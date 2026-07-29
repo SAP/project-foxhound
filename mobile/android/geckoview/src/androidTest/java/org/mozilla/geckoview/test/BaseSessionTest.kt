@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -100,6 +99,7 @@ open class BaseSessionTest(
         const val STORAGE_TITLE_HTML_PATH = "/assets/www/reflect_local_storage_into_title.html"
         const val HUNG_SCRIPT = "/assets/www/hungScript.html"
         const val PUSH_HTML_PATH = "/assets/www/push/push.html"
+        const val WEBAUTHN_RELATED_ORIGIN_PATH = "https://example.com/tests/junit/webauthn_related_origin.html"
         const val OPEN_WINDOW_PATH = "https://example.org/tests/junit/open_window.html"
         const val OPEN_WINDOW_TARGET_PATH = "https://example.org/tests/junit/open_window_target.html"
         const val CLICK_ACTION_PATH = "/assets/www/worker/click-action.html"
@@ -159,7 +159,9 @@ open class BaseSessionTest(
         const val BUG1985669_HTML_PATH = "/assets/www/bug1985669.html"
         const val BUG1993407_HTML_PATH = "/assets/www/bug1993407.html"
         const val BUG1994311_HTML_PATH = "/assets/www/bug1994311.html"
+        const val BUG2028072_HTML_PATH = "/assets/www/bug2028072.html"
         const val PAGE_EXTRACTION_HTML_PATH = "/assets/www/page-extraction.html"
+        const val PAGE_EXTRACTION_READER_MODE_HTML_PATH = "/assets/www/readerModeArticle.html"
         const val POSITION_STICKY_HTML_PATH = "/assets/www/position-sticky.html"
         const val POSITION_STICKY_ON_MAIN_THREAD_HTML_PATH = "/assets/www/position-sticky-on-main-thread.html"
         const val INTERACTIVE_WIDGET_HTML_PATH = "/assets/www/interactive-widget.html"

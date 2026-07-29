@@ -69,6 +69,7 @@
         android:supportsRtl="true"
         android:theme="@style/NormalTheme"
         android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:enableOnBackInvokedCallback="@bool/enableOnBackInvokedCallback"
         tools:ignore="UnusedAttribute">
 
@@ -524,6 +525,7 @@
                 <data android:host="settings"/>
                 <data android:host="settings_accessibility"/>
                 <data android:host="settings_addon_manager"/>
+                <data android:host="settings_ai_controls"/>
                 <data android:host="settings_delete_browsing_data"/>
                 <data android:host="settings_logins"/>
                 <data android:host="settings_notifications"/>
@@ -661,6 +663,12 @@
             android:taskAffinity=""
             />
 
+        <activity android:name=".components.lens.LensCameraActivity"
+            android:theme="@style/Theme.LensCamera"
+            android:exported="false"
+            android:taskAffinity=""
+            />
+
         <activity
             android:name=".settings.account.AuthCustomTabActivity"
             android:autoRemoveFromRecents="false"
@@ -774,6 +782,16 @@
         </service>
 
         <provider
+            android:name=".components.LensFileProvider"
+            android:authorities="${applicationId}.lens.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_provider_paths" />
+        </provider>
+
+        <provider
             android:name=".perf.ProfilerProvider"
             android:authorities="${applicationId}.profiler"
             android:exported="false"
@@ -802,6 +820,27 @@
                 tools:node="remove" />
         </provider>
 
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <!-- Disables automatic initialization of EmojiCompat -->
+            <meta-data
+                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+                tools:node="remove" />
+        </provider>
+
         <!-- For adjust pre-installs -->
         <!-- https://dev.adjust.com/en/sdk/android/setup/preinstalled#system-installer-receiver-->
         <receiver
@@ -811,6 +850,30 @@
             <intent-filter>
                 <action android:name="com.attribution.SYSTEM_INSTALLER_REFERRER" />
             </intent-filter>
+        </receiver>
+
+        <receiver android:name="org.mozilla.fenix.components.share.SaveToPdfReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="org.mozilla.fenix.ACTION_SAVE_TO_PDF" />
+            </intent-filter>
+        </receiver>
+
+        <receiver android:name="org.mozilla.fenix.components.share.PrintReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="org.mozilla.fenix.ACTION_PRINT" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+          android:name="org.mozilla.fenix.messaging.QAMessageNotificationWorkerReceiver"
+          android:exported="true"
+          android:enabled="true"
+          android:permission="android.permission.DUMP">
+          <intent-filter>
+            <action android:name="org.mozilla.fenix.TRIGGER_MESSAGE_WORKER" />
+          </intent-filter>
         </receiver>
     </application>
 

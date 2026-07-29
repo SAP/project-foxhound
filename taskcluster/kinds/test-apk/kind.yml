@@ -59,12 +59,9 @@ tasks:
             tier: 1
         worker:
             artifacts:
-                - name: public/reports/index.html
-                  path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/focus-android/app/reports/tests/testFocusDebugUnitTest/index.html
+                - name: public/reports/test-reports.zip
+                  path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/focus-android/app/reports/test-reports.zip
                   type: file
-                - name: public/reports/test
-                  path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/focus-android/app/reports/tests
-                  type: directory
 
     fenix-debug:
         description: Fenix unit tests
@@ -82,12 +79,9 @@ tasks:
             tier: 1
         worker:
             artifacts:
-                - name: public/reports/index.html
-                  path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/fenix/app/reports/tests/testDebugUnitTest/index.html
+                - name: public/reports/test-reports.zip
+                  path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/fenix/app/reports/test-reports.zip
                   type: file
-                - name: public/reports/test
-                  path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/fenix/app/reports/tests
-                  type: directory
         routes:
             by-level:
                 '3':
@@ -140,7 +134,7 @@ tasks:
                                 "type": "section",
                                 "text": {
                                   "type": "mrkdwn",
-                                  "text": "*Test Summary*: <https://firefoxci.taskcluster-artifacts.net/${status.taskId}/0/public/reports/index.html|Results> :debug:"
+                                  "text": "*Test Log*: <https://firefox-ci-tc.services.mozilla.com/tasks/${status.taskId}/runs/0/logs/public/logs/live_backing.log|Build Log> :debug:"
                                 }
                               },
                               {

@@ -19,7 +19,9 @@ export class ColorPickerChild extends InputPickerChildCommon {
   closeImpl(inputElement) {
     inputElement.setOpenState(false);
     if (this.initialValue !== inputElement.value) {
-      inputElement.dispatchEvent(new inputElement.ownerGlobal.Event("change"));
+      inputElement.dispatchEvent(
+        new inputElement.documentGlobal.Event("change")
+      );
     }
   }
 

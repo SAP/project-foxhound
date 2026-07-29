@@ -56,25 +56,12 @@ macosx64-geckodriver:
         symbol: TM(gd)
         platform: macosx64/opt
     run:
-        arguments: ['x86_64-apple-darwin']
+        arguments: ['apple-darwin']
     attributes:
         build_platform: macosx64-geckodriver
     fetches:
         toolchain:
-            - linux64-clang-toolchain
-            - linux64-rust-macos
-            - macosx64-sdk-toolchain
-
-macosx64-aarch64-geckodriver:
-    treeherder:
-        symbol: TMA64(gd)
-        platform: macosx64-aarch64/opt
-    run:
-        arguments: ['aarch64-apple-darwin']
-    attributes:
-        build_platform: macosx64-aarch64-geckodriver
-    fetches:
-        toolchain:
+            - linux64-cctools-port
             - linux64-clang-toolchain
             - linux64-rust-macos
             - macosx64-sdk-toolchain

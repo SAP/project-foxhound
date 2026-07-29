@@ -9,6 +9,7 @@ TABLE_CSS = "#ecoEast table"
 async def is_table_fully_visible(client):
     await client.navigate(URL, wait="none")
     client.await_css(ACCORDION_CSS, is_displayed=True).click()
+    await client.stall(2)
     return client.execute_script(
         """
         const table = arguments[0];

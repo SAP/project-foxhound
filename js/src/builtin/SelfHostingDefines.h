@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -103,6 +101,8 @@
 #define REGEXP_SOURCE_SLOT 1
 #define REGEXP_FLAGS_SLOT 2
 
+#define REGEXP_MAX_SUBSTITUTION_CAPTURES 99
+
 #define REGEXP_IGNORECASE_FLAG 0x01
 #define REGEXP_GLOBAL_FLAG 0x02
 #define REGEXP_MULTILINE_FLAG 0x04
@@ -112,6 +112,8 @@
 #define REGEXP_HASINDICES_FLAG 0x40
 #define REGEXP_UNICODESETS_FLAG 0x80
 #define REGEXP_LEGACY_FEATURES_ENABLED_FLAG 0x100
+
+#define REGEXP_ANY_UNICODE_MASK (REGEXP_UNICODE_FLAG | REGEXP_UNICODESETS_FLAG)
 
 #define REGEXP_STRING_ITERATOR_REGEXP_SLOT 0
 #define REGEXP_STRING_ITERATOR_STRING_SLOT 1

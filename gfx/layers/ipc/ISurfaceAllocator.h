@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,10 +9,13 @@
 #include <stdint.h>  // for uint32_t
 #include "gfxTypes.h"
 #include "mozilla/dom/ipc/IdType.h"
-#include "mozilla/gfx/Point.h"              // for IntSize
-#include "nsIMemoryReporter.h"              // for nsIMemoryReporter
-#include "mozilla/Atomics.h"                // for Atomic
-#include "mozilla/layers/LayersMessages.h"  // for ShmemSection
+#include "mozilla/ipc/Shmem.h"
+#include "mozilla/gfx/Point.h"  // for IntSize
+#include "nsIMemoryReporter.h"  // for nsIMemoryReporter
+#include "mozilla/Atomics.h"    // for Atomic
+#include "nsTArray.h"
+
+class MessageLoop;
 
 namespace mozilla {
 namespace ipc {
@@ -27,13 +28,15 @@ class DataSourceSurface;
 
 namespace layers {
 
+class PTextureParent;
+class AsyncParentMessageData;
 class CompositableForwarder;
 class CompositorBridgeParentBase;
 class TextureForwarder;
+class UntrustedShmemSection;
 
 class ShmemSectionAllocator;
 class LegacySurfaceDescriptorAllocator;
-class ClientIPCAllocator;
 class HostIPCAllocator;
 class LayersIPCChannel;
 
@@ -62,8 +65,7 @@ class SurfaceDescriptor;
  */
 class ISurfaceAllocator {
  public:
-  MOZ_DECLARE_REFCOUNTED_TYPENAME(ISurfaceAllocator)
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ISurfaceAllocator)
+  NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
 
   ISurfaceAllocator() = default;
 
@@ -75,9 +77,7 @@ class ISurfaceAllocator {
 
   virtual CompositableForwarder* AsCompositableForwarder() { return nullptr; }
 
-  virtual TextureForwarder* GetTextureForwarder() { return nullptr; }
-
-  virtual ClientIPCAllocator* AsClientAllocator() { return nullptr; }
+  virtual RefPtr<TextureForwarder> GetTextureForwarder();
 
   virtual HostIPCAllocator* AsHostIPCAllocator() { return nullptr; }
 
@@ -108,20 +108,6 @@ class ISurfaceAllocator {
   virtual ~ISurfaceAllocator() = default;
 };
 
-/// Methods that are specific to the client/child side.
-class ClientIPCAllocator : public ISurfaceAllocator {
- public:
-  ClientIPCAllocator() = default;
-
-  ClientIPCAllocator* AsClientAllocator() override { return this; }
-
-  virtual base::ProcessId GetParentPid() const = 0;
-
-  virtual MessageLoop* GetMessageLoop() const = 0;
-
-  virtual void CancelWaitForNotifyNotUsed(uint64_t aTextureId) = 0;
-};
-
 /// Methods that are specific to the host/parent side.
 class HostIPCAllocator : public ISurfaceAllocator {
  public:
@@ -137,9 +123,7 @@ class HostIPCAllocator : public ISurfaceAllocator {
   virtual void NotifyNotUsed(PTextureParent* aTexture,
                              uint64_t aTransactionId) = 0;
 
-  virtual void SendAsyncMessage(
-      const nsTArray<AsyncParentMessageData>& aMessage) = 0;
-
+  virtual void SendAsyncMessage(Span<const AsyncParentMessageData>) = 0;
   virtual void SendPendingAsyncMessages();
 
   virtual void SetAboutToSendAsyncMessages() {
@@ -149,16 +133,15 @@ class HostIPCAllocator : public ISurfaceAllocator {
   bool IsAboutToSendAsyncMessages() { return mAboutToSendAsyncMessages; }
 
  protected:
-  std::vector<AsyncParentMessageData> mPendingAsyncMessage;
+  nsTArray<AsyncParentMessageData> mPendingAsyncMessage;
   bool mAboutToSendAsyncMessages = false;
 };
 
 class ShmemSection {
  public:
   static Maybe<ShmemSection> FromUntrusted(
-      const UntrustedShmemSection& aUntrusted);
+      const UntrustedShmemSection& aUntrusted, size_t aMinSize);
   bool Init(const mozilla::ipc::Shmem& aShm, uint32_t offset, uint32_t size);
-  UntrustedShmemSection AsUntrusted();
 
   uint32_t size() const { return mSize; }
   uint32_t offset() const { return mOffset; }
@@ -202,14 +185,6 @@ class LegacySurfaceDescriptorAllocator {
 };
 
 bool IsSurfaceDescriptorValid(const SurfaceDescriptor& aSurface);
-
-already_AddRefed<gfx::DataSourceSurface> GetSurfaceForDescriptor(
-    const SurfaceDescriptor& aDescriptor);
-
-uint8_t* GetAddressFromDescriptor(const SurfaceDescriptor& aDescriptor);
-
-void DestroySurfaceDescriptor(mozilla::ipc::IShmemAllocator* aAllocator,
-                              SurfaceDescriptor* aSurface);
 
 class GfxMemoryImageReporter final : public nsIMemoryReporter {
   ~GfxMemoryImageReporter() = default;

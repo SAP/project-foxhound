@@ -20,7 +20,7 @@ add_task(async function testToggleNarrate() {
     let TEST_VOICE = "urn:moz-tts:fake:teresa";
     let $ = content.document.querySelector.bind(content.document);
 
-    let prefChanged = NarrateTestUtils.waitForPrefChange("narrate.voice");
+    let prefChanged = TestUtils.waitForPrefChange("narrate.voice");
     NarrateTestUtils.selectVoice(content, TEST_VOICE);
     await prefChanged;
 

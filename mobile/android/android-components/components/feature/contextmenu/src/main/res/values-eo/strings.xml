@@ -14,7 +14,7 @@
   <!-- Text for context menu item to open the image in a new tab. -->
   <string name="mozac_feature_contextmenu_open_image_in_new_tab">Malfermi bildon en nova langeto</string>
   <!-- Text for context menu item to save / download the link. -->
-  <string name="mozac_feature_contextmenu_download_link">Elŝuta ligilo</string>
+  <string name="mozac_feature_contextmenu_download_link">Elŝuti ligilon</string>
   <!-- Text for context menu item to share the link with an other app. -->
   <string name="mozac_feature_contextmenu_share_link">Dividi ligilon</string>
   <!-- Text for context menu item to share the image with an other app. -->

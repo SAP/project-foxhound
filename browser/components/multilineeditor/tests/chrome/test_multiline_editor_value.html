@@ -80,6 +80,44 @@
         ok(editor.shadowRoot, "Shadow root exists");
         is(editor.value, "Pending text", "Pending value is applied");
       });
+
+      add_task(async function testMaxLengthTruncatesInput() {
+        const result = await testHelpers.renderTemplate(html`
+          <moz-multiline-editor maxlength="5"></moz-multiline-editor>
+        `);
+        const editor = result.querySelector("moz-multiline-editor");
+
+        editor.focus();
+        sendString("abcdefgh");
+        await new Promise(resolve => requestAnimationFrame(resolve));
+
+        is(editor.value, "abcde", "Value is truncated to maxLength");
+      });
+
+      add_task(async function testMaxLengthAllowsWithinLimit() {
+        const result = await testHelpers.renderTemplate(html`
+          <moz-multiline-editor maxlength="10"></moz-multiline-editor>
+        `);
+        const editor = result.querySelector("moz-multiline-editor");
+
+        editor.focus();
+        sendString("hello");
+        await new Promise(resolve => requestAnimationFrame(resolve));
+
+        is(editor.value, "hello", "Value within limit is not truncated");
+      });
+
+      add_task(async function testNoMaxLengthAllowsUnlimited() {
+        const result = await testHelpers.renderTemplate();
+        const editor = result.querySelector("moz-multiline-editor");
+
+        editor.focus();
+        const longText = "a".repeat(20);
+        sendString(longText);
+        await new Promise(resolve => requestAnimationFrame(resolve));
+
+        is(editor.value, longText, "Without maxLength, no truncation");
+      });
     </script>
   </head>
   <body>

@@ -66,11 +66,11 @@ class CryptoMetaData {
     return mClearBytes.size();
   }
 
-  cdm::EncryptionScheme mEncryptionScheme;
+  cdm::EncryptionScheme mEncryptionScheme = cdm::EncryptionScheme::kUnencrypted;
   std::vector<uint8_t> mKeyId;
   std::vector<uint8_t> mIV;
-  uint32_t mCryptByteBlock;
-  uint32_t mSkipByteBlock;
+  uint32_t mCryptByteBlock = 0;
+  uint32_t mSkipByteBlock = 0;
   std::vector<uint32_t> mClearBytes;
   std::vector<uint32_t> mCipherBytes;
 };

@@ -7,6 +7,11 @@
 }
 
 #contentView,
+#placesList {
+  min-width: 100px;
+  min-height: 100px;
+}
+
 #placesView,
 #placesViewsBox {
   min-width: 0;

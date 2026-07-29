@@ -6,6 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=635499
 <head>
   <title>Test for Bug 635499</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="datetime_utils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -73,7 +74,7 @@ function checkValidity(aElement, aValidity, aApply, aRangeApply)
         (aElement.type == "date" || aElement.type == "time" ||
          aElement.type == "month" || aElement.type == "week" ||
          aElement.type == "datetime-local") ?
-        ("Please select a value that is no later than " + aElement.max + ".") :
+        ("Please select a value that is no later than " + formatDateTimeForValidityMessage(aElement.max, aElement.type) + ".") :
         ("Please select a value that is no more than " + aElement.max + ".");
   is(aElement.validationMessage,
      aValidity ? "" : overflowMsg, "Checking range overflow validation message");

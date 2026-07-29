@@ -1,0 +1,413 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+// Shared celebration overlay rules; widgets supply --widget-celebration-*
+// tokens and call widget-celebration-styles(<classNamePrefix>).
+
+@mixin widget-celebration-styles($prefix) {
+  .#{$prefix} {
+    animation:
+      widget-celebration-lifecycle
+      calc(var(--widget-celebration-hold-duration) + var(--widget-celebration-exit-duration))
+      linear
+      forwards;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 3;
+
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+      background: var(--widget-celebration-tint-color);
+      opacity: 0;
+      animation:
+        widget-celebration-tint-in 260ms var(--widget-celebration-enter-ease) forwards,
+        widget-celebration-tint-out var(--widget-celebration-exit-duration) ease forwards;
+      animation-delay: 0ms, var(--widget-celebration-hold-duration);
+    }
+  }
+
+  .#{$prefix}-effects {
+    inset: 0;
+    position: absolute;
+
+    svg {
+      display: block;
+      filter: drop-shadow(0 0 10px var(--widget-celebration-glow-color));
+      height: 100%;
+      width: 100%;
+    }
+  }
+
+  .#{$prefix}-stroke-track,
+  .#{$prefix}-stroke,
+  .#{$prefix}-stroke-orbit {
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 3;
+  }
+
+  .#{$prefix}-stroke-track {
+    // No matching opacity token.
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    opacity: 0.22;
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    stroke: var(--widget-celebration-track-color);
+  }
+
+  .#{$prefix}-stroke {
+    stroke-dasharray: 100;
+    stroke-dashoffset: 100;
+    animation-name: widget-celebration-border-draw, widget-celebration-border-fade;
+    animation-duration: var(--widget-celebration-border-draw-duration), var(--widget-celebration-exit-duration);
+    animation-timing-function: var(--widget-celebration-enter-ease), ease;
+    animation-fill-mode: forwards, forwards;
+    animation-delay: 0ms, var(--widget-celebration-hold-duration);
+  }
+
+  .#{$prefix}-stroke-orbit {
+    opacity: 0;
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    stroke: var(--widget-celebration-orbit-color);
+    stroke-dasharray: 14 86;
+    stroke-dashoffset: 100;
+    stroke-width: 3;
+    animation:
+      widget-celebration-border-orbit-in 240ms var(--widget-celebration-enter-ease) 160ms forwards,
+      widget-celebration-border-orbit-loop var(--widget-celebration-orbit-duration) linear 260ms infinite,
+      widget-celebration-border-orbit-out var(--widget-celebration-exit-duration) ease var(--widget-celebration-hold-duration) forwards;
+  }
+
+  .#{$prefix}-copy {
+    align-items: center;
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    color: var(--widget-celebration-copy-color);
+    display: flex;
+    flex-direction: column;
+    inset-block-start: 52%;
+    inset-inline: var(--space-large);
+    padding-block: var(--space-small);
+    padding-inline: var(--space-medium);
+    position: absolute;
+    text-align: center;
+    transform: translateY(-50%);
+    z-index: 1;
+
+    &::before {
+      display: none;
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+      background: color-mix(
+        in srgb,
+        var(--widget-celebration-surface-color) 88%,
+        transparent
+      );
+      border-radius: var(--border-radius-large);
+      content: '';
+      inset: 0;
+      opacity: 0;
+      position: absolute;
+      animation:
+        widget-celebration-copy-panel-in 320ms var(--widget-celebration-enter-ease) forwards,
+        widget-celebration-copy-panel-out var(--widget-celebration-exit-duration) ease forwards;
+      animation-delay: var(--widget-celebration-panel-delay), var(--widget-celebration-hold-duration);
+    }
+  }
+
+  .#{$prefix}-headline,
+  .#{$prefix}-subhead {
+    opacity: 0;
+    position: relative;
+    transform: translateY(8px);
+    z-index: 1;
+  }
+
+  .#{$prefix}-headline {
+    display: inline-block;
+    background-image: linear-gradient(
+      var(--widget-celebration-headline-gradient-angle),
+      var(--widget-celebration-headline-gradient-start),
+      var(--widget-celebration-headline-gradient-mid-start) 28%,
+      var(--widget-celebration-headline-gradient-mid-end) 64%,
+      var(--widget-celebration-headline-gradient-end)
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    // Required by background-clip: text.
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    color: transparent;
+    font-size: var(--font-size-xlarge);
+    font-weight: var(--font-weight-bold);
+    line-height: 1.2;
+    animation:
+      widget-celebration-copy-in 320ms var(--widget-celebration-enter-ease) forwards,
+      widget-celebration-copy-out var(--widget-celebration-exit-duration) ease forwards;
+    animation-delay: var(--widget-celebration-headline-delay), var(--widget-celebration-hold-duration);
+  }
+
+  .#{$prefix}-subhead {
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    color: var(--widget-celebration-copy-color);
+    font-size: var(--font-size-large);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.2;
+    margin-block-start: var(--space-xxsmall);
+    animation:
+      widget-celebration-copy-in 320ms var(--widget-celebration-enter-ease) forwards,
+      widget-celebration-copy-out var(--widget-celebration-exit-duration) ease forwards;
+    animation-delay: var(--widget-celebration-subhead-delay), var(--widget-celebration-hold-duration);
+  }
+
+  .#{$prefix}-illustration {
+    // Image-specific dimensions, not on the size-image scale.
+    /* stylelint-disable stylelint-plugin-mozilla/use-design-tokens */
+    block-size: 132px;
+    inset-block-end: var(--space-xxsmall);
+    inline-size: auto;
+    max-inline-size: 209px;
+    /* stylelint-enable stylelint-plugin-mozilla/use-design-tokens */
+    inset-inline-end: var(--space-small);
+    opacity: 0;
+    position: absolute;
+    transform: translateY(12px) scale(0.96);
+    transform-origin: bottom right;
+    animation:
+      widget-celebration-illustration-in 360ms var(--widget-celebration-enter-ease) forwards,
+      widget-celebration-illustration-out var(--widget-celebration-exit-duration) ease forwards;
+    animation-delay: var(--widget-celebration-illustration-delay), var(--widget-celebration-hold-duration);
+  }
+
+  // Optional confetti shower. Widgets opt in by passing `confettiColors` to
+  // <WidgetCelebration>; pieces are generated in JS (colors + randomized
+  // position/spin via CSS custom props) and fall through this clipped layer.
+  .#{$prefix}-confetti {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: inherit;
+    pointer-events: none;
+  }
+
+  // Holds the <symbol> soccer-ball geometry; never painted itself.
+  .#{$prefix}-confetti-defs {
+    position: absolute;
+    inline-size: 0;
+    block-size: 0;
+  }
+
+  // Shared faller: position, size, fall/spin animation. Per-piece values come
+  // from JS-set custom props, so design tokens don't apply.
+  .#{$prefix}-confetti-piece {
+    position: absolute;
+    inset-block-start: -12%;
+    /* stylelint-disable stylelint-plugin-mozilla/use-design-tokens */
+    inset-inline-start: var(--confetti-x);
+    inline-size: var(--confetti-w);
+    block-size: var(--confetti-h);
+    /* stylelint-enable stylelint-plugin-mozilla/use-design-tokens */
+    opacity: 0;
+    animation-name: widget-celebration-confetti-fall;
+    animation-duration: var(--confetti-duration);
+    animation-timing-function: cubic-bezier(0.3, 0.45, 0.55, 1);
+    animation-delay: var(--confetti-delay);
+    animation-fill-mode: forwards;
+  }
+
+  // Flat shapes: solid color fill + border-radius/clip-path silhouette.
+  i.#{$prefix}-confetti-piece {
+    /* stylelint-disable stylelint-plugin-mozilla/use-design-tokens */
+    background-color: var(--confetti-color);
+    border-radius: var(--confetti-radius);
+    /* stylelint-enable stylelint-plugin-mozilla/use-design-tokens */
+    clip-path: var(--confetti-clip);
+  }
+
+  // Soccer balls: the <use>d symbol tints its body via currentColor.
+  svg.#{$prefix}-confetti-piece {
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    color: var(--confetti-color);
+  }
+}
+
+@keyframes widget-celebration-confetti-fall {
+  0% {
+    opacity: 0;
+    translate: 0 0;
+    rotate: 0deg;
+  }
+
+  12% {
+    opacity: 1;
+  }
+
+  85% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    translate: var(--confetti-drift) var(--confetti-fall, 360px);
+    rotate: var(--confetti-rotate);
+  }
+}
+
+@keyframes widget-celebration-lifecycle {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes widget-celebration-border-draw {
+  from {
+    // Keyframe midpoint, no matching opacity token.
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    opacity: 0.4;
+    stroke-dashoffset: 100;
+  }
+
+  to {
+    opacity: 1;
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes widget-celebration-border-fade {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes widget-celebration-border-orbit-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: var(--opacity-deemphasized-strong);
+  }
+}
+
+@keyframes widget-celebration-border-orbit-loop {
+  from {
+    stroke-dashoffset: 100;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes widget-celebration-border-orbit-out {
+  from {
+    opacity: var(--opacity-deemphasized-strong);
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes widget-celebration-copy-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes widget-celebration-copy-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes widget-celebration-copy-panel-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes widget-celebration-copy-panel-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes widget-celebration-illustration-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes widget-celebration-illustration-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+@keyframes widget-celebration-tint-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes widget-celebration-tint-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}

@@ -38,11 +38,27 @@ enum Code {
   kStatusDiskFull = 8,
   kStatusIoError = 9,
   kStatusFatal = 10,
+  // Values 0-10 mirror the upstream enum in zucchini.h. Mozilla-added codes
+  // start at 100 to avoid collisions when vendoring upstream updates.
+  kStatusOutOfMemory = 100,
 };
 
 }  // namespace status
 
 namespace mozilla {
+
+#ifdef ENABLE_TESTS
+// Options that help testing crash recovery.
+// Crash recovery is only supported on Windows for now.
+// POSIX support is planned, see bug 2043122 for more information.
+
+struct TestOptions {
+  bool logDestructorMarker = false;
+  bool triggerBadAlloc = false;
+  bool triggerCheckFailure = false;
+};
+void SetTestOptions(const TestOptions& aOptions);
+#endif  // ENABLE_TESTS
 
 using LogFunctionPtr = void (*)(const char* aMessage);
 void SetLogFunction(LogFunctionPtr aLogFunction);

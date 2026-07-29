@@ -4,7 +4,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+#![cfg_attr(all(coverage_nightly, test), feature(coverage_attribute))]
 
 //! A crate to return the name and maximum transmission unit (MTU) of the local network interface
 //! towards a given destination `SocketAddr`, optionally from a given local `SocketAddr`.
@@ -45,7 +45,7 @@
 //! # Contributing
 //!
 //! We're happy to receive PRs that improve this crate. Please take a look at our [community
-//! guidelines](CODE_OF_CONDUCT.md) beforehand.
+//! guidelines](https://github.com/mozilla/neqo/blob/main/CODE_OF_CONDUCT.md) beforehand.
 
 use std::{
     io::{Error, ErrorKind, Result},
@@ -110,7 +110,12 @@ const fn aligned_by(size: usize, align: usize) -> usize {
 // Platforms currently not supported.
 //
 // See <https://github.com/mozilla/mtu/issues/82>.
-#[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
+#[cfg(any(
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "visionos",
+    target_os = "redox"
+))]
 pub fn interface_and_mtu_impl(remote: IpAddr) -> Result<(String, usize)> {
     return Err(default_err());
 }
@@ -133,8 +138,6 @@ pub fn interface_and_mtu(remote: IpAddr) -> Result<(String, usize)> {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod test {
-    #![expect(clippy::unwrap_used, reason = "OK in tests.")]
-
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
     use crate::interface_and_mtu;

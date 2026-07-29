@@ -1,12 +1,10 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef GFX_PLATFORM_H
 #define GFX_PLATFORM_H
 
-#include "mozilla/FontPropertyTypes.h"
 #include "mozilla/gfx/Types.h"
 #include "mozilla/intl/UnicodeScriptCodes.h"
 #include "nsTArray.h"
@@ -46,6 +44,11 @@ typedef struct FT_LibraryRec_* FT_Library;
 
 namespace mozilla {
 struct StyleFontFamilyList;
+struct StyleFontFaceSourceTechFlags;
+enum class StyleFontFaceSourceFormatKeyword : uint8_t;
+class WeightRange;
+class StretchRange;
+class SlantStyleRange;
 class LogModule;
 class VsyncDispatcher;
 namespace layers {
@@ -85,7 +88,7 @@ enum class CMSMode : int32_t {
   _ENUM_MAX = TaggedOnly
 };
 
-enum eGfxLog {
+enum eGfxLog : uint8_t {
   // all font enumerations, localized names, fullname/psnames, cmap loads
   eGfxLog_fontlist = 0,
   // timing info on font initialization
@@ -166,9 +169,9 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   friend class SRGBOverrideObserver;
 
  public:
-  typedef mozilla::StretchRange StretchRange;
-  typedef mozilla::SlantStyleRange SlantStyleRange;
-  typedef mozilla::WeightRange WeightRange;
+  using WeightRange = mozilla::WeightRange;
+  using StretchRange = mozilla::StretchRange;
+  using SlantStyleRange = mozilla::SlantStyleRange;
   typedef mozilla::gfx::sRGBColor sRGBColor;
   typedef mozilla::gfx::DeviceColor DeviceColor;
   typedef mozilla::gfx::DataSourceSurface DataSourceSurface;
@@ -225,6 +228,8 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   static bool IsHeadless();
 
   static bool UseRemoteCanvas();
+
+  static bool UseHDR();
 
   static bool IsBackendAccelerated(
       const mozilla::gfx::BackendType aBackendType);
@@ -392,28 +397,26 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   /**
    * Look up a local platform font using the full font face name.
    * (Needed to support @font-face src local().)
-   * Ownership of the returned gfxFontEntry is passed to the caller,
-   * who must either AddRef() or delete.
+   * Ownership of the returned gfxFontEntry is passed to the caller.
    */
-  gfxFontEntry* LookupLocalFont(FontVisibilityProvider* aFontVisibilityProvider,
-                                const nsACString& aFontName,
-                                WeightRange aWeightForEntry,
-                                StretchRange aStretchForEntry,
-                                SlantStyleRange aStyleForEntry);
+  already_AddRefed<gfxFontEntry> LookupLocalFont(
+      FontVisibilityProvider* aFontVisibilityProvider,
+      const nsACString& aFontName, const WeightRange& aWeightForEntry,
+      const StretchRange& aStretchForEntry,
+      const SlantStyleRange& aStyleForEntry);
 
   /**
    * Activate a platform font.  (Needed to support @font-face src url().)
    * aFontData is a NS_Malloc'ed block that must be freed by this function
    * (or responsibility passed on) when it is no longer needed; the caller
    * will NOT free it.
-   * Ownership of the returned gfxFontEntry is passed to the caller,
-   * who must either AddRef() or delete.
+   * Ownership of the returned gfxFontEntry is passed to the caller.
    */
-  gfxFontEntry* MakePlatformFont(const nsACString& aFontName,
-                                 WeightRange aWeightForEntry,
-                                 StretchRange aStretchForEntry,
-                                 SlantStyleRange aStyleForEntry,
-                                 const uint8_t* aFontData, uint32_t aLength);
+  already_AddRefed<gfxFontEntry> MakePlatformFont(
+      const nsACString& aFontName, const WeightRange& aWeightForEntry,
+      const StretchRange& aStretchForEntry,
+      const SlantStyleRange& aStyleForEntry, const uint8_t* aFontData,
+      uint32_t aLength);
 
   /**
    * Whether to allow downloadable fonts via @font-face rules
@@ -480,7 +483,7 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   // all platforms, but individual platform implementations may override.
   virtual bool IsFontFormatSupported(
       mozilla::StyleFontFaceSourceFormatKeyword aFormatHint,
-      mozilla::StyleFontFaceSourceTechFlags aTechFlags);
+      const mozilla::StyleFontFaceSourceTechFlags& aTechFlags);
 
   bool IsKnownIconFontFamily(const nsAtom* aFamilyName) const;
 
@@ -545,6 +548,16 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
    */
   static qcms_profile* GetCMSOutputProfile() {
     return GetPlatform()->mCMSOutputProfile;
+  }
+
+  static const mozilla::Maybe<nsTArray<uint8_t>>& GetCMSOutputICCProfileData() {
+    // This data only represents mCMSOutputProfile if it is not the sRGB
+    // profile, so this should not be called unless that is the case as there is
+    // no need for that data otherwise.
+    MOZ_ASSERT(qcms_profile_is_sRGB(GetPlatform()->mCMSsRGBProfile));
+    MOZ_ASSERT(GetPlatform()->mCMSsRGBProfile !=
+               GetPlatform()->mCMSOutputProfile);
+    return GetPlatform()->mCMSOutputProfileData;
   }
 
   /**

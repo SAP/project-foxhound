@@ -1,0 +1,29 @@
+{
+  "label": "news.yahoo.co.jp",
+  "bugs": {
+    "1724868": {
+      "issue": "broken-videos",
+      "matches": ["*://news.yahoo.co.jp/articles/*", "*://s.yimg.jp/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "content_scripts": {
+        "all_frames": true,
+        "js": ["use_chrome_useragent.js", "define_userAgentData.js"]
+      }
+    },
+    {
+      "platforms": ["linux"],
+      "content_scripts": {
+        "all_frames": true,
+        "js": [
+          "spoof_as_windows.js",
+          "use_chrome_useragent.js",
+          "define_userAgentData.js"
+        ]
+      }
+    }
+  ]
+}

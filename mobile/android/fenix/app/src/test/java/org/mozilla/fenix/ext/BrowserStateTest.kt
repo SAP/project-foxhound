@@ -8,16 +8,22 @@ import io.mockk.every
 import io.mockk.mockk
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.LastMediaAccessState
+import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.concept.engine.utils.ABOUT_HOME_URL
 import mozilla.components.concept.storage.HistoryMetadataKey
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
 import org.mozilla.fenix.home.recenttabs.RecentTab
 import org.mozilla.fenix.utils.Settings
+import org.mozilla.fenix.utils.Stories.markAsOpenedFromStoriesScreen
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
 class BrowserStateTest {
 
     @Test
@@ -332,4 +338,62 @@ class BrowserStateTest {
         assertEquals(2, result.size)
         assertTrue(result.containsAll(listOf(normalTab1, normalTab3)))
     }
+
+    @Test
+    fun `GIVEN existing back browser history WHEN checking if can go back in history or to stories THEN return true`() {
+        val normalTab = createTab(url = "url1").markAsCanGoBackInHistory()
+        val browserState = BrowserState(tabs = listOf(normalTab), selectedTabId = normalTab.id)
+
+        val result = browserState.canGoBackInHistoryOrToStories()
+
+        assertTrue(result)
+    }
+
+    @Test
+    fun `GIVEN existing back browser history in another tab WHEN checking if can go back in history or to stories THEN return false`() {
+        val normalTab1 = createTab(url = "url1")
+        val normalTab2 = createTab(url = "url2").markAsCanGoBackInHistory()
+        val browserState = BrowserState(tabs = listOf(normalTab1, normalTab2), selectedTabId = normalTab1.id)
+
+        val result = browserState.canGoBackInHistoryOrToStories()
+
+        assertFalse(result)
+    }
+
+    @Test
+    fun `GIVEN existing back browser history in private tab WHEN checking if can go back in history or to stories THEN return true`() {
+        val privateTab = createTab(url = "url1", private = true).markAsCanGoBackInHistory()
+        val browserState = BrowserState(tabs = listOf(privateTab), selectedTabId = privateTab.id)
+
+        val result = browserState.canGoBackInHistoryOrToStories()
+
+        assertTrue(result)
+    }
+
+    @Test
+    fun `GIVEN no browser history but URL opened from home story WHEN checking if can go back in history or to stories THEN return true`() {
+        val storyUrl = "https://story.test".markAsOpenedFromStoriesScreen()
+        val normalTab = createTab(url = storyUrl)
+        val browserState = BrowserState(tabs = listOf(normalTab), selectedTabId = normalTab.id)
+
+        val result = browserState.canGoBackInHistoryOrToStories()
+
+        assertTrue(result)
+    }
+
+    @Test
+    fun `GIVEN no browser history but and URL not opened from home story WHEN checking if can go back in history or to stories THEN return false`() {
+        val normalTab = createTab(url = "https://example.test")
+        val browserState = BrowserState(tabs = listOf(normalTab), selectedTabId = normalTab.id)
+
+        val result = browserState.canGoBackInHistoryOrToStories()
+
+        assertFalse(result)
+    }
+
+    private fun TabSessionState.markAsCanGoBackInHistory() = copy(
+        content = content.copy(
+            canGoBack = true,
+        ),
+    )
 }

@@ -4,5 +4,5 @@ It has been forked into mozilla-firefox from the [A-S Repo](https://github.com/m
 
 This is mostly a thin wrapper around the actual code generator whose implementation lives in either:
 
-* hopefully in services/app-services/components/support/nimbus-fml and built by mach.
+* hopefully in third_party/application-services/components/support/nimbus-fml and built by mach.
 * otherwise from [the application-services repo](https://github.com/mozilla/application-services/tree/main/components/support/nimbus-fml) and published as a taskcluster artifact, then downloaded locally.

@@ -16,7 +16,7 @@
 _NS_InvokeByIndex:
   .cfi_startproc
   addi.d    $sp, $sp, -32
-  .cfi_def_cfa_offset 32
+  .cfi_adjust_cfa_offset 32
   st.d      $s0, $sp, 16
   .cfi_offset 23, -16
   st.d      $s1, $sp, 8
@@ -25,7 +25,7 @@ _NS_InvokeByIndex:
   .cfi_offset 25, -32
   st.d      $ra, $sp, 24
   .cfi_offset 1, -8
-  
+
   move      $s2, $a0
   move      $s1, $a1
   move      $s0, $sp
@@ -84,7 +84,7 @@ _NS_InvokeByIndex:
   ld.d      $ra, $sp, 24
   .cfi_restore 1
   addi.d    $sp, $sp, 32
-  .cfi_def_cfa_offset -32
+  .cfi_adjust_cfa_offset -32
   jirl      $zero, $ra, 0
   .cfi_endproc
   .size   _NS_InvokeByIndex, .-_NS_InvokeByIndex

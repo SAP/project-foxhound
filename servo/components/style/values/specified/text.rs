@@ -56,7 +56,6 @@ impl Parse for Spacing {
 #[derive(
     Clone, Debug, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToCss, ToShmem, ToTyped,
 )]
-#[typed_value(derive_fields)]
 pub struct LetterSpacing(pub Spacing);
 
 impl ToComputedValue for LetterSpacing {
@@ -118,6 +117,7 @@ impl ToComputedValue for WordSpacing {
     ToTyped,
 )]
 #[repr(C, u8)]
+#[typed(todo_derive_fields)]
 pub enum HyphenateCharacter {
     /// `auto`
     Auto,
@@ -141,7 +141,7 @@ impl Parse for HyphenateLimitChars {
             .unwrap_or(IntegerOrAuto::Auto);
         let post_hyphen_length = input
             .try_parse(|i| IntegerOrAuto::parse(context, i))
-            .unwrap_or(pre_hyphen_length);
+            .unwrap_or_else(|_| pre_hyphen_length.clone());
         Ok(Self {
             total_word_length,
             pre_hyphen_length,
@@ -206,6 +206,7 @@ pub enum TextOverflowSide {
     ToTyped,
 )]
 #[repr(C)]
+#[typed(todo_derive_fields)]
 /// text-overflow.
 /// When the specified value only has one side, that's the "second"
 /// side, and the sides are logical, so "second" means "end".  The
@@ -560,7 +561,6 @@ pub enum TextAlign {
     Keyword(TextAlignKeyword),
     /// `match-parent` value of text-align property. It has a different handling
     /// unlike other keywords.
-    #[cfg(feature = "gecko")]
     MatchParent,
     /// This is how we implement the following HTML behavior from
     /// https://html.spec.whatwg.org/#tables-2:
@@ -585,7 +585,6 @@ impl ToComputedValue for TextAlign {
     fn to_computed_value(&self, _context: &Context) -> Self::ComputedValue {
         match *self {
             TextAlign::Keyword(key) => key,
-            #[cfg(feature = "gecko")]
             TextAlign::MatchParent => {
                 // on the root <html> element we should still respect the dir
                 // but the parent dir of that element is LTR even if it's <html dir=rtl>
@@ -641,6 +640,7 @@ fn fill_mode_is_default_and_shape_exists(
 /// https://drafts.csswg.org/css-text-decor/#propdef-text-emphasis-style
 #[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem, ToTyped)]
 #[allow(missing_docs)]
+#[typed(todo_derive_fields)]
 pub enum TextEmphasisStyle {
     /// [ <fill> || <shape> ]
     Keyword {

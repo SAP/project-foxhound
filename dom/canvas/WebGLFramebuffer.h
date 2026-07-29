@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -181,6 +180,19 @@ class WebGLFramebuffer final : public WebGLContextBoundObject,
 
     // IsFeedback
     std::vector<const WebGLFBAttachPoint*> texAttachments;  // Non-null
+
+    CompletenessInfo() = default;
+    CompletenessInfo(const CompletenessInfo&) = default;
+    explicit CompletenessInfo(const WebGLFramebuffer* fb) : fb(fb) {}
+    CompletenessInfo(CompletenessInfo&& other)
+        : fb{std::exchange(other.fb, nullptr)},
+          width{other.width},
+          height{other.height},
+          hasAttachment{std::move(other.hasAttachment)},
+          isAttachmentF32{std::move(other.isAttachmentF32)},
+          zLayerCount{other.zLayerCount},
+          isMultiview{other.isMultiview},
+          texAttachments{std::move(other.texAttachments)} {}
 
     ~CompletenessInfo();
   };

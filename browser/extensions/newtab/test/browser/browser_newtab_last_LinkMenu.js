@@ -75,26 +75,36 @@ add_task(async function test_newtab_last_LinkMenu() {
       SpecialPowers.spawn(
         browser,
         [],
-        () => content.document.getElementById("root").children.length
+        () => content.document.getElementById("root")?.children.length
       ),
     "Should render activity stream content"
   );
 
+  // @nova-cleanup(remove-conditional): Remove novaEnabled; use 600 and "2n" unconditionally.
+  // Nova's grid requires ≥700px to avoid inherent horizontal overflow; at 600px it shows
+  // 4 topsites per row so the right-edge item is nth-child(4n) instead of nth-child(2n).
+  const novaEnabled = Services.prefs.getBoolPref(
+    "browser.newtabpage.activity-stream.nova.enabled",
+    false
+  );
+  const testWidth = novaEnabled ? 750 : 600;
+  const topSiteNthChild = novaEnabled ? "4n" : "2n";
+
   // Set the window to a small enough size to trigger menus that might overflow.
-  await setSize(600, 450);
+  await setSize(testWidth, 450);
 
   // Test context menu position for topsites.
-  await SpecialPowers.spawn(browser, [], async () => {
+  await SpecialPowers.spawn(browser, [topSiteNthChild], async nthChild => {
     // Topsites might not be ready, so wait for the button.
     await ContentTaskUtils.waitForCondition(
       () =>
         content.document.querySelector(
-          ".top-site-outer:nth-child(2n) .context-menu-button"
+          `.top-site-outer:nth-child(${nthChild}) .context-menu-button`
         ),
       "Wait for the topsite card and button"
     );
     const topsiteOuter = content.document.querySelector(
-      ".top-site-outer:nth-child(2n)"
+      `.top-site-outer:nth-child(${nthChild})`
     );
     const topsiteContextMenuButton = topsiteOuter.querySelector(
       ".context-menu-button"

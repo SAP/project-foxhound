@@ -6,7 +6,8 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
-  ScreenshotsOverlay: "resource:///modules/ScreenshotsOverlayChild.sys.mjs",
+  ScreenshotsOverlay:
+    "moz-src:///browser/components/screenshots/ScreenshotsOverlayChild.sys.mjs",
 });
 
 const SCREENSHOTS_PREVENT_CONTENT_EVENTS_PREF =

@@ -34,7 +34,7 @@ class PublicSuffixList(
      * Prefetch the public suffix list from disk so that it is available in memory.
      */
     fun prefetch(): Deferred<Unit> = scope.async {
-        data.run { Unit }
+        data.run { }
     }
 
     /**

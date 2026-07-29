@@ -13,8 +13,6 @@ const TEST_PB_MESSAGE = {
   content: {
     promoEnabled: true,
     promoType: "VPN",
-    infoEnabled: false,
-    infoTitleEnabled: false,
     promoLinkType: "button",
     promoLinkText: "Link",
     promoSectionStyle: "below-search",

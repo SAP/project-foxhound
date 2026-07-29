@@ -20,21 +20,8 @@ object FloatingActionButtonDefaults {
     @Composable
     @ReadOnlyComposable
     fun colorsPrimary(
-        containerColor: Color = MaterialTheme.colorScheme.primaryFixed,
-        contentColor: Color = MaterialTheme.colorScheme.onPrimaryFixed,
-    ) = FloatingActionButtonColors(
-        containerColor = containerColor,
-        contentColor = contentColor,
-    )
-
-    /**
-     * Returns the colors for a Surface FAB.
-     */
-    @Composable
-    @ReadOnlyComposable
-    fun colorsSurface(
-        containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentColor: Color = MaterialTheme.colorScheme.inverseSurface,
+        containerColor: Color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor: Color = MaterialTheme.colorScheme.onPrimaryContainer,
     ) = FloatingActionButtonColors(
         containerColor = containerColor,
         contentColor = contentColor,

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -65,7 +64,7 @@ MozExternalRefCountType nsTestCom::Release() {
 TEST(TestCOM, WindowsInterop)
 {
   // Test that we can QI an nsITestCom to an IUnknown.
-  RefPtr<nsTestCom> t = new nsTestCom();
+  RefPtr t = mozilla::MakeRefPtr<nsTestCom>();
   IUnknown* iUnknown = nullptr;
   nsresult rv = t->QueryInterface(NS_GET_IID(nsISupports), (void**)&iUnknown);
   ASSERT_NS_SUCCEEDED(rv);

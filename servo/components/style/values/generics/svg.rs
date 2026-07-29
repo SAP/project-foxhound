@@ -61,6 +61,7 @@ pub use self::GenericSVGPaintFallback as SVGPaintFallback;
 )]
 #[animation(no_bound(Url))]
 #[repr(C)]
+#[typed(todo_derive_fields)]
 pub struct GenericSVGPaint<Color, Url> {
     /// The paint source.
     pub kind: GenericSVGPaintKind<Color, Url>,
@@ -185,6 +186,7 @@ pub use self::GenericSVGLength as SVGLength;
 pub enum GenericSVGStrokeDashArray<L> {
     /// `[ <length> | <percentage> | <number> ]#`
     #[css(comma)]
+    #[typed(no_multiple_values)]
     Values(#[css(if_empty = "none", iterable)] crate::OwnedSlice<L>),
     /// `context-value`
     ContextValue,

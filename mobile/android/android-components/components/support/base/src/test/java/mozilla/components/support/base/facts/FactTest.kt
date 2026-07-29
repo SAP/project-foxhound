@@ -8,11 +8,11 @@ import mozilla.components.support.base.Component
 import mozilla.components.support.test.mock
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mockito.verify
+import kotlin.test.assertNotNull
 
 class FactTest {
     @Before
@@ -56,7 +56,7 @@ class FactTest {
         assertEquals("test-value", fact.value)
 
         assertNotNull(fact.metadata)
-        assertEquals(2, fact.metadata!!.size)
+        assertEquals(2, fact.metadata.size)
         assertTrue(fact.metadata.contains("key1"))
         assertTrue(fact.metadata.contains("key2"))
         assertEquals("value1", fact.metadata["key1"])

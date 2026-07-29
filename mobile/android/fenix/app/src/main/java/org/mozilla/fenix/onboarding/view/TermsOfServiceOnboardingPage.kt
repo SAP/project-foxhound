@@ -5,36 +5,54 @@
 package org.mozilla.fenix.onboarding.view
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.LocalOverscrollFactory
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
+import mozilla.components.compose.base.LinkText
+import mozilla.components.compose.base.LinkTextState
 import mozilla.components.compose.base.button.FilledButton
 import org.mozilla.fenix.R
-import org.mozilla.fenix.compose.LinkText
-import org.mozilla.fenix.compose.LinkTextState
+import org.mozilla.fenix.compose.ScrollIndicator
 import org.mozilla.fenix.theme.FirefoxTheme
+
+private val TOU_IMAGE_HEIGHT = 176.dp
+private val TOU_IMAGE_HEIGHT_SMALL_DEVICE = 130.dp
+
+private val kitImageResources = listOf(
+    R.drawable.nova_onboarding_tou,
+    R.drawable.nova_onboarding_tou_2,
+)
 
 /**
  * A Composable for displaying the terms of service onboarding page content.
@@ -47,173 +65,220 @@ fun TermsOfServiceOnboardingPage(
     pageState: OnboardingPageState,
     eventHandler: OnboardingTermsOfServiceEventHandler,
 ) {
-    Surface {
-        BoxWithConstraints(
-            modifier = Modifier.padding(horizontal = 16.dp),
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(if (!pageState.isSmallDevice) 6.dp else 0.dp),
+    ) {
+        val verticalPadding = if (pageState.isSmallDevice) 0.dp else FirefoxTheme.layout.space.static300
+        Column(
+            modifier = Modifier.padding(
+                horizontal = FirefoxTheme.layout.space.static200,
+                vertical = verticalPadding,
+            ),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            val boxWithConstraintsScope = this
+            val scrollState = rememberScrollState()
 
-            // Base
-            Column(
+            if (pageState.isSmallDevice) {
+                Spacer(modifier = Modifier.height(16.dp))
+            } else {
+                Spacer(modifier = Modifier.weight(TITLE_TOP_SPACER_WEIGHT))
+            }
+
+            // Use a Box to overlay the scrollbar on top of the content column, aligned to the right.
+            Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.SpaceBetween,
+                    .weight(CONTENT_WEIGHT)
+                    .fillMaxWidth(),
             ) {
-                Spacer(Modifier)
-
-                with(pageState) {
-                    // Main content group
+                // Disable the overscroll glow/stretch effect to keep the onboarding UI clean.
+                CompositionLocalProvider(
+                    LocalOverscrollFactory provides null,
+                ) {
                     Column(
                         modifier = Modifier
-                            .padding(vertical = 32.dp),
+                            .fillMaxSize()
+                            .padding(end = FirefoxTheme.layout.space.static150)
+                            .verticalScroll(scrollState),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
                     ) {
-                        Image(
-                            painter = painterResource(id = imageRes),
-                            contentDescription = null,
-                            modifier = Modifier
-                                .heightIn(max = imageHeight(boxWithConstraintsScope))
-                                .height(167.dp)
-                                .width(161.dp),
-                        )
+                        Header(pageState)
 
-                        Spacer(Modifier.height(24.dp))
+                        Spacer(Modifier.weight(1f))
 
-                        Text(
-                            text = title,
-                            textAlign = TextAlign.Center,
-                            style = FirefoxTheme.typography.headline5,
-                        )
+                        pageState.termsOfService?.let { BodyText(it, eventHandler) }
 
-                        Spacer(Modifier.height(8.dp))
-
-                        Text(
-                            text = description,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                            style = FirefoxTheme.typography.subtitle1,
-                        )
+                        Spacer(Modifier.height(26.dp))
                     }
 
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.padding(bottom = 24.dp),
-                    ) {
-                        BodyText(pageState, eventHandler)
-
-                        Spacer(Modifier.height(24.dp))
-
-                        FilledButton(
-                            text = primaryButton.text,
-                            modifier = Modifier
-                                .width(width = FirefoxTheme.layout.size.maxWidth.small)
-                                .semantics { testTag = title + "onboarding_card.positive_button" },
-                            onClick = primaryButton.onClick,
-                        )
-                    }
+                    ScrollIndicator(
+                        scrollState = scrollState,
+                        modifier = Modifier.align(Alignment.CenterEnd),
+                        enabled = pageState.isSmallDevice,
+                    )
                 }
             }
+            FilledButton(
+                text = pageState.primaryButton.text,
+                modifier = Modifier
+                    .width(width = FirefoxTheme.layout.size.maxWidth.small)
+                    .defaultMinSize(minHeight = FirefoxTheme.layout.size.static600)
+                    .semantics {
+                        testTag = pageState.title + "onboarding_card.positive_button"
+                    },
+                onClick = pageState.primaryButton.onClick,
+            )
+        }
+    }
 
-            LaunchedEffect(pageState) {
-                pageState.onRecordImpressionEvent()
-            }
+    LaunchedEffect(Unit) {
+        pageState.onRecordImpressionEvent()
+    }
+}
+
+@Composable
+private fun Header(pageState: OnboardingPageState) {
+    val currentImageIndex = remember { mutableIntStateOf(0) }
+    val currentImageRes = kitImageResources[currentImageIndex.intValue]
+
+    Image(
+        painter = painterResource(id = currentImageRes),
+        contentDescription = null, // Decorative image only.
+        modifier = Modifier
+            .height(pageState.imageHeight())
+            .clickable(
+                role = Role.Button,
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null, // Prevents onClick press/ripple animation
+            ) {
+                currentImageIndex.intValue =
+                    nextCyclicImageIndex(currentImageIndex.intValue, kitImageResources.size)
+            },
+    )
+
+    Spacer(Modifier.height(20.dp))
+
+    Text(
+        text = pageState.title,
+        textAlign = TextAlign.Center,
+        style = FirefoxTheme.typography.headline6,
+    )
+
+    Spacer(Modifier.height(20.dp))
+
+    pageState.termsOfService?.subheaderOneText?.let { SubHeader(it) }
+}
+
+private fun OnboardingPageState.imageHeight() = if (isSmallDevice) {
+    TOU_IMAGE_HEIGHT_SMALL_DEVICE
+} else {
+    TOU_IMAGE_HEIGHT
+}
+
+/**
+ * Advances the image index to the next item, wrapping back to the start when the end of the list
+ * is reached. This ensures the index always stays within valid bounds.
+ */
+private fun nextCyclicImageIndex(
+    currentImageIndex: Int,
+    imageResourcesSize: Int,
+) = (currentImageIndex + 1) % imageResourcesSize
+
+@Composable
+private fun SubHeader(text: String) {
+    Text(
+        text = text,
+        style = FirefoxTheme.typography.body2.copy(
+            color = MaterialTheme.colorScheme.secondary,
+            textAlign = TextAlign.Center,
+        ),
+    )
+}
+
+@Composable
+private fun BodyText(
+    termsOfService: OnboardingTermsOfService,
+    eventHandler: OnboardingTermsOfServiceEventHandler,
+) {
+    with(termsOfService) {
+        Column(modifier = Modifier.padding(horizontal = FirefoxTheme.layout.space.static100)) {
+            val bodyOneLinkState = LinkTextState(
+                text = lineOneLinkText,
+                url = lineOneLinkUrl,
+                onClick = eventHandler::onTermsOfServiceLinkClicked,
+            )
+            BodyLinkText(
+                lineOneText.updateFirstPlaceholder(lineOneLinkText),
+                bodyOneLinkState,
+            )
+
+            val bodyTwoLinkState = LinkTextState(
+                text = lineTwoLinkText,
+                url = lineTwoLinkUrl,
+                onClick = eventHandler::onPrivacyNoticeLinkClicked,
+            )
+            BodyLinkText(
+                lineTwoText.updateFirstPlaceholder(lineTwoLinkText),
+                bodyTwoLinkState,
+            )
+
+            val bodyThreeLinkState = LinkTextState(
+                text = lineThreeLinkText,
+                url = "", // No URL
+                onClick = { _ -> eventHandler.onManagePrivacyPreferencesLinkClicked() },
+            )
+            BodyLinkText(
+                lineThreeText.updateFirstPlaceholder(lineThreeLinkText),
+                bodyThreeLinkState,
+            )
         }
     }
 }
 
 @Composable
-private fun BodyText(
-    pageState: OnboardingPageState,
-    eventHandler: OnboardingTermsOfServiceEventHandler,
+private fun BodyLinkText(
+    text: String,
+    linkState: LinkTextState,
 ) {
-    pageState.termsOfService?.let {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(horizontal = 10.dp),
-        ) {
-            val lineOneState = LinkTextState(
-                text = it.lineOneLinkText,
-                url = it.lineOneLinkUrl,
-                onClick = eventHandler::onTermsOfServiceLinkClicked,
-            )
-            val lineTwoState = LinkTextState(
-                text = it.lineTwoLinkText,
-                url = it.lineTwoLinkUrl,
-                onClick = eventHandler::onPrivacyNoticeLinkClicked,
-            )
-            val lineThreeState = LinkTextState(
-                text = it.lineThreeLinkText,
-                url = "",
-                onClick = { _ -> eventHandler.onManagePrivacyPreferencesLinkClicked() },
-            )
-            LinkText(
-                text = it.lineOneText.updateFirstPlaceholder(it.lineOneLinkText),
-                linkTextStates = listOf(
-                    lineOneState,
-                ),
-                style = FirefoxTheme.typography.caption.copy(
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                ),
-                shouldApplyAccessibleSize = true,
-            )
+    val style = FirefoxTheme.typography.caption.copy(
+        textAlign = TextAlign.Start,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 
-            LinkText(
-                text = it.lineTwoText.updateFirstPlaceholder(it.lineTwoLinkText),
-                linkTextStates = listOf(
-                    lineTwoState,
-                ),
-                style = FirefoxTheme.typography.caption.copy(
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                ),
-                shouldApplyAccessibleSize = true,
-            )
-
-            LinkText(
-                text = it.lineThreeText.updateFirstPlaceholder(it.lineThreeLinkText),
-                linkTextStates = listOf(
-                    lineThreeState,
-                ),
-                style = FirefoxTheme.typography.caption.copy(
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                ),
-                shouldApplyAccessibleSize = true,
-            )
-        }
-    }
+    LinkText(
+        text = text,
+        linkTextStates = listOf(linkState),
+        style = style,
+        linkTextDecoration = TextDecoration.Underline,
+        shouldApplyAccessibleSize = true,
+    )
 }
 
-private fun String.updateFirstPlaceholder(text: String) = replace("%1\$s", text)
+private fun String.updateFirstPlaceholder(text: String) = replace($$"%1$s", text)
 
-// *** Code below used for previews only *** //
-
-@FlexibleWindowLightDarkPreview
+@PreviewLightDark
 @Composable
 private fun OnboardingPagePreview() {
     FirefoxTheme {
         TermsOfServiceOnboardingPage(
             pageState = OnboardingPageState(
                 title = stringResource(id = R.string.onboarding_welcome_to_firefox),
-                description = stringResource(id = R.string.onboarding_terms_of_service_sub_header_2),
+                description = "",
                 termsOfService = OnboardingTermsOfService(
-                    lineOneText = stringResource(id = R.string.onboarding_term_of_service_line_one_2),
-                    lineOneLinkText = stringResource(id = R.string.onboarding_term_of_service_line_one_link_text_2),
+                    subheaderOneText = stringResource(id = R.string.nova_onboarding_tou_subtitle),
+                    lineOneText = stringResource(id = R.string.nova_onboarding_tou_body_line_1),
+                    lineOneLinkText = stringResource(id = R.string.nova_onboarding_tou_body_line_1_link_text),
                     lineOneLinkUrl = "URL",
-                    lineTwoText = stringResource(id = R.string.onboarding_term_of_service_line_two_2),
-                    lineTwoLinkText = stringResource(id = R.string.onboarding_term_of_service_line_two_link_text),
+                    lineTwoText = stringResource(id = R.string.nova_onboarding_tou_body_line_2),
+                    lineTwoLinkText = stringResource(id = R.string.nova_onboarding_tou_body_line_2_link_text),
                     lineTwoLinkUrl = "URL",
-                    lineThreeText = stringResource(id = R.string.onboarding_term_of_service_line_three),
-                    lineThreeLinkText = stringResource(id = R.string.onboarding_term_of_service_line_three_link_text),
+                    lineThreeText = stringResource(id = R.string.nova_onboarding_tou_body_line_3),
+                    lineThreeLinkText = stringResource(id = R.string.nova_onboarding_tou_body_line_3_link_text),
                 ),
-                imageRes = R.drawable.ic_firefox,
+                imageRes = R.drawable.nova_onboarding_tou,
                 primaryButton = Action(
                     text = stringResource(
-                        id = R.string.onboarding_term_of_service_agree_and_continue_button_label_2,
+                        id = R.string.nova_onboarding_continue_button,
                     ),
                     onClick = {},
                 ),

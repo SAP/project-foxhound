@@ -8,9 +8,9 @@ import android.app.Activity
 import android.content.Context
 import android.graphics.Color
 import android.os.Looper.getMainLooper
+import androidx.annotation.OptIn
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.ExperimentalAndroidComponentsApi
-import mozilla.components.browser.engine.gecko.autofill.RuntimeAddressStructureAccessor
 import mozilla.components.browser.engine.gecko.ext.getAntiTrackingPolicy
 import mozilla.components.browser.engine.gecko.mediaquery.toGeckoValue
 import mozilla.components.browser.engine.gecko.preferences.GeckoPreferenceAccessor
@@ -31,6 +31,7 @@ import mozilla.components.concept.engine.EngineSession.TrackingProtectionPolicy.
 import mozilla.components.concept.engine.EngineSession.TrackingProtectionPolicy.TrackingCategory
 import mozilla.components.concept.engine.UnsupportedSettingException
 import mozilla.components.concept.engine.content.blocking.TrackerLog
+import mozilla.components.concept.engine.content.blocking.TrackingProtectionEvent
 import mozilla.components.concept.engine.mediaquery.PreferredColorScheme
 import mozilla.components.concept.engine.preferences.Branch
 import mozilla.components.concept.engine.preferences.BrowserPrefObserverDelegate
@@ -61,7 +62,6 @@ import mozilla.components.support.test.whenever
 import mozilla.components.test.ReflectionUtils
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -74,6 +74,7 @@ import org.mockito.ArgumentMatchers.anyBoolean
 import org.mockito.ArgumentMatchers.anyFloat
 import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.ArgumentMatchers.anyList
+import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.never
@@ -86,6 +87,7 @@ import org.mozilla.geckoview.ContentBlocking
 import org.mozilla.geckoview.ContentBlocking.CookieBehavior
 import org.mozilla.geckoview.ContentBlockingController
 import org.mozilla.geckoview.ContentBlockingController.Event
+import org.mozilla.geckoview.ExperimentalGeckoViewApi
 import org.mozilla.geckoview.GeckoPreferenceController.GeckoPreference
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
@@ -110,6 +112,8 @@ import org.mozilla.geckoview.WebPushController
 import org.robolectric.Robolectric
 import org.robolectric.Shadows.shadowOf
 import java.io.IOException
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import org.mozilla.geckoview.WebExtension as GeckoWebExtension
 
 typealias GeckoInstallException = org.mozilla.geckoview.WebExtension.InstallException
@@ -131,17 +135,17 @@ class GeckoEngineTest {
 
     @Test
     fun createView() {
-        assertTrue(
+        assertIs<GeckoEngineView>(
             GeckoEngine(context, runtime = runtime).createView(
                 Robolectric.buildActivity(Activity::class.java).get(),
-            ) is GeckoEngineView,
+            ),
         )
     }
 
     @Test
     fun createSession() {
         val engine = GeckoEngine(context, runtime = runtime)
-        assertTrue(engine.createSession() is GeckoEngineSession)
+        assertIs<GeckoEngineSession>(engine.createSession())
 
         // Create a private speculative session and consume it
         engine.speculativeCreateSession(private = true)
@@ -230,6 +234,7 @@ class GeckoEngineTest {
         assertEquals("Gecko", GeckoEngine(context, runtime = runtime).name())
     }
 
+    @OptIn(ExperimentalGeckoViewApi::class)
     @Test
     fun settings() {
         val defaultSettings = DefaultSettings()
@@ -349,11 +354,21 @@ class GeckoEngineTest {
         assertEquals(contentBlockingSettings.queryParameterStrippingPrivateBrowsingEnabled, engine.settings.queryParameterStrippingPrivateBrowsing)
         assertEquals(contentBlockingSettings.queryParameterStrippingAllowList[0], engine.settings.queryParameterStrippingAllowList)
         assertEquals(contentBlockingSettings.queryParameterStrippingStripList[0], engine.settings.queryParameterStrippingStripList)
+        assertEquals(contentBlockingSettings.contentBlockingDatabaseStatus, engine.settings.useContentBlockingDatabase)
         assertEquals(contentBlockingSettings.bounceTrackingProtectionMode, EngineSession.BounceTrackingProtectionMode.ENABLED.mode)
         assertEquals(contentBlockingSettings.allowListBaselineTrackingProtection, (engine.settings.trackingProtectionPolicy as EngineSession.TrackingProtectionPolicyForSessionTypes).allowListBaselineTrackingProtection)
         assertEquals(contentBlockingSettings.allowListConvenienceTrackingProtection, (engine.settings.trackingProtectionPolicy as EngineSession.TrackingProtectionPolicyForSessionTypes).allowListConvenienceTrackingProtection)
 
         assertEquals(contentBlockingSettings.emailTrackerBlockingPrivateBrowsingEnabled, engine.settings.emailTrackerBlockingPrivateBrowsing)
+
+        // Verify safe browsing simulation defaults
+        assertFalse(contentBlockingSettings.safeBrowsingGlobalCacheEnabled)
+        assertFalse(contentBlockingSettings.safeBrowsingRealTimeEnabled)
+        assertFalse(contentBlockingSettings.safeBrowsingRealTimeSimulationEnabled)
+        assertEquals(5, contentBlockingSettings.safeBrowsingRealTimeSimulationHitProbability)
+        assertEquals(300, contentBlockingSettings.safeBrowsingRealTimeSimulationCacheTTLSec)
+        assertFalse(contentBlockingSettings.safeBrowsingRealTimeSimulationNegativeCacheEnabled)
+        assertEquals(300, contentBlockingSettings.safeBrowsingRealTimeSimulationNegativeCacheTTLSec)
 
         try {
             engine.settings.domStorageEnabled
@@ -368,6 +383,31 @@ class GeckoEngineTest {
         } catch (e: UnsupportedSettingException) {
             // Ignore exception
         }
+    }
+
+    @OptIn(ExperimentalGeckoViewApi::class)
+    @Test
+    fun `WHEN safe browsing simulation settings are set via DefaultSettings THEN they must be propagated to contentBlockingSettings`() {
+        val contentBlockingSettings = ContentBlocking.Settings.Builder().build()
+        val runtime = mock<GeckoRuntime>()
+        val runtimeSettings = mock<GeckoRuntimeSettings>()
+        whenever(runtimeSettings.javaScriptEnabled).thenReturn(true)
+        whenever(runtime.settings).thenReturn(runtimeSettings)
+        whenever(runtimeSettings.contentBlocking).thenReturn(contentBlockingSettings)
+        whenever(runtimeSettings.fontInflationEnabled).thenReturn(true)
+
+        val defaultSettings = DefaultSettings(
+            safeBrowsingRealTimeSimulationHitProbability = 50,
+            safeBrowsingRealTimeSimulationCacheTTLSec = 600,
+            safeBrowsingRealTimeSimulationNegativeCacheEnabled = true,
+            safeBrowsingRealTimeSimulationNegativeCacheTTLSec = 120,
+        )
+        GeckoEngine(context, defaultSettings, runtime)
+
+        assertEquals(50, contentBlockingSettings.safeBrowsingRealTimeSimulationHitProbability)
+        assertEquals(600, contentBlockingSettings.safeBrowsingRealTimeSimulationCacheTTLSec)
+        assertTrue(contentBlockingSettings.safeBrowsingRealTimeSimulationNegativeCacheEnabled)
+        assertEquals(120, contentBlockingSettings.safeBrowsingRealTimeSimulationNegativeCacheTTLSec)
     }
 
     @Test
@@ -940,6 +980,18 @@ class GeckoEngineTest {
     }
 
     @Test
+    fun `WHEN using the content blocking database is changed THEN update this value in content blocking settings`() {
+        val mockRuntime = mock<GeckoRuntime>()
+        whenever(mockRuntime.settings).thenReturn(mock())
+        whenever(mockRuntime.settings.contentBlocking).thenReturn(mock())
+        val engine = GeckoEngine(testContext, runtime = mockRuntime)
+
+        engine.settings.useContentBlockingDatabase = true
+
+        verify(mockRuntime.settings.contentBlocking).setContentBlockingDatabaseStatus(true)
+    }
+
+    @Test
     fun defaultSettings() {
         val runtime = mock<GeckoRuntime>()
         val runtimeSettings = mock<GeckoRuntimeSettings>()
@@ -1253,7 +1305,7 @@ class GeckoEngineTest {
         shadowOf(getMainLooper()).idle()
 
         assertTrue(onErrorCalled)
-        assertTrue(throwable is GeckoWebExtensionException)
+        assertIs<GeckoWebExtensionException>(throwable)
     }
 
     @Test
@@ -1280,7 +1332,7 @@ class GeckoEngineTest {
         shadowOf(getMainLooper()).idle()
 
         assertTrue(onErrorCalled)
-        assertTrue(throwable is GeckoWebExtensionException)
+        assertIs<GeckoWebExtensionException>(throwable)
     }
 
     @Test
@@ -2431,7 +2483,7 @@ class GeckoEngineTest {
 
         assertFalse(onErrorCalled)
         assertNotNull(result)
-        verify(webExtensionsDelegate).onAllowedInPrivateBrowsingChanged(result!!)
+        verify(webExtensionsDelegate).onAllowedInPrivateBrowsingChanged(result)
     }
 
     @Test
@@ -2800,6 +2852,468 @@ class GeckoEngineTest {
     }
 
     @Test
+    fun `GIVEN a site with social trackers cross-site cookies WHEN these are blocked THEN engine informs about this`() {
+        val runtime = mock<GeckoRuntime>()
+        val engine = GeckoEngine(context, runtime = runtime)
+        val mockSession = mock<GeckoEngineSession>()
+        val mockGeckoSetting = mock<GeckoRuntimeSettings>()
+        val mockGeckoContentBlockingSetting = mock<ContentBlocking.Settings>()
+        var trackersLog: List<TrackerLog>? = null
+
+        val mockContentBlockingController = mock<ContentBlockingController>()
+        var logEntriesResult = GeckoResult<List<ContentBlockingController.LogEntry>>()
+
+        whenever(runtime.settings).thenReturn(mockGeckoSetting)
+        whenever(mockGeckoSetting.contentBlocking).thenReturn(mockGeckoContentBlockingSetting)
+        whenever(runtime.contentBlockingController).thenReturn(mockContentBlockingController)
+        whenever(mockContentBlockingController.getLog(any())).thenReturn(logEntriesResult)
+        engine.settings.trackingProtectionPolicy = TrackingProtectionPolicy.recommended()
+
+        engine.getTrackersLog(mockSession, onSuccess = { trackersLog = it })
+        logEntriesResult.complete(createSocialTrackersLogEntryList() + createBlockedCrossSiteCookiesLogEntryList())
+
+        shadowOf(getMainLooper()).idle()
+
+        assertEquals(3, trackersLog!!.size)
+
+        var trackerLog = trackersLog.first()
+        assertTrue(trackerLog.cookiesHasBeenBlocked)
+        assertEquals("www.tracker.com", trackerLog.url)
+        assertTrue(trackerLog.blockedCategories.contains(TrackingCategory.MOZILLA_SOCIAL))
+
+        var trackerLog2 = trackersLog[1]
+        assertFalse(trackerLog2.cookiesHasBeenBlocked)
+        assertEquals("www.tracker2.com", trackerLog2.url)
+        assertTrue(trackerLog2.loadedCategories.contains(TrackingCategory.MOZILLA_SOCIAL))
+
+        var trackerLog3 = trackersLog.last()
+        assertTrue(trackerLog3.cookiesHasBeenBlocked)
+        assertEquals("www.data-collector.com", trackerLog3.url)
+        assertTrue(trackerLog3.loadedCategories.isEmpty())
+
+        engine.settings.trackingProtectionPolicy = TrackingProtectionPolicy.strict()
+
+        logEntriesResult = GeckoResult()
+        whenever(mockContentBlockingController.getLog(any())).thenReturn(logEntriesResult)
+        engine.getTrackersLog(mockSession, onSuccess = { trackersLog = it })
+        logEntriesResult.complete(createSocialTrackersLogEntryList())
+
+        trackerLog = trackersLog.first()
+        assertTrue(trackerLog.cookiesHasBeenBlocked)
+        assertEquals("www.tracker.com", trackerLog.url)
+        assertTrue(trackerLog.blockedCategories.contains(TrackingCategory.MOZILLA_SOCIAL))
+
+        trackerLog2 = trackersLog[1]
+        assertFalse(trackerLog2.cookiesHasBeenBlocked)
+        assertEquals("www.tracker2.com", trackerLog2.url)
+        assertTrue(trackerLog2.loadedCategories.contains(TrackingCategory.MOZILLA_SOCIAL))
+
+        trackerLog3 = trackersLog.last()
+        assertTrue(trackerLog3.cookiesHasBeenBlocked)
+        assertEquals("www.data-collector.com", trackerLog3.url)
+        assertTrue(trackerLog3.loadedCategories.isEmpty())
+    }
+
+    @Test
+    fun `GIVEN a site with an email tracker WHEN it is blocked THEN engine reports it under EMAIL`() {
+        val runtime = mock<GeckoRuntime>()
+        val engine = GeckoEngine(context, runtime = runtime)
+        val mockSession = mock<GeckoEngineSession>()
+        val mockGeckoSetting = mock<GeckoRuntimeSettings>()
+        val mockGeckoContentBlockingSetting = mock<ContentBlocking.Settings>()
+        var trackersLog: List<TrackerLog>? = null
+
+        val mockContentBlockingController = mock<ContentBlockingController>()
+        val logEntriesResult = GeckoResult<List<ContentBlockingController.LogEntry>>()
+
+        whenever(runtime.settings).thenReturn(mockGeckoSetting)
+        whenever(mockGeckoSetting.contentBlocking).thenReturn(mockGeckoContentBlockingSetting)
+        whenever(runtime.contentBlockingController).thenReturn(mockContentBlockingController)
+        whenever(mockContentBlockingController.getLog(any())).thenReturn(logEntriesResult)
+        engine.settings.trackingProtectionPolicy = TrackingProtectionPolicy.recommended()
+
+        engine.getTrackersLog(mockSession, onSuccess = { trackersLog = it })
+        logEntriesResult.complete(createEmailTrackerLogEntryList())
+
+        shadowOf(getMainLooper()).idle()
+
+        assertEquals(1, trackersLog!!.size)
+        val trackerLog = trackersLog.first()
+        assertEquals("www.email-tracker.com", trackerLog.url)
+        assertTrue(trackerLog.blockedCategories.contains(TrackingCategory.EMAIL))
+        assertFalse(trackerLog.cookiesHasBeenBlocked)
+        assertFalse(trackerLog.unBlockedBySmartBlock)
+    }
+
+    @Test
+    fun `GIVEN a site with a bounce tracker WHEN it is purged THEN engine reports it under SCRIPTS_AND_SUB_RESOURCES`() {
+        val runtime = mock<GeckoRuntime>()
+        val engine = GeckoEngine(context, runtime = runtime)
+        val mockSession = mock<GeckoEngineSession>()
+        val mockGeckoSetting = mock<GeckoRuntimeSettings>()
+        val mockGeckoContentBlockingSetting = mock<ContentBlocking.Settings>()
+        var trackersLog: List<TrackerLog>? = null
+
+        val mockContentBlockingController = mock<ContentBlockingController>()
+        val logEntriesResult = GeckoResult<List<ContentBlockingController.LogEntry>>()
+
+        whenever(runtime.settings).thenReturn(mockGeckoSetting)
+        whenever(mockGeckoSetting.contentBlocking).thenReturn(mockGeckoContentBlockingSetting)
+        whenever(runtime.contentBlockingController).thenReturn(mockContentBlockingController)
+        whenever(mockContentBlockingController.getLog(any())).thenReturn(logEntriesResult)
+        engine.settings.trackingProtectionPolicy = TrackingProtectionPolicy.recommended()
+
+        engine.getTrackersLog(mockSession, onSuccess = { trackersLog = it })
+        logEntriesResult.complete(createPurgedBounceTrackerLogEntryList())
+
+        shadowOf(getMainLooper()).idle()
+
+        assertEquals(1, trackersLog!!.size)
+        val trackerLog = trackersLog.first()
+        assertEquals("www.bounce-tracker.com", trackerLog.url)
+        assertTrue(trackerLog.blockedCategories.contains(TrackingCategory.SCRIPTS_AND_SUB_RESOURCES))
+        assertFalse(trackerLog.cookiesHasBeenBlocked)
+        assertFalse(trackerLog.unBlockedBySmartBlock)
+    }
+
+    @Test
+    fun `GIVEN a site with replaced fingerprinting content WHEN it is shimmed THEN engine reports it under FINGERPRINTING`() {
+        val runtime = mock<GeckoRuntime>()
+        val engine = GeckoEngine(context, runtime = runtime)
+        val mockSession = mock<GeckoEngineSession>()
+        val mockGeckoSetting = mock<GeckoRuntimeSettings>()
+        val mockGeckoContentBlockingSetting = mock<ContentBlocking.Settings>()
+        var trackersLog: List<TrackerLog>? = null
+
+        val mockContentBlockingController = mock<ContentBlockingController>()
+        val logEntriesResult = GeckoResult<List<ContentBlockingController.LogEntry>>()
+
+        whenever(runtime.settings).thenReturn(mockGeckoSetting)
+        whenever(mockGeckoSetting.contentBlocking).thenReturn(mockGeckoContentBlockingSetting)
+        whenever(runtime.contentBlockingController).thenReturn(mockContentBlockingController)
+        whenever(mockContentBlockingController.getLog(any())).thenReturn(logEntriesResult)
+        engine.settings.trackingProtectionPolicy = TrackingProtectionPolicy.recommended()
+
+        engine.getTrackersLog(mockSession, onSuccess = { trackersLog = it })
+        logEntriesResult.complete(createReplacedFingerprintingLogEntryList())
+
+        shadowOf(getMainLooper()).idle()
+
+        assertEquals(1, trackersLog!!.size)
+        val trackerLog = trackersLog.first()
+        assertEquals("www.fingerprinting-shim.com", trackerLog.url)
+        assertTrue(trackerLog.blockedCategories.contains(TrackingCategory.FINGERPRINTING))
+        assertFalse(trackerLog.cookiesHasBeenBlocked)
+        assertFalse(trackerLog.unBlockedBySmartBlock)
+    }
+
+    @Test
+    fun `GIVEN a request to fetch tracking events WHEN successful THEN invoke the success callback`() {
+        val runtime: GeckoRuntime = mock()
+        val controller: ContentBlockingController = mock()
+        whenever(runtime.contentBlockingController).thenReturn(controller)
+        val engine = GeckoEngine(context, runtime = runtime)
+
+        val dateFrom = 1000L
+        val dateTo = 2000L
+        val result = GeckoResult<List<ContentBlockingController.TrackingDbEvent>>()
+        whenever(controller.getTrackingDbEventsByDateRange(dateFrom, dateTo)).thenReturn(result)
+
+        val event = object : ContentBlockingController.TrackingDbEvent() {}
+        ReflectionUtils.setField(event, "type", 1)
+        ReflectionUtils.setField(event, "count", 5)
+        ReflectionUtils.setField(event, "date", "2023-01-01")
+
+        var onSuccessCalled = false
+        var onErrorCalled = false
+        var events: List<TrackingProtectionEvent>? = null
+
+        engine.getTrackingProtectionEventsByDateRange(
+            dateFrom,
+            dateTo,
+            onSuccess = {
+                onSuccessCalled = true
+                events = it
+            },
+            onError = { onErrorCalled = true },
+        )
+        result.complete(listOf(event))
+        shadowOf(getMainLooper()).idle()
+
+        assertTrue(onSuccessCalled)
+        assertFalse(onErrorCalled)
+        assertEquals(1, events?.size)
+        assertEquals(1, events?.first()?.type)
+        assertEquals(5, events?.first()?.count)
+        assertEquals("2023-01-01", events?.first()?.date)
+    }
+
+    @Test
+    fun `GIVEN a request to fetch tracking events WHEN an error is encountered THEN call the error callback`() {
+        val runtime: GeckoRuntime = mock()
+        val controller: ContentBlockingController = mock()
+        whenever(runtime.contentBlockingController).thenReturn(controller)
+        val engine = GeckoEngine(context, runtime = runtime)
+
+        val result = GeckoResult<List<ContentBlockingController.TrackingDbEvent>>()
+        whenever(controller.getTrackingDbEventsByDateRange(anyLong(), anyLong())).thenReturn(result)
+
+        var onErrorCalled = false
+        var onSuccessCalled = false
+
+        engine.getTrackingProtectionEventsByDateRange(
+            dateFrom = 0,
+            dateTo = 0,
+            onSuccess = { onSuccessCalled = true },
+            onError = { onErrorCalled = true },
+        )
+        result.completeExceptionally(Exception())
+        shadowOf(getMainLooper()).idle()
+
+        assertFalse(onSuccessCalled)
+        assertTrue(onErrorCalled)
+    }
+
+    @Test
+    fun `GIVEN a request to fetch tracking events WHEN no data is available THEN return an empty list`() {
+        val runtime: GeckoRuntime = mock()
+        val controller: ContentBlockingController = mock()
+        whenever(runtime.contentBlockingController).thenReturn(controller)
+        val engine = GeckoEngine(context, runtime = runtime)
+
+        val result = GeckoResult<List<ContentBlockingController.TrackingDbEvent>>()
+        whenever(controller.getTrackingDbEventsByDateRange(anyLong(), anyLong())).thenReturn(result)
+
+        var events: List<TrackingProtectionEvent>? = null
+        var onErrorCalled = false
+
+        engine.getTrackingProtectionEventsByDateRange(
+            dateFrom = 0,
+            dateTo = 0,
+            onSuccess = { events = it },
+            onError = { onErrorCalled = true },
+        )
+        result.complete(null)
+        shadowOf(getMainLooper()).idle()
+
+        assertFalse(onErrorCalled)
+        assertNotNull(events)
+        assertTrue(events.isEmpty())
+    }
+
+    @Test
+    fun `GIVEN a request to fetch total trackers blocked WHEN successful THEN return their sum`() {
+        val runtime: GeckoRuntime = mock()
+        val controller: ContentBlockingController = mock()
+        whenever(runtime.contentBlockingController).thenReturn(controller)
+        val engine = GeckoEngine(context, runtime = runtime)
+
+        val result = GeckoResult<Int>()
+        whenever(controller.sumAllTrackingDbEvents()).thenReturn(result)
+
+        var onSuccessCalled = false
+        var onErrorCalled = false
+        var total = -1
+
+        engine.sumAllTrackingProtectionEvents(
+            onSuccess = {
+                onSuccessCalled = true
+                total = it
+            },
+            onError = { onErrorCalled = true },
+        )
+        result.complete(42)
+        shadowOf(getMainLooper()).idle()
+
+        assertTrue(onSuccessCalled)
+        assertFalse(onErrorCalled)
+        assertEquals(42, total)
+    }
+
+    @Test
+    fun `GIVEN a request to fetch total trackers blocked WHEN no data is available THEN return 0`() {
+        val runtime: GeckoRuntime = mock()
+        val controller: ContentBlockingController = mock()
+        whenever(runtime.contentBlockingController).thenReturn(controller)
+        val engine = GeckoEngine(context, runtime = runtime)
+
+        val result = GeckoResult<Int>()
+        whenever(controller.sumAllTrackingDbEvents()).thenReturn(result)
+
+        var onSuccessCalled = false
+        var onErrorCalled = false
+        var total = -1
+
+        engine.sumAllTrackingProtectionEvents(
+            onSuccess = {
+                onSuccessCalled = true
+                total = it
+            },
+            onError = { onErrorCalled = true },
+        )
+        result.complete(null)
+        shadowOf(getMainLooper()).idle()
+
+        assertTrue(onSuccessCalled)
+        assertFalse(onErrorCalled)
+        assertEquals(0, total)
+    }
+
+    @Test
+    fun `GIVEN a request to fetch total trackers blocked WHEN an error is encountered THEN call the error callback`() {
+        val runtime: GeckoRuntime = mock()
+        val controller: ContentBlockingController = mock()
+        whenever(runtime.contentBlockingController).thenReturn(controller)
+        val engine = GeckoEngine(context, runtime = runtime)
+
+        val result = GeckoResult<Int>()
+        whenever(controller.sumAllTrackingDbEvents()).thenReturn(result)
+
+        var onSuccessCalled = false
+        var onErrorCalled = false
+
+        engine.sumAllTrackingProtectionEvents(
+            onSuccess = { onSuccessCalled = true },
+            onError = { onErrorCalled = true },
+        )
+        result.completeExceptionally(Exception())
+        shadowOf(getMainLooper()).idle()
+
+        assertFalse(onSuccessCalled)
+        assertTrue(onErrorCalled)
+    }
+
+    @Test
+    fun `GIVEN a request to fetch earliest tracking date WHEN successful THEN return that date`() {
+        val runtime: GeckoRuntime = mock()
+        val controller: ContentBlockingController = mock()
+        whenever(runtime.contentBlockingController).thenReturn(controller)
+        val engine = GeckoEngine(context, runtime = runtime)
+
+        val result = GeckoResult<Long>()
+        whenever(controller.getTrackingDbEarliestRecordedDate()).thenReturn(result)
+
+        var onSuccessCalled = false
+        var onErrorCalled = false
+        var date: Long? = -1L
+
+        engine.getEarliestTrackingProtectionDate(
+            onSuccess = {
+                onSuccessCalled = true
+                date = it
+            },
+            onError = { onErrorCalled = true },
+        )
+        result.complete(123456789L)
+        shadowOf(getMainLooper()).idle()
+
+        assertTrue(onSuccessCalled)
+        assertFalse(onErrorCalled)
+        assertEquals(123456789L, date)
+    }
+
+    @Test
+    fun `GIVEN a request to fetch earliest tracking date WHEN no data is available THEN return null`() {
+        val runtime: GeckoRuntime = mock()
+        val controller: ContentBlockingController = mock()
+        whenever(runtime.contentBlockingController).thenReturn(controller)
+        val engine = GeckoEngine(context, runtime = runtime)
+
+        val result = GeckoResult<Long>()
+        whenever(controller.getTrackingDbEarliestRecordedDate()).thenReturn(result)
+
+        var onSuccessCalled = false
+        var onErrorCalled = false
+        var date: Long? = -1L
+
+        engine.getEarliestTrackingProtectionDate(
+            onSuccess = {
+                onSuccessCalled = true
+                date = it
+            },
+            onError = { onErrorCalled = true },
+        )
+        result.complete(0L)
+        shadowOf(getMainLooper()).idle()
+
+        assertTrue(onSuccessCalled)
+        assertFalse(onErrorCalled)
+        assertNull(date)
+    }
+
+    @Test
+    fun `GIVEN a request to fetch earliest tracking date WHEN an error is encountered THEN call the error callback`() {
+        val runtime: GeckoRuntime = mock()
+        val controller: ContentBlockingController = mock()
+        whenever(runtime.contentBlockingController).thenReturn(controller)
+        val engine = GeckoEngine(context, runtime = runtime)
+
+        val result = GeckoResult<Long>()
+        whenever(controller.getTrackingDbEarliestRecordedDate()).thenReturn(result)
+
+        var onSuccessCalled = false
+        var onErrorCalled = false
+
+        engine.getEarliestTrackingProtectionDate(
+            onSuccess = { onSuccessCalled = true },
+            onError = { onErrorCalled = true },
+        )
+        result.completeExceptionally(Exception())
+        shadowOf(getMainLooper()).idle()
+
+        assertFalse(onSuccessCalled)
+        assertTrue(onErrorCalled)
+    }
+
+    @Test
+    fun `GIVEN a request to clear tracking protection data WHEN successful THEN invoke the success callback`() {
+        val runtime: GeckoRuntime = mock()
+        val controller: ContentBlockingController = mock()
+        whenever(runtime.contentBlockingController).thenReturn(controller)
+        val engine = GeckoEngine(context, runtime = runtime)
+
+        val result = GeckoResult<Void>()
+        whenever(controller.clearTrackingDb()).thenReturn(result)
+
+        var onSuccessCalled = false
+        var onErrorCalled = false
+
+        engine.clearTrackingProtectionData(
+            onSuccess = { onSuccessCalled = true },
+            onError = { onErrorCalled = true },
+        )
+        result.complete(null)
+        shadowOf(getMainLooper()).idle()
+
+        assertTrue(onSuccessCalled)
+        assertFalse(onErrorCalled)
+    }
+
+    @Test
+    fun `GIVEN a request to clear tracking protection data WHEN an error is encountered THEN call the error callback`() {
+        val runtime: GeckoRuntime = mock()
+        val controller: ContentBlockingController = mock()
+        whenever(runtime.contentBlockingController).thenReturn(controller)
+        val engine = GeckoEngine(context, runtime = runtime)
+
+        val result = GeckoResult<Void>()
+        whenever(controller.clearTrackingDb()).thenReturn(result)
+
+        var onSuccessCalled = false
+        var onErrorCalled = false
+
+        engine.clearTrackingProtectionData(
+            onSuccess = { onSuccessCalled = true },
+            onError = { onErrorCalled = true },
+        )
+        result.completeExceptionally(Exception())
+        shadowOf(getMainLooper()).idle()
+
+        assertFalse(onSuccessCalled)
+        assertTrue(onErrorCalled)
+    }
+
+    @Test
     fun `fetch trackers logged of the level 2 list`() {
         val runtime = mock<GeckoRuntime>()
         val engine = GeckoEngine(context, runtime = runtime)
@@ -3063,7 +3577,7 @@ class GeckoEngineTest {
             extensionCaptor.value as mozilla.components.browser.engine.gecko.webextension.GeckoWebExtension
         assertEquals(extension, capturedExtension.nativeExtension)
 
-        assertTrue(exceptionCaptor.value is WebExtensionInstallException.Blocklisted)
+        assertIs<WebExtensionInstallException.Blocklisted>(exceptionCaptor.value)
     }
 
     @Test
@@ -3135,6 +3649,42 @@ class GeckoEngineTest {
         verify(extension).setActionDelegate(any())
         // Make sure we called `registerTabHandler()` on the installed extension.
         verify(extension).tabDelegate = any()
+    }
+
+    @Test
+    fun `web extension delegate handles add-on onReady event`() {
+        val runtime: GeckoRuntime = mock()
+        val webExtensionController: WebExtensionController = mock()
+        whenever(runtime.webExtensionController).thenReturn(webExtensionController)
+
+        val extension = mockNativeWebExtension("test", "uri")
+        val webExtensionsDelegate: WebExtensionDelegate = mock()
+        val engine = GeckoEngine(context, runtime = runtime)
+        engine.registerWebExtensionDelegate(webExtensionsDelegate)
+
+        val geckoDelegateCaptor = argumentCaptor<WebExtensionController.AddonManagerDelegate>()
+        verify(webExtensionController).setAddonManagerDelegate(geckoDelegateCaptor.capture())
+
+        assertEquals(Unit, geckoDelegateCaptor.value.onReady(extension))
+        val extensionCaptor = argumentCaptor<WebExtension>()
+
+        // Note: the "reacts to WebExtensionDelegate onReady" test in
+        // WebExtensionSupportTest.kt provides further verification of onReady
+        // doing anything meaningful.
+        verify(webExtensionsDelegate).onReady(extensionCaptor.capture())
+        val capturedExtension =
+            extensionCaptor.value as mozilla.components.browser.engine.gecko.webextension.GeckoWebExtension
+        assertEquals(extension, capturedExtension.nativeExtension)
+
+        // registerTabHandler must be called again on the extension at onReady,
+        // to make sure that changes to optionsPageUrl are propagated, and applied
+        // when the onOpenOptionsPage delegate is called.
+        // This is a regression test for bug 2046177.
+        verify(extension).tabDelegate = any()
+
+        // Although there are no known dependencies on setActionDelegate at the
+        // time of writing, we also update the action delegate for consistency.
+        verify(extension).setActionDelegate(any())
     }
 
     @Test
@@ -4113,6 +4663,11 @@ class GeckoEngineTest {
             WebExtensionController.INSTALLATION_METHOD_ONBOARDING,
             InstallationMethod.ONBOARDING.toGeckoInstallationMethod(),
         )
+
+        assertEquals(
+            WebExtensionController.INSTALLATION_METHOD_RTAMO,
+            InstallationMethod.RTAMO.toGeckoInstallationMethod(),
+        )
     }
 
     @Test
@@ -4134,7 +4689,7 @@ class GeckoEngineTest {
             geckoPreferenceAccessor = geckoPreferenceAccessor,
         )
 
-        @OptIn(ExperimentalAndroidComponentsApi::class)
+        @kotlin.OptIn(ExperimentalAndroidComponentsApi::class)
         engine.registerPrefForObservation(
         anyString(),
         onSuccess = { onSuccessCalled = true },
@@ -4167,7 +4722,7 @@ class GeckoEngineTest {
             geckoPreferenceAccessor = geckoPreferenceAccessor,
         )
 
-        @OptIn(ExperimentalAndroidComponentsApi::class)
+        @kotlin.OptIn(ExperimentalAndroidComponentsApi::class)
         engine.registerPrefsForObservation(
             anyList<String>(),
             onSuccess = { onSuccessCalled = true },
@@ -4199,7 +4754,7 @@ class GeckoEngineTest {
             geckoPreferenceAccessor = geckoPreferenceAccessor,
         )
 
-        @OptIn(ExperimentalAndroidComponentsApi::class)
+        @kotlin.OptIn(ExperimentalAndroidComponentsApi::class)
         engine.registerPrefForObservation(
             anyString(),
             onSuccess = { onSuccessCalled = true },
@@ -4231,7 +4786,7 @@ class GeckoEngineTest {
             geckoPreferenceAccessor = geckoPreferenceAccessor,
         )
 
-        @OptIn(ExperimentalAndroidComponentsApi::class)
+        @kotlin.OptIn(ExperimentalAndroidComponentsApi::class)
         engine.registerPrefsForObservation(
             anyList<String>(),
             onSuccess = { onSuccessCalled = true },
@@ -4264,7 +4819,7 @@ class GeckoEngineTest {
             geckoPreferenceAccessor = geckoPreferenceAccessor,
         )
 
-        @OptIn(ExperimentalAndroidComponentsApi::class)
+        @kotlin.OptIn(ExperimentalAndroidComponentsApi::class)
         engine.unregisterPrefForObservation(
             anyString(),
             onSuccess = { onSuccessCalled = true },
@@ -4297,7 +4852,7 @@ class GeckoEngineTest {
             geckoPreferenceAccessor = geckoPreferenceAccessor,
         )
 
-        @OptIn(ExperimentalAndroidComponentsApi::class)
+        @kotlin.OptIn(ExperimentalAndroidComponentsApi::class)
         engine.unregisterPrefsForObservation(
             anyList<String>(),
             onSuccess = { onSuccessCalled = true },
@@ -4329,7 +4884,7 @@ class GeckoEngineTest {
             geckoPreferenceAccessor = geckoPreferenceAccessor,
         )
 
-        @OptIn(ExperimentalAndroidComponentsApi::class)
+        @kotlin.OptIn(ExperimentalAndroidComponentsApi::class)
         engine.unregisterPrefForObservation(
             anyString(),
             onSuccess = { onSuccessCalled = true },
@@ -4361,7 +4916,7 @@ class GeckoEngineTest {
             geckoPreferenceAccessor = geckoPreferenceAccessor,
         )
 
-        @OptIn(ExperimentalAndroidComponentsApi::class)
+        @kotlin.OptIn(ExperimentalAndroidComponentsApi::class)
         engine.unregisterPrefsForObservation(
             anyList<String>(),
             onSuccess = { onSuccessCalled = true },
@@ -4395,7 +4950,7 @@ class GeckoEngineTest {
             geckoPreferenceAccessor = geckoPreferenceAccessor,
         )
 
-        @OptIn(ExperimentalAndroidComponentsApi::class)
+        @kotlin.OptIn(ExperimentalAndroidComponentsApi::class)
         engine.getBrowserPref(
             geckoPref,
             onSuccess = {
@@ -4431,7 +4986,7 @@ class GeckoEngineTest {
             geckoPreferenceAccessor = geckoPreferenceAccessor,
         )
 
-        @OptIn(ExperimentalAndroidComponentsApi::class)
+        @kotlin.OptIn(ExperimentalAndroidComponentsApi::class)
         engine.getBrowserPrefs(
             prefs = geckoPrefs,
             onSuccess = {
@@ -4468,7 +5023,7 @@ class GeckoEngineTest {
             geckoPreferenceAccessor = geckoPreferenceAccessor,
         )
 
-        @OptIn(ExperimentalAndroidComponentsApi::class)
+        @kotlin.OptIn(ExperimentalAndroidComponentsApi::class)
         engine.setBrowserPref(
             "test.test.test",
             1,
@@ -4516,7 +5071,7 @@ class GeckoEngineTest {
             ),
         )
 
-        @OptIn(ExperimentalAndroidComponentsApi::class)
+        @kotlin.OptIn(ExperimentalAndroidComponentsApi::class)
         engine.setBrowserPrefs(
             prefs = request,
             onSuccess = {
@@ -4560,7 +5115,7 @@ class GeckoEngineTest {
             ),
         )
 
-        @OptIn(ExperimentalAndroidComponentsApi::class)
+        @kotlin.OptIn(ExperimentalAndroidComponentsApi::class)
         engine.setBrowserPrefs(
             prefs = request,
             onSuccess = {
@@ -4597,7 +5152,7 @@ class GeckoEngineTest {
             geckoPreferenceAccessor = geckoPreferenceAccessor,
         )
 
-        @OptIn(ExperimentalAndroidComponentsApi::class)
+        @kotlin.OptIn(ExperimentalAndroidComponentsApi::class)
         engine.clearBrowserUserPref(
             "test.test.test",
             onSuccess = {
@@ -4623,6 +5178,88 @@ class GeckoEngineTest {
         assertTrue("AddressStructureAccessor should be called,", getAddressStructureCalled)
     }
 
+    @Test
+    fun `GIVEN BLOCKED_EMAILTRACKING_CONTENT WHEN getBlockedCategory is called THEN it returns EMAIL`() {
+        val blockingData = createBlockingData(Event.BLOCKED_EMAILTRACKING_CONTENT)
+
+        assertEquals(TrackingCategory.EMAIL, blockingData.getBlockedCategory())
+    }
+
+    @Test
+    fun `GIVEN BLOCKED_FINGERPRINTING_CONTENT WHEN getBlockedCategory is called THEN it returns FINGERPRINTING`() {
+        val blockingData = createBlockingData(Event.BLOCKED_FINGERPRINTING_CONTENT)
+
+        assertEquals(TrackingCategory.FINGERPRINTING, blockingData.getBlockedCategory())
+    }
+
+    @Test
+    fun `GIVEN BLOCKED_SUSPICIOUS_FINGERPRINTING WHEN getBlockedCategory is called THEN it returns FINGERPRINTING`() {
+        val blockingData = createBlockingData(Event.BLOCKED_SUSPICIOUS_FINGERPRINTING)
+
+        assertEquals(TrackingCategory.FINGERPRINTING, blockingData.getBlockedCategory())
+    }
+
+    @Test
+    fun `GIVEN BLOCKED_CRYPTOMINING_CONTENT WHEN getBlockedCategory is called THEN it returns CRYPTOMINING`() {
+        val blockingData = createBlockingData(Event.BLOCKED_CRYPTOMINING_CONTENT)
+
+        assertEquals(TrackingCategory.CRYPTOMINING, blockingData.getBlockedCategory())
+    }
+
+    @Test
+    fun `GIVEN BLOCKED_SOCIALTRACKING_CONTENT WHEN getBlockedCategory is called THEN it returns MOZILLA_SOCIAL`() {
+        val blockingData = createBlockingData(Event.BLOCKED_SOCIALTRACKING_CONTENT)
+
+        assertEquals(TrackingCategory.MOZILLA_SOCIAL, blockingData.getBlockedCategory())
+    }
+
+    @Test
+    fun `GIVEN COOKIES_BLOCKED_SOCIALTRACKER WHEN getBlockedCategory is called THEN it returns MOZILLA_SOCIAL`() {
+        val blockingData = createBlockingData(Event.COOKIES_BLOCKED_SOCIALTRACKER)
+
+        assertEquals(TrackingCategory.MOZILLA_SOCIAL, blockingData.getBlockedCategory())
+    }
+
+    @Test
+    fun `GIVEN BLOCKED_TRACKING_CONTENT WHEN getBlockedCategory is called THEN it returns SCRIPTS_AND_SUB_RESOURCES`() {
+        val blockingData = createBlockingData(Event.BLOCKED_TRACKING_CONTENT)
+
+        assertEquals(TrackingCategory.SCRIPTS_AND_SUB_RESOURCES, blockingData.getBlockedCategory())
+    }
+
+    @Test
+    fun `GIVEN an unmapped event WHEN getBlockedCategory is called THEN it returns NONE`() {
+        val blockingData = createBlockingData(Event.LOADED_LEVEL_1_TRACKING_CONTENT)
+
+        assertEquals(TrackingCategory.NONE, blockingData.getBlockedCategory())
+    }
+
+    @Test
+    fun `GIVEN COOKIES_PARTITIONED_TRACKER WHEN hasBlockedCookies is called THEN it returns true`() {
+        val blockingData = createBlockingData(Event.COOKIES_PARTITIONED_TRACKER)
+
+        assertTrue(blockingData.hasBlockedCookies())
+    }
+
+    @Test
+    fun `GIVEN COOKIES_LOADED WHEN hasBlockedCookies is called THEN it returns false`() {
+        val blockingData = createBlockingData(Event.COOKIES_LOADED)
+
+        assertFalse(blockingData.hasBlockedCookies())
+    }
+
+    @Test
+    fun `GIVEN LOADED_LEVEL_1_TRACKING_CONTENT WHEN getLoadedCategory is called THEN it returns SCRIPTS_AND_SUB_RESOURCES`() {
+        val blockingData = createBlockingData(Event.LOADED_LEVEL_1_TRACKING_CONTENT)
+
+        with(GeckoEngine(context, runtime = runtime)) {
+            assertEquals(
+                TrackingCategory.SCRIPTS_AND_SUB_RESOURCES,
+                blockingData.getLoadedCategory(),
+            )
+        }
+    }
+
     private fun createSocialTrackersLogEntryList(): List<ContentBlockingController.LogEntry> {
         val blockedLogEntry = object : ContentBlockingController.LogEntry() {}
 
@@ -4641,6 +5278,50 @@ class GeckoEngineTest {
         ReflectionUtils.setField(loadedLogEntry, "blockingData", listOf(loadedCookieSocialTracker, loadedSocialContent))
 
         return listOf(blockedLogEntry, loadedLogEntry)
+    }
+
+    private fun createBlockedCrossSiteCookiesLogEntryList(): List<ContentBlockingController.LogEntry> {
+        val blockedLogEntry = object : ContentBlockingController.LogEntry() {}
+
+        ReflectionUtils.setField(blockedLogEntry, "origin", "www.data-collector.com")
+        val blockedCrossSiteCookie = createBlockingData(Event.COOKIES_PARTITIONED_TRACKER)
+
+        ReflectionUtils.setField(blockedLogEntry, "blockingData", listOf(blockedCrossSiteCookie))
+
+        return listOf(blockedLogEntry)
+    }
+
+    private fun createEmailTrackerLogEntryList(): List<ContentBlockingController.LogEntry> {
+        val blockedLogEntry = object : ContentBlockingController.LogEntry() {}
+
+        ReflectionUtils.setField(blockedLogEntry, "origin", "www.email-tracker.com")
+        val blockedEmailTracking = createBlockingData(Event.BLOCKED_EMAILTRACKING_CONTENT)
+
+        ReflectionUtils.setField(blockedLogEntry, "blockingData", listOf(blockedEmailTracking))
+
+        return listOf(blockedLogEntry)
+    }
+
+    private fun createPurgedBounceTrackerLogEntryList(): List<ContentBlockingController.LogEntry> {
+        val blockedLogEntry = object : ContentBlockingController.LogEntry() {}
+
+        ReflectionUtils.setField(blockedLogEntry, "origin", "www.bounce-tracker.com")
+        val purgedBounceTracker = createBlockingData(Event.PURGED_BOUNCETRACKER)
+
+        ReflectionUtils.setField(blockedLogEntry, "blockingData", listOf(purgedBounceTracker))
+
+        return listOf(blockedLogEntry)
+    }
+
+    private fun createReplacedFingerprintingLogEntryList(): List<ContentBlockingController.LogEntry> {
+        val blockedLogEntry = object : ContentBlockingController.LogEntry() {}
+
+        ReflectionUtils.setField(blockedLogEntry, "origin", "www.fingerprinting-shim.com")
+        val replacedFingerprinting = createBlockingData(Event.REPLACED_FINGERPRINTING_CONTENT)
+
+        ReflectionUtils.setField(blockedLogEntry, "blockingData", listOf(replacedFingerprinting))
+
+        return listOf(blockedLogEntry)
     }
 
     private fun createDummyLogEntryList(): List<ContentBlockingController.LogEntry> {

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,11 +13,11 @@
 #include "nsRefPtrHashtable.h"
 #include "nsWrapperCache.h"
 
-class nsContentList;
 class nsINode;
 
 namespace mozilla::dom {
 
+class ContentList;
 class Document;
 class Element;
 class OwningHTMLCollectionOrElement;
@@ -34,11 +32,11 @@ class HTMLAllCollection final : public nsISupports, public nsWrapperCache {
  public:
   explicit HTMLAllCollection(mozilla::dom::Document* aDocument);
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(HTMLAllCollection)
 
-  virtual JSObject* WrapObject(JSContext* aCx,
-                               JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
   nsINode* GetParentObject() const;
 
   uint32_t Length();
@@ -67,13 +65,13 @@ class HTMLAllCollection final : public nsISupports, public nsWrapperCache {
   }
 
  private:
-  nsContentList* Collection();
+  ContentList* Collection();
 
   /**
    * Returns the HTMLCollection for document.all[aID], or null if there isn't
    * one.
    */
-  nsContentList* GetDocumentAllList(const nsAString& aID);
+  ContentList* GetDocumentAllList(const nsAString& aID);
 
   /**
    * Helper for indexed getter and spec Item() method.
@@ -81,8 +79,8 @@ class HTMLAllCollection final : public nsISupports, public nsWrapperCache {
   Element* Item(uint32_t aIndex);
 
   RefPtr<mozilla::dom::Document> mDocument;
-  RefPtr<nsContentList> mCollection;
-  nsRefPtrHashtable<nsStringHashKey, nsContentList> mNamedMap;
+  RefPtr<ContentList> mCollection;
+  nsRefPtrHashtable<nsStringHashKey, ContentList> mNamedMap;
 };
 
 }  // namespace mozilla::dom

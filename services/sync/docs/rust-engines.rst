@@ -8,7 +8,7 @@ The bridged-engine
 ==================
 
 Because Rust engines still need to work with the existing Sync infrastructure,
-there's the concept of a `bridged-engine <https://searchfox.org/mozilla-central/source/services/sync/modules/bridged_engine.js>`_.
+there's the concept of a :searchfox:`bridged-engine <services/sync/modules/bridged_engine.js>`.
 In short, this is just a shim between the existing
-`Sync Service <https://searchfox.org/mozilla-central/source/services/sync/modules/service.js>`_
+:searchfox:`Sync Service <services/sync/modules/service.js>`
 and the Rust code.

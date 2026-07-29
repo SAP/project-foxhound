@@ -1091,10 +1091,10 @@ export class TranslationsDocument {
     isFindBarOpen
   ) {
     /** @type {WindowProxy} */
-    const ownerGlobal = ensureExists(document.ownerGlobal);
-    ownerGlobal.addEventListener("scroll", this.#handleScrollEvent);
+    const documentGlobal = ensureExists(document.documentGlobal);
+    documentGlobal.addEventListener("scroll", this.#handleScrollEvent);
 
-    this.#domParser = new ownerGlobal.DOMParser();
+    this.#domParser = new documentGlobal.DOMParser();
     this.#innerWindowId = innerWindowId;
     this.#sourceDocument = document;
     this.#documentLanguage = documentLanguage;
@@ -1154,7 +1154,7 @@ export class TranslationsDocument {
      *
      * @type {typeof IntersectionObserver}
      */
-    const DocumentIntersectionObserver = ownerGlobal.IntersectionObserver;
+    const DocumentIntersectionObserver = documentGlobal.IntersectionObserver;
 
     this.#intersectionObserverForContentTranslationsWithinViewport =
       new DocumentIntersectionObserver(
@@ -1398,7 +1398,7 @@ export class TranslationsDocument {
      *
      * @type {typeof MutationObserver}
      */
-    const DocumentMutationObserver = ownerGlobal.MutationObserver;
+    const DocumentMutationObserver = documentGlobal.MutationObserver;
 
     this.#mutationObserver = new DocumentMutationObserver(
       async mutationsList => {
@@ -1452,7 +1452,7 @@ export class TranslationsDocument {
 
               // New nodes could have been added, make sure we can follow their shadow roots.
               ensureExists(
-                this.#sourceDocument.ownerGlobal
+                this.#sourceDocument.documentGlobal
               ).requestAnimationFrame(() => {
                 this.#addShadowRootsToObserver(pendingParentElement);
               });
@@ -1730,7 +1730,7 @@ export class TranslationsDocument {
       );
     }
 
-    const window = ensureExists(this.#sourceDocument.ownerGlobal);
+    const window = ensureExists(this.#sourceDocument.documentGlobal);
     const { visualViewport } = window;
     if (visualViewport.width > 0 && visualViewport.height > 0) {
       // The only time we should call this function is in test cases where the
@@ -1924,12 +1924,12 @@ export class TranslationsDocument {
     }
 
     this.#hasPendingMutatedNodesCallback = true;
-    const ownerGlobal = ensureExists(this.#sourceDocument.ownerGlobal);
+    const documentGlobal = ensureExists(this.#sourceDocument.documentGlobal);
 
     // Nodes can be mutated in a tight loop. To guard against the performance of re-translating nodes too frequently,
     // we will batch the processing of mutated nodes into a double requestAnimationFrame.
-    ownerGlobal.requestAnimationFrame(() => {
-      ownerGlobal.requestAnimationFrame(async () => {
+    documentGlobal.requestAnimationFrame(() => {
+      documentGlobal.requestAnimationFrame(async () => {
         // We should not handle any mutations until the intersection observers have completed their first observations.
         await this.#waitForFirstIntersectionObservations();
 
@@ -2350,7 +2350,7 @@ export class TranslationsDocument {
         this.#handleVisibilityChange
       );
 
-      const window = this.#sourceDocument.ownerGlobal;
+      const window = this.#sourceDocument.documentGlobal;
       if (window) {
         window.removeEventListener("scroll", this.#handleScrollEvent);
       }
@@ -3543,7 +3543,7 @@ export class TranslationsDocument {
       return;
     }
 
-    const scrollY = ensureExists(this.#sourceDocument.ownerGlobal).scrollY;
+    const scrollY = ensureExists(this.#sourceDocument.documentGlobal).scrollY;
 
     this.#mostRecentScrollDirection =
       scrollY >= this.#previousScrollY ? "down" : "up";
@@ -5238,6 +5238,10 @@ class TranslationScheduler {
     translationId,
     priority
   ) {
+    if (this.#engineStatus === "error") {
+      return Promise.resolve(null);
+    }
+
     const { promise, resolve, reject } = Promise.withResolvers();
     this.#unscheduledRequestPriorities.set(translationId, priority);
 
@@ -5435,6 +5439,10 @@ class TranslationScheduler {
       return false;
     }
 
+    if (this.#engineStatus === "error") {
+      return false;
+    }
+
     if (this.#portRequest) {
       // We are still waiting for a port: we will try again if a port is acquired.
       return false;
@@ -5523,7 +5531,7 @@ class TranslationScheduler {
     let stackSizesAtStart = null;
     const activeRequestsAtStart = this.#activeRequests.size;
     const unscheduledRequestsAtStart = this.#unscheduledRequestPriorities.size;
-    if (Services.profiler?.IsActive() || lazy.console.shouldLog("Debug")) {
+    if (Services.profiler.IsActive() || lazy.console.shouldLog("Debug")) {
       // We need to preserve the sizes prior to scheduling only if we are adding profiler markers,
       // or if we are logging to console debug. Otherwise we shouldn't bother with these computations.
       stackSizesAtStart = this.#priorityStacks.map(stack => stack.size);
@@ -5889,14 +5897,14 @@ function isNodeHidden(node) {
     return true;
   }
 
-  const { ownerGlobal } = element;
-  if (!ownerGlobal) {
-    // We cannot compute the style without ownerGlobal, so we will assume it is not visible.
+  const { documentGlobal } = element;
+  if (!documentGlobal) {
+    // We cannot compute the style without documentGlobal, so we will assume it is not visible.
     return true;
   }
 
   // This flushes the style, which is a performance cost.
-  const style = ownerGlobal.getComputedStyle(element);
+  const style = documentGlobal.getComputedStyle(element);
   if (!style) {
     // We were unable to compute the style, so we will assume it is not visible.
     return true;
@@ -5959,7 +5967,7 @@ function getHTMLElementForStyle(node) {
  * @returns {NodeSpatialContext}
  */
 function getNodeSpatialContext(node) {
-  const window = node.ownerGlobal;
+  const window = node.documentGlobal;
   const document = node.ownerDocument;
   if (!window || !document || !document.documentElement) {
     // We won't be able to calculate the spatial context for this node.
@@ -6465,8 +6473,8 @@ function getIsBlockLike(node) {
     return false;
   }
 
-  const { ownerGlobal } = element;
-  if (!ownerGlobal) {
+  const { documentGlobal } = element;
+  if (!documentGlobal) {
     return false;
   }
 
@@ -6478,7 +6486,7 @@ function getIsBlockLike(node) {
 
   /** @type {Record<string, string>} */
   // @ts-expect-error - This is a workaround for the CSSStyleDeclaration not being indexable.
-  const style = ownerGlobal.getComputedStyle(element) ?? { display: null };
+  const style = documentGlobal.getComputedStyle(element) ?? { display: null };
 
   return style.display !== "inline" && style.display !== "none";
 }
@@ -6698,7 +6706,11 @@ function ensureExists(item, message = "Item did not exist") {
  * @returns {ShadowRoot | null}
  */
 function getShadowRoot(node) {
-  return asElement(node)?.openOrClosedShadowRoot ?? null;
+  let root = asElement(node)?.openOrClosedShadowRoot;
+  if (!root || root.isUAWidget()) {
+    return null;
+  }
+  return root;
 }
 
 /**

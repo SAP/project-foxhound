@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-<toolbox id="navigator-toolbox" class="browser-toolbox-background">
+<toolbox id="navigator-toolbox" class="chrome-block">
   <script src="chrome://browser/content/navigator-toolbox.js" />
 
   <!-- Menu -->
@@ -13,9 +13,9 @@
            autohide="true"
            context="toolbar-context-menu">
     <toolbaritem id="menubar-items" align="center">
-# The entire main menubar is placed into browser-menubar.inc, so that it can be
-# shared with other top level windows in macWindow.inc.xhtml.
-#include browser-menubar.inc
+# The entire main menubar is placed into browser-menubar.inc.xhtml, so that it
+# can be shared with other top level windows in macWindow.inc.xhtml.
+#include browser-menubar.inc.xhtml
     </toolbaritem>
     <spacer flex="1" skipintoolbarset="true" style="order: 1000;"/>
 #include titlebar-items.inc.xhtml
@@ -110,6 +110,7 @@
                     data-l10n-id="toolbar-button-ai-window-toggle"
                     cui-areatype="toolbar"
                     removable="false"
+                    aria-haspopup="true"
                     hidden="true"/>
 
     <toolbarbutton class="content-analysis-indicator toolbarbutton-1 content-analysis-indicator-icon"/>
@@ -181,11 +182,26 @@
                    class="urlbar-container"
                    removable="false"
                    overflows="false">
+        <menupopup id="urlbarView-context-menu">
+          <menuitem id="urlbar-view-context-menu-open-in-tab"
+                    data-l10n-id="urlbar-view-context-menu-open-in-tab"/>
+          <menu id="urlbarView-context-menu-open-in-container-tab"
+                data-l10n-id="urlbar-view-context-menu-open-in-container-tab"
+                selection-type="single"
+                node-type="link"
+                hide-if-private-browsing="true"
+                hide-if-usercontext-disabled="true">
+            <menupopup id="urlbarView-context-menu-open-in-container-tab-popup"/>
+          </menu>
+          <menuitem id="urlbarView-context-menu-open-in-window"
+                    data-l10n-id="urlbar-view-context-menu-open-in-window"/>
+          <menuitem id="urlbarView-context-menu-open-in-private-window"
+                    data-l10n-id="urlbar-view-context-menu-open-in-private-window"/>
+        </menupopup>
         <toolbartabstop/>
         <html:moz-urlbar id="urlbar"
               class="urlbar"
               popover="manual"
-              focused="true"
               pageproxystate="invalid"
               unifiedsearchbutton-available=""
               sap-name="urlbar">
@@ -238,6 +254,7 @@
                   <image class="sharing-icon" id="webrtc-sharing-icon"/>
                   <image class="sharing-icon geo-icon" id="geo-sharing-icon"/>
                   <image class="sharing-icon xr-icon" id="xr-sharing-icon"/>
+                  <image class="sharing-icon serial-icon" id="serial-sharing-icon"/>
               </box>
               <box id="blocked-permissions-container" align="center">
                 <image data-permission-id="geo" class="blocked-permission-icon geo-icon" role="button"
@@ -250,7 +267,7 @@
                       data-l10n-id="urlbar-camera-blocked"/>
                 <image data-permission-id="microphone" class="blocked-permission-icon microphone-icon" role="button"
                       data-l10n-id="urlbar-microphone-blocked"/>
-                <image data-permission-id="localhost" class="blocked-permission-icon localhost-icon" role="button"
+                <image data-permission-id="loopback-network" class="blocked-permission-icon loopback-network-icon" role="button"
                       data-l10n-id="urlbar-localhost-blocked"/>
                 <image data-permission-id="local-network" class="blocked-permission-icon local-network-icon" role="button"
                       data-l10n-id="urlbar-local-network-blocked"/>
@@ -266,6 +283,8 @@
                       data-l10n-id="urlbar-canvas-blocked"/>
                 <image data-permission-id="midi" class="blocked-permission-icon midi-icon" role="button"
                       data-l10n-id="urlbar-midi-blocked"/>
+                <image data-permission-id="serial" class="blocked-permission-icon serial-icon" role="button"
+                      data-l10n-id="urlbar-serial-blocked"/>
                 <image data-permission-id="install" class="blocked-permission-icon install-icon" role="button"
                       data-l10n-id="urlbar-install-blocked"/>
                 <!-- A speaker icon for blocked speaker selection is not
@@ -281,7 +300,7 @@
                       data-l10n-id="urlbar-default-notification-anchor"/>
               <image id="geo-notification-icon" class="notification-anchor-icon geo-icon" role="button"
                       data-l10n-id="urlbar-geolocation-notification-anchor"/>
-              <image id="localhost-notification-icon" class="notification-anchor-icon localhost-icon" role="button"
+              <image id="loopback-network-notification-icon" class="notification-anchor-icon loopback-network-icon" role="button"
                       data-l10n-id="urlbar-localhost-notification-anchor"/>
               <image id="local-network-notification-icon" class="notification-anchor-icon local-network-icon" role="button"
                       data-l10n-id="urlbar-local-network-notification-anchor"/>
@@ -315,6 +334,8 @@
                       data-l10n-id="urlbar-persistent-storage-notification-anchor"/>
               <image id="midi-notification-icon" class="notification-anchor-icon midi-icon" role="button"
                       data-l10n-id="urlbar-midi-notification-anchor"/>
+              <image id="serial-notification-icon" class="notification-anchor-icon serial-icon" role="button"
+                      data-l10n-id="urlbar-serial-notification-anchor"/>
               <image id="webauthn-notification-icon" class="notification-anchor-icon" role="button"
                       data-l10n-id="urlbar-web-authn-anchor"/>
               <image id="identity-credential-notification-icon" class="notification-anchor-icon" role="button"
@@ -359,7 +380,8 @@
                 <image class="urlbar-icon"/>
               </hbox>
             </hbox>
-            <hbox id="userContext-icons" hidden="true">
+            <hbox id="userContext-icons" hidden="true"
+                  role="button">
               <label id="userContext-label"/>
               <image id="userContext-indicator"/>
             </hbox>
@@ -419,6 +441,10 @@
                       class="urlbar-icon"/>
             </hbox>
           </hbox>
+          <html:div class="search-one-offs"
+              includecurrentengine="true"
+              disabletab="true"
+              urlbar-slot="search-one-offs"/>
         </html:moz-urlbar>
         <toolbartabstop/>
       </toolbaritem>
@@ -483,13 +509,17 @@
     <toolbarbutton id="taskbar-tabs-audio" class="toolbarbutton-1 chromeclass-toolbar-additional"
                     removable="false" overflows="false"/>
 
-    <toolbarbutton id="smartwindow-ask-button"
-                    class="toolbarbutton-1 chromeclass-toolbar-additional"
-                    data-l10n-id="smartwindow-ask-button"
-                    hidden="true"
-                    overflows="false"
-                    removable="false">
-    </toolbarbutton>
+    <toolbaritem id="smartwindow-ask-button"
+                 class="chromeclass-toolbar-additional"
+                 hidden="true"
+                 overflows="false"
+                 removable="false">
+      <toolbarbutton id="smartwindow-ask-button-inner"
+                      class="toolbarbutton-1"
+                      aria-expanded="false"
+                      data-l10n-id="smartwindow-ask-button">
+      </toolbarbutton>
+    </toolbaritem>
 
     <toolbarbutton id="nav-bar-overflow-button"
                    class="toolbarbutton-1 chromeclass-toolbar-additional"
@@ -565,7 +595,7 @@
           <menupopup id="PlacesChevronPopup"
                       is="places-popup"
                       placespopup="true"
-                      native="false"
+                      nonnative=""
                       class="toolbar-menupopup"
                       tooltip="bhTooltip" popupsinherittooltip="true"
                       context="placesContext"/>
@@ -606,7 +636,7 @@
                  is="places-popup-arrow"
                  class="toolbar-menupopup animatable-menupopup"
                  placespopup="true"
-                 native="false"
+                 nonnative=""
                  context="placesContext"
                  openInTabs="children"
                  side="top"
@@ -630,7 +660,7 @@
           <menupopup id="BMB_bookmarksToolbarPopup"
                      is="places-popup"
                      placespopup="true"
-                     native="false"
+                     nonnative=""
                      context="placesContext">
             <menuitem id="BMB_viewBookmarksToolbar"
                       data-l10n-id="bookmarks-tools-toolbar-visibility-menuitem"
@@ -646,7 +676,7 @@
           <menupopup id="BMB_unsortedBookmarksPopup"
                      is="places-popup"
                      placespopup="true"
-                     native="false"
+                     nonnative=""
                      context="placesContext"/>
         </menu>
         <menu id="BMB_mobileBookmarks"
@@ -657,7 +687,7 @@
           <menupopup id="BMB_mobileBookmarksPopup"
                      is="places-popup"
                      placespopup="true"
-                     native="false"
+                     nonnative=""
                      context="placesContext"/>
         </menu>
 

@@ -1,4 +1,3 @@
-/* -*- Mode: C; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -582,10 +581,13 @@ bool mozTXTToHTMLConv::ItMatchesDelimited(const char16_t* aInString,
   }
 
   int32_t afterIndex = aRepLen + ignoreLen;
-  uint32_t textAfterPos = aInString[afterIndex];
-  if (aInLength > afterIndex + 1 &&
-      NS_IS_SURROGATE_PAIR(textAfterPos, aInString[afterIndex + 1])) {
-    textAfterPos = SURROGATE_TO_UCS4(textAfterPos, aInString[afterIndex + 1]);
+  uint32_t textAfterPos = 0;
+  if (afterIndex < aInLength) {
+    textAfterPos = aInString[afterIndex];
+    if (aInLength > afterIndex + 1 &&
+        NS_IS_SURROGATE_PAIR(textAfterPos, aInString[afterIndex + 1])) {
+      textAfterPos = SURROGATE_TO_UCS4(textAfterPos, aInString[afterIndex + 1]);
+    }
   }
 
   return !((before == LT_ALPHA && !IsAlpha(text0)) ||

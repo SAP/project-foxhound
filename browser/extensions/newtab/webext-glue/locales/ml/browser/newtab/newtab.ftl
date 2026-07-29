@@ -8,7 +8,10 @@
 newtab-page-title = പുതിയ ടാബ്
 newtab-settings-button =
     .title = നിങ്ങളുടെ പുതിയ ടാബ് താള് ഇഷ്ടാനുസൃതമാക്കുക
+#  (developer note): @nova-cleanup(remove-string): Remove newtab-customize-panel-icon-button-label once Nova lands, will be using newtab-customize-panel-label instead
 newtab-customize-panel-icon-button-label = ഇച്ഛാനുസൃതമാക്കുക
+newtab-customize-panel-label =
+    .label = ഇച്ഛാനുസൃതമാക്കുക
 newtab-personalize-settings-icon-label =
     .title = പുതിയ ടാബ് വ്യക്തിപരമാക്കുക
     .aria-label = ക്രമീകരണങ്ങൾ
@@ -21,6 +24,80 @@ newtab-personalize-dialog-label =
     .aria-label = വ്യക്തിപരമാക്കുക
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
+
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-title =
+    .label = പൂമുഖം
+home-homepage-new-tabs =
+    .label = പുതിയ ടാബുകൾ
+
+## Custom URLs subpage
+
+# Subheader on the Custom Homepage subpage. Followed by a form to enter URLs and a list of URLs already saved, if any.
+home-custom-homepage-card-header =
+    .label = വെബ്ബിട വിലാസം(കൾ)
+home-custom-homepage-address =
+    .placeholder = വിലാസം നല്കുക
+home-custom-homepage-address-button =
+    .label = വിലാസം ചേൎക്കുക
+# Shown when no custom websites/URLs to use as a homepage have been added yet
+home-custom-homepage-no-results =
+    .label = വെബ്ബിടങ്ങൾ ചേൎത്തിട്ടില്ല
+# Button that appears in-line after text "Replace with" (home-custom-homepage-replace-with-prompt)
+home-custom-homepage-current-pages-button =
+    .label = നിലവിൽ തുറന്നിരിക്കുന്ന താളുകൾ
+# Button that appears in-line after text "Replace with" (home-custom-homepage-replace-with-prompt)
+home-custom-homepage-bookmarks-button =
+    .label = അടയാളക്കുറിപ്പുകൾ…
+
+## Firefox Home content
+
+home-prefs-search-header2 =
+    .label = തിരയുക
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } വരികൾ
+           *[other] { $num } വരികൾ
+        }
+# Dropdown option shown when an extension replaces the contents of new windows or tabs.
+# Variables:
+#   $extension (string) - Name of the extension
+home-prefs-homepage-extension-option =
+    .label = വിപുലീകരണം ({ $extension })
+home-restore-defaults-srd =
+    .label = സ്വതവേയുള്ളവ പുനഃസ്ഥാപിക്കുക
+    .accesskey = R
+home-mode-choice-default-fx-srd =
+    .label = { -firefox-home-brand-name } (തനതായവ)
+home-mode-choice-custom-srd =
+    .label = ഇഷ്ടാനുസൃത URL കൾ ...
+home-mode-choice-blank-srd =
+    .label = ശൂന്യമായ താൾ
+home-prefs-shortcuts-header-srd =
+    .label = കുറുക്കുവഴികൾ
+home-prefs-shortcuts-select =
+    .aria-label = കുറുക്കുവഴികൾ
+home-prefs-shortcuts-by-option-sponsored-srd =
+    .label = പണം കൊണ്ടു് പ്രസരിപ്പിച്ച കുറുക്കുവഴികൾ
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = പണം കൊണ്ടു് പ്രസരിപ്പിച്ച കഥകൾ
+home-prefs-highlights-option-visited-pages-srd =
+    .label = സന്ദർശിച്ച പേജുകൾ
+home-prefs-highlights-options-bookmarks-srd =
+    .label = ബുക്ക്മാർക്കുകൾ
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = ഏറ്റവും അടുത്തിടെ ഇറക്കിവച്ച സാധനം
+home-prefs-recent-activity-header-srd =
+    .label = ഒടുവിലുള്ള പ്രവൎത്തനം
+home-prefs-recent-activity-select =
+    .aria-label = ഒടുവിലുള്ള പ്രവൎത്തനം
+home-prefs-weather-header-srd =
+    .label = കാലാവസ്ഥ
 
 ## Search box component.
 
@@ -47,7 +124,7 @@ newtab-search-box-input =
     .placeholder = ആഗോളാന്തരവലയിൽ തിരയുക
     .aria-label = ആഗോളാന്തരവലയിൽ തിരയുക
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = തിരയൽ യന്ത്രം ചേർക്കുക
 newtab-topsites-add-shortcut-header = പുതിയ കുറുക്കുവഴി
@@ -126,6 +203,8 @@ newtab-menu-report = വിവരം അറിയിക്കുക
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
 # e.g. "Sports". "Block" is a verb here.
 newtab-menu-section-block = തടയുക
+# Context menu option to open a support page explaining the New Tab personalization features and privacy controls.
+newtab-menu-section-learn-more = കൂടുതല്‍ അറിയുക
 # "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
 # e.g. Following the travel section of stories.
 newtab-menu-section-unfollow = വിഷയം പിന്തുടരാൻ നി‌രുത്തുക
@@ -280,9 +359,21 @@ newtab-error-fallback-refresh-link = വീണ്ടും ശ്രമിക്
 
 newtab-custom-shortcuts-title = കുറുക്കുവഴികൾ
 newtab-custom-shortcuts-subtitle = താങ്ങൾ കരുതിവയ്ക്കുന്ന അല്ലെങ്കിൽ സന്ദൎശിക്കുന്ന വെബ്സ്ഥാനങ്ങൾ
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = കുറുക്കുവഴികൾ
     .description = താങ്ങൾ കരുതിവയ്ക്കുന്ന അല്ലെങ്കിൽ സന്ദൎശിക്കുന്ന വെബ്സ്ഥാനങ്ങൾ
+newtab-custom-shortcuts-nova =
+    .label = കുറുക്കുവഴികൾ
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+            [one] { $num } വരികൾ
+           *[other] { $num } വരികൾ
+        }
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector =
@@ -309,14 +400,18 @@ newtab-custom-close-button = അടയ്ക്കുക
 
 newtab-wallpaper-title = ചുവർകടലാസുകൾ
 newtab-wallpaper-reset = തനിമട്ടിലാക്കുക
+#  (developer note): @nova-cleanup(remove-string): Remove old "Upload an image" string once Nova lands. The new "Add an image"  string will take over
 newtab-wallpaper-upload-image = ചിത്രം കയറ്റുവയ്ക്കുക
 newtab-wallpaper-custom-color = ഒരു നിറം തെരഞ്ഞെടുക്കുക
+newtab-wallpaper-toggle-title =
+    .label = ചുവർകടലാസുകൾ
 newtab-wallpaper-light-red-panda = ചുമന്ന കരടിപ്പൂച്ച
 newtab-wallpaper-light-mountain = വെളുത്ത മല
 newtab-wallpaper-light-sky = പാടലന്നിറത്തിന്റെയും ഊതന്നിറത്തിന്റെയും മുകിലുകൾ നിറഞ്ഞവ്വിണ്ണു്
 
 ## Solid Colors
 
+#  (developer note): @nova-cleanup(remove-string): Remove old "Solid colors" string once Nova lands. The simplified "Colors" string will take over
 newtab-wallpaper-category-title-colors = കടും നിറങ്ങൾ
 newtab-wallpaper-blue = നീല
 newtab-wallpaper-light-blue = ഇളം നീല
@@ -485,10 +580,11 @@ newtab-widget-lists-label-new =
 newtab-widget-lists-label-beta =
     .label = ബീറ്റ
 newtab-widget-task-list-menu-copy = പകൎത്തുക
-newtab-widget-lists-menu-hide = പട്ടികകളെല്ലാം മറയ്ക്കുക
 newtab-widget-lists-menu-learn-more = കൂടുതല്‍ അറിയുക
-newtab-widget-lists-input-add-an-item =
+newtab-widget-lists-button-add-item = ഇനം ചേർക്കുക
+newtab-widget-lists-input-add-an-item2 =
     .placeholder = ഇനം ചേർക്കുക
+    .aria-label = ഇനം ചേർക്കുക
 newtab-widget-lists-input-menu-open-link = കണ്ണി തുറക്കുക
 newtab-widget-lists-input-menu-move-up = മുകളിലേക്കു് നീക്കു്
 newtab-widget-lists-input-menu-move-down = താഴോട്ടു നീക്കു്
@@ -501,6 +597,3 @@ newtab-widget-lists-name-label-default =
     .label = കാര്യപ്പട്ടിക
 newtab-widget-lists-name-placeholder-default =
     .placeholder = കാര്യപ്പട്ടിക
-# The placeholder value of the name field for a newly created list
-newtab-widget-lists-name-placeholder-new =
-    .placeholder = പുതിയ പട്ടിക

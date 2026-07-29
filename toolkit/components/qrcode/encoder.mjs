@@ -19,8 +19,8 @@ ChromeUtils.defineESModuleGetters(
  * in the resulting image, thus limiting the amount of data that can be
  * represented.
  *
- * It expects you to pick a version large enough to contain your message.  Here
- * we search for the mimimum version based on the message length.
+ * We need to pick a version large enough to contain our message. Here we
+ * search for the minimum version based on the message length.
  *
  * @param {string} message
  *   Text to encode
@@ -34,13 +34,13 @@ ChromeUtils.defineESModuleGetters(
  *     - "M" (medium error correction)
  *     - "Q" (quartile error correction)
  *     - "H" (high error correction)
- * @returns {integer}
+ * @returns {number}
  */
 function findMinimumVersion(message, errorCorrectionLevelChar) {
   const msgLength = message.length;
   const errorCorrectionLevel =
     lazy.QRErrorCorrectionLevel[errorCorrectionLevelChar];
-  for (let version = 1; version <= 10; version++) {
+  for (let version = 1; version <= 40; version++) {
     const rsBlocks = lazy.QRRSBlock.getRSBlocks(version, errorCorrectionLevel);
     let maxLength = rsBlocks.reduce((prev, block) => {
       return prev + block.dataCount;
@@ -52,6 +52,26 @@ function findMinimumVersion(message, errorCorrectionLevelChar) {
     }
   }
   throw new Error("Message too large");
+}
+
+/**
+ * Build and populate a QR encoder for the requested message.
+ *
+ * @param {string} message
+ *   Text to encode
+ * @param {string} [errorCorrectionLevelChar="H"]
+ *   Error correction level to use ("L", "M", "Q", or "H")
+ * @param {number} [version]
+ *   QR code version large enough to contain the message
+ * @returns {object}
+ */
+function createEncoder(message, errorCorrectionLevelChar, version) {
+  const levelChar = errorCorrectionLevelChar ?? "H";
+  const qrVersion = version ?? findMinimumVersion(message, levelChar);
+  const encoder = new lazy.qrcode(qrVersion, levelChar);
+  encoder.addData(message);
+  encoder.make();
+  return encoder;
 }
 
 /**
@@ -69,7 +89,7 @@ function findMinimumVersion(message, errorCorrectionLevelChar) {
  *     - "M" (medium error correction)
  *     - "Q" (quartile error correction)
  *     - "H" (high error correction)
- * @param {integer} version (optional)
+ * @param {number} [version]
  *   QR code "version" large enough to contain the message
  * @returns {object} An object with the following fields:
  *   src:    an image encoded as a data URI
@@ -77,24 +97,42 @@ function findMinimumVersion(message, errorCorrectionLevelChar) {
  *   width:  image width
  */
 function encodeToDataURI(message, errorCorrectionLevelChar, version) {
-  errorCorrectionLevelChar = errorCorrectionLevelChar ?? "H";
-  version = version ?? findMinimumVersion(message, errorCorrectionLevelChar);
-  const encoder = new lazy.qrcode(version, errorCorrectionLevelChar);
-  encoder.addData(message);
-  encoder.make();
-
+  const encoder = createEncoder(message, errorCorrectionLevelChar, version);
   const dataURI = encoder.createDataURL();
-  const moduleCount = encoder.getModuleCount();
+  const dotCount = encoder.getModuleCount();
   const cellSize = 2;
   const margin = cellSize * 4;
-  const size = moduleCount * cellSize + margin * 2;
-  return {
-    src: dataURI,
-    width: size,
-    height: size,
-  };
+  const size = dotCount * cellSize + margin * 2;
+  return { src: dataURI, width: size, height: size };
+}
+
+/**
+ * Return the QR dot matrix without generating a raster image.
+ *
+ * @param {string} message
+ *   Text to encode
+ * @param {string} [errorCorrectionLevelChar="H"]
+ *   Error correction level to use ("L", "M", "Q", or "H")
+ * @param {number} [version]
+ *   QR code "version" large enough to contain the message
+ * @returns {object} An object with the following fields:
+ *   matrix:   boolean[][] of dark dots
+ *   dotCount: number of dots per side
+ */
+function encodeToMatrix(message, errorCorrectionLevelChar, version) {
+  const encoder = createEncoder(message, errorCorrectionLevelChar, version);
+  const dotCount = encoder.getModuleCount();
+  const matrix = [];
+  for (let row = 0; row < dotCount; row++) {
+    matrix[row] = [];
+    for (let col = 0; col < dotCount; col++) {
+      matrix[row][col] = encoder.isDark(row, col);
+    }
+  }
+  return { matrix, dotCount };
 }
 
 export const QR = {
   encodeToDataURI,
+  encodeToMatrix,
 };

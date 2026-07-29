@@ -7,17 +7,18 @@ package mozilla.components.browser.thumbnails.utils
 import android.content.Context
 import android.graphics.Bitmap
 import androidx.annotation.VisibleForTesting
-import com.jakewharton.disklrucache.DiskLruCache
 import mozilla.components.concept.base.images.ImageLoadRequest
 import mozilla.components.concept.base.images.ImageSaveRequest
 import mozilla.components.support.base.log.logger.Logger
+import mozilla.components.support.utils.cache.CacheDirectoryMigration
+import mozilla.components.support.utils.cache.DiskLruCacheStore
 import java.io.File
-import java.io.IOException
 
 private const val MAXIMUM_CACHE_THUMBNAIL_DATA_BYTES: Long = 1024L * 1024L * 100L // 100 MB
 private const val THUMBNAIL_DISK_CACHE_VERSION = 1
 private const val ENCODING_QUALITY = 90
 private const val BASE_DIR_NAME = "thumbnails"
+private const val THUMBNAILS_DIR_NAME = "mozac_browser_thumbnails"
 
 /**
  * Caching thumbnail bitmaps on disk.
@@ -28,19 +29,19 @@ class ThumbnailDiskCache(private val isPrivate: Boolean = false) {
     private val logger = Logger("ThumbnailDiskCache")
 
     @VisibleForTesting
-    internal var thumbnailCache: DiskLruCache? = null
-    private val thumbnailCacheWriteLock = Any()
+    internal val thumbnailStore = DiskLruCacheStore(
+        logger = logger,
+        version = THUMBNAIL_DISK_CACHE_VERSION,
+        maxSizeBytes = MAXIMUM_CACHE_THUMBNAIL_DATA_BYTES,
+        directoryProvider = ::getThumbnailCacheDirectory,
+        migration = CacheDirectoryMigration(
+            logger = logger,
+            legacyDirectory = { File(it.cacheDir, THUMBNAILS_DIR_NAME) },
+            newDirectory = { File(it.noBackupFilesDir, THUMBNAILS_DIR_NAME) },
+        ),
+    )
 
-    internal fun clear(context: Context) {
-        synchronized(thumbnailCacheWriteLock) {
-            try {
-                getThumbnailCache(context)?.delete()
-            } catch (e: IOException) {
-                logger.warn("Thumbnail cache could not be cleared. Perhaps there are none?")
-            }
-            thumbnailCache = null
-        }
-    }
+    internal fun clear(context: Context) = thumbnailStore.clear(context)
 
     /**
      * Retrieves the thumbnail data from the disk cache for the given session ID or URL.
@@ -50,16 +51,7 @@ class ThumbnailDiskCache(private val isPrivate: Boolean = false) {
      * @return the [ByteArray] of the thumbnail or null if the snapshot of the entry does not exist.
      */
     internal fun getThumbnailData(context: Context, request: ImageLoadRequest): ByteArray? {
-        val snapshot = getThumbnailCache(context)?.get(request.id) ?: return null
-
-        return try {
-            snapshot.getInputStream(0).use {
-                it.buffered().readBytes()
-            }
-        } catch (e: IOException) {
-            logger.info("Failed to read thumbnail bitmap from disk", e)
-            null
-        }
+        return thumbnailStore.readBytes(context, request.id)
     }
 
     /**
@@ -70,18 +62,8 @@ class ThumbnailDiskCache(private val isPrivate: Boolean = false) {
      * @param bitmap the thumbnail [Bitmap] to store.
      */
     internal fun putThumbnailBitmap(context: Context, request: ImageSaveRequest, bitmap: Bitmap) {
-        try {
-            synchronized(thumbnailCacheWriteLock) {
-                val editor = getThumbnailCache(context)?.edit(request.id) ?: return
-
-                editor.newOutputStream(0).use { stream ->
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, ENCODING_QUALITY, stream)
-                }
-
-                editor.commit()
-            }
-        } catch (e: IOException) {
-            logger.info("Failed to save thumbnail bitmap to disk", e)
+        thumbnailStore.write(context, request.id) { stream ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, ENCODING_QUALITY, stream)
         }
     }
 
@@ -92,35 +74,12 @@ class ThumbnailDiskCache(private val isPrivate: Boolean = false) {
      * @param sessionIdOrUrl the session ID or URL.
      */
     internal fun removeThumbnailData(context: Context, sessionIdOrUrl: String) {
-        try {
-            synchronized(thumbnailCacheWriteLock) {
-                getThumbnailCache(context)?.remove(sessionIdOrUrl)
-            }
-        } catch (e: IOException) {
-            logger.info("Failed to remove thumbnail bitmap from disk", e)
-        }
+        thumbnailStore.remove(context, sessionIdOrUrl)
     }
 
     private fun getThumbnailCacheDirectory(context: Context): File {
         val dirName = if (isPrivate) "private_$BASE_DIR_NAME" else BASE_DIR_NAME
-        val cacheDirectory = File(context.cacheDir, "mozac_browser_thumbnails")
+        val cacheDirectory = File(context.noBackupFilesDir, THUMBNAILS_DIR_NAME)
         return File(cacheDirectory, dirName)
-    }
-
-    @Synchronized
-    private fun getThumbnailCache(context: Context): DiskLruCache? {
-        thumbnailCache?.let { return it }
-
-        return try {
-            DiskLruCache.open(
-                getThumbnailCacheDirectory(context),
-                THUMBNAIL_DISK_CACHE_VERSION,
-                1,
-                MAXIMUM_CACHE_THUMBNAIL_DATA_BYTES,
-            ).also { thumbnailCache = it }
-        } catch (e: IOException) {
-            logger.warn("Thumbnail cache could not be created.", e)
-            null
-        }
     }
 }

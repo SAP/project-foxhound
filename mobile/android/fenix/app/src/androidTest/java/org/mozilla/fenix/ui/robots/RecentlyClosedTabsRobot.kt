@@ -20,7 +20,6 @@ import org.hamcrest.Matchers
 import org.hamcrest.Matchers.allOf
 import org.mozilla.fenix.R
 import org.mozilla.fenix.helpers.Constants.TAG
-import org.mozilla.fenix.helpers.HomeActivityComposeTestRule
 import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectExists
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdContainingText
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
@@ -109,7 +108,7 @@ class RecentlyClosedTabsRobot {
             return BrowserRobot.Transition(composeTestRule)
         }
 
-        fun clickOpenInNewTab(testRule: HomeActivityComposeTestRule, interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
+        fun clickOpenInNewTab(testRule: ComposeTestRule, interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
             Log.i(TAG, "clickOpenInNewTab: Trying to click the multi-select \"Open in a new tab\" context menu button")
             openInNewTabOption().click()
             Log.i(TAG, "clickOpenInNewTab: Clicked the multi-select \"Open in a new tab\" context menu button")
@@ -118,7 +117,7 @@ class RecentlyClosedTabsRobot {
             return TabDrawerRobot.Transition(testRule)
         }
 
-        fun clickOpenInPrivateTab(testRule: HomeActivityComposeTestRule, interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
+        fun clickOpenInPrivateTab(testRule: ComposeTestRule, interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
             Log.i(TAG, "clickOpenInPrivateTab: Trying to click the multi-select \"Open in a private tab\" context menu button")
             openInPrivateTabOption().click()
             Log.i(TAG, "clickOpenInPrivateTab: Clicked the multi-select \"Open in a private tab\" context menu button")

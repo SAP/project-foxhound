@@ -7,7 +7,6 @@
 
 // Here be dragons.
 
-#include <functional>
 #include <tuple>
 
 namespace mozilla {

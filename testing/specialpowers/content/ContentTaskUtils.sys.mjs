@@ -10,9 +10,9 @@
  * callback based.
  */
 
-// Disable ownerGlobal use since that's not available on content-privileged elements.
+// Disable documentGlobal use since that's not available on content-privileged elements.
 
-/* eslint-disable mozilla/use-ownerGlobal */
+/* eslint-disable mozilla/use-documentGlobal */
 
 import { setTimeout } from "resource://gre/modules/Timer.sys.mjs";
 
@@ -200,7 +200,13 @@ export var ContentTaskUtils = {
       return Promise.resolve();
     }
     return new Promise(resolve => {
-      let obs = new subject.ownerGlobal.MutationObserver(function () {
+      /**
+       * @backward-compat { version 152 }
+       *
+       * Get rid of the documentGlobal fallback once 152 makes it to release.
+       */
+      let global = subject.documentGlobal ?? subject.ownerGlobal;
+      let obs = new global.MutationObserver(function () {
         if (checkFn && !checkFn()) {
           return;
         }
@@ -212,8 +218,44 @@ export var ContentTaskUtils = {
   },
 
   /**
+   * Run a query selector that pierces into open and closed Shadow DOM roots.
+   *
+   * @param {Document | ShadowRoot | Element} root
+   * @param {string} selector
+   * @returns {Element | null}
+   */
+  querySelectorDeep(root, selector) {
+    if (!root) {
+      return null;
+    }
+
+    const direct = root.querySelector?.(selector);
+    if (direct) {
+      return direct;
+    }
+
+    const doc = root.ownerDocument ?? root;
+    const treeWalker = doc.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+
+    // Walk child elements to find other shadow roots.
+    let current = treeWalker.currentNode;
+    while (current) {
+      const shadow = current.openOrClosedShadowRoot;
+      if (shadow) {
+        const match = ContentTaskUtils.querySelectorDeep(shadow, selector);
+        if (match) {
+          return match;
+        }
+      }
+      current = treeWalker.nextNode();
+    }
+
+    return null;
+  },
+
+  /**
    * Gets an instance of the `EventUtils` helper module for usage in
-   * content tasks. See https://searchfox.org/mozilla-central/source/testing/mochitest/tests/SimpleTest/EventUtils.js
+   * content tasks. See https://searchfox.org/firefox-main/source/testing/mochitest/tests/SimpleTest/EventUtils.js
    *
    * @param content
    *        The `content` global object from your content task.

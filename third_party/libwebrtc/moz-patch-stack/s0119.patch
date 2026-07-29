@@ -1,85 +1,23 @@
-From: Michael Froman <mjfroman@mac.com>
-Date: Mon, 15 Sep 2025 14:53:58 -0500
-Subject: Bug 1973648 - move applicable libwebrtc changes to our new
- libwebrtc_overrides location. r=ng
+From: Michael Froman <mfroman@mozilla.com>
+Date: Wed, 8 Oct 2025 16:39:00 -0500
+Subject: Bug 1993083 - (fix-032f8c223e) add missing stub implementation for
+ SSLStreamAdapter static method.
 
-Differential Revision: https://phabricator.services.mozilla.com/D258499
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/19164e58323d59c1f66f7fcf671b8d0b6366f708
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/293f1877fead30723696b8f5cb354bdf819af5d3
 ---
- call/call.cc                     | 13 -------------
- call/call.h                      | 14 ++------------
- modules/desktop_capture/BUILD.gn |  5 +++++
- 3 files changed, 7 insertions(+), 25 deletions(-)
+ rtc_base/ssl_stream_adapter.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/call/call.cc b/call/call.cc
-index 716da8b65a..39c7cb79af 100644
---- a/call/call.cc
-+++ b/call/call.cc
-@@ -513,19 +513,6 @@ class Call final : public webrtc::Call,
- };
- }  // namespace internal
- 
--std::string Call::Stats::ToString(int64_t time_ms) const {
--  char buf[1024];
--  SimpleStringBuilder ss(buf);
--  ss << "Call stats: " << time_ms << ", {";
--  ss << "send_bw_bps: " << send_bandwidth_bps << ", ";
--  ss << "recv_bw_bps: " << recv_bandwidth_bps << ", ";
--  ss << "max_pad_bps: " << max_padding_bitrate_bps << ", ";
--  ss << "pacer_delay_ms: " << pacer_delay_ms << ", ";
--  ss << "rtt_ms: " << rtt_ms;
--  ss << '}';
--  return ss.str();
--}
--
- std::unique_ptr<Call> Call::Create(CallConfig config) {
-   auto transport_send = std::make_unique<RtpTransportControllerSend>(
-       config.ExtractTransportConfig());
-diff --git a/call/call.h b/call/call.h
-index d626f5c8b2..fb92bc49fa 100644
---- a/call/call.h
-+++ b/call/call.h
-@@ -26,6 +26,7 @@
- #include "api/transport/bitrate_settings.h"
- #include "call/audio_receive_stream.h"
- #include "call/audio_send_stream.h"
-+#include "call/call_basic_stats.h"
- #include "call/call_config.h"
- #include "call/flexfec_receive_stream.h"
- #include "call/packet_receiver.h"
-@@ -53,18 +54,7 @@ namespace webrtc {
- 
- class Call {
-  public:
--  struct Stats {
--    std::string ToString(int64_t time_ms) const;
--
--    int send_bandwidth_bps = 0;       // Estimated available send bandwidth.
--    int max_padding_bitrate_bps = 0;  // Cumulative configured max padding.
--    int recv_bandwidth_bps = 0;       // Estimated available receive bandwidth.
--    int64_t pacer_delay_ms = 0;
--    int64_t rtt_ms = -1;
--    std::optional<int64_t> ccfb_messages_received = std::nullopt;
--    flat_map<uint32_t, SentCongestionControllerFeedbackStats>
--        sent_ccfb_stats_per_ssrc;
--  };
-+  using Stats = CallBasicStats;
- 
-   static std::unique_ptr<Call> Create(CallConfig config);
- 
-diff --git a/modules/desktop_capture/BUILD.gn b/modules/desktop_capture/BUILD.gn
-index 0a6ccf4011..aa174d524f 100644
---- a/modules/desktop_capture/BUILD.gn
-+++ b/modules/desktop_capture/BUILD.gn
-@@ -394,6 +394,11 @@ rtc_library("desktop_capture") {
-     ]
-     if (build_with_mozilla) {
-       libs -= [ "Xtst" ]
-+      # Mozilla provides custom impl of x_error_trap.*
-+      sources -= [
-+        "linux/x11/x_error_trap.cc",
-+        "linux/x11/x_error_trap.h",
-+      ]
-     }
-   }
+diff --git a/rtc_base/ssl_stream_adapter.h b/rtc_base/ssl_stream_adapter.h
+index 499c76e151..00fd5f2da9 100644
+--- a/rtc_base/ssl_stream_adapter.h
++++ b/rtc_base/ssl_stream_adapter.h
+@@ -273,7 +273,7 @@ class SSLStreamAdapter : public StreamInterface {
+   static std::set<uint16_t> GetSupportedEphemeralKeyExchangeCipherGroups()
+       { return {}; }
+   static std::optional<std::string> GetEphemeralKeyExchangeCipherGroupName(
+-      uint16_t group_id);
++      uint16_t group_id) { return std::nullopt; }
+   static std::vector<uint16_t> GetDefaultEphemeralKeyExchangeCipherGroups(
+       const FieldTrialsView* field_trials) { return {}; }
  

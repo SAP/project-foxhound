@@ -5,15 +5,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import functools
 import json
 from collections import OrderedDict
 
 import buildconfig
-from mozbuild.util import memoize
 from perfecthash import PerfectHash
-
-# Pick a nice power-of-two size for our intermediate PHF tables.
-PHFSIZE = 512
 
 
 def indented(s):
@@ -136,7 +133,7 @@ def split_iid(iid):  # Get the individual components out of an IID string.
     return tuple(split_at_idxs(iid, (8, 4, 4, 2, 2, 2, 2, 2, 2, 2, 2)))
 
 
-@memoize
+@functools.cache
 def iid_bytes(iid):  # Get the byte representation of the IID for hashing.
     bs = bytearray()
     for num in split_iid(iid):
@@ -185,12 +182,12 @@ utility_types = [
 # writes out a file containing the necessary static declarations into fd.
 def link_to_cpp(interfaces, fd, header_fd):
     # Perfect Hash from IID to interface.
-    iid_phf = PerfectHash(interfaces, PHFSIZE, key=lambda i: iid_bytes(i["uuid"]))
+    iid_phf = PerfectHash(interfaces, key=lambda i: iid_bytes(i["uuid"]))
     for idx, iface in enumerate(iid_phf.entries):
         iface["idx"] = idx  # Store the index in iid_phf of the entry.
 
     # Perfect Hash from name to iid_phf index.
-    name_phf = PerfectHash(interfaces, PHFSIZE, key=lambda i: i["name"].encode("ascii"))
+    name_phf = PerfectHash(interfaces, key=lambda i: i["name"].encode("ascii"))
 
     def interface_idx(name):
         entry = name and name_phf.get_entry(name.encode("ascii"))

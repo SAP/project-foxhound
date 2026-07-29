@@ -2120,6 +2120,9 @@
     },
     {
       "base": {
+        "aliases": [
+          "ecosia"
+        ],
         "classification": "general",
         "name": "Ecosia",
         "partnerCode": "mzl",
@@ -2148,9 +2151,9 @@
       },
       "id": "e8e4a7e3-aead-43e3-887d-4064a186bd70",
       "identifier": "ecosia",
-      "last_modified": 1734364924960,
+      "last_modified": 1783024776556,
       "recordType": "engine",
-      "schema": 1734220806364,
+      "schema": 1782777609128,
       "variants": [
         {
           "environment": {
@@ -2588,9 +2591,9 @@
       },
       "id": "7ace4aa1-e762-4f4b-87b9-b23b3c3a930b",
       "identifier": "google",
-      "last_modified": 1772114960790,
+      "last_modified": 1774874010729,
       "recordType": "engine",
-      "schema": 1772064008248,
+      "schema": 1774656007453,
       "variants": [
         {
           "environment": {
@@ -2644,9 +2647,7 @@
           "environment": {
             "regions": [
               "ru",
-              "tr",
-              "by",
-              "kz"
+              "by"
             ]
           },
           "telemetrySuffix": "com-nocodes"
@@ -2702,7 +2703,8 @@
                 ],
                 "distributions": [
                   "dt-002",
-                  "dt-003"
+                  "dt-003",
+                  "xiaomi-001"
                 ]
               },
               "partnerCode": "firefox-b-1-dt",
@@ -2783,9 +2785,7 @@
             ],
             "excludedRegions": [
               "ru",
-              "tr",
-              "by",
-              "kz"
+              "by"
             ]
           },
           "partnerCode": "firefox-b-lm",
@@ -2849,9 +2849,7 @@
             ],
             "excludedRegions": [
               "ru",
-              "tr",
-              "by",
-              "kz"
+              "by"
             ]
           },
           "partnerCode": "firefox-b-vv",
@@ -2881,9 +2879,7 @@
             ],
             "excludedRegions": [
               "ru",
-              "tr",
-              "by",
-              "kz"
+              "by"
             ]
           },
           "partnerCode": "firefox-b-tf",
@@ -2914,9 +2910,7 @@
             "excludedRegions": [
               "us",
               "ru",
-              "tr",
-              "by",
-              "kz"
+              "by"
             ]
           },
           "partnerCode": "firefox-b-ar",
@@ -2943,14 +2937,13 @@
             ],
             "distributions": [
               "dt-002",
-              "dt-003"
+              "dt-003",
+              "xiaomi-001"
             ],
             "excludedRegions": [
               "us",
               "ru",
-              "tr",
-              "by",
-              "kz"
+              "by"
             ]
           },
           "partnerCode": "firefox-b-dt",
@@ -3853,6 +3846,50 @@
               "partnerCode": "SearchBox"
             }
           ]
+        }
+      ]
+    },
+    {
+      "base": {
+        "aliases": [
+          "startpage"
+        ],
+        "classification": "general",
+        "name": "Startpage",
+        "partnerCode": "startpage.apex.desktop",
+        "urls": {
+          "search": {
+            "base": "https://www.startpage.com/sp/search",
+            "params": [
+              {
+                "name": "segment",
+                "value": "{partnerCode}"
+              }
+            ],
+            "searchTermParamName": "q"
+          },
+          "suggestions": {
+            "base": "https://www.startpage.com/suggestions?partner=apex&format=opensearch",
+            "params": [
+              {
+                "name": "segment",
+                "value": "{partnerCode}"
+              }
+            ],
+            "searchTermParamName": "q"
+          }
+        }
+      },
+      "id": "5fb2256b-fdb0-42e8-8d8a-0d633b14e8d5",
+      "identifier": "startpage",
+      "last_modified": 1778165854657,
+      "recordType": "engine",
+      "schema": 1778115248130,
+      "variants": [
+        {
+          "environment": {
+            "experiment": "startpage"
+          }
         }
       ]
     },
@@ -8386,5 +8423,5 @@
       "schema": 1707824831520
     }
   ],
-  "timestamp": 1772114960790
+  "timestamp": 1783024776556
 }

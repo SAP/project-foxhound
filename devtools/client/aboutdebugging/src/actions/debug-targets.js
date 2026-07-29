@@ -112,7 +112,7 @@ function inspectDebugTarget(type, id) {
 
       const existingTab = getTabForUrl(url);
       if (existingTab) {
-        const navigator = existingTab.ownerGlobal;
+        const navigator = existingTab.documentGlobal;
         navigator.gBrowser.selectedTab = existingTab;
         navigator.focus();
       } else {

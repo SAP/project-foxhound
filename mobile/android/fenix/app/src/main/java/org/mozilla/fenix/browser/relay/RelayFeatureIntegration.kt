@@ -7,6 +7,7 @@ package org.mozilla.fenix.browser.relay
 import mozilla.components.concept.engine.Engine
 import mozilla.components.service.fxa.manager.FxaAccountManager
 import mozilla.components.service.fxrelay.EmailMask
+import mozilla.components.service.fxrelay.eligibility.DefaultFxaAccountManagerDelegate
 import mozilla.components.service.fxrelay.eligibility.RelayEligibilityStore
 import mozilla.components.service.fxrelay.eligibility.RelayFeature
 import mozilla.components.support.base.feature.LifecycleAwareFeature
@@ -32,7 +33,7 @@ class RelayFeatureIntegration(
 
     private val relayFeature by lazy {
         RelayFeature(
-            accountManager = accountManager,
+            accountManager = DefaultFxaAccountManagerDelegate(accountManager),
             store = store,
         )
     }

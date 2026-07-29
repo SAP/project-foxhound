@@ -25,6 +25,9 @@ class AccGroupInfo {
   AccGroupInfo(AccGroupInfo&&) = default;
   AccGroupInfo& operator=(AccGroupInfo&&) = default;
 
+  AccGroupInfo(const AccGroupInfo&) = delete;
+  AccGroupInfo& operator=(const AccGroupInfo&) = delete;
+
   /**
    * Return 1-based position in the group.
    */
@@ -73,9 +76,6 @@ class AccGroupInfo {
   AccGroupInfo(const Accessible* aItem, a11y::role aRole);
 
  private:
-  AccGroupInfo(const AccGroupInfo&) = delete;
-  AccGroupInfo& operator=(const AccGroupInfo&) = delete;
-
   /**
    * Return true if the given parent and child roles should have their node
    * relations reported.

@@ -310,6 +310,41 @@ def npx(command_context, args):
     )
 
 
+@Command(
+    "devtools-mcp",
+    category="devenv",
+    description="Run the firefox-devtools-mcp server with the local build.",
+)
+@CommandArgument("args", nargs=argparse.REMAINDER)
+def devtools_mcp(command_context, args):
+    import os
+    from pathlib import Path
+
+    from mozbuild.base import BinaryNotFoundException, BuildEnvironmentNotFoundException
+
+    extra_args = []
+
+    if "--firefox-path" not in args and "--firefoxPath" not in args:
+        binary_path = None
+        try:
+            binary_path = command_context.get_binary_path(validate_exists=True)
+        except (BuildEnvironmentNotFoundException, BinaryNotFoundException) as e:
+            print(f"Warning: Local build not found: {e}")
+
+        if binary_path and os.path.exists(binary_path):
+            extra_args += ["--firefox-path", binary_path]
+            if "--profile-path" not in args and "--profilePath" not in args:
+                profile_path = (
+                    Path(command_context.topobjdir) / "tmp" / "profile-default"
+                ).as_posix()
+                extra_args += ["--profile-path", profile_path]
+
+    return npx(
+        command_context,
+        ["@mozilla/firefox-devtools-mcp-moz"] + extra_args + args,
+    )
+
+
 def logspam_create_parser(subcommand):
     # Create the logspam command line parser.
     # if logspam is not installed, or not up to date, it will

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,13 +12,14 @@
 #  undef LOG
 #endif
 
-#define LOG(arg, ...)                    \
-  MOZ_LOG(                               \
-      sPDMLog, mozilla::LogLevel::Debug, \
-      ("PureOmxPlatformLayer(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
-#define LOG_BUF(arg, ...)                    \
-  MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, \
-          ("PureOmxBufferData(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
+#define LOG(arg, ...)                                                         \
+  MOZ_LOG_FMT(sPDMLog, mozilla::LogLevel::Debug,                              \
+              "PureOmxPlatformLayer({})::{}: " arg, fmt::ptr(this), __func__, \
+              ##__VA_ARGS__)
+#define LOG_BUF(arg, ...)                                                  \
+  MOZ_LOG_FMT(sPDMLog, mozilla::LogLevel::Debug,                           \
+              "PureOmxBufferData({})::{}: " arg, fmt::ptr(this), __func__, \
+              ##__VA_ARGS__)
 
 namespace mozilla {
 
@@ -45,7 +44,7 @@ PureOmxBufferData::PureOmxBufferData(
   err = OMX_AllocateBuffer(mPlatformLayer.GetComponent(), &mBuffer,
                            mPortDef.nPortIndex, this, mPortDef.nBufferSize);
   if (err != OMX_ErrorNone) {
-    LOG_BUF("Failed to allocate the buffer!: 0x%08x", err);
+    LOG_BUF("Failed to allocate the buffer!: 0x{:08x}", err);
   }
 }
 
@@ -62,7 +61,7 @@ void PureOmxBufferData::ReleaseBuffer() {
     err = OMX_FreeBuffer(mPlatformLayer.GetComponent(), mPortDef.nPortIndex,
                          mBuffer);
     if (err != OMX_ErrorNone) {
-      LOG_BUF("Failed to free the buffer!: 0x%08x", err);
+      LOG_BUF("Failed to free the buffer!: 0x{:08x}", err);
     }
     mBuffer = nullptr;
   }
@@ -83,9 +82,10 @@ bool PureOmxPlatformLayer::Init(void) {
 
   OMX_ERRORTYPE err = OMX_Init();
   if (err != OMX_ErrorNone) {
-    MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug,
-            ("PureOmxPlatformLayer::%s: Failed to initialize OMXCore: 0x%08x",
-             __func__, err));
+    MOZ_LOG_FMT(
+        sPDMLog, mozilla::LogLevel::Debug,
+        "PureOmxPlatformLayer::{}: Failed to initialize OMXCore: 0x{:08x}",
+        __func__, err);
     return false;
   }
 
@@ -136,7 +136,7 @@ PureOmxPlatformLayer::FillThisBuffer(BufferData* aData) {
 OMX_ERRORTYPE
 PureOmxPlatformLayer::SendCommand(OMX_COMMANDTYPE aCmd, OMX_U32 aParam1,
                                   OMX_PTR aCmdData) {
-  LOG("aCmd: 0x%08x", aCmd);
+  LOG("aCmd: 0x{:08x}", aCmd);
   if (!mComponent) {
     return OMX_ErrorUndefined;
   }
@@ -157,7 +157,7 @@ nsresult PureOmxPlatformLayer::FindPortDefinition(
     if (err != OMX_ErrorNone) {
       return NS_ERROR_FAILURE;
     } else if (portDef.eDir == aType) {
-      LOG("Found OMX_IndexParamPortDefinition: port: %d, type: %d",
+      LOG("Found OMX_IndexParamPortDefinition: port: {}, type: {}",
           portDef.nPortIndex, portDef.eDir);
       return NS_OK;
     }
@@ -167,7 +167,7 @@ nsresult PureOmxPlatformLayer::FindPortDefinition(
 
 nsresult PureOmxPlatformLayer::AllocateOmxBuffer(OMX_DIRTYPE aType,
                                                  BUFFERLIST* aBufferList) {
-  LOG("aType: %d", aType);
+  LOG("aType: {}", static_cast<int>(aType));
 
   OMX_PARAM_PORTDEFINITIONTYPE portDef;
   nsresult result = FindPortDefinition(aType, portDef);
@@ -175,7 +175,7 @@ nsresult PureOmxPlatformLayer::AllocateOmxBuffer(OMX_DIRTYPE aType,
     return result;
   }
 
-  LOG("nBufferCountActual: %d, nBufferSize: %d", portDef.nBufferCountActual,
+  LOG("nBufferCountActual: {}, nBufferSize: {}", portDef.nBufferCountActual,
       portDef.nBufferSize);
 
   for (OMX_U32 i = 0; i < portDef.nBufferCountActual; ++i) {
@@ -188,7 +188,7 @@ nsresult PureOmxPlatformLayer::AllocateOmxBuffer(OMX_DIRTYPE aType,
 
 nsresult PureOmxPlatformLayer::ReleaseOmxBuffer(OMX_DIRTYPE aType,
                                                 BUFFERLIST* aBufferList) {
-  LOG("aType: 0x%08x", aType);
+  LOG("aType: 0x{:08x}", static_cast<uint32_t>(aType));
 
   uint32_t len = aBufferList->Length();
   for (uint32_t i = 0; i < len; i++) {
@@ -220,7 +220,7 @@ OMX_ERRORTYPE
 PureOmxPlatformLayer::GetParameter(OMX_INDEXTYPE aParamIndex,
                                    OMX_PTR aComponentParameterStructure,
                                    OMX_U32 aComponentParameterSize) {
-  LOG("aParamIndex: 0x%08x", aParamIndex);
+  LOG("aParamIndex: 0x{:08x}", aParamIndex);
 
   if (!mComponent) {
     return OMX_ErrorUndefined;
@@ -234,7 +234,7 @@ OMX_ERRORTYPE
 PureOmxPlatformLayer::SetParameter(OMX_INDEXTYPE aParamIndex,
                                    OMX_PTR aComponentParameterStructure,
                                    OMX_U32 aComponentParameterSize) {
-  LOG("aParamIndex: 0x%08x", aParamIndex);
+  LOG("aParamIndex: 0x{:08x}", aParamIndex);
 
   if (!mComponent) {
     return OMX_ErrorUndefined;
@@ -299,7 +299,7 @@ OMX_ERRORTYPE
 PureOmxPlatformLayer::EventHandler(OMX_EVENTTYPE eEventType, OMX_U32 nData1,
                                    OMX_U32 nData2, OMX_PTR pEventData) {
   bool handled = mPromiseLayer->Event(eEventType, nData1, nData2);
-  LOG("eEventType: 0x%08x, handled: %d", eEventType, handled);
+  LOG("eEventType: 0x{:08x}, handled: {}", eEventType, handled);
   return OMX_ErrorNone;
 }
 
@@ -308,7 +308,7 @@ PureOmxPlatformLayer::EmptyBufferDone(OMX_IN OMX_BUFFERHEADERTYPE* pBuffer) {
   PureOmxBufferData* buffer =
       static_cast<PureOmxBufferData*>(pBuffer->pAppPrivate);
   OMX_DIRTYPE portDirection = buffer->GetPortDirection();
-  LOG("PortDirection: %d", portDirection);
+  LOG("PortDirection: {}", portDirection);
   mPromiseLayer->EmptyFillBufferDone(portDirection, buffer);
   return OMX_ErrorNone;
 }
@@ -318,7 +318,7 @@ PureOmxPlatformLayer::FillBufferDone(OMX_OUT OMX_BUFFERHEADERTYPE* pBuffer) {
   PureOmxBufferData* buffer =
       static_cast<PureOmxBufferData*>(pBuffer->pAppPrivate);
   OMX_DIRTYPE portDirection = buffer->GetPortDirection();
-  LOG("PortDirection: %d", portDirection);
+  LOG("PortDirection: {}", portDirection);
   mPromiseLayer->EmptyFillBufferDone(portDirection, buffer);
   return OMX_ErrorNone;
 }
@@ -371,9 +371,10 @@ bool PureOmxPlatformLayer::FindStandardComponent(const nsACString& aMimeType,
   err = OMX_GetComponentsOfRole(const_cast<OMX_STRING>(role.Data()),
                                 &nComponents, componentNames);
   if (err == OMX_ErrorNone) {
-    MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug,
-            ("PureOmxPlatformLayer::%s: A component has been found for %s: %s",
-             __func__, aMimeType.Data(), componentNames[0]));
+    MOZ_LOG_FMT(
+        sPDMLog, mozilla::LogLevel::Debug,
+        "PureOmxPlatformLayer::{}: A component has been found for {}: {}",
+        __func__, aMimeType.Data(), reinterpret_cast<char*>(componentNames[0]));
     aComponentName->Assign(reinterpret_cast<char*>(componentNames[0]));
   }
 
@@ -395,9 +396,10 @@ PureOmxPlatformLayer::CreateComponent(const nsACString* aComponentName) {
 
   const char* mime = mInfo->mMimeType.Data();
   if (err == OMX_ErrorNone) {
-    LOG("Succeeded to create the component for %s", mime);
+    LOG("Succeeded to create the component for {}", mime);
   } else {
-    LOG("Failed to create the component for %s: 0x%08x", mime, err);
+    LOG("Failed to create the component for {}: 0x{:08x}", mime,
+        static_cast<uint32_t>(err));
   }
 
   return err;

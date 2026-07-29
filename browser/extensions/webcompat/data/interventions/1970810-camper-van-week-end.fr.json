@@ -1,0 +1,17 @@
+{
+  "label": "camper-van-week-end.fr",
+  "bugs": {
+    "1970810": {
+      "issue": "page-fails-to-load",
+      "matches": ["*://www.camper-van-week-end.fr/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["linux"],
+      "content_scripts": {
+        "js": ["use_linux_appVersion.js"]
+      }
+    }
+  ]
+}

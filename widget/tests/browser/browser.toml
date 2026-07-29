@@ -3,6 +3,11 @@ skip-if = [
   "os == 'android'",
 ]
 
+["browser_ensure_frame_is_on_screen.js"]
+run-if = [
+  "os == 'mac'",
+]
+
 ["browser_test_AZERTY_digit_shortcut.js"]
 skip-if = [
   "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Linux build has not implemented sendNativeKeyEvent yet
@@ -14,6 +19,8 @@ skip-if = [
 ["browser_test_InputContextURI.js"]
 
 ["browser_test_clipboard_contextmenu.js"]
+
+["browser_test_clipboard_getDataIfSmallerThan_parent.js"]
 
 ["browser_test_clipboardcache.js"]
 
@@ -29,6 +36,8 @@ run-if = [
 ["browser_test_contentCommand_replaceText_with_selection_cache.js"]
 
 ["browser_test_fullscreen_size.js"]
+
+["browser_test_gtk_telemetry.js"]
 
 ["browser_test_ime_state_after_body_removed_and_reconnected_in_designMode.js"]
 support-files = [ "../file_ime_state_test_helper.js" ]
@@ -96,6 +105,7 @@ support-files = ["helper_scrollbar_colors.html"]
 ["browser_test_swipe_gesture.js"]
 support-files = [
   "helper_swipe_gesture.html",
+  "helper_swipe_gesture_rotated_vertical.html",
   "!/gfx/layers/apz/test/mochitest/apz_test_native_event_utils.js",
   "!/gfx/layers/apz/test/mochitest/apz_test_utils.js",
 ]

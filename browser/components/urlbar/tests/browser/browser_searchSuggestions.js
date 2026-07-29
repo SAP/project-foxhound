@@ -198,7 +198,7 @@ add_task(async function pasteMaxChars() {
   for (let i = 0; i < maxChars; i++) {
     value += String.fromCharCode("a".charCodeAt(0) + i);
   }
-  await selectAndPaste(value);
+  await UrlbarTestUtils.selectAndPaste(value, window);
 
   // Suggestions should be fetched since the pasted string is not longer than
   // maxChars.
@@ -229,7 +229,7 @@ add_task(async function pasteMoreThanMaxChars() {
   for (let i = 0; i < 2 * maxChars; i++) {
     value += String.fromCharCode("a".charCodeAt(0) + i);
   }
-  await selectAndPaste(value);
+  await UrlbarTestUtils.selectAndPaste(value, window);
 
   // Suggestions should not be fetched since the value was pasted and it was
   // longer than maxChars.
@@ -246,7 +246,7 @@ add_task(async function pasteMoreThanMaxChars() {
 
   // Paste again.  The string is longer than maxChars, so suggestions should not
   // be fetched.
-  await selectAndPaste(value);
+  await UrlbarTestUtils.selectAndPaste(value, window);
   await assertSuggestions([]);
 
   await SpecialPowers.popPrefEnv();

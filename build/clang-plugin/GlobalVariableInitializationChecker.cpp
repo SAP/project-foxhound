@@ -9,11 +9,11 @@ void GlobalVariableInitializationChecker::registerMatchers(MatchFinder *AstMatch
   auto FirstPartyGlobalVariable = varDecl(
       hasGlobalStorage(),
       unless(hasDeclContext(functionDecl())),
-      allOf(isDefinition(), isFirstParty(), unless(isExpansionInSystemHeader()))
+      isDefinition(), isFirstParty(), unless(isExpansionInSystemHeader())
   );
 
   auto FirstPartyGlobalVariableWithRuntimeInit = varDecl(FirstPartyGlobalVariable,
-      allOf(anyOf(isConstexpr(), hasConstInitAttr(), hasConstantInitializer(), hasMozGlobalType()), isMozGlobal()),
+      anyOf(isConstexpr(), hasConstInitAttr(), hasConstantInitializer(), hasMozGlobalType()), isMozGlobal(),
       unless(isMozGenerated())
       );
 

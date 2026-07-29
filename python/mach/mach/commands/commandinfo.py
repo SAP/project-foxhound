@@ -3,6 +3,7 @@
 # file, # You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import argparse
+import functools
 import re
 import subprocess
 import sys
@@ -10,7 +11,6 @@ from itertools import chain
 from pathlib import Path
 
 import attr
-from mozbuild.util import memoize
 
 from mach.decorators import Command, CommandArgument, SubCommand
 
@@ -33,13 +33,13 @@ def render_template(shell, context):
     return template % context
 
 
-@memoize
+@functools.cache
 def command_handlers(command_context):
     """A dictionary of command handlers keyed by command name."""
     return command_context._mach_context.commands.command_handlers
 
 
-@memoize
+@functools.cache
 def commands(command_context):
     """A sorted list of all command names."""
     return sorted(command_handlers(command_context))
@@ -60,7 +60,7 @@ def _get_parser_options(parser):
     return options
 
 
-@memoize
+@functools.cache
 def global_options(command_context):
     """Return a dict of global options.
 
@@ -71,7 +71,7 @@ def global_options(command_context):
             return _get_parser_options(group)
 
 
-@memoize
+@functools.cache
 def _get_handler_options(handler):
     """Return a dict of options for the given handler.
 
@@ -112,7 +112,7 @@ def _get_handler_info(handler):
     )
 
 
-@memoize
+@functools.cache
 def commands_info(command_context):
     """Return a list of CommandInfo objects for each command."""
     commands_info = []

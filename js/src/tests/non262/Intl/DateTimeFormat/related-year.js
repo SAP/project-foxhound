@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 const {
     Era, Year, YearName, RelatedYear, Month, Day, Literal
 } = DateTimeFormatParts

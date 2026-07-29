@@ -10,7 +10,10 @@ this.aboutConfigPrefs = class AboutConfigPrefsChildAPI extends ExtensionAPI {
   static ALLOWED_GLOBAL_PREFS = Object.freeze(
     [
       "layout.css.prefixes.transforms",
+      "layout.css.fake-webkit-scrollbar.enabled",
       "layout.css.webkit-fill-available.enabled",
+      "media.captureStream.enabled",
+      "media.webspeech.recognition.enable",
       "timer.auto_increase_timer_resolution",
     ].concat(
       Cu.isInAutomation ? ["webcompat.test.pref1", "webcompat.test.pref2"] : []

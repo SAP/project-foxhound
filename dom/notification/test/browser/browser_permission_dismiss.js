@@ -28,13 +28,13 @@ function clickDoorhangerButton(aButtonIndex, browser) {
 
   if (aButtonIndex == PROMPT_ALLOW_BUTTON) {
     ok(true, "Triggering main action (allow the permission)");
-    notification.button.doCommand();
+    notification.button.click();
   } else if (aButtonIndex == PROMPT_NEVER_BUTTON) {
     ok(true, "Triggering secondary action (deny the permission permanently)");
     notification.menupopup.querySelector("menuitem").doCommand();
   } else {
     ok(true, "Triggering secondary action (deny the permission temporarily)");
-    notification.secondaryButton.doCommand();
+    notification.secondaryButton.click();
   }
 }
 

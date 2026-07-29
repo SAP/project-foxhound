@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -21,6 +19,11 @@ EXPORTS.mozilla += [
     "HalWakeLockInformation.h",
 ]
 
+if CONFIG["OS_TARGET"] == "Linux":
+    EXPORTS.mozilla += [
+        "linux/UdevLib.h",
+    ]
+
 UNIFIED_SOURCES += [
     "HalWakeLock.cpp",
     "sandbox/SandboxHal.cpp",
@@ -37,7 +40,6 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "android":
         "/widget/android",
     ]
     UNIFIED_SOURCES += [
-        "android/AndroidHapticFeedback.cpp",
         "android/AndroidHeterogeneousCpuInfo.cpp",
         "android/AndroidPerformanceHintManager.cpp",
         "android/AndroidProcessPriority.cpp",
@@ -112,7 +114,6 @@ else:
 # Fallbacks for backends implemented on Android only.
 if CONFIG["MOZ_WIDGET_TOOLKIT"] != "android":
     UNIFIED_SOURCES += [
-        "fallback/FallbackHapticFeedback.cpp",
         "fallback/FallbackNetwork.cpp",
         "fallback/FallbackPerformanceHintManager.cpp",
     ]

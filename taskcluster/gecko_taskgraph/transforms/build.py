@@ -13,7 +13,7 @@ from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.schema import resolve_keyed_by
 from taskgraph.util.treeherder import add_suffix
 
-from gecko_taskgraph.util.attributes import RELEASE_PROJECTS, is_try, release_level
+from gecko_taskgraph.util.attributes import RELEASE_PROJECTS, release_level
 from gecko_taskgraph.util.workertypes import worker_type_implementation
 
 logger = logging.getLogger(__name__)
@@ -136,7 +136,7 @@ def mozconfig(config, jobs):
 
 @transforms.add
 def use_artifact(config, jobs):
-    if is_try(config.params):
+    if "try_task_config" in config.params:
         use_artifact = config.params["try_task_config"].get(
             "use-artifact-builds", False
         )

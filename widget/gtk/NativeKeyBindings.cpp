@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,6 +12,7 @@
 #include "NativeKeyBindings.h"
 #include "nsString.h"
 #include "nsGtkKeyUtils.h"
+#include "nsWindow.h"
 
 #include <gtk/gtk.h>
 #include <gdk/gdkkeysyms.h>
@@ -136,6 +136,11 @@ static const Command sMoveCommands[][2][2] = {
     // GTK differentiates between logical position, which is prev/next,
     // and visual position, which is always left/right.
     // We should fix this to work the same way for RTL text input.
+    // For WORDS, the selection variants use visual (physical Left/Right)
+    // commands so that ctrl-shift-Left/Right select toward the actual key's
+    // direction in RTL text. The non-extend variants already behave
+    // visually in RTL because bidi.edit.caret_movement_style defaults to 2
+    // on Linux ("visual, but logical during selection").
     {// LOGICAL_POSITIONS
      {Command::CharPrevious, Command::CharNext},
      {Command::SelectCharPrevious, Command::SelectCharNext}},
@@ -144,7 +149,7 @@ static const Command sMoveCommands[][2][2] = {
      {Command::SelectCharPrevious, Command::SelectCharNext}},
     {// WORDS
      {Command::WordPrevious, Command::WordNext},
-     {Command::SelectWordPrevious, Command::SelectWordNext}},
+     {Command::SelectLeft2, Command::SelectRight2}},
     {// DISPLAY_LINES
      {Command::LinePrevious, Command::LineNext},
      {Command::SelectLinePrevious, Command::SelectLineNext}},
@@ -197,6 +202,14 @@ static void paste_clipboard_cb(GtkWidget* w, gpointer user_data) {
   AddCommand(Command::Paste);
   g_signal_stop_emission_by_name(w, "paste_clipboard");
   gHandled = true;
+}
+
+static void insert_emoji_cb(GtkWidget* w) {
+  RefPtr<nsWindow> window = nsWindow::GetFocusedWindow();
+  if (!window) {
+    return;
+  }
+  window->InsertEmoji();
 }
 
 // GtkTextView-only signals
@@ -261,7 +274,6 @@ void NativeKeyBindings::Init(NativeKeyBindingsType aType) {
                        this);
       break;
   }
-
   g_object_ref_sink(mNativeTarget);
 
   g_signal_connect(mNativeTarget, "copy_clipboard",
@@ -274,6 +286,8 @@ void NativeKeyBindings::Init(NativeKeyBindingsType aType) {
                    this);
   g_signal_connect(mNativeTarget, "paste_clipboard",
                    G_CALLBACK(paste_clipboard_cb), this);
+  g_signal_connect(mNativeTarget, "insert-emoji", G_CALLBACK(insert_emoji_cb),
+                   this);
 }
 
 NativeKeyBindings::~NativeKeyBindings() {

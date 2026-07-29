@@ -63,7 +63,7 @@ module.exports = function (config) {
     coverageIstanbulReporter: {
       reports: ["lcov", "text-summary"], // for some reason "lcov" reallys means "lcov" and "html"
       "report-config": {
-        // so the full m-c path gets printed; needed for https://coverage.moz.tools/ integration
+        // so the full m-c path gets printed; needed for Searchfox integration
         lcov: {
           projectRoot: "../../..",
         },
@@ -82,122 +82,6 @@ module.exports = function (config) {
               lines: 48.75,
               functions: 61.54,
               branches: 37.04,
-            },
-            "content-src/lib/aboutwelcome-utils.mjs": {
-              statements: 73.68,
-              lines: 73.68,
-              functions: 71.43,
-              branches: 66.67,
-            },
-            "content-src/components/LanguageSwitcher.jsx": {
-              // This file is covered by the mochitest: browser_aboutwelcome_multistage_languageSwitcher.js
-              statements: 0,
-              lines: 0,
-              functions: 0,
-              branches: 0,
-            },
-            "content-src/components/EmbeddedMigrationWizard.jsx": {
-              // This file is covered by the mochitest: browser_aboutwelcome_multistage_mr.js
-              // Can't be unit tested because it relies on the migration-wizard custom element
-              statements: 0,
-              lines: 0,
-              functions: 0,
-              branches: 0,
-            },
-            "content-src/components/AddonsPicker.jsx": {
-              // This file is covered by the mochitest: browser_aboutwelcome_multistage_addonspicker.js
-              statements: 0,
-              lines: 0,
-              functions: 0,
-              branches: 0,
-            },
-            "content-src/components/SubmenuButton.jsx": {
-              // Enzyme can't test this file because it relies on XUL elements
-              // and JS events, which Enzyme can't simulate. Browser tests are
-              // in browser_feature_callout_panel.js
-              statements: 0,
-              lines: 0,
-              functions: 0,
-              branches: 0,
-            },
-            "content-src/components/EmbeddedBrowser.jsx": {
-              // Enzyme can't test this file because it relies on XUL elements
-              // which Enzyme can't simulate. Browser tests are in
-              // browser_aboutwelcome_embedded_browser.js
-              statements: 0,
-              lines: 0,
-              functions: 0,
-              branches: 0,
-            },
-            "content-src/components/EmbeddedFxBackupOptIn.jsx": {
-              statements: 60,
-              lines: 60,
-              functions: 50,
-              branches: 60,
-            },
-            "content-src/components/MSLocalized.jsx": {
-              statements: 77.42,
-              lines: 77.42,
-              functions: 75,
-              branches: 73.08,
-            },
-            "content-src/components/CTAParagraph.jsx": {
-              functions: 50,
-              branches: 70,
-            },
-            "content-src/components/HeroImage.jsx": {
-              branches: 62.5,
-            },
-            "content-src/components/LinkParagraph.jsx": {
-              functions: 75,
-              branches: 37.5,
-            },
-            "content-src/components/MobileDownloads.jsx": {
-              branches: 56.25,
-            },
-            "content-src/components/Themes.jsx": {
-              branches: 50,
-            },
-            "content-src/components/MultiStageAboutWelcome.jsx": {
-              statements: 78.06,
-              lines: 79,
-              functions: 73.17,
-              branches: 61.74,
-            },
-            "content-src/components/AdditionalCTA.jsx": {
-              branches: 75,
-            },
-            "content-src/components/MultiStageProtonScreen.jsx": {
-              branches: 78,
-            },
-            // The install actions and dynamic label of the InstallButton are covered
-            // in the browser test browser_aboutwelcome_multistage_addonspicker.js.
-            "content-src/components/InstallButton.jsx": {
-              statements: 60,
-              lines: 60,
-              functions: 60,
-              branches: 30,
-            },
-            "content-src/components/TileButton.jsx": {
-              // TODO: This file will be covered in a followup by end-to-end tests of the backup component
-              statements: 0,
-              lines: 0,
-              functions: 0,
-              branches: 0,
-            },
-            "content-src/components/TileList.jsx": {
-              // This file will be covered in a followup by end-to-end tests of the backup component
-              statements: 0,
-              lines: 0,
-              functions: 0,
-              branches: 0,
-            },
-            "content-src/components/ConfirmationChecklist.jsx": {
-              // This file is will be covered in a followup by end-to-end tests of the backup component
-              statements: 0,
-              lines: 0,
-              functions: 0,
-              branches: 0,
             },
           },
         },
@@ -265,7 +149,7 @@ module.exports = function (config) {
             test: /\.m?js[mx]?$/,
             loader: "@jsdevtools/coverage-istanbul-loader",
             options: { esModules: true },
-            include: [path.resolve("content-src"), path.resolve("modules")],
+            include: [path.resolve("modules")],
             exclude: [path.resolve("tests"), path.resolve("../newtab")],
           },
         ],

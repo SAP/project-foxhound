@@ -42,7 +42,7 @@ add_task(function test_FPI_on() {
     equal(Services.prefs.getIntPref(PREF_COOKIE_BEHAVIOR), i);
     equal(
       Services.cookies.getCookieBehavior(false),
-      i == Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN
+      i == Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN
         ? Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER
         : i
     );
@@ -55,7 +55,7 @@ add_task(function test_FPI_on() {
     equal(Services.prefs.getIntPref(PREF_COOKIE_BEHAVIOR_PBMODE), i);
     equal(
       Services.cookies.getCookieBehavior(true),
-      i == Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN
+      i == Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN
         ? Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER
         : i
     );

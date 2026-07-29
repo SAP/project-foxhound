@@ -1,7 +1,5 @@
 /* clang-format off */
-/* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* clang-format on */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,6 +17,7 @@
 #include "js/PropertyAndElement.h"  // JS_Enumerate, JS_GetElement, JS_GetProperty, JS_GetPropertyById, JS_HasOwnProperty, JS_SetUCProperty
 
 #import <Accessibility/Accessibility.h>
+#import <objc/runtime.h>
 
 #import "mozAccessible.h"
 
@@ -49,12 +48,26 @@ NS_IMPL_ISUPPORTS_INHERITED(xpcAccessibleMacInterface,
 xpcAccessibleMacInterface::xpcAccessibleMacInterface(Accessible* aObj)
     : xpcAccessibleMacNSObjectWrapper(GetNativeFromGeckoAccessible(aObj)) {}
 
+static BOOL IsNativeObjectAvailable(id aObj) {
+  if (!aObj) {
+    return NO;
+  }
+
+  // If the object is a wrapper around an expired gecko accessible, we want to
+  // treat it as unavailable.
+  if ([aObj respondsToSelector:@selector(isExpired)] && [aObj isExpired]) {
+    return NO;
+  }
+
+  return YES;
+}
+
 NS_IMETHODIMP
 xpcAccessibleMacInterface::GetAttributeNames(
     nsTArray<nsString>& aAttributeNames) {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN
 
-  if (!mNativeObject || [mNativeObject isExpired]) {
+  if (!IsNativeObjectAvailable(mNativeObject)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
@@ -74,7 +87,7 @@ xpcAccessibleMacInterface::GetParameterizedAttributeNames(
     nsTArray<nsString>& aAttributeNames) {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN
 
-  if (!mNativeObject || [mNativeObject isExpired]) {
+  if (!IsNativeObjectAvailable(mNativeObject)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
@@ -101,7 +114,7 @@ NS_IMETHODIMP
 xpcAccessibleMacInterface::GetActionNames(nsTArray<nsString>& aActionNames) {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN
 
-  if (!mNativeObject || [mNativeObject isExpired]) {
+  if (!IsNativeObjectAvailable(mNativeObject)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
@@ -130,7 +143,7 @@ xpcAccessibleMacInterface::GetActionDescription(const nsAString& aActionName,
                                                 nsAString& aDescription) {
   aDescription.Truncate();
 
-  if (!mNativeObject || [mNativeObject isExpired]) {
+  if (!IsNativeObjectAvailable(mNativeObject)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
@@ -159,7 +172,7 @@ NS_IMETHODIMP
 xpcAccessibleMacInterface::PerformAction(const nsAString& aActionName) {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN
 
-  if (!mNativeObject || [mNativeObject isExpired]) {
+  if (!IsNativeObjectAvailable(mNativeObject)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
@@ -190,7 +203,7 @@ xpcAccessibleMacInterface::GetAttributeValue(const nsAString& aAttributeName,
                                              JS::MutableHandleValue aResult) {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN
 
-  if (!mNativeObject || [mNativeObject isExpired]) {
+  if (!IsNativeObjectAvailable(mNativeObject)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
@@ -374,10 +387,11 @@ nsresult xpcAccessibleMacInterface::NSObjectToJsValue(
                          (int)(components[1] * 0xff),
                          (int)(components[2] * 0xff)];
     return NSObjectToJsValue(hexString, aCx, aResult);
-  } else if ([aObj respondsToSelector:@selector(isAccessibilityElement)]) {
+  } else if ([aObj
+                 respondsToSelector:@selector(accessibilityAttributeValue:)]) {
     // We expect all of our accessibility objects to implement
-    // isAccessibilityElement at the very least. If it is implemented we will
-    // assume its an accessibility object.
+    // accessibilityAttributeValue at the very least. If it is implemented we
+    // will assume its an accessibility object.
     nsCOMPtr<nsIAccessibleMacInterface> obj =
         new xpcAccessibleMacInterface(aObj);
     return nsContentUtils::WrapNative(

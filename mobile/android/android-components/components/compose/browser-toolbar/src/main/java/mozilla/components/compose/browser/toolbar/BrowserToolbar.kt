@@ -4,19 +4,23 @@
 
 package mozilla.components.compose.browser.toolbar
 
+import androidx.annotation.StringRes
 import androidx.compose.material3.DividerDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import mozilla.components.compose.base.theme.AcornTheme
 import mozilla.components.compose.browser.toolbar.concept.PageOrigin
+import mozilla.components.compose.browser.toolbar.store.BrowserDisplayToolbarAction
 import mozilla.components.compose.browser.toolbar.store.BrowserEditToolbarAction.SearchQueryUpdated
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarAction.CommitUrl
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction.BrowserToolbarEvent
@@ -27,9 +31,13 @@ import mozilla.components.compose.browser.toolbar.store.EditState
 import mozilla.components.compose.browser.toolbar.store.Mode
 import mozilla.components.compose.browser.toolbar.store.ToolbarGravity
 import mozilla.components.compose.browser.toolbar.ui.BrowserToolbarQuery
+import mozilla.components.compose.cfr.CFR
+import mozilla.components.compose.cfr.CFRBox
 import mozilla.components.compose.cfr.CFRPopup
-import mozilla.components.compose.cfr.CFRPopupLayout
+import mozilla.components.compose.cfr.CFRPopup.IndicatorDirection
 import mozilla.components.compose.cfr.CFRPopupProperties
+import mozilla.components.compose.cfr.rememberCFRPositionProvider
+import mozilla.components.compose.cfr.rememberCFRState
 import mozilla.components.lib.state.ext.observeAsComposableState
 
 private const val CFR_HORIZONTAL_OFFSET = 160
@@ -38,18 +46,19 @@ private const val CFR_VERTICAL_OFFSET = 0
 /**
  * Represents the state and behavior of a CFR shown in the browser toolbar.
  *
+ * @property tag An identifying tag for the CFR. This can be used to handle side effects
+ * of interactions with the tag.
  * @property enabled Whether the CFR is currently active and should be displayed.
  * @property title The headline text displayed in the CFR banner.
  * @property description A short descriptive message explaining the feature or action.
- * @property onShown Callback invoked when the CFR is first shown to the user.
- * @property onDismiss Callback invoked when the CFR is dismissed.
  */
 data class BrowserToolbarCFR(
+    val tag: String,
     val enabled: Boolean,
-    val title: String,
-    val description: String,
-    val onShown: () -> Unit = {},
-    val onDismiss: (Boolean) -> Unit = {},
+    @get:StringRes
+    val title: Int?,
+    @get:StringRes
+    val description: Int,
 )
 
 /**
@@ -69,11 +78,11 @@ fun BrowserToolbar(
     store: BrowserToolbarStore,
     cfr: BrowserToolbarCFR? = null,
     useMinimalBottomToolbarWhenEnteringText: Boolean = false,
-    backgroundColor: Color = MaterialTheme.colorScheme.surface,
-    outlineColor: Color = DividerDefaults.color,
 ) {
     val uiState by store.observeAsComposableState { it }
     val cfrProperties = browserToolbarCFRProperties(uiState.gravity)
+    val backgroundColor = MaterialTheme.colorScheme.surface
+    val outlineColor = DividerDefaults.color
 
     if (uiState.isEditMode()) {
         BrowserEditToolbar(
@@ -116,34 +125,72 @@ fun BrowserToolbar(
         if (cfr?.enabled == true) {
             // Wrapping the toolbar with the CFR code negatively impacts the transition
             // between the full and minimal toolbar <=> Avoid this when not needed.
-            CFRPopupLayout(
-                showCFR = true,
-                properties = cfrProperties,
-                onCFRShown = { cfr.onShown.invoke() },
-                onDismiss = { explicit -> cfr.onDismiss.invoke(explicit) },
-                title = {
-                    cfr.title.let {
-                        Text(
-                            text = it,
-                            color = AcornTheme.colors.textOnColorPrimary,
-                            style = AcornTheme.typography.subtitle2,
-                        )
-                    }
+            DisplayToolbarWithCFR(
+                cfr = cfr,
+                indicatorDirection = cfrProperties.indicatorDirection,
+                onCFRDismissed = {
+                    store.dispatch(BrowserDisplayToolbarAction.ToolbarCFRDismissed(tag = cfr.tag))
                 },
-                text = {
-                    cfr.description.let {
-                        Text(
-                            text = it,
-                            color = AcornTheme.colors.textOnColorPrimary,
-                            style = AcornTheme.typography.body2,
-                        )
-                    }
-                },
+                modifier = Modifier,
             ) {
                 displayToolbar()
             }
         } else {
             displayToolbar()
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DisplayToolbarWithCFR(
+    cfr: BrowserToolbarCFR,
+    indicatorDirection: IndicatorDirection,
+    onCFRDismissed: (tag: String) -> Unit,
+    modifier: Modifier = Modifier,
+    displayToolbar: @Composable () -> Unit,
+) {
+    val title: @Composable (() -> Unit)? = cfr.title?.run {
+        {
+            Text(
+                text = stringResource(cfr.title),
+                color = AcornTheme.colors.textOnColorPrimary,
+                style = AcornTheme.typography.subtitle2,
+            )
+        }
+    }
+
+    val state = rememberCFRState()
+    val onDismiss = {
+        state.dismiss()
+        onCFRDismissed(cfr.tag)
+    }
+
+    CFRBox(
+        modifier = modifier,
+        state = state,
+        positionProvider = rememberCFRPositionProvider(indicatorDirection),
+        cfr = {
+            CFR(
+                modifier = Modifier,
+                showDismissButton = true,
+                onDismiss = onDismiss,
+                title = title,
+                text = {
+                    Text(text = stringResource(cfr.description))
+                },
+            )
+        },
+        onDismissRequest = {
+            onDismiss()
+        },
+    ) {
+        displayToolbar()
+    }
+
+    LaunchedEffect(cfr) {
+        if (cfr.enabled) {
+            state.show()
         }
     }
 }
@@ -154,7 +201,7 @@ private fun browserToolbarCFRProperties(
 ): CFRPopupProperties {
     val isBottom = gravity == ToolbarGravity.Bottom
     val indicatorDir =
-        if (isBottom) CFRPopup.IndicatorDirection.DOWN else CFRPopup.IndicatorDirection.UP
+        if (isBottom) IndicatorDirection.DOWN else IndicatorDirection.UP
 
     val colors = AcornTheme.colors
 

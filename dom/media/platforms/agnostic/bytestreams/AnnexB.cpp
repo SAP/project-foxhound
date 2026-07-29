@@ -14,8 +14,9 @@
 
 mozilla::LazyLogModule gAnnexB("AnnexB");
 
-#define LOG(msg, ...) MOZ_LOG(gAnnexB, LogLevel::Debug, (msg, ##__VA_ARGS__))
-#define LOGV(msg, ...) MOZ_LOG(gAnnexB, LogLevel::Verbose, (msg, ##__VA_ARGS__))
+#define LOG(msg, ...) MOZ_LOG_FMT(gAnnexB, LogLevel::Debug, msg, ##__VA_ARGS__)
+#define LOGV(msg, ...) \
+  MOZ_LOG_FMT(gAnnexB, LogLevel::Verbose, msg, ##__VA_ARGS__)
 
 namespace mozilla {
 
@@ -91,7 +92,7 @@ Result<Ok, nsresult> AnnexB::ConvertAVCCSampleToAnnexB(
         samplewriter->mCrypto.mPlainSizes[0] = newSize.value();
       }
     }
-    LOG("Appended extradata %zu bytes", annexB->Length());
+    LOG("Appended extradata {} bytes", annexB->Length());
   }
 
   return Ok();
@@ -171,13 +172,14 @@ Result<Ok, nsresult> AnnexB::ConvertHVCCSampleToAnnexB(
         samplewriter->mCrypto.mPlainSizes[0] = newSize.value();
       }
     }
-    LOG("Appended extradata %zu bytes", annexB->Length());
+    LOG("Appended extradata {} bytes", annexB->Length());
   }
   return Ok();
 }
 
 already_AddRefed<mozilla::MediaByteBuffer> AnnexB::ConvertAVCCExtraDataToAnnexB(
-    const mozilla::MediaByteBuffer* aExtraData) {
+    const mozilla::MediaByteBuffer* aExtraData,
+    size_t* aSPSLength /* = nullptr */) {
   // AVCC 6 byte header looks like:
   //     +------+------+------+------+------+------+------+------+
   // [0] |   0  |   0  |   0  |   0  |   0  |   0  |   0  |   1  |
@@ -201,6 +203,9 @@ already_AddRefed<mozilla::MediaByteBuffer> AnnexB::ConvertAVCCExtraDataToAnnexB(
     // Append SPS then PPS
     (void)reader.ReadU8().map(
         [&](uint8_t x) { return ConvertSPSOrPPS(reader, x & 31, annexB); });
+    if (aSPSLength) {
+      *aSPSLength = annexB->Length();
+    }
     (void)reader.ReadU8().map(
         [&](uint8_t x) { return ConvertSPSOrPPS(reader, x, annexB); });
     // MP4Box adds extra bytes that we ignore. I don't know what they do.
@@ -218,9 +223,29 @@ already_AddRefed<mozilla::MediaByteBuffer> AnnexB::ConvertHVCCExtraDataToAnnexB(
   const HVCCConfig hvcc = rv.unwrap();
   RefPtr<mozilla::MediaByteBuffer> annexB = new mozilla::MediaByteBuffer;
   for (const auto& nalu : hvcc.mNALUs) {
+#ifdef MOZ_WMF
+    if (nalu.mNalUnitType == H265NALU::NAL_TYPES::PREFIX_SEI_NUT) {
+      RefPtr<MediaByteBuffer> filteredNalu =
+          H265::FilterPrefixSEIForWindows(nalu);
+      if (!filteredNalu) {
+        LOGV(
+            "Skipping PREFIX_SEI_NUT (size={}) from AnnexB extradata on "
+            "Windows because it only contains unregistered user data",
+            nalu.mNALU.Length());
+        continue;
+      }
+      annexB->AppendElements(kAnnexBDelimiter, std::size(kAnnexBDelimiter));
+      annexB->AppendElements(filteredNalu->Elements(), filteredNalu->Length());
+      LOGV(
+          "Insert filtered PREFIX_SEI_NUT (old size={}, new size={}) to "
+          "AnnexB (size={})",
+          nalu.mNALU.Length(), filteredNalu->Length(), annexB->Length());
+      continue;
+    }
+#endif
     annexB->AppendElements(kAnnexBDelimiter, std::size(kAnnexBDelimiter));
     annexB->AppendElements(nalu.mNALU.Elements(), nalu.mNALU.Length());
-    LOGV("Insert NALU (type=%hhu, size=%zu) to AnnexB (size=%zu)",
+    LOGV("Insert NALU (type={}, size={}) to AnnexB (size={})",
          nalu.mNalUnitType, nalu.mNALU.Length(), annexB->Length());
   }
   return annexB.forget();
@@ -393,6 +418,40 @@ static Result<mozilla::Ok, nsresult> ParseNALUnits(ByteWriter<BigEndian>& aBw,
     }
   }
   return Ok();
+}
+
+/* static */
+RefPtr<MediaByteBuffer> AnnexB::ExtractExtraData(
+    const Span<const uint8_t>& aSpan) {
+  if (!IsAnnexB(aSpan)) {
+    return nullptr;
+  }
+
+  nsTArray<NALEntry> paramSets;
+  ParseNALEntries(aSpan, paramSets);
+
+  size_t spsIndex =
+      FindNalType(aSpan, paramSets, H264_NAL_SPS, /* aStartIndex */ 0);
+  if (spsIndex == SIZE_MAX) {
+    return nullptr;
+  }
+
+  size_t ppsIndex =
+      FindNalType(aSpan, paramSets, H264_NAL_PPS, /* aStartIndex */ 0);
+  if (ppsIndex == SIZE_MAX) {
+    return nullptr;
+  }
+
+  auto annexb = MakeRefPtr<MediaByteBuffer>();
+  const auto& spsEntry = paramSets.ElementAt(spsIndex);
+  const auto& ppsEntry = paramSets.ElementAt(ppsIndex);
+  const auto sps = aSpan.Subspan(spsEntry.mOffset, spsEntry.mSize);
+  const auto pps = aSpan.Subspan(ppsEntry.mOffset, ppsEntry.mSize);
+  annexb->AppendElements(kAnnexBDelimiter, std::size(kAnnexBDelimiter));
+  annexb->AppendElements(sps);
+  annexb->AppendElements(kAnnexBDelimiter, std::size(kAnnexBDelimiter));
+  annexb->AppendElements(pps);
+  return annexb;
 }
 
 /* static */

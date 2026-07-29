@@ -6,6 +6,7 @@ add_setup(async function () {
     set: [
       ["browser.contextual-password-manager.enabled", true],
       ["signon.rememberSignons", true],
+      ["signon.rustMirror.enabled", false],
     ],
   });
   registerCleanupFunction(() => {

@@ -5,21 +5,14 @@
 "use strict";
 
 const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
+const { clampDimensionsIfNeeded } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/screenshots/ScreenshotsUtils.sys.mjs",
+  { global: "shared" }
+);
 
 const CONTAINER_FLASHING_DURATION = 500;
 const STRINGS_URI = "devtools/shared/locales/screenshot.properties";
 const L10N = new LocalizationHelper(STRINGS_URI);
-
-// These values are used to truncate the resulting image if the captured area is bigger.
-// This is to avoid failing to produce a screenshot at all.
-// It is recommended to keep these values in sync with the corresponding screenshots features
-// values in browser/components/screenshots/ScreenshotsUtils.sys.mjs.
-//
-// TODO(Bug 1942439): Change the consts and related truncation warning logic to align it to the new consts
-// used by ScreenshotsUtils.sys.mjs, which does not use the same approach nor the MAX_IMAGE_WIDTH
-// and MAX_IMAGE_HEIGHT consts that the screenshots addon was originally using.
-const MAX_IMAGE_WIDTH = 10000;
-const MAX_IMAGE_HEIGHT = 10000;
 
 /**
  * This function is called to simulate camera effects
@@ -43,7 +36,7 @@ function simulateCameraFlash(browsingContext) {
   }
 
   // Don't take a screenshot if the user prefers reduced motion.
-  if (node.ownerGlobal.matchMedia("(prefers-reduced-motion)").matches) {
+  if (node.documentGlobal.matchMedia("(prefers-reduced-motion)").matches) {
     return;
   }
 
@@ -90,11 +83,12 @@ async function captureScreenshot(args, browsingContext) {
   let { left, top, width, height } = args.rect || {};
   let _showScreenshotTruncationWarning = false;
 
-  // Truncate the width and height if necessary.
-  if (width && (width > MAX_IMAGE_WIDTH || height > MAX_IMAGE_HEIGHT)) {
-    _showScreenshotTruncationWarning = true;
-    width = Math.min(width, MAX_IMAGE_WIDTH);
-    height = Math.min(height, MAX_IMAGE_HEIGHT);
+  // Crop dimensions if necessary, using shared function from ScreenshotsUtils.
+  if (width && height) {
+    const result = clampDimensionsIfNeeded(width, height);
+    width = result.width;
+    height = result.height;
+    _showScreenshotTruncationWarning = result.cropped;
   }
 
   let rect = null;

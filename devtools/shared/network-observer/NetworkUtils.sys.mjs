@@ -94,17 +94,24 @@ const REDIRECT_CODES = [
   308, // HTTP Moved Permanently
 ];
 
-function causeTypeToString(causeType, loadFlags, internalContentPolicyType) {
+function getChannelCauseType(channel) {
+  if (channel.loadInfo.isInDevToolsContext) {
+    return "devtools";
+  }
+
+  const { externalContentPolicyType, internalContentPolicyType } =
+    channel.loadInfo;
+
   let prefix = "";
   if (
-    (causeType == Ci.nsIContentPolicy.TYPE_IMAGESET ||
+    (externalContentPolicyType == Ci.nsIContentPolicy.TYPE_IMAGESET ||
       internalContentPolicyType == Ci.nsIContentPolicy.TYPE_INTERNAL_IMAGE) &&
-    loadFlags & Ci.nsIRequest.LOAD_BACKGROUND
+    channel.loadFlags & Ci.nsIRequest.LOAD_BACKGROUND
   ) {
     prefix = "lazy-";
   }
 
-  return prefix + LOAD_CAUSE_STRINGS[causeType] || "unknown";
+  return prefix + LOAD_CAUSE_STRINGS[externalContentPolicyType] || "unknown";
 }
 
 function stringToCauseType(value) {
@@ -144,11 +151,7 @@ function isChromeFileChannel(channel) {
 }
 
 function isPrivilegedChannel(channel) {
-  return (
-    isChannelFromSystemPrincipal(channel) ||
-    isChromeFileChannel(channel) ||
-    channel.loadInfo.isInDevToolsContext
-  );
+  return isChannelFromSystemPrincipal(channel) || isChromeFileChannel(channel);
 }
 
 /**
@@ -169,8 +172,8 @@ function getChannelBrowsingContextID(channel) {
     return channel.loadInfo.browsingContextID;
   }
 
-  if (channel.loadInfo.workerAssociatedBrowsingContextID) {
-    return channel.loadInfo.workerAssociatedBrowsingContextID;
+  if (channel.loadInfo.associatedBrowsingContextID) {
+    return channel.loadInfo.associatedBrowsingContextID;
   }
 
   // At least WebSocket channel aren't having a browsingContextID set on their loadInfo
@@ -219,7 +222,8 @@ function isPreloadRequest(channel) {
     type == Ci.nsIContentPolicy.TYPE_INTERNAL_IMAGE_PRELOAD ||
     type == Ci.nsIContentPolicy.TYPE_INTERNAL_STYLESHEET_PRELOAD ||
     type == Ci.nsIContentPolicy.TYPE_INTERNAL_FONT_PRELOAD ||
-    type == Ci.nsIContentPolicy.TYPE_INTERNAL_JSON_PRELOAD
+    type == Ci.nsIContentPolicy.TYPE_INTERNAL_JSON_PRELOAD ||
+    type == Ci.nsIContentPolicy.TYPE_INTERNAL_TEXT_PRELOAD
   );
 }
 
@@ -233,25 +237,11 @@ function isPreloadRequest(channel) {
  *          - type {string} cause type as string
  */
 function getCauseDetails(channel) {
-  // Determine the cause and if this is an XHR request.
-  let causeType = Ci.nsIContentPolicy.TYPE_OTHER;
-  let causeUri = null;
-
-  if (channel.loadInfo) {
-    causeType = channel.loadInfo.externalContentPolicyType;
-    const { loadingPrincipal } = channel.loadInfo;
-    if (loadingPrincipal) {
-      causeUri = loadingPrincipal.spec;
-    }
-  }
-
   return {
-    loadingDocumentUri: causeUri,
-    type: causeTypeToString(
-      causeType,
-      channel.loadFlags,
-      channel.loadInfo.internalContentPolicyType
-    ),
+    loadingDocumentUri: channel.loadInfo.loadingPrincipal
+      ? channel.loadInfo.loadingPrincipal.spec
+      : null,
+    type: getChannelCauseType(channel),
   };
 }
 
@@ -570,20 +560,19 @@ function matchRequest(channel, filters) {
     }
 
     if (type == "browser-element") {
-      if (!channel.loadInfo.browsingContext) {
+      let browsingContext =
+        channel.loadInfo.browsingContext ||
+        channel.loadInfo.associatedBrowsingContext;
+
+      if (!browsingContext) {
         const topFrame = lazy.NetworkHelper.getTopFrameForRequest(channel);
-        // `topFrame` is typically null for some chrome requests like favicons
-        // And its `browsingContext` attribute might be null if the request happened
+        // `topFrame` is typically null for some chrome requests like favicons,
+        // and its `browsingContext` attribute might be null if the request happened
         // while the tab is being closed.
-        return (
-          topFrame?.browsingContext?.browserId ==
-          filters.sessionContext.browserId
-        );
+        browsingContext = topFrame?.browsingContext;
       }
-      return (
-        channel.loadInfo.browsingContext.browserId ==
-        filters.sessionContext.browserId
-      );
+
+      return browsingContext?.browserId == filters.sessionContext.browserId;
     }
     if (type == "webextension") {
       return (
@@ -938,7 +927,6 @@ function removeChromeFrames(stacktrace) {
 
 export const NetworkUtils = {
   ACCEPTED_COMPRESSION_ENCODINGS,
-  causeTypeToString,
   decodeResponseChunks,
   fetchRequestHeadersAndCookies,
   fetchResponseHeadersAndCookies,

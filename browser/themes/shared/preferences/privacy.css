@@ -41,7 +41,7 @@
   list-style-image: url(chrome://browser/skin/notification-icons/camera.svg);
 }
 
-.localhost-icon {
+.loopback-network-icon {
   list-style-image: url(chrome://browser/skin/notification-icons/local-host.svg);
 }
 
@@ -67,6 +67,10 @@
 
 .midi-icon {
   list-style-image: url(chrome://browser/skin/notification-icons/midi.svg);
+}
+
+.serial-icon {
+  list-style-image: url(chrome://browser/skin/notification-icons/serial.svg);
 }
 
 /* Content Blocking */
@@ -292,11 +296,6 @@
   margin: 0;
 }
 
-#telemetry-container {
-  margin-block: 4px;
-  width: 100%;
-}
-
 .privacy-detailedoption-description {
   font-size: 90%;
   opacity: 0.6;
@@ -323,10 +322,6 @@
 #deleteOnCloseNote {
   margin-top: 8px;
   margin-inline-end: 32px;
-}
-
-#submitHealthReportBox {
-  display: inline-flex;
 }
 
 /* Logins and Passwords */

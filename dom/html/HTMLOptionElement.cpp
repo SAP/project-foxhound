@@ -1,12 +1,12 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/HTMLOptionElement.h"
 
+#include "BindContext.h"
 #include "HTMLOptGroupElement.h"
+#include "mozilla/dom/AncestorIterator.h"
 #include "mozilla/dom/HTMLOptionElementBinding.h"
 #include "mozilla/dom/HTMLSelectElement.h"
 #include "nsGkAtoms.h"
@@ -29,7 +29,7 @@ NS_IMPL_NS_NEW_HTML_ELEMENT(Option)
 namespace mozilla::dom {
 
 HTMLOptionElement::HTMLOptionElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : nsGenericHTMLElement(std::move(aNodeInfo)) {
   // We start off enabled
   AddStatesSilently(ElementState::ENABLED);
@@ -62,9 +62,18 @@ void HTMLOptionElement::UpdateDisabledState(bool aNotify) {
   bool isDisabled = HasAttr(nsGkAtoms::disabled);
 
   if (!isDisabled) {
-    nsIContent* parent = GetParent();
-    if (auto optGroupElement = HTMLOptGroupElement::FromNodeOrNull(parent)) {
-      isDisabled = optGroupElement->IsDisabled();
+    // https://html.spec.whatwg.org/#concept-option-disabled
+    // Walk ancestors looking for a disabled optgroup, stopping at boundary
+    // elements. Wrapper elements (div, span, etc.) are transparent.
+    for (nsINode* ancestor = GetParent(); ancestor;
+         ancestor = ancestor->GetParentNode()) {
+      if (IsOptionListBoundary(*ancestor)) {
+        break;
+      }
+      if (auto* optgroup = HTMLOptGroupElement::FromNode(ancestor)) {
+        isDisabled = optgroup->IsDisabled();
+        break;
+      }
     }
   }
 
@@ -146,18 +155,16 @@ void HTMLOptionElement::BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
   // We just changed out selected state (since we look at the "selected"
   // attribute when mSelectedChanged is false).  Let's tell our select about
   // it.
-  HTMLSelectElement* selectInt = GetSelect();
-  if (!selectInt) {
+  HTMLSelectElement* select = GetSelect();
+  if (!select) {
     // If option is a child of select, SetOptionsSelectedByIndex will set the
     // selected state if needed.
+    // Keep in sync with Element::SetNoNameSpaceAttrOnNewlyCreatedElement!
     SetStates(ElementState::CHECKED, !!aValue, aNotify);
     return;
   }
 
   NS_ASSERTION(!mSelectedChanged, "Shouldn't be here");
-
-  bool inSetDefaultSelected = mIsInSetDefaultSelected;
-  mIsInSetDefaultSelected = true;
 
   int32_t index = Index();
   HTMLSelectElement::OptionFlags mask =
@@ -174,11 +181,8 @@ void HTMLOptionElement::BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
   // change, which we will allow to take effect so that parts of
   // SetOptionsSelectedByIndex that might depend on it working don't get
   // confused.
-  selectInt->SetOptionsSelectedByIndex(index, index, mask);
+  select->SetOptionsSelectedByIndex(index, index, mask);
 
-  // Now reset our members; when we finish the attr set we'll end up with the
-  // rigt selected state.
-  mIsInSetDefaultSelected = inSetDefaultSelected;
   // the selected state might have been changed by SetOptionsSelectedByIndex,
   // possibly more than once; make sure our mSelectedChanged state is set back
   // correctly.
@@ -230,7 +234,7 @@ void HTMLOptionElement::GetText(nsAString& aText) {
 
   // XXX No CompressWhitespace for nsAString.  Sad.
   text.CompressWhitespace(true, true);
-  aText = text;
+  aText = std::move(text);
 }
 
 void HTMLOptionElement::SetText(const nsAString& aText, ErrorResult& aRv) {
@@ -245,33 +249,94 @@ nsresult HTMLOptionElement::BindToTree(BindContext& aContext,
   // Our new parent might change :disabled/:enabled state.
   UpdateDisabledState(false);
 
+  // https://html.spec.whatwg.org/#the-option-element
+  // The option HTML element insertion steps, given insertedOption, are to run
+  // update an option's nearest ancestor select given insertedOption.
+  UpdateNearestAncestorSelect();
+
+  // The option HTML element post-connection steps, given insertedOption:
+  // 1. If insertedOption's cached nearest ancestor select element is not null
+  // and insertedOption is selected, then update select's descendant
+  // selectedcontent elements given insertedOption's cached nearest ancestor
+  // select element.
+
+  // NOTE: Post-connection steps only run when connecting to a composed doc,
+  // unlike insertion steps above which run for any tree insertion.
+  if (aContext.InComposedDoc() && mCachedNearestAncestorSelect && Selected()) {
+    mCachedNearestAncestorSelect->ScheduleSelectedContentUpdateScriptRunner();
+  }
+
   return NS_OK;
 }
 
 void HTMLOptionElement::UnbindFromTree(UnbindContext& aContext) {
+  // https://html.spec.whatwg.org/#the-option-element
+  // The option HTML element removing steps, given removedOption and oldParent:
+  //
+  // 1. Let select be removedOption's cached nearest ancestor select element.
+  RefPtr<HTMLSelectElement> oldSelect = mCachedNearestAncestorSelect;
+
   nsGenericHTMLElement::UnbindFromTree(aContext);
 
-  // Our previous parent could have been involved in :disabled/:enabled state.
+  // 3. Run update an option's nearest ancestor select given removedOption.
+  UpdateNearestAncestorSelect();
+
+  // 2. If removedOption is selected and select is not null and select has at
+  //    least one selectedcontent element descendant, then queue a microtask to
+  //    update a select's descendant selectedcontent elements given select.
+  // NOTE: omitting the "has selectedcontent descendant" check for now.
+  if (oldSelect && oldSelect != mCachedNearestAncestorSelect && Selected()) {
+    oldSelect->ScheduleSelectedContentUpdate();
+  }
+
   UpdateDisabledState(false);
 }
 
-// Get the select content element that contains this option
+// https://html.spec.whatwg.org/#concept-option-nearest-ancestor-select
+HTMLSelectElement* HTMLOptionElement::ComputeNearestAncestorSelect() const {
+  HTMLOptGroupElement* ancestorOptgroup = nullptr;
+  // 1-2. For each ancestor of option's ancestors, in reverse tree order:
+  for (nsINode* ancestor : Ancestors(*this)) {
+    // 2.1. If ancestor is a datalist, hr, or option element, return null.
+    if (ancestor->IsAnyOfHTMLElements(nsGkAtoms::datalist, nsGkAtoms::hr,
+                                      nsGkAtoms::option)) {
+      return nullptr;
+    }
+    // 2.2. If ancestor is an optgroup element:
+    if (auto* optgroup = HTMLOptGroupElement::FromNode(ancestor)) {
+      // 2.2.1. If ancestorOptgroup is not null, return null.
+      if (ancestorOptgroup) {
+        return nullptr;
+      }
+      // 2.2.2. Set ancestorOptgroup to ancestor.
+      ancestorOptgroup = optgroup;
+      continue;
+    }
+    // 2.3. If ancestor is a select element, return ancestor.
+    if (auto* select = HTMLSelectElement::FromNode(ancestor)) {
+      return select;
+    }
+  }
+  // 3. Return null.
+  return nullptr;
+}
+
+// https://html.spec.whatwg.org/#update-an-options-nearest-ancestor-select
+void HTMLOptionElement::UpdateNearestAncestorSelect() {
+  // 1. Let oldSelect be option's cached nearest ancestor select element.
+  // 2. Let newSelect be option's option element nearest ancestor select.
+  // 3. Set option's cached nearest ancestor select element to newSelect.
+  mCachedNearestAncestorSelect = ComputeNearestAncestorSelect();
+  // 4. If oldSelect is not newSelect:
+  //    4.1/4.2: Run the selectedness setting algorithm on old/new select.
+  //    NOTE: Deferred to HTMLSelectElement's mutation observer callbacks
+  //    (ContentAppendedOrInserted / ContentWillBeRemoved) which run once
+  //    per DOM mutation.
+}
+
+// Returns this option's nearest ancestor select element (cached), or null.
 HTMLSelectElement* HTMLOptionElement::GetSelect() const {
-  nsIContent* parent = GetParent();
-  if (!parent) {
-    return nullptr;
-  }
-
-  HTMLSelectElement* select = HTMLSelectElement::FromNode(parent);
-  if (select) {
-    return select;
-  }
-
-  if (!parent->IsHTMLElement(nsGkAtoms::optgroup)) {
-    return nullptr;
-  }
-
-  return HTMLSelectElement::FromNodeOrNull(parent->GetParent());
+  return mCachedNearestAncestorSelect;
 }
 
 already_AddRefed<HTMLOptionElement> HTMLOptionElement::Option(

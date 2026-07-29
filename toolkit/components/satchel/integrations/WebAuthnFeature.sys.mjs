@@ -21,7 +21,7 @@ XPCOMUtils.defineLazyServiceGetter(
 ChromeUtils.defineLazyGetter(
   lazy,
   "strings",
-  () => new Localization(["browser/webauthnDialog.ftl"])
+  () => new Localization(["toolkit/webauthnDialog.ftl"])
 );
 ChromeUtils.defineLazyGetter(lazy, "log", () =>
   LoginHelper.createLogger("WebAuthnFeature")
@@ -43,7 +43,16 @@ class WebAuthnSupport {
       // No pending transaction
       return;
     }
-    let credentials = lazy.webauthnService.getAutoFillEntries(transactionId);
+    let credentials = await new Promise(resolve => {
+      let callback = {
+        QueryInterface: ChromeUtils.generateQI([
+          "nsIWebAuthnAutoFillEntriesCallback",
+        ]),
+        resolve,
+        reject: () => resolve([]),
+      };
+      lazy.webauthnService.getAutoFillEntries(transactionId, callback);
+    });
 
     let labels = credentials.map(x => ({
       id: "webauthn-specific-passkey-label",

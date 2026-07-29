@@ -262,7 +262,7 @@ TEST(VideoStreamTest, ResolutionAdaptsToAvailableBandwidth) {
   num_qvga_frames_ = 0;
   num_vga_frames_ = 0;
 
-  s.RunFor(TimeDelta::Seconds(70));
+  s.RunFor(TimeDelta::Seconds(100));
   EXPECT_GT(num_qvga_frames_, 0u);
   EXPECT_GT(num_vga_frames_, 0u);
 }
@@ -281,7 +281,7 @@ TEST(VideoStreamTest, SuspendsBelowMinBitrate) {
     // Min transmit rate needs to be lower than kMinVideoBitrate for this test
     // to make sense.
     c->transport.rates.min_rate = kMinVideoBitrate / 2;
-    c->transport.rates.start_rate = kMinVideoBitrate;
+    c->transport.rates.start_rate = kMinVideoBitrate * 2;
     c->transport.rates.max_rate = kMinVideoBitrate * 2;
   });
   auto send_net = s.CreateMutableSimulationNode(

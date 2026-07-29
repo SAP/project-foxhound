@@ -24,6 +24,10 @@ const CRLITE_FILTER_CHANNEL_PREF = "security.pki.crlite_channel";
 
 const lazy = {};
 
+ChromeUtils.defineLazyGetter(lazy, "securityStateDir", () =>
+  PathUtils.join(PathUtils.profileDir, "security_state")
+);
+
 ChromeUtils.defineLazyGetter(lazy, "gTextDecoder", () => new TextDecoder());
 
 ChromeUtils.defineLazyGetter(lazy, "log", () => {
@@ -125,6 +129,27 @@ function hasPriorData(dataType) {
         // (even though it's unlikely doing so will succeed).
         resolve(false);
       }
+    });
+  });
+}
+
+/**
+ * Helper function that returns a promise that will resolve with the set of
+ * SHA256 hashes of CRLite filters that are currently loaded in cert_storage.
+ *
+ * @param {object} certStorage a Ci.nsICertStorage instance
+
+ * @returns {Promise} a promise that will resolve with the set of hashes.
+ */
+function getLoadedCRLiteFilterHashes(certStorage) {
+  return new Promise(resolve => {
+    certStorage.getCRLiteFilterHashes((rv, result) => {
+      if (rv != Cr.NS_OK || !result) {
+        resolve(new Set());
+        return;
+      }
+      let str = result.toString();
+      resolve(new Set(str ? str.split(",") : []));
     });
   });
 }
@@ -503,10 +528,29 @@ class IntermediatePreloads {
   }
 }
 
-// Helper function to compare filters. One filter is "less than" another filter (i.e. it sorts
-// earlier) if its timestamp is farther in the past than the other.
-function compareFilters(filterA, filterB) {
-  return filterA.effectiveTimestamp - filterB.effectiveTimestamp;
+/**
+ * Check whether a CRLite filter is on disk in the security_state directory with the correct hash.
+ *
+ * @param {object} filter A CRLite filter record from Remote Settings.
+ * @returns {boolean} True if the file is on disk with the correct size and SHA-256 hash.
+ */
+async function isFilterOnDisk(filter) {
+  let filename = filter.incremental
+    ? filter.attachment.filename
+    : "crlite.filter";
+  let filePath = PathUtils.join(lazy.securityStateDir, filename);
+  let bytes;
+  try {
+    bytes = await IOUtils.read(filePath);
+  } catch (_) {
+    return false;
+  }
+  let { size, hash } = filter.attachment;
+  if (bytes.length !== size) {
+    return false;
+  }
+  const hashBuffer = await crypto.subtle.digest("SHA-256", bytes);
+  return new Uint8Array(hashBuffer).toHex() === hash;
 }
 
 class CRLiteFilters {
@@ -514,7 +558,6 @@ class CRLiteFilters {
     this.client = RemoteSettings("cert-revocations", {
       bucketName: SECURITY_STATE_BUCKET,
       signerName: SECURITY_STATE_SIGNER,
-      localFields: ["loaded_into_cert_storage"],
     });
 
     Services.obs.addObserver(
@@ -524,32 +567,32 @@ class CRLiteFilters {
     Services.prefs.addObserver(CRLITE_FILTER_CHANNEL_PREF, this);
   }
 
-  async observe(subject, topic, prefName) {
+  observe(subject, topic, prefName) {
     if (topic == "nsPref:changed" && prefName == CRLITE_FILTER_CHANNEL_PREF) {
-      // When the user changes from channel A to channel B, mark the records
-      // for channel A (and all other channels) with loaded_into_cert_storage =
-      // false. If we don't do this, then the user will fail to reinstall the
-      // channel A artifacts if they switch back to channel A.
-      let records;
+      this.onObservePollEnd();
+    }
+  }
+
+  async readOrDownloadFilter(filter, tryDisk) {
+    if (tryDisk) {
+      let filename = filter.incremental
+        ? filter.attachment.filename
+        : "crlite.filter";
       try {
-        records = await this.client.db.list();
-      } catch (err) {
-        if (err instanceof lazy.RemoteSettingsClient.EmptyDatabaseError) {
-          // Likely during tests, less likely in production.
-          return;
-        }
-        throw err;
+        return await IOUtils.read(
+          PathUtils.join(lazy.securityStateDir, filename)
+        );
+      } catch (e) {
+        lazy.log.error("failed to read CRLite filter from disk", e);
       }
-      let newChannel = Services.prefs.getStringPref(
-        CRLITE_FILTER_CHANNEL_PREF,
-        "none"
+    }
+    try {
+      return new Uint8Array(
+        await this.client.attachments.downloadAsBytes(filter)
       );
-      let toReset = records.filter(record => record.channel != newChannel);
-      await this.client.db.importChanges(
-        undefined, // do not touch metadata.
-        undefined, // do not touch collection timestamp.
-        toReset.map(r => ({ ...r, loaded_into_cert_storage: false }))
-      );
+    } catch (e) {
+      lazy.log.error("failed to download CRLite filter", e);
+      return null;
     }
   }
 
@@ -571,116 +614,112 @@ class CRLiteFilters {
       lazy.log.debug("CRLite filter downloading is disabled");
       Services.obs.notifyObservers(
         null,
-        "remote-security-settings:crlite-filters-downloaded",
+        "remote-security-settings:crlite-filters-updated",
         "disabled"
       );
       return;
     }
 
-    let hasPriorFilter = await hasPriorData(
-      Ci.nsICertStorage.DATA_TYPE_CRLITE_FILTER_FULL
-    );
-    if (!hasPriorFilter) {
-      let current = await this.getFilteredRecords();
-      let toReset = current.filter(
-        record => !record.incremental && record.loaded_into_cert_storage
+    let records = await this.getFilteredRecords();
+    let fullFilters = records.filter(filter => !filter.incremental);
+    if (fullFilters.length != 1) {
+      lazy.log.debug(
+        `${fullFilters.length} full CRLite filters available to download, expected 1`
       );
-      await this.client.db.importChanges(
-        undefined, // do not touch metadata.
-        undefined, // do not touch collection timestamp.
-        toReset.map(r => ({ ...r, loaded_into_cert_storage: false }))
-      );
-    }
-    let hasPriorDelta = await hasPriorData(
-      Ci.nsICertStorage.DATA_TYPE_CRLITE_FILTER_INCREMENTAL
-    );
-    if (!hasPriorDelta) {
-      let current = await this.getFilteredRecords();
-      let toReset = current.filter(
-        record => record.incremental && record.loaded_into_cert_storage
-      );
-      await this.client.db.importChanges(
-        undefined, // do not touch metadata.
-        undefined, // do not touch collection timestamp.
-        toReset.map(r => ({ ...r, loaded_into_cert_storage: false }))
-      );
-    }
-
-    let current = await this.getFilteredRecords();
-    let fullFilters = current.filter(filter => !filter.incremental);
-    if (fullFilters.length < 1) {
-      lazy.log.debug("no full CRLite filters to download?");
       Services.obs.notifyObservers(
         null,
-        "remote-security-settings:crlite-filters-downloaded",
+        "remote-security-settings:crlite-filters-updated",
         "unavailable"
       );
       return;
     }
-    fullFilters.sort(compareFilters);
-    lazy.log.debug("fullFilters:", fullFilters);
-    let fullFilter = fullFilters.pop(); // the most recent filter sorts last
-    let incrementalFilters = current.filter(
-      filter =>
-        // Return incremental filters that are more recent than (i.e. sort later than) the full
-        // filter.
-        filter.incremental && compareFilters(filter, fullFilter) > 0
-    );
-    incrementalFilters.sort(compareFilters);
-    // Map of id to filter where that filter's parent has the given id.
-    let parentIdMap = {};
-    for (let filter of incrementalFilters) {
-      if (filter.parent in parentIdMap) {
-        lazy.log.debug(`filter with parent id ${filter.parent} already seen?`);
-      } else {
-        parentIdMap[filter.parent] = filter;
-      }
-    }
-    let filtersToDownload = [];
-    let nextFilter = fullFilter;
-    while (nextFilter) {
-      filtersToDownload.push(nextFilter);
-      nextFilter = parentIdMap[nextFilter.id];
-    }
+    let fullFilter = fullFilters[0];
+    let incrementalFilters = records.filter(filter => filter.incremental);
     const certList = Cc["@mozilla.org/security/certstorage;1"].getService(
       Ci.nsICertStorage
     );
-    filtersToDownload = filtersToDownload.filter(
-      filter => !filter.loaded_into_cert_storage
-    );
-    lazy.log.debug("filtersToDownload:", filtersToDownload);
-    let filtersDownloaded = [];
-    for (let filter of filtersToDownload) {
-      try {
-        let attachment = await this.client.attachments.downloadAsBytes(filter);
-        let bytes = new Uint8Array(attachment);
-        lazy.log.debug(
-          `Downloaded ${filter.details.name}: ${bytes.length} bytes`
-        );
-        filter.bytes = bytes;
-        filtersDownloaded.push(filter);
-      } catch (e) {
-        lazy.log.error("failed to download CRLite filter", e);
-      }
-    }
-    let fullFiltersDownloaded = filtersDownloaded.filter(
-      filter => !filter.incremental
-    );
-    if (fullFiltersDownloaded.length) {
-      if (fullFiltersDownloaded.length > 1) {
-        lazy.log.warn("trying to install more than one full CRLite filter?");
-      }
-      let filter = fullFiltersDownloaded[0];
+    let loadedFilterHashes = await getLoadedCRLiteFilterHashes(certList);
 
+    lazy.log.debug("filtersInChannel:", records);
+    let filtersToInstall = [];
+    let filtersDownloaded = [];
+    let fullFilterInstalling = false;
+
+    let expectedDeltaHashes = new Set(
+      incrementalFilters.map(f => f.attachment.hash)
+    );
+    // Check for stale deltas: hashes loaded in cert_storage that are not in
+    // the expected set (e.g. deltas from a previous channel). setFullCRLiteFilter
+    // clears all loaded deltas, so we can re-load the full filter to remove them.
+    let hasStaleLoadedDeltas = [...loadedFilterHashes]
+      .filter(h => h !== fullFilter.attachment.hash)
+      .some(h => !expectedDeltaHashes.has(h));
+
+    let fullFilterOnDisk = await isFilterOnDisk(fullFilter);
+    if (
+      !fullFilterOnDisk ||
+      !loadedFilterHashes.has(fullFilter.attachment.hash) ||
+      hasStaleLoadedDeltas
+    ) {
+      // setFullCRLiteFilter clears all loaded deltas from cert_storage and
+      // removes delta files from the security_state directory. In the event of,
+      // say, a corrupted full filter on disk, we would like to avoid
+      // re-downloading any delta files that we have good copies of on disk.
+      // The fullFilterInstalling flag causes us to read those deltas from disk
+      // prior to calling setFullCRLiteFilter so that we can re-load them
+      // without fetching them over the network.
+      fullFilterInstalling = true;
+      let bytes = await this.readOrDownloadFilter(fullFilter, fullFilterOnDisk);
+      if (!bytes) {
+        Services.obs.notifyObservers(
+          null,
+          "remote-security-settings:crlite-filters-updated",
+          "unavailable"
+        );
+        return;
+      }
+      lazy.log.debug(`${fullFilter.details.name}: ${bytes.length} bytes`);
+      fullFilter.bytes = bytes;
+      if (!fullFilterOnDisk) {
+        filtersDownloaded.push(fullFilter.details.name);
+      }
+      filtersToInstall.push(fullFilter);
+    }
+
+    for (let filter of incrementalFilters) {
+      let deltaOnDisk = await isFilterOnDisk(filter);
+      if (
+        !fullFilterInstalling &&
+        deltaOnDisk &&
+        loadedFilterHashes.has(filter.attachment.hash)
+      ) {
+        continue;
+      }
+      let bytes = await this.readOrDownloadFilter(filter, deltaOnDisk);
+      if (!bytes) {
+        lazy.log.error(
+          `failed to obtain bytes for CRLite delta ${filter.attachment.filename}`
+        );
+        continue;
+      }
+      lazy.log.debug(`${filter.details.name}: ${bytes.length} bytes`);
+      filter.bytes = bytes;
+      if (!deltaOnDisk) {
+        filtersDownloaded.push(filter.details.name);
+      }
+      filtersToInstall.push(filter);
+    }
+
+    let fullFilterToInstall = filtersToInstall.find(f => !f.incremental);
+    if (fullFilterToInstall) {
       await new Promise(resolve => {
-        certList.setFullCRLiteFilter(filter.bytes, rv => {
+        certList.setFullCRLiteFilter(fullFilterToInstall.bytes, rv => {
           lazy.log.debug(`setFullCRLiteFilter: ${rv}`);
           resolve();
         });
       });
     }
-    let deltas = filtersDownloaded.filter(filter => filter.incremental);
-    for (let filter of deltas) {
+    for (let filter of filtersToInstall.filter(f => f.incremental)) {
       lazy.log.debug(`adding delta update of size ${filter.bytes.length}`);
       await new Promise(resolve => {
         certList.addCRLiteDelta(
@@ -694,22 +733,14 @@ class CRLiteFilters {
       });
     }
 
-    for (let filter of filtersDownloaded) {
+    for (let filter of filtersToInstall) {
       delete filter.bytes;
     }
 
-    await this.client.db.importChanges(
-      undefined, // do not touch metadata.
-      undefined, // do not touch collection timestamp.
-      filtersDownloaded.map(r => ({ ...r, loaded_into_cert_storage: true }))
-    );
-
     Services.obs.notifyObservers(
       null,
-      "remote-security-settings:crlite-filters-downloaded",
-      `finished;${filtersDownloaded
-        .map(filter => filter.details.name)
-        .join(",")}`
+      "remote-security-settings:crlite-filters-updated",
+      `finished;${filtersToInstall.map(f => f.details.name).join(",")};${filtersDownloaded.join(",")}`
     );
   }
 }

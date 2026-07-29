@@ -238,7 +238,7 @@ function searchInText(query, modifiers, text, data) {
     const { caseSensitive } = modifiers;
     const flags = caseSensitive ? "g" : "gi";
     const regexQuery = RegExp(
-      caseSensitive ? query : query.toLowerCase(),
+      RegExp.escape(caseSensitive ? query : query.toLowerCase()),
       flags
     );
     const lineMatches = [];

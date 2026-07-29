@@ -1,0 +1,38 @@
+[DEFAULT]
+dupe-manifest=true
+prefs = [
+  "browser.settings-redesign.enabled=true",
+]
+support-files = [
+  "head.js",
+]
+tags = "os_integration"
+
+["browser_localSearchShortcuts.js"]
+
+["browser_searchChangedEngine.js"]
+
+["browser_searchDefaultEngine.js"]
+
+["browser_searchShowSuggestionsFirst.js"]
+
+["browser_search_engineList.js"]
+fail-if = [
+  "a11y_checks", # Bug 1854636 clicked treechildren#engineChildren may not be focusable
+]
+
+["browser_search_engineList_enterprise.js"]
+
+["browser_search_engine_reorder.js"]
+
+["browser_search_firefoxSuggest.js"]
+
+["browser_search_quickactions.js"]
+
+["browser_search_searchTerms.js"]
+
+["browser_search_userEngineDialog.js"]
+
+["browser_searchsuggestions.js"]
+
+["browser_trendingsuggestions.js"]

@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -253,9 +250,8 @@ IPCResult HttpBackgroundChannelChild::RecvOnTransportAndData(
 
   // Bug 1641336: Race only happens if the data is from socket process.
   if (IsWaitingOnStartRequest()) {
-    LOG(("  > pending until OnStartRequest [offset=%" PRIu64 " count=%" PRIu32
-         "]\n",
-         aOffset, aCount));
+    LOG(("  > pending until OnStartRequest [offset=%" PRIu64 " count=%zu]\n",
+         aOffset, aData.Length()));
 
     mQueuedRunnables.AppendElement(NS_NewRunnableFunction(
         "HttpBackgroundChannelChild::RecvOnTransportAndData",
@@ -459,34 +455,20 @@ IPCResult HttpBackgroundChannelChild::RecvDetachStreamFilters() {
 }
 
 void HttpBackgroundChannelChild::ActorDestroy(ActorDestroyReason aWhy) {
-  LOG(("HttpBackgroundChannelChild::ActorDestroy[this=%p]\n", this));
+  LOG(("HttpBackgroundChannelChild::ActorDestroy[this=%p reason=%d]\n", this,
+       static_cast<int>(aWhy)));
   // This function might be called during shutdown phase, so OnSocketThread()
   // might return false even on STS thread. Use IsOnCurrentThreadInfallible()
   // to get correct information.
   MOZ_ASSERT(gSocketTransportService);
   MOZ_ASSERT(gSocketTransportService->IsOnCurrentThreadInfallible());
 
-  // Ensure all IPC messages received before ActorDestroy can be
-  // handled correctly. If there is any pending IPC message, destroyed
-  // mChannelChild until those messages are flushed.
-  // If background channel is not closed by normal IPDL actor deletion,
-  // remove the HttpChannelChild reference and notify background channel
-  // destroyed immediately.
-  if (aWhy == Deletion && !mQueuedRunnables.IsEmpty()) {
-    LOG(("  > pending until queued messages are flushed\n"));
-    RefPtr<HttpBackgroundChannelChild> self = this;
-    mQueuedRunnables.AppendElement(NS_NewRunnableFunction(
-        "HttpBackgroundChannelChild::ActorDestroy", [self]() {
-          MOZ_ASSERT(OnSocketThread());
-          RefPtr<HttpChannelChild> channelChild =
-              std::move(self->mChannelChild);
-
-          if (channelChild) {
-            channelChild->OnBackgroundChildDestroyed(self);
-          }
-        }));
-    return;
-  }
+  // Drop any IPC runnables that were queued waiting for OnStartRequest. After
+  // ActorDestroy returns, no further Recv* calls fire to drain the queue, and
+  // each entry holds a RefPtr<self> via its capture; without clearing them
+  // the actor (and everything it transitively owns) is kept alive forever.
+  mQueuedRunnables.Clear();
+  mConsoleReportTask = nullptr;
 
   if (mChannelChild) {
     RefPtr<HttpChannelChild> channelChild = std::move(mChannelChild);

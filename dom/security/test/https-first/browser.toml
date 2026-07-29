@@ -81,6 +81,7 @@ support-files = ["file_redirect_exemption_clearing.sjs"]
 
 ["browser_schemeless.js"]
 skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
   "tsan", # Bug 1890170
 ]
 

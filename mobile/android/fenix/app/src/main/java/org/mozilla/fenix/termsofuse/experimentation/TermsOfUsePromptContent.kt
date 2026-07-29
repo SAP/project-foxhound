@@ -14,9 +14,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.PreviewLightDark
+import mozilla.components.compose.base.LinkText
+import mozilla.components.compose.base.LinkTextState
 import org.mozilla.fenix.R
-import org.mozilla.fenix.compose.LinkText
-import org.mozilla.fenix.compose.LinkTextState
 import org.mozilla.fenix.nimbus.TermsOfUsePromptContentOption
 import org.mozilla.fenix.theme.FirefoxTheme
 

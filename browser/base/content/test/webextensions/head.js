@@ -193,8 +193,14 @@ function waitAboutAddonsViewLoaded(doc) {
 /**
  * Trigger an action from the page options menu.
  */
-function triggerPageOptionsAction(win, action) {
-  win.document.querySelector(`#page-options [action="${action}"]`).click();
+async function triggerPageOptionsAction(win, action) {
+  let button = win.document.querySelector(`#page-options [action="${action}"]`);
+  // Button is temporarily disabled on click. Wait in case we just clicked.
+  await BrowserTestUtils.waitForCondition(
+    () => !button.disabled,
+    "Wait for button to become enabled"
+  );
+  button.click();
 }
 
 function isDefaultIcon(icon) {

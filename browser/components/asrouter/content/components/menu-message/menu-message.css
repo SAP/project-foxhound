@@ -3,7 +3,7 @@
 * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 :host {
-  margin-inline: var(--arrowpanel-menuitem-margin-inline, var(--space-xsmall));
+  margin-inline: var(--panel-menuitem-margin-inline, var(--space-xsmall));
   margin-block: var(--space-xsmall);
   --illustration-margin-block-start-offset: 0px;
   --illustration-margin-block-end-offset: 0px;
@@ -18,9 +18,9 @@
   flex-direction: column;
   background-color: var(--background-color-information);
   border-radius: var(--border-radius-small);
-  padding-block: var(--arrowpanel-menuitem-padding-block, var(--space-small));
-  padding-inline: var(--arrowpanel-menuitem-padding-inline, var(--space-small));
-  padding-block-end: var(--container-padding-block-end, var(--arrowpanel-menuitem-padding-block));
+  padding-block: var(--panel-menuitem-padding-block, var(--space-small));
+  padding-inline: var(--panel-menuitem-padding-inline, var(--space-small));
+  padding-block-end: var(--container-padding-block-end, var(--panel-menuitem-padding-block));
   margin-block-start: var(--space-small);
   color: var(--text-color);
 }

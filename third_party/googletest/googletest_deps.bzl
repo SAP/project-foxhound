@@ -9,17 +9,17 @@ def googletest_deps():
     if not native.existing_rule("re2"):
         http_archive(
             name = "re2",
-            sha256 = "eb2df807c781601c14a260a507a5bb4509be1ee626024cb45acbd57cb9d4032b",
-            strip_prefix = "re2-2024-07-02",
-            urls = ["https://github.com/google/re2/releases/download/2024-07-02/re2-2024-07-02.tar.gz"],
+            sha256 = "87f6029d2f6de8aa023654240a03ada90e876ce9a4676e258dd01ea4c26ffd67",
+            strip_prefix = "re2-2025-11-05",
+            urls = ["https://github.com/google/re2/releases/download/2025-11-05/re2-2025-11-05.tar.gz"],
         )
 
     if not native.existing_rule("abseil-cpp"):
         http_archive(
             name = "abseil-cpp",
-            sha256 = "9b2b72d4e8367c0b843fa2bcfa2b08debbe3cee34f7aaa27de55a6cbb3e843db",
-            strip_prefix = "abseil-cpp-20250814.0",
-            urls = ["https://github.com/abseil/abseil-cpp/releases/download/20250814.0/abseil-cpp-20250814.0.tar.gz"],
+            sha256 = "4c124408da902be896a2f368042729655709db5e3004ec99f57e3e14439bc1b2",
+            strip_prefix = "abseil-cpp-20260107.0",
+            urls = ["https://github.com/abseil/abseil-cpp/releases/download/20260107.0/abseil-cpp-20260107.0.tar.gz"],
         )
 
     if not native.existing_rule("bazel_features"):

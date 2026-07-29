@@ -183,6 +183,7 @@ impl<'a> BindingParser<'a> {
                 lexer.expect(Token::Paren('('))?;
                 self.location
                     .set(parser.expression(lexer, ctx)?, name_span)?;
+                lexer.next_if(Token::Separator(','));
                 lexer.expect(Token::Paren(')'))?;
             }
             "builtin" => {
@@ -192,17 +193,23 @@ impl<'a> BindingParser<'a> {
                     conv::map_built_in(&lexer.enable_extensions, raw, span)?,
                     name_span,
                 )?;
+                lexer.next_if(Token::Separator(','));
                 lexer.expect(Token::Paren(')'))?;
             }
             "interpolate" => {
                 lexer.expect(Token::Paren('('))?;
                 let (raw, span) = lexer.next_ident_with_span()?;
-                self.interpolation
-                    .set(conv::map_interpolation(raw, span)?, name_span)?;
-                if lexer.next_if(Token::Separator(',')) {
+                self.interpolation.set(
+                    conv::map_interpolation(&lexer.enable_extensions, raw, span)?,
+                    name_span,
+                )?;
+                if lexer.next_if(Token::Separator(','))
+                    && !matches!(lexer.peek().0, Token::Paren(')'))
+                {
                     let (raw, span) = lexer.next_ident_with_span()?;
                     self.sampling
                         .set(conv::map_sampling(raw, span)?, name_span)?;
+                    lexer.next_if(Token::Separator(','));
                 }
                 lexer.expect(Token::Paren(')'))?;
             }
@@ -275,13 +282,16 @@ impl<'a> BindingParser<'a> {
 pub struct Options {
     /// Controls whether the parser should parse doc comments.
     pub parse_doc_comments: bool,
+    /// Capabilities to enable during parsing.
+    pub capabilities: crate::valid::Capabilities,
 }
 
 impl Options {
-    /// Creates a new [`Options`] without doc comments parsing.
+    /// Creates a new default [`Options`].
     pub const fn new() -> Self {
         Options {
             parse_doc_comments: false,
+            capabilities: crate::valid::Capabilities::all(),
         }
     }
 }
@@ -333,7 +343,7 @@ impl Parser {
         F: FnOnce(&mut Self) -> Result<'a, R>,
     {
         self.recursion_depth += 1;
-        if self.recursion_depth >= 256 {
+        if self.recursion_depth >= 200 {
             return Err(Box::new(Error::Internal("Parser recursion limit exceeded")));
         }
         let ret = f(self);
@@ -783,64 +793,68 @@ impl Parser {
         lexer: &mut Lexer<'a>,
         context: &mut ExpressionContext<'a, '_, '_>,
     ) -> Result<'a, Handle<ast::Expression<'a>>> {
-        self.push_rule_span(Rule::GeneralExpr, lexer);
-        // logical_or_expression
-        let handle = context.parse_binary_op(
-            lexer,
-            |token| match token {
-                Token::LogicalOperation('|') => Some(crate::BinaryOperator::LogicalOr),
-                _ => None,
-            },
-            // logical_and_expression
-            |lexer, context| {
-                context.parse_binary_op(
-                    lexer,
-                    |token| match token {
-                        Token::LogicalOperation('&') => Some(crate::BinaryOperator::LogicalAnd),
-                        _ => None,
-                    },
-                    // inclusive_or_expression
-                    |lexer, context| {
-                        context.parse_binary_op(
-                            lexer,
-                            |token| match token {
-                                Token::Operation('|') => Some(crate::BinaryOperator::InclusiveOr),
-                                _ => None,
-                            },
-                            // exclusive_or_expression
-                            |lexer, context| {
-                                context.parse_binary_op(
-                                    lexer,
-                                    |token| match token {
-                                        Token::Operation('^') => {
-                                            Some(crate::BinaryOperator::ExclusiveOr)
-                                        }
-                                        _ => None,
-                                    },
-                                    // and_expression
-                                    |lexer, context| {
-                                        context.parse_binary_op(
-                                            lexer,
-                                            |token| match token {
-                                                Token::Operation('&') => {
-                                                    Some(crate::BinaryOperator::And)
-                                                }
-                                                _ => None,
-                                            },
-                                            |lexer, context| {
-                                                self.equality_expression(lexer, context)
-                                            },
-                                        )
-                                    },
-                                )
-                            },
-                        )
-                    },
-                )
-            },
-        )?;
-        self.pop_rule_span(lexer);
-        Ok(handle)
+        self.track_recursion(|this| {
+            this.push_rule_span(Rule::GeneralExpr, lexer);
+            // logical_or_expression
+            let handle = context.parse_binary_op(
+                lexer,
+                |token| match token {
+                    Token::LogicalOperation('|') => Some(crate::BinaryOperator::LogicalOr),
+                    _ => None,
+                },
+                // logical_and_expression
+                |lexer, context| {
+                    context.parse_binary_op(
+                        lexer,
+                        |token| match token {
+                            Token::LogicalOperation('&') => Some(crate::BinaryOperator::LogicalAnd),
+                            _ => None,
+                        },
+                        // inclusive_or_expression
+                        |lexer, context| {
+                            context.parse_binary_op(
+                                lexer,
+                                |token| match token {
+                                    Token::Operation('|') => {
+                                        Some(crate::BinaryOperator::InclusiveOr)
+                                    }
+                                    _ => None,
+                                },
+                                // exclusive_or_expression
+                                |lexer, context| {
+                                    context.parse_binary_op(
+                                        lexer,
+                                        |token| match token {
+                                            Token::Operation('^') => {
+                                                Some(crate::BinaryOperator::ExclusiveOr)
+                                            }
+                                            _ => None,
+                                        },
+                                        // and_expression
+                                        |lexer, context| {
+                                            context.parse_binary_op(
+                                                lexer,
+                                                |token| match token {
+                                                    Token::Operation('&') => {
+                                                        Some(crate::BinaryOperator::And)
+                                                    }
+                                                    _ => None,
+                                                },
+                                                |lexer, context| {
+                                                    this.equality_expression(lexer, context)
+                                                },
+                                            )
+                                        },
+                                    )
+                                },
+                            )
+                        },
+                    )
+                },
+            )?;
+            this.pop_rule_span(lexer);
+            Ok(handle)
+        })
     }
 
     fn optionally_typed_ident<'a>(
@@ -885,6 +899,7 @@ impl Parser {
             ty,
             init,
             doc_comments: Vec::new(),
+            memory_decorations: crate::MemoryDecorations::empty(),
         })
     }
 
@@ -916,12 +931,14 @@ impl Parser {
                     ("size", name_span) => {
                         lexer.expect(Token::Paren('('))?;
                         let expr = self.expression(lexer, ctx)?;
+                        lexer.next_if(Token::Separator(','));
                         lexer.expect(Token::Paren(')'))?;
                         size.set(expr, name_span)?;
                     }
                     ("align", name_span) => {
                         lexer.expect(Token::Paren('('))?;
                         let expr = self.expression(lexer, ctx)?;
+                        lexer.next_if(Token::Separator(','));
                         lexer.expect(Token::Paren(')'))?;
                         align.set(expr, name_span)?;
                     }
@@ -1709,6 +1726,9 @@ impl Parser {
 
         // start a scope that contains arguments as well as the function body
         ctx.local_table.push_scope();
+        // Reduce lookup scope to parse the parameter list and return type
+        // avoiding identifier lookup to match newly declared param names.
+        ctx.local_table.reduce_lookup_scope();
 
         // read parameter list
         let mut arguments = Vec::new();
@@ -1755,6 +1775,8 @@ impl Parser {
         } else {
             None
         };
+
+        ctx.local_table.reset_lookup_scope();
 
         // do not use `self.block` here, since we must not push a new scope
         lexer.expect(Token::Paren('{'))?;
@@ -1821,16 +1843,22 @@ impl Parser {
         // read attributes
         let mut binding = None;
         let mut stage = ParsedAttribute::default();
-        let mut compute_like_span = Span::new(0, 0);
+        // Span in case we need to report an error for a shader stage missing something (e.g. its workgroup size).
+        // Doesn't need to be set in the vertex and fragment stages because they don't have errors like that.
+        let mut shader_stage_error_span = Span::new(0, 0);
         let mut workgroup_size = ParsedAttribute::default();
         let mut early_depth_test = ParsedAttribute::default();
         let (mut bind_index, mut bind_group) =
             (ParsedAttribute::default(), ParsedAttribute::default());
         let mut id = ParsedAttribute::default();
+        // the payload variable for a mesh shader
         let mut payload = ParsedAttribute::default();
+        // the incoming payload from a traceRay call
+        let mut incoming_payload = ParsedAttribute::default();
         let mut mesh_output = ParsedAttribute::default();
 
         let mut must_use: ParsedAttribute<Span> = ParsedAttribute::default();
+        let mut memory_decorations = crate::MemoryDecorations::empty();
 
         let mut dependencies = FastIndexSet::default();
         let mut ctx = ExpressionContext {
@@ -1866,16 +1894,19 @@ impl Parser {
                 "binding" => {
                     lexer.expect(Token::Paren('('))?;
                     bind_index.set(self.expression(lexer, &mut ctx)?, name_span)?;
+                    lexer.next_if(Token::Separator(','));
                     lexer.expect(Token::Paren(')'))?;
                 }
                 "group" => {
                     lexer.expect(Token::Paren('('))?;
                     bind_group.set(self.expression(lexer, &mut ctx)?, name_span)?;
+                    lexer.next_if(Token::Separator(','));
                     lexer.expect(Token::Paren(')'))?;
                 }
                 "id" => {
                     lexer.expect(Token::Paren('('))?;
                     id.set(self.expression(lexer, &mut ctx)?, name_span)?;
+                    lexer.next_if(Token::Separator(','));
                     lexer.expect(Token::Paren(')'))?;
                 }
                 "vertex" => {
@@ -1886,7 +1917,7 @@ impl Parser {
                 }
                 "compute" => {
                     stage.set(ShaderStage::Compute, name_span)?;
-                    compute_like_span = name_span;
+                    shader_stage_error_span = name_span;
                 }
                 "task" => {
                     lexer.require_enable_extension(
@@ -1894,7 +1925,7 @@ impl Parser {
                         name_span,
                     )?;
                     stage.set(ShaderStage::Task, name_span)?;
-                    compute_like_span = name_span;
+                    shader_stage_error_span = name_span;
                 }
                 "mesh" => {
                     lexer.require_enable_extension(
@@ -1902,11 +1933,43 @@ impl Parser {
                         name_span,
                     )?;
                     stage.set(ShaderStage::Mesh, name_span)?;
-                    compute_like_span = name_span;
+                    shader_stage_error_span = name_span;
 
                     lexer.expect(Token::Paren('('))?;
                     mesh_output.set(lexer.next_ident_with_span()?, name_span)?;
                     lexer.expect(Token::Paren(')'))?;
+                }
+                "ray_generation" => {
+                    lexer.require_enable_extension(
+                        ImplementedEnableExtension::WgpuRayTracingPipeline,
+                        name_span,
+                    )?;
+                    stage.set(ShaderStage::RayGeneration, name_span)?;
+                    shader_stage_error_span = name_span;
+                }
+                "any_hit" => {
+                    lexer.require_enable_extension(
+                        ImplementedEnableExtension::WgpuRayTracingPipeline,
+                        name_span,
+                    )?;
+                    stage.set(ShaderStage::AnyHit, name_span)?;
+                    shader_stage_error_span = name_span;
+                }
+                "closest_hit" => {
+                    lexer.require_enable_extension(
+                        ImplementedEnableExtension::WgpuRayTracingPipeline,
+                        name_span,
+                    )?;
+                    stage.set(ShaderStage::ClosestHit, name_span)?;
+                    shader_stage_error_span = name_span;
+                }
+                "miss" => {
+                    lexer.require_enable_extension(
+                        ImplementedEnableExtension::WgpuRayTracingPipeline,
+                        name_span,
+                    )?;
+                    stage.set(ShaderStage::Miss, name_span)?;
+                    shader_stage_error_span = name_span;
                 }
                 "payload" => {
                     lexer.require_enable_extension(
@@ -1917,14 +1980,27 @@ impl Parser {
                     payload.set(lexer.next_ident_with_span()?, name_span)?;
                     lexer.expect(Token::Paren(')'))?;
                 }
+                "incoming_payload" => {
+                    lexer.require_enable_extension(
+                        ImplementedEnableExtension::WgpuRayTracingPipeline,
+                        name_span,
+                    )?;
+                    lexer.expect(Token::Paren('('))?;
+                    incoming_payload.set(lexer.next_ident_with_span()?, name_span)?;
+                    lexer.expect(Token::Paren(')'))?;
+                }
                 "workgroup_size" => {
                     lexer.expect(Token::Paren('('))?;
                     let mut new_workgroup_size = [None; 3];
-                    for (i, size) in new_workgroup_size.iter_mut().enumerate() {
+                    for size in new_workgroup_size.iter_mut() {
                         *size = Some(self.expression(lexer, &mut ctx)?);
                         match lexer.next() {
                             (Token::Paren(')'), _) => break,
-                            (Token::Separator(','), _) if i != 2 => (),
+                            (Token::Separator(','), _) => {
+                                if lexer.next_if(Token::Paren(')')) {
+                                    break;
+                                }
+                            }
                             other => {
                                 return Err(Box::new(Error::Unexpected(
                                     other.1,
@@ -1950,6 +2026,12 @@ impl Parser {
                 }
                 "must_use" => {
                     must_use.set(name_span, name_span)?;
+                }
+                "coherent" => {
+                    memory_decorations |= crate::MemoryDecorations::COHERENT;
+                }
+                "volatile" => {
+                    memory_decorations |= crate::MemoryDecorations::VOLATILE;
                 }
                 _ => return Err(Box::new(Error::UnknownAttribute(name_span))),
             }
@@ -2050,6 +2132,7 @@ impl Parser {
                 let mut var = self.variable_decl(lexer, &mut ctx)?;
                 var.binding = binding.take();
                 var.doc_comments = doc_comments;
+                var.memory_decorations = memory_decorations;
                 Some(ast::GlobalDeclKind::Var(var))
             }
             (Token::Word("fn"), _) => {
@@ -2069,7 +2152,20 @@ impl Parser {
                 Some(ast::GlobalDeclKind::Fn(ast::Function {
                     entry_point: if let Some(stage) = stage.value {
                         if stage.compute_like() && workgroup_size.value.is_none() {
-                            return Err(Box::new(Error::MissingWorkgroupSize(compute_like_span)));
+                            return Err(Box::new(Error::MissingWorkgroupSize(
+                                shader_stage_error_span,
+                            )));
+                        }
+
+                        match stage {
+                            ShaderStage::AnyHit | ShaderStage::ClosestHit | ShaderStage::Miss => {
+                                if incoming_payload.value.is_none() {
+                                    return Err(Box::new(Error::MissingIncomingPayload(
+                                        shader_stage_error_span,
+                                    )));
+                                }
+                            }
+                            _ => {}
                         }
 
                         Some(ast::EntryPoint {
@@ -2078,6 +2174,7 @@ impl Parser {
                             workgroup_size: workgroup_size.value,
                             mesh_output_variable: mesh_output.value,
                             task_payload: payload.value,
+                            ray_incoming_payload: incoming_payload.value,
                         })
                     } else {
                         None
@@ -2101,6 +2198,9 @@ impl Parser {
                 Some(ast::GlobalDeclKind::ConstAssert(condition))
             }
             (Token::End, _) => return Ok(()),
+            (Token::UnterminatedBlockComment(_), span) => {
+                return Err(Box::new(Error::UnterminatedBlockComment(span)))
+            }
             other => {
                 return Err(Box::new(Error::Unexpected(
                     other.1,
@@ -2108,6 +2208,12 @@ impl Parser {
                 )))
             }
         };
+
+        if let Some(must_use_span) = must_use.value {
+            if !matches!(kind.as_ref(), Some(ast::GlobalDeclKind::Fn(_))) {
+                return Err(Box::new(Error::FunctionMustUseOnNonFunction(must_use_span)));
+            }
+        }
 
         if let Some(kind) = kind {
             out.decls.append(
@@ -2171,6 +2277,14 @@ impl Parser {
                                     }))
                                 }
                             };
+                            // Check if the required capability is supported
+                            let required_capability = extension.capability();
+                            if !options.capabilities.intersects(required_capability) {
+                                return Err(Box::new(Error::EnableExtensionNotSupported {
+                                    kind,
+                                    span,
+                                }));
+                            }
                             enable_extensions.add(extension);
                             Ok(())
                         })?;

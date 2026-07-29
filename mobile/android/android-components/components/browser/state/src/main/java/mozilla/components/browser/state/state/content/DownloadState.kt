@@ -19,7 +19,6 @@ import java.util.UUID
  * @property currentBytesCopied The number of current bytes copied.
  * @property status The current status of the download.
  * @property userAgent The user agent to be used for the download.
- * @property destinationDirectory The matching destination directory for this type of download.
  * @property directoryPath The full path to the directory where the file should be saved.
  * @property filePath The file path the file was saved at.
  * @property referrerUrl The site that linked to this download.
@@ -42,8 +41,7 @@ data class DownloadState(
     val currentBytesCopied: Long = 0,
     val status: Status = Status.INITIATED,
     val userAgent: String? = null,
-    val destinationDirectory: String = Environment.DIRECTORY_DOWNLOADS,
-    val directoryPath: String = Environment.getExternalStoragePublicDirectory(destinationDirectory).path,
+    val directoryPath: String = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).path,
     val referrerUrl: String? = null,
     val skipConfirmation: Boolean = false,
     val openInApp: Boolean = false,

@@ -39,30 +39,58 @@ class DelayBasedCongestionControl {
     min_delay_based_bwe_ = min_delay_based_bwe;
   }
 
-  // Returns true if queue delay is detected, but it may be low and does not
-  // necessarily mean reference window should be reduced. From 4.2.2.1.
-  // (queue_qdelay >= queue_delay_target * 0.25)
-  bool IsQueueDelayDetected() const;
-
-  // Returns true if queue delay is detected and reference window should be
-  // reduced. From 4.2.2.1. (queue_qdelay >= queue_delay_target*0.5)
-  bool ShouldReduceReferenceWindow() const;
-
-  DataSize UpdateReferenceWindow(DataSize rew_window,
-                                 double ref_window_mss_ratio,
-                                 double virtual_alpha_lim) const;
-
-  double scale_increase() const {
-    return std::clamp(1 - queue_delay_avg_ / (params_.queue_delay_target.Get() *
-                                              params_.queue_delay_threshold),
-                      0.1, 1.0);
+  // Returns true if queue delay is detected and above a threshold.
+  bool IsQueueDelayDetected() const {
+    return queue_delay_avg_.IsFinite() &&
+           queue_delay_avg_ > params_.queue_delay_target.Get() / 2;
   }
 
-  // Public for testing and logging.
+  DataSize UpdateReferenceWindow(DataSize rew_window,
+                                 double ref_window_mss_ratio) const;
+
+  // Returns false if the minimum queue delay has been above the drain threshold
+  // for a prolonged time. This can happen if minimum possible latency has
+  // increased, or queues has been filled for a longer period of time without
+  // being drained.
+  bool IsQueueDrainedInTime(Timestamp now) const {
+    return min_queue_delay_above_threshold_start_.IsInfinite() ||
+           (now - min_queue_delay_above_threshold_start_ <
+            params_.queue_delay_drain_period.Get());
+  }
+
+  // Resets queue delay estimates to start values.
+  void ResetQueueDelay();
+
   TimeDelta queue_delay() const { return queue_delay_avg_; }
 
+  TimeDelta queue_delay_min_avg() const { return queue_delay_min_avg_; }
+  TimeDelta latency_difference_avg() const { return latency_difference_avg_; }
+
+  // Scale factor used for scaling reference window increase/decrease due to
+  // minimum average queue delay per feedback. The scale factor is 0.1
+  // if the delay is higher than the threshold, and increases linearly to 1.0 if
+  // the delay is lower than the threshold / 4.
+  double ref_window_scale_factor_due_to_avg_min_delay(
+      bool allow_zero = false) const;
+
+  // Scale factor used for scaling reference window increase if
+  // latency differences per feedback is larger than the threshold. If the send
+  // rate is close to link capacity, the difference between min and max latency
+  // per feedback increases and the scale factor decreases.
+  double ref_window_scale_factor_due_to_latency_difference() const;
+
+  TimeDelta rtt() const { return last_smoothed_rtt_; }
+
+  double l4s_alpha_v() const;
+
  private:
+  TimeDelta min_base_delay() const {
+    return std::min(next_base_delay_, base_delay_history_.GetMin());
+  }
+  void UpdateSmoothedRtt(TimeDelta rtt_sample);
   void UpdateQueueDelayAverage(TimeDelta one_way_delay);
+  void UpdateQueueDelayMinAverage(TimeDelta packet_qdelay);
+  void UpdateLatencyDifferenceAverage(TimeDelta packet_latency_diff);
 
   const ScreamV2Parameters params_;
 
@@ -74,9 +102,13 @@ class DelayBasedCongestionControl {
   TimeDelta next_base_delay_ = TimeDelta::PlusInfinity();
   WindowedMinFilter<TimeDelta> base_delay_history_;
 
+  Timestamp min_queue_delay_above_threshold_start_ = Timestamp::MinusInfinity();
   TimeDelta last_smoothed_rtt_ = TimeDelta::Zero();
   Timestamp last_update_qdelay_avg_time_ = Timestamp::MinusInfinity();
+  TimeDelta last_queue_delay_sample_ = TimeDelta::PlusInfinity();
   TimeDelta queue_delay_avg_ = TimeDelta::PlusInfinity();
+  TimeDelta queue_delay_min_avg_ = TimeDelta::Zero();
+  TimeDelta latency_difference_avg_ = TimeDelta::Zero();
 };
 
 }  // namespace webrtc

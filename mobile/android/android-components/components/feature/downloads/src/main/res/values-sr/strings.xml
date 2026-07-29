@@ -34,6 +34,8 @@
   <string name="mozac_feature_downloads_dialog_title_3">Преузети датотеку? (%1$s)</string>
   <!-- This string is used as the title for the download confirmation dialog when the size of the file is not known. -->
   <string name="mozac_feature_downloads_dialog_title_with_unknown_size">Преузети датотеку?</string>
+  <!-- Alert dialog confirmation before downloading a previously downloaded file, this is the title when the size of the file is not known. -->
+  <string name="mozac_feature_downloads_again_dialog_title_with_unknown_size">Поново преузети датотеку?</string>
   <!-- Alert dialog confirmation before download a file, this is the positive action. -->
   <string name="mozac_feature_downloads_dialog_download">Преузми</string>
   <!-- Alert dialog confirmation before downloading a file again, this is the positive action. -->
@@ -45,6 +47,8 @@
     %1$s will be replaced with the name of the file.
   -->
   <string name="mozac_feature_downloads_already_exists_dialog_title">%1$s већ постоји.</string>
+  <!-- Alert dialog confirmation before downloading a previously downloaded file, this is the neutral action that proposes to open the file instead. -->
+  <string name="mozac_feature_downloads_open_existing_file">Отвори постојећу датотеку</string>
   <!--
     Alert dialog confirmation before downloading a file without network connection, this is the description.
     %1$s will be replaced with the name of the file.

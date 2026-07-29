@@ -37,11 +37,16 @@ skip-if = [
 ["browser_history_firefoxview.js"]
 
 ["browser_opentabs_cards.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
 
 ["browser_opentabs_changes.js"]
 skip-if = [
   "os == 'win' && os_version == '11.26100' && arch == 'x86'", # Bug 1879026
+  "os == 'win' && os_version == '11.26200' && arch == 'x86'", # Bug 1879026
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 1879026
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64'", # Bug 1879026
 ]
 
 ["browser_opentabs_firefoxview.js"]
@@ -55,7 +60,9 @@ skip-if = [
 skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1896042
   "os == 'win' && os_version == '11.26100' && arch == 'x86'", # Bug 1896042
+  "os == 'win' && os_version == '11.26200' && arch == 'x86'", # Bug 1896042
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 1896042
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64'", # Bug 1896042
   "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug", # Bug 1896042
 ]
 
@@ -69,9 +76,14 @@ skip-if = [
 ] # macos times out, see bug 1857293, Bug 1875877 - frequent fails on linux and windows opt
 
 ["browser_opentabs_search.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
 fail-if = [
   "a11y_checks", # Bug 1850591 clicked moz-page-nav-button button is not focusable
 ]
+
+["browser_opentabs_tab_favicons.js"]
 
 ["browser_opentabs_tab_indicators.js"]
 

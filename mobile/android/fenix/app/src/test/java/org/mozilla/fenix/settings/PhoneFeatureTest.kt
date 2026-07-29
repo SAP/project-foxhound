@@ -13,13 +13,13 @@ import mozilla.components.concept.engine.permission.SitePermissions.Status
 import mozilla.components.feature.sitepermissions.SitePermissionsRules.Action
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.R
 import org.mozilla.fenix.utils.Settings
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 class PhoneFeatureTest {

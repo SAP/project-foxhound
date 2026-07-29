@@ -40,3 +40,23 @@ url-classifier-harmful-addon:
   notification_emails:
     - amarchesini@mozilla.com
     - addons-dev-internal@mozilla.com
+
+content-decoding-error:
+  description: |
+    Reported when a content decoding error occurs. Includes the top-level
+    site (ETLD+1) and error type. Sent via OHTTP for privacy.
+  reasons:
+    error: |
+      A content decoding error was encountered.
+  include_client_id: false
+  send_if_empty: false
+  metadata:
+    include_info_sections: false
+    uploader_capabilities:
+      - ohttp
+  bugs:
+    - https://bugzilla.mozilla.org/show_bug.cgi?id=2016228
+  data_reviews:
+    - https://bugzilla.mozilla.org/show_bug.cgi?id=2016228
+  notification_emails:
+    - necko@mozilla.com

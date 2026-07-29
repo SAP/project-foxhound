@@ -46,9 +46,7 @@ add_task(async function changeSelectionUsingKeyboard() {
   is(document.activeElement, gURLBar.inputField, "urlbar should be focused");
 
   info("Move focus to the selected tab using the keyboard");
-  let unifiedSearchButton = document.querySelector(
-    "#urlbar-searchmode-switcher"
-  );
+  let unifiedSearchButton = gURLBar.querySelector(".searchmode-switcher");
   await synthesizeKeyAndWaitForFocus(unifiedSearchButton, "VK_TAB", {
     shiftKey: true,
   });

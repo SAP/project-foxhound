@@ -51,6 +51,9 @@ using mozilla::UniquePtr;
 //      m_frameDelay is the leading delay of the original impulse response.
 class HRTFKernel {
  public:
+  HRTFKernel(const HRTFKernel& other) = delete;
+  void operator=(const HRTFKernel& other) = delete;
+
   // Note: this is destructive on the passed in |impulseResponse|.
   // The |length| of |impulseResponse| must be a power of two.
   // The size of the DFT will be |2 * length|.
@@ -81,9 +84,6 @@ class HRTFKernel {
   }
 
  private:
-  HRTFKernel(const HRTFKernel& other) = delete;
-  void operator=(const HRTFKernel& other) = delete;
-
   // Note: this is destructive on the passed in |impulseResponse|.
   HRTFKernel(float* impulseResponse, size_t fftSize, float sampleRate);
 

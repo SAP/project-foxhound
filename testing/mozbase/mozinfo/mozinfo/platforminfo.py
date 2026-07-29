@@ -3,34 +3,24 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import os
+from pathlib import Path
 
 # ruff linter deprecates Dict required for Python 3.8 compatibility
 from typing import Any, Dict, Optional  # noqa UP035
+
+import yaml
 
 DictAny = Dict[str, Any]  # noqa UP006
 DictStr = Dict[str, str]  # noqa UP006
 OptTestSettings = Optional[DictAny]
 
-# From https://developer.android.com/tools/releases/platforms
-# https://apilevels.com/
-# https://en.wikipedia.org/wiki/Android_version_history
-# testing/mozbase/mozdevice/mozdevice/version_codes.py
-# MUST be a 1-1 map
-android_os_to_api_map = {
-    "7.0": "24",
-    "7.1": "25",
-    "8.0": "26",
-    "8.1": "27",
-    "9.0": "28",
-    "10.0": "29",
-    "11.0": "30",
-    "12.0": "31",
-    "12.1": "32",
-    "13": "33",
-    "14": "34",
-    "15": "35",
-    "16": "36",
-}
+# Loaded from the YAML file that is the single source of truth shared with
+# tools/lint/mozcheck (Rust, via include_str!). See the YAML file's header
+# for the documentation links.
+with (Path(__file__).parent / "android_os_to_api_map.yaml").open(
+    encoding="utf-8"
+) as _f:
+    android_os_to_api_map: DictStr = yaml.safe_load(_f)["android_os_to_api_map"]
 
 
 def android_os_to_api_version(os_version: str):
@@ -131,6 +121,8 @@ class PlatformInfo:
         if build is not None and self.os == "win":
             if build == "24h2":
                 version += ".26100"
+            elif build == "25h2":
+                version += ".26200"
             else:
                 version += "." + build
         return version

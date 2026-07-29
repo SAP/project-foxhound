@@ -19,38 +19,53 @@
       src="../states.js"></script>
 
   <script type="application/javascript">
-    var gQueue = null;
 
-    // var gA11yEventDumpID = "eventdump";
-    // gA11yEventDumpToConsole = true;
-
-    function doTests() {
+    async function doTests() {
       // setup
-      var frameDoc = document.getElementById("iframe").contentDocument;
+      const frameDoc = document.getElementById("iframe").contentDocument;
       frameDoc.designMode = "on";
-      var frameDocAcc = getAccessible(frameDoc, [nsIAccessibleDocument]);
-      var buttonAcc = getAccessible("b1");
+      const frameDocAcc = getAccessible(frameDoc, [nsIAccessibleDocument]);
+      const buttonAcc = getAccessible("b1");
 
-      var frame2Doc = document.getElementById("iframe2").contentDocument;
-      var frame2Input = frame2Doc.getElementById("input");
-      var frame2InputAcc = getAccessible(frame2Input);
-
-      // Test focus events.
-      gQueue = new eventQueue();
+      const frame2Doc = document.getElementById("iframe2").contentDocument;
+      const frame2Input = frame2Doc.getElementById("input");
+      const frame2InputAcc = getAccessible(frame2Input);
 
       // try to give focus to contentEditable frame twice to cover bug 512059
-      gQueue.push(new synthFocus(buttonAcc));
-      gQueue.push(new synthTab(frameDocAcc, new focusChecker(frameDocAcc)));
-      gQueue.push(new synthFocus(buttonAcc));
-      gQueue.push(new synthTab(frameDocAcc, new focusChecker(frameDocAcc)));
+      let focused = waitForEvent(EVENT_FOCUS, buttonAcc);
+      buttonAcc.DOMNode.focus();
+      await focused;
+      testStates(buttonAcc, STATE_FOCUSED);
+
+      focused = waitForEvent(EVENT_FOCUS, frameDocAcc);
+      synthesizeKey("KEY_Tab", { shiftKey: false });
+      await focused;
+      testStates(frameDocAcc, STATE_FOCUSED);
+
+      focused = waitForEvent(EVENT_FOCUS, buttonAcc);
+      buttonAcc.DOMNode.focus();
+      await focused;
+      testStates(buttonAcc, STATE_FOCUSED);
+
+      focused = waitForEvent(EVENT_FOCUS, frameDocAcc);
+      synthesizeKey("KEY_Tab", { shiftKey: false });
+      await focused;
+      testStates(frameDocAcc, STATE_FOCUSED);
 
       // focus on not editable document
-      gQueue.push(new synthFocus(frame2InputAcc));
-      // Skips the root element, so the focus got moved to buttonAcc2.
-      var buttonAcc2 = getAccessible("b2");
-      gQueue.push(new synthShiftTab(buttonAcc2, new focusChecker(buttonAcc2)));
+      focused = waitForEvent(EVENT_FOCUS, frame2InputAcc);
+      frame2InputAcc.DOMNode.focus();
+      await focused;
+      testStates(frame2InputAcc, STATE_FOCUSED);
 
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      // Skips the root element, so the focus got moved to buttonAcc2.
+      const buttonAcc2 = getAccessible("b2");
+      focused = waitForEvent(EVENT_FOCUS, buttonAcc2);
+      synthesizeKey("KEY_Tab", { shiftKey: true });
+      await focused;
+      testStates(buttonAcc2, STATE_FOCUSED);
+
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

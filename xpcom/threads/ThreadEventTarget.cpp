@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -103,8 +101,8 @@ ThreadEventTarget::DelayedDispatch(already_AddRefed<nsIRunnable> aEvent,
   nsCOMPtr<nsIRunnable> event = aEvent;
   NS_ENSURE_TRUE(!!aDelayMs, NS_ERROR_UNEXPECTED);
 
-  RefPtr<DelayedRunnable> r =
-      new DelayedRunnable(do_AddRef(this), event.forget(), aDelayMs);
+  RefPtr r =
+      MakeRefPtr<DelayedRunnable>(do_AddRef(this), event.forget(), aDelayMs);
   nsresult rv = r->Init();
   NS_ENSURE_SUCCESS(rv, rv);
 

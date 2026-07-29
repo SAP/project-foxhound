@@ -6,15 +6,25 @@
 
 /* Global rules */
 :root {
-  /**
-   * Headings are currently 1 level higher than they should be. Eventually
-   * "Settings" will become our h1 and everything will drop down a level so our
-   * h1s become h2s, h2s become h3s, etc.
-   */
-  --heading-font-size-xlarge: var(--font-size-xlarge);
-  --heading-font-size-large: var(--font-size-large);
-  --heading-font-size-medium: var(--font-size-medium);
+  @media not -moz-pref("browser.settings-redesign.enabled") {
+    /**
+     * Pre-SRD, headings are 1 level higher than they should be. These overrides
+     * size them as if they were one level lower. With SRD on, the widgets
+     * already render the correct level, so we don't need these.
+     */
+    --font-size-heading-xlarge: var(--font-size-xlarge);
+    --font-size-heading-large: var(--font-size-large);
+    --font-size-heading-medium: var(--font-size-medium);
+  }
   --select-max-width: 20rem;
+
+  --card-padding-inline: var(--space-xlarge);
+  --card-padding-block: var(--card-padding-inline);
+
+  @media -moz-pref("browser.settings-redesign.enabled") {
+    --background-color-canvas: light-dark(var(--color-gray-0), var(--color-gray-90));
+  }
+
   user-select: text;
 }
 
@@ -53,30 +63,72 @@
   min-height: 0;
 }
 
+#categories {
+  width: calc(var(--size-sidebar) - 42px);
+
+  @media (max-width: 950px) {
+    width: auto;
+  }
+}
+
+#search-container {
+  position: sticky;
+  top: 0;
+  /* Bug 2026689 Negative margin is used here to hide the borders of setting-controls on scroll
+     as well as the shadow to the left of the searchbar */
+  margin-inline-start: -4px;
+  /* 4px of additional width to account for the -4px of margin defined above */
+  width: calc(100% + 4px);
+  /* z-index = 2 so that the search-tooltips don't appear when the user scrolls
+     up after searching. */
+  z-index: 2;
+  background-color: var(--background-color-canvas);
+  padding-top: var(--page-space-block-start);
+  padding-bottom: var(--search-container-padding);
+  padding-inline: var(--focus-outline-offset);
+  /* Ensure focus indicators on elements below the search container
+     aren't obscured. */
+  margin-bottom: var(--search-container-margin);
+}
+
+#searchInput {
+  width: 100%;
+}
+
+#policies-container-content:not([hidden]) + #searchInput {
+  margin-block-start: var(--space-small);
+}
+
 .main-content {
-  padding-top: 0;
-  /* the 32px min-height, plus 20+30px margin below, plus some leeway: */
-  scroll-padding-top: 90px;
+  --search-container-padding: var(--space-small);
+  --search-container-margin: calc(var(--focus-outline-width) + var(--focus-outline-offset));
+
   contain: inline-size;
+  padding-top: 0;
+  scroll-padding-top: calc(calc(2 * var(--page-space-block-start)) + var(--search-container-padding) + var(--search-container-margin));
+
+  @media (max-width: 950px) {
+    padding-inline: var(--space-medium);
+  }
 }
 
 .pane-container {
   /* A workaround to keep the container always float on the `top: 0` (Bug 1377009) */
   display: block;
-  width: min(100%, var(--page-main-content-width));
+  width: min(100%, 600px);
   min-width: min-content;
+  /* Used to prevent cutting off the borders of the setting-controls */
+  margin-inline-start: 1px;
 }
 
 #mainPrefPane {
   width: 100%;
-  /* at some point we'll end up removing the sticky element using z-index above this that cuts off the top of the focus outline in https://bugzilla.mozilla.org/show_bug.cgi?id=1867385, but we're adding padding intentionally until then */
-  padding: calc(var(--focus-outline-offset) + var(--focus-outline-width)) 0 0;
 }
 
 html|div[data-category],
 groupbox[data-category],
 setting-group[data-category] {
-  margin: 0 0 32px;
+  margin: 0 0 var(--space-xlarge);
 }
 
 /* Bug 2002963 - payments and addresses are in a groupbox together, but they probably shouldn't be */
@@ -87,7 +139,7 @@ setting-group[data-category] {
 }
 
 html|h1 {
-  margin: 0 0 var(--space-small);
+  margin: 0 0 var(--space-large);
 }
 
 html|h2 {
@@ -136,6 +188,11 @@ label {
   color: var(--text-color-deemphasized);
 }
 
+.firefoxLabs-description {
+  color: var(--text-color-deemphasized);
+  margin: 0;
+}
+
 .tip-caption {
   font-size: 0.9em;
   color: var(--text-color-deemphasized);
@@ -178,19 +235,36 @@ radio {
   margin: 4px 0;
 }
 
-.spotlight:not(setting-group:has(> moz-card)) {
-  background-color: color-mix(in srgb, var(--color-accent-primary) 15%, transparent);
-  outline: var(--border-color-selected) 1px dotted;
-  animation: fade-out 0.5s ease-out 2s forwards;
-  /* Show the border to spotlight the components in high-contrast mode. */
-  border: 1px solid transparent;
-  border-radius: var(--border-radius-xsmall);
+@media not -moz-pref("browser.settings-redesign.enabled") {
+  .spotlight {
+    background-color: color-mix(in srgb, var(--color-accent-primary) 15%, transparent);
+    outline: var(--border-color-selected) 1px dotted;
+    animation: fade-out 0.5s ease-out 2s forwards;
+    /* Show the border to spotlight the components in high-contrast mode. */
+    border: 1px solid transparent;
+    border-radius: var(--border-radius-xsmall);
+  }
+
+  [data-subcategory] {
+    margin-inline: -4px;
+    padding-inline: 4px;
+  }
 }
 
-setting-group:has(> moz-card).spotlight {
-  outline: 2px solid var(--border-color-selected);
-  border-radius: var(--border-radius-medium);
-  animation: fade-out 0.5s ease-out 2s forwards;
+@media -moz-pref("browser.settings-redesign.enabled") {
+  .spotlight {
+    outline: 2px solid var(--border-color-selected);
+    animation: fade-out 0.5s ease-out 2s forwards;
+
+    setting-group& {
+      border-radius: var(--card-border-radius);
+    }
+
+    &:not(setting-group) {
+      border-radius: var(--border-radius-medium);
+      outline-offset: var(--space-small);
+    }
+  }
 }
 
 @keyframes fade-out {
@@ -200,64 +274,18 @@ setting-group:has(> moz-card).spotlight {
   }
 }
 
-[data-subcategory]:not(setting-group:has(> moz-card)) {
-  margin-inline: -4px;
-  padding-inline: 4px;
-}
-
 .ac-site-icon {
   display: flex;
 }
 
-/* Subcategory title */
+@media not -moz-pref("browser.settings-redesign.enabled") {
+  /* Subcategory title */
 
-/**
- * The first subcategory title for each category should not have margin-top.
- */
-
-.subcategory:not([hidden]) ~ .subcategory {
-  padding-top: var(--space-xxlarge);
-  border-top: 1px solid var(--border-color);
-}
-
-/* Category List */
-
-#categories {
-  overflow: visible;
-  min-height: auto;
-  padding: 1px; /* Adding padding around richlistitem in order to make entire keyboard focusing outline visible */
-}
-
-#category-general > .category-icon {
-  list-style-image: url("chrome://browser/skin/preferences/category-general.svg");
-}
-
-#category-home > .category-icon {
-  list-style-image: url("chrome://browser/skin/home.svg");
-}
-
-#category-search > .category-icon {
-  list-style-image: url("chrome://browser/skin/preferences/category-search.svg");
-}
-
-#category-privacy > .category-icon {
-  list-style-image: url("chrome://browser/skin/preferences/category-privacy-security.svg");
-}
-
-#category-sync > .category-icon {
-  list-style-image: url("chrome://browser/skin/preferences/category-sync.svg");
-}
-
-#category-ai-features > .category-icon {
-  list-style-image: url("chrome://global/skin/icons/highlights.svg");
-}
-
-#category-experimental > .category-icon {
-  list-style-image: url("chrome://global/skin/icons/experiments.svg");
-}
-
-#category-more-from-mozilla > .category-icon {
-  list-style-image: url("chrome://browser/skin/preferences/mozilla-logo.svg");
+  /* The first subcategory title for each category should not have margin-top. */
+  .subcategory:not([hidden]) ~ .subcategory {
+    padding-top: var(--space-xxlarge);
+    border-top: 1px solid var(--border-color);
+  }
 }
 
 /* All panes */
@@ -271,7 +299,14 @@ setting-group:has(> moz-card).spotlight {
 
 /* General Pane */
 
-/* stylelint-disable-next-line media-query-no-invalid */
+#isNotDefaultPane,
+#isDefaultPane {
+  /* 64px for the kit image + border. This may be slightly too large due to
+   * pixel-snapping. Defining it helps avoid layout changes once the kit
+   * image is loaded. */
+  min-height: calc(64px + 2 * var(--border-width));
+}
+
 @media not -moz-pref("browser.migrate.preferences-entrypoint.enabled") {
   #dataMigrationGroup {
     display: none;
@@ -332,38 +367,36 @@ setting-group:has(> moz-card).spotlight {
   padding: 0.3em;
 }
 
-#updateBox {
-  margin-block: 4px 32px;
-}
-
-/* Work around bug 560067 - animated images in visibility: hidden
- * still eat CPU. */
-#updateDeck > *:not(.deck-selected) > .update-throbber {
-  display: none;
-}
-
-#updateDeck > hbox > button {
-  margin-block: 0;
-  margin-inline-end: 0;
-}
-
-#updateDeck > hbox > label {
-  flex: 1;
-  margin-inline-end: 5px !important;
-}
-
-.manualLink {
-  margin-inline-start: 6px !important;
-}
-
-#updateRadioGroup > radio {
-  min-height: 30px;
-  margin: 2px 0;
-}
-
 #filter {
   flex: 1;
   margin: 4px 0 8px;
+}
+
+/** SRD applications section START **/
+#applicationsHandlersView {
+  --box-group-max-height: 500px;
+  container-type: inline-size;
+
+  moz-box-item.first label {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  moz-box-item label[slot="actions"],
+  .actionsMenu {
+    width: clamp(140px, 50cqi, 270px);
+  }
+
+  moz-box-item[hidden] {
+    display: none;
+  }
+}
+/** SRD applications section END **/
+
+/* Override overflow-wrap: anywhere from moz-card
+ TODO: Eventually we should update to make this
+ section more responsive to screen width */
+moz-fieldset#applicationsGroup {
+  overflow-wrap: normal;
 }
 
 #handlersView {
@@ -414,7 +447,7 @@ setting-group:has(> moz-card).spotlight {
   margin-inline-end: 8px !important;
 }
 
-/* Increase the specifity to override common.inc.css */
+/* Increase the specificity to override common.inc.css */
 richlistitem[selected] .actionsMenu:focus-visible {
   outline-offset: -3px;
 }
@@ -482,7 +515,7 @@ richlistitem[selected] .actionsMenu:focus-visible {
   margin-inline-end: var(--space-small);
 }
 
-a[is="moz-support-link"]:not(.sidebar-footer-link, [hidden]) {
+a[is="moz-support-link"]:not([hidden]) {
   display: inline-block;
   white-space: initial;
 }
@@ -598,11 +631,11 @@ html|dialog,
 .dialogBox {
   border: 1px solid transparent;
   border-radius: var(--border-radius-medium);
-  box-shadow: var(--box-shadow-popup);
+  box-shadow: var(--popup-box-shadow);
 }
 
 .dialogBox {
-  background-color: var(--background-color-canvas);
+  background-color: var(--background-color-box);
   background-clip: content-box;
   color: var(--text-color);
   /* `transparent` will use the dialogText color in high-contrast themes and
@@ -635,7 +668,7 @@ html|dialog,
 }
 
 .dialogTitle {
-  font-weight: var(--heading-font-weight);
+  font-weight: var(--font-weight-heading);
   text-align: center;
   user-select: none;
 }
@@ -741,6 +774,10 @@ html|dialog,
 #fxaChangeDeviceName {
   margin-block: 4px;
   margin-inline-end: 0;
+}
+
+#fxaAccountDisabled {
+  margin-bottom: calc(-1 * var(--space-large));
 }
 
 #noFxaAccount > label:first-child {
@@ -933,61 +970,6 @@ dialog > .sync-engines-list + hbox {
   vertical-align: text-bottom;
 }
 
-.update-throbber {
-  width: 1.3em;
-  min-height: 1.3em;
-  margin-inline-end: 8px;
-  content: url("chrome://global/skin/icons/loading.svg");
-  -moz-context-properties: fill;
-  fill: var(--color-accent-primary);
-}
-
-.navigation {
-  overflow-x: hidden;
-  overflow-y: auto;
-  position: relative;
-}
-
-@media (prefers-reduced-motion) {
-  /* Setting border-inline-end on .navigation makes it a focusable element */
-  .navigation::after {
-    content: "";
-    width: 1px;
-    height: 100%;
-    background-color: var(--border-color);
-    top: 0;
-    inset-inline-end: 0;
-    position: absolute;
-  }
-}
-
-.face-sad::before {
-  content: "\01F641";
-  font-size: 1.3em;
-  margin-inline-end: 8px;
-}
-
-.face-smile::before {
-  content: "\01F600";
-  font-size: 1.3em;
-  margin-inline-end: 8px;
-}
-
-#policies-container,
-#searchInput {
-  min-height: 32px;
-  margin: 20px 0 30px;
-}
-
-#policies-container {
-  margin-inline-end: var(--space-large);
-  /* Make sure the container is at least the same height as the searchbox.
-     This is needed in addition to the min-height above to make the info icon
-     the same height as the first line in the policies label.
-     Searchbox's height - line-height - border top and bottom */
-  padding-block: max(0px, calc((32px - 1.8em - 2px) / 2));
-}
-
 .info-box-container {
   background-color: var(--background-color-box-info);
   padding: 9px;
@@ -1015,22 +997,6 @@ dialog > .sync-engines-list + hbox {
 
 .info-box-container.smaller-font-size .info-icon {
   margin-top: 0.3em;
-}
-
-.sticky-container {
-  position: sticky;
-  background-color: var(--background-color-canvas);
-  top: 0;
-  z-index: 1;
-  /* The sticky-container should have the capability to cover all spotlight area. */
-  width: calc(100% + 8px);
-  margin-inline: -4px;
-  padding-inline: 4px;
-}
-
-.sticky-inner-container {
-  flex: 1;
-  max-width: var(--page-main-content-width);
 }
 
 #search-tooltip-container {
@@ -1184,15 +1150,6 @@ menulist[indicator="true"] > menupopup menuitem[indicator="true"]:not([image]) >
   font-size: 0.8em;
 }
 
-.updateSettingCrossUserWarningContainer {
-  margin-block-end: 17px;
-}
-
-#updateSettingCrossUserWarningDesc {
-  padding-inline-start: calc(16px + 6px); /* radio-check's width + margin-inline-end */
-  margin-block-start: 20px;
-}
-
 richlistitem .text-link {
   color: inherit;
   text-decoration: underline;
@@ -1248,7 +1205,18 @@ richlistitem .text-link:hover {
   margin-inline-start: 6px;
 }
 
+/* This is an HTML div (not XUL hbox), so it needs explicit display:flex for
+   horizontal icon+title layout. The :not([hidden]) guard prevents this from
+   overriding the hidden attribute's display:none (inline styles and CSS rules
+   both beat the UA stylesheet's hidden handling for HTML elements). */
+#moreFromMozillaCategory-header:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+}
+
 #moreFromMozillaCategory-header .subtitle {
+  flex-basis: 100%;
+  margin-block-start: var(--space-xsmall);
   margin-block-end: var(--space-xlarge);
 }
 
@@ -1288,28 +1256,33 @@ richlistitem .text-link:hover {
   margin-inline: 30px 0;
 }
 
-#firefox-mobile {
-  background-image: url("chrome://browser/skin/device-phone.svg");
-}
+/* Product icon backgrounds for the legacy (non-SRD) More from Mozilla page.
+ * Scoped to #moreFromMozillaCategory so they don't apply to the config-based
+ * moz-card elements that reuse the same product IDs. */
+#moreFromMozillaCategory {
+  #firefox-mobile {
+    background-image: url("chrome://browser/skin/device-phone.svg");
+  }
 
-#mozilla-vpn {
-  background-image: url("chrome://browser/skin/preferences/vpn-logo.svg");
-}
+  #mozilla-vpn {
+    background-image: url("chrome://browser/skin/preferences/vpn-logo.svg");
+  }
 
-#mozilla-monitor {
-  background-image: url("chrome://browser/skin/preferences/monitor-logo.svg");
-}
+  #mozilla-monitor {
+    background-image: url("chrome://browser/skin/preferences/monitor-logo.svg");
+  }
 
-#firefox-relay {
-  background-image: url("chrome://browser/skin/preferences/relay-logo.svg");
-}
+  #firefox-relay {
+    background-image: url("chrome://browser/skin/preferences/relay-logo.svg");
+  }
 
-#solo-ai {
-  background-image: url("chrome://browser/skin/preferences/solo-ai-logo.svg");
-}
+  #solo-ai {
+    background-image: url("chrome://browser/skin/preferences/solo-ai-logo.svg");
+  }
 
-#mdn {
-  background-image: url("chrome://browser/skin/preferences/mdn-logo.svg");
+  #mdn {
+    background-image: url("chrome://browser/skin/preferences/mdn-logo.svg");
+  }
 }
 
 /*
@@ -1408,7 +1381,7 @@ richlistitem .text-link:hover {
 
   &::part(image) {
     width: 54px;
-    box-shadow: var(--box-shadow-card);
+    box-shadow: var(--card-box-shadow);
     margin-block-start: var(--space-medium);
     border: var(--border-width) solid var(--border-color);
     border-radius: var(--border-radius-small);
@@ -1467,6 +1440,31 @@ setting-group[groupid="aiFeatures"] {
 #aiControlDefaultToggle {
   --toggle-width: 40px;
   --toggle-height: 20px;
+}
+
+.custom-model-save-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-medium);
+}
+
+.custom-model-save-confirmation {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-small);
+  min-inline-size: 0;
+
+  > span {
+    min-inline-size: 0;
+  }
+}
+
+.custom-model-save-confirmation-icon {
+  -moz-context-properties: fill;
+  fill: var(--icon-color-success);
+  width: var(--icon-size);
+  height: var(--icon-size);
 }
 
 .ai-controls-description {
@@ -1537,6 +1535,11 @@ setting-group[groupid="aiStatesDescription"] {
 .hidden-category {
   display: none;
 }
+
+.nav-separator {
+  width: 100%;
+}
+
 /* Platform-specific tweaks & overrides */
 
 @media (-moz-platform: macos) {
@@ -1598,6 +1601,10 @@ setting-group[groupid="aiStatesDescription"] {
   margin: 0;
 }
 
+setting-pane[onsearchpane] {
+  margin-block-start: var(--space-large);
+}
+
 /* Styles for the "sponsors support our mission" message and link on the Home tab */
 .mission-message {
   margin-block-start: var(--space-large);
@@ -1626,6 +1633,12 @@ setting-group[groupid="aiStatesDescription"] {
   height: 128px;
 }
 
+@media (forced-colors: active) {
+  #etpBannerEl {
+    background-image: url("chrome://browser/content/preferences/etp-advanced-banner.svg");
+  }
+}
+
 #etpLevelWarning {
   --promo-image-position: top;
 }
@@ -1637,9 +1650,36 @@ setting-group[groupid="aiStatesDescription"] {
 
 #addresses-list-header,
 #payments-list-header {
-  --box-label-font-weight: var(--heading-font-weight);
+  --box-label-font-weight: var(--font-weight-heading);
+}
+
+#no-addresses-stored,
+#no-payments-stored {
+  color: var(--text-color-deemphasized);
 }
 
 .box-header-bold {
-  --box-label-font-weight: var(--heading-font-weight);
+  --box-label-font-weight: var(--font-weight-heading);
+}
+
+.containers-identity-item {
+  --box-icon-start-fill: var(--identity-icon-color);
+  --box-icon-size: var(--icon-size-xlarge);
+  --box-icon-padding: var(--space-small);
+  --box-icon-border-radius: var(--border-radius-circle);
+  --box-icon-background: color-mix(in srgb, var(--identity-icon-color) 15%, transparent);
+}
+
+.products-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-large);
+
+  moz-box-link {
+    margin-block-start: auto;
+  }
+
+  @media (max-width: 45em) {
+    grid-template-columns: 1fr;
+  }
 }

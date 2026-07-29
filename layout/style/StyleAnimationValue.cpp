@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,6 +24,7 @@
 #include "nsComputedDOMStyle.h"
 #include "nsIFrame.h"
 #include "nsString.h"
+#include "nsStyleTransformMatrix.h"
 
 using namespace mozilla;
 using namespace mozilla::css;
@@ -141,7 +140,8 @@ MatrixScales AnimationValue::GetScaleValue(const nsIFrame* aFrame) const {
   Matrix4x4 t =
       ReadTransforms(StyleTranslate::None(), StyleRotate::None(),
                      StyleScale::None(), nullptr, GetTransformProperty(),
-                     refBox, aFrame->PresContext()->AppUnitsPerDevPixel());
+                     refBox, aFrame->PresContext()->AppUnitsPerDevPixel(),
+                     aFrame->Style()->EffectiveZoom());
   Matrix transform2d;
   bool canDraw2D = t.CanDraw2D(&transform2d);
   if (!canDraw2D) {
@@ -217,6 +217,13 @@ AnimationValue AnimationValue::FromString(CSSPropertyId& aProperty,
   result.mServo = presShell->StyleSet()->ComputeAnimationValue(
       aElement, declarations, computedStyle);
   return result;
+}
+
+std::ostream& operator<<(std::ostream& aOut, const AnimationValue& aValue) {
+  MOZ_ASSERT(aValue.mServo);
+  nsAutoCString s;
+  Servo_AnimationValue_Dump(aValue.mServo, &s);
+  return aOut << s;
 }
 
 /* static */

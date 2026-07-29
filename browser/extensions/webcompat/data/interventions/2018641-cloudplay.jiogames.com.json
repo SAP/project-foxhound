@@ -1,0 +1,15 @@
+{
+  "label": "cloudplay.jiogames.com",
+  "bugs": {
+    "2018641": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://cloudplay.jiogames.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

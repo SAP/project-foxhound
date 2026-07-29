@@ -24,10 +24,10 @@ Each item in the comma separated list can be:
 
 For example, `logins,autofill:warn,error,suggest` would forward:
 
-- Logins logs at the debug level
-- Autofill logs at the warning level
-- Suggest logs at the debug level
-- All other logs at the error level.
+* Logins logs at the debug level
+* Autofill logs at the warning level
+* Suggest logs at the debug level
+* All other logs at the error level.
 
 ### Error reporting
 

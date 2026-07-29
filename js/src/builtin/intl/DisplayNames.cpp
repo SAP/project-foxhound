@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -11,6 +9,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/intl/DisplayNames.h"
 #include "mozilla/Span.h"
+#include "mozilla/UsingEnum.h"
 
 #include "jspubtd.h"
 
@@ -19,7 +18,6 @@
 #include "builtin/intl/LocaleNegotiation.h"
 #include "builtin/intl/Packed.h"
 #include "builtin/intl/ParameterNegotiation.h"
-#include "builtin/intl/UsingEnum.h"
 #include "builtin/Number.h"
 #include "gc/AllocKind.h"
 #include "gc/GCContext.h"
@@ -49,13 +47,7 @@ using namespace js;
 using namespace js::intl;
 
 const JSClassOps DisplayNamesObject::classOps_ = {
-    nullptr, /* addProperty */
-    nullptr, /* delProperty */
-    nullptr, /* enumerate */
-    nullptr, /* newEnumerate */
-    nullptr, /* resolve */
-    nullptr, /* mayResolve */
-    DisplayNamesObject::finalize,
+    .finalize = DisplayNamesObject::finalize,
 };
 
 const JSClass DisplayNamesObject::class_ = {
@@ -200,11 +192,7 @@ void js::intl::DisplayNamesObject::setOptions(
 
 static constexpr std::string_view DisplayNamesStyleToString(
     DisplayNamesOptions::Style style) {
-#ifndef USING_ENUM
-  using enum DisplayNamesOptions::Style;
-#else
-  USING_ENUM(DisplayNamesOptions::Style, Long, Short, Narrow, Abbreviated);
-#endif
+  MOZ_USING_ENUM(DisplayNamesOptions::Style, Long, Short, Narrow, Abbreviated);
   switch (style) {
     case Long:
       return "long";
@@ -220,12 +208,8 @@ static constexpr std::string_view DisplayNamesStyleToString(
 
 static constexpr std::string_view DisplayNamesTypeToString(
     DisplayNamesOptions::Type type) {
-#ifndef USING_ENUM
-  using enum DisplayNamesOptions::Type;
-#else
-  USING_ENUM(DisplayNamesOptions::Type, Language, Region, Script, Currency,
-             Calendar, DateTimeField, Weekday, Month, Quarter, DayPeriod);
-#endif
+  MOZ_USING_ENUM(DisplayNamesOptions::Type, Language, Region, Script, Currency,
+                 Calendar, DateTimeField, Weekday, Month, Quarter, DayPeriod);
   switch (type) {
     case Language:
       return "language";
@@ -253,11 +237,7 @@ static constexpr std::string_view DisplayNamesTypeToString(
 
 static constexpr std::string_view FallbackToString(
     DisplayNamesOptions::Fallback fallback) {
-#ifndef USING_ENUM
-  using enum DisplayNamesOptions::Fallback;
-#else
-  USING_ENUM(DisplayNamesOptions::Fallback, Code, None);
-#endif
+  MOZ_USING_ENUM(DisplayNamesOptions::Fallback, Code, None);
   switch (fallback) {
     case Code:
       return "code";
@@ -269,11 +249,7 @@ static constexpr std::string_view FallbackToString(
 
 static constexpr std::string_view LanguageDisplayToString(
     DisplayNamesOptions::LanguageDisplay languageDisplay) {
-#ifndef USING_ENUM
-  using enum DisplayNamesOptions::LanguageDisplay;
-#else
-  USING_ENUM(DisplayNamesOptions::LanguageDisplay, Dialect, Standard);
-#endif
+  MOZ_USING_ENUM(DisplayNamesOptions::LanguageDisplay, Dialect, Standard);
   switch (languageDisplay) {
     case Dialect:
       return "dialect";
@@ -325,17 +301,11 @@ static bool DisplayNames(JSContext* cx, const CallArgs& args,
   // Step 3. (Inlined ResolveOptions)
 
   // ResolveOptions, step 1.
-  Rooted<LocalesList> requestedLocales(cx, cx);
-  if (!CanonicalizeLocaleList(cx, args.get(0), &requestedLocales)) {
+  auto* requestedLocales = CanonicalizeLocaleList(cx, args.get(0));
+  if (!requestedLocales) {
     return false;
   }
-
-  Rooted<ArrayObject*> requestedLocalesArray(
-      cx, LocalesListToArray(cx, requestedLocales));
-  if (!requestedLocalesArray) {
-    return false;
-  }
-  displayNames->setRequestedLocales(requestedLocalesArray);
+  displayNames->setRequestedLocales(requestedLocales);
 
   DisplayNamesOptions dnOptions{};
   dnOptions.mozExtensions = kind == DisplayNamesKind::EnableMozExtensions;
@@ -570,14 +540,30 @@ static bool ResolveLocale(JSContext* cx,
   displayNames->setLocale(locale);
 
   if (mozExtensions) {
-    auto ca = resolved.extension(UnicodeExtensionKey::Calendar);
-    MOZ_ASSERT(ca, "resolved calendar is non-null");
-
-    displayNames->setCalendar(ca);
+    if (auto ca = resolved.extension(UnicodeExtensionKey::Calendar)) {
+      displayNames->setCalendar(ca);
+    } else {
+      displayNames->setCalendar(cx->names().default_);
+    }
   }
 
   MOZ_ASSERT(displayNames->isLocaleResolved(), "locale successfully resolved");
   return true;
+}
+
+static JSLinearString* ResolveCalendar(
+    JSContext* cx, Handle<DisplayNamesObject*> displayNames) {
+  MOZ_ASSERT(displayNames->isLocaleResolved());
+
+  auto* calendar = displayNames->getCalendar();
+  if (calendar == cx->names().default_) {
+    calendar = DefaultCalendar(cx, displayNames->getLocale());
+    if (!calendar) {
+      return nullptr;
+    }
+    displayNames->setCalendar(calendar);
+  }
+  return calendar;
 }
 
 static mozilla::intl::DisplayNames* NewDisplayNames(
@@ -791,7 +777,12 @@ static bool ComputeDisplayName(JSContext* cx,
         return false;
       }
 
-      auto calendarChars = EncodeAscii(cx, displayNames->getCalendar());
+      auto* calendar = ResolveCalendar(cx, displayNames);
+      if (!calendar) {
+        return false;
+      }
+
+      auto calendarChars = EncodeAscii(cx, calendar);
       if (!calendarChars) {
         return false;
       }
@@ -994,8 +985,13 @@ static bool displayNames_resolvedOptions(JSContext* cx, const CallArgs& args) {
   }
 
   if (dnOptions.mozExtensions) {
+    auto* calendar = ResolveCalendar(cx, displayNames);
+    if (!calendar) {
+      return false;
+    }
+
     if (!options.emplaceBack(NameToId(cx->names().calendar),
-                             StringValue(displayNames->getCalendar()))) {
+                             StringValue(calendar))) {
       return false;
     }
   }

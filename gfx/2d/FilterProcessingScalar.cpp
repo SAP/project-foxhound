@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -176,8 +174,8 @@ void FilterProcessing::DoOpacityCalculationA8_Scalar(
   uint8_t alpha = uint8_t(255.f * aValue);
   for (int32_t y = 0; y < aSize.height; y++) {
     for (int32_t x = 0; x < aSize.width; x++) {
-      int32_t inputIndex = y * aSourceStride;
-      int32_t targetIndex = y * aTargetStride;
+      int32_t inputIndex = y * aSourceStride + x;
+      int32_t targetIndex = y * aTargetStride + x;
       aTargetData[targetIndex] =
           FastDivideBy255<uint8_t>(aSourceData[inputIndex] * alpha);
     }

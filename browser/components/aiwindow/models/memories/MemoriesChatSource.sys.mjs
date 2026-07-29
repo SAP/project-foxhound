@@ -44,6 +44,7 @@ let _sensitiveInfoDetector = new SensitiveInfoDetector();
  *   role: string,
  *   content: any,
  *   pageUrl: string | null,
+ *   convId: string | null,
  *   freshness_score: number
  * }>>}
  *        Promise resolving to an array of mapped chat message objects.
@@ -90,6 +91,7 @@ export async function getRecentChats(
       role: msg.role,
       content,
       pageUrl: msg.pageUrl,
+      convId: msg.convId ?? null,
       freshness_score,
     };
   });

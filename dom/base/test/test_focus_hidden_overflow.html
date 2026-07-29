@@ -1,0 +1,108 @@
+<!doctype html>
+<title>Test for bug 1795509 - overflow:hidden elements should not be focusable via Tab</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/EventUtils.js"></script>
+<script>
+SimpleTest.waitForExplicitFinish();
+SimpleTest.waitForFocus(async function() {
+  if (navigator.platform.indexOf("Mac") === 0) {
+    await SpecialPowers.pushPrefEnv({"set": [["accessibility.tabfocus", 7]]});
+  }
+
+  const cases = [
+    // [id, description, expectedFocusable]
+    // overflow-x:hidden, content overflows only in X -> not focusable
+    ["x-hidden-x-overflow", "overflow-x:hidden with X overflow only", false],
+    // overflow-y:hidden, content overflows only in Y -> not focusable
+    ["y-hidden-y-overflow", "overflow-y:hidden with Y overflow only", false],
+    // overflow-x:hidden, content overflows only in Y -> focusable
+    ["x-hidden-y-overflow", "overflow-x:hidden with Y overflow only", true],
+    // overflow-y:hidden, content overflows only in X -> focusable
+    ["y-hidden-x-overflow", "overflow-y:hidden with X overflow only", true],
+    // both hidden -> not focusable
+    ["both-hidden", "overflow:hidden in both directions", false],
+    // both auto, content overflows -> focusable
+    ["both-auto-overflow", "overflow:auto in both directions with overflow", true],
+    // both auto, no overflow -> not focusable
+    ["both-auto-no-overflow", "overflow:auto in both directions without overflow", false],
+  ];
+
+  for (let [id, description, expectedFocusable] of cases) {
+    const caseStart = document.querySelector(`input[data-for="${id}"]`);
+    caseStart.focus();
+    is(document.activeElement, caseStart, `Sanity: focus on start before testing "${description}"`);
+
+    synthesizeKey("KEY_Tab");
+    const el = document.getElementById(id);
+    if (expectedFocusable) {
+      is(document.activeElement, el, `"${description}" should be focusable via Tab`);
+    } else {
+      isnot(document.activeElement, el, `"${description}" should NOT be focusable via Tab`);
+    }
+  }
+
+  SimpleTest.finish();
+});
+</script>
+<style>
+  .scrollable {
+    width: 100px;
+    height: 100px;
+  }
+  .wide-content::before {
+    content: "";
+    display: block;
+    width: 300px;
+    height: 10px;
+  }
+  .tall-content::before {
+    content: "";
+    display: block;
+    width: 10px;
+    height: 300px;
+  }
+</style>
+
+<!-- overflow-x:hidden, content overflows only in X -->
+<input data-for="x-hidden-x-overflow">
+<div id="x-hidden-x-overflow" class="scrollable" style="overflow-x:hidden; overflow-y:auto;">
+  <div class="wide-content"></div>
+</div>
+
+<!-- overflow-y:hidden, content overflows only in Y -->
+<input data-for="y-hidden-y-overflow">
+<div id="y-hidden-y-overflow" class="scrollable" style="overflow-x:auto; overflow-y:hidden;">
+  <div class="tall-content"></div>
+</div>
+
+<!-- overflow-x:hidden, content overflows only in Y -->
+<input data-for="x-hidden-y-overflow">
+<div id="x-hidden-y-overflow" class="scrollable" style="overflow-x:hidden; overflow-y:auto;">
+  <div class="tall-content"></div>
+</div>
+
+<!-- overflow-y:hidden, content overflows only in X -->
+<input data-for="y-hidden-x-overflow">
+<div id="y-hidden-x-overflow" class="scrollable" style="overflow-x:auto; overflow-y:hidden;">
+  <div class="wide-content"></div>
+</div>
+
+<!-- both hidden -->
+<input data-for="both-hidden">
+<div id="both-hidden" class="scrollable" style="overflow:hidden;">
+  <div class="wide-content"></div>
+  <div class="tall-content"></div>
+</div>
+
+<!-- both auto, has overflow -->
+<input data-for="both-auto-overflow">
+<div id="both-auto-overflow" class="scrollable" style="overflow:auto;">
+  <div class="wide-content"></div>
+  <div class="tall-content"></div>
+</div>
+
+<!-- both auto, no overflow -->
+<input data-for="both-auto-no-overflow">
+<div id="both-auto-no-overflow" class="scrollable" style="overflow:auto;">
+  <div style="width:10px; height:10px;"></div>
+</div>

@@ -44,12 +44,6 @@ class MediaTransportHandler {
   explicit MediaTransportHandler()
       : mStateCacheMutex("MediaTransportHandler::mStateCacheMutex") {}
 
-  // Exposed so we can synchronously validate ICE servers from PeerConnection
-  static nsresult ConvertIceServers(
-      const nsTArray<dom::RTCIceServer>& aIceServers,
-      std::vector<NrIceStunServer>* aStunServers,
-      std::vector<NrIceTurnServer>* aTurnServers);
-
   typedef MozPromise<dom::Sequence<nsString>, nsresult, true> IceLogPromise;
 
   virtual void Initialize() {}
@@ -136,6 +130,10 @@ class MediaTransportHandler {
     return mCandidateGathered;
   }
 
+  MediaEventSource<IceCandidateErrorInfo>& GetCandidateError() {
+    return mCandidateError;
+  }
+
   MediaEventSource<std::string, bool>& GetAlpnNegotiated() {
     return mAlpnNegotiated;
   }
@@ -151,7 +149,9 @@ class MediaTransportHandler {
   MediaEventSource<std::string, MediaPacket>& GetEncryptedSending() {
     return mEncryptedSending;
   }
-  MediaEventSource<std::string, TransportLayer::State>& GetStateChange() {
+  MediaEventSource<std::string, TransportLayer::State,
+                   nsTArray<nsTArray<uint8_t>>>&
+  GetStateChange() {
     return mStateChange;
   }
   MediaEventSource<std::string, TransportLayer::State>& GetRtcpStateChange() {
@@ -161,6 +161,7 @@ class MediaTransportHandler {
  protected:
   void OnCandidate(const std::string& aTransportId,
                    CandidateInfo&& aCandidateInfo);
+  void OnCandidateError(IceCandidateErrorInfo&& aErrorInfo);
   void OnAlpnNegotiated(const std::string& aAlpn);
   void OnGatheringStateChange(const std::string& aTransportId,
                               dom::RTCIceGathererState aState);
@@ -170,7 +171,8 @@ class MediaTransportHandler {
   void OnEncryptedSending(const std::string& aTransportId,
                           MediaPacket&& aPacket);
   void OnStateChange(const std::string& aTransportId,
-                     TransportLayer::State aState);
+                     TransportLayer::State aState,
+                     nsTArray<nsTArray<uint8_t>>&& aRemoteCerts);
   void OnRtcpStateChange(const std::string& aTransportId,
                          TransportLayer::State aState);
   virtual void Destroy() = 0;
@@ -186,13 +188,16 @@ class MediaTransportHandler {
   MediaEventProducerOneCopyPerThread<std::string, MediaPacket>
       mSctpPacketReceived;
   MediaEventProducer<std::string, CandidateInfo> mCandidateGathered;
+  MediaEventProducer<IceCandidateErrorInfo> mCandidateError;
   MediaEventProducer<std::string, bool> mAlpnNegotiated;
   MediaEventProducer<std::string, dom::RTCIceGathererState>
       mGatheringStateChange;
   MediaEventProducer<std::string, dom::RTCIceTransportState>
       mConnectionStateChange;
   MediaEventProducer<std::string, MediaPacket> mEncryptedSending;
-  MediaEventProducer<std::string, TransportLayer::State> mStateChange;
+  MediaEventProducer<std::string, TransportLayer::State,
+                     nsTArray<nsTArray<uint8_t>>>
+      mStateChange;
   MediaEventProducer<std::string, TransportLayer::State> mRtcpStateChange;
 };
 

@@ -5,37 +5,15 @@
 Transform the checksums task into an actual task description.
 """
 
-import copy
 import logging
 
 from taskgraph.transforms.base import TransformSequence
-from taskgraph.util.schema import resolve_keyed_by
 
-from gecko_taskgraph.util.attributes import release_level
 from gecko_taskgraph.util.scriptworker import get_release_config
 
 logger = logging.getLogger(__name__)
 
 transforms = TransformSequence()
-
-
-@transforms.add
-def handle_keyed_by(config, jobs):
-    """Resolve fields that can be keyed by project, etc."""
-    fields = [
-        "run.config",
-        "run.extra-config",
-    ]
-    for job in jobs:
-        job = copy.deepcopy(job)
-        for field in fields:
-            resolve_keyed_by(
-                item=job,
-                field=field,
-                item_name=job["name"],
-                **{"release-level": release_level(config.params)},
-            )
-        yield job
 
 
 @transforms.add

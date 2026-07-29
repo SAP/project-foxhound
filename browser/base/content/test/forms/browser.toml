@@ -2,6 +2,8 @@
 prefs = ["gfx.font_loader.delay=0", "dom.select.showPicker.enabled=true", "font.minimum-size.x-western=9"]
 support-files = ["head.js"]
 
+["browser_picker_blocked_background_tab.js"]
+
 ["browser_selectpopup.js"]
 skip-if = [
   "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1329991
@@ -20,6 +22,8 @@ skip-if = [
 ]
 
 ["browser_selectpopup_dir.js"]
+
+["browser_selectpopup_display_inherit.js"]
 
 ["browser_selectpopup_focus.js"]
 

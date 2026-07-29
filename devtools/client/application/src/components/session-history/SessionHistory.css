@@ -8,60 +8,71 @@
   background-color: var(--theme-selection-background);
 }
 
-#diagram-container {
-  margin: 10px 0 0 10px;
-}
-
-#diagram-container table {
+#diagram-container-table {
+  --col-width: 95px;
   border-collapse: collapse;
   table-layout: fixed;
-  border: 1px solid;
 }
 
-#diagram-container thead th {
+#diagram-container-table thead th:not([aria-hidden]) {
   border: 1px solid var(--theme-body-color);
   cursor: default;
-  width: 95px;
+  width: var(--col-width);
 }
 
-#diagram-container td {
-  border: 1px solid;
+#diagram-container-table tbody td:not([aria-hidden]) {
+  --cell-padding: 4px;
+  --cell-border: 1px;
+  border: var(--cell-border) solid;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  padding: 4px;
+  padding: var(--cell-padding);
 }
 
-#diagram-container td.same-document-nav {
+#diagram-container-table tbody td.diagram-padding {
+  border: none;
+}
+
+#diagram-container-table .diagram-spacer {
+  width: 5px;
+}
+
+#diagram-container-table tbody td.same-document-nav {
   border-inline-start-style: dotted;
 }
 
-#diagram-container td:has(+ td.same-document-nav) {
+#diagram-container-table tbody td:has(+ td.same-document-nav) {
   border-inline-end-style: dotted;
 }
 
-#diagram-container td button {
-  border: 0 solid;
+#diagram-container-table tbody td button {
+  border: none;
+  text-align: start;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  width: 95px;
+  /* Make the button as wide as the cell, especially when the td spans multiple columns */
+  /* prettier-ignore */
+  width: calc(
+    /* multiply base column width with the colspan (--age) */
+    var(--col-width) * var(--age, 1)
+    /* removing the cell inline padding and border */
+    - (2 * var(--cell-padding))
+    - (2 * var(--cell-border))
+  );
 }
 
-td:has(:popover-open) button {
+#diagram-container-table td:has(:popover-open) button {
   background-color: var(--theme-selection-background);
   color: var(--theme-selection-color);
 }
 
-td:has(:popover-open) {
+#diagram-container-table td:has(:popover-open) {
   anchor-name: --selected-session-history-entry-info;
 }
 
-.no-text-cursor {
-  cursor: default;
-}
-
-td div[popover] {
+#diagram-container-table td div[popover] {
   position: absolute;
   position-anchor: --selected-session-history-entry-info;
   background-color: var(--theme-body-alternate-emphasized-background);

@@ -29,7 +29,7 @@ fuzzy-if(useDrawSnapshot,1-1,1197-2400) == boxshadow-opacity.html boxshadow-opac
 fuzzy(0-3,0-500) fuzzy-if(winWidget,0-2,0-1080) == boxshadow-border-radius-int.html boxshadow-border-radius-int-ref.html
 == boxshadow-inset-neg-spread.html about:blank
 == boxshadow-inset-neg-spread2.html boxshadow-inset-neg-spread2-ref.html
-fuzzy(0-26,0-3610) fuzzy-if(winWidget,0-26,0-5910) fuzzy-if(!(swgl&&Android),0-6,378-4500) == boxshadow-rotated.html boxshadow-rotated-ref.html # Bug 1211264
+fuzzy(0-13,0-5250) fuzzy-if(appleSilicon,0-13,0-6000) == boxshadow-rotated.html boxshadow-rotated-ref.html # Bug 1211264
 == boxshadow-inset-large-border-radius.html boxshadow-inset-large-border-radius-ref.html
 
 # fuzzy due to blur going inside, but as long as it's essentially black instead of a light gray its ok.
@@ -46,4 +46,4 @@ fuzzy(0-16,0-10) == fieldset-inset.html fieldset-inset-ref.html # minor anti-ali
 == 1178575-2.html 1178575-2-ref.html
 fuzzy(0-159,0-2) fails == 1212823-1.html 1212823-1-ref.html
 fuzzy(0-93,0-8) == 1212823-2.html 1212823-2-ref.html
-== boxshadow-large-offset.html boxshadow-large-offset-ref.html
+fuzzy(0-1,0-308200) == boxshadow-large-offset.html boxshadow-large-offset-ref.html

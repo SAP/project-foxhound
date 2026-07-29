@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,7 +13,7 @@
 #include "nsPrintfCString.h"
 #include "nsGTKToolkit.h"
 
-#include <dlfcn.h>
+#include <dbus/dbus.h>
 
 using namespace mozilla;
 
@@ -132,11 +129,8 @@ static const GDBusInterfaceVTable gInterfaceVTable = {
 
 void nsDBusRemoteServer::OnBusAcquired(GDBusConnection* aConnection) {
   mPathName = nsPrintfCString("/org/mozilla/%s/Remote", mAppName.get());
-  static auto sDBusValidatePathName = (bool (*)(const char*, DBusError*))dlsym(
-      RTLD_DEFAULT, "dbus_validate_path");
-  if (!sDBusValidatePathName ||
-      !sDBusValidatePathName(mPathName.get(), nullptr)) {
-    g_warning("nsDBusRemoteServer: dbus_validate_path() failed!");
+  if (!g_variant_is_object_path(mPathName.get())) {
+    g_warning("nsDBusRemoteServer: object path is not valid");
     return;
   }
 
@@ -211,20 +205,12 @@ nsresult nsDBusRemoteServer::Startup(const char* aAppName,
     busName.Truncate(DBUS_MAXIMUM_NAME_LENGTH);
   }
 
-  static auto sDBusValidateBusName = (bool (*)(const char*, DBusError*))dlsym(
-      RTLD_DEFAULT, "dbus_validate_bus_name");
-  if (!sDBusValidateBusName) {
-    g_warning("nsDBusRemoteServer: dbus_validate_bus_name() is missing!");
-    return NS_ERROR_FAILURE;
-  }
-
   // We don't have a valid busName yet - try to create a default one.
-  if (!sDBusValidateBusName(busName.get(), nullptr)) {
+  if (!g_dbus_is_name(busName.get())) {
     busName = nsPrintfCString("org.mozilla.%s.%s", mAppName.get(), "default");
-    if (!sDBusValidateBusName(busName.get(), nullptr)) {
-      // We failed completelly to get a valid bus name - just quit
-      // to prevent crash at dbus_bus_request_name().
-      g_warning("nsDBusRemoteServer: dbus_validate_bus_name() failed!");
+    if (!g_dbus_is_name(busName.get())) {
+      // We failed completely to get a valid bus name - just quit.
+      g_warning("nsDBusRemoteServer: couldn't get a valid bus name!");
       return NS_ERROR_FAILURE;
     }
   }

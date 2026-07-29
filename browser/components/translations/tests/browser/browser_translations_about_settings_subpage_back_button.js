@@ -23,8 +23,8 @@ add_task(async function test_translations_subpage_back_button() {
 
   is(
     document.location.hash,
-    "#general",
-    "Hash should return to the General pane after clicking back"
+    "#languages",
+    "Hash should return to the Languages pane after clicking back"
   );
   ok(pane?.hidden, "Translations pane should hide after navigating back");
 

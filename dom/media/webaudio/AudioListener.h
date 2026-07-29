@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -58,9 +56,9 @@ class AudioListener final : public nsWrapperCache {
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
 
-  void SetPosition(double aX, double aY, double aZ);
-  void SetOrientation(double aX, double aY, double aZ, double aXUp, double aYUp,
-                      double aZUp);
+  void SetPosition(float aX, float aY, float aZ);
+  void SetOrientation(float aX, float aY, float aZ, float aXUp, float aYUp,
+                      float aZUp);
 
   AudioListenerEngine* Engine() { return mEngine.get(); }
 

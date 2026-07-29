@@ -231,10 +231,9 @@ RefPtr<FetchServicePromises> FetchService::FetchInstance::Fetch() {
 
   nsAutoCString principalSpec;
   MOZ_ALWAYS_SUCCEEDS(mPrincipal->GetAsciiSpec(principalSpec));
-  nsAutoCString requestURL;
-  mRequest->GetURL(requestURL);
+  nsCOMPtr<nsIURI> requestURL = mRequest->GetURL();
   FETCH_LOG(("FetchInstance::Fetch [%p], mRequest URL: %s mPrincipal: %s", this,
-             requestURL.BeginReading(), principalSpec.BeginReading()));
+             requestURL->GetSpecOrDefault().get(), principalSpec.get()));
 
   nsresult rv;
 

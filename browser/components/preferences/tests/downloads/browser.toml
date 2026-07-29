@@ -1,0 +1,17 @@
+[DEFAULT]
+dupe-manifest = true
+prefs = [
+  "browser.settings-redesign.enabled=false",
+]
+support-files = [
+  "head.js",
+]
+tags = "os_integration"
+
+["browser_bug1547020_lockedDownloadDir.js"]
+
+["browser_downloads.js"]
+
+["browser_open_download_preferences_xul.js"]
+support-files = [
+  "head.js","../empty_pdf_file.pdf"]

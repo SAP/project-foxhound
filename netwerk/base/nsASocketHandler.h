@@ -5,6 +5,7 @@
 #ifndef nsASocketHandler_h_
 #define nsASocketHandler_h_
 
+#include "mozilla/OriginAttributes.h"
 #include "nsError.h"
 #include "nsINetAddr.h"
 #include "nsISupports.h"
@@ -42,7 +43,11 @@ class nsASocketHandler : public nsISupports {
   //
   uint16_t mPollTimeout{UINT16_MAX};
 
-  bool mIsPrivate{false};
+  //
+  // keys the connection pool for network partitioning.
+  // must be set before the socket transport is built.
+  //
+  mozilla::OriginAttributes mOriginAttributes;
 
   //
   // called to service a socket

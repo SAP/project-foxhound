@@ -13,4 +13,5 @@ skip-if = [
   "headless", # Bug 1405869
   "os == 'android'", # Image type isn't supported
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && asan", # Bug 1836500
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && asan", # Bug 1836500
 ]

@@ -5,7 +5,6 @@
 package org.mozilla.fenix.downloads.listscreen.store
 
 import mozilla.components.lib.state.State
-import org.mozilla.fenix.downloads.listscreen.store.DownloadUIState.Mode
 
 /**
  * The state of the Download screen.
@@ -13,11 +12,13 @@ import org.mozilla.fenix.downloads.listscreen.store.DownloadUIState.Mode
  * @property items List of [FileItem] to display.
  * @property mode Current [Mode] of the Download screen.
  * @property pendingDeletionIds Set of [FileItem] IDs that are waiting to be deleted.
- * @property isDeleteDialogVisible Flag indicating whether the delete confirmation dialog is currently visible.
  * @property searchQuery The search query entered by the user. This is used to filter the list of items.
  * @property fileToRename FileItem if there is a file to rename.
  * @property renameFileError [RenameFileError] indicating if there is an error when renaming a file.
  * @property isChangeFileExtensionDialogVisible Indicates whether the dialog to change file extension is visible.
+ * @property itemToChangeExtension [FileItem] for which the change file extension dialog is currently shown.
+ * @property dialogState The current [DialogState] indicating if a dialog is visible.
+ * @property deletionSnackbarState A one-time event containing items deleted, used to trigger the Undo snackbar.
  * @param isSearchFieldRequested Indicates whether the search field is requested to be shown.
  * @param userSelectedContentTypeFilter The user selected [FileItem.ContentTypeFilter].
  */
@@ -25,11 +26,13 @@ data class DownloadUIState(
     val items: List<FileItem>,
     val mode: Mode,
     val pendingDeletionIds: Set<String>,
-    val isDeleteDialogVisible: Boolean = false,
     val searchQuery: String = "",
     val fileToRename: FileItem? = null,
     val renameFileError: RenameFileError? = null,
     val isChangeFileExtensionDialogVisible: Boolean = false,
+    val itemToChangeExtension: FileItem? = null,
+    val dialogState: DialogState = DialogState.None,
+    val deletionSnackbarState: SnackbarState = SnackbarState.None,
     private val isSearchFieldRequested: Boolean = false,
     private val userSelectedContentTypeFilter: FileItem.ContentTypeFilter = FileItem.ContentTypeFilter.All,
 ) : State {
@@ -170,5 +173,42 @@ data class DownloadUIState(
          * Editing mode for the Download screen where items can be selected.
          */
         data class Editing(override val selectedItems: Set<FileItem>) : Mode()
+    }
+
+    /**
+     * The state of the Undo deletion snackbar.
+     */
+    sealed interface SnackbarState {
+        /**
+         * No snackbar is currently visible.
+         */
+        data object None : SnackbarState
+
+        /**
+         * The Undo deletion snackbar is shown with the specified items.
+         */
+        data class UndoDeletion(val items: Set<FileItem>) : SnackbarState
+    }
+
+    /**
+     * The state of the active dialog on the Download screen.
+     */
+    sealed interface DialogState {
+        /**
+         * No dialog is currently visible.
+         */
+        data object None : DialogState
+
+        /**
+         * The delete confirmation dialog is visible.
+         * @property items The items waiting for deletion confirmation.
+         */
+        data class DeleteConfirmation(val items: Set<FileItem>) : DialogState
+
+        /**
+         * The multi-select delete confirmation dialog is visible.
+         * @property items The items waiting for deletion confirmation.
+         */
+        data class MultiSelectDeleteConfirmation(val items: Set<FileItem>) : DialogState
     }
 }

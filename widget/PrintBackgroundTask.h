@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +8,6 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/ErrorResult.h"
 
-#include <tuple>
 #include <utility>
 
 // A helper to resolve a DOM Promise with the result of a const method, executed
@@ -41,18 +39,14 @@ void SpawnPrintBackgroundTask(
       /* strict = */ false);
   // See
   // https://stackoverflow.com/questions/47496358/c-lambdas-how-to-capture-variadic-parameter-pack-from-the-upper-scope
-  // about the tuple shenanigans. It could be improved with C++20
+  // for the capture.
   NS_DispatchBackgroundTask(
       NS_NewRunnableFunction(
           "SpawnPrintBackgroundTask",
           [holder = std::move(holder), promiseHolder = std::move(promiseHolder),
            backgroundTask = aBackgroundTask,
-           aArgs = std::make_tuple(std::forward<Args>(aArgs)...)] {
-            Result result = std::apply(
-                [&](auto&&... args) {
-                  return (holder->get()->*backgroundTask)(args...);
-                },
-                std::move(aArgs));
+           ... args = std::forward<Args>(aArgs)] {
+            Result result = (holder->get()->*backgroundTask)(args...);
             NS_DispatchToMainThread(NS_NewRunnableFunction(
                 "SpawnPrintBackgroundTaskResolution",
                 [holder = std::move(holder),

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -33,7 +31,8 @@ std::ostream& operator<<(std::ostream& aStream, PseudoStyleType aType) {
 
 /* static */
 Maybe<PseudoStyleRequest> PseudoStyleRequest::Parse(
-    const nsAString& aPseudoElement, bool aIgnoreEnabledState) {
+    const nsAString& aPseudoElement, URLExtraData* aURLExtraData,
+    bool aIgnoreEnabledState) {
   PseudoStyleRequest result;
 
   // Not a pseudo-element, use default PseudoStyleReqeust.
@@ -42,8 +41,8 @@ Maybe<PseudoStyleRequest> PseudoStyleRequest::Parse(
   }
 
   // Parse the pseudo-element string.
-  if (!Servo_ParsePseudoElement(&aPseudoElement, aIgnoreEnabledState,
-                                &result)) {
+  if (!Servo_ParsePseudoElement(&aPseudoElement, aURLExtraData,
+                                aIgnoreEnabledState, &result)) {
     return Nothing();
   }
 

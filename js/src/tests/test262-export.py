@@ -534,7 +534,8 @@ def insertMeta(source: bytes, frontmatter: "dict[str, Any]") -> bytes:
         if key in ("description", "info"):
             lines.append(b"%s: |" % key.encode("ascii"))
             lines.append(
-                yaml.dump(
+                yaml
+                .dump(
                     value,
                     encoding="utf8",
                     default_style="|",

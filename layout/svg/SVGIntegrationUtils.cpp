@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -1208,7 +1206,7 @@ already_AddRefed<gfxDrawable> SVGIntegrationUtils::DrawableFromPaintServer(
     gfxFloat scaleY = overrideBounds.Height() / aRenderSize.height;
     gfxMatrix scaleMatrix = gfxMatrix::Scaling(scaleX, scaleY);
     pattern->SetMatrix(scaleMatrix * pattern->GetMatrix());
-    return do_AddRef(new gfxPatternDrawable(pattern, aRenderSize));
+    return MakeAndAddRef<gfxPatternDrawable>(pattern, aRenderSize);
   }
 
   if (aFrame->IsSVGFrame() &&
@@ -1221,9 +1219,9 @@ already_AddRefed<gfxDrawable> SVGIntegrationUtils::DrawableFromPaintServer(
 
   // We don't want to paint into a surface as long as we don't need to, so we
   // set up a drawing callback.
-  RefPtr<gfxDrawingCallback> cb =
-      new PaintFrameCallback(aFrame, aPaintServerSize, aRenderSize, aFlags);
-  return do_AddRef(new gfxCallbackDrawable(cb, aRenderSize));
+  auto cb = MakeRefPtr<PaintFrameCallback>(aFrame, aPaintServerSize,
+                                           aRenderSize, aFlags);
+  return MakeAndAddRef<gfxCallbackDrawable>(cb, aRenderSize);
 }
 
 }  // namespace mozilla

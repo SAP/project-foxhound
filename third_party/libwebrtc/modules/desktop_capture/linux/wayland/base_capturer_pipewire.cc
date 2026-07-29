@@ -16,6 +16,8 @@
 #include <memory>
 #include <utility>
 
+#include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
 #include "modules/desktop_capture/delegated_source_list_controller.h"
 #include "modules/desktop_capture/desktop_capture_options.h"
 #include "modules/desktop_capture/desktop_capture_types.h"
@@ -28,7 +30,6 @@
 #include "modules/portal/xdg_session_details.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/time_utils.h"
 #include "rtc_base/trace_event.h"
 
 namespace webrtc {
@@ -56,7 +57,10 @@ bool BaseCapturerPipeWire::IsSupported() {
 BaseCapturerPipeWire::BaseCapturerPipeWire(const DesktopCaptureOptions& options,
                                            CaptureType type)
     : BaseCapturerPipeWire(options,
-                           std::make_unique<ScreenCastPortal>(type, this)) {
+                           std::make_unique<ScreenCastPortal>(
+                               type,
+                               this,
+                               options.prefer_cursor_embedded())) {
   is_screencast_portal_ = true;
 }
 
@@ -64,6 +68,7 @@ BaseCapturerPipeWire::BaseCapturerPipeWire(
     const DesktopCaptureOptions& options,
     std::unique_ptr<ScreenCapturePortalInterface> portal)
     : options_(options),
+      clock_(options.clock()),
       is_screencast_portal_(false),
       portal_(std::move(portal)) {
   source_id_ = RestoreTokenManager::GetInstance().GetUnusedId();
@@ -72,6 +77,10 @@ BaseCapturerPipeWire::BaseCapturerPipeWire(
 }
 
 BaseCapturerPipeWire::~BaseCapturerPipeWire() {
+  // Destroy the portal first. Its destructor may block until in-flight
+  // GDBus callbacks finish, and those callbacks access other members
+  // (options_, callback_) through the notifier_ pointer.
+  portal_.reset();
   options_.screencast_stream()->StopScreenCastStream();
 }
 
@@ -83,8 +92,7 @@ void BaseCapturerPipeWire::OnScreenCastRequestResult(RequestResponse result,
   // Reset the value of capturer_failed_ in case we succeed below. If we fail,
   // then it'll set it to the right value again soon enough.
   capturer_failed_ = false;
-  if (result != RequestResponse::kSuccess ||
-      !options_.screencast_stream() ||
+  if (result != RequestResponse::kSuccess || !options_.screencast_stream() ||
       !options_.screencast_stream()->StartScreenCastStream(
           stream_node_id, fd, options_.get_width(), options_.get_height(),
           options_.prefer_cursor_embedded(),
@@ -170,7 +178,7 @@ void BaseCapturerPipeWire::CaptureFrame() {
     return;
   }
 
-  int64_t capture_start_time_nanos = TimeNanos();
+  Timestamp capture_start_time = clock_.CurrentTime();
   std::unique_ptr<DesktopFrame> frame =
       options_.screencast_stream()->CaptureFrame();
 
@@ -183,8 +191,7 @@ void BaseCapturerPipeWire::CaptureFrame() {
   // the frame, see ScreenCapturerX11::CaptureFrame.
 
   frame->set_capturer_id(DesktopCapturerId::kWaylandCapturerLinux);
-  frame->set_capture_time_ms((TimeNanos() - capture_start_time_nanos) /
-                             kNumNanosecsPerMillisec);
+  frame->set_capture_time_ms((clock_.CurrentTime() - capture_start_time).ms());
   callback_->OnCaptureResult(Result::SUCCESS, std::move(frame));
 }
 
@@ -197,7 +204,7 @@ bool BaseCapturerPipeWire::GetSourceList(SourceList* sources) {
   // is often treated as a null/placeholder id, so we shouldn't use that.
   // TODO(https://crbug.com/1297671): Reconsider type of ID when plumbing
   // token that will enable stream re-use.
-  sources->push_back({source_id_});
+  sources->push_back({.id = source_id_});
   return true;
 }
 

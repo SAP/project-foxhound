@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -76,7 +75,7 @@ export class NetErrorChild extends RemotePageChild {
     // Note: not document.documentURIObject, which will be the network error
     // page's URI - we want the URI of the page that failed to load.
     let uri = document.mozDocumentURIIfNotForErrorPages;
-    return lazy.BrowserUtils.formatURIForDisplay(uri);
+    return lazy.BrowserUtils.formatURIForDisplay(uri, { showWWW: true });
   }
 
   /**
@@ -139,6 +138,7 @@ export class NetErrorChild extends RemotePageChild {
         link.setAttribute("data-l10n-name", "website");
 
         let span = doc.createElement("span");
+        span.id = "dns-suggestion";
         span.appendChild(link);
         doc.l10n.setAttributes(span, "neterror-dns-not-found-with-suggestion", {
           hostAndPath: displayHost + pathQueryRef,
@@ -148,16 +148,11 @@ export class NetErrorChild extends RemotePageChild {
         if (shortDesc) {
           shortDesc.textContent += " ";
           shortDesc.appendChild(span);
-        }
-
-        // For Felt Privacy experience (net-error-card), also update the learn more link
-        // to point to the corrected domain instead of the SUMO support page
-        const netErrorCard =
-          doc.querySelector("net-error-card").wrappedJSObject;
-        if (netErrorCard) {
-          const learnMoreLink = netErrorCard.netErrorLearnMoreLink;
-          if (learnMoreLink) {
-            learnMoreLink.href = displaySpec;
+        } else {
+          const intro =
+            doc.querySelector("net-error-card")?.wrappedJSObject?.errorIntro;
+          if (intro) {
+            intro.after(span);
           }
         }
       },

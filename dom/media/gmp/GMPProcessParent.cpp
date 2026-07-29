@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=2 et :
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -55,7 +53,7 @@ void GMPProcessParent::InitStaticMainThread() {
   sMacSandboxGMPLogging =
       Preferences::GetBool("security.sandbox.logging.enabled") ||
       PR_GetEnv("MOZ_SANDBOX_GMP_LOGGING") || PR_GetEnv("MOZ_SANDBOX_LOGGING");
-  GMP_LOG_DEBUG("GMPProcessParent::InitStaticMainThread: sandbox logging=%s",
+  GMP_LOG_DEBUG("GMPProcessParent::InitStaticMainThread: sandbox logging={}",
                 sMacSandboxGMPLogging ? "true" : "false");
 #  if defined(DEBUG)
   sIsMainThreadInitDone = true;
@@ -159,7 +157,7 @@ bool GMPProcessParent::Launch(int32_t aTimeoutMs) {
       StaticPrefs::media_gmp_use_native_event_processing(), args);
 
 #ifdef ALLOW_GECKO_CHILD_PROCESS_ARCH
-  GMP_LOG_DEBUG("GMPProcessParent::Launch() mLaunchArch: %d", mLaunchArch);
+  GMP_LOG_DEBUG("GMPProcessParent::Launch() mLaunchArch: {}", mLaunchArch);
 #  if defined(XP_MACOSX)
   mLaunchOptions->arch = mLaunchArch;
   if (mLaunchArch == base::PROCESS_ARCH_X86_64) {
@@ -180,7 +178,7 @@ bool GMPProcessParent::Launch(int32_t aTimeoutMs) {
   if (NS_WARN_IF(NS_FAILED(rv))) {
     GMP_LOG_DEBUG(
         "GMPProcessParent::Launch: "
-        "plugin path normaliziation failed for path: %s",
+        "plugin path normaliziation failed for path: {}",
         mGMPPath.c_str());
   }
 
@@ -198,12 +196,12 @@ bool GMPProcessParent::Launch(int32_t aTimeoutMs) {
   // case. See bug 1236680 for details.
   if (NS_WARN_IF(
           !widget::WinUtils::ResolveJunctionPointsAndSymLinks(wGMPPath))) {
-    GMP_LOG_DEBUG("ResolveJunctionPointsAndSymLinks failed for GMP path=%S",
-                  wGMPPath.c_str());
+    GMP_LOG_DEBUG("ResolveJunctionPointsAndSymLinks failed for GMP path={}",
+                  NS_ConvertUTF16toUTF8(wGMPPath.c_str()).get());
     return false;
   }
-  GMP_LOG_DEBUG("GMPProcessParent::Launch() resolved path to %S",
-                wGMPPath.c_str());
+  GMP_LOG_DEBUG("GMPProcessParent::Launch() resolved path to {}",
+                NS_ConvertUTF16toUTF8(wGMPPath.c_str()).get());
 
 #  ifdef MOZ_SANDBOX
   // If the GMP path is a network path that is not mapped to a drive letter,
@@ -281,7 +279,7 @@ bool GMPProcessParent::FillMacSandboxInfo(MacSandboxInfo& aInfo) {
 
   GMP_LOG_DEBUG(
       "GMPProcessParent::FillMacSandboxInfo: "
-      "plugin dir path: %s",
+      "plugin dir path: {}",
       mGMPPath.c_str());
   nsCOMPtr<nsIFile> pluginDir;
   nsresult rv = NS_NewLocalFile(NS_ConvertUTF8toUTF16(mGMPPath.c_str()),
@@ -289,7 +287,7 @@ bool GMPProcessParent::FillMacSandboxInfo(MacSandboxInfo& aInfo) {
   if (NS_FAILED(rv)) {
     GMP_LOG_DEBUG(
         "GMPProcessParent::FillMacSandboxInfo: "
-        "NS_NewLocalFile failed for plugin dir, rv=%d",
+        "NS_NewLocalFile failed for plugin dir, rv={}",
         uint32_t(rv));
     return false;
   }
@@ -298,7 +296,7 @@ bool GMPProcessParent::FillMacSandboxInfo(MacSandboxInfo& aInfo) {
   if (NS_FAILED(rv)) {
     GMP_LOG_DEBUG(
         "GMPProcessParent::FillMacSandboxInfo: "
-        "failed to normalize plugin dir path, rv=%d",
+        "failed to normalize plugin dir path, rv={}",
         uint32_t(rv));
     return false;
   }
@@ -308,7 +306,7 @@ bool GMPProcessParent::FillMacSandboxInfo(MacSandboxInfo& aInfo) {
   aInfo.pluginPath.assign(resolvedPluginPath.get());
   GMP_LOG_DEBUG(
       "GMPProcessParent::FillMacSandboxInfo: "
-      "resolved plugin dir path: %s",
+      "resolved plugin dir path: {}",
       resolvedPluginPath.get());
 
   if (!mozilla::IsPackagedBuild()) {
@@ -328,7 +326,7 @@ bool GMPProcessParent::FillMacSandboxInfo(MacSandboxInfo& aInfo) {
     aInfo.testingReadPath1 = repoDirPath.get();
     GMP_LOG_DEBUG(
         "GMPProcessParent::FillMacSandboxInfo: "
-        "repo dir path: %s",
+        "repo dir path: {}",
         repoDirPath.get());
 
     // Object dir
@@ -344,7 +342,7 @@ bool GMPProcessParent::FillMacSandboxInfo(MacSandboxInfo& aInfo) {
     aInfo.testingReadPath2 = objDirPath.get();
     GMP_LOG_DEBUG(
         "GMPProcessParent::FillMacSandboxInfo: "
-        "object dir path: %s",
+        "object dir path: {}",
         objDirPath.get());
   }
   return true;

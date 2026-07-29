@@ -1,0 +1,66 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <title>RTL native key bindings GTK</title>
+    <!-- Any copyright is dedicated to the Public Domain.
+         http://creativecommons.org/publicdomain/zero/1.0/ -->
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+  </head>
+  <body>
+
+    <input id="input" dir="rtl" type="text" value="שלום עולם">
+
+    <textarea id="textarea" dir="rtl" cols="40">שלום עולם</textarea>
+
+    <script type="text/javascript">
+      // Before the fix, the word-selection commands were logical
+      // (SelectWordPrevious / SelectWordNext), which moved in the opposite
+      // visual direction.  The fix maps them to the physical SelectLeft2 /
+      // SelectRight2 commands.
+
+      SimpleTest.waitForExplicitFinish();
+
+      // The text is two Hebrew words (shalom olam):
+      //   index 0-3 = first word  (4 chars)
+      //   index 4   = space
+      //   index 5-8 = second word (4 chars)
+      const WORD2_START = 5;
+
+      function testElement(el) {
+        el.focus();
+        el.setSelectionRange(WORD2_START, WORD2_START);
+
+        // Ctrl+Shift+Left: in RTL, visual left = toward higher offsets.
+        synthesizeKey("KEY_ArrowLeft", {ctrlKey: true, shiftKey: true});
+        ok(el.selectionStart != el.selectionEnd,
+           el.id + ": Ctrl+Shift+Left should create a selection");
+        is(el.selectionStart, WORD2_START,
+           el.id + ": Ctrl+Shift+Left anchor should stay at " + WORD2_START);
+        ok(el.selectionEnd > WORD2_START,
+           el.id + ": Ctrl+Shift+Left should extend toward higher offsets " +
+           "(got selectionEnd=" + el.selectionEnd + ")");
+
+        // Reset cursor to the same position.
+        el.setSelectionRange(WORD2_START, WORD2_START);
+
+        // Ctrl+Shift+Right: in RTL, visual right = toward lower offsets.
+        synthesizeKey("KEY_ArrowRight", {ctrlKey: true, shiftKey: true});
+        ok(el.selectionStart != el.selectionEnd,
+           el.id + ": Ctrl+Shift+Right should create a selection");
+        ok(el.selectionStart < WORD2_START,
+           el.id + ": Ctrl+Shift+Right should extend toward lower offsets " +
+           "(got selectionStart=" + el.selectionStart + ")");
+        is(el.selectionEnd, WORD2_START,
+           el.id + ": Ctrl+Shift+Right anchor should stay at " + WORD2_START);
+      }
+
+      SimpleTest.waitForFocus(function() {
+        testElement(document.getElementById("input"));
+        testElement(document.getElementById("textarea"));
+        SimpleTest.finish();
+      });
+    </script>
+  </body>
+</html>

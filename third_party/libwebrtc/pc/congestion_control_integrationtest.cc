@@ -13,6 +13,7 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "absl/strings/str_cat.h"
@@ -24,12 +25,14 @@
 #include "api/test/rtc_error_matchers.h"
 #include "pc/session_description.h"
 #include "pc/test/integration_test_helpers.h"
+#include "system_wrappers/include/metrics.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/wait_until.h"
 
 namespace webrtc {
 
+using ::testing::ContainsRegex;
 using ::testing::Eq;
 using ::testing::Field;
 using ::testing::Gt;
@@ -44,6 +47,9 @@ class PeerConnectionCongestionControlTest
       : PeerConnectionIntegrationBaseTest(SdpSemantics::kUnifiedPlan) {}
 };
 
+// This regexp matches both wildcard and non-wildcard ccfb lines.
+constexpr std::string_view ccfb_regex = "a=rtcp-fb:[0-9*]* ack ccfb\r\n";
+
 TEST_F(PeerConnectionCongestionControlTest,
        OfferDoesNotContainCcfbEvenIfEnabled) {
   SetFieldTrials("WebRTC-RFC8888CongestionControlFeedback/Enabled/");
@@ -52,7 +58,7 @@ TEST_F(PeerConnectionCongestionControlTest,
   std::unique_ptr<SessionDescriptionInterface> offer =
       caller()->CreateOfferAndWait();
   std::string offer_str = absl::StrCat(*offer);
-  EXPECT_THAT(offer_str, Not(HasSubstr("a=rtcp-fb:* ack ccfb\r\n")));
+  EXPECT_THAT(offer_str, Not(ContainsRegex(ccfb_regex)));
 }
 
 TEST_F(PeerConnectionCongestionControlTest, OfferContainsCcfbIfFieldTrial) {
@@ -62,7 +68,7 @@ TEST_F(PeerConnectionCongestionControlTest, OfferContainsCcfbIfFieldTrial) {
   std::unique_ptr<SessionDescriptionInterface> offer =
       caller()->CreateOfferAndWait();
   std::string offer_str = absl::StrCat(*offer);
-  EXPECT_THAT(offer_str, HasSubstr("a=rtcp-fb:* ack ccfb\r\n"));
+  EXPECT_THAT(offer_str, ContainsRegex(ccfb_regex));
 }
 
 TEST_F(PeerConnectionCongestionControlTest, ReceiveOfferSetsCcfbFlag) {
@@ -360,6 +366,7 @@ TEST_F(PeerConnectionCongestionControlTest, CcfbGetsUsed) {
 
 TEST_F(PeerConnectionCongestionControlTest, CcfbGetsUsedWithPrAnswer) {
   SetFieldTrials("WebRTC-RFC8888CongestionControlFeedback/Enabled,offer:true/");
+  metrics::Reset();
   ASSERT_TRUE(CreatePeerConnectionWrappers());
   ConnectFakeSignaling();
   caller()->AddAudioVideoTracks();
@@ -390,10 +397,23 @@ TEST_F(PeerConnectionCongestionControlTest, CcfbGetsUsedWithPrAnswer) {
   // There should be no transport-cc generated.
   EXPECT_THAT(pc_internal->FeedbackAccordingToTransportCcCountForTesting(),
               Eq(0));
+  // Note that metrics are picked up from both PCs, so the number
+  // of metric counts is 2.
+  EXPECT_METRIC_EQ(
+      metrics::NumSamples("WebRTC.PeerConnection.NegotiatedFeedbackType"), 2);
+  EXPECT_METRIC_EQ(
+      metrics::NumEvents("WebRTC.PeerConnection.NegotiatedFeedbackType",
+                         static_cast<int>(RtcpFeedbackType::CCFB)),
+      2);
+  EXPECT_METRIC_EQ(
+      metrics::NumEvents("WebRTC.PeerConnection.NegotiatedFeedbackType",
+                         static_cast<int>(RtcpFeedbackType::TRANSPORT_CC)),
+      0);
 }
 
 TEST_F(PeerConnectionCongestionControlTest, TransportCcGetsUsed) {
   SetFieldTrials("WebRTC-RFC8888CongestionControlFeedback/Disabled/");
+  metrics::Reset();
   ASSERT_TRUE(CreatePeerConnectionWrappers());
   ConnectFakeSignaling();
   caller()->AddAudioVideoTracks();
@@ -414,6 +434,18 @@ TEST_F(PeerConnectionCongestionControlTest, TransportCcGetsUsed) {
       IsRtcOk());
   // Test that RFC 8888 feedback is NOT generated when field trial disabled.
   EXPECT_THAT(pc_internal->FeedbackAccordingToRfc8888CountForTesting(), Eq(0));
+  // Note that metrics are picked up from both PCs, so the number
+  // of metric counts is 2.
+  EXPECT_METRIC_EQ(
+      metrics::NumSamples("WebRTC.PeerConnection.NegotiatedFeedbackType"), 2);
+  EXPECT_METRIC_EQ(
+      metrics::NumEvents("WebRTC.PeerConnection.NegotiatedFeedbackType",
+                         static_cast<int>(RtcpFeedbackType::CCFB)),
+      0);
+  EXPECT_METRIC_EQ(
+      metrics::NumEvents("WebRTC.PeerConnection.NegotiatedFeedbackType",
+                         static_cast<int>(RtcpFeedbackType::TRANSPORT_CC)),
+      2);
 }
 
 TEST_F(PeerConnectionCongestionControlTest,

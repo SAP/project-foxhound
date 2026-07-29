@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -78,6 +77,8 @@ RasterImage::RasterImage(nsIURI* aURI /* = nullptr */)
 
 //******************************************************************************
 RasterImage::~RasterImage() {
+  mIsBeingDestroyed = true;
+
   // Make sure our SourceBuffer is marked as complete. This will ensure that any
   // outstanding decoders terminate.
   if (!mSourceBuffer->IsComplete()) {
@@ -266,7 +267,12 @@ AspectRatio RasterImage::GetIntrinsicRatio() {
   if (mError) {
     return {};
   }
-  return AspectRatio::FromSize(mSize.width, mSize.height);
+  OrientedIntSize size = mSize;
+  if (mResolution.mX != mResolution.mY) {
+    mResolution.ApplyXTo(size.width);
+    mResolution.ApplyYTo(size.height);
+  }
+  return AspectRatio::FromSize(size.width, size.height);
 }
 
 NS_IMETHODIMP_(Orientation)
@@ -481,8 +487,12 @@ RasterImage::WillDrawOpaqueNow() {
 void RasterImage::OnSurfaceDiscarded(const SurfaceKey& aSurfaceKey) {
   MOZ_ASSERT(mProgressTracker);
 
+  if (mIsBeingDestroyed) {
+    return;
+  }
+
   bool animatedFramesDiscarded =
-      mAnimationState && aSurfaceKey.Playback() == PlaybackType::eAnimated;
+      aSurfaceKey.Playback() == PlaybackType::eAnimated;
 
   nsCOMPtr<nsIEventTarget> eventTarget = do_GetMainThread();
 
@@ -1671,10 +1681,12 @@ void RasterImage::NotifyDecodeComplete(
     }
 
     if (mAnimationState && LoadHasBeenDecoded()) {
-      // We've finished a full decode of all animation frames and our
-      // AnimationState has been notified about them all, so let it know not to
-      // expect anymore.
-      mAnimationState->NotifyDecodeComplete();
+      // If we've successfully finished a full decode of all animation frames
+      // then let our animation state know it is complete and to not expect
+      // anymore frames.
+      if (aStatus.mFinished && !aStatus.mHadError) {
+        mAnimationState->NotifyDecodeComplete();
+      }
 
       IntRect rect = mAnimationState->UpdateState(this, mSize.ToUnknownSize());
 

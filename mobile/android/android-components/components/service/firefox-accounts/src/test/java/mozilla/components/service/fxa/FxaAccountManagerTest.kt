@@ -9,6 +9,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.test.runTest
 import mozilla.appservices.fxaclient.FxaConfig
+import mozilla.appservices.fxaclient.FxaRustAuthState
 import mozilla.appservices.fxaclient.FxaServer
 import mozilla.appservices.fxaclient.FxaState
 import mozilla.components.concept.base.crash.CrashReporting
@@ -23,6 +24,7 @@ import mozilla.components.concept.sync.DeviceType
 import mozilla.components.concept.sync.FxAEntryPoint
 import mozilla.components.concept.sync.StatePersistenceCallback
 import mozilla.components.service.fxa.manager.FxaAccountManager
+import mozilla.components.service.fxa.manager.SCOPE_SYNC
 import mozilla.components.service.fxa.manager.SyncEnginesStorage
 import mozilla.components.service.fxa.sync.SyncManager
 import mozilla.components.service.fxa.sync.SyncReason
@@ -35,6 +37,8 @@ import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.whenever
 import org.junit.After
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.ArgumentMatchers.anyBoolean
@@ -128,6 +132,77 @@ class FxaAccountManagerTest {
     }
 
     @Test
+    fun `containsScope returns true when granted and false when not granted`() = runTest {
+        val accountStorage: AccountStorage = mock()
+        val crashReporter: CrashReporting = mock()
+        val fxaManager = TestableFxaAccountManager(
+            context = testContext,
+            config = FxaConfig(FxaServer.Release, "dummyId", "http://auth-url/redirect"),
+            storage = accountStorage,
+            syncConfig = null,
+            coroutineContext = this.coroutineContext,
+            crashReporter = crashReporter,
+        )
+        val account = fxaManager.testableStorageWrapper.account
+        whenever(account.toJSONString()).thenReturn(
+            """{"refresh_token":{"token":"t","scopes":["profile","$SCOPE_SYNC"]}}""",
+        )
+        whenever(accountStorage.read()).thenReturn(account)
+        whenever(account.processEvent(any())).thenReturn(FxaState.AuthIssues)
+        fxaManager.start()
+
+        assertTrue(fxaManager.containsScope(SCOPE_SYNC))
+        assertFalse(fxaManager.containsScope("https://identity.mozilla.com/apps/vpn"))
+        verify(crashReporter, never()).submitCaughtException(any())
+    }
+
+    @Test
+    fun `containsScope returns false and reports to crashReporter when the scope is unavailable`() = runTest {
+        val accountStorage: AccountStorage = mock()
+        whenever(accountStorage.read()).thenReturn(null)
+
+        val crashReporter: CrashReporting = mock()
+        val fxaManager = TestableFxaAccountManager(
+            context = testContext,
+            config = FxaConfig(FxaServer.Release, "dummyId", "http://auth-url/redirect"),
+            storage = accountStorage,
+            syncConfig = null,
+            coroutineContext = this.coroutineContext,
+            crashReporter = crashReporter,
+        )
+        whenever(fxaManager.testableStorageWrapper.account.processEvent(any())).thenReturn(FxaState.AuthIssues)
+        fxaManager.start()
+
+        assertFalse(fxaManager.containsScope(SCOPE_SYNC))
+        verify(crashReporter).submitCaughtException(any())
+    }
+
+    @Test
+    fun `containsScope returns false when the state is not accessible`() = runTest {
+        val accountStorage: AccountStorage = mock()
+        val crashReporter: CrashReporting = mock()
+        val fxaManager = TestableFxaAccountManager(
+            context = testContext,
+            config = FxaConfig(FxaServer.Release, "dummyId", "http://auth-url/redirect"),
+            storage = accountStorage,
+            syncConfig = null,
+            coroutineContext = this.coroutineContext,
+            crashReporter = crashReporter,
+        )
+
+        // Uninitialized: the manager is never started, so storage is never consulted.
+        assertFalse(fxaManager.containsScope(SCOPE_SYNC))
+        verify(accountStorage, never()).read()
+
+        // Disconnected: reached after starting into a disconnected state.
+        whenever(fxaManager.testableStorageWrapper.account.processEvent(any())).thenReturn(FxaState.Disconnected)
+        fxaManager.start()
+        assertFalse(fxaManager.containsScope(SCOPE_SYNC))
+
+        verify(crashReporter, never()).submitCaughtException(any())
+    }
+
+    @Test
     fun `creating fresh account`() = runTest {
         val fxaManager = TestableFxaAccountManager(
             context = testContext,
@@ -170,7 +245,7 @@ class FxaAccountManagerTest {
         whenever(account.processEvent(any())).thenReturn(FxaState.Disconnected)
         fxaManager.start()
 
-        whenever(account.processEvent(any())).thenReturn(FxaState.Authenticating("https://test-oauth.example.com/"))
+        whenever(account.processEvent(any())).thenReturn(FxaState.Authenticating("https://test-oauth.example.com/", FxaRustAuthState.CONNECTED))
         fxaManager.beginAuthentication(entrypoint = entryPoint)
 
         whenever(account.processEvent(any())).thenReturn(FxaState.Connected)
@@ -196,7 +271,7 @@ class FxaAccountManagerTest {
         whenever(account.processEvent(any())).thenReturn(FxaState.Disconnected)
         fxaManager.start()
 
-        whenever(account.processEvent(any())).thenReturn(FxaState.Authenticating("https://test-oauth.example.com/"))
+        whenever(account.processEvent(any())).thenReturn(FxaState.Authenticating("https://test-oauth.example.com/", FxaRustAuthState.CONNECTED))
         fxaManager.beginAuthentication(
             pairingUrl = "http://test-oauth/example.com/pairing",
             entrypoint = entryPoint,
@@ -250,7 +325,7 @@ class FxaAccountManagerTest {
         whenever(account.processEvent(any())).thenReturn(FxaState.Disconnected)
         fxaManager.start()
 
-        whenever(account.processEvent(any())).thenReturn(FxaState.Authenticating("https://test-oauth.example.com/"))
+        whenever(account.processEvent(any())).thenReturn(FxaState.Authenticating("https://test-oauth.example.com/", FxaRustAuthState.CONNECTED))
         fxaManager.beginAuthentication(entrypoint = entryPoint)
 
         // Simulate the fxa client moving to the `Disconnected` state after `finishAuthentication()` is called.
@@ -322,7 +397,7 @@ class FxaAccountManagerTest {
         whenever(account.processEvent(any())).thenReturn(FxaState.Disconnected)
         fxaManager.start()
 
-        whenever(account.processEvent(any())).thenReturn(FxaState.Authenticating("https://test-oauth.example.com/"))
+        whenever(account.processEvent(any())).thenReturn(FxaState.Authenticating("https://test-oauth.example.com/", FxaRustAuthState.CONNECTED))
         fxaManager.beginAuthentication(entrypoint = entryPoint)
 
         whenever(account.processEvent(any())).thenReturn(FxaState.Connected)
@@ -350,7 +425,7 @@ class FxaAccountManagerTest {
         whenever(account.processEvent(any())).thenReturn(FxaState.Disconnected)
         fxaManager.start()
 
-        whenever(account.processEvent(any())).thenReturn(FxaState.Authenticating("https://test-oauth.example.com/"))
+        whenever(account.processEvent(any())).thenReturn(FxaState.Authenticating("https://test-oauth.example.com/", FxaRustAuthState.CONNECTED))
         fxaManager.beginAuthentication(entrypoint = entryPoint)
 
         whenever(account.processEvent(any())).thenReturn(FxaState.Connected)
@@ -379,7 +454,7 @@ class FxaAccountManagerTest {
         whenever(account.processEvent(any())).thenReturn(FxaState.Disconnected)
         fxaManager.start()
 
-        whenever(account.processEvent(any())).thenReturn(FxaState.Authenticating("https://test-oauth.example.com/"))
+        whenever(account.processEvent(any())).thenReturn(FxaState.Authenticating("https://test-oauth.example.com/", FxaRustAuthState.CONNECTED))
         fxaManager.beginAuthentication(entrypoint = entryPoint)
 
         whenever(account.processEvent(any())).thenReturn(FxaState.Connected)
@@ -408,7 +483,7 @@ class FxaAccountManagerTest {
         whenever(account.processEvent(any())).thenReturn(FxaState.Disconnected)
         fxaManager.start()
 
-        whenever(account.processEvent(any())).thenReturn(FxaState.Authenticating("https://test-oauth.example.com/"))
+        whenever(account.processEvent(any())).thenReturn(FxaState.Authenticating("https://test-oauth.example.com/", FxaRustAuthState.CONNECTED))
         fxaManager.beginAuthentication(entrypoint = entryPoint)
 
         whenever(account.processEvent(any())).thenReturn(FxaState.Connected)

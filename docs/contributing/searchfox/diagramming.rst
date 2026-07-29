@@ -25,29 +25,51 @@ accessibility tree and are considered alpha quality.
 .. image:: img/diagramming.png
     :class: border
     :alt: The diagramming feature
-    :width: 573px
+    :width: 538px
 
 .. _searchfox_diagramming_context_menu:
 
 Context Menu
 ------------
 
-.. image:: img/context-menu-layout.png
+.. image:: img/context-menu-diagram.png
     :class: border
-    :alt: The context menu for classes
-    :width: 448px
+    :alt: The context menu for diagramming
+    :width: 433px
 
-Uses diagram of ...
-  Open a diagram that shows how given field is used.
+Calls to
+  Open a diagram that shows how given symbol is called or used.
 
-Calls diagram of ...
-  Open a diagram that shows how given function is called.
+Calls from
+  Open a diagram that shows how given symbol uses other functions
 
-Class diagram of ...
+Class
   Open a diagram that shows given class and its fields, the hierarchy, etc.
 
-Inheritance diagram of ...
+Inheritance
   Open a diagram that shows the class hierarchy of given class.
+
+Pin icon
+  Pin the symbol, to create a diagram between two symbols.
+
+.. image:: img/context-menu-diagram-pin.png
+    :class: border
+    :alt: The context menu for diagramming with pinned item
+    :width: 413px
+
+When a symbol is pinned, another row of buttons are shown.
+
+Calls from Pin to
+  Open a diagram that shows the paths from the pinned symbol to the clicked symbol
+
+Calls to Pin from
+  Open a diagram that shows the paths from the clicked symbol to the pinned symbol
+
+Calls between
+  Open a diagram that shows the paths between the clicked symbol and the pinned symbol, for both directions
+
+Trash icon
+  Remove the pinned symbol
 
 Context Menu for nodes
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -55,7 +77,7 @@ Context Menu for nodes
 .. image:: img/diagramming-menu-node.png
     :class: border
     :alt: The context menu for nodes
-    :width: 446px
+    :width: 463px
 
 Ignore this node in the diagram
   Re-generate the diagram, ignoring the specified node.
@@ -167,6 +189,26 @@ Format
 
 Debug
   When checked, show the debug log.
+
+Icons
+-----
+
+To reduce the server load, the diagramming feature has several limitation,
+and when it hits the limit, icons are shown for each node.
+
+Clicking the icon shows a menu to lift the limit if possible.
+See also the controls section above.
+
+.. image:: img/diagramming-icons.png
+    :class: border
+    :alt: The control panel
+    :width: 296px
+
+Circle with "!"
+  This node hits the depth limit.
+
+Triangle with "!"
+  This node hits other limit, such as node limit, path limit.
 
 Queries
 -------

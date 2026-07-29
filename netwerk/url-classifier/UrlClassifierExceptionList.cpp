@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,13 +34,6 @@ UrlClassifierExceptionList::AddEntry(
   nsresult rv = aEntry->GetUrlPattern(urlPattern);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsAutoCString site;
-  rv = GetSchemelessSiteFromUrlPattern(urlPattern, site);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // We must be able to parse a site from the url pattern.
-  NS_ENSURE_TRUE(!site.IsEmpty(), NS_ERROR_INVALID_ARG);
-
   nsAutoCString topLevelUrlPattern;
   rv = aEntry->GetTopLevelUrlPattern(topLevelUrlPattern);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -56,7 +47,7 @@ UrlClassifierExceptionList::AddEntry(
   NS_ENSURE_TRUE(topLevelUrlPattern.IsEmpty() == topLevelSite.IsEmpty(),
                  NS_ERROR_INVALID_ARG);
 
-  if (MOZ_LOG_TEST(UrlClassifierCommon::sLog, LogLevel::Debug)) {
+  if (MOZ_LOG_TEST(gChannelClassifierLog, LogLevel::Debug)) {
     nsAutoCString entryString;
     (void)aEntry->Describe(entryString);
     UC_LOG_DEBUG(("UrlClassifierExceptionList::%s - Adding entry: %s",
@@ -66,20 +57,19 @@ UrlClassifierExceptionList::AddEntry(
   // If the top level site is empty, the exception applies across all top
   // level sites. Store it in the global exceptions map.
   if (topLevelSite.IsEmpty()) {
+    nsAutoCString site;
+    rv = GetSchemelessSiteFromUrlPattern(urlPattern, site);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    // We must be able to parse a site from the url pattern.
+    NS_ENSURE_TRUE(!site.IsEmpty(), NS_ERROR_INVALID_ARG);
+
     mGlobalExceptions.LookupOrInsert(site).AppendElement(aEntry);
     return NS_OK;
   }
 
   // Otherwise, store it in the site specific exception map.
-  mExceptions
-      // Outer map keyed by top level site.
-      // topLevelSite may be the empty string. We still use that a key. These
-      // entries apply to all top-level sites.
-      .LookupOrInsert(topLevelSite)
-      // Inner map keyed by site of the load.
-      .LookupOrInsert(site)
-      // Append the entry.
-      .AppendElement(aEntry);
+  mExceptions.LookupOrInsert(topLevelSite).AppendElement(aEntry);
 
   return NS_OK;
 }
@@ -138,12 +128,9 @@ UrlClassifierExceptionList::Matches(nsIURI* aURI, nsIURI* aTopLevelURI,
   }
 
   // 2. Get exceptions which apply only to the current top level site.
-  SiteToEntries* topLevelSiteToEntries =
+  ExceptionEntryArray* siteSpecificExceptions =
       mExceptions.Lookup(aTopLevelSite).DataPtrOrNull();
-  if (topLevelSiteToEntries) {
-    ExceptionEntryArray* siteSpecificExceptions =
-        topLevelSiteToEntries->Lookup(aSite).DataPtrOrNull();
-
+  if (siteSpecificExceptions) {
     *aResult = ExceptionListMatchesLoad(siteSpecificExceptions, aURI,
                                         aTopLevelURI, aIsPrivateBrowsing);
     if (*aResult) {
@@ -175,7 +162,7 @@ bool UrlClassifierExceptionList::ExceptionListMatchesLoad(
     }
     if (match) {
       // Match found, return immediately.
-      if (MOZ_LOG_TEST(UrlClassifierCommon::sLog, LogLevel::Debug)) {
+      if (MOZ_LOG_TEST(gChannelClassifierLog, LogLevel::Debug)) {
         nsAutoCString entryString;
         (void)entry->Describe(entryString);
         UC_LOG_DEBUG(
@@ -231,16 +218,10 @@ UrlClassifierExceptionList::TestGetEntries(
   }
 
   // Site specific entries.
-  // Iterate through the outer map (top-level sites)
-  for (const auto& outerEntry : mExceptions) {
-    const SiteToEntries& innerMap = outerEntry.GetData();
-
-    // Iterate through the inner map (sites to exception entries)
-    for (const auto& innerEntry : innerMap) {
-      const ExceptionEntryArray& entries = innerEntry.GetData();
-      // Append all entries from this array to the result
-      aEntries.AppendElements(entries);
-    }
+  for (const auto& entry : mExceptions) {
+    const ExceptionEntryArray& entries = entry.GetData();
+    // Append all entries from this array to the result
+    aEntries.AppendElements(entries);
   }
 
   return NS_OK;

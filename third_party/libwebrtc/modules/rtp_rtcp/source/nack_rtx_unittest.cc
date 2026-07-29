@@ -15,9 +15,9 @@
 #include <map>
 #include <memory>
 #include <set>
+#include <span>
 
 #include "absl/algorithm/container.h"
-#include "api/array_view.h"
 #include "api/call/transport.h"
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
@@ -37,9 +37,9 @@
 #include "modules/rtp_rtcp/source/rtp_rtcp_interface.h"
 #include "modules/rtp_rtcp/source/rtp_sender_video.h"
 #include "rtc_base/rate_limiter.h"
-#include "rtc_base/thread.h"
 #include "system_wrappers/include/clock.h"
 #include "test/gtest.h"
+#include "test/run_loop.h"
 
 namespace webrtc {
 
@@ -90,7 +90,7 @@ class RtxLoopBackTransport : public Transport {
     packet_loss_ = 0;
   }
 
-  bool SendRtp(ArrayView<const uint8_t> data,
+  bool SendRtp(std::span<const uint8_t> data,
                const PacketOptions& /* options */) override {
     count_++;
     RtpPacketReceived packet;
@@ -115,7 +115,7 @@ class RtxLoopBackTransport : public Transport {
     return true;
   }
 
-  bool SendRtcp(ArrayView<const uint8_t> data,
+  bool SendRtcp(std::span<const uint8_t> data,
                 const PacketOptions& /* options */) override {
     module_->IncomingRtcpPacket(data);
     return true;
@@ -137,7 +137,10 @@ class RtpRtcpRtxNackTest : public ::testing::Test {
       : fake_clock_(123456),
         env_(CreateEnvironment(&fake_clock_)),
         transport_(kTestRtxSsrc),
-        rtx_stream_(&media_stream_, rtx_associated_payload_types_, kTestSsrc),
+        rtx_stream_(env_,
+                    &media_stream_,
+                    rtx_associated_payload_types_,
+                    kTestSsrc),
         retransmission_rate_limiter_(&fake_clock_, kMaxRttMs) {}
   ~RtpRtcpRtxNackTest() override {}
 
@@ -151,7 +154,7 @@ class RtpRtcpRtxNackTest : public ::testing::Test {
     configuration.local_media_ssrc = kTestSsrc;
     configuration.rtx_send_ssrc = kTestRtxSsrc;
     rtp_rtcp_module_ =
-        std::make_unique<ModuleRtpRtcpImpl2>(env_, configuration);
+        ModuleRtpRtcpImpl2::CreateSendModule(env_, configuration);
     RTPSenderVideo::Config video_config;
     video_config.clock = &fake_clock_;
     video_config.rtp_sender = rtp_rtcp_module_->RtpSender();
@@ -237,7 +240,7 @@ class RtpRtcpRtxNackTest : public ::testing::Test {
     media_stream_.sequence_numbers_.sort();
   }
 
-  AutoThread main_thread_;
+  test::RunLoop main_thread_;
   SimulatedClock fake_clock_;
   const Environment env_;
   std::unique_ptr<ReceiveStatistics> receive_statistics_;

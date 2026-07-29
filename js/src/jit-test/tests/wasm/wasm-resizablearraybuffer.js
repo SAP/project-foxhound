@@ -121,7 +121,7 @@ ins.exports.fill(0, 10, 5);
 check(0, 10, 5);
 
 // Try to resize JS way.
-rab.resize(65536 * 30);
+assertEq(rab.resize(65536 * 30), undefined);
 assertEq(rab.byteLength, 30 * 65536);
 ins.exports.fill(30 * 65536 - 10*4, 10, 6);
 check(30 * 65536 - 10 * 4, 10, 6);
@@ -154,3 +154,14 @@ assertEq(buffer.maxByteLength <= Number.MAX_SAFE_INTEGER, true);
 
 // Create a new Memory without a maximum and accessing maxByteLength.
 new WebAssembly.Memory({ initial: 10 }).buffer.maxByteLength;
+
+// toResizableBuffer and toFixedLengthBuffer throw when the buffer length is pinned.
+mem = new WebAssembly.Memory({initial: 1, maximum: 4});
+pinArrayBufferOrViewLength(mem.buffer, true);
+assertThrowsInstanceOf(() => mem.toResizableBuffer(), RangeError);
+pinArrayBufferOrViewLength(mem.buffer, false);
+
+rab = mem.toResizableBuffer();
+pinArrayBufferOrViewLength(rab, true);
+assertThrowsInstanceOf(() => mem.toFixedLengthBuffer(), RangeError);
+pinArrayBufferOrViewLength(rab, false);

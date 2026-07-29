@@ -12,7 +12,6 @@ ChromeUtils.defineLazyGetter(this, "UrlbarTestUtils", () => {
 add_setup(async function setup() {
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["browser.urlbar.trustPanel.featureGate", true],
       ["security.qwacs.enabled", true],
       ["security.qwacs.enable_test_trust_anchors", true],
     ],
@@ -37,9 +36,37 @@ add_task(async function test_https() {
 
   Assert.ok(
     BrowserTestUtils.isVisible(
+      document.getElementById("identity-popup-content-verifier-label")
+    ),
+    "'Verified by:' label visible"
+  );
+  let issuerOrganization = document.getElementById(
+    "identity-popup-content-verifier"
+  );
+  Assert.ok(
+    BrowserTestUtils.isVisible(issuerOrganization),
+    "issuer (verifier) organization text visible"
+  );
+  Assert.equal(
+    issuerOrganization.textContent,
+    "Mozilla Testing",
+    "issuer (verifier) text as expected"
+  );
+
+  Assert.ok(
+    BrowserTestUtils.isVisible(
       document.getElementById("identity-popup-content-verifier-unknown")
     ),
     "custom root warning in sub panel is visible"
+  );
+
+  Assert.ok(
+    BrowserTestUtils.isHidden(
+      document.getElementById(
+        "identity-popup-content-cert-exception-overridden"
+      )
+    ),
+    "user-added certificate error exception text is not visible"
   );
 
   await UrlbarTestUtils.closeTrustPanel(window);
@@ -127,6 +154,11 @@ add_task(async function test_1_qwac() {
     "QWAC location text as expected"
   );
 
+  let euTrustMark = document.getElementById(
+    "identity-popup-content-eu-trust-mark"
+  );
+  Assert.ok(BrowserTestUtils.isVisible(euTrustMark), "EU trust mark visible");
+
   await UrlbarTestUtils.closeTrustPanel(window);
   await BrowserTestUtils.removeTab(tab);
 });
@@ -147,6 +179,25 @@ add_task(async function test_2_qwac() {
 
   // Wait for the QWAC status to be determined.
   await gTrustPanelHandler.qwacStatusPromise;
+
+  Assert.ok(
+    BrowserTestUtils.isVisible(
+      document.getElementById("identity-popup-content-verifier-label")
+    ),
+    "'Verified by:' label visible"
+  );
+  let issuerOrganization = document.getElementById(
+    "identity-popup-content-verifier"
+  );
+  Assert.ok(
+    BrowserTestUtils.isVisible(issuerOrganization),
+    "issuer (verifier) organization text visible"
+  );
+  Assert.equal(
+    issuerOrganization.textContent,
+    "Test CA",
+    "issuer (verifier) text as expected"
+  );
 
   Assert.ok(
     BrowserTestUtils.isVisible(
@@ -187,6 +238,11 @@ add_task(async function test_2_qwac() {
     "2-QWAC Test Locality\nEX",
     "QWAC location text as expected"
   );
+
+  let euTrustMark = document.getElementById(
+    "identity-popup-content-eu-trust-mark"
+  );
+  Assert.ok(BrowserTestUtils.isVisible(euTrustMark), "EU trust mark visible");
 
   await UrlbarTestUtils.closeTrustPanel(window);
   await BrowserTestUtils.removeTab(tab);
@@ -241,6 +297,14 @@ add_task(async function test_non_qwac() {
         document.getElementById("identity-popup-content-supplemental")
       ),
       "QWAC location text not visible"
+    );
+
+    let euTrustMark = document.getElementById(
+      "identity-popup-content-eu-trust-mark"
+    );
+    Assert.ok(
+      !BrowserTestUtils.isVisible(euTrustMark),
+      "EU trust mark not visible"
     );
 
     await UrlbarTestUtils.closeTrustPanel(window);

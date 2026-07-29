@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,12 +7,14 @@
 
 #include <cstring>
 #include <type_traits>
+#include <limits.h>
 
 #ifdef XP_WIN
 #  include <io.h>  // for _write()
 #endif
 
 #include "mozilla/CheckedInt.h"
+#include "mozilla/MathAlgorithms.h"
 
 // Helper for log2 of powers of 2 at compile time.
 constexpr size_t LOG2(size_t N) { return mozilla::CeilingLog2(N); }

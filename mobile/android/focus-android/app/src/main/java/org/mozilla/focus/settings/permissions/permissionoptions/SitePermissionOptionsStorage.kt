@@ -15,6 +15,9 @@ import org.mozilla.focus.R
 import org.mozilla.focus.settings.permissions.AutoplayOption
 import org.mozilla.focus.settings.permissions.SitePermissionOption
 
+/**
+ * Storage for site permission options.
+ */
 class SitePermissionOptionsStorage(private val context: Context) {
 
     /**
@@ -29,10 +32,16 @@ class SitePermissionOptionsStorage(private val context: Context) {
         }
     }
 
+    /**
+     * Checks if the Android permission for the given [sitePermission] is granted.
+     */
     fun isAndroidPermissionGranted(sitePermission: SitePermission): Boolean {
         return context.isPermissionGranted(sitePermission.androidPermissionsList.asIterable())
     }
 
+    /**
+     * Returns the localized label for the given [sitePermission].
+     */
     fun getSitePermissionLabel(sitePermission: SitePermission): String {
         return context.getString(sitePermission.labelRes)
     }
@@ -168,6 +177,9 @@ class SitePermissionOptionsStorage(private val context: Context) {
         }
     }
 
+    /**
+     * Returns the [SitePermissionsRules] based on the current user settings.
+     */
     fun getSitePermissionsSettingsRules() = SitePermissionsRules(
         notification = getSitePermissionRules(SitePermission.NOTIFICATION),
         microphone = getSitePermissionRules(SitePermission.MICROPHONE),
@@ -193,6 +205,9 @@ class SitePermissionOptionsStorage(private val context: Context) {
         }
     }
 
+    /**
+     * Checks if at least one of the site permissions in [permissionsList] is not blocked.
+     */
     fun isSitePermissionNotBlocked(permissionsList: Array<String>): Boolean {
         SitePermission.entries.forEach { sitePermission ->
             if (

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,8 +8,8 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentFragment.h"
 #include "mozilla/dom/HTMLInputElement.h"
+#include "mozilla/dom/NodeList.h"
 #include "nsHtml5StringParser.h"
-#include "nsINodeList.h"
 #include "nsIParserUtils.h"
 #include "nsTextNode.h"
 
@@ -247,7 +245,7 @@ already_AddRefed<nsINode> L10nOverlays::GetNodeForNamedElement(
   aTranslatedChild->GetAttr(nsGkAtoms::datal10nname, childName);
   RefPtr<Element> sourceChild = nullptr;
 
-  nsINodeList* childNodes = aSourceElement->ChildNodes();
+  NodeList* childNodes = aSourceElement->ChildNodes();
   for (uint32_t i = 0; i < childNodes->Length(); i++) {
     nsINode* childNode = childNodes->Item(i);
 
@@ -352,7 +350,7 @@ void L10nOverlays::OverlayChildNodes(DocumentFragment* aFromFragment,
                                      Element* aToElement,
                                      nsTArray<L10nOverlaysError>& aErrors,
                                      ErrorResult& aRv) {
-  nsINodeList* childNodes = aFromFragment->ChildNodes();
+  NodeList* childNodes = aFromFragment->ChildNodes();
   for (uint32_t i = 0; i < childNodes->Length(); i++) {
     nsINode* childNode = childNodes->Item(i);
 

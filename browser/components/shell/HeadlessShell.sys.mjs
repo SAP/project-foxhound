@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { E10SUtils } from "resource://gre/modules/E10SUtils.sys.mjs";
 import { HiddenFrame } from "resource://gre/modules/HiddenFrame.sys.mjs";
 
 // Refrences to the progress listeners to keep them from being gc'ed
@@ -34,19 +33,8 @@ function loadContentWindow(browser, url) {
 
   const principal = Services.scriptSecurityManager.getSystemPrincipal();
   return new Promise(resolve => {
-    let oa = E10SUtils.predictOriginAttributes({
-      browser,
-    });
     let loadURIOptions = {
       triggeringPrincipal: principal,
-      remoteType: E10SUtils.getRemoteTypeForURI(
-        url,
-        true,
-        false,
-        E10SUtils.DEFAULT_REMOTE_TYPE,
-        null,
-        oa
-      ),
     };
     browser.loadURI(uri, loadURIOptions);
     let { webProgress } = browser;
@@ -61,8 +49,11 @@ function loadContentWindow(browser, url) {
         if (flags & Ci.nsIWebProgressListener.LOCATION_CHANGE_SAME_DOCUMENT) {
           return;
         }
-        // Ignore the initial about:blank, unless about:blank is requested
-        if (location.spec == "about:blank" && uri.spec != "about:blank") {
+        // Ignore transient about:blank.
+        if (
+          progress.browsingContext.currentWindowGlobal
+            ?.isUncommittedInitialDocument
+        ) {
           return;
         }
 
@@ -105,6 +96,8 @@ async function takeScreenshot(
     browser.style.height = `${contentHeight}px`;
     browser.style.minHeight = `${contentHeight}px`;
     browser.setAttribute("maychangeremoteness", "true");
+    // Suppress initial about:blank so it can't race any explicit load below.
+    browser.setAttribute("nodefaultsrc", "true");
     doc.documentElement.appendChild(browser);
 
     await loadContentWindow(browser, url);

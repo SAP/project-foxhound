@@ -47,20 +47,33 @@ class ScreamNetworkController : public NetworkControllerInterface {
   bool SupportsEcnAdaptation() const override { return true; }
 
  private:
-  NetworkControlUpdate CreateUpdate(Timestamp now,
-                                    DataRate target_rate,
-                                    TimeDelta rtt);
-  PacerConfig CreatePacerConfig(DataRate target_rate);
+  void UpdateScreamTargetBitrateConstraints();
+  NetworkControlUpdate CreateFirstUpdate(Timestamp now);
+  NetworkControlUpdate CreateUpdate(Timestamp now);
+  std::optional<PacerConfig> MaybeCreatePacerConfig(Timestamp now);
 
   Environment env_;
   const ScreamV2Parameters params_;
   const TimeDelta default_pacing_window_;
+  const bool allow_initial_bwe_before_media_ = false;
+  bool first_update_created_ = false;
+  bool network_available_ = false;
   TimeDelta current_pacing_window_;
   std::optional<ScreamV2> scream_;
-  TargetRateConstraints target_rate_constraints_;
+  DataRate min_target_rate_;
+  DataRate max_target_rate_;
+  DataRate starting_rate_;
+  std::optional<DataRate> remote_bitrate_report_;
   StreamsConfig streams_config_;
+  DataRate max_seen_total_allocated_bitrate_ = DataRate::Zero();
+  Timestamp initial_bwe_probe_end_time_ = Timestamp::MinusInfinity();
+  Timestamp padding_interval_end_time_ = Timestamp::MinusInfinity();
 
-  Timestamp last_padding_interval_started_;
+  // Values last reported in a NetworkControlUpdate. Used for finding out if an
+  // update needs to be reported.
+  DataRate reported_target_rate_;
+  DataRate reported_padding_rate_;
+  DataRate reported_pacing_rate_;
 };
 
 }  // namespace webrtc

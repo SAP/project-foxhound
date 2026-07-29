@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,7 +28,11 @@ enum class Limit : uint8_t {
   MaxDynamicStorageBuffersPerPipelineLayout,
   MaxSampledTexturesPerShaderStage,
   MaxSamplersPerShaderStage,
+  MaxStorageBuffersInVertexStage,
+  MaxStorageBuffersInFragmentStage,
   MaxStorageBuffersPerShaderStage,
+  MaxStorageTexturesInVertexStage,
+  MaxStorageTexturesInFragmentStage,
   MaxStorageTexturesPerShaderStage,
   MaxUniformBuffersPerShaderStage,
   MaxUniformBufferBindingSize,
@@ -53,7 +56,7 @@ enum class Limit : uint8_t {
 };
 
 uint64_t GetLimit(const ffi::WGPULimits&, Limit);
-void SetLimit(ffi::WGPULimits*, Limit, double);
+void SetLimit(ffi::WGPULimits*, Limit, uint64_t);
 
 class SupportedLimits final : public nsWrapperCache, public ChildOf<Adapter> {
  public:
@@ -76,7 +79,11 @@ class SupportedLimits final : public nsWrapperCache, public ChildOf<Adapter> {
   _(MaxDynamicStorageBuffersPerPipelineLayout)
   _(MaxSampledTexturesPerShaderStage)
   _(MaxSamplersPerShaderStage)
+  _(MaxStorageBuffersInVertexStage)
+  _(MaxStorageBuffersInFragmentStage)
   _(MaxStorageBuffersPerShaderStage)
+  _(MaxStorageTexturesInVertexStage)
+  _(MaxStorageTexturesInFragmentStage)
   _(MaxStorageTexturesPerShaderStage)
   _(MaxUniformBuffersPerShaderStage)
   _(MaxUniformBufferBindingSize)

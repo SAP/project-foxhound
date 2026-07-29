@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -45,37 +43,6 @@ const uint32_t kNsStringBufferShrinkingThreshold = 384;
 
 using double_conversion::DoubleToStringConverter;
 
-// ---------------------------------------------------------------------------
-
-static void ReleaseData(void* aData, nsAString::DataFlags aFlags) {
-  if (aFlags & nsAString::DataFlags::REFCOUNTED) {
-    mozilla::StringBuffer::FromData(aData)->Release();
-  } else if (aFlags & nsAString::DataFlags::OWNED) {
-    // Treat this as destruction of a "StringAdopt" object for leak
-    // tracking purposes.
-    MOZ_LOG_DTOR(aData, "StringAdopt", 1);
-
-    free(aData);
-  }
-  // otherwise, nothing to do.
-}
-
-// ---------------------------------------------------------------------------
-
-#ifdef XPCOM_STRING_CONSTRUCTOR_OUT_OF_LINE
-template <typename T>
-nsTSubstring<T>::nsTSubstring(char_type* aData, size_type aLength,
-                              DataFlags aDataFlags, ClassFlags aClassFlags)
-    : ::mozilla::detail::nsTStringRepr<T>(aData, aLength, aDataFlags,
-                                          aClassFlags) {
-  AssertValid();
-
-  if (aDataFlags & DataFlags::OWNED) {
-    MOZ_LOG_CTOR(this->mData, "StringAdopt", 1);
-  }
-}
-#endif /* XPCOM_STRING_CONSTRUCTOR_OUT_OF_LINE */
-
 /**
  * helper function for down-casting a nsTSubstring to an nsTAutoString.
  */
@@ -115,7 +82,7 @@ auto nsTSubstring<T>::StartBulkWriteImpl(size_type aCapacity,
   // If zero capacity is requested, set the string to the special empty
   // string.
   if (MOZ_UNLIKELY(!aCapacity)) {
-    ReleaseData(this->mData, this->mDataFlags);
+    Finalize();
     SetToEmptyBuffer();
     return 0;
   }
@@ -211,11 +178,12 @@ auto nsTSubstring<T>::StartBulkWriteImpl(size_type aCapacity,
     // Avoid shrinking if the new buffer size is close to the old. Note that
     // unsigned underflow is defined behavior.
     if ((curCapacity - newCapacity) <= kNsStringBufferShrinkingThreshold &&
-        (this->mDataFlags & DataFlags::REFCOUNTED)) {
+        (oldFlags & DataFlags::OWNED)) {
       MOZ_ASSERT(aAllowShrinking, "How come we didn't return earlier?");
       // We're already close enough to the right size.
       newData = oldData;
       newCapacity = curCapacity;
+      newDataFlags = oldFlags;
     } else {
       size_type storageSize = (newCapacity + 1) * sizeof(char_type);
       // Since we allocate only by powers of 2 we always fit into a full
@@ -225,6 +193,8 @@ auto nsTSubstring<T>::StartBulkWriteImpl(size_type aCapacity,
           mozilla::StringBuffer::Alloc(storageSize).take();
       if (newHdr) {
         newData = (char_type*)newHdr->Data();
+        newDataFlags =
+            DataFlags::TERMINATED | DataFlags::STRINGBUFFER | DataFlags::OWNED;
       } else if (shrinking) {
         // We're still in a consistent state.
         //
@@ -235,11 +205,11 @@ auto nsTSubstring<T>::StartBulkWriteImpl(size_type aCapacity,
         // disposing of this string before reaching OOM again.
         newData = oldData;
         newCapacity = curCapacity;
+        newDataFlags = oldFlags;
       } else {
         return mozilla::Err(NS_ERROR_OUT_OF_MEMORY);
       }
     }
-    newDataFlags = DataFlags::TERMINATED | DataFlags::REFCOUNTED;
   }
 
   this->mData = newData;
@@ -276,7 +246,7 @@ void nsTSubstring<T>::FinishBulkWriteImpl(size_type aLength) {
   if (aLength) {
     FinishBulkWriteImplImpl(aLength);
   } else {
-    ReleaseData(this->mData, this->mDataFlags);
+    Finalize();
     SetToEmptyBuffer();
   }
   AssertValid();
@@ -292,6 +262,7 @@ void nsTSubstring<T>::Finalize() {
 }
 
 template <typename T>
+
 bool nsTSubstring<T>::ReplacePrep(index_type aCutStart, size_type aCutLength,
                                   size_type aNewLength) {
   aCutLength = XPCOM_MIN(aCutLength, this->mLength - aCutStart);
@@ -342,18 +313,19 @@ typename nsTSubstring<T>::size_type nsTSubstring<T>::Capacity() const {
   // return 0 to indicate an immutable or 0-sized buffer
 
   size_type capacity;
-  if (this->mDataFlags & DataFlags::REFCOUNTED) {
+  const auto dataFlags = this->mDataFlags;
+  if (dataFlags & DataFlags::STRINGBUFFER) {
     // if the string is readonly, then we pretend that it has no capacity.
     mozilla::StringBuffer* hdr = mozilla::StringBuffer::FromData(this->mData);
-    if (hdr->IsReadonly()) {
+    if (!(dataFlags & DataFlags::OWNED) || hdr->IsReadonly()) {
       capacity = 0;
     } else {
       capacity = (size_t(hdr->StorageSize()) / sizeof(char_type)) - 1;
     }
-  } else if (this->mDataFlags & DataFlags::INLINE) {
+  } else if (dataFlags & DataFlags::INLINE) {
     MOZ_ASSERT(this->mClassFlags & ClassFlags::INLINE);
     capacity = AsAutoString(this)->mInlineCapacity;
-  } else if (this->mDataFlags & DataFlags::OWNED) {
+  } else if (dataFlags & DataFlags::OWNED) {
     // we don't store the capacity of an adopted buffer because that would
     // require an additional member field.  the best we can do is base the
     // capacity on our length.  remains to be seen if this is the right
@@ -369,14 +341,13 @@ typename nsTSubstring<T>::size_type nsTSubstring<T>::Capacity() const {
 template <typename T>
 bool nsTSubstring<T>::EnsureMutable(size_type aNewLen) {
   if (aNewLen == size_type(-1) || aNewLen == this->mLength) {
-    if (this->mDataFlags & (DataFlags::INLINE | DataFlags::OWNED)) {
+    // If the buffer is owned or inline, and is not a shared string buffer, we
+    // can immediately return.
+    if (this->mDataFlags & (DataFlags::INLINE | DataFlags::OWNED) &&
+        (!(this->mDataFlags & DataFlags::STRINGBUFFER) ||
+         !mozilla::StringBuffer::FromData(this->mData)->IsReadonly())) {
       return true;
     }
-    if ((this->mDataFlags & DataFlags::REFCOUNTED) &&
-        !mozilla::StringBuffer::FromData(this->mData)->IsReadonly()) {
-      return true;
-    }
-
     aNewLen = this->mLength;
   }
   return SetLength(aNewLen, mozilla::fallible);
@@ -493,7 +464,7 @@ bool nsTSubstring<T>::AssignASCII(const char* aData, size_type aLength,
 
 template <typename T>
 void nsTSubstring<T>::AssignLiteral(const char_type* aData, size_type aLength) {
-  ReleaseData(this->mData, this->mDataFlags);
+  Finalize();
   SetData(const_cast<char_type*>(aData), aLength,
           DataFlags::TERMINATED | DataFlags::LITERAL);
   this->mTaint.clear();
@@ -509,10 +480,10 @@ void nsTSubstring<T>::Assign(const self_type& aStr) {
 template <typename T>
 bool nsTSubstring<T>::Assign(const self_type& aStr,
                              const fallible_t& aFallible) {
-  // |aStr| could be sharable. We need to check its flags to know how to
+  // |aStr| could be shareable. We need to check its flags to know how to
   // deal with it.
 
-  if (&aStr == this) {
+  if (&aStr == this) [[unlikely]] {
     return true;
   }
 
@@ -525,17 +496,17 @@ bool nsTSubstring<T>::Assign(const self_type& aStr,
   // Foxhound: clear Taint
   this->mTaint.clear();
 
-  if (aStr.mDataFlags & DataFlags::REFCOUNTED) {
+  if (aStr.mDataFlags & DataFlags::STRINGBUFFER) {
     // nice! we can avoid a string copy :-)
 
     // |aStr| should be null-terminated
     NS_ASSERTION(aStr.mDataFlags & DataFlags::TERMINATED,
                  "shared, but not terminated");
 
-    ReleaseData(this->mData, this->mDataFlags);
+    Finalize();
 
     SetData(aStr.mData, aStr.mLength,
-            DataFlags::TERMINATED | DataFlags::REFCOUNTED);
+            DataFlags::TERMINATED | DataFlags::STRINGBUFFER | DataFlags::OWNED);
 
     this->mTaint = aStr.mTaint;
 
@@ -572,17 +543,15 @@ void nsTSubstring<T>::Assign(self_type&& aStr) {
 
 template <typename T>
 void nsTSubstring<T>::AssignOwned(self_type&& aStr) {
-  MOZ_ASSERT(aStr.mDataFlags & (DataFlags::REFCOUNTED | DataFlags::OWNED),
-             "neither shared nor owned");
-
-  // If they have a REFCOUNTED or OWNED buffer, we can avoid a copy - so steal
-  // their buffer and reset them to the empty string.
+  MOZ_ASSERT(aStr.mDataFlags & DataFlags::OWNED);
+  // If they have an OWNED buffer, we can avoid a copy - so steal their buffer
+  // and reset them to the empty string.
 
   // |aStr| should be null-terminated
   MOZ_ASSERT(aStr.mDataFlags & DataFlags::TERMINATED,
              "shared or owned, but not terminated");
 
-  ReleaseData(this->mData, this->mDataFlags);
+  Finalize();
 
   // Foxhound: clear Taint
   this->mTaint.clear();
@@ -606,7 +575,7 @@ bool nsTSubstring<T>::Assign(self_type&& aStr, const fallible_t& aFallible) {
     return true;
   }
 
-  if (aStr.mDataFlags & (DataFlags::REFCOUNTED | DataFlags::OWNED)) {
+  if (aStr.mDataFlags & DataFlags::OWNED) {
     AssignOwned(std::move(aStr));
     return true;
   }
@@ -668,7 +637,7 @@ bool nsTSubstring<T>::Assign(const substring_tuple_type& aTuple,
 template <typename T>
 void nsTSubstring<T>::Adopt(char_type* aData, size_type aLength) {
   if (aData) {
-    ReleaseData(this->mData, this->mDataFlags);
+    Finalize();
 
     // Foxhound: remove taint here.
     // Caller is responsible to propagate taint in this case.
@@ -797,9 +766,8 @@ void nsTSubstring<T>::ReplaceLiteral(index_type aCutStart, size_type aCutLength,
   aCutStart = XPCOM_MIN(aCutStart, this->Length());
 
   if (!aCutStart && aCutLength == this->Length() &&
-      !(this->mDataFlags & DataFlags::REFCOUNTED)) {
-    // Check for REFCOUNTED above to avoid undoing the effect of
-    // SetCapacity().
+      !(this->mDataFlags & DataFlags::OWNED)) {
+    // Check for OWNED to avoid undoing the effect of SetCapacity().
     AssignLiteral(aData, aLength);
   } else if (ReplacePrep(aCutStart, aCutLength, aLength) && aLength > 0) {
     char_traits::copy(this->mData + aCutStart, aData, aLength);
@@ -899,8 +867,8 @@ bool nsTSubstring<T>::AppendASCII(const char* aData, size_type aLength,
   }
 
   if (MOZ_UNLIKELY(!aLength)) {
-    // Avoid undoing the effect of SetCapacity() if both
-    // mLength and aLength are zero.
+    // Avoid undoing the effect of SetCapacity() if both mLength and aLength are
+    // zero.
     return true;
   }
 
@@ -936,9 +904,8 @@ void nsTSubstring<T>::Append(const self_type& aStr) {
 template <typename T>
 bool nsTSubstring<T>::Append(const self_type& aStr,
                              const fallible_t& aFallible) {
-  // Check refcounted to avoid undoing the effects of SetCapacity().
-  if (MOZ_UNLIKELY(!this->mLength &&
-                   !(this->mDataFlags & DataFlags::REFCOUNTED))) {
+  // Check OWNED to avoid undoing the effects of SetCapacity().
+  if (MOZ_UNLIKELY(!this->mLength && !(this->mDataFlags & DataFlags::OWNED))) {
     return Assign(aStr, mozilla::fallible);
   }
   AppendTaint(aStr.Taint());
@@ -1055,7 +1022,7 @@ bool nsTSubstring<T>::SetLength(size_type aLength,
 
 template <typename T>
 void nsTSubstring<T>::Truncate() {
-  ReleaseData(this->mData, this->mDataFlags);
+  Finalize();
   SetToEmptyBuffer();
   AssertValid();
 }
@@ -1405,11 +1372,11 @@ void nsTSubstring<T>::AppendFloat(double aFloat) {
 template <typename T>
 size_t nsTSubstring<T>::SizeOfExcludingThisIfUnshared(
     mozilla::MallocSizeOf aMallocSizeOf) const {
-  if (this->mDataFlags & DataFlags::REFCOUNTED) {
-    return mozilla::StringBuffer::FromData(this->mData)
-        ->SizeOfIncludingThisIfUnshared(aMallocSizeOf);
-  }
   if (this->mDataFlags & DataFlags::OWNED) {
+    if (this->mDataFlags & DataFlags::STRINGBUFFER) {
+      return mozilla::StringBuffer::FromData(this->mData)
+          ->SizeOfIncludingThisIfUnshared(aMallocSizeOf);
+    }
     return aMallocSizeOf(this->mData);
   }
 
@@ -1417,7 +1384,7 @@ size_t nsTSubstring<T>::SizeOfExcludingThisIfUnshared(
   // - DataFlags::VOIDED is set, and this->mData points to sEmptyBuffer;
   // - DataFlags::INLINE is set, and this->mData points to a buffer within a
   //   string object (e.g. nsAutoString);
-  // - None of DataFlags::REFCOUNTED, DataFlags::OWNED, DataFlags::INLINE is
+  // - Neither of DataFlags::OWNED or DataFlags::INLINE is
   //   set, and this->mData points to a buffer owned by something else.
   //
   // In all three cases, we don't measure it.
@@ -1428,12 +1395,12 @@ template <typename T>
 size_t nsTSubstring<T>::SizeOfExcludingThisEvenIfShared(
     mozilla::MallocSizeOf aMallocSizeOf) const {
   // This is identical to SizeOfExcludingThisIfUnshared except for the
-  // DataFlags::REFCOUNTED case.
-  if (this->mDataFlags & DataFlags::REFCOUNTED) {
-    return mozilla::StringBuffer::FromData(this->mData)
-        ->SizeOfIncludingThisEvenIfShared(aMallocSizeOf);
-  }
+  // DataFlags::STRINGBUFFER case.
   if (this->mDataFlags & DataFlags::OWNED) {
+    if (this->mDataFlags & DataFlags::STRINGBUFFER) {
+      return mozilla::StringBuffer::FromData(this->mData)
+          ->SizeOfIncludingThisEvenIfShared(aMallocSizeOf);
+    }
     return aMallocSizeOf(this->mData);
   }
   return 0;
@@ -1577,6 +1544,15 @@ template <typename T>
 int64_t nsTSubstring<T>::ToInteger64(nsresult* aErrorCode,
                                      uint32_t aRadix) const {
   return ToIntegerCommon<T, int64_t>(*this, aErrorCode, aRadix);
+}
+
+/**
+ * nsTSubstring::ToUnsignedInteger64
+ */
+template <typename T>
+uint64_t nsTSubstring<T>::ToUnsignedInteger64(nsresult* aErrorCode,
+                                              uint32_t aRadix) const {
+  return ToIntegerCommon<T, uint64_t>(*this, aErrorCode, aRadix);
 }
 
 /**

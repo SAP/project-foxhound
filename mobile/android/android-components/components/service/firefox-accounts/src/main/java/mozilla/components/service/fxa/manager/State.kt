@@ -58,6 +58,11 @@ import mozilla.components.service.fxa.FxaAuthData
  */
 sealed class AccountState {
     /**
+     * The account manager has not initialized, so we have not determined an auth state yet.
+     */
+    object Unknown : AccountState()
+
+    /**
      * Account is logged in and authenticated.
      */
     object Authenticated : AccountState()
@@ -91,9 +96,14 @@ internal enum class ProgressState {
 internal sealed class Event {
     internal sealed class Account : Event() {
         internal object Start : Account()
-        data class BeginEmailFlow(val entrypoint: FxAEntryPoint, val scopes: Set<String>) : Account()
+        data class BeginEmailFlow(
+            val service: String,
+            val entrypoint: FxAEntryPoint,
+            val scopes: Set<String>,
+        ) : Account()
         data class BeginPairingFlow(
             val pairingUrl: String?,
+            val service: String,
             val entrypoint: FxAEntryPoint,
             val scopes: Set<String>,
         ) : Account()
@@ -172,6 +182,7 @@ internal sealed class State {
             is AccountState.Authenticating -> "AccountState.Athenticating"
             is AccountState.AuthenticationProblem -> "AccountState.AthenticationProblem"
             is AccountState.NotAuthenticated -> "AccountState.NotAthenticated"
+            AccountState.Unknown -> "AccountState.Unknown"
         }
         is Active -> when (progressState) {
             ProgressState.Initializing -> "ProgressState.Initializing"
@@ -209,6 +220,9 @@ internal fun State.next(event: Event): State? = when (this) {
             is Event.Account.BeginEmailFlow -> State.Active(ProgressState.BeginningAuthentication)
             else -> null
         }
+        // This is the old state machine that is no longer used so we don't need to implement
+        // new features into it. See Bug 2041509.
+        AccountState.Unknown -> null
     }
     // Reacting to internal events.
     is State.Active -> when (this.progressState) {

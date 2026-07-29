@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -173,8 +171,6 @@ class RendererOGL {
   wr::WindowId mWindowId;
   TimeStamp mFrameStartTime;
 
-  bool mDisableNativeCompositor;
-
 #ifdef MOZ_WIDGET_ANDROID
   struct ScreenPixelsRequest {
     gfx::IntRect mSourceRect;
@@ -189,7 +185,7 @@ class RendererOGL {
   // The id of the root WebRender pipeline.
   //
   // All other pipelines are considered content.
-  wr::PipelineId mRootPipelineId;
+  wr::PipelineId mRootPipelineId{};
 
   // A mapping of wr::PipelineId to the epochs when last they updated.
   //

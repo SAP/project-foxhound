@@ -8,7 +8,6 @@ ChromeUtils.defineESModuleGetters(this, {
   BackupService: "resource:///modules/backup/BackupService.sys.mjs",
   BackupResource: "resource:///modules/backup/BackupResource.sys.mjs",
   MeasurementUtils: "resource:///modules/backup/MeasurementUtils.sys.mjs",
-  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
   Sqlite: "resource://gre/modules/Sqlite.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
   OSKeyStoreTestUtils: "resource://testing-common/OSKeyStoreTestUtils.sys.mjs",
@@ -205,7 +204,29 @@ async function assertFilesExist(parentPath, testFilesArray) {
     let copiedFileName = PathUtils.join(parentPath, ...[].concat(path));
     Assert.ok(
       await IOUtils.exists(copiedFileName),
-      `${copiedFileName} should exist in the staging folder`
+      `${copiedFileName} should exist`
+    );
+  }
+}
+
+/**
+ * Checks that files do not exist within a particular folder. The filesize is
+ * not checked.
+ *
+ * @param {string} parentPath
+ *   The path to the parent directory where the files should not exist.
+ * @param {TestFileObject[]} testFilesArray
+ *   An array of TestFileObjects describing what test files to search for within
+ *   parentPath.
+ * @see TestFileObject
+ * @returns {Promise<undefined>}
+ */
+async function assertFilesDoNotExist(parentPath, testFilesArray) {
+  for (let { path } of testFilesArray) {
+    let copiedFileName = PathUtils.join(parentPath, ...[].concat(path));
+    Assert.ok(
+      !(await IOUtils.exists(copiedFileName)),
+      `${copiedFileName} should not exist`
     );
   }
 }
@@ -365,21 +386,6 @@ function assertUint8ArraysSimilarity(uint8ArrayA, uint8ArrayB, expectSimilar) {
   }
 }
 
-/**
- * Returns the total number of measurements taken for this histogram, regardless
- * of the values of the measurements themselves.
- *
- * @param {object} histogram
- *   Telemetry histogram object, like from `getHistogramById`
- * @returns {number}
- *   Number of measurements in the latest snapshot of the histogram
- */
-function countHistogramMeasurements(histogram) {
-  const snapshot = histogram.snapshot();
-  const countsPerBucket = Object.values(snapshot.values);
-  return countsPerBucket.reduce((sum, count) => sum + count, 0);
-}
-
 function setupProfile() {
   // FOG needs to be initialized in order for data to flow.
   Services.fog.initializeFOG();
@@ -427,28 +433,6 @@ function setupProfile() {
 }
 
 /**
- * Asserts that a histogram received a certain number of measurements, regardless
- * of the values of the measurements themselves.
- *
- * @param {object} histogram
- *   Telemetry histogram object, like from `getHistogramById`
- * @param {number} expected
- *   Expected number of measurements to have been taken
- * @param {string?} message
- *   Optional message for test report
- * @returns {void}
- *   No return value; only runs assertions
- */
-function assertHistogramMeasurementQuantity(
-  histogram,
-  expected,
-  message = "Should have taken a specific number of measurements in the histogram"
-) {
-  const totalCount = countHistogramMeasurements(histogram);
-  Assert.equal(totalCount, expected, message);
-}
-
-/**
  * @param {GleanDistributionData?} timerTestValue
  *   Glean timer from `testGetValue`
  * @returns {void}
@@ -462,4 +446,19 @@ function assertSingleTimeMeasurement(timerTestValue) {
     "Timer should have a single measurement"
   );
   Assert.greater(timerTestValue.sum, 0, "Timer measurement should be non-zero");
+}
+
+/**
+ * Creates an empty stub backup file for testing purposes.
+ *
+ * @param {string} dirPath - Directory to create the file in.
+ * @param {string} filename - Name of the backup file.
+ * @returns {Promise<string>} Full path to the created file.
+ */
+async function createStubBackupFile(dirPath, filename) {
+  const filePath = PathUtils.join(dirPath, filename);
+  await IOUtils.writeUTF8(filePath, "<!-- stub backup -->", {
+    tmpPath: filePath + ".tmp",
+  });
+  return filePath;
 }

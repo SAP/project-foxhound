@@ -171,6 +171,7 @@ class MarionetteParentProcess {
       case "final-ui-startup":
         Services.obs.removeObserver(this, topic);
 
+        Services.obs.addObserver(this, "before-cancel-download-prompt");
         Services.obs.addObserver(this, "browser-idle-startup-tasks-finished");
         Services.obs.addObserver(this, "mail-idle-startup-tasks-finished");
         Services.obs.addObserver(this, "quit-application");
@@ -194,11 +195,23 @@ class MarionetteParentProcess {
 
       case "quit-application":
         Services.obs.removeObserver(this, topic);
+        // Remove this observer here rather than inside the handler itself,
+        // because on some platforms the notification fires multiple times
+        // and removing an already-removed observer would throw.
+        Services.obs.removeObserver(this, "before-cancel-download-prompt");
         lazy.logger.trace(
           `Application is shutting down with reason: "${data || "unknown"}"`
         );
         await this.uninit();
         break;
+
+      // Before the cancel download prompt appears,
+      // skip the prompt and force canceling of downloads.
+      case "before-cancel-download-prompt": {
+        const showPrompt = subject.QueryInterface(Ci.nsISupportsPRBool);
+        showPrompt.data = false;
+        break;
+      }
 
       // Used for logging purposes to help identify slow shutdown sequences.
       case "xpcom-shutdown":

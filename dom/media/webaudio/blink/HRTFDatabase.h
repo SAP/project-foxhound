@@ -40,6 +40,9 @@ class HRTFKernel;
 
 class HRTFDatabase {
  public:
+  HRTFDatabase(const HRTFDatabase& other) = delete;
+  void operator=(const HRTFDatabase& other) = delete;
+
   static nsReturnRef<HRTFDatabase> create(float sampleRate);
 
   // clang-format off
@@ -68,9 +71,6 @@ class HRTFDatabase {
   size_t sizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
 
  private:
-  HRTFDatabase(const HRTFDatabase& other) = delete;
-  void operator=(const HRTFDatabase& other) = delete;
-
   explicit HRTFDatabase(float sampleRate);
 
   // Minimum and maximum elevation angles (inclusive) for a HRTFDatabase.

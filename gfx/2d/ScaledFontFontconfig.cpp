@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -464,6 +462,11 @@ bool ScaledFontFontconfig::GetWRFontInstanceOptions(
     }
   }
 
+  platformOptions.gamma =
+      int16_t(StaticPrefs::gfx_font_rendering_freetype_gamma());
+  platformOptions.enhanced_contrast =
+      int16_t(StaticPrefs::gfx_font_rendering_freetype_enhanced_contrast());
+
   *aOutOptions = Some(options);
   *aOutPlatformOptions = Some(platformOptions);
 
@@ -533,10 +536,42 @@ already_AddRefed<UnscaledFont> UnscaledFontFontconfig::CreateFromFontDescriptor(
     gfxWarning() << "Fontconfig font descriptor is truncated.";
     return nullptr;
   }
-  const char* path = reinterpret_cast<const char*>(aData);
-  RefPtr<UnscaledFont> unscaledFont =
-      new UnscaledFontFontconfig(std::string(path, aDataLength), aIndex);
-  return unscaledFont.forget();
+  nsCString path((const char*)aData, aDataLength);
+
+  // Use the given pathname/index in a fontconfig lookup to confirm this is a
+  // known font; if not, we'll use whatever fallback it provides instead.
+  FcPattern* pattern = FcPatternCreate();
+  FcPatternAddString(pattern, FC_FILE, (const FcChar8*)path.BeginReading());
+  FcPatternAddInteger(pattern, FC_INDEX, aIndex);
+  FcConfigSubstitute(nullptr, pattern, FcMatchPattern);
+  FcDefaultSubstitute(pattern);
+  FcResult result = FcResultMatch;
+  FcPattern* match = FcFontMatch(nullptr, pattern, &result);
+  FcPatternDestroy(pattern);
+  if (!match || result != FcResultMatch) {
+    gfxWarning() << "FcFontMatch failed.";
+    return nullptr;
+  }
+
+  // Get the file and index that fontconfig returned, logging a warning if they
+  // are not the expected values.
+  char* file = nullptr;
+  int index = 0;
+  result = FcPatternGetString(match, FC_FILE, 0, (FcChar8**)&file);
+  if (result == FcResultMatch && !path.Equals(file)) {
+    gfxWarning() << "Font path " << path.get() << " invalid, using " << file;
+    path = file;
+  }
+  result = FcPatternGetInteger(match, FC_INDEX, 0, &index);
+  // We compare just the low 16 bits of aIndex, as the upper 16 bits appear
+  // to be used to indicate variable-font instances rather than a collection
+  // index.
+  if (result == FcResultMatch && (uint32_t)index != (aIndex & 0xffff)) {
+    gfxWarning() << "Font index " << aIndex << " invalid, using " << index;
+    aIndex = index;
+  }
+
+  return MakeAndAddRef<UnscaledFontFontconfig>(path.BeginReading(), aIndex);
 }
 
 }  // namespace mozilla::gfx

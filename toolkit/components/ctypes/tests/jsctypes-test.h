@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -180,6 +179,8 @@ MOZ_EXPORT void* test_getfn();
 EXPORT_CDECL(int32_t) test_sum_va_cdecl(uint8_t n, ...);
 EXPORT_CDECL(uint8_t) test_count_true_va_cdecl(uint8_t n, ...);
 EXPORT_CDECL(void) test_add_char_short_int_va_cdecl(uint32_t* result, ...);
+EXPORT_CDECL(void) test_add_uint8_uint16_va_cdecl(uint32_t* result, ...);
+EXPORT_CDECL(void) test_add_float_double_va_cdecl(double* result, ...);
 EXPORT_CDECL(int32_t*)
 test_vector_add_va_cdecl(uint8_t num_vecs, uint8_t vec_len, int32_t* result,
                          ...);

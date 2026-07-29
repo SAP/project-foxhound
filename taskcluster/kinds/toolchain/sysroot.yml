@@ -63,12 +63,12 @@ sysroot-x86_64-linux-gnu-x11:
         arguments:
             - amd64
 
-sysroot-wasm32-wasi-clang-17:
+sysroot-wasm32-wasi-clang-19:
     description: "Sysroot for wasi"
     attributes:
         local-toolchain: true
     treeherder:
-        symbol: TL(sysroot-wasi-17)
+        symbol: TL(sysroot-wasi-19)
     run:
         script: build-sysroot-wasi.sh
         arguments:
@@ -79,36 +79,11 @@ sysroot-wasm32-wasi-clang-17:
         toolchain-artifact: public/build/sysroot-wasm32-wasi.tar.zst
     fetches:
         fetch:
-            - clang-17
+            - clang-19
             - wasi-sdk
         toolchain:
-            - linux64-clang-17-raw
-            - wasm32-wasi-compiler-rt-17
-
-sysroot-wasm32-wasi-clang-20:
-    description: "Sysroot for wasi"
-    attributes:
-        local-toolchain: true
-    treeherder:
-        symbol: TL(sysroot-wasi-20)
-    run:
-        script: build-sysroot-wasi.sh
-        arguments:
-            - wasi-sdk.patch
-        resources:
-            - taskcluster/scripts/misc/wasi-sdk.patch
-        toolchain-alias:
-            by-project:
-                toolchains: null
-                default: sysroot-wasm32-wasi
-        toolchain-artifact: public/build/sysroot-wasm32-wasi.tar.zst
-    fetches:
-        fetch:
-            - clang-20
-            - wasi-sdk
-        toolchain:
-            - linux64-clang-20-stage1
-            - wasm32-wasi-compiler-rt-20
+            - linux64-clang-19-raw
+            - wasm32-wasi-compiler-rt-19
 
 sysroot-wasm32-wasi-clang-21:
     description: "Sysroot for wasi"
@@ -122,6 +97,10 @@ sysroot-wasm32-wasi-clang-21:
             - wasi-sdk.patch
         resources:
             - taskcluster/scripts/misc/wasi-sdk.patch
+        toolchain-alias:
+            by-project:
+                toolchains: null
+                default: sysroot-wasm32-wasi
         toolchain-artifact: public/build/sysroot-wasm32-wasi.tar.zst
     fetches:
         fetch:
@@ -130,6 +109,27 @@ sysroot-wasm32-wasi-clang-21:
         toolchain:
             - linux64-clang-21-stage1
             - wasm32-wasi-compiler-rt-21
+
+sysroot-wasm32-wasi-clang-22:
+    description: "Sysroot for wasi"
+    attributes:
+        local-toolchain: true
+    treeherder:
+        symbol: TL(sysroot-wasi-22)
+    run:
+        script: build-sysroot-wasi.sh
+        arguments:
+            - wasi-sdk.patch
+        resources:
+            - taskcluster/scripts/misc/wasi-sdk.patch
+        toolchain-artifact: public/build/sysroot-wasm32-wasi.tar.zst
+    fetches:
+        fetch:
+            - clang-22
+            - wasi-sdk
+        toolchain:
+            - linux64-clang-22-stage1
+            - wasm32-wasi-compiler-rt-22
 
 sysroot-wasm32-wasi-clang-trunk:
     description: "Sysroot for wasi"

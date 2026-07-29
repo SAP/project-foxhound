@@ -1014,7 +1014,7 @@ function sanitize(input) {
   return input.replace(/\r|\n/g, "").trim();
 }
 
-add_task(async function setup() {
+add_setup(async () => {
   // FIXME: the test fails without setting this to false. Bug 1995919.
   Services.prefs.setBoolPref("browser.fixup.domainwhitelist.localhost", false);
   var prefList = [
@@ -1034,18 +1034,17 @@ add_task(async function setup() {
   await addTestEngines();
 
   await SearchService.setDefault(
-    SearchService.getEngineByName(kSearchEngineID),
+    SearchService.getEngineByName(kSearchEngineName),
     SearchService.CHANGE_REASON.UNKNOWN
   );
   await SearchService.setDefaultPrivate(
-    SearchService.getEngineByName(kPrivateSearchEngineID),
+    SearchService.getEngineByName(kPrivateSearchEngineName),
     SearchService.CHANGE_REASON.UNKNOWN
   );
 });
 
 var gSingleWordDNSLookup = false;
-add_task(async function run_test() {
-  // Only keywordlookup things should be affected by requiring a DNS lookup for single-word hosts:
+add_task(async function test_without_forcing_single_word() {
   info(
     "Check only keyword lookup testcases should be affected by requiring DNS for single hosts"
   );
@@ -1059,11 +1058,17 @@ add_task(async function run_test() {
   }
   Assert.equal(affectedTests.length, 0);
   await do_single_test_run();
+});
+
+add_task(async function test_forcing_single_word() {
   gSingleWordDNSLookup = true;
   await do_single_test_run();
+});
+
+add_task(async function test_engines_with_POST_submission() {
   gSingleWordDNSLookup = false;
   await SearchService.setDefault(
-    SearchService.getEngineByName(kPostSearchEngineID),
+    SearchService.getEngineByName(kPostSearchEngineName),
     SearchService.CHANGE_REASON.UNKNOWN
   );
   await do_single_test_run();
@@ -1077,7 +1082,7 @@ async function do_single_test_run() {
 
   let engine = await SearchService.getDefault();
   let engineUrl =
-    engine.name == kPostSearchEngineID
+    engine.name == kPostSearchEngineName
       ? kPostSearchEngineURL
       : kSearchEngineURL;
   let privateEngine = await SearchService.getDefaultPrivate();
@@ -1156,7 +1161,7 @@ async function do_single_test_run() {
       let couldDoKeywordLookup =
         flags & Services.uriFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP;
       Assert.equal(
-        !!URIInfo.keywordProviderName,
+        !!URIInfo.keywordProviderId,
         couldDoKeywordLookup && expectKeywordLookup,
         "keyword lookup as expected"
       );
@@ -1207,20 +1212,28 @@ async function do_single_test_run() {
             );
             let spec = URIInfo.preferredURI.spec.replace(/%27/g, "'");
             Assert.equal(spec, searchURL, "should get correct search URI");
-            let providerName = isPrivate ? privateEngine.name : engine.name;
+            let providerId = isPrivate ? privateEngine.id : engine.id;
             Assert.equal(
-              URIInfo.keywordProviderName,
-              providerName,
-              "should get correct provider name"
+              URIInfo.keywordProviderId,
+              providerId,
+              "should get correct provider id"
             );
             // Also check keywordToURI() uses the right engine.
             let kwInfo = Services.uriFixup.keywordToURI(
               urlparamInput,
               isPrivate
             );
-            Assert.equal(kwInfo.providerName, URIInfo.providerName);
-            if (providerName == kPostSearchEngineID) {
-              Assert.ok(kwInfo.postData);
+            Assert.equal(
+              kwInfo.keywordProviderId,
+              URIInfo.keywordProviderId,
+              "keywordToURI() uses the right engine"
+            );
+            let providerName = isPrivate ? privateEngine.name : engine.name;
+            if (providerName == kPostSearchEngineName) {
+              Assert.ok(
+                kwInfo.postData,
+                "Should have post data for the keyword"
+              );
               let submission = engine.getSubmission(urlparamInput);
               let enginePostData = NetUtil.readInputStreamToString(
                 submission.postData,

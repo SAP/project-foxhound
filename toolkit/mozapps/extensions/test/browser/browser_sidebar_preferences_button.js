@@ -13,7 +13,7 @@ add_task(async function testNoOtherTabsPresent() {
     "about:preferences"
   );
 
-  preferencesButton.click();
+  preferencesButton.shadowRoot.querySelector("a").click();
 
   let preferencesTab = await preferencesPromise;
 
@@ -34,7 +34,7 @@ async function ensurePreferencesButtonFocusesTab(expectedUri) {
     addonsWin.document.querySelector("#preferencesButton");
 
   let tabCountBeforeClick = gBrowser.tabCount;
-  preferencesButton.click();
+  EventUtils.synthesizeMouseAtCenter(preferencesButton, {}, addonsWin);
   let tabCountAfterClick = gBrowser.tabCount;
 
   is(

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,18 +5,6 @@
 #ifndef nsGlobalWindowInner_h_
 #define nsGlobalWindowInner_h_
 
-#include "nsHashKeys.h"
-#include "nsPIDOMWindow.h"
-
-// Local Includes
-// Helper Classes
-#include "mozilla/WeakPtr.h"
-#include "nsCOMPtr.h"
-#include "nsCycleCollectionParticipant.h"
-#include "nsTHashMap.h"
-#include "nsWeakReference.h"
-
-// Interfaces Needed
 #include "Units.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/CallState.h"
@@ -26,9 +12,11 @@
 #include "mozilla/FlushType.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/MozPromise.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/StorageAccess.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/WeakPtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/ChromeMessageBroadcaster.h"
 #include "mozilla/dom/DebuggerNotificationManager.h"
@@ -41,18 +29,23 @@
 #include "mozilla/dom/StorageEvent.h"
 #include "mozilla/dom/WindowBinding.h"
 #include "mozilla/dom/WindowProxyHolder.h"
+#include "nsCOMPtr.h"
 #include "nsCheapSets.h"
-#include "nsIBrowserDOMWindow.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsHashKeys.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIPrincipal.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIScriptObjectPrincipal.h"
-#include "nsSize.h"
+#include "nsPIDOMWindow.h"
+#include "nsTHashMap.h"
 #include "nsThreadUtils.h"
+#include "nsWeakReference.h"
 #include "nsWrapperCacheInlines.h"
 #include "prclist.h"
 
 class nsIArray;
+class nsIBrowserDOMWindow;
 class nsIBaseWindow;
 class nsIContent;
 class nsICookieJarSettings;
@@ -260,8 +253,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   bool IsEligibleForMessaging() override;
 
   void ReportToConsole(uint32_t aErrorFlags, const nsCString& aCategory,
-                       nsContentUtils::PropertiesFile aFile,
-                       const nsCString& aMessageName,
+                       PropertiesFile aFile, const nsCString& aMessageName,
                        const nsTArray<nsString>& aParams,
                        const mozilla::SourceLocation& aLocation) override;
 
@@ -304,9 +296,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
 
   bool ComputeDefaultWantsUntrusted(mozilla::ErrorResult& aRv) final;
 
-  virtual nsPIDOMWindowOuter* GetOwnerGlobalForBindingsInternal() override;
-
-  virtual nsIGlobalObject* GetOwnerGlobal() const override;
+  nsIGlobalObject* GetRelevantGlobal() const override;
 
   EventTarget* GetTargetForDOMEvent() override;
 
@@ -467,6 +457,10 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   void ObserveStorageNotification(mozilla::dom::StorageEvent* aEvent,
                                   const char16_t* aStorageType,
                                   bool aPrivateBrowsing);
+
+  // Called by DocGroup when managing MediaSource URLs.
+  void NoteMediaSourceURL(const nsACString& aURL);
+  void UnnoteMediaSourceURL(const nsACString& aURL);
 
   static void Init();
   static void ShutDown();
@@ -670,7 +664,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   already_AddRefed<mozilla::dom::CookieStore> CookieStore();
 
   mozilla::dom::DocumentPictureInPicture* GetExtantDocumentPictureInPicture()
-      override {
+      const override {
     return mDocumentPiP;
   }
 
@@ -690,6 +684,10 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   void StoreSharedWorker(mozilla::dom::SharedWorker* aSharedWorker);
 
   void ForgetSharedWorker(mozilla::dom::SharedWorker* aSharedWorker);
+
+  void UpdateSharedWorkersLanguageOverride(const nsCString& aLanguageOverride);
+
+  void UpdateSharedWorkerTimezoneOverride(const nsAString& aTimezoneOverride);
 
  public:
   void Alert(nsIPrincipal& aSubjectPrincipal, mozilla::ErrorResult& aError);
@@ -751,8 +749,6 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
             mozilla::ErrorResult& aError);
   void Btoa(const nsAString& aBinaryData, nsAString& aAsciiBase64String,
             mozilla::ErrorResult& aError);
-
-  void MaybeNotifyStorageKeyUsed();
 
   mozilla::dom::Storage* GetSessionStorage(mozilla::ErrorResult& aError);
   mozilla::dom::Storage* GetLocalStorage(mozilla::ErrorResult& aError);
@@ -1243,7 +1239,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   bool IsPlayingAudio() override;
 
   // Dispatch a runnable related to the global.
-  nsresult Dispatch(already_AddRefed<nsIRunnable>&& aRunnable) const final;
+  nsresult Dispatch(already_AddRefed<nsIRunnable> aRunnable) const final;
   nsISerialEventTarget* SerialEventTarget() const final;
 
   void DisableIdleCallbackRequests();
@@ -1442,11 +1438,6 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   mozilla::Maybe<mozilla::StorageAccess> mStorageAllowedCache;
   uint32_t mStorageAllowedReasonCache;
 
-  // When window associated storage is accessed we need to notify the parent
-  // process. This flag is used to ensure we only do it once per window
-  // lifetime.
-  bool hasNotifiedStorageKeyUsed{false};
-
   RefPtr<mozilla::dom::DebuggerNotificationManager>
       mDebuggerNotificationManager;
 
@@ -1517,7 +1508,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
 
   nsTArray<mozilla::WeakPtr<Document>> mDataDocumentsForMemoryReporting;
 
-  static InnerWindowByIdTable* sInnerWindowsById;
+  static mozilla::StaticAutoPtr<InnerWindowByIdTable> sInnerWindowsById;
 
   // Members in the mChromeFields member should only be used in chrome windows.
   // All accesses to this field should be guarded by a check of mIsChrome.
@@ -1530,6 +1521,8 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   // Cache the DataTransfer created for a paste event, this will be reset after
   // the event is dispatched.
   RefPtr<mozilla::dom::DataTransfer> mCurrentPasteDataTransfer;
+
+  nsTArray<nsCString> mMediaSourceURLs;
 
   // These fields are used by the inner and outer windows to prevent
   // programatically moving the window while the mouse is down.
@@ -1549,41 +1542,6 @@ inline nsISupports* ToSupports(nsGlobalWindowInner* p) {
 
 inline nsISupports* ToCanonicalSupports(nsGlobalWindowInner* p) {
   return static_cast<mozilla::dom::EventTarget*>(p);
-}
-
-// XXX: EWW - This is an awful hack - let's not do this
-#include "nsGlobalWindowOuter.h"
-
-inline nsIGlobalObject* nsGlobalWindowInner::GetOwnerGlobal() const {
-  return const_cast<nsGlobalWindowInner*>(this);
-}
-
-inline nsGlobalWindowOuter* nsGlobalWindowInner::GetInProcessTopInternal() {
-  nsGlobalWindowOuter* outer = GetOuterWindowInternal();
-  nsCOMPtr<nsPIDOMWindowOuter> top = outer ? outer->GetInProcessTop() : nullptr;
-  if (top) {
-    return nsGlobalWindowOuter::Cast(top);
-  }
-  return nullptr;
-}
-
-inline nsGlobalWindowOuter*
-nsGlobalWindowInner::GetInProcessScriptableTopInternal() {
-  nsPIDOMWindowOuter* top = GetInProcessScriptableTop();
-  return nsGlobalWindowOuter::Cast(top);
-}
-
-inline nsIScriptContext* nsGlobalWindowInner::GetContextInternal() {
-  if (mOuterWindow) {
-    return GetOuterWindowInternal()->mContext;
-  }
-
-  return nullptr;
-}
-
-inline nsGlobalWindowOuter* nsGlobalWindowInner::GetOuterWindowInternal()
-    const {
-  return nsGlobalWindowOuter::Cast(GetOuterWindow());
 }
 
 #endif /* nsGlobalWindowInner_h_ */

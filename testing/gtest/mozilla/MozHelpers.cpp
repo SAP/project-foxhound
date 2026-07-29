@@ -1,20 +1,22 @@
 #include "MozHelpers.h"
 
-#include <iostream>
-
 #include "gtest/gtest-spi.h"
 #include "mozilla/Mutex.h"
 #include "nsDebug.h"
 
 namespace mozilla::gtest {
 
-void DisableCrashReporter() {
+static void SetCrashReporter(bool aEnabled) {
   nsCOMPtr<nsICrashReporter> crashreporter =
       do_GetService("@mozilla.org/toolkit/crash-reporter;1");
   if (crashreporter) {
-    crashreporter->SetEnabled(false);
+    crashreporter->SetEnabled(aEnabled);
   }
 }
+
+void EnableCrashReporter() { SetCrashReporter(/* aEnabled */ true); }
+
+void DisableCrashReporter() { SetCrashReporter(/* aEnabled */ false); }
 
 class ScopedTestResultReporterImpl
     : public ScopedTestResultReporter,

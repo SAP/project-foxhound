@@ -57,7 +57,6 @@ import mozilla.components.support.test.whenever
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -77,6 +76,8 @@ import org.robolectric.Robolectric
 import org.robolectric.annotation.Config
 import java.io.StringReader
 import java.security.cert.X509Certificate
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class SystemEngineViewTest {
@@ -181,23 +182,23 @@ class SystemEngineViewTest {
         )
 
         engineView.handleLongClick(HitTestResult.EMAIL_TYPE, "mailto:asa@mozilla.com")
-        assertTrue(hitTestResult is HitResult.EMAIL)
+        assertIs<HitResult.EMAIL>(hitTestResult)
         assertEquals("mailto:asa@mozilla.com", hitTestResult.src)
 
         engineView.handleLongClick(HitTestResult.GEO_TYPE, "geo:1,-1")
-        assertTrue(hitTestResult is HitResult.GEO)
+        assertIs<HitResult.GEO>(hitTestResult)
         assertEquals("geo:1,-1", hitTestResult.src)
 
         engineView.handleLongClick(HitTestResult.PHONE_TYPE, "tel:+123456789")
-        assertTrue(hitTestResult is HitResult.PHONE)
+        assertIs<HitResult.PHONE>(hitTestResult)
         assertEquals("tel:+123456789", hitTestResult.src)
 
         engineView.handleLongClick(HitTestResult.IMAGE_TYPE, "image.png")
-        assertTrue(hitTestResult is HitResult.IMAGE)
+        assertIs<HitResult.IMAGE>(hitTestResult)
         assertEquals("image.png", hitTestResult.src)
 
         engineView.handleLongClick(HitTestResult.SRC_ANCHOR_TYPE, "https://mozilla.org")
-        assertTrue(hitTestResult is HitResult.UNKNOWN)
+        assertIs<HitResult.UNKNOWN>(hitTestResult)
         assertEquals("https://mozilla.org", hitTestResult.src)
 
         var result = engineView.handleLongClick(HitTestResult.SRC_IMAGE_ANCHOR_TYPE, "image.png")
@@ -357,7 +358,6 @@ class SystemEngineViewTest {
         engineSession.webView.webViewClient.doUpdateVisitedHistory(webView, "https://www.mozilla.com/not-allowed", false)
         verify(historyDelegate, never()).onVisited(eq("https://www.mozilla.com/not-allowed"), any())
         verify(historyDelegate).shouldStoreUri("https://www.mozilla.com/not-allowed")
-        Unit
     }
 
     @Test
@@ -526,7 +526,7 @@ class SystemEngineViewTest {
         engineSession.trackingProtectionPolicy = TrackingProtectionPolicy.strict()
         response = webViewClient.shouldInterceptRequest(engineSession.webView, invalidRequest)
         assertNotNull(response)
-        assertNull(response!!.data)
+        assertNull(response.data)
         assertNull(response.encoding)
         assertNull(response.mimeType)
 
@@ -535,7 +535,7 @@ class SystemEngineViewTest {
         whenever(faviconRequest.url).thenReturn("http://foo/favicon.ico".toUri())
         response = webViewClient.shouldInterceptRequest(engineSession.webView, faviconRequest)
         assertNotNull(response)
-        assertNull(response!!.data)
+        assertNull(response.data)
         assertNull(response.encoding)
         assertNull(response.mimeType)
 
@@ -554,7 +554,7 @@ class SystemEngineViewTest {
 
         response = webViewClient.shouldInterceptRequest(engineSession.webView, blockedRequest)
         assertNotNull(response)
-        assertNull(response!!.data)
+        assertNull(response.data)
         assertNull(response.encoding)
         assertNull(response.mimeType)
         assertTrue(trackerBlocked!!.trackingCategories.isEmpty())
@@ -784,7 +784,7 @@ class SystemEngineViewTest {
 
         val response = webViewClient.shouldInterceptRequest(engineSession.webView, webFontRequest)
         assertNotNull(response)
-        assertNull(response!!.data)
+        assertNull(response.data)
         assertNull(response.encoding)
         assertNull(response.mimeType)
     }
@@ -1139,8 +1139,8 @@ class SystemEngineViewTest {
 
         engineSession.webView.webChromeClient!!.onShowFileChooser(null, callback, mockFileChooserParams)
 
-        val filePickerRequest = request as PromptRequest.File
-        assertTrue(request is PromptRequest.File)
+        val filePickerRequest = request
+        assertIs<PromptRequest.File>(filePickerRequest)
 
         filePickerRequest.onSingleFileSelected(mock(), mock())
         assertTrue(onSingleFileSelectedWasCalled)
@@ -1197,8 +1197,8 @@ class SystemEngineViewTest {
 
         engineSession.webView.webChromeClient!!.onJsAlert(mock(), "http://www.mozilla.org", "message", mockJSResult)
 
-        val alertRequest = request as PromptRequest.Alert
-        assertTrue(request is PromptRequest.Alert)
+        val alertRequest = request
+        assertIs<PromptRequest.Alert>(alertRequest)
 
         assertTrue(alertRequest.title.contains("mozilla.org"))
         assertEquals(alertRequest.message, "message")
@@ -1236,8 +1236,8 @@ class SystemEngineViewTest {
             mockJSPromptResult,
         )
 
-        val textPromptRequest = request as PromptRequest.TextPrompt
-        assertTrue(request is PromptRequest.TextPrompt)
+        val textPromptRequest = request
+        assertIs<PromptRequest.TextPrompt>(textPromptRequest)
 
         assertTrue(textPromptRequest.title.contains("mozilla.org"))
         assertEquals(textPromptRequest.hasShownManyDialogs, false)
@@ -1311,8 +1311,8 @@ class SystemEngineViewTest {
             mockJSPromptResult,
         )
 
-        val confirmPromptRequest = request as PromptRequest.Confirm
-        assertTrue(request is PromptRequest.Confirm)
+        val confirmPromptRequest = request
+        assertIs<PromptRequest.Confirm>(confirmPromptRequest)
 
         assertTrue(confirmPromptRequest.title.contains("mozilla.org"))
         assertEquals(confirmPromptRequest.hasShownManyDialogs, false)
@@ -1382,8 +1382,8 @@ class SystemEngineViewTest {
 
         engineSession.webView.webViewClient.onReceivedHttpAuthRequest(engineSession.webView, authHandler, host, realm)
 
-        val authRequest = request as PromptRequest.Authentication
-        assertTrue(request is PromptRequest.Authentication)
+        val authRequest = request
+        assertIs<PromptRequest.Authentication>(authRequest)
 
         assertEquals(authRequest.title, "")
 

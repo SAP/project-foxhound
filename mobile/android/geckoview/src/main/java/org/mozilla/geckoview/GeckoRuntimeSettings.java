@@ -1,6 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * vim: ts=4 sw=4 expandtab:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -344,8 +342,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     }
 
     /**
-     * Set whether Fission should be enabled or not. This must be set before startup. Note: Session
-     * History in Parent (SHIP) will be enabled as well if Fission is enabled.
+     * Set whether Fission should be enabled or not. This must be set before startup.
      *
      * @param enabled A flag determining whether fission should be enabled.
      * @return The builder instance.
@@ -379,13 +376,14 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     }
 
     /**
-     * Sets whether Session History in Parent (SHIP) should be disabled or not.
+     * Sets whether Session History in Parent (SHIP) should be disabled or not. As SHIP can no
+     * longer be disabled this is a no-op.
      *
      * @param value A flag determining whether SHIP should be disabled or not.
      * @return The builder instance.
      */
-    public @NonNull Builder disableShip(final boolean value) {
-      getSettings().mDisableShip.set(value);
+    public @Deprecated @DeprecationSchedule(id = "disable-ship-removal", version = 153) @NonNull
+    Builder disableShip(final boolean value) {
       return this;
     }
 
@@ -830,8 +828,6 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
       new PrefWithoutDefault<>("privacy.baselineFingerprintingProtection");
   /* package */ final PrefWithoutDefault<String> mBaselineFingerprintingProtectionOverrides =
       new PrefWithoutDefault<>("privacy.baselineFingerprintingProtection.overrides");
-  /* package */ PrefWithoutDefault<Boolean> mDisableShip =
-      new PrefWithoutDefault<Boolean>("fission.disableSessionHistoryInParent");
   /* package */ final Pref<Boolean> mFetchPriorityEnabled =
       new Pref<Boolean>("network.fetchpriority.enabled", false);
   /* package */ final Pref<Boolean> mParallelMarkingEnabled =
@@ -2396,8 +2392,8 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
   }
 
   /**
-   * Retrieve the status of the disable session history in parent (SHIP) preference. May be null if
-   * the value hasn't been specifically initialized.
+   * Retrieve the status of the disable session history in parent (SHIP) preference. Since SHIP can
+   * no longer be disabled this is always false.
    *
    * <p>Note, there is no conventional setter because this may only be set before Gecko is
    * initialized.
@@ -2406,8 +2402,9 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
    *
    * @return True if SHIP is disabled, false if SHIP is enabled.
    */
-  public @Nullable Boolean getDisableShip() {
-    return mDisableShip.get();
+  public @Deprecated @DeprecationSchedule(id = "disable-ship-removal", version = 153) @Nullable
+  Boolean getDisableShip() {
+    return false;
   }
 
   /**

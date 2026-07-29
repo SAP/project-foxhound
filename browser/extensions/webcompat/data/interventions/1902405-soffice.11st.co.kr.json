@@ -1,0 +1,18 @@
+{
+  "label": "soffice.11st.co.kr",
+  "bugs": {
+    "1902405": {
+      "issue": "unsupported-warning",
+      "matches": ["*://soffice.11st.co.kr/*"]
+    }
+  },
+  "css": {
+    "hide_browser_notice": "#app > .c-browser { display: none !important; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "css": ["hide_browser_notice"]
+    }
+  ]
+}

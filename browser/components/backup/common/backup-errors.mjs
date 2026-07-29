@@ -21,6 +21,9 @@ export const ERROR_L10N_IDS = Object.freeze({
   [ERRORS.INTERNAL_ERROR]: "backup-service-error-went-wrong2",
   [ERRORS.UNSUPPORTED_APPLICATION]:
     "backup-service-error-unsupported-application",
+  [ERRORS.DECOMPRESSION_FAILED]: "backup-service-error-recovery-failed",
+  [ERRORS.PROFILE_CREATION_FAILED]: "backup-service-error-recovery-failed",
+  [ERRORS.RESOURCE_RECOVERY_FAILED]: "backup-service-error-recovery-failed",
 });
 
 /**

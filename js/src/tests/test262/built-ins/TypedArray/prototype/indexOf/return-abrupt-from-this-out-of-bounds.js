@@ -56,6 +56,6 @@ testWithTypedArrayConstructors(TA => {
     array.indexOf(0);
     throw new Test262Error('indexOf completed successfully');
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

@@ -6,8 +6,9 @@ use super::strings::utf16_ptr_to_ascii;
 use super::HResult;
 use std::fs::File;
 use std::os::windows::io::AsRawHandle;
+use windows_sys::core::BOOL;
 use windows_sys::Win32::{
-    Foundation::{GetLastError, BOOL, ERROR_INSUFFICIENT_BUFFER, HANDLE, MAX_PATH},
+    Foundation::{GetLastError, ERROR_INSUFFICIENT_BUFFER, MAX_PATH},
     Security::Cryptography::{
         szOID_CERT_STRONG_SIGN_OS_1, szOID_CERT_STRONG_SIGN_OS_CURRENT,
         Catalog::{
@@ -20,8 +21,8 @@ use windows_sys::Win32::{
     },
 };
 
-pub type HCATADMIN = HANDLE;
-pub type HCATINFO = HANDLE;
+pub type HCATADMIN = isize;
+pub type HCATINFO = isize;
 
 /// A catalog admin handle.
 pub struct CATAdmin(HCATADMIN);

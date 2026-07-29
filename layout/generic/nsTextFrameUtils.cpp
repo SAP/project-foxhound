@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -94,53 +92,54 @@ static CharT* TransformWhiteSpaces(
              "whitespaces should be skippable!!");
   // Get the context preceding/following this white space range.
   // For 8-bit text (sizeof CharT == 1), the checks here should get optimized
-  // out, and isSegmentBreakSkippable should be initialized to be 'false'.
-  bool isSegmentBreakSkippable =
-      sizeof(CharT) > 1 &&
-      ((aBegin > 0 && IS_ZERO_WIDTH_SPACE(aText[aBegin - 1])) ||
-       (aEnd < aLength && IS_ZERO_WIDTH_SPACE(aText[aEnd])));
-  if (sizeof(CharT) > 1 && !isSegmentBreakSkippable && aBegin > 0 &&
-      aEnd < aLength) {
-    // Get the characters before and after the segment break, skipping past
-    // any default-ignorable characters (e.g. variation selectors, various
-    // invisible control chars, etc)
-    uint32_t ucs4before, ucs4after;
-    uint32_t pos = aBegin;
-    do {
-      if (pos > 1 && NS_IS_SURROGATE_PAIR(aText[pos - 2], aText[pos - 1])) {
-        ucs4before = SURROGATE_TO_UCS4(aText[pos - 2], aText[pos - 1]);
-        pos -= 2;
-      } else {
-        ucs4before = aText[pos - 1];
-        pos -= 1;
-      }
-    } while (IsDefaultIgnorable(ucs4before) && pos > 0);
+  // out, and isSegmentBreakSkippable is simply initialized to false.
+  bool isSegmentBreakSkippable = false;
+  if constexpr (sizeof(CharT) > 1) {
+    if ((aBegin > 0 && IS_ZERO_WIDTH_SPACE(aText[aBegin - 1])) ||
+        (aEnd < aLength && IS_ZERO_WIDTH_SPACE(aText[aEnd]))) {
+      isSegmentBreakSkippable = true;
+    } else if (aBegin > 0 && aEnd < aLength) {
+      // Get the characters before and after the segment break, skipping past
+      // any default-ignorable characters (e.g. variation selectors, various
+      // invisible control chars, etc)
+      uint32_t ucs4before, ucs4after;
+      uint32_t pos = aBegin;
+      do {
+        if (pos > 1 && NS_IS_SURROGATE_PAIR(aText[pos - 2], aText[pos - 1])) {
+          ucs4before = SURROGATE_TO_UCS4(aText[pos - 2], aText[pos - 1]);
+          pos -= 2;
+        } else {
+          ucs4before = aText[pos - 1];
+          pos -= 1;
+        }
+      } while (IsDefaultIgnorable(ucs4before) && pos > 0);
 
-    pos = aEnd;
-    do {
-      if (pos + 1 < aLength &&
-          NS_IS_SURROGATE_PAIR(aText[pos], aText[pos + 1])) {
-        ucs4after = SURROGATE_TO_UCS4(aText[pos], aText[pos + 1]);
-        pos += 2;
-      } else {
-        ucs4after = aText[pos];
-        pos += 1;
-      }
-    } while (IsDefaultIgnorable(ucs4after) && pos < aLength);
+      pos = aEnd;
+      do {
+        if (pos + 1 < aLength &&
+            NS_IS_SURROGATE_PAIR(aText[pos], aText[pos + 1])) {
+          ucs4after = SURROGATE_TO_UCS4(aText[pos], aText[pos + 1]);
+          pos += 2;
+        } else {
+          ucs4after = aText[pos];
+          pos += 1;
+        }
+      } while (IsDefaultIgnorable(ucs4after) && pos < aLength);
 
-    // Discard newlines between characters that have F, W, or H EastAsianWidth
-    // property and neither side is Hangul.
-    // For Japanese/Chinese, also discard if *either* character is a fullwidth/
-    // wide punctuation character.
-    isSegmentBreakSkippable =
-        (IsSegmentBreakSkipChar(ucs4before) &&
-         IsSegmentBreakSkipChar(ucs4after)) ||
-        (aLangIsJapaneseOrChinese && (IsEastAsianPunctuation(ucs4before) ||
-                                      IsEastAsianPunctuation(ucs4after)));
+      // Discard newlines between characters that have F/W/H EastAsianWidth
+      // property and neither side is Hangul.
+      // For Japanese/Chinese, also discard if either character is a fullwidth/
+      // wide punctuation character.
+      isSegmentBreakSkippable =
+          (IsSegmentBreakSkipChar(ucs4before) &&
+           IsSegmentBreakSkipChar(ucs4after)) ||
+          (aLangIsJapaneseOrChinese && (IsEastAsianPunctuation(ucs4before) ||
+                                        IsEastAsianPunctuation(ucs4after)));
+    }
   }
 
   for (uint32_t i = aBegin; i < aEnd; ++i) {
-    CharT ch = aText[i];
+    const CharT ch = aText[i];
     bool keepChar = false;
     bool keepTransformedWhiteSpace = false;
     if (IsDiscardable(ch, &aFlags)) {
@@ -221,15 +220,37 @@ CharT* nsTextFrameUtils::TransformText(
   if (aCompression == COMPRESS_NONE ||
       aCompression == COMPRESS_NONE_TRANSFORM_TO_SPACE) {
     // Skip discardables.
-    uint32_t i;
-    for (i = 0; i < aLength; ++i) {
+    for (uint32_t i = 0; i < aLength; ++i) {
       CharT ch = aText[i];
+
+      // Batch-process runs of non-discardable chars >= ' '.
+      if (ch >= ' ' && !IsDiscardable(ch, &flags)) {
+        uint32_t batchStart = i;
+        while (i + 1 < aLength) {
+          const CharT next = aText[i + 1];
+          if (next < ' ' || IsDiscardable(next, &flags)) {
+            break;
+          }
+          i++;
+        }
+        if constexpr (sizeof(CharT) > 1) {
+          lastCharArabic = IS_ARABIC_CHAR(aText[i]);
+        }
+        const uint32_t batchLen = i - batchStart + 1;
+        memcpy(aOutput, aText + batchStart, batchLen * sizeof(CharT));
+        aOutput += batchLen;
+        aSkipChars->KeepChars(batchLen);
+        continue;
+      }
+
       if (IsDiscardable(ch, &flags)) {
         aSkipChars->SkipChar();
       } else {
         aSkipChars->KeepChar();
         if (ch > ' ') {
-          lastCharArabic = IS_ARABIC_CHAR(ch);
+          if constexpr (sizeof(CharT) > 1) {
+            lastCharArabic = IS_ARABIC_CHAR(ch);
+          }
         } else if (aCompression == COMPRESS_NONE_TRANSFORM_TO_SPACE) {
           if (ch == '\t' || ch == '\n') {
             ch = ' ';
@@ -244,11 +265,6 @@ CharT* nsTextFrameUtils::TransformText(
         }
         *aOutput++ = ch;
       }
-    }
-    if (lastCharArabic) {
-      *aIncomingFlags |= INCOMING_ARABICCHAR;
-    } else {
-      *aIncomingFlags &= ~INCOMING_ARABICCHAR;
     }
     *aIncomingFlags &= ~INCOMING_WHITESPACE;
   } else {
@@ -266,9 +282,31 @@ CharT* nsTextFrameUtils::TransformText(
       return false;
     }();
     bool inWhitespace = (*aIncomingFlags & INCOMING_WHITESPACE) != 0;
-    uint32_t i;
-    for (i = 0; i < aLength; ++i) {
-      CharT ch = aText[i];
+    for (uint32_t i = 0; i < aLength; ++i) {
+      const CharT ch = aText[i];
+
+      // Batch-process runs of non-discardable, non-document-whitespace,
+      // non-segment-break chars.
+      if (!IsSpaceOrTabOrSegmentBreak(ch) && !IsDiscardable(ch, &flags)) {
+        const uint32_t batchStart = i;
+        while (i + 1 < aLength) {
+          const CharT next = aText[i + 1];
+          if (IsSpaceOrTabOrSegmentBreak(next) || IsDiscardable(next, &flags)) {
+            break;
+          }
+          i++;
+        }
+        if constexpr (sizeof(CharT) > 1) {
+          lastCharArabic = IS_ARABIC_CHAR(aText[i]);
+        }
+        const uint32_t batchLen = i - batchStart + 1;
+        memcpy(aOutput, aText + batchStart, batchLen * sizeof(CharT));
+        aOutput += batchLen;
+        aSkipChars->KeepChars(batchLen);
+        inWhitespace = false;
+        continue;
+      }
+
       // CSS Text 3 - 4.1. The White Space Processing Rules
       // White space processing in CSS affects only the document white space
       // characters: spaces (U+0020), tabs (U+0009), and segment breaks.
@@ -296,10 +334,12 @@ CharT* nsTextFrameUtils::TransformText(
         }
         // If the last white space is followed by a combining sequence tail,
         // exclude it from the range of TransformWhiteSpaces.
-        if (sizeof(CharT) > 1 && aText[j - 1] == ' ' && j < aLength &&
-            IsSpaceCombiningSequenceTail(&aText[j], aLength - j)) {
-          keepLastSpace = true;
-          j--;
+        if constexpr (sizeof(CharT) > 1) {
+          if (aText[j - 1] == ' ' && j < aLength &&
+              IsSpaceCombiningSequenceTail(&aText[j], aLength - j)) {
+            keepLastSpace = true;
+            j--;
+          }
         }
         if (j > i) {
           aOutput = TransformWhiteSpaces(
@@ -312,7 +352,9 @@ CharT* nsTextFrameUtils::TransformText(
           keepLastSpace = false;
           *aOutput++ = ' ';
           aSkipChars->KeepChar();
-          lastCharArabic = false;
+          if constexpr (sizeof(CharT) > 1) {
+            lastCharArabic = false;
+          }
           j++;
         }
         for (; countTrailingDiscardables > 0; countTrailingDiscardables--) {
@@ -329,20 +371,23 @@ CharT* nsTextFrameUtils::TransformText(
         *aOutput++ = ch;
         aSkipChars->KeepChar();
       }
-      lastCharArabic = IS_ARABIC_CHAR(ch);
+      if constexpr (sizeof(CharT) > 1) {
+        lastCharArabic = IS_ARABIC_CHAR(ch);
+      }
       inWhitespace = false;
     }
 
-    if (lastCharArabic) {
-      *aIncomingFlags |= INCOMING_ARABICCHAR;
-    } else {
-      *aIncomingFlags &= ~INCOMING_ARABICCHAR;
-    }
     if (inWhitespace) {
       *aIncomingFlags |= INCOMING_WHITESPACE;
     } else {
       *aIncomingFlags &= ~INCOMING_WHITESPACE;
     }
+  }
+
+  if (lastCharArabic) {
+    *aIncomingFlags |= INCOMING_ARABICCHAR;
+  } else {
+    *aIncomingFlags &= ~INCOMING_ARABICCHAR;
   }
 
   *aAnalysisFlags = flags;

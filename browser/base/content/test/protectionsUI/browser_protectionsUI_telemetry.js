@@ -33,7 +33,7 @@ add_setup(async function () {
   await UrlClassifierTestUtils.addTestTrackers();
 
   let TrackingProtection =
-    gBrowser.ownerGlobal.gProtectionsHandler.blockers.TrackingProtection;
+    gBrowser.documentGlobal.gProtectionsHandler.blockers.TrackingProtection;
   ok(TrackingProtection, "TP is attached to the browser window");
   ok(!TrackingProtection.enabled, "TP is not enabled");
 

@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -18,21 +16,34 @@ DIRS += ["updater-dep"]
 TEST_DIRS += ["updater-xpcshell"]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
+    GeneratedFile(
+        "Info.plist",
+        script="/python/mozbuild/mozbuild/action/preprocessor.py",
+        entry_point="generate",
+        inputs=["macbuild/Contents/Info.plist.in"],
+        flags=[
+            "-Fsubstitution",
+            f"-DMOZ_MACBUNDLE_ID={CONFIG['MOZ_MACBUNDLE_ID']}",
+            f"-DMOZ_SMAUTHORIZEDCLIENTS_REQUIREMENTS={CONFIG['MOZ_SMAUTHORIZEDCLIENTS_REQUIREMENTS']}",
+        ],
+    )
+    FINAL_TARGET_FILES += ["!Info.plist"]
     LDFLAGS += [
         "-sectcreate",
         "__TEXT",
         "__info_plist",
-        TOPOBJDIR + "/dist/bin/Info.plist",
+        OBJDIR + "/Info.plist",
         "-sectcreate",
         "__TEXT",
         "__launchd_plist",
         SRCDIR + "/Launchd.plist",
     ]
+    EXTRA_LINK_DEPS += ["!Info.plist", "Launchd.plist"]
     DIRS += [
         "macos-frameworks",
     ]
 
-GENERATED_FILES = [
+GENERATED_FILES += [
     "dep1Cert.h",
     "dep2Cert.h",
     "primaryCert.h",

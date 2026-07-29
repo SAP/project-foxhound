@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -14,7 +12,7 @@ namespace mozilla {
 #  undef LOG_INTERNAL
 #endif  // LOG_INTERNAL
 #define LOG_INTERNAL(level, msg, ...) \
-  MOZ_LOG(gMediaTrackGraphLog, LogLevel::level, (msg, ##__VA_ARGS__))
+  MOZ_LOG_FMT(gMediaTrackGraphLog, LogLevel::level, msg, ##__VA_ARGS__)
 
 #ifdef LOG
 #  undef LOG
@@ -32,8 +30,9 @@ namespace mozilla {
 #  undef TRACK_GRAPH_LOG_INTERNAL
 #endif  // TRACK_GRAPH_LOG_INTERNAL
 #define TRACK_GRAPH_LOG_INTERNAL(level, msg, ...)                        \
-  LOG_INTERNAL(level, "(Graph %p, Driver %p) DeviceInputTrack %p, " msg, \
-               this->mGraph, this->mGraph->CurrentDriver(), this,        \
+  LOG_INTERNAL(level, "(Graph {}, Driver {}) DeviceInputTrack {}, " msg, \
+               fmt::ptr(this->mGraph),                                   \
+               fmt::ptr(this->mGraph->CurrentDriver()), fmt::ptr(this),  \
                ##__VA_ARGS__)
 
 #ifdef TRACK_GRAPH_LOG
@@ -59,8 +58,9 @@ namespace mozilla {
 #endif  // CONSUMER_GRAPH_LOG_INTERNAL
 #define CONSUMER_GRAPH_LOG_INTERNAL(level, msg, ...)                    \
   LOG_INTERNAL(                                                         \
-      level, "(Graph %p, Driver %p) DeviceInputConsumerTrack %p, " msg, \
-      this->mGraph, this->mGraph->CurrentDriver(), this, ##__VA_ARGS__)
+      level, "(Graph {}, Driver {}) DeviceInputConsumerTrack {}, " msg, \
+      fmt::ptr(this->mGraph), fmt::ptr(this->mGraph->CurrentDriver()),  \
+      fmt::ptr(this), ##__VA_ARGS__)
 
 #ifdef CONSUMER_GRAPH_LOGV
 #  undef CONSUMER_GRAPH_LOGV
@@ -89,8 +89,8 @@ void DeviceInputConsumerTrack::ConnectDeviceInput(
 
   mDeviceInputTrack =
       DeviceInputTrack::OpenAudio(Graph(), aId, aPrincipal, this);
-  LOG("Open device %p (DeviceInputTrack %p) for consumer %p", aId,
-      mDeviceInputTrack.get(), this);
+  LOG("Open device {} (DeviceInputTrack {}) for consumer {}", fmt::ptr(aId),
+      fmt::ptr(mDeviceInputTrack.get()), fmt::ptr(this));
   mPort = AllocateInputPort(mDeviceInputTrack.get());
 }
 
@@ -108,8 +108,8 @@ void DeviceInputConsumerTrack::DisconnectDeviceInput() {
   MOZ_ASSERT(mDeviceInputTrack);
   MOZ_ASSERT(mDeviceId.isSome());
 
-  LOG("Close device %p (DeviceInputTrack %p) for consumer %p ", *mDeviceId,
-      mDeviceInputTrack.get(), this);
+  LOG("Close device {} (DeviceInputTrack {}) for consumer {} ",
+      fmt::ptr(*mDeviceId), fmt::ptr(mDeviceInputTrack.get()), fmt::ptr(this));
   mPort->Destroy();
   DeviceInputTrack::CloseAudio(mDeviceInputTrack.forget(), this);
   mListener = nullptr;
@@ -180,20 +180,19 @@ void DeviceInputConsumerTrack::GetInputSourceData(AudioSegment& aOutput,
     if (inputEnded) {
       aOutput.AppendNullData(ticks);
       CONSUMER_GRAPH_LOGV(
-          "Getting %" PRId64
-          " ticks of null data from input port source (ended input)",
+          "Getting {} ticks of null data from input port source (ended input)",
           ticks);
     } else if (interval.mInputIsBlocked) {
       aOutput.AppendNullData(ticks);
       CONSUMER_GRAPH_LOGV(
-          "Getting %" PRId64
-          " ticks of null data from input port source (blocked input)",
+          "Getting {} ticks of null data from input port source (blocked "
+          "input)",
           ticks);
     } else if (source->IsSuspended()) {
       aOutput.AppendNullData(ticks);
       CONSUMER_GRAPH_LOGV(
-          "Getting %" PRId64
-          " ticks of null data from input port source (source is suspended)",
+          "Getting {} ticks of null data from input port source (source is "
+          "suspended)",
           ticks);
     } else {
       TrackTime start =
@@ -201,9 +200,9 @@ void DeviceInputConsumerTrack::GetInputSourceData(AudioSegment& aOutput,
       TrackTime end = source->GraphTimeToTrackTimeWithBlocking(interval.mEnd);
       MOZ_ASSERT(source->GetData<AudioSegment>()->GetDuration() >= end);
       aOutput.AppendSlice(*source->GetData<AudioSegment>(), start, end);
-      CONSUMER_GRAPH_LOGV("Getting %" PRId64
-                          " ticks of real data from input port source %p",
-                          end - start, source);
+      CONSUMER_GRAPH_LOGV(
+          "Getting {} ticks of real data from input port source {}",
+          end - start, fmt::ptr(source));
     }
   }
 }
@@ -235,9 +234,9 @@ NotNull<RefPtr<DeviceInputTrack>> DeviceInputTrack::OpenAudio(
       track = new NativeInputTrack(aGraph->GraphRate(), aDeviceId,
                                    aPrincipalHandle);
     }
-    LOG("Create %sNativeInputTrack %p in MTG %p for device %p",
-        (track->AsNativeInputTrack() ? "" : "Non"), track.get(), aGraph,
-        aDeviceId);
+    LOG("Create {}NativeInputTrack {} in MTG {} for device {}",
+        (track->AsNativeInputTrack() ? "" : "Non"), fmt::ptr(track.get()),
+        fmt::ptr(aGraph), fmt::ptr(aDeviceId));
     aGraph->AddTrack(track);
     // Add the listener before opening the device so the device passed to
     // OpenAudioInput always has a non-zero input channel count.
@@ -250,9 +249,9 @@ NotNull<RefPtr<DeviceInputTrack>> DeviceInputTrack::OpenAudio(
   MOZ_ASSERT(!track->mConsumerTracks.Contains(aConsumer));
   track->mConsumerTracks.AppendElement(aConsumer);
 
-  LOG("DeviceInputTrack %p (device %p: %snative) in MTG %p has %zu users now",
-      track.get(), track->mDeviceId,
-      (track->AsNativeInputTrack() ? "" : "non-"), aGraph,
+  LOG("DeviceInputTrack {} (device {}: {}native) in MTG {} has {} users now",
+      fmt::ptr(track.get()), fmt::ptr(track->mDeviceId),
+      (track->AsNativeInputTrack() ? "" : "non-"), fmt::ptr(aGraph),
       track->mConsumerTracks.Length());
   if (track->mConsumerTracks.Length() > 1) {
     track->ReevaluateInputDevice();
@@ -272,9 +271,9 @@ void DeviceInputTrack::CloseAudio(already_AddRefed<DeviceInputTrack> aTrack,
   track->RemoveDataListener(aConsumer->GetAudioDataListener());
   DebugOnly<bool> removed = track->mConsumerTracks.RemoveElement(aConsumer);
   MOZ_ASSERT(removed);
-  LOG("DeviceInputTrack %p (device %p) in MTG %p has %zu users now",
-      track.get(), track->mDeviceId, track->Graph(),
-      track->mConsumerTracks.Length());
+  LOG("DeviceInputTrack {} (device {}) in MTG {} has {} users now",
+      fmt::ptr(track.get()), fmt::ptr(track->mDeviceId),
+      fmt::ptr(track->Graph()), track->mConsumerTracks.Length());
   if (track->mConsumerTracks.IsEmpty()) {
     track->Graph()->CloseAudioInput(track);
     track->Destroy();
@@ -335,8 +334,8 @@ DeviceInputTrack::UpdateRequestedProcessingParams() {
         Graph()->ProcessingParamsGeneration();
 
     TRACK_GRAPH_LOG(
-        "%sNativeInputTrack notifying of setting requested processing params "
-        "%s (Gen %d)",
+        "{}NativeInputTrack notifying of setting requested processing params "
+        "{} (Gen {})",
         (AsNonNativeInputTrack() ? "Non" : ""),
         CubebUtils::ProcessingParamsToString(mProcessingParamsRequest.mParams)
             .get(),
@@ -428,8 +427,7 @@ void NativeInputTrack::ProcessInput(GraphTime aFrom, GraphTime aTo,
   AssertOnGraphThread();
   TRACE_COMMENT("NativeInputTrack::ProcessInput", "%p", this);
 
-  TRACK_GRAPH_LOGV("(Native) ProcessInput from %" PRId64 " to %" PRId64
-                   ", needs %" PRId64 " frames",
+  TRACK_GRAPH_LOGV("(Native) ProcessInput from {} to {}, needs {} frames",
                    aFrom, aTo, aTo - aFrom);
 
   TrackTime from = GraphTimeToTrackTime(aFrom);
@@ -478,7 +476,7 @@ void NativeInputTrack::NotifyInputData(MediaTrackGraph* aGraph,
   AssertOnGraphThread();
   MOZ_ASSERT(aGraph == mGraph, "Receive input data from another graph");
   TRACK_GRAPH_LOGV(
-      "NotifyInputData: frames=%zu, rate=%d, channel=%u, alreadyBuffered=%u",
+      "NotifyInputData: frames={}, rate={}, channel={}, alreadyBuffered={}",
       aFrames, aRate, aChannels, aAlreadyBuffered);
 
   if (!mIsBufferingAppended) {
@@ -490,7 +488,7 @@ void NativeInputTrack::NotifyInputData(MediaTrackGraph* aGraph,
         buffering - static_cast<TrackTime>(aAlreadyBuffered);
     mPendingData.AppendNullData(remaining);
     mIsBufferingAppended = true;
-    TRACK_GRAPH_LOG("Set mIsBufferingAppended by appending %" PRId64 " frames.",
+    TRACK_GRAPH_LOG("Set mIsBufferingAppended by appending {} frames.",
                     remaining);
   }
 
@@ -523,8 +521,7 @@ void NonNativeInputTrack::ProcessInput(GraphTime aFrom, GraphTime aTo,
   AssertOnGraphThread();
   TRACE_COMMENT("NonNativeInputTrack::ProcessInput", "%p", this);
 
-  TRACK_GRAPH_LOGV("(NonNative) ProcessInput from %" PRId64 " to %" PRId64
-                   ", needs %" PRId64 " frames",
+  TRACK_GRAPH_LOGV("(NonNative) ProcessInput from {} to {}, needs {} frames",
                    aFrom, aTo, aTo - aFrom);
 
   TrackTime from = GraphTimeToTrackTime(aFrom);
@@ -559,7 +556,8 @@ void NonNativeInputTrack::StartAudio(
   MOZ_ASSERT(aAudioInputSource->mPrincipalHandle == mPrincipalHandle);
   MOZ_ASSERT(aAudioInputSource->mDeviceId == mDeviceId);
 
-  TRACK_GRAPH_LOG("StartAudio with source %p", aAudioInputSource.get());
+  TRACK_GRAPH_LOG("StartAudio with source {}",
+                  fmt::ptr(aAudioInputSource.get()));
 #ifdef DEBUG
   mGraphThreadId = std::this_thread::get_id();
 #endif
@@ -572,7 +570,7 @@ void NonNativeInputTrack::StartAudio(
 void NonNativeInputTrack::StopAudio() {
   AssertOnGraphThread();
 
-  TRACK_GRAPH_LOG("StopAudio from source %p", mAudioSource.get());
+  TRACK_GRAPH_LOG("StopAudio from source {}", fmt::ptr(mAudioSource.get()));
   if (!mAudioSource) {
     return;
   }
@@ -678,9 +676,9 @@ void AudioInputSourceListener::AudioDeviceChanged(
   MOZ_ASSERT(mOwner);
 
   if (mOwner->IsDestroyed()) {
-    LOG("NonNativeInputTrack %p has been destroyed. No need to forward the "
+    LOG("NonNativeInputTrack {} has been destroyed. No need to forward the "
         "audio device-changed notification",
-        mOwner.get());
+        fmt::ptr(mOwner.get()));
     return;
   }
 
@@ -704,19 +702,19 @@ void AudioInputSourceListener::AudioStateCallback(
                                                                   : "error";
 
   if (mOwner->IsDestroyed()) {
-    LOG("NonNativeInputTrack %p has been destroyed. No need to forward the "
-        "audio state-changed(%s) notification",
-        mOwner.get(), state);
+    LOG("NonNativeInputTrack {} has been destroyed. No need to forward the "
+        "audio state-changed({}) notification",
+        fmt::ptr(mOwner.get()), state);
     return;
   }
 
   if (aState == AudioInputSource::EventListener::State::Started) {
-    LOG("We can ignore %s notification for NonNativeInputTrack %p", state,
-        mOwner.get());
+    LOG("We can ignore {} notification for NonNativeInputTrack {}", state,
+        fmt::ptr(mOwner.get()));
     return;
   }
 
-  LOG("Notify audio stopped due to entering %s state", state);
+  LOG("Notify audio stopped due to entering {} state", state);
 
   MOZ_DIAGNOSTIC_ASSERT(mOwner->Graph());
   mOwner->QueueControlMessageWithNoShutdown([inputTrack = mOwner, aSourceId] {

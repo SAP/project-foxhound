@@ -15,10 +15,10 @@
 #include <cstring>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
-#include "api/array_view.h"
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
 #include "api/frame_transformer_interface.h"
@@ -43,6 +43,7 @@
 #include "call/test/mock_rtp_packet_sink_interface.h"
 #include "call/video_receive_stream.h"
 #include "common_video/h264/h264_common.h"
+#include "logging/rtc_event_log/mock/mock_rtc_event_log.h"
 #include "media/base/media_constants.h"
 #include "modules/include/module_common_types.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
@@ -68,6 +69,7 @@
 #include "test/mock_transport.h"
 #include "test/rtcp_packet_parser.h"
 #include "test/time_controller/simulated_time_controller.h"
+#include "test/time_controller/simulated_time_controller_impl.h"
 
 namespace webrtc {
 
@@ -153,7 +155,7 @@ class MockOnCompleteFrameCallback
   void ClearExpectedBitstream() { buffer_.Clear(); }
 
   void AppendExpectedBitstream(const uint8_t data[], size_t size_in_bytes) {
-    buffer_.Write(ArrayView<const uint8_t>(data, size_in_bytes));
+    buffer_.Write(std::span<const uint8_t>(data, size_in_bytes));
   }
   ByteBufferWriter buffer_;
 };
@@ -186,10 +188,11 @@ class RtpVideoStreamReceiver2Test : public ::testing::Test,
       : time_controller_(Timestamp::Millis(100)),
         env_(CreateEnvironment(CreateTestFieldTrialsPtr(field_trials),
                                time_controller_.GetClock(),
-                               time_controller_.GetTaskQueueFactory())),
+                               time_controller_.GetTaskQueueFactory(),
+                               &log_)),
         task_queue_(time_controller_.GetTaskQueueFactory()->CreateTaskQueue(
             "RtpVideoStreamReceiver2Test",
-            TaskQueueFactory::Priority::NORMAL)),
+            TaskQueueFactory::Priority::kNormal)),
         task_queue_setter_(task_queue_.get()),
         config_(CreateConfig()) {
     rtp_receive_statistics_ = ReceiveStatistics::Create(&env_.clock());
@@ -203,7 +206,7 @@ class RtpVideoStreamReceiver2Test : public ::testing::Test,
                                                 /*raw_payload=*/false);
     ON_CALL(mock_transport_, SendRtcp)
         .WillByDefault(
-            [this](ArrayView<const uint8_t> packet, ::testing::Unused) {
+            [this](std::span<const uint8_t> packet, ::testing::Unused) {
               return rtcp_packet_parser_.Parse(packet);
             });
   }
@@ -260,13 +263,13 @@ class RtpVideoStreamReceiver2Test : public ::testing::Test,
   VideoReceiveStreamInterface::Config CreateConfig() {
     VideoReceiveStreamInterface::Config config(nullptr);
     config.rtp.remote_ssrc = 1111;
-    config.rtp.local_ssrc = 2222;
     config.rtp.red_payload_type = kRedPayloadType;
     config.rtp.packet_sink_ = this;
     return config;
   }
 
   GlobalSimulatedTimeController time_controller_;
+  MockRtcEventLog log_;
   Environment env_;
   std::unique_ptr<TaskQueueBase, TaskQueueDeleter> task_queue_;
   TokenTaskQueue::CurrentTaskQueueSetter task_queue_setter_;
@@ -1824,5 +1827,20 @@ TEST_F(RtpVideoStreamReceiver2TestH265, H265Bitstream) {
       CopyOnWriteBuffer(idr, sizeof(idr)), rtp_packet, video_header, 0);
 }
 #endif  // RTC_ENABLE_H265
+
+TEST_F(RtpVideoStreamReceiver2Test, LogsReceivedPacketToEventLog) {
+  RtpPacketReceived rtp_packet;
+
+  EXPECT_CALL(log_, LogProxy(_));
+  rtp_video_stream_receiver_->OnRtpPacket(rtp_packet);
+}
+
+TEST_F(RtpVideoStreamReceiver2Test, DoesNotLogRecoveredPacketToEventLog) {
+  RtpPacketReceived recovered_packet;
+  recovered_packet.set_recovered(true);
+
+  EXPECT_CALL(log_, LogProxy(_)).Times(0);
+  rtp_video_stream_receiver_->OnRtpPacket(recovered_packet);
+}
 
 }  // namespace webrtc

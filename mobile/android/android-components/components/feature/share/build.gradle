@@ -56,6 +56,8 @@ dependencies {
     androidTestImplementation libs.androidx.test.core
     androidTestImplementation libs.androidx.test.rules
     androidTestImplementation libs.androidx.test.runner
+
+    androidTestRuntimeOnly libs.okhttp
 }
 
 apply from: '../../../common-config.gradle'

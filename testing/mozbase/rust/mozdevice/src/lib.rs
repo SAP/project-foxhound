@@ -589,7 +589,7 @@ impl Device {
         package: &str,
         activity: &str,
         am_start_args: &[T],
-    ) -> Result<bool> {
+    ) -> Result<u32> {
         let mut am_start = format!("am start -S -W -n {}/{}", package, activity);
 
         for arg in am_start_args {
@@ -601,8 +601,35 @@ impl Device {
             };
         }
 
-        self.execute_host_shell_command(&am_start)
-            .map(|v| v.contains("Complete"))
+        let output = self.execute_host_shell_command(&am_start)?;
+        if !output.contains("Complete") {
+            return Err(DeviceError::Adb(format!(
+                "Failed to launch {}/{}: {}",
+                package, activity, output
+            )));
+        }
+
+        let pid_output = self.execute_host_shell_command(&format!("pidof {}", package))?;
+        // pidof may return multiple space-separated PIDs when the app has
+        // multiple processes (e.g. content processes). Take the first one,
+        // which is the main process.
+        pid_output
+            .trim()
+            .split_whitespace()
+            .next()
+            .ok_or_else(|| {
+                DeviceError::Adb(format!(
+                    "Process for package '{}' not running after launch",
+                    package
+                ))
+            })?
+            .parse::<u32>()
+            .map_err(|_| {
+                DeviceError::Adb(format!(
+                    "Process for package '{}' not running after launch",
+                    package
+                ))
+            })
     }
 
     pub fn force_stop(&self, package: &str) -> Result<()> {
@@ -1011,7 +1038,7 @@ impl Device {
 
             let tail = path
                 .strip_prefix(source)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+                .map_err(|e| io::Error::other(e.to_string()))?;
 
             let dest = append_components(dest_dir, tail)?;
             self.push(&mut file, &dest, mode)?;
@@ -1040,18 +1067,12 @@ pub(crate) fn append_components(
 
     for component in tail.components() {
         if let Component::Normal(segment) = component {
-            let utf8 = segment.to_str().ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    "Could not represent path segment as UTF-8",
-                )
-            })?;
+            let utf8 = segment
+                .to_str()
+                .ok_or_else(|| io::Error::other("Could not represent path segment as UTF-8"))?;
             buf.push(utf8);
         } else {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Unexpected path component".to_owned(),
-            ));
+            return Err(io::Error::other("Unexpected path component".to_owned()));
         }
     }
 

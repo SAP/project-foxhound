@@ -9,19 +9,20 @@
  */
 #include "net/dcsctp/tx/rr_send_queue.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <map>
 #include <optional>
 #include <set>
+#include <span>
 #include <tuple>
 #include <utility>
 #include <vector>
 
 #include "absl/algorithm/container.h"
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
 #include "net/dcsctp/common/internal_types.h"
@@ -174,9 +175,10 @@ std::optional<SendQueue::DataToSend> RRSendQueue::OutgoingStream::Produce(
     }
 
     // Grab the next `max_size` fragment from this message and calculate flags.
-    webrtc::ArrayView<const uint8_t> chunk_payload =
-        item.message.payload().subview(item.remaining_offset, max_size);
-    webrtc::ArrayView<const uint8_t> message_payload = message.payload();
+    std::span<const uint8_t> message_payload = message.payload();
+    std::span<const uint8_t> chunk_payload = message_payload.subspan(
+        item.remaining_offset,
+        std::min(message_payload.size() - item.remaining_offset, max_size));
     Data::IsBeginning is_beginning(chunk_payload.data() ==
                                    message_payload.data());
     Data::IsEnd is_end((chunk_payload.data() + chunk_payload.size()) ==

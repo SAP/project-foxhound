@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -245,10 +243,8 @@ nsXMLFragmentContentSink::ReportError(const char16_t* aErrorText,
     mRoot->GetLastChild()->Remove();
   }
 
-  // Clear any buffered-up text we have.  It's enough to set the length to 0.
-  // The buffer itself is allocated when we're created and deleted in our
-  // destructor, so don't mess with it.
-  mTextLength = 0;
+  // Clear any buffered-up text we have.
+  mText.ClearAndRetainStorage();
 
   return NS_OK;
 }

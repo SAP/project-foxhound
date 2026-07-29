@@ -8,9 +8,13 @@
 newtab-page-title = Nova lapela
 newtab-settings-button =
     .title = Personalice a páxina de nova lapela
+#  (developer note): @nova-cleanup(remove-string): Remove newtab-customize-panel-icon-button once Nova lands, will be using newtab-customize-panel-label instead
 newtab-customize-panel-icon-button =
     .title = Personalizar esta páxina
+#  (developer note): @nova-cleanup(remove-string): Remove newtab-customize-panel-icon-button-label once Nova lands, will be using newtab-customize-panel-label instead
 newtab-customize-panel-icon-button-label = Personalizar
+newtab-customize-panel-label =
+    .label = Personalizar
 newtab-personalize-settings-icon-label =
     .title = Personalizar a nova pestana
     .aria-label = Configuración
@@ -23,6 +27,62 @@ newtab-personalize-dialog-label =
     .aria-label = Personalizar
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
+
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Novas lapelas
+
+## Firefox Home content
+
+home-prefs-firefox-logo-header =
+    .label = Logotipo de { -brand-short-name }
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } fila
+           *[other] { $num } filas
+        }
+# Dropdown option shown when an extension replaces the contents of new windows or tabs.
+# Variables:
+#   $extension (string) - Name of the extension
+home-prefs-homepage-extension-option =
+    .label = Extensión ({ $extension })
+home-restore-defaults-srd =
+    .label = Restaurar a configuración predeterminada
+    .accesskey = R
+home-mode-choice-default-fx-srd =
+    .label = { -firefox-home-brand-name } (Predeterminado)
+home-mode-choice-custom-srd =
+    .label = URLs personalizados...
+home-mode-choice-blank-srd =
+    .label = Páxina en branco
+home-prefs-shortcuts-header-srd =
+    .label = Atallos
+home-prefs-shortcuts-select =
+    .aria-label = Atallos
+home-prefs-shortcuts-by-option-sponsored-srd =
+    .label = Atallos patrocinados
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Historias patrocinadas
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Páxinas visitadas
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Marcadores
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = A descarga máis recente
+home-prefs-recent-activity-header-srd =
+    .label = Actividade recente
+home-prefs-recent-activity-select =
+    .aria-label = Actividade recente
+home-prefs-weather-header-srd =
+    .label = Tempo
+home-prefs-support-firefox-header-srd =
+    .label = Apoiar a { -brand-product-name }
+home-prefs-mission-message-learn-more-link-srd = Descubre como
 
 ## Search box component.
 
@@ -49,7 +109,7 @@ newtab-search-box-input =
     .placeholder = Buscar na web
     .aria-label = Buscar na web
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Engadir buscador
 newtab-topsites-add-shortcut-header = Novo atallo
@@ -136,6 +196,8 @@ newtab-menu-report = Informar
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
 # e.g. "Sports". "Block" is a verb here.
 newtab-menu-section-block = Bloquear
+# Context menu option to open a support page explaining the New Tab personalization features and privacy controls.
+newtab-menu-section-learn-more = Máis información
 # "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
 # e.g. Following the travel section of stories.
 newtab-menu-section-unfollow = Deixa de seguir o tema
@@ -303,9 +365,21 @@ newtab-error-fallback-refresh-link = Actualice a páxina para tentalo de novo.
 
 newtab-custom-shortcuts-title = Atallos
 newtab-custom-shortcuts-subtitle = Sitios gardados ou visitados
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = Atallos
     .description = Sitios gardados ou visitados
+newtab-custom-shortcuts-nova =
+    .label = Atallos
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+            [one] { $num } fila
+           *[other] { $num } filas
+        }
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector =
@@ -316,9 +390,12 @@ newtab-custom-row-selector =
 newtab-custom-sponsored-sites = Atallos patrocinados
 newtab-custom-pocket-title = Recomendado por { -pocket-brand-name }
 newtab-custom-pocket-subtitle = Contido excepcional patrocinado por { -pocket-brand-name }, parte da familia { -brand-product-name }
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be having a description under "Recommended stories" anymore
 newtab-custom-stories-toggle =
     .label = Historias recomendadas
     .description = Contido excepcional seleccionado pola familia de { -brand-product-name }
+newtab-recommended-stories-toggle =
+    .label = Historias recomendadas
 newtab-custom-stories-personalized-toggle =
     .label = Historias
 newtab-custom-pocket-sponsored = Historias patrocinadas
@@ -345,8 +422,11 @@ newtab-custom-settings = Xestionar máis axustes
 
 newtab-wallpaper-title = Fondos de pantalla
 newtab-wallpaper-reset = Restablecer os valores predeterminados
+#  (developer note): @nova-cleanup(remove-string): Remove old "Upload an image" string once Nova lands. The new "Add an image"  string will take over
 newtab-wallpaper-upload-image = Subir unha imaxe
 newtab-wallpaper-custom-color = Escolle unha cor
+newtab-wallpaper-toggle-title =
+    .label = Fondos de pantalla
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = A imaxe superou o límite de tamaño do ficheiro de { $file_size }MB. Proba a subir un ficheiro máis pequeno.
@@ -368,6 +448,7 @@ newtab-wallpaper-light-fox-anniversary = Un raposo nun campo herboso cunha paisa
 
 ## Solid Colors
 
+#  (developer note): @nova-cleanup(remove-string): Remove old "Solid colors" string once Nova lands. The simplified "Colors" string will take over
 newtab-wallpaper-category-title-colors = Cores sólidas
 newtab-wallpaper-blue = Azul
 newtab-wallpaper-light-blue = Azul claro
@@ -613,23 +694,24 @@ newtab-widget-lists-label-beta =
     .label = Beta
 newtab-widget-task-list-menu-copy = Copiar
 newtab-widget-lists-menu-edit = Editar o nome da lista
+newtab-widget-lists-menu-edit2 =
+    .aria-label = Editar o nome da lista
 newtab-widget-lists-menu-create = Crea unha nova lista
 newtab-widget-lists-menu-delete = Eliminar esta lista
 newtab-widget-lists-menu-copy = Copiar a lista no portapapeis
-newtab-widget-lists-menu-hide = Ocultar todas as listas
 newtab-widget-lists-menu-learn-more = Máis información
-newtab-widget-lists-input-add-an-item =
+newtab-widget-lists-button-add-item = Engadir un elemento
+newtab-widget-lists-input-add-an-item2 =
     .placeholder = Engadir un elemento
+    .aria-label = Engadir un elemento
 
-## Strings for timer productivity widget
-## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+## Strings introduced by the Nova redesign of the Timer widget
 
 newtab-widget-timer-label-play =
     .label = Reproducir
 newtab-widget-timer-label-pause =
     .label = Pausar
 newtab-widget-timer-menu-notifications-on = Activar as notificacións
-newtab-widget-timer-menu-hide = Ocultar o temporizador
 newtab-widget-timer-menu-learn-more = Máis información
 newtab-widget-message-title = Mantente concentrado con listas e un temporizador incorporado
 newtab-promo-card-title = Apoiar a { -brand-product-name }

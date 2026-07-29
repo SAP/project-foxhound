@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <link rel="stylesheet" href="file_browserPersist_filename.css">
+  <link rel="stylesheet" href="file_browserPersist_a_very_long_filename_used_for_truncation_test.css">
+</head>
+<body>
+  <!-- Two img tags with different query strings produce the same base filename,
+       exercising the uniqueness counter logic in CalculateUniqueFilename. -->
+  <img src="dummy.png">
+  <img src="dummy.png?v=2">
+</body>
+</html>

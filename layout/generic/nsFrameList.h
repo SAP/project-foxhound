@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -34,7 +32,6 @@ class FrameChildList;
 enum class FrameChildListID {
   // The individual concrete child lists.
   Principal,
-  ColGroup,
   Absolute,
   PushedAbsolute,
   Overflow,
@@ -347,6 +344,8 @@ class nsFrameList {
         : mStart(aList.FirstChild()), mEnd(nullptr) {}
     Slice(nsIFrame* aStart, nsIFrame* aEnd) : mStart(aStart), mEnd(aEnd) {}
 
+    void operator delete(void*) = delete;
+
     iterator begin() const { return iterator(mStart); }
     const_iterator cbegin() const { return begin(); }
     iterator end() const { return iterator(mEnd); }
@@ -416,8 +415,6 @@ class nsFrameList {
   const_reverse_iterator crend() const { return rend(); }
 
  private:
-  void operator delete(void*) = delete;
-
   static const nsFrameList sEmptyList;
 
 #ifdef DEBUG_FRAME_LIST

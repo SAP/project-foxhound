@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -79,7 +77,7 @@ class Window {
       const gfx::IntSize& aSize) = 0;
 
  protected:
-  virtual ~Window() {}
+  virtual ~Window() = default;
 };
 
 class RenderSource {
@@ -90,7 +88,7 @@ class RenderSource {
 
  protected:
   explicit RenderSource(const gfx::IntSize& aSize) : mSize(aSize) {}
-  virtual ~RenderSource() {}
+  virtual ~RenderSource() = default;
 
   const gfx::IntSize mSize;
 };
@@ -108,7 +106,7 @@ class DownscaleTarget {
 
  protected:
   explicit DownscaleTarget(const gfx::IntSize& aSize) : mSize(aSize) {}
-  virtual ~DownscaleTarget() {}
+  virtual ~DownscaleTarget() = default;
 
   const gfx::IntSize mSize;
 };
@@ -125,7 +123,7 @@ class AsyncReadbackBuffer {
 
  protected:
   explicit AsyncReadbackBuffer(const gfx::IntSize& aSize) : mSize(aSize) {}
-  virtual ~AsyncReadbackBuffer() {}
+  virtual ~AsyncReadbackBuffer() = default;
 
   const gfx::IntSize mSize;
 };

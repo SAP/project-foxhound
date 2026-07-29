@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -104,7 +103,9 @@ WSRunScanner::TextFragmentData::TextFragmentData(
     const EditorDOMPointType& aPoint,
     const Element* aAncestorLimiter /* = nullptr */)
     : mAncestorLimiter(aAncestorLimiter), mOptions(aOptions) {
-  if (NS_WARN_IF(!aPoint.IsInContentNodeAndValidInComposedDoc()) ||
+  const bool onlyEditableNodes = mOptions.contains(Option::OnlyEditableNodes);
+  if (NS_WARN_IF(!aPoint.IsInContentNodeAndValid()) ||
+      NS_WARN_IF(onlyEditableNodes && !aPoint.IsInComposedDoc()) ||
       NS_WARN_IF(!aPoint.GetContainerOrContainerParentElement())) {
     // We don't need to support composing in uncomposed tree.
     return;
@@ -120,9 +121,8 @@ WSRunScanner::TextFragmentData::TextFragmentData(
       editableBlockElementOrInlineEditingHostOrNonEditableRootElement =
           HTMLEditUtils::GetInclusiveAncestorElement(
               *mScanStartPoint.ContainerAs<nsIContent>(),
-              mOptions.contains(Option::OnlyEditableNodes)
-                  ? kScanEditableRootAncestorTypes
-                  : kScanAnyRootAncestorTypes,
+              onlyEditableNodes ? kScanEditableRootAncestorTypes
+                                : kScanAnyRootAncestorTypes,
               ReferredHTMLDefaultStyle()
                   ? BlockInlineCheck::UseHTMLDefaultStyle
                   : BlockInlineCheck::UseComputedDisplayOutsideStyle,
@@ -257,6 +257,13 @@ WSRunScanner::TextFragmentData::BoundaryData WSRunScanner::TextFragmentData::
             aAncestorLimiter, UseComputedDisplayStyleIfAuto(blockInlineCheck))
             ? WSType::CurrentBlockBoundary
             : WSType::InlineEditingHostBoundary);
+  }
+
+  if (previousLeafContentOrBlock->GetShadowRootForSelection()) [[unlikely]] {
+    // If the leaf content is has a shadow root, we should treat the element is
+    // an atomic content.
+    return BoundaryData(aPoint, *previousLeafContentOrBlock,
+                        WSType::SpecialContent);
   }
 
   if (HTMLEditUtils::IsBlockElement(
@@ -431,6 +438,13 @@ WSRunScanner::TextFragmentData::BoundaryData::ScanCollapsibleWhiteSpaceEndFrom(
             aAncestorLimiter, UseComputedDisplayStyleIfAuto(blockInlineCheck))
             ? WSType::CurrentBlockBoundary
             : WSType::InlineEditingHostBoundary);
+  }
+
+  if (nextLeafContentOrBlock->GetShadowRootForSelection()) [[unlikely]] {
+    // If the leaf content is has a shadow root, we should treat the element is
+    // an atomic content.
+    return BoundaryData(aPoint, *nextLeafContentOrBlock,
+                        WSType::SpecialContent);
   }
 
   if (HTMLEditUtils::IsBlockElement(
@@ -632,7 +646,8 @@ WSRunScanner::TextFragmentData::VisibleWhiteSpacesDataRef() const {
           // because in the other cases, we don't do that.
           HTMLEditUtils::IsVisibleElementEvenIfLeafNode(
               *GetEndReasonContent())) &&
-        !EndsByBRElement() && !EndsByInvisiblePreformattedLineBreak();
+        !EndsByBRElement() &&
+        !EndsByPreformattedLineBreakFollowedByBlockBoundary();
 
     if (!mayHaveInvisibleLeadingSpace && !mayHaveInvisibleTrailingWhiteSpace) {
       VisibleWhiteSpacesData visibleWhiteSpaces;
@@ -918,7 +933,7 @@ EditorDOMPointType WSRunScanner::TextFragmentData::GetInclusiveNextCharPoint(
     if (!child ||
         HTMLEditUtils::IsBlockElement(
             *child, UseComputedDisplayOutsideStyleIfAuto(blockInlineCheck)) ||
-        ((!aOptions.contains(Option::IgnoreEmptyInlineContainers) ||
+        ((aOptions.contains(Option::StopAtAnyEmptyInlineContainers) ||
           !HTMLEditUtils::IsContainerNode(*child)) &&
          HTMLEditUtils::IsVisibleElementEvenIfLeafNode(*child))) {
       return aPoint.template To<EditorRawDOMPoint>();
@@ -941,7 +956,7 @@ EditorDOMPointType WSRunScanner::TextFragmentData::GetInclusiveNextCharPoint(
     if (HTMLEditUtils::IsBlockElement(
             *leafContent,
             UseComputedDisplayOutsideStyleIfAuto(blockInlineCheck)) ||
-        ((!aOptions.contains(Option::IgnoreEmptyInlineContainers) ||
+        ((aOptions.contains(Option::StopAtAnyEmptyInlineContainers) ||
           !HTMLEditUtils::IsContainerNode(*leafContent)) &&
          HTMLEditUtils::IsVisibleElementEvenIfLeafNode(*leafContent))) {
       return EditorRawDOMPoint();
@@ -996,7 +1011,7 @@ EditorDOMPointType WSRunScanner::TextFragmentData::GetInclusiveNextCharPoint(
           HTMLEditUtils::IsBlockElement(
               *nextContent,
               UseComputedDisplayOutsideStyleIfAuto(blockInlineCheck)) ||
-          ((!aOptions.contains(Option::IgnoreEmptyInlineContainers) ||
+          ((aOptions.contains(Option::StopAtAnyEmptyInlineContainers) ||
             !HTMLEditUtils::IsContainerNode(*nextContent)) &&
            HTMLEditUtils::IsVisibleElementEvenIfLeafNode(*nextContent))) {
         break;  // Reached end of current runs.
@@ -1043,7 +1058,7 @@ EditorDOMPointType WSRunScanner::TextFragmentData::GetPreviousCharPoint(
         HTMLEditUtils::IsBlockElement(
             *previousChild,
             UseComputedDisplayOutsideStyleIfAuto(blockInlineCheck)) ||
-        ((!aOptions.contains(Option::IgnoreEmptyInlineContainers) ||
+        ((aOptions.contains(Option::StopAtAnyEmptyInlineContainers) ||
           !HTMLEditUtils::IsContainerNode(*previousChild)) &&
          HTMLEditUtils::IsVisibleElementEvenIfLeafNode(*previousChild))) {
       return aPoint.template To<EditorRawDOMPoint>();
@@ -1067,7 +1082,7 @@ EditorDOMPointType WSRunScanner::TextFragmentData::GetPreviousCharPoint(
     if (HTMLEditUtils::IsBlockElement(
             *leafContent,
             UseComputedDisplayOutsideStyleIfAuto(blockInlineCheck)) ||
-        ((!aOptions.contains(Option::IgnoreEmptyInlineContainers) ||
+        ((aOptions.contains(Option::StopAtAnyEmptyInlineContainers) ||
           !HTMLEditUtils::IsContainerNode(*leafContent)) &&
          HTMLEditUtils::IsVisibleElementEvenIfLeafNode(*leafContent))) {
       return EditorRawDOMPoint();
@@ -1125,7 +1140,7 @@ EditorDOMPointType WSRunScanner::TextFragmentData::GetPreviousCharPoint(
           HTMLEditUtils::IsBlockElement(
               *previousContent,
               UseComputedDisplayOutsideStyleIfAuto(blockInlineCheck)) ||
-          ((!aOptions.contains(Option::IgnoreEmptyInlineContainers) ||
+          ((aOptions.contains(Option::StopAtAnyEmptyInlineContainers) ||
             !HTMLEditUtils::IsContainerNode(*previousContent)) &&
            HTMLEditUtils::IsVisibleElementEvenIfLeafNode(*previousContent))) {
         break;  // Reached start of current runs.

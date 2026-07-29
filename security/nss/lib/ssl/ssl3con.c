@@ -544,7 +544,7 @@ PRBool
 ssl_HaveRecvBufLock(sslSocket *ss)
 {
     if (!ss->opt.noLocks) {
-        return PZ_InMonitor(ss->recvBufLock);
+        return PR_InMonitor(ss->recvBufLock);
     } else {
         return PR_TRUE;
     }
@@ -554,7 +554,7 @@ PRBool
 ssl_HaveXmitBufLock(sslSocket *ss)
 {
     if (!ss->opt.noLocks) {
-        return PZ_InMonitor(ss->xmitBufLock);
+        return PR_InMonitor(ss->xmitBufLock);
     } else {
         return PR_TRUE;
     }
@@ -564,7 +564,7 @@ PRBool
 ssl_Have1stHandshakeLock(sslSocket *ss)
 {
     if (!ss->opt.noLocks) {
-        return PZ_InMonitor(ss->firstHandshakeLock);
+        return PR_InMonitor(ss->firstHandshakeLock);
     } else {
         return PR_TRUE;
     }
@@ -574,7 +574,7 @@ PRBool
 ssl_HaveSSL3HandshakeLock(sslSocket *ss)
 {
     if (!ss->opt.noLocks) {
-        return PZ_InMonitor(ss->ssl3HandshakeLock);
+        return PR_InMonitor(ss->ssl3HandshakeLock);
     } else {
         return PR_TRUE;
     }
@@ -595,9 +595,9 @@ void
 ssl_Get1stHandshakeLock(sslSocket *ss)
 {
     if (!ss->opt.noLocks) {
-        PORT_Assert(PZ_InMonitor(ss->firstHandshakeLock) ||
+        PORT_Assert(PR_InMonitor(ss->firstHandshakeLock) ||
                     !ssl_HaveRecvBufLock(ss));
-        PZ_EnterMonitor(ss->firstHandshakeLock);
+        PR_EnterMonitor(ss->firstHandshakeLock);
     }
 }
 
@@ -605,7 +605,7 @@ void
 ssl_Release1stHandshakeLock(sslSocket *ss)
 {
     if (!ss->opt.noLocks) {
-        PZ_ExitMonitor(ss->firstHandshakeLock);
+        PR_ExitMonitor(ss->firstHandshakeLock);
     }
 }
 
@@ -614,7 +614,7 @@ ssl_GetSSL3HandshakeLock(sslSocket *ss)
 {
     if (!ss->opt.noLocks) {
         PORT_Assert(!ssl_HaveXmitBufLock(ss));
-        PZ_EnterMonitor(ss->ssl3HandshakeLock);
+        PR_EnterMonitor(ss->ssl3HandshakeLock);
     }
 }
 
@@ -622,7 +622,7 @@ void
 ssl_ReleaseSSL3HandshakeLock(sslSocket *ss)
 {
     if (!ss->opt.noLocks) {
-        PZ_ExitMonitor(ss->ssl3HandshakeLock);
+        PR_ExitMonitor(ss->ssl3HandshakeLock);
     }
 }
 
@@ -667,7 +667,7 @@ ssl_GetRecvBufLock(sslSocket *ss)
     if (!ss->opt.noLocks) {
         PORT_Assert(!ssl_HaveSSL3HandshakeLock(ss));
         PORT_Assert(!ssl_HaveXmitBufLock(ss));
-        PZ_EnterMonitor(ss->recvBufLock);
+        PR_EnterMonitor(ss->recvBufLock);
     }
 }
 
@@ -675,7 +675,7 @@ void
 ssl_ReleaseRecvBufLock(sslSocket *ss)
 {
     if (!ss->opt.noLocks) {
-        PZ_ExitMonitor(ss->recvBufLock);
+        PR_ExitMonitor(ss->recvBufLock);
     }
 }
 
@@ -684,7 +684,7 @@ void
 ssl_GetXmitBufLock(sslSocket *ss)
 {
     if (!ss->opt.noLocks) {
-        PZ_EnterMonitor(ss->xmitBufLock);
+        PR_EnterMonitor(ss->xmitBufLock);
     }
 }
 
@@ -692,7 +692,7 @@ void
 ssl_ReleaseXmitBufLock(sslSocket *ss)
 {
     if (!ss->opt.noLocks) {
-        PZ_ExitMonitor(ss->xmitBufLock);
+        PR_ExitMonitor(ss->xmitBufLock);
     }
 }
 
@@ -2863,12 +2863,16 @@ ssl3_SendApplicationData(sslSocket *ss, const unsigned char *in,
     while (len > totalSent) {
         PRInt32 sent, toSend;
 
-        if (totalSent > 0) {
+        if (totalSent > 0 && ssl_SocketIsBlocking(ss)) {
             /*
              * The thread yield is intended to give the reader thread a
              * chance to get some cycles while the writer thread is in
              * the middle of a large application data write.  (See
              * Bugzilla bug 127740, comment #1.)
+             *
+             * For non-blocking sockets, the pendingBuf check below
+             * already breaks out of the loop when the underlying
+             * socket cannot accept more data.
              */
             ssl_ReleaseXmitBufLock(ss);
             PR_Sleep(PR_INTERVAL_NO_WAIT); /* PR_Yield(); */
@@ -6148,14 +6152,14 @@ typedef struct {
     PK11SymKey *symWrapKey[SSL_NUM_WRAP_KEYS];
 } ssl3SymWrapKey;
 
-static PZLock *symWrapKeysLock = NULL;
+static PRLock *symWrapKeysLock = NULL;
 static ssl3SymWrapKey symWrapKeys[SSL_NUM_WRAP_MECHS];
 
 SECStatus
 ssl_FreeSymWrapKeysLock(void)
 {
     if (symWrapKeysLock) {
-        PZ_DestroyLock(symWrapKeysLock);
+        PR_DestroyLock(symWrapKeysLock);
         symWrapKeysLock = NULL;
         return SECSuccess;
     }
@@ -6170,7 +6174,7 @@ SSL3_ShutdownServerCache(void)
 
     if (!symWrapKeysLock)
         return SECSuccess; /* lock was never initialized */
-    PZ_Lock(symWrapKeysLock);
+    PR_Lock(symWrapKeysLock);
     /* get rid of all symWrapKeys */
     for (i = 0; i < SSL_NUM_WRAP_MECHS; ++i) {
         for (j = 0; j < SSL_NUM_WRAP_KEYS; ++j) {
@@ -6183,7 +6187,7 @@ SSL3_ShutdownServerCache(void)
         }
     }
 
-    PZ_Unlock(symWrapKeysLock);
+    PR_Unlock(symWrapKeysLock);
     ssl_FreeSessionCacheLocks();
     return SECSuccess;
 }
@@ -6191,7 +6195,7 @@ SSL3_ShutdownServerCache(void)
 SECStatus
 ssl_InitSymWrapKeysLock(void)
 {
-    symWrapKeysLock = PZ_NewLock(nssILockOther);
+    symWrapKeysLock = PR_NewLock();
     return symWrapKeysLock ? SECSuccess : SECFailure;
 }
 
@@ -6253,7 +6257,7 @@ ssl3_GetWrappingKey(sslSocket *ss,
 
     ssl_InitSessionCacheLocks(PR_TRUE);
 
-    PZ_Lock(symWrapKeysLock);
+    PR_Lock(symWrapKeysLock);
 
     unwrappedWrappingKey = *pSymWrapKey;
     if (unwrappedWrappingKey != NULL) {
@@ -6452,7 +6456,7 @@ install:
 
 loser:
 done:
-    PZ_Unlock(symWrapKeysLock);
+    PR_Unlock(symWrapKeysLock);
     return unwrappedWrappingKey;
 }
 
@@ -7357,6 +7361,15 @@ ssl3_HandleServerHello(sslSocket *ss, PRUint8 *b, PRUint32 length)
                     SSL_GETPID(), ss->fd));
         desc = unexpected_message;
         errCode = SSL_ERROR_RX_UNEXPECTED_HELLO_RETRY_REQUEST;
+        goto alert_loser;
+    }
+
+    /* A server that sent HelloVerifyRequest is DTLS 1.2 or earlier;
+     * reject a subsequent TLS 1.3 ServerHello as illegal. */
+    if (ss->ssl3.hs.dtlsReceivedHVR &&
+        ss->version >= SSL_LIBRARY_VERSION_TLS_1_3) {
+        desc = illegal_parameter;
+        errCode = SSL_ERROR_RX_MALFORMED_SERVER_HELLO;
         goto alert_loser;
     }
 
@@ -8312,10 +8325,21 @@ ssl3_ClientCertCallbackComplete(sslSocket *ss, SECStatus outcome, SECKEYPrivateK
     ssl3_ClientAuthCallbackOutcome(ss, outcome);
 
     /* Continue the handshake */
-    PORT_Assert(ss->ssl3.hs.restartTarget);
     if (!ss->ssl3.hs.restartTarget) {
-        FATAL_ERROR(ss, PR_INVALID_STATE_ERROR, internal_error);
-        return SECFailure;
+        /* The client cert callback completed before the server Finished
+         * message was fully received.  This can happen on a non-blocking
+         * socket when EAGAIN interrupts the record-header read partway
+         * through (e.g. when the Finished record header straddles a TCP
+         * segment boundary).  The partial gather state is preserved in
+         * ss->gs and will be resumed by the next SSL_ForceHandshake /
+         * PR_Read call.  tls13_SendClientSecondRound will run after the
+         * Finished is processed and will find clientCertificatePending
+         * already cleared, so it will proceed without blocking. */
+        SSL_TRC(3, ("%d: SSL3[%p]: client certificate selection won the race"
+                    " with server Finished; will resume on next I/O",
+                    SSL_GETPID(), ss->fd));
+        PORT_Assert(ss->ssl3.hs.ws != idle_handshake);
+        return SECSuccess;
     }
     sslRestartTarget target = ss->ssl3.hs.restartTarget;
     ss->ssl3.hs.restartTarget = NULL;
@@ -11254,14 +11278,14 @@ ssl3_HandleNewSessionTicket(sslSocket *ss, PRUint8 *b, PRUint32 length)
     PORT_Assert(ss->opt.noLocks || ssl_HaveRecvBufLock(ss));
     PORT_Assert(ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss));
 
-    PORT_Assert(!ss->ssl3.hs.newSessionTicket.ticket.data);
-    PORT_Assert(!ss->ssl3.hs.receivedNewSessionTicket);
-
     if (ss->ssl3.hs.ws != wait_new_session_ticket) {
         SSL3_SendAlert(ss, alert_fatal, unexpected_message);
         PORT_SetError(SSL_ERROR_RX_UNEXPECTED_NEW_SESSION_TICKET);
         return SECFailure;
     }
+
+    PORT_Assert(!ss->ssl3.hs.newSessionTicket.ticket.data);
+    PORT_Assert(!ss->ssl3.hs.receivedNewSessionTicket);
 
     /* RFC5077 Section 3.3: "The client MUST NOT treat the ticket as valid
      * until it has verified the server's Finished message." See the comment in
@@ -12308,10 +12332,10 @@ ssl3_WriteKeyLog(sslSocket *ss, const char *label, const SECItem *item)
 
     PORT_Assert(offset == len);
 
-    PZ_Lock(ssl_keylog_lock);
+    PR_Lock(ssl_keylog_lock);
     if (fwrite(buf, len, 1, ssl_keylog_iob) == 1)
         fflush(ssl_keylog_iob);
-    PZ_Unlock(ssl_keylog_lock);
+    PR_Unlock(ssl_keylog_lock);
     PORT_Free(buf);
 #endif
 }
@@ -14078,6 +14102,8 @@ ssl3_InitState(sslSocket *ss)
                 sizeof(ss->ssl3.hs.newSessionTicket));
 
     ss->ssl3.hs.zeroRttState = ssl_0rtt_none;
+
+    ss->ssl3.hs.dtlsReceivedHVR = PR_FALSE;
     return SECSuccess;
 }
 
@@ -14427,6 +14453,7 @@ ssl3_DestroySSL3Info(sslSocket *ss)
     SECITEM_FreeItem(&ss->ssl3.hs.newSessionTicket.ticket, PR_FALSE);
     SECITEM_FreeItem(&ss->ssl3.hs.srvVirtName, PR_FALSE);
     SECITEM_FreeItem(&ss->ssl3.hs.fakeSid, PR_FALSE);
+    SECITEM_FreeItem(&ss->ssl3.hs.cookie, PR_FALSE);
 
     /* Destroy the DTLS data */
     if (IS_DTLS(ss)) {

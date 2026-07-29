@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * Any copyright is dedicated to the Public Domain.
+/* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 package org.mozilla.geckoview.test
@@ -384,6 +383,54 @@ class InteractiveWidgetTest : BaseSessionTest() {
               scrollY,
               equalTo(0.0),
             )
+
+        // Close the software keyboard.
+        imm.hideSoftInputFromWindow(view.getWindowToken(), 0)
+    }
+
+    @GeckoSessionTestRule.NullDelegate(Autofill.Delegate::class)
+    @Test
+    fun scrollIntoViewToPositionFixed() {
+        mainSession.setActive(true)
+
+        mainSession.loadTestPath(BaseSessionTest.BUG2028072_HTML_PATH)
+        mainSession.waitForPageStop()
+        mainSession.promiseAllPaintsDone()
+        mainSession.flushApzRepaints()
+
+        ensureKeyboardOpen()
+
+        // Hide the dynamic toolbar.
+        view.setVerticalClipping(-dynamicToolbarMaxHeight)
+
+        // To make sure the dynamic toolbar height has been reflected into APZ.
+        mainSession.flushApzRepaints()
+        // Also to make sure the dynamic toolbar height has been reflected on the main-thread.
+        mainSession.promiseAllPaintsDone()
+
+        mainSession.evaluateJS("document.querySelector('#fixed').scrollIntoView()")
+
+        mainSession.flushApzRepaints()
+        mainSession.promiseAllPaintsDone()
+
+        val scrollY = mainSession.evaluateJS("window.scrollY") as Double
+        val pageTop = mainSession.evaluateJS("window.visualViewport.pageTop") as Double
+
+        mainSession.evaluateJS("document.querySelector('#fixed').scrollIntoView()")
+
+        mainSession.flushApzRepaints()
+        mainSession.promiseAllPaintsDone()
+
+        assertThat(
+            "scrollIntoView should not change the layout scroll position when the target is already in the visual viewport",
+          mainSession.evaluateJS("window.scrollY") as Double,
+            equalTo(scrollY),
+        )
+        assertThat(
+            "scrollIntoView should not change the visual scroll position when the target is already in the visual viewport",
+          mainSession.evaluateJS("window.visualViewport.pageTop") as Double,
+            equalTo(pageTop),
+        )
 
         // Close the software keyboard.
         imm.hideSoftInputFromWindow(view.getWindowToken(), 0)

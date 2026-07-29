@@ -48,13 +48,10 @@ tasks:
                         - linux64-libdmg
                         - linux64-hfsplus
                     win.*:
+                        - linux64-7zz
+                        - linux64-upx
                         - linux64-wine
                         - nsis
-            fetch:
-                by-build-platform:
-                    default: []
-                    win.*:
-                        - upx-3.95-win
         tooltool:
             by-build-platform:
                 default: internal

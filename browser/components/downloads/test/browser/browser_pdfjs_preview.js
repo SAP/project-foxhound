@@ -592,6 +592,12 @@ async function testOpenPDFPreview({
           );
         });
         itemTarget = listbox.itemChildren[0];
+        // The allDownloads view does lazy refreshes, differently from the
+        // downloads panel which eagerly updates. In order to ensure that the
+        // "viewable-internally" attribute is set on the item element, we need
+        // to trigger a refresh of the download, which will cause the view to
+        // update that attribute.
+        await itemTarget._shell.download.refresh();
         contextMenu = uiWindow.document.querySelector("#downloadsContextMenu");
 
         break;
@@ -645,7 +651,7 @@ async function testOpenPDFPreview({
         info("waiting for downloadsLoaded");
         await downloadsLoaded;
 
-        await ContentTask.spawn(
+        await SpecialPowers.spawn(
           browser,
           [expected.downloadCount],
           async function awaitListItems(expectedCount) {
@@ -737,6 +743,93 @@ async function testOpenPDFPreview({
     await SpecialPowers.popPrefEnv();
   }
 }
+
+add_task(async function test_autoopen_pdf_background_if_tab_switched() {
+  if (!gDownloadDir) {
+    gDownloadDir = await setDownloadDir();
+  }
+
+  for (let { name, prepareTabState, expectBackground } of [
+    {
+      name: "source tab still active",
+      async prepareTabState(_sourceTab) {},
+      expectBackground: false,
+    },
+    {
+      name: "user switched to another tab",
+      async prepareTabState(_sourceTab) {
+        return BrowserTestUtils.openNewForegroundTab(gBrowser, "about:blank");
+      },
+      expectBackground: true,
+    },
+    {
+      name: "source tab was closed",
+      prepareTabState(sourceTab) {
+        BrowserTestUtils.removeTab(sourceTab);
+      },
+      expectBackground: true,
+    },
+  ]) {
+    info(`test_autoopen_pdf_background_if_tab_switched: ${name}`);
+    await task_resetState();
+
+    let sourceTab = await BrowserTestUtils.openNewForegroundTab(
+      gBrowser,
+      "about:blank"
+    );
+    let sourceBcId = sourceTab.linkedBrowser.browsingContext.id;
+
+    let downloadPathname = PathUtils.join(gDownloadDir, "autoopen.pdf");
+    let pdfFile = await createDownloadedFile(downloadPathname, DATA_PDF);
+    let pdfFileURI = NetUtil.newURI(new FileUtils.File(pdfFile.path));
+
+    let downloadList = await Downloads.getList(Downloads.PUBLIC);
+    let download = await Downloads.createDownload({
+      source: {
+        url: "https://example.com/some.pdf",
+        browsingContextId: sourceBcId,
+      },
+      target: { path: pdfFile.path },
+      succeeded: DownloadsCommon.DOWNLOAD_FINISHED,
+      canceled: false,
+      error: null,
+      hasPartialData: false,
+    });
+    // Simulate auto-open on download completion: launchWhenSucceeded triggers
+    // the background detection, handleInternally ensures loadFileIn is reached
+    // even though launchWhenSucceeded bypasses the mimeInfo conditions.
+    download.launchWhenSucceeded = true;
+    download.handleInternally = true;
+    await downloadList.add(download);
+
+    let extraTab = await prepareTabState(sourceTab);
+
+    let previewHappened = BrowserTestUtils.waitForNewTab(
+      gBrowser,
+      pdfFileURI.spec,
+      false,
+      true
+    );
+    await download.launch();
+    let previewTab = await previewHappened;
+
+    let isSelected = gBrowser.selectedTab === previewTab;
+    if (expectBackground) {
+      ok(!isSelected, `PDF opened in background (${name})`);
+    } else {
+      ok(isSelected, `PDF opened in foreground (${name})`);
+    }
+
+    BrowserTestUtils.removeTab(previewTab);
+    if (sourceTab.isConnected) {
+      BrowserTestUtils.removeTab(sourceTab);
+    }
+    if (extraTab) {
+      BrowserTestUtils.removeTab(extraTab);
+    }
+    await downloadList.removeFinished();
+  }
+});
 
 // register the tests
 for (let testData of TestCases) {

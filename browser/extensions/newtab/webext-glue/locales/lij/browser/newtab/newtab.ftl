@@ -9,6 +9,38 @@ newtab-page-title = Neuvo feuggio
 newtab-settings-button =
     .title = Personalizza a teu pagina Neuvo feuggio
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Neuvi feuggi
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } riga
+           *[other] { $num } righe
+        }
+home-restore-defaults-srd =
+    .label = Repiggia predefinii
+    .accesskey = R
+home-mode-choice-custom-srd =
+    .label = Indirissi cliénti...
+home-mode-choice-blank-srd =
+    .label = Pagina gianca
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Stöie sponsorizæ
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Pagine vixitæ
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Segnalibbri
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Urtimi descaregamenti
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +48,7 @@ newtab-search-box-search-button =
     .title = Çerca
     .aria-label = Çerca
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Azonzi motô de riçerca
 newtab-topsites-edit-topsites-header = Cangia scito prinçipâ
@@ -178,6 +210,15 @@ newtab-error-fallback-refresh-link = Agiorna pagina pe provâ torna.
 ## Customization Menu
 
 newtab-custom-shortcuts-title = Scorsaieu
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+            [one] { $num } riga
+           *[other] { $num } righe
+        }
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector =

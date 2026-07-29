@@ -3,7 +3,12 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
 task-defaults:
-    worker-type: t-linux-talos-1804
+    worker-type:
+        by-platform:
+            linux1804-64-shippable/opt: t-linux-talos-1804
+            linux2404-64-shippable/opt: t-linux-talos-2404
+            linux1804-64/opt: t-linux-talos-1804
+            linux2404-64/opt: t-linux-talos-2404
     fetches:
         toolchain:
             - linux64-node
@@ -17,9 +22,12 @@ task-defaults:
             - artifact: target.xpcshell.tests.tar.zst
             - artifact: target.mochitest.tests.tar.zst
             - artifact: target.tar.xz
-    platform: linux1804-64-shippable/opt
+    platform:
+        - linux1804-64-shippable/opt
+        - linux2404-64-shippable/opt
     require-build:
         linux1804-64-shippable/opt: build-linux64-shippable/opt
+        linux2404-64-shippable/opt: build-linux64-shippable/opt
     scopes:
         - secrets:get:project/releng/gecko/build/level-{level}/conditioned-profiles
 
@@ -197,6 +205,30 @@ http3:
             --xpcshell-cycles 13
             --xpcshell-xre-path ${MOZ_FETCHES_DIR}/firefox
 
+busy-trr:
+    description: Run TRR speed test
+    treeherder:
+        symbol: perftest(busy-trr)
+    attributes:
+        batch: false
+        cron: false
+    run-on-projects: [autoland, mozilla-central]
+    run:
+        command: >-
+            mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
+            cd $MOZ_FETCHES_DIR &&
+            python3 python/mozperftest/mozperftest/runner.py
+            xpcshell/tests/netwerk/test/unit/test_trr_bench.js
+            --flavor xpcshell
+            --perfherder
+            --perfherder-metrics name:average,unit:ms
+            --output $MOZ_FETCHES_DIR/../artifacts
+            --xpcshell-binary ${MOZ_FETCHES_DIR}/bin/xpcshell
+            --xpcshell-mozinfo ${MOZ_FETCHES_DIR}/target.mozinfo.json
+            --xpcshell-nodejs ${MOZ_FETCHES_DIR}/node/bin/node
+            --xpcshell-cycles 13
+            --xpcshell-xre-path ${MOZ_FETCHES_DIR}/firefox
+
 livesites:
     description: Live site performance testing
     variants: [http3]
@@ -347,9 +379,10 @@ perfstats:
 
 record-websites:
     description: Run mozperftest to record desktop websites
-    platform: linux1804-64/opt
+    platform:
+        - linux2404-64/opt
     require-build:
-        linux1804-64/opt: build-linux64/opt
+        linux2404-64/opt: build-linux64/opt
     treeherder:
         symbol: perftest(rec)
     attributes:
@@ -806,6 +839,21 @@ perftest-accessibility:
             --flavor mochitest
             --output $MOZ_FETCHES_DIR/../artifacts
             accessible/tests/browser/performance/browser_removeManySpellingErrors.js
+            && python3 python/mozperftest/mozperftest/runner.py
+            --mochitest-binary ${MOZ_FETCHES_DIR}/firefox/firefox-bin
+            --flavor mochitest
+            --output $MOZ_FETCHES_DIR/../artifacts
+            accessible/tests/browser/performance/browser_implicitRoleARIAExpanded.js
+            && python3 python/mozperftest/mozperftest/runner.py
+            --mochitest-binary ${MOZ_FETCHES_DIR}/firefox/firefox-bin
+            --flavor mochitest
+            --output $MOZ_FETCHES_DIR/../artifacts
+            accessible/tests/browser/performance/browser_bounds.js
+            && python3 python/mozperftest/mozperftest/runner.py
+            --mochitest-binary ${MOZ_FETCHES_DIR}/firefox/firefox-bin
+            --flavor mochitest
+            --output $MOZ_FETCHES_DIR/../artifacts
+            accessible/tests/browser/performance/browser_displayContentsBounds.js
 
 perftest-places:
     description: Run Places related performance tests

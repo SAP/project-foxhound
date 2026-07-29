@@ -12,10 +12,10 @@ import mozilla.components.concept.base.crash.CrashReporting
 import mozilla.components.support.base.log.Log
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.test.assertIs
 
 @RunWith(AndroidJUnit4::class)
 class RustLogTest {
@@ -64,7 +64,7 @@ class RustLogTest {
 
         fun assertLastException(expectedCount: Int, msg: String) {
             assertEquals(expectedCount, exceptions.size)
-            assertTrue(exceptions.last() is RustErrorException)
+            assertIs<RustErrorException>(exceptions.last())
             assertEquals(msg, exceptions.last().message)
         }
     }

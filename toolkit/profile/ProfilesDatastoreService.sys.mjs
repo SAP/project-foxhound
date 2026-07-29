@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import { DeferredTask } from "resource://gre/modules/DeferredTask.sys.mjs";
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 const NOTIFY_TIMEOUT = 200;
 const STOREID_PREF_NAME = "toolkit.profiles.storeID";
@@ -12,6 +13,23 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
   Sqlite: "resource://gre/modules/Sqlite.sys.mjs",
+});
+ChromeUtils.defineLazyGetter(lazy, "MigrationUtils", () => {
+  // MigrationUtils is currently only available in browser builds.
+  if (AppConstants.MOZ_BUILD_APP !== "browser") {
+    return undefined;
+  }
+
+  try {
+    let { MigrationUtils } = ChromeUtils.importESModule(
+      // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
+      "resource:///modules/MigrationUtils.sys.mjs"
+    );
+    return MigrationUtils;
+  } catch (e) {
+    console.error(`Unable to load MigrationUtils.sys.mjs: ${e}`);
+  }
+  return undefined;
 });
 
 /**
@@ -470,6 +488,16 @@ class ProfilesDatastoreServiceClass {
     this.#initialized = true;
   }
 
+  async getStartupMigrationConnection() {
+    if (!lazy.MigrationUtils?.isStartupMigration) {
+      return null;
+    }
+
+    this.#storeID = Services.env.get("SELECTABLE_PROFILE_RESET_STORE_ID");
+    await this.#initConnection();
+    return this.#connection;
+  }
+
   async uninit() {
     if (this.#asyncShutdownBarrier) {
       await this.#asyncShutdownBarrier.wait();
@@ -541,8 +569,12 @@ class ProfilesDatastoreServiceClass {
 
     // If we are not running in a named nsIToolkitProfile, the datastore path
     // should be in the profile directory. This is true in a local build or a
-    // CI test build, for example.
-    if (!this.#profileService.currentProfile) {
+    // CI test build, for example. If isStartupMigration is true, we should use
+    // the shared profile store path regardless of if we have a profile or not
+    if (
+      !lazy.MigrationUtils?.isStartupMigration &&
+      !this.#profileService.currentProfile
+    ) {
       return PathUtils.join(
         ProfilesDatastoreServiceClass.getDirectory("ProfD").path,
         `${this.#storeID}.sqlite`

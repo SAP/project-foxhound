@@ -1,6 +1,6 @@
 // Tests illegal UTF-8 sequences
 
-var Cc = Components.Constructor;
+var CC = Components.Constructor;
 
 const { NetUtil } = ChromeUtils.importESModule(
   "resource://gre/modules/NetUtil.sys.mjs"
@@ -120,7 +120,7 @@ function testCaseInputStream(inStr, expected) {
   var dataURI = "data:text/plain; charset=UTF-8,ABC" + inStr + "XYZ";
   dump(inStr + "==>");
 
-  var ConverterInputStream = Cc(
+  var ConverterInputStream = CC(
     "@mozilla.org/intl/converter-input-stream;1",
     "nsIConverterInputStream",
     "init"

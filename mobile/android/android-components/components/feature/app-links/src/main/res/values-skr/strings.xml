@@ -9,8 +9,6 @@
 <resources>
   <!-- The tile for the list of external apps to open the link in -->
   <string name="mozac_feature_applinks_open_in">۔۔۔ وچ کھولو</string>
-  <!-- The description to warn users that their private browsing session changes -->
-  <string name="mozac_feature_applinks_confirm_dialog_title">ایپ وچ کھولوں؟ تہاݙی سرگرمی ہݨ نجی کائناں ہوسی۔</string>
   <!-- The title of the prompt that warns users their normal browsing session is trying to open another app -->
   <string name="mozac_feature_applinks_normal_confirm_dialog_title">ہک ٻئی ایپ وچ کھولو</string>
   <!--
@@ -22,4 +20,6 @@
   <string name="mozac_feature_applinks_confirm_dialog_confirm">کھولو</string>
   <!-- Cancels the prompt -->
   <string name="mozac_feature_applinks_confirm_dialog_deny">منسوخ</string>
+  <!-- The label for the expandable section when details are shown -->
+  <string name="mozac_feature_applinks_hide_details">تفصیلاں لُکاؤ</string>
 </resources>

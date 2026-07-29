@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -46,7 +44,7 @@ class SVGFilterPrimitiveElement : public SVGFilterPrimitiveElementBase {
   using FilterPrimitiveDescription = mozilla::gfx::FilterPrimitiveDescription;
 
   explicit SVGFilterPrimitiveElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
       : SVGFilterPrimitiveElementBase(std::move(aNodeInfo)) {}
   virtual ~SVGFilterPrimitiveElement() = default;
 
@@ -144,7 +142,7 @@ class SVGFilterPrimitiveChildElement
     : public SVGFilterPrimitiveChildElementBase {
  protected:
   explicit SVGFilterPrimitiveChildElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
       : SVGFilterPrimitiveChildElementBase(std::move(aNodeInfo)) {}
 
  public:
@@ -168,7 +166,7 @@ using SVGFELightingElementBase = SVGFilterPrimitiveElement;
 class SVGFELightingElement : public SVGFELightingElementBase {
  protected:
   explicit SVGFELightingElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
       : SVGFELightingElementBase(std::move(aNodeInfo)) {}
 
   virtual ~SVGFELightingElement() = default;
@@ -222,8 +220,7 @@ using SVGFELightElementBase = SVGFilterPrimitiveChildElement;
 
 class SVGFELightElement : public SVGFELightElementBase {
  protected:
-  explicit SVGFELightElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+  explicit SVGFELightElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
       : SVGFELightElementBase(std::move(aNodeInfo)) {}
 
  public:

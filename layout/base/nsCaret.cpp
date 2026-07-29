@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -353,11 +351,22 @@ nsIFrame* nsCaret::GetGeometry(const Selection* aSelection, nsRect* aRect) {
   return data.mFrame;
 }
 
+// Generally we want the caret to paint from the containing block of the frame
+// the caret is positioned at. The one exception is the
+// ::-moz-text-control-editing-root, in which case we want the caret to paint
+// from the input itself, so that it paints atop the placeholder and such
+// without having to do magic elsewhere.
 [[nodiscard]] static nsIFrame* GetContainingBlockIfNeeded(nsIFrame* aFrame) {
-  if (aFrame->IsBlockOutside() || aFrame->IsBlockFrameOrSubclass()) {
-    return nullptr;
+  for (auto* f = aFrame; f; f = f->GetContainingBlock()) {
+    if (f->Style()->GetPseudoType() ==
+        PseudoStyleType::MozTextControlEditingRoot) {
+      continue;
+    }
+    if (f != aFrame || f->IsBlockOutside() || f->IsBlockFrameOrSubclass()) {
+      return f == aFrame ? nullptr : f;
+    }
   }
-  return aFrame->GetContainingBlock();
+  return nullptr;
 }
 
 void nsCaret::SchedulePaint() {

@@ -59,7 +59,9 @@ skip-if = [
   "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1857240
   "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1579623, 1776996
   "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1929452
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2019404
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug && xorigin && verify-standalone",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && debug && xorigin && verify-standalone",
 ]
 
 ["test_fullscreen_iframe.html"]
@@ -72,4 +74,5 @@ skip-if = [
   "http3",
   "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1857240
   "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1929452
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2019466
 ]

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,7 +5,6 @@
 #include "SourceBuffer.h"
 
 #include <algorithm>
-#include <cmath>
 #include <cstring>
 #include "mozilla/Likely.h"
 #include "nsIInputStream.h"
@@ -107,6 +105,29 @@ SourceBufferIterator::State SourceBufferIterator::AdvanceOrScheduleResume(
   // SourceBuffer.
   return mOwner->AdvanceIteratorOrScheduleResume(*this, aRequestedBytes,
                                                  aConsumer);
+}
+
+void SourceBufferIterator::MarkConsumed(size_t aConsumed) {
+  MOZ_ASSERT(mState == READY);
+  MOZ_ASSERT(aConsumed <= mData.mIterating.mNextReadLength);
+
+  if (mRemainderToRead != SIZE_MAX) [[unlikely]] {
+    MOZ_ASSERT(aConsumed <= mRemainderToRead);
+    mRemainderToRead -= aConsumed;
+  }
+
+  // Update the iterator to reflect partial consumption: advance mOffset by
+  // aConsumed, shrink mAvailableLength, and set mNextReadLength to the
+  // remaining bytes so Data()/Length() immediately expose the unconsumed
+  // portion. When all remaining bytes are eventually consumed and
+  // mNextReadLength reaches zero, the next AdvanceOrScheduleResume() will
+  // advance past zero bytes and fetch the next chunk.
+  mData.mIterating.mOffset += aConsumed;
+  mData.mIterating.mAvailableLength -= aConsumed;
+  mData.mIterating.mNextReadLength =
+      MOZ_LIKELY(mRemainderToRead == SIZE_MAX)
+          ? mData.mIterating.mAvailableLength
+          : std::min(mData.mIterating.mAvailableLength, mRemainderToRead);
 }
 
 bool SourceBufferIterator::RemainingBytesIsNoMoreThan(size_t aBytes) const {

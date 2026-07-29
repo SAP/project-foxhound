@@ -64,6 +64,7 @@ add_setup(async function setup() {
     Services.prefs.clearUserPref("network.http.speculative-parallel-limit");
     Services.prefs.clearUserPref("network.http.http3.block_loopback_ipv6_addr");
     Services.prefs.clearUserPref("network.dns.get-ttl");
+    Services.prefs.clearUserPref("network.http.http3.enable");
     if (trrServer) {
       await trrServer.stop();
     }
@@ -350,5 +351,63 @@ add_task(async function test_retry_with_0rtt() {
   [req] = await channelOpenPromise(chan);
   Assert.equal(req.protocolVersion, "h3");
 
+  await trrServer.stop();
+});
+
+// Bug 2043768: an HTTPS record advertising h3 must not result in an h3
+// connection when network.http.http3.enable is false. The h3 alpn points at
+// the live HTTP/3 server, so if it were attempted it would win and
+// protocolVersion would be "h3"; the h2 record lets the request still
+// complete. Seeing "h2" proves h3 was never used. This invariant must hold on
+// both the Happy Eyeballs v3 and legacy connection paths.
+add_task(async function test_http3_disabled_skips_h3_from_https_rr() {
+  let host = "test.http3_disabled.com";
+  let ipv4answers = [
+    { name: host, ttl: 55, type: "A", flush: false, data: "127.0.0.1" },
+  ];
+  let ipv6answers = [];
+  let httpsRecord = [
+    {
+      name: host,
+      ttl: 55,
+      type: "HTTPS",
+      flush: false,
+      data: {
+        priority: 1,
+        name: host,
+        values: [
+          { key: "alpn", value: "h3" },
+          { key: "no-default-alpn" },
+          { key: "port", value: h3Port },
+        ],
+      },
+    },
+    {
+      name: host,
+      ttl: 55,
+      type: "HTTPS",
+      flush: false,
+      data: {
+        priority: 2,
+        name: host,
+        values: [
+          { key: "alpn", value: "h2" },
+          { key: "port", value: h2Port },
+        ],
+      },
+    },
+  ];
+
+  await registerDoHAnswers(host, ipv4answers, ipv6answers, httpsRecord);
+
+  Services.prefs.setBoolPref("network.http.http3.enable", false);
+
+  // The h2 response carries no Content-Length; we only care about the
+  // negotiated protocol, so allow it.
+  let chan = makeChan(`https://${host}`);
+  let [req] = await channelOpenPromise(chan, CL_ALLOW_UNKNOWN_CL);
+  Assert.equal(req.protocolVersion, "h2", "h3 disabled -> must not use h3");
+
+  Services.prefs.clearUserPref("network.http.http3.enable");
   await trrServer.stop();
 });

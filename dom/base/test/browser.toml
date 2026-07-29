@@ -20,6 +20,7 @@ support-files = [
   "file_bug1303838_target_ibar.html",
   "file_bug1303838_target_ibaz.html",
   "file_bug1303838_with_iframe.html",
+  "file_bug2034329.html",
   "file_messagemanager_unload.html",
   "file_set_focus_after_reuse_bcg_1.html",
   "file_set_focus_after_reuse_bcg_2.html",
@@ -80,7 +81,12 @@ skip-if = [
 ]
 
 ["browser_bug1703472.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
 support-files = ["file_bug1703472.html"]
+
+["browser_bug2034329.js"]
 
 ["browser_chromeutils_getalldomprocesses.js"]
 
@@ -115,6 +121,8 @@ skip-if = [
   "socketprocess_networking",
 ]
 support-files = ["browser_multiple_popups.html"]
+
+["browser_newtab_session_history.js"]
 
 ["browser_object_attachment.js"]
 support-files = [
@@ -221,6 +229,12 @@ support-files = [
   "file_js_cache_imported1.mjs",
   "file_js_cache_imported2.mjs",
   "file_js_cache_imported3.mjs",
+]
+
+["browser_script_loader_js_cache_nonce.js"]
+support-files = [
+  "empty.html",
+  "file_js_cache_large.js",
 ]
 
 ["browser_script_loader_js_cache_serviceworker.js"]

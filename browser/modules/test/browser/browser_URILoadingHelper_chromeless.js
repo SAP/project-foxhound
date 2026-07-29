@@ -5,6 +5,7 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 ChromeUtils.defineESModuleGetters(this, {
   URILoadingHelper: "resource:///modules/URILoadingHelper.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
+  ASRouterTargeting: "resource:///modules/asrouter/ASRouterTargeting.sys.mjs",
 });
 
 const URL_TO_LOAD = "https://example.com/";
@@ -54,6 +55,21 @@ add_task(async function opens_a_new_window_not_reusing_existing_window() {
   const win = await openChromelessAndWaitForLoad(URL_TO_LOAD);
   const after = BrowserWindowTracker.orderedWindows.length;
   Assert.greater(after, before, "Opened a new browser window for chromeless");
+  await BrowserTestUtils.closeWindow(win);
+});
+
+add_task(async function opens_with_requested_dimensions() {
+  const { width, height } = ASRouterTargeting.Environment.primaryResolution;
+  if (width < 800 || height < 600) {
+    ok(true, "Skipping: screen too small to reliably test window dimensions");
+    return;
+  }
+  const win = await openChromelessAndWaitForLoad(URL_TO_LOAD, {
+    width: 800,
+    height: 600,
+  });
+  Assert.equal(win.innerWidth, 800, "Window should have the requested width");
+  Assert.equal(win.innerHeight, 600, "Window should have the requested height");
   await BrowserTestUtils.closeWindow(win);
 });
 

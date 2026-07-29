@@ -18,143 +18,119 @@
           src="../events.js"></script>
 
   <script type="application/javascript">
-    let PromEvents = {};
-    Services.scriptloader.loadSubScript(
-      "chrome://mochitests/content/a11y/accessible/tests/mochitest/promisified-events.js",
-      PromEvents);
-
-    /**
-     * Do tests.
-     */
-    var gQueue = null;
-
-    // gA11yEventDumpID = "eventdump"; // debugging
-    // gA11yEventDumpToConsole = true; // debugging
-
-    function expandNode(aID, aIsExpanded) {
-      this.DOMNode = getNode(aID);
-
-      this.eventSeq = [
-        new expandedStateChecker(aIsExpanded, this.DOMNode),
-      ];
-
-      this.invoke = function expandNode_invoke() {
-        this.DOMNode.setAttribute("aria-expanded",
-                                  (aIsExpanded ? "true" : "false"));
-      };
-
-      this.getID = function expandNode_getID() {
-        return prettyName(aID) + " aria-expanded changed to '" + aIsExpanded + "'";
-      };
-    }
-
-    function busyify(aID, aIsBusy) {
-      this.DOMNode = getNode(aID);
-
-      this.eventSeq = [
-        new stateChangeChecker(STATE_BUSY, kOrdinalState, aIsBusy, this.DOMNode),
-      ];
-
-      this.invoke = function busyify_invoke() {
-        this.DOMNode.setAttribute("aria-busy", (aIsBusy ? "true" : "false"));
-      };
-
-      this.getID = function busyify_getID() {
-        return prettyName(aID) + " aria-busy changed to '" + aIsBusy + "'";
-      };
-    }
-
-    function makeCurrent(aID, aIsCurrent, aValue) {
-      this.DOMNode = getNode(aID);
-
-      this.eventSeq = [
-        new stateChangeChecker(EXT_STATE_CURRENT, true, aIsCurrent, this.DOMNode),
-      ];
-
-      this.invoke = function makeCurrent_invoke() {
-        this.DOMNode.setAttribute("aria-current", aValue);
-      };
-
-      this.getID = function makeCurrent_getID() {
-        return prettyName(aID) + " aria-current changed to " + aValue;
-      };
-    }
 
     async function testToggleAttribute(aID, aAttribute, aIncludeMixed) {
-      let toggleState = aAttribute == "aria-pressed" ? STATE_PRESSED : STATE_CHECKED;
+      let toggleState =
+        aAttribute == "aria-pressed" ? STATE_PRESSED : STATE_CHECKED;
 
       // bug 472142. Role changes here if aria-pressed is added,
       // accessible should be recreated?
-      let stateChange = PromEvents.waitForStateChange(aID, toggleState, true);
+      let stateChange = waitForStateChange(aID, toggleState, true);
       getNode(aID).setAttribute(aAttribute, "true");
       await stateChange;
 
-      stateChange = PromEvents.waitForStateChange(aID, toggleState, false);
+      stateChange = waitForStateChange(aID, toggleState, false);
       getNode(aID).setAttribute(aAttribute, "false");
       await stateChange;
 
       if (aIncludeMixed) {
-        stateChange = PromEvents.waitForStateChange(aID, STATE_MIXED, true);
+        stateChange = waitForStateChange(aID, STATE_MIXED, true);
         getNode(aID).setAttribute(aAttribute, "mixed");
         await stateChange;
 
-        stateChange = PromEvents.waitForStateChange(aID, STATE_MIXED, false);
+        stateChange = waitForStateChange(aID, STATE_MIXED, false);
         getNode(aID).setAttribute(aAttribute, "");
         await stateChange;
       }
 
-      stateChange = PromEvents.waitForStateChange(aID, toggleState, true);
+      stateChange = waitForStateChange(aID, toggleState, true);
       getNode(aID).setAttribute(aAttribute, "true");
       await stateChange;
 
       if (aIncludeMixed) {
         stateChange = Promise.all([
-          PromEvents.waitForStateChange(aID, STATE_MIXED, true),
-          PromEvents.waitForStateChange(aID, toggleState, false)]);
+          waitForStateChange(aID, STATE_MIXED, true),
+          waitForStateChange(aID, toggleState, false),
+        ]);
         getNode(aID).setAttribute(aAttribute, "mixed");
         await stateChange;
 
         stateChange = Promise.all([
-          PromEvents.waitForStateChange(aID, STATE_MIXED, false),
-          PromEvents.waitForStateChange(aID, toggleState, true)]);
+          waitForStateChange(aID, STATE_MIXED, false),
+          waitForStateChange(aID, toggleState, true),
+        ]);
         getNode(aID).setAttribute(aAttribute, "true");
         await stateChange;
       }
 
       // bug 472142. Role changes here too if aria-pressed is removed,
       // accessible should be recreated?
-      stateChange = PromEvents.waitForStateChange(aID, toggleState, false);
+      stateChange = waitForStateChange(aID, toggleState, false);
       getNode(aID).removeAttribute(aAttribute);
       await stateChange;
     }
 
     async function doTests() {
-      gQueue = new eventQueue();
+      let stateChange = waitForStateChange("tab", STATE_EXPANDED, true);
+      getNode("tab").setAttribute("aria-expanded", "true");
+      await stateChange;
 
-      let queueFinished = new Promise(resolve => {
-        gQueue.onFinish = function() {
-          resolve();
-          return DO_NOT_FINISH_TEST;
-        };
-      });
+      stateChange = waitForStateChange("tab", STATE_EXPANDED, false);
+      getNode("tab").setAttribute("aria-expanded", "false");
+      await stateChange;
 
-      gQueue.push(new expandNode("section", true));
-      gQueue.push(new expandNode("section", false));
-      gQueue.push(new expandNode("div", true));
-      gQueue.push(new expandNode("div", false));
+      stateChange = waitForStateChange("aria_doc", STATE_BUSY, true);
+      getNode("aria_doc").setAttribute("aria-busy", "true");
+      await stateChange;
 
-      gQueue.push(new busyify("aria_doc", true));
-      gQueue.push(new busyify("aria_doc", false));
+      stateChange = waitForStateChange("aria_doc", STATE_BUSY, false);
+      getNode("aria_doc").setAttribute("aria-busy", "false");
+      await stateChange;
 
-      gQueue.push(new makeCurrent("current_page_1", false, "false"));
-      gQueue.push(new makeCurrent("current_page_2", true, "page"));
-      gQueue.push(new makeCurrent("current_page_2", false, "false"));
-      gQueue.push(new makeCurrent("current_page_3", true, "true"));
-      gQueue.push(new makeCurrent("current_page_3", false, ""));
+      stateChange = waitForStateChange(
+        "current_page_1",
+        EXT_STATE_CURRENT,
+        false,
+        true
+      );
+      getNode("current_page_1").setAttribute("aria-current", "false");
+      await stateChange;
 
-      gQueue.invoke();
-      await queueFinished;
-      // Tests beyond this point use await rather than eventQueue.
+      stateChange = waitForStateChange(
+        "current_page_2",
+        EXT_STATE_CURRENT,
+        true,
+        true
+      );
+      getNode("current_page_2").setAttribute("aria-current", "page");
+      await stateChange;
+
+      stateChange = waitForStateChange(
+        "current_page_2",
+        EXT_STATE_CURRENT,
+        false,
+        true
+      );
+      getNode("current_page_2").setAttribute("aria-current", "false");
+      await stateChange;
+
+      stateChange = waitForStateChange(
+        "current_page_3",
+        EXT_STATE_CURRENT,
+        true,
+        true
+      );
+      getNode("current_page_3").setAttribute("aria-current", "true");
+      await stateChange;
+
+      stateChange = waitForStateChange(
+        "current_page_3",
+        EXT_STATE_CURRENT,
+        false,
+        true
+      );
+      getNode("current_page_3").setAttribute("aria-current", "");
+      await stateChange;
 
       await testToggleAttribute("pressable", "aria-pressed", true);
       await testToggleAttribute("pressable_native", "aria-pressed", true);
@@ -209,8 +185,7 @@
   <div id="eventdump"></div>
 
   <!-- aria-expanded -->
-  <div id="section" role="section" aria-expanded="false">expandable section</div>
-  <div id="div" aria-expanded="false">expandable native div</div>
+  <div id="tab" role="tab" aria-expanded="false">expandable tab</div>
 
   <!-- aria-busy -->
   <div id="aria_doc" role="document" tabindex="0">A document</div>

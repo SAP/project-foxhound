@@ -15,7 +15,7 @@ add_task(async function test_interactions_pushState() {
   await BrowserTestUtils.withNewTab(TEST_URL, async browser => {
     Interactions._pageViewStartTime = ChromeUtils.now() - 10000;
 
-    await ContentTask.spawn(browser, TEST_URL2, url => {
+    await SpecialPowers.spawn(browser, [TEST_URL2], url => {
       content.history.pushState(null, "", url);
     });
 
@@ -40,7 +40,7 @@ add_task(async function test_interactions_pushState_sameUrl() {
   await BrowserTestUtils.withNewTab(TEST_URL, async browser => {
     Interactions._pageViewStartTime = ChromeUtils.now() - 10000;
 
-    await ContentTask.spawn(browser, TEST_URL, url => {
+    await SpecialPowers.spawn(browser, [TEST_URL], url => {
       content.history.pushState(null, "", url);
     });
 
@@ -61,7 +61,7 @@ add_task(async function test_interactions_replaceState() {
   await BrowserTestUtils.withNewTab(TEST_URL, async browser => {
     Interactions._pageViewStartTime = ChromeUtils.now() - 10000;
 
-    await ContentTask.spawn(browser, TEST_URL2, url => {
+    await SpecialPowers.spawn(browser, [TEST_URL2], url => {
       content.history.replaceState(null, "", url);
     });
 
@@ -86,7 +86,7 @@ add_task(async function test_interactions_replaceState_sameUrl() {
   await BrowserTestUtils.withNewTab(TEST_URL, async browser => {
     Interactions._pageViewStartTime = ChromeUtils.now() - 10000;
 
-    await ContentTask.spawn(browser, TEST_URL, url => {
+    await SpecialPowers.spawn(browser, [TEST_URL], url => {
       content.history.replaceState(null, "", url);
     });
 
@@ -107,7 +107,7 @@ add_task(async function test_interactions_hashchange() {
   await BrowserTestUtils.withNewTab(TEST_URL, async browser => {
     Interactions._pageViewStartTime = ChromeUtils.now() - 10000;
 
-    await ContentTask.spawn(browser, TEST_URL + "#foo", url => {
+    await SpecialPowers.spawn(browser, [TEST_URL + "#foo"], url => {
       content.location = url;
     });
 

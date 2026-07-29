@@ -24,6 +24,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
  */
 export class WindowGlobalMessageHandler extends MessageHandler {
   #innerWindowId;
+  #pausedDebuggerFrame;
   #realms;
 
   constructor() {
@@ -33,6 +34,9 @@ export class WindowGlobalMessageHandler extends MessageHandler {
 
     // Maps sandbox names to instances of window realms.
     this.#realms = new Map();
+
+    // The currently paused Debugger.Frame, if any.
+    this.#pausedDebuggerFrame = null;
   }
 
   initialize(sessionDataItems) {
@@ -105,6 +109,26 @@ export class WindowGlobalMessageHandler extends MessageHandler {
 
   get window() {
     return this.context.window;
+  }
+
+  /**
+   * Get the currently paused Debugger.Frame.
+   *
+   * @returns {Debugger.Frame|null}
+   *     The paused frame, or null if not paused.
+   */
+  getPausedDebuggerFrame() {
+    return this.#pausedDebuggerFrame;
+  }
+
+  /**
+   * Set the currently paused Debugger.Frame.
+   *
+   * @param {Debugger.Frame|null} frame
+   *     The paused frame, or null to clear.
+   */
+  setPausedDebuggerFrame(frame) {
+    this.#pausedDebuggerFrame = frame;
   }
 
   #createRealm(sandboxName = null) {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -47,7 +47,7 @@ public:
         uint32_t               fUniqueID;
     };
 
-    SkImage_Lazy(Validator* validator);
+    explicit SkImage_Lazy(Validator* validator);
 
     // From SkImage.h
     bool isValid(SkRecorder*) const override;
@@ -66,7 +66,7 @@ public:
 
     bool onReadPixels(GrDirectContext*, const SkImageInfo&, void*, size_t, int srcX, int srcY,
                       CachingHint) const override;
-    sk_sp<SkData> onRefEncoded() const override;
+    sk_sp<const SkData> onRefEncoded() const override;
 
     sk_sp<SkImage> onMakeSubset(SkRecorder*, const SkIRect&, RequiredProperties) const override;
 

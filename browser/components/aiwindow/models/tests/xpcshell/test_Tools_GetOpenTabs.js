@@ -2,6 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+do_get_profile();
+
+const { sanitizeUntrustedContent } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/aiwindow/models/ChatUtils.sys.mjs"
+);
+
 const { getOpenTabs } = ChromeUtils.importESModule(
   "moz-src:///browser/components/aiwindow/models/Tools.sys.mjs"
 );
@@ -76,11 +82,15 @@ add_task(async function test_getOpenTabs_basic() {
       "https://mozilla.org": "Mozilla organization site",
     });
 
-    const tabs = await getOpenTabs();
+    const tabs = await getOpenTabs(makeConversation());
 
     Assert.equal(tabs.length, 3, "Should return all 3 tabs");
     Assert.equal(tabs[0].url, "https://firefox.com", "Most recent tab first");
-    Assert.equal(tabs[0].title, "Firefox", "Title should match");
+    Assert.equal(
+      tabs[0].title,
+      sanitizeUntrustedContent("Firefox"),
+      "Title should match"
+    );
     // @todo Bug2009194
     // Assert.equal(
     //   tabs[0].description,
@@ -95,17 +105,12 @@ add_task(async function test_getOpenTabs_basic() {
     //   "Description should be fetched"
     // );
     Assert.equal(tabs[2].url, "https://example.com", "Least recent tab");
-    Assert.equal(
-      tabs[2].description,
-      "",
-      "Description should be empty when not available"
-    );
   } finally {
     sb.restore();
   }
 });
 
-add_task(async function test_getOpenTabs_filters_about_urls() {
+add_task(async function test_getOpenTabs_filters_non_web_urls() {
   const BrowserWindowTracker = ChromeUtils.importESModule(
     "resource:///modules/BrowserWindowTracker.sys.mjs"
   ).BrowserWindowTracker;
@@ -119,17 +124,21 @@ add_task(async function test_getOpenTabs_filters_about_urls() {
       createFakeTab("about:config", "Config", 3000),
       createFakeTab("https://mozilla.org", "Mozilla", 4000),
       createFakeTab("about:blank", "Blank", 5000),
+      createFakeTab("chrome://browser/content/browser.xhtml", "Chrome", 6000),
+      createFakeTab("moz-extension://abc/page.html", "Extension", 7000),
+      createFakeTab("file:///home/user/doc.html", "Local File", 8000),
+      createFakeTab("data:text/html,hello", "Data URL", 9000),
     ]);
 
     sb.stub(BrowserWindowTracker, "orderedWindows").get(() => [fakeWindow]);
     setupPageDataServiceMock(sb);
 
-    const tabs = await getOpenTabs();
+    const tabs = await getOpenTabs(makeConversation());
 
     Assert.equal(
       tabs.length,
       2,
-      "Should only return non-about: tabs (filtered 3)"
+      "Should only return http/https tabs (filtered 7)"
     );
     Assert.equal(
       tabs[0].url,
@@ -138,8 +147,10 @@ add_task(async function test_getOpenTabs_filters_about_urls() {
     );
     Assert.equal(tabs[1].url, "https://example.com", "Should return example");
     Assert.ok(
-      !tabs.some(t => t.url.startsWith("about:")),
-      "No about: URLs in results"
+      tabs.every(
+        t => t.url.startsWith("https://") || t.url.startsWith("http://")
+      ),
+      "Only http/https URLs in results"
     );
   } finally {
     sb.restore();
@@ -166,21 +177,12 @@ add_task(async function test_getOpenTabs_pagination() {
     setupPageDataServiceMock(sb);
 
     // Test default limit
-    const defaultResult = await getOpenTabs();
-    Assert.equal(defaultResult.length, 15, "Should default to 15 tabs");
+    const defaultResult = await getOpenTabs(makeConversation());
+    Assert.equal(defaultResult.length, 15, "Should return at most 15 tabs");
     Assert.equal(
       defaultResult[0].url,
       "https://example19.com",
       "First tab should be most recent"
-    );
-
-    // Test custom limit
-    const customResult = await getOpenTabs(10);
-    Assert.equal(customResult.length, 10, "Should return at most 10 tabs");
-    Assert.equal(
-      customResult[9].url,
-      "https://example10.com",
-      "Last tab should be 10th most recent"
     );
   } finally {
     sb.restore();
@@ -219,7 +221,7 @@ add_task(async function test_getOpenTabs_filters_non_ai_windows() {
     ]);
     setupPageDataServiceMock(sb);
 
-    const tabs = await getOpenTabs();
+    const tabs = await getOpenTabs(makeConversation());
 
     Assert.equal(
       tabs.length,
@@ -235,6 +237,33 @@ add_task(async function test_getOpenTabs_filters_non_ai_windows() {
   } finally {
     sb.restore();
   }
+});
+
+add_task(async function test_getOpenTabs_sets_security_flags() {
+  const conversation = makeConversation();
+  await getOpenTabs(conversation);
+  conversation.securityProperties.commit();
+
+  Assert.strictEqual(
+    conversation.securityProperties.privateData,
+    true,
+    "private_data true"
+  );
+  Assert.strictEqual(
+    conversation.securityProperties.untrustedInput,
+    false,
+    "untrusted_input false"
+  );
+});
+
+add_task(async function test_getOpenTabs_allowed_when_flags_set() {
+  const conversation = makeConversation({
+    privateData: true,
+    untrustedInput: true,
+  });
+  const tabs = await getOpenTabs(conversation);
+
+  Assert.ok(Array.isArray(tabs), "returns array, not refusal");
 });
 
 add_task(async function test_getOpenTabs_return_structure() {
@@ -254,23 +283,17 @@ add_task(async function test_getOpenTabs_return_structure() {
       "https://test.com": "A test page description",
     });
 
-    const tabs = await getOpenTabs();
+    const tabs = await getOpenTabs(makeConversation());
 
     Assert.equal(tabs.length, 1, "Should return one tab");
 
     const tab = tabs[0];
     Assert.ok("url" in tab, "Tab should have url property");
     Assert.ok("title" in tab, "Tab should have title property");
-    Assert.ok("description" in tab, "Tab should have description property");
     Assert.ok("lastAccessed" in tab, "Tab should have lastAccessed property");
 
     Assert.equal(typeof tab.url, "string", "url should be a string");
     Assert.equal(typeof tab.title, "string", "title should be a string");
-    Assert.equal(
-      typeof tab.description,
-      "string",
-      "description should be a string"
-    );
     Assert.equal(
       typeof tab.lastAccessed,
       "number",
@@ -278,7 +301,11 @@ add_task(async function test_getOpenTabs_return_structure() {
     );
 
     Assert.equal(tab.url, "https://test.com", "url value correct");
-    Assert.equal(tab.title, "Test Page", "title value correct");
+    Assert.equal(
+      tab.title,
+      sanitizeUntrustedContent("Test Page"),
+      "title value correct"
+    );
     // @todo Bug2009194
     // Assert.equal(
     //   tab.description,

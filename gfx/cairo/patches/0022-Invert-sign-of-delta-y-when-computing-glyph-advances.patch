@@ -1,0 +1,27 @@
+From e0363f85f11a3d030d380772db2d98dd5b3fdec1 Mon Sep 17 00:00:00 2001
+From: Jonathan Kew <jkew@mozilla.com>
+Date: Wed, 22 Apr 2026 13:00:22 -0700
+Subject: [PATCH 22/29] Invert sign of delta-y when computing glyph advances
+ for ExtTextOutW
+
+---
+ src/win32/cairo-win32-surface.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/win32/cairo-win32-surface.c b/src/win32/cairo-win32-surface.c
+index eb90a4fff..87306bd91 100644
+--- a/src/win32/cairo-win32-surface.c
++++ b/src/win32/cairo-win32-surface.c
+@@ -309,7 +309,8 @@ _cairo_win32_surface_emit_glyphs (cairo_win32_surface_t *dst,
+             next_logical_y = _cairo_lround (next_user_y);
+ 
+             dxy_buf[j] = _cairo_lround (next_logical_x - logical_x);
+-            dxy_buf[j+1] = _cairo_lround (next_logical_y - logical_y);
++            /* Note that GDI coordinate system is inverted! */
++            dxy_buf[j+1] = _cairo_lround (logical_y - next_logical_y);
+ 
+             logical_x = next_logical_x;
+             logical_y = next_logical_y;
+-- 
+2.53.0
+

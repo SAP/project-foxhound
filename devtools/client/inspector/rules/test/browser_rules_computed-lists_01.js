@@ -19,7 +19,7 @@ add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view } = await openRuleView();
   await selectNode("#testid", inspector);
-  const rule = getRuleViewRuleEditor(view, 1).rule;
+  const rule = getRuleViewRuleEditorAt(view, 1).rule;
 
   info("Check that the correct rules are visible");
   is(rule.selectorText, "#testid", "Second rule is #testid.");
@@ -54,7 +54,7 @@ add_task(async function () {
   );
 
   info("Check that the expander gets shown again after we're done editing");
-  let onEditingCancelled = view.once("ruleview-changed");
+  let onEditingCancelled = view.once("property-value-updated");
   EventUtils.sendKey("ESCAPE", view.styleWindow);
   await onEditingCancelled;
   is(
@@ -75,7 +75,7 @@ add_task(async function () {
   await onValueFocus;
 
   // the value span was focused, cancel the edit
-  onEditingCancelled = view.once("ruleview-changed");
+  onEditingCancelled = view.once("property-value-updated");
   EventUtils.sendKey("ESCAPE", view.styleWindow);
   await onEditingCancelled;
 

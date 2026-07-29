@@ -28,6 +28,9 @@ support-files = [
   "!/dom/canvas/test/captureStream_common.js",
 ]
 
+["test_windowGlobalParent_documentChannel.html"]
+support-files = ["file_pdf.pdf"]
+
 ["test_window_open_discarded_bc.html"]
 skip-if = [
   "os == 'android'",

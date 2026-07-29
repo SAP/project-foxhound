@@ -4,33 +4,33 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 #
-# Write a Mochitest manifest for WebGL conformance test files.
+# Write Mochitest manifests for WebGL conformance test files.
 
 import os
 import re
 import shutil
+from collections import defaultdict
 from pathlib import Path
 
 # All paths in this file are based where this file is run.
 WRAPPER_TEMPLATE_FILE = "mochi-wrapper.html.template"
 MANIFEST_TEMPLATE_FILE = "mochitest.toml.template"
 ERRATA_FILE = "mochitest-errata.toml"
-DEST_MANIFEST_PATHSTR = "generated-mochitest.toml"
+DEST_MANIFEST_PREFIX = "generated-mochitest-"
+DEST_MANIFEST_SUFFIX = ".toml"
+
+# Tests are bucketed into separate manifests so dynamic chunking has multiple
+# units to distribute. MANIFEST_MAX_TESTS caps the size of a single manifest;
+# clusters bigger than this are split along the next path component. Tiny
+# sibling clusters below MANIFEST_MIN_TESTS are merged into a bucket named
+# after their parent prefix instead of creating one-test manifests.
+MANIFEST_MAX_TESTS = 300
+MANIFEST_MIN_TESTS = 5
 
 BASE_TEST_LIST_PATHSTR = "checkout/00_test_list.txt"
 GENERATED_PATHSTR = "generated"
 WEBGL2_TEST_MANGLE = "2_"
 PATH_SEP_MANGLING = "__"
-
-SUPPORT_DIRS = [
-    "checkout",
-]
-
-EXTRA_SUPPORT_FILES = [
-    "always-fail.html",
-    "iframe-passthrough.css",
-    "mochi-single.html",
-]
 
 ACCEPTABLE_ERRATA_KEYS = set([
     "fail-if",
@@ -195,11 +195,6 @@ def AccumTests(pathStr, listFile, allowWebGL1, allowWebGL2, out_testList):
 
 ########################################################################
 # Templates
-
-
-def FillTemplate(inFilePath, templateDict, outFilePath):
-    templateShell = ImportTemplate(inFilePath)
-    OutputFilledTemplate(templateShell, templateDict, outFilePath)
 
 
 def ImportTemplate(inFilePath):
@@ -371,57 +366,156 @@ def WriteWrappers(testEntryList):
     return wrapperPathList
 
 
-kManifestRelPathStr = os.path.relpath(".", os.path.dirname(DEST_MANIFEST_PATHSTR))
-kManifestRelPathStr = kManifestRelPathStr.replace(os.sep, "/")
-
-
 def ManifestPathStr(pathStr):
-    pathStr = kManifestRelPathStr + "/" + pathStr
-    return os.path.normpath(pathStr).replace(os.sep, "/")
+    # Rewrites a wrapper path (relative to the webgl-conf root) to be relative
+    # to GENERATED_PATHSTR/, where the manifests live.
+    rel = os.path.relpath(pathStr, GENERATED_PATHSTR)
+    return rel.replace(os.sep, "/")
 
 
-def WriteManifest(wrapperPathStrList, supportPathStrList):
-    destPathStr = DEST_MANIFEST_PATHSTR
-    print("Generating manifest: " + destPathStr)
+def WrapperPathParts(wrapperPathStr):
+    base = wrapperPathStr.split("/", 1)[1]
+    base = re.sub(r"^test_(2_)?", "", base)
+    return base.split(PATH_SEP_MANGLING)
 
+
+def TreeSplit(items, pathPrefix):
+    """Recursively partition (parts, payload) items into clusters.
+
+    `items` is a list of (remainingParts, payload). At each level, items are
+    grouped by their next path component; subtrees exceeding MANIFEST_MAX_TESTS
+    are recursed into, and sibling subtrees below MANIFEST_MIN_TESTS are merged
+    into a bucket labeled with the current prefix to avoid one-test manifests.
+    Returns a list of (label, [payload, ...]) pairs.
+    """
+    if len(items) <= MANIFEST_MAX_TESTS:
+        return [(pathPrefix, [payload for _, payload in items])]
+
+    byChild = defaultdict(list)
+    for parts, payload in items:
+        byChild[parts[0]].append((parts[1:], payload))
+
+    out = []
+    smallBucket = []
+    for k in sorted(byChild):
+        gitems = byChild[k]
+        childPrefix = (pathPrefix + "/" + k) if pathPrefix else k
+        if len(gitems) > MANIFEST_MAX_TESTS:
+            out.extend(TreeSplit(gitems, childPrefix))
+        elif len(gitems) < MANIFEST_MIN_TESTS:
+            smallBucket.extend(payload for _, payload in gitems)
+        else:
+            out.append((childPrefix, [payload for _, payload in gitems]))
+
+    if smallBucket:
+        out.append((pathPrefix, smallBucket))
+
+    return out
+
+
+def ManifestFileName(subsuite, label):
+    sanitized = label.replace("/", "-")
+    suffix = f"-{sanitized}" if sanitized else ""
+    return f"{DEST_MANIFEST_PREFIX}{subsuite}{suffix}{DEST_MANIFEST_SUFFIX}"
+
+
+# Support files that every wrapper needs regardless of its checkout path:
+# the wrapper's iframe host page plus the shared JS test framework and assets.
+# Non-glob support-files that resolve outside the manifest's directory get
+# flattened to their basename by mozbuild's test installer (see
+# `SupportFilesConverter.convert_support_files` in python/mozbuild/mozbuild/
+# testing.py); glob patterns instead go through `pattern_installs` and keep
+# their relative layout. Since these manifests live in `generated/`, anything
+# under `../` has to be expressed as a glob to land at the right path.
+SHARED_SUPPORT_FILES = [
+    "../*.html",
+    "../*.css",
+    "../checkout/js/**",
+    "../checkout/resources/**",
+]
+
+
+def ClusterSupportFiles(wrapperPathStrList):
+    """Compute the support-files entries needed for one cluster.
+
+    Tests live in `checkout/<top>/...` where `<top>` is `conformance`,
+    `conformance2`, or `deqp`. Cross-references stay within `<top>/<2nd>` for
+    the GLES suites (e.g. `conformance/ogles/ogles-utils.js` reached via
+    `../../ogles-utils.js`), so 2nd-level scoping is the tightest safe glob.
+    Deqp tests additionally depend on `deqp/deqp-deps.js` at the deqp root and
+    on the closure library, so for deqp clusters we widen to the full deqp
+    tree.
+    """
+    scopes = set()
+    needsClosure = False
+    for wrapperPathStr in wrapperPathStrList:
+        parts = WrapperPathParts(wrapperPathStr)
+        top = parts[0]
+        if top == "..":
+            # The always-fail wrapper lives outside checkout/; covered by
+            # SHARED_SUPPORT_FILES.
+            continue
+        if top == "deqp":
+            scopes.add("../checkout/deqp/**")
+            needsClosure = True
+        elif len(parts) >= 2:
+            scopes.add(f"../checkout/{top}/{parts[1]}/**")
+        else:
+            scopes.add(f"../checkout/{top}/**")
+    if needsClosure:
+        scopes.add("../checkout/closure-library/**")
+    return sorted(set(SHARED_SUPPORT_FILES) | scopes)
+
+
+def FormatSupportFiles(paths):
+    return "\n".join(f'  "{p}",' for p in paths)
+
+
+def WriteManifests(wrapperPathStrList):
     errataMap = LoadErrata()
 
     # DEFAULT_ERRATA
     defaultSectionName = "DEFAULT"
-
     defaultSectionLines = []
     if defaultSectionName in errataMap:
         defaultSectionLines = errataMap[defaultSectionName]
         del errataMap[defaultSectionName]
-
     defaultSectionStr = "\n".join(defaultSectionLines)
 
-    # SUPPORT_FILES
-    supportPathStrList = [ManifestPathStr(x) for x in supportPathStrList]
-    supportPathStrList = sorted(supportPathStrList)
-    supportFilesStr = '",\n  "'.join(supportPathStrList)
-    supportFilesStr = '[\n  "' + supportFilesStr + '",\n]'
-
-    # MANIFEST_TESTS
-    manifestTestLineList = []
+    # Bucket wrappers by subsuite, then tree-split each subsuite by path.
     wrapperPathStrList = sorted(wrapperPathStrList)
+    bySubsuite = defaultdict(list)
     for wrapperPathStr in wrapperPathStrList:
-        wrapperManifestPathStr = ManifestPathStr(wrapperPathStr)
-        sectionName = '\n["' + wrapperManifestPathStr + '"]'
-        manifestTestLineList.append(sectionName)
-
-        errataLines = []
-
         subsuite = ChooseSubsuite(wrapperPathStr)
-        errataLines.append('subsuite = "' + subsuite + '"')
+        bySubsuite[subsuite].append(wrapperPathStr)
 
-        if wrapperPathStr in errataMap:
-            assert subsuite
-            errataLines += errataMap[wrapperPathStr]
-            del errataMap[wrapperPathStr]
+    templateShell = ImportTemplate(MANIFEST_TEMPLATE_FILE)
 
-        manifestTestLineList += errataLines
-        continue
+    writtenManifests = []
+    for subsuite in sorted(bySubsuite):
+        items = [(WrapperPathParts(p), p) for p in bySubsuite[subsuite]]
+        clusters = TreeSplit(items, "")
+        for label, wrapperPaths in clusters:
+            manifestFileName = ManifestFileName(subsuite, label)
+
+            manifestTestLineList = []
+            for wrapperPathStr in sorted(wrapperPaths):
+                wrapperManifestPathStr = ManifestPathStr(wrapperPathStr)
+                manifestTestLineList.append('\n["' + wrapperManifestPathStr + '"]')
+                if wrapperPathStr in errataMap:
+                    manifestTestLineList += errataMap[wrapperPathStr]
+                    del errataMap[wrapperPathStr]
+
+            supportFilesStr = FormatSupportFiles(ClusterSupportFiles(wrapperPaths))
+            templateDict = {
+                "SUBSUITE": subsuite,
+                "DEFAULT_ERRATA": defaultSectionStr,
+                "SUPPORT_FILES": supportFilesStr,
+                "MANIFEST_TESTS": "\n".join(manifestTestLineList),
+            }
+            destPath = os.path.join(GENERATED_PATHSTR, manifestFileName)
+            OutputFilledTemplate(templateShell, templateDict, destPath)
+            writtenManifests.append((manifestFileName, len(wrapperPaths)))
 
     if errataMap:
         print("Errata left in map:")
@@ -429,17 +523,38 @@ def WriteManifest(wrapperPathStrList, supportPathStrList):
             print(" " * 4 + x)
         assert False
 
-    manifestTestsStr = "\n".join(manifestTestLineList)
+    WriteGeneratedMozBuild([name for name, _ in writtenManifests])
 
-    # Fill the template.
-    templateDict = {
-        "DEFAULT_ERRATA": defaultSectionStr,
-        "SUPPORT_FILES": supportFilesStr,
-        "MANIFEST_TESTS": manifestTestsStr,
-    }
+    print(f"\nGenerated {len(writtenManifests)} manifests:")
+    for name, count in writtenManifests:
+        print(f"  {count:5d}  {name}")
+    return [name for name, _ in writtenManifests]
 
-    destPath = destPathStr.replace("/", os.sep)
-    FillTemplate(MANIFEST_TEMPLATE_FILE, templateDict, destPath)
+
+def WriteGeneratedMozBuild(manifestFileNames):
+    """Emit a moz.build inside GENERATED_PATHSTR/ listing the manifests.
+
+    The hand-written dom/canvas/moz.build pulls this in via
+    `DIRS += ["test/webgl-conf/generated"]`, so the set of manifests can grow
+    or shrink without touching the hand-written build files.
+    """
+    destPath = os.path.join(GENERATED_PATHSTR, "moz.build")
+    lines = [
+        "# This Source Code Form is subject to the terms of the Mozilla Public",
+        "# License, v. 2.0. If a copy of the MPL was not distributed with this",
+        "# file, You can obtain one at http://mozilla.org/MPL/2.0/.",
+        "",
+        "# GENERATED FILE. Do not edit. Regenerate by running",
+        "# dom/canvas/test/webgl-conf/generate-wrappers-and-manifest.py.",
+        "",
+        "MOCHITEST_MANIFESTS += [",
+    ]
+    for name in sorted(manifestFileNames):
+        lines.append(f'    "{name}",')
+    lines.append("]")
+    lines.append("")
+    with open(destPath, "w", newline="\n") as f:
+        f.write("\n".join(lines))
 
 
 ##############################
@@ -524,41 +639,14 @@ def LoadErrata():
 ########################################################################
 
 
-def GetSupportFileList():
-    ret = EXTRA_SUPPORT_FILES[:]
-
-    for pathStr in SUPPORT_DIRS:
-        ret += GetFilePathListForDir(pathStr)
-        continue
-
-    for pathStr in ret:
-        path = pathStr.replace("/", os.sep)
-        assert os.path.exists(path), path + "\n\n\n" + "pathStr: " + str(pathStr)
-        continue
-
-    return ret
-
-
-def GetFilePathListForDir(baseDir):
-    ret = []
-    for root, folders, files in os.walk(baseDir):
-        for f in files:
-            filePath = os.path.join(root, f)
-            filePath = filePath.replace(os.sep, "/")
-            ret.append(filePath)
-
-    return ret
-
-
 if __name__ == "__main__":
     file_dir = Path(__file__).parent
     os.chdir(str(file_dir))
-    shutil.rmtree(file_dir / "generated", True)
+    shutil.rmtree(file_dir / GENERATED_PATHSTR, True)
 
     testEntryList = GetTestList()
     wrapperPathStrList = WriteWrappers(testEntryList)
 
-    supportPathStrList = GetSupportFileList()
-    WriteManifest(wrapperPathStrList, supportPathStrList)
+    WriteManifests(wrapperPathStrList)
 
-    print("Done!")
+    print("\nDone!")

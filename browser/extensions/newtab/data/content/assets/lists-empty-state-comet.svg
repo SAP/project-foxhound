@@ -1,0 +1,33 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="75" height="66" viewBox="0 0 75 66" fill="none">
+  <rect x="27.2803" y="19.9014" width="47.7194" height="45.5571" rx="7.32511" fill="#E8E8E8" fill-opacity="0.33"/>
+  <g clip-path="url(#empty-list-clip)" fill="context-fill currentColor" transform="translate(34.8193 30.9895)">
+    <circle cx="2.25677" cy="2.28656" r="2.25677"/>
+    <rect x="7.04785" y="0" width="25.5944" height="4.51402" rx="2.25701"/>
+    <circle cx="2.25677" cy="11.3873" r="2.25677"/>
+    <rect x="7.04785" y="9.11523" width="25.5944" height="4.51402" rx="2.25701"/>
+    <circle cx="2.25677" cy="20.488" r="2.25677"/>
+    <rect x="7.04785" y="18.2308" width="25.5944" height="4.51402" rx="2.25701"/>
+  </g>
+  <path d="M48.8944 0.00728429C34.9081 3.91978 26.7084 13.2709 22.295 20.1697C19.2796 24.8829 18.0314 28.4515 17.9131 28.3601C17.0441 27.687 16.2004 27.0706 15.3825 26.5043C6.23666 20.1752 0.364337 20.2726 0 21.1691C0 21.1691 4.67419 24.8576 11.8916 35.5841C13.7969 38.4163 16.4497 44.293 18.2207 44.5726C20.5603 44.9424 22.8503 43.8698 27.1382 34.4674C30.8443 26.3408 31.3435 23.6661 34.9478 17.3628C39.5229 9.36228 47.0094 2.19771 49.0694 0.301726C49.2043 0.177345 49.0722 -0.0427983 48.8944 0.00728429Z" fill="url(#empty-list-comet)"/>
+  <path d="M21.402 30.9027C21.402 30.9027 24.161 26.1465 23.5567 22.4932C23.429 21.7211 22.9551 20.9258 22.2892 20.1509C20.2259 23.3897 18.7653 26.5747 18.2077 27.8108C18.0525 28.1547 17.9287 28.3644 17.9287 28.3644L21.402 30.9027Z" fill="url(#empty-list-comet-tail)"/>
+  <defs>
+    <linearGradient id="empty-list-comet" x1="-8.21692" y1="44.6334" x2="58.7563" y2="-3.64214" gradientUnits="userSpaceOnUse">
+      <stop offset="0.088" stop-color="#FFEB49"/>
+      <stop offset="0.568" stop-color="#FF6600"/>
+      <stop offset="0.614" stop-color="#FE6009"/>
+      <stop offset="0.691" stop-color="#FD5322"/>
+      <stop offset="0.789" stop-color="#FC3C4C"/>
+      <stop offset="0.868" stop-color="#FB2872"/>
+    </linearGradient>
+    <linearGradient id="empty-list-comet-tail" x1="21.1892" y1="25.7385" x2="14.9895" y2="27.7382" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FC2B32" stop-opacity="0"/>
+      <stop offset="0.999" stop-color="#FD0174"/>
+    </linearGradient>
+    <clipPath id="empty-list-clip">
+      <rect width="32.6419" height="22.7446"/>
+    </clipPath>
+  </defs>
+</svg>

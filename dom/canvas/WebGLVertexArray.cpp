@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,11 +13,11 @@
 
 namespace mozilla {
 
-WebGLVertexArray* WebGLVertexArray::Create(WebGLContext* webgl) {
+RefPtr<WebGLVertexArray> WebGLVertexArray::Create(WebGLContext* webgl) {
   if (webgl->gl->IsSupported(gl::GLFeature::vertex_array_object)) {
-    return new WebGLVertexArrayGL(webgl);
+    return MakeRefPtr<WebGLVertexArrayGL>(webgl);
   }
-  return new WebGLVertexArrayFake(webgl);
+  return MakeRefPtr<WebGLVertexArrayFake>(webgl);
 }
 
 WebGLVertexArray::WebGLVertexArray(WebGLContext* const webgl)

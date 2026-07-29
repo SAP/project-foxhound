@@ -1,6 +1,7 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+@file:Suppress("UndocumentedPublicClass")
 
 package mozilla.components.ui.richtext.ir
 
@@ -13,13 +14,13 @@ import androidx.compose.runtime.Stable
  * This is meant to be an abstraction that is agnostic of the underlying parser or rich content format.
  */
 @Immutable
-internal data class RichDocument(val blocks: List<BlockContent>)
+data class RichDocument(val blocks: List<BlockContent>)
 
 /**
  * Inline content.
  */
 @Stable
-internal sealed interface InlineContent {
+sealed interface InlineContent {
 
     data object LineBreak : InlineContent
     data class Plain(val value: String) : InlineContent
@@ -31,7 +32,7 @@ internal sealed interface InlineContent {
 
 @JvmInline
 @Stable
-internal value class HeadingLevel(val level: Int) {
+value class HeadingLevel(val level: Int) {
 
     companion object {
         val H1 = HeadingLevel(1)
@@ -49,7 +50,7 @@ internal value class HeadingLevel(val level: Int) {
  * A [BlockContent] can contain any combination of one or more [InlineContent] and other [BlockContent]
  */
 @Stable
-internal sealed interface BlockContent {
+sealed interface BlockContent {
 
     /**
      * A paragraph of inline content.

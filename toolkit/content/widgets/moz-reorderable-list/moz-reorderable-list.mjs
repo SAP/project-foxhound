@@ -23,6 +23,11 @@ const REORDER_PROP = "__mozReorderableIndex";
  * - `targetElement`: The element over which the dragged element was dropped.
  * - `position`: The position of the drop relative to the target element. -1
  *   means before, 0 means after.
+ * - `draggedIndex`: The original index of the dragged element.
+ * - `targetIndex`: The index of the target element.
+ * - `insertAt`: The index at which the dragged element should be inserted after
+ *   it has been removed from its original position (i.e. accounting for the
+ *   left-shift caused by splicing it out).
  *
  * Which children are reorderable is determined by the `itemSelector` property.
  *
@@ -220,7 +225,11 @@ export default class MozReorderableList extends MozLitElement {
 
     this.indicatorEl.hidden = false;
     if (position < 0) {
-      this.indicatorEl.style.top = `${itemRect.top - containerRect.top}px`;
+      const top = itemRect.top - containerRect.top;
+      // Ensure the indicator is rendered inside the container when moving an
+      // item to the top of the list. This cancels out the negative margin based
+      // on the indicator height set in the css, see Bug 2033867 for details.
+      this.indicatorEl.style.top = `${Math.max(this.indicatorEl.offsetHeight, top)}px`;
     } else {
       this.indicatorEl.style.top = `${itemRect.bottom - containerRect.top}px`;
     }
@@ -272,9 +281,14 @@ export default class MozReorderableList extends MozLitElement {
     this.emitEvent(REORDER_EVENT, {
       draggedElement: this.#draggedElement,
       targetElement: this.#dropTargetInfo.targetElement,
-      position: this.#dropTargetInfo.position,
+      position,
       draggedIndex,
       targetIndex,
+      // +1 to insert after target; subtract 1 when draggedIndex < targetIndex
+      // to compensate for the left-shift after splice.
+      insertAt:
+        (position < 0 ? targetIndex : targetIndex + 1) -
+        (draggedIndex < targetIndex ? 1 : 0),
     });
     this.onDragEnd();
   }
@@ -316,12 +330,17 @@ export default class MozReorderableList extends MozLitElement {
       return undefined;
     }
 
+    let targetIndex = fromIndex + direction;
     return {
       draggedElement: fromEl,
       targetElement: items[fromIndex + direction],
       position: Math.min(direction, 0),
       draggedIndex: fromIndex,
-      targetIndex: fromIndex + direction,
+      targetIndex,
+      // Keyboard moves are always single-step, whereas drag-n-drop has more
+      // flexibility. With a keyboard move, the drop position equals the target
+      // index, so the post-splice insertion index is simply the target index.
+      insertAt: targetIndex,
     };
   }
 

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -2241,11 +2239,13 @@ void BacktrackingAllocator::tryMergeBundles(LiveBundle* bundle0,
 }
 
 // Helper for ::mergeAndQueueRegisters
-void BacktrackingAllocator::allocateStackDefinition(VirtualRegister& reg) {
+bool BacktrackingAllocator::allocateStackDefinition(VirtualRegister& reg) {
   LInstruction* ins = reg.ins()->toInstruction();
   if (reg.def()->type() == LDefinition::STACKRESULTS) {
     LStackArea alloc(ins->toInstruction());
-    stackSlotAllocator.allocateStackArea(&alloc);
+    if (!stackSlotAllocator.allocateStackArea(&alloc)) {
+      return false;
+    }
     reg.def()->setOutput(alloc);
   } else {
     // Because the definitions are visited in order, the area has been allocated
@@ -2255,6 +2255,7 @@ void BacktrackingAllocator::allocateStackDefinition(VirtualRegister& reg) {
     const LStackArea* areaAlloc = area.def()->output()->toStackArea();
     reg.def()->setOutput(areaAlloc->resultAlloc(ins, reg.def()));
   }
+  return true;
 }
 
 // Helper for ::mergeAndQueueRegisters
@@ -2483,8 +2484,9 @@ bool BacktrackingAllocator::mergeAndQueueRegisters() {
     VirtualRegister& reg = vregs[i];
 
     // Eagerly allocate stack result areas and their component stack results.
-    if (reg.def() && reg.def()->policy() == LDefinition::STACK) {
-      allocateStackDefinition(reg);
+    if (reg.def() && reg.def()->policy() == LDefinition::STACK &&
+        !allocateStackDefinition(reg)) {
+      return false;
     }
 
     for (VirtualRegister::RangeIterator iter(reg); iter; iter++) {
@@ -3042,12 +3044,12 @@ bool BacktrackingAllocator::splitAcrossCalls(LiveBundle* bundle) {
   MOZ_ASSERT(!bundleCallPositions.empty());
 
 #ifdef JS_JITSPEW
-  JitSpewStart(JitSpew_RegAlloc, "  .. split across calls at ");
-  for (size_t i = 0; i < bundleCallPositions.length(); ++i) {
-    JitSpewCont(JitSpew_RegAlloc, "%s%u", i != 0 ? ", " : "",
-                bundleCallPositions[i].bits());
+  {
+    AutoJitSpewMessage msg(JitSpew_RegAlloc, "  .. split across calls at ");
+    for (size_t i = 0; i < bundleCallPositions.length(); ++i) {
+      msg.append("%s%u", i != 0 ? ", " : "", bundleCallPositions[i].bits());
+    }
   }
-  JitSpewFin(JitSpew_RegAlloc);
 #endif
 
   return splitAt(bundle, bundleCallPositions);
@@ -3972,7 +3974,10 @@ bool BacktrackingAllocator::pickStackSlot(SpillSet* spillSet) {
 
   // We need a new physical stack slot.
   LStackSlot::Width width = LStackSlot::width(type);
-  uint32_t stackSlot = stackSlotAllocator.allocateSlot(width);
+  uint32_t stackSlot;
+  if (!stackSlotAllocator.allocateSlot(width, &stackSlot)) {
+    return false;
+  }
 
   SpillSlot* spillSlot =
       new (alloc().fallible()) SpillSlot(stackSlot, width, alloc().lifoAlloc());
@@ -4819,27 +4824,25 @@ UniqueChars LiveBundle::toString() const {
 void BacktrackingAllocator::dumpLiveRangesByVReg(const char* who) {
   MOZ_ASSERT(!vregs[0u].hasRanges());
 
-  JitSpewCont(JitSpew_RegAlloc, "\n");
+  JitSpew(JitSpew_RegAlloc, "\n");
   JitSpew(JitSpew_RegAlloc, "Live ranges by virtual register (%s):", who);
 
   for (uint32_t i = 1; i < graph.numVirtualRegisters(); i++) {
-    JitSpewHeader(JitSpew_RegAlloc);
-    JitSpewCont(JitSpew_RegAlloc, "  ");
+    AutoJitSpewMessage msg(JitSpew_RegAlloc, "  ");
     VirtualRegister& reg = vregs[i];
     for (VirtualRegister::RangeIterator iter(reg); iter; iter++) {
       if (*iter != reg.firstRange()) {
-        JitSpewCont(JitSpew_RegAlloc, " ## ");
+        msg.append(" ## ");
       }
-      JitSpewCont(JitSpew_RegAlloc, "%s", iter->toString().get());
+      msg.append("%s", iter->toString().get());
     }
-    JitSpewCont(JitSpew_RegAlloc, "\n");
   }
 }
 
 void BacktrackingAllocator::dumpLiveRangesByBundle(const char* who) {
   MOZ_ASSERT(!vregs[0u].hasRanges());
 
-  JitSpewCont(JitSpew_RegAlloc, "\n");
+  JitSpew(JitSpew_RegAlloc, "\n");
   JitSpew(JitSpew_RegAlloc, "Live ranges by bundle (%s):", who);
 
   for (uint32_t i = 1; i < graph.numVirtualRegisters(); i++) {
@@ -4859,13 +4862,13 @@ void BacktrackingAllocator::dumpAllocations() {
 
   dumpLiveRangesByBundle("in dumpAllocations()");
 
-  JitSpewCont(JitSpew_RegAlloc, "\n");
+  JitSpew(JitSpew_RegAlloc, "\n");
   JitSpew(JitSpew_RegAlloc, "Allocations by physical register:");
 
   for (size_t i = 0; i < AnyRegister::Total; i++) {
     if (registers[i].allocatable && !registers[i].allocations.empty()) {
-      JitSpewHeader(JitSpew_RegAlloc);
-      JitSpewCont(JitSpew_RegAlloc, "  %s:", AnyRegister::FromCode(i).name());
+      AutoJitSpewMessage msg(JitSpew_RegAlloc,
+                             "  %s:", AnyRegister::FromCode(i).name());
       bool first = true;
       LiveRangePlusSet::Iter lrpIter(&registers[i].allocations);
       while (lrpIter.hasMore()) {
@@ -4873,15 +4876,14 @@ void BacktrackingAllocator::dumpAllocations() {
         if (first) {
           first = false;
         } else {
-          fprintf(stderr, " /");
+          msg.append(" /");
         }
-        fprintf(stderr, " %s", range->toString().get());
+        msg.append(" %s", range->toString().get());
       }
-      JitSpewCont(JitSpew_RegAlloc, "\n");
     }
   }
 
-  JitSpewCont(JitSpew_RegAlloc, "\n");
+  JitSpew(JitSpew_RegAlloc, "\n");
 }
 
 #endif  // JS_JITSPEW
@@ -4893,10 +4895,10 @@ void BacktrackingAllocator::dumpAllocations() {
 ///////////////////////////////////////////////////////////////////////////////
 
 bool BacktrackingAllocator::go() {
-  JitSpewCont(JitSpew_RegAlloc, "\n");
+  JitSpew(JitSpew_RegAlloc, "\n");
   JitSpew(JitSpew_RegAlloc, "Beginning register allocation");
 
-  JitSpewCont(JitSpew_RegAlloc, "\n");
+  JitSpew(JitSpew_RegAlloc, "\n");
   if (JitSpewEnabled(JitSpew_RegAlloc)) {
     dumpInstructions("(Pre-allocation LIR)");
   }
@@ -4919,7 +4921,7 @@ bool BacktrackingAllocator::go() {
     return false;
   }
 
-  JitSpewCont(JitSpew_RegAlloc, "\n");
+  JitSpew(JitSpew_RegAlloc, "\n");
   JitSpew(JitSpew_RegAlloc, "Beginning grouping and queueing registers");
   if (!mergeAndQueueRegisters()) {
     return false;
@@ -4971,9 +4973,9 @@ bool BacktrackingAllocator::go() {
   // been allocated a register or is marked for spilling.  In the latter case
   // it will have been added to ::spilledBundles.
 
-  JitSpewCont(JitSpew_RegAlloc, "\n");
+  JitSpew(JitSpew_RegAlloc, "\n");
   JitSpew(JitSpew_RegAlloc, "Beginning main allocation loop");
-  JitSpewCont(JitSpew_RegAlloc, "\n");
+  JitSpew(JitSpew_RegAlloc, "\n");
 
   // Allocate, spill and split bundles until finished.
   while (!allocationQueue.empty()) {
@@ -4981,8 +4983,9 @@ bool BacktrackingAllocator::go() {
       return false;
     }
 
-    QueueItem item = allocationQueue.removeHighest();
-    if (!processBundle(mir, item.bundle)) {
+    LiveBundle* bundle = allocationQueue.highest().bundle;
+    allocationQueue.popHighest();
+    if (!processBundle(mir, bundle)) {
       return false;
     }
   }
@@ -5004,19 +5007,19 @@ bool BacktrackingAllocator::go() {
   // refinement is implemented in the un-landed patch at bug 1758274 comment
   // 15.
 
-  JitSpewCont(JitSpew_RegAlloc, "\n");
+  JitSpew(JitSpew_RegAlloc, "\n");
   JitSpew(JitSpew_RegAlloc,
           "Main allocation loop complete; "
           "beginning spill-bundle allocation loop");
-  JitSpewCont(JitSpew_RegAlloc, "\n");
+  JitSpew(JitSpew_RegAlloc, "\n");
 
   if (!tryAllocatingRegistersForSpillBundles()) {
     return false;
   }
 
-  JitSpewCont(JitSpew_RegAlloc, "\n");
+  JitSpew(JitSpew_RegAlloc, "\n");
   JitSpew(JitSpew_RegAlloc, "Spill-bundle allocation loop complete");
-  JitSpewCont(JitSpew_RegAlloc, "\n");
+  JitSpew(JitSpew_RegAlloc, "\n");
 
   // After this point, the VirtualRegister ranges are sorted and must stay
   // sorted.
@@ -5048,7 +5051,7 @@ bool BacktrackingAllocator::go() {
     return false;
   }
 
-  JitSpewCont(JitSpew_RegAlloc, "\n");
+  JitSpew(JitSpew_RegAlloc, "\n");
   if (JitSpewEnabled(JitSpew_RegAlloc)) {
     dumpInstructions("(Post-allocation LIR)");
   }

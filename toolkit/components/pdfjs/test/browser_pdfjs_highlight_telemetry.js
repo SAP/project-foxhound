@@ -33,6 +33,9 @@ add_task(async function test() {
         set: [
           ["pdfjs.annotationEditorMode", 0],
           ["pdfjs.enableHighlight", true],
+          // Disable right-click on images to avoid opening the context menu
+          // during tests because of some pointer issues when selecting text.
+          ["pdfjs.imagesRightClickMinSize", -1],
         ],
       });
 

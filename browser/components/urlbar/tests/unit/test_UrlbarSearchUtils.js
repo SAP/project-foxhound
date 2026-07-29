@@ -52,6 +52,10 @@ add_setup(async function () {
     name: "firefox",
   });
 
+  // Force settings redesign to false, so that `hideOneOffButton` will correctly
+  // work for the time being.
+  Services.prefs.setBoolPref("browser.settings-redesign.enabled", false);
+
   // Tell the search service we are running in the US.  This also has the
   // desired side-effect of preventing our geoip lookup.
   Services.prefs.setCharPref("browser.search.region", "US");

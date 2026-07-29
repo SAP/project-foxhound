@@ -26,5 +26,8 @@ includes = ["certt.h", "prerror.h", "nsString.h", "nsTArray.h"]
 exclude = ["NeqoDecoder", "NeqoEncoder", "NeqoHttp3Conn", "NetAddr"]
 item_types = ["globals", "enums", "structs", "unions", "typedefs", "opaque", "functions", "constants"]
 
+[defines]
+"target_vendor = apple" = "__APPLE__"
+
 [export.rename]
 "ThinVec" = "nsTArray"

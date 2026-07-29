@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 1; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -117,7 +116,7 @@ enum RequestDestination {
   "",
   "audio", "audioworklet", "document", "embed", "font", "frame", "iframe",
   "image", "json", "manifest", "object", "paintworklet", "report", "script",
-  "sharedworker", "style",  "track", "video", "worker", "xslt"
+  "sharedworker", "style", "text", "track", "video", "worker", "xslt"
 };
 
 enum RequestMode { "same-origin", "no-cors", "cors", "navigate" };

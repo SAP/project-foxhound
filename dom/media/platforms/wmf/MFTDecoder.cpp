@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,8 +11,8 @@
 #include "mozilla/mscom/Utils.h"
 #include "nsThreadUtils.h"
 
-#define LOG(...) MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
-#define LOGV(...) MOZ_LOG(sPDMLog, mozilla::LogLevel::Verbose, (__VA_ARGS__))
+#define LOG(...) MOZ_LOG_FMT(sPDMLog, mozilla::LogLevel::Debug, __VA_ARGS__)
+#define LOGV(...) MOZ_LOG_FMT(sPDMLog, mozilla::LogLevel::Verbose, __VA_ARGS__)
 
 namespace mozilla {
 MFTDecoder::MFTDecoder() {
@@ -102,7 +100,7 @@ MFTDecoder::Create(const GUID& aCategory, const GUID& aInSubtype,
       SUCCEEDED(hr),
       nsPrintfCString("IMFActivate::ActivateObject failed with code %lx", hr)
           .get());
-  LOG("MFTDecoder::Create, created decoder, input=%s, output=%s",
+  LOG("MFTDecoder::Create, created decoder, input={}, output={}",
       GetSubTypeStr(aInSubtype).get(), GetSubTypeStr(aOutSubtype).get());
   return hr;
 }
@@ -205,7 +203,7 @@ MFTDecoder::SetDecoderOutputType(
       0, typeIndex++, getter_AddRefs(outputType)))) {
     GUID outSubtype = {0};
     RETURN_IF_FAILED(outputType->GetGUID(MF_MT_SUBTYPE, &outSubtype));
-    LOGV("Searching compatible type, input=%s, output=%s",
+    LOGV("Searching compatible type, input={}, output={}",
          GetSubTypeStr(aSubType).get(), GetSubTypeStr(outSubtype).get());
     lastOutputType = outputType;
     lastOutputSubtype = outSubtype;
@@ -229,7 +227,7 @@ MFTDecoder::SetDecoderOutputType(
         0, typeIndex++, getter_AddRefs(outputType)))) {
       GUID outSubtype = {0};
       RETURN_IF_FAILED(outputType->GetGUID(MF_MT_SUBTYPE, &outSubtype));
-      LOGV("Searching preferred type, input=%s, output=%s",
+      LOGV("Searching preferred type, input={}, output={}",
            GetSubTypeStr(preferredSubtype).get(),
            GetSubTypeStr(outSubtype).get());
       lastOutputType = outputType;
@@ -248,12 +246,12 @@ MFTDecoder::SetDecoderOutputType(
   }
 
   if (foundType != Result::eNotFound) {
-    LOG("Found %s type %s",
+    LOG("Found {} type {}",
         foundType == Result::eFoundCompatibleType ? "compatible" : "preferred",
         GetSubTypeStr(lastOutputSubtype).get());
   } else {
     LOG("Can't find compatible and preferred type, use the last available type "
-        "%s",
+        "{}",
         GetSubTypeStr(lastOutputSubtype).get());
   }
   RETURN_IF_FAILED(aCallback(lastOutputType));
@@ -270,7 +268,7 @@ HRESULT
 MFTDecoder::SendMFTMessage(MFT_MESSAGE_TYPE aMsg, ULONG_PTR aData) {
   MOZ_ASSERT(mscom::IsCurrentThreadMTA());
   NS_ENSURE_TRUE(mDecoder != nullptr, E_POINTER);
-  LOG("Send message '%s'", MFTMessageTypeToStr(aMsg));
+  LOG("Send message '{}'", MFTMessageTypeToStr(aMsg));
   HRESULT hr = mDecoder->ProcessMessage(aMsg, aData);
   NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
   return S_OK;

@@ -5,21 +5,24 @@
 from mozdevice import ADBError
 
 
-def tune_performance(device, log=None, timeout=None):
+def tune_performance(device, log=None, timeout=None, test_names=None):
     """Set various performance-oriented parameters, to reduce jitter.
 
     This includes some device-specific kernel tweaks.
 
     For more information, see https://bugzilla.mozilla.org/show_bug.cgi?id=1547135.
     """
-    PerformanceTuner(device, log=log, timeout=timeout).tune_performance()
+    PerformanceTuner(
+        device, log=log, timeout=timeout, test_names=test_names
+    ).tune_performance()
 
 
 class PerformanceTuner:
-    def __init__(self, device, log=None, timeout=None):
+    def __init__(self, device, log=None, timeout=None, test_names=None):
         self.device = device
         self.log = log or self.device._logger
         self.timeout = timeout
+        self.test_names = test_names or []
 
     def tune_performance(self):
         self.log.info("tuning android device performance")
@@ -35,6 +38,11 @@ class PerformanceTuner:
             self.set_cpu_performance_parameters(device_name)
             self.set_gpu_performance_parameters(device_name)
             self.set_kernel_performance_parameters()
+            if "SM-A556" in device_name and any(
+                "speedometer3" in n for n in self.test_names
+            ):
+                self.disable_accessibility()
+                self.disable_lt_services()
         self.device.clear_logcat(timeout=self.timeout)
         self.log.info("android device performance tuning complete")
 
@@ -84,6 +92,24 @@ class PerformanceTuner:
                 self.log.info(" ".join(["successfully terminated:", service]))
             else:
                 self.log.warning(" ".join(["failed to terminate:", service]))
+
+    def disable_accessibility(self):
+        self.log.info("disabling accessibility services")
+        self.device.shell_bool(
+            'settings put secure enabled_accessibility_services ""',
+            timeout=self.timeout,
+        )
+        self.device.shell_bool(
+            "settings put secure accessibility_enabled 0",
+            timeout=self.timeout,
+        )
+
+    def disable_lt_services(self):
+        self.log.info("disabling LambdaTest services")
+        for pkg in ("com.genymobile.scrcpy", "com.lambdatest.androidwebrtc"):
+            self.device.shell_bool(f"am force-stop {pkg}", timeout=self.timeout)
+            self.device.shell_bool(f"pm disable {pkg}", timeout=self.timeout)
+            self.device.shell_bool(f"pm disable-user {pkg}", timeout=self.timeout)
 
     def disable_animations(self):
         self.log.info("disabling animations")

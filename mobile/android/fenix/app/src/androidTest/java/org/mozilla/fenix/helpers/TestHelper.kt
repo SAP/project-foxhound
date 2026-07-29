@@ -8,6 +8,8 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import android.view.View
+import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeTestRule
@@ -33,24 +35,28 @@ import androidx.test.uiautomator.Until
 import mozilla.components.support.ktx.android.content.appName
 import org.hamcrest.CoreMatchers.allOf
 import org.hamcrest.Matcher
-import org.junit.Assert
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.snackbar.SNACKBAR_BUTTON_TEST_TAG
 import org.mozilla.fenix.compose.snackbar.SNACKBAR_TEST_TAG
 import org.mozilla.fenix.helpers.Constants.TAG
+import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
 import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectExists
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
+import org.mozilla.fenix.helpers.MatcherHelper.itemWithResId
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
+import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeLong
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeShort
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeVeryShort
 import org.mozilla.fenix.helpers.ext.waitNotNull
+import kotlin.test.assertNotNull
 
 object TestHelper {
 
     val appContext: Context = InstrumentationRegistry.getInstrumentation().targetContext
     val appName = appContext.appName
+    val shortAppName = getStringResource(R.string.app_name_firefox)
     var mDevice: UiDevice = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
     val packageName: String = appContext.packageName
 
@@ -141,6 +147,10 @@ object TestHelper {
         Log.i(TAG, "clickSnackbarButton: Trying to click $expectedText snackbar button")
         composeTestRule.onNode(hasTestTag(SNACKBAR_BUTTON_TEST_TAG) or hasText(expectedText)).performClick()
         Log.i(TAG, "clickSnackbarButton: Clicked $expectedText snackbar button")
+        composeTestRule.waitForIdle()
+        Log.i(TAG, "clickSnackbarButton: Compose is idle after clicking $expectedText snackbar button")
+        mDevice.waitForIdle()
+        Log.i(TAG, "clickSnackbarButton: Device is idle after clicking $expectedText snackbar button")
     }
 
     fun waitUntilSnackbarGone() {
@@ -152,6 +162,47 @@ object TestHelper {
     }
 
     fun verifySnackBarText(expectedText: String) = assertUIObjectExists(itemContainingText(expectedText))
+
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    fun verifySnackBarText(composeTestRule: ComposeTestRule, expectedText: String) {
+        Log.i(TAG, "verifySnackBarText: Waiting for snackbar with text: $expectedText")
+        composeTestRule.waitUntilAtLeastOneExists(hasText(expectedText), waitingTimeLong)
+        Log.i(TAG, "verifySnackBarText: Found snackbar with text: $expectedText")
+    }
+
+    /**
+     * Click the main three-dot menu button and wait for the menu's bottom sheet to appear.
+     *
+     * If the click is swallowed (e.g. by an in-progress page navigation or compose
+     * animation) and the bottom sheet does not appear, drain pending idle work and
+     * re-issue the click once before failing.
+     */
+    fun openMainMenuAndAwaitBottomSheet(composeTestRule: ComposeTestRule) {
+        composeTestRule.waitForIdle()
+        mDevice.waitForIdle()
+        Log.i(TAG, "openMainMenuAndAwaitBottomSheet: Waiting for main menu button to exist")
+        val menuButton = mDevice.wait(
+            Until.findObject(By.desc(getStringResource(R.string.content_description_menu))),
+            waitingTimeLong,
+        ) ?: throw AssertionError("Main menu button not found after $waitingTimeLong ms")
+        Log.i(TAG, "openMainMenuAndAwaitBottomSheet: Trying to click main menu button")
+        menuButton.click()
+        Log.i(TAG, "openMainMenuAndAwaitBottomSheet: Clicked main menu button")
+        if (!itemWithResId("$packageName:id/design_bottom_sheet").waitForExists(waitingTime)) {
+            Log.i(TAG, "openMainMenuAndAwaitBottomSheet: Bottom sheet did not appear, draining idle and retrying")
+            composeTestRule.waitForIdle()
+            mDevice.waitForIdle()
+            if (!itemWithResId("$packageName:id/design_bottom_sheet").waitForExists(waitingTimeVeryShort)) {
+                val retryButton = mDevice.wait(
+                    Until.findObject(By.desc(getStringResource(R.string.content_description_menu))),
+                    waitingTime,
+                ) ?: throw AssertionError("Main menu button not found on retry")
+                retryButton.click()
+                Log.i(TAG, "openMainMenuAndAwaitBottomSheet: Retried click on main menu button")
+            }
+        }
+        assertUIObjectExists(itemWithResId("$packageName:id/design_bottom_sheet"))
+    }
 
     // exit from Menus to home screen or browser
     fun exitMenu() {
@@ -169,7 +220,7 @@ object TestHelper {
         this.waitForIdle()
         Log.i(TAG, "waitForObjects: Waited for device to be idle")
         Log.i(TAG, "waitForObjects: Waiting for $waitingTime ms to assert that ${obj.selector} is not null")
-        Assert.assertNotNull(obj.waitForExists(waitingTime))
+        assertNotNull(obj.waitForExists(waitingTime))
         Log.i(TAG, "waitForObjects: Waited for $waitingTime ms and asserted that ${obj.selector} is not null")
     }
 
@@ -224,4 +275,22 @@ object TestHelper {
 
     val snackbarButton: UiObject2?
         get() = mDevice.findObject(res(SNACKBAR_BUTTON_TEST_TAG))
+}
+
+/**
+ * Polls [node].assertIsDisplayed() until it succeeds or the timeout elapses.
+ *
+ * Use this after [performScrollToNode][androidx.compose.ui.test.performScrollToNode]
+ * for lazy-list items: scrolling establishes the node's existence in the semantics tree,
+ * but layout completion of its bounds can lag behind on slow Firebase shards. A plain
+ * [waitForIdle][ComposeTestRule.waitForIdle] does not always drain that, and
+ * [waitUntilAtLeastOneExists][androidx.compose.ui.test.waitUntilAtLeastOneExists] is a
+ * no-op once existence has been established.
+ */
+@OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+fun ComposeTestRule.waitUntilDisplayed(
+    node: SemanticsNodeInteraction,
+    timeoutMillis: Long = waitingTime,
+) {
+    waitUntil(timeoutMillis) { runCatching { node.assertIsDisplayed() }.isSuccess }
 }

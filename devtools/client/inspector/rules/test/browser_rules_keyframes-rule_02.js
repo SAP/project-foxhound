@@ -34,11 +34,8 @@ async function testPacman(inspector, view) {
 
   // info("Test dynamic changes to keyframe rule for #pacman");
 
-  // let defaultView = element.ownerDocument.defaultView;
-  // let ruleEditor = view.element.children[5].childNodes[0]._ruleEditor;
-  // ruleEditor.addProperty("opacity", "0", true);
+  // addProperty(view, 4, "opacity", "0");
 
-  // yield ruleEditor.applyingModifications;
   // yield once(element, "animationend");
 
   // is

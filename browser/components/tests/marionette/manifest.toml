@@ -1,4 +1,5 @@
 [DEFAULT]
-tags = "local"
+subsuite = "integration"
+tags = "local os_integration"
 
 ["test_no_errors_clean_profile.py"]

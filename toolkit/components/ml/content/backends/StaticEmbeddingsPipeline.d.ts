@@ -38,8 +38,17 @@ export interface TokenizerJSON {
   version: string; // "1.0"
 }
 
+export interface EmbeddingMetrics {
+  runTimestamps: Array<{ name: string; when: number }>;
+  inputChars: number;
+  inputTokens: number;
+  inferenceTime: number;
+  tokensPerSecond?: number;
+  charsPerSecond?: number;
+}
+
 export interface EmbeddingResponse {
-  metrics: Array<{ name: string; when: number }>;
+  metrics: EmbeddingMetrics;
   output: Array<Float32Array>;
 }
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -227,7 +225,7 @@ void AppShutdown::Init(AppShutdownMode aMode, int aExitCode,
   // Very early shutdowns can happen before the startup cache is even
   // initialized; don't bother initializing it during shutdown.
   if (auto* cache = scache::StartupCache::GetSingletonNoInit()) {
-    cache->MaybeInitShutdownWrite();
+    cache->MaybeKickOffShutdownWrite();
   }
 }
 

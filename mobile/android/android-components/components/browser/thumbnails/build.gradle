@@ -21,10 +21,10 @@ dependencies {
     implementation project(':components:concept-engine')
     implementation project(':components:support-images')
     implementation project(':components:support-ktx')
+    implementation project(':components:support-utils')
 
     implementation libs.androidx.annotation
     implementation libs.androidx.core.ktx
-    implementation libs.disklrucache
     implementation libs.kotlinx.coroutines
 
     testImplementation project(':components:support-test')
@@ -32,6 +32,7 @@ dependencies {
 
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
+    testImplementation libs.kotlin.test
     testImplementation libs.kotlinx.coroutines.test
     testImplementation libs.robolectric
 }

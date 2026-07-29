@@ -1,5 +1,7 @@
 [DEFAULT]
 subsuite = "webgpu"
+dupe-manifest = true # duplicates mochitest-disabled.toml
+
 # This file's tests should run when WebGPU is disabled by the default
 # value of `dom.webgpu.enabled` in `modules/libpref/init/StaticPrefList.yaml`.
 #

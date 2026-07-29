@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl')||!Intl.hasOwnProperty("DurationFormat"))
-
 // Test formatting zero amount for a single unit and compare "auto" against
 // "always" for the display option.
 

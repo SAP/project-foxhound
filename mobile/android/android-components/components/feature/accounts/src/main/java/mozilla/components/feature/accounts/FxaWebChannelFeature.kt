@@ -21,7 +21,6 @@ import mozilla.components.concept.engine.webextension.MessageHandler
 import mozilla.components.concept.engine.webextension.Port
 import mozilla.components.concept.engine.webextension.WebExtensionRuntime
 import mozilla.components.concept.sync.AuthType
-import mozilla.components.concept.sync.UserData
 import mozilla.components.feature.accounts.FxaWebChannelFeature.Companion.COMMAND_CAN_LINK_ACCOUNT
 import mozilla.components.feature.accounts.FxaWebChannelFeature.Companion.COMMAND_DELETE_ACCOUNT
 import mozilla.components.feature.accounts.FxaWebChannelFeature.Companion.COMMAND_LOGIN
@@ -168,7 +167,7 @@ class FxaWebChannelFeature(
             logger.debug("Processing WebChannel command: $rawCommand")
 
             val response = when (command) {
-                WebChannelCommand.CAN_LINK_ACCOUNT -> processCanLinkAccountCommand(messageId)
+                WebChannelCommand.CAN_LINK_ACCOUNT -> processCanLinkAccountCommand(accountManager, messageId, payload)
                 WebChannelCommand.FXA_STATUS -> processFxaStatusCommand(accountManager, messageId, fxaCapabilities)
                 WebChannelCommand.OAUTH_LOGIN -> processOauthLoginCommand(accountManager, payload)
                 WebChannelCommand.LOGIN -> processLoginCommand(accountManager, payload)
@@ -285,13 +284,34 @@ class FxaWebChannelFeature(
 
         /**
          * Handles the [COMMAND_CAN_LINK_ACCOUNT] event from the web-channel.
-         * Currently this always response with 'ok=true'.
          * On Fx Desktop, this event prompts a possible "another user was previously logged in on
-         * this device" warning. Currently we don't support propagating this warning to a consuming application.
+         * this device" warning. Currently we don't persist that info so can't support that, so
+         * always say it's OK to link when no one is signed in.
+         * However, when a profile is already signed in we do check that the account being linked matches,
+         * which is an important safety-valve for things like re-authenticating or authorizing new scopes.
          */
-        private fun processCanLinkAccountCommand(messageId: String): JSONObject {
-            // TODO don't allow linking if we're logged in already? This is requested after user
-            // entered their credentials.
+        private fun processCanLinkAccountCommand(
+            accountManager: FxaAccountManager,
+            messageId: String,
+            payload: JSONObject,
+        ): JSONObject {
+            // In 'data' we currently have 'email', but hopefully soon FxA will also send `uid`.
+            // If we have `uid` that's the only thing we check as emails might change.
+            val profile = accountManager.accountProfile()
+            val ok = if (profile == null) {
+                true
+            } else {
+                val data = payload.optJSONObject("data")
+                val uid = data?.optString("uid")
+                if (!uid.isNullOrEmpty()) {
+                    uid == profile.uid
+                } else {
+                    data?.optString("email") == profile.email
+                }
+            }
+            if (!ok) {
+                logger.error("Signed in user doesn't match new user, rejecting login")
+            }
             return JSONObject().also { status ->
                 status.put("id", CHANNEL_ID)
                 status.put(
@@ -302,7 +322,7 @@ class FxaWebChannelFeature(
                         message.put(
                             "data",
                             JSONObject().also { data ->
-                                data.put("ok", true)
+                                data.put("ok", ok)
                             },
                         )
                     },
@@ -345,35 +365,16 @@ class FxaWebChannelFeature(
                                     if (fxaCapabilities.contains(FxaCapability.CHOOSE_WHAT_TO_SYNC)) {
                                         capabilities.put("choose_what_to_sync", true)
                                     }
+                                    // we can check for uid in canLinkAccount
+                                    capabilities.put("can_link_account_uid", true)
                                 },
                             )
                             val account = accountManager.authenticatedAccount()
-                            if (account == null) {
+                            val signedInUserJson = account?.getSignedInUserForWebChannel()
+                            if (signedInUserJson == null) {
                                 data.put("signedInUser", JSONObject.NULL)
                             } else {
-                                data.put(
-                                    "signedInUser",
-                                    JSONObject().also { signedInUser ->
-                                        signedInUser.put(
-                                            "email",
-                                            accountManager.accountProfile()?.email ?: JSONObject.NULL,
-                                        )
-                                        signedInUser.put(
-                                            "uid",
-                                            accountManager.accountProfile()?.uid ?: JSONObject.NULL,
-                                        )
-                                        signedInUser.put(
-                                            "sessionToken",
-                                            account.getSessionToken() ?: JSONObject.NULL,
-                                        )
-                                        // Our account state machine only ever completes authentication for
-                                        // "verified" accounts, so this is always 'true'.
-                                        signedInUser.put(
-                                            "verified",
-                                            true,
-                                        )
-                                    },
-                                )
+                                data.put("signedInUser", JSONObject(signedInUserJson))
                             }
                         },
                     )
@@ -394,24 +395,15 @@ class FxaWebChannelFeature(
          * Handles the [COMMAND_LOGIN] event from the web-channel
          */
         private fun processLoginCommand(accountManager: FxaAccountManager, payload: JSONObject): JSONObject? {
-            val sessionToken: String
-            val email: String
-            val uid: String
-            val verified: Boolean
-
+            val dataJson: String
             try {
-                val data = payload.getJSONObject("data")
-                sessionToken = data.getString("sessionToken")
-                email = data.getString("email")
-                uid = data.getString("uid")
-                verified = data.getBoolean("verified")
+                dataJson = payload.getJSONObject("data").toString()
             } catch (e: JSONException) {
                 logger.error("Error while processing WebChannel login command", e)
                 return null
             }
-            val userData = UserData(sessionToken, email, uid, verified)
             CoroutineScope(Dispatchers.Main).launch {
-                accountManager.setUserData(userData)
+                accountManager.handleWebChannelLogin(dataJson)
             }
             return null
         }

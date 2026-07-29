@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -14,6 +12,8 @@
 
 #include <algorithm>
 
+#include "builtin/Array.h"
+#include "ds/Sort.h"
 #include "gc/GCEnum.h"
 #include "gc/ZoneAllocator.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_INTERNAL_INTL_ERROR
@@ -148,6 +148,45 @@ js::UniqueChars js::intl::EncodeLocale(JSContext* cx, JSString* locale) {
       [](char c) { return mozilla::IsAsciiAlphanumeric(c) || c == '-'; }));
 
   return chars;
+}
+
+js::ArrayObject* js::intl::CreateSortedArrayFromList(
+    JSContext* cx, JS::MutableHandle<StringList> list) {
+  // Reserve scratch space for MergeSort().
+  size_t initialLength = list.length();
+  if (!list.growBy(initialLength)) {
+    return nullptr;
+  }
+
+  // Sort all strings in alphabetical order.
+  MOZ_ALWAYS_TRUE(
+      MergeSort(list.begin(), initialLength, list.begin() + initialLength,
+                [](const auto* a, const auto* b, bool* lessOrEqual) {
+                  *lessOrEqual = js::CompareStrings(a, b) <= 0;
+                  return true;
+                }));
+
+  // Ensure we don't add duplicate entries to the array.
+  auto* end = std::unique(
+      list.begin(), list.begin() + initialLength,
+      [](const auto* a, const auto* b) { return EqualStrings(a, b); });
+
+  // std::unique leaves the elements after |end| with an unspecified value, so
+  // remove them first. And also delete the elements in the scratch space.
+  list.shrinkBy(std::distance(end, list.end()));
+
+  // And finally copy the strings into the result array.
+  auto* array = NewDenseFullyAllocatedArray(cx, list.length());
+  if (!array) {
+    return nullptr;
+  }
+  array->setDenseInitializedLength(list.length());
+
+  for (size_t i = 0; i < list.length(); ++i) {
+    array->initDenseElement(i, StringValue(list[i]));
+  }
+
+  return array;
 }
 
 void js::intl::AddICUCellMemory(JSObject* obj, size_t nbytes) {

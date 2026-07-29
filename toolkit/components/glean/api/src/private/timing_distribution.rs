@@ -406,7 +406,7 @@ impl TimingDistributionMetric {
                         *id,
                         None,
                         None,
-                        Some(TDMPayload::Sample(sample.clone())),
+                        Some(TDMPayload::Sample(sample)),
                     )
                 );
                 inner.accumulate_single_sample(sample)
@@ -755,7 +755,7 @@ impl TimingDistribution for TimingDistributionMetric {
                     metric_id.into(),
                     None,
                     None,
-                    Some(TDMPayload::Duration(duration.clone())),
+                    Some(TDMPayload::Duration(duration)),
                 )
             );
         }

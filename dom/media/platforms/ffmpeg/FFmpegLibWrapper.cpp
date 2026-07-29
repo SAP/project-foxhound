@@ -96,6 +96,16 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
                           AV_FUNC_61 | AV_FUNC_62,
     AV_FUNC_AVUTIL_ALL = AV_FUNC_AVCODEC_ALL | AV_FUNC_AVUTIL_MASK
   };
+  // AV_FUNC_N = 1 << (N - 53), so these two checks enforce that
+  // FFMPEG_MAX_MAJOR_VERSION matches AV_FUNC_AVCODEC_ALL exactly.
+  static_assert(
+      (AV_FUNC_AVCODEC_ALL & (1 << (FFMPEG_MAX_MAJOR_VERSION - 53))) != 0,
+      "FFMPEG_MAX_MAJOR_VERSION has no AV_FUNC entry; add bindings or lower "
+      "the version");
+  static_assert(
+      (AV_FUNC_AVCODEC_ALL & (1 << (FFMPEG_MAX_MAJOR_VERSION - 53 + 1))) == 0,
+      "New FFmpeg version added to AV_FUNC_AVCODEC_ALL; bump "
+      "FFMPEG_MAX_MAJOR_VERSION");
 
   switch (macro) {
     case 53:
@@ -129,7 +139,7 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
       version = AV_FUNC_62;
       break;
     default:
-      FFMPEGV_LOG("Unknown avcodec version: %d", macro);
+      FFMPEGV_LOG("Unknown avcodec version: {}", macro);
       Unlink();
       return isFFMpeg ? ((macro > 57) ? LinkResult::UnknownFutureFFMpegVersion
                                       : LinkResult::UnknownOlderFFMpegVersion)
@@ -138,7 +148,7 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
                       : LinkResult::UnknownFutureLibAVVersion;
   }
 
-  FFMPEGP_LOG("version: 0x%x, macro: %d, micro: %d, isFFMpeg: %s", version,
+  FFMPEGP_LOG("version: 0x{:x}, macro: {}, micro: {}, isFFMpeg: {}", version,
               macro, micro, isFFMpeg ? "yes" : "no");
 
 #define AV_FUNC_OPTION_SILENT(func, ver)                                \
@@ -216,6 +226,7 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
   AV_FUNC(av_log_set_callback, AV_FUNC_AVUTIL_ALL)
   AV_FUNC(av_log_set_level, AV_FUNC_AVUTIL_ALL)
   AV_FUNC(av_malloc, AV_FUNC_AVUTIL_ALL)
+  AV_FUNC(av_mallocz, AV_FUNC_AVUTIL_ALL)
   AV_FUNC(av_freep, AV_FUNC_AVUTIL_ALL)
   AV_FUNC(av_frame_alloc,
           (AV_FUNC_AVUTIL_55 | AV_FUNC_AVUTIL_56 | AV_FUNC_AVUTIL_57 |
@@ -289,6 +300,10 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
                         AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 |
                             AV_FUNC_AVUTIL_60 | AV_FUNC_AVUTIL_61 |
                             AV_FUNC_AVUTIL_62)
+  AV_FUNC_OPTION_SILENT(av_hwdevice_ctx_create,
+                        AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 |
+                            AV_FUNC_AVUTIL_60 | AV_FUNC_AVUTIL_61 |
+                            AV_FUNC_AVUTIL_62)
   AV_FUNC_OPTION_SILENT(av_hwdevice_ctx_alloc,
                         AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 |
                             AV_FUNC_AVUTIL_60 | AV_FUNC_AVUTIL_61 |
@@ -308,6 +323,13 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
                         AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 |
                             AV_FUNC_AVUTIL_60 | AV_FUNC_AVUTIL_61 |
                             AV_FUNC_AVUTIL_62)
+  AV_FUNC_OPTION_SILENT(av_hwframe_map, AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 |
+                                            AV_FUNC_AVUTIL_60 |
+                                            AV_FUNC_AVUTIL_61 |
+                                            AV_FUNC_AVUTIL_62)
+  AV_FUNC_OPTION_SILENT(
+      avcodec_get_hw_frames_parameters,
+      AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 | AV_FUNC_61 | AV_FUNC_62)
 
 #ifdef MOZ_WIDGET_GTK
   AV_FUNC_OPTION_SILENT(av_hwdevice_hwconfig_alloc, AV_FUNC_58 | AV_FUNC_59 |
@@ -325,6 +347,10 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
   AV_FUNC_OPTION_SILENT(
       av_hwdevice_ctx_create_derived,
       AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 | AV_FUNC_61 | AV_FUNC_62)
+  AV_FUNC_OPTION_SILENT(av_hwdevice_get_type_name,
+                        AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 |
+                            AV_FUNC_AVUTIL_60 | AV_FUNC_AVUTIL_61 |
+                            AV_FUNC_AVUTIL_62)
   AV_FUNC_OPTION_SILENT(avcodec_get_name, AV_FUNC_57 | AV_FUNC_58 | AV_FUNC_59 |
                                               AV_FUNC_60 | AV_FUNC_61 |
                                               AV_FUNC_62)
@@ -442,7 +468,7 @@ void FFmpegLibWrapper::UpdateLogLevel() {
   if (MOZ_LOG_TEST(sFFmpegLibLog, level)) {
     nsAutoCString msg;
     msg.AppendVprintf(aFmt, aArgs);
-    MOZ_LOG(sFFmpegLibLog, level, ("[%p] %s", aPtr, msg.get()));
+    MOZ_LOG_FMT(sFFmpegLibLog, level, "[{}] {}", fmt::ptr(aPtr), msg.get());
   }
 }
 

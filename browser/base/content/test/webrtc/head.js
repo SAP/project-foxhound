@@ -232,7 +232,7 @@ async function assertWebRTCIndicatorStatus(expected) {
 }
 
 function promiseNotificationShown(notification) {
-  let win = notification.browser.ownerGlobal;
+  let win = notification.browser.documentGlobal;
   if (win.PopupNotifications.panel.state == "open") {
     return Promise.resolve();
   }
@@ -345,6 +345,8 @@ function promiseMessage(
   browser = gBrowser.selectedBrowser
 ) {
   let startTime = ChromeUtils.now();
+  // TODO: Switch to SpecialPowers.spawn
+  // eslint-disable-next-line mozilla/reject-contenttask-spawn
   let promise = ContentTask.spawn(
     browser,
     [aMessage, aCount],
@@ -434,11 +436,18 @@ async function activateSecondaryAction(aAction) {
     case kActionNever:
       if (notification.notification.secondaryActions.length > 1) {
         // "Always Block" is the first (and only) item in the menupopup.
+        await notification.secondaryButton.updateComplete;
         await Promise.all([
           BrowserTestUtils.waitForEvent(notification.menupopup, "popupshown"),
-          notification.menubutton.click(),
+          EventUtils.synthesizeMouseAtCenter(
+            notification.secondaryButton.chevronButtonEl,
+            {}
+          ),
         ]);
         notification.menupopup.querySelector("menuitem").click();
+        // menuitem.click() doesn't trigger XUL's auto-close. Hide explicitly so
+        // the reused menupopup is in a clean state if this panel is shown again.
+        notification.menupopup.hidePopup();
         return;
       }
       if (!notification.checkbox.checked) {
@@ -446,6 +455,7 @@ async function activateSecondaryAction(aAction) {
       }
     // fallthrough
     case kActionDeny:
+      await notification.secondaryButton.updateComplete;
       notification.secondaryButton.click();
       break;
     case kActionAlways:
@@ -704,7 +714,7 @@ async function promiseRequestDevice(
           args.aType,
           args.aBadDevice
         );
-        await EventUtils.synthesizeMouseAtCenter(
+        EventUtils.synthesizeMouseAtCenter(
           global.document.getElementById("gum"),
           {},
           content
@@ -859,7 +869,7 @@ async function reloadFromContent() {
   await disableObserverVerification();
 
   let loadedPromise = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-  await ContentTask.spawn(gBrowser.selectedBrowser, null, () =>
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () =>
     content.location.reload()
   );
 

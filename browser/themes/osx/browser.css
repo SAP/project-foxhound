@@ -5,17 +5,17 @@
 @import url("chrome://browser/skin/browser-shared.css");
 
 :root {
-  --arrowpanel-field-background: light-dark(rgba(249, 249, 250, 0.3), rgba(12, 12, 13, 0.3));
+  --panel-field-background: light-dark(rgba(249, 249, 250, 0.3), rgba(12, 12, 13, 0.3));
 }
 
 @media (-moz-native-theme) {
   @media not (prefers-contrast) {
     :root:not([lwtheme]) {
       @media (prefers-color-scheme: light) {
-        --urlbar-box-bgcolor: #fafafa;
+        --urlbar-box-background-color: #fafafa;
       }
       @media (prefers-color-scheme: dark) {
-        --tab-selected-bgcolor: color-mix(in srgb, -moz-dialog 75%, white);
+        --tab-background-color-selected: color-mix(in srgb, -moz-dialog 75%, white);
       }
     }
   }
@@ -103,7 +103,7 @@
 #editBMPanel_folderTree,
 #editBMPanel_tagsSelector {
   appearance: none;
-  background-color: var(--arrowpanel-field-background);
+  background-color: var(--panel-field-background);
   color: inherit;
   border-radius: var(--border-radius-xsmall);
   border: 1px solid var(--panel-separator-color);
@@ -112,7 +112,7 @@
 
 #editBMPanel_folderTree > treechildren::-moz-tree-row(blur, selected),
 #editBMPanel_tagsSelector:not(:focus) > richlistitem[selected] {
-  background-color: var(--arrowpanel-dimmed);
+  background-color: var(--panel-background-color-dimmed);
 }
 
 #editBMPanel_folderTree > treechildren::-moz-tree-twisty(blur, selected),

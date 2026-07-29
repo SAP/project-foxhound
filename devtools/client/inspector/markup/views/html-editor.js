@@ -16,7 +16,7 @@ const EventEmitter = require("resource://devtools/shared/event-emitter.js");
  * way is that the editor is loaded in an iframe, and calling appendChild
  * causes it to reload.
  *
- * Meant to be embedded inside of an HTML page, as in markup.xhtml.
+ * Meant to be embedded inside of an HTML page, as in markup.html.
  */
 class HTMLEditor extends EventEmitter {
   /**
@@ -32,7 +32,7 @@ class HTMLEditor extends EventEmitter {
     this.#container.className = "html-editor theme-body";
     this.#container.style.display = "none";
     this.#editorInner = this.doc.createElement("div");
-    this.#editorInner.className = "html-editor-inner";
+    this.#editorInner.className = "html-editor-inner devtools-input";
     this.#container.appendChild(this.#editorInner);
     this.doc.body.appendChild(this.#container);
     this.doc.defaultView.addEventListener("resize", this.refresh, true);

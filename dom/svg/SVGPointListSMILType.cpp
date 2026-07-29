@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +7,7 @@
 #include <math.h>
 
 #include "SVGPointList.h"
+#include "gfx2DGlue.h"
 #include "mozilla/SMILValue.h"
 #include "nsMathUtils.h"
 
@@ -76,7 +75,7 @@ nsresult SVGPointListSMILType::Add(SMILValue& aDest,
       return NS_ERROR_OUT_OF_MEMORY;
     }
     for (uint32_t i = 0; i < dest.Length(); ++i) {
-      dest[i] = aCount * valueToAdd[i];
+      dest[i] = valueToAdd[i] * aCount;
     }
     dest.SetInfo(valueToAdd.Element());  // propagate target element info!
     return NS_OK;
@@ -89,7 +88,7 @@ nsresult SVGPointListSMILType::Add(SMILValue& aDest,
     return NS_ERROR_FAILURE;
   }
   for (uint32_t i = 0; i < dest.Length(); ++i) {
-    dest[i] += aCount * valueToAdd[i];
+    dest[i] += valueToAdd[i] * aCount;
   }
   dest.SetInfo(valueToAdd.Element());  // propagate target element info!
   return NS_OK;
@@ -118,11 +117,9 @@ nsresult SVGPointListSMILType::ComputeDistance(const SMILValue& aFrom,
   double total = 0.0;
 
   for (uint32_t i = 0; i < to.Length(); ++i) {
-    double dx = to[i].mX - from[i].mX;
-    double dy = to[i].mY - from[i].mY;
-    total += dx * dx + dy * dy;
+    total += gfx::ThebesPoint(to[i] - from[i]).LengthSquare();
   }
-  double distance = sqrt(total);
+  double distance = std::sqrt(total);
   if (!std::isfinite(distance)) {
     return NS_ERROR_FAILURE;
   }
@@ -163,16 +160,19 @@ nsresult SVGPointListSMILType::Interpolate(const SMILValue& aStartVal,
 
   result.SetInfo(end.Element());  // propagate target element info!
 
+  float unitDistance = float(aUnitDistance);
   if (start.Length() != end.Length()) {
     MOZ_ASSERT(start.Length() == 0, "Not an identity value");
-    for (uint32_t i = 0; i < end.Length(); ++i) {
-      result[i] = aUnitDistance * end[i];
-    }
+    std::transform(
+        end.begin(), end.end(), result.begin(),
+        [&unitDistance](const gfx::Point& e) { return e * unitDistance; });
     return NS_OK;
   }
-  for (uint32_t i = 0; i < end.Length(); ++i) {
-    result[i] = start[i] + (end[i] - start[i]) * aUnitDistance;
-  }
+  std::transform(start.begin(), start.end(), end.begin(), result.begin(),
+                 [&unitDistance](const gfx::Point& s, const gfx::Point& e) {
+                   return gfx::Point(std::lerp(s.x, e.x, unitDistance),
+                                     std::lerp(s.y, e.y, unitDistance));
+                 });
   return NS_OK;
 }
 

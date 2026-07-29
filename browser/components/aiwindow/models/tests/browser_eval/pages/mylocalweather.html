@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Weather Forecast for New York, NY | mylocalweather.com</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f5f5f5;
+      color: #1a1a1a;
+    }
+
+    /* NAV */
+    header {
+      background: #1a2d4e;
+      color: #fff;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 32px;
+      height: 56px;
+    }
+    .logo {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: #fff;
+    }
+    .logo span { color: #4fc3f7; }
+    nav { display: flex; gap: 24px; align-items: center; }
+    nav a {
+      color: #cdd9e8;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .search-bar {
+      margin-left: auto;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 20px;
+      padding: 6px 16px;
+      color: #fff;
+      font-size: 14px;
+      width: 200px;
+    }
+    .search-bar::placeholder { color: rgba(255,255,255,0.5); }
+
+    /* LOCATION BAR */
+    .location-bar {
+      background: #1e3a5f;
+      color: #cdd9e8;
+      padding: 8px 24px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .location-bar strong { color: #fff; }
+
+    /* MAIN */
+    main {
+      max-width: 1100px;
+      margin: 24px auto;
+      padding: 0 16px;
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      gap: 20px;
+    }
+
+    /* CURRENT CONDITIONS CARD */
+    .current-card {
+      background: linear-gradient(135deg, #1565c0, #0d47a1);
+      color: #fff;
+      border-radius: 16px;
+      padding: 28px;
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 40px;
+    }
+    .current-temp {
+      font-size: 88px;
+      font-weight: 200;
+      line-height: 1;
+    }
+    .current-temp sup { font-size: 36px; vertical-align: super; }
+    .current-condition { font-size: 24px; font-weight: 400; margin-bottom: 6px; }
+    .current-feels { font-size: 15px; opacity: 0.85; margin-bottom: 16px; }
+    .current-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      font-size: 14px;
+      opacity: 0.9;
+    }
+    .current-meta span b { display: block; font-size: 16px; font-weight: 600; }
+    .weather-icon-large {
+      font-size: 96px;
+      line-height: 1;
+      margin-left: auto;
+    }
+    .hi-lo { font-size: 18px; opacity: 0.9; margin-bottom: 8px; }
+
+    /* HOURLY */
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+    .card h2 {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #666;
+      margin-bottom: 16px;
+      font-weight: 600;
+    }
+    .hourly-row {
+      display: flex;
+      gap: 4px;
+      overflow: hidden;
+    }
+    .hour-item {
+      flex: 1;
+      text-align: center;
+      padding: 10px 6px;
+      border-radius: 8px;
+      background: #f8f9fa;
+    }
+    .hour-item.active { background: #e3f2fd; }
+    .hour-time { font-size: 12px; color: #555; margin-bottom: 6px; }
+    .hour-icon { font-size: 22px; margin-bottom: 6px; }
+    .hour-temp { font-size: 16px; font-weight: 600; }
+    .hour-precip { font-size: 11px; color: #1565c0; margin-top: 4px; }
+
+    /* 10-DAY */
+    .day-row {
+      display: flex;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid #f0f0f0;
+      gap: 12px;
+    }
+    .day-row:last-child { border-bottom: none; }
+    .day-name { width: 36px; font-weight: 600; font-size: 14px; }
+    .day-icon { font-size: 22px; width: 30px; text-align: center; }
+    .day-condition { flex: 1; font-size: 13px; color: #444; }
+    .day-precip { font-size: 12px; color: #1565c0; width: 36px; text-align: right; }
+    .day-temps { font-size: 14px; font-weight: 500; white-space: nowrap; }
+    .day-temps .lo { color: #888; margin-right: 8px; }
+
+    /* DETAILS */
+    .details-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .detail-item {
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .detail-label { font-size: 12px; color: #666; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .detail-value { font-size: 22px; font-weight: 600; }
+    .detail-sub { font-size: 12px; color: #555; margin-top: 2px; }
+
+    /* RADAR PLACEHOLDER */
+    .radar-placeholder {
+      background: linear-gradient(160deg, #0d1b2a, #1e3a5f, #2a5298);
+      border-radius: 10px;
+      height: 200px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255,255,255,0.6);
+      font-size: 14px;
+      margin-bottom: 12px;
+      position: relative;
+      overflow: hidden;
+    }
+    .radar-ring {
+      position: absolute;
+      border-radius: 50%;
+      border: 1px solid rgba(79, 195, 247, 0.3);
+    }
+    .radar-ring:nth-child(1) { width: 80px; height: 80px; }
+    .radar-ring:nth-child(2) { width: 140px; height: 140px; }
+    .radar-ring:nth-child(3) { width: 200px; height: 200px; }
+    .radar-ring:nth-child(4) { width: 260px; height: 260px; }
+    .radar-label { position: relative; z-index: 1; text-align: center; }
+    .radar-label strong { display: block; font-size: 16px; color: #4fc3f7; margin-bottom: 4px; }
+
+    /* ALERTS */
+    .alert-banner {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 10px;
+      padding: 14px 18px;
+      font-size: 14px;
+      margin-bottom: 20px;
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .alert-banner .alert-icon { font-size: 22px; }
+    .alert-banner strong { color: #7a5000; }
+    .alert-banner p { color: #555; margin-top: 2px; font-size: 13px; }
+
+    /* AIR QUALITY */
+    .aqi-bar {
+      height: 10px;
+      border-radius: 5px;
+      background: linear-gradient(to right, #4caf50, #8bc34a, #ffc107, #ff9800, #f44336, #9c27b0);
+      margin: 10px 0 6px;
+      position: relative;
+    }
+    .aqi-marker {
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      background: #1a1a1a;
+      border: 2px solid #fff;
+      border-radius: 50%;
+      top: -2px;
+      left: 22%;
+      transform: translateX(-50%);
+    }
+    .aqi-labels { display: flex; justify-content: space-between; font-size: 10px; color: #888; }
+
+    /* SIDEBAR */
+    aside { display: flex; flex-direction: column; gap: 16px; }
+
+    .trending-item {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 10px 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .trending-item:last-child { border-bottom: none; }
+    .trending-num { font-size: 22px; font-weight: 700; color: #ddd; min-width: 28px; }
+    .trending-text { font-size: 13px; line-height: 1.4; color: #333; }
+    .trending-tag { font-size: 11px; color: #1565c0; font-weight: 600; margin-top: 3px; }
+
+    footer {
+      background: #1a2d4e;
+      color: #8899aa;
+      text-align: center;
+      padding: 24px;
+      margin-top: 40px;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">mylocalweather<span>.com</span></div>
+  <nav>
+    <a href="#">Today</a>
+    <a href="#">Hourly</a>
+    <a href="#">10-Day</a>
+    <a href="#">Radar</a>
+    <a href="#">Monthly</a>
+    <a href="#">Air Quality</a>
+    <a href="#">Health &amp; Activities</a>
+  </nav>
+  <input class="search-bar" type="text" placeholder="Search location..." />
+</header>
+
+<div class="location-bar">
+  <span>&#128205;</span>
+  <strong>New York, NY</strong>
+  <span>&mdash; Updated Tuesday, March 10, 2026 at 9:42 AM EST</span>
+</div>
+
+<main>
+
+  <!-- WEATHER ALERT -->
+  <div class="alert-banner">
+    <div class="alert-icon">&#9888;&#65039;</div>
+    <div>
+      <strong>Wind Advisory in Effect until 6:00 PM EST today</strong>
+      <p>Southwest winds 20 to 30 mph with gusts up to 50 mph. Gusty winds could blow around unsecured objects.</p>
+    </div>
+  </div>
+
+  <!-- CURRENT CONDITIONS -->
+  <div class="current-card">
+    <div>
+      <div style="font-size:18px; margin-bottom:6px; opacity:0.8;">New York, NY</div>
+      <div class="current-temp">48<sup>&deg;F</sup></div>
+      <div class="hi-lo">H: 52&deg; / L: 39&deg;</div>
+      <div class="current-condition">Partly Cloudy</div>
+      <div class="current-feels">Feels Like 41&deg;F</div>
+      <div class="current-meta">
+        <span><b>22 mph SW</b>Wind</span>
+        <span><b>62%</b>Humidity</span>
+        <span><b>29.85 in</b>Pressure</span>
+        <span><b>8 mi</b>Visibility</span>
+        <span><b>6:24 AM</b>Sunrise</span>
+        <span><b>6:07 PM</b>Sunset</span>
+      </div>
+    </div>
+    <div class="weather-icon-large">&#9925;</div>
+  </div>
+
+  <!-- LEFT COLUMN -->
+  <div style="display:flex; flex-direction:column; gap:20px;">
+
+    <!-- HOURLY -->
+    <div class="card">
+      <h2>Hourly Forecast</h2>
+      <div class="hourly-row">
+        <div class="hour-item active">
+          <div class="hour-time">Now</div>
+          <div class="hour-icon">&#9925;</div>
+          <div class="hour-temp">48&deg;</div>
+          <div class="hour-precip">5%</div>
+        </div>
+        <div class="hour-item">
+          <div class="hour-time">11 AM</div>
+          <div class="hour-icon">&#9925;</div>
+          <div class="hour-temp">49&deg;</div>
+          <div class="hour-precip">5%</div>
+        </div>
+        <div class="hour-item">
+          <div class="hour-time">12 PM</div>
+          <div class="hour-icon">&#9728;&#65039;</div>
+          <div class="hour-temp">51&deg;</div>
+          <div class="hour-precip">3%</div>
+        </div>
+        <div class="hour-item">
+          <div class="hour-time">1 PM</div>
+          <div class="hour-icon">&#9728;&#65039;</div>
+          <div class="hour-temp">52&deg;</div>
+          <div class="hour-precip">3%</div>
+        </div>
+        <div class="hour-item">
+          <div class="hour-time">2 PM</div>
+          <div class="hour-icon">&#9728;&#65039;</div>
+          <div class="hour-temp">52&deg;</div>
+          <div class="hour-precip">4%</div>
+        </div>
+        <div class="hour-item">
+          <div class="hour-time">3 PM</div>
+          <div class="hour-icon">&#9925;</div>
+          <div class="hour-temp">51&deg;</div>
+          <div class="hour-precip">8%</div>
+        </div>
+        <div class="hour-item">
+          <div class="hour-time">4 PM</div>
+          <div class="hour-icon">&#127783;&#65039;</div>
+          <div class="hour-temp">49&deg;</div>
+          <div class="hour-precip">15%</div>
+        </div>
+        <div class="hour-item">
+          <div class="hour-time">5 PM</div>
+          <div class="hour-icon">&#127783;&#65039;</div>
+          <div class="hour-temp">47&deg;</div>
+          <div class="hour-precip">22%</div>
+        </div>
+        <div class="hour-item">
+          <div class="hour-time">6 PM</div>
+          <div class="hour-icon">&#127783;&#65039;</div>
+          <div class="hour-temp">45&deg;</div>
+          <div class="hour-precip">28%</div>
+        </div>
+        <div class="hour-item">
+          <div class="hour-time">7 PM</div>
+          <div class="hour-icon">&#127783;&#65039;</div>
+          <div class="hour-temp">43&deg;</div>
+          <div class="hour-precip">35%</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 10-DAY -->
+    <div class="card">
+      <h2>10-Day Forecast</h2>
+
+      <div class="day-row">
+        <div class="day-name">Today</div>
+        <div class="day-icon">&#9925;</div>
+        <div class="day-condition">Partly Cloudy / Windy</div>
+        <div class="day-precip">5%</div>
+        <div class="day-temps"><span class="lo">39&deg;</span> 52&deg;</div>
+      </div>
+      <div class="day-row">
+        <div class="day-name">Wed</div>
+        <div class="day-icon">&#127783;&#65039;</div>
+        <div class="day-condition">Showers Likely</div>
+        <div class="day-precip">70%</div>
+        <div class="day-temps"><span class="lo">40&deg;</span> 47&deg;</div>
+      </div>
+      <div class="day-row">
+        <div class="day-name">Thu</div>
+        <div class="day-icon">&#127783;&#65039;</div>
+        <div class="day-condition">AM Showers</div>
+        <div class="day-precip">55%</div>
+        <div class="day-temps"><span class="lo">38&deg;</span> 50&deg;</div>
+      </div>
+      <div class="day-row">
+        <div class="day-name">Fri</div>
+        <div class="day-icon">&#9728;&#65039;</div>
+        <div class="day-condition">Mostly Sunny</div>
+        <div class="day-precip">10%</div>
+        <div class="day-temps"><span class="lo">35&deg;</span> 53&deg;</div>
+      </div>
+      <div class="day-row">
+        <div class="day-name">Sat</div>
+        <div class="day-icon">&#9728;&#65039;</div>
+        <div class="day-condition">Sunny</div>
+        <div class="day-precip">5%</div>
+        <div class="day-temps"><span class="lo">37&deg;</span> 57&deg;</div>
+      </div>
+      <div class="day-row">
+        <div class="day-name">Sun</div>
+        <div class="day-icon">&#9925;</div>
+        <div class="day-condition">Partly Cloudy</div>
+        <div class="day-precip">10%</div>
+        <div class="day-temps"><span class="lo">41&deg;</span> 58&deg;</div>
+      </div>
+      <div class="day-row">
+        <div class="day-name">Mon</div>
+        <div class="day-icon">&#9925;</div>
+        <div class="day-condition">Partly Cloudy</div>
+        <div class="day-precip">15%</div>
+        <div class="day-temps"><span class="lo">43&deg;</span> 60&deg;</div>
+      </div>
+      <div class="day-row">
+        <div class="day-name">Tue</div>
+        <div class="day-icon">&#127783;&#65039;</div>
+        <div class="day-condition">Cloudy / Rain</div>
+        <div class="day-precip">60%</div>
+        <div class="day-temps"><span class="lo">44&deg;</span> 55&deg;</div>
+      </div>
+      <div class="day-row">
+        <div class="day-name">Wed</div>
+        <div class="day-icon">&#9728;&#65039;</div>
+        <div class="day-condition">Sunny</div>
+        <div class="day-precip">5%</div>
+        <div class="day-temps"><span class="lo">38&deg;</span> 56&deg;</div>
+      </div>
+      <div class="day-row">
+        <div class="day-name">Thu</div>
+        <div class="day-icon">&#9728;&#65039;</div>
+        <div class="day-condition">Mostly Sunny</div>
+        <div class="day-precip">8%</div>
+        <div class="day-temps"><span class="lo">40&deg;</span> 59&deg;</div>
+      </div>
+    </div>
+
+    <!-- TODAY'S DETAILS -->
+    <div class="card">
+      <h2>Today's Details</h2>
+      <div class="details-grid">
+        <div class="detail-item">
+          <div class="detail-label">Wind</div>
+          <div class="detail-value">22 mph</div>
+          <div class="detail-sub">SW &mdash; Gusts up to 50 mph</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">Humidity</div>
+          <div class="detail-value">62%</div>
+          <div class="detail-sub">Dew Point: 35&deg;F</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">UV Index</div>
+          <div class="detail-value">3</div>
+          <div class="detail-sub">Moderate</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">Visibility</div>
+          <div class="detail-value">8 mi</div>
+          <div class="detail-sub">Clear</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">Pressure</div>
+          <div class="detail-value">29.85 in</div>
+          <div class="detail-sub">Falling</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">Moon Phase</div>
+          <div class="detail-value">&#127762;</div>
+          <div class="detail-sub">Waning Crescent</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AIR QUALITY -->
+    <div class="card">
+      <h2>Air Quality Index</h2>
+      <div style="font-size:32px; font-weight:700; color:#4caf50;">42 <span style="font-size:16px; font-weight:400; color:#333;">Good</span></div>
+      <div class="aqi-bar"><div class="aqi-marker"></div></div>
+      <div class="aqi-labels">
+        <span>Good</span>
+        <span>Moderate</span>
+        <span>Unhealthy</span>
+        <span>Hazardous</span>
+      </div>
+      <p style="font-size:13px; color:#555; margin-top:12px;">Air quality is satisfactory. Outdoor activities are safe for all groups.</p>
+      <div style="display:flex; gap:12px; margin-top:12px; font-size:13px;">
+        <div style="flex:1; background:#f8f9fa; border-radius:8px; padding:10px;">
+          <div style="color:#666; font-size:11px; text-transform:uppercase;">Primary Pollutant</div>
+          <div style="font-weight:600; margin-top:2px;">PM 2.5</div>
+        </div>
+        <div style="flex:1; background:#f8f9fa; border-radius:8px; padding:10px;">
+          <div style="color:#666; font-size:11px; text-transform:uppercase;">Ozone</div>
+          <div style="font-weight:600; margin-top:2px;">31 ppb</div>
+        </div>
+        <div style="flex:1; background:#f8f9fa; border-radius:8px; padding:10px;">
+          <div style="color:#666; font-size:11px; text-transform:uppercase;">NO<sub>2</sub></div>
+          <div style="font-weight:600; margin-top:2px;">18 ppb</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT SIDEBAR -->
+  <aside>
+
+    <!-- RADAR -->
+    <div class="card">
+      <h2>Interactive Radar</h2>
+      <div class="radar-placeholder">
+        <div class="radar-ring"></div>
+        <div class="radar-ring"></div>
+        <div class="radar-ring"></div>
+        <div class="radar-ring"></div>
+        <div class="radar-label">
+          <strong>&#127760; Live Radar</strong>
+          New York Metro Area<br />
+          <small style="color:#4fc3f7;">No precipitation detected</small>
+        </div>
+      </div>
+    </div>
+
+    <!-- NEARBY CITIES -->
+    <div class="card">
+      <h2>Nearby Cities</h2>
+      <div class="day-row">
+        <span style="flex:1; font-size:14px;">Newark, NJ</span>
+        <span style="font-size:18px; margin-right:8px;">&#9925;</span>
+        <span style="font-weight:600;">47&deg;F</span>
+      </div>
+      <div class="day-row">
+        <span style="flex:1; font-size:14px;">Brooklyn, NY</span>
+        <span style="font-size:18px; margin-right:8px;">&#9925;</span>
+        <span style="font-weight:600;">48&deg;F</span>
+      </div>
+      <div class="day-row">
+        <span style="flex:1; font-size:14px;">Hoboken, NJ</span>
+        <span style="font-size:18px; margin-right:8px;">&#9728;&#65039;</span>
+        <span style="font-weight:600;">49&deg;F</span>
+      </div>
+      <div class="day-row">
+        <span style="flex:1; font-size:14px;">Yonkers, NY</span>
+        <span style="font-size:18px; margin-right:8px;">&#9925;</span>
+        <span style="font-weight:600;">46&deg;F</span>
+      </div>
+      <div class="day-row">
+        <span style="flex:1; font-size:14px;">Stamford, CT</span>
+        <span style="font-size:18px; margin-right:8px;">&#9925;</span>
+        <span style="font-weight:600;">45&deg;F</span>
+      </div>
+    </div>
+
+    <!-- HEALTH & ACTIVITIES -->
+    <div class="card">
+      <h2>Health &amp; Activities</h2>
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:14px;">
+          <span>&#127939; Running</span>
+          <span style="background:#e8f5e9; color:#2e7d32; border-radius:12px; padding:2px 10px; font-size:12px; font-weight:600;">Good</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:14px;">
+          <span>&#127812; Allergy</span>
+          <span style="background:#fff8e1; color:#f57c00; border-radius:12px; padding:2px 10px; font-size:12px; font-weight:600;">Moderate</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:14px;">
+          <span>&#127774; Flu Risk</span>
+          <span style="background:#e8f5e9; color:#2e7d32; border-radius:12px; padding:2px 10px; font-size:12px; font-weight:600;">Low</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:14px;">
+          <span>&#9981; Outdoor BBQ</span>
+          <span style="background:#fce4ec; color:#c62828; border-radius:12px; padding:2px 10px; font-size:12px; font-weight:600;">Poor</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:14px;">
+          <span>&#127920; Golf</span>
+          <span style="background:#fff8e1; color:#f57c00; border-radius:12px; padding:2px 10px; font-size:12px; font-weight:600;">Fair</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- TRENDING -->
+    <div class="card">
+      <h2>Trending Now</h2>
+      <div class="trending-item">
+        <div class="trending-num">1</div>
+        <div>
+          <div class="trending-text">Nor'easter watches posted for New England coast this weekend</div>
+          <div class="trending-tag">ALERT</div>
+        </div>
+      </div>
+      <div class="trending-item">
+        <div class="trending-num">2</div>
+        <div>
+          <div class="trending-text">March 2026 has been 4 degrees warmer than average across the Northeast</div>
+          <div class="trending-tag">CLIMATE</div>
+        </div>
+      </div>
+      <div class="trending-item">
+        <div class="trending-num">3</div>
+        <div>
+          <div class="trending-text">Wind gusts exceed 60 mph in some NYC suburbs early Tuesday</div>
+          <div class="trending-tag">LOCAL</div>
+        </div>
+      </div>
+      <div class="trending-item">
+        <div class="trending-num">4</div>
+        <div>
+          <div class="trending-text">Spring outlook: Above-normal warmth expected through April for the Mid-Atlantic</div>
+          <div class="trending-tag">SEASONAL</div>
+        </div>
+      </div>
+    </div>
+
+  </aside>
+
+</main>
+
+<footer>
+  <p>Weather data for New York, NY &mdash; Updated Tuesday, March 10, 2026 at 9:42 AM EST</p>
+  <p style="margin-top:8px;">Temperature in &deg;F &bull; Wind in mph &bull; Pressure in inches</p>
+</footer>
+
+</body>
+</html>

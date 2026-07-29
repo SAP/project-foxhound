@@ -25,12 +25,13 @@ import mozilla.components.support.test.argumentCaptor
 import mozilla.components.support.test.middleware.CaptureActionsMiddleware
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.doNothing
@@ -48,42 +49,32 @@ private const val GIF_HEADER = "GIF89a"
 
 @RunWith(AndroidJUnit4::class)
 class ShareResourceFeatureTest {
-    // When writing new tests initialize ShareDownloadFeature with this class' context property
-    // When creating new directories use class' context property#cacheDir as a parent
-    // This will ensure the effectiveness of @After. Otherwise leftover files may be left on the machine running tests.
+
+    @get:Rule
+    val temporaryFolder = TemporaryFolder()
 
     private lateinit var context: Context
-    private val testCacheDirName = "testCacheDir"
-
     private val testDispatcher = StandardTestDispatcher()
 
     @Before
     fun setup() {
-        // Effectively reset context mock
         context = spy(testContext)
-        doReturn(File(testCacheDirName)).`when`(context).cacheDir
-    }
-
-    @After
-    fun cleanup() {
-        context.cacheDir.deleteRecursively()
+        doReturn(temporaryFolder.root).`when`(context).cacheDir
     }
 
     @Test
     fun `cleanupCache should automatically be called when this class is initialized`() = runTest(testDispatcher) {
-        val cacheDir = File(context.cacheDir, cacheDirName).also { dir ->
-            dir.mkdirs()
-            File(dir, "leftoverFile").also { file ->
-                file.createNewFile()
-            }
+        val cacheDir = File(temporaryFolder.root, cacheDirName).apply {
+            mkdirs()
+            File(this, "leftoverFile").createNewFile()
         }
 
-        assertTrue(cacheDir.listFiles()!!.isNotEmpty())
+        assertTrue(cacheDir.listFiles()?.isNotEmpty() == true)
 
         ShareResourceFeature(context, BrowserStore(), null, mock(), testDispatcher, testDispatcher)
         testDispatcher.scheduler.advanceUntilIdle()
 
-        assertTrue(cacheDir.listFiles()!!.isEmpty())
+        assertTrue(cacheDir.listFiles()?.isEmpty() == true)
     }
 
     @Test
@@ -119,20 +110,25 @@ class ShareResourceFeatureTest {
 
     @Test
     fun `cleanupCache should delete all files from the cache directory`() = runTest(testDispatcher) {
-        val shareFeature = spy(ShareResourceFeature(context, BrowserStore(), null, mock(), testDispatcher))
-        val testDir = File(context.cacheDir, cacheDirName).also { dir ->
-            dir.mkdirs()
-            File(dir, "testFile").also { file ->
-                file.createNewFile()
-            }
-        }
+        val shareFeature = ShareResourceFeature(context, BrowserStore(), null, mock(), testDispatcher, testDispatcher)
 
-        doReturn(testDir).`when`(shareFeature).getCacheDirectory()
-        assertTrue(testDir.listFiles()!!.isNotEmpty())
+        // Clear the 'init' block's coroutine from the queue
+        testDispatcher.scheduler.runCurrent()
+
+        val testDir = temporaryFolder.newFolder(cacheDirName)
+        File(testDir, "testFile").createNewFile()
+
+        assertTrue(
+            "File should exist before cleanup",
+            testDir.listFiles()?.isNotEmpty() == true,
+            )
 
         shareFeature.cleanupCache()
 
-        assertTrue(testDir.listFiles()!!.isEmpty())
+        assertTrue(
+            "Directory should be empty after manual cleanup",
+            testDir.listFiles()?.isEmpty() == true,
+        )
     }
 
     @Test
@@ -170,29 +166,29 @@ class ShareResourceFeatureTest {
     fun `download() will persist in cache the response#body() if available`() = runTest(testDispatcher) {
         val shareFeature = ShareResourceFeature(context, BrowserStore(), null, mock(), testDispatcher)
         val inputStream = "test".byteInputStream(StandardCharsets.UTF_8)
-        val responseFromShareState = mock<Response>()
-        doReturn(Response.Body(inputStream)).`when`(responseFromShareState).body
+        val responseFromShareState = mock<Response>().apply {
+            doReturn(Response.Body(inputStream)).`when`(this).body
+            doReturn(Response.SUCCESS).`when`(this).status
+            doReturn(MutableHeaders()).`when`(this).headers
+        }
         val shareState = ShareResourceState.InternetResource("randomUrl.jpg", response = responseFromShareState)
-        doReturn(Response.SUCCESS).`when`(responseFromShareState).status
-        doReturn(MutableHeaders()).`when`(responseFromShareState).headers
 
         val result = shareFeature.download(shareState)
 
         assertTrue(result.exists())
         assertTrue(result.name.endsWith(".$DEFAULT_IMAGE_EXTENSION"))
-        assertEquals(cacheDirName, result.parentFile!!.name)
+        assertEquals(cacheDirName, result.parentFile?.name)
         assertEquals("test", result.inputStream().bufferedReader().use { it.readText() })
     }
 
     @Test(expected = RuntimeException::class)
     fun `download() will throw an error if the request is not successful`() = runTest(testDispatcher) {
         val shareFeature = ShareResourceFeature(context, BrowserStore(), null, mock(), testDispatcher)
-        val inputStream = "test".byteInputStream(StandardCharsets.UTF_8)
-        val responseFromShareState = mock<Response>()
-        doReturn(Response.Body(inputStream)).`when`(responseFromShareState).body
-        val shareState =
-            ShareResourceState.InternetResource("randomUrl.jpg", response = responseFromShareState)
-        doReturn(500).`when`(responseFromShareState).status
+        val responseFromShareState = mock<Response>().apply {
+            doReturn(Response.Body("test".byteInputStream())).`when`(this).body
+            doReturn(500).`when`(this).status
+        }
+        val shareState = ShareResourceState.InternetResource("randomUrl.jpg", response = responseFromShareState)
 
         shareFeature.download(shareState)
     }
@@ -210,7 +206,7 @@ class ShareResourceFeatureTest {
 
         assertTrue(result.exists())
         assertTrue(result.name.endsWith(".$DEFAULT_IMAGE_EXTENSION"))
-        assertEquals(cacheDirName, result.parentFile!!.name)
+        assertEquals(cacheDirName, result.parentFile?.name)
         assertEquals("clientTest", result.inputStream().bufferedReader().use { it.readText() })
     }
 
@@ -265,7 +261,7 @@ class ShareResourceFeatureTest {
         val result = shareFeature.getTempFile(testExtension)
 
         assertTrue(result.name.endsWith(testExtension))
-        assertEquals(shareFeature.getCacheDirectory().toString(), result.parent)
+        assertEquals(shareFeature.getCacheDirectory().absolutePath, result.parentFile?.absolutePath)
     }
 
     @Test
@@ -274,18 +270,21 @@ class ShareResourceFeatureTest {
 
         val result = shareFeature.getCacheDirectory()
 
-        assertEquals(testCacheDirName, result.parent)
+        assertEquals(temporaryFolder.root.absolutePath, result.parentFile?.absolutePath)
         assertEquals(cacheDirName, result.name)
     }
 
     @Test
     fun `getMediaShareCacheDirectory creates the needed files if they don't exist`() {
         val shareFeature = spy(ShareResourceFeature(context, BrowserStore(), null, mock(), testDispatcher))
-        assertFalse(context.cacheDir.exists())
+        val expectedDir = File(temporaryFolder.root, cacheDirName)
+
+        expectedDir.deleteRecursively()
+        assertFalse(expectedDir.exists())
 
         val result = shareFeature.getMediaShareCacheDirectory()
 
-        assertEquals(cacheDirName, result.name)
+        assertEquals(expectedDir.absolutePath, result.absolutePath)
         assertTrue(result.exists())
     }
 

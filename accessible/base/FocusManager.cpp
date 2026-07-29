@@ -19,9 +19,9 @@
 namespace mozilla {
 namespace a11y {
 
-FocusManager::FocusManager() {}
+FocusManager::FocusManager() = default;
 
-FocusManager::~FocusManager() {}
+FocusManager::~FocusManager() = default;
 
 LocalAccessible* FocusManager::FocusedLocalAccessible() const {
   MOZ_ASSERT(NS_IsMainThread());
@@ -201,8 +201,6 @@ void FocusManager::ActiveItemChanged(LocalAccessible* aItem,
     return;
   }
 
-  mActiveItem = nullptr;
-
   if (aItem && aCheckIfActive) {
     LocalAccessible* widget = aItem->ContainerWidget();
 #ifdef A11Y_LOG
@@ -252,9 +250,9 @@ void FocusManager::DispatchFocusEvent(DocAccessible* aDocument,
                                       LocalAccessible* aTarget) {
   MOZ_ASSERT(aDocument, "No document for focused accessible!");
   if (aDocument) {
-    RefPtr<AccEvent> event =
-        new AccEvent(nsIAccessibleEvent::EVENT_FOCUS, aTarget, eAutoDetect,
-                     AccEvent::eCoalesceOfSameType);
+    auto event =
+        MakeRefPtr<AccEvent>(nsIAccessibleEvent::EVENT_FOCUS, aTarget,
+                             eAutoDetect, AccEvent::eCoalesceOfSameType);
     aDocument->FireDelayedEvent(event);
     mLastFocus = aTarget;
     if (mActiveItem != aTarget) {
@@ -350,9 +348,9 @@ void FocusManager::ProcessFocusEvent(AccEvent* aEvent) {
     if (ARIAMenubar != mActiveARIAMenubar) {
       // Leaving ARIA menu. Fire menu_end event on current menubar.
       if (mActiveARIAMenubar) {
-        RefPtr<AccEvent> menuEndEvent =
-            new AccEvent(nsIAccessibleEvent::EVENT_MENU_END, mActiveARIAMenubar,
-                         aEvent->FromUserInput());
+        auto menuEndEvent =
+            MakeRefPtr<AccEvent>(nsIAccessibleEvent::EVENT_MENU_END,
+                                 mActiveARIAMenubar, aEvent->FromUserInput());
         nsEventShell::FireEvent(menuEndEvent);
       }
 
@@ -360,17 +358,17 @@ void FocusManager::ProcessFocusEvent(AccEvent* aEvent) {
 
       // Entering ARIA menu. Fire menu_start event.
       if (mActiveARIAMenubar) {
-        RefPtr<AccEvent> menuStartEvent =
-            new AccEvent(nsIAccessibleEvent::EVENT_MENU_START,
-                         mActiveARIAMenubar, aEvent->FromUserInput());
+        auto menuStartEvent =
+            MakeRefPtr<AccEvent>(nsIAccessibleEvent::EVENT_MENU_START,
+                                 mActiveARIAMenubar, aEvent->FromUserInput());
         nsEventShell::FireEvent(menuStartEvent);
       }
     }
   } else if (mActiveARIAMenubar) {
     // Focus left a menu. Fire menu_end event.
-    RefPtr<AccEvent> menuEndEvent =
-        new AccEvent(nsIAccessibleEvent::EVENT_MENU_END, mActiveARIAMenubar,
-                     aEvent->FromUserInput());
+    auto menuEndEvent =
+        MakeRefPtr<AccEvent>(nsIAccessibleEvent::EVENT_MENU_END,
+                             mActiveARIAMenubar, aEvent->FromUserInput());
     nsEventShell::FireEvent(menuEndEvent);
 
     mActiveARIAMenubar = nullptr;
@@ -387,8 +385,8 @@ void FocusManager::ProcessFocusEvent(AccEvent* aEvent) {
   // offset before the caret move event is handled.
   SelectionMgr()->ResetCaretOffset();
 
-  RefPtr<AccEvent> focusEvent = new AccEvent(nsIAccessibleEvent::EVENT_FOCUS,
-                                             target, aEvent->FromUserInput());
+  auto focusEvent = MakeRefPtr<AccEvent>(nsIAccessibleEvent::EVENT_FOCUS,
+                                         target, aEvent->FromUserInput());
   nsEventShell::FireEvent(focusEvent);
 
   if (NS_WARN_IF(target->IsDefunct())) {

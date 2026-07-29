@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +6,7 @@
 
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/HTMLMediaElement.h"
 #include "mozilla/dom/HTMLTrackElement.h"
 #include "mozilla/dom/TextTrackList.h"
 #include "mozilla/dom/TextTrackRegion.h"
@@ -16,9 +16,9 @@
 
 extern mozilla::LazyLogModule gTextTrackLog;
 
-#define LOG(msg, ...)                     \
-  MOZ_LOG(gTextTrackLog, LogLevel::Debug, \
-          ("TextTrackCue=%p, " msg, this, ##__VA_ARGS__))
+#define LOG(msg, ...)                                                  \
+  MOZ_LOG_FMT(gTextTrackLog, LogLevel::Debug, "TextTrackCue={}, " msg, \
+              fmt::ptr(this), ##__VA_ARGS__)
 
 namespace mozilla::dom {
 
@@ -246,7 +246,7 @@ void TextTrackCue::SetActive(bool aActive) {
     return;
   }
 
-  LOG("TextTrackCue, SetActive=%d", aActive);
+  LOG("TextTrackCue, SetActive={}", aActive);
   mActive = aActive;
   mDisplayState = mActive ? mDisplayState : nullptr;
   if (mTrack) {

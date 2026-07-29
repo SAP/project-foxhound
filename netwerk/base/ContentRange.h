@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set et cin ts=4 sw=2 sts=2: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,7 @@
 #ifndef ContentRange_h_
 #define ContentRange_h_
 
+#include "nsContentUtils.h"
 #include "nsString.h"
 #include "nsISupportsImpl.h"
 
@@ -33,7 +32,7 @@ class ContentRange {
   bool IsValid() const { return mStart < mSize; }
   ContentRange(uint64_t aStart, uint64_t aEnd, uint64_t aSize)
       : mStart(aStart), mEnd(aEnd), mSize(aSize) {}
-  ContentRange(const nsACString& aRangeHeader, uint64_t aSize);
+  ContentRange(const nsContentUtils::ParsedRange& aRangeHeader, uint64_t aSize);
   void AsHeader(nsACString& aOutString) const;
 
   NS_INLINE_DECL_REFCOUNTING(ContentRange)

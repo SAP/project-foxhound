@@ -1,4 +1,3 @@
-/* -*- js-indent-level: 4; indent-tabs-mode: nil -*- */
 // Source.prototype.displayURL can be a string or null.
 
 let g = newGlobal({newCompartment: true});

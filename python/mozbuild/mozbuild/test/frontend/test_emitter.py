@@ -8,7 +8,7 @@ import unittest
 import mozpack.path as mozpath
 from mozunit import main
 
-from mozbuild.frontend.context import ObjDirPath, Path
+from mozbuild.frontend.context import ObjDirPath, Path, SourcePath
 from mozbuild.frontend.data import (
     ComputedFlags,
     ConfigFileSubstitution,
@@ -214,8 +214,8 @@ class TestEmitterBasic(unittest.TestCase):
             flags.flags["VISIBILITY"], reader.config.substs["VISIBILITY_FLAGS"]
         )
         self.assertEqual(flags.flags["WARNINGS_AS_ERRORS"], ["-Werror"])
-        self.assertEqual(flags.flags["MOZBUILD_CFLAGS"], ["-Wall", "-funroll-loops"])
-        self.assertEqual(flags.flags["MOZBUILD_CXXFLAGS"], ["-funroll-loops", "-Wall"])
+        self.assertEqual(flags.flags["MOZBUILD_CFLAGS"], ["-Os", "-funroll-loops"])
+        self.assertEqual(flags.flags["MOZBUILD_CXXFLAGS"], ["-funroll-loops", "-Os"])
 
     def test_asflags(self):
         reader = self.reader("asflags", extra_substs={"ASFLAGS": ["-safeseh"]})
@@ -653,6 +653,29 @@ class TestEmitterBasic(unittest.TestCase):
         reader = self.reader("generated-files-no-python-script")
         with self.assertRaisesRegex(
             SandboxValidationError, "Script for generating bar.c does not end in .py"
+        ):
+            self.read_topsrcdir(reader)
+
+    def test_generated_files_extra_deps(self):
+        """Test that GENERATED_FILES extra_deps is properly parsed."""
+        reader = self.reader("generated-files-extra-deps")
+        objs = self.read_topsrcdir(reader)
+
+        self.assertEqual(len(objs), 1)
+        o = objs[0]
+        self.assertIsInstance(o, GeneratedFile)
+        self.assertEqual(o.outputs, ("foo.c",))
+        self.assertEqual(o.inputs, [])
+        self.assertEqual(len(o.extra_deps), 1)
+        self.assertIsInstance(o.extra_deps[0], ObjDirPath)
+        self.assertEqual(o.extra_deps[0], "!/generated-header.h")
+
+    def test_generated_files_extra_deps_missing(self):
+        """Test that a missing extra_deps source is an error."""
+        reader = self.reader("generated-files-extra-deps-missing")
+        with self.assertRaisesRegex(
+            SandboxValidationError,
+            "extra_dep for generating foo.c does not exist",
         ):
             self.read_topsrcdir(reader)
 
@@ -1306,6 +1329,35 @@ class TestEmitterBasic(unittest.TestCase):
                     got_results += 1
         self.assertEqual(got_results, 2)
 
+    def test_extra_link_deps(self):
+        """Test that EXTRA_LINK_DEPS is properly parsed."""
+        reader = self.reader("extra-link-deps")
+        objs = self.read_topsrcdir(reader)
+        programs = [o for o in objs if isinstance(o, Program)]
+        self.assertEqual(len(programs), 1)
+        deps = programs[0].extra_link_deps
+        self.assertEqual([str(d) for d in deps], ["!generated.txt", "bar.txt"])
+        self.assertIsInstance(deps[0], ObjDirPath)
+        self.assertIsInstance(deps[1], SourcePath)
+
+    def test_extra_link_deps_no_linkable(self):
+        """Test that EXTRA_LINK_DEPS without a linkable is an error."""
+        reader = self.reader("extra-link-deps-no-linkable")
+        with self.assertRaisesRegex(
+            SandboxValidationError,
+            "EXTRA_LINK_DEPS is set but no program or shared library",
+        ):
+            self.read_topsrcdir(reader)
+
+    def test_extra_link_deps_missing(self):
+        """Test that EXTRA_LINK_DEPS srcdir entries must exist."""
+        reader = self.reader("extra-link-deps-missing")
+        with self.assertRaisesRegex(
+            SandboxValidationError,
+            "Path specified in EXTRA_LINK_DEPS does not exist",
+        ):
+            self.read_topsrcdir(reader)
+
     def test_generated_sources(self):
         """Test that GENERATED_SOURCES works properly."""
         reader = self.reader("generated-sources")
@@ -1574,6 +1626,15 @@ class TestEmitterBasic(unittest.TestCase):
         with self.assertRaisesRegex(
             SandboxValidationError,
             "Only source directory paths allowed in FINAL_TARGET_PP_FILES:",
+        ):
+            self.read_topsrcdir(reader)
+
+    def test_pp_files_extra_deps_without_pp_files(self):
+        """PP_FILES_EXTRA_DEPS without any preprocessed files is an error."""
+        reader = self.reader("pp-files-extra-deps-no-pp-files")
+        with self.assertRaisesRegex(
+            SandboxValidationError,
+            "PP_FILES_EXTRA_DEPS is set but no preprocessed files",
         ):
             self.read_topsrcdir(reader)
 

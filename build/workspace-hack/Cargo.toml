@@ -40,7 +40,7 @@ futures-util = { version = "0.3", features = ["channel", "io", "sink"], optional
 getrandom = { version = "0.2", default-features = false, features = ["custom", "std"], optional = true }
 hashbrown = { version = "0.13", optional = true }
 hex = { version = "0.4", features = ["serde"], optional = true }
-hyper = { version = "0.14", features = ["full"], optional = true }
+hyper = { version = "1", features = ["server", "http1"], optional = true }
 icu_locale_core = { version = "2.0", default-features = false, features = ["zerovec"], optional = true }
 icu_properties = { version = "2.0", features = ["unicode_bidi"], optional = true }
 idna = { version = "1", optional = true }
@@ -222,7 +222,7 @@ features = [
 ]
 
 [target."cfg(windows)".dependencies.windows-sys]
-version = "0.52"
+version = "0.61.1"
 optional = true
 features = [
     "Wdk_Foundation",
@@ -281,3 +281,6 @@ pkcs11testmodule-static = []
 test-trust-anchors-static = ["dep:bindgen", "dep:bitflags", "dep:itertools", "dep:memchr", "dep:nom", "dep:regex", "dep:smallvec"]
 toolchain-embedded-uniffi-bindgen = []
 toolchain-nimbus-fml = []
+megazord = []
+embedded-uniffi-bindgen = []
+nimbus-fml = []

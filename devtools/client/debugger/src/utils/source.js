@@ -163,6 +163,14 @@ export function isJavaScript(source, content) {
   );
 }
 
+export function isNotPrettyPrintable(source, sourceContent) {
+  return (
+    !isJavaScript(source, sourceContent) &&
+    !source.isHTML &&
+    !source.isStyleSheet
+  );
+}
+
 export function isPrettyURL(url) {
   return url ? url.endsWith(":formatted") : false;
 }

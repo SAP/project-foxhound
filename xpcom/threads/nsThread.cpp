@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -37,8 +35,11 @@
 #include "mozilla/StaticLocalPtr.h"
 #include "mozilla/StaticPrefs_threads.h"
 #include "mozilla/TaskController.h"
+#include "nsExceptionHandler.h"
+#include "nsFmtString.h"
 #include "nsXPCOMPrivate.h"
 #include "mozilla/ChaosMode.h"
+#include "prerror.h"
 #include "mozilla/glean/XpcomMetrics.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/DocGroup.h"
@@ -332,7 +333,7 @@ void nsThread::ThreadFunc(void* aArg) {
   SetupCurrentThreadForChaosMode();
 
   if (!initData->name.IsEmpty()) {
-    NS_SetCurrentThreadName(initData->name.BeginReading());
+    NS_SetCurrentThreadName(initData->name.get());
   }
 
   self->InitCommon();
@@ -355,7 +356,7 @@ void nsThread::ThreadFunc(void* aArg) {
   // which profiler_register_thread() requires. See bug 1347007.
   const bool registerWithProfiler = !initData->name.IsEmpty();
   if (registerWithProfiler) {
-    PROFILER_REGISTER_THREAD(initData->name.BeginReading());
+    PROFILER_REGISTER_THREAD(initData->name.get());
   }
 
   {
@@ -622,6 +623,15 @@ nsresult nsThread::Init(const nsACString& aName) {
     if (!(thread = PR_CreateThread(PR_USER_THREAD, ThreadFunc, initData.get(),
                                    PR_PRIORITY_NORMAL, PR_GLOBAL_THREAD,
                                    PR_JOINABLE_THREAD, mStackSize))) {
+      // Until bug 2017883 is fixed, these values may not be useful on
+      // Windows as NSPR does not propagate the OS error from thread
+      // creation.
+      PRErrorCode prError = PR_GetError();
+      PRInt32 osError = PR_GetOSError();
+      CrashReporter::RecordAnnotationNSCString(
+          CrashReporter::Annotation::ThreadLastCreateError,
+          nsFmtCString("{}: prError={:#x} osError={:#x}", aName, prError,
+                       osError));
       return NS_ERROR_OUT_OF_MEMORY;
     }
 
@@ -839,8 +849,8 @@ nsThread::BeginShutdown(nsIThreadShutdown** aShutdown) {
 
   // Set mShutdownContext and wake up the thread in case it is waiting for
   // events to process.
-  RefPtr<nsIRunnable> event =
-      new nsThreadShutdownEvent(WrapNotNull(this), WrapNotNull(context));
+  RefPtr<nsIRunnable> event = MakeRefPtr<nsThreadShutdownEvent>(
+      WrapNotNull(this), WrapNotNull(context));
   if (!mEvents->PutEvent(event, EventQueuePriority::Normal)) {
     // We do not expect this to happen. Let's collect some diagnostics.
     nsAutoCString threadName;

@@ -3,7 +3,7 @@
 set -v -e -x
 
 base="$(realpath "$(dirname "$0")")"
-export PATH="$PATH:$base:${MOZ_FETCHES_DIR}/dmg"
+export PATH="$PATH:$base:${MOZ_FETCHES_DIR}/dmg:${MOZ_FETCHES_DIR}/7zz"
 
 cd /builds/worker
 mkdir -p /opt/data-reposado artifacts
@@ -22,6 +22,14 @@ if [ ! -d /opt/data-reposado/html ] || [ ! -d /opt/data-reposado/metadata ]; the
   mkdir -p /opt/data-reposado/html /opt/data-reposado/metadata
 fi
 
+# First, just fetch all the update info.
+python3 /usr/local/bin/repo_sync --no-download
+
+# Save the update catalog metadata for reuse in future runs
+tar -czf artifacts/reposado-metadata.tar.gz \
+  --exclude='html/content/downloads' \
+  -C /opt/data-reposado html metadata
+
 # Restore processed-packages list
 if test "$ROUTE" && test "$PROCESSED_PACKAGES_PATH" && test "$TASKCLUSTER_ROOT_URL"; then
   PROCESSED_PACKAGES="$TASKCLUSTER_ROOT_URL/api/index/v1/task/$ROUTE/artifacts/$PROCESSED_PACKAGES_PATH"
@@ -34,26 +42,22 @@ if test "$PROCESSED_PACKAGES"; then
   elif test -f "$PROCESSED_PACKAGES"; then
     gzip -dc "$PROCESSED_PACKAGES" > processed-packages
   fi
-  if test -f processed-packages; then
-    # Prevent reposado from downloading packages that have previously been
-    # dumped.
-    for f in $(cat processed-packages); do
-      mkdir -p "$(dirname "$f")"
-      touch "$f"
-    done
-  fi
 fi
 
-# First, just fetch all the update info.
-python3 /usr/local/bin/repo_sync --no-download
-
-# Save the update catalog metadata for reuse in future runs
-tar -czf artifacts/reposado-metadata.tar.gz -C /opt/data-reposado html metadata
-
 # Next, fetch just the update packages we're interested in.
+touch processed-packages
+grep -E '^[0-9]+-[0-9]+(::[0-9]+)?$' processed-packages | sort -t- -k1,1nr -k2,2Vr -u > processed-packages.filtered || true
+mv processed-packages.filtered processed-packages
+rm -f downloaded-packages
+touch downloaded-packages
+
 packages=$(python3 "${base}/list-packages.py")
 
 for package in ${packages}; do
+  if grep -Fxq "$package" processed-packages; then
+    continue
+  fi
+
   tmp_stderr="artifacts/tmp.repo_sync-product-id-${package}.stderr"
   final_stderr="artifacts/repo_sync-product-id-${package}.stderr"
 
@@ -69,6 +73,7 @@ for package in ${packages}; do
   fi
 
   rm -f "$tmp_stderr"
+  echo "$package" >> downloaded-packages
 
   # Stop downloading packages if we have more than 10 GiB of them to process
   download_size=$(du -B1073741824 -s /opt/data-reposado | cut -f1)
@@ -81,7 +86,14 @@ du -sh /opt/data-reposado
 
 # Now scrape symbols out of anything that was downloaded.
 mkdir -p symbols tmp
-env TMP=tmp python3 "${base}/PackageSymbolDumper.py" --tracking-file=/builds/worker/processed-packages --dump_syms=$MOZ_FETCHES_DIR/dump_syms/dump_syms /opt/data-reposado/html/content/downloads /builds/worker/symbols
+if test -s downloaded-packages; then
+  rm -f failed-package-ids successful-packages
+  touch failed-package-ids
+  env TMP=tmp python3 "${base}/PackageSymbolDumper.py" --failed-package-ids-file=/builds/worker/failed-package-ids --dump_syms=$MOZ_FETCHES_DIR/dump_syms/dump_syms /opt/data-reposado/html/content/downloads /builds/worker/symbols
+  grep -Fvx -f failed-package-ids downloaded-packages > successful-packages || true
+  cat processed-packages successful-packages | sort -t- -k1,1nr -k2,2Vr -u > processed-packages.merged
+  mv processed-packages.merged processed-packages
+fi
 
 # Hand out artifacts
 gzip -c processed-packages > artifacts/processed-packages.gz

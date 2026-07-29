@@ -4,8 +4,8 @@
 
 "use strict";
 
-const TEST_PAGE_URI = NetUtil.newURI("http://example.com/");
-const BOOKMARKED_PAGE_URI = NetUtil.newURI("http://example.com/bookmarked");
+const TEST_PAGE_URI = Services.io.newURI("http://example.com/");
+const BOOKMARKED_PAGE_URI = Services.io.newURI("http://example.com/bookmarked");
 
 add_task(async function test_expireAllFavicons() {
   // Add a visited page.

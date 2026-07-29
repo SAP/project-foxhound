@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -203,7 +201,7 @@ for var in ("USE_CAIRO", "MOZ2D_HAS_MOZ_CAIRO"):
 if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("android", "gtk"):
     DEFINES["MOZ_ENABLE_FREETYPE"] = True
 
-CXXFLAGS += ["-Werror=switch"]
+COMPILE_FLAGS["WARNINGS_CXXFLAGS"] += ["-Werror=switch"]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("android", "gtk"):
     CXXFLAGS += CONFIG["CAIRO_FT_CFLAGS"]

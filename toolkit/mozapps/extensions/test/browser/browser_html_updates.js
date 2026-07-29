@@ -315,7 +315,7 @@ function assertUpdateState({
 }) {
   let menuButton = card.querySelector(".more-options-button");
   Assert.equal(
-    menuButton.classList.contains("more-options-button-badged"),
+    menuButton.hasAttribute("attention"),
     shown,
     "The menu button is badged"
   );
@@ -595,12 +595,18 @@ add_task(async function testAvailableUpdates() {
   let win = await loadInitialView("extension");
   let doc = win.document;
   let updatesMessage = doc.getElementById("updates-message");
-  let categoryUtils = new CategoryUtilities(win);
 
-  let availableCat = categoryUtils.get("available-updates");
+  let availableCat = AboutAddonsTestUtils.getCategoryButton(
+    win,
+    "available-updates"
+  );
 
   ok(availableCat.hidden, "Available updates is hidden");
-  is(availableCat.badgeCount, 0, "There are no updates");
+  is(
+    AboutAddonsTestUtils.getCategoryBadgeCount(availableCat),
+    0,
+    "There are no updates"
+  );
   ok(updatesMessage, "There is an updates message");
   is_element_hidden(updatesMessage, "The message is hidden");
   ok(!updatesMessage.message.textContent, "The message is empty");
@@ -608,7 +614,7 @@ add_task(async function testAvailableUpdates() {
 
   // Check for all updates.
   let updatesFound = TestUtils.topicObserved("EM-update-check-finished");
-  doc.querySelector('#page-options [action="check-for-updates"]').click();
+  await triggerPageOptionsAction(win, "check-for-updates");
 
   is_element_visible(updatesMessage, "The message is visible");
   ok(!updatesMessage.message.textContent, "The message is empty");
@@ -630,15 +636,21 @@ add_task(async function testAvailableUpdates() {
   );
 
   // Wait for the available updates count to finalize, it's async.
-  await BrowserTestUtils.waitForCondition(() => availableCat.badgeCount == 3);
+  await BrowserTestUtils.waitForCondition(
+    () => AboutAddonsTestUtils.getCategoryBadgeCount(availableCat) === 3
+  );
 
   // The category shows the correct update count.
   ok(!availableCat.hidden, "Available updates is visible");
-  is(availableCat.badgeCount, 3, "There are 3 updates");
+  is(
+    AboutAddonsTestUtils.getCategoryBadgeCount(availableCat),
+    3,
+    "There are 3 updates"
+  );
 
   // Go to the available updates page.
   let loaded = waitForViewLoad(win);
-  availableCat.click();
+  EventUtils.synthesizeMouseAtCenter(availableCat, {}, win);
   await loaded;
 
   // Check the updates are shown.
@@ -653,7 +665,7 @@ add_task(async function testAvailableUpdates() {
   // Check the detail page for the first add-on.
   await loadDetailView(win, ids[0]);
   is(
-    categoryUtils.getSelectedViewId(),
+    AboutAddonsTestUtils.getSidebarSelectedViewId(win),
     "addons://list/extension",
     "The extensions category is selected"
   );
@@ -665,7 +677,7 @@ add_task(async function testAvailableUpdates() {
 
   // We're back on the updates view.
   is(
-    categoryUtils.getSelectedViewId(),
+    AboutAddonsTestUtils.getSidebarSelectedViewId(win),
     "addons://updates/available",
     "The available updates category is selected"
   );
@@ -679,7 +691,11 @@ add_task(async function testAvailableUpdates() {
   assertUpdateState({ card: cards[0], shown: false, expanded: false });
 
   // The count goes down but the card stays.
-  is(availableCat.badgeCount, 2, "There are only 2 updates now");
+  is(
+    AboutAddonsTestUtils.getCategoryBadgeCount(availableCat),
+    2,
+    "There are only 2 updates now"
+  );
   is(
     doc.querySelectorAll("addon-card").length,
     3,
@@ -693,7 +709,11 @@ add_task(async function testAvailableUpdates() {
   assertUpdateState({ card: cards[2], shown: false, expanded: false });
 
   // The count goes down but the card stays.
-  is(availableCat.badgeCount, 0, "There are no more updates");
+  is(
+    AboutAddonsTestUtils.getCategoryBadgeCount(availableCat),
+    0,
+    "There are no more updates"
+  );
   is(
     doc.querySelectorAll("addon-card").length,
     3,
@@ -713,7 +733,11 @@ add_task(async function testAvailableUpdates() {
   fakeUpdateAvailableOnServer(id0, "3");
   await findUpdatesForAddonId(id0);
   await waitForUpdateAvailableCountUpdatedAfterUpdateCheck();
-  is(availableCat.badgeCount, 1, "Badge count updated after finding update");
+  is(
+    AboutAddonsTestUtils.getCategoryBadgeCount(availableCat),
+    1,
+    "Badge count updated after finding update"
+  );
   // The following check is a regression test for bug 1578182.
   is(
     doc.querySelectorAll("addon-card").length,
@@ -726,7 +750,11 @@ add_task(async function testAvailableUpdates() {
   fakeUpdateAvailableOnServer(id0, "4");
   await findUpdatesForAddonId(id0);
   await waitForUpdateAvailableCountUpdatedAfterUpdateCheck();
-  is(availableCat.badgeCount, 1, "Badge count still 1 with a newer version");
+  is(
+    AboutAddonsTestUtils.getCategoryBadgeCount(availableCat),
+    1,
+    "Badge count still 1 with a newer version"
+  );
   cards = doc.querySelectorAll("addon-card");
   is(cards.length, 1, "There is still only one card");
   assertUpdateState({ card: cards[0], shown: true, expanded: false });
@@ -746,7 +774,11 @@ add_task(async function testAvailableUpdates() {
     ]);
   }
 
-  is(availableCat.badgeCount, 0, "No updates known any more");
+  is(
+    AboutAddonsTestUtils.getCategoryBadgeCount(availableCat),
+    0,
+    "No updates known any more"
+  );
   cards = doc.querySelectorAll("addon-card");
   is(cards.length, 1, "Card is still there despite no updates being available");
   // Card still there (because we do not remove cards while the update view
@@ -771,7 +803,11 @@ add_task(async function testAvailableUpdates() {
   // card may appear. We want to check that the card does not appear.
   await findUpdatesForAddonId(ids[1]);
   await waitForUpdateAvailableCountUpdatedAfterUpdateCheck();
-  is(availableCat.badgeCount, 0, "Badge count 0 with auto updates re-enabled");
+  is(
+    AboutAddonsTestUtils.getCategoryBadgeCount(availableCat),
+    0,
+    "Badge count 0 with auto updates re-enabled"
+  );
   cards = doc.querySelectorAll("addon-card");
   is(cards.length, 0, "Card not shown when automatic updates are enabled");
   // This verifies that an install was created, and then cancels it.
@@ -792,14 +828,20 @@ add_task(async function testUpdatesShownOnLoad() {
   await findUpdatesForAddonId(id);
 
   let win = await loadInitialView("extension");
-  let categoryUtils = new CategoryUtilities(win);
-  let updatesButton = categoryUtils.get("available-updates");
+  let updatesButton = AboutAddonsTestUtils.getCategoryButton(
+    win,
+    "available-updates"
+  );
 
   ok(!updatesButton.hidden, "The updates button is shown");
-  is(updatesButton.badgeCount, 1, "There is an update");
+  is(
+    AboutAddonsTestUtils.getCategoryBadgeCount(updatesButton),
+    1,
+    "There is an update"
+  );
 
   let loaded = waitForViewLoad(win);
-  updatesButton.click();
+  EventUtils.synthesizeMouseAtCenter(updatesButton, {}, win);
   await loaded;
 
   let cards = win.document.querySelectorAll("addon-card");
@@ -812,16 +854,26 @@ add_task(async function testUpdatesShownOnLoad() {
   await installUpdate(card, "update-installed");
 
   ok(!updatesButton.hidden, "The updates button is still shown");
-  is(updatesButton.badgeCount, 0, "There are no more updates");
+  is(
+    AboutAddonsTestUtils.getCategoryBadgeCount(updatesButton),
+    0,
+    "There are no more updates"
+  );
 
   info("Check that the updates section is hidden when re-opened");
   await closeView(win);
   win = await loadInitialView("extension");
-  categoryUtils = new CategoryUtilities(win);
-  updatesButton = categoryUtils.get("available-updates");
+  updatesButton = AboutAddonsTestUtils.getCategoryButton(
+    win,
+    "available-updates"
+  );
 
   ok(updatesButton.hidden, "Available updates is hidden");
-  is(updatesButton.badgeCount, 0, "There are no updates");
+  is(
+    AboutAddonsTestUtils.getCategoryBadgeCount(updatesButton),
+    0,
+    "There are no updates"
+  );
 
   AddonManager.autoUpdateDefault = true;
   await closeView(win);

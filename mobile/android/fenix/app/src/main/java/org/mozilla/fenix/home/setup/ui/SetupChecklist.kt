@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -30,7 +29,6 @@ import androidx.compose.ui.unit.dp
 import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
 import mozilla.components.compose.base.button.FilledButton
 import mozilla.components.compose.base.theme.layout.AcornElevation
-import mozilla.components.compose.base.theme.layout.AcornLayout
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.appstate.setup.checklist.ChecklistItem
 import org.mozilla.fenix.components.appstate.setup.checklist.SetupChecklistState
@@ -42,7 +40,6 @@ import org.mozilla.fenix.theme.FirefoxTheme
 import mozilla.components.ui.icons.R as iconsR
 
 private val elevation = AcornElevation.level4
-private val shapeChecklist = RoundedCornerShape(size = AcornLayout.AcornCorner.large)
 
 /**
  * The Setup checklist displayed on homepage that contains onboarding tasks.
@@ -54,8 +51,8 @@ private val shapeChecklist = RoundedCornerShape(size = AcornLayout.AcornCorner.l
 fun SetupChecklist(setupChecklistState: SetupChecklistState, interactor: SetupChecklistInteractor) {
     Card(
         modifier = Modifier.padding(16.dp),
-        shape = shapeChecklist,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+        shape = MaterialTheme.shapes.small,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceBright),
         elevation = CardDefaults.cardElevation(defaultElevation = elevation),
     ) {
         Column(
@@ -157,7 +154,7 @@ private fun createPreviewTasks() = listOf(
 private fun setAsDefaultTaskPreview() = ChecklistItem.Task(
     type = ChecklistItem.Task.Type.SET_AS_DEFAULT,
     title = R.string.setup_checklist_task_default_browser,
-    icon = iconsR.drawable.mozac_ic_android_robot_fill_24,
+    icon = iconsR.drawable.mozac_ic_globe_24,
     isCompleted = false,
 )
 
@@ -171,7 +168,7 @@ private fun webExtensionTaskPreview() = ChecklistItem.Task(
 private fun signInTaskPreview() = ChecklistItem.Task(
     type = ChecklistItem.Task.Type.SIGN_IN,
     title = R.string.setup_checklist_task_account_sync,
-    icon = iconsR.drawable.mozac_ic_android_robot_fill_24,
+    icon = iconsR.drawable.mozac_ic_globe_24,
     isCompleted = true,
 )
 
@@ -187,13 +184,13 @@ private fun createPreviewGroups() = listOf(
             ChecklistItem.Task(
                 type = ChecklistItem.Task.Type.SELECT_THEME,
                 title = R.string.setup_checklist_task_toolbar_selection,
-                icon = iconsR.drawable.mozac_ic_android_robot_fill_24,
+                icon = iconsR.drawable.mozac_ic_globe_24,
                 isCompleted = false,
             ),
             ChecklistItem.Task(
                 type = ChecklistItem.Task.Type.CHANGE_TOOLBAR_PLACEMENT,
                 title = R.string.setup_checklist_task_theme_selection,
-                icon = iconsR.drawable.mozac_ic_android_robot_fill_24,
+                icon = iconsR.drawable.mozac_ic_globe_24,
                 isCompleted = false,
             ),
         ),
@@ -205,7 +202,7 @@ private fun createPreviewGroups() = listOf(
             ChecklistItem.Task(
                 type = ChecklistItem.Task.Type.INSTALL_SEARCH_WIDGET,
                 title = R.string.setup_checklist_task_search_widget_2,
-                icon = iconsR.drawable.mozac_ic_android_robot_fill_24,
+                icon = iconsR.drawable.mozac_ic_globe_24,
                 isCompleted = false,
             ),
             ChecklistItem.Task(

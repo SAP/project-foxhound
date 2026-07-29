@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -268,6 +266,15 @@ class nsHTTPSOnlyUtils {
    * @return     true if the host of the URI ends with a unknown suffix
    */
   static bool UnknownPublicSuffixException(nsIURI* aURI);
+
+  /**
+   * Checks if a request was initiated by an extension background script and
+   * the destination URL is on the exception list.
+   * @param aURI      The destination URI
+   * @param aLoadInfo The loadinfo of the request
+   * @return          true if the request is exempt
+   */
+  static bool IsExemptedExtensionRequest(nsIURI* aURI, nsILoadInfo* aLoadInfo);
 };
 
 /**

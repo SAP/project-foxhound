@@ -20,15 +20,13 @@ jobs:
           rustup toolchain install nightly --component miri
           rustup override set nightly
           cargo miri setup
-      - name: Test (default) with Miri
-        run: MIRIFLAGS=-Zmiri-strict-provenance cargo miri test
+      # We do not use Stacked Borrows anymore, since ExtractIf (which is lifted from std) does not pass SB,
+      # and if std can do it in non-magical data structure code, we can do it too.
       - name: Test (default) with Miri + Tree Borrows
         run: MIRIFLAGS="-Zmiri-strict-provenance -Zmiri-tree-borrows" cargo miri test
       # AutoThinVec needs tree borrows.
       - name: Test (gecko-ffi) with Miri
         run: MIRIFLAGS="-Zmiri-strict-provenance -Zmiri-tree-borrows" cargo miri test --features=gecko-ffi
-      - name: Test (unstable features) with Miri
-        run: MIRIFLAGS=-Zmiri-strict-provenance cargo miri test --features=unstable
 
   build:
     runs-on: ubuntu-latest
@@ -40,24 +38,27 @@ jobs:
       run: cargo build --features=malloc_size_of --verbose
     - name: Run tests
       run: cargo test --verbose
-    - name: Run tests
-      run: cargo test --verbose
     - name: Run tests (serde)
       run: cargo test --features=serde --verbose
     - name: Run tests (gecko-ffi)
       run: cargo test --tests --features=gecko-ffi --verbose
     - name: Run tests (no_std)
       run: cargo test --tests --no-default-features --verbose
+    - name: Run tests (unstable)
+      run: cargo +nightly test --features=unstable --verbose
 
-  msrv:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: 1.53
-          override: true
-      - run: cargo +1.53 check
+  # FIXME(emilio): msrv job times out waiting for crates.io with the 1.53
+  # toolchain.
+  #
+  # msrv:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v2
+  #     - uses: actions-rs/toolchain@v1
+  #       with:
+  #         toolchain: 1.53
+  #         override: true
+  #     - run: cargo check
 
   fmt:
     runs-on: ubuntu-latest
@@ -69,10 +70,7 @@ jobs:
           profile: minimal
           components: rustfmt
           override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+      - run: cargo fmt --all -- --check
 
 
   clippy:
@@ -85,12 +83,7 @@ jobs:
             profile: minimal
             components: clippy
             override: true
-      - uses: actions-rs/clippy-check@v1
-        env:
-          PWD: ${{ env.GITHUB_WORKSPACE }}
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --workspace --tests --examples
+      - run: cargo clippy --workspace --tests --examples
 
 
   docs:
@@ -106,7 +99,4 @@ jobs:
           components: rust-docs
           override: true
       - uses: swatinem/rust-cache@v1
-      - uses: actions-rs/cargo@v1
-        with:
-          command: doc
-          args: --workspace --no-deps
+      - run: cargo doc --workspace --no-deps

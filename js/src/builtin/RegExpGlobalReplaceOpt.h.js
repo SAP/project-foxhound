@@ -35,7 +35,7 @@ function FUNC_NAME(
 #endif
 ) {
   // Step 9.a.
-  var fullUnicode = !!(flags & REGEXP_UNICODE_FLAG);
+  var fullUnicode = !!(flags & REGEXP_ANY_UNICODE_MASK);
 
   // Step 9.b.
   var lastIndex = 0;

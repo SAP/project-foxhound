@@ -51,23 +51,25 @@ function appUpdater(options = {}) {
     "chrome://browser/locale/browser.properties"
   );
 
-  try {
-    let manualURL = new URL(
-      Services.urlFormatter.formatURLPref("app.update.url.manual")
-    );
+  if (this.updateDeck) {
+    try {
+      let manualURL = new URL(
+        Services.urlFormatter.formatURLPref("app.update.url.manual")
+      );
 
-    for (const manualLink of document.querySelectorAll(".manualLink")) {
-      // Strip hash and search parameters for display text.
-      let displayUrl = manualURL.origin + manualURL.pathname;
-      manualLink.href = manualURL.href;
-      document.l10n.setArgs(manualLink.closest("[data-l10n-id]"), {
-        displayUrl,
-      });
+      for (const manualLink of document.querySelectorAll(".manualLink")) {
+        // Strip hash and search parameters for display text.
+        let displayUrl = manualURL.origin + manualURL.pathname;
+        manualLink.href = manualURL.href;
+        document.l10n.setArgs(manualLink.closest("[data-l10n-id]"), {
+          displayUrl,
+        });
+      }
+
+      document.getElementById("failedLink").href = manualURL.href;
+    } catch (e) {
+      console.error("Invalid manual update url.", e);
     }
-
-    document.getElementById("failedLink").href = manualURL.href;
-  } catch (e) {
-    console.error("Invalid manual update url.", e);
   }
 
   this._appUpdater.check();
@@ -91,7 +93,7 @@ appUpdater.prototype = {
   },
 
   get selectedPanel() {
-    return this.updateDeck.selectedPanel;
+    return this.updateDeck?.selectedPanel;
   },
 
   _onAppUpdateStatus(status, ...args) {
@@ -117,12 +119,18 @@ appUpdater.prototype = {
             maxSize = this.update.selectedPatch.size;
           }
           const transfer = DownloadUtils.getTransferTotal(0, maxSize);
-          document.l10n.setArgs(downloadStatus, { transfer });
-          this.selectPanel("downloading");
+          if (downloadStatus) {
+            document.l10n.setArgs(downloadStatus, { transfer });
+          }
+          this.selectPanel("downloading", { transfer });
         } else {
           let [progress, max] = args;
           const transfer = DownloadUtils.getTransferTotal(progress, max);
-          document.l10n.setArgs(downloadStatus, { transfer });
+          if (downloadStatus) {
+            document.l10n.setArgs(downloadStatus, { transfer });
+          } else {
+            this.selectPanel("downloading", { transfer });
+          }
         }
         break;
       }
@@ -157,10 +165,16 @@ appUpdater.prototype = {
         break;
       case AppUpdater.STATUS.UNSUPPORTED_SYSTEM:
         if (this.update.detailsURL) {
-          let unsupportedLink = document.getElementById("unsupportedLink");
-          unsupportedLink.href = this.update.detailsURL;
+          if (this.updateDeck) {
+            let unsupportedLink = document.getElementById("unsupportedLink");
+            unsupportedLink.href = this.update.detailsURL;
+          }
+          this.selectPanel("unsupportedSystem", {
+            linkURL: this.update.detailsURL,
+          });
+        } else {
+          this.selectPanel("unsupportedSystem");
         }
-        this.selectPanel("unsupportedSystem");
         break;
       case AppUpdater.STATUS.MANUAL_UPDATE:
         this.selectPanel("manualUpdate");
@@ -190,7 +204,25 @@ appUpdater.prototype = {
    * @param  aChildID
    *         The id of the deck's child to select, e.g. "apply".
    */
-  selectPanel(aChildID) {
+  selectPanel(aChildID, options = {}) {
+    let updateVersion = "";
+    if (aChildID == "downloadAndInstall") {
+      updateVersion = gAppUpdater.update.displayVersion;
+      // Include the build ID if this is an "a#" (nightly or aurora) build
+      if (/a\d+$/.test(updateVersion)) {
+        let buildID = gAppUpdater.update.buildID;
+        let year = buildID.slice(0, 4);
+        let month = buildID.slice(4, 6);
+        let day = buildID.slice(6, 8);
+        updateVersion += ` (${year}-${month}-${day})`;
+      }
+    }
+    // If a custom selectPanel callback is provided, use it
+    if (typeof this.options.selectPanel === "function") {
+      this.options.selectPanel(aChildID, { ...options, updateVersion });
+      return;
+    }
+
     let panel = document.getElementById(aChildID);
     let icon = document.getElementById("updateIcon");
     if (icon) {
@@ -203,15 +235,6 @@ appUpdater.prototype = {
     let button = panel.querySelector("button");
     if (button) {
       if (aChildID == "downloadAndInstall") {
-        let updateVersion = gAppUpdater.update.displayVersion;
-        // Include the build ID if this is an "a#" (nightly or aurora) build
-        if (/a\d+$/.test(updateVersion)) {
-          let buildID = gAppUpdater.update.buildID;
-          let year = buildID.slice(0, 4);
-          let month = buildID.slice(4, 6);
-          let day = buildID.slice(6, 8);
-          updateVersion += ` (${year}-${month}-${day})`;
-        }
         button.label = this.bundle.formatStringFromName(
           "update.downloadAndInstallButton.label",
           [updateVersion]

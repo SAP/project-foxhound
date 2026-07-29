@@ -285,7 +285,6 @@ class RecentlyClosedMiddlewareTest {
             assertEquals(1, tab.size)
             assertEquals("tab5", tab[0].state.id)
         }
-        Unit
     }
 
     @Test

@@ -26,6 +26,7 @@
     "defaultPageQueryParam",
     "pageTypeParam",
     "subframes",
-    "impressionAttributes"
+    "impressionAttributes",
+    "alwaysMatchSERP"
   ]
 }

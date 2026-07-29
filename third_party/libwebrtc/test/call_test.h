@@ -15,10 +15,10 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
-#include "api/array_view.h"
 #include "api/audio/audio_device.h"
 #include "api/audio/audio_processing.h"
 #include "api/audio_codecs/audio_decoder_factory.h"
@@ -70,7 +70,7 @@ class BaseTest;
 class CallTest : public ::testing::Test, public RtpPacketSinkInterface {
  public:
   explicit CallTest(FieldTrials field_trials = CreateTestFieldTrials(""));
-  virtual ~CallTest();
+  ~CallTest() override;
 
   static const std::map<uint8_t, MediaType> payload_type_map_;
 
@@ -83,7 +83,7 @@ class CallTest : public ::testing::Test, public RtpPacketSinkInterface {
 
   void RegisterRtpExtension(const RtpExtension& extension);
   // Returns header extensions that can be parsed by the transport.
-  ArrayView<const RtpExtension> GetRegisteredExtensions() {
+  std::span<const RtpExtension> GetRegisteredExtensions() {
     return rtp_extensions_;
   }
 
@@ -282,7 +282,7 @@ class BaseTest : public RtpRtcpObserver {
  public:
   BaseTest();
   explicit BaseTest(TimeDelta timeout);
-  virtual ~BaseTest();
+  ~BaseTest() override;
 
   virtual void PerformTest() = 0;
   virtual bool ShouldCreateReceivers() const = 0;

@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,10 +28,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
+import mozilla.components.compose.base.InfoCard
+import mozilla.components.compose.base.InfoType
+import mozilla.components.compose.base.button.IconButton
 import mozilla.components.concept.engine.translate.TranslationError
 import org.mozilla.fenix.R
-import org.mozilla.fenix.compose.InfoCard
-import org.mozilla.fenix.compose.InfoType
 import org.mozilla.fenix.compose.list.SwitchListItem
 import org.mozilla.fenix.compose.list.TextListItem
 import org.mozilla.fenix.theme.FirefoxTheme
@@ -172,11 +172,12 @@ private fun TranslationOptionsDialogHeader(
     ) {
         IconButton(
             onClick = { onBackClicked() },
+            contentDescription = stringResource(R.string.etp_back_button_content_description),
             modifier = Modifier.size(24.dp),
         ) {
             Icon(
                 painter = painterResource(id = iconsR.drawable.mozac_ic_back_24),
-                contentDescription = stringResource(R.string.etp_back_button_content_description),
+                contentDescription = null,
             )
         }
 

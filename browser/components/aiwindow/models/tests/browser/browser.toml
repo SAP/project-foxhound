@@ -1,7 +1,6 @@
 [DEFAULT]
 support-files = [
   "head.js",
-  "ai-window-prompts-remote-settings-snapshot.json",
 ]
 prefs = [
   "browser.smartwindow.enabled=true",
@@ -14,4 +13,3 @@ prefs = [
 ["browser_get_page_content.js"]
 ["browser_title_generation.js"]
 ["browser_utils_fxAccount.js"]
-["browser_utils_loadConfig.js"]

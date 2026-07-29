@@ -139,6 +139,7 @@ const char* MFVideoTransferFunctionToStr(MFVideoTransferFunction aFunc) {
     ENUM_TO_STR(MFVideoTransFunc_2020);
     ENUM_TO_STR(MFVideoTransFunc_sRGB);
     ENUM_TO_STR(MFVideoTransFunc_2084);
+    ENUM_TO_STR(MFVideoTransFunc_HLG);
     default:
       return "Unsupported MFVideoTransferFunction";
   }
@@ -151,6 +152,27 @@ const char* MFVideoPrimariesToStr(MFVideoPrimaries aPrimaries) {
     ENUM_TO_STR(MFVideoPrimaries_BT2020);
     default:
       return "Unsupported MFVideoPrimaries";
+  }
+}
+
+MFVideoTransferFunction ToMFVideoTransFunc(
+    const Maybe<gfx::TransferFunction>& aTransferFunction) {
+  if (!aTransferFunction) {
+    return MFVideoTransFunc_Unknown;
+  }
+  // https://docs.microsoft.com/en-us/windows/win32/api/mfobjects/ne-mfobjects-mfvideotransferfunction
+  using TransferFunction = gfx::TransferFunction;
+  switch (*aTransferFunction) {
+    case TransferFunction::BT709:
+      return MFVideoTransFunc_709;
+    case TransferFunction::SRGB:
+      return MFVideoTransFunc_sRGB;
+    case TransferFunction::PQ:
+      return MFVideoTransFunc_2084;
+    case TransferFunction::HLG:
+      return MFVideoTransFunc_HLG;
+    default:
+      return MFVideoTransFunc_Unknown;
   }
 }
 

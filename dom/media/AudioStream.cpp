@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -35,12 +33,12 @@ namespace mozilla {
 
 LazyLogModule gAudioStreamLog("AudioStream");
 // For simple logs
-#define LOG(x, ...)                                  \
-  MOZ_LOG(gAudioStreamLog, mozilla::LogLevel::Debug, \
-          ("%p " x, this, ##__VA_ARGS__))
-#define LOGW(x, ...)                                   \
-  MOZ_LOG(gAudioStreamLog, mozilla::LogLevel::Warning, \
-          ("%p " x, this, ##__VA_ARGS__))
+#define LOG(x, ...)                                               \
+  MOZ_LOG_FMT(gAudioStreamLog, mozilla::LogLevel::Debug, "{} " x, \
+              fmt::ptr(this), ##__VA_ARGS__)
+#define LOGW(x, ...)                                                \
+  MOZ_LOG_FMT(gAudioStreamLog, mozilla::LogLevel::Warning, "{} " x, \
+              fmt::ptr(this), ##__VA_ARGS__)
 #define LOGE(x, ...)                                                          \
   NS_DebugBreak(NS_DEBUG_WARNING,                                             \
                 nsPrintfCString("%p " x, this, ##__VA_ARGS__).get(), nullptr, \
@@ -145,7 +143,7 @@ AudioStream::AudioStream(DataSource& aSource, uint32_t aInRate,
       mCallbacksStarted(false) {}
 
 AudioStream::~AudioStream() {
-  LOG("deleted, state %d", mState.load());
+  LOG("deleted, state {}", static_cast<int>(mState.load()));
   MOZ_ASSERT(mState == SHUTDOWN && !mCubebStream,
              "Should've called ShutDown() before deleting an AudioStream");
 }
@@ -230,7 +228,7 @@ nsresult AudioStream::Init(AudioDeviceInfo* aSinkInfo)
   auto startTime = TimeStamp::Now();
   TRACE("AudioStream::Init");
 
-  LOG("%s channels: %d, rate: %d", __FUNCTION__, mOutChannels,
+  LOG("{} channels: {}, rate: {}", __FUNCTION__, mOutChannels,
       mAudioClock.GetInputRate());
 
   mSinkInfo = aSinkInfo;
@@ -284,7 +282,7 @@ nsresult AudioStream::OpenCubeb(cubeb* aContext, cubeb_stream_params& aParams,
   }
 
   TimeDuration timeDelta = TimeStamp::Now() - aStartTime;
-  LOG("creation time %sfirst: %u ms", aIsFirst ? "" : "not ",
+  LOG("creation time {}first: {} ms", aIsFirst ? "" : "not ",
       (uint32_t)timeDelta.ToMilliseconds());
 
   return NS_OK;
@@ -341,7 +339,7 @@ RefPtr<MediaSink::EndedPromise> AudioStream::Start() {
       mEndedPromise.RejectIfExists(NS_ERROR_FAILURE, __func__);
     }
 
-    LOG("started, state %s", mState == STARTED   ? "STARTED"
+    LOG("started, state {}", mState == STARTED   ? "STARTED"
                              : mState == DRAINED ? "DRAINED"
                                                  : "ERRORED");
   }
@@ -392,7 +390,7 @@ void AudioStream::Resume() {
 
 void AudioStream::ShutDown() {
   TRACE("AudioStream::ShutDown");
-  LOG("ShutDown, state %d", mState.load());
+  LOG("ShutDown, state {}", static_cast<int>(mState.load()));
 
   MonitorAutoLock mon(mMonitor);
   if (mCubebStream) {
@@ -462,7 +460,7 @@ int64_t AudioStream::GetPositionInFramesUnlocked() {
 
 bool AudioStream::IsValidAudioFormat(Chunk* aChunk) {
   if (aChunk->Rate() != mAudioClock.GetInputRate()) {
-    LOGW("mismatched sample %u, mInRate=%u", aChunk->Rate(),
+    LOGW("mismatched sample {}, mInRate={}", aChunk->Rate(),
          mAudioClock.GetInputRate());
     return false;
   }
@@ -541,7 +539,7 @@ void AudioStream::GetTimeStretched(AudioBufferWriter& aWriter) {
     auto size = CheckedUint32(mOutChannels) * toPopFrames;
     if (!size.isValid()) {
       // The overflow should not happen in normal case.
-      LOGW("Invalid member data: %d channels, %d frames", mOutChannels,
+      LOGW("Invalid member data: {} channels, {} frames", mOutChannels,
            toPopFrames);
       return;
     }
@@ -648,7 +646,7 @@ long AudioStream::DataCallback(void* aBuffer, long aFrames) {
     if (writer.Available() > 0) {
       TRACE_COMMENT("AudioStream::DataCallback", "Underrun: %d frames missing",
                     writer.Available());
-      LOGW("lost %d frames", writer.Available());
+      LOGW("lost {} frames", writer.Available());
       writer.WriteZeros(writer.Available());
     }
   } else {
@@ -676,7 +674,8 @@ long AudioStream::DataCallback(void* aBuffer, long aFrames) {
 
 void AudioStream::StateCallback(cubeb_state aState) {
   MOZ_ASSERT(mState != SHUTDOWN, "No state callback after shutdown");
-  LOG("StateCallback, mState=%d cubeb_state=%d", mState.load(), aState);
+  LOG("StateCallback, mState={} cubeb_state={}",
+      static_cast<int>(mState.load()), static_cast<int>(aState));
 
   MonitorAutoLock mon(mMonitor);
   if (aState == CUBEB_STATE_DRAINED) {

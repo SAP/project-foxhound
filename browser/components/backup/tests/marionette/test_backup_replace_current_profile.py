@@ -109,6 +109,7 @@ class BackupReplaceCurrentProfileTest(BackupTestBase):
         self.logger.info("Post-recovery complete")
 
         self.init_selectable_profile_service()
+        self.assert_profile_source("backup")
 
         self.logger.info("Step 6: Cleaning up")
         self.cleanup_selectable_profiles()
@@ -159,7 +160,11 @@ class BackupReplaceCurrentProfileTest(BackupTestBase):
 
         custom_name = "My Custom Profile"
         custom_avatar = "book"
-        custom_theme = {"themeBg": "#ff5500", "themeFg": "#ffffff"}
+        custom_theme = {
+            "themeId": "default-theme@mozilla.org",
+            "themeBg": "#ff5500",
+            "themeFg": "#ffffff",
+        }
         self.run_async(
             """
             const { SelectableProfileService } = ChromeUtils.importESModule(
@@ -232,6 +237,7 @@ class BackupReplaceCurrentProfileTest(BackupTestBase):
 
         self.logger.info("Step 5: Verifying recovered profile has copied metadata")
         self.init_selectable_profile_service()
+        self.assert_profile_source("backup")
 
         recovered_profile_metadata = self.run_async(
             """

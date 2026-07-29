@@ -181,7 +181,7 @@ class TableUpdateV4 : public TableUpdate {
  private:
   virtual int Tag() const override { return TAG; }
 
-  bool mFullUpdate;
+  bool mFullUpdate = false;
   PrefixStringMap mPrefixesMap;
   RemovalIndiceArray mRemovalIndiceArray;
   nsCString mClientState;

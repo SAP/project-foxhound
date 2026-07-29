@@ -16,6 +16,7 @@ import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.State
 import mozilla.components.lib.state.Store
 import mozilla.components.lib.state.ext.flow
+import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.search.SearchFragmentAction.Init
 import org.mozilla.fenix.search.SearchFragmentAction.UpdateSearchState
 import org.mozilla.fenix.search.SearchFragmentStore.Environment
@@ -25,11 +26,13 @@ import mozilla.components.lib.state.Action as MVIAction
  * [SearchFragmentStore] [Middleware] to synchronize search related details from [BrowserStore].
  *
  * @param browserStore The [BrowserStore] to sync from.
- * @param scope [CoroutineScope] used for running long running operations in background.
+ * @param scope [CoroutineScope] used for running long-running operations in background.
+ * @param appStore The [AppStore] to sync from.
  */
 class BrowserStoreToFenixSearchMapperMiddleware(
     private val browserStore: BrowserStore,
     private val scope: CoroutineScope,
+    private val appStore: AppStore? = null,
 ) : Middleware<SearchFragmentState, SearchFragmentAction> {
     @VisibleForTesting
     internal var environment: Environment? = null
@@ -53,7 +56,10 @@ class BrowserStoreToFenixSearchMapperMiddleware(
                 .distinctUntilChanged()
                 .collect { searchState ->
                     store.dispatch(
-                        UpdateSearchState(searchState, true),
+                        UpdateSearchState(
+                            searchState,
+                            isPrivate = appStore?.state?.mode?.isPrivate ?: false,
+                        ),
                     )
                 }
         }

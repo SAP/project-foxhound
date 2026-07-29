@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -178,8 +177,6 @@ class gfxDWriteFontEntry final : public gfxFontEntry {
 
   gfxFontEntry* Clone() const override;
 
-  virtual ~gfxDWriteFontEntry();
-
   hb_blob_t* GetFontTable(uint32_t aTableTag) override;
 
   nsresult ReadCMAP(FontInfoData* aFontInfoData = nullptr) override;
@@ -207,6 +204,9 @@ class gfxDWriteFontEntry final : public gfxFontEntry {
   friend class gfxDWriteFontList;
   friend class gfxDWriteFontFamily;
 
+  // Protected destructor, to discourage deletion outside of Release():
+  virtual ~gfxDWriteFontEntry();
+
   virtual nsresult CopyFontTable(uint32_t aTableTag,
                                  nsTArray<uint8_t>& aBuffer) override;
 
@@ -218,6 +218,8 @@ class gfxDWriteFontEntry final : public gfxFontEntry {
       const nsTArray<gfxFontVariation>* aVariations = nullptr);
 
   static bool InitLogFont(IDWriteFont* aFont, LOGFONTW* aLogFont);
+
+  FontTableCache* GetFontTableCache(bool aCreate) override;
 
   /**
    * A fontentry only needs to have either of these. If it has both only
@@ -237,6 +239,8 @@ class gfxDWriteFontEntry final : public gfxFontEntry {
   RefPtr<IDWriteFontFace5> mFontFace5;
 
   DWRITE_FONT_FACE_TYPE mFaceType;
+
+  mozilla::Atomic<FontTableCache*> mFontTableCache;
 
   int8_t mIsCJK;
   bool mIsSystemFont;
@@ -371,10 +375,10 @@ class gfxDWriteFontList final : public gfxPlatformFontList {
 
   FontVisibility GetVisibilityForFamily(const nsACString& aName) const;
 
-  gfxFontFamily* CreateFontFamily(const nsACString& aName,
-                                  FontVisibility aVisibility) const override;
+  already_AddRefed<gfxFontFamily> CreateFontFamily(
+      const nsACString& aName, FontVisibility aVisibility) const override;
 
-  gfxFontEntry* CreateFontEntry(
+  already_AddRefed<gfxFontEntry> CreateFontEntry(
       mozilla::fontlist::Face* aFace,
       const mozilla::fontlist::Family* aFamily) override;
 
@@ -391,18 +395,15 @@ class gfxDWriteFontList final : public gfxPlatformFontList {
       nsTArray<mozilla::fontlist::Face::InitData>& aFaces,
       bool aLoadCmaps) const override;
 
-  gfxFontEntry* LookupLocalFont(FontVisibilityProvider* aFontVisibilityProvider,
-                                const nsACString& aFontName,
-                                WeightRange aWeightForEntry,
-                                StretchRange aStretchForEntry,
-                                SlantStyleRange aStyleForEntry) override;
+  already_AddRefed<gfxFontEntry> LookupLocalFont(
+      FontVisibilityProvider* aFontVisibilityProvider,
+      const nsACString& aFontName, WeightRange aWeightForEntry,
+      StretchRange aStretchForEntry, SlantStyleRange aStyleForEntry) override;
 
-  gfxFontEntry* MakePlatformFont(const nsACString& aFontName,
-                                 WeightRange aWeightForEntry,
-                                 StretchRange aStretchForEntry,
-                                 SlantStyleRange aStyleForEntry,
-                                 const uint8_t* aFontData,
-                                 uint32_t aLength) override;
+  already_AddRefed<gfxFontEntry> MakePlatformFont(
+      const nsACString& aFontName, WeightRange aWeightForEntry,
+      StretchRange aStretchForEntry, SlantStyleRange aStyleForEntry,
+      const uint8_t* aFontData, uint32_t aLength) override;
 
   IDWriteGdiInterop* GetGDIInterop() { return mGDIInterop; }
   bool UseGDIFontTableAccess() const;

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -51,7 +49,7 @@ TEST(Threads, Main)
 {
   nsresult rv;
 
-  nsCOMPtr<nsIRunnable> event = new nsRunner(0);
+  RefPtr event = MakeRefPtr<nsRunner>(0);
   EXPECT_TRUE(event);
 
   nsCOMPtr<nsIThread> runner;
@@ -120,7 +118,7 @@ TEST(Threads, Stress)
     for (k = 0; k < threads; k++) {
       nsCOMPtr<nsIThread> t;
       nsresult rv = NS_NewNamedThread("StressRunner", getter_AddRefs(t),
-                                      new nsStressRunner(k));
+                                      MakeAndAddRef<nsStressRunner>(k));
       EXPECT_NS_SUCCEEDED(rv);
       NS_ADDREF(array[k] = t);
     }
@@ -171,7 +169,7 @@ class AsyncShutdownWaiter : public Runnable {
       mozilla::MonitorAutoLock lock(*gBeginAsyncShutdownMonitor);
 
       rv = NS_NewNamedThread("AsyncShutdownPr", getter_AddRefs(t),
-                             new AsyncShutdownPreparer());
+                             MakeAndAddRef<AsyncShutdownPreparer>());
       EXPECT_NS_SUCCEEDED(rv);
 
       lock.Wait();
@@ -219,13 +217,13 @@ TEST(Threads, AsyncShutdown)
     mozilla::MonitorAutoLock lock(*gAsyncShutdownReadyMonitor);
 
     rv = NS_NewNamedThread("AsyncShutdownWt", getter_AddRefs(t),
-                           new AsyncShutdownWaiter());
+                           MakeAndAddRef<AsyncShutdownWaiter>());
     EXPECT_NS_SUCCEEDED(rv);
 
     lock.Wait();
   }
 
-  NS_DispatchToCurrentThread(new SameThreadSentinel());
+  NS_DispatchToCurrentThread(MakeAndAddRef<SameThreadSentinel>());
   rv = t->Shutdown();
   EXPECT_NS_SUCCEEDED(rv);
 
@@ -321,13 +319,13 @@ TEST(Threads, ShutdownTask)
   nsresult rv = NS_NewNamedThread("Testing Thread", getter_AddRefs(thread));
   MOZ_ALWAYS_SUCCEEDS(rv);
 
-  nsCOMPtr<nsITargetShutdownTask> shutdownTask = new TestShutdownTask([=] {
+  RefPtr shutdownTask = MakeRefPtr<TestShutdownTask>([=] {
     EXPECT_TRUE(thread->IsOnCurrentThread());
 
     ASSERT_FALSE(*shutdownTaskRun);
     *shutdownTaskRun = true;
 
-    nsCOMPtr<nsITargetShutdownTask> dummyTask = new TestShutdownTask([] {});
+    RefPtr dummyTask = MakeRefPtr<TestShutdownTask>([] {});
     nsresult rv = thread->RegisterShutdownTask(dummyTask);
     EXPECT_TRUE(rv == NS_ERROR_UNEXPECTED);
 
@@ -335,8 +333,7 @@ TEST(Threads, ShutdownTask)
         thread->Dispatch(NS_NewRunnableFunction("afterShutdownTask", [=] {
           EXPECT_TRUE(thread->IsOnCurrentThread());
 
-          nsCOMPtr<nsITargetShutdownTask> dummyTask =
-              new TestShutdownTask([] {});
+          RefPtr dummyTask = MakeRefPtr<TestShutdownTask>([] {});
           nsresult rv = thread->RegisterShutdownTask(dummyTask);
           EXPECT_TRUE(rv == NS_ERROR_UNEXPECTED);
 
@@ -349,8 +346,8 @@ TEST(Threads, ShutdownTask)
   ASSERT_FALSE(*shutdownTaskRun);
   ASSERT_FALSE(*runnableFromShutdownRun);
 
-  RefPtr<mozilla::SyncRunnable> syncWithThread =
-      new mozilla::SyncRunnable(NS_NewRunnableFunction("dummy", [] {}));
+  RefPtr syncWithThread =
+      MakeRefPtr<mozilla::SyncRunnable>(NS_NewRunnableFunction("dummy", [] {}));
   MOZ_ALWAYS_SUCCEEDS(syncWithThread->DispatchToThread(thread));
 
   ASSERT_FALSE(*shutdownTaskRun);
@@ -368,13 +365,13 @@ TEST(Threads, UnregisteredShutdownTask)
   nsresult rv = NS_NewNamedThread("Testing Thread", getter_AddRefs(thread));
   MOZ_ALWAYS_SUCCEEDS(rv);
 
-  nsCOMPtr<nsITargetShutdownTask> shutdownTask =
-      new TestShutdownTask([=] { MOZ_CRASH("should not be run"); });
+  RefPtr shutdownTask =
+      MakeRefPtr<TestShutdownTask>([=] { MOZ_CRASH("should not be run"); });
 
   MOZ_ALWAYS_SUCCEEDS(thread->RegisterShutdownTask(shutdownTask));
 
-  RefPtr<mozilla::SyncRunnable> syncWithThread =
-      new mozilla::SyncRunnable(NS_NewRunnableFunction("dummy", [] {}));
+  RefPtr syncWithThread =
+      MakeRefPtr<mozilla::SyncRunnable>(NS_NewRunnableFunction("dummy", [] {}));
   MOZ_ALWAYS_SUCCEEDS(syncWithThread->DispatchToThread(thread));
 
   MOZ_ALWAYS_SUCCEEDS(thread->UnregisterShutdownTask(shutdownTask));

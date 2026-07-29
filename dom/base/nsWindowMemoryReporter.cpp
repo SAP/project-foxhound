@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,6 +16,7 @@
 #include "nsGlobalWindowInner.h"
 #include "nsGlobalWindowOuter.h"
 #include "nsNetCID.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsPrintfCString.h"
 #include "nsQueryObject.h"
 #include "nsServiceManagerUtils.h"
@@ -95,7 +94,7 @@ void nsWindowMemoryReporter::Init() {
   MOZ_ASSERT(!sWindowReporter);
   sWindowReporter = new nsWindowMemoryReporter();
   ClearOnShutdown(&sWindowReporter);
-  RegisterStrongMemoryReporter(sWindowReporter);
+  RegisterStrongMemoryReporter(do_AddRef(sWindowReporter));
   RegisterNonJSSizeOfTab(NonJSSizeOfTab);
 
   nsCOMPtr<nsIObserverService> os = services::GetObserverService();
@@ -427,6 +426,12 @@ static void CollectWindowReports(nsGlobalWindowInner* aWindow,
   REPORT_COUNT("/dom/event-listeners", mDOMEventListenersCount,
                "Number of event listeners in a window, including event "
                "listeners on nodes and other event targets.");
+
+  REPORT_COUNT(
+      "/media/media-source-urls", mMediaSourceURLsCount,
+      "Number of MediaSource object URLs allocated with URL.createObjectURL; "
+      "the referenced data cannot be freed until all URLs for it have been "
+      "explicitly invalidated with URL.revokeObjectURL.");
 
   // There are many different kinds of frames, but it is very likely
   // that only a few matter.  Implement a cutoff so we don't bloat

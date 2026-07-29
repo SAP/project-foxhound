@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -37,6 +35,24 @@ class ContentBlockingLog final {
         mReason;
     nsTArray<nsCString> mTrackingFullHashes;
     Maybe<CanvasFingerprintingEvent> mCanvasFingerprintingEvent;
+
+    // Portion of mRepeatCount that has already been emitted to the tracking
+    // database by a previous ReportLog() flush. Subsequent incremental flushes
+    // emit only (mRepeatCount - mReportedRepeatCount), so additional
+    // aggregated repeats on a previously-flushed entry are not lost.
+    uint32_t mReportedRepeatCount = 0;
+  };
+
+  // Bits used to track which of the origin-level "custom field" flags have
+  // already been serialized in a previous ReportLog() flush, so that
+  // subsequent incremental flushes don't re-emit them.
+  enum ReportedFlag : uint8_t {
+    eReportedLevel1Tracking = 1 << 0,
+    eReportedLevel2Tracking = 1 << 1,
+    eReportedCookiesLoaded = 1 << 2,
+    eReportedTrackerCookiesLoaded = 1 << 3,
+    eReportedSocialTrackerCookiesLoaded = 1 << 4,
+    eReportedSuspiciousFingerprinting = 1 << 5,
   };
 
   struct OriginDataEntry {
@@ -52,6 +68,9 @@ class ContentBlockingLog final {
     Maybe<bool> mHasTrackerCookiesLoaded;
     Maybe<bool> mHasSocialTrackerCookiesLoaded;
     nsTArray<LogEntry> mLogs;
+
+    // Bitmask of ReportedFlag bits already serialized in a previous flush.
+    uint8_t mReportedFlags = 0;
   };
 
   struct OriginEntry {
@@ -110,7 +129,11 @@ class ContentBlockingLog final {
   void ReportFontFingerprintingLog(nsIPrincipal* aFirstPartyPrincipal);
   void ReportEmailTrackingLog(nsIPrincipal* aFirstPartyPrincipal);
 
-  nsAutoCString Stringify() {
+  // Serialize the log as JSON. When aOnlyUnreported is true, only entries
+  // not previously reported (via MarkAsReported) are emitted, producing an
+  // incremental delta suitable for flushing to the tracking database
+  // multiple times per document lifetime without double-counting.
+  nsAutoCString Stringify(bool aOnlyUnreported = false) {
     nsAutoCString buffer;
 
     JSONStringRefWriteFunc js(buffer);
@@ -122,15 +145,30 @@ class ContentBlockingLog final {
         continue;
       }
 
+      const bool hasPendingCustomFields =
+          aOnlyUnreported ? HasUnreportedCustomFields(entry) : true;
+      const bool hasPendingLogs =
+          aOnlyUnreported ? HasUnreportedLogs(entry) : true;
+
+      if (aOnlyUnreported && !hasPendingCustomFields && !hasPendingLogs) {
+        continue;
+      }
+
       w.StartArrayProperty(entry.mOrigin, w.SingleLineStyle);
 
-      StringifyCustomFields(entry, w);
+      StringifyCustomFields(entry, w, aOnlyUnreported);
       for (const LogEntry& item : entry.mData->mLogs) {
+        const uint32_t emitCount =
+            aOnlyUnreported ? item.mRepeatCount - item.mReportedRepeatCount
+                            : item.mRepeatCount;
+        if (emitCount == 0) {
+          continue;
+        }
         w.StartArrayElement(w.SingleLineStyle);
         {
           w.IntElement(item.mType);
           w.BoolElement(item.mBlocked);
-          w.IntElement(item.mRepeatCount);
+          w.IntElement(emitCount);
           if (item.mReason.isSome()) {
             w.IntElement(item.mReason.value());
           }
@@ -143,6 +181,39 @@ class ContentBlockingLog final {
     w.End();
 
     return buffer;
+  }
+
+  // Advance every per-entry repeat-count cursor and the origin-level
+  // reported-flag bitmask so the next call to
+  // Stringify(/*aOnlyUnreported=*/true) sees an empty delta. Call
+  // synchronously after handing the delta off to TrackingDBService.
+  void MarkAsReported() {
+    for (OriginEntry& entry : mLog) {
+      if (!entry.mData) {
+        continue;
+      }
+      for (LogEntry& item : entry.mData->mLogs) {
+        item.mReportedRepeatCount = item.mRepeatCount;
+      }
+      if (entry.mData->mHasLevel1TrackingContentLoaded) {
+        entry.mData->mReportedFlags |= eReportedLevel1Tracking;
+      }
+      if (entry.mData->mHasLevel2TrackingContentLoaded) {
+        entry.mData->mReportedFlags |= eReportedLevel2Tracking;
+      }
+      if (entry.mData->mHasCookiesLoaded.isSome()) {
+        entry.mData->mReportedFlags |= eReportedCookiesLoaded;
+      }
+      if (entry.mData->mHasTrackerCookiesLoaded.isSome()) {
+        entry.mData->mReportedFlags |= eReportedTrackerCookiesLoaded;
+      }
+      if (entry.mData->mHasSocialTrackerCookiesLoaded.isSome()) {
+        entry.mData->mReportedFlags |= eReportedSocialTrackerCookiesLoaded;
+      }
+      if (entry.mData->mHasSuspiciousFingerprintingActivity) {
+        entry.mData->mReportedFlags |= eReportedSuspiciousFingerprinting;
+      }
+    }
   }
 
   bool HasBlockedAnyOfType(uint32_t aType) const {
@@ -306,8 +377,36 @@ class ContentBlockingLog final {
     return false;
   }
 
-  void StringifyCustomFields(const OriginEntry& aEntry, JSONWriter& aWriter) {
-    if (aEntry.mData->mHasLevel1TrackingContentLoaded) {
+  bool HasUnreportedLogs(const OriginEntry& aEntry) const {
+    for (const LogEntry& item : aEntry.mData->mLogs) {
+      if (item.mReportedRepeatCount < item.mRepeatCount) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool HasUnreportedCustomFields(const OriginEntry& aEntry) const {
+    const uint8_t reported = aEntry.mData->mReportedFlags;
+    return (aEntry.mData->mHasLevel1TrackingContentLoaded &&
+            !(reported & eReportedLevel1Tracking)) ||
+           (aEntry.mData->mHasLevel2TrackingContentLoaded &&
+            !(reported & eReportedLevel2Tracking)) ||
+           (aEntry.mData->mHasCookiesLoaded.isSome() &&
+            !(reported & eReportedCookiesLoaded)) ||
+           (aEntry.mData->mHasTrackerCookiesLoaded.isSome() &&
+            !(reported & eReportedTrackerCookiesLoaded)) ||
+           (aEntry.mData->mHasSocialTrackerCookiesLoaded.isSome() &&
+            !(reported & eReportedSocialTrackerCookiesLoaded)) ||
+           (aEntry.mData->mHasSuspiciousFingerprintingActivity &&
+            !(reported & eReportedSuspiciousFingerprinting));
+  }
+
+  void StringifyCustomFields(const OriginEntry& aEntry, JSONWriter& aWriter,
+                             bool aOnlyUnreported) {
+    const uint8_t reported = aEntry.mData->mReportedFlags;
+    if (aEntry.mData->mHasLevel1TrackingContentLoaded &&
+        !(aOnlyUnreported && (reported & eReportedLevel1Tracking))) {
       aWriter.StartArrayElement(aWriter.SingleLineStyle);
       {
         aWriter.IntElement(
@@ -317,7 +416,8 @@ class ContentBlockingLog final {
       }
       aWriter.EndArray();
     }
-    if (aEntry.mData->mHasLevel2TrackingContentLoaded) {
+    if (aEntry.mData->mHasLevel2TrackingContentLoaded &&
+        !(aOnlyUnreported && (reported & eReportedLevel2Tracking))) {
       aWriter.StartArrayElement(aWriter.SingleLineStyle);
       {
         aWriter.IntElement(
@@ -327,7 +427,8 @@ class ContentBlockingLog final {
       }
       aWriter.EndArray();
     }
-    if (aEntry.mData->mHasCookiesLoaded.isSome()) {
+    if (aEntry.mData->mHasCookiesLoaded.isSome() &&
+        !(aOnlyUnreported && (reported & eReportedCookiesLoaded))) {
       aWriter.StartArrayElement(aWriter.SingleLineStyle);
       {
         aWriter.IntElement(nsIWebProgressListener::STATE_COOKIES_LOADED);
@@ -337,7 +438,8 @@ class ContentBlockingLog final {
       }
       aWriter.EndArray();
     }
-    if (aEntry.mData->mHasTrackerCookiesLoaded.isSome()) {
+    if (aEntry.mData->mHasTrackerCookiesLoaded.isSome() &&
+        !(aOnlyUnreported && (reported & eReportedTrackerCookiesLoaded))) {
       aWriter.StartArrayElement(aWriter.SingleLineStyle);
       {
         aWriter.IntElement(
@@ -348,7 +450,9 @@ class ContentBlockingLog final {
       }
       aWriter.EndArray();
     }
-    if (aEntry.mData->mHasSocialTrackerCookiesLoaded.isSome()) {
+    if (aEntry.mData->mHasSocialTrackerCookiesLoaded.isSome() &&
+        !(aOnlyUnreported &&
+          (reported & eReportedSocialTrackerCookiesLoaded))) {
       aWriter.StartArrayElement(aWriter.SingleLineStyle);
       {
         aWriter.IntElement(
@@ -359,7 +463,8 @@ class ContentBlockingLog final {
       }
       aWriter.EndArray();
     }
-    if (aEntry.mData->mHasSuspiciousFingerprintingActivity) {
+    if (aEntry.mData->mHasSuspiciousFingerprintingActivity &&
+        !(aOnlyUnreported && (reported & eReportedSuspiciousFingerprinting))) {
       aWriter.StartArrayElement(aWriter.SingleLineStyle);
       {
         aWriter.IntElement(

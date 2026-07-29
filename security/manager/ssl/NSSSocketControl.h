@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -157,26 +156,6 @@ class NSSSocketControl final : public CommonSocketControl {
     return mEchExtensionStatus;
   }
 
-  void WillSendMlkemShare() {
-    COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
-    mSentMlkemShare = true;
-  }
-
-  bool SentMlkemShare() {
-    COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
-    return mSentMlkemShare;
-  }
-
-  void SetHasTls13HandshakeSecrets() {
-    COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
-    mHasTls13HandshakeSecrets = true;
-  }
-
-  bool HasTls13HandshakeSecrets() {
-    COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
-    return mHasTls13HandshakeSecrets;
-  }
-
   bool GetJoined() {
     COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
     return mJoined;
@@ -301,6 +280,10 @@ class NSSSocketControl final : public CommonSocketControl {
     COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
     mClientAuthCertificateRequest.emplace(ClientAuthCertificateRequest{
         std::move(serverCertificate), std::move(caNames)});
+    // Let HE pause other racers before PSM may show a cert dialog.
+    if (mTlsHandshakeCallback) {
+      (void)mTlsHandshakeCallback->ClientAuthCertificateRequested();
+    }
   }
 
   void MaybeSelectClientAuthCertificate();
@@ -329,8 +312,6 @@ class NSSSocketControl final : public CommonSocketControl {
   bool mIsFullHandshake;
   bool mNotedTimeUntilReady;
   EchExtensionStatus mEchExtensionStatus;  // Currently only used for telemetry.
-  bool mSentMlkemShare;
-  bool mHasTls13HandshakeSecrets;
 
   // True when SSL layer has indicated an "SSL short write", i.e. need
   // to call on send one or more times to push all pending data to write.

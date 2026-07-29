@@ -43,7 +43,7 @@ More information about this component including design, writing, and localizatio
 
 ## Code
 
-The source for `moz-button` can be found under [toolkit/content/widgets/moz-button/](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/moz-button)
+The source for `moz-button` can be found under [toolkit/content/widgets/moz-button/](https://searchfox.org/firefox-main/source/toolkit/content/widgets/moz-button)
 
 ## How to use `moz-button`
 
@@ -170,7 +170,7 @@ Ghost buttons are used for secondary or less prominent actions. They are ideal f
 
 #### Menu Button
 
-When `moz-button` is given a `menuId` property, it functions as a menu button. This property links the button to an associated [panel-list](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/panel-list/panel-list.js) component, which will act as the popup menu. The `menuId` must correspond to the ID of that `panel-list` element.
+When `moz-button` is given a `menuId` property, it functions as a menu button. This property links the button to an associated [panel-list](https://searchfox.org/firefox-main/source/toolkit/content/widgets/panel-list/panel-list.mjs) component, which will act as the popup menu. The `menuId` must correspond to the ID of that `panel-list` element.
 
 This built-in integration with `panel-list` offers several automatic features:
 * The button is automatically assigned `aria-haspopup="menu"`.

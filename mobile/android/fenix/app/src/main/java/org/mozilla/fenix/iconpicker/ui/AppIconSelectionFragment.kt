@@ -16,6 +16,7 @@ import androidx.navigation.fragment.findNavController
 import mozilla.components.lib.state.helpers.StoreProvider.Companion.storeProvider
 import mozilla.components.support.base.feature.UserInteractionHandler
 import org.mozilla.fenix.R
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.showToolbar
 import org.mozilla.fenix.iconpicker.AppIconMiddleware
@@ -36,7 +37,7 @@ import org.mozilla.gecko.search.SearchWidgetProvider
 /**
  * Fragment that displays a list of alternative app icons.
  */
-class AppIconSelectionFragment : Fragment(), UserInteractionHandler {
+class AppIconSelectionFragment : Fragment(), UserInteractionHandler, SystemInsetsPaddedFragment {
 
     private val appIconRepository: AppIconRepository by lazy {
         DefaultAppIconRepository(

@@ -53,7 +53,7 @@ const sitePermissionsL10n = {
     window: "permissions-site-autoplay-window2",
     description: "permissions-site-autoplay-desc",
   },
-  localhost: {
+  "loopback-network": {
     window: "permissions-site-localhost-window",
     description: "permissions-site-localhost-desc",
     disableLabel: "permissions-site-localhost-disable-label",
@@ -679,7 +679,7 @@ var gSitePermissionsManager = {
       SitePermissions.setDefault("autoplay-media", Number(menulist.value));
     });
 
-    menulist.menupopup.setAttribute("incontentshell", "false");
+    menulist.menupopup.setAttribute("escapecontentshell", true);
 
     menulist.disabled = Services.prefs.prefIsLocked(AUTOPLAY_PREF);
 

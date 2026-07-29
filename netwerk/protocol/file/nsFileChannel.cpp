@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,8 +26,13 @@
 #include "nsIURIMutator.h"
 #include "nsIFile.h"
 #include "nsIMIMEService.h"
+#include "nsStringStream.h"
 #include "prio.h"
 #include <algorithm>
+
+#ifdef XP_WIN
+#  include <windows.h>
+#endif
 
 #include "mozilla/Components.h"
 #include "mozilla/TaskQueue.h"
@@ -323,8 +326,65 @@ nsresult nsFileChannel::MakeFileInputStream(nsIFile* file,
   return rv;
 }
 
+#ifdef XP_WIN
+static nsresult MakeWindowsDriveListingStream(nsIInputStream** aResult,
+                                              nsACString& aContentType,
+                                              int64_t& aContentLength) {
+  DWORD len = 0;
+  UniquePtr<WCHAR[]> buf;
+  for (;;) {
+    DWORD result = GetLogicalDriveStringsW(len, buf.get());
+    if (result == 0) {
+      return NS_ERROR_FAILURE;
+    }
+    if (result <= len) {
+      break;
+    }
+    len = result;
+    buf = MakeUnique<WCHAR[]>(len);
+  }
+
+  nsCString listing;
+  listing.AppendLiteral(
+      "200: filename content-length last-modified file-type\n");
+
+  for (WCHAR* drive = buf.get(); *drive; drive += wcslen(drive) + 1) {
+    listing.AppendLiteral("201: ");
+    listing.Append((char)drive[0]);
+    listing.AppendLiteral(
+        ":/ 0 Thu,%2001%20Jan%201970%2000:00:00%20GMT DIRECTORY\n");
+  }
+
+  aContentType.AssignLiteral(APPLICATION_HTTP_INDEX_FORMAT);
+  aContentLength = listing.Length();
+  return NS_NewCStringInputStream(aResult, listing);
+}
+#endif
+
 nsresult nsFileChannel::OpenContentStream(bool async, nsIInputStream** result,
                                           nsIChannel** channel) {
+#ifdef XP_WIN
+  {
+    nsCOMPtr<nsIURI> uri = URI();
+    nsAutoCString path;
+    if (NS_SUCCEEDED(uri->GetFilePath(path)) && path.EqualsLiteral("/")) {
+      nsCOMPtr<nsIInputStream> stream;
+      nsAutoCString contentType;
+      int64_t contentLength = 0;
+      nsresult rv = MakeWindowsDriveListingStream(getter_AddRefs(stream),
+                                                  contentType, contentLength);
+      if (NS_FAILED(rv)) return rv;
+      mContentLength = contentLength;
+      if (!HasContentTypeHint()) {
+        SetContentType(contentType);
+      }
+      EnableSynthesizedProgressEvents(true);
+      stream.forget(result);
+      return NS_OK;
+    }
+  }
+#endif
+
   // NOTE: the resulting file is a clone, so it is safe to pass it to the
   //       file input stream which will be read on a background thread.
   nsCOMPtr<nsIFile> file;

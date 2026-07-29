@@ -24,42 +24,48 @@ requestLongerTimeout(2);
 add_task(async function testSendMoreInfoPref() {
   ensureReportBrokenSitePreffedOn();
 
-  await BrowserTestUtils.withNewTab(REPORTABLE_PAGE_URL, async function () {
-    await changeTab(gBrowser.selectedTab, REPORTABLE_PAGE_URL);
+  await withNewTab(REPORTABLE_PAGE_URL, async function () {
+    await navigateOnTab(gBrowser.selectedTab, REPORTABLE_PAGE_URL);
 
-    ensureSendMoreInfoDisabled();
-    let rbs = await AppMenu().openReportBrokenSite();
-    await rbs.isSendMoreInfoHidden();
+    disableSendMoreInfo();
+    let rbs = await AppMenu().openReportBrokenSiteToDetailsPanel();
+    await isHidden(
+      rbs.sendMoreInfoButton,
+      "send more info is not visible if preffed off"
+    );
     await rbs.close();
 
-    ensureSendMoreInfoEnabled();
-    rbs = await AppMenu().openReportBrokenSite();
-    await rbs.isSendMoreInfoShown();
+    enableSendMoreInfo();
+    rbs = await AppMenu().openReportBrokenSiteToDetailsPanel();
+    await isNotHidden(
+      rbs.sendMoreInfoButton,
+      "send more info is visible if preffed on"
+    );
     await rbs.close();
   });
 });
 
 add_task(async function testSendingMoreInfo() {
   ensureReportBrokenSitePreffedOn();
-  ensureSendMoreInfoEnabled();
+  enableSendMoreInfo();
+  enableScreenshots();
 
-  const tab = await openTab(REPORTABLE_PAGE_URL);
+  await withNewTab(REPORTABLE_PAGE_URL, async (win, tab) => {
+    await testSendMoreInfo(tab, AppMenu(win));
+    await navigateOnTab(tab, REPORTABLE_PAGE_URL2);
 
-  await testSendMoreInfo(tab, AppMenu());
+    await testSendMoreInfo(tab, ProtectionsPanel(), {
+      url: "https://override.com",
+      description: "another test description",
+      expectNoTabDetails: true,
+    });
 
-  await changeTab(tab, REPORTABLE_PAGE_URL2);
-
-  await testSendMoreInfo(tab, ProtectionsPanel(), {
-    url: "https://override.com",
-    description: "another",
-    expectNoTabDetails: true,
+    // also load a video to ensure system codec
+    // information is loaded and properly sent
+    // and test that screenshots aren't included
+    // if the opt-out is toggled.
+    await withNewTab(VIDEO_URL, async (win2, tab2) => {
+      await testSendMoreInfo(tab2, HelpMenu(win2), { screenshotOptOut: true });
+    });
   });
-
-  // also load a video to ensure system codec
-  // information is loaded and properly sent
-  const tab2 = await openTab(VIDEO_URL);
-  await testSendMoreInfo(tab2, AppMenu());
-  closeTab(tab2);
-
-  closeTab(tab);
 });

@@ -23,13 +23,13 @@ import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.whenever
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.notNull
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
+import kotlin.test.assertNotNull
 import androidx.appcompat.R as appcompatR
 
 @RunWith(AndroidJUnit4::class)

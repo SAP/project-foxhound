@@ -3,13 +3,36 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /**
+ * @import { SmartbarCommitDetails } from "resource:///modules/AISmartBarParent.sys.mjs"
+ */
+
+/**
  * Represents a child actor for getting query requests from the browser.
  */
 export class AISmartBarChild extends JSWindowActorChild {
+  /**
+   * @param {{ name: string, data: SmartbarCommitDetails }} msg
+   */
   receiveMessage(msg) {
     if (msg.name === "AskFromParent") {
+      const {
+        contextMentions,
+        contextPageUrl,
+        detectedIntent,
+        location,
+        submitType,
+        value,
+      } = msg.data;
       let event = new this.contentWindow.CustomEvent("smartbar-commit", {
-        detail: { value: msg.data.query, action: "chat" },
+        detail: {
+          action: "chat",
+          contextMentions,
+          contextPageUrl,
+          detectedIntent,
+          location,
+          submitType,
+          value,
+        },
         bubbles: true,
         composed: true,
       });

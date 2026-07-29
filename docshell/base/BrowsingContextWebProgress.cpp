@@ -15,6 +15,7 @@
 #include "nsIChannel.h"
 #include "xptinfo.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/ScopedPrefs.h"
 
 mozilla::LazyLogModule gBCWebProgressLog("BCWebProgress");
 

@@ -16,10 +16,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "moz-src:///browser/modules/CanvasPermissionPromptHelper.sys.mjs",
   FilePickerCrashed: "resource:///modules/FilePickerCrashed.sys.mjs",
   PluginManager: "resource:///actors/PluginParent.sys.mjs",
-  UnexpectedScriptObserver:
-    "moz-src:///browser/modules/UnexpectedScriptObserver.sys.mjs",
   WebAuthnPromptHelper:
-    "moz-src:///browser/modules/WebAuthnPromptHelper.sys.mjs",
+    "moz-src:///toolkit/modules/WebAuthnPromptHelper.sys.mjs",
 });
 
 // Map from observer topic to a list of exported objects whose observe()
@@ -29,20 +27,12 @@ let gObservers = {
   "canvas-permissions-prompt": ["CanvasPermissionPromptHelper"],
   "canvas-permissions-prompt-hide-doorhanger": ["CanvasPermissionPromptHelper"],
 
-  "UnexpectedJavaScriptLoad-Live": ["UnexpectedScriptObserver"],
-  "UnexpectedJavaScriptLoad-UserTookAction": ["UnexpectedScriptObserver"],
-
   "file-picker-crashed": ["FilePickerCrashed"],
   "gmp-plugin-crash": ["PluginManager"],
   "plugin-crashed": ["PluginManager"],
 
   "webauthn-prompt": ["WebAuthnPromptHelper"],
 };
-if (Cu.isInAutomation) {
-  gObservers["UnexpectedJavaScriptLoad-ResetNotification"] = [
-    "UnexpectedScriptObserver",
-  ];
-}
 
 if (AppConstants.MOZ_UPDATER) {
   ChromeUtils.defineESModuleGetters(lazy, {

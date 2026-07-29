@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -147,10 +145,10 @@ class SVGAnimatedTransformList {
     nsresult SetAnimValue(const SMILValue& aNewAnimValue) override;
 
    protected:
-    static void ParseValue(const nsAString& aSpec, const nsAtom* aTransformType,
+    static void ParseValue(const nsAString& aSpec, uint16_t aTransformType,
                            SMILValue& aResult);
-    static int32_t ParseParameterList(const nsAString& aSpec, float* aVars,
-                                      int32_t aNVars);
+    static int32_t ParseParameterList(
+        const nsAString& aSpec, SVGTransformSMILData::SimpleParams& aParams);
 
     // These will stay alive because a SMILAttr only lives as long
     // as the Compositing step, and DOM elements don't get a chance to

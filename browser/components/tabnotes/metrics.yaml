@@ -19,8 +19,10 @@ tab_notes:
       - sthompson@mozilla.com
     bugs:
       - https://bugzil.la/2003702
+      - https://bugzil.la/2027827
     data_reviews:
       - https://bugzil.la/2003702
+      - https://bugzil.la/2027827
     data_sensitivity:
       - interaction
     extra_keys:
@@ -31,6 +33,13 @@ tab_notes:
             - `context_menu` # Tab context menu's "Add Note" menu item
             - `hover_menu` # Tab hover preview panel's "Add Note" button
         type: string
+      note_length:
+        description: >
+          JavaScript string length (number of Unicode code units) of the note text. Note that
+          this value can be higher than the number of characters (Unicode code points) or the
+          number of graphemes (what a human perceives as a single visual character).
+          For example, 👨‍👩‍👧‍👧 would count as 11 string length, 7 characters, and 1 grapheme.
+        type: quantity
     expires: never
   edited:
     type: event
@@ -41,8 +50,10 @@ tab_notes:
       - jswinarton@mozilla.com
     bugs:
       - https://bugzil.la/2003703
+      - https://bugzil.la/2027827
     data_reviews:
       - https://bugzil.la/2003703
+      - https://bugzil.la/2027827
     data_sensitivity:
       - interaction
     extra_keys:
@@ -50,9 +61,16 @@ tab_notes:
         description: >
           Identifies the user interface entry point that resulted in this tab
           note being edited. Expected values:
-            - `context_menu` # Tab context menu's "Update Note" menu item
-            - `hover_menu` # Tab hover preview panel's edit note icon button
+            - `context_menu` # Tab context menu's "Edit Note" menu item
+            - `note_preview` # Tab note preview panel's edit icon or double-click
         type: string
+      note_length:
+        description: >
+          JavaScript string length (number of Unicode code units) of the note text. Note that
+          this value can be higher than the number of characters (Unicode code points) or the
+          number of graphemes (what a human perceives as a single visual character).
+          For example, 👨‍👩‍👧‍👧 would count as 11 string length, 7 characters, and 1 grapheme.
+        type: quantity
     expires: never
   deleted:
     type: event
@@ -72,8 +90,8 @@ tab_notes:
         description: >
           Identifies the user interface entry point that resulted in this tab
           note being deleted. Expected values:
-            - `context_menu` # Tab context menu's "Delete Note" menu item
-            - `hover_menu` # "Delete Note" button in the edit note UI via tab hover preview
+            - `context_menu` # Tab context menu's "Edit Note" menu item
+            - `note_preview` # Tab note preview panel's edit icon or double-click
         type: string
       note_age_hours:
         description: >

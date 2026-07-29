@@ -276,7 +276,7 @@ class TestFile(TestWithTmpDir):
 
 class TestAbsoluteSymlinkFile(TestWithTmpDir):
     def test_absolute_relative(self):
-        AbsoluteSymlinkFile("/foo")
+        AbsoluteSymlinkFile(os.path.abspath("/foo"))
 
         with self.assertRaisesRegex(ValueError, "Symlink target not absolute"):
             AbsoluteSymlinkFile("./foo")

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -10,13 +8,13 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/DynamicallyLinkedFunctionPtr.h"
-#include "mozilla/MathAlgorithms.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Span.h"
 #include "mozilla/WindowsMapRemoteView.h"
 #include "mozilla/WindowsUnwindInfo.h"
 #include "mozilla/WinHeaderOnlyUtils.h"
 
+#include <bit>
 #include <windows.h>
 
 #if (NTDDI_VERSION < NTDDI_WIN10_RS4) || defined(__MINGW32__)
@@ -101,14 +99,14 @@ class MOZ_TRIVIAL_CTOR_DTOR MMPolicyBase {
  protected:
   static uintptr_t AlignDown(const uintptr_t aUnaligned,
                              const uintptr_t aAlignTo) {
-    MOZ_ASSERT(IsPowerOfTwo(aAlignTo));
+    MOZ_ASSERT(std::has_single_bit(aAlignTo));
 #pragma warning(suppress : 4146)
     return aUnaligned & (-aAlignTo);
   }
 
   static uintptr_t AlignUp(const uintptr_t aUnaligned,
                            const uintptr_t aAlignTo) {
-    MOZ_ASSERT(IsPowerOfTwo(aAlignTo));
+    MOZ_ASSERT(std::has_single_bit(aAlignTo));
 #pragma warning(suppress : 4146)
     return aUnaligned + ((-aUnaligned) & (aAlignTo - 1));
   }
@@ -451,7 +449,7 @@ class MOZ_TRIVIAL_CTOR_DTOR MMPolicyBase {
   }
 };
 
-class MOZ_TRIVIAL_CTOR_DTOR MMPolicyInProcess
+class MOZ_EMPTY_BASES MOZ_TRIVIAL_CTOR_DTOR MMPolicyInProcess
     : public MMPolicyInProcessPrimitive,
       public MMPolicyBase {
  public:

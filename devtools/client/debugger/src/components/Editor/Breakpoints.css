@@ -16,10 +16,10 @@
 
 .theme-light,
 .theme-dark {
-  --logpoint-fill: var(--theme-graphs-purple);
+  --logpoint-fill: var(--theme-breakpoint-logpoint);
   --logpoint-stroke: var(--purple-60);
-  --breakpoint-condition-fill: var(--theme-graphs-yellow);
-  --breakpoint-condition-stroke: var(--theme-graphs-orange);
+  --breakpoint-condition-fill: var(--theme-breakpoint-conditional-background);
+  --breakpoint-condition-stroke: var(--theme-breakpoint-conditional-border-color);
   --breakpoint-skipped-opacity: 0.15;
   --breakpoint-inactive-opacity: 0.3;
   --breakpoint-disabled-opacity: 0.6;

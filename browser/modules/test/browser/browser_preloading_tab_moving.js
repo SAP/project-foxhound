@@ -22,7 +22,7 @@ async function openWinWithPreloadBrowser(options = {}) {
 }
 
 async function promiseNewTabLoadedInBrowser(browser) {
-  let url = browser.ownerGlobal.BROWSER_NEW_TAB_URL;
+  let url = browser.documentGlobal.BROWSER_NEW_TAB_URL;
   if (browser.currentURI.spec != url) {
     info(`Waiting for ${url} to be the location for the browser.`);
     await new Promise(resolve => {

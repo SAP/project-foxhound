@@ -114,10 +114,6 @@ declare_args() {
   # library that comes with WebRTC (i.e. rtc_build_ssl == 0).
   rtc_ssl_root = ""
 
-  # Enable when an external authentication mechanism is used for performing
-  # packet authentication for RTP packets instead of libsrtp.
-  rtc_enable_external_auth = build_with_chromium
-
   # Selects whether debug dumps for the audio processing module
   # should be generated.
   apm_debug_dump = build_with_mozilla
@@ -154,11 +150,8 @@ declare_args() {
   # See http://clang.llvm.org/docs/SanitizerCoverage.html .
   rtc_sanitize_coverage = ""
 
-  # Selects fixed-point code where possible.
-  rtc_prefer_fixed_point = false
-  if (target_cpu == "arm" || target_cpu == "arm64") {
-    rtc_prefer_fixed_point = true
-  }
+  # When set to true, Plan B will be deprecated.
+  deprecate_plan_b = true
 
   # Determines whether NEON code will be built.
   rtc_build_with_neon =
@@ -547,6 +540,11 @@ template("rtc_test") {
       ]
     }
 
+    # TODO: bugs.webrtc.org/467294026 - Support iOS too.
+    if (!defined(invoker.is_xctest) || !invoker.is_xctest) {
+      deps += [ webrtc_root + "test:test_main" ]
+    }
+
     # Build //test:google_test_runner_objc when the test is not a real XCTest.
     if (is_ios && rtc_include_tests) {
       if (!defined(invoker.is_xctest) || !invoker.is_xctest) {
@@ -854,6 +852,7 @@ template("rtc_library") {
   } else {
     target_type = "static_library"
   }
+
   target(target_type, target_name) {
     forward_variables_from(invoker,
                            "*",
@@ -1160,6 +1159,26 @@ if (is_mac || is_ios) {
              ] + rebase_path(sources, root_build_dir)
     }
 
+    action_foreach("create_bracket_include_headers_$target_name") {
+      script = "//tools_webrtc/apple/copy_framework_header.py"
+      if (is_mac) {
+        sources = invoker.sources
+      } else {
+        sources = invoker.public_headers
+      }
+      output_name = invoker.output_name
+      outputs = [
+        "$target_gen_dir/$output_name.framework/Headers/{{source_file_part}}",
+      ]
+      args = [
+        "--input",
+        "{{source}}",
+        "--output",
+        rebase_path(target_gen_dir, root_build_dir) +
+            "/$output_name.framework/Headers/{{source_file_part}}",
+      ]
+    }
+
     action("create_privacy_manifest_$this_target_name") {
       script = "//tools_webrtc/apple/generate_privacy_manifest.py"
       args = [
@@ -1203,6 +1222,7 @@ if (is_mac || is_ios) {
         deps += [
           ":copy_modulemap_$this_target_name",
           ":copy_umbrella_header_$this_target_name",
+          ":create_bracket_include_headers_$this_target_name",
           ":create_privacy_manifest_$this_target_name",
           ":modulemap_$this_target_name",
           ":privacy_manifest_bundle_data_$this_target_name",
@@ -1251,15 +1271,13 @@ if (is_mac || is_ios) {
           configs += invoker.configs
         }
 
-        if (defined(invoker.public_headers)) {
-          public_headers = invoker.public_headers
-        } else {
-          public_headers = []
-        }
+        public_headers = get_target_outputs(
+                ":create_bracket_include_headers_$this_target_name")
         public_headers +=
             get_target_outputs(":umbrella_header_$this_target_name")
 
         deps += [
+          ":create_bracket_include_headers_$this_target_name",
           ":create_privacy_manifest_$this_target_name",
           ":umbrella_header_$this_target_name",
         ]
@@ -1349,5 +1367,144 @@ if (is_android && !build_with_mozilla) {
                              ])
       deps += [ "//third_party/jni_zero:jni_zero_java" ]
     }
+  }
+}
+
+# Defines a unit test target.
+#
+# This template generates:
+# 1. A static library containing the test sources.
+# 2. An executable to run the test locally.
+# 3. A verification step to ensure the test is included in at least one
+#    `rtc_test_suite` (when not building with Chromium).
+#
+# Arguments:
+#   sources: List of source files.
+#   deps: List of dependencies.
+#   data_deps: List of data dependencies.
+#   ... (other standard rtc_library arguments)
+template("rtc_cc_test") {
+  _lib_target_name = "${target_name}"
+
+  rtc_library(_lib_target_name) {
+    forward_variables_from(invoker,
+                           "*",
+                           [
+                             "configs",
+                             "public_configs",
+                             "suppressed_configs",
+                             "deps",
+                             "visibility",
+                           ])
+    testonly = true
+
+    if (defined(invoker.deps)) {
+      deps = invoker.deps
+    } else {
+      deps = []
+    }
+
+    # Adds a metadata key "rtc_cc_test" with a value of this test. This is used
+    # to confirm this test is included in a test suite.
+    metadata = {
+      rtc_cc_test = [
+        {
+          label = get_label_info(":$_lib_target_name", "label_no_toolchain")
+          type = "rtc_cc_test"
+        },
+      ]
+    }
+  }
+
+  _path_from_webrtc_root = rebase_path(".", webrtc_root)
+  if (_path_from_webrtc_root == ".") {
+    _binary_name = "${target_name}_bin"
+  } else {
+    _binary_name = string_replace(_path_from_webrtc_root, "/", "_") + "_" +
+                   target_name + "_bin"
+  }
+  rtc_test("${target_name}_bin") {
+    testonly = true
+
+    # Output into the target's directory.
+    output_name = _binary_name
+    deps = [ ":${_lib_target_name}" ]
+    if (defined(invoker.data_deps)) {
+      data_deps = invoker.data_deps
+    }
+  }
+}
+
+# Defines a test suite that aggregates multiple unit tests.
+#
+# This template is used to create "mega-targets" for CI/CQ. It collects
+# dependencies (which should be rtc_cc_test targets) and verifies that
+# they are reachable. The `tests_in_suites.json` file is generated by
+# walking the dependency graph starting from these suites.
+#
+# Arguments:
+#   tests: List of rtc_cc_test targets to include in this suite.
+#   deps: Additional dependencies (e.g. groups of tests).
+template("rtc_test_suite") {
+  _suite_name = target_name
+
+  # This checks that all of the tests strings listed are an rtc_cc_test by
+  # extracting their "rtc_cc_test" metadata into a file. This uses a simple
+  # set comparison in //tools_webrtc/verify_test_suite_metadata.py.
+  assert(defined(invoker.tests))
+
+  _metadata_map = []
+  _metadata_check_deps = []
+  foreach(t, invoker.tests) {
+    _test_label = get_label_info(t, "label_no_toolchain")
+    _safe_label = string_replace(_test_label, "//", "")
+    _safe_label = string_replace(_safe_label, "/", "_")
+    _safe_label = string_replace(_safe_label, ":", "_")
+    _output_file = "$target_gen_dir/${_suite_name}_${_safe_label}_metadata.json"
+    _check_target = "${_suite_name}_${_safe_label}_check"
+
+    generated_file(_check_target) {
+      testonly = true
+      outputs = [ _output_file ]
+      data_keys = [ "rtc_cc_test" ]
+      output_conversion = "json"
+      deps = [ t ]
+    }
+    _metadata_check_deps += [ ":${_check_target}" ]
+    _metadata_map += [
+      {
+        label = _test_label
+        output = rebase_path(_output_file, root_build_dir)
+      },
+    ]
+  }
+
+  write_file("$target_gen_dir/${_suite_name}_metadata_map.json",
+             _metadata_map,
+             "json")
+
+  action("${_suite_name}_verify_metadata") {
+    testonly = true
+    script = "//tools_webrtc/verify_test_suite_metadata.py"
+    inputs = [ "$target_gen_dir/${_suite_name}_metadata_map.json" ]
+    outputs = [ "$target_gen_dir/${_suite_name}_metadata.stamp" ]
+    args = [
+      rebase_path(inputs[0], root_build_dir),
+      rebase_path(outputs[0], root_build_dir),
+    ]
+    deps = _metadata_check_deps
+  }
+
+  rtc_test(_suite_name) {
+    forward_variables_from(invoker, "*", [ "tests" ])
+
+    if (!defined(deps)) {
+      deps = []
+    }
+    if (defined(invoker.deps)) {
+      deps += invoker.deps
+    }
+    deps += invoker.tests
+    deps += [ ":${_suite_name}_verify_metadata" ]
   }
 }

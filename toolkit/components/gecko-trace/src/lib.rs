@@ -16,7 +16,7 @@ static GLOBAL_TRACE_COLLECTOR: Lazy<RefPtr<TraceCollector>> =
     once_cell::sync::Lazy::new(|| TraceCollector::new(TraceCollectorConfig::default()));
 
 #[no_mangle]
-pub extern "C" fn recv_gecko_trace_export(data: *const u8, len: usize) {
+pub unsafe extern "C" fn recv_gecko_trace_export(data: *const u8, len: usize) {
     let buf = unsafe {
         if data.is_null() {
             log::error!(

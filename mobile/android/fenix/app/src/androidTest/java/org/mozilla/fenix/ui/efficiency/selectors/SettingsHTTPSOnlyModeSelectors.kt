@@ -16,7 +16,23 @@ object SettingsHTTPSOnlyModeSelectors {
         groups = listOf("requiredForPage"),
     )
 
+    val HTTPS_ONLY_MODE_TOGGLE = Selector(
+        strategy = SelectorStrategy.ESPRESSO_BY_ID,
+        value = "https_only_switch",
+        description = "HTTPS-Only Mode toggle",
+        groups = listOf(),
+    )
+
+    val HTTPS_ONLY_ALL_TABS_OPTION = Selector(
+        strategy = SelectorStrategy.ESPRESSO_BY_ID,
+        value = "https_only_all_tabs",
+        description = "Enable in all tabs option",
+        groups = listOf(),
+    )
+
     val all = listOf(
         HTTPS_MODE_OPTION_SUMMARY,
+        HTTPS_ONLY_MODE_TOGGLE,
+        HTTPS_ONLY_ALL_TABS_OPTION,
     )
 }

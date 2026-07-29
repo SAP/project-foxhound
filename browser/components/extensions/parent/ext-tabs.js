@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -61,7 +59,7 @@ function showHiddenTabs(id) {
     for (let tab of win.gBrowser.tabs) {
       if (
         tab.hidden &&
-        tab.ownerGlobal &&
+        tab.documentGlobal &&
         SessionStore.getCustomTabValue(tab, "hiddenBy") === id
       ) {
         win.gBrowser.showTab(tab);
@@ -69,82 +67,6 @@ function showHiddenTabs(id) {
     }
   }
 }
-
-let tabListener = {
-  tabReadyInitialized: false,
-  // Map[tab -> Promise]
-  tabBlockedPromises: new WeakMap(),
-  // Map[tab -> Deferred]
-  tabReadyPromises: new WeakMap(),
-  initializingTabs: new WeakSet(),
-
-  initTabReady() {
-    if (!this.tabReadyInitialized) {
-      windowTracker.addListener("progress", this);
-
-      this.tabReadyInitialized = true;
-    }
-  },
-
-  onLocationChange(browser, webProgress) {
-    if (webProgress.isTopLevel) {
-      let { gBrowser } = browser.ownerGlobal;
-      let nativeTab = gBrowser.getTabForBrowser(browser);
-
-      // Now we are certain that the first page in the tab was loaded.
-      this.initializingTabs.delete(nativeTab);
-
-      // browser.innerWindowID is now set, resolve the promises if any.
-      let deferred = this.tabReadyPromises.get(nativeTab);
-      if (deferred) {
-        deferred.resolve(nativeTab);
-        this.tabReadyPromises.delete(nativeTab);
-      }
-    }
-  },
-
-  blockTabUntilRestored(nativeTab) {
-    let promise = ExtensionUtils.promiseEvent(nativeTab, "SSTabRestored").then(
-      ({ target }) => {
-        this.tabBlockedPromises.delete(target);
-        return target;
-      }
-    );
-
-    this.tabBlockedPromises.set(nativeTab, promise);
-  },
-
-  /**
-   * Returns a promise that resolves when the tab is ready.
-   * Tabs created via the `tabs.create` method are "ready" once the location
-   * changes to the requested URL. Other tabs are assumed to be ready once their
-   * inner window ID is known.
-   *
-   * @param {XULElement} nativeTab The <tab> element.
-   * @returns {Promise} Resolves with the given tab once ready.
-   */
-  awaitTabReady(nativeTab) {
-    let deferred = this.tabReadyPromises.get(nativeTab);
-    if (!deferred) {
-      let promise = this.tabBlockedPromises.get(nativeTab);
-      if (promise) {
-        return promise;
-      }
-      deferred = Promise.withResolvers();
-      if (
-        !this.initializingTabs.has(nativeTab) &&
-        (nativeTab.linkedBrowser.innerWindowID ||
-          nativeTab.linkedBrowser.currentURI.spec === "about:blank")
-      ) {
-        deferred.resolve(nativeTab);
-      } else {
-        this.initTabReady();
-        this.tabReadyPromises.set(nativeTab, deferred);
-      }
-    }
-    return deferred.promise;
-  },
-};
 
 const allAttrs = new Set([
   "attention",
@@ -275,7 +197,7 @@ this.tabs = class extends ExtensionAPIPersistent {
         // event if the position actually moved.
         if (fromIndex !== toIndex && tabManager.canAccessTab(nativeTab)) {
           fire.async(tabTracker.getId(nativeTab), {
-            windowId: windowTracker.getId(nativeTab.ownerGlobal),
+            windowId: windowTracker.getId(nativeTab.documentGlobal),
             fromIndex,
             toIndex,
           });
@@ -426,11 +348,11 @@ this.tabs = class extends ExtensionAPIPersistent {
         // and events that are triggered while tabs are swapped between windows.
         if (
           updatedTab.initializingTab ||
-          updatedTab.ownerGlobal.gBrowserInit?.isAdoptingTab()
+          updatedTab.documentGlobal.gBrowserInit?.isAdoptingTab()
         ) {
           return;
         }
-        if (!extension.canAccessWindow(event.originalTarget.ownerGlobal)) {
+        if (!extension.canAccessWindow(event.originalTarget.documentGlobal)) {
           return;
         }
         let needed = [];
@@ -526,10 +448,10 @@ this.tabs = class extends ExtensionAPIPersistent {
       };
 
       let statusListener = ({ browser, status, url }) => {
-        let { gBrowser } = browser.ownerGlobal;
+        let { gBrowser } = browser.documentGlobal;
         let tabElem = gBrowser.getTabForBrowser(browser);
         if (tabElem) {
-          if (!extension.canAccessWindow(tabElem.ownerGlobal)) {
+          if (!extension.canAccessWindow(tabElem.documentGlobal)) {
             return;
           }
 
@@ -546,10 +468,10 @@ this.tabs = class extends ExtensionAPIPersistent {
       };
 
       let isArticleChangeListener = (messageName, message) => {
-        let { gBrowser } = message.target.ownerGlobal;
+        let { gBrowser } = message.target.documentGlobal;
         let nativeTab = gBrowser.getTabForBrowser(message.target);
 
-        if (nativeTab && extension.canAccessWindow(nativeTab.ownerGlobal)) {
+        if (nativeTab && extension.canAccessWindow(nativeTab.documentGlobal)) {
           let tab = tabManager.getWrapper(nativeTab);
           fireForTab(tab, { isArticle: message.data.isArticle }, nativeTab);
         }
@@ -653,6 +575,10 @@ this.tabs = class extends ExtensionAPIPersistent {
       });
     }
 
+    function getNativeTabsOrSplitViews(nativeTabs) {
+      return Array.from(new Set(nativeTabs.map(t => t.splitview ?? t)));
+    }
+
     function updateNativeTabAfterAdopt(nativeTabs, oldTab, newTab) {
       for (let i = 0; i < nativeTabs.length; ++i) {
         if (nativeTabs[i] === oldTab) {
@@ -674,7 +600,7 @@ this.tabs = class extends ExtensionAPIPersistent {
         );
       }
 
-      await tabListener.awaitTabReady(tab.nativeTab);
+      await tabTracker.awaitTabReady(tab.nativeTab);
 
       return tab;
     }
@@ -824,7 +750,6 @@ this.tabs = class extends ExtensionAPIPersistent {
               setContentTriggeringPrincipal(url, window.gBrowser, options);
             }
 
-            tabListener.initTabReady();
             const currentTab = window.gBrowser.selectedTab;
             const { frameLoader } = currentTab.linkedBrowser;
             const currentTabSize = {
@@ -837,7 +762,7 @@ this.tabs = class extends ExtensionAPIPersistent {
                 createProperties.openerTabId
               );
               options.openerBrowser = options.ownerTab.linkedBrowser;
-              if (options.ownerTab.ownerGlobal !== window) {
+              if (options.ownerTab.documentGlobal !== window) {
                 return Promise.reject({
                   message:
                     "Opener tab must be in the same window as the tab being created",
@@ -882,6 +807,7 @@ this.tabs = class extends ExtensionAPIPersistent {
             }
 
             let nativeTab = window.gBrowser.addTab(url, options);
+            tabTracker.addTabReadyBlocker(nativeTab);
 
             if (active) {
               window.gBrowser.selectedTab = nativeTab;
@@ -890,27 +816,13 @@ this.tabs = class extends ExtensionAPIPersistent {
               }
             }
 
-            if (
-              createProperties.url &&
-              createProperties.url !== window.BROWSER_NEW_TAB_URL &&
-              !createProperties.url.startsWith("about:blank")
-            ) {
-              // We can't wait for a location change event for about:newtab,
-              // since it may be pre-rendered, in which case its initial
-              // location change event has already fired.
-              // The same goes for about:blank, since the initial blank document
-              // is loaded synchronously.
-
-              // Mark the tab as initializing, so that operations like
-              // `executeScript` wait until the requested URL is loaded in
-              // the tab before dispatching messages to the inner window
-              // that contains the URL we're attempting to load.
-              tabListener.initializingTabs.add(nativeTab);
-            }
-
             if (createProperties.muted) {
               nativeTab.toggleMuteAudio(extension.id);
             }
+
+            // We intentionally return as soon as possible after creating the
+            // tab, without waiting for load completion. Some tabs APIs use
+            // tabTracker.awaitTabReady to await load completion if needed.
 
             return tabManager.convert(nativeTab, currentTabSize);
           });
@@ -920,14 +832,14 @@ this.tabs = class extends ExtensionAPIPersistent {
           let nativeTabs = getNativeTabsFromIDArray(tabIds);
 
           if (nativeTabs.length === 1) {
-            nativeTabs[0].ownerGlobal.gBrowser.removeTab(nativeTabs[0]);
+            nativeTabs[0].documentGlobal.gBrowser.removeTab(nativeTabs[0]);
             return;
           }
 
           // Or for multiple tabs, first group them by window
           let windowTabMap = new DefaultMap(() => []);
           for (let nativeTab of nativeTabs) {
-            windowTabMap.get(nativeTab.ownerGlobal).push(nativeTab);
+            windowTabMap.get(nativeTab.documentGlobal).push(nativeTab);
           }
 
           // Then make one call to removeTabs() for each window, to keep the
@@ -947,18 +859,18 @@ this.tabs = class extends ExtensionAPIPersistent {
           let nativeTabs = getNativeTabsFromIDArray(tabIds);
           await Promise.all(
             nativeTabs.map(nativeTab =>
-              nativeTab.ownerGlobal.gBrowser.prepareDiscardBrowser(nativeTab)
+              nativeTab.documentGlobal.gBrowser.prepareDiscardBrowser(nativeTab)
             )
           );
           for (let nativeTab of nativeTabs) {
-            nativeTab.ownerGlobal.gBrowser.discardBrowser(nativeTab);
+            nativeTab.documentGlobal.gBrowser.discardBrowser(nativeTab);
           }
         },
 
         async update(tabId, updateProperties) {
           let nativeTab = getTabOrActive(tabId);
 
-          let tabbrowser = nativeTab.ownerGlobal.gBrowser;
+          let tabbrowser = nativeTab.documentGlobal.gBrowser;
 
           if (updateProperties.url !== null) {
             let url = context.uri.resolve(updateProperties.url);
@@ -1068,7 +980,7 @@ this.tabs = class extends ExtensionAPIPersistent {
           if (!tabManager.canAccessTab(nativeTab)) {
             throw new ExtensionError(`Invalid tab ID: ${tabId}`);
           }
-          let tabbrowser = nativeTab.ownerGlobal.gBrowser;
+          let tabbrowser = nativeTab.documentGlobal.gBrowser;
           tabbrowser.warmupTab(nativeTab);
         },
 
@@ -1092,10 +1004,10 @@ this.tabs = class extends ExtensionAPIPersistent {
 
         async captureTab(tabId, options) {
           let nativeTab = getTabOrActive(tabId);
-          await tabListener.awaitTabReady(nativeTab);
+          await tabTracker.awaitTabReady(nativeTab);
 
           let browser = nativeTab.linkedBrowser;
-          let window = browser.ownerGlobal;
+          let window = browser.documentGlobal;
           let zoom = window.ZoomManager.getZoomForBrowser(browser);
 
           let tab = tabManager.wrapTab(nativeTab);
@@ -1115,7 +1027,7 @@ this.tabs = class extends ExtensionAPIPersistent {
           ) {
             throw new ExtensionError("Missing activeTab permission");
           }
-          await tabListener.awaitTabReady(tab.nativeTab);
+          await tabTracker.awaitTabReady(tab.nativeTab);
 
           let zoom = window.ZoomManager.getZoomForBrowser(
             tab.nativeTab.linkedBrowser
@@ -1177,8 +1089,8 @@ this.tabs = class extends ExtensionAPIPersistent {
           while (tabsToMove.length) {
             let nativeTab = tabsToMove.shift();
             // If the window is not specified, use the window from the tab.
-            let window = destinationWindow || nativeTab.ownerGlobal;
-            let isSameWindow = nativeTab.ownerGlobal == window;
+            let window = destinationWindow || nativeTab.documentGlobal;
+            let isSameWindow = nativeTab.documentGlobal == window;
             let gBrowser = window.gBrowser;
 
             // If we are not moving the tab to a different window, and the window
@@ -1193,7 +1105,7 @@ this.tabs = class extends ExtensionAPIPersistent {
               !isSameWindow &&
               PrivateBrowsingUtils.isBrowserPrivate(gBrowser) !=
                 PrivateBrowsingUtils.isBrowserPrivate(
-                  nativeTab.ownerGlobal.gBrowser
+                  nativeTab.documentGlobal.gBrowser
                 )
             ) {
               continue;
@@ -1237,6 +1149,32 @@ this.tabs = class extends ExtensionAPIPersistent {
 
             let splitview = nativeTab.splitview;
             let splitviewTabs = splitview?.tabs;
+            let wantReversedSplit = false;
+            if (splitview) {
+              // otherTabInSplit always exists because a split view has 2 tabs.
+              const otherTabInSplit = splitviewTabs.find(t => t !== nativeTab);
+              // tabsToMove is the (potentially empty) list of tabs that will
+              // be moved once we finish moving nativeTab.
+              if (otherTabInSplit === tabsToMove[0]) {
+                // Order was explicitly specified. Reverse if needed.
+                wantReversedSplit = splitviewTabs[0] === otherTabInSplit;
+              } else if (tabsToMove.includes(otherTabInSplit)) {
+                // Order was explicitly specified, other tabs are in between.
+                // Unsplit tab to prepare for moving other tabs in between.
+                splitview.unsplitTabs();
+                splitview = splitviewTabs = null;
+              } else if (isSameWindow) {
+                // Other tab in split was not specified, but the index points
+                // to the same split view. Reverse if needed:
+                wantReversedSplit = otherTabInSplit._tPos === insertionPoint;
+              }
+              if (wantReversedSplit) {
+                // Split views move as one unit, but if the API call describes
+                // a destination within a split view, reverse the tabs within.
+                splitview.reverseTabs();
+                splitviewTabs = splitview.tabs;
+              }
+            }
             if (isSameWindow) {
               // If the window we are moving is the same, just move the tab.
               // moveTabTo handles regular tabs and split views.
@@ -1296,16 +1234,18 @@ this.tabs = class extends ExtensionAPIPersistent {
           // Schema requires tab id.
           let nativeTab = getTabOrActive(tabId);
 
-          let gBrowser = nativeTab.ownerGlobal.gBrowser;
+          let gBrowser = nativeTab.documentGlobal.gBrowser;
           let newTab = gBrowser.duplicateTab(nativeTab, true, {
             inBackground,
             tabIndex,
           });
 
-          tabListener.blockTabUntilRestored(newTab);
+          tabTracker.addTabReadyBlocker(newTab);
           return new Promise(resolve => {
             // Use SSTabRestoring to ensure that the tab's URL is ready before
             // resolving the promise.
+            // We do not wait for SSTabRestored; tab methods using
+            // tabTracker.awaitTabReady will wait as needed.
             newTab.addEventListener(
               "SSTabRestoring",
               () => resolve(tabManager.convert(newTab)),
@@ -1317,7 +1257,7 @@ this.tabs = class extends ExtensionAPIPersistent {
         getZoom(tabId) {
           let nativeTab = getTabOrActive(tabId);
 
-          let { ZoomManager } = nativeTab.ownerGlobal;
+          let { ZoomManager } = nativeTab.documentGlobal;
           let zoom = ZoomManager.getZoomForBrowser(nativeTab.linkedBrowser);
 
           return Promise.resolve(zoom);
@@ -1326,7 +1266,7 @@ this.tabs = class extends ExtensionAPIPersistent {
         setZoom(tabId, zoom) {
           let nativeTab = getTabOrActive(tabId);
 
-          let { FullZoom, ZoomManager } = nativeTab.ownerGlobal;
+          let { FullZoom, ZoomManager } = nativeTab.documentGlobal;
 
           if (zoom === 0) {
             // A value of zero means use the default zoom factor.
@@ -1345,7 +1285,7 @@ this.tabs = class extends ExtensionAPIPersistent {
         async getZoomSettings(tabId) {
           let nativeTab = getTabOrActive(tabId);
 
-          let { FullZoom, ZoomUI } = nativeTab.ownerGlobal;
+          let { FullZoom, ZoomUI } = nativeTab.documentGlobal;
 
           return {
             mode: "automatic",
@@ -1377,7 +1317,7 @@ this.tabs = class extends ExtensionAPIPersistent {
           name: "tabs.onZoomChange",
           register: fire => {
             let getZoomLevel = browser => {
-              let { ZoomManager } = browser.ownerGlobal;
+              let { ZoomManager } = browser.documentGlobal;
 
               return ZoomManager.getZoomForBrowser(browser);
             };
@@ -1413,11 +1353,11 @@ this.tabs = class extends ExtensionAPIPersistent {
                 browser = browser.docShell.chromeEventHandler;
               }
 
-              if (!context.canAccessWindow(browser.ownerGlobal)) {
+              if (!context.canAccessWindow(browser.documentGlobal)) {
                 return;
               }
 
-              let { gBrowser } = browser.ownerGlobal;
+              let { gBrowser } = browser.documentGlobal;
               let nativeTab = gBrowser.getTabForBrowser(browser);
               if (!nativeTab) {
                 // We only care about zoom events in the top-level browser of a tab.
@@ -1457,7 +1397,7 @@ this.tabs = class extends ExtensionAPIPersistent {
 
         print() {
           let activeTab = getTabOrActive(null);
-          let { PrintUtils } = activeTab.ownerGlobal;
+          let { PrintUtils } = activeTab.documentGlobal;
           PrintUtils.startPrintWindow(activeTab.linkedBrowser.browsingContext);
         },
 
@@ -1494,7 +1434,7 @@ this.tabs = class extends ExtensionAPIPersistent {
           filename = DownloadPaths.sanitize(filename);
 
           picker.init(
-            activeTab.ownerGlobal.browsingContext,
+            activeTab.documentGlobal.browsingContext,
             title,
             Ci.nsIFilePicker.modeSave
           );
@@ -1652,7 +1592,7 @@ this.tabs = class extends ExtensionAPIPersistent {
           }
 
           const referenceTab = tabTracker.getTab(tabId, null);
-          let referenceWindow = referenceTab && referenceTab.ownerGlobal;
+          let referenceWindow = referenceTab && referenceTab.documentGlobal;
           if (referenceWindow && !context.canAccessWindow(referenceWindow)) {
             throw new ExtensionError(`Invalid tab ID: ${tabId}`);
           }
@@ -1675,8 +1615,8 @@ this.tabs = class extends ExtensionAPIPersistent {
               throw new ExtensionError(`Invalid tab ID: ${tabId}`);
             }
             if (referenceWindow === null) {
-              referenceWindow = tab.ownerGlobal;
-            } else if (tab.ownerGlobal !== referenceWindow) {
+              referenceWindow = tab.documentGlobal;
+            } else if (tab.documentGlobal !== referenceWindow) {
               continue;
             }
             referenceWindow.gBrowser.replaceInSuccession(tab, tab.successor);
@@ -1704,8 +1644,8 @@ this.tabs = class extends ExtensionAPIPersistent {
 
         show(tabIds) {
           for (let tab of getNativeTabsFromIDArray(tabIds)) {
-            if (tab.ownerGlobal) {
-              tab.ownerGlobal.gBrowser.showTab(tab);
+            if (tab.documentGlobal) {
+              tab.documentGlobal.gBrowser.showTab(tab);
             }
           }
         },
@@ -1713,8 +1653,8 @@ this.tabs = class extends ExtensionAPIPersistent {
         hide(tabIds) {
           let hidden = [];
           for (let tab of getNativeTabsFromIDArray(tabIds)) {
-            if (tab.ownerGlobal && !tab.hidden) {
-              tab.ownerGlobal.gBrowser.hideTab(tab, extension.id);
+            if (tab.documentGlobal && !tab.hidden) {
+              tab.documentGlobal.gBrowser.hideTab(tab, extension.id);
               if (tab.hidden) {
                 hidden.push(tabTracker.getId(tab));
               }
@@ -1782,7 +1722,7 @@ this.tabs = class extends ExtensionAPIPersistent {
           const windowIsPrivate = PrivateBrowsingUtils.isWindowPrivate(window);
           for (const nativeTab of nativeTabs) {
             if (
-              PrivateBrowsingUtils.isWindowPrivate(nativeTab.ownerGlobal) !==
+              PrivateBrowsingUtils.isWindowPrivate(nativeTab.documentGlobal) !==
               windowIsPrivate
             ) {
               if (windowIsPrivate) {
@@ -1797,7 +1737,7 @@ this.tabs = class extends ExtensionAPIPersistent {
           }
           function unpinTabsBeforeGrouping() {
             for (const nativeTab of nativeTabs) {
-              nativeTab.ownerGlobal.gBrowser.unpinTab(nativeTab);
+              nativeTab.documentGlobal.gBrowser.unpinTab(nativeTab);
             }
           }
           let group;
@@ -1807,10 +1747,13 @@ this.tabs = class extends ExtensionAPIPersistent {
             // tabs should just be grouped without moving positions.
             // TODO bug 1939214: when addTabGroup inserts tabs at the front as
             // needed (instead of always appending), simplify this logic.
-            const tabInWin = nativeTabs.find(t => t.ownerGlobal === window);
+            const tabInWin = nativeTabs.find(t => t.documentGlobal === window);
             let insertBefore = tabInWin;
             if (tabInWin?.group) {
-              if (tabInWin.group.tabs[0] === tabInWin) {
+              // When any of the tabs in a split view are grouped, the whole
+              // split view is grouped, so check the split view's first tab.
+              const maybeFirstTab = tabInWin.splitview?.tabs[0] || tabInWin;
+              if (tabInWin.group.tabs[0] === maybeFirstTab) {
                 // When tabInWin is at the front of a tab group, insert before
                 // the tab group (instead of after it).
                 insertBefore = tabInWin.group;
@@ -1819,7 +1762,10 @@ this.tabs = class extends ExtensionAPIPersistent {
               }
             }
             unpinTabsBeforeGrouping();
-            group = window.gBrowser.addTabGroup(nativeTabs, { insertBefore });
+            group = window.gBrowser.addTabGroup(
+              getNativeTabsOrSplitViews(nativeTabs),
+              { insertBefore: insertBefore?.splitview ?? insertBefore }
+            );
             // Note: group is never null, because the only condition for which
             // it could be null is when all tabs are pinned, and we are already
             // explicitly unpinning them before moving.
@@ -1838,7 +1784,7 @@ this.tabs = class extends ExtensionAPIPersistent {
             const firstTabInGroup = group.tabs[0];
             for (const nativeTab of nativeTabs) {
               if (
-                nativeTab.ownerGlobal === window &&
+                nativeTab.documentGlobal === window &&
                 nativeTab._tPos < firstTabInGroup._tPos
               ) {
                 tabsBefore.push(nativeTab);
@@ -1847,10 +1793,13 @@ this.tabs = class extends ExtensionAPIPersistent {
               }
             }
             if (tabsBefore.length) {
-              window.gBrowser.moveTabsBefore(tabsBefore, firstTabInGroup);
+              window.gBrowser.moveTabsBefore(
+                getNativeTabsOrSplitViews(tabsBefore),
+                firstTabInGroup.splitview ?? firstTabInGroup
+              );
             }
             if (tabsAfter.length) {
-              group.addTabs(tabsAfter);
+              group.addTabs(getNativeTabsOrSplitViews(tabsAfter));
             }
           }
           return getExtTabGroupIdForInternalTabGroupId(group.id);
@@ -1867,15 +1816,20 @@ this.tabs = class extends ExtensionAPIPersistent {
               ungroupOrder.get(nativeTab.group).push(nativeTab);
             }
           }
-          for (const [group, tabs] of ungroupOrder) {
+          for (let [group, tabs] of ungroupOrder) {
             // Preserve original order of ungrouped tabs.
             tabs.sort((a, b) => a._tPos - b._tPos);
-            if (tabs[0] === tabs[0].group.tabs[0]) {
+            tabs = getNativeTabsOrSplitViews(tabs);
+            let firstTab = tabs[0];
+            if (group.documentGlobal.gBrowser.isSplitViewWrapper(firstTab)) {
+              firstTab = firstTab.tabs[0];
+            }
+            if (firstTab === group.tabs[0]) {
               // The tab is the front of the tab group, so insert before
               // current tab group to preserve order.
-              tabs[0].ownerGlobal.gBrowser.moveTabsBefore(tabs, group);
+              group.documentGlobal.gBrowser.moveTabsBefore(tabs, group);
             } else {
-              tabs[0].ownerGlobal.gBrowser.moveTabsAfter(tabs, group);
+              group.documentGlobal.gBrowser.moveTabsAfter(tabs, group);
             }
           }
         },

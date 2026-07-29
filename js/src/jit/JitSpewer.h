@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -14,8 +12,10 @@
 #include <stdarg.h>
 
 #include "jit/GraphSpewer.h"
+#include "jit/JitSpewChannelList.h"
 #include "js/Printer.h"
 #include "js/TypeDecls.h"
+#include "vm/Logging.h"
 #include "wasm/WasmTypeDecls.h"
 
 enum JSValueType : uint8_t;
@@ -23,112 +23,8 @@ enum JSValueType : uint8_t;
 namespace js {
 namespace jit {
 
-// New channels may be added below.
-#define JITSPEW_CHANNEL_LIST(_)                   \
-  /* Information during sinking */                \
-  _(Prune)                                        \
-  /* Information during escape analysis */        \
-  _(Escape)                                       \
-  /* Information during alias analysis */         \
-  _(Alias)                                        \
-  /* Information during alias analysis */         \
-  _(AliasSummaries)                               \
-  /* Information during GVN */                    \
-  _(GVN)                                          \
-  /* Information during sinking */                \
-  _(Sink)                                         \
-  /* Information during Range analysis */         \
-  _(Range)                                        \
-  /* Information during LICM */                   \
-  _(LICM)                                         \
-  /* Information during Branch Hinting */         \
-  _(BranchHint)                                   \
-  /* Info about fold linear constants */          \
-  _(FLAC)                                         \
-  /* Effective address analysis info */           \
-  _(EAA)                                          \
-  /* Wasm Bounds Check Elimination */             \
-  _(WasmBCE)                                      \
-  /* Information during regalloc */               \
-  _(RegAlloc)                                     \
-  /* Information during inlining */               \
-  _(Inlining)                                     \
-  /* Information during codegen */                \
-  _(Codegen)                                      \
-  /* Debug info about safepoints */               \
-  _(Safepoints)                                   \
-  /* Debug info about Pools*/                     \
-  _(Pools)                                        \
-  /* Profiling-related information */             \
-  _(Profiling)                                    \
-  /* Debug info about the I$ */                   \
-  _(CacheFlush)                                   \
-  /* Info about redundant shape guards */         \
-  _(RedundantShapeGuards)                         \
-  /* Info about redundant GC barriers */          \
-  _(RedundantGCBarriers)                          \
-  /* Info about loads used as keys */             \
-  _(MarkLoadsUsedAsPropertyKeys)                  \
-  /* Output a list of MIR expressions */          \
-  _(MIRExpressions)                               \
-  /* Summary info about loop unrolling */         \
-  _(Unroll)                                       \
-  /* Detailed info about loop unrolling */        \
-  _(UnrollDetails)                                \
-  /* Information about stub folding */            \
-  _(StubFolding)                                  \
-  /* Additional information about stub folding */ \
-  _(StubFoldingDetails)                           \
-                                                  \
-  /* BASELINE COMPILER SPEW */                    \
-                                                  \
-  /* Aborting Script Compilation. */              \
-  _(BaselineAbort)                                \
-  /* Script Compilation. */                       \
-  _(BaselineScripts)                              \
-  /* Detailed op-specific spew. */                \
-  _(BaselineOp)                                   \
-  /* Inline caches. */                            \
-  _(BaselineIC)                                   \
-  /* Inline cache fallbacks. */                   \
-  _(BaselineICFallback)                           \
-  /* OSR from Baseline => Ion. */                 \
-  _(BaselineOSR)                                  \
-  /* Bailouts. */                                 \
-  _(BaselineBailouts)                             \
-  /* Debug Mode On Stack Recompile . */           \
-  _(BaselineDebugModeOSR)                         \
-                                                  \
-  /* ION COMPILER SPEW */                         \
-                                                  \
-  /* Used to abort SSA construction */            \
-  _(IonAbort)                                     \
-  /* Information about compiled scripts */        \
-  _(IonScripts)                                   \
-  /* Info about failing to log script */          \
-  _(IonSyncLogs)                                  \
-  /* Information during MIR building */           \
-  _(IonMIR)                                       \
-  /* Information during bailouts */               \
-  _(IonBailouts)                                  \
-  /* Information during OSI */                    \
-  _(IonInvalidate)                                \
-  /* Debug info about snapshots */                \
-  _(IonSnapshots)                                 \
-  /* Generated inline cache stubs */              \
-  _(IonIC)                                        \
-                                                  \
-  /* WARP SPEW */                                 \
-                                                  \
-  /* Generated WarpSnapshots */                   \
-  _(WarpSnapshots)                                \
-  /* CacheIR transpiler logging */                \
-  _(WarpTranspiler)                               \
-  /* Trial inlining for Warp */                   \
-  _(WarpTrialInlining)
-
 enum JitSpewChannel {
-#define JITSPEW_CHANNEL(name) JitSpew_##name,
+#define JITSPEW_CHANNEL(name, help) JitSpew_##name,
   JITSPEW_CHANNEL_LIST(JITSPEW_CHANNEL)
 #undef JITSPEW_CHANNEL
       JitSpew_Terminator
@@ -169,7 +65,6 @@ class JitSpewGraphSpewer {
 };
 
 void CheckLogging();
-Fprinter& JitSpewPrinter();
 
 class JitSpewIndent {
   JitSpewChannel channel_;
@@ -179,41 +74,60 @@ class JitSpewIndent {
   ~JitSpewIndent();
 };
 
+// RAII helper that buffers one logical message (one or more lines) of spew
+// on `channel` and emits it on destruction. The buffer is a single per-thread
+// Vector reused across messages.
+class MOZ_RAII AutoJitSpewMessage {
+  bool enabled_;
+
+ public:
+  explicit AutoJitSpewMessage(JitSpewChannel channel);
+  AutoJitSpewMessage(JitSpewChannel channel, const char* fmt, ...)
+      MOZ_FORMAT_PRINTF(3, 4);
+  ~AutoJitSpewMessage();
+
+  void append(const char* fmt, ...) MOZ_FORMAT_PRINTF(2, 3);
+
+  // Returns a GenericPrinter that appends to this message's buffer. Only
+  // valid while this AutoJitSpewMessage is alive and enabled.
+  js::GenericPrinter& printer();
+
+  AutoJitSpewMessage(const AutoJitSpewMessage&) = delete;
+  void operator=(const AutoJitSpewMessage&) = delete;
+};
+
 void JitSpew(JitSpewChannel channel, const char* fmt, ...)
     MOZ_FORMAT_PRINTF(2, 3);
-void JitSpewStart(JitSpewChannel channel, const char* fmt, ...)
-    MOZ_FORMAT_PRINTF(2, 3);
-void JitSpewCont(JitSpewChannel channel, const char* fmt, ...)
-    MOZ_FORMAT_PRINTF(2, 3);
-void JitSpewFin(JitSpewChannel channel);
-void JitSpewHeader(JitSpewChannel channel);
 
 }  // namespace jit
 
 namespace jitspew::detail {
 extern bool LoggingChecked;
-extern uint64_t LoggingBits;
 extern mozilla::Atomic<uint32_t, mozilla::Relaxed> filteredOutCompilations;
+
+// Array of LogModules indexed by JitSpewChannel.
+inline constexpr const js::LogModule* const channelModules[] = {
+#  define JITSPEW_MODULE_PTR(name, help) &name##Module,
+    JITSPEW_CHANNEL_LIST(JITSPEW_MODULE_PTR)
+#  undef JITSPEW_MODULE_PTR
+};
 }  // namespace jitspew::detail
 
 namespace jit {
 
-static inline bool JitSpewEnabled(JitSpewChannel channel) {
+inline bool JitSpewEnabled(JitSpewChannel channel) {
   MOZ_ASSERT(jitspew::detail::LoggingChecked);
-  return (jitspew::detail::LoggingBits & (uint64_t(1) << uint32_t(channel))) &&
-         !jitspew::detail::filteredOutCompilations;
+  if (jitspew::detail::filteredOutCompilations) {
+    return false;
+  }
+  return jitspew::detail::channelModules[channel]->shouldLog(
+      mozilla::LogLevel::Debug);
 }
 
 void JitSpewVA(JitSpewChannel channel, const char* fmt, va_list ap)
     MOZ_FORMAT_PRINTF(2, 0);
-void JitSpewStartVA(JitSpewChannel channel, const char* fmt, va_list ap)
-    MOZ_FORMAT_PRINTF(2, 0);
-void JitSpewContVA(JitSpewChannel channel, const char* fmt, va_list ap)
-    MOZ_FORMAT_PRINTF(2, 0);
 void JitSpewDef(JitSpewChannel channel, const char* str, MDefinition* def);
 
-void EnableChannel(JitSpewChannel channel);
-void DisableChannel(JitSpewChannel channel);
 void EnableIonDebugSyncLogging();
 void EnableIonDebugAsyncLogging();
 
@@ -242,14 +156,24 @@ class JitSpewGraphSpewer {
 };
 
 static inline void CheckLogging() {}
-static inline Fprinter& JitSpewPrinter() {
-  MOZ_CRASH("No empty backend for JitSpewPrinter");
-}
 
 class JitSpewIndent {
  public:
   explicit JitSpewIndent(JitSpewChannel channel) {}
-  ~JitSpewIndent() {}
+  ~JitSpewIndent() = default;
+};
+
+class MOZ_RAII AutoJitSpewMessage {
+ public:
+  explicit AutoJitSpewMessage(JitSpewChannel channel) {}
+  template <typename... Args>
+  AutoJitSpewMessage(JitSpewChannel channel, const char* fmt, Args&&... args) {}
+  ~AutoJitSpewMessage() = default;
+  template <typename... Args>
+  void append(const char* fmt, Args&&... args) {}
+  js::GenericPrinter& printer() {
+    MOZ_CRASH("Shouldn't call this in non-JS_JITSPEW builds");
+  }
 };
 
 // The computation of some of the argument of the spewing functions might be
@@ -263,15 +187,10 @@ static inline void JitSpewCheckArguments(JitSpewChannel channel,
 #  define JitSpewCheckExpandedArgs_(ArgList) \
     JitSpewCheckExpandedArgs ArgList /* Fix MSVC issue */
 #  define JitSpew(...) JitSpewCheckExpandedArgs_((__VA_ARGS__))
-#  define JitSpewStart(...) JitSpewCheckExpandedArgs_((__VA_ARGS__))
-#  define JitSpewCont(...) JitSpewCheckExpandedArgs_((__VA_ARGS__))
 
 #  define JitSpewIfEnabled(channel, fmt, ...) \
     JitSpewCheckArguments(channel, fmt)
 
-static inline void JitSpewFin(JitSpewChannel channel) {}
-
-static inline void JitSpewHeader(JitSpewChannel channel) {}
 static inline bool JitSpewEnabled(JitSpewChannel channel) { return false; }
 static inline MOZ_FORMAT_PRINTF(2, 0) void JitSpewVA(JitSpewChannel channel,
                                                      const char* fmt,

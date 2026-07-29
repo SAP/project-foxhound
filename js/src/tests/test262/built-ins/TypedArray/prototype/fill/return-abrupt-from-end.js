@@ -34,11 +34,11 @@ var end = {
   }
 };
 
-testWithTypedArrayConstructors(function(TA) {
-  var sample = new TA();
+testWithTypedArrayConstructors(function(TA, makeCtorArg) {
+  var sample = new TA(makeCtorArg(0));
   assert.throws(Test262Error, function() {
     sample.fill(1, 0, end);
   });
-});
+}, null, null, ["immutable"]);
 
 reportCompare(0, 0);

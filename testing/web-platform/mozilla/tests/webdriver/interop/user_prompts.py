@@ -1,5 +1,5 @@
 import pytest
-from tests.support.asserts import assert_dialog_handled, assert_error
+from tests.support.classic.asserts import assert_dialog_handled, assert_error
 
 
 def new_window(session, type_hint=None):

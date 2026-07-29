@@ -17,12 +17,15 @@ const { RESERVED_WORDS } = require("peggy");
 const TAGLIST = require.resolve("../../parser/htmlparser/nsHTMLTagList.inc");
 const BINDINGS = require.resolve("../../dom/bindings/Bindings.conf");
 
-// TODO Bug TBD: Ideally we should get details about the generated files from
+// TODO Bug 2022802: Ideally we should get details about the generated files from
 // the build system.
+// This list should match the list of `GeneratedFile` in dom/bindings/moz.build.
 const GENERATED_WEDIDL_FILES = [
   "CSSPageDescriptors.webidl",
   "CSSPositionTryDescriptors.webidl",
   "CSSStyleProperties.webidl",
+  "CSSFontFaceDescriptors.webidl",
+  "CSSCounterStyleRule.webidl",
 ];
 
 // Support overrides using the syntax from @typescript/dom-lib-generator which

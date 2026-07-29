@@ -9,11 +9,11 @@ use crate::std::{
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering::Relaxed},
-        Arc, Mutex, Weak,
+        Arc,
     },
 };
 use crate::{
-    async_task::AsyncTask,
+    async_task::{async_scoped_thread, block_on, AsyncTask},
     config::Config,
     memory_test::child::Memtest,
     net,
@@ -22,7 +22,6 @@ use crate::{
     ui::{ReportCrashUI, ReportCrashUIState, SubmitState},
 };
 use anyhow::Context;
-use uuid::Uuid;
 
 pub mod annotations;
 
@@ -33,7 +32,7 @@ pub struct ReportCrash {
     extra: serde_json::Value,
     settings_file: PathBuf,
     attempted_to_send: AtomicBool,
-    ui: Option<Arc<AsyncTask<ReportCrashUIState>>>,
+    ui: Option<AsyncTask<ReportCrashUIState>>,
     memtest: RefCell<Option<Memtest>>,
 }
 
@@ -107,8 +106,8 @@ impl ReportCrash {
         self.set_log_file();
         self.set_extra_context();
         let hash = self.compute_minidump_hash();
-        let ping_uuid = self.send_crash_ping(hash.as_deref());
-        if let Err(e) = self.update_events_file(hash.as_deref(), ping_uuid) {
+        self.send_crash_ping();
+        if let Err(e) = self.update_events_file(hash.as_deref()) {
             log::warn!("failed to update events file: {e:#}");
         }
         self.check_eol_version()?;
@@ -116,7 +115,10 @@ impl ReportCrash {
         if !self.config.auto_submit {
             self.run_ui();
         } else {
-            anyhow::ensure!(self.try_send().unwrap_or(false), "failed to send report");
+            anyhow::ensure!(
+                block_on(self.try_send()).unwrap_or(false),
+                "failed to send report"
+            );
         }
 
         Ok(self.attempted_to_send.load(Relaxed))
@@ -167,29 +169,17 @@ impl ReportCrash {
     }
 
     /// Send crash pings to legacy telemetry and Glean.
-    ///
-    /// Returns the crash ping uuid used in legacy telemetry.
-    fn send_crash_ping(&self, minidump_hash: Option<&str>) -> Option<Uuid> {
+    fn send_crash_ping(&self) {
         net::ping::CrashPing {
             extra: &self.extra,
             reason: Some("crash"),
-            legacy_telemetry: Some(net::ping::LegacyTelemetryCrashPing {
-                crash_id: self.config.local_dump_id().as_ref(),
-                ping_dir: self.config.ping_dir.as_deref(),
-                minidump_hash,
-                pingsender_path: crate::config::installation_program_path("pingsender").as_ref(),
-            }),
         }
         .send()
     }
 
     /// Update the events file with information about the crash ping, minidump hash, and
     /// stacktraces.
-    fn update_events_file(
-        &self,
-        minidump_hash: Option<&str>,
-        ping_uuid: Option<Uuid>,
-    ) -> anyhow::Result<()> {
+    fn update_events_file(&self, minidump_hash: Option<&str>) -> anyhow::Result<()> {
         use crate::std::io::{BufRead, Error, ErrorKind, Write};
         struct EventsFile {
             event_version: String,
@@ -251,9 +241,6 @@ impl ReportCrash {
         // Update events file fields.
         if let Some(hash) = minidump_hash {
             events_file.data["MinidumpSha256Hash"] = hash.into();
-        }
-        if let Some(uuid) = ping_uuid {
-            events_file.data["CrashPingUUID"] = uuid.to_string().into();
         }
         events_file.data["StackTraces"] = self.extra["StackTraces"].clone();
 
@@ -409,37 +396,26 @@ impl ReportCrash {
         use crate::std::{sync::mpsc, thread};
 
         let (logic_send, logic_recv) = mpsc::channel();
-        // Wrap work_send in an Arc so that it can be captured weakly by the work queue and
-        // drop when the UI finishes, including panics (allowing the logic thread to exit).
-        //
-        // We need to wrap in a Mutex because std::mpsc::Sender isn't Sync (until rust 1.72).
-        let logic_send = Arc::new(Mutex::new(logic_send));
-
-        let weak_logic_send = Arc::downgrade(&logic_send);
         let logic_remote_queue = AsyncTask::new(move |f| {
-            if let Some(logic_send) = weak_logic_send.upgrade() {
-                // This is best-effort: ignore errors.
-                let _ = logic_send.lock().unwrap().send(f);
-            }
+            // This is best-effort: ignore errors.
+            let _ = logic_send.send(f);
         });
 
         let crash_ui = ReportCrashUI::new(
             &*self.settings.borrow(),
             self.config.clone(),
-            logic_remote_queue,
+            logic_remote_queue.weak(),
         );
 
         // Set the UI remote queue.
-        let crash_ui_async_task = Arc::new(crash_ui.async_task());
-        struct PanicHandler(Weak<AsyncTask<ReportCrashUIState>>);
+        let crash_ui_async_task = crash_ui.async_task();
+        struct PanicHandler(AsyncTask<ReportCrashUIState>);
         impl Drop for PanicHandler {
             fn drop(&mut self) {
-                if let Some(ui) = self.0.upgrade() {
-                    ui.push(|_| panic!("logic thread panicked"));
-                }
+                self.0.push(|_| panic!("logic thread panicked"));
             }
         }
-        let logic_panic_handler = PanicHandler(Arc::downgrade(&crash_ui_async_task));
+        let logic_panic_handler = PanicHandler(crash_ui_async_task.weak());
         self.ui = Some(crash_ui_async_task);
 
         // Spawn a separate thread to handle all interactions with `self`. This prevents blocking
@@ -450,18 +426,16 @@ impl ReportCrash {
         let barrier = std::sync::Barrier::new(2);
         let barrier = &barrier;
         thread::scope(move |s| {
-            // Move `logic_send` into this scope so that it will drop when the scope completes
-            // (which will drop the `mpsc::Sender` and cause the logic thread to complete and join
-            // when the UI finishes so the scope can exit).
-            let _logic_send = logic_send;
+            // Move `logic_remote_queue` into this scope so that it will drop when the scope
+            // completes (which will drop the `mpsc::Sender` and cause the logic thread to complete
+            // and join when the UI finishes so the scope can exit).
+            let _logic_remote_queue = logic_remote_queue;
             s.spawn(move || {
                 let _logic_panic_handler = logic_panic_handler;
                 barrier.wait();
                 while let Ok(f) = logic_recv.recv() {
                     f(self);
                 }
-                // Save settings after UI is closed
-                self.save_settings();
 
                 // Clear the UI remote queue, using it after this point is an error. This also
                 // prevents the panic handler from engaging.
@@ -540,23 +514,23 @@ impl ReportCrash {
     }
 
     /// Restart the application and send the crash report.
-    pub fn restart(&self) {
+    pub async fn restart(&self) {
         // Get the program restarted before sending the report.
         self.restart_process();
-        let result = self.try_send();
-        self.close_window(result.is_some());
+        let result = self.try_send().await;
+        self.close_window(result.is_some()).await;
     }
 
     /// Quit and send the crash report.
-    pub fn quit(&self) {
-        let result = self.try_send();
-        self.close_window(result.is_some());
+    pub async fn quit(&self) {
+        let result = self.try_send().await;
+        self.close_window(result.is_some()).await;
     }
 
-    fn close_window(&self, report_sent: bool) {
+    async fn close_window(&self, report_sent: bool) {
         if report_sent && !self.config.auto_submit && !cfg!(test) {
             // Add a delay to allow the user to see the result.
-            std::thread::sleep(std::time::Duration::from_secs(5));
+            async_scoped_thread(|| std::thread::sleep(std::time::Duration::from_secs(5))).await;
         }
 
         self.ui().push(|r| r.close_window.fire(&()));
@@ -569,7 +543,7 @@ impl ReportCrash {
     ///
     /// Returns whether the report was received (regardless of whether the response was processed
     /// successfully), if a report could be sent at all (based on the configuration).
-    fn try_send(&self) -> Option<bool> {
+    async fn try_send(&self) -> Option<bool> {
         // Whether the user wants to submit the report or not, we record that we attempted a send
         // (so to speak), confirming that we got to the point of user input. This will retain the
         // crash files rather than deleting them. E.g., the user may want to submit it later through
@@ -643,14 +617,13 @@ impl ReportCrash {
             url,
         };
 
-        // Normally we might want to do the following asynchronously since it will block,
-        // however we don't really need the Logic thread to do anything else (the UI
-        // becomes disabled from this point onward), so we just do it here. Same goes for
-        // the `std::thread::sleep` in close_window() later on.
-        let report_response = report.send().map(Some).unwrap_or_else(|e| {
-            log::error!("failed to send report: {e:#}");
-            None
-        });
+        let report_response = async_scoped_thread(|| report.send())
+            .await
+            .map(Some)
+            .unwrap_or_else(|e| {
+                log::error!("failed to send report: {e:#}");
+                None
+            });
 
         let report_received = report_response.is_some();
         let crash_id = report_response.and_then(|response| {
@@ -661,16 +634,10 @@ impl ReportCrash {
                 })
         });
 
-        if report_received {
-            // If the response could be handled (indicated by the returned crash id), clean up by
-            // deleting the minidump files. Otherwise, prune old minidump files.
-            if crash_id.is_some() {
-                self.config.delete_files();
-            } else {
-                if let Err(e) = self.config.prune_files() {
-                    log::warn!("failed to prune files: {e}");
-                }
-            }
+        // If the response could be handled (indicated by the returned crash id), clean up by
+        // deleting the minidump files.
+        if crash_id.is_some() {
+            self.config.delete_files();
         }
 
         if let Err(e) = self.write_submission_event(crash_id) {

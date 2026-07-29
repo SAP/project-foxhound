@@ -27,6 +27,10 @@ notes = "This is the upstream code with a fix for rust 1.89."
 audit-as-crates-io = true
 notes = "This is the upstream code plus the ARM intrinsics workaround from qcms, see bug 1882209."
 
+[policy.authenticator]
+audit-as-crates-io = false
+notes = "This is a first-party crate which is no longer published through crates.io."
+
 [policy.autocfg]
 audit-as-crates-io = true
 notes = "This is the upstream code plus a few local fixes, see bug 1685697."
@@ -35,17 +39,13 @@ notes = "This is the upstream code plus a few local fixes, see bug 1685697."
 audit-as-crates-io = true
 notes = "This is the upstream code not yet released"
 
-[policy.chardetng]
-audit-as-crates-io = true
-notes = "This is a crate Henri wrote which is also published. We should probably update Firefox to tip and certify that."
-
-[policy.chardetng_c]
-audit-as-crates-io = true
-notes = "This is a crate Henri wrote which is also published. We should probably update Firefox to tip and certify that."
-
 [policy.cose]
 audit-as-crates-io = true
 notes = "This is upstream plus a warning fix from bug 1823866."
+
+[policy.encoding_rs]
+audit-as-crates-io = true
+notes = "This is upstream plus a build fix for bug 2033279."
 
 [policy.firefox-on-glean]
 audit-as-crates-io = false
@@ -68,6 +68,18 @@ notes = "The dependencies on tokio-reactor and tokio-threadpools are just a hack
 criteria = "safe-to-run"
 notes = "Used for fuzzing."
 
+[policy.harfbuzz]
+audit-as-crates-io = true
+notes = "Patched version of upstream to fix Android build"
+
+[policy.harfbuzz-sys]
+audit-as-crates-io = true
+notes = "Patched version of upstream to remove bundled HarfBuzz"
+
+[policy.harfbuzz-traits]
+audit-as-crates-io = true
+notes = "Vendored with harfbuzz to avoid duplicates"
+
 [policy.http3server]
 criteria = "safe-to-run"
 notes = "Used for testing."
@@ -76,9 +88,53 @@ notes = "Used for testing."
 audit-as-crates-io = true
 notes = "Patched version of upstream"
 
+[policy.icu_collator]
+audit-as-crates-io = true
+notes = "Patched version of upstream"
+
+[policy.icu_collator_data]
+audit-as-crates-io = true
+notes = "Patched version of upstream"
+
+[policy.icu_collections]
+audit-as-crates-io = true
+notes = "Patched version of upstream"
+
+[policy.icu_normalizer]
+audit-as-crates-io = true
+notes = "Patched version of upstream"
+
+[policy.icu_normalizer_data]
+audit-as-crates-io = true
+notes = "Patched version of upstream"
+
+[policy.icu_properties]
+audit-as-crates-io = true
+notes = "Patched version of upstream"
+
+[policy.icu_properties_data]
+audit-as-crates-io = true
+notes = "Patched version of upstream"
+
 [policy.icu_segmenter_data]
 audit-as-crates-io = true
 notes = "Patched version of upstream"
+
+[policy.jxl]
+audit-as-crates-io = true
+notes = "Vendored from libjxl/jxl-rs git, a few commits past the 0.4.3 tag."
+
+[policy.jxl_macros]
+audit-as-crates-io = true
+notes = "Vendored from libjxl/jxl-rs git, a few commits past the 0.4.3 tag."
+
+[policy.jxl_simd]
+audit-as-crates-io = true
+notes = "Vendored from libjxl/jxl-rs git, a few commits past the 0.4.3 tag."
+
+[policy.jxl_transforms]
+audit-as-crates-io = true
+notes = "Vendored from libjxl/jxl-rs git, a few commits past the 0.4.3 tag."
 
 [policy.l10nregistry]
 dependency-criteria = { fluent-testing = "safe-to-run", tokio = "safe-to-run" }
@@ -107,33 +163,9 @@ audit-as-crates-io = true
 audit-as-crates-io = true
 notes = "This is a pinned version of the upstream code, presumably to get a fix that hadn't been released yet. We should consider switching to the latest official release."
 
-[policy.mls-rs]
+[policy.minidump-writer]
 audit-as-crates-io = true
-notes = "This is a pinned version of the upstream code, pending update of the crate."
-
-[policy.mls-rs-codec]
-audit-as-crates-io = true
-notes = "This is a pinned version of the upstream code, pending update of the crate."
-
-[policy.mls-rs-codec-derive]
-audit-as-crates-io = true
-notes = "This is a pinned version of the upstream code, pending update of the crate."
-
-[policy.mls-rs-core]
-audit-as-crates-io = true
-notes = "This is a pinned version of the upstream code, pending update of the crate."
-
-[policy.mls-rs-crypto-hpke]
-audit-as-crates-io = true
-notes = "This is a pinned version of the upstream code, pending update of the crate."
-
-[policy.mls-rs-crypto-traits]
-audit-as-crates-io = true
-notes = "This is a pinned version of the upstream code, pending update of the crate."
-
-[policy.mls-rs-identity-x509]
-audit-as-crates-io = true
-notes = "This is a pinned version of the upstream code, pending update of the crate."
+notes = "We are letting a pre-release ride the trains to catch any regressions before we cut an actual release."
 
 [policy.mls-rs-provider-sqlite]
 audit-as-crates-io = true
@@ -181,13 +213,17 @@ audit-as-crates-io = true
 audit-as-crates-io = true
 notes = "Part of the wgpu repository, pinned as the rest of wgpu crates."
 
-[policy.nss-gk-api]
-audit-as-crates-io = true
-notes = "This is a pinned version of the upstream code, pending update of the crate."
+[policy.nimbus-sdk]
+audit-as-crates-io = false
+notes = "This lives in application-services but was pushed to crates.io a very long time ago."
 
 [policy.objc]
 audit-as-crates-io = true
 notes = "This is the upstream code plus a backported fix."
+
+[policy.ohttp]
+audit-as-crates-io = true
+notes = "We are currently on an unreleased revision"
 
 [policy.osclientcerts]
 audit-as-crates-io = false
@@ -219,10 +255,6 @@ notes = "This is a first-party crate which is also published to crates.io, but w
 audit-as-crates-io = true
 notes = "This is a first-party crate which is also published to crates.io, but we should publish audits for it for the benefit of the ecosystem."
 
-[policy.spirv]
-audit-as-crates-io = true
-notes = "Contains only upstream mainline history pending release."
-
 [policy.storage]
 audit-as-crates-io = false
 notes = "This is a first-party crate which is entirely unrelated to the crates.io package of the same name."
@@ -235,10 +267,6 @@ notes = "This is an in-tree first-party crate that is published to crates.io by 
 audit-as-crates-io = false
 notes = "This is a first-party crate, maintained by the appservices team, which is entirely unrelated to the crates.io package of the same name."
 
-[policy.thin-vec]
-audit-as-crates-io = true
-notes = "3rd-party crate with a mozilla-specific patch applied"
-
 [policy.to_shmem]
 audit-as-crates-io = true
 notes = "This is a first-party crate which is also published to crates.io"
@@ -248,6 +276,12 @@ audit-as-crates-io = true
 notes = "This is a first-party crate which is also published to crates.io"
 
 [policy.unicode-bidi]
+audit-as-crates-io = true
+
+[policy.utf16_iter]
+audit-as-crates-io = true
+
+[policy.utf8_iter]
 audit-as-crates-io = true
 
 [policy.viaduct]
@@ -261,8 +295,15 @@ notes = "This is a first-party crate which is also published to crates.io. We ce
 
 [policy.webrender]
 audit-as-crates-io = false
-dependency-criteria = { hyper = "safe-to-run", tokio = "safe-to-run" }
-notes = "the hyper and tokio dependencies are only enabled in local debug builds, and are not shipped to users"
+notes = "the hyper and tokio dependencies (and their transitive deps) are only enabled via the debugger feature in local debug builds, and are not shipped to users"
+
+[policy.webrender.dependency-criteria]
+http-body = "safe-to-run"
+http-body-util = "safe-to-run"
+hyper = "safe-to-run"
+hyper-util = "safe-to-run"
+tokio = "safe-to-run"
+tower-service = "safe-to-run"
 
 [policy.webrender_api]
 audit-as-crates-io = false
@@ -286,6 +327,10 @@ notes = "Upstream project which we pin."
 audit-as-crates-io = true
 notes = "Upstream project which we pin."
 
+[policy.wgpu-naga-bridge]
+audit-as-crates-io = true
+notes = "Upstream project which we pin."
+
 [policy.wgpu-types]
 audit-as-crates-io = true
 notes = "Upstream project which we pin."
@@ -301,8 +346,9 @@ notes = "This is an in-tree first-party crate that is published to crates.io by 
 [policy.wr_malloc_size_of]
 audit-as-crates-io = false
 
-[policy.zip]
+[policy.zlib-rs]
 audit-as-crates-io = true
+notes = "This is the upstream code plus a workaround for Raptor Lake CPUs, see bug 1950764."
 
 [[exemptions.alsa]]
 version = "0.4.3"
@@ -488,20 +534,12 @@ criteria = "safe-to-deploy"
 version = "0.1.3"
 criteria = "safe-to-deploy"
 
-[[exemptions.gpu-descriptor]]
-version = "0.2.2"
-criteria = "safe-to-deploy"
-
-[[exemptions.gpu-descriptor-types]]
-version = "0.1.1"
+[[exemptions.harfbuzz-sys]]
+version = "0.6.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.hashlink]]
 version = "0.7.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.hexf-parse]]
-version = "0.2.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.ioctl-sys]]
@@ -552,10 +590,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.minimal-lexical]]
 version = "0.2.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.mio]]
-version = "0.8.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.murmurhash3]]

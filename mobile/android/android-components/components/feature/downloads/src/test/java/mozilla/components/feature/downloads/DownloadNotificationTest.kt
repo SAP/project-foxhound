@@ -16,6 +16,7 @@ import mozilla.components.feature.downloads.AbstractFetchDownloadService.Downloa
 import mozilla.components.feature.downloads.fake.FakeFileSizeFormatter
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.utils.FakeDateTimeProvider
+import mozilla.components.support.utils.FakeDownloadFileUtils
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -395,6 +396,7 @@ class DownloadNotificationTest {
             downloadState = download.state,
             createdTime = download.createdTime,
             notificationAccentColor = style.notificationAccentColor,
+            downloadFileUtils = FakeDownloadFileUtils(),
             contentIntent = mock(PendingIntent::class.java),
         )
 

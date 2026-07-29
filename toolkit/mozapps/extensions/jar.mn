@@ -7,16 +7,14 @@ toolkit.jar:
 #ifndef MOZ_GECKOVIEW
   content/mozapps/extensions/OpenH264-license.txt               (content/OpenH264-license.txt)
   content/mozapps/extensions/aboutaddons.html                   (content/aboutaddons.html)
-  content/mozapps/extensions/aboutaddons.js                     (content/aboutaddons.js)
-  content/mozapps/extensions/aboutaddonsCommon.js               (content/aboutaddonsCommon.js)
+  content/mozapps/extensions/aboutaddons.mjs                    (content/aboutaddons.mjs)
+  content/mozapps/extensions/aboutaddons-utils.mjs              (content/aboutaddons-utils.mjs)
   content/mozapps/extensions/aboutaddons.css                    (content/aboutaddons.css)
-  content/mozapps/extensions/abuse-reports.js                   (content/abuse-reports.js)
+  content/mozapps/extensions/abuse-reports.mjs                  (content/abuse-reports.mjs)
   content/mozapps/extensions/components                         (content/components/*.css)
   content/mozapps/extensions/components                         (content/components/*.mjs)
-  content/mozapps/extensions/drag-drop-addon-installer.js       (content/drag-drop-addon-installer.js)
   content/mozapps/extensions/shortcuts.css                      (content/shortcuts.css)
-  content/mozapps/extensions/shortcuts.js                       (content/shortcuts.js)
-  content/mozapps/extensions/view-controller.js                 (content/view-controller.js)
+  content/mozapps/extensions/view-controller.mjs                (content/view-controller.mjs)
 
 % resource default-theme %content/mozapps/extensions/default-theme/
   content/mozapps/extensions/default-theme                      (default-theme/*.svg)

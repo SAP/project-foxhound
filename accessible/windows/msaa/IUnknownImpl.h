@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. *
@@ -10,7 +8,9 @@
 
 #include <windows.h>
 #undef CreateEvent  // thank you windows you're such a helper
+#include "MainThreadUtils.h"
 #include "nsError.h"
+#include "nsISupportsImpl.h"
 
 // Avoid warning C4509 like "nonstandard extension used:
 // 'AccessibleWrap::[acc_getName]' uses SEH and 'name' has destructor.
@@ -20,46 +20,26 @@
 #  pragma warning(disable : 4509)
 #endif
 
-namespace mozilla {
-namespace a11y {
-
-class AutoRefCnt {
- public:
-  AutoRefCnt() : mValue(0) {}
-
-  ULONG operator++() { return ++mValue; }
-  ULONG operator--() { return --mValue; }
-  ULONG operator++(int) { return ++mValue; }
-  ULONG operator--(int) { return --mValue; }
-
-  operator ULONG() const { return mValue; }
-
- private:
-  ULONG mValue;
-};
-
-}  // namespace a11y
-}  // namespace mozilla
-
 #define DECL_IUNKNOWN                                                        \
  public:                                                                     \
   virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID, void**) override; \
   ULONG STDMETHODCALLTYPE AddRef() override {                                \
+    MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());                                \
     MOZ_ASSERT(int32_t(mRefCnt) >= 0, "illegal refcnt");                     \
-    ++mRefCnt;                                                               \
-    return mRefCnt;                                                          \
+    return ++mRefCnt;                                                        \
   }                                                                          \
   ULONG STDMETHODCALLTYPE Release() override {                               \
+    MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());                                \
     MOZ_ASSERT(int32_t(mRefCnt) > 0, "dup release");                         \
-    --mRefCnt;                                                               \
-    if (mRefCnt) return mRefCnt;                                             \
+    const ULONG newCount = --mRefCnt;                                        \
+    if (newCount) return newCount;                                           \
                                                                              \
     delete this;                                                             \
     return 0;                                                                \
   }                                                                          \
                                                                              \
  private:                                                                    \
-  mozilla::a11y::AutoRefCnt mRefCnt;                                         \
+  mozilla::ThreadSafeAutoRefCnt mRefCnt;                                     \
                                                                              \
  public:
 

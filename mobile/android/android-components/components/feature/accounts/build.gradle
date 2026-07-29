@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import static org.mozilla.conventions.BuildConfigKt.updateExtensionVersion
+
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
@@ -16,7 +18,7 @@ android {
 }
 
 tasks.register("updateBuiltInExtensionVersion", Copy) { task ->
-    updateExtensionVersion(task, 'src/main/assets/extensions/fxawebchannel')
+    updateExtensionVersion(task, 'src/main/assets/extensions/fxawebchannel', rootProject.ext.config.componentsVersion)
 }
 
 // Make sure DAGP asset-source exploding happens after ExtensionVersion tasks

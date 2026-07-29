@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,10 +12,10 @@
 #include "mozilla/StaticPrefs_svg.h"
 #include "mozilla/URLExtraData.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/ElementBinding.h"
 #include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/dom/SVGGraphicsElement.h"
 #include "mozilla/dom/SVGLengthBinding.h"
-#include "mozilla/dom/SVGSVGElement.h"
 #include "mozilla/dom/SVGSwitchElement.h"
 #include "mozilla/dom/SVGSymbolElement.h"
 #include "mozilla/dom/SVGUseElementBinding.h"
@@ -76,8 +74,7 @@ NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(SVGUseElement, SVGUseElementBase,
 //----------------------------------------------------------------------
 // Implementation
 
-SVGUseElement::SVGUseElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+SVGUseElement::SVGUseElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : SVGUseElementBase(std::move(aNodeInfo)), mReferencedElementTracker(this) {
   SetEnabledCallbacks(kCharacterDataChanged | kAttributeChanged |
                       kContentAppended | kContentInserted |
@@ -419,7 +416,9 @@ void SVGUseElement::UpdateShadowTree() {
 
   RefPtr<ShadowRoot> shadow = GetShadowRoot();
   if (!shadow) {
-    shadow = AttachShadowWithoutNameChecks(ShadowRootMode::Closed);
+    ShadowRootInit init;
+    init.mMode = ShadowRootMode::Closed;
+    shadow = AttachShadowWithoutNameChecks(init);
   }
   MOZ_ASSERT(shadow);
 

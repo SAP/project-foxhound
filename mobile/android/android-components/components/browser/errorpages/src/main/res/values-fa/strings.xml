@@ -135,6 +135,10 @@
   <string name="mozac_browser_errorpages_safe_phishing_uri_title">مشکل پایگاه گمراه‌کننده</string>
   <!-- The %1$s will be replaced by the malicious website URL -->
   <string name="mozac_browser_errorpages_safe_phishing_uri_message"><![CDATA[<p>صفحه %1$s به عنوان یک پایگاه وب گمراه‌کننده گزارش شده و بر اساس ترجیحات امنیتی شما مسدود شده است.</p>]]></string>
+  <!-- The document title and heading of an error page. -->
+  <string name="mozac_browser_errorpages_harmful_addon_uri_title">وبگاه برای امنیت شما مسدود شده است</string>
+  <!-- The %1$s will be replaced by the malicious website URL -->
+  <string name="mozac_browser_errorpages_harmful_addon_uri_message"><![CDATA[<p>این صفحهٔ وب در %1$s مسدود شده است، چون یکی از برافزاهای شما تلاش کرده آن را باز کند. این وبگاه ممکن است برای سرقت اطلاعات شما مثل گذرواژه یا اطلاعات کارت بانکی، استفاده شود.</p>]]></string>
   <!-- The title of the error page for websites that do not support HTTPS when HTTPS-Only is turned on -->
   <string name="mozac_browser_errorpages_httpsonly_title">پایگاه ایمن در دسترس نیست</string>
   <!-- The text of the error page for websites that do not support HTTPS when HTTPS-Only is turned on. %1$s will be replaced with the URL of the website. -->

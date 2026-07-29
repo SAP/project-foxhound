@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -357,6 +355,12 @@ class RestyleManager {
                         const nsAttrValue* aOldValue);
 
   /**
+   * Recascade aElement and its pseudo-elements if they depend on
+   * aAttribute through attr().
+   */
+  void MaybeRecascadeForAttrFunction(Element* aElement, nsAtom* aAttribute);
+
+  /**
    * Restyle an element's previous and/or next siblings.
    */
   void RestyleSiblingsForNthOf(dom::Element* aChild,
@@ -494,7 +498,7 @@ class RestyleManager {
   void RestyleWholeContainer(nsINode* aContainer, NodeSelectorFlags);
   void RestylePreviousSiblings(nsIContent* aStartingSibling);
   void RestyleSiblingsStartingWith(nsIContent* aStartingSibling);
-
+  void RecascadeForTreeCountingFunctions(nsINode* aContainer);
   void RestyleForEmptyChange(Element* aContainer);
   void MaybeRestyleForEdgeChildChange(nsINode* aContainer,
                                       nsIContent* aChangedChild);

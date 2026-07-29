@@ -222,12 +222,12 @@ export class ContentDelegateChild extends GeckoViewActorChild {
         this.sendAsyncMessage("GeckoView:DOMFullscreenExit");
         break;
       case "DOMMetaViewportFitChanged":
-        if (aEvent.originalTarget.ownerGlobal == this.contentWindow) {
+        if (aEvent.originalTarget.documentGlobal == this.contentWindow) {
           this.notifyParentOfViewportFit();
         }
         break;
       case "DOMContentLoaded": {
-        if (aEvent.originalTarget.ownerGlobal == this.contentWindow) {
+        if (aEvent.originalTarget.documentGlobal == this.contentWindow) {
           // If loaded content doesn't have viewport-fit, parent still
           // uses old value of previous content.
           this.notifyParentOfViewportFit();

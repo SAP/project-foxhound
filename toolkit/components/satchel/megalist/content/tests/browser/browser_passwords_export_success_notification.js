@@ -22,7 +22,7 @@ function waitForOpenFilePicker() {
 }
 
 async function clickExportAllPasswords(megalist) {
-  MockFilePicker.init(window.browsingContext);
+  MockFilePicker.init();
   MockFilePicker.useAnyFile();
   MockFilePicker.returnValue = MockFilePicker.returnOK;
 

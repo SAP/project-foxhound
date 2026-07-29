@@ -91,19 +91,16 @@ int NR_reg_set_uint4(NR_registry_name name, UINT4 data);
 
 int NR_reg_set_registry(NR_registry_name name);
 
-int NR_reg_set_bytes(NR_registry_name name, const UCHAR *data, size_t length);
 int NR_reg_set_string(NR_registry_name name, const char *data);
 
 int NR_reg_set2_uchar(NR_registry_name prefix, const char *name, UCHAR data);
-
-int NR_reg_set2_string(NR_registry_name prefix, const char *name, const char *data);
 
 int NR_reg_del(NR_registry_name name);
 
 int NR_reg_get_child_count(NR_registry_name parent, unsigned int *count);
 int NR_reg_get_child_registry(NR_registry_name parent, unsigned int i, NR_registry child);
 
-/* convenience methods, call RFREE on the returned data */
+/* convenience methods, call free on the returned data */
 int NR_reg_alloc_data(NR_registry_name name, Data *data);
 int NR_reg_alloc_string(NR_registry_name name, char **data);
 

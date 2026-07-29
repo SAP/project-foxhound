@@ -23,7 +23,9 @@ skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && socketprocess_networking", # Bug 1942961
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && verify-standalone", # Bug 1942961
   "os == 'win' && os_version == '11.26100' && arch == 'x86' && debug && verify-standalone", # Bug 1942961
+  "os == 'win' && os_version == '11.26200' && arch == 'x86' && debug && verify-standalone", # Bug 1942961
   "os == 'win' && os_version == '11.26100' && debug", # Bug 1942961
+  "os == 'win' && os_version == '11.26200' && debug", # Bug 1942961
 ]
 
 ["browser_custom_avatar_test.js"]
@@ -39,6 +41,7 @@ run-if = [
 skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1942961
   "os == 'win' && os_version == '11.26100' && debug", # Bug 1942961
+  "os == 'win' && os_version == '11.26200' && debug", # Bug 1942961
 ]
 
 ["browser_empty_name_beforeunload_test.js"]
@@ -57,9 +60,6 @@ skip-if = [
 ]
 
 ["browser_preferences.js"]
-fail-if = [
-  "a11y_checks", # Bug 1955503
-]
 
 ["browser_refresh_button.js"]
 
@@ -76,6 +76,9 @@ skip-if = [
 ["browser_test_nimbus_feature.js"]
 
 ["browser_test_profile_selector.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
 
 ["browser_update_profile_on_window_switch.js"]
 skip-if = [
@@ -83,6 +86,7 @@ skip-if = [
   "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # Bug 1948374
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1948374
   "os == 'win' && os_version == '11.26100' && opt", # Bug 1948374
+  "os == 'win' && os_version == '11.26200' && opt", # Bug 1948374
 ]
 
 ["browser_window_title_test.js"]

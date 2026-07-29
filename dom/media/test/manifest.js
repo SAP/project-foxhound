@@ -399,6 +399,8 @@ var gPlayTests = [
     duration: 0.27,
     contentDuration: 0.267,
   },
+  // Two adjacent colr boxes in the video sample entry (bug 2044320).
+  { name: "two-colr.mp4", type: "video/mp4", duration: 0.512 },
   // Test playback of a MP4 file with a non-zero start time (and audio starting
   // a second later).
   { name: "bipbop-lateaudio.mp4", type: "video/mp4" },
@@ -513,6 +515,12 @@ var gMKVtests = [
   // ffmpeg -f lavfi -i sine=frequency=1000:duration=1 -c:a libopus output_opus.mkv
   {
     name: "output_opus.mkv",
+    type: 'audio/matroska; codecs="opus"',
+    duration: 1.0,
+  },
+  // ffmpeg -f lavfi -i sine=frequency=1000:duration=1 -c:a libopus -ac 6 -mapping_family 1 output_opus_surround.mkv
+  {
+    name: "output_opus_surround.mkv",
     type: 'audio/matroska; codecs="opus"',
     duration: 1.0,
   },

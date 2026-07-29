@@ -2,246 +2,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { SelectableProfileService } from "resource:///modules/profiles/SelectableProfileService.sys.mjs";
+import {
+  SelectableProfileService,
+  PROFILE_THEMES_MAP,
+} from "resource:///modules/profiles/SelectableProfileService.sys.mjs";
 import { ProfileAge } from "resource://gre/modules/ProfileAge.sys.mjs";
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 const lazy = {};
 
-// Bug 1922374: Move themes to remote settings
-const PROFILE_THEMES_MAP = new Map([
-  [
-    "firefox-compact-light@mozilla.org",
-    {
-      dataL10nId: "profiles-gray-theme",
-      dataL10nTitle: "profiles-gray-theme-title",
-      colors: {
-        light: {
-          chromeColor: "rgb(234, 234, 237)", // frame
-          toolbarColor: "rgb(255, 255, 255)", // sidebar?
-          contentColor: "#F9F9FB", // ntp_background
-        },
-      },
-      isDark: false,
-      useInAutomation: true,
-    },
-  ],
-  [
-    "firefox-compact-dark@mozilla.org",
-    {
-      dataL10nId: "profiles-gray-theme",
-      dataL10nTitle: "profiles-gray-theme-title",
-      colors: {
-        dark: {
-          chromeColor: "rgb(28, 27, 34)",
-          toolbarColor: "rgb(28, 27, 34)",
-          contentColor: "rgb(43, 42, 51)",
-        },
-      },
-      isDark: true,
-      useInAutomation: true,
-    },
-  ],
-  [
-    "{cd6791f7-4b6d-47b4-8877-1d4c82c6699d}",
-    {
-      dataL10nId: "profiles-yellow-theme",
-      dataL10nTitle: "profiles-yellow-theme-title",
-      downloadURL:
-        "https://addons.mozilla.org/firefox/downloads/file/4552782/profiles_yellow-1.0.xpi",
-      colors: {
-        light: {
-          chromeColor: "rgb(255, 230, 153)",
-          toolbarColor: "rgb(255, 255, 255)",
-          contentColor: "rgb(255, 244, 208)",
-        },
-        dark: {
-          chromeColor: "rgb(39, 16, 0)",
-          toolbarColor: "rgb(22, 22, 22)",
-          contentColor: "rgb(66, 27, 0)",
-        },
-      },
-    },
-  ],
-  [
-    "{7a301b7b-c3e2-40bf-a06b-6d517bbf138b}",
-    {
-      dataL10nId: "profiles-orange-theme",
-      dataL10nTitle: "profiles-orange-theme-title",
-      downloadURL:
-        "https://addons.mozilla.org/firefox/downloads/file/4552788/profiles_orange-1.0.xpi",
-      colors: {
-        light: {
-          chromeColor: "rgb(255, 205, 158)",
-          toolbarColor: "rgb(255, 255, 255)",
-          contentColor: "rgb(255, 237, 214)",
-        },
-        dark: {
-          chromeColor: "rgb(39, 15, 0)",
-          toolbarColor: "rgb(22, 22, 22)",
-          contentColor: "rgb(72, 18, 0)",
-        },
-      },
-    },
-  ],
-  [
-    "{8de5f8c3-bfc2-443b-9913-7bbadbd1ba0d}",
-    {
-      dataL10nId: "profiles-red-theme",
-      dataL10nTitle: "profiles-red-theme-title",
-      downloadURL:
-        "https://addons.mozilla.org/firefox/downloads/file/4552785/profiles_red-1.0.xpi",
-      colors: {
-        light: {
-          chromeColor: "rgb(255, 195, 201)",
-          toolbarColor: "rgb(255, 255, 255)",
-          contentColor: "rgb(255, 232, 234)",
-        },
-        dark: {
-          chromeColor: "rgb(41, 11, 15)",
-          toolbarColor: "rgb(22, 22, 22)",
-          contentColor: "rgb(76, 5, 22)",
-        },
-      },
-    },
-  ],
-  [
-    "{2b0fadbf-238d-43db-aa9d-e06c9a7e000b}",
-    {
-      dataL10nId: "profiles-pink-theme",
-      dataL10nTitle: "profiles-pink-theme-title",
-      downloadURL:
-        "https://addons.mozilla.org/firefox/downloads/file/4552787/profiles_pink-1.0.xpi",
-      colors: {
-        light: {
-          chromeColor: "rgb(255, 194, 219)",
-          toolbarColor: "rgb(255, 255, 255)",
-          contentColor: "rgb(255, 232, 244)",
-        },
-        dark: {
-          chromeColor: "rgb(39, 11, 21)",
-          toolbarColor: "rgb(22, 22, 22)",
-          contentColor: "rgb(73, 6, 36)",
-        },
-      },
-    },
-  ],
-  [
-    "{1d73a1eb-128d-4e9e-83f8-c0c51f8c5fd3}",
-    {
-      dataL10nId: "profiles-purple-theme",
-      dataL10nTitle: "profiles-purple-theme-title",
-      downloadURL:
-        "https://addons.mozilla.org/firefox/downloads/file/4552786/profiles_purple-1.0.xpi",
-      colors: {
-        light: {
-          chromeColor: "rgb(247, 202, 255)",
-          toolbarColor: "rgb(255, 255, 255)",
-          contentColor: "rgb(255, 236, 255)",
-        },
-        dark: {
-          chromeColor: "rgb(30, 14, 37)",
-          toolbarColor: "rgb(22, 22, 22)",
-          contentColor: "rgb(56, 17, 71)",
-        },
-      },
-    },
-  ],
-  [
-    "{aab1adac-5449-47fd-b836-c2f43dc28f3f}",
-    {
-      dataL10nId: "profiles-violet-theme",
-      dataL10nTitle: "profiles-violet-theme-title",
-      downloadURL:
-        "https://addons.mozilla.org/firefox/downloads/file/4552784/profiles_violet-1.0.xpi",
-      colors: {
-        light: {
-          chromeColor: "rgb(221, 207, 255)",
-          toolbarColor: "rgb(255, 255, 255)",
-          contentColor: "rgb(244, 240, 255)",
-        },
-        dark: {
-          chromeColor: "rgb(22, 17, 43)",
-          toolbarColor: "rgb(22, 22, 22)",
-          contentColor: "rgb(40, 25, 83)",
-        },
-      },
-    },
-  ],
-  [
-    "{4223a94a-d3f9-40e9-95dd-99aca80ea04b}",
-    {
-      dataL10nId: "profiles-blue-theme",
-      dataL10nTitle: "profiles-blue-theme-title",
-      downloadURL:
-        "https://addons.mozilla.org/firefox/downloads/file/4551961/profiles_blue-1.0.xpi",
-      colors: {
-        light: {
-          chromeColor: "rgb(171, 223, 255)",
-          toolbarColor: "rgb(255, 255, 255)",
-          contentColor: "rgb(226, 247, 255)",
-        },
-        dark: {
-          chromeColor: "rgb(8, 21, 44)",
-          toolbarColor: "rgb(22, 22, 22)",
-          contentColor: "rgb(4, 35, 86)",
-        },
-      },
-    },
-  ],
-  [
-    "{7063abff-a690-4b87-a548-fc32d3ce5708}",
-    {
-      dataL10nId: "profiles-green-theme",
-      dataL10nTitle: "profiles-green-theme-title",
-      downloadURL:
-        "https://addons.mozilla.org/firefox/downloads/file/4552789/profiles_green-1.0.xpi",
-      colors: {
-        light: {
-          chromeColor: "rgb(181, 240, 181)",
-          toolbarColor: "rgb(255, 255, 255)",
-          contentColor: "rgb(225, 255, 225)",
-        },
-        dark: {
-          chromeColor: "rgb(5, 28, 7)",
-          toolbarColor: "rgb(22, 22, 22)",
-          contentColor: "rgb(0, 50, 0)",
-        },
-      },
-    },
-  ],
-  [
-    "{0683b144-0d4a-4815-963e-55a8ec8d386b}",
-    {
-      dataL10nId: "profiles-cyan-theme",
-      dataL10nTitle: "profiles-cyan-theme-title",
-      downloadURL:
-        "https://addons.mozilla.org/firefox/downloads/file/4552790/profiles_cyan-1.0.xpi",
-      colors: {
-        light: {
-          chromeColor: "rgb(166, 236, 244)",
-          toolbarColor: "rgb(255, 255, 255)",
-          contentColor: "rgb(207, 255, 255)",
-        },
-        dark: {
-          chromeColor: "rgb(0, 31, 43)",
-          toolbarColor: "rgb(22, 22, 22)",
-          contentColor: "rgb(0, 50, 61)",
-        },
-      },
-    },
-  ],
-  [
-    "default-theme@mozilla.org",
-    {
-      dataL10nId: "profiles-system-theme",
-      dataL10nTitle: "profiles-system-theme-title",
-      colors: {},
-    },
-  ],
-]);
-
 ChromeUtils.defineESModuleGetters(lazy, {
+  ASRouter: "resource:///modules/asrouter/ASRouter.sys.mjs",
+  BackupService: "resource:///modules/backup/BackupService.sys.mjs",
   EveryWindow: "resource:///modules/EveryWindow.sys.mjs",
   formAutofillStorage: "resource://autofill/FormAutofillStorage.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
@@ -300,6 +72,10 @@ export class ProfilesParent extends JSWindowActorParent {
           return null;
         }
 
+        // Since this profile will be deleted, let's make sure to update any prefs
+        // that depended on its existence
+        await lazy.BackupService.maybeRemoveFromEnabledListPref();
+
         try {
           await SelectableProfileService.deleteCurrentProfile();
 
@@ -323,14 +99,15 @@ export class ProfilesParent extends JSWindowActorParent {
       }
       case "Profiles:GetNewProfileContent": {
         Glean.profilesNew.displayed.record();
-        let isDark = gBrowser.selectedBrowser.ownerGlobal.matchMedia(
+        let isDark = gBrowser.selectedBrowser.documentGlobal.matchMedia(
           "(-moz-system-dark-theme)"
         ).matches;
         return this.#getProfileContent(isDark);
       }
       case "Profiles:GetEditProfileContent": {
         Glean.profilesExisting.displayed.record();
-        let isDark = gBrowser.selectedBrowser.ownerGlobal.matchMedia(
+        await lazy.BackupService.init().postRecoveryComplete;
+        let isDark = gBrowser.selectedBrowser.documentGlobal.matchMedia(
           "(-moz-system-dark-theme)"
         ).matches;
         return this.#getProfileContent(isDark);
@@ -481,6 +258,16 @@ export class ProfilesParent extends JSWindowActorParent {
           gBrowser.addTrustedTab("about:newtab");
         }
         gBrowser.removeTab(this.tab);
+        // Send a trigger to ASRouter on new profile creation
+        if (source === "about:newprofile") {
+          await lazy.ASRouter.waitForInitialized;
+          const browser = gBrowser.selectedBrowser;
+          await lazy.ASRouter.sendTriggerMessage({
+            browser,
+            id: "selectableProfileCreated",
+          });
+        }
+
         break;
       }
     }
@@ -488,17 +275,7 @@ export class ProfilesParent extends JSWindowActorParent {
   }
 
   async enableTheme(themeId, telemetryInfo) {
-    let theme = await lazy.AddonManager.getAddonByID(themeId);
-    if (!theme) {
-      let themeUrl = PROFILE_THEMES_MAP.get(themeId).downloadURL;
-      let themeInstall = await lazy.AddonManager.getInstallForURL(themeUrl, {
-        telemetryInfo,
-      });
-      await themeInstall.install();
-      theme = await lazy.AddonManager.getAddonByID(themeId);
-    }
-
-    await theme.enable();
+    await SelectableProfileService.enableTheme(themeId, telemetryInfo);
   }
 
   async getSafeForContentThemes(isDark) {

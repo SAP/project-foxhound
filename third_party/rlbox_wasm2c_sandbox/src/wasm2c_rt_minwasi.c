@@ -190,6 +190,11 @@ static bool safe_add_u32(u32* ret, u32 a, u32 b)
 // Clock operations
 /////////////////////////////////////////////////////////////
 
+#define WASM_CLOCK_REALTIME 0
+#define WASM_CLOCK_MONOTONIC 1
+#define WASM_CLOCK_PROCESS_CPUTIME 2
+#define WASM_CLOCK_THREAD_CPUTIME_ID 3
+
 #if defined(_WIN32)
 
 typedef struct
@@ -385,12 +390,29 @@ static void os_clock_cleanup_instance(void** clock_data_pointer)
   (void)clock_data_pointer;
 }
 
+static int os_translate_clock_id(int wasm_clock_id) {
+  // Some OSes like OpenBSD use different clock ids, so wasm's clock id should
+  // be explicitly translated
+  switch (wasm_clock_id)
+  {
+    case WASM_CLOCK_REALTIME:
+      return CLOCK_REALTIME;
+    case WASM_CLOCK_MONOTONIC:
+      return CLOCK_MONOTONIC;
+    case WASM_CLOCK_PROCESS_CPUTIME:
+      return CLOCK_PROCESS_CPUTIME_ID;
+    case WASM_CLOCK_THREAD_CPUTIME_ID:
+      return CLOCK_THREAD_CPUTIME_ID;
+  }
+  return CLOCK_REALTIME;
+}
+
 static int os_clock_gettime(void* clock_data,
                             int clock_id,
                             struct timespec* out_struct)
 {
   (void)clock_data;
-  int ret = clock_gettime(clock_id, out_struct);
+  int ret = clock_gettime(os_translate_clock_id(clock_id), out_struct);
   return ret;
 }
 
@@ -399,16 +421,11 @@ static int os_clock_getres(void* clock_data,
                            struct timespec* out_struct)
 {
   (void)clock_data;
-  int ret = clock_getres(clock_id, out_struct);
+  int ret = clock_getres(os_translate_clock_id(clock_id), out_struct);
   return ret;
 }
 
 #endif
-
-#define WASM_CLOCK_REALTIME 0
-#define WASM_CLOCK_MONOTONIC 1
-#define WASM_CLOCK_PROCESS_CPUTIME 2
-#define WASM_CLOCK_THREAD_CPUTIME_ID 3
 
 static int check_clock(u32 clock_id)
 {

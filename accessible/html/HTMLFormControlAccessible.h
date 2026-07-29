@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -111,7 +110,7 @@ class HTMLTextFieldAccessible : public HyperTextAccessible {
   virtual LocalAccessible* ContainerWidget() const override;
 
  protected:
-  virtual ~HTMLTextFieldAccessible() {}
+  virtual ~HTMLTextFieldAccessible() = default;
 
   // LocalAccessible
   virtual ENameValueFlag DirectName(nsString& aName) const override;
@@ -296,7 +295,7 @@ class HTMLProgressAccessible : public LeafAccessible {
   virtual bool IsWidget() const override;
 
  protected:
-  virtual ~HTMLProgressAccessible() {}
+  virtual ~HTMLProgressAccessible() = default;
 
   virtual void DOMAttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
                                    AttrModType aModType,
@@ -344,7 +343,7 @@ class HTMLMeterAccessible : public LeafAccessible {
   int32_t ValueRegion() const;
 
  protected:
-  virtual ~HTMLMeterAccessible() {}
+  virtual ~HTMLMeterAccessible() = default;
 
   virtual void DOMAttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
                                    AttrModType aModType,
@@ -386,7 +385,7 @@ class HTMLDateTimeAccessible : public HyperTextAccessible {
   virtual bool IsWidget() const override { return true; }
 
  protected:
-  virtual ~HTMLDateTimeAccessible() {}
+  virtual ~HTMLDateTimeAccessible() = default;
 };
 
 }  // namespace a11y

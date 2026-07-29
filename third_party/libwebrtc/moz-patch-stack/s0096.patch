@@ -1,25 +1,100 @@
-From: Dan Baker <dbaker@mozilla.com>
-Date: Tue, 27 Aug 2024 14:09:00 -0600
-Subject: Bug 1912989 - (fix-2360208f7d) Removed build command causing failure.
- - moz.build file updates
+From: Michael Froman <mfroman@mozilla.com>
+Date: Thu, 10 Oct 2024 13:42:00 +0000
+Subject: Bug 1921707 - webrtc.gni - filter out '//third_party/abseil-cpp/'
+ deps r=ng,webrtc-reviewers
 
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/fd4bc7427678a45283f0f56418ee2c70fac711e6
+Differential Revision: https://phabricator.services.mozilla.com/D224079
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/45b99d1ba95b46896506de1c7dd92f19e4dc9207
 ---
- .gn | 4 +++-
- 1 file changed, 3 insertions(+), 1 deletion(-)
+ webrtc.gni | 71 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 71 insertions(+)
 
-diff --git a/.gn b/.gn
-index 161ec4c54c..26080d9abc 100644
---- a/.gn
-+++ b/.gn
-@@ -38,7 +38,9 @@ no_check_targets = [
- exec_script_allowlist = build_dotfile_settings.exec_script_allowlist +
-                         [ "//build_overrides/build.gni" ]
+diff --git a/webrtc.gni b/webrtc.gni
+index 316fe6c32e..6525cc7143 100644
+--- a/webrtc.gni
++++ b/webrtc.gni
+@@ -691,6 +691,36 @@ template("rtc_source_set") {
+         deps += [ "//third_party/abseil-cpp:absl" ]
+       }
+     }
++
++    # Rather than widespread changes to most, if not all, BUILD.gn files
++    # we'll do some filtering on dependencies here.
++    if (build_with_mozilla && defined(deps)) {
++      # Now that abseil-cpp is moved to Mozilla's third_party directory
++      # we remove all the abseil-cpp dependency listings so moz.build
++      # generation succeed.
++      filtered_deps = []
++      foreach (dep, deps) {
++        newdep = string_replace(dep, "//third_party/abseil-cpp/", "")
++        if (newdep == dep) {
++          filtered_deps += [ dep ]
++        }
++      }
++      deps = []
++      deps = filtered_deps
++
++      # We don't build any of the test code, but many of the test
++      # targets list gtest/gmock as a dependency.  We can simply
++      # filter them out here.
++      filtered_deps = []
++      foreach (dep, deps) {
++        newdep = string_replace(dep, "//testing/g", "")
++        if (newdep == dep) {
++          filtered_deps += [ dep ]
++        }
++      }
++      deps = []
++      deps = filtered_deps
++    }
+   }
+ }
  
--export_compile_commands = [ "*" ]
-+# Normally, we'd use 'if (!build_with_mozilla)', but that flag isn't
-+# available yet.
-+#export_compile_commands = [ "*" ]
+@@ -926,6 +956,47 @@ template("rtc_library") {
+         deps += [ "//third_party/abseil-cpp:absl" ]
+       }
+     }
++
++    # Rather than widespread changes to most, if not all, BUILD.gn files
++    # we'll do some filtering on dependencies here.
++    if (build_with_mozilla && defined(deps)) {
++      # Now that abseil-cpp is moved to Mozilla's third_party directory
++      # we remove all the abseil-cpp dependency listings so moz.build
++      # generation succeed.
++      filtered_deps = []
++      foreach (dep, deps) {
++        newdep = string_replace(dep, "//third_party/abseil-cpp/", "")
++        if (newdep == dep) {
++          filtered_deps += [ dep ]
++        }
++      }
++      deps = []
++      deps = filtered_deps
++
++      # We don't build any of the test code, but many of the test
++      # targets list gtest/gmock as a dependency.  We can simply
++      # filter them out here.
++      filtered_deps = []
++      foreach (dep, deps) {
++        newdep = string_replace(dep, "//testing/g", "")
++        if (newdep == dep) {
++          filtered_deps += [ dep ]
++        }
++      }
++      deps = []
++      deps = filtered_deps
++
++      # Moving the google build directory requires looking for libwebrtc's
++      # third_party dependencies under libwebrtc/third_party instead of
++      # simply third_party.
++      modified_deps = []
++      foreach (dep, deps) {
++        newdep = string_replace(dep, "//third_party/", "//libwebrtc/third_party/")
++        modified_deps += [ newdep ]
++      }
++      deps = []
++      deps = modified_deps
++    }
+   }
+ }
  
- default_args = {
-   # Webrtc does not support component builds because we are not using the

@@ -172,7 +172,7 @@ class TabManagerClass {
       return null;
     }
 
-    const tabBrowser = this.getTabBrowser(browser.ownerGlobal);
+    const tabBrowser = this.getTabBrowser(browser.documentGlobal);
     return tabBrowser.getTabForBrowser(browser);
   }
 
@@ -199,10 +199,10 @@ class TabManagerClass {
   }
 
   getWindowForTab(tab) {
-    // `.linkedBrowser.ownerGlobal` works both with Firefox Desktop and Mobile.
-    // Other accessors (eg `.ownerGlobal` or `.browser.ownerGlobal`) fail on one
-    // of the platforms.
-    return tab.linkedBrowser.ownerGlobal;
+    // This works both with Firefox Desktop and Mobile.
+    // Other accessors (eg `.documentGlobal` or `.browser.documentGlobal`) fail
+    // on one of the platforms.
+    return tab.linkedBrowser.documentGlobal;
   }
 
   /**

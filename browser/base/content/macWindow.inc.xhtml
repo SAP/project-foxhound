@@ -1,4 +1,3 @@
-# -*- Mode: HTML -*-
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -29,10 +28,10 @@
 <script src="chrome://browser/content/nonbrowser-mac.js"></script>
 
 # All sets except for popupsets (commands, keys, and stringbundles)
-# *must* go into the browser-sets.inc file so that they can be shared with
+# *must* go into the browser-sets.inc.xhtml file so that they can be shared with
 # browser.xhtml
-#include browser-sets.inc
+#include browser-sets.inc.xhtml
 
-# The entire main menubar is placed into browser-menubar.inc, so that it can be
-# shared with browser.xhtml.
-#include browser-menubar.inc
+# The entire main menubar is placed into browser-menubar.inc.xhtml, so that it
+# can be shared with browser.xhtml.
+#include browser-menubar.inc.xhtml

@@ -26,7 +26,7 @@
                 android:padding="8dp"
                 android:scaleType="centerCrop"
                 android:importantForAccessibility="no"
-                tools:src="@drawable/ic_folder_icon" />
+                tools:src="@drawable/mozac_ic_folder_24" />
         <ImageView
                 android:id="@+id/checkmark"
                 android:layout_width="40dp"
@@ -50,7 +50,7 @@
             android:singleLine="true"
             android:textAlignment="viewStart"
             android:textSize="16sp"
-            android:textColor="?attr/textPrimary"
+            android:textColor="?attr/colorOnSurface"
             tools:text="Example site"
             app:layout_constraintEnd_toStartOf="@id/overflow_menu"
             app:layout_constraintStart_toEndOf="@id/icon"
@@ -68,7 +68,7 @@
             android:ellipsize="end"
             android:singleLine="true"
             android:textAlignment="viewStart"
-            android:textColor="?attr/textSecondary"
+            android:textColor="?attr/colorOnSurfaceVariant"
             android:textSize="14sp"
             tools:text="https://example.com/"
             app:layout_constraintEnd_toStartOf="@id/overflow_menu"
@@ -86,7 +86,8 @@
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/content_description_menu"
             android:padding="12dp"
-            app:srcCompat="@drawable/ic_menu"
+            app:srcCompat="@drawable/mozac_ic_ellipsis_vertical_24"
+            app:tint="?attr/colorOnSurface"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toTopOf="parent"

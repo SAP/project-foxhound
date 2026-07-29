@@ -27,10 +27,7 @@ add_task(async function test_network_markers_service_worker_register() {
   // In this first step, we request an HTML page that will register a service
   // worker. We'll wait until the service worker is fully installed before
   // checking various things.
-  Assert.ok(
-    !Services.profiler.IsActive(),
-    "The profiler is not currently active"
-  );
+  await ProfilerTestUtils.assertProfilerInactive();
 
   await ProfilerTestUtils.startProfilerForMarkerTests();
 
@@ -208,10 +205,7 @@ add_task(async function test_network_markers_service_worker_register() {
 add_task(async function test_network_markers_service_worker_use() {
   // In this test we request an HTML file that itself contains resources that
   // are redirected.
-  Assert.ok(
-    !Services.profiler.IsActive(),
-    "The profiler is not currently active"
-  );
+  await ProfilerTestUtils.assertProfilerInactive();
 
   await ProfilerTestUtils.startProfilerForMarkerTests();
 

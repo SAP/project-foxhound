@@ -19,7 +19,7 @@
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-import { setTimeout } from "resource://gre/modules/Timer.sys.mjs";
+import { clearTimeout, setTimeout } from "resource://gre/modules/Timer.sys.mjs";
 
 const lazy = {};
 
@@ -41,6 +41,10 @@ XPCOMUtils.defineLazyServiceGetter(
 
 // Regular expression used by isInvalidBoundLikeQuery
 var likeSqlRegex = /\bLIKE\b\s(?![@:?])/i;
+
+// Matches carray() parameter references and bare ? placeholders in SQL.
+// Group 1: full carray() match; group 2: explicit ?N index; group 3: :name.
+var carrayParamRegex = /(carray\((?:\?(\d+)|\?|:(\w+))\))|\?(?!\d)/gi;
 
 // Counts the number of created connections per database basename(). This is
 // used for logging to distinguish connection instances.
@@ -161,7 +165,7 @@ function convertStorageErrorResult(result) {
     case Ci.mozIStorageError.MISMATCH:
     case Ci.mozIStorageError.MISUSE:
     case Ci.mozIStorageError.RANGE:
-      return Ci.NS_ERROR_UNEXPECTED;
+      return Cr.NS_ERROR_UNEXPECTED;
     case Ci.mozIStorageError.CORRUPT:
     case Ci.mozIStorageError.EMPTY:
     case Ci.mozIStorageError.FORMAT:
@@ -410,14 +414,6 @@ function ConnectionData(connection, identifier, options = {}) {
       statementCounter: this._statementCounter,
     })
   );
-
-  // We avoid creating a timer for every transaction, because in most cases they
-  // are not canceled and they are only used as a timeout.
-  // Instead the timer is reused when it's sufficiently close to the previous
-  // creation time (see `_getTimeoutPromise` for more info).
-  this._timeoutPromise = null;
-  // The last timestamp when we should consider using `this._timeoutPromise`.
-  this._timeoutPromiseExpires = 0;
 
   this._useIncrementalVacuum = !!options.incrementalVacuum;
   if (this._useIncrementalVacuum) {
@@ -793,16 +789,26 @@ ConnectionData.prototype = Object.freeze({
     }
     this.ensureOpen();
 
-    // If a transaction yields on a never resolved promise, or is mistakenly
-    // nested, it could hang the transactions queue forever.  Thus we timeout
-    // the execution after a meaningful amount of time, to ensure in any case
-    // we'll proceed after a while.
-    let timeoutPromise = this._getTimeoutPromise();
-
     let promise = this._transactionQueue.then(() => {
       if (this._closeRequested) {
         throw new Error("Transaction canceled due to a closed connection.");
       }
+      // If a transaction yields on a never resolved promise, or is mistakenly
+      // nested, it could hang the transactions queue forever.  Thus we timeout
+      // the execution after a meaningful amount of time, to ensure in any case
+      // we'll proceed after a while. The timeout is created here so that each
+      // transaction gets its own budget starting when it actually begins, not
+      // when it is enqueued.
+      let timeoutId;
+      let timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+          let e = new Error(
+            "Transaction timeout, most likely caused by unresolved pending work."
+          );
+          e.becauseTimedOut = true;
+          reject(e);
+        }, Sqlite.TRANSACTIONS_TIMEOUT_MS);
+      });
 
       let transactionPromise = (async () => {
         // At this point we should never have an in progress transaction, since
@@ -906,6 +912,7 @@ ConnectionData.prototype = Object.freeze({
           return result;
         } finally {
           this._initiatedTransaction = false;
+          clearTimeout(timeoutId);
         }
       })();
 
@@ -950,37 +957,128 @@ ConnectionData.prototype = Object.freeze({
   },
 
   /**
-   * Helper method to bind parameters of various kinds through
-   * reflection.
+   * Parses `sql` and returns a Set of parameter keys (0-based numeric indices
+   * or name strings) that appear inside carray() calls, or null if the SQL
+   * contains no carray() at all. The indexOf fast-path avoids any allocation
+   * for the common case where carray() is not present.
+   *
+   * @param {string} sql
+   * @returns {Set|null}
    */
-  _bindParameters(statement, params) {
+  _parseCarrayParams(sql) {
+    if (!sql.includes("carray(") && !sql.includes("CARRAY(")) {
+      return null;
+    }
+    const carrayParams = new Set();
+    // largestIdx is the largest 1-based ?N seen so far; bare ? gets
+    // largestIdx+1 as its 1-based number.
+    let largestIdx = 0;
+    for (const m of sql.matchAll(carrayParamRegex)) {
+      if (m[1]) {
+        if (m[2]) {
+          // carray(?N) — explicit index
+          const n = +m[2];
+          largestIdx = Math.max(largestIdx, n);
+          carrayParams.add(n - 1);
+        } else if (m[3]) {
+          // carray(:name)
+          carrayParams.add(m[3]);
+        } else {
+          // carray(?) — bare placeholder, gets next sequential slot
+          carrayParams.add(largestIdx);
+          largestIdx++;
+        }
+      } else {
+        // bare ? outside carray() — advance counter without adding to Set
+        largestIdx++;
+      }
+    }
+    return carrayParams;
+  },
+
+  /**
+   * Binds a single parameter value to a storage statement object.
+   *
+   * @param {object} obj
+   * @param {number|string} key
+   * @param {*} val
+   * @param {Set|null} carrayParams  Param keys inside carray() calls, or null.
+   */
+  _bindParam(obj, key, val, carrayParams) {
+    const bindMethod = typeof key == "number" ? "Index" : "Name";
+    if (Array.isArray(val)) {
+      if (!carrayParams || !carrayParams.has(key)) {
+        throw new Error("Array parameters require carray()");
+      }
+      if (!val.length) {
+        throw new Error("Array must not be empty");
+      }
+      // Determine array type to pick the appropriate binding method.
+      let finalType, lastSeenType;
+      for (const v of val) {
+        const type = typeof v;
+        if (type != "string" && type != "number") {
+          throw new Error(`Unsupported array element type: ${type}`);
+        }
+        if (lastSeenType && type != lastSeenType) {
+          throw new Error("All array elements must be of the same type");
+        }
+        if (type == "number" && !isFinite(v)) {
+          throw new Error("Array elements must be finite numbers");
+        }
+        lastSeenType = type;
+        if (type == "string") {
+          finalType = "Strings";
+        } else if (finalType != "Doubles") {
+          // As soon as we hit a non-integer number, we must bind as doubles.
+          finalType = Number.isInteger(v) ? "Integers" : "Doubles";
+        }
+      }
+      obj[`bindArrayOf${finalType}By${bindMethod}`](key, val);
+      return;
+    }
+
+    if (carrayParams?.has(key)) {
+      throw new Error("carray() parameters must be bound to an array");
+    }
+
+    const isBlob =
+      val &&
+      typeof val == "object" &&
+      ["Uint8Array", "Uint8ClampedArray"].includes(val.constructor.name);
+    const args = [key, val];
+    if (isBlob) {
+      args.push(val.length);
+    }
+    obj[`bind${isBlob ? "Blob" : ""}By${bindMethod}`](...args);
+  },
+
+  /**
+   * Helper method to bind parameters of various kinds through reflection.
+   * See `executeCached` for the full parameter binding contract.
+   */
+  _bindParameters(statement, params, sql) {
     if (!params) {
       return;
     }
 
-    function bindParam(obj, key, val) {
-      let isBlob =
-        val &&
-        typeof val == "object" &&
-        ["Uint8Array", "Uint8ClampedArray"].includes(val.constructor.name);
-      let args = [key, val];
-      if (isBlob) {
-        args.push(val.length);
-      }
-      let methodName = `bind${isBlob ? "Blob" : ""}By${
-        typeof key == "number" ? "Index" : "Name"
-      }`;
-      obj[methodName](...args);
-    }
+    const carrayParams = this._parseCarrayParams(sql);
 
     if (Array.isArray(params)) {
       // It's an array of separate params.
-      if (params.length && typeof params[0] == "object" && params[0] !== null) {
+      // Multi-row: array of plain objects (not arrays), each object being one
+      // row's named params.
+      if (
+        params.length &&
+        typeof params[0] == "object" &&
+        params[0] !== null &&
+        !Array.isArray(params[0])
+      ) {
         let paramsArray = statement.newBindingParamsArray();
         for (let p of params) {
           let bindings = paramsArray.newBindingParams();
           for (let [key, value] of Object.entries(p)) {
-            bindParam(bindings, key, value);
+            this._bindParam(bindings, key, value, carrayParams);
           }
           paramsArray.addParams(bindings);
         }
@@ -991,7 +1089,7 @@ ConnectionData.prototype = Object.freeze({
 
       // Indexed params.
       for (let i = 0; i < params.length; i++) {
-        bindParam(statement, i, params[i]);
+        this._bindParam(statement, i, params[i], carrayParams);
       }
       return;
     }
@@ -999,7 +1097,7 @@ ConnectionData.prototype = Object.freeze({
     // Named params.
     if (params && typeof params == "object") {
       for (let k in params) {
-        bindParam(statement, k, params[k]);
+        this._bindParam(statement, k, params[k], carrayParams);
       }
       return;
     }
@@ -1020,7 +1118,7 @@ ConnectionData.prototype = Object.freeze({
       throw new Error("onRow must be a function. Got: " + onRow);
     }
 
-    this._bindParameters(statement, params);
+    this._bindParameters(statement, params, sql);
 
     let index = this._statementCounter++;
 
@@ -1150,38 +1248,6 @@ ConnectionData.prototype = Object.freeze({
   },
 
   /**
-   * Returns a promise that will resolve after a time comprised between 80% of
-   * `TRANSACTIONS_TIMEOUT_MS` and `TRANSACTIONS_TIMEOUT_MS`. Use
-   * this method instead of creating several individual timers that may survive
-   * longer than necessary.
-   */
-  _getTimeoutPromise() {
-    if (
-      this._timeoutPromise &&
-      ChromeUtils.now() <= this._timeoutPromiseExpires
-    ) {
-      return this._timeoutPromise;
-    }
-    let timeoutPromise = new Promise((resolve, reject) => {
-      setTimeout(() => {
-        // Clear out this._timeoutPromise if it hasn't changed since we set it.
-        if (this._timeoutPromise == timeoutPromise) {
-          this._timeoutPromise = null;
-        }
-        let e = new Error(
-          "Transaction timeout, most likely caused by unresolved pending work."
-        );
-        e.becauseTimedOut = true;
-        reject(e);
-      }, Sqlite.TRANSACTIONS_TIMEOUT_MS);
-    });
-    this._timeoutPromise = timeoutPromise;
-    this._timeoutPromiseExpires =
-      ChromeUtils.now() + Sqlite.TRANSACTIONS_TIMEOUT_MS * 0.2;
-    return this._timeoutPromise;
-  },
-
-  /**
    * Asynchronously makes a copy of the SQLite database while there may still be
    * open connections on it.
    *
@@ -1217,6 +1283,55 @@ ConnectionData.prototype = Object.freeze({
         stepDelayMs
       );
     });
+  },
+
+  attachDatabase(path, name) {
+    let deferred = Promise.withResolvers();
+    let index = this._statementCounter++;
+    let self = this;
+    let errors = [];
+
+    let pending = this._dbConn.attachDatabase(path, name, {
+      handleResult(_result) {},
+      handleError(error) {
+        self._logger.warn(
+          "Error when attaching database (" +
+            error.result +
+            "): " +
+            error.message
+        );
+        errors.push(error);
+      },
+      handleCompletion(reason) {
+        self._logger.debug("attachDatabase #" + index + " finished.");
+        self._pendingStatements.delete(index);
+
+        switch (reason) {
+          case Ci.mozIStorageStatementCallback.REASON_FINISHED:
+          case Ci.mozIStorageStatementCallback.REASON_CANCELED:
+            deferred.resolve(reason);
+            break;
+          case Ci.mozIStorageStatementCallback.REASON_ERROR: {
+            let error = new Error(
+              "Error(s) encountered during ATTACH DATABASE: " +
+                errors.map(e => e.message).join(", ")
+            );
+            error.errors = errors;
+            error.result = convertStorageErrorResult(errors[0]?.result);
+            deferred.reject(error);
+            break;
+          }
+          default:
+            deferred.reject(
+              new Error("Unknown completion reason code: " + reason)
+            );
+            break;
+        }
+      },
+    });
+
+    this._pendingStatements.set(index, pending);
+    return deferred.promise;
   },
 });
 
@@ -1843,6 +1958,51 @@ OpenedConnection.prototype = {
    * users of the statement. Objects/named parameters are a little safer
    * because changes in order alone won't result in bad things happening.
    *
+   * To execute the same statement multiple times with different parameters,
+   * pass an Array of plain objects as `params`. The statement will be executed
+   * once per object, each bound with that object's named parameters. This is
+   * more efficient than calling `execute` in a loop.
+   *
+   *   await conn.execute(
+   *     "INSERT INTO t (id, v) VALUES (:id, :v)",
+   *     [{id: 1, v: "a"}, {id: 2, v: "b"}]
+   *   );
+   *
+   * To bind a JS array as a single parameter (for use with the SQLite
+   * `carray()` table-valued function), wrap it as an indexed param or use a
+   * named param object. The array must be non-empty and homogeneous: all
+   * integers, all floating-point numbers, or all strings.
+   *
+   *   // Named param (recommended):
+   *   await conn.execute(
+   *     "SELECT * FROM t WHERE id IN carray(:ids)",
+   *     { ids: [1, 2, 3] }
+   *   );
+   *
+   *   // Indexed param:
+   *   await conn.execute(
+   *     "SELECT * FROM t WHERE id IN carray(?1)",
+   *     [[1, 2, 3]]
+   *   );
+   *
+   * Array params and multi-row execution can be combined using named params:
+   *
+   *   await conn.execute(
+   *     "DELETE FROM t WHERE id IN carray(:ids)",
+   *     [{ids: [1, 2]}, {ids: [3, 4]}]
+   *   );
+   *
+   * Note: the multi-row shorthand (array of plain objects) is detected by
+   * inspecting the first element. If the first element is a plain object (not
+   * an Array), multi-row execution is assumed. A top-level Array whose first
+   * element is itself an Array is always treated as indexed parameters, where
+   * each element is bound to the corresponding positional placeholder.
+   *
+   * Note: named parameters (`:name`) and positional parameters (`?`) cannot
+   * be mixed in the same SQL statement. If both are present, whichever style
+   * is not matched by the `params` argument will be left unbound, resulting
+   * in a SQLite error at execution time.
+   *
    * When `onRow` is not specified, all returned rows are buffered before the
    * returned promise is resolved. For INSERT or UPDATE statements, this has
    * no effect because no rows are returned from these. However, it has
@@ -2058,6 +2218,10 @@ OpenedConnection.prototype = {
       pagesPerStep,
       stepDelayMs
     );
+  },
+
+  attachDatabase(path, name) {
+    return this._connectionData.attachDatabase(path, name);
   },
 };
 // This is frozen after the prototype has been assigned to allow TypeScript

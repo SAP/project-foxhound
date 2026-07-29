@@ -16,15 +16,22 @@
  * actual messages, with the usual message keys like `template` and `targeting`.
  *
  * @see FeatureManifest.yaml
+ *
  * Messages delivered through these feature IDs record reach events, with the
  * exception of "pbNewtab". If you're adding new features to this list, make
  * sure they're also added in the `messaging_experiments.reach.objects` defined
- * in "toolkit/components/telemetry/Events.yaml", and as new event metrics in
- * "toolkit/components/messaging-system/metrics.yaml".
+ * as new event metrics in "toolkit/components/messaging-system/metrics.yaml".
  */
 export const MESSAGING_EXPERIMENTS_DEFAULT_FEATURES = [
   "cfr",
+  "infobar",
+  "moments-page",
+  "pbNewtab",
+  "setToDefaultPrompt",
+  "spotlight",
+  "featureCallout",
   "fxms_bmb_button",
+  "fxms-message",
   "fxms-message-1",
   "fxms-message-2",
   "fxms-message-3",
@@ -50,10 +57,4 @@ export const MESSAGING_EXPERIMENTS_DEFAULT_FEATURES = [
   "fxms-message-23",
   "fxms-message-24",
   "fxms-message-25",
-  "infobar",
-  "moments-page",
-  "pbNewtab",
-  "setToDefaultPrompt",
-  "spotlight",
-  "featureCallout",
 ];

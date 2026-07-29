@@ -11,7 +11,7 @@ add_setup(async function () {
   await SearchService.init();
 
   // This test purposely attempts to load an invalid engine.
-  consoleAllowList.push("_onLoad: Failed to init engine!");
+  consoleAllowList.push("parseXMLData: Failed to init engine!");
   consoleAllowList.push("Invalid search plugin due to namespace not matching");
 });
 

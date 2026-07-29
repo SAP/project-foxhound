@@ -14,7 +14,6 @@ export class GeckoViewPromptChild extends GeckoViewActorChild {
       case "mozshowdropdown":
       case "mozshowdropdown-sourcetouch":
       case "click":
-      case "contextmenu":
       case "DOMPopupBlocked":
       case "DOMRedirectBlocked":
         Services.prompt.wrappedJSObject.handleEvent(event);

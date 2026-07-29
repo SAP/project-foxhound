@@ -59,16 +59,6 @@ wasmEval(
 
 wasmError(
   moduleWithSections([
-    sigSection([badExnType]),
-    memorySection(0),
-    tagSection([{ type: 0 }]),
-  ]),
-  WebAssembly.CompileError,
-  /tag function types must not return anything/
-);
-
-wasmError(
-  moduleWithSections([
     sigSection([emptyType]),
     memorySection(0),
     tagSection([{ type: 1 }]),

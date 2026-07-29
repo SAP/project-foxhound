@@ -2,11 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const lazy = {};
-ChromeUtils.defineESModuleGetters(lazy, {
-  LayoutUtils: "resource://gre/modules/LayoutUtils.sys.mjs",
-});
-
 /**
  * InputPickerChildCommon is the communication channel between the input box
  * (content) for each input types and its picker (chrome).
@@ -55,7 +50,7 @@ export class InputPickerChildCommon extends JSWindowActorChild {
    */
   addListeners(aElement) {
     this.#abortController = new AbortController();
-    aElement.ownerGlobal.addEventListener("pagehide", this, {
+    aElement.documentGlobal.addEventListener("pagehide", this, {
       signal: this.#abortController.signal,
     });
   }
@@ -64,7 +59,7 @@ export class InputPickerChildCommon extends JSWindowActorChild {
    * Helper function that returns the CSS direction property of the element.
    */
   getComputedDirection(aElement) {
-    return aElement.ownerGlobal
+    return aElement.documentGlobal
       .getComputedStyle(aElement)
       .getPropertyValue("direction");
   }
@@ -74,7 +69,8 @@ export class InputPickerChildCommon extends JSWindowActorChild {
    * relative to the left/top of the content area.
    */
   getBoundingContentRect(aElement) {
-    return lazy.LayoutUtils.getElementBoundingScreenRect(aElement);
+    let win = aElement.documentGlobal;
+    return win.windowUtils.getElementBoundingScreenRect(aElement);
   }
 
   /**
@@ -115,7 +111,7 @@ export class InputPickerChildCommon extends JSWindowActorChild {
     switch (aEvent.type) {
       case `MozOpen${this.#namespace}`: {
         if (
-          !aEvent.originalTarget.ownerGlobal.HTMLInputElement.isInstance(
+          !aEvent.originalTarget.documentGlobal.HTMLInputElement.isInstance(
             aEvent.originalTarget
           )
         ) {

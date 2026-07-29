@@ -129,7 +129,6 @@ exclude = [
 "config/tests/unitMozZipFile.py" = ["F821"]
 "ipc/pull-chromium.py" = ["F633"]
 "js/src/**" = ["F633", "F821"]
-"python/mozbuild/mozbuild/action/dump_env.py" = ["F821"]
 "python/mozbuild/mozbuild/dotproperties.py" = ["F821"]
 "python/mozbuild/mozbuild/testing.py" = ["F821"]
 "python/mozbuild/mozbuild/util.py" = ["F821"]

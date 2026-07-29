@@ -70,7 +70,7 @@ function switchTheme(root, themePrefValue, appliedTheme = themePrefValue) {
     gDevTools.on(
       "theme-switched",
       (win, newTheme) => {
-        if (win === root.ownerGlobal && newTheme === appliedTheme) {
+        if (win === root.documentGlobal && newTheme === appliedTheme) {
           res();
           ac.abort();
         }

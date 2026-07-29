@@ -2,40 +2,46 @@
 <html>
 <head>
 <meta charset="utf-8">
-</head>
-<body>
-<script type="text/javascript">
-var testFont = '40px sans-serif';
-
-function test(x, y, text, style, rotation, baseline) {
-  var canvas = document.createElement("canvas");
-  canvas.width = 400;
-  canvas.height = 400;
-  canvas.style.cssText = 'position:absolute;' + style;
-  document.getElementsByTagName('body')[0].appendChild(canvas);
-  var ctx = canvas.getContext('2d');
-  ctx.globalAlpha = 0.5;
-  ctx.beginPath();
-  ctx.moveTo(x - 20, y); ctx.lineTo(x + 20, y);
-  ctx.moveTo(x, y - 20); ctx.lineTo(x, y + 20);
-  ctx.stroke();
-  ctx.globalAlpha = 1.0;
-  ctx.font = testFont;
-  if (rotation != 0) {
-    ctx.translate(x,y);
-    ctx.rotate(rotation);
-    ctx.translate(-x,-y);
-  }
-  if (baseline != '') {
-    ctx.textBaseline = baseline;
-  }
-  ctx.fillText(text, x, y);
+<style>
+@font-face {
+  font-family: 'Ahem';
+  src: url('../fonts/Ahem.ttf');
 }
 
-// Testcase: vertical text with orientation:mixed
-// test(100,  50, 'Hello', 'writing-mode:vertical-lr;text-orientation:mixed', 0, '');
+body {
+  position: relative;
+  font: 40px/1 Ahem;
+}
 
-// Reference: horizontal text with 90° rotation and textBaseline=middle
-test(100,  50, 'Hello', 'writing-mode:horizontal-tb', Math.PI/2, 'middle');
+#ref {
+  writing-mode: vertical-lr;
+}
 
-</script>
+.baseline {
+  position: absolute;
+  top: 50px;
+}
+
+.baseline.top div { translate: -1em; }
+.baseline.middle div { translate: -0.5em; }
+.baseline.alphabetic div { translate: -0.2em; }
+.baseline.bottom div { translate: 0; }
+
+/* Visualizes the baseline */
+.baseline::before {
+  content: "|";
+  position: absolute;
+  top: -20px;
+  bottom: -20px;
+  display: block;
+  width: 2px;
+  background: #0008;
+  translate: -50%;
+  color: transparent;
+}
+</style>
+</head>
+<body>
+<div id="ref">
+  <div class="baseline middle" style="left: 100px;"><div>ApÉx</div></div>
+</div>

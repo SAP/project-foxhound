@@ -1,0 +1,17 @@
+{
+  "label": "digits.t-mobile.com",
+  "bugs": {
+    "1898952": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://digits.t-mobile.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "content_scripts": {
+        "js": ["define_userAgentData.js"]
+      }
+    }
+  ]
+}

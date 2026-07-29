@@ -37,9 +37,13 @@ add_task(async function tabNotesBasicStorageTests() {
   let updatedValue = "some other note";
 
   let tabNoteCreated = BrowserTestUtils.waitForEvent(tab, "TabNote:Created");
-  let firstSavedNote = await TabNotes.set(tab, value);
+  let setNote = TabNotes.set(tab, value);
+  let [firstSavedNote, createdEvent] = await Promise.all([
+    setNote,
+    tabNoteCreated,
+  ]);
   Assert.ok(firstSavedNote, "TabNotes.set returns the saved tab note");
-  Assert.ok(await tabNoteCreated, "observers were notified of TabNote:Created");
+  Assert.ok(createdEvent, "tab fired TabNote:Created");
   Assert.equal(
     firstSavedNote.canonicalUrl,
     tab.canonicalUrl,
@@ -65,10 +69,14 @@ add_task(async function tabNotesBasicStorageTests() {
   );
 
   let tabNoteEdited = BrowserTestUtils.waitForEvent(tab, "TabNote:Edited");
-  let editedSavedNote = await TabNotes.set(tab, updatedValue);
+  let editNote = TabNotes.set(tab, updatedValue);
 
+  let [editedSavedNote, editedEvent] = await Promise.all([
+    editNote,
+    tabNoteEdited,
+  ]);
   Assert.ok(editedSavedNote, "TabNotes.set returns the updated tab note");
-  Assert.ok(await tabNoteEdited, "observers were notified of TabNote:Edited");
+  Assert.ok(editedEvent, "tab fired TabNote:Edited");
   Assert.equal(
     editedSavedNote.canonicalUrl,
     tab.canonicalUrl,
@@ -93,10 +101,14 @@ add_task(async function tabNotesBasicStorageTests() {
   );
 
   let tabNoteRemoved = BrowserTestUtils.waitForEvent(tab, "TabNote:Removed");
-  wasDeleted = await TabNotes.delete(tab);
-  Assert.ok(await tabNoteRemoved, "listeners were notified of TabNote:Removed");
+  let deleteNote = TabNotes.delete(tab);
+  let [wasActuallyDeleted, removedEvent] = await Promise.all([
+    deleteNote,
+    tabNoteRemoved,
+  ]);
+  Assert.ok(removedEvent, "listeners were notified of TabNote:Removed");
   Assert.ok(
-    wasDeleted,
+    wasActuallyDeleted,
     "TabNotes.delete should return true if something was deleted"
   );
 

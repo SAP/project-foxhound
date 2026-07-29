@@ -5,6 +5,10 @@
   user-select: none;
 }
 
+.hidden {
+  display: none;
+}
+
 .theme-light {
   --experimental-background: #e0eeff;
   --experimental-color: #436286;
@@ -211,4 +215,100 @@ label:has(.option-secondary-label) {
   .highlighted {
     animation-timing-function: steps(1, end);
   }
+}
+
+#local-mode-mappings {
+  margin: 0 0 10px;
+  border-block-start: 1px solid var(--theme-splitter-color);
+
+  li {
+    list-style: none;
+
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-gap: 5px;
+    border-block-end: 1px solid var(--theme-splitter-color);
+    padding-block: 10px 5px;
+
+    & > * {
+      grid-column: 1 / -1;
+    }
+
+    &.disabled,
+    &.disabled :is(a, button.local-mode-mapping-choose-folder) {
+      color: var(--theme-text-color-inactive);
+    }
+
+    .local-mode-origin-line {
+      display: grid;
+      grid-template-columns: subgrid;
+      align-items: baseline;
+
+      & > div {
+        display: grid;
+        grid-template-columns: max-content 1fr auto;
+        grid-template-rows: auto auto;
+        align-items: center;
+        /* use some space to prevent hidding https:// with outline on focus */
+        column-gap: 4px;
+      }
+      .local-mode-origin-error {
+        grid-column: 2;
+        display: none;
+        margin: 5px 0;
+      }
+      &:has(input:invalid) .local-mode-origin-error {
+        display: block;
+      }
+
+      button.local-mode-mapping-navigate-to::before {
+        background-image: url("chrome://devtools/skin/images/forward.svg");
+      }
+    }
+
+    .local-mode-folder-line {
+      display: grid;
+      grid-template-columns: subgrid;
+      align-items: baseline;
+
+      .local-mode-folder-error {
+        grid-column: 2;
+      }
+
+      button.local-mode-mapping-choose-folder {
+        margin-inline-start: 5px;
+      }
+    }
+
+    footer {
+      display: flex;
+      justify-content: end;
+      gap: 10px;
+      margin-block-start: 5px;
+    }
+
+    input:invalid,
+    .local-mode-origin-error,
+    .local-mode-folder-error {
+      color: var(--theme-error-color);
+      background-color: var(--theme-error-background);
+      border: 1px solid var(--theme-error-border);
+    }
+    .local-mode-origin-error,
+    .local-mode-folder-error {
+      padding: 0.5em;
+    }
+  }
+}
+
+.local-mode-behavior {
+  margin-block-end: 10px;
+}
+
+.local-mode-only-work-locally {
+  background-color: var(--theme-warning-background);
+  color: var(--theme-warning-color);
+  border: 1px solid var(--theme-warning-border);
+  border-radius: 4px;
+  padding: 10px;
 }

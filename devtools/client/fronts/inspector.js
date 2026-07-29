@@ -26,6 +26,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 const SHOW_ALL_ANONYMOUS_CONTENT_PREF =
   "devtools.inspector.showAllAnonymousContent";
+const SHOW_COMMENTS_PREF = "devtools.markup.showComments";
 
 /**
  * Client side of the inspector actor, which is used to create
@@ -82,8 +83,10 @@ class InspectorFront extends FrontClassWithSpec(inspectorSpec) {
     const showAllAnonymousContent = Services.prefs.getBoolPref(
       SHOW_ALL_ANONYMOUS_CONTENT_PREF
     );
+    const showComments = Services.prefs.getBoolPref(SHOW_COMMENTS_PREF);
     this.walker = await this.getWalker({
       showAllAnonymousContent,
+      showComments,
     });
 
     // We need to reparent the RootNode of remote iframe Walkers
@@ -138,14 +141,20 @@ class InspectorFront extends FrontClassWithSpec(inspectorSpec) {
 
   destroyHighlighters() {
     for (const type of this._highlighters.keys()) {
-      if (this._highlighters.has(type)) {
-        const highlighter = this._highlighters.get(type);
-        if (!highlighter.isDestroyed()) {
-          highlighter.finalize();
-        }
-        this._highlighters.delete(type);
-      }
+      this.destroyHighlighterByType(type);
     }
+  }
+
+  destroyHighlighterByType(type) {
+    if (!this._highlighters.has(type)) {
+      return;
+    }
+
+    const highlighter = this._highlighters.get(type);
+    if (!highlighter.isDestroyed()) {
+      highlighter.finalize();
+    }
+    this._highlighters.delete(type);
   }
 
   async getHighlighterByType(typeName) {

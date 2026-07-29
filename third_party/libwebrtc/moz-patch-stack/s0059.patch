@@ -23,7 +23,7 @@ Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/8e9a326a99cd5eaa6
  4 files changed, 55 insertions(+)
 
 diff --git a/api/video/frame_buffer.cc b/api/video/frame_buffer.cc
-index 467ceaa42d..b6e67a4309 100644
+index 77834e7d1f..4c41c74ab7 100644
 --- a/api/video/frame_buffer.cc
 +++ b/api/video/frame_buffer.cc
 @@ -25,6 +25,7 @@
@@ -116,7 +116,7 @@ index 467ceaa42d..b6e67a4309 100644
    num_discarded_packets_ += num_discarded_packets;
  }
 diff --git a/video/receive_statistics_proxy.cc b/video/receive_statistics_proxy.cc
-index aa36333a10..e8e5e5ba08 100644
+index 40aac29326..4f0aa69d0b 100644
 --- a/video/receive_statistics_proxy.cc
 +++ b/video/receive_statistics_proxy.cc
 @@ -39,6 +39,7 @@
@@ -127,17 +127,17 @@ index aa36333a10..e8e5e5ba08 100644
  #include "system_wrappers/include/clock.h"
  #include "system_wrappers/include/metrics.h"
  #include "video/stats_counter.h"
-@@ -788,6 +789,9 @@ void ReceiveStatisticsProxy::OnCompleteFrame(bool is_keyframe,
+@@ -786,6 +787,9 @@ void ReceiveStatisticsProxy::OnCompleteFrame(bool is_keyframe,
                                               VideoContentType content_type) {
    RTC_DCHECK_RUN_ON(&main_thread_);
  
 +  TRACE_EVENT2("webrtc", "ReceiveStatisticsProxy::OnCompleteFrame",
 +               "remote_ssrc", remote_ssrc_, "is_keyframe", is_keyframe);
 +
-   // Content type extension is set only for keyframes and should be propagated
-   // for all the following delta frames. Here we may receive frames out of order
-   // and miscategorise some delta frames near the layer switch.
-@@ -813,6 +817,8 @@ void ReceiveStatisticsProxy::OnCompleteFrame(bool is_keyframe,
+   if (is_keyframe) {
+     ++stats_.frame_counts.key_frames;
+   } else {
+@@ -817,6 +821,8 @@ void ReceiveStatisticsProxy::OnCompleteFrame(bool is_keyframe,
  void ReceiveStatisticsProxy::OnDroppedFrames(uint32_t frames_dropped) {
    // Can be called on either the decode queue or the worker thread
    // See FrameBuffer2 for more details.
@@ -146,7 +146,7 @@ index aa36333a10..e8e5e5ba08 100644
    worker_thread_->PostTask(
        SafeTask(task_safety_.flag(), [frames_dropped, this]() {
          RTC_DCHECK_RUN_ON(&main_thread_);
-@@ -823,6 +829,9 @@ void ReceiveStatisticsProxy::OnDroppedFrames(uint32_t frames_dropped) {
+@@ -827,6 +833,9 @@ void ReceiveStatisticsProxy::OnDroppedFrames(uint32_t frames_dropped) {
  void ReceiveStatisticsProxy::OnDiscardedPackets(uint32_t packets_discarded) {
    // Can be called on either the decode queue or the worker thread
    // See FrameBuffer2 for more details.
@@ -156,7 +156,7 @@ index aa36333a10..e8e5e5ba08 100644
    worker_thread_->PostTask(
        SafeTask(task_safety_.flag(), [packets_discarded, this]() {
          RTC_DCHECK_RUN_ON(&main_thread_);
-@@ -851,6 +860,8 @@ void ReceiveStatisticsProxy::OnStreamInactive() {
+@@ -855,6 +864,8 @@ void ReceiveStatisticsProxy::OnStreamInactive() {
  
  void ReceiveStatisticsProxy::OnRttUpdate(int64_t avg_rtt_ms) {
    RTC_DCHECK_RUN_ON(&main_thread_);
@@ -166,7 +166,7 @@ index aa36333a10..e8e5e5ba08 100644
  }
  
 diff --git a/video/rtp_video_stream_receiver2.cc b/video/rtp_video_stream_receiver2.cc
-index 4573171a5f..a5b1a12fd0 100644
+index 58953eb0d2..030ebe34c9 100644
 --- a/video/rtp_video_stream_receiver2.cc
 +++ b/video/rtp_video_stream_receiver2.cc
 @@ -89,6 +89,7 @@
@@ -177,7 +177,7 @@ index 4573171a5f..a5b1a12fd0 100644
  #include "system_wrappers/include/ntp_time.h"
  #include "video/buffered_frame_decryptor.h"
  
-@@ -1361,6 +1362,9 @@ void RtpVideoStreamReceiver2::FrameDecoded(int64_t picture_id) {
+@@ -1366,6 +1367,9 @@ void RtpVideoStreamReceiver2::FrameDecoded(int64_t picture_id) {
                          packet_infos_.upper_bound(unwrapped_rtp_seq_num));
      uint32_t num_packets_cleared = packet_buffer_.ClearTo(seq_num);
      if (num_packets_cleared > 0) {
@@ -188,10 +188,10 @@ index 4573171a5f..a5b1a12fd0 100644
      }
      reference_finder_->ClearTo(seq_num);
 diff --git a/video/video_stream_buffer_controller.cc b/video/video_stream_buffer_controller.cc
-index 1137c3fb5a..d830750c5d 100644
+index 40f2353b18..31128d1deb 100644
 --- a/video/video_stream_buffer_controller.cc
 +++ b/video/video_stream_buffer_controller.cc
-@@ -37,6 +37,7 @@
+@@ -36,6 +36,7 @@
  #include "rtc_base/checks.h"
  #include "rtc_base/experiments/field_trial_parser.h"
  #include "rtc_base/logging.h"
@@ -199,7 +199,7 @@ index 1137c3fb5a..d830750c5d 100644
  #include "video/frame_decode_scheduler.h"
  #include "video/frame_decode_timing.h"
  #include "video/video_receive_stream_timeout_tracker.h"
-@@ -157,6 +158,9 @@ std::optional<int64_t> VideoStreamBufferController::InsertFrame(
+@@ -156,6 +157,9 @@ std::optional<int64_t> VideoStreamBufferController::InsertFrame(
      std::unique_ptr<EncodedFrame> frame) {
    RTC_DCHECK_RUN_ON(&worker_sequence_checker_);
    FrameMetadata metadata(*frame);
@@ -209,8 +209,8 @@ index 1137c3fb5a..d830750c5d 100644
    int complete_units = buffer_->GetTotalNumberOfContinuousTemporalUnits();
    if (buffer_->InsertFrame(std::move(frame))) {
      RTC_DCHECK(metadata.receive_time) << "Frame receive time must be set!";
-@@ -167,6 +171,9 @@ std::optional<int64_t> VideoStreamBufferController::InsertFrame(
-                                  *metadata.receive_time);
+@@ -166,6 +170,9 @@ std::optional<int64_t> VideoStreamBufferController::InsertFrame(
+                                       *metadata.receive_time);
      }
      if (complete_units < buffer_->GetTotalNumberOfContinuousTemporalUnits()) {
 +      TRACE_EVENT2("webrtc",

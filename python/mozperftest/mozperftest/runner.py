@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -42,14 +43,12 @@ def _activate_virtualenvs(flavor):
 
     # We need the "mach" module to access the logic to parse virtualenv
     # requirements. Since that depends on "packaging", we add that to the path too.
-    # We need filelock for solving a virtualenv race condition
     sys.path[0:0] = [
         os.path.join(SRC_ROOT, module)
         for module in (
             os.path.join("python", "mach"),
             os.path.join("testing", "mozbase", "mozfile"),
             os.path.join("third_party", "python", "packaging"),
-            os.path.join("third_party", "python", "filelock"),
         )
     ]
 
@@ -199,10 +198,48 @@ def run_tools(mach_cmd, kwargs):
     from mozperftest.utils import ON_TRY, install_package
 
     mach_cmd.activate_virtualenv()
-    install_package(
-        mach_cmd.virtualenv_manager,
-        "mozperftest-tools==0.3.2",
-    )
+    if sys.version_info[:2] == (3, 9):
+        # Bug 2033807
+        # On Python 3.9, pip resolves numpy>=1.23 to numpy 2.x from the internal mirror,
+        # which is only available as a source archive and fails to build
+        install_package(
+            mach_cmd.virtualenv_manager,
+            "numpy==1.24.4",
+        )
+
+        install_package(
+            mach_cmd.virtualenv_manager,
+            "scipy==1.10.0",
+        )
+
+        subprocess.check_call([
+            mach_cmd.virtualenv_manager.python_path,
+            "-m",
+            "pip",
+            "install",
+            "opencv-python==4.8.1.78",
+            "--no-deps",
+            "--no-index",
+            "--find-links",
+            "https://pypi.pub.build.mozilla.org/pub/",
+        ])
+
+        subprocess.check_call([
+            mach_cmd.virtualenv_manager.python_path,
+            "-m",
+            "pip",
+            "install",
+            "mozperftest-tools==0.4.4",
+            "--no-deps",
+            "--no-index",
+            "--find-links",
+            "https://pypi.pub.build.mozilla.org/pub/",
+        ])
+    else:
+        install_package(
+            mach_cmd.virtualenv_manager,
+            "mozperftest-tools==0.4.4",
+        )
 
     log_level = logging.INFO
     if mach_cmd.log_manager.terminal_handler is not None:

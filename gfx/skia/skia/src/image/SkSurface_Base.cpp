@@ -18,6 +18,7 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkSize.h"
+#include "include/core/SkSurface.h"
 #include "src/image/SkRescaleAndReadPixels.h"
 
 #include <atomic>
@@ -49,7 +50,7 @@ SkRecorder* SkSurface_Base::onGetBaseRecorder() const { return nullptr; }
 
 void SkSurface_Base::onDraw(SkCanvas* canvas, SkScalar x, SkScalar y,
                             const SkSamplingOptions& sampling, const SkPaint* paint) {
-    auto image = this->makeImageSnapshot();
+    auto image = this->makeTemporaryImage();
     if (image) {
         canvas->drawImage(image.get(), x, y, sampling, paint);
     }
@@ -133,4 +134,10 @@ uint32_t SkSurface_Base::newGenerationID() {
 
 sk_sp<const SkCapabilities> SkSurface_Base::onCapabilities() {
     return SkCapabilities::RasterBackend();
+}
+
+void SkSurface_Base::createCaptureBreakpoint() {
+    if (this->baseRecorder()) {
+        this->baseRecorder()->createCaptureBreakpoint(this);
+    }
 }

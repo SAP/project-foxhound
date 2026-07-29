@@ -1,4 +1,4 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl')||!this.hasOwnProperty('addIntlExtras'))
+// |reftest| skip-if(!this.hasOwnProperty('addIntlExtras'))
 
 addMozIntlDisplayNames(this);
 

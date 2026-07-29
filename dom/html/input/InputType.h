@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -79,12 +77,15 @@ class InputType {
 
   MOZ_CAN_RUN_SCRIPT virtual void MinMaxStepAttrChanged() {}
 
+  enum class Localized : bool { No = false, Yes };
+
   /**
    * Convert a string to a Decimal number in a type specific way,
    * http://www.whatwg.org/specs/web-apps/current-work/multipage/the-input-element.html#concept-input-value-string-number
    * ie parse a date string to a timestamp if type=date,
    * or parse a number string to its value if type=number.
    * @param aValue the string to be parsed.
+   * @param Localized whether to accept localized numbers for type=number
    */
   struct StringToNumberResult {
     // The result decimal. Successfully parsed if it's finite.
@@ -93,10 +94,9 @@ class InputType {
     // type=number), or the value parses using the regular HTML rules.
     bool mLocalized = false;
   };
-  virtual StringToNumberResult ConvertStringToNumber(
-      const nsAString& aValue) const;
+  virtual StringToNumberResult ConvertStringToNumber(const nsAString& aValue,
+                                                     Localized) const;
 
-  enum class Localized : bool { No = false, Yes };
   /**
    * Convert a Decimal to a string in a type specific way, ie convert a
    * timestamp to a date string if type=date or append the number string

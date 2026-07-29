@@ -11,11 +11,11 @@ import mozilla.components.support.test.file.loadResourceAsString
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class WebAppManifestParserTest {
@@ -33,8 +33,8 @@ class WebAppManifestParserTest {
     fun `Parsing example manifest from MDN`() {
         val json = loadManifest("example_mdn.json")
         val result = WebAppManifestParser().parse(json)
-        assertTrue(result is WebAppManifestParser.Result.Success)
-        val manifest = (result as WebAppManifestParser.Result.Success).manifest
+        assertIs<WebAppManifestParser.Result.Success>(result)
+        val manifest = result.manifest
 
         assertNotNull(manifest)
         assertEquals("HackerWeb", manifest.name)
@@ -98,8 +98,8 @@ class WebAppManifestParserTest {
     fun `Parsing example manifest from Google`() {
         val json = loadManifest("example_google.json")
         val result = WebAppManifestParser().parse(json)
-        assertTrue(result is WebAppManifestParser.Result.Success)
-        val manifest = (result as WebAppManifestParser.Result.Success).manifest
+        assertIs<WebAppManifestParser.Result.Success>(result)
+        val manifest = result.manifest
 
         assertNotNull(manifest)
         assertEquals("Google Maps", manifest.name)
@@ -139,8 +139,8 @@ class WebAppManifestParserTest {
     fun `Parsing twitter mobile manifest`() {
         val json = loadManifest("twitter_mobile.json")
         val result = WebAppManifestParser().parse(json)
-        assertTrue(result is WebAppManifestParser.Result.Success)
-        val manifest = (result as WebAppManifestParser.Result.Success).manifest
+        assertIs<WebAppManifestParser.Result.Success>(result)
+        val manifest = result.manifest
 
         assertNotNull(manifest)
         assertEquals("Twitter", manifest.name)
@@ -184,8 +184,8 @@ class WebAppManifestParserTest {
     fun `Parsing minimal manifest`() {
         val json = loadManifest("minimal.json")
         val result = WebAppManifestParser().parse(json)
-        assertTrue(result is WebAppManifestParser.Result.Success)
-        val manifest = (result as WebAppManifestParser.Result.Success).manifest
+        assertIs<WebAppManifestParser.Result.Success>(result)
+        val manifest = result.manifest
 
         assertNotNull(manifest)
         assertEquals("Minimal", manifest.name)
@@ -207,8 +207,8 @@ class WebAppManifestParserTest {
     fun `Parsing manifest with no name`() {
         val json = loadManifest("minimal_short_name.json")
         val result = WebAppManifestParser().parse(json)
-        assertTrue(result is WebAppManifestParser.Result.Success)
-        val manifest = (result as WebAppManifestParser.Result.Success).manifest
+        assertIs<WebAppManifestParser.Result.Success>(result)
+        val manifest = result.manifest
 
         assertNotNull(manifest)
         assertEquals("Minimal with Short Name", manifest.name)
@@ -230,8 +230,8 @@ class WebAppManifestParserTest {
     fun `Parsing typical manifest from W3 spec`() {
         val json = loadManifest("spec_typical.json")
         val result = WebAppManifestParser().parse(json)
-        assertTrue(result is WebAppManifestParser.Result.Success)
-        val manifest = (result as WebAppManifestParser.Result.Success).manifest
+        assertIs<WebAppManifestParser.Result.Success>(result)
+        val manifest = result.manifest
 
         assertNotNull(manifest)
         assertEquals("Super Racer 3000", manifest.name)
@@ -307,8 +307,8 @@ class WebAppManifestParserTest {
     fun `Parsing manifest from Squoosh`() {
         val json = loadManifest("squoosh.json")
         val result = WebAppManifestParser().parse(json)
-        assertTrue(result is WebAppManifestParser.Result.Success)
-        val manifest = (result as WebAppManifestParser.Result.Success).manifest
+        assertIs<WebAppManifestParser.Result.Success>(result)
+        val manifest = result.manifest
 
         assertNotNull(manifest)
         assertEquals("Squoosh", manifest.name)
@@ -355,8 +355,8 @@ class WebAppManifestParserTest {
     fun `Parsing minimal manifest with share target`() {
         val json = loadManifest("minimal_share_target.json")
         val result = WebAppManifestParser().parse(json)
-        assertTrue(result is WebAppManifestParser.Result.Success)
-        val manifest = (result as WebAppManifestParser.Result.Success).manifest
+        assertIs<WebAppManifestParser.Result.Success>(result)
+        val manifest = result.manifest
 
         assertNotNull(manifest)
         assertEquals("Minimal", manifest.name)
@@ -385,7 +385,7 @@ class WebAppManifestParserTest {
         val json = loadManifest("invalid_json.json")
         val result = WebAppManifestParser().parse(json)
 
-        assertTrue(result is WebAppManifestParser.Result.Failure)
+        assertIs<WebAppManifestParser.Result.Failure>(result)
     }
 
     @Test
@@ -393,7 +393,7 @@ class WebAppManifestParserTest {
         val json = loadManifestAsString("invalid_json.json")
         val result = WebAppManifestParser().parse(json)
 
-        assertTrue(result is WebAppManifestParser.Result.Failure)
+        assertIs<WebAppManifestParser.Result.Failure>(result)
     }
 
     @Test
@@ -401,7 +401,7 @@ class WebAppManifestParserTest {
         val json = loadManifest("invalid_missing_name.json")
         val result = WebAppManifestParser().parse(json)
 
-        assertTrue(result is WebAppManifestParser.Result.Failure)
+        assertIs<WebAppManifestParser.Result.Failure>(result)
     }
 
     @Test
@@ -416,7 +416,7 @@ class WebAppManifestParserTest {
         }
         val result = WebAppManifestParser().parse(json)
 
-        assertTrue(result is WebAppManifestParser.Result.Success)
+        assertIs<WebAppManifestParser.Result.Success>(result)
         assertNull(result.getOrNull()!!.shareTarget)
     }
 
@@ -433,7 +433,7 @@ class WebAppManifestParserTest {
         }
         val result = WebAppManifestParser().parse(json)
 
-        assertTrue(result is WebAppManifestParser.Result.Success)
+        assertIs<WebAppManifestParser.Result.Success>(result)
         assertNull(result.getOrNull()!!.shareTarget)
     }
 
@@ -450,7 +450,7 @@ class WebAppManifestParserTest {
         }
         val result = WebAppManifestParser().parse(json)
 
-        assertTrue(result is WebAppManifestParser.Result.Success)
+        assertIs<WebAppManifestParser.Result.Success>(result)
         assertNull(result.getOrNull()!!.shareTarget)
     }
 
@@ -468,7 +468,7 @@ class WebAppManifestParserTest {
         }
         val result = WebAppManifestParser().parse(json)
 
-        assertTrue(result is WebAppManifestParser.Result.Success)
+        assertIs<WebAppManifestParser.Result.Success>(result)
         assertNull(result.getOrNull()!!.shareTarget)
     }
 
@@ -476,8 +476,8 @@ class WebAppManifestParserTest {
     fun `Parsing manifest with unusual values`() {
         val json = loadManifest("unusual.json")
         val result = WebAppManifestParser().parse(json)
-        assertTrue(result is WebAppManifestParser.Result.Success)
-        val manifest = (result as WebAppManifestParser.Result.Success).manifest
+        assertIs<WebAppManifestParser.Result.Success>(result)
+        val manifest = result.manifest
 
         assertNotNull(manifest)
         assertEquals("The Sample Manifest", manifest.name)
@@ -522,8 +522,8 @@ class WebAppManifestParserTest {
     fun `Parsing manifest where purpose field is array instead of string`() {
         val json = loadManifest("purpose_array.json")
         val result = WebAppManifestParser().parse(json)
-        assertTrue(result is WebAppManifestParser.Result.Success)
-        val manifest = (result as WebAppManifestParser.Result.Success).manifest
+        assertIs<WebAppManifestParser.Result.Success>(result)
+        val manifest = result.manifest
 
         assertNotNull(manifest)
         assertEquals("The Sample Manifest", manifest.name)

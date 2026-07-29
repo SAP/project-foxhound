@@ -6,23 +6,20 @@
 <script src="/resources/testharnessreport.js"></script>
 
 <div id="container">
-  <template shadowrootmode="open" marker="a b c"
-    ><?marker name=a>b<?start name=c><?end><template for="a">a</template
+  <template shadowrootmode="open"
+    ><?marker name="a">b<?start name="c"><?end><template for="a">a</template
     ><template for="c">c</template></template
   >
 </div>
 <script>
   test(() => {
-    const { shadowRoot } = document.querySelector("#container");
-    assert_array_equals(shadowRoot.marker, ["a", "b", "c"]);
-    assert_equals(shadowRoot.textContent, "abc");
+    assert_equals(document.querySelector("#container").shadowRoot.textContent, "abc");
   }, "markers are respected in declarative shadow root");
 
   promise_test(async (t) => {
     const element = document.createElement("div");
-    const shadow = element.attachShadow({ mode: "open", marker: ["a", "b"] });
-    assert_array_equals(shadow.marker, ["a", "b"]);
-    shadow.innerHTML = "<?marker name=a>X<?marker name=b>";
+    const shadow = element.attachShadow({ mode: "open", marker: "x" });
+    shadow.innerHTML = '<?marker name="a">X<?marker name="b">';
     const writer = shadow.streamAppendHTMLUnsafe().getWriter();
     await writer.write("<template for=a>a</template>");
     await writer.write("<template for=b>b</template>");

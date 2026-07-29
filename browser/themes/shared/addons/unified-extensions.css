@@ -12,7 +12,7 @@
   --uei-button-hover-color: var(--button-text-color-ghost-hover);
   --uei-button-active-bgcolor: var(--button-background-color-ghost-active);
   --uei-button-active-color: var(--button-text-color-ghost-active);
-  --uei-button-attention-dot-color: var(--attention-dot-color);
+  --uei-button-attention-dot-color: var(--color-accent-attention);
 
   &[uidensity="compact"] {
     --uei-icon-size: 24px;
@@ -20,8 +20,8 @@
 }
 
 #unified-extensions-panel {
-  --uei-dot-horizontal-position-in-panel: calc(var(--uei-icon-size) / 2 + var(--arrowpanel-menuitem-padding-inline) - var(--uei-attention-dot-size) / 2);
-  --uei-dot-vertical-position-in-panel: max(0px, calc(var(--arrowpanel-menuitem-padding-block) / 2 - var(--uei-attention-dot-size) / 2));
+  --uei-dot-horizontal-position-in-panel: calc(var(--uei-icon-size) / 2 + var(--panel-menuitem-padding-inline) - var(--uei-attention-dot-size) / 2);
+  --uei-dot-vertical-position-in-panel: max(0px, calc(var(--panel-menuitem-padding-block) / 2 - var(--uei-attention-dot-size) / 2));
 }
 
 #unified-extensions-view {
@@ -35,13 +35,13 @@
   }
   > h2 {
     color: inherit; /* undo var(--text-color-deemphasized) from panelUI-shared.css */
-    font-weight: var(--heading-font-weight); /* undo inherit from panelUI-shared.css that overrode h2's font-weight */
+    font-weight: var(--font-weight-heading); /* undo inherit from panelUI-shared.css that overrode h2's font-weight */
   }
 
   > description {
     /* Horizontally align the text with the "Manage extensions" button/item at the bottom */
-    margin: var(--arrowpanel-menuitem-margin);
-    padding: var(--arrowpanel-menuitem-padding);
+    margin: var(--panel-menuitem-margin);
+    padding: var(--panel-menuitem-padding);
   }
 }
 
@@ -91,7 +91,7 @@ unified-extensions-item {
   background-repeat: no-repeat;
 
   /* Adjust attention dots position in the toolbar. */
-  background-position: center bottom calc(var(--toolbarbutton-inner-padding) / 2 - var(--uei-attention-dot-size) / 2);
+  background-position: center bottom calc(var(--toolbarbutton-padding-inner) / 2 - var(--uei-attention-dot-size) / 2);
 
   /* Adjust attention dots position in the unified extensions panel. */
   &.subviewbutton {
@@ -167,7 +167,7 @@ unified-extensions-item {
 .unified-extensions-item-menu-button.subviewbutton {
   list-style-image: url("chrome://global/skin/icons/settings.svg");
   /* subtract the child's ~1px border from the block padding */
-  padding: calc(var(--arrowpanel-menuitem-margin-inline) - 1px) var(--arrowpanel-menuitem-margin-inline);
+  padding: calc(var(--panel-menuitem-margin-inline) - 1px) var(--panel-menuitem-margin-inline);
   padding-inline-end: 0;
   border-radius: 0;
   /* override panelUI-shared.css */
@@ -177,9 +177,9 @@ unified-extensions-item {
 
   > .toolbarbutton-icon {
     box-sizing: content-box;
-    padding: var(--arrowpanel-menuitem-padding-inline);
+    padding: var(--panel-menuitem-padding-inline);
     border: 1px solid transparent;
-    border-radius: var(--arrowpanel-menuitem-border-radius);
+    border-radius: var(--panel-menuitem-border-radius);
     color: var(--uei-button-color);
     background-color: var(--uei-button-bgcolor);
   }
@@ -211,7 +211,7 @@ unified-extensions-item {
 /* --- warning messages --- */
 
 #unified-extensions-messages-container {
-  margin: var(--arrowpanel-menuitem-margin);
+  margin: var(--panel-menuitem-margin);
 }
 
 .unified-extensions-message-bar {

@@ -100,6 +100,13 @@ gcc-14.2.0:
         strip-components: 1
         add-prefix: gcc-source/
 
+sixgill:
+    description: Sixgill GCC static analysis plugin source code
+    fetch:
+        type: git
+        repo: https://github.com/mozilla-spidermonkey/sixgill
+        revision: f8ace7cffffe9fd2b35a53a8260199c85f685336
+
 gmp-6.1.0:
     description: GMP 6.1.0 source code
     fetch:
@@ -210,21 +217,24 @@ nsis-3.07-win:
         strip-components: 1
         add-prefix: nsis/
 
-upx-3.95-win:
-    description: upx 3.95 for windows
+upx:
+    description: upx 5.2.0 source
     fetch:
         type: static-url
-        url: https://hg.mozilla.org/mozilla-build/raw-file/3b8c537ca3c879551956ad47ca9f089583f647c5/upx-3.95-win64.zip
-        sha256: 5c076f87ba64d82f11513f4af0ceb07246a3540aa3c72ca3ffc2d53971fa56e3
-        size: 462820
+        url: https://github.com/upx/upx/releases/download/v5.2.0/upx-5.2.0-src.tar.xz
+        sha256: af99e526d5759de94412aea1104d5e4ca406cb725295f8633ecc9e843dc1ce1c
+        size: 1764768
+        artifact-name: upx-src.tar.zst
+        strip-components: 1
+        add-prefix: upx/
 
 wine:
     description: wine source code
     fetch:
         type: static-url
-        url: https://dl.winehq.org/wine/source/11.x/wine-11.2.tar.xz
-        sha256: 1756227bdb3feb41750afa97b44ac50a22890a88704a1f0fa14d88c4f921e183
-        size: 33227804
+        url: https://dl.winehq.org/wine/source/11.x/wine-11.10.tar.xz
+        sha256: e4c35ebe26f4f8eef5f2143e24a1fb9fd103f1d46132ad4755479227d086b8e7
+        size: 45603064
         gpg-signature:
             sig-url: "{url}.sign"
             key-path: build/unix/build-gcc/DA23579A74D4AD9AF9D3F945CEFAC8EAAF17519D.key
@@ -232,12 +242,12 @@ wine:
         strip-components: 1
         add-prefix: wine-source/
 
-cbindgen-0.29.1:
-    description: cbindgen 0.29.1 source code
+cbindgen-0.29.4:
+    description: cbindgen 0.29.4 source code
     fetch:
         type: git
         repo: https://github.com/mozilla/cbindgen
-        revision: eef17769e2739ebb425fee0bbd88e6a52ac2a4e1
+        revision: b826cb8911488fe8a209d2b693492c0c673e8cca
     fetch-alias: cbindgen
 
 cctools-port:
@@ -252,7 +262,7 @@ libtapi:
     fetch:
         type: git
         repo: https://github.com/tpoechtrager/apple-libtapi
-        revision: aed9334283e3e290bba622ee980bde2322e4d516
+        revision: 593d29141bf176d24021208c75af54a2ef23c38b
 
 libdispatch:
     description: libdispatch source code
@@ -312,22 +322,23 @@ gn:
     fetch:
         type: git
         repo: https://gn.googlesource.com/gn
-        revision: f98b6d7275c2e823e0983fa7f874facfe6980778
+        revision: 6f8c0328ee29c76e3566a216f2f0cf2992daa6ed
 
 grcov:
     description: grcov source code
     fetch:
         type: git
         repo: https://github.com/mozilla/grcov
-        revision: 00099a73329b139949072254e83e8598ab88cbc2
+        # 0.10.7 release
+        revision: 6efbc1d7604a22fae6ba145d1c3637f0bec7b1e6
 
 sccache:
     description: sccache source code
     fetch:
         type: git
         repo: https://github.com/mozilla/sccache
-        # 0.11.0 release
-        revision: 5709f069514a775ddb6604a6e9f5f5c91c0e9821
+        # 0.15.0 release
+        revision: c2e4b4ca035f91f8b63978afc8e2c71f174fe306
 
 fxc2:
     description: fxc2 source code
@@ -341,7 +352,7 @@ mingw-w64:
     fetch:
         type: git
         repo: https://git.code.sf.net/p/mingw-w64/mingw-w64
-        revision: 287a0d4d478e3575d082ba37ce4dcba86524fc9e
+        revision: 00349888007fef589c2604bf60d0ea14c0e2d606
 
 mingw-w64-trunk:
     description: mingw-w64 master branch source code
@@ -363,12 +374,14 @@ android-ndk-rs:
     description: android-ndk-rs source code
     fetch:
         type: git
-        # Until there's a version of cargo-apk published on crates.io that has
-        # https://github.com/rust-windowing/android-ndk-rs/pull/236, we need to use
-        # an unpublished version. Additionally, until we update the NDK version used
-        # in gecko we must use our own patched version. See bug 1615148.
+        # Ideally we'd switch back to using the current official upstream for
+        # this project: https://github.com/rust-mobile/cargo-apk/
+        # Unfortunately, it's not a drop-in replacement as there are changes
+        # we'll need to adapt our builds to. And the two patches applied to
+        # our fork for Android SDK detection are also both still necessary.
+        # Example: https://github.com/rust-mobile/cargo-apk/issues/74
         repo: https://github.com/jamienicol/android-ndk-rs
-        revision: 595f4e14a78371e3ab59b12f7bd8131f2ec5b4a1
+        revision: abddf7b2a3f491637440e0418087f68fb4a401c1
 
 clang-14:
     description: clang 14.0.5 source code
@@ -377,19 +390,12 @@ clang-14:
         repo: https://github.com/llvm/llvm-project
         revision: 4bc1d0b51c8e488d78ab69c8b19cfbcd1f7db6a4
 
-clang-17:
-    description: clang 17.0.6 source code
+clang-19:
+    description: clang 19.1.7 source code
     fetch:
         type: git
         repo: https://github.com/llvm/llvm-project
-        revision: 6009708b4367171ccdbf4b5905cb6a803753fe18
-
-clang-20:
-    description: clang 20.1.8 source code
-    fetch:
-        type: git
-        repo: https://github.com/llvm/llvm-project
-        revision: 87f0227cb60147a26a1eeb4fb06e3b505e9c7261
+        revision: cd708029e0b2869e80abe31ddb175f7c35361f90
 
 clang-21:
     description: clang 21.1.8 source code
@@ -397,6 +403,13 @@ clang-21:
         type: git
         repo: https://github.com/llvm/llvm-project
         revision: 2078da43e25a4623cab2d0d60decddf709aaea28
+
+clang-22:
+    description: clang 22.1.6 source code
+    fetch:
+        type: git
+        repo: https://github.com/llvm/llvm-project
+        revision: fc4aad7b5db3fff421df9a9637605b9ca5667881
 
 clang-trunk:
     description: clang main branch source code
@@ -410,13 +423,13 @@ clang-trunk:
 # We build stable rust from source so the resulting compiler acts as a nightly
 # rust compiler, allowing to use unstable features like -Zbuild-std and
 # sanitizers.
-rust-1.90.0:
-    description: Rust 1.90.0 source code
+rust-1.94.1:
+    description: Rust 1.94.1 source code
     fetch:
         type: git
         include-dot-git: true
         repo: https://github.com/rust-lang/rust/
-        revision: 1159e78c4747b02ef996e55082b704c09b970588
+        revision: e408947bfd200af42db322daf0fadfe7e26d3bd1
 
 rust-nightly:
     description: Rust nightly source code
@@ -436,43 +449,43 @@ wasi-sdk:
         revision: 935fe1acd2fcd7ea4aed2d5ee4527482862b6344
 
 macosx64-ninja:
-    description: ninja 1.13.1
+    description: ninja 1.13.2
     fetch:
         type: static-url
-        url: https://github.com/ninja-build/ninja/releases/download/v1.13.1/ninja-mac.zip
-        sha256: da7797794153629aca5570ef7c813342d0be214ba84632af886856e8f0063dd9
-        size: 314009
+        url: https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-mac.zip
+        sha256: c99048673aa765960a99cf10c6ddb9f1fad506099ff0a0e137ad8960a88f321b
+        size: 314051
         artifact-name: ninja.tar.zst
         add-prefix: ninja/bin/
 
 win64-ninja:
-    description: ninja 1.13.1
+    description: ninja 1.13.2
     fetch:
         type: static-url
-        url: https://github.com/ninja-build/ninja/releases/download/v1.13.1/ninja-win.zip
-        sha256: 26a40fa8595694dec2fad4911e62d29e10525d2133c9a4230b66397774ae25bf
-        size: 289808
+        url: https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-win.zip
+        sha256: 07fc8261b42b20e71d1720b39068c2e14ffcee6396b76fb7a795fb460b78dc65
+        size: 291570
         artifact-name: ninja.tar.zst
         add-prefix: ninja/bin/
 
 macosx64-cmake:
-    description: cmake 4.1.2
+    description: cmake 4.3.3
     fetch:
         type: static-url
-        url: https://github.com/Kitware/CMake/releases/download/v4.1.2/cmake-4.1.2-macos-universal.tar.gz
-        sha256: 3be85f5b999e327b1ac7d804cbc9acd767059e9f603c42ec2765f6ab68fbd367
-        size: 80750689
+        url: https://github.com/Kitware/CMake/releases/download/v4.3.3/cmake-4.3.3-macos-universal.tar.gz
+        sha256: 5221a13450c7a0219a2a0d1b6c9085eb06489721fafd8488ccebc1584175d2fb
+        size: 87452640
         artifact-name: cmake.tar.zst
         strip-components: 3
         add-prefix: cmake/
 
 cmake:
-    description: cmake 4.1.2 source code
+    description: cmake 4.3.3 source code
     fetch:
         type: static-url
-        url: https://github.com/Kitware/CMake/releases/download/v4.1.2/cmake-4.1.2.tar.gz
-        sha256: 643f04182b7ba323ab31f526f785134fb79cba3188a852206ef0473fee282a15
-        size: 12048810
+        url: https://github.com/Kitware/CMake/releases/download/v4.3.3/cmake-4.3.3.tar.gz
+        sha256: cba4bb7a44edf2877bb6f059932896383babe435b3a8c3b5df48b4aa41c9bb85
+        size: 12971567
         artifact-name: cmake.tar.zst
         strip-components: 1
         add-prefix: cmake/
@@ -482,7 +495,7 @@ dump-syms:
     fetch:
         type: git
         repo: https://github.com/mozilla/dump_syms/
-        revision: 5ba29a30c1c25eb5c6aa21890b390e3d51db6b4a
+        revision: 01b3559d5b3692e731d768d94e2eef42984c737b
 
 rust-minidump:
     description: rust-minidump 0.25.0 source code (for minidump-stackwalk)
@@ -499,12 +512,12 @@ fix-stacks:
         revision: 1fb1bcc8cb4dd65fbe342853954651563a0a88e7
 
 7zz:
-    description: 7-zip 25.01 source code
+    description: 7-zip 26.01 source code
     fetch:
         type: static-url
-        url: https://downloads.sourceforge.net/sevenzip/7-Zip/25.01/7z2501-src.tar.xz
-        sha256: ed087f83ee789c1ea5f39c464c55a5c9d4008deb0efe900814f2df262b82c36e
-        size: 1533240
+        url: https://github.com/ip7z/7zip/releases/download/26.01/7z2601-src.tar.xz
+        sha256: b2389e0e930b2f9a348cf0fe7d9870a46482a8ec044ee0bdf42e2136db31c3d6
+        size: 1543032
         artifact-name: 7z-src.tar.zst
         add-prefix: 7zz/
 
@@ -542,9 +555,9 @@ jdk-8-linux64:
     description: Java 8 JDK
     fetch:
         type: static-url
-        url: https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u472-b08/OpenJDK8U-jdk_x64_linux_hotspot_8u472b08.tar.gz
-        sha256: 5becaa4ac660e844c5a39e2ebc39ff5ac824c37ff1b625af8c8b111dc13c3592
-        size: 103123206
+        url: https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u482-b08/OpenJDK8U-jdk_x64_linux_hotspot_8u482b08.tar.gz
+        sha256: e74becad56b4cc01f1556a671e578d3788789f5257f9499f6fbed84e63a55ecf
+        size: 103525252
         artifact-name: jdk-8.tar.zst
         strip-components: 1
         add-prefix: jdk-8/
@@ -640,6 +653,17 @@ nodejs-22-source:
         strip-components: 1
         add-prefix: node/
 
+nodejs-24-linux64:
+    description: nodejs 24 for x64 linux
+    fetch:
+        type: static-url
+        url: https://nodejs.org/dist/v24.15.0/node-v24.15.0-linux-x64.tar.xz
+        sha256: 472655581fb851559730c48763e0c9d3bc25975c59d518003fc0849d3e4ba0f6
+        size: 31164460
+        artifact-name: nodejs.tar.zst
+        strip-components: 1
+        add-prefix: node/
+
 gnumake:
     description: GNU make source
     fetch:
@@ -656,7 +680,7 @@ msix-packaging:
     fetch:
         type: git
         repo: https://github.com/mozilla/msix-packaging
-        revision: 8164b7ac5a67688e18fa2497fb31ba13ce9bfb15
+        revision: 1d068315fc1cff43c04837816c28a4a66cba22c1
 
 pkgconf:
     description: pkgconf 2.5.1
@@ -669,12 +693,12 @@ pkgconf:
         strip-components: 1
         add-prefix: pkgconf/
 
-afl-plus-plus-4.0:
-    description: AFL++ 4.x source
+afl-plus-plus:
+    description: AFL++ 5.x source
     fetch:
         type: git
         repo: https://github.com/AFLplusplus/AFLplusplus
-        revision: ada0855022ac6e77de74622d0ab61ca7a37b9a9c
+        revision: 4d0ec73b3eaad851402f18d63ea8344e9890d458
 
 cargo-vet:
     description: cargo-vet source
@@ -688,15 +712,15 @@ symbol-scrapers:
     fetch:
         type: git
         repo: https://github.com/mozilla/symbol-scrapers
-        revision: c9f6fe6a16cb9bba11976d85fc924efaad643a9d
+        revision: 54402d045d400f79f10de9163c0071d64c449f3e
 
-xz-5.8.1:
-    description: xz 5.8.1 source code
+xz:
+    description: xz 5.8.3 source code
     fetch:
         type: static-url
-        url: https://github.com/tukaani-project/xz/releases/download/v5.8.1/xz-5.8.1.tar.xz
-        sha256: 0b54f79df85912504de0b14aec7971e3f964491af1812d83447005807513cd9e
-        size: 1461872
+        url: https://github.com/tukaani-project/xz/releases/download/v5.8.3/xz-5.8.3.tar.xz
+        sha256: fff1ffcf2b0da84d308a14de513a1aa23d4e9aa3464d17e64b9714bfdd0bbfb6
+        size: 1548064
         artifact-name: xz-source.tar.zst
         strip-components: 1
         add-prefix: xz-source/
@@ -755,11 +779,11 @@ windows-rs:
         add-prefix: windows-rs/
 
 libxml2:
-    description: libxml2 2.15.1 source code
+    description: libxml2 2.15.3 source code
     fetch:
         type: git
         repo: https://gitlab.gnome.org/GNOME/libxml2
-        revision: b7fa62cbe8ef0df5869e000d5b690bdedd07f33e
+        revision: c94eb0210183b9d7cb43f8e7fddc6be55843ef49
 
 mozilla-pdf.js:
     description: Mozilla pdf.js Github repo
@@ -789,28 +813,31 @@ dxc-src:
     fetch:
         type: git
         repo: https://github.com/FirefoxGraphics/DirectXShaderCompiler
-        revision: dc9cb8960f8d4fbb5f904eac1e3bf7f1821e4be1
+        revision: 9c26d96149925760ca86cd43610d9d32b6ec70c2
 
 jj:
-    description: jj 0.29.0 source code
+    description: jj 0.38.0 source code
     fetch:
         type: git
         repo: https://github.com/jj-vcs/jj
-        revision: 94269d2e7228ff502b2116258e5ae6b3b07ec434
+        revision: 2508982cde5c7e4db0933e0b6469f9e778e71e28
 
 firefox-profiler:
     description: firefox profiler source code
     fetch:
         type: git
         repo: https://github.com/firefox-devtools/profiler
-        revision: 26904094839504de2b8f9193971a37086e305c27
+        revision: 8c0afb1f47190487b08ea2561ae3cc0f7a5d31e9
 
 # See https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/downloads
+# We can't catch regressions from these updates in CI. Testing should focus on
+# "no tabs in toolbar" functionality, making sure tabs are selectable at the
+# very top of the screen when maximized, and fullscreen transitions (F11).
 windowsappsdk-redist:
     description: Windows App SDK Redistributable
     fetch:
         type: static-url
-        url: https://aka.ms/windowsappsdk/1.8/1.8.251106002/Microsoft.WindowsAppRuntime.Redist.1.8.zip
-        sha256: 57748c37e2b0ce381518bbe7ac72e015c150771a343af89f9f0bd95aa5e9bbc0
-        size: 465986932
+        url: https://aka.ms/windowsappsdk/2.2/2.2.0/Microsoft.WindowsAppRuntime.Redist.2.2.zip
+        sha256: ab078d5b1d730f093ed4e1a33d0e709d1dbca85fa4a10f546cc6824e3b48057f
+        size: 478796379
         artifact-name: Microsoft.WindowsAppRuntime.Redist.tar.zst

@@ -46,6 +46,16 @@ tasks:
                         - repackage/base.py
                         - repackage/win64-aarch64_sfx_stub.py
                         - repackage/win64_signed.py
+        msi:
+            display-name:
+                by-shipping-product:
+                    devedition: "Firefox Developer Edition"
+                    default:
+                        by-release-type:
+                            beta.*: "Firefox Beta"
+                            release: "Firefox"
+                            esr.*: "Firefox"
+                            default: "Firefox Nightly"
         package-formats: [msi]
         fetches:
             fetch:

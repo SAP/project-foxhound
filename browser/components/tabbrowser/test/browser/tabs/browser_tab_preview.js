@@ -646,8 +646,11 @@ add_task(async function tabNotesTests() {
   const [addedEvent] = Glean.tabNotes.added.testGetValue();
   Assert.deepEqual(
     addedEvent.extra,
-    { source: "hover_menu" },
-    "added event extra data should say the tab note was added from the tab hover preview menu"
+    {
+      source: "hover_menu",
+      note_length: noteText.length,
+    },
+    "added event extra data should include length and say the tab note was added from the tab hover preview menu"
   );
 
   await closeTabPreviews();
@@ -974,7 +977,7 @@ add_task(async function moveBetweenTabGroupsTests() {
   const group1 = gBrowser.addTabGroup([tab1]);
   group1.collapsed = true;
 
-  const tab2 = await addTabTo(gBrowser, "about:logo");
+  const tab2 = await addTabTo(gBrowser, "about:blank");
   const group2 = gBrowser.addTabGroup([tab2]);
   group2.collapsed = true;
 

@@ -190,7 +190,7 @@ export var PageThumbs = {
     }
 
     return new Promise(resolve => {
-      let canvas = this.createCanvas(aBrowser.ownerGlobal);
+      let canvas = this.createCanvas(aBrowser.documentGlobal);
       this.captureToCanvas(aBrowser, canvas, aArgs)
         .then(() => {
           canvas.toBlob(blob => {
@@ -363,7 +363,7 @@ export var PageThumbs = {
       thumbnail.width = contentWidth;
       thumbnail.height = contentHeight;
 
-      let imageData = new aBrowser.ownerGlobal.ImageData(
+      let imageData = new aBrowser.documentGlobal.ImageData(
         contentInfo.imageData,
         contentWidth,
         contentHeight
@@ -672,7 +672,7 @@ export var PageThumbsStorage = {
   // If two thumbnails with the same URL and revision are in cache at the
   // same time, the image loader may pick the stale thumbnail in some cases.
   // Therefore _revisionRange must be large enough to prevent this, e.g.
-  // in the pathological case image.cache.size (5MB by default) could fill
+  // in the pathological case image.cache.size (20MB by default) could fill
   // with (abnormally small) 10KB thumbnail images if the browser session
   // runs long enough (though this is unlikely as thumbnails are usually
   // only updated every MAX_THUMBNAIL_AGE_SECS).

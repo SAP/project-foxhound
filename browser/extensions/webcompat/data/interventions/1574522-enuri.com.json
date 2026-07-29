@@ -1,0 +1,15 @@
+{
+  "label": "enuri.com",
+  "bugs": {
+    "1574522": {
+      "issue": "incorrect-viewport-dimensions",
+      "matches": ["*://enuri.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

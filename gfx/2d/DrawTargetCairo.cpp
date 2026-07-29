@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -1878,8 +1876,7 @@ already_AddRefed<SourceSurface> DrawTargetCairo::CreateSourceSurfaceFromData(
     return nullptr;
   }
 
-  RefPtr<SourceSurfaceCairo> source_surf =
-      new SourceSurfaceCairo(surf, aSize, aFormat);
+  RefPtr source_surf = MakeRefPtr<SourceSurfaceCairo>(surf, aSize, aFormat);
   cairo_surface_destroy(surf);
 
   return source_surf.forget();
@@ -1900,7 +1897,7 @@ DrawTargetCairo::CreateSourceSurfaceFromNativeSurface(
 already_AddRefed<DrawTarget> DrawTargetCairo::CreateSimilarDrawTarget(
     const IntSize& aSize, SurfaceFormat aFormat) const {
   if (cairo_surface_status(cairo_get_group_target(mContext))) {
-    RefPtr<DrawTargetCairo> target = new DrawTargetCairo();
+    RefPtr target = MakeRefPtr<DrawTargetCairo>();
     if (target->Init(aSize, aFormat)) {
       return target.forget();
     }
@@ -1932,7 +1929,7 @@ already_AddRefed<DrawTarget> DrawTargetCairo::CreateSimilarDrawTarget(
   }
 
   if (!cairo_surface_status(similar)) {
-    RefPtr<DrawTargetCairo> target = new DrawTargetCairo();
+    RefPtr target = MakeRefPtr<DrawTargetCairo>();
     if (target->InitAlreadyReferenced(similar, aSize)) {
       return target.forget();
     }
@@ -2028,7 +2025,7 @@ already_AddRefed<DrawTarget> DrawTargetCairo::CreateShadowDrawTarget(
   // If we don't have a blur then we can use the RGBA mask and keep all the
   // operations in graphics memory.
   if (aSigma == 0.0f || aFormat == SurfaceFormat::A8) {
-    RefPtr<DrawTargetCairo> target = new DrawTargetCairo();
+    RefPtr target = MakeRefPtr<DrawTargetCairo>();
     if (target->InitAlreadyReferenced(similar, aSize)) {
       return target.forget();
     } else {
@@ -2053,7 +2050,7 @@ already_AddRefed<DrawTarget> DrawTargetCairo::CreateShadowDrawTarget(
   cairo_tee_surface_add(tee, similar);
   cairo_surface_destroy(similar);
 
-  RefPtr<DrawTargetCairo> target = new DrawTargetCairo();
+  RefPtr target = MakeRefPtr<DrawTargetCairo>();
   if (target->InitAlreadyReferenced(tee, aSize)) {
     return target.forget();
   }

@@ -35,7 +35,7 @@ class nsDeflateConverter final : public nsIStreamConverter {
   }
 
  private:
-  ~nsDeflateConverter() {}
+  ~nsDeflateConverter() = default;
 
   enum WrapMode { WRAP_ZLIB, WRAP_GZIP, WRAP_NONE };
 

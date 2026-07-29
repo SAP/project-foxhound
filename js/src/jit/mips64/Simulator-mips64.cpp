@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright 2011 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
@@ -2282,7 +2280,7 @@ void Simulator::configureTypeRegister(SimInstruction* instr, int64_t& alu_out,
           u128hilo = U64(U32(I32_CHECK(rs))) * U64(U32(I32_CHECK(rt)));
           break;
         case ff_dmultu:
-          u128hilo = U128(rs) * U128(rt);
+          u128hilo = U128(U64(rs)) * U128(U64(rt));
           break;
         case ff_add:
           alu_out = I32_CHECK(rs) + I32_CHECK(rt);

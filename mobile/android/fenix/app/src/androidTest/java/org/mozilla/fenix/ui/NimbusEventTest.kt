@@ -13,13 +13,17 @@ import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.components.TelemetryAccountObserver
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.helpers.Experimentation
+import org.mozilla.fenix.helpers.FenixTestRule
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.RetryTestRule
 import org.mozilla.fenix.helpers.TestHelper.appContext
-import org.mozilla.fenix.helpers.TestSetup
 
-class NimbusEventTest : TestSetup() {
+class NimbusEventTest {
+    @get:Rule(order = 0)
+    val fenixTestRule: FenixTestRule = FenixTestRule()
+
     @get:Rule
     val homeActivityTestRule = HomeActivityIntentTestRule.withDefaultSettingsOverrides()
         .withIntent(
@@ -41,7 +45,7 @@ class NimbusEventTest : TestSetup() {
 
     @Test
     fun telemetryAccountObserverTest() {
-        val observer = TelemetryAccountObserver(appContext)
+        val observer = TelemetryAccountObserver(appContext, appContext.components.settings)
         // replacing interface mock with implementation mock.
         observer.onAuthenticated(mockk<FirefoxAccount>(), AuthType.Signin)
 

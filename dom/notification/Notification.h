@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -135,7 +133,7 @@ class Notification : public DOMEventTargetHelper, public SupportsWeakPtr {
 
   void Close();
 
-  nsIGlobalObject* GetParentObject() const { return GetOwnerGlobal(); }
+  nsIGlobalObject* GetParentObject() const { return GetRelevantGlobal(); }
 
   JSObject* WrapObject(JSContext*, JS::Handle<JSObject*> aGivenProto) override;
 
@@ -155,7 +153,7 @@ class Notification : public DOMEventTargetHelper, public SupportsWeakPtr {
 
   bool DispatchClickEvent();
 
-  nsresult DispatchToMainThread(already_AddRefed<nsIRunnable>&& aRunnable);
+  nsresult DispatchToMainThread(already_AddRefed<nsIRunnable> aRunnable);
 
  protected:
   Notification(nsIGlobalObject* aGlobal,

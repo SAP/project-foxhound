@@ -346,7 +346,7 @@ FinderHighlighter.prototype = {
   highlightRange(range) {
     let node = range.startContainer;
     let editableNode = this._getEditableNode(node);
-    let window = node.ownerGlobal;
+    let window = node.documentGlobal;
     let controller = this.finder._getSelectionController(window);
     if (editableNode) {
       controller = editableNode.editor.selectionController;
@@ -899,7 +899,7 @@ FinderHighlighter.prototype = {
       return frameData.offset;
     }
 
-    let style = frame.ownerGlobal.getComputedStyle(frame);
+    let style = frame.documentGlobal.getComputedStyle(frame);
     // We only need to left sides, because ranges are offset from point 0,0 in
     // the top-left corner.
     let borderOffset = [
@@ -956,7 +956,7 @@ FinderHighlighter.prototype = {
     while (node.nodeType != 1) {
       node = node.parentNode;
     }
-    let style = node.ownerGlobal.getComputedStyle(node);
+    let style = node.documentGlobal.getComputedStyle(node);
     let props = {};
     for (let prop of kFontPropsCamelCase) {
       if (prop in style && style[prop]) {
@@ -1122,7 +1122,7 @@ FinderHighlighter.prototype = {
    * @return {Set}    Set of rects that were found for the range
    */
   _getRangeRectsAndTexts(range, dict = null) {
-    let window = range.startContainer.ownerGlobal;
+    let window = range.startContainer.documentGlobal;
     let bounds;
     // If the window is part of a frameset, try to cache the bounds query.
     if (dict && dict.frames.has(window)) {
@@ -1168,7 +1168,7 @@ FinderHighlighter.prototype = {
    * @return {Set}     Set of rects that were found for the range
    */
   _updateRangeRects(range, checkIfDynamic = true, dict = null) {
-    let window = range.startContainer.ownerGlobal;
+    let window = range.startContainer.documentGlobal;
     let rectsAndTexts = this._getRangeRectsAndTexts(range, dict);
 
     // Only fetch the rect at this point, if not passed in as argument.
@@ -1240,7 +1240,7 @@ FinderHighlighter.prototype = {
       !outlineAnonNode || rectCount !== previousRectCount || rectCount != 1;
     dict.previousRangeRectsAndTexts = rectsAndTexts;
 
-    let window = this.getTopWindow(range.startContainer.ownerGlobal);
+    let window = this.getTopWindow(range.startContainer.documentGlobal);
     let document = window.document;
     // First see if we need to and can remove the previous outline nodes.
     if (rebuildOutline) {
@@ -1793,26 +1793,29 @@ FinderHighlighter.prototype = {
 
   /**
    * For a given node returns its editable parent or null if there is none.
-   * It's enough to check if node is a text node and its parent's parent is
-   * an input or textarea.
+   * It's enough to check if node is a text node and it's containing shadow
+   * host is an input or textarea.
    *
    * @param node the node we want to check
    * @returns the first node in the parent chain that is editable,
    *          null if there is no such node
    */
   _getEditableNode(node) {
-    if (
-      node.nodeType === node.TEXT_NODE &&
-      node.parentNode &&
-      node.parentNode.parentNode &&
-      (ChromeUtils.getClassName(node.parentNode.parentNode) ===
-        "HTMLInputElement" ||
-        ChromeUtils.getClassName(node.parentNode.parentNode) ===
-          "HTMLTextAreaElement")
-    ) {
-      return node.parentNode.parentNode;
+    if (node.nodeType !== node.TEXT_NODE) {
+      return null;
     }
-    return null;
+    let host = node.getRootNode().host;
+    if (!host) {
+      return null;
+    }
+    let className = ChromeUtils.getClassName(host);
+    if (
+      className !== "HTMLInputElement" &&
+      className !== "HTMLTextAreaElement"
+    ) {
+      return null;
+    }
+    return host;
   },
 
   /**

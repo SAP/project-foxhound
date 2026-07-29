@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -345,7 +343,8 @@ already_AddRefed<BasePrincipal> BasePrincipal::FromJSON(
           reinterpret_cast<const JS::Latin1Char*>(aJSON.BeginReading()),
           aJSON.Length(), &handler)) {
     NS_WARNING(
-        nsPrintfCString("Unable to parse: %s", aJSON.BeginReading()).get());
+        nsPrintfCString("Unable to parse: %s", PromiseFlatCString(aJSON).get())
+            .get());
     MOZ_ASSERT(false,
                "Unable to parse string as JSON to deserialize as a principal");
     return nullptr;
@@ -1260,6 +1259,20 @@ already_AddRefed<BasePrincipal> BasePrincipal::CreateContentPrincipal(
     nsIURI* aURI, const OriginAttributes& aAttrs, nsIURI* aInitialDomain) {
   MOZ_ASSERT(aURI);
 
+  // Blob URLs don't derive the principal directly from the URL in the same way
+  // as normal content principals, and may have a non-content principal.
+  if (aURI->SchemeIs(BLOBURI_SCHEME)) {
+    MOZ_ASSERT(!aInitialDomain,
+               "an initial domain for a blob URI makes no sense");
+    nsCOMPtr<nsIPrincipal> blobPrincipal;
+    if (!dom::BlobURLProtocolHandler::GetBlobURLPrincipal(
+            aURI, aAttrs, getter_AddRefs(blobPrincipal))) {
+      // This isn't a valid Blob URL, give up and return a null principal.
+      return NullPrincipal::Create(aAttrs);
+    }
+    return blobPrincipal.forget().downcast<BasePrincipal>();
+  }
+
   nsAutoCString originNoSuffix;
   nsresult rv =
       ContentPrincipal::GenerateOriginNoSuffixFromURI(aURI, originNoSuffix);
@@ -1305,16 +1318,6 @@ already_AddRefed<BasePrincipal> BasePrincipal::CreateContentPrincipal(
     return principal.forget();
   }
 #endif
-
-  nsCOMPtr<nsIPrincipal> blobPrincipal;
-  if (dom::BlobURLProtocolHandler::GetBlobURLPrincipal(
-          aURI, getter_AddRefs(blobPrincipal))) {
-    MOZ_ASSERT(blobPrincipal);
-    MOZ_ASSERT(!aInitialDomain,
-               "an initial domain for a blob URI makes no sense");
-    RefPtr<BasePrincipal> principal = Cast(blobPrincipal);
-    return principal.forget();
-  }
 
   // Mint a content principal.
   RefPtr<ContentPrincipal> principal =
@@ -1429,7 +1432,7 @@ BasePrincipal::GetLocalStorageQuotaKey(nsACString& aKey) {
     nsAutoCString eTLDplusOne;
     rv = eTLDService->GetBaseDomain(uri, 0, eTLDplusOne);
     if (NS_SUCCEEDED(rv)) {
-      baseDomain = eTLDplusOne;
+      baseDomain = std::move(eTLDplusOne);
     } else if (rv == NS_ERROR_HOST_IS_IP_ADDRESS ||
                rv == NS_ERROR_INSUFFICIENT_DOMAIN_LEVELS) {
       rv = NS_OK;

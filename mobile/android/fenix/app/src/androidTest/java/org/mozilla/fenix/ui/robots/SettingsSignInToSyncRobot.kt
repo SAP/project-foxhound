@@ -16,7 +16,9 @@ import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.uiautomator.UiSelector
 import org.hamcrest.CoreMatchers
 import org.hamcrest.Matchers.allOf
+import org.junit.Assert.assertTrue
 import org.mozilla.fenix.R
+import org.mozilla.fenix.helpers.Constants.RETRY_COUNT
 import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectExists
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResId
@@ -71,6 +73,47 @@ class SettingsSignInToSyncRobot {
         Log.i(TAG, "verifyTurnOnSyncToolbarTitle: Verified that the \"Sync and save your data\" toolbar title is displayed")
     }
 
+    fun clickReadyToScanButton() {
+        for (i in 1..RETRY_COUNT) {
+            try {
+                assertUIObjectExists(itemWithResId("$packageName:id/signInScanButton"))
+                Log.i(TAG, "clickReadyToScanButton: Trying to click the \"Ready to scan\" button")
+                itemWithResId("$packageName:id/signInScanButton").click()
+                Log.i(TAG, "clickReadyToScanButton: Clicked the \"Ready to scan\" button")
+                assertUIObjectExists(itemWithResId("$packageName:id/signInScanButton"), exists = false)
+
+                break
+            } catch (e: AssertionError) {
+                Log.i(TAG, "clickReadyToScanButton: AssertionError caught, executing fallback methods")
+                if (i == RETRY_COUNT) {
+                    throw e
+                }
+            }
+        }
+    }
+
+    fun clickDismissPermissionRequiredDialog() {
+        Log.i(TAG, "clickDismissPermissionRequiredDialog: Waiting for $waitingTime ms for the \"Dismiss\" permission button to exist")
+        dismissPermissionButton().waitForExists(waitingTime)
+        Log.i(TAG, "clickDismissPermissionRequiredDialog: Waited for $waitingTime ms for the \"Dismiss\" permission button to exist")
+        Log.i(TAG, "clickDismissPermissionRequiredDialog: Trying to click the \"Dismiss\" permission button")
+        dismissPermissionButton().click()
+        Log.i(TAG, "clickDismissPermissionRequiredDialog: Clicked the \"Dismiss\" permission button")
+    }
+
+    fun verifyQRScannerIsOpen() {
+        Log.i(TAG, "verifyScannerOpen: Trying to verify that the device camera is opened or that the camera app error message exist")
+        assertTrue(
+            "$TAG: Neither the device camera was opened nor the camera app error message was displayed",
+            mDevice.findObject(UiSelector().resourceId("$packageName:id/view_finder"))
+                .waitForExists(waitingTime) ||
+                // In case there is no camera available, an error will be shown.
+                mDevice.findObject(UiSelector().resourceId("$packageName:id/camera_error"))
+                    .exists(),
+        )
+        Log.i(TAG, "verifyScannerOpen: Verified that the device camera is opened or that the camera app error message exist")
+    }
+
     class Transition(private val composeTestRule: ComposeTestRule) {
         fun goBack(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
             Log.i(TAG, "goBack: Trying to click the navigate up button")
@@ -89,6 +132,18 @@ class SettingsSignInToSyncRobot {
             HomeScreenRobot(composeTestRule).interact()
             return HomeScreenRobot.Transition(composeTestRule)
         }
+
+        fun clickGoToPermissionsSettings(interact: SettingsSubMenuSitePermissionsCommonRobot.() -> Unit): SettingsSubMenuSitePermissionsCommonRobot.Transition {
+            Log.i(TAG, "clickGoToPermissionsSettings: Waiting for $waitingTime ms for the Go To \"Settings\" permission button to exist")
+            goToPermissionsSettingsButton().waitForExists(waitingTime)
+            Log.i(TAG, "clickGoToPermissionsSettings: Waited for $waitingTime ms for the Go To \"Settings\" permission button to exist")
+            Log.i(TAG, "clickGoToPermissionsSettings: Trying to click the \"Go To Settings\" permission button")
+            goToPermissionsSettingsButton().click()
+            Log.i(TAG, "clickGoToPermissionsSettings: Clicked the \"Go To Settings\" permission button")
+
+            SettingsSubMenuSitePermissionsCommonRobot().interact()
+            return SettingsSubMenuSitePermissionsCommonRobot.Transition()
+        }
     }
 }
 
@@ -96,3 +151,14 @@ private fun goBackButton() =
     onView(CoreMatchers.allOf(ViewMatchers.withContentDescription("Navigate up")))
 
 private fun useEmailButton() = onView(withText("Use email instead"))
+
+fun settingsTurnOnSyncScreen(composeTestRule: ComposeTestRule, interact: SettingsSignInToSyncRobot.() -> Unit): SettingsSignInToSyncRobot.Transition {
+    SettingsSignInToSyncRobot().interact()
+    return SettingsSignInToSyncRobot.Transition(composeTestRule)
+}
+
+private fun dismissPermissionButton() =
+    mDevice.findObject(UiSelector().text("Dismiss"))
+
+private fun goToPermissionsSettingsButton() =
+    mDevice.findObject(UiSelector().text("Go to settings"))

@@ -5,6 +5,7 @@
 package org.mozilla.fenix.helpers.perf
 
 import android.util.Log
+import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.test.ext.junit.rules.ActivityScenarioRule
 import androidx.test.platform.app.InstrumentationRegistry
 import leakcanary.AppWatcher
@@ -35,8 +36,11 @@ import shark.AndroidReferenceMatchers
  * ```kotlin
  * class MyFeatureTest {
  *
- *   @get:Rule
- *   val memoryLeaksRule = DetectMemoryLeaksRule()
+ *   @get:Rule(order = 0)
+ *   val composeTestRule = AndroidComposeTestRuleV2(MyActivityTestRule()) { it.activity }
+ *
+ *   @get:Rule(order = 1)
+ *   val memoryLeaksRule = DetectMemoryLeaksRule(composeTestRule = { composeTestRule })
  *
  *   @Test
  *   fun testMyFeature() {
@@ -52,9 +56,16 @@ import shark.AndroidReferenceMatchers
  * ```
  *
  * @param tag Tag used to identify the calling code
+ * @param composeTestRule Optional lambda returning the [ComposeTestRule] used by the test class.
+ *   When provided, [ComposeTestRule.waitForIdle] is called after the test completes to drain
+ *   pending Compose coroutines before the heap dump, preventing false-positive leak reports.
+ *   The rule must be declared at a lower [order][org.junit.Rule.order] value than this rule
+ *   (i.e. [order][org.junit.Rule.order] = 0 for [composeTestRule], 1 for this rule) so that
+ *   Compose is still active when [waitForIdle][ComposeTestRule.waitForIdle] is called.
  */
 class DetectMemoryLeaksRule(
     private val tag: String = DetectMemoryLeaksRule::class.java.simpleName,
+    private val composeTestRule: (() -> ComposeTestRule)? = null,
 ) : TestRule {
 
     override fun apply(base: Statement, description: Description): Statement {
@@ -68,6 +79,26 @@ class DetectMemoryLeaksRule(
                                 referenceMatchers = AndroidReferenceMatchers.appDefaults + knownLeaks,
                             )
                             base.evaluate()
+                            // If a composeTestRule lambda was supplied, draining is required for
+                            // the leak assertion to be reliable: pending compose coroutines retain
+                            // the AndroidComposeUiTestEnvironment via WindowRecomposerPolicy.factory
+                            // and will trip false positives. A drain failure here likely means
+                            // misconfigured rule ordering (composeTestRule rule applied at a higher
+                            // order than this rule), which silently produced false-positive leaks
+                            // before this check was added; fail loudly so the misconfiguration
+                            // surfaces in CI rather than as flaky leak reports.
+                            composeTestRule?.let { lambda ->
+                                try {
+                                    lambda.invoke().waitForIdle()
+                                } catch (t: Throwable) {
+                                    throw AssertionError(
+                                        "DetectMemoryLeaksRule: waitForIdle() drain failed before leak detection. " +
+                                            "Check that composeTestRule is declared at a lower @get:Rule order than " +
+                                            "DetectMemoryLeaksRule so it is still active here.",
+                                        t,
+                                    )
+                                }
+                            }
 
                             FenixDetectLeaksAssert.assertNoLeaks(
                                 tag = tag,

@@ -1,0 +1,17 @@
+# Configuration for rumdl (https://github.com/rvben/rumdl).
+# Used by `./mach lint --linter rumdl`.
+
+[global]
+disable = [
+    "MD013",  # line-length: noisy on prose-heavy docs
+    "MD033",  # inline HTML: used intentionally in many docs
+    "MD041",  # first-line-h1: Sphinx/myst pages don't always start with H1
+    "MD040",  # fenced-code-language: MyST directive fences (```{toctree}, ```{eval-rst}) trigger this and autofix breaks them
+    "MD051",  # link-fragments: noisy on docs converted from RST (underscore-style anchors)
+    "MD057",  # existing-relative-links: many cross-doc links still point to legacy RST paths post-conversion
+    "MD024",  # no-duplicate-heading: pre-existing duplicates in converted docs, address in follow-up
+    "MD025",  # single-h1: pre-existing multiple-H1 docs from RST conversion, address in follow-up
+    "MD045",  # no-alt-text: needs human-written alt text per image, address in follow-up
+    "MD059",  # descriptive-link-text: needs human-written link text per link, address in follow-up
+    "MD053",  # link-image-reference-definitions: pre-existing unused references, address in follow-up
+]

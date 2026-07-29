@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,12 +17,14 @@
 extern mozilla::LogModule* GetMediaSourceLog();
 extern mozilla::LogModule* GetMediaSourceAPILog();
 
-#define MSE_API(arg, ...)                                   \
-  MOZ_LOG(GetMediaSourceAPILog(), mozilla::LogLevel::Debug, \
-          ("SourceBufferList(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
-#define MSE_DEBUG(arg, ...)                              \
-  MOZ_LOG(GetMediaSourceLog(), mozilla::LogLevel::Debug, \
-          ("SourceBufferList(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
+#define MSE_API(arg, ...)                                                 \
+  MOZ_LOG_FMT(GetMediaSourceAPILog(), mozilla::LogLevel::Debug,           \
+              "SourceBufferList({})::{}: " arg, fmt::ptr(this), __func__, \
+              ##__VA_ARGS__)
+#define MSE_DEBUG(arg, ...)                                               \
+  MOZ_LOG_FMT(GetMediaSourceLog(), mozilla::LogLevel::Debug,              \
+              "SourceBufferList({})::{}: " arg, fmt::ptr(this), __func__, \
+              ##__VA_ARGS__)
 
 struct JSContext;
 class JSObject;
@@ -104,7 +104,7 @@ bool SourceBufferList::AnyUpdating() {
 
 void SourceBufferList::RangeRemoval(double aStart, double aEnd) {
   MOZ_ASSERT(NS_IsMainThread());
-  MSE_DEBUG("RangeRemoval(aStart=%f, aEnd=%f)", aStart, aEnd);
+  MSE_DEBUG("RangeRemoval(aStart={}, aEnd={})", aStart, aEnd);
   for (uint32_t i = 0; i < mSourceBuffers.Length(); ++i) {
     mSourceBuffers[i]->RangeRemoval(aStart, aEnd);
   }
@@ -130,12 +130,12 @@ TimeUnit SourceBufferList::GetHighestBufferedEndTime() {
 
 void SourceBufferList::DispatchSimpleEvent(const char* aName) {
   MOZ_ASSERT(NS_IsMainThread());
-  MSE_API("Dispatch event '%s'", aName);
+  MSE_API("Dispatch event '{}'", aName);
   DispatchTrustedEvent(NS_ConvertUTF8toUTF16(aName));
 }
 
 void SourceBufferList::QueueAsyncSimpleEvent(const char* aName) {
-  MSE_DEBUG("Queue event '%s'", aName);
+  MSE_DEBUG("Queue event '{}'", aName);
   nsCOMPtr<nsIRunnable> event =
       new AsyncEventRunner<SourceBufferList>(this, aName);
   mAbstractMainThread->Dispatch(event.forget());

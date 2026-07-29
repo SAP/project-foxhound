@@ -27,6 +27,7 @@
     <link rel="localization" href="browser/preonboarding.ftl" />
     <link rel="localization" href="browser/termsofuse.ftl" />
     <link rel="localization" href="browser/featureCallout.ftl" />
+    <link rel="localization" href="preview/aiWindow.ftl" />
   </head>
   <body
     role="dialog"
@@ -37,7 +38,10 @@
     <script src="chrome://global/content/vendor/react-dom.js"></script>
     <script src="chrome://browser/content/spotlight.js"></script>
     <script src="chrome://global/content/elements/named-deck.js" async></script>
-    <script src="chrome://global/content/elements/panel-list.js" async></script>
+    <script
+      src="chrome://global/content/elements/panel-list.mjs"
+      type="module"
+    ></script>
     <script
       src="chrome://browser/content/migration/migration-wizard.mjs"
       type="module"

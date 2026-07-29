@@ -72,7 +72,7 @@ The Model
 
 The *Model* is the component responsible for retrieving search results based on
 the user's input, and sorting them accordingly to their importance.
-At the core is the `ProvidersManager <https://searchfox.org/mozilla-central/source/browser/components/urlbar/UrlbarProvidersManager.sys.mjs>`_,
+At the core is the :searchfox:`ProvidersManager <browser/components/urlbar/UrlbarProvidersManager.sys.mjs>`,
 a component tracking all the available search providers, and managing searches
 across them.
 
@@ -92,7 +92,7 @@ Queries can be canceled.
   terminating any running and future SQL query, unless a query is running inside
   a *runInCriticalSection* task.
 
-The *searchString* gets tokenized by the `UrlbarTokenizer <https://searchfox.org/mozilla-central/source/browser/components/urlbar/UrlbarTokenizer.sys.mjs>`_
+The *searchString* gets tokenized by the :searchfox:`UrlbarTokenizer <browser/components/urlbar/UrlbarTokenizer.sys.mjs>`
 component into tokens, some of these tokens have a special meaning and can be
 used by the user to restrict the search to specific result type (See the
 *UrlbarTokenizer::TYPE* enum).
@@ -246,7 +246,7 @@ indicated by the UrlbarQueryContext.muxer property.
 The Controller
 --------------
 
-`UrlbarController <https://searchfox.org/mozilla-central/source/browser/components/urlbar/UrlbarController.sys.mjs>`_
+:searchfox:`UrlbarController <browser/components/urlbar/UrlbarController.sys.mjs>`
 is the component responsible for reacting to user's input, by communicating
 proper course of action to the Model (e.g. starting/stopping a query) and the
 View (e.g. showing/hiding a panel). It is also responsible for reporting Telemetry.
@@ -279,7 +279,7 @@ user and handling their input.
   The View is a replaceable component, as such what is described here is a
   reference for the default View, but may not be valid for other implementations.
 
-`UrlbarInput.sys.mjs <https://searchfox.org/mozilla-central/source/browser/components/urlbar/UrlbarInput.sys.mjs>`_
+:searchfox:`UrlbarInput.sys.mjs <browser/components/urlbar/UrlbarInput.sys.mjs>`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Implements an input box *View*, owns an *UrlbarView*.
@@ -323,7 +323,7 @@ Implements an input box *View*, owns an *UrlbarView*.
     value;
   }
 
-`UrlbarView.sys.mjs <https://searchfox.org/mozilla-central/source/browser/components/urlbar/UrlbarView.sys.mjs>`_
+:searchfox:`UrlbarView.mjs <browser/components/urlbar/content/UrlbarView.mjs>`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Represents the base *View* implementation, communicates with the *Controller*.
@@ -353,7 +353,7 @@ Represents the base *View* implementation, communicates with the *Controller*.
 UrlbarResult
 ------------
 
-An `UrlbarResult <https://searchfox.org/mozilla-central/source/browser/components/urlbar/UrlbarResult.sys.mjs>`_
+An :searchfox:`UrlbarResult <browser/components/urlbar/content/UrlbarResult.mjs>`
 instance represents a single search result with a result type, that
 identifies specific kind of results.
 Each kind has its own properties, that the *View* may support, and a few common

@@ -46,7 +46,7 @@ async function getSupportedToolIds(tab) {
 }
 
 function toggleAllTools(state) {
-  for (const [, tool] of gDevTools._tools) {
+  for (const [, tool] of gDevTools.tools) {
     if (!tool.visibilityswitch) {
       continue;
     }
@@ -211,7 +211,10 @@ function createTestPanel(iframeWindow, toolbox) {
 }
 
 async function openChevronMenu(toolbox) {
-  const chevronMenuButton = toolbox.doc.querySelector(".tools-chevron-menu");
+  const chevronMenuButton = await waitFor(
+    () => toolbox.doc.querySelector(".tools-chevron-menu"),
+    "Could not find the tools chevron menu-button."
+  );
   EventUtils.synthesizeMouseAtCenter(chevronMenuButton, {}, toolbox.win);
 
   const menuPopup = toolbox.doc.getElementById(
@@ -220,13 +223,16 @@ async function openChevronMenu(toolbox) {
   ok(menuPopup, "tools-chevron-menupopup is available");
 
   info("Waiting for the menu popup to be displayed");
-  await waitUntil(() => menuPopup.classList.contains("tooltip-visible"));
+  await waitFor(() => menuPopup.classList.contains("tooltip-visible"));
 }
 
 async function closeChevronMenu(toolbox) {
   // In order to close the popup menu with escape key, set the focus to the chevron
   // button at first.
-  const chevronMenuButton = toolbox.doc.querySelector(".tools-chevron-menu");
+  const chevronMenuButton = await waitFor(
+    () => toolbox.doc.querySelector(".tools-chevron-menu"),
+    "Could not find the tools chevron menu-button."
+  );
   chevronMenuButton.focus();
 
   EventUtils.sendKey("ESCAPE", toolbox.doc.defaultView);
@@ -235,7 +241,7 @@ async function closeChevronMenu(toolbox) {
   );
 
   info("Closing the chevron popup menu");
-  await waitUntil(() => !menuPopup.classList.contains("tooltip-visible"));
+  await waitFor(() => !menuPopup.classList.contains("tooltip-visible"));
 }
 
 function prepareToolTabReorderTest(toolbox, startingOrder) {
@@ -266,7 +272,7 @@ async function dndToolTab(toolbox, dragTarget, dropTarget, passedTargets = []) {
   EventUtils.synthesizeMouseAtCenter(
     dragTargetEl,
     { type: "mousedown" },
-    dragTargetEl.ownerGlobal
+    dragTargetEl.documentGlobal
   );
   await onReady;
 
@@ -279,7 +285,7 @@ async function dndToolTab(toolbox, dragTarget, dropTarget, passedTargets = []) {
     EventUtils.synthesizeMouseAtCenter(
       passedTargetEl,
       { type: "mousemove" },
-      passedTargetEl.ownerGlobal
+      passedTargetEl.documentGlobal
     );
   }
 
@@ -291,12 +297,12 @@ async function dndToolTab(toolbox, dragTarget, dropTarget, passedTargets = []) {
     EventUtils.synthesizeMouseAtCenter(
       dropTargetEl,
       { type: "mousemove" },
-      dropTargetEl.ownerGlobal
+      dropTargetEl.documentGlobal
     );
     EventUtils.synthesizeMouseAtCenter(
       dropTargetEl,
       { type: "mouseup" },
-      dropTargetEl.ownerGlobal
+      dropTargetEl.documentGlobal
     );
   } else {
     const containerEl = toolbox.doc.getElementById("toolbox-container");
@@ -305,7 +311,7 @@ async function dndToolTab(toolbox, dragTarget, dropTarget, passedTargets = []) {
       0,
       0,
       { type: "mouseout" },
-      containerEl.ownerGlobal
+      containerEl.documentGlobal
     );
   }
 
@@ -430,7 +436,7 @@ async function openAboutToolbox(params) {
  *        Path to the FTL file.
  */
 function loadFTL(toolbox, path) {
-  const win = toolbox.doc.ownerGlobal;
+  const win = toolbox.doc.documentGlobal;
 
   if (win.MozXULElement) {
     win.MozXULElement.insertFTLIfNeeded(path);

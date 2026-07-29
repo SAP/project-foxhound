@@ -1,14 +1,10 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PDMFactory.h"
 
-#ifdef MOZ_AV1
-#  include "AOMDecoder.h"
-#endif
+#include "AOMDecoder.h"
 #include "AgnosticDecoderModule.h"
 #include "AudioTrimmer.h"
 #include "BlankDecoderModule.h"
@@ -19,6 +15,7 @@
 #include "MP4Decoder.h"
 #include "MediaChangeMonitor.h"
 #include "MediaInfo.h"
+#include "PDMFactorySupport.h"
 #include "VPXDecoder.h"
 #include "VideoUtils.h"
 #include "mozilla/ClearOnShutdown.h"
@@ -70,11 +67,11 @@ using MCSInfo = mozilla::media::MCSInfo;
 namespace mozilla {
 
 #define PDM_INIT_LOG(msg, ...) \
-  MOZ_LOG(sPDMLog, LogLevel::Debug, ("PDMInitializer, " msg, ##__VA_ARGS__))
+  MOZ_LOG_FMT(sPDMLog, LogLevel::Debug, "PDMInitializer, " msg, ##__VA_ARGS__)
 
 extern already_AddRefed<PlatformDecoderModule> CreateNullDecoderModule();
 
-MOZ_RUNINIT static StaticDataMutex<StaticRefPtr<PlatformDecoderModule>>
+constinit static StaticDataMutex<StaticRefPtr<PlatformDecoderModule>>
     sForcedPDM("Forced PDM");
 
 class PDMInitializer final {
@@ -256,27 +253,28 @@ class SupportChecker {
       auto mimeType = aTrackConfig.GetAsVideoInfo()->mMimeType;
       RefPtr<MediaByteBuffer> extraData =
           aTrackConfig.GetAsVideoInfo()->mExtraData;
-      AddToCheckList([mimeType, extraData]() {
+      AddToCheckList(
+          [mimeType = std::move(mimeType), extraData = std::move(extraData)]() {
 #if defined(XP_WIN) || defined(XP_DARWIN)
-        if (MP4Decoder::IsH264(mimeType)) {
-          SPSData spsdata;
-          // WMF H.264 Video Decoder and Apple ATDecoder
-          // do not support YUV444 format.
-          if (H264::DecodeSPSFromExtraData(extraData, spsdata) &&
-              (spsdata.profile_idc == 244 /* Hi444PP */ ||
-               spsdata.chroma_format_idc == PDMFactory::kYUV444)) {
-            return CheckResult(
-                SupportChecker::Reason::kVideoFormatNotSupported,
-                MediaResult(
-                    NS_ERROR_DOM_MEDIA_FATAL_ERR,
-                    RESULT_DETAIL("Decoder may not have the capability "
-                                  "to handle the requested video format "
-                                  "with YUV444 chroma subsampling.")));
-          }
-        }
+            if (MP4Decoder::IsH264(mimeType)) {
+              SPSData spsdata;
+              // WMF H.264 Video Decoder and Apple ATDecoder
+              // do not support YUV444 format.
+              if (H264::DecodeSPSFromExtraData(extraData, spsdata) &&
+                  (spsdata.profile_idc == 244 /* Hi444PP */ ||
+                   spsdata.chroma_format_idc == PDMFactory::kYUV444)) {
+                return CheckResult(
+                    SupportChecker::Reason::kVideoFormatNotSupported,
+                    MediaResult(
+                        NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                        RESULT_DETAIL("Decoder may not have the capability "
+                                      "to handle the requested video format "
+                                      "with YUV444 chroma subsampling.")));
+              }
+            }
 #endif
-        return CheckResult(SupportChecker::Reason::kSupported);
-      });
+            return CheckResult(SupportChecker::Reason::kSupported);
+          });
     }
   }
 
@@ -445,9 +443,7 @@ PDMFactory::CreateDecoderWithPDM(PlatformDecoderModule* aPDM,
   }
 
   if ((MP4Decoder::IsH264(config.mMimeType) ||
-#ifdef MOZ_AV1
        AOMDecoder::IsAV1(config.mMimeType) ||
-#endif
        VPXDecoder::IsVPX(config.mMimeType) ||
        MP4Decoder::IsHEVC(config.mMimeType)) &&
       !aParams.mUseNullDecoder.mUse &&
@@ -569,7 +565,19 @@ void PDMFactory::CreateRddPDMs() {
 #ifdef MOZ_FFMPEG
   if (StaticPrefs::media_ffmpeg_enabled() &&
       StaticPrefs::media_rdd_ffmpeg_enabled() &&
-      !StartupPDM(FFmpegRuntimeLinker::CreateDecoder())) {
+      !StartupPDM(
+          FFmpegRuntimeLinker::CreateDecoder(),
+  // When Vulkan video decoding is enabled, insert the full FFmpeg
+  // decoder before ffvpx so that Vulkan hardware decoding is
+  // preferred. ffvpx does not support Vulkan decode and would
+  // otherwise be selected first and fall back to software.
+  // TODO (bug 2034236): remove once ffvpx gains Vulkan decode support.
+#  ifdef MOZ_WIDGET_GTK
+          StaticPrefs::media_hardware_video_decoding_vulkan_enabled_AtStartup()
+#  else
+          false
+#  endif
+              )) {
     mFailureFlags += GetFailureFlagBasedOnFFmpegStatus(
         FFmpegRuntimeLinker::LinkStatusCode());
   }
@@ -580,7 +588,7 @@ void PDMFactory::CreateRddPDMs() {
   PDM_INIT_LOG("RDD PDM order:");
   int i = 0;
   for (const auto& pdm : mCurrentPDMs) {
-    PDM_INIT_LOG("%d: %s", i++, pdm->Name());
+    PDM_INIT_LOG("{}: {}", i++, pdm->Name());
   }
 }
 
@@ -626,7 +634,7 @@ void PDMFactory::CreateUtilityPDMs() {
   PDM_INIT_LOG("Utility PDM order:");
   int i = 0;
   for (const auto& pdm : mCurrentPDMs) {
-    PDM_INIT_LOG("%d: %s", i++, pdm->Name());
+    PDM_INIT_LOG("{}: {}", i++, pdm->Name());
   }
 }
 
@@ -716,7 +724,7 @@ void PDMFactory::CreateContentPDMs() {
   PDM_INIT_LOG("Content PDM order:");
   int i = 0;
   for (const auto& pdm : mCurrentPDMs) {
-    PDM_INIT_LOG("%d: %s", i++, pdm->Name());
+    PDM_INIT_LOG("{}: {}", i++, pdm->Name());
   }
 }
 
@@ -766,7 +774,7 @@ void PDMFactory::CreateDefaultPDMs() {
   PDM_INIT_LOG("Default PDM order:");
   int i = 0;
   for (const auto& pdm : mCurrentPDMs) {
-    PDM_INIT_LOG("%d: %s", i++, pdm->Name());
+    PDM_INIT_LOG("{}: {}", i++, pdm->Name());
   }
 }
 
@@ -839,8 +847,11 @@ StaticMutex PDMFactory::sSupportedMutex;
 media::MediaCodecsSupported PDMFactory::Supported(bool aForceRefresh) {
   StaticMutexAutoLock lock(sSupportedMutex);
 
-  static auto calculate = []() {
-    auto pdm = MakeRefPtr<PDMFactory>();
+  if (aForceRefresh) {
+    PDMFactorySupport::Invalidate();
+  }
+
+  auto calculate = []() {
     MediaCodecsSupported supported;
     // H264 and AAC depends on external framework that must be dynamically
     // loaded.
@@ -852,7 +863,8 @@ media::MediaCodecsSupported PDMFactory::Supported(bool aForceRefresh) {
     // will be added in addition to the WMF and FFmpeg PDM (such as OpenH264)
     for (const auto& cd : MCSInfo::GetAllCodecDefinitions()) {
       supported += MCSInfo::GetDecodeMediaCodecsSupported(
-          cd.codec, pdm->SupportsMimeType(nsCString(cd.mimeTypeString)));
+          cd.codec,
+          PDMFactorySupport::IsTypeSupported(nsCString(cd.mimeTypeString)));
     }
 #ifdef MOZ_WIDGET_ANDROID
     if (AndroidDecoderModule::IsJavaDecoderModuleAllowed()) {
@@ -887,11 +899,9 @@ DecodeSupportSet PDMFactory::SupportsMimeType(
     if (VPXDecoder::IsVP8(aMimeType)) {
       return MCSInfo::GetDecodeSupportSet(MediaCodec::VP8, aSupported);
     }
-#ifdef MOZ_AV1
     if (AOMDecoder::IsAV1(aMimeType)) {
       return MCSInfo::GetDecodeSupportSet(MediaCodec::AV1, aSupported);
     }
-#endif
     if (MP4Decoder::IsHEVC(aMimeType)) {
       return MCSInfo::GetDecodeSupportSet(MediaCodec::HEVC, aSupported);
     }

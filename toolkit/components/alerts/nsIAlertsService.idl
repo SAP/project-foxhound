@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -134,6 +133,7 @@ interface nsIAlertNotification : nsISupports
   /**
    * An opaque cookie that will be passed to the alert listener for each
    * callback.
+   * TODO bug 1932368: Remove cookie field from alerts
    */
   readonly attribute AString cookie;
 
@@ -260,7 +260,9 @@ interface nsIAlertsService : nsISupports
    *             "alertsettingscallback" when alert settings should be opened
    *             "alertclickcallback" when the text is clicked
    *             "alertshow" when the alert is shown
-   *   data    - the value of the cookie attribute of the alert parameter.
+   *   data    - On desktop: the value of the cookie attribute of aAlert.
+   *             On Android: the action associated with the notification.
+   *             See: https://bugzilla.mozilla.org/show_bug.cgi?id=2022705#c1
    *
    * @note Depending on current circumstances (if the user's in a fullscreen
    *       application, for instance), the alert might not be displayed at all.
@@ -297,6 +299,19 @@ interface nsIAlertsService : nsISupports
    * Close all alerts opened for Private Browsing Mode.
    */
   void pbmTeardown();
+
+  /**
+   * Returns whether full-screen mode is enabled.
+   *
+   * @retval true On Windows if any of these apply:
+   *              - App is in full-screen mode (F11).
+   *              - App is in presentation mode.
+   *              - Videogame is in full-screen mode.
+   *              - Videogame is in exclusive full-screen mode.
+   *
+   * @retval false On Windows if none of the above apply, or on other platforms.
+   */
+  boolean isFullscreen();
 };
 
 [scriptable, uuid(c5d63e3a-259d-45a8-b964-8377967cb4d2)]

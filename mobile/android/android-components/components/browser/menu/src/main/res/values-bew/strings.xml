@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources>
+  <!-- Content description (not visible, for screen readers etc.): Indicates the overflow menu has a highlight -->
+  <string name="mozac_browser_menu_highlighted">Diimpleng</string>
+  <!-- Label for extensions submenu section -->
+  <string name="mozac_browser_menu_extensions">Ata-été</string>
+  <!-- Label for extensions sub menu item for extensions manager -->
+  <string name="mozac_browser_menu_extensions_manager">Penggolangan Ata-été</string>
+</resources>

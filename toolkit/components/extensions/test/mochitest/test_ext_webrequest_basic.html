@@ -45,10 +45,6 @@ add_task(async function setup() {
     Services.cache2.clear();
   });
 
-  await SpecialPowers.pushPrefEnv({
-    set: [["network.http.rcwn.enabled", false]],
-  });
-
   extension = makeExtension();
   await extension.startup();
 });

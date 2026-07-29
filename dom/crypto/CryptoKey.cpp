@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -73,16 +71,6 @@ nsresult StringToUsage(const nsString& aUsage, CryptoKey::KeyUsage& aUsageOut) {
   return NS_OK;
 }
 
-// This helper function will release the memory backing a SECKEYPrivateKey and
-// any resources acquired in its creation. It will leave the backing PKCS#11
-// object untouched, however. This should only be called from
-// PrivateKeyFromPrivateKeyTemplate.
-static void DestroyPrivateKeyWithoutDestroyingPKCS11Object(
-    SECKEYPrivateKey* key) {
-  PK11_FreeSlot(key->pkcs11Slot);
-  PORT_FreeArena(key->arena, PR_TRUE);
-}
-
 // To protect against key ID collisions, PrivateKeyFromPrivateKeyTemplate
 // generates a random ID for each key. The given template must contain an
 // attribute slot for a key ID, but it must consist of a null pointer and have a
@@ -105,12 +93,9 @@ UniqueSECKEYPrivateKey PrivateKeyFromPrivateKeyTemplate(
   SECKEYPrivateKey* preexistingKey =
       PK11_FindKeyByKeyID(slot.get(), objID.get(), nullptr);
   if (preexistingKey) {
-    // Note that we can't just call SECKEY_DestroyPrivateKey here because that
-    // will destroy the PKCS#11 object that is backing a preexisting key (that
-    // we still have a handle on somewhere else in memory). If that object were
-    // destroyed, cryptographic operations performed by that other key would
-    // fail.
-    DestroyPrivateKeyWithoutDestroyingPKCS11Object(preexistingKey);
+    // PK11_FindKeyByKeyID returns a non-owning reference, so destroying it
+    // here does not touch the PKCS#11 object backing the preexisting key.
+    SECKEY_DestroyPrivateKey(preexistingKey);
     // Try again with a new ID (but only once - collisions are very unlikely).
     rv = PK11_GenerateRandomOnSlot(slot.get(), objID->data, objID->len);
     if (rv != SECSuccess) {
@@ -118,7 +103,7 @@ UniqueSECKEYPrivateKey PrivateKeyFromPrivateKeyTemplate(
     }
     preexistingKey = PK11_FindKeyByKeyID(slot.get(), objID.get(), nullptr);
     if (preexistingKey) {
-      DestroyPrivateKeyWithoutDestroyingPKCS11Object(preexistingKey);
+      SECKEY_DestroyPrivateKey(preexistingKey);
       return nullptr;
     }
   }
@@ -149,9 +134,16 @@ UniqueSECKEYPrivateKey PrivateKeyFromPrivateKeyTemplate(
     return nullptr;
   }
 
-  // Have NSS translate the object to a private key.
-  return UniqueSECKEYPrivateKey(
+  // Have NSS translate the object to a private key. Since NSS 3.122 (bug
+  // 2017945) PK11_FindKeyByKeyID returns a wrapper that does not own the
+  // underlying PKCS#11 object. We created this session object above, so we own
+  // it and must mark it owned so it is destroyed along with the key.
+  UniqueSECKEYPrivateKey privKey(
       PK11_FindKeyByKeyID(slot.get(), objID.get(), nullptr));
+  if (privKey) {
+    SECKEYPRIVATEKEY_SET_OWNED(privKey.get(), PR_TRUE);
+  }
+  return privKey;
 }
 
 CryptoKey::CryptoKey(nsIGlobalObject* aGlobal)
@@ -183,38 +175,39 @@ void CryptoKey::GetType(nsString& aRetVal) const {
 
 bool CryptoKey::Extractable() const { return (mAttributes & EXTRACTABLE); }
 
-void CryptoKey::GetAlgorithm(JSContext* cx,
+void CryptoKey::GetAlgorithm(JSContext* aCx,
                              JS::MutableHandle<JSObject*> aRetVal,
                              ErrorResult& aRv) const {
   bool converted = false;
-  JS::Rooted<JS::Value> val(cx);
+  JS::Rooted<JS::Value> val(aCx);
   switch (mAlgorithm.mType) {
     case KeyAlgorithmProxy::AES:
-      converted = ToJSValue(cx, mAlgorithm.mAes, &val);
+      converted = ToJSValue(aCx, mAlgorithm.mAes, &val);
       break;
     case KeyAlgorithmProxy::KDF:
-      converted = ToJSValue(cx, mAlgorithm.mKDF, &val);
+      converted = ToJSValue(aCx, mAlgorithm.mKDF, &val);
       break;
     case KeyAlgorithmProxy::HMAC:
-      converted = ToJSValue(cx, mAlgorithm.mHmac, &val);
+      converted = ToJSValue(aCx, mAlgorithm.mHmac, &val);
       break;
     case KeyAlgorithmProxy::RSA: {
-      RootedDictionary<RsaHashedKeyAlgorithm> rsa(cx);
-      converted = mAlgorithm.mRsa.ToKeyAlgorithm(cx, rsa, aRv);
-      if (converted) {
-        converted = ToJSValue(cx, rsa, &val);
+      RootedDictionary<RsaHashedKeyAlgorithm> rsa(aCx);
+      mAlgorithm.mRsa.ToKeyAlgorithm(aCx, rsa, aRv);
+      if (aRv.Failed()) {
+        return;
       }
+      converted = ToJSValue(aCx, rsa, &val);
       break;
     }
     case KeyAlgorithmProxy::EC:
-      converted = ToJSValue(cx, mAlgorithm.mEc, &val);
+      converted = ToJSValue(aCx, mAlgorithm.mEc, &val);
       break;
     case KeyAlgorithmProxy::OKP:
-      converted = ToJSValue(cx, mAlgorithm.mEd, &val);
+      converted = ToJSValue(aCx, mAlgorithm.mEd, &val);
       break;
   }
   if (!converted) {
-    aRv.Throw(NS_ERROR_DOM_OPERATION_ERR);
+    aRv.NoteJSContextException(aCx);
     return;
   }
 

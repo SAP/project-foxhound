@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,9 +6,13 @@
 
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/NavigationHistoryEntryBinding.h"
+#include "mozilla/dom/NavigationUtils.h"
 #include "mozilla/dom/SessionHistoryEntry.h"
 #include "nsDocShell.h"
 #include "nsGlobalWindowInner.h"
+
+#define LOG_FMTD(format, ...) \
+  MOZ_LOG_FMT(gNavigationAPILog, LogLevel::Debug, format, ##__VA_ARGS__);
 
 extern mozilla::LazyLogModule gNavigationAPILog;
 
@@ -177,6 +179,21 @@ nsIStructuredCloneContainer* NavigationHistoryEntry::GetNavigationAPIState()
   return mSHInfo->GetNavigationAPIState();
 }
 
+// Since we don't compute the index of the entry every time we use it, but
+// instead cache it, we need to make sure to invalidate the cache when the
+// entry is disposed.
 void NavigationHistoryEntry::ResetIndexForDisposal() { mIndex = -1; }
 
+MOZ_CAN_RUN_SCRIPT
+void NavigationHistoryEntry::FireDisposeEvent() {
+  RefPtr<Event> event = NS_NewDOMEvent(this, nullptr, nullptr);
+  // it doesn't bubble, and it isn't cancelable
+  event->InitEvent(u"dispose"_ns, false, false);
+  event->SetTrusted(true);
+  LOG_FMTD("Fire dispose");
+  DispatchEvent(*event, IgnoreErrors());
+}
+
 }  // namespace mozilla::dom
+
+#undef LOG_FMTD

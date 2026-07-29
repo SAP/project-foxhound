@@ -119,4 +119,4 @@ although the latter is impossible in protocol levels 2 and earlier
 due to the lack of message sequencing.
 
 [WebDriver standard]: https://w3c.github.io/webdriver/#dfn-error-code
-[reference client]: https://searchfox.org/mozilla-central/source/testing/marionette/client/
+[reference client]: https://searchfox.org/firefox-main/source/testing/marionette/client/

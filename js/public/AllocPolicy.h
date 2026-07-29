@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -55,8 +53,7 @@ class AllocPolicyBase {
   // For allocation policies that support allocating GCed memory, trace an
   // allocation. For policies that use malloc, this is a no-op.
   template <typename T>
-  void traceOwnedAlloc(JSTracer* trc, gc::Cell* maybeOwner, T** ptrp,
-                       const char* name) {}
+  void traceOwnedAlloc(JSTracer* trc, T** ptrp, const char* name) {}
 
   // For memory reporting, get the size of an allocation made with this policy.
   // The parameter |mallocSizeOf| is only used for policies that use malloc.
@@ -77,9 +74,8 @@ void TraceOwnedAllocs(JSTracer* trc, gc::Cell* maybeOwner, Container& container,
                       const char* name) {
   auto& allocPolicy = container.allocPolicy();
   allocPolicy.updateOwningGCThing(maybeOwner);
-  container.traceOwnedAllocs([&](auto** ptrp) {
-    allocPolicy.traceOwnedAlloc(trc, maybeOwner, ptrp, name);
-  });
+  container.traceOwnedAllocs(
+      [&](auto** ptrp) { allocPolicy.traceOwnedAlloc(trc, ptrp, name); });
 }
 
 // For containers implementing |traceOwnedAllocs| get the total size of owned
@@ -351,8 +347,8 @@ class MallocAllocPolicy : public MallocAllocPolicyBase {
 
 } /* namespace js */
 
-class JSInfallibleAllocPolicy : public js::AllocPolicyBase,
-                                public ::InfallibleAllocPolicy {
+class MOZ_EMPTY_BASES JSInfallibleAllocPolicy : public js::AllocPolicyBase,
+                                                public ::InfallibleAllocPolicy {
  public:
   using ::InfallibleAllocPolicy::reportAllocOverflow;
   // Simulated OOM is not supported.

@@ -5,13 +5,18 @@
 loader: taskgraph.loader.transform:loader
 
 transforms:
-    - gecko_taskgraph.transforms.trigger_comm_central:transforms
+    - taskgraph.transforms.task_context
     - gecko_taskgraph.transforms.job:transforms
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
     run-on-repo-type: [hg]
     run-on-projects: ['mozilla-central-only']
+    task-context:
+        from-parameters:
+            level: level
+        substitution-fields:
+            - scopes
     treeherder:
         kind: other
         platform: other/opt

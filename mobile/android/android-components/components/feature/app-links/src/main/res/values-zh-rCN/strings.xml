@@ -9,15 +9,15 @@
 <resources>
   <!-- The tile for the list of external apps to open the link in -->
   <string name="mozac_feature_applinks_open_in">打开于…</string>
-  <!-- The description to warn users that their private browsing session changes -->
-  <string name="mozac_feature_applinks_confirm_dialog_title">要在应用中打开吗？您的上网行为可能不再保持私密。</string>
-  <!--
-    The description to warn users that their private browsing session changes
-    %s is a placeholder that will be replaced by an app name
-  -->
-  <string name="mozac_feature_applinks_confirm_dialog_title_with_app_name">在“%s”中打开？您的活动可能不再私密。</string>
   <!-- The title of the prompt that warns users their normal browsing session is trying to open another app -->
   <string name="mozac_feature_applinks_normal_confirm_dialog_title">其他应用打开</string>
+  <!-- The title of the prompt that warns users their normal browsing session is trying to open another app -->
+  <string name="mozac_feature_applinks_normal_confirm_dialog_title_2">用其他应用打开链接？</string>
+  <!--
+    The title of the prompt with app suffix.
+    %s is a placeholder that will be replaced by an app name
+  -->
+  <string name="mozac_feature_applinks_normal_confirm_dialog_title_with_app_name_2">用应用“%s”打开链接？</string>
   <!--
     The title of the prompt that warns users their normal browsing session is trying to open another app
     %s is a placeholder that will be replaced by an app name
@@ -30,8 +30,26 @@
   <string name="mozac_feature_applinks_normal_confirm_dialog_message">您想要离开 %s 来查看此内容吗？</string>
   <!-- Opens the selected time -->
   <string name="mozac_feature_applinks_confirm_dialog_confirm">打开</string>
+  <!-- Opens the selected app link -->
+  <string name="mozac_feature_applinks_confirm_dialog_confirm_2">在应用中打开</string>
   <!-- Cancels the prompt -->
   <string name="mozac_feature_applinks_confirm_dialog_deny">取消</string>
   <!-- The label of the checkbox that, depending of user's choice, can change the Open links in apps setting -->
   <string name="mozac_feature_applinks_confirm_dialog_checkbox_label">始终在应用中打开链接</string>
+  <!-- The label for the expandable section that shows additional details -->
+  <string name="mozac_feature_applinks_view_details">查看详细信息</string>
+  <!-- The label for the expandable section when details are shown -->
+  <string name="mozac_feature_applinks_hide_details">隐藏详细信息</string>
+  <!-- The label for the source URL in the details section -->
+  <string name="mozac_feature_applinks_source_url">来源网址</string>
+  <!-- The label for the destination URL in the details section -->
+  <string name="mozac_feature_applinks_destination_url">目标网址</string>
+  <!-- The label for the URL if opening in the browser in the details section. %s is the browser name. -->
+  <string name="mozac_feature_applinks_firefox_url">使用 %s 打开时的网址</string>
+  <!-- The label for the unique identifier in the details section -->
+  <string name="mozac_feature_applinks_unique_identifier">唯一标识符</string>
+  <!-- The text shown when there is no Firefox URL -->
+  <string name="mozac_feature_applinks_none">无</string>
+  <!-- The subtitle showing where the link was navigated from. %s is the domain. -->
+  <string name="mozac_feature_applinks_link_from">来自 %s 的链接</string>
 </resources>

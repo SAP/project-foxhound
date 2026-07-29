@@ -557,6 +557,239 @@ class SearchUseCasesTest {
     }
 
     @Test
+    fun `GIVEN a private tab WHEN default search invoked without explicit engine THEN private default engine is used`() {
+        val privateEngine = createSearchEngine(
+            name = "PrivateSearch",
+            url = "https://private.example.org/?q={searchTerms}",
+            icon = mock(),
+        )
+        val normalEngine = createSearchEngine(
+            name = "NormalSearch",
+            url = "https://normal.example.org/?q={searchTerms}",
+            icon = mock(),
+        )
+
+        val browserStore = BrowserStore(
+            initialState = BrowserState(
+                search = SearchState(
+                    regionSearchEngines = listOf(normalEngine),
+                    regionDefaultSearchEngineId = normalEngine.id,
+                    userSelectedSearchEngineId = normalEngine.id,
+                    userSelectedSearchEngineName = normalEngine.name,
+                    userSelectedPrivateSearchEngineId = privateEngine.id,
+                    userSelectedPrivateSearchEngineName = privateEngine.name,
+                    customSearchEngines = listOf(privateEngine),
+                ),
+                tabs = listOf(
+                    createTab(url = "https://www.mozilla.org", id = "private-tab", private = true),
+                ),
+                selectedTabId = "private-tab",
+            ),
+            middleware = listOf(middleware) + EngineMiddleware.create(engine = mock()),
+        )
+
+        val searchUseCases = SearchUseCases(browserStore, tabsUseCases, sessionUseCases)
+        searchUseCases.defaultSearch(
+            searchTerms = searchTerms,
+            sessionId = "private-tab",
+        )
+
+        middleware.assertLastAction(EngineAction.LoadUrlAction::class) { action ->
+            assertEquals("private-tab", action.tabId)
+            assertEquals("https://private.example.org/?q=mozilla%20android", action.url)
+        }
+    }
+
+    @Test
+    fun `GIVEN a non-private tab WHEN default search invoked without explicit engine THEN normal default engine is used`() {
+        val privateEngine = createSearchEngine(
+            name = "PrivateSearch",
+            url = "https://private.example.org/?q={searchTerms}",
+            icon = mock(),
+        )
+        val normalEngine = createSearchEngine(
+            name = "NormalSearch",
+            url = "https://normal.example.org/?q={searchTerms}",
+            icon = mock(),
+        )
+
+        val testStore = BrowserStore(
+            initialState = BrowserState(
+                search = SearchState(
+                    regionSearchEngines = listOf(normalEngine),
+                    regionDefaultSearchEngineId = normalEngine.id,
+                    userSelectedSearchEngineId = normalEngine.id,
+                    userSelectedSearchEngineName = normalEngine.name,
+                    userSelectedPrivateSearchEngineId = privateEngine.id,
+                    userSelectedPrivateSearchEngineName = privateEngine.name,
+                    customSearchEngines = listOf(privateEngine),
+                ),
+                tabs = listOf(
+                    createTab(url = "https://www.mozilla.org", id = "normal-tab", private = false),
+                ),
+                selectedTabId = "normal-tab",
+            ),
+            middleware = listOf(middleware) + EngineMiddleware.create(engine = mock()),
+        )
+
+        val testUseCases = SearchUseCases(testStore, tabsUseCases, sessionUseCases)
+        testUseCases.defaultSearch(
+            searchTerms = searchTerms,
+            sessionId = "normal-tab",
+        )
+
+        middleware.assertLastAction(EngineAction.LoadUrlAction::class) { action ->
+            assertEquals("normal-tab", action.tabId)
+            assertEquals("https://normal.example.org/?q=mozilla%20android", action.url)
+        }
+    }
+
+    @Test
+    fun `GIVEN a search in a new private tab WHEN a search engine is not provided THEN use the default search engine for private searches`() {
+        val privateEngine = createSearchEngine(
+            name = "PrivateSearch",
+            url = "https://private.example.org/?q={searchTerms}",
+            icon = mock(),
+        )
+        val normalEngine = createSearchEngine(
+            name = "NormalSearch",
+            url = "https://normal.example.org/?q={searchTerms}",
+            icon = mock(),
+        )
+        val privateSearchUrl = "https://private.example.org/?q=mozilla%20android"
+
+        val browserStore = BrowserStore(
+            initialState = BrowserState(
+                search = SearchState(
+                    regionSearchEngines = listOf(normalEngine),
+                    regionDefaultSearchEngineId = normalEngine.id,
+                    userSelectedSearchEngineId = normalEngine.id,
+                    userSelectedSearchEngineName = normalEngine.name,
+                    userSelectedPrivateSearchEngineId = privateEngine.id,
+                    userSelectedPrivateSearchEngineName = privateEngine.name,
+                    customSearchEngines = listOf(privateEngine),
+                ),
+            ),
+            middleware = listOf(middleware) + EngineMiddleware.create(engine = mock()),
+        )
+
+        val newTabUseCase: TabsUseCases.AddNewTabUseCase = mock()
+        whenever(tabsUseCases.addTab).thenReturn(newTabUseCase)
+        whenever(
+            newTabUseCase(
+                privateSearchUrl,
+                source = SessionState.Source.Internal.None,
+                private = true,
+                isSearch = true,
+            ),
+        ).thenReturn("1234")
+
+        val searchUseCases = SearchUseCases(browserStore, tabsUseCases, sessionUseCases)
+        searchUseCases.newPrivateTabSearch.invoke(searchTerms)
+
+        verify(newTabUseCase).invoke(
+            privateSearchUrl,
+            parentId = null,
+            selectTab = true,
+            private = true,
+            source = SessionState.Source.Internal.None,
+            isSearch = true,
+        )
+    }
+
+    @Test
+    fun `GIVEN a search in a new tab WHEN a search engine is not provided THEN use the default search engine for searches`() {
+        val privateEngine = createSearchEngine(
+            name = "PrivateSearch",
+            url = "https://private.example.org/?q={searchTerms}",
+            icon = mock(),
+        )
+        val normalEngine = createSearchEngine(
+            name = "NormalSearch",
+            url = "https://normal.example.org/?q={searchTerms}",
+            icon = mock(),
+        )
+        val normalSearchUrl = "https://normal.example.org/?q=mozilla%20android"
+
+        val testStore = BrowserStore(
+            initialState = BrowserState(
+                search = SearchState(
+                    regionSearchEngines = listOf(normalEngine),
+                    regionDefaultSearchEngineId = normalEngine.id,
+                    userSelectedSearchEngineId = normalEngine.id,
+                    userSelectedSearchEngineName = normalEngine.name,
+                    userSelectedPrivateSearchEngineId = privateEngine.id,
+                    userSelectedPrivateSearchEngineName = privateEngine.name,
+                    customSearchEngines = listOf(privateEngine),
+                ),
+            ),
+            middleware = listOf(middleware) + EngineMiddleware.create(engine = mock()),
+        )
+
+        val newTabUseCase: TabsUseCases.AddNewTabUseCase = mock()
+        whenever(tabsUseCases.addTab).thenReturn(newTabUseCase)
+        whenever(
+            newTabUseCase(
+                normalSearchUrl,
+                source = SessionState.Source.Internal.NewTab,
+                isSearch = true,
+            ),
+        ).thenReturn("5678")
+
+        val searchUseCases = SearchUseCases(testStore, tabsUseCases, sessionUseCases)
+        searchUseCases.newTabSearch(searchTerms, SessionState.Source.Internal.NewTab)
+
+        verify(newTabUseCase).invoke(
+            normalSearchUrl,
+            parentId = null,
+            selectTab = true,
+            source = SessionState.Source.Internal.NewTab,
+            isSearch = true,
+        )
+    }
+
+    @Test
+    fun `GIVEN no private search engine selected WHEN invoking selectPrivateSearchEngine use case THEN update the userSelectedPrivateSearchEngineId and name in state`() {
+        val store = BrowserStore(getBrowserState())
+        val useCases = SearchUseCases(store, mock(), mock())
+
+        assertNull(store.state.search.userSelectedPrivateSearchEngineId)
+        assertNull(store.state.search.userSelectedPrivateSearchEngineName)
+
+        useCases.selectPrivateSearchEngine.invoke(
+            store.findSearchEngineById("engine-d"),
+        )
+
+        assertEquals("engine-d", store.state.search.userSelectedPrivateSearchEngineId)
+        assertNull(store.state.search.userSelectedPrivateSearchEngineName)
+
+        useCases.selectPrivateSearchEngine.invoke(
+            store.findSearchEngineById("engine-b"),
+        )
+
+        assertEquals("engine-b", store.state.search.userSelectedPrivateSearchEngineId)
+        assertEquals("Engine B", store.state.search.userSelectedPrivateSearchEngineName)
+    }
+
+    @Test
+    fun `GIVEN a selected private search engine WHEN invoking clearPrivateSearchEngine use case THEN remove the userSelectedPrivateSearchEngineId and name from state`() {
+        val store = BrowserStore(getBrowserState())
+        val useCases = SearchUseCases(store, mock(), mock())
+
+        useCases.selectPrivateSearchEngine.invoke(
+            store.findSearchEngineById("engine-b"),
+        )
+
+        assertEquals("engine-b", store.state.search.userSelectedPrivateSearchEngineId)
+        assertEquals("Engine B", store.state.search.userSelectedPrivateSearchEngineName)
+
+        useCases.clearPrivateSearchEngine.invoke()
+
+        assertNull(store.state.search.userSelectedPrivateSearchEngineId)
+        assertNull(store.state.search.userSelectedPrivateSearchEngineName)
+    }
+
+    @Test
     fun `WHEN restore search engines use case is invoked GIVEN there are no hidden engines THEN do nothing`() {
         val regionSearchEngines = listOf(
             SearchEngine("bundled-engine-a", "Regional Engine A", mock(), type = SearchEngine.Type.BUNDLED),

@@ -194,12 +194,32 @@ class ExtensionsTest {
     }
 
     @Test
-    fun `GIVEN no items but default and edge-to-edge WHEN grouped for onboarding THEN edge-to-edge is first`() {
-        val allWallpapers = listOf(Wallpaper.Default, Wallpaper.EdgeToEdge)
+    fun `GIVEN no items but default and edge-to-edge WHEN grouped for onboarding THEN order is preserved from input`() {
+        val allWallpapers = listOf(Wallpaper.EdgeToEdge, Wallpaper.Default)
 
         val result = allWallpapers.getWallpapersForOnboarding()
         val expected = listOf(Wallpaper.EdgeToEdge, Wallpaper.Default)
 
+        assertEquals(expected, result)
+    }
+
+    @Test
+    fun `GIVEN edge-to-edge is not in available wallpapers WHEN grouped for onboarding THEN edge-to-edge is not in result`() {
+        val seasonalCollectionName = "finally fall"
+        val seasonalWallpapers = (0..5).map { generateSeasonalWallpaper("${seasonalCollectionName}$it", seasonalCollectionName) }
+        val classicFirefoxWallpapers = (0..5).map { generateClassicFirefoxWallpaper("firefox$it") }
+        val allWallpapers = listOf(Wallpaper.Default) + classicFirefoxWallpapers + seasonalWallpapers
+
+        val expected = listOf(
+            Wallpaper.Default,
+            generateSeasonalWallpaper("finally fall0", "finally fall"),
+            generateSeasonalWallpaper("finally fall1", "finally fall"),
+            generateSeasonalWallpaper("finally fall2", "finally fall"),
+            generateClassicFirefoxWallpaper("firefox0"),
+            generateClassicFirefoxWallpaper("firefox1"),
+        )
+
+        val result = allWallpapers.getWallpapersForOnboarding()
         assertEquals(expected, result)
     }
 

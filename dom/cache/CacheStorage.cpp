@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -266,6 +264,14 @@ CacheStorage::CacheStorage(Namespace aNamespace, nsIGlobalObject* aGlobal,
       mActor(nullptr),
       mStatus(NS_OK) {
   MOZ_DIAGNOSTIC_ASSERT(mGlobal);
+
+  // Throw if this process wouldn't be allowed to access storage.
+  if (!BackgroundChild::ValidatePrincipalInfo(*mPrincipalInfo, {})) {
+    MOZ_ASSERT_UNREACHABLE(
+        "ValidatePrincipalInfo failed in CacheStorage constructor");
+    mStatus = NS_ERROR_UNEXPECTED;
+    return;
+  }
 
   // If the PBackground actor is already initialized then we can
   // immediately use it
@@ -579,10 +585,7 @@ bool CacheStorage::HasStorageAccess(UseCounter aLabel,
     }
   }
 
-  return access > StorageAccess::eDeny ||
-         (StaticPrefs::
-              privacy_partition_always_partition_third_party_non_cookie_storage() &&
-          ShouldPartitionStorage(access));
+  return access > StorageAccess::eDeny || ShouldPartitionStorage(access);
 }
 
 }  // namespace mozilla::dom::cache

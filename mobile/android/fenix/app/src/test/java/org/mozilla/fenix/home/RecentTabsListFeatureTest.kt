@@ -20,7 +20,6 @@ import mozilla.components.feature.media.middleware.LastMediaAccessMiddleware
 import mozilla.components.support.test.middleware.CaptureActionsMiddleware
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -31,6 +30,8 @@ import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.home.recenttabs.RecentTab
 import org.mozilla.fenix.home.recenttabs.RecentTabsListFeature
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 
 class RecentTabsListFeatureTest {
 
@@ -140,9 +141,9 @@ class RecentTabsListFeatureTest {
             testDispatcher.scheduler.advanceUntilIdle()
 
             assertEquals(2, appStore.state.recentTabs.size)
-            assertTrue(appStore.state.recentTabs[0] is RecentTab.Tab)
+            assertIs<RecentTab.Tab>(appStore.state.recentTabs[0])
             assertEquals(selectedTab, (appStore.state.recentTabs[0] as RecentTab.Tab).state)
-            assertTrue(appStore.state.recentTabs[1] is RecentTab.Tab)
+            assertIs<RecentTab.Tab>(appStore.state.recentTabs[1])
             assertEquals(mediaTab, (appStore.state.recentTabs[1] as RecentTab.Tab).state)
         }
 
@@ -171,7 +172,7 @@ class RecentTabsListFeatureTest {
             testDispatcher.scheduler.advanceUntilIdle()
 
             assertEquals(1, appStore.state.recentTabs.size)
-            assertTrue(appStore.state.recentTabs[0] is RecentTab.Tab)
+            assertIs<RecentTab.Tab>(appStore.state.recentTabs[0])
             assertEquals(selectedMediaTab, (appStore.state.recentTabs[0] as RecentTab.Tab).state)
         }
 
@@ -202,13 +203,13 @@ class RecentTabsListFeatureTest {
             feature.start()
             testDispatcher.scheduler.advanceUntilIdle()
             assertEquals(1, appStore.state.recentTabs.size)
-            assertTrue(appStore.state.recentTabs[0] is RecentTab.Tab)
+            assertIs<RecentTab.Tab>(appStore.state.recentTabs[0])
             assertEquals(tab1, (appStore.state.recentTabs[0] as RecentTab.Tab).state)
 
             browserStore.dispatch(TabListAction.SelectTabAction(tab2.id))
             testDispatcher.scheduler.advanceUntilIdle()
             assertEquals(1, appStore.state.recentTabs.size)
-            assertTrue(appStore.state.recentTabs[0] is RecentTab.Tab)
+            assertIs<RecentTab.Tab>(appStore.state.recentTabs[0])
             assertEquals(tab2, (appStore.state.recentTabs[0] as RecentTab.Tab).state)
         }
 
@@ -242,7 +243,7 @@ class RecentTabsListFeatureTest {
             feature.start()
             testDispatcher.scheduler.advanceUntilIdle()
             assertEquals(2, appStore.state.recentTabs.size)
-            assertTrue(appStore.state.recentTabs[0] is RecentTab.Tab)
+            assertIs<RecentTab.Tab>(appStore.state.recentTabs[0])
             assertEquals(initialMediaTab, (appStore.state.recentTabs[0] as RecentTab.Tab).state)
 
             browserStore.dispatch(
@@ -253,7 +254,7 @@ class RecentTabsListFeatureTest {
             )
             testDispatcher.scheduler.advanceUntilIdle()
             assertEquals(2, appStore.state.recentTabs.size)
-            assertTrue(appStore.state.recentTabs[0] is RecentTab.Tab)
+            assertIs<RecentTab.Tab>(appStore.state.recentTabs[0])
             assertEquals(initialMediaTab, (appStore.state.recentTabs[0] as RecentTab.Tab).state)
             // UpdateMediaPlaybackStateAction would set the current timestamp as the new value for lastMediaAccess
             val updatedLastMediaAccess =
@@ -309,7 +310,7 @@ class RecentTabsListFeatureTest {
             feature.start()
             testDispatcher.scheduler.advanceUntilIdle()
             assertEquals(1, appStore.state.recentTabs.size)
-            assertTrue(appStore.state.recentTabs[0] is RecentTab.Tab)
+            assertIs<RecentTab.Tab>(appStore.state.recentTabs[0])
             assertEquals(selectedNormalTab, (appStore.state.recentTabs[0] as RecentTab.Tab).state)
 
             browserStore.dispatch(TabListAction.SelectTabAction(privateTab.id))
@@ -317,7 +318,7 @@ class RecentTabsListFeatureTest {
 
             // If the selected tab is a private tab the feature should show the last accessed normal tab.
             assertEquals(1, appStore.state.recentTabs.size)
-            assertTrue(appStore.state.recentTabs[0] is RecentTab.Tab)
+            assertIs<RecentTab.Tab>(appStore.state.recentTabs[0])
             assertEquals(
                 lastAccessedNormalTab,
                 (appStore.state.recentTabs[0] as RecentTab.Tab).state,
@@ -393,7 +394,7 @@ class RecentTabsListFeatureTest {
             browserStore.dispatch(TabListAction.RemoveTabsAction(listOf("1")))
             testDispatcher.scheduler.advanceUntilIdle()
             assertEquals(1, appStore.state.recentTabs.size)
-            assertTrue(appStore.state.recentTabs[0] is RecentTab.Tab)
+            assertIs<RecentTab.Tab>(appStore.state.recentTabs[0])
             assertEquals(selectedTab, (appStore.state.recentTabs[0] as RecentTab.Tab).state)
         }
 }

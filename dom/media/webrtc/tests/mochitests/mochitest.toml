@@ -38,7 +38,6 @@ prefs = [
 ]
 skip-if = [
   "isolated_process", # Bug 1709948
-  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan", # high frequency leaks on shutdown
 ]
 
 ["test_1488832.html"]

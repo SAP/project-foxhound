@@ -202,6 +202,10 @@ impl TexelRect {
             self.uv1.y,
         ]
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.uv1.x <= self.uv0.x || self.uv1.y <= self.uv0.y
+    }
 }
 
 impl Into<TexelRect> for DeviceIntRect {

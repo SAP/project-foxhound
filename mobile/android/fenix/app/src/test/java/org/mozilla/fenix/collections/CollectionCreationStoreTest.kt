@@ -7,6 +7,7 @@ package org.mozilla.fenix.collections
 import io.mockk.MockKAnnotations
 import io.mockk.every
 import io.mockk.impl.annotations.MockK
+import io.mockk.impl.annotations.RelaxedMockK
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
 import mozilla.components.browser.state.state.BrowserState
@@ -34,7 +35,7 @@ class CollectionCreationStoreTest {
 
     @MockK private lateinit var tabCollectionStorage: TabCollectionStorage
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var publicSuffixList: PublicSuffixList
 
     private val sessionMozilla = createTab(URL_MOZILLA, id = SESSION_ID_MOZILLA)

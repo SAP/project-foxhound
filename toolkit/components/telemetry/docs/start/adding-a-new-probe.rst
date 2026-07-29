@@ -1,6 +1,11 @@
-============================
-Adding a new Telemetry probe
-============================
+=========================================
+Adding a new Telemetry probe (deprecated)
+=========================================
+
+.. important::
+
+    Legacy Telemetry collection APIs are now deprecated.
+    Please use Glean instead.
 
 In Firefox, the Telemetry system collects various measures of Firefox performance, hardware, usage and customizations and submit it to Mozilla. This article provides an overview of what is needed to add any new Telemetry data collection.
 
@@ -11,7 +16,7 @@ In Firefox, the Telemetry system collects various measures of Firefox performanc
 What is your goal?
 ==================
 
-We have various :doc:`data collection tools <../collection/index>` available, each serving different needs. Before diving right into technical details, it is best to take a step back and consider what you need to achieve.
+Before diving right into technical details, it is best to take a step back and consider what you need to achieve.
 
 Your goal could be to answer product questions like “how many people use feature X?” or “what is the error rate of service Y?”.
 You could also be focused more on answering engineering questions, say “which web features are most used?” or “how is the performance of engine Z?”.
@@ -67,8 +72,6 @@ As a general rule, you can inform the choice of data types from your goals like 
 Aggregate data
 --------------
 
-Most of our data collection happens through :doc:`scalars <../collection/scalars>` and :doc:`histograms <../collection/histograms>`:
-
 - Scalars allow collection of simple values, like counts, booleans and strings.
 - Histograms allow collection of multiple different values, but aggregate them into a number of buckets. Each bucket has a value range and a count of how many values we recorded.
 
@@ -80,14 +83,6 @@ Rich data
 ---------
 
 Aggregate data can tell you that something happened, but is usually lacking details about what exactly. When more details are needed, we can collect them using other tools that submit less efficient data. This usually means that we can't enable the data collection for all users, for cost and performance concerns.
-
-There are multiple mechanisms to collect rich data:
-
-**Stack collection** helps with e.g. diagnosing hangs. Stack data is recorded into chrome hangs and threadhang stats. To diagnose where rarely used code is called from, you can use stack capturing.
-
-:doc:`Event Telemetry <../collection/events>` provides a way to record both when and what happened. This enables e.g. funnel analysis for usage.
-
-:doc:`Custom pings <../collection/custom-pings>` are used when other existing data collection does not cover your need. Submitting a custom ping enables you to submit your own JSON package that will be delivered to the Telemetry servers. However, this loses you access to existing tooling and makes it harder to join your data with other sources.
 
 Setup & building
 ================
@@ -118,14 +113,14 @@ Test coverage
 
 Any data collection that you need to base decisions on needs to have test coverage. Using JS, you can access the recorded values for your data collection. You can use the following functions:
 
-- for scalars, `getSnapshotForScalars() <https://searchfox.org/mozilla-central/rev/f997bd6bbfc4773e774fdb6cd010142370d186f9/toolkit/components/telemetry/core/nsITelemetry.idl#90-102>`_
-  or `getSnapshotForKeyedScalars() <https://searchfox.org/mozilla-central/rev/f997bd6bbfc4773e774fdb6cd010142370d186f9/toolkit/components/telemetry/core/nsITelemetry.idl#104-116>`_
-- for histograms, `getSnapshotForHistograms() <https://searchfox.org/mozilla-central/rev/f997bd6bbfc4773e774fdb6cd010142370d186f9/toolkit/components/telemetry/core/nsITelemetry.idl#54-74>`_
-  or `getSnapshotForKeyedHistograms() <https://searchfox.org/mozilla-central/rev/f997bd6bbfc4773e774fdb6cd010142370d186f9/toolkit/components/telemetry/core/nsITelemetry.idl#76-88>`_
+- for scalars, :searchfox:`getSnapshotForScalars() <mozilla-central/rev/f997bd6bbfc4773e774fdb6cd010142370d186f9:toolkit/components/telemetry/core/nsITelemetry.idl#90-102>`
+  or :searchfox:`getSnapshotForKeyedScalars() <mozilla-central/rev/f997bd6bbfc4773e774fdb6cd010142370d186f9:toolkit/components/telemetry/core/nsITelemetry.idl#104-116>`
+- for histograms, :searchfox:`getSnapshotForHistograms() <mozilla-central/rev/f997bd6bbfc4773e774fdb6cd010142370d186f9:toolkit/components/telemetry/core/nsITelemetry.idl#54-74>`
+  or :searchfox:`getSnapshotForKeyedHistograms() <mozilla-central/rev/f997bd6bbfc4773e774fdb6cd010142370d186f9:toolkit/components/telemetry/core/nsITelemetry.idl#76-88>`
 
-  * Optionally, histogram objects have a `snapshot() <https://searchfox.org/mozilla-central/rev/f997bd6bbfc4773e774fdb6cd010142370d186f9/toolkit/components/telemetry/core/nsITelemetry.idl#285-287,313-315>`_ method.
+  * Optionally, histogram objects have a :searchfox:`snapshot() <mozilla-central/rev/f997bd6bbfc4773e774fdb6cd010142370d186f9:toolkit/components/telemetry/core/nsITelemetry.idl#285-287,313-315>` method.
 
-- for events, `snapshotEvents() <https://searchfox.org/mozilla-central/rev/f997bd6bbfc4773e774fdb6cd010142370d186f9/toolkit/components/telemetry/core/nsITelemetry.idl#542-558>`_
+- for events, :searchfox:`snapshotEvents() <mozilla-central/rev/f997bd6bbfc4773e774fdb6cd010142370d186f9:toolkit/components/telemetry/core/nsITelemetry.idl#542-558>`
 
 If you need to test that pings were correctly passed to Telemetry, you can use `TelemetryArchiveTesting <https://searchfox.org/mozilla-central/search?q=TelemetryArchiveTesting&redirect=false>`_.
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,7 +21,8 @@ namespace mozilla {
 
 struct CSSPropertyId;
 class ErrorResult;
-struct StyleMathSum;
+struct StyleNumericValue;
+using StyleMathSum = CopyableTArray<StyleNumericValue>;
 
 namespace dom {
 
@@ -57,6 +56,7 @@ class CSSMathSum final : public CSSMathValue {
   // end of CSSMathSum Web IDL declarations
 
   void ToCssTextWithProperty(const CSSPropertyId& aPropertyId,
+                             const SerializationContext& aContext,
                              nsACString& aDest) const;
 
   StyleMathSum ToStyleMathSum() const;

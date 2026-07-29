@@ -9,18 +9,20 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 
 private val defaultDate = LocalDate.of(2025, 5, 31)
+private val defaultZoneId = ZoneOffset.UTC
 
 /**
  * A fake date time provider to be used for testing.
  */
 class FakeDateTimeProvider(
     private val localDate: LocalDate = defaultDate,
-    private val currentTime: Long = 0,
+    private val currentTime: Long =
+        localDate.atStartOfDay(defaultZoneId).toInstant().toEpochMilli(),
 ) : DateTimeProvider {
 
     override fun currentLocalDate(): LocalDate = localDate
 
-    override fun currentZoneId(): ZoneId = ZoneOffset.UTC
+    override fun currentZoneId(): ZoneId = defaultZoneId
 
     override fun currentTimeMillis(): Long = currentTime
 }

@@ -449,11 +449,13 @@ MP4SampleIndex::MP4SampleIndex(const IndiceWrapper& aIndices,
     int64_t lastOffset = 0;
     for (size_t i = 0; i < aIndices.Length(); i++) {
       Indice indice{};
-      int64_t timescale =
-          mMoofParser ? AssertedCast<int64_t>(mMoofParser->mMvhd.mTimescale)
-                      : aTimeScale;
+      int64_t timescale = static_cast<int64_t>(aTimeScale);
       if (!aIndices.GetIndice(i, indice)) {
         // Out of index?
+        return;
+      }
+      if (indice.start_offset > uint64_t(INT64_MAX) ||
+          indice.end_offset > uint64_t(INT64_MAX)) {
         return;
       }
       if (indice.sync || mIsAudio) {
@@ -472,11 +474,11 @@ MP4SampleIndex::MP4SampleIndex(const IndiceWrapper& aIndices,
       sample.mSync = indice.sync || mIsAudio;
       // FIXME: Make this infallible after bug 968520 is done.
       MOZ_ALWAYS_TRUE(mIndex.AppendElement(sample, fallible));
-      if (indice.start_offset < lastOffset) {
+      if (AssertedCast<int64_t>(indice.start_offset) < lastOffset) {
         NS_WARNING("Chunks in MP4 out of order, expect slow down");
         progressive = false;
       }
-      lastOffset = indice.end_offset;
+      lastOffset = AssertedCast<int64_t>(indice.end_offset);
 
       // Pack audio samples in group of 128.
       if (sample.mSync && progressive && (!mIsAudio || !(i % 128))) {
@@ -489,7 +491,8 @@ MP4SampleIndex::MP4SampleIndex(const IndiceWrapper& aIndices,
           last.mTime.end = intervalTime.GetEnd();
         }
         if (!mDataOffset.AppendElement(
-                MP4DataOffset(mIndex.Length() - 1, indice.start_offset),
+                MP4DataOffset(mIndex.Length() - 1,
+                              AssertedCast<int64_t>(indice.start_offset)),
                 fallible)) {
           // OOM.
           return;
@@ -507,8 +510,11 @@ MP4SampleIndex::MP4SampleIndex(const IndiceWrapper& aIndices,
       if (!aIndices.GetIndice(aIndices.Length() - 1, indice)) {
         return;
       }
+      if (indice.end_offset > uint64_t(INT64_MAX)) {
+        return;
+      }
       auto& last = mDataOffset.LastElement();
-      last.mEndOffset = indice.end_offset;
+      last.mEndOffset = AssertedCast<int64_t>(indice.end_offset);
       last.mTime =
           MP4Interval<TimeUnit>(intervalTime.GetStart(), intervalTime.GetEnd());
     } else {

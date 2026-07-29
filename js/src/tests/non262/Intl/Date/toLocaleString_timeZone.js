@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 const defaultLocale = "en-US";
 const defaultDate = Date.UTC(2012, 12-1, 6, 12, 0, 0);
 const defaultOptions = {};

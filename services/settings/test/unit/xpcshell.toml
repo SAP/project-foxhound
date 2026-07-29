@@ -9,8 +9,14 @@ skip-if = [
 
 ["test_attachments_downloader.js"]
 support-files = ["test_attachments_downloader/**"]
+skip-if = [
+  "os == 'android'", # Bug 2042499
+]
 
 ["test_remote_settings.js"]
+skip-if = [
+  "os == 'android'", # Bug 2042499
+]
 
 ["test_remote_settings_dump_lastmodified.js"]
 
@@ -21,12 +27,18 @@ support-files = ["test_attachments_downloader/**"]
 ["test_remote_settings_older_than_local.js"]
 
 ["test_remote_settings_poll.js"]
+skip-if = [
+  "os == 'android'", # Bug 2042499
+]
 
 ["test_remote_settings_recover_broken.js"]
 
 ["test_remote_settings_release_prefs.js"]
 
 ["test_remote_settings_signatures.js"]
+skip-if = [
+  "os == 'android'", # Bug 2042499
+]
 
 ["test_remote_settings_startup_bundle.js"]
 support-files = ["test_remote_settings_startup_bundle/**"]
@@ -43,3 +55,8 @@ skip-if = [
 ["test_remote_settings_worker.js"]
 
 ["test_shutdown_handling.js"]
+
+["test_uptake_telemetry.js"]
+skip-if = [
+  "os == 'android'", # Bug 2042499
+]

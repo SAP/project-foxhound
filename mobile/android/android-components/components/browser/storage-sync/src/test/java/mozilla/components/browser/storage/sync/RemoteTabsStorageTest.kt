@@ -170,7 +170,5 @@ class RemoteTabsStorageTest {
         remoteTabs.store(emptyList())
 
         verify(crashReporter, times(2)).submitCaughtException(throwable)
-
-        Unit
     }
 }

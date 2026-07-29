@@ -2,10 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// TODO Bug 2009070 - Implement Search
-import { html /*, when */ } from "chrome://global/content/vendor/lit.all.mjs";
-// TODO Bug 2009070 - Implement Search
-// import { escapeHtmlEntities } from "./helpers.mjs";
+import { html, when } from "chrome://global/content/vendor/lit.all.mjs";
+import { escapeHtmlEntities } from "./helpers.mjs";
 import { ViewPage } from "./viewpage.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://global/content/elements/moz-button.mjs";
@@ -30,8 +28,7 @@ ChromeUtils.defineLazyGetter(lazy, "log", function () {
   });
 });
 
-// TODO Bug 2009070 - Implement Search
-// const SEARCH_RESULTS_LIMIT = 300;
+const SEARCH_RESULTS_LIMIT = 300;
 
 class ChatsInView extends ViewPage {
   static properties = {};
@@ -40,8 +37,7 @@ class ChatsInView extends ViewPage {
     cards: { all: "card-container:not([hidden])" },
     emptyState: "fxview-empty-state",
     lists: { all: "chats-tab-list" },
-    // TODO Bug 2009070 - Implement Search
-    // searchTextbox: "moz-input-search",
+    searchTextbox: "moz-input-search",
     panelList: "panel-list",
   };
 
@@ -51,13 +47,11 @@ class ChatsInView extends ViewPage {
     // Setting maxTabsLength to -1 for no max
     this.maxTabsLength = -1;
     this.fullyUpdated = false;
-    // TODO Bug 2009070 - Implement Search
-    // this.cumulativeSearches = 0;
+    this.cumulativeSearches = 0;
   }
 
   controller = new lazy.ChatsController(this, {
-    // TODO Bug 2009070 - Implement Search
-    // searchResultsLimit: SEARCH_RESULTS_LIMIT,
+    searchResultsLimit: SEARCH_RESULTS_LIMIT,
   });
 
   disconnectedCallback() {
@@ -132,14 +126,17 @@ class ChatsInView extends ViewPage {
       return;
     }
 
-    const win = event.target.ownerGlobal;
+    const win = event.target.documentGlobal;
     const mostRecentPage = conversation.getMostRecentPageVisited();
 
     if (mostRecentPage?.href) {
       // Chat has a page URL - open the page and sidebar
       lazy.URILoadingHelper.openTrustedLinkIn(win, mostRecentPage.href, "tab", {
         resolveOnContentBrowserCreated: async targetBrowser => {
-          lazy.AIWindowUI.openSidebar(targetBrowser.ownerGlobal, conversation);
+          lazy.AIWindowUI.openSidebar(
+            targetBrowser.documentGlobal,
+            conversation
+          );
         },
       });
     } else {
@@ -156,10 +153,9 @@ class ChatsInView extends ViewPage {
       );
     }
 
-    // TODO Bug 2009070 - Implement Search
-    // if (this.controller.searchQuery) {
-    //   this.cumulativeSearches = 0;
-    // }
+    if (this.controller.searchQuery) {
+      this.cumulativeSearches = 0;
+    }
   }
 
   onSecondaryAction(e) {
@@ -175,13 +171,12 @@ class ChatsInView extends ViewPage {
       );
   }
 
-  // TODO Bug 2009070 - Implement Search
-  // onSearchQuery(e) {
-  //   this.controller.onSearchQuery(e);
-  //   this.cumulativeSearches = this.controller.searchQuery
-  //     ? this.cumulativeSearches + 1
-  //     : 0;
-  // }
+  onSearchQuery(e) {
+    this.controller.onSearchQuery(e);
+    this.cumulativeSearches = this.controller.searchQuery
+      ? this.cumulativeSearches + 1
+      : 0;
+  }
 
   panelListTemplate() {
     return html`
@@ -199,11 +194,9 @@ class ChatsInView extends ViewPage {
    * The template to use for cards-container.
    */
   get cardsTemplate() {
-    // TODO Bug 2009070 - Implement Search
-    // if (this.controller.searchResults.length) {
-    //   return this.#searchResultsTemplate();
-    // } else
-    if (!this.controller.isChatEmpty) {
+    if (this.controller.searchQuery) {
+      return this.#searchResultsTemplate();
+    } else if (!this.controller.isChatEmpty) {
       return this.#chatCardsTemplate();
     }
     return this.#emptyMessageTemplate();
@@ -252,42 +245,41 @@ class ChatsInView extends ViewPage {
     `;
   }
 
-  // TODO Bug 2009070 - Implement Search
-  // #searchResultsTemplate() {
-  //   return html` <card-container toggleDisabled>
-  //     <h3
-  //       slot="header"
-  //       data-l10n-id="firefoxview-search-results-header"
-  //       data-l10n-args=${JSON.stringify({
-  //         query: escapeHtmlEntities(this.controller.searchQuery),
-  //       })}
-  //     ></h3>
-  //     ${when(
-  //       this.controller.searchResults.length,
-  //       () =>
-  //         html`<h3
-  //           slot="secondary-header"
-  //           data-l10n-id="firefoxview-search-results-count"
-  //           data-l10n-args=${JSON.stringify({
-  //             count: this.controller.searchResults.length,
-  //           })}
-  //         ></h3>`
-  //     )}
-  //     <chats-tab-list
-  //       slot="main"
-  //       .updatesPaused=${false}
-  //       secondaryActionClass="options-button"
-  //       dateTimeFormat="dateTime"
-  //       hasPopup="menu"
-  //       maxTabsLength="-1"
-  //       .searchQuery=${this.controller.searchQuery}
-  //       .tabItems=${this.controller.searchResults}
-  //       @fxview-tab-list-primary-action=${this.onPrimaryAction}
-  //       @fxview-tab-list-secondary-action=${this.onSecondaryAction}
-  //     >
-  //     </chats-tab-list>
-  //   </card-container>`;
-  // }
+  #searchResultsTemplate() {
+    return html` <card-container toggleDisabled>
+      <h3
+        slot="header"
+        data-l10n-id="firefoxview-search-results-header"
+        data-l10n-args=${JSON.stringify({
+          query: escapeHtmlEntities(this.controller.searchQuery),
+        })}
+      ></h3>
+      ${when(
+        this.controller.searchResults.length,
+        () =>
+          html`<h3
+            slot="secondary-header"
+            data-l10n-id="firefoxview-search-chat-results-count"
+            data-l10n-args=${JSON.stringify({
+              count: this.controller.searchResults.length,
+            })}
+          ></h3>`
+      )}
+      <chats-tab-list
+        slot="main"
+        .updatesPaused=${false}
+        secondaryActionClass="options-button"
+        dateTimeFormat="dateTime"
+        hasPopup="menu"
+        maxTabsLength="-1"
+        .searchQuery=${this.controller.searchQuery}
+        .tabItems=${this.controller.searchResults}
+        @fxview-tab-list-primary-action=${this.onPrimaryAction}
+        @fxview-tab-list-secondary-action=${this.onSecondaryAction}
+      >
+      </chats-tab-list>
+    </card-container>`;
+  }
 
   render() {
     if (!this.selectedTab) {
@@ -301,12 +293,11 @@ class ChatsInView extends ViewPage {
       ${this.panelListTemplate()}
       <div class="sticky-container bottom-fade">
         <h2 class="page-header" data-l10n-id="firefoxview-chats-header"></h2>
-        <!-- TODO Bug 2009070 - Implement Search -->
-        <!-- <moz-input-search
+        <moz-input-search
           data-l10n-id="firefoxview-search-text-box-chats"
           data-l10n-attrs="placeholder"
           @MozInputSearch:search=${this.onSearchQuery}
-        ></moz-input-search> -->
+        ></moz-input-search>
       </div>
       <div class="cards-container">${this.cardsTemplate}</div>
     `;

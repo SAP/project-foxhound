@@ -15,9 +15,12 @@ ChromeUtils.defineLazyGetter(lazy, "logger", function () {
   });
 });
 
-// Every time the schema or the underlying data changes, you must bump up the
-// schema version. This is also necessary for example if we change the embedding
-// size.
+// Tracks the on-disk *structure* of the semantic database only. Changing the
+// embedding model (engine, dimension, feature/model ID) does NOT bump this --
+// model state lives in the places_semantic_models table and is reconciled by
+// PlacesSemanticHistoryManager on startup.
+//
+// Bump this only when columns, table names, or stored data formats change.
 
 // Remember to:
 // 1. Bump up the version number
@@ -29,13 +32,17 @@ ChromeUtils.defineLazyGetter(lazy, "logger", function () {
 // user downgrades, the database will be deleted and recreated.
 // If a migration throws, the database will also be deleted and recreated.
 
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 4;
 
 // Maximum percentage of wasted space before defragmenting the database.
 const MAX_WASTED_SPACE_PERC = 0.6;
 
-// Maximum number of _chunksNN tables in sqlite-vec.
-const MAX_CHUNKS_TABLES = 100;
+// Fixed table base name for the single live embedding table. Reserved as a
+// column in places_semantic_models for forward-compat with multi-table.
+const DEFAULT_TABLE_BASE_NAME = "vec_history";
+
+// Legacy static-embeddings dimension
+const STATIC_EMBEDDINGS_DEFAULT_DIM = 512;
 
 /**
  * Handles the database connection, reading and writing for semantic history.
@@ -138,7 +145,7 @@ export class PlacesSemanticHistoryDatabase {
       this.#databaseFolderPath,
       "places.sqlite"
     );
-    await conn.execute(`ATTACH DATABASE '${placesDbPath}' AS places`);
+    await conn.attachDatabase(placesDbPath, "places");
     return conn;
   }
 
@@ -199,8 +206,93 @@ export class PlacesSemanticHistoryDatabase {
         throw new Error("Replacing semantic history database");
       }
 
+      if (version == 2) {
+        lazy.logger.info(
+          "Migrating from v2 sqlite-vec database schema with native coarse (bit) embedding search"
+        );
+        await this.reindexDatabase();
+        lazy.logger.info("Database migration reindex completed");
+      }
+
+      if (version < 4) {
+        // Schema v3: add places_semantic_models. If the on-disk vec_history
+        // is at the legacy static-embeddings dim we can safely assume that
+        // data and keep it. Any other dim means an unknown earlier
+        // configuration, so throw to drop and recreate the DB.
+        let onDiskDim = null;
+        const rows = await this.#conn.execute(
+          `SELECT vec_length(embedding) AS dim FROM vec_history LIMIT 1`
+        );
+        if (rows.length) {
+          onDiskDim = rows?.[0]?.getResultByName("dim");
+        }
+        if (onDiskDim !== STATIC_EMBEDDINGS_DEFAULT_DIM) {
+          throw new Error(
+            "Replacing semantic history database for v4+ migration due to embedding size mismatch"
+          );
+        }
+        await this.#createModelConfigTable();
+        await this.#insertModelConfigRow({
+          featureId: "simple-text-embedder",
+          modelId: "mozilla/static-embeddings",
+          embeddingDimension: STATIC_EMBEDDINGS_DEFAULT_DIM,
+        });
+      }
+      let healthy = await this.#checkDatabaseHealth();
+      if (!healthy) {
+        lazy.logger.error(
+          `sqlite-vec database schema is not healthy after migration from ${version}`
+        );
+        throw new Error("Database schema is not healthy after migration");
+      }
       await this.#conn.setSchemaVersion(CURRENT_SCHEMA_VERSION);
     });
+  }
+
+  async #createModelConfigTable() {
+    await this.#conn.execute(`
+      CREATE TABLE IF NOT EXISTS places_semantic_models (
+        table_base_name TEXT PRIMARY KEY,
+        feature_id TEXT,
+        model_id TEXT,
+        embedding_dimension INTEGER NOT NULL,
+        target_locales TEXT,
+        created_at INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active'
+      ) WITHOUT ROWID;
+    `);
+  }
+
+  async #createMappingTable() {
+    await this.#conn.execute(`
+      CREATE TABLE vec_history_mapping (
+        rowid INTEGER PRIMARY KEY,
+        url_hash INTEGER NOT NULL UNIQUE
+      );
+    `);
+  }
+
+  async #insertModelConfigRow(modelConfig) {
+    await this.#conn.execute(
+      `INSERT OR REPLACE INTO places_semantic_models (
+         table_base_name, feature_id, model_id,
+         embedding_dimension, target_locales, created_at, status
+       ) VALUES (
+         :table_base_name, :feature_id, :model_id,
+         :embedding_dimension, :target_locales, :created_at,
+         'active'
+       )`,
+      {
+        table_base_name: DEFAULT_TABLE_BASE_NAME,
+        feature_id: modelConfig.featureId ?? null,
+        model_id: modelConfig.modelId ?? null,
+        embedding_dimension: modelConfig.embeddingDimension,
+        target_locales: modelConfig.targetLocales
+          ? JSON.stringify(modelConfig.targetLocales)
+          : null,
+        created_at: Date.now(),
+      }
+    );
   }
 
   /**
@@ -209,8 +301,12 @@ export class PlacesSemanticHistoryDatabase {
   get #createVirtualTableSQL() {
     return `
       CREATE VIRTUAL TABLE vec_history USING vec0(
-        embedding FLOAT[${this.#embeddingSize}],
-        embedding_coarse bit[${this.#embeddingSize}]
+        embedding FLOAT[${this.#embeddingSize}]
+        distance_metric=cosine
+            INDEXED BY rescore(
+          quantizer=bit,
+          oversample=50
+        )
       );
     `;
   }
@@ -223,12 +319,16 @@ export class PlacesSemanticHistoryDatabase {
   async #createDatabaseEntities() {
     // Modifying this will also require to modify #defragmentDatabase.
     await this.#conn.execute(this.#createVirtualTableSQL);
-    await this.#conn.execute(`
-      CREATE TABLE vec_history_mapping (
-        rowid INTEGER PRIMARY KEY,
-        url_hash INTEGER NOT NULL UNIQUE
-      );
-    `);
+    await this.#createMappingTable();
+    await this.#createModelConfigTable();
+    // Synthesise a default row matching the dim vec_history was created at.
+    // The manager's reconciliation runs immediately after and will call
+    // replaceEmbeddingTables() if the active config differs.
+    await this.#insertModelConfigRow({
+      featureId: "simple-text-embedder",
+      modelId: "mozilla/static-embeddings",
+      embeddingDimension: this.#embeddingSize,
+    });
   }
 
   /**
@@ -244,23 +344,35 @@ export class PlacesSemanticHistoryDatabase {
     let tableNames = tables.map(row => row.getResultByName("name"));
     if (
       !tableNames.includes("vec_history") ||
-      !tableNames.includes("vec_history_mapping")
+      !tableNames.includes("vec_history_mapping") ||
+      !tableNames.includes("places_semantic_models")
     ) {
       lazy.logger.error(`Missing tables in the database`);
       return false;
     }
 
-    // If the embedding size changed the database should be recreated. This
-    // should be handled by a migration, but we check to be overly safe.
-    let embeddingSizeMatches = (
+    // Dimension mismatch is detected by the manager comparing
+    // getActiveModelConfig() against the resolved modelConfig, not here. Any
+    // mismatch triggers replaceEmbeddingTables() which keeps row + tables
+    // in sync.
+
+    // Verify the vec0 index is configured with cosine distance and a
+    // bit-quantized rescore index. If the create SQL is missing either, the
+    // table is not the one we expect and should be recreated.
+    let indexConfigMatches = (
       await this.#conn.execute(
-        `SELECT INSTR(sql, :needle) > 0
+        `SELECT INSTR(sql, :distance) > 0 AND INSTR(sql, :quantizer) > 0
        FROM sqlite_master WHERE name = 'vec_history'`,
-        { needle: `FLOAT[${this.#embeddingSize}]` }
+        {
+          distance: "distance_metric=cosine",
+          quantizer: "quantizer=bit",
+        }
       )
     )[0].getResultByIndex(0);
-    if (!embeddingSizeMatches) {
-      lazy.logger.error(`Embeddings size doesn't match`);
+    if (!indexConfigMatches) {
+      lazy.logger.error(
+        `vec_history index config doesn't match (expected cosine + bit-quantized rescore)`
+      );
       return false;
     }
 
@@ -310,52 +422,63 @@ export class PlacesSemanticHistoryDatabase {
   /**
    * Defragments the database contents.
    *
-   * Due to https://github.com/asg017/sqlite-vec/issues/220 the database may
-   * grow unbound if continuous insertions and removals are made, because the
-   * space left by embeddings removed from chunks is not reused. The only
-   * workaround for now is to create a new virtual table and copy the data over.
+   * The database only removes a chunk when all vectors in the chunk have been removed.
+   *
+   * Given the frecency cleanup behavior it may be unlikely for that to happen.
+   *
+   * A workaround for now is to create a new virtual table and copy the data over.
    * Then a VACUUM is necessary to compact the leftover space.
    *
-   * Updating sqlite-vec in the future may make this obsolete, or require deep
-   * changes.
+   * This may be removed when Sqlite-vec merges this PR or similar:
+   * https://github.com/asg017/sqlite-vec/pull/269
+   *
    */
   async #defragmentDatabase() {
-    lazy.logger.info(`Defragmenting the database`);
     let timer = Glean.places.databaseSemanticHistoryDefragmentTime.start();
     await this.#conn.executeTransaction(async () => {
-      // sqlite-vec supports removing shadow tables on DROP, but unfortunately
-      // doesn't rename them on ALTER, so we must do it manually.
-      for (let suffix of ["", "_info", "_chunks", "_rowids"]) {
-        await this.#conn.execute(`
-          ALTER TABLE vec_history${suffix} RENAME TO old_vec_history${suffix}
-        `);
-      }
-      for (let i = 0; i < MAX_CHUNKS_TABLES; ++i) {
-        try {
-          await this.#conn.execute(`
-              ALTER TABLE vec_history_vector_chunks${`${i}`.padStart(2, "0")}
-              RENAME TO old_vec_history_vector_chunks${`${i}`.padStart(2, "0")}
-            `);
-        } catch (e) {
-          break;
-        }
-      }
-      await this.#conn.execute(this.#createVirtualTableSQL);
       await this.#conn.execute(`
-          INSERT INTO vec_history(rowid, embedding, embedding_coarse)
-          SELECT rowid, embedding, embedding_coarse FROM old_vec_history
-        `);
+          ALTER TABLE vec_history RENAME TO old_vec_history
+          `);
+
+      await this.#conn.execute(this.#createVirtualTableSQL);
+
+      await this.#conn.execute(`
+            INSERT INTO vec_history(rowid, embedding)
+            SELECT rowid, embedding
+            FROM old_vec_history
+          `);
+
       await this.#conn.execute(`
           DROP TABLE old_vec_history
         `);
     });
-
-    // Cannot VACUUM from within a transaction.
     await this.#conn.execute(`
       VACUUM
     `);
-
     Glean.places.databaseSemanticHistoryDefragmentTime.stopAndAccumulate(timer);
+  }
+
+  /**
+   * Recreate the database contents. This is typically called inside a transaction
+   * during a migration.
+   *
+   * This is used in the V3 migration to create the internal bit index.
+   */
+  async reindexDatabase() {
+    let timer = Glean.places.databaseSemanticHistoryReindexTime.start();
+    await this.#conn.execute(`
+        ALTER TABLE vec_history RENAME TO old_vec_history
+        `);
+    await this.#conn.execute(this.#createVirtualTableSQL);
+    await this.#conn.execute(`
+          INSERT INTO vec_history(rowid, embedding)
+          SELECT rowid, embedding
+          FROM old_vec_history
+        `);
+    await this.#conn.execute(`
+        DROP TABLE old_vec_history
+      `);
+    Glean.places.databaseSemanticHistoryReindexTime.stopAndAccumulate(timer);
   }
 
   /**
@@ -365,6 +488,62 @@ export class PlacesSemanticHistoryDatabase {
    */
   get databaseFilePath() {
     return PathUtils.join(PathUtils.profileDir, this.databaseFileName);
+  }
+
+  /**
+   * Returns the currently active model row from places_semantic_models, or
+   * null if no active row exists.
+   *
+   * @param {object} connection
+   * @returns {Promise<object | null>}
+   */
+  async getActiveModelConfig(connection) {
+    const rows = await connection.execute(
+      `SELECT table_base_name, feature_id, model_id,
+              embedding_dimension, target_locales, created_at, status
+       FROM places_semantic_models
+       WHERE status = 'active'
+       LIMIT 1`
+    );
+    if (!rows.length) {
+      return null;
+    }
+    const row = rows[0];
+    return {
+      tableBaseName: row.getResultByName("table_base_name"),
+      featureId: row.getResultByName("feature_id"),
+      modelId: row.getResultByName("model_id"),
+      embeddingDimension: row.getResultByName("embedding_dimension"),
+      targetLocales: row.getResultByName("target_locales"),
+      createdAt: row.getResultByName("created_at"),
+      status: row.getResultByName("status"),
+    };
+  }
+
+  /**
+   * Drops the embedding-bearing tables (vec_history + mapping) and recreates
+   * them at the new dimension, then upserts the matching row in
+   * places_semantic_models. The schema version and other Places state are
+   * preserved -- only the embedding data is replaced.
+   *
+   * @param {object} modelConfig
+   *   Resolved engine options ({ featureId, modelId,
+   *   embeddingDimension, targetLocales? }).
+   * @param {object} connection Database connection
+   * @returns {Promise<void>}
+   */
+  async replaceEmbeddingTables(modelConfig, connection) {
+    lazy.logger.info(
+      `Replacing embedding tables for model switch -> ${modelConfig.featureId} dim=${modelConfig.embeddingDimension}`
+    );
+    this.#embeddingSize = modelConfig.embeddingDimension;
+    await connection.executeTransaction(async () => {
+      await connection.execute(`DROP TABLE IF EXISTS vec_history`);
+      await connection.execute(`DROP TABLE IF EXISTS vec_history_mapping`);
+      await connection.execute(this.#createVirtualTableSQL);
+      await this.#createMappingTable();
+      await this.#insertModelConfigRow(modelConfig);
+    });
   }
 
   /**

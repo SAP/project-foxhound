@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -164,6 +161,10 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD GetBlockAuthPrompt(bool* aValue) override;
   NS_IMETHOD SetBlockAuthPrompt(bool aValue) override;
   NS_IMETHOD GetCanceled(bool* aCanceled) override;
+  NS_IMETHOD GetParentProcessChannelHandle(
+      mozilla::dom::ParentProcessChannelHandle** aValue) override;
+  NS_IMETHOD SetParentProcessChannelHandle(
+      mozilla::dom::ParentProcessChannelHandle* aValue) override;
 
   // nsIEncodedChannel
   NS_IMETHOD GetApplyConversion(bool* value) override;
@@ -277,6 +278,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD GetBypassProxy(bool* aBypassProxy) override;
   NS_IMETHOD SetBypassProxy(bool aBypassProxy) override;
   bool BypassProxy();
+  NS_IMETHOD GetProxyDNSStrategy(
+      nsIHttpChannelInternal::ProxyDNSStrategy* aStrategy) override;
 
   NS_IMETHOD GetIsTRRServiceChannel(bool* aTRR) override;
   NS_IMETHOD SetIsTRRServiceChannel(bool aTRR) override;
@@ -413,7 +416,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
 
   // nsIConsoleReportCollector
   void AddConsoleReport(uint32_t aErrorFlags, const nsACString& aCategory,
-                        nsContentUtils::PropertiesFile aPropertiesFile,
+                        PropertiesFile aPropertiesFile,
                         const nsACString& aSourceFileURI, uint32_t aLineNumber,
                         uint32_t aColumnNumber, const nsACString& aMessageName,
                         const nsTArray<nsString>& aStringParams) override;
@@ -470,6 +473,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   nsHttpResponseHead* GetResponseHead() const { return mResponseHead.get(); }
   nsHttpRequestHead* GetRequestHead() { return &mRequestHead; }
   nsHttpHeaderArray* GetResponseTrailers() const {
+    MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
     return mResponseTrailers.get();
   }
 
@@ -746,6 +750,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
 
   RefPtr<OpaqueResponseBlocker> mORB;
 
+  RefPtr<mozilla::dom::ParentProcessChannelHandle> mParentProcessChannelHandle;
+
  private:
   // Proxy release all members above on main thread.
   void ReleaseMainThreadOnlyReferences();
@@ -839,12 +845,12 @@ class HttpBaseChannel : public nsHashPropertyBag,
       nsILoadInfo::OPENER_POLICY_UNSAFE_NONE};
 
   uint64_t mStartPos{UINT64_MAX};
-  uint64_t mTransferSize{0};
+  Atomic<uint64_t, ReleaseAcquire> mTransferSize{0};
   uint64_t mRequestSize{0};
-  uint64_t mDecodedBodySize{0};
+  Atomic<uint64_t, ReleaseAcquire> mDecodedBodySize{0};
   // True only when the channel supports any of the versions of HTTP3
   bool mSupportsHTTP3{false};
-  uint64_t mEncodedBodySize{0};
+  Atomic<uint64_t, ReleaseAcquire> mEncodedBodySize{0};
   uint64_t mRequestContextID{0};
   // ID of the top-level document's inner window this channel is being
   // originated from.
@@ -862,13 +868,9 @@ class HttpBaseChannel : public nsHashPropertyBag,
   Atomic<uint32_t, ReleaseAcquire> mFirstPartyClassificationFlags{0};
   Atomic<uint32_t, ReleaseAcquire> mThirdPartyClassificationFlags{0};
 
-  // mutex to guard members accessed during OnDataFinished in
-  // HttpChannelChild.cpp
-  Mutex mOnDataFinishedMutex{"HttpChannelChild::OnDataFinishedMutex"};
-
   UniquePtr<ProfileChunkedBuffer> mSource;
 
-  uint32_t mLoadFlags{LOAD_NORMAL};
+  Atomic<uint32_t, Relaxed> mLoadFlags{LOAD_NORMAL};
   uint32_t mCaps{0};
 
   ClassOfService mClassOfService;
@@ -932,6 +934,12 @@ class HttpBaseChannel : public nsHashPropertyBag,
     (uint32_t, ResponseTimeoutEnabled, 1),
     // A flag that should be false only if a cross-domain redirect occurred
     (uint32_t, AllRedirectsSameOrigin, 1),
+
+    // Like AllRedirectsSameOrigin, but internal redirects (e.g. a service
+    // worker substituting a response from a different URL) do not count as
+    // cross-origin. Used for canvas/CSS/media tainting, which must only treat a
+    // real cross-origin *network* redirect as a trust-boundary crossing.
+    (uint32_t, AllRedirectsSameOriginIgnoringInternal, 1),
 
     // Is 1 if no redirects have occured or if all redirects
     // pass the Resource Timing timing-allow-check

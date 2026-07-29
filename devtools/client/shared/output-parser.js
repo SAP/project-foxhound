@@ -11,9 +11,6 @@ const { colorUtils } = require("resource://devtools/shared/css/color.js");
 const {
   InspectorCSSParserWrapper,
 } = require("resource://devtools/shared/css/lexer.js");
-const {
-  appendText,
-} = require("resource://devtools/client/inspector/shared/utils.js");
 
 const STYLE_INSPECTOR_PROPERTIES =
   "devtools/shared/locales/styleinspector.properties";
@@ -27,24 +24,6 @@ loader.lazyGetter(this, "VARIABLE_JUMP_DEFINITION_TITLE", function () {
   return STYLE_INSPECTOR_L10N.getStr("rule.variableJumpDefinition.title");
 });
 
-// Functions that accept an angle argument.
-const ANGLE_TAKING_FUNCTIONS = new Set([
-  "linear-gradient",
-  "-moz-linear-gradient",
-  "repeating-linear-gradient",
-  "-moz-repeating-linear-gradient",
-  "conic-gradient",
-  "repeating-conic-gradient",
-  "rotate",
-  "rotateX",
-  "rotateY",
-  "rotateZ",
-  "rotate3d",
-  "skew",
-  "skewX",
-  "skewY",
-  "hue-rotate",
-]);
 // All cubic-bezier CSS timing-function names.
 const BEZIER_KEYWORDS = new Set([
   "linear",
@@ -69,6 +48,17 @@ const COLOR_TAKING_FUNCTIONS = new Set([
   "color-mix",
   "contrast-color",
   "light-dark",
+  // color functions can take a relative color after `from`
+  "color",
+  "hsl",
+  "hwb",
+  "lab",
+  "lch",
+  "oklab",
+  "oklch",
+  "rgb",
+  // image(<color>) is equivalent to linear-gradient(<color>)
+  "image",
 ]);
 // Functions that accept a shape argument.
 const BASIC_SHAPE_FUNCTIONS = new Set([
@@ -77,6 +67,10 @@ const BASIC_SHAPE_FUNCTIONS = new Set([
   "ellipse",
   "inset",
 ]);
+
+const CSS_EXPLAINERS_SUPPORTED_FUNCTIONS = new Set(
+  InspectorUtils.getComputationStepsSupportedCSSFunctions()
+);
 
 const BACKDROP_FILTER_ENABLED = Services.prefs.getBoolPref(
   "layout.css.backdrop-filter.enabled"
@@ -96,6 +90,11 @@ const URL_REGEX =
 // should start truncating properties which would otherwise be 100 lines long.
 const TRUNCATE_LENGTH_THRESHOLD = 5000;
 const TRUNCATE_NODE_CLASSNAME = "propertyvalue-long-text";
+
+// This symbol is used in stack entries for the `tokenType` property of the object we set
+// as a key in `tokensByPart`, for token/part pairs that were already processed in child
+// stack entries and which shouldn't be processed as individual entries.
+const AGGREGATED_TOKEN_TYPE = Symbol("AGGREGATED_TOKEN_TYPE");
 
 /**
  * This module is used to process CSS text declarations and output DOM fragments (to be
@@ -150,14 +149,11 @@ class OutputParser {
   parseCssProperty(name, value, options = {}) {
     options = this.#mergeOptions(options);
 
-    options.expectCubicBezier = this.#cssProperties.supportsType(
+    options.expectTimingFunction = this.#cssProperties.supportsType(
       name,
       "timing-function"
     );
-    options.expectLinearEasing = this.#cssProperties.supportsType(
-      name,
-      "timing-function"
-    );
+    this.parsedPropertyName = name;
     options.expectDisplay = name === "display";
     options.expectFilter =
       name === "filter" ||
@@ -188,244 +184,7 @@ class OutputParser {
   }
 
   /**
-   * Read tokens from |tokenStream| and collect all the (non-comment)
-   * text. Return the collected texts and variable data (if any).
-   * Stop when an unmatched closing paren is seen.
-   * If |stopAtComma| is true, then also stop when a top-level
-   * (unparenthesized) comma is seen.
-   *
-   * @param  {string} text
-   *         The original source text.
-   * @param  {CSSLexer} tokenStream
-   *         The token stream from which to read.
-   * @param  {object} options
-   *         The options object in use; @see #mergeOptions.
-   * @param  {boolean} stopAtComma
-   *         If true, stop at a comma.
-   * @return {object}
-   *         An object of the form {tokens, functionData, sawComma, sawVariable, depth}.
-   *         |tokens| is a list of the non-comment, non-whitespace tokens
-   *         that were seen. The stopping token (paren or comma) will not
-   *         be included.
-   *         |functionData| is a list of parsed strings and nodes that contain the
-   *         data between the matching parenthesis. The stopping token's text will
-   *         not be included.
-   *         |sawComma| is true if the stop was due to a comma, or false otherwise.
-   *         |sawVariable| is true if a variable was seen while parsing the text.
-   *         |depth| is the number of unclosed parenthesis remaining when we return.
-   */
-  #parseMatchingParens(text, tokenStream, options, stopAtComma) {
-    let depth = 1;
-    const functionData = [];
-    const tokens = [];
-    let sawVariable = false;
-
-    while (depth > 0) {
-      const token = tokenStream.nextToken();
-      if (!token) {
-        break;
-      }
-      if (token.tokenType === "Comment") {
-        continue;
-      }
-
-      if (stopAtComma && depth === 1 && token.tokenType === "Comma") {
-        return { tokens, functionData, sawComma: true, sawVariable, depth };
-      } else if (token.tokenType === "ParenthesisBlock") {
-        ++depth;
-      } else if (token.tokenType === "CloseParenthesis") {
-        this.#onCloseParenthesis(options);
-        --depth;
-        if (depth === 0) {
-          break;
-        }
-      } else if (
-        token.tokenType === "Function" &&
-        token.value === "var" &&
-        options.getVariableData
-      ) {
-        sawVariable = true;
-        const { node, value, computedValue, fallbackValue } =
-          this.#parseVariable(token, text, tokenStream, options);
-        functionData.push({ node, value, computedValue, fallbackValue });
-      } else if (token.tokenType === "Function") {
-        ++depth;
-      }
-
-      if (
-        token.tokenType !== "Function" ||
-        token.value !== "var" ||
-        !options.getVariableData
-      ) {
-        functionData.push(text.substring(token.startOffset, token.endOffset));
-      }
-
-      tokens.push(token);
-    }
-
-    return { tokens, functionData, sawComma: false, sawVariable, depth };
-  }
-
-  /**
-   * Parse var() use and return a variable node to be added to the output state.
-   * This will read tokens up to and including the ")" that closes the "var("
-   * invocation.
-   *
-   * @param  {CSSToken} initialToken
-   *         The "var(" token that was already seen.
-   * @param  {string} text
-   *         The original input text.
-   * @param  {CSSLexer} tokenStream
-   *         The token stream from which to read.
-   * @param  {object} options
-   *         The options object in use; @see #mergeOptions.
-   * @return {object}
-   *         - node: A node for the variable, with the appropriate text and
-   *           title. Eg. a span with "var(--var1)" as the textContent
-   *           and a title for --var1 like "--var1 = 10" or
-   *           "--var1 is not set".
-   *         - value: The value for the variable.
-   */
-  #parseVariable(initialToken, text, tokenStream, options) {
-    // Handle the "var(".
-    const varText = text.substring(
-      initialToken.startOffset,
-      initialToken.endOffset
-    );
-    const variableNode = this.#createNode("span", {}, varText);
-
-    // Parse the first variable name within the parens of var().
-    const { tokens, functionData, sawComma, sawVariable } =
-      this.#parseMatchingParens(text, tokenStream, options, true);
-
-    const result = sawVariable ? "" : functionData.join("");
-
-    // Display options for the first and second argument in the var().
-    const firstOpts = {};
-    const secondOpts = {};
-
-    let varData;
-    let varFallbackValue;
-    let varSubstitutedValue;
-    let varComputedValue;
-    let varName;
-
-    // Get the variable value if it is in use.
-    if (tokens && tokens.length === 1) {
-      varName = tokens[0].text;
-      varData = options.getVariableData(varName);
-      const varValue =
-        typeof varData.value === "string"
-          ? varData.value
-          : varData.registeredProperty?.initialValue;
-
-      const varStartingStyleValue =
-        typeof varData.startingStyle === "string"
-          ? varData.startingStyle
-          : // If the variable is not set in starting style, then it will default to either:
-            // - a declaration in a "regular" rule
-            // - or if there's no declaration in regular rule, to the registered property initial-value.
-            varValue;
-
-      varSubstitutedValue = options.inStartingStyleRule
-        ? varStartingStyleValue
-        : varValue;
-
-      varComputedValue = varData.computedValue;
-    }
-
-    if (typeof varSubstitutedValue === "string") {
-      // The variable value is valid, store the substituted value in a data attribute to
-      // be reused by the variable tooltip.
-      firstOpts["data-variable"] = varSubstitutedValue;
-      firstOpts.class = options.matchedVariableClass;
-      secondOpts.class = options.unmatchedClass;
-
-      // Display computed value when it exists, is different from the substituted value
-      // we computed, and we're not inside a starting-style rule
-      if (
-        !options.inStartingStyleRule &&
-        typeof varComputedValue === "string" &&
-        varComputedValue !== varSubstitutedValue
-      ) {
-        firstOpts["data-variable-computed"] = varComputedValue;
-      }
-
-      // Display starting-style value when not in a starting style rule
-      if (
-        !options.inStartingStyleRule &&
-        typeof varData.startingStyle === "string"
-      ) {
-        firstOpts["data-starting-style-variable"] = varData.startingStyle;
-      }
-
-      if (varData.registeredProperty) {
-        const { initialValue, syntax, inherits } = varData.registeredProperty;
-        firstOpts["data-registered-property-initial-value"] = initialValue;
-        firstOpts["data-registered-property-syntax"] = syntax;
-        // createNode does not handle `false`, let's stringify the boolean.
-        firstOpts["data-registered-property-inherits"] = `${inherits}`;
-      }
-
-      const customPropNode = this.#createNode("span", firstOpts, result);
-      if (options.showJumpToVariableButton) {
-        customPropNode.append(
-          this.#createNode("button", {
-            class: "ruleview-variable-link jump-definition",
-            "data-variable-name": varName,
-            title: VARIABLE_JUMP_DEFINITION_TITLE,
-          })
-        );
-      }
-
-      variableNode.appendChild(customPropNode);
-    } else if (varName) {
-      // The variable is not set and does not have an initial value, mark it unmatched.
-      firstOpts.class = options.unmatchedClass;
-
-      firstOpts["data-variable"] = STYLE_INSPECTOR_L10N.getFormatStr(
-        "rule.variableUnset",
-        varName
-      );
-      variableNode.appendChild(this.#createNode("span", firstOpts, result));
-    }
-
-    // If we saw a ",", then append it and show the remainder using
-    // the correct highlighting.
-    if (sawComma) {
-      variableNode.appendChild(this.#doc.createTextNode(","));
-
-      // Parse the text up until the close paren, being sure to
-      // disable the special case for filter.
-      const subOptions = Object.assign({}, options);
-      subOptions.expectFilter = false;
-      const saveParsed = this.#parsed;
-      const savedStack = this.#stack;
-      this.#parsed = [];
-      this.#stack = [];
-      const rest = this.#doParse(text, subOptions, tokenStream, true);
-      this.#parsed = saveParsed;
-      this.#stack = savedStack;
-
-      const span = this.#createNode("span", secondOpts);
-      span.appendChild(rest);
-      varFallbackValue = span.textContent;
-      variableNode.appendChild(span);
-    }
-    variableNode.appendChild(this.#doc.createTextNode(")"));
-
-    return {
-      node: variableNode,
-      value: varSubstitutedValue,
-      computedValue: varComputedValue,
-      fallbackValue: varFallbackValue,
-    };
-  }
-
-  /**
-   * The workhorse for @see #parse. This parses some CSS text,
-   * stopping at EOF; or optionally when an umatched close paren is
-   * seen.
+   * The workhorse for @see #parse. This parses some CSS text, stopping at EOF
    *
    * @param  {string} text
    *         The original input text.
@@ -433,14 +192,12 @@ class OutputParser {
    *         The options object in use; @see #mergeOptions.
    * @param  {CSSLexer} tokenStream
    *         The token stream from which to read
-   * @param  {boolean} stopAtCloseParen
-   *         If true, stop at an umatched close paren.
    * @return {DocumentFragment}
    *         A document fragment.
    */
   // eslint-disable-next-line complexity
-  #doParse(text, options, tokenStream, stopAtCloseParen) {
-    let fontFamilyNameParts = [];
+  #doParse(text, options, tokenStream) {
+    let fontFamilyNameIndex = null;
     let previousWasBang = false;
 
     const colorOK = () => {
@@ -457,223 +214,81 @@ class OutputParser {
     };
 
     let spaceNeeded = false;
-    let done = false;
 
-    while (!done) {
-      const token = tokenStream.nextToken();
-      if (!token) {
-        break;
-      }
-      const lowerCaseTokenText = token.text?.toLowerCase();
-
-      if (token.tokenType === "Comment") {
+    let token;
+    while ((token = tokenStream.nextToken())) {
+      const tokenType = token.tokenType;
+      if (tokenType === "Comment") {
         // This doesn't change spaceNeeded, because we didn't emit
         // anything to the output.
         continue;
       }
 
-      switch (token.tokenType) {
+      const tokenText = text.substring(token.startOffset, token.endOffset);
+      const lowerCaseTokenText = tokenText.toLowerCase();
+
+      if (
+        this.#stack.length &&
+        // Don't add the token text to the current stack if we have a function or an
+        // opening parenthesis, as we're going to create a new stack entry for those (with
+        // the tokenText being the initial text value in it)
+        tokenType !== "Function" &&
+        tokenType !== "ParenthesisBlock"
+      ) {
+        const stackEntry = this.#stack.at(-1);
+        stackEntry.text += tokenText;
+        // We only want to add the token text to substituted text when there was one
+        // deeper subtitution function (see #onCloseParenthesis)
+        if (stackEntry.substitutedText !== null) {
+          stackEntry.substitutedText += tokenText;
+        }
+      }
+
+      switch (tokenType) {
         case "Function": {
           const functionName = token.value;
           const lowerCaseFunctionName = functionName.toLowerCase();
-
           const isColorTakingFunction = COLOR_TAKING_FUNCTIONS.has(
             lowerCaseFunctionName
           );
 
-          this.#stack.push({
+          this.#createStackEntry({
             lowerCaseFunctionName,
             functionName,
             isColorTakingFunction,
-            // The position of the function separators ("," or "/") in the `parts` property
-            separatorIndexes: [],
-            // The parsed parts of the function that will be rendered on screen.
-            // This can hold both simple strings and DOMNodes.
-            parts: [],
+            text: tokenText,
           });
 
           if (
-            isColorTakingFunction ||
-            ANGLE_TAKING_FUNCTIONS.has(lowerCaseFunctionName)
+            options.cssExplainersEnabled &&
+            CSS_EXPLAINERS_SUPPORTED_FUNCTIONS.has(lowerCaseFunctionName)
           ) {
-            // The function can accept a color or an angle argument, and we know
-            // it isn't special in some other way. So, we let it
-            // through to the ordinary parsing loop so that the value
-            // can be handled in a single place.
-            this.#appendTextNode(
-              text.substring(token.startOffset, token.endOffset)
+            this.#appendNode(
+              "span",
+              { class: "css-explainers-function-name" },
+              functionName,
+              token
             );
-          } else if (
-            lowerCaseFunctionName === "var" &&
-            options.getVariableData
-          ) {
-            const {
-              node: variableNode,
-              value,
-              computedValue,
-            } = this.#parseVariable(token, text, tokenStream, options);
-
-            const variableValue = computedValue ?? value;
-            // InspectorUtils.isValidCSSColor returns true for `light-dark()` function,
-            // but `#isValidColor` returns false. As the latter is used in #appendColor,
-            // we need to check that both functions return true.
-            const colorObj =
-              value &&
-              colorOK() &&
-              InspectorUtils.isValidCSSColor(variableValue)
-                ? new colorUtils.CssColor(variableValue)
-                : null;
-
-            if (colorObj && this.#isValidColor(colorObj)) {
-              const colorFunctionEntry = this.#stack.findLast(
-                entry => entry.isColorTakingFunction
-              );
-              this.#appendColor(variableValue, {
-                ...options,
-                colorObj,
-                variableContainer: variableNode,
-                colorFunction: colorFunctionEntry?.functionName,
-              });
-            } else {
-              this.#append(variableNode);
-            }
+            this.#appendTextNode("(", token);
           } else {
-            const {
-              functionData,
-              sawVariable,
-              tokens: functionContentTokens,
-              depth,
-            } = this.#parseMatchingParens(text, tokenStream, options);
-
-            if (sawVariable) {
-              const computedFunctionText =
-                functionName +
-                "(" +
-                functionData
-                  .map(data => {
-                    if (typeof data === "string") {
-                      return data;
-                    }
-                    return (
-                      data.computedValue ?? data.value ?? data.fallbackValue
-                    );
-                  })
-                  .join("") +
-                ")";
-              if (
-                colorOK() &&
-                InspectorUtils.isValidCSSColor(computedFunctionText)
-              ) {
-                const colorFunctionEntry = this.#stack.findLast(
-                  entry => entry.isColorTakingFunction
-                );
-
-                this.#appendColor(computedFunctionText, {
-                  ...options,
-                  colorFunction: colorFunctionEntry?.functionName,
-                  valueParts: [
-                    functionName,
-                    "(",
-                    ...functionData.map(data => data.node || data),
-                    ")",
-                  ],
-                });
-              } else {
-                // If function contains variable, we need to add both strings
-                // and nodes.
-                this.#appendTextNode(functionName + "(");
-                for (const data of functionData) {
-                  if (typeof data === "string") {
-                    this.#appendTextNode(data);
-                  } else if (data) {
-                    this.#append(data.node);
-                  }
-                }
-                this.#appendTextNode(")");
-              }
-            } else {
-              // If no variable in function, join the text together and add
-              // to DOM accordingly.
-              const functionText =
-                functionName +
-                "(" +
-                functionData.join("") +
-                // only append closing parenthesis if the authored text actually had it
-                // In such case, we should probably indicate that there's a "syntax error"
-                // See Bug 1891461.
-                (depth == 0 ? ")" : "");
-
-              if (lowerCaseFunctionName === "url" && options.urlClass) {
-                // url() with quoted strings are not mapped as UnquotedUrl,
-                // instead, we get a "Function" token with "url" function name,
-                // and later, a "QuotedString" token, which contains the actual URL.
-                let url;
-                for (const argToken of functionContentTokens) {
-                  if (argToken.tokenType === "QuotedString") {
-                    url = argToken.value;
-                    break;
-                  }
-                }
-
-                if (url !== undefined) {
-                  this.#appendURL(functionText, url, options);
-                } else {
-                  this.#appendTextNode(functionText);
-                }
-              } else if (
-                options.expectCubicBezier &&
-                lowerCaseFunctionName === "cubic-bezier"
-              ) {
-                this.#appendCubicBezier(functionText, options);
-              } else if (
-                options.expectLinearEasing &&
-                lowerCaseFunctionName === "linear"
-              ) {
-                this.#appendLinear(functionText, options);
-              } else if (
-                lowerCaseFunctionName === "attr" &&
-                typeof options.getAttributeValue === "function"
-              ) {
-                this.#appendAttr({
-                  functionText,
-                  functionContentTokens,
-                  options,
-                });
-              } else if (
-                colorOK() &&
-                InspectorUtils.isValidCSSColor(functionText)
-              ) {
-                const colorFunctionEntry = this.#stack.findLast(
-                  entry => entry.isColorTakingFunction
-                );
-                this.#appendColor(functionText, {
-                  ...options,
-                  colorFunction: colorFunctionEntry?.functionName,
-                });
-              } else if (
-                options.expectShape &&
-                BASIC_SHAPE_FUNCTIONS.has(lowerCaseFunctionName)
-              ) {
-                this.#appendShape(functionText, options);
-              } else {
-                this.#appendTextNode(functionText);
-              }
-            }
+            this.#appendTextNode(tokenText, token);
           }
+
           break;
         }
 
         case "Ident":
           if (
-            options.expectCubicBezier &&
+            options.expectTimingFunction &&
             BEZIER_KEYWORDS.has(lowerCaseTokenText)
           ) {
-            this.#appendCubicBezier(token.text, options);
-          } else if (
-            options.expectLinearEasing &&
-            lowerCaseTokenText == "linear"
-          ) {
-            this.#appendLinear(token.text, options);
+            this.#append(
+              this.#createCubicBezierContainer({
+                children: [token.text],
+                parseOptions: options,
+              }) || token.text,
+              token
+            );
           } else if (this.#isDisplayFlex(text, token, options)) {
             this.#appendDisplayWithHighlighterToggle(
               token.text,
@@ -688,135 +303,129 @@ class OutputParser {
             const colorFunctionEntry = this.#stack.findLast(
               entry => entry.isColorTakingFunction
             );
-            this.#appendColor(token.text, {
-              ...options,
-              colorFunction: colorFunctionEntry?.functionName,
-            });
-          } else if (angleOK(token.text)) {
-            this.#appendAngle(token.text, options);
-          } else if (options.expectFont && !previousWasBang) {
-            // We don't append the identifier if the previous token
-            // was equal to '!', since in that case we expect the
-            // identifier to be equal to 'important'.
-            fontFamilyNameParts.push(token.text);
-          } else {
-            this.#appendTextNode(
-              text.substring(token.startOffset, token.endOffset)
+            this.#appendColor(
+              token.text,
+              {
+                ...options,
+                colorFunction: colorFunctionEntry?.functionName,
+              },
+              token
             );
+          } else if (angleOK(token.text)) {
+            this.#appendAngle(token.text, options, token);
+          } else {
+            const idx = this.#appendTextNode(tokenText, token);
+            if (
+              options.expectFont &&
+              // We don't append the identifier if the previous token
+              // was equal to '!', since in that case we expect the
+              // identifier to be equal to 'important'.
+              !previousWasBang &&
+              fontFamilyNameIndex == null &&
+              // And if we're in a stack, we only expect a font-family after a comma (e.g.
+              // in the fallback params for `var()`/`attr()`
+              (!this.#stack.length || this.#stack.at(-1).sawComma)
+            ) {
+              fontFamilyNameIndex = idx;
+            }
           }
           break;
 
         case "IDHash":
         case "Hash": {
-          const original = text.substring(token.startOffset, token.endOffset);
+          const original = tokenText;
           if (colorOK() && InspectorUtils.isValidCSSColor(original)) {
             if (spaceNeeded) {
               // Insert a space to prevent token pasting when a #xxx
               // color is changed to something like rgb(...).
-              this.#appendTextNode(" ");
+              this.#appendTextNode(" ", token);
             }
             const colorFunctionEntry = this.#stack.findLast(
               entry => entry.isColorTakingFunction
             );
-            this.#appendColor(original, {
-              ...options,
-              colorFunction: colorFunctionEntry?.functionName,
-            });
+            this.#appendColor(
+              original,
+              {
+                ...options,
+                colorFunction: colorFunctionEntry?.functionName,
+              },
+              token
+            );
           } else {
-            this.#appendTextNode(original);
+            this.#appendTextNode(original, token);
           }
           break;
         }
         case "Dimension": {
-          const value = text.substring(token.startOffset, token.endOffset);
-          if (angleOK(value)) {
-            this.#appendAngle(value, options);
+          if (angleOK(tokenText)) {
+            this.#appendAngle(tokenText, options, token);
           } else {
-            this.#appendTextNode(value);
+            this.#appendTextNode(tokenText, token);
           }
           break;
         }
         case "UnquotedUrl":
         case "BadUrl":
-          this.#appendURL(
-            text.substring(token.startOffset, token.endOffset),
+          for (const part of this.#createURLElements(
+            tokenText,
             token.value,
             options
-          );
+          )) {
+            this.#append(part, token);
+          }
           break;
 
         case "QuotedString":
-          if (options.expectFont) {
-            fontFamilyNameParts.push(
-              text.substring(token.startOffset, token.endOffset)
-            );
-          } else {
-            this.#appendTextNode(
-              text.substring(token.startOffset, token.endOffset)
-            );
+          {
+            const idx = this.#appendTextNode(tokenText, token);
+            if (options.expectFont && fontFamilyNameIndex == null) {
+              fontFamilyNameIndex = idx;
+            }
           }
           break;
 
         case "WhiteSpace":
-          if (options.expectFont) {
-            fontFamilyNameParts.push(" ");
-          } else {
-            this.#appendTextNode(
-              text.substring(token.startOffset, token.endOffset)
-            );
-          }
+          this.#appendTextNode(tokenText, token);
           break;
 
         case "ParenthesisBlock":
-          this.#stack.push({
-            isParenthesis: true,
-            separatorIndexes: [],
-            // The parsed parts of the function that will be rendered on screen.
-            // This can hold both simple strings and DOMNodes.
-            parts: [],
-          });
-          this.#appendTextNode(
-            text.substring(token.startOffset, token.endOffset)
-          );
+          this.#createStackEntry({ text: tokenText });
+          this.#appendTextNode(tokenText, token);
           break;
 
-        case "CloseParenthesis":
-          this.#onCloseParenthesis(options);
-
-          if (stopAtCloseParen && this.#stack.length === 0) {
-            done = true;
-            break;
+        case "CloseParenthesis": {
+          if (options.expectFont && fontFamilyNameIndex !== null) {
+            this.#wrapFontFamilyName(fontFamilyNameIndex, options);
+            // reset the variable so we can handle following names
+            fontFamilyNameIndex = null;
           }
-
-          this.#appendTextNode(
-            text.substring(token.startOffset, token.endOffset)
-          );
+          this.#appendTextNode(")", token);
+          this.#onCloseParenthesis(options);
           break;
+        }
 
         case "Comma":
         case "Delim":
           if (
             (token.tokenType === "Comma" || token.text === "!") &&
             options.expectFont &&
-            fontFamilyNameParts.length !== 0
+            fontFamilyNameIndex !== null
           ) {
-            this.#appendFontFamily(fontFamilyNameParts.join(""), options);
-            fontFamilyNameParts = [];
+            this.#wrapFontFamilyName(fontFamilyNameIndex, options);
+            // reset the variable so we can handle following names
+            fontFamilyNameIndex = null;
           }
 
-          // Add separator for the current function
-          if (this.#stack.length) {
-            this.#appendTextNode(token.text);
-            const entry = this.#stack.at(-1);
-            entry.separatorIndexes.push(entry.parts.length - 1);
-            break;
+          if (tokenType === "Comma" && this.#stack.length) {
+            this.#stack.at(-1).sawComma = true;
           }
+
+          this.#appendTextNode(tokenText, token);
+          break;
 
         // falls through
         default:
-          this.#appendTextNode(
-            text.substring(token.startOffset, token.endOffset)
-          );
+          this.#appendTextNode(tokenText, token);
           break;
       }
 
@@ -834,8 +443,8 @@ class OutputParser {
       previousWasBang = token.tokenType === "Delim" && token.text === "!";
     }
 
-    if (options.expectFont && fontFamilyNameParts.length !== 0) {
-      this.#appendFontFamily(fontFamilyNameParts.join(""), options);
+    if (options.expectFont && fontFamilyNameIndex !== null) {
+      this.#wrapFontFamilyName(fontFamilyNameIndex, options);
     }
 
     // We might never encounter a matching closing parenthesis for a function and still
@@ -856,109 +465,1415 @@ class OutputParser {
     return result;
   }
 
+  /**
+   * Add a stack entry in this.#stack
+   *
+   * @param {object} entryData: An object that will be spread into the stack entry.
+   */
+  #createStackEntry(entryData) {
+    const stackEntry = {
+      // The parsed parts of the function that will be rendered on screen.
+      // This can hold Element or Text instances
+      parts: [],
+      // A <(Element|Text),object> Map, whose keys are element in `parts`,
+      // and values are usually the token they represents (multiple part can represent
+      // a single token).
+      // When a set of tokens (e.g. a stack entry, a font family name, …) was already
+      // handled (e.g. in #onCloseParenthesis or in #wrapFontFamilyName) the value will,
+      // be an object with an AGGREGATED_TOKEN_TYPE tokenType and a `data` property that will
+      // hold all or a subset of the properties that can be found in a stack entry
+      tokensByPart: new WeakMap(),
+      // Function name if token is a function, null otherwise.
+      functionName: null,
+      // Lowercase function name if token is a function, null otherwise.
+      // Precomputed because this can be a hot path.
+      lowerCaseFunctionName: null,
+      // Will hold the names of the functions that are used inside the current one
+      nestedFunctions: [],
+      // Boolean indicating if the function accepts color parameters
+      // if token is a function, null otherwise.
+      isColorTakingFunction: null,
+      // Will hold the text for the stack entry, i.e. the whole function call
+      // (e.g. `min(10px, max(1em, var(--w, 20w)))`),
+      text: "",
+      // Will hold the substituted text for the stack entry, i.e. the whole function call
+      // with subtitution functions (for now `var()`, but later `attr()` and `env()`)
+      // being replaced by their returned value
+      // (e.g. for `min(10px, max(1em, var(--w, 20w)))` with `--w:30%`, this will be
+      // `min(10px, max(1em, 30%))`),
+      // Initial value is null so it can properly be replaced by `text` when there
+      // isn't any subtitution functions in the stack (we can't just use an empty string
+      // as some function can subtitute to an empty string)
+      substitutedText: null,
+      // Used to know if a comma was found in the entry. Useful for functions like `var()`
+      // or `attr()` to know if they have a fallback.
+      sawComma: false,
+      ...entryData,
+    };
+    this.#stack.push(stackEntry);
+  }
+
+  // eslint-disable-next-line complexity
   #onCloseParenthesis(options) {
     if (!this.#stack.length) {
       return;
     }
 
-    const stackEntry = this.#stack.at(-1);
-    if (
-      stackEntry.lowerCaseFunctionName === "light-dark" &&
-      typeof options.isDarkColorScheme === "boolean" &&
-      // light-dark takes exactly two parameters, so if we don't get exactly 1 separator
-      // at this point, that means that the value is valid at parse time, but is invalid
-      // at computed value time.
-      // TODO: We might want to add a class to indicate that this is invalid at computed
-      // value time (See Bug 1910845)
-      stackEntry.separatorIndexes.length === 1
+    const stackEntry = this.#stack.pop();
+    let { lowerCaseFunctionName, parts, text } = stackEntry;
+    if (lowerCaseFunctionName === "attr") {
+      parts = this.#onCloseParenthesisForAttr(stackEntry, options);
+    } else if (lowerCaseFunctionName === "cubic-bezier") {
+      parts = this.#onCloseParenthesisForCubicBezier(stackEntry, options);
+    } else if (lowerCaseFunctionName === "light-dark") {
+      parts = this.#onCloseParenthesisForLightDark(stackEntry, options);
+    } else if (lowerCaseFunctionName === "linear") {
+      parts = this.#onCloseParenthesisForLinear(stackEntry, options);
+    } else if (lowerCaseFunctionName === "url") {
+      parts = this.#onCloseParenthesisForUrl(stackEntry, options);
+    } else if (lowerCaseFunctionName === "var") {
+      parts = this.#onCloseParenthesisForVar(stackEntry, options);
+    } else if (BASIC_SHAPE_FUNCTIONS.has(lowerCaseFunctionName)) {
+      parts = this.#onCloseParenthesisForBasicShape(stackEntry, options);
+    } else if (
+      (options.supportsColor ||
+        ((options.expectFilter || options.isVariable) &&
+          this.#stack.length !== 0 &&
+          this.#stack.at(-1).isColorTakingFunction)) &&
+      InspectorUtils.isValidCSSColor(
+        // use the substituted text when we have one, as it allows us to still get the
+        // color swatch when we have CSS variables parameters
+        stackEntry.substitutedText ?? stackEntry.text
+      )
     ) {
-      const stackEntryParts = this.#getCurrentStackParts();
-      const separatorIndex = stackEntry.separatorIndexes[0];
-      let startIndex;
-      let endIndex;
-      if (options.isDarkColorScheme) {
-        // If we're using a dark color scheme, we want to mark the first param as
-        // not used.
-
-        // The first "part" is `light-dark(`, so we can start after that.
-        // We want to filter out white space character before the first parameter
-        for (startIndex = 1; startIndex < separatorIndex; startIndex++) {
-          const part = stackEntryParts[startIndex];
-          if (typeof part !== "string" || part.trim() !== "") {
-            break;
-          }
-        }
-
-        // same for the end of the parameter, we want to filter out whitespaces
-        // after the parameter and before the comma
-        for (
-          endIndex = separatorIndex - 1;
-          endIndex >= startIndex;
-          endIndex--
-        ) {
-          const part = stackEntryParts[endIndex];
-          if (typeof part !== "string" || part.trim() !== "") {
-            // We found a non-whitespace part, we need to include it, so increment the endIndex
-            endIndex++;
-            break;
-          }
-        }
-      } else {
-        // If we're not using a dark color scheme, we want to mark the second param as
-        // not used.
-
-        // We want to filter out white space character after the comma and before the
-        // second parameter
-        for (
-          startIndex = separatorIndex + 1;
-          startIndex < stackEntryParts.length;
-          startIndex++
-        ) {
-          const part = stackEntryParts[startIndex];
-          if (typeof part !== "string" || part.trim() !== "") {
-            break;
-          }
-        }
-
-        // same for the end of the parameter, we want to filter out whitespaces
-        // after the parameter and before the closing parenthesis (which is not yet
-        // included in stackEntryParts)
-        for (
-          endIndex = stackEntryParts.length - 1;
-          endIndex > separatorIndex;
-          endIndex--
-        ) {
-          const part = stackEntryParts[endIndex];
-          if (typeof part !== "string" || part.trim() !== "") {
-            // We found a non-whitespace part, we need to include it, so increment the endIndex
-            endIndex++;
-            break;
-          }
-        }
-      }
-
-      const parts = stackEntryParts.slice(startIndex, endIndex);
-
-      // If the item we need to mark is already an element (e.g. a parsed color),
-      // just add a class to it.
-      if (parts.length === 1 && Element.isInstance(parts[0])) {
-        parts[0].classList.add(options.unmatchedClass);
-      } else {
-        // Otherwise, we need to wrap our parts into a specific element so we can
-        // style them
-        const node = this.#createNode("span", {
-          class: options.unmatchedClass,
-        });
-        node.append(...parts);
-        stackEntryParts.splice(startIndex, parts.length, node);
-      }
+      const colorFunctionEntry = this.#stack.findLast(
+        entry => entry.isColorTakingFunction
+      );
+      const colorObj =
+        options.colorObj ||
+        new colorUtils.CssColor(stackEntry.substitutedText ?? stackEntry.text);
+      const colorContainerEl = this.#createColorContainerElement(
+        colorObj,
+        {
+          ...options,
+          colorFunction: colorFunctionEntry?.functionName,
+        },
+        stackEntry.parts
+      );
+      parts = [colorContainerEl];
     }
 
-    // Our job is done here, pop last stack entry
-    const { parts } = this.#stack.pop();
+    if (
+      options.cssExplainersEnabled &&
+      CSS_EXPLAINERS_SUPPORTED_FUNCTIONS.has(lowerCaseFunctionName) &&
+      stackEntry.nestedFunctions.every(fn =>
+        CSS_EXPLAINERS_SUPPORTED_FUNCTIONS.has(fn)
+      )
+    ) {
+      const functionNode = this.#createNode("span", {
+        class: options.functionClass,
+        "data-function-expression": stackEntry.text,
+      });
+      functionNode.append(...parts);
+      parts = [functionNode];
+    }
+
     // Put all the parts in the "new" last stack, or the main parsed array if there
     // is no more entry in the stack
     this.#getCurrentStackParts().push(...parts);
+
+    if (this.#stack.length) {
+      const lastStackEntry = this.#stack.at(-1);
+      // This needs to be done before we update lastStackEntry.text
+      if (
+        // Only compute the substituted text if a stack entry has substituted text…
+        stackEntry.substitutedText ||
+        // …or if substituted text was already consumed in a "child" stack entry
+        lastStackEntry.substitutedText
+      ) {
+        // if that's the first substituted function we encounter, we need to initialize
+        // the value
+        if (lastStackEntry.substitutedText === null) {
+          lastStackEntry.substitutedText = lastStackEntry.text;
+        }
+
+        // substitutedText is only computed for some functions, so fall back to text when
+        // it doesn't exist
+        const textToAdd = stackEntry.substitutedText ?? text;
+        lastStackEntry.substitutedText += textToAdd;
+      }
+      // Then update the authored text
+      lastStackEntry.text += text;
+
+      if (stackEntry.lowerCaseFunctionName) {
+        // Set the nested functions by adding the one for the stack entry we just handled
+        lastStackEntry.nestedFunctions = [
+          stackEntry.lowerCaseFunctionName,
+          ...stackEntry.nestedFunctions,
+        ];
+      } else {
+        // If we closed a parenthesis block, just copy the nested functions we had
+        lastStackEntry.nestedFunctions = Array.from(stackEntry.nestedFunctions);
+      }
+
+      const compoundEntryToken = {
+        // Associate AGGREGATED_TOKEN_TYPE to the part so consumers can know the part was for
+        // a previous stack entry and shouldn't be considered.
+        tokenType: AGGREGATED_TOKEN_TYPE,
+        data: stackEntry,
+      };
+      for (const part of parts) {
+        lastStackEntry.tokensByPart.set(part, compoundEntryToken);
+      }
+    }
+  }
+
+  /**
+   * Called when we got the closing bracket for `light-dark()`
+   *
+   * @param {object} stackEntry
+   *        The last item in this.#stack
+   * @param {object} options
+   *        options passed to the parse function. @see #mergeOptions for valid options
+   *        and default values
+   * @returns {Array<string|Element>} The updated parts for the stack entry that is being closed.
+   */
+  #onCloseParenthesisForLightDark(stackEntry, options) {
+    const stackEntryParts = stackEntry.parts;
+    if (typeof options.isDarkColorScheme !== "boolean") {
+      return stackEntryParts;
+    }
+
+    let separatorIndex = null;
+    for (let i = 0; i < stackEntryParts.length; i++) {
+      const token = stackEntry.tokensByPart.get(stackEntryParts[i]);
+      if (token?.tokenType === "Comma") {
+        if (separatorIndex === null) {
+          separatorIndex = i;
+        } else {
+          // light-dark takes exactly two parameters, so if we don't get exactly 1 separator
+          // at this point, that means that the value is valid at parse time, but is invalid
+          // at computed value time.
+          // TODO: We might want to add a class to indicate that this is invalid at computed
+          // value time (See Bug 1910845)
+          return stackEntryParts;
+        }
+      }
+    }
+
+    if (separatorIndex === null) {
+      return stackEntryParts;
+    }
+
+    let startIndex;
+    let endIndex;
+    if (options.isDarkColorScheme) {
+      // If we're using a dark color scheme, we want to mark the first param as
+      // not used.
+
+      // The first "part" is `light-dark(`, so we can start after that.
+      // We want to filter out white space character before the first parameter
+      for (let i = 1; i < separatorIndex; i++) {
+        const token = stackEntry.tokensByPart.get(stackEntryParts[i]);
+        if (token?.tokenType !== "WhiteSpace") {
+          startIndex = i;
+          break;
+        }
+      }
+
+      // same for the end of the parameter, we want to filter out whitespaces
+      // after the parameter and before the comma
+      endIndex = separatorIndex - 1;
+      for (let i = endIndex; i >= startIndex; i--) {
+        const token = stackEntry.tokensByPart.get(stackEntryParts[i]);
+        if (token?.tokenType !== "WhiteSpace") {
+          // We found a non-whitespace part, we need to include it, so increment the endIndex
+          endIndex = i + 1;
+          break;
+        }
+      }
+    } else {
+      // If we're not using a dark color scheme, we want to mark the second param as
+      // not used.
+
+      // We want to filter out white space character after the comma and before the
+      // second parameter
+      for (let i = separatorIndex + 1; i < stackEntryParts.length; i++) {
+        const token = stackEntry.tokensByPart.get(stackEntryParts[i]);
+        if (token?.tokenType !== "WhiteSpace") {
+          startIndex = i;
+          break;
+        }
+      }
+
+      // same for the end of the parameter, we want to filter out whitespaces
+      // after the parameter and before the closing parenthesis (which is not yet
+      // included in stackEntryParts)
+      for (
+        // we don't start at the last part, but the one before that, as the last part will
+        // always be the closing parenthesis for the function, and it shouldn't be included
+        // in the unmatched span.
+        let i = stackEntryParts.length - 2;
+        i > separatorIndex;
+        i--
+      ) {
+        const token = stackEntry.tokensByPart.get(stackEntryParts[i]);
+        if (token?.tokenType !== "WhiteSpace") {
+          // We found a non-whitespace part, we need to include it, so increment the endIndex
+          endIndex = i + 1;
+          break;
+        }
+      }
+    }
+
+    const parts = stackEntryParts.slice(startIndex, endIndex);
+
+    // If the item we need to mark is already an element (e.g. a parsed color),
+    // just add a class to it.
+    if (parts.length === 1 && Element.isInstance(parts[0])) {
+      parts[0].classList.add(options.unmatchedClass);
+    } else {
+      // Otherwise, we need to wrap our parts into a specific element so we can
+      // style them
+      const node = this.#createNode("span", {
+        class: options.unmatchedClass,
+      });
+      node.append(...parts);
+      stackEntryParts.splice(startIndex, parts.length, node);
+    }
+
+    return stackEntryParts;
+  }
+
+  /**
+   * Called when we got the closing bracket for `cubic-bezier()`
+   *
+   * @param {object} stackEntry
+   *        The last item in this.#stack
+   * @param {object} options
+   *        options passed to the parse function. @see #mergeOptions for valid options
+   *        and default values
+   * @returns {Array<string|Element>} The updated parts for the stack entry that is being closed.
+   */
+  #onCloseParenthesisForCubicBezier(stackEntry, options) {
+    if (!options.expectTimingFunction) {
+      return stackEntry.parts;
+    }
+
+    const container = this.#createCubicBezierContainer({
+      children: stackEntry.parts,
+      parseOptions: options,
+    });
+
+    return container ? [container] : stackEntry.parts;
+  }
+
+  /**
+   * Called when we got the closing bracket for `linear()`
+   *
+   * @param {object} stackEntry
+   *        The last item in this.#stack
+   * @param {object} options
+   *        options passed to the parse function. @see #mergeOptions for valid options
+   *        and default values
+   * @returns {Array<string|Element>} The updated parts for the stack entry that is being closed.
+   */
+  #onCloseParenthesisForLinear(stackEntry, options) {
+    if (!options.expectTimingFunction) {
+      return stackEntry.parts;
+    }
+
+    const linear = stackEntry.text;
+
+    if (linear.includes("var(")) {
+      // For now, we don't support cubic-bezier with CSS variables (see Bug 2031696)
+      return stackEntry.parts;
+    }
+
+    const container = this.#createNode("span", {
+      "data-linear": linear,
+    });
+
+    if (options.linearEasingSwatchClass) {
+      const swatch = this.#createNode("span", {
+        class: options.linearEasingSwatchClass,
+        tabindex: "0",
+        role: "button",
+        "data-linear": linear,
+      });
+      container.appendChild(swatch);
+    }
+
+    const valueEl = this.#createNode("span", {
+      class: options.linearEasingClass,
+    });
+    valueEl.append(...stackEntry.parts);
+    container.appendChild(valueEl);
+    return [container];
+  }
+
+  /**
+   * Called when we got the closing bracket for `attr()`
+   *
+   * @param {object} stackEntry
+   *        The last item in this.#stack
+   * @param {object} options
+   *        options passed to the parse function. @see #mergeOptions for valid options
+   *        and default values
+   * @returns {Array<string|Element>} The updated parts for the stack entry that is being closed.
+   */
+  // eslint-disable-next-line complexity
+  #onCloseParenthesisForAttr(stackEntry, options) {
+    if (typeof options.getAttributeValue !== "function") {
+      return stackEntry.parts;
+    }
+
+    let attrNameIndex = null;
+    let attrTypeIndex = null;
+    let commaIndex = null;
+    for (let i = 0; i < stackEntry.parts.length; i++) {
+      const part = stackEntry.parts[i];
+      if (!stackEntry.tokensByPart.has(part)) {
+        continue;
+      }
+      const token = stackEntry.tokensByPart.get(part);
+
+      // The attribute name is the first Ident
+      if (token.tokenType === "Ident" && attrNameIndex === null) {
+        attrNameIndex = i;
+      } else if (
+        // If we have another Ident or a closed stack entry before the comma, then that's
+        // the attr type.
+        attrNameIndex !== null &&
+        attrTypeIndex === null &&
+        // Here we're looking for <attr-type> which might be an Ident (raw-string,
+        // number, px, …), a % (Delim) or the `type()` function (which will be represented
+        // as an aggregated token at this point)
+        (token.tokenType === "Ident" ||
+          (token.tokenType === "Delim" && token.text === "%") ||
+          token.tokenType === AGGREGATED_TOKEN_TYPE)
+      ) {
+        attrTypeIndex = i;
+      } else if (token.tokenType === "Comma") {
+        commaIndex = i;
+        break;
+      }
+    }
+
+    // This shouldn't happen, but let's be safe
+    if (attrNameIndex === null) {
+      return stackEntry.parts;
+    }
+
+    // Get the attribute name part, which should be the first Ident
+    const attrNamePart = stackEntry.parts[attrNameIndex];
+    const attrName = attrNamePart.textContent;
+    // and its value
+    const attrValue = options.getAttributeValue(attrName);
+
+    // as well as the first attribute (might contain attribute name + typing information),
+    // with specific style if the attribute isn't set
+    const attrFirstParamNode = this.#createNode("span", {
+      class: "inspector-attr-param",
+    });
+
+    // > When an <attr-type> is set, attr() will try to parse the attribute into that
+    // > specified <attr-type> and return it.
+    // > If the attribute cannot be parsed into the given <attr-type>, the <fallback-value>
+    // > will be returned instead.
+    // > When no <attr-type> is set, the attribute will be parsed into a CSS string.
+    // > If no <fallback-value> is set, the return value will default to an empty string
+    // > when no <attr-type> is set or the guaranteed-invalid value when an <attr-type> is set.
+    let fallbackValueIsUsed = attrValue === null;
+    let attrTypeMismatchText;
+    if (attrTypeIndex !== null && attrValue !== null) {
+      const part = stackEntry.parts[attrTypeIndex];
+      const token = stackEntry.tokensByPart.get(part);
+      // First, we want to handle <attr-type> other than `type()`, i.e. Idents (`raw-string`,
+      // `number`, `px`, …) and `%`
+      if (
+        token.tokenType === "Ident" ||
+        (token.tokenType === "Delim" && token.text === "%")
+      ) {
+        // For `number` and units, the spec says:
+        // > If given as the number keyword, it causes the attribute’s literal value […]
+        // to be parsed as a <number-token>.
+        // > Values that fail to parse trigger fallback.
+        // […]
+        // > If given as an <attr-unit> value, the value is first parsed as if number
+        // > keyword was specified, then the resulting numeric value is turned into a
+        // > dimension with the corresponding unit, or a percentage if % was given.
+        // > Same as for number <attr-type>, values that do not correspond to the
+        // > <number-token> production trigger fallback.
+
+        // So we need to check that the attribute value is actually a number. And that's
+        // pretty much it: for <attr-unit>, if the given unit is not known, the declaration
+        // is invalid and won't be parsed anyway
+
+        if (
+          token.text !== "raw-string" &&
+          !InspectorUtils.valueMatchesSyntax(this.#doc, attrValue, "<number>")
+        ) {
+          fallbackValueIsUsed = true;
+          attrTypeMismatchText = STYLE_INSPECTOR_L10N.getFormatStr(
+            "rule.attributeNotNumber",
+            `"${attrValue}"`
+          );
+        }
+      } else if (
+        token.tokenType === AGGREGATED_TOKEN_TYPE &&
+        token.data.lowerCaseFunctionName === "type"
+      ) {
+        // Here we have a type() function. We need to extract its content to see if
+        // the attribute value can be parsed with this type.
+        // We can take a small shortcut here: we have the text of the type() function so…
+        const syntax = token.data.text
+          .slice(
+            // …we can just remove the leading "type("
+            5,
+            // …as well as the  trailing ")"
+            -1
+          )
+          .trim();
+        if (!InspectorUtils.valueMatchesSyntax(this.#doc, attrValue, syntax)) {
+          fallbackValueIsUsed = true;
+          attrTypeMismatchText = STYLE_INSPECTOR_L10N.getFormatStr(
+            "rule.attributeUnmatchedType",
+            `"${attrValue}"`,
+            `"${syntax}"`
+          );
+        }
+      }
+    }
+
+    // First, we want to render the attribute name on its own element
+    const attrNameNode = this.#createNode(
+      "span",
+      {
+        class: "inspector-attr-name",
+      },
+      attrName
+    );
+    stackEntry.parts[attrNameIndex] = attrNameNode;
+
+    if (fallbackValueIsUsed) {
+      attrFirstParamNode.classList.add(options.unmatchedClass);
+    }
+
+    if (attrValue === null) {
+      attrFirstParamNode.setAttribute(
+        "data-attribute",
+        STYLE_INSPECTOR_L10N.getFormatStr("rule.attributeUnset", attrName)
+      );
+    } else if (attrTypeMismatchText) {
+      attrFirstParamNode.setAttribute("data-attribute", attrTypeMismatchText);
+    } else {
+      // Otherwise we set it on the attribute name only
+      attrNameNode.setAttribute("data-attribute", `"${attrValue}"`);
+    }
+
+    // Let's put all the parts starting with the attribute name until the comma
+    let attrFirstParamChildCount = 0;
+    let attrFirstParamEndIndex;
+    if (commaIndex === null) {
+      // if we didn't found a comma, we want to get all the items until the closing
+      // parenthesis, which is the last item in parts
+      attrFirstParamEndIndex = stackEntry.parts.length - 1;
+    } else if (
+      // if the token before the comma is a whitespace, don't include it in the first param node
+      stackEntry.tokensByPart.get(stackEntry.parts[commaIndex - 1])
+        ?.tokenType === "WhiteSpace"
+    ) {
+      attrFirstParamEndIndex = commaIndex - 1;
+    } else {
+      attrFirstParamEndIndex = commaIndex;
+    }
+
+    for (let i = attrNameIndex; i < attrFirstParamEndIndex; i++) {
+      attrFirstParamNode.append(stackEntry.parts[i]);
+      attrFirstParamChildCount++;
+    }
+
+    stackEntry.parts.splice(
+      attrNameIndex,
+      attrFirstParamChildCount,
+      attrFirstParamNode
+    );
+
+    // We don't have to do anything more when there's no fallback value, i.e. if we didn't
+    // found a comma
+    if (commaIndex === null) {
+      return stackEntry.parts;
+    }
+
+    // we need to update the comma index, as we added attrFirstParamNode in parts and
+    // removed all the elements we put in it.
+    commaIndex = commaIndex + 1 - attrFirstParamChildCount;
+    let fallbackStartIndex = null;
+    // Then we want to find the part that correspond to the first non whitespace token,
+    // which will be the start of the fallback param
+    for (let i = commaIndex + 1; i < stackEntry.parts.length; i++) {
+      const part = stackEntry.parts[i];
+      if (!stackEntry.tokensByPart.has(part)) {
+        continue;
+      }
+      const token = stackEntry.tokensByPart.get(part);
+      if (
+        // we might get into a part that was already handled, for example a nested function,
+        // and in such case, it should be part of the fallback element
+        token.tokenType === AGGREGATED_TOKEN_TYPE ||
+        token.tokenType !== "WhiteSpace"
+      ) {
+        fallbackStartIndex = i;
+        break;
+      }
+    }
+
+    // This shouldn't happen, but let's be safe an bail if we didn't find the fallback part
+    if (fallbackStartIndex === null) {
+      return stackEntry.parts;
+    }
+
+    // The last part is the closing bracket, so let's put the index before it.
+    let fallbackEndTokenIndex = stackEntry.parts.length - 2;
+    for (let i = fallbackEndTokenIndex; i >= fallbackStartIndex; i--) {
+      const part = stackEntry.parts[i];
+      if (!stackEntry.tokensByPart.has(part)) {
+        continue;
+      }
+      const token = stackEntry.tokensByPart.get(part);
+      if (
+        // we might get into a part that was already handled, for example a nested function,
+        // and in such case, it should be part of the fallback element
+        token.tokenType === AGGREGATED_TOKEN_TYPE ||
+        token.tokenType !== "WhiteSpace"
+      ) {
+        fallbackEndTokenIndex = i;
+        break;
+      }
+    }
+
+    // So, at this point, we have the fallback parts that we want to put in their own elements
+    const partsToWrap = stackEntry.parts.splice(
+      fallbackStartIndex,
+      fallbackEndTokenIndex - fallbackStartIndex + 1
+    );
+
+    const fallbackEl = this.#createNode("span", {
+      class: `inspector-attr-fallback${fallbackValueIsUsed ? "" : " " + options.unmatchedClass}`,
+    });
+    fallbackEl.append(...partsToWrap);
+    stackEntry.parts.splice(fallbackStartIndex, 0, fallbackEl);
+    return stackEntry.parts;
+  }
+
+  /**
+   * Called when we got the closing bracket for any function in BASIC_SHAPE_FUNCTIONS.
+   * It will append a CSS shapes highlighter toggle next to the value, and parse the value
+   * into spans, each containing a point that can be hovered over.
+   *
+   * @param {object} stackEntry
+   *        The last item in this.#stack
+   * @param {object} options
+   *        options passed to the parse function. @see #mergeOptions for valid options
+   *        and default values
+   * @returns {Array<string|Element>} The updated parts for the stack entry that is being closed.
+   */
+  #onCloseParenthesisForBasicShape(stackEntry, options) {
+    if (!options.expectShape) {
+      return stackEntry.parts;
+    }
+
+    const container = this.#createNode("span", {});
+    const valContainer = this.#createNode("span", {
+      class: options.shapeClass,
+    });
+
+    // Let's retrieve the index in `parts` where the coordinates start
+    let coordStartIdx = null;
+    let previousToken;
+    for (let i = 0; i < stackEntry.parts.length; i++) {
+      const part = stackEntry.parts[i];
+      const token = stackEntry.tokensByPart.get(part);
+      // Multiple consecutive parts can reference the same token, so let's find the first
+      // part that refers to a token that is not the initial function.
+      if (
+        token.tokenType === "Function" &&
+        (!previousToken || token === previousToken)
+      ) {
+        coordStartIdx = i + 1;
+        previousToken = token;
+        valContainer.append(part);
+      } else if (coordStartIdx !== null) {
+        // we already found the coordinate, and the token does not represent the initial
+        // function, so we can stop looping
+        break;
+      }
+    }
+
+    // That shouldn't happen, but let's be safe
+    if (coordStartIdx === null) {
+      return stackEntry.parts;
+    }
+
+    if (stackEntry.lowerCaseFunctionName === "polygon") {
+      valContainer.append(
+        ...this.#onCloseParenthesisForPolygonShape(stackEntry, coordStartIdx)
+      );
+    } else if (stackEntry.lowerCaseFunctionName === "circle") {
+      valContainer.append(
+        ...this.#onCloseParenthesisForCircleShape(stackEntry, coordStartIdx)
+      );
+    } else if (stackEntry.lowerCaseFunctionName === "ellipse") {
+      valContainer.append(
+        ...this.#onCloseParenthesisForEllipseShape(stackEntry, coordStartIdx)
+      );
+    } else if (stackEntry.lowerCaseFunctionName === "inset") {
+      valContainer.append(
+        ...this.#onCloseParenthesisForInsetShape(stackEntry, coordStartIdx)
+      );
+    }
+
+    if (options.shapeSwatchClass) {
+      const toggleButton = this.#createNode("button", {
+        class: options.shapeSwatchClass,
+      });
+      container.appendChild(toggleButton);
+    }
+
+    container.appendChild(valContainer);
+    return [container];
+  }
+
+  /**
+   * Called when we got the closing bracket for the `polygon()` function.
+   * It will append a CSS shapes highlighter toggle next to the value, and parse the value
+   * into spans, each containing a point that can be hovered over.
+   *
+   * @param {object} stackEntry
+   *        The last item in this.#stack
+   * @param {number} coordsStartIdx
+   *        The index in stackEntry.parts at which the coordinates for the polygon start
+   * @returns {Array<Element|Text>} The parts that were handled
+   */
+  // eslint-disable-next-line complexity
+  #onCloseParenthesisForPolygonShape(stackEntry, coordsStartIdx) {
+    const points = [];
+    let previousToken;
+    for (let i = coordsStartIdx; i < stackEntry.parts.length; i++) {
+      const part = stackEntry.parts[i];
+      const token = stackEntry.tokensByPart.get(part);
+
+      if (
+        token.tokenType !== "Number" &&
+        token.tokenType !== "Dimension" &&
+        token.tokenType !== "Percentage" &&
+        // a collapsed function call (e.g. `var(…)`) counts as a single argument
+        token.tokenType !== AGGREGATED_TOKEN_TYPE
+      ) {
+        continue;
+      }
+
+      const lastPoint = points.at(-1);
+      if (previousToken !== token) {
+        if (!lastPoint || lastPoint.y) {
+          points.push({
+            x: [i],
+          });
+        } else {
+          lastPoint.y = [i];
+        }
+      } else if (lastPoint.y) {
+        lastPoint.y.push(i);
+      } else {
+        lastPoint.x.push(i);
+      }
+
+      previousToken = token;
+    }
+
+    // Let's iterate through points in reverse as we're going to mutate stackEntry.parts
+    // and the indexes in `points` refer to the original indexes
+    for (let i = points.length - 1; i >= 0; i--) {
+      const point = points[i];
+      const xNode = this.#createNode("span", {
+        class: "inspector-shape-point",
+        "data-point": i,
+        "data-pair": "x",
+      });
+      for (const idx of point.x) {
+        xNode.append(stackEntry.parts[idx]);
+      }
+      const yNode = this.#createNode("span", {
+        class: "inspector-shape-point",
+        "data-point": i,
+        "data-pair": "y",
+      });
+      for (const idx of point.y) {
+        yNode.append(stackEntry.parts[idx]);
+      }
+      const coordNode = this.#createNode("span", {
+        class: "inspector-shape-point",
+        "data-point": i,
+      });
+      coordNode.append(xNode);
+      // Put the parts between the x and y points
+      for (let j = point.x.at(-1) + 1; j < point.y[0]; j++) {
+        coordNode.append(stackEntry.parts[j]);
+      }
+      coordNode.append(yNode);
+      stackEntry.parts.splice(
+        point.x[0],
+        point.y.at(-1) - point.x[0] + 1,
+        coordNode
+      );
+    }
+
+    return stackEntry.parts;
+  }
+
+  /**
+   * Called when we got the closing bracket for the `circle()` function.
+   * It will append a CSS shapes highlighter toggle next to the value, and parse the value
+   * into spans, each containing a point that can be hovered over.
+   *
+   * @param {object} stackEntry
+   *        The last item in this.#stack
+   * @param {number} coordsStartIdx
+   *        The index in stackEntry.parts at which the coordinates for the circle start
+   * @returns {Array<Element|Text>} The parts that were handled
+   */
+  // eslint-disable-next-line complexity
+  #onCloseParenthesisForCircleShape(stackEntry, coordsStartIdx) {
+    const radiusPartsIndexes = [];
+    const positionsPartsIndexes = [];
+    let seenAtKeyword = false;
+    let previousToken;
+    for (let i = coordsStartIdx; i < stackEntry.parts.length; i++) {
+      const part = stackEntry.parts[i];
+      const token = stackEntry.tokensByPart.get(part);
+
+      if (token.tokenType === "Ident" && token.text === "at") {
+        seenAtKeyword = true;
+        continue;
+      }
+
+      // circle() can take a radius which is before `at`, which can be a length, percentage,
+      // or a keyword (closest-corner, closest-side, farthest-corner, farthest-side)
+      if (
+        !seenAtKeyword &&
+        (token.tokenType === "Number" ||
+          token.tokenType === "Dimension" ||
+          token.tokenType === "Percentage" ||
+          token.tokenType === "Ident" ||
+          // a collapsed function call (e.g. `var(…)`) counts as a single argument
+          token.tokenType === AGGREGATED_TOKEN_TYPE)
+      ) {
+        // we have a single radius, the array will contain all the indexes of parts that
+        // refer to it.
+        radiusPartsIndexes.push(i);
+      }
+
+      // after that `at` keyword, the position of the circle is defined. It can be represented
+      // by 1, 2 or 4 length, percentage or keyword (e.g. start, center, …)
+      // So let's collect all those here
+      if (
+        seenAtKeyword &&
+        (token.tokenType === "Number" ||
+          token.tokenType === "Dimension" ||
+          token.tokenType === "Percentage" ||
+          token.tokenType === "Ident" ||
+          // a collapsed function call (e.g. `var(…)`) counts as a single argument
+          token.tokenType === AGGREGATED_TOKEN_TYPE)
+      ) {
+        if (token !== previousToken) {
+          positionsPartsIndexes.push([i]);
+        } else {
+          // if the token for the current part is the same one as the previous part, then
+          // it represent the same position, so we add the part index to the last position
+          // item we added.
+          positionsPartsIndexes.at(-1).push(i);
+        }
+      }
+
+      previousToken = token;
+    }
+
+    // We're going to mutate stackEntry.parts, so let's go through the parts in reverse
+    // as the indexes in radiusIndexes and positionIndexes refer to the original indexes
+    // So first, let's handle positions if there are some
+    if (positionsPartsIndexes.length) {
+      const centerEl = this.#createNode("span", {
+        class: "inspector-shape-point",
+        "data-point": "center",
+      });
+      for (let i = positionsPartsIndexes.length - 1; i >= 0; i--) {
+        const pointEl = this.#createNode("span", {
+          class: "inspector-shape-point",
+          "data-point": "center",
+        });
+        if (i === 0) {
+          pointEl.setAttribute("data-pair", "x");
+        } else if (positionsPartsIndexes.length === 2) {
+          // Here we're not handling the first item, and there's only 2 items, so we know
+          // we have the y coord
+          pointEl.setAttribute("data-pair", "y");
+        } else if (i === 2) {
+          // If there's more than 2 position, that means we have a <position-four> type,
+          // where there's both x,y positions + offsets (e.g. `left 10px top 15px`)
+          // In such case, the first item is x (already handled in the first if block),
+          // and the third item is y
+          pointEl.setAttribute("data-pair", "y");
+        }
+
+        const indexes = positionsPartsIndexes[i];
+        for (const idx of indexes) {
+          pointEl.append(stackEntry.parts[idx]);
+        }
+
+        centerEl.prepend(pointEl);
+        stackEntry.parts.splice(indexes[0], indexes.length);
+
+        // append any parts between this point and the previous one into centerEl
+        const previousIndexes = positionsPartsIndexes[i - 1];
+        if (previousIndexes) {
+          for (let j = indexes[0] - 1; j > previousIndexes.at(-1); j--) {
+            centerEl.prepend(stackEntry.parts[j]);
+            stackEntry.parts.splice(j, 1);
+          }
+        }
+      }
+      stackEntry.parts.splice(positionsPartsIndexes[0][0], 0, centerEl);
+    }
+
+    // Handle radius size if there's one
+    if (radiusPartsIndexes.length) {
+      const radiusEl = this.#createNode("span", {
+        class: "inspector-shape-point",
+        "data-point": "radius",
+      });
+      for (let i = radiusPartsIndexes.length - 1; i >= 0; i--) {
+        const idx = radiusPartsIndexes[i];
+        radiusEl.prepend(stackEntry.parts[idx]);
+        stackEntry.parts.splice(idx, 1);
+      }
+      stackEntry.parts.splice(radiusPartsIndexes[0], 0, radiusEl);
+    }
+
+    return stackEntry.parts;
+  }
+
+  /**
+   * Called when we got the closing bracket for the `ellipse()` function.
+   * It will append a CSS shapes highlighter toggle next to the value, and parse the value
+   * into spans, each containing a point that can be hovered over.
+   *
+   * @param {object} stackEntry
+   *        The last item in this.#stack
+   * @param {number} coordsStartIdx
+   *        The index in stackEntry.parts at which the coordinates for the ellipse start
+   * @returns {Array<Element|Text>} The parts that were handled
+   */
+  // eslint-disable-next-line complexity
+  #onCloseParenthesisForEllipseShape(stackEntry, coordsStartIdx) {
+    const radiiPartsIndexes = [];
+    const positionsPartsIndexes = [];
+    let seenAtKeyword = false;
+    let previousToken;
+    for (let i = coordsStartIdx; i < stackEntry.parts.length; i++) {
+      const part = stackEntry.parts[i];
+      const token = stackEntry.tokensByPart.get(part);
+
+      if (token.tokenType === "Ident" && token.text === "at") {
+        seenAtKeyword = true;
+        continue;
+      }
+
+      // ellipse() can take two radii before `at`, which can be a lengths, percentages,
+      // or a keywords (closest-corner, closest-side, farthest-corner, farthest-side)
+      if (
+        !seenAtKeyword &&
+        (token.tokenType === "Number" ||
+          token.tokenType === "Dimension" ||
+          token.tokenType === "Percentage" ||
+          token.tokenType === "Ident" ||
+          // a collapsed function call (e.g. `var(…)`) counts as a single argument
+          token.tokenType === AGGREGATED_TOKEN_TYPE)
+      ) {
+        if (token !== previousToken) {
+          radiiPartsIndexes.push([i]);
+        } else {
+          // if the token for the current part is the same one as the previous part, then
+          // it represent the same radius, so we add the part index to the last radius
+          // item we added.
+          radiiPartsIndexes.at(-1).push(i);
+        }
+      }
+
+      // after that `at` keyword, the position of the ellipse is defined. It can be represented
+      // by 1, 2 or 4 length, percentage or keyword (e.g. start, center, …)
+      // So let's collect all those here
+      if (
+        seenAtKeyword &&
+        (token.tokenType === "Number" ||
+          token.tokenType === "Dimension" ||
+          token.tokenType === "Percentage" ||
+          token.tokenType === "Ident" ||
+          // a collapsed function call (e.g. `var(…)`) counts as a single argument
+          token.tokenType === AGGREGATED_TOKEN_TYPE)
+      ) {
+        if (token !== previousToken) {
+          positionsPartsIndexes.push([i]);
+        } else {
+          // if the token for the current part is the same one as the previous part, then
+          // it represent the same position, so we add the part index to the last position
+          // item we added.
+          positionsPartsIndexes.at(-1).push(i);
+        }
+      }
+
+      previousToken = token;
+    }
+
+    // We're going to mutate stackEntry.parts, so let's go through the parts in reverse
+    // as the indexes in radiusIndexes and positionIndexes refer to the original indexes
+    // So first, let's handle positions if there are some
+    if (positionsPartsIndexes.length) {
+      const centerEl = this.#createNode("span", {
+        class: "inspector-shape-point",
+        "data-point": "center",
+      });
+      for (let i = positionsPartsIndexes.length - 1; i >= 0; i--) {
+        const pointEl = this.#createNode("span", {
+          class: "inspector-shape-point",
+          "data-point": "center",
+        });
+        if (i === 0) {
+          pointEl.setAttribute("data-pair", "x");
+        } else if (positionsPartsIndexes.length === 2) {
+          // Here we're not handling the first item, and there's only 2 items, so we know
+          // we have the y coord
+          pointEl.setAttribute("data-pair", "y");
+        } else if (i === 2) {
+          // If there's more than 2 position, that means we have a <position-four> type,
+          // where there's both x,y positions + offsets (e.g. `left 10px top 15px`)
+          // In such case, the first item is x (already handled in the first if block),
+          // and the third item is y
+          pointEl.setAttribute("data-pair", "y");
+        }
+
+        const indexes = positionsPartsIndexes[i];
+        for (const idx of indexes) {
+          pointEl.append(stackEntry.parts[idx]);
+        }
+        // we're iterating the parts in reverse, so we need to prepend in centerEl
+        centerEl.prepend(pointEl);
+        // We can remove as many items as we have indexes here, because if we have
+        // multiple parts refering to the same position, their indexes should be consecutive.
+        stackEntry.parts.splice(indexes[0], indexes.length);
+
+        // prepend any parts (e.g. whitespaces) between this point and the previous one
+        // into centerEl
+        const previousIndexes = positionsPartsIndexes[i - 1];
+        if (previousIndexes) {
+          for (let j = indexes[0] - 1; j > previousIndexes.at(-1); j--) {
+            centerEl.prepend(stackEntry.parts[j]);
+            stackEntry.parts.splice(j, 1);
+          }
+        }
+      }
+      stackEntry.parts.splice(positionsPartsIndexes[0][0], 0, centerEl);
+    }
+
+    // Handle radius size if there are some
+    if (radiiPartsIndexes.length) {
+      for (let i = radiiPartsIndexes.length - 1; i >= 0; i--) {
+        const radiusEl = this.#createNode("span", {
+          class: "inspector-shape-point",
+          // we should only have 2 radii, the first one being rx and the second one ry
+          "data-point": i === 0 ? "rx" : "ry",
+        });
+
+        const indexes = radiiPartsIndexes[i];
+        for (const idx of indexes) {
+          radiusEl.append(stackEntry.parts[idx]);
+        }
+        // We can remove as many items as we have indexes here, because if we have
+        // multiple parts refering to the same radius, their indexes should be consecutive.
+        stackEntry.parts.splice(indexes[0], indexes.length, radiusEl);
+      }
+    }
+
+    return stackEntry.parts;
+  }
+
+  /**
+   * Called when we got the closing bracket for the `inset()` function.
+   * It will append a CSS shapes highlighter toggle next to the value, and parse the value
+   * into spans, each containing a point that can be hovered over.
+   *
+   * @param {object} stackEntry
+   *        The last item in this.#stack
+   * @param {number} coordsStartIdx
+   *        The index in stackEntry.parts at which the coordinates for the inset start
+   * @returns {Array<Element|Text>} The parts that were handled
+   */
+  #onCloseParenthesisForInsetShape(stackEntry, coordsStartIdx) {
+    const insetPointsPartsIndexes = [];
+    let previousToken;
+    for (let i = coordsStartIdx; i < stackEntry.parts.length; i++) {
+      const part = stackEntry.parts[i];
+      const token = stackEntry.tokensByPart.get(part);
+
+      if (token.tokenType === "Ident" && token.text === "round") {
+        // Once we see the `round` keyword, we can stop looping, we have all the coordinates
+        // we need
+        break;
+      }
+
+      if (
+        token.tokenType !== "Number" &&
+        token.tokenType !== "Dimension" &&
+        token.tokenType !== "Percentage" &&
+        // a collapsed function call (e.g. `var(…)`) counts as a single argument
+        token.tokenType !== AGGREGATED_TOKEN_TYPE
+      ) {
+        continue;
+      }
+
+      const lastPoint = insetPointsPartsIndexes.at(-1);
+      if (!lastPoint || previousToken !== token) {
+        insetPointsPartsIndexes.push([i]);
+      } else if (lastPoint) {
+        lastPoint.push(i);
+      }
+
+      previousToken = token;
+    }
+
+    const insetPoints = ["top", "right", "bottom", "left"];
+
+    // Let's iterate through points in reverse as we're going to mutate stackEntry.parts
+    // and the indexes in `points` refer to the original indexes
+    for (let i = insetPointsPartsIndexes.length - 1; i >= 0; i--) {
+      const pointPartsIndexes = insetPointsPartsIndexes[i];
+      const shapePointNode = this.#createNode("span", {
+        class: "inspector-shape-point",
+      });
+
+      // insetPoints contains the 4 different possible inset points in the order they are
+      // defined. By taking the modulo of the index in insetPoints with the number of nodes,
+      // we can get which node represents each point (e.g. if there is only 1 node, it
+      // represents all 4 points). The exception is "left" when there are 3 nodes. In that
+      // case, it is nodes[1] that represents the left point rather than nodes[0].
+      if (insetPointsPartsIndexes.length === 1) {
+        shapePointNode.classList.add(...insetPoints);
+      } else if (insetPointsPartsIndexes.length === 2) {
+        if (i === 0) {
+          shapePointNode.classList.add(insetPoints[0], insetPoints[2]);
+        } else {
+          shapePointNode.classList.add(insetPoints[1], insetPoints[3]);
+        }
+      } else if (insetPointsPartsIndexes.length === 3) {
+        if (i === 1) {
+          shapePointNode.classList.add(insetPoints[1], insetPoints[3]);
+        } else {
+          shapePointNode.classList.add(insetPoints[i]);
+        }
+      } else if (insetPointsPartsIndexes.length === 4) {
+        shapePointNode.classList.add(insetPoints[i]);
+      }
+
+      for (const idx of pointPartsIndexes) {
+        shapePointNode.append(stackEntry.parts[idx]);
+      }
+
+      stackEntry.parts.splice(
+        pointPartsIndexes[0],
+        pointPartsIndexes.at(-1) - pointPartsIndexes[0] + 1,
+        shapePointNode
+      );
+    }
+
+    return stackEntry.parts;
+  }
+
+  /**
+   * Called when we got the closing parenthesis for `url()`.
+   * It will wrap the URL into a proper <a> element.
+   *
+   * @param {object} stackEntry
+   *        The last item in this.#stack
+   * @param {object} options
+   *        options passed to the parse function. @see #mergeOptions for valid options
+   *        and default values
+   * @returns {Array<string|Element>} The updated parts for the stack entry that is being closed.
+   */
+  #onCloseParenthesisForUrl(stackEntry, options) {
+    if (!options.urlClass) {
+      return stackEntry.parts;
+    }
+
+    // url() with quoted strings are not mapped as UnquotedUrl, instead, we get a "Function"
+    // token with "url" (the one we're closing here), and later, a "QuotedString" token
+    // which contains the actual URL.
+    // So here, we only need to loop through the parts to find the one which holds the
+    // QuotedString token and wrap it in an anchor.
+    let url;
+    for (let i = 0; i < stackEntry.parts.length; i++) {
+      const part = stackEntry.parts[i];
+      const token = stackEntry.tokensByPart.get(part);
+      if (token?.tokenType !== "QuotedString") {
+        continue;
+      }
+
+      // url() only takes a string, so we'll only have a single part refering to the url token
+      url = token.value;
+      break;
+    }
+
+    if (!url) {
+      return stackEntry.parts;
+    }
+
+    return this.#createURLElements(stackEntry.text, url, options);
+  }
+
+  /**
+   * Called when we got the closing parenthesis for `var()`.
+   *
+   * @param {object} stackEntry
+   *        The last item in this.#stack
+   * @param {object} options
+   *        options passed to the parse function. @see #mergeOptions for valid options
+   *        and default values
+   * @returns {Array<string|Element>} The updated parts for the stack entry that is being closed.
+   */
+  // eslint-disable-next-line complexity
+  #onCloseParenthesisForVar(stackEntry, options) {
+    if (!options.getVariableData) {
+      return stackEntry.parts;
+    }
+
+    let varNameIndex = null;
+    let varName = null;
+    let fallbackStartIndex = null;
+    for (let i = 0; i < stackEntry.parts.length; i++) {
+      const part = stackEntry.parts[i];
+      const token = stackEntry.tokensByPart.get(part);
+
+      // The variable name is the first Ident we find
+      if (varNameIndex === null && token.tokenType === "Ident") {
+        varNameIndex = i;
+        varName = token.text;
+      } else if (token.tokenType === "Comma") {
+        // Anything between the first comma and the end of the function is considered a
+        // fallback value.
+        fallbackStartIndex = i + 1;
+        break;
+      }
+    }
+
+    // Shouldn't happen, but let's be safe
+    if (varNameIndex === null) {
+      return stackEntry.parts;
+    }
+
+    const varData = options.getVariableData(varName);
+    const varValue =
+      typeof varData.value === "string"
+        ? varData.value
+        : varData.registeredProperty?.initialValue;
+    let varStartingStyleValue;
+    if (options.inStartingStyleRule) {
+      varStartingStyleValue =
+        typeof varData.startingStyle === "string"
+          ? varData.startingStyle
+          : // If the variable is not set in starting style, then it will default to either:
+            // - a declaration in a "regular" rule
+            // - or if there's no declaration in regular rule, to the registered property initial-value.
+            varValue;
+    }
+
+    let varSubstitutedValue = options.inStartingStyleRule
+      ? varStartingStyleValue
+      : varValue;
+    const variableExists = typeof varSubstitutedValue === "string";
+    // TODO: we should also check if the variable is not guaranteed invalid (see Bug 1904013)
+    const shouldUseFallback = !variableExists;
+    const varComputedValue = varData.computedValue;
+    const varNameNodeOptions = {};
+    const varFallbackNodeOptions = {};
+
+    if (variableExists) {
+      // The variable value is valid, store the substituted value in a data attribute to
+      // be reused by the variable tooltip.
+      varNameNodeOptions["data-variable"] = varSubstitutedValue;
+      varNameNodeOptions.class = options.matchedVariableClass;
+      varFallbackNodeOptions.class = options.unmatchedClass;
+
+      // Display computed value when it exists, is different from the substituted value
+      // we computed, and we're not inside a starting-style rule
+      if (
+        !options.inStartingStyleRule &&
+        typeof varComputedValue === "string" &&
+        varComputedValue !== varSubstitutedValue
+      ) {
+        varNameNodeOptions["data-variable-computed"] = varComputedValue;
+      }
+
+      // Display starting-style value when not in a starting style rule
+      if (
+        !options.inStartingStyleRule &&
+        typeof varData.startingStyle === "string"
+      ) {
+        varNameNodeOptions["data-starting-style-variable"] =
+          varData.startingStyle;
+      }
+
+      if (varData.registeredProperty) {
+        const { initialValue, syntax, inherits } = varData.registeredProperty;
+        varNameNodeOptions["data-registered-property-initial-value"] =
+          initialValue;
+        varNameNodeOptions["data-registered-property-syntax"] = syntax;
+        // createNode does not handle `false`, let's stringify the boolean.
+        varNameNodeOptions["data-registered-property-inherits"] = `${inherits}`;
+      }
+    } else {
+      // The variable is not set and does not have an initial value, mark it unmatched.
+      varNameNodeOptions.class = options.unmatchedClass;
+      varNameNodeOptions["data-variable"] = STYLE_INSPECTOR_L10N.getFormatStr(
+        "rule.variableUnset",
+        varName
+      );
+    }
+
+    const varNameNode = this.#createNode("span", varNameNodeOptions);
+    varNameNode.append(stackEntry.parts[varNameIndex]);
+    stackEntry.parts.splice(varNameIndex, 1, varNameNode);
+
+    if (variableExists && options.showJumpToVariableButton) {
+      varNameNode.append(
+        this.#createNode("button", {
+          class: "ruleview-variable-link jump-definition",
+          "data-variable-name": varName,
+          title: VARIABLE_JUMP_DEFINITION_TITLE,
+        })
+      );
+    }
+
+    // From https://drafts.csswg.org/css-variables/#using-variables:
+    // > var(--a,) is a valid function, specifying that if the --a custom property is
+    // > invalid or missing, the var() should be replaced with nothing.
+    //
+    // So if we saw a comma, initialize the value with an empty string
+    let fallbackSubstitutedValue = fallbackStartIndex !== null ? "" : null;
+
+    if (fallbackStartIndex !== null) {
+      // We want to wrap the fallback into a span, so let's find the last non whitespace
+      // token before the closing parenthesis now
+      let fallbackEndIndex = null;
+      for (
+        // we can start at the part before the last one, as the last one will always be
+        // the closing parenthesis
+        let i = stackEntry.parts.length - 2;
+        i >= fallbackStartIndex;
+        i--
+      ) {
+        const part = stackEntry.parts[i];
+        const token = stackEntry.tokensByPart.get(part);
+        if (token.tokenType !== "WhiteSpace") {
+          fallbackEndIndex = i;
+          break;
+        }
+      }
+
+      const fallbackNode = this.#createNode("span", varFallbackNodeOptions);
+      let previousToken;
+      for (let i = fallbackStartIndex; i <= fallbackEndIndex; i++) {
+        const part = stackEntry.parts[i];
+        const token = stackEntry.tokensByPart.get(part);
+        fallbackNode.append(part);
+        if (previousToken === token) {
+          continue;
+        }
+        if (token?.tokenType === AGGREGATED_TOKEN_TYPE) {
+          fallbackSubstitutedValue +=
+            token.data.substitutedText ?? token.data.text;
+        } else {
+          fallbackSubstitutedValue += part.textContent;
+        }
+        previousToken = token;
+      }
+      stackEntry.parts.splice(
+        fallbackStartIndex,
+        fallbackEndIndex - fallbackStartIndex + 1,
+        fallbackNode
+      );
+    }
+
+    // Now that we went through the fallback, we can re-compute varSubstitutedValue
+    // to potentially include the fallback value.
+    if (shouldUseFallback) {
+      // If the fallback should be used (i.e. the variable value is guaranteed invalid)
+      // but none was found, then the substituted value should be an empty string, as
+      // defined in https://drafts.csswg.org/css-variables/#guaranteed-invalid:
+      // > The guaranteed-invalid value serializes as the empty string
+      if (fallbackSubstitutedValue === null) {
+        varSubstitutedValue = "";
+      } else {
+        varSubstitutedValue = fallbackSubstitutedValue;
+      }
+    }
+
+    // TODO: We should handle the following case (see Bug 2006565)
+    // From https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Values/var#invalid_values:
+    // > var() functions can resolve to invalid values if:
+    // > - […]
+    // > - The custom property is defined but its value is an invalid value for the
+    //     property it is used in.
+    // > When this happens, the property is treated as if it has value unset
+
+    const varComputedOrSubstitutedValue = options.inStartingStyleRule
+      ? varSubstitutedValue
+      : (varComputedValue ?? varSubstitutedValue);
+
+    // Put the substitutedText in the entry so it can then be consumed in onCloseParenthesis
+    stackEntry.substitutedText = varComputedOrSubstitutedValue;
+
+    if (
+      options.supportsColor ||
+      ((options.expectFilter || options.isVariable) &&
+        this.#stack.length !== 0 &&
+        this.#stack.at(-1).isColorTakingFunction)
+    ) {
+      // InspectorUtils.isValidCSSColor returns true for `light-dark()` function,
+      // but `#isValidColor` returns false. As the latter is used in #appendColor,
+      // we need to check that both functions return true.
+      const colorObj =
+        varSubstitutedValue &&
+        InspectorUtils.isValidCSSColor(varComputedOrSubstitutedValue)
+          ? new colorUtils.CssColor(varComputedOrSubstitutedValue)
+          : null;
+      if (colorObj && this.#isValidColor(colorObj)) {
+        const colorFunctionEntry = this.#stack.findLast(
+          entry => entry.isColorTakingFunction
+        );
+        const colorContainerEl = this.#createColorContainerElement(
+          colorObj,
+          {
+            ...options,
+            colorFunction: colorFunctionEntry?.functionName,
+          },
+          stackEntry.parts
+        );
+        return [colorContainerEl];
+      }
+    }
+
+    const variableNode = this.#createNode("span", {});
+    variableNode.append(...stackEntry.parts);
+    return [variableNode];
   }
 
   /**
@@ -978,7 +1893,7 @@ class OutputParser {
     this.#stack.length = 0;
 
     const tokenStream = new InspectorCSSParserWrapper(text);
-    return this.#doParse(text, options, tokenStream, false);
+    return this.#doParse(text, options, tokenStream);
   }
 
   /**
@@ -1016,143 +1931,48 @@ class OutputParser {
   }
 
   /**
-   * Append a cubic-bezier timing function value to the output
+   * Create an element for a cubic-bezier timing function.
+   * Returns null if the element couldn't be created
    *
-   * @param {string} bezier
-   *        The cubic-bezier timing function
    * @param {object} options
+   * @param {Array<string|Node>} options.children
+   *        Children (strings or node) of the container that will be created.
+   * @param {object} options.parseOptions
    *        Options object. For valid options and default values see
    *        #mergeOptions()
+   * @return {Node|null}
    */
-  #appendCubicBezier(bezier, options) {
+  #createCubicBezierContainer({ children, parseOptions }) {
+    let bezier = "";
+    for (const child of children) {
+      bezier += child.textContent ?? child;
+    }
+
+    if (bezier.includes("var(")) {
+      // For now, we don't support cubic-bezier with CSS variables (see Bug 2031695)
+      return null;
+    }
+
     const container = this.#createNode("span", {
       "data-bezier": bezier,
     });
 
-    if (options.bezierSwatchClass) {
+    if (parseOptions.bezierSwatchClass) {
       const swatch = this.#createNode("span", {
-        class: options.bezierSwatchClass,
+        class: parseOptions.bezierSwatchClass,
         tabindex: "0",
         role: "button",
       });
       container.appendChild(swatch);
     }
 
-    const value = this.#createNode(
-      "span",
-      {
-        class: options.bezierClass,
-      },
-      bezier
-    );
-
-    container.appendChild(value);
-    this.#append(container);
-  }
-
-  #appendLinear(text, options) {
-    const container = this.#createNode("span", {
-      "data-linear": text,
+    const valueEl = this.#createNode("span", {
+      class: parseOptions.bezierClass,
     });
+    valueEl.append(...children);
 
-    if (options.linearEasingSwatchClass) {
-      const swatch = this.#createNode("span", {
-        class: options.linearEasingSwatchClass,
-        tabindex: "0",
-        role: "button",
-        "data-linear": text,
-      });
-      container.appendChild(swatch);
-    }
-
-    const value = this.#createNode(
-      "span",
-      {
-        class: options.linearEasingClass,
-      },
-      text
-    );
-
-    container.appendChild(value);
-    this.#append(container);
-  }
-
-  /**
-   * Append an `attr()` function to the output
-   *
-   * @param {object} dict
-   * @param {string} dict.functionText
-   *        The whole function call (e.g. `attr(foo, "bar")`)
-   * @param {object[]} dict.functionContentTokens
-   *        The parsed tokens for the function content (i.e. what's inside the parens)
-   * @param {object} dict.options
-   *        Options object. For valid options and default values see
-   *        #mergeOptions()
-   */
-  #appendAttr({ functionText, functionContentTokens, options }) {
-    // Look for the attribute name, which should be the first Ident tokens
-    const attrNameIndex = functionContentTokens.findIndex(
-      t => t.tokenType === "Ident"
-    );
-    const attrName =
-      attrNameIndex !== -1 ? functionContentTokens[attrNameIndex].value : null;
-    // We should always have an attribute name at this point, but let's be safe
-    if (!attrName) {
-      this.#appendTextNode(functionText);
-      return;
-    }
-
-    // Append text before the attribute name
-    this.#appendTextNode("attr(");
-    for (let i = 0; i < attrNameIndex; i++) {
-      this.#appendTextNode(functionContentTokens[i].text);
-    }
-
-    // Then append the attribute name, with specific style if the attribute isn't found
-    const attrValue = options.getAttributeValue(attrName);
-    this.#appendNode(
-      "span",
-      {
-        class: `inspector-attribute${attrValue === null ? " " + options.unmatchedClass : ""}`,
-        "data-attribute":
-          attrValue === null
-            ? STYLE_INSPECTOR_L10N.getFormatStr("rule.attributeUnset", attrName)
-            : `"${attrValue}"`,
-      },
-      attrName
-    );
-
-    // Handle potential fallback value
-    // Note that this might change once the attribute value can be declared in attr()
-    // (see Bug 435426)
-    let foundSeparator = false;
-    let foundFallback = false;
-    for (let i = attrNameIndex + 1; i < functionContentTokens.length; i++) {
-      const t = functionContentTokens[i];
-      // We first need to find the comma that comes after the attribute name
-      if (t.tokenType === "Comma") {
-        foundSeparator = true;
-        this.#appendTextNode(t.text);
-        continue;
-      }
-
-      // Then, once we found the comma, the next non whitespace token is the fallback
-      if (foundSeparator && !foundFallback && t.tokenType !== "WhiteSpace") {
-        foundFallback = true;
-        this.#appendNode(
-          "span",
-          {
-            class: `inspector-attr-fallback${attrValue !== null ? " " + options.unmatchedClass : ""}`,
-          },
-          t.text
-        );
-      } else {
-        this.#appendTextNode(t.text);
-      }
-    }
-
-    // Finally append the closing paren
-    this.#appendTextNode(")");
+    container.appendChild(valueEl);
+    return container;
   }
 
   /**
@@ -1181,693 +2001,6 @@ class OutputParser {
   }
 
   /**
-   * Append a CSS shapes highlighter toggle next to the value, and parse the value
-   * into spans, each containing a point that can be hovered over.
-   *
-   * @param {string} shape
-   *        The shape text value to append
-   * @param {object} options
-   *        Options object. For valid options and default values see
-   *        #mergeOptions()
-   */
-  #appendShape(shape, options) {
-    const shapeTypes = [
-      {
-        prefix: "polygon(",
-        coordParser: this.#addPolygonPointNodes.bind(this),
-      },
-      {
-        prefix: "circle(",
-        coordParser: this.#addCirclePointNodes.bind(this),
-      },
-      {
-        prefix: "ellipse(",
-        coordParser: this.#addEllipsePointNodes.bind(this),
-      },
-      {
-        prefix: "inset(",
-        coordParser: this.#addInsetPointNodes.bind(this),
-      },
-    ];
-
-    const container = this.#createNode("span", {});
-
-    const toggleButton = this.#createNode("button", {
-      class: options.shapeSwatchClass,
-    });
-
-    const lowerCaseShape = shape.toLowerCase();
-    for (const { prefix, coordParser } of shapeTypes) {
-      if (lowerCaseShape.includes(prefix)) {
-        const coordsBegin = prefix.length;
-        const coordsEnd = shape.lastIndexOf(")");
-        let valContainer = this.#createNode("span", {
-          class: options.shapeClass,
-        });
-
-        container.appendChild(toggleButton);
-
-        appendText(valContainer, shape.substring(0, coordsBegin));
-
-        const coordsString = shape.substring(coordsBegin, coordsEnd);
-        valContainer = coordParser(coordsString, valContainer);
-
-        appendText(valContainer, shape.substring(coordsEnd));
-        container.appendChild(valContainer);
-      }
-    }
-
-    this.#append(container);
-  }
-
-  /**
-   * Parse the given polygon coordinates and create a span for each coordinate pair,
-   * adding it to the given container node.
-   *
-   * @param {string} coords
-   *        The string of coordinate pairs.
-   * @param {Node} container
-   *        The node to which spans containing points are added.
-   * @returns {Node} The container to which spans have been added.
-   */
-  // eslint-disable-next-line complexity
-  #addPolygonPointNodes(coords, container) {
-    const tokenStream = new InspectorCSSParserWrapper(coords);
-    let token = tokenStream.nextToken();
-    let coord = "";
-    let i = 0;
-    let depth = 0;
-    let isXCoord = true;
-    let fillRule = false;
-    let coordNode = this.#createNode("span", {
-      class: "inspector-shape-point",
-      "data-point": `${i}`,
-    });
-
-    while (token) {
-      if (token.tokenType === "Comma") {
-        // Comma separating coordinate pairs; add coordNode to container and reset vars
-        if (!isXCoord) {
-          // Y coord not added to coordNode yet
-          const node = this.#createNode(
-            "span",
-            {
-              class: "inspector-shape-point",
-              "data-point": `${i}`,
-              "data-pair": isXCoord ? "x" : "y",
-            },
-            coord
-          );
-          coordNode.appendChild(node);
-          coord = "";
-          isXCoord = !isXCoord;
-        }
-
-        if (fillRule) {
-          // If the last text added was a fill-rule, do not increment i.
-          fillRule = false;
-        } else {
-          container.appendChild(coordNode);
-          i++;
-        }
-        appendText(
-          container,
-          coords.substring(token.startOffset, token.endOffset)
-        );
-        coord = "";
-        depth = 0;
-        isXCoord = true;
-        coordNode = this.#createNode("span", {
-          class: "inspector-shape-point",
-          "data-point": `${i}`,
-        });
-      } else if (token.tokenType === "ParenthesisBlock") {
-        depth++;
-        coord += coords.substring(token.startOffset, token.endOffset);
-      } else if (token.tokenType === "CloseParenthesis") {
-        depth--;
-        coord += coords.substring(token.startOffset, token.endOffset);
-      } else if (token.tokenType === "WhiteSpace" && coord === "") {
-        // Whitespace at beginning of coord; add to container
-        appendText(
-          container,
-          coords.substring(token.startOffset, token.endOffset)
-        );
-      } else if (token.tokenType === "WhiteSpace" && depth === 0) {
-        // Whitespace signifying end of coord
-        const node = this.#createNode(
-          "span",
-          {
-            class: "inspector-shape-point",
-            "data-point": `${i}`,
-            "data-pair": isXCoord ? "x" : "y",
-          },
-          coord
-        );
-        coordNode.appendChild(node);
-        appendText(
-          coordNode,
-          coords.substring(token.startOffset, token.endOffset)
-        );
-        coord = "";
-        isXCoord = !isXCoord;
-      } else if (
-        token.tokenType === "Number" ||
-        token.tokenType === "Dimension" ||
-        token.tokenType === "Percentage" ||
-        token.tokenType === "Function"
-      ) {
-        if (isXCoord && coord && depth === 0) {
-          // Whitespace is not necessary between x/y coords.
-          const node = this.#createNode(
-            "span",
-            {
-              class: "inspector-shape-point",
-              "data-point": `${i}`,
-              "data-pair": "x",
-            },
-            coord
-          );
-          coordNode.appendChild(node);
-          isXCoord = false;
-          coord = "";
-        }
-
-        coord += coords.substring(token.startOffset, token.endOffset);
-        if (token.tokenType === "Function") {
-          depth++;
-        }
-      } else if (
-        token.tokenType === "Ident" &&
-        (token.text === "nonzero" || token.text === "evenodd")
-      ) {
-        // A fill-rule (nonzero or evenodd).
-        appendText(
-          container,
-          coords.substring(token.startOffset, token.endOffset)
-        );
-        fillRule = true;
-      } else {
-        coord += coords.substring(token.startOffset, token.endOffset);
-      }
-      token = tokenStream.nextToken();
-    }
-
-    // Add coords if any are left over
-    if (coord) {
-      const node = this.#createNode(
-        "span",
-        {
-          class: "inspector-shape-point",
-          "data-point": `${i}`,
-          "data-pair": isXCoord ? "x" : "y",
-        },
-        coord
-      );
-      coordNode.appendChild(node);
-      container.appendChild(coordNode);
-    }
-    return container;
-  }
-
-  /**
-   * Parse the given circle coordinates and populate the given container appropriately
-   * with a separate span for the center point.
-   *
-   * @param {string} coords
-   *        The circle definition.
-   * @param {Node} container
-   *        The node to which the definition is added.
-   * @returns {Node} The container to which the definition has been added.
-   */
-  // eslint-disable-next-line complexity
-  #addCirclePointNodes(coords, container) {
-    const tokenStream = new InspectorCSSParserWrapper(coords);
-    let token = tokenStream.nextToken();
-    let depth = 0;
-    let coord = "";
-    let point = "radius";
-    const centerNode = this.#createNode("span", {
-      class: "inspector-shape-point",
-      "data-point": "center",
-    });
-    while (token) {
-      if (token.tokenType === "ParenthesisBlock") {
-        depth++;
-        coord += coords.substring(token.startOffset, token.endOffset);
-      } else if (token.tokenType === "CloseParenthesis") {
-        depth--;
-        coord += coords.substring(token.startOffset, token.endOffset);
-      } else if (token.tokenType === "WhiteSpace" && coord === "") {
-        // Whitespace at beginning of coord; add to container
-        appendText(
-          container,
-          coords.substring(token.startOffset, token.endOffset)
-        );
-      } else if (
-        token.tokenType === "WhiteSpace" &&
-        point === "radius" &&
-        depth === 0
-      ) {
-        // Whitespace signifying end of radius
-        const node = this.#createNode(
-          "span",
-          {
-            class: "inspector-shape-point",
-            "data-point": "radius",
-          },
-          coord
-        );
-        container.appendChild(node);
-        appendText(
-          container,
-          coords.substring(token.startOffset, token.endOffset)
-        );
-        point = "cx";
-        coord = "";
-        depth = 0;
-      } else if (token.tokenType === "WhiteSpace" && depth === 0) {
-        // Whitespace signifying end of cx/cy
-        const node = this.#createNode(
-          "span",
-          {
-            class: "inspector-shape-point",
-            "data-point": "center",
-            "data-pair": point === "cx" ? "x" : "y",
-          },
-          coord
-        );
-        centerNode.appendChild(node);
-        appendText(
-          centerNode,
-          coords.substring(token.startOffset, token.endOffset)
-        );
-        point = point === "cx" ? "cy" : "cx";
-        coord = "";
-        depth = 0;
-      } else if (token.tokenType === "Ident" && token.text === "at") {
-        // "at"; Add radius to container if not already done so
-        if (point === "radius" && coord) {
-          const node = this.#createNode(
-            "span",
-            {
-              class: "inspector-shape-point",
-              "data-point": "radius",
-            },
-            coord
-          );
-          container.appendChild(node);
-        }
-        appendText(
-          container,
-          coords.substring(token.startOffset, token.endOffset)
-        );
-        point = "cx";
-        coord = "";
-        depth = 0;
-      } else if (
-        token.tokenType === "Number" ||
-        token.tokenType === "Dimension" ||
-        token.tokenType === "Percentage" ||
-        token.tokenType === "Function"
-      ) {
-        if (point === "cx" && coord && depth === 0) {
-          // Center coords don't require whitespace between x/y. So if current point is
-          // cx, we have the cx coord, and depth is 0, then this token is actually cy.
-          // Add cx to centerNode and set point to cy.
-          const node = this.#createNode(
-            "span",
-            {
-              class: "inspector-shape-point",
-              "data-point": "center",
-              "data-pair": "x",
-            },
-            coord
-          );
-          centerNode.appendChild(node);
-          point = "cy";
-          coord = "";
-        }
-
-        coord += coords.substring(token.startOffset, token.endOffset);
-        if (token.tokenType === "Function") {
-          depth++;
-        }
-      } else {
-        coord += coords.substring(token.startOffset, token.endOffset);
-      }
-      token = tokenStream.nextToken();
-    }
-
-    // Add coords if any are left over.
-    if (coord) {
-      if (point === "radius") {
-        const node = this.#createNode(
-          "span",
-          {
-            class: "inspector-shape-point",
-            "data-point": "radius",
-          },
-          coord
-        );
-        container.appendChild(node);
-      } else {
-        const node = this.#createNode(
-          "span",
-          {
-            class: "inspector-shape-point",
-            "data-point": "center",
-            "data-pair": point === "cx" ? "x" : "y",
-          },
-          coord
-        );
-        centerNode.appendChild(node);
-      }
-    }
-
-    if (centerNode.textContent) {
-      container.appendChild(centerNode);
-    }
-    return container;
-  }
-
-  /**
-   * Parse the given ellipse coordinates and populate the given container appropriately
-   * with a separate span for each point
-   *
-   * @param {string} coords
-   *        The ellipse definition.
-   * @param {Node} container
-   *        The node to which the definition is added.
-   * @returns {Node} The container to which the definition has been added.
-   */
-  // eslint-disable-next-line complexity
-  #addEllipsePointNodes(coords, container) {
-    const tokenStream = new InspectorCSSParserWrapper(coords);
-    let token = tokenStream.nextToken();
-    let depth = 0;
-    let coord = "";
-    let point = "rx";
-    const centerNode = this.#createNode("span", {
-      class: "inspector-shape-point",
-      "data-point": "center",
-    });
-    while (token) {
-      if (token.tokenType === "ParenthesisBlock") {
-        depth++;
-        coord += coords.substring(token.startOffset, token.endOffset);
-      } else if (token.tokenType === "CloseParenthesis") {
-        depth--;
-        coord += coords.substring(token.startOffset, token.endOffset);
-      } else if (token.tokenType === "WhiteSpace" && coord === "") {
-        // Whitespace at beginning of coord; add to container
-        appendText(
-          container,
-          coords.substring(token.startOffset, token.endOffset)
-        );
-      } else if (token.tokenType === "WhiteSpace" && depth === 0) {
-        if (point === "rx" || point === "ry") {
-          // Whitespace signifying end of rx/ry
-          const node = this.#createNode(
-            "span",
-            {
-              class: "inspector-shape-point",
-              "data-point": point,
-            },
-            coord
-          );
-          container.appendChild(node);
-          appendText(
-            container,
-            coords.substring(token.startOffset, token.endOffset)
-          );
-          point = point === "rx" ? "ry" : "cx";
-          coord = "";
-          depth = 0;
-        } else {
-          // Whitespace signifying end of cx/cy
-          const node = this.#createNode(
-            "span",
-            {
-              class: "inspector-shape-point",
-              "data-point": "center",
-              "data-pair": point === "cx" ? "x" : "y",
-            },
-            coord
-          );
-          centerNode.appendChild(node);
-          appendText(
-            centerNode,
-            coords.substring(token.startOffset, token.endOffset)
-          );
-          point = point === "cx" ? "cy" : "cx";
-          coord = "";
-          depth = 0;
-        }
-      } else if (token.tokenType === "Ident" && token.text === "at") {
-        // "at"; Add radius to container if not already done so
-        if (point === "ry" && coord) {
-          const node = this.#createNode(
-            "span",
-            {
-              class: "inspector-shape-point",
-              "data-point": "ry",
-            },
-            coord
-          );
-          container.appendChild(node);
-        }
-        appendText(
-          container,
-          coords.substring(token.startOffset, token.endOffset)
-        );
-        point = "cx";
-        coord = "";
-        depth = 0;
-      } else if (
-        token.tokenType === "Number" ||
-        token.tokenType === "Dimension" ||
-        token.tokenType === "Percentage" ||
-        token.tokenType === "Function"
-      ) {
-        if (point === "rx" && coord && depth === 0) {
-          // Radius coords don't require whitespace between x/y.
-          const node = this.#createNode(
-            "span",
-            {
-              class: "inspector-shape-point",
-              "data-point": "rx",
-            },
-            coord
-          );
-          container.appendChild(node);
-          point = "ry";
-          coord = "";
-        }
-        if (point === "cx" && coord && depth === 0) {
-          // Center coords don't require whitespace between x/y.
-          const node = this.#createNode(
-            "span",
-            {
-              class: "inspector-shape-point",
-              "data-point": "center",
-              "data-pair": "x",
-            },
-            coord
-          );
-          centerNode.appendChild(node);
-          point = "cy";
-          coord = "";
-        }
-
-        coord += coords.substring(token.startOffset, token.endOffset);
-        if (token.tokenType === "Function") {
-          depth++;
-        }
-      } else {
-        coord += coords.substring(token.startOffset, token.endOffset);
-      }
-      token = tokenStream.nextToken();
-    }
-
-    // Add coords if any are left over.
-    if (coord) {
-      if (point === "rx" || point === "ry") {
-        const node = this.#createNode(
-          "span",
-          {
-            class: "inspector-shape-point",
-            "data-point": point,
-          },
-          coord
-        );
-        container.appendChild(node);
-      } else {
-        const node = this.#createNode(
-          "span",
-          {
-            class: "inspector-shape-point",
-            "data-point": "center",
-            "data-pair": point === "cx" ? "x" : "y",
-          },
-          coord
-        );
-        centerNode.appendChild(node);
-      }
-    }
-
-    if (centerNode.textContent) {
-      container.appendChild(centerNode);
-    }
-    return container;
-  }
-
-  /**
-   * Parse the given inset coordinates and populate the given container appropriately.
-   *
-   * @param {string} coords
-   *        The inset definition.
-   * @param {Node} container
-   *        The node to which the definition is added.
-   * @returns {Node} The container to which the definition has been added.
-   */
-  // eslint-disable-next-line complexity
-  #addInsetPointNodes(coords, container) {
-    const insetPoints = ["top", "right", "bottom", "left"];
-    const tokenStream = new InspectorCSSParserWrapper(coords);
-    let token = tokenStream.nextToken();
-    let depth = 0;
-    let coord = "";
-    let i = 0;
-    let round = false;
-    // nodes is an array containing all the coordinate spans. otherText is an array of
-    // arrays, each containing the text that should be inserted into container before
-    // the node with the same index. i.e. all elements of otherText[i] is inserted
-    // into container before nodes[i].
-    const nodes = [];
-    const otherText = [[]];
-
-    while (token) {
-      if (round) {
-        // Everything that comes after "round" should just be plain text
-        otherText[i].push(coords.substring(token.startOffset, token.endOffset));
-      } else if (token.tokenType === "ParenthesisBlock") {
-        depth++;
-        coord += coords.substring(token.startOffset, token.endOffset);
-      } else if (token.tokenType === "CloseParenthesis") {
-        depth--;
-        coord += coords.substring(token.startOffset, token.endOffset);
-      } else if (token.tokenType === "WhiteSpace" && coord === "") {
-        // Whitespace at beginning of coord; add to container
-        otherText[i].push(coords.substring(token.startOffset, token.endOffset));
-      } else if (token.tokenType === "WhiteSpace" && depth === 0) {
-        // Whitespace signifying end of coord; create node and push to nodes
-        const node = this.#createNode(
-          "span",
-          {
-            class: "inspector-shape-point",
-          },
-          coord
-        );
-        nodes.push(node);
-        i++;
-        coord = "";
-        otherText[i] = [coords.substring(token.startOffset, token.endOffset)];
-        depth = 0;
-      } else if (
-        token.tokenType === "Number" ||
-        token.tokenType === "Dimension" ||
-        token.tokenType === "Percentage" ||
-        token.tokenType === "Function"
-      ) {
-        if (coord && depth === 0) {
-          // Inset coords don't require whitespace between each coord.
-          const node = this.#createNode(
-            "span",
-            {
-              class: "inspector-shape-point",
-            },
-            coord
-          );
-          nodes.push(node);
-          i++;
-          coord = "";
-          otherText[i] = [];
-        }
-
-        coord += coords.substring(token.startOffset, token.endOffset);
-        if (token.tokenType === "Function") {
-          depth++;
-        }
-      } else if (token.tokenType === "Ident" && token.text === "round") {
-        if (coord && depth === 0) {
-          // Whitespace is not necessary before "round"; create a new node for the coord
-          const node = this.#createNode(
-            "span",
-            {
-              class: "inspector-shape-point",
-            },
-            coord
-          );
-          nodes.push(node);
-          i++;
-          coord = "";
-          otherText[i] = [];
-        }
-        round = true;
-        otherText[i].push(coords.substring(token.startOffset, token.endOffset));
-      } else {
-        coord += coords.substring(token.startOffset, token.endOffset);
-      }
-      token = tokenStream.nextToken();
-    }
-
-    // Take care of any leftover text
-    if (coord) {
-      if (round) {
-        otherText[i].push(coord);
-      } else {
-        const node = this.#createNode(
-          "span",
-          {
-            class: "inspector-shape-point",
-          },
-          coord
-        );
-        nodes.push(node);
-      }
-    }
-
-    // insetPoints contains the 4 different possible inset points in the order they are
-    // defined. By taking the modulo of the index in insetPoints with the number of nodes,
-    // we can get which node represents each point (e.g. if there is only 1 node, it
-    // represents all 4 points). The exception is "left" when there are 3 nodes. In that
-    // case, it is nodes[1] that represents the left point rather than nodes[0].
-    for (let j = 0; j < 4; j++) {
-      const point = insetPoints[j];
-      const nodeIndex =
-        point === "left" && nodes.length === 3 ? 1 : j % nodes.length;
-      nodes[nodeIndex].classList.add(point);
-    }
-
-    nodes.forEach((node, j) => {
-      for (const text of otherText[j]) {
-        appendText(container, text);
-      }
-      container.appendChild(node);
-    });
-
-    // Add text that comes after the last node, if any exists
-    if (otherText[nodes.length]) {
-      for (const text of otherText[nodes.length]) {
-        appendText(container, text);
-      }
-    }
-
-    return container;
-  }
-
-  /**
    * Append a angle value to the output
    *
    * @param {string} angle
@@ -1875,8 +2008,9 @@ class OutputParser {
    * @param {object} options
    *        Options object. For valid options and default values see
    *        #mergeOptions()
+   * @param {object} token
    */
-  #appendAngle(angle, options) {
+  #appendAngle(angle, options, token) {
     const angleObj = new angleUtils.CssAngle(angle);
     const container = this.#createNode("span", {
       "data-angle": angle,
@@ -1912,7 +2046,7 @@ class OutputParser {
     );
 
     container.appendChild(value);
-    this.#append(container);
+    this.#append(container, token);
   }
 
   /**
@@ -1925,7 +2059,7 @@ class OutputParser {
    * @param  {object} options
    *         Options object. For valid options and default values see #mergeOptions().
    */
-  #cssPropertySupportsValue(name, value, options) {
+  #cssPropertySupportsValue(name, value, options = {}) {
     if (
       options.isValid ||
       // The filter property is special in that we want to show the swatch even if the
@@ -1960,81 +2094,77 @@ class OutputParser {
    * @param {object} [options]
    * @param {CSSColor} options.colorObj: A css color for the passed color. Will be computed
    *         if not passed.
-   * @param {DOMNode} options.variableContainer: A DOM Node that is the result of parsing
-   *        a CSS variable
    * @param {string} options.colorFunction: The color function that is used to produce this color
    * @param {*} For all the other valid options and default values see #mergeOptions().
+   * @param {object} token
    */
-  #appendColor(color, options = {}) {
+  #appendColor(color, options, token) {
     const colorObj = options.colorObj || new colorUtils.CssColor(color);
 
     if (this.#isValidColor(colorObj)) {
-      const container = this.#createNode("span", {
-        "data-color": color,
-      });
+      const colorContainerEl = this.#createColorContainerElement(
+        colorObj,
+        options
+      );
 
-      if (options.colorSwatchClass) {
-        let attributes = {
-          class: options.colorSwatchClass,
-          style: "background-color:" + color,
-        };
-
-        // Color swatches next to values trigger the color editor everywhere aside from
-        // the Computed panel where values are read-only.
-        if (!options.colorSwatchReadOnly) {
-          attributes = { ...attributes, tabindex: "0", role: "button" };
-        }
-
-        // The swatch is a <span> instead of a <button> intentionally. See Bug 1597125.
-        // It is made keyboard accessible via `tabindex` and has keydown handlers
-        // attached for pressing SPACE and RETURN in SwatchBasedEditorTooltip.js
-        const swatch = this.#createNode("span", attributes);
-        this.#colorSwatches.set(swatch, colorObj);
-        if (options.colorFunction) {
-          swatch.dataset.colorFunction = options.colorFunction;
-        }
-        swatch.addEventListener("mousedown", this.#onColorSwatchMouseDown);
-        container.appendChild(swatch);
-        container.classList.add("color-swatch-container");
-      }
-
-      let colorUnit = options.defaultColorUnit;
-      if (!options.useDefaultColorUnit) {
-        // If we're not being asked to convert the color to the default color type
-        // specified by the user, then force the CssColor instance to be set to the type
-        // of the current color.
-        // Not having a type means that the default color type will be automatically used.
-        colorUnit = colorUtils.classifyColor(color);
-      }
-      color = colorObj.toString(colorUnit);
-      container.dataset.color = color;
-
-      // Next we create the markup to show the value of the property.
-      if (options.variableContainer) {
-        // If we are creating a color swatch for a CSS variable we simply reuse
-        // the markup created for the variableContainer.
-        if (options.colorClass) {
-          options.variableContainer.classList.add(options.colorClass);
-        }
-        container.appendChild(options.variableContainer);
-      } else {
-        // Otherwise we create a new element with the `color` as textContent.
-        const value = this.#createNode("span", {
-          class: options.colorClass,
-        });
-        if (options.valueParts) {
-          value.append(...options.valueParts);
-        } else {
-          value.append(this.#doc.createTextNode(color));
-        }
-
-        container.appendChild(value);
-      }
-
-      this.#append(container);
+      this.#append(colorContainerEl, token);
     } else {
-      this.#appendTextNode(color);
+      this.#appendTextNode(color, token);
     }
+  }
+
+  #createColorContainerElement(colorObj, options, children) {
+    let color = colorObj.authored;
+    const containerEl = this.#createNode("span", {
+      "data-color": color,
+    });
+
+    if (options.colorSwatchClass) {
+      let attributes = {
+        class: options.colorSwatchClass,
+        style: "background-color:" + color,
+      };
+
+      // Color swatches next to values trigger the color editor everywhere aside from
+      // the Computed panel where values are read-only.
+      if (!options.colorSwatchReadOnly) {
+        attributes = { ...attributes, tabindex: "0", role: "button" };
+      }
+
+      // The swatch is a <span> instead of a <button> intentionally. See Bug 1597125.
+      // It is made keyboard accessible via `tabindex` and has keydown handlers
+      // attached for pressing SPACE and RETURN in SwatchBasedEditorTooltip.js
+      const swatch = this.#createNode("span", attributes);
+      this.#colorSwatches.set(swatch, colorObj);
+      if (options.colorFunction) {
+        swatch.dataset.colorFunction = options.colorFunction;
+      }
+      swatch.addEventListener("mousedown", this.#onColorSwatchMouseDown);
+      containerEl.appendChild(swatch);
+      containerEl.classList.add("color-swatch-container");
+    }
+
+    let colorUnit = options.defaultColorUnit;
+    if (!options.useDefaultColorUnit) {
+      // If we're not being asked to convert the color to the default color type
+      // specified by the user, then force the CssColor instance to be set to the type
+      // of the current color.
+      // Not having a type means that the default color type will be automatically used.
+      colorUnit = colorUtils.classifyColor(color);
+    }
+    color = colorObj.toString(colorUnit);
+    containerEl.dataset.color = color;
+
+    const valueEl = this.#createNode("span", {
+      class: options.colorClass,
+    });
+    if (children) {
+      valueEl.append(...children);
+    } else {
+      valueEl.append(color);
+    }
+    containerEl.append(valueEl);
+    return containerEl;
   }
 
   /**
@@ -2091,7 +2221,9 @@ class OutputParser {
     swatch.nextElementSibling.textContent = val;
     swatch.parentNode.dataset.color = val;
 
-    const unitChangeEvent = new swatch.ownerGlobal.CustomEvent("unit-change");
+    const unitChangeEvent = new swatch.documentGlobal.CustomEvent(
+      "unit-change"
+    );
     swatch.dispatchEvent(unitChangeEvent);
   };
 
@@ -2108,7 +2240,9 @@ class OutputParser {
 
     swatch.nextElementSibling.textContent = val;
 
-    const unitChangeEvent = new swatch.ownerGlobal.CustomEvent("unit-change");
+    const unitChangeEvent = new swatch.documentGlobal.CustomEvent(
+      "unit-change"
+    );
     swatch.dispatchEvent(unitChangeEvent);
   };
 
@@ -2129,35 +2263,37 @@ class OutputParser {
   }
 
   /**
-   * Append a URL to the output.
+   * Returns the elements representing a URL.
    *
    * @param  {string} match
    *         Complete match that may include "url(xxx)"
    * @param  {string} url
    *         Actual URL
-   * @param  {object} [options]
-   *         Options object. For valid options and default values see
-   *         #mergeOptions().
+   * @param  {object} options
+   *         Options object. For valid options and default values see #mergeOptions().
+   * @returns {Array<Node>}
    */
-  #appendURL(match, url, options) {
-    if (options.urlClass) {
-      // Sanitize the URL. Note that if we modify the URL, we just
-      // leave the termination characters. This isn't strictly
-      // "as-authored", but it makes a bit more sense.
-      match = this.#sanitizeURL(match);
-      const urlParts = URL_REGEX.exec(match);
+  #createURLElements(match, url, options) {
+    if (!options.urlClass) {
+      return [this.#createTextElement(match)];
+    }
 
-      // Bail out if that didn't match anything.
-      if (!urlParts) {
-        this.#appendTextNode(match);
-        return;
-      }
+    // Sanitize the URL. Note that if we modify the URL, we just
+    // leave the termination characters. This isn't strictly
+    // "as-authored", but it makes a bit more sense.
+    match = this.#sanitizeURL(match);
+    const urlParts = URL_REGEX.exec(match);
 
-      const { leader, body, trailer } = urlParts.groups;
+    // Bail out if that didn't match anything.
+    if (!urlParts) {
+      return [this.#doc.createTextNode(match)];
+    }
 
-      this.#appendTextNode(leader);
+    const { leader, body, trailer } = urlParts.groups;
 
-      this.#appendNode(
+    return [
+      this.#doc.createTextNode(leader),
+      this.#createNode(
         "a",
         {
           target: "_blank",
@@ -2167,67 +2303,102 @@ class OutputParser {
             : url,
         },
         body
-      );
-
-      this.#appendTextNode(trailer);
-    } else {
-      this.#appendTextNode(match);
-    }
+      ),
+      this.#doc.createTextNode(trailer),
+    ];
   }
 
   /**
-   * Append a font family to the output.
+   * Wrap a font family in a special element
    *
-   * @param  {string} fontFamily
-   *         Font family to append
+   * @param  {number} fontFamilyStartPartIndex
+   *         The index in `parts` at which the font-family starts
    * @param  {object} options
    *         Options object. For valid options and default values see
    *         #mergeOptions().
    */
-  #appendFontFamily(fontFamily, options) {
-    let spanContents = fontFamily;
-    let quoteChar = null;
-    let trailingWhitespace = false;
-
-    // Before appending the actual font-family span, we need to trim
-    // down the actual contents by removing any whitespace before and
-    // after, and any quotation characters in the passed string.  Any
-    // such characters are preserved in the actual output, but just
-    // not inside the span element.
-
-    if (spanContents[0] === " ") {
-      this.#appendTextNode(" ");
-      spanContents = spanContents.slice(1);
+  #wrapFontFamilyName(fontFamilyStartPartIndex, options) {
+    if (!options.expectFont) {
+      return;
     }
 
-    if (spanContents[spanContents.length - 1] === " ") {
-      spanContents = spanContents.slice(0, -1);
-      trailingWhitespace = true;
+    const parts = this.#getCurrentStackParts();
+    // We have the beginning of the font family, we need to find the end.
+    // Loop through the parts in reverse to find the first non whitespace character.
+    // By default, let's consider the last part as the end of the font name
+    let fontFamilyEndPartIndex = parts.length - 1;
+    for (let i = parts.length - 1; i >= fontFamilyStartPartIndex; i--) {
+      const part = parts[i];
+      if (part.textContent.trim() !== "") {
+        fontFamilyEndPartIndex = i;
+        break;
+      }
     }
 
-    if (spanContents[0] === "'" || spanContents[0] === '"') {
-      quoteChar = spanContents[0];
+    // Wrap the parts in a dedicated element
+    const fontFamilyNode = this.#createNode("span", {
+      class: options.fontFamilyClass,
+    });
+
+    // If the family name is quoted, we need to put the quotes outside of the family node
+    // So first let's compute the family name (it might be made out of multiple parts at
+    // the moment, e.g. if we have `Helvetica Black`)
+    let familyName = "";
+    for (let i = fontFamilyStartPartIndex; i <= fontFamilyEndPartIndex; i++) {
+      familyName += parts[i].textContent;
     }
 
-    if (quoteChar) {
-      this.#appendTextNode(quoteChar);
-      spanContents = spanContents.slice(1, -1);
+    // We'll associate the new part we create with this aggregated token, so other functions
+    // know those shouldn't be processed.
+    const aggregatedToken = this.#stack.length
+      ? {
+          tokenType: AGGREGATED_TOKEN_TYPE,
+          data: {
+            text: familyName,
+          },
+        }
+      : null;
+    const stackEntry = this.#stack.length ? this.#stack.at(-1) : null;
+    if (stackEntry) {
+      stackEntry.tokensByPart.set(fontFamilyNode, aggregatedToken);
     }
 
-    this.#appendNode(
-      "span",
-      {
-        class: options.fontFamilyClass,
-      },
-      spanContents
+    // Extracting opening and closing quotes, as well as the font name
+    const quoteRegex = /^(?<open>['"])(?<name>[^'"]*)(?<close>['"])$/g;
+    const regexResult = quoteRegex.exec(familyName);
+    // If it's actually wrapped in quote
+    if (regexResult !== null) {
+      // Then, first append the closing quote, as we're going to modify parts and we rely
+      // on the indexes to insert the name at the right spot
+      const part = this.#doc.createTextNode(regexResult.groups.close);
+      parts.splice(fontFamilyEndPartIndex + 1, 0, part);
+
+      if (stackEntry) {
+        stackEntry.tokensByPart.set(part, aggregatedToken);
+      }
+      // Update the family name with the non-quoted one
+      familyName = regexResult.groups.name;
+    }
+
+    fontFamilyNode.append(familyName);
+
+    // Then we want to insert our container, and remove the parts that are representing it
+    const fontFamilyNodeChildCount =
+      fontFamilyEndPartIndex - fontFamilyStartPartIndex + 1;
+    parts.splice(
+      fontFamilyStartPartIndex,
+      fontFamilyNodeChildCount,
+      fontFamilyNode
     );
 
-    if (quoteChar) {
-      this.#appendTextNode(quoteChar);
-    }
+    // Finally we insert the opening quote
+    if (regexResult !== null) {
+      const part = this.#doc.createTextNode(regexResult.groups.open);
+      parts.splice(fontFamilyStartPartIndex, 0, part);
 
-    if (trailingWhitespace) {
-      this.#appendTextNode(" ");
+      if (stackEntry) {
+        stackEntry.tokensByPart.set(part, aggregatedToken);
+      }
     }
   }
 
@@ -2257,9 +2428,29 @@ class OutputParser {
     if (value) {
       const textNode = this.#doc.createTextNode(value);
       node.appendChild(textNode);
+      const truncated = value.length > TRUNCATE_LENGTH_THRESHOLD;
+      node.classList.toggle(TRUNCATE_NODE_CLASSNAME, truncated);
     }
 
     return node;
+  }
+
+  /**
+   * Create an element representing a simple text.
+   *
+   * @param  {string} text
+   *         Text to append
+   * @returns {Text|Element} Returns a Text, or, if the text is greater than the truncate
+   *          threshold, a Node with a specific class to trigger CSS "truncation".
+   */
+  #createTextElement(text) {
+    if (text.length > TRUNCATE_LENGTH_THRESHOLD) {
+      // If the text is too long, force creating a node, which will add the
+      // necessary classname to truncate the property correctly.
+      return this.#createNode("span", {}, text);
+    }
+
+    return this.#doc.createTextNode(text);
   }
 
   /**
@@ -2272,23 +2463,30 @@ class OutputParser {
    * @param  {string} [value]
    *         If a value is included it will be appended as a text node inside
    *         the tag. This is useful e.g. for span tags.
+   * @param  {object} token
+   * @return {number} The index of the new part in the parts array
    */
-  #appendNode(tagName, attributes, value = "") {
+  #appendNode(tagName, attributes, value, token) {
     const node = this.#createNode(tagName, attributes, value);
-    if (value.length > TRUNCATE_LENGTH_THRESHOLD) {
-      node.classList.add(TRUNCATE_NODE_CLASSNAME);
-    }
-
-    this.#append(node);
+    return this.#append(node, token);
   }
 
   /**
    * Append an element or a text node to the output.
    *
-   * @param {DOMNode | string} item
+   * @param {Element|Text} item
+   * @param {object} token
+   * @return {number} The index of the new part in the parts array
    */
-  #append(item) {
-    this.#getCurrentStackParts().push(item);
+  #append(item, token = null) {
+    const len = this.#getCurrentStackParts().push(item);
+
+    if (token !== null && this.#stack.length) {
+      const stackEntry = this.#stack.at(-1);
+      stackEntry.tokensByPart.set(item, token);
+    }
+
+    return len - 1;
   }
 
   /**
@@ -2297,15 +2495,17 @@ class OutputParser {
    *
    * @param  {string} text
    *         Text to append
+   * @param  {object} token
+   * @return {number} The index of the new part in the parts array
    */
-  #appendTextNode(text) {
+  #appendTextNode(text, token) {
     if (text.length > TRUNCATE_LENGTH_THRESHOLD) {
       // If the text is too long, force creating a node, which will add the
       // necessary classname to truncate the property correctly.
-      this.#appendNode("span", {}, text);
-    } else {
-      this.#append(text);
+      return this.#appendNode("span", {}, text, token);
     }
+
+    return this.#append(this.#doc.createTextNode(text), token);
   }
 
   #getCurrentStackParts() {
@@ -2380,6 +2580,7 @@ class OutputParser {
    *        definition for CSS variables. Defaults to true.
    * @param {boolean} overrides.isDarkColorScheme: Is the currently applied color scheme dark.
    * @param {boolean} overrides.isValid: Is the name+value valid.
+   * @param {boolean} overrides.cssExplainersEnabled: Are CSS explainers enabled
    * @return {object} Overridden options object
    */
   #mergeOptions(overrides) {
@@ -2393,6 +2594,7 @@ class OutputParser {
       colorClass: null,
       colorSwatchClass: null,
       colorSwatchReadOnly: false,
+      cssExplainersEnabled: false,
       filterSwatch: false,
       flexClass: null,
       gridClass: null,

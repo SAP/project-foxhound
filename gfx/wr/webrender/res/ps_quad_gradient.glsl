@@ -177,9 +177,9 @@ float apply_extend_mode(float offset) {
 // the layout of the gradient data in the gpu buffer.
 vec4 sample_gradient_stops_tree(float offset) {
     int count = v_gradient_header.y;
-    int colors_addr = v_gradient_header.w;
+    HIGHP_FS_ADDRESS int colors_addr = v_gradient_header.w;
     // Address of the current level
-    int level_base_addr = colors_addr + count;
+    HIGHP_FS_ADDRESS int level_base_addr = colors_addr + count;
     // Number of blocks of 4 indices for the current level.
     // At the root, a single block is stored. Each level stores
     // 5 times more blocks than the previous one.
@@ -269,7 +269,7 @@ vec4 sample_gradient_stops_tree(float offset) {
     } else if (index > count - 1) {
         index = count - 1;
     }
-    int color_pair_address = colors_addr + index - 1;
+    HIGHP_FS_ADDRESS int color_pair_address = colors_addr + index - 1;
     vec4 color_pair[2] = fetch_from_gpu_buffer_2f(color_pair_address);
 
     return mix(color_pair[0], color_pair[1], factor);
@@ -301,7 +301,16 @@ float linear_gradient_fragment() {
     float start_offset = v_flat_data.z;
 
     // Project position onto a direction vector to compute offset.
-    return dot(pos, scale_dir) - start_offset;
+    float offset = dot(pos, scale_dir) - start_offset;
+
+    // Due to precision issues with interpolated varyings if a row/column or diagonal
+    // of pixels are exactly on the hard stop boundary, pixels along the hard stop may
+    // fall on either side of the boundary inconsistently which creates a very noticeable
+    // jagged look. The issue is hardware-dependent but has been observed with multiple
+    // GPU vendors.
+    // We work around it by adding a tiny amount to the offset as it makes it much less
+    // likely for typical gradient stop offset values to land exactly on pixel centers.
+    return offset + 0.000001;
 }
 
 float radial_gradient_fragment() {

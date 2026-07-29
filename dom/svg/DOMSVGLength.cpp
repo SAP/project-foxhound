@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -83,8 +81,8 @@ void DOMSVGLength::CleanupWeakRefs() {
   // cycle collected), so we that don't leave behind a pointer to
   // free / soon-to-be-free memory.
   if (nsCOMPtr<DOMSVGLengthList> lengthList = do_QueryInterface(mOwner)) {
-    MOZ_ASSERT(lengthList->mItems[mListIndex] == this,
-               "Clearing out the wrong list index...?");
+    MOZ_RELEASE_ASSERT(lengthList->mItems[mListIndex] == this,
+                       "Clearing out the wrong list index...?");
     lengthList->mItems[mListIndex] = nullptr;
   }
 
@@ -122,9 +120,9 @@ already_AddRefed<DOMSVGLength> DOMSVGLength::GetTearOff(SVGAnimatedLength* aVal,
   return domLength.forget();
 }
 
-DOMSVGLength* DOMSVGLength::Copy() {
+already_AddRefed<DOMSVGLength> DOMSVGLength::Copy() {
   NS_ASSERTION(HasOwner(), "unexpected caller");
-  DOMSVGLength* copy = new DOMSVGLength();
+  RefPtr copy = MakeRefPtr<DOMSVGLength>();
   uint16_t unit;
   float value;
   if (nsCOMPtr<SVGElement> svg = do_QueryInterface(mOwner)) {
@@ -142,7 +140,7 @@ DOMSVGLength* DOMSVGLength::Copy() {
     value = length.GetValueInCurrentUnits();
   }
   copy->NewValueSpecifiedUnits(unit, value, IgnoreErrors());
-  return copy;
+  return copy.forget();
 }
 
 uint16_t DOMSVGLength::UnitType() {

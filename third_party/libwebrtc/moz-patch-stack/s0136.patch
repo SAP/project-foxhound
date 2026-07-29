@@ -1,29 +1,28 @@
-From: Michael Froman <mfroman@mozilla.com>
-Date: Mon, 29 Dec 2025 13:18:00 -0600
-Subject: Bug 2006933 - (fix-932f274e86) don't include rtc_error.h, forward
- declare RTCError
+From: Landry Breuil <landry@openbsd.org>
+Date: Wed, 15 Apr 2026 13:31:00 +0000
+Subject: Bug 2030612 - define AOM_EFLAG_FREEZE_INTERNAL_STATE if not defined
+ r=mjf
 
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/fb61f91d422c3d77545d0d10778314eb958fc8c6
+fixes build with system-av1/aom after bug 2029247
+
+Differential Revision: https://phabricator.services.mozilla.com/D293051
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/70d2379819582d44092dee15e1e45ddbc9cd3f22
 ---
- api/rtp_parameters.h | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
+ modules/video_coding/codecs/av1/libaom_av1_encoder.cc | 4 ++++
+ 1 file changed, 4 insertions(+)
 
-diff --git a/api/rtp_parameters.h b/api/rtp_parameters.h
-index 09eebcab05..db025379da 100644
---- a/api/rtp_parameters.h
-+++ b/api/rtp_parameters.h
-@@ -23,13 +23,13 @@
- #include "absl/strings/string_view.h"
- #include "api/media_types.h"
- #include "api/priority.h"
--#include "api/rtc_error.h"
- #include "api/rtp_transceiver_direction.h"
- #include "api/video/resolution.h"
- #include "api/video_codecs/scalability_mode.h"
- #include "rtc_base/system/rtc_export.h"
+diff --git a/modules/video_coding/codecs/av1/libaom_av1_encoder.cc b/modules/video_coding/codecs/av1/libaom_av1_encoder.cc
+index dc27b1f170..6e369c1c09 100644
+--- a/modules/video_coding/codecs/av1/libaom_av1_encoder.cc
++++ b/modules/video_coding/codecs/av1/libaom_av1_encoder.cc
+@@ -67,6 +67,10 @@
+ #define AOM_EFLAG_CALCULATE_PSNR (1 << 3)
+ #endif
  
- namespace webrtc {
-+class RTCError;
- class StringBuilder;
- 
- using CodecParameterMap = std::map<std::string, std::string>;
++#ifndef AOM_EFLAG_FREEZE_INTERNAL_STATE
++#define AOM_EFLAG_FREEZE_INTERNAL_STATE (1 << 2)
++#endif
++
+ #if defined(WEBRTC_ENCODER_PSNR_STATS)
+ constexpr bool kEnablePsnrStats = true;
+ #else

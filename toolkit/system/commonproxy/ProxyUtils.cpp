@@ -1,10 +1,10 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ProxyUtils.h"
 
+#include "mozilla/Atomics.h"
 #include "mozilla/IntegerRange.h"
 #include "nsReadableUtils.h"
 #include "nsTArray.h"
@@ -301,6 +301,27 @@ nsresult GetProxyFromEnvironment(const nsACString& aScheme,
 
 bool IsHostProxyEntry(const nsACString& aHost, const nsACString& aOverride) {
   return IsMatchMask(aHost, aOverride) || IsMatchWildcard(aHost, aOverride);
+}
+
+bool HasProxyEnvVars() {
+  // Environment variables don't change after process start, so cache the
+  // result to avoid repeated PR_GetEnv calls on every proxy resolution.
+  // Two threads racing on the first call will both compute the same result
+  // and both write it — benign double-initialization.
+  static mozilla::Atomic<int32_t> sCached{-1};
+  if (sCached >= 0) {
+    return !!sCached;
+  }
+  bool result = false;
+  for (const auto& var : {"http_proxy"_ns, "https_proxy"_ns, "all_proxy"_ns}) {
+    const char* val = GetEnvRetryUppercase(var);
+    if (val && val[0]) {
+      result = true;
+      break;
+    }
+  }
+  sCached = result ? 1 : 0;
+  return result;
 }
 
 }  // namespace system

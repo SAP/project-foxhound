@@ -29,6 +29,24 @@ var smoothScrollEnabled = [
   ["general.smoothScroll.msdPhysics.enabled", false],
 ];
 
+var scrollbarPrefs = [
+  ...prefs,
+  ["ui.useOverlayScrollbars", 0],
+  ["layout.scrollbars.click_and_hold_track.continue_to_end", false],
+];
+
+var scrollbarPrefsWithHitTest = [
+  ...scrollbarPrefs,
+  ["test.events.async.enabled", true],
+  ["apz.test.logging_enabled", true],
+];
+
+var touchGesturePrefs = [
+  ...prefs,
+  ["apz.touch_start_tolerance", "0.0"],
+  ["apz.fling_min_velocity_threshold", "10000"],
+];
+
 var subtests = [
   {"file": "helper_basic_scrollend.html?chrome-only=true", "prefs": prefs},
   {"file": "helper_basic_scrollend.html?chrome-only=false", "prefs": prefs},
@@ -36,6 +54,7 @@ var subtests = [
   {"file": "helper_scrollend_bubbles.html?scroll-target=element", "prefs": prefs},
   {"file": "helper_main_thread_smooth_scroll_scrollend.html", "prefs": prefs},
   {"file": "helper_pan_with_no_scroll.html", "prefs": prefs},
+  {"file": "helper_visual_viewport_scrollend.html", "prefs": touchGesturePrefs},
   {"file": "helper_scrollend_bubbles.html?scroll-target=document",
         "prefs": smoothScrollDisabled},
   {"file": "helper_scrollend_bubbles.html?scroll-target=element",
@@ -58,6 +77,12 @@ var subtests = [
         "prefs": smoothScrollDisabled},
   {"file": "helper_keyboard_scrollend.html?direction=down",
         "prefs": smoothScrollDisabled},
+  {"file": "helper_click_and_hold_scrollbar_scrollend.html",
+   "prefs": scrollbarPrefsWithHitTest},
+  {"file": "helper_click_and_hold_scrollbar_scrollend_after_snap.html",
+   "prefs": scrollbarPrefs},
+  {"file": "helper_pan_end_snap_to_current_position_scrollend.html",
+   "prefs": prefs},
 ];
 
 if (isApzEnabled()) {

@@ -19,7 +19,7 @@ add_task(async function test_textSelectedDuringScreenshot() {
       let helper = new ScreenshotsHelper(browser);
       let rect = await helper.getTestPageElementRect("selection");
 
-      await ContentTask.spawn(browser, [], async () => {
+      await SpecialPowers.spawn(browser, [], async () => {
         let selection = content.window.getSelection();
         let elToSelect = content.document.getElementById("selection");
 
@@ -37,7 +37,7 @@ add_task(async function test_textSelectedDuringScreenshot() {
       // remove the selection here.
       // In real scenarios, the selection is cleared when the page is
       // interacted with.
-      await ContentTask.spawn(browser, [], async () => {
+      await SpecialPowers.spawn(browser, [], async () => {
         let selection = content.window.getSelection();
         selection.removeAllRanges();
       });
@@ -87,7 +87,7 @@ add_task(async function test_textSelectedDuringVisibleScreenshot() {
         devicePixelRatio * contentInfo.clientHeight
       );
 
-      await ContentTask.spawn(browser, [], async () => {
+      await SpecialPowers.spawn(browser, [], async () => {
         let selection = content.window.getSelection();
         let elToSelect = content.document.getElementById("selection");
 

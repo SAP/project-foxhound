@@ -24,7 +24,11 @@ import org.mozilla.fenix.components.toolbar.ToolbarPosition
 class FenixAutocompletePromptTest {
     @Test
     fun `GIVEN FenixAutocompletePrompt WHEN selectablePromptListener is set THEN don't initialize the view`() {
-        val viewProvider: () -> LoginSelectBar = mockk()
+        var viewProviderInvocationCount = 0
+        val viewProvider: () -> LoginSelectBar = {
+            viewProviderInvocationCount++
+            error("viewProvider should not be invoked")
+        }
         val fenixPrompt = FenixAutocompletePrompt(
             viewProvider = viewProvider,
             toolbarPositionProvider = { ToolbarPosition.BOTTOM },
@@ -37,7 +41,7 @@ class FenixAutocompletePromptTest {
             override fun onManageOptions() {}
         }
 
-        verify(exactly = 0) { viewProvider.invoke() }
+        assertEquals(0, viewProviderInvocationCount)
     }
 
     @Test

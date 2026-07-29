@@ -124,13 +124,17 @@ function finish() {
 
 async function runTests()
 {
-  // This ensures we actually test the lazy-load of images in printpreview_images.
   await SpecialPowers.pushPrefEnv({
     set: [
+      // Ensure we actually test the lazy-load of images in printpreview_images:
       ["dom.lazy-loading.margin.top", 0],
       ["dom.lazy-loading.margin.bottom", 0],
       ["dom.lazy-loading.margin.left", 0],
       ["dom.lazy-loading.margin.right", 0],
+
+      // Set pref to request callback from PDF.js, so we can tell when
+      // PDF documents are ready for screenshotting:
+      ["pdfjs.postMessageAfterPrintCallback", true],
     ],
   });
   startTest1();
@@ -162,6 +166,21 @@ function addHTMLContent(parent) {
   }
   s += "</table>";
   n.innerHTML = s;
+}
+
+// Convenience function to make a data URI for a document that has the given
+// width and height declared in a @page size rule, and is filled with blue.
+function makeBlueRectDoc(width, height){
+  // If only one param is passed, use it for width and height:
+  if (height === undefined) {
+    height = width;
+  }
+  return `data:text/html,<style> \
+      @page{ size: ${width} ${height}; margin: 0; } \
+      body { margin: 0; } \
+      .rect{ background: blue; width: ${width}; height: ${height}; } \
+      </style> \
+      <div class="rect"></div>`;
 }
 
 async function startTest1() {
@@ -448,6 +467,22 @@ async function runTest10() {
   requestAnimationFrame(function() { setTimeout(runTest11); } );
 }
 
+
+/* This function's 'options' param accepts a bundle of parameters that we
+ * pass along to printpreview() (typically grouped as 'options.test' and
+ * 'options.ref').
+ *
+ * Additionally, 'options' can contain several flags that let us wait for a
+ * signal before/after our printpreview() call, specifically for the testcase
+ * i.e. 'src1' (*not* for the reference case 'src2' which is assumed to be
+ * simpler):
+ * - 'waitForMessage': await a postMessage from the iframe before invoking
+ * printpreview().
+ * - 'waitForMessageDuringPrintPreview': after invoking printpreview(),
+ * await a postMessage from the iframe before taking our screenshot
+ * (using drawPrintPreviewWindow). This is needed if the testcase uses
+ * mozPrintCallback, e.g. PDF files rendered using PDF.js.
+ */
 async function compareFiles(src1, src2, options = {}) {
   const BASE = "https://example.org/chrome/layout/base/tests/chrome/";
 
@@ -476,11 +511,23 @@ async function compareFiles(src1, src2, options = {}) {
   }
 
   if (messagePromise) {
-    info("awaiting for message to arrive");
+    info("awaiting for message to arrive (before calling printpreview)");
     await messagePromise;
+    messagePromise = null;
   }
 
+  if (options.waitForMessageDuringPrintPreview) {
+    messagePromise = new Promise(resolve => {
+      iframeElement.addEventListener("message", resolve, { capture: true, once: true });
+    });
+  }
   await printpreview(options.test || options);
+  if (messagePromise) {
+    info("awaiting for message to arrive (after calling printpreview)");
+    await messagePromise;
+    messagePromise = null;
+  }
+
   drawPrintPreviewWindow(ctx1);
   exitprintpreview();
 
@@ -1978,6 +2025,47 @@ async function runTest66() {
         printInColor: true,
       },
     },
+  });
+  requestAnimationFrame(() => setTimeout(runTest67));
+}
+
+// Test for basic PDF rendering: 2in blue square (on larger default-sized paper)
+async function runTest67() {
+  let test = "2in_blue.pdf";
+  let ref = makeBlueRectDoc("2in");
+  await compareFiles(test, ref, { waitForMessageDuringPrintPreview: true });
+  requestAnimationFrame(() => setTimeout(runTest68));
+}
+
+// Test for basic PDF rendering: 2x3 blue square (on larger default-sized paper)
+async function runTest68() {
+  let test = "2in_by_3in_blue.pdf";
+  let ref = makeBlueRectDoc("2in", "3in");
+  await compareFiles(test, ref, { waitForMessageDuringPrintPreview: true });
+  requestAnimationFrame(() => setTimeout(runTest69));
+}
+
+// Test for PDF rendering on smaller sheet of paper. The PDF should downscale
+// with a 'contain' constraint, and snap to top left corner of paper, rather
+// than filling/overflowing the paper.
+async function runTest69() {
+  let fuzz = navigator.platform.includes("Win") ? // Workaround for bug 1680838
+      { maxDifferent: 13490, maxDifference: 255 } :
+      { maxDifferent: 0, maxDifference: 0 };
+
+  let test = "2in_by_4in_blue.pdf";
+  let ref = makeBlueRectDoc("1in", "2in");
+  await compareFiles(test, ref, {
+    maxDifferent: fuzz.maxDifferent,
+    maxDifference: fuzz.maxDifference,
+    settings: {
+      // Note: This 2x2 paper is too small to fit our 2x4 PDF, so we expect
+      // that the PDF will scale down by 50% to render as 1x2.
+      paperWidth: 2,
+      paperHeight: 2,
+      paperSizeUnit: Ci.nsIPrintSettings.kPaperSizeInches,
+    },
+    waitForMessageDuringPrintPreview: true,
   });
   finish();
 }

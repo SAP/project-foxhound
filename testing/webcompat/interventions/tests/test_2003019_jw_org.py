@@ -8,6 +8,7 @@ ARTICLE_CSS = "#bibleText"
 async def does_text_wrap(client):
     await client.navigate(URL, wait="none")
     text = client.await_css(ARTICLE_CSS, is_displayed=True)
+    await client.stall(2)
     return client.execute_script(
         """
         const container = arguments[0];

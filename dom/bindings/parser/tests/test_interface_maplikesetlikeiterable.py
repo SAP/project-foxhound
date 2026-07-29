@@ -9,26 +9,27 @@ def WebIDLTest(parser, harness):
         harness.check(
             len(results),
             numProductions,
-            "%s - Should have production count %d" % (prefix, numProductions),
+            f"{prefix} - Should have production count {numProductions}",
         )
         harness.ok(
             isinstance(results[0], WebIDL.IDLInterface),
-            "%s - Should be an IDLInterface" % (prefix),
+            f"{prefix} - Should be an IDLInterface",
         )
         # Make a copy, since we plan to modify it
         expectedMembers = list(expectedMembers)
         for m in results[0].members:
             name = m.identifier.name
+            member_type = type(m)
             if m.isMethod() and m.isStatic():
                 # None of the expected members are static methods, so ignore those.
-                harness.ok(True, "%s - %s - Should be a %s" % (prefix, name, type(m)))
-            elif (name, type(m)) in expectedMembers:
-                harness.ok(True, "%s - %s - Should be a %s" % (prefix, name, type(m)))
-                expectedMembers.remove((name, type(m)))
+                harness.ok(True, f"{prefix} - {name} - Should be a {member_type}")
+            elif (name, member_type) in expectedMembers:
+                harness.ok(True, f"{prefix} - {name} - Should be a {member_type}")
+                expectedMembers.remove((name, member_type))
             else:
                 harness.ok(
                     False,
-                    "%s - %s - Unknown symbol of type %s" % (prefix, name, type(m)),
+                    f"{prefix} - {name} - Unknown symbol of type {member_type}",
                 )
         # A bit of a hoop because we can't generate the error string if we pass
         if len(expectedMembers) == 0:
@@ -36,8 +37,7 @@ def WebIDLTest(parser, harness):
         else:
             harness.ok(
                 False,
-                "Expected member not found: %s of type %s"
-                % (expectedMembers[0][0], expectedMembers[0][1]),
+                f"Expected member not found: {expectedMembers[0][0]} of type {expectedMembers[0][1]}",
             )
         return results
 
@@ -52,8 +52,7 @@ def WebIDLTest(parser, harness):
         except Exception as e:
             harness.ok(
                 False,
-                prefix
-                + " - Interface failed but not as a WebIDLError exception: %s" % e,
+                prefix + f" - Interface failed but not as a WebIDLError exception: {e}",
             )
 
     iterableMembers = [
@@ -587,95 +586,87 @@ def WebIDLTest(parser, harness):
         (conflictName, conflictType) = conflict
         if methodPasses:
             shouldPass(
-                "Conflicting method: %s and %s" % (likeMember, conflictName),
-                """
-                       interface Foo1 {
-                       %s;
+                f"Conflicting method: {likeMember} and {conflictName}",
+                f"""
+                       interface Foo1 {{
+                       {likeMember};
                        [Throws]
-                       undefined %s(long test1, double test2, double test3);
-                       };
-                       """
-                % (likeMember, conflictName),
+                       undefined {conflictName}(long test1, double test2, double test3);
+                       }};
+                       """,
                 expectedMembers,
             )
         else:
             shouldFail(
-                "Conflicting method: %s and %s" % (likeMember, conflictName),
-                """
-                       interface Foo1 {
-                       %s;
+                f"Conflicting method: {likeMember} and {conflictName}",
+                f"""
+                       interface Foo1 {{
+                       {likeMember};
                        [Throws]
-                       undefined %s(long test1, double test2, double test3);
-                       };
-                       """
-                % (likeMember, conflictName),
+                       undefined {conflictName}(long test1, double test2, double test3);
+                       }};
+                       """,
             )
         # Inherited conflicting methods should ALWAYS fail
         shouldFail(
-            "Conflicting inherited method: %s and %s" % (likeMember, conflictName),
-            """
-                   interface Foo1 {
-                   undefined %s(long test1, double test2, double test3);
-                   };
-                   interface Foo2 : Foo1 {
-                   %s;
-                   };
-                   """
-            % (conflictName, likeMember),
+            f"Conflicting inherited method: {likeMember} and {conflictName}",
+            f"""
+                   interface Foo1 {{
+                   undefined {conflictName}(long test1, double test2, double test3);
+                   }};
+                   interface Foo2 : Foo1 {{
+                   {likeMember};
+                   }};
+                   """,
         )
         if conflictType == WebIDL.IDLAttribute:
             shouldFail(
-                "Conflicting static method: %s and %s" % (likeMember, conflictName),
-                """
-                       interface Foo1 {
-                       %s;
-                       static undefined %s(long test1, double test2, double test3);
-                       };
-                       """
-                % (likeMember, conflictName),
+                f"Conflicting static method: {likeMember} and {conflictName}",
+                f"""
+                       interface Foo1 {{
+                       {likeMember};
+                       static undefined {conflictName}(long test1, double test2, double test3);
+                       }};
+                       """,
             )
         else:
             shouldPass(
-                "Conflicting static method: %s and %s" % (likeMember, conflictName),
-                """
-                       interface Foo1 {
-                       %s;
-                       static undefined %s(long test1, double test2, double test3);
-                       };
-                       """
-                % (likeMember, conflictName),
+                f"Conflicting static method: {likeMember} and {conflictName}",
+                f"""
+                       interface Foo1 {{
+                       {likeMember};
+                       static undefined {conflictName}(long test1, double test2, double test3);
+                       }};
+                       """,
                 expectedMembers,
                 numProductions=numProductions,
             )
         shouldFail(
-            "Conflicting attribute: %s and %s" % (likeMember, conflictName),
-            """
-                   interface Foo1 {
-                   %s
-                   attribute double %s;
-                   };
-                   """
-            % (likeMember, conflictName),
+            f"Conflicting attribute: {likeMember} and {conflictName}",
+            f"""
+                   interface Foo1 {{
+                   {likeMember}
+                   attribute double {conflictName};
+                   }};
+                   """,
         )
         shouldFail(
-            "Conflicting const: %s and %s" % (likeMember, conflictName),
-            """
-                   interface Foo1 {
-                   %s;
-                   const double %s = 0;
-                   };
-                   """
-            % (likeMember, conflictName),
+            f"Conflicting const: {likeMember} and {conflictName}",
+            f"""
+                   interface Foo1 {{
+                   {likeMember};
+                   const double {conflictName} = 0;
+                   }};
+                   """,
         )
         shouldFail(
-            "Conflicting static attribute: %s and %s" % (likeMember, conflictName),
-            """
-                   interface Foo1 {
-                   %s;
-                   static attribute long %s;
-                   };
-                   """
-            % (likeMember, conflictName),
+            f"Conflicting static attribute: {likeMember} and {conflictName}",
+            f"""
+                   interface Foo1 {{
+                   {likeMember};
+                   static attribute long {conflictName};
+                   }};
+                   """,
         )
 
     for member in disallowedIterableNames:
@@ -925,13 +916,13 @@ def WebIDLTest(parser, harness):
 
     for m in r[0].members:
         if m.identifier.name in ["clear", "set", "delete"]:
-            harness.ok(m.isMethod(), "%s should be a method" % m.identifier.name)
+            harness.ok(m.isMethod(), f"{m.identifier.name} should be a method")
             harness.check(
-                m.maxArgCount, 4, "%s should have 4 arguments" % m.identifier.name
+                m.maxArgCount, 4, f"{m.identifier.name} should have 4 arguments"
             )
             harness.ok(
                 not m.isMaplikeOrSetlikeOrIterableMethod(),
-                "%s should not be a maplike/setlike function" % m.identifier.name,
+                f"{m.identifier.name} should not be a maplike/setlike function",
             )
 
     tests = [

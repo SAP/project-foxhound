@@ -10,6 +10,9 @@ import mozilla.components.lib.state.State
 import mozilla.components.lib.state.Store
 import org.mozilla.focus.settings.permissions.SitePermissionOption
 
+/**
+ * Store for the site permission options screen.
+ */
 class SitePermissionOptionsScreenStore(
     initialState: SitePermissionOptionsScreenState,
     middlewares: List<Middleware<SitePermissionOptionsScreenState, SitePermissionOptionsScreenAction>> = emptyList(),
@@ -23,6 +26,9 @@ class SitePermissionOptionsScreenStore(
     }
 }
 
+/**
+ * State for the site permission options screen.
+ */
 data class SitePermissionOptionsScreenState(
     val sitePermissionOptionList: List<SitePermissionOption> = emptyList(),
     val selectedSitePermissionOption: SitePermissionOption? = null,
@@ -30,10 +36,28 @@ data class SitePermissionOptionsScreenState(
     val isAndroidPermissionGranted: Boolean = false,
 ) : State
 
+/**
+ * Actions for the site permission options screen.
+ */
 sealed class SitePermissionOptionsScreenAction : Action {
+    /**
+     * Action to initialize the site permission options.
+     */
     object InitSitePermissionOptions : SitePermissionOptionsScreenAction()
+
+    /**
+     * Action to select a specific site permission option.
+     */
     data class Select(val selectedSitePermissionOption: SitePermissionOption) : SitePermissionOptionsScreenAction()
+
+    /**
+     * Action to update the Android permission status.
+     */
     data class AndroidPermission(val isAndroidPermissionGranted: Boolean) : SitePermissionOptionsScreenAction()
+
+    /**
+     * Action to update all site permission options.
+     */
     data class UpdateSitePermissionOptions(
         val sitePermissionOptionsList: List<SitePermissionOption>,
         val selectedSitePermissionOption: SitePermissionOption,

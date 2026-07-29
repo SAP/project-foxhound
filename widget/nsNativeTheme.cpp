@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +8,6 @@
 #include "nsIContent.h"
 #include "nsIFrame.h"
 #include "nsLayoutUtils.h"
-#include "nsNumberControlFrame.h"
 #include "nsPresContext.h"
 #include "nsString.h"
 #include "nsNameSpaceManager.h"
@@ -38,6 +36,18 @@ nsNativeTheme::nsNativeTheme() : mAnimatedContentTimeout(UINT32_MAX) {}
 
 NS_IMPL_ISUPPORTS(nsNativeTheme, nsITimerCallback, nsINamed)
 
+static HTMLInputElement* GetContainingNumberInput(nsIContent* aContent) {
+  auto* nacHost = aContent->GetClosestNativeAnonymousSubtreeRootParentOrHost();
+  if (!nacHost) {
+    return nullptr;
+  }
+  auto* input = HTMLInputElement::FromNode(nacHost);
+  if (!input || input->ControlType() != FormControlType::InputNumber) {
+    return nullptr;
+  }
+  return input;
+}
+
 /* static */ ElementState nsNativeTheme::GetContentState(
     nsIFrame* aFrame, StyleAppearance aAppearance) {
   if (!aFrame) {
@@ -61,12 +71,13 @@ NS_IMPL_ISUPPORTS(nsNativeTheme, nsITimerCallback, nsINamed)
   MOZ_ASSERT(frameContent && frameContent->IsElement());
 
   ElementState flags = frameContent->AsElement()->StyleState();
-  nsNumberControlFrame* numberControlFrame =
-      nsNumberControlFrame::GetNumberControlFrameForSpinButton(aFrame);
-  if (numberControlFrame &&
-      numberControlFrame->GetContent()->AsElement()->StyleState().HasState(
-          ElementState::DISABLED)) {
-    flags |= ElementState::DISABLED;
+  if (aAppearance == StyleAppearance::SpinnerDownbutton ||
+      aAppearance == StyleAppearance::SpinnerUpbutton) {
+    if (HTMLInputElement* numberInput = GetContainingNumberInput(frameContent);
+        numberInput &&
+        numberInput->StyleState().HasState(ElementState::DISABLED)) {
+      flags |= ElementState::DISABLED;
+    }
   }
 
   if (!isXULElement) {

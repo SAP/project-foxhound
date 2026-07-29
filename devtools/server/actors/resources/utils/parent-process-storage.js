@@ -47,14 +47,10 @@ class ParentProcessStorage {
     Services.obs.addObserver(this, "window-global-created");
     Services.obs.addObserver(this, "window-global-destroyed");
 
-    // bfcacheInParent is only enabled when fission is enabled
-    // and when Session History In Parent is enabled. (all three modes should now enabled all together)
-    loader.lazyGetter(
-      this,
-      "isBfcacheInParentEnabled",
-      () =>
-        Services.appinfo.sessionHistoryInParent &&
-        Services.prefs.getBoolPref("fission.bfcacheInParent", false)
+    // bfcacheInParent is only enabled when fission is enabled.
+    // (all three modes should now enabled all together)
+    loader.lazyGetter(this, "isBfcacheInParentEnabled", () =>
+      Services.prefs.getBoolPref("fission.bfcacheInParent", false)
     );
   }
 

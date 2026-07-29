@@ -85,7 +85,7 @@ export function FeatureHighlight({
         className={`feature-highlight-modal ${position} ${arrowPosition} ${modalClassName} ${openedClassname}`}
       >
         <div className="message-icon">{icon}</div>
-        <p className="content-wrapper">{message}</p>
+        <div className="content-wrapper">{message}</div>
         <moz-button
           type="icon ghost"
           size="small"

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,18 +29,6 @@ using namespace mozilla;
 static StaticAutoPtr<nsTHashMap<nsCStringHashKey, NonCustomCSSPropertyId>>
     gPropertyIDLNameTable;
 
-static constexpr nsLiteralCString const kCSSRawFontDescs[] = {
-#define CSS_FONT_DESC(name_, method_) #name_ ""_ns,
-#include "nsCSSFontDescList.inc"
-#undef CSS_FONT_DESC
-};
-
-static constexpr nsLiteralCString const kCSSRawCounterDescs[] = {
-#define CSS_COUNTER_DESC(name_, method_) #name_ ""_ns,
-#include "nsCSSCounterDescList.inc"
-#undef CSS_COUNTER_DESC
-};
-
 static constexpr CSSPropFlags kFlagsTable[eCSSProperty_COUNT_with_aliases] = {
 #define CSS_PROP_LONGHAND(name_, id_, method_, flags_, ...) flags_,
 #define CSS_PROP_SHORTHAND(name_, id_, method_, flags_, ...) flags_,
@@ -52,23 +38,6 @@ static constexpr CSSPropFlags kFlagsTable[eCSSProperty_COUNT_with_aliases] = {
 #undef CSS_PROP_SHORTHAND
 #undef CSS_PROP_LONGHAND
 };
-
-template <size_t N>
-static constexpr bool DescsAreValid(const nsLiteralCString (&aDescs)[N]) {
-  for (const nsLiteralCString& desc : aDescs) {
-    for (size_t i = 0; i < desc.Length(); ++i) {
-      unsigned char c = desc.CharAt(i);
-      if (!IS_ASCII(c) || IS_ASCII_UPPER(c) || c == '_') {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-static_assert(DescsAreValid(kCSSRawFontDescs),
-              "invalid desc in nsCSSFontDescList.inc");
-static_assert(DescsAreValid(kCSSRawCounterDescs),
-              "invalid desc in nsCSSCounterDescList.inc");
 
 void nsCSSProps::RecomputeEnabledState(const char* aPref, void*) {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
@@ -140,35 +109,36 @@ NonCustomCSSPropertyId nsCSSProps::LookupPropertyByIDLName(
   return res;
 }
 
-nsCSSFontDesc nsCSSProps::LookupFontDesc(const nsACString& aFontDesc) {
-  // NOTE: This method does chained comparisons as there are only 14 items in
-  // `nsCSSFontDescList.inc`. A more advanced table-based lookup may be
-  // warranted if this grows substantially.
-#define CSS_FONT_DESC(name_, method_)             \
-  if (aFontDesc.LowerCaseEqualsLiteral(#name_)) { \
-    return eCSSFontDesc_##method_;                \
+template <typename Id, size_t N>
+static Maybe<Id> LookupDescriptor(
+    const nsACString& aName,
+    const nsCSSProps::DescriptorTableEntry<Id> (&aTable)[N]) {
+  for (const auto& entry : aTable) {
+    if (aName.LowerCaseEqualsASCII(entry.mName.get(), entry.mName.Length())) {
+      return Some(entry.mId);
+    }
   }
-#include "nsCSSFontDescList.inc"
-#undef CSS_FONT_DESC
-
-  return eCSSFontDesc_UNKNOWN;
+  return Nothing();
 }
 
-static constexpr auto sDescNullStr = ""_ns;
-
-const nsCString& nsCSSProps::GetStringValue(nsCSSFontDesc aFontDescID) {
-  if (eCSSFontDesc_UNKNOWN < aFontDescID && aFontDescID < eCSSFontDesc_COUNT) {
-    return kCSSRawFontDescs[size_t(aFontDescID)];
-  }
-  return sDescNullStr;
+Maybe<FontFaceDescriptorId> nsCSSProps::LookupFontDesc(
+    const nsACString& aFontDesc) {
+  return LookupDescriptor(aFontDesc, kFontFaceDescs);
 }
 
-const nsCString& nsCSSProps::GetStringValue(nsCSSCounterDesc aCounterDescID) {
-  if (eCSSCounterDesc_UNKNOWN < aCounterDescID &&
-      aCounterDescID < eCSSCounterDesc_COUNT) {
-    return kCSSRawCounterDescs[size_t(aCounterDescID)];
-  }
-  return sDescNullStr;
+Maybe<CounterStyleDescriptorId> nsCSSProps::LookupCounterStyleDesc(
+    const nsACString& aDesc) {
+  return LookupDescriptor(aDesc, kCounterStyleDescs);
+}
+
+const nsCString& nsCSSProps::GetStringValue(FontFaceDescriptorId aDesc) {
+  MOZ_ASSERT(size_t(aDesc) < kFontFaceDescriptorCount);
+  return kFontFaceDescs[size_t(aDesc)].mName;
+}
+
+const nsCString& nsCSSProps::GetStringValue(CounterStyleDescriptorId aDesc) {
+  MOZ_ASSERT(size_t(aDesc) < kCounterStyleDescriptorCount);
+  return kCounterStyleDescs[size_t(aDesc)].mName;
 }
 
 CSSPropFlags nsCSSProps::PropFlags(NonCustomCSSPropertyId aProperty) {

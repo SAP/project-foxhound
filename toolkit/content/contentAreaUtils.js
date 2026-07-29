@@ -351,6 +351,10 @@ function internalSave(
     promiseTargetFile(fpParams, aSkipPrompt, relatedURI)
       .then(aDialogAccepted => {
         if (!aDialogAccepted) {
+          // Close the persist document to tear down the IPC actor
+          // that otherwise prevents the content window from being
+          // destroyed until GC runs.
+          aDocument?.close();
           aSaveCompleteCallback?.();
           return;
         }
@@ -415,6 +419,13 @@ function internalSave(
 
     // Start the actual save process
     internalPersist(persistArgs);
+
+    // If the document isn't used for saving content, close it now to
+    // tear down the IPC actor that otherwise prevents the content
+    // window from being destroyed until GC runs.
+    if (!useSaveDocument) {
+      aDocument?.close();
+    }
   }
 }
 
@@ -523,6 +534,9 @@ function internalPersist(persistArgs) {
       encodingFlags |= nsIWBP.ENCODE_FLAGS_NOFRAMES_CONTENT;
     } else {
       encodingFlags |= nsIWBP.ENCODE_FLAGS_ENCODE_BASIC_ENTITIES;
+      // Don't wrap markup when saving document:
+      // https://bugzilla.mozilla.org/show_bug.cgi?id=2025300
+      encodingFlags |= nsIWBP.ENCODE_FLAGS_DISALLOW_LINE_BREAKING;
     }
 
     const kWrapColumn = 80;
@@ -766,7 +780,9 @@ function promiseTargetFile(
 
     aFpP.saveAsType = fp.filterIndex;
     aFpP.file = fp.file;
-    aFpP.file.leafName = validateFileName(aFpP.file.leafName);
+    if (AppConstants.platform != "linux") {
+      aFpP.file.leafName = validateFileName(aFpP.file.leafName);
+    }
 
     return true;
   })();

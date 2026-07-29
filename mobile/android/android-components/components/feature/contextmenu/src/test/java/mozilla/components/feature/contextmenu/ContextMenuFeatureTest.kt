@@ -27,7 +27,6 @@ import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -35,8 +34,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.never
+import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class ContextMenuFeatureTest {
@@ -65,7 +66,13 @@ class ContextMenuFeatureTest {
         val feature = ContextMenuFeature(
             fragmentManager,
             store,
-            ContextMenuCandidate.defaultCandidates(testContext, mock(), mock(), mock()),
+            ContextMenuCandidate.defaultCandidates(
+                context = testContext,
+                tabsUseCases = mock(),
+                contextMenuUseCases = mock(),
+                snackBarParentView = mock(),
+                downloadsLocation = { "downloads" },
+            ),
             engineView,
             mock(),
             mainDispatcher = testDispatcher,
@@ -95,7 +102,13 @@ class ContextMenuFeatureTest {
         val feature = ContextMenuFeature(
             fragmentManager,
             store,
-            ContextMenuCandidate.defaultCandidates(testContext, mock(), mock(), mock()),
+            ContextMenuCandidate.defaultCandidates(
+                context = testContext,
+                tabsUseCases = mock(),
+                contextMenuUseCases = mock(),
+                snackBarParentView = mock(),
+                downloadsLocation = { "downloads" },
+            ),
             engineView,
             mock(),
             mainDispatcher = testDispatcher,
@@ -137,7 +150,13 @@ class ContextMenuFeatureTest {
         val feature = ContextMenuFeature(
             fragmentManager,
             store,
-            ContextMenuCandidate.defaultCandidates(testContext, mock(), mock(), mock()),
+            ContextMenuCandidate.defaultCandidates(
+                context = testContext,
+                tabsUseCases = mock(),
+                contextMenuUseCases = mock(),
+                snackBarParentView = mock(),
+                downloadsLocation = { "downloads" },
+            ),
             engineView,
             mock(),
             mainDispatcher = testDispatcher,
@@ -168,7 +187,13 @@ class ContextMenuFeatureTest {
         val feature = ContextMenuFeature(
             fragmentManager,
             store,
-            ContextMenuCandidate.defaultCandidates(testContext, mock(), mock(), mock()),
+            ContextMenuCandidate.defaultCandidates(
+                context = testContext,
+                tabsUseCases = mock(),
+                contextMenuUseCases = mock(),
+                snackBarParentView = mock(),
+                downloadsLocation = { "downloads" },
+            ),
             engineView,
             mock(),
             mainDispatcher = testDispatcher,
@@ -200,7 +225,13 @@ class ContextMenuFeatureTest {
         val feature = ContextMenuFeature(
             fragmentManager,
             store,
-            ContextMenuCandidate.defaultCandidates(testContext, mock(), mock(), mock()),
+            ContextMenuCandidate.defaultCandidates(
+                context = testContext,
+                tabsUseCases = mock(),
+                contextMenuUseCases = mock(),
+                snackBarParentView = mock(),
+                downloadsLocation = { "downloads" },
+            ),
             engineView,
             mock(),
             mainDispatcher = testDispatcher,
@@ -226,7 +257,7 @@ class ContextMenuFeatureTest {
             id = "test-id",
             label = "Test Item",
             showFor = { _, _ -> false },
-            action = { _, _ -> Unit },
+            action = { _, _ -> },
         )
 
         val (engineView, view) = mockEngineView()
@@ -271,7 +302,13 @@ class ContextMenuFeatureTest {
         val feature = ContextMenuFeature(
             mockFragmentManager(),
             store,
-            ContextMenuCandidate.defaultCandidates(testContext, mock(), mock(), mock()),
+            ContextMenuCandidate.defaultCandidates(
+                context = testContext,
+                tabsUseCases = mock(),
+                contextMenuUseCases = mock(),
+                snackBarParentView = mock(),
+                downloadsLocation = { "downloads" },
+            ),
             engineView,
             ContextMenuUseCases(store),
             mainDispatcher = testDispatcher,
@@ -380,6 +417,64 @@ class ContextMenuFeatureTest {
             assertEquals("item", fact.item)
             assertEquals("test-id", fact.metadata?.get("item"))
         }
+    }
+
+    @Test
+    fun `stop will hide context menu if shouldHide returns true`() {
+        val fragment: ContextMenuFragment = mock()
+        val transaction: FragmentTransaction = mock()
+        val fragmentManager: FragmentManager = mock()
+        val (engineView, _) = mockEngineView()
+
+        doReturn(fragment).`when`(fragmentManager).findFragmentByTag(FRAGMENT_TAG)
+        doReturn(transaction).`when`(fragmentManager).beginTransaction()
+        doReturn(transaction).`when`(transaction).remove(any())
+
+        val feature = spy(
+            ContextMenuFeature(
+                fragmentManager,
+                store,
+                emptyList(),
+                engineView,
+                mock(),
+                shouldHide = { true },
+            ),
+        )
+
+        feature.stop()
+
+        verify(feature).hideContextMenu()
+        verify(fragmentManager).beginTransaction()
+        verify(transaction).remove(fragment)
+    }
+
+    @Test
+    fun `stop will not hide context menu if shouldHide returns false`() {
+        val fragment: ContextMenuFragment = mock()
+        val transaction: FragmentTransaction = mock()
+        val fragmentManager: FragmentManager = mock()
+        val (engineView, _) = mockEngineView()
+
+        doReturn(fragment).`when`(fragmentManager).findFragmentByTag(FRAGMENT_TAG)
+        doReturn(transaction).`when`(fragmentManager).beginTransaction()
+        doReturn(transaction).`when`(transaction).remove(any())
+
+        val feature = spy(
+            ContextMenuFeature(
+                fragmentManager,
+                store,
+                emptyList(),
+                engineView,
+                mock(),
+                shouldHide = { false },
+            ),
+        )
+
+        feature.stop()
+
+        verify(feature, never()).hideContextMenu()
+        verify(fragmentManager, never()).beginTransaction()
+        verify(transaction, never()).remove(any())
     }
 
     private fun mockFragmentManager(): FragmentManager {

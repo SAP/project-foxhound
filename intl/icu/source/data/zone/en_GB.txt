@@ -4,9 +4,9 @@
 en_GB{
     %%Parent{"en_001"}
     zoneStrings{
-        "Europe:London"{
-            sd{"BST"}
-        }
+        // Europe/London rules implemented in code in smpdtfmt.cpp;
+        // see https://unicode-org.atlassian.net/browse/CLDR-19362 and
+        // https://unicode-org.atlassian.net/browse/CLDR-19382.
         "meta:Europe_Central"{
             sd{"CEST"}
             sg{"CET"}

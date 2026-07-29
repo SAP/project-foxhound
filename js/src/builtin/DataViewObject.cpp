@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -792,7 +790,7 @@ bool DataViewObject::getFloat16Impl(JSContext* cx, const CallArgs& args) {
     return false;
   }
 
-  args.rval().setDouble(CanonicalizeNaN(static_cast<double>(val)));
+  args.rval().setDouble(static_cast<double>(val));
   return true;
 }
 
@@ -812,7 +810,7 @@ bool DataViewObject::getFloat32Impl(JSContext* cx, const CallArgs& args) {
     return false;
   }
 
-  args.rval().setDouble(CanonicalizeNaN(val));
+  args.rval().setDouble(val);
   return true;
 }
 
@@ -832,7 +830,7 @@ bool DataViewObject::getFloat64Impl(JSContext* cx, const CallArgs& args) {
     return false;
   }
 
-  args.rval().setDouble(CanonicalizeNaN(val));
+  args.rval().setDouble(val);
   return true;
 }
 
@@ -1095,16 +1093,7 @@ bool DataViewObject::byteOffsetGetter(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 static const JSClassOps DataViewObjectClassOps = {
-    nullptr,                       // addProperty
-    nullptr,                       // delProperty
-    nullptr,                       // enumerate
-    nullptr,                       // newEnumerate
-    nullptr,                       // resolve
-    nullptr,                       // mayResolve
-    nullptr,                       // finalize
-    nullptr,                       // call
-    nullptr,                       // construct
-    ArrayBufferViewObject::trace,  // trace
+    .trace = ArrayBufferViewObject::trace,
 };
 
 static JSObject* CreateDataViewPrototype(JSContext* cx, JSProtoKey key) {

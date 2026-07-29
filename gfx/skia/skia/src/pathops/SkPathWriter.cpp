@@ -6,6 +6,7 @@
  */
 #include "src/pathops/SkPathWriter.h"
 
+#include "include/core/SkPathBuilder.h"
 #include "include/core/SkTypes.h"
 #include "include/private/base/SkMath.h"
 #include "src/base/SkTSort.h"
@@ -30,8 +31,9 @@ void SkPathWriter::close() {
     SkDebugf("path.close();\n");
 #endif
     fCurrent.close();
-    fBuilder.addPath(fCurrent);
-    fCurrent.reset();
+    if (auto raw = SkPathPriv::Raw(fCurrent, SkResolveConvexity::kNo)) {
+        fBuilder.addRaw(*raw, SkPathBuilder::Reserve::kExact);
+    }
     init();
 }
 
@@ -54,6 +56,7 @@ void SkPathWriter::cubicTo(const SkPoint& pt1, const SkPoint& pt2, const SkOpPtT
 }
 
 bool SkPathWriter::deferredLine(const SkOpPtT* pt) {
+    SkASSERT(pt);
     SkASSERT(fFirstPtT);
     SkASSERT(fDefer[0]);
     if (fDefer[0] == pt) {
@@ -76,6 +79,7 @@ bool SkPathWriter::deferredLine(const SkOpPtT* pt) {
 }
 
 void SkPathWriter::deferredMove(const SkOpPtT* pt) {
+    SkASSERT(pt);
     if (!fDefer[1]) {
         fFirstPtT = fDefer[0] = pt;
         return;
@@ -159,6 +163,7 @@ void SkPathWriter::quadTo(const SkPoint& pt1, const SkOpPtT* pt2) {
 // if last point to be written matches the current path's first point, alter the
 // last to avoid writing a degenerate lineTo when the path is closed
 SkPoint SkPathWriter::update(const SkOpPtT* pt) {
+    SkASSERT(pt);
     if (!fDefer[1]) {
         this->moveTo();
     } else if (!this->matchedLast(fDefer[0])) {
@@ -178,6 +183,7 @@ bool SkPathWriter::someAssemblyRequired() {
 }
 
 bool SkPathWriter::changedSlopes(const SkOpPtT* ptT) const {
+    SkASSERT(ptT);
     if (matchedLast(fDefer[0])) {
         return false;
     }
@@ -212,7 +218,15 @@ void SkPathWriter::assemble() {
     SkOpPtT const* const* runs = fEndPtTs.begin();  // starts, ends of partial contours
     int endCount = fEndPtTs.size(); // all starts and ends
     SkASSERT(endCount > 0);
-    SkASSERT(endCount == fPartials.size() * 2);
+    SkASSERT(endCount == (int)fPartials.size() * 2);
+
+    // Limit the number of partial contours to avoid O(N^2) complexity and integer overflows.
+    // 10,000 partial contours results in 20,000 ends and ~200,000,000 distance entries.
+    constexpr int kMaxPartialContours = 10000;
+    if (endCount > kMaxPartialContours * 2) {
+        return;
+    }
+
 #if DEBUG_ASSEMBLE
     for (int index = 0; index < endCount; index += 2) {
         const SkOpPtT* eStart = runs[index];
@@ -249,19 +263,19 @@ void SkPathWriter::assemble() {
             *runsPtr = opPtT;
         } while (true);
         partWriter.finishContour();
-        const TArray<SkPath>& partPartials = partWriter.partials();
+        const TArray<SkPathBuilder>& partPartials = partWriter.partials();
         if (partPartials.empty()) {
             continue;
         }
         // if pIndex is even, reverse and prepend to fPartials; otherwise, append
-        SkPath& partial = const_cast<SkPath&>(fPartials[pIndex >> 1]);
-        const SkPath& part = partPartials[0];
+        SkPathBuilder& partial = const_cast<SkPathBuilder&>(fPartials[pIndex >> 1]);
+        const SkPath part = partPartials[0].snapshot();
         if (pIndex & 1) {
             partial.addPath(part, SkPath::kExtend_AddPathMode);
         } else {
-            SkPath reverse;
-            reverse.reverseAddPath(part);
-            reverse.addPath(partial, SkPath::kExtend_AddPathMode);
+            SkPathBuilder reverse;
+            SkPathPriv::ReverseAddPath(&reverse, part);
+            reverse.addPath(partial.detach(), SkPath::kExtend_AddPathMode);
             partial = reverse;
         }
     }
@@ -351,19 +365,22 @@ void SkPathWriter::assemble() {
                     eIndex < 0 ? ~eIndex : eIndex);
 #endif
         do {
-            const SkPath& contour = fPartials[rIndex];
+            SkPath contour = fPartials[rIndex].snapshot();
             if (!first) {
                 auto prior = fBuilder.getLastPt();
                 if (!prior) {
                     return;
                 }
+                SkSpan<const SkPoint> contourPts = contour.points();
                 SkPoint next;
                 if (forward) {
-                    next = contour.getPoint(0);
+                    next = contourPts.empty() ? SkPoint{0, 0} : contourPts.front();
                 } else {
-                    auto lastPt = contour.getLastPt();
-                    SkASSERT(lastPt.has_value());
-                    next = *lastPt;
+                    if (contourPts.empty()) {
+                        SkDEBUGFAIL("unexpected empty contour");
+                        return;
+                    }
+                    next = contourPts.back();
                 }
                 if (*prior != next) {
                     /* TODO: if there is a gap between open path written so far and path to come,

@@ -33,6 +33,23 @@ class MockBleuEval:
         }
 
 
+class MockBleuEvalReturnsList:
+    name = "bleu"
+    requirements = []
+
+    def __init__(self, log, config):
+        pass
+
+    def run(self, payloads):
+        return [
+            {
+                "name": self.name,
+                "values": [100.0 for _ in payloads],
+                "lowerIsBetter": True,
+            }
+        ]
+
+
 class MockChrfEval:
     name = "chrF"
     requirements = []
@@ -385,6 +402,49 @@ def test_eval_metrics_creates_output_directory(mock_load_class, tmp_path):
 
         assert output_dir.exists()
         assert (output_dir / "eval-bleu.json").exists()
+
+    finally:
+        shutil.rmtree(mach_cmd._mach_context.state_dir)
+
+
+@mock.patch(
+    "mozperftest.metrics.eval.load_class_from_path",
+    return_value=MockBleuEvalReturnsList,
+)
+@mock.patch("mozperftest.test.mochitest.ON_TRY", new=False)
+@mock.patch("mozperftest.utils.ON_TRY", new=False)
+def test_eval_metrics_handles_list_result(mock_load_class, tmp_path):
+    mach_cmd, metadata, env = eval_metrics_running_env(
+        tests=[],
+        output=str(tmp_path),
+    )
+
+    metadata.script = {
+        "options": {
+            "default": {
+                "evaluations": {
+                    "TranslationsBleu": {"shouldAlert": False},
+                }
+            }
+        }
+    }
+
+    metadata.add_eval_payload(
+        "test_translation.js",
+        [{"trg": "Hello world", "ref": "Hello world"}],
+    )
+
+    try:
+        metrics = env.layers[METRICS]
+        eval_metrics_layer = metrics.layers[0]
+
+        assert isinstance(eval_metrics_layer, EvalMetrics)
+
+        result_metadata = eval_metrics_layer.run(metadata)
+
+        results = result_metadata.get_results()
+        assert len(results) == 1
+        assert results[0]["name"] == "bleu"
 
     finally:
         shutil.rmtree(mach_cmd._mach_context.state_dir)

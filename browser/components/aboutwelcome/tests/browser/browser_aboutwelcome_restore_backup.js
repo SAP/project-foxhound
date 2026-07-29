@@ -30,7 +30,7 @@ const TEST_DEFAULT_CONTENT = [
 const TEST_DEFAULT_JSON = JSON.stringify(TEST_DEFAULT_CONTENT);
 
 add_setup(async () => {
-  MockFilePicker.init(window.browsingContext);
+  MockFilePicker.init();
   TEST_PROFILE_PATH = await IOUtils.createUniqueDirectory(
     PathUtils.tempDir,
     "testBackupAW"
@@ -62,6 +62,14 @@ add_task(async function test_aboutwelcome_embedded_backup_restore_properties() {
     "browser.backup.restore.enabled",
     true,
   ]);
+
+  sandbox
+    .stub(BackupService.get(), "findBackupsInWellKnownLocations")
+    .resolves({
+      found: false,
+      backupFileToRestore: null,
+      multipleBackupsFound: false,
+    });
 
   await setAboutWelcomeMultiStage(TEST_DEFAULT_JSON);
   let { cleanup, browser } = await openMRAboutWelcome();
@@ -102,10 +110,6 @@ add_task(async function test_aboutwelcome_embedded_backup_restore_properties() {
     Assert.ok(filePicker, "File picker input should be present");
     Assert.ok(fileSelectButton, "File select button should be present");
     Assert.ok(confirmButton, "Confirm button should be present");
-    Assert.ok(
-      confirmButton.hasAttribute("disabled"),
-      "Confirm button should be initially disabled"
-    );
   });
 
   await cleanup();

@@ -3,6 +3,10 @@
 
 "use strict";
 
+const { CustomKeys } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/customkeys/CustomKeys.sys.mjs"
+);
+
 /**
  * Test the behavior of assigning keys, resetting keys, etc. via the CustomKeys module. The UI is tested separately.
  */
@@ -258,6 +262,43 @@ add_task(async function testResetAll() {
   gBrowser.selectedBrowser.focus();
   await focused;
   ok(true, "Tab document browser got focus");
+});
+
+// Test that key_duplicateTab (which has no default binding) can be assigned
+// and triggers tab duplication.
+add_task(async function testDuplicateTab() {
+  is(
+    document.activeElement,
+    gBrowser.selectedBrowser,
+    "Tab document browser is focused"
+  );
+
+  is(
+    CustomKeys.getDefaultKey("key_duplicateTab"),
+    null,
+    "key_duplicateTab is not customized"
+  );
+  info(`Assigning key_duplicateTab to ${consts.unusedDisplay}`);
+  CustomKeys.changeKey("key_duplicateTab", {
+    modifiers: consts.unusedModifiers,
+    key: consts.unusedKey,
+  });
+
+  const originalTab = gBrowser.selectedTab;
+  const originalUrl = originalTab.linkedBrowser.currentURI.spec;
+  const newTabPromise = BrowserTestUtils.waitForNewTab(
+    gBrowser,
+    originalUrl,
+    true
+  );
+  info(`Pressing ${consts.unusedDisplay}`);
+  EventUtils.synthesizeKey(consts.unusedKey, consts.unusedOptions, window);
+  const newTab = await newTabPromise;
+  isnot(newTab, originalTab, "The new tab is different from the original");
+
+  BrowserTestUtils.removeTab(newTab);
+  info("Resetting all keys");
+  CustomKeys.resetAll();
 });
 
 // Test that changes apply to other windows.

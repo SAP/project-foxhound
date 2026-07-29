@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,11 +9,13 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/MathAlgorithms.h"
 
-#include <cstdint>
+#include <bit>
 #include <initializer_list>
 #include <type_traits>
+#ifdef DEBUG
+#  include <cstdint>
+#endif
 
 namespace mozilla {
 
@@ -199,11 +199,7 @@ class EnumSet {
    */
   size_t size() const {
     if constexpr (std::is_unsigned_v<Serialized>) {
-      if constexpr (kMaxBits > 32) {
-        return CountPopulation64(mBitField);
-      } else {
-        return CountPopulation32(mBitField);
-      }
+      return std::popcount(mBitField);
     } else {
       return mBitField.Count();
     }

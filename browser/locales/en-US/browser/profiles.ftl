@@ -78,14 +78,18 @@ new-profile-page-done-button =
 
 # Variables
 #   $profilename (String) - The name of the copied profile.
-copied-profile-page-header = Your copy of { $profilename } is ready to customize
+copied-profile-page-header-2 = Your copy of “{ $profilename }” is ready to customize
 copied-profile-page-header-description = We copied your data and settings into a new profile. Now give it a name, pick a look, and make it your own.
+
+restored-profile-page-header = Customize your restored profile
+restored-profile-page-header-description = Each profile keeps its unique browsing history and settings separate from your other profiles. Plus, { -brand-short-name }’s strong privacy protections are on by default.
+restored-profile-page-learn-more = Learn more
 
 ## Delete profile dialogue that allows users to review what they will lose if they choose to delete their profile. Each item (open windows, etc.) is displayed in a table, followed by a column with the number of items.
 
 # Variables
 #   $profilename (String) - The name of the profile.
-delete-profile-page-title = Delete { $profilename } profile
+delete-profile-page-title-2 = Delete “{ $profilename }” profile
 
 # Variables
 #   $profilename (String) - The name of the profile.

@@ -27,15 +27,15 @@ task-defaults:
                 mozilla-beta: firefox-beta
                 mozilla-release: firefox-release
                 mozilla-esr115: firefox-esr115
-                mozilla-esr128: firefox-esr128
                 mozilla-esr140: firefox-esr140
+                mozilla-esr153: firefox-esr153
                 try:
                     by-release-type:
                         beta: staging-firefox-beta
                         release: staging-firefox-release
                         esr115: staging-firefox-esr115
-                        esr128: staging-firefox-esr128
                         esr140: staging-firefox-esr140
+                        esr153: staging-firefox-esr153
                         default: ""
                 default: ""
         actions:
@@ -47,8 +47,8 @@ task-defaults:
                           mozilla-beta: https://hg.mozilla.org/releases/mozilla-beta
                           mozilla-release: https://hg.mozilla.org/releases/mozilla-release
                           mozilla-esr115: https://hg.mozilla.org/releases/mozilla-esr115
-                          mozilla-esr128: https://hg.mozilla.org/releases/mozilla-esr128
                           mozilla-esr140: https://hg.mozilla.org/releases/mozilla-esr140
+                          mozilla-esr153: https://hg.mozilla.org/releases/mozilla-esr153
                           try: https://hg.mozilla.org/try
                           default: ""
             - version-bump:

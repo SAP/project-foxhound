@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -37,7 +36,7 @@ static void UpdateDocumentViewerRegistration(const char* aPref, void* aData) {
 
   static nsLiteralCString kCategory = "Gecko-Content-Viewers"_ns;
   static nsLiteralCString kContractId =
-      "@mozilla.org/content/plugin/document-loader-factory;1"_ns;
+      "@mozilla.org/content/document-loader-factory;1"_ns;
 
   if (cookie->mIsEnabled()) {
     catMan->AddCategoryEntry(kCategory, cookie->mMimeType, kContractId,

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -30,19 +28,10 @@ namespace mozilla::dom::cache {
 
 using mozilla::ipc::PBackgroundChild;
 
-bool IsValidPutRequestURL(const nsACString& aUrl, ErrorResult& aRv) {
-  bool validScheme = false;
-
-  // make a copy because ProcessURL strips the fragmet
-  nsAutoCString url(aUrl);
-  TypeUtils::ProcessURL(url, &validScheme, nullptr, nullptr, aRv);
-  if (aRv.Failed()) {
-    return false;
-  }
-
-  if (!validScheme) {
-    // `url` has been modified, so don't use it here.
-    aRv.ThrowTypeError<MSG_INVALID_URL_SCHEME>("Request", aUrl);
+bool IsValidPutRequestURL(nsIURI* aUrl, ErrorResult& aRv) {
+  if (!TypeUtils::URLHasValidScheme(aUrl)) {
+    aRv.ThrowTypeError<MSG_INVALID_URL_SCHEME>("Request",
+                                               aUrl->GetSpecOrDefault());
     return false;
   }
 
@@ -313,9 +302,8 @@ already_AddRefed<Promise> Cache::Add(JSContext* aContext,
     return nullptr;
   }
 
-  nsAutoCString url;
-  request->GetUrl(url);
-  if (NS_WARN_IF(!IsValidPutRequestURL(url, aRv))) {
+  SafeRefPtr<InternalRequest> ireq = request->GetInternalRequest();
+  if (NS_WARN_IF(!IsValidPutRequestURL(ireq->GetURLWithoutFragment(), aRv))) {
     return nullptr;
   }
 
@@ -348,8 +336,7 @@ already_AddRefed<Promise> Cache::AddAll(
         return nullptr;
       }
     } else {
-      requestOrString.SetAsUTF8String().ShareOrDependUpon(
-          aRequestList[i].GetAsUTF8String());
+      requestOrString.SetAsUTF8String() = aRequestList[i].GetAsUTF8String();
     }
 
     RootedDictionary<RequestInit> requestInit(aContext);
@@ -359,9 +346,8 @@ already_AddRefed<Promise> Cache::AddAll(
       return nullptr;
     }
 
-    nsAutoCString url;
-    request->GetUrl(url);
-    if (NS_WARN_IF(!IsValidPutRequestURL(url, aRv))) {
+    SafeRefPtr<InternalRequest> ireq = request->GetInternalRequest();
+    if (NS_WARN_IF(!IsValidPutRequestURL(ireq->GetURLWithoutFragment(), aRv))) {
       return nullptr;
     }
 

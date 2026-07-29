@@ -226,6 +226,34 @@
         );
       });
 
+      add_task(async function testCardRole() {
+        let card = await generateCard({
+          id: "generated-role-card",
+          role: "presentation",
+        });
+
+        let article = card.shadowRoot.querySelector("article");
+        is(
+          article.getAttribute("role"),
+          "presentation",
+          "The role should be mapped to the inner article element"
+        );
+        ok(
+          !card.hasAttribute("role"),
+          "The role attribute should be removed from the host element"
+        );
+
+        let cardWithoutRole = await generateCard({
+          id: "generated-no-role-card",
+        });
+        let articleWithoutRole =
+          cardWithoutRole.shadowRoot.querySelector("article");
+        ok(
+          !articleWithoutRole.hasAttribute("role"),
+          "The article should not have a role when none is provided"
+        );
+      });
+
       add_task(async function testHeadingIconCard() {
         assertBasicProperties(document.getElementById("heading-icon-card"), {
           "data-l10n-id": "test-id-3",

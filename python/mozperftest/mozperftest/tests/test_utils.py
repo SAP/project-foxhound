@@ -11,6 +11,7 @@ from unittest import mock
 
 import mozunit
 import pytest
+from mozdevice import ADBError
 
 from mozperftest.tests.support import EXAMPLE_TESTS_DIR, requests_content, temp_file
 from mozperftest.utils import (
@@ -20,6 +21,7 @@ from mozperftest.utils import (
     convert_day,
     create_path,
     download_file,
+    get_adb_device_or_emu,
     get_multi_tasks_url,
     get_output_dir,
     get_revision_namespace_url,
@@ -273,6 +275,46 @@ def test_archive_folder():
 
         archive_folder(input_dir_path, output_dir_path, archive_name="testing")
         assert len(list(output_dir_path.glob("testing.tgz"))) == 1
+
+
+class MockADBDeviceFactory:
+    def __init__(self, verbose=False):
+        self.verbose = verbose
+
+
+class EmulatorMockAvailable:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def is_available(self):
+        return True
+
+    def check_avd(self):
+        return True
+
+    def get_avd_description(self):
+        return "test-avd"
+
+    def start(self):
+        pass
+
+    def wait_for_start(self):
+        pass
+
+
+@mock.patch("mozperftest.utils.input", return_value="y")
+@mock.patch(
+    "mozrunner.devices.android_device.AndroidEmulator", new=EmulatorMockAvailable
+)
+@mock.patch("mozdevice.ADBDeviceFactory")
+def test_launch_emulator_click_yes(mock_factory, mock_input):
+    fake_device = MockADBDeviceFactory(verbose=True)
+    mock_factory.side_effect = [ADBError("No ready devices found."), fake_device]
+
+    result = get_adb_device_or_emu()
+
+    assert isinstance(result, MockADBDeviceFactory)
+    assert mock_factory.call_count == 2
 
 
 if __name__ == "__main__":

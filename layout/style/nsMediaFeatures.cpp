@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,11 +16,11 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/ScreenBinding.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "nsCSSProps.h"
 #include "nsCSSValue.h"
 #include "nsContentUtils.h"
 #include "nsDeviceContext.h"
-#include "nsGkAtoms.h"
 #include "nsGlobalWindowOuter.h"
 #include "nsIBaseWindow.h"
 #include "nsIDocShell.h"
@@ -280,6 +278,20 @@ bool Gecko_MediaFeatures_PrefersReducedMotion(const Document* aDocument) {
           RFPTarget::CSSPrefersReducedMotion)) {
     return false;
   }
+
+  // Check for DevTools override first
+  if (dom::BrowsingContext* bc = aDocument->GetBrowsingContext()) {
+    auto* top = bc->Top();
+    switch (top->GetPrefersReducedMotionOverride()) {
+      case dom::PrefersReducedMotionOverride::Reduce:
+        return true;
+      case dom::PrefersReducedMotionOverride::No_preference:
+        return false;
+      case dom::PrefersReducedMotionOverride::None:
+        break;
+    }
+  }
+
   return LookAndFeel::GetInt(LookAndFeel::IntID::PrefersReducedMotion, 0) == 1;
 }
 
@@ -357,20 +369,18 @@ StyleDynamicRange Gecko_MediaFeatures_DynamicRange(const Document* aDocument) {
 
 StyleDynamicRange Gecko_MediaFeatures_VideoDynamicRange(
     const Document* aDocument) {
-  if (aDocument->ShouldResistFingerprinting(RFPTarget::CSSVideoDynamicRange) ||
-      !StaticPrefs::layout_css_video_dynamic_range_allows_high()) {
+  if (aDocument->ShouldResistFingerprinting(RFPTarget::CSSVideoDynamicRange)) {
     return StyleDynamicRange::Standard;
   }
-#ifdef MOZ_WAYLAND
-  // Wayland compositors allow to process HDR content even without HDR monitor
-  // attached.
-  if (StaticPrefs::gfx_wayland_hdr_force_enabled_AtStartup()) {
+  // Usually compositors can process HDR content even without HDR displays.
+  //
+  // This parallels logic in gfxPlatform::UseHDR().
+  if (StaticPrefs::gfx_color_management_hdr_force_enabled()) {
     return StyleDynamicRange::High;
   }
-  if (!StaticPrefs::gfx_wayland_hdr_AtStartup()) {
+  if (!StaticPrefs::gfx_color_management_hdr() || !gfx::gfxVars::VideoHDR()) {
     return StyleDynamicRange::Standard;
   }
-#endif
   // video-dynamic-range: high has 3 requirements:
   // 1) high peak brightness
   // 2) high contrast ratio

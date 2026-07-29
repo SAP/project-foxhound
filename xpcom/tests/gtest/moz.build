@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -25,6 +23,7 @@ UNIFIED_SOURCES += [
     "TestEventTargetQI.cpp",
     "TestFile.cpp",
     "TestGCPostBarriers.cpp",
+    "TestHex.cpp",
     "TestID.cpp",
     "TestIDUtils.cpp",
     "TestINIParser.cpp",
@@ -56,6 +55,7 @@ UNIFIED_SOURCES += [
     "TestSnappyStreams.cpp",
     "TestStateMirroring.cpp",
     "TestStateWatching.cpp",
+    "TestStaticBackgroundTaskQueue.cpp",
     "TestStopGapEventTarget.cpp",
     "TestStorageStream.cpp",
     "TestStrings.cpp",
@@ -161,6 +161,7 @@ if CONFIG["MOZ_MEMORY"]:
     ]
 
 SOURCES += [
+    "TestAsyncPlatformPipes.cpp",
     "TestCOMArray.cpp",
     "TestCOMPtr.cpp",  # Redefines IFoo and IBar
     "TestHashtables.cpp",  # Redefines IFoo
@@ -172,6 +173,11 @@ LOCAL_INCLUDES += [
     "/toolkit/components/telemetry/tests/gtest",
     "/xpcom/components",
 ]
+
+# GCC 11 issues a false-positive -Wstringop-overread warning from
+# std::vector::reserve()/push_back() patterns in gmock-matchers.h.
+if CONFIG["CC_TYPE"] == "gcc" and 11 <= int(CONFIG["CC_VERSION"].split(".")[0]) < 12:
+    CXXFLAGS += ["-Wno-stringop-overread"]
 
 GeneratedFile(
     "dafsa_test_1.inc",

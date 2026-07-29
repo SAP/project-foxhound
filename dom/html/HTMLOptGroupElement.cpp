@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,10 +6,10 @@
 
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/dom/HTMLOptGroupElementBinding.h"
-#include "mozilla/dom/HTMLSelectElement.h"  // SafeOptionListMutation
+#include "mozilla/dom/HTMLOptionElement.h"
+#include "mozilla/dom/HTMLSelectElement.h"
 #include "nsGkAtoms.h"
 #include "nsIFrame.h"
-#include "nsStyleConsts.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(OptGroup)
 
@@ -22,7 +20,7 @@ namespace mozilla::dom {
  */
 
 HTMLOptGroupElement::HTMLOptGroupElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : nsGenericHTMLElement(std::move(aNodeInfo)) {
   // We start off enabled
   AddStatesSilently(ElementState::ENABLED);
@@ -39,28 +37,6 @@ void HTMLOptGroupElement::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
 
 HTMLSelectElement* HTMLOptGroupElement::GetSelect() const {
   return HTMLSelectElement::FromNodeOrNull(GetParentNode());
-}
-
-void HTMLOptGroupElement::InsertChildBefore(
-    nsIContent* aKid, nsIContent* aBeforeThis, bool aNotify, ErrorResult& aRv,
-    nsINode* aOldParent, MutationEffectOnScript aMutationEffectOnScript) {
-  const uint32_t index =
-      aBeforeThis ? *ComputeIndexOf(aBeforeThis) : GetChildCount();
-  SafeOptionListMutation safeMutation(GetSelect(), this, aKid, index, aNotify);
-  nsGenericHTMLElement::InsertChildBefore(aKid, aBeforeThis, aNotify, aRv,
-                                          aOldParent, aMutationEffectOnScript);
-  if (aRv.Failed()) {
-    safeMutation.MutationFailed();
-  }
-}
-
-void HTMLOptGroupElement::RemoveChildNode(
-    nsIContent* aKid, bool aNotify, const BatchRemovalState* aState,
-    nsINode* aNewParent, MutationEffectOnScript aMutationEffectOnScript) {
-  SafeOptionListMutation safeMutation(GetSelect(), this, nullptr,
-                                      *ComputeIndexOf(aKid), aNotify);
-  nsGenericHTMLElement::RemoveChildNode(aKid, aNotify, aState, aNewParent,
-                                        aMutationEffectOnScript);
 }
 
 void HTMLOptGroupElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
@@ -82,13 +58,21 @@ void HTMLOptGroupElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
     if (!changedStates.IsEmpty()) {
       ToggleStates(changedStates, aNotify);
 
-      // All our children <option> have their :disabled state depending on our
-      // disabled attribute. We should make sure their state is updated.
-      for (nsIContent* child = nsINode::GetFirstChild(); child;
-           child = child->GetNextSibling()) {
-        if (auto optElement = HTMLOptionElement::FromNode(child)) {
-          optElement->OptGroupDisabledChanged(true);
+      // Descendant options have their :disabled state depending on our
+      // disabled attribute. Walk descendants, skipping boundary elements
+      // whose children are not affected by this optgroup's disabled state.
+      for (nsIContent* node = GetFirstChild(); node;) {
+        if (auto* opt = HTMLOptionElement::FromNode(node)) {
+          opt->OptGroupDisabledChanged(true);
+          node = node->GetNextNonChildNode(this);
+          continue;
         }
+        if (HTMLOptionElement::IsOptionListBoundary(*node) ||
+            node->IsHTMLElement(nsGkAtoms::optgroup)) {
+          node = node->GetNextNonChildNode(this);
+          continue;
+        }
+        node = node->GetNextNode(this);
       }
     }
   }

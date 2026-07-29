@@ -1,6 +1,6 @@
 import pytest
 from support.context import using_context
-from tests.support.asserts import assert_error, assert_success
+from tests.support.classic.asserts import assert_error, assert_success
 
 from . import switch_to_window
 

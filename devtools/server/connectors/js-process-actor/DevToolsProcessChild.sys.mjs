@@ -297,60 +297,74 @@ export class DevToolsProcessChild extends JSProcessActorChild {
   /**
    * Called by the JSProcessActor API when the process process sent us a message.
    */
-  receiveMessage(message) {
-    switch (message.name) {
-      case "DevToolsProcessParent:watchTargets": {
-        const { watcherActorID, targetType } = message.data;
-        const watcherDataObject =
-          ContentProcessWatcherRegistry.getWatcherDataObject(watcherActorID);
-        return this.#watchNewTargetTypeForWatcher(
-          watcherDataObject,
-          targetType
-        );
-      }
-      case "DevToolsProcessParent:unwatchTargets": {
-        const { watcherActorID, targetType, options } = message.data;
-        const watcherDataObject =
-          ContentProcessWatcherRegistry.getWatcherDataObject(watcherActorID);
-        return this.#unwatchTargetsForWatcher(
-          watcherDataObject,
-          targetType,
-          options
-        );
-      }
-      case "DevToolsProcessParent:addOrSetSessionDataEntry": {
-        const { watcherActorID, type, entries, updateType } = message.data;
-        return this.#addOrSetSessionDataEntry(
-          watcherActorID,
-          type,
-          entries,
-          updateType
-        );
-      }
-      case "DevToolsProcessParent:removeSessionDataEntry": {
-        const { watcherActorID, type, entries } = message.data;
-        return this.#removeSessionDataEntry(watcherActorID, type, entries);
-      }
-      case "DevToolsProcessParent:destroyWatcher": {
-        const { watcherActorID } = message.data;
-        const watcherDataObject =
-          ContentProcessWatcherRegistry.getWatcherDataObject(
-            watcherActorID,
-            true
-          );
-        // The watcher may already be destroyed if the client unwatched for all target types.
-        if (watcherDataObject) {
-          return this.#destroyWatcher(watcherDataObject);
+  async receiveMessage(message) {
+    try {
+      switch (message.name) {
+        case "DevToolsProcessParent:watchTargets": {
+          const { watcherActorID, targetType } = message.data;
+          const watcherDataObject =
+            ContentProcessWatcherRegistry.getWatcherDataObject(watcherActorID);
+          this.#watchNewTargetTypeForWatcher(watcherDataObject, targetType);
+          break;
         }
-        return null;
+        case "DevToolsProcessParent:unwatchTargets": {
+          const { watcherActorID, targetType, options } = message.data;
+          const watcherDataObject =
+            ContentProcessWatcherRegistry.getWatcherDataObject(watcherActorID);
+          this.#unwatchTargetsForWatcher(
+            watcherDataObject,
+            targetType,
+            options
+          );
+          break;
+        }
+        case "DevToolsProcessParent:addOrSetSessionDataEntry": {
+          const { watcherActorID, type, entries, updateType } = message.data;
+          await this.#addOrSetSessionDataEntry(
+            watcherActorID,
+            type,
+            entries,
+            updateType
+          );
+          break;
+        }
+        case "DevToolsProcessParent:removeSessionDataEntry": {
+          const { watcherActorID, type, entries } = message.data;
+          this.#removeSessionDataEntry(watcherActorID, type, entries);
+          break;
+        }
+        case "DevToolsProcessParent:destroyWatcher": {
+          const { watcherActorID } = message.data;
+          const watcherDataObject =
+            ContentProcessWatcherRegistry.getWatcherDataObject(
+              watcherActorID,
+              true
+            );
+          // The watcher may already be destroyed if the client unwatched for all target types.
+          if (watcherDataObject) {
+            this.#destroyWatcher(watcherDataObject);
+          }
+          break;
+        }
+        case "DevToolsProcessParent:packet":
+          this.emit("packet-received", message);
+          break;
+        default:
+          throw new Error(
+            "Unsupported message in DevToolsProcessParent: " + message.name
+          );
       }
-      case "DevToolsProcessParent:packet":
-        return this.emit("packet-received", message);
-      default:
-        throw new Error(
-          "Unsupported message in DevToolsProcessParent: " + message.name
-        );
+    } catch (e) {
+      const stack =
+        e == "out of memory" ? ChromeUtils.getLastOOMStackTrace() : e.stack;
+      return {
+        // Follows the same logic as protocol.js's `Actor.writeError`
+        error: e.error || e.name || String(e),
+        message: e.message,
+        stack,
+      };
     }
+    return null;
   }
 
   /**

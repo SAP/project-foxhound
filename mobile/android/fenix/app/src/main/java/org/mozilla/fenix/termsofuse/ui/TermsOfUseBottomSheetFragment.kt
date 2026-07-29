@@ -10,12 +10,12 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.compose.ui.platform.ComposeView
+import androidx.fragment.compose.content
 import androidx.navigation.fragment.navArgs
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import mozilla.components.lib.state.helpers.StoreProvider.Companion.fragmentStore
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.requireComponents
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.termsofuse.experimentation.getTermsOfUsePromptContent
 import org.mozilla.fenix.termsofuse.store.TermsOfUsePromptAction
@@ -64,14 +64,15 @@ class TermsOfUseBottomSheetFragment : BottomSheetDialogFragment() {
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?,
-    ): View = ComposeView(requireContext()).apply {
+    ): View {
+        val context = requireContext()
         isAlreadyShowing = savedInstanceState?.getBoolean(IS_ALREADY_SHOW_KEY) ?: false
         termsOfUsePromptStore.dispatch(TermsOfUsePromptAction.OnPromptCreated)
-        setContent {
+        return content {
             FirefoxTheme {
                 val termsOfUsePromptContent = getTermsOfUsePromptContent(
                     context = requireActivity().applicationContext,
-                    id = settings().termsOfUsePromptContentOptionId,
+                    id = context.components.settings.termsOfUsePromptContentOptionId,
                     onLearnMoreClicked = {
                         termsOfUsePromptStore.dispatch(
                             TermsOfUsePromptAction.OnLearnMoreClicked(args.surface),
@@ -88,7 +89,7 @@ class TermsOfUseBottomSheetFragment : BottomSheetDialogFragment() {
                 )
 
                 TermsOfUseBottomSheet(
-                    showDragHandle = settings().shouldShowTermsOfUsePromptDragHandle,
+                    showDragHandle = context.components.settings.shouldShowTermsOfUsePromptDragHandle,
                     termsOfUsePromptContent = termsOfUsePromptContent,
                     onDismiss = { dismiss() },
                     onDismissRequest = {

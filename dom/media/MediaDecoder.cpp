@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -105,7 +103,7 @@ constexpr TimeUnit MediaDecoder::DEFAULT_NEXT_FRAME_AVAILABLE_BUFFERED;
 void MediaDecoder::InitStatics() {
   MOZ_ASSERT(NS_IsMainThread());
   // Eagerly init gMediaDecoderLog to work around bug 1415441.
-  MOZ_LOG(gMediaDecoderLog, LogLevel::Info, ("MediaDecoder::InitStatics"));
+  MOZ_LOG_FMT(gMediaDecoderLog, LogLevel::Info, "MediaDecoder::InitStatics");
 
   if (XRE_IsParentProcess()) {
     // Lock Utility process preferences so that people cannot opt-out of
@@ -360,10 +358,22 @@ void MediaDecoder::OnPlaybackEvent(const MediaPlaybackEvent& aEvent) {
     case MediaPlaybackEvent::VideoOnlySeekCompleted:
       GetOwner()->QueueEvent(u"mozvideoonlyseekcompleted"_ns);
       break;
+#ifdef MOZ_WMF_CDM
+    case MediaPlaybackEvent::FrameServerMode:
+      mIsFrameServerMode = true;
+      UpdateReadyState();
+      break;
+#endif
     default:
       break;
   }
 }
+
+#ifdef MOZ_WMF_CDM
+bool MediaDecoder::IsUsingWMFClearKey() const {
+  return mIsFrameServerMode && StaticPrefs::media_eme_wmf_clearkey_enabled();
+}
+#endif
 
 bool MediaDecoder::IsVideoDecodingSuspended() const {
   return mIsVideoDecodingSuspended;
@@ -778,7 +788,7 @@ void MediaDecoder::EnsureTelemetryReported() {
   }
   if (codecs.IsEmpty()) {
     codecs.AppendElement(nsPrintfCString(
-        "resource; %s", ContainerType().OriginalString().Data()));
+        "resource; %s", ContainerType().OriginalString().get()));
   }
   for (const nsCString& codec : codecs) {
     LOG("Telemetry MEDIA_CODEC_USED= '%s'", codec.get());
@@ -1387,13 +1397,14 @@ void MediaDecoder::SetStreamName(const nsAutoString& aStreamName) {
   mStreamName = aStreamName;
 }
 
-void MediaDecoder::ConnectMirrors(MediaDecoderStateMachineBase* aObject) {
+void MediaDecoder::ConnectMirrors() {
   MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(aObject);
-  mStateMachineDuration.Connect(aObject->CanonicalDuration());
-  mBuffered.Connect(aObject->CanonicalBuffered());
-  mCurrentPosition.Connect(aObject->CanonicalCurrentPosition());
-  mIsAudioDataAudible.Connect(aObject->CanonicalIsAudioDataAudible());
+  MOZ_ASSERT(mDecoderStateMachine);
+  mStateMachineDuration.Connect(mDecoderStateMachine->CanonicalDuration());
+  mBuffered.Connect(mDecoderStateMachine->CanonicalBuffered());
+  mCurrentPosition.Connect(mDecoderStateMachine->CanonicalCurrentPosition());
+  mIsAudioDataAudible.Connect(
+      mDecoderStateMachine->CanonicalIsAudioDataAudible());
 }
 
 void MediaDecoder::DisconnectMirrors() {
@@ -1405,13 +1416,14 @@ void MediaDecoder::DisconnectMirrors() {
 }
 
 void MediaDecoder::SetStateMachine(
-    MediaDecoderStateMachineBase* aStateMachine) {
+    already_AddRefed<MediaDecoderStateMachineBase> aStateMachine) {
   MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT_IF(aStateMachine, !mDecoderStateMachine);
-  if (aStateMachine) {
-    mDecoderStateMachine = aStateMachine;
+  RefPtr<MediaDecoderStateMachineBase> stateMachine = aStateMachine;
+  MOZ_ASSERT_IF(stateMachine, !mDecoderStateMachine);
+  if (stateMachine) {
+    mDecoderStateMachine = std::move(stateMachine);
     LOG("set state machine %p", mDecoderStateMachine.get());
-    ConnectMirrors(aStateMachine);
+    ConnectMirrors();
     UpdateVideoDecodeMode();
   } else if (mDecoderStateMachine) {
     LOG("null out state machine %p", mDecoderStateMachine.get());
@@ -1727,7 +1739,7 @@ bool MediaDecoder::OutputCaptureInfo::operator==(
     const OutputCaptureInfo& aOther) const {
   return mState == aOther.mState &&
          mShouldConfigAudioOutput == aOther.mShouldConfigAudioOutput &&
-         mDummyTrack.get() == aOther.mDummyTrack.get() &&
+         mDummyTrack == aOther.mDummyTrack &&
          mDevice.get() == aOther.mDevice.get();
 }
 

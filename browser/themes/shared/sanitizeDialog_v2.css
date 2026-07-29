@@ -41,6 +41,12 @@
 #sanitizeEverythingWarningIcon {
   padding: 0;
   margin: 0;
+  @media not (-moz-platform: linux) {
+    list-style-image: url("chrome://global/skin/icons/warning-large.png");
+  }
+  @media (-moz-platform: linux) {
+    list-style-image: image-set("moz-icon://stock/dialog-warning?size=48" 1x, "moz-icon://stock/dialog-warning?size=48&scale=2" 2x);
+  }
 }
 
 #sanitizeEverythingWarningDescBox {

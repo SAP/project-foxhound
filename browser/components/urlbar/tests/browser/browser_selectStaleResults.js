@@ -7,19 +7,9 @@
 
 "use strict";
 
-ChromeUtils.defineESModuleGetters(this, {
-  UrlbarView: "moz-src:///browser/components/urlbar/UrlbarView.sys.mjs",
-});
-
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [["browser.urlbar.scotchBonnet.enableOverride", false]],
-  });
-
-  // We'll later replace this, so ensure it's restored.
-  let originalRemoveStaleRowsTimeout = UrlbarView.removeStaleRowsTimeout;
-  registerCleanupFunction(() => {
-    UrlbarView.removeStaleRowsTimeout = originalRemoveStaleRowsTimeout;
   });
 });
 
@@ -28,7 +18,9 @@ add_setup(async function () {
 add_task(async function viewContainsStaleRows() {
   // Set the remove-stale-rows timer to a very large value, so there's no
   // possibility it interferes with this test.
-  UrlbarView.removeStaleRowsTimeout = 10000;
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.removeStaleRowsTimeout", 10000]],
+  });
 
   // For the test stability we need a slow provider that ensures the search
   // doesn't complete too fast.
@@ -174,7 +166,9 @@ add_task(async function staleReplacedWithFresh() {
   // NB: If this test ends up failing, it may be because the remove-stale-rows
   // timer fires before the history results are added.  i.e., steps 2 and 3
   // above happen out of order.  If that happens, try increasing it.
-  UrlbarView.removeStaleRowsTimeout = 1000;
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.removeStaleRowsTimeout", 1000]],
+  });
 
   await PlacesUtils.history.clear();
   await PlacesUtils.bookmarks.eraseEverything();

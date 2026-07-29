@@ -54,10 +54,7 @@ requestLongerTimeout(2);
 add_setup(async function () {
   // We do not want http://example.com etc. to be upgraded to https
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["browser.urlbar.trustPanel.featureGate", false],
-      ["dom.security.https_first", false],
-    ],
+    set: [["dom.security.https_first", false]],
   });
 
   // Load recipes for this test.
@@ -676,11 +673,10 @@ add_task(async function test_changeUPLoginOnUPForm_remove() {
       const forceClosePopup = false;
       // Make sure confirmation hint was shown
       info("waiting for verifyConfirmationHint");
-      await verifyConfirmationHint(
-        browser,
-        forceClosePopup,
-        "identity-icon-box"
-      );
+      await verifyConfirmationHint(browser, forceClosePopup, [
+        "identity-icon-box",
+        "trust-icon-container",
+      ]);
     }
   );
 

@@ -38,9 +38,9 @@ def align_stack_comment(path):
         for line in f:
             line_num += 1
             # Python includes \n in lines.
-            line = line.rstrip("\n")
+            stripped_line = line.rstrip("\n")
 
-            m = stack_comment_pat.search(line)
+            m = stack_comment_pat.search(stripped_line)
             if m:
                 head = m.group(1) + " "
                 head_len = len(head)
@@ -66,12 +66,12 @@ def align_stack_comment(path):
                 spaces = max(ALIGNMENT_COLUMN - head_len, 0)
                 formatted = head + " " * spaces + comment
 
-                if formatted != line:
+                if formatted != stripped_line:
                     changed = True
 
                 lines.append(formatted)
             else:
-                lines.append(line)
+                lines.append(stripped_line)
 
         print(
             f"Info: Minimum column number for [stack]: {max_head_len}",

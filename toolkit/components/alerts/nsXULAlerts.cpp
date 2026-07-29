@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode:nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -368,5 +367,10 @@ NS_IMETHODIMP nsXULAlerts::PbmTeardown() {
   // Usually XUL alerts close after a few seconds without being listed anywhere,
   // but those with requireInteraction: true would still need an explicit
   // closure.
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP nsXULAlerts::IsFullscreen(bool* aRetVal) {
+  *aRetVal = false;
   return NS_ERROR_NOT_IMPLEMENTED;
 }

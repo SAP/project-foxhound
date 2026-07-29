@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -88,6 +87,10 @@ typedef nsRefPtrHashtable<nsPtrHashKey<const void>, LocalAccessible>
 class LocalAccessible : public nsISupports, public Accessible {
  public:
   LocalAccessible(nsIContent* aContent, DocAccessible* aDoc);
+
+  LocalAccessible() = delete;
+  LocalAccessible(const LocalAccessible&) = delete;
+  LocalAccessible& operator=(const LocalAccessible&) = delete;
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS(LocalAccessible)
@@ -765,6 +768,8 @@ class LocalAccessible : public nsISupports, public Accessible {
 
   virtual void DOMNodeClass(nsString& aClass) const override;
 
+  virtual int32_t HeadingLevel() const override;
+
   virtual void LiveRegionAttributes(nsAString* aLive, nsAString* aRelevant,
                                     Maybe<bool>* aAtomic,
                                     nsAString* aBusy) const override;
@@ -1027,10 +1032,6 @@ class LocalAccessible : public nsISupports, public Accessible {
   friend class AccGroupInfo;
 
  private:
-  LocalAccessible() = delete;
-  LocalAccessible(const LocalAccessible&) = delete;
-  LocalAccessible& operator=(const LocalAccessible&) = delete;
-
   /**
    * Traverses the accessible's parent chain in search of an accessible with
    * a frame. Returns the frame when found. Includes special handling for

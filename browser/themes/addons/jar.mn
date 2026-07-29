@@ -18,3 +18,5 @@ browser.jar:
 
   content/builtin-themes/aiwindow/manifest.json       (aiwindow/manifest.json)
   content/builtin-themes/aiwindow/aiwindow-theme.css  (aiwindow/aiwindow-theme.css)
+
+  content/builtin-themes/privatewindow/manifest.json            (privatewindow/manifest.json)

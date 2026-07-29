@@ -13,6 +13,7 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 import mozilla.components.browser.storage.sync.PlacesHistoryStorage
 import mozilla.components.browser.thumbnails.BrowserThumbnails
+import mozilla.components.concept.awesomebar.AwesomeBar
 import mozilla.components.concept.awesomebar.AwesomeBar.GroupedSuggestion
 import mozilla.components.feature.awesomebar.AwesomeBarFeature
 import mozilla.components.feature.awesomebar.provider.SearchSuggestionProvider
@@ -177,12 +178,20 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
         historyStorage: PlacesHistoryStorage,
     ) = MainScope().launch(Dispatchers.IO) {
         when (entry.suggestion.provider is SearchTermSuggestionsProvider) {
-            true -> entry.suggestion.title?.let {
-                historyStorage.deleteHistoryMetadata(it)
+            true -> {
+                if (entry.suggestion is AwesomeBar.Suggestion) {
+                    (entry.suggestion as AwesomeBar.Suggestion).title?.let {
+                        historyStorage.deleteHistoryMetadata(it)
+                    }
+                }
             }
 
-            else -> entry.suggestion.description?.let {
-                historyStorage.deleteVisitsFor(it)
+            false -> {
+                if (entry.suggestion is AwesomeBar.Suggestion) {
+                    (entry.suggestion as AwesomeBar.Suggestion).description?.let {
+                        historyStorage.deleteVisitsFor(it)
+                    }
+                }
             }
         }
     }

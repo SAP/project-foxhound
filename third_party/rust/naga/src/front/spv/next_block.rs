@@ -1685,7 +1685,7 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
                 }
                 Op::ExtInst => {
                     use crate::MathFunction as Mf;
-                    use spirv::GLOp as Glo;
+                    use spirv::GlslStd450Op as Glo;
 
                     let base_wc = 5;
                     inst.expect_at_least(base_wc)?;
@@ -3015,6 +3015,8 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
                         ctx.expressions.append(expr, span)
                     };
 
+                    emitter.start(ctx.expressions);
+
                     // Create an dot accessor to extract the value from the
                     // result struct __atomic_compare_exchange_result<T> and use that
                     // as the expression for the result_id
@@ -3034,8 +3036,6 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
                             },
                         );
                     }
-
-                    emitter.start(ctx.expressions);
 
                     // Create a statement for the op itself
                     let stmt = crate::Statement::Atomic {

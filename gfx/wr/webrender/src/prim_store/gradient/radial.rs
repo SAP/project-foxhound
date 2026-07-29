@@ -9,28 +9,22 @@
 //! Radial gradients are rendered via cached render tasks and composited with the image brush.
 
 use euclid::{vec2, size2};
-use api::{ColorF, ColorU, ExtendMode, GradientStop, PremultipliedColorF};
+use api::{ColorU, ExtendMode, GradientStop};
 use api::units::*;
-use crate::gpu_types::ImageBrushPrimitiveData;
 use crate::pattern::gradient::{radial_gradient_pattern};
 use crate::pattern::{Pattern, PatternBuilder, PatternBuilderContext, PatternBuilderState};
 use crate::scene_building::IsVisible;
-use crate::frame_builder::FrameBuildingState;
 use crate::intern::{Internable, InternDebug, Handle as InternHandle};
 use crate::internal_types::LayoutPrimitiveInfo;
-use crate::prim_store::{BrushSegment, GradientTileRange, InternablePrimitive, VECS_PER_SEGMENT};
-use crate::prim_store::{PrimitiveInstanceKind, PrimitiveOpacity};
+use crate::prim_store::{InternablePrimitive};
+use crate::prim_store::{PrimitiveKind, PrimitiveOpacity};
 use crate::prim_store::{PrimKeyCommonData, PrimTemplateCommonData, PrimitiveStore};
-use crate::prim_store::{NinePatchDescriptor, PointKey, SizeKey, FloatKey};
-use crate::render_task::{RenderTask, RenderTaskKind};
-use crate::render_task_graph::RenderTaskId;
-use crate::render_task_cache::{RenderTaskCacheKeyKind, RenderTaskCacheKey, RenderTaskParent};
-use crate::renderer::GpuBufferAddress;
+use crate::prim_store::{NinePatchDescriptor, PointKey, SizeKey};
 use crate::segment::EdgeMask;
 
 use std::{hash, ops::{Deref, DerefMut}};
 use super::{
-    stops_and_min_alpha, GradientStopKey, GradientGpuBlockBuilder,
+    stops_and_min_alpha, GradientStopKey,
     apply_gradient_local_clip,
 };
 
@@ -63,7 +57,9 @@ pub struct RadialGradientKey {
     pub extend_mode: ExtendMode,
     pub center: PointKey,
     pub params: RadialGradientParams,
-    pub stretch_size: SizeKey,
+    /// Per-axis tile size encoded as a fraction of `common.prim_size`. The
+    /// runtime `stretch_size` is `stretch_ratio * common.prim_size`.
+    pub stretch_ratio: SizeKey,
     pub stops: Vec<GradientStopKey>,
     pub tile_spacing: SizeKey,
     pub nine_patch: Option<Box<NinePatchDescriptor>>,
@@ -79,7 +75,7 @@ impl RadialGradientKey {
             extend_mode: radial_grad.extend_mode,
             center: radial_grad.center,
             params: radial_grad.params,
-            stretch_size: radial_grad.stretch_size,
+            stretch_ratio: radial_grad.stretch_ratio,
             stops: radial_grad.stops,
             tile_spacing: radial_grad.tile_spacing,
             nine_patch: radial_grad.nine_patch,
@@ -98,20 +94,21 @@ pub struct RadialGradientTemplate {
     pub extend_mode: ExtendMode,
     pub params: RadialGradientParams,
     pub center: LayoutPoint,
-    pub task_size: DeviceIntSize,
-    pub scale: DeviceVector2D,
-    pub stretch_size: LayoutSize,
+    /// Per-axis fraction of `common.prim_size` covered by one tile of the
+    /// gradient pattern. Multiply by `common.prim_size` at use to recover the
+    /// absolute stretch_size.
+    pub stretch_ratio: LayoutSize,
     pub tile_spacing: LayoutSize,
-    pub brush_segments: Vec<BrushSegment>,
+    pub border_nine_patch: Option<Box<NinePatchDescriptor>>,
     pub stops_opacity: PrimitiveOpacity,
     pub stops: Vec<GradientStop>,
-    pub src_color: Option<RenderTaskId>,
 }
 
 impl PatternBuilder for RadialGradientTemplate {
     fn build(
         &self,
         _sub_rect: Option<DeviceRect>,
+        offset: LayoutVector2D,
         ctx: &PatternBuilderContext,
         state: &mut PatternBuilderState,
     ) -> Pattern {
@@ -122,7 +119,7 @@ impl PatternBuilder for RadialGradientTemplate {
         // RadialGradientTemplate stores the center point relative to the primitive
         // origin, but the shader works with start/end points in "proper" layout
         // coordinates (relative to the primitive's spatial node).
-        let center = self.center.cast_unit() + self.common.prim_rect.min.to_vector();
+        let center = self.center.cast_unit() + ctx.prim_origin.to_vector() + offset;
 
         radial_gradient_pattern(
             center,
@@ -135,19 +132,6 @@ impl PatternBuilder for RadialGradientTemplate {
             ctx.fb_config.is_software,
             state.frame_gpu_data,
         )
-    }
-
-    fn get_base_color(
-        &self,
-        _ctx: &PatternBuilderContext,
-    ) -> ColorF {
-        ColorF::WHITE
-    }
-
-    fn use_shared_pattern(
-        &self,
-    ) -> bool {
-        true
     }
 }
 
@@ -167,11 +151,6 @@ impl DerefMut for RadialGradientTemplate {
 impl From<RadialGradientKey> for RadialGradientTemplate {
     fn from(item: RadialGradientKey) -> Self {
         let common = PrimTemplateCommonData::with_key_common(item.common);
-        let mut brush_segments = Vec::new();
-
-        if let Some(ref nine_patch) = item.nine_patch {
-            brush_segments = nine_patch.create_segments(common.prim_rect.size());
-        }
 
         let (stops, min_alpha) = stops_and_min_alpha(&item.stops);
 
@@ -180,118 +159,17 @@ impl From<RadialGradientKey> for RadialGradientTemplate {
         // should be drawn in.
         let stops_opacity = PrimitiveOpacity::from_alpha(min_alpha);
 
-        let mut stretch_size: LayoutSize = item.stretch_size.into();
-        stretch_size.width = stretch_size.width.min(common.prim_rect.width());
-        stretch_size.height = stretch_size.height.min(common.prim_rect.height());
-
-        // Avoid rendering enormous gradients. Radial gradients are mostly made of soft transitions,
-        // so it is unlikely that rendering at a higher resolution that 1024 would produce noticeable
-        // differences, especially with 8 bits per channel.
-        const MAX_SIZE: f32 = 1024.0;
-        let mut task_size: DeviceSize = stretch_size.cast_unit();
-        let mut scale = vec2(1.0, 1.0);
-        if task_size.width > MAX_SIZE {
-            scale.x = task_size.width/ MAX_SIZE;
-            task_size.width = MAX_SIZE;
-        }
-        if task_size.height > MAX_SIZE {
-            scale.y = task_size.height /MAX_SIZE;
-            task_size.height = MAX_SIZE;
-        }
-
         RadialGradientTemplate {
             common,
             center: item.center.into(),
             extend_mode: item.extend_mode,
             params: item.params,
-            stretch_size,
-            task_size: task_size.ceil().to_i32(),
-            scale,
+            stretch_ratio: item.stretch_ratio.into(),
             tile_spacing: item.tile_spacing.into(),
-            brush_segments,
+            border_nine_patch: item.nine_patch,
             stops_opacity,
             stops,
-            src_color: None,
         }
-    }
-}
-
-impl RadialGradientTemplate {
-    /// Update the GPU cache for a given primitive template. This may be called multiple
-    /// times per frame, by each primitive reference that refers to this interned
-    /// template. The initial request call to the GPU cache ensures that work is only
-    /// done if the cache entry is invalid (due to first use or eviction).
-    pub fn update(
-        &mut self,
-        frame_state: &mut FrameBuildingState,
-    ) {
-        let mut writer = frame_state.frame_gpu_data.f32.write_blocks(3 + self.brush_segments.len() * VECS_PER_SEGMENT);
-
-        // write_prim_gpu_blocks
-        writer.push(&ImageBrushPrimitiveData {
-            color: PremultipliedColorF::WHITE,
-            background_color: PremultipliedColorF::WHITE,
-            stretch_size: self.stretch_size,
-        });
-
-        // write_segment_gpu_blocks
-        for segment in &self.brush_segments {
-            segment.write_gpu_blocks(&mut writer);
-        }
-        self.common.gpu_buffer_address = writer.finish();
-
-        let task_size = self.task_size;
-        let cache_key = RadialGradientCacheKey {
-            size: task_size,
-            center: PointKey { x: self.center.x, y: self.center.y },
-            scale: PointKey { x: self.scale.x, y: self.scale.y },
-            start_radius: FloatKey(self.params.start_radius),
-            end_radius: FloatKey(self.params.end_radius),
-            ratio_xy: FloatKey(self.params.ratio_xy),
-            extend_mode: self.extend_mode,
-            stops: self.stops.iter().map(|stop| (*stop).into()).collect(),
-        };
-
-        let task_id = frame_state.resource_cache.request_render_task(
-            Some(RenderTaskCacheKey {
-                size: task_size,
-                kind: RenderTaskCacheKeyKind::RadialGradient(cache_key),
-            }),
-            false,
-            RenderTaskParent::Surface,
-            &mut frame_state.frame_gpu_data.f32,
-            frame_state.rg_builder,
-            &mut frame_state.surface_builder,
-            &mut |rg_builder, gpu_buffer_builder| {
-                let stops = GradientGpuBlockBuilder::build(
-                    false,
-                    gpu_buffer_builder,
-                    &self.stops,
-                );
-
-                rg_builder.add().init(RenderTask::new_dynamic(
-                    task_size,
-                    RenderTaskKind::RadialGradient(RadialGradientTask {
-                        extend_mode: self.extend_mode,
-                        // In this code path we chose to render the gradient as if
-                        // layout coordinates were equivalent to device coordinates.
-                        // This can lead to loss of precision.
-                        center: self.center.cast_unit(),
-                        scale: self.scale,
-                        params: self.params.clone(),
-                        stops,
-                    }),
-                ))
-            }
-        );
-
-        self.src_color = Some(task_id);
-
-        // Tile spacing is always handled by decomposing into separate draw calls so the
-        // primitive opacity is equivalent to stops opacity. This might change to being
-        // set to non-opaque in the presence of tile spacing if/when tile spacing is handled
-        // in the same way as with the image primitive.
-        self.opacity = self.stops_opacity;
     }
 }
 
@@ -304,7 +182,9 @@ pub struct RadialGradient {
     pub extend_mode: ExtendMode,
     pub center: PointKey,
     pub params: RadialGradientParams,
-    pub stretch_size: SizeKey,
+    /// Per-axis tile size encoded as a fraction of the prim's size. See
+    /// [`RadialGradientKey::stretch_ratio`].
+    pub stretch_ratio: SizeKey,
     pub stops: Vec<GradientStopKey>,
     pub tile_spacing: SizeKey,
     pub nine_patch: Option<Box<NinePatchDescriptor>>,
@@ -329,11 +209,9 @@ impl InternablePrimitive for RadialGradient {
         _key: RadialGradientKey,
         data_handle: RadialGradientDataHandle,
         _prim_store: &mut PrimitiveStore,
-    ) -> PrimitiveInstanceKind {
-        PrimitiveInstanceKind::RadialGradient {
+    ) -> PrimitiveKind {
+        PrimitiveKind::RadialGradient {
             data_handle,
-            visible_tiles_range: GradientTileRange::empty(),
-            use_legacy_path: true,
         }
     }
 }
@@ -344,63 +222,6 @@ impl IsVisible for RadialGradient {
     }
 }
 
-#[derive(Debug)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-pub struct RadialGradientTask {
-    pub extend_mode: ExtendMode,
-    pub center: DevicePoint,
-    pub scale: DeviceVector2D,
-    pub params: RadialGradientParams,
-    pub stops: GpuBufferAddress,
-}
-
-impl RadialGradientTask {
-    pub fn to_instance(&self, target_rect: &DeviceIntRect) -> RadialGradientInstance {
-        RadialGradientInstance {
-            task_rect: target_rect.to_f32(),
-            center: self.center,
-            scale: self.scale,
-            start_radius: self.params.start_radius,
-            end_radius: self.params.end_radius,
-            ratio_xy: self.params.ratio_xy,
-            extend_mode: self.extend_mode as i32,
-            gradient_stops_address: self.stops.as_int(),
-        }
-    }
-}
-
-/// The per-instance shader input of a radial gradient render task.
-///
-/// Must match the RADIAL_GRADIENT instance description in renderer/vertex.rs.
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-#[repr(C)]
-#[derive(Clone, Debug)]
-pub struct RadialGradientInstance {
-    pub task_rect: DeviceRect,
-    pub center: DevicePoint,
-    pub scale: DeviceVector2D,
-    pub start_radius: f32,
-    pub end_radius: f32,
-    pub ratio_xy: f32,
-    pub extend_mode: i32,
-    pub gradient_stops_address: i32,
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-pub struct RadialGradientCacheKey {
-    pub size: DeviceIntSize,
-    pub center: PointKey,
-    pub scale: PointKey,
-    pub start_radius: FloatKey,
-    pub end_radius: FloatKey,
-    pub ratio_xy: FloatKey,
-    pub extend_mode: ExtendMode,
-    pub stops: Vec<GradientStopKey>,
-}
 
 /// Avoid invoking the radial gradient shader on large areas where the color is
 /// constant.

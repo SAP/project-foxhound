@@ -132,6 +132,63 @@ add_task(async function test_processPointerDownAction() {
   equal(chain[0][0].button, 5);
 });
 
+add_task(async function test_processPointerActionAltitudeAzimuthValidation() {
+  for (let subtype of ["pointerDown", "pointerMove"]) {
+    const baseAction =
+      subtype === "pointerDown"
+        ? { type: "pointer", subtype, button: 0 }
+        : { type: "pointer", subtype, x: 0, y: 0 };
+
+    for (let altitudeAngle of [-0.1, Math.PI / 2 + 0.1, "a", true, [], {}]) {
+      await checkFromJSONErrors(
+        [{ ...baseAction, altitudeAngle }],
+        /Expected "altitudeAngle" to be in range/,
+        `${subtype} with altitudeAngle: ${altitudeAngle}`
+      );
+    }
+
+    for (let azimuthAngle of [-0.1, 2 * Math.PI + 0.1, "a", true, [], {}]) {
+      await checkFromJSONErrors(
+        [{ ...baseAction, azimuthAngle }],
+        /Expected "azimuthAngle" to be in range/,
+        `${subtype} with azimuthAngle: ${azimuthAngle}`
+      );
+    }
+  }
+});
+
+add_task(async function test_processPointerActionAltitudeAzimuth() {
+  for (let subtype of ["pointerDown", "pointerMove"]) {
+    const baseItem =
+      subtype === "pointerDown"
+        ? { type: subtype, button: 0 }
+        : { type: subtype, x: 0, y: 0 };
+
+    // Values round-trip correctly
+    const state = new actions.State();
+    const actionSequence = {
+      id: "touch",
+      type: "pointer",
+      parameters: { pointerType: "touch" },
+      actions: [
+        { ...baseItem, altitudeAngle: 0.5, azimuthAngle: 1.8 },
+        { ...baseItem, altitudeAngle: 0, azimuthAngle: 0 },
+        { ...baseItem, altitudeAngle: Math.PI / 2, azimuthAngle: 2 * Math.PI },
+        baseItem,
+      ],
+    };
+    const chain = await actions.Chain.fromJSON(state, [actionSequence], {});
+    equal(chain[0][0].altitudeAngle, 0.5);
+    equal(chain[0][0].azimuthAngle, 1.8);
+    equal(chain[1][0].altitudeAngle, 0);
+    equal(chain[1][0].azimuthAngle, 0);
+    equal(chain[2][0].altitudeAngle, Math.PI / 2);
+    equal(chain[2][0].azimuthAngle, 2 * Math.PI);
+    equal(chain[3][0].altitudeAngle, undefined);
+    equal(chain[3][0].azimuthAngle, undefined);
+  }
+});
+
 add_task(async function test_validateActionDurationAndCoordinates() {
   for (let [type, subtype] of [
     ["none", "pause"],

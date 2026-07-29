@@ -4,7 +4,9 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
+  AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
   MockRegistrar: "resource://testing-common/MockRegistrar.sys.mjs",
+  ShellService: "moz-src:///browser/components/shell/ShellService.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
   TaskbarTabsUtils: "resource:///modules/taskbartabs/TaskbarTabsUtils.sys.mjs",
 });
@@ -141,3 +143,31 @@ add_task(async function test_getDefaultIcon() {
     "getDefaultIcon is equivalent to _imageFromLocalURI(Favicons.defaultFavicon)"
   );
 });
+
+add_task(async function test_determineNewDesktopEntryName() {
+  // xdg-desktop-portal will reject the name (under Flatpak) if it doesn't
+  // start with the application ID. Aside from that, it should contain the id
+  // somewhere.
+  let sandbox = sinon.createSandbox();
+  sandbox.stub(ShellService, "shellService").value({
+    getGlibPrgname() {
+      return "glib.prgname.here";
+    },
+  });
+
+  let name = TaskbarTabsUtils._determineNewDesktopEntryName(
+    "real-taskbar-tab-id"
+  );
+  info(`determined name: ${name}`);
+  Assert.equal(
+    name.indexOf("glib.prgname.here."),
+    0,
+    "New desktop entry name has correct prefix"
+  );
+  Assert.greaterOrEqual(
+    name.indexOf("real-taskbar-tab-id"),
+    0,
+    "New desktop entry name contains the given id"
+  );
+  sandbox.restore();
+}).skip(AppConstants.platform !== "linux"); // We don't use GLib/its prgname on non-Linux platforms.

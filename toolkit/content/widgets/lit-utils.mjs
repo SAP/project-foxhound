@@ -465,12 +465,15 @@ export class MozBaseInputElement extends MozLitElement {
       return "";
     }
     let labelEl;
-    if (this.getAttribute("headinglevel") == "2") {
+    let headingLevel = this.getAttribute("headinglevel");
+    if (headingLevel == "3" || headingLevel == "4") {
       // Undocumented hack for AI controls, do not use, it WILL be removed. (bug 2012250)
-      labelEl = html`<h2
+      // Configs set headinglevel: 3; the SettingElement SRD bump can promote
+      // that to 4 in SRD mode, so both values render h3 here.
+      labelEl = html`<h3
         class="text text-box-trim-start"
         .textContent=${this.label}
-      ></h2>`;
+      ></h3>`;
     } else {
       labelEl = html`<span class="text" .textContent=${this.label}></span>`;
     }

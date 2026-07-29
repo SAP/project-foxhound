@@ -1,10 +1,10 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "TextDirectiveCreator.h"
+
+#include <algorithm>
 
 #include "AbstractRange.h"
 #include "Document.h"
@@ -131,14 +131,14 @@ TextDirectiveCreator::ExtendRangeToWordBoundaries(AbstractRange* aRange) {
   }
   RangeBoundary startPoint = TextDirectiveUtil::FindNextNonWhitespacePosition<
       TextScanDirection::Right>(aRange->StartRef());
-  startPoint =
-      TextDirectiveUtil::FindWordBoundary<TextScanDirection::Left>(startPoint);
+  startPoint = TextDirectiveUtil::FindWordBoundary<TextScanDirection::Left>(
+      startPoint, TextDirectiveUtil::BreakOnPunctuation::Yes);
 
   RangeBoundary endPoint =
       TextDirectiveUtil::FindNextNonWhitespacePosition<TextScanDirection::Left>(
           aRange->EndRef());
-  endPoint =
-      TextDirectiveUtil::FindWordBoundary<TextScanDirection::Right>(endPoint);
+  endPoint = TextDirectiveUtil::FindWordBoundary<TextScanDirection::Right>(
+      endPoint, TextDirectiveUtil::BreakOnPunctuation::Yes);
 #if MOZ_DIAGNOSTIC_ASSERT_ENABLED
   auto cmp = nsContentUtils::ComparePoints(startPoint, endPoint);
   MOZ_DIAGNOSTIC_ASSERT(
@@ -551,21 +551,30 @@ RangeBasedTextDirectiveCreator::FindAllMatchingCandidates() {
   if (mWatchdog && mWatchdog->IsDone()) {
     return Ok();
   }
-  TEXT_FRAGMENT_LOG(
-      "Searching all occurrences of last word of end content ({}) in the "
-      "partial document from beginning of the target range to the end of the "
-      "target range, excluding the last word.",
-      NS_ConvertUTF16toUTF8(mLastWordOfEndContent));
+  // Skip past the first word of the start content. Per "find a range from a
+  // text directive", the search for the end content should start at the end of
+  // the start content.
+  // https://wicg.github.io/scroll-to-text-fragment/#find-a-range-from-a-text-directive
+  // 2.4 Let rangeEndSearchRange be a range whose start is potentialMatch’s end
+  //     and whose end is searchRange’s end.
+  auto searchStart =
+      TextDirectiveUtil::FindWordBoundary<TextScanDirection::Right>(
+          mRange->StartRef(), TextDirectiveUtil::BreakOnPunctuation::No);
 
   auto searchEnd =
       TextDirectiveUtil::FindNextNonWhitespacePosition<TextScanDirection::Left>(
           mRange->EndRef());
-  searchEnd =
-      TextDirectiveUtil::FindWordBoundary<TextScanDirection::Left>(searchEnd);
+  searchEnd = TextDirectiveUtil::FindWordBoundary<TextScanDirection::Left>(
+      searchEnd, TextDirectiveUtil::BreakOnPunctuation::No);
 
-  const nsTArray<RefPtr<AbstractRange>> endContentRanges =
-      MOZ_TRY(FindAllMatchingRanges(mLastWordOfEndContent, mRange->StartRef(),
-                                    searchEnd));
+  TEXT_FRAGMENT_LOG(
+      "Searching all occurrences of last word of end content ({}) in the "
+      "partial document from after the first word of the start content to "
+      "the end of the target range, excluding the last word.",
+      NS_ConvertUTF16toUTF8(mLastWordOfEndContent));
+
+  const nsTArray<RefPtr<AbstractRange>> endContentRanges = MOZ_TRY(
+      FindAllMatchingRanges(mLastWordOfEndContent, searchStart, searchEnd));
   FindEndMatchCommonSubstringLengths(endContentRanges);
   return Ok();
 }
@@ -743,7 +752,7 @@ TextDirectiveCreator::CheckAllCombinations(
     TEXT_FRAGMENT_LOG("Checking candidate ({},{}). Score: {}",
                       firstExtendedToWordBoundary, secondExtendedToWordBoundary,
                       costFunctionValue);
-    const bool isInvalid = AnyOf(
+    const bool isInvalid = std::any_of(
         aExactWordLengths.begin(), aExactWordLengths.end(),
         [firstExtended = firstExtendedToWordBoundary,
          secondExtended = secondExtendedToWordBoundary](

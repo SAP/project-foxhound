@@ -373,6 +373,9 @@ add_task(async function test_invalid_cookie_fix() {
 
   promise = CookieValidatedObserver.waitForCookieValidation();
 
+  // Reset the lastEpoch so validation runs again on the next profile load.
+  Services.prefs.clearUserPref("network.cookie.validation.lastEpoch");
+
   // Reload profile.
   await promise_load_profile();
 

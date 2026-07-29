@@ -13,7 +13,7 @@ add_task(async function () {
   const { inspector } = await openInspectorForURL(TEST_URI);
 
   info("Replace fake-iframe div with a real iframe");
-  await ContentTask.spawn(gBrowser.selectedBrowser, null, async function () {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {
     await new Promise(resolve => {
       // Remove the fake-iframe div
       content.document.querySelector("#fake-iframe").remove();

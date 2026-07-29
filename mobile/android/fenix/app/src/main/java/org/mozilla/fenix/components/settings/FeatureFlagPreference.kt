@@ -48,6 +48,13 @@ private class DummyProperty : ReadWriteProperty<PreferencesHolder, Boolean> {
  * )
  * ```
  */
+@Deprecated(
+    "Use booleanPreference instead and control the feature flag through Nimbus.",
+    ReplaceWith(
+        "booleanPreference(key, defaultValue)",
+        "mozilla.components.support.ktx.android.content.booleanPreference",
+    ),
+)
 fun featureFlagBooleanPreference(key: String, defaultValue: Boolean, featureFlag: Boolean) =
     if (featureFlag) {
         booleanPreference(key, defaultValue)
@@ -55,7 +62,7 @@ fun featureFlagBooleanPreference(key: String, defaultValue: Boolean, featureFlag
         DummyProperty()
     }
 
-internal class LazyBooleanPreference(val key: String, val defaultValue: () -> Boolean) :
+private class LazyBooleanPreference(val key: String, val defaultValue: () -> Boolean) :
     ReadWriteProperty<PreferencesHolder, Boolean> {
 
     override fun getValue(thisRef: PreferencesHolder, property: KProperty<*>): Boolean =
@@ -98,20 +105,16 @@ internal class LazyBooleanPreference(val key: String, val defaultValue: () -> Bo
  *
  * @param defaultValue The default value to return when the preference is unset.
  */
+@Deprecated(
+    "Use booleanPreference with a lambda default instead.",
+    ReplaceWith(
+        "booleanPreference(key, defaultValue)",
+        "mozilla.components.support.ktx.android.content.booleanPreference",
+    ),
+)
 fun lazyFeatureFlagBooleanPreference(key: String, featureFlag: Boolean, defaultValue: () -> Boolean) =
     if (featureFlag) {
         LazyBooleanPreference(key, defaultValue)
     } else {
         DummyProperty()
     }
-
-/**
- * Property delegate for getting and setting a boolean shared preference with a lazily evaluated
- * default value.
- *
- * @param key The key for the shared preference.
- * @param defaultValue A lambda that provides the default value when the preference is unset.
- * The lambda is only evaluated when the preference is read, not during property initialization.
- */
-fun lazyBooleanPreference(key: String, defaultValue: () -> Boolean): ReadWriteProperty<PreferencesHolder, Boolean> =
-    LazyBooleanPreference(key, defaultValue)

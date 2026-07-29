@@ -46,7 +46,7 @@ add_task(async function () {
   info("Waiting for WS frames...");
 
   // Wait for two frames to be displayed in the panel
-  await waitForDOMIfNeeded(
+  await waitForDOM(
     document,
     "#messages-view .message-list-table .message-list-item",
     2

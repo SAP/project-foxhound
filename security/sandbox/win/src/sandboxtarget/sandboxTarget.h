@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -53,9 +51,11 @@ class SandboxTarget {
    * more secure delayed / lockdown policy.
    */
   void StartSandbox();
-
-  bool GetComplexLineBreaks(const WCHAR* text, uint32_t length,
-                            uint8_t* break_before);
+  /**
+   * Called by content processes to lower the sandbox. This includes other
+   * processing like DLL pre-loading to prevent failures after lowering.
+   */
+  void LowerContentSandbox();
 
  protected:
   SandboxTarget() : mTargetServices(nullptr) {}

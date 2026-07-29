@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,6 +24,7 @@
 #include "mozilla/net/CookieValidation.h"
 #include "Cookie.h"
 #include "CookieParser.h"
+#include "CookieStorage.h"
 #include "nsIURI.h"
 #include "nsIConsoleReportCollector.h"
 
@@ -595,21 +595,45 @@ TEST(TestCookie, TestCookieMain)
   GetACookie(cookieService, "http://parser.test/", cookie);
   EXPECT_TRUE(CheckResult(cookie.get(), MUST_BE_NULL));
 
-  // test the handling of VALUE-only cookies (see bug 169091),
-  // i.e. "six" should assume an empty NAME, which allows other VALUE-only
-  // cookies to overwrite it
-  SetACookie(cookieService, "http://parser.test/", "six");
-  GetACookie(cookieService, "http://parser.test/", cookie);
-  EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "six"));
-  SetACookie(cookieService, "http://parser.test/", "seven");
-  GetACookie(cookieService, "http://parser.test/", cookie);
-  EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "seven"));
-  SetACookie(cookieService, "http://parser.test/", " =eight");
-  GetACookie(cookieService, "http://parser.test/", cookie);
-  EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "eight"));
-  SetACookie(cookieService, "http://parser.test/", "test=six");
-  GetACookie(cookieService, "http://parser.test/", cookie);
+  // test the handling of valueless cookies (no '=' in cookie string).
+  // With network.cookie.valueless_cookie=true (default), "six" is parsed as
+  // name="six", value="" and serialized as "six=". Each valueless cookie has a
+  // distinct name, so they don't overwrite each other.
+  Preferences::SetBool("network.cookie.valueless_cookie", true);
+  SetACookie(cookieService, "http://valueless.parser.test/", "six");
+  GetACookie(cookieService, "http://valueless.parser.test/", cookie);
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_CONTAIN, "six="));
+  SetACookie(cookieService, "http://valueless.parser.test/", "seven");
+  GetACookie(cookieService, "http://valueless.parser.test/", cookie);
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_CONTAIN, "six="));
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_CONTAIN, "seven="));
+  // " =eight" parses as name="" value="eight" (nameless), which is rejected
+  // when valueless_cookie=true, so only the previous two cookies remain.
+  SetACookie(cookieService, "http://valueless.parser.test/", " =eight");
+  GetACookie(cookieService, "http://valueless.parser.test/", cookie);
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_CONTAIN, "six="));
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_CONTAIN, "seven="));
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_NOT_CONTAIN, "eight"));
+  SetACookie(cookieService, "http://valueless.parser.test/", "test=six");
+  GetACookie(cookieService, "http://valueless.parser.test/", cookie);
   EXPECT_TRUE(CheckResult(cookie.get(), MUST_CONTAIN, "test=six"));
+
+  // With network.cookie.valueless_cookie=false (legacy), "six" is parsed as
+  // name="", value="six", so valueless cookies overwrite each other.
+  Preferences::SetBool("network.cookie.valueless_cookie", false);
+  SetACookie(cookieService, "http://nameless.parser.test/", "six");
+  GetACookie(cookieService, "http://nameless.parser.test/", cookie);
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "six"));
+  SetACookie(cookieService, "http://nameless.parser.test/", "seven");
+  GetACookie(cookieService, "http://nameless.parser.test/", cookie);
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "seven"));
+  SetACookie(cookieService, "http://nameless.parser.test/", " =eight");
+  GetACookie(cookieService, "http://nameless.parser.test/", cookie);
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "eight"));
+  SetACookie(cookieService, "http://nameless.parser.test/", "test=six");
+  GetACookie(cookieService, "http://nameless.parser.test/", cookie);
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_CONTAIN, "test=six"));
+  Preferences::SetBool("network.cookie.valueless_cookie", true);
 
   // *** path ordering tests
 
@@ -1223,4 +1247,168 @@ TEST(TestCookie, MaxAgeParser)
   SetACookie(cookieService, "http://maxage.net/", "a=1; max-age=-1");
   GetACookie(cookieService, "http://maxage.net/", cookieStr);
   EXPECT_TRUE(CheckResult(cookieStr.get(), MUST_EQUAL, ""));
+}
+
+// Minimal CookieStorage subclass to expose internals for testing.
+class TestableCookieStorage final : public CookieStorage {
+ public:
+  static already_AddRefed<TestableCookieStorage> Create() {
+    RefPtr<TestableCookieStorage> storage = new TestableCookieStorage();
+    storage->Init();
+    return storage.forget();
+  }
+
+  using CookieStorage::AddCookieToList;
+  using CookieStorage::mHostTable;
+
+  void StaleCookies(const nsTArray<RefPtr<Cookie>>&, int64_t) override {}
+  void Close() override {}
+  void EnsureInitialized() override {}
+  nsresult RunInTransaction(nsICookieTransactionCallback*) override {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+
+ protected:
+  const char* NotificationTopic() const override { return "test-cookie"; }
+  void NotifyChangedInternal(nsICookieNotification*, bool) override {}
+  void RemoveAllInternal() override {}
+  void RemoveCookieFromDB(const Cookie&) override {}
+  void StoreCookie(const nsACString&, const OriginAttributes&,
+                   Cookie*) override {}
+
+ private:
+  ~TestableCookieStorage() = default;
+  void CollectCookieJarSizeData() override {}
+  already_AddRefed<nsIArray> PurgeCookies(int64_t, uint16_t, int64_t) override {
+    return nullptr;
+  }
+};
+
+// Regression test for Bug 2022369: RemoveOlderCookiesByBytes must re-lookup the
+// CookieEntry after pass 1 (insecure removal) because it may have been freed if
+// pass 1 emptied the entry.
+TEST(TestCookie, RemoveOlderCookiesByBytesEntryFreed)
+{
+  RefPtr<TestableCookieStorage> storage = TestableCookieStorage::Create();
+
+  nsAutoCString baseDomain("localhost"_ns);
+  OriginAttributes attrs;
+  attrs.mPartitionKey = u"(http,example.com)"_ns;
+
+  // Add a single insecure cookie to the partition.
+  CookieStruct cookieData;
+  cookieData.name() = "B"_ns;
+  cookieData.value() = "xx"_ns;
+  cookieData.host() = "localhost"_ns;
+  cookieData.path() = "/"_ns;
+  cookieData.expiryInMSec() = PR_Now() / PR_USEC_PER_MSEC + 86400 * 1000;
+  cookieData.lastAccessedInUSec() = 0;
+  cookieData.creationTimeInUSec() = 0;
+  cookieData.updateTimeInUSec() = 0;
+  cookieData.isHttpOnly() = false;
+  cookieData.isSession() = true;
+  cookieData.isSecure() = false;
+  cookieData.isPartitioned() = true;
+  cookieData.sameSite() = nsICookie::SAMESITE_LAX;
+  cookieData.schemeMap() = 2;
+
+  RefPtr<Cookie> cookie = Cookie::Create(cookieData, attrs);
+  ASSERT_TRUE(cookie);
+
+  storage->AddCookieToList(baseDomain, attrs, cookie);
+
+  CookieKey key(baseDomain, attrs);
+  CookieEntry* entry = storage->mHostTable.GetEntry(key);
+  ASSERT_TRUE(entry);
+  EXPECT_EQ(entry->GetCookies().Length(), 1u);
+
+  uint32_t cookieBytes = cookie->NameAndValueBytes();
+  ASSERT_GT(cookieBytes, 0u);
+
+  // Ask to remove more bytes than the single insecure cookie provides.
+  // Pass 1 removes the insecure cookie (the only one), freeing the entry.
+  // Without the fix, pass 2 would dereference the freed entry (UAF).
+  nsCOMPtr<nsIArray> purgedList;
+  storage->RemoveOlderCookiesByBytes(entry, cookieBytes + 100, purgedList);
+
+  // The entry should be gone from the hash table.
+  EXPECT_FALSE(storage->mHostTable.GetEntry(key));
+}
+
+// Regression test for Bug 2041131: HasCookiesForSite must find cookies stored
+// under any OriginAttributes matching the pattern (containers, partitionKey,
+// …), not just the default-OA bucket.
+TEST(TestCookie, HasCookiesForSite)
+{
+  RefPtr<TestableCookieStorage> storage = TestableCookieStorage::Create();
+
+  nsAutoCString baseDomain("example.com"_ns);
+
+  auto addCookie = [&](const OriginAttributes& aAttrs) {
+    CookieStruct cookieData;
+    cookieData.name() = "c"_ns;
+    cookieData.value() = "v"_ns;
+    cookieData.host() = "example.com"_ns;
+    cookieData.path() = "/"_ns;
+    cookieData.expiryInMSec() = PR_Now() / PR_USEC_PER_MSEC + 86400 * 1000;
+    cookieData.lastAccessedInUSec() = 0;
+    cookieData.creationTimeInUSec() = 0;
+    cookieData.updateTimeInUSec() = 0;
+    cookieData.isHttpOnly() = false;
+    cookieData.isSession() = true;
+    cookieData.isSecure() = false;
+    cookieData.isPartitioned() = false;
+    cookieData.sameSite() = nsICookie::SAMESITE_LAX;
+    cookieData.schemeMap() = 2;
+
+    RefPtr<Cookie> cookie = Cookie::Create(cookieData, aAttrs);
+    ASSERT_TRUE(cookie);
+    storage->AddCookieToList(baseDomain, aAttrs, cookie);
+  };
+
+  OriginAttributesPattern nonPbPattern;
+  nonPbPattern.mPrivateBrowsingId.Construct(0);
+
+  // No cookies at all → false.
+  EXPECT_FALSE(storage->HasCookiesForSite(baseDomain, nonPbPattern));
+  EXPECT_FALSE(storage->HasCookiesForSite("other.test"_ns, nonPbPattern));
+
+  // Cookie in the default-OA bucket → true.
+  OriginAttributes defaultAttrs;
+  addCookie(defaultAttrs);
+  EXPECT_TRUE(storage->HasCookiesForSite(baseDomain, nonPbPattern));
+
+  // Different base domain still gets false.
+  EXPECT_FALSE(storage->HasCookiesForSite("other.test"_ns, nonPbPattern));
+
+  // Cookie only in a container (userContextId != 0) → true. This is the
+  // direct regression case from Bug 2041131.
+  RefPtr<TestableCookieStorage> containerOnly = TestableCookieStorage::Create();
+  storage = containerOnly;
+  OriginAttributes containerAttrs;
+  containerAttrs.mUserContextId = 1;
+  addCookie(containerAttrs);
+  EXPECT_TRUE(storage->HasCookiesForSite(baseDomain, nonPbPattern));
+
+  // PB-only cookie must NOT be visible to a non-PB pattern.
+  RefPtr<TestableCookieStorage> pbOnly = TestableCookieStorage::Create();
+  storage = pbOnly;
+  OriginAttributes pbAttrs;
+  pbAttrs.mPrivateBrowsingId = 1;
+  addCookie(pbAttrs);
+  EXPECT_FALSE(storage->HasCookiesForSite(baseDomain, nonPbPattern));
+  // And IS visible to a PB-matching pattern.
+  OriginAttributesPattern pbPattern;
+  pbPattern.mPrivateBrowsingId.Construct(1);
+  EXPECT_TRUE(storage->HasCookiesForSite(baseDomain, pbPattern));
+
+  // Partitioned-only cookie (non-default partitionKey) → true under
+  // privateBrowsingId=0 pattern.
+  RefPtr<TestableCookieStorage> partitionedOnly =
+      TestableCookieStorage::Create();
+  storage = partitionedOnly;
+  OriginAttributes partAttrs;
+  partAttrs.mPartitionKey = u"(http,other.test)"_ns;
+  addCookie(partAttrs);
+  EXPECT_TRUE(storage->HasCookiesForSite(baseDomain, nonPbPattern));
 }

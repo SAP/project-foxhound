@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -33,6 +31,18 @@ void AnimationTimelinesController::WillRefresh() {
   }
 }
 
+bool AnimationTimelinesController::UpdateStaleTimelines() {
+  // https://drafts.csswg.org/scroll-animations-1/#event-loop
+  // Hold a strong reference to each timeline so that if one UpdateIfStale
+  // call destroys others, they remain valid.
+  bool needsFlush = false;
+  for (ScrollTimeline* tl :
+       ToTArray<AutoTArray<RefPtr<ScrollTimeline>, 1>>(mScrollTimelines)) {
+    needsFlush |= tl->UpdateIfStale();
+  }
+  return needsFlush;
+}
+
 void AnimationTimelinesController::UpdateLastRefreshDriverTime() {
   for (DocumentTimeline* timeline : mDocumentTimelines) {
     timeline->UpdateLastRefreshDriverTime();
@@ -56,12 +66,6 @@ void AnimationTimelinesController::UpdateHiddenByContentVisibility() {
 
   for (AnimationTimeline* timeline : mScrollTimelines) {
     timeline->UpdateHiddenByContentVisibility();
-  }
-}
-
-void AnimationTimelinesController::TrySampleScrollTimelines() {
-  for (ScrollTimeline* timeline : mScrollTimelines) {
-    timeline->UpdateCachedCurrentTime();
   }
 }
 

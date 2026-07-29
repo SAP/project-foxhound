@@ -110,7 +110,7 @@ async function test_save_change(testData) {
         "passwordmgr/test/browser/form_multipage.html",
     },
     async function (browser) {
-      await SimpleTest.promiseFocus(browser.ownerGlobal);
+      await SimpleTest.promiseFocus(browser.documentGlobal);
 
       info("Waiting for form-processed message");
       await formProcessedPromise;

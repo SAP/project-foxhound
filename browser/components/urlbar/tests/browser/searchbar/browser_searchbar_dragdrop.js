@@ -46,8 +46,10 @@ add_task(async function checkDragURL() {
   await BrowserTestUtils.withNewTab(TEST_URL, async () => {
     info("Check dragging a normal url onto the searchbar");
     const DRAG_URL = "https://www.example.com/";
-    simulateSearchbarDrop({ type: "text/plain", data: DRAG_URL });
-
+    await SearchbarTestUtils.promisePopupOpen(window, () => {
+      simulateSearchbarDrop({ type: "text/plain", data: DRAG_URL });
+    });
+    Assert.ok(searchbar.view.isOpen, "Opened results panel");
     Assert.ok(openLinkSpy.notCalled, "Not navigating");
     Assert.equal(searchbar.value, DRAG_URL, "Inserted value");
     let queryContext = await SearchbarTestUtils.promiseSearchComplete(window);

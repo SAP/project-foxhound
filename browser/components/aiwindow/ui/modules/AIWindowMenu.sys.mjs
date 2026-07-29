@@ -1,5 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -122,7 +121,7 @@ export class AIWindowMenu {
       where = "tab";
     }
 
-    const win = event.target.ownerGlobal;
+    const win = event.target.documentGlobal;
     const mostRecentPage = conversation.getMostRecentPageVisited();
     const url = mostRecentPage?.href ?? win.BROWSER_NEW_TAB_URL;
 
@@ -131,7 +130,7 @@ export class AIWindowMenu {
         if (url === win.BROWSER_NEW_TAB_URL) {
           AIWindowUI.openInFullWindow(targetBrowser, conversation);
         } else {
-          AIWindowUI.openSidebar(targetBrowser.ownerGlobal, conversation);
+          AIWindowUI.openSidebar(targetBrowser.documentGlobal, conversation);
         }
       },
     });

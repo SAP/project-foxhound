@@ -10,10 +10,10 @@ import mozilla.components.feature.top.sites.db.PinnedSiteEntity
 import mozilla.components.feature.top.sites.db.TopSiteDatabase
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
+import kotlin.test.assertNotNull
 
 class PinnedSitesStorageTest {
 
@@ -42,8 +42,6 @@ class PinnedSitesStorageTest {
                 PinnedSiteEntity(title = "Pocket", url = "https://www.getpocket.com", isDefault = true, createdAt = 42),
             ),
         )
-
-        Unit
     }
 
     @Test
@@ -61,8 +59,6 @@ class PinnedSitesStorageTest {
         // only verify the call with "id = 0". See issue #9708.
         verify(dao).insertPinnedSite(PinnedSiteEntity(id = 0, title = "Mozilla", url = "https://www.mozilla.org", isDefault = false, createdAt = 3))
         verify(dao).insertPinnedSite(PinnedSiteEntity(id = 0, title = "Firefox", url = "https://www.firefox.com", isDefault = true, createdAt = 3))
-
-        Unit
     }
 
     @Test

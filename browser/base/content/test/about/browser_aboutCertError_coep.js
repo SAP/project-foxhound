@@ -86,21 +86,21 @@ add_task(async function test_coepError() {
     await netErrorCard.getUpdateComplete();
 
     Assert.strictEqual(
-      netErrorCard.netErrorTitleText.dataset.l10nId,
+      netErrorCard.errorTitle.dataset.l10nId,
       "fp-certerror-body-title",
       "Correct error link title (CORP) is set"
     );
 
     await ContentTaskUtils.waitForCondition(() => {
       return (
-        netErrorCard.netErrorLearnMoreLink &&
-        netErrorCard.netErrorLearnMoreLink.textContent != "" &&
-        netErrorCard.netErrorLearnMoreLink.tagName.toLowerCase() === "a"
+        netErrorCard.learnMoreLink &&
+        netErrorCard.learnMoreLink.textContent != "" &&
+        netErrorCard.learnMoreLink.tagName.toLowerCase() === "a"
       );
     }, "learn more link is visible and is a link");
 
     Assert.strictEqual(
-      netErrorCard.netErrorLearnMoreLink.dataset.l10nId,
+      netErrorCard.learnMoreLink.dataset.l10nId,
       "certerror-coep-learn-more",
       "Learn more element is a link and has COEP text"
     );

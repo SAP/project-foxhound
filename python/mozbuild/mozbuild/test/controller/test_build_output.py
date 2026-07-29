@@ -45,6 +45,11 @@ SAMPLE_LOG_BUILD_OUTPUT_TEMPLATES = [
     (STDERR, THIRD_PARTY_WARNING, "{topsrcdir}/nsprpub/pr/src/misc/prdtoa.c(1261,27): warning: operator '>>' has lower precedence than '-'; '-' will be evaluated first [-Wshift-op-parentheses]"),
     (STDERR, THIRD_PARTY_WARNING, " 1261 |     d1 = z << k | y >> 32 - k;"),
     (STDERR, THIRD_PARTY_WARNING, "      |                     ~~ ~~~^~~"),
+    # Same warning as above, but with relative path {
+    (STDERR, THIRD_PARTY_WARNING, "../../nsprpub/pr/src/misc/prdtoa.c(1261,27): warning: operator '>>' has lower precedence than '-'; '-' will be evaluated first [-Wshift-op-parentheses]"),
+    (STDERR, THIRD_PARTY_WARNING, " 1261 |     d1 = z << k | y >> 32 - k;"),
+    (STDERR, THIRD_PARTY_WARNING, "      |                     ~~ ~~~^~~"),
+    # }
     (STDERR, BUILD_ERROR,         "1 error generated."),
     (STDOUT, logging.INFO,        "browser/components/about"),
     (STDOUT, logging.INFO,        "   Compiling syn v2.0.106"),
@@ -56,6 +61,12 @@ SAMPLE_LOG_BUILD_OUTPUT_TEMPLATES = [
     (STDERR, BUILD_ERROR,         "      | ^"),
     (STDOUT, logging.INFO,        "toolkit/library/build/xul.dll.def.stub"),
     (STDERR, THIRD_PARTY_WARNING, r"lld-link: warning: nss\lib\ssl\ssl_ssl\win32err.obj: locally defined symbol imported: PR_SetError (defined in ..\config\external\nspr\pr\Unified_c_external_nspr_pr2.obj) [LNK4217]"),
+    (STDERR, BUILD_ERROR,         "error[E0308]: `match` arms have incompatible types"),
+    (STDERR, BUILD_ERROR,         "   --> browser/extensions/felt/rust/src/components.rs:167:23"),
+    (STDERR, BUILD_ERROR,         "     |"),
+    (STDERR, BUILD_ERROR,         " 167 |               Err(_) => NS_ERROR_FAILURE,"),
+    (STDERR, BUILD_ERROR,         "     |                         ^^^^^^^^^^^^^^^^ expected `()`, found `nsresult`"),
+    (STDERR, BUILD_ERROR,         "error: could not compile `felt` (lib) due to 2 previous errors; 1 warning emitted"),
     (STDOUT, logging.INFO,        "   Compiling syn v2.0.106"),
     (STDOUT, logging.WARNING,     "warning: windows@0.62.2: ignoring 'hints.mostly-unused', pass `-Zprofile-hint-mostly-unused` to enable it"),
     (STDOUT, logging.WARNING,     "3 warnings:"),
@@ -95,6 +106,12 @@ SAMPLE_GCC_BUILD_OUTPUT_TEMPLATES = [
     (STDERR, THIRD_PARTY_WARNING, "{topsrcdir}/nsprpub/pr/src/misc/prdtoa.c:566:52: warning: comparison of integer expressions of different signedness: 'long int' and 'long unsigned int' [-Wsign-compare]"),
     (STDERR, THIRD_PARTY_WARNING, "  566 |     if (k <= Kmax && pmem_next - private_mem + len <= PRIVATE_mem) {{"),
     (STDERR, THIRD_PARTY_WARNING, "      |                                                    ^~"),
+    # Same warning as above, but with relative paths {
+    (STDERR, THIRD_PARTY_WARNING, "In file included from ./../../nsprpub/pr/src/misc/prdtoa.c:307:"),
+    (STDERR, THIRD_PARTY_WARNING, "./../../nsprpub/pr/src/misc/prdtoa.c:566:52: warning: comparison of integer expressions of different signedness: 'long int' and 'long unsigned int' [-Wsign-compare]"),
+    (STDERR, THIRD_PARTY_WARNING, "  566 |     if (k <= Kmax && pmem_next - private_mem + len <= PRIVATE_mem) {{"),
+    (STDERR, THIRD_PARTY_WARNING, "      |                                                    ^~"),
+    # }
     (STDOUT, logging.INFO,        "security/nss/lib/nss"),
     (STDERR, logging.WARNING,     "In file included from {topsrcdir}/objdir/dist/include/nss/seccomon.h:27,"),
     (STDERR, THIRD_PARTY_WARNING, "                 from /usr/include/ctype.h:66,"),

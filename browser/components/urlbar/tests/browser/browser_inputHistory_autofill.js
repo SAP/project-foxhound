@@ -96,9 +96,11 @@ add_task(async function bumped() {
   }
 });
 
-// Input history use count should not be bumped when an origin autofill result
+// Input history use count should be bumped when an origin autofill result
 // is triggered and picked.
-add_task(async function notBumped_origin() {
+add_task(async function bumped_origin() {
+  addToInputHistorySpy.resetHistory();
+
   // Add enough visits to trigger origin autofill.
   let url = "http://example.com/test";
   await PlacesTestUtils.addVisits({
@@ -109,21 +111,39 @@ add_task(async function notBumped_origin() {
 
   await triggerAutofillAndPickResult("exam", "example.com/");
 
-  let calls = addToInputHistorySpy.getCalls();
-  Assert.equal(calls.length, 0, "UrlbarUtils.addToInputHistory() not called");
+  // addToInputHistoryWhenReady is fire-and-forget, so wait for the DB write
+  // to complete before checking the spy.
+  await TestUtils.waitForCondition(
+    async () =>
+      (await getUseCount({ url: "http://example.com/" })) !== undefined,
+    "Origin URL present in input history"
+  );
 
-  Assert.strictEqual(
-    await getUseCount({ url }),
-    undefined,
-    "URL not present in input history: " + url
+  // Called once or twice depending on whether the origin was already in
+  // moz_places when addToInputHistoryWhenReady made its first attempt.
+  let calls = addToInputHistorySpy.getCalls();
+  Assert.greaterOrEqual(
+    calls.length,
+    1,
+    "UrlbarUtils.addToInputHistory() called at least once"
+  );
+
+  Assert.greater(
+    await getUseCount({ url: "http://example.com/" }),
+    0,
+    "URL present in input history: " + url
   );
 
   await PlacesUtils.history.clear();
+  await PlacesTestUtils.clearInputHistory();
+  addToInputHistorySpy.resetHistory();
 });
 
 // Input history use count should not be bumped when a URL autofill result is
 // triggered and picked.
 add_task(async function notBumped_url() {
+  addToInputHistorySpy.resetHistory();
+
   let url = "http://example.com/test";
   await PlacesTestUtils.addVisits({
     url,
@@ -143,6 +163,57 @@ add_task(async function notBumped_url() {
   );
 
   await PlacesUtils.history.clear();
+});
+
+// Input history use count should not be bumped when a search result is picked.
+add_task(async function notBumped_search() {
+  addToInputHistorySpy.resetHistory();
+
+  let extension = await SearchTestUtils.installSearchExtension(
+    {},
+    { setAsDefault: true, skipUnload: true }
+  );
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.urlbar.suggest.searches", true],
+      ["browser.urlbar.maxHistoricalSearchSuggestions", 1],
+    ],
+  });
+  await UrlbarTestUtils.formHistory.add(["example search"]);
+
+  await BrowserTestUtils.withNewTab("about:blank", async () => {
+    await UrlbarTestUtils.promiseAutocompleteResultPopup({
+      window,
+      value: "example",
+      fireInputEvent: true,
+    });
+
+    let resultIndex = -1;
+    for (let i = 0; i < UrlbarTestUtils.getResultCount(window); i++) {
+      let details = await UrlbarTestUtils.getDetailsOfResultAt(window, i);
+      if (
+        details.type == UrlbarUtils.RESULT_TYPE.SEARCH &&
+        !details.result.heuristic
+      ) {
+        resultIndex = i;
+        break;
+      }
+    }
+    Assert.greater(resultIndex, -1, "Found a non-heuristic search result");
+
+    gURLBar.view.selectedRowIndex = resultIndex;
+    await UrlbarTestUtils.promisePopupClose(window, () => {
+      EventUtils.synthesizeKey("KEY_Enter", {}, window);
+    });
+  });
+
+  let calls = addToInputHistorySpy.getCalls();
+  Assert.equal(calls.length, 0, "UrlbarUtils.addToInputHistory() not called");
+
+  await extension.unload();
+  await SpecialPowers.popPrefEnv();
+  await UrlbarTestUtils.formHistory.clear();
+  addToInputHistorySpy.resetHistory();
 });
 
 /**

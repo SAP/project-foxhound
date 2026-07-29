@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=2 expandtab: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -24,6 +22,10 @@
 #include "nsTArray.h"               // for nsTArray, nsTArray_Impl
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/widget/ScreenManager.h"  // for ScreenManager
+
+#if defined(ACCESSIBILITY) && defined(MOZ_ENABLE_SKIA_PDF)
+#  include "mozilla/a11y/PdfStructTreeBuilder.h"
+#endif
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -238,19 +240,21 @@ nsresult nsDeviceContext::InitForPrinting(nsIDeviceContextSpec* aDevice) {
 
 nsresult nsDeviceContext::BeginDocument(const nsAString& aTitle,
                                         const nsAString& aPrintToFileName,
+                                        uint64_t aBrowsingContextId,
                                         int32_t aStartPage, int32_t aEndPage) {
   MOZ_DIAGNOSTIC_ASSERT(!mIsCurrentlyPrintingDoc,
                         "Mismatched BeginDocument/EndDocument calls");
   AUTO_PROFILER_MARKER_TEXT("DeviceContext Printing", LAYOUT_Printing, {},
                             "nsDeviceContext::BeginDocument"_ns);
 
-  nsresult rv = mPrintTarget->BeginPrinting(aTitle, aPrintToFileName,
-                                            aStartPage, aEndPage);
+  mBrowsingContextId = aBrowsingContextId;
+  nsresult rv = mPrintTarget->BeginPrinting(
+      aTitle, aPrintToFileName, aBrowsingContextId, aStartPage, aEndPage);
 
   if (NS_SUCCEEDED(rv)) {
     if (mDeviceContextSpec) {
-      rv = mDeviceContextSpec->BeginDocument(aTitle, aPrintToFileName,
-                                             aStartPage, aEndPage);
+      rv = mDeviceContextSpec->BeginDocument(
+          aTitle, aPrintToFileName, aBrowsingContextId, aStartPage, aEndPage);
     }
     mIsCurrentlyPrintingDoc = true;
   }
@@ -270,6 +274,17 @@ RefPtr<PrintEndDocumentPromise> nsDeviceContext::EndDocument() {
                             "nsDeviceContext::EndDocument"_ns);
 
   mIsCurrentlyPrintingDoc = false;
+#if defined(ACCESSIBILITY) && defined(MOZ_ENABLE_SKIA_PDF)
+  // PdfStructTreeBuilder::Init is called in
+  // a11y::DocManager::NotifyOfPrintDocument for same-process documents or
+  // a11y::DocAccessibleParent::RecvPrinting for remote documents, triggered by
+  // nsPrintJob::SetupToPrintContent. This is because the accessibility tree
+  // needs to be built from the DOM document and potentially sent async from the
+  // content process before printing begins. However, cleanup is much simpler:
+  // we can do it synchronously as soon as we're finished printing and
+  // nsDeviceContext will always be notified when we finish printing.
+  mozilla::a11y::PdfStructTreeBuilder::Done(mBrowsingContextId);
+#endif
 
   if (mPrintTarget) {
     auto result = mPrintTarget->EndPrinting();
@@ -296,6 +311,10 @@ nsresult nsDeviceContext::AbortDocument() {
 
   nsresult rv = mPrintTarget->AbortPrinting();
   mIsCurrentlyPrintingDoc = false;
+#if defined(ACCESSIBILITY) && defined(MOZ_ENABLE_SKIA_PDF)
+  // See the comment in EndDocument.
+  mozilla::a11y::PdfStructTreeBuilder::Done(mBrowsingContextId);
+#endif
 
   if (mDeviceContextSpec) {
     (void)mDeviceContextSpec->EndDocument();

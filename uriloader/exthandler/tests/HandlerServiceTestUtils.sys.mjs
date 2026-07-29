@@ -242,12 +242,6 @@ export var HandlerServiceTestUtils = {
     } else if (expected.uriTemplate) {
       Assert.ok(handlerApp instanceof Ci.nsIWebHandlerApp);
       Assert.equal(handlerApp.uriTemplate, expected.uriTemplate);
-    } else if (expected.service) {
-      Assert.ok(handlerApp instanceof Ci.nsIDBusHandlerApp);
-      Assert.equal(handlerApp.service, expected.service);
-      Assert.equal(handlerApp.method, expected.method);
-      Assert.equal(handlerApp.dBusInterface, expected.dBusInterface);
-      Assert.equal(handlerApp.objectPath, expected.objectPath);
     }
   },
 };

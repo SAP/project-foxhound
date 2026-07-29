@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,9 +16,9 @@ namespace mozilla {
 
 extern LazyLogModule gMediaDecoderLog;
 
-#  define QLOG(msg, ...)                       \
-    MOZ_LOG(gMediaDecoderLog, LogLevel::Debug, \
-            ("MediaQueue=%p " msg, this, ##__VA_ARGS__))
+#  define QLOG(msg, ...)                                                 \
+    MOZ_LOG_FMT(gMediaDecoderLog, LogLevel::Debug, "MediaQueue={} " msg, \
+                fmt::ptr(this), ##__VA_ARGS__)
 
 class AudioData;
 class VideoData;
@@ -83,8 +81,7 @@ class MediaQueue : private nsRefPtrDeque<T> {
         NS_WARNING("Reverting timestamp adjustment due to sample overflow!");
         aItem->mTime = prev;
       } else {
-        QLOG("adjusted %s sample [%" PRId64 ",%" PRId64 "] -> [%" PRId64
-             ",%" PRId64 "]",
+        QLOG("adjusted {} sample [{},{}] -> [{},{}]",
              std::is_same_v<U, AudioData> ? "audio" : "video",
              prev.ToMicroseconds(), prevEndTime.ToMicroseconds(),
              aItem->mTime.ToMicroseconds(),
@@ -230,11 +227,11 @@ class MediaQueue : private nsRefPtrDeque<T> {
     }
   }
 
-  uint32_t AudioFramesCount() {
+  CheckedInt<uint32_t> AudioFramesCount() {
     static_assert(std::is_same_v<T, AudioData>,
                   "Only usable with MediaQueue<AudioData>");
     RecursiveMutexAutoLock lock(mRecursiveMutex);
-    uint32_t frames = 0;
+    CheckedInt<uint32_t> frames = 0;
     for (size_t i = 0; i < GetSize(); ++i) {
       T* v = nsRefPtrDeque<T>::ObjectAt(i);
       frames += v->Frames();
@@ -249,7 +246,7 @@ class MediaQueue : private nsRefPtrDeque<T> {
     }
     RecursiveMutexAutoLock lock(mRecursiveMutex);
     mOffset = aOffset;
-    QLOG("Set media queue offset %" PRId64, mOffset.ToMicroseconds());
+    QLOG("Set media queue offset {}", mOffset.ToMicroseconds());
     return true;
   }
 

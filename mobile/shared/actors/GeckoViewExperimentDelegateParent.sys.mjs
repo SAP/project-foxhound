@@ -16,10 +16,10 @@ export class GeckoViewExperimentDelegateParent extends GeckoViewActorParent {
    * @returns a promise of success with a JSON message or failure
    */
   async getExperimentFeature(feature) {
-    return this.eventDispatcher.sendRequestForResult({
-      type: "GeckoView:GetExperimentFeature",
-      feature,
-    });
+    return this.eventDispatcher.sendRequestForResult(
+      "GeckoView:GetExperimentFeature",
+      { feature }
+    );
   }
 
   /**
@@ -29,10 +29,10 @@ export class GeckoViewExperimentDelegateParent extends GeckoViewActorParent {
    * @returns a promise of success or failure
    */
   async recordExposure(feature) {
-    return this.eventDispatcher.sendRequestForResult({
-      type: "GeckoView:RecordExposure",
-      feature,
-    });
+    return this.eventDispatcher.sendRequestForResult(
+      "GeckoView:RecordExposure",
+      { feature }
+    );
   }
 
   /**
@@ -45,11 +45,10 @@ export class GeckoViewExperimentDelegateParent extends GeckoViewActorParent {
    * @returns a promise of success or failure
    */
   async recordExperimentExposure(feature, slug) {
-    return this.eventDispatcher.sendRequestForResult({
-      type: "GeckoView:RecordExperimentExposure",
-      feature,
-      slug,
-    });
+    return this.eventDispatcher.sendRequestForResult(
+      "GeckoView:RecordExperimentExposure",
+      { feature, slug }
+    );
   }
 
   /**
@@ -60,10 +59,9 @@ export class GeckoViewExperimentDelegateParent extends GeckoViewActorParent {
    * @returns a promise of success or failure
    */
   async recordExperimentMalformedConfig(feature, part) {
-    return this.eventDispatcher.sendRequestForResult({
-      type: "GeckoView:RecordMalformedConfig",
-      feature,
-      part,
-    });
+    return this.eventDispatcher.sendRequestForResult(
+      "GeckoView:RecordMalformedConfig",
+      { feature, part }
+    );
   }
 }

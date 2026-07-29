@@ -8,7 +8,6 @@ scrollcorner,
 resizer,
 scrollbar {
   /* Rules required for style caching of anonymous content scrollbar parts */
-  /* stylelint-disable-next-line media-query-no-invalid */
   @media -moz-pref("layout.css.cached-scrollbar-styles.enabled") {
     /* All scrollbar parts must not inherit any properties from the scrollable
      * element (except for visibility and pointer-events), for the anonymous
@@ -128,7 +127,6 @@ scrollbar {
   -moz-default-appearance: scrollbar-horizontal;
   cursor: default;
 
-  /* stylelint-disable-next-line media-query-no-invalid */
   @media -moz-pref("layout.testing.scrollbars.always-hidden") {
     opacity: 0 !important;
   }

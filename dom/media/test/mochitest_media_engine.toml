@@ -6,7 +6,12 @@ skip-if = [
 ]
 
 support-files = [
+  "mediacapabilities_drm_utils.js",
   "tearsofsteel_1frame_encrypted.mp4",
+  "bipbop-clearkey-video-av1.mp4",
+  "bipbop-clearkey-video-av1.mp4^headers^",
+  "opus-sample-cenc.mp4",
+  "opus-sample-cenc.mp4^headers^",
 ]
 
 ["test_eme_mfcdm_generate_request.html"]
@@ -15,4 +20,11 @@ support-files = [
 
 ["test_eme_mfcdm_getstatusforpolicy.html"]
 
+["test_eme_mfcdm_update_error.html"]
+
 ["test_eme_wideinve_l1_installation.html"]
+
+["test_eme_wmfclearkey_playback.html"]
+
+["test_mediacapabilities_drm_hardware_encryption.html"]
+scheme = "https"

@@ -21,121 +21,12 @@
   <script type="application/javascript">
   <![CDATA[
 
-    function openMenu(aID, aTree)
-    {
-      this.eventSeq = [
-        new invokerChecker(EVENT_MENUPOPUP_START, getNode(aID))
-      ];
-
-      this.invoke = function openMenu_invoke()
-      {
-        var button = getNode("button");
-        getNode(aID).openPopup(button, "after_start", 0, 0, true, false);
-      }
-
-      this.finalCheck = function openMenu_finalCheck()
-      {
-        testStates(aID, STATE_FLOATING, 0, STATE_INVISIBLE | STATE_OFFSCREEN | STATE_COLLAPSED);
-        testAccessibleTree(aID, aTree);
-      }
-
-      this.getID = function openMenu_getID()
-      {
-        return "open menu " + prettyName(aID);
-      }
-    }
-
-    function selectNextMenuItem(aID)
-    {
-      this.eventSeq = [
-        new invokerChecker(EVENT_FOCUS, getNode(aID))
-      ];
-
-      this.invoke = function selectMenuItem_invoke()
-      {
-        synthesizeKey("KEY_ArrowDown");
-      }
-
-      this.getID = function selectMenuItem_getID()
-      {
-        return "select menuitem " + prettyName(aID);
-      }
-    }
-
-    function openSubMenu(aSubMenuID, aItemID, aMenuID, aTree)
-    {
-      this.eventSeq = [
-        new invokerChecker(EVENT_FOCUS, getNode(aItemID)),
-      ];
-
-      this.invoke = function openSubMenu_invoke()
-      {
-        synthesizeKey("KEY_Enter");
-      }
-
-      this.finalCheck = function openSubMenu_finalCheck()
-      {
-        testAccessibleTree(aMenuID, aTree);
-      }
-
-      this.getID = function openSubMenu_getID()
-      {
-        return "open submenu " + prettyName(aSubMenuID) + " focusing item " + prettyName(aItemID);
-      }
-    }
-
-    function closeSubMenu(aSubMenuID, aItemID)
-    {
-      this.eventSeq = [
-        new invokerChecker(EVENT_FOCUS, getNode(aItemID)),
-      ];
-
-      this.invoke = function closeSubMenu_invoke()
-      {
-        synthesizeKey("KEY_Escape");
-      }
-
-      this.getID = function closeSubMenu_getID()
-      {
-        return "close submenu " + prettyName(aSubMenuID) + " focusing item " + prettyName(aItemID);
-      }
-    }
-
-    function closeMenu(aID)
-    {
-      this.eventSeq = [
-        new invokerChecker(EVENT_MENUPOPUP_END, getNode(aID))
-      ];
-
-      this.invoke = function closeMenu_invoke()
-      {
-        synthesizeKey("KEY_Escape");
-      }
-
-      this.getID = function closeMenu_getID()
-      {
-        return "close menu " + prettyName(aID);
-      }
-
-      this.finalCheck = function closeMenu_finalCheck()
-      {
-        testStates(aID, STATE_FLOATING | STATE_INVISIBLE | STATE_OFFSCREEN, 0);
-      }
-    }
-
-    //gA11yEventDumpToConsole = true;
-    //enableLogging("tree,verbose");
-
-    var gQueue = null;
-    var gContextTree = {};
-
     // Linux and Windows menu trees discrepancy: bug 527646.
 
     /**
      * Return the context menu tree before submenus were open.
      */
-    function getMenuTree1()
-    {
+    function getMenuTree1() {
       if (LINUX || SOLARIS) {
         let tree = {
           role: ROLE_MENUPOPUP,
@@ -193,9 +84,8 @@
     /**
      * Return context menu tree when submenu was open.
      */
-    function getMenuTree2()
-    {
-      var tree = getMenuTree1();
+    function getMenuTree2() {
+      const tree = getMenuTree1();
       if (LINUX || SOLARIS) {
         let submenuTree =
         {
@@ -228,10 +118,9 @@
     /**
      * Return context menu tree when subsub menu was open.
      */
-    function getMenuTree3()
-    {
-      var tree = getMenuTree2();
-      var subsubmenuTree =
+    function getMenuTree3() {
+      const tree = getMenuTree2();
+      const subsubmenuTree =
       {
         name: "item2.0.0",
         role: ROLE_MENUITEM,
@@ -247,34 +136,57 @@
     }
 
 
-    function doTests()
-    {
-      gQueue = new eventQueue();
-
+    async function doTests() {
       // Check initial empty tree
       testAccessibleTree("context", { MENUPOPUP: [] });
 
       // Open context menu and check that menu item accesibles are created.
-      gQueue.push(new openMenu("context", getMenuTree1()));
+      let button = getNode("button");
+      let popupStarted = waitForEvent(EVENT_MENUPOPUP_START, getNode("context"));
+      getNode("context").openPopup(button, "after_start", 0, 0, true, false);
+      await popupStarted;
+      testStates("context", STATE_FLOATING, 0, STATE_INVISIBLE | STATE_OFFSCREEN | STATE_COLLAPSED);
+      testAccessibleTree("context", getMenuTree1());
 
       // Select items and check focus event on them.
-      gQueue.push(new selectNextMenuItem("item0"));
-      gQueue.push(new selectNextMenuItem("item1"));
-      gQueue.push(new selectNextMenuItem("item2"));
+      let focused = waitForEvent(EVENT_FOCUS, getNode("item0"));
+      synthesizeKey("KEY_ArrowDown");
+      await focused;
+
+      focused = waitForEvent(EVENT_FOCUS, getNode("item1"));
+      synthesizeKey("KEY_ArrowDown");
+      await focused;
+
+      focused = waitForEvent(EVENT_FOCUS, getNode("item2"));
+      synthesizeKey("KEY_ArrowDown");
+      await focused;
 
       // Open sub menu and check menu accessible tree and focus event.
-      gQueue.push(new openSubMenu("submenu2", "item2.0",
-                                  "context", getMenuTree2()));
-      gQueue.push(new openSubMenu("submenu2.0", "item2.0.0",
-                                  "context", getMenuTree3()));
+      focused = waitForEvent(EVENT_FOCUS, getNode("item2.0"));
+      synthesizeKey("KEY_Enter");
+      await focused;
+      testAccessibleTree("context", getMenuTree2());
+
+      focused = waitForEvent(EVENT_FOCUS, getNode("item2.0.0"));
+      synthesizeKey("KEY_Enter");
+      await focused;
+      testAccessibleTree("context", getMenuTree3());
 
       // Close submenus and check that focus goes to parent.
-      gQueue.push(new closeSubMenu("submenu2.0", "item2.0"));
-      gQueue.push(new closeSubMenu("submenu2", "item2"));
+      focused = waitForEvent(EVENT_FOCUS, getNode("item2.0"));
+      synthesizeKey("KEY_Escape");
+      await focused;
 
-      gQueue.push(new closeMenu("context"));
+      focused = waitForEvent(EVENT_FOCUS, getNode("item2"));
+      synthesizeKey("KEY_Escape");
+      await focused;
 
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      let popupEnded = waitForEvent(EVENT_MENUPOPUP_END, getNode("context"));
+      synthesizeKey("KEY_Escape");
+      await popupEnded;
+      testStates("context", STATE_FLOATING | STATE_INVISIBLE | STATE_OFFSCREEN, 0);
+
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();
@@ -303,13 +215,13 @@
 
     <vbox flex="1">
 
-      <menupopup id="context" native="false">
+      <menupopup id="context" nonnative="">
         <menuitem id="item0" label="item0"/>
         <menuitem id="item1" label="item1"/>
         <menu id="item2" label="item2">
-          <menupopup id="submenu2" native="false">
+          <menupopup id="submenu2" nonnative="">
             <menu id="item2.0" label="item2.0">
-              <menupopup id="submenu2.0" native="false">
+              <menupopup id="submenu2.0" nonnative="">
                 <menuitem id="item2.0.0" label="item2.0.0"/>
               </menupopup>
             </menu>

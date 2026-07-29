@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -330,6 +328,7 @@ enum class VideoRotation {
   kDegree_90 = 90,
   kDegree_180 = 180,
   kDegree_270 = 270,
+  // Keep in sync with VideoRotationValidator.
 };
 
 // Stores info relevant to presenting media frames.
@@ -370,6 +369,7 @@ class VideoInfo : public TrackInfo {
     mColorSpace = aOther.mColorSpace;
     mColorPrimaries = aOther.mColorPrimaries;
     mTransferFunction = aOther.mTransferFunction;
+    mHDRMetadata = aOther.mHDRMetadata;
     mColorRange = aOther.mColorRange;
     mImageRect = aOther.mImageRect;
     mAlphaPresent = aOther.mAlphaPresent;
@@ -476,6 +476,8 @@ class VideoInfo : public TrackInfo {
   // Transfer functions get their own member, which may not be strongly
   // correlated to the colorspace.
   Maybe<gfx::TransferFunction> mTransferFunction;
+
+  Maybe<gfx::HDRMetadata> mHDRMetadata;
 
   // True indicates no restriction on Y, U, V values (otherwise 16-235 for 8
   // bits etc)

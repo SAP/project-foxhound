@@ -40,6 +40,8 @@ skip-if = [
 
 ["test_ext_dns.js"]
 
+["test_ext_publicSuffix.js"]
+
 ["test_ext_runtime_getBackgroundPage.js"]
 
 ["test_ext_scripting_contentScripts.js"]

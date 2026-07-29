@@ -13,6 +13,8 @@
 
   let imports = {};
   ChromeUtils.defineESModuleGetters(imports, {
+    DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
+    KeyboardLockUtils: "resource://gre/modules/KeyboardLockUtils.sys.mjs",
     ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
   });
 
@@ -115,17 +117,27 @@
         return;
       }
 
-      // Skip if chrome code has cancelled this:
-      if (event.defaultPreventedByChrome) {
+      // Skip if chrome code has cancelled this
+      // or keyboard lock & webcontent default prevented it
+      if (event.defaultPrevented) {
         return;
       }
 
       // Don't check if the event was already consumed because tab
       // navigation should always work for better user experience.
 
-      const { ShortcutUtils } = imports;
+      const { KeyboardLockUtils, ShortcutUtils } = imports;
 
-      switch (ShortcutUtils.getSystemActionForEvent(event)) {
+      const action = ShortcutUtils.getSystemActionForEvent(event);
+      // If we don't have an action, don't request reply.
+      if (
+        action != null &&
+        KeyboardLockUtils.mustWaitForKeyboardLockRequestedReply(event)
+      ) {
+        return;
+      }
+
+      switch (action) {
         case ShortcutUtils.CYCLE_TABS:
           Glean.browserUiInteraction.keyboard["ctrl-tab"].add(1);
           Services.prefs.setBoolPref(
@@ -270,6 +282,7 @@
      */
     #splitViewSplitter = null;
     #splitterWasDragging = false;
+    #splitterAriaUpdateTask = null;
     #splitViewSplitterObserver = new MutationObserver(() => {
       const splitterState = this.#splitViewSplitter.getAttribute("state");
       if (splitterState === "dragging") {
@@ -278,23 +291,12 @@
       } else {
         const wasDragging = this.#splitterWasDragging;
         this.#splitterWasDragging = false;
-
-        if (!this._splitterPendingUpdate) {
-          // wait for the layout flush before doing any measuring
-          this._splitterPendingUpdate = window
-            .promiseDocumentFlushed(() => {})
-            .then(() => {
-              this.updateSplitterAriaAttributes(!!this.#splitViewPanels.length);
-
-              // Record telemetry when drag resize completes
-              if (wasDragging) {
-                this.#recordSplitViewResizeTelemetry();
-              }
-            })
-            .finally(() => {
-              this._splitterPendingUpdate = null;
-            });
+        if (wasDragging) {
+          window.promiseDocumentFlushed(() =>
+            this.#recordSplitViewResizeTelemetry()
+          );
         }
+        this.#splitterAriaUpdateTask.arm();
       }
     });
 
@@ -309,9 +311,18 @@
       this._tabbox = null;
     }
 
+    connectedCallback() {
+      super.connectedCallback();
+      this.#splitterAriaUpdateTask = new imports.DeferredTask(
+        () => this.updateSplitterAriaAttributes(),
+        0
+      );
+    }
+
     disconnectedCallback() {
       super.disconnectedCallback();
       this.#splitViewSplitterObserver.disconnect();
+      this.#splitterAriaUpdateTask.finalize();
     }
 
     #recordSplitViewResizeTelemetry() {
@@ -372,40 +383,34 @@
 
     get splitViewSplitter() {
       if (!this.#splitViewSplitter) {
-        const splitter = document.createXULElement("splitter");
-        splitter.className = "split-view-splitter";
-        splitter.setAttribute("resizebefore", "sibling");
-        splitter.setAttribute("resizeafter", "none");
-        splitter.setAttribute("tabindex", "0");
-        splitter.setAttribute("role", "separator");
-        splitter.setAttribute("data-l10n-id", "tab-splitview-splitter");
-        this.#splitViewSplitter = splitter;
-        this.#splitterWasDragging = false;
-        splitter.addEventListener("command", () => {
-          gBrowser.activeSplitView.resetRightPanelWidth();
-
-          // wait for the layout flush before doing any measuring
-          if (!this._splitterPendingUpdate) {
-            this._splitterPendingUpdate = window
-              .promiseDocumentFlushed(() => {})
-              .then(() => {
-                this.updateSplitterAriaAttributes(
-                  !!this.#splitViewPanels.length
-                );
-                this.#recordSplitViewResizeTelemetry();
-              });
-          }
-        });
-        this.#splitViewSplitterObserver.observe(splitter, {
-          attributeFilter: ["state"],
-        });
+        this.#splitViewSplitter = this.#createSplitViewSplitter();
       }
       return this.#splitViewSplitter;
     }
 
-    updateSplitterAriaAttributes(isActive) {
-      delete this._splitterPendingUpdate;
+    #createSplitViewSplitter() {
+      const splitter = document.createXULElement("splitter");
+      splitter.className = "split-view-splitter";
+      splitter.setAttribute("resizebefore", "sibling");
+      splitter.setAttribute("resizeafter", "none");
+      splitter.setAttribute("tabindex", "0");
+      splitter.setAttribute("role", "separator");
+      splitter.setAttribute("data-l10n-id", "tab-splitview-splitter");
+      this.#splitterWasDragging = false;
+      splitter.addEventListener("command", () => {
+        gBrowser.activeSplitView.resetRightPanelWidth();
+        window.promiseDocumentFlushed(() =>
+          this.#recordSplitViewResizeTelemetry()
+        );
+        this.#splitterAriaUpdateTask.arm();
+      });
+      this.#splitViewSplitterObserver.observe(splitter, {
+        attributeFilter: ["state"],
+      });
+      return splitter;
+    }
 
+    async updateSplitterAriaAttributes() {
       // avoid triggering the splitter's creation here if it doesnt already exist
       const splitter = this.#splitViewSplitter;
       if (!splitter) {
@@ -413,15 +418,17 @@
       }
       // The splitter is actively controlling the size of the left/first panel
       const controlledPanel =
-        isActive &&
-        this.splitViewPanels.length &&
+        this.#splitViewPanels.length &&
         document.getElementById(this.splitViewPanels[0]);
       if (controlledPanel) {
         splitter.setAttribute("aria-controls", controlledPanel.id);
 
         // gather the min, max and current widths to update the aria attributes
-        const { width: containerWidth } =
-          window.windowUtils.getBoundsWithoutFlushing(this);
+        const [containerWidth, currentWidth] =
+          await window.promiseDocumentFlushed(() => [
+            this.clientWidth,
+            controlledPanel.clientWidth,
+          ]);
         const minWidth = parseFloat(getComputedStyle(controlledPanel).minWidth);
         // We can reuse the controlled panel's minWidth to calculate maxWidth as it should be
         // the same as the 2nd panel in the splitview
@@ -429,15 +436,17 @@
         // Sometimes dragging the splitter produces a panel width attribute which exceeds
         // the max width, so lets get our own measurment. This may end up at the previous
         // frames width
-        const currentWidth =
-          window.windowUtils.getBoundsWithoutFlushing(controlledPanel).width;
+        if (controlledPanel.hasAttribute("width")) {
+          const storedWidth = Number(controlledPanel.getAttribute("width"));
+          if (storedWidth > maxWidth) {
+            controlledPanel.setAttribute("width", currentWidth);
+            controlledPanel.style.width = currentWidth + "px";
+          }
+        }
 
         splitter.setAttribute("aria-valuemin", String(minWidth));
         splitter.setAttribute("aria-valuemax", String(maxWidth));
-        splitter.setAttribute(
-          "aria-valuenow",
-          String(Math.floor(currentWidth))
-        );
+        splitter.setAttribute("aria-valuenow", String(currentWidth));
       } else {
         splitter.removeAttribute("aria-controls");
         splitter.removeAttribute("aria-valuenow");
@@ -511,51 +520,91 @@
     }
 
     /**
-     * Remove split view attributes from a panel, and optionally remove it from
-     * the splitViewPanels array.
+     * Remove split view attributes from tabs and their linked panels.
      *
-     * @param {string} panel
-     * @param {boolean} [updateArray]
+     * @param {MozTabbrowserTab[]} tabs
      */
-    removePanelFromSplitView(panel, updateArray = true) {
-      const panelEl = document.getElementById(panel);
-      panelEl?.classList.remove("split-view-panel");
-      panelEl?.removeAttribute("column");
-      const browser = panelEl?.querySelector("browser");
-      const browserContainer = panelEl?.querySelector(".browserContainer");
-      for (const eventType of MozTabpanels.#SPLIT_VIEW_PANEL_EVENTS) {
-        browserContainer?.removeEventListener(eventType, this);
-      }
-      browser?.removeEventListener("focus", this);
-      if (updateArray) {
+    removeTabsFromSplitview(tabs) {
+      for (const tab of tabs) {
+        let panel = tab.linkedPanel;
+        const panelEl = document.getElementById(panel);
+        panelEl?.classList.remove("split-view-panel");
+        panelEl?.classList.remove("split-view-panel-active");
+        panelEl?.removeAttribute("column");
+        const browser = panelEl?.querySelector("browser");
+        const browserContainer = panelEl?.querySelector(".browserContainer");
+
+        for (const eventType of MozTabpanels.#SPLIT_VIEW_PANEL_EVENTS) {
+          browserContainer?.removeEventListener(eventType, this);
+        }
+        browser?.removeEventListener("focus", this);
         const index = this.#splitViewPanels.indexOf(panel);
+
         if (index !== -1) {
           this.#splitViewPanels.splice(index, 1);
         }
       }
+
       this.setSplitViewActive(!!this.#splitViewPanels.length);
     }
 
+    /**
+     * Temporarily hide split view panels when switching to a non-split-view tab.
+     * Preserves the split-view-panel class and column attribute so panels re-enter
+     * the flex layout at their correct size when reactivated.
+     *
+     * @param {MozTabbrowserTab[]} tabs
+     */
+    suspendSplitViewPanels(tabs) {
+      for (const tab of tabs) {
+        const panelEl = document.getElementById(tab.linkedPanel);
+        panelEl?.classList.remove("split-view-panel-active");
+      }
+      this.setSplitViewActive(!!this.#splitViewPanels.length);
+    }
+
+    /**
+     * Updates attributes on panels such as the blue outline for active splitview tabs,
+     * panel ordering and aria attributes.
+     *
+     * @param {boolean} updatedValue
+     */
     setSplitViewActive(updatedValue) {
-      let isActive = gBrowser.selectedTab.splitview && updatedValue;
-      this.toggleAttribute("splitview", isActive);
-      this.splitViewSplitter.hidden = !isActive;
+      const splitViewTabSelected =
+        gBrowser.selectedTab.splitview && updatedValue;
+      this.toggleAttribute("splitview", updatedValue);
+      this.splitViewSplitter.hidden = !splitViewTabSelected;
       const selectedPanel = this.selectedPanel;
-      if (isActive) {
-        // Place splitter after first panel, so that it can be resized.
+
+      if (splitViewTabSelected) {
+        // Ensure panels are in the correct DOM order so that focus moves
+        // as expected when tabbing across a splitview
         const firstPanel = document.getElementById(this.splitViewPanels[0]);
-        firstPanel?.after(this.#splitViewSplitter);
+        const secondPanel = document.getElementById(this.splitViewPanels[1]);
+        if (firstPanel && secondPanel) {
+          // Does secondPanel follow firstPanel? Move firstPanel before secondPanel if necessary
+          if (
+            !(
+              firstPanel.compareDocumentPosition(secondPanel) &
+              Node.DOCUMENT_POSITION_FOLLOWING
+            )
+          ) {
+            firstPanel.parentElement.moveBefore(firstPanel, secondPanel);
+          }
+        }
+        // Ensure the splitter is in-between the panels
+        if (
+          firstPanel &&
+          firstPanel.nextElementSibling !== this.#splitViewSplitter
+        ) {
+          firstPanel.after(this.#splitViewSplitter);
+        }
       }
       // Ensure that selected index stays up to date, in case the splitter
       // offsets it.
       this.selectedPanel = selectedPanel;
       // Update aria attributes
-      this.updateSplitterAriaAttributes(isActive);
-    }
-
-    setSplitViewPanelActive(isActive, panel) {
-      const panelEl = document.getElementById(panel);
-      panelEl?.classList.toggle("split-view-panel-active", isActive);
+      this.#splitterAriaUpdateTask.arm();
     }
   }
 

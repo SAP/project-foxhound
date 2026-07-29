@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -63,7 +61,7 @@ nsresult TCPServerSocket::Init() {
 
   if (XRE_GetProcessType() == GeckoProcessType_Content) {
     mServerBridgeChild =
-        new TCPServerSocketChild(this, mPort, mBacklog, mUseArrayBuffers);
+        TCPServerSocketChild::Create(this, mPort, mBacklog, mUseArrayBuffers);
     return NS_OK;
   }
 
@@ -131,7 +129,7 @@ void TCPServerSocket::FireEvent(const nsAString& aType, TCPSocket* aSocket) {
 NS_IMETHODIMP
 TCPServerSocket::OnSocketAccepted(nsIServerSocket* aServer,
                                   nsISocketTransport* aTransport) {
-  nsCOMPtr<nsIGlobalObject> global = GetOwnerGlobal();
+  nsCOMPtr<nsIGlobalObject> global = GetRelevantGlobal();
   RefPtr<TCPSocket> socket =
       TCPSocket::CreateAcceptedSocket(global, aTransport, mUseArrayBuffers);
   FireEvent(u"connect"_ns, socket);
@@ -154,7 +152,7 @@ TCPServerSocket::OnStopListening(nsIServerSocket* aServer, nsresult aStatus) {
 }
 
 nsresult TCPServerSocket::AcceptChildSocket(TCPSocketChild* aSocketChild) {
-  nsCOMPtr<nsIGlobalObject> global = GetOwnerGlobal();
+  nsCOMPtr<nsIGlobalObject> global = GetRelevantGlobal();
   NS_ENSURE_TRUE(global, NS_ERROR_FAILURE);
   RefPtr<TCPSocket> socket =
       TCPSocket::CreateAcceptedSocket(global, aSocketChild, mUseArrayBuffers);

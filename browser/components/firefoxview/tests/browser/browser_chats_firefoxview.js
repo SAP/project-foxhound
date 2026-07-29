@@ -4,7 +4,6 @@
 const { ChatStore, ChatConversation } = ChromeUtils.importESModule(
   "moz-src:///browser/components/aiwindow/ui/modules/ChatStore.sys.mjs"
 );
-// AIWindow is provided by the test environment (e.g. head.js or the browser window); do not import it here.
 
 const TEST_URL1 = "https://example.com/";
 const TEST_URL2 = "https://mozilla.org/";
@@ -71,10 +70,7 @@ async function addTestChatWithoutUrl(options = {}) {
 async function getChatsList(browser) {
   const { document } = browser.contentWindow;
   const chatsView = document.querySelector("view-chats");
-  await TestUtils.waitForCondition(
-    () => chatsView && chatsView.lists?.length,
-    "Waiting for chats lists to render"
-  );
+  await chatsView.updateComplete;
   return chatsView.lists;
 }
 
@@ -102,10 +98,12 @@ async function openAIWindow() {
  * @param {Document} document - The Firefox View document
  */
 async function waitForChatsNavVisible(document) {
-  await TestUtils.waitForCondition(() => {
-    const chatsNav = document.getElementById("firefoxview-chats-nav");
-    return chatsNav && !chatsNav.hidden;
-  }, "Waiting for chats navigation button to be visible");
+  const chatsNav = document.getElementById("firefoxview-chats-nav");
+  await BrowserTestUtils.waitForMutationCondition(
+    chatsNav,
+    { attributes: true },
+    () => !chatsNav.hidden
+  );
 }
 
 /**
@@ -141,6 +139,38 @@ async function waitForChatsReady(browser, expectedCount) {
     `Waiting for ${expectedCount} chat items to render`,
     200,
     100
+  );
+}
+
+/**
+ * Triggers a search by calling the controller directly and waits for the
+ * cache to reflect the completed query.
+ *
+ * @param {Browser} browser
+ * @param {string} searchQuery
+ */
+async function triggerSearch(browser, searchQuery) {
+  const { document } = browser.contentWindow;
+  const chatsView = document.querySelector("view-chats");
+  chatsView.controller.onSearchQuery({ detail: { query: searchQuery } });
+  await TestUtils.waitForCondition(
+    () => chatsView.controller.cache.searchQuery === searchQuery,
+    `Waiting for search "${searchQuery}" to complete`
+  );
+}
+
+/**
+ * Waits for the search results to contain a specific number of items.
+ *
+ * @param {Browser} browser
+ * @param {number} expectedCount
+ */
+async function waitForSearchResultCount(browser, expectedCount) {
+  const { document } = browser.contentWindow;
+  const chatsView = document.querySelector("view-chats");
+  await TestUtils.waitForCondition(
+    () => chatsView.controller.searchResults.length === expectedCount,
+    `Waiting for ${expectedCount} search results`
   );
 }
 
@@ -186,11 +216,7 @@ add_task(async function test_chats_view_renders() {
     const chatsView = document.querySelector("view-chats");
     Assert.ok(chatsView, "Chats view should be rendered");
 
-    // Wait for view to fully render
-    await TestUtils.waitForCondition(() => {
-      const emptyState = chatsView.emptyState;
-      return emptyState && BrowserTestUtils.isVisible(emptyState);
-    }, "Waiting for empty state to be visible");
+    await chatsView.updateComplete;
 
     const emptyState = chatsView.emptyState;
     Assert.ok(emptyState, "Empty state element should exist");
@@ -398,19 +424,19 @@ add_task(async function test_chat_with_url_opens_sidebar() {
 
     // Wait for sidebar to open with longer timeout
     await TestUtils.waitForCondition(
-      () => AIWindowUI.isSidebarOpen(newTab.ownerGlobal),
+      () => AIWindowUI.isSidebarOpen(newTab.documentGlobal),
       "Waiting for sidebar to open",
       5000,
       100
     );
 
     Assert.ok(
-      AIWindowUI.isSidebarOpen(newTab.ownerGlobal),
+      AIWindowUI.isSidebarOpen(newTab.documentGlobal),
       "Sidebar should be open in the new tab"
     );
 
     // Clean up
-    AIWindowUI.closeSidebar(newTab.ownerGlobal);
+    AIWindowUI.closeSidebar(newTab.documentGlobal);
     BrowserTestUtils.removeTab(newTab);
   });
 
@@ -459,4 +485,273 @@ add_task(async function test_delete_chat() {
     const deletedChat = await gChatStore.findConversationById(chat.id);
     Assert.equal(deletedChat, null, "Chat should be deleted from database");
   });
+});
+
+add_task(async function test_search_by_title() {
+  const conversation = new ChatConversation({
+    createdDate: Date.now(),
+    updatedDate: Date.now(),
+  });
+  conversation.title = "xyzTitleSearch99 Unique Title";
+  conversation.addUserMessage("irrelevant user message content");
+  conversation.addAssistantMessage("text", "irrelevant assistant response");
+  await gChatStore.updateConversation(conversation);
+
+  await withFirefoxView({}, async browser => {
+    const { document } = browser.contentWindow;
+    await waitForChatsNavVisible(document);
+    await navigateToViewAndWait(document, "chats");
+    await waitForChatsReady(browser, 1);
+
+    await triggerSearch(browser, "xyzTitleSearch99");
+    await waitForSearchResultCount(browser, 1);
+
+    const chatsView = document.querySelector("view-chats");
+    const lists = chatsView.lists;
+    Assert.equal(lists.length, 1, "Should have one results list");
+    Assert.equal(lists[0].rowEls.length, 1, "Should find 1 result by title");
+  });
+
+  await gChatStore.deleteConversationById(conversation.id);
+});
+
+add_task(async function test_search_by_user_message_content() {
+  const conversation = new ChatConversation({
+    createdDate: Date.now(),
+    updatedDate: Date.now(),
+  });
+  conversation.title = "Generic Unrelated Title";
+  conversation.addUserMessage("hello xyzUserMsgToken77 world");
+  conversation.addAssistantMessage("text", "some response");
+  await gChatStore.updateConversation(conversation);
+
+  await withFirefoxView({}, async browser => {
+    const { document } = browser.contentWindow;
+    await waitForChatsNavVisible(document);
+    await navigateToViewAndWait(document, "chats");
+    await waitForChatsReady(browser, 1);
+
+    await triggerSearch(browser, "xyzUserMsgToken77");
+    await waitForSearchResultCount(browser, 1);
+
+    const chatsView = document.querySelector("view-chats");
+    const lists = chatsView.lists;
+    Assert.equal(lists.length, 1, "Should have one results list");
+    Assert.equal(
+      lists[0].rowEls.length,
+      1,
+      "Should find conversation by user message content"
+    );
+  });
+
+  await gChatStore.deleteConversationById(conversation.id);
+});
+
+add_task(async function test_search_by_assistant_message_content() {
+  const conversation = new ChatConversation({
+    createdDate: Date.now(),
+    updatedDate: Date.now(),
+  });
+  conversation.title = "Generic Unrelated Title";
+  conversation.addUserMessage("irrelevant user message");
+  conversation.addAssistantMessage(
+    "text",
+    "response containing xyzAssistantToken55"
+  );
+  await gChatStore.updateConversation(conversation);
+
+  await withFirefoxView({}, async browser => {
+    const { document } = browser.contentWindow;
+    await waitForChatsNavVisible(document);
+    await navigateToViewAndWait(document, "chats");
+    await waitForChatsReady(browser, 1);
+
+    await triggerSearch(browser, "xyzAssistantToken55");
+    await waitForSearchResultCount(browser, 1);
+
+    const chatsView = document.querySelector("view-chats");
+    const lists = chatsView.lists;
+    Assert.equal(lists.length, 1, "Should have one results list");
+    Assert.equal(
+      lists[0].rowEls.length,
+      1,
+      "Should find conversation by assistant message content"
+    );
+  });
+
+  await gChatStore.deleteConversationById(conversation.id);
+});
+
+add_task(async function test_search_empty_results_no_crash() {
+  const conversation = new ChatConversation({
+    createdDate: Date.now(),
+    updatedDate: Date.now(),
+  });
+  conversation.title = "Some title";
+  conversation.addUserMessage("some message");
+  conversation.addAssistantMessage("text", "some response");
+  await gChatStore.updateConversation(conversation);
+
+  await withFirefoxView({}, async browser => {
+    const { document } = browser.contentWindow;
+    await waitForChatsNavVisible(document);
+    await navigateToViewAndWait(document, "chats");
+    await waitForChatsReady(browser, 1);
+
+    await triggerSearch(browser, "xyzNoMatchShouldReturnNothing999");
+    await waitForSearchResultCount(browser, 0);
+
+    const chatsView = document.querySelector("view-chats");
+    Assert.ok(chatsView, "Chats view should still be rendered");
+    Assert.ok(
+      BrowserTestUtils.isVisible(chatsView),
+      "Chats view should be visible after empty search"
+    );
+    Assert.equal(
+      chatsView.controller.searchQuery,
+      "xyzNoMatchShouldReturnNothing999",
+      "Search query should still be active"
+    );
+  });
+
+  await gChatStore.deleteConversationById(conversation.id);
+});
+
+add_task(async function test_search_deduplication() {
+  const conversation = new ChatConversation({
+    createdDate: Date.now(),
+    updatedDate: Date.now(),
+  });
+  conversation.title = "Chat with repeated xyzDedupToken88 in title";
+  conversation.addUserMessage("first message with xyzDedupToken88");
+  conversation.addAssistantMessage("text", "response one");
+  conversation.addUserMessage("second message with xyzDedupToken88");
+  conversation.addAssistantMessage("text", "response two");
+  conversation.addUserMessage("third message with xyzDedupToken88");
+  conversation.addAssistantMessage("text", "response three");
+  await gChatStore.updateConversation(conversation);
+
+  await withFirefoxView({}, async browser => {
+    const { document } = browser.contentWindow;
+    await waitForChatsNavVisible(document);
+    await navigateToViewAndWait(document, "chats");
+    await waitForChatsReady(browser, 1);
+
+    await triggerSearch(browser, "xyzDedupToken88");
+    await waitForSearchResultCount(browser, 1);
+
+    const chatsView = document.querySelector("view-chats");
+    const lists = chatsView.lists;
+    Assert.equal(lists.length, 1, "Should have one results list");
+    Assert.equal(
+      lists[0].rowEls.length,
+      1,
+      "Should deduplicate and show conversation only once despite multiple matching messages"
+    );
+  });
+
+  await gChatStore.deleteConversationById(conversation.id);
+});
+
+add_task(async function test_search_cleared_restores_view() {
+  const conversation = new ChatConversation({
+    createdDate: Date.now(),
+    updatedDate: Date.now(),
+  });
+  conversation.title = "Chat to search then clear";
+  conversation.addUserMessage("xyzClearSearchToken66 content");
+  conversation.addAssistantMessage("text", "some response");
+  await gChatStore.updateConversation(conversation);
+
+  await withFirefoxView({}, async browser => {
+    const { document } = browser.contentWindow;
+    await waitForChatsNavVisible(document);
+    await navigateToViewAndWait(document, "chats");
+    await waitForChatsReady(browser, 1);
+
+    await triggerSearch(browser, "xyzClearSearchToken66");
+    await waitForSearchResultCount(browser, 1);
+
+    const chatsView = document.querySelector("view-chats");
+    Assert.ok(
+      chatsView.controller.searchQuery,
+      "Search query should be active"
+    );
+
+    await triggerSearch(browser, "");
+    await TestUtils.waitForCondition(
+      () => !chatsView.controller.searchQuery,
+      "Waiting for search to be cleared"
+    );
+
+    await waitForChatsReady(browser, 1);
+
+    const lists = chatsView.lists;
+    Assert.ok(lists.length, "Should have chat lists after clearing search");
+    Assert.equal(
+      lists[0].rowEls.length,
+      1,
+      "Should show original chat after clearing search"
+    );
+  });
+
+  await gChatStore.deleteConversationById(conversation.id);
+});
+
+add_task(async function test_search_snippet_shown_for_body_match() {
+  const conversation = new ChatConversation({
+    createdDate: Date.now(),
+    updatedDate: Date.now(),
+  });
+  conversation.title = "Unrelated Title";
+  conversation.addUserMessage("message with xyzSnippetRenderToken11 word");
+  conversation.addAssistantMessage("text", "some response");
+  await gChatStore.updateConversation(conversation);
+
+  await withFirefoxView({}, async browser => {
+    const { document } = browser.contentWindow;
+    await waitForChatsNavVisible(document);
+    await navigateToViewAndWait(document, "chats");
+    await waitForChatsReady(browser, 1);
+
+    await triggerSearch(browser, "xyzSnippetRenderToken11");
+    await waitForSearchResultCount(browser, 1);
+
+    const row = document.querySelector("view-chats").lists[0].rowEls[0];
+    const snippet = row.shadowRoot.querySelector(".fxview-tab-row-snippet");
+    Assert.ok(snippet, "Snippet element rendered for body match");
+    Assert.ok(
+      snippet.textContent.includes("xyzSnippetRenderToken11"),
+      "Snippet contains the search term"
+    );
+  });
+
+  await gChatStore.deleteConversationById(conversation.id);
+});
+
+add_task(async function test_search_no_snippet_for_title_only_match() {
+  const conversation = new ChatConversation({
+    createdDate: Date.now(),
+    updatedDate: Date.now(),
+  });
+  conversation.title = "Title with xyzTitleOnlyToken22";
+  conversation.addUserMessage("unrelated message body");
+  conversation.addAssistantMessage("text", "some response");
+  await gChatStore.updateConversation(conversation);
+
+  await withFirefoxView({}, async browser => {
+    const { document } = browser.contentWindow;
+    await waitForChatsNavVisible(document);
+    await navigateToViewAndWait(document, "chats");
+    await waitForChatsReady(browser, 1);
+
+    await triggerSearch(browser, "xyzTitleOnlyToken22");
+    await waitForSearchResultCount(browser, 1);
+
+    const row = document.querySelector("view-chats").lists[0].rowEls[0];
+    const snippet = row.shadowRoot.querySelector(".fxview-tab-row-snippet");
+    Assert.ok(!snippet, "No snippet for title-only match");
+  });
+
+  await gChatStore.deleteConversationById(conversation.id);
 });

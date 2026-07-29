@@ -9,6 +9,47 @@ newtab-page-title = Sukua jíía
 newtab-settings-button =
     .title = Sá´á vii tutu ya´a sukua jíía
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Da pestaña jíía
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+           *[other] { $num } fila
+        }
+home-restore-defaults-srd =
+    .label = Natee tuku predeterminados
+    .accesskey = R
+home-mode-choice-custom-srd =
+    .label = Sa´a vii URLs
+home-mode-choice-blank-srd =
+    .label = Página kuijin
+home-prefs-shortcuts-header-srd =
+    .label = Atajos
+home-prefs-shortcuts-select =
+    .aria-label = Atajos
+home-prefs-shortcuts-by-option-sponsored-srd =
+    .label = Da atajo íyo patrocinado
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Artículos íyo patrocinado
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Páginas nnkivɨnu
+home-prefs-highlights-options-bookmarks-srd =
+    .label = A ta´a ini noo´o
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Nxinuun Ntañu´u
+home-prefs-recent-activity-header-srd =
+    .label = Da a skuata nsá´á
+home-prefs-recent-activity-select =
+    .aria-label = Da a skuata nsá´á
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -33,7 +74,7 @@ newtab-search-box-input =
     .placeholder = Nánuku nuu Web
     .aria-label = Nánuku nuu Web
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Chisó ka̱a̱ nánuku
 newtab-topsites-add-shortcut-header = A jíía acceso ñama
@@ -219,9 +260,20 @@ newtab-error-fallback-refresh-link = Nachu´un página je nakajie´e tuku.
 
 newtab-custom-shortcuts-title = Da acceso ñama
 newtab-custom-shortcuts-subtitle = Da nuu chuva´anu a xíín ne´yanu
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = Da acceso ñama
     .description = Da nuu chuva´anu a xíín ne´yanu
+newtab-custom-shortcuts-nova =
+    .label = Da acceso ñama
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+           *[other] { $num } filas
+        }
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector =

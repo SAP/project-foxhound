@@ -72,8 +72,12 @@ export class _ConfirmDialog extends React.PureComponent {
 
     return (
       <span>
-        {message_body.map(msg => (
-          <p key={msg} data-l10n-id={msg} />
+        {message_body.map((msg, index) => (
+          <p
+            key={msg}
+            data-l10n-id={msg}
+            id={index === 0 ? "confirmation-dialog-title" : undefined}
+          />
         ))}
       </span>
     );
@@ -84,6 +88,7 @@ export class _ConfirmDialog extends React.PureComponent {
       <dialog
         ref={this.dialogRef}
         className="confirmation-dialog"
+        aria-labelledby="confirmation-dialog-title"
         onClick={e => {
           // Close modal when clicking on the backdrop pseudo element (the background of the modal)
           if (e.target === this.dialogRef.current) {
@@ -103,11 +108,12 @@ export class _ConfirmDialog extends React.PureComponent {
           <section className="button-group">
             <moz-button-group>
               <moz-button
+                type="ghost"
                 onClick={this._handleCancelBtn}
                 data-l10n-id={this.props.data.cancel_button_string_id}
               ></moz-button>
               <moz-button
-                type="primary"
+                type="destructive"
                 onClick={this._handleConfirmBtn}
                 data-l10n-id={this.props.data.confirm_button_string_id}
                 data-l10n-args={JSON.stringify(

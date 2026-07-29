@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -1715,7 +1713,7 @@ nsresult History::FetchPageInfo(VisitData& _place, bool* _exists) {
     nsAutoCString spec;
     rv = stmt->GetUTF8String(0, spec);
     NS_ENSURE_SUCCESS(rv, rv);
-    _place.spec = spec;
+    _place.spec = std::move(spec);
   }
 
   rv = stmt->GetInt64(1, &_place.placeId);
@@ -1730,7 +1728,7 @@ nsresult History::FetchPageInfo(VisitData& _place, bool* _exists) {
   // title (because we don't want to, that would be empty), and set the title
   // to what is currently stored in the datbase.
   if (_place.title.IsVoid()) {
-    _place.title = title;
+    _place.title = std::move(title);
   }
   // Otherwise, just indicate if the title has changed.
   else {

@@ -11,10 +11,6 @@ add_task(async function test_RefreshTestPrefFunction() {
   await initGroupDatabase();
 
   window.gURLBar.value = "";
-  // Pref allows refresh for all profiles, see Bug 1928138
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.profiles.forceEnableRefresh", true]],
-  });
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
@@ -34,6 +30,6 @@ add_task(async function test_RefreshTestPrefFunction() {
   });
   row = UrlbarTestUtils.getRowAt(window, 1);
   // row 0 is always the "Search with <default engine>" item
-  // If there is no row 1, there is no refresh button
-  ok(!row, "Refresh button should not be visible");
+  refreshButton = row.querySelector("span[data-action='refresh']");
+  ok(refreshButton, "Refresh button should be visible");
 });

@@ -14,6 +14,50 @@ newtab-personalize-icon-label =
 newtab-personalize-dialog-label =
     .aria-label = Tichinäx
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = K'ak'a' taq ruwi'
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } cholaj
+           *[other] { $num } taq cholaj
+        }
+home-restore-defaults-srd =
+    .label = Ketzolij ri E K'o wi
+    .accesskey = K
+home-mode-choice-default-fx-srd =
+    .label = { -firefox-home-brand-name } (K'o wi)
+home-mode-choice-custom-srd =
+    .label = Ichinan URLs...
+home-mode-choice-blank-srd =
+    .label = Kowöl Ruxaq
+home-prefs-shortcuts-header-srd =
+    .label = Chojmin Okem
+home-prefs-shortcuts-select =
+    .aria-label = Chojmin Okem
+home-prefs-shortcuts-by-option-sponsored-srd =
+    .label = Xto' chojmin okem
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = To'on taq B'anob'äl
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Taq Ruxaq Etz'eton
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Taq yaketal
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = K'a B'a' Keqasäx
+home-prefs-recent-activity-header-srd =
+    .label = K'ak'a' samaj
+home-prefs-recent-activity-select =
+    .aria-label = K'ak'a' samaj
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -39,7 +83,7 @@ newtab-search-box-input =
     .placeholder = Tikanöx pan ajk'amaya'l
     .aria-label = Tikanöx pan ajk'amaya'l
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Titz'aqatisäx Kanob'äl
 newtab-topsites-add-shortcut-header = K'ak'a' Chojokem
@@ -242,9 +286,21 @@ newtab-error-fallback-refresh-link = Titzolïx ruxaq richin nitojtob'ëx chik.
 
 newtab-custom-shortcuts-title = Chojmin Okem
 newtab-custom-shortcuts-subtitle = Taq ruxaq xe'ayäk o xe'atz'ët
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = Chojmin Okem
     .description = Taq ruxaq xe'ayäk o xe'atz'ët
+newtab-custom-shortcuts-nova =
+    .label = Chojmin Okem
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+            [one] { $num } cholaj
+           *[other] { $num } taq cholaj
+        }
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector =

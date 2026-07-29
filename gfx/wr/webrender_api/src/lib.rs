@@ -47,7 +47,6 @@ mod color;
 #[cfg(feature = "debugger")]
 pub mod debugger;
 mod display_item;
-mod display_item_cache;
 mod display_list;
 mod font;
 mod gradient_builder;
@@ -57,7 +56,6 @@ pub mod units;
 
 pub use crate::color::*;
 pub use crate::display_item::*;
-pub use crate::display_item_cache::DisplayItemCache;
 pub use crate::display_list::*;
 pub use crate::font::*;
 pub use crate::gradient_builder::*;
@@ -762,6 +760,8 @@ bitflags! {
         /// Show external composite border rects in debug overlay.
         /// TODO: Add native compositor support
         const EXTERNAL_COMPOSITE_BORDERS = (1 as u64) << 34;
+        /// Dump the frame spatial tree to stderr.
+        const DUMP_SPATIAL_TREE = (1 as u64) << 35;
     }
 }
 
@@ -773,17 +773,6 @@ impl core::fmt::Debug for DebugFlags {
             bitflags::parser::to_writer(self, f)
         }
     }
-}
-
-/// Information specific to a primitive type that
-/// uniquely identifies a primitive template by key.
-#[derive(Debug, Clone, Eq, MallocSizeOf, PartialEq, Hash, Serialize, Deserialize)]
-pub enum PrimitiveKeyKind {
-    ///
-    Rectangle {
-        ///
-        color: PropertyBinding<ColorU>,
-    },
 }
 
 ///

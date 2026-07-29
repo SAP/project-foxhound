@@ -22,6 +22,7 @@ projects:
     - components:concept-fetch
     - components:concept-menu
     - components:concept-storage
+    - components:concept-storage-bookmarks
     - components:concept-sync
     - components:concept-tabstray
     - components:concept-toolbar
@@ -51,7 +52,9 @@ projects:
     - components:service-digitalassetlinks
     - components:service-glean
     - components:service-location
+    - components:service-merino-manifest
     - components:service-nimbus
+    - components:support-android-test
     - components:support-appservices
     - components:support-base
     - components:support-images

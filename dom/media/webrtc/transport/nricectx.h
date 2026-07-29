@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -56,14 +54,13 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <vector>
 
 #include "m_cpp_utils.h"
+#include "mozilla/IceServerParser.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/UniquePtr.h"
 #include "nricemediastream.h"
 #include "nricestunaddr.h"
 #include "nsIEventTarget.h"
 #include "nsTArray.h"
-#include "prnetdb.h"
 #include "sigslot.h"
 
 typedef struct nr_ice_ctx_ nr_ice_ctx;
@@ -91,91 +88,6 @@ class NrIceMediaStream;
 extern const char kNrIceTransportUdp[];
 extern const char kNrIceTransportTcp[];
 extern const char kNrIceTransportTls[];
-
-class NrIceStunServer {
- public:
-  explicit NrIceStunServer(const PRNetAddr& addr) : has_addr_(true) {
-    memcpy(&addr_, &addr, sizeof(addr));
-  }
-
-  // The main function to use. Will take either an address or a hostname.
-  static UniquePtr<NrIceStunServer> Create(
-      const std::string& addr, uint16_t port,
-      const char* transport = kNrIceTransportUdp) {
-    UniquePtr<NrIceStunServer> server(new NrIceStunServer(transport));
-
-    nsresult rv = server->Init(addr, port);
-    if (NS_FAILED(rv)) return nullptr;
-
-    return server;
-  }
-
-  nsresult ToNicerStunStruct(nr_ice_stun_server* server) const;
-
-  bool HasFqdn() const { return !has_addr_; }
-
-  void SetUseIPv6IfFqdn() {
-    MOZ_ASSERT(HasFqdn());
-    use_ipv6_if_fqdn_ = true;
-  }
-
- protected:
-  explicit NrIceStunServer(const char* transport)
-      : addr_(), transport_(transport) {}
-
-  nsresult Init(const std::string& addr, uint16_t port) {
-    PRStatus status = PR_StringToNetAddr(addr.c_str(), &addr_);
-    if (status == PR_SUCCESS) {
-      // Parseable as an address
-      addr_.inet.port = PR_htons(port);
-      port_ = port;
-      has_addr_ = true;
-      return NS_OK;
-    } else if (addr.size() < 256) {
-      // Apparently this is a hostname.
-      host_ = addr;
-      port_ = port;
-      has_addr_ = false;
-      return NS_OK;
-    }
-
-    return NS_ERROR_FAILURE;
-  }
-
-  bool has_addr_;
-  std::string host_;
-  uint16_t port_;
-  PRNetAddr addr_;
-  std::string transport_;
-  bool use_ipv6_if_fqdn_ = false;
-};
-
-class NrIceTurnServer : public NrIceStunServer {
- public:
-  static UniquePtr<NrIceTurnServer> Create(
-      const std::string& addr, uint16_t port, const std::string& username,
-      const std::vector<unsigned char>& password,
-      const char* transport = kNrIceTransportUdp) {
-    UniquePtr<NrIceTurnServer> server(
-        new NrIceTurnServer(username, password, transport));
-
-    nsresult rv = server->Init(addr, port);
-    if (NS_FAILED(rv)) return nullptr;
-
-    return server;
-  }
-
-  nsresult ToNicerTurnStruct(nr_ice_turn_server* server) const;
-
- private:
-  NrIceTurnServer(const std::string& username,
-                  const std::vector<unsigned char>& password,
-                  const char* transport)
-      : NrIceStunServer(transport), username_(username), password_(password) {}
-
-  std::string username_;
-  std::vector<unsigned char> password_;
-};
 
 class TestNat;
 
@@ -277,6 +189,7 @@ class NrIceCtx {
 
   std::vector<RefPtr<NrIceMediaStream>> GetStreams() const {
     std::vector<RefPtr<NrIceMediaStream>> result;
+    result.reserve(streams_.size());
     for (auto& idAndStream : streams_) {
       result.push_back(idAndStream.second);
     }
@@ -299,13 +212,12 @@ class NrIceCtx {
 
   Controlling GetControlling();
 
-  // Set the STUN servers. Must be called before StartGathering
-  // (if at all).
-  nsresult SetStunServers(const std::vector<NrIceStunServer>& stun_servers);
-
-  // Set the TURN servers. Must be called before StartGathering
-  // (if at all).
-  nsresult SetTurnServers(const std::vector<NrIceTurnServer>& turn_servers);
+  using ParsedIceServer = IceServerParser::ParsedIceServer;
+  // Set ICE servers from ParsedIceServer structs. Converts directly to nICEr
+  // C structs, with FQDN fanout (IPv4 + IPv6 entries for hostnames).
+  // Must be called before StartGathering.
+  nsresult SetIceServers(const nsTArray<ParsedIceServer>& aServers,
+                         bool aTurnDisabled);
 
   // Provide the resolution provider. Must be called before
   // StartGathering.
@@ -363,6 +275,8 @@ class NrIceCtx {
                          int potential_ct);
   static int stream_gathering(void* obj, nr_ice_media_stream* stream);
   static int stream_gathered(void* obj, nr_ice_media_stream* stream);
+  static int candidate_error(void* obj, nr_ice_media_stream* stream,
+                             nr_ice_candidate* candidate);
   static int stream_checking(void* obj, nr_ice_media_stream* stream);
   static int stream_ready(void* obj, nr_ice_media_stream* stream);
   static int stream_disconnected(void* obj, nr_ice_media_stream* stream);

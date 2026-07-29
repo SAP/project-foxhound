@@ -153,8 +153,12 @@ class SwatchBasedEditorTooltip extends EventEmitter {
    *        - onRevert: will be called when the user ESCapes out of the tooltip
    *        - onCommit: will be called when the user presses ENTER or clicks
    *        outside the tooltip.
+   * @param {node|undefined} previousSwatchEl
+   *        If we are updating an already rendered property value,
+   *        the previously registered swatch element (previous call to addSwatch's `swatchEl`
+   *        argument).
    */
-  addSwatch(swatchEl, callbacks = {}) {
+  addSwatch(swatchEl, callbacks = {}, previousSwatchEl) {
     if (!callbacks.onShow) {
       callbacks.onShow = function () {};
     }
@@ -168,6 +172,21 @@ class SwatchBasedEditorTooltip extends EventEmitter {
       callbacks.onCommit = function () {};
     }
 
+    // If we are updating an already rendered swatch:
+    // * unregister the old element in favor of the new one
+    // * remove event listener from the old element
+    // * if the swatch was active, automatically flag the new
+    //   element as active.
+    if (previousSwatchEl) {
+      this.swatches.delete(previousSwatchEl);
+
+      previousSwatchEl.removeEventListener("click", this._onSwatchClick);
+      previousSwatchEl.removeEventListener("keydown", this._onSwatchKeyDown);
+
+      if (this.activeSwatch == previousSwatchEl) {
+        this.activeSwatch = swatchEl;
+      }
+    }
     this.swatches.set(swatchEl, {
       callbacks,
     });

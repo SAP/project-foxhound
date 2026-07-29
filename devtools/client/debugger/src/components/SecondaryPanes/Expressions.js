@@ -16,7 +16,7 @@ import {
 import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 import { connect } from "devtools/client/shared/vendor/react-redux";
 import { features } from "../../utils/prefs";
-import DebuggerImage from "../shared/DebuggerImage";
+import DebuggerImage from "devtools/client/shared/components/DebuggerImage";
 
 import * as objectInspector from "resource://devtools/client/shared/components/object-inspector/index.js";
 
@@ -32,13 +32,15 @@ import {
 } from "../../selectors/index";
 import { getExpressionResultGripAndFront } from "../../utils/expressions";
 
-import { CloseButton } from "../shared/Button/index";
+import CloseButton from "devtools/client/shared/components/CloseButton";
 
 const { debounce } = require("resource://devtools/shared/debounce.js");
 
 const { ObjectInspector } = objectInspector;
 
 class Expressions extends Component {
+  #input;
+
   constructor(props) {
     super(props);
 
@@ -74,8 +76,8 @@ class Expressions extends Component {
 
     // Ensures that the input is focused when the "+"
     // is clicked while the panel is collapsed
-    if (showInput && this._input) {
-      this._input.focus();
+    if (showInput && this.#input) {
+      this.#input.focus();
     }
   }
 
@@ -123,17 +125,17 @@ class Expressions extends Component {
   }
 
   componentDidUpdate(prevProps, prevState) {
-    const _input = this._input;
+    const inputEl = this.#input;
 
-    if (!_input) {
+    if (!inputEl) {
       return;
     }
 
     if (!prevState.editing && this.state.editing) {
-      _input.setSelectionRange(0, _input.value.length);
-      _input.focus();
+      inputEl.setSelectionRange(0, inputEl.value.length);
+      inputEl.focus();
     } else if (this.props.showInput) {
-      _input.focus();
+      inputEl.focus();
     }
   }
 
@@ -250,7 +252,7 @@ class Expressions extends Component {
     } = this.props;
 
     const { editing, editIndex } = this.state;
-    const { input: _input, updating } = expression;
+    const { input: expressionInput, updating } = expression;
     const isEditingExpr = editing && editIndex === index;
     if (isEditingExpr) {
       return this.renderExpressionEditInput(expression);
@@ -264,8 +266,8 @@ class Expressions extends Component {
       getExpressionResultGripAndFront(expression);
 
     const root = {
-      name: expression.input,
-      path: _input,
+      name: expressionInput,
+      path: expressionInput,
       contents: {
         value: expressionResultGrip,
         front: expressionResultFront,
@@ -275,7 +277,7 @@ class Expressions extends Component {
     return li(
       {
         className: "expression-container",
-        key: _input,
+        key: expressionInput,
         title: expression.input,
       },
       div(
@@ -366,7 +368,7 @@ class Expressions extends Component {
         onBlur: this.hideInput,
         onKeyDown: this.handleKeyDown,
         value: !editing ? inputValue : "",
-        ref: c => (this._input = c),
+        ref: c => (this.#input = c),
         ...(features.autocompleteExpression && {
           list: "autocomplete-matches",
         }),
@@ -396,7 +398,7 @@ class Expressions extends Component {
         onBlur: this.clear,
         onKeyDown: this.handleKeyDown,
         value: editing ? inputValue : expression.input,
-        ref: c => (this._input = c),
+        ref: c => (this.#input = c),
         ...(features.autocompleteExpression && {
           list: "autocomplete-matches",
         }),

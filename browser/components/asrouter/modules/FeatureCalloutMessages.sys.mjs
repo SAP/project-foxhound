@@ -170,7 +170,7 @@ const MESSAGES = () => {
         ],
       },
       targeting:
-        "'browser.ipProtection.hasUpgraded' | preferenceValue == false && 'browser.ipProtection.bandwidthThreshold' | preferenceValue == 50 && !hasActiveEnterprisePolicies && !activeNotifications && previousSessionEnd && (messageImpressions.IP_PROTECTION_CALLOUT_MOZILLA_VPN_UPGRADE_SECONDARY || []) | length == 0",
+        "'browser.ipProtection.hasUpgraded' | preferenceValue == false && 'browser.ipProtection.upgradeNotAvailable' | preferenceValue == false && 'browser.ipProtection.bandwidthThreshold' | preferenceValue == 50 && !hasActiveEnterprisePolicies && !activeNotifications && previousSessionEnd && (messageImpressions.IP_PROTECTION_CALLOUT_MOZILLA_VPN_UPGRADE_SECONDARY || []) | length == 0",
       trigger: {
         id: "preferenceObserver",
         params: ["browser.ipProtection.bandwidthThreshold"],
@@ -267,7 +267,7 @@ const MESSAGES = () => {
         ],
       },
       targeting:
-        "'browser.ipProtection.hasUpgraded' | preferenceValue == false && 'browser.ipProtection.bandwidthThreshold' | preferenceValue == 50 && !hasActiveEnterprisePolicies && !activeNotifications && previousSessionEnd && (messageImpressions.IP_PROTECTION_CALLOUT_MOZILLA_VPN_UPGRADE || []) | length == 0",
+        "'browser.ipProtection.hasUpgraded' | preferenceValue == false && 'browser.ipProtection.upgradeNotAvailable' | preferenceValue == false && 'browser.ipProtection.bandwidthThreshold' | preferenceValue == 50 && !hasActiveEnterprisePolicies && !activeNotifications && previousSessionEnd && (messageImpressions.IP_PROTECTION_CALLOUT_MOZILLA_VPN_UPGRADE || []) | length == 0",
       trigger: {
         id: "ipProtectionReady",
       },
@@ -350,191 +350,10 @@ const MESSAGES = () => {
       targeting:
         "'browser.ipProtection.bandwidthThreshold' | preferenceValue == 0 && 'browser.ipProtection.userEnableCount' | preferenceValue > 0 && !hasActiveEnterprisePolicies && !activeNotifications && previousSessionEnd",
       trigger: {
-        id: "preferenceObserver",
-        params: ["browser.ipProtection.bandwidthThreshold"],
+        id: "ipProtectionBandwidthReset",
       },
       frequency: {
         lifetime: 2,
-      },
-      skip_in_tests: "it's not tested in automation",
-    },
-    {
-      id: "TAB_GROUP_ONBOARDING_CALLOUT",
-      template: "feature_callout",
-      groups: ["cfr"],
-      content: {
-        id: "TAB_GROUP_ONBOARDING_CALLOUT",
-        template: "multistage",
-        backdrop: "transparent",
-        transitions: false,
-        screens: [
-          {
-            id: "TAB_GROUP_ONBOARDING_CALLOUT_HORIZONTAL",
-            anchors: [
-              {
-                selector:
-                  "#tabbrowser-tabs:not([overflow]) .tab-content[selected]:not([pinned])",
-                panel_position: {
-                  anchor_attachment: "bottomcenter",
-                  callout_attachment: "topright",
-                },
-              },
-              {
-                selector:
-                  "#tabbrowser-tabs:not([overflow]) tab:not([pinned]):last-of-type",
-                panel_position: {
-                  anchor_attachment: "bottomcenter",
-                  callout_attachment: "topright",
-                },
-              },
-              {
-                selector:
-                  "#tabbrowser-tabs:not([overflow]) #tabs-newtab-button",
-                panel_position: {
-                  anchor_attachment: "bottomcenter",
-                  callout_attachment: "topright",
-                },
-              },
-              {
-                selector: "#tabbrowser-tabs",
-                panel_position: {
-                  anchor_attachment: "bottomcenter",
-                  callout_attachment: "topright",
-                },
-              },
-            ],
-            content: {
-              position: "callout",
-              width: "333px",
-              padding: 16,
-              logo: {
-                imageURL:
-                  "chrome://browser/content/asrouter/assets/tabgroups/hort-animated-light.svg",
-                darkModeImageURL:
-                  "chrome://browser/content/asrouter/assets/tabgroups/hort-animated-dark.svg",
-                reducedMotionImageURL:
-                  "chrome://browser/content/asrouter/assets/tabgroups/hort-static-light.svg",
-                darkModeReducedMotionImageURL:
-                  "chrome://browser/content/asrouter/assets/tabgroups/hort-static-dark.svg",
-                height: "172px",
-                width: "300px",
-              },
-              title: {
-                string_id: "tab-groups-onboarding-feature-callout-title",
-              },
-              subtitle: {
-                string_id: "tab-groups-onboarding-feature-callout-subtitle",
-              },
-              dismiss_button: {
-                action: {
-                  dismiss: true,
-                },
-                background: true,
-                size: "small",
-                marginInline: "0 20px",
-                marginBlock: "20px 0",
-              },
-            },
-          },
-        ],
-      },
-      targeting:
-        "tabsClosedCount >= 1 && currentTabsOpen >= 8 && ('browser.tabs.groups.enabled' | preferenceValue) && (!'sidebar.verticalTabs' | preferenceValue) && currentTabGroups == 0 && savedTabGroups == 0 && !activeNotifications",
-      trigger: {
-        id: "nthTabClosed",
-      },
-      frequency: {
-        lifetime: 1,
-      },
-      skip_in_tests: "it's not tested in automation",
-    },
-    {
-      id: "TAB_GROUP_ONBOARDING_CALLOUT",
-      template: "feature_callout",
-      groups: ["cfr"],
-      content: {
-        id: "TAB_GROUP_ONBOARDING_CALLOUT",
-        template: "multistage",
-        backdrop: "transparent",
-        transitions: false,
-        screens: [
-          {
-            id: "TAB_GROUP_ONBOARDING_CALLOUT_VERTICAL",
-            anchors: [
-              {
-                selector:
-                  "#tabbrowser-tabs:not([overflow]) .tab-content[selected]:not([pinned])",
-                panel_position: {
-                  anchor_attachment: "rightcenter",
-                  callout_attachment: "topleft",
-                },
-              },
-              {
-                selector:
-                  "#tabbrowser-tabs:not([overflow]) tab:not([pinned]):last-of-type",
-                panel_position: {
-                  anchor_attachment: "rightcenter",
-                  callout_attachment: "topleft",
-                },
-              },
-              {
-                selector:
-                  "#tabbrowser-tabs:not([overflow]) #tabs-newtab-button",
-                panel_position: {
-                  anchor_attachment: "rightcenter",
-                  callout_attachment: "topleft",
-                },
-              },
-              {
-                selector: "#tabbrowser-tabs",
-                panel_position: {
-                  anchor_attachment: "rightcenter",
-                  callout_attachment: "topleft",
-                },
-              },
-            ],
-            content: {
-              position: "callout",
-              width: "333px",
-              padding: 16,
-              logo: {
-                imageURL:
-                  "chrome://browser/content/asrouter/assets/tabgroups/vert-animated-light.svg",
-                darkModeImageURL:
-                  "chrome://browser/content/asrouter/assets/tabgroups/vert-animated-dark.svg",
-                reducedMotionImageURL:
-                  "chrome://browser/content/asrouter/assets/tabgroups/vert-static-light.svg",
-                darkModeReducedMotionImageURL:
-                  "chrome://browser/content/asrouter/assets/tabgroups/vert-static-dark.svg",
-                height: "172px",
-                width: "300px",
-              },
-              title: {
-                string_id: "tab-groups-onboarding-feature-callout-title",
-              },
-              subtitle: {
-                string_id: "tab-groups-onboarding-feature-callout-subtitle",
-              },
-              dismiss_button: {
-                action: {
-                  dismiss: true,
-                },
-                background: true,
-                size: "small",
-                marginInline: "0 20px",
-                marginBlock: "20px 0",
-              },
-            },
-          },
-        ],
-      },
-      targeting:
-        "tabsClosedCount >= 1 && currentTabsOpen >= 8 && ('browser.tabs.groups.enabled' | preferenceValue) && ('sidebar.revamp' | preferenceValue) && ('sidebar.verticalTabs' | preferenceValue) && currentTabGroups == 0 && savedTabGroups == 0 && !activeNotifications",
-      trigger: {
-        id: "nthTabClosed",
-      },
-      frequency: {
-        lifetime: 1,
       },
       skip_in_tests: "it's not tested in automation",
     },
@@ -912,81 +731,6 @@ const MESSAGES = () => {
       skip_in_tests: "not tested in automation",
     },
     {
-      id: "ADDONS_STAFF_PICK_PT_2",
-      template: "feature_callout",
-      groups: ["cfr"],
-      content: {
-        id: "ADDONS_STAFF_PICK_PT_2",
-        template: "multistage",
-        backdrop: "transparent",
-        transitions: false,
-        screens: [
-          {
-            id: "ADDONS_STAFF_PICK_PT_2_A",
-            anchors: [
-              {
-                selector: "#unified-extensions-button",
-                panel_position: {
-                  anchor_attachment: "bottomcenter",
-                  callout_attachment: "topright",
-                },
-                arrow_width: "26.9",
-              },
-            ],
-            content: {
-              position: "callout",
-              width: "310px",
-              padding: 16,
-              title_logo: {
-                imageURL:
-                  "chrome://browser/content/asrouter/assets/smiling-fox-icon.svg",
-                width: "24px",
-                height: "24px",
-                marginInline: "4px 14px",
-              },
-              title: {
-                raw: "Give your browsing a boost",
-                marginInline: "0 48px",
-              },
-              subtitle: {
-                raw: "Make browsing faster, safer, or just plain fun with Firefox add-ons. See what our staff recommends!",
-                paddingInline: "34px 0",
-              },
-              primary_button: {
-                label: {
-                  raw: "Explore add-ons",
-                },
-                action: {
-                  dismiss: true,
-                  type: "OPEN_URL",
-                  data: {
-                    args: "https://addons.mozilla.org/en-US/firefox/collections/4757633/36d285535db74c6986abbeeed3e214/?page=1&collection_sort=added",
-                    where: "tabshifted",
-                  },
-                },
-              },
-              dismiss_button: {
-                action: {
-                  dismiss: true,
-                },
-                size: "small",
-                marginInline: "0 14px",
-                marginBlock: "14px 0",
-              },
-            },
-          },
-        ],
-      },
-      targeting:
-        "userPrefs.cfrAddons && userPrefs.cfrFeatures && localeLanguageCode == 'en' && ((currentDate|date - profileAgeCreated|date) / 86400000 < 28) && !screenImpressions.AW_AMO_INTRODUCE && !willShowDefaultPrompt && !activeNotifications && source == 'newtab' && previousSessionEnd",
-      trigger: {
-        id: "defaultBrowserCheck",
-      },
-      frequency: {
-        lifetime: 1,
-      },
-    },
-    {
       id: "PDFJS_FEATURE_TOUR_A",
       template: "feature_callout",
       content: {
@@ -1310,8 +1054,7 @@ const MESSAGES = () => {
       targeting:
         "'browser.profiles.profile-name.updated' | preferenceValue == true && userPrefs.cfrFeatures",
       trigger: {
-        id: "preferenceObserver",
-        params: ["browser.profiles.profile-name.updated"],
+        id: "selectableProfileCreated",
       },
       frequency: {
         lifetime: 1,
@@ -1378,7 +1121,7 @@ const MESSAGES = () => {
     {
       id: "SMARTWINDOW_NEWTAB_CALLOUT",
       template: "feature_callout",
-      groups: ["cfr"],
+      groups: [],
       content: {
         id: "SMARTWINDOW_NEWTAB_CALLOUT",
         template: "multistage",
@@ -1394,8 +1137,6 @@ const MESSAGES = () => {
                   anchor_attachment: "bottomcenter",
                   callout_attachment: "topright",
                 },
-                arrow_width: 23,
-                arrow_corner_distance: 4,
               },
             ],
             content: {
@@ -1427,6 +1168,210 @@ const MESSAGES = () => {
       skip_in_tests: "it's not tested in automation",
       trigger: {
         id: "smartWindowNewTab",
+      },
+      frequency: {
+        lifetime: 1,
+      },
+    },
+    {
+      id: "SMARTWINDOW_CLOSE_CURRENT_TAB",
+      template: "feature_callout",
+      content: {
+        id: "SMARTWINDOW_CLOSE_CURRENT_TAB",
+        template: "multistage",
+        backdrop: "transparent",
+        transitions: false,
+        disableHistoryUpdates: true,
+        screens: [
+          {
+            id: "SMARTWINDOW_CLOSE_CURRENT_TAB_SCREEN",
+            anchors: [
+              {
+                selector: "#PanelUI-menu-button",
+                panel_position: {
+                  anchor_attachment: "bottomcenter",
+                  callout_attachment: "topright",
+                },
+              },
+            ],
+            content: {
+              position: "callout",
+              width: "320px",
+              padding: 16,
+              title: {
+                string_id: "smartwindow-close-tab-callout-title",
+              },
+              subtitle: {
+                string_id: "smartwindow-close-tab-callout-subtitle",
+              },
+              dismiss_button: {
+                size: "small",
+                action: { dismiss: true },
+              },
+            },
+          },
+        ],
+      },
+      targeting: "isAIWindow && actionSource == 'close_current_tab'",
+      // Bug 2037624 - "close_current_tab" toolcall sets
+      // tab.smartWindowActionSource before removeTab();
+      trigger: {
+        id: "nthTabClosed",
+      },
+      skip_in_tests: "it's not tested in automation",
+    },
+    {
+      id: "SMARTWINDOW_SIDEBAR_AUTO_OPEN_PROMPT",
+      template: "feature_callout",
+      groups: [],
+      content: {
+        id: "SMARTWINDOW_SIDEBAR_AUTO_OPEN_PROMPT",
+        template: "multistage",
+        backdrop: "transparent",
+        transitions: false,
+        disableHistoryUpdates: true,
+        screens: [
+          {
+            id: "SMARTWINDOW_SIDEBAR_AUTO_OPEN_PROMPT_CALLOUT",
+            force_hide_steps_indicator: true,
+            anchors: [
+              {
+                selector: "#smartwindow-ask-button",
+                panel_position: {
+                  anchor_attachment: "bottomcenter",
+                  callout_attachment: "topright",
+                },
+              },
+            ],
+            content: {
+              position: "callout",
+              title: {
+                string_id: "smartwindow-sidebar-auto-open-callout-title",
+              },
+              subtitle: {
+                string_id: "smartwindow-sidebar-auto-open-callout-body",
+              },
+              primary_button: {
+                label: {
+                  string_id: "smartwindow-sidebar-auto-open-callout-accept",
+                },
+                action: {
+                  type: "SET_PREF",
+                  data: {
+                    pref: {
+                      name: "browser.smartwindow.sidebar.openByDefault",
+                      value: false,
+                    },
+                  },
+                  advance_screens: {
+                    id: "SMARTWINDOW_SIDEBAR_AUTO_OPEN_ACCEPTED_CALLOUT",
+                  },
+                },
+              },
+              secondary_button: {
+                label: {
+                  string_id: "smartwindow-sidebar-auto-open-callout-dismiss",
+                },
+                action: {
+                  advance_screens: {
+                    id: "SMARTWINDOW_SIDEBAR_AUTO_OPEN_REJECTED_CALLOUT",
+                  },
+                },
+              },
+              dismiss_button: { action: { dismiss: true } },
+            },
+          },
+          {
+            id: "SMARTWINDOW_SIDEBAR_AUTO_OPEN_ACCEPTED_CALLOUT",
+            force_hide_steps_indicator: true,
+            anchors: [
+              {
+                selector: "#smartwindow-ask-button",
+                panel_position: {
+                  anchor_attachment: "bottomcenter",
+                  callout_attachment: "topright",
+                },
+              },
+            ],
+            content: {
+              position: "callout",
+              title: {
+                string_id:
+                  "smartwindow-sidebar-auto-open-callout-accepted-title",
+              },
+              above_button_content: [
+                {
+                  type: "text",
+                  text: {
+                    string_id:
+                      "smartwindow-sidebar-auto-open-callout-accepted-subtitle",
+                    textAlign: "start",
+                    fontSize: "0.8em",
+                    marginBlock: "0",
+                    marginInline: "0",
+                  },
+                  link_keys: ["settings"],
+                },
+              ],
+              settings: {
+                action: {
+                  type: "OPEN_PREFERENCES_PAGE",
+                  data: { category: "personalizeSmartWindow" },
+                  dismiss: true,
+                },
+              },
+              dismiss_button: { action: { dismiss: true } },
+            },
+          },
+          {
+            id: "SMARTWINDOW_SIDEBAR_AUTO_OPEN_REJECTED_CALLOUT",
+            force_hide_steps_indicator: true,
+            anchors: [
+              {
+                selector: "#smartwindow-ask-button",
+                panel_position: {
+                  anchor_attachment: "bottomcenter",
+                  callout_attachment: "topright",
+                },
+              },
+            ],
+            content: {
+              position: "callout",
+              title: {
+                string_id:
+                  "smartwindow-sidebar-auto-open-callout-rejected-title",
+              },
+              above_button_content: [
+                {
+                  type: "text",
+                  text: {
+                    string_id:
+                      "smartwindow-sidebar-auto-open-callout-rejected-subtitle",
+                    textAlign: "start",
+                    fontSize: "0.8em",
+                    marginBlock: "0",
+                    marginInline: "0",
+                  },
+                  link_keys: ["settings"],
+                },
+              ],
+              settings: {
+                action: {
+                  type: "OPEN_PREFERENCES_PAGE",
+                  data: { category: "personalizeSmartWindow" },
+                  dismiss: true,
+                },
+              },
+              dismiss_button: { action: { dismiss: true } },
+            },
+          },
+        ],
+      },
+      targeting:
+        "isAIWindow && 'browser.smartwindow.sidebar.openByDefault' | preferenceValue && 'browser.smartwindow.sidebar.emptyCloseCount' | preferenceValue >= 2",
+      trigger: {
+        id: "preferenceObserver",
+        params: ["browser.smartwindow.sidebar.emptyCloseCount"],
       },
       frequency: {
         lifetime: 1,

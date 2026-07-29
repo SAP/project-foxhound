@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -105,36 +103,8 @@ void LocationBase::SetHrefWithBase(const nsACString& aHref, nsIURI* aBase,
     return;
   }
 
-  /* Check with the scriptContext if it is currently processing a script tag.
-   * If so, this must be a <script> tag with a location.href in it.
-   * we want to do a replace load, in such a situation.
-   * In other cases, for example if a event handler or a JS timer
-   * had a location.href in it, we want to do a normal load,
-   * so that the new url will be appended to Session History.
-   * This solution is tricky. Hopefully it isn't going to bite
-   * anywhere else. This is part of solution for bug # 39938, 72197
-   */
-  bool inScriptTag = false;
-  nsIScriptContext* scriptContext = nullptr;
-  nsCOMPtr<nsPIDOMWindowInner> win = do_QueryInterface(GetEntryGlobal());
-  if (win) {
-    scriptContext = nsGlobalWindowInner::Cast(win)->GetContextInternal();
-  }
-
-  if (scriptContext) {
-    if (scriptContext->GetProcessingScriptTag()) {
-      // Now check to make sure that the script is running in our window,
-      // since we only want to replace if the location is set by a
-      // <script> tag in the same window.  See bug 178729.
-      nsCOMPtr<nsIDocShell> docShell(GetDocShell());
-      nsCOMPtr<nsIScriptGlobalObject> ourGlobal =
-          docShell ? docShell->GetScriptGlobalObject() : nullptr;
-      inScriptTag = (ourGlobal == scriptContext->GetGlobalObject());
-    }
-  }
-
   NavigationHistoryBehavior historyHandling = NavigationHistoryBehavior::Auto;
-  if (aReplace || inScriptTag) {
+  if (aReplace) {
     historyHandling = NavigationHistoryBehavior::Replace;
   }
 

@@ -9,6 +9,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.Interaction
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonColors
 import androidx.compose.material3.IconButtonDefaults
@@ -80,40 +81,44 @@ fun LongPressIconButton(
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
     content: @Composable () -> Unit,
 ) {
-    val haptic = LocalHapticFeedback.current
-    val view = LocalView.current
-    Box(
-        modifier = modifier
-            .semantics { this.contentDescription = contentDescription }
-            .minimumInteractiveComponentSize()
-            .combinedClickable(
-                interactionSource = interactionSource,
-                indication = ripple(bounded = false, radius = RippleRadius, color = AcornTheme.colors.ripple),
-                enabled = enabled,
-                onClickLabel = onClickLabel,
-                role = Role.Button,
-                onLongClickLabel = onLongClickLabel,
-                onLongClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onLongClick()
-                },
-                onClick = {
-                    view.playSoundEffect(SoundEffectConstants.CLICK)
-                    onClick()
-                },
-            )
-            .rightClickable(
-                interactionSource = interactionSource,
-                indication = ripple(bounded = false, radius = RippleRadius, color = AcornTheme.colors.ripple),
-                onRightClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onLongClick()
-                },
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        val contentColor = if (enabled) colors.contentColor else colors.disabledContentColor
-        CompositionLocalProvider(LocalContentColor provides contentColor, content = content)
+    val contentColor = if (enabled) colors.contentColor else colors.disabledContentColor
+
+    CompositionLocalProvider(LocalContentColor provides contentColor) {
+        val haptic = LocalHapticFeedback.current
+        val view = LocalView.current
+
+        Box(
+            modifier = modifier
+                .semantics { this.contentDescription = contentDescription }
+                .minimumInteractiveComponentSize()
+                .combinedClickable(
+                    interactionSource = interactionSource,
+                    indication = ripple(bounded = false, radius = RippleRadius),
+                    enabled = enabled,
+                    onClickLabel = onClickLabel,
+                    role = Role.Button,
+                    onLongClickLabel = onLongClickLabel,
+                    onLongClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onLongClick()
+                    },
+                    onClick = {
+                        view.playSoundEffect(SoundEffectConstants.CLICK)
+                        onClick()
+                    },
+                )
+                .rightClickable(
+                    interactionSource = interactionSource,
+                    indication = ripple(bounded = false, radius = RippleRadius),
+                    onRightClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onLongClick()
+                    },
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            content()
+        }
     }
 }
 
@@ -122,15 +127,29 @@ fun LongPressIconButton(
 private fun LongPressIconButtonPreview() {
     AcornTheme {
         Surface {
-            LongPressIconButton(
-                onClick = {},
-                onLongClick = {},
-                contentDescription = "test",
-            ) {
-                Icon(
-                    painter = painterResource(iconsR.drawable.mozac_ic_bookmark_fill_24),
-                    contentDescription = null,
-                )
+            Column {
+                LongPressIconButton(
+                    onClick = {},
+                    onLongClick = {},
+                    contentDescription = "test",
+                ) {
+                    Icon(
+                        painter = painterResource(iconsR.drawable.mozac_ic_bookmark_fill_24),
+                        contentDescription = null,
+                    )
+                }
+
+                LongPressIconButton(
+                    onClick = {},
+                    onLongClick = {},
+                    contentDescription = "test",
+                    colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) {
+                    Icon(
+                        painter = painterResource(iconsR.drawable.mozac_ic_bookmark_fill_24),
+                        contentDescription = null,
+                    )
+                }
             }
         }
     }
@@ -141,13 +160,23 @@ private fun LongPressIconButtonPreview() {
 private fun LongPressTextButtonPreview() {
     AcornTheme {
         Surface {
-            LongPressIconButton(
-                onClick = {},
-                onLongClick = {},
-                contentDescription = "test",
-                colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
-            ) {
-                Text(text = "button")
+            Column {
+                LongPressIconButton(
+                    onClick = {},
+                    onLongClick = {},
+                    contentDescription = "test",
+                ) {
+                    Text(text = "button")
+                }
+
+                LongPressIconButton(
+                    onClick = {},
+                    onLongClick = {},
+                    contentDescription = "test",
+                    colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) {
+                    Text(text = "button")
+                }
             }
         }
     }

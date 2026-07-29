@@ -7,11 +7,11 @@
     <Preference
         android:key="@string/pref_key_add_private_browsing_shortcut"
         android:title="@string/preferences_add_private_browsing_shortcut" />
-    <SwitchPreference
+    <SwitchPreferenceCompat
         android:defaultValue="false"
         android:key="@string/pref_key_open_links_in_a_private_tab"
         android:title="@string/preferences_open_links_in_a_private_tab" />
-    <SwitchPreference
+    <SwitchPreferenceCompat
         android:defaultValue="false"
         android:key="@string/pref_key_allow_screenshots_in_private_mode"
         android:summary="@string/preferences_screenshots_in_private_mode_disclaimer"
@@ -20,7 +20,7 @@
         android:key="@string/pref_key_pbm_lock_category_divider"
         android:layout="@xml/preference_category_divider"
         android:selectable="false" />
-    <SwitchPreference
+    <SwitchPreferenceCompat
         android:defaultValue="false"
         android:key="pref_key_private_browsing_locked_enabled"
         android:summary="@string/preferences_pbm_lock_screen_summary_3"

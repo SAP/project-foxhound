@@ -17,7 +17,7 @@ add_task(async function () {
   const brace = view.styleDocument.querySelectorAll(".ruleview-ruleclose")[1];
 
   info("Focus the new property editable field to create a color property");
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
   await focusNewRuleViewProperty(ruleEditor);
   EventUtils.sendString("color");
 
@@ -145,7 +145,7 @@ add_task(async function testKeyboardNavigationInElementRule() {
   const brace = view.styleDocument.querySelector(".ruleview-ruleclose");
 
   info("Focus the new property editable field to create a color property");
-  const ruleEditor = getRuleViewRuleEditor(view, 0);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 0);
   let editor = await focusNewRuleViewProperty(ruleEditor);
   editor.input.value = "color";
 
@@ -241,7 +241,7 @@ add_task(async function () {
   const brace = view.styleDocument.querySelectorAll(".ruleview-ruleclose")[1];
 
   info("Focus the new property editable field to create a color property");
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
   await focusNewRuleViewProperty(ruleEditor);
   EventUtils.sendString("color");
 

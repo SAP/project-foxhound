@@ -33,7 +33,6 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -49,6 +48,8 @@ import org.robolectric.annotation.Config
 import java.lang.Thread.sleep
 import java.lang.reflect.Modifier
 import kotlin.coroutines.ContinuationInterceptor
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class CrashReporterTest {
@@ -723,6 +724,8 @@ class CrashReporterTest {
         var nativeCrash = false
 
         val telemetryService = object : CrashTelemetryService {
+            override fun setTelemetryEnabled(enabled: Boolean) = Unit
+
             override fun record(crash: Crash.UncaughtExceptionCrash) = Unit
 
             override fun record(crash: Crash.NativeCodeCrash) {
@@ -756,6 +759,36 @@ class CrashReporterTest {
         testScheduler.advanceUntilIdle()
 
         assertTrue(nativeCrash)
+    }
+
+    @Test
+    fun `CrashReporter forwards telemetry enable to telemetry service`() = runTest {
+        var enabledValue: Boolean? = null
+
+        val telemetryService = object : CrashTelemetryService {
+            override fun setTelemetryEnabled(enabled: Boolean) {
+                enabledValue = enabled
+            }
+
+            override fun record(crash: Crash.UncaughtExceptionCrash) = Unit
+            override fun record(crash: Crash.NativeCodeCrash) = Unit
+            override fun record(throwable: Throwable) = Unit
+        }
+
+        val reporter = spy(
+            CrashReporter(
+                context = testContext,
+                shouldPrompt = CrashReporter.Prompt.NEVER,
+                telemetryServices = listOf(telemetryService),
+                mainDispatcher = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher,
+                scope = this,
+            ),
+        ).install(testContext)
+
+        reporter.setTelemetryEnabled(true)
+        assertEquals(enabledValue, true)
+        reporter.setTelemetryEnabled(false)
+        assertEquals(enabledValue, false)
     }
 
     @Test
@@ -1486,7 +1519,7 @@ class CrashReporterTest {
         val entity = crash.toEntity()
         val otherCrash = entity.toCrash() as Crash.UncaughtExceptionCrash
 
-        assertTrue(otherCrash.throwable is CrashReporterUnableToRestoreException)
+        assertIs<CrashReporterUnableToRestoreException>(otherCrash.throwable)
         assertEquals(expectedMessage, otherCrash.throwable.message)
         assertArrayEquals(crash.throwable.stackTrace, otherCrash.throwable.stackTrace)
     }

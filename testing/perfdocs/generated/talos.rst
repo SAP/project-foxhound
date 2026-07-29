@@ -13,10 +13,10 @@ named after the `bronze automaton from Greek myth <https://en.wikipedia.org/wiki
    :local:
 
 Talos tests are run in a similar manner to xpcshell and mochitests. They are started via
-the command :code:`mach talos-test`. A `python script <https://searchfox.org/mozilla-central/source/testing/talos>`_
+the command :code:`mach talos-test`. A :searchfox:`python script <testing/talos>`
 then launches Firefox, which runs the tests via JavaScript special powers. The test timing
 information is recorded in a text log file, e.g. :code:`browser_output.txt`, and then processed
-into the `JSON format supported by Perfherder <https://searchfox.org/mozilla-central/source/testing/mozharness/external_tools/performance-artifact-schema.json>`_.
+into the :searchfox:`JSON format supported by Perfherder <testing/mozharness/external_tools/performance-artifact-schema.json>`.
 
 Talos bugs can be filed in `Testing::Talos <https://bugzilla.mozilla.org/enter_bug.cgi?product=Testing&component=Talos>`_.
 
@@ -123,23 +123,22 @@ At a glance
 ***********
 
 -  Tests are defined in
-   `testing/talos/talos/test.py <https://searchfox.org/mozilla-central/source/testing/talos/talos/test.py>`__
+   :searchfox:`testing/talos/talos/test.py`
 -  Treeherder abbreviations are defined in
-   `taskcluster/kinds/test/talos.yml <https://searchfox.org/mozilla-central/source/taskcluster/kinds/test/talos.yml>`__
+   :searchfox:`taskcluster/kinds/test/talos.yml`
 -  Suites are defined for production in
-   `testing/talos/talos.json <https://searchfox.org/mozilla-central/source/testing/talos/talos.json>`__
+   :searchfox:`testing/talos/talos.json`
 
 Test lifecycle
 **************
 
--  Taskcluster schedules `talos
-   jobs <https://searchfox.org/mozilla-central/source/taskcluster/kinds/test/talos.yml>`__
+-  Taskcluster schedules :searchfox:`talos jobs <taskcluster/kinds/test/talos.yml>`
 -  Taskcluster runs a Talos job on a hardware machine when one is
    available - this is bootstrapped by
-   `mozharness <https://searchfox.org/mozilla-central/source/testing/mozharness/mozharness/mozilla/testing/talos.py>`__
+   :searchfox:`mozharness <testing/mozharness/mozharness/mozilla/testing/talos.py>`
 
    -  mozharness downloads the build, talos.zip (found in
-      `talos.json <https://searchfox.org/mozilla-central/source/testing/talos/talos.json>`__),
+      :searchfox:`talos.json <testing/talos/talos.json>`),
       and creates a virtualenv for running the test.
    -  mozharness `configures the test and runs
       it <https://wiki.mozilla.org/TestEngineering/Performance/Talos/Running#How_Talos_is_Run_in_Production>`__
@@ -381,10 +380,10 @@ For the sample commands found below, note that the capitalization used is import
       ./mach talos-test -a ARES6
 
    * contact: :jandem and SpiderMonkey Team
-   * source: `ARES-6 <https://searchfox.org/mozilla-central/source/third_party/webkit/PerformanceTests/ARES-6>`__
+   * source: `ARES-6 <https://searchfox.org/firefox-main/source/third_party/webkit/PerformanceTests/ARES-6>`__
    * type: `Page load`_
    * data: 6 cycles of the entire benchmark
-      * `geometric mean <https://searchfox.org/mozilla-central/source/testing/talos/talos/output.py#259>`__ self reported from the benchmark
+      * `geometric mean <https://searchfox.org/firefox-main/source/testing/talos/talos/output.py#259>`__ self reported from the benchmark
    * **Lower is better**
    * unit: geometric mean / benchmark score
    * lower_is_better: True
@@ -392,7 +391,7 @@ For the sample commands found below, note that the capitalization used is import
    * tppagecycles: 1
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -451,13 +450,13 @@ For the sample commands found below, note that the capitalization used is import
       ./mach talos-test -a JetStream
 
    * contact: :jandem and SpiderMonkey Team
-   * source: `jetstream.manifest <https://searchfox.org/mozilla-central/source/testing/talos/talos/tests/jetstream/jetstream.manifest>`__ and jetstream.zip from tooltool
+   * source: `jetstream.manifest <https://searchfox.org/firefox-main/source/testing/talos/talos/tests/jetstream/jetstream.manifest>`__ and jetstream.zip from tooltool
    * type: `Page load`_
    * measuring: JavaScript performance
    * reporting: geometric mean from the benchmark
    * data: internal benchmark
       * suite: `geometric
-        mean <https://searchfox.org/mozilla-central/source/testing/talos/talos/output.py#259>`__
+        mean <https://searchfox.org/firefox-main/source/testing/talos/talos/output.py#259>`__
         provided by the benchmark
    * description:
       | This is the `JetStream <http://browserbench.org/JetStream/in-depth.html>`__
@@ -467,7 +466,7 @@ For the sample commands found below, note that the capitalization used is import
    * tppagecycles: 1
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -556,7 +555,7 @@ For the sample commands found below, note that the capitalization used is import
    * unit: ms
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -566,27 +565,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ✅
+        - ✅
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-other-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-other**
+      * - **talos-other-nv**
         - ✅
         - ✅
         - ❌
@@ -603,6 +586,32 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-nv**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
    .. list-table:: **test-macosx1470-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -613,6 +622,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-other-nv**
         - ✅
         - ✅
         - ❌
@@ -643,6 +657,11 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
+      * - **talos-other-nv**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
       * - **talos-other-profiling**
         - ❌
         - ❌
@@ -665,6 +684,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-nv**
         - ❌
         - ❌
         - ❌
@@ -749,6 +773,11 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
         - ❌
         - ❌
+      * - **talos-chrome-nv**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
       * - **talos-chrome-swr**
         - ❌
         - ❌
@@ -770,14 +799,30 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-chrome-profiling**
-        - ❌
-        - ❌
+      * - **talos-chrome-nv**
+        - ✅
+        - ✅
         - ❌
         - ❌
       * - **talos-chrome-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64-shippable/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-chrome-profiling**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -792,6 +837,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-chrome**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-chrome-nv**
         - ✅
         - ✅
         - ❌
@@ -822,6 +872,11 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
+      * - **talos-chrome-nv**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
       * - **talos-chrome-profiling**
         - ❌
         - ❌
@@ -844,6 +899,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-chrome**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-chrome-nv**
         - ❌
         - ❌
         - ❌
@@ -913,28 +973,7 @@ For the sample commands found below, note that the capitalization used is import
    * unit: ms/frame
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-bcv**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-bcv-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -956,6 +995,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-bcv-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-bcv**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-bcv-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -1079,28 +1139,7 @@ For the sample commands found below, note that the capitalization used is import
    * win_counters: None
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -1122,6 +1161,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -1231,7 +1291,7 @@ For the sample commands found below, note that the capitalization used is import
    * unit: ms
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -1241,27 +1301,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ✅
+        - ✅
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-other-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-other**
+      * - **talos-other-nv**
         - ✅
         - ✅
         - ❌
@@ -1278,6 +1322,32 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-nv**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
    .. list-table:: **test-macosx1470-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -1288,6 +1358,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-other-nv**
         - ✅
         - ✅
         - ❌
@@ -1318,6 +1393,11 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
+      * - **talos-other-nv**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
       * - **talos-other-profiling**
         - ❌
         - ❌
@@ -1340,6 +1420,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-nv**
         - ❌
         - ❌
         - ❌
@@ -1383,7 +1468,7 @@ For the sample commands found below, note that the capitalization used is import
    * unit: ms
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -1393,27 +1478,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ✅
+        - ✅
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-other-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-other**
+      * - **talos-other-nv**
         - ✅
         - ✅
         - ❌
@@ -1430,6 +1499,32 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-nv**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
    .. list-table:: **test-macosx1470-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -1440,6 +1535,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-other-nv**
         - ✅
         - ✅
         - ❌
@@ -1470,6 +1570,11 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
+      * - **talos-other-nv**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
       * - **talos-other-profiling**
         - ❌
         - ❌
@@ -1492,6 +1597,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-nv**
         - ❌
         - ❌
         - ❌
@@ -1600,11 +1710,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
         - ❌
         - ❌
-      * - **talos-damp-other**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **talos-damp-webconsole**
         - ❌
         - ❌
@@ -1626,14 +1731,41 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
+      * - **talos-damp-webconsole**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64-shippable/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
       * - **talos-damp-other**
         - ✅
         - ✅
         - ❌
         - ❌
-      * - **talos-damp-webconsole**
-        - ✅
-        - ✅
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-damp-other**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -1727,7 +1859,7 @@ For the sample commands found below, note that the capitalization used is import
       ./mach talos-test -a displaylist_mutate
 
    * contact: :miko and gfx
-   * source: `displaylist_mutate.html <https://searchfox.org/mozilla-central/source/testing/talos/talos/tests/layout/benchmarks/displaylist_mutate.html>`__
+   * source: `displaylist_mutate.html <https://searchfox.org/firefox-main/source/testing/talos/talos/tests/layout/benchmarks/displaylist_mutate.html>`__
    * type: `Page load`_
    * data: we load the displaylist_mutate.html page five times, measuring pageload each time, generating 5 data points.
    * summarization:
@@ -1756,28 +1888,7 @@ For the sample commands found below, note that the capitalization used is import
    * win_counters: None
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-g4**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-g4-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -1799,6 +1910,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-g4-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g4**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g4-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -1947,23 +2079,7 @@ For the sample commands found below, note that the capitalization used is import
    * unit: score
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-dromaeojs**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -1978,6 +2094,22 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
         - ❌
       * - **talos-dromaeojs-profiling**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-dromaeojs**
         - ❌
         - ❌
         - ❌
@@ -2085,28 +2217,7 @@ For the sample commands found below, note that the capitalization used is import
    * unit: score
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-g3**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-g3-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -2128,6 +2239,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-g3-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g3**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g3-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -2213,28 +2345,7 @@ For the sample commands found below, note that the capitalization used is import
    * win_counters: None
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -2256,6 +2367,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -2379,28 +2511,7 @@ For the sample commands found below, note that the capitalization used is import
    * win_counters: None
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -2422,6 +2533,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -2553,23 +2685,7 @@ For the sample commands found below, note that the capitalization used is import
    * unit: score
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-dromaeojs**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -2584,6 +2700,22 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
         - ❌
       * - **talos-dromaeojs-profiling**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-dromaeojs**
         - ❌
         - ❌
         - ❌
@@ -2659,7 +2791,7 @@ For the sample commands found below, note that the capitalization used is import
       ./mach talos-test -a motionmark_animometer
 
    * contact: :b0bh00d, :jeffm, and gfx
-   * source: `source <https://searchfox.org/mozilla-central/source/third_party/webkit/PerformanceTests/MotionMark>`__ `manifests <https://searchfox.org/mozilla-central/source/testing/talos/talos/tests/motionmark>`__
+   * source: `source <https://searchfox.org/firefox-main/source/third_party/webkit/PerformanceTests/MotionMark>`__ `manifests <https://searchfox.org/firefox-main/source/testing/talos/talos/tests/motionmark>`__
    * type: `Page load`_
    * measuring: benchmark measuring the time to animate complex scenes
    * summarization:
@@ -2670,7 +2802,7 @@ For the sample commands found below, note that the capitalization used is import
    * tpmanifest: ${talos}/tests/motionmark/animometer.manifest
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -2732,7 +2864,7 @@ For the sample commands found below, note that the capitalization used is import
    * tpmanifest: ${talos}/tests/motionmark/htmlsuite.manifest
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -2791,7 +2923,7 @@ For the sample commands found below, note that the capitalization used is import
       ./mach talos-test -a motionmark_webgl
 
    * contact: :jgilbert and gfx
-   * source: `source <https://searchfox.org/mozilla-central/source/third_party/webkit/PerformanceTests/MotionMark>`__ `manifest <https://searchfox.org/mozilla-central/source/testing/talos/talos/tests/motionmark/webgl.manifest>`__
+   * source: `source <https://searchfox.org/firefox-main/source/third_party/webkit/PerformanceTests/MotionMark>`__ `manifest <https://searchfox.org/firefox-main/source/testing/talos/talos/tests/motionmark/webgl.manifest>`__
    * type: `Page load`_
    * measuring: Draw call performance in WebGL
    * summarization:
@@ -2803,28 +2935,7 @@ For the sample commands found below, note that the capitalization used is import
    * unit: fps
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -2846,6 +2957,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -2969,28 +3101,7 @@ For the sample commands found below, note that the capitalization used is import
    * win_counters: None
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -3012,6 +3123,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -3179,28 +3311,7 @@ For the sample commands found below, note that the capitalization used is import
    * win_counters: None
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -3222,6 +3333,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -3345,28 +3477,7 @@ For the sample commands found below, note that the capitalization used is import
    * win_counters: None
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -3388,6 +3499,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -3511,28 +3643,7 @@ For the sample commands found below, note that the capitalization used is import
    * win_counters: None
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -3554,6 +3665,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -3677,28 +3809,7 @@ For the sample commands found below, note that the capitalization used is import
    * win_counters: None
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -3720,6 +3831,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -3843,28 +3975,7 @@ For the sample commands found below, note that the capitalization used is import
    * win_counters: None
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -3886,6 +3997,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -4053,28 +4185,7 @@ For the sample commands found below, note that the capitalization used is import
    * win_counters: None
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -4096,6 +4207,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -4219,28 +4351,7 @@ For the sample commands found below, note that the capitalization used is import
    * win_counters: None
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -4262,6 +4373,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -4385,28 +4517,7 @@ For the sample commands found below, note that the capitalization used is import
    * win_counters: None
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -4428,6 +4539,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -4551,28 +4683,7 @@ For the sample commands found below, note that the capitalization used is import
    * win_counters: None
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -4594,6 +4705,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -4702,118 +4834,7 @@ For the sample commands found below, note that the capitalization used is import
    * unit: ms
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-pdfpaint-1**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-pdfpaint-1-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-pdfpaint-10**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-pdfpaint-10-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-pdfpaint-2**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-pdfpaint-2-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-pdfpaint-3**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-pdfpaint-3-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-pdfpaint-4**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-pdfpaint-4-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-pdfpaint-5**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-pdfpaint-5-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-pdfpaint-6**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-pdfpaint-6-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-pdfpaint-7**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-pdfpaint-7-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-pdfpaint-8**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-pdfpaint-8-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-pdfpaint-9**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-pdfpaint-9-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -4920,6 +4941,117 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-pdfpaint-9-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-pdfpaint-1**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-1-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-10**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-10-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-2**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-2-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-3**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-3-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-4**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-4-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-5**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-5-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-6**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-6-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-7**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-7-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-8**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-8-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-9**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-9-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -5329,28 +5461,7 @@ For the sample commands found below, note that the capitalization used is import
    * unit: ms
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-perf-reftest**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-perf-reftest-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -5372,6 +5483,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-perf-reftest-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-perf-reftest**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-perf-reftest-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -5497,23 +5629,7 @@ For the sample commands found below, note that the capitalization used is import
    * unit: ms
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-perf-reftest-singletons**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -5528,6 +5644,22 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
         - ❌
       * - **talos-perf-reftest-singletons-profiling**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-perf-reftest-singletons**
         - ❌
         - ❌
         - ❌
@@ -5603,7 +5735,7 @@ For the sample commands found below, note that the capitalization used is import
       ./mach talos-test -a rasterflood_gradient
 
    * contact: :jrmuizel, :jimm, and gfx
-   * source: `rasterflood_gradient.html <https://searchfox.org/mozilla-central/source/testing/talos/talos/tests/gfx/benchmarks/rasterflood_gradient.html>`__
+   * source: `rasterflood_gradient.html <https://searchfox.org/firefox-main/source/testing/talos/talos/tests/gfx/benchmarks/rasterflood_gradient.html>`__
    * type: `Page load`_
    * data: we load the rasterflood_gradient.html page ten times, computing a score each time, generating 10 data points.
    * summarization:
@@ -5638,28 +5770,7 @@ For the sample commands found below, note that the capitalization used is import
    * win_counters: None
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-g4**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-g4-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -5681,6 +5792,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-g4-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g4**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g4-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -5769,7 +5901,7 @@ For the sample commands found below, note that the capitalization used is import
       ./mach talos-test -a rasterflood_svg
 
    * contact: :jrmuizel, :jimm, and gfx
-   * source: `rasterflood_svg.html <https://searchfox.org/mozilla-central/source/testing/talos/talos/tests/gfx/benchmarks/rasterflood_svg.html>`__
+   * source: `rasterflood_svg.html <https://searchfox.org/firefox-main/source/testing/talos/talos/tests/gfx/benchmarks/rasterflood_svg.html>`__
    * type: `Page load`_
    * data: we load the rasterflood_svg.html page ten times, measuring pageload each time, generating 10 data points.
    * summarization:
@@ -5802,28 +5934,7 @@ For the sample commands found below, note that the capitalization used is import
    * win_counters: None
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-g4**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-g4-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -5845,6 +5956,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-g4-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g4**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g4-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -5977,7 +6109,7 @@ For the sample commands found below, note that the capitalization used is import
    * url: about:home
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -5987,27 +6119,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ✅
+        - ✅
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-other-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-other**
+      * - **talos-other-nv**
         - ✅
         - ✅
         - ❌
@@ -6024,6 +6140,32 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-nv**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
    .. list-table:: **test-macosx1470-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -6034,6 +6176,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-other-nv**
         - ✅
         - ✅
         - ❌
@@ -6064,6 +6211,11 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
+      * - **talos-other-nv**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
       * - **talos-other-profiling**
         - ❌
         - ❌
@@ -6086,6 +6238,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-nv**
         - ❌
         - ❌
         - ❌
@@ -6111,7 +6268,7 @@ For the sample commands found below, note that the capitalization used is import
    * profile_path: ${talos}/startup_test/sessionrestore/profile-manywindows
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -6121,27 +6278,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-sessionrestore-many-windows**
+        - ✅
+        - ✅
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-sessionrestore-many-windows-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-sessionrestore-many-windows**
+      * - **talos-sessionrestore-many-windows-nv**
         - ✅
         - ✅
         - ❌
@@ -6158,6 +6299,32 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-sessionrestore-many-windows**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-sessionrestore-many-windows-nv**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-sessionrestore-many-windows-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
    .. list-table:: **test-macosx1470-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -6168,6 +6335,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-sessionrestore-many-windows**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-sessionrestore-many-windows-nv**
         - ✅
         - ✅
         - ❌
@@ -6198,6 +6370,11 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
+      * - **talos-sessionrestore-many-windows-nv**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
       * - **talos-sessionrestore-many-windows-profiling**
         - ❌
         - ❌
@@ -6220,6 +6397,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-sessionrestore-many-windows**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-sessionrestore-many-windows-nv**
         - ❌
         - ❌
         - ❌
@@ -6246,7 +6428,7 @@ For the sample commands found below, note that the capitalization used is import
    * timeout: 300
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -6256,27 +6438,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ✅
+        - ✅
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-other-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-other**
+      * - **talos-other-nv**
         - ✅
         - ✅
         - ❌
@@ -6293,6 +6459,32 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-nv**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
    .. list-table:: **test-macosx1470-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -6303,6 +6495,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-other-nv**
         - ✅
         - ✅
         - ❌
@@ -6333,6 +6530,11 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
+      * - **talos-other-nv**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
       * - **talos-other-profiling**
         - ❌
         - ❌
@@ -6355,6 +6557,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-nv**
         - ❌
         - ❌
         - ❌
@@ -6397,7 +6604,7 @@ For the sample commands found below, note that the capitalization used is import
    * url: None
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -6407,27 +6614,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ✅
+        - ✅
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-other-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-other**
+      * - **talos-other-nv**
         - ✅
         - ✅
         - ❌
@@ -6444,6 +6635,32 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-nv**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
    .. list-table:: **test-macosx1470-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -6454,6 +6671,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-other-nv**
         - ✅
         - ✅
         - ❌
@@ -6484,6 +6706,11 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
+      * - **talos-other-nv**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
       * - **talos-other-profiling**
         - ❌
         - ❌
@@ -6506,6 +6733,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-nv**
         - ❌
         - ❌
         - ❌
@@ -6539,7 +6771,7 @@ For the sample commands found below, note that the capitalization used is import
    * url: None
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -6549,27 +6781,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ✅
+        - ✅
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-other-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-other**
+      * - **talos-other-nv**
         - ✅
         - ✅
         - ❌
@@ -6586,6 +6802,32 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-nv**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
    .. list-table:: **test-macosx1470-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -6596,6 +6838,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-other-nv**
         - ✅
         - ✅
         - ❌
@@ -6626,6 +6873,11 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
+      * - **talos-other-nv**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
       * - **talos-other-profiling**
         - ❌
         - ❌
@@ -6648,6 +6900,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-nv**
         - ❌
         - ❌
         - ❌
@@ -6690,7 +6947,7 @@ For the sample commands found below, note that the capitalization used is import
    * webextensions_folder: ${talos}/webextensions
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -6702,25 +6959,25 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-realworld-webextensions**
         - ❌
         - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-realworld-webextensions**
-        - ✅
-        - ✅
         - ❌
         - ❌
       * - **talos-realworld-webextensions-profiling**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-realworld-webextensions**
         - ❌
         - ❌
         - ❌
@@ -6846,7 +7103,7 @@ For the sample commands found below, note that the capitalization used is import
    * unit: ms
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -6856,27 +7113,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ✅
+        - ✅
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-other-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-other**
+      * - **talos-other-nv**
         - ✅
         - ✅
         - ❌
@@ -6893,6 +7134,32 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-nv**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
    .. list-table:: **test-macosx1470-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -6903,6 +7170,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-other-nv**
         - ✅
         - ✅
         - ❌
@@ -6933,6 +7205,11 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
+      * - **talos-other-nv**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
       * - **talos-other-profiling**
         - ❌
         - ❌
@@ -6955,6 +7232,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-nv**
         - ❌
         - ❌
         - ❌
@@ -7053,7 +7335,7 @@ For the sample commands found below, note that the capitalization used is import
    * unit: ms
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -7063,6 +7345,16 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-tabswitch**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-tabswitch-nv**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-tabswitch-profiling**
         - ❌
         - ❌
         - ❌
@@ -7074,7 +7366,7 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -7088,7 +7380,7 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
         - ❌
         - ❌
-      * - **talos-tabswitch-profiling**
+      * - **talos-tabswitch-nv**
         - ❌
         - ❌
         - ❌
@@ -7110,6 +7402,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-tabswitch**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-tabswitch-nv**
         - ❌
         - ❌
         - ❌
@@ -7140,6 +7437,11 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
         - ❌
         - ❌
+      * - **talos-tabswitch-nv**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
       * - **talos-tabswitch-profiling**
         - ❌
         - ❌
@@ -7162,6 +7464,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-tabswitch**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-tabswitch-nv**
         - ❌
         - ❌
         - ❌
@@ -7260,28 +7567,7 @@ For the sample commands found below, note that the capitalization used is import
    * win_counters: None
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-svgr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-svgr-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -7303,6 +7589,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-svgr-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -7431,7 +7738,7 @@ For the sample commands found below, note that the capitalization used is import
    * xperf_user_providers: ['Mozilla Generic Provider', 'Microsoft-Windows-TCPIP']
    * **Test Task**:
 
-   .. list-table:: **test-windows11-64-24h2-shippable/opt**
+   .. list-table:: **test-windows11-64-25h2-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -7452,7 +7759,7 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
-   .. list-table:: **test-windows11-64-24h2/opt**
+   .. list-table:: **test-windows11-64-25h2/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -7588,28 +7895,7 @@ For the sample commands found below, note that the capitalization used is import
    * win_counters: ['% Processor Time']
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-tp5o**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-tp5o-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -7631,6 +7917,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-tp5o-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-tp5o**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-tp5o-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -7810,28 +8117,7 @@ For the sample commands found below, note that the capitalization used is import
    * unit: 1/FPS
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-g1**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-g1-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -7853,6 +8139,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-g1-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g1**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g1-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -7945,28 +8252,7 @@ For the sample commands found below, note that the capitalization used is import
    * webextensions: ${talos}/webextensions/dummy/dummy.xpi
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-g5**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-g5-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -7988,6 +8274,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-g5-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g5**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g5-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -8129,6 +8436,11 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
         - ❌
         - ❌
+      * - **talos-chrome-nv**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
       * - **talos-chrome-swr**
         - ❌
         - ❌
@@ -8150,14 +8462,30 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-chrome-profiling**
-        - ❌
-        - ❌
+      * - **talos-chrome-nv**
+        - ✅
+        - ✅
         - ❌
         - ❌
       * - **talos-chrome-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64-shippable/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-chrome-profiling**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -8172,6 +8500,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-chrome**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-chrome-nv**
         - ✅
         - ✅
         - ❌
@@ -8202,6 +8535,11 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
+      * - **talos-chrome-nv**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
       * - **talos-chrome-profiling**
         - ❌
         - ❌
@@ -8224,6 +8562,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-chrome**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-chrome-nv**
         - ❌
         - ❌
         - ❌
@@ -8280,7 +8623,7 @@ For the sample commands found below, note that the capitalization used is import
    * xperf_counters: []
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -8290,27 +8633,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ✅
+        - ✅
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-other-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-other**
+      * - **talos-other-nv**
         - ✅
         - ✅
         - ❌
@@ -8327,6 +8654,32 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-nv**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
    .. list-table:: **test-macosx1470-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -8337,6 +8690,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-other-nv**
         - ✅
         - ✅
         - ❌
@@ -8367,6 +8725,11 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
+      * - **talos-other-nv**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
       * - **talos-other-profiling**
         - ❌
         - ❌
@@ -8389,6 +8752,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-nv**
         - ❌
         - ❌
         - ❌
@@ -8428,28 +8796,7 @@ For the sample commands found below, note that the capitalization used is import
    * webextensions: ${talos}/webextensions/dummy/dummy.xpi
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-g5**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-g5-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -8471,6 +8818,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-g5-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g5**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g5-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -8601,28 +8969,7 @@ For the sample commands found below, note that the capitalization used is import
    * unit: ms
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-svgr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-svgr-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -8644,6 +8991,161 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-svgr-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-macosx1470-64-shippable/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-svgr-profiling**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows11-64-24h2-shippable/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-svgr-profiling**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows11-64-24h2/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+
+.. dropdown:: tscrollx_paint_skip
+   :class-container: anchor-id-tscrollx_paint_skip
+
+   * Command to Run Locally
+
+   .. code-block::
+
+      ./mach talos-test -a tscrollx_paint_skip
+
+   * TODO: Add a description. See this bug: https://bugzilla.mozilla.org/show_bug.cgi?id=2036344
+   * preferences: {'layout.frame_rate': 0, 'docshell.event_starvation_delay_hint': 1, 'dom.send_after_paint_to_content': True, 'apz.paint_skipping.enabled': True, 'layout.css.scroll-snap.spring-constant': "'10'", 'layout.css.scroll-behavior.same-physics-as-user-input': False, 'toolkit.framesRecording.bufferSize': 10000}
+   * **Test Task**:
+
+   .. list-table:: **test-linux2404-64-shippable/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-svgr-profiling**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -8759,28 +9261,7 @@ For the sample commands found below, note that the capitalization used is import
    * unit: ms
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-svgr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-svgr-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -8802,6 +9283,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-svgr-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -8948,28 +9450,7 @@ For the sample commands found below, note that the capitalization used is import
    * unit: ms
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-svgr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-svgr-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -8991,6 +9472,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-svgr-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -9126,28 +9628,7 @@ For the sample commands found below, note that the capitalization used is import
    * unit: ms
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-svgr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-svgr-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -9169,6 +9650,27 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-svgr-swr**
         - ✅
         - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr**
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -9286,7 +9788,7 @@ For the sample commands found below, note that the capitalization used is import
    * unit: ms
    * **Test Task**:
 
-   .. list-table:: **test-linux1804-64-qr/opt**
+   .. list-table:: **test-linux2404-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -9296,27 +9798,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ✅
+        - ✅
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-other-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-linux1804-64-shippable-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-other**
+      * - **talos-other-nv**
         - ✅
         - ✅
         - ❌
@@ -9333,6 +9819,32 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-nv**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
    .. list-table:: **test-macosx1470-64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -9343,6 +9855,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-other-nv**
         - ✅
         - ✅
         - ❌
@@ -9373,6 +9890,11 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
+      * - **talos-other-nv**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
       * - **talos-other-profiling**
         - ❌
         - ❌
@@ -9395,6 +9917,11 @@ For the sample commands found below, note that the capitalization used is import
         - mozilla-release
         - mozilla-beta
       * - **talos-other**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-nv**
         - ❌
         - ❌
         - ❌

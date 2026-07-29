@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -78,7 +76,7 @@ bool IsNotificationForbiddenFor(nsIPrincipal* aPrincipal,
       glean::web_notification::insecure_context_permission_request.Add();
       nsContentUtils::ReportToConsole(
           nsIScriptError::errorFlag, "DOM"_ns, aRequestorDoc,
-          nsContentUtils::eDOM_PROPERTIES,
+          PropertiesFile::DOM_PROPERTIES,
           "NotificationsInsecureRequestIsForbidden");
     }
     return true;
@@ -111,7 +109,7 @@ bool IsNotificationForbiddenFor(nsIPrincipal* aPrincipal,
   if (aRequestorDoc) {
     nsContentUtils::ReportToConsole(
         nsIScriptError::errorFlag, "DOM"_ns, aRequestorDoc,
-        nsContentUtils::eDOM_PROPERTIES,
+        PropertiesFile::DOM_PROPERTIES,
         "NotificationsCrossOriginIframeRequestIsForbidden");
   }
   return !StaticPrefs::dom_webnotifications_allowcrossoriginiframe();

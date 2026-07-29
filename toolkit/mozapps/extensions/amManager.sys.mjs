@@ -24,18 +24,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
   false
 );
 
-// The old XPInstall error codes
-const EXECUTION_ERROR = -203;
-const CANT_READ_ARCHIVE = -207;
-const USER_CANCELLED = -210;
-const DOWNLOAD_ERROR = -228;
-const UNSUPPORTED_TYPE = -244;
-const SUCCESS = 0;
-
-const MSG_INSTALL_ENABLED = "WebInstallerIsInstallEnabled";
-const MSG_INSTALL_ADDON = "WebInstallerInstallAddonFromWebpage";
-const MSG_INSTALL_CALLBACK = "WebInstallerInstallCallback";
-
 const MSG_PROMISE_REQUEST = "WebAPIPromiseRequest";
 const MSG_PROMISE_RESULT = "WebAPIPromiseResult";
 const MSG_INSTALL_EVENT = "WebAPIInstallEvent";
@@ -50,12 +38,9 @@ export function amManager() {
     "resource://gre/modules/AddonManager.sys.mjs"
   ));
 
-  Services.mm.addMessageListener(MSG_INSTALL_ENABLED, this);
   Services.mm.addMessageListener(MSG_PROMISE_REQUEST, this);
   Services.mm.addMessageListener(MSG_INSTALL_CLEANUP, this);
   Services.mm.addMessageListener(MSG_ADDON_EVENT_REQ, this);
-
-  Services.ppmm.addMessageListener(MSG_INSTALL_ADDON, this);
 
   Services.obs.addObserver(this, "message-manager-close");
   Services.obs.addObserver(this, "message-manager-disconnect");
@@ -78,91 +63,6 @@ amManager.prototype = {
         this.childClosed(aSubject);
         break;
     }
-  },
-
-  installAddonFromWebpage(aPayload, aBrowser, aCallback) {
-    let retval = true;
-
-    const { mimetype, triggeringPrincipal, hash, icon, name, uri } = aPayload;
-
-    // NOTE: consider removing this call to isInstallAllowed from here, later it is going to be called
-    // again from inside AddonManager.installAddonFromWebpage as part of the block/allow logic.
-    //
-    // The sole purpose of the call here seems to be "clearing the optional InstallTrigger callback",
-    // which seems to be actually wrong if we are still proceeding to call getInstallForURL and the same
-    // logic used to block the install flow using the exact same method call later on.
-    if (!AddonManager.isInstallAllowed(mimetype, triggeringPrincipal)) {
-      aCallback = null;
-      retval = false;
-    }
-
-    let telemetryInfo = {
-      source: AddonManager.getInstallSourceFromHost(aPayload.sourceHost),
-      sourceURL: aPayload.sourceURL,
-    };
-
-    if ("method" in aPayload) {
-      telemetryInfo.method = aPayload.method;
-    }
-
-    AddonManager.getInstallForURL(uri, {
-      hash,
-      name,
-      icon,
-      browser: aBrowser,
-      triggeringPrincipal,
-      telemetryInfo,
-      sendCookies: true,
-    }).then(aInstall => {
-      function callCallback(status) {
-        try {
-          aCallback?.onInstallEnded(uri, status);
-        } catch (e) {
-          Cu.reportError(e);
-        }
-      }
-
-      if (!aInstall) {
-        callCallback(UNSUPPORTED_TYPE);
-        return;
-      }
-
-      if (aCallback) {
-        aInstall.addListener({
-          onDownloadCancelled() {
-            callCallback(USER_CANCELLED);
-          },
-
-          onDownloadFailed(aInstall) {
-            if (aInstall.error == AddonManager.ERROR_CORRUPT_FILE) {
-              callCallback(CANT_READ_ARCHIVE);
-            } else {
-              callCallback(DOWNLOAD_ERROR);
-            }
-          },
-
-          onInstallFailed() {
-            callCallback(EXECUTION_ERROR);
-          },
-
-          onInstallEnded() {
-            callCallback(SUCCESS);
-          },
-        });
-      }
-
-      AddonManager.installAddonFromWebpage(
-        mimetype,
-        aBrowser,
-        triggeringPrincipal,
-        aInstall,
-        {
-          hasCrossOriginAncestor: aPayload.hasCrossOriginAncestor,
-        }
-      );
-    });
-
-    return retval;
   },
 
   notify() {
@@ -202,39 +102,10 @@ amManager.prototype = {
     }
   },
 
-  /**
-   * messageManager callback function.
-   *
-   * Listens to requests from child processes for InstallTrigger
-   * activity, and sends back callbacks.
-   */
   receiveMessage(aMessage) {
     let payload = aMessage.data;
 
     switch (aMessage.name) {
-      case MSG_INSTALL_ENABLED:
-        return AddonManager.isInstallEnabled(payload.mimetype);
-
-      case MSG_INSTALL_ADDON: {
-        let browser = payload.browsingContext.top.embedderElement;
-
-        let callback = null;
-        if (payload.callbackID != -1) {
-          let mm = browser.messageManager;
-          callback = {
-            onInstallEnded(url, status) {
-              mm.sendAsyncMessage(MSG_INSTALL_CALLBACK, {
-                callbackID: payload.callbackID,
-                url,
-                status,
-              });
-            },
-          };
-        }
-
-        return this.installAddonFromWebpage(payload, browser, callback);
-      }
-
       case MSG_PROMISE_REQUEST: {
         if (
           !lazy.extensionsWebAPITesting &&

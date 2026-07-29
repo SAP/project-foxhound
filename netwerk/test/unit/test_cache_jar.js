@@ -68,8 +68,6 @@ function run_test() {
 
   do_test_pending();
 
-  Services.prefs.setBoolPref("network.http.rcwn.enabled", false);
-
   httpserv = new HttpServer();
   httpserv.registerPathHandler("/cached", cached_handler);
   httpserv.start(-1);

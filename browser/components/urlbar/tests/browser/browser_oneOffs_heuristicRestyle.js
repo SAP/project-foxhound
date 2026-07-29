@@ -252,9 +252,11 @@ add_setup(async function () {
   let engine = SearchService.getEngineByName(TEST_DEFAULT_ENGINE_NAME);
   await SearchService.moveEngine(engine, 0);
 
-  for (let i = 0; i < 5; i++) {
-    await PlacesTestUtils.addVisits(HISTORY_URL);
-  }
+  await PlacesTestUtils.addVisits({
+    uri: HISTORY_URL,
+    transition: PlacesUtils.history.TRANSITION_TYPED,
+  });
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
   await PlacesUtils.keywords.insert({
     keyword: KEYWORD,

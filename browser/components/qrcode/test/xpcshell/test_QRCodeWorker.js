@@ -12,6 +12,9 @@ const { QRCodeWorker } = ChromeUtils.importESModule(
   "moz-src:///browser/components/qrcode/QRCodeWorker.sys.mjs"
 );
 
+const CELL_SIZE = 20;
+const MARGIN = 4 * CELL_SIZE;
+
 add_task(async function test_worker_instantiation() {
   info("Testing QRCodeWorker can be instantiated");
 
@@ -22,46 +25,98 @@ add_task(async function test_worker_instantiation() {
   await worker.terminate();
 });
 
-add_task(async function test_worker_responds_to_ping() {
-  info("Testing QRCodeWorker responds to ping message");
+add_task(async function test_worker_generateQRMatrix() {
+  info("Testing QRCodeWorker generateQRMatrix returns matrix data");
+
   const worker = new QRCodeWorker();
+  let result;
+  try {
+    result = await worker.generateQRMatrix("https://mozilla.org");
+  } finally {
+    await worker.terminate();
+  }
 
-  // Test ping functionality
-  const response = await worker.ping();
-  Assert.equal(response, "pong", "Worker should respond with 'pong' to ping");
-
-  // Clean up
-  await worker.terminate();
+  Assert.ok(Array.isArray(result.matrix), "Result should have a matrix array");
+  Assert.equal(result.src, undefined, "Result should not include image data");
+  Assert.equal(
+    result.width,
+    undefined,
+    "Result should not include image width"
+  );
+  Assert.equal(
+    result.height,
+    undefined,
+    "Result should not include image height"
+  );
+  Assert.greater(result.dotCount, 0, "Result should have a positive dotCount");
+  Assert.equal(
+    result.matrix.length,
+    result.dotCount,
+    "matrix should have dotCount rows"
+  );
+  Assert.equal(
+    result.matrix[0].length,
+    result.dotCount,
+    "matrix rows should have dotCount columns"
+  );
+  Assert.ok(
+    result.matrix[0][0],
+    "top-left finder pattern corner should be dark"
+  );
 });
 
-add_task(async function test_worker_can_load_qrcode_library() {
-  info("Testing QRCodeWorker can load QRCode library");
+add_task(async function test_worker_getLogoPlacement() {
+  info("Testing QRCodeWorker getLogoPlacement returns valid placement data");
 
   const worker = new QRCodeWorker();
+  let placement;
+  try {
+    const { dotCount } = await worker.generateQRMatrix("https://mozilla.org");
+    placement = await worker.getLogoPlacement(dotCount, MARGIN);
+  } finally {
+    await worker.terminate();
+  }
 
-  // Test that the worker can check if the QRCode library is available
-  const hasLibrary = await worker.hasQRCodeLibrary();
-  Assert.ok(hasLibrary, "Worker should have access to QRCode library");
-
-  // Clean up
-  await worker.terminate();
+  Assert.strictEqual(
+    typeof placement.centerX,
+    "number",
+    "placement should have centerX"
+  );
+  Assert.strictEqual(
+    typeof placement.centerY,
+    "number",
+    "placement should have centerY"
+  );
+  Assert.strictEqual(
+    typeof placement.logoSize,
+    "number",
+    "placement should have logoSize"
+  );
+  Assert.strictEqual(
+    typeof placement.showLogo,
+    "boolean",
+    "placement should have showLogo"
+  );
 });
 
-add_task(async function test_worker_can_generate_simple_qrcode() {
-  info("Testing QRCodeWorker can generate a simple QR code");
+add_task(async function test_worker_getLogoPlacement_small_qr() {
+  info("Testing QRCodeWorker can place a logo on a version 1 QR code");
 
   const worker = new QRCodeWorker();
+  let placement;
+  try {
+    placement = await worker.getLogoPlacement(
+      21, // QR version 1 = 17 + 4×1 modules
+      MARGIN
+    );
+  } finally {
+    await worker.terminate();
+  }
 
-  // Test generating a very simple QR code
-  const testUrl = "https://mozilla.org";
-  const result = await worker.generateQRCode(testUrl);
-
-  Assert.ok(result, "Should get a result from generateQRCode");
-  Assert.ok(result.width, "Result should have a width");
-  Assert.ok(result.height, "Result should have a height");
-  Assert.ok(result.src, "Result should have a src data URI");
-  Assert.ok(result.src.startsWith("data:image/"), "src should be a data URI");
-
-  // Clean up
-  await worker.terminate();
+  Assert.ok(placement.showLogo, "Version 1 QR codes should still show a logo");
+  Assert.greaterOrEqual(
+    placement.logoSize,
+    6 * CELL_SIZE,
+    "Small QR codes should use at least the minimum viable logo size"
+  );
 });

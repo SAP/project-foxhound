@@ -1,12 +1,10 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "EMEDecoderModule.h"
 
-#include <inttypes.h>
+#include <stdint.h>
 
 #include "Adts.h"
 #include "BlankDecoderModule.h"
@@ -20,7 +18,7 @@
 #include "PDMFactory.h"
 #include "mozilla/CDMProxy.h"
 #include "mozilla/EMEUtils.h"
-#include "mozilla/RemoteCDMChild.h"
+#include "mozilla/RemoteCDMProxy.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/UniquePtr.h"
 #include "nsClassHashtable.h"
@@ -46,9 +44,9 @@ class ADTSSampleConverter {
         ,
         mProfile(aInfo.mProfile < 1 || aInfo.mProfile > 4 ? 2 : aInfo.mProfile),
         mFrequencyIndex(ADTS::GetFrequencyIndex(aInfo.mRate).unwrapOr(255)) {
-    EME_LOG("ADTSSampleConvertor(): aInfo.mProfile=%" PRIi8
-            " aInfo.mExtendedProfile=%" PRIi8,
-            aInfo.mProfile, aInfo.mExtendedProfile);
+    EME_LOG(
+        "ADTSSampleConvertor(): aInfo.mProfile={} aInfo.mExtendedProfile={}",
+        aInfo.mProfile, aInfo.mExtendedProfile);
     if (aInfo.mProfile < 1 || aInfo.mProfile > 4) {
       EME_LOG(
           "ADTSSampleConvertor(): Profile not in [1, 4]! Samples will "
@@ -92,7 +90,7 @@ class EMEDecryptor final : public MediaDataDecoder,
     MOZ_ASSERT(!mIsShutdown);
     mThread = GetCurrentSerialEventTarget();
     uint32_t maxThroughputMs = StaticPrefs::media_eme_max_throughput_ms();
-    EME_LOG("EME max-throughput-ms=%" PRIu32, maxThroughputMs);
+    EME_LOG("EME max-throughput-ms={}", maxThroughputMs);
     mThroughputLimiter.emplace(mThread, maxThroughputMs);
 
     return mDecoder->Init();
@@ -399,7 +397,7 @@ EMEDecoderModule::AsyncCreateDecoder(const CreateDecoderParams& aParams) {
 
   // If the CDMProxy is a RemoteCDMChild actor, then we know that the CDM
   // functionality will be exercised by the decoder in the remote process.
-  if (auto* cdm = static_cast<PRemoteCDMActor*>(mProxy->AsRemoteCDMChild())) {
+  if (auto* cdm = static_cast<PRemoteCDMActor*>(mProxy->AsRemoteCDMProxy())) {
     return mPDM->CreateDecoder(CreateDecoderParams{aParams, cdm});
   }
 
@@ -413,10 +411,21 @@ EMEDecoderModule::AsyncCreateDecoder(const CreateDecoderParams& aParams) {
                                                                       __func__);
     }
 
-    if (!SupportsMimeType(aParams.mConfig.mMimeType, nullptr).isEmpty()) {
+    const bool gmpSupported =
+        !SupportsMimeType(aParams.mConfig.mMimeType, nullptr).isEmpty();
+
+    // Pre-create the GMP decoder wrapper before aParams is moved into the
+    // resolve lambda below. CreateDecoderWrapper does not call Init(), so
+    // creating an unused wrapper is safe.
+    RefPtr<MediaDataDecoder> gmpFallback =
+        gmpSupported ? CreateDecoderWrapper(mProxy, aParams) : nullptr;
+
+    if (gmpSupported &&
+        !StaticPrefs::media_eme_video_prefer_platform_decoder()) {
       // GMP decodes. Assume that means it can decrypt too.
+      EME_LOG("EMEDecoderModule::AsyncCreateDecoder() using GMP decoder.");
       return EMEDecoderModule::CreateDecoderPromise::CreateAndResolve(
-          CreateDecoderWrapper(mProxy, aParams), __func__);
+          gmpFallback, __func__);
     }
 
     RefPtr<EMEDecoderModule::CreateDecoderPromise> p =
@@ -425,13 +434,23 @@ EMEDecoderModule::AsyncCreateDecoder(const CreateDecoderParams& aParams) {
             [self = RefPtr{this},
              params = CreateDecoderParamsForAsync(aParams)](
                 RefPtr<MediaDataDecoder>&& aDecoder) {
+              EME_LOG(
+                  "EMEDecoderModule::AsyncCreateDecoder() using platform "
+                  "decoder.");
               RefPtr<MediaDataDecoder> emeDecoder(
                   new EMEDecryptor(aDecoder, self->mProxy, params.mType,
                                    params.mOnWaitingForKeyEvent));
               return EMEDecoderModule::CreateDecoderPromise::CreateAndResolve(
                   emeDecoder, __func__);
             },
-            [](const MediaResult& aError) {
+            [gmpFallback](const MediaResult& aError) {
+              if (gmpFallback) {
+                EME_LOG(
+                    "EMEDecoderModule::AsyncCreateDecoder() platform decoder "
+                    "failed, falling back to GMP decoder.");
+                return EMEDecoderModule::CreateDecoderPromise::CreateAndResolve(
+                    gmpFallback, __func__);
+              }
               return EMEDecoderModule::CreateDecoderPromise::CreateAndReject(
                   aError, __func__);
             });

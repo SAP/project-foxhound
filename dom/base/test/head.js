@@ -148,6 +148,9 @@ async function jsCacheContentTask(test, item) {
   if (item.sri) {
     script.integrity = item.sri;
   }
+  if (item.nonce) {
+    script.nonce = item.nonce;
+  }
   script.src = item.file;
   content.document.body.appendChild(script);
 

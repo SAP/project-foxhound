@@ -69,8 +69,7 @@ void MediaTransportHandlerIPC::Initialize() {
               [this, self = RefPtr<MediaTransportHandlerIPC>(this)](
                   mozilla::ipc::Endpoint<mozilla::dom::PMediaTransportChild>&&
                       aEndpoint) {
-                RefPtr<MediaTransportChild> child =
-                    new MediaTransportChild(this);
+                RefPtr child = MakeRefPtr<MediaTransportChild>(this);
                 aEndpoint.Bind(child);
                 mChild = child;
 
@@ -173,18 +172,9 @@ void MediaTransportHandlerIPC::CreateIceCtx(const std::string& aName) {
 nsresult MediaTransportHandlerIPC::SetIceConfig(
     const nsTArray<dom::RTCIceServer>& aIceServers,
     dom::RTCIceTransportPolicy aIcePolicy) {
-  // Run some validation on this side of the IPC boundary so we can return
-  // errors synchronously. We don't actually use the results. It might make
-  // sense to move this check to PeerConnection and have this API take the
-  // converted form, but we would need to write IPC serialization code for
-  // the NrIce*Server types.
-  std::vector<NrIceStunServer> stunServers;
-  std::vector<NrIceTurnServer> turnServers;
-  nsresult rv = ConvertIceServers(aIceServers, &stunServers, &turnServers);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
+  // PeerConnectionImpl validates before calling this.
+  // The socket process will re-validate when it receives the RTCIceServer
+  // array, so no pre-validation is needed here.
   mInitPromise->Then(
       mThread, __func__,
       [=, this, iceServers = aIceServers.Clone(),
@@ -299,7 +289,8 @@ void MediaTransportHandlerIPC::RemoveTransportsExcept(
                                         aTransportIds.end());
   mInitPromise->Then(
       mThread, __func__,
-      [=, this, self = RefPtr<MediaTransportHandlerIPC>(this)](bool /*dummy*/) {
+      [this, self = RefPtr<MediaTransportHandlerIPC>(this),
+       transportIds = std::move(transportIds)](bool /*dummy*/) {
         if (mChild) {
           mChild->SendRemoveTransportsExcept(transportIds);
         }
@@ -402,6 +393,15 @@ mozilla::ipc::IPCResult MediaTransportChild::RecvOnCandidate(
   return ipc::IPCResult::Ok();
 }
 
+mozilla::ipc::IPCResult MediaTransportChild::RecvOnCandidateError(
+    IceCandidateErrorInfo&& errorInfo) {
+  MutexAutoLock lock(mMutex);
+  if (mUser) {
+    mUser->OnCandidateError(std::move(errorInfo));
+  }
+  return ipc::IPCResult::Ok();
+}
+
 mozilla::ipc::IPCResult MediaTransportChild::RecvOnAlpnNegotiated(
     const string& alpn) {
   MutexAutoLock lock(mMutex);
@@ -412,21 +412,19 @@ mozilla::ipc::IPCResult MediaTransportChild::RecvOnAlpnNegotiated(
 }
 
 mozilla::ipc::IPCResult MediaTransportChild::RecvOnGatheringStateChange(
-    const string& transportId, const int& state) {
+    const string& transportId, const RTCIceGathererState& state) {
   MutexAutoLock lock(mMutex);
   if (mUser) {
-    mUser->OnGatheringStateChange(transportId,
-                                  static_cast<dom::RTCIceGathererState>(state));
+    mUser->OnGatheringStateChange(transportId, state);
   }
   return ipc::IPCResult::Ok();
 }
 
 mozilla::ipc::IPCResult MediaTransportChild::RecvOnConnectionStateChange(
-    const string& transportId, const int& state) {
+    const string& transportId, const RTCIceTransportState& state) {
   MutexAutoLock lock(mMutex);
   if (mUser) {
-    mUser->OnConnectionStateChange(
-        transportId, static_cast<dom::RTCIceTransportState>(state));
+    mUser->OnConnectionStateChange(transportId, state);
   }
   return ipc::IPCResult::Ok();
 }
@@ -451,21 +449,20 @@ mozilla::ipc::IPCResult MediaTransportChild::RecvOnEncryptedSending(
 }
 
 mozilla::ipc::IPCResult MediaTransportChild::RecvOnStateChange(
-    const string& transportId, const int& state) {
+    const string& transportId, const TransportLayer::State& state,
+    nsTArray<nsTArray<uint8_t>>&& remoteCerts) {
   MutexAutoLock lock(mMutex);
   if (mUser) {
-    mUser->OnStateChange(transportId,
-                         static_cast<TransportLayer::State>(state));
+    mUser->OnStateChange(transportId, state, std::move(remoteCerts));
   }
   return ipc::IPCResult::Ok();
 }
 
 mozilla::ipc::IPCResult MediaTransportChild::RecvOnRtcpStateChange(
-    const string& transportId, const int& state) {
+    const string& transportId, const TransportLayer::State& state) {
   MutexAutoLock lock(mMutex);
   if (mUser) {
-    mUser->OnRtcpStateChange(transportId,
-                             static_cast<TransportLayer::State>(state));
+    mUser->OnRtcpStateChange(transportId, state);
   }
   return ipc::IPCResult::Ok();
 }

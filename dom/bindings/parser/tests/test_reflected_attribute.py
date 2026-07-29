@@ -15,13 +15,12 @@ def WebIDLTest(parser, harness):
 
     def parseFrozenArrayAttribute(innerType):
         parseWithNode(
-            """
-            interface ReflectedAttribute {
+            f"""
+            interface ReflectedAttribute {{
                [Frozen, ReflectedHTMLAttributeReturningFrozenArray]
-               attribute sequence<%s>? reflectedHTMLAttribute;
-            };
+               attribute sequence<{innerType}>? reflectedHTMLAttribute;
+            }};
             """
-            % innerType
         )
 
         results = parser.finish()

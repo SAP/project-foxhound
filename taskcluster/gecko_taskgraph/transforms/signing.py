@@ -5,13 +5,15 @@
 Transform the signing task into an actual task description.
 """
 
+from typing import Optional
+
+import msgspec
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
 from taskgraph.util.keyed_by import evaluate_keyed_by
-from taskgraph.util.schema import LegacySchema, taskref_or_string
-from voluptuous import Optional, Required
+from taskgraph.util.schema import Schema, taskref_or_string_msgspec
 
-from gecko_taskgraph.transforms.task import task_description_schema
+from gecko_taskgraph.transforms.task import TaskDescriptionSchema
 from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
 from gecko_taskgraph.util.scriptworker import (
     add_scope_prefix,
@@ -20,42 +22,44 @@ from gecko_taskgraph.util.scriptworker import (
 
 transforms = TransformSequence()
 
-signing_description_schema = LegacySchema({
+
+class UpstreamArtifactSchema(
+    msgspec.Struct, kw_only=True, rename="camel", forbid_unknown_fields=True
+):
+    # taskId of the task with the artifact
+    task_id: taskref_or_string_msgspec
+    # type of signing task (for CoT)
+    task_type: str
+    # Paths to the artifacts to sign
+    paths: list[str]
+    # Signing formats to use on each of the paths
+    formats: list[str]
+
+
+class SigningDescriptionSchema(Schema, kw_only=True):
     # Artifacts from dep task to sign - Sync with taskgraph/transforms/task.py
     # because this is passed directly into the signingscript worker
-    Required("upstream-artifacts"): [
-        {
-            # taskId of the task with the artifact
-            Required("taskId"): taskref_or_string,
-            # type of signing task (for CoT)
-            Required("taskType"): str,
-            # Paths to the artifacts to sign
-            Required("paths"): [str],
-            # Signing formats to use on each of the paths
-            Required("formats"): [str],
-        }
-    ],
+    upstream_artifacts: list[UpstreamArtifactSchema]
     # attributes for this task
-    Optional("attributes"): {str: object},
+    attributes: Optional[dict[str, object]] = None
     # unique label to describe this signing task, defaults to {dep.label}-signing
-    Optional("label"): str,
+    label: Optional[str] = None
     # treeherder is allowed here to override any defaults we use for signing.  See
     # taskcluster/gecko_taskgraph/transforms/task.py for the schema details, and the
     # below transforms for defaults of various values.
-    Optional("treeherder"): task_description_schema["treeherder"],
+    treeherder: TaskDescriptionSchema.__annotations__["treeherder"] = None
     # Routes specific to this task, if defined
-    Optional("routes"): [str],
-    Optional("shipping-phase"): task_description_schema["shipping-phase"],
-    Optional("shipping-product"): task_description_schema["shipping-product"],
-    Required("dependencies"): task_description_schema["dependencies"],
-    Optional("extra"): {str: object},
+    routes: Optional[list[str]] = None
+    shipping_phase: TaskDescriptionSchema.__annotations__["shipping_phase"] = None
+    shipping_product: TaskDescriptionSchema.__annotations__["shipping_product"] = None
+    dependencies: TaskDescriptionSchema.__annotations__["dependencies"] = None
+    extra: Optional[dict[str, object]] = None
     # Max number of partner repacks per chunk
-    Optional("repacks-per-chunk"): int,
+    repacks_per_chunk: Optional[int] = None
     # Override the default priority for the project
-    Optional("priority"): task_description_schema["priority"],
-    Optional("task-from"): task_description_schema["task-from"],
-    Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
-})
+    priority: TaskDescriptionSchema.__annotations__["priority"] = None
+    task_from: TaskDescriptionSchema.__annotations__["task_from"] = None
+    run_on_repo_type: TaskDescriptionSchema.__annotations__["run_on_repo_type"] = None
 
 
 def get_locales_description(attributes, default):
@@ -75,7 +79,7 @@ def delete_name(config, jobs):
         yield job
 
 
-transforms.add_validate(signing_description_schema)
+transforms.add_validate(SigningDescriptionSchema)
 
 
 @transforms.add
@@ -117,7 +121,8 @@ def make_task_description(config, jobs):
             treeherder = job.get("treeherder", {})
 
             dep_th_platform = (
-                dep_job.task.get("extra", {})
+                dep_job.task
+                .get("extra", {})
                 .get("treeherder", {})
                 .get("machine", {})
                 .get("platform", "")
@@ -192,8 +197,8 @@ def make_task_description(config, jobs):
         if dep_job.kind in task["dependencies"]:
             task["if-dependencies"] = [dep_job.kind]
 
-        # build-mac-{signing,notarization} uses signingscript instead of iscript
-        if "macosx" in build_platform and config.kind.endswith("-mac-notarization"):
+        # Mac notarization uses signingscript instead of iscript
+        if "macosx" in build_platform and config.kind.endswith("-notarization"):
             task["worker"]["signing-type"] = "release-apple-notarization"
             task["scopes"] = [
                 add_scope_prefix(config, "signing:cert:release-apple-notarization")

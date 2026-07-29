@@ -47,9 +47,9 @@ extensions = [
     "sphinxcontrib.jquery",
     "sphinxcontrib.mermaid",
     "sphinx_copybutton",
-    "sphinx_markdown_tables",
     "sphinx_design",
     "bzlink",
+    "etp_matrix",
 ]
 
 myst_enable_extensions = [
@@ -123,6 +123,14 @@ moz_project_name = "main"
 
 html_show_copyright = False
 
+# GitHub integration for "View page source" links
+html_context = {
+    "display_github": True,
+    "github_user": "mozilla-firefox",
+    "github_repo": "firefox",
+    "github_version": "main",
+}
+
 # Only run autosection for the page title.
 # Otherwise, we have a huge number of duplicate links.
 # For example, the page https://firefox-source-docs.mozilla.org/code-quality/lint/
@@ -137,6 +145,38 @@ def install_sphinx_design(app, pagename, templatename, context, doctree):
         app.add_css_file("sphinx_design.css")
 
 
+def add_github_source_link(app, pagename, templatename, context, doctree):
+    """Add the original source file path to the context for GitHub links.
+
+    Docs are staged from various source locations (e.g. gfx/docs/, js/src/doc/)
+    into a flat structure (e.g. gfx/, js/) for building. We need to reverse this
+    mapping so GitHub links point to the actual source files in the repo.
+    """
+    from moztreedocs import manager
+
+    if not manager.trees:
+        return
+
+    source_suffix = context.get("page_source_suffix", "")
+    staging_relpath = pagename + source_suffix
+
+    # manager.trees maps staging prefixes to source prefixes,
+    # e.g. {"gfx": "gfx/docs", "js": "js/src/doc"}.
+    # Replace the staging prefix with the original source prefix to recover
+    # the real repo path, e.g. "gfx/Silk.rst" -> "gfx/docs/Silk.rst".
+    for staging_prefix, original_prefix in manager.trees.items():
+        if staging_relpath.startswith(staging_prefix + "/"):
+            # Strip the staging prefix and re-attach the original source prefix.
+            # e.g. "gfx/Silk.rst" -> strip "gfx" -> "Silk.rst" -> "gfx/docs/Silk.rst"
+            rel = staging_relpath[len(staging_prefix) + 1 :]
+            context["github_source_path"] = original_prefix + "/" + rel
+            return
+
+    # Files directly in docs/ don't go through SPHINX_TREES staging
+    context["github_source_path"] = "docs/" + staging_relpath
+
+
 def setup(app):
     app.add_css_file("custom_theme.css")
     app.connect("html-page-context", install_sphinx_design)
+    app.connect("html-page-context", add_github_source_link)

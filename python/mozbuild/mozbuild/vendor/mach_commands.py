@@ -158,7 +158,7 @@ def vendor(
         new_files_only,
     )
 
-    sys.exit(0)
+    return 0
 
 
 def check_modified_files(command_context):

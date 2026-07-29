@@ -100,7 +100,7 @@ function urlBarHasNormalFocus(win) {
 /**
  * Tests that we have the correct icon displayed.
  */
-add_task(async function test_search_icon() {
+add_task(async function test_search_icon_legacy() {
   let { win, tab } = await openAboutPrivateBrowsing();
 
   await SpecialPowers.spawn(tab, [expectedIconURL], async function (iconURL) {
@@ -129,6 +129,29 @@ add_task(async function test_search_icon() {
         "Should have the correct icon URL for the logo"
       );
     }
+  });
+
+  await BrowserTestUtils.closeWindow(win);
+});
+
+/**
+ * Tests that we have the correct icon (the searchglass icon) displayed in
+ * about:privatebrowsing.
+ */
+add_task(async function test_search_icon() {
+  let { win, tab } = await openAboutPrivateBrowsing();
+
+  await SpecialPowers.spawn(tab, [], async function () {
+    let handoffUI = content.document.querySelector("content-search-handoff-ui");
+    let btn = handoffUI.shadowRoot.querySelector(".search-handoff-button");
+    await handoffUI.updateComplete;
+
+    let computedStyle = content.window.getComputedStyle(btn);
+    is(
+      computedStyle.backgroundImage,
+      `url("chrome://global/skin/icons/search-glass.svg")`,
+      "Got the searchglass icon"
+    );
   });
 
   await BrowserTestUtils.closeWindow(win);

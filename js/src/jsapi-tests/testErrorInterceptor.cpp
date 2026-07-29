@@ -6,7 +6,7 @@
 // Tests for JS_GetErrorInterceptorCallback and JS_SetErrorInterceptorCallback.
 
 namespace {
-MOZ_RUNINIT static JS::PersistentRootedString gLatestMessage;
+constinit static JS::PersistentRootedString gLatestMessage;
 
 // An interceptor that stores the error in `gLatestMessage`.
 struct SimpleInterceptor : JSErrorInterceptor {

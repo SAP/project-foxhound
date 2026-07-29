@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -118,13 +117,14 @@ class nsBufferedInputStream final : public nsBufferedStream,
   NS_IMETHOD Fill() override;
   NS_IMETHOD Flush() override { return NS_OK; }  // no-op for input streams
 
-  mozilla::Mutex mMutex MOZ_UNANNOTATED{"nsBufferedInputStream::mMutex"};
+  mozilla::Mutex mMutex{"nsBufferedInputStream::mMutex"};
 
   // This value is protected by mutex.
-  nsCOMPtr<nsIInputStreamCallback> mAsyncWaitCallback;
+  nsCOMPtr<nsIInputStreamCallback> mAsyncWaitCallback MOZ_GUARDED_BY(mMutex);
 
   // This value is protected by mutex.
-  nsCOMPtr<nsIInputStreamLengthCallback> mAsyncInputStreamLengthCallback;
+  nsCOMPtr<nsIInputStreamLengthCallback> mAsyncInputStreamLengthCallback
+      MOZ_GUARDED_BY(mMutex);
 
   bool mIsIPCSerializable{true};
   bool mIsAsyncInputStream{false};

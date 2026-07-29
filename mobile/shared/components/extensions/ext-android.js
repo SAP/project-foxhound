@@ -88,7 +88,7 @@ class BrowserProgressListener {
   }
 
   onLocationChange(webProgress, request, locationURI, flags) {
-    const window = this.browser.ownerGlobal;
+    const window = this.browser.documentGlobal;
     // GeckoView windows can become popups at any moment, so we need to check
     // here
     if (!windowTracker.isBrowserWindow(window)) {
@@ -130,6 +130,7 @@ class WindowTracker extends WindowTrackerBase {
     // In GeckoView the popup is on a separate window so getCurrentWindow for
     // the popup should return whatever is the topWindow.
     if (context?.viewType === "popup") {
+      // TODO bug 2040609: Improve tracking of "current window" for popups.
       return this.topWindow;
     }
     return super.getCurrentWindow(context);
@@ -257,41 +258,38 @@ class TabTracker extends TabTrackerBase {
     throw new ExtensionError(`Invalid tab ID: ${id}`);
   }
 
-  getBrowserData(browser) {
-    const window = browser.ownerGlobal;
-    const tab = window?.tab;
-    if (!tab) {
-      return {
-        tabId: -1,
-        windowId: -1,
-      };
+  getTabForBrowser(browser) {
+    const window = browser.documentGlobal;
+    // isBrowserWindow check excludes "navigator:popup" and background pages.
+    if (windowTracker.isBrowserWindow(window)) {
+      // There is currently a 1:1 relation between window and tab (bug 1584252).
+      return window.tab;
     }
+    return null;
+  }
 
-    const windowId = windowTracker.getId(window);
-
-    if (!windowTracker.isBrowserWindow(window)) {
-      return {
-        windowId,
-        tabId: -1,
-      };
+  getBrowserData(browser) {
+    const window = browser.documentGlobal;
+    if (!window) {
+      return { tabId: -1, windowId: -1 };
+    }
+    const nativeTab = this.getTabForBrowser(browser);
+    if (!nativeTab) {
+      let wintype = window.document.documentElement.getAttribute("windowtype");
+      if (wintype === "navigator:popup") {
+        // TODO bug 2040609: Improve tracking of "current window" for popups.
+        let currentWindow = windowTracker.topWindow;
+        if (currentWindow) {
+          return { tabId: -1, windowId: windowTracker.getId(currentWindow) };
+        }
+      }
+      return { tabId: -1, windowId: -1 };
     }
 
     return {
-      windowId,
-      tabId: this.getId(tab),
+      tabId: this.getId(nativeTab),
+      windowId: windowTracker.getId(window),
     };
-  }
-
-  getBrowserDataForContext(context) {
-    if (["tab", "background"].includes(context.viewType)) {
-      return this.getBrowserData(context.xulBrowser);
-    } else if (context.viewType === "popup") {
-      const chromeWindow = windowTracker.getCurrentWindow(context);
-      const windowId = chromeWindow ? windowTracker.getId(chromeWindow) : -1;
-      return { tabId: -1, windowId };
-    }
-
-    return { tabId: -1, windowId: -1 };
   }
 
   get activeTab() {
@@ -314,11 +312,13 @@ class Tab extends TabBase {
   }
 
   get attention() {
+    // Always false because the concept is not implemented on Android.
     return false;
   }
 
   get audible() {
-    return this.nativeTab.playingAudio;
+    // TODO bug 2032751: Implement tabs.audible on Android.
+    return undefined;
   }
 
   get browser() {
@@ -326,11 +326,17 @@ class Tab extends TabBase {
   }
 
   get discarded() {
-    return this.browser.getAttribute("pending") === "true";
+    // TODO bug 1402338: Implement tabs.discard on Android.
+    return false;
   }
 
   get cookieStoreId() {
     return getCookieStoreIdForTab(this, this.nativeTab);
+  }
+
+  get openerTabId() {
+    // TODO bug 1817806: Implement openerTabId on Android.
+    return undefined;
   }
 
   get height() {
@@ -342,6 +348,7 @@ class Tab extends TabBase {
   }
 
   get index() {
+    // TODO bug 1812854: Support more than one tab per window.
     return 0;
   }
 
@@ -350,10 +357,12 @@ class Tab extends TabBase {
   }
 
   get lastAccessed() {
-    return this.nativeTab.lastTouchedAt;
+    // TODO bug 2032927: lastAccessed is not implemented on Android.
+    return undefined;
   }
 
   get pinned() {
+    // Always false because the concept is not implemented on Android.
     return false;
   }
 
@@ -377,10 +386,12 @@ class Tab extends TabBase {
   }
 
   get groupId() {
+    // Always TAB_GROUP_ID_NONE because tab groups are not implemented.
     return -1;
   }
 
   get splitViewId() {
+    // Always SPLIT_VIEW_ID_NONE because split views are not implemented.
     return -1;
   }
 
@@ -389,24 +400,25 @@ class Tab extends TabBase {
   }
 
   get window() {
-    return this.browser.ownerGlobal;
+    return this.browser.documentGlobal;
   }
 
   get windowId() {
     return windowTracker.getId(this.window);
   }
 
-  // TODO: Just return false for these until properly implemented on Android.
-  // https://bugzilla.mozilla.org/show_bug.cgi?id=1402924
   get isArticle() {
+    // TODO bug 1402924: implement isArticle with toggleReaderMode.
     return false;
   }
 
   get isInReaderMode() {
+    // TODO bug 1402924: implement isInReaderMode with toggleReaderMode.
     return false;
   }
 
   get hidden() {
+    // tabs.hide() / tabs.show() not implemented on Android.
     return false;
   }
 
@@ -417,6 +429,9 @@ class Tab extends TabBase {
   }
 
   get sharingState() {
+    // sharingState is undocumented on MDN but has been around forever since it
+    // landed in bug 1423725. This return value is a dummy value that does not
+    // reflect the true sharing state.
     return {
       screen: undefined,
       microphone: false,
@@ -443,7 +458,7 @@ class TabContext extends EventEmitter {
       // location changes related to the top level frame (See Bug 1493470 for a rationale).
       return;
     }
-    const { tab } = browser.ownerGlobal;
+    const { tab } = browser.documentGlobal;
     // fromBrowse will be false in case of e.g. a hash change or history.pushState
     const fromBrowse = !(
       flags & Ci.nsIWebProgressListener.LOCATION_CHANGE_SAME_DOCUMENT
@@ -479,6 +494,12 @@ class TabContext extends EventEmitter {
 }
 
 class Window extends WindowBase {
+  get type() {
+    // The base implementation may return "popup" in some cases, but on mobile
+    // all tabs are associated with "normal" windowTypes.
+    return "normal";
+  }
+
   get focused() {
     return this.window.document.hasFocus();
   }
@@ -487,6 +508,7 @@ class Window extends WindowBase {
     // In GeckoView the popup is on a separate window so the current window for
     // the popup is whatever is the topWindow.
     if (context?.viewType === "popup") {
+      // TODO bug 2040609: Improve tracking of "current window" for popups.
       return mobileWindowTracker.topWindow == this.window;
     }
     return super.isCurrentFor(context);
@@ -612,8 +634,10 @@ extensions.on("startup", (type, extension) => {
 
 /* eslint-disable mozilla/balanced-listeners */
 extensions.on("page-shutdown", (type, context) => {
+  // The logic here aims to close extension tabs when an extension unloads, but
+  // due to lazy context creation, this does not always happen (bug 1399655).
   if (context.viewType == "tab") {
-    const window = context.xulBrowser.ownerGlobal;
+    const window = context.xulBrowser.documentGlobal;
     if (!windowTracker.isBrowserWindow(window)) {
       // Content in non-browser window, e.g. ContentPage in xpcshell uses
       // chrome://extensions/content/dummy.xhtml as the window.
@@ -649,7 +673,7 @@ global.openOptionsPage = async extension => {
       triggeringPrincipal: extension.principal,
     });
 
-    const newWindow = browser.ownerGlobal;
+    const newWindow = browser.documentGlobal;
     mobileWindowTracker.setTabActive(newWindow, true);
     return;
   }

@@ -29,13 +29,23 @@ class BackupTestBase(MarionetteTestCase):
         MarionetteTestCase.setUp(self)
         self.logger.info("Setting up test environment")
 
+        # Profile backup is disabled while SQLite at-rest encryption is on
+        # (per-database keys are not portable into the archive), so the backup
+        # feature these tests exercise is unavailable then. We cannot just force
+        # the pref off here: under a global encryption-on build the initial
+        # session already created an encrypted profile, and restarting with
+        # encryption off cannot reopen it. Skip instead -- on the shipping
+        # (encryption-off) configuration this is a no-op and the tests run.
+        if self.marionette.get_pref("security.storage.encryption.sqlite.enabled"):
+            self.skipTest(
+                "Profile backup is disabled when SQLite at-rest encryption is enabled"
+            )
+
         self.marionette.enforce_gecko_prefs({
             "browser.backup.enabled": True,
             "browser.backup.log": True,
             "browser.backup.archive.enabled": True,
             "browser.backup.restore.enabled": True,
-            "browser.backup.archive.overridePlatformCheck": True,
-            "browser.backup.restore.overridePlatformCheck": True,
             "browser.backup.profiles.force-enable": True,
         })
         self.marionette.set_context("chrome")
@@ -133,16 +143,24 @@ class BackupTestBase(MarionetteTestCase):
         """Register the profile with toolkit profile service and restart."""
         profile_name = "marionette-backup-test-" + str(int(time.time() * 1000))
 
-        self.marionette.execute_script(
+        self.run_async(
             """
             let profD = Services.dirsvc.get("ProfD", Ci.nsIFile);
             let profileName = arguments[0];
             let profileSvc = Cc["@mozilla.org/toolkit/profile-service;1"]
                 .getService(Ci.nsIToolkitProfileService);
-            let myProfile = profileSvc.createProfile(profD, profileName);
+            profileSvc.createProfile(profD, profileName, "backup-legacy-source");
+            let { ProfileAge } = ChromeUtils.importESModule(
+                "resource://gre/modules/ProfileAge.sys.mjs"
+            );
+
+            // Manually patch times.json as createNewProfile will not do this for existing directories.
+            let profileAge = await ProfileAge(profD.path);
+            profileAge._times.source = "backup-legacy-source";
+            await profileAge.writeTimes();
             profileSvc.flush();
             """,
-            script_args=(profile_name,),
+            script_args=[profile_name],
         )
 
         self.marionette.restart(clean=False, in_app=True)
@@ -156,12 +174,20 @@ class BackupTestBase(MarionetteTestCase):
             const { SelectableProfileService } = ChromeUtils.importESModule(
                 "resource:///modules/profiles/SelectableProfileService.sys.mjs"
             );
-            let newProfile = await SelectableProfileService.createNewProfile(false);
+            const { ProfileAge } = ChromeUtils.importESModule(
+                "resource://gre/modules/ProfileAge.sys.mjs"
+            );
+            let newProfile = await SelectableProfileService.createNewProfile(false, null, "backup-selectable-source");
             let profileCount = (await SelectableProfileService.getAllProfiles()).length;
             let profile = SelectableProfileService.currentProfile;
             if (!profile) {
                 throw new Error("currentProfile is null after createNewProfile");
             }
+
+            // Manually patch times.json as createNewProfile will not do this for existing directories.
+            let profileAge = await ProfileAge(PathUtils.profileDir);
+            profileAge._times.source = "backup-selectable-source";
+            await profileAge.writeTimes();
             return {
                 path: profile.path,
                 name: profile.name,
@@ -182,7 +208,7 @@ class BackupTestBase(MarionetteTestCase):
                 "resource:///modules/backup/BackupService.sys.mjs"
             );
             let bs = BackupService.init();
-            bs.setParentDirPath(arguments[0]);
+            await bs.setParentDirPath(arguments[0]);
             let { archivePath } = await bs.createBackup();
             return archivePath;
             """,
@@ -253,6 +279,25 @@ class BackupTestBase(MarionetteTestCase):
             """
         )
 
+    def assert_profile_source(self, expected_source, profile_path=None):
+        """Assert ProfileAge metadata for the current or specified profile."""
+        source = self.run_async(
+            """
+            const { ProfileAge } = ChromeUtils.importESModule(
+                "resource://gre/modules/ProfileAge.sys.mjs"
+            );
+            let profileAge = await ProfileAge(arguments[0]);
+            return profileAge.source;
+            """,
+            script_args=[profile_path],
+        )
+
+        self.assertEqual(
+            source,
+            expected_source,
+            f"ProfileAge source should be {expected_source}",
+        )
+
     def get_all_profiles(self):
         """Get all profiles from the SelectableProfileService database."""
         return self.run_async(
@@ -314,5 +359,42 @@ class BackupTestBase(MarionetteTestCase):
                 "resource:///modules/profiles/SelectableProfileService.sys.mjs"
             );
             await SelectableProfileService.init();
+            """
+        )
+
+    def set_selectable_profile_metadata(self, name, avatar):
+        """Set name and avatar on the current selectable profile."""
+        self.run_async(
+            """
+            let [name, avatar] = arguments;
+            const { SelectableProfileService } = ChromeUtils.importESModule(
+                "resource:///modules/profiles/SelectableProfileService.sys.mjs"
+            );
+            let profile = SelectableProfileService.currentProfile;
+            if (!profile) {
+                throw new Error("No current selectable profile");
+            }
+            profile.name = name;
+            profile.avatar = avatar;
+            """,
+            script_args=[name, avatar],
+        )
+
+    def get_selectable_profile_metadata(self):
+        """Return {name, avatar, theme} from the current selectable profile."""
+        return self.run_async(
+            """
+            const { SelectableProfileService } = ChromeUtils.importESModule(
+                "resource:///modules/profiles/SelectableProfileService.sys.mjs"
+            );
+            let profile = SelectableProfileService.currentProfile;
+            if (!profile) {
+                throw new Error("No current selectable profile");
+            }
+            return {
+                name: profile.name,
+                avatar: profile.avatar,
+                theme: profile.theme,
+            };
             """
         )

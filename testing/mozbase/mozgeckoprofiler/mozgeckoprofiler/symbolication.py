@@ -53,7 +53,8 @@ class OSXSymbolDumper:
             Find the list of architectures present in a Mach-O file.
             """
             return (
-                subprocess.Popen(["lipo", "-info", filename], stdout=subprocess.PIPE)
+                subprocess
+                .Popen(["lipo", "-info", filename], stdout=subprocess.PIPE)
                 .communicate()[0]
                 .split(b":")[2]
                 .strip()
@@ -299,8 +300,8 @@ class ProfileSymbolicator:
         # Check if running in CI
         if "MOZ_AUTOMATION" in os.environ:
             moz_fetch = os.environ["MOZ_FETCHES_DIR"]
-            symbolicator_path = Path(
-                moz_fetch, "symbolicator-cli", "symbolicator-cli.js"
+            profiler_edit_path = Path(
+                moz_fetch, "profiler-node-tools", "profiler-edit.js"
             )
             if platform.system() == "Windows":
                 samply_path = Path(moz_fetch, "samply", "samply.exe")
@@ -310,11 +311,9 @@ class ProfileSymbolicator:
                 node_path = Path(moz_fetch, "node", "bin", "node")
 
             # Check if symbolication dependencies are available
-            # Bug 2000026: Temporarily use fallback symbolication for --extra-profiler-run
-            # since those tasks don't have the toolchains for symbolicator-cli symbolication yet.
 
             if not self._validate_symbolication_deps([
-                symbolicator_path,
+                profiler_edit_path,
                 samply_path,
                 node_path,
             ]):
@@ -369,22 +368,22 @@ class ProfileSymbolicator:
                     with subprocess.Popen(
                         [
                             node_path,
-                            str(Path(symbolicator_path)),
-                            "--input",
+                            str(profiler_edit_path),
+                            "-i",
                             str(unsym_profile),
-                            "--output",
+                            "-o",
                             str(sym_profile),
-                            "--server",
+                            "--symbolicate-with-server",
                             server_url,
                         ],
                         stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT,
                         text=True,
                         bufsize=1,
-                    ) as symbolicator_process:
+                    ) as profiler_edit_process:
                         # Stream and forward to self.info()
-                        for line in symbolicator_process.stdout:
-                            LOG.info(f"symbolicator-cli {line.strip()}")
+                        for line in profiler_edit_process.stdout:
+                            LOG.info(f"profiler-edit {line.strip()}")
 
                     # Terminate samply server
                     if platform.system() == "Windows":

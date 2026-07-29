@@ -41,7 +41,7 @@ address-capture-learn-more-button =
     .label = Learn more
 address-capture-open-menu-button =
     .aria-label = Open menu
-address-capture-edit-address-button =
+address-capture-edit-address-link = Edit address
     .aria-label = Edit address
 
 
@@ -56,7 +56,7 @@ autofill-edit-address-title = Edit address
 
 autofill-address-name = Name
 autofill-address-organization = Organization
-autofill-address-street-address = Street Address
+autofill-address-street-address = Street address
 
 autofill-address-street = Street Address
 
@@ -100,7 +100,7 @@ autofill-address-oblast = Oblast
 autofill-address-pin = Pin
 autofill-address-postal-code = Postal Code
 # Postal code field.
-autofill-address-zip = ZIP Code
+autofill-address-zip = ZIP code
 # Postal code field used in Ireland (IE).
 autofill-address-eircode = Eircode
 

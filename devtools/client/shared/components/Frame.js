@@ -28,7 +28,7 @@ const l10n = new LocalizationHelper(
   "devtools/client/locales/components.properties"
 );
 const webl10n = new LocalizationHelper(
-  "devtools/client/locales/webconsole.properties"
+  "devtools/shared/locales/webconsole.properties"
 );
 
 function savedFrameToDebuggerLocation(frame) {

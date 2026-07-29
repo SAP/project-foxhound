@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -56,8 +54,6 @@ EXPORTS += [
     "nsAnimationManager.h",
     "nsChangeHint.h",
     "nsComputedDOMStyle.h",
-    "nsCSSCounterDescList.inc",
-    "nsCSSFontDescList.inc",
     "nsCSSPropertyIDSet.h",
     "nsCSSProps.h",
     "nsCSSValue.h",
@@ -141,6 +137,7 @@ EXPORTS.mozilla += [
 
 EXPORTS.mozilla.dom += [
     "CSS.h",
+    "CSSAppearanceBaseRule.h",
     "CSSContainerRule.h",
     "CSSCounterStyleRule.h",
     "CSSCustomMediaRule.h",
@@ -166,6 +163,7 @@ EXPORTS.mozilla.dom += [
     "CSSStyleRule.h",
     "CSSSupportsRule.h",
     "CSSValue.h",
+    "CSSViewTransitionRule.h",
     "FontFace.h",
     "FontFaceImpl.h",
     "FontFaceSet.h",
@@ -186,7 +184,6 @@ EXPORTS.mozilla.css += [
     "Loader.h",
     "Rule.h",
     "SheetLoadData.h",
-    "SheetParsingMode.h",
     "StreamLoader.h",
     "StylePreloadKind.h",
 ]
@@ -198,6 +195,7 @@ UNIFIED_SOURCES += [
     "ComputedStyle.cpp",
     "CounterStyleManager.cpp",
     "CSS.cpp",
+    "CSSAppearanceBaseRule.cpp",
     "CSSContainerRule.cpp",
     "CSSCounterStyleRule.cpp",
     "CSSCustomMediaRule.cpp",
@@ -222,6 +220,7 @@ UNIFIED_SOURCES += [
     "CSSStartingStyleRule.cpp",
     "CSSStyleRule.cpp",
     "CSSSupportsRule.cpp",
+    "CSSViewTransitionRule.cpp",
     "DeclarationBlock.cpp",
     "DocumentStyleRootIterator.cpp",
     "ErrorReporter.cpp",

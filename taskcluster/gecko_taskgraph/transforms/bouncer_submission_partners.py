@@ -8,7 +8,6 @@ Add from parameters.yml into bouncer submission tasks.
 import logging
 
 from taskgraph.transforms.base import TransformSequence
-from taskgraph.util.schema import resolve_keyed_by
 
 from gecko_taskgraph.transforms.bouncer_submission import (
     CONFIG_PER_BOUNCER_PRODUCT as CONFIG_PER_BOUNCER_PRODUCT_VANILLA,
@@ -18,7 +17,6 @@ from gecko_taskgraph.transforms.bouncer_submission import (
     _craft_filename_product,
     _craft_ftp_product,
 )
-from gecko_taskgraph.util.attributes import release_level
 from gecko_taskgraph.util.partners import (
     check_if_partners_enabled,
     get_partners_to_be_published,
@@ -68,25 +66,6 @@ transforms.add(check_if_partners_enabled)
 @transforms.add
 def make_task_worker(config, jobs):
     for job in jobs:
-        resolve_keyed_by(
-            job,
-            "worker-type",
-            item_name=job["name"],
-            **{"release-level": release_level(config.params)},
-        )
-        resolve_keyed_by(
-            job,
-            "scopes",
-            item_name=job["name"],
-            **{"release-level": release_level(config.params)},
-        )
-        resolve_keyed_by(
-            job,
-            "bouncer-products",
-            item_name=job["name"],
-            **{"release-type": config.params["release_type"]},
-        )
-
         # the schema requires at least one locale but this will not be used
         job["worker"]["locales"] = ["fake"]
         job["worker"]["entries"] = craft_bouncer_entries(config, job)

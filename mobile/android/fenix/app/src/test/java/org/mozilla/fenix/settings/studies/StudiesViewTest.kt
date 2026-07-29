@@ -5,8 +5,8 @@
 package org.mozilla.fenix.settings.studies
 
 import android.widget.TextView
-import androidx.appcompat.widget.SwitchCompat
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.materialswitch.MaterialSwitch
 import io.mockk.MockKAnnotations
 import io.mockk.every
 import io.mockk.impl.annotations.RelaxedMockK
@@ -67,7 +67,7 @@ class StudiesViewTest {
     @Test
     fun `WHEN calling bind THEN bind all the related information`() = runTest(testDispatcher) {
         val studiesTitle = mockk<TextView>(relaxed = true)
-        val studiesSwitch = mockk<SwitchCompat>(relaxed = true)
+        val studiesSwitch = mockk<MaterialSwitch>(relaxed = true)
         val studiesList = mockk<RecyclerView>(relaxed = true)
 
         every { settings.isExperimentationEnabled } returns true

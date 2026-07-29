@@ -4,6 +4,8 @@
 <title>Test for pointer boundary events</title>
 <script type="application/javascript"  src="/tests/SimpleTest/SimpleTest.js"></script>
 <script type="application/javascript"  src="/tests/SimpleTest/EventUtils.js"></script>
+<script src="/tests/SimpleTest/paint_listener.js"></script>
+<script src="/tests/gfx/layers/apz/test/mochitest/apz_test_utils.js"></script>
 <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 <style>
 #container {
@@ -57,6 +59,8 @@ add_setup(async function init() {
     sameOriginIframe.addEventListener(eventType, logEvent);
     crossOriginIframe.addEventListener(eventType, logEvent);
   });
+
+  await waitUntilApzStable();
 });
 
 add_task(async function test_pointer_boundary_events_same_origin_iframe() {

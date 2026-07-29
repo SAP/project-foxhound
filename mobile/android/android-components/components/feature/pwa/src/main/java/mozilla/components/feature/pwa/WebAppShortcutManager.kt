@@ -105,9 +105,6 @@ class WebAppShortcutManager(
 
     /**
      * Update existing PWA shortcuts with the latest info from web app manifests.
-     *
-     * Devices before 7.1 do not allow shortcuts to be dynamically updated,
-     * so this method will do nothing.
      */
     suspend fun updateShortcuts(context: Context, manifests: List<WebAppManifest>) {
         context.getSystemService<ShortcutManager>()?.apply {

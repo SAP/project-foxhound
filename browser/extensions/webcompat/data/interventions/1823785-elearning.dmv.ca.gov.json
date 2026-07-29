@@ -1,0 +1,15 @@
+{
+  "label": "elearning.dmv.ca.gov",
+  "bugs": {
+    "1823785": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.elearning.dmv.ca.gov/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

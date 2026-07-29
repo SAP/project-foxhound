@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,18 +6,20 @@
 
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/MediaSessionBinding.h"
+#include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/image/FetchDecodedImage.h"
+#include "nsIHttpChannel.h"
 #include "nsNetUtil.h"
 
 extern mozilla::LazyLogModule gMediaControlLog;
 
 // avoid redefined macro in unified build
 #undef LOG
-#define LOG(msg, ...)                        \
-  MOZ_LOG(gMediaControlLog, LogLevel::Debug, \
-          ("MediaMetadata, " msg, ##__VA_ARGS__))
+#define LOG(msg, ...)                                                   \
+  MOZ_LOG_FMT(gMediaControlLog, LogLevel::Debug, "MediaMetadata, " msg, \
+              ##__VA_ARGS__)
 
 namespace mozilla::dom {
 
@@ -149,25 +149,39 @@ void MediaMetadata::SetArtwork(JSContext* aCx,
 }
 
 RefPtr<MediaMetadataBasePromise> MediaMetadata::FetchArtwork(
-    const MediaMetadataBase& aMetadata, nsIPrincipal* aPrincipal,
-    const size_t aIndex) {
-  if (!aPrincipal || aIndex >= aMetadata.mArtwork.Length()) {
-    // No image loaded successfully or no principal, but still resolve without
+    const MediaMetadataBase& aMetadata, Document* aDoc, const size_t aIndex) {
+  if (aIndex >= aMetadata.mArtwork.Length()) {
+    // No image loaded successfully, but still resolve without
     // any image data.
-    LOG("FetchArtwork loaded no image, aPrincipal=%p.", aPrincipal);
+    LOG("FetchArtwork loaded no image.");
     return MediaMetadataBasePromise::CreateAndResolve(aMetadata, __func__);
   }
 
   nsCOMPtr<nsIURI> uri;
   if (NS_WARN_IF(NS_FAILED(
           NS_NewURI(getter_AddRefs(uri), aMetadata.mArtwork[aIndex].mSrc)))) {
-    return FetchArtwork(aMetadata, aPrincipal, aIndex + 1);
+    return FetchArtwork(aMetadata, aDoc, aIndex + 1);
   }
 
-  return image::FetchDecodedImage(uri, gfx::IntSize{}, aPrincipal)
+  nsCOMPtr<nsIChannel> channel;
+  if (NS_FAILED(
+          NS_NewChannel(getter_AddRefs(channel), uri, aDoc,
+                        nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
+                        nsIContentPolicy::TYPE_INTERNAL_IMAGE))) {
+    return FetchArtwork(aMetadata, aDoc, aIndex + 1);
+  }
+
+  if (nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(channel)) {
+    auto referrerInfo = MakeRefPtr<ReferrerInfo>(*aDoc);
+    if (NS_FAILED(httpChannel->SetReferrerInfo(referrerInfo))) {
+      return FetchArtwork(aMetadata, aDoc, aIndex + 1);
+    }
+  }
+
+  return image::FetchDecodedImage(uri, channel, gfx::IntSize{})
       ->Then(
           GetCurrentSerialEventTarget(), __func__,
-          [metadata = aMetadata, principal = RefPtr{aPrincipal},
+          [metadata = aMetadata, doc = RefPtr{aDoc},
            aIndex](already_AddRefed<imgIContainer> aImage) {
             nsCOMPtr<imgIContainer> image(std::move(aImage));
             // The promise should only be resolved for decoded images, so using
@@ -185,16 +199,17 @@ RefPtr<MediaMetadataBasePromise> MediaMetadata::FetchArtwork(
                                                                   __func__);
               }
             }
-            return FetchArtwork(metadata, principal, aIndex + 1);
+            return FetchArtwork(metadata, doc, aIndex + 1);
           },
-          [metadata = aMetadata, principal = RefPtr{aPrincipal},
-           aIndex](nsresult aStatus) {
-            return FetchArtwork(metadata, principal, aIndex + 1);
+          [metadata = aMetadata, doc = RefPtr{aDoc}, aIndex](nsresult aStatus) {
+            return FetchArtwork(metadata, doc, aIndex + 1);
           });
 }
 
-RefPtr<MediaMetadataBasePromise> MediaMetadata::LoadMetadataArtwork() {
-  return FetchArtwork(*this, mParent->PrincipalOrNull(), 0);
+RefPtr<MediaMetadataBasePromise> MediaMetadata::LoadMetadataArtwork(
+    Document* aDoc) {
+  MOZ_ASSERT(aDoc);
+  return FetchArtwork(*this, aDoc, 0);
 }
 
 static nsIURI* GetEntryBaseURL() {

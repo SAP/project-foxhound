@@ -69,6 +69,12 @@
   <string name="mozac_feature_prompts_before_unload_stay">No surtis</string>
   <!-- Leave button of the dialog shown when a user is leaving a website and there is still data not saved yet, this indicates that the user wants to leave in the website. -->
   <string name="mozac_feature_prompts_before_unload_leave">Surt</string>
+  <!-- Message shown when a site wants to create a passkey for a related domain. %1$s is the requesting site, %2$s is the related domain the passkey is for. -->
+  <string name="webauthn_related_origin_create_message">%1$s vol crear una clau d’accés per a %2$s.</string>
+  <!-- Message shown when a site wants to use a passkey from a related domain. %1$s is the requesting site, %2$s is the related domain the passkey is for. -->
+  <string name="webauthn_related_origin_use_message">%1$s vol utilitzar una clau d’accés per a %2$s.</string>
+  <!-- Continue button label for WebAuthn related origin prompt. -->
+  <string name="webauthn_continue">Continua</string>
   <!-- Title of the month chooser dialog. -->
   <string name="mozac_feature_prompts_set_month">Trieu un mes</string>
   <!-- January (short description), used on the month chooser dialog. -->
@@ -166,6 +172,8 @@
   <string name="mozac_feature_prompts_collapse_address_content_description_2">Redueix les adreces desades</string>
   <!-- Text for the manage addresses button. -->
   <string name="mozac_feature_prompts_manage_address">Gestiona les adreces</string>
+  <!-- Text for the title of a save address dialog. -->
+  <string name="mozac_feature_prompts_save_address_prompt_title">Voleu desar l’adreça?</string>
   <!--
     Federated Credential Management prompts
 
@@ -184,4 +192,12 @@
   <string name="mozac_feature_prompts_identity_credentials_continue">Continua</string>
   <!-- Text for the cancel button of the Identity Credential dialogs. -->
   <string name="mozac_feature_prompts_identity_credentials_cancel">Cancel·la</string>
+  <!--
+    Email Mask Autofill
+
+    Text for the email mask prompt to allow users to fill an email input field in a sign up form with an email mask.
+  -->
+  <string name="mozac_feature_relay_chip_text">Utilitza una màscara d’adreça electrònica</string>
+  <!-- Informational text for the contextual feature recommendation (CFR) enabling the email mask aliases. The %s is the name of the service, "Firefox Relay". -->
+  <string name="mozac_feature_relay_email_masks_cfr">Novetat! Les màscares d’adreça electrònica del %s ja estan disponibles per a mòbils.</string>
 </resources>

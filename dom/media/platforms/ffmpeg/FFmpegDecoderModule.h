@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -61,6 +59,9 @@ class FFmpegDecoderModule : public PlatformDecoderModule {
         AV_HWDEVICE_TYPE_D3D11VA,
 #  endif
 #  ifdef MOZ_WIDGET_GTK
+#    if LIBAVCODEC_VERSION_MAJOR >= 60
+        AV_HWDEVICE_TYPE_VULKAN,
+#    endif
         AV_HWDEVICE_TYPE_VAAPI,
         AV_HWDEVICE_TYPE_NONE,  // Placeholder for V4L2.
 #  endif
@@ -112,9 +113,9 @@ class FFmpegDecoderModule : public PlatformDecoderModule {
       hwCodecs->Clear();
       for (const auto& entry : kCodecIDs) {
         if (!entry.mHwAllowed) {
-          MOZ_LOG(sPDMLog, LogLevel::Debug,
-                  ("Hw codec disabled by gfxVars for %s",
-                   AVCodecToString(entry.mId)));
+          MOZ_LOG_FMT(sPDMLog, LogLevel::Debug,
+                      "Hw codec disabled by gfxVars for {}",
+                      AVCodecToString(entry.mId));
           continue;
         }
 
@@ -128,15 +129,14 @@ class FFmpegDecoderModule : public PlatformDecoderModule {
         }
 
         if (!codec) {
-          MOZ_LOG(
-              sPDMLog, LogLevel::Debug,
-              ("No hw codec or decoder for %s", AVCodecToString(entry.mId)));
+          MOZ_LOG_FMT(sPDMLog, LogLevel::Debug, "No hw codec or decoder for {}",
+                      AVCodecToString(entry.mId));
           continue;
         }
 
         hwCodecs->AppendElement(entry.mId);
-        MOZ_LOG(sPDMLog, LogLevel::Debug,
-                ("Support %s for hw decoding", AVCodecToString(entry.mId)));
+        MOZ_LOG_FMT(sPDMLog, LogLevel::Debug, "Support {} for hw decoding",
+                    AVCodecToString(entry.mId));
       }
     }
 #endif  // (XP_WIN || MOZ_WIDGET_GTK || MOZ_WIDGET_ANDROID) && MOZ_USE_HWDECODE
@@ -178,8 +178,8 @@ class FFmpegDecoderModule : public PlatformDecoderModule {
           FFmpegVideoDecoder<V>::GetCodecId(aParams.mConfig.mMimeType);
       if (IsHWDecodingSupported(videoCodec) &&
           !decoder->IsHardwareAccelerated()) {
-        MOZ_LOG(sPDMLog, LogLevel::Debug,
-                ("FFmpeg video decoder can't perform hw decoding, abort!"));
+        MOZ_LOG_FMT(sPDMLog, LogLevel::Debug,
+                    "FFmpeg video decoder can't perform hw decoding, abort!");
         (void)decoder->Shutdown();
         decoder = nullptr;
       }
@@ -221,9 +221,9 @@ class FFmpegDecoderModule : public PlatformDecoderModule {
     const auto& trackInfo = aParams.mConfig;
     const nsACString& mimeType = trackInfo.mMimeType;
     if (VPXDecoder::IsVPX(mimeType) && trackInfo.GetAsVideoInfo()->HasAlpha()) {
-      MOZ_LOG(sPDMLog, LogLevel::Debug,
-              ("FFmpeg decoder rejects requested type '%s'",
-               mimeType.BeginReading()));
+      MOZ_LOG_FMT(sPDMLog, LogLevel::Debug,
+                  "FFmpeg decoder rejects requested type '{}'",
+                  PromiseFlatCString(mimeType).get());
       return media::DecodeSupportSet{};
     }
 
@@ -231,18 +231,19 @@ class FFmpegDecoderModule : public PlatformDecoderModule {
         aParams.mOptions.contains(CreateDecoderParams::Option::LowLatency)) {
       // SVC layers are unsupported, and may be used in low latency use cases
       // (WebRTC).
-      MOZ_LOG(sPDMLog, LogLevel::Debug,
-              ("FFmpeg decoder rejects requested type '%s' due to low latency",
-               mimeType.BeginReading()));
+      MOZ_LOG_FMT(
+          sPDMLog, LogLevel::Debug,
+          "FFmpeg decoder rejects requested type '{}' due to low latency",
+          PromiseFlatCString(mimeType).get());
       return media::DecodeSupportSet{};
     }
 
     if (MP4Decoder::IsHEVC(mimeType) && !StaticPrefs::media_hevc_enabled()) {
-      MOZ_LOG(
+      MOZ_LOG_FMT(
           sPDMLog, LogLevel::Debug,
-          ("FFmpeg decoder rejects requested type '%s' due to being disabled "
-           "by the pref",
-           mimeType.BeginReading()));
+          "FFmpeg decoder rejects requested type '{}' due to being disabled "
+          "by the pref",
+          PromiseFlatCString(mimeType).get());
       return media::DecodeSupportSet{};
     }
 
@@ -251,9 +252,9 @@ class FFmpegDecoderModule : public PlatformDecoderModule {
         mimeType,
         trackInfo.GetAsAudioInfo() ? *trackInfo.GetAsAudioInfo() : AudioInfo());
     if (audioCodec == AV_CODEC_ID_NONE && videoCodec == AV_CODEC_ID_NONE) {
-      MOZ_LOG(sPDMLog, LogLevel::Debug,
-              ("FFmpeg decoder rejects requested type '%s'",
-               mimeType.BeginReading()));
+      MOZ_LOG_FMT(sPDMLog, LogLevel::Debug,
+                  "FFmpeg decoder rejects requested type '{}'",
+                  PromiseFlatCString(mimeType).get());
       return media::DecodeSupportSet{};
     }
     AVCodecID codecId =
@@ -294,10 +295,10 @@ class FFmpegDecoderModule : public PlatformDecoderModule {
                   !supports.contains(media::DecodeSupport::SoftwareDecode));
 #endif
 
-    MOZ_LOG(
-        sPDMLog, LogLevel::Debug,
-        ("FFmpeg decoder %s requested type '%s'",
-         supports.isEmpty() ? "rejects" : "supports", mimeType.BeginReading()));
+    MOZ_LOG_FMT(sPDMLog, LogLevel::Debug,
+                "FFmpeg decoder {} requested type '{}'",
+                supports.isEmpty() ? "rejects" : "supports",
+                PromiseFlatCString(mimeType).get());
     return supports;
   }
 
@@ -335,7 +336,7 @@ class FFmpegDecoderModule : public PlatformDecoderModule {
 
  private:
   const FFmpegLibWrapper* mLib;
-  MOZ_RUNINIT static inline StaticDataMutex<nsTArray<AVCodecID>>
+  constinit static inline StaticDataMutex<nsTArray<AVCodecID>>
       sSupportedHWCodecs{"sSupportedHWCodecs"};
 };
 

@@ -281,34 +281,53 @@ pub enum BufferAccessError {
     #[error("Buffer range size invalid: range_size {range_size} must be multiple of 4")]
     UnalignedRangeSize { range_size: wgt::BufferAddress },
     #[error("Buffer access out of bounds: index {index} would underrun the buffer (limit: {min})")]
-    OutOfBoundsUnderrun {
+    OutOfBoundsStartOffsetUnderrun {
         index: wgt::BufferAddress,
         min: wgt::BufferAddress,
     },
     #[error(
-        "Buffer access out of bounds: last index {index} would overrun the buffer (limit: {max})"
+        "Buffer access out of bounds: start offset {index} would overrun the buffer (limit: {max})"
     )]
-    OutOfBoundsOverrun {
+    OutOfBoundsStartOffsetOverrun {
         index: wgt::BufferAddress,
         max: wgt::BufferAddress,
     },
-    #[error("Buffer map range start {start} is greater than end {end}")]
-    NegativeRange {
-        start: wgt::BufferAddress,
-        end: wgt::BufferAddress,
+    #[error(
+        "Buffer access out of bounds: start offset {index} + size {size} would overrun the buffer (limit: {max})"
+    )]
+    OutOfBoundsEndOffsetOverrun {
+        index: wgt::BufferAddress,
+        size: wgt::BufferAddress,
+        max: wgt::BufferAddress,
     },
     #[error("Buffer map aborted")]
     MapAborted,
     #[error(transparent)]
     InvalidResource(#[from] InvalidResourceError),
+    #[error("Map start offset ({offset}) is out-of-bounds for buffer of size {buffer_size}")]
+    MapStartOffsetOverrun {
+        offset: wgt::BufferAddress,
+        buffer_size: wgt::BufferAddress,
+    },
+    #[error(
+        "Map end offset (start at {} + size of {}) is out-of-bounds for buffer of size {}",
+        offset,
+        size,
+        buffer_size
+    )]
+    MapEndOffsetOverrun {
+        offset: wgt::BufferAddress,
+        size: wgt::BufferAddress,
+        buffer_size: wgt::BufferAddress,
+    },
 }
 
 impl WebGpuError for BufferAccessError {
     fn webgpu_error_type(&self) -> ErrorType {
-        let e: &dyn WebGpuError = match self {
-            Self::Device(e) => e,
-            Self::InvalidResource(e) => e,
-            Self::DestroyedResource(e) => e,
+        match self {
+            Self::Device(e) => e.webgpu_error_type(),
+            Self::InvalidResource(e) => e.webgpu_error_type(),
+            Self::DestroyedResource(e) => e.webgpu_error_type(),
 
             Self::Failed
             | Self::AlreadyMapped
@@ -318,12 +337,13 @@ impl WebGpuError for BufferAccessError {
             | Self::UnalignedRange
             | Self::UnalignedOffset { .. }
             | Self::UnalignedRangeSize { .. }
-            | Self::OutOfBoundsUnderrun { .. }
-            | Self::OutOfBoundsOverrun { .. }
-            | Self::NegativeRange { .. }
-            | Self::MapAborted => return ErrorType::Validation,
-        };
-        e.webgpu_error_type()
+            | Self::OutOfBoundsStartOffsetUnderrun { .. }
+            | Self::OutOfBoundsStartOffsetOverrun { .. }
+            | Self::OutOfBoundsEndOffsetOverrun { .. }
+            | Self::MapAborted
+            | Self::MapStartOffsetOverrun { .. }
+            | Self::MapEndOffsetOverrun { .. } => ErrorType::Validation,
+        }
     }
 }
 
@@ -435,6 +455,7 @@ pub struct Buffer {
     pub(crate) label: String,
     pub(crate) tracking_data: TrackingData,
     pub(crate) map_state: Mutex<BufferMapState>,
+    // Bind groups that reference this buffer. May contain duplicates.
     pub(crate) bind_groups: Mutex<WeakVec<BindGroup>>,
     pub(crate) timestamp_normalization_bind_group: Snatchable<TimestampNormalizationBindGroup>,
     pub(crate) indirect_validation_bind_groups: Snatchable<crate::indirect_validation::BindGroups>,
@@ -571,9 +592,47 @@ impl Buffer {
         ))
     }
 
-    /// Returns the mapping callback in case of error so that the callback can be fired outside
-    /// of the locks that are held in this function.
+    /// Schedule buffer mapping.
+    ///
+    /// `op.callback` is guaranteed to be called, regardless of the outcome.
     pub fn map_async(
+        self: &Arc<Self>,
+        offset: wgt::BufferAddress,
+        size: Option<wgt::BufferAddress>,
+        op: BufferMapOperation,
+    ) -> Result<SubmissionIndex, BufferAccessError> {
+        self.try_map_async(offset, size, op)
+            .map_err(|(mut operation, err)| {
+                if let Some(callback) = operation.callback.take() {
+                    callback(Err(err.clone()));
+                }
+                err
+            })
+    }
+
+    /// Try to schedule buffer mapping.
+    ///
+    /// The outcome of this function is one of the following:
+    /// - If there is a queue, and nothing pending in the queue that uses the
+    ///   buffer in question, the buffer is added to `Queue::ready_to_map`, and
+    ///   will be mapped the next time `Device::maintain` is called. The
+    ///   queue assumes responsibility for calling the callback, and this
+    ///   function returns `Ok(0)`, but the buffer has not yet been mapped.
+    /// - If there is a queue, and something is pending in the queue that uses
+    ///   the buffer in question, the buffer is scheduled for mapping after that
+    ///   submission completes. The queue assumes responsibility for calling the
+    ///   callback, and this function returns `Ok(index)` with the index of the
+    ///   submission that must complete. The buffer has not yet been mapped.
+    /// - If there is no queue, the buffer is mapped and the callback is called
+    ///   immediately. The return value is `Ok(0)`.
+    /// - Regardless of the queue state, if there is an error that terminates
+    ///   the buffer mapping attempt, this function returns the callback along
+    ///   with the error, and the caller is responsible for calling the
+    ///   callback.
+    ///
+    /// A return value of `Ok(0)` means that mapping does not need to wait on the queue, but
+    /// it does not mean that the buffer has already been mapped.
+    fn try_map_async(
         self: &Arc<Self>,
         offset: wgt::BufferAddress,
         size: Option<wgt::BufferAddress>,
@@ -588,13 +647,35 @@ impl Buffer {
         if !offset.is_multiple_of(wgt::MAP_ALIGNMENT) {
             return Err((op, BufferAccessError::UnalignedOffset { offset }));
         }
-        if range_size % wgt::COPY_BUFFER_ALIGNMENT != 0 {
+        if !range_size.is_multiple_of(wgt::COPY_BUFFER_ALIGNMENT) {
             return Err((op, BufferAccessError::UnalignedRangeSize { range_size }));
         }
 
-        let range = offset..(offset + range_size);
+        if offset > self.size {
+            return Err((
+                op,
+                BufferAccessError::MapStartOffsetOverrun {
+                    offset,
+                    buffer_size: self.size,
+                },
+            ));
+        }
+        // NOTE: Should never underflow because of our earlier check.
+        if range_size > self.size - offset {
+            return Err((
+                op,
+                BufferAccessError::MapEndOffsetOverrun {
+                    offset,
+                    size: range_size,
+                    buffer_size: self.size,
+                },
+            ));
+        }
+        let end_offset = offset + range_size;
 
-        if range.start % wgt::MAP_ALIGNMENT != 0 || range.end % wgt::COPY_BUFFER_ALIGNMENT != 0 {
+        if !offset.is_multiple_of(wgt::MAP_ALIGNMENT)
+            || !end_offset.is_multiple_of(wgt::COPY_BUFFER_ALIGNMENT)
+        {
             return Err((op, BufferAccessError::UnalignedRange));
         }
 
@@ -607,74 +688,84 @@ impl Buffer {
             return Err((op, e.into()));
         }
 
-        if range.start > range.end {
-            return Err((
-                op,
-                BufferAccessError::NegativeRange {
-                    start: range.start,
-                    end: range.end,
-                },
-            ));
-        }
-        if range.end > self.size {
-            return Err((
-                op,
-                BufferAccessError::OutOfBoundsOverrun {
-                    index: range.end,
-                    max: self.size,
-                },
-            ));
-        }
-
         let device = &self.device;
         if let Err(e) = device.check_is_valid() {
             return Err((op, e.into()));
         }
 
-        {
+        let submit_index = {
             let snatch_guard = device.snatchable_lock.read();
             if let Err(e) = self.check_destroyed(&snatch_guard) {
                 return Err((op, e.into()));
             }
-        }
 
-        {
-            let map_state = &mut *self.map_state.lock();
-            *map_state = match *map_state {
-                BufferMapState::Init { .. } | BufferMapState::Active { .. } => {
-                    return Err((op, BufferAccessError::AlreadyMapped));
-                }
-                BufferMapState::Waiting(_) => {
-                    return Err((op, BufferAccessError::MapAlreadyPending));
-                }
-                BufferMapState::Idle => BufferMapState::Waiting(BufferPendingMapping {
-                    range,
-                    op,
-                    _parent_buffer: self.clone(),
-                }),
-            };
-        }
+            {
+                let map_state = &mut *self.map_state.lock();
+                *map_state = match *map_state {
+                    BufferMapState::Init { .. } | BufferMapState::Active { .. } => {
+                        return Err((op, BufferAccessError::AlreadyMapped));
+                    }
+                    BufferMapState::Waiting(_) => {
+                        return Err((op, BufferAccessError::MapAlreadyPending));
+                    }
+                    BufferMapState::Idle => BufferMapState::Waiting(BufferPendingMapping {
+                        range: offset..end_offset,
+                        op,
+                        _parent_buffer: self.clone(),
+                    }),
+                };
+            }
 
-        // TODO: we are ignoring the transition here, I think we need to add a barrier
-        // at the end of the submission
+            if let Some(queue) = device.get_queue().as_ref() {
+                match queue.flush_writes_for_buffer(self, snatch_guard) {
+                    Err(err) => {
+                        let state = mem::replace(&mut *self.map_state.lock(), BufferMapState::Idle);
+                        let BufferMapState::Waiting(BufferPendingMapping { op, .. }) = state else {
+                            unreachable!();
+                        };
+                        return Err((op, err));
+                    }
+                    Ok(()) => {
+                        // Schedule the buffer map in the  lifetime tracker.
+                        //
+                        // This call searches for use of the buffer by pending submissions.
+                        // If we just flushed pending writes, that search is redundant; we
+                        // already know that mapping needs to wait for the latest submission
+                        // and could implement a special case to directly attach it to that
+                        // submission. However, the queue is searched in reverse, so finding
+                        // that the buffer is used by the latest submission will be fast.
+                        Some(queue.lock_life().map(self).unwrap_or(0))
+                    }
+                }
+            } else {
+                None
+            }
+        };
+
+        // At this point, `submit_index` is:
+        // - `Some(index)`, if there is a submission the mapping operation must wait for.
+        // - `Some(0)`, if we have a queue and there is no submission to wait for.
+        // - `None`, if we don't have a queue.
+        //
+        // TODO(https://github.com/gfx-rs/wgpu/issues/9306): we are ignoring the transition
+        // here, I think we need to add a barrier at the end of the submission
         device
             .trackers
             .lock()
             .buffers
             .set_single(self, internal_use);
 
-        let submit_index = if let Some(queue) = device.get_queue() {
-            queue.lock_life().map(self).unwrap_or(0) // '0' means no wait is necessary
+        if let Some(index) = submit_index {
+            Ok(index)
         } else {
+            // We don't have a queue, so go ahead and map the buffer.
             // We can safely unwrap below since we just set the `map_state` to `BufferMapState::Waiting`.
             let (mut operation, status) = self.map(&device.snatchable_lock.read()).unwrap();
             if let Some(callback) = operation.callback.take() {
                 callback(status);
             }
-            0
-        };
-
-        Ok(submit_index)
+            Ok(0)
+        }
     }
 
     pub fn get_mapped_range(
@@ -696,17 +787,24 @@ impl Buffer {
         if !offset.is_multiple_of(wgt::MAP_ALIGNMENT) {
             return Err(BufferAccessError::UnalignedOffset { offset });
         }
-        if range_size % wgt::COPY_BUFFER_ALIGNMENT != 0 {
+        if !range_size.is_multiple_of(wgt::COPY_BUFFER_ALIGNMENT) {
             return Err(BufferAccessError::UnalignedRangeSize { range_size });
         }
         let map_state = &*self.map_state.lock();
         match *map_state {
             BufferMapState::Init { ref staging_buffer } => {
-                // offset (u64) can not be < 0, so no need to validate the lower bound
-                if offset + range_size > self.size {
-                    return Err(BufferAccessError::OutOfBoundsOverrun {
-                        index: offset + range_size - 1,
-                        max: self.size,
+                if offset > self.size {
+                    return Err(BufferAccessError::MapStartOffsetOverrun {
+                        offset,
+                        buffer_size: self.size,
+                    });
+                }
+                // NOTE: Should never underflow because of our earlier check.
+                if range_size > self.size - offset {
+                    return Err(BufferAccessError::MapEndOffsetOverrun {
+                        offset,
+                        size: range_size,
+                        buffer_size: self.size,
                     });
                 }
                 let ptr = unsafe { staging_buffer.ptr() };
@@ -718,15 +816,22 @@ impl Buffer {
                 ref range,
                 ..
             } => {
+                if offset > range.end {
+                    return Err(BufferAccessError::OutOfBoundsStartOffsetOverrun {
+                        index: offset,
+                        max: range.end,
+                    });
+                }
                 if offset < range.start {
-                    return Err(BufferAccessError::OutOfBoundsUnderrun {
+                    return Err(BufferAccessError::OutOfBoundsStartOffsetUnderrun {
                         index: offset,
                         min: range.start,
                     });
                 }
-                if offset + range_size > range.end {
-                    return Err(BufferAccessError::OutOfBoundsOverrun {
-                        index: offset + range_size - 1,
+                if range_size > range.end - offset {
+                    return Err(BufferAccessError::OutOfBoundsEndOffsetOverrun {
+                        index: offset,
+                        size: range_size,
                         max: range.end,
                     });
                 }
@@ -744,6 +849,7 @@ impl Buffer {
         }
     }
     /// This function returns [`None`] only if [`Self::map_state`] is not [`BufferMapState::Waiting`].
+    /// Other errors are returned within `BufferMapPendingClosure`.
     #[must_use]
     pub(crate) fn map(&self, snatch_guard: &SnatchGuard) -> Option<BufferMapPendingClosure> {
         // This _cannot_ be inlined into the match. If it is, the lock will be held
@@ -811,7 +917,8 @@ impl Buffer {
         let device = &self.device;
         let snatch_guard = device.snatchable_lock.read();
         let raw_buf = self.try_raw(&snatch_guard)?;
-        match mem::replace(&mut *self.map_state.lock(), BufferMapState::Idle) {
+        let map_state = mem::replace(&mut *self.map_state.lock(), BufferMapState::Idle);
+        match map_state {
             BufferMapState::Init { staging_buffer } => {
                 #[cfg(feature = "trace")]
                 if let Some(ref mut trace) = *device.trace.lock() {
@@ -821,7 +928,9 @@ impl Buffer {
                     trace.add(trace::Action::WriteBuffer {
                         id: self.to_trace(),
                         data,
-                        range: 0..self.size,
+                        // NOTE: `self.size` here corresponds to `data`'s actual length.
+                        offset: 0,
+                        size: self.size,
                         queued: true,
                     });
                 }
@@ -887,7 +996,8 @@ impl Buffer {
                         trace.add(trace::Action::WriteBuffer {
                             id: self.to_trace(),
                             data,
-                            range: range.clone(),
+                            offset: range.start,
+                            size,
                             queued: false,
                         });
                     }
@@ -940,17 +1050,22 @@ impl Buffer {
             })
         };
 
-        if let Some(queue) = device.get_queue() {
+        let Some(queue) = device.get_queue() else {
+            return;
+        };
+
+        {
             let mut pending_writes = queue.pending_writes.lock();
             if pending_writes.contains_buffer(self) {
                 pending_writes.consume_temp(temp);
-            } else {
-                let mut life_lock = queue.lock_life();
-                let last_submit_index = life_lock.get_buffer_latest_submission_index(self);
-                if let Some(last_submit_index) = last_submit_index {
-                    life_lock.schedule_resource_destruction(temp, last_submit_index);
-                }
+                return;
             }
+        }
+
+        let mut life_lock = queue.lock_life();
+        let last_submit_index = life_lock.get_buffer_latest_submission_index(self);
+        if let Some(last_submit_index) = last_submit_index {
+            life_lock.schedule_resource_destruction(temp, last_submit_index);
         }
     }
 }
@@ -986,19 +1101,18 @@ crate::impl_trackable!(Buffer);
 
 impl WebGpuError for CreateBufferError {
     fn webgpu_error_type(&self) -> ErrorType {
-        let e: &dyn WebGpuError = match self {
-            Self::Device(e) => e,
-            Self::AccessError(e) => e,
-            Self::MissingDownlevelFlags(e) => e,
-            Self::IndirectValidationBindGroup(e) => e,
-            Self::MissingFeatures(e) => e,
+        match self {
+            Self::Device(e) => e.webgpu_error_type(),
+            Self::AccessError(e) => e.webgpu_error_type(),
+            Self::MissingDownlevelFlags(e) => e.webgpu_error_type(),
+            Self::IndirectValidationBindGroup(e) => e.webgpu_error_type(),
+            Self::MissingFeatures(e) => e.webgpu_error_type(),
 
             Self::UnalignedSize
             | Self::InvalidUsage(_)
             | Self::UsageMismatch(_)
-            | Self::MaxBufferSize { .. } => return ErrorType::Validation,
-        };
-        e.webgpu_error_type()
+            | Self::MaxBufferSize { .. } => ErrorType::Validation,
+        }
     }
 }
 
@@ -1253,6 +1367,7 @@ pub struct Texture {
     pub(crate) tracking_data: TrackingData,
     pub(crate) clear_mode: RwLock<TextureClearMode>,
     pub(crate) views: Mutex<WeakVec<TextureView>>,
+    // Bind groups that reference this texture. May contain duplicates.
     pub(crate) bind_groups: Mutex<WeakVec<BindGroup>>,
 }
 
@@ -1438,17 +1553,22 @@ impl Texture {
             })
         };
 
-        if let Some(queue) = device.get_queue() {
+        let Some(queue) = device.get_queue() else {
+            return;
+        };
+
+        {
             let mut pending_writes = queue.pending_writes.lock();
             if pending_writes.contains_texture(self) {
                 pending_writes.consume_temp(temp);
-            } else {
-                let mut life_lock = queue.lock_life();
-                let last_submit_index = life_lock.get_texture_latest_submission_index(self);
-                if let Some(last_submit_index) = last_submit_index {
-                    life_lock.schedule_resource_destruction(temp, last_submit_index);
-                }
+                return;
             }
+        }
+
+        let mut life_lock = queue.lock_life();
+        let last_submit_index = life_lock.get_texture_latest_submission_index(self);
+        if let Some(last_submit_index) = last_submit_index {
+            life_lock.schedule_resource_destruction(temp, last_submit_index);
         }
     }
 }
@@ -1618,12 +1738,12 @@ impl Borrow<TextureSelector> for Texture {
 
 impl WebGpuError for CreateTextureError {
     fn webgpu_error_type(&self) -> ErrorType {
-        let e: &dyn WebGpuError = match self {
-            Self::Device(e) => e,
-            Self::CreateTextureView(e) => e,
-            Self::InvalidDimension(e) => e,
-            Self::MissingFeatures(_, e) => e,
-            Self::MissingDownlevelFlags(e) => e,
+        match self {
+            Self::Device(e) => e.webgpu_error_type(),
+            Self::CreateTextureView(e) => e.webgpu_error_type(),
+            Self::InvalidDimension(e) => e.webgpu_error_type(),
+            Self::MissingFeatures(_, e) => e.webgpu_error_type(),
+            Self::MissingDownlevelFlags(e) => e.webgpu_error_type(),
 
             Self::InvalidUsage(_)
             | Self::IncompatibleUsage(_, _)
@@ -1636,9 +1756,8 @@ impl WebGpuError for CreateTextureError {
             | Self::InvalidMultisampledStorageBinding
             | Self::InvalidMultisampledFormat(_)
             | Self::InvalidSampleCount(..)
-            | Self::MultisampledNotRenderAttachment => return ErrorType::Validation,
-        };
-        e.webgpu_error_type()
+            | Self::MultisampledNotRenderAttachment => ErrorType::Validation,
+        }
     }
 }
 
@@ -1800,9 +1919,8 @@ pub enum CreateTextureViewError {
     #[error("Array layer count is 0")]
     ZeroArrayLayerCount,
     #[error(
-        "TextureView spans mip levels [{base_mip_level}, {end_mip_level}) \
-        (mipLevelCount {mip_level_count}) but the texture view only has {total} total mip levels",
-        end_mip_level = base_mip_level + mip_level_count
+        "`TextureView` starts at mip level {base_mip_level} and spans {mip_level_count} mip \
+        levels, but the texture view only has {total} total mip level(s)"
     )]
     TooManyMipLevels {
         base_mip_level: u32,
@@ -1810,9 +1928,8 @@ pub enum CreateTextureViewError {
         total: u32,
     },
     #[error(
-        "TextureView spans array layers [{base_array_layer}, {end_array_layer}) \
-         (arrayLayerCount {array_layer_count}) but the texture view only has {total} total layers",
-        end_array_layer = base_array_layer + array_layer_count
+        "`TextureView` starts at array layer {base_array_layer} and spans {array_layer_count}) \
+        array layers, but the texture view only has {total} total layer(s)"
     )]
     TooManyArrayLayers {
         base_array_layer: u32,
@@ -1871,10 +1988,6 @@ impl WebGpuError for CreateTextureViewError {
         }
     }
 }
-
-#[derive(Clone, Debug, Error)]
-#[non_exhaustive]
-pub enum TextureViewDestroyError {}
 
 crate::impl_resource_type!(TextureView);
 crate::impl_labeled!(TextureView);
@@ -1950,22 +2063,19 @@ pub enum CreateExternalTextureError {
 
 impl WebGpuError for CreateExternalTextureError {
     fn webgpu_error_type(&self) -> ErrorType {
-        let e: &dyn WebGpuError = match self {
-            CreateExternalTextureError::Device(e) => e,
-            CreateExternalTextureError::MissingFeatures(e) => e,
-            CreateExternalTextureError::InvalidResource(e) => e,
-            CreateExternalTextureError::CreateBuffer(e) => e,
-            CreateExternalTextureError::QueueWrite(e) => e,
-            CreateExternalTextureError::MissingTextureUsage(e) => e,
+        match self {
+            CreateExternalTextureError::Device(e) => e.webgpu_error_type(),
+            CreateExternalTextureError::MissingFeatures(e) => e.webgpu_error_type(),
+            CreateExternalTextureError::InvalidResource(e) => e.webgpu_error_type(),
+            CreateExternalTextureError::CreateBuffer(e) => e.webgpu_error_type(),
+            CreateExternalTextureError::QueueWrite(e) => e.webgpu_error_type(),
+            CreateExternalTextureError::MissingTextureUsage(e) => e.webgpu_error_type(),
             CreateExternalTextureError::IncorrectPlaneCount { .. }
             | CreateExternalTextureError::InvalidPlaneMultisample(_)
             | CreateExternalTextureError::InvalidPlaneSampleType { .. }
             | CreateExternalTextureError::InvalidPlaneDimension(_)
-            | CreateExternalTextureError::InvalidPlaneFormat { .. } => {
-                return ErrorType::Validation
-            }
-        };
-        e.webgpu_error_type()
+            | CreateExternalTextureError::InvalidPlaneFormat { .. } => ErrorType::Validation,
+        }
     }
 }
 
@@ -2089,17 +2199,16 @@ crate::impl_trackable!(Sampler);
 
 impl WebGpuError for CreateSamplerError {
     fn webgpu_error_type(&self) -> ErrorType {
-        let e: &dyn WebGpuError = match self {
-            Self::Device(e) => e,
-            Self::MissingFeatures(e) => e,
+        match self {
+            Self::Device(e) => e.webgpu_error_type(),
+            Self::MissingFeatures(e) => e.webgpu_error_type(),
 
             Self::InvalidLodMinClamp(_)
             | Self::InvalidLodMaxClamp { .. }
             | Self::InvalidAnisotropy(_)
             | Self::InvalidFilterModeWithAnisotropy { .. }
-            | Self::InvalidMipmapFilterModeWithAnisotropy { .. } => return ErrorType::Validation,
-        };
-        e.webgpu_error_type()
+            | Self::InvalidMipmapFilterModeWithAnisotropy { .. } => ErrorType::Validation,
+        }
     }
 }
 
@@ -2118,13 +2227,12 @@ pub enum CreateQuerySetError {
 
 impl WebGpuError for CreateQuerySetError {
     fn webgpu_error_type(&self) -> ErrorType {
-        let e: &dyn WebGpuError = match self {
-            Self::Device(e) => e,
-            Self::MissingFeatures(e) => e,
+        match self {
+            Self::Device(e) => e.webgpu_error_type(),
+            Self::MissingFeatures(e) => e.webgpu_error_type(),
 
-            Self::TooManyQueries { .. } | Self::ZeroCount => return ErrorType::Validation,
-        };
-        e.webgpu_error_type()
+            Self::TooManyQueries { .. } | Self::ZeroCount => ErrorType::Validation,
+        }
     }
 }
 
@@ -2138,6 +2246,7 @@ pub struct QuerySet {
     pub(crate) label: String,
     pub(crate) tracking_data: TrackingData,
     pub(crate) desc: wgt::QuerySetDescriptor<()>,
+    pub(crate) initialized_slots: Mutex<bit_vec::BitVec>,
 }
 
 impl Drop for QuerySet {
@@ -2324,9 +2433,7 @@ impl Blas {
                 match map_res {
                     Ok(mapping) => {
                         if !mapping.is_coherent {
-                            // Clippy complains about this because it might not be intended, but
-                            // this is intentional.
-                            #[expect(clippy::single_range_in_vec_init)]
+                            #[expect(clippy::single_range_in_vec_init, reason = "intentional")]
                             self.device.raw().invalidate_mapped_ranges(
                                 compaction_buffer,
                                 &[0..size_of::<wgpu_types::BufferAddress>() as wgt::BufferAddress],

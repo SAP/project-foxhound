@@ -9,29 +9,14 @@ taskcluster/kinds/reprocess-symbols/job-template.yml into an actual task descrip
 import logging
 
 from taskgraph.transforms.base import TransformSequence
-from taskgraph.util.dependencies import get_dependencies, get_primary_dependency
+from taskgraph.util.dependencies import get_primary_dependency
 from taskgraph.util.treeherder import inherit_treeherder_from_dep, join_symbol
 
-from gecko_taskgraph.util.attributes import (
-    copy_attributes_from_dependent_job,
-    sorted_unique_list,
-)
+from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
 
 logger = logging.getLogger(__name__)
 
 transforms = TransformSequence()
-
-
-@transforms.add
-def gather_required_signoffs(config, jobs):
-    for job in jobs:
-        job.setdefault("attributes", {})["required_signoffs"] = sorted_unique_list(
-            *(
-                dep.attributes.get("required_signoffs", [])
-                for dep in get_dependencies(config, job)
-            )
-        )
-        yield job
 
 
 @transforms.add

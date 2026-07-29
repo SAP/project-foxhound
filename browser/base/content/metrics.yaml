@@ -65,12 +65,13 @@ security.ui.protectionspopup:
       - https://bugzil.la/1920735
       - https://bugzil.la/1958162
       - https://bugzil.la/1989192
+      - https://bugzil.la/2026447
     data_reviews:
       - https://bugzil.la/1920735
     notification_emails:
       - wwen@mozilla.com
       - emz@mozilla.com
-    expires: 152
+    expires: 160
 
   open_protectionspopup_cfr:
     type: event
@@ -304,12 +305,13 @@ security.ui.protectionspopup:
       - https://bugzil.la/1920735
       - https://bugzil.la/1958162
       - https://bugzil.la/1989192
+      - https://bugzil.la/2026447
     data_reviews:
       - https://bugzil.la/1920735
     notification_emails:
       - wwen@mozilla.com
       - emz@mozilla.com
-    expires: 152
+    expires: 160
 
   smartblockembeds_shown:
     type: counter
@@ -319,12 +321,13 @@ security.ui.protectionspopup:
       - https://bugzil.la/1920735
       - https://bugzil.la/1958162
       - https://bugzil.la/1989192
+      - https://bugzil.la/2026447
     data_reviews:
       - https://bugzil.la/1920735
     notification_emails:
       - wwen@mozilla.com
       - emz@mozilla.com
-    expires: 152
+    expires: 160
 
 browser.engagement:
   bookmarks_toolbar_bookmark_added:
@@ -383,6 +386,26 @@ browser.engagement:
     expires: never
     telemetry_mirror: h#FX_TOTAL_TOP_VISITS
 
+  windows_start_search_activation_count:
+    type: labeled_counter
+    description: >
+      Counts Bing navigations on Windows that match the Windows Search pattern,
+      using the Bing base domain and `/search` path as heuristic signals. This
+      metric is intended as a proxy for Firefox activations originating from
+      Windows Start menu search.
+    bugs:
+      - https://bugzil.la/2026849
+    data_reviews:
+      - https://bugzil.la/2026849
+    notification_emails:
+      - install-update@mozilla.com
+    send_in_pings:
+      - metrics
+    expires: 159
+    labels:
+      - startup
+      - new_tab
+
 networking:
   captive_portal_banner_displayed:
     type: counter
@@ -393,12 +416,12 @@ networking:
       scalar networking.captive_portal_banner_displayed.
     bugs:
       - https://bugzil.la/1868145
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037081
     data_reviews:
       - https://bugzil.la/1868145
     notification_emails:
       - necko@mozilla.com
     expires: never
-    telemetry_mirror: NETWORKING_CAPTIVE_PORTAL_BANNER_DISPLAYED
 
   captive_portal_banner_display_time:
     type: labeled_counter
@@ -412,6 +435,7 @@ networking:
       scalar networking.captive_portal_banner_display_time.
     bugs:
       - https://bugzil.la/1868145
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037081
     data_reviews:
       - https://bugzil.la/1868145
     notification_emails:
@@ -421,7 +445,6 @@ networking:
       - success
       - abort
       - dismiss
-    telemetry_mirror: NETWORKING_CAPTIVE_PORTAL_BANNER_DISPLAY_TIME
 
 browser.timings:
   tab_click:
@@ -438,8 +461,14 @@ browser.timings:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1950710
     notification_emails:
       - mconley@mozilla.com
+      - perf-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: FX_TAB_CLICK_MS
+    metadata:
+      monitor:
+        alert: False
+        lower_is_better: True
+        platforms:
+          - All
 
   new_window:
     type: timing_distribution
@@ -455,8 +484,14 @@ browser.timings:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1489524
     notification_emails:
       - mconley@mozilla.com
+      - perf-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: FX_NEW_WINDOW_MS
+    metadata:
+      monitor:
+        alert: False
+        lower_is_better: True
+        platforms:
+          - All
 
   page_load:
     type: timing_distribution
@@ -478,7 +513,12 @@ browser.timings:
       - perf-telemetry-alerts@mozilla.com
       - product-metrics-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: FX_PAGE_LOAD_MS_2
+    metadata:
+      monitor:
+        alert: False
+        lower_is_better: True
+        platforms:
+          - All
 
   page_reload_normal:
     type: timing_distribution
@@ -498,7 +538,6 @@ browser.timings:
       - perf-telemetry-alerts@mozilla.com
       - product-metrics-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: FX_PAGE_RELOAD_NORMAL_MS
 
   page_reload_skip_cache:
     type: timing_distribution
@@ -517,7 +556,6 @@ browser.timings:
       - perf-telemetry-alerts@mozilla.com
       - product-metrics-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: FX_PAGE_RELOAD_SKIP_CACHE_MS
 
   startup_timeline:
     type: labeled_quantity
@@ -541,3 +579,17 @@ browser.timings:
       - delayedStartupStarted
       - delayedStartupFinished
       - blankWindowShown
+
+browser.applicationmenu:
+  set_as_default:
+    type: event
+    description: >
+      The user used Set As Default in the macOS application menu.
+    bugs:
+      - https://bugzil.la/2018752
+    data_reviews:
+      - https://bugzil.la/2018752
+    notification_emails:
+      - rfambro@mozilla.com
+      - iholmes@mozilla.com
+    expires: never

@@ -9,6 +9,13 @@ newtab-page-title = Ak' ika'ye'
 newtab-settings-button =
     .title = B'an tuch ak' xaj u'uje' tu k'uchb'al tetze'
 
+## Firefox Home content
+
+home-mode-choice-custom-srd =
+    .label = Eetz chitu' URLs…
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Aq'ol texhlal
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +23,7 @@ newtab-search-box-search-button =
     .title = Chuka
     .aria-label = Chuka
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Aq'ku' uma'l chukb'al tetz
 newtab-topsites-edit-topsites-header = B'an tuch u atimb'ale'  ve nim atje'.

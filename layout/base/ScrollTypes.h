@@ -55,7 +55,7 @@ enum class ScrollUnit { DEVICE_PIXELS, LINES, PAGES, WHOLE };
  * Representing whether there's an on-going animation in APZC and it was
  * triggered by script or by user input.
  */
-enum class APZScrollAnimationType {
+enum class APZScrollAnimationType : uint8_t {
   No,                   // No animation.
   TriggeredByScript,    // Animation triggered by script.
   TriggeredByUserInput  // Animation triggered by user input.

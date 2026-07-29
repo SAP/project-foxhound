@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -113,23 +111,23 @@ JSScript* JS::Compile(JSContext* cx, const ReadOnlyCompileOptions& options,
   return CompileSourceBuffer(cx, options, srcBuf);
 }
 
-static bool StartCollectingDelazifications(JSContext* cx,
-                                           JS::Handle<ScriptSourceObject*> sso,
-                                           JS::Stencil* stencil,
-                                           bool& alreadyStarted) {
+static bool StartCollectingDelazifications(
+    JSContext* cx, JS::Handle<ScriptSourceObject*> sso, JS::Stencil* stencil,
+    JS::CollectDelazificationsResult& result) {
   if (sso->isCollectingDelazifications()) {
-    alreadyStarted = true;
+    result = JS::CollectDelazificationsResult::AlreadyStarted;
     return true;
   }
-
-  alreadyStarted = false;
 
   // We don't support asm.js in XDR.
   // Failures are reported by the FinishCollectingDelazifications function
   // below.
   if (stencil->getInitial()->hasAsmJS()) {
+    result = JS::CollectDelazificationsResult::NotSupported;
     return true;
   }
+
+  result = JS::CollectDelazificationsResult::NewlyStarted;
 
   if (!sso->maybeGetStencils()) {
     RefPtr stencils = stencil;
@@ -143,17 +141,17 @@ static bool StartCollectingDelazifications(JSContext* cx,
 
 JS_PUBLIC_API bool JS::StartCollectingDelazifications(
     JSContext* cx, JS::Handle<JSScript*> script, JS::Stencil* stencil,
-    bool& alreadyStarted) {
+    JS::CollectDelazificationsResult& result) {
   JS::Rooted<ScriptSourceObject*> sso(cx, script->sourceObject());
-  return ::StartCollectingDelazifications(cx, sso, stencil, alreadyStarted);
+  return ::StartCollectingDelazifications(cx, sso, stencil, result);
 }
 
 JS_PUBLIC_API bool JS::StartCollectingDelazifications(
     JSContext* cx, JS::Handle<JSObject*> module, JS::Stencil* stencil,
-    bool& alreadyStarted) {
+    JS::CollectDelazificationsResult& result) {
   JS::Rooted<ScriptSourceObject*> sso(
       cx, module->as<ModuleObject>().scriptSourceObject());
-  return ::StartCollectingDelazifications(cx, sso, stencil, alreadyStarted);
+  return ::StartCollectingDelazifications(cx, sso, stencil, result);
 }
 
 static bool FinishCollectingDelazifications(JSContext* cx,
@@ -185,18 +183,24 @@ JS_PUBLIC_API bool JS::FinishCollectingDelazifications(
   return ::FinishCollectingDelazifications(cx, sso, stencilOut);
 }
 
-JS_PUBLIC_API void JS::AbortCollectingDelazifications(JS::HandleScript script) {
+static void AbortCollectingDelazifications(ScriptSourceObject* sso) {
+  if (!sso->isCollectingDelazifications()) {
+    return;
+  }
+
+  sso->unsetCollectingDelazifications();
+}
+
+JS_PUBLIC_API void JS::AbortCollectingDelazifications(JSScript* script) {
   if (!script) {
     return;
   }
-  script->sourceObject()->unsetCollectingDelazifications();
+  AbortCollectingDelazifications(script->sourceObject());
 }
 
-JS_PUBLIC_API void JS::AbortCollectingDelazifications(
-    JS::Handle<JSObject*> module) {
-  module->as<ModuleObject>()
-      .scriptSourceObject()
-      ->unsetCollectingDelazifications();
+JS_PUBLIC_API void JS::AbortCollectingDelazifications(JSObject* module) {
+  AbortCollectingDelazifications(
+      module->as<ModuleObject>().scriptSourceObject());
 }
 
 JSScript* JS::CompileUtf8File(JSContext* cx,

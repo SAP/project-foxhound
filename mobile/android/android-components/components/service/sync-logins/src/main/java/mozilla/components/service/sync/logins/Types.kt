@@ -4,6 +4,7 @@
 
 package mozilla.components.service.sync.logins
 
+import mozilla.appservices.logins.BulkResultEntry
 import mozilla.components.concept.storage.Login
 import mozilla.components.concept.storage.LoginEntry
 
@@ -25,9 +26,21 @@ fun mozilla.appservices.logins.Login.toLogin() = Login(
     timeCreated = timeCreated,
     timeLastUsed = timeLastUsed,
     timePasswordChanged = timePasswordChanged,
-    timeOfLastBreach = timeOfLastBreach,
     timeLastBreachAlertDismissed = timeLastBreachAlertDismissed,
 )
+
+/**
+ * Convert A-S BulkResultEntry into A-C [Result<Login>].
+ */
+fun mozilla.appservices.logins.BulkResultEntry.toLoginResult() = when (this) {
+    is BulkResultEntry.Success -> Result.success(this.login.toLogin())
+    is BulkResultEntry.Error -> Result.failure(BulkInsertionError(this.message))
+}
+
+/**
+ * A [Throwable] containing the error message of a [BulkResultEntry].
+ */
+class BulkInsertionError(message: String) : Throwable(message)
 
 /**
  * Convert A-C [LoginEntry] into A-S LoginEntry.
@@ -58,6 +71,5 @@ fun Login.toLogin() = mozilla.appservices.logins.Login(
     passwordField = passwordField,
     username = username,
     password = password,
-    timeOfLastBreach = timeOfLastBreach,
     timeLastBreachAlertDismissed = timeLastBreachAlertDismissed,
 )

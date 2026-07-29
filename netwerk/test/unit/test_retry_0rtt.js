@@ -34,54 +34,12 @@ add_setup(
     httpServer = new HttpServer();
     httpServer.registerPrefixHandler("/callback/", listenHandler);
     httpServer.start(-1);
-
     registerCleanupFunction(async () => {
       await httpServer.stop();
     });
-
-    Services.env.set(
-      "FAULTY_SERVER_CALLBACK_PORT",
-      httpServer.identity.primaryPort
-    );
-    Services.env.set("MOZ_TLS_SERVER_0RTT", "1");
-    await asyncStartTLSTestServer(
-      "FaultyServer",
-      "../../../security/manager/ssl/tests/unit/test_faulty_server"
-    );
-    let nssComponent = Cc["@mozilla.org/psm;1"].getService(Ci.nsINSSComponent);
-    await nssComponent.asyncClearSSLExternalAndInternalSessionCache();
-
-    // See Bug 1878505
-    Services.prefs.setIntPref("network.http.speculative-parallel-limit", 0);
-    registerCleanupFunction(async () => {
-      Services.prefs.clearUserPref("network.http.speculative-parallel-limit");
-    });
+    await asyncSetupFaultyServer(httpServer);
   }
 );
-
-async function sleep(time) {
-  return new Promise(resolve => {
-    do_timeout(time * 1000, resolve);
-  });
-}
-
-function makeChan(url) {
-  let chan = NetUtil.newChannel({
-    uri: url,
-    loadUsingSystemPrincipal: true,
-  }).QueryInterface(Ci.nsIHttpChannel);
-
-  chan.loadFlags = Ci.nsIChannel.LOAD_INITIAL_DOCUMENT_URI;
-  return chan;
-}
-
-function channelOpenPromise(chan, flags) {
-  return new Promise(resolve => {
-    chan.asyncOpen(
-      new ChannelListener((req, buffer) => resolve([req, buffer]), null, flags)
-    );
-  });
-}
 
 add_task(
   {

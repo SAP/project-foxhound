@@ -79,7 +79,7 @@ export class PageAssist extends MozLitElement {
   }
 
   get _browserWin() {
-    return this.ownerGlobal?.browsingContext?.topChromeWindow || null;
+    return this.documentGlobal?.browsingContext?.topChromeWindow || null;
   }
   get _gBrowser() {
     return this._browserWin?.gBrowser || null;
@@ -91,7 +91,9 @@ export class PageAssist extends MozLitElement {
     this._initURLChange();
     this._onUnload = () => this._cleanup();
     this._setupFinder();
-    this.ownerGlobal.addEventListener("unload", this._onUnload, { once: true });
+    this.documentGlobal.addEventListener("unload", this._onUnload, {
+      once: true,
+    });
   }
 
   disconnectedCallback() {
@@ -101,7 +103,7 @@ export class PageAssist extends MozLitElement {
     }
 
     if (this._onUnload) {
-      this.ownerGlobal.removeEventListener("unload", this._onUnload);
+      this.documentGlobal.removeEventListener("unload", this._onUnload);
       this._onUnload = null;
     }
     this._cleanup();

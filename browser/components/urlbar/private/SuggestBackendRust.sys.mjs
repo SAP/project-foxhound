@@ -83,11 +83,11 @@ const gSuggestionTypesByCtor = new WeakMap();
  *     binding will return a promise, and if it's "main" it won't.
  *
  * [1] https://github.com/mozilla/application-services/tree/main/components/suggest
- * [2] https://searchfox.org/mozilla-central/source/third_party/rust/suggest
+ * [2] https://searchfox.org/firefox-main/source/third_party/rust/suggest
  * [3] https://github.com/mozilla/application-services/blob/main/components/suggest/src/suggest.udl
- * [4] https://searchfox.org/mozilla-central/source/third_party/rust/suggest/src/suggest.udl
- * [5] https://searchfox.org/mozilla-central/source/toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustSuggest.sys.mjs
- * [6] https://searchfox.org/mozilla-central/source/toolkit/components/uniffi-bindgen-gecko-js/config.toml
+ * [4] https://searchfox.org/firefox-main/source/third_party/rust/suggest/src/suggest.udl
+ * [5] https://searchfox.org/firefox-main/source/toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustSuggest.sys.mjs
+ * [6] https://searchfox.org/firefox-main/source/toolkit/components/uniffi-bindgen-gecko-js/config.toml
  */
 export class SuggestBackendRust extends SuggestBackend {
   constructor() {
@@ -115,7 +115,7 @@ export class SuggestBackendRust extends SuggestBackend {
     // fine. Alternatively the test harnesses could disable Suggest by default
     // just like they set the server pref to the dummy URL, but Suggest is more
     // than Rust suggestions.
-    if (!lazy.Utils.shouldSkipRemoteActivityDueToTests) {
+    if (!lazy.Utils.shouldSkipRemoteActivity) {
       this.#remoteSettingsService =
         lazy.SharedRemoteSettingsService.rustService();
     }

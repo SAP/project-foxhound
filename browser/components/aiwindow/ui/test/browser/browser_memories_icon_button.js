@@ -58,3 +58,48 @@ add_task(async function test_memories_icon_button() {
     });
   });
 });
+
+add_task(async function test_memories_toggle_icon_changes() {
+  await BrowserTestUtils.withNewTab(TEST_PAGE, async browser => {
+    await SpecialPowers.spawn(browser, [], async () => {
+      const doc = content.document;
+      const btn = doc.getElementById("test-memories-icon-button");
+
+      await content.customElements.whenDefined("memories-icon-button");
+
+      const shadow = btn.shadowRoot;
+      const mozBtn = shadow.querySelector("moz-button");
+
+      // Test that icon changes when toggled
+      Assert.equal(btn.pressed, true, "Should start as pressed");
+      Assert.ok(
+        mozBtn.getAttribute("iconsrc").includes("memories-on.svg"),
+        "Should show memories-on icon when pressed"
+      );
+
+      // Click to toggle off
+      mozBtn.click();
+      await content.Promise.resolve();
+
+      Assert.equal(btn.pressed, false, "Should be unpressed after click");
+      Assert.ok(
+        mozBtn.getAttribute("iconsrc").includes("memories-off.svg"),
+        "Should show memories-off icon when unpressed"
+      );
+
+      // Click to toggle back on
+      mozBtn.click();
+      await content.Promise.resolve();
+
+      Assert.equal(
+        btn.pressed,
+        true,
+        "Should be pressed again after second click"
+      );
+      Assert.ok(
+        mozBtn.getAttribute("iconsrc").includes("memories-on.svg"),
+        "Should show memories-on icon when pressed again"
+      );
+    });
+  });
+});

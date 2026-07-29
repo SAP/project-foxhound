@@ -42,11 +42,11 @@ Awsy tests
             * awsy-base: trunk
             * awsy-base-dmd: None
 
-      * test-windows11-64-24h2-shippable/opt
+      * test-windows11-64-25h2-shippable/opt
             * awsy-base: trunk
             * awsy-base-dmd: None
 
-      * test-windows11-64-24h2/opt
+      * test-windows11-64-25h2/opt
             * awsy-base: None
             * awsy-base-dmd: None
 
@@ -79,11 +79,11 @@ Awsy tests
             * awsy-base-dmd: None
             * awsy-dmd: None
 
-      * test-windows11-64-24h2-shippable/opt
+      * test-windows11-64-25h2-shippable/opt
             * awsy-base-dmd: None
             * awsy-dmd: None
 
-      * test-windows11-64-24h2/opt
+      * test-windows11-64-25h2/opt
             * awsy-base-dmd: None
             * awsy-dmd: None
 
@@ -108,9 +108,9 @@ Awsy tests
 
       * test-macosx1470-64-shippable/opt
 
-      * test-windows11-64-24h2-shippable/opt
+      * test-windows11-64-25h2-shippable/opt
 
-      * test-windows11-64-24h2/opt
+      * test-windows11-64-25h2/opt
 
 
 .. dropdown:: tp6 (FF)
@@ -137,10 +137,10 @@ Awsy tests
       * test-macosx1470-64-shippable/opt
             * awsy-tp6: trunk
 
-      * test-windows11-64-24h2-shippable/opt
+      * test-windows11-64-25h2-shippable/opt
             * awsy-tp6: trunk
 
-      * test-windows11-64-24h2/opt
+      * test-windows11-64-25h2/opt
             * awsy-tp6: None
 
 

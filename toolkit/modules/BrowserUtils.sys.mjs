@@ -1,4 +1,3 @@
-/* -*- mode: js; indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,10 +8,16 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
-  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   ReaderMode: "moz-src:///toolkit/components/reader/ReaderMode.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
 });
+
+XPCOMUtils.defineLazyServiceGetter(
+  lazy,
+  "IDNService",
+  "@mozilla.org/network/idn-service;1",
+  Ci.nsIIDNService
+);
 
 ChromeUtils.defineLazyGetter(lazy, "CatManListenerManager", () => {
   const CatManListenerManager = {
@@ -33,14 +38,38 @@ ChromeUtils.defineLazyGetter(lazy, "CatManListenerManager", () => {
       }
       let rv = Array.from(
         Services.catMan.enumerateCategory(categoryName),
-        ({ data: module, value }) => {
+        ({ data: entry, value }) => {
           try {
+            // Entry names are unique keys per category, so a `#…` suffix lets
+            // multiple consumers in the same module register without colliding.
+            // TODO bug 2038950: remove this once all common JS is ported to
+            // ES modules.
+            let module = entry.replace(/#.*$/, "");
             let [objName, method] = value.split(".");
-            let fn = (...args) => {
-              if (!Object.hasOwn(this.cachedModules, module)) {
-                this.cachedModules[module] = ChromeUtils.importESModule(module);
+            let fn = (jsGlobal, ...args) => {
+              let obj;
+              if (module.endsWith(".js")) {
+                if (!jsGlobal) {
+                  throw new Error(
+                    `jsGlobal must be provided to load ${objName} from ${module}.`
+                  );
+                }
+                // For plain JS scripts, rely on a lazy getter defined on
+                // jsGlobal to load the script on first access.
+                obj = jsGlobal[objName];
+                if (!obj) {
+                  throw new Error(
+                    `Could not access ${objName} from ${module}. ` +
+                      `Did you forget to define a lazy getter for ${objName} on the global?`
+                  );
+                }
+              } else {
+                if (!Object.hasOwn(this.cachedModules, module)) {
+                  this.cachedModules[module] =
+                    ChromeUtils.importESModule(module);
+                }
+                obj = this.cachedModules[module][objName];
               }
-              let obj = this.cachedModules[module][objName];
               if (!obj) {
                 throw new Error(
                   `Could not access ${objName} in ${module}. Is it exported?`
@@ -51,13 +80,13 @@ ChromeUtils.defineLazyGetter(lazy, "CatManListenerManager", () => {
                   `${objName}.${method} in ${module} is not a function.`
                 );
               }
-              return this.cachedModules[module][objName][method](...args);
+              return obj[method](...args);
             };
             fn._descriptiveName = value;
             return fn;
           } catch (ex) {
             console.error(
-              `Error processing category manifest for ${module}: ${value}`,
+              `Error processing category manifest for ${entry}: ${value}`,
               ex
             );
             return null;
@@ -161,13 +190,104 @@ export var BrowserUtils = {
    *   The label/title of the URL
    */
   copyLink(url, title) {
-    // This is a little hacky, but there is a lot of code in Places that handles
-    // clipboard stuff, so it's easier to reuse.
-    let node = {};
-    node.type = 0;
-    node.title = title;
-    node.uri = url;
-    lazy.PlacesUtils.copyNode(node);
+    this.copyLinks([{ url, title }]);
+  },
+
+  /**
+   * Copy multiple links to the clipboard. Writes three clipboard flavors:
+   *   text/x-moz-url  — "url\ntitle" pairs separated by newlines
+   *   text/html       — "<A HREF="url">title</A>" anchors separated by <BR>
+   *   text/plain      — plain URLs separated by newlines
+   *
+   * @param {Array<{url: string, title: string}>} links
+   */
+  copyLinks(links) {
+    let htmlEscape = s =>
+      s
+        .replace(/&/g, "&amp;")
+        .replace(/>/g, "&gt;")
+        .replace(/</g, "&lt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&apos;");
+
+    let mozURLData = links
+      .map(({ url, title }) => `${url}\n${title}`)
+      .join("\n");
+    let htmlData = links
+      .map(({ url, title }) => `<A HREF="${url}">${htmlEscape(title)}</A>`)
+      .join("<BR>\n");
+    let textData = links.map(({ url }) => url).join("\n");
+
+    let xferable = Cc["@mozilla.org/widget/transferable;1"].createInstance(
+      Ci.nsITransferable
+    );
+    xferable.init(null);
+
+    for (let [type, data] of [
+      // This order is _important_! It controls how this and other applications
+      // select data to be inserted based on type.
+      ["text/x-moz-url", mozURLData],
+      ["text/html", htmlData],
+      ["text/plain", textData],
+    ]) {
+      let str = Cc["@mozilla.org/supports-string;1"].createInstance(
+        Ci.nsISupportsString
+      );
+      str.data = data;
+      xferable.addDataFlavor(type);
+      xferable.setTransferData(type, str);
+    }
+
+    Services.clipboard.setData(
+      xferable,
+      null,
+      Ci.nsIClipboard.kGlobalClipboard
+    );
+  },
+
+  /**
+   * Copy image data from an ArrayBuffer to the system clipboard.
+   *
+   * @param {ArrayBuffer} arrayBuffer
+   *   The image data encoded as PNG.
+   */
+  copyImageToClipboard(arrayBuffer) {
+    const imageTools = Cc["@mozilla.org/image/tools;1"].getService(
+      Ci.imgITools
+    );
+
+    const imgDecoded = imageTools.decodeImageFromArrayBuffer(
+      arrayBuffer,
+      "image/png"
+    );
+
+    const transferable = Cc[
+      "@mozilla.org/widget/transferable;1"
+    ].createInstance(Ci.nsITransferable);
+    transferable.init(null);
+    // Internal consumers expect the image data to be stored as a
+    // nsIInputStream. On Linux and Windows, pasted data is directly
+    // retrieved from the system's native clipboard, and made available
+    // as a nsIInputStream.
+    //
+    // On macOS, nsClipboard::GetNativeClipboardData (nsClipboard.mm) uses
+    // a cached copy of nsITransferable if available, e.g. when the copy
+    // was initiated by the same browser instance. To make sure that a
+    // nsIInputStream is returned instead of the cached imgIContainer,
+    // the image is exported as `kNativeImageMime`. Data associated
+    // with this type is converted to a platform-specific image format
+    // when written to the clipboard. The type is not used when images
+    // are read from the clipboard (on all platforms, not just macOS).
+    // This forces nsClipboard::GetNativeClipboardData to fall back to
+    // the native clipboard, and return the image as a nsITransferable.
+    transferable.addDataFlavor("application/x-moz-nativeimage");
+    transferable.setTransferData("application/x-moz-nativeimage", imgDecoded);
+
+    Services.clipboard.setData(
+      transferable,
+      null,
+      Services.clipboard.kGlobalClipboard
+    );
   },
 
   /**
@@ -289,7 +409,16 @@ export var BrowserUtils = {
           !showInsecureHTTP &&
           (onlyBaseDomain || (!showWWW && host.startsWith("www.")));
         if (removeSubdomains) {
-          host = Services.eTLD.getSchemelessSite(uri);
+          try {
+            host = lazy.IDNService.domainToDisplay(
+              Services.eTLD.getSchemelessSite(uri)
+            );
+          } catch (ex) {
+            // Fall back to the full host for invalid IDN. This should never
+            // happen but we'll be defensive so we don't break display.
+            console.error(ex);
+            host = uri.host;
+          }
           if (uri.port != -1) {
             host += ":" + uri.port;
           }
@@ -402,56 +531,60 @@ export var BrowserUtils = {
    */
   hrefAndLinkNodeForClickEvent(event) {
     // We should get a window off the event, and bail if not:
-    let content = event.view || event.composedTarget?.ownerGlobal;
+    let content = event.view || event.composedTarget?.documentGlobal;
     if (!content?.HTMLAnchorElement) {
       return null;
     }
-    function isHTMLLink(aNode) {
-      // Be consistent with what nsContextMenu.js does.
-      return (
-        (content.HTMLAnchorElement.isInstance(aNode) && aNode.href) ||
-        (content.HTMLAreaElement.isInstance(aNode) && aNode.href) ||
-        content.HTMLLinkElement.isInstance(aNode)
-      );
+    // Be consistent with what ContextMenuChild.sys.mjs does.
+    function hrefAndLinkNodeForHTMLLink(aElement) {
+      if (
+        (content.HTMLAnchorElement.isInstance(aElement) && aElement.href) ||
+        (content.HTMLAreaElement.isInstance(aElement) && aElement.href) ||
+        content.HTMLLinkElement.isInstance(aElement)
+      ) {
+        let href = URL.parse(aElement.href)?.href ?? null;
+        if (href) {
+          return [href, aElement, aElement.ownerDocument.nodePrincipal];
+        }
+      }
+      return null;
+    }
+    function hrefAndLinkNodeForNonHTMLink(aElement) {
+      if (
+        aElement.localName == "a" ||
+        (content.MathMLElement.isInstance(aElement) &&
+          !Services.prefs.getBoolPref(
+            "mathml.href_link_on_non_anchor_element.disabled"
+          ))
+      ) {
+        let href =
+          aElement.getAttribute("href") ||
+          aElement.getAttributeNS("http://www.w3.org/1999/xlink", "href");
+        href =
+          URL.parse(href, aElement.ownerDocument.baseURIObject.spec)?.href ??
+          null;
+        if (href) {
+          // Don't return the aElement we got href from since callers expect
+          // <a>-like elements.
+          return [href, null, aElement.ownerDocument.nodePrincipal];
+        }
+      }
+      return null;
     }
 
     let node = event.composedTarget;
-    while (node && !isHTMLLink(node)) {
-      node = node.flattenedTreeParentNode;
-    }
-
-    if (node) {
-      return [node.href, node, node.ownerDocument.nodePrincipal];
-    }
-
-    // If there is no linkNode, try simple XLink.
-    let href, baseURI;
-    node = event.composedTarget;
-    while (node && !href) {
-      if (
-        node.nodeType == content.Node.ELEMENT_NODE &&
-        (node.localName == "a" ||
-          node.namespaceURI == "http://www.w3.org/1998/Math/MathML")
-      ) {
-        href =
-          node.getAttribute("href") ||
-          node.getAttributeNS("http://www.w3.org/1999/xlink", "href");
-        if (href) {
-          baseURI = node.ownerDocument.baseURIObject;
-          break;
+    while (node) {
+      if (node.nodeType == node.ELEMENT_NODE) {
+        let linkData =
+          hrefAndLinkNodeForHTMLLink(node) ||
+          hrefAndLinkNodeForNonHTMLink(node);
+        if (linkData) {
+          return linkData;
         }
       }
       node = node.flattenedTreeParentNode;
     }
-
-    // In case of XLink, we don't return the node we got href from since
-    // callers expect <a>-like elements.
-    // Note: makeURI() will throw if aUri is not a valid URI.
-    return [
-      href ? Services.io.newURI(href, null, baseURI).spec : null,
-      null,
-      node && node.ownerDocument.nodePrincipal,
-    ];
+    return [null, null, null];
   },
 
   /**
@@ -527,6 +660,41 @@ export var BrowserUtils = {
     return "current";
   },
 
+  /**
+   * This function returns whether a link opened with the given `where` will load
+   * in the background.
+   *
+   * @param {string}  where
+   *   Where the link will open, as returned by whereToOpenLink().
+   * @param {object} params
+   *   The params that will be passed to openLinkIn() as param.
+   * @param {boolean} [params.inBackground=null]
+   *   If non-null it takes precedence.
+   * @param {boolean} [params.forceForeground=null]
+   *   When true, defaults to the foreground rather than the pref.
+   * @returns {boolean}
+   *   Whether the link will load in the background.
+   */
+  willLoadInBackground(
+    where,
+    { inBackground = null, forceForeground = null } = {}
+  ) {
+    switch (where) {
+      case "tab":
+      case "tabshifted": {
+        let loadInBackground = inBackground;
+        if (loadInBackground == null) {
+          loadInBackground = forceForeground
+            ? false
+            : Services.prefs.getBoolPref("browser.tabs.loadInBackground");
+        }
+        return where == "tabshifted" ? !loadInBackground : loadInBackground;
+      }
+    }
+
+    return false;
+  },
+
   // Utility function to check command events for potential middle-click events
   // from checkForMiddleClick and unwrap them.
   getRootEvent(aEvent) {
@@ -568,6 +736,9 @@ export var BrowserUtils = {
    * @param {Function} [options.failureHandler]
    *        If specified, will be called for any exceptions raised, in
    *        order to do custom failure handling.
+   * @param {object} [options.jsGlobal=null]
+   *        If specified, will be used as the global object when loading any
+   *        JS modules specified in the category entries.
    * @param {...any} args
    *        Arguments to pass to the consumers.
    * @returns {Promise}
@@ -579,6 +750,7 @@ export var BrowserUtils = {
       profilerMarker = "",
       idleDispatch = false,
       failureHandler = null,
+      jsGlobal = null,
     },
     ...args
   ) {
@@ -588,7 +760,7 @@ export var BrowserUtils = {
     let callSingleListener = async fn => {
       let startTime = profilerMarker ? ChromeUtils.now() : 0;
       try {
-        await fn(...args);
+        await fn(jsGlobal, ...args);
       } catch (ex) {
         console.error(
           `Error in processing ${categoryName} for ${fn._descriptiveName}`
@@ -598,11 +770,15 @@ export var BrowserUtils = {
           await failureHandler?.(ex);
         } catch (nestedEx) {
           console.error(`Error in handling failure: ${nestedEx}`);
-          // Crash in automation:
+          // Crash in automation.
+          // See bug 2034905 for filename / fileName shenanigans.
           if (BrowserUtils._inAutomation) {
             Cc["@mozilla.org/xpcom/debug;1"]
               .getService(Ci.nsIDebug2)
-              .abort(nestedEx.filename, nestedEx.lineNumber);
+              .abort(
+                nestedEx.filename || nestedEx.fileName,
+                nestedEx.lineNumber
+              );
           }
         }
       }
@@ -634,20 +810,6 @@ export var BrowserUtils = {
     }
 
     return Promise.allSettled(allTasks);
-  },
-
-  /**
-   * Returns whether the build is a China repack.
-   *
-   * @returns {boolean} True if the distribution ID is 'MozillaOnline',
-   *                   otherwise false.
-   */
-  isChinaRepack() {
-    return (
-      Services.prefs
-        .getDefaultBranch("")
-        .getCharPref("distribution.id", "default") === "MozillaOnline"
-    );
   },
 
   /**

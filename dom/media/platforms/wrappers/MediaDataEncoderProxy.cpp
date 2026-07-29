@@ -1,24 +1,31 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MediaDataEncoderProxy.h"
 
+#include "nsProxyRelease.h"
+
 namespace mozilla {
 
 MediaDataEncoderProxy::MediaDataEncoderProxy(
-    already_AddRefed<MediaDataEncoder> aProxyEncoder,
-    already_AddRefed<nsISerialEventTarget> aProxyThread)
-    : mProxyEncoder(aProxyEncoder), mProxyThread(aProxyThread) {}
+    RefPtr<MediaDataEncoder>&& aProxyEncoder,
+    nsCOMPtr<nsISerialEventTarget>&& aProxyThread)
+    : mProxyEncoder(std::move(aProxyEncoder)),
+      mProxyThread(std::move(aProxyThread)) {
+  MOZ_ASSERT(mProxyEncoder);
+  MOZ_ASSERT(mProxyThread);
+}
 
-MediaDataEncoderProxy::~MediaDataEncoderProxy() = default;
+MediaDataEncoderProxy::~MediaDataEncoderProxy() {
+  NS_ProxyRelease("MediaDataEncoderProxy::mProxyEncoder", mProxyThread,
+                  mProxyEncoder.forget());
+}
 
 RefPtr<MediaDataEncoder::InitPromise> MediaDataEncoderProxy::Init() {
   MOZ_ASSERT(!mIsShutdown);
 
-  if (!mProxyThread || mProxyThread->IsOnCurrentThread()) {
+  if (mProxyThread->IsOnCurrentThread()) {
     return mProxyEncoder->Init();
   }
   return InvokeAsync(mProxyThread, __func__, [self = RefPtr{this}] {
@@ -30,7 +37,7 @@ RefPtr<MediaDataEncoder::EncodePromise> MediaDataEncoderProxy::Encode(
     nsTArray<RefPtr<MediaData>>&& aSamples) {
   MOZ_ASSERT(!mIsShutdown);
 
-  if (!mProxyThread || mProxyThread->IsOnCurrentThread()) {
+  if (mProxyThread->IsOnCurrentThread()) {
     return mProxyEncoder->Encode(std::move(aSamples));
   }
   return InvokeAsync(
@@ -44,7 +51,7 @@ RefPtr<MediaDataEncoder::EncodePromise> MediaDataEncoderProxy::Encode(
     const MediaData* aSample) {
   MOZ_ASSERT(!mIsShutdown);
 
-  if (!mProxyThread || mProxyThread->IsOnCurrentThread()) {
+  if (mProxyThread->IsOnCurrentThread()) {
     return mProxyEncoder->Encode(aSample);
   }
   return InvokeAsync(mProxyThread, __func__,
@@ -58,7 +65,7 @@ MediaDataEncoderProxy::Reconfigure(
     const RefPtr<const EncoderConfigurationChangeList>& aConfigurationChanges) {
   MOZ_ASSERT(!mIsShutdown);
 
-  if (!mProxyThread || mProxyThread->IsOnCurrentThread()) {
+  if (mProxyThread->IsOnCurrentThread()) {
     return mProxyEncoder->Reconfigure(aConfigurationChanges);
   }
   return InvokeAsync(
@@ -71,7 +78,7 @@ MediaDataEncoderProxy::Reconfigure(
 RefPtr<MediaDataEncoder::EncodePromise> MediaDataEncoderProxy::Drain() {
   MOZ_ASSERT(!mIsShutdown);
 
-  if (!mProxyThread || mProxyThread->IsOnCurrentThread()) {
+  if (mProxyThread->IsOnCurrentThread()) {
     return mProxyEncoder->Drain();
   }
   return InvokeAsync(mProxyThread, __func__, [self = RefPtr{this}] {
@@ -86,23 +93,20 @@ RefPtr<ShutdownPromise> MediaDataEncoderProxy::Shutdown() {
   mIsShutdown = true;
 #endif
 
-  RefPtr<MediaDataEncoder> proxyEncoder = std::move(mProxyEncoder);
-  if (!mProxyThread || mProxyThread->IsOnCurrentThread()) {
-    return proxyEncoder->Shutdown();
+  if (mProxyThread->IsOnCurrentThread()) {
+    return mProxyEncoder->Shutdown();
   }
   // We chain another promise to ensure that the proxied encoder gets destructed
   // on the proxy thread.
-  return InvokeAsync(
-      mProxyThread, __func__,
-      [self = RefPtr{this}, proxyEncoder = std::move(proxyEncoder)] {
-        return proxyEncoder->Shutdown();
-      });
+  return InvokeAsync(mProxyThread, __func__, [self = RefPtr{this}] {
+    return self->mProxyEncoder->Shutdown();
+  });
 }
 
 RefPtr<GenericPromise> MediaDataEncoderProxy::SetBitrate(uint32_t aBitsPerSec) {
   MOZ_ASSERT(!mIsShutdown);
 
-  if (!mProxyThread || mProxyThread->IsOnCurrentThread()) {
+  if (mProxyThread->IsOnCurrentThread()) {
     return mProxyEncoder->SetBitrate(aBitsPerSec);
   }
   return InvokeAsync(mProxyThread, __func__,

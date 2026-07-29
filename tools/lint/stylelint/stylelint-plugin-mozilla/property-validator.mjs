@@ -5,9 +5,8 @@
  */
 
 import valueParser from "postcss-value-parser";
-import { getTokensTable } from "./helpers.mjs";
-
-const tokensTable = getTokensTable();
+import { tokensTable } from "../../../../toolkit/themes/shared/design-system/dist/semantic-categories.mjs";
+import { isSystemColor } from "./helpers.mjs";
 
 /**
  * Validates whether a given CSS property value complies with allowed design token rules.
@@ -40,6 +39,8 @@ export class PropertyValidator {
   customFixes;
   /** @type {Record<string, string>} */
   customSuggestions;
+  /** @type {boolean} */
+  warnSystemColors;
 
   constructor(config) {
     this.config = config;
@@ -92,6 +93,9 @@ export class PropertyValidator {
       .map(type => type.customSuggestions)
       .filter(Boolean)
       .reduce((acc, fixes) => ({ ...acc, ...fixes }), {});
+    this.warnSystemColors = this.config.validTypes.some(
+      propType => propType.warnSystemColors
+    );
   }
 
   getFixedValue(value, lookupMap = {}) {
@@ -136,7 +140,10 @@ export class PropertyValidator {
 
   isAllowedFunction(functionType, isAlias = false) {
     if (isAlias) {
-      return this.allowedAliasFunctions.has(functionType);
+      return (
+        this.allowedFunctions.has(functionType) ||
+        this.allowedAliasFunctions.has(functionType)
+      );
     }
 
     return this.allowedFunctions.has(functionType);
@@ -147,6 +154,14 @@ export class PropertyValidator {
   }
 
   isAllowedWord(word, isAlias = false) {
+    const lowerWord = word.toLowerCase();
+    const hasAllowedWord = Array.from(this.allowedWords).some(
+      allowed => allowed.toLowerCase() === lowerWord
+    );
+    if (hasAllowedWord) {
+      return true;
+    }
+
     if (this.allowUnits && this.isUnit(word)) {
       if (this.allowedUnits.size) {
         const parsed = valueParser.unit(word);
@@ -154,7 +169,6 @@ export class PropertyValidator {
       }
       return true;
     }
-    const lowerWord = word.toLowerCase();
 
     if (isAlias) {
       return Array.from(this.allowedAliasWords).some(
@@ -162,14 +176,12 @@ export class PropertyValidator {
       );
     }
 
-    return Array.from(this.allowedWords).some(
-      allowed => allowed.toLowerCase() === lowerWord
-    );
+    return false;
   }
 
   isUnit(word) {
     const parsed = valueParser.unit(word);
-    return parsed !== false && parsed.unit !== "";
+    return parsed !== false && parsed.number !== "" && parsed.unit !== "";
   }
 
   static isCalcOperand(node) {
@@ -184,17 +196,17 @@ export class PropertyValidator {
     return false;
   }
 
-  isValidCalcFunction(node) {
+  isValidCalcFunction(node, isAlias = false) {
     const calcNodes = node.nodes.filter(
       n => !PropertyValidator.isCalcOperand(n)
     );
     const hasDesignToken = calcNodes.some(n => {
       if (n.type === "function" && n.value === "var") {
-        return this.isValidVarFunction(n);
+        return this.isValidVarFunction(n, isAlias);
       }
       return false;
     });
-    return hasDesignToken || calcNodes.every(n => this.isValidNode(n));
+    return hasDesignToken || calcNodes.every(n => this.isValidNode(n, isAlias));
   }
 
   isValidColorMixFunction(node, isAlias = false) {
@@ -231,7 +243,7 @@ export class PropertyValidator {
       case "var":
         return this.isValidVarFunction(node, isAlias);
       case "calc":
-        return this.isValidCalcFunction(node);
+        return this.isValidCalcFunction(node, isAlias);
       case "light-dark":
         return this.isValidLightDarkFunction(node, isAlias);
       case "color-mix":
@@ -298,6 +310,15 @@ export class PropertyValidator {
     }
 
     if (isAlias && this.isValidAliasToken(varName)) {
+      return true;
+    }
+
+    // allow system colors as var() fallback values
+    if (
+      fallback?.type === "word" &&
+      this.warnSystemColors &&
+      isSystemColor(fallback.value)
+    ) {
       return true;
     }
 

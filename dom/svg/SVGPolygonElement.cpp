@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,7 +24,7 @@ JSObject* SVGPolygonElement::WrapNode(JSContext* aCx,
 // Implementation
 
 SVGPolygonElement::SVGPolygonElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : SVGPolygonElementBase(std::move(aNodeInfo)) {}
 
 //----------------------------------------------------------------------
@@ -46,8 +44,8 @@ void SVGPolygonElement::GetMarkPoints(nsTArray<SVGMark>* aMarks) {
 
   SVGMark* endMark = &aMarks->LastElement();
   SVGMark* startMark = &aMarks->ElementAt(0);
-  float angle =
-      std::atan2(startMark->y - endMark->y, startMark->x - endMark->x);
+  float angle = std::atan2(startMark->pos.y - endMark->pos.y,
+                           startMark->pos.x - endMark->pos.x);
 
   endMark->type = SVGMark::Type::Mid;
   endMark->angle = SVGContentUtils::AngleBisect(angle, endMark->angle);
@@ -55,8 +53,8 @@ void SVGPolygonElement::GetMarkPoints(nsTArray<SVGMark>* aMarks) {
   // for a polygon (as opposed to a polyline) there's an implicit extra point
   // co-located with the start point that SVGPolyElement::GetMarkPoints
   // doesn't return
-  aMarks->AppendElement(SVGMark(startMark->x, startMark->y, startMark->angle,
-                                SVGMark::Type::End));
+  aMarks->AppendElement(
+      SVGMark(startMark->pos, startMark->angle, SVGMark::Type::End));
 }
 
 already_AddRefed<Path> SVGPolygonElement::BuildPath(PathBuilder* aBuilder) {

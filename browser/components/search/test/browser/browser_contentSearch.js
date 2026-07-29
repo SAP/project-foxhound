@@ -3,6 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 ChromeUtils.defineESModuleGetters(this, {
+  ConfigSearchEngine:
+    "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
   SearchTestUtils: "resource://testing-common/SearchTestUtils.sys.mjs",
 });
 
@@ -34,6 +36,9 @@ add_setup(async function () {
       ["browser.newtab.preload", false],
       ["browser.search.separatePrivateDefault.ui.enabled", true],
       ["browser.search.separatePrivateDefault", true],
+      // Force settings redesign to false, so that `hideOneOffButton` will correctly
+      // work for the time being.
+      ["browser.settings-redesign.enabled", false],
     ],
   });
 
@@ -460,7 +465,16 @@ async function addTab() {
   );
   registerCleanupFunction(() => gBrowser.removeTab(tab));
 
-  return { browser: tab.linkedBrowser };
+  let { linkedBrowser } = tab;
+
+  // The ContentSearch actor is lazily instantiated on the first
+  // ContentSearchClient event. Ensure it exists before returning so that
+  // broadcasts from engine changes reach this tab.
+  let statePromise = await waitForTestMsg(linkedBrowser, "State");
+  sendEventToContent(linkedBrowser, { type: "GetState" });
+  await statePromise.donePromise;
+
+  return { browser: linkedBrowser };
 }
 
 var currentStateObj = async function (hiddenEngine = "") {
@@ -477,7 +491,7 @@ var currentStateObj = async function (hiddenEngine = "") {
       name: engine.name,
       iconData: await iconDataFromURI(uri),
       hidden: engine.name == hiddenEngine,
-      isConfigEngine: engine.isConfigEngine,
+      isConfigEngine: engine instanceof ConfigSearchEngine,
     });
   }
   return state;
@@ -488,7 +502,7 @@ async function constructEngineObj(engine) {
   return {
     name: engine.name,
     iconData: await iconDataFromURI(uriFavicon),
-    isConfigEngine: engine.isConfigEngine,
+    isConfigEngine: engine instanceof ConfigSearchEngine,
   };
 }
 

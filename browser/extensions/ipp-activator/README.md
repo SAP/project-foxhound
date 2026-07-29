@@ -35,7 +35,6 @@ Notes:
     ```
     Supported modifiers: `strong`.
 - `condition` (optional): a Condition object that controls when to show the notification. If omitted, the rule always matches when the domain matches.
-- Testing mode is detected via the pref `extensions.ippactivator.testMode` (set to true by tests and by `npm run start`).
 - Inject dynamic breakages at runtime via string prefs to JSON arrays:
   - `extensions.ippactivator.dynamicTabBreakages` for tab-triggered breakages
   - `extensions.ippactivator.dynamicWebRequestBreakages` for webRequest-triggered breakages
@@ -131,6 +130,26 @@ Supported types
     }
     ```
 
+- **date**: matches when the current time falls within an optional date range.
+  - Fields (both optional):
+    - `start` (string): ISO 8601 lower bound; match requires `now() >= start`.
+    - `end` (string): ISO 8601 upper bound; match requires `now() <= end`.
+  - Result: true when the current time is within all provided bounds (inclusive). With no bounds, always true. Invalid date strings are ignored (treated as absent).
+  - Notes: the condition is static and does not emit change notifications when a bound is crossed; re-evaluation happens whenever any other condition triggers a check. Combine with `not` to express "before `start`" or "after `end`".
+  - Examples:
+    ```json
+    { "type": "date", "start": "2026-07-11T00:00:00Z", "end": "2026-07-20T23:59:59Z" }
+    ```
+    ```json
+    { "type": "date", "start": "2026-07-11T00:00:00Z" }
+    ```
+    ```json
+    {
+      "type": "not",
+      "condition": { "type": "date", "start": "2026-07-11T00:00:00Z" }
+    }
+    ```
+
 - **url**: matches a URL against a regular expression.
   - Fields:
     - `pattern` (string, required): JavaScript RegExp pattern (without flags) tested against a URL string.
@@ -145,6 +164,24 @@ Supported types
       "name": "sessionid",
       "value_contain": "abc"
     }
+    ```
+
+- **vpn**: checks whether IP Protection (IPP) is currently active.
+  - Fields:
+    - `active` (boolean, required): expected IPP state. Use `true` to match when IPP is active, `false` to match when it is not.
+  - Result: true if the current IPP state equals `active`. The condition reacts to IPP state changes and re-evaluates automatically.
+  - Example:
+    ```json
+    { "type": "vpn", "active": true }
+    ```
+
+- **region**: matches the user's home region against a list of ISO 3166-1 alpha-2 codes.
+  - Fields:
+    - `regions` (array of strings, required): list of region codes (uppercase, e.g. `"US"`, `"DE"`). Result is true when the user's current home region is in the list.
+  - Notes: the condition observes `browser-region-updated` and re-evaluates when the home region changes.
+  - Example:
+    ```json
+    { "type": "region", "regions": ["US", "CA"] }
     ```
 
 Composing conditions

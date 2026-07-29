@@ -6,6 +6,7 @@ loader: taskgraph.loader.transform:loader
 
 transforms:
     - gecko_taskgraph.transforms.release_deps:transforms
+    - taskgraph.transforms.task_context
     - gecko_taskgraph.transforms.bouncer_aliases:transforms
     - gecko_taskgraph.transforms.task:transforms
 
@@ -15,6 +16,15 @@ kind-dependencies:
 task-defaults:
     run-on-repo-type: [hg]
     description: Update bouncer aliases job
+    task-context:
+        from-parameters:
+            release-type: release_type
+        from-custom:
+            - release-level
+        substitution-fields:
+            - worker-type
+            - scopes
+            - bouncer-products-per-alias
     worker-type: bouncer
     worker:
         implementation: bouncer-aliases
@@ -46,6 +56,9 @@ tasks:
             platform: devedition-release/opt
 
     firefox:
+        task-context:
+            substitution-fields:
+                - partner-bouncer-products-per-alias
         bouncer-products-per-alias:
             by-release-type:
                 beta:
@@ -64,7 +77,7 @@ tasks:
                     firefox-msix-latest-ssl: msix
                     firefox-pkg-latest-ssl: pkg
                     firefox-langpack-latest-ssl: langpack
-                esr128:
+                esr140:
                     # when there is one ESR branch both sets of aliases work
                     # when there are two ESR branches ...
                     # ... these always point to the older branch
@@ -74,7 +87,7 @@ tasks:
                     firefox-esr-msix-latest-ssl: msix
                     firefox-esr-pkg-latest-ssl: pkg
                     firefox-esr-langpack-latest-ssl: langpack
-                esr140:
+                esr153:
                     # ... these point to the newer branch
                     firefox-esr-next-latest-ssl: installer-ssl
                     firefox-esr-next-latest: installer

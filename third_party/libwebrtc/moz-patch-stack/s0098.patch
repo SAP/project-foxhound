@@ -1,212 +1,55 @@
-From: Jan Grulich <jgrulich@redhat.com>
-Date: Thu, 5 Sep 2024 16:04:00 +0000
-Subject: Bug 1830275 - Add missing support for device change notifications
- r=pehrsons,webrtc-reviewers
+From: Michael Froman <mfroman@mozilla.com>
+Date: Thu, 10 Oct 2024 13:42:00 +0000
+Subject: Bug 1921707 - add filtering for new build directory location in
+ third_party/libwebrtc/webrtc.gni r=ng,webrtc-reviewers
 
-Registers each DeviceInfoPipeWire in PipeWireSession we use and calls
-DeviceChange() for each once there is a new camera added or removed to
-invoke OnDeviceChange() for every registered VideoInputFeedback.
-
-Differential Revision: https://phabricator.services.mozilla.com/D219218
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/60eb5ef11c8df7eb6e0d616cb76885d9109f114d
+Differential Revision: https://phabricator.services.mozilla.com/D224545
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/f18c05287ce831369f44715a4174facff4f12652
 ---
- .../linux/device_info_pipewire.cc             | 10 +++-
- .../video_capture/linux/pipewire_session.cc   | 55 ++++++++++++++++++-
- .../video_capture/linux/pipewire_session.h    | 26 ++++++++-
- 3 files changed, 85 insertions(+), 6 deletions(-)
+ webrtc.gni | 14 ++++++++++++--
+ 1 file changed, 12 insertions(+), 2 deletions(-)
 
-diff --git a/modules/video_capture/linux/device_info_pipewire.cc b/modules/video_capture/linux/device_info_pipewire.cc
-index 009e1408b9..a737f9bdb3 100644
---- a/modules/video_capture/linux/device_info_pipewire.cc
-+++ b/modules/video_capture/linux/device_info_pipewire.cc
-@@ -23,13 +23,19 @@
- namespace webrtc {
- namespace videocapturemodule {
- DeviceInfoPipeWire::DeviceInfoPipeWire(VideoCaptureOptions* options)
--    : DeviceInfoImpl(), pipewire_session_(options->pipewire_session()) {}
-+    : DeviceInfoImpl(), pipewire_session_(options->pipewire_session()) {
-+  const bool ret = pipewire_session_->RegisterDeviceInfo(this);
-+  RTC_CHECK(ret);
-+}
- 
- int32_t DeviceInfoPipeWire::Init() {
-   return 0;
- }
- 
--DeviceInfoPipeWire::~DeviceInfoPipeWire() = default;
-+DeviceInfoPipeWire::~DeviceInfoPipeWire() {
-+  const bool ret = pipewire_session_->DeRegisterDeviceInfo(this);
-+  RTC_CHECK(ret);
-+}
- 
- uint32_t DeviceInfoPipeWire::NumberOfDevices() {
-   RTC_CHECK(pipewire_session_);
-diff --git a/modules/video_capture/linux/pipewire_session.cc b/modules/video_capture/linux/pipewire_session.cc
-index 1582f85577..957590c92b 100644
---- a/modules/video_capture/linux/pipewire_session.cc
-+++ b/modules/video_capture/linux/pipewire_session.cc
-@@ -35,6 +35,7 @@
- #include "modules/portal/pipewire_utils.h"
- #include "modules/portal/portal_request_response.h"
- #include "modules/video_capture/linux/camera_portal.h"
-+#include "modules/video_capture/linux/device_info_pipewire.h"
- #include "modules/video_capture/video_capture_defines.h"
- #include "modules/video_capture/video_capture_options.h"
- #include "rtc_base/logging.h"
-@@ -104,7 +105,8 @@ PipeWireNode::PipeWireNode(PipeWireSession* session,
-       .param = OnNodeParam,
-   };
- 
--  pw_node_add_listener(reinterpret_cast<pw_node*>(proxy_), &node_listener_, &node_events, this);
-+  pw_node_add_listener(reinterpret_cast<pw_node*>(proxy_), &node_listener_,
-+                       &node_events, this);
- }
- 
- // static
-@@ -136,7 +138,8 @@ void PipeWireNode::OnNodeInfo(void* data, const pw_node_info* info) {
-       uint32_t id = info->params[i].id;
-       if (id == SPA_PARAM_EnumFormat &&
-           info->params[i].flags & SPA_PARAM_INFO_READ) {
--        pw_node_enum_params(reinterpret_cast<pw_node*>(that->proxy_), 0, id, 0, UINT32_MAX, nullptr);
-+        pw_node_enum_params(reinterpret_cast<pw_node*>(that->proxy_), 0, id, 0,
-+                            UINT32_MAX, nullptr);
-         break;
+diff --git a/webrtc.gni b/webrtc.gni
+index eff3f0882e..eb963f146f 100644
+--- a/webrtc.gni
++++ b/webrtc.gni
+@@ -531,7 +531,7 @@ template("rtc_test") {
+       min_sdk_version = 23
+       target_sdk_version = 24
+       deps += [
+-        "//build/android/gtest_apk:native_test_instrumentation_test_runner_java",
++        "//chromium/build/android/gtest_apk:native_test_instrumentation_test_runner_java",
+         webrtc_root + "sdk/android:native_test_jni_onload",
+         webrtc_root + "sdk/android:base_java",
+         webrtc_root + "test:native_test_java",
+@@ -992,11 +992,21 @@ template("rtc_library") {
+       modified_deps = []
+       foreach (dep, deps) {
+         newdep = string_replace(dep, "//third_party/", "//libwebrtc/third_party/")
++        newdep = string_replace(newdep, "//build", "//chromium/build")
+         modified_deps += [ newdep ]
        }
+       deps = []
+       deps = modified_deps
      }
-@@ -304,6 +307,30 @@ void PipeWireSession::InitPipeWire(int fd) {
-     Finish(VideoCaptureOptions::Status::ERROR);
- }
- 
-+bool PipeWireSession::RegisterDeviceInfo(DeviceInfoPipeWire* device_info) {
-+  RTC_CHECK(device_info);
-+  MutexLock lock(&device_info_lock_);
-+  auto it = std::find(device_info_list_.begin(), device_info_list_.end(),
-+                      device_info);
-+  if (it == device_info_list_.end()) {
-+    device_info_list_.push_back(device_info);
-+    return true;
-+  }
-+  return false;
-+}
-+
-+bool PipeWireSession::DeRegisterDeviceInfo(DeviceInfoPipeWire* device_info) {
-+  RTC_CHECK(device_info);
-+  MutexLock lock(&device_info_lock_);
-+  auto it = std::find(device_info_list_.begin(), device_info_list_.end(),
-+                      device_info);
-+  if (it != device_info_list_.end()) {
-+    device_info_list_.erase(it);
-+    return true;
-+  }
-+  return false;
-+}
-+
- RTC_NO_SANITIZE("cfi-icall")
- bool PipeWireSession::StartPipeWire(int fd) {
-   pw_init(/*argc=*/nullptr, /*argv=*/nullptr);
-@@ -376,6 +403,21 @@ void PipeWireSession::PipeWireSync() {
-   sync_seq_ = pw_core_sync(pw_core_, PW_ID_CORE, sync_seq_);
- }
- 
-+void PipeWireSession::NotifyDeviceChange() {
-+  RTC_LOG(LS_INFO) << "Notify about device list changes";
-+  MutexLock lock(&device_info_lock_);
-+
-+  // It makes sense to notify about device changes only once we are
-+  // properly initialized.
-+  if (status_ != VideoCaptureOptions::Status::SUCCESS) {
-+    return;
-+  }
-+
-+  for (auto* deviceInfo : device_info_list_) {
-+    deviceInfo->DeviceChange();
-+  }
-+}
-+
- // static
- void PipeWireSession::OnCoreError(void* data,
-                                   uint32_t id,
-@@ -433,6 +475,8 @@ void PipeWireSession::OnRegistryGlobal(void* data,
- 
-   that->nodes_.push_back(PipeWireNode::Create(that, id, props));
-   that->PipeWireSync();
-+
-+  that->NotifyDeviceChange();
- }
- 
- // static
-@@ -442,10 +486,15 @@ void PipeWireSession::OnRegistryGlobalRemove(void* data, uint32_t id) {
-   std::erase_if(that->nodes_, [id](const PipeWireNode::PipeWireNodePtr& node) {
-     return node->id() == id;
-   });
-+
-+  that->NotifyDeviceChange();
- }
- 
- void PipeWireSession::Finish(VideoCaptureOptions::Status status) {
--  status_ = status;
-+  {
-+    MutexLock lock(&device_info_lock_);
-+    status_ = status;
-+  }
- 
-   webrtc::MutexLock lock(&callback_lock_);
- 
-diff --git a/modules/video_capture/linux/pipewire_session.h b/modules/video_capture/linux/pipewire_session.h
-index 84848d76ef..a9e162a2ff 100644
---- a/modules/video_capture/linux/pipewire_session.h
-+++ b/modules/video_capture/linux/pipewire_session.h
-@@ -34,6 +34,7 @@
- namespace webrtc {
- namespace videocapturemodule {
- 
-+class DeviceInfoPipeWire;
- class PipeWireSession;
- class VideoCaptureModulePipeWire;
- 
-@@ -102,6 +103,21 @@ class PipeWireSession : public webrtc::RefCountedNonVirtual<PipeWireSession> {
- 
-   void Init(VideoCaptureOptions::Callback* callback,
-             int fd = kInvalidPipeWireFd);
-+
-+  // [De]Register DeviceInfo for device change updates
-+  // These methods will add or remove references to DeviceInfo
-+  // objects that we want to notify about device changes.
-+  // NOTE: We do not take ownership of these objects and
-+  // they should never be released by us. All the instances
-+  // of DeviceInfoPipeWire must outlive their registration.
-+
-+  // Returns true when DeviceInfo was successfuly registered
-+  // or false otherwise, when it was already registered before.
-+  bool RegisterDeviceInfo(DeviceInfoPipeWire* device_info);
-+  // Returns true when DeviceInfo was successfuly unregistered
-+  // or false otherwise, when it was not previously registered.
-+  bool DeRegisterDeviceInfo(DeviceInfoPipeWire* device_info);
-+
-   const std::deque<PipeWireNode::PipeWireNodePtr>& nodes() const {
-     return nodes_;
++    if (build_with_mozilla && defined(data_deps)) {
++      modified_deps = []
++      foreach (dep, data_deps) {
++        newdep = string_replace(dep, "//build/", "//chromium/build/")
++        modified_deps += [ newdep ]
++      }
++      data_deps = []
++      data_deps = modified_deps
++    }
    }
-@@ -116,6 +132,8 @@ class PipeWireSession : public webrtc::RefCountedNonVirtual<PipeWireSession> {
-   void StopPipeWire();
-   void PipeWireSync();
+ }
  
-+  void NotifyDeviceChange();
-+
-   static void OnCoreError(void* data,
-                           uint32_t id,
-                           int seq,
-@@ -138,7 +156,13 @@ class PipeWireSession : public webrtc::RefCountedNonVirtual<PipeWireSession> {
-   VideoCaptureOptions::Callback* callback_ RTC_GUARDED_BY(&callback_lock_) =
-       nullptr;
+@@ -1034,7 +1044,7 @@ template("rtc_executable") {
+     if (is_win) {
+       deps += [
+         # Give executables the default manifest on Windows (a no-op elsewhere).
+-        "//build/win:default_exe_manifest",
++        "//chromium/build/win:default_exe_manifest",
+       ]
+     }
  
--  VideoCaptureOptions::Status status_;
-+  webrtc::Mutex device_info_lock_;
-+  std::vector<DeviceInfoPipeWire*> device_info_list_
-+      RTC_GUARDED_BY(device_info_lock_);
-+  // Guard with device_info_lock, because currently it's the only place where
-+  // we use this status information.
-+  VideoCaptureOptions::Status status_
-+      RTC_GUARDED_BY(device_info_lock_);
- 
-   struct pw_thread_loop* pw_main_loop_ = nullptr;
-   struct pw_context* pw_context_ = nullptr;

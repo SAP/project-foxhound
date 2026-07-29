@@ -26,10 +26,7 @@ add_task(async function test_network_markers_service_worker_register() {
   // In this first step, we request an HTML page that will register a service
   // worker. We'll wait until the service worker is fully installed before
   // checking various things.
-  Assert.ok(
-    !Services.profiler.IsActive(),
-    "The profiler is not currently active"
-  );
+  await ProfilerTestUtils.assertProfilerInactive();
 
   const url = `${BASE_URL_HTTPS}serviceworkers/serviceworker_register.html`;
   await BrowserTestUtils.withNewTab(url, async contentBrowser => {
@@ -58,10 +55,7 @@ add_task(async function test_network_markers_service_worker_use() {
   // requests in the context of the page. One request is served with a
   // synthetized response, the other request is served with a real "fetch" done
   // by the service worker.
-  Assert.ok(
-    !Services.profiler.IsActive(),
-    "The profiler is not currently active"
-  );
+  await ProfilerTestUtils.assertProfilerInactive();
 
   await ProfilerTestUtils.startProfilerForMarkerTests();
 

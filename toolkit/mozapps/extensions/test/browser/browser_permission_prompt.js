@@ -1622,7 +1622,7 @@ add_task(async function testVerifyPostInstallPopupWithDataCollection() {
       // like Bug 1983869.
       Assert.equal(
         AppConstants.BROWSER_CHROME_URL,
-        tab.ownerGlobal.window.location.href,
+        tab.documentGlobal.window.location.href,
         "Expect browser chrome window url to be unchanged"
       );
 

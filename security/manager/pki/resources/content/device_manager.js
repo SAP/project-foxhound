@@ -73,8 +73,7 @@ async function doConfirm(l10n_id) {
 
 async function RefreshDeviceList() {
   for (let module of await secmoddb.listModules()) {
-    let slots = module.listSlots();
-    AddModule(module, slots);
+    AddModule(module, module.slots);
   }
 
   // Set the text on the FIPS button.
@@ -166,14 +165,12 @@ function enableButtons() {
     unload_toggle = false;
     showModuleInfo();
   } else if (selected_slot) {
-    // here's the workaround - login functions are all with token,
-    // so grab the token type
     var selected_token = selected_slot.getToken();
     if (selected_token != null) {
-      if (selected_token.needsLogin() || !selected_token.needsUserInit) {
+      if (selected_token.canHavePassword) {
         pw_toggle = false;
-        if (selected_token.needsLogin()) {
-          if (selected_token.isLoggedIn()) {
+        if (selected_token.hasPassword) {
+          if (selected_token.isLoggedIn) {
             logout_toggle = false;
           } else {
             login_toggle = false;
@@ -186,7 +183,7 @@ function enableButtons() {
         selected_token.isInternalKeyToken &&
         !selected_token.hasPassword
       ) {
-        pw_toggle = "true";
+        pw_toggle = true;
       }
     }
     showSlotInfo();
@@ -336,9 +333,9 @@ function doLogin() {
   // here's the workaround - login functions are with token
   var selected_token = selected_slot.getToken();
   try {
-    selected_token.login(false);
+    selected_token.login();
     var tok_status = document.getElementById("tok_status");
-    if (selected_token.isLoggedIn()) {
+    if (selected_token.isLoggedIn) {
       document.l10n.setAttributes(tok_status, "devinfo-status-logged-in");
     } else {
       document.l10n.setAttributes(tok_status, "devinfo-status-not-logged-in");
@@ -352,12 +349,14 @@ function doLogin() {
 // log out of a slot
 function doLogout() {
   getSelectedItem();
-  // here's the workaround - login functions are with token
   var selected_token = selected_slot.getToken();
   try {
-    selected_token.logoutAndDropAuthenticatedResources();
+    selected_token.logout();
+    // clear any TLS state that may have been derived from secrets on the token
+    let nssComponent = Cc["@mozilla.org/psm;1"].getService(Ci.nsINSSComponent);
+    nssComponent.clearTLSCacheAndCancelAllConnections();
     var tok_status = document.getElementById("tok_status");
-    if (selected_token.isLoggedIn()) {
+    if (selected_token.isLoggedIn) {
       document.l10n.setAttributes(tok_status, "devinfo-status-logged-in");
     } else {
       document.l10n.setAttributes(tok_status, "devinfo-status-not-logged-in");
@@ -408,7 +407,7 @@ function changePassword() {
   objects.appendElement(selected_slot.getToken());
   params.objects = objects;
   window.browsingContext.topChromeWindow.openDialog(
-    "changepassword.xhtml",
+    "chrome://pippki/content/changepassword.xhtml",
     "",
     "chrome,centerscreen,modal",
     params
@@ -450,10 +449,9 @@ async function toggleFIPS() {
     // In FIPS mode the password must be non-empty.
     // This is different from what we allow in NON-Fips mode.
 
-    var tokendb = Cc["@mozilla.org/security/pk11tokendb;1"].getService(
-      Ci.nsIPK11TokenDB
-    );
-    var internal_token = tokendb.getInternalKeyToken(); // nsIPK11Token
+    var internal_token = Cc[
+      "@mozilla.org/security/internalkeytoken;1"
+    ].createInstance(Ci.nsIPKCS11Token);
     if (!internal_token.hasPassword) {
       // Token has either no or an empty password.
       doPrompt("fips-nonempty-primary-password-required");

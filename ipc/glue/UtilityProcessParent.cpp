@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -38,17 +36,20 @@ bool UtilityProcessParent::SendRequestMemoryReport(
     const bool& aMinimizeMemoryUsage, const Maybe<FileDescriptor>& aDMDFile) {
   mMemoryReportRequest = MakeUnique<MemoryReportRequestHost>(aGeneration);
 
-  PUtilityProcessParent::SendRequestMemoryReport(
-      aGeneration, aAnonymize, aMinimizeMemoryUsage, aDMDFile,
-      [self = RefPtr{this}](const uint32_t& aGeneration2) {
-        if (self->mMemoryReportRequest) {
-          self->mMemoryReportRequest->Finish(aGeneration2);
-          self->mMemoryReportRequest = nullptr;
-        }
-      },
-      [self = RefPtr{this}](mozilla::ipc::ResponseRejectReason) {
-        self->mMemoryReportRequest = nullptr;
-      });
+  RefPtr<UtilityProcessParent> self(this);
+  PUtilityProcessParent::SendRequestMemoryReport(aGeneration, aAnonymize,
+                                                 aMinimizeMemoryUsage, aDMDFile)
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [self](uint32_t aGeneration2) {
+            if (self->mMemoryReportRequest) {
+              self->mMemoryReportRequest->Finish(aGeneration2);
+              self->mMemoryReportRequest = nullptr;
+            }
+          },
+          [self](mozilla::ipc::ResponseRejectReason) {
+            self->mMemoryReportRequest = nullptr;
+          });
 
   return true;
 }
@@ -137,7 +138,7 @@ mozilla::ipc::IPCResult UtilityProcessParent::RecvInitCompleted() {
 }
 
 void UtilityProcessParent::ActorDestroy(ActorDestroyReason aWhy) {
-  RefPtr<nsHashPropertyBag> props = new nsHashPropertyBag();
+  RefPtr props = MakeRefPtr<nsHashPropertyBag>();
 
   if (aWhy == AbnormalShutdown) {
     nsAutoString dumpID;

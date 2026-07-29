@@ -49,6 +49,7 @@ class JUnitTestRunner(MochitestDesktop):
         self.verbose = False
         self.http3Server = None
         self.http2Server = None
+        self.mozHttp2Server = None
         self.dohServer = None
         if (
             options.log_tbpl_level == "debug"
@@ -88,7 +89,10 @@ class JUnitTestRunner(MochitestDesktop):
         self.cleanup()
         self.device.clear_logcat()
         self.build_profile()
-        self.startServers(self.options, debuggerInfo=None, public=True)
+        if self.startServers(self.options, debuggerInfo=None, public=True) is False:
+            raise RuntimeError(
+                "Failed to start servers: a required port is already in use"
+            )
         self.log.debug("Servers started")
 
     def collectLogcatForCurrentTest(self):
@@ -691,9 +695,7 @@ def run_test_harness(parser, options):
     if hasattr(options, "log"):
         log = options.log
     else:
-        log = mozlog.commandline.setup_logging(
-            "runjunit", options, {"tbpl": sys.stdout}
-        )
+        log = mozlog.commandline.setup_logging("runjunit", options, {"raw": sys.stdout})
     runner = JUnitTestRunner(log, options)
     result = -1
     try:

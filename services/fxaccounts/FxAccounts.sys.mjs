@@ -1439,10 +1439,19 @@ FxAccountsInternal.prototype = {
   },
 
   _error(aError, aDetails) {
-    log.error("FxA rejecting with error ${aError}, details: ${aDetails}", {
-      aError,
-      aDetails,
-    });
+    // Expected on profiles with no signed-in user; demote to debug to avoid noise.
+    const isExpected =
+      aError === ERROR_NO_ACCOUNT || aError === ERROR_UNVERIFIED_ACCOUNT;
+    const logFn = isExpected ? log.debug : log.error;
+    if (aDetails) {
+      logFn.call(
+        log,
+        "FxA rejecting with error ${aError}, details: ${aDetails}",
+        { aError, aDetails }
+      );
+    } else {
+      logFn.call(log, "FxA rejecting with error ${aError}", { aError });
+    }
     let reason = new Error(aError);
     if (aDetails) {
       reason.details = aDetails;

@@ -1367,6 +1367,7 @@ EnvironmentCache.prototype = {
     let resetDate = await profileAccessor.reset;
     let firstUseDate = await profileAccessor.firstUse;
     let recoveredFromBackup = await profileAccessor.recoveredFromBackup;
+    let source = profileAccessor.source;
 
     this._currentEnvironment.profile.creationDate =
       Utils.millisecondsToDays(creationDate);
@@ -1391,6 +1392,9 @@ EnvironmentCache.prototype = {
       Glean.profiles.recoveredFromBackup.set(
         this._currentEnvironment.profile.recoveredFromBackup
       );
+    }
+    if (source) {
+      Glean.profiles.source.set(source);
     }
   },
 

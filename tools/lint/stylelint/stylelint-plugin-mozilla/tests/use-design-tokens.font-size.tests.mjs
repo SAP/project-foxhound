@@ -53,15 +53,15 @@ testRule({
       description: "Using xxxlarge font-size token is valid.",
     },
     {
-      code: ".a { font-size: var(--heading-font-size-medium); }",
+      code: ".a { font-size: var(--font-size-heading-medium); }",
       description: "Using heading-font-size-medium token is valid.",
     },
     {
-      code: ".a { font-size: var(--heading-font-size-large); }",
+      code: ".a { font-size: var(--font-size-heading-large); }",
       description: "Using heading-font-size-large token is valid.",
     },
     {
-      code: ".a { font-size: var(--heading-font-size-xlarge); }",
+      code: ".a { font-size: var(--font-size-heading-xlarge); }",
       description: "Using heading-font-size-xlarge token is valid.",
     },
     // allowed CSS values

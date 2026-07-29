@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +8,9 @@
 #include <string.h>
 
 #include <cmath>
+
+#include "mozilla/CheckedInt.h"
+#include "nsFmtString.h"
 
 /*
  *  Parts derived from MythTV AudioConvert Class
@@ -189,7 +190,12 @@ size_t AudioConverter::DownmixAudio(void* aOut, const void* aIn,
     return aFrames;
   }
 
-  if (!mIn.Layout().IsValid() || !mOut.Layout().IsValid()) {
+  // The downmix matrix below only handles 3 to 8 input channels. For more
+  // than 8 channels (or invalid layouts) fall back to dropping extra channels.
+  if (!mIn.Layout().IsValid() || !mOut.Layout().IsValid() || inChannels > 8) {
+    NS_WARNING(nsFmtCString("Dumb remixing: {} channels in, {} channels out",
+                            inChannels, outChannels)
+                   .get());
     // Dumb copy dropping extra channels.
     if (mIn.Format() == AudioConfig::FORMAT_FLT) {
       dumbUpDownMix(static_cast<float*>(aOut), outChannels,
@@ -245,6 +251,7 @@ size_t AudioConverter::DownmixAudio(void* aOut, const void* aIn,
            {0.3366f, 0.1943f},
            {0.1943f, 0.3366f}},
       };
+      MOZ_DIAGNOSTIC_ASSERT(inChannels < std::size(dmatrix) + 3);
       // Re-write the buffer with downmixed data
       const float* in = static_cast<const float*>(aIn);
       float* out = static_cast<float*>(aOut);
@@ -294,6 +301,7 @@ size_t AudioConverter::DownmixAudio(void* aOut, const void* aIn,
            {3184, 5514},
            {5514, 3184},
            {3184, 5514}}};
+      MOZ_DIAGNOSTIC_ASSERT(inChannels < std::size(dmatrix) + 3);
       // Re-write the buffer with downmixed data
       const int16_t* in = static_cast<const int16_t*>(aIn);
       int16_t* out = static_cast<int16_t*>(aOut);
@@ -349,8 +357,15 @@ size_t AudioConverter::ResampleAudio(void* aOut, const void* aIn,
   if (!mResampler) {
     return 0;
   }
-  uint32_t outframes = ResampleRecipientFrames(aFrames);
-  uint32_t inframes = aFrames;
+  uint32_t outframes;
+  if (!ResampleRecipientFrames(aFrames, &outframes)) {
+    return 0;
+  }
+  CheckedUint32 inframesChecked(aFrames);
+  if (!inframesChecked.isValid()) {
+    return 0;
+  }
+  uint32_t inframes = inframesChecked.value();
 
   int error;
   if (mOut.Format() == AudioConfig::FORMAT_FLT) {
@@ -373,7 +388,8 @@ size_t AudioConverter::ResampleAudio(void* aOut, const void* aIn,
     mResampler = nullptr;
     return 0;
   }
-  MOZ_ASSERT(inframes == aFrames, "Some frames will be dropped");
+  MOZ_ASSERT(static_cast<size_t>(inframes) == aFrames,
+             "Some frames will be dropped");
   return outframes;
 }
 
@@ -462,15 +478,27 @@ size_t AudioConverter::UpmixAudio(void* aOut, const void* aIn,
   return aFrames;
 }
 
-size_t AudioConverter::ResampleRecipientFrames(size_t aFrames) const {
+bool AudioConverter::ResampleRecipientFrames(size_t aFrames,
+                                             uint32_t* aOutFrames) const {
   if (!aFrames && mIn.Rate() != mOut.Rate()) {
     if (!mResampler) {
-      return 0;
+      *aOutFrames = 0;
+      return true;
     }
     // We drain by pushing in get_input_latency() samples of 0
     aFrames = speex_resampler_get_input_latency(mResampler);
   }
-  return (uint64_t)aFrames * mOut.Rate() / mIn.Rate() + 1;
+  CheckedInt<uint64_t> numerator = CheckedInt<uint64_t>(aFrames) * mOut.Rate();
+  if (!numerator.isValid()) {
+    return false;
+  }
+  CheckedUint32 outFrames(numerator.value() / mIn.Rate());
+  outFrames += 1u;
+  if (!outFrames.isValid()) {
+    return false;
+  }
+  *aOutFrames = outFrames.value();
+  return true;
 }
 
 size_t AudioConverter::FramesOutToSamples(size_t aFrames) const {

@@ -46,6 +46,23 @@ def is_addon_temporary_installed(session, addon_id):
         )
 
 
+def get_internal_addon_id(session, addon_id):
+    with using_context(session, "chrome"):
+        return session.execute_script(
+            """
+              const [addon_id] = arguments;
+              const policy = WebExtensionPolicy.getByID(addon_id);
+              if (policy) {
+                return policy.mozExtensionHostname;
+              }
+              throw new Error(
+                `Policy of add-on with ID ${addon_id} doesn't exist`
+              );
+            """,
+            args=[addon_id],
+        )
+
+
 def is_addon_private_browsing_allowed(session, addon_id):
     with using_context(session, "chrome"):
         return session.execute_async_script(

@@ -79,4 +79,8 @@
         app:key="@string/key_etb_private_mode_enabled"
         app:title="Enable ETB in Private Mode"
         app:defaultValue="@bool/global_privacy_control_enabled_default"/>
+    <SwitchPreferenceCompat
+        app:key="@string/key_edge_to_edge_enabled"
+        app:title="Enable Edge to Edge Mode"
+        app:defaultValue="@bool/edge_to_edge_enabled_default"/>
 </PreferenceScreen>

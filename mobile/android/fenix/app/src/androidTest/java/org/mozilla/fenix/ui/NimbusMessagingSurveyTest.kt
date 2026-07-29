@@ -6,7 +6,6 @@ package org.mozilla.fenix.ui
 
 import android.content.Context
 import android.content.pm.ActivityInfo
-import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import org.json.JSONObject
 import org.junit.Assert.assertNotEquals
 import org.junit.Before
@@ -14,14 +13,15 @@ import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.experiments.nimbus.HardcodedNimbusFeatures
+import org.mozilla.fenix.helpers.FenixTestRule
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.RetryTestRule
 import org.mozilla.fenix.helpers.TestHelper
-import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.nimbus.HomeScreenSection
 import org.mozilla.fenix.nimbus.Homescreen
 import org.mozilla.fenix.ui.robots.surveyScreen
+import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidComposeTestRuleV2
 
 /**
  *  Tests for verifying basic functionality of the Nimbus Survey surface message
@@ -29,17 +29,21 @@ import org.mozilla.fenix.ui.robots.surveyScreen
  *  Verifies a message can be displayed with all of the correct components
 **/
 
-class NimbusMessagingSurveyTest : TestSetup() {
+class NimbusMessagingSurveyTest {
     private lateinit var context: Context
     private lateinit var hardcodedNimbus: HardcodedNimbusFeatures
 
-    @get:Rule
+    @get:Rule(order = 0)
+    val fenixTestRule: FenixTestRule = FenixTestRule()
+
+    @get:Rule(order = 1)
     val composeTestRule =
-        AndroidComposeTestRule(HomeActivityIntentTestRule.withDefaultSettingsOverrides(skipOnboarding = true)) { it.activity }
+        AndroidComposeTestRuleV2(
+            HomeActivityIntentTestRule.withDefaultSettingsOverrides(),
+        ) { it.activity }
 
     @Before
-    override fun setUp() {
-        super.setUp()
+    fun setUp() {
         context = TestHelper.appContext
 
         // Set up nimbus message

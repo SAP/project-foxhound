@@ -9,6 +9,38 @@ newtab-page-title = Nova scheda
 newtab-settings-button =
     .title = Pirsunalizza a pàggina dâ scheda nova
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Novi schedi
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } riga
+           *[other] { $num } righi
+        }
+home-restore-defaults-srd =
+    .label = Riprìstina pridifinuti
+    .accesskey = R
+home-mode-choice-custom-srd =
+    .label = Nnirizzi pirsunalizzati…
+home-mode-choice-blank-srd =
+    .label = Pàggina vacanti
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Artìculi spunzurizzati
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Pàggini visitati
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Nzingalibbra
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Scarricamenti cchiù ricenti
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -25,7 +57,7 @@ newtab-search-box-handoff-input =
     .title = Riscedi cu { $engine } o metti nu nnirizzu
     .aria-label = Riscedi cu { $engine } o metti nu nnirizzu
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Junci muturi di risciduta
 newtab-topsites-edit-topsites-header = Cancia situ principali

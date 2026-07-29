@@ -3,6 +3,10 @@
 
 "use strict";
 
+const { AIWindowUI } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/aiwindow/ui/modules/AIWindowUI.sys.mjs"
+);
+
 add_task(async function test_addressbar_shortcut_smartwindow() {
   let win = await openAIWindow();
   registerCleanupFunction(() => {
@@ -12,6 +16,9 @@ add_task(async function test_addressbar_shortcut_smartwindow() {
   await BrowserTestUtils.withNewTab(
     { url: "about:blank", gBrowser: win.gBrowser },
     async () => {
+      // Ensure sidebar is closed for this test
+      AIWindowUI.closeSidebar(win);
+
       win.gBrowser.selectedTab.focus();
       EventUtils.synthesizeKey("l", { accelKey: true }, win);
 

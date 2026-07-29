@@ -19,9 +19,6 @@ prefs = [
 ]
 
 ["browser_iframe_test.js"]
-skip-if = [
-  "opt",
-]
 
 ["browser_keyboard_shortcuts.js"]
 run-if = [
@@ -32,10 +29,15 @@ skip-if = [
 ]
 
 ["browser_keyboard_tests.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
 
 ["browser_overlay_keyboard_test.js"]
 
 ["browser_screenshots_download_filenames.js"]
+
+["browser_screenshots_downloads_private.js"]
 
 ["browser_screenshots_drag_scroll_test.js"]
 skip-if = [
@@ -60,6 +62,9 @@ skip-if = [
 
 ["browser_screenshots_telemetry_tests.js"]
 
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2023967
+]
 ["browser_screenshots_test_downloads.js"]
 
 ["browser_screenshots_test_escape.js"]
@@ -87,6 +92,8 @@ run-if = [
 skip-if = [
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && ccov", # Bug 1894797
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug", # Bug 1894797
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && ccov", # Bug 1894797
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && debug", # Bug 1894797
 ]
 
 ["browser_test_prevent_events.js"]

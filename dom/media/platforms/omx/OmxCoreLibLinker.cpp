@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,9 +13,9 @@
 #  undef LOG
 #endif
 
-#define LOG(arg, ...)                        \
-  MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, \
-          ("OmxCoreLibLinker::%s: " arg, __func__, ##__VA_ARGS__))
+#define LOG(arg, ...)                                                          \
+  MOZ_LOG_FMT(sPDMLog, mozilla::LogLevel::Debug, "OmxCoreLibLinker::{}: " arg, \
+              __func__, ##__VA_ARGS__)
 
 namespace mozilla {
 
@@ -44,10 +42,10 @@ bool OmxCoreLibLinker::TryLinkingLibrary(const char* libName) {
   if (sLinkedLib) {
     if (Bind(libName)) {
       sLibName = libName;
-      LOG("Succeeded to load %s", libName);
+      LOG("Succeeded to load {}", libName);
       return true;
     } else {
-      LOG("Failed to link %s", libName);
+      LOG("Failed to link {}", libName);
     }
     Unlink();
   }
@@ -89,7 +87,7 @@ bool OmxCoreLibLinker::Bind(const char* aLibName) {
 #define OMX_FUNC(func)                                              \
   {                                                                 \
     if (!(func = (typeof(func))PR_FindSymbol(sLinkedLib, #func))) { \
-      LOG("Couldn't load function " #func " from %s.", aLibName);   \
+      LOG("Couldn't load function " #func " from {}.", aLibName);   \
       return false;                                                 \
     }                                                               \
   }

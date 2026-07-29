@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,6 +27,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import mozilla.components.browser.state.state.TabSessionState
+import mozilla.components.compose.base.button.IconButton
 import mozilla.components.ui.icons.R as iconsR
 
 /**
@@ -79,15 +79,17 @@ fun Tab(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+
             IconButton(
+                onClick = { onClose.invoke(tab.id) },
+                contentDescription = "close",
                 modifier = Modifier
                     .align(Alignment.CenterVertically)
                     .requiredSize(24.dp),
-                onClick = { onClose.invoke(tab.id) },
             ) {
                 Icon(
                     painter = painterResource(iconsR.drawable.mozac_ic_cross_24),
-                    contentDescription = "close",
+                    contentDescription = null,
                     tint = Color.White,
                 )
             }

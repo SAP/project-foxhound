@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +6,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <new>
-#include <ostream>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -19,6 +16,7 @@
 #include "mozilla/Result.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/ResultVariant.h"
+#include "mozilla/SourcePathLiteral.h"
 #include "mozilla/dom/quota/QuotaCommon.h"
 #include "mozilla/dom/quota/QuotaTestParent.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
@@ -2166,7 +2164,7 @@ TEST(QuotaCommon_CallWithDelayedRetriesIfAccessDenied, FailuresAndSuccess)
 TEST(QuotaCommon_MakeSourceFileRelativePath, ThisSourceFile)
 {
   static constexpr auto thisSourceFileRelativePath =
-      "dom/quota/test/gtest/TestQuotaCommon.cpp"_ns;
+      "dom/quota/test/gtest/TestQuotaCommon.cpp"_sp;
 
   const nsCString sourceFileRelativePath{
       mozilla::dom::quota::detail::MakeSourceFileRelativePath(
@@ -2179,7 +2177,7 @@ static nsCString MakeTreePath(const nsACString& aBasePath,
                               const nsACString& aRelativePath) {
   nsCString path{aBasePath};
 
-  path.Append("/");
+  path.Append("/"_sp);
   path.Append(aRelativePath);
 
   return path;
@@ -2200,7 +2198,7 @@ static nsCString MakeObjdirDistIncludeTreePath(
 TEST(QuotaCommon_MakeSourceFileRelativePath, DomQuotaSourceFile)
 {
   static constexpr auto domQuotaSourceFileRelativePath =
-      "dom/quota/ActorsParent.cpp"_ns;
+      "dom/quota/ActorsParent.cpp"_sp;
 
   const nsCString sourceFileRelativePath{
       mozilla::dom::quota::detail::MakeSourceFileRelativePath(
@@ -2213,10 +2211,10 @@ TEST(QuotaCommon_MakeSourceFileRelativePath, DomQuotaSourceFile)
 TEST(QuotaCommon_MakeSourceFileRelativePath, DomQuotaSourceFile_Exported)
 {
   static constexpr auto mozillaDomQuotaSourceFileRelativePath =
-      "mozilla/dom/quota/QuotaCommon.h"_ns;
+      "mozilla/dom/quota/QuotaCommon.h"_sp;
 
   static constexpr auto domQuotaSourceFileRelativePath =
-      "dom/quota/QuotaCommon.h"_ns;
+      "dom/quota/QuotaCommon.h"_sp;
 
   const nsCString sourceFileRelativePath{
       mozilla::dom::quota::detail::MakeSourceFileRelativePath(
@@ -2230,7 +2228,7 @@ TEST(QuotaCommon_MakeSourceFileRelativePath, DomQuotaSourceFile_Exported)
 TEST(QuotaCommon_MakeSourceFileRelativePath, DomIndexedDBSourceFile)
 {
   static constexpr auto domIndexedDBSourceFileRelativePath =
-      "dom/indexedDB/ActorsParent.cpp"_ns;
+      "dom/indexedDB/ActorsParent.cpp"_sp;
 
   const nsCString sourceFileRelativePath{
       mozilla::dom::quota::detail::MakeSourceFileRelativePath(
@@ -2244,10 +2242,10 @@ TEST(QuotaCommon_MakeSourceFileRelativePath,
      DomLocalstorageSourceFile_Exported_Mapped)
 {
   static constexpr auto mozillaDomSourceFileRelativePath =
-      "mozilla/dom/LocalStorageCommon.h"_ns;
+      "mozilla/dom/LocalStorageCommon.h"_sp;
 
   static constexpr auto domLocalstorageSourceFileRelativePath =
-      "dom/localstorage/LocalStorageCommon.h"_ns;
+      "dom/localstorage/LocalStorageCommon.h"_sp;
 
   const nsCString sourceFileRelativePath{
       mozilla::dom::quota::detail::MakeSourceFileRelativePath(
@@ -2260,7 +2258,7 @@ TEST(QuotaCommon_MakeSourceFileRelativePath,
 TEST(QuotaCommon_MakeSourceFileRelativePath, NonDomSourceFile)
 {
   static constexpr auto nonDomSourceFileRelativePath =
-      "storage/mozStorageService.cpp"_ns;
+      "storage/mozStorageService.cpp"_sp;
 
   const nsCString sourceFileRelativePath{
       mozilla::dom::quota::detail::MakeSourceFileRelativePath(
@@ -2272,7 +2270,7 @@ TEST(QuotaCommon_MakeSourceFileRelativePath, NonDomSourceFile)
 
 TEST(QuotaCommon_MakeSourceFileRelativePath, OtherSourceFile)
 {
-  constexpr auto otherSourceFilePath = "/foo/bar/Test.cpp"_ns;
+  constexpr auto otherSourceFilePath = "/foo/bar/Test.cpp"_sp;
   const nsCString sourceFileRelativePath{
       mozilla::dom::quota::detail::MakeSourceFileRelativePath(
           otherSourceFilePath)};

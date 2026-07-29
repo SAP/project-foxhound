@@ -6,6 +6,7 @@ loader: taskgraph.loader.transform:loader
 
 transforms:
     - taskgraph.transforms.from_deps
+    - taskgraph.transforms.task_context
     - gecko_taskgraph.transforms.release_sign_and_push_langpacks
     - gecko_taskgraph.transforms.task
 
@@ -15,6 +16,12 @@ kind-dependencies:
 
 task-defaults:
     run-on-repo-type: [hg]
+    task-context:
+        from-custom:
+            - release-level
+        substitution-fields:
+            - worker-type
+            - scopes
 
 only-for-build-platforms:
     - linux64-shippable/opt  # addons.mozilla.org only support 1 platform per locale. That's why we use linux64

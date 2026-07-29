@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,8 +5,11 @@
 #include "mozilla/FontLoaderUtils.h"
 
 #include "gfxUserFontSet.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/ReferrerInfo.h"
+#include "mozilla/dom/ServiceWorkerDescriptor.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "nsCOMPtr.h"
 #include "nsIChannel.h"
@@ -128,8 +129,8 @@ nsresult FontLoaderUtils::BuildChannel(
   nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(channel));
   nsCOMPtr<nsIReferrerInfo> referrerInfo;
   if (httpChannel && !aFontFaceSrc) {
-    referrerInfo = new dom::ReferrerInfo(aDocument->GetDocumentURIAsReferrer(),
-                                         aReferrerPolicy);
+    referrerInfo = MakeAndAddRef<dom::ReferrerInfo>(
+        aDocument->GetDocumentURIAsReferrer(), aReferrerPolicy);
     rv = httpChannel->SetReferrerInfoWithoutClone(referrerInfo);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
   }
@@ -147,8 +148,8 @@ nsresult FontLoaderUtils::BuildChannel(
     nsIChannel** aChannel, nsIURI* aURI, const CORSMode aCORSMode,
     const dom::ReferrerPolicy& aReferrerPolicy,
     gfxUserFontEntry* aUserFontEntry, const gfxFontFaceSrc* aFontFaceSrc,
-    dom::WorkerPrivate* aWorkerPrivate, nsILoadGroup* aLoadGroup,
-    nsIInterfaceRequestor* aCallbacks) {
+    dom::WorkerPrivate* aWorkerPrivate, const dom::ClientInfo& aClientInfo,
+    nsILoadGroup* aLoadGroup, nsIInterfaceRequestor* aCallbacks) {
   nsresult rv;
 
   nsIPrincipal* principal =
@@ -166,8 +167,8 @@ nsresult FontLoaderUtils::BuildChannel(
   nsCOMPtr<nsIChannel> channel;
   rv = NS_NewChannelWithTriggeringPrincipal(
       getter_AddRefs(channel), aURI, aWorkerPrivate->GetLoadingPrincipal(),
-      principal, securityFlags, contentPolicyType, nullptr, nullptr,
-      aLoadGroup);
+      principal, aClientInfo, Maybe<dom::ServiceWorkerDescriptor>(),
+      securityFlags, contentPolicyType, nullptr, nullptr, aLoadGroup);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(channel));

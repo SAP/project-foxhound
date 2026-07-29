@@ -1,0 +1,15 @@
+{
+  "label": "app.homewyse.com",
+  "bugs": {
+    "1897724": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://app.homewyse.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

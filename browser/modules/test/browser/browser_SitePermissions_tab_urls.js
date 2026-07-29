@@ -21,10 +21,10 @@ add_task(async function testTemporaryPermissionTabURLs() {
     newPrincipal("https://example.com:443"),
     newPrincipal("https://test1.example.com"),
     newPrincipal("https://name:password@example.com"),
-    newPrincipal("http://example.com"),
   ];
   let different = [
     newPrincipal("https://example.com"),
+    newPrincipal("http://example.com"),
     newPrincipal("http://example.org"),
     newPrincipal("http://example.net"),
   ];

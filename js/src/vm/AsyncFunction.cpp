@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -112,6 +110,8 @@ static bool AsyncFunctionResume(JSContext* cx,
   if (generator->isRunning()) {
     return true;
   }
+
+  AutoAsyncResumeDepth autoDepth(cx);
 
   Rooted<PromiseObject*> resultPromise(cx, generator->promise());
 
@@ -246,16 +246,7 @@ const JSClass AsyncFunctionGeneratorObject::class_ = {
 };
 
 const JSClassOps AsyncFunctionGeneratorObject::classOps_ = {
-    nullptr,                                   // addProperty
-    nullptr,                                   // delProperty
-    nullptr,                                   // enumerate
-    nullptr,                                   // newEnumerate
-    nullptr,                                   // resolve
-    nullptr,                                   // mayResolve
-    nullptr,                                   // finalize
-    nullptr,                                   // call
-    nullptr,                                   // construct
-    CallTraceMethod<AbstractGeneratorObject>,  // trace
+    .trace = CallTraceMethod<AbstractGeneratorObject>,
 };
 
 AsyncFunctionGeneratorObject* AsyncFunctionGeneratorObject::create(
@@ -316,9 +307,8 @@ static bool AsyncModuleExecutionRejectedHandler(JSContext* cx, unsigned argc,
       cx, &func.getExtendedSlot(FunctionExtended::MODULE_SLOT)
                .toObject()
                .as<ModuleObject>());
-  AsyncModuleExecutionRejected(cx, module, args.get(0));
   args.rval().setUndefined();
-  return true;
+  return AsyncModuleExecutionRejected(cx, module, args.get(0));
 }
 
 AsyncFunctionGeneratorObject* AsyncFunctionGeneratorObject::create(

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,6 +9,7 @@
  */
 
 DEPRECATED_OPERATION(Components)
+DEPRECATED_OPERATION(CSSContainerRuleSingleCondition)
 DEPRECATED_OPERATION(NodeIteratorDetach)
 DEPRECATED_OPERATION(LenientThis)
 DEPRECATED_OPERATION(UseOfCaptureEvents)
@@ -20,18 +19,13 @@ DEPRECATED_OPERATION(Window_Cc_ontrollers)
 DEPRECATED_OPERATION(ImportXULIntoContent)
 DEPRECATED_OPERATION(InstallTriggerDeprecated)
 DEPRECATED_OPERATION(NavigatorGetUserMedia)
-DEPRECATED_OPERATION(WebrtcDeprecatedPrefix)
 DEPRECATED_OPERATION(RTCPeerConnectionGetStreams)
-DEPRECATED_OPERATION(AppCache)
 DEPRECATED_OPERATION(LenientSetter)
 DEPRECATED_OPERATION(ImageBitmapRenderingContext_TransferImageBitmap)
-DEPRECATED_OPERATION(WindowContentUntrusted)
 DEPRECATED_OPERATION(MotionEvent)
 DEPRECATED_OPERATION(OrientationEvent)
 DEPRECATED_OPERATION(ProximityEvent)
 DEPRECATED_OPERATION(AmbientLightEvent)
-DEPRECATED_OPERATION(IDBOpenDBOptions_StorageType)
-DEPRECATED_OPERATION(DOMQuadBoundsAttr)
 DEPRECATED_OPERATION(DeprecatedTestingInterface)
 DEPRECATED_OPERATION(DeprecatedTestingMethod)
 DEPRECATED_OPERATION(DeprecatedTestingAttribute)
@@ -50,6 +44,7 @@ DEPRECATED_OPERATION(MathML_DeprecatedMathVariant)
 DEPRECATED_OPERATION(MathML_DeprecatedMoExplicitAccent)
 DEPRECATED_OPERATION(MathML_DeprecatedMoverNonExplicitAccent)
 DEPRECATED_OPERATION(MathML_DeprecatedMunderNonExplicitAccentunder)
+DEPRECATED_OPERATION(MathML_DeprecatedHrefLinkOnNonAnchorElement)
 DEPRECATED_OPERATION(FormSubmissionUntrustedEvent)
 DEPRECATED_OPERATION(ElementSetCapture)
 DEPRECATED_OPERATION(ElementReleaseCapture)
@@ -61,6 +56,7 @@ DEPRECATED_OPERATION(FullscreenAttribute)
 DEPRECATED_OPERATION(XSLTDeprecated)
 DEPRECATED_OPERATION(CKEditor4CompatHack)
 DEPRECATED_OPERATION(GWTRichTextAreaCompatHack)
+DEPRECATED_OPERATION(OldZECompatHack)
 DEPRECATED_OPERATION(MozorientationDeprecated)
 DEPRECATED_OPERATION(MozorientationchangeDeprecated)
 DEPRECATED_OPERATION(MozlockorientationDeprecated)

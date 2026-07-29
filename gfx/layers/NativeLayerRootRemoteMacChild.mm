@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -13,7 +12,7 @@ namespace layers {
 already_AddRefed<NativeLayer> NativeLayerRootRemoteMacChild::CreateLayer(
     const gfx::IntSize& aSize, bool aIsOpaque,
     SurfacePoolHandle* aSurfacePoolHandle) {
-  RefPtr<NativeLayerRemoteMac> layer = new NativeLayerRemoteMac(
+  RefPtr layer = MakeRefPtr<NativeLayerRemoteMac>(
       aSize, aIsOpaque, aSurfacePoolHandle->AsSurfacePoolHandleCA());
   mCommandQueue->AppendCommand(mozilla::layers::CommandCreateLayer(
       reinterpret_cast<uint64_t>(layer.get()), aSize, aIsOpaque));
@@ -24,7 +23,7 @@ already_AddRefed<NativeLayer> NativeLayerRootRemoteMacChild::CreateLayer(
 
 already_AddRefed<NativeLayer>
 NativeLayerRootRemoteMacChild::CreateLayerForExternalTexture(bool aIsOpaque) {
-  RefPtr<NativeLayerRemoteMac> layer = new NativeLayerRemoteMac(aIsOpaque);
+  RefPtr layer = MakeRefPtr<NativeLayerRemoteMac>(aIsOpaque);
   mCommandQueue->AppendCommand(
       mozilla::layers::CommandCreateLayerForExternalTexture(
           reinterpret_cast<uint64_t>(layer.get()), aIsOpaque));
@@ -35,7 +34,7 @@ NativeLayerRootRemoteMacChild::CreateLayerForExternalTexture(bool aIsOpaque) {
 
 already_AddRefed<NativeLayer>
 NativeLayerRootRemoteMacChild::CreateLayerForColor(gfx::DeviceColor aColor) {
-  RefPtr<NativeLayerRemoteMac> layer = new NativeLayerRemoteMac(aColor);
+  RefPtr layer = MakeRefPtr<NativeLayerRemoteMac>(aColor);
   mCommandQueue->AppendCommand(mozilla::layers::CommandCreateLayerForColor(
       reinterpret_cast<uint64_t>(layer.get()), aColor));
   // Share our command queue.

@@ -54,7 +54,14 @@ export class _LinkMenu extends React.PureComponent {
         )
       )
       .map(option => {
-        const { action, impression, id, type, userEvent: eventName } = option;
+        const {
+          action,
+          impression,
+          toast,
+          id,
+          type,
+          userEvent: eventName,
+        } = option;
         if (!type && id) {
           option.onClick = (event = {}) => {
             const { ctrlKey, metaKey, shiftKey, button } = event;
@@ -68,6 +75,9 @@ export class _LinkMenu extends React.PureComponent {
               );
             }
             dispatch(action);
+            if (toast) {
+              dispatch(toast);
+            }
             if (eventName) {
               let value;
               // Bug 1958135: Pass additional info to ac.OPEN_NEW_WINDOW event
@@ -76,8 +86,6 @@ export class _LinkMenu extends React.PureComponent {
                   card_type,
                   corpus_item_id,
                   event_source,
-                  fetchTimestamp,
-                  firstVisibleTimestamp,
                   format,
                   is_section_followed,
                   received_rank,
@@ -95,8 +103,6 @@ export class _LinkMenu extends React.PureComponent {
                   card_type,
                   corpus_item_id,
                   event_source,
-                  fetchTimestamp,
-                  firstVisibleTimestamp,
                   format,
                   received_rank,
                   recommendation_id,

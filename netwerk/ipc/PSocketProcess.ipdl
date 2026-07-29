@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -88,6 +87,9 @@ struct SocketPorcessInitAttributes {
   bool mIsReadyForBackgroundProcessing;
 #endif
   FileDescriptor? mSandboxBroker;
+#if defined(XP_MACOSX) || defined(XP_IOS)
+  bool mAppleFastDatapathProbeAllowed;
+#endif
 };
 
 [NeedsOtherPid, ChildProc=Socket]
@@ -138,6 +140,13 @@ parent:
 
   async GeckoTraceExport(ByteBuf aBuf);
 
+  // Socket process pushes its TLS session token cache to the parent for
+  // persistence to disk.
+  async SSLTokensCacheData(ByteBuf aBuf);
+
+#if defined(XP_MACOSX) || defined(XP_IOS)
+  async AppleFastDatapathProbeResult(bool aAvailable);
+#endif
 #if defined(XP_WIN)
   async GetModulesTrust(ModulePaths aModPaths, bool aRunAtNormalPriority)
       returns (ModulesMapResult? modMapResult);
@@ -198,6 +207,13 @@ child:
   // Used in tests and ping assembly. Buffer contains bincoded Rust structs.
   // https://firefox-source-docs.mozilla.org/toolkit/components/glean/dev/ipc.html
   async FlushFOGData() returns (ByteBuf buf);
+
+  // Parent sends persisted TLS session tokens to the socket process on startup.
+  async LoadSSLTokensCache(ByteBuf aBuf);
+
+  // Parent requests a final TLS session token flush from the socket process
+  // before shutdown.
+  async FlushSSLTokensCache() returns (ByteBuf buf);
 
   // Test-only method.
   // Asks the Socket process to trigger test-only instrumentation.

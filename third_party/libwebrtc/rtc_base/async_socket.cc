@@ -24,11 +24,13 @@ AsyncSocketAdapter::AsyncSocketAdapter(Socket* socket)
     : socket_(absl::WrapUnique(socket)) {
   RTC_DCHECK(socket_);
   socket_->SubscribeConnectEvent(
-      [this](Socket* socket) { OnConnectEvent(socket); });
-  socket_->SignalReadEvent.connect(this, &AsyncSocketAdapter::OnReadEvent);
-  socket_->SignalWriteEvent.connect(this, &AsyncSocketAdapter::OnWriteEvent);
+      this, [this](Socket* socket) { OnConnectEvent(socket); });
+  socket_->SubscribeReadEvent(this,
+                              [this](Socket* socket) { OnReadEvent(socket); });
+  socket_->SubscribeWriteEvent(
+      this, [this](Socket* socket) { OnWriteEvent(socket); });
   socket_->SubscribeCloseEvent(
-      [this](Socket* socket, int err) { OnCloseEvent(socket, err); });
+      this, [this](Socket* socket, int err) { OnCloseEvent(socket, err); });
 }
 
 SocketAddress AsyncSocketAdapter::GetLocalAddress() const {
@@ -105,11 +107,11 @@ void AsyncSocketAdapter::OnConnectEvent(Socket* socket) {
 }
 
 void AsyncSocketAdapter::OnReadEvent(Socket* socket) {
-  SignalReadEvent(this);
+  NotifyReadEvent(this);
 }
 
 void AsyncSocketAdapter::OnWriteEvent(Socket* socket) {
-  SignalWriteEvent(this);
+  NotifyWriteEvent(this);
 }
 
 void AsyncSocketAdapter::OnCloseEvent(Socket* socket, int err) {

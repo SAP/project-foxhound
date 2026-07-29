@@ -22,6 +22,10 @@ EXPORTS.opentelemetry.proto.collector.trace.v1 = [
 
 DEFINES["GOOGLE_PROTOBUF_NO_RTTI"] = True
 
+LOCAL_INCLUDES += [
+    "/third_party/abseil-cpp",
+]
+
 SOURCES += [
     "opentelemetry/proto/collector/trace/v1/trace_service.pb.cc",
     "opentelemetry/proto/common/v1/common.pb.cc",

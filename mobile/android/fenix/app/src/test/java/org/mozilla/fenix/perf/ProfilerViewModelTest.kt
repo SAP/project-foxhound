@@ -26,7 +26,6 @@ import mozilla.components.concept.base.profiler.Profiler
 import mozilla.components.concept.engine.Engine
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -38,6 +37,8 @@ import org.mozilla.fenix.components.Components
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.shadows.ShadowApplication
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -173,8 +174,8 @@ class ProfilerViewModelTest {
         advanceUntilIdle()
 
         val finalState = viewModel.uiState.value
-        assertTrue(finalState is ProfilerUiState.Error)
-        assertEquals(R.string.profiler_error, (finalState as ProfilerUiState.Error).messageResId)
+        assertIs<ProfilerUiState.Error>(finalState)
+        assertEquals(R.string.profiler_error, finalState.messageResId)
         assertTrue(
             finalState.errorDetails.contains("Profiler not available"),
         )
@@ -242,8 +243,8 @@ class ProfilerViewModelTest {
         advanceUntilIdle()
 
         val lastState = viewModel.uiState.value
-        assertTrue(lastState is ProfilerUiState.Finished)
-        assertNull((lastState as ProfilerUiState.Finished).profileUrl)
+        assertIs<ProfilerUiState.Finished>(lastState)
+        assertNull(lastState.profileUrl)
 
         verify(exactly = 0) { mockProfiler.stopProfiler(any(), any()) }
     }
@@ -282,8 +283,8 @@ class ProfilerViewModelTest {
         assertNotNull(toastState)
         assertEquals(R.string.profiler_uploaded_url_to_clipboard, (toastState as ProfilerUiState.ShowToast).messageResId)
         val finishedState = collectedStates.last()
-        assertTrue(finishedState is ProfilerUiState.Finished)
-        assertEquals(expectedUrl, (finishedState as ProfilerUiState.Finished).profileUrl)
+        assertIs<ProfilerUiState.Finished>(finishedState)
+        assertEquals(expectedUrl, finishedState.profileUrl)
 
         verify { mockProfiler.stopProfiler(any(), any()) }
         verify { mockProfilerUtils.saveProfileUrlToClipboard(fakeProfileData, mockApplication) }
@@ -320,8 +321,8 @@ class ProfilerViewModelTest {
         assertTrue(collectedStates.any { it is ProfilerUiState.Idle })
         assertTrue(collectedStates.any { it is ProfilerUiState.Gathering })
         val errorState = collectedStates.last()
-        assertTrue(errorState is ProfilerUiState.Error)
-        assertEquals(R.string.profiler_error, (errorState as ProfilerUiState.Error).messageResId)
+        assertIs<ProfilerUiState.Error>(errorState)
+        assertEquals(R.string.profiler_error, errorState.messageResId)
         assertEquals("Profiler Stop Failed", errorState.errorDetails)
 
         verify { mockProfiler.stopProfiler(any(), any()) }
@@ -403,11 +404,11 @@ class ProfilerViewModelTest {
         collectionJob.cancel()
 
         assertEquals("Expected 3 state emissions: Initial, Stopping, Finished", 3, collectedUiStates.size)
-        assertTrue("First collected state should be Idle", collectedUiStates[0] is ProfilerUiState.Idle)
-        assertTrue("Second collected state should be Stopping", collectedUiStates[1] is ProfilerUiState.Stopping)
+        assertIs<ProfilerUiState.Idle>(collectedUiStates[0], "First collected state should be Idle")
+        assertIs<ProfilerUiState.Stopping>(collectedUiStates[1], "Second collected state should be Stopping")
         val finalState = collectedUiStates[2]
-        assertTrue("Third collected state should be Finished", finalState is ProfilerUiState.Finished)
-        assertNull("Profile URL should be null in the final Finished state", (finalState as ProfilerUiState.Finished).profileUrl)
+        assertIs<ProfilerUiState.Finished>(finalState, "Third collected state should be Finished")
+        assertNull("Profile URL should be null in the final Finished state", finalState.profileUrl)
 
         verify { mockProfiler.stopProfiler(any(), any()) }
         verify(exactly = 0) { mockProfilerUtils.saveProfileUrlToClipboard(any(), any()) }

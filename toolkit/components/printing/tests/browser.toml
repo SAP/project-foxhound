@@ -9,6 +9,8 @@ prefs = ["sidebar.revamp=false"]
 
 ["browser_destination_change.js"]
 
+["browser_destination_sort.js"]
+
 ["browser_empty_paper_sizes.js"]
 
 ["browser_modal_print.js"]
@@ -60,7 +62,9 @@ support-files = [
 skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan && swgl", # Bug 1683730
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && ccov",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && ccov",
   "os == 'win' && os_version == '11.26100' && debug && verify",
+  "os == 'win' && os_version == '11.26200' && debug && verify",
 ]
 
 ["browser_print_margins.js"]

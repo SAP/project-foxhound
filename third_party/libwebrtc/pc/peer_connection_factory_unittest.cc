@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -38,6 +39,7 @@
 #include "api/scoped_refptr.h"
 #include "api/test/mock_packet_socket_factory.h"
 #include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
 #include "api/video_codecs/scalability_mode.h"
 #include "api/video_codecs/video_decoder_factory_template.h"
 #include "api/video_codecs/video_decoder_factory_template_dav1d_adapter.h"
@@ -54,20 +56,21 @@
 #include "modules/audio_processing/include/mock_audio_processing.h"
 #include "p2p/base/port.h"
 #include "p2p/base/port_allocator.h"
-#include "p2p/base/port_interface.h"
 #include "p2p/test/fake_port_allocator.h"
 #include "pc/connection_context.h"
 #include "pc/test/fake_audio_capture_module.h"
 #include "pc/test/fake_video_track_source.h"
 #include "rtc_base/event.h"
 #include "rtc_base/internal/default_socket_server.h"
+#include "rtc_base/net_helper.h"
 #include "rtc_base/network.h"
 #include "rtc_base/socket_address.h"
 #include "rtc_base/socket_server.h"
 #include "rtc_base/thread.h"
-#include "rtc_base/time_utils.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
+#include "test/run_loop.h"
+#include "test/testsupport/file_utils.h"
 
 #ifdef WEBRTC_ANDROID
 #include "pc/test/android_test_initializer.h"
@@ -262,7 +265,7 @@ class PeerConnectionFactoryTest : public ::testing::Test {
   }
 
   std::unique_ptr<SocketServer> socket_server_;
-  AutoSocketServerThread main_thread_;
+  test::RunLoop main_thread_;
   scoped_refptr<PeerConnectionFactoryInterface> factory_;
   NullPeerConnectionObserver observer_;
   std::unique_ptr<FakePortAllocator> port_allocator_;
@@ -643,7 +646,8 @@ TEST_F(PeerConnectionFactoryTest, LocalRendering) {
   scoped_refptr<FakeVideoTrackSource> source =
       FakeVideoTrackSource::Create(/*is_screencast=*/false);
 
-  FakeFrameSource frame_source(1280, 720, kNumMicrosecsPerSec / 30);
+  FakeFrameSource frame_source(1280, 720, TimeDelta::Seconds(1) / 30,
+                               Timestamp::Zero());
 
   ASSERT_TRUE(source.get() != nullptr);
   scoped_refptr<VideoTrackInterface> track(
@@ -760,7 +764,14 @@ TEST(PeerConnectionFactoryDependenciesTest,
 
   scoped_refptr<PeerConnectionFactoryInterface> pcf =
       CreateModularPeerConnectionFactory(std::move(pcf_dependencies));
-  pcf->StartAecDump(nullptr, 24'242);
+  // Provide a valid file to avoid triggering the null pointer guard.
+  // The AEC dump machinery takes ownership of the file and closes it.
+  std::string temp_filename =
+      test::TempFilename(test::OutputPath(), "aec_dump");
+  pcf->StartAecDump(fopen(temp_filename.c_str(), "wb"), 24'242);
+  // Destroy the PCF to ensure the file is closed before attempting removal.
+  pcf = nullptr;
+  test::RemoveFile(temp_filename);
 }
 
 TEST(PeerConnectionFactoryDependenciesTest, RepeatMediaEngineInitialization) {

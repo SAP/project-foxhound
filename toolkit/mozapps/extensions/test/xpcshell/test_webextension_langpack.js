@@ -7,6 +7,14 @@ const { ExtensionUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/ExtensionUtils.sys.mjs"
 );
 
+const { Langpack } = ChromeUtils.importESModule(
+  "resource://gre/modules/Extension.sys.mjs"
+);
+
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
+);
+
 ChromeUtils.defineLazyGetter(this, "resourceProtocol", () =>
   Services.io
     .getProtocolHandler("resource")
@@ -813,4 +821,86 @@ add_task(async function test_staged_langpack_compat_startup() {
   await addon.uninstall();
   await promiseShutdownManager();
   Services.locale.requestedLocales = originalLocales;
+});
+
+/**
+ * Verifies that Langpack.activeLangpackIds tracks the set of currently
+ * active langpacks via startup/shutdown, and that the new
+ * webextension-langpack-shutdown observer topic fires when a langpack is
+ * disabled or uninstalled (but not on APP_SHUTDOWN). See Bug 2046945.
+ */
+add_task(async function test_activeLangpackIds_and_shutdown_topic() {
+  const LANGPACK_METASOURCE = `langpack-und-${AppConstants.MOZ_BUILD_APP.replace(
+    "/",
+    "-"
+  )}`;
+  const SHUTDOWN_TOPIC = "webextension-langpack-shutdown";
+
+  await promiseStartupManager();
+
+  Assert.ok(
+    !Langpack.activeLangpackIds.has(LANGPACK_METASOURCE),
+    "activeLangpackIds is empty for our test langpack before install"
+  );
+
+  // Install → startup adds the langpack id to the set.
+  let [, { addon }] = await Promise.all([
+    promiseLangpackStartup(),
+    AddonTestUtils.promiseInstallXPI(ADDONS.langpack_1),
+  ]);
+  Assert.ok(
+    Langpack.activeLangpackIds.has(LANGPACK_METASOURCE),
+    "activeLangpackIds contains the langpack metasource after startup"
+  );
+
+  // Disable → fires shutdown topic with the Langpack instance as subject,
+  // and removes the id from the set.
+  let shutdownObserved = TestUtils.topicObserved(SHUTDOWN_TOPIC);
+  await addon.disable();
+  let [shutdownSubject] = await shutdownObserved;
+  Assert.equal(
+    shutdownSubject?.wrappedJSObject?.langpack?.startupData?.langpackId,
+    LANGPACK_METASOURCE,
+    "Shutdown subject carries the Langpack instance with the correct langpackId"
+  );
+  Assert.ok(
+    !Langpack.activeLangpackIds.has(LANGPACK_METASOURCE),
+    "activeLangpackIds removes the entry after disable"
+  );
+
+  // Re-enable → startup re-adds the id.
+  await Promise.all([promiseLangpackStartup(), addon.enable()]);
+  Assert.ok(
+    Langpack.activeLangpackIds.has(LANGPACK_METASOURCE),
+    "activeLangpackIds re-adds the entry after enable"
+  );
+
+  let shutdownTopicFired = false;
+  const observer = () => {
+    shutdownTopicFired = true;
+  };
+  Services.obs.addObserver(observer, SHUTDOWN_TOPIC);
+
+  await promiseShutdownManager();
+
+  Services.obs.removeObserver(observer, SHUTDOWN_TOPIC);
+
+  Assert.ok(
+    !shutdownTopicFired,
+    "webextension-langpack-shutdown does not fire on APP_SHUTDOWN"
+  );
+
+  await promiseStartupManager();
+  addon = await AddonManager.getAddonByID(ID);
+
+  // Uninstall → fires shutdown topic again, removes from set.
+  shutdownObserved = TestUtils.topicObserved(SHUTDOWN_TOPIC);
+  await addon.uninstall();
+  await shutdownObserved;
+  Assert.ok(
+    !Langpack.activeLangpackIds.has(LANGPACK_METASOURCE),
+    "activeLangpackIds removes the entry after uninstall"
+  );
+
+  await promiseShutdownManager();
 });

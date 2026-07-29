@@ -7,8 +7,6 @@
 // * session and stream creation
 // * reading from incoming streams (uni)
 //
-// keep eslint happy until it knows about WebTransport
-/* global WebTransport:false */
 
 "use strict";
 
@@ -20,7 +18,6 @@ const dns = Services.dns;
 
 registerCleanupFunction(async () => {
   Services.prefs.clearUserPref("network.dns.localDomains");
-  Services.prefs.clearUserPref("network.webtransport.enabled");
   Services.prefs.clearUserPref("network.webtransport.redirect.enabled");
 });
 
@@ -49,7 +46,6 @@ function addCertFromFile(certdb, filename, trustString) {
 
 add_setup(async function setup() {
   Services.prefs.setCharPref("network.dns.localDomains", "foo.example.com");
-  Services.prefs.setBoolPref("network.webtransport.enabled", true);
   Services.prefs.setBoolPref("network.webtransport.redirect.enabled", true);
 
   h3Port = Services.env.get("MOZHTTP3_PORT");
@@ -70,13 +66,13 @@ add_setup(async function setup() {
 });
 
 add_task(async function test_webtransport_create() {
-  const wt = new WebTransport("https://" + host + "/success");
+  const wt = newWebTransport("https://" + host + "/success");
   await wt.ready;
   wt.close();
 });
 
 add_task(async function test_redirect_wt() {
-  let wt = new WebTransport("https://" + host + "/redirect");
+  let wt = newWebTransport("https://" + host + "/redirect");
   const e1 = await wt.ready.catch(e => e);
   const e2 = await wt.closed.catch(e => e);
 
@@ -85,7 +81,7 @@ add_task(async function test_redirect_wt() {
 });
 
 add_task(async function test_reject_wt() {
-  let wt = new WebTransport("https://" + host + "/reject");
+  let wt = newWebTransport("https://" + host + "/reject");
   const e1 = await wt.ready.catch(e => e);
   const e2 = await wt.closed.catch(e => e);
   Assert.equal(e1, "WebTransportError: WebTransport connection rejected");
@@ -93,21 +89,21 @@ add_task(async function test_reject_wt() {
 });
 
 add_task(async function test_immediate_server_close() {
-  let wt = new WebTransport("https://" + host + "/closeafter0ms");
+  let wt = newWebTransport("https://" + host + "/closeafter0ms");
   await wt.ready;
   await wt.closed;
   Assert.ok(true);
 });
 
 add_task(async function test_delayed_server_close() {
-  let wt = new WebTransport("https://" + host + "/closeafter100ms");
+  let wt = newWebTransport("https://" + host + "/closeafter100ms");
   await wt.ready;
   await wt.closed;
   Assert.ok(true);
 });
 
 add_task(async function test_wt_stream_create_bidi() {
-  let wt = new WebTransport("https://" + host + "/success");
+  let wt = newWebTransport("https://" + host + "/success");
   await wt.ready;
 
   let bds = await wt.createBidirectionalStream();
@@ -118,7 +114,7 @@ add_task(async function test_wt_stream_create_bidi() {
 });
 
 add_task(async function test_wt_stream_create_uni() {
-  let wt = new WebTransport("https://" + host + "/success");
+  let wt = newWebTransport("https://" + host + "/success");
   await wt.ready;
 
   let uds = await wt.createUnidirectionalStream();

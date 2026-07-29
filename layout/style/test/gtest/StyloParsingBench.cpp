@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,7 +10,6 @@
 #include "mozilla/Encoding.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/Utf8.h"
-#include "mozilla/css/SheetParsingMode.h"
 #include "nsCSSValue.h"
 #include "nsString.h"
 
@@ -36,13 +33,13 @@ static void ServoParsingBench() {
 
   RefPtr<nsIURI> uri = NullPrincipal::CreateURI();
   nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo(nullptr);
-  RefPtr<URLExtraData> data =
-      new URLExtraData(uri.forget(), referrerInfo.forget(),
-                       NullPrincipal::CreateWithoutOriginAttributes());
+  auto data =
+      MakeRefPtr<URLExtraData>(uri.forget(), referrerInfo.forget(),
+                               NullPrincipal::CreateWithoutOriginAttributes());
   for (int i = 0; i < PARSING_REPETITIONS; i++) {
     RefPtr<StyleStylesheetContents> stylesheet =
         Servo_StyleSheet_FromUTF8Bytes(
-            nullptr, nullptr, nullptr, &cssStr, eAuthorSheetFeatures, data,
+            nullptr, nullptr, nullptr, &cssStr, StyleOrigin::Author, data,
             eCompatibility_FullStandards, nullptr, StyleAllowImportRules::Yes,
             StyleSanitizationKind::None, nullptr)
             .Consume();
@@ -56,9 +53,9 @@ static void ServoSetPropertyByIdBench(const nsACString& css) {
       Servo_DeclarationBlock_CreateEmpty().Consume();
   RefPtr<nsIURI> uri = NullPrincipal::CreateURI();
   nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo(nullptr);
-  RefPtr<URLExtraData> data =
-      new URLExtraData(uri.forget(), referrerInfo.forget(),
-                       NullPrincipal::CreateWithoutOriginAttributes());
+  auto data =
+      MakeRefPtr<URLExtraData>(uri.forget(), referrerInfo.forget(),
+                               NullPrincipal::CreateWithoutOriginAttributes());
   ASSERT_TRUE(IsUtf8(css));
 
   for (int i = 0; i < SETPROPERTY_REPETITIONS; i++) {
@@ -75,9 +72,9 @@ static void ServoGetPropertyValueByNonCustomId() {
 
   RefPtr<nsIURI> uri = NullPrincipal::CreateURI();
   nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo(nullptr);
-  RefPtr<URLExtraData> data =
-      new URLExtraData(uri.forget(), referrerInfo.forget(),
-                       NullPrincipal::CreateWithoutOriginAttributes());
+  auto data =
+      MakeRefPtr<URLExtraData>(uri.forget(), referrerInfo.forget(),
+                               NullPrincipal::CreateWithoutOriginAttributes());
   constexpr auto css_ = "10px"_ns;
   const nsACString& css = css_;
   Servo_DeclarationBlock_SetPropertyById(

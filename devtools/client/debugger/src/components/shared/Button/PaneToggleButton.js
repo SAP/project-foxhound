@@ -4,7 +4,7 @@
 
 import React, { PureComponent } from "devtools/client/shared/vendor/react";
 import PropTypes from "devtools/client/shared/vendor/react-prop-types";
-import DebuggerImage from "../DebuggerImage";
+import DebuggerImage from "devtools/client/shared/components/DebuggerImage";
 import { CommandBarButton } from "./index";
 
 const classnames = require("resource://devtools/client/shared/classnames.js");

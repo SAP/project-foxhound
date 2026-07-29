@@ -8,7 +8,7 @@
 ---
 $schema: moz://mozilla.org/schemas/glean/metrics/2-0-0
 $tags:
-  - 'Firefox :: Messaging System'
+  - "Firefox :: Messaging System"
 
 messaging_experiments:
   targeting_attribute_error:
@@ -76,9 +76,10 @@ messaging_experiments:
           event's `value` parameter.
         type: string
       branches:
-        description: >
-          A semicolon separated string for all the qualified branch ID(s). e.g. "control;variant_01;treatment_02".
-
+        description: The slug for the branch the message came from.
+        type: string
+      message_id:
+        description: The ID of the message that triggered this reach event.
         type: string
     telemetry_mirror: Messaging_experiments_Reach_Cfr
 
@@ -161,6 +162,22 @@ messaging_experiments:
     expires: never
     extra_keys: *messaging_experiments_reach_extra
     telemetry_mirror: Messaging_experiments_Reach_FxmsBmbButton
+
+  reach_fxms_message:
+    type: event
+    description: >
+      This records whether a branch's targeting is satisfied for Messaging
+      System experiments. All qualified branch ID(s) will be recorded in
+      the 'extra_keys' for each active experiment, and the event 'value'
+      will be the experiment ID
+      This event was generated to correspond to the Legacy Telemetry event
+      messaging_experiments.reach#fxms_message.
+    bugs: *messaging_experiments_reach_bugs
+    data_reviews: *messaging_experiments_reach_data_reviews
+    notification_emails: *messaging_experiments_reach_emails
+    expires: never
+    extra_keys: *messaging_experiments_reach_extra
+    telemetry_mirror: Messaging_experiments_Reach_FxmsMessage
 
   reach_fxms_message_1:
     type: event
@@ -401,7 +418,6 @@ messaging_experiments:
     expires: never
     extra_keys: *messaging_experiments_reach_extra
     telemetry_mirror: Messaging_experiments_Reach_FxmsMessage15
-
 
   reach_fxms_message_16:
     type: event

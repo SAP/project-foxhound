@@ -149,28 +149,28 @@ are a few proposals for APIs that would allow such effects, and they all
 have their advantages and disadvantages. The proposals currently under
 consideration are:
 
--   [Web Animations](https://w3c.github.io/web-animations/): A new API
-    for precisely controlling web animations in JavaScript, with an
-    [additional
-    proposal](https://wiki.mozilla.org/Platform/Layout/Extended_Timelines)
-    to map scroll position to time and use that as a timeline for the
-    animation.
--   [CompositorWorker](https://docs.google.com/document/d/18GGuTRGnafai17PDWjCHHAvFRsCfYUDYsi720sVPkws/edit?pli=1#heading=h.iy9r1phg1ux4):
-    Allows JavaScript to be run on the compositor thread in small
-    chunks, provided it doesn't cause the framerate to drop.
--   [Scroll
-    Customization](https://docs.google.com/document/d/1VnvAqeWFG9JFZfgG5evBqrLGDZYRE5w6G5jEDORekPY/edit?pli=1):
-    Introduces a new API for content to dictate how a scroll delta is
-    applied and consumed. As of this writing, Mozilla does not plan to
-    support this proposal, but it is included for completeness.
+- [Web Animations](https://w3c.github.io/web-animations/): A new API
+  for precisely controlling web animations in JavaScript, with an
+  [additional
+  proposal](https://wiki.mozilla.org/Platform/Layout/Extended_Timelines)
+  to map scroll position to time and use that as a timeline for the
+  animation.
+- [CompositorWorker](https://docs.google.com/document/d/18GGuTRGnafai17PDWjCHHAvFRsCfYUDYsi720sVPkws/edit?pli=1#heading=h.iy9r1phg1ux4):
+  Allows JavaScript to be run on the compositor thread in small
+  chunks, provided it doesn't cause the framerate to drop.
+- [Scroll
+  Customization](https://docs.google.com/document/d/1VnvAqeWFG9JFZfgG5evBqrLGDZYRE5w6G5jEDORekPY/edit?pli=1):
+  Introduces a new API for content to dictate how a scroll delta is
+  applied and consumed. As of this writing, Mozilla does not plan to
+  support this proposal, but it is included for completeness.
 
 ### Call to action
 
 If you have thoughts or opinions on:
 
--   Any of the above proposals in the context of scroll-linked effects.
--   Scroll-linked effects you are trying to implement.
--   Any other related issues or ideas.
+- Any of the above proposals in the context of scroll-linked effects.
+- Scroll-linked effects you are trying to implement.
+- Any other related issues or ideas.
 
 Please get in touch with us! You can join the discussion on the
 [public-houdini](https://lists.w3.org/Archives/Public/public-houdini/)

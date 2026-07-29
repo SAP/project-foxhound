@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -48,7 +46,7 @@ class FFmpegEncoderModule final : public PlatformEncoderModule {
  private:
   // This refers to a static FFmpegLibWrapper, so raw pointer is adequate.
   const FFmpegLibWrapper* mLib;  // set in constructor
-  MOZ_RUNINIT static inline StaticDataMutex<nsTArray<uint32_t>>
+  constinit static inline StaticDataMutex<nsTArray<uint32_t>>
       sSupportedHWCodecs{"sSupportedHWCodecs"};
 };
 

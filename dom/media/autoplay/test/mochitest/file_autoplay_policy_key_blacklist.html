@@ -36,14 +36,6 @@
           "ScrollLock",
           "FnLock",
           "Meta",
-          "ArrowUp",
-          "ArrowDown",
-          "ArrowLeft",
-          "ArrowRight",
-          "PageUp",
-          "PageDown",
-          "Home",
-          "End",
           "Fn",
           "Alt",
           "AltGraph",
@@ -51,23 +43,6 @@
           "Shift",
           "Escape",
         ];
-
-        // XXX not sure why Android behave different on handling Backspace key.
-        if (!navigator.appVersion.includes("Android")) {
-          blacklistKeyPresses.push("Backspace");
-        }
-
-        let modifiedKeys = [
-          { key: "a", modifiers: { accelKey: true } },
-          { key: "z", modifiers: { accelKey: true } },
-        ];
-
-        // Browser shortcut on non-Linux platform.
-        if (navigator.platform.indexOf("Linux") !== 0) {
-          modifiedKeys.push(
-            { key: "KEY_ArrowRight", modifiers: { metaKey: true } },
-            { key: "KEY_ArrowRight", modifiers: { altKey: true } });
-        }
 
         let script = SpecialPowers.loadChromeScript(function() {
           var EventUtils = {};
@@ -129,34 +104,28 @@
           input.blur();
         }
 
-        async function testAutoplayKeyBlacklist() {
+        async function makeVideoElement() {
           let element = document.createElement("video");
           element.preload = "auto";
           element.src = "short.mp4";
           document.body.appendChild(element);
-
           await once(element, "loadedmetadata");
+          return element;
+        }
+
+        async function testAutoplayKeyBlacklist() {
+          let element = await makeVideoElement();
 
           let played = await element.play().then(() => true, () => false);
           is(played, false, "Document should start out not activated, with playback blocked.");
 
           // Try pressing all the keys in the blacklist, then playing.
           // Document should not be activated, so play should fail.
-
           for (let key of blacklistKeyPresses) {
             document.body.focus();
             await synthesizeKeyAndWait("KEY_" + key);
             played = await element.play().then(() => true, () => false);
             is(played, false, "Key " + key + " should not activate document and should not unblock play");
-          }
-
-          // Try pressing some keys with modifiers.
-          let keyNames = (m) => Object.keys(m).join("+");
-          for (let x of modifiedKeys) {
-            document.body.focus();
-            await synthesizeKeyAndWait(x.key, x.modifiers);
-            played = await element.play().then(() => true, () => false);
-            is(played, false, "Key (" + x.key + "+" + keyNames(x.modifiers) + ") should not activate document and should not unblock play");
           }
 
           // Try pressing a key not in the blacklist, then playing.
@@ -168,10 +137,26 @@
           removeNodeAndSource(element);
         }
 
+        async function testCtrlF5Activation() {
+          let element = await makeVideoElement();
+          document.body.focus();
+          await synthesizeKeyAndWait("KEY_F5", { accelKey: true });
+          let played = await element.play().then(() => true, () => false);
+          is(played, true, "Ctrl+F5 should activate document and should unblock play");
+          removeNodeAndSource(element);
+        }
+
         nextWindowMessage().then(
           async (event) => {
             try {
-              await testAutoplayKeyBlacklist(event.data, event.source);
+              switch(event.data) {
+                case "testAutoplayKeyBlacklist":
+                  await testAutoplayKeyBlacklist();
+                  break;
+                case "testCtrlF5Activation":
+                  await testCtrlF5Activation();
+                  break;
+              }
             } catch (e) {
               ok(false, "Caught exception " + e + " " + e.message + " " + e.stackTrace);
             }

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -16,11 +14,13 @@ namespace js {
 class DateTimeInfo;
 
 class DateObject : public NativeObject {
+ public:
   // Time in milliseconds since the (Unix) epoch.
   //
   // The stored value is guaranteed to be a Double.
   static const uint32_t UTC_TIME_SLOT = 0;
 
+ private:
   // Time zone cache key.
   //
   // This value is exclusively used to verify the cached slots are still valid.
@@ -38,12 +38,14 @@ class DateObject : public NativeObject {
    */
   static const uint32_t COMPONENTS_START_SLOT = 2;
 
+ public:
   static const uint32_t LOCAL_TIME_SLOT = COMPONENTS_START_SLOT + 0;
   static const uint32_t LOCAL_YEAR_SLOT = COMPONENTS_START_SLOT + 1;
   static const uint32_t LOCAL_MONTH_SLOT = COMPONENTS_START_SLOT + 2;
   static const uint32_t LOCAL_DATE_SLOT = COMPONENTS_START_SLOT + 3;
   static const uint32_t LOCAL_DAY_SLOT = COMPONENTS_START_SLOT + 4;
 
+ private:
   /*
    * Unlike the above slots that hold LocalTZA-adjusted component values,
    * LOCAL_SECONDS_INTO_YEAR_SLOT holds a composite value that can be used
@@ -63,13 +65,6 @@ class DateObject : public NativeObject {
   static const JSClass protoClass_;
 
   js::DateTimeInfo* dateTimeInfo() const;
-
-  JS::ClippedTime clippedTime() const {
-    double t = getFixedSlot(UTC_TIME_SLOT).toDouble();
-    JS::ClippedTime clipped = JS::TimeClip(t);
-    MOZ_ASSERT(mozilla::NumbersAreIdentical(clipped.toDouble(), t));
-    return clipped;
-  }
 
   /**
    * Return the time in milliseconds since the epoch. The value is guaranteed to
@@ -130,6 +125,8 @@ class DateObject : public NativeObject {
   const js::Value& localSecondsIntoYear() const {
     return getReservedSlot(LOCAL_SECONDS_INTO_YEAR_SLOT);
   }
+
+  static DateObject* createTemplateObject(JSContext* cx);
 
   static constexpr size_t offsetOfUTCTimeSlot() {
     return getFixedSlotOffset(UTC_TIME_SLOT);

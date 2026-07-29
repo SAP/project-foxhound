@@ -10,8 +10,12 @@ import android.app.Activity.RESULT_OK
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.content.pm.PackageManager.PERMISSION_DENIED
 import android.content.pm.PackageManager.PERMISSION_GRANTED
+import android.content.pm.ResolveInfo
 import android.net.Uri
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.net.toUri
@@ -52,6 +56,8 @@ import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
 import org.robolectric.annotation.Config
 import java.io.File
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class FilePickerTest {
@@ -611,10 +617,10 @@ class FilePickerTest {
 
         val result = filePicker.getVisualMediaType(request)
 
-        assertTrue(result is ActivityResultContracts.PickVisualMedia.SingleMimeType)
+        assertIs<ActivityResultContracts.PickVisualMedia.SingleMimeType>(result)
         assertEquals(
             "image/png",
-            (result as ActivityResultContracts.PickVisualMedia.SingleMimeType).mimeType,
+            result.mimeType,
         )
     }
 
@@ -719,6 +725,39 @@ class FilePickerTest {
             assertEquals(selected.id, action.sessionId)
             assertEquals(filePickerRequest, action.promptRequest)
         }
+    }
+
+    @Test
+    fun `buildCaptureIntent grants read and write URI permissions on image capture intent`() {
+        val photoUri = "content://test/photo.jpg".toUri()
+        val image = MimeType.Image { _, _, _ -> photoUri }
+        val mockContext = mock<Context>()
+        val mockPackageManager = mock<PackageManager>()
+        whenever(mockContext.packageManager).thenReturn(mockPackageManager)
+        whenever(mockContext.packageName).thenReturn("org.mozilla.browser")
+        val resolveInfo = ResolveInfo().apply {
+            activityInfo = ActivityInfo().apply {
+                applicationInfo = ApplicationInfo().apply {
+                    packageName = "com.example.camera"
+                }
+                name = "CameraActivity"
+            }
+        }
+        @Suppress("DEPRECATION")
+        whenever(mockPackageManager.resolveActivity(any(), anyInt())).thenReturn(resolveInfo)
+
+        val captureRequest = PromptRequest.File(
+            mimeTypes = arrayOf("image/*"),
+            onSingleFileSelected = noopSingle,
+            onMultipleFilesSelected = noopMulti,
+            onDismiss = {},
+        )
+
+        val intent = image.buildCaptureIntent(mockContext, captureRequest)
+
+        assertNotNull(intent)
+        assertTrue(intent.flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION != 0)
+        assertTrue(intent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
     }
 
     private fun prepareSelectedSession(request: PromptRequest? = null): TabSessionState {

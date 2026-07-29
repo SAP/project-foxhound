@@ -39,6 +39,7 @@ class TrustPanelStore(
     ) : this(
         initialState = TrustPanelState(
             isTrackingProtectionEnabled = isTrackingProtectionEnabled,
+            numberOfTrackersBlocked = sessionState?.trackingProtection?.blockedTrackers?.size ?: 0,
             sessionState = sessionState,
             sitePermissions = sitePermissions,
             websiteInfoState = websiteInfoState,
@@ -131,7 +132,12 @@ private fun reducer(state: TrustPanelState, action: TrustPanelAction): TrustPane
         is TrustPanelAction.UpdateTrackersBlocked,
         is TrustPanelAction.TogglePermission,
         is TrustPanelAction.UpdateAutoplayValue,
+        is TrustPanelAction.RequestQWAC,
         -> state
+
+        is TrustPanelAction.UpdateIPProtectionMenuState -> state.copy(
+            ipProtectionMenuState = action.state,
+        )
 
         is TrustPanelAction.WebsitePermissionAction -> state.copy(
             websitePermissionsState = WebsitePermissionsStateReducer.reduce(
@@ -154,6 +160,11 @@ private fun reducer(state: TrustPanelState, action: TrustPanelAction): TrustPane
         )
         is TrustPanelAction.UpdateSitePermissions -> state.copy(
             sitePermissions = action.sitePermissions,
+        )
+        is TrustPanelAction.UpdateQWAC -> state.copy(
+            websiteInfoState = state.websiteInfoState.copy(
+                qwac = action.qwac,
+            ),
         )
     }
 }

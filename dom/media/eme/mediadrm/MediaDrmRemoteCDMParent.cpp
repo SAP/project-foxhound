@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,8 +29,8 @@ void MediaDrmRemoteCDMParent::HandleEventCb(
     AMediaDrm* aDrm, const AMediaDrmSessionId* aSessionId,
     AMediaDrmEventType aEventType, int aExtra, const uint8_t* aData,
     size_t aDataSize) {
-  EME_LOG("MediaDrmRemoteCDMParent::HandleEventCb -- drm %p, event %d", aDrm,
-          aEventType);
+  EME_LOG("MediaDrmRemoteCDMParent::HandleEventCb -- drm {}, event {}",
+          fmt::ptr(aDrm), static_cast<int>(aEventType));
 
   // Called from an internal NDK thread. We need to dispatch to the owning
   // thread of the actor with the same AMediaDrm object.
@@ -63,7 +61,8 @@ void MediaDrmRemoteCDMParent::HandleEventCb(
 void MediaDrmRemoteCDMParent::HandleExpirationUpdateCb(
     AMediaDrm* aDrm, const AMediaDrmSessionId* aSessionId,
     int64_t aExpiryTimeInMS) {
-  EME_LOG("MediaDrmRemoteCDMParent::HandleExpirationUpdateCb -- drm %p", aDrm);
+  EME_LOG("MediaDrmRemoteCDMParent::HandleExpirationUpdateCb -- drm {}",
+          fmt::ptr(aDrm));
 
   // Called from an internal NDK thread. We need to dispatch to the owning
   // thread of the actor with the same AMediaDrm object.
@@ -88,7 +87,8 @@ void MediaDrmRemoteCDMParent::HandleKeysChangeCb(
     AMediaDrm* aDrm, const AMediaDrmSessionId* aSessionId,
     const AMediaDrmKeyStatus* aKeyStatus, size_t aNumKeys,
     bool aHasNewUsableKey) {
-  EME_LOG("MediaDrmRemoteCDMParent::HandleKeysChangeCb -- drm %p", aDrm);
+  EME_LOG("MediaDrmRemoteCDMParent::HandleKeysChangeCb -- drm {}",
+          fmt::ptr(aDrm));
 
   // Called from an internal NDK thread. We need to dispatch to the owning
   // thread of the actor with the same AMediaDrm object.
@@ -141,7 +141,8 @@ void MediaDrmRemoteCDMParent::HandleKeysChangeCb(
 
 MediaDrmRemoteCDMParent::MediaDrmRemoteCDMParent(const nsAString& aKeySystem)
     : mMutex("MediaDrmRemoteCDMParent::mMutex") {
-  EME_LOG("[%p] MediaDrmRemoteCDMParent::MediaDrmRemoteCDMParent", this);
+  EME_LOG("[{}] MediaDrmRemoteCDMParent::MediaDrmRemoteCDMParent",
+          fmt::ptr(this));
   if (IsWidevineKeySystem(aKeySystem)) {
     mUuid = WIDEVINE_UUID;
   } else if (IsClearkeyKeySystem(aKeySystem)) {
@@ -150,17 +151,19 @@ MediaDrmRemoteCDMParent::MediaDrmRemoteCDMParent(const nsAString& aKeySystem)
 }
 
 MediaDrmRemoteCDMParent::~MediaDrmRemoteCDMParent() {
-  EME_LOG("[%p] MediaDrmRemoteCDMParent::~MediaDrmRemoteCDMParent", this);
+  EME_LOG("[{}] MediaDrmRemoteCDMParent::~MediaDrmRemoteCDMParent",
+          fmt::ptr(this));
   Destroy();
 }
 
 void MediaDrmRemoteCDMParent::ActorDestroy(ActorDestroyReason aWhy) {
-  EME_LOG("[%p] MediaDrmRemoteCDMParent::ActorDestroy", this);
+  EME_LOG("[{}] MediaDrmRemoteCDMParent::ActorDestroy", fmt::ptr(this));
   Destroy();
 }
 
 void MediaDrmRemoteCDMParent::Destroy() {
-  EME_LOG("[%p] MediaDrmRemoteCDMParent::Destroy -- drm %p", this, mDrm);
+  EME_LOG("[{}] MediaDrmRemoteCDMParent::Destroy -- drm {}", fmt::ptr(this),
+          fmt::ptr(mDrm));
 
   mProvisionPromise.RejectIfExists(
       MediaResult(NS_ERROR_DOM_ABORT_ERR, "Destroyed"_ns), __func__);
@@ -192,7 +195,7 @@ void MediaDrmRemoteCDMParent::Destroy() {
 
 mozilla::ipc::IPCResult MediaDrmRemoteCDMParent::RecvInit(
     const RemoteCDMInitRequestIPDL& request, InitResolver&& aResolver) {
-  EME_LOG("[%p] MediaDrmRemoteCDMParent::RecvInit", this);
+  EME_LOG("[{}] MediaDrmRemoteCDMParent::RecvInit", fmt::ptr(this));
 
   if (NS_WARN_IF(!mUuid)) {
     aResolver(MediaResult(NS_ERROR_DOM_INVALID_STATE_ERR, "Invalid uuid"_ns));
@@ -246,6 +249,22 @@ mozilla::ipc::IPCResult MediaDrmRemoteCDMParent::RecvInit(
     return IPC_OK();
   }
 
+  // Set per-origin ID if available.
+  if (!request.originID().IsEmpty()) {
+    EME_LOG(
+        "[{}] MediaDrmRemoteCDMParent::RecvInit -- "
+        "setting origin ID property ({:.4}...)",
+        fmt::ptr(this), request.originID().get());
+    media_status_t originStatus =
+        AMediaDrm_setPropertyString(mDrm, "origin", request.originID().get());
+    if (originStatus != AMEDIA_OK) {
+      EME_LOG(
+          "[{}] MediaDrmRemoteCDMParent::RecvInit -- "
+          "AMediaDrm_setPropertyString origin ID failed: {}",
+          fmt::ptr(this), static_cast<int>(originStatus));
+    }
+  }
+
   status = AMediaDrm_setOnEventListener(mDrm, HandleEventCb);
   if (NS_WARN_IF(status != AMEDIA_OK)) {
     aResolver(MediaResult(
@@ -275,7 +294,8 @@ mozilla::ipc::IPCResult MediaDrmRemoteCDMParent::RecvInit(
     }
   }
 
-  EME_LOG("[%p] MediaDrmRemoteCDMParent::RecvInit -- drm %p", this, mDrm);
+  EME_LOG("[{}] MediaDrmRemoteCDMParent::RecvInit -- drm {}", fmt::ptr(this),
+          fmt::ptr(mDrm));
   InitializeStatics();
   sCbMap->insert(std::pair{mDrm, this});
   aResolver(MediaResult(NS_OK));
@@ -300,8 +320,8 @@ MediaDrmRemoteCDMParent::EnsureHasAMediaCrypto() {
     return InternalPromise::CreateAndReject(*mCryptoError, __func__);
   }
 
-  EME_LOG("[%p] MediaDrmRemoteCDMParent::EnsureHasAMediaCrypto -- open session",
-          this);
+  EME_LOG("[{}] MediaDrmRemoteCDMParent::EnsureHasAMediaCrypto -- open session",
+          fmt::ptr(this));
 
   media_status_t status = AMediaDrm_openSession(mDrm, &mCryptoSessionId);
   if (status == AMEDIA_DRM_NOT_PROVISIONED) {
@@ -353,8 +373,8 @@ MediaDrmRemoteCDMParent::EnsureProvisioned() {
     return p.forget();
   }
 
-  EME_LOG("[%p] MediaDrmRemoteCDMParent::EnsureProvisioned -- get request",
-          this);
+  EME_LOG("[{}] MediaDrmRemoteCDMParent::EnsureProvisioned -- get request",
+          fmt::ptr(this));
 
   // AMediaDrm_getProvisionRequest requires the size to be non-zero. It does not
   // use the value for anything besides verification and overwrites in the
@@ -366,10 +386,11 @@ MediaDrmRemoteCDMParent::EnsureProvisioned() {
       mDrm, &provisionRequest, &provisionRequestSize, &serverUrl);
   if (NS_WARN_IF(status != AMEDIA_OK)) {
     EME_LOG(
-        "[%p] MediaDrmRemoteCDMParent::EnsureProvisioned -- failed drm %p "
-        "provisionRequest %p size %zu serverUrl %p (%s) status %d",
-        this, mDrm, provisionRequest, provisionRequestSize, serverUrl,
-        serverUrl ? serverUrl : "", status);
+        "[{}] MediaDrmRemoteCDMParent::EnsureProvisioned -- failed drm {} "
+        "provisionRequest {} size {} serverUrl {} ({}) status {}",
+        fmt::ptr(this), fmt::ptr(mDrm), fmt::ptr(provisionRequest),
+        provisionRequestSize, fmt::ptr(serverUrl), serverUrl ? serverUrl : "",
+        static_cast<int>(status));
     mProvisionError.emplace(
         NS_ERROR_DOM_INVALID_STATE_ERR,
         RESULT_DETAIL("AMediaDrm_getProvisionRequest failed %d", status));
@@ -386,9 +407,9 @@ MediaDrmRemoteCDMParent::EnsureProvisioned() {
             if (aResponse.type() ==
                 RemoteCDMProvisionResponseIPDL::TMediaResult) {
               EME_LOG(
-                  "[%p] MediaDrmRemoteCDMParent::EnsureProvisioned -- response "
+                  "[{}] MediaDrmRemoteCDMParent::EnsureProvisioned -- response "
                   "failed",
-                  self.get());
+                  fmt::ptr(self.get()));
               self->mProvisionError.emplace(
                   std::move(aResponse.get_MediaResult()));
               self->mProvisionPromise.RejectIfExists(*self->mProvisionError,
@@ -401,9 +422,9 @@ MediaDrmRemoteCDMParent::EnsureProvisioned() {
                 aResponse.get_ArrayOfuint8_t().Length());
             if (NS_WARN_IF(status != AMEDIA_OK)) {
               EME_LOG(
-                  "[%p] MediaDrmRemoteCDMParent::EnsureProvisioned -- response "
+                  "[{}] MediaDrmRemoteCDMParent::EnsureProvisioned -- response "
                   "invalid",
-                  self.get());
+                  fmt::ptr(self.get()));
               self->mProvisionError.emplace(
                   NS_ERROR_DOM_INVALID_STATE_ERR,
                   RESULT_DETAIL("AMediaDrm_provideProvisionResponse failed %d",
@@ -414,8 +435,8 @@ MediaDrmRemoteCDMParent::EnsureProvisioned() {
             }
 
             EME_LOG(
-                "[%p] MediaDrmRemoteCDMParent::EnsureProvisioned -- success",
-                self.get());
+                "[{}] MediaDrmRemoteCDMParent::EnsureProvisioned -- success",
+                fmt::ptr(self.get()));
             self->mProvisionPromise.ResolveIfExists(true, __func__);
           },
           [](const mozilla::ipc::ResponseRejectReason& aReason) {});
@@ -425,7 +446,7 @@ MediaDrmRemoteCDMParent::EnsureProvisioned() {
 mozilla::ipc::IPCResult MediaDrmRemoteCDMParent::RecvCreateSession(
     RemoteCDMCreateSessionRequestIPDL&& aRequest,
     CreateSessionResolver&& aResolver) {
-  EME_LOG("[%p] MediaDrmRemoteCDMParent::RecvCreateSession", this);
+  EME_LOG("[{}] MediaDrmRemoteCDMParent::RecvCreateSession", fmt::ptr(this));
 
   // If we are still provisioning, then the remote side should have queued the
   // requests.
@@ -524,7 +545,7 @@ mozilla::ipc::IPCResult MediaDrmRemoteCDMParent::RecvCreateSession(
 mozilla::ipc::IPCResult MediaDrmRemoteCDMParent::RecvLoadSession(
     const RemoteCDMLoadSessionRequestIPDL& aRequest,
     LoadSessionResolver&& aResolver) {
-  EME_LOG("[%p] MediaDrmRemoteCDMParent::RecvLoadSession", this);
+  EME_LOG("[{}] MediaDrmRemoteCDMParent::RecvLoadSession", fmt::ptr(this));
   aResolver(MediaResult(NS_ERROR_NOT_IMPLEMENTED));
   return IPC_OK();
 }
@@ -532,7 +553,7 @@ mozilla::ipc::IPCResult MediaDrmRemoteCDMParent::RecvLoadSession(
 mozilla::ipc::IPCResult MediaDrmRemoteCDMParent::RecvUpdateSession(
     const RemoteCDMUpdateSessionRequestIPDL& aRequest,
     UpdateSessionResolver&& aResolver) {
-  EME_LOG("[%p] MediaDrmRemoteCDMParent::RecvUpdateSession", this);
+  EME_LOG("[{}] MediaDrmRemoteCDMParent::RecvUpdateSession", fmt::ptr(this));
 
   const auto i = mSessions.find(aRequest.sessionId());
   if (i == mSessions.end()) {
@@ -561,7 +582,7 @@ mozilla::ipc::IPCResult MediaDrmRemoteCDMParent::RecvUpdateSession(
 
 mozilla::ipc::IPCResult MediaDrmRemoteCDMParent::RecvRemoveSession(
     const nsString& aSessionId, RemoveSessionResolver&& aResolver) {
-  EME_LOG("[%p] MediaDrmRemoteCDMParent::RecvRemoveSession", this);
+  EME_LOG("[{}] MediaDrmRemoteCDMParent::RecvRemoveSession", fmt::ptr(this));
   aResolver(MediaResult(NS_ERROR_NOT_IMPLEMENTED));
   return IPC_OK();
 }
@@ -570,8 +591,8 @@ mozilla::ipc::IPCResult MediaDrmRemoteCDMParent::RecvCloseSession(
     const nsString& aSessionId, CloseSessionResolver&& aResolver) {
   const auto i = mSessions.find(aSessionId);
   if (i == mSessions.end()) {
-    EME_LOG("[%p] MediaDrmRemoteCDMParent::RecvCloseSession -- invalid session",
-            this);
+    EME_LOG("[{}] MediaDrmRemoteCDMParent::RecvCloseSession -- invalid session",
+            fmt::ptr(this));
     aResolver(
         MediaResult(NS_ERROR_DOM_INVALID_STATE_ERR, "Invalid session id"_ns));
     return IPC_OK();
@@ -580,11 +601,11 @@ mozilla::ipc::IPCResult MediaDrmRemoteCDMParent::RecvCloseSession(
   MOZ_ASSERT(mDrm);
   MOZ_ASSERT(HasCrypto());
 
-  EME_LOG("[%p] MediaDrmRemoteCDMParent::RecvCloseSession -- closeSession",
-          this);
+  EME_LOG("[{}] MediaDrmRemoteCDMParent::RecvCloseSession -- closeSession",
+          fmt::ptr(this));
   media_status_t status = AMediaDrm_closeSession(mDrm, &i->second.id);
-  EME_LOG("[%p] MediaDrmRemoteCDMParent::RecvCloseSession -- status %d", this,
-          status);
+  EME_LOG("[{}] MediaDrmRemoteCDMParent::RecvCloseSession -- status {}",
+          fmt::ptr(this), static_cast<int>(status));
   if (NS_WARN_IF(status != AMEDIA_OK)) {
     aResolver(
         MediaResult(NS_ERROR_DOM_INVALID_STATE_ERR,
@@ -602,21 +623,21 @@ mozilla::ipc::IPCResult MediaDrmRemoteCDMParent::RecvSetServerCertificate(
     SetServerCertificateResolver&& aResolver) {
   if (NS_WARN_IF(!mDrm)) {
     EME_LOG(
-        "[%p] MediaDrmRemoteCDMParent::RecvSetServerCertificate -- not init",
-        this);
+        "[{}] MediaDrmRemoteCDMParent::RecvSetServerCertificate -- not init",
+        fmt::ptr(this));
     aResolver(
         MediaResult(NS_ERROR_DOM_INVALID_STATE_ERR, "Missing AMediaDrm"_ns));
     return IPC_OK();
   }
 
   EME_LOG(
-      "[%p] MediaDrmRemoteCDMParent::RecvSetServerCertificate -- "
+      "[{}] MediaDrmRemoteCDMParent::RecvSetServerCertificate -- "
       "setPropertyByteArray",
-      this);
+      fmt::ptr(this));
   media_status_t status = AMediaDrm_setPropertyByteArray(
       mDrm, "certificate", aCertificate.Elements(), aCertificate.Length());
-  EME_LOG("[%p] MediaDrmRemoteCDMParent::RecvSetServerCertificate -- status %d",
-          this, status);
+  EME_LOG("[{}] MediaDrmRemoteCDMParent::RecvSetServerCertificate -- status {}",
+          fmt::ptr(this), static_cast<int>(status));
   if (NS_WARN_IF(status != AMEDIA_OK)) {
     aResolver(MediaResult(
         NS_ERROR_DOM_INVALID_STATE_ERR,
@@ -635,13 +656,13 @@ void MediaDrmRemoteCDMParent::HandleEvent(nsString&& aSessionId,
                                           nsTArray<uint8_t>&& aData) {
   const auto i = mSessions.find(aSessionId);
   if (i == mSessions.end()) {
-    EME_LOG("[%p] MediaDrmRemoteCDMParent::HandleEvent -- session not found",
-            this);
+    EME_LOG("[{}] MediaDrmRemoteCDMParent::HandleEvent -- session not found",
+            fmt::ptr(this));
     return;
   }
 
-  EME_LOG("[%p] MediaDrmRemoteCDMParent::HandleEvent -- event %d", this,
-          aEventType);
+  EME_LOG("[{}] MediaDrmRemoteCDMParent::HandleEvent -- event {}",
+          fmt::ptr(this), static_cast<int>(aEventType));
   MOZ_ASSERT(mDrm);
 
   switch (aEventType) {
@@ -730,13 +751,14 @@ void MediaDrmRemoteCDMParent::HandleExpirationUpdate(nsString&& aSessionId,
   const auto i = mSessions.find(aSessionId);
   if (i == mSessions.end()) {
     EME_LOG(
-        "[%p] MediaDrmRemoteCDMParent::HandleExpirationUpdate -- session not "
+        "[{}] MediaDrmRemoteCDMParent::HandleExpirationUpdate -- session not "
         "found",
-        this);
+        fmt::ptr(this));
     return;
   }
 
-  EME_LOG("[%p] MediaDrmRemoteCDMParent::HandleExpirationUpdate", this);
+  EME_LOG("[{}] MediaDrmRemoteCDMParent::HandleExpirationUpdate",
+          fmt::ptr(this));
   (void)SendOnSessionKeyExpiration(RemoteCDMKeyExpirationIPDL(
       std::move(aSessionId), static_cast<double>(aExpiryTimeInMS)));
 }
@@ -747,12 +769,12 @@ void MediaDrmRemoteCDMParent::HandleKeysChange(
   const auto i = mSessions.find(aSessionId);
   if (i == mSessions.end()) {
     EME_LOG(
-        "[%p] MediaDrmRemoteCDMParent::HandleKeysChange -- session not found",
-        this);
+        "[{}] MediaDrmRemoteCDMParent::HandleKeysChange -- session not found",
+        fmt::ptr(this));
     return;
   }
 
-  EME_LOG("[%p] MediaDrmRemoteCDMParent::HandleKeysChange", this);
+  EME_LOG("[{}] MediaDrmRemoteCDMParent::HandleKeysChange", fmt::ptr(this));
   (void)SendOnSessionKeyStatus(
       RemoteCDMKeyStatusIPDL(std::move(aSessionId), std::move(aKeyInfo)));
 }
@@ -882,6 +904,43 @@ MediaDrmCrypto::~MediaDrmCrypto() { AMediaCrypto_delete(mCrypto); }
 
 MediaDrmCryptoInfo::~MediaDrmCryptoInfo() {
   AMediaCodecCryptoInfo_delete(mCryptoInfo);
+}
+
+/* static */
+void MediaDrmRemoteCDMParent::UnprovisionMediaDrmOrigins(
+    const nsTArray<nsCString>& aOriginKeys) {
+  EME_LOG("UnprovisionMediaDrmOrigins: unprovisioning {} origin(s)",
+          aOriginKeys.Length());
+
+  for (const auto& originKey : aOriginKeys) {
+    AMediaDrm* drm = AMediaDrm_createByUUID(WIDEVINE_UUID);
+    if (!drm) {
+      EME_LOG("UnprovisionMediaDrmOrigins: failed to create AMediaDrm");
+      continue;
+    }
+
+    media_status_t status =
+        AMediaDrm_setPropertyString(drm, "origin", originKey.get());
+    if (status != AMEDIA_OK) {
+      EME_LOG("UnprovisionMediaDrmOrigins: setPropertyString origin failed: {}",
+              static_cast<int>(status));
+      AMediaDrm_release(drm);
+      continue;
+    }
+
+    static constexpr char kUnprovision[] = "unprovision";
+    status = AMediaDrm_provideProvisionResponse(
+        drm, reinterpret_cast<const uint8_t*>(kUnprovision),
+        sizeof(kUnprovision) - 1);
+    if (status != AMEDIA_OK) {
+      EME_LOG(
+          "UnprovisionMediaDrmOrigins: provideProvisionResponse failed: {} "
+          "(may already be unprovisioned)",
+          static_cast<int>(status));
+    }
+
+    AMediaDrm_release(drm);
+  }
 }
 
 }  // namespace mozilla

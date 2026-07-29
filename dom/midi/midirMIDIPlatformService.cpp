@@ -75,7 +75,7 @@ midirMIDIPlatformService::~midirMIDIPlatformService() {
 void midirMIDIPlatformService::AddPort(const nsString* aId,
                                        const nsString* aName, bool aInput) {
   MIDIPortType type = aInput ? MIDIPortType::Input : MIDIPortType::Output;
-  MIDIPortInfo port(*aId, *aName, u""_ns, u""_ns, static_cast<uint32_t>(type));
+  MIDIPortInfo port(*aId, *aName, u""_ns, u""_ns, type);
   MIDIPlatformService::Get()->AddPortInfo(port);
 }
 
@@ -83,7 +83,7 @@ void midirMIDIPlatformService::AddPort(const nsString* aId,
 void midirMIDIPlatformService::RemovePort(const nsString* aId,
                                           const nsString* aName, bool aInput) {
   MIDIPortType type = aInput ? MIDIPortType::Input : MIDIPortType::Output;
-  MIDIPortInfo port(*aId, *aName, u""_ns, u""_ns, static_cast<uint32_t>(type));
+  MIDIPortInfo port(*aId, *aName, u""_ns, u""_ns, type);
   MIDIPlatformService::Get()->RemovePortInfo(port);
 }
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -46,7 +44,11 @@ class SlicedInputStream final : public nsIAsyncInputStream,
   // than aStart bytes, reading from SlicedInputStream returns no data.  If
   // aInputStream contains more than aStart bytes, but fewer than aStart +
   // aLength bytes, reading from SlicedInputStream returns as many bytes as can
-  // be consumed from aInputStream after reading aLength bytes.
+  // be consumed from aInputStream after reading aStart bytes.
+  //
+  // It is safe to specify an arbitrarily large aLength (e.g. UINT64_MAX). Doing
+  // so is treated as allowing an arbitrary number of additional bytes following
+  // aStart.
   //
   // aInputStream should not be read from after constructing a
   // SlicedInputStream wrapper around it.

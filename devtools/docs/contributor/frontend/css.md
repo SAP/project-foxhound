@@ -34,7 +34,7 @@ Naming standards for class names:
 
 DevTools supports 2 different themes: the dark theme and the light theme. In order to support them, there are 2 class names available (`theme-dark` and `theme-light`).
 
-* Use [pre-defined CSS variables](https://searchfox.org/mozilla-central/source/devtools/client/themes/variables.css) instead of hardcoding colors when possible.
+* Use [pre-defined CSS variables](https://searchfox.org/firefox-main/source/devtools/client/themes/variables.css) instead of hardcoding colors when possible.
 * If you need to support themes and the pre-defined variables don't fit, define a variable with your custom colors at the beginning of the CSS file. This avoids selector duplication in the code.
 
 Example:
@@ -59,14 +59,15 @@ It's recommended to use SVG since it keeps the CSS clean when supporting multipl
 
 * Use an iframe where possible so your rules are scoped to the smallest possible set of nodes.<!--TODO: is this still true? and also refine exactly when it is appropriate to use an iframe. Examples might help-->
 * If your CSS is used in `browser.xhtml`, you need to take special care with performance:
- * Descendent selectors should be avoided.
- * If possible, find ways to use **only** id selectors, class selectors and selector groups.
+* Descendent selectors should be avoided.
+* If possible, find ways to use **only** id selectors, class selectors and selector groups.
 
 ## Localization
 
 ### Text Direction
+
 * For margins, padding and borders, use `inline-start`/`inline-end` rather than `left`/`right`.
- * Example: Use `margin-inline-start: 3px;` not `margin-left: 3px`.
+* Example: Use `margin-inline-start: 3px;` not `margin-left: 3px`.
 * For RTL-aware positioning (left/right), use `inset-inline-start/end`.
 * When there is no special RTL-aware property (eg. `float: left|right`) available, use the pseudo `:-moz-locale-dir(ltr|rtl)` (for XUL files) or `:dir(ltr|rtl)` (for HTML files).
 * Remember that while a tab content's scrollbar still shows on the right in RTL, an overflow scrollbar will show on the left.
@@ -77,6 +78,7 @@ It's recommended to use SVG since it keeps the CSS clean when supporting multipl
 By default, new HTML modules support only left-to-right (LTR) and do not reuse the current direction of the browser.
 
 To enable right-to-left (RTL) support in a module, set the `[dir]` attribute on the document element of the module:
+
 * Example: `<html xmlns="http://www.w3.org/1999/xhtml" dir="">`.
 
 The appropriate value for the `dir` attribute will then be set when the toolbox loads this module.

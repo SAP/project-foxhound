@@ -478,3 +478,110 @@ add_task(async function test_ledger_normalizes_urls() {
     "Should return normalized URL without fragment"
   );
 });
+
+/**
+ * Test: mergeAll returns empty view for empty ledger.
+ *
+ * Reason:
+ * When no tabs have been seeded, mergeAll should return an empty view
+ * with size() === 0.
+ */
+add_task(async function test_mergeAll_empty_ledger() {
+  const sessionLedger = new SessionLedger("session-1");
+  const result = sessionLedger.mergeAll();
+
+  Assert.equal(result.size(), 0, "Empty ledger should return empty view");
+});
+
+/**
+ * Test: mergeAll includes URLs from a single tab.
+ *
+ * Reason:
+ * mergeAll should include all URLs from all tabs. With one tab,
+ * it should return all URLs from that tab.
+ */
+add_task(async function test_mergeAll_single_tab() {
+  const sessionLedger = new SessionLedger("session-1");
+  sessionLedger.forTab("tab-1").add("https://mozilla.org");
+  sessionLedger.forTab("tab-1").add("https://example.com");
+
+  const result = sessionLedger.mergeAll();
+
+  Assert.equal(result.size(), 2, "Should contain both URLs");
+  // Note: lookup() normalizes URLs internally, so trailing slash is added
+  Assert.equal(
+    result.lookup("https://mozilla.org/"),
+    "https://mozilla.org/",
+    "Should have mozilla.org"
+  );
+  Assert.equal(
+    result.lookup("https://example.com/"),
+    "https://example.com/",
+    "Should have example.com"
+  );
+});
+
+/**
+ * Test: mergeAll deduplicates URLs across tabs.
+ *
+ * Reason:
+ * The same URL trusted in multiple tabs should only appear once
+ * in the merged view.
+ */
+add_task(async function test_mergeAll_multiple_tabs_deduped() {
+  const sessionLedger = new SessionLedger("session-1");
+  sessionLedger.forTab("tab-1").add("https://mozilla.org");
+  sessionLedger.forTab("tab-2").add("https://mozilla.org");
+  sessionLedger.forTab("tab-2").add("https://github.com");
+
+  const result = sessionLedger.mergeAll();
+
+  Assert.equal(result.size(), 2, "Duplicate URLs should be deduped");
+  // Note: lookup() normalizes URLs internally, so trailing slash is added
+  Assert.equal(
+    result.lookup("https://mozilla.org/"),
+    "https://mozilla.org/",
+    "Should have mozilla.org"
+  );
+  Assert.equal(
+    result.lookup("https://github.com/"),
+    "https://github.com/",
+    "Should have github.com"
+  );
+});
+
+/**
+ * Test: mergeAll returns same API as merge().
+ *
+ * Reason:
+ * mergeAll should return the same type of view as merge() for
+ * API consistency - an object with has() and size() methods.
+ */
+add_task(async function test_mergeAll_returns_same_api_as_merge() {
+  const sessionLedger = new SessionLedger("session-1");
+  sessionLedger.forTab("tab-1").add("https://mozilla.org");
+
+  const mergeAllResult = sessionLedger.mergeAll();
+  const mergeResult = sessionLedger.merge(["tab-1"]);
+
+  Assert.equal(
+    typeof mergeAllResult.lookup,
+    "function",
+    "mergeAll should return object with lookup()"
+  );
+  Assert.equal(
+    typeof mergeResult.lookup,
+    "function",
+    "merge should return object with lookup()"
+  );
+  Assert.equal(
+    typeof mergeAllResult.size,
+    "function",
+    "mergeAll should return object with size()"
+  );
+  Assert.equal(
+    typeof mergeResult.size,
+    "function",
+    "merge should return object with size()"
+  );
+});

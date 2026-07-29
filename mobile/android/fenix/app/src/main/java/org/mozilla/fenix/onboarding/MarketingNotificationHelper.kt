@@ -13,9 +13,6 @@ import org.mozilla.fenix.R
 // to use this ID as the marketing channel ID
 const val MARKETING_CHANNEL_ID = "org.mozilla.fenix.default.browser.channel"
 
-// For notification that uses the marketing notification channel, IDs should be unique.
-const val RE_ENGAGEMENT_NOTIFICATION_ID = 2
-
 /**
  * Make sure the marketing notification channel exists.
  *

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -111,8 +109,6 @@ bool WeakRefObject::preserveDOMWrapper(JSContext* cx, HandleObject obj) {
     return false;
   }
 
-  cx->runtime()->commitPendingWrapperPreservations(obj->zone());
-
   return true;
 }
 
@@ -140,16 +136,8 @@ void WeakRefObject::finalize(JS::GCContext* gcx, JSObject* obj) {
 }
 
 const JSClassOps WeakRefObject::classOps_ = {
-    nullptr,   // addProperty
-    nullptr,   // delProperty
-    nullptr,   // enumerate
-    nullptr,   // newEnumerate
-    nullptr,   // resolve
-    nullptr,   // mayResolve
-    finalize,  // finalize
-    nullptr,   // call
-    nullptr,   // construct
-    trace,     // trace
+    .finalize = finalize,
+    .trace = trace,
 };
 
 const ClassSpec WeakRefObject::classSpec_ = {
@@ -251,6 +239,9 @@ bool WeakRefObject::deref(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
+void WeakRefObject::setTarget(Value target) {
+  setReservedSlotGCThingAsPrivate(TargetSlot, target.toGCThing());
+}
 void WeakRefObject::setTargetUnbarriered(Value target) {
   setReservedSlotGCThingAsPrivateUnbarriered(TargetSlot, target.toGCThing());
 }
@@ -272,6 +263,11 @@ void WeakRefObject::readBarrier(JSContext* cx, Handle<WeakRefObject*> self) {
     // been released then the DOM object it wraps has been collected, so clear
     // the target.
     RootedObject obj(cx, &target.toObject());
+
+    // Ensure buffered wrapper preservations are committed because the DOM's
+    // hasReleasedWrapperCallback checks the preserving-wrapper flag.
+    cx->runtime()->commitPendingWrapperPreservations(obj->zone());
+
     MOZ_ASSERT(cx->runtime()->hasReleasedWrapperCallback);
     bool wasReleased = cx->runtime()->hasReleasedWrapperCallback(obj);
     if (wasReleased) {

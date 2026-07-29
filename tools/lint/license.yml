@@ -76,6 +76,11 @@ license:
         - '**/jit-test/'
         # Exclude localized strings.xml files for Android.
         - '**/values-*/strings.xml'
+        # Android resource XML files (drawables, layouts, colors,
+        # etc.) don't have license headers.
+        - 'mobile/android/fenix/app/src/main/res/'
+        - 'mobile/android/focus-android/app/src/main/res/'
+        - '**/lint-baseline.xml'
     extensions:
         - .c
         - .cc
@@ -93,6 +98,8 @@ license:
         - .m
         - .mm
         - .mjs
+        - .nsh
+        - .nsi
         - .properties
         - .py
         - .rs
@@ -101,7 +108,9 @@ license:
         - .xhtml
         - .xml
     support-files:
-        - 'tools/lint/license/**'
+        - 'tools/lint/mozcheck/**'
+        - 'tools/lint/license/valid-licenses.txt'
     type: external
-    payload: license:lint
+    payload: mozcheck:lint
+    check: license
     find-dotfiles: true

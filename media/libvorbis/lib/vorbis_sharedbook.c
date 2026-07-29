@@ -326,7 +326,9 @@ static int sort32a(const void *a,const void *b){
 /* decode codebook arrangement is more heavily optimized than encode */
 int vorbis_book_init_decode(codebook *c,const static_codebook *s){
   int i,j,n=0,tabn;
-  int *sortindex;
+  int *sortindex=NULL;
+  ogg_uint32_t *codes=NULL;
+  ogg_uint32_t **codep=NULL;
 
   memset(c,0,sizeof(*c));
 
@@ -351,10 +353,11 @@ int vorbis_book_init_decode(codebook *c,const static_codebook *s){
     by sorted bitreversed codeword to allow treeless decode. */
 
     /* perform sort */
-    ogg_uint32_t *codes=_make_words(s->lengthlist,s->entries,c->used_entries);
-    ogg_uint32_t **codep=alloca(sizeof(*codep)*n);
-
+    codes=_make_words(s->lengthlist,s->entries,c->used_entries);
     if(codes==NULL)goto err_out;
+
+    codep=_ogg_malloc(sizeof(*codep)*n);
+    if(codep==NULL)goto err_out;
 
     for(i=0;i<n;i++){
       codes[i]=bitreverse(codes[i]);
@@ -363,26 +366,32 @@ int vorbis_book_init_decode(codebook *c,const static_codebook *s){
 
     qsort(codep,n,sizeof(*codep),sort32a);
 
-    sortindex=alloca(n*sizeof(*sortindex));
+    sortindex=_ogg_malloc(n*sizeof(*sortindex));
+    if(sortindex==NULL)goto err_out;
+
     c->codelist=_ogg_malloc(n*sizeof(*c->codelist));
+    if(c->codelist==NULL)goto err_out;
     /* the index is a reverse index */
     for(i=0;i<n;i++){
       int position=codep[i]-codes;
       sortindex[position]=i;
     }
+    _ogg_free(codep); codep=NULL;
 
     for(i=0;i<n;i++)
       c->codelist[sortindex[i]]=codes[i];
-    _ogg_free(codes);
+    _ogg_free(codes); codes=NULL;
 
     c->valuelist=_book_unquantize(s,n,sortindex);
     c->dec_index=_ogg_malloc(n*sizeof(*c->dec_index));
+    if(c->dec_index==NULL)goto err_out;
 
     for(n=0,i=0;i<s->entries;i++)
       if(s->lengthlist[i]>0)
         c->dec_index[sortindex[n++]]=i;
 
     c->dec_codelengths=_ogg_malloc(n*sizeof(*c->dec_codelengths));
+    if(c->dec_codelengths==NULL)goto err_out;
     c->dec_maxlength=0;
     for(n=0,i=0;i<s->entries;i++)
       if(s->lengthlist[i]>0){
@@ -390,6 +399,7 @@ int vorbis_book_init_decode(codebook *c,const static_codebook *s){
         if(s->lengthlist[i]>c->dec_maxlength)
           c->dec_maxlength=s->lengthlist[i];
       }
+    _ogg_free(sortindex); sortindex=NULL;
 
     if(n==1 && c->dec_maxlength==1){
       /* special case the 'single entry codebook' with a single bit
@@ -397,6 +407,7 @@ int vorbis_book_init_decode(codebook *c,const static_codebook *s){
        unmodified decode paths. */
       c->dec_firsttablen=1;
       c->dec_firsttable=_ogg_calloc(2,sizeof(*c->dec_firsttable));
+      if(c->dec_firsttable==NULL)goto err_out;
       c->dec_firsttable[0]=c->dec_firsttable[1]=1;
 
     }else{
@@ -406,6 +417,7 @@ int vorbis_book_init_decode(codebook *c,const static_codebook *s){
 
       tabn=1<<c->dec_firsttablen;
       c->dec_firsttable=_ogg_calloc(tabn,sizeof(*c->dec_firsttable));
+      if(c->dec_firsttable==NULL)goto err_out;
 
       for(i=0;i<n;i++){
         if(c->dec_codelengths[i]<=c->dec_firsttablen){
@@ -447,6 +459,9 @@ int vorbis_book_init_decode(codebook *c,const static_codebook *s){
 
   return(0);
  err_out:
+  _ogg_free(sortindex);
+  _ogg_free(codep);
+  _ogg_free(codes);
   vorbis_book_clear(c);
   return(-1);
 }

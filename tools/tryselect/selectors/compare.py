@@ -38,7 +38,7 @@ class CompareParser(BaseTryParser):
         if vcs.branch:
             current_revision_ref = vcs.branch
         else:
-            current_revision_ref = vcs.head_ref
+            current_revision_ref = vcs.head_rev
 
         return compare_commit, current_revision_ref
 

@@ -1,4 +1,3 @@
-//* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-/
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,6 +28,7 @@ class nsUrlClassifierStreamUpdater final
       public nsINamed {
  public:
   nsUrlClassifierStreamUpdater();
+  nsUrlClassifierStreamUpdater(nsUrlClassifierStreamUpdater&) = delete;
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIURLCLASSIFIERSTREAMUPDATER
@@ -47,9 +47,6 @@ class nsUrlClassifierStreamUpdater final
   // When the dbservice sends an UpdateComplete or UpdateFailure, we call this
   // to reset the stream updater.
   void DownloadDone();
-
-  // Disallow copy constructor
-  nsUrlClassifierStreamUpdater(nsUrlClassifierStreamUpdater&);
 
   nsresult AddRequestBody(const nsACString& aRequestBody);
 

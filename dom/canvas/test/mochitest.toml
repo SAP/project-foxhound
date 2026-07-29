@@ -237,7 +237,7 @@ support-files = ["captureStream_common.js"]
 support-files = ["captureStream_common.js"]
 skip-if = [
   "os == 'android'", # Bug 1752351
-  "os == 'win'", # Bug 1777094
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2019625
 ]
 
 ["test_drawImageIncomplete.html"]
@@ -262,6 +262,8 @@ support-files = [
 
 ["test_filter.html"]
 
+["test_filter_opacity_a8.html"]
+
 ["test_filter_tainted.html"]
 
 ["test_imagebitmap.html"]
@@ -271,6 +273,9 @@ tags = "imagebitmap"
 tags = "imagebitmap"
 
 ["test_imagebitmap_cropping.html"]
+tags = "imagebitmap"
+
+["test_imagebitmap_error_messages.html"]
 tags = "imagebitmap"
 
 ["test_imagebitmap_structuredclone.html"]
@@ -354,6 +359,11 @@ skip-if = [
   "true",
 ]
 
+["test_offscreencanvas_todataurl_stride.html"]
+skip-if = [
+  "os == 'android'", # test depends on things android doesn't have
+]
+
 ["test_offscreencanvas_toimagebitmap.html"]
 subsuite = "gpu"
 tags = "offscreencanvas"
@@ -361,6 +371,10 @@ tags = "offscreencanvas"
 skip-if = [
   "os == 'android' && debug",
 ]
+
+["test_offscreencanvas_transfer_readback.html"]
+tags = "offscreencanvas"
+skip-if = ["os == 'android'"]
 
 ["test_strokeText_throw.html"]
 

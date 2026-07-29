@@ -8,8 +8,9 @@ prefs = [
   "browser.backup.log=true",
   "browser.backup.archive.enabled=true",
   "browser.backup.restore.enabled=true",
-  "browser.backup.archive.overridePlatformCheck=true",
-  "browser.backup.restore.overridePlatformCheck=true",
+  # Profile backup is disabled when SQLite at-rest encryption is on
+  # (Bug 1996558); run these tests with it off (the production default).
+  "security.storage.encryption.sqlite.enabled=false",
 ]
 
 ["test_AddonsBackupResource.js"]
@@ -49,6 +50,13 @@ prefs = [
 
 ["test_BackupService_enabled.js"]
 
+["test_BackupService_enabledListPref.js"]
+head = "../../../../../toolkit/profile/test/xpcshell/head.js ../../../profiles/tests/unit/head.js head.js"
+prefs = [
+  "browser.profiles.created=false",
+  "browser.profiles.enabled=true",
+]
+
 ["test_BackupService_finalizeSingleFileArchive.js"]
 
 ["test_BackupService_internalPostRecovery.js"]
@@ -70,6 +78,8 @@ run-sequentially = ["true"] # Mock Windows registry interferes with normal opera
 ["test_BackupService_resolveArchiveDestFolderPath.js"]
 
 ["test_BackupService_resolveDownloadLink.js"]
+
+["test_BackupService_restoreStepTelemetry.js"]
 
 ["test_BackupService_retryHeuristic.js"]
 

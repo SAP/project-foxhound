@@ -9,6 +9,28 @@ newtab-page-title = Dirica matidi manyen
 newtab-settings-button =
     .title = Yub potbuk me dirica matidi mamegi manyen
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Dirica matino manyen
+
+## Firefox Home content
+
+home-restore-defaults-srd =
+    .label = Dwok makwongo
+    .accesskey = D
+home-mode-choice-blank-srd =
+    .label = Potbuk ma nono
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Lok ma kicwako
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Potbuk ma kilimo
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Alamabuk
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Gam ma cokcoki loyo
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +38,7 @@ newtab-search-box-search-button =
     .title = Yeny
     .aria-label = Yeny
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Med ingin me yeny
 newtab-topsites-edit-topsites-header = Yub Kakube maloyo

@@ -32,7 +32,6 @@ add_task(async function () {
     "resource://devtools/client/webconsole/constants.js",
     "resource://devtools/client/webconsole/utils.js",
     "resource://devtools/client/webconsole/utils/messages.js",
-    "resource://devtools/client/webconsole/utils/l10n.js",
     "resource://devtools/client/netmonitor/src/utils/request-utils.js",
     "resource://devtools/client/webconsole/types.js",
     "resource://devtools/client/shared/vendor/fluent-react.js",

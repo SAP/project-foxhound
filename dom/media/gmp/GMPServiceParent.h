@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -61,7 +60,7 @@ class GeckoMediaPluginServiceParent final
   NS_DECL_MOZIGECKOMEDIAPLUGINCHROMESERVICE
   NS_DECL_NSIOBSERVER
 
-  RefPtr<GenericPromise> EnsureInitialized();
+  RefPtr<GenericNonExclusivePromise> EnsureInitialized();
   RefPtr<GenericPromise> AsyncAddPluginDirectory(const nsAString& aDirectory);
 
   // GMP thread access only
@@ -108,6 +107,7 @@ class GeckoMediaPluginServiceParent final
 
   virtual ~GeckoMediaPluginServiceParent();
 
+  void ClearTemporaryStorage();
   void ClearStorage();
 
   already_AddRefed<GMPParent> SelectPluginForAPI(
@@ -235,7 +235,7 @@ class GeckoMediaPluginServiceParent final
   // Synchronization for barrier that ensures we've loaded GMPs from
   // MOZ_GMP_PATH before allowing GetContentParentFrom() to proceed.
   Monitor mInitPromiseMonitor;
-  MozMonitoredPromiseHolder<GenericPromise> mInitPromise;
+  MozMonitoredPromiseHolder<GenericNonExclusivePromise> mInitPromise;
   bool mLoadPluginsFromDiskComplete;
 
   // Hashes nodeId to the hashtable of storage for that nodeId.
@@ -290,13 +290,23 @@ class GMPServiceParent final : public PGMPServiceParent {
                                nsTArray<ProcessId>&& aAlreadyBridgedTo,
                                LaunchGMPResolver&& aResolve) override;
 
+  // Releases the profile-before-change shutdown blocker. Called from
+  // GeckoMediaPluginServiceParent::UnloadPlugins(). Must be called with
+  // mService->mMutex held (asserted); safe to null the UniquePtr from any
+  // thread because ~ShutdownBlockingTicketImpl posts RemoveBlocker to the
+  // main thread internally.
+  void BeginShutdown();
+
  private:
   ~GMPServiceParent();
 
   const RefPtr<GeckoMediaPluginServiceParent> mService;
 
-  // Ticket that controls the shutdown blocker.
-  const UniquePtr<media::ShutdownBlockingTicket> mShutdownBlocker;
+  // Ticket that holds a blocker on the profile-before-change barrier.
+  // Released when this actor is destroyed, or proactively from BeginShutdown()
+  // so that profile-before-change isn't blocked waiting for the PGMPService
+  // channel to close at xpcom-shutdown-threads.
+  UniquePtr<media::ShutdownBlockingTicket> mShutdownBlocker;
 };
 
 }  // namespace gmp

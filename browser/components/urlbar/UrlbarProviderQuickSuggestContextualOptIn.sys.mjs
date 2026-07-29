@@ -15,11 +15,10 @@ import {
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  UrlbarView: "moz-src:///browser/components/urlbar/UrlbarView.sys.mjs",
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
   UrlbarProviderTopSites:
     "moz-src:///browser/components/urlbar/UrlbarProviderTopSites.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
 });
 
 const DYNAMIC_RESULT_TYPE = "quickSuggestContextualOptIn";
@@ -63,15 +62,6 @@ const VIEW_TEMPLATE = {
     },
   ],
 };
-
-/**
- * Initializes this provider's dynamic result. To be called after the creation
- * of the provider singleton.
- */
-function initializeDynamicResult() {
-  lazy.UrlbarResult.addDynamicResultType(DYNAMIC_RESULT_TYPE);
-  lazy.UrlbarView.addDynamicViewTemplate(DYNAMIC_RESULT_TYPE, VIEW_TEMPLATE);
-}
 
 /**
  * Class used to create the provider.
@@ -190,6 +180,10 @@ export class UrlbarProviderQuickSuggestContextualOptIn extends UrlbarProvider {
     return lazy.UrlbarProviderTopSites.PRIORITY;
   }
 
+  getViewTemplate(_result) {
+    return VIEW_TEMPLATE;
+  }
+
   /**
    * This is called only for dynamic result types, when the urlbar view updates
    * the view of one of the results of the provider.  It should return an object
@@ -235,7 +229,7 @@ export class UrlbarProviderQuickSuggestContextualOptIn extends UrlbarProvider {
     // Remove the "Learn More" link.
     decription.firstElementChild?.remove();
     alertText += ". " + decription.textContent;
-    row.ownerGlobal.A11yUtils.announce({ raw: alertText });
+    row.ariaNotify(alertText);
   }
 
   onImpression(state, _queryContext, _controller, _resultsAndIndexes, details) {
@@ -345,5 +339,3 @@ export class UrlbarProviderQuickSuggestContextualOptIn extends UrlbarProvider {
     addCallback(this, result);
   }
 }
-
-initializeDynamicResult();

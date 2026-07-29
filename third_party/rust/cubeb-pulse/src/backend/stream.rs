@@ -465,9 +465,17 @@ impl<'ctx> PulseStream<'ctx> {
                         {
                             stream_flags |= pulse::StreamFlags::DONT_MOVE;
                         }
-                        let _ = s.connect_playback(device_name, &battr, stream_flags, None, None);
-
+                        let connect_result =
+                            s.connect_playback(device_name, &battr, stream_flags, None, None);
+                        // Set output_stream before checking connect_result so
+                        // destroy() can clean up the stream on error.
                         stm.output_stream = Some(s);
+                        if let Err(e) = connect_result {
+                            cubeb_log!("Output stream connect error: {}", e);
+                            stm.context.mainloop.unlock();
+                            stm.destroy();
+                            return Err(Error::Error);
+                        }
                     }
                     Err(e) => {
                         cubeb_log!("Output stream initialization error");
@@ -508,9 +516,16 @@ impl<'ctx> PulseStream<'ctx> {
                         {
                             stream_flags |= pulse::StreamFlags::DONT_MOVE;
                         }
-                        let _ = s.connect_record(device_name, &battr, stream_flags);
-
+                        let connect_result = s.connect_record(device_name, &battr, stream_flags);
+                        // Set input_stream before checking connect_result so
+                        // destroy() can clean up the stream on error.
                         stm.input_stream = Some(s);
+                        if let Err(e) = connect_result {
+                            cubeb_log!("Input stream connect error: {}", e);
+                            stm.context.mainloop.unlock();
+                            stm.destroy();
+                            return Err(Error::Error);
+                        }
                     }
                     Err(e) => {
                         cubeb_log!("Input stream initialization error");
@@ -627,6 +642,15 @@ impl StreamOps for PulseStream<'_> {
                 stm.trigger_user_callback(std::ptr::null(), size);
             }
         }
+
+        // Restarting a stream that is still draining is a cubeb API contract
+        // violation: the pending drain_timer holds a pointer to this stream,
+        // and re-prerolling would arm a second timer and leak the first.
+        if !self.drain_timer.load(Ordering::Acquire).is_null() {
+            cubeb_log!("Rejecting start() on a draining stream");
+            return Err(Error::Error);
+        }
+
         self.shutdown = false;
         self.cork(CorkState::uncork() | CorkState::notify());
 
@@ -649,12 +673,14 @@ impl StreamOps for PulseStream<'_> {
         {
             self.context.mainloop.lock();
             self.shutdown = true;
-            // If draining is taking place wait to finish
-            cubeb_log!("Stream stop: waiting for drain");
-            while !self.drain_timer.load(Ordering::Acquire).is_null() {
-                self.context.mainloop.wait();
+            // Cancel any pending drain timer rather than blocking until it
+            // fires, matching destroy() and other backends' behaviour.
+            let drain_timer = self.drain_timer.load(Ordering::Acquire);
+            if !drain_timer.is_null() {
+                cubeb_log!("Stream stop: cancelling drain timer");
+                self.context.mainloop.get_api().time_free(drain_timer);
+                self.drain_timer.store(ptr::null_mut(), Ordering::Release);
             }
-            cubeb_log!("Stream stop: waited for drain");
             self.context.mainloop.unlock();
         }
         self.cork(CorkState::cork() | CorkState::notify());
@@ -996,13 +1022,15 @@ impl PulseStream<'_> {
     }
 
     fn wait_until_ready(&self) -> bool {
-        fn wait_until_io_stream_ready(
-            stm: &pulse::Stream,
-            mainloop: &pulse::ThreadedMainloop,
-        ) -> bool {
-            if mainloop.is_null() {
+        fn wait_until_io_stream_ready(stm: &pulse::Stream, ctx: &PulseContext) -> bool {
+            if ctx.mainloop.is_null() {
                 return false;
             }
+
+            let context = match ctx.context {
+                Some(ref c) => c,
+                None => return false,
+            };
 
             loop {
                 let state = stm.get_state();
@@ -1012,20 +1040,23 @@ impl PulseStream<'_> {
                 if state == pulse::StreamState::Ready {
                     break;
                 }
-                mainloop.wait();
+                if !context.get_state().is_good() {
+                    return false;
+                }
+                ctx.mainloop.wait();
             }
 
             true
         }
 
         if let Some(ref stm) = self.output_stream {
-            if !wait_until_io_stream_ready(stm, &self.context.mainloop) {
+            if !wait_until_io_stream_ready(stm, self.context) {
                 return false;
             }
         }
 
         if let Some(ref stm) = self.input_stream {
-            if !wait_until_io_stream_ready(stm, &self.context.mainloop) {
+            if !wait_until_io_stream_ready(stm, self.context) {
                 return false;
             }
         }
@@ -1176,7 +1207,10 @@ impl PulseStream<'_> {
 
                             /* pa_stream_drain is useless, see PA bug# 866. this is a workaround. */
                             /* arbitrary safety margin: double the current latency. */
-                            debug_assert!(self.drain_timer.load(Ordering::Acquire).is_null());
+                            assert!(
+                                self.drain_timer.load(Ordering::Acquire).is_null(),
+                                "drain timer already armed; stream restarted while draining"
+                            );
                             let stream_ptr = self as *const _ as *mut _;
                             if let Some(ref context) = self.context.context {
                                 self.drain_timer.store(

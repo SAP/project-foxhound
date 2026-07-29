@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -48,10 +46,11 @@
 #include <numeric>
 #include <vector>
 
-#ifdef MOZ_CLANG_PLUGIN
-#  define MOZ_RUNINIT __attribute__((annotate("moz_global_var")))
+#if defined(MOZ_CLANG_PLUGIN) && defined(__GLIBCXX__) && \
+    (__GLIBCXX__ <= 20230707)
+#  define MOZ_GLIBCXX_CONSTINIT __attribute__((annotate("moz_global_var")))
 #else
-#  define MOZ_RUNINIT
+#  define MOZ_GLIBCXX_CONSTINIT
 #endif
 
 //---------------------------------------------------------------------------
@@ -610,7 +609,7 @@ static double gSampleInterval_sec;
 static RAPL* gRapl;
 
 // All the sampled "total" values, in Watts.
-MOZ_RUNINIT static std::vector<double> gTotals_W;
+MOZ_GLIBCXX_CONSTINIT static std::vector<double> gTotals_W;
 
 // Power = Energy / Time, where power is measured in Watts, Energy is measured
 // in Joules, and Time is measured in seconds.

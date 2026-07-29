@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -132,9 +130,9 @@ class PaymentResponse final : public DOMEventTargetHelper,
                              const nsAString& aPayerEmail,
                              const nsAString& aPayerPhone);
 
-  already_AddRefed<Promise> Retry(JSContext* aCx,
-                                  const PaymentValidationErrors& errorField,
-                                  ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> Retry(
+      JSContext* aCx, const PaymentValidationErrors& errorField,
+      ErrorResult& aRv);
 
   void RespondRetry(const nsAString& aMethodName,
                     const nsAString& aShippingOption,
@@ -149,15 +147,15 @@ class PaymentResponse final : public DOMEventTargetHelper,
   void ValidatePaymentValidationErrors(const PaymentValidationErrors& aErrors,
                                        ErrorResult& aRv);
 
-  void ConvertPaymentMethodErrors(JSContext* aCx,
-                                  const PaymentValidationErrors& aErrors,
-                                  ErrorResult& aRv) const;
+  MOZ_CAN_RUN_SCRIPT void ConvertPaymentMethodErrors(
+      JSContext* aCx, const PaymentValidationErrors& aErrors,
+      ErrorResult& aRv) const;
 
   nsresult DispatchUpdateEvent(const nsAString& aType);
 
  private:
   bool mCompleteCalled;
-  PaymentRequest* mRequest;
+  RefPtr<PaymentRequest> mRequest;
   nsString mRequestId;
   nsString mMethodName;
   ResponseData mDetails;

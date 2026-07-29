@@ -8,6 +8,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Context.INPUT_METHOD_SERVICE
 import android.graphics.Rect
+import android.os.Build
 import android.provider.Settings.Secure.DEFAULT_INPUT_METHOD
 import android.provider.Settings.Secure.getString
 import android.text.Editable
@@ -28,6 +29,8 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputConnectionWrapper
 import android.view.inputmethod.InputMethodManager
+import android.view.inputmethod.TextAttribute
+import androidx.annotation.ChecksSdkIntAtLeast
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.widget.AppCompatEditText
 import mozilla.components.support.base.Component
@@ -146,6 +149,20 @@ open class InlineAutocompleteEditText @JvmOverloads constructor(
 
     // Do not process autocomplete result
     private var discardAutoCompleteResult: Boolean = false
+
+    /**
+     * Set of flags to be added to the next [AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED]
+     * accessibility event.
+     */
+    private var pendingTextChangeTypes: Int = 0
+
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+    @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.CINNAMON_BUN)
+    internal fun isAtLeastCinnamonBun(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN
+
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+    internal var onPendingTextChangeTypesSet: ((Int) -> Unit)? = null
 
     val nonAutocompleteText: String
         get() = getNonAutocompleteText(text)
@@ -317,6 +334,14 @@ open class InlineAutocompleteEditText @JvmOverloads constructor(
     }
 
     override fun sendAccessibilityEventUnchecked(event: AccessibilityEvent) {
+        if (isAtLeastCinnamonBun() &&
+            event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED &&
+            pendingTextChangeTypes != 0
+        ) {
+            event.textChangeTypes = pendingTextChangeTypes
+            clearPendingTextChangeTypes()
+        }
+
         // We need to bypass the isShown() check in the default implementation
         // for TYPE_VIEW_TEXT_SELECTION_CHANGED events so that accessibility
         // services could detect a url change.
@@ -637,21 +662,70 @@ open class InlineAutocompleteEditText @JvmOverloads constructor(
             }
 
             override fun commitText(text: CharSequence, newCursorPosition: Int): Boolean {
-                return if (removeAutocompleteOnComposing(text)) {
-                    false
-                } else {
-                    super.commitText(text, newCursorPosition)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                    return commitText(text, newCursorPosition, null)
                 }
+                if (removeAutocompleteOnComposing(text)) {
+                    return false
+                }
+                return super.commitText(text, newCursorPosition)
+            }
+
+            override fun commitText(
+                text: CharSequence,
+                newCursorPosition: Int,
+                textAttribute: TextAttribute?,
+            ): Boolean {
+                if (removeAutocompleteOnComposing(text)) {
+                    return false
+                }
+                if (isAtLeastCinnamonBun()) {
+                    var types = AccessibilityEvent.TEXT_CHANGE_TYPE_COMMITTED_BY_IME
+                    if (textAttribute?.isTextSuggestionSelected == true) {
+                        types = types or AccessibilityEvent.TEXT_CHANGE_TYPE_CONVERSION_SUGGESTION_SELECTED_BY_IME
+                    }
+                    setPendingTextChangeTypes(types)
+                }
+                return super.commitText(text, newCursorPosition, textAttribute)
             }
 
             override fun setComposingText(text: CharSequence, newCursorPosition: Int): Boolean {
-                return if (removeAutocompleteOnComposing(text)) {
-                    false
-                } else {
-                    super.setComposingText(text, newCursorPosition)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                    return setComposingText(text, newCursorPosition, null)
                 }
+                if (removeAutocompleteOnComposing(text)) {
+                    return false
+                }
+                return super.setComposingText(text, newCursorPosition)
+            }
+
+            override fun setComposingText(
+                text: CharSequence,
+                newCursorPosition: Int,
+                textAttribute: TextAttribute?,
+            ): Boolean {
+                if (removeAutocompleteOnComposing(text)) {
+                    return false
+                }
+                if (isAtLeastCinnamonBun()) {
+                    var types = AccessibilityEvent.TEXT_CHANGE_TYPE_IN_COMPOSITION
+                    if (textAttribute?.isTextSuggestionSelected == true) {
+                        types = types or AccessibilityEvent.TEXT_CHANGE_TYPE_CONVERSION_SUGGESTION_SELECTED_BY_IME
+                    }
+                    setPendingTextChangeTypes(types)
+                }
+                return super.setComposingText(text, newCursorPosition, textAttribute)
             }
         }
+    }
+
+    private fun setPendingTextChangeTypes(types: Int) {
+        pendingTextChangeTypes = types
+        onPendingTextChangeTypesSet?.invoke(types)
+    }
+
+    private fun clearPendingTextChangeTypes() {
+        pendingTextChangeTypes = 0
     }
 
     private fun restartInput() {

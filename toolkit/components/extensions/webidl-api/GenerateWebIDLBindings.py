@@ -635,9 +635,18 @@ class WebIDLHelpers:
 
         schema_data = api_fun.get_schema_data(schema_group)
         if "returns" in schema_data:
-            return cls.webidl_type_from_mapping(
+            returns = cls.webidl_type_from_mapping(
                 schema_data["returns"], "%s return value" % api_fun.api_path_string
             )
+
+            if returns != "any":
+                # Optional return values need suffix '?'
+                returns_data = schema_data["returns"]
+                is_optional = "optional" in returns_data and returns_data["optional"]
+                if is_optional:
+                    return f"{returns}?"
+
+            return returns
 
         return "undefined"
 

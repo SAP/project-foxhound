@@ -1,25 +1,27 @@
-From: Andreas Pehrson <apehrson@mozilla.com>
-Date: Fri, 5 Dec 2025 11:12:00 +0000
-Subject: Bug 1931210 - Log SCK startCaptureWithCompletionHandler error code.
- r=jib
+From: Michael Froman <mfroman@mozilla.com>
+Date: Tue, 7 Apr 2026 18:03:00 -0500
+Subject: Bug 2030139 - (fix-1ccc59d5c9) don't use
+ std::make_unique_for_overwrite for now to fix build error
 
-Differential Revision: https://phabricator.services.mozilla.com/D268351
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/330a55d5a7ff5e7c694772810697fde59f0c742b
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/a4e2ac07bd6f2deb8fde32b147422c3918c31eca
 ---
- modules/desktop_capture/mac/screen_capturer_sck.mm | 3 ++-
- 1 file changed, 2 insertions(+), 1 deletion(-)
+ rtc_base/copy_on_write_buffer.cc | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
 
-diff --git a/modules/desktop_capture/mac/screen_capturer_sck.mm b/modules/desktop_capture/mac/screen_capturer_sck.mm
-index 0d0750f63e..8ec1d182a3 100644
---- a/modules/desktop_capture/mac/screen_capturer_sck.mm
-+++ b/modules/desktop_capture/mac/screen_capturer_sck.mm
-@@ -590,7 +590,8 @@ void ScreenCapturerSck::StartWithFilter(SCContentFilter* __strong filter) {
-         // this handler.
-         permanent_error_ = true;
-         RTC_LOG(LS_ERROR) << "ScreenCapturerSck " << this
--                          << " Starting failed.";
-+                          << " Starting failed with error code " << error.code
-+                          << ".";
-       } else {
-         RTC_LOG(LS_INFO) << "ScreenCapturerSck " << this << " Capture started.";
-       }
+diff --git a/rtc_base/copy_on_write_buffer.cc b/rtc_base/copy_on_write_buffer.cc
+index 68e98ce729..5877f323f6 100644
+--- a/rtc_base/copy_on_write_buffer.cc
++++ b/rtc_base/copy_on_write_buffer.cc
+@@ -28,7 +28,11 @@
+ namespace webrtc {
+ 
+ CopyOnWriteBuffer::RawBuffer::RawBuffer(size_t size)
+-    : size_(size), data_(std::make_unique_for_overwrite<uint8_t[]>(size)) {}
++    : size_(size), data_(std::unique_ptr<uint8_t[]>(new uint8_t[size])) {}
++// We should be able to use the form below, but our current compile setup
++// doesn't find std::make_unique_for_overwrite.  See Bug 2030186 to revert
++// this change.
++//     : size_(size), data_(std::make_unique_for_overwrite<uint8_t[]>(size)) {}
+ 
+ scoped_refptr<CopyOnWriteBuffer::RefCountedBuffer>
+ CopyOnWriteBuffer::CreateBuffer(size_t capacity) {

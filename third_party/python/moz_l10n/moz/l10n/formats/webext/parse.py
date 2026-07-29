@@ -44,7 +44,7 @@ def webext_parse(source: str | bytes) -> Resource[Message]:
 
     The parsed resource will not include any metadata.
     """
-    json: dict[str, dict[str, Any]] = json_linecomment_loads(source)
+    json: dict[str, dict[str, Any]] = json_linecomment_loads(source)[0]
     entries: list[Entry[Message] | Comment] = [
         Entry(
             (key,),

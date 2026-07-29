@@ -4,7 +4,7 @@ pypi:pillow==11.3.0
 # Bug 1823701 - tomli is a pytest dependency that isn't pulled into WPT's
 # vendor dir for some reason
 pypi:tomli==2.2.1
-pypi:tox==3.12.1
+pypi:tox==3.28.0
 pypi:ujson==5.10.0
 vendored:testing/web-platform/tests/tools/third_party/h2/src
 vendored:testing/web-platform/tests/tools/third_party/hpack/src

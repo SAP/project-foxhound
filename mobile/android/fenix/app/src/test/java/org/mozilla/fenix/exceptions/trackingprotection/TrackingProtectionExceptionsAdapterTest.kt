@@ -24,6 +24,7 @@ import org.mozilla.fenix.exceptions.viewholders.ExceptionsHeaderViewHolder
 import org.mozilla.fenix.exceptions.viewholders.ExceptionsListItemViewHolder
 import org.mozilla.fenix.ext.components
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertIs
 
 @RunWith(RobolectricTestRunner::class)
 class TrackingProtectionExceptionsAdapterTest {
@@ -55,10 +56,10 @@ class TrackingProtectionExceptionsAdapterTest {
             .toList()
         assertEquals(4, holders.size)
 
-        assertTrue(holders[0] is ExceptionsHeaderViewHolder)
-        assertTrue(holders[1] is ExceptionsListItemViewHolder<*>)
-        assertTrue(holders[2] is ExceptionsListItemViewHolder<*>)
-        assertTrue(holders[3] is ExceptionsDeleteButtonViewHolder)
+        assertIs<ExceptionsHeaderViewHolder>(holders[0])
+        assertIs<ExceptionsListItemViewHolder<*>>(holders[1])
+        assertIs<ExceptionsListItemViewHolder<*>>(holders[2])
+        assertIs<ExceptionsDeleteButtonViewHolder>(holders[3])
     }
 
     @Test

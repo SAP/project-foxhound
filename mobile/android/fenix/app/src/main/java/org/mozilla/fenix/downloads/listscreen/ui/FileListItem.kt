@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.progressSemantics
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -33,6 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
+import mozilla.components.compose.base.button.IconButton
 import mozilla.components.compose.base.menu.DropdownMenu
 import mozilla.components.compose.base.menu.MenuItem
 import mozilla.components.compose.base.text.Text
@@ -147,10 +147,11 @@ private fun AfterListItemAction(
         is FileItem.Status.Downloading -> {
             IconButton(
                 onClick = { onPauseClick(fileItem.id) },
+                contentDescription = stringResource(R.string.download_pause_action),
             ) {
                 Icon(
                     painter = painterResource(mediaR.drawable.mozac_feature_media_action_pause),
-                    contentDescription = stringResource(R.string.download_pause_action),
+                    contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -158,10 +159,11 @@ private fun AfterListItemAction(
         is FileItem.Status.Paused -> {
             IconButton(
                 onClick = { onResumeClick(fileItem.id) },
+                contentDescription = stringResource(R.string.download_resume_action),
             ) {
                 Icon(
                     painter = painterResource(mediaR.drawable.mozac_feature_media_action_play),
-                    contentDescription = stringResource(R.string.download_resume_action),
+                    contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -170,10 +172,11 @@ private fun AfterListItemAction(
         FileItem.Status.Failed -> {
             IconButton(
                 onClick = { onRetryClick(fileItem.id) },
+                contentDescription = stringResource(R.string.download_retry_action),
             ) {
                 Icon(
                     painter = painterResource(iconsR.drawable.mozac_ic_arrow_counter_clockwise_24),
-                    contentDescription = stringResource(R.string.download_retry_action),
+                    contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -184,13 +187,14 @@ private fun AfterListItemAction(
 
     IconButton(
         onClick = { menuExpanded = true },
+        contentDescription = stringResource(id = R.string.content_description_menu),
         modifier = Modifier
             .size(24.dp)
             .testTag("${DownloadsListTestTag.DOWNLOADS_LIST_ITEM_MENU}.${fileItem.fileName}"),
     ) {
         Icon(
             painter = painterResource(id = iconsR.drawable.mozac_ic_ellipsis_vertical_24),
-            contentDescription = stringResource(id = R.string.content_description_menu),
+            contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurface,
         )
 
@@ -300,6 +304,7 @@ private class FileListItemParameterProvider : ThemedValueProvider<FileListItemPr
                 url = "https://www.mozilla.org",
                 fileName = "TestJPG.jpg",
                 filePath = "",
+                directoryPath = "/storage/emulated/0/Download",
                 displayedShortUrl = "mozilla.org",
                 contentType = "image/jpg",
                 status = FileItem.Status.Completed,
@@ -315,6 +320,7 @@ private class FileListItemParameterProvider : ThemedValueProvider<FileListItemPr
                 url = "https://www.google.com",
                 fileName = "TestPDF.pdf",
                 filePath = "",
+                directoryPath = "/storage/emulated/0/Download",
                 displayedShortUrl = "google.com",
                 contentType = "application/pdf",
                 status = FileItem.Status.Completed,
@@ -330,6 +336,7 @@ private class FileListItemParameterProvider : ThemedValueProvider<FileListItemPr
                 url = "https://www.google.com",
                 fileName = "TestVideo.mp4",
                 filePath = "",
+                directoryPath = "/storage/emulated/0/Download",
                 displayedShortUrl = "google.com",
                 contentType = "video/mp4",
                 status = FileItem.Status.Completed,
@@ -345,6 +352,7 @@ private class FileListItemParameterProvider : ThemedValueProvider<FileListItemPr
                 url = "https://www.google.com",
                 fileName = "TestZIP.zip",
                 filePath = "",
+                directoryPath = "/storage/emulated/0/Download",
                 displayedShortUrl = "google.com",
                 contentType = "application/zip",
                 status = FileItem.Status.Completed,
@@ -360,6 +368,7 @@ private class FileListItemParameterProvider : ThemedValueProvider<FileListItemPr
                 url = "https://www.google.com",
                 fileName = "TestMSWordDoc.docx",
                 filePath = "",
+                directoryPath = "/storage/emulated/0/Download",
                 displayedShortUrl = "google.com",
                 contentType = "application/msword",
                 status = FileItem.Status.Completed,
@@ -375,6 +384,7 @@ private class FileListItemParameterProvider : ThemedValueProvider<FileListItemPr
                 url = "https://www.mozilla.org",
                 fileName = "TestJPG.jpg",
                 filePath = "",
+                directoryPath = "/storage/emulated/0/Download",
                 displayedShortUrl = "mozilla.org",
                 contentType = "image/jpg",
                 status = FileItem.Status.Completed,
@@ -390,6 +400,7 @@ private class FileListItemParameterProvider : ThemedValueProvider<FileListItemPr
                 url = "https://www.google.com",
                 fileName = "TestPDF.pdf",
                 filePath = "",
+                directoryPath = "/storage/emulated/0/Download",
                 displayedShortUrl = "google.com",
                 contentType = "application/pdf",
                 status = FileItem.Status.Completed,
@@ -405,6 +416,7 @@ private class FileListItemParameterProvider : ThemedValueProvider<FileListItemPr
                 url = "https://www.google.com",
                 fileName = "TestVideo.mp4",
                 filePath = "",
+                directoryPath = "/storage/emulated/0/Download",
                 displayedShortUrl = "google.com",
                 contentType = "video/mp4",
                 status = FileItem.Status.Completed,
@@ -420,6 +432,7 @@ private class FileListItemParameterProvider : ThemedValueProvider<FileListItemPr
                 url = "https://www.google.com",
                 fileName = "TestZIP.zip",
                 filePath = "",
+                directoryPath = "/storage/emulated/0/Download",
                 displayedShortUrl = "google.com",
                 contentType = "application/zip",
                 status = FileItem.Status.Completed,
@@ -435,6 +448,7 @@ private class FileListItemParameterProvider : ThemedValueProvider<FileListItemPr
                 url = "https://www.google.com",
                 fileName = "TestMSWordDoc.docx",
                 filePath = "",
+                directoryPath = "/storage/emulated/0/Download",
                 displayedShortUrl = "google.com",
                 contentType = "application/msword",
                 status = FileItem.Status.Completed,
@@ -448,6 +462,7 @@ private class FileListItemParameterProvider : ThemedValueProvider<FileListItemPr
             fileItem = FileItem(
                 id = "11",
                 fileName = "File 11",
+                directoryPath = "/storage/emulated/0/Download",
                 url = "https://example.com/file11",
                 description = "5 MB / 10 MB • in 5s",
                 displayedShortUrl = "example.com",
@@ -469,6 +484,7 @@ private class FileListItemParameterProvider : ThemedValueProvider<FileListItemPr
                 contentType = "application/zip",
                 status = FileItem.Status.Downloading(progress = 0.5f),
                 filePath = "",
+                directoryPath = "/storage/emulated/0/Download",
                 timeCategory = TimeCategory.IN_PROGRESS,
             ),
             isSelected = false,
@@ -484,6 +500,7 @@ private class FileListItemParameterProvider : ThemedValueProvider<FileListItemPr
                 contentType = "application/zip",
                 status = FileItem.Status.Paused(progress = 0.5f),
                 filePath = "",
+                directoryPath = "/storage/emulated/0/Download",
                 timeCategory = TimeCategory.IN_PROGRESS,
             ),
             isSelected = false,
@@ -499,6 +516,7 @@ private class FileListItemParameterProvider : ThemedValueProvider<FileListItemPr
                 contentType = "application/zip",
                 status = FileItem.Status.Initiated,
                 filePath = "",
+                directoryPath = "/storage/emulated/0/Download",
                 timeCategory = TimeCategory.IN_PROGRESS,
             ),
             isSelected = false,
@@ -514,6 +532,7 @@ private class FileListItemParameterProvider : ThemedValueProvider<FileListItemPr
                 contentType = "application/zip",
                 status = FileItem.Status.Failed,
                 filePath = "",
+                directoryPath = "/storage/emulated/0/Download",
                 timeCategory = TimeCategory.IN_PROGRESS,
             ),
             isSelected = false,
@@ -529,6 +548,7 @@ private class FileListItemParameterProvider : ThemedValueProvider<FileListItemPr
                 contentType = "application/zip",
                 status = FileItem.Status.Failed,
                 filePath = "",
+                directoryPath = "/storage/emulated/0/Download",
                 timeCategory = TimeCategory.IN_PROGRESS,
             ),
             isSelected = false,

@@ -164,7 +164,7 @@ impl<'a> TokenData<'a> {
                 ));
             }
         };
-        if self.data != "" {
+        if !self.data.is_empty() {
             self.data.to_mut().push_str(data)
         } else {
             self.data = Cow::Borrowed(data)

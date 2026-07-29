@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,20 +34,12 @@ nsresult GetIPCSynthesizeResponseArgs(
     ChildToParentSynthesizeResponseArgs* aIPCArgs,
     SynthesizeResponseArgs&& aArgs) {
   MOZ_ASSERT(RemoteWorkerService::Thread()->IsOnCurrentThread());
+  auto [internalResponse, ipcArgs] = std::move(aArgs);
 
-  auto [internalResponse, closure, timeStamps] = std::move(aArgs);
+  *aIPCArgs = std::move(ipcArgs);
 
-  aIPCArgs->closure() = std::move(closure);
-  aIPCArgs->timeStamps() = std::move(timeStamps);
-
-  PBackgroundChild* bgChild = BackgroundChild::GetOrCreateForCurrentThread();
-
-  if (NS_WARN_IF(!bgChild)) {
-    return NS_ERROR_DOM_INVALID_STATE_ERR;
-  }
-
-  internalResponse->ToChildToParentInternalResponse(
-      &aIPCArgs->internalResponse(), bgChild);
+  internalResponse->SerializeChildToParentInternalResponseBody(
+      &aIPCArgs->internalResponse());
   return NS_OK;
 }
 

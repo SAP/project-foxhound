@@ -10,10 +10,12 @@
 
 #include "rtc_base/thread.h"
 
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -26,10 +28,12 @@
 #include "api/units/time_delta.h"
 #include "rtc_base/async_packet_socket.h"
 #include "rtc_base/async_udp_socket.h"
+#include "rtc_base/byte_order.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/event.h"
 #include "rtc_base/fake_clock.h"
 #include "rtc_base/internal/default_socket_server.h"
+#include "rtc_base/logging.h"
 #include "rtc_base/network/received_packet.h"
 #include "rtc_base/null_socket_server.h"
 #include "rtc_base/socket.h"
@@ -42,6 +46,7 @@
 #include "test/create_test_environment.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
+#include "test/run_loop.h"
 #include "test/testsupport/rtc_expect_death.h"
 #include "test/wait_until.h"
 
@@ -54,6 +59,28 @@ namespace webrtc {
 namespace {
 
 using ::testing::ElementsAre;
+using ::testing::IsNull;
+using ::testing::NotNull;
+
+class ScopedThread : public Thread {
+ public:
+  ScopedThread()
+      : Thread(CreateDefaultSocketServer(), /*do_init=*/false),
+        previous_thread_(ThreadManager::Instance()->CurrentThread()) {
+    DoInit();
+    ThreadManager::Instance()->SetCurrentThread(this);
+  }
+
+  ~ScopedThread() override {
+    Stop();
+    DoDestroy();
+    RTC_DCHECK_EQ(ThreadManager::Instance()->CurrentThread(), this);
+    ThreadManager::Instance()->SetCurrentThread(previous_thread_);
+  }
+
+ private:
+  Thread* const previous_thread_;
+};
 
 // Generates a sequence of numbers (collaboratively).
 class TestGenerator {
@@ -79,8 +106,9 @@ class MessageClient : public TestGenerator {
   ~MessageClient() { delete socket_; }
 
   void OnValue(int value) {
-    int result = Next(value);
-    EXPECT_GE(socket_->Send(&result, sizeof(result)), 0);
+    std::array<uint8_t, sizeof(uint32_t)> octets;
+    SetLE32(octets, Next(value));
+    EXPECT_GE(socket_->Send(octets.data(), octets.size()), 0);
   }
 
  private:
@@ -111,8 +139,7 @@ class SocketClient : public TestGenerator {
 
   void OnPacket(AsyncPacketSocket* socket, const ReceivedIpPacket& packet) {
     EXPECT_EQ(packet.payload().size(), sizeof(uint32_t));
-    uint32_t prev =
-        reinterpret_cast<const uint32_t*>(packet.payload().data())[0];
+    uint32_t prev = GetLE32(packet.payload());
     uint32_t result = Next(prev);
 
     post_thread_->PostDelayedTask([post_handler_ = post_handler_,
@@ -160,7 +187,7 @@ class SignalWhenDestroyedThread : public Thread {
 
 // See: https://code.google.com/p/webrtc/issues/detail?id=2409
 TEST(ThreadTest, DISABLED_Main) {
-  AutoThread main_thread;
+  ScopedThread main_thread;
   const SocketAddress addr("127.0.0.1", 0);
 
   // Create the messaging client on its own thread.
@@ -199,15 +226,29 @@ TEST(ThreadTest, DISABLED_Main) {
   EXPECT_EQ(55, sock_client.last);
 }
 
+// Tests that the implementation behind
+// `RTC_DCHECK_DISALLOW_THREAD_BLOCKING_CALLS` doesn't cause problems (crash or
+// DCHECK) when used on a thread that does not have an attached current
+// `Thread*` instance.
+TEST(ThreadTest, DisallowBlockingCallsNoThread) {
+  ASSERT_THAT(Thread::Current(), IsNull());
+  RTC_DCHECK_DISALLOW_THREAD_BLOCKING_CALLS();
+}
+
+TEST(ThreadTest, DisallowBlockingCallsWithThread) {
+  ScopedThread current;
+  RTC_DCHECK_DISALLOW_THREAD_BLOCKING_CALLS();
+}
+
 TEST(ThreadTest, CountBlockingCalls) {
-  AutoThread current;
+  ScopedThread current;
 
   // When the test runs, this will print out:
   //   (thread_unittest.cc:262): Blocking TestBody: total=2 (actual=1, could=1)
   RTC_LOG_THREAD_BLOCK_COUNT();
 #if RTC_DCHECK_IS_ON
   Thread::ScopedCountBlockingCalls blocked_calls(
-      [&](uint32_t actual_block, uint32_t could_block) {
+      [&](uint32_t actual_block, uint32_t could_block, TimeDelta duration) {
         EXPECT_EQ(1u, actual_block);
         EXPECT_EQ(1u, could_block);
       });
@@ -242,11 +283,11 @@ TEST(ThreadTest, CountBlockingCalls) {
 
 #if RTC_DCHECK_IS_ON
 TEST(ThreadTest, CountBlockingCallsOneCallback) {
-  AutoThread current;
+  ScopedThread current;
   bool was_called_back = false;
   {
     Thread::ScopedCountBlockingCalls blocked_calls(
-        [&](uint32_t actual_block, uint32_t could_block) {
+        [&](uint32_t actual_block, uint32_t could_block, TimeDelta duration) {
           was_called_back = true;
         });
     current.BlockingCall([]() {});
@@ -255,11 +296,11 @@ TEST(ThreadTest, CountBlockingCallsOneCallback) {
 }
 
 TEST(ThreadTest, CountBlockingCallsSkipCallback) {
-  AutoThread current;
+  ScopedThread current;
   bool was_called_back = false;
   {
     Thread::ScopedCountBlockingCalls blocked_calls(
-        [&](uint32_t actual_block, uint32_t could_block) {
+        [&](uint32_t actual_block, uint32_t could_block, TimeDelta duration) {
           was_called_back = true;
         });
     // Changed `blocked_calls` to not issue the callback if there are 1 or
@@ -309,7 +350,7 @@ TEST(ThreadTest, Wrap) {
 
 #if (!defined(NDEBUG) || RTC_DCHECK_IS_ON)
 TEST(ThreadTest, InvokeToThreadAllowedReturnsTrueWithoutPolicies) {
-  AutoThread main_thread;
+  ScopedThread main_thread;
   // Create and start the thread.
   auto thread1 = Thread::CreateWithSocketServer();
   auto thread2 = Thread::CreateWithSocketServer();
@@ -320,7 +361,7 @@ TEST(ThreadTest, InvokeToThreadAllowedReturnsTrueWithoutPolicies) {
 }
 
 TEST(ThreadTest, InvokeAllowedWhenThreadsAdded) {
-  AutoThread main_thread;
+  ScopedThread main_thread;
   // Create and start the thread.
   auto thread1 = Thread::CreateWithSocketServer();
   auto thread2 = Thread::CreateWithSocketServer();
@@ -339,7 +380,7 @@ TEST(ThreadTest, InvokeAllowedWhenThreadsAdded) {
 }
 
 TEST(ThreadTest, InvokesDisallowedWhenDisallowAllInvokes) {
-  AutoThread main_thread;
+  ScopedThread main_thread;
   // Create and start the thread.
   auto thread1 = Thread::CreateWithSocketServer();
   auto thread2 = Thread::CreateWithSocketServer();
@@ -353,7 +394,7 @@ TEST(ThreadTest, InvokesDisallowedWhenDisallowAllInvokes) {
 #endif  // (!defined(NDEBUG) || RTC_DCHECK_IS_ON)
 
 TEST(ThreadTest, InvokesAllowedByDefault) {
-  AutoThread main_thread;
+  ScopedThread main_thread;
   // Create and start the thread.
   auto thread1 = Thread::CreateWithSocketServer();
   auto thread2 = Thread::CreateWithSocketServer();
@@ -387,7 +428,7 @@ TEST(ThreadTest, BlockingCall) {
 #if RTC_DCHECK_IS_ON && GTEST_HAS_DEATH_TEST && !defined(WEBRTC_ANDROID)
 TEST(ThreadTest, TwoThreadsInvokeDeathTest) {
   GTEST_FLAG_SET(death_test_style, "threadsafe");
-  AutoThread thread;
+  ScopedThread thread;
   Thread* main_thread = Thread::Current();
   auto other_thread = Thread::CreateWithSocketServer();
   other_thread->Start();
@@ -398,7 +439,7 @@ TEST(ThreadTest, TwoThreadsInvokeDeathTest) {
 
 TEST(ThreadTest, ThreeThreadsInvokeDeathTest) {
   GTEST_FLAG_SET(death_test_style, "threadsafe");
-  AutoThread thread;
+  ScopedThread thread;
   Thread* first = Thread::Current();
 
   auto second = Thread::Create();
@@ -412,13 +453,25 @@ TEST(ThreadTest, ThreeThreadsInvokeDeathTest) {
   });
 }
 
+TEST(ThreadTest, DisallowBlockingCallDeathTest) {
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  ScopedThread thread;
+  ASSERT_THAT(Thread::Current(), NotNull());
+  auto other_thread = Thread::CreateWithSocketServer();
+  other_thread->Start();
+  {
+    RTC_DCHECK_DISALLOW_THREAD_BLOCKING_CALLS();
+    RTC_EXPECT_DEATH(other_thread->BlockingCall([] {}),
+                     "blocking_calls_allowed_");
+  }
+}
 #endif
 
 // Verifies that if thread A invokes a call on thread B and thread C is trying
 // to invoke A at the same time, thread A does not handle C's invoke while
 // invoking B.
 TEST(ThreadTest, ThreeThreadsBlockingCall) {
-  AutoThread thread;
+  ScopedThread thread;
   Thread* thread_a = Thread::Current();
   auto thread_b = Thread::CreateWithSocketServer();
   auto thread_c = Thread::CreateWithSocketServer();
@@ -529,7 +582,7 @@ TEST(ThreadTest, DelayedPostsWithIdenticalTimesAreProcessedInFifoOrder) {
 // all messages (both delayed and non delayed) up until the current time, on
 // all registered message queues.
 TEST(ThreadManager, ProcessAllMessageQueues) {
-  AutoThread main_thread;
+  ScopedThread main_thread;
   Event entered_process_all_message_queues(true, false);
   auto a = Thread::CreateWithSocketServer();
   auto b = Thread::CreateWithSocketServer();
@@ -841,6 +894,54 @@ TEST(ThreadPostDelayedTaskTest, IsCurrentTaskQueue) {
   EXPECT_EQ(TaskQueueBase::Current(), current_tq);
 }
 
+// Uses `HasPendingTasks()` to detect when to yield to another posted task.
+TEST(ThreadCooperativeTest, TaskTriggersHasPendingTasks) {
+  test::RunLoop loop;
+  auto thread = Thread::Create();
+  thread->Start();
+
+  bool was_interrupted = false;
+  Event task_started;
+
+  // Post a long running task that checks for pending tasks.
+  thread->PostTask(
+      [&was_interrupted, &loop, &task_started, thread = thread.get()] {
+        task_started.Set();
+        while (!thread->HasPendingTasks()) {
+          // Busy loop/simulated work
+        }
+        loop.PostTask([&was_interrupted, &loop] {
+          was_interrupted = true;
+          loop.Quit();
+        });
+      });
+
+  // Wait for the task to start to ensure that the task doesn't
+  // run first.
+  task_started.Wait(Event::kForever);
+
+  // Post a task that interrupts the busy loop.
+  thread->PostTask([] {});
+
+  loop.Run();
+  EXPECT_TRUE(was_interrupted);
+}
+
+TEST(ThreadCooperativeTest, HasPendingTasksClearedAfterTask) {
+  std::unique_ptr<Thread> thread(Thread::Create());
+  thread->Start();
+
+  // Initially false.
+  thread->BlockingCall([&] { EXPECT_FALSE(thread->HasPendingTasks()); });
+
+  // Post task.
+  thread->PostTask([&] {});
+
+  // Use `BlockingCall` to post normal task which implicitly blocks and waits
+  // for its functor to run, at which point the queue will be empty again.
+  thread->BlockingCall([&] { EXPECT_FALSE(thread->HasPendingTasks()); });
+}
+
 class ThreadFactory : public TaskQueueFactory {
  public:
   std::unique_ptr<TaskQueueBase, TaskQueueDeleter> CreateTaskQueue(
@@ -856,7 +957,6 @@ std::unique_ptr<TaskQueueFactory> CreateDefaultThreadFactory(
     const FieldTrialsView*) {
   return std::make_unique<ThreadFactory>();
 }
-
 
 INSTANTIATE_TEST_SUITE_P(RtcThread,
                          TaskQueueTest,

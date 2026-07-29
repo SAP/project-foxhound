@@ -1,0 +1,16 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+[DEFAULT]
+prefs = ["browser.shareqrcode.enabled=true"]
+skip-if = ["!nightly_build"]
+support-files = ["reference-qr-no-logo.png", "reference-long-url-no-logo.png"]
+
+["browser_qrcode_png_output.js"]
+
+["browser_qrcode_save_filename.js"]
+
+["browser_qrcode_share_menu.js"]
+
+["browser_qrcode_share_menu_non_focused_tab.js"]

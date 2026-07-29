@@ -25,7 +25,12 @@ struct ScreamV2Parameters {
   FieldTrialParameter<DataSize> min_ref_window;
 
   // Exponentially Weighted Moving Average (EWMA) factor for l4s_alpha.
-  FieldTrialParameter<double> l4s_avg_g;
+  FieldTrialParameter<double> l4s_avg_g_up;
+  FieldTrialParameter<double> l4s_avg_g_down;
+
+  // Exponentially Weighted Moving Average (EWMA) factor for smoothed rtt.
+  FieldTrialParameter<double> smoothed_rtt_avg_g_up;
+  FieldTrialParameter<double> smoothed_rtt_avg_g_down;
 
   // Maximum Segment Size (MSS)
   // Size of the largest data segment that a sender is able to transmit. I.e
@@ -61,13 +66,24 @@ struct ScreamV2Parameters {
   FieldTrialParameter<int>
       number_of_rtts_between_reset_ref_window_i_on_congestion;
 
-  // Excessive data in flight correction
-  FieldTrialParameter<double> data_in_flight_limit;
-  FieldTrialParameter<double> max_data_in_flight_limit_compensation;
+  // Max/Min used for calculating how much larger the send window is allowed to
+  // be than the ref window.
+  FieldTrialParameter<double> ref_window_overhead_min;
+  FieldTrialParameter<double> ref_window_overhead_max;
 
   // Exponentially Weighted Moving Average (EWMA) factor for updating queue
   // delay.
   FieldTrialParameter<double> queue_delay_avg_g;
+  // Exponentially Weighted Moving Average (EWMA) factor for updating average
+  // min queue delay and average latency difference.
+  FieldTrialParameter<double> delay_min_and_latency_diff_avg_g;
+
+  // Thresholds for average min queue delay. Used for limiting ref_window
+  // increase.
+  FieldTrialParameter<TimeDelta> queue_delay_min_threshold;
+  // Thresholds for average latency difference. Used for limiting ref_window
+  // increase.
+  FieldTrialParameter<TimeDelta> latency_diff_threshold;
 
   // Determines the length of the base delay history when estimating one way
   // delay (owd)
@@ -75,32 +91,50 @@ struct ScreamV2Parameters {
   // Determines how often the base delay history is updated.
   FieldTrialParameter<TimeDelta> base_delay_history_update_interval;
 
-  // Initial queue delay target.
+  // Reference window is reduced if average queue delay is above
+  // `queue_delay_target/2`
   // TODO: bugs.webrtc.org/447037083 -  Consider implementing 4.2.1.4.1.
   // Competing Flows Compensation.
   FieldTrialParameter<TimeDelta> queue_delay_target;
 
-  // Queue delay is "detected" if queue delay is higher than
-  // `queue_delay_target`* `queue_delay_increased_threshold`.
-  FieldTrialParameter<double> queue_delay_increased_threshold;
-
-  // Reference window should be reduced if average queue delay is above
-  // `queue_delay_target`* `queue_delay_threshold`
-  FieldTrialParameter<double> queue_delay_threshold;
-
-  // Use all packets when calculating `queue_delay_average`. This is per default
-  // true. This is in contrast with
-  // https://datatracker.ietf.org/doc/draft-johansson-ccwg-rfc8298bis-screamv2/
-  // that specifies that only the last packet reported in a feedback packet
-  // received every min(virtual_rtt, smoothed rtt) is used.
-  FieldTrialParameter<bool> use_all_packets_when_calculating_queue_delay;
+  // If the minimum queue delay is below this threshold, queues are deamed to be
+  // drained.
+  FieldTrialParameter<TimeDelta> queue_delay_drain_threshold;
+  // If the minimum queue delay has been above `queue_delay_drain_threshold` for
+  // longer than `queue_delay_drain_period`, an attempt it made to drain the
+  // queues, and if that fails, resets the estimates.
+  FieldTrialParameter<TimeDelta> queue_delay_drain_period;
+  // Number of RTTs where the target rate is reduced to attempt to drain.
+  FieldTrialParameter<int> queue_delay_drain_rtts;
 
   // Padding is periodically used in order to increase target rate even if a
-  // stream does not produce a high enough rate.
-  FieldTrialParameter<TimeDelta> periodic_padding_interval;
-
-  // Duration padding is used when periodic padding start.
+  // stream does not produce a high enough rate. Time between periodic padding
+  // is at least this long.
+  FieldTrialParameter<TimeDelta> time_between_periodic_padding;
+  // Max duration padding is used when periodic padding start.
+  // Padding is stopped if congestion occur.
   FieldTrialParameter<TimeDelta> periodic_padding_duration;
+  // Padding is allowed to be used after this duration since the last
+  // time reference window was reduced but at least `periodic_padding_interval`
+  // must have passed since last time padding was used.
+  FieldTrialParameter<TimeDelta> allow_padding_after_last_congestion_time;
+  // If initial BWE probing is allowed, allow periodic probing for this duration
+  // even of no streams have been configured.
+  FieldTrialParameter<TimeDelta> initial_probing_duration;
+
+  // Factor multiplied by the current target rate to decide the pacing rate.
+  FieldTrialParameter<double> pacing_factor;
+
+  // Exponentially Weighted Moving Average (EWMA) factor for calculating average
+  // time feedback is delayed by the receiver. I.e the time from a packet is
+  // received until feedback is sent. If zero, this delay is ignored.
+  FieldTrialParameter<double> feedback_hold_time_avg_g;
+
+  // If the time since last reaction to congestion is larger than this, the
+  // pacing window is increased. I.e. packets are allowed to be sent in larger
+  // bursts.
+  FieldTrialParameter<TimeDelta>
+      allow_large_pacing_bursts_after_congestion_time;
 };
 
 }  // namespace webrtc

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -35,7 +33,8 @@ class NullHttpTransaction : public nsAHttpTransaction {
   NS_DECL_NSAHTTPTRANSACTION
 
   NullHttpTransaction(nsHttpConnectionInfo* ci,
-                      nsIInterfaceRequestor* callbacks, uint32_t caps);
+                      nsIInterfaceRequestor* callbacks, uint32_t caps,
+                      bool reportActivity = true);
 
   [[nodiscard]] bool Claim();
   void Unclaim();

@@ -1,0 +1,90 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+.asrouter-newtab-message {
+  background-color: var(--background-color-box);
+  box-sizing: border-box;
+  color: var(--text-color);
+  padding: var(--space-large);
+  border-radius: var(--border-radius-large);
+  position: relative;
+  overflow: hidden;
+}
+
+
+@media (min-width: 1122px) {
+  .asrouter-newtab-message {
+    max-width: 904px;
+  }
+}
+
+.dismiss-button {
+  position: absolute;
+  inset-inline-end: var(--space-medium);
+  inset-block-start: var(--space-medium);
+}
+
+.message-inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-medium);
+  align-items: flex-start;
+}
+
+.message-inner img {
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+}
+
+.message-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding-inline-end: var(--space-xxlarge);
+}
+
+.asrouter-newtab-message.no-dismiss .message-content {
+  padding-inline-end: 0;
+}
+
+.message-content h2 {
+  margin: 0;
+  font-size: var(--font-size-large);
+  font-weight: var(--font-weight-semibold);
+}
+
+.message-content p {
+  margin-block: var(--space-medium) 0;
+  color: var(--text-color-deemphasized);
+}
+
+.button-group {
+  margin-block-start: var(--space-medium);
+  justify-content: flex-start;
+}
+
+@media (min-width: 724px) {
+  .message-inner {
+    flex-direction: row;
+    gap: var(--space-xlarge);
+    align-items: stretch;
+  }
+
+  .message-inner img {
+    width: 98px;
+    height: 98px;
+  }
+
+  .message-content {
+    justify-content: space-between;
+  }
+}
+
+@media (min-width: 1122px) {
+  .message-inner img {
+    width: 140px;
+    height: 111px;
+  }
+}

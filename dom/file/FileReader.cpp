@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -415,10 +413,15 @@ void FileReader::ReadFileContent(Blob& aBlob, const nsAString& aCharset,
   // Binary Format doesn't need a post-processing of the data. Everything is
   // written directly into mResult.
   if (mDataFormat != FILE_AS_BINARY) {
+    CheckedInt<size_t> size(mTotal);
+    if (!size.isValid()) {
+      aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
+      return;
+    }
     if (mDataFormat == FILE_AS_ARRAYBUFFER) {
-      mFileData = js_pod_malloc<char>(mTotal);
+      mFileData = js_pod_malloc<char>(size.value());
     } else {
-      mFileData = (char*)malloc(mTotal);
+      mFileData = (char*)malloc(size.value());
     }
 
     if (!mFileData) {

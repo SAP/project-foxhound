@@ -449,139 +449,6 @@ async function getActualResult({
 }
 
 /**
- * Tests the `show_less_frequently` command for a given feature.
- *
- * @param {object} options
- *   Options object.
- * @param {SuggestFeature} options.feature
- *   The feature being tested.
- * @param {SuggestFeature} options.keyword
- *   The keyword to search for. Its length must be at least 3, and each prefix
- *   starting at `keyword.length - 3` must match a suggestion.
- * @param {object} options.expectedResult
- *   The result that is expected to match the keyword and its prefixes.
- * @param {string} options.minKeywordLengthPref
- *   The name of the pref for the min keyword length being tested.
- * @param {string} options.showLessFrequentlyCountPref
- *   The name of the pref for the "show less frequently" count being tested.
- */
-async function doShowLessFrequentlyTest({
-  feature,
-  keyword,
-  expectedResult,
-  minKeywordLengthPref,
-  showLessFrequentlyCountPref,
-}) {
-  let showLessFrequentlyCap = 3;
-
-  if (keyword.length < showLessFrequentlyCap) {
-    throw new Error(
-      "keyword must be long enough to 'Show less frequently' enough times"
-    );
-  }
-
-  await QuickSuggestTestUtils.withConfig({
-    config: { show_less_frequently_cap: showLessFrequentlyCap },
-    callback: async () => {
-      // Do `showLessFrequentlyCap` searches and trigger the
-      // `show_less_frequently` command after each one. In each iteration, the
-      // length of `searchString` increases by 1.
-      for (let count = 0; count < showLessFrequentlyCap; count++) {
-        let searchString = keyword.substring(
-          0,
-          keyword.length - showLessFrequentlyCap + count + 1
-        );
-
-        info(
-          "Doing search: " +
-            JSON.stringify({
-              count,
-              searchString,
-            })
-        );
-
-        // Check prefs and other values before searching.
-        Assert.equal(
-          UrlbarPrefs.get(minKeywordLengthPref),
-          count == 0 ? 0 : searchString.length,
-          "minKeywordLength pref should be correct before search " + count
-        );
-        Assert.equal(
-          feature.showLessFrequentlyCount,
-          count,
-          "showLessFrequentlyCount should be correct before search " + count
-        );
-        Assert.equal(
-          UrlbarPrefs.get(showLessFrequentlyCountPref),
-          count,
-          "showLessFrequentlyCount pref should be correct before search " +
-            count
-        );
-        Assert.ok(
-          feature.canShowLessFrequently,
-          "canShowLessFrequently should be correct before search " + count
-        );
-
-        // Do the search.
-        await check_results({
-          context: createContext(searchString, {
-            providers: [UrlbarProviderQuickSuggest.name],
-            isPrivate: false,
-          }),
-          matches: [expectedResult],
-        });
-
-        // Trigger the command.
-        triggerCommand({
-          feature,
-          searchString,
-          command: "show_less_frequently",
-          result: expectedResult,
-          expectedCountsByCall: {
-            acknowledgeFeedback: 1,
-            invalidateResultMenuCommands:
-              count == showLessFrequentlyCap - 1 ? 1 : 0,
-          },
-        });
-
-        // The same search should now match nothing.
-        await check_results({
-          context: createContext(searchString, {
-            providers: [UrlbarProviderQuickSuggest.name],
-            isPrivate: false,
-          }),
-          matches: [],
-        });
-      }
-
-      // Check prefs and other values now that all searches are done.
-      Assert.equal(
-        UrlbarPrefs.get(minKeywordLengthPref),
-        keyword.length + 1,
-        "minKeywordLength pref should be correct after all searches"
-      );
-      Assert.equal(
-        feature.showLessFrequentlyCount,
-        showLessFrequentlyCap,
-        "showLessFrequentlyCount should be correct after all searches"
-      );
-      Assert.equal(
-        UrlbarPrefs.get(showLessFrequentlyCountPref),
-        showLessFrequentlyCap,
-        "showLessFrequentlyCap pref should be correct after all searches"
-      );
-      Assert.ok(
-        !feature.canShowLessFrequently,
-        "canShowLessFrequently should be correct after all searches"
-      );
-    },
-  });
-
-  UrlbarPrefs.clear(minKeywordLengthPref);
-  UrlbarPrefs.clear(showLessFrequentlyCountPref);
-}
-
-/**
  * Queries the Rust component directly and checks the returned suggestions. The
  * point is to make sure the Rust backend passes the correct providers to the
  * Rust component depending on the types of enabled suggestions. Assuming the
@@ -635,6 +502,422 @@ async function doRustProvidersTests({ searchString, tests }) {
     }
     await QuickSuggestTestUtils.forceSync();
   }
+}
+
+/**
+ * Test for a feature's telemetry type.
+ *
+ * @param {object} options
+ *   Options object.
+ * @param {string} options.feature
+ *   The feature name. e.g. "AmpSuggestions"
+ * @param {Array} options.tests
+ *   Array of test objects: `{ source, expected }`
+ *
+ *   {object} source
+ *     The source of the telemetry type. e.g. "rust"
+ *   {Array} expected
+ *     The expected result. e.g. "adm_sponsored"
+ */
+async function doTelemetryTypeTest({ feature, tests }) {
+  for (let { source, expected } of tests) {
+    Assert.equal(
+      QuickSuggest.getFeature(feature).getSuggestionTelemetryType({
+        source,
+      }),
+      expected,
+      `Telemetry type should be '${expected}'`
+    );
+  }
+}
+
+/**
+ * Test whether the results are expected under specified conditions.
+ *
+ * @param {object} options
+ *   Options object.
+ *
+ * @param {object} options.env
+ *   The environment object.
+ *
+ *   {Array} prefs (optional)
+ *     Prefs that will be used as default in entire tests.
+ *     e.g. [["suggest.quicksuggest.sponsored", true]]
+ *   {Array} remoteSettingRecords (optional)
+ *     Dummy records of remote settings that is passed to
+ *     QuickSuggestTestUtils.setRemoteSettingsRecords().
+ *   {Array} merinoSuggestions (optional)
+ *     Dummy merino suggestions that will be used as the Merino mock server
+ *     suggestions.
+ *   {Array} additionalProvider (optional)
+ *     A provider that providers additional suggestions.
+ *     e.g.
+ *     {
+ *       name: "additionalProvider",
+ *       results: [new UrlbarResult(...), ...],
+ *     }
+ *
+ * @param {Array} options.tests
+ *   Array of test objects.
+ *
+ *   {string} description (optional)
+ *     The description displayed in info() before testing.
+ *   {Array} prefs (optional)
+ *     Prefs that will be used in this test.
+ *   {object} nimbus (optional)
+ *     Nimbus variables that will be used in this test.
+ *   {Array} histories (optional)
+ *     Additional histories that will be passed to PlacesTestUtils.addVisits().
+ *   {UrlbarQueryContext} context
+ *     The query context that will be passed to check_results().
+ *   {object} conditionalPayloadProperties (optional)
+ *     The properties that will be passed to check_results().
+ *   {Array} expected
+ *     The expected results that will be passed to check_results().
+ */
+async function doResultCheckTest({ env, tests }) {
+  // Setup
+  for (let [name, value] of env?.prefs ?? []) {
+    UrlbarPrefs.set(name, value);
+  }
+
+  await QuickSuggestTestUtils.setRemoteSettingsRecords(
+    env?.remoteSettingRecords ?? []
+  );
+
+  if (env?.merinoSuggestions) {
+    await MerinoTestUtils.server.start();
+    MerinoTestUtils.server.response.body.suggestions = env.merinoSuggestions;
+  }
+
+  let additionalProviderCleanup;
+  if (env?.additionalProvider) {
+    let provider = new UrlbarTestUtils.TestProvider(env.additionalProvider);
+    let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+    providersManager.registerProvider(provider);
+
+    additionalProviderCleanup = () => {
+      providersManager.unregisterProvider(provider);
+    };
+  }
+
+  await QuickSuggestTestUtils.forceSync();
+
+  // Test
+  for (let {
+    description,
+    prefs = [],
+    nimbus,
+    histories,
+    context,
+    conditionalPayloadProperties,
+    expected,
+  } of tests) {
+    if (description) {
+      info(description);
+    }
+    for (let [name, value] of prefs) {
+      UrlbarPrefs.set(name, value);
+    }
+
+    let cleanUpNimbus;
+    if (nimbus) {
+      cleanUpNimbus = await UrlbarTestUtils.initNimbusFeature(nimbus);
+    }
+
+    if (histories) {
+      await PlacesTestUtils.addVisits(histories);
+    }
+
+    await check_results({
+      context,
+      conditionalPayloadProperties,
+      matches: expected,
+    });
+
+    for (let [name] of prefs) {
+      UrlbarPrefs.clear(name);
+    }
+
+    cleanUpNimbus?.();
+
+    if (histories) {
+      await PlacesUtils.history.clear();
+    }
+  }
+
+  // Cleanup.
+  for (let [name] of env?.prefs ?? []) {
+    UrlbarPrefs.clear(name);
+  }
+  additionalProviderCleanup?.();
+  if (env?.merinoSuggestions) {
+    await MerinoTestUtils.server.stop();
+  }
+}
+
+/**
+ * Does show less frequently test.
+ *
+ * @param {object} options
+ *   Options object.
+ *
+ * @param {object} options.env
+ *   The environment object.
+ *
+ *   {Array} prefs (optional)
+ *     Prefs that will be used as default in entire tests.
+ *     e.g. [["suggest.quicksuggest.sponsored", true]]
+ *   {Array} remoteSettingRecords (optional)
+ *     Dummy records of remote settings that is passed to
+ *     QuickSuggestTestUtils.setRemoteSettingsRecords().
+ *
+ * @param {object} options.feature
+ *   The feature name want to test.
+ *
+ * @param {object} options.showLessFrequentlyCountPref
+ *   The showLessFrequentlyCount preference name for the feature.
+ *   e.g. "amp.showLessFrequentlyCount",
+ *
+ * @param {object} options.minKeywordLengthPref
+ *   The minKeywordLength preference name for the feature.
+ *   e.g. "amp.minKeywordLength",
+ *
+ * @param {Array} options.tests
+ *   Array of test objects.
+ *
+ *   {UrlbarQueryContext} context
+ *     The query context that will be passed to check_results().
+ *   {number} targetIndex
+ *     Index of result that will be executed the command.
+ *   {object} before
+ *     Expected result before executing the show less frequently command.
+ *   {Array} before.results
+ *     Expected results.
+ *   {object} after
+ *     Expected result after executing the show less frequently command.
+ *   {Array} after.results
+ *     Expected results.
+ *   {boolean} after.canShowLessFrequently
+ *     Expected canShowLessFrequently pref value.
+ *   {Number} after.showLessFrequentlyCount
+ *     Expected showLessFrequentlyCount pref value.
+ *   {Number} after.minKeywordLength
+ *     Expected minKeywordLength pref value.
+ */
+async function doShowLessFrequentlyTest({
+  feature,
+  showLessFrequentlyCountPref,
+  minKeywordLengthPref,
+  env,
+  tests,
+}) {
+  // Setup
+  for (let [name, value] of env?.prefs ?? []) {
+    UrlbarPrefs.set(name, value);
+  }
+
+  await QuickSuggestTestUtils.setRemoteSettingsRecords(
+    env?.remoteSettingRecords ?? []
+  );
+
+  UrlbarPrefs.set(showLessFrequentlyCountPref, 0);
+  UrlbarPrefs.set(minKeywordLengthPref, 0);
+
+  await QuickSuggestTestUtils.forceSync();
+
+  // Sanity check
+  let featureInstance = QuickSuggest.getFeature(feature);
+  Assert.equal(featureInstance.canShowLessFrequently, true);
+  Assert.equal(featureInstance.showLessFrequentlyCount, 0);
+
+  // Test
+  for (let { context, targetIndex, before, after } of tests) {
+    await check_results({
+      context,
+      matches: before.results,
+    });
+
+    triggerCommand({
+      result: context.results[targetIndex],
+      feature: featureInstance,
+      command: "show_less_frequently",
+      searchString: context.searchString,
+    });
+
+    Assert.equal(
+      featureInstance.canShowLessFrequently,
+      after.canShowLessFrequently
+    );
+    Assert.equal(
+      featureInstance.showLessFrequentlyCount,
+      after.showLessFrequentlyCount
+    );
+    Assert.equal(UrlbarPrefs.get(minKeywordLengthPref), after.minKeywordLength);
+    await check_results({
+      context,
+      matches: after.results,
+    });
+  }
+
+  for (let [name] of env?.prefs ?? []) {
+    UrlbarPrefs.clear(name);
+  }
+
+  UrlbarPrefs.clear(showLessFrequentlyCountPref);
+  UrlbarPrefs.clear(minKeywordLengthPref);
+  await QuickSuggestTestUtils.setConfig(QuickSuggestTestUtils.DEFAULT_CONFIG);
+}
+
+/**
+ * Does dismiss test.
+ *
+ * @param {object} options
+ *   Options object.
+ *
+ * @param {object} options.env
+ *   The environment object.
+ *
+ *   {Array} prefs (optional)
+ *     Prefs that will be used as default in entire tests.
+ *     e.g. [["suggest.quicksuggest.sponsored", true]]
+ *   {Array} remoteSettingRecords (optional)
+ *     Dummy records of remote settings that is passed to
+ *     QuickSuggestTestUtils.setRemoteSettingsRecords().
+ *
+ * @param {Array} options.tests
+ *   Array of test objects.
+ *
+ *   {UrlbarQueryContext} context
+ *     The query context that will be passed to check_results().
+ *   {object} conditionalPayloadProperties (optional)
+ *     The properties that will be passed to check_results().
+ *   {number} targetIndex
+ *     Index of result that will be executed the command.
+ *   {object} before
+ *     Expected result before executing the show less frequently command.
+ *   {Array} before.results
+ *     Expected results.
+ *   {object} after
+ *     Expected result after executing the show less frequently command.
+ *   {Array} after.results
+ *     Expected results.
+ */
+async function doDismissTest({ env, tests }) {
+  // Setup
+  for (let [name, value] of env?.prefs ?? []) {
+    UrlbarPrefs.set(name, value);
+  }
+
+  await QuickSuggestTestUtils.setRemoteSettingsRecords(
+    env?.remoteSettingRecords ?? []
+  );
+
+  await QuickSuggestTestUtils.forceSync();
+
+  // Test
+  for (let {
+    context,
+    conditionalPayloadProperties,
+    targetIndex,
+    before,
+    after,
+  } of tests) {
+    await check_results({
+      context,
+      conditionalPayloadProperties,
+      matches: before.results,
+    });
+
+    // Dismiss it.
+    let target = context.results[targetIndex];
+    await QuickSuggest.dismissResult(target);
+    Assert.ok(
+      await QuickSuggest.isResultDismissed(target),
+      "isResultDismissed should return true"
+    );
+    Assert.ok(
+      await QuickSuggest.canClearDismissedSuggestions(),
+      "canClearDismissedSuggestions should return true"
+    );
+
+    // Do another search. The result shouldn't be added.
+    await check_results({
+      context,
+      conditionalPayloadProperties,
+      matches: after.results,
+    });
+
+    await QuickSuggest.clearDismissedSuggestions();
+    Assert.ok(
+      !(await QuickSuggest.isResultDismissed(target)),
+      "isResultDismissed should return false"
+    );
+    Assert.ok(
+      !(await QuickSuggest.canClearDismissedSuggestions()),
+      "canClearDismissedSuggestions should return false"
+    );
+  }
+
+  for (let [name] of env?.prefs ?? []) {
+    UrlbarPrefs.clear(name);
+  }
+}
+
+/**
+ * Test the results that Rust backend returns.
+ *
+ * @param {object} options
+ *   Options object.
+ *
+ * @param {object} options.env
+ *   The environment object.
+ *
+ *   {Array} prefs (optional)
+ *     Prefs that will be used as default in entire tests.
+ *     e.g. [["suggest.quicksuggest.sponsored", true]]
+ *   {Array} remoteSettingRecords (optional)
+ *     Dummy records of remote settings that is passed to
+ *     QuickSuggestTestUtils.setRemoteSettingsRecords().
+ *
+ * @param {Array} options.tests
+ *   Array of test objects.
+ *
+ *   {Array} prefs
+ *     Prefs that will be used in this test.
+ *   {string} input
+ *     The input query that will be passed to Rust backend.
+ *   {Array} expected
+ *     Expected URLs as string array.
+ */
+async function doRustBackendTest({ env, tests }) {
+  // Setup
+  for (let [name, value] of env?.prefs ?? []) {
+    UrlbarPrefs.set(name, value);
+  }
+  await QuickSuggestTestUtils.setRemoteSettingsRecords(
+    env?.remoteSettingRecords ?? []
+  );
+  await QuickSuggestTestUtils.forceSync();
+
+  // Test
+  for (let { prefs, input, expected } of tests) {
+    for (let [name, value] of prefs) {
+      UrlbarPrefs.set(name, value);
+    }
+
+    let suggestions = await QuickSuggest.rustBackend.query(input);
+    Assert.deepEqual(suggestions.map(s => s.url).sort(), expected.sort());
+
+    for (let [name] of prefs) {
+      UrlbarPrefs.clear(name);
+    }
+  }
+
+  for (let [name] of env?.prefs ?? []) {
+    UrlbarPrefs.clear(name);
+  }
+  await QuickSuggestTestUtils.forceSync();
 }
 
 /**

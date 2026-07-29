@@ -112,7 +112,7 @@ const dismissDialog = async (tab, dialog, shouldAccept) => {
 const cleanup = async (tab, cardSelector) => {
   // Instead of manually inserting text into the input in the content document,
   // just disconnect the beforeunload listener and close the tab.
-  await tab.linkedBrowser.ownerGlobal.SpecialPowers.spawn(
+  await tab.linkedBrowser.documentGlobal.SpecialPowers.spawn(
     tab.linkedBrowser,
     [cardSelector],
     async selector => {

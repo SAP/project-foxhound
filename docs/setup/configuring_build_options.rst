@@ -228,6 +228,16 @@ using a similar way to handle caching and dependencies.
       When using sccache, because of the operation on the files and storage,
       the initial build of Firefox will be slower.
 
+buildcache
+^^^^^^^^^^
+
+`BuildCache <https://gitlab.com/bits-n-bites/buildcache>`__ is another compiler
+caching tool that can speed up subsequent C / C++ and Rust builds by caching
+compilation results. Unlike ``ccache``, it also supports caching Rust artifacts.
+
+In order to enable ``buildcache`` for Firefox builds, you can use
+``ac_add_options --with-ccache=buildcache``.
+
 Optimization
 ^^^^^^^^^^^^
 

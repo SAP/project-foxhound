@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -27,12 +25,14 @@
 #include "jit/RematerializedFrame.h"
 #include "jit/SharedICRegisters.h"
 #include "jit/Simulator.h"
+#include "jit/VMFunctions.h"
 #include "js/friend/StackLimits.h"  // js::AutoCheckRecursionLimit, js::ReportOverRecursed
 #include "js/Utility.h"
 #include "proxy/ScriptedProxyHandler.h"
 #include "util/Memory.h"
 #include "vm/ArgumentsObject.h"
 #include "vm/BytecodeUtil.h"
+#include "vm/Iteration.h"
 #include "vm/JitActivation.h"
 
 #include "jit/JitFrames-inl.h"
@@ -639,8 +639,8 @@ bool BaselineStackBuilder::buildBaselineFrame() {
   ArgumentsObject* argsObj = nullptr;
   if (script_->needsArgsObj()) {
     Value maybeArgsObj = iter_.read();
-    MOZ_ASSERT(maybeArgsObj.isObject() || maybeArgsObj.isUndefined() ||
-               maybeArgsObj.isMagic(JS_OPTIMIZED_OUT));
+    MOZ_RELEASE_ASSERT(maybeArgsObj.isObject() || maybeArgsObj.isUndefined() ||
+                       maybeArgsObj.isMagic(JS_OPTIMIZED_OUT));
     if (maybeArgsObj.isObject()) {
       argsObj = &maybeArgsObj.toObject().as<ArgumentsObject>();
     }
@@ -913,10 +913,29 @@ bool BaselineStackBuilder::buildExpressionStack() {
             "      Checking that intermediate value is an object");
     Value returnVal;
     if (iter_.tryRead(&returnVal) && !returnVal.isObject()) {
-      MOZ_ASSERT(!returnVal.isMagic());
+      MOZ_RELEASE_ASSERT(!returnVal.isMagic());
       JitSpew(JitSpew_BaselineBailouts,
               "      Not an object! Overwriting bailout kind");
       bailoutKind_ = BailoutKind::ThrowCheckIsObject;
+    }
+  }
+
+  if (resumeMode() == ResumeMode::ResumeAfterObjectKeys) {
+    JitSpew(JitSpew_BaselineBailouts,
+            "      Converting Object.keys iterator to keys array");
+    // The result slot holds the internal PropertyIteratorObject produced by the
+    // Object.keys scalar-replacement optimization. Convert it back to the keys
+    // array so the internal iterator is never exposed to the baseline frame.
+    Value iterVal;
+    if (peekLastValue(&iterVal) && !iterVal.isMagic(JS_OPTIMIZED_OUT)) {
+      MOZ_RELEASE_ASSERT(iterVal.isObject());
+      MOZ_RELEASE_ASSERT(iterVal.toObject().is<PropertyIteratorObject>());
+      RootedObject iterObj(cx_, &iterVal.toObject());
+      JSObject* keys = ObjectKeysFromIterator(cx_, iterObj);
+      if (!keys) {
+        return false;
+      }
+      valuePointerAtStackOffset(0).set(ObjectValue(*keys));
     }
   }
 
@@ -1752,7 +1771,7 @@ static bool CopyFromRematerializedFrame(JSContext* cx, JitActivation* act,
   // in InitFromBailout.
   if (rematFrame->isDebuggee()) {
     frame->setIsDebuggee();
-    return DebugAPI::handleIonBailout(cx, rematFrame, frame);
+    DebugAPI::handleIonBailout(cx, rematFrame, frame);
   }
 
   return true;

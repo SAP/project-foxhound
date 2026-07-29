@@ -1,0 +1,214 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test Web Serial API - Port Information and Filters</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="serial_test_utils.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script>
+
+"use strict";
+
+SimpleTest.waitForExplicitFinish();
+
+SimpleTest.registerCleanupFunction(cleanupSerialPorts);
+
+add_task(async function testGetInfoAfterOpen() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const info = port.getInfo();
+  ok(info, "getInfo() should work after opening port");
+
+  await port.close();
+});
+
+add_task(async function testGetInfoFields() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  const info = port.getInfo();
+  is(info.usbVendorId, 0x2341, "expected usbVendorId from port");
+  is(info.usbProductId, 0x0043, "expected usbProductId from port");
+  ok(!("bluetoothServiceClassId" in info), "expected port should not have bluetooth info");
+});
+
+add_task(async function testGetInfoFieldsWithFilterVendorId() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [{usbVendorId: 0x0403}] });
+
+  const info = port.getInfo();
+  is(info.usbVendorId, 0x0403, "expected usbVendorId from port");
+  is(info.usbProductId, 0x6002, "expected usbProductId from port");
+  ok(!("bluetoothServiceClassId" in info), "expected port should not have bluetooth info");
+});
+
+add_task(async function testGetInfoFieldsWithFilterNonexistentVendorId() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  await Assert.rejects(
+    navigator.serial.requestPort({ filters: [{usbVendorId: 0xabcd}] }),
+    /NotFoundError/,
+    "requestPort() should throw NotFoundError for nonexistent vendor ID"
+  );
+});
+
+add_task(async function testGetInfoFieldsWithFilterProductIdFails() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  await Assert.rejects(
+    navigator.serial.requestPort({ filters: [{usbProductId: 0x7523}] }),
+    /TypeError/,
+    "requestPort() should throw TypeError for filter with only productId"
+  );
+});
+
+add_task(async function testGetInfoFieldsWithFilterUnknownPropertyFails() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  await Assert.rejects(
+    navigator.serial.requestPort({ filters: [{unknownProperty: 0xaaaa}] }),
+    /TypeError/,
+    "requestPort() should throw TypeError for filter with unknown property"
+  );
+});
+
+add_task(async function testGetInfoFieldsWithFilterProductIdAndVendorId() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [{usbVendorId: 0x1a86, usbProductId: 0x7523}] });
+
+  const info = port.getInfo();
+  is(info.usbVendorId, 0x1a86, "expected usbVendorId from port");
+  is(info.usbProductId, 0x7523, "expected usbProductId from port");
+  ok(!("bluetoothServiceClassId" in info), "expected port should not have bluetooth info");
+});
+
+add_task(async function testGetInfoConsistency() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  const info1 = port.getInfo();
+  const info2 = port.getInfo();
+
+  is(JSON.stringify(info1), JSON.stringify(info2),
+     "Multiple calls to getInfo() should return consistent data");
+});
+
+add_task(async function testGetInfoPersistsAcrossOpenClose() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  const infoBefore = port.getInfo();
+  await port.open({ baudRate: 9600 });
+  const infoDuring = port.getInfo();
+  await port.close();
+  const infoAfter = port.getInfo();
+
+  is(JSON.stringify(infoBefore), JSON.stringify(infoDuring),
+     "getInfo() should return same data before and during open");
+  is(JSON.stringify(infoDuring), JSON.stringify(infoAfter),
+     "getInfo() should return same data during and after close");
+});
+
+add_task(async function testGetInfoNotAffectedByOperations() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const infoBefore = port.getInfo();
+
+  await port.setSignals({ dataTerminalReady: true });
+  const infoAfterSignals = port.getInfo();
+
+  is(JSON.stringify(infoBefore), JSON.stringify(infoAfterSignals),
+     "getInfo() should not be affected by signal operations");
+
+  await port.close();
+});
+
+add_task(async function testGetInfoImmutableReturn() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  const info = port.getInfo();
+  const originalVendorId = info.usbVendorId;
+
+  info.usbVendorId = 0x9999;
+
+  const info2 = port.getInfo();
+  is(info2.usbVendorId, originalVendorId,
+     "Modifying returned object should not affect future calls");
+});
+
+add_task(async function testFirstFilterMatches() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+
+  const port = await navigator.serial.requestPort({
+    filters: [
+      {usbVendorId: 0x2341},
+      {usbVendorId: 0xaaaa}, // this does not match anything in TestSerialPlatformService
+      {usbVendorId: 0xbbbb},
+    ]
+  });
+
+  const info = port.getInfo();
+  is(info.usbVendorId, 0x2341, "port matches expected vendorId");
+  is(info.usbProductId, 0x0043, "port matches expected productId");
+});
+
+add_task(async function testSecondFilterMatches() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+
+  const port = await navigator.serial.requestPort({
+    filters: [
+      {usbVendorId: 0xaaaa}, // this does not match anything in TestSerialPlatformService
+      {usbVendorId: 0x1a86, usbProductId: 0x7523}
+    ]
+  });
+
+  const info = port.getInfo();
+  is(info.usbVendorId, 0x1a86, "port matches expected vendorId");
+  is(info.usbProductId, 0x7523, "port matches expected productId");
+});
+
+add_task(async function testSingleFilter() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+
+  const port = await navigator.serial.requestPort({
+    filters: [
+      {usbVendorId: 0x1a86, usbProductId: 0x7523}
+    ]
+  });
+
+  const info = port.getInfo();
+  is(info.usbVendorId, 0x1a86, "Port should match vendorId");
+  is(info.usbProductId, 0x7523, "Port should match productId");
+});
+
+add_task(async function testMultipleFiltersNoMatch() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+
+  await Assert.rejects(
+    navigator.serial.requestPort({
+      filters: [
+        {usbVendorId: 0xaaaa},
+        {usbVendorId: 0xbbbb},
+      ]
+    }),
+    /NotFoundError/,
+    "Should throw NotFoundError when no ports match"
+  );
+});
+
+add_task(async function testEmptyFiltersMatchesAll() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  ok(port, "requestPort with empty filters should return a port");
+});
+
+</script>
+</body>
+</html>

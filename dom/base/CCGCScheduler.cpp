@@ -42,7 +42,7 @@ MOZ_RUNINIT const TimeDuration kMaxCCLockedoutTime =
  * ==========================
  *
  * See also GC Scheduling from SpiderMonkey's perspective here:
- * https://searchfox.org/mozilla-central/source/js/src/gc/Scheduling.h
+ * https://searchfox.org/firefox-main/source/js/src/gc/Scheduling.h
  *
  * From Firefox's perspective GCs can start in 5 different ways:
  *

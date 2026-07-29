@@ -1,19 +1,37 @@
 import re
 from collections import defaultdict
 
+import buildconfig
 
-def parse_defaults(path):
+
+def parse_defaults(path, is_nightly: bool):
     pattern = re.compile(r"(DESKTOP_DEFAULT|ANDROID_DEFAULT)\((.+)\)")
 
-    contents = ""
     with open(path) as f:
         contents = f.read()
 
-    defaults = defaultdict(lambda: [])
-    for match in pattern.finditer(contents):
-        platform = match.group(1)
-        target = match.group(2)
-        defaults[platform].append(target)
+    defaults = defaultdict(list)
+
+    inside_nightly = False
+    for rawline in contents.splitlines():
+        line = rawline.strip()
+
+        if line.startswith("#ifdef NIGHTLY_BUILD"):
+            inside_nightly = True
+            continue
+        if line.startswith("#endif"):
+            inside_nightly = False
+            continue
+
+        # Skip lines inside NIGHTLY_BUILD block if not nightly
+        if inside_nightly and not is_nightly:
+            continue
+
+        match = pattern.search(line)
+        if match:
+            platform = match.group(1)
+            target = match.group(2)
+            defaults[platform].append(target)
 
     return defaults
 
@@ -63,13 +81,23 @@ def write_targets(output, targets):
 
 
 def main(output, targets_path, defaults_base_path, defaults_fpp_path):
+    is_nightly = buildconfig.substs["MOZ_UPDATE_CHANNEL"] not in (
+        "beta",
+        "release",
+        "esr",
+    )
     output.write("// This is a generated file. Please do not edit.\n")
     output.write(
         f"// See extract_rfp_targets.py, {targets_path}, {defaults_base_path}, {defaults_fpp_path} files instead.\n"
+    )
+    output.write(
+        f"// Update channel is {buildconfig.substs['MOZ_UPDATE_CHANNEL']}, classified as{'' if is_nightly else ' not'} nightly\n\n"
     )
 
     write_targets(output, parse_targets(targets_path))
     output.write("\n")
     write_defaults(
-        output, parse_defaults(defaults_base_path), parse_defaults(defaults_fpp_path)
+        output,
+        parse_defaults(defaults_base_path, is_nightly),
+        parse_defaults(defaults_fpp_path, is_nightly),
     )

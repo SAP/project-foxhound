@@ -28,17 +28,17 @@ runNetworkTest(() => {
 
   // check various ports on the blocklist
   makePC({ iceServers: [
-    { urls:"turn:[::1]:6666", username:"p", credential:"p" }] }, "NS_ERROR_UNEXPECTED");
+    { urls:"turn:[::1]:6666", username:"p", credential:"p" }] }, "SyntaxError");
   makePC({ iceServers: [
     { urls:"turns:localhost:6667?transport=udp", username:"p", credential:"p" }] },
-    "NS_ERROR_UNEXPECTED");
+    "SyntaxError");
   makePC({ iceServers: [
-    { urls:"stun:localhost:21", foo:"" }] }, "NS_ERROR_UNEXPECTED");
+    { urls:"stun:localhost:21", foo:"" }] }, "SyntaxError");
   makePC({ iceServers: [
-    { urls:"stun:[::1]:22", foo:"" }] }, "NS_ERROR_UNEXPECTED");
+    { urls:"stun:[::1]:22", foo:"" }] }, "SyntaxError");
   makePC({ iceServers: [
     { urls:"turn:localhost:5060", username:"p", credential:"p" }] },
-    "NS_ERROR_UNEXPECTED");
+    "SyntaxError");
 
   // check various ports on the good list for webrtc (or default port)
   makePC({ iceServers: [

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,6 +18,7 @@ static const char SandboxPolicyGPU[] = R"SANDBOX_LITERAL(
   (define crashPort (param "CRASH_PORT"))
   (define macosVersion (string->number (param "MAC_OS_VERSION")))
   (define isRosettaTranslated (param "IS_ROSETTA_TRANSLATED"))
+  (define allowRemoteAppleImageIO (param "ALLOW_REMOTE_APPLE_IMAGEIO"))
 
   (define (moz-deny feature)
     (if (string=? shouldLog "TRUE")
@@ -123,10 +123,13 @@ static const char SandboxPolicyGPU[] = R"SANDBOX_LITERAL(
     (global-name "com.apple.CARenderServer")
     (global-name "com.apple.windowserver.active")
     (global-name "com.apple.MTLCompilerService")
-    (global-name "com.apple.CARenderServer")
     (global-name "com.apple.CoreDisplay.master")
     (global-name "com.apple.CoreDisplay.Notification")
     (global-name "com.apple.cvmsServ"))
+
+  (if (string=? allowRemoteAppleImageIO "TRUE")
+    (allow mach-lookup
+      (global-name "com.apple.ImageIOXPCService")))
 
   ; Allow access to defaults services
   (allow mach-lookup

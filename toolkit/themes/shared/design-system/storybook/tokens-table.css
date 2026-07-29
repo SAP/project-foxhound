@@ -159,7 +159,7 @@ input[type="search"] {
     margin: 0;
     padding: var(--space-small);
     font-size: var(--font-size-large);
-    font-weight: var(--heading-font-weight);
+    font-weight: var(--font-weight-heading);
     text-transform: uppercase;
     color: var(--text-color);
     display: inline-block;

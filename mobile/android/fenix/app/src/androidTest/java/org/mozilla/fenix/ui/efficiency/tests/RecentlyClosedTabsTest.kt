@@ -4,11 +4,13 @@
 
 package org.mozilla.fenix.ui.efficiency.tests
 
+import org.junit.Ignore
 import org.junit.Test
 import org.mozilla.fenix.ui.efficiency.helpers.BaseTest
 
 class RecentlyClosedTabsTest : BaseTest() {
 
+    @Ignore("Covered by verifyNavigationReachability[0: RecentlyClosedTabsPage (TBD) — Navigation Reachability]")
     @Test
     fun verifyEmptyRecentlyClosedTabsSectionTest() {
         on.recentlyClosedTabs.navigateToPage()

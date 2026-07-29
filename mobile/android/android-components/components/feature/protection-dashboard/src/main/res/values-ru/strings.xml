@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this file,
+  You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources>
+  <!-- Title shown in the protection dashboard indicating the user is protected -->
+  <string name="mozac_protections_dashboard_youre_protected">Вы защищены</string>
+  <plurals name="mozac_protections_dashboard_trackers_blocked_this_week">
+    <!--
+      Label shown below the tracker count in the dashboard. The count is displayed separately
+      above this string and is used to select the correct plural form. Do not include the number in
+      the translation.
+    -->
+    <item quantity="one">На этой неделе заблокирован трекер</item>
+    <item quantity="few">На этой неделе заблокированы трекеры</item>
+    <item quantity="other">На этой неделе заблокированы трекеры</item>
+  </plurals>
+  <plurals name="mozac_protections_dashboard_data_saved">
+    <!-- Label showing data saved in megabytes. %1$d is the number of MB saved -->
+    <item quantity="one">Сэкономлен %1$d МБ</item>
+    <item quantity="few">Сэкономлено %1$d МБ</item>
+    <item quantity="other">Сэкономлено %1$d МБ</item>
+  </plurals>
+  <!-- Section header for tracker category breakdown -->
+  <string name="protections_dashboard_where_they_came_from">Откуда они появились</string>
+  <!-- Tracker category: Advertising trackers -->
+  <string name="protections_dashboard_category_ads">Реклама</string>
+  <!-- Tracker category: Analytics trackers -->
+  <string name="protections_dashboard_category_analytics">Аналитика</string>
+  <!-- Tracker category: Social media trackers -->
+  <string name="protections_dashboard_category_social">Соцсети</string>
+  <!-- Tracker category: Other trackers -->
+  <string name="protections_dashboard_category_others">Другое</string>
+  <!-- Title shown in the protection dashboard header next to the shield icon -->
+  <string name="mozac_protections_dashboard_trackers_blocked_this_week_title">На этой неделе заблокированы трекеры</string>
+  <!--
+    Title shown when no trackers have been blocked yet
+    %1$s will be replaced by the app name (e.g. Firefox Focus)
+  -->
+  <string name="mozac_protections_dashboard_empty_title">%1$s блокирует трекеры во время вашего веб-сёрфинга.</string>
+  <!-- Subtitle shown when no trackers have been blocked yet -->
+  <string name="mozac_protections_dashboard_empty_subtitle">Вы увидите их здесь.</string>
+  <plurals name="mozac_protections_dashboard_total_blocked_since_2">
+    <!--
+      Footer line shown in the dashboard summarizing total trackers blocked
+      since a specific date. %1$d is the trackers count number (e.g. 123).
+      %2$s is the formatted date (e.g. "February 23, 2026").
+    -->
+    <item quantity="one">С %2$s заблокирован %1$d трекер</item>
+    <item quantity="few">С %2$s заблокировано %1$d трекера</item>
+    <item quantity="other">С %2$s заблокировано %1$d трекеров</item>
+  </plurals>
+</resources>

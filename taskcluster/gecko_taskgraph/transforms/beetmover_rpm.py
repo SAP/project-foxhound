@@ -51,7 +51,6 @@ def beetmover_rpm(config, tasks):
         repo_action_scope = get_beetmover_repo_action_scope(config)
 
         attributes = {
-            "required_signoffs": ["mar-signing"],
             "shippable": True,
             "shipping_product": product,
         }

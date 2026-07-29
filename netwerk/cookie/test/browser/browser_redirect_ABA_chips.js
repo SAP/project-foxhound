@@ -17,7 +17,7 @@ add_setup(async () => {
     set: [
       [
         "network.cookie.cookieBehavior",
-        Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+        Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
       ],
       ["network.cookie.CHIPS.enabled", true],
     ],

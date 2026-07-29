@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -85,11 +83,7 @@ void ServerTimingParser::Parse() {
       // This is true whether or not the value makes any sense (or, indeed, if
       // there even is a value).
       if (currentName.LowerCaseEqualsASCII("dur") && !foundDuration) {
-        if (currentValue.BeginReading()) {
-          timingHeader->SetDuration(ParseDouble(currentValue));
-        } else {
-          timingHeader->SetDuration(0.0);
-        }
+        timingHeader->SetDuration(ParseDouble(currentValue));
         foundDuration = true;
       } else if (currentName.LowerCaseEqualsASCII("desc") &&
                  !foundDescription) {

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,11 +17,13 @@ NS_IMPL_ISUPPORTS(RemotePrintJobChild, nsIWebProgressListener)
 RemotePrintJobChild::RemotePrintJobChild() = default;
 
 nsresult RemotePrintJobChild::InitializePrint(const nsString& aDocumentTitle,
+                                              uint64_t aBrowsingContextId,
                                               const int32_t& aStartPage,
                                               const int32_t& aEndPage) {
   // Print initialization can sometimes display a dialog in the parent, so we
   // need to spin a nested event loop until initialization completes.
-  (void)SendInitializePrint(aDocumentTitle, aStartPage, aEndPage);
+  (void)SendInitializePrint(aDocumentTitle, aBrowsingContextId, aStartPage,
+                            aEndPage);
   mozilla::SpinEventLoopUntil("RemotePrintJobChild::InitializePrint"_ns,
                               [&]() { return mPrintInitialized; });
 

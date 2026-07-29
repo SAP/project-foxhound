@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,14 +5,13 @@
 #include "ADTSDecoder.h"
 
 #include "MediaContainerType.h"
-#include "PDMFactory.h"
+#include "PDMFactorySupport.h"
 
 namespace mozilla {
 
 /* static */
 bool ADTSDecoder::IsEnabled() {
-  RefPtr<PDMFactory> platform = new PDMFactory();
-  return !platform->SupportsMimeType("audio/mp4a-latm"_ns).isEmpty();
+  return !PDMFactorySupport::IsTypeSupported("audio/mp4a-latm"_ns).isEmpty();
 }
 
 /* static */

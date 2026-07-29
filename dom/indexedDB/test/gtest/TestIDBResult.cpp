@@ -21,7 +21,7 @@ TEST(IDBResultTest, Expand)
 {
   IDBResult<int, IDBSpecialValue::Failure> narrow{
       mozilla::Err(SpecialValues::Failure)};
-  IDBResult<int, IDBSpecialValue::Failure, IDBSpecialValue::Invalid> wide{
+  IDBResult<int, IDBSpecialValue::Failure, IDBSpecialValue::InvalidValue> wide{
       narrow.propagateErr()};
   EXPECT_TRUE(wide.isErr() && wide.inspectErr().Is(SpecialValues::Failure));
 }

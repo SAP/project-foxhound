@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -90,8 +88,7 @@ template <typename T>
         aIPCResponse.metadata().principalInfo().ref()));
   }
 
-  nsAutoCString bodyBlobURISpec(aIPCResponse.metadata().bodyBlobURISpec());
-  response->SetBodyBlobURISpec(bodyBlobURISpec);
+  response->SetBodyBlobImpl(aIPCResponse.metadata().bodyBlobImpl());
   nsAutoString bodyLocalPath(aIPCResponse.metadata().bodyLocalPath());
   response->SetBodyLocalPath(bodyLocalPath);
 
@@ -131,25 +128,27 @@ InternalResponseMetadata InternalResponse::GetMetadata() {
   Maybe<mozilla::ipc::PrincipalInfo> principalInfo =
       mPrincipalInfo ? Some(*mPrincipalInfo) : Nothing();
 
-  nsAutoCString bodyBlobURISpec(BodyBlobURISpec());
+  RefPtr<BlobImpl> bodyBlobImpl(BodyBlobImpl());
   nsAutoString bodyLocalPath(BodyLocalPath());
 
   // Note: all the arguments are copied rather than moved, which would be more
   // efficient, because there's no move-friendly constructor generated.
   nsCOMPtr<nsITransportSecurityInfo> securityInfo(mChannelInfo.SecurityInfo());
   return InternalResponseMetadata(
-      mType, GetUnfilteredURLList(), GetUnfilteredStatus(),
+      mType, GetUnfilteredURLList().Clone(), GetUnfilteredStatus(),
       GetUnfilteredStatusText(), headersGuard, headers, mErrorCode,
-      GetAlternativeDataType(), securityInfo, principalInfo, bodyBlobURISpec,
+      GetAlternativeDataType(), securityInfo, principalInfo, bodyBlobImpl,
       bodyLocalPath, GetCredentialsMode());
 }
 
 void InternalResponse::ToChildToParentInternalResponse(
-    ChildToParentInternalResponse* aIPCResponse,
-    mozilla::ipc::PBackgroundChild* aManager) {
+    ChildToParentInternalResponse* aIPCResponse) {
   *aIPCResponse = ChildToParentInternalResponse(GetMetadata(), Nothing(),
                                                 UNKNOWN_BODY_SIZE, Nothing());
+}
 
+void InternalResponse::SerializeChildToParentInternalResponseBody(
+    ChildToParentInternalResponse* aIPCResponse) {
   nsCOMPtr<nsIInputStream> body;
   int64_t bodySize;
   GetUnfilteredBody(getter_AddRefs(body), &bodySize);

@@ -12,11 +12,8 @@ var CSS_URL = `${URL_ROOT_SSL}doc_theme.css`;
 async function viewSource() {
   const toolbox = await openNewTabAndToolbox(URL);
 
-  const fileFound = await toolbox.viewSourceInStyleEditorByURL(CSS_URL, 2);
-  ok(
-    fileFound,
-    "viewSourceInStyleEditorByURL should resolve to true if source found."
-  );
+  const fileFound = await toolbox.viewStyleSourceByURL(CSS_URL, 2);
+  ok(fileFound, "viewStyleSourceByURL should resolve to true if source found.");
 
   const stylePanel = toolbox.getPanel("styleeditor");
   ok(stylePanel, "The style editor panel was opened.");

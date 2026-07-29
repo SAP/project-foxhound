@@ -16,6 +16,7 @@ use crate::values::computed::Filter as ComputedFilter;
 use crate::values::computed::NonNegativeLength as ComputedNonNegativeLength;
 use crate::values::computed::NonNegativeNumber as ComputedNonNegativeNumber;
 use crate::values::computed::Number as ComputedNumber;
+use crate::values::computed::NumberOrPercentage as ComputedNumberOrPercentage;
 use crate::values::computed::ZeroToOneNumber as ComputedZeroToOneNumber;
 use crate::values::computed::{Context, ToComputedValue};
 use crate::values::generics::effects::BoxShadow as GenericBoxShadow;
@@ -52,15 +53,15 @@ pub use self::SpecifiedFilter as Filter;
 pub struct FilterFactor(NumberOrPercentage);
 
 impl FilterFactor {
-    fn to_number(&self) -> Number {
-        self.0.to_number()
+    fn to_computed_value_without_context(&self) -> Result<ComputedNumberOrPercentage, ()> {
+        self.0.to_computed_value_without_context()
     }
 }
 
 impl ToComputedValue for FilterFactor {
     type ComputedValue = ComputedNumber;
-    fn to_computed_value(&self, _: &Context) -> Self::ComputedValue {
-        self.0.to_number().get()
+    fn to_computed_value(&self, context: &Context) -> Self::ComputedValue {
+        self.0.to_computed_value(context).value()
     }
     fn from_computed_value(computed: &Self::ComputedValue) -> Self {
         Self(NumberOrPercentage::Number(Number::new(*computed)))
@@ -71,10 +72,14 @@ impl ToComputedValue for FilterFactor {
 #[inline]
 fn clamp_to_one(number: NumberOrPercentage) -> NumberOrPercentage {
     match number {
-        NumberOrPercentage::Percentage(percent) => {
-            NumberOrPercentage::Percentage(percent.clamp_to_hundred())
+        NumberOrPercentage::Percentage(mut percent) => {
+            percent.clamp_to_hundred();
+            NumberOrPercentage::Percentage(percent)
         },
-        NumberOrPercentage::Number(number) => NumberOrPercentage::Number(number.clamp_to_one()),
+        NumberOrPercentage::Number(mut number) => {
+            number.clamp_to_one();
+            NumberOrPercentage::Number(number)
+        },
     }
 }
 
@@ -216,41 +221,49 @@ impl Filter {
             Filter::Blur(ref length) => Ok(ComputedFilter::Blur(ComputedNonNegativeLength::new(
                 length.0.to_computed_pixel_length_without_context()?,
             ))),
-            Filter::Brightness(ref factor) => Ok(ComputedFilter::Brightness(
-                ComputedNonNegativeNumber::from(factor.0.to_number().get()),
-            )),
-            Filter::Contrast(ref factor) => Ok(ComputedFilter::Contrast(
-                ComputedNonNegativeNumber::from(factor.0.to_number().get()),
-            )),
-            Filter::Grayscale(ref factor) => Ok(ComputedFilter::Grayscale(
-                ComputedZeroToOneNumber::from(factor.0.to_number().get()),
-            )),
+            Filter::Brightness(ref factor) => {
+                Ok(ComputedFilter::Brightness(ComputedNonNegativeNumber::from(
+                    factor.0.to_computed_value_without_context()?.value(),
+                )))
+            },
+            Filter::Contrast(ref factor) => {
+                Ok(ComputedFilter::Contrast(ComputedNonNegativeNumber::from(
+                    factor.0.to_computed_value_without_context()?.value(),
+                )))
+            },
+            Filter::Grayscale(ref factor) => {
+                Ok(ComputedFilter::Grayscale(ComputedZeroToOneNumber::from(
+                    factor.0.to_computed_value_without_context()?.value(),
+                )))
+            },
             Filter::HueRotate(ref angle) => Ok(ComputedFilter::HueRotate(
-                ComputedAngle::from_degrees(angle.degrees()),
+                ComputedAngle::from_degrees(angle.degrees().ok_or(())?),
             )),
-            Filter::Invert(ref factor) => Ok(ComputedFilter::Invert(
-                ComputedZeroToOneNumber::from(factor.0.to_number().get()),
-            )),
-            Filter::Opacity(ref factor) => Ok(ComputedFilter::Opacity(
-                ComputedZeroToOneNumber::from(factor.0.to_number().get()),
-            )),
-            Filter::Saturate(ref factor) => Ok(ComputedFilter::Saturate(
-                ComputedNonNegativeNumber::from(factor.0.to_number().get()),
-            )),
+            Filter::Invert(ref factor) => {
+                Ok(ComputedFilter::Invert(ComputedZeroToOneNumber::from(
+                    factor.0.to_computed_value_without_context()?.value(),
+                )))
+            },
+            Filter::Opacity(ref factor) => {
+                Ok(ComputedFilter::Opacity(ComputedZeroToOneNumber::from(
+                    factor.0.to_computed_value_without_context()?.value(),
+                )))
+            },
+            Filter::Saturate(ref factor) => {
+                Ok(ComputedFilter::Saturate(ComputedNonNegativeNumber::from(
+                    factor.0.to_computed_value_without_context()?.value(),
+                )))
+            },
             Filter::Sepia(ref factor) => Ok(ComputedFilter::Sepia(ComputedZeroToOneNumber::from(
-                factor.0.to_number().get(),
+                factor.0.to_computed_value_without_context()?.value(),
             ))),
             Filter::DropShadow(ref shadow) => {
                 if cfg!(feature = "gecko") {
-                    let color = match shadow
+                    let color = shadow
                         .color
                         .as_ref()
                         .unwrap_or(&Color::currentcolor())
-                        .to_computed_color(None)
-                    {
-                        Some(c) => c,
-                        None => return Err(()),
-                    };
+                        .to_computed_color(None)?;
 
                     let horizontal = ComputedCSSPixelLength::new(
                         shadow

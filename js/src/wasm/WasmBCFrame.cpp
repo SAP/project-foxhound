@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright 2016 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +16,7 @@
 
 #include "wasm/WasmBCFrame.h"
 
+#include "mozilla/Likely.h"
 #include "wasm/WasmBaselineCompile.h"  // For BaseLocalIter
 #include "wasm/WasmBCClass.h"
 
@@ -162,6 +161,18 @@ bool BaseCompiler::createStackMap(
   return stackMapGenerator_.createStackMap(
              who, noExtras, debugFrameWithLiveRefs, stk_, &stackMap) &&
          (!stackMap || stackMaps_->add(masm.currentOffset(), stackMap));
+}
+
+[[nodiscard]] bool BaseCompiler::createAbortingOutOfLineTrapStackMap(
+    StackMap** result) {
+  if (MOZ_LIKELY(!compilerEnv_.debugEnabled())) {
+    *result = nullptr;
+    return true;
+  }
+
+  ExitStubMapVector extras;
+  return stackMapGenerator_.createStackMap(
+      "OutOfLineTrap", extras, HasDebugFrameWithLiveRefs::Maybe, stk_, result);
 }
 
 bool MachineStackTracker::cloneTo(MachineStackTracker* dst) {

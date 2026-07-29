@@ -52,6 +52,15 @@ bitflags! {
         /// any other style data. This hint is only processed in animation-only
         /// traversal which is prior to normal traversal.
         const RESTYLE_SMIL = 1 << 10;
+
+        /// Match self if this element is dependent on a style query.
+        const RESTYLE_IF_AFFECTED_BY_STYLE_QUERIES = 1 << 11;
+
+        /// Match self or descendants if dependent on a named style query.
+        const RESTYLE_IF_AFFECTED_BY_NAMED_STYLE_CONTAINER = 1 << 12;
+
+        /// Do a selector match of the element if it depends on an ancestor's font.
+        const RESTYLE_IF_AFFECTED_BY_ANCESTOR_FONT = 1 << 13;
     }
 }
 
@@ -115,11 +124,24 @@ impl RestyleHint {
             return Self::restyle_subtree();
         }
         let mut result = Self::empty();
-        if self.contains(RestyleHint::RESTYLE_PSEUDOS) {
+        if self.contains(Self::RESTYLE_PSEUDOS) {
             result |= Self::RESTYLE_SELF_IF_PSEUDO;
         }
-        if self.contains(RestyleHint::RECASCADE_DESCENDANTS) {
+        if self.contains(Self::RECASCADE_DESCENDANTS) {
             result |= Self::recascade_subtree();
+        }
+        if self.contains(Self::RESTYLE_IF_AFFECTED_BY_ANCESTOR_FONT) {
+            result |= Self::RESTYLE_IF_AFFECTED_BY_ANCESTOR_FONT;
+        }
+        if self.contains(Self::RESTYLE_IF_AFFECTED_BY_NAMED_STYLE_CONTAINER) {
+            // We may need to restyle further down the tree if rules are
+            // declared for a named container.
+            // e.g @container my-name {#b {...}}
+            // and <div id=a> <div> <div id=b> </div> </div> </div>
+            // If a toggles `container-name: my-name` the rules for #b
+            // also invalidate. This is why we need one hint for unnamed
+            // container and one for named containers.
+            result |= Self::RESTYLE_IF_AFFECTED_BY_NAMED_STYLE_CONTAINER;
         }
         result
     }

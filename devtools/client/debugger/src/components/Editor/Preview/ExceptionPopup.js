@@ -16,7 +16,7 @@ const {
 
 import actions from "../../../actions/index";
 
-import DebuggerImage from "../../shared/DebuggerImage";
+import DebuggerImage from "devtools/client/shared/components/DebuggerImage";
 const classnames = require("resource://devtools/client/shared/classnames.js");
 const ANONYMOUS_FN_NAME = "<anonymous>";
 

@@ -12,10 +12,10 @@
 // Existing tile cache slice builder (was previously tile_cache.rs)
 pub mod slice_builder;
 
-use api::{AlphaType, BorderRadius, ClipMode, ColorF, ColorDepth, DebugFlags, ImageKey, ImageRendering};
-use api::{PropertyBindingId, PrimitiveFlags, YuvFormat, YuvRangedColorSpace};
+use api::{AlphaType, BorderRadius, ClipMode, ColorF, ColorU, ColorDepth, DebugFlags, ImageKey, ImageRendering};
+use api::{PropertyBinding, PropertyBindingId, PrimitiveFlags, YuvFormat, YuvRangedColorSpace};
 use api::units::*;
-use crate::clip::{ClipNodeId, ClipLeafId, ClipItemKind, ClipSpaceConversion, ClipChainInstance, ClipStore};
+use crate::clip::{clamped_radius, ClipNodeId, ClipLeafId, ClipItemKind, ClipSpaceConversion, ClipChainInstance, ClipStore, intersect_rounded_rects};
 use crate::composite::{CompositorKind, CompositeState, CompositorSurfaceKind, ExternalSurfaceDescriptor};
 use crate::composite::{ExternalSurfaceDependency, NativeSurfaceId, NativeTileId};
 use crate::composite::{CompositorClipIndex, CompositorTransformIndex};
@@ -24,25 +24,26 @@ use crate::gpu_types::ZBufferId;
 use crate::internal_types::{FastHashMap, FrameId, Filter};
 use crate::invalidation::{InvalidationReason, DirtyRegion, PrimitiveCompareResult};
 use crate::invalidation::cached_surface::{CachedSurface, TileUpdateDirtyContext, TileUpdateDirtyState, PrimitiveDependencyInfo};
+use crate::invalidation::vert_buffer::{CornersCache, VertRange};
 use crate::invalidation::compare::{PrimitiveDependency, ImageDependency};
-use crate::invalidation::compare::{SpatialNodeComparer, PrimitiveComparisonKey};
+use crate::invalidation::compare::PrimitiveComparisonKey;
 use crate::invalidation::compare::{OpacityBindingInfo, ColorBindingInfo};
 use crate::picture::{SurfaceTextureDescriptor, PictureCompositeMode, SurfaceIndex, clamp};
-use crate::picture::{get_relative_scale_offset, PicturePrimitive};
+use crate::picture::{get_relative_scale_offset, PictureInstance};
 use crate::picture::MAX_COMPOSITOR_SURFACES_SIZE;
-use crate::prim_store::{PrimitiveInstance, PrimitiveInstanceKind, PrimitiveScratchBuffer, PictureIndex};
-use crate::prim_store::{ColorBindingStorage, ColorBindingIndex, PrimitiveTemplateKind};
+use crate::prim_store::{PrimitiveInstance, PrimitiveKind, PrimitiveScratchBuffer, PictureIndex};
+use crate::prim_store::PrimitiveInstanceIndex;
 use crate::print_tree::{PrintTreePrinter, PrintTree};
 use crate::{profiler, render_backend::DataStores};
 use crate::profiler::TransactionProfile;
 use crate::renderer::GpuBufferBuilderF;
 use crate::resource_cache::{ResourceCache, ImageRequest};
 use crate::scene_building::SliceFlags;
-use crate::space::SpaceMapper;
+use crate::space::{SpaceMapper, SpaceSnapper};
 use crate::spatial_tree::{SpatialNodeIndex, SpatialTree};
 use crate::surface::{SubpixelMode, SurfaceInfo};
 use crate::util::{ScaleOffset, MatrixHelpers, MaxRect};
-use crate::visibility::{FrameVisibilityContext, FrameVisibilityState, VisibilityState, PrimitiveVisibilityFlags};
+use crate::visibility::{FrameVisibilityContext, FrameVisibilityState, DrawState, PrimitiveVisibilityFlags};
 use euclid::approxeq::ApproxEq;
 use euclid::Box2D;
 use peek_poke::{PeekPoke, ensure_red_zone};
@@ -53,6 +54,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 pub use self::slice_builder::{
     TileCacheBuilder, TileCacheConfig,
     PictureCacheDebugInfo, SliceDebugInfo, DirtyTileDebugInfo, TileDebugInfo,
+    CompositorClipDebugInfo,
 };
 
 pub use api::units::TileOffset;
@@ -62,6 +64,10 @@ pub use api::units::TileRange as TileRect;
 /// is an arbitrary number that should be enough for common cases, but low enough to
 /// prevent performance and memory usage drastically degrading in pathological cases.
 pub const MAX_COMPOSITOR_SURFACES: usize = 4;
+
+/// The maximum number of compositor underlay surfaces that are allowed per picture cache.
+/// This is an arbitrary number that should be enough for most cases.
+pub const MAX_COMPOSITOR_UNDERLAY_SURFACES: usize = 5;
 
 /// The size in device pixels of a normal cached tile.
 pub const TILE_SIZE_DEFAULT: DeviceIntSize = DeviceIntSize {
@@ -244,6 +250,8 @@ pub struct Tile {
     pub z_id: ZBufferId,
     /// Cached surface state (content tracking, invalidation, dependencies)
     pub cached_surface: CachedSurface,
+    /// Raster-space rect for this tile, cached to avoid recomputing per primitive.
+    pub local_raster_rect: RasterRect,
 }
 
 impl Tile {
@@ -263,6 +271,7 @@ impl Tile {
             is_opaque: false,
             z_id: ZBufferId::invalid(),
             cached_surface: CachedSurface::new(),
+            local_raster_rect: RasterRect::zero(),
         }
     }
 
@@ -318,6 +327,8 @@ impl Tile {
             ),
         );
 
+        self.local_raster_rect = ctx.local_to_raster.map_rect(&self.cached_surface.local_rect);
+
         self.world_tile_rect = ctx.pic_to_world_mapper
             .map(&self.cached_surface.local_rect)
             .expect("bug: map local tile rect");
@@ -338,6 +349,8 @@ impl Tile {
     fn add_prim_dependency(
         &mut self,
         info: &PrimitiveDependencyInfo,
+        corners_cache: &CornersCache,
+        prim_clamp_to_tile: bool,
     ) {
         // If this tile isn't currently visible, we don't want to update the dependencies
         // for this tile, as an optimization, since it won't be drawn anyway.
@@ -345,7 +358,14 @@ impl Tile {
             return;
         }
 
-        self.cached_surface.add_prim_dependency(info, self.cached_surface.local_rect);
+        let local_rect = self.cached_surface.local_rect;
+        self.cached_surface.add_prim_dependency(
+            info,
+            corners_cache,
+            prim_clamp_to_tile,
+            &self.local_raster_rect,
+            local_rect,
+        );
     }
 
     /// Called during tile cache instance post_update. Allows invalidation and dirty
@@ -358,12 +378,6 @@ impl Tile {
     ) {
         // Ensure peek-poke constraint is met, that `dep_data` is large enough
         ensure_red_zone::<PrimitiveDependency>(&mut self.cached_surface.current_descriptor.dep_data);
-
-        // Register the frame id of this tile with the spatial node comparer, to ensure
-        // that it doesn't GC any spatial nodes from the comparer that are referenced
-        // by this tile. Must be done before we early exit below, so that we retain
-        // spatial node info even for tiles that are currently not visible.
-        state.spatial_node_comparer.retain_for_frame(self.cached_surface.current_descriptor.last_updated_frame_id);
 
         // If tile is not visible, just early out from here - we don't update dependencies
         // so don't want to invalidate, merge, split etc. The tile won't need to be drawn
@@ -727,8 +741,6 @@ pub struct TileCacheInstance {
     opacity_bindings: FastHashMap<PropertyBindingId, OpacityBindingInfo>,
     /// Switch back and forth between old and new bindings hashmaps to avoid re-allocating.
     old_opacity_bindings: FastHashMap<PropertyBindingId, OpacityBindingInfo>,
-    /// A helper to compare transforms between previous and current frame.
-    spatial_node_comparer: SpatialNodeComparer,
     /// List of color bindings, with some extra information
     /// about whether they changed since last frame.
     color_bindings: FastHashMap<PropertyBindingId, ColorBindingInfo>,
@@ -815,6 +827,8 @@ pub struct TileCacheInstance {
     /// The remaining number of YuvImage prims we will see this frame. We prioritize
     /// promoting these before promoting any Image prims.
     pub yuv_images_remaining: usize,
+    /// Persistent cache for computing and storing raster-space primitive corners.
+    corners_cache: CornersCache,
 }
 
 impl TileCacheInstance {
@@ -837,7 +851,6 @@ impl TileCacheInstance {
             sub_slices,
             opacity_bindings: FastHashMap::default(),
             old_opacity_bindings: FastHashMap::default(),
-            spatial_node_comparer: SpatialNodeComparer::new(),
             color_bindings: FastHashMap::default(),
             old_color_bindings: FastHashMap::default(),
             dirty_region: DirtyRegion::new(params.visibility_node_index, params.spatial_node_index),
@@ -879,6 +892,7 @@ impl TileCacheInstance {
             overlay_region: PictureRect::zero(),
             yuv_images_count: params.yuv_image_surface_count,
             yuv_images_remaining: 0,
+            corners_cache: CornersCache::new(),
         }
     }
 
@@ -1067,10 +1081,13 @@ impl TileCacheInstance {
                 pic_rect,
             );
 
+            let mut clip_snapper = SpaceSnapper::new(surface, frame_context.spatial_tree);
+
             frame_state.clip_store.set_active_clips(
                 self.spatial_node_index,
                 map_local_to_picture.ref_spatial_node_index,
                 surface.visibility_spatial_node_index,
+                &mut clip_snapper,
                 shared_clip_leaf_id,
                 frame_context.spatial_tree,
                 &mut frame_state.data_stores.clip,
@@ -1084,7 +1101,6 @@ impl TileCacheInstance {
                 frame_context.spatial_tree,
                 &mut frame_state.frame_gpu_data.f32,
                 frame_state.resource_cache,
-                frame_context.global_device_pixel_scale,
                 &surface.culling_rect,
                 &mut frame_state.data_stores.clip,
                 frame_state.rg_builder,
@@ -1102,61 +1118,66 @@ impl TileCacheInstance {
                 self.compositor_clip = None;
 
                 if clip_chain.needs_mask {
+                    let mut combined: Option<(DeviceRect, BorderRadius)> = None;
+
                     for i in 0 .. clip_chain.clips_range.count {
                         let clip_instance = frame_state
                             .clip_store
                             .get_instance_from_range(&clip_chain.clips_range, i);
                         let clip_node = &frame_state.data_stores.clip[clip_instance.handle];
 
-                        match clip_node.item.kind {
-                            ClipItemKind::RoundedRectangle { rect, radius, mode } => {
-                                assert_eq!(mode, ClipMode::Clip);
+                        if let ClipItemKind::RoundedRectangle { radius, mode } = clip_node.item.kind {
+                            assert_eq!(mode, ClipMode::Clip);
 
-                                // Map the clip in to device space. We know from the shared
-                                // clip creation logic it's in root coord system, so only a
-                                // 2d axis-aligned transform can apply. For example, in the
-                                // case of a pinch-zoom effect.
-                                let map = ClipSpaceConversion::new(
-                                    frame_context.root_spatial_node_index,
-                                    clip_node.item.spatial_node_index,
-                                    frame_context.root_spatial_node_index,
-                                    frame_context.spatial_tree,
-                                );
+                            let radius = clamped_radius(&radius, clip_instance.clip_rect.size());
 
-                                let (rect, radius) = match map {
-                                    ClipSpaceConversion::Local => {
-                                        (rect.cast_unit(), radius)
-                                    }
-                                    ClipSpaceConversion::ScaleOffset(scale_offset) => {
-                                        (
-                                            scale_offset.map_rect(&rect),
-                                            BorderRadius {
-                                                top_left: scale_offset.map_size(&radius.top_left),
-                                                top_right: scale_offset.map_size(&radius.top_right),
-                                                bottom_left: scale_offset.map_size(&radius.bottom_left),
-                                                bottom_right: scale_offset.map_size(&radius.bottom_right),
-                                            },
-                                        )
-                                    }
-                                    ClipSpaceConversion::Transform(..) => {
-                                        unreachable!();
-                                    }
-                                };
+                            // Map to device space. All shared rounded-rect clips are in the
+                            // root coordinate system (is_rcs), so only a 2D axis-aligned
+                            // transform can apply (e.g. pinch-zoom).
+                            let map = ClipSpaceConversion::new(
+                                frame_context.root_spatial_node_index,
+                                clip_instance.spatial_node_index,
+                                frame_context.root_spatial_node_index,
+                                frame_context.spatial_tree,
+                            );
 
-                                self.compositor_clip = Some(frame_state.composite_state.register_clip(
-                                    rect,
-                                    radius,
-                                ));
+                            let (device_rect, device_radius) = match map {
+                                ClipSpaceConversion::Local => (clip_instance.clip_rect.cast_unit(), radius),
+                                ClipSpaceConversion::ScaleOffset(so) => (
+                                    so.map_rect(&clip_instance.clip_rect),
+                                    BorderRadius {
+                                        top_left: so.map_size(&radius.top_left),
+                                        top_right: so.map_size(&radius.top_right),
+                                        bottom_left: so.map_size(&radius.bottom_left),
+                                        bottom_right: so.map_size(&radius.bottom_right),
+                                        shape_top_left: radius.shape_top_left,
+                                        shape_top_right: radius.shape_top_right,
+                                        shape_bottom_left: radius.shape_bottom_left,
+                                        shape_bottom_right: radius.shape_bottom_right,
+                                    },
+                                ),
+                                ClipSpaceConversion::Transform(..) => unreachable!(),
+                            };
 
-                                break;
-                            }
-                            _ => {
-                                // The logic to check for shared clips excludes other mask
-                                // clip types (box-shadow, image-mask) and ensures that the
-                                // clip is in the root coord system (so rect clips can't
-                                // produce a mask).
-                            }
+                            combined = Some(match combined {
+                                None => (device_rect, device_radius),
+                                Some((prev_rect, prev_radius)) => {
+                                    intersect_rounded_rects(
+                                        prev_rect.cast_unit(), prev_radius,
+                                        device_rect.cast_unit(), device_radius,
+                                    )
+                                    .map(|(r, rad)| (r.cast_unit(), rad))
+                                    .unwrap_or((prev_rect, prev_radius))
+                                }
+                            });
                         }
+                    }
+
+                    if let Some((rect, radius)) = combined {
+                        self.compositor_clip = Some(frame_state.composite_state.register_clip(
+                            rect,
+                            radius,
+                        ));
                     }
                 }
             }
@@ -1165,10 +1186,6 @@ impl TileCacheInstance {
         // Advance the current frame ID counter for this picture cache (must be done
         // after any retained prev state is taken above).
         self.frame_id.advance();
-
-        // Notify the spatial node comparer that a new frame has started, and the
-        // current reference spatial node for this tile cache.
-        self.spatial_node_comparer.next_frame(self.spatial_node_index);
 
         // At the start of the frame, step through each current compositor surface
         // and mark it as unused. Later, this is used to free old compositor surfaces.
@@ -1434,7 +1451,10 @@ impl TileCacheInstance {
             global_screen_world_rect: frame_context.global_screen_world_rect,
             tile_size: self.tile_size,
             frame_id: self.frame_id,
+            local_to_raster: self.local_to_raster,
         };
+
+        self.corners_cache.pre_update();
 
         // Pre-update each tile
         for sub_slice in &mut self.sub_slices {
@@ -1517,7 +1537,7 @@ impl TileCacheInstance {
         data_stores: &DataStores,
         clip_store: &ClipStore,
         composite_state: &CompositeState,
-        force: bool,
+        color_depth: Option<ColorDepth>,
     ) -> Result<CompositorSurfaceKind, SurfacePromotionFailure> {
         use SurfacePromotionFailure::*;
 
@@ -1540,7 +1560,9 @@ impl TileCacheInstance {
                             let clip_instance = clip_store.get_instance_from_range(&prim_clip_chain.clips_range, 0);
                             let clip_node = &data_stores.clip[clip_instance.handle];
 
-                            if let ClipItemKind::RoundedRectangle { ref radius, mode: ClipMode::Clip, rect, .. } = clip_node.item.kind {
+                            if let ClipItemKind::RoundedRectangle { ref radius, mode: ClipMode::Clip, .. } = clip_node.item.kind {
+                                let size = clip_instance.clip_rect.size();
+                                let radius = clamped_radius(radius, size);
                                 let max_corner_width = radius.top_left.width
                                                             .max(radius.bottom_left.width)
                                                             .max(radius.top_right.width)
@@ -1550,8 +1572,8 @@ impl TileCacheInstance {
                                                             .max(radius.top_right.height)
                                                             .max(radius.bottom_right.height);
 
-                                if max_corner_width <= 0.5 * rect.size().width &&
-                                    max_corner_height <= 0.5 * rect.size().height {
+                                if max_corner_width <= 0.5 * size.width &&
+                                    max_corner_height <= 0.5 * size.height {
                                     is_supported_rounded_rect = true;
                                 }
                             }
@@ -1564,6 +1586,10 @@ impl TileCacheInstance {
                 }
             }
             CompositorSurfaceKind::Underlay => {
+                // Should we force the promotion of this surface? We'll force it if promotion
+                // is necessary for correct color display of HDR.
+                let force_for_hdr = matches!(color_depth, Some(color_depth) if color_depth.bit_depth() > 8);
+
                 // If a mask is needed, there are some restrictions.
                 if prim_clip_chain.needs_mask {
                     // Need an opaque region behind this prim. The opaque region doesn't
@@ -1572,7 +1598,7 @@ impl TileCacheInstance {
                     if !self.backdrop.opaque_rect.contains_box(&pic_coverage_rect) {
                         let result = Err(UnderlayAlphaBackdrop);
                         // If we aren't forcing, give up and return Err.
-                        if !force {
+                        if !force_for_hdr {
                             return result;
                         }
 
@@ -1580,9 +1606,14 @@ impl TileCacheInstance {
                         self.report_promotion_failure(result, pic_coverage_rect, true);
                     }
 
-                    // Only one masked underlay allowed.
                     if !self.underlays.is_empty() {
-                        return Err(UnderlaySurfaceLimit);
+                        // If we aren't forcing, we limit the number of masked underlays
+                        // Permit more underlays when forced.
+                        // XXX WebRender does not support full HDR yet.
+                        // HDR requires external composite to show correct colors.
+                        if !force_for_hdr || self.underlays.len() > MAX_COMPOSITOR_UNDERLAY_SURFACES {
+                            return Err(UnderlaySurfaceLimit);
+                        }
                     }
                 }
 
@@ -1591,7 +1622,7 @@ impl TileCacheInstance {
                 if self.overlay_region.intersects(&pic_coverage_rect) {
                     let result = Err(UnderlayIntersectsOverlay);
                     // If we aren't forcing, give up and return Err.
-                    if !force {
+                    if !force_for_hdr {
                         return result;
                     }
 
@@ -1631,8 +1662,10 @@ impl TileCacheInstance {
             return result;
         }
 
-        if self.slice_flags.contains(SliceFlags::IS_ATOMIC) {
-            return Err(SliceAtomic);
+        if surface_kind != CompositorSurfaceKind::Underlay {
+            if self.slice_flags.contains(SliceFlags::IS_ATOMIC) {
+                return Err(SliceAtomic);
+            }
         }
 
         Ok(surface_kind)
@@ -1640,6 +1673,7 @@ impl TileCacheInstance {
 
     fn setup_compositor_surfaces_yuv(
         &mut self,
+        prim_instance_index: PrimitiveInstanceIndex,
         sub_slice_index: usize,
         prim_info: &mut PrimitiveDependencyInfo,
         flags: PrimitiveFlags,
@@ -1675,6 +1709,7 @@ impl TileCacheInstance {
         }
 
         self.setup_compositor_surfaces_impl(
+            prim_instance_index,
             sub_slice_index,
             prim_info,
             flags,
@@ -1702,6 +1737,7 @@ impl TileCacheInstance {
 
     fn setup_compositor_surfaces_rgb(
         &mut self,
+        prim_instance_index: PrimitiveInstanceIndex,
         sub_slice_index: usize,
         prim_info: &mut PrimitiveDependencyInfo,
         flags: PrimitiveFlags,
@@ -1739,6 +1775,7 @@ impl TileCacheInstance {
         );
 
         self.setup_compositor_surfaces_impl(
+            prim_instance_index,
             sub_slice_index,
             prim_info,
             flags,
@@ -1765,6 +1802,7 @@ impl TileCacheInstance {
     // and the non-compositor path should be used to draw it instead.
     fn setup_compositor_surfaces_impl(
         &mut self,
+        prim_instance_index: PrimitiveInstanceIndex,
         sub_slice_index: usize,
         prim_info: &mut PrimitiveDependencyInfo,
         flags: PrimitiveFlags,
@@ -1878,30 +1916,36 @@ impl TileCacheInstance {
 
             let clip_instance = clip_store.get_instance_from_range(&prim_clip_chain.clips_range, 0);
             let clip_node = &data_stores.clip[clip_instance.handle];
-            if let ClipItemKind::RoundedRectangle { radius, mode: ClipMode::Clip, rect, .. } = clip_node.item.kind {
+            if let ClipItemKind::RoundedRectangle { radius, mode: ClipMode::Clip, .. } = clip_node.item.kind {
+                let radius = clamped_radius(&radius, clip_instance.clip_rect.size());
+
                 // Map the clip in to device space. We know from the shared
                 // clip creation logic it's in root coord system, so only a
                 // 2d axis-aligned transform can apply. For example, in the
                 // case of a pinch-zoom effect.
                 let map = ClipSpaceConversion::new(
                     frame_context.root_spatial_node_index,
-                    clip_node.item.spatial_node_index,
+                    clip_instance.spatial_node_index,
                     frame_context.root_spatial_node_index,
                     frame_context.spatial_tree,
                 );
 
                 let (rect, radius) = match map {
                     ClipSpaceConversion::Local => {
-                        (rect.cast_unit(), radius)
+                        (clip_instance.clip_rect.cast_unit(), radius)
                     }
                     ClipSpaceConversion::ScaleOffset(scale_offset) => {
                         (
-                            scale_offset.map_rect(&rect),
+                            scale_offset.map_rect(&clip_instance.clip_rect),
                             BorderRadius {
                                 top_left: scale_offset.map_size(&radius.top_left),
                                 top_right: scale_offset.map_size(&radius.top_right),
                                 bottom_left: scale_offset.map_size(&radius.bottom_left),
                                 bottom_right: scale_offset.map_size(&radius.bottom_right),
+                                shape_top_left: radius.shape_top_left,
+                                shape_top_right: radius.shape_top_right,
+                                shape_bottom_left: radius.shape_bottom_left,
+                                shape_bottom_right: radius.shape_bottom_right,
                             },
                         )
                     }
@@ -2032,6 +2076,7 @@ impl TileCacheInstance {
             native_surface_id,
             update_params,
             external_image_id,
+            prim_instance_index,
         };
 
         // If the surface is opaque, we can draw it an an underlay (which avoids
@@ -2130,15 +2175,15 @@ impl TileCacheInstance {
     /// Update the dependencies for each tile for a given primitive instance.
     pub fn update_prim_dependencies(
         &mut self,
+        prim_instance_index: PrimitiveInstanceIndex,
         prim_instance: &mut PrimitiveInstance,
         prim_spatial_node_index: SpatialNodeIndex,
         local_prim_rect: LayoutRect,
         frame_context: &FrameVisibilityContext,
         data_stores: &DataStores,
         clip_store: &ClipStore,
-        pictures: &[PicturePrimitive],
+        pictures: &[PictureInstance],
         resource_cache: &mut ResourceCache,
-        color_bindings: &ColorBindingStorage,
         surface_stack: &[(PictureIndex, SurfaceIndex)],
         composite_state: &mut CompositeState,
         gpu_buffer: &mut GpuBufferBuilderF,
@@ -2146,13 +2191,14 @@ impl TileCacheInstance {
         is_root_tile_cache: bool,
         surfaces: &mut [SurfaceInfo],
         profile: &mut TransactionProfile,
-    ) -> VisibilityState {
+    ) -> DrawState {
         use SurfacePromotionFailure::*;
 
         // This primitive exists on the last element on the current surface stack.
         profile_scope!("update_prim_dependencies");
         let prim_surface_index = surface_stack.last().unwrap().1;
-        let prim_clip_chain = &prim_instance.vis.clip_chain;
+        let prim_clip_chain = scratch.frame.draws[prim_instance_index.0 as usize].clip_chain;
+        let prim_clip_chain = &prim_clip_chain;
 
         // If the primitive is directly drawn onto this picture cache surface, then
         // the pic_coverage_rect is in the same space. If not, we need to map it from
@@ -2199,7 +2245,7 @@ impl TileCacheInstance {
                         ).cast_unit()
                     }
                     None => {
-                        return VisibilityState::Culled;
+                        return DrawState::Culled;
                     }
                 };
 
@@ -2215,13 +2261,15 @@ impl TileCacheInstance {
         // If the primitive is outside the tiling rects, it's known to not
         // be visible.
         if p0.x == p1.x || p0.y == p1.y {
-            return VisibilityState::Culled;
+            return DrawState::Culled;
         }
 
         // Build the list of resources that this primitive has dependencies on.
-        let mut prim_info = PrimitiveDependencyInfo::new(
-            prim_instance.uid(),
-            pic_coverage_rect,
+        let mut prim_info = PrimitiveDependencyInfo::new(prim_instance.uid(), pic_coverage_rect);
+        // Compute once here so it's available for both prim_info and the tile loop.
+        let prim_clamp_to_tile = matches!(
+            prim_instance.kind,
+            PrimitiveKind::Rectangle { .. }
         );
 
         let mut sub_slice_index = self.sub_slices.len() - 1;
@@ -2248,26 +2296,12 @@ impl TileCacheInstance {
             }
         }
 
-        // Include the prim spatial node, if differs relative to cache root.
-        if prim_spatial_node_index != self.spatial_node_index {
-            prim_info.spatial_nodes.push(prim_spatial_node_index);
-        }
+        // Spatial node and clip deps are no longer added; vert corners (computed per
+        // tile below) capture transform and clip position changes directly in raster space.
 
-        // If there was a clip chain, add any clip dependencies to the list for this tile.
+        // Gather clip data needed for the per-tile vert push below.
         let clip_instances = &clip_store
             .clip_node_instances[prim_clip_chain.clips_range.to_range()];
-        for clip_instance in clip_instances {
-            let clip = &data_stores.clip[clip_instance.handle];
-
-            prim_info.clips.push(clip_instance.handle.uid());
-
-            // If the clip has the same spatial node, the relative transform
-            // will always be the same, so there's no need to depend on it.
-            if clip.item.spatial_node_index != self.spatial_node_index
-                && !prim_info.spatial_nodes.contains(&clip.item.spatial_node_index) {
-                prim_info.spatial_nodes.push(clip.item.spatial_node_index);
-            }
-        }
 
         // Certain primitives may select themselves to be a backdrop candidate, which is
         // then applied below.
@@ -2285,33 +2319,34 @@ impl TileCacheInstance {
         // TODO(gw): Get picture clips earlier (during the initial picture traversal
         //           pass) so that we can calculate these correctly.
         match prim_instance.kind {
-            PrimitiveInstanceKind::Picture { pic_index,.. } => {
+            PrimitiveKind::Picture { pic_index,.. } => {
                 // Pictures can depend on animated opacity bindings.
                 let pic = &pictures[pic_index.0];
                 if let Some(PictureCompositeMode::Filter(Filter::Opacity(binding, _))) = pic.composite_mode {
                     prim_info.opacity_bindings.push(binding.into());
                 }
             }
-            PrimitiveInstanceKind::Rectangle { data_handle, color_binding_index, .. } => {
+            PrimitiveKind::Rectangle { data_handle, .. } => {
                 // Rectangles can only form a backdrop candidate if they are known opaque.
                 // TODO(gw): We could resolve the opacity binding here, but the common
                 //           case for background rects is that they don't have animated opacity.
-                let PrimitiveTemplateKind::Rectangle { color, .. } = data_stores.prim[data_handle].kind;
-                let color = frame_context.scene_properties.resolve_color(&color);
-                if color.a >= 1.0 {
+                let prim_color = data_stores.prim[data_handle].kind.color;
+                let resolved = frame_context.scene_properties.resolve_color(&prim_color);
+                if resolved.a >= 1.0 {
                     backdrop_candidate = Some(BackdropInfo {
                         opaque_rect: pic_coverage_rect,
                         spanning_opaque_color: None,
-                        kind: Some(BackdropKind::Color { color }),
+                        kind: Some(BackdropKind::Color { color: resolved }),
                         backdrop_rect: pic_coverage_rect,
                     });
                 }
 
-                if color_binding_index != ColorBindingIndex::INVALID {
-                    prim_info.color_binding = Some(color_bindings[color_binding_index].into());
+                if matches!(prim_color, PropertyBinding::Binding(..)) {
+                    let color_u: PropertyBinding<ColorU> = prim_color.into();
+                    prim_info.color_binding = Some(color_u.into());
                 }
             }
-            PrimitiveInstanceKind::Image { data_handle, ref mut compositor_surface_kind, .. } => {
+            PrimitiveKind::Image { data_handle, .. } => {
                 let image_key = &data_stores.image[data_handle];
                 let image_data = &image_key.kind;
 
@@ -2359,7 +2394,7 @@ impl TileCacheInstance {
                                                           data_stores,
                                                           clip_store,
                                                           composite_state,
-                                                          false);
+                                                          None);
                     }
 
                     // Native OS compositors (DC and CA, at least) support premultiplied alpha
@@ -2370,6 +2405,7 @@ impl TileCacheInstance {
 
                     if let Ok(kind) = promotion_result {
                         promotion_result = self.setup_compositor_surfaces_rgb(
+                            prim_instance_index,
                             sub_slice_index,
                             &mut prim_info,
                             image_key.common.flags,
@@ -2395,19 +2431,20 @@ impl TileCacheInstance {
                     }
                 }
 
+                let draw_idx = prim_instance_index.0 as usize;
                 if let Ok(kind) = promotion_result {
-                    *compositor_surface_kind = kind;
+                    scratch.frame.draws[draw_idx].compositor_surface_kind = kind;
 
                     if kind == CompositorSurfaceKind::Overlay {
                         profile.inc(profiler::COMPOSITOR_SURFACE_OVERLAYS);
-                        return VisibilityState::Culled;
+                        return DrawState::Culled;
                     }
 
                     assert!(kind == CompositorSurfaceKind::Blit, "Image prims should either be overlays or blits.");
                 } else {
                     // In Err case, we handle as a blit, and proceed.
                     self.report_promotion_failure(promotion_result, pic_coverage_rect, false);
-                    *compositor_surface_kind = CompositorSurfaceKind::Blit;
+                    scratch.frame.draws[draw_idx].compositor_surface_kind = CompositorSurfaceKind::Blit;
                 }
 
                 if image_key.common.flags.contains(PrimitiveFlags::PREFER_COMPOSITOR_SURFACE) {
@@ -2419,7 +2456,7 @@ impl TileCacheInstance {
                     generation: resource_cache.get_image_generation(image_data.key),
                 });
             }
-            PrimitiveInstanceKind::YuvImage { data_handle, ref mut compositor_surface_kind, .. } => {
+            PrimitiveKind::YuvImage { data_handle, .. } => {
                 let prim_data = &data_stores.yuv_image[data_handle];
 
                 let mut promotion_result: Result<CompositorSurfaceKind, SurfacePromotionFailure> = Ok(CompositorSurfaceKind::Blit);
@@ -2432,10 +2469,6 @@ impl TileCacheInstance {
                     if is_root_tile_cache {
                         self.yuv_images_remaining -= 1;
                     }
-
-                    // Should we force the promotion of this surface? We'll force it if promotion
-                    // is necessary for correct color display.
-                    let force = prim_data.kind.color_depth.bit_depth() > 8;
 
                     let promotion_attempts =
                         [CompositorSurfaceKind::Overlay, CompositorSurfaceKind::Underlay];
@@ -2454,7 +2487,7 @@ impl TileCacheInstance {
                                                     data_stores,
                                                     clip_store,
                                                     composite_state,
-                                                    force);
+                                                    Some(prim_data.kind.color_depth));
                         if promotion_result.is_ok() {
                             break;
                         }
@@ -2492,6 +2525,7 @@ impl TileCacheInstance {
                         }
 
                         promotion_result = self.setup_compositor_surfaces_yuv(
+                            prim_instance_index,
                             sub_slice_index,
                             &mut prim_info,
                             prim_data.common.flags,
@@ -2519,24 +2553,30 @@ impl TileCacheInstance {
                 // Store on the YUV primitive instance whether this is a promoted surface.
                 // This is used by the batching code to determine whether to draw the
                 // image to the content tiles, or just a transparent z-write.
+                let draw_idx = prim_instance_index.0 as usize;
                 if let Ok(kind) = promotion_result {
-                    *compositor_surface_kind = kind;
+                    scratch.frame.draws[draw_idx].compositor_surface_kind = kind;
                     if kind == CompositorSurfaceKind::Overlay {
                         profile.inc(profiler::COMPOSITOR_SURFACE_OVERLAYS);
-                        return VisibilityState::Culled;
+                        return DrawState::Culled;
                     }
 
                     profile.inc(profiler::COMPOSITOR_SURFACE_UNDERLAYS);
                 } else {
                     // In Err case, we handle as a blit, and proceed.
                     self.report_promotion_failure(promotion_result, pic_coverage_rect, false);
-                    *compositor_surface_kind = CompositorSurfaceKind::Blit;
+                    scratch.frame.draws[draw_idx].compositor_surface_kind = CompositorSurfaceKind::Blit;
                     if prim_data.common.flags.contains(PrimitiveFlags::PREFER_COMPOSITOR_SURFACE) {
                         profile.inc(profiler::COMPOSITOR_SURFACE_BLITS);
                     }
                 }
 
-                if *compositor_surface_kind == CompositorSurfaceKind::Blit {
+                // Underlay with SliceFlags::IS_ATOMIC adds extra invalidation.
+                // It is for handling cases where underlay is disabled later.
+                let kind = scratch.frame.draws[draw_idx].compositor_surface_kind;
+                if kind == CompositorSurfaceKind::Blit ||
+                    kind == CompositorSurfaceKind::Underlay &&
+                    self.slice_flags.contains(SliceFlags::IS_ATOMIC) {
                     prim_info.images.extend(
                         prim_data.kind.yuv_key.iter().map(|key| {
                             ImageDependency {
@@ -2547,15 +2587,14 @@ impl TileCacheInstance {
                     );
                 }
             }
-            PrimitiveInstanceKind::ImageBorder { data_handle, .. } => {
+            PrimitiveKind::ImageBorder { data_handle, .. } => {
                 let border_data = &data_stores.image_border[data_handle].kind;
                 prim_info.images.push(ImageDependency {
                     key: border_data.request.key,
                     generation: resource_cache.get_image_generation(border_data.request.key),
                 });
             }
-            PrimitiveInstanceKind::LinearGradient { data_handle, .. }
-            | PrimitiveInstanceKind::CachedLinearGradient { data_handle, .. } => {
+            PrimitiveKind::LinearGradient { data_handle, .. } => {
                 let gradient_data = &data_stores.linear_grad[data_handle];
                 if gradient_data.stops_opacity.is_opaque
                     && gradient_data.tile_spacing == LayoutSize::zero()
@@ -2568,7 +2607,7 @@ impl TileCacheInstance {
                     });
                 }
             }
-            PrimitiveInstanceKind::ConicGradient { data_handle, .. } => {
+            PrimitiveKind::ConicGradient { data_handle, .. } => {
                 let gradient_data = &data_stores.conic_grad[data_handle];
                 if gradient_data.stops_opacity.is_opaque
                     && gradient_data.tile_spacing == LayoutSize::zero()
@@ -2581,7 +2620,7 @@ impl TileCacheInstance {
                     });
                 }
             }
-            PrimitiveInstanceKind::RadialGradient { data_handle, .. } => {
+            PrimitiveKind::RadialGradient { data_handle, .. } => {
                 let gradient_data = &data_stores.radial_grad[data_handle];
                 if gradient_data.stops_opacity.is_opaque
                     && gradient_data.tile_spacing == LayoutSize::zero()
@@ -2594,8 +2633,8 @@ impl TileCacheInstance {
                     });
                 }
             }
-            PrimitiveInstanceKind::BackdropCapture { .. } => {}
-            PrimitiveInstanceKind::BackdropRender { pic_index, .. } => {
+            PrimitiveKind::BackdropCapture { .. } => {}
+            PrimitiveKind::BackdropRender { pic_index, .. } => {
                 // If the area that the backdrop covers in the space of the surface it draws on
                 // is empty, skip any sub-graph processing. This is not just a performance win,
                 // it also ensures that we don't do a deferred dirty test that invalidates a tile
@@ -2604,7 +2643,7 @@ impl TileCacheInstance {
                 if !pic_coverage_rect.is_empty() {
                     // Mark that we need the sub-graph this render depends on so that
                     // we don't skip it during the prepare pass
-                    scratch.required_sub_graphs.insert(pic_index);
+                    scratch.frame.required_sub_graphs.insert(pic_index);
 
                     // If this is a sub-graph, register the bounds on any affected tiles
                     // so we know how much to expand the content tile by.
@@ -2632,10 +2671,10 @@ impl TileCacheInstance {
                     });
                 }
             }
-            PrimitiveInstanceKind::LineDecoration { .. } |
-            PrimitiveInstanceKind::NormalBorder { .. } |
-            PrimitiveInstanceKind::BoxShadow { .. } |
-            PrimitiveInstanceKind::TextRun { .. } => {
+            PrimitiveKind::LineDecoration { .. } |
+            PrimitiveKind::NormalBorder { .. } |
+            PrimitiveKind::BoxShadow { .. } |
+            PrimitiveKind::TextRun { .. } => {
                 // These don't contribute dependencies
             }
         };
@@ -2742,28 +2781,96 @@ impl TileCacheInstance {
             }
         }
 
-        // Record any new spatial nodes in the used list.
-        for spatial_node_index in &prim_info.spatial_nodes {
-            self.spatial_node_comparer.register_used_transform(
-                *spatial_node_index,
-                self.frame_id,
-                frame_context.spatial_tree,
-            );
+        // coverage_rect is the visible portion of the primitive in local space.
+        // Used for coverage_corners: detects when clipping changes the visible area
+        // without over-invalidating when the clip changes outside the prim extent.
+        let coverage_rect = local_prim_rect
+            .intersection(&prim_clip_chain.local_clip_rect)
+            .unwrap_or_default();
+
+        // Compute raster-space corners once, outside the tile loop.
+        // Transform + unquantized results land in corners_cache scratch (amortised alloc).
+        // The per-prim spatial-node transform is cached across consecutive same-node prims.
+        self.corners_cache.clear_scratch();
+        prim_info.prim_scratch = self.corners_cache.compute_to_scratch(
+            local_prim_rect,
+            prim_spatial_node_index,
+            self.spatial_node_index,
+            self.local_to_raster,
+            frame_context.spatial_tree,
+        );
+        prim_info.cov_scratch = self.corners_cache.compute_to_scratch(
+            coverage_rect,
+            prim_spatial_node_index,
+            self.spatial_node_index,
+            self.local_to_raster,
+            frame_context.spatial_tree,
+        );
+
+        // Compute scratch ranges for clips once, outside the tile loop.
+        // Actual quantization into per-tile vert_data happens inside add_prim_dependency.
+        for clip_instance in clip_instances {
+            let clip = &data_stores.clip[clip_instance.handle];
+            let clip_local_rect = match clip.item.kind {
+                ClipItemKind::Rectangle { .. }
+                | ClipItemKind::RoundedRectangle { .. }
+                | ClipItemKind::Image { .. } => Some(clip_instance.clip_rect),
+            };
+            let clip_scratch = match clip_local_rect {
+                Some(rect) => self.corners_cache.compute_to_scratch(
+                    rect,
+                    clip_instance.spatial_node_index,
+                    self.spatial_node_index,
+                    self.local_to_raster,
+                    frame_context.spatial_tree,
+                ),
+                None => VertRange::INVALID,
+            };
+            prim_info.clips.push((clip_instance.handle.uid(), clip_scratch));
         }
 
-        // Normalize the tile coordinates before adding to tile dependencies.
-        // For each affected tile, mark any of the primitive dependencies.
+        // For unclamped primitives, push prim + coverage into curr_verts once.
+        // All tiles share the same VertRange.
+        //
+        // For clamped primitives (Rectangle), push per-tile clamped corners into
+        // curr_verts inside the tile loop. The VertRange is tile-specific but still
+        // indexes into the same single buffer.
+        //
+        // clamp_to_tile = true  (coverage-only, currently Rectangle):
+        //   A primitive growing/shrinking while still covering the tile does not
+        //   change the tile's visual output — same coverage, same uniform color.
+        //   Clamping the corners to tile bounds means such a resize compares
+        //   equal and avoids a spurious invalidation.
+        //
+        //   NOTE: this optimisation does not yet fire in practice. prim_uid is
+        //   the full intern uid, which includes prim_rect in the key; if the
+        //   Rectangle's bounds change the uid changes and the prim_uid check in
+        //   compare_prim invalidates the tile before the clamped-corners check
+        //   is ever reached. The clamp_to_tile path is correct and ready; it
+        //   will become effective once prim_uid is derived from a true
+        //   content-only key (excluding prim_rect).
+        //
+        // clamp_to_tile = false (UV-mapped):
+        //   The pixels sampled from the primitive depend on UV coordinates
+        //   (tile_pos - prim_min) / prim_size. Any position or size change
+        //   shifts the UV mapping even if the tile stays fully covered.
+
+        // For each affected tile, record the primitive dependencies.
         for y in p0.y .. p1.y {
             for x in p0.x .. p1.x {
                 // TODO(gw): Convert to 2d array temporarily to avoid hash lookups per-tile?
                 let key = TileOffset::new(x, y);
                 let tile = sub_slice.tiles.get_mut(&key).expect("bug: no tile");
 
-                tile.add_prim_dependency(&prim_info);
+                tile.add_prim_dependency(
+                    &prim_info,
+                    &self.corners_cache,
+                    prim_clamp_to_tile,
+                );
             }
         }
 
-        VisibilityState::Visible {
+        DrawState::Visible {
             vis_flags,
             sub_slice_index: SubSliceIndex::new(sub_slice_index),
         }
@@ -2861,8 +2968,10 @@ impl TileCacheInstance {
     pub fn post_update(
         &mut self,
         frame_context: &FrameVisibilityContext,
+        prim_instances: &mut [PrimitiveInstance],
         composite_state: &mut CompositeState,
         resource_cache: &mut ResourceCache,
+        scratch: &mut PrimitiveScratchBuffer,
     ) {
         assert!(self.current_surface_traversal_depth == 0);
 
@@ -2900,6 +3009,53 @@ impl TileCacheInstance {
             surface.used_this_frame
         });
 
+        if !self.underlays.is_empty() && !self.deferred_dirty_tests.is_empty() {
+            let is_yuv_8bit = |desc: &ExternalSurfaceDescriptor| {
+                matches!(
+                    desc.dependency,
+                    ExternalSurfaceDependency::Yuv {
+                        channel_bit_depth: 8,
+                        ..
+                    }
+                )
+            };
+
+            let intersects_with_dirty_tests = |desc: &ExternalSurfaceDescriptor| {
+                self.deferred_dirty_tests
+                    .iter()
+                    .any(|dirty_test| dirty_test.prim_rect.intersects(&desc.local_rect))
+            };
+
+            // Cancel underlay if underlay intersects with backdrop filter and bit depth is 8 bits
+            // XXX WebRender does not support full HDR yet. HDR requires external composite to show correct colors.
+            let (underlays, cancel_underlays): (Vec<_>, Vec<_>) =
+                self.underlays
+                    .iter()
+                    .partition(|desc| {
+                        !is_yuv_8bit(desc) || !intersects_with_dirty_tests(desc)
+                    });
+
+            if !cancel_underlays.is_empty() {
+                for desc in cancel_underlays {
+                    // Change underlay to blit.
+                    debug_assert!(matches!(
+                        prim_instances[desc.prim_instance_index.0 as usize].kind,
+                        PrimitiveKind::YuvImage { .. }
+                    ));
+                    scratch.frame.draws[desc.prim_instance_index.0 as usize].compositor_surface_kind =
+                        CompositorSurfaceKind::Blit;
+                }
+
+                let mut underlays: Vec<ExternalSurfaceDescriptor> = underlays
+                    .iter()
+                    .cloned()
+                    .cloned()
+                    .collect();
+
+                mem::swap(&mut self.underlays, &mut underlays);
+            }
+        }
+
         let pic_to_world_mapper = SpaceMapper::new_with_target(
             frame_context.root_spatial_node_index,
             self.spatial_node_index,
@@ -2920,7 +3076,6 @@ impl TileCacheInstance {
             resource_cache,
             composite_state,
             compare_cache: &mut self.compare_cache,
-            spatial_node_comparer: &mut self.spatial_node_comparer,
         };
 
         // Step through each tile and invalidate if the dependencies have changed. Determine
@@ -3187,6 +3342,9 @@ struct TilePreUpdateContext {
 
     /// The current frame id for this picture cache
     frame_id: FrameId,
+
+    /// Maps picture-space coords to raster space, for caching per-tile raster rects.
+    local_to_raster: ScaleOffset,
 }
 
 // Immutable context passed to picture cache tiles during post_update

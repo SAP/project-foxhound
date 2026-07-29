@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +7,7 @@
 #include "DOMSVGPoint.h"
 #include "SVGTextFrame.h"
 #include "mozilla/dom/CharacterDataBuffer.h"
+#include "mozilla/dom/DOMPoint.h"
 #include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/dom/SVGRect.h"
 #include "mozilla/dom/SVGTextContentElementBinding.h"
@@ -198,7 +197,9 @@ float SVGTextContentElement::GetRotationOfChar(uint32_t charnum,
 int32_t SVGTextContentElement::GetCharNumAtPosition(
     const DOMPointInit& aPoint) {
   SVGTextFrame* textFrame = GetSVGTextFrame();
-  return textFrame ? textFrame->GetCharNumAtPosition(this, aPoint) : -1;
+  return textFrame ? textFrame->GetCharNumAtPosition(
+                         this, DOMPointReadOnly::ToPoint(aPoint))
+                   : -1;
 }
 
 }  // namespace mozilla::dom

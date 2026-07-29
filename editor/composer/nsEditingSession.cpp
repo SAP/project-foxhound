@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sw=2 et tw=78: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,27 +19,28 @@
 #include "nsDebug.h"     // for NS_ENSURE_SUCCESS, etc
 #include "nsDocShell.h"  // for nsDocShell
 #include "nsEditingSession.h"
-#include "nsError.h"                      // for NS_ERROR_FAILURE, NS_OK, etc
-#include "nsIChannel.h"                   // for nsIChannel
-#include "nsIDocumentViewer.h"            // for nsIDocumentViewer
-#include "nsIControllers.h"               // for nsIControllers
-#include "nsID.h"                         // for NS_GET_IID, etc
-#include "nsHTMLDocument.h"               // for nsHTMLDocument
-#include "nsIDocShell.h"                  // for nsIDocShell
-#include "mozilla/dom/Document.h"         // for Document
-#include "nsIEditor.h"                    // for nsIEditor
-#include "nsIInterfaceRequestorUtils.h"   // for do_GetInterface
-#include "nsIRefreshURI.h"                // for nsIRefreshURI
-#include "nsIRequest.h"                   // for nsIRequest
-#include "nsITimer.h"                     // for nsITimer, etc
-#include "nsIWeakReference.h"             // for nsISupportsWeakReference, etc
-#include "nsIWebNavigation.h"             // for nsIWebNavigation
-#include "nsIWebProgress.h"               // for nsIWebProgress, etc
-#include "nsLiteralString.h"              // for NS_LITERAL_STRING
-#include "nsPIDOMWindow.h"                // for nsPIDOMWindow
-#include "nsPresContext.h"                // for nsPresContext
-#include "nsReadableUtils.h"              // for AppendUTF16toUTF8
-#include "nsStringFwd.h"                  // for nsString
+#include "nsError.h"                     // for NS_ERROR_FAILURE, NS_OK, etc
+#include "nsIChannel.h"                  // for nsIChannel
+#include "nsIDocumentViewer.h"           // for nsIDocumentViewer
+#include "nsIControllers.h"              // for nsIControllers
+#include "nsID.h"                        // for NS_GET_IID, etc
+#include "nsHTMLDocument.h"              // for nsHTMLDocument
+#include "nsIDocShell.h"                 // for nsIDocShell
+#include "mozilla/dom/Document.h"        // for Document
+#include "nsIEditor.h"                   // for nsIEditor
+#include "nsIInterfaceRequestorUtils.h"  // for do_GetInterface
+#include "nsIRefreshURI.h"               // for nsIRefreshURI
+#include "nsIRequest.h"                  // for nsIRequest
+#include "nsITimer.h"                    // for nsITimer, etc
+#include "nsIWeakReference.h"            // for nsISupportsWeakReference, etc
+#include "nsIWebNavigation.h"            // for nsIWebNavigation
+#include "nsIWebProgress.h"              // for nsIWebProgress, etc
+#include "nsLiteralString.h"             // for NS_LITERAL_STRING
+#include "nsPIDOMWindow.h"               // for nsPIDOMWindow
+#include "nsPIDOMWindowInlines.h"  // for nsPIDOMWindowOuter::GetDocShell(), etc
+#include "nsPresContext.h"         // for nsPresContext
+#include "nsReadableUtils.h"       // for AppendUTF16toUTF8
+#include "nsStringFwd.h"           // for nsString
 #include "mozilla/dom/BrowsingContext.h"  // for BrowsingContext
 #include "mozilla/dom/Selection.h"        // for AutoHideSelectionChanges, etc
 #include "mozilla/dom/WindowContext.h"    // for WindowContext
@@ -306,8 +305,7 @@ nsresult nsEditingSession::SetupEditorOnWindow(nsPIDOMWindowOuter& aWindow) {
   }
 
   // make the UI state maintainer
-  RefPtr<ComposerCommandsUpdater> commandsUpdater =
-      new ComposerCommandsUpdater();
+  RefPtr commandsUpdater = MakeRefPtr<ComposerCommandsUpdater>();
   mComposerCommandsUpdater = commandsUpdater;
 
   // now init the state maintainer

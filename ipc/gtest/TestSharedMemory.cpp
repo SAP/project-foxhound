@@ -1,15 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gtest/gtest.h"
 
-#include "mozilla/MathAlgorithms.h"
 #include "mozilla/ipc/SharedMemoryCursor.h"
 #include "mozilla/ipc/SharedMemoryHandle.h"
 #include "mozilla/ipc/SharedMemoryMapping.h"
+
+#include <bit>
 
 #ifdef XP_LINUX
 #  include <errno.h>
@@ -522,7 +521,7 @@ TEST(IPCSharedMemory, CursorWriteRead)
   // Select a chunk size which is at least as big as the allocation granularity,
   // as smaller sizes will not be able to map.
   const size_t chunkSize = ipc::shared_memory::SystemAllocationGranularity();
-  ASSERT_TRUE(IsPowerOfTwo(chunkSize));
+  ASSERT_TRUE(std::has_single_bit(chunkSize));
 
   const uint64_t fullSize = chunkSize * 20;
   auto handle = ipc::shared_memory::Create(fullSize);

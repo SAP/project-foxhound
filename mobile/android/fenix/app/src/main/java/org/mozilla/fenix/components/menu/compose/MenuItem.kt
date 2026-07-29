@@ -23,9 +23,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentSize
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -46,14 +45,15 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.collectionItemInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
+import mozilla.components.compose.base.button.IconButton
 import mozilla.components.compose.base.modifier.thenConditional
-import mozilla.components.compose.base.theme.surfaceDimVariant
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.menu.MenuDialogTestTag.WEB_EXTENSION_ITEM
 import org.mozilla.fenix.compose.list.IconListItem
@@ -65,10 +65,6 @@ import mozilla.components.ui.icons.R as iconsR
 private val MENU_ITEM_HEIGHT_WITHOUT_DESC = 52.dp
 
 private val MENU_ITEM_HEIGHT_WITH_DESC = 56.dp
-
-private val BADGE_ROUNDED_CORNER = 100.dp
-
-private val ROUNDED_CORNER_SHAPE = RoundedCornerShape(4.dp)
 
 /**
  * An [IconListItem] wrapper for menu items in a [MenuGroup] with an optional icon at the end.
@@ -145,17 +141,23 @@ internal fun MenuItem(
                 if (!enabled) {
                     disabled()
                 }
+                if (onClick != null && enabled) {
+                    onClick {
+                        onClick()
+                        true
+                    }
+                }
             }
             .wrapContentSize()
-            .clip(shape = ROUNDED_CORNER_SHAPE)
+            .clip(shape = MaterialTheme.shapes.extraSmall)
             .background(
-                color = MaterialTheme.colorScheme.surfaceDimVariant,
+                color = MaterialTheme.colorScheme.surfaceBright,
             ),
         labelModifier = labelModifier,
         colors = ListItemDefaults.colors(
             headlineColor = labelTextColor,
             supportingColor = descriptionTextColor,
-            ),
+        ),
         maxLabelLines = 2,
         description = description,
         maxDescriptionLines = maxDescriptionLines,
@@ -206,9 +208,9 @@ internal fun MenuTextItem(
             MENU_ITEM_HEIGHT_WITHOUT_DESC
         },
         modifier = modifier
-            .clip(shape = ROUNDED_CORNER_SHAPE)
+            .clip(shape = MaterialTheme.shapes.extraSmall)
             .background(
-                color = MaterialTheme.colorScheme.surfaceDimVariant,
+                color = MaterialTheme.colorScheme.surfaceBright,
             ),
         iconPainter = iconPainter,
         onClick = onClick,
@@ -260,9 +262,9 @@ internal fun WebExtensionMenuItem(
                 testTagsAsResourceId = true
             }
             .wrapContentSize()
-            .clip(shape = ROUNDED_CORNER_SHAPE)
+            .clip(shape = MaterialTheme.shapes.extraSmall)
             .background(
-                color = MaterialTheme.colorScheme.surfaceDimVariant,
+                color = MaterialTheme.colorScheme.surfaceBright,
             ),
         afterListAction = {
             Row(
@@ -280,8 +282,9 @@ internal fun WebExtensionMenuItem(
                     VerticalDivider()
 
                     IconButton(
-                        modifier = Modifier.size(24.dp),
                         onClick = onSettingsClick,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
                     ) {
                         Icon(
                             painter = painterResource(iconsR.drawable.mozac_ic_settings_24),
@@ -323,9 +326,9 @@ internal fun MenuBadgeItem(
                 Modifier.semantics { disabled() },
             ) { !enabled }
             .semantics { disabled() }
-            .clip(shape = ROUNDED_CORNER_SHAPE)
+            .clip(shape = MaterialTheme.shapes.extraSmall)
             .background(
-                color = MaterialTheme.colorScheme.surfaceDimVariant,
+                color = MaterialTheme.colorScheme.surfaceBright,
             )
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -367,7 +370,7 @@ internal fun Badge(
 ) {
     Column(
         modifier = Modifier
-            .clip(shape = RoundedCornerShape(BADGE_ROUNDED_CORNER))
+            .clip(CircleShape)
             .background(color = getBadgeColor(state))
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -483,8 +486,8 @@ private fun getIconTint(state: MenuItemState): Color {
 @Composable
 private fun getBadgeColor(state: MenuItemState): Color {
     return when (state) {
-        MenuItemState.ACTIVE -> MaterialTheme.colorScheme.primaryContainer
-        else -> MaterialTheme.colorScheme.surfaceContainerHighest
+        MenuItemState.ACTIVE -> MaterialTheme.colorScheme.tertiaryContainer
+        else -> MaterialTheme.colorScheme.surfaceContainerHigh
     }
 }
 

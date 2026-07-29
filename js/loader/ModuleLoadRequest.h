@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -30,9 +28,6 @@ class ModuleLoaderBase;
 class ModuleLoadRequest final : public ScriptLoadRequest {
   ~ModuleLoadRequest();
 
-  ModuleLoadRequest(const ModuleLoadRequest& aOther) = delete;
-  ModuleLoadRequest(ModuleLoadRequest&& aOther) = delete;
-
  public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(ModuleLoadRequest,
@@ -53,6 +48,8 @@ class ModuleLoadRequest final : public ScriptLoadRequest {
   ModuleLoadRequest(ModuleType aModuleType, const SRIMetadata& aIntegrity,
                     nsIURI* aReferrer, LoadContextBase* aContext, Kind aKind,
                     ModuleLoaderBase* aLoader, ModuleLoadRequest* aRootModule);
+  ModuleLoadRequest(const ModuleLoadRequest& aOther) = delete;
+  ModuleLoadRequest(ModuleLoadRequest&& aOther) = delete;
 
   bool IsTopLevel() const override { return mKind == Kind::TopLevel; }
   bool IsStaticImport() const { return mKind == Kind::StaticImport; }
@@ -114,6 +111,10 @@ class ModuleLoadRequest final : public ScriptLoadRequest {
     MOZ_ASSERT(IsDynamicImport());
     MOZ_ASSERT(IsFetching() || IsCompiling());
     mErroredLoadingImports = true;
+  }
+
+  void UpdateReferrerPolicy(mozilla::dom::ReferrerPolicy aReferrerPolicy) {
+    FetchInfo()->UpdateReferrerPolicy(aReferrerPolicy);
   }
 
  public:

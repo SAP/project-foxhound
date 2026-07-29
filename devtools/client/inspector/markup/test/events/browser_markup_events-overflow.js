@@ -69,7 +69,7 @@ add_task(async function () {
     const header = headers[data.headerToClick];
 
     const ready = tooltip.once("event-tooltip-ready");
-    EventUtils.synthesizeMouseAtCenter(header, {}, header.ownerGlobal);
+    EventUtils.synthesizeMouseAtCenter(header, {}, header.documentGlobal);
     await ready;
 
     info("Event handler expanded.");

@@ -26,7 +26,6 @@
 #include "api/video/video_content_type.h"
 #include "api/video/video_frame.h"
 #include "api/video/video_sink_interface.h"
-#include "api/video/video_timing.h"
 #include "modules/video_coding/timing/timing.h"
 #include "rtc_base/thread_annotations.h"
 #include "video/timing/simulator/assembler.h"
@@ -61,12 +60,8 @@ class RenderingTracker : public AssembledFrameCallback,
   // All members of the config should be explicitly set by the user.
   struct Config {
     uint32_t ssrc = 0;
-    // Time to wait for a keyframe, before timing out.
-    TimeDelta max_wait_for_keyframe = TimeDelta::MinusInfinity();
-    // Time to wait for a delta frame, before timing out.
-    TimeDelta max_wait_for_frame = TimeDelta::MinusInfinity();
     // Fixed render delay term added to the render timestamps.
-    TimeDelta render_delay = TimeDelta::MinusInfinity();
+    TimeDelta render_delay = TimeDelta::PlusInfinity();
   };
 
   RenderingTracker(const Environment& env,
@@ -103,7 +98,6 @@ class RenderingTracker : public AssembledFrameCallback,
                         TimeDelta jitter_buffer_target_delay,
                         TimeDelta jitter_buffer_minimum_delay) override;
   void OnFrameBufferTimingsUpdated(int, int, int, int, int, int) override {}
-  void OnTimingFrameInfoUpdated(const TimingFrameInfo&) override {}
 
   // Implements `VideoSinkInterface<VideoFrame>`.
   void OnFrame(const VideoFrame& decoded_frame) override;

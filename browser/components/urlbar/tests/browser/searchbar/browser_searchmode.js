@@ -21,11 +21,11 @@ add_task(async function searchModeSurvivesTabSwitch() {
   let tab1 = gBrowser.selectedTab;
   let tab2 = await BrowserTestUtils.openNewForegroundTab(gBrowser);
 
-  let popup = await SearchbarTestUtils.openSearchModeSwitcher(window);
-  info("Press on the engine1 menu button to enter search mode");
-  let popupHidden = SearchbarTestUtils.searchModeSwitcherPopupClosed(window);
-  popup.querySelector("menuitem[label=engine1]").click();
-  await popupHidden;
+  info("Press on the engine1 panel item to enter search mode");
+  await SearchbarTestUtils.activateSearchModeSwitcherItem(
+    window,
+    "panel-item[data-engine-id=engine1]"
+  );
 
   await SearchbarTestUtils.assertSearchMode(window, {
     engineName: "engine1",

@@ -250,10 +250,9 @@ add_task(async function testFocusAndClickMixing() {
   await waitForAnimationFrame();
 
   is(deck.selectedViewName, "two", "second view is shown");
-
   if (document.activeElement != buttons[1]) {
     // On Mac the button isn't focused on click, but it is on Windows/Linux.
-    await sendTab();
+    buttons[1].focus();
   }
   is(document.activeElement, buttons[1], "second deck button is focusable");
 

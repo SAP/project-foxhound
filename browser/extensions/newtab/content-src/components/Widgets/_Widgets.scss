@@ -9,26 +9,61 @@
 .widgets-wrapper {
   margin-inline: auto;
   padding-block-end: var(--space-large);
-  max-width: max-content;
+
+  // Classic layout
+  // @nova-cleanup(remove-conditional): Remove classic max-width after Nova ships
+  .classic-enabled & {
+    max-width: max-content;
+  }
+
+  // Nova layout
+  // @nova-cleanup(remove-conditional): Make Nova grid default, remove .nova-enabled selector
+  .nova-enabled & {
+    display: contents;
+  }
 }
 
-.widgets-section-container {
-  padding-block: var(--space-xsmall) var(--space-large);
-  padding-inline: var(--space-large);
-  background-color: var(--button-background-color);
-  border-radius: var(--border-radius-large);
-  // Bug 1908010 - This overwrites the design system color because of a
-  // known transparency issue with color-mix syntax when a wallpaper is set
-  .lightWallpaper &,
-  .darkWallpaper & {
-    background-color: var(--newtab-weather-background-color); // stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens
 
-    @media (prefers-contrast) {
-      background-color: var(--background-color-box);
+.widgets-section-container {
+  // Classic layout
+  // @nova-cleanup(remove-conditional): Remove classic padding/background styles after Nova ships
+  .classic-enabled & {
+    padding-block: var(--space-xsmall) var(--space-large);
+    padding-inline: var(--space-large);
+    background-color: var(--button-background-color);
+    border-radius: var(--border-radius-large);
+
+    // Bug 1908010 - This overwrites the design system color because of a
+    // known transparency issue with color-mix syntax when a wallpaper is set
+    .lightWallpaper &,
+    .darkWallpaper & {
+      background-color: var(--newtab-weather-background-color); // stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens
+
+      @media (prefers-contrast) {
+        background-color: var(--background-color-box);
+      }
     }
   }
 
+  // Nova layout
+  // @nova-cleanup(remove-conditional): Make Nova grid default, remove .nova-enabled selector
+  .nova-enabled & {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(
+      auto-fill,
+      calc(4 * var(--col-width) + 3 * var(--space-medium))
+    );
+    gap: var(--space-medium);
+    justify-content: center;
+  }
+
   .widgets-title-container {
+    // @nova-cleanup(remove-conditional): Make grid-column default, remove .nova-enabled selector
+    .nova-enabled & {
+      grid-column: 1 / -1;
+    }
+
     display: flex;
     justify-content: flex-end;
     align-items: center;
@@ -40,8 +75,134 @@
       margin-inline-end: auto;
       position: relative;
     }
+
+    .widgets-title-heading {
+      display: flex;
+      align-items: center;
+      gap: var(--space-medium);
+    }
+
+    .widgets-title-actions {
+      display: flex;
+      align-items: center;
+      gap: var(--space-medium);
+      position: relative;
+    }
   }
 
+  h1 {
+    font-size: var(--font-size-large);
+    font-weight: var(--font-weight-bold);
+
+    // @nova-cleanup(remove-conditional): Make default, remove .nova-enabled selector
+    .nova-enabled & {
+      font-size: var(--font-size-heading-large);
+      font-weight: var(--font-weight-heading);
+      color: var(--newtab-contextual-text-primary-color);
+
+      @include at-content-cols(12) {
+        font-size: var(--font-size-heading-xlarge);
+      }
+
+      @include wallpaper-contrast-fix;
+    }
+  }
+
+  // @nova-cleanup(remove-conditional): Make default, remove .nova-enabled selector
+  #hide-all-widgets-button,
+  #toggle-widgets-size-button {
+    .nova-enabled & {
+      color: var(--newtab-contextual-text-primary-color);
+
+      @include wallpaper-contrast-fix;
+    }
+  }
+}
+
+
+.widgets-expand-button {
+  appearance: none;
+  align-items: center;
+  background-color: transparent;
+  border: 1px solid var(--newtab-primary-action-background);
+  border-radius: var(--border-radius-circle);
+  color: var(--newtab-primary-action-background);
+  cursor: pointer;
+  display: inline-flex;
+  height: var(--size-item-large);
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  width: var(--size-item-large);
+
+  &::before {
+    background-color: currentColor;
+    content: '';
+    height: var(--size-item-small);
+    mask: url('chrome://global/skin/icons/arrow-down.svg') center / contain no-repeat;
+    transition: transform 160ms ease;
+    width: var(--size-item-small);
+  }
+
+  &.is-maximized::before {
+    transform: rotate(180deg);
+  }
+
+  &:hover {
+    background-color: var(--newtab-element-secondary-hover-color);
+  }
+
+  &:active {
+    background-color: var(--newtab-element-secondary-active-color);
+  }
+
+  &:focus {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: var(--focus-outline-offset);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .widgets-expand-button::before {
+    transition: none;
+  }
+}
+
+.widgets-header-context-menu {
+  position: relative;
+
+  @include wallpaper-contrast-fix;
+
+  .widgets-header-context-menu-button {
+    &::part(button) {
+      background-color: transparent;
+    }
+
+    &::part(button):hover {
+      background-color: var(--button-background-color-hover);
+    }
+
+    &::part(button):active {
+      background-color: var(--button-background-color-active);
+    }
+  }
+
+  panel-list {
+    min-width: 256px;
+  }
+
+  panel-item::part(button) {
+    min-block-size: 30px;
+  }
+}
+
+// Classic layout padding (when Nova is disabled)
+// @nova-cleanup(remove-conditional): Remove classic layout styles after Nova ships
+.classic-enabled .widgets-section-container {
   // Mirrors the grid-gap spacing used on
   // .ds-outer-wrapper-breakpoint-override .ds-card-grid
   @media(min-width: $break-point-widest) {
@@ -56,56 +217,221 @@
       padding-inline: var(--space-large);
     }
   }
-
-  h1 {
-    font-size: var(--font-size-large);
-    font-weight: var(--font-weight-bold);
-  }
 }
 
 // Bug 1996308: This layout is somewhat brittle as the design dictates the parent container (.widgets-wrapper)
 // be only as wide as the width of this container (.widgets-container) while still being responsive.
 // Once we have four widgets, we can revert most of this logic as the container will be 100%.
 .widgets-container {
-  --widgets-card-width: var(--newtab-card-grid-layout-width);
-  // This is the maximum number of widgets the Widgets row can support
-  --widgets-max-cols: 3;
-  --widgets-grid-gap: var(--space-large);
-  --widgets-small-card-height: var(--newtab-card-height-small);
-
-  // Update the card width when Sections is enabled
-  .has-sections-grid & {
-    --widgets-card-width: var(--newtab-card-width-medium);
+  // Nova layout
+  // @nova-cleanup(remove-conditional): Make Nova grid default, remove .nova-enabled selector
+  .nova-enabled & {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, var(--col-width));
+    grid-auto-rows: var(--row-height);
+    gap: var(--space-medium);
   }
 
-  &:has(.lists),
-  &:has(.focus-timer) {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, var(--widgets-card-width));
-    gap: var(--widgets-grid-gap);
+  // Classic layout (when Nova is disabled)
+  // @nova-cleanup(remove-conditional): Remove classic fixed-width card layout after Nova ships
+  .classic-enabled & {
+    --widgets-card-width: var(--newtab-card-grid-layout-width);
+    // This is the maximum number of widgets the Widgets row can support
+    --widgets-max-cols: 3;
+    --widgets-grid-gap: var(--space-large);
+    --widgets-small-card-height: var(--newtab-card-height-small);
 
-    // The max-width logic is only necessary when displaying more than one column
-    @media(min-width: $break-point-medium) {
-      max-width: calc(var(--widgets-max-cols) * var(--widgets-card-width) + (var(--widgets-max-cols) - 1) * var(--widgets-grid-gap));
-      justify-content: center;
-    }
+    &:has(.lists),
+    &:has(.focus-timer),
+    &:has(.sports) {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, var(--widgets-card-width));
+      gap: var(--widgets-grid-gap);
 
-    // Mirrors the grid-gap spacing used on
-    // .ds-outer-wrapper-breakpoint-override .ds-card-grid
-    @media(min-width: $break-point-widest) {
-      --widgets-grid-gap: var(--space-xlarge);
-    }
+      // The max-width logic is only necessary when displaying more than one column
+      @media(min-width: $break-point-medium) {
+        max-width: calc(var(--widgets-max-cols) * var(--widgets-card-width) + (var(--widgets-max-cols) - 1) * var(--widgets-grid-gap));
+        justify-content: center;
+      }
 
-    // Sections Layout Override
-    .has-sections-grid & {
+      // Mirrors the grid-gap spacing used on
+      // .ds-outer-wrapper-breakpoint-override .ds-card-grid
       @media(min-width: $break-point-widest) {
-        --widgets-grid-gap: var(--space-large);
+        --widgets-grid-gap: var(--space-xlarge);
+      }
+    }
+
+    .is-small {
+      height: var(--widgets-small-card-height);
+    }
+  }
+}
+
+// Classic layout: Sections grid overrides
+// @nova-cleanup(remove-conditional): Remove after Nova ships
+.classic-enabled .has-sections-grid .widgets-container {
+  --widgets-card-width: var(--newtab-card-width-medium);
+
+  &:has(.lists),
+  &:has(.focus-timer),
+  &:has(.sports) {
+    @media(min-width: $break-point-widest) {
+      --widgets-grid-gap: var(--space-large);
+    }
+  }
+}
+
+// DnD visuals on the wrapper.
+.nova-enabled .widget-draggable {
+  &.is-dragging {
+    opacity: 0.5;
+  }
+}
+
+.widgets-feedback-link {
+  display: inline-block;
+  margin-block-start: var(--space-medium);
+  font-size: var(--font-size-small);
+}
+
+.nova-enabled .widgets-row-toggle {
+  display: none;
+  grid-column: 1 / -1;
+  justify-self: center;
+  margin-block-start: var(--space-medium);
+
+  @include wallpaper-contrast-fix;
+}
+
+// Reveal the toggle when the layout would overflow at the current
+// card-column count, and remove individual widgets from layout when
+// they'd be hidden by collapse. JS publishes:
+//   - `data-overflow-N` on .widgets-section-container — drives toggle
+//     visibility.
+//   - `data-hidden-N` on each .widget-wrapper that would be clipped at
+//     that viewport — combined with `data-row-collapsed`, drives
+//     `display: none` so the container shrinks naturally (no clip
+//     needed) and the widget tabs out of focus / a11y order.
+// One IAB card spans 4 grid columns, so the ranges below mirror 1-, 2-,
+// 3-, and 4-card viewports.
+.nova-enabled {
+  @include at-content-cols-range(0, 8) {
+    .widgets-section-container[data-overflow-1] .widgets-row-toggle {
+      display: block;
+    }
+
+    .widgets-container[data-row-collapsed] .widget-wrapper[data-hidden-1] {
+      display: none;
+    }
+  }
+
+  @include at-content-cols-range(8, 12) {
+    .widgets-section-container[data-overflow-2] .widgets-row-toggle {
+      display: block;
+    }
+
+    .widgets-container[data-row-collapsed] .widget-wrapper[data-hidden-2] {
+      display: none;
+    }
+  }
+
+  @include at-content-cols-range(12, 16) {
+    .widgets-section-container[data-overflow-3] .widgets-row-toggle {
+      display: block;
+    }
+
+    .widgets-container[data-row-collapsed] .widget-wrapper[data-hidden-3] {
+      display: none;
+    }
+  }
+
+  @include at-content-cols(16) {
+    .widgets-section-container[data-overflow-4] .widgets-row-toggle {
+      display: block;
+    }
+
+    .widgets-container[data-row-collapsed] .widget-wrapper[data-hidden-4] {
+      display: none;
+    }
+  }
+}
+
+.nova-enabled {
+  .widgets-container {
+    // Only reserve a grid slot for the placeholder when it can fit on row 1
+    // alongside the existing widgets (no wrap to a new row). Each widget is
+    // col-4 (4 grid cols), so N widgets + placeholder need 4*(N+1) cols of
+    // width. Child counts include the placeholder itself (rendered last in
+    // the DOM), so 2 children = 1 widget, 3 = 2 widgets, etc. Restricting to
+    // row 1 avoids edge cases with mixed-height widgets (e.g. a large widget
+    // occupying multiple medium row-slots in one column).
+    @include at-content-cols(8) {
+      &:has(> :nth-child(2)):not(:has(> :nth-child(3))) > .widgets-add-button {
+        display: flex;
+      }
+    }
+
+    @include at-content-cols(12) {
+      &:has(> :nth-child(3)):not(:has(> :nth-child(4))) > .widgets-add-button {
+        display: flex;
+      }
+    }
+
+    @include at-content-cols(16) {
+      &:has(> :nth-child(4)):not(:has(> :nth-child(5))) > .widgets-add-button {
+        display: flex;
       }
     }
   }
 
-  .small-widget {
-    height: var(--widgets-small-card-height);
+  .widgets-add-button {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    background: var(--newtab-background-card);
+    border: 1px dashed var(--border-color);
+    border-radius: var(--border-radius-large);
+    color: var(
+      --icon-color-accent-primary-desaturated,
+      light-dark(var(--color-violet-desaturated-60), var(--color-violet-desaturated-50))
+    );
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
+    }
+
+    &.medium-widget {
+      grid-row: span 2;
+    }
+
+    &.large-widget {
+      grid-row: span 4;
+    }
+
+    &:hover,
+    &:focus-within {
+      opacity: 1;
+      background: var(--newtab-background-color-secondary);
+      outline: 1px solid var(--border-color-deemphasized);
+      box-shadow: var(--card-box-shadow-hover);
+    }
+
+    &:focus-visible {
+      outline: var(--focus-outline);
+      outline-offset: var(--focus-outline-offset);
+    }
+
+    .widgets-add-button-icon {
+      display: inline-block;
+      width: var(--icon-size-large);
+      height: var(--icon-size-large);
+      background-color: currentColor;
+      mask: url('chrome://global/skin/icons/plus.svg') center / contain no-repeat;
+    }
   }
 }
 
@@ -151,7 +477,7 @@
     inset-inline-end: var(--space-medium);
     inset-block-start: var(--space-medium);
     // Custom contrast override
-    --button-icon-fill: var(--color-gray-05);
+    --button-icon-fill: var(--color-gray-0);
   }
 
   // If not image is not included, use the default icon color to maintain proper viz contrast

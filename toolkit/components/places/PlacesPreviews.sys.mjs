@@ -33,6 +33,9 @@ const DELETE_TIMEOUT_MS = 60000;
 // The folder inside the profile folder where to store previews.
 const PREVIEWS_DIRECTORY = "places-previews";
 
+// 64 = SHA-256 hex digest length (32 bytes * 2 hex chars per byte).
+const PREVIEW_FILENAME_RE = /^[a-f0-9]{64}\.webp$/;
+
 // How old a preview file should be before we replace it.
 const DAYS_BEFORE_REPLACEMENT = 30;
 
@@ -390,23 +393,41 @@ export const PlacesPreviews = new (class extends EventEmitter {
     let files = await IOUtils.getChildren(this.getPath());
     let hashes = files
       .map(f => PathUtils.filename(f))
-      .filter(() => /^[a-f0-9]{32}\.webp$/)
+      .filter(f => PREVIEW_FILENAME_RE.test(f))
       .map(n => n.substring(0, n.lastIndexOf(".")));
+
+    if (!hashes.length) {
+      return true;
+    }
 
     await lazy.PlacesUtils.withConnectionWrapper(
       "PlacesPreviews.sys.mjs::deleteOrphans",
       async db => {
-        await db.execute(
-          `
-          WITH files(hash) AS (
-            VALUES ${hashes.map(h => `('${h}')`).join(", ")}
-          )
-          INSERT OR IGNORE INTO moz_previews_tombstones
-            SELECT hash FROM files
-            EXCEPT
-            SELECT sha256hex(url) FROM moz_places
-          `
-        );
+        await db.executeTransaction(async () => {
+          for (let chunk of lazy.PlacesUtils.chunkArray(
+            hashes,
+            db.variableLimit
+          )) {
+            let params = chunk.reduce((p, h, i) => {
+              p["hash" + i] = h;
+              return p;
+            }, {});
+            await db.execute(
+              `
+              WITH files(hash) AS (
+                VALUES ${Object.keys(params)
+                  .map(p => `(:${p})`)
+                  .join(", ")}
+              )
+              INSERT OR IGNORE INTO moz_previews_tombstones
+                SELECT hash FROM files
+                EXCEPT
+                SELECT sha256hex(url) FROM moz_places
+              `,
+              params
+            );
+          }
+        });
       }
     );
     this.#deletionHandler.ensureRunning();

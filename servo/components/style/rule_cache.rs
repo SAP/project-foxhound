@@ -5,12 +5,14 @@
 //! A cache from rule node to computed values, in order to cache reset
 //! properties.
 
+use crate::computed_value_flags::ComputedValueFlags;
+use crate::context::CascadeInputs;
 use crate::logical_geometry::WritingMode;
 use crate::properties::{ComputedValues, StyleBuilder};
-use crate::rule_tree::StrongRuleNode;
+use crate::rule_tree::{RuleCascadeFlags, StrongRuleNode};
 use crate::selector_parser::PseudoElement;
 use crate::shared_lock::StylesheetGuards;
-use crate::values::computed::{NonNegativeLength, Zoom};
+use crate::values::computed::{Context, NonNegativeLength};
 use crate::values::specified::color::ColorSchemeFlags;
 use rustc_hash::FxHashMap;
 use servo_arc::Arc;
@@ -68,13 +70,22 @@ struct CachedConditions {
     line_height: Option<NonNegativeLength>,
     color_scheme: Option<ColorSchemeFlags>,
     writing_mode: Option<WritingMode>,
-    zoom: Zoom,
 }
 
 impl CachedConditions {
     /// Returns whether `style` matches the conditions.
-    fn matches(&self, style: &StyleBuilder) -> bool {
-        if style.effective_zoom != self.zoom {
+    fn matches(&self, cached_style: &ComputedValues, style: &StyleBuilder) -> bool {
+        if cached_style.effective_zoom != style.effective_zoom {
+            return false;
+        }
+
+        if cached_style
+            .flags
+            .intersects(ComputedValueFlags::IS_IN_APPEARANCE_BASE_SUBTREE)
+            != style
+                .flags()
+                .intersects(ComputedValueFlags::IS_IN_APPEARANCE_BASE_SUBTREE)
+        {
             return false;
         }
 
@@ -94,16 +105,15 @@ impl CachedConditions {
             }
         }
 
-        if let Some(cs) = self.color_scheme {
-            if style.get_inherited_ui().color_scheme_bits() != cs {
-                return false;
-            }
+        if self
+            .color_scheme
+            .is_some_and(|cs| style.get_inherited_ui().color_scheme_bits() != cs)
+        {
+            return false;
         }
 
-        if let Some(wm) = self.writing_mode {
-            if style.writing_mode != wm {
-                return false;
-            }
+        if self.writing_mode.is_some_and(|wm| style.writing_mode != wm) {
+            return false;
         }
 
         true
@@ -138,12 +148,12 @@ impl RuleCache {
         guards: &StylesheetGuards,
         mut rule_node: Option<&'r StrongRuleNode>,
     ) -> Option<&'r StrongRuleNode> {
-        use crate::rule_tree::CascadeLevel;
+        use crate::rule_tree::CascadeOrigin;
         while let Some(node) = rule_node {
             let priority = node.cascade_priority();
             let cascade_level = priority.cascade_level();
             let should_try_to_skip = cascade_level.is_animation()
-                || matches!(cascade_level, CascadeLevel::PresHints)
+                || cascade_level.origin() == CascadeOrigin::PresHints
                 || priority.layer_order().is_style_attribute_layer();
             if !should_try_to_skip {
                 break;
@@ -163,14 +173,11 @@ impl RuleCache {
     ///
     /// This needs to receive a `StyleBuilder` with the `early` properties
     /// already applied.
-    pub fn find(
-        &self,
-        guards: &StylesheetGuards,
-        builder_with_early_props: &StyleBuilder,
-    ) -> Option<&ComputedValues> {
+    pub fn find(&self, guards: &StylesheetGuards, context: &Context) -> Option<&ComputedValues> {
         // A pseudo-element with property restrictions can result in different
         // computed values if it's also used for a non-pseudo.
-        if builder_with_early_props
+        if context
+            .builder
             .pseudo
             .and_then(|p| p.property_restriction())
             .is_some()
@@ -178,12 +185,20 @@ impl RuleCache {
             return None;
         }
 
-        let rules = builder_with_early_props.rules.as_ref();
+        if context
+            .included_cascade_flags
+            .contains(RuleCascadeFlags::STARTING_STYLE)
+        {
+            // We don't want to cache nor include starting-style rules.
+            return None;
+        }
+
+        let rules = context.builder.rules.as_ref();
         let rules = Self::get_rule_node_for_cache(guards, rules)?;
         let cached_values = self.map.get(rules)?;
 
         for &(ref conditions, ref values) in cached_values.iter() {
-            if conditions.matches(builder_with_early_props) {
+            if conditions.matches(values, &context.builder) {
                 debug!("Using cached reset style with conditions {:?}", conditions);
                 return Some(&**values);
             }
@@ -199,15 +214,25 @@ impl RuleCache {
         guards: &StylesheetGuards,
         style: &Arc<ComputedValues>,
         pseudo: Option<&PseudoElement>,
+        inputs: &CascadeInputs,
         conditions: &RuleCacheConditions,
     ) -> bool {
         if !conditions.cacheable() {
             return false;
         }
 
-        // A pseudo-element with property restrictions can result in different
-        // computed values if it's also used for a non-pseudo.
+        // A pseudo-element with property restrictions can result in different computed values if
+        // it's also used for a non-pseudo.
+        // TODO: we could consider inserting them and just checking the builder like we do for zoom.
         if pseudo.and_then(|p| p.property_restriction()).is_some() {
+            return false;
+        }
+
+        // Don't insert @starting-style styles in the cache, for the same reason.
+        if inputs
+            .included_cascade_flags
+            .contains(RuleCascadeFlags::STARTING_STYLE)
+        {
             return false;
         }
 
@@ -226,7 +251,6 @@ impl RuleCache {
             font_size: conditions.font_size,
             line_height: conditions.line_height,
             color_scheme: conditions.color_scheme,
-            zoom: style.effective_zoom,
         };
         self.map
             .entry(rules)

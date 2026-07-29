@@ -10,9 +10,6 @@ const { Heartbeat } = ChromeUtils.importESModule(
   "resource://normandy/lib/Heartbeat.sys.mjs"
 );
 
-const { Uptake } = ChromeUtils.importESModule(
-  "resource://normandy/lib/Uptake.sys.mjs"
-);
 const { NormandyTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/NormandyTestUtils.sys.mjs"
 );

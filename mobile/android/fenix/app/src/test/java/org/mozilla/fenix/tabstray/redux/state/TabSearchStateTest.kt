@@ -5,13 +5,13 @@
 package org.mozilla.fenix.tabstray.redux.state
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import io.mockk.mockk
 import mozilla.components.browser.state.state.createTab
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mozilla.fenix.tabstray.data.TabsTrayItem
 
 @RunWith(AndroidJUnit4::class)
 class TabSearchStateTest {
@@ -49,7 +49,7 @@ class TabSearchStateTest {
     fun `WHEN query is not empty AND searchResults is not empty THEN showNoResults is false`() {
         val state = TabSearchState(
             query = "Mozilla",
-            searchResults = listOf(createTab("mozilla.org", id = "mozilla")),
+            searchResults = listOf(TabsTrayItem.Tab(tab = createTab("mozilla.org", id = "mozilla"))),
         )
 
         assertFalse(state.showNoResults)

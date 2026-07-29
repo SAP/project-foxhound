@@ -51,7 +51,7 @@ class FragmentTest {
     @Before
     fun setup() {
         mockContext = mockk(relaxed = true) {
-            every { settings() } returns settings
+            every { components.settings } returns settings
         }
         fragment = spyk(Fragment()).apply {
             every { context } returns mockContext
@@ -87,73 +87,7 @@ class FragmentTest {
     }
 
     @Test
-    fun `GIVEN the top addressbar and tabstrip are shown WHEN getTopToolbarHeight THEN return their combined height`() {
-        every { settings.shouldUseComposableToolbar } returns false
-        every { settings.isTabStripEnabled } returns true
-        every { settings.toolbarPosition } returns ToolbarPosition.TOP
-
-        val topToolbarHeight = fragment.getTopToolbarHeight()
-
-        assertEquals(112, topToolbarHeight)
-    }
-
-    @Test
-    fun `GIVEN the top addressbar and tabstrip are shown WHEN getTopToolbarHeight with tabstrip excluded THEN return the addressbar height`() {
-        every { settings.shouldUseComposableToolbar } returns false
-        every { settings.isTabStripEnabled } returns true
-        every { settings.toolbarPosition } returns ToolbarPosition.TOP
-
-        val topToolbarHeight = fragment.getTopToolbarHeight(includeTabStripIfAvailable = false)
-
-        assertEquals(56, topToolbarHeight)
-    }
-
-    @Test
-    fun `GIVEN only the top addressbar shown WHEN getTopToolbarHeight with tabstrip included THEN return the addressbar height`() {
-        every { settings.shouldUseComposableToolbar } returns false
-        every { settings.isTabStripEnabled } returns false
-        every { settings.toolbarPosition } returns ToolbarPosition.TOP
-
-        val topToolbarHeight = fragment.getTopToolbarHeight(includeTabStripIfAvailable = true)
-
-        assertEquals(56, topToolbarHeight)
-    }
-
-    @Test
-    fun `GIVEN only the top addressbar shown WHEN getTopToolbarHeight THEN return the addressbar height`() {
-        every { settings.shouldUseComposableToolbar } returns false
-        every { settings.toolbarPosition } returns ToolbarPosition.TOP
-
-        val topToolbarHeight = fragment.getTopToolbarHeight()
-
-        assertEquals(56, topToolbarHeight)
-    }
-
-    @Test
-    fun `GIVEN the top addressbar or tabstrip not shown WHEN getTopToolbarHeight THEN return 0`() {
-        every { settings.shouldUseComposableToolbar } returns false
-        every { settings.isTabStripEnabled } returns false
-        every { settings.toolbarPosition } returns ToolbarPosition.BOTTOM
-
-        val topToolbarHeight = fragment.getTopToolbarHeight(includeTabStripIfAvailable = false)
-
-        assertEquals(0, topToolbarHeight)
-    }
-
-    @Test
-    fun `GIVEN the address bar and the microsurvey are shown at bottom WHEN getBottomToolbarHeight THEN returns the combined height`() {
-        every { settings.shouldUseComposableToolbar } returns false
-        every { settings.shouldShowMicrosurveyPrompt } returns true
-        every { settings.toolbarPosition } returns ToolbarPosition.BOTTOM
-
-        val bottomToolbarHeight = fragment.getBottomToolbarHeight()
-
-        assertEquals(187, bottomToolbarHeight)
-    }
-
-    @Test
     fun `GIVEN the composable toolbar and the microsurvey are shown at bottom WHEN getBottomToolbarHeight THEN returns the combined height`() {
-        every { settings.shouldUseComposableToolbar } returns true
         every { settings.shouldShowMicrosurveyPrompt } returns true
         every { settings.toolbarPosition } returns ToolbarPosition.BOTTOM
 
@@ -173,20 +107,8 @@ class FragmentTest {
     }
 
     @Test
-    fun `GIVEN just the addressbar is shown at bottom WHEN getBottomToolbarHeight THEN returns it's height`() {
-        every { settings.shouldUseComposableToolbar } returns false
-        every { settings.shouldShowMicrosurveyPrompt } returns false
-        every { settings.toolbarPosition } returns ToolbarPosition.BOTTOM
-
-        val bottomToolbarHeight = fragment.getBottomToolbarHeight()
-
-        assertEquals(56, bottomToolbarHeight)
-    }
-
-    @Test
     @Config(qualifiers = "h481dp") // navbar is only shown on screens taller than 480dp
     fun `GIVEN just the composable toolbar shown at bottom WHEN getBottomToolbarHeight THEN returns it's height`() {
-        every { settings.shouldUseComposableToolbar } returns true
         every { settings.shouldShowMicrosurveyPrompt } returns false
         every { settings.toolbarPosition } returns ToolbarPosition.BOTTOM
 
@@ -197,29 +119,11 @@ class FragmentTest {
 
     @Test
     @Config(qualifiers = "h481dp") // navbar is only shown on screens taller than 480dp
-    fun `GIVEN the address bar, navigation bar and the microsurvey are shown at bottom WHEN getBottomToolbarHeight THEN returns the combined height`() {
-        val configuration = Configuration().apply {
-            screenHeightDp = 481
-        }
-        every { mockContext.resources.configuration } returns configuration
-        every { settings.shouldUseComposableToolbar } returns false
-        every { settings.shouldShowMicrosurveyPrompt } returns true
-        every { settings.shouldUseExpandedToolbar } returns true
-        every { settings.toolbarPosition } returns ToolbarPosition.BOTTOM
-
-        val bottomToolbarHeight = fragment.getBottomToolbarHeight()
-
-        assertEquals(247, bottomToolbarHeight)
-    }
-
-    @Test
-    @Config(qualifiers = "h481dp") // navbar is only shown on screens taller than 480dp
     fun `GIVEN the composable toolbar, navigation bar and the microsurvey are shown at bottom WHEN getBottomToolbarHeight with excluded navigation bar THEN returns the combined height minus navigation bar`() {
         val configuration = Configuration().apply {
             screenHeightDp = 481
         }
         every { mockContext.resources.configuration } returns configuration
-        every { settings.shouldUseComposableToolbar } returns true
         every { settings.shouldShowMicrosurveyPrompt } returns true
         every { settings.shouldUseExpandedToolbar } returns true
         every { settings.toolbarPosition } returns ToolbarPosition.BOTTOM
@@ -236,7 +140,6 @@ class FragmentTest {
             screenHeightDp = 481
         }
         every { mockContext.resources.configuration } returns configuration
-        every { settings.shouldUseComposableToolbar } returns true
         every { settings.shouldShowMicrosurveyPrompt } returns true
         every { settings.shouldUseExpandedToolbar } returns true
         every { settings.toolbarPosition } returns ToolbarPosition.BOTTOM
@@ -275,41 +178,11 @@ class FragmentTest {
 
     @Test
     @Config(qualifiers = "h481dp") // navbar is only shown on screens taller than 480dp
-    fun `GIVEN the addressbar and navigation bar is shown at bottom WHEN getBottomToolbarHeight THEN returns the combined height`() {
-        val configuration = Configuration().apply {
-            screenHeightDp = 481
-        }
-        every { mockContext.resources.configuration } returns configuration
-        every { settings.shouldUseComposableToolbar } returns false
-        every { settings.shouldShowMicrosurveyPrompt } returns false
-        every { settings.shouldUseExpandedToolbar } returns true
-        every { settings.toolbarPosition } returns ToolbarPosition.BOTTOM
-
-        val bottomToolbarHeight = fragment.getBottomToolbarHeight()
-
-        assertEquals(116, bottomToolbarHeight)
-    }
-
-    @Test
-    fun `GIVEN the addressbar and navigation bar are shown at bottom WHEN getBottomToolbarHeight with excluded navigation bar THEN returns the addressbar height`() {
-        every { settings.shouldUseComposableToolbar } returns false
-        every { settings.shouldShowMicrosurveyPrompt } returns false
-        every { settings.shouldUseExpandedToolbar } returns true
-        every { settings.toolbarPosition } returns ToolbarPosition.BOTTOM
-
-        val bottomToolbarHeight = fragment.getBottomToolbarHeight(includeNavBarIfEnabled = false)
-
-        assertEquals(56, bottomToolbarHeight)
-    }
-
-    @Test
-    @Config(qualifiers = "h481dp") // navbar is only shown on screens taller than 480dp
     fun `GIVEN the composable toolbar and navigation bar are shown at bottom WHEN getBottomToolbarHeight THEN returns the combined height`() {
         val configuration = Configuration().apply {
             screenHeightDp = 481
         }
         every { mockContext.resources.configuration } returns configuration
-        every { settings.shouldUseComposableToolbar } returns true
         every { settings.shouldShowMicrosurveyPrompt } returns false
         every { settings.shouldUseExpandedToolbar } returns true
         every { settings.toolbarPosition } returns ToolbarPosition.BOTTOM
@@ -326,7 +199,6 @@ class FragmentTest {
             screenHeightDp = 481
         }
         every { mockContext.resources.configuration } returns configuration
-        every { settings.shouldUseComposableToolbar } returns true
         every { settings.shouldShowMicrosurveyPrompt } returns false
         every { settings.shouldUseExpandedToolbar } returns true
         every { settings.toolbarPosition } returns ToolbarPosition.TOP
@@ -343,7 +215,6 @@ class FragmentTest {
             screenHeightDp = 480
         }
         every { mockContext.resources.configuration } returns configuration
-        every { settings.shouldUseComposableToolbar } returns true
         every { settings.shouldShowMicrosurveyPrompt } returns false
         every { settings.shouldUseExpandedToolbar } returns true
         every { settings.toolbarPosition } returns ToolbarPosition.TOP

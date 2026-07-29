@@ -1,0 +1,146 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl2-deqp"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/closure-library/**",
+  "../checkout/deqp/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_2_deqp__functional__gles3__attriblocation.html"]
+
+["test_2_deqp__functional__gles3__booleanstatequery.html"]
+
+["test_2_deqp__functional__gles3__buffercopy.html"]
+
+["test_2_deqp__functional__gles3__bufferobjectquery.html"]
+
+["test_2_deqp__functional__gles3__clipping.html"]
+
+["test_2_deqp__functional__gles3__defaultvertexattribute.html"]
+
+["test_2_deqp__functional__gles3__fbocompleteness.html"]
+
+["test_2_deqp__functional__gles3__fbodepthbuffer.html"]
+
+["test_2_deqp__functional__gles3__fbomultisample.2_samples.html"]
+
+["test_2_deqp__functional__gles3__fbomultisample.4_samples.html"]
+
+["test_2_deqp__functional__gles3__fbomultisample.8_samples.html"]
+
+["test_2_deqp__functional__gles3__fbostatequery.html"]
+
+["test_2_deqp__functional__gles3__fbostencilbuffer.html"]
+
+["test_2_deqp__functional__gles3__floatstatequery.html"]
+
+["test_2_deqp__functional__gles3__fragdepth.html"]
+
+["test_2_deqp__functional__gles3__indexedstatequery.html"]
+
+["test_2_deqp__functional__gles3__instancedrendering.html"]
+
+["test_2_deqp__functional__gles3__integerstatequery.html"]
+
+["test_2_deqp__functional__gles3__internalformatquery.html"]
+
+["test_2_deqp__functional__gles3__lifetime.html"]
+
+["test_2_deqp__functional__gles3__multisample__default_fbo.html"]
+
+["test_2_deqp__functional__gles3__multisample__fbo_4_samples.html"]
+
+["test_2_deqp__functional__gles3__multisample__fbo_8_samples.html"]
+
+["test_2_deqp__functional__gles3__multisample__fbo_max_samples.html"]
+
+["test_2_deqp__functional__gles3__negativebufferapi.html"]
+
+["test_2_deqp__functional__gles3__negativefragmentapi.html"]
+
+["test_2_deqp__functional__gles3__negativeshaderapi.html"]
+
+["test_2_deqp__functional__gles3__negativestateapi.html"]
+
+["test_2_deqp__functional__gles3__negativetextureapi.html"]
+
+["test_2_deqp__functional__gles3__negativevertexarrayapi.html"]
+
+["test_2_deqp__functional__gles3__occlusionquery_conservative.html"]
+
+["test_2_deqp__functional__gles3__occlusionquery_strict.html"]
+
+["test_2_deqp__functional__gles3__pixelbufferobject.html"]
+
+["test_2_deqp__functional__gles3__rasterizerdiscard.html"]
+
+["test_2_deqp__functional__gles3__rbostatequery.html"]
+
+["test_2_deqp__functional__gles3__readpixel.html"]
+
+["test_2_deqp__functional__gles3__samplerobject.html"]
+
+["test_2_deqp__functional__gles3__samplerstatequery.html"]
+
+["test_2_deqp__functional__gles3__shaderapi.html"]
+
+["test_2_deqp__functional__gles3__shaderbuiltinvar.html"]
+
+["test_2_deqp__functional__gles3__shadercommonfunction.html"]
+
+["test_2_deqp__functional__gles3__shaderderivate_dfdx.html"]
+
+["test_2_deqp__functional__gles3__shaderderivate_dfdy.html"]
+
+["test_2_deqp__functional__gles3__shaderderivate_fwidth.html"]
+
+["test_2_deqp__functional__gles3__shaderloop_do_while.html"]
+
+["test_2_deqp__functional__gles3__shaderloop_for.html"]
+
+["test_2_deqp__functional__gles3__shaderloop_while.html"]
+
+["test_2_deqp__functional__gles3__shaderpackingfunction.html"]
+
+["test_2_deqp__functional__gles3__shaderprecision_float.html"]
+
+["test_2_deqp__functional__gles3__shaderprecision_int.html"]
+
+["test_2_deqp__functional__gles3__shaderprecision_uint.html"]
+
+["test_2_deqp__functional__gles3__shaderstatequery.html"]
+
+["test_2_deqp__functional__gles3__shaderstruct.html"]
+
+["test_2_deqp__functional__gles3__shaderswitch.html"]
+
+["test_2_deqp__functional__gles3__stringquery.html"]
+
+["test_2_deqp__functional__gles3__sync.html"]
+
+["test_2_deqp__functional__gles3__texturestatequery.html"]
+
+["test_2_deqp__functional__gles3__uniformapi__info_query.html"]
+
+["test_2_deqp__functional__gles3__uniformapi__random.html"]
+
+["test_2_deqp__functional__gles3__uniformapi__value_assigned.html"]
+
+["test_2_deqp__functional__gles3__uniformapi__value_initial.html"]
+
+["test_2_deqp__functional__gles3__vertexarrayobject.html"]

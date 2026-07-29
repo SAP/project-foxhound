@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -130,15 +128,15 @@ void DelayBuffer::ReadChannels(const float aPerFrameDelays[WEBAUDIO_BLOCK_SIZE],
     positions[1] = PositionForDelay(floorDelay) + i;
     positions[0] = positions[1] - 1;
 
-    for (unsigned tick = 0; tick < std::size(positions); ++tick) {
-      int readChunk = ChunkForPosition(positions[tick]);
+    for (int position : positions) {
+      int readChunk = ChunkForPosition(position);
       // The zero check on interpolationFactor is important because, when
       // currentDelay is integer, positions[0] may be outside the range
       // considered for determining totalChannelCount.
       // mVolume is not set on default initialized chunks so also handle null
       // chunks specially.
       if (interpolationFactor != 0.0f && !mChunks[readChunk].IsNull()) {
-        int readOffset = OffsetForPosition(positions[tick]);
+        int readOffset = OffsetForPosition(position);
         UpdateUpmixChannels(readChunk, totalChannelCount,
                             aChannelInterpretation);
         float multiplier = interpolationFactor * mChunks[readChunk].mVolume;
@@ -157,11 +155,7 @@ void DelayBuffer::ReadChannels(const float aPerFrameDelays[WEBAUDIO_BLOCK_SIZE],
 void DelayBuffer::Read(float aDelayTicks, AudioBlock* aOutputChunk,
                        ChannelInterpretation aChannelInterpretation) {
   float computedDelay[WEBAUDIO_BLOCK_SIZE];
-
-  for (unsigned i = 0; i < WEBAUDIO_BLOCK_SIZE; ++i) {
-    computedDelay[i] = aDelayTicks;
-  }
-
+  std::fill(std::begin(computedDelay), std::end(computedDelay), aDelayTicks);
   Read(computedDelay, aOutputChunk, aChannelInterpretation);
 }
 

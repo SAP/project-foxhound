@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -40,7 +38,7 @@ already_AddRefed<IPDLUnitTestParent> IPDLUnitTestParent::CreateCrossProcess() {
   nsCOMPtr<nsIAppShell> _appShell = do_GetService(NS_APPSHELL_CID);
 #endif
 
-  RefPtr<IPDLUnitTestParent> parent = new IPDLUnitTestParent();
+  RefPtr parent = MakeRefPtr<IPDLUnitTestParent>();
   parent->mSubprocess =
       new ipc::GeckoChildProcessHost(GeckoProcessType_IPDLUnitTest);
 
@@ -70,8 +68,8 @@ already_AddRefed<IPDLUnitTestParent> IPDLUnitTestParent::CreateCrossProcess() {
 }
 
 already_AddRefed<IPDLUnitTestParent> IPDLUnitTestParent::CreateCrossThread() {
-  RefPtr<IPDLUnitTestParent> parent = new IPDLUnitTestParent();
-  RefPtr<IPDLUnitTestChild> child = new IPDLUnitTestChild();
+  RefPtr parent = MakeRefPtr<IPDLUnitTestParent>();
+  RefPtr child = MakeRefPtr<IPDLUnitTestChild>();
 
   nsresult rv =
       NS_NewNamedThread("IPDL UnitTest", getter_AddRefs(parent->mOtherThread));
@@ -259,7 +257,7 @@ class IPDLUnitTestProcessChild : public ipc::ProcessChild {
       return false;
     }
 
-    RefPtr<IPDLUnitTestChild> child = new IPDLUnitTestChild();
+    RefPtr child = MakeRefPtr<IPDLUnitTestChild>();
     if (!TakeInitialEndpoint().Bind(child.get())) {
       MOZ_CRASH("Bind of IPDLUnitTestChild failed");
       return false;

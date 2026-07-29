@@ -43,7 +43,7 @@ class SyncEnginesStorage(private val context: Context) {
      * @param engine A [SyncEngine] for which to update state.
      * @param status New state.
      */
-    fun setStatus(engine: SyncEngine, status: Boolean) {
+    internal fun setStatus(engine: SyncEngine, status: Boolean) {
         storage().edit { putBoolean(engine.nativeName, status) }
     }
 

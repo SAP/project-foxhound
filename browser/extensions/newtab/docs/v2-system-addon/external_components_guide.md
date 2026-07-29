@@ -41,6 +41,10 @@ Each component configuration must include:
 
 ## Step-by-Step Registration
 
+:::{note}
+A component that registers this way does not take advantage of newtab train-hopping. Talk to the newtab team if you want to work with them to make your embedded component train-hoppable.
+:::
+
 ### 1. Create a Registrant Module
 
 Create a module that extends `BaseAboutNewTabComponentRegistrant`:

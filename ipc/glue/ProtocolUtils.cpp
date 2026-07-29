@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -611,9 +609,10 @@ void IProtocol::ActorDisconnected(ActorDestroyReason aWhy) {
 }
 
 void IProtocol::DoomSubtree() {
-  MOZ_ASSERT(
-      mLinkStatus == LinkStatus::Connected || mLinkStatus == LinkStatus::Doomed,
-      "Invalid link status for SetDoomed");
+  // If we're already `Doomed` or `Destroyed`, there's nothing to do.
+  if (mLinkStatus != LinkStatus::Connected) {
+    return;
+  }
   for (ProtocolId id : ManagedProtocolIds()) {
     for (IProtocol* actor : *GetManagedActors(id)) {
       actor->DoomSubtree();
@@ -673,7 +672,7 @@ bool IToplevelProtocol::OpenOnSameThread(IToplevelProtocol* aTarget,
 }
 
 void IToplevelProtocol::NotifyImpendingShutdown() {
-  if (CanRecv()) {
+  if (CanSend()) {
     GetIPCChannel()->NotifyImpendingShutdown();
   }
 }

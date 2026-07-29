@@ -398,6 +398,13 @@ ABSL_LOG_INTERNAL_DEFINE_MAKE_CHECK_OP_STRING_EXTERN(const void*);
   MakeCheckOpString<U1, U2>(v1, v2, exprtext)
 #endif
 
+// Comparing mixed signed/unsigned values is intentional in CHECK_OP. A
+// push/pop pragma does not interact correctly with macro definitions, so
+// suppress without restoring. This header is transitively included by all
+// protobuf-generated headers, so this pragma affects entire translation
+// units that include any .pb.h file.
+#pragma GCC diagnostic ignored "-Wsign-compare"
+
 // Helper functions for `ABSL_LOG_INTERNAL_CHECK_OP` macro family.  The
 // `(int, int)` override works around the issue that the compiler will not
 // instantiate the template version of the function on values of unnamed enum

@@ -87,7 +87,7 @@ Building NSS
 
    .. code::
 
-      hg clone https://hg.mozilla.org/projects/nspr
+      git clone https://github.com/mozilla/nspr
       hg clone https://hg.mozilla.org/projects/nss
 
 
@@ -98,7 +98,7 @@ Building NSS
 
    .. code::
 
-      git clone hg::https://hg.mozilla.org/projects/nspr
+      git clone https://github.com/mozilla/nspr
       git clone hg::https://hg.mozilla.org/projects/nss
 
 
@@ -274,7 +274,6 @@ Building NSS
 
    The following static libraries aren't included in any shared libraries
 
-   -  ``libcrmf.a``/``crmf.lib`` provides an API for CRMF operations.
    -  ``libjar.a``/``jar.lib`` provides an API for creating JAR files.
 
    The following static libraries are included only in external loadable PKCS

@@ -13,6 +13,71 @@ const lazy = XPCOMUtils.declareLazy({
     "moz-src:///browser/components/newtab/AboutNewTabComponents.sys.mjs",
 });
 
+ChromeUtils.defineLazyGetter(lazy, "logConsole", function () {
+  return console.createInstance({
+    prefix: "ExternalComponentsFeed",
+    maxLogLevel: Services.prefs.getBoolPref(
+      "browser.newtabpage.activity-stream.externalComponents.log",
+      false
+    )
+      ? "Debug"
+      : "Warn",
+  });
+});
+
+const TRAIN_HOPPING_COMPONENT_CONFIGURATIONS = [
+  {
+    type: "ASROUTER_MULTISTAGE_MESSAGE",
+    mountStrategy: "react-bundle",
+    bundleURL:
+      "chrome://newtab/content/data/content/external-components/asrouter-newtab-multistage/asrouter-newtab-multistage.bundle.js",
+    stylesURLs: [
+      "chrome://global/skin/in-content/common.css",
+      "chrome://newtab/content/data/content/external-components/asrouter-newtab-multistage/asrouter-newtab-multistage.css",
+    ],
+    mountFunction: "mountMultistageMessage",
+    l10nURLs: [
+      "browser/newtab/onboarding.ftl",
+      "browser/featureCallout.ftl",
+      "browser/backupSettings.ftl",
+    ],
+    moduleURLs: [
+      // While it's more than likely that moz-button is already available on newtab,
+      // better safe than sorry.
+      "chrome://global/content/elements/moz-button.mjs",
+      "chrome://browser/content/backup/turn-on-scheduled-backups.mjs",
+    ],
+  },
+  {
+    type: "ASROUTER_NEWTAB_MESSAGE",
+    l10nURLs: [],
+    componentURL:
+      "chrome://newtab/content/data/content/external-components/asrouter-newtab-message/asrouter-newtab-message.mjs",
+    tagName: "asrouter-newtab-message",
+    cssVariables: {},
+    attributes: {},
+    actors: {
+      ASRouterNewTabMessage: {
+        parent: {
+          esModuleURI:
+            "chrome://newtab/content/data/content/external-components/asrouter-newtab-message/ASRouterNewTabMessageParent.sys.mjs",
+        },
+        child: {
+          esModuleURI:
+            "chrome://newtab/content/data/content/external-components/asrouter-newtab-message/ASRouterNewTabMessageChild.sys.mjs",
+          events: {
+            "ASRouterNewTabMessage:SpecialMessageAction": {
+              wantUntrusted: true,
+            },
+          },
+        },
+        matches: ["about:home", "about:newtab"],
+        remoteTypes: ["privilegedabout"],
+      },
+    },
+  },
+];
+
 /**
  * ExternalComponentsFeed manages the integration between the
  * AboutNewTabComponentRegistry and the New Tab Redux store.
@@ -59,9 +124,46 @@ export class ExternalComponentsFeed {
    *   about:home document from unnecessarily reprocessing the action.
    */
   refreshComponents(options = {}) {
+    for (let configuration of this.#registry.values) {
+      if (configuration.actors) {
+        for (let actorName of Object.keys(configuration.actors)) {
+          try {
+            ChromeUtils.unregisterWindowActor(actorName);
+          } catch (e) {
+            lazy.logConsole.warn(
+              `Failed to unregister actor ${actorName} for ${configuration.type}`
+            );
+          }
+        }
+      }
+    }
+
+    let newConfigurations = [
+      ...this.#registry.values,
+      ...TRAIN_HOPPING_COMPONENT_CONFIGURATIONS,
+    ];
+
+    for (let configuration of newConfigurations) {
+      if (configuration.actors) {
+        for (let actorName of Object.keys(configuration.actors)) {
+          try {
+            ChromeUtils.registerWindowActor(
+              actorName,
+              configuration.actors[actorName]
+            );
+          } catch (e) {
+            lazy.logConsole.error(
+              `Failed to register actor ${actorName} for ${configuration.type}`,
+              e
+            );
+          }
+        }
+      }
+    }
+
     const action = {
       type: at.REFRESH_EXTERNAL_COMPONENTS,
-      data: [...this.#registry.values],
+      data: newConfigurations,
     };
 
     if (options.isStartup) {

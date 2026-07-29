@@ -1,5 +1,3 @@
-// -*- Mode: js; tab-width: 2; indent-tabs-mode: nil; js2-basic-offset: 2; js2-skip-preprocessor-directives: t; -*-
-
 /* globals ExtensionAPI, Services */
 
 ChromeUtils.defineESModuleGetters(this, {
@@ -28,7 +26,7 @@ this.tabswitch = class extends ExtensionAPI {
           );
           Services.ppmm.loadProcessScript(processScriptURL, true);
 
-          let tabSwitchTalosActors = {
+          ChromeUtils.registerWindowActor("TalosTabSwitch", {
             parent: {
               esModuleURI:
                 "resource://talos-tabswitch/TalosTabSwitchParent.sys.mjs",
@@ -40,18 +38,11 @@ this.tabswitch = class extends ExtensionAPI {
                 DOMDocElementInserted: { capture: true },
               },
             },
-          };
-          ChromeUtils.registerWindowActor(
-            "TalosTabSwitch",
-            tabSwitchTalosActors
-          );
+          });
 
           return () => {
             Services.ppmm.sendAsyncMessage("Tabswitch:Teardown");
-            ChromeUtils.unregisterWindowActor(
-              "TalosTabSwitch",
-              tabSwitchTalosActors
-            );
+            ChromeUtils.unregisterWindowActor("TalosTabSwitch");
             AboutNewTab.resetNewTabURL();
             resProto.setSubstitution("talos-tabswitch", null);
           };

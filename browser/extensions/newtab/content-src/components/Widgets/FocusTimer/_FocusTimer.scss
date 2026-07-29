@@ -5,21 +5,459 @@
 .focus-timer {
   @include newtab-card-style;
 
-  grid-column: span 1;
-  width: var(--newtab-card-grid-layout-width);
-
-  // Match the new card width if sections are enabled
-  .has-sections-grid & {
-    width: var(--newtab-card-width-medium);
+  .nova-enabled & {
+    @include widget-base-style;
   }
 
   border-radius: var(--border-radius-large);
   padding-block: var(--space-medium);
-  height: var(--newtab-card-height);
   display: flex;
   flex-direction: column;
   align-items: center;
-  box-shadow: var(--box-shadow-card);
+  height: 100%;
+
+  // Classic layout (when Nova is disabled)
+  // @nova-cleanup(remove-conditional): Remove classic fixed-width/height styles after Nova ships
+  .classic-enabled & {
+    grid-column: span 1;
+    width: var(--newtab-card-grid-layout-width);
+    height: var(--newtab-card-height);
+    box-shadow: var(--card-box-shadow);
+
+    // Match the new card width if sections are enabled
+    .has-sections-grid & {
+      width: var(--newtab-card-width-medium);
+    }
+  }
+
+  // @nova-cleanup(remove-conditional): Once Nova ships, hoist these rules to the root selector
+  .nova-enabled & {
+    --timer-focus-color: var(--color-orange-30, #FF8D5B);
+    --timer-break-color: var(--color-violet-50, #764EDD);
+    // Figma celebration palette; no matching design-system token.
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    --timer-celebration-leading: #B89CFF;
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    --timer-celebration-trailing: #FF9565;
+    // Diverges from --border-color for dark-mode contrast on translucent surfaces.
+    --timer-ring-idle-color: light-dark(var(--color-gray-20), var(--color-gray-30));
+    --widget-celebration-accent-color: var(--timer-celebration-leading);
+    --widget-celebration-copy-color: var(--text-color-deemphasized);
+    --widget-celebration-surface-color: var(--newtab-background-card);
+    --widget-celebration-headline-gradient-angle: 96deg;
+    --widget-celebration-headline-gradient-start: var(--timer-celebration-leading);
+    --widget-celebration-headline-gradient-mid-start: var(--timer-celebration-leading);
+    --widget-celebration-headline-gradient-mid-end: var(--timer-celebration-trailing);
+    --widget-celebration-headline-gradient-end: var(--timer-celebration-trailing);
+    --widget-celebration-tint-color: transparent;
+    --widget-celebration-glow-color: color-mix(
+      in srgb,
+      var(--widget-celebration-accent-color) 35%,
+      transparent
+    );
+    --widget-celebration-orbit-color: color-mix(
+      in srgb,
+      var(--timer-celebration-trailing) 70%,
+      transparent
+    );
+    --widget-celebration-border-draw-duration: 800ms;
+    --widget-celebration-orbit-duration: 1900ms;
+    --widget-celebration-track-color: color-mix(
+      in srgb,
+      var(--widget-celebration-accent-color) 45%,
+      transparent
+    );
+    --widget-celebration-hold-duration: 3400ms;
+    --widget-celebration-exit-duration: 1200ms;
+    --widget-celebration-enter-ease: cubic-bezier(0.2, 0.9, 0.2, 1);
+    --widget-celebration-headline-delay: 1ms;
+    --widget-celebration-panel-delay: var(--widget-celebration-headline-delay);
+    --widget-celebration-illustration-delay: 1ms;
+    --widget-celebration-subhead-delay: 1ms;
+
+    align-items: center;
+    background: var(--newtab-background-card);
+    border-radius: var(--border-radius-large);
+    gap: var(--space-medium);
+    justify-content: center;
+    padding: var(--space-medium);
+    position: relative;
+
+    @include widget-celebration-styles('focus-timer-celebration');
+
+    &:hover {
+      background: var(--newtab-background-color-secondary);
+    }
+
+    .newtab-widget-timer-notification-title-wrapper {
+      inset-block-start: var(--space-small);
+      inset-inline-end: var(--space-small);
+      inset-inline-start: auto;
+      margin-block-end: 0;
+      padding-inline: 0;
+      position: absolute;
+      width: auto;
+
+      h2 {
+        clip: rect(0 0 0 0);
+        clip-path: inset(50%);
+        height: 1px;
+        overflow: hidden;
+        position: absolute;
+        white-space: nowrap;
+        width: 1px;
+      }
+    }
+
+    .focus-timer-body {
+      align-items: center;
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-medium);
+    }
+
+    &.is-celebrating {
+      .focus-timer-body,
+      .focus-timer-play-button {
+        opacity: 0;
+        pointer-events: none;
+      }
+    }
+
+    .focus-timer-celebration-headline {
+      font-size: var(--font-size-root);
+      font-weight: var(--font-weight-semibold);
+    }
+
+    .focus-timer-celebration-subhead {
+      font-size: var(--font-size-small);
+      font-weight: var(--font-weight);
+      margin-block-start: var(--space-xxsmall);
+    }
+
+    .focus-timer-time-slot,
+    .focus-timer-bottom-slot {
+      align-items: center;
+      block-size: var(--button-min-height, 32px);
+      display: flex;
+      justify-content: center;
+    }
+
+    .focus-timer-time-display {
+      align-items: center;
+      display: flex;
+      flex-direction: column;
+      gap: calc(var(--space-xsmall) + var(--space-xxsmall));
+      justify-content: center;
+      line-height: 1;
+    }
+
+    .focus-timer-time-text {
+      color: var(--text-color);
+      font-size: var(--font-size-xxlarge);
+      font-variant-numeric: tabular-nums;
+      font-weight: var(--font-weight);
+    }
+
+    .focus-timer-time-mode {
+      color: var(--text-color-deemphasized);
+      font-size: var(--font-size-xsmall);
+      font-weight: var(--font-weight);
+      // No matching letter-spacing design-system token.
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+      letter-spacing: 0.022em;
+      text-transform: none;
+      white-space: nowrap;
+    }
+
+    &.medium-widget {
+      flex-direction: row;
+      gap: var(--space-medium);
+      justify-content: center;
+
+      .progress-circle-wrapper {
+        flex-shrink: 0;
+        margin-block-end: 0;
+        min-height: 70px;
+        width: 70px;
+      }
+
+      .focus-timer-body {
+        align-self: stretch;
+        flex-shrink: 0;
+        gap: var(--space-medium);
+        justify-content: center;
+        /* stylelint-disable-next-line declaration-property-value-disallowed-list */
+        min-inline-size: 180px;
+      }
+
+      &.is-active .focus-timer-body,
+      &.is-complete .focus-timer-body,
+      &.is-celebrating .focus-timer-body {
+        min-inline-size: 0;
+      }
+
+      .focus-timer-bottom-slot:empty {
+        display: none;
+      }
+
+      .focus-timer-celebration-copy {
+        align-items: flex-start;
+        display: flex;
+        flex-direction: column;
+        inset-block: 0;
+        inset-inline-end: var(--space-medium);
+        inset-inline-start: calc(50% + var(--space-xsmall));
+        justify-content: center;
+        padding: 0;
+        text-align: start;
+        transform: none;
+      }
+    }
+
+    &.medium-widget :is(.progress-circle-background, .progress-circle-background-break, .progress-circle, .progress-circle-complete, .progress-circle-cap) {
+      --thickness: 12.5px;
+    }
+
+    &.large-widget {
+      flex-direction: column;
+      gap: calc(var(--space-medium) + var(--space-small));
+
+      .progress-circle-wrapper {
+        block-size: calc(var(--space-medium) * 2 + var(--space-xxlarge) * 4);
+        margin-block-end: 0;
+        width: 120px;
+      }
+
+      .focus-timer-body {
+        gap: var(--space-large);
+      }
+
+      .focus-timer-celebration-copy {
+        align-items: center;
+        display: flex;
+        flex-direction: column;
+        inset-block-end: calc(var(--space-xxlarge) * 2 + var(--space-large));
+        inset-block-start: auto;
+        inset-inline: var(--space-medium);
+        justify-content: center;
+        padding: 0;
+        transform: none;
+      }
+    }
+
+    &.large-widget .progress-circle-wrapper :is(.progress-circle-background, .progress-circle-background-break, .progress-circle, .progress-circle-complete, .progress-circle-cap-rotator) {
+      inset-block-end: auto;
+      inset-block-start: var(--space-medium);
+      /* stylelint-disable-next-line declaration-property-value-disallowed-list */
+      block-size: 120px;
+    }
+
+    &.large-widget :is(.progress-circle-background, .progress-circle-background-break, .progress-circle, .progress-circle-complete, .progress-circle-cap) {
+      --thickness: 18.5px;
+    }
+
+    .focus-timer-time-row {
+      align-items: center;
+      display: flex;
+      gap: var(--space-small);
+      justify-content: center;
+    }
+
+    .focus-timer-spinbutton {
+      color: var(--text-color);
+      font-size: var(--font-size-xxlarge);
+      font-variant-numeric: tabular-nums;
+      font-weight: var(--font-weight);
+      min-width: 80px;
+      padding: var(--space-xxsmall) var(--space-small);
+      text-align: center;
+
+      &:focus,
+      &:focus-visible {
+        border: 1px solid var(--border-color-interactive, #99979C);
+        border-radius: calc(var(--border-radius-medium) + var(--space-xsmall));
+        outline: none;
+      }
+    }
+
+    .focus-timer-mode-group {
+      display: flex;
+      gap: var(--space-small);
+      justify-content: center;
+    }
+
+    .focus-timer-mode-group moz-button[type='default']::part(button),
+    .focus-timer-reset-button::part(button) {
+      border-color: var(--color-accent-primary);
+    }
+
+    .focus-timer-reset-button {
+      align-self: center;
+    }
+
+    .focus-timer-play-button {
+      inset-block-start: 50%;
+      inset-inline-start: 50%;
+      position: absolute;
+      transform: translate(-50%, -50%);
+      z-index: 3;
+
+      &::part(button) {
+        background-color: transparent;
+        border-color: transparent;
+        /* stylelint-disable-next-line declaration-property-value-disallowed-list */
+        color: light-dark(#816297, #ECE0F5);
+      }
+
+      &:hover::part(button),
+      &:focus::part(button),
+      &:focus-visible::part(button),
+      &:active::part(button) {
+        background-color: transparent;
+        border-color: transparent;
+      }
+    }
+
+    .progress-circle-wrapper.is-active .focus-timer-play-button::part(button) {
+      color: var(--icon-color);
+    }
+
+    .progress-circle-background {
+      background: conic-gradient(
+        var(--timer-focus-color) 0deg,
+        var(--timer-focus-color) 360deg
+      );
+    }
+
+    .progress-circle-background-break {
+      background: conic-gradient(
+        var(--timer-break-color) 0deg,
+        var(--timer-break-color) 360deg
+      );
+    }
+
+    .progress-circle {
+      background-color: var(--timer-ring-idle-color);
+    }
+
+    .progress-circle-complete {
+      background: conic-gradient(
+        from 0deg,
+        var(--timer-celebration-leading),
+        var(--timer-celebration-trailing),
+        var(--timer-celebration-leading)
+      );
+
+      @media (prefers-reduced-motion: no-preference) {
+        &.visible {
+          animation:
+            focus-timer-celebration-spin 800ms ease-out,
+            focus-timer-celebration-ring-fade-out var(--widget-celebration-exit-duration) ease forwards;
+          animation-delay: 0ms, var(--widget-celebration-hold-duration);
+        }
+      }
+    }
+
+    .progress-circle-cap-rotator {
+      inset: 0;
+      pointer-events: none;
+      position: absolute;
+      transform: rotate(var(--progress-angle, 0deg));
+      z-index: 2;
+    }
+
+    .progress-circle-cap {
+      block-size: var(--thickness, var(--space-small));
+      border-radius: var(--border-radius-circle);
+      inline-size: var(--thickness, var(--space-small));
+      inset-block-start: 0;
+      inset-inline-start: 50%;
+      position: absolute;
+      transform: translateX(-50%);
+    }
+
+    .progress-circle-cap-rotator.is-focus .progress-circle-cap {
+      background: var(--timer-focus-color);
+    }
+
+    .progress-circle-cap-rotator.is-break .progress-circle-cap {
+      background: var(--timer-break-color);
+    }
+  }
+}
+
+@keyframes focus-timer-celebration-spin {
+  from {
+    transform: rotate(0deg);
+    opacity: 0;
+  }
+
+  to {
+    transform: rotate(360deg);
+    opacity: 1;
+  }
+}
+
+@keyframes focus-timer-celebration-ring-fade-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .nova-enabled .focus-timer {
+    --timer-focus-color: var(--color-orange-30, #FF8D5B);
+    --timer-break-color: var(--color-violet-50, #764EDD);
+  }
+}
+
+@media (forced-colors: active) {
+  .nova-enabled .focus-timer {
+    border: 1px solid CanvasText;
+
+    // Idle ring picks up CanvasText via HCM substitution. Active/celebration
+    // ring layers keep their colors so progress + completion stay legible.
+    .progress-circle-background,
+    .progress-circle-background-break,
+    .progress-circle-complete,
+    .progress-circle-cap-rotator,
+    .progress-circle-cap {
+      forced-color-adjust: none;
+    }
+
+    .focus-timer-play-button::part(button) {
+      forced-color-adjust: none;
+    }
+
+    // Bordered pill around the spinbutton + ± buttons (per Figma HCM).
+    .focus-timer-time-row {
+      border: var(--border-width) solid ButtonText;
+      border-radius: var(--border-radius-circle);
+      padding-inline: var(--space-xxsmall);
+    }
+
+    .focus-timer-spinbutton:focus,
+    .focus-timer-spinbutton:focus-visible {
+      border-color: CanvasText;
+    }
+
+    .focus-timer-mode-group moz-button[type='default']::part(button),
+    .focus-timer-reset-button::part(button) {
+      border-color: ButtonText;
+    }
+
+    // Drop the gradient — HCM uses solid system text.
+    .focus-timer-celebration-headline {
+      background: none;
+      -webkit-text-fill-color: CanvasText;
+      color: CanvasText;
+    }
+  }
 }
 
 .focus-timer-tabs {
@@ -37,21 +475,27 @@
   justify-content: center;
   flex-grow: 1;
 
-  moz-button {
-    flex-grow: 1;
+  .nova-enabled & {
+    gap: var(--space-small);
   }
 
-  moz-button:first-of-type {
-    &::part(button) {
-      border-end-end-radius: 0;
-      border-start-end-radius: 0;
+  .classic-enabled & {
+    moz-button {
+      flex-grow: 1;
     }
-  }
 
-  moz-button:last-of-type {
-    &::part(button) {
-      border-start-start-radius: 0;
-      border-end-start-radius: 0;
+    moz-button:first-of-type {
+      &::part(button) {
+        border-end-end-radius: 0;
+        border-start-end-radius: 0;
+      }
+    }
+
+    moz-button:last-of-type {
+      &::part(button) {
+        border-start-start-radius: 0;
+        border-end-start-radius: 0;
+      }
     }
   }
 }
@@ -65,10 +509,10 @@
   padding-inline: var(--space-medium);
   margin-block-end: var(--space-medium);
 
-  h3 {
-    font-size: var(--button-font-size);
-    font-weight: var(--heading-font-weight);
+  h2 {
     margin-block: 0;
+    font-weight: var(--font-weight);
+    font-size: var(--font-size-root);
   }
 }
 

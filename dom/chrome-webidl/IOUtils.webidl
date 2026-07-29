@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -96,9 +95,9 @@ namespace IOUtils {
   [NewObject]
   Promise<unsigned long long> writeUTF8(DOMString path, UTF8String string, optional WriteOptions options = {});
   /**
-   * Attempts to serialize |value| into a JSON string and encode it as into a
-   * UTF-8 string, then safely write the result to a file at |path|. Works
-   * exactly like |write|.
+   * Attempts to serialize |value| into a JSON string and encode it as a UTF-8
+   * string, then safely write the result to a file at |path|. Works exactly
+   * like |write|.
    *
    * @param path      An absolute file path
    * @param value     The value to be serialized.
@@ -108,7 +107,7 @@ namespace IOUtils {
    *         otherwise rejects with a DOMException.
    */
   [NewObject]
-  Promise<unsigned long long> writeJSON(DOMString path, any value, optional WriteOptions options = {});
+  Promise<WriteJSONResult> writeJSON(DOMString path, any value, optional WriteJSONOptions options = {});
   /**
    * Moves the file from |sourcePath| to |destPath|, creating necessary parents.
    * If |destPath| is a directory, then the source file will be moved into the
@@ -567,6 +566,35 @@ dictionary WriteOptions {
    * If true, compress the data with LZ4-encoding before writing to the file.
    */
   boolean compress = false;
+};
+
+/**
+ * Options to be passed to the |IOUtils.writeJSON| method.
+ */
+dictionary WriteJSONOptions: WriteOptions {
+  /**
+   * An optional length hint that will be used to pre-allocate the buffer that
+   * will hold the stringified JSON.
+   *
+   * This is the *length* and not the size (i.e., it is the number of UTF-16
+   * codepoints and not the number of bytes).
+   */
+  unsigned long long lengthHint = 0;
+};
+
+/**
+ * Information about a WriteJSON operation.
+ */
+dictionary WriteJSONResult {
+  /**
+   * The number of bytes written.
+   */
+  required unsigned long long size;
+
+  /**
+   * The length of the stringified JSON (in UTF-16 codepoints).
+   */
+  required unsigned long long jsonLength;
 };
 
 /**

@@ -29,7 +29,7 @@ they were not selected for the proposal.
 
 # Resources and Docs (optional)
 
-- Any (internal or external) similar proposals  or other documentation that shares concepts with the proposal.
+- Any (internal or external) similar proposals or other documentation that shares concepts with the proposal.
 - Links to artifacts generated as part of the proposal, such as additional documentation or follow-up bugs.
 
 # Unresolved questions

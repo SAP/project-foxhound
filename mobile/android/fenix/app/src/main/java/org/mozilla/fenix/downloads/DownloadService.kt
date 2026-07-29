@@ -4,23 +4,25 @@
 
 package org.mozilla.fenix.downloads
 
-import android.os.Environment
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.feature.downloads.AbstractFetchDownloadService
 import mozilla.components.feature.downloads.DefaultPackageNameProvider
 import mozilla.components.feature.downloads.DownloadEstimator
 import mozilla.components.feature.downloads.FileSizeFormatter
 import mozilla.components.feature.downloads.PackageNameProvider
+import mozilla.components.feature.downloads.filewriter.DefaultDownloadFileWriter
+import mozilla.components.feature.downloads.filewriter.DownloadFileWriter
 import mozilla.components.support.base.android.NotificationsDelegate
 import mozilla.components.support.utils.DefaultDownloadFileUtils
 import mozilla.components.support.utils.DownloadFileUtils
 import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.settings.downloads.DownloadLocationManager
 
 class DownloadService : AbstractFetchDownloadService() {
     override val httpClient by lazy { components.core.client }
     override val store: BrowserStore by lazy { components.core.store }
-    override val style: Style by lazy { Style(R.color.fx_mobile_text_color_accent) }
+    override val style: Style by lazy { Style(R.color.fx_mobile_tertiary) }
     override val notificationsDelegate: NotificationsDelegate by lazy { components.notificationsDelegate }
     override val fileSizeFormatter: FileSizeFormatter by lazy { components.core.fileSizeFormatter }
     override val downloadEstimator: DownloadEstimator by lazy { components.core.downloadEstimator }
@@ -31,10 +33,17 @@ class DownloadService : AbstractFetchDownloadService() {
         DefaultDownloadFileUtils(
             context = applicationContext,
             downloadLocation = {
-                Environment.getExternalStoragePublicDirectory(
-                    Environment.DIRECTORY_DOWNLOADS,
-                ).path
+                DownloadLocationManager(
+                    applicationContext.components.settings,
+                    applicationContext.contentResolver,
+                ).defaultLocation
             },
+        )
+    }
+    override val downloadFileWriter: DownloadFileWriter by lazy {
+        DefaultDownloadFileWriter(
+            context = applicationContext,
+            downloadFileUtils = downloadFileUtils,
         )
     }
 }

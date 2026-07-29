@@ -34,10 +34,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef _stun_reg_h
 #define _stun_reg_h
-#ifdef __cplusplus
-using namespace std;
-extern "C" {
-#endif /* __cplusplus */
 
 #define NR_STUN_REG_PREF_CLNT_RETRANSMIT_TIMEOUT    "stun.client.retransmission_timeout"
 #define NR_STUN_REG_PREF_CLNT_RETRANSMIT_BACKOFF    "stun.client.retransmission_backoff_factor"
@@ -49,8 +45,5 @@ extern "C" {
 #define NR_STUN_REG_PREF_SERVER_NONCE_SIZE          "stun.server.nonce_size"
 #define NR_STUN_REG_PREF_SERVER_REALM               "stun.server.realm"
 
-#ifdef __cplusplus
-}
-#endif /* __cplusplus */
 #endif
 

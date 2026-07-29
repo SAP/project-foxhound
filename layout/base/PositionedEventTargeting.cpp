@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -490,7 +488,7 @@ static void SubtractFromExposedRegion(nsRegion* aExposedRegion,
   // its bounds either. Do let aExposedRegion get more complex if by doing so
   // we reduce its area by at least half.
   if (tmp.GetNumRects() <= 15 || tmp.Area() <= aExposedRegion->Area() / 2) {
-    *aExposedRegion = tmp;
+    *aExposedRegion = std::move(tmp);
   }
 }
 

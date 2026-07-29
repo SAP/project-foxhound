@@ -280,11 +280,15 @@ asserts(0-1) load 1907228.html # see bug 1908485 for assert
 load 1922153.html
 load 1965664.html
 load 1966485.html
-load 1966466.html
+asserts(0-2) load 1966466.html
 load 1969289.html
 load 1975990.html
 load 1991206.html
 load 2004132.html
+load 2014551.html
 load 2014583.html
 load 2014592.html
 load 2016511.html
+load 2024472.html
+load 2042268.html
+load 2052570.html

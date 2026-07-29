@@ -6,7 +6,6 @@ package mozilla.components.concept.engine
 
 import android.content.Intent
 import androidx.annotation.CallSuper
-import mozilla.components.concept.engine.EngineSession.BounceTrackingProtectionMode
 import mozilla.components.concept.engine.EngineSession.TrackingProtectionPolicy.CookiePolicy.ACCEPT_ALL
 import mozilla.components.concept.engine.EngineSession.TrackingProtectionPolicy.CookiePolicy.ACCEPT_FIRST_PARTY_AND_ISOLATE_OTHERS
 import mozilla.components.concept.engine.content.blocking.Tracker
@@ -14,6 +13,8 @@ import mozilla.components.concept.engine.history.HistoryItem
 import mozilla.components.concept.engine.manifest.WebAppManifest
 import mozilla.components.concept.engine.media.RecordingDevice
 import mozilla.components.concept.engine.mediasession.MediaSession
+import mozilla.components.concept.engine.pageextraction.ContentParams
+import mozilla.components.concept.engine.pageextraction.PageMetadata
 import mozilla.components.concept.engine.permission.PermissionRequest
 import mozilla.components.concept.engine.prompt.PromptRequest
 import mozilla.components.concept.engine.translate.TranslationEngineState
@@ -1154,9 +1155,23 @@ abstract class EngineSession(
     open fun onPipModeChanged(enabled: Boolean) = Unit
 
     /**
-     * Gets the page text content of this session
+     * Gets the page text content of this session.
+     *
+     * @param options options controlling how the text is extracted
      */
-    open fun getPageContent(onResult: (String) -> Unit, onException: (Throwable) -> Unit) = Unit
+    open fun getPageContent(
+        options: ContentParams = ContentParams(),
+        onResult: (String) -> Unit,
+        onException: (Throwable) -> Unit,
+    ) = Unit
+
+    /**
+     * Gets metadata about the current page.
+     */
+    open fun getPageMetadata(
+        onResult: (PageMetadata) -> Unit,
+        onException: (Throwable) -> Unit,
+    ) = Unit
 
     /**
      * Allow the Engine to handle back navigation events to dismiss some HTML elements such as &lt;dialog&gt;.
@@ -1164,4 +1179,11 @@ abstract class EngineSession(
      * @param onResult callback invoked if the engine API returned a valid response.
      */
     abstract fun processBackPressed(onResult: (Boolean) -> Unit)
+
+    /**
+     * Asynchronously determine if the page loaded in this session uses a QWAC.
+     *
+     * @param onResult Callback to call with the QWAC or null if none.
+     */
+    open fun qwacStatus(onResult: (X509Certificate?) -> Unit) = Unit
 }

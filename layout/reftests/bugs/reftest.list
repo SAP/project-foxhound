@@ -949,7 +949,6 @@ fuzzy(0-1,0-10) == 413361-1.html 413361-1-ref.html # bug 1128229
 == 413982.html 413982-ref.html
 == 414638.html 414638-ref.html
 == 414851-1.html 414851-1-ref.html
-== 416106-1.xhtml 416106-1-ref.xhtml
 == 416752-1.html 416752-1-ref.html
 == 417178-1.html 417178-1-ref.html
 == 417246-1.html 417246-1-ref.html
@@ -1011,7 +1010,7 @@ fuzzy(0-1,0-160000) == 424766-1.html 424766-1-ref.html
 == 425972-2.html 425972-2-ref.html
 != 425972-1.html 425972-2.html
 == 426629-1.html 426629-1-ref.html
-asserts(3) != 427017-1.xhtml about:blank # crash test (needs reftest-paged). existing assertions are bug 457400.
+asserts(2-2) != 427017-1.xhtml about:blank # crash test (needs reftest-paged). existing assertions are bug 457400.
 == 427129-scrollframe.html 427129-ref.html
 == 427129-table.html 427129-ref.html
 == 427129-image.html 427129-ref.html
@@ -1646,7 +1645,7 @@ fuzzy(0-1,0-3) needs-focus == 712130-2.html 712130-2-ref.html
 == 714519-1-q.html 714519-1-ref.html
 == 714519-2-as.html 714519-2-ref.html
 == 714519-2-q.html 714519-2-ref.html
-skip-if(Android&&emulator) fuzzy(0-1,0-21) fuzzy-if(winWidget,0-77,0-173) fuzzy-if(cocoaWidget,0-1,0-170) fuzzy-if(useDrawSnapshot,1-1,163-163) == 718521.html 718521-ref.html # bug 773482
+skip-if(Android&&emulator) fuzzy(0-1,0-21) fuzzy-if(winWidget,0-77,0-173) fuzzy-if(cocoaWidget,0-1,0-170) fuzzy-if(useDrawSnapshot,0-1,0-163) == 718521.html 718521-ref.html # bug 773482
 == 720987.html 720987-ref.html
 == 722888-1.html 722888-1-ref.html
 fuzzy(0-2,0-40000) == 722923-1.html 722923-1-ref.html
@@ -1733,7 +1732,7 @@ fuzzy(0-1,0-3) == 931464-1.html 931464-1-ref.html
 == 931853.html 931853-ref.html
 == 931853-quirks.html 931853-quirks-ref.html
 == 933264-1.html 933264-1-ref.html
-test-pref(font.minimum-size.x-western,32) fuzzy-if(Android,0-45,0-324) == 935056-1.html 935056-1-ref.html
+test-pref(font.minimum-size.x-western,32) fuzzy-if(Android,0-55,0-324) == 935056-1.html 935056-1-ref.html
 == 936670-1.svg 936670-1-ref.svg
 == 941940-1.html 941940-1-ref.html
 fails == 942017.html 942017-ref.html # bug 942017
@@ -1760,7 +1759,7 @@ fuzzy(0-1,0-123) == 978911-1.svg 978911-1-ref.svg
 == 985303-1b.html 985303-1-ref.html
 == 987680-1.html 987680-1-ref.html
 # Fuzzy on WR due to alpha blending
-fuzzy(0-1,0-1473) == 991046-1.html 991046-1-ref.html
+fuzzy(0-1,0-1600) == 991046-1.html 991046-1-ref.html
 == 1003425-1.html 1003425-1-ref.html
 == 1003425-2.html 1003425-2-ref.html
 == 1005405-1.html 1005405-1-ref.html
@@ -1791,7 +1790,7 @@ fuzzy(0-1,0-24000) == 1025914-1.html 1025914-1-ref.html
 == 1062792-1.html 1062792-1-ref.html
 == 1066554-1.html 1066554-1-ref.html
 == 1069716-1.html 1069716-1-ref.html
-== 1078262-1.html about:blank # bug 1656792
+fuzzy(0-46,0-220) == 1078262-1.html about:blank # bug 1656792
 test-pref(layout.testing.overlay-scrollbars.always-visible,false) == 1081072-1.html 1081072-1-ref.html
 fuzzy(15-65,100-500) fuzzy-if(useDrawSnapshot,0-33,0-218) == 1081185-1.html 1081185-1-ref.html
 == 1097437-1.html 1097437-1-ref.html
@@ -1823,10 +1822,10 @@ pref(apz.allow_zooming,true) skip-if(!Android) == 1133905-4.html 1133905-ref.htm
 pref(apz.allow_zooming,true) skip-if(!Android) == 1133905-5.html 1133905-ref.html
 pref(apz.allow_zooming,true) skip-if(!Android) == 1133905-6.html 1133905-ref.html
 pref(apz.allow_zooming,true) skip-if(!Android) == 1133905-1-v.html 1133905-ref-v.html
-pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-43,0-10) == 1133905-2-v.html 1133905-ref-v.html
-pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-43,0-10) == 1133905-3-v.html 1133905-ref-v.html
+pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-53,0-10) == 1133905-2-v.html 1133905-ref-v.html
+pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-53,0-10) == 1133905-3-v.html 1133905-ref-v.html
 pref(apz.allow_zooming,true) skip-if(!Android) == 1133905-4-v.html 1133905-ref-v.html
-pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-43,0-10) == 1133905-5-v.html 1133905-ref-v.html
+pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-53,0-10) == 1133905-5-v.html 1133905-ref-v.html
 pref(apz.allow_zooming,true) skip-if(!Android) == 1133905-6-v.html 1133905-ref-v.html
 pref(apz.allow_zooming,true) skip-if(!Android) == 1133905-1-h.html 1133905-ref-h.html
 pref(apz.allow_zooming,true) skip-if(!Android) == 1133905-2-h.html 1133905-ref-h.html
@@ -1835,10 +1834,10 @@ pref(apz.allow_zooming,true) skip-if(!Android) == 1133905-4-h.html 1133905-ref-h
 pref(apz.allow_zooming,true) skip-if(!Android) == 1133905-5-h.html 1133905-ref-h.html
 pref(apz.allow_zooming,true) skip-if(!Android) == 1133905-6-h.html 1133905-ref-h.html
 pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-54,0-17) == 1133905-1-vh.html 1133905-ref-vh.html
-pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-43,0-10) == 1133905-2-vh.html 1133905-ref-vh.html
-pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-43,0-10) == 1133905-3-vh.html 1133905-ref-vh.html
-pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-43,0-12) == 1133905-4-vh.html 1133905-ref-vh.html
-pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-43,0-12) == 1133905-5-vh.html 1133905-ref-vh.html
+pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-53,0-10) == 1133905-2-vh.html 1133905-ref-vh.html
+pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-53,0-10) == 1133905-3-vh.html 1133905-ref-vh.html
+pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-53,0-12) == 1133905-4-vh.html 1133905-ref-vh.html
+pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-53,0-12) == 1133905-5-vh.html 1133905-ref-vh.html
 pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-54,0-18) == 1133905-6-vh.html 1133905-ref-vh.html
 pref(apz.allow_zooming,true) skip-if(!Android) != 1133905-ref-vh.html about:blank # make sure it doesn't render blank
 pref(apz.allow_zooming,true) skip-if(!Android) == 1133905-1-rtl.html 1133905-ref-rtl.html
@@ -1848,10 +1847,10 @@ pref(apz.allow_zooming,true) skip-if(!Android) == 1133905-4-rtl.html 1133905-ref
 pref(apz.allow_zooming,true) skip-if(!Android) == 1133905-5-rtl.html 1133905-ref-rtl.html
 pref(apz.allow_zooming,true) skip-if(!Android) == 1133905-6-rtl.html 1133905-ref-rtl.html
 pref(apz.allow_zooming,true) skip-if(!Android) == 1133905-1-v-rtl.html 1133905-ref-v-rtl.html
-pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-43,0-10) == 1133905-2-v-rtl.html 1133905-ref-v-rtl.html
-pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-43,0-10) == 1133905-3-v-rtl.html 1133905-ref-v-rtl.html
+pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-53,0-10) == 1133905-2-v-rtl.html 1133905-ref-v-rtl.html
+pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-53,0-10) == 1133905-3-v-rtl.html 1133905-ref-v-rtl.html
 pref(apz.allow_zooming,true) skip-if(!Android) == 1133905-4-v-rtl.html 1133905-ref-v-rtl.html
-pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-43,0-10) == 1133905-5-v-rtl.html 1133905-ref-v-rtl.html
+pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-53,0-10) == 1133905-5-v-rtl.html 1133905-ref-v-rtl.html
 pref(apz.allow_zooming,true) skip-if(!Android) == 1133905-6-v-rtl.html 1133905-ref-v-rtl.html # bug 1308702
 pref(apz.allow_zooming,true) skip-if(!Android) == 1133905-1-h-rtl.html 1133905-ref-h-rtl.html
 pref(apz.allow_zooming,true) skip-if(!Android) == 1133905-2-h-rtl.html 1133905-ref-h-rtl.html
@@ -1860,10 +1859,10 @@ pref(apz.allow_zooming,true) skip-if(!Android) == 1133905-4-h-rtl.html 1133905-r
 pref(apz.allow_zooming,true) skip-if(!Android) == 1133905-5-h-rtl.html 1133905-ref-h-rtl.html
 pref(apz.allow_zooming,true) skip-if(!Android) == 1133905-6-h-rtl.html 1133905-ref-h-rtl.html
 pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-54,0-17) == 1133905-1-vh-rtl.html 1133905-ref-vh-rtl.html
-pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-43,0-10) == 1133905-2-vh-rtl.html 1133905-ref-vh-rtl.html
-pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-43,0-10) == 1133905-3-vh-rtl.html 1133905-ref-vh-rtl.html
-pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-43,0-12) == 1133905-4-vh-rtl.html 1133905-ref-vh-rtl.html
-pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-43,0-12) == 1133905-5-vh-rtl.html 1133905-ref-vh-rtl.html
+pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-53,0-10) == 1133905-2-vh-rtl.html 1133905-ref-vh-rtl.html
+pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-53,0-10) == 1133905-3-vh-rtl.html 1133905-ref-vh-rtl.html
+pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-53,0-12) == 1133905-4-vh-rtl.html 1133905-ref-vh-rtl.html
+pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-53,0-12) == 1133905-5-vh-rtl.html 1133905-ref-vh-rtl.html
 pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-54,0-18) == 1133905-6-vh-rtl.html 1133905-ref-vh-rtl.html
 pref(apz.allow_zooming,true) skip-if(!Android) != 1133905-ref-vh-rtl.html about:blank # make sure it doesn't render blank
 == 1149304-1-transform-change.html 1149304-1-transform-change-ref.html
@@ -2000,7 +1999,7 @@ fuzzy(0-2,0-17500) skip-if(winWidget&&isCoverageBuild) == 1412375.html 1412375-r
 # scale-dependent font metrics. Without the fix the test fails in the range
 # 246-255,3237-25110, which overlaps the fuzz range, but would still catch
 # regressing this bug some of the time which is better than not having a test.
-fuzzy(0-255,0-6025) fuzzy-if(gtkWidget,0-255,0-8600) == 1415987-1.html 1415987-1-ref.html
+fuzzy(0-255,0-6025) fuzzy-if(gtkWidget,0-255,0-8600) fuzzy-if(appleSilicon,0-255,0-6500) == 1415987-1.html 1415987-1-ref.html
 == 1419820-1.html 1419820-1-ref.html
 == 1420946-1.html 1420946-1-ref.html
 == 1422393.html 1422393-ref.html
@@ -2053,7 +2052,7 @@ pref(image.downscale-during-decode.enabled,true) fuzzy(0-2,0-2008) skip-if(((gtk
 fuzzy-if(geckoview,251-255,1392-1405) skip-if(Android) == 1562733-rotated-nastaliq-1.html 1562733-rotated-nastaliq-1-ref.html #Bug 1604765
 fuzzy-if(winWidget,0-31,0-3) fuzzy-if(geckoview,0-93,0-87) == 1562733-rotated-nastaliq-2.html 1562733-rotated-nastaliq-2-ref.html
 test-pref(plain_text.wrap_long_lines,false) != 1565129.txt 1565129.txt
-fuzzy(0-32,0-8) fuzzy-if(Android,0-32,0-1458) == 1576553-1.html 1576553-1-ref.html
+fuzzy(0-121,0-400) fuzzy-if(Android,0-91,0-1458) == 1576553-1.html 1576553-1-ref.html
 fuzzy(0-1,0-10000) == 1577566-1.html 1577566-1-ref.html
 == 1579953-2.html 1579953-2-ref.html
 == 1588954.html 1588954-ref.html
@@ -2084,13 +2083,13 @@ fuzzy(0-2,0-96600) == 1648282-1b.html 1648282-1-ref.html
 != chrome://reftest/content/bugs/1688004.xhtml about:blank
 pref(image.downscale-during-decode.enabled,true) fuzzy-if(cocoaWidget||winWidget,0-167,0-44310) fuzzy-if(gtkWidget,0-2,0-46080) == 1714763-1.html 1714763-1-ref.html
 pref(image.downscale-during-decode.enabled,true) fuzzy-if(cocoaWidget||winWidget,0-166,0-22530) fuzzy-if(Android,0-21,0-22260) fuzzy-if(gtkWidget,0-22,0-43900) == 1714763-2.html 1714763-2-ref.html
-pref(image.downscale-during-decode.enabled,true) fuzzy-if(cocoaWidget||winWidget,0-235,0-289) fuzzy-if(gtkWidget,0-186,0-240) fuzzy-if(Android,0-185,0-232) == 1714763-3.html 1714763-3-ref.html
+pref(image.downscale-during-decode.enabled,true) fuzzy-if(cocoaWidget||winWidget,0-235,0-289) fuzzy-if(gtkWidget,0-232,0-240) fuzzy-if(Android,0-232,0-232) == 1714763-3.html 1714763-3-ref.html
 skip-if(!appleSilicon) != 1721223-1.html 1721223-1-notref.html # Big Sur required for updated system font; OSX value is clamped to 10.15
 skip-if(Android) == 1727172-1.xhtml 1727172-1-ref.html
 == 1726663-1.html 1726663-1-ref.html
 == 1727016-1.html 1727016-1-ref.html
 != 1730314-1.html 1730314-1-ref.html
-fuzzy(0-4,0-19) fuzzy-if(Android,0-17,0-2600) fuzzy-if(winWidget,0-154,0-350) fuzzy-if(cocoaWidget,0-23,0-230) == 1738700-1.html 1738700-1-ref.html
+fuzzy(0-4,0-19) fuzzy-if(Android,0-17,0-2600) fuzzy-if(winWidget,0-154,0-350) fuzzy-if(cocoaWidget,0-30,0-650) == 1738700-1.html 1738700-1-ref.html
 
 # Have to skip android because it doesn't set up example.org as a local host,
 # so the test crashes there.
@@ -2100,7 +2099,7 @@ fuzzy(0-128,0-17172) skip-if(Android) HTTP == 1743533-1.html 1743533-2.html # Fu
 
 pref(gfx.font_rendering.fallback.async,false) == 1743560-1.html 1743560-1-ref.html
 == 1743851-1.html 1743851-1-ref.html
-pref(image.downscale-during-decode.enabled,true) == 1744468-1.html 1744468-1-ref.html # do not increase fuzz without looking, the test should be smoothly downscaled, not pixelated
+pref(image.downscale-during-decode.enabled,true) fuzzy(0-2,0-1879) == 1744468-1.html 1744468-1-ref.html # do not increase fuzz without looking, the test should be smoothly downscaled, not pixelated
 == 1747272-1.html 1747272-1-ref.html
 == 1750146-1.html 1750146-1-ref.html
 == 1735265-1.html 1735265-1-ref.html
@@ -2126,7 +2125,6 @@ pref(layout.css.prefers-color-scheme.content-override,1) == 1787127.html 1787127
 pref(layout.css.prefers-color-scheme.content-override,2) == 1787127.html 1787127-ref.html
 == 1792643-1.html 1792643-1-ref.html
 skip-if(!winWidget) == 1798297-1.html 1798297-1-ref.html
-skip-if(!winWidget) != 1798297-1.html 1798297-1-notref.html
 == 1799425-1.html 1799425-1-ref.html
 fuzzy-if(winWidget,111-114,572-572) == 1800437-1.html 1800437-1-ref.html
 == 1803999-1.html 1803999-1-ref.html

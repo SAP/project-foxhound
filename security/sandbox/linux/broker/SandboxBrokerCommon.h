@@ -1,11 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef mozilla_SandboxBrokerCommon_h
 #define mozilla_SandboxBrokerCommon_h
+
+#include "mozilla/UsingEnum.h"
 
 #include <sys/types.h>
 #include <stdint.h>
@@ -26,13 +26,12 @@ namespace mozilla {
 
 class SandboxBrokerCommon {
  public:
-  enum Operation {
+  enum class Operation : unsigned {
     SANDBOX_FILE_OPEN,
     SANDBOX_FILE_ACCESS,
     SANDBOX_FILE_STAT,
     SANDBOX_FILE_CHMOD,
     SANDBOX_FILE_LINK,
-    SANDBOX_FILE_SYMLINK,
     SANDBOX_FILE_MKDIR,
     SANDBOX_FILE_RENAME,
     SANDBOX_FILE_RMDIR,
@@ -40,9 +39,33 @@ class SandboxBrokerCommon {
     SANDBOX_FILE_READLINK,
     SANDBOX_SOCKET_CONNECT,
     SANDBOX_SOCKET_CONNECT_ABSTRACT,
+    SANDBOX_OP_MAX_VALUE = SANDBOX_SOCKET_CONNECT_ABSTRACT
   };
-  // String versions of the above
-  static const char* OperationDescription[];
+  MOZ_USING_ENUM_STATIC(Operation, SANDBOX_FILE_OPEN, SANDBOX_FILE_ACCESS,
+                        SANDBOX_FILE_STAT, SANDBOX_FILE_CHMOD,
+                        SANDBOX_FILE_LINK, SANDBOX_FILE_MKDIR,
+                        SANDBOX_FILE_RENAME, SANDBOX_FILE_RMDIR,
+                        SANDBOX_FILE_UNLINK, SANDBOX_FILE_READLINK,
+                        SANDBOX_SOCKET_CONNECT, SANDBOX_SOCKET_CONNECT_ABSTRACT,
+                        SANDBOX_OP_MAX_VALUE);
+
+  static bool OperationIsValid(Operation aOp) {
+    return static_cast<unsigned>(aOp) <=
+           static_cast<unsigned>(SANDBOX_OP_MAX_VALUE);
+  }
+
+  static int OperationPaths(Operation aOp) {
+    switch (aOp) {
+      case SANDBOX_FILE_LINK:
+      case SANDBOX_FILE_RENAME:
+        return 2;
+      default:
+        return 1;
+    }
+  }
+
+  static unsigned OperationToInt(Operation);
+  static const char* OperationDescription(Operation);
 
   struct Request {
     Operation mOp;

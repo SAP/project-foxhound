@@ -10,9 +10,9 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.LayoutScopeMarker
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
@@ -42,7 +42,6 @@ import androidx.compose.ui.window.PopupProperties
 import kotlin.math.max
 import kotlin.math.min
 
-private const val CORNER_RADIUS = 8
 private const val ELEVATION = 6
 private const val ANIMATION_DURATION_MS = 200
 private const val ANIMATION_ORIGIN_START_EDGE = 0f
@@ -203,7 +202,7 @@ private fun CustomPlacementPopupContent(
     }
 
     Card(
-        shape = RoundedCornerShape(CORNER_RADIUS.dp),
+        shape = MaterialTheme.shapes.small,
         modifier = Modifier.graphicsLayer { graphicsLayerAnim() },
         elevation = CardDefaults.cardElevation(defaultElevation = ELEVATION.dp),
     ) {

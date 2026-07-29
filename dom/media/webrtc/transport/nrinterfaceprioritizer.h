@@ -4,9 +4,7 @@
 #ifndef nrinterfacepriority_h_
 #define nrinterfacepriority_h_
 
-extern "C" {
 #include "nr_interface_prioritizer.h"
-}
 
 namespace mozilla {
 

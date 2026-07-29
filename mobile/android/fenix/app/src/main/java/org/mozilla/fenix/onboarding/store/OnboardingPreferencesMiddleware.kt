@@ -10,7 +10,6 @@ import kotlinx.coroutines.launch
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.Store
 import org.mozilla.fenix.onboarding.store.OnboardingPreferencesRepository.OnboardingPreference
-import org.mozilla.fenix.onboarding.view.ThemeOptionType
 import org.mozilla.fenix.onboarding.view.ToolbarOptionType
 
 /**
@@ -46,13 +45,6 @@ class OnboardingPreferencesMiddleware(
                 repository.init()
             }
 
-            is OnboardingAction.OnboardingThemeAction.UpdateSelected -> {
-                repository.updateOnboardingPreference(
-                    OnboardingPreferencesRepository
-                        .OnboardingPreferenceUpdate(action.selected.toOnboardingPreference()),
-                )
-            }
-
             is OnboardingAction.OnboardingToolbarAction.UpdateSelected -> {
                 repository.updateOnboardingPreference(
                     OnboardingPreferencesRepository
@@ -60,12 +52,6 @@ class OnboardingPreferencesMiddleware(
                 )
             }
         }
-    }
-
-    private fun ThemeOptionType.toOnboardingPreference() = when (this) {
-        ThemeOptionType.THEME_SYSTEM -> OnboardingPreference.DeviceTheme
-        ThemeOptionType.THEME_LIGHT -> OnboardingPreference.LightTheme
-        ThemeOptionType.THEME_DARK -> OnboardingPreference.DarkTheme
     }
 
     private fun ToolbarOptionType.toOnboardingPreference() = when (this) {
@@ -77,15 +63,6 @@ class OnboardingPreferencesMiddleware(
         preferenceUpdate: OnboardingPreferencesRepository.OnboardingPreferenceUpdate,
     ): OnboardingAction {
         return when (preferenceUpdate.preferenceType) {
-            OnboardingPreference.DeviceTheme ->
-                OnboardingAction.OnboardingThemeAction.UpdateSelected(ThemeOptionType.THEME_SYSTEM)
-
-            OnboardingPreference.LightTheme ->
-                OnboardingAction.OnboardingThemeAction.UpdateSelected(ThemeOptionType.THEME_LIGHT)
-
-            OnboardingPreference.DarkTheme ->
-                OnboardingAction.OnboardingThemeAction.UpdateSelected(ThemeOptionType.THEME_DARK)
-
             OnboardingPreference.TopToolbar ->
                 OnboardingAction.OnboardingToolbarAction.UpdateSelected(ToolbarOptionType.TOOLBAR_TOP)
 

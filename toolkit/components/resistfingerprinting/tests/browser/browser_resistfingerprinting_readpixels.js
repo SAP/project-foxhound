@@ -150,6 +150,10 @@ const extractCanvas = async () => {
 
 add_task(async function test_randomization() {
   await SpecialPowers.pushPrefEnv({
+    set: [["privacy.baselineFingerprintingProtection", false]],
+  });
+
+  await SpecialPowers.pushPrefEnv({
     set: [
       ["privacy.fingerprintingProtection", true],
       [
@@ -193,4 +197,6 @@ add_task(async function test_randomization() {
   isnot(randomized, nonRandomized, "Canvas is randomized");
 
   BrowserTestUtils.removeTab(tab);
+
+  await SpecialPowers.popPrefEnv();
 });

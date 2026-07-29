@@ -27,6 +27,9 @@ add_setup(function setup() {
   sinon
     .stub(SelectableProfileService, "isEnabled")
     .get(() => gProfileName !== null);
+  sinon
+    .stub(SelectableProfileService, "getCachedProfileCount")
+    .callsFake(() => (gProfileName ? 2 : 1));
   sinon.stub(SelectableProfileService, "currentProfile").get(() => ({
     name: gProfileName,
   }));

@@ -161,7 +161,7 @@ mod tests {
     use crate::test_helpers::{EngineRecord, ExpectedEngine, SubVariant, Variant};
     use crate::{test_helpers, types::*, SearchApiError};
     use mockito::mock;
-    use remote_settings::{RemoteSettingsConfig2, RemoteSettingsContext, RemoteSettingsServer};
+    use remote_settings::{RemoteSettingsConfig, RemoteSettingsContext, RemoteSettingsServer};
     use serde_json::json;
 
     #[test]
@@ -870,7 +870,7 @@ mod tests {
         error_support::init_for_tests();
         viaduct_dev::init_backend_dev();
 
-        let config = RemoteSettingsConfig2 {
+        let config = RemoteSettingsConfig {
             server: Some(RemoteSettingsServer::Custom {
                 url: mockito::server_url(),
             }),
@@ -914,10 +914,10 @@ mod tests {
             "id": "search-config-v2",
             "last_modified": 1000,
             "bucket": "main",
-            "signature": {
+            "signatures": [{
               "x5u": "fake",
               "signature": "fake",
-            },
+            }],
           },
           "timestamp": 1000,
           "changes": [
@@ -979,10 +979,10 @@ mod tests {
             "id": "search-config-v2",
             "last_modified": 1000,
             "bucket": "main",
-            "signature": {
+            "signatures": [{
               "x5u": "fake",
               "signature": "fake",
-            },
+            }],
           },
           "timestamp": 1000,
           "changes": [
@@ -1028,10 +1028,10 @@ mod tests {
             "id": "search-config-overrides-v2",
             "last_modified": 1000,
             "bucket": "main",
-            "signature": {
+            "signatures": [{
               "x5u": "fake",
               "signature": "fake",
-            },
+            }],
           },
           "timestamp": 1000,
           "changes": [ engine ]
@@ -1052,10 +1052,10 @@ mod tests {
                 "id": "search-config-v2",
                 "last_modified": 1000,
                 "bucket": "main",
-                "signature": {
+                "signatures": [{
                   "x5u": "fake",
                   "signature": "fake",
-                },
+                }],
               },
               "timestamp": 1000,
               "changes": [
@@ -1139,10 +1139,10 @@ mod tests {
                  "id": "search-config-overrides-v2",
                  "last_modified": 1000,
                  "bucket": "main",
-                 "signature": {
+                 "signatures": [{
                    "x5u": "fake",
                    "signature": "fake",
-                 },
+                 }],
                },
                "timestamp": 1000,
                "changes": [

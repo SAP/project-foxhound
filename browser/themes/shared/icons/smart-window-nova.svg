@@ -1,0 +1,19 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+  <g clip-path="url(#smart-window-nova-clip)">
+    <rect width="16" height="16" fill="url(#smart-window-nova-gradient)"/>
+    <path d="M3.42871 7.9775C6.76937 7.49219 7.86827 4.74211 8.00014 3.42773C8.56278 6.82489 11.2822 7.87639 12.5716 7.9775C9.26607 8.42814 8.14666 11.2273 8.00014 12.5706C7.543 9.17344 4.76204 8.09305 3.42871 7.9775Z" fill="white"/>
+  </g>
+  <defs>
+    <clipPath id="smart-window-nova-clip">
+      <circle cx="8" cy="8" r="8"/>
+    </clipPath>
+    <linearGradient id="smart-window-nova-gradient" x1="14" y1="16" x2="0" y2="-7.71429" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF3647"/>
+      <stop offset="0.737663" stop-color="#7543E3"/>
+      <stop offset="1" stop-color="#FF980E"/>
+    </linearGradient>
+  </defs>
+</svg>

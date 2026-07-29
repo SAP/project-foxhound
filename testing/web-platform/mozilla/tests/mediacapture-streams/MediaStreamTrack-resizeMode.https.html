@@ -1,6 +1,8 @@
 <!doctype html>
-<title>MediaStreamTrack video resizeMode. Assumes Mozilla's fake camera source with 480p and 720p capabilities.</title>
+<title>getUserMedia MediaStreamTrack video resizeMode. Assumes Mozilla's fake camera source with 480p and 720p capabilities.</title>
 <meta name="timeout" content="long">
+<meta name="variant" content="?resizeMode=enabled">
+<meta name="variant" content="?resizeMode=disabled">
 <p class="instructions">When prompted, accept to share your video stream.</p>
 <script src=/resources/testharness.js></script>
 <script src=/resources/testharnessreport.js></script>
@@ -9,7 +11,11 @@
 <script src=settings-helper.js></script>
 <script src=video-test-helper.js></script>
 <script>
-  "use strict"
+"use strict"
+
+function doTest() {
+  const resizeModeEnabled =
+    new URLSearchParams(window.location.search).get("resizeMode") == "enabled";
 
   // Native capabilities supported by the fake camera.
   const nativeLow = {width: 640, height: 480, frameRate: 30, resizeMode: "none"};
@@ -33,11 +39,15 @@
     ],
     [
       {resizeMode: "crop-and-scale", height: 500},
-      {resizeMode: "crop-and-scale", width: 889, height: 500, frameRate: 10}
+      resizeModeEnabled ?
+        {resizeMode: "crop-and-scale", width: 889, height: 500, frameRate: 10} :
+        {width: 640, height: 480, frameRate: 30}
     ],
     [
       {resizeMode: "crop-and-scale", width: {min: 500}, height: {max: 200}},
-      {resizeMode: "crop-and-scale", width: 500, height: 200, frameRate: 30}
+      resizeModeEnabled ?
+        {resizeMode: "crop-and-scale", width: 500, height: 200, frameRate: 30} :
+        "OverconstrainedError"
     ],
     [
       {resizeMode: "crop-and-scale", frameRate: 50},
@@ -49,14 +59,25 @@
     ],
     [
       {resizeMode: "crop-and-scale", frameRate: {exact: 5}},
-      {resizeMode: "crop-and-scale", width: 640, height: 480, frameRate: 5},
+      resizeModeEnabled ?
+        {resizeMode: "crop-and-scale", width: 640, height: 480, frameRate: 5} :
+        "OverconstrainedError",
       [2, 7]
     ],
   ].forEach(([video, expected, testFramerate]) => promise_test(async t => {
-      const stream = await navigator.mediaDevices.getUserMedia({video});
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({video});
+      } catch(e) {
+        assert_equals(e.name, expected);
+        return;
+      }
       const [track] = stream.getTracks();
       t.add_cleanup(() => track.stop());
       const settings = track.getSettings();
+      if (!resizeModeEnabled) {
+        expected.resizeMode = undefined;
+      }
       for (const key of Object.keys(expected)) {
         assert_equals(settings[key], expected[key], key);
       }
@@ -76,14 +97,14 @@
       track2.stop();
     });
     const settings = track.getSettings();
-    assert_equals(settings.resizeMode, "none", "track resizeMode");
+    assert_equals(settings.resizeMode, resizeModeEnabled ? "none" : undefined, "track resizeMode");
     assert_equals(settings.width, 1280, "track width");
     assert_equals(settings.height, 720, "track height");
     assert_equals(settings.frameRate, 10, "track framerate");
     const settings2 = track2.getSettings();
-    assert_equals(settings2.resizeMode, "crop-and-scale", "track2 resizeMode");
-    assert_equals(settings2.width, 400, "track2 width");
-    assert_equals(settings2.height, 300, "track2 height");
+    assert_equals(settings2.resizeMode, resizeModeEnabled ? "crop-and-scale" : undefined, "track2 resizeMode");
+    assert_equals(settings2.width, resizeModeEnabled ? 400 : 640, "track2 width");
+    assert_equals(settings2.height, resizeModeEnabled ? 300 : 480, "track2 height");
     // Bug 1988466: source is configured at 10fps so we cannot completely
     // masquerade the selected capability.
     assert_equals(settings2.frameRate, 30, "track2 framerate");
@@ -163,19 +184,27 @@
     ],
     [
       {resizeMode: "crop-and-scale", height: 400},
-      {resizeMode: "crop-and-scale", width: 533, height: 400, frameRate: 30}
+      resizeModeEnabled ?
+        {resizeMode: "crop-and-scale", width: 533, height: 400, frameRate: 30} :
+        {width: 640, height: 480, frameRate: 30}
     ],
     [
       {resizeMode: "crop-and-scale", height: 500},
-      {resizeMode: "crop-and-scale", width: 889, height: 500, frameRate: 10}
+      resizeModeEnabled ?
+        {resizeMode: "crop-and-scale", width: 889, height: 500, frameRate: 10} :
+        {width: 640, height: 480, frameRate: 30}
     ],
     [
       {resizeMode: "crop-and-scale", height: {exact: 500}},
-      {resizeMode: "crop-and-scale", width: 889, height: 500, frameRate: 10}
+      resizeModeEnabled ?
+        {resizeMode: "crop-and-scale", width: 889, height: 500, frameRate: 10} :
+        "OverconstrainedError"
     ],
     [
       {resizeMode: "crop-and-scale", width: {min: 500}, height: {max: 200}},
-      {resizeMode: "crop-and-scale", width: 500, height: 200, frameRate: 30}
+      resizeModeEnabled ?
+        {resizeMode: "crop-and-scale", width: 500, height: 200, frameRate: 30} :
+        "OverconstrainedError"
     ],
     [
       {resizeMode: "crop-and-scale", frameRate: 50},
@@ -187,15 +216,25 @@
     ],
     [
       {resizeMode: "crop-and-scale", frameRate: {exact: 5}},
-      {resizeMode: "crop-and-scale", width: 640, height: 480, frameRate: 5},
+      resizeModeEnabled ?
+        {resizeMode: "crop-and-scale", width: 640, height: 480, frameRate: 5} :
+        "OverconstrainedError",
       [2, 7]
     ],
   ].forEach(([video, expected, testFramerate]) => promise_test(async t => {
       const stream = await navigator.mediaDevices.getUserMedia({video: true});
       const [track] = stream.getTracks();
       t.add_cleanup(() => track.stop());
-      await track.applyConstraints(video);
+      try {
+        await track.applyConstraints(video);
+      } catch(e) {
+        assert_equals(e.name, expected);
+        return;
+      }
       const settings = track.getSettings();
+      if (!resizeModeEnabled) {
+        expected.resizeMode = undefined;
+      }
       for (const key of Object.keys(expected)) {
         assert_equals(settings[key], expected[key], key);
       }
@@ -256,143 +295,6 @@
     }
     assert_unreached("applyConstraints is rejected with impossible fps");
   }, "applyConstraints is rejected by resizeMode crop-and-scale impossible fps");
-
-
-  // Note these gDM tests will fail if our own window is on a screen different
-  // than the system's first screen. They're functions in case the browser
-  // window needs to be moved to the first screen during the test in order to
-  // pass.
-  function screenPixelRatio() { return SpecialPowers.wrap(window).desktopToDeviceScale; }
-  function screenWidth() { return window.screen.width * window.devicePixelRatio; }
-  function screenHeight() { return window.screen.height * window.devicePixelRatio; }
-  function desktopWidth() {
-    // TODO: Bug 1965499 - scale down by screenPixelRatio by default in resizeMode: crop-and-scale.
-    // return screenWidth() / screenPixelRatio();
-    return screenWidth();
-  }
-  function desktopHeight() {
-    // TODO: Bug 1965499 - scale down by screenPixelRatio by default in resizeMode: crop-and-scale.
-    // return screenHeight() / screenPixelRatio();
-    return screenHeight();
-  }
-
-  promise_test(async t => {
-    await test_driver.bless('getDisplayMedia()');
-    const stream = await navigator.mediaDevices.getDisplayMedia(
-        {video: {resizeMode: "none", width: 100}}
-    );
-    const [track] = stream.getTracks();
-    t.add_cleanup(() => track.stop());
-    assert_equals(track.getSettings().width, screenWidth(), "width");
-    assert_equals(track.getSettings().height, screenHeight(), "height");
-    assert_equals(track.getSettings().frameRate, 60, "framerate");
-    assert_equals(track.getSettings().resizeMode, "none", "resizeMode");
-  }, "gDM gets full screen resolution by width");
-
-  // TODO: By default we shouldn't be multiplying with window.devicePixelRatio (bug 1703991).
-  function defaultScreen() {
-    return {
-      resizeMode: "crop-and-scale",
-      width: screenWidth(),
-      height: screenHeight(),
-      frameRate: 30,
-    };
-  }
-  // TODO: Should get the source's real refresh rate for frameRate (bug 1984363).
-  function nativeScreen() {
-    return {
-      resizeMode: "none",
-      width: screenWidth(),
-      height: screenHeight(),
-      frameRate: 60
-    };
-  }
-
-  [
-    [{resizeMode: "none", width: 100}, nativeScreen],
-    [{resizeMode: "none", frameRate: 50}, nativeScreen],
-    [{resizeMode: "crop-and-scale"}, defaultScreen],
-    [{resizeMode: "crop-and-scale", height: 100}, () => ({
-        resizeMode: "crop-and-scale",
-        width: Math.round(screenWidth() / screenHeight() * 100),
-        height: 100,
-        frameRate: 30
-      })],
-    [{resizeMode: "crop-and-scale", frameRate: 5}, () => {
-        const { width, height } = defaultScreen();
-        return { width, height, frameRate: 5};
-      }, [2, 7]],
-    [{resizeMode: "crop-and-scale", frameRate: 50}, () => {
-        const { width, height } = defaultScreen();
-        return { width, height, frameRate: 50};
-      }],
-    [{resizeMode: "crop-and-scale", frameRate: 5000}, () => {
-        const { width, height } = defaultScreen();
-        return { width, height, frameRate: 120};
-      }],
-  ].forEach(([video, expectedFunc, testFramerate]) => {
-      let expected;
-      promise_test(async t => {
-          expected = expectedFunc();
-          await test_driver.bless('getDisplayMedia()');
-          const stream = await navigator.mediaDevices.getDisplayMedia({video});
-          const [track] = stream.getTracks();
-          t.add_cleanup(() => track.stop());
-          const settings = track.getSettings();
-          for (const key of Object.keys(expected)) {
-            assert_equals(settings[key], expected[key], key);
-          }
-          if (testFramerate) {
-            const [low, high] = testFramerate;
-            await test_framerate_between_exclusive(t, track, low, high);
-          }
-        }, `gDM gets expected mode by ${JSON.stringify(video)}`);
-    });
-
-  promise_test(async t => {
-    await test_driver.bless('getDisplayMedia()');
-    const stream = await navigator.mediaDevices.getDisplayMedia(
-        {video: {
-            resizeMode: "crop-and-scale",
-            width: 400,
-            height: 400
-        }}
-    );
-    const [track] = stream.getTracks();
-    t.add_cleanup(() => track.stop());
-    const expected = findFittestResolutionSetting(
-      screenWidth(),
-      screenHeight(),
-      track.getConstraints()
-    );
-    assert_equals(track.getSettings().width, expected.width, "width");
-    assert_equals(track.getSettings().height, expected.height, "height");
-    assert_approx_equals(
-      track.getSettings().width / track.getSettings().height,
-      desktopWidth() / desktopHeight(),
-      0.01,
-      "aspect ratio"
-    );
-    assert_equals(track.getSettings().resizeMode, "crop-and-scale", "resizeMode");
-  }, "gDM doesn't crop with only ideal dimensions");
-
-  promise_test(async t => {
-    await test_driver.bless('getDisplayMedia()');
-    const stream = await navigator.mediaDevices.getDisplayMedia(
-        {video: {
-            resizeMode: "crop-and-scale",
-            width: {max: 400},
-            height: {ideal: 400}
-        }}
-    );
-    const [track] = stream.getTracks();
-    t.add_cleanup(() => track.stop());
-    assert_equals(track.getSettings().width, 400, "width");
-    assert_equals(
-      track.getSettings().height,
-      Math.round(screenHeight() / screenWidth() * 400),
-      "height"
-    );
-    assert_equals(track.getSettings().resizeMode, "crop-and-scale", "resizeMode");
-  }, "gDM doesn't crop with ideal and max dimensions");
+}
+window.addEventListener("load", doTest, {once: true});
 </script>

@@ -51,6 +51,9 @@ def pytest_generate_tests(metafunc):
     if "actual_platform_required" in marks:
         otherargs["actual_platform_required"] = True
 
+    if "use_big_minimum_font_size" in marks:
+        otherargs["use_big_minimum_font_size"] = True
+
     if "no_overlay_scrollbars" in marks:
         otherargs["no_overlay_scrollbars"] = True
 
@@ -59,6 +62,24 @@ def pytest_generate_tests(metafunc):
 
     if "disable_moztransform" in marks:
         otherargs["disable_moztransform"] = True
+
+    if "enable_speechrecognition" in marks:
+        otherargs["enable_speechrecognition"] = True
+
+    if "disable_speechrecognition" in marks:
+        otherargs["disable_speechrecognition"] = True
+
+    if "enable_standard_captureStream" in marks:
+        otherargs["enable_standard_captureStream"] = True
+
+    if "disable_standard_captureStream" in marks:
+        otherargs["disable_standard_captureStream"] = True
+
+    if "enable_webkit_scrollbar" in marks:
+        otherargs["enable_webkit_scrollbar"] = True
+
+    if "disable_webkit_scrollbar" in marks:
+        otherargs["disable_webkit_scrollbar"] = True
 
     if "enable_webkit_fill_available" in marks:
         otherargs["enable_webkit_fill_available"] = True
@@ -91,15 +112,26 @@ async def test_config(request, driver):
     return {
         "actual_platform_required": params.get("actual_platform_required", False),
         "enable_moztransform": params.get("enable_moztransform", False),
+        "enable_speechrecognition": params.get("enable_speechrecognition", False),
+        "enable_standard_captureStream": params.get(
+            "enable_standard_captureStream", False
+        ),
+        "enable_webkit_scrollbar": params.get("enable_webkit_scrollbar", False),
         "enable_webkit_fill_available": params.get(
             "enable_webkit_fill_available", False
         ),
         "disable_moztransform": params.get("disable_moztransform", False),
+        "disable_speechrecognition": params.get("disable_speechrecognition", False),
+        "disable_standard_captureStream": params.get(
+            "disable_standard_captureStream", False
+        ),
+        "disable_webkit_scrollbar": params.get("disable_webkit_scrollbar", False),
         "disable_webkit_fill_available": params.get(
             "disable_webkit_fill_available", False
         ),
         "need_visible_scrollbars": params.get("need_visible_scrollbars", False),
         "no_overlay_scrollbars": params.get("no_overlay_scrollbars", False),
+        "use_big_minimum_font_size": params.get("use_big_minimum_font_size", False),
         "use_interventions": use_interventions,
         "use_pbm": params.get("with_private_browsing", False),
         "use_strict_etp": params.get("with_strict_etp", False),

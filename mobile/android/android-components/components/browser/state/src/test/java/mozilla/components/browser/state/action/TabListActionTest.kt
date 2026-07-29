@@ -20,10 +20,10 @@ import mozilla.components.browser.state.state.recover.RecoverableTab
 import mozilla.components.browser.state.state.recover.TabState
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.test.assertNotNull
 
 class TabListActionTest {
 
@@ -384,6 +384,40 @@ class TabListActionTest {
         // [(a), b*, c*] -> [b*, c*]
         state = BrowserStateReducer.reduce(state, TabListAction.RemoveTabAction("a"))
         assertNull(state.selectedTabId)
+    }
+
+    @Test
+    fun `RemoveTabAction - Exclude excluded tab from selection`() {
+        var state = BrowserState(
+            tabs = listOf(
+                createTab(id = "a", url = "https://www.mozilla.org", private = false),
+                createTab(id = "b", url = "https://www.firefox.com", private = false),
+                createTab(id = "c", url = "https://www.example.org", private = false),
+                createTab(id = "d", url = "https://getpocket.com", private = false),
+                createTab(id = "e", url = "https://developer.mozilla.org/", private = false),
+            ),
+            selectedTabId = "d",
+        )
+
+        state = BrowserStateReducer.reduce(state, TabListAction.RemoveTabAction(excludedTabIds = setOf("e"), tabId = "d"))
+        assertEquals("c", state.selectedTabId)
+    }
+
+    @Test
+    fun `RemoveTabsAction - Exclude excluded tabs from selection`() {
+        var state = BrowserState(
+            tabs = listOf(
+                createTab(id = "a", url = "https://www.mozilla.org", private = false),
+                createTab(id = "b", url = "https://www.firefox.com", private = false),
+                createTab(id = "c", url = "https://www.example.org", private = false),
+                createTab(id = "d", url = "https://getpocket.com", private = false),
+                createTab(id = "e", url = "https://developer.mozilla.org/", private = false),
+            ),
+            selectedTabId = "d",
+        )
+
+        state = BrowserStateReducer.reduce(state, TabListAction.RemoveTabsAction(excludedTabIds = setOf("c", "e"), tabIds = listOf("d", "b")))
+        assertEquals("a", state.selectedTabId)
     }
 
     @Test

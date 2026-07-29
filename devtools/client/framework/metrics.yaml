@@ -24,7 +24,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_CURRENT_THEME
 
   cold_toolbox_open_delay:
     type: labeled_timing_distribution
@@ -47,7 +46,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_COLD_TOOLBOX_OPEN_DELAY_MS
 
   warm_toolbox_open_delay:
     type: labeled_timing_distribution
@@ -70,7 +68,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_WARM_TOOLBOX_OPEN_DELAY_MS
 
   toolbox_page_reload_delay:
     type: labeled_timing_distribution
@@ -93,7 +90,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_TOOLBOX_PAGE_RELOAD_DELAY_MS
 
   toolbox_host:
     type: custom_distribution
@@ -117,7 +113,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_TOOLBOX_HOST
 
 devtools.tool:
   registered:
@@ -142,7 +137,6 @@ devtools.tool:
       - devtools-telemetry-alerts@mozilla.com
       - accessibility@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_TOOL_REGISTERED
 
 devtools.toolbox:
   tabs_reordered:
@@ -161,4 +155,3 @@ devtools.toolbox:
       - devtools-telemetry-alerts@mozilla.com
       - daisuke@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_TOOLBOX_TABS_REORDERED

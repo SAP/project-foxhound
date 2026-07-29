@@ -38,7 +38,6 @@ add_setup(async function () {
   // We always resolve elements of localDomains as it's hardcoded without the
   // following pref:
   prefs.setBoolPref("network.proxy.allow_hijacking_localhost", true);
-  prefs.setBoolPref("network.http.altsvc.oe", true);
 
   if (mozinfo.os == "android") {
     // Set necessary prefs to make Firefox connect to the http3Server on the
@@ -86,7 +85,6 @@ add_setup(async function () {
     prefs.clearUserPref("network.http.http3.enable");
     prefs.clearUserPref("network.dns.localDomains");
     prefs.clearUserPref("network.proxy.allow_hijacking_localhost");
-    prefs.clearUserPref("network.http.altsvc.oe");
     prefs.clearUserPref("network.http.http3.alt-svc-mapping-for-testing");
     pps.unregisterFilter(proxyFilter);
     if (mozinfo.os == "android") {
@@ -143,21 +141,6 @@ add_task(async function test_post() {
 add_task(async function test_patch() {
   await do_test_patch(httpsOrigin, h3Route);
 });
-
-add_task(
-  {
-    // Skip this test on Android because the httpOrigin (http://foo.example.com)
-    // is on 127.0.0.1, while the http3Server (https://foo.example.com) is
-    // on 10.0.2.2. Currently, we can't change the IP mapping dynamically.
-    skip_if: () => mozinfo.os == "android",
-  },
-  async function test_http_alt_svc() {
-    setup_h1_server(h3ServerDomain);
-    await waitForHttp3Route(httpOrigin + "http3-test", h3Route, h3AltSvc, {
-      delayMs: 500,
-    });
-  }
-);
 
 add_task(async function test_slow_receiver() {
   await do_test_slow_receiver(httpsOrigin, h3Route);

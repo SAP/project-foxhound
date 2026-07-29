@@ -22,6 +22,13 @@ XPCOMUtils.defineLazyPreferenceGetter(
 
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
+  "flushOnQueryEnabled",
+  "browser.contentblocking.database.flushOnQuery.enabled",
+  true
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
   "fpp_enabled",
   "privacy.fingerprintingProtection",
   false
@@ -127,6 +134,7 @@ TrackingDBService.prototype = {
   _db: null,
   waitingTasks: new Set(),
   finishedShutdown: true,
+  _flushingLiveLogsPromise: null,
 
   async ensureDB() {
     await this._initPromise;
@@ -172,7 +180,12 @@ TrackingDBService.prototype = {
   async _shutdown() {
     let db = await this.ensureDB();
     this.finishedShutdown = true;
-    await Promise.all(Array.from(this.waitingTasks, task => task.finalize()));
+    // Ensure all waiting tasks are finalized before closing the DB
+    await Promise.all(
+      Array.from(this.waitingTasks, task =>
+        task.isFinalized ? null : task.finalize()
+      )
+    );
     await db.close();
   },
 
@@ -190,6 +203,46 @@ TrackingDBService.prototype = {
     }, 0);
     task.arm();
     this.waitingTasks.add(task);
+  },
+
+  /**
+   * Force every live top-level WindowGlobalParent to flush its in-memory
+   * ContentBlockingLog to the database, then wait for those writes to settle.
+   * Called before read paths so long-lived tabs contribute up-to-date data.
+   *
+   */
+  async _flushLiveLogs() {
+    if (this.finishedShutdown || !lazy.flushOnQueryEnabled) {
+      return undefined;
+    }
+
+    // Concurrent callers share a single in-flight flush: if a flush is already
+    // running, additional callers await the same promise rather than triggering
+    // a redundant flush or returning early and reading stale data.
+    if (this._flushingLiveLogsPromise) {
+      return this._flushingLiveLogsPromise;
+    }
+    const { promise: flushPromise, resolve, reject } = Promise.withResolvers();
+    this._flushingLiveLogsPromise = flushPromise;
+    try {
+      WindowGlobalParent.flushAllContentBlockingLogs();
+      // Drain until empty rather than awaiting a single snapshot. ActorDestroy
+      // on a tab teardown also routes through recordContentBlockingLog and can
+      // add new tasks to waitingTasks while we're awaiting the current batch;
+      // those would otherwise be missed by both this caller and any concurrent
+      // callers sharing the in-flight flush promise.
+      while (this.waitingTasks.size) {
+        await Promise.all([...this.waitingTasks].map(task => task.finalize()));
+      }
+      resolve();
+    } catch (e) {
+      reject(e);
+      throw e;
+    } finally {
+      this._flushingLiveLogsPromise = null;
+    }
+
+    return undefined;
   },
 
   identifyType(events) {
@@ -236,9 +289,15 @@ TrackingDBService.prototype = {
         ) {
           result = Ci.nsITrackingDBService.SOCIAL_ID;
         } else if (
-          // If there is a tracker blocked. If there is a social tracker blocked, but STP is not enabled.
+          // If there is a tracker blocked, attribute it to trackers. Social
+          // tracker blocks also fall through to here when STP is not enabled.
+          // We also attribute replaced tracking content and email tracker
+          // blocks to trackers.
           state & Ci.nsIWebProgressListener.STATE_BLOCKED_TRACKING_CONTENT ||
-          state & Ci.nsIWebProgressListener.STATE_BLOCKED_SOCIALTRACKING_CONTENT
+          state &
+            Ci.nsIWebProgressListener.STATE_BLOCKED_SOCIALTRACKING_CONTENT ||
+          state & Ci.nsIWebProgressListener.STATE_REPLACED_TRACKING_CONTENT ||
+          state & Ci.nsIWebProgressListener.STATE_BLOCKED_EMAILTRACKING_CONTENT
         ) {
           result = Ci.nsITrackingDBService.TRACKERS_ID;
         } else if (
@@ -333,7 +392,10 @@ TrackingDBService.prototype = {
       return;
     }
     this.lastChecked = Date.now();
-    let totalSaved = await this.sumAllEvents();
+    // Query the DB directly rather than going through sumAllEvents(): we're
+    // inside the flush triggered by _flushLiveLogs, and re-entering it would
+    // deadlock on the in-flight shared promise.
+    let totalSaved = await this.sumAllEventsWithoutFlushing(db);
 
     let reachedMilestone = null;
     let nextMilestone = null;
@@ -364,17 +426,30 @@ TrackingDBService.prototype = {
 
   async clearAll() {
     let db = await this.ensureDB();
+    // Ensure all waiting tasks are finalized before clearing the DB.
+    await Promise.all(
+      Array.from(this.waitingTasks, task =>
+        task.isFinalized ? null : task.finalize()
+      )
+    );
     await removeAllRecords(db);
   },
 
   async clearSince(date) {
     let db = await this.ensureDB();
+    // Ensure all waiting tasks are finalized before clearing the DB.
+    await Promise.all(
+      Array.from(this.waitingTasks, task =>
+        task.isFinalized ? null : task.finalize()
+      )
+    );
     date = new Date(date).toISOString();
     await removeRecordsSince(db, date);
   },
 
   async getEventsByDateRange(dateFrom, dateTo) {
     let db = await this.ensureDB();
+    await this._flushLiveLogs();
     dateFrom = new Date(dateFrom).toISOString();
     dateTo = new Date(dateTo).toISOString();
     return db.execute(SQL.selectByDateRange, { dateFrom, dateTo });
@@ -382,6 +457,11 @@ TrackingDBService.prototype = {
 
   async sumAllEvents() {
     let db = await this.ensureDB();
+    await this._flushLiveLogs();
+    return this.sumAllEventsWithoutFlushing(db);
+  },
+
+  async sumAllEventsWithoutFlushing(db) {
     let results = await db.execute(SQL.sumAllEvents);
     if (!results[0]) {
       return 0;
@@ -392,6 +472,7 @@ TrackingDBService.prototype = {
 
   async getEarliestRecordedDate() {
     let db = await this.ensureDB();
+    await this._flushLiveLogs();
     let date = await db.execute(SQL.getEarliestDate);
     if (!date[0]) {
       return null;

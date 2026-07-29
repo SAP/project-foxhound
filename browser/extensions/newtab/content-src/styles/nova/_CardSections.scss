@@ -1,0 +1,254 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+// @nova-cleanup(merge-styles): Move to components/DiscoveryStreamComponents/CardSections/_CardSections.scss
+
+.nova-enabled .section-title-wrapper {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-medium);
+
+  @include at-content-cols(12) {
+    column-gap: var(--space-large);
+  }
+
+  .section-subtitle {
+    flex-basis: 100%;
+  }
+}
+
+.nova-enabled .ds-section .section-follow,
+.nova-enabled .ds-section .section-context-menu {
+  @include wallpaper-contrast-fix;
+}
+
+.nova-enabled .ds-section .section-follow {
+  moz-button::part(button) {
+    transition: background-color 0.2s ease;
+  }
+
+  moz-button::part(moz-button-label) {
+    // CSS can only transition between fixed values;
+    // 30ch accommodates the longest localized string (Georgian: 26ch)
+    max-width: 30ch;
+    transition:
+      max-width 0.2s ease,
+      opacity 0.2s ease;
+
+    @starting-style {
+      max-width: 0;
+      opacity: 0;
+    }
+  }
+}
+
+// Also used by nova/_DSCard.scss
+@mixin nova-card-stp-controls {
+  .card-stp-button-hover-background .card-stp-button-position-wrapper {
+    inset-inline-end: var(--nova-stp-inset);
+    inset-block-end: var(--nova-stp-inset);
+  }
+
+  .context-menu-position-container .context-menu-button {
+    width: var(--size-item-medium);
+    height: var(--size-item-medium);
+    border-radius: var(--border-radius-circle);
+  }
+}
+
+@mixin nova-section-card-small {
+  &.ds-card.sections-card-ui {
+    --nova-small-card-image-width: 132px;
+    --nova-small-card-image-height: 108px;
+
+    &:not(.placeholder) {
+      box-shadow: var(--card-box-shadow);
+    }
+
+    &:hover,
+    &:active,
+    &:focus-within,
+    &.active {
+      box-shadow: var(--card-box-shadow-hover);
+
+      .meta .sections-card-footer {
+        padding-inline-end: var(--space-xlarge);
+      }
+    }
+
+    .ds-card-link {
+      align-items: flex-start;
+      gap: var(--space-small);
+      padding: var(--space-medium);
+    }
+
+    .img-wrapper {
+      width: var(--nova-small-card-image-width);
+      height: var(--nova-small-card-image-height);
+    }
+
+    .img-wrapper > .ds-image.img > img {
+      border-radius: calc(var(--border-radius-small) + var(--space-xxsmall));
+    }
+
+    .meta {
+      // space-xxsmall is used to align small card publisher title with medium card
+      height: calc(var(--nova-small-card-image-height) + var(--space-xxsmall));
+      min-height: 0;
+
+      .info-wrap {
+        margin-block-start: 0;
+        max-width: none;
+      }
+
+      .sections-card-footer {
+        margin-block-end: 0;
+        min-height: var(--size-item-medium);
+        max-width: none;
+      }
+    }
+
+    --nova-stp-inset: var(--space-medium);
+
+    @include nova-card-stp-controls;
+  }
+}
+
+@mixin nova-section-card-medium {
+  &.ds-card.sections-card-ui:not(.ds-spoc-rectangle) {
+    &:not(.placeholder) {
+      box-shadow: var(--card-box-shadow);
+
+      .img-wrapper > .ds-image.img > img {
+        border-radius: var(--border-radius-medium);
+      }
+    }
+
+    &:hover,
+    &:active,
+    &:focus-within,
+    &.active {
+      box-shadow: var(--card-box-shadow-hover);
+    }
+
+    .ds-card-link {
+      gap: var(--space-medium);
+      padding: var(--space-large) var(--space-large) var(--space-medium);
+    }
+
+    .meta {
+      padding: 0;
+      min-height: 79px;
+
+      .info-wrap .title {
+        font-size: var(--font-size-small);
+        margin-block-end: 0;
+      }
+
+      .info-wrap .excerpt {
+        display: none;
+      }
+
+      .sections-card-footer {
+        min-height: var(--size-item-medium);
+      }
+    }
+
+    --nova-stp-inset: var(--space-large);
+
+    @include nova-card-stp-controls;
+  }
+}
+
+@mixin nova-section-card-large {
+  &.ds-card.sections-card-ui {
+    &:not(.placeholder) {
+      box-shadow: var(--card-box-shadow);
+    }
+
+    &:hover,
+    &:active,
+    &:focus-within,
+    &.active {
+      box-shadow: var(--card-box-shadow-hover);
+    }
+
+    // @nova-cleanup(remove-conditional): Replace with container query to match nova breakpoints.
+    // Currently prevents classic @media rules from bleeding through.
+    @media (min-width: $break-point-layout-variant) {
+      --nova-large-card-image-width: 240px;
+      --nova-large-card-image-height: 200px;
+
+      .ds-card-link {
+        flex-wrap: wrap;
+        gap: var(--space-large);
+        padding: var(--space-xlarge) var(--space-xlarge) var(--space-large);
+      }
+
+      .img-wrapper {
+        width: var(--nova-large-card-image-width);
+        height: var(--nova-large-card-image-height);
+      }
+
+      .meta {
+        display: contents;
+
+        .info-wrap {
+          flex: 1;
+          margin-inline-start: var(--space-small);
+        }
+
+        .info-wrap .title {
+          margin-block: 0;
+        }
+
+        .info-wrap .excerpt {
+          display: block;
+          -webkit-line-clamp: 6;
+          margin-block: var(--space-medium) 0;
+          color: var(--newtab-text-primary-color);
+        }
+
+        .sections-card-footer {
+          flex-basis: 100%;
+          margin-block-start: 0;
+          margin-block-end: 0;
+          min-height: var(--size-item-medium);
+        }
+      }
+
+      --nova-stp-inset: var(--space-large);
+
+      @include nova-card-stp-controls;
+    }
+  }
+}
+
+.nova-enabled .ds-section-grid.ds-card-grid {
+  @include at-content-cols-range(0, 8) {
+    .col-1-small { @include nova-section-card-small; }
+
+    .col-1-medium,
+    .col-1-large { @include nova-section-card-medium; }
+  }
+
+  @include at-content-cols-range(8, 12) {
+    .col-2-small { @include nova-section-card-small; }
+    .col-2-medium { @include nova-section-card-medium; }
+    .col-2-large { @include nova-section-card-large; }
+  }
+
+  @include at-content-cols-range(12, 16) {
+    .col-3-small { @include nova-section-card-small; }
+    .col-3-medium { @include nova-section-card-medium; }
+    .col-3-large { @include nova-section-card-large; }
+  }
+
+  @include at-content-cols(16) {
+    .col-4-small { @include nova-section-card-small; }
+    .col-4-medium { @include nova-section-card-medium; }
+    .col-4-large { @include nova-section-card-large; }
+  }
+}

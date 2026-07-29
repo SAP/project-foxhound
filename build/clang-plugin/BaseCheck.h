@@ -14,6 +14,9 @@ public:
   virtual void registerMatchers(MatchFinder *Finder) {}
   virtual void registerPPCallbacks(CompilerInstance &CI) {}
   virtual void check(const MatchFinder::MatchResult &Result) {}
+  virtual bool isLanguageVersionSupported(const LangOptions &LangOpts) const {
+    return true;
+  }
   DiagnosticBuilder diag(SourceLocation Loc, StringRef Description,
                          DiagnosticIDs::Level Level = DiagnosticIDs::Warning) {
     DiagnosticsEngine &Diag = Context->getDiagnostics();

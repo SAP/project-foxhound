@@ -11,7 +11,6 @@ support-files = [
   "helper-mocks.js",
   "helper-real-usb.js",
   "helper-serviceworker.js",
-  "helper-telemetry.js",
   "mocks/*",
   "resources/bad-extensions/*",
   "resources/packaged-extension/*",
@@ -23,7 +22,6 @@ support-files = [
   "test-tab-favicons.html",
   "!/devtools/client/debugger/test/mochitest/shared-head.js",
   "!/devtools/client/shared/test/shared-head.js",
-  "!/devtools/client/shared/test/telemetry-test-helpers.js",
   "!/devtools/client/webconsole/test/browser/shared-head.js",
 ]
 
@@ -78,6 +76,9 @@ tags = "webextensions"
 ["browser_aboutdebugging_addons_temporary_install_error.js"]
 
 ["browser_aboutdebugging_addons_temporary_install_path.js"]
+skip-if = [
+  "debug && standalone", # Bug 2026756
+]
 
 ["browser_aboutdebugging_addons_temporary_reload_error.js"]
 
@@ -128,6 +129,7 @@ fail-if = [
 ["browser_aboutdebugging_devtoolstoolbox_reload.js"]
 skip-if = [
   "verify", # test loads the toolbox 2 times for each panel, might timeout or OOM
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2019466
 ]
 
 ["browser_aboutdebugging_devtoolstoolbox_shortcuts.js"]
@@ -135,6 +137,10 @@ skip-if = [
 ["browser_aboutdebugging_devtoolstoolbox_splitconsole_key.js"]
 
 ["browser_aboutdebugging_devtoolstoolbox_target_destroyed.js"]
+skip-if = [
+  "os == 'win' && opt && standalone", # Bug 2026757
+  "debug && standalone", # Bug 2026757
+]
 
 ["browser_aboutdebugging_devtoolstoolbox_tooltip_markupview.js"]
 fail-if = [

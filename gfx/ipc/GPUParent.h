@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -61,12 +59,12 @@ class GPUParent final : public PGPUParent {
   mozilla::ipc::IPCResult RecvInitVsyncBridge(
       Endpoint<PVsyncBridgeParent>&& aVsyncEndpoint);
   mozilla::ipc::IPCResult RecvInitImageBridge(
-      Endpoint<PImageBridgeParent>&& aEndpoint);
+      Endpoint<PImageBridgeParent>&& aEndpoint, uint32_t aNamespace);
   mozilla::ipc::IPCResult RecvInitVideoBridge(
       Endpoint<PVideoBridgeParent>&& aEndpoint,
       const layers::VideoBridgeSource& aSource);
   mozilla::ipc::IPCResult RecvInitVRManager(
-      Endpoint<PVRManagerParent>&& aEndpoint);
+      Endpoint<PVRManagerParent>&& aEndpoint, uint32_t aNamespace);
   mozilla::ipc::IPCResult RecvInitVR(Endpoint<PVRGPUChild>&& aVRGPUChild);
   mozilla::ipc::IPCResult RecvInitUiCompositorController(
       const LayersId& aRootLayerTreeId,
@@ -85,10 +83,11 @@ class GPUParent final : public PGPUParent {
       Endpoint<PCompositorManagerParent>&& aEndpoint,
       const ContentParentId& aChildId, uint32_t aNamespace);
   mozilla::ipc::IPCResult RecvNewContentImageBridge(
-      Endpoint<PImageBridgeParent>&& aEndpoint,
-      const ContentParentId& aChildId);
+      Endpoint<PImageBridgeParent>&& aEndpoint, const ContentParentId& aChildId,
+      uint32_t aNamespace);
   mozilla::ipc::IPCResult RecvNewContentVRManager(
-      Endpoint<PVRManagerParent>&& aEndpoint, const ContentParentId& aChildId);
+      Endpoint<PVRManagerParent>&& aEndpoint, const ContentParentId& aChildId,
+      uint32_t aNamespace);
   mozilla::ipc::IPCResult RecvNewContentRemoteMediaManager(
       Endpoint<PRemoteMediaManagerParent>&& aEndpoint,
       const ContentParentId& aChildId);
@@ -98,7 +97,7 @@ class GPUParent final : public PGPUParent {
       const LayerTreeIdMapping& aMapping);
   mozilla::ipc::IPCResult RecvRemoveLayerTreeIdMapping(
       const LayerTreeIdMapping& aMapping);
-  mozilla::ipc::IPCResult RecvNotifyGpuObservers(const nsCString& aTopic);
+  mozilla::ipc::IPCResult RecvFlushActiveCheckerboardReports();
   mozilla::ipc::IPCResult RecvRequestMemoryReport(
       const uint32_t& generation, const bool& anonymize,
       const bool& minimizeMemoryUsage,

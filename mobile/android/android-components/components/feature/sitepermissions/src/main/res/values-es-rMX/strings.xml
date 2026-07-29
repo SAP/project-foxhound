@@ -17,6 +17,10 @@
   <string name="mozac_feature_sitepermissions_location_title">¿Permitir que %1$s use tu ubicación?</string>
   <!-- Title of a dialog for a camera and microphone permission request. %1$s is the domain name of the website. -->
   <string name="mozac_feature_sitepermissions_camera_and_microphone">¿Permitir que %1$s use tu cámara y micrófono?</string>
+  <!-- Title of a dialog for a local network access request. %1$s is the domain name of the website -->
+  <string name="mozac_feature_sitepermissions_local_network_access_title">¿Permitir que %1$s acceda a aplicaciones y servicios en dispositivos conectados a la red local?</string>
+  <!-- Title of a dialog for a local device access request. %1$s is the domain name of the website -->
+  <string name="mozac_feature_sitepermissions_local_device_access_title">¿Permitir que %1$s acceda a otras aplicaciones y servicios en este dispositivo?</string>
   <!--
     Option in a dialog for requesting a microphone permission, this option will give access to
     the first microphone
@@ -47,6 +51,8 @@
     this button will not give access to this permission
   -->
   <string name="mozac_feature_sitepermissions_block">Bloquear</string>
+  <!-- Message of a dialog offering more context about the app level notification permission request. %1$s will be replaced with the name of the app. -->
+  <string name="mozac_feature_sitepermissions_notification_permission_rationale_dialog_message">Es necesario permitir las notificaciones en %1$s para recibirlas de este sitio web.</string>
   <!-- Button label in a notification permission request dialog to dismiss the dialog. -->
   <string name="mozac_feature_sitepermissions_notification_permission_rationale_dialog_dismiss_label">Cancelar</string>
   <!-- Button label in a notification permission request dialog. It will let the user go to Android Settings to grant the permission. -->

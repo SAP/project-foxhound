@@ -1,6 +1,10 @@
 [DEFAULT]
 subsuite = "mozlint"
 
+["test_agent_skills_sync.py"]
+
+["test_android_expired_strings.py"]
+
 ["test_android_format.py"]
 
 ["test_cargo-audit.py"]
@@ -50,12 +54,6 @@ skip-if = ["os == 'win'"]
 
 ["test_node_package_names.py"]
 
-["test_perfdocs.py"]
-
-["test_perfdocs_generation.py"]
-
-["test_perfdocs_helpers.py"]
-
 ["test_python_sites.py"]
 
 ["test_rst.py"]
@@ -63,6 +61,8 @@ skip-if = ["os == 'win'"]
 ["test_ruff.py"]
 
 ["test_ruff_format.py"]
+
+["test_rumdl.py"]
 
 ["test_rustfmt.py"]
 

@@ -30,9 +30,6 @@ SimpleTest.registerCleanupFunction(function() {
 
 addLoadEvent(() => {
   add_task(async function test_copyhtml() {
-    await SpecialPowers.pushPrefEnv({
-      set: [["dom.shadowdom.selection_across_boundary.enabled", true]],
-    });
     await testCopyPasteShadowDOM();
   });
 });

@@ -3,6 +3,14 @@ https://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
 
+const { ArchiveEncryptionState } = ChromeUtils.importESModule(
+  "resource:///modules/backup/ArchiveEncryptionState.sys.mjs"
+);
+
+const { ERRORS } = ChromeUtils.importESModule(
+  "chrome://browser/content/backup/backup-constants.mjs"
+);
+
 const TEST_PASSWORD = "This is some test password.";
 const TEST_PASSWORD_ALT = "mozilla.org";
 
@@ -354,4 +362,145 @@ add_task(async function test_disabling_encryption() {
   );
 
   await IOUtils.remove(testProfilePath, { recursive: true });
+});
+
+/**
+ * Tests that if encryption is enabled, that we can call
+ * BackupService.createBackup using an alternative ArchiveEncryptionState if
+ * we'd like.
+ */
+add_task(async function test_alternative_archive_encryption_state() {
+  let sandbox = sinon.createSandbox();
+
+  let bs = new BackupService({
+    FakeBackupResource1,
+    FakeBackupResource2,
+    FakeBackupResource3,
+  });
+
+  Assert.ok(
+    !bs.state.encryptionEnabled,
+    "State should initially indicate that encryption is disabled."
+  );
+
+  let testProfilePath = await IOUtils.createUniqueDirectory(
+    PathUtils.tempDir,
+    "testAlternativeArchiveEncryptionState"
+  );
+  let encState = await bs.loadEncryptionState(testProfilePath);
+  Assert.ok(!encState, "Should not find an ArchiveEncryptionState.");
+
+  // Now enable encryption.
+  let stateUpdatePromise = new Promise(resolve => {
+    bs.addEventListener("BackupService:StateUpdate", resolve, { once: true });
+  });
+  await bs.enableEncryption(TEST_PASSWORD, testProfilePath);
+  await stateUpdatePromise;
+  Assert.ok(
+    bs.state.encryptionEnabled,
+    "State should indicate that encryption is enabled."
+  );
+
+  Assert.ok(
+    await IOUtils.exists(
+      PathUtils.join(
+        testProfilePath,
+        BackupService.PROFILE_FOLDER_NAME,
+        BackupService.ARCHIVE_ENCRYPTION_STATE_FILE
+      )
+    ),
+    "Encryption state file should exist."
+  );
+
+  // Override FakeBackupResource2 so that it requires encryption.
+  sandbox.stub(FakeBackupResource2, "requiresEncryption").get(() => {
+    return true;
+  });
+  Assert.ok(
+    FakeBackupResource2.requiresEncryption,
+    "FakeBackupResource2 requires encryption."
+  );
+
+  // This is how these FakeBackupResource's are defined in head.js
+  Assert.ok(
+    !FakeBackupResource1.requiresEncryption,
+    "FakeBackupResource1 does not require encryption."
+  );
+  Assert.ok(
+    !FakeBackupResource3.requiresEncryption,
+    "FakeBackupResource3 does not require encryption."
+  );
+
+  let allResourceBackupStubs = [
+    sandbox.stub(FakeBackupResource1.prototype, "backup").resolves(null),
+    sandbox.stub(FakeBackupResource3.prototype, "backup").resolves(null),
+    sandbox.stub(FakeBackupResource2.prototype, "backup").resolves(null),
+  ];
+
+  let { instance: alternativeEncState } =
+    await ArchiveEncryptionState.initialize(TEST_PASSWORD_ALT);
+
+  let { archivePath } = await bs.createBackup({
+    profilePath: testProfilePath,
+    encState: alternativeEncState,
+  });
+
+  for (let resourceBackupStub of allResourceBackupStubs) {
+    Assert.ok(resourceBackupStub.calledOnce, "backup called on resource");
+  }
+
+  Assert.ok(
+    await IOUtils.exists(
+      PathUtils.join(
+        testProfilePath,
+        BackupService.PROFILE_FOLDER_NAME,
+        BackupService.ARCHIVE_ENCRYPTION_STATE_FILE
+      )
+    ),
+    "Encryption state file should still exist."
+  );
+
+  Assert.ok(
+    await IOUtils.exists(archivePath),
+    "Encrypted archive was created."
+  );
+
+  const EXTRACTION_PATH = PathUtils.join(testProfilePath, "extraction.bin");
+
+  // Trying to decrypt with TEST_PASSWORD, which is the password we set up with
+  // the service, should actually fail, because the ArchiveEncryptionState we
+  // passed to createBackup should only decrypt with TEST_PASSWORD_ALT.
+  try {
+    await bs.extractCompressedSnapshotFromArchive(
+      archivePath,
+      EXTRACTION_PATH,
+      TEST_PASSWORD
+    );
+    Assert.ok(
+      false,
+      "Should have failed to decrypt backup with TEST_PASSWORD."
+    );
+  } catch (e) {
+    Assert.equal(
+      e.cause,
+      ERRORS.UNAUTHORIZED,
+      "TEST_PASSWORD failed to decrypt the backup."
+    );
+  }
+
+  // Using TEST_PASSWORD_ALT should work to decrypt the backup.
+  await bs.extractCompressedSnapshotFromArchive(
+    archivePath,
+    EXTRACTION_PATH,
+    TEST_PASSWORD_ALT
+  );
+
+  // Do a quick check to make sure that the archive was extracted.
+  Assert.ok(
+    await IOUtils.exists(PathUtils.join(EXTRACTION_PATH)),
+    "Found the extracted archive."
+  );
+
+  await maybeRemovePath(testProfilePath);
+  sandbox.restore();
 });

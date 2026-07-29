@@ -206,9 +206,6 @@ pub struct WebRenderOptions {
     /// If true, open a debug socket to listen for remote debugger.
     /// Relies on `debugger` cargo feature being enabled.
     pub enable_debugger: bool,
-
-    /// Use a more precise method for sampling gradients.
-    pub precise_linear_gradients: bool,
 }
 
 impl WebRenderOptions {
@@ -282,7 +279,6 @@ impl Default for WebRenderOptions {
             low_quality_pinch_zoom: false,
             max_shared_surface_size: 2048,
             enable_debugger: true,
-            precise_linear_gradients: false,
         }
     }
 }
@@ -562,7 +558,6 @@ pub fn create_webrender_instance(
         low_quality_pinch_zoom: options.low_quality_pinch_zoom,
         max_shared_surface_size: options.max_shared_surface_size,
         enable_dithering: options.enable_dithering,
-        precise_linear_gradients: options.precise_linear_gradients,
     };
     info!("WR {:?}", config);
 
@@ -814,6 +809,10 @@ pub fn create_webrender_instance(
         pending_result_msg: None,
         layer_compositor_frame_state_in_prev_frame: None,
         external_composite_debug_items: Vec::new(),
+        #[cfg(feature = "debugger")]
+        renderdoc: crate::renderdoc::RenderDocCapture::new(),
+        #[cfg(feature = "debugger")]
+        renderdoc_capture_reply: None,
         command_log: None,
         #[cfg(feature = "debugger")]
         debugger: Debugger::new(),

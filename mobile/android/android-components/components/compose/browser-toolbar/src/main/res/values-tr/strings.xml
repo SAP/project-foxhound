@@ -10,17 +10,13 @@
   <!-- Content description for the clear URL text button. -->
   <string name="mozac_clear_button_description">Temizle</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
-  <string name="mozac_browser_toolbar_search_hint">Arama yapın veya adres yazın</string>
+  <string name="mozac_browser_toolbar_search_hint">Arama yap veya adres yaz</string>
   <!-- Contextual menu option for long pressing on the toolbar URL. Clicking it will copy the current URL -->
   <string name="mozac_browser_toolbar_long_press_popup_copy">Kopyala</string>
   <!-- Contextual menu option for long pressing on the toolbar URL. Clicking it will paste the text from clipboard and allow user to edit it -->
   <string name="mozac_browser_toolbar_long_press_popup_paste">Yapıştır</string>
   <!-- Contextual menu option for long pressing on the toolbar URL. Clicking it will paste the text from clipboard and search for or load it as an URL. '&amp;' is replaced with the ampersand symbol: & -->
   <string name="mozac_browser_toolbar_long_press_popup_paste_and_go">Yapıştır ve git</string>
-  <!-- Text for the title displayed in the contextual feature recommendation popup promoting the new toolbar redesign. -->
-  <string name="mozac_toolbar_cfr_title">Android için tasarlandı, sizin için ayarlandı</string>
-  <!-- Text for the description displayed in the contextual feature recommendation popup promoting the new toolbar redesign. -->
-  <string name="mozac_toolbar_cfr_description">Tasarımı şık ve modern bir dokunuşla yeniledik</string>
   <!-- Content description (not visible, for screen readers etc.) for the "minimal toolbar" containing just the URL instead of the big toolbar containing also other buttons. %1$s will be replaced with the domain name of the current website. -->
   <string name="mozac_minimal_display_toolbar_content_description">%1$s sitesine metin giriliyor. Durdurmak için iki kez dokunun</string>
 </resources>

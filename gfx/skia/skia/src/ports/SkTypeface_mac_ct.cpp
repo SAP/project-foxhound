@@ -89,10 +89,10 @@ SkString SkCFTypeIDDescription(CFTypeID id) {
 template<typename CF> CFTypeID SkCFGetTypeID();
 #define SK_GETCFTYPEID(cf) \
 template<> CFTypeID SkCFGetTypeID<cf##Ref>() { return cf##GetTypeID(); }
-SK_GETCFTYPEID(CFArray);
-SK_GETCFTYPEID(CFBoolean);
-SK_GETCFTYPEID(CFDictionary);
-SK_GETCFTYPEID(CFNumber);
+SK_GETCFTYPEID(CFArray)
+SK_GETCFTYPEID(CFBoolean)
+SK_GETCFTYPEID(CFDictionary)
+SK_GETCFTYPEID(CFNumber)
 
 /* Checked dynamic downcast of CFTypeRef.
  *
@@ -127,13 +127,13 @@ static bool SkCFDynamicCast(CFTypeRef cf, CF* cfAsCF, char const* name) {
 template<typename T> struct SkCFNumberTypeFor {};
 #define SK_CFNUMBERTYPE_FOR(c, cf) \
 template<> struct SkCFNumberTypeFor<c> : std::integral_constant<CFNumberType, cf> {};
-SK_CFNUMBERTYPE_FOR(char     , kCFNumberCharType    );
-SK_CFNUMBERTYPE_FOR(short    , kCFNumberShortType   );
-SK_CFNUMBERTYPE_FOR(int      , kCFNumberIntType     );
-SK_CFNUMBERTYPE_FOR(long     , kCFNumberLongType    );
-SK_CFNUMBERTYPE_FOR(long long, kCFNumberLongLongType);
-SK_CFNUMBERTYPE_FOR(float    , kCFNumberFloatType   );
-SK_CFNUMBERTYPE_FOR(double   , kCFNumberDoubleType  );
+SK_CFNUMBERTYPE_FOR(char     , kCFNumberCharType    )
+SK_CFNUMBERTYPE_FOR(short    , kCFNumberShortType   )
+SK_CFNUMBERTYPE_FOR(int      , kCFNumberIntType     )
+SK_CFNUMBERTYPE_FOR(long     , kCFNumberLongType    )
+SK_CFNUMBERTYPE_FOR(long long, kCFNumberLongLongType)
+SK_CFNUMBERTYPE_FOR(float    , kCFNumberFloatType   )
+SK_CFNUMBERTYPE_FOR(double   , kCFNumberDoubleType  )
 
 template <typename T>
 static bool SkCFNumberDynamicCast(CFTypeRef cf, T* number, CFNumberRef* cfNumber, char const* name){
@@ -376,16 +376,17 @@ SkFontStyle SkCTFontDescriptorGetSkFontStyle(CTFontDescriptorRef desc, bool from
 // Web fonts added to the CTFont registry do not return their character set.
 // Iterate through the font in this case. The existing caller caches the result,
 // so the performance impact isn't too bad.
-static void populate_glyph_to_unicode_slow(CTFontRef ctFont, CFIndex glyphCount,
+static void populate_glyph_to_unicode_slow(CTFontRef ctFont, const CFIndex glyphCount,
                                            SkUnichar* out) {
     sk_bzero(out, glyphCount * sizeof(SkUnichar));
+    CFIndex glyphsRemaining = glyphCount;
     UniChar unichar = 0;
-    while (glyphCount > 0) {
+    while (glyphsRemaining > 0) {
         CGGlyph glyph;
         if (CTFontGetGlyphsForCharacters(ctFont, &unichar, &glyph, 1)) {
-            if (out[glyph] == 0) {
+            if (glyph < glyphCount && out[glyph] == 0) {
                 out[glyph] = unichar;
-                --glyphCount;
+                --glyphsRemaining;
             }
         }
         if (++unichar == 0) {
@@ -494,13 +495,6 @@ std::unique_ptr<SkAdvancedTypefaceMetrics> SkTypeface_Mac::onGetAdvancedMetrics(
                                     fOpszVariation);
 
     std::unique_ptr<SkAdvancedTypefaceMetrics> info(new SkAdvancedTypefaceMetrics);
-
-    {
-        SkUniqueCFRef<CFStringRef> fontName(CTFontCopyPostScriptName(ctFont.get()));
-        if (fontName.get()) {
-            SkStringFromCFString(fontName.get(), &info->fPostScriptName);
-        }
-    }
 
     CFArrayRef ctAxes = this->getVariationAxes();
     if (ctAxes && CFArrayGetCount(ctAxes) > 0) {
@@ -794,8 +788,7 @@ int SkTypeface_Mac::onGetVariationDesignPosition(
 }
 
 int SkTypeface_Mac::onGetUPEM() const {
-    SkUniqueCFRef<CGFontRef> cgFont(CTFontCopyGraphicsFont(fFontRef.get(), nullptr));
-    return CGFontGetUnitsPerEm(cgFont.get());
+    return CTFontGetUnitsPerEm(fFontRef.get());
 }
 
 SkTypeface::LocalizedStrings* SkTypeface_Mac::onCreateFamilyNameIterator() const {

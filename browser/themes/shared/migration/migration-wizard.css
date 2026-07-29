@@ -127,7 +127,7 @@ panel {
 }
 
 panel-item::part(button) {
-  min-height: 40px;
+  padding-block: var(--space-medium);
 }
 
 panel-item[type="file"]::part(button) {

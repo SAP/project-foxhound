@@ -1,0 +1,40 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+interface nsIURI;
+
+[ref] native const_OriginAttributesRef(const mozilla::OriginAttributes);
+
+[scriptable, uuid(030be57f-7bc2-48a7-a7c8-82716d86bdd6)]
+interface nsISiteIntegrityService : nsISupports
+{
+    /**
+     * Records that aSourceURI has served a valid Integrity-Policy-WAICT-v1
+     * header, enabling downgrade protection for subsequent loads of that URI.
+     *
+     * @param aSourceURI         The URI that served the WAICT header.
+     * @param aOriginAttributes  Origin attributes of the load.
+     * @param aMaxAge            Number of seconds the protection should remain
+     *                           active, as parsed from the max-age directive.
+     */
+    [noscript, must_use]
+    void setProtected(in nsIURI aSourceURI,
+                      in const_OriginAttributesRef aOriginAttributes,
+                      in uint64_t aMaxAge);
+
+    /**
+     * Returns true if aSourceURI has a valid, non-expired WAICT protection
+     * record, meaning a missing Integrity-Policy-WAICT-v1 header should be
+     * treated as a downgrade attack.
+     *
+     * @param aSourceURI         The URI to check.
+     * @param aOriginAttributes  Origin attributes of the load.
+     * @return true if the URI is currently protected, false otherwise.
+     */
+    [noscript, must_use]
+    boolean isProtectedURI(in nsIURI aSourceURI,
+                           in const_OriginAttributesRef aOriginAttributes);
+};

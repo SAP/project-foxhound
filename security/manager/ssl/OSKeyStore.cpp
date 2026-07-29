@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +6,10 @@
 #include "OSKeyStore.h"
 
 #include "mozilla/Base64.h"
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/dom/Promise.h"
+#include "nsINSSComponent.h"
+#include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
 #include "nsXPCOM.h"
 #include "pk11pub.h"
@@ -28,9 +30,31 @@ NS_IMPL_ISUPPORTS(OSKeyStore, nsIOSKeyStore)
 using namespace mozilla;
 using dom::Promise;
 
+StaticRefPtr<OSKeyStore> sOSKeyStore;
+
+already_AddRefed<OSKeyStore> OSKeyStore::GetSingleton() {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!NS_IsMainThread()) {
+    return nullptr;
+  }
+
+  // Ensure NSS is initialized.
+  nsCOMPtr<nsISupports> nss(do_GetService(PSM_COMPONENT_CONTRACTID));
+  if (!nss) {
+    return nullptr;
+  }
+
+  if (!sOSKeyStore) {
+    sOSKeyStore = new OSKeyStore();
+    ClearOnShutdown(&sOSKeyStore);
+  }
+
+  return do_AddRef(sOSKeyStore);
+}
+
 OSKeyStore::OSKeyStore() : mKs(nullptr) {
   MOZ_ASSERT(NS_IsMainThread());
-  if (NS_WARN_IF(!NS_IsMainThread())) {
+  if (!NS_IsMainThread()) {
     return;
   }
 

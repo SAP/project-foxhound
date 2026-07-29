@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -47,7 +45,7 @@ class CSSTransformComponent : public nsISupports, public nsWrapperCache {
     MatrixComponent
   };
 
-  CSSTransformComponent(nsCOMPtr<nsISupports> aParent,
+  CSSTransformComponent(nsCOMPtr<nsISupports> aParent, bool aIs2D,
                         TransformComponentType aTransformComponentType);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -59,6 +57,7 @@ class CSSTransformComponent : public nsISupports, public nsWrapperCache {
 
   // start of CSSTransformComponent Web IDL declarations
 
+  // https://drafts.css-houdini.org/css-typed-om-1/#dom-csstransformcomponent-is2d
   bool Is2D() const;
 
   void SetIs2D(bool aArg);
@@ -144,6 +143,8 @@ class CSSTransformComponent : public nsISupports, public nsWrapperCache {
   virtual ~CSSTransformComponent() = default;
 
   nsCOMPtr<nsISupports> mParent;
+  // https://drafts.css-houdini.org/css-typed-om-1/#dom-csstransformcomponent-is2d
+  bool mIs2D;
   const TransformComponentType mTransformComponentType;
 };
 

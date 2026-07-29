@@ -26,6 +26,8 @@ export default {
         "default",
         "primary",
         "destructive",
+        "toolbar",
+        "menuitem",
         "icon",
         "icon ghost",
         "split",
@@ -47,6 +49,7 @@ moz-button-labelled =
   .label = Button
 moz-button-primary = Primary
 moz-button-destructive = Destructive
+moz-button-menuitem = Menu Item
 moz-button-titled =
   .title = View logins
 moz-button-aria-labelled =
@@ -130,6 +133,13 @@ Destructive.args = {
   type: "destructive",
   l10nId: "moz-button-destructive",
 };
+export const MenuItem = Template.bind({});
+MenuItem.args = {
+  ...Default.args,
+  type: "menuitem",
+  l10nId: "moz-button-menuitem",
+  size: "small",
+};
 export const Icon = Template.bind({});
 Icon.args = {
   ...Default.args,
@@ -166,6 +176,7 @@ WithAccesskey.args = {
 export const Toolbar = Template.bind({});
 Toolbar.args = {
   ...Default.args,
+  type: "toolbar",
   showOuterPadding: true,
 };
 export const Badged = Template.bind({});

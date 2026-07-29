@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,7 +35,7 @@ struct mozilla::a11y::SelData final {
 
  private:
   // Private destructor, to discourage deletion outside of Release():
-  ~SelData() {}
+  ~SelData() = default;
 };
 
 SelectionManager::SelectionManager()
@@ -155,10 +154,10 @@ void SelectionManager::ProcessTextSelChangeEvent(AccEvent* aEvent) {
     // It is important that we call TextLeafPoint::GetCaret *after* updating
     // mCaretOffset because GetCaret will use mCaretOffset.
     TextLeafPoint caret = TextLeafPoint::GetCaret(caretCntr);
-    RefPtr<AccCaretMoveEvent> caretMoveEvent =
-        new AccCaretMoveEvent(caretCntr, mCaretOffset, selection->IsCollapsed(),
-                              caret.mIsEndOfLineInsertionPoint,
-                              event->GetGranularity(), aEvent->FromUserInput());
+    auto caretMoveEvent = MakeRefPtr<AccCaretMoveEvent>(
+        caretCntr, mCaretOffset, selection->IsCollapsed(),
+        caret.mIsEndOfLineInsertionPoint, event->GetGranularity(),
+        aEvent->FromUserInput());
     nsEventShell::FireEvent(caretMoveEvent);
   }
 }
@@ -183,7 +182,7 @@ SelectionManager::NotifySelectionChanged(dom::Document* aDocument,
     // Selection manager has longer lifetime than any document accessible,
     // so that we are guaranteed that the notification is processed before
     // the selection manager is destroyed.
-    RefPtr<SelData> selData = new SelData(aSelection, aReason, aAmount);
+    auto selData = MakeRefPtr<SelData>(aSelection, aReason, aAmount);
     document->HandleNotification<SelectionManager, SelData>(
         this, &SelectionManager::ProcessSelectionChanged, selData);
   }
@@ -219,7 +218,7 @@ void SelectionManager::ProcessSelectionChanged(SelData* aSelData) {
   }
 
   if (selection->GetType() == SelectionType::eNormal) {
-    RefPtr<AccEvent> event = new AccTextSelChangeEvent(
+    auto event = MakeRefPtr<AccTextSelChangeEvent>(
         text, selection, aSelData->mReason, aSelData->mGranularity);
     text->Document()->FireDelayedEvent(event);
   }

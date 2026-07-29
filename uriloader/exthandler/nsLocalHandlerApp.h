@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim:expandtab:shiftwidth=2:tabstop=2:cin:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -20,7 +18,7 @@ class nsLocalHandlerApp : public nsILocalHandlerApp {
   NS_DECL_NSIHANDLERAPP
   NS_DECL_NSILOCALHANDLERAPP
 
-  nsLocalHandlerApp() {}
+  nsLocalHandlerApp() = default;
 
   nsLocalHandlerApp(const char16_t* aName, nsIFile* aExecutable)
       : mName(aName), mExecutable(aExecutable) {}
@@ -29,7 +27,7 @@ class nsLocalHandlerApp : public nsILocalHandlerApp {
       : mName(aName), mExecutable(aExecutable) {}
 
  protected:
-  virtual ~nsLocalHandlerApp() {}
+  virtual ~nsLocalHandlerApp() = default;
 
   virtual std::function<nsresult(nsString&)>
   GetPrettyNameOnNonMainThreadCallback();

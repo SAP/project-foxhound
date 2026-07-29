@@ -60,33 +60,41 @@ const {
 } = require("resource://devtools/client/framework/local-tab-commands-factory.js");
 const STORAGE_PREF = "devtools.storage.enabled";
 const DUMPEMIT_PREF = "devtools.dump.emit";
-const DEBUGGERLOG_PREF = "devtools.debugger.log";
 
 // Allows Cache API to be working on usage `http` test page
 const CACHES_ON_HTTP_PREF = "dom.caches.testing.enabled";
 const PATH = "browser/devtools/client/storage/test/";
-const MAIN_DOMAIN = "http://test1.example.org/" + PATH;
-const MAIN_DOMAIN_SECURED = "https://test1.example.org/" + PATH;
-const MAIN_DOMAIN_WITH_PORT = "http://test1.example.org:8000/" + PATH;
-const ALT_DOMAIN = "http://sectest1.example.org/" + PATH;
-const ALT_DOMAIN_SECURED = "https://sectest1.example.org:443/" + PATH;
+const MAIN_DOMAIN = "example.org";
+const MAIN_HOST = "test1.example.org";
+
+const MAIN_ORIGIN = "http://test1.example.org";
+const MAIN_ORIGIN_SECURED = "https://test1.example.org";
+const MAIN_URL = MAIN_ORIGIN + "/" + PATH;
+const MAIN_URL_SECURED = MAIN_ORIGIN_SECURED + "/" + PATH;
+const MAIN_URL_WITH_PORT = MAIN_ORIGIN + ":8000/" + PATH;
+
+const ALT_ORIGIN = "http://sectest1.example.org";
+const ALT_ORIGIN_SECURED = "https://sectest1.example.org";
+const ALT_URL = ALT_ORIGIN + "/" + PATH;
+const ALT_URL_SECURED = ALT_ORIGIN_SECURED + ":443/" + PATH;
 
 // GUID to be used as a separator in compound keys. This must match the same
 // constant in devtools/server/actors/resources/storage/index.js,
 // devtools/client/storage/ui.js and devtools/server/tests/browser/head.js
 const SEPARATOR_GUID = "{9d414cc5-8319-0a04-0586-c0a6ae01670a}";
 
+const getExtensionStorageUniqueKey = (area, name) =>
+  name + SEPARATOR_GUID + area;
+
 var gToolbox, gPanelWindow, gUI;
 
 // Services.prefs.setBoolPref(DUMPEMIT_PREF, true);
-// Services.prefs.setBoolPref(DEBUGGERLOG_PREF, true);
 
 Services.prefs.setBoolPref(STORAGE_PREF, true);
 Services.prefs.setBoolPref(CACHES_ON_HTTP_PREF, true);
 registerCleanupFunction(() => {
   gToolbox = gPanelWindow = gUI = null;
   Services.prefs.clearUserPref(CACHES_ON_HTTP_PREF);
-  Services.prefs.clearUserPref(DEBUGGERLOG_PREF);
   Services.prefs.clearUserPref(DUMPEMIT_PREF);
   Services.prefs.clearUserPref(STORAGE_PREF);
 });

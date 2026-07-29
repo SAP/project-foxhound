@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -15,6 +13,7 @@
 
 #include "builtin/SelfHostingDefines.h"
 #include "gc/Barrier.h"
+#include "util/Memory.h"
 #include "vm/NativeObject.h"
 #include "vm/TypedArrayObject.h"
 
@@ -354,7 +353,11 @@ struct NativeIterator : public NativeIteratorListNode {
     uintptr_t result = propertiesEnd;
     if (flags_ & Flags::IndicesAllocated) {
       result += numProperties * sizeof(PropertyIndex);
+      if constexpr (sizeof(PropertyIndex) != alignof(GCPtr<Shape*>)) {
+        result = AlignBytes(result, alignof(GCPtr<Shape*>));
+      }
     }
+    MOZ_ASSERT(result % alignof(GCPtr<Shape*>) == 0);
     return reinterpret_cast<GCPtr<Shape*>*>(result);
   }
 
@@ -397,11 +400,6 @@ struct NativeIterator : public NativeIteratorListNode {
     // array, with no padding required for correct alignment.
     static_assert(alignof(IteratorProperty) >= alignof(PropertyIndex));
     return reinterpret_cast<PropertyIndex*>(propertiesEnd());
-  }
-
-  PropertyIndex* indicesEnd() const {
-    MOZ_ASSERT(flags_ & Flags::IndicesAllocated);
-    return indicesBegin() + propertyCount_ * sizeof(PropertyIndex);
   }
 
   MOZ_ALWAYS_INLINE JS::Value nextIteratedValueAndAdvance() {

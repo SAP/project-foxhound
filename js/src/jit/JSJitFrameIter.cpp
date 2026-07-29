@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -45,8 +43,6 @@ JSJitFrameIter::JSJitFrameIter(const JitActivation* activation, uint8_t* fp,
   // frames in the same JitActivation so ignore activation_->bailoutData().
   if (unwinding) {
     MOZ_ASSERT(fp == activation->jsExitFP());
-  } else {
-    MOZ_ASSERT(fp > activation->jsOrWasmExitFP());
   }
   MOZ_ASSERT(!TlsContext.get()->inUnsafeCallWithABI);
 }
@@ -549,15 +545,13 @@ bool JSJitProfilingFrameIterator::tryInitWithTable(JitcodeGlobalTable* table,
 
   // For IonICEntry, use the corresponding IonEntry.
   if (entry->isIonIC()) {
-    entry = table->lookup(entry->asIonIC().rejoinAddr());
-    MOZ_ASSERT(entry);
-    MOZ_RELEASE_ASSERT(entry->isIon());
+    entry = &entry->asIonIC().ionEntry();
   }
 
   if (entry->isIon()) {
     // If looked-up callee doesn't match frame callee, don't accept
     // lastProfilingCallSite
-    if (!entry->asIon().getScriptSource(0).matches(callee)) {
+    if (!entry->asIon().getScriptKey(0).matches(callee)) {
       return false;
     }
 
@@ -569,8 +563,7 @@ bool JSJitProfilingFrameIterator::tryInitWithTable(JitcodeGlobalTable* table,
   if (entry->isBaseline()) {
     // If looked-up callee doesn't match frame callee, don't accept
     // lastProfilingCallSite
-    if (forLastCallSite &&
-        !entry->asBaseline().scriptSource().matches(callee)) {
+    if (forLastCallSite && !entry->asBaseline().scriptKey().matches(callee)) {
       return false;
     }
 
@@ -664,6 +657,7 @@ void JSJitProfilingFrameIterator::moveToNextFrame(CommonFrameLayout* frame) {
       frame = GetPreviousRawFrame<TrampolineNativeFrameLayout*>(frame);
       MOZ_ASSERT(frame->prevType() == FrameType::IonJS ||
                  frame->prevType() == FrameType::BaselineStub ||
+                 frame->prevType() == FrameType::IonICCall ||
                  frame->prevType() == FrameType::WasmToJSJit ||
                  frame->prevType() == FrameType::CppToJSJit);
       continue;

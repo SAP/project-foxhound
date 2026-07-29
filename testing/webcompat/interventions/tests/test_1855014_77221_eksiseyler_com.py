@@ -2,7 +2,7 @@ import pytest
 from webdriver.error import NoSuchElementException
 
 URL = "https://eksiseyler.com/evrimin-kisa-surede-de-yasanabilecegini-kanitlayan-1971-hirvatistan-kertenkele-deneyi"
-CAPTCHA_TEXT = "Verifying you are human"
+CAPTCHA_TEXT = "Performing security"
 IMAGE_CSS = ".content-heading .cover-img img"
 ERROR_MSG = "loggingEnabled is not defined"
 INFINITE_CAPTCHA_MSG = (

@@ -1,4 +1,3 @@
-/* -*- Mode: C; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -118,9 +117,9 @@ MOZ_XML_SetParamEntityParsing(XML_Parser parser,
   return XML_SetParamEntityParsing(parser, parsing);
 }
 
-int
-MOZ_XML_SetHashSalt(XML_Parser parser, unsigned long hash_salt) {
-  return XML_SetHashSalt(parser, hash_salt);
+XML_Bool
+MOZ_XML_SetHashSalt16Bytes(XML_Parser parser, const char entropy[16]) {
+  return XML_SetHashSalt16Bytes(parser, (const uint8_t *)entropy);
 }
 
 int

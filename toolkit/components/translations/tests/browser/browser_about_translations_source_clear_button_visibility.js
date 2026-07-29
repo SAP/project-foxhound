@@ -16,6 +16,10 @@ add_task(async function test_source_clear_button_shows_and_hides_with_input() {
     {
       expected: [
         [AboutTranslationsTestUtils.Events.SourceTextClearButtonShown],
+        [
+          AboutTranslationsTestUtils.Events.SourceTextInputDebounced,
+          { sourceText: "Hello world" },
+        ],
       ],
       unexpected: [
         AboutTranslationsTestUtils.Events.SourceTextClearButtonHidden,
@@ -34,6 +38,10 @@ add_task(async function test_source_clear_button_shows_and_hides_with_input() {
     {
       expected: [
         [AboutTranslationsTestUtils.Events.SourceTextClearButtonHidden],
+        [
+          AboutTranslationsTestUtils.Events.SourceTextInputDebounced,
+          { sourceText: "" },
+        ],
       ],
       unexpected: [
         AboutTranslationsTestUtils.Events.SourceTextClearButtonShown,
@@ -65,6 +73,10 @@ add_task(
       {
         expected: [
           [AboutTranslationsTestUtils.Events.SourceTextClearButtonShown],
+          [
+            AboutTranslationsTestUtils.Events.SourceTextInputDebounced,
+            { sourceText: "Text" },
+          ],
         ],
       },
       async () => {
@@ -80,6 +92,12 @@ add_task(
       {
         unexpected: [
           AboutTranslationsTestUtils.Events.SourceTextClearButtonHidden,
+        ],
+        expected: [
+          [
+            AboutTranslationsTestUtils.Events.SourceTextInputDebounced,
+            { sourceText: "" },
+          ],
         ],
       },
       async () => {

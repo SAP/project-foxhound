@@ -34,7 +34,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 class FormFillFocusListener {
   handleFocus(element) {
     let actor =
-      element.ownerGlobal?.windowGlobalChild?.getActor("FormAutofill");
+      element.documentGlobal.windowGlobalChild?.getActor("FormAutofill");
     return actor?.handleFocus(element);
   }
 
@@ -285,17 +285,19 @@ export class FormAutofillChild extends JSWindowActorChild {
         handler.form
       );
 
-      // If none of the detected fields are credit card or address fields,
-      // there's no need to notify the parent because nothing will change.
-      if (
-        !detectedFields.some(
-          fd =>
-            lazy.FormAutofillUtils.isCreditCardField(fd.fieldName) ||
-            lazy.FormAutofillUtils.isAddressField(fd.fieldName)
-        )
-      ) {
-        handler.setIdentifiedFieldDetails(detectedFields);
-        return null;
+      if (!lazy.FormAutofillUtils.useMLInference) {
+        // If none of the detected fields are credit card or address fields,
+        // there's no need to notify the parent because nothing will change.
+        if (
+          !detectedFields.some(
+            fd =>
+              lazy.FormAutofillUtils.isCreditCardField(fd.fieldName) ||
+              lazy.FormAutofillUtils.isAddressField(fd.fieldName)
+          )
+        ) {
+          handler.setIdentifiedFieldDetails(detectedFields);
+          return null;
+        }
       }
 
       return new Promise(resolve => {
@@ -364,6 +366,20 @@ export class FormAutofillChild extends JSWindowActorChild {
   showPopupIfEmpty(element, fieldName) {
     if (element?.value?.length !== 0) {
       this.debug(`Not opening popup because field is not empty.`);
+      return;
+    }
+
+    const method = Services.focus.getLastFocusMethod(this.contentWindow);
+    const isProgrammatic = !!(method & Ci.nsIFocusManager.FLAG_BYJS);
+    const skipCheck = Services.prefs.getBoolPref(
+      "extensions.formautofill.skipProgrammaticCheckForTests",
+      false
+    );
+
+    if (isProgrammatic && !skipCheck) {
+      this.debug(
+        "showPopupIfEmpty: Suppressing automated popup due to programmatic focus."
+      );
       return;
     }
 
@@ -478,7 +494,6 @@ export class FormAutofillChild extends JSWindowActorChild {
 
         if (!gFormFillFocusListener) {
           gFormFillFocusListener = new FormFillFocusListener();
-
           const formFillController = Cc[
             "@mozilla.org/satchel/form-fill-controller;1"
           ].getService(Ci.nsIFormFillController);
@@ -839,7 +854,7 @@ export class FormAutofillChild extends JSWindowActorChild {
     }
 
     // The `domWin` truthiness test is used by unit tests to bypass this check.
-    const domWin = formElement.ownerGlobal;
+    const domWin = formElement.documentGlobal;
     if (!domWin) {
       return;
     }

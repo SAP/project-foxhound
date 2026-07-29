@@ -26,7 +26,7 @@ async function restoreFocusOnEscape(initialFocusElem, helper) {
   let gotFocus;
   if (Services.focus.focusedElement !== initialFocusElem) {
     gotFocus = BrowserTestUtils.waitForEvent(initialFocusElem, "focus");
-    await SimpleTest.promiseFocus(initialFocusElem.ownerGlobal);
+    await SimpleTest.promiseFocus(initialFocusElem.documentGlobal);
     Services.focus.setFocus(initialFocusElem, Services.focus.FLAG_BYKEY);
     info(
       `Waiting to place focus on initialFocusElem: ${initialFocusElem.localName}#${initialFocusElem.id}`

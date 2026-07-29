@@ -618,6 +618,18 @@ impl Renderer {
                 continue;
             }
 
+            let mut disable_external_composite = enable_screenshot;
+            if let CompositeTileSurface::ExternalSurface { .. } = tile.surface {
+                let transformed_rect = composite_state.get_device_rect(
+                    &tile.local_rect,
+                    tile.transform_index
+                );
+                if let None = transformed_rect.try_cast::<i16>() {
+                    // Disable external composite when rect is big.
+                    disable_external_composite = true;
+                }
+            }
+
             // Determine if the tile is an external surface or content
             let usage = match tile.surface {
                 CompositeTileSurface::Texture { .. } |
@@ -625,7 +637,7 @@ impl Renderer {
                     CompositorSurfaceUsage::Content
                 }
                 CompositeTileSurface::ExternalSurface { external_surface_index } => {
-                    match (self.current_compositor_kind, enable_screenshot) {
+                    match (self.current_compositor_kind, disable_external_composite) {
                         (CompositorKind::Native { .. }, _) | (CompositorKind::Draw { .. }, _) => {
                             CompositorSurfaceUsage::Content
                         }
@@ -976,8 +988,11 @@ impl Renderer {
                     combined_dirty_rect = combined_dirty_rect.union(&rect);
                 }
 
+                let device_rect = DeviceRect::from_size(device_size.to_f32());
+                let clipped_dirty_rect = combined_dirty_rect.intersection_unchecked(&device_rect);
+
                 partial_present_mode = Some(PartialPresentMode::Single {
-                    dirty_rect: combined_dirty_rect,
+                    dirty_rect: clipped_dirty_rect,
                 });
             } else {
                 partial_present_mode = None;
@@ -1122,7 +1137,9 @@ impl Renderer {
 
             if let Some(ref mut _compositor) = self.compositor_config.layer_compositor() {
                 if let Some(PartialPresentMode::Single { dirty_rect }) = partial_present_mode {
-                    if dirty_rect.is_empty() {
+                    let device_rect = DeviceRect::from_size(device_size.to_f32());
+                    let clipped_dirty_rect = dirty_rect.intersection_unchecked(&device_rect);
+                    if clipped_dirty_rect.is_empty() {
                         continue;
                     }
                 }

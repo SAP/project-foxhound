@@ -60,6 +60,10 @@ testRule({
         "Using a value using the `ch` unit in the inset property is valid.",
     },
     {
+      code: ".a { height: 1px; }",
+      description: "Using 1px to define size is valid.",
+    },
+    {
       code: ".a { inline-size: var(--size-item-xlarge); }",
       description:
         "Using the xlarge item size token with the inline-size property is valid.",
@@ -77,6 +81,14 @@ testRule({
       code: ".a { width: calc(var(--size-item-small) * 2); }",
       description:
         "Using the small item size token in a `calc()` declaration with the width property is valid.",
+    },
+    {
+      code: `
+        :root { --custom-size: calc(var(--dimension-2) * -1); }
+        .a { inset-inline-start: var(--custom-size); }
+      `,
+      description:
+        "Using dimension tokens in a `calc()` declaration in a local custom property is valid.",
     },
     {
       code: ".a { width: calc(2 * var(--size-item-small)); }",

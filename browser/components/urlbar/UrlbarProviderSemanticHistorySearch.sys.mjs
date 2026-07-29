@@ -22,7 +22,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
   UrlbarProviderOpenTabs:
     "moz-src:///browser/components/urlbar/UrlbarProviderOpenTabs.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "logger", function () {
@@ -101,7 +101,15 @@ export class UrlbarProviderSemanticHistorySearch extends UrlbarProvider {
       (!queryContext.searchMode ||
         queryContext.searchMode.source == UrlbarUtils.RESULT_SOURCE.HISTORY)
     ) {
-      if (lazy.semanticManager.canUseSemanticSearch) {
+      // The smartbar (SW-only surface) is gated on the SW pref so it can light
+      // up independently of the CW feature gate; all other surfaces (urlbar in
+      // either window, searchbar, etc.) stay on the CW gate so urlbar behavior
+      // is consistent across CW and SW.
+      const canUse =
+        queryContext.sapName === "smartbar"
+          ? lazy.semanticManager.isEnabledForSmartWindow
+          : lazy.semanticManager.canUseSemanticSearch;
+      if (canUse) {
         // Proceed only if a sufficient number of history entries have
         // embeddings calculated.
         return lazy.semanticManager.hasSufficientEntriesForSearching();

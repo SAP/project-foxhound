@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,6 +27,46 @@ class SVGUserUnitList;
 namespace image {
 struct imgDrawingParams;
 }  // namespace image
+
+enum class SVGBBoxFlag : uint16_t {
+  // Include the geometry of the fill even when the fill does not
+  // actually render (e.g. when fill="none" or fill-opacity="0")
+  IncludeFillGeometry,
+  IncludeStroke,
+  // Include the geometry of the stroke even when the stroke does not
+  // actually render (e.g. when stroke="none" or stroke-opacity="0")
+  IncludeStrokeGeometry,
+  IncludeMarkers,
+  IncludeClipped,
+  // Normally a getBBox call on outer-<svg> should only return the
+  // bounds of the elements children. This flag will cause the
+  // element's bounds to be returned instead.
+  UseFrameBoundsForOuterSVG,
+  // Normally GetBBox will return values that apply CSS Zoom.
+  // This flag will cause the unzoomed element's bounds to be returned instead.
+  DisregardCSSZoom,
+  // https://developer.mozilla.org/en-US/docs/Web/API/Element/getBoundingClientRect
+  ForGetClientRects,
+  // If the given frame is an HTML element, only include the region of the
+  // given frame, instead of all continuations of it, while computing bbox if
+  // this flag is set.
+  IncludeOnlyCurrentFrameForNonSVGElement,
+  // This flag is only has an effect when the target is a <use> element.
+  // getBBox returns the bounds of the elements children in user space if
+  // this flag is set; Otherwise, getBBox returns the union bounds in
+  // the coordinate system formed by the <use> element.
+  UseUserSpaceOfUseElement,
+  // For a frame with a clip-path, if this flag is set then the result
+  // will not be clipped to the bbox of the content inside the clip-path.
+  DoNotClipToBBoxOfContentInsideClipPath,
+  // For some cases, e.g. when using transform-box: stroke-box, we may have
+  // the cyclical dependency if any of the elements in the subtree has
+  // non-scaling-stroke. In this case, we should break it and use
+  // transform-box:fill-box instead.
+  // https://github.com/w3c/csswg-drafts/issues/9640
+  AvoidCycleIfNonScalingStroke
+};
+using SVGBBoxFlags = EnumSet<SVGBBoxFlag>;
 
 /**
  * This class is used for elements that can be part of a directly displayable
@@ -143,7 +181,7 @@ class ISVGDisplayableFrame : public nsQueryFrame {
    *   included in the bbox calculation.
    */
   virtual SVGBBox GetBBoxContribution(const gfx::Matrix& aToBBoxUserspace,
-                                      uint32_t aFlags) = 0;
+                                      SVGBBoxFlags aFlags) = 0;
 
   // Are we a container frame?
   virtual bool IsDisplayContainer() = 0;

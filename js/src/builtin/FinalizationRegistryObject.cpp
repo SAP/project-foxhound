@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -27,16 +25,7 @@ using namespace js;
 // FinalizationRecordObject
 
 const JSClassOps FinalizationRecordObject::classOps_ = {
-    nullptr,   // addProperty
-    nullptr,   // delProperty
-    nullptr,   // enumerate
-    nullptr,   // newEnumerate
-    nullptr,   // resolve
-    nullptr,   // mayResolve
-    finalize,  // finalize
-    nullptr,   // call
-    nullptr,   // construct
-    nullptr,   // trace
+    .finalize = finalize,
 };
 
 const JSClass FinalizationRecordObject::class_ = {
@@ -157,16 +146,8 @@ const JSClass FinalizationRegistryObject::protoClass_ = {
 };
 
 const JSClassOps FinalizationRegistryObject::classOps_ = {
-    nullptr,                               // addProperty
-    nullptr,                               // delProperty
-    nullptr,                               // enumerate
-    nullptr,                               // newEnumerate
-    nullptr,                               // resolve
-    nullptr,                               // mayResolve
-    FinalizationRegistryObject::finalize,  // finalize
-    nullptr,                               // call
-    nullptr,                               // construct
-    FinalizationRegistryObject::trace,     // trace
+    .finalize = FinalizationRegistryObject::finalize,
+    .trace = FinalizationRegistryObject::trace,
 };
 
 const ClassSpec FinalizationRegistryObject::classSpec_ = {
@@ -268,10 +249,16 @@ void FinalizationRegistryObject::trace(JSTracer* trc, JSObject* obj) {
   }
 }
 
-void FinalizationRegistryObject::traceWeak(JSTracer* trc) {
-  // Trace and update the contents of the registrations map's keys, which
-  // are weakly held.
+void FinalizationRegistryObject::traceWeak(JSTracer* trc,
+                                           bool* hasSymbolRegistrations) {
+  // Trace and update the contents of the registrations map's keys, which are
+  // weakly held. Remove any old records that have been queued or cleaned up.
+  MOZ_ASSERT(recordsWithoutToken());
   MOZ_ASSERT(registrations());
+  MOZ_ASSERT(hasSymbolRegistrations);
+
+  recordsWithoutToken()->mutableEraseIf(
+      [](FinalizationRecordObject* record) { return !record->isRegistered(); });
 
   for (auto iter = registrations()->modIter(); !iter.done(); iter.next()) {
     auto result = TraceWeakEdge(trc, &iter.getMutable().mutableKey(),
@@ -284,6 +271,19 @@ void FinalizationRegistryObject::traceWeak(JSTracer* trc) {
         oomUnsafe.crash("FinalizationRegistryObject::traceWeak");
       }
       iter.remove();
+    } else {
+      if (result.finalTarget().isSymbol()) {
+        *hasSymbolRegistrations = true;
+      }
+
+      FinalizationRecordVector& records = iter.get().value();
+      records.mutableEraseIf([](FinalizationRecordObject* record) {
+        return !record->isRegistered();
+      });
+
+      if (records.empty()) {
+        iter.remove();
+      }
     }
   }
 
@@ -470,6 +470,10 @@ bool FinalizationRegistryObject::addRegistration(
     return false;
   }
 
+  if (unregisterToken.isSymbol()) {
+    cx->zone()->setGCFinalizationRegistriesMayHaveSymbolRegistrations();
+  }
+
   return true;
 }
 
@@ -631,16 +635,8 @@ const JSClass FinalizationQueueObject::class_ = {
 };
 
 const JSClassOps FinalizationQueueObject::classOps_ = {
-    nullptr,                            // addProperty
-    nullptr,                            // delProperty
-    nullptr,                            // enumerate
-    nullptr,                            // newEnumerate
-    nullptr,                            // resolve
-    nullptr,                            // mayResolve
-    FinalizationQueueObject::finalize,  // finalize
-    nullptr,                            // call
-    nullptr,                            // construct
-    FinalizationQueueObject::trace,     // trace
+    .finalize = FinalizationQueueObject::finalize,
+    .trace = FinalizationQueueObject::trace,
 };
 
 /* static */
@@ -666,8 +662,8 @@ FinalizationQueueObject* FinalizationQueueObject::create(
   // you don't know how far to unwrap it to get the original object
   // back. Instead store a CCW to a plain object in the same compartment as the
   // global (this uses Object.prototype).
-  Rooted<JSObject*> hostDefinedData(cx);
-  if (!GetObjectFromHostDefinedData(cx, &hostDefinedData)) {
+  Rooted<JSObject*> incumbentGlobalRepresentative(cx);
+  if (!GetIncumbentGlobalRepresentative(cx, &incumbentGlobalRepresentative)) {
     return nullptr;
   }
 
@@ -678,8 +674,8 @@ FinalizationQueueObject* FinalizationQueueObject::create(
   }
 
   queue->initReservedSlot(CleanupCallbackSlot, ObjectValue(*cleanupCallback));
-  queue->initReservedSlot(HostDefinedDataSlot,
-                          JS::ObjectOrNullValue(hostDefinedData));
+  queue->initReservedSlot(IncumbentGlobalRepresentative,
+                          JS::ObjectOrNullValue(incumbentGlobalRepresentative));
   InitReservedSlot(queue, RecordsToBeCleanedUpSlot,
                    recordsToBeCleanedUp.release(),
                    MemoryUse::FinalizationRegistryRecordVector);
@@ -739,8 +735,8 @@ inline JSObject* FinalizationQueueObject::cleanupCallback() const {
   return &value.toObject();
 }
 
-JSObject* FinalizationQueueObject::getHostDefinedData() const {
-  Value value = getReservedSlot(HostDefinedDataSlot);
+JSObject* FinalizationQueueObject::getIncumbentGlobalRepresentative() const {
+  Value value = getReservedSlot(IncumbentGlobalRepresentative);
   if (value.isUndefined()) {
     return nullptr;
   }

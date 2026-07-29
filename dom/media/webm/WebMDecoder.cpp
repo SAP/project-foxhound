@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,16 +6,14 @@
 
 #include <utility>
 
+#include "AOMDecoder.h"
+#include "MediaContainerType.h"
+#include "PDMFactorySupport.h"
+#include "PlatformDecoderModule.h"
 #include "VPXDecoder.h"
+#include "VideoUtils.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_media.h"
-#ifdef MOZ_AV1
-#  include "AOMDecoder.h"
-#endif
-#include "MediaContainerType.h"
-#include "PDMFactory.h"
-#include "PlatformDecoderModule.h"
-#include "VideoUtils.h"
 
 namespace mozilla {
 
@@ -63,7 +59,6 @@ nsTArray<UniquePtr<TrackInfo>> WebMDecoder::GetTracksInfo(
         continue;
       }
     }
-#ifdef MOZ_AV1
     if (StaticPrefs::media_av1_enabled() && IsAV1CodecString(codec)) {
       auto trackInfo =
           CreateTrackInfoWithMIMETypeAndContainerTypeExtraParameters(
@@ -72,7 +67,6 @@ nsTArray<UniquePtr<TrackInfo>> WebMDecoder::GetTracksInfo(
       tracks.AppendElement(std::move(trackInfo));
       continue;
     }
-#endif
     // Unknown codec
     aError = MediaResult(
         NS_ERROR_DOM_MEDIA_FATAL_ERR,
@@ -102,12 +96,10 @@ bool WebMDecoder::IsSupportedType(const MediaContainerType& aContainerType) {
 
   // Verify that we have a PDM that supports the whitelisted types, include
   // color depth
-  RefPtr<PDMFactory> platform = new PDMFactory();
   for (const auto& track : tracks) {
-    if (!track ||
-        platform
-            ->Supports(SupportDecoderParams(*track), nullptr /* diagnostic */)
-            .isEmpty()) {
+    if (!track || PDMFactorySupport::IsSupported(SupportDecoderParams(*track),
+                                                 nullptr /* diagnostic */)
+                      .isEmpty()) {
       return false;
     }
   }

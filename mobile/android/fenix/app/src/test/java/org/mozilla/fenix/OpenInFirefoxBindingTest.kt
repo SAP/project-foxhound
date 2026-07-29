@@ -5,25 +5,20 @@
 package org.mozilla.fenix
 
 import android.content.Intent
-import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
 import junit.framework.TestCase.assertFalse
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import mozilla.components.feature.session.SessionFeature
 import mozilla.components.feature.tabs.CustomTabsUseCases
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
-import mozilla.components.support.test.mock
-import mozilla.components.support.test.whenever
 import org.junit.Before
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.mockito.Mockito.verify
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction
 
-@OptIn(ExperimentalCoroutinesApi::class)
-@RunWith(AndroidJUnit4::class)
 class OpenInFirefoxBindingTest {
 
     private val testDispatcher = StandardTestDispatcher()
@@ -35,10 +30,10 @@ class OpenInFirefoxBindingTest {
 
     @Before
     fun setUp() {
-        activity = mock()
-        customTabsUseCases = mock()
-        openInFenixIntent = mock()
-        sessionFeature = mock()
+        activity = mockk(relaxUnitFun = true)
+        customTabsUseCases = mockk()
+        openInFenixIntent = mockk(relaxed = true)
+        sessionFeature = mockk()
     }
 
     @Test
@@ -55,11 +50,11 @@ class OpenInFirefoxBindingTest {
             mainDispatcher = testDispatcher,
         )
 
-        val getSessionFeature: SessionFeature = mock()
-        whenever(sessionFeature.get()).thenReturn(getSessionFeature)
+        val getSessionFeature: SessionFeature = mockk(relaxUnitFun = true)
+        every { sessionFeature.get() } returns getSessionFeature
 
-        val migrateCustomTabsUseCases: CustomTabsUseCases.MigrateCustomTabUseCase = mock()
-        whenever(customTabsUseCases.migrate).thenReturn(migrateCustomTabsUseCases)
+        val migrateCustomTabsUseCases: CustomTabsUseCases.MigrateCustomTabUseCase = mockk(relaxed = true)
+        every { customTabsUseCases.migrate } returns migrateCustomTabsUseCases
 
         binding.start()
 
@@ -67,13 +62,15 @@ class OpenInFirefoxBindingTest {
 
         testDispatcher.scheduler.advanceUntilIdle()
 
-        verify(getSessionFeature).release()
-        verify(migrateCustomTabsUseCases).invoke("", select = true)
-        verify(activity).startActivity(openInFenixIntent)
-        verify(openInFenixIntent).apply {
-            flags = flags or Intent.FLAG_ACTIVITY_NEW_TASK
+        verify { getSessionFeature.release() }
+        verify { migrateCustomTabsUseCases.invoke("", select = true) }
+        verify { activity.startActivity(openInFenixIntent) }
+        verify {
+            openInFenixIntent.apply {
+                flags = flags or Intent.FLAG_ACTIVITY_NEW_TASK
+            }
         }
-        verify(activity).finishAndRemoveTask()
+        verify { activity.finishAndRemoveTask() }
 
         assertFalse(appStore.state.openInFirefoxRequested)
     }

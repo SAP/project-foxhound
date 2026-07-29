@@ -21,6 +21,9 @@ import org.mozilla.focus.state.AppAction
 import org.mozilla.focus.state.Screen
 import org.mozilla.focus.widget.DefaultBrowserPreference
 
+/**
+ * Settings fragment for general application settings like theme and language.
+ */
 class GeneralSettingsFragment :
     BaseSettingsFragment() {
 

@@ -397,10 +397,7 @@ class SingleTestMixin:
         mozinfo.update({
             "privateBrowsing": "privatebrowsing" in self.config.get("test_tags", [])
         })
-        mozinfo.update({
-            "sessionHistoryInParent": "fission.disableSessionHistoryInParent=true"
-            in self.config.get("extra_prefs", [])
-        })
+        mozinfo.update({"sessionHistoryInParent": True})
         mozinfo.update({"http2": self.config.get("useHttp2Server", False)})
         mozinfo.update({"http3": self.config.get("useHttp3Server", False)})
         mozinfo.update({"xorigin": self.config.get("enable_xorigin_tests", False)})

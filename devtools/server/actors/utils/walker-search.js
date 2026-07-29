@@ -285,7 +285,7 @@ class WalkerSearch {
     }
 
     // If the query is not a valid selector, bail
-    if (!CSS.supports(`selector(${query})`)) {
+    if (!this.walker.targetActor.window.CSS.supports(`selector(${query})`)) {
       return;
     }
 

@@ -22,7 +22,7 @@ registerCleanupFunction(function () {
 
 add_task(async function testNormalBrowsing() {
   let { TrackingProtection } =
-    gBrowser.ownerGlobal.gProtectionsHandler.blockers;
+    gBrowser.documentGlobal.gProtectionsHandler.blockers;
   ok(
     TrackingProtection,
     "Normal window gProtectionsHandler should have TrackingProtection blocker."
@@ -124,7 +124,7 @@ add_task(async function testPrivateBrowsing() {
     private: true,
   });
   let { TrackingProtection } =
-    privateWin.gBrowser.ownerGlobal.gProtectionsHandler.blockers;
+    privateWin.gBrowser.documentGlobal.gProtectionsHandler.blockers;
   ok(
     TrackingProtection,
     "Private window gProtectionsHandler should have TrackingProtection blocker."

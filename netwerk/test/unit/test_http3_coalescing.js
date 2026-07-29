@@ -19,6 +19,8 @@ function setup() {
   Assert.notEqual(h3Port, null);
   Assert.notEqual(h3Port, "");
   Services.prefs.setBoolPref("network.http.http3.enable", true);
+  // Happy Eyeballs does not support connection coalescing for now.
+  Services.prefs.setBoolPref("network.http.happy_eyeballs_enabled", false);
 }
 
 setup();
@@ -31,6 +33,7 @@ registerCleanupFunction(async () => {
   );
   Services.prefs.clearUserPref("network.dns.httpssvc.reset_exclustion_list");
   Services.prefs.clearUserPref("network.http.http3.enable");
+  Services.prefs.clearUserPref("network.http.happy_eyeballs_enabled");
   Services.prefs.clearUserPref(
     "network.dns.httpssvc.http3_fast_fallback_timeout"
   );

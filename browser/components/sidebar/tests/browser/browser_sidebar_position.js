@@ -10,7 +10,7 @@ registerCleanupFunction(() =>
 add_task(async function test_sidebar_position_start() {
   const win = await BrowserTestUtils.openNewBrowserWindow();
   const { document } = win;
-  const sidebar = document.getElementById("sidebar-main");
+  const sidebar = document.getElementById("sidebar-container");
   const sidebarBox = document.getElementById("sidebar-box");
   ok(sidebar, "Sidebar is shown.");
   await sidebar.updateComplete;
@@ -26,7 +26,7 @@ add_task(async function test_sidebar_position_end() {
 
   const win = await BrowserTestUtils.openNewBrowserWindow();
   const { document } = win;
-  const sidebar = document.getElementById("sidebar-main");
+  const sidebar = document.getElementById("sidebar-container");
   const sidebarBox = document.getElementById("sidebar-box");
   ok(sidebar, "Sidebar is shown.");
   await sidebar.updateComplete;
@@ -40,7 +40,7 @@ add_task(async function test_sidebar_position_end() {
 add_task(async function test_sidebar_position_end_new_window() {
   const win = await BrowserTestUtils.openNewBrowserWindow();
   const { document } = win;
-  const sidebar = document.getElementById("sidebar-main");
+  const sidebar = document.getElementById("sidebar-container");
   const sidebarBox = document.getElementById("sidebar-box");
   ok(sidebar, "Sidebar is shown.");
   await sidebar.updateComplete;

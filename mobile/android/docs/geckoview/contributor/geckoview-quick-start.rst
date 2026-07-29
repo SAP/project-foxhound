@@ -1,5 +1,3 @@
-.. -*- Mode: rst; fill-column: 80; -*-
-
 .. _geckoview-contributor-guide:
 
 =================
@@ -161,7 +159,7 @@ If your patch makes a C++ file change, you should run the C++ linter formatter:
 
 ::
 
-   ./mach clang-format -p <path/to/file.cpp>
+   ./mach format <path/to/file.cpp>
 
 
 If your patch makes a Python file change:
@@ -230,7 +228,7 @@ Finally, follow the next command to get the API hash for the CHANGELOG:
 
     ./mach lint --linter android-api-lint
 
-In the `CHANGELOG` `file <https://searchfox.org/mozilla-central/source/mobile/android/geckoview/src/main/java/org/mozilla/geckoview/doc-files/CHANGELOG.md>`_.
+In the `CHANGELOG` :searchfox:`file <mobile/android/geckoview/src/main/java/org/mozilla/geckoview/doc-files/CHANGELOG.md>`.
 at the bottom, swap `[api-version]` with the new hash provided by the linter and add an entry for what changed.
 
 The feature and methods should also be documented in the changelog similar to the example below.

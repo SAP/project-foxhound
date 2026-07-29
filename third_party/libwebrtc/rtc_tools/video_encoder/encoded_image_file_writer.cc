@@ -11,10 +11,10 @@
 
 #include <cstddef>
 #include <optional>
+#include <string>
 #include <utility>
 
 #include "api/video/encoded_image.h"
-#include "api/video/video_frame_type.h"
 #include "api/video_codecs/scalability_mode.h"
 #include "api/video_codecs/video_codec.h"
 #include "modules/video_coding/svc/scalability_mode_util.h"
@@ -22,7 +22,6 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/strings/string_builder.h"
-#include "rtc_base/system/file_wrapper.h"
 
 namespace webrtc {
 namespace test {
@@ -47,15 +46,14 @@ EncodedImageFileWriter::EncodedImageFileWriter(
   // Create writer for every decode target.
   for (int i = 0; i < spatial_layers_; ++i) {
     for (int j = 0; j < temporal_layers_; ++j) {
-      char buffer[256];
-      SimpleStringBuilder name(buffer);
+      StringBuilder name;
       name << "output-" << codec_string << "-"
            << ScalabilityModeToString(*scalability_mode) << "-L" << i << "T"
            << j << ".ivf";
-
-      decode_target_writers_.emplace_back(std::make_pair(
-          IvfFileWriter::Wrap(FileWrapper::OpenWriteOnly(name.str()), 0),
-          name.str()));
+      std::string name_str = name.Release();
+      auto writer = IvfFileWriter::Wrap(name_str, /*byte_limit=*/0);
+      decode_target_writers_.emplace_back(std::move(writer),
+                                          std::move(name_str));
     }
   }
 }
@@ -75,8 +73,7 @@ int EncodedImageFileWriter::Write(const EncodedImage& encoded_image) {
   RTC_CHECK_LT(temporal_index, temporal_layers_);
 
   if (spatial_index == 0) {
-    is_base_layer_key_frame =
-        (encoded_image._frameType == VideoFrameType::kVideoFrameKey);
+    is_base_layer_key_frame_ = encoded_image.IsKey();
   }
 
   switch (inter_layer_pred_mode_) {
@@ -117,7 +114,7 @@ int EncodedImageFileWriter::Write(const EncodedImage& encoded_image) {
         }
 
         // Write to higher spatial layers only if key frame.
-        if (!is_base_layer_key_frame) {
+        if (!is_base_layer_key_frame_) {
           break;
         }
       }

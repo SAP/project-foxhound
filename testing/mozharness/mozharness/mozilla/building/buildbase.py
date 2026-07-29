@@ -247,7 +247,6 @@ class BuildOptionParser:
     build_variants = {
         "add-on-devel": path_base + "%s_add-on-devel.py",
         "asan-tc": path_base + "%s_asan_tc.py",
-        "asan-reporter-tc": path_base + "%s_asan_reporter_tc.py",
         "fuzzing-asan-tc": path_base + "%s_fuzzing_asan_tc.py",
         "tsan-tc": path_base + "%s_tsan_tc.py",
         "fuzzing-tsan-tc": path_base + "%s_fuzzing_tsan_tc.py",
@@ -880,11 +879,13 @@ items from that key's value."
         )
         self.run_command(
             command=[
-                "make",
+                sys.executable,
+                "mach",
                 "source-package",
-                "source-upload",
+                "--output=source.tar.xz",
+                f"--upload={env['UPLOAD_PATH']}",
             ],
-            cwd=dirs["abs_obj_dir"],
+            cwd=dirs["abs_src_dir"],
             env=env,
             output_timeout=60 * 45,
             halt_on_failure=True,

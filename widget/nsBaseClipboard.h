@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -54,6 +53,17 @@ class nsBaseClipboard : public nsIClipboard {
   NS_IMETHOD GetData(
       nsITransferable* aTransferable, ClipboardType aWhichClipboard,
       mozilla::dom::WindowContext* aWindowContext) override final;
+  NS_IMETHOD GetDataIfSmallerThan(
+      nsITransferable* aTransferable, uint64_t aThreshold,
+      ClipboardType aWhichClipboard,
+      mozilla::dom::WindowContext* aWindowContext, JSContext* aJSContext,
+      mozilla::dom::Promise** aPromise) override final;
+  // If the clipboard data could not be taken by threshold,
+  // returns NS_ERROR_CLIPBOARD_TOO_BIG.
+  NS_IMETHOD GetDataIfSmallerThanNative(
+      nsITransferable* aTransferable, uint64_t aThreshold,
+      ClipboardType aWhichClipboard,
+      mozilla::dom::WindowContext* aWindowContext) override final;
   NS_IMETHOD GetDataSnapshot(
       const nsTArray<nsCString>& aFlavorList, ClipboardType aWhichClipboard,
       mozilla::dom::WindowContext* aRequestingWindowContext,
@@ -107,7 +117,8 @@ class nsBaseClipboard : public nsIClipboard {
                                     ClipboardType aWhichClipboard) = 0;
   virtual mozilla::Result<nsCOMPtr<nsISupports>, nsresult>
   GetNativeClipboardData(const nsACString& aFlavor,
-                         ClipboardType aWhichClipboard) = 0;
+                         ClipboardType aWhichClipboard,
+                         uint64_t aThreshold = 0) = 0;
   virtual void AsyncGetNativeClipboardData(const nsACString& aFlavor,
                                            ClipboardType aWhichClipboard,
                                            GetNativeDataCallback&& aCallback);
@@ -212,7 +223,7 @@ class nsBaseClipboard : public nsIClipboard {
       mTransferable = aTransferable;
       mClipboardOwner = aClipboardOwner;
       mSequenceNumber = aSequenceNumber;
-      mInnerWindowId = aInnerWindowId;
+      mInnerWindowId = std::move(aInnerWindowId);
     }
     nsITransferable* GetTransferable() const { return mTransferable; }
     nsIClipboardOwner* GetClipboardOwner() const { return mClipboardOwner; }

@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -45,9 +43,8 @@ class BrowserAction extends BrowserActionBase {
     const action = tab
       ? this.getContextData(tab)
       : this.helper.extractProperties(this.globals);
-    this.helper.sendRequest(tabId, {
+    this.helper.sendRequest(tabId, "GeckoView:BrowserAction:Update", {
       action,
-      type: "GeckoView:BrowserAction:Update",
     });
   }
 
@@ -57,9 +54,8 @@ class BrowserAction extends BrowserActionBase {
       : this.triggerClickOrPopup(tab);
     const actionObject = this.getContextData(tab);
     const action = this.helper.extractProperties(actionObject);
-    this.helper.sendRequest(tab.id, {
+    this.helper.sendRequest(tab.id, "GeckoView:BrowserAction:OpenPopup", {
       action,
-      type: "GeckoView:BrowserAction:OpenPopup",
       popupUri,
     });
   }

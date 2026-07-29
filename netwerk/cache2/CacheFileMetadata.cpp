@@ -5,6 +5,7 @@
 #include "CacheLog.h"
 #include "CacheFileMetadata.h"
 
+#include "CacheCrypto.h"
 #include "CacheFileIOManager.h"
 #include "nsICacheEntry.h"
 #include "CacheHashUtils.h"
@@ -21,6 +22,81 @@
 #include "prnetdb.h"
 
 namespace mozilla::net {
+
+// The metadata block ends with an unencrypted two-word trailer the reader
+// consults before touching the rest:
+//
+//   [ formatVersion(uint32) ][ metaStartOffset | flag (uint32) ]
+//
+// The last word is the metadata start offset; its high bit (kEncryptedFlag) is
+// set iff the entry is encrypted, and its low bits are the logical data size.
+// The word before it is a clear-text copy of CacheFileMetadataHeader::mVersion,
+// so the reader can identify the format up front -- a version it does not
+// understand is rejected, and the physical metadata start of an encrypted entry
+// is derived from the logical data size (each chunk is kBlockOverhead larger on
+// disk).
+//
+// For an encrypted entry the rest of the metadata block (everything before the
+// trailer) is a single AES-GCM block, encrypted and decrypted exactly like a
+// data chunk via CacheCrypto::Encrypt/DecryptBlock with kMetadataBlockNumber.
+// The read paths decrypt it before ParseMetadata runs, so ParseMetadata always
+// works on plaintext.
+//
+// Entries from older formats (which this build still reads) end with just the
+// bare offset word; they are recognized by the trailing version word not
+// matching a known version.
+static const uint32_t kEncryptedFlag = 0x80000000;
+
+// Physical offset of the metadata block for an encrypted entry: the logical
+// data size plus the per-chunk on-disk overhead for each chunk.
+static uint32_t EncryptedMetaPhysicalOffset(uint32_t aLogicalDataSize) {
+  uint32_t chunks = aLogicalDataSize / kChunkSize;
+  if (aLogicalDataSize % kChunkSize) {
+    chunks++;
+  }
+  return aLogicalDataSize + chunks * CacheCrypto::kBlockOverhead;
+}
+
+// Decoded form of the metadata trailer.
+struct MetadataTrailer {
+  bool mEncrypted;
+  uint32_t mLogicalDataSize;
+  // Physical offset of the metadata block within the entry file.
+  uint32_t mPhysOffset;
+  // Number of trailing offset words: 2 for the current [version][offset|flag]
+  // trailer, 1 for old single-offset-word entries.
+  uint32_t mTrailerWords;
+};
+
+// Decodes the two trailing words of an entry. aVersionWord is the
+// second-to-last word (a clear-text copy of the format version in the current
+// format; the caller passes 0 when it is not present), aOffsetWord the last
+// word. The current format is recognized by the version word naming a version
+// we understand, in which case the offset word's high bit flags encryption and
+// its low bits are the logical data size; older entries end with just the bare
+// offset word.
+static MetadataTrailer DecodeMetadataTrailer(uint32_t aVersionWord,
+                                             uint32_t aOffsetWord) {
+  MetadataTrailer trailer;
+  bool newFormat = aVersionWord >= 4 && aVersionWord <= kCacheEntryVersion;
+  if (newFormat) {
+    trailer.mEncrypted = aOffsetWord & kEncryptedFlag;
+    trailer.mLogicalDataSize = aOffsetWord & ~kEncryptedFlag;
+    trailer.mPhysOffset =
+        trailer.mEncrypted
+            ? EncryptedMetaPhysicalOffset(trailer.mLogicalDataSize)
+            : trailer.mLogicalDataSize;
+    trailer.mTrailerWords = 2;
+  } else {
+    // Old single-word-trailer entries predate encryption: the whole word is the
+    // offset/data size and the entry is never encrypted.
+    trailer.mEncrypted = false;
+    trailer.mLogicalDataSize = aOffsetWord;
+    trailer.mPhysOffset = aOffsetWord;
+    trailer.mTrailerWords = 1;
+  }
+  return trailer;
+}
 
 #define kMinMetadataRead 1024  // TODO find optimal value from telemetry
 #define kAlignSize 4096
@@ -155,6 +231,8 @@ void CacheFileMetadata::ReadMetadata(CacheFileMetadataListener* aListener) {
 
   if (size < int64_t(sizeof(CacheFileMetadataHeader) + 2 * sizeof(uint32_t))) {
     // there must be at least checksum, header and offset
+    // The current format additionally carries a clear-text version word (a
+    // two-word trailer); ParseMetadata does the precise validation.
     LOG(
         ("CacheFileMetadata::ReadMetadata() - File is corrupted, creating "
          "empty metadata. [this=%p, filesize=%" PRId64 "]",
@@ -225,13 +303,44 @@ nsresult CacheFileMetadata::WriteMetadata(
 
   mIsDirty = false;
 
-  mWriteBuf =
-      static_cast<char*>(malloc(CalcMetadataSize(mElementsSize, mHashCount)));
+  const bool encrypted = IsEncrypted();
+  RefPtr<CacheCrypto> crypto;
+  if (encrypted) {
+    crypto = CacheCrypto::GetInstanceOrNull();
+    if (!crypto) {
+      return NS_ERROR_NOT_AVAILABLE;
+    }
+  }
+
+  // Plaintext content layout: [hash32][hashes][header][key+null][elements].
+  // CalcMetadataSize counts one trailing offset word, which the content does
+  // not include, so subtract it back out.
+  uint32_t contentLen =
+      CalcMetadataSize(mElementsSize, mHashCount) - sizeof(uint32_t);
+
+  // On-disk buffer: the content (for an encrypted entry the whole content is
+  // one AES-GCM block, growing by kBlockOverhead) followed by the unencrypted
+  // two-word trailer [ formatVersion ][ metaStartOffset | flag ].
+  uint32_t bufSize = contentLen +
+                     (encrypted ? CacheCrypto::kBlockOverhead : 0) +
+                     2 * sizeof(uint32_t);
+  mWriteBuf = static_cast<char*>(malloc(bufSize));
   if (!mWriteBuf) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  char* p = mWriteBuf + sizeof(uint32_t);
+  // Build the plaintext content. When encrypting it is assembled in a scratch
+  // buffer and then encrypted into mWriteBuf; otherwise it is built in place.
+  UniquePtr<char[]> scratch;
+  char* content;
+  if (encrypted) {
+    scratch = MakeUnique<char[]>(contentLen);
+    content = scratch.get();
+  } else {
+    content = mWriteBuf;
+  }
+
+  char* p = content + sizeof(uint32_t);  // leave room for the leading hash word
   if (mHashCount) {
     memcpy(p, mHashArray, mHashCount * sizeof(CacheHash::Hash16_t));
     p += mHashCount * sizeof(CacheHash::Hash16_t);
@@ -246,27 +355,58 @@ nsresult CacheFileMetadata::WriteMetadata(
     memcpy(p, mBuf, mElementsSize);
     p += mElementsSize;
   }
+  MOZ_ASSERT(uint32_t(p - content) == contentLen);
+
   LOG(("CacheFileMetadata::WriteMetadata() [this=%p, key=%s, mElementsSize=%d]",
        this, mKey.get(), mElementsSize));
   CacheHash::Hash32_t hash;
-  hash = CacheHash::Hash(mWriteBuf + sizeof(uint32_t),
-                         p - mWriteBuf - sizeof(uint32_t));
-  NetworkEndian::writeUint32(mWriteBuf, hash);
+  hash = CacheHash::Hash(content + sizeof(uint32_t),
+                         contentLen - sizeof(uint32_t));
+  NetworkEndian::writeUint32(content, hash);
 
-  NetworkEndian::writeUint32(p, aOffset);
-  p += sizeof(uint32_t);
+  // Write the unencrypted trailer: [ formatVersion ][ metaStartOffset | flag ].
+  // The version is a clear-text copy of the header version; the high bit of the
+  // offset word marks the entry encrypted. For an encrypted entry each chunk is
+  // kBlockOverhead larger on disk, so the physical metadata start is past the
+  // logical data size. The trailer is written before encrypting so it can be
+  // bound as AAD below.
+  char* trailer =
+      mWriteBuf + contentLen + (encrypted ? CacheCrypto::kBlockOverhead : 0);
+  MOZ_ASSERT((aOffset & kEncryptedFlag) == 0);
+  NetworkEndian::writeUint32(trailer, mMetaHdr.mVersion);
+  NetworkEndian::writeUint32(trailer + sizeof(uint32_t),
+                             aOffset | (encrypted ? kEncryptedFlag : 0));
+
+  // Encrypt the whole content into mWriteBuf, exactly like a data chunk. The
+  // plaintext trailer (version + offset|flag) is bound as AAD so it cannot
+  // be tampered with.
+  if (encrypted) {
+    rv = crypto->EncryptBlock(CacheCrypto::kMetadataBlockNumber,
+                              reinterpret_cast<const uint8_t*>(content),
+                              contentLen, reinterpret_cast<uint8_t*>(mWriteBuf),
+                              reinterpret_cast<const uint8_t*>(trailer),
+                              2 * sizeof(uint32_t));
+    if (NS_FAILED(rv)) {
+      CacheFileUtils::FreeBuffer(mWriteBuf);
+      mWriteBuf = nullptr;
+      return rv;
+    }
+  }
+
+  int64_t writeOffset =
+      encrypted ? EncryptedMetaPhysicalOffset(aOffset) : int64_t(aOffset);
 
   char* writeBuffer = mWriteBuf;
   if (aListener) {
     mListener = aListener;
-    rv = CacheFileIOManager::Write(mHandle, aOffset, writeBuffer,
-                                   p - writeBuffer, true, true, this);
+    rv = CacheFileIOManager::Write(mHandle, writeOffset, writeBuffer, bufSize,
+                                   true, true, this);
   } else {
     // We are not going to pass |this| as a callback so the buffer will be
     // released by CacheFileIOManager. Just null out mWriteBuf here.
     mWriteBuf = nullptr;
-    rv = CacheFileIOManager::WriteWithoutCallback(mHandle, aOffset, writeBuffer,
-                                                  p - writeBuffer, true, true);
+    rv = CacheFileIOManager::WriteWithoutCallback(
+        mHandle, writeOffset, writeBuffer, bufSize, true, true);
   }
 
   if (NS_FAILED(rv)) {
@@ -310,47 +450,55 @@ nsresult CacheFileMetadata::SyncReadMetadata(nsIFile* aFile) {
   PRFileDesc* fd;
   rv = aFile->OpenNSPRFileDesc(PR_RDONLY, 0600, &fd);
   NS_ENSURE_SUCCESS(rv, rv);
+  auto closeFd = MakeScopeExit([&fd] { PR_Close(fd); });
 
-  int64_t offset = PR_Seek64(fd, fileSize - sizeof(uint32_t), PR_SEEK_SET);
+  // Read the last two words. The current format's trailer is two words
+  // ([version][offset|flag]); older formats have a single offset word. Reading
+  // both covers either case (the version word disambiguates).
+  if (fileSize < int64_t(2 * sizeof(uint32_t))) {
+    return NS_ERROR_FAILURE;
+  }
+  int64_t offset = PR_Seek64(fd, fileSize - 2 * sizeof(uint32_t), PR_SEEK_SET);
   if (offset == -1) {
-    PR_Close(fd);
     return NS_ERROR_FAILURE;
   }
 
-  uint32_t metaOffset;
-  int32_t bytesRead = PR_Read(fd, &metaOffset, sizeof(uint32_t));
-  if (bytesRead != sizeof(uint32_t)) {
-    PR_Close(fd);
+  uint32_t trailer[2];
+  int32_t bytesRead = PR_Read(fd, trailer, 2 * sizeof(uint32_t));
+  if (bytesRead != int32_t(2 * sizeof(uint32_t))) {
     return NS_ERROR_FAILURE;
   }
 
-  metaOffset = NetworkEndian::readUint32(&metaOffset);
-  if (metaOffset > fileSize) {
-    PR_Close(fd);
+  MetadataTrailer meta =
+      DecodeMetadataTrailer(NetworkEndian::readUint32(&trailer[0]),
+                            NetworkEndian::readUint32(&trailer[1]));
+
+  if (meta.mPhysOffset > fileSize) {
     return NS_ERROR_FAILURE;
   }
 
-  mBuf = static_cast<char*>(malloc(fileSize - metaOffset));
+  mBuf = static_cast<char*>(malloc(fileSize - meta.mPhysOffset));
   if (!mBuf) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
-  mBufSize = fileSize - metaOffset;
+  mBufSize = fileSize - meta.mPhysOffset;
 
   DoMemoryReport(MemoryUsage());
 
-  offset = PR_Seek64(fd, metaOffset, PR_SEEK_SET);
+  offset = PR_Seek64(fd, meta.mPhysOffset, PR_SEEK_SET);
   if (offset == -1) {
-    PR_Close(fd);
     return NS_ERROR_FAILURE;
   }
 
   bytesRead = PR_Read(fd, mBuf, mBufSize);
-  PR_Close(fd);
   if (bytesRead != static_cast<int32_t>(mBufSize)) {
     return NS_ERROR_FAILURE;
   }
 
-  rv = ParseMetadata(metaOffset, 0, false);
+  rv = NormalizeMetadataBuf(0, meta.mTrailerWords, meta.mEncrypted);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = ParseMetadata(meta.mLogicalDataSize, false);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -655,9 +803,19 @@ nsresult CacheFileMetadata::OnDataRead(CacheFileHandle* aHandle, char* aBuf,
   }
 #endif
 
-  // check whether we have read all necessary data
-  uint32_t realOffset =
-      NetworkEndian::readUint32(mBuf + mBufSize - sizeof(uint32_t));
+  // Decode the trailer (always within this first tail read). The version word
+  // is absent in old single-offset-word entries; pass 0 when the buffer is too
+  // small to hold it.
+  uint32_t versionWord =
+      mBufSize >= 2 * sizeof(uint32_t)
+          ? NetworkEndian::readUint32(mBuf + mBufSize - 2 * sizeof(uint32_t))
+          : 0;
+  MetadataTrailer meta = DecodeMetadataTrailer(
+      versionWord,
+      NetworkEndian::readUint32(mBuf + mBufSize - sizeof(uint32_t)));
+  bool encrypted = meta.mEncrypted;
+  uint32_t logicalDataSize = meta.mLogicalDataSize;
+  uint32_t realOffset = meta.mPhysOffset;
 
   int64_t size = mHandle->FileSize();
   MOZ_ASSERT(size != -1);
@@ -743,8 +901,13 @@ nsresult CacheFileMetadata::OnDataRead(CacheFileHandle* aHandle, char* aBuf,
 #endif
 
   // We have all data according to offset information at the end of the entry.
-  // Try to parse it.
-  rv = ParseMetadata(realOffset, realOffset - usedOffset, true);
+  // Strip the trailer (and decrypt, if needed) so mBuf holds plaintext content,
+  // then parse it.
+  rv = NormalizeMetadataBuf(realOffset - usedOffset, meta.mTrailerWords,
+                            encrypted);
+  if (NS_SUCCEEDED(rv)) {
+    rv = ParseMetadata(logicalDataSize, true);
+  }
   if (NS_FAILED(rv)) {
     LOG(
         ("CacheFileMetadata::OnDataRead() - Error parsing metadata, creating "
@@ -816,22 +979,122 @@ void CacheFileMetadata::InitEmptyMetadata() {
   }
 }
 
-nsresult CacheFileMetadata::ParseMetadata(uint32_t aMetaOffset,
-                                          uint32_t aBufOffset, bool aHaveKey) {
+nsresult CacheFileMetadata::NormalizeMetadataBuf(uint32_t aBlockOffset,
+                                                 uint32_t aTrailerWords,
+                                                 bool aEncrypted) {
+  // Fail closed: when disk-cache encryption is active, every on-disk entry must
+  // be encrypted.
+  if (!aEncrypted && CacheCrypto::IsActive()) {
+    LOG(
+        ("CacheFileMetadata::NormalizeMetadataBuf() - plaintext entry while "
+         "encryption is enabled, rejecting [this=%p]",
+         this));
+    return NS_ERROR_FILE_CORRUPTED;
+  }
+
+  uint32_t trailerLen = aTrailerWords * sizeof(uint32_t);
+  if (mBufSize < aBlockOffset + trailerLen) {
+    return NS_ERROR_FILE_CORRUPTED;
+  }
+  // The metadata block is everything between the leading bytes we over-read and
+  // the trailing offset word(s).
+  uint32_t blockLen = mBufSize - aBlockOffset - trailerLen;
+
+  if (aEncrypted) {
+    RefPtr<CacheCrypto> crypto = CacheCrypto::GetInstanceOrNull();
+    if (!crypto) {
+      return NS_ERROR_NOT_AVAILABLE;
+    }
+    if (blockLen < CacheCrypto::kBlockOverhead) {
+      return NS_ERROR_FILE_CORRUPTED;
+    }
+    // The block is [ciphertext][tag][nonce]; decrypt it into a fresh plaintext
+    // buffer exactly like a data chunk. A failed AEAD check means corruption.
+    uint32_t plaintextLen = blockLen - CacheCrypto::kBlockOverhead;
+    char* plain = static_cast<char*>(malloc(plaintextLen ? plaintextLen : 1));
+    if (!plain) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+    // Authenticate the plaintext trailer (version + offset|flag) by passing it
+    // as AAD: tampering with the format version, encryption flag or data size
+    // fails the AEAD tag below.
+    nsresult rv = crypto->DecryptBlock(
+        CacheCrypto::kMetadataBlockNumber,
+        reinterpret_cast<uint8_t*>(mBuf + aBlockOffset), plaintextLen,
+        reinterpret_cast<uint8_t*>(plain),
+        reinterpret_cast<uint8_t*>(mBuf + aBlockOffset + blockLen), trailerLen);
+    if (NS_FAILED(rv)) {
+      free(plain);
+      return NS_ERROR_FILE_CORRUPTED;
+    }
+    CacheFileUtils::FreeBuffer(mBuf);
+    mBuf = plain;
+    mBufSize = plaintextLen;
+  } else {
+    if (aBlockOffset) {
+      memmove(mBuf, mBuf + aBlockOffset, blockLen);
+    }
+    mBufSize = blockLen;
+  }
+
+  DoMemoryReport(MemoryUsage());
+  return NS_OK;
+}
+
+nsresult CacheFileMetadata::ParseMetadata(uint32_t aLogicalDataSize,
+                                          bool aHaveKey) {
   LOG(
-      ("CacheFileMetadata::ParseMetadata() [this=%p, metaOffset=%d, "
-       "bufOffset=%d, haveKey=%u]",
-       this, aMetaOffset, aBufOffset, aHaveKey));
+      ("CacheFileMetadata::ParseMetadata() [this=%p, logicalDataSize=%u, "
+       "haveKey=%u]",
+       this, aLogicalDataSize, aHaveKey));
 
   nsresult rv;
 
-  uint32_t metaposOffset = mBufSize - sizeof(uint32_t);
-  uint32_t hashesOffset = aBufOffset + sizeof(uint32_t);
-  uint32_t hashCount = aMetaOffset / kChunkSize;
-  if (aMetaOffset % kChunkSize) hashCount++;
+  uint32_t hashesOffset = sizeof(uint32_t);
+  uint32_t hashCount = aLogicalDataSize / kChunkSize;
+  if (aLogicalDataSize % kChunkSize) {
+    hashCount++;
+  }
   uint32_t hashesLen = hashCount * sizeof(CacheHash::Hash16_t);
   uint32_t hdrOffset = hashesOffset + hashesLen;
-  uint32_t keyOffset = hdrOffset + sizeof(CacheFileMetadataHeader);
+
+  // mBuf holds exactly the plaintext content (no trailer); metaposOffset is its
+  // end. Read the version (the leading header field, present in every version)
+  // before computing where the key begins. Require the version field to be
+  // within the buffer.
+  uint32_t metaposOffset = mBufSize;
+  if (hdrOffset + sizeof(uint32_t) > metaposOffset) {
+    LOG((
+        "CacheFileMetadata::ParseMetadata() - Buffer too small to hold header! "
+        "[this=%p]",
+        this));
+    return NS_ERROR_FILE_CORRUPTED;
+  }
+  uint32_t version = NetworkEndian::readUint32(mBuf + hdrOffset);
+
+  // The header's on-disk size depends on the version: v1 lacked mFlags.
+  uint32_t onDiskHdrSize;
+  switch (version) {
+    case 1:
+      onDiskHdrSize = sizeof(CacheFileMetadataHeader) - sizeof(mMetaHdr.mFlags);
+      break;
+    case 2:
+      // Version 2 just lacks the ability to store alternative data.
+      [[fallthrough]];
+    case 3:
+      [[fallthrough]];
+    case kCacheEntryVersion:
+      onDiskHdrSize = sizeof(CacheFileMetadataHeader);
+      break;
+    default:
+      LOG(
+          ("CacheFileMetadata::ParseMetadata() - Not a version we understand "
+           "to. [version=0x%x, this=%p]",
+           version, this));
+      return NS_ERROR_UNEXPECTED;
+  }
+
+  uint32_t keyOffset = hdrOffset + onDiskHdrSize;
 
   LOG(
       ("CacheFileMetadata::ParseMetadata() [this=%p]\n  metaposOffset=%d\n  "
@@ -848,20 +1111,6 @@ nsresult CacheFileMetadata::ParseMetadata(uint32_t aMetaOffset,
 
   mMetaHdr.ReadFromBuf(mBuf + hdrOffset);
 
-  if (mMetaHdr.mVersion == 1) {
-    // Backward compatibility before we've added flags to the header
-    keyOffset -= sizeof(uint32_t);
-  } else if (mMetaHdr.mVersion == 2) {
-    // Version 2 just lacks the ability to store alternative data. Nothing to do
-    // here.
-  } else if (mMetaHdr.mVersion != kCacheEntryVersion) {
-    LOG(
-        ("CacheFileMetadata::ParseMetadata() - Not a version we understand to. "
-         "[version=0x%x, this=%p]",
-         mMetaHdr.mVersion, this));
-    return NS_ERROR_UNEXPECTED;
-  }
-
   // Update the version stored in the header to make writes
   // store the header in the current version form.
   mMetaHdr.mVersion = kCacheEntryVersion;
@@ -873,6 +1122,20 @@ nsresult CacheFileMetadata::ParseMetadata(uint32_t aMetaOffset,
         ("CacheFileMetadata::ParseMetadata() - Wrong elementsOffset %d "
          "[this=%p]",
          elementsOffset, this));
+    return NS_ERROR_FILE_CORRUPTED;
+  }
+
+  // Verify the metadata hash over the content (the leading hash word excluded).
+  CacheHash::Hash32_t hashComputed, hashExpected;
+  hashComputed =
+      CacheHash::Hash(mBuf + hashesOffset, metaposOffset - hashesOffset);
+  hashExpected = NetworkEndian::readUint32(mBuf);
+
+  if (hashComputed != hashExpected) {
+    LOG(
+        ("CacheFileMetadata::ParseMetadata() - Metadata hash mismatch! Hash of "
+         "the metadata is %x, hash in file is %x [this=%p]",
+         hashComputed, hashExpected, this));
     return NS_ERROR_FILE_CORRUPTED;
   }
 
@@ -909,20 +1172,6 @@ nsresult CacheFileMetadata::ParseMetadata(uint32_t aMetaOffset,
     }
   }
 
-  // check metadata hash (data from hashesOffset to metaposOffset)
-  CacheHash::Hash32_t hashComputed, hashExpected;
-  hashComputed =
-      CacheHash::Hash(mBuf + hashesOffset, metaposOffset - hashesOffset);
-  hashExpected = NetworkEndian::readUint32(mBuf + aBufOffset);
-
-  if (hashComputed != hashExpected) {
-    LOG(
-        ("CacheFileMetadata::ParseMetadata() - Metadata hash mismatch! Hash of "
-         "the metadata is %x, hash in file is %x [this=%p]",
-         hashComputed, hashExpected, this));
-    return NS_ERROR_FILE_CORRUPTED;
-  }
-
   // check elements
   rv = CheckElements(mBuf + elementsOffset, metaposOffset - elementsOffset);
   if (NS_FAILED(rv)) return rv;
@@ -948,7 +1197,8 @@ nsresult CacheFileMetadata::ParseMetadata(uint32_t aMetaOffset,
 
   mElementsSize = metaposOffset - elementsOffset;
   memmove(mBuf, mBuf + elementsOffset, mElementsSize);
-  mOffset = aMetaOffset;
+  // mOffset is the logical data size, not the physical metadata position.
+  mOffset = aLogicalDataSize;
 
   DoMemoryReport(MemoryUsage());
 

@@ -14,6 +14,51 @@ newtab-personalize-icon-label =
 newtab-personalize-dialog-label =
     .aria-label = Tinkinti
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Naujos kortelės
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } eilutė
+            [few] { $num } eilutės
+           *[other] { $num } eilučių
+        }
+home-restore-defaults-srd =
+    .label = Atstatyti numatytąsias
+    .accesskey = A
+home-mode-choice-default-fx-srd =
+    .label = „{ -firefox-home-brand-name }“ (numatytasis)
+home-mode-choice-custom-srd =
+    .label = Kiti URL…
+home-mode-choice-blank-srd =
+    .label = Tuščias puslapis
+home-prefs-shortcuts-header-srd =
+    .label = Leistukai
+home-prefs-shortcuts-select =
+    .aria-label = Leistukai
+home-prefs-shortcuts-by-option-sponsored-srd =
+    .label = Rėmėjų leistukai
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Rėmėjų straipsniai
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Aplankyti tinklalapiai
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Adresynas
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Paskiausias atsisiuntimas
+home-prefs-recent-activity-header-srd =
+    .label = Paskiausia veikla
+home-prefs-recent-activity-select =
+    .aria-label = Paskiausia veikla
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -39,7 +84,7 @@ newtab-search-box-input =
     .placeholder = Ieškokite saityne
     .aria-label = Ieškokite saityne
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Pridėti ieškyklę
 newtab-topsites-add-shortcut-header = Naujas leistukas
@@ -237,9 +282,22 @@ newtab-error-fallback-refresh-link = Pabandykite iš naujo įkelti tinklalapį.
 
 newtab-custom-shortcuts-title = Leistukai
 newtab-custom-shortcuts-subtitle = Jūsų įrašytos arba lankomos svetainės
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = Leistukai
     .description = Jūsų įrašytos arba lankomos svetainės
+newtab-custom-shortcuts-nova =
+    .label = Leistukai
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+            [one] { $num } eilutė
+            [few] { $num } eilutės
+           *[other] { $num } eilučių
+        }
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector =

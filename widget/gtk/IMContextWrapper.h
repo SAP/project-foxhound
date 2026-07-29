@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -71,6 +68,8 @@ class IMContextWrapper final : public TextEventDispatcherListener {
   // "Enabled" means the users can use all IMEs.
   // I.e., the focus is in the normal editors.
   bool IsEnabled() const;
+
+  bool IsEditable() const { return mInputContext.mIMEState.IsEditable(); }
 
   // OnFocusWindow is a notification that aWindow is going to be focused.
   void OnFocusWindow(nsWindow* aWindow);
@@ -486,6 +485,10 @@ class IMContextWrapper final : public TextEventDispatcherListener {
   // mSetInputPurposeAndInputHints is set if `SetInputContext` wants `Focus`
   // to set input-purpose and input-hints.
   bool mSetInputPurposeAndInputHints;
+  // mPendingSetSurrounding is set if "retrieve_surrounding" signal is received
+  // but the surrounding text is not set yet. We retry setting the surrounding
+  // text when selection is changed in Gecko.
+  bool mPendingSetSurrounding = false;
 
   // sLastFocusedContext is a pointer to the last focused instance of this
   // class.  When a instance is destroyed and sLastFocusedContext refers it,

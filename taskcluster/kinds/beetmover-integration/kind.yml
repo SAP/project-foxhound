@@ -14,35 +14,57 @@ kind-dependencies:
     # Primary dependencies
     - build
 
-task-defaults:
-    run-on-repo-type: [hg]
-
 only-for-build-platforms:
     - linux64/opt
     - macosx64/opt
     - win32/opt
     - win64/opt
+    - android-aarch64/opt
+    # We don't need to archive android arm and x86_64 yet. See Bug 2032156
+    # - android-arm/opt
+    # - android-x86_64/opt
+
+task-defaults:
+    description: Beetmover integration submission - {build_platform}/{build_type}
+    run-on-repo-type: [hg]
+    if-dependencies:
+        - build
+    run-on-projects: [autoland-only]
+    treeherder:
+        tier: 2
+        kind: build
+        symbol: BM-int
+    worker-type: beetmover
+    scopes:
+        by-project:
+            autoland:
+                - project:releng:beetmover:bucket:integration
+                - project:releng:beetmover:action:direct-push-to-bucket
+            default:
+                - project:releng:beetmover:bucket:dep
+                - project:releng:beetmover:action:direct-push-to-bucket
 
 tasks:
     beetmover-integration:
-        description: Beetmover integration submission - {build_platform}/{build_type}
         from-deps:
             group-by: platform
+            with-attributes:
+                build_platform:
+                    - linux64
+                    - macosx64
+                    - win32
+                    - win64
         attributes:
             artifact_map: taskcluster/gecko_taskgraph/manifests/firefox_integration.yml
-        if-dependencies:
-            - build
-        run-on-projects: [autoland-only]
-        treeherder:
-            tier: 2
-            kind: build
-            symbol: BM-int
-        worker-type: beetmover
-        scopes:
-            by-project:
-                autoland:
-                    - project:releng:beetmover:bucket:integration
-                    - project:releng:beetmover:action:direct-push-to-bucket
-                default:
-                    - project:releng:beetmover:bucket:dep
-                    - project:releng:beetmover:action:direct-push-to-bucket
+
+    beetmover-integration-android:
+        from-deps:
+            group-by: platform
+            with-attributes:
+                build_platform:
+                    - android-aarch64
+                    # We don't need to archive android arm and x86_64 yet. See Bug 2032156
+                    # - android-arm
+                    # - android-x86_64
+        attributes:
+            artifact_map: taskcluster/gecko_taskgraph/manifests/mobile_integration.yml

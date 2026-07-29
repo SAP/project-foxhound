@@ -2,15 +2,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+@import url("chrome://global/content/elements/moz-badge.tokens.css");
+
 .moz-badge {
   display: flex;
   align-items: center;
   gap: var(--space-xsmall);
-  padding: var(--space-xsmall) var(--space-small);
+  padding: 0 var(--space-xsmall);
   width: fit-content;
   color: var(--badge-text-color);
-  border: 1px solid var(--badge-border-color);
-  border-radius: var(--border-radius-small);
+  /* Use outline so the border doesn't overlay the background and the size of
+   * the badge doesn't increase */
+  outline: var(--badge-border-width) solid var(--badge-border-color);
+  border-radius: var(--badge-border-radius);
 }
 
 .moz-badge-icon {
@@ -23,12 +27,13 @@
 
 .moz-badge-label {
   font-size: var(--font-size-small);
+  font-weight: var(--font-weight-semibold);
 }
 
 :host([type="new"]) {
   .moz-badge {
     color: var(--badge-text-color-filled);
     background-color: var(--badge-background-color-filled);
-    border-color: var(--badge-border-color-filled);
+    outline-color: var(--badge-border-color-filled);
   }
 }

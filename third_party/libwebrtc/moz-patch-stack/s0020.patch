@@ -17,7 +17,7 @@ Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/59fb6760bb6785a6f
  2 files changed, 22 insertions(+), 20 deletions(-)
 
 diff --git a/modules/video_capture/linux/device_info_v4l2.cc b/modules/video_capture/linux/device_info_v4l2.cc
-index fa930d8020..5c228772ab 100644
+index a836c701d0..f831ea37ab 100644
 --- a/modules/video_capture/linux/device_info_v4l2.cc
 +++ b/modules/video_capture/linux/device_info_v4l2.cc
 @@ -18,6 +18,7 @@
@@ -52,7 +52,7 @@ index fa930d8020..5c228772ab 100644
  
  int DeviceInfoV4l2::HandleEvents(int fd)
 diff --git a/modules/video_capture/linux/video_capture_v4l2.cc b/modules/video_capture/linux/video_capture_v4l2.cc
-index 1cb83f82d5..b8af09a7aa 100644
+index 0eef1ff172..b8fd584974 100644
 --- a/modules/video_capture/linux/video_capture_v4l2.cc
 +++ b/modules/video_capture/linux/video_capture_v4l2.cc
 @@ -11,7 +11,14 @@
@@ -70,7 +70,7 @@ index 1cb83f82d5..b8af09a7aa 100644
  #include <sys/ioctl.h>
  #include <sys/mman.h>
  #include <sys/select.h>
-@@ -417,16 +424,13 @@ bool VideoCaptureModuleV4L2::CaptureProcess() {
+@@ -422,16 +429,13 @@ bool VideoCaptureModuleV4L2::CaptureProcess() {
    RTC_CHECK_RUNS_SERIALIZED(&capture_checker_);
  
    int retVal = 0;
@@ -92,7 +92,7 @@ index 1cb83f82d5..b8af09a7aa 100644
  
    {
      MutexLock lock(&capture_lock_);
-@@ -436,12 +440,12 @@ bool VideoCaptureModuleV4L2::CaptureProcess() {
+@@ -441,12 +445,12 @@ bool VideoCaptureModuleV4L2::CaptureProcess() {
      }
  
      if (retVal < 0 && errno != EINTR) {  // continue if interrupted

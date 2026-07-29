@@ -38,7 +38,6 @@ support-files = [
 
 ["test_attrgetownerelement05.html"]
 
-["test_createAttributeNS01.html"]
 
 ["test_createAttributeNS02.html"]
 
@@ -48,7 +47,6 @@ support-files = [
 
 ["test_createAttributeNS06.html"]
 
-["test_createDocument01.html"]
 
 ["test_createDocument02.html"]
 
@@ -64,7 +62,6 @@ support-files = [
 
 ["test_createDocumentType03.html"]
 
-["test_createElementNS01.html"]
 
 ["test_createElementNS02.html"]
 

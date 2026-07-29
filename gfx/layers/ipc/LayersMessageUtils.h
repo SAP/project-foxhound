@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,7 +18,6 @@
 #include "mozilla/RelativeTo.h"
 #include "mozilla/ScrollSnapInfo.h"
 #include "mozilla/ServoBindings.h"
-#include "mozilla/ParamTraits_IsEnumCase.h"
 #include "mozilla/ParamTraits_TiedFields.h"
 #include "mozilla/ipc/ByteBuf.h"
 #include "mozilla/ipc/ProtocolMessageUtils.h"
@@ -159,11 +156,11 @@ struct ParamTraits<mozilla::layers::ScrollDirection>
           mozilla::layers::kHighestScrollDirection> {};
 
 template <>
-struct ParamTraits<mozilla::layers::FrameMetrics::ScrollOffsetUpdateType>
+struct ParamTraits<mozilla::layers::ScrollOffsetUpdateType>
     : public ContiguousEnumSerializerInclusive<
-          mozilla::layers::FrameMetrics::ScrollOffsetUpdateType,
-          mozilla::layers::FrameMetrics::ScrollOffsetUpdateType::eNone,
-          mozilla::layers::FrameMetrics::sHighestScrollOffsetUpdateType> {};
+          mozilla::layers::ScrollOffsetUpdateType,
+          mozilla::layers::ScrollOffsetUpdateType::None,
+          mozilla::layers::kHighestScrollOffsetUpdateType> {};
 
 template <>
 struct ParamTraits<mozilla::layers::RepaintRequest::ScrollOffsetUpdateType>
@@ -443,9 +440,16 @@ struct ParamTraits<mozilla::StyleScrollSnapStop>
           mozilla::StyleScrollSnapStop, mozilla::StyleScrollSnapStop::Normal,
           mozilla::StyleScrollSnapStop::Always> {};
 
+struct ScrollSnapTargetIdValidator {
+  using IntegralType = std::underlying_type_t<mozilla::ScrollSnapTargetId>;
+
+  static bool IsLegalValue(const IntegralType e) { return true; }
+};
+
 template <>
 struct ParamTraits<mozilla::ScrollSnapTargetId>
-    : public ParamTraits_IsEnumCase<mozilla::ScrollSnapTargetId> {};
+    : public EnumSerializer<mozilla::ScrollSnapTargetId,
+                            ScrollSnapTargetIdValidator> {};
 
 template <>
 struct ParamTraits<mozilla::SnapPoint> {
@@ -458,6 +462,23 @@ struct ParamTraits<mozilla::SnapPoint> {
 
   static bool Read(MessageReader* aReader, paramType* aResult) {
     return ReadParam(aReader, &aResult->mX) && ReadParam(aReader, &aResult->mY);
+  }
+};
+
+template <>
+struct ParamTraits<mozilla::ScrollSnapRange> {
+  typedef mozilla::ScrollSnapRange paramType;
+
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParam(aWriter, aParam.mDirection);
+    WriteParam(aWriter, aParam.mSnapArea);
+    WriteParam(aWriter, aParam.mTargetId);
+  }
+
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    return ReadParam(aReader, &aResult->mDirection) &&
+           ReadParam(aReader, &aResult->mSnapArea) &&
+           ReadParam(aReader, &aResult->mTargetId);
   }
 };
 
@@ -476,23 +497,6 @@ struct ParamTraits<mozilla::ScrollSnapInfo::SnapTarget> {
     return ReadParam(aReader, &aResult->mSnapPoint) &&
            ReadParam(aReader, &aResult->mSnapArea) &&
            ReadParam(aReader, &aResult->mScrollSnapStop) &&
-           ReadParam(aReader, &aResult->mTargetId);
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::ScrollSnapInfo::ScrollSnapRange> {
-  typedef mozilla::ScrollSnapInfo::ScrollSnapRange paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mDirection);
-    WriteParam(aWriter, aParam.mSnapArea);
-    WriteParam(aWriter, aParam.mTargetId);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &aResult->mDirection) &&
-           ReadParam(aReader, &aResult->mSnapArea) &&
            ReadParam(aReader, &aResult->mTargetId);
   }
 };
@@ -627,6 +631,7 @@ struct ParamTraits<mozilla::layers::ScrollMetadata>
     WriteParam(aWriter, aParam.mOverscrollBehavior);
     WriteParam(aWriter, aParam.mOverflow);
     WriteParam(aWriter, aParam.mScrollUpdates);
+    WriteParam(aWriter, aParam.mWritingMode);
   }
 
   static bool ReadContentDescription(MessageReader* aReader,
@@ -668,7 +673,8 @@ struct ParamTraits<mozilla::layers::ScrollMetadata>
            ReadParam(aReader, &aResult->mDisregardedDirection) &&
            ReadParam(aReader, &aResult->mOverscrollBehavior) &&
            ReadParam(aReader, &aResult->mOverflow) &&
-           ReadParam(aReader, &aResult->mScrollUpdates);
+           ReadParam(aReader, &aResult->mScrollUpdates) &&
+           ReadParam(aReader, &aResult->mWritingMode);
   }
 };
 
@@ -816,6 +822,7 @@ struct ParamTraits<mozilla::layers::APZEventResult> {
     WriteParam(aWriter, aParam.GetHandledResult());
     WriteParam(aWriter, aParam.mTargetGuid);
     WriteParam(aWriter, aParam.mInputBlockId);
+    WriteParam(aWriter, aParam.mTargetCanScrollHorizontally);
   }
 
   static bool Read(MessageReader* aReader, paramType* aResult) {
@@ -832,7 +839,8 @@ struct ParamTraits<mozilla::layers::APZEventResult> {
     aResult->UpdateHandledResult(handledResult);
 
     return (ReadParam(aReader, &aResult->mTargetGuid) &&
-            ReadParam(aReader, &aResult->mInputBlockId));
+            ReadParam(aReader, &aResult->mInputBlockId) &&
+            ReadParam(aReader, &aResult->mTargetCanScrollHorizontally));
   }
 };
 
@@ -1039,7 +1047,7 @@ struct ParamTraits<mozilla::layers::CompositorOptions> {
 
 template <>
 struct ParamTraits<mozilla::layers::OverlaySupportType>
-    : public ContiguousEnumSerializerInclusive<
+    : public ContiguousEnumSerializer<
           mozilla::layers::OverlaySupportType,
           mozilla::layers::OverlaySupportType::None,
           mozilla::layers::OverlaySupportType::MAX> {};

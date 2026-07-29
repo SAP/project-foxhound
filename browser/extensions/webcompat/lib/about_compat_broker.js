@@ -34,7 +34,11 @@ class AboutCompatBroker {
 
     async function broadcast(message) {
       for (const port of ports) {
-        port.postMessage(message);
+        try {
+          port.postMessage(message);
+        } catch (_) {
+          ports.delete(port);
+        }
       }
     }
 

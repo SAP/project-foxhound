@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -60,7 +59,7 @@ interface HTMLInputElement : HTMLElement {
            attribute boolean formNoValidate;
   [CEReactions, Pure, SetterThrows]
            attribute DOMString formTarget;
-  [CEReactions, Pure, SetterThrows]
+  [CEReactions, SetterThrows]
            attribute unsigned long height;
   [Pure]
            attribute boolean indeterminate;
@@ -216,7 +215,7 @@ interface mixin MozEditableElement {
   // Returns an nsIEditor instance which is associated with the element.
   // If the element can be associated with an editor but not yet created,
   // this creates new one automatically.
-  [Pure, ChromeOnly, BinaryName="editorForBindings"]
+  [ChromeOnly, BinaryName="editorForBindings"]
   readonly attribute nsIEditor? editor;
 
   // Returns true if an nsIEditor instance has already been associated with

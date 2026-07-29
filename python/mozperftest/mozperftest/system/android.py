@@ -117,7 +117,7 @@ class AndroidDevice(Layer):
             "help": (
                 "APK to install to the device "
                 "Can be a file, an url or an alias url from "
-                " %s" % ", ".join(_PERMALINKS.keys())
+                f" {', '.join(_PERMALINKS.keys())}"
             ),
         },
     }
@@ -179,7 +179,7 @@ class AndroidDevice(Layer):
         if self.capture_file is not None:
             self.capture_file.close()
         if self.capture_logcat is not None and self.device is not None:
-            self.info("Dumping logcat into %r" % str(self.capture_logcat))
+            self.info(f"Dumping logcat into {str(self.capture_logcat)!r}")
             with self.capture_logcat.open("wb") as f:
                 for line in self.device.get_logcat():
                     f.write(line.encode("utf8", errors="replace") + b"\n")
@@ -202,13 +202,13 @@ class AndroidDevice(Layer):
             apk = apks
             self.info("Uninstalling old version")
             self.device.uninstall_app(self.app_name)
-            self.info("Installing %s" % apk)
+            self.info(f"Installing {apk}")
             if str(apk) in _PERMALINKS:
                 apk = _PERMALINKS[apk]
             if str(apk).startswith("http"):
                 with tempfile.TemporaryDirectory() as tmpdirname:
                     target = Path(tmpdirname, "target.apk")
-                    self.info("Downloading %s" % apk)
+                    self.info(f"Downloading {apk}")
                     download_file(apk, target)
                     self.info("Installing downloaded APK")
                     self.device.install_app(str(target))
@@ -221,7 +221,7 @@ class AndroidDevice(Layer):
 
         # checking that the app is installed
         if not self.device.is_app_installed(self.app_name):
-            raise Exception("%s is not installed" % self.app_name)
+            raise Exception(f"{self.app_name} is not installed")
 
     def run(self, metadata):
         if self.get_arg("app") not in MOBILE_APPS:
@@ -287,7 +287,7 @@ class AndroidDevice(Layer):
             self.set_arg("android_activity", self.android_activity)
 
         self.info("Android environment:")
-        self.info("- Application name: %s" % self.app_name)
-        self.info("- Activity: %s" % self.android_activity)
-        self.info("- Intent: %s" % self.get_arg("android_intent"))
+        self.info(f"- Application name: {self.app_name}")
+        self.info(f"- Activity: {self.android_activity}")
+        self.info(f"- Intent: {self.get_arg('android_intent')}")
         return metadata

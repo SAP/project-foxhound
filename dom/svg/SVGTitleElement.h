@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +9,7 @@
 #include "nsStubMutationObserver.h"
 
 nsresult NS_NewSVGTitleElement(
-    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 namespace mozilla::dom {
 
 using SVGTitleElementBase = SVGElement;
@@ -21,9 +19,8 @@ class SVGTitleElement final : public SVGTitleElementBase,
  protected:
   friend nsresult(::NS_NewSVGTitleElement(
       nsIContent** aResult,
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
-  explicit SVGTitleElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo));
+  explicit SVGTitleElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
   ~SVGTitleElement() = default;
 
   JSObject* WrapNode(JSContext* aCx,

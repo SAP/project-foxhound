@@ -5,7 +5,7 @@
 package mozilla.components.compose.browser.awesomebar.internal.utils
 
 import androidx.compose.ui.tooling.preview.PreviewParameterProvider
-import mozilla.components.compose.browser.awesomebar.internal.optimizedsuggestions.ChangePercent
+import mozilla.components.concept.awesomebar.AwesomeBar.ChangePercent
 
 internal class StockSuggestionDataProvider : PreviewParameterProvider<StockSuggestionPreviewModel> {
 

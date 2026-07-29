@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,6 +34,10 @@ void APZCTreeManagerParent::ChildAdopted(
   MOZ_ASSERT(aAPZUpdater->HasTreeManager(aAPZCTreeManager));
   mTreeManager = std::move(aAPZCTreeManager);
   mUpdater = std::move(aAPZUpdater);
+}
+
+void APZCTreeManagerParent::ActorDestroy(ActorDestroyReason aWhy) {
+  CompositorBridgeParent::DisconnectApzcTreeManager(this);
 }
 
 mozilla::ipc::IPCResult APZCTreeManagerParent::RecvSetKeyboardMap(
@@ -184,6 +186,15 @@ mozilla::ipc::IPCResult APZCTreeManagerParent::RecvSetLongTapEnabled(
           "layers::IAPZCTreeManager::SetLongTapEnabled", mTreeManager,
           &IAPZCTreeManager::SetLongTapEnabled, aLongTapEnabled));
 
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult APZCTreeManagerParent::RecvNotifyApzAwareListenerAdded(
+    const ScrollableLayerGuid& aGuid) {
+  if (!IsGuidValid(aGuid)) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+  mTreeManager->NotifyApzAwareListenerAdded(aGuid);
   return IPC_OK();
 }
 

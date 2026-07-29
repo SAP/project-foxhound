@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -55,11 +53,9 @@ namespace mozilla {
 // They can be different so that we can continue to use 4KB pages on systems
 // with a larger page size. (WIP see Bug 1980047).
 //
-// On x86-64 they are both 4KiB.  However Apple Silicon has a 16KiB page size,
-// so gRealPageSize will be 16KiB, but in order to keep the number of
-// regions-per-run to 256 we want to limit gPageSize to 4KiB.  (4096 / 16 =
-// 256).  Other platforms with different gRealPageSizes might also have
-// different gRealPageSize and gPageSize.
+// For now they are the same on all platforms, since a lower logical page
+// size creates a performance regression due to smaller runs and more
+// frequent run allocation.
 //
 // gPageSize is always less than or equal to gRealPageSize.
 //
@@ -72,7 +68,7 @@ static const size_t gRealPageSize = 16_KiB;
 #  else
 static const size_t gRealPageSize = 4_KiB;
 #  endif
-static const size_t gPageSize = 4_KiB;
+static const size_t gPageSize = gRealPageSize;
 #else
 // When MALLOC_OPTIONS contains one or several `P`s, gPageSize will be
 // doubled for each `P`.  Likewise each 'p' will halve gPageSize.
@@ -81,8 +77,12 @@ extern size_t gPageSize;
 #endif
 
 // Return the smallest pagesize multiple that is >= s.
-#define PAGE_CEILING(s) (((s) + gPageSizeMask) & ~gPageSizeMask)
+#define PAGE_CEILING(s) \
+  (((s) + mozilla::gPageSizeMask) & ~mozilla::gPageSizeMask)
 #define REAL_PAGE_CEILING(s) (((s) + gRealPageSizeMask) & ~gRealPageSizeMask)
+
+// Return the largest pagesize multiple that is <= s.
+#define REAL_PAGE_FLOOR(s) ((s) & ~gRealPageSizeMask)
 
 #define PAGES_PER_REAL_PAGE_CEILING(s) \
   (((s) + gPagesPerRealPage - 1) & ~(gPagesPerRealPage - 1))
@@ -116,22 +116,26 @@ void DefineGlobals();
 #endif
 
 // Max size class for bins.
-#define gMaxBinClass (kMaxQuantumWideClass)
+#define gMaxBinClass \
+  (gMaxSubPageClass ? gMaxSubPageClass : kMaxQuantumWideClass)
 
 // Return the smallest chunk multiple that is >= s.
 #define CHUNK_CEILING(s) (((s) + kChunkSizeMask) & ~kChunkSizeMask)
 
 // Return the smallest cacheline multiple that is >= s.
-#define CACHELINE_CEILING(s) \
-  (((s) + (kCacheLineSize - 1)) & ~(kCacheLineSize - 1))
+#define CACHELINE_CEILING(s) (((s) + kCacheLineMask) & ~kCacheLineMask)
 
 // Return the smallest quantum multiple that is >= a.
 #define QUANTUM_CEILING(a) (((a) + (kQuantumMask)) & ~(kQuantumMask))
 #define QUANTUM_WIDE_CEILING(a) \
   (((a) + (kQuantumWideMask)) & ~(kQuantumWideMask))
 
+// Return the smallest sub page-size  that is >= a.
+#define SUBPAGE_CEILING(a) (std::bit_ceil(a))
+
 // Number of all the small-allocated classes
-#define NUM_SMALL_CLASSES (kNumQuantumClasses + kNumQuantumWideClasses)
+#define NUM_SMALL_CLASSES \
+  (kNumQuantumClasses + kNumQuantumWideClasses + gNumSubPageClasses)
 
 // Return the chunk address for allocation address a.
 static inline arena_chunk_t* GetChunkForPtr(const void* aPtr) {

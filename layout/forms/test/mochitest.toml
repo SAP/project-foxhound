@@ -51,6 +51,9 @@ skip-if = [
 ["test_bug549170.html"]
 
 ["test_bug562447.html"]
+skip-if = [
+  "standalone", # Bug 2026600
+]
 
 ["test_bug563642.html"]
 
@@ -110,6 +113,8 @@ skip-if = [
 ["test_listcontrol_search.html"]
 
 ["test_readonly.html"]
+
+["test_select_ctrl_a.html"]
 
 ["test_select_collapsed_page_keys.html"]
 skip-if = [

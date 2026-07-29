@@ -620,6 +620,7 @@ export class UnstoredDownloader extends Downloader {
       set: async () => {},
       setMultiple: async () => {},
       delete: async () => {},
+      deleteMultiple: async () => {},
       prune: async () => {},
       hasData: async () => false,
     };

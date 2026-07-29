@@ -35,11 +35,11 @@ add_task(async function test_about_compat_loads_properly() {
 
     content.verifyAllInterventionsOn = async function () {
       await ContentTaskUtils.waitForCondition(
-        () => content.document.querySelector("#interventions tr[data-id]"),
+        () => content.document.querySelector("#interventions [data-id]"),
         "interventions are listed"
       );
       await ContentTaskUtils.waitForCondition(
-        () => content.document.querySelector("#smartblock tr[data-id]"),
+        () => content.document.querySelector("#smartblock [data-id]"),
         "SmartBlock shims are listed"
       );
       ok(true, "Interventions and shims are listed");
@@ -78,13 +78,15 @@ add_task(async function test_about_compat_loads_properly() {
 
     // both should have their content scripts registered at startup
 
+    const { matches, excludeMatches } =
+      bgWin.interventions.getBlocksAndMatchesFor(
+        interventionWithContentScripts
+      );
     const interventionRCSId =
-      bgWin.interventions.buildContentScriptRegistrations(
-        interventionWithContentScripts.label,
-        interventionWithContentScripts.interventions[0],
-        bgWin.interventions.getBlocksAndMatchesFor(
-          interventionWithContentScripts
-        ).matches
+      bgWin.interventions.buildContentScriptsRegistrationsForIntervention(
+        interventionWithContentScripts,
+        matches,
+        excludeMatches
       )[0].id;
     const shimRCSId = `SmartBlock shim for ${shimWithContentScripts.id}: ${JSON.stringify(shimWithContentScripts.contentScripts[0])}`;
     ok(
@@ -142,8 +144,8 @@ add_task(async function test_about_compat_loads_properly() {
 
     // toggle the intervention
     await testToggling(
-      `tr[data-id='${interventionWithContentScripts.id}'] button[data-l10n-id=label-disable]`,
-      `tr[data-id='${interventionWithContentScripts.id}'] button[data-l10n-id=label-enable]`,
+      `[data-id='${interventionWithContentScripts.id}'] button[data-l10n-id=label-disable]`,
+      `[data-id='${interventionWithContentScripts.id}'] button[data-l10n-id=label-enable]`,
       interventionWithContentScripts,
       interventionRCSId,
       "intervention"
@@ -151,8 +153,8 @@ add_task(async function test_about_compat_loads_properly() {
 
     // toggle the shim
     await testToggling(
-      `tr[data-id='${shimWithContentScripts.id}'] button[data-l10n-id=label-disable]`,
-      `tr[data-id='${shimWithContentScripts.id}'] button[data-l10n-id=label-enable]`,
+      `[data-id='${shimWithContentScripts.id}'] button[data-l10n-id=label-disable]`,
+      `[data-id='${shimWithContentScripts.id}'] button[data-l10n-id=label-enable]`,
       shimWithContentScripts,
       shimRCSId,
       "shim"

@@ -755,11 +755,11 @@
             <td id="a11y-force-disabled">
             </td>
           </tr>
-#if defined(XP_WIN)
-          <tr>
+#if defined(XP_WIN) || defined(XP_MACOSX)
+          <tr id="a11y-instantiator" hidden="hidden">
             <th class="column" data-l10n-id="a11y-instantiator"/>
 
-            <td id="a11y-instantiator">
+            <td>
             </td>
           </tr>
 #endif
@@ -808,7 +808,7 @@
 
       <table>
         <tbody>
-          <tr>
+          <tr class="no-copy">
             <th class="column" data-l10n-id="startup-cache-disk-cache-path"/>
 
             <td id="startup-cache-disk-cache-path">

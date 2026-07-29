@@ -59,3 +59,22 @@ tasks:
                           - toml-path: mobile/android/fenix/l10n.toml
                           - toml-path: mobile/android/focus-android/l10n.toml
                           - toml-path: mobile/android/android-components/l10n.toml
+
+    sync-beta-to-release:
+        name: android_l10n_sync_beta_to_release
+        description: Sync android-l10n strings from beta to release
+        treeherder:
+            symbol: android-l10n(SR)
+        worker:
+            lando-repo:
+                by-project:
+                    try: staging-firefox-release
+                    default: firefox-release
+            ignore-closed-tree: true
+            actions:
+                - android-l10n-sync:
+                      from-branch: beta
+                      toml-info:
+                          - toml-path: mobile/android/fenix/l10n.toml
+                          - toml-path: mobile/android/focus-android/l10n.toml
+                          - toml-path: mobile/android/android-components/l10n.toml

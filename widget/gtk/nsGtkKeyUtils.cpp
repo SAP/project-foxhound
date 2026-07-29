@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=4:tabstop=4:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -723,7 +720,7 @@ void KeymapWrapper::HandleKeymap(uint32_t format, int fd, uint32_t size) {
     return;
   }
 
-  char* mapString = (char*)mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
+  char* mapString = (char*)mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
   if (mapString == MAP_FAILED) {
     MOZ_LOG(gKeyLog, LogLevel::Info,
             ("KeymapWrapper::HandleKeymap(): failed to allocate shm!"));
@@ -1111,33 +1108,34 @@ uint32_t KeymapWrapper::ComputeKeyModifiers(guint aGdkModifierState) {
 
 /* static */
 guint KeymapWrapper::ConvertWidgetModifierToGdkState(
-    nsIWidget::Modifiers aNativeModifiers) {
-  if (!aNativeModifiers) {
+    nsIWidget::NativeModifiers aNativeModifiers) {
+  if (aNativeModifiers == nsIWidget::NativeModifiers::NO_MODIFIERS) {
     return 0;
   }
   struct ModifierMapEntry {
-    nsIWidget::Modifiers mWidgetModifier;
+    nsIWidget::NativeModifiers mWidgetModifier;
     MappedModifier mModifier;
   };
   // TODO: Currently, we don't treat L/R of each modifier on Linux.
   // TODO: No proper native modifier for Level5.
   static constexpr ModifierMapEntry sModifierMap[] = {
-      {nsIWidget::CAPS_LOCK, MappedModifier::CAPS_LOCK},
-      {nsIWidget::NUM_LOCK, MappedModifier::NUM_LOCK},
-      {nsIWidget::SHIFT_L, MappedModifier::SHIFT},
-      {nsIWidget::SHIFT_R, MappedModifier::SHIFT},
-      {nsIWidget::CTRL_L, MappedModifier::CTRL},
-      {nsIWidget::CTRL_R, MappedModifier::CTRL},
-      {nsIWidget::ALT_L, MappedModifier::ALT},
-      {nsIWidget::ALT_R, MappedModifier::ALT},
-      {nsIWidget::ALTGRAPH, MappedModifier::LEVEL3},
-      {nsIWidget::COMMAND_L, MappedModifier::SUPER},
-      {nsIWidget::COMMAND_R, MappedModifier::SUPER}};
+      {nsIWidget::NativeModifiers::CAPS_LOCK, MappedModifier::CAPS_LOCK},
+      {nsIWidget::NativeModifiers::NUM_LOCK, MappedModifier::NUM_LOCK},
+      {nsIWidget::NativeModifiers::SHIFT_L, MappedModifier::SHIFT},
+      {nsIWidget::NativeModifiers::SHIFT_R, MappedModifier::SHIFT},
+      {nsIWidget::NativeModifiers::CTRL_L, MappedModifier::CTRL},
+      {nsIWidget::NativeModifiers::CTRL_R, MappedModifier::CTRL},
+      {nsIWidget::NativeModifiers::ALT_L, MappedModifier::ALT},
+      {nsIWidget::NativeModifiers::ALT_R, MappedModifier::ALT},
+      {nsIWidget::NativeModifiers::ALTGRAPH, MappedModifier::LEVEL3},
+      {nsIWidget::NativeModifiers::COMMAND_L, MappedModifier::SUPER},
+      {nsIWidget::NativeModifiers::COMMAND_R, MappedModifier::SUPER}};
 
   guint state = 0;
   KeymapWrapper* instance = GetInstance();
   for (const ModifierMapEntry& entry : sModifierMap) {
-    if (aNativeModifiers & entry.mWidgetModifier) {
+    if ((aNativeModifiers & entry.mWidgetModifier) !=
+        nsIWidget::NativeModifiers::NO_MODIFIERS) {
       state |= instance->GetGdkModifierMask(entry.mModifier);
     }
   }

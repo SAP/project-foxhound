@@ -18,6 +18,12 @@
 #   is_element_backed - whether this is an element-backed pseudo-element
 #                       https://drafts.csswg.org/css-pseudo-4/#element-like
 #   supports_user_action_state - true if this pseudo supports :hover etc.
+#   disabled_domains_pref - name of a pref (`DataMutexString`,
+#                           `mirror: always`, `rust: true`) listing domains
+#                           for which this pseudo-element should be treated
+#                           as disabled, even when it is otherwise enabled.
+#                           See `nsContentUtils::IsURIInList` for the value
+#                           format.
 #   argument - If provided, the argument this functional pseudo takes.
 #   pref - Same semantics as gecko_pref in longhands.toml
 #
@@ -27,11 +33,14 @@
 is_css2 = true
 is_eager = true
 is_flex_or_grid_item = true
+is_tree_abiding = true
 [before]
 is_css2 = true
 is_eager = true
 is_flex_or_grid_item = true
+is_tree_abiding = true
 [marker]
+is_tree_abiding = true
 [backdrop]
 [cue]
 is_js_created_nac = true
@@ -72,6 +81,14 @@ argument = "PtNameAndClassSelector"
 # containing block concept.
 [-moz-snapshot-containing-block]
 enabled_in = "ua"
+[picker]
+enabled_in = "ua"
+pref = "dom.select.customizable_select.enabled"
+argument = "AtomIdent"
+is_element_backed = true
+[checkmark]
+pref = "dom.select.customizable_select.enabled"
+is_tree_abiding = true
 
 # HTML5 Forms pseudo elements
 [-moz-number-spin-box]
@@ -91,10 +108,10 @@ enabled_in = "chrome"
 enabled_in = "chrome"
 is_element_backed = true
 # The menulist button of a <select>
-# TODO: Maybe unify with the base-appearance ::picker-icon pseudo?
-[-moz-select-picker-icon]
+[picker-icon]
 enabled_in = "chrome"
-is_element_backed = true
+pref = "dom.select.customizable_select.enabled"
+is_tree_abiding = true
 [-moz-progress-bar]
 supports_user_action_state = true
 [-moz-range-track]
@@ -107,20 +124,26 @@ supports_user_action_state = true
 supports_user_action_state = true
 [placeholder]
 supports_user_action_state = true
+is_element_backed = true
+parses_as_element_backed = false
 [-moz-color-swatch]
 supports_user_action_state = true
 # The root of the text value anonymous content inside an <input> or <textarea>.
 [-moz-text-control-editing-root]
 enabled_in = "ua"
+is_element_backed = true
 # The element that shows the autofill value.
 [-moz-text-control-preview]
 enabled_in = "ua"
+is_element_backed = true
 # The Reveal Password button for <input type=password>.
 [-moz-reveal]
+supports_user_action_state = true
 enabled_in = "ua"
 # The button in an <input type=file>
 [file-selector-button]
 supports_user_action_state = true
+is_tree_abiding = true
 # The cropped label in a file input.
 [-moz-file-content]
 enabled_in = "chrome"
@@ -143,6 +166,9 @@ supports_user_action_state = true
 enabled_in = "chrome"
 pref = "layout.css.details-content.enabled"
 is_element_backed = true
+[-webkit-scrollbar]
+pref = "layout.css.fake-webkit-scrollbar.enabled"
+disabled_domains_pref = "layout.css.fake-webkit-scrollbar.disabled-domains"
 
 # Tree pseudo-elements
 [-moz-tree-column]

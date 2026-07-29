@@ -62,14 +62,7 @@ skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug",
 ]
 
-["browser_popupNotification_hide_after_identity_panel.js"]
-skip-if = [
-  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug",
-  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
-  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug",
-]
-
-["browser_popupNotification_hide_after_protections_panel.js"]
+["browser_popupNotification_hide_after_trust_panel.js"]
 skip-if = [
   "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug",
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
@@ -98,17 +91,14 @@ skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug",
 ]
 
-["browser_popupNotification_queue.js"]
-skip-if = [
-  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug",
-  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
-  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug",
-]
+["browser_popupNotification_popupshown_leak.js"]
 
 ["browser_popupNotification_security_delay.js"]
 skip-if = [
-   "os == 'win' && arch == 'x86'", # Bug 1882452
+  "os == 'win' && arch == 'x86'", # Bug 1882452
 ]
+
+["browser_popupNotification_security_delay_cap.js"]
 
 ["browser_popupNotification_selection_required.js"]
 skip-if = [
@@ -118,6 +108,8 @@ skip-if = [
 ]
 
 ["browser_popupNotification_swapBrowser.js"]
+
+["browser_popupNotification_swapBrowserRefused.js"]
 
 ["browser_reshow_in_background.js"]
 skip-if = [

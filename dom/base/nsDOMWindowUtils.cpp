@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -34,6 +32,7 @@
 #include "mozilla/dom/Animation.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/BlobBinding.h"
+#include "mozilla/dom/ContentList.h"
 #include "mozilla/dom/DOMCollectedFramesBinding.h"
 #include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/DocumentInlines.h"
@@ -54,7 +53,6 @@
 #include "nsCaret.h"
 #include "nsCharsetSource.h"
 #include "nsComputedDOMStyle.h"
-#include "nsContentList.h"
 #include "nsContentUtils.h"
 #include "nsDeviceContext.h"
 #include "nsError.h"
@@ -69,6 +67,7 @@
 #include "nsJSUtils.h"
 #include "nsLayoutUtils.h"
 #include "nsMenuPopupFrame.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsPresContext.h"
 #include "nsQueryContentEventResult.h"
 #include "nsQueryObject.h"
@@ -200,21 +199,21 @@ class OldWindowSize : public LinkedListElement<OldWindowSize> {
 namespace {
 
 class NativeInputRunnable final : public PrioritizableRunnable {
-  explicit NativeInputRunnable(already_AddRefed<nsIRunnable>&& aEvent);
+  explicit NativeInputRunnable(already_AddRefed<nsIRunnable> aEvent);
   ~NativeInputRunnable() = default;
 
  public:
   static already_AddRefed<nsIRunnable> Create(
-      already_AddRefed<nsIRunnable>&& aEvent);
+      already_AddRefed<nsIRunnable> aEvent);
 };
 
-NativeInputRunnable::NativeInputRunnable(already_AddRefed<nsIRunnable>&& aEvent)
+NativeInputRunnable::NativeInputRunnable(already_AddRefed<nsIRunnable> aEvent)
     : PrioritizableRunnable(std::move(aEvent),
                             nsIRunnablePriority::PRIORITY_INPUT_HIGH) {}
 
 /* static */
 already_AddRefed<nsIRunnable> NativeInputRunnable::Create(
-    already_AddRefed<nsIRunnable>&& aEvent) {
+    already_AddRefed<nsIRunnable> aEvent) {
   MOZ_ASSERT(NS_IsMainThread());
   nsCOMPtr<nsIRunnable> event(new NativeInputRunnable(std::move(aEvent)));
   return event.forget();
@@ -222,7 +221,7 @@ already_AddRefed<nsIRunnable> NativeInputRunnable::Create(
 
 }  // unnamed namespace
 
-MOZ_RUNINIT LinkedList<OldWindowSize> OldWindowSize::sList;
+constinit LinkedList<OldWindowSize> OldWindowSize::sList;
 
 NS_INTERFACE_MAP_BEGIN(nsDOMWindowUtils)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDOMWindowUtils)
@@ -827,86 +826,82 @@ nsDOMWindowUtils::SendWheelEvent(float aX, float aY, double aDeltaX,
 }
 
 static_assert(
-    static_cast<uint32_t>(nsIWidget::Modifiers::CAPS_LOCK) ==
+    static_cast<uint32_t>(nsIWidget::NativeModifiers::CAPS_LOCK) ==
         static_cast<uint32_t>(nsIDOMWindowUtils::NATIVE_MODIFIER_CAPS_LOCK),
-    "Need to sync CapsLock value between nsIWidget::Modifiers and "
+    "Need to sync CapsLock value between nsIWidget::NativeModifiers and "
     "nsIDOMWindowUtils");
 static_assert(
-    static_cast<uint32_t>(nsIWidget::Modifiers::NUM_LOCK) ==
+    static_cast<uint32_t>(nsIWidget::NativeModifiers::NUM_LOCK) ==
         static_cast<uint32_t>(nsIDOMWindowUtils::NATIVE_MODIFIER_NUM_LOCK),
-    "Need to sync NumLock value between nsIWidget::Modifiers and "
+    "Need to sync NumLock value between nsIWidget::NativeModifiers and "
     "nsIDOMWindowUtils");
 static_assert(
-    static_cast<uint32_t>(nsIWidget::Modifiers::SHIFT_L) ==
+    static_cast<uint32_t>(nsIWidget::NativeModifiers::SHIFT_L) ==
         static_cast<uint32_t>(nsIDOMWindowUtils::NATIVE_MODIFIER_SHIFT_LEFT),
-    "Need to sync ShiftLeft value between nsIWidget::Modifiers and "
+    "Need to sync ShiftLeft value between nsIWidget::NativeModifiers and "
     "nsIDOMWindowUtils");
 static_assert(
-    static_cast<uint32_t>(nsIWidget::Modifiers::SHIFT_R) ==
+    static_cast<uint32_t>(nsIWidget::NativeModifiers::SHIFT_R) ==
         static_cast<uint32_t>(nsIDOMWindowUtils::NATIVE_MODIFIER_SHIFT_RIGHT),
-    "Need to sync ShiftRight value between nsIWidget::Modifiers and "
+    "Need to sync ShiftRight value between nsIWidget::NativeModifiers and "
     "nsIDOMWindowUtils");
 static_assert(
-    static_cast<uint32_t>(nsIWidget::Modifiers::CTRL_L) ==
+    static_cast<uint32_t>(nsIWidget::NativeModifiers::CTRL_L) ==
         static_cast<uint32_t>(nsIDOMWindowUtils::NATIVE_MODIFIER_CONTROL_LEFT),
-    "Need to sync ControlLeft value between nsIWidget::Modifiers and "
+    "Need to sync ControlLeft value between nsIWidget::NativeModifiers and "
     "nsIDOMWindowUtils");
 static_assert(
-    static_cast<uint32_t>(nsIWidget::Modifiers::CTRL_R) ==
+    static_cast<uint32_t>(nsIWidget::NativeModifiers::CTRL_R) ==
         static_cast<uint32_t>(nsIDOMWindowUtils::NATIVE_MODIFIER_CONTROL_RIGHT),
-    "Need to sync ControlRight value between nsIWidget::Modifiers "
+    "Need to sync ControlRight value between nsIWidget::NativeModifiers "
     "and nsIDOMWindowUtils");
 static_assert(
-    static_cast<uint32_t>(nsIWidget::Modifiers::ALT_L) ==
+    static_cast<uint32_t>(nsIWidget::NativeModifiers::ALT_L) ==
         static_cast<uint32_t>(nsIDOMWindowUtils::NATIVE_MODIFIER_ALT_LEFT),
-    "Need to sync AltLeft value between nsIWidget::Modifiers and "
+    "Need to sync AltLeft value between nsIWidget::NativeModifiers and "
     "nsIDOMWindowUtils");
 static_assert(
-    static_cast<uint32_t>(nsIWidget::Modifiers::ALT_R) ==
+    static_cast<uint32_t>(nsIWidget::NativeModifiers::ALT_R) ==
         static_cast<uint32_t>(nsIDOMWindowUtils::NATIVE_MODIFIER_ALT_RIGHT),
-    "Need to sync AltRight value between nsIWidget::Modifiers and "
+    "Need to sync AltRight value between nsIWidget::NativeModifiers and "
     "nsIDOMWindowUtils");
 static_assert(
-    static_cast<uint32_t>(nsIWidget::Modifiers::COMMAND_L) ==
+    static_cast<uint32_t>(nsIWidget::NativeModifiers::COMMAND_L) ==
         static_cast<uint32_t>(nsIDOMWindowUtils::NATIVE_MODIFIER_COMMAND_LEFT),
-    "Need to sync CommandLeft value between nsIWidget::Modifiers and "
+    "Need to sync CommandLeft value between nsIWidget::NativeModifiers and "
     "nsIDOMWindowUtils");
 static_assert(
-    static_cast<uint32_t>(nsIWidget::Modifiers::COMMAND_R) ==
+    static_cast<uint32_t>(nsIWidget::NativeModifiers::COMMAND_R) ==
         static_cast<uint32_t>(nsIDOMWindowUtils::NATIVE_MODIFIER_COMMAND_RIGHT),
-    "Need to sync CommandRight value between nsIWidget::Modifiers "
+    "Need to sync CommandRight value between nsIWidget::NativeModifiers "
     "and nsIDOMWindowUtils");
 static_assert(
-    static_cast<uint32_t>(nsIWidget::Modifiers::HELP) ==
+    static_cast<uint32_t>(nsIWidget::NativeModifiers::HELP) ==
         static_cast<uint32_t>(nsIDOMWindowUtils::NATIVE_MODIFIER_HELP),
-    "Need to sync Help value between nsIWidget::Modifiers and "
+    "Need to sync Help value between nsIWidget::NativeModifiers and "
     "nsIDOMWindowUtils");
 static_assert(
-    static_cast<uint32_t>(nsIWidget::Modifiers::ALTGRAPH) ==
+    static_cast<uint32_t>(nsIWidget::NativeModifiers::ALTGRAPH) ==
         static_cast<uint32_t>(nsIDOMWindowUtils::NATIVE_MODIFIER_ALT_GRAPH),
-    "Need to sync AltGraph value between nsIWidget::Modifiers and "
+    "Need to sync AltGraph value between nsIWidget::NativeModifiers and "
     "nsIDOMWindowUtils");
 static_assert(
-    static_cast<uint32_t>(nsIWidget::Modifiers::FUNCTION) ==
+    static_cast<uint32_t>(nsIWidget::NativeModifiers::FUNCTION) ==
         static_cast<uint32_t>(nsIDOMWindowUtils::NATIVE_MODIFIER_FUNCTION),
-    "Need to sync Function value between nsIWidget::Modifiers and "
+    "Need to sync Function value between nsIWidget::NativeModifiers and "
     "nsIDOMWindowUtils");
-static_assert(static_cast<uint32_t>(nsIWidget::Modifiers::NUMERIC_KEY_PAD) ==
-                  static_cast<uint32_t>(
-                      nsIDOMWindowUtils::NATIVE_MODIFIER_NUMERIC_KEY_PAD),
-              "Need to sync NumericKeyPad value between nsIWidget::Modifiers "
-              "and nsIDOMWindowUtils");
+static_assert(
+    static_cast<uint32_t>(nsIWidget::NativeModifiers::NUMERIC_KEY_PAD) ==
+        static_cast<uint32_t>(
+            nsIDOMWindowUtils::NATIVE_MODIFIER_NUMERIC_KEY_PAD),
+    "Need to sync NumericKeyPad value between nsIWidget::NativeModifiers "
+    "and nsIDOMWindowUtils");
 
-static nsIWidget::Modifiers GetWidgetModifiers(uint32_t aNativeModifiers) {
-  nsIWidget::Modifiers widgetModifiers = static_cast<nsIWidget::Modifiers>(
-      aNativeModifiers &
-      (nsIWidget::Modifiers::CAPS_LOCK | nsIWidget::Modifiers::NUM_LOCK |
-       nsIWidget::Modifiers::SHIFT_L | nsIWidget::Modifiers::SHIFT_R |
-       nsIWidget::Modifiers::CTRL_L | nsIWidget::Modifiers::CTRL_R |
-       nsIWidget::Modifiers::ALT_L | nsIWidget::Modifiers::ALT_R |
-       nsIWidget::Modifiers::COMMAND_L | nsIWidget::Modifiers::COMMAND_R |
-       nsIWidget::Modifiers::HELP | nsIWidget::Modifiers::ALTGRAPH |
-       nsIWidget::Modifiers::FUNCTION | nsIWidget::Modifiers::NUMERIC_KEY_PAD));
+static nsIWidget::NativeModifiers GetWidgetModifiers(
+    uint32_t aNativeModifiers) {
+  nsIWidget::NativeModifiers widgetModifiers =
+      static_cast<nsIWidget::NativeModifiers>(aNativeModifiers) &
+      nsIWidget::NativeModifiers::ALL_BITS;
   NS_ASSERTION(static_cast<uint32_t>(widgetModifiers) == aNativeModifiers,
                "Invalid value is specified to the native modifiers");
   return widgetModifiers;
@@ -926,12 +921,12 @@ nsDOMWindowUtils::SendNativeKeyEvent(int32_t aNativeKeyboardLayout,
   }
 
   NS_DispatchToMainThread(NativeInputRunnable::Create(
-      NewRunnableMethod<int32_t, int32_t, uint32_t, nsString, nsString,
-                        nsISynthesizedEventCallback*>(
+      NewRunnableMethod<int32_t, int32_t, nsIWidget::NativeModifiers, nsString,
+                        nsString, nsISynthesizedEventCallback*>(
           "nsIWidget::SynthesizeNativeKeyEvent", widget,
           &nsIWidget::SynthesizeNativeKeyEvent, aNativeKeyboardLayout,
-          aNativeKeyCode, static_cast<uint32_t>(GetWidgetModifiers(aModifiers)),
-          aCharacters, aUnmodifiedCharacters, aCallback)));
+          aNativeKeyCode, GetWidgetModifiers(aModifiers), aCharacters,
+          aUnmodifiedCharacters, aCallback)));
   return NS_OK;
 }
 
@@ -970,7 +965,7 @@ nsDOMWindowUtils::SendNativeMouseEvent(int32_t aScreenX, int32_t aScreenY,
 
   NS_DispatchToMainThread(NativeInputRunnable::Create(
       NewRunnableMethod<LayoutDeviceIntPoint, nsIWidget::NativeMouseMessage,
-                        MouseButton, nsIWidget::Modifiers,
+                        MouseButton, nsIWidget::NativeModifiers,
                         nsISynthesizedEventCallback*>(
           "nsIWidget::SynthesizeNativeMouseEvent", widget,
           &nsIWidget::SynthesizeNativeMouseEvent,
@@ -994,12 +989,13 @@ nsDOMWindowUtils::SendNativeMouseScrollEvent(
 
   NS_DispatchToMainThread(NativeInputRunnable::Create(
       NewRunnableMethod<mozilla::LayoutDeviceIntPoint, uint32_t, double, double,
-                        double, uint32_t, uint32_t,
+                        double, nsIWidget::NativeModifiers, uint32_t,
                         nsISynthesizedEventCallback*>(
           "nsIWidget::SynthesizeNativeMouseScrollEvent", widget,
           &nsIWidget::SynthesizeNativeMouseScrollEvent,
           LayoutDeviceIntPoint(aScreenX, aScreenY), aNativeMessage, aDeltaX,
-          aDeltaY, aDeltaZ, aModifierFlags, aAdditionalFlags, aCallback)));
+          aDeltaY, aDeltaZ, GetWidgetModifiers(aModifierFlags),
+          aAdditionalFlags, aCallback)));
   return NS_OK;
 }
 
@@ -1367,12 +1363,11 @@ nsDOMWindowUtils::NodesFromRect(float aX, float aY, float aTopSize,
                                 float aRightSize, float aBottomSize,
                                 float aLeftSize, bool aIgnoreRootScrollFrame,
                                 bool aFlushLayout, bool aOnlyVisible,
-                                float aVisibleThreshold,
-                                nsINodeList** aReturn) {
+                                float aVisibleThreshold, NodeList** aReturn) {
   RefPtr<Document> doc = GetDocument();
   NS_ENSURE_STATE(doc);
 
-  auto list = MakeRefPtr<nsSimpleContentList>(doc);
+  auto list = MakeRefPtr<SimpleContentList>(doc);
 
   // The visible threshold was omitted or given a zero value (which makes no
   // sense), so give a reasonable default.
@@ -1605,13 +1600,13 @@ nsDOMWindowUtils::ScrollToVisual(float aOffsetX, float aOffsetY,
       presContext->PresShell()->GetRootScrollContainerFrame();
   NS_ENSURE_TRUE(sf, NS_ERROR_NOT_AVAILABLE);
 
-  FrameMetrics::ScrollOffsetUpdateType updateType;
+  ScrollOffsetUpdateType updateType;
   switch (aUpdateType) {
     case UPDATE_TYPE_RESTORE:
-      updateType = FrameMetrics::eRestore;
+      updateType = ScrollOffsetUpdateType::Restore;
       break;
     case UPDATE_TYPE_MAIN_THREAD:
-      updateType = FrameMetrics::eMainThread;
+      updateType = ScrollOffsetUpdateType::MainThread;
       break;
     default:
       return NS_ERROR_INVALID_ARG;
@@ -1710,26 +1705,38 @@ Result<mozilla::LayoutDeviceRect, nsresult> nsDOMWindowUtils::ConvertTo(
     return Err(NS_ERROR_NOT_AVAILABLE);
   }
 
-  // Note that if the document is NOT in OOP iframes, i.e. it's in the top level
-  // content subtree in the same process,
-  // nsIWidget::WidgetToTopLevelWidgetTransform() doesn't include the desktop
-  // zoom value, so for documents in the top level content document subtree,
-  // this ViewportUtils::DocumentRelativeLayoutToVisual call applies the desktop
-  // zoom value via PresShell::GetResolution() in the function.
   CSSRect rect(aX, aY, aWidth, aHeight);
-  rect = ViewportUtils::DocumentRelativeLayoutToVisual(rect, presShell);
 
+  nsRect appUnitsRect = CSSPixel::ToAppUnits(rect);
   nsPresContext* presContext = presShell->GetPresContext();
   MOZ_ASSERT(presContext);
+  nsPresContext* rootPresContext = presContext->GetRootPresContext();
+  MOZ_ASSERT(rootPresContext);
 
-  // For OOP iframe documents, we don't have desktop zoom value specifically in
-  // each iframe documents (i.e. the in-process root presshell's resolution is
-  // 1.0), instead nsIWidget::WidgetToTopLevelWidgetTransform() includes the
+  // Use TransformRect to map coordinates from the subdocument frame to the
+  // top-level root frame, applying intermediate CSS transforms. For OOP iframe
+  // documents, rootFrame and topRootFrame are the same frame, so this is a
+  // no-op.
+  if (presContext != rootPresContext) {
+    nsIFrame* rootFrame = presShell->GetRootFrame();
+    nsIFrame* topRootFrame = rootPresContext->PresShell()->GetRootFrame();
+    if (rootFrame && topRootFrame) {
+      nsLayoutUtils::TransformRect(rootFrame, topRootFrame, appUnitsRect);
+    }
+  }
+
+  LayoutDeviceRect devPixelsRect = LayoutDeviceRect::FromAppUnits(
+      appUnitsRect, rootPresContext->AppUnitsPerDevPixel());
+
+  // Apply the desktop zoom value via PresShell::GetResolution()
+  devPixelsRect =
+      ViewportUtils::DocumentRelativeLayoutToVisual(devPixelsRect, presShell);
+
+  // For OOP iframe documents, we don't have the desktop zoom value specifically
+  // in each iframe document (i.e. the in-process root presshell's resolution is
+  // 1.0). Instead, nsIWidget::WidgetToTopLevelWidgetTransform() includes the
   // desktop zoom scale value along with translations by ancestor scroll
   // containers, ancestor CSS transforms, etc.
-  nsRect appUnitsRect = CSSPixel::ToAppUnits(rect);
-  LayoutDeviceRect devPixelsRect = LayoutDeviceRect::FromAppUnits(
-      appUnitsRect, presContext->AppUnitsPerDevPixel());
   devPixelsRect =
       widget->WidgetToTopLevelWidgetTransform().TransformBounds(devPixelsRect);
 
@@ -1742,6 +1749,20 @@ Result<mozilla::LayoutDeviceRect, nsresult> nsDOMWindowUtils::ConvertTo(
       break;
   }
   return devPixelsRect;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::GetElementBoundingScreenRect(Element* aElement,
+                                               DOMRect** aResult) {
+  NS_ENSURE_ARG_POINTER(aElement);
+
+  CSSRect rect;
+  if (nsIFrame* frame = aElement->GetPrimaryFrame(FlushType::Layout)) {
+    rect = CSSRect::FromAppUnits(frame->GetBoundingClientRect());
+  }
+
+  return ToScreenRectInCSSUnits(rect.x, rect.y, rect.width, rect.height,
+                                aResult);
 }
 
 NS_IMETHODIMP
@@ -2278,8 +2299,6 @@ nsDOMWindowUtils::SendQueryContentEvent(uint32_t aType, int64_t aOffset,
   LayoutDeviceIntPoint pt(aX, aY);
 
   WidgetQueryContentEvent::Options options;
-  options.mUseNativeLineBreak =
-      !(aAdditionalFlags & QUERY_CONTENT_FLAG_USE_XP_LINE_BREAK);
   options.mRelativeToInsertionPoint =
       (aAdditionalFlags &
        QUERY_CONTENT_FLAG_OFFSET_RELATIVE_TO_INSERTION_POINT) != 0;
@@ -2366,8 +2385,6 @@ nsDOMWindowUtils::SendSelectionSetEvent(uint32_t aOffset, uint32_t aLength,
   selectionEvent.mOffset = aOffset;
   selectionEvent.mLength = aLength;
   selectionEvent.mReversed = (aAdditionalFlags & SELECTION_SET_FLAG_REVERSE);
-  selectionEvent.mUseNativeLineBreak =
-      !(aAdditionalFlags & SELECTION_SET_FLAG_USE_XP_LINE_BREAK);
 
   widget->DispatchEvent(&selectionEvent);
 
@@ -2912,7 +2929,7 @@ static CaretInfo GetCaretContentAndBounds(
   // focused element will have multi-line content.
   nsIFrame* frame = aElement->GetPrimaryFrame();
   if (frame) {
-    RefPtr<nsCaret> caret = frame->PresShell()->GetCaret();
+    RefPtr<nsCaret> caret = frame->PresShell()->GetActiveCaret();
     if (caret && caret->IsVisible()) {
       nsRect rect;
       if (nsIFrame* textFrame = caret->GetGeometry(&rect)) {
@@ -2983,8 +3000,8 @@ nsDOMWindowUtils::ZoomToFocusedInput() {
   if (caretInfo.frame) {
     presShell->ScrollFrameIntoView(
         caretInfo.frame, caretInfo.caretRectRelativeToTextFrame,
-        ScrollAxis(WhereToScroll::Center, WhenToScroll::IfNotVisible),
-        ScrollAxis(WhereToScroll::Center, WhenToScroll::IfNotVisible),
+        AxisScrollParams(WhereToScroll::Center, WhenToScroll::IfNotVisible),
+        AxisScrollParams(WhereToScroll::Center, WhenToScroll::IfNotVisible),
         ScrollFlags::ForZoomToFocusedInput);
   }
 
@@ -3126,7 +3143,13 @@ nsDOMWindowUtils::GetUnanimatedComputedStyle(Element* aElement,
     return NS_ERROR_FAILURE;
   }
 
-  Maybe<PseudoStyleRequest> pseudo = PseudoStyleRequest::Parse(aPseudoElement);
+  RefPtr<Document> doc = GetDocument();
+  if (!doc) {
+    return NS_ERROR_FAILURE;
+  }
+
+  Maybe<PseudoStyleRequest> pseudo =
+      PseudoStyleRequest::Parse(aPseudoElement, doc->DefaultStyleAttrURLData());
   if (!pseudo) {
     return NS_ERROR_FAILURE;
   }
@@ -3328,7 +3351,7 @@ nsDOMWindowUtils::GetFilePath(JS::Handle<JS::Value> aFile, JSContext* aCx,
       return rv.StealNSResult();
     }
 
-    _retval = filePath;
+    _retval = std::move(filePath);
     return NS_OK;
   }
 
@@ -3454,11 +3477,12 @@ nsDOMWindowUtils::SetVisualViewportSize(float aWidth, float aHeight) {
 }
 
 nsresult nsDOMWindowUtils::RemoteFrameFullscreenChanged(
-    Element* aFrameElement) {
+    Element* aFrameElement, bool aFullscreenKeyboardLockEnabled) {
   nsCOMPtr<Document> doc = GetDocument();
   NS_ENSURE_STATE(doc);
 
-  doc->RemoteFrameFullscreenChanged(aFrameElement);
+  doc->RemoteFrameFullscreenChanged(aFrameElement,
+                                    aFullscreenKeyboardLockEnabled);
   return NS_OK;
 }
 
@@ -4281,10 +4305,9 @@ nsDOMWindowUtils::WrCapture() {
 }
 
 NS_IMETHODIMP
-nsDOMWindowUtils::WrStartCaptureSequence(const nsACString& aPath,
-                                         uint32_t aFlags) {
+nsDOMWindowUtils::WrStartCaptureSequence(uint32_t aFlags) {
   if (WebRenderBridgeChild* wrbc = GetWebRenderBridge()) {
-    wrbc->StartCaptureSequence(nsCString(aPath), aFlags);
+    wrbc->StartCaptureSequence(aFlags);
   }
   return NS_OK;
 }

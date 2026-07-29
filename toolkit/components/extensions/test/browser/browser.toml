@@ -66,6 +66,8 @@ run-if = [
 
 ["browser_ext_themes_persistence.js"]
 
+["browser_ext_themes_private_nova.js"]
+
 ["browser_ext_themes_reset.js"]
 
 ["browser_ext_themes_sanitization.js"]

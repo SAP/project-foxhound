@@ -4,10 +4,6 @@
   <title>W3C Web Authentication - Attestation Conveyance</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="u2futil.js"></script>
-  <script type="text/javascript" src="pkijs/common.js"></script>
-  <script type="text/javascript" src="pkijs/asn1.js"></script>
-  <script type="text/javascript" src="pkijs/x509_schema.js"></script>
-  <script type="text/javascript" src="pkijs/x509_simpl.js"></script>
   <script type="text/javascript" src="cbor.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -27,12 +23,23 @@
       await addVirtualAuthenticator();
     });
 
+    // The fixed AAGUID used by the virtual authenticator (see test_token.rs).
+    const VIRTUAL_TOKEN_AAGUID = [
+      0x68, 0xe1, 0x00, 0xa5, 0x0b, 0x47, 0x91, 0x04,
+      0xb8, 0x54, 0x97, 0xa9, 0xba, 0x51, 0x06, 0x38,
+    ];
+
     function verifyAnonymizedCertificate(aResult) {
       return webAuthnDecodeCBORAttestation(aResult.response.attestationObject)
-      .then(({fmt, attStmt}) => {
+      .then(({fmt, attStmt, authDataObj}) => {
         is(fmt, "none", "Is a None Attestation");
         is(typeof(attStmt), "object", "attStmt is a map");
         is(Object.keys(attStmt).length, 0, "attStmt is empty");
+        // Anonymizing strips the attestation statement but must preserve the
+        // AAGUID, which identifies the make/model of the authenticator but no
+        // individual user/device (bug 1935842).
+        is(hexEncode(authDataObj.attestationAuthData.aaguid),
+           hexEncode(VIRTUAL_TOKEN_AAGUID), "AAGUID is preserved");
       });
     }
 

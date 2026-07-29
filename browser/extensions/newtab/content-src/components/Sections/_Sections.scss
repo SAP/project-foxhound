@@ -4,6 +4,7 @@
     grid-gap: var(--space-xxlarge);
     grid-template-columns: repeat(auto-fit, $card-width);
     margin: 0;
+    padding: 0;
 
     @media (max-width: $break-point-medium) {
       @include context-menu-open-left;

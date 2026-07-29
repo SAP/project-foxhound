@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -40,7 +38,7 @@ class CTPolicyEnforcerTest : public ::testing::Test {
     SignedCertificateTimestamp sct;
     sct.version = SignedCertificateTimestamp::Version::V1;
     sct.timestamp = timestamp;
-    sct.leafIndex = leafIndex;
+    sct.leafIndex = std::move(leafIndex);
     Buffer logId;
     GetLogId(logId, logNo);
     sct.logId = std::move(logId);

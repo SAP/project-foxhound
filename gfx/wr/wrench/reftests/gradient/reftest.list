@@ -1,5 +1,5 @@
 platform(linux,mac) == premultiplied-aligned.yaml premultiplied-aligned.png
-fuzzy(1,500) platform(linux,mac) == premultiplied-angle.yaml premultiplied-angle.png
+fuzzy(1,700) platform(linux,mac) == premultiplied-angle.yaml premultiplied-angle.png
 platform(linux,mac) == premultiplied-radial.yaml premultiplied-radial.png
 platform(linux,mac) fuzzy(1,250) == premultiplied-conic.yaml premultiplied-conic.png
 
@@ -19,7 +19,8 @@ platform(linux,mac) fuzzy(1,35000) == linear-stops.yaml linear-stops-ref.png
 == linear-clamp-2.yaml linear-clamp-2-ref.yaml
 
 fuzzy-range(<=1,*4800) == linear-hard-stop.yaml linear-hard-stop-ref.png
-fuzzy-if(env(android,device),15,17000) == linear-hard-stop-repeat-large.yaml linear-hard-stop-repeat-large-ref.yaml # Android device is Samsung Galaxy A51
+fuzzy(1,9000) fuzzy-if(env(android,device),15,17000) == linear-hard-stop-repeat-large.yaml linear-hard-stop-repeat-large-ref.yaml # Android device is Samsung Galaxy A51
+fuzzy-if(platform(swgl),255,920) == linear-hard-stop-45-degrees.yaml linear-hard-stop-45-degrees-ref.png
 
 # dithering requires us to fuzz here
 fuzzy(1,20000) == linear.yaml linear-ref.yaml
@@ -64,6 +65,7 @@ fuzzy(255,1652) == repeat-conic-negative.yaml repeat-conic-ref.yaml
 fuzzy(1,83164) == tiling-linear-1.yaml tiling-linear-1-ref.yaml
 fuzzy(1,46293) == tiling-linear-2.yaml tiling-linear-2-ref.yaml
 fuzzy(1,62154) == tiling-linear-3.yaml tiling-linear-3-ref.yaml
+== tiling-linear-downscale.yaml tiling-linear-downscale-ref.yaml
 
 fuzzy(1,30) fuzzy-if(platform(win),1,7548) == tiling-radial-1.yaml tiling-radial-1-ref.yaml
 fuzzy(1,10) == tiling-radial-2.yaml tiling-radial-2-ref.yaml
@@ -81,7 +83,7 @@ fuzzy(1,320) fuzzy-if(platform(win),2,45278) == tiling-conic-3.yaml tiling-conic
 == linear-adjust-tile-size.yaml linear-adjust-tile-size-ref.yaml
 == linear-repeat-clip.yaml linear-repeat-clip-ref.yaml
 
-platform(linux,mac) == linear-aligned-border-radius.yaml linear-aligned-border-radius.png
+fuzzy(2,50) platform(linux,mac) == linear-aligned-border-radius.yaml linear-aligned-border-radius.png
 # interpolation fuzz from sampling texture-baked gradient ramps
 platform(linux,mac) fuzzy-range(<=1,*1404) == repeat-border-radius.yaml repeat-border-radius.png
 fuzzy(3,6000) == radial-border-radius-large.yaml radial-border-radius-large-ref.png
@@ -116,7 +118,7 @@ fuzzy-range(<=1,1) == gradient_cache_hardstop_clip.yaml gradient_cache_hardstop_
 # Exercise the radial gradient optimization code path
 == radial-optimized.yaml radial-optimized-ref.yaml
 == radial-optimized-2.yaml radial-optimized-2-ref.yaml
-== radial-tiling-optimized.yaml radial-tiling-optimized-ref.yaml
+fuzzy(2,200) == radial-tiling-optimized.yaml radial-tiling-optimized-ref.yaml
 
 # Exercise the cached gradient scaling code path
 fuzzy(2,23000) == linear-large.yaml linear-large-ref.yaml

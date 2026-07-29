@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -44,6 +42,7 @@
 #include "vm/Opcodes.h"
 #include "vm/RealmFuses.h"
 #include "vm/RuntimeFuses.h"
+#include "vm/StringFlags.h"
 #include "wasm/WasmAnyRef.h"
 
 // [SMDOC] MacroAssembler multi-platform overview
@@ -261,8 +260,6 @@ enum class CheckUnsafeCallWithABI {
 // as an ABI function signature.
 template <typename Sig>
 static inline DynFn DynamicFunction(Sig fun);
-
-enum class CharEncoding { Latin1, TwoByte };
 
 constexpr uint32_t WasmCallerInstanceOffsetBeforeCall =
     wasm::FrameWithInstances::callerInstanceOffsetWithoutFrame();
@@ -1176,6 +1173,8 @@ class MacroAssembler : public MacroAssemblerSpecific {
   inline void mulPtr(Register rhs, Register srcDest) PER_ARCH;
   inline void mulPtr(ImmWord rhs, Register srcDest) PER_ARCH;
 
+  inline void mul64(const Register64& rhs, const Register64& srcDest)
+      DEFINED_ON(x64, arm64, mips64, loong64, riscv64);
   inline void mul64(const Operand& src, const Register64& dest) DEFINED_ON(x64);
   inline void mul64(const Operand& src, const Register64& dest,
                     const Register temp) DEFINED_ON(x64);
@@ -2029,6 +2028,8 @@ class MacroAssembler : public MacroAssemblerSpecific {
 
   inline void branchTestMagic(Condition cond, const Address& valaddr,
                               JSWhyMagic why, Label* label) PER_ARCH;
+  inline void branchTestMagic(Condition cond, const BaseIndex& valaddr,
+                              JSWhyMagic why, Label* label) PER_ARCH;
 
   inline void branchTestMagicValue(Condition cond, const ValueOperand& val,
                                    JSWhyMagic why, Label* label);
@@ -2235,6 +2236,29 @@ class MacroAssembler : public MacroAssemblerSpecific {
   inline void spectreBoundsCheckPtr(Register index, const Address& length,
                                     Register maybeScratch,
                                     Label* failure) PER_ARCH;
+
+  // ========================================================================
+  // Support for 128-bit arithmetic.
+
+  // Produces the top 64 bits of the 128-bit value `lhsHi:lhsLo +/-
+  // rhsHi:rhsLo`.  Only used on 64-bit targets.  `output` must be different
+  // from all the other registers, on all supported targets.
+  inline void wasmAddSubI128HI64(Register lhsLo, Register lhsHi, Register rhsLo,
+                                 Register rhsHi, Register output, bool isAdd)
+      DEFINED_ON(x64, arm64, riscv64, loong64, mips64);
+
+  // Produces the top 64 bits of the 128-bit value `lhs *widen rhs`.  Only used
+  // on 64-bit targets.  On x64, `lhs` must be RAX, `rhs` must be RDX, and all
+  // 5 registers must be distinct.
+  inline void wasmMulI64WideHI64(Register lhs, Register rhs, Register temp0,
+                                 Register temp1, Register output, bool isSigned)
+      DEFINED_ON(x64);
+
+  // The same, but for all other 64-bit targets.  There are no restrictions on
+  // what the registers may be.
+  inline void wasmMulI64WideHI64(Register lhs, Register rhs, Register output,
+                                 bool isSigned)
+      DEFINED_ON(arm64, riscv64, loong64, mips64);
 
   // ========================================================================
   // Canonicalization primitives.
@@ -3779,16 +3803,16 @@ class MacroAssembler : public MacroAssemblerSpecific {
   // Scalar::Int64.
   void wasmLoad(const wasm::MemoryAccessDesc& access, Register memoryBase,
                 Register ptr, Register ptrScratch, AnyRegister output)
-      DEFINED_ON(arm, loong64, riscv64, mips64);
+      DEFINED_ON(arm, loong64, mips64);
   void wasmLoadI64(const wasm::MemoryAccessDesc& access, Register memoryBase,
                    Register ptr, Register ptrScratch, Register64 output)
-      DEFINED_ON(arm, mips64, loong64, riscv64);
+      DEFINED_ON(arm, mips64, loong64);
   void wasmStore(const wasm::MemoryAccessDesc& access, AnyRegister value,
                  Register memoryBase, Register ptr, Register ptrScratch)
-      DEFINED_ON(arm, loong64, riscv64, mips64);
+      DEFINED_ON(arm, loong64, mips64);
   void wasmStoreI64(const wasm::MemoryAccessDesc& access, Register64 value,
                     Register memoryBase, Register ptr, Register ptrScratch)
-      DEFINED_ON(arm, mips64, loong64, riscv64);
+      DEFINED_ON(arm, mips64, loong64);
 
   // These accept general memoryBase + ptr + offset (in `access`); the offset is
   // always smaller than the guard region.  They will insert an additional add
@@ -3796,13 +3820,14 @@ class MacroAssembler : public MacroAssemblerSpecific {
   // register for the offset if the offset is large, and instructions to set it
   // up.
   void wasmLoad(const wasm::MemoryAccessDesc& access, Register memoryBase,
-                Register ptr, AnyRegister output) DEFINED_ON(arm64);
+                Register ptr, AnyRegister output) DEFINED_ON(arm64, riscv64);
   void wasmLoadI64(const wasm::MemoryAccessDesc& access, Register memoryBase,
-                   Register ptr, Register64 output) DEFINED_ON(arm64);
+                   Register ptr, Register64 output) DEFINED_ON(arm64, riscv64);
   void wasmStore(const wasm::MemoryAccessDesc& access, AnyRegister value,
-                 Register memoryBase, Register ptr) DEFINED_ON(arm64);
+                 Register memoryBase, Register ptr) DEFINED_ON(arm64, riscv64);
   void wasmStoreI64(const wasm::MemoryAccessDesc& access, Register64 value,
-                    Register memoryBase, Register ptr) DEFINED_ON(arm64);
+                    Register memoryBase, Register ptr)
+      DEFINED_ON(arm64, riscv64);
 
   // `ptr` will always be updated.
   void wasmUnalignedLoad(const wasm::MemoryAccessDesc& access,
@@ -3967,20 +3992,26 @@ class MacroAssembler : public MacroAssemblerSpecific {
   // This function takes care of loading the pointer to the current instance
   // as the implicit first argument. It preserves instance and pinned registers.
   // (instance & pinned regs are non-volatile registers in the system ABI).
-  CodeOffset wasmCallBuiltinInstanceMethod(const wasm::CallSiteDesc& desc,
-                                           const ABIArg& instanceArg,
-                                           wasm::SymbolicAddress builtin,
-                                           wasm::FailureMode failureMode,
-                                           wasm::Trap failureTrap);
+  // Offsets for stackmaps for the call and (if required) for the following
+  // failure trap, are returned.
+  void wasmCallBuiltinInstanceMethod(const wasm::CallSiteDesc& desc,
+                                     const ABIArg& instanceArg,
+                                     wasm::SymbolicAddress builtin,
+                                     wasm::FailureMode failureMode,
+                                     wasm::Trap failureTrap,
+                                     CodeOffset* callStackMapKey,
+                                     CodeOffset* trapStackMapKey);
 
   // Performs the appropriate check based on the instance call's FailureMode,
   // and traps if the check fails. The resultRegister should likely be
   // ReturnReg, but this depends on whatever you do with registers immediately
-  // after the call.
-  void wasmTrapOnFailedInstanceCall(Register resultRegister,
-                                    wasm::FailureMode failureMode,
-                                    wasm::Trap failureTrap,
-                                    const wasm::TrapSiteDesc& trapSiteDesc);
+  // after the call. In the case where a trap is generated, the returned
+  // CodeOffset points at the first byte of the instruction following the trap,
+  // and that is where a stackmap, if needed, should be keyed.  If a trap is not
+  // generated, a CodeOffset satisfying !CodeOffset::bound() is returned.
+  CodeOffset wasmTrapOnFailedInstanceCall(
+      Register resultRegister, wasm::FailureMode failureMode,
+      wasm::Trap failureTrap, const wasm::TrapSiteDesc& trapSiteDesc);
 
   // Performs a bounds check for ranged wasm operations like memory.fill or
   // array.fill. This handles the bizarre edge case in the wasm spec where a
@@ -4211,10 +4242,10 @@ class MacroAssembler : public MacroAssemblerSpecific {
 
   void emitPreBarrierFastPath(MIRType type, Register temp1, Register temp2,
                               Register temp3, Label* noBarrier);
-  void emitValueReadBarrierFastPath(ValueOperand value, Register cell,
-                                    Register temp1, Register temp2,
-                                    Register temp3, Register temp4,
-                                    Label* barrier);
+  void emitWeapMapBarrierFastPath(ValueOperand value, Register cell,
+                                  Register temp1, Register temp2,
+                                  Register temp3, Register temp4,
+                                  Label* barrier);
 
  private:
   void loadMarkBits(Register cell, Register chunk, Register markWord,
@@ -5881,6 +5912,10 @@ class MacroAssembler : public MacroAssemblerSpecific {
                                       ValueOperand output, Register scratch1,
                                       Register scratch2);
 
+  void timeClip(FloatRegister time, FloatRegister output);
+  void timeClip(FloatRegister time, FloatRegister output, Register scratch,
+                const LiveRegisterSet& liveRegs);
+
   void computeImplicitThis(Register env, ValueOperand output, Label* slowPath);
 
  private:
@@ -6027,6 +6062,22 @@ class MacroAssembler : public MacroAssemblerSpecific {
 
   void finish();
   void link(JitCode* code);
+
+  void assertUnreachable(const char* output);
+
+  void assert32Compare(Condition condition, Register lhs, Imm32 rhs,
+                       const char* output = nullptr);
+  void assert32Compare(Condition condition, Address lhs, Imm32 rhs,
+                       const char* output = nullptr);
+  void assertPtrCompare(Condition condition, Register lhs, ImmWord rhs,
+                        const char* output = nullptr);
+  void assertPtrCompare(Condition condition, Address lhs, ImmWord rhs,
+                        const char* output = nullptr);
+
+  void assertPtrZero(Address src, const char* output = nullptr);
+  void assertPtrZero(Register src, const char* output = nullptr);
+  void assertPtrNonZero(Address src, const char* output = nullptr);
+  void assertPtrNonZero(Register src, const char* output = nullptr);
 
   void assumeUnreachable(const char* output);
 

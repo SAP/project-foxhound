@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sw=2 et tw=80:
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -159,13 +157,6 @@ class Nursery {
                                    size_t nbytes, arena_id_t arenaId);
   void* allocateBuffer(JS::Zone* zone, gc::Cell* owner, size_t nbytes,
                        size_t maxNurserySize);
-
-  // Allocate a zero-initialized buffer for a given zone, using the nursery if
-  // possible. If the buffer isn't allocated in the nursery, the given arena is
-  // used. Returns <buffer, isMalloced>. Returns false in |isMalloced| if the
-  // allocation fails.
-  std::tuple<void*, bool> allocateZeroedBuffer(JS::Zone* zone, size_t nbytes,
-                                               arena_id_t arena);
 
   // Allocate a zero-initialized buffer for a given Cell, using the nursery if
   // possible and |owner| is in the nursery. If the buffer isn't allocated in
@@ -650,7 +641,7 @@ class Nursery {
 
 #ifdef JS_GC_ZEAL
   // Report on the kinds of things promoted.
-  bool reportPromotion_;
+  bool reportPromotion_ = false;
 #endif
 
   // Whether to report information on pretenuring, and if so the allocation

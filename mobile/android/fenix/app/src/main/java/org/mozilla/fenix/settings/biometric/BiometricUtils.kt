@@ -22,9 +22,9 @@ import kotlinx.coroutines.launch
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 import mozilla.components.ui.widgets.withCenterAlignedButtons
 import org.mozilla.fenix.R
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.runIfFragmentIsAttached
 import org.mozilla.fenix.ext.secure
-import org.mozilla.fenix.ext.settings
 
 /**
  * Allows handling of biometric authentication workflows.
@@ -104,7 +104,7 @@ object DefaultBiometricUtils : BiometricUtils {
             onShowPinVerification(confirmDeviceCredentialIntent)
         } else {
             // Warn that the device has not been secured
-            if (context.settings().shouldShowSecurityPinWarning) {
+            if (context.components.settings.shouldShowSecurityPinWarning) {
                 fragment.activity?.let {
                     showPinDialogWarning(it, onAuthSuccess)
                 } ?: return
@@ -140,5 +140,5 @@ private fun showPinDialogWarning(
         }
         create().withCenterAlignedButtons()
     }.show().secure(activity)
-    activity.settings().incrementSecureWarningCount()
+    activity.components.settings.incrementSecureWarningCount()
 }

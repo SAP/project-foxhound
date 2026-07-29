@@ -252,6 +252,7 @@ SimpleTest.waitForExplicitFinish();
 SpecialPowers.pushPrefEnv({"set": [
   ["browser.safebrowsing.malware.enabled", true],
   ["urlclassifier.malwareTable", "mochi-malware-simple,mochi-unwanted-simple"],
+  ["browser.safebrowsing.realTime.enabled", false],
   ["urlclassifier.gethash.timeout_ms", 30000],
 ]}, runTest);
 

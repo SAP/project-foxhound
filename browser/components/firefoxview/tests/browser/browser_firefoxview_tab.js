@@ -89,7 +89,7 @@ add_task(async function aria_attributes() {
 
 add_task(async function load_opens_new_tab() {
   await withFirefoxView({ openNewWindow: true }, async browser => {
-    let win = browser.ownerGlobal;
+    let win = browser.documentGlobal;
     ok(win.FirefoxViewHandler.tab.selected, "Firefox View tab is selected");
     win.gURLBar.focus();
     win.gURLBar.value = "https://example.com";
@@ -112,7 +112,7 @@ add_task(async function load_opens_new_tab() {
 
 add_task(async function homepage_new_tab() {
   await withFirefoxView({ openNewWindow: true }, async browser => {
-    let win = browser.ownerGlobal;
+    let win = browser.documentGlobal;
     ok(win.FirefoxViewHandler.tab.selected, "Firefox View tab is selected");
     let newTabOpened = BrowserTestUtils.waitForEvent(
       win.gBrowser.tabContainer,
@@ -131,7 +131,7 @@ add_task(async function homepage_new_tab() {
 
 add_task(async function number_tab_select_shortcut() {
   await withFirefoxView({}, async browser => {
-    let win = browser.ownerGlobal;
+    let win = browser.documentGlobal;
     EventUtils.synthesizeKey(
       "1",
       AppConstants.MOZ_WIDGET_GTK ? { altKey: true } : { accelKey: true },
@@ -196,21 +196,50 @@ add_task(async function undo_close_tab() {
   await BrowserTestUtils.closeWindow(win);
 });
 
-add_task(async function test_firefoxview_view_count() {
-  const startViews = 2;
+add_task(async function test_firefoxview_button_clicks_older_than_30_days() {
+  const PREF_NAME = "browser.firefox-view.button-clicks";
+  const MS_PER_DAY = 24 * 60 * 60 * 1000;
+  const oldTimestamp = Math.round(Date.now()) - 31 * MS_PER_DAY;
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.firefox-view.view-count", startViews]],
+    set: [
+      [PREF_NAME, JSON.stringify({ count: 5, lastCountTime: oldTimestamp })],
+    ],
   });
 
   let tab = await openFirefoxViewTab(window);
 
+  let data = JSON.parse(Services.prefs.getStringPref(PREF_NAME));
   Assert.strictEqual(
-    SpecialPowers.getIntPref("browser.firefox-view.view-count"),
-    startViews + 1,
-    "View count pref value is incremented when tab is selected"
+    data.count,
+    0,
+    "Count resets to 0 when lastCountTime is older than 30 days"
   );
 
   BrowserTestUtils.removeTab(tab);
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function test_firefoxview_button_clicks_within_30_days() {
+  const PREF_NAME = "browser.firefox-view.button-clicks";
+  const MS_PER_DAY = 24 * 60 * 60 * 1000;
+  const recentTimestamp = Math.round(Date.now()) - 1 * MS_PER_DAY;
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [PREF_NAME, JSON.stringify({ count: 5, lastCountTime: recentTimestamp })],
+    ],
+  });
+
+  let tab = await openFirefoxViewTab(window);
+
+  let data = JSON.parse(Services.prefs.getStringPref(PREF_NAME));
+  Assert.strictEqual(
+    data.count,
+    6,
+    "Count increments when lastCountTime is within the last 30 days"
+  );
+
+  BrowserTestUtils.removeTab(tab);
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function test_add_ons_cant_unhide_fx_view() {
@@ -240,7 +269,7 @@ add_task(async function test_add_ons_cant_unhide_fx_view() {
 // Firefox View button is present and active.
 add_task(async function testFirstTabFocusableWhenFxViewOpen() {
   await withFirefoxView({}, async browser => {
-    let win = browser.ownerGlobal;
+    let win = browser.documentGlobal;
     ok(win.FirefoxViewHandler.tab.selected, "Firefox View tab is selected");
     let fxViewBtn = win.document.getElementById("firefox-view-button");
     forceFocus(fxViewBtn);
@@ -260,7 +289,7 @@ add_task(async function testFirstTabFocusableWhenFxViewOpen() {
 // Test that Firefox View tab is not multiselectable
 add_task(async function testFxViewNotMultiselect() {
   await withFirefoxView({}, async browser => {
-    let win = browser.ownerGlobal;
+    let win = browser.documentGlobal;
     Assert.ok(
       win.FirefoxViewHandler.tab.selected,
       "Firefox View tab is selected"

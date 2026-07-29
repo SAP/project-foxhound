@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -276,7 +274,9 @@ class nsPipeInputStream final : public nsIAsyncInputStream,
         mBlocking(aOther.mBlocking),
         mBlocked(false),
         mReadState(aOther.mReadState),
-        mPriority(nsIRunnablePriority::PRIORITY_NORMAL) {}
+        mPriority(nsIRunnablePriority::PRIORITY_NORMAL) {
+    MOZ_ASSERT(!mReadState.mActiveRead);
+  }
 
   void SetNonBlocking(bool aNonBlocking) { mBlocking = !aNonBlocking; }
 
@@ -710,7 +710,7 @@ nsPipe::GetReadSegment(nsPipeReadState& aReadState, const char*& aSegment,
   // order to avoid deleting the buffer out from under this lockless read
   // set a flag to indicate a read is active.  This flag is only modified
   // while the lock is held.
-  MOZ_DIAGNOSTIC_ASSERT(!aReadState.mActiveRead);
+  MOZ_RELEASE_ASSERT(!aReadState.mActiveRead);
   aReadState.mActiveRead = true;
 
   aSegment = aReadState.mReadCursor;
@@ -1091,7 +1091,8 @@ void nsPipe::OnPipeException(nsresult aReason, bool aOutputOnly) {
 nsresult nsPipe::CloneInputStream(nsPipeInputStream* aOriginal,
                                   nsIInputStream** aCloneOut) {
   ReentrantMonitorAutoEnter mon(mReentrantMonitor);
-  RefPtr<nsPipeInputStream> ref = new nsPipeInputStream(*aOriginal);
+  MOZ_RELEASE_ASSERT(!aOriginal->ReadState().mActiveRead);
+  RefPtr ref = MakeRefPtr<nsPipeInputStream>(*aOriginal);
   // don't add clones of closed pipes to mInputList.
   ref->Monitor().AssertCurrentThreadIn();
   if (NS_SUCCEEDED(ref->InputStatus(mon))) {
@@ -1888,7 +1889,7 @@ void NS_NewPipe2(nsIAsyncInputStream** aPipeIn, nsIAsyncOutputStream** aPipeOut,
       new nsPipe(aSegmentSize ? aSegmentSize : DEFAULT_SEGMENT_SIZE,
                  aSegmentCount ? aSegmentCount : DEFAULT_SEGMENT_COUNT);
 
-  RefPtr<nsPipeInputStream> pipeIn = new nsPipeInputStream(pipe);
+  RefPtr pipeIn = MakeRefPtr<nsPipeInputStream>(pipe);
   pipe->mInputList.AppendElement(pipeIn);
   RefPtr<nsPipeOutputStream> pipeOut = &pipe->mOutput;
 
@@ -1948,7 +1949,7 @@ nsPipeHolder::GetOutputStream(nsIAsyncOutputStream** aOutputStream) {
 }
 
 nsresult nsPipeConstructor(REFNSIID aIID, void** aResult) {
-  RefPtr<nsPipeHolder> pipe = new nsPipeHolder();
+  RefPtr pipe = MakeRefPtr<nsPipeHolder>();
   nsresult rv = pipe->QueryInterface(aIID, aResult);
   return rv;
 }

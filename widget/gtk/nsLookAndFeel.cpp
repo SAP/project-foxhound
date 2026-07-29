@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -393,8 +390,8 @@ nsLookAndFeel::nsLookAndFeel() {
     GUniquePtr<gchar> path(
         g_strconcat(g_get_user_config_dir(), "/gtk-3.0/colors.css", NULL));
     mKdeColors = dont_AddRef(g_file_new_for_path(path.get()));
-    mKdeColorsMonitor = dont_AddRef(
-        g_file_monitor_file(mKdeColors.get(), G_FILE_MONITOR_NONE, NULL, NULL));
+    mKdeColorsMonitor = dont_AddRef(g_file_monitor_file(
+        mKdeColors.get(), G_FILE_MONITOR_NONE, nullptr, nullptr));
     if (mKdeColorsMonitor) {
       g_signal_connect(mKdeColorsMonitor.get(), "changed",
                        G_CALLBACK(kde_colors_changed), NULL);
@@ -1340,6 +1337,7 @@ bool nsLookAndFeel::PerThemeData::GetFont(FontID aID, nsString& aFontName,
       aFontStyle = mDefaultFontStyle;
       break;
   }
+  aFontStyle.systemFont = true;
 
   // Convert GDK pixels to CSS pixels.
   // Note that this is generally a no-op, except when text scale factor is
@@ -2700,6 +2698,8 @@ void nsLookAndFeel::RecordLookAndFeelSpecificTelemetry() {
   nsCString version;
   version.AppendPrintf("%d.%d", gtk_major_version, gtk_minor_version);
   glean::widget::gtk_version.Set(version);
+
+  glean::widget::desktop_environment.Set(GetDesktopEnvironmentIdentifier());
 }
 
 bool nsLookAndFeel::ShouldHonorThemeScrollbarColors() {

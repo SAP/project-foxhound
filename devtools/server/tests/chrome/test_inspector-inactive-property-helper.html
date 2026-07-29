@@ -120,7 +120,7 @@ SimpleTest.waitForExplicitFinish();
       if (pseudoElement) {
         const walker = new DocumentWalker(
           el,
-          el.ownerGlobal
+          el.documentGlobal
         );
 
         const pseudoNodeName = `_moz_generated_content_${pseudoElement.replaceAll(":", "")}`;

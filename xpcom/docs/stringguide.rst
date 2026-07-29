@@ -11,8 +11,7 @@ Introduction
 
 The string classes are a library of C++ classes which are used to manage
 buffers of wide (16-bit) and narrow (8-bit) character strings. The headers
-and implementation are in the `xpcom/string
-<https://searchfox.org/mozilla-central/source/xpcom/string>`_ directory. All
+and implementation are in the :searchfox:`xpcom/string` directory. All
 strings are stored as a single contiguous buffer of characters.
 
 The 8-bit and 16-bit string classes have completely separate base classes,
@@ -467,8 +466,7 @@ common encodings are:
 In addition, there exist multiple other (legacy) encodings. The Web-relevant
 ones are defined in the `Encoding Standard <https://encoding.spec.whatwg.org/>`_.
 Conversions from these encodings to
-UTF-8 and UTF-16 are provided by `mozilla::Encoding
-<https://searchfox.org/mozilla-central/source/intl/Encoding.h#109>`_.
+UTF-8 and UTF-16 are provided by :searchfox:`mozilla::Encoding <intl/Encoding.h#109>`.
 Additionally, on Windows the are some rare cases (e.g. drag&drop) where it's
 necessary to call a system API with data encoded in the Windows
 locale-dependent legacy encoding instead of UTF-16. In those rare cases, use

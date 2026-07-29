@@ -43,7 +43,16 @@ Main components
 
    The majority of the allocator.
 
- * BaseAlloc.h and BaseAlloc.cpp
+ * Arena.h
+
+   The arena structure and many of its sub-structures such as runs and
+   arena chunks.
+
+ * ArenaAvailRuns.h
+
+   A data structure for run allocation.
+
+ * BaseAlloc.h, BaseAlloc.cpp and BaseAllocInternals.h
 
    The base allocator and some template classes to spacialise it.  Some of
    mozjemalloc's bookkeeping structures need dynamic allocation and this is
@@ -83,6 +92,10 @@ Main components
 
 Utility code
 ------------
+
+ * BaseArray.h 
+
+   A resizable array implementation that uses the base allocator.
 
  * FdPrintf.h and FdPrintf.cpp
 

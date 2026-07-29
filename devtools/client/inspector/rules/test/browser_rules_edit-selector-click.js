@@ -25,7 +25,7 @@ add_task(async function () {
 async function testClickOnSelectorEditorInput(view) {
   info("Test clicking inside the selector editor input");
 
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
 
   info("Focusing an existing selector name in the rule-view");
   const editor = await focusEditableField(view, ruleEditor.selectorText);

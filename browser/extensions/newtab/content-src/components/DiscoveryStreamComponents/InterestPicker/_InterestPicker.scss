@@ -92,3 +92,29 @@
     }
   }
 }
+
+// @nova-cleanup(remove-conditional): Remove .nova-enabled wrapper, make default
+.nova-enabled .inline-selection-wrapper.ds-section {
+  .topic-list {
+    grid-column: 1 / -1;
+
+    moz-button {
+      @include wallpaper-contrast-fix;
+
+      // Override the aria-pressed selected styling
+      &[type='primary']::part(button):not(:hover, :active) {
+        background-color: var(--button-background-color-primary);
+        border-color: var(--button-border-color-primary);
+        color: var(--button-text-color-primary);
+      }
+    }
+  }
+
+  .learn-more-copy {
+    grid-column: 1 / -1;
+
+    a {
+      color: var(--link-color);
+    }
+  }
+}

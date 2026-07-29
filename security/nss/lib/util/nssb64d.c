@@ -460,7 +460,13 @@ PL_UpdateBase64Decoder(PLBase64Decoder *data, const char *buffer,
 
     /*
      * How much space could this update need for decoding?
+     * Guard against integer overflow: both size and token_size are PRUint32,
+     * so their sum can wrap if size is near PR_UINT32_MAX.
      */
+    if (size > PR_UINT32_MAX - data->token_size) {
+        PR_SetError(PR_INVALID_ARGUMENT_ERROR, 0);
+        return PR_FAILURE;
+    }
     need_length = PL_Base64MaxDecodedLength(size + data->token_size);
 
     /*
@@ -494,6 +500,7 @@ PL_UpdateBase64Decoder(PLBase64Decoder *data, const char *buffer,
         PRInt32 output_result;
 
         PR_ASSERT(data->output_fn != NULL);
+        PR_ASSERT(data->output_length <= PR_INT32_MAX);
         output_result = data->output_fn(data->output_arg,
                                         data->output_buffer,
                                         (PRInt32)data->output_length);

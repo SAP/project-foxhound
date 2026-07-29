@@ -14,7 +14,7 @@
 
 ## Code
 
-The source for `moz-box-group` can be found under [toolkit/content/widgets/moz-box-group/](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/moz-box-group)
+The source for `moz-box-group` can be found under [toolkit/content/widgets/moz-box-group/](https://searchfox.org/firefox-main/source/toolkit/content/widgets/moz-box-group)
 
 ## How to use `moz-box-group`
 

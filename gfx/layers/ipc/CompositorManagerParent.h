@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -70,7 +68,7 @@ class CompositorManagerParent final : public PCompositorManagerParent {
   void ActorDestroy(ActorDestroyReason aReason) override;
 
   already_AddRefed<PCompositorBridgeParent> AllocPCompositorBridgeParent(
-      const CompositorBridgeOptions& aOpt);
+      const CompositorBridgeOptions& aOpt, const uint32_t& aNamespace);
 
   static void NotifyWebRenderError(wr::WebRenderError aError);
 
@@ -79,6 +77,8 @@ class CompositorManagerParent final : public PCompositorManagerParent {
   bool OwnsExternalImageId(const wr::ExternalImageId& aId) const {
     return mNamespace == static_cast<uint32_t>(wr::AsUint64(aId) >> 32);
   }
+
+  uint32_t GetNamespace() const { return mNamespace; }
 
  private:
   static StaticMonitor sMonitor;

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +7,7 @@
 #include <utility>
 
 #include "ServiceWorkerRegistrationProxy.h"
+#include "nsNetUtil.h"
 
 namespace mozilla::dom {
 
@@ -89,6 +88,9 @@ IPCResult ServiceWorkerRegistrationParent::RecvSetNavigationPreloadEnabled(
 
 IPCResult ServiceWorkerRegistrationParent::RecvSetNavigationPreloadHeader(
     const nsACString& aHeader, SetNavigationPreloadHeaderResolver&& aResolver) {
+  if (!NS_IsReasonableHTTPHeaderValue(aHeader)) {
+    return IPC_FAIL(this, "Invalid navigation preload header value");
+  }
   if (!mProxy) {
     aResolver(false);
     return IPC_OK();
@@ -138,7 +140,7 @@ IPCResult ServiceWorkerRegistrationParent::RecvGetNotifications(
   return IPC_OK();
 }
 
-ServiceWorkerRegistrationParent::ServiceWorkerRegistrationParent() {}
+ServiceWorkerRegistrationParent::ServiceWorkerRegistrationParent() = default;
 
 ServiceWorkerRegistrationParent::~ServiceWorkerRegistrationParent() {
   MOZ_DIAGNOSTIC_ASSERT(!mProxy);

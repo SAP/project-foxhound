@@ -7,7 +7,7 @@ import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 
 import { getLibraryFromUrl } from "../../../utils/pause/frames/index";
 
-import DebuggerImage from "../../shared/DebuggerImage";
+import DebuggerImage from "devtools/client/shared/components/DebuggerImage";
 import FrameComponent from "./Frame";
 import Badge from "../../shared/Badge";
 import FrameIndent from "./FrameIndent";

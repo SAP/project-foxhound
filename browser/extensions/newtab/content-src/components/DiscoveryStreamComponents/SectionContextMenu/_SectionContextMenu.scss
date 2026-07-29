@@ -1,6 +1,10 @@
 .section-context-menu {
   position: relative;
 
+  &.context-menu-open > moz-button::part(button) {
+    background-color: var(--button-background-color-ghost-hover);
+  }
+
   .context-menu {
     /* Fix the context menu width */
     width: calc(4 * var(--size-item-large));

@@ -1,26 +1,22 @@
 From: Michael Froman <mfroman@mozilla.com>
-Date: Wed, 16 Jul 2025 21:08:00 +0300
-Subject: Bug 1974813 - turn off rust in libwebrtc since we don't use any
- libwebrtc rust code. r=ng?
+Date: Fri, 19 Sep 2025 10:46:00 -0500
+Subject: Bug 1985396 - (fix-948f6e7a4e) fix windows build failure caused by a
+ macro expansion
 
-Note: no moz.build changes are caused by this change.
-
-Differential Revision: https://phabricator.services.mozilla.com/D257316
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/14ee98c4832a55bf32116c925540ab0f53e46cd3
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/5368b134e503299a9cef8590ec91fbc3cf4dcc8a
 ---
- .gn | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
+ modules/desktop_capture/desktop_capturer.h | 1 -
+ 1 file changed, 1 deletion(-)
 
-diff --git a/.gn b/.gn
-index 269ca2f5a7..e30bfefddf 100644
---- a/.gn
-+++ b/.gn
-@@ -89,7 +89,7 @@ default_args = {
-   use_fuzztest_wrapper = false
- 
-   # Enable Rust in WebRTC
--  enable_rust = true
-+  enable_rust = false # Mozilla
-   enable_rust_cxx = true
-   enable_chromium_prelude = true
+diff --git a/modules/desktop_capture/desktop_capturer.h b/modules/desktop_capture/desktop_capturer.h
+index 8219358e1e..9b1efa0bb5 100644
+--- a/modules/desktop_capture/desktop_capturer.h
++++ b/modules/desktop_capture/desktop_capturer.h
+@@ -23,7 +23,6 @@
+ #include "modules/desktop_capture/delegated_source_list_controller.h"
+ #include "modules/desktop_capture/desktop_capture_metadata.h"
+ #include "modules/desktop_capture/desktop_capture_types.h"
+-#include "modules/desktop_capture/desktop_geometry.h"
+ #include "modules/desktop_capture/shared_memory.h"
+ #include "rtc_base/system/rtc_export.h"
  

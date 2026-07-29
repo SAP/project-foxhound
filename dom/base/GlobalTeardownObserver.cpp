@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,7 +13,7 @@ GlobalTeardownObserver::GlobalTeardownObserver() = default;
 GlobalTeardownObserver::GlobalTeardownObserver(nsIGlobalObject* aGlobalObject,
                                                bool aHasOrHasHadOwnerWindow)
     : mHasOrHasHadOwnerWindow(aHasOrHasHadOwnerWindow) {
-  BindToOwner(aGlobalObject);
+  BindToGlobal(aGlobalObject);
 }
 
 GlobalTeardownObserver::~GlobalTeardownObserver() {
@@ -30,13 +28,13 @@ nsGlobalWindowInner* GlobalTeardownObserver::GetOwnerWindow() const {
              : nullptr;
 }
 
-void GlobalTeardownObserver::BindToOwner(nsIGlobalObject* aOwner) {
+void GlobalTeardownObserver::BindToGlobal(nsIGlobalObject* aGlobal) {
   MOZ_ASSERT(!mParentObject);
 
-  if (aOwner) {
-    mParentObject = aOwner;
-    aOwner->AddGlobalTeardownObserver(this);
-    const bool isWindow = !!aOwner->GetAsInnerWindow();
+  if (aGlobal) {
+    mParentObject = aGlobal;
+    aGlobal->AddGlobalTeardownObserver(this);
+    const bool isWindow = !!aGlobal->GetAsInnerWindow();
     MOZ_ASSERT_IF(!isWindow, !mHasOrHasHadOwnerWindow);
     mHasOrHasHadOwnerWindow = isWindow;
   }

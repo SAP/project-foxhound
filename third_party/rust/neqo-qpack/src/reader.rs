@@ -9,7 +9,7 @@ use std::{mem, str};
 use neqo_common::{qdebug, qerror};
 use neqo_transport::{Connection, StreamId};
 
-use crate::{huffman, prefix::Prefix, Error, Res};
+use crate::{Error, Res, huffman, prefix::Prefix};
 
 pub trait ReadByte {
     /// # Errors
@@ -266,7 +266,7 @@ impl LiteralReader {
     /// The Gecko limit is in `network.http.max_response_header_size` and defaults to
     /// 393216 bytes (384 KB), see `modules/libpref/init/StaticPrefList.yaml`. We use
     /// the same limit.
-    const MAX_LEN: usize = 384 * 1024;
+    pub(crate) const MAX_LEN: usize = 384 * 1024;
 
     /// Creates `LiteralReader` with the first byte. This constructor is always used
     /// when a literal has a prefix.
@@ -402,8 +402,8 @@ mod tests {
     use test_receiver::TestReceiver;
 
     use super::{
-        huffman, test_receiver, Error, IntReader, LiteralReader, ReadByte as _,
-        ReceiverBufferWrapper, Res,
+        Error, IntReader, LiteralReader, ReadByte as _, ReceiverBufferWrapper, Res, huffman,
+        test_receiver,
     };
     use crate::{prefix::Prefix, qpack_send_buf::Encoder as _};
 

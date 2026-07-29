@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -76,7 +74,7 @@ static void logMessage(nsIContent* aContent, const nsAString& aCoordsSpec,
                        int32_t aFlags, const char* aMessageName) {
   nsContentUtils::ReportToConsole(
       aFlags, "Layout: ImageMap"_ns, aContent->OwnerDoc(),
-      nsContentUtils::eLAYOUT_PROPERTIES, aMessageName);
+      PropertiesFile::LAYOUT_PROPERTIES, aMessageName);
 }
 
 void Area::ParseCoords(const nsAString& aSpec) {
@@ -802,42 +800,29 @@ void nsImageMap::ContentInserted(nsIContent* aChild, const ContentInsertInfo&) {
   MaybeUpdateAreas(aChild->GetParent());
 }
 
-static UniquePtr<Area> TakeArea(nsImageMap::AreaList& aAreas,
-                                HTMLAreaElement* aArea) {
-  UniquePtr<Area> result;
-  size_t index = 0;
-  for (UniquePtr<Area>& area : aAreas) {
-    if (area->mArea == aArea) {
-      result = std::move(area);
-      break;
-    }
-    index++;
-  }
-
-  if (result) {
-    aAreas.RemoveElementAt(index);
-  }
-
-  return result;
-}
-
 void nsImageMap::ContentWillBeRemoved(nsIContent* aChild,
                                       const ContentRemoveInfo&) {
-  if (aChild->GetParent() != mMap && !mConsiderWholeSubtree) {
+  if (!mConsiderWholeSubtree && (aChild->GetParent() != mMap ||
+                                 !aChild->IsHTMLElement(nsGkAtoms::area))) {
     return;
   }
 
-  auto* areaElement = HTMLAreaElement::FromNode(aChild);
-  if (!areaElement) {
+  bool any = false;
+  mAreas.RemoveElementsBy([&](const UniquePtr<Area>& area) {
+    const bool remove =
+        area->mArea == aChild ||
+        (mConsiderWholeSubtree && area->mArea->IsInclusiveDescendantOf(aChild));
+    if (!remove) {
+      return false;
+    }
+    any = true;
+    AreaRemoved(area->mArea);
+    return true;
+  });
+
+  if (!any) {
     return;
   }
-
-  UniquePtr<Area> area = TakeArea(mAreas, areaElement);
-  if (!area) {
-    return;
-  }
-
-  AreaRemoved(area->mArea);
 
 #ifdef ACCESSIBILITY
   if (nsAccessibilityService* accService = GetAccService()) {

@@ -9,6 +9,7 @@ const {
   DiscoveryStream,
   Search,
   ExternalComponents,
+  SportsWidget,
 } = reducers;
 import { actionTypes as at } from "common/Actions.mjs";
 
@@ -756,6 +757,19 @@ describe("Reducers", () => {
 
       assert.deepEqual(state, INITIAL_STATE.DiscoveryStream);
     });
+    it("should preserve sectionPersonalization with DISCOVERY_STREAM_LAYOUT_RESET", () => {
+      const personalization = {
+        sports: { isBlocked: true, isFollowed: false, title: "Sports" },
+      };
+      let state = DiscoveryStream(undefined, {
+        type: at.SECTION_PERSONALIZATION_UPDATE,
+        data: personalization,
+      });
+      state = DiscoveryStream(state, {
+        type: at.DISCOVERY_STREAM_LAYOUT_RESET,
+      });
+      assert.deepEqual(state.sectionPersonalization, personalization);
+    });
     it("should set config data with DISCOVERY_STREAM_CONFIG_CHANGE", () => {
       const state = DiscoveryStream(undefined, {
         type: at.DISCOVERY_STREAM_CONFIG_CHANGE,
@@ -1138,13 +1152,8 @@ describe("Reducers", () => {
       const nextState = Search(undefined, { type: "DISABLE_SEARCH" });
       assert.propertyVal(nextState, "disable", true);
     });
-    it("should set focus to true on FAKE_FOCUS_SEARCH", () => {
-      const nextState = Search(undefined, { type: "FAKE_FOCUS_SEARCH" });
-      assert.propertyVal(nextState, "fakeFocus", true);
-    });
     it("should set focus and disable to false on SHOW_SEARCH", () => {
       const nextState = Search(undefined, { type: "SHOW_SEARCH" });
-      assert.propertyVal(nextState, "fakeFocus", false);
       assert.propertyVal(nextState, "disable", false);
     });
   });
@@ -1213,6 +1222,126 @@ describe("Reducers", () => {
       });
       assert.deepEqual(nextState.components, newComponents);
       assert.notDeepEqual(nextState.components, oldComponents);
+    });
+  });
+  describe("SportsWidget", () => {
+    const baseMatches = {
+      previous: [],
+      current: [
+        { global_event_id: 1, status_type: "live", home_score: 0 },
+        { global_event_id: 2, status_type: "live", home_score: 1 },
+      ],
+      next: [],
+    };
+    const stateWithMatches = () => ({
+      ...INITIAL_STATE.SportsWidget,
+      data: { teams: [], matches: { ...baseMatches } },
+    });
+
+    it("WIDGETS_SPORTS_LIVE_UPDATE writes the incoming array to data.live", () => {
+      const liveEvents = [
+        { global_event_id: 1, home_score: 2 },
+        { global_event_id: 99, home_score: 0 },
+      ];
+      const next = SportsWidget(stateWithMatches(), {
+        type: at.WIDGETS_SPORTS_LIVE_UPDATE,
+        data: { live: liveEvents, lastLiveUpdated: 12345 },
+      });
+      assert.deepEqual(next.data.live, liveEvents);
+    });
+
+    it("WIDGETS_SPORTS_LIVE_UPDATE replaces data.live wholesale on each update", () => {
+      // /wcs/live returns the canonical set of in-progress games each tick,
+      // so the reducer simply overwrites; no merge against the prior set.
+      const prev = {
+        ...stateWithMatches(),
+        data: {
+          ...stateWithMatches().data,
+          live: [{ global_event_id: 1, home_score: 0 }],
+        },
+      };
+      const next = SportsWidget(prev, {
+        type: at.WIDGETS_SPORTS_LIVE_UPDATE,
+        data: {
+          live: [{ global_event_id: 2, home_score: 5 }],
+          lastLiveUpdated: 12345,
+        },
+      });
+      assert.deepEqual(next.data.live, [{ global_event_id: 2, home_score: 5 }]);
+    });
+
+    it("WIDGETS_SPORTS_LIVE_UPDATE records lastLiveUpdated at SportsWidget root", () => {
+      const next = SportsWidget(stateWithMatches(), {
+        type: at.WIDGETS_SPORTS_LIVE_UPDATE,
+        data: { live: [], lastLiveUpdated: 999_000 },
+      });
+      assert.equal(next.lastLiveUpdated, 999_000);
+    });
+
+    it("WIDGETS_SPORTS_LIVE_UPDATE lastLiveUpdated survives WIDGETS_SPORTS_WIDGET_SET", () => {
+      // Regression: the timestamp used to live under data.matches and was wiped
+      // by every post-match resync.
+      const afterLive = SportsWidget(stateWithMatches(), {
+        type: at.WIDGETS_SPORTS_LIVE_UPDATE,
+        data: { live: [], lastLiveUpdated: 12345 },
+      });
+      const afterResync = SportsWidget(afterLive, {
+        type: at.WIDGETS_SPORTS_WIDGET_SET,
+        data: { teams: [], matches: { previous: [], current: [], next: [] } },
+      });
+      assert.equal(afterResync.lastLiveUpdated, 12345);
+    });
+
+    it("WIDGETS_SPORTS_LIVE_UPDATE preserves data.matches", () => {
+      const next = SportsWidget(stateWithMatches(), {
+        type: at.WIDGETS_SPORTS_LIVE_UPDATE,
+        data: {
+          live: [{ global_event_id: 1, home_score: 0 }],
+          lastLiveUpdated: 12345,
+        },
+      });
+      assert.deepEqual(next.data.matches, baseMatches);
+    });
+
+    it("WIDGETS_SPORTS_LIVE_UPDATE preserves other SportsWidget fields", () => {
+      const prev = {
+        ...stateWithMatches(),
+        widgetState: "sports-intro",
+        selectedTeams: ["ENG"],
+      };
+      const next = SportsWidget(prev, {
+        type: at.WIDGETS_SPORTS_LIVE_UPDATE,
+        data: { live: [], lastLiveUpdated: 1 },
+      });
+      assert.equal(next.widgetState, "sports-intro");
+      assert.deepEqual(next.selectedTeams, ["ENG"]);
+    });
+
+    it("WIDGETS_SPORTS_SET_CELEBRATIONS replaces the celebrations map", () => {
+      const celebrations = {
+        endedAt: { 7: 12345 },
+        celebrated: [3, 5],
+      };
+      const next = SportsWidget(stateWithMatches(), {
+        type: at.WIDGETS_SPORTS_SET_CELEBRATIONS,
+        data: celebrations,
+      });
+      assert.deepEqual(next.celebrations, celebrations);
+    });
+
+    it("WIDGETS_SPORTS_SET_CELEBRATIONS preserves other SportsWidget fields", () => {
+      const prev = {
+        ...stateWithMatches(),
+        widgetState: "sports-matches",
+        selectedTeams: ["ENG"],
+      };
+      const next = SportsWidget(prev, {
+        type: at.WIDGETS_SPORTS_SET_CELEBRATIONS,
+        data: { endedAt: {}, celebrated: [1] },
+      });
+      assert.equal(next.widgetState, "sports-matches");
+      assert.deepEqual(next.selectedTeams, ["ENG"]);
+      assert.deepEqual(next.data.matches, baseMatches);
     });
   });
 });

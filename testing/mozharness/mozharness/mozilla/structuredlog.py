@@ -2,6 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 import json
+import time
 from collections import defaultdict, namedtuple
 
 from mozsystemmonitor.resourcemonitor import SystemResourceMonitor
@@ -99,6 +100,9 @@ class StructuredOutputParser(OutputParser):
 
         self.prev_was_unstructured = False
 
+        if "time" not in data:
+            data["time"] = int(time.time() * 1000)
+
         self.handler(data)
 
         action = data["action"]
@@ -114,6 +118,16 @@ class StructuredOutputParser(OutputParser):
             SystemResourceMonitor.test_status(data)
         elif action == "crash":
             SystemResourceMonitor.crash(data)
+        elif action == "lsan_leak":
+            SystemResourceMonitor.lsan_leak(data)
+        elif action == "lsan_summary":
+            SystemResourceMonitor.lsan_summary(data)
+        elif action == "tsan_error":
+            SystemResourceMonitor.tsan_error(data)
+        elif action == "mozleak_object":
+            SystemResourceMonitor.mozleak_object(data)
+        elif action == "mozleak_total":
+            SystemResourceMonitor.mozleak_total(data)
         elif action == "suite_start":
             SystemResourceMonitor.begin_marker("suite", data["source"])
         elif action == "suite_end":

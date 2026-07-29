@@ -132,10 +132,22 @@ class SiteDependencyExtractor:
             for raw_line in f:
                 line = raw_line.strip()
 
-                if not line or line.startswith("#") or line.startswith("-"):
+                if not line or line.startswith("#"):
                     continue
 
-                pypi_requirement_spec = line.split("\\")[0].strip().rstrip()
+                if line.startswith("-r "):
+                    included = (
+                        requirements_txt_path.parent / line[3:].strip()
+                    ).resolve()
+                    self._handle_requirements_txt(
+                        str(included.relative_to(self.topsrcdir))
+                    )
+                    continue
+
+                if line.startswith("-"):
+                    continue
+
+                pypi_requirement_spec = line.split("#")[0].split("\\")[0].strip()
                 if pypi_requirement_spec:
                     self._handle_pypi(pypi_requirement_spec)
 

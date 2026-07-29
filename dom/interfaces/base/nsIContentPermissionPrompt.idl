@@ -66,6 +66,11 @@ interface nsIContentPermissionRequest : nsISupports {
    */
   readonly attribute boolean isRequestDelegatedToUnsafeThirdParty;
 
+  /**
+   * If true, ignore SitePermissions that indicate that this request should be permitted.
+   */
+  readonly attribute boolean ignoreAllowSitePermission;
+
   /*
    * Get delegate principal of the permission request. This will return nullptr,
    * or request's principal or top level principal based on the delegate policy

@@ -22,6 +22,7 @@ const {
   nodeIsDefaultProperties,
   nodeIsFunction,
   nodeIsGetter,
+  nodeIsGlobal,
   nodeIsMapEntry,
   nodeIsMissingArguments,
   nodeIsOptimizedOut,
@@ -137,7 +138,7 @@ class ObjectInspectorItem extends Component {
       if (depth > 0) {
         repProps.mode = mode === MODE.LONG ? MODE.SHORT : MODE.TINY;
       }
-     
+
 
       if (nodeIsLongString(item)) {
         repProps.member = {
@@ -193,6 +194,7 @@ class ObjectInspectorItem extends Component {
         nodeIsPrototype(item) ||
         nodeIsGetter(item) ||
         nodeIsSetter(item) ||
+        nodeIsGlobal(item) ||
         (dimTopLevelWindow === true && nodeIsWindow(item) && depth === 0))
     ) {
       classNames.push("lessen");

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,8 +26,8 @@
 #include "nsColor.h"
 #include "nsCOMPtr.h"
 #include "nsCoreUtils.h"
+#include "mozilla/dom/ContentList.h"
 #include "nsDebug.h"
-#include "nsIHTMLCollection.h"
 #include "nsError.h"
 #include "nsGkAtoms.h"
 #include "nsLiteralString.h"
@@ -554,8 +553,7 @@ bool HTMLTableAccessible::IsProbablyLayoutTable() {
   }
 
   // Check for nested tables.
-  nsCOMPtr<nsIHTMLCollection> nestedTables =
-      el->GetElementsByTagName(u"table"_ns);
+  RefPtr<HTMLCollection> nestedTables = el->GetElementsByTagName(u"table"_ns);
   if (nestedTables->Length() > 0) {
     RETURN_LAYOUT_ANSWER(true, "Has a nested table within it");
   }
@@ -615,7 +613,7 @@ bool HTMLTableAccessible::IsProbablyLayoutTable() {
   static const nsLiteralString tags[] = {u"embed"_ns, u"object"_ns,
                                          u"iframe"_ns};
   for (const auto& tag : tags) {
-    nsCOMPtr<nsIHTMLCollection> descendants = el->GetElementsByTagName(tag);
+    RefPtr<HTMLCollection> descendants = el->GetElementsByTagName(tag);
     if (descendants->Length() > 0) {
       RETURN_LAYOUT_ANSWER(true,
                            "Has no borders, and has iframe, object or embed, "

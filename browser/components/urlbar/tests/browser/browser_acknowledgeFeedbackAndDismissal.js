@@ -454,7 +454,7 @@ async function checkRowLabel(resultIndex, expectedLabel) {
   if (expectedLabel) {
     Assert.equal(
       before.content,
-      "attr(label)",
+      `"${expectedLabel}"`,
       "::before content should use the row label"
     );
     Assert.equal(

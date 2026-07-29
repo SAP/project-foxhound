@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -29,7 +28,7 @@ interface Report {
 [Pref="dom.reporting.enabled",
  Exposed=(Window,Worker)]
 interface ReportingObserver {
-  [Throws]
+  [UseCounter, Throws]
   constructor(ReportingObserverCallback callback, optional ReportingObserverOptions options = {});
   undefined observe();
   undefined disconnect();
@@ -87,6 +86,15 @@ interface CSPViolationReportBody : ReportBody {
   readonly attribute unsigned long? columnNumber;
 };
 
+enum IntegrityViolationReason {
+  "manifest_unavailable",
+  "invalid_manifest",
+  "invalid_transparency_proof",
+  "untrusted_transparency_proof",
+  "missing_from_manifest",
+  "no_manifest_match",
+};
+
 // https://w3c.github.io/webappsec-subresource-integrity/#report-violations
 [Exposed=Window, Pref="dom.reporting.enabled"]
 interface IntegrityViolationReportBody : ReportBody {
@@ -95,6 +103,9 @@ interface IntegrityViolationReportBody : ReportBody {
   readonly attribute UTF8String blockedURL;
   readonly attribute UTF8String destination;
   readonly attribute boolean    reportOnly;
+  // TODO: Move this to a new interface.
+  [Pref="security.waict.enabled"]
+  readonly attribute IntegrityViolationReason? reason;
 };
 
 // Used internally to process the JSON

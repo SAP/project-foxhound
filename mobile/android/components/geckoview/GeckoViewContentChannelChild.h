@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -41,8 +39,7 @@ class GeckoViewContentChannelChild final
 
   mozilla::ipc::IPCResult RecvOnDataAvailable(const nsresult& aChannelStatus,
                                               const nsACString& aData,
-                                              const uint64_t& aOffset,
-                                              const uint32_t& aCount);
+                                              const uint64_t& aOffset);
 
   mozilla::ipc::IPCResult RecvOnStopRequest(const nsresult& aChannelStatus);
 
@@ -63,7 +60,7 @@ class GeckoViewContentChannelChild final
                         const nsCString& aEntityID, nsIURI* aURI);
 
   void DoOnDataAvailable(const nsresult& aChannelStatus, const nsCString& aData,
-                         const uint64_t& aOffset, const uint32_t& aCount);
+                         const uint64_t& aOffset);
 
   void DoOnStopRequest(const nsresult& aChannelStatus);
 

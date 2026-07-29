@@ -7,8 +7,8 @@
  *
  * The primary method in this module is `generateMemories`, which orchestrates the entire pipeline:
  * 1. Generates initial memories from a specified user data user
- * 2. Deduplicates the newly generated memories against all existing memories
- * 3. Filters out memories with sensitive content (i.e. financial, medical, etc.)
+ * 2. Filters out low-quality (generic/ephemeral) AND sensitive memories
+ * 3. Deduplicates the newly generated memories against all existing memories
  * 4. Returns the final list of memories objects
  *
  * `generateMemories` requires 3 arguments:
@@ -17,7 +17,8 @@
  * 3. `existingMemoriesList`: an array of existing memory summary strings to deduplicate against
  *
  * Example Usage:
- * const engine = await openAIEngine.build(MODEL_FEATURES.MEMORIES, DEFAULT_ENGINE_ID, SERVICE_TYPES.MEMORIES);
+ * const ctx = await loadCallContext(MODEL_FEATURES.MEMORIES_INITIAL_GENERATION_SYSTEM);
+ * const engine = await openAIEngine.build({ model: ctx.model, serviceType: ctx.serviceType, purpose: ctx.purpose, flowId: null, feature: MODEL_FEATURES.MEMORIES_INITIAL_GENERATION_SYSTEM });
  * const sources = {history: [domainItems, titleItems, searchItems]};
  * const existingMemoriesList = [...]; // Array of existing memory summary strings; this should be fetched from memory storage
  * const newMemories = await generateMemories(engine, sources, existingMemoriesList);
@@ -26,6 +27,12 @@
 
 import { renderPrompt, openAIEngine, MODEL_FEATURES } from "../Utils.sys.mjs";
 
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  loadPrompt:
+    "moz-src:///browser/components/aiwindow/models/PromptLoader.sys.mjs",
+});
+
 import {
   HISTORY,
   CONVERSATION,
@@ -33,12 +40,13 @@ import {
   CATEGORIES_LIST,
   INTENTS,
   INTENTS_LIST,
+  MAX_MEMORY_SUMMARY_LENGTH,
 } from "./MemoriesConstants.sys.mjs";
 
 import {
   INITIAL_MEMORIES_SCHEMA,
+  MEMORIES_QUALITY_AND_SENSITIVITY_FILTER_SCHEMA,
   MEMORIES_DEDUPLICATION_SCHEMA,
-  MEMORIES_NON_SENSITIVE_SCHEMA,
 } from "moz-src:///browser/components/aiwindow/models/memories/MemoriesSchemas.sys.mjs";
 
 /**
@@ -64,30 +72,33 @@ export async function generateMemories(engine, sources, existingMemoriesList) {
     return [];
   }
 
-  // Step 2: Deduplicate against existing memories
+  // Step 2: Filter out low-quality and sensitive memories
   const initialMemoriesSummaries = initialMemories.map(
     memory => memory.memory_summary
   );
+  const filteredMemoriesSummaries = await applyQualityAndSensitivityFilter(
+    engine,
+    initialMemoriesSummaries
+  );
+  if (!filteredMemoriesSummaries || filteredMemoriesSummaries.length === 0) {
+    return [];
+  }
+
+  // Step 3: Deduplicate against existing memories
   const dedupedMemoriesSummaries = await deduplicateMemories(
     engine,
     existingMemoriesList,
-    initialMemoriesSummaries
+    filteredMemoriesSummaries
   );
   // If we don't have any deduped memories, no new memories were generated or we ran into an unexpected JSON parse error, so return an empty list
   if (!dedupedMemoriesSummaries || dedupedMemoriesSummaries.length === 0) {
     return [];
   }
 
-  // Step 3: Filter out sensitive memories
-  const nonSensitiveMemoriesSummaries = await filterSensitiveMemories(
-    engine,
-    dedupedMemoriesSummaries
-  );
-
-  // Step 4: Map back to full memory objects and return
+  // Step 4: Map back to full memory objects
   return await mapFilteredMemoriesToInitialList(
     initialMemories,
-    nonSensitiveMemoriesSummaries
+    dedupedMemoriesSummaries
   );
 }
 
@@ -208,6 +219,17 @@ function sanitizeMemory(memory) {
     return null;
   }
 
+  // Check for maximum memory summary length
+  if (
+    memory.memory_summary &&
+    memory.memory_summary.length > MAX_MEMORY_SUMMARY_LENGTH
+  ) {
+    console.warn(
+      `Memory rejected: memory_summary exceeds max length of ${MAX_MEMORY_SUMMARY_LENGTH}: "${memory.memory_summary}"`
+    );
+    return null;
+  }
+
   // Check that the candidate memory object has all the required string fields
   for (const field of ["category", "intent", "memory_summary", "reasoning"]) {
     if (!(field in memory) && typeof memory[field] !== "string") {
@@ -278,13 +300,11 @@ function normalizeMemoryList(parsed) {
  * }>>>}                            Promise resolving the list of generated memories
  */
 export async function generateInitialMemoriesList(engine, sources) {
-  const systemPrompt = await engine.loadPrompt(
-    MODEL_FEATURES.MEMORIES_INITIAL_GENERATION_SYSTEM
-  );
-
-  const userPromptTemplate = await engine.loadPrompt(
-    MODEL_FEATURES.MEMORIES_INITIAL_GENERATION_USER
-  );
+  const [{ prompt: systemPrompt }, { prompt: userPromptTemplate }] =
+    await Promise.all([
+      lazy.loadPrompt(MODEL_FEATURES.MEMORIES_INITIAL_GENERATION_SYSTEM),
+      lazy.loadPrompt(MODEL_FEATURES.MEMORIES_INITIAL_GENERATION_USER),
+    ]);
 
   // Build sources string
   let profileRecordsRenderedStr = "";
@@ -303,7 +323,7 @@ export async function generateInitialMemoriesList(engine, sources) {
   }
 
   // Render user prompt with dynamic values
-  const userPrompt = await renderPrompt(userPromptTemplate, {
+  const userPrompt = renderPrompt(userPromptTemplate, {
     categoriesList: getFormattedMemoryAttributeList(CATEGORIES),
     intentsList: getFormattedMemoryAttributeList(INTENTS),
     profileRecordsRenderedStr,
@@ -335,15 +355,13 @@ export async function deduplicateMemories(
   existingMemoriesList,
   newMemoriesList
 ) {
-  const systemPrompt = await engine.loadPrompt(
-    MODEL_FEATURES.MEMORIES_DEDUPLICATION_SYSTEM
-  );
+  const [{ prompt: systemPrompt }, { prompt: userPromptTemplate }] =
+    await Promise.all([
+      lazy.loadPrompt(MODEL_FEATURES.MEMORIES_DEDUPLICATION_SYSTEM),
+      lazy.loadPrompt(MODEL_FEATURES.MEMORIES_DEDUPLICATION_USER),
+    ]);
 
-  const userPromptTemplate = await engine.loadPrompt(
-    MODEL_FEATURES.MEMORIES_DEDUPLICATION_USER
-  );
-
-  const userPrompt = await renderPrompt(userPromptTemplate, {
+  const userPrompt = renderPrompt(userPromptTemplate, {
     existingMemoriesList: formatListForPrompt(existingMemoriesList),
     newMemoriesList: formatListForPrompt(newMemoriesList),
   });
@@ -362,7 +380,6 @@ export async function deduplicateMemories(
 
   const parsed = parseAndExtractJSON(response, { unique_memories: [] });
 
-  // Able to extract a JSON, so the fallback wasn't used, but the LLM didn't follow the schema
   if (
     parsed.unique_memories === undefined ||
     !Array.isArray(parsed.unique_memories)
@@ -380,22 +397,23 @@ export async function deduplicateMemories(
 }
 
 /**
- * Prompts an LLM to filter out sensitive memories from an memories list
+ * Prompts an LLM to filter out both low-quality (generic/ephemeral) and sensitive
+ * memories.
  *
  * @param {OpenAIEngine} engine         openAIEngine instance to call LLM API
  * @param {Array<string>} memoriesList  List of memory summary strings to filter
- * @returns {Promise<Array<string>>}    Promise resolving the final list of non-sensitive memory summary strings
+ * @returns {Promise<Array<string>>}    Promise resolving the list of memory summary strings that are both high quality and non-sensitive
  */
-export async function filterSensitiveMemories(engine, memoriesList) {
-  const systemPrompt = await engine.loadPrompt(
-    MODEL_FEATURES.MEMORIES_SENSITIVITY_FILTER_SYSTEM
+export async function applyQualityAndSensitivityFilter(engine, memoriesList) {
+  const { prompt: systemPrompt } = await lazy.loadPrompt(
+    MODEL_FEATURES.MEMORIES_QUALITY_AND_SENSITIVITY_FILTER_SYSTEM
   );
 
-  const userPromptTemplate = await engine.loadPrompt(
-    MODEL_FEATURES.MEMORIES_SENSITIVITY_FILTER_USER
+  const { prompt: userPromptTemplate } = await lazy.loadPrompt(
+    MODEL_FEATURES.MEMORIES_QUALITY_AND_SENSITIVITY_FILTER_USER
   );
 
-  const userPrompt = await renderPrompt(userPromptTemplate, {
+  const userPrompt = renderPrompt(userPromptTemplate, {
     memoriesList: formatListForPrompt(memoriesList),
   });
 
@@ -406,23 +424,25 @@ export async function filterSensitiveMemories(engine, memoriesList) {
     ],
     responseFormat: {
       type: "json_schema",
-      schema: MEMORIES_NON_SENSITIVE_SCHEMA,
+      schema: MEMORIES_QUALITY_AND_SENSITIVITY_FILTER_SCHEMA,
     },
     fxAccountToken: await openAIEngine.getFxAccountToken(),
   });
 
-  const parsed = parseAndExtractJSON(response, { non_sensitive_memories: [] });
+  const parsed = parseAndExtractJSON(response, { kept_memories: [] });
 
-  // Able to extract a JSON, so the fallback wasn't used, but the LLM didn't follow the schema
   if (
-    parsed.non_sensitive_memories === undefined ||
-    !Array.isArray(parsed.non_sensitive_memories)
+    parsed.kept_memories === undefined ||
+    !Array.isArray(parsed.kept_memories)
   ) {
     return [];
   }
 
-  // Make sure we filter out any invalid entries before returning
-  return parsed.non_sensitive_memories.filter(item => typeof item === "string");
+  // Retain input memories and dont let the LLM reword memories
+  const inputSet = new Set(memoriesList);
+  return parsed.kept_memories.filter(
+    item => typeof item === "string" && inputSet.has(item)
+  );
 }
 
 /**

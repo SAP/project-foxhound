@@ -47,6 +47,7 @@ internal const val FRAGMENT_TAG = "mozac_feature_contextmenu_dialog"
  * show only context menus for this tab if an id is provided.
  * @param mainDispatcher The [CoroutineDispatcher] used for observing the [BrowserStore].
  * @param additionalNote which it will be attached to the bottom of context menu but for a specific [HitResult]
+ * @param shouldHide Whether the context menu should be hidden.
  */
 class ContextMenuFeature(
     private val fragmentManager: FragmentManager,
@@ -57,6 +58,7 @@ class ContextMenuFeature(
     private val tabId: String? = null,
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val additionalNote: (HitResult) -> String? = { null },
+    private val shouldHide: () -> Boolean = { false },
 ) : LifecycleAwareFeature {
     private var scope: CoroutineScope? = null
 
@@ -83,6 +85,9 @@ class ContextMenuFeature(
      */
     override fun stop() {
         scope?.cancel()
+        if (shouldHide()) {
+            hideContextMenu()
+        }
     }
 
     @VisibleForTesting(otherwise = PRIVATE)
@@ -117,7 +122,7 @@ class ContextMenuFeature(
         fragment.show(fragmentManager, FRAGMENT_TAG)
     }
 
-    private fun hideContextMenu() {
+    internal fun hideContextMenu() {
         emitCancelMenuFact()
         fragmentManager.findFragmentByTag(FRAGMENT_TAG)?.let { fragment ->
             fragmentManager.beginTransaction()

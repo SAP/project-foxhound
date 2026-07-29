@@ -46,8 +46,8 @@ class MockVideoSink : public webrtc::VideoSinkInterface<webrtc::VideoFrame> {
 struct TestRTCStatsTimestampState : public dom::RTCStatsTimestampState {
   TestRTCStatsTimestampState()
       : dom::RTCStatsTimestampState(
-            TimeStamp::Now() + TimeDuration::FromMilliseconds(10),
-            webrtc::Timestamp::Micros(0)) {}
+            0, TimeStamp::Now() + TimeDuration::FromMilliseconds(10),
+            webrtc::Timestamp::Micros(0), RTPCallerType::Normal, 0) {}
 };
 
 class TestRTCStatsTimestampMaker : public dom::RTCStatsTimestampMaker {

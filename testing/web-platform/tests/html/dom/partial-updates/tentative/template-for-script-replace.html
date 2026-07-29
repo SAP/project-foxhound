@@ -5,11 +5,9 @@
 <script src="/resources/testharness.js"></script>
 <script src="/resources/testharnessreport.js"></script>
 
-<section id="placeholder" marker="s">
-    <?start name="s"><script>
+<section id="placeholder"><?start name="s"><script>
     window.state = "init";
-    </script><?end name="s">
-</section>
+    </script><?end></section>
 <template for="s"><script>window.state = 'patched';</script></template>
 <script>
 test(() => {

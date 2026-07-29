@@ -29,7 +29,7 @@
         android:gravity="start|center_vertical"
         android:letterSpacing="-0.025"
         android:textAlignment="viewStart"
-        android:textColor="@color/fx_mobile_text_color_primary"
+        android:textColor="@color/fx_mobile_on_surface"
         android:textSize="15sp"
         tools:text="Search the web" />
 
@@ -44,6 +44,6 @@
         android:contentDescription="@string/search_widget_voice"
         android:scaleType="centerInside"
         android:src="@drawable/mozac_ic_microphone_24"
-        android:tint="@color/fx_mobile_icon_color_primary"
+        android:tint="@color/fx_mobile_on_surface"
         tools:ignore="AndroidSrcXmlDetector,UseAppTint" />
 </RelativeLayout>

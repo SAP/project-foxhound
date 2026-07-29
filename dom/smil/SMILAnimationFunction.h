@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -238,14 +236,6 @@ class SMILAnimationFunction {
    * recomposite the sandwich.
    */
   void SetWasSkipped() { mWasSkippedInPrevSample = true; }
-
-  /**
-   * Returns true if we need to recalculate the animation value on every sample.
-   * (e.g. because it depends on context like the font-size)
-   */
-  bool ValueNeedsReparsingEverySample() const {
-    return mValueNeedsReparsingEverySample;
-  }
 
   // Comparator utility class, used for sorting SMILAnimationFunctions
   class MOZ_STACK_CLASS Comparator final {

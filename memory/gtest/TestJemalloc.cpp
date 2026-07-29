@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,6 +16,7 @@
 #ifdef MOZ_PHC
 #  include "PHC.h"
 #endif
+#include "BaseAlloc.h"
 
 using namespace mozilla;
 
@@ -108,7 +107,8 @@ TEST(Jemalloc, PtrInfo)
 
   // For small (less than half the page size) allocations, test every position
   // within many possible sizes.
-  size_t small_max = stats.quantum_wide_max;
+  size_t small_max =
+      stats.subpage_max ? stats.subpage_max : stats.quantum_wide_max;
   for (size_t n = 0; n <= small_max; n += 8) {
     auto p = (char*)moz_arena_malloc(arenaId, n);
     size_t usable = moz_malloc_size_of(p);
@@ -233,7 +233,25 @@ TEST(Jemalloc, PtrInfo)
 
   // Run header.
   size_t page_sizeMask = stats.page_size - 1;
-  char* run = (char*)(uintptr_t(p.get()) & ~page_sizeMask);
+  char* run;
+  // The run header could be at the page boundary of this or any of the
+  // preceeding 3 pages.
+  for (unsigned i = 0; i < 100; i++) {
+    run = (char*)((uintptr_t(p.get()) & ~page_sizeMask) - stats.page_size * i);
+
+    // The run header was not found before finding the chunk header.
+    ASSERT_NE(run, (char*)((uintptr_t)chunk + chunkHeaderSize -
+                           stats.real_page_size));
+
+    jemalloc_ptr_info(run, &info);
+    if (InfoEq(info, TagUnknown, nullptr, 0U, 0U)) {
+      break;
+    }
+
+    // If the loop doesn't break because the run isn't found then the
+    // assertion in the next loop will catch it.
+  }
+
   for (size_t i = 0; i < 4 * sizeof(void*); i++) {
     jemalloc_ptr_info(&run[i], &info);
     ASSERT_TRUE(InfoEq(info, TagUnknown, nullptr, 0U, 0U));
@@ -864,4 +882,223 @@ TEST(Jemalloc, StatsLite)
   }
 
   moz_dispose_arena(my_arena);
+}
+
+void TestBaseAlloc(size_t size, unsigned& hits) {
+  SCOPED_TRACE(testing::Message() << "testing size " << size);
+  void* ptr1 = sBaseAlloc.alloc(size);
+  EXPECT_TRUE(ptr1);
+  EXPECT_TRUE(size <= sBaseAlloc.usable_size(ptr1));
+
+  void* ptr2 = sBaseAlloc.alloc(size);
+  EXPECT_TRUE(ptr2);
+  EXPECT_TRUE(size <= sBaseAlloc.usable_size(ptr2));
+
+  EXPECT_NE(ptr1, ptr2);
+
+  // Freeing the memory and allocating more of the same size should reuse the
+  // same address.
+  sBaseAlloc.free(ptr1);
+  void* ptr3 = sBaseAlloc.alloc(size);
+  EXPECT_TRUE(size <= sBaseAlloc.usable_size(ptr3));
+  if (ptr1 == ptr3) {
+    hits++;
+  }
+
+  sBaseAlloc.free(ptr2);
+  sBaseAlloc.free(ptr3);
+}
+
+TEST(Jemalloc, BaseAlloc)
+{
+  // Used to calculate the free list hit rate, see the end of the test.
+  unsigned tries = 0;
+  unsigned hits = 0;
+
+  // Try varying sizes to hit each size class.  The base allocator's size
+  // classes depend on cache line and C++ structure sizes, they'll be at least
+  // 16 from each-other.
+  for (size_t size = 8; size < 1024; size += 8) {
+    tries++;
+    TestBaseAlloc(size, hits);
+  }
+  for (size_t size = 1024; size < 8192; size += 128) {
+    tries++;
+    TestBaseAlloc(size, hits);
+  }
+  for (size_t size = 8192; size < 8_MiB; size += 1024) {
+    tries++;
+    TestBaseAlloc(size, hits);
+  }
+
+  void* ptr1 = sBaseAlloc.calloc(100, 7);
+  EXPECT_TRUE(ptr1);
+  EXPECT_TRUE(100 * 7 <= sBaseAlloc.usable_size(ptr1));
+  sBaseAlloc.free(ptr1);
+
+  // Free list hit rate is at least 90% (its typically 99%)
+  EXPECT_TRUE(float(hits) / float(tries) >= 0.9f);
+}
+
+TEST(Jemalloc, BaseAllocMergeSplit)
+{
+  // Test merging and splitting together, start with a large allocation then
+  // free it, ensuring it lands in the free lists.
+  void* ptr1 = sBaseAlloc.alloc(4096);
+  size_t ptr1_size = sBaseAlloc.usable_size(ptr1);
+  ASSERT_TRUE(4096 <= ptr1_size);
+  sBaseAlloc.free(ptr1);
+
+  // For small enough sizes we know the allocator will return memory in LIFO
+  // order so naively it would appear that we don't need loops to find recently
+  // inserted cells. However the cell we just freed is 4096 bytes and it'll be
+  // on that free list. The loop here needs to exhaust the smaller free lists
+  // before finding and splitting the 4096 cell.  The smaller cells will be
+  // leaked.
+  BaseAlloc::Stats stats_before = sBaseAlloc.GetStats();
+  void* ptr2;
+  size_t ptr2_size;
+  while (true) {
+    ptr2 = sBaseAlloc.alloc(2048);
+    ptr2_size = sBaseAlloc.usable_size(ptr2);
+    ASSERT_TRUE(2048 <= ptr2_size);
+    if (ptr2 == ptr1) {
+      ASSERT_TRUE(ptr1 == ptr2);
+      // To prove that it did indeed split the cell the new size must be less
+      // than the old size.
+      ASSERT_TRUE(ptr2_size < ptr1_size);
+      break;
+    }
+
+    BaseAlloc::Stats stats = sBaseAlloc.GetStats();
+    ASSERT_EQ(stats.mCommitted, stats_before.mCommitted);
+    if (stats.mCommitted != stats_before.mCommitted) {
+      return;
+    }
+  }
+
+  // We should also be able to allocate the other half of the split cell.  Again
+  // a loop is used because anything in free lists between 1024 bytes and 2048
+  // bytes (where the previous loop started) must be exhausted first.
+  void* ptr3;
+  while (true) {
+    ptr3 = sBaseAlloc.alloc(1024);
+    size_t ptr3_size = sBaseAlloc.usable_size(ptr3);
+    ASSERT_TRUE(1024 <= ptr2_size);
+    if ((uintptr_t(ptr1) < uintptr_t(ptr3)) &&
+        (uintptr_t(ptr3) < uintptr_t(ptr1) + 4096)) {
+      ASSERT_TRUE(ptr3_size <= ptr1_size + ptr2_size);
+      break;
+    }
+
+    BaseAlloc::Stats stats = sBaseAlloc.GetStats();
+    ASSERT_EQ(stats.mCommitted, stats_before.mCommitted);
+    if (stats.mCommitted != stats_before.mCommitted) {
+      return;
+    }
+  }
+
+  // To test merging we should now be able to free ptr2 and ptr3 and allocate a
+  // new cell the size of ptr1 in the same place.
+  sBaseAlloc.free(ptr2);
+  sBaseAlloc.free(ptr3);
+  // This also uses a loop because the cell we're looking for may have been
+  // merged with more cells than we planned placing it in the oversize tree and
+  // we must exhaust the 4096 list first.  Although this won't happen on
+  // the cell's left without a different free() occuring during the test, so we
+  // don't check for that case.
+  while (true) {
+    ptr1 = sBaseAlloc.alloc(4096);
+    if (ptr1 == ptr2) {
+      ASSERT_TRUE(4096 <= sBaseAlloc.usable_size(ptr1));
+      break;
+    }
+
+    BaseAlloc::Stats stats = sBaseAlloc.GetStats();
+    ASSERT_EQ(stats.mCommitted, stats_before.mCommitted);
+    if (stats.mCommitted != stats_before.mCommitted) {
+      return;
+    }
+  }
+
+  sBaseAlloc.free(ptr1);
+}
+
+TEST(Jemalloc, BaseAllocRealloc)
+{
+  void* ptr1 = sBaseAlloc.alloc(4096);
+  size_t ptr1_size = sBaseAlloc.usable_size(ptr1);
+  ASSERT_TRUE(4096 <= ptr1_size);
+
+  // Test realloc using the same allocation, first by shrinking.  Since we're
+  // doing in-place reallocs here ptr1 and ptr2 are interchangeable.
+  void* ptr2 = sBaseAlloc.realloc(ptr1, 2048);
+  size_t ptr2_size = sBaseAlloc.usable_size(ptr2);
+  ASSERT_TRUE(2048 <= ptr2_size);
+  ASSERT_TRUE(4096 > ptr2_size);
+  // all shrinking reallocs are in-place.
+  ASSERT_EQ(ptr1, ptr2);
+
+  // We should now be able to allocate the other half of the split cell.
+  BaseAlloc::Stats stats_before = sBaseAlloc.GetStats();
+  void* ptr3;
+  while (true) {
+    ptr3 = sBaseAlloc.alloc(1024);
+    size_t ptr3_size = sBaseAlloc.usable_size(ptr3);
+    ASSERT_TRUE(1024 <= ptr3_size);
+    if ((uintptr_t(ptr1) < uintptr_t(ptr3)) &&
+        (uintptr_t(ptr3) < uintptr_t(ptr1) + 4096)) {
+      ASSERT_TRUE(ptr3_size < ptr1_size);
+      break;
+    }
+
+    BaseAlloc::Stats stats = sBaseAlloc.GetStats();
+    ASSERT_EQ(stats.mCommitted, stats_before.mCommitted);
+  }
+  sBaseAlloc.free(ptr3);
+
+  // And now that it's free we should be able to realloc in place.
+  ptr1 = sBaseAlloc.realloc(ptr2, 4096);
+  ptr1_size = sBaseAlloc.usable_size(ptr1);
+  ASSERT_EQ(ptr1, ptr2);
+  ASSERT_TRUE(4096 <= ptr1_size);
+
+  // Shrink it again (in-place).
+  ptr2 = sBaseAlloc.realloc(ptr1, 2048);
+  ptr2_size = sBaseAlloc.usable_size(ptr2);
+  ASSERT_TRUE(2048 <= ptr2_size);
+  ASSERT_TRUE(4096 > ptr2_size);
+  ASSERT_EQ(ptr1, ptr2);
+
+  // Allocate the neighbour cell once more, but don't free it.
+  while (true) {
+    ptr3 = sBaseAlloc.alloc(1024);
+    size_t ptr3_size = sBaseAlloc.usable_size(ptr3);
+    ASSERT_TRUE(1024 <= ptr3_size);
+    if ((uintptr_t(ptr1) < uintptr_t(ptr3)) &&
+        (uintptr_t(ptr3) < uintptr_t(ptr1) + 4096)) {
+      ASSERT_TRUE(ptr3_size < ptr1_size);
+      break;
+    }
+
+    BaseAlloc::Stats stats = sBaseAlloc.GetStats();
+    ASSERT_EQ(stats.mCommitted, stats_before.mCommitted);
+  }
+
+  // Instead call realloc forcing it to move the cell.
+  *(uintptr_t*)(ptr2) = 0xCAFE1234;
+  ptr1 = sBaseAlloc.realloc(ptr2, 4096);
+  ASSERT_NE(ptr1, ptr2);
+  ASSERT_TRUE(4096 <= sBaseAlloc.usable_size(ptr1));
+  ASSERT_EQ(*(uintptr_t*)(ptr1), 0xCAFE1234);
+
+  // The origional cell should now be available for a 2048 byte allocation.
+  void* ptr4 = sBaseAlloc.alloc(2048);
+  ASSERT_EQ(ptr4, ptr2);
+  ASSERT_TRUE(2048 <= sBaseAlloc.usable_size(ptr4));
+  ASSERT_TRUE(4096 > sBaseAlloc.usable_size(ptr4));
+
+  sBaseAlloc.free(ptr1);
+  sBaseAlloc.free(ptr3);
+  sBaseAlloc.free(ptr4);
 }

@@ -1,0 +1,168 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test Web Serial API - Worker Support</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="serial_test_utils.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script>
+
+"use strict";
+
+add_task(async function testSerialInWorkerWithNoPorts() {
+  await cleanupSerialPorts();
+  const worker = new Worker("serial_worker.js");
+
+  const testPromise = new Promise((resolve, reject) => {
+    worker.onmessage = (e) => {
+      if (e.data.type === "test") {
+        const { result, message } = e.data;
+        ok(!!result, message);
+      } else if (e.data.type === "done") {
+        resolve();
+      } else if (e.data.type === "error") {
+        reject(new Error(e.data.message));
+      }
+    };
+
+    worker.onerror = (e) => {
+      reject(new Error(`Worker error: ${e.message}`));
+    };
+  });
+
+  await testPromise;
+  worker.terminate();
+});
+
+add_task(async function testWorkerCanAccessGrantedPort() {
+  await cleanupSerialPorts();
+  info("Requesting port in window context");
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  ok(port, "requestPort should succeed in window context");
+
+  let ports = await navigator.serial.getPorts();
+  is(ports.length, 1, "Should have 1 port after requestPort in window");
+  const portInfo = ports[0].getInfo();
+  is(portInfo.usbVendorId, 0x2341, "expected usbVendorId from port");
+  is(portInfo.usbProductId, 0x0043, "expected usbProductId from port");
+
+  info("Creating worker to access granted port");
+  const worker = new Worker("serial_worker_access.js");
+
+  const testPromise = new Promise((resolve, reject) => {
+    worker.onmessage = (e) => {
+      if (e.data.type === "test") {
+        const { result, message } = e.data;
+        ok(result, message);
+      } else if (e.data.type === "done") {
+        resolve();
+      } else if (e.data.type === "error") {
+        reject(new Error(e.data.message));
+      }
+    };
+
+    worker.onerror = (e) => {
+      reject(new Error(`Worker error: ${e.message}`));
+    };
+  });
+
+  try {
+    await testPromise;
+  } finally {
+    worker.terminate();
+    await port.forget();
+    ports = await navigator.serial.getPorts();
+    is(ports.length, 0, "Should have 0 ports after forgetting");
+  }
+});
+
+
+add_task(async function testWorkerCanForgetPort() {
+  await cleanupSerialPorts();
+  info("Requesting port in window context");
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  ok(port, "requestPort should succeed in window context");
+
+  let ports = await navigator.serial.getPorts();
+  is(ports.length, 1, "Should have 1 port before worker forget");
+
+  info("Creating worker to forget port");
+  const worker = new Worker("serial_worker_forget.js");
+
+  const testPromise = new Promise((resolve, reject) => {
+    worker.onmessage = (e) => {
+      if (e.data.type === "test") {
+        const { result, message } = e.data;
+        ok(result, message);
+      } else if (e.data.type === "done") {
+        resolve();
+      } else if (e.data.type === "error") {
+        reject(new Error(e.data.message));
+      }
+    };
+
+    worker.onerror = (e) => {
+      reject(new Error(`Worker error: ${e.message}`));
+    };
+  });
+
+  try {
+    await testPromise;
+  } finally {
+    worker.terminate();
+  }
+
+  // Verify from the window context that the port was actually removed
+  ports = await navigator.serial.getPorts();
+  is(ports.length, 0, "Window getPorts() should return 0 ports after worker forget");
+  await Assert.rejects(
+    port.open({baudRate: 9600}),
+    /InvalidStateError/,
+    "Should fail to open port after worker forget"
+  );
+});
+
+add_task(async function testWorkerCanOpenPort() {
+  await cleanupSerialPorts();
+  info("Requesting port in window context");
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  ok(port, "requestPort should succeed in window context");
+
+  info("Creating worker to open port");
+  const worker = new Worker("serial_worker_open.js");
+
+  const testPromise = new Promise((resolve, reject) => {
+    worker.onmessage = (e) => {
+      if (e.data.type === "test") {
+        const { result, message } = e.data;
+        ok(result, message);
+      } else if (e.data.type === "done") {
+        resolve();
+      } else if (e.data.type === "error") {
+        reject(new Error(e.data.message));
+      }
+    };
+
+    worker.onerror = (e) => {
+      reject(new Error(`Worker error: ${e.message}`));
+    };
+  });
+
+  try {
+    await testPromise;
+  } finally {
+    worker.terminate();
+    await port.forget();
+  }
+});
+
+</script>
+</body>
+</html>

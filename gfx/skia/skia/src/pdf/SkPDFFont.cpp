@@ -156,7 +156,10 @@ sk_sp<SkPDFStrike> SkPDFStrike::Make(SkPDFDocument* doc, const SkFont& font, con
 #endif
 
     SkScalar unitsPerEm = static_cast<SkScalar>(font.getTypeface()->getUnitsPerEm());
-    SkASSERT(0 < unitsPerEm);
+    int glyphCount = font.getTypeface()->countGlyphs();
+    if (unitsPerEm <= 0 || glyphCount <= 0) {
+        return nullptr;
+    }
 
     SkFont canonFont(font);
     canonFont.setBaselineSnap(false);  // canonicalize
@@ -179,7 +182,8 @@ sk_sp<SkPDFStrike> SkPDFStrike::Make(SkPDFDocument* doc, const SkFont& font, con
         canonFont.setSize(font.getSize());
     }
     SkScalar pathStrikeEM = canonFont.getSize();
-    SkStrikeSpec pathStrikeSpec = SkStrikeSpec::MakeWithNoDevice(canonFont, &pathPaint);
+    SkStrikeSpec pathStrikeSpec = SkStrikeSpec::MakeWithNoDevice(canonFont, &pathPaint,
+                                                                 SkScalerContextFlags::kNone);
 
     if (sk_sp<SkPDFStrike>* strike = doc->fStrikes.find(pathStrikeSpec.descriptor())) {
         return *strike;
@@ -201,7 +205,8 @@ sk_sp<SkPDFStrike> SkPDFStrike::Make(SkPDFDocument* doc, const SkFont& font, con
         canonFont.setSize(font.getSize());
     }
     SkScalar imageStrikeEM = canonFont.getSize();
-    SkStrikeSpec imageStrikeSpec = SkStrikeSpec::MakeWithNoDevice(canonFont, &imagePaint);
+    SkStrikeSpec imageStrikeSpec = SkStrikeSpec::MakeWithNoDevice(canonFont, &imagePaint,
+                                                                  SkScalerContextFlags::kNone);
 
     sk_sp<SkPDFStrike> strike(new SkPDFStrike(SkPDFStrikeSpec(pathStrikeSpec, pathStrikeEM),
                                               SkPDFStrikeSpec(imageStrikeSpec, imageStrikeEM),
@@ -328,10 +333,9 @@ SkAdvancedTypefaceMetrics::FontType SkPDFFont::FontType(const SkPDFStrike& pdfSt
     if (SkToBool(metrics.fFlags & SkAdvancedTypefaceMetrics::kVariable_FontFlag) ||
         // PDF is actually interested in the encoding of the data, not just the logical format.
         // If the TrueType is actually wOFF or wOF2 then it should not be directly embedded in PDF.
-        // For now export these as Type3 until the subsetter can handle table based fonts.
-        // See https://github.com/harfbuzz/harfbuzz/issues/3609 and
-        // https://skia-review.googlesource.com/c/skia/+/543485
-        SkToBool(metrics.fFlags & SkAdvancedTypefaceMetrics::kAltDataFormat_FontFlag) ||
+        // Export these as Type3 if the subsetter cannot handle table based fonts.
+        (SkToBool(metrics.fFlags & SkAdvancedTypefaceMetrics::kAltDataFormat_FontFlag)
+            && !SkPDFCanSubsetTableBasedFonts()) ||
         SkToBool(metrics.fFlags & SkAdvancedTypefaceMetrics::kNotEmbeddable_FontFlag) ||
         // Something like 45eeeddb00741493 and 7c86e7641b348ca7b0 to output OpenType should work,
         // but requires PDF 1.6 which is still not supported by all printers. One could fix this by
@@ -766,7 +770,7 @@ static void emit_subset_type3(const SkPDFFont& pdfFont, SkPDFDocument* doc) {
             canvas.translate(-glyphBBox.fLeft, -glyphBBox.fTop);
             canvas.drawDrawable(drawable);
             SkPDFIndirectReference xobject = SkPDFMakeFormXObject(
-                    doc, glyphDevice->content(),
+                    doc, glyphDevice->content(), SkPDFParentTreeKey(),
                     SkPDFMakeArray(0, 0, glyphBBox.width(), glyphBBox.height()),
                     glyphDevice->makeResourceDict(),
                     SkMatrix::Translate(glyphBBox.fLeft, glyphBBox.fTop), nullptr);
@@ -779,8 +783,12 @@ static void emit_subset_type3(const SkPDFFont& pdfFont, SkPDFDocument* doc) {
             setGlyphWidthAndBoundingBox(pathGlyph->advanceX(), glyphBBox, &content);
             SkPaint::Style style = pathGlyph->pathIsHairline() ? SkPaint::kStroke_Style
                                                                : SkPaint::kFill_Style;
-            SkPDFUtils::EmitPath(*path, style, &content);
-            SkPDFUtils::PaintPath(style, path->getFillType(), &content);
+            using SkPDFUtils::EmptyPath, SkPDFUtils::EmptyVerb;
+            if (SkPDFUtils::EmitPath(*path, style, EmptyPath::Discard, EmptyVerb::Discard,
+                                     &content))
+            {
+                SkPDFUtils::PaintPath(style, path->getFillType(), &content);
+            }
         } else if (auto pimg = to_image(gID, &smallGlyphs); pimg.fImage) {
             using SkPDFUtils::AppendScalar;
             if (pimg.fImage->colorType() != kGray_8_SkColorType) {
@@ -848,7 +856,7 @@ static void emit_subset_type3(const SkPDFFont& pdfFont, SkPDFDocument* doc) {
                 SkCanvas canvas(glyphDevice);
                 canvas.drawImage(pimg.fImage, 0, 0);
                 SkPDFIndirectReference sMask = SkPDFMakeFormXObject(
-                        doc, glyphDevice->content(),
+                        doc, glyphDevice->content(), SkPDFParentTreeKey(),
                         SkPDFMakeArray(0, 0, pimg.fImage->width(), pimg.fImage->height()),
                         glyphDevice->makeResourceDict(),
                         SkMatrix(), "DeviceGray");

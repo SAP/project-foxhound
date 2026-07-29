@@ -1,0 +1,95 @@
+.logo-and-wordmark {
+  .spin-ball-small {
+    .spin-ball-small__spin {
+      animation: 5.03s linear both spin-ball-small-spin, 5.03s linear both spin-ball-small-blur;
+      animation-play-state: paused;
+    }
+
+    .spin-ball-small__classic {
+      isolation: isolate;
+      animation: 5.03s linear both spin-ball-small-classic-fade;
+      animation-play-state: paused;
+    }
+
+    .spin-ball-small__nova {
+      animation: 5.03s linear both spin-ball-small-nova-fade;
+      animation-play-state: paused;
+    }
+  }
+}
+
+// @backward-compat { version 153 }
+// All four @keyframes below can be removed after Firefox 153 hits Release.
+@keyframes spin-ball-small-spin {
+  0% {
+    transform: translate(484.5px, 511px) rotate(0deg) scale(1.7, 1.7) translate(-230.8px, -255.1px);
+  }
+
+  2.643% {
+    transform: translate(484.5px, 511px) rotate(0deg) scale(1.7, 1.7) translate(-230.8px, -255.1px);
+    animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
+  }
+
+  9.934% {
+    transform: translate(484.5px, 511px) rotate(-10deg) scale(1.7, 1.7) translate(-230.8px, -255.1px);
+    animation-timing-function: cubic-bezier(0.8, 0, 0.1, 1);
+  }
+
+  42.38% {
+    transform: translate(484.5px, 511px) rotate(2880deg) scale(1.7, 1.7) translate(-230.8px, -255.1px);
+  }
+
+  67.554% {
+    transform: translate(484.5px, 511px) rotate(2880deg) scale(1.7, 1.7) translate(-230.8px, -255.1px);
+  }
+
+  72.859% {
+    transform: translate(484.5px, 511px) rotate(2890deg) scale(1.7, 1.7) translate(-230.8px, -255.1px);
+    animation-timing-function: cubic-bezier(0.8, 0, 0.1, 1);
+  }
+
+  92.052% {
+    transform: translate(484.5px, 511px) rotate(0deg) scale(1.7, 1.7) translate(-230.8px, -255.1px);
+  }
+
+  100% {
+    transform: translate(484.5px, 511px) rotate(0deg) scale(1.7, 1.7) translate(-230.8px, -255.1px);
+  }
+}
+
+@keyframes spin-ball-small-blur {
+  0% { filter: blur(0); }
+  15.239% { filter: blur(0); }
+  26.485% { filter: blur(10px); }
+  35.108% { filter: blur(0); }
+  76.157% { filter: blur(0); }
+  82.118% { filter: blur(10px); }
+  88.754% { filter: blur(0); }
+  100% { filter: blur(0); }
+}
+
+@keyframes spin-ball-small-classic-fade {
+  0% { opacity: 1; }
+
+  14.564% {
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0, 0, 1, 1);
+  }
+
+  27.816% { opacity: 0; }
+  39.738% { opacity: 0; }
+  76.157% { opacity: 0; }
+  82.118% { opacity: 1; }
+  100% { opacity: 1; }
+}
+
+@keyframes spin-ball-small-nova-fade {
+  0% { opacity: 0; }
+  15.239% { opacity: 0; }
+  27.816% { opacity: 1; }
+  39.738% { opacity: 1; }
+  76.157% { opacity: 1; }
+  82.118% { opacity: 0; }
+  100% { opacity: 0; }
+}
+

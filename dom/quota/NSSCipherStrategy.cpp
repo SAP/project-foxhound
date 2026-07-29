@@ -1,20 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "NSSCipherStrategy.h"
 
-#include <algorithm>
-#include <cstdlib>
 #include <cstring>
 #include <utility>
 
+#include "CipherStrategyUtils.h"
 #include "mozilla/Assertions.h"
 
 // NSS includes
-#include "blapit.h"
 #include "nsNSSComponent.h"
 #include "pk11pub.h"
 #include "pkcs11t.h"
@@ -28,27 +24,7 @@ static_assert(NSSCipherStrategy::BlockPrefixLength == 32);
 static_assert(NSSCipherStrategy::BasicBlockSize == 16);
 
 Result<NSSCipherStrategy::KeyType, nsresult> NSSCipherStrategy::GenerateKey() {
-  const auto slot = UniquePK11SlotInfo{PK11_GetInternalSlot()};
-  if (slot == nullptr) {
-    return Err(NS_ERROR_FAILURE);
-  }
-  const auto symKey = UniquePK11SymKey{PK11_KeyGen(
-      slot.get(), CKM_CHACHA20_KEY_GEN, nullptr, sizeof(KeyType), nullptr)};
-  if (symKey == nullptr) {
-    return Err(NS_ERROR_FAILURE);
-  }
-  if (PK11_ExtractKeyValue(symKey.get()) != SECSuccess) {
-    return Err(NS_ERROR_FAILURE);
-  }
-  // No need to free keyData as it is a buffer managed by symKey.
-  SECItem* keyData = PK11_GetKeyData(symKey.get());
-  if (keyData == nullptr) {
-    return Err(NS_ERROR_FAILURE);
-  }
-  KeyType key;
-  MOZ_RELEASE_ASSERT(keyData->len == key.size());
-  std::copy(keyData->data, keyData->data + key.size(), key.data());
-  return key;
+  return mozilla::dom::quota::GenerateKey<NSSCipherStrategy::KeyType>();
 }
 
 nsresult NSSCipherStrategy::Init(const CipherMode aMode,
@@ -122,34 +98,19 @@ nsresult NSSCipherStrategy::Cipher(const Span<uint8_t> aIv,
   return MapSECStatus(rv);
 }
 
-template <size_t N>
-static std::array<uint8_t, N> MakeRandomData() {
-  std::array<uint8_t, N> res;
-
-  const auto rv = PK11_GenerateRandom(res.data(), res.size());
-  /// XXX Allow return of error code to handle this gracefully.
-  MOZ_RELEASE_ASSERT(rv == SECSuccess);
-
-  return res;
-}
-
 std::array<uint8_t, NSSCipherStrategy::BlockPrefixLength>
 NSSCipherStrategy::MakeBlockPrefix() {
   return MakeRandomData<BlockPrefixLength>();
 }
 
 Span<const uint8_t> NSSCipherStrategy::SerializeKey(const KeyType& aKey) {
-  return Span(aKey);
+  return mozilla::dom::quota::SerializeKey<NSSCipherStrategy::KeyType>(aKey);
 }
 
 Maybe<NSSCipherStrategy::KeyType> NSSCipherStrategy::DeserializeKey(
     const Span<const uint8_t>& aSerializedKey) {
-  KeyType res;
-  if (res.size() != aSerializedKey.size()) {
-    return Nothing();
-  }
-  std::copy(aSerializedKey.cbegin(), aSerializedKey.cend(), res.begin());
-  return Some(res);
+  return mozilla::dom::quota::DeserializeKey<NSSCipherStrategy::KeyType>(
+      aSerializedKey);
 }
 
 }  // namespace mozilla::dom::quota

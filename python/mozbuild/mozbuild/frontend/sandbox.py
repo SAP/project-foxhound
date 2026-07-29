@@ -100,6 +100,8 @@ class Sandbox(dict):
     what it is given for namespaces is a dict.
     """
 
+    __hash__ = object.__hash__
+
     # The default set of builtins.
     BUILTINS = ReadOnlyDict({
         # Only real Python built-ins should go here.

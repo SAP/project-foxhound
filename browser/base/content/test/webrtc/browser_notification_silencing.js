@@ -34,7 +34,7 @@ async function testNotificationSilencing(aBrowser) {
     .getEnumerator("Browser:WebRTCGlobalIndicator")
     .hasMoreElements();
 
-  let window = aBrowser.ownerGlobal;
+  let window = aBrowser.documentGlobal;
 
   let alertsService = Cc["@mozilla.org/alerts-service;1"]
     .getService(Ci.nsIAlertsService)

@@ -8,4 +8,5 @@ license = "MPL-2.0"
 name = "embedded-uniffi-bindgen"
 
 [dependencies]
+embedded-uniffi-bindgen = { path = "../../../third_party/application-services/tools/embedded-uniffi-bindgen" }
 mozilla-central-workspace-hack = { version = "0.1", features = ["toolchain-embedded-uniffi-bindgen"], optional = true }

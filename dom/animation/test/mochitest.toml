@@ -25,6 +25,7 @@ skip-if = [
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1784938
   "os == 'win' && os_version == '10.2009' && arch == 'x86_64' && opt", # Bug 1784938
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1784938
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && opt", # Bug 1784938
 ]
 
 ["document-timeline/test_request_animation_frame.html"]
@@ -59,6 +60,7 @@ skip-if = [
 ["mozilla/test_event_listener_leaks.html"]
 skip-if = [
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug && xorigin && verify-standalone",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && debug && xorigin && verify-standalone",
 ]
 
 ["mozilla/test_get_animations_on_scroll_animations.html"]

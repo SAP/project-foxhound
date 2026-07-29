@@ -263,6 +263,76 @@ ROOT_HASHES_FOOTER = """\
 """
 
 
+CERT_VALIDATION_BY_CA_QUERY_HEADER = """\
+-- This is a generated file. To regenerate, run regen_root_ca_metadata.py.
+"""
+
+CERT_VALIDATION_BY_CA_QUERY_PREFIX = """\
+WITH per_client AS (
+  SELECT
+    client_info.client_id,
+    DATE(submission_timestamp) AS day,
+    CAST(v.key AS INT64) AS ca,
+    SUM(v.value) AS value
+  FROM
+    `moz-fx-data-shared-prod.firefox_desktop.metrics`,
+    UNNEST(metrics.custom_distribution.cert_validation_success_by_ca_2.values) AS v
+  WHERE
+    client_info.app_channel = 'release'
+    AND DATE(submission_timestamp) >= DATE_SUB(CURRENT_DATE, INTERVAL 7 DAY)
+    AND metrics.custom_distribution.cert_validation_success_by_ca_2.values IS NOT NULL
+    AND sample_id < 10 -- 10% sample; use sample_id = 0 for 1%, remove for 100%
+  GROUP BY
+    client_info.client_id,
+    day,
+    ca
+),
+totals AS (
+  SELECT
+    ca,
+    SUM(value) AS value,
+    day
+  FROM
+    per_client
+  GROUP BY
+    ca,
+    day
+)
+SELECT
+  CASE ca
+"""
+
+CERT_VALIDATION_BY_CA_QUERY_SUFFIX = """\
+    WHEN 0 THEN 'Unknown (0)'
+    WHEN 1 THEN 'User cert DB (1)'
+    WHEN 2 THEN 'External PKCS#11 module (2)'
+    WHEN 3 THEN 'Third-party OS root (3)'
+    ELSE CAST(ca AS STRING)
+  END AS ca,
+  value,
+  ROUND(100.0 * value / SUM(value) OVER (PARTITION BY day), 2) AS pct,
+  day
+FROM
+  totals
+ORDER BY
+  day,
+  value DESC
+"""
+
+
+def write_cert_validation_by_ca_query(path, known_root_hashes):
+    """Write a BigQuery SQL query for cert.validation_success_by_ca_2."""
+    with open(path, "w") as f:
+        f.write(CERT_VALIDATION_BY_CA_QUERY_HEADER)
+        f.write(CERT_VALIDATION_BY_CA_QUERY_PREFIX)
+        for root_hash in sorted(known_root_hashes.values(), key=lambda r: r.bin_number):
+            label = root_hash.label.replace("'", "''")
+            f.write(
+                f"    WHEN {root_hash.bin_number} THEN '{label} ({root_hash.bin_number})'\n"
+            )
+        f.write(CERT_VALIDATION_BY_CA_QUERY_SUFFIX)
+
+
 def write_root_hashes(path, certdata, known_root_hashes):
     """Write the known root hashes C++ source file for inclusion
     in the build."""
@@ -333,3 +403,10 @@ if __name__ == "__main__":
     # certdata.txt.
     root_hashes_path = Path("security/manager/ssl/RootHashes.inc")
     write_root_hashes(root_hashes_path, certdata, known_root_hashes)
+
+    cert_validation_by_ca_query_path = Path(
+        "security/manager/tools/cert_validation_by_ca_query.sql"
+    )
+    write_cert_validation_by_ca_query(
+        cert_validation_by_ca_query_path, known_root_hashes
+    )

@@ -45,7 +45,6 @@ import mozilla.components.support.webextensions.facts.WebExtensionFacts.Items.WE
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -55,6 +54,7 @@ import org.mockito.Mockito.never
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import kotlin.coroutines.ContinuationInterceptor
+import kotlin.test.assertNotNull
 import mozilla.components.support.base.facts.Action as FactsAction
 
 @RunWith(AndroidJUnit4::class)
@@ -169,7 +169,7 @@ class WebExtensionSupportTest {
         WebExtensionSupport.initialize(
             engine,
             store,
-            onNewTabOverride = { _, _, _ ->
+            onNewTabOverride = { _, _, _, _ ->
                 onNewTabCalled = true
                 "123"
             },
@@ -178,6 +178,57 @@ class WebExtensionSupportTest {
 
         delegateCaptor.value.onNewTab(ext, engineSession, true, "https://mozilla.org")
         assertTrue(onNewTabCalled)
+    }
+
+    @Test
+    fun `forwards active flag to onNewTabOverride`() {
+        val store = BrowserStore()
+        val engine: Engine = mock()
+        val ext: WebExtension = mock()
+        val engineSession: EngineSession = mock()
+        val capturedSelected = mutableListOf<Boolean>()
+        var selectTabOverrideCallCount = 0
+
+        val delegateCaptor = argumentCaptor<WebExtensionDelegate>()
+        WebExtensionSupport.initialize(
+            engine,
+            store,
+            onNewTabOverride = { _, _, _, selected ->
+                capturedSelected.add(selected)
+                "session-${capturedSelected.size}"
+            },
+            onSelectTabOverride = { _, _ ->
+                selectTabOverrideCallCount++
+            },
+        )
+        verify(engine).registerWebExtensionDelegate(delegateCaptor.capture())
+
+        delegateCaptor.value.onNewTab(ext, engineSession, true, "https://mozilla.org")
+        delegateCaptor.value.onNewTab(ext, engineSession, false, "https://mozilla.org")
+
+        assertEquals(listOf(true, false), capturedSelected)
+        // onSelectTabOverride should only fire for the active=true case; the override
+        // is responsible for the active=false case via its own selected argument.
+        assertEquals(1, selectTabOverrideCallCount)
+    }
+
+    @Test
+    fun `reacts to new tab being opened in background by adding unselected tab to store`() {
+        val store = BrowserStore(middleware = listOf(captureMiddleware))
+        val engine: Engine = mock()
+        val ext: WebExtension = mock()
+        val engineSession: EngineSession = mock()
+
+        val delegateCaptor = argumentCaptor<WebExtensionDelegate>()
+        WebExtensionSupport.initialize(engine, store)
+        verify(engine).registerWebExtensionDelegate(delegateCaptor.capture())
+
+        delegateCaptor.value.onNewTab(ext, engineSession, false, "https://mozilla.org")
+
+        captureMiddleware.assertFirstAction(TabListAction.AddTabAction::class) { action ->
+            assertEquals("https://mozilla.org", action.tab.content.url)
+            assertFalse(action.select)
+        }
     }
 
     @Test
@@ -770,6 +821,31 @@ class WebExtensionSupportTest {
         captureMiddleware.assertFirstAction(WebExtensionAction.UpdatePageAction::class) { action ->
             assertEquals(ext.id, action.extensionId)
             assertEquals(pageAction, action.pageAction)
+        }
+    }
+
+    @Test
+    fun `reacts to call for opening options page by dispatching to the store`() {
+        val store = BrowserStore(middleware = listOf(captureMiddleware))
+        val engine: Engine = mock()
+        val ext: WebExtension = mock()
+        val metaData: Metadata = mock()
+        whenever(ext.id).thenReturn("testId")
+        whenever(ext.getMetadata()).thenReturn(metaData)
+        whenever(metaData.openOptionsPageInTab).thenReturn(false)
+        whenever(metaData.optionsPageUrl).thenReturn("testUrl")
+        whenever(metaData.name).thenReturn("testName")
+
+        val delegateCaptor = argumentCaptor<WebExtensionDelegate>()
+        WebExtensionSupport.initialize(engine, store)
+        verify(engine).registerWebExtensionDelegate(delegateCaptor.capture())
+
+        delegateCaptor.value.onOpenOptionsPage(ext)
+        captureMiddleware.assertFirstAction(WebExtensionAction.UpdateOptionsPageSessionAction::class) { action ->
+            assertEquals(ext.id, action.extensionId)
+            assertTrue(action.optionsPageInstanceId.isNotEmpty())
+            assertEquals(metaData.optionsPageUrl, action.optionsPageUrl)
+            assertEquals(metaData.name, action.extensionTranslatedName)
         }
     }
 

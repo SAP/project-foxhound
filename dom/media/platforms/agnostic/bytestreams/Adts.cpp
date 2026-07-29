@@ -12,8 +12,9 @@
 #include "mozilla/Array.h"
 #include "mozilla/Logging.h"
 
-#define LOG(msg, ...) \
-  MOZ_LOG(gMediaDemuxerLog, LogLevel::Debug, msg, ##__VA_ARGS__)
+#define LOG(...)                                 \
+  MOZ_LOG_FMT(gMediaDemuxerLog, LogLevel::Debug, \
+              MOZ_LOG_EXPAND_ARGS __VA_ARGS__)
 #define ADTSLOG(msg, ...) \
   DDMOZ_LOG(gMediaDemuxerLog, LogLevel::Debug, msg, ##__VA_ARGS__)
 #define ADTSLOGV(msg, ...) \
@@ -43,18 +44,18 @@ bool ConvertSample(uint16_t aChannelCount, uint8_t aFrequencyIndex,
                    uint8_t aProfile, MediaRawData* aSample) {
   size_t newSize = aSample->Size() + kADTSHeaderSize;
 
-  MOZ_LOG(sPDMLog, LogLevel::Debug,
-          ("Converting sample to ADTS format: newSize: %zu, ch: %u, "
-           "profile: %u, freq index: %d",
-           newSize, aChannelCount, aProfile, aFrequencyIndex));
+  MOZ_LOG_FMT(sPDMLog, LogLevel::Debug,
+              "Converting sample to ADTS format: newSize: {}, ch: {}, "
+              "profile: {}, freq index: {}",
+              newSize, aChannelCount, aProfile, aFrequencyIndex);
 
   // ADTS header uses 13 bits for packet size.
   if (newSize >= (1 << 13) || aChannelCount > 15 || aProfile < 1 ||
       aProfile > 4 || aFrequencyIndex >= FREQ_LOOKUP.size()) {
-    MOZ_LOG(sPDMLog, LogLevel::Debug,
-            ("Couldn't convert sample to ADTS format: newSize: %zu, ch: %u, "
-             "profile: %u, freq index: %d",
-             newSize, aChannelCount, aProfile, aFrequencyIndex));
+    MOZ_LOG_FMT(sPDMLog, LogLevel::Debug,
+                "Couldn't convert sample to ADTS format: newSize: {}, ch: {}, "
+                "profile: {}, freq index: {}",
+                newSize, aChannelCount, aProfile, aFrequencyIndex);
     return false;
   }
 
@@ -98,7 +99,7 @@ bool StripHeader(MediaRawData* aSample) {
 
   bool crcPresent = header.mHaveCrc;
 
-  LOG(("Stripping ADTS, crc %spresent", crcPresent ? "" : "not "));
+  LOG(("Stripping ADTS, crc {}present", crcPresent ? "" : "not "));
 
   size_t toStrip = crcPresent ? kADTSHeaderSize + 2 : kADTSHeaderSize;
 
@@ -177,7 +178,7 @@ bool FrameHeader::Parse(const Span<const uint8_t>& aData) {
                                           32000, 24000, 22050, 16000, 12000,
                                           11025, 8000,  7350};
   if (mSamplingIndex >= std::size(SAMPLE_RATES)) {
-    LOG(("ADTS: Init() failure: invalid sample-rate index value: %" PRIu32 ".",
+    LOG(("ADTS: Init() failure: invalid sample-rate index value: {}.",
          mSamplingIndex));
     // This marks the header as invalid.
     mFrameLength = 0;

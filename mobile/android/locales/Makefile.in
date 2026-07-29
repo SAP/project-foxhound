@@ -16,7 +16,7 @@ include $(topsrcdir)/config/rules.mk
 # be included in langpack xpis.
 DIST_SUBDIRS = $(DIST_SUBDIR)
 
-MOZ_LANGPACK_EID=langpack-$(AB_CD)@firefox.mozilla.org
+MOZ_LANGPACK_EID = langpack-$(AB_CD)@$(MOZ_LANGPACK_EID_HOST)
 
 include $(topsrcdir)/toolkit/locales/l10n.mk
 

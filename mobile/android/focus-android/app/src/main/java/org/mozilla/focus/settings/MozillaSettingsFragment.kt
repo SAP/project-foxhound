@@ -15,6 +15,9 @@ import org.mozilla.focus.state.AppAction
 import org.mozilla.focus.state.Screen
 import org.mozilla.focus.utils.SupportUtils
 
+/**
+ * Settings fragment for Mozilla-related links and information.
+ */
 class MozillaSettingsFragment :
     BaseSettingsFragment() {
     override fun onCreatePreferences(p0: Bundle?, p1: String?) {

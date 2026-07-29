@@ -2337,7 +2337,6 @@ head_rev: c4525dfe35a20458c7a6966c0c6d27f92f2deca7
 head_tag: ''
 hg_branch: default
 level: '3'
-message: ''
 moz_build_date: '20251009121631'
 next_version: 140.4.1esr
 optimize_strategies: null
@@ -2375,8 +2374,6 @@ release_partners: null
 release_product: firefox
 release_type: esr140
 repository_type: hg
-required_signoffs: []
-signoff_urls: {}
 target_tasks_method: promote_desktop
 tasks_for: hg-push
 test_manifest_loader: default

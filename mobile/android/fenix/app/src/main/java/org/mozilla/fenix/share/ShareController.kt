@@ -6,6 +6,7 @@ package org.mozilla.fenix.share
 
 import android.content.ActivityNotFoundException
 import android.content.ClipData
+import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -16,6 +17,8 @@ import android.content.Intent.FLAG_ACTIVITY_MULTIPLE_TASK
 import android.content.Intent.FLAG_ACTIVITY_NEW_DOCUMENT
 import android.net.Uri
 import android.os.Build
+import android.os.PersistableBundle
+import androidx.annotation.RequiresApi
 import androidx.annotation.VisibleForTesting
 import androidx.core.net.toUri
 import androidx.navigation.NavController
@@ -126,6 +129,7 @@ class DefaultShareController(
         dismiss(ShareController.Result.DISMISSED)
     }
 
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     override fun handleShareToApp(app: AppShareOption) {
         Events.shareToApp.record(
             getShareToAppSafeExtra(
@@ -296,19 +300,18 @@ class DefaultShareController(
         return "data:,${Uri.encode(this)}"
     }
 
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private fun copyClipboard() {
         val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clipData = ClipData.newPlainText(getShareSubject(), getShareText())
 
-        clipboardManager.setPrimaryClip(clipData)
-
-        // Android 13+ shows by default a popup for copied text.
-        // Avoid overlapping popups informing the user when the URL is copied to the clipboard.
-        // and only show our snackbar when Android will not show an indication by default.                 *
-        // See https://developer.android.com/develop/ui/views/touch-and-input/copy-paste#duplicate-notifications).
-        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) {
-            appStore.dispatch(ShareAction.CopyLinkToClipboard)
+        if (isPrivate) {
+            clipData.description.extras = PersistableBundle().apply {
+                putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+            }
         }
+
+        clipboardManager.setPrimaryClip(clipData)
     }
 
     companion object {

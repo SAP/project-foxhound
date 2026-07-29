@@ -2704,7 +2704,11 @@ TEST_F(LibYUVConvertTest, TestYUY2ToARGB) {
   }
   YUY2ToARGB(&orig_pixels[0][0], 0, &dest_argb[0][0], 0, 256, 1);
   uint32_t checksum = HashDjb2(&dest_argb[0][0], sizeof(dest_argb), 5381);
+#if defined(LIBYUV_UNLIMITED_DATA)
+  EXPECT_EQ(10343289u, checksum);
+#else
   EXPECT_EQ(3486643515u, checksum);
+#endif
 }
 
 TEST_F(LibYUVConvertTest, TestUYVYToARGB) {
@@ -2718,7 +2722,11 @@ TEST_F(LibYUVConvertTest, TestUYVYToARGB) {
   }
   UYVYToARGB(&orig_pixels[0][0], 0, &dest_argb[0][0], 0, 256, 1);
   uint32_t checksum = HashDjb2(&dest_argb[0][0], sizeof(dest_argb), 5381);
+#if defined(LIBYUV_UNLIMITED_DATA)
+  EXPECT_EQ(10343289u, checksum);
+#else
   EXPECT_EQ(3486643515u, checksum);
+#endif
 }
 
 #ifdef ENABLE_ROW_TESTS
@@ -2771,10 +2779,10 @@ TEST_F(LibYUVConvertTest, TestARGBToUVRow) {
       benchmark_width_ * benchmark_height_ * benchmark_iterations_ / 32;
 
   for (int i = 0; i < benchmark_iterations; ++i) {
-#if defined(HAS_ARGBTOUVROW_SSSE3)
-    int has_ssse3 = TestCpuFlag(kCpuHasSSSE3);
-    if (has_ssse3) {
-      ARGBToUVRow_SSSE3(&orig_argb_pixels[0], 0, &dest_u[0], &dest_v[0], 64);
+#if defined(HAS_ARGBTOUVROW_AVX2)
+    int has_avx2 = TestCpuFlag(kCpuHasAVX2);
+    if (has_avx2) {
+      ARGBToUVRow_AVX2(&orig_argb_pixels[0], 0, &dest_u[0], &dest_v[0], 64);
     } else {
       ARGBToUVRow_C(&orig_argb_pixels[0], 0, &dest_u[0], &dest_v[0], 64);
     }

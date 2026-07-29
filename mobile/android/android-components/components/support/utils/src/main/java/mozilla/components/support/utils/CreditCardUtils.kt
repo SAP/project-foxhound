@@ -36,7 +36,7 @@ data class CreditCardIIN(
 
 /**
  * Enum of supported credit card network types. This list mirrors the networks from
- * https://searchfox.org/mozilla-central/source/toolkit/modules/CreditCard.jsm
+ * https://searchfox.org/firefox-main/source/toolkit/modules/CreditCard.jsm
  */
 enum class CreditCardNetworkType(val cardName: String) {
     AMEX("amex"),

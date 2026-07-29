@@ -267,6 +267,7 @@ add_task(async function test_openai_fxaccount_token() {
   // Mock server that checks for fxAccount token in headers
   let capturedFxaHeader = null;
   let capturedServiceTypeHeader = null;
+  let capturedChatIdHeader = null;
   const { server: mockServer, port } = startMockOpenAI({
     echo: "Response with FxA token",
     onRequest: req => {
@@ -277,6 +278,9 @@ add_task(async function test_openai_fxaccount_token() {
         if (req.hasHeader("service-type")) {
           capturedServiceTypeHeader = req.getHeader("service-type");
         }
+        if (req.hasHeader("chat-id")) {
+          capturedChatIdHeader = req.getHeader("chat-id");
+        }
       } catch (e) {
         info("Failed to get header: " + e);
       }
@@ -285,6 +289,7 @@ add_task(async function test_openai_fxaccount_token() {
 
   const fxAccountToken = "test_fxa_token_12345";
   const apiKey = "test-api-key";
+  const chatId = "test-chat-id-12345";
 
   const engineInstance = await createEngine({
     ...BASE_ENGINE_OPTIONS,
@@ -301,6 +306,7 @@ add_task(async function test_openai_fxaccount_token() {
       },
     ],
     fxAccountToken,
+    chatId,
   };
 
   try {
@@ -326,6 +332,12 @@ add_task(async function test_openai_fxaccount_token() {
       capturedServiceTypeHeader,
       "ai",
       "service-type header should be 'ai' when FxA token is provided"
+    );
+
+    Assert.equal(
+      capturedChatIdHeader,
+      chatId,
+      `chat-id header should be included in request headers. Expected: ${chatId}, Got: ${capturedChatIdHeader}`
     );
 
     info("Test without fxAccountToken - should not include header");

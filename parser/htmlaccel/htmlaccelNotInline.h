@@ -7,6 +7,8 @@
 
 #include "mozilla/Attributes.h"
 
+#include <cstddef>
+
 namespace mozilla::htmlaccel {
 // True iff the buffer contains less-than, ampersand, carriage return,
 // or U+0000.
@@ -27,22 +29,22 @@ MOZ_NEVER_INLINE bool ContainsMarkup(const char16_t* aPtr,
 /// greater-than, ampersand, or no-break space.
 /// Examines the input in multiples of 16 code units and does not examine
 /// the tail that is left over.
-MOZ_NEVER_INLINE size_t SkipNonEscapedInTextNode(const char16_t* aPtr,
-                                                 const char16_t* aEnd);
+MOZ_NEVER_INLINE std::size_t SkipNonEscapedInTextNode(const char16_t* aPtr,
+                                                      const char16_t* aEnd);
 
 /// Returns the length of the prefix that does not contain less-than,
 /// greater-than, ampersand, or no-break space.
 /// Examines the input in multiples of 16 code units and does not examine
 /// the tail that is left over.
-MOZ_NEVER_INLINE size_t SkipNonEscapedInTextNode(const char* aPtr,
-                                                 const char* aEnd);
+MOZ_NEVER_INLINE std::size_t SkipNonEscapedInTextNode(const char* aPtr,
+                                                      const char* aEnd);
 
 /// Returns the length of the prefix that does not contain less-than,
 /// greater-than, ampersand, no-break space, or double quote.
 /// Examines the input in multiples of 16 code units and does not examine
 /// the tail that is left over.
-MOZ_NEVER_INLINE size_t SkipNonEscapedInAttributeValue(const char16_t* aPtr,
-                                                       const char16_t* aEnd);
+MOZ_NEVER_INLINE std::size_t SkipNonEscapedInAttributeValue(
+    const char16_t* aPtr, const char16_t* aEnd);
 
 /// Count occurrences of less-than, greater-than, ampersand, and no-break space.
 MOZ_NEVER_INLINE uint32_t CountEscapedInTextNode(const char16_t* aPtr,

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -198,7 +196,7 @@ struct FuncData {
 // Wrap aio_write. We have not seen it before, so just assert/report it.
 typedef ssize_t (*aio_write_t)(struct aiocb* aAioCbp);
 ssize_t wrap_aio_write(struct aiocb* aAioCbp);
-FuncData aio_write_data = {0, (void*)wrap_aio_write, (void*)aio_write};
+FuncData aio_write_data = {nullptr, (void*)wrap_aio_write, (void*)aio_write};
 ssize_t wrap_aio_write(struct aiocb* aAioCbp) {
   MacIOAutoObservation timer(mozilla::IOInterposeObserver::OpWrite,
                              aAioCbp->aio_fildes);

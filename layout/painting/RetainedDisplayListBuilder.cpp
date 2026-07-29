@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -270,7 +268,7 @@ bool RetainedDisplayListBuilder::PreProcessDisplayList(
       const ActiveScrolledRoot* asyncAncestorASR = aAsyncAncestorASR;
       if (item->CanMoveAsync()) {
         asyncAncestor = item->Frame();
-        asyncAncestorASR = item->GetActiveScrolledRoot();
+        asyncAncestorASR = item->GetNearestScrollASR();
       }
 
       if (!PreProcessDisplayList(
@@ -320,7 +318,6 @@ bool RetainedDisplayListBuilder::PreProcessDisplayList(
     // If we're going to keep this linked list and not merge it, then mark the
     // item as used and put it back into the list.
     if (aKeepLinked) {
-      item->SetReused(true);
       if (item->GetChildren()) {
         item->UpdateBounds(Builder());
       }
@@ -695,7 +692,6 @@ class MergeState {
       if (item->GetType() == DisplayItemType::TYPE_SUBDOCUMENT) {
         mBuilder->IncrementSubDocPresShellPaintCount(item);
       }
-      item->SetReused(true);
       mBuilder->Metrics()->mReusedItems++;
       mOldItems[aNode.val].AddedToMergedList(
           AddNewNode(item, Some(aNode), aDirectPredecessors, Nothing()));
@@ -860,10 +856,6 @@ void RetainedDisplayListBuilder::GetModifiedAndFramesWithProps(
 
     if (flags.contains(RetainedDisplayListData::FrameFlag::HasProps)) {
       aOutFramesWithProps->AppendElement(frame);
-    }
-
-    if (flags.contains(RetainedDisplayListData::FrameFlag::HadWillChange)) {
-      Builder()->RemoveFromWillChangeBudgets(frame);
     }
   }
 
@@ -1515,8 +1507,6 @@ void CollectStackingContextItems(nsDisplayListBuilder* aBuilder,
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
     item->SetMergedPreProcessed(false, true);
 #endif
-    item->SetReused(true);
-
     const bool isStackingContextItem = IsReuseableStackingContextItem(item);
 
     if (item->GetChildren()) {

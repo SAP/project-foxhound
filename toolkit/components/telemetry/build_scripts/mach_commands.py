@@ -103,7 +103,7 @@ def mach_gifft(command_context, telemetry_probe_name):
                     bugs_list = "\n" + textwrap.indent(
                         "\n".join(
                             map(
-                                lambda b: BUG_URL_TEMPLATE.format(b),
+                                BUG_URL_TEMPLATE.format,
                                 e._definition.get("bug_numbers", []),
                             )
                         ),
@@ -204,7 +204,7 @@ def mach_gifft(command_context, telemetry_probe_name):
             bugs_list = "\n" + textwrap.indent(
                 "\n".join(
                     map(
-                        lambda b: BUG_URL_TEMPLATE.format(b),
+                        BUG_URL_TEMPLATE.format,
                         s._definition.get("bug_numbers", []),
                     )
                 ),

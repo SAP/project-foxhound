@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +7,7 @@
 #endif  // !NIGHTLY_BUILD || MOZ_NO_SMART_CARDS
 
 #include "mozilla/psm/PKCS11ModuleParent.h"
+#include "nsNSSComponent.h"
 
 namespace mozilla::psm {
 
@@ -24,7 +24,14 @@ nsresult PKCS11ModuleParent::BindToUtilityProcess(
     return NS_ERROR_FAILURE;
   }
 
-  if (!aUtilityParent->SendStartPKCS11ModuleService(std::move(childEnd))) {
+  nsAutoCString profilePath;
+  rv = GetNSSProfilePath(profilePath);
+  if (NS_FAILED(rv)) {
+    profilePath.Truncate();
+  }
+
+  if (!aUtilityParent->SendStartPKCS11ModuleService(std::move(childEnd),
+                                                    profilePath)) {
     MOZ_ASSERT_UNREACHABLE("StartPKCS11Module service failure");
     return NS_ERROR_FAILURE;
   }

@@ -11,6 +11,6 @@ features: [Symbol.toStringTag, TypedArray]
 
 testWithTypedArrayConstructors(function(TA) {
   assert.sameValue(TA.prototype.hasOwnProperty(Symbol.toStringTag), false);
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

@@ -273,6 +273,8 @@ export function FakeNimbusFeature() {
     getEnrollmentMetadata() {},
     getVariable() {},
     getAllVariables() {},
+    getAllEnrollments() {},
+    getAllEnrollmentMetadata() {},
     onUpdate() {},
     offUpdate() {},
     recordExposureEvent() {},

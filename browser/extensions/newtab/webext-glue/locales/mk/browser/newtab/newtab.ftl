@@ -9,6 +9,37 @@ newtab-page-title = Ново јазиче
 newtab-settings-button =
     .title = Прилагодете ја страницата на вашето Ново јазиче
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Нови јазичиња
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } ред
+           *[other] { $num } редови
+        }
+home-mode-choice-blank-srd =
+    .label = Празна страница
+home-prefs-shortcuts-header-srd =
+    .label = Кратенки
+home-prefs-shortcuts-select =
+    .aria-label = Кратенки
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Спонзорирани приказни
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Посетени страници
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Обележувачи
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Последно преземање
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +47,7 @@ newtab-search-box-search-button =
     .title = Барај
     .aria-label = Барај
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Додај сервис за пребарување
 newtab-topsites-edit-topsites-header = Уреди врвно мрежно место
@@ -41,7 +72,7 @@ newtab-topsites-add-button = Додај
 
 newtab-confirm-delete-history-p1 = Дали сте сигурни дека сакате да ја избришете оваа страница отсекаде во вашата историја на прелистување?
 # "This action" refers to deleting a page from history.
-newtab-confirm-delete-history-p2 = Ова дејство не може да се одврати.
+newtab-confirm-delete-history-p2 = Ова е неповратна акција.
 
 ## Context Menu - Action Tooltips.
 

@@ -37,12 +37,7 @@ function createPromiseForObservingChannel(aURL, aExpected) {
 
 add_setup(async function setup() {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      [
-        "network.cookie.cookieBehavior",
-        BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
-      ],
-    ],
+    set: [["network.cookie.cookieBehavior", BEHAVIOR_PARTITION_FOREIGN]],
   });
 
   registerCleanupFunction(async () => {

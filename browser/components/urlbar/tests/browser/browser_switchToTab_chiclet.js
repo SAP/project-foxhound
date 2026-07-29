@@ -261,6 +261,59 @@ add_task(async function test_chiclet_tab_group() {
   TabGroupTestUtils.forgetSavedTabGroups();
 });
 
+add_task(async function test_chiclet_tab_group_no_stale_after_row_reuse() {
+  const TAB_URL =
+    "https://example.com/test_chiclet_tab_group_no_stale_switch_tab";
+  const HISTORY_URL =
+    "https://example.com/test_chiclet_tab_group_no_stale_history";
+
+  await PlacesTestUtils.addVisits(HISTORY_URL);
+
+  let tab = await BrowserTestUtils.openNewForegroundTab({
+    gBrowser,
+    url: TAB_URL,
+  });
+  let tabGroup = gBrowser.addTabGroup([tab], {
+    label: "stale_chiclet_test",
+    color: "blue",
+  });
+  await BrowserTestUtils.switchTab(gBrowser, gBrowser.tabs[0]);
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "test_chiclet_tab_group_no_stale_switch_tab",
+  });
+
+  let switchTabDetails = await getDetailsOfTabSwitchResult();
+  Assert.ok(
+    switchTabDetails?.element.row.querySelector(".urlbarView-tabGroup"),
+    "Tab group chiclet should be present on the TAB_SWITCH row"
+  );
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "test_chiclet_tab_group_no_stale_history",
+  });
+
+  for (let i = 0; i < UrlbarTestUtils.getResultCount(window); i++) {
+    let details = await UrlbarTestUtils.getDetailsOfResultAt(window, i);
+    Assert.notEqual(
+      details.type,
+      UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
+      `Row ${i} should not be a TAB_SWITCH result`
+    );
+    Assert.ok(
+      !details.element.row.querySelector(".urlbarView-tabGroup"),
+      `Row ${i} should not have a stale tab group chiclet`
+    );
+  }
+
+  await UrlbarTestUtils.promisePopupClose(window);
+  await TabGroupTestUtils.removeTabGroup(tabGroup);
+  TabGroupTestUtils.forgetSavedTabGroups();
+  await PlacesUtils.history.clear();
+});
+
 async function getDetailsOfTabSwitchResult() {
   for (let i = 0; i < UrlbarTestUtils.getResultCount(window); i++) {
     let details = await UrlbarTestUtils.getDetailsOfResultAt(window, i);

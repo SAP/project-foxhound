@@ -1,0 +1,18 @@
+{
+  "label": "avlguest.justice.nsw.gov.au",
+  "bugs": {
+    "1994704": {
+      "issue": "page-fails-to-load",
+      "matches": ["*://avlguest.justice.nsw.gov.au/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "content_scripts": {
+        "all_frames": true,
+        "js": ["define_mozRTC_APIs.js"]
+      }
+    }
+  ]
+}

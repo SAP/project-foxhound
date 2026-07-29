@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>El %1$s us dóna el control.</p>\n<p>Com a navegador privat, us permet:\n<ul>\n<li>Cercar i navegar directament des de l’aplicació</li>\n<li>Blocar els elements de seguiment (o canviar els paràmetres per permetre’ls)</li>\n<li>Esborrar les galetes i l’historial de cerques i de navegació</li>\n</ul> </p>\n<p>El %1$s està creat per Mozilla. La nostra missió és fomentar un Internet obert i saludable.<br/>\n<a href=\"%2$s\">Més informació</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>El %1$s us dóna el control.</p>\n<p>Com a navegador privat, us permet:\n<ul>\n<li>Cercar i navegar directament des de l’aplicació</li>\n<li>Blocar els elements de seguiment (o canviar els paràmetres per permetre’ls)</li>\n<li>Esborrar les galetes i l’historial de cerques i de navegació</li>\n</ul> </p>\n<p>El %1$s està creat per Mozilla. La nostra missió és fomentar un Internet obert i saludable.<br/>\n<a href=\"%2$s\">Més informació</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Més informació</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Enganxeu o escriviu un URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Exemple: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Exemple: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Exemple: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Fes que el %1$s sigui el navegador per defecte</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Envia dades d\'ús</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Més informació</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla s\'esforça per recollir només les dades necessàries per oferir i millorar el %1$s per a tothom.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla s\'esforça per recollir només les dades necessàries per oferir i millorar el %1$s per a tothom.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Ping d’ús diari</string>
-  <string name="preference_daily_usage_ping_description">Això ajuda a Mozilla a estimar els usuaris actius.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Això ajuda a Mozilla a estimar els usuaris actius.</string>
   <string name="preference_daily_usage_ping_learn_more">Més informació</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Avís de privadesa</string>
@@ -562,6 +562,8 @@
   <string name="tabs_tray_action_erase">Esborra l\'historial de navegació</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">Tanca les altres pestanyes</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">Afegeix una pestanya nova</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -582,6 +584,21 @@
   <string name="security_popup_security_verified">Verificat per: %1$s</string>
   <!-- Content Description of Security Icon in toolbar -->
   <string name="site_security_icon_content_description">Seguretat del lloc</string>
+  <!--
+    %1$s will be replaced with the organization for which the certificate
+    used by the site was issued. For example, the certificate in use by
+    the site https://eidas.ec.europa.eu/ was issued to "The European
+    Commission".
+  -->
+  <string name="qualified_identity">Certificat emès per a %1$s</string>
+  <!--
+    The European Union eIDAS Regulation specifies a type of certificate
+    called a "qualified website authentication certificate" (QWAC) and
+    requires that browsers identify and indicate such certificates. This
+    text was paraphrased from ETSI TS 119 411-5 V2.1.1 section 6.3 and
+    indicates that the website uses a QWAC.
+  -->
+  <string name="qualified_text">Qualificat segons l\'especificació del Reglament (UE) 2024/1183.</string>
   <string name="preference_autocomplete_duplicate_url_error">L\'URL ja existeix</string>
   <!-- Label for the Find in page button -->
   <string name="find_in_page">Cerca a la pàgina</string>
@@ -812,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Tanca la pestanya</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Envia un informe de fallada a Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Envia un informe de fallada a Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

@@ -10,7 +10,9 @@
 
 #include "modules/rtp_rtcp/source/rtp_video_layers_allocation_extension.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <span>
 
 #include "api/units/data_rate.h"
 #include "api/video/video_layers_allocation.h"
@@ -22,10 +24,15 @@ namespace {
 
 TEST(RtpVideoLayersAllocationExtension, WriteEmptyLayersAllocationReturnsTrue) {
   VideoLayersAllocation written_allocation;
-  Buffer buffer(
+  Buffer buffer = Buffer::CreateWithCapacity(
       RtpVideoLayersAllocationExtension::ValueSize(written_allocation));
-  EXPECT_TRUE(
-      RtpVideoLayersAllocationExtension::Write(buffer, written_allocation));
+  buffer.AppendData(
+      RtpVideoLayersAllocationExtension::ValueSize(written_allocation),
+      [&](std::span<uint8_t> buffer_view) {
+        EXPECT_TRUE(RtpVideoLayersAllocationExtension::Write(
+            buffer_view, written_allocation));
+        return buffer_view.size();
+      });
 }
 
 TEST(RtpVideoLayersAllocationExtension,
@@ -35,11 +42,15 @@ TEST(RtpVideoLayersAllocationExtension,
   VideoLayersAllocation written_allocation;
   written_allocation.resolution_and_frame_rate_is_valid = true;
   written_allocation.rtp_stream_index = 0;
-
-  Buffer buffer(
+  Buffer buffer = Buffer::CreateWithCapacity(
       RtpVideoLayersAllocationExtension::ValueSize(written_allocation));
-  EXPECT_TRUE(
-      RtpVideoLayersAllocationExtension::Write(buffer, written_allocation));
+  buffer.AppendData(
+      RtpVideoLayersAllocationExtension::ValueSize(written_allocation),
+      [&](std::span<uint8_t> buffer_view) {
+        EXPECT_TRUE(RtpVideoLayersAllocationExtension::Write(
+            buffer_view, written_allocation));
+        return buffer_view.size();
+      });
 
   VideoLayersAllocation parsed_allocation;
   EXPECT_TRUE(
@@ -53,28 +64,35 @@ TEST(RtpVideoLayersAllocationExtension,
   written_allocation.rtp_stream_index = 1;
   written_allocation.active_spatial_layers = {
       {
-          /*rtp_stream_index*/ 0,
-          /*spatial_id*/ 0,
+          /*rtp_stream_index*/ .rtp_stream_index = 0,
+          /*spatial_id*/ .spatial_id = 0,
           /*target_bitrate_per_temporal_layer*/
-          {DataRate::KilobitsPerSec(25), DataRate::KilobitsPerSec(50)},
-          /*width*/ 0,
-          /*height*/ 0,
-          /*frame_rate_fps*/ 0,
+          .target_bitrate_per_temporal_layer = {DataRate::KilobitsPerSec(25),
+                                                DataRate::KilobitsPerSec(50)},
+          /*width*/ .width = 0,
+          /*height*/ .height = 0,
+          /*frame_rate_fps*/ .frame_rate_fps = 0,
       },
       {
-          /*rtp_stream_index*/ 1,
-          /*spatial_id*/ 0,
+          /*rtp_stream_index*/ .rtp_stream_index = 1,
+          /*spatial_id*/ .spatial_id = 0,
           /*target_bitrate_per_temporal_layer*/
-          {DataRate::KilobitsPerSec(100), DataRate::KilobitsPerSec(200)},
-          /*width*/ 0,
-          /*height*/ 0,
-          /*frame_rate_fps*/ 0,
+          .target_bitrate_per_temporal_layer = {DataRate::KilobitsPerSec(100),
+                                                DataRate::KilobitsPerSec(200)},
+          /*width*/ .width = 0,
+          /*height*/ .height = 0,
+          /*frame_rate_fps*/ .frame_rate_fps = 0,
       },
   };
-  Buffer buffer(
+  Buffer buffer = Buffer::CreateWithCapacity(
       RtpVideoLayersAllocationExtension::ValueSize(written_allocation));
-  EXPECT_TRUE(
-      RtpVideoLayersAllocationExtension::Write(buffer, written_allocation));
+  buffer.AppendData(
+      RtpVideoLayersAllocationExtension::ValueSize(written_allocation),
+      [&](std::span<uint8_t> buffer_view) {
+        EXPECT_TRUE(RtpVideoLayersAllocationExtension::Write(
+            buffer_view, written_allocation));
+        return buffer_view.size();
+      });
   VideoLayersAllocation parsed_allocation;
   EXPECT_TRUE(
       RtpVideoLayersAllocationExtension::Parse(buffer, &parsed_allocation));
@@ -86,29 +104,37 @@ TEST(RtpVideoLayersAllocationExtension,
   VideoLayersAllocation written_allocation;
   written_allocation.rtp_stream_index = 1;
   written_allocation.active_spatial_layers = {
-      {/*rtp_stream_index*/ 0,
-       /*spatial_id*/ 0,
-       /*target_bitrate_per_temporal_layer*/ {DataRate::KilobitsPerSec(50)},
-       /*width*/ 0,
-       /*height*/ 0,
-       /*frame_rate_fps*/ 0},
-      {/*rtp_stream_index*/ 1,
-       /*spatial_id*/ 0,
-       /*target_bitrate_per_temporal_layer*/ {DataRate::KilobitsPerSec(100)},
-       /*width*/ 0,
-       /*height*/ 0,
-       /*frame_rate_fps*/ 0},
-      {/*rtp_stream_index*/ 1,
-       /*spatial_id*/ 1,
-       /*target_bitrate_per_temporal_layer*/ {DataRate::KilobitsPerSec(200)},
-       /*width*/ 0,
-       /*height*/ 0,
-       /*frame_rate_fps*/ 0},
+      {/*rtp_stream_index*/ .rtp_stream_index = 0,
+       /*spatial_id*/ .spatial_id = 0,
+       /*target_bitrate_per_temporal_layer*/
+       .target_bitrate_per_temporal_layer = {DataRate::KilobitsPerSec(50)},
+       /*width*/ .width = 0,
+       /*height*/ .height = 0,
+       /*frame_rate_fps*/ .frame_rate_fps = 0},
+      {/*rtp_stream_index*/ .rtp_stream_index = 1,
+       /*spatial_id*/ .spatial_id = 0,
+       /*target_bitrate_per_temporal_layer*/
+       .target_bitrate_per_temporal_layer = {DataRate::KilobitsPerSec(100)},
+       /*width*/ .width = 0,
+       /*height*/ .height = 0,
+       /*frame_rate_fps*/ .frame_rate_fps = 0},
+      {/*rtp_stream_index*/ .rtp_stream_index = 1,
+       /*spatial_id*/ .spatial_id = 1,
+       /*target_bitrate_per_temporal_layer*/
+       .target_bitrate_per_temporal_layer = {DataRate::KilobitsPerSec(200)},
+       /*width*/ .width = 0,
+       /*height*/ .height = 0,
+       /*frame_rate_fps*/ .frame_rate_fps = 0},
   };
-  Buffer buffer(
+  Buffer buffer = Buffer::CreateWithCapacity(
       RtpVideoLayersAllocationExtension::ValueSize(written_allocation));
-  EXPECT_TRUE(
-      RtpVideoLayersAllocationExtension::Write(buffer, written_allocation));
+  buffer.AppendData(
+      RtpVideoLayersAllocationExtension::ValueSize(written_allocation),
+      [&](std::span<uint8_t> buffer_view) {
+        EXPECT_TRUE(RtpVideoLayersAllocationExtension::Write(
+            buffer_view, written_allocation));
+        return buffer_view.size();
+      });
   VideoLayersAllocation parsed_allocation;
   EXPECT_TRUE(
       RtpVideoLayersAllocationExtension::Parse(buffer, &parsed_allocation));
@@ -120,23 +146,30 @@ TEST(RtpVideoLayersAllocationExtension,
   VideoLayersAllocation written_allocation;
   written_allocation.rtp_stream_index = 1;
   written_allocation.active_spatial_layers = {
-      {/*rtp_stream_index*/ 0,
-       /*spatial_id*/ 0,
-       /*target_bitrate_per_temporal_layer*/ {DataRate::KilobitsPerSec(50)},
-       /*width*/ 0,
-       /*height*/ 0,
-       /*frame_rate_fps*/ 0},
-      {/*rtp_stream_index*/ 1,
-       /*spatial_id*/ 1,
-       /*target_bitrate_per_temporal_layer*/ {DataRate::KilobitsPerSec(200)},
-       /*width*/ 0,
-       /*height*/ 0,
-       /*frame_rate_fps*/ 0},
+      {/*rtp_stream_index*/ .rtp_stream_index = 0,
+       /*spatial_id*/ .spatial_id = 0,
+       /*target_bitrate_per_temporal_layer*/
+       .target_bitrate_per_temporal_layer = {DataRate::KilobitsPerSec(50)},
+       /*width*/ .width = 0,
+       /*height*/ .height = 0,
+       /*frame_rate_fps*/ .frame_rate_fps = 0},
+      {/*rtp_stream_index*/ .rtp_stream_index = 1,
+       /*spatial_id*/ .spatial_id = 1,
+       /*target_bitrate_per_temporal_layer*/
+       .target_bitrate_per_temporal_layer = {DataRate::KilobitsPerSec(200)},
+       /*width*/ .width = 0,
+       /*height*/ .height = 0,
+       /*frame_rate_fps*/ .frame_rate_fps = 0},
   };
-  Buffer buffer(
+  Buffer buffer = Buffer::CreateWithCapacity(
       RtpVideoLayersAllocationExtension::ValueSize(written_allocation));
-  EXPECT_TRUE(
-      RtpVideoLayersAllocationExtension::Write(buffer, written_allocation));
+  buffer.AppendData(
+      RtpVideoLayersAllocationExtension::ValueSize(written_allocation),
+      [&](std::span<uint8_t> buffer_view) {
+        EXPECT_TRUE(RtpVideoLayersAllocationExtension::Write(
+            buffer_view, written_allocation));
+        return buffer_view.size();
+      });
   VideoLayersAllocation parsed_allocation;
   EXPECT_TRUE(
       RtpVideoLayersAllocationExtension::Parse(buffer, &parsed_allocation));
@@ -148,23 +181,30 @@ TEST(RtpVideoLayersAllocationExtension,
   VideoLayersAllocation written_allocation;
   written_allocation.rtp_stream_index = 2;
   written_allocation.active_spatial_layers = {
-      {/*rtp_stream_index*/ 0,
-       /*spatial_id*/ 0,
-       /*target_bitrate_per_temporal_layer*/ {DataRate::KilobitsPerSec(50)},
-       /*width*/ 0,
-       /*height*/ 0,
-       /*frame_rate_fps*/ 0},
-      {/*rtp_stream_index*/ 2,
-       /*spatial_id*/ 0,
-       /*target_bitrate_per_temporal_layer*/ {DataRate::KilobitsPerSec(200)},
-       /*width*/ 0,
-       /*height*/ 0,
-       /*frame_rate_fps*/ 0},
+      {/*rtp_stream_index*/ .rtp_stream_index = 0,
+       /*spatial_id*/ .spatial_id = 0,
+       /*target_bitrate_per_temporal_layer*/
+       .target_bitrate_per_temporal_layer = {DataRate::KilobitsPerSec(50)},
+       /*width*/ .width = 0,
+       /*height*/ .height = 0,
+       /*frame_rate_fps*/ .frame_rate_fps = 0},
+      {/*rtp_stream_index*/ .rtp_stream_index = 2,
+       /*spatial_id*/ .spatial_id = 0,
+       /*target_bitrate_per_temporal_layer*/
+       .target_bitrate_per_temporal_layer = {DataRate::KilobitsPerSec(200)},
+       /*width*/ .width = 0,
+       /*height*/ .height = 0,
+       /*frame_rate_fps*/ .frame_rate_fps = 0},
   };
-  Buffer buffer(
+  Buffer buffer = Buffer::CreateWithCapacity(
       RtpVideoLayersAllocationExtension::ValueSize(written_allocation));
-  EXPECT_TRUE(
-      RtpVideoLayersAllocationExtension::Write(buffer, written_allocation));
+  buffer.AppendData(
+      RtpVideoLayersAllocationExtension::ValueSize(written_allocation),
+      [&](std::span<uint8_t> buffer_view) {
+        EXPECT_TRUE(RtpVideoLayersAllocationExtension::Write(
+            buffer_view, written_allocation));
+        return buffer_view.size();
+      });
   VideoLayersAllocation parsed_allocation;
   EXPECT_TRUE(
       RtpVideoLayersAllocationExtension::Parse(buffer, &parsed_allocation));
@@ -177,27 +217,34 @@ TEST(RtpVideoLayersAllocationExtension,
   written_allocation.rtp_stream_index = 1;
   written_allocation.active_spatial_layers = {
       {
-          /*rtp_stream_index*/ 0,
-          /*spatial_id*/ 0,
+          /*rtp_stream_index*/ .rtp_stream_index = 0,
+          /*spatial_id*/ .spatial_id = 0,
           /*target_bitrate_per_temporal_layer*/
-          {DataRate::KilobitsPerSec(25), DataRate::KilobitsPerSec(50)},
-          /*width*/ 0,
-          /*height*/ 0,
-          /*frame_rate_fps*/ 0,
+          .target_bitrate_per_temporal_layer = {DataRate::KilobitsPerSec(25),
+                                                DataRate::KilobitsPerSec(50)},
+          /*width*/ .width = 0,
+          /*height*/ .height = 0,
+          /*frame_rate_fps*/ .frame_rate_fps = 0,
       },
       {
-          /*rtp_stream_index*/ 1,
-          /*spatial_id*/ 0,
-          /*target_bitrate_per_temporal_layer*/ {DataRate::KilobitsPerSec(100)},
-          /*width*/ 0,
-          /*height*/ 0,
-          /*frame_rate_fps*/ 0,
+          /*rtp_stream_index*/ .rtp_stream_index = 1,
+          /*spatial_id*/ .spatial_id = 0,
+          /*target_bitrate_per_temporal_layer*/
+          .target_bitrate_per_temporal_layer = {DataRate::KilobitsPerSec(100)},
+          /*width*/ .width = 0,
+          /*height*/ .height = 0,
+          /*frame_rate_fps*/ .frame_rate_fps = 0,
       },
   };
-  Buffer buffer(
+  Buffer buffer = Buffer::CreateWithCapacity(
       RtpVideoLayersAllocationExtension::ValueSize(written_allocation));
-  EXPECT_TRUE(
-      RtpVideoLayersAllocationExtension::Write(buffer, written_allocation));
+  buffer.AppendData(
+      RtpVideoLayersAllocationExtension::ValueSize(written_allocation),
+      [&](std::span<uint8_t> buffer_view) {
+        EXPECT_TRUE(RtpVideoLayersAllocationExtension::Write(
+            buffer_view, written_allocation));
+        return buffer_view.size();
+      });
   VideoLayersAllocation parsed_allocation;
   EXPECT_TRUE(
       RtpVideoLayersAllocationExtension::Parse(buffer, &parsed_allocation));
@@ -211,29 +258,36 @@ TEST(RtpVideoLayersAllocationExtension,
   written_allocation.resolution_and_frame_rate_is_valid = true;
   written_allocation.active_spatial_layers = {
       {
-          /*rtp_stream_index*/ 0,
-          /*spatial_id*/ 0,
+          /*rtp_stream_index*/ .rtp_stream_index = 0,
+          /*spatial_id*/ .spatial_id = 0,
           /*target_bitrate_per_temporal_layer*/
-          {DataRate::KilobitsPerSec(25), DataRate::KilobitsPerSec(50)},
-          /*width*/ 320,
-          /*height*/ 240,
-          /*frame_rate_fps*/ 8,
+          .target_bitrate_per_temporal_layer = {DataRate::KilobitsPerSec(25),
+                                                DataRate::KilobitsPerSec(50)},
+          /*width*/ .width = 320,
+          /*height*/ .height = 240,
+          /*frame_rate_fps*/ .frame_rate_fps = 8,
       },
       {
-          /*rtp_stream_index*/ 1,
-          /*spatial_id*/ 1,
+          /*rtp_stream_index*/ .rtp_stream_index = 1,
+          /*spatial_id*/ .spatial_id = 1,
           /*target_bitrate_per_temporal_layer*/
-          {DataRate::KilobitsPerSec(100), DataRate::KilobitsPerSec(200)},
-          /*width*/ 640,
-          /*height*/ 320,
-          /*frame_rate_fps*/ 30,
+          .target_bitrate_per_temporal_layer = {DataRate::KilobitsPerSec(100),
+                                                DataRate::KilobitsPerSec(200)},
+          /*width*/ .width = 640,
+          /*height*/ .height = 320,
+          /*frame_rate_fps*/ .frame_rate_fps = 30,
       },
   };
 
-  Buffer buffer(
+  Buffer buffer = Buffer::CreateWithCapacity(
       RtpVideoLayersAllocationExtension::ValueSize(written_allocation));
-  EXPECT_TRUE(
-      RtpVideoLayersAllocationExtension::Write(buffer, written_allocation));
+  buffer.AppendData(
+      RtpVideoLayersAllocationExtension::ValueSize(written_allocation),
+      [&](std::span<uint8_t> buffer_view) {
+        EXPECT_TRUE(RtpVideoLayersAllocationExtension::Write(
+            buffer_view, written_allocation));
+        return buffer_view.size();
+      });
   VideoLayersAllocation parsed_allocation;
   EXPECT_TRUE(
       RtpVideoLayersAllocationExtension::Parse(buffer, &parsed_allocation));
@@ -244,10 +298,15 @@ TEST(RtpVideoLayersAllocationExtension,
      WriteEmptyAllocationCanHaveAnyRtpStreamIndex) {
   VideoLayersAllocation written_allocation;
   written_allocation.rtp_stream_index = 1;
-  Buffer buffer(
+  Buffer buffer = Buffer::CreateWithCapacity(
       RtpVideoLayersAllocationExtension::ValueSize(written_allocation));
-  EXPECT_TRUE(
-      RtpVideoLayersAllocationExtension::Write(buffer, written_allocation));
+  buffer.AppendData(
+      RtpVideoLayersAllocationExtension::ValueSize(written_allocation),
+      [&](std::span<uint8_t> buffer_view) {
+        EXPECT_TRUE(RtpVideoLayersAllocationExtension::Write(
+            buffer_view, written_allocation));
+        return buffer_view.size();
+      });
 }
 
 TEST(RtpVideoLayersAllocationExtension, DiscardsOverLargeDataRate) {
@@ -263,19 +322,28 @@ TEST(RtpVideoLayersAllocationExtension, DiscardsInvalidHeight) {
   written_allocation.resolution_and_frame_rate_is_valid = true;
   written_allocation.active_spatial_layers = {
       {
-          /*rtp_stream_index*/ 0,
-          /*spatial_id*/ 0,
+          /*rtp_stream_index*/ .rtp_stream_index = 0,
+          /*spatial_id*/ .spatial_id = 0,
           /*target_bitrate_per_temporal_layer*/
-          {DataRate::KilobitsPerSec(25), DataRate::KilobitsPerSec(50)},
-          /*width*/ 320,
-          /*height*/ 240,
-          /*frame_rate_fps*/ 8,
+          .target_bitrate_per_temporal_layer = {DataRate::KilobitsPerSec(25),
+                                                DataRate::KilobitsPerSec(50)},
+          /*width*/ .width = 320,
+          /*height*/ .height = 240,
+          /*frame_rate_fps*/ .frame_rate_fps = 8,
       },
   };
-  Buffer buffer(
+  Buffer buffer = Buffer::CreateWithCapacity(
       RtpVideoLayersAllocationExtension::ValueSize(written_allocation));
-  ASSERT_TRUE(
-      RtpVideoLayersAllocationExtension::Write(buffer, written_allocation));
+  size_t written = buffer.AppendData(
+      RtpVideoLayersAllocationExtension::ValueSize(written_allocation),
+      [&](std::span<uint8_t> buffer_view) {
+        bool result = RtpVideoLayersAllocationExtension::Write(
+            buffer_view, written_allocation);
+        EXPECT_TRUE(result);
+        return result ? buffer_view.size() : 0;
+      });
+  ASSERT_EQ(written,
+            RtpVideoLayersAllocationExtension::ValueSize(written_allocation));
 
   // Modify the height to be invalid.
   buffer[buffer.size() - 3] = 0xff;

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=4 sw=2 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -858,12 +856,6 @@ inline nsresult NS_GetInnermostURIHost(nsIURI* aURI, nsACString& aHost) {
  */
 nsresult NS_GetFinalChannelURI(nsIChannel* channel, nsIURI** uri);
 
-// NS_SecurityHashURI must return the same hash value for any two URIs that
-// compare equal according to NS_SecurityCompareURIs.  Unfortunately, in the
-// case of files, it's not clear we can do anything better than returning
-// the schemeHash, so hashing files degenerates to storing them in a list.
-uint32_t NS_SecurityHashURI(nsIURI* aURI);
-
 bool NS_SecurityCompareURIs(nsIURI* aSourceURI, nsIURI* aTargetURI,
                             bool aStrictFileOriginPolicy);
 
@@ -879,7 +871,10 @@ bool NS_ShouldRemoveAuthHeaderOnRedirect(nsIChannel* aOldChannel,
                                          nsIChannel* aNewChannel,
                                          uint32_t aFlags);
 
-nsresult NS_LinkRedirectChannels(uint64_t channelId,
+// aContentParentId identifies the process requesting the link (0 for the
+// parent process). The link only succeeds if the channel was registered for
+// that same process.
+nsresult NS_LinkRedirectChannels(uint64_t channelId, uint64_t aContentParentId,
                                  nsIParentChannel* parentChannel,
                                  nsIChannel** _result);
 
@@ -1152,7 +1147,8 @@ enum ASDestination : uint8_t {
   DESTINATION_WORKER,
   DESTINATION_XSLT,
   DESTINATION_FETCH,
-  DESTINATION_JSON
+  DESTINATION_JSON,
+  DESTINATION_TEXT
 };
 
 void ParseAsValue(const nsAString& aValue, nsAttrValue& aResult);
@@ -1162,7 +1158,8 @@ bool IsScriptLikeOrInvalid(const nsAString& aAs);
 bool CheckPreloadAttrs(const nsAttrValue& aAs, const nsAString& aType,
                        const nsAString& aMedia,
                        mozilla::dom::Document* aDocument);
-void WarnIgnoredPreload(const mozilla::dom::Document&, nsIURI&);
+void WarnIgnoredPreload(const mozilla::dom::Document& aDoc, nsIURI* aURI,
+                        const nsAString& aSrcset = nsString());
 
 // Implements parsing of Use-As-Dictionary headers for Compression Dictionary
 // support.

@@ -161,6 +161,7 @@ export class SecurityOrchestrator {
    * sessionId will not create duplicate ledgers.
    *
    * @param {string} sessionId - Unique identifier for the session
+   * @returns {lazy.SessionLedger} The session ledger
    */
   registerSession(sessionId) {
     if (!sessionId || typeof sessionId !== "string") {
@@ -168,12 +169,16 @@ export class SecurityOrchestrator {
         "registerSession requires a non-empty string sessionId"
       );
     }
-    if (this.#sessionLedgers.has(sessionId)) {
+
+    let ledger = this.#sessionLedgers.get(sessionId);
+    if (!ledger) {
+      ledger = new lazy.SessionLedger(sessionId);
+      this.#sessionLedgers.set(sessionId, ledger);
+      lazy.console.debug(`[Security] Registered session ${sessionId}`);
+    } else {
       lazy.console.debug(`[Security] Session ${sessionId} already registered`);
-      return;
     }
-    this.#sessionLedgers.set(sessionId, new lazy.SessionLedger(sessionId));
-    lazy.console.debug(`[Security] Registered session ${sessionId}`);
+    return ledger;
   }
 
   /**

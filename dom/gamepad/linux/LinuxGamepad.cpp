@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,12 +20,12 @@
 
 #include "mozilla/Sprintf.h"
 #include "mozilla/Tainting.h"
+#include "mozilla/UdevLib.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/GamepadHandle.h"
 #include "mozilla/dom/GamepadPlatformService.h"
 #include "mozilla/dom/GamepadRemapping.h"
 #include "nscore.h"
-#include "udev.h"
 
 #define BITS_PER_LONG ((sizeof(unsigned long)) * 8)
 #define BITS_TO_LONGS(x) (((x) + BITS_PER_LONG - 1) / BITS_PER_LONG)
@@ -94,6 +92,7 @@ class LinuxGamepadService {
   void AddMonitor();
   void RemoveMonitor();
   bool IsDeviceGamepad(struct udev_device* dev);
+  bool IsXboxDevice(struct udev_device* aDev);
   void ReadUdevChange();
 
   // handler for data from /dev/input/eventN
@@ -112,7 +111,8 @@ class LinuxGamepadService {
 };
 
 // singleton instance
-LinuxGamepadService* gService = nullptr;
+LinuxGamepadService* gService MOZ_GUARDED_BY(mozilla::sMainThreadCapability) =
+    nullptr;
 
 void LinuxGamepadService::AddDevice(struct udev_device* dev) {
   RefPtr<GamepadPlatformService> service =
@@ -208,6 +208,18 @@ void LinuxGamepadService::AddDevice(struct udev_device* dev) {
     for (uint8_t button = 0; button < BUTTON_INDEX_COUNT; button++) {
       gamepad->key_map[kStandardButtons[button]] = button;
     }
+
+    if (IsXboxDevice(dev)) {
+      // The `xpad` and `microsoft` drivers for Xbox like gamepads map the
+      // button labelled X to BTN_X (== BTN_NORTH) and the button labelled Y to
+      // BTN_Y (== BTN_WEST). However, unlike Nintendo controllers (where X is
+      // north and Y is west), Xbox gamepads have X on the left (west) and Y on
+      // the top (north). We swap them here to provide consistent results to the
+      // Gamepad API.
+
+      std::swap(gamepad->key_map[BTN_WEST], gamepad->key_map[BTN_NORTH]);
+    }
+
     numButtons = BUTTON_INDEX_COUNT;
   }
 
@@ -251,6 +263,20 @@ void LinuxGamepadService::AddDevice(struct udev_device* dev) {
         gamepad->abs_map[i] = numAxes++;
       }
     }
+  }
+
+  // If this is a standard gamepad and has exactly 2 extra axes that are mapped
+  // to ABS_Z and ABS_RZ, then those are analog triggers and will be remapped.
+  if (gamepad->isStandardGamepad && numAxes == (AXIS_INDEX_COUNT + 2) &&
+      gamepad->abs_map[ABS_Z] && gamepad->abs_map[ABS_RZ]) {
+    // Correct the number of axes reported.
+    numAxes -= 2;
+
+    // Disable discrete trigger buttons. Set BTN_TL2 and BTN_TR2 to an invalid
+    // value that does not exist on the gamepad, so they won't trigger a button
+    // press when you partially pull the trigger.
+    gamepad->key_map[BTN_TL2] = 255;
+    gamepad->key_map[BTN_TR2] = 255;
   }
 
   if (numAxes == 0) {
@@ -400,6 +426,27 @@ bool LinuxGamepadService::IsDeviceGamepad(struct udev_device* aDev) {
   return strncmp(devpath, kEvdevPath, strlen(kEvdevPath)) == 0;
 }
 
+bool LinuxGamepadService::IsXboxDevice(struct udev_device* aDev) {
+  const char* driver = NULL;
+  struct udev_device* p = mUdev.udev_device_get_parent(aDev);
+  while (p && !driver) {
+    driver = mUdev.udev_device_get_driver(p);
+    p = mUdev.udev_device_get_parent(p);
+  }
+  if (!driver) {
+    return false;
+  }
+  if (strcmp(driver, "xpad") == 0) {
+    // Wired Xbox controllers and Xbox 360 wireless receivers
+    return true;
+  }
+  if (strcmp(driver, "microsoft") == 0) {
+    // Bluetooth Xbox controllers
+    return true;
+  }
+  return false;
+}
+
 void LinuxGamepadService::ReadUdevChange() {
   struct udev_device* dev = mUdev.udev_monitor_receive_device(mMonitor);
   if (IsDeviceGamepad(dev)) {
@@ -442,6 +489,9 @@ gboolean LinuxGamepadService::OnGamepadData(GIOChannel* source,
     switch (event.type) {
       case EV_KEY:
         if (gamepad->isStandardGamepad) {
+          if (gamepad->key_map[event.code] == 255) {
+            continue;
+          }
           service->NewButtonEvent(gamepad->handle, gamepad->key_map[event.code],
                                   !!event.value);
         } else {
@@ -470,6 +520,20 @@ gboolean LinuxGamepadService::OnGamepadData(GIOChannel* source,
               service->NewButtonEvent(gamepad->handle, BUTTON_INDEX_DPAD_DOWN,
                                       AxisPositiveAsButton(scaledValue));
               break;
+            case ABS_Z: {
+              const double value = AxisToButtonValue(scaledValue);
+              service->NewButtonEvent(gamepad->handle,
+                                      BUTTON_INDEX_LEFT_TRIGGER,
+                                      value > BUTTON_THRESHOLD_VALUE, value);
+              break;
+            }
+            case ABS_RZ: {
+              const double value = AxisToButtonValue(scaledValue);
+              service->NewButtonEvent(gamepad->handle,
+                                      BUTTON_INDEX_RIGHT_TRIGGER,
+                                      value > BUTTON_THRESHOLD_VALUE, value);
+              break;
+            }
             default:
               service->NewAxisMoveEvent(
                   gamepad->handle, gamepad->abs_map[event.code], scaledValue);
@@ -490,7 +554,9 @@ gboolean LinuxGamepadService::OnGamepadData(GIOChannel* source,
 gboolean LinuxGamepadService::OnUdevMonitor(GIOChannel* source,
                                             GIOCondition condition,
                                             gpointer data) {
-  if (condition & (G_IO_ERR | G_IO_HUP)) {
+  mozilla::AssertIsOnMainThread();
+
+  if (!gService || condition & (G_IO_ERR | G_IO_HUP)) {
     return FALSE;
   }
 
@@ -503,20 +569,28 @@ gboolean LinuxGamepadService::OnUdevMonitor(GIOChannel* source,
 namespace mozilla::dom {
 
 void StartGamepadMonitoring() {
-  if (gService) {
-    return;
-  }
-  gService = new LinuxGamepadService();
-  gService->Startup();
+  MOZ_ASSERT(!NS_IsMainThread());
+
+  NS_DispatchToMainThread(NS_NewRunnableFunction("StartGamepadMonitoring", [] {
+    AssertIsOnMainThread();
+    if (!gService) {
+      gService = new LinuxGamepadService();
+      gService->Startup();
+    }
+  }));
 }
 
 void StopGamepadMonitoring() {
-  if (!gService) {
-    return;
-  }
-  gService->Shutdown();
-  delete gService;
-  gService = nullptr;
+  MOZ_ASSERT(!NS_IsMainThread());
+
+  NS_DispatchToMainThread(NS_NewRunnableFunction("StopGamepadMonitoring", [] {
+    AssertIsOnMainThread();
+    if (gService) {
+      gService->Shutdown();
+      delete gService;
+      gService = nullptr;
+    }
+  }));
 }
 
 void SetGamepadLightIndicatorColor(const Tainted<GamepadHandle>& aGamepadHandle,

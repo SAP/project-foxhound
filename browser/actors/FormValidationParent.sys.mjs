@@ -83,7 +83,7 @@ export class FormValidationParent extends JSWindowActorParent {
     switch (aMessage.name) {
       case "FormValidation:ShowPopup": {
         let browser = this.browsingContext.top.embedderElement;
-        let window = browser.ownerGlobal;
+        let window = browser.documentGlobal;
         let data = aMessage.data;
         let tabBrowser = window.gBrowser;
 
@@ -130,7 +130,7 @@ export class FormValidationParent extends JSWindowActorParent {
   _onPopupHidden(aEvent) {
     aEvent.originalTarget.removeEventListener("popuphidden", this, true);
     Services.obs.removeObserver(this._obs, "popup-shown");
-    let tabBrowser = aEvent.originalTarget.ownerGlobal.gBrowser;
+    let tabBrowser = aEvent.originalTarget.documentGlobal.gBrowser;
     tabBrowser.selectedBrowser.removeEventListener("scroll", this, true);
     tabBrowser.selectedBrowser.removeEventListener("FullZoomChange", this);
     tabBrowser.selectedBrowser.removeEventListener("TextZoomChange", this);
@@ -197,7 +197,7 @@ export class FormValidationParent extends JSWindowActorParent {
     // Lazy load the invalid form popup the first time we need to display it.
     if (!this._panel) {
       let browser = this.browsingContext.top.embedderElement;
-      let window = browser.ownerGlobal;
+      let window = browser.documentGlobal;
       let template = window.document.getElementById("invalidFormTemplate");
       if (template) {
         template.replaceWith(template.content);

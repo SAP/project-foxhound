@@ -78,7 +78,7 @@ add_task(async function () {
   ok(waitUntilApzStable, "waitUntilApzStable is defined.");
   await waitUntilApzStable();
 
-  await ContentTask.spawn(tab.linkedBrowser, null, async function () {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
     const win = content.window;
     const doc = content.document;
     const refNode = doc.documentElement;

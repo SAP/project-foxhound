@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -38,6 +36,8 @@
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"
+#include "mozilla/dom/IDBRecord.h"
+#include "mozilla/dom/IDBRecordBinding.h"
 #include "mozilla/dom/IPCBlobUtils.h"
 #include "mozilla/dom/PermissionMessageUtils.h"
 #include "mozilla/dom/WorkerPrivate.h"
@@ -93,6 +93,17 @@ ThreadLocal::~ThreadLocal() {
 /*******************************************************************************
  * Helpers
  ******************************************************************************/
+
+struct ObjectStoreRecordsData {
+  nsTArray<Key> keys;
+  nsTArray<StructuredCloneReadInfoChild> cloneInfos;
+};
+
+struct IndexRecordsData {
+  nsTArray<Key> keys;
+  nsTArray<Key> primaryKeys;
+  nsTArray<StructuredCloneReadInfoChild> cloneInfos;
+};
 
 namespace {
 
@@ -182,10 +193,24 @@ void SetResultAndDispatchSuccessEvent(
     const SafeRefPtr<IDBTransaction>& aTransaction, T& aPtr,
     RefPtr<Event> aEvent = nullptr);
 
+template <typename T>
+  requires(std::is_same_v<T, ObjectStoreRecordsData> ||
+           std::is_same_v<T, IndexRecordsData>)
+void SetResultAndDispatchSuccessEvent(
+    const NotNull<RefPtr<IDBRequest>>& aRequest,
+    const SafeRefPtr<IDBTransaction>& aTransaction, T&& aData,
+    RefPtr<Event> aEvent = nullptr);
+
 namespace detail {
 void DispatchSuccessEvent(const NotNull<RefPtr<IDBRequest>>& aRequest,
                           const SafeRefPtr<IDBTransaction>& aTransaction,
                           const RefPtr<Event>& aEvent);
+
+template <typename Callback>
+void SetResultAndDispatchSuccessEvent(
+    const NotNull<RefPtr<IDBRequest>>& aRequest,
+    const SafeRefPtr<IDBTransaction>& aTransaction, const Callback& aCallback,
+    RefPtr<Event> aEvent);
 
 template <class T>
 std::enable_if_t<std::is_same_v<T, IDBDatabase> || std::is_same_v<T, IDBCursor>,
@@ -320,6 +345,75 @@ nsresult GetResult(JSContext* aCx, const nsTArray<Key>* aKeys,
   aResult.setObject(*array);
   return NS_OK;
 }
+
+nsresult GetResult(JSContext* aCx, ObjectStoreRecordsData&& aData,
+                   JS::MutableHandle<JS::Value> aResult) {
+  const size_t count = aData.keys.Length();
+  MOZ_ASSERT(aData.cloneInfos.Length() == count);
+
+  JS::Rooted<JSObject*> array(aCx, JS::NewArrayObject(aCx, count));
+  if (NS_WARN_IF(!array)) {
+    IDB_REPORT_INTERNAL_ERR();
+    return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
+  }
+
+  for (size_t i = 0; i < count; i++) {
+    RefPtr<IDBRecord> record =
+        new IDBRecord(std::move(aData.keys[i]), std::move(aData.cloneInfos[i]));
+
+    JS::Rooted<JSObject*> recordVal(aCx);
+    if (NS_WARN_IF(
+            !IDBRecord_Binding::Wrap(aCx, record, nullptr, &recordVal))) {
+      IDB_REPORT_INTERNAL_ERR();
+      return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
+    }
+
+    if (NS_WARN_IF(
+            !JS_DefineElement(aCx, array, i, recordVal, JSPROP_ENUMERATE))) {
+      IDB_REPORT_INTERNAL_ERR();
+      return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
+    }
+  }
+
+  aResult.setObject(*array);
+  return NS_OK;
+}
+
+nsresult GetResult(JSContext* aCx, IndexRecordsData&& aData,
+                   JS::MutableHandle<JS::Value> aResult) {
+  const size_t count = aData.keys.Length();
+  MOZ_ASSERT(aData.primaryKeys.Length() == count);
+  MOZ_ASSERT(aData.cloneInfos.Length() == count);
+
+  JS::Rooted<JSObject*> array(aCx, JS::NewArrayObject(aCx, count));
+  if (NS_WARN_IF(!array)) {
+    IDB_REPORT_INTERNAL_ERR();
+    return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
+  }
+
+  for (size_t i = 0; i < count; i++) {
+    RefPtr<IDBRecord> record =
+        new IDBRecord(std::move(aData.keys[i]), std::move(aData.primaryKeys[i]),
+                      std::move(aData.cloneInfos[i]));
+
+    JS::Rooted<JSObject*> recordVal(aCx);
+    if (NS_WARN_IF(
+            !IDBRecord_Binding::Wrap(aCx, record, nullptr, &recordVal))) {
+      IDB_REPORT_INTERNAL_ERR();
+      return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
+    }
+
+    if (NS_WARN_IF(
+            !JS_DefineElement(aCx, array, i, recordVal, JSPROP_ENUMERATE))) {
+      IDB_REPORT_INTERNAL_ERR();
+      return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
+    }
+  }
+
+  aResult.setObject(*array);
+  return NS_OK;
+}
+
 }  // namespace detail
 
 auto DeserializeStructuredCloneFiles(
@@ -349,7 +443,7 @@ auto DeserializeStructuredCloneFiles(
             MOZ_ASSERT(blobImpl);
 
             RefPtr<Blob> blob =
-                Blob::Create(database.GetOwnerGlobal(), blobImpl);
+                Blob::Create(database.GetRelevantGlobal(), blobImpl);
             MOZ_ASSERT(blob);
 
             return {StructuredCloneFileBase::eBlob, std::move(blob)};
@@ -366,7 +460,7 @@ auto DeserializeStructuredCloneFiles(
               MOZ_ASSERT(blobImpl);
 
               RefPtr<Blob> blob =
-                  Blob::Create(database.GetOwnerGlobal(), blobImpl);
+                  Blob::Create(database.GetRelevantGlobal(), blobImpl);
               MOZ_ASSERT(blob);
 
               return {StructuredCloneFileBase::eStructuredClone,
@@ -501,32 +595,32 @@ void SetResultAndDispatchSuccessEvent(
     const NotNull<RefPtr<IDBRequest>>& aRequest,
     const SafeRefPtr<IDBTransaction>& aTransaction, T& aPtr,
     RefPtr<Event> aEvent) {
-  const auto autoTransaction =
-      AutoSetCurrentTransaction{aTransaction.maybeDeref()};
-
-  AUTO_PROFILER_LABEL("IndexedDB:SetResultAndDispatchSuccessEvent", DOM);
-
-  aRequest->AssertIsOnOwningThread();
-
-  if (aTransaction && aTransaction->IsAborted()) {
-    DispatchErrorEvent(aRequest, aTransaction->AbortCode(), aTransaction);
-    return;
-  }
-
-  if (!aEvent) {
-    aEvent =
-        CreateGenericEvent(aRequest.get(), nsDependentString(kSuccessEventType),
-                           eDoesNotBubble, eNotCancelable);
-  }
-  MOZ_ASSERT(aEvent);
-
-  aRequest->SetResult(
+  detail::SetResultAndDispatchSuccessEvent(
+      aRequest, aTransaction,
       [&aPtr](JSContext* aCx, JS::MutableHandle<JS::Value> aResult) {
         MOZ_ASSERT(aCx);
         return detail::GetResult(aCx, &aPtr, aResult);
-      });
+      },
+      std::move(aEvent));
+}
 
-  detail::DispatchSuccessEvent(aRequest, aTransaction, aEvent);
+// SetResultAndDispatchSuccessEvent overload, for objects which support (and
+// that we want) being moved
+template <typename T>
+  requires(std::is_same_v<T, ObjectStoreRecordsData> ||
+           std::is_same_v<T, IndexRecordsData>)
+void SetResultAndDispatchSuccessEvent(
+    const NotNull<RefPtr<IDBRequest>>& aRequest,
+    const SafeRefPtr<IDBTransaction>& aTransaction, T&& aData,
+    RefPtr<Event> aEvent) {
+  detail::SetResultAndDispatchSuccessEvent(
+      aRequest, aTransaction,
+      [&aData](JSContext* aCx, JS::MutableHandle<JS::Value> aResult) {
+        MOZ_ASSERT(aCx);
+        return detail::GetResult(aCx, std::forward<decltype(aData)>(aData),
+                                 aResult);
+      },
+      std::move(aEvent));
 }
 
 namespace detail {
@@ -570,6 +664,35 @@ void DispatchSuccessEvent(const NotNull<RefPtr<IDBRequest>>& aRequest,
       aTransaction->CommitIfNotStarted();
     }
   }
+}
+
+template <typename Callback>
+void SetResultAndDispatchSuccessEvent(
+    const NotNull<RefPtr<IDBRequest>>& aRequest,
+    const SafeRefPtr<IDBTransaction>& aTransaction, const Callback& aCallback,
+    RefPtr<Event> aEvent) {
+  const auto autoTransaction =
+      AutoSetCurrentTransaction{aTransaction.maybeDeref()};
+
+  AUTO_PROFILER_LABEL("IndexedDB:SetResultAndDispatchSuccessEvent", DOM);
+
+  aRequest->AssertIsOnOwningThread();
+
+  if (aTransaction && aTransaction->IsAborted()) {
+    DispatchErrorEvent(aRequest, aTransaction->AbortCode(), aTransaction);
+    return;
+  }
+
+  if (!aEvent) {
+    aEvent =
+        CreateGenericEvent(aRequest.get(), nsDependentString(kSuccessEventType),
+                           eDoesNotBubble, eNotCancelable);
+  }
+  MOZ_ASSERT(aEvent);
+
+  aRequest->SetResult(aCallback);
+
+  DispatchSuccessEvent(aRequest, aTransaction, aEvent);
 }
 }  // namespace detail
 
@@ -1079,7 +1202,7 @@ bool BackgroundDatabaseChild::EnsureDOMObject() {
   auto& factory =
       static_cast<BackgroundFactoryChild*>(Manager())->GetDOMObject();
 
-  if (!factory.GetOwnerGlobal()) {
+  if (!factory.GetRelevantGlobal()) {
     // Already disconnected from global.
 
     // We need to clear mOpenRequestActor here, since that would otherwise be
@@ -1415,6 +1538,10 @@ void BackgroundTransactionChild::SendDeleteMeInternal() {
 void BackgroundTransactionChild::ActorDestroy(ActorDestroyReason aWhy) {
   AssertIsOnOwningThread();
 
+  if (mTransaction) {
+    mTransaction->DrainDeferredResponses();
+  }
+
   MaybeCollectGarbageOnIPCMessage();
 
   NoteActorDestroyed();
@@ -1673,61 +1800,109 @@ UniquePtr<JSStructuredCloneData> BackgroundRequestChild::GetNextCloneData() {
   return std::move(mCloneInfos[mCurrentCloneDataIndex++].mCloneData);
 }
 
-void BackgroundRequestChild::HandleResponse(nsresult aResponse) {
-  AssertIsOnOwningThread();
-  MOZ_ASSERT(NS_FAILED(aResponse));
-  MOZ_ASSERT(NS_ERROR_GET_MODULE(aResponse) == NS_ERROR_MODULE_DOM_INDEXEDDB);
-  MOZ_ASSERT(mTransaction);
+nsCOMPtr<nsIRunnable> BackgroundRequestChild::HandleResponse(
+    nsresult aResponse) {
+  SafeRefPtr<IDBTransaction> transaction = AcquireTransaction();
+  nsCOMPtr<IDBDatabase> database = nsCOMPtr{mTransaction->Database()};
+  return NS_NewRunnableFunction(
+      "IDB::DeferredRecvDelete",
+      [request = mRequest, transaction = std::move(transaction),
+       database = std::move(database), response = aResponse]() {
+        MOZ_ASSERT(NS_FAILED(response));
+        MOZ_ASSERT(NS_ERROR_GET_MODULE(response) ==
+                   NS_ERROR_MODULE_DOM_INDEXEDDB);
+        MOZ_ASSERT(transaction);
 
-  DispatchErrorEvent(mRequest, aResponse, mTransaction.clonePtr());
+        if (transaction->IsAborted()) {
+          DispatchErrorEvent(request, NS_ERROR_DOM_INDEXEDDB_ABORT_ERR,
+                             std::move(transaction));
+          return;
+        }
+
+        if (!database->GetRelevantGlobal()) {
+          return;
+        }
+
+        DispatchErrorEvent(request, response, std::move(transaction));
+      });
 }
 
-void BackgroundRequestChild::HandleResponse(const Key& aResponse) {
-  AssertIsOnOwningThread();
+template <typename SuccessAction>
+nsCOMPtr<nsIRunnable> BackgroundRequestChild::MakeDeferredResultRunnable(
+    SuccessAction&& aAction) {
+  SafeRefPtr<IDBTransaction> transaction = AcquireTransaction();
+  nsCOMPtr<IDBDatabase> database = nsCOMPtr{mTransaction->Database()};
+  return NS_NewRunnableFunction(
+      "IDB::DeferredRecvDelete",
+      [request = mRequest, transaction = std::move(transaction),
+       database = std::move(database),
+       action = std::forward<SuccessAction>(aAction)]() mutable {
+        if (transaction->IsAborted()) {
+          DispatchErrorEvent(request, NS_ERROR_DOM_INDEXEDDB_ABORT_ERR,
+                             std::move(transaction));
+          return;
+        }
 
-  SetResultAndDispatchSuccessEvent(mRequest, AcquireTransaction(), aResponse);
+        if (!database->GetRelevantGlobal()) {
+          // Ignore the response, since we have already been disconnected
+          // from the global.
+          return;
+        }
+
+        action(request, std::move(transaction));
+      });
 }
 
-void BackgroundRequestChild::HandleResponse(const nsTArray<Key>& aResponse) {
+nsCOMPtr<nsIRunnable> BackgroundRequestChild::HandleResponse(Key&& aResponse) {
   AssertIsOnOwningThread();
 
-  SetResultAndDispatchSuccessEvent(mRequest, AcquireTransaction(), aResponse);
+  return MakeDeferredResultRunnable(
+      [key = std::move(aResponse)](auto& request, auto&& transaction) {
+        SetResultAndDispatchSuccessEvent(
+            request, std::forward<decltype(transaction)>(transaction), key);
+      });
 }
 
-void BackgroundRequestChild::HandleResponse(
+nsCOMPtr<nsIRunnable> BackgroundRequestChild::HandleResponse(
+    nsTArray<Key>&& aResponse) {
+  AssertIsOnOwningThread();
+
+  return MakeDeferredResultRunnable(
+      [keys = std::move(aResponse)](auto& request, auto&& transaction) {
+        SetResultAndDispatchSuccessEvent(
+            request, std::forward<decltype(transaction)>(transaction), keys);
+      });
+}
+
+nsCOMPtr<nsIRunnable> BackgroundRequestChild::HandleResponse(
     SerializedStructuredCloneReadInfo&& aResponse) {
   AssertIsOnOwningThread();
 
-  if (!mTransaction->Database()->GetOwnerGlobal()) {
+  if (!mTransaction->Database()->GetRelevantGlobal()) {
     // Ignore the response, since we have already been disconnected from the
     // global.
-    return;
+    return nullptr;
   }
 
   auto cloneReadInfo = DeserializeStructuredCloneReadInfo(
       std::move(aResponse), mTransaction->Database(),
       [this] { return std::move(*GetNextCloneData()); });
 
-  SetResultAndDispatchSuccessEvent(mRequest, AcquireTransaction(),
-                                   cloneReadInfo);
+  return MakeDeferredResultRunnable([cloneInfo = std::move(cloneReadInfo)](
+                                        auto& request,
+                                        auto&& transaction) mutable {
+    SetResultAndDispatchSuccessEvent(
+        request, std::forward<decltype(transaction)>(transaction), cloneInfo);
+  });
 }
 
-void BackgroundRequestChild::HandleResponse(
-    nsTArray<SerializedStructuredCloneReadInfo>&& aResponse) {
-  AssertIsOnOwningThread();
-
-  if (!mTransaction->Database()->GetOwnerGlobal()) {
-    // Ignore the response, since we have already been disconnected from the
-    // global.
-    return;
-  }
-
-  nsTArray<StructuredCloneReadInfoChild> cloneReadInfos;
-
-  QM_TRY(OkIf(cloneReadInfos.SetCapacity(aResponse.Length(), fallible)),
-         QM_VOID, ([&aResponse, this](const auto) {
-           // Since we are under memory pressure, release aResponse early.
-           aResponse.Clear();
+bool BackgroundRequestChild::DeserializeCloneInfos(
+    nsTArray<SerializedStructuredCloneReadInfo>& aSerialized,
+    nsTArray<StructuredCloneReadInfoChild>& aOut) {
+  QM_TRY(OkIf(aOut.SetCapacity(aSerialized.Length(), fallible)), false,
+         ([&aSerialized, this](const auto) {
+           // Since we are under memory pressure, release aSerialized early.
+           aSerialized.Clear();
 
            DispatchErrorEvent(mRequest, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR,
                               AcquireTransaction());
@@ -1735,32 +1910,113 @@ void BackgroundRequestChild::HandleResponse(
            MOZ_ASSERT(mTransaction->IsAborted());
          }));
 
-  std::transform(std::make_move_iterator(aResponse.begin()),
-                 std::make_move_iterator(aResponse.end()),
-                 MakeBackInserter(cloneReadInfos),
-                 [database = mTransaction->Database(), this](
-                     SerializedStructuredCloneReadInfo&& serializedCloneInfo) {
-                   return DeserializeStructuredCloneReadInfo(
-                       std::move(serializedCloneInfo), database,
-                       [this] { return std::move(*GetNextCloneData()); });
-                 });
+  std::transform(
+      std::make_move_iterator(aSerialized.begin()),
+      std::make_move_iterator(aSerialized.end()), MakeBackInserter(aOut),
+      [database = RefPtr<IDBDatabase>(mTransaction->Database()),
+       this](SerializedStructuredCloneReadInfo&& serializedCloneInfo) {
+        return DeserializeStructuredCloneReadInfo(
+            std::move(serializedCloneInfo), database,
+            [this] { return std::move(*GetNextCloneData()); });
+      });
 
-  SetResultAndDispatchSuccessEvent(mRequest, AcquireTransaction(),
-                                   cloneReadInfos);
+  return true;
 }
 
-void BackgroundRequestChild::HandleResponse(JS::Handle<JS::Value> aResponse) {
+nsCOMPtr<nsIRunnable> BackgroundRequestChild::HandleResponse(
+    nsTArray<SerializedStructuredCloneReadInfo>&& aResponse) {
   AssertIsOnOwningThread();
 
-  SetResultAndDispatchSuccessEvent(
-      mRequest, AcquireTransaction(),
-      const_cast<const JS::Handle<JS::Value>&>(aResponse));
+  if (!mTransaction->Database()->GetRelevantGlobal()) {
+    // Ignore the response, since we have already been disconnected from the
+    // global.
+    return nullptr;
+  }
+
+  nsTArray<StructuredCloneReadInfoChild> cloneReadInfos;
+  if (!DeserializeCloneInfos(aResponse, cloneReadInfos)) {
+    return nullptr;
+  }
+
+  return MakeDeferredResultRunnable(
+      [infos = std::move(cloneReadInfos)](auto& request,
+                                          auto&& transaction) mutable {
+        SetResultAndDispatchSuccessEvent(
+            request, std::forward<decltype(transaction)>(transaction), infos);
+      });
 }
 
-void BackgroundRequestChild::HandleResponse(const uint64_t aResponse) {
+nsCOMPtr<nsIRunnable> BackgroundRequestChild::HandleResponse(
+    ObjectStoreGetAllRecordsResponse&& aResponse) {
   AssertIsOnOwningThread();
 
-  SetResultAndDispatchSuccessEvent(mRequest, AcquireTransaction(), aResponse);
+  if (!mTransaction->Database()->GetRelevantGlobal()) {
+    // Ignore the response, since we have already been disconnected from the
+    // global.
+    return nullptr;
+  }
+
+  nsTArray<StructuredCloneReadInfoChild> cloneInfos;
+  if (!DeserializeCloneInfos(aResponse.cloneInfos(), cloneInfos)) {
+    return nullptr;
+  }
+  ObjectStoreRecordsData data(std::move(aResponse.keys()),
+                              std::move(cloneInfos));
+
+  return MakeDeferredResultRunnable(
+      [infos = std::move(data)](auto& request, auto&& transaction) mutable {
+        SetResultAndDispatchSuccessEvent(
+            request, std::forward<decltype(transaction)>(transaction),
+            std::move(infos));
+      });
+}
+
+nsCOMPtr<nsIRunnable> BackgroundRequestChild::HandleResponse(
+    IndexGetAllRecordsResponse&& aResponse) {
+  AssertIsOnOwningThread();
+
+  if (!mTransaction->Database()->GetRelevantGlobal()) {
+    // Ignore the response, since we have already been disconnected from the
+    // global.
+    return nullptr;
+  }
+
+  nsTArray<StructuredCloneReadInfoChild> cloneInfos;
+  if (!DeserializeCloneInfos(aResponse.cloneInfos(), cloneInfos)) {
+    return nullptr;
+  }
+  IndexRecordsData data(std::move(aResponse.keys()),
+                        std::move(aResponse.primaryKeys()),
+                        std::move(cloneInfos));
+
+  return MakeDeferredResultRunnable(
+      [infos = std::move(data)](auto& request, auto&& transaction) mutable {
+        SetResultAndDispatchSuccessEvent(
+            request, std::forward<decltype(transaction)>(transaction),
+            std::move(infos));
+      });
+}
+
+nsCOMPtr<nsIRunnable> BackgroundRequestChild::HandleResponse(
+    BackgroundRequestChild::UndefinedJSHandleValue /* overload selector */) {
+  AssertIsOnOwningThread();
+
+  return MakeDeferredResultRunnable([](auto& request, auto&& transaction) {
+    SetResultAndDispatchSuccessEvent(
+        request, std::forward<decltype(transaction)>(transaction),
+        JS::UndefinedHandleValue);
+  });
+}
+
+nsCOMPtr<nsIRunnable> BackgroundRequestChild::HandleResponse(
+    const uint64_t aResponse) {
+  AssertIsOnOwningThread();
+
+  return MakeDeferredResultRunnable(
+      [count = aResponse](auto& request, auto&& transaction) {
+        SetResultAndDispatchSuccessEvent(
+            request, std::forward<decltype(transaction)>(transaction), count);
+      });
 }
 
 nsresult BackgroundRequestChild::HandlePreprocess(
@@ -1850,78 +2106,96 @@ mozilla::ipc::IPCResult BackgroundRequestChild::Recv__delete__(
 
   MaybeCollectGarbageOnIPCMessage();
 
+  nsCOMPtr<nsIRunnable> runnable;
+
   if (mTransaction->IsAborted()) {
     // Always fire an "error" event with ABORT_ERR if the transaction was
     // aborted, even if the request succeeded or failed with another error.
-    HandleResponse(NS_ERROR_DOM_INDEXEDDB_ABORT_ERR);
+    runnable = HandleResponse(NS_ERROR_DOM_INDEXEDDB_ABORT_ERR);
   } else {
     switch (aResponse.type()) {
       case RequestResponse::Tnsresult:
-        HandleResponse(aResponse.get_nsresult());
+        runnable = HandleResponse(aResponse.get_nsresult());
         break;
-
       case RequestResponse::TObjectStoreAddResponse:
-        HandleResponse(aResponse.get_ObjectStoreAddResponse().key());
+        runnable = HandleResponse(
+            std::move(aResponse.get_ObjectStoreAddResponse().key()));
         break;
-
       case RequestResponse::TObjectStorePutResponse:
-        HandleResponse(aResponse.get_ObjectStorePutResponse().key());
+        runnable = HandleResponse(
+            std::move(aResponse.get_ObjectStorePutResponse().key()));
         break;
-
       case RequestResponse::TObjectStoreGetResponse:
-        HandleResponse(
+        runnable = HandleResponse(
             std::move(aResponse.get_ObjectStoreGetResponse().cloneInfo()));
         break;
-
       case RequestResponse::TObjectStoreGetKeyResponse:
-        HandleResponse(aResponse.get_ObjectStoreGetKeyResponse().key());
+        runnable = HandleResponse(
+            std::move(aResponse.get_ObjectStoreGetKeyResponse().key()));
         break;
-
       case RequestResponse::TObjectStoreGetAllResponse:
-        HandleResponse(
+        runnable = HandleResponse(
             std::move(aResponse.get_ObjectStoreGetAllResponse().cloneInfos()));
         break;
-
       case RequestResponse::TObjectStoreGetAllKeysResponse:
-        HandleResponse(aResponse.get_ObjectStoreGetAllKeysResponse().keys());
+        runnable = HandleResponse(
+            std::move(aResponse.get_ObjectStoreGetAllKeysResponse().keys()));
         break;
-
       case RequestResponse::TObjectStoreDeleteResponse:
       case RequestResponse::TObjectStoreClearResponse:
-        HandleResponse(JS::UndefinedHandleValue);
+        runnable =
+            HandleResponse(BackgroundRequestChild::UndefinedJSHandleValue{});
         break;
-
       case RequestResponse::TObjectStoreCountResponse:
-        HandleResponse(aResponse.get_ObjectStoreCountResponse().count());
+        runnable =
+            HandleResponse(aResponse.get_ObjectStoreCountResponse().count());
         break;
-
       case RequestResponse::TIndexGetResponse:
-        HandleResponse(std::move(aResponse.get_IndexGetResponse().cloneInfo()));
+        runnable = HandleResponse(
+            std::move(aResponse.get_IndexGetResponse().cloneInfo()));
         break;
-
       case RequestResponse::TIndexGetKeyResponse:
-        HandleResponse(aResponse.get_IndexGetKeyResponse().key());
+        runnable = HandleResponse(
+            std::move(aResponse.get_IndexGetKeyResponse().key()));
         break;
-
       case RequestResponse::TIndexGetAllResponse:
-        HandleResponse(
+        runnable = HandleResponse(
             std::move(aResponse.get_IndexGetAllResponse().cloneInfos()));
         break;
-
       case RequestResponse::TIndexGetAllKeysResponse:
-        HandleResponse(aResponse.get_IndexGetAllKeysResponse().keys());
+        runnable = HandleResponse(
+            std::move(aResponse.get_IndexGetAllKeysResponse().keys()));
+        break;
+
+      case RequestResponse::TObjectStoreGetAllRecordsResponse:
+        runnable = HandleResponse(
+            std::move(aResponse.get_ObjectStoreGetAllRecordsResponse()));
+        break;
+
+      case RequestResponse::TIndexGetAllRecordsResponse:
+        runnable = HandleResponse(
+            std::move(aResponse.get_IndexGetAllRecordsResponse()));
         break;
 
       case RequestResponse::TIndexCountResponse:
-        HandleResponse(aResponse.get_IndexCountResponse().count());
+        runnable = HandleResponse(aResponse.get_IndexCountResponse().count());
         break;
-
       default:
         return IPC_FAIL(this, "Unknown response type!");
     }
   }
 
-  mTransaction->OnRequestFinished(/* aRequestCompletedSuccessfully */ true);
+  if (runnable) {
+    if (mTransaction->IsDeferralActive()) {
+      mTransaction->QueueDeferredResponse(runnable.forget());
+    } else {
+      runnable->Run();
+      mTransaction->OnRequestFinished(/* aRequestCompletedSuccessfully */ true);
+    }
+  } else {
+    // We always finish successfully!
+    mTransaction->OnRequestFinished(/* aRequestCompletedSuccessfully */ true);
+  }
 
   // Null this out so that we don't try to call OnRequestFinished() again in
   // ActorDestroy.
@@ -2643,7 +2917,7 @@ void BackgroundCursorChild<CursorType>::HandleResponse(
                 CursorType == IDBCursorType::Index) {
     MOZ_ASSERT(mTransaction);
 
-    if (!mTransaction->Database()->GetOwnerGlobal()) {
+    if (!mTransaction->Database()->GetRelevantGlobal()) {
       // Ignore the response, since we have already been disconnected from the
       // global.
       return;

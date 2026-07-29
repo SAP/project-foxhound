@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,6 +25,7 @@
 #include "nsIMemoryReporter.h"
 #include "nsIObserverService.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/NodeBinding.h"
 #include "nsIRunnable.h"
 #include "nsPIDOMWindow.h"
 #include "nsPrintfCString.h"
@@ -57,6 +56,7 @@
 #include "js/UbiNodeUtils.h"
 #include "js/friend/UsageStatistics.h"  // JSMetric, JS_SetAccumulateTelemetryCallback
 #include "js/friend/WindowProxy.h"  // js::SetWindowProxyClass
+#include "js/friend/Wrapper.h"      // js::NukeCrossCompartmentWrappers
 #include "js/friend/XrayJitInfo.h"  // JS::SetXrayJitInfo
 #include "js/Utility.h"             // JS::UniqueTwoByteChars
 #include "mozilla/dom/AbortSignalBinding.h"
@@ -154,13 +154,14 @@ class AsyncFreeSnowWhite : public Runnable {
     AUTO_PROFILER_LABEL_RELEVANT_FOR_JS("Incremental CC", GCCC);
     AUTO_PROFILER_LABEL("AsyncFreeSnowWhite::Run", GCCC_FreeSnowWhite);
 
-    auto timerId = glean::cycle_collector::async_snow_white_freeing.Start();
+    auto timerId =
+        glean::cycle_collector::async_snow_white_freeing.ProcessGet().Start();
     // 2 ms budget, given that kICCSliceBudget is only 3 ms
     SliceBudget budget = SliceBudget(TimeBudget(2));
     bool hadSnowWhiteObjects =
         nsCycleCollector_doDeferredDeletionWithBudget(budget);
-    glean::cycle_collector::async_snow_white_freeing.StopAndAccumulate(
-        std::move(timerId));
+    glean::cycle_collector::async_snow_white_freeing.ProcessGet()
+        .StopAndAccumulate(std::move(timerId));
     if (hadSnowWhiteObjects && !mContinuation) {
       mContinuation = true;
       if (NS_FAILED(Dispatch())) {
@@ -831,13 +832,6 @@ void XPCJSRuntime::DoCycleCollectionCallback(JSContext* cx) {
   }
 }
 
-void XPCJSRuntime::CustomGCCallback(JSGCStatus status) {
-  nsTArray<xpcGCCallback> callbacks(extraGCCallbacks.Clone());
-  for (uint32_t i = 0; i < callbacks.Length(); ++i) {
-    callbacks[i](status);
-  }
-}
-
 /* static */
 void XPCJSRuntime::FinalizeCallback(JS::GCContext* gcx, JSFinalizeStatus status,
                                     void* data) {
@@ -952,6 +946,8 @@ void XPCJSRuntime::WeakPointerZonesCallback(JSTracer* trc, void* data) {
 
   self->mWrappedJSMap->UpdateWeakPointersAfterGC(trc);
   self->mUAWidgetScopeMap.traceWeak(trc);
+
+  BrowsingContext::SweepWindowProxies(trc);
 }
 
 /* static */
@@ -1218,14 +1214,6 @@ extern void xpc::GetCurrentRealmName(JSContext* cx, nsCString& name) {
   JS::Realm* realm = GetNonCCWObjectRealm(global);
   int anonymizeID = 0;
   GetRealmName(realm, name, &anonymizeID, false);
-}
-
-void xpc::AddGCCallback(xpcGCCallback cb) {
-  XPCJSRuntime::Get()->AddGCCallback(cb);
-}
-
-void xpc::RemoveGCCallback(xpcGCCallback cb) {
-  XPCJSRuntime::Get()->RemoveGCCallback(cb);
 }
 
 static int64_t JSMainRuntimeGCHeapDistinguishedAmount() {
@@ -1622,6 +1610,18 @@ static void ReportZoneStats(const JS::ZoneStats& zStats,
         " We filter them out rather than display them, because displaying "
         "them would create even more such strings every time about:memory "
         "is refreshed.");
+  }
+
+  if (zStats.stringsDeduplicationTruncated) {
+    MOZ_ASSERT(!zStats.isTotals);
+    nsAutoCString desc;
+    desc.AppendPrintf(
+        "Number of JS strings seen in zones where notable string detection was "
+        "cut off before it could finish.");
+    handleReport->Callback(""_ns, "js-notable-truncated-strings-count"_ns,
+                           nsIMemoryReporter::KIND_OTHER,
+                           nsIMemoryReporter::UNITS_COUNT,
+                           zStats.stringsTotalCount, desc, data);
   }
 
   const JS::ShapeInfo& shapeInfo = zStats.shapeInfo;
@@ -2179,6 +2179,7 @@ class XPCJSRuntimeStats : public JS::RuntimeStats {
                                   const JS::AutoRequireNoGC& nogc) override {
     xpc::ZoneStatsExtras* extras = new xpc::ZoneStatsExtras;
     extras->pathPrefix.AssignLiteral("explicit/js-non-window/zones/");
+    extras->zoneName = nsPrintfCString("zone(0x%p)/", (void*)zone);
 
     // Get some global in this zone.
     Rooted<Realm*> realm(dom::RootingCx(), js::GetAnyRealmInZone(zone));
@@ -2196,7 +2197,7 @@ class XPCJSRuntimeStats : public JS::RuntimeStats {
       }
     }
 
-    extras->pathPrefix += nsPrintfCString("zone(0x%p)/", (void*)zone);
+    extras->pathPrefix += extras->zoneName;
 
     MOZ_ASSERT(StartsWithExplicit(extras->pathPrefix));
 
@@ -2354,6 +2355,13 @@ void JSReporter::CollectReports(WindowPaths* windowPaths,
         " to RSS, only vsize.");
   }
 
+  if (rtStats.runtime.wasmContStacks > 0) {
+    REPORT_BYTES(
+        "wasm-cont-stacks"_ns, KIND_OTHER, rtStats.runtime.wasmContStacks,
+        "Memory mapped for wasm continuation stacks (JS Promise Integration "
+        "and stack-switching), including guard pages.");
+  }
+
   // Report the numbers for memory outside of realms.
 
   REPORT_BYTES("js-main-runtime/gc-heap/unused-chunks"_ns, KIND_OTHER,
@@ -2501,17 +2509,32 @@ void JSReporter::CollectReports(WindowPaths* windowPaths,
 
   // Report totals from per-zone GC buffer allocators.
 
-  MREPORT_BYTES("js-main-runtime-gc-buffers/used"_ns, KIND_OTHER,
-                rtStats.zTotals.gcBuffers.usedBytes,
-                "Bookeeping information and padding within GC buffer memeory.");
+  for (const auto& zStats : rtStats.zoneStatsVector) {
+    const xpc::ZoneStatsExtras* extras =
+        static_cast<const xpc::ZoneStatsExtras*>(zStats.extra);
 
-  MREPORT_BYTES("js-main-runtime-gc-buffers/free"_ns, KIND_OTHER,
-                rtStats.zTotals.gcBuffers.freeBytes,
-                "Free space within GC buffer memeory.");
+    nsCString pathPrefix;
+    pathPrefix.AssignLiteral("js-main-runtime-gc-buffers/");
+    pathPrefix += extras->zoneName;
 
-  MREPORT_BYTES("js-main-runtime-gc-buffers/admin"_ns, KIND_OTHER,
-                rtStats.zTotals.gcBuffers.adminBytes,
-                "Bookeeping information and padding within GC buffer memeory.");
+    nsCString usedPath =
+        pathPrefix +
+        nsPrintfCString("used (in %zu chunks and %zu large allocs)",
+                        zStats.gcBuffers.totalChunks,
+                        zStats.gcBuffers.largeAllocs);
+    MREPORT_BYTES(usedPath, KIND_OTHER, zStats.gcBuffers.usedBytes,
+                  "Allocated memory within GC buffer memeory.");
+
+    nsCString freePath =
+        pathPrefix +
+        nsPrintfCString("free (in %zu regions)", zStats.gcBuffers.freeRegions);
+    MREPORT_BYTES(freePath, KIND_OTHER, zStats.gcBuffers.freeBytes,
+                  "Free space within GC buffer memeory.");
+
+    MREPORT_BYTES(
+        pathPrefix + "admin"_ns, KIND_OTHER, zStats.gcBuffers.adminBytes,
+        "Bookeeping information and padding within GC buffer memeory.");
+  }
 
   REPORT("js-main-runtime-zone-count"_ns, KIND_OTHER, UNITS_COUNT,
          rtStats.zoneStatsVector.length(), "Count of GC zones in the runtime.");
@@ -2582,130 +2605,138 @@ static nsresult JSSizeOfTab(JSObject* obj, size_t* jsObjectsSize,
 
 }  // namespace xpc
 
-static void AccumulateTelemetryCallback(JSMetric id, uint32_t sample) {
+static void AccumulateTelemetryCallback(JSMetric id,
+                                        const JSTelemetryData& sample) {
   switch (id) {
     case JSMetric::GC_MS:
-      glean::javascript_gc::total_time.AccumulateRawDuration(
-          TimeDuration::FromMilliseconds(sample));
+      glean::javascript_gc::total_time.ProcessGet().AccumulateRawDuration(
+          sample.as<TimeDuration>());
       break;
     case JSMetric::GC_MINOR_US:
-      glean::javascript_gc::minor_time.AccumulateRawDuration(
-          TimeDuration::FromMicroseconds(sample));
+      glean::javascript_gc::minor_time.ProcessGet().AccumulateRawDuration(
+          sample.as<TimeDuration>());
       break;
     case JSMetric::GC_PREPARE_MS:
-      glean::javascript_gc::prepare_time.AccumulateRawDuration(
-          TimeDuration::FromMilliseconds(sample));
+      glean::javascript_gc::prepare_time.ProcessGet().AccumulateRawDuration(
+          sample.as<TimeDuration>());
       break;
     case JSMetric::GC_MARK_ROOTS_US:
-      glean::javascript_gc::mark_roots_time.AccumulateRawDuration(
-          TimeDuration::FromMicroseconds(sample));
+      glean::javascript_gc::mark_roots_time.ProcessGet().AccumulateRawDuration(
+          sample.as<TimeDuration>());
       break;
     case JSMetric::GC_MARK_MS:
-      glean::javascript_gc::mark_time.AccumulateRawDuration(
-          TimeDuration::FromMilliseconds(sample));
+      glean::javascript_gc::mark_time.ProcessGet().AccumulateRawDuration(
+          sample.as<TimeDuration>());
       break;
     case JSMetric::GC_SWEEP_MS:
-      glean::javascript_gc::sweep_time.AccumulateRawDuration(
-          TimeDuration::FromMilliseconds(sample));
+      glean::javascript_gc::sweep_time.ProcessGet().AccumulateRawDuration(
+          sample.as<TimeDuration>());
       break;
     case JSMetric::GC_COMPACT_MS:
-      glean::javascript_gc::compact_time.AccumulateRawDuration(
-          TimeDuration::FromMilliseconds(sample));
+      glean::javascript_gc::compact_time.ProcessGet().AccumulateRawDuration(
+          sample.as<TimeDuration>());
       break;
     case JSMetric::GC_SLICE_MS:
-      glean::javascript_gc::slice_time.AccumulateRawDuration(
-          TimeDuration::FromMilliseconds(sample));
+      glean::javascript_gc::slice_time.ProcessGet().AccumulateRawDuration(
+          sample.as<TimeDuration>());
       break;
     case JSMetric::ION_COMPILE_TIME:
       glean::javascript_ion::compile_time.AccumulateRawDuration(
-          TimeDuration::FromMicroseconds(sample));
+          sample.as<TimeDuration>());
       break;
     case JSMetric::GC_BUDGET_MS_2:
-      glean::javascript_gc::budget.AccumulateRawDuration(
-          TimeDuration::FromMilliseconds(sample));
+      glean::javascript_gc::budget.ProcessGet().AccumulateRawDuration(
+          sample.as<TimeDuration>());
       break;
     case JSMetric::GC_BUDGET_OVERRUN:
-      glean::javascript_gc::budget_overrun.AccumulateRawDuration(
-          TimeDuration::FromMicroseconds(sample));
+      glean::javascript_gc::budget_overrun.ProcessGet().AccumulateRawDuration(
+          sample.as<TimeDuration>());
       break;
     case JSMetric::GC_ANIMATION_MS:
-      glean::javascript_gc::animation.AccumulateRawDuration(
-          TimeDuration::FromMilliseconds(sample));
+      glean::javascript_gc::animation.ProcessGet().AccumulateRawDuration(
+          sample.as<TimeDuration>());
       break;
     case JSMetric::GC_MAX_PAUSE_MS_2:
-      glean::javascript_gc::max_pause.AccumulateRawDuration(
-          TimeDuration::FromMilliseconds(sample));
+      glean::javascript_gc::max_pause.ProcessGet().AccumulateRawDuration(
+          sample.as<TimeDuration>());
       break;
     case JSMetric::GC_MARK_GRAY_MS_2:
-      glean::javascript_gc::mark_gray.AccumulateRawDuration(
-          TimeDuration::FromMilliseconds(sample));
+      glean::javascript_gc::mark_gray.ProcessGet().AccumulateRawDuration(
+          sample.as<TimeDuration>());
       break;
     case JSMetric::GC_MARK_WEAK_MS:
-      glean::javascript_gc::mark_weak.AccumulateRawDuration(
-          TimeDuration::FromMilliseconds(sample));
+      glean::javascript_gc::mark_weak.ProcessGet().AccumulateRawDuration(
+          sample.as<TimeDuration>());
       break;
     case JSMetric::GC_TIME_BETWEEN_S:
-      glean::javascript_gc::time_between.AccumulateRawDuration(
-          TimeDuration::FromSeconds(sample));
+      glean::javascript_gc::time_between.ProcessGet().AccumulateRawDuration(
+          sample.as<TimeDuration>());
       break;
     case JSMetric::GC_TIME_BETWEEN_SLICES_MS:
-      glean::javascript_gc::time_between_slices.AccumulateRawDuration(
-          TimeDuration::FromMilliseconds(sample));
+      glean::javascript_gc::time_between_slices.ProcessGet()
+          .AccumulateRawDuration(sample.as<TimeDuration>());
       break;
     case JSMetric::GC_TIME_BETWEEN_MINOR_MS:
-      glean::javascript_gc::time_between_minor.AccumulateRawDuration(
-          TimeDuration::FromMilliseconds(sample));
+      glean::javascript_gc::time_between_minor.ProcessGet()
+          .AccumulateRawDuration(sample.as<TimeDuration>());
       break;
     case JSMetric::GC_TASK_START_DELAY_US:
-      glean::javascript_gc::task_start_delay.AccumulateRawDuration(
-          TimeDuration::FromMicroseconds(sample));
+      glean::javascript_gc::task_start_delay.ProcessGet().AccumulateRawDuration(
+          sample.as<TimeDuration>());
       break;
     case JSMetric::GC_MMU_50:
-      glean::javascript_gc::mmu_50.AccumulateSingleSample(sample);
+      glean::javascript_gc::mmu_50.AccumulateSingleSample(sample.as<size_t>());
       break;
     case JSMetric::GC_NURSERY_PROMOTION_RATE:
       glean::javascript_gc::nursery_promotion_rate.AccumulateSingleSample(
-          sample);
+          sample.as<size_t>());
       break;
     case JSMetric::GC_TENURED_SURVIVAL_RATE:
       glean::javascript_gc::tenured_survival_rate.AccumulateSingleSample(
-          sample);
+          sample.as<size_t>());
       break;
     case JSMetric::GC_PARALLEL_MARK_UTILIZATION:
       glean::javascript_gc::parallel_mark_utilization.AccumulateSingleSample(
-          sample);
+          sample.as<size_t>());
       break;
     case JSMetric::GC_NURSERY_BYTES_2:
-      glean::javascript_gc::nursery_bytes.Accumulate(sample);
+      glean::javascript_gc::nursery_bytes.ProcessGet().Accumulate(
+          sample.as<size_t>());
       break;
     case JSMetric::GC_EFFECTIVENESS:
-      glean::javascript_gc::effectiveness.AccumulateSingleSample(sample);
+      glean::javascript_gc::effectiveness.AccumulateSingleSample(
+          sample.as<size_t>());
       break;
     case JSMetric::GC_ZONE_COUNT:
-      glean::javascript_gc::zone_count.AccumulateSingleSample(sample);
+      glean::javascript_gc::zone_count.AccumulateSingleSample(
+          sample.as<size_t>());
       break;
     case JSMetric::GC_ZONES_COLLECTED:
-      glean::javascript_gc::zones_collected.AccumulateSingleSample(sample);
+      glean::javascript_gc::zones_collected.AccumulateSingleSample(
+          sample.as<size_t>());
       break;
     case JSMetric::GC_PRETENURE_COUNT_2:
-      glean::javascript_gc::pretenure_count.AccumulateSingleSample(sample);
+      glean::javascript_gc::pretenure_count.AccumulateSingleSample(
+          sample.as<size_t>());
       break;
     case JSMetric::GC_MARK_RATE_2:
-      glean::javascript_gc::mark_rate.AccumulateSingleSample(sample);
+      glean::javascript_gc::mark_rate.AccumulateSingleSample(
+          sample.as<size_t>());
       break;
     case JSMetric::GC_SLICE_COUNT:
-      glean::javascript_gc::slice_count.AccumulateSingleSample(sample);
+      glean::javascript_gc::slice_count.AccumulateSingleSample(
+          sample.as<size_t>());
       break;
     case JSMetric::GC_PARALLEL_MARK_SPEEDUP:
       glean::javascript_gc::parallel_mark_speedup.AccumulateSingleSample(
-          sample);
+          sample.as<size_t>());
       break;
     case JSMetric::GC_PARALLEL_MARK_INTERRUPTIONS:
       glean::javascript_gc::parallel_mark_interruptions.AccumulateSingleSample(
-          sample);
+          sample.as<size_t>());
       break;
     case JSMetric::GC_IS_COMPARTMENTAL:
-      if (sample) {
+      if (sample.as<bool>()) {
         glean::javascript_gc::is_zone_gc
             .EnumGet(glean::javascript_gc::IsZoneGcLabel::eTrue)
             .Add(1);
@@ -2716,7 +2747,7 @@ static void AccumulateTelemetryCallback(JSMetric id, uint32_t sample) {
       }
       break;
     case JSMetric::GC_BUDGET_WAS_INCREASED:
-      if (sample) {
+      if (sample.as<bool>()) {
         glean::javascript_gc::budget_was_increased
             .EnumGet(glean::javascript_gc::BudgetWasIncreasedLabel::eTrue)
             .Add(1);
@@ -2727,7 +2758,7 @@ static void AccumulateTelemetryCallback(JSMetric id, uint32_t sample) {
       }
       break;
     case JSMetric::GC_SLICE_WAS_LONG:
-      if (sample) {
+      if (sample.as<bool>()) {
         glean::javascript_gc::slice_was_long
             .EnumGet(glean::javascript_gc::SliceWasLongLabel::eTrue)
             .Add(1);
@@ -2738,7 +2769,7 @@ static void AccumulateTelemetryCallback(JSMetric id, uint32_t sample) {
       }
       break;
     case JSMetric::GC_RESET:
-      if (sample) {
+      if (sample.as<bool>()) {
         glean::javascript_gc::reset
             .EnumGet(glean::javascript_gc::ResetLabel::eTrue)
             .Add(1);
@@ -2749,7 +2780,7 @@ static void AccumulateTelemetryCallback(JSMetric id, uint32_t sample) {
       }
       break;
     case JSMetric::GC_NON_INCREMENTAL:
-      if (sample) {
+      if (sample.as<bool>()) {
         glean::javascript_gc::non_incremental
             .EnumGet(glean::javascript_gc::NonIncrementalLabel::eTrue)
             .Add(1);
@@ -2760,7 +2791,7 @@ static void AccumulateTelemetryCallback(JSMetric id, uint32_t sample) {
       }
       break;
     case JSMetric::GC_PARALLEL_MARK:
-      if (sample) {
+      if (sample.as<bool>()) {
         glean::javascript_gc::parallel_mark_used
             .EnumGet(glean::javascript_gc::ParallelMarkUsedLabel::eTrue)
             .Add(1);
@@ -2778,29 +2809,29 @@ static void AccumulateTelemetryCallback(JSMetric id, uint32_t sample) {
                   glean::javascript_gc::ReasonLabel::e__Other__),
           "GC reason enum and glean::javascript_gc::reason labels do "
           "not match.");
-      MOZ_ASSERT(static_cast<JS::GCReason>(sample) <=
+      MOZ_ASSERT(static_cast<JS::GCReason>(sample.as<size_t>()) <=
                      JS::GCReason::LAST_FIREFOX_REASON,
                  "Invalid GC Reason.");
 
       nsAutoCString reason(
-          JS::ExplainGCReason(static_cast<JS::GCReason>(sample)));
+          JS::ExplainGCReason(static_cast<JS::GCReason>(sample.as<size_t>())));
       glean::javascript_gc::reason.Get(reason).Add(1);
     } break;
     case JSMetric::GC_RESET_REASON: {
-      MOZ_ASSERT(
-          sample < static_cast<uint32_t>(
-                       glean::javascript_gc::ResetReasonLabel::e__Other__),
-          "Reason does not exist in the reset_reason labels list.");
-      nsAutoCString reason(JS::ExplainGCAbortReason(sample));
+      MOZ_ASSERT(sample.as<size_t>() <
+                     static_cast<uint32_t>(
+                         glean::javascript_gc::ResetReasonLabel::e__Other__),
+                 "Reason does not exist in the reset_reason labels list.");
+      nsAutoCString reason(JS::ExplainGCAbortReason(sample.as<size_t>()));
       glean::javascript_gc::reset_reason.Get(reason).Add(1);
     } break;
     case JSMetric::GC_NON_INCREMENTAL_REASON: {
       MOZ_ASSERT(
-          sample <
+          sample.as<size_t>() <
               static_cast<uint32_t>(
                   glean::javascript_gc::NonIncrementalReasonLabel::e__Other__),
           "Reason does not exist in the non_incremental_reason labels list.");
-      nsAutoCString reason(JS::ExplainGCAbortReason(sample));
+      nsAutoCString reason(JS::ExplainGCAbortReason(sample.as<size_t>()));
       glean::javascript_gc::non_incremental_reason.Get(reason).Add(1);
     } break;
     case JSMetric::GC_MINOR_REASON: {
@@ -2811,12 +2842,12 @@ static void AccumulateTelemetryCallback(JSMetric id, uint32_t sample) {
                   glean::javascript_gc::MinorReasonLabel::e__Other__),
           "GC reason enum and glean::javascript_gc::reason labels do not "
           "match.");
-      MOZ_ASSERT(static_cast<JS::GCReason>(sample) <=
+      MOZ_ASSERT(static_cast<JS::GCReason>(sample.as<size_t>()) <=
                      JS::GCReason::LAST_FIREFOX_REASON,
                  "Invalid GC Reason.");
 
       nsAutoCString reason(
-          JS::ExplainGCReason(static_cast<JS::GCReason>(sample)));
+          JS::ExplainGCReason(static_cast<JS::GCReason>(sample.as<size_t>())));
       glean::javascript_gc::minor_reason.Get(reason).Add(1);
     } break;
     case JSMetric::GC_MINOR_REASON_LONG: {
@@ -2827,26 +2858,28 @@ static void AccumulateTelemetryCallback(JSMetric id, uint32_t sample) {
                   glean::javascript_gc::MinorReasonLongLabel::e__Other__),
           "GC reason enum and glean::javascript_gc::reason labels do not "
           "match.");
-      MOZ_ASSERT(static_cast<JS::GCReason>(sample) <=
+      MOZ_ASSERT(static_cast<JS::GCReason>(sample.as<size_t>()) <=
                      JS::GCReason::LAST_FIREFOX_REASON,
                  "Invalid GC Reason.");
 
       nsAutoCString reason(
-          JS::ExplainGCReason(static_cast<JS::GCReason>(sample)));
+          JS::ExplainGCReason(static_cast<JS::GCReason>(sample.as<size_t>())));
       glean::javascript_gc::minor_reason_long.Get(reason).Add(1);
     } break;
     case JSMetric::GC_SLOW_PHASE: {
-      MOZ_ASSERT(sample < static_cast<uint32_t>(
-                              glean::javascript_gc::SlowPhaseLabel::e__Other__),
+      MOZ_ASSERT(sample.as<size_t>() <
+                     static_cast<uint32_t>(
+                         glean::javascript_gc::SlowPhaseLabel::e__Other__),
                  "Phase does not exist in the slow_phase labels list.");
-      nsAutoCString phase(JS::GetGCPhaseName(sample));
+      nsAutoCString phase(JS::GetGCPhaseName(sample.as<size_t>()));
       glean::javascript_gc::slow_phase.Get(phase).Add(1);
     } break;
     case JSMetric::GC_SLOW_TASK: {
-      MOZ_ASSERT(sample < static_cast<uint32_t>(
-                              glean::javascript_gc::SlowTaskLabel::e__Other__),
+      MOZ_ASSERT(sample.as<size_t>() <
+                     static_cast<uint32_t>(
+                         glean::javascript_gc::SlowTaskLabel::e__Other__),
                  "Phase does not exist in the slow_task labels list.");
-      nsAutoCString phase(JS::GetGCPhaseName(sample));
+      nsAutoCString phase(JS::GetGCPhaseName(sample.as<size_t>()));
       glean::javascript_gc::slow_task.Get(phase).Add(1);
     } break;
 
@@ -2896,6 +2929,19 @@ static void SetUseCounterCallback(JSObject* obj, JSUseCounter counter) {
       return;
     case JSUseCounter::DATEPARSE_IMPL_DEF:
       SetUseCounter(obj, eUseCounter_custom_JS_dateparse_impl_def);
+      return;
+    case JSUseCounter::GENERATOR_FUNCTION_CREATED:
+      SetUseCounter(obj, eUseCounter_custom_JS_generatorFunctionCreated);
+      return;
+    case JSUseCounter::ASYNC_GENERATOR_FUNCTION_CREATED:
+      SetUseCounter(obj, eUseCounter_custom_JS_asyncGeneratorFunctionCreated);
+      return;
+    case JSUseCounter::GENERATOR_FUNCTION_ION_ELIGIBLE:
+      SetUseCounter(obj, eUseCounter_custom_JS_generatorFunctionIonEligible);
+      return;
+    case JSUseCounter::ASYNC_GENERATOR_FUNCTION_ION_ELIGIBLE:
+      SetUseCounter(obj,
+                    eUseCounter_custom_JS_asyncGeneratorFunctionIonEligible);
       return;
     case JSUseCounter::COUNT:
       break;
@@ -3005,7 +3051,7 @@ static nsresult ReadSourceFromFilename(JSContext* cx, const char* filename,
   // Allocate a buffer the size of the file to initially fill with the UTF-8
   // contents of the file.  Use the JS allocator so that if UTF-8 source was
   // requested, we can return this memory directly.
-  JS::UniqueChars buf(js_pod_malloc<char>(rawLen));
+  JS::UniqueChars buf(js_pod_malloc<char>(static_cast<size_t>(rawLen)));
   if (!buf) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
@@ -3227,8 +3273,9 @@ void XPCJSRuntime::Initialize(JSContext* cx) {
   js::SetSourceHook(cx, std::move(hook));
 
   // Register memory reporters and distinguished amount functions.
-  RegisterStrongMemoryReporter(new JSMainRuntimeRealmsReporter());
-  RegisterStrongMemoryReporter(new JSMainRuntimeTemporaryPeakReporter());
+  RegisterStrongMemoryReporter(MakeAndAddRef<JSMainRuntimeRealmsReporter>());
+  RegisterStrongMemoryReporter(
+      MakeAndAddRef<JSMainRuntimeTemporaryPeakReporter>());
   RegisterJSMainRuntimeGCHeapDistinguishedAmount(
       JSMainRuntimeGCHeapDistinguishedAmount);
   RegisterJSMainRuntimeTemporaryPeakDistinguishedAmount(
@@ -3271,7 +3318,7 @@ bool XPCJSRuntime::InitializeStrings(JSContext* cx) {
 }
 
 bool XPCJSRuntime::DescribeCustomObjects(JSObject* obj, const JSClass* clasp,
-                                         char (&name)[72]) const {
+                                         char (&name)[512]) const {
   if (clasp != &XPC_WN_Proto_JSClass) {
     return false;
   }
@@ -3352,19 +3399,6 @@ void XPCJSRuntime::DebugDump(int16_t depth) {
 }
 
 /***************************************************************************/
-
-void XPCJSRuntime::AddGCCallback(xpcGCCallback cb) {
-  MOZ_ASSERT(cb, "null callback");
-  extraGCCallbacks.AppendElement(cb);
-}
-
-void XPCJSRuntime::RemoveGCCallback(xpcGCCallback cb) {
-  MOZ_ASSERT(cb, "null callback");
-  bool found = extraGCCallbacks.RemoveElement(cb);
-  if (!found) {
-    NS_ERROR("Removing a callback which was never added.");
-  }
-}
 
 JSObject* XPCJSRuntime::GetUAWidgetScope(JSContext* cx,
                                          nsIPrincipal* principal) {

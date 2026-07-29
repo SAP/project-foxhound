@@ -4,17 +4,20 @@
 
 package mozilla.components.browser.engine.gecko.ext
 
+import androidx.annotation.OptIn
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.engine.EngineSession.BounceTrackingProtectionMode
 import mozilla.components.concept.engine.EngineSession.TrackingProtectionPolicy
 import mozilla.components.concept.engine.EngineSession.TrackingProtectionPolicy.TrackingCategory
 import org.mozilla.geckoview.ContentBlocking
+import org.mozilla.geckoview.ExperimentalGeckoViewApi
 import org.mozilla.geckoview.GeckoRuntimeSettings
 
 /**
  * Converts a [TrackingProtectionPolicy] into a GeckoView setting that can be used with [GeckoRuntimeSettings.Builder].
  * Also contains the cookie banner handling settings for regular and private browsing.
  */
+@OptIn(ExperimentalGeckoViewApi::class)
 @Suppress("SpreadOperator")
 fun TrackingProtectionPolicy.toContentBlockingSetting(
     safeBrowsingPolicy: Array<EngineSession.SafeBrowsingPolicy> = arrayOf(EngineSession.SafeBrowsingPolicy.RECOMMENDED),
@@ -31,6 +34,13 @@ fun TrackingProtectionPolicy.toContentBlockingSetting(
     bounceTrackingProtectionMode: BounceTrackingProtectionMode = BounceTrackingProtectionMode.DISABLED,
     allowListBaselineTrackingProtection: Boolean = true,
     allowListConvenienceTrackingProtection: Boolean = true,
+    safeBrowsingGlobalCacheEnabled: Boolean = false,
+    safeBrowsingRealTimeEnabled: Boolean = false,
+    safeBrowsingRealTimeSimulationEnabled: Boolean = false,
+    safeBrowsingRealTimeSimulationHitProbability: Int = 5,
+    safeBrowsingRealTimeSimulationCacheTTLSec: Int = 300,
+    safeBrowsingRealTimeSimulationNegativeCacheEnabled: Boolean = false,
+    safeBrowsingRealTimeSimulationNegativeCacheTTLSec: Int = 300,
 ) = ContentBlocking.Settings.Builder().apply {
     enhancedTrackingProtectionLevel(getEtpLevel())
     enhancedTrackingProtectionCategory(getEtpCategory())
@@ -52,6 +62,13 @@ fun TrackingProtectionPolicy.toContentBlockingSetting(
     bounceTrackingProtectionMode(bounceTrackingProtectionMode.mode)
     allowListBaselineTrackingProtection(allowListBaselineTrackingProtection)
     allowListConvenienceTrackingProtection(allowListConvenienceTrackingProtection)
+    safeBrowsingGlobalCacheEnabled(safeBrowsingGlobalCacheEnabled)
+    safeBrowsingRealTimeEnabled(safeBrowsingRealTimeEnabled)
+    safeBrowsingRealTimeSimulationEnabled(safeBrowsingRealTimeSimulationEnabled)
+    safeBrowsingRealTimeSimulationHitProbability(safeBrowsingRealTimeSimulationHitProbability)
+    safeBrowsingRealTimeSimulationCacheTTLSec(safeBrowsingRealTimeSimulationCacheTTLSec)
+    safeBrowsingRealTimeSimulationNegativeCacheEnabled(safeBrowsingRealTimeSimulationNegativeCacheEnabled)
+    safeBrowsingRealTimeSimulationNegativeCacheTTLSec(safeBrowsingRealTimeSimulationNegativeCacheTTLSec)
 }.build()
 
 /**

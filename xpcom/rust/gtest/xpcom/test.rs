@@ -8,12 +8,22 @@
 extern crate xpcom;
 
 extern crate nserror;
+extern crate nsstring;
 
 use nserror::{nsresult, NS_OK};
+use nsstring::nsACString;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
 use xpcom::{interfaces, RefPtr};
+
+#[no_mangle]
+pub unsafe extern "C" fn Rust_GetSpecFromRust(
+    uri: *const interfaces::nsIURI,
+    spec: *mut nsACString,
+) -> nsresult {
+    (*uri).GetSpec(spec)
+}
 
 #[no_mangle]
 pub unsafe extern "C" fn Rust_ObserveFromRust() -> *const interfaces::nsIObserverService {

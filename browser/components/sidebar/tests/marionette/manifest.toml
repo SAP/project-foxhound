@@ -1,5 +1,6 @@
 [DEFAULT]
-tags = "local"
+subsuite = "integration"
+tags = "local os_integration"
 
 ["test_default_launcher_visible.py"]
 skip-if = [

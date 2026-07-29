@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,8 +12,10 @@
 #include "Tools.h"
 #include "mozilla/Maybe.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <iterator>
 
 namespace mozilla {
 
@@ -402,6 +402,7 @@ Maybe<Rect> UnionMaybeRects(const Maybe<Rect>& a, const Maybe<Rect>& b) {
 template <typename Coord, typename Size, typename Margin>
 struct BaseRectCornerRadii {
   Size radii[eCornerCount];
+  float mShapeK[eCornerCount] = {1.0f, 1.0f, 1.0f, 1.0f};
 
   BaseRectCornerRadii() = default;
 
@@ -449,7 +450,15 @@ struct BaseRectCornerRadii {
   bool operator==(const BaseRectCornerRadii& aOther) const {
     return TopLeft() == aOther.TopLeft() && TopRight() == aOther.TopRight() &&
            BottomRight() == aOther.BottomRight() &&
-           BottomLeft() == aOther.BottomLeft();
+           BottomLeft() == aOther.BottomLeft() &&
+           std::equal(std::begin(mShapeK), std::end(mShapeK),
+                      std::begin(aOther.mShapeK));
+  }
+
+  // True if every corner uses the default round (K=1) shape.
+  bool AreShapesAllRound() const {
+    return std::all_of(std::begin(mShapeK), std::end(mShapeK),
+                       [](float k) { return k == 1.0f; });
   }
 
   bool AreRadiiSame() const {

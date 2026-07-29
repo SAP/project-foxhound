@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,19 +6,15 @@
 
 #include "gfxVR.h"
 
-#ifndef M_PI
-#  define M_PI 3.14159265358979323846
-#endif
-
 using namespace mozilla;
 using namespace mozilla::gfx;
 
 Matrix4x4 VRFieldOfView::ConstructProjectionMatrix(float zNear, float zFar,
                                                    bool rightHanded) const {
-  float upTan = tan(upDegrees * M_PI / 180.0);
-  float downTan = tan(downDegrees * M_PI / 180.0);
-  float leftTan = tan(leftDegrees * M_PI / 180.0);
-  float rightTan = tan(rightDegrees * M_PI / 180.0);
+  float upTan = tan(upDegrees * kRadPerDegree);
+  float downTan = tan(downDegrees * kRadPerDegree);
+  float leftTan = tan(leftDegrees * kRadPerDegree);
+  float rightTan = tan(rightDegrees * kRadPerDegree);
 
   float handednessScale = rightHanded ? -1.0 : 1.0;
 

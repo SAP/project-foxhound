@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -196,46 +194,61 @@ void MacroAssemblerLOONG64::ma_li(Register dest, CodeLabel* label) {
 }
 
 void MacroAssemblerLOONG64::ma_li(Register dest, ImmWord imm) {
-  int64_t value = imm.value;
+  const int64_t value = imm.value;
 
-  if (-1 == (value >> 11) || 0 == (value >> 11)) {
+  if (is_intN(value, 12)) {
     as_addi_w(dest, zero, value);
     return;
   }
 
-  if (0 == (value >> 12)) {
+  if (is_uintN(value, 12)) {
     as_ori(dest, zero, value);
     return;
   }
 
-  if (-1 == (value >> 31) || 0 == (value >> 31)) {
-    as_lu12i_w(dest, (value >> 12) & 0xfffff);
-  } else if (0 == (value >> 32)) {
-    as_lu12i_w(dest, (value >> 12) & 0xfffff);
-    as_bstrins_d(dest, zero, 63, 32);
-  } else if (-1 == (value >> 51) || 0 == (value >> 51)) {
-    if (is_uintN((value >> 12) & 0xfffff, 20)) {
-      as_lu12i_w(dest, (value >> 12) & 0xfffff);
-    }
-    as_lu32i_d(dest, (value >> 32) & 0xfffff);
-  } else if (0 == (value >> 52)) {
-    if (is_uintN((value >> 12) & 0xfffff, 20)) {
-      as_lu12i_w(dest, (value >> 12) & 0xfffff);
-    }
-    as_lu32i_d(dest, (value >> 32) & 0xfffff);
-    as_bstrins_d(dest, zero, 63, 52);
-  } else {
-    if (is_uintN((value >> 12) & 0xfffff, 20)) {
-      as_lu12i_w(dest, (value >> 12) & 0xfffff);
-    }
-    if (is_uintN((value >> 32) & 0xfffff, 20)) {
-      as_lu32i_d(dest, (value >> 32) & 0xfffff);
-    }
-    as_lu52i_d(dest, dest, (value >> 52) & 0xfff);
-  }
+  const uint32_t bits_11_0 = value & 0xfff;
+  const uint32_t bits_31_12 = (value >> 12) & 0xfffff;
+  const uint32_t bits_51_32 = (value >> 32) & 0xfffff;
+  const uint32_t bits_63_52 = (value >> 52) & 0xfff;
 
-  if (is_uintN(value & 0xfff, 12)) {
-    as_ori(dest, dest, value & 0xfff);
+  // The mnemonics of these imm-generating instructions may be a bit misleading.
+  // From
+  // <https://loongson.github.io/LoongArch-Documentation/LoongArch-Vol1-EN.html#_lu12i_w_lu32i_d_lu52i_d>:
+  //
+  // * LU12I.W: GR[rd] = SignExtend({si20, 12'b0}, GRLEN)
+  //   Build from 0 and imm
+  // * LU32I.D: GR[rd] = {SignExtend(si20, 32), GR[rd][31:0]}
+  //   Concat(!) rd and imm
+  // * LU52I.D: GR[rd] = {si12, GR[rj][51:0]}
+  //   Concat rj(!), imm and store to rd
+  //
+  // These matter when building large numbers.
+
+  if (is_intN(value, 32)) {
+    as_lu12i_w(dest, bits_31_12);
+  } else if (is_uintN(value, 32)) {
+    as_lu12i_w(dest, bits_31_12);
+    as_bstrins_d(dest, zero, 63, 32);
+  } else if (is_intN(value, 52)) {
+    as_lu12i_w(dest, bits_31_12);
+    as_lu32i_d(dest, bits_51_32);
+  } else if (is_uintN(value, 52)) {
+    as_lu12i_w(dest, bits_31_12);
+    as_lu32i_d(dest, bits_51_32);
+    as_bstrins_d(dest, zero, 63, 52);
+  } else if (bits_31_12 == 0 && bits_51_32 == 0) {
+    as_lu52i_d(dest, zero, bits_63_52);
+  } else if (bits_31_12 != 0 && (((bits_31_12 >> 19) & 1) == 0) &&
+             bits_51_32 == 0) {
+    as_lu12i_w(dest, bits_31_12);
+    as_lu52i_d(dest, dest, bits_63_52);
+  } else {
+    as_lu12i_w(dest, bits_31_12);
+    as_lu32i_d(dest, bits_51_32);
+    as_lu52i_d(dest, dest, bits_63_52);
+  }
+  if (bits_11_0 != 0) {
+    as_ori(dest, dest, bits_11_0);
   }
 }
 
@@ -868,84 +881,87 @@ void MacroAssemblerLOONG64::ma_mulPtrTestOverflow(Register rd, Register rj,
 FaultingCodeOffset MacroAssemblerLOONG64::ma_load(
     Register dest, Address address, LoadStoreSize size,
     LoadStoreExtension extension) {
-  int32_t encodedOffset;
-  Register base;
   FaultingCodeOffset fco;
-
-  // TODO: use as_ldx_b/h/w/d, could decrease as_add_d instr.
   UseScratchRegisterScope temps(*this);
   switch (size) {
     case SizeByte:
     case SizeHalfWord:
-      if (!is_intN(address.offset, 12)) {
-        Register scratch = temps.Acquire();
-        ma_li(scratch, Imm32(address.offset));
-        as_add_d(scratch, address.base, scratch);
-        base = scratch;
-        encodedOffset = 0;
-      } else {
-        encodedOffset = address.offset;
-        base = address.base;
-      }
-
-      fco = FaultingCodeOffset(currentOffset());
-      if (size == SizeByte) {
-        if (ZeroExtend == extension) {
-          as_ld_bu(dest, base, encodedOffset);
+      if (is_intN(address.offset, 12)) {
+        // This load can be represented by `ld.{b[u],h[u]} rd, rj, si12`.
+        fco = FaultingCodeOffset(currentOffset());
+        if (size == SizeByte) {
+          if (extension == ZeroExtend) {
+            as_ld_bu(dest, address.base, address.offset);
+          } else {
+            as_ld_b(dest, address.base, address.offset);
+          }
         } else {
-          as_ld_b(dest, base, encodedOffset);
+          if (extension == ZeroExtend) {
+            as_ld_hu(dest, address.base, address.offset);
+          } else {
+            as_ld_h(dest, address.base, address.offset);
+          }
         }
       } else {
-        if (ZeroExtend == extension) {
-          as_ld_hu(dest, base, encodedOffset);
+        // The offset to this load needs to be built in a separate register.
+        Register scratch = temps.Acquire();
+        ma_li(scratch, Imm32(address.offset));
+
+        fco = FaultingCodeOffset(currentOffset());
+        if (size == SizeByte) {
+          if (extension == ZeroExtend) {
+            as_ldx_bu(dest, address.base, scratch);
+          } else {
+            as_ldx_b(dest, address.base, scratch);
+          }
         } else {
-          as_ld_h(dest, base, encodedOffset);
+          if (extension == ZeroExtend) {
+            as_ldx_hu(dest, address.base, scratch);
+          } else {
+            as_ldx_h(dest, address.base, scratch);
+          }
         }
       }
       break;
     case SizeWord:
     case SizeDouble:
-      if ((address.offset & 0x3) == 0 &&
-          (size == SizeDouble ||
-           (size == SizeWord && SignExtend == extension))) {
-        if (!Imm16::IsInSignedRange(address.offset)) {
-          Register scratch = temps.Acquire();
-          ma_li(scratch, Imm32(address.offset));
-          as_add_d(scratch, address.base, scratch);
-          base = scratch;
-          encodedOffset = 0;
-        } else {
-          encodedOffset = address.offset;
-          base = address.base;
-        }
-
+      if (is_intN(address.offset, 12)) {
+        // This load can be represented by `ld.{w[u],d} rd, rj, si12`.
         fco = FaultingCodeOffset(currentOffset());
         if (size == SizeWord) {
-          as_ldptr_w(dest, base, encodedOffset);
-        } else {
-          as_ldptr_d(dest, base, encodedOffset);
-        }
-      } else {
-        if (!is_intN(address.offset, 12)) {
-          Register scratch = temps.Acquire();
-          ma_li(scratch, Imm32(address.offset));
-          as_add_d(scratch, address.base, scratch);
-          base = scratch;
-          encodedOffset = 0;
-        } else {
-          encodedOffset = address.offset;
-          base = address.base;
-        }
-
-        fco = FaultingCodeOffset(currentOffset());
-        if (size == SizeWord) {
-          if (ZeroExtend == extension) {
-            as_ld_wu(dest, base, encodedOffset);
+          if (extension == ZeroExtend) {
+            as_ld_wu(dest, address.base, address.offset);
           } else {
-            as_ld_w(dest, base, encodedOffset);
+            as_ld_w(dest, address.base, address.offset);
           }
         } else {
-          as_ld_d(dest, base, encodedOffset);
+          as_ld_d(dest, address.base, address.offset);
+        }
+      } else if (is_intN(address.offset, 16) && (address.offset & 0x3) == 0 &&
+                 (size == SizeDouble ||
+                  (size == SizeWord && extension == SignExtend))) {
+        // This load is aligned to 4 bytes and can be represented by
+        // `ldptr.{w,d} rd, rj, si14`.
+        fco = FaultingCodeOffset(currentOffset());
+        if (size == SizeWord) {
+          as_ldptr_w(dest, address.base, address.offset);
+        } else {
+          as_ldptr_d(dest, address.base, address.offset);
+        }
+      } else {
+        // The offset to this load needs to be built in a separate register.
+        Register scratch = temps.Acquire();
+        ma_li(scratch, Imm32(address.offset));
+
+        fco = FaultingCodeOffset(currentOffset());
+        if (size == SizeWord) {
+          if (extension == ZeroExtend) {
+            as_ldx_wu(dest, address.base, scratch);
+          } else {
+            as_ldx_w(dest, address.base, scratch);
+          }
+        } else {
+          as_ldx_d(dest, address.base, scratch);
         }
       }
       break;
@@ -958,70 +974,61 @@ FaultingCodeOffset MacroAssemblerLOONG64::ma_load(
 FaultingCodeOffset MacroAssemblerLOONG64::ma_store(
     Register data, Address address, LoadStoreSize size,
     LoadStoreExtension extension) {
-  int32_t encodedOffset;
-  Register base;
   FaultingCodeOffset fco;
-
-  // TODO: use as_stx_b/h/w/d, could decrease as_add_d instr.
   UseScratchRegisterScope temps(*this);
   switch (size) {
     case SizeByte:
     case SizeHalfWord:
-      if (!is_intN(address.offset, 12)) {
+      if (is_intN(address.offset, 12)) {
+        // This store can be represented by `st.{b,h} rd, rj, si12`.
+        fco = FaultingCodeOffset(currentOffset());
+        if (size == SizeByte) {
+          as_st_b(data, address.base, address.offset);
+        } else {
+          as_st_h(data, address.base, address.offset);
+        }
+      } else {
+        // The offset to this store needs to be built in a separate register.
         Register scratch = temps.Acquire();
         ma_li(scratch, Imm32(address.offset));
-        as_add_d(scratch, address.base, scratch);
-        base = scratch;
-        encodedOffset = 0;
-      } else {
-        encodedOffset = address.offset;
-        base = address.base;
-      }
 
-      fco = FaultingCodeOffset(currentOffset());
-      if (size == SizeByte) {
-        as_st_b(data, base, encodedOffset);
-      } else {
-        as_st_h(data, base, encodedOffset);
+        fco = FaultingCodeOffset(currentOffset());
+        if (size == SizeByte) {
+          as_stx_b(data, address.base, scratch);
+        } else {
+          as_stx_h(data, address.base, scratch);
+        }
       }
       break;
     case SizeWord:
     case SizeDouble:
-      if ((address.offset & 0x3) == 0) {
-        if (!Imm16::IsInSignedRange(address.offset)) {
-          Register scratch = temps.Acquire();
-          ma_li(scratch, Imm32(address.offset));
-          as_add_d(scratch, address.base, scratch);
-          base = scratch;
-          encodedOffset = 0;
-        } else {
-          encodedOffset = address.offset;
-          base = address.base;
-        }
-
+      if (is_intN(address.offset, 12)) {
+        // This store can be represented by `st.{w,d} rd, rj, si12`.
         fco = FaultingCodeOffset(currentOffset());
         if (size == SizeWord) {
-          as_stptr_w(data, base, encodedOffset);
+          as_st_w(data, address.base, address.offset);
         } else {
-          as_stptr_d(data, base, encodedOffset);
+          as_st_d(data, address.base, address.offset);
+        }
+      } else if (is_intN(address.offset, 16) && (address.offset & 0x3) == 0) {
+        // This store is aligned to 4 bytes and can be represented by
+        // `stptr.{w,d} rd, rj, si14`.
+        fco = FaultingCodeOffset(currentOffset());
+        if (size == SizeWord) {
+          as_stptr_w(data, address.base, address.offset);
+        } else {
+          as_stptr_d(data, address.base, address.offset);
         }
       } else {
-        if (!is_intN(address.offset, 12)) {
-          Register scratch = temps.Acquire();
-          ma_li(scratch, Imm32(address.offset));
-          as_add_d(scratch, address.base, scratch);
-          base = scratch;
-          encodedOffset = 0;
-        } else {
-          encodedOffset = address.offset;
-          base = address.base;
-        }
+        // The offset to this store needs to be built in a separate register.
+        Register scratch = temps.Acquire();
+        ma_li(scratch, Imm32(address.offset));
 
         fco = FaultingCodeOffset(currentOffset());
         if (size == SizeWord) {
-          as_st_w(data, base, encodedOffset);
+          as_stx_w(data, address.base, scratch);
         } else {
-          as_st_d(data, base, encodedOffset);
+          as_stx_d(data, address.base, scratch);
         }
       }
       break;
@@ -3760,8 +3767,6 @@ static void AtomicExchange(MacroAssembler& masm,
                            Register offsetTemp, Register maskTemp,
                            Register output) {
   UseScratchRegisterScope temps(masm);
-  Register scratch = temps.Acquire();
-  Register scratch2 = temps.Acquire();
   bool signExtend = Scalar::isSignedIntType(type);
   unsigned nbytes = Scalar::byteSize(type);
 
@@ -3780,8 +3785,10 @@ static void AtomicExchange(MacroAssembler& masm,
 
   Label again;
 
-  Register memTemp = scratch2;
-  masm.computeEffectiveAddress(mem, memTemp);
+  Register scratch2 = temps.Acquire();
+  masm.computeEffectiveAddress(mem, scratch2);
+
+  Register scratch = temps.Acquire();
 
   if (nbytes == 4) {
     masm.memoryBarrierBefore(sync);
@@ -3792,9 +3799,9 @@ static void AtomicExchange(MacroAssembler& masm,
                   FaultingCodeOffset(masm.currentOffset()));
     }
 
-    masm.as_ll_w(output, memTemp, 0);
+    masm.as_ll_w(output, scratch2, 0);
     masm.as_or(scratch, value, zero);
-    masm.as_sc_w(scratch, memTemp, 0);
+    masm.as_sc_w(scratch, scratch2, 0);
     masm.ma_b(scratch, Register(scratch), &again, Assembler::Zero, ShortJump);
 
     masm.memoryBarrierAfter(sync);
@@ -3802,8 +3809,8 @@ static void AtomicExchange(MacroAssembler& masm,
     return;
   }
 
-  masm.as_andi(offsetTemp, memTemp, 3);
-  masm.subPtr(offsetTemp, memTemp);
+  masm.as_andi(offsetTemp, scratch2, 3);
+  masm.subPtr(offsetTemp, scratch2);
   masm.as_slli_w(offsetTemp, offsetTemp, 3);
   masm.ma_li(maskTemp, Imm32(UINT32_MAX >> ((4 - nbytes) * 8)));
   masm.as_sll_w(maskTemp, maskTemp, offsetTemp);
@@ -3827,11 +3834,11 @@ static void AtomicExchange(MacroAssembler& masm,
                 FaultingCodeOffset(masm.currentOffset()));
   }
 
-  masm.as_ll_w(output, memTemp, 0);
+  masm.as_ll_w(output, scratch2, 0);
   masm.as_and(scratch, output, maskTemp);
   masm.as_or(scratch, scratch, valueTemp);
 
-  masm.as_sc_w(scratch, memTemp, 0);
+  masm.as_sc_w(scratch, scratch2, 0);
 
   masm.ma_b(scratch, Register(scratch), &again, Assembler::Zero, ShortJump);
 
@@ -3899,8 +3906,6 @@ static void AtomicFetchOp(MacroAssembler& masm,
                           Register offsetTemp, Register maskTemp,
                           Register output) {
   UseScratchRegisterScope temps(masm);
-  Register scratch = temps.Acquire();
-  Register scratch2 = temps.Acquire();
   bool signExtend = Scalar::isSignedIntType(type);
   unsigned nbytes = Scalar::byteSize(type);
 
@@ -3919,8 +3924,10 @@ static void AtomicFetchOp(MacroAssembler& masm,
 
   Label again;
 
-  Register memTemp = scratch2;
-  masm.computeEffectiveAddress(mem, memTemp);
+  Register scratch2 = temps.Acquire();
+  masm.computeEffectiveAddress(mem, scratch2);
+
+  Register scratch = temps.Acquire();
 
   if (nbytes == 4) {
     masm.memoryBarrierBefore(sync);
@@ -3931,7 +3938,7 @@ static void AtomicFetchOp(MacroAssembler& masm,
                   FaultingCodeOffset(masm.currentOffset()));
     }
 
-    masm.as_ll_w(output, memTemp, 0);
+    masm.as_ll_w(output, scratch2, 0);
 
     switch (op) {
       case AtomicOp::Add:
@@ -3953,7 +3960,7 @@ static void AtomicFetchOp(MacroAssembler& masm,
         MOZ_CRASH();
     }
 
-    masm.as_sc_w(scratch, memTemp, 0);
+    masm.as_sc_w(scratch, scratch2, 0);
     masm.ma_b(scratch, Register(scratch), &again, Assembler::Zero, ShortJump);
 
     masm.memoryBarrierAfter(sync);
@@ -3961,8 +3968,8 @@ static void AtomicFetchOp(MacroAssembler& masm,
     return;
   }
 
-  masm.as_andi(offsetTemp, memTemp, 3);
-  masm.subPtr(offsetTemp, memTemp);
+  masm.as_andi(offsetTemp, scratch2, 3);
+  masm.subPtr(offsetTemp, scratch2);
   masm.as_slli_w(offsetTemp, offsetTemp, 3);
   masm.ma_li(maskTemp, Imm32(UINT32_MAX >> ((4 - nbytes) * 8)));
   masm.as_sll_w(maskTemp, maskTemp, offsetTemp);
@@ -3977,7 +3984,7 @@ static void AtomicFetchOp(MacroAssembler& masm,
                 FaultingCodeOffset(masm.currentOffset()));
   }
 
-  masm.as_ll_w(scratch, memTemp, 0);
+  masm.as_ll_w(scratch, scratch2, 0);
   masm.as_srl_w(output, scratch, offsetTemp);
 
   switch (op) {
@@ -4014,7 +4021,7 @@ static void AtomicFetchOp(MacroAssembler& masm,
   masm.as_and(scratch, scratch, maskTemp);
   masm.as_or(scratch, scratch, valueTemp);
 
-  masm.as_sc_w(scratch, memTemp, 0);
+  masm.as_sc_w(scratch, scratch2, 0);
 
   masm.ma_b(scratch, Register(scratch), &again, Assembler::Zero, ShortJump);
 
@@ -5910,7 +5917,7 @@ void MacroAssemblerLOONG64Compat::handleFailureWithHandlerTail(
 
   // Found a wasm catch handler, restore state and jump to it.
   bind(&wasmCatch);
-  wasm::GenerateJumpToCatchHandler(asMasm(), sp, a1, a2);
+  wasm::GenerateJumpToCatchHandler(asMasm(), sp, a1, a2, a3);
 }
 
 CodeOffset MacroAssemblerLOONG64Compat::toggledJump(Label* label) {

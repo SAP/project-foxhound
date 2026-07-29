@@ -3,14 +3,16 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+const imgUrl =
+  "https://example.com/browser/browser/base/content/test/general/moz.png";
 const URI =
   "data:text/html," +
-  "<style type='text/css'>%23test-image,%23not-test-image {background-image: url('about:logo?c');}</style>" +
-  "<img src='about:logo?b' height=300 width=350 alt=2 id='not-test-image'>" +
-  "<img src='about:logo?b' height=300 width=350 alt=2>" +
-  "<img src='about:logo?a' height=200 width=250>" +
-  "<img src='about:logo?b' height=200 width=250 alt=1>" +
-  "<img src='about:logo?b' height=100 width=150 alt=2 id='test-image'>";
+  `<style type='text/css'>%23test-image,%23not-test-image {background-image: url('${imgUrl}?c');}</style>` +
+  `<img src='${imgUrl}?b' height=300 width=350 alt=2 id='not-test-image'>` +
+  `<img src='${imgUrl}?b' height=300 width=350 alt=2>` +
+  `<img src='${imgUrl}?a' height=200 width=250>` +
+  `<img src='${imgUrl}?b' height=200 width=250 alt=1>` +
+  `<img src='${imgUrl}?b' height=100 width=150 alt=2 id='test-image'>`;
 
 add_task(async function () {
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, URI);

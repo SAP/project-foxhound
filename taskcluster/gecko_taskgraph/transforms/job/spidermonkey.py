@@ -5,8 +5,9 @@
 Support for running spidermonkey jobs via dedicated scripts
 """
 
-from taskgraph.util.schema import LegacySchema
-from voluptuous import Any, Optional, Required
+from typing import Literal, Optional, Union
+
+from taskgraph.util.schema import Schema
 
 from gecko_taskgraph.transforms.job import configure_taskdesc_for_run, run_job_using
 from gecko_taskgraph.transforms.job.common import (
@@ -14,26 +15,25 @@ from gecko_taskgraph.transforms.job.common import (
     generic_worker_add_artifacts,
 )
 
-sm_run_schema = LegacySchema({
-    Required("using"): Any(
-        "spidermonkey",
-        "spidermonkey-package",
-    ),
+
+class SmRunSchema(Schema, kw_only=True):
+    using: Literal["spidermonkey", "spidermonkey-package"]
     # SPIDERMONKEY_VARIANT and SPIDERMONKEY_PLATFORM
-    Required("spidermonkey-variant"): str,
-    Optional("spidermonkey-platform"): str,
+    spidermonkey_variant: str
+    spidermonkey_platform: Optional[str] = None
     # Base work directory used to set up the task.
-    Optional("workdir"): str,
-    Required("tooltool-downloads"): Any(
-        False,
-        "public",
-        "internal",
-    ),
-})
+    workdir: Optional[str] = None
+    tooltool_downloads: Union[bool, Literal["public", "internal"]]
+
+    def __post_init__(self):
+        if self.tooltool_downloads is True:
+            raise ValueError(
+                "tooltool-downloads must be False, 'public', or 'internal'"
+            )
 
 
-@run_job_using("docker-worker", "spidermonkey", schema=sm_run_schema)
-@run_job_using("docker-worker", "spidermonkey-package", schema=sm_run_schema)
+@run_job_using("docker-worker", "spidermonkey", schema=SmRunSchema)
+@run_job_using("docker-worker", "spidermonkey-package", schema=SmRunSchema)
 def docker_worker_spidermonkey(config, job, taskdesc):
     run = job["run"]
 
@@ -63,7 +63,7 @@ def docker_worker_spidermonkey(config, job, taskdesc):
     configure_taskdesc_for_run(config, job, taskdesc, worker["implementation"])
 
 
-@run_job_using("generic-worker", "spidermonkey", schema=sm_run_schema)
+@run_job_using("generic-worker", "spidermonkey", schema=SmRunSchema)
 def generic_worker_spidermonkey(config, job, taskdesc):
     assert job["worker"]["os"] == "windows", "only supports windows right now"
 

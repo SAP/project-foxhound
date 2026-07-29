@@ -25,11 +25,11 @@ testRule({
   accept: [
     // allowed token values
     {
-      code: ".a { box-shadow: var(--box-shadow-card); }",
+      code: ".a { box-shadow: var(--card-box-shadow); }",
       description: "Using box-shadow-card token is valid.",
     },
     {
-      code: ".a { box-shadow: var(--box-shadow-card-hover); }",
+      code: ".a { box-shadow: var(--card-box-shadow-hover); }",
       description: "Using box-shadow-card-hover token is valid.",
     },
     {
@@ -53,11 +53,11 @@ testRule({
       description: "Using box-shadow-level-4 token is valid.",
     },
     {
-      code: ".a { box-shadow: var(--box-shadow-popup); }",
+      code: ".a { box-shadow: var(--popup-box-shadow); }",
       description: "Using box-shadow-popup token is valid.",
     },
     {
-      code: ".a { box-shadow: var(--box-shadow-tab); }",
+      code: ".a { box-shadow: var(--tab-box-shadow); }",
       description: "Using box-shadow-tab token is valid.",
     },
     // allowed CSS values
@@ -93,7 +93,7 @@ testRule({
     },
     {
       code: `
-        :root { --custom-token: var(--box-shadow-card); }
+        :root { --custom-token: var(--card-box-shadow); }
         .a { box-shadow: var(--custom-token); }
       `,
       description:

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -110,11 +108,40 @@ class PerformanceMainThread final : public Performance,
 
   static constexpr uint32_t kMaxLargestContentfulPaintBufferSize = 150;
 
+  static constexpr size_t kMaxInteractionDurations = 2048;
+
+  // Matches web-vitals.js's INP durationThreshold for RUM comparability.
+  static constexpr double kInpEventDurationThreshold = 40.0;
+
   class EventCounts* EventCounts() override;
 
   uint64_t InteractionCount() override;
 
+  // Aggregates for the perf.page_load event, populated by
+  // UpdateInteractionTelemetry as event-timing entries are finalized.
+  struct InteractionTelemetry {
+    uint32_t inpLongest = 0;
+    uint32_t keypressMaxDuration = 0;
+    uint32_t mouseClick = 0;
+
+    // Ascending durations of interaction-tagged events; backs inpP75/inpP98.
+    // Values are clamped to UINT16_MAX (~65 s) on insert; inpLongest still
+    // tracks the unclamped max.
+    nsTArray<uint16_t> interactionEventDurations;
+  };
+  const InteractionTelemetry& GetInteractionTelemetry() const {
+    return mInteractionTelemetry;
+  }
+
   bool IsGlobalObjectWindow() const override { return true; };
+
+  void RecordModalFallbackTime() override;
+  DOMHighResTimeStamp GetLastModalFallbackTime() const override {
+    return mLastModalFallbackTime;
+  }
+
+  void SetCurrentEventTimingEntry(PerformanceEventTiming* aEntry);
+  PerformanceEventTiming* GetCurrentEventTimingEntry() const;
 
   bool HasDispatchedInputEvent() const { return mHasDispatchedInputEvent; }
 
@@ -180,6 +207,12 @@ class PerformanceMainThread final : public Performance,
   void SetHasDispatchedInputEvent();
 
   bool mHasQueuedRefreshdriverObserver = false;
+  DOMHighResTimeStamp mLastModalFallbackTime = 0;
+
+  // The event timing entry currently being dispatched. Managed by
+  // EventDispatcher via SetCurrentEventTimingEntry to support
+  // RecordModalFallbackTime being called from modal dialog code.
+  RefPtr<PerformanceEventTiming> mCurrentEventTimingEntry;
 
   RefPtr<class EventCounts> mEventCounts;
   void IncEventCount(const nsAtom* aType);
@@ -198,6 +231,10 @@ class PerformanceMainThread final : public Performance,
   // mTextFrameUnions's key is the containing block, and
   // the value is the unioned area.
   TextFrameUnions mTextFrameUnions;
+
+  // Updates mInteractionTelemetry from a popped PerformanceEventTiming entry.
+  void UpdateInteractionTelemetry(PerformanceEventTiming* aEntry);
+  InteractionTelemetry mInteractionTelemetry;
 };
 
 inline void ImplCycleCollectionTraverse(

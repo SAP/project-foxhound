@@ -62,6 +62,13 @@ function readFromStream(stream, count) {
  *   Returns a Blob response body.
  */
 
+/**
+ * Provides a high-level JS API for making Oblivious HTTP (OHTTP) requests.
+ *
+ * OHTTP routes an encrypted inner HTTP request through a relay to a gateway,
+ * preventing the relay from seeing the request contents and the gateway from
+ * learning the client's IP address.
+ */
 export class ObliviousHTTP {
   /**
    * Get a cached, or fetch a copy of, an OHTTP config from a given URL.

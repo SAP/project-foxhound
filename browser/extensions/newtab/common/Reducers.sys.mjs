@@ -126,6 +126,7 @@ export const INITIAL_STATE = {
     showNotifications: false,
     toastCounter: 0,
     toastId: "",
+    toastData: {},
     // This queue is reset each time SHOW_TOAST_MESSAGE is ran.
     // For can be a queue in the future, but for now is one item
     toastQueue: [],
@@ -136,6 +137,8 @@ export const INITIAL_STATE = {
     inferredInterests: {},
     coarseInferredInterests: {},
     coarsePrivateInferredInterests: {},
+    debugFeatures: null,
+    inferredTelemetrySettingsOverrides: {},
   },
   Search: {
     // When search hand-off is enabled, we render a big button that is styled to
@@ -152,11 +155,15 @@ export const INITIAL_STATE = {
     categories: [],
     uploadedWallpaper: "",
   },
+  SectionsLayout: {
+    configs: {},
+  },
   Weather: {
     initialized: false,
     lastUpdated: null,
     query: "",
     suggestions: [],
+    hourlyForecasts: [],
     locationData: {
       city: "",
       adminArea: "",
@@ -203,6 +210,30 @@ export const INITIAL_STATE = {
   },
   ExternalComponents: {
     components: [],
+  },
+  SportsWidget: {
+    data: null,
+    initialized: false,
+    widgetState: "sports-intro",
+    selectedTeams: [],
+    matchesTab: "upcoming",
+    // Per-tab "Only followed teams" filter toggle. Defaults to on so users
+    // who follow teams see the filtered list right away.
+    followedOnly: { results: true, upcoming: true },
+    watchLive: {
+      loaded: false,
+      data: null,
+    },
+    // Timestamp (ms since epoch) of the last successful live update.
+    // Kept at root so it survives WIDGETS_SPORTS_WIDGET_SET wholesale-replaces
+    // of `data` (e.g. post-match resync).
+    lastLiveUpdated: null,
+    // Index into the live matches list for the Now tab's single-card pager.
+    liveIndex: 0,
+    // End-of-match celebration bookkeeping (set by the feed): `endedAt` maps a
+    // just-ended match's global_event_id to the ms timestamp it left /live;
+    // `celebrated` lists ids that have already triggered a celebration.
+    celebrations: { endedAt: {}, celebrated: [] },
   },
 };
 
@@ -634,7 +665,14 @@ function InferredPersonalization(
         coarseInferredInterests: action.data.coarseInferredInterests,
         coarsePrivateInferredInterests:
           action.data.coarsePrivateInferredInterests,
+        inferredTelemetrySettingsOverrides:
+          action.data.inferredTelemetrySettingsOverrides,
         lastUpdated: action.data.lastUpdated,
+      };
+    case at.INFERRED_PERSONALIZATION_DEBUG_FEATURES_UPDATE:
+      return {
+        ...prevState,
+        debugFeatures: action.data,
       };
     case at.INFERRED_PERSONALIZATION_RESET:
       return { ...INITIAL_STATE.InferredPersonalization };
@@ -736,7 +774,11 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
         ...prevState,
       };
     case at.DISCOVERY_STREAM_LAYOUT_RESET:
-      return { ...INITIAL_STATE.DiscoveryStream, config: prevState.config };
+      return {
+        ...INITIAL_STATE.DiscoveryStream,
+        config: prevState.config,
+        sectionPersonalization: prevState.sectionPersonalization,
+      };
     case at.DISCOVERY_STREAM_FEEDS_UPDATE:
       return {
         ...prevState,
@@ -966,10 +1008,8 @@ function Search(prevState = INITIAL_STATE.Search, action) {
   switch (action.type) {
     case at.DISABLE_SEARCH:
       return Object.assign({ ...prevState, disable: true });
-    case at.FAKE_FOCUS_SEARCH:
-      return Object.assign({ ...prevState, fakeFocus: true });
     case at.SHOW_SEARCH:
-      return Object.assign({ ...prevState, disable: false, fakeFocus: false });
+      return Object.assign({ ...prevState, disable: false });
     default:
       return prevState;
   }
@@ -996,6 +1036,15 @@ function Wallpapers(prevState = INITIAL_STATE.Wallpapers, action) {
   }
 }
 
+function SectionsLayout(prevState = INITIAL_STATE.SectionsLayout, action) {
+  switch (action.type) {
+    case at.SECTIONS_LAYOUT_UPDATE:
+      return { ...prevState, configs: action.data.configs };
+    default:
+      return prevState;
+  }
+}
+
 function Notifications(prevState = INITIAL_STATE.Notifications, action) {
   switch (action.type) {
     case at.SHOW_TOAST_MESSAGE:
@@ -1004,6 +1053,7 @@ function Notifications(prevState = INITIAL_STATE.Notifications, action) {
         showNotifications: action.data.showNotifications,
         toastCounter: prevState.toastCounter + 1,
         toastId: action.data.toastId,
+        toastData: action.data.toastData ?? {},
         toastQueue: [action.data.toastId],
       };
     case at.HIDE_TOAST_MESSAGE: {
@@ -1030,7 +1080,8 @@ function Weather(prevState = INITIAL_STATE.Weather, action) {
       return {
         ...prevState,
         suggestions: action.data.suggestions,
-        lastUpdated: action.data.date,
+        hourlyForecasts: action.data.hourlyForecasts || [],
+        lastUpdated: action.data.lastUpdated,
         locationData: action.data.locationData || prevState.locationData,
         initialized: true,
       };
@@ -1171,6 +1222,50 @@ function ExternalComponents(
   }
 }
 
+function SportsWidget(prevState = INITIAL_STATE.SportsWidget, action) {
+  switch (action.type) {
+    case at.WIDGETS_SPORTS_WIDGET_SET:
+      return { ...prevState, data: action.data, initialized: true };
+    case at.WIDGETS_SPORTS_SET_WIDGET_STATE:
+      return { ...prevState, widgetState: action.data };
+    case at.WIDGETS_SPORTS_SET_SELECTED_TEAMS:
+      return { ...prevState, selectedTeams: action.data };
+    case at.WIDGETS_SPORTS_SET_MATCHES_TAB:
+      return { ...prevState, matchesTab: action.data };
+    case at.WIDGETS_SPORTS_SET_FOLLOWED_ONLY:
+      return {
+        ...prevState,
+        followedOnly: { ...prevState.followedOnly, ...action.data },
+      };
+    case at.WIDGETS_SPORTS_WATCH_LIVE_REQUEST:
+      return {
+        ...prevState,
+        watchLive: { loaded: false, data: null },
+      };
+    case at.WIDGETS_SPORTS_WATCH_LIVE_SET:
+      return {
+        ...prevState,
+        watchLive: { loaded: true, data: action.data },
+      };
+    case at.WIDGETS_SPORTS_LIVE_UPDATE: {
+      return {
+        ...prevState,
+        lastLiveUpdated: action.data?.lastLiveUpdated ?? null,
+        data: {
+          ...prevState.data,
+          live: action.data?.live ?? [],
+        },
+      };
+    }
+    case at.WIDGETS_SPORTS_SET_LIVE_INDEX:
+      return { ...prevState, liveIndex: action.data };
+    case at.WIDGETS_SPORTS_SET_CELEBRATIONS:
+      return { ...prevState, celebrations: action.data };
+    default:
+      return prevState;
+  }
+}
+
 export const reducers = {
   TopSites,
   App,
@@ -1187,6 +1282,8 @@ export const reducers = {
   TimerWidget,
   ListsWidget,
   Wallpapers,
+  SectionsLayout,
   Weather,
   ExternalComponents,
+  SportsWidget,
 };

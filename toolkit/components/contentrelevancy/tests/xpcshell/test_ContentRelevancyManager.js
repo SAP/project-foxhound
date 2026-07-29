@@ -189,7 +189,7 @@ add_task(async function test_dont_register_blocker_if_in_shutdown() {
  * Sets up the update timer manager for testing: makes it fire more often,
  * removes all existing timers, and initializes it for testing. The body of this
  * function is copied from:
- * https://searchfox.org/mozilla-central/source/toolkit/components/timermanager/tests/unit/consumerNotifications.js
+ * https://searchfox.org/firefox-main/source/toolkit/components/timermanager/tests/unit/consumerNotifications.js
  */
 function initUpdateTimerManager() {
   // Set the timer to fire every second

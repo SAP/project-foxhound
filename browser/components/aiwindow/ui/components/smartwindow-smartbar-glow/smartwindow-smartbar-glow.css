@@ -1,0 +1,38 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:host {
+  --glow-bleed: calc(var(--dimension-24) * -1);
+  /* position: absolute so the host sizes to match the bar's container;
+   * a custom element with no content would collapse to zero height with
+   * position: relative, leaving the SVG nothing to fill. */
+  position: absolute;
+  inset: var(--glow-bleed);
+  /* TODO Bug 2044263 */
+  /* Killing pointer-events blocks the text cursor from showing on the component */
+  pointer-events: none;
+  overflow: visible;
+  z-index: -1;
+
+  @media (prefers-reduced-motion), (forced-colors) {
+    display: none;
+  }
+}
+
+.glow-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  filter: blur(10px);
+  opacity: 1;
+  transition: opacity 0.4s ease-out;
+
+  @starting-style {
+    opacity: 0;
+  }
+}

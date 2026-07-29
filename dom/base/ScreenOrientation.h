@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -42,7 +40,12 @@ class ScreenOrientation final : public DOMEventTargetHelper {
                                       bool aOldHasOrientationOverride,
                                       bool aOverrideIsDifferentThanDevice);
 
+ private:
   ScreenOrientation(nsPIDOMWindowInner* aWindow, nsScreen* aScreen);
+
+ public:
+  static already_AddRefed<ScreenOrientation> Create(nsPIDOMWindowInner* aWindow,
+                                                    nsScreen* aScreen);
 
   already_AddRefed<Promise> Lock(OrientationLockType aOrientation,
                                  ErrorResult& aRv);
@@ -116,8 +119,8 @@ class ScreenOrientation final : public DOMEventTargetHelper {
   RefPtr<nsScreen> mScreen;
   RefPtr<FullscreenEventListener> mFullscreenListener;
   RefPtr<VisibleEventListener> mVisibleListener;
-  OrientationType mType;
-  uint16_t mAngle;
+  OrientationType mType{};
+  uint16_t mAngle{};
   // Whether we've tried to call into hal to lock the device orientation. This
   // is needed because you don't want calling UnlockDeviceOrientation() during
   // shutdown to initialize PHal if it hasn't been initialized earlier. Also,

@@ -9,8 +9,6 @@ const CAPTCHA_SELECTOR = "#form-expanded-captcha";
 const NON_FORM_SELECTOR = "#form-expanded-non-form-input";
 
 const AUTOCOMPLETE_POPUP_SELECTOR = "#PopupAutoComplete";
-const USERNAME_DROPMARKER_SELECTOR =
-  "#password-notification-username-dropmarker";
 
 const TEST_CASES = [
   {
@@ -154,7 +152,9 @@ async function _clickDropmarker(document, notificationElement) {
   let acPopup = document.querySelector(AUTOCOMPLETE_POPUP_SELECTOR);
   let acPopupShown = BrowserTestUtils.waitForEvent(acPopup, "popupshown");
 
-  notificationElement.querySelector(USERNAME_DROPMARKER_SELECTOR).click();
+  notificationElement
+    .querySelector("#password-notification-username")
+    .dropmarkerEl.click();
   await acPopupShown;
 }
 
@@ -220,8 +220,8 @@ add_task(async function test_edit_password() {
         let notificationElement = panel.childNodes[0];
 
         let usernameDropmarker = notificationElement.querySelector(
-          USERNAME_DROPMARKER_SELECTOR
-        );
+          "#password-notification-username"
+        ).dropmarkerEl;
         Assert.equal(
           BrowserTestUtils.isVisible(usernameDropmarker),
           testCase.expectUsernameDropmarker,

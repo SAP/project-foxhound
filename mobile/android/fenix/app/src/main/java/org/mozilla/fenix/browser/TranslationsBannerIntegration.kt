@@ -30,13 +30,14 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.store.BrowserScreenState
 import org.mozilla.fenix.browser.store.BrowserScreenStore
 import org.mozilla.fenix.databinding.FragmentBrowserBinding
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.translations.TranslationToolbar
+import org.mozilla.fenix.utils.Settings
 
 /**
  * Helper for showing the translations banner.
  *
+ * @param settings [Settings] used to access user settings.
  * @param browserStore [BrowserStore] to sync browser state changes from.
  * @param browserScreenStore [BrowserScreenStore] to sync the current translations status from.
  * @param binding [FragmentBrowserBinding] to inflate the banner into when needed.
@@ -45,6 +46,7 @@ import org.mozilla.fenix.translations.TranslationToolbar
  *                       Defaults to [Dispatchers.Main].
  */
 class TranslationsBannerIntegration(
+    private val settings: Settings,
     private val browserStore: BrowserStore,
     private val browserScreenStore: BrowserScreenStore,
     private val binding: FragmentBrowserBinding,
@@ -69,10 +71,10 @@ class TranslationsBannerIntegration(
                     observeFullScreenMediaState()
                     getViewOrInflate().let { banner ->
                         banner.isVisible = true
-                        banner.behavior = TranslationsBannerBehavior<View>(
+                        banner.behavior = TranslationsBannerBehavior(
                             context = banner.context,
-                            isAddressBarAtBottom = banner.settings().shouldUseBottomToolbar,
-                            isNavBarShown = banner.context.settings().shouldUseExpandedToolbar,
+                            isAddressBarAtBottom = settings.shouldUseBottomToolbar,
+                            isNavBarShown = settings.shouldUseExpandedToolbar,
                         )
                     }
                 } else {

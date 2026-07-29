@@ -6,10 +6,7 @@
  * Test that we emit network markers with the cancel status.
  */
 add_task(async function test_network_markers_early_cancel() {
-  Assert.ok(
-    !Services.profiler.IsActive(),
-    "The profiler is not currently active"
-  );
+  await ProfilerTestUtils.assertProfilerInactive();
 
   await ProfilerTestUtils.startProfilerForMarkerTests();
 

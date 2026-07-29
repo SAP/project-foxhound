@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,8 +16,9 @@ namespace net {
 
 SpeculativeTransaction::SpeculativeTransaction(
     nsHttpConnectionInfo* aConnInfo, nsIInterfaceRequestor* aCallbacks,
-    uint32_t aCaps, std::function<void(bool)>&& aCallback)
-    : NullHttpTransaction(aConnInfo, aCallbacks, aCaps),
+    uint32_t aCaps, std::function<void(nsresult)>&& aCallback,
+    bool reportActivity)
+    : NullHttpTransaction(aConnInfo, aCallbacks, aCaps, reportActivity),
       mCloseCallback(std::move(aCallback)) {}
 
 SpeculativeTransaction::~SpeculativeTransaction() = default;
@@ -92,14 +92,15 @@ void SpeculativeTransaction::Close(nsresult aReason) {
     aReason = NS_OK;
   }
   if (mCloseCallback) {
-    mCloseCallback(mTriedToWrite && NS_SUCCEEDED(aReason));
+    mCloseCallback(mTriedToWrite || NS_FAILED(aReason) ? aReason
+                                                       : NS_ERROR_FAILURE);
     mCloseCallback = nullptr;
   }
 }
 
 void SpeculativeTransaction::InvokeCallback() {
   if (mCloseCallback) {
-    mCloseCallback(true);
+    mCloseCallback(NS_OK);
     mCloseCallback = nullptr;
   }
 }

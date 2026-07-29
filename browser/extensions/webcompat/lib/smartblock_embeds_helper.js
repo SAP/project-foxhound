@@ -89,7 +89,7 @@ const embedHelperLib = (() => {
       shimId
     );
 
-    const [titleString, descriptionString, buttonString] =
+    const [titleString, descriptionString, buttonString, contentHeaderString] =
       await sendMessageToAddon("smartblockGetFluentString", shimId);
 
     if (!embedContainers.length) {
@@ -133,23 +133,23 @@ const embedHelperLib = (() => {
             border: 0;
   
             /* Colours match light/dark theme from
-              https://searchfox.org/mozilla-central/source/browser/themes/addons/light/manifest.json
-              https://searchfox.org/mozilla-central/source/browser/themes/addons/dark/manifest.json */
+              https://searchfox.org/firefox-main/source/browser/themes/addons/light/manifest.json
+              https://searchfox.org/firefox-main/source/browser/themes/addons/dark/manifest.json */
             background-color: light-dark(rgb(0, 97, 224), rgb(0, 221, 255));
             color: light-dark(rgb(251, 251, 254), rgb(43, 42, 51));
           }
   
           #smartblock-placeholder-button:hover {
             /* Colours match light/dark theme from
-              https://searchfox.org/mozilla-central/source/browser/themes/addons/light/manifest.json
-              https://searchfox.org/mozilla-central/source/browser/themes/addons/dark/manifest.json */
+              https://searchfox.org/firefox-main/source/browser/themes/addons/light/manifest.json
+              https://searchfox.org/firefox-main/source/browser/themes/addons/dark/manifest.json */
             background-color: light-dark(rgb(2, 80, 187), rgb(128, 235, 255));
           }
 
           #smartblock-placeholder-button:hover:active {
             /* Colours match light/dark theme from
-              https://searchfox.org/mozilla-central/source/browser/themes/addons/light/manifest.json
-              https://searchfox.org/mozilla-central/source/browser/themes/addons/dark/manifest.json */
+              https://searchfox.org/firefox-main/source/browser/themes/addons/light/manifest.json
+              https://searchfox.org/firefox-main/source/browser/themes/addons/dark/manifest.json */
             background-color: light-dark(rgb(5, 62, 148), rgb(170, 242, 255));
           }
   
@@ -231,6 +231,11 @@ const embedHelperLib = (() => {
         // Source: dom/security/sanitizer/SanitizerDefaultConfig.h kDefaultHTMLElements
         // Sanitizer unwraps these elements (replaces them with their children)
         const sanitizer = new Sanitizer({
+          attributes: [],
+          elements: [
+            { name: "a", attributes: ["href", "target", "title"] },
+            "br",
+          ],
           replaceWithChildrenElements: [
             "abbr",
             "address",
@@ -267,7 +272,7 @@ const embedHelperLib = (() => {
             "header",
             "hgroup",
             "hr",
-            "html",
+            // "html" (not allowed here, but not relevant for setHTML)
             "i",
             "ins",
             "kbd",
@@ -338,7 +343,7 @@ const embedHelperLib = (() => {
 
         // Add explanatory header
         const explanationDiv = document.createElement("div");
-        explanationDiv.textContent = "Content from blocked embed:";
+        explanationDiv.textContent = contentHeaderString;
         explanationDiv.style.cssText = `
           font-size: 12px;
           font-weight: 600;

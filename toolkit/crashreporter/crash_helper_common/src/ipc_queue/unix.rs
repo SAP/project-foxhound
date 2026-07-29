@@ -56,12 +56,9 @@ impl IPCQueue {
 
             if revents.contains(PollFlags::POLLHUP) {
                 events.push(IPCEvent::Disconnect(key));
-                // If a process was disconnected then skip all further
-                // processing of the socket. This wouldn't matter normally,
-                // but on macOS calling recvmsg() on a hung-up socket seems
-                // to trigger a kernel panic, one we've already encountered
-                // in the past. Doing things this way avoids the panic
-                // while having no real downsides.
+
+                // If this pipe was disconnected then reading from it will fail,
+                // don't even attempt it even though `POLLIN` might be set.
                 continue;
             }
 

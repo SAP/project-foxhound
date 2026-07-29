@@ -25,7 +25,6 @@ async def test_capability_type(new_session, add_browser_capabilities):
         ("browserName", str),
         ("browserVersion", str),
         ("platformName", str),
-        ("proxy", dict),
         ("setWindowRect", bool),
         ("userAgent", str),
     ]
@@ -42,13 +41,20 @@ async def test_capability_default_value(new_session, add_browser_capabilities):
     )
     assert isinstance(bidi_session.capabilities, dict)
 
-    default_capability_values = [
-        ("acceptInsecureCerts", False),
-        ("proxy", {}),
-    ]
+    assert bidi_session.capabilities["acceptInsecureCerts"] is False
+    assert "proxy" not in bidi_session.capabilities
 
-    for capability, value in default_capability_values:
-        assert bidi_session.capabilities[capability] == value
+
+async def test_proxy_capability_returned_when_set(
+    new_session, add_browser_capabilities
+):
+    bidi_session = await new_session(
+        capabilities={
+            "alwaysMatch": add_browser_capabilities({"proxy": {"proxyType": "direct"}})
+        }
+    )
+    assert isinstance(bidi_session.capabilities["proxy"], dict)
+    assert bidi_session.capabilities["proxy"]["proxyType"] == "direct"
 
 
 async def test_ignore_non_spec_fields_in_capabilities(

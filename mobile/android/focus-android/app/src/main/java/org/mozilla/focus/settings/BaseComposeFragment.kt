@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -28,6 +27,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
+import mozilla.components.compose.base.button.IconButton
 import org.mozilla.focus.R
 import org.mozilla.focus.ext.hideToolbar
 import org.mozilla.focus.ui.theme.FocusTheme
@@ -138,10 +138,11 @@ private fun FocusTopAppBar(
         navigationIcon = {
             IconButton(
                 onClick = onNavigateUpClick,
+                contentDescription = stringResource(R.string.go_back),
             ) {
                 Icon(
-                    painterResource(id = iconsR.drawable.mozac_ic_back_24),
-                    stringResource(R.string.go_back),
+                    painter = painterResource(id = iconsR.drawable.mozac_ic_back_24),
+                    contentDescription = null,
                 )
             }
         },

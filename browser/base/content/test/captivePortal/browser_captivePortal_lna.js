@@ -46,7 +46,6 @@ add_setup(async function setup() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["network.lna.blocking", true],
-      ["network.http.rcwn.enabled", false],
       [
         "captivedetect.canonicalURL",
         `http://127.0.0.1:${gHttpServer.identity.primaryPort}/`,
@@ -151,7 +150,10 @@ add_task(async function test_captivePortalTab_noLnaPrompt() {
   );
   await BrowserTestUtils.waitForCondition(
     () =>
-      PopupNotifications.getNotification("localhost", portalTab.linkedBrowser),
+      PopupNotifications.getNotification(
+        "loopback-network",
+        portalTab.linkedBrowser
+      ),
     "Waiting for localhost prompt"
   );
 

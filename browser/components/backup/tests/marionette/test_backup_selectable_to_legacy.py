@@ -174,6 +174,7 @@ class BackupSelectableToLegacyTest(BackupTestBase):
         self.logger.info("Post-recovery complete")
 
         self.init_selectable_profile_service()
+        self.assert_profile_source("backup")
 
         recovered_store_id = self.get_store_id()
         self.assertEqual(
@@ -271,6 +272,7 @@ class BackupSelectableToLegacyTest(BackupTestBase):
         self._new_profile_path = recovery_result["path"]
         self._new_profile_id = recovery_result["id"]
         self._cleanups.append({"path": self._new_profile_path})
+        self.assert_profile_source("backup", profile_path=self._new_profile_path)
         self.logger.info(
             f"Recovery complete. New profile path: {self._new_profile_path}"
         )
@@ -298,3 +300,119 @@ class BackupSelectableToLegacyTest(BackupTestBase):
         self.logger.info("Step 7: Cleaning up")
         self.cleanup_selectable_profiles()
         self.logger.info("=== Test: Selectable -> Legacy (Replace) PASSED ===")
+
+    def test_backup_selectable_to_disabled_selectable(self):
+        """
+        Tests that a backup created from a selectable profile can be recovered
+        into a legacy profile where selectable profiles are NOT enabled.
+
+        The stale selectable profile prefs from the backup should be reset to
+        their default/falsey values.
+        """
+        self.logger.info("=== Test: Selectable -> Disabled Selectable ===")
+
+        self.logger.info("Step 1: Setting up source selectable profile")
+        profile_name = self.register_profile_and_restart()
+        self._cleanups.append({"profile_name": profile_name})
+
+        selectable_info = self.setup_selectable_profile()
+        original_backup_store_id = selectable_info["store_id"]
+        self.assertIsNotNone(
+            original_backup_store_id, "Backup profile should have storeID"
+        )
+        self.logger.info(
+            f"Created selectable profile with storeID: {original_backup_store_id}"
+        )
+
+        self.set_prefs({"test.selectable.disabled.pref": "test-value"})
+        self.marionette.restart(clean=False, in_app=True)
+
+        self.logger.info("Step 2: Creating backup from selectable profile")
+        self._archive_path = self.create_backup()
+        self._cleanups.append({"path": self._archive_path})
+        self.assertTrue(
+            os.path.exists(self._archive_path), "Backup archive should exist"
+        )
+        self.logger.info(f"Backup created at: {self._archive_path}")
+
+        self.logger.info(
+            "Step 3: Switching to new legacy profile with selectable profiles disabled"
+        )
+        self.marionette.quit()
+        self.marionette.instance.switch_profile()
+        self.marionette.start_session()
+        self.marionette.set_context("chrome")
+
+        legacy_profile_name = self.register_profile_and_restart()
+        self._cleanups.append({"profile_name": legacy_profile_name})
+        self.logger.info(f"Created legacy profile: {legacy_profile_name}")
+
+        self.set_prefs({
+            "browser.profiles.enabled": False,
+            "browser.profiles.created": False,
+        })
+
+        has_selectable = self.has_selectable_profiles()
+        self.assertFalse(has_selectable, "Should start as legacy profile")
+        self.logger.info("Verified profile is legacy with selectable profiles disabled")
+
+        self.logger.info("Step 4: Recovering backup into disabled environment")
+        self._recovery_path = os.path.join(
+            tempfile.gettempdir(), "selectable-to-disabled-recovery"
+        )
+        mozfile.remove(self._recovery_path)
+        self._cleanups.append({"path": self._recovery_path})
+
+        recovery_result = self.recover_backup(self._archive_path, self._recovery_path)
+        self._new_profile_path = recovery_result["path"]
+        self._cleanups.append({"path": self._new_profile_path})
+        self.logger.info(
+            f"Recovery complete. New profile path: {self._new_profile_path}"
+        )
+
+        self.logger.info(
+            "Step 5: Launching recovered profile and verifying prefs are reset"
+        )
+        self.marionette.quit()
+        intermediate_profile = self.marionette.instance.profile
+        self.marionette.instance.profile = self._new_profile_path
+        self.marionette.start_session()
+        self.marionette.set_context("chrome")
+
+        self.wait_for_post_recovery()
+        self.logger.info("Post-recovery complete")
+        self.assert_profile_source("backup")
+
+        profiles_enabled = self.run_code(
+            """return Services.prefs.getBoolPref("browser.profiles.enabled", null);"""
+        )
+        self.assertFalse(
+            profiles_enabled,
+            "browser.profiles.enabled should be false",
+        )
+
+        profiles_created = self.run_code(
+            """return Services.prefs.getBoolPref("browser.profiles.created", null);"""
+        )
+        self.assertFalse(
+            profiles_created,
+            "browser.profiles.created should be false",
+        )
+
+        test_pref = self.run_code(
+            """return Services.prefs.getStringPref("test.selectable.disabled.pref", null);"""
+        )
+        self.assertEqual(
+            test_pref,
+            "test-value",
+            "User prefs from backup should be preserved",
+        )
+        self.logger.info("Verified user prefs from backup are preserved")
+
+        self.logger.info("Step 6: Cleaning up")
+        self.marionette.quit()
+        self.marionette.instance.profile = intermediate_profile
+        self.marionette.start_session()
+        self.marionette.set_context("chrome")
+
+        self.logger.info("=== Test: Selectable -> Disabled Selectable PASSED ===")

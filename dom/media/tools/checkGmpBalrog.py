@@ -201,7 +201,7 @@ def main():
 
     url_base = "https://aus5.mozilla.org"
     if args.staging:
-        url_base = "https://stage.balrog.nonprod.cloudops.mozgcp.net"
+        url_base = "https://stage.balrog.nonprod.webservices.mozgcp.net"
     if args.url is not None:
         url_base = args.url
     if url_base[-1] == "/":

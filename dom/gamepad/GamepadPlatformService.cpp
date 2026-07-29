@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,7 @@
 #include "mozilla/dom/GamepadPlatformService.h"
 
 #include "mozilla/Mutex.h"
+#include "mozilla/StaticMutex.h"
 #include "mozilla/dom/GamepadEventChannelParent.h"
 #include "mozilla/dom/GamepadMonitoring.h"
 #include "mozilla/dom/GamepadTestChannelParent.h"
@@ -20,9 +19,12 @@ namespace mozilla::dom {
 
 namespace {
 
+StaticMutex gGamepadPlatformServiceMutex;
+
 // This is the singleton instance of GamepadPlatformService, can be called
 // by both background and monitor thread.
-StaticRefPtr<GamepadPlatformService> gGamepadPlatformServiceSingleton;
+StaticRefPtr<GamepadPlatformService> gGamepadPlatformServiceSingleton
+    MOZ_GUARDED_BY(gGamepadPlatformServiceMutex);
 
 }  // namespace
 
@@ -78,8 +80,8 @@ void GamepadMonitoringState::Set(bool aIsMonitoring) {
 }
 
 GamepadPlatformService::GamepadPlatformService()
-    : mNextGamepadHandleValue(1),
-      mMutex("mozilla::dom::GamepadPlatformService") {}
+    : mMutex("mozilla::dom::GamepadPlatformService"),
+      mNextGamepadHandleValue(1) {}
 
 GamepadPlatformService::~GamepadPlatformService() { Cleanup(); }
 
@@ -88,6 +90,7 @@ already_AddRefed<GamepadPlatformService>
 GamepadPlatformService::GetParentService() {
   // GamepadPlatformService can only be accessed in parent process
   MOZ_ASSERT(XRE_IsParentProcess());
+  StaticMutexAutoLock lock(gGamepadPlatformServiceMutex);
   if (!gGamepadPlatformServiceSingleton) {
     // Only Background Thread can create new GamepadPlatformService instance.
     if (IsOnBackgroundThread()) {
@@ -111,10 +114,6 @@ void GamepadPlatformService::NotifyGamepadChange(GamepadHandle aHandle,
   GamepadChangeEventBody body(aInfo);
   GamepadChangeEvent e(aHandle, body);
 
-  // mChannelParents may be accessed by background thread in the
-  // same time, we use mutex to prevent possible race condtion
-  MutexAutoLock autoLock(mMutex);
-
   for (uint32_t i = 0; i < mChannelParents.Length(); ++i) {
     mChannelParents[i]->DispatchUpdateEvent(e);
   }
@@ -129,15 +128,18 @@ GamepadHandle GamepadPlatformService::AddGamepad(
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(!NS_IsMainThread());
 
-  GamepadHandle gamepadHandle{mNextGamepadHandleValue++,
-                              GamepadHandleKind::GamepadPlatformManager};
-
   GamepadAdded a(NS_ConvertUTF8toUTF16(nsDependentCString(aID)), aMapping,
                  aHand, aNumButtons, aNumAxes, aHaptics, aNumLightIndicator,
                  aNumTouchEvents);
 
-  mGamepadAdded.emplace(gamepadHandle, a);
-  NotifyGamepadChange<GamepadAdded>(gamepadHandle, a);
+  GamepadHandle gamepadHandle;
+  {
+    MutexAutoLock autoLock(mMutex);
+    gamepadHandle = GamepadHandle{mNextGamepadHandleValue++,
+                                  GamepadHandleKind::GamepadPlatformManager};
+    mGamepadAdded.emplace(gamepadHandle, a);
+    NotifyGamepadChange<GamepadAdded>(gamepadHandle, a);
+  }
   return gamepadHandle;
 }
 
@@ -147,8 +149,11 @@ void GamepadPlatformService::RemoveGamepad(GamepadHandle aHandle) {
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(!NS_IsMainThread());
   GamepadRemoved a;
-  NotifyGamepadChange<GamepadRemoved>(aHandle, a);
-  mGamepadAdded.erase(aHandle);
+  {
+    MutexAutoLock autoLock(mMutex);
+    NotifyGamepadChange<GamepadRemoved>(aHandle, a);
+    mGamepadAdded.erase(aHandle);
+  }
 }
 
 void GamepadPlatformService::NewButtonEvent(GamepadHandle aHandle,
@@ -159,6 +164,7 @@ void GamepadPlatformService::NewButtonEvent(GamepadHandle aHandle,
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(!NS_IsMainThread());
   GamepadButtonInformation a(aButton, aValue, aPressed, aTouched);
+  MutexAutoLock autoLock(mMutex);
   NotifyGamepadChange<GamepadButtonInformation>(aHandle, a);
 }
 
@@ -201,6 +207,7 @@ void GamepadPlatformService::NewAxisMoveEvent(GamepadHandle aHandle,
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(!NS_IsMainThread());
   GamepadAxisInformation a(aAxis, aValue);
+  MutexAutoLock autoLock(mMutex);
   NotifyGamepadChange<GamepadAxisInformation>(aHandle, a);
 }
 
@@ -211,6 +218,7 @@ void GamepadPlatformService::NewLightIndicatorTypeEvent(
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(!NS_IsMainThread());
   GamepadLightIndicatorTypeInformation a(aLight, aType);
+  MutexAutoLock autoLock(mMutex);
   NotifyGamepadChange<GamepadLightIndicatorTypeInformation>(aHandle, a);
 }
 
@@ -221,6 +229,7 @@ void GamepadPlatformService::NewPoseEvent(GamepadHandle aHandle,
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(!NS_IsMainThread());
   GamepadPoseInformation a(aState);
+  MutexAutoLock autoLock(mMutex);
   NotifyGamepadChange<GamepadPoseInformation>(aHandle, a);
 }
 
@@ -233,6 +242,7 @@ void GamepadPlatformService::NewMultiTouchEvent(
   MOZ_ASSERT(!NS_IsMainThread());
 
   GamepadTouchInformation a(aTouchArrayIndex, aState);
+  MutexAutoLock autoLock(mMutex);
   NotifyGamepadChange<GamepadTouchInformation>(aHandle, a);
 }
 
@@ -241,6 +251,7 @@ void GamepadPlatformService::ResetGamepadIndexes() {
   // platform-dependent backends
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(!NS_IsMainThread());
+  MutexAutoLock autoLock(mMutex);
   mNextGamepadHandleValue = 1;
 }
 
@@ -250,11 +261,11 @@ void GamepadPlatformService::AddChannelParent(
   // is created or removed in Background thread
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aParent);
-  MOZ_ASSERT(!mChannelParents.Contains(aParent));
 
   // We use mutex here to prevent race condition with monitor thread
   {
     MutexAutoLock autoLock(mMutex);
+    MOZ_ASSERT(!mChannelParents.Contains(aParent));
     mChannelParents.AppendElement(aParent);
 
     // For a new GamepadEventChannel, we have to send the exising GamepadAdded
@@ -279,11 +290,11 @@ void GamepadPlatformService::RemoveChannelParent(
   // is created or removed in Background thread
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aParent);
-  MOZ_ASSERT(mChannelParents.Contains(aParent));
 
   // We use mutex here to prevent race condition with monitor thread
   {
     MutexAutoLock autoLock(mMutex);
+    MOZ_ASSERT(mChannelParents.Contains(aParent));
     mChannelParents.RemoveElement(aParent);
     if (!mChannelParents.IsEmpty()) {
       return;
@@ -314,10 +325,13 @@ void GamepadPlatformService::MaybeShutdown() {
     MutexAutoLock autoLock(mMutex);
     isChannelParentEmpty = mChannelParents.IsEmpty();
     if (isChannelParentEmpty) {
-      kungFuDeathGrip = gGamepadPlatformServiceSingleton;
-      gGamepadPlatformServiceSingleton = nullptr;
       mGamepadAdded.clear();
     }
+  }
+  if (isChannelParentEmpty) {
+    StaticMutexAutoLock lock(gGamepadPlatformServiceMutex);
+    kungFuDeathGrip = gGamepadPlatformServiceSingleton;
+    gGamepadPlatformServiceSingleton = nullptr;
   }
 }
 

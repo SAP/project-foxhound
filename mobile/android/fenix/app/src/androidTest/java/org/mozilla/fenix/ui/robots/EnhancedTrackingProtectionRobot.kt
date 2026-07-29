@@ -42,7 +42,7 @@ class EnhancedTrackingProtectionRobot {
     fun verifyEnhancedTrackingProtectionSheetStatus(status: String, state: Boolean) {
         mDevice.waitNotNull(Until.findObjects(By.text("Protections are $status for this site")))
         Log.i(TAG, "verifyEnhancedTrackingProtectionSheetStatus: Trying to check ETP toggle is checked: $state")
-        onView(ViewMatchers.withResourceName("switch_widget")).check(
+        onView(ViewMatchers.withResourceName("switchWidget")).check(
             matches(
                 isChecked(
                     state,
@@ -278,7 +278,7 @@ private fun pageSecurityIndicator() =
     mDevice.findObject(UiSelector().resourceId("$packageName:id/mozac_browser_toolbar_site_info_indicator"))
 
 private fun enhancedTrackingProtectionSwitch() =
-    onView(ViewMatchers.withResourceName("switch_widget"))
+    onView(ViewMatchers.withResourceName("switchWidget"))
 
 private fun trackingProtectionSettingsButton() =
     onView(withId(R.id.protection_settings)).inRoot(RootMatchers.isDialog()).check(

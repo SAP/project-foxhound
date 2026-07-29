@@ -1,6 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * vim: sw=2 ts=2 sts=2 expandtab
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -531,7 +529,7 @@ URIFixup.prototype = {
       info.postData = submissionPostDataStream;
     }
 
-    info.keywordProviderName = engine.name;
+    info.keywordProviderId = engine.id;
     info.keywordAsSent = keyword;
     info.preferredURI = submission.uri;
     return info;
@@ -672,11 +670,11 @@ URIFixupInfo.prototype = {
     return this._fixedURI || null;
   },
 
-  set keywordProviderName(name) {
-    this._keywordProviderName = name;
+  set keywordProviderId(id) {
+    this._keywordProviderId = id;
   },
-  get keywordProviderName() {
-    return this._keywordProviderName || "";
+  get keywordProviderId() {
+    return this._keywordProviderId || "";
   },
 
   set keywordAsSent(keyword) {
@@ -860,7 +858,7 @@ function tryKeywordFixupForURIInfo(uriString, fixupInfo, isPrivateContext) {
       uriString,
       isPrivateContext
     );
-    fixupInfo.keywordProviderName = keywordInfo.keywordProviderName;
+    fixupInfo.keywordProviderId = keywordInfo.keywordProviderId;
     fixupInfo.keywordAsSent = keywordInfo.keywordAsSent;
     fixupInfo.preferredURI = keywordInfo.preferredURI;
     return true;

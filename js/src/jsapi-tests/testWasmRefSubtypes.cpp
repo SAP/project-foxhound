@@ -220,7 +220,7 @@ BEGIN_TEST(testWasmRefType_LUB) {
   do {                                                                     \
     RefType _actual = RefType::leastUpperBound((a), (b));                  \
     if (_actual != (expected)) {                                           \
-      return fail(JSAPITestString("bad LUB of ") +                         \
+      return fail(std::string("bad LUB of ") +                             \
                       wasm::ToString((a), types).get() + " and " +         \
                       wasm::ToString((b), types).get() + ": expected " +   \
                       wasm::ToString((expected), types).get() + ", got " + \
@@ -391,13 +391,13 @@ BEGIN_TEST(testWasmRefType_GLB) {
 
       // $a1, any -> $a1 or none
       {a1, RefType::any(), a1},
-      {a1, RefType::any().asNonNullable(), RefType::none().asNonNullable()},
+      {a1, RefType::any().asNonNullable(), a1.asNonNullable()},
       {a1.asNonNullable(), RefType::any(), a1.asNonNullable()},
       {a1.asNonNullable(), RefType::any().asNonNullable(), a1.asNonNullable()},
 
       // $a1, eq -> eq or none
       {a1, RefType::eq(), a1},
-      {a1, RefType::eq().asNonNullable(), RefType::none().asNonNullable()},
+      {a1, RefType::eq().asNonNullable(), a1.asNonNullable()},
       {a1.asNonNullable(), RefType::eq(), a1.asNonNullable()},
       {a1.asNonNullable(), RefType::eq().asNonNullable(), a1.asNonNullable()},
 
@@ -417,7 +417,7 @@ BEGIN_TEST(testWasmRefType_GLB) {
 
       // $a1, array -> $a1 or none
       {a1, RefType::array(), a1},
-      {a1, RefType::array().asNonNullable(), RefType::none().asNonNullable()},
+      {a1, RefType::array().asNonNullable(), a1.asNonNullable()},
       {a1.asNonNullable(), RefType::array(), a1.asNonNullable()},
       {a1.asNonNullable(), RefType::array().asNonNullable(),
        a1.asNonNullable()},
@@ -436,7 +436,7 @@ BEGIN_TEST(testWasmRefType_GLB) {
       // $s1, $s2 -> $s2 or none
       {s1, s2, s2},
       {s1, s2.asNonNullable(), s2.asNonNullable()},
-      {s1.asNonNullable(), s2, RefType::none().asNonNullable()},
+      {s1.asNonNullable(), s2, s2.asNonNullable()},
       {s1.asNonNullable(), s2.asNonNullable(), s2.asNonNullable()},
 
       //
@@ -464,7 +464,7 @@ BEGIN_TEST(testWasmRefType_GLB) {
   do {                                                                     \
     RefType _actual = RefType::greatestLowerBound((a), (b));               \
     if (_actual != (expected)) {                                           \
-      return fail(JSAPITestString("bad GLB of ") +                         \
+      return fail(std::string("bad GLB of ") +                             \
                       wasm::ToString((a), types).get() + " and " +         \
                       wasm::ToString((b), types).get() + ": expected " +   \
                       wasm::ToString((expected), types).get() + ", got " + \

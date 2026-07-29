@@ -116,6 +116,9 @@ TEST_F(ImageDecodeToSurface, BMP) { RunDecodeToSurface(GreenBMPTestCase()); }
 TEST_F(ImageDecodeToSurface, ICO) { RunDecodeToSurface(GreenICOTestCase()); }
 TEST_F(ImageDecodeToSurface, Icon) { RunDecodeToSurface(GreenIconTestCase()); }
 TEST_F(ImageDecodeToSurface, WebP) { RunDecodeToSurface(GreenWebPTestCase()); }
+#ifdef MOZ_JXL
+TEST_F(ImageDecodeToSurface, JXL) { RunDecodeToSurface(GreenJXLTestCase()); }
+#endif
 
 TEST_F(ImageDecodeToSurface, AnimatedGIF) {
   RunDecodeToSurface(GreenFirstFrameAnimatedGIFTestCase());

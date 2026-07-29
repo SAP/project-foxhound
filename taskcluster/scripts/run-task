@@ -729,7 +729,7 @@ def collect_vcs_options(args, project):
     if checkout:
         checkout = os.path.expanduser(checkout)
     if store_path:
-        store_path = os.path.expanduser(store_path)
+        store_path = normalize_store_path(store_path)
 
     # Some callers set the base repository to mozilla-central for historical
     # reasons. Switch to mozilla-unified because robustcheckout works best
@@ -753,6 +753,19 @@ def collect_vcs_options(args, project):
         "revision": revision,
         "branch": branch,
     }
+
+
+def normalize_store_path(path):
+    path = os.path.expandvars(os.path.expanduser(path))
+
+    if IS_WINDOWS and path.startswith(("\\", "/")) and not os.path.splitdrive(path)[0]:
+        hg_cache = os.environ.get("HG_CACHE")
+        if hg_cache:
+            cache_drive = os.path.splitdrive(os.path.abspath(hg_cache))[0]
+            if cache_drive:
+                path = f"{cache_drive}{path}"
+
+    return os.path.abspath(os.path.normpath(path))
 
 
 def vcs_checkout_from_args(args, project):
@@ -964,7 +977,8 @@ def main(args):
             print("error: HG_STORE_PATH environment variable not set")
             sys.exit(1)
 
-        store_path = os.environ["HG_STORE_PATH"]
+        store_path = normalize_store_path(os.environ["HG_STORE_PATH"])
+        os.environ["HG_STORE_PATH"] = store_path
 
         if not path_in_cache_or_volume(store_path):
             print_line(

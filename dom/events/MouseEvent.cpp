@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -446,6 +444,13 @@ nsIntPoint MouseEvent::GetMovementPoint() const {
     // Pointer Lock spec defines that movementX/Y must be zero for all mouse
     // events except mousemove.
     return nsIntPoint(0, 0);
+  }
+
+  // If the platform supplied raw delta information, use it instead of
+  // calculating from mRefPoint/mLastRefPoint.
+  if (WidgetMouseEvent* mouseEvent = mEvent->AsMouseEvent();
+      mouseEvent && mouseEvent->mMovement) {
+    return nsIntPoint(mouseEvent->mMovement->x, mouseEvent->mMovement->y);
   }
 
   // Calculate the delta between the last screen point and the current one.

@@ -221,6 +221,7 @@ function TopicSelection({ supportUrl }) {
     <ModalOverlayWrapper
       onClose={handleUserClose}
       innerClassName="topic-selection-container"
+      headerId="topic-selection-title"
     >
       <div className="topic-selection-form" ref={modalRef}>
         <button
@@ -228,7 +229,11 @@ function TopicSelection({ supportUrl }) {
           title="dismiss"
           onClick={handleUserClose}
         />
-        <h1 className="title" data-l10n-id="newtab-topic-selection-title" />
+        <h1
+          className="title"
+          id="topic-selection-title"
+          data-l10n-id="newtab-topic-selection-title"
+        />
         <p
           className="subtitle"
           data-l10n-id="newtab-topic-selection-subtitle"

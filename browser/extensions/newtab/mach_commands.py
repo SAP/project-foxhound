@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 import time
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -51,6 +52,7 @@ COMPARE_TOOL_PATH = Path(
 )
 REPORT_PATH = Path(WEBEXT_LOCALES_PATH, "locales-report.json")
 REPORT_LEFT_JUSTIFY_CHARS = 15
+REPORT_WRAP_CHARS = 80
 FLUENT_FILE_ANCESTRY = Path("browser", "newtab")
 SUPPORTED_LOCALES_PATH = Path(WEBEXT_LOCALES_PATH, "supported-locales.json")
 
@@ -276,10 +278,19 @@ def update_locales(command_context):
 @CommandArgument(
     "--details", default=None, help="Which locale to pull up details about"
 )
-def locales_report(command_context, details):
+@CommandArgument(
+    "--string",
+    dest="message_id",
+    default=None,
+    help="Show which locales are missing a specific Fluent message id",
+)
+def locales_report(command_context, details, message_id):
     with open(REPORT_PATH) as file:
         report = json.load(file)
-        display_report(report, details)
+        if message_id:
+            display_string_report(report, message_id)
+        else:
+            display_report(report, details)
 
 
 def get_message_dates(fluent_file_path):
@@ -471,6 +482,59 @@ def display_report(report, details=None):
                 Fore.GREEN
                 + f"{locale.ljust(REPORT_LEFT_JUSTIFY_CHARS)}0 missing translations"
             )
+    print(Style.RESET_ALL, end="")
+
+
+def display_string_report(report, message_id):
+    """Lists which locales are missing or have a specific Fluent message id.
+
+    This is the inverse of the --details view: instead of listing the missing
+    strings for one locale, it lists every locale missing one given string (and
+    the locales that have it). Computed entirely from the local
+    locales-report.json (no network access).
+    """
+    if message_id not in report["message_dates"]:
+        print(f"Unknown string '{message_id}'")
+        return
+
+    file_key = str(FLUENT_FILE_ANCESTRY.joinpath(FLUENT_FILE))
+    missing_locales = []
+    present_locales = []
+    for locale in sorted(report["locales"].keys(), key=lambda x: x.lower()):
+        missing = report["locales"][locale]["missing"]
+        # Entries may carry a ".attribute" suffix, so normalize to the message id.
+        missing_ids = {
+            entry.split(".")[0] for entry in (missing or {}).get(file_key, [])
+        }
+        if message_id in missing_ids:
+            missing_locales.append(locale)
+        else:
+            present_locales.append(locale)
+
+    total = len(report["locales"])
+    meta = report["meta"]
+    print("New Tab string report")
+    print(f"String: {message_id}")
+    print(f"Landed in en-US: {report['message_dates'][message_id]}")
+    print(f"Locales last updated: {meta['updated']}")
+    print(f"From {meta['repository']} - revision: {meta['revision']}")
+    print("------")
+    print(Fore.YELLOW + f"{len(missing_locales)}/{total} locales missing")
+    print(
+        textwrap.fill(
+            ", ".join(missing_locales),
+            width=REPORT_WRAP_CHARS,
+            break_on_hyphens=False,
+        )
+    )
+    print(Fore.GREEN + f"{len(present_locales)}/{total} locales present")
+    print(
+        textwrap.fill(
+            ", ".join(present_locales),
+            width=REPORT_WRAP_CHARS,
+            break_on_hyphens=False,
+        )
+    )
     print(Style.RESET_ALL, end="")
 
 
@@ -942,7 +1006,7 @@ def get_unbranded_builds(command_context, channel):
         },
         "Linux 64-bit": {
             "namespace": f"gecko.v2.{repo}.latest.firefox.linux64-add-on-devel",
-            "artifact": "public/build/target.tar.bz2",
+            "artifact": "public/build/target.tar.xz",
         },
     }
 

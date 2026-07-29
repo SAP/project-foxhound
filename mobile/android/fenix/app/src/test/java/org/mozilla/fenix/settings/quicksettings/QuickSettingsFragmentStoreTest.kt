@@ -7,7 +7,7 @@ package org.mozilla.fenix.settings.quicksettings
 import android.content.pm.PackageManager
 import io.mockk.MockKAnnotations
 import io.mockk.every
-import io.mockk.impl.annotations.MockK
+import io.mockk.impl.annotations.RelaxedMockK
 import io.mockk.mockk
 import io.mockk.spyk
 import io.mockk.verify
@@ -23,7 +23,6 @@ import mozilla.components.feature.sitepermissions.SitePermissionsRules.AutoplayA
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -42,18 +41,19 @@ import org.mozilla.fenix.trackingprotection.CookieBannerUIMode
 import org.mozilla.fenix.trackingprotection.ProtectionsState
 import org.mozilla.fenix.utils.Settings
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 class QuickSettingsFragmentStoreTest {
     private val context = spyk(testContext)
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var permissions: SitePermissions
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var permissionHighlights: PermissionHighlightsState
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var appSettings: Settings
 
     @Before

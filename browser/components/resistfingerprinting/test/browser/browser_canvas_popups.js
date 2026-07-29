@@ -79,6 +79,7 @@ add_setup(async function () {
   // Disable the fingerprinting randomization.
   await SpecialPowers.pushPrefEnv({
     set: [
+      ["privacy.baselineFingerprintingProtection", false],
       ["privacy.fingerprintingProtection", false],
       ["privacy.fingerprintingProtection.pbmode", false],
       ["privacy.resistFingerprinting", false],

@@ -181,10 +181,24 @@ def repackage_deb_l10n(
             description_suffix=f" - {langpack_metadata['description']}",
             product=product,
         )
+
         if product == "devedition":
-            depends = f"firefox-devedition (= {build_variables['PKG_VERSION']})"
+            depends_package = "firefox-devedition"
         else:
-            depends = f"{application_ini_data['remoting_name']} (= {build_variables['PKG_VERSION']})"
+            depends_package = application_ini_data["remoting_name"]
+
+        depends_version = build_variables["PKG_VERSION"]
+
+        # Thunderbird prepends epoch 1 to the version number to prevent
+        # accidental downgrading to Thunderbird .debs in non-Mozilla APT
+        # repositories.
+        #
+        # See bug 2005200
+        if depends_package == "thunderbird":
+            depends_version = f"1:{depends_version}"
+
+        depends = f"{depends_package} (= {depends_version})"
+
         build_variables["DEPENDS"] = depends
         build_variables["CHANGELOG_DATE"] = format_datetime(
             build_variables["TIMESTAMP"]

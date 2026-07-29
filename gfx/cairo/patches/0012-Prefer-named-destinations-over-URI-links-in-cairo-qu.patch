@@ -1,0 +1,43 @@
+From c3bd41f6edd26c8713135aba0b7b33d03dc5f32b Mon Sep 17 00:00:00 2001
+From: Jonathan Kew <jkew@mozilla.com>
+Date: Wed, 22 Apr 2026 13:00:22 -0700
+Subject: [PATCH 12/29] Prefer named destinations over URI links in
+ cairo-quartz-surface
+
+---
+ src/cairo-quartz-surface.c | 14 +++++++-------
+ 1 file changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/src/cairo-quartz-surface.c b/src/cairo-quartz-surface.c
+index 6145d01ca..59145fe57 100644
+--- a/src/cairo-quartz-surface.c
++++ b/src/cairo-quartz-surface.c
+@@ -2216,18 +2216,18 @@ _cairo_quartz_surface_link (cairo_quartz_surface_t *surface,
+            in the link attributes. */
+         CFURLRef url = NULL;
+         CFStringRef name = NULL;
+-        if (link_attrs.uri && *link_attrs.uri)
+-            url = CFURLCreateWithBytes (NULL,
+-                                        (const UInt8 *) link_attrs.uri,
+-                                        strlen (link_attrs.uri),
+-                                        kCFStringEncodingUTF8,
+-                                        NULL);
+-        else if (link_attrs.dest && *link_attrs.dest)
++        if (link_attrs.dest && *link_attrs.dest)
+             name = CFStringCreateWithBytes (kCFAllocatorDefault,
+                                             (const UInt8 *) link_attrs.dest,
+                                             strlen (link_attrs.dest),
+                                             kCFStringEncodingUTF8,
+                                             FALSE);
++        else if (link_attrs.uri && *link_attrs.uri)
++            url = CFURLCreateWithBytes (NULL,
++                                        (const UInt8 *) link_attrs.uri,
++                                        strlen (link_attrs.uri),
++                                        kCFStringEncodingUTF8,
++                                        NULL);
+         else /* silently ignore link that doesn't have a usable target */
+             goto cleanup;
+ 
+-- 
+2.53.0
+

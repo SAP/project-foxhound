@@ -57,7 +57,7 @@ function populateInputFile(aInputFile) {
   var script = SpecialPowers.loadChromeScript(url);
 
   var MockFilePicker = SpecialPowers.MockFilePicker;
-  MockFilePicker.init(SpecialPowers.wrap(window).browsingContext);
+  MockFilePicker.init();
 
   async function onOpened(message) {
     MockFilePicker.useDirectory(message.dir);
@@ -144,7 +144,7 @@ async function test_individualSymlink(aInputFile) {
 
   // -- Have the picker pick it
   var MockFilePicker = SpecialPowers.MockFilePicker;
-  MockFilePicker.init(SpecialPowers.wrap(window).browsingContext);
+  MockFilePicker.init();
 
   MockFilePicker.displayDirectory = dir;
   let pickerShown = new Promise(resolve => {
@@ -197,7 +197,7 @@ function test_changeDataWhileWorking() {
   var script = SpecialPowers.loadChromeScript(url);
 
   var MockFilePicker = SpecialPowers.MockFilePicker;
-  MockFilePicker.init(SpecialPowers.wrap(window).browsingContext);
+  MockFilePicker.init();
   let promptHandled;
 
   // Let's start retrieving the root nsIFile object
@@ -214,7 +214,7 @@ function test_changeDataWhileWorking() {
   // input.click() pointing to the root dir
   .then(async function(aDir) {
     MockFilePicker.cleanup();
-    MockFilePicker.init(SpecialPowers.wrap(window).browsingContext);
+    MockFilePicker.init();
     MockFilePicker.useDirectory(aDir);
     var input = document.getElementById("inputFileDirectoryChange");
 
@@ -241,7 +241,7 @@ function test_changeDataWhileWorking() {
   // Now let's click again and wait for onchange.
   .then(async function(aDir) {
       MockFilePicker.cleanup();
-      MockFilePicker.init(SpecialPowers.wrap(window).browsingContext);
+      MockFilePicker.init();
       MockFilePicker.useDirectory(aDir);
 
       let input = document.getElementById("inputFileDirectoryChange");

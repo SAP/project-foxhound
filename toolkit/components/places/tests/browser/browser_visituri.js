@@ -140,7 +140,7 @@ add_task(async function test_userpass() {
   );
 
   // Open the target link as background.
-  await ContentTask.spawn(gBrowser.selectedBrowser, null, async () => {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async () => {
     let link = content.document.getElementById("target-userpass");
     EventUtils.synthesizeMouseAtCenter(
       link,
@@ -177,10 +177,10 @@ add_task(async function test_userpass() {
   };
 
   for (const [key, value] of Object.entries(expectedResults)) {
-    await ContentTask.spawn(
+    await SpecialPowers.spawn(
       gBrowser.selectedBrowser,
       [key, value],
-      async ([k, v]) => {
+      async (k, v) => {
         // ElementState::VISITED
         const VISITED_STATE = 1 << 18;
         await ContentTaskUtils.waitForCondition(() => {

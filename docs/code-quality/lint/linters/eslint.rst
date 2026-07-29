@@ -92,7 +92,7 @@ it is not possible to scope ESLint rules to individual files based on .ini
 files without a build step that would break editors, or an expensive loading
 cycle.
 
-* If the directory path of the tests is one of the `known ones`_, then ESLint will
+* If the directory path of the tests is one of the :searchfox:`known ones <mozilla-central/rev/287583a4a605eee8cd2d41381ffaea7a93d7b987:.eslintrc.js#24-40>`, then ESLint will
   do the right thing for that test type. This is the preferred option.
 
   * For example placing xpcshell-tests in ``browser/components/foo/test/unit/``
@@ -215,9 +215,8 @@ For test harness issues, file bugs in Developer Infrastructure :: Lint and Forma
 .. _eslint.org's rule list: https://eslint.org/docs/rules/
 .. _eslint-plugin-mozilla: eslint-plugin-mozilla.html
 .. _eslint-plugin-spidermonkey-js: eslint-plugin-spidermonkey-js.html
-.. _informed that it is a module: https://searchfox.org/mozilla-central/rev/9399e5832979755cd340383f4ca4069dd5fc7774/browser/base/content/.eslintrc.js
+.. _informed that it is a module: :searchfox:`mozilla-central/rev/9399e5832979755cd340383f4ca4069dd5fc7774:browser/base/content/.eslintrc.js`
 .. _seek help: ../index.html#getting-help
-.. _patterns in .eslintrc.js: https://searchfox.org/mozilla-central/rev/9399e5832979755cd340383f4ca4069dd5fc7774/.eslintrc.js#24-38
-.. _known ones: https://searchfox.org/mozilla-central/rev/287583a4a605eee8cd2d41381ffaea7a93d7b987/.eslintrc.js#24-40
+.. _patterns in .eslintrc.js: :searchfox:`mozilla-central/rev/9399e5832979755cd340383f4ca4069dd5fc7774:.eslintrc.js#24-38`
 .. _difficult for ESLint to handle: https://bugzilla.mozilla.org/show_bug.cgi?id=1379669
 .. _prettier ignore docs: https://prettier.io/docs/en/ignore.html

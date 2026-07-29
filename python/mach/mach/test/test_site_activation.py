@@ -313,7 +313,6 @@ def _activation_context():
     required_mach_sys_paths = [
         topsrcdir / "python" / "mach",
         topsrcdir / "testing" / "mozbase" / "mozfile",
-        topsrcdir / "third_party" / "python" / "filelock",
         topsrcdir / "third_party" / "python" / "packaging",
         topsrcdir / "third_party" / "python" / "pip",
     ]

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +7,7 @@
 
 #include "js/RootingAPI.h"
 #include "mozilla/AlreadyAddRefed.h"
-#include "nsContentList.h"
+#include "mozilla/dom/ContentList.h"
 
 class JSObject;
 class nsINode;
@@ -21,9 +19,9 @@ class ErrorResult;
 namespace dom {
 class GlobalObject;
 
-class ChromeNodeList final : public nsSimpleContentList {
+class ChromeNodeList final : public SimpleContentList {
  public:
-  explicit ChromeNodeList(nsINode* aOwner) : nsSimpleContentList(aOwner) {}
+  explicit ChromeNodeList(nsINode* aOwner) : SimpleContentList(aOwner) {}
 
   static already_AddRefed<ChromeNodeList> Constructor(
       const GlobalObject& aGlobal);

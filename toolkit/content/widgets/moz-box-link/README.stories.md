@@ -11,7 +11,7 @@
 
 ## Code
 
-The source for `moz-box-link` can be found under [toolkit/content/widgets/moz-box-link/](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/moz-box-link)
+The source for `moz-box-link` can be found under [toolkit/content/widgets/moz-box-link/](https://searchfox.org/firefox-main/source/toolkit/content/widgets/moz-box-link)
 
 ## How to use `moz-box-link`
 

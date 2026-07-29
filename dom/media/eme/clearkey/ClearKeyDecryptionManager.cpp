@@ -265,6 +265,12 @@ Status ClearKeyDecryptor::Decrypt(uint8_t* aBuffer, uint32_t aBufferSize,
   assert(aMetadata.mIV.size() == 8 || aMetadata.mIV.size() == 16 ||
          (aMetadata.mIV.empty() && AllZero(aMetadata.mCipherBytes)));
 
+  if (aMetadata.mIV.size() > CENC_KEY_LEN) {
+    CK_LOGD("ClearKeyDecryptor::Decrypt unexpected IV size %zu",
+            aMetadata.mIV.size());
+    return Status::kDecryptError;
+  }
+
   std::vector<uint8_t> iv(aMetadata.mIV);
   iv.insert(iv.end(), CENC_KEY_LEN - aMetadata.mIV.size(), 0);
 

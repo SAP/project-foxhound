@@ -26,6 +26,9 @@ class SecretSettingsUnlocker(
         secretSettingsClicks = 0
     }
 
+    /**
+     * Increments the secret settings tap counter.
+     */
     fun increment() {
         // Because the user will mostly likely tap the logo in rapid succession,
         // we ensure only 1 toast is shown at any given time.

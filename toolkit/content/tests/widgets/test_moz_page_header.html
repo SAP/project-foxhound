@@ -42,7 +42,8 @@
 
         ok(header, "The page header renders.");
 
-        let headingEl = header.shadowRoot.querySelector("h1");
+        let headingEl = header.shadowRoot.querySelector("#heading");
+        is(headingEl?.localName, "h2", "Heading defaults to <h2>.");
         is(
           headingEl?.textContent.trim(),
           HEADING,
@@ -139,6 +140,71 @@
           group.localName,
           "moz-breadcrumb-group",
           "moz-breadcrumb-group is slotted in the breadcrumbs slot."
+        );
+      });
+
+      add_task(async function testMozPageHeaderBadge() {
+        let template = testHelpers.templateFn({
+          heading: "With Badge",
+          badge: "beta",
+        });
+        let renderTarget = await testHelpers.renderTemplate(template);
+        let header = renderTarget.firstElementChild;
+
+        let badge = header.shadowRoot.querySelector("moz-badge");
+        ok(badge, "moz-badge is rendered when badge is 'beta'.");
+        is(badge.getAttribute("type"), "beta", "moz-badge has type 'beta'.");
+
+        header.badge = undefined;
+        await header.updateComplete;
+
+        badge = header.shadowRoot.querySelector("moz-badge");
+        ok(!badge, "moz-badge is removed when badge is undefined.");
+
+        header.badge = "new";
+        await header.updateComplete;
+
+        badge = header.shadowRoot.querySelector("moz-badge");
+        ok(badge, "moz-badge is rendered when badge is 'new'.");
+        is(badge.getAttribute("type"), "new", "moz-badge has type 'new'.");
+      });
+
+      add_task(async function testMozPageHeaderHeadingLevel() {
+        const HEADING = "Demotable Heading";
+        let template = testHelpers.templateFn({ heading: HEADING });
+        let renderTarget = await testHelpers.renderTemplate(template);
+        let header = renderTarget.firstElementChild;
+
+        let headingEl = header.shadowRoot.querySelector("#heading");
+        is(
+          headingEl?.localName,
+          "h2",
+          "Heading defaults to <h2> when headingLevel is not set."
+        );
+
+        for (let level of [1, 3, 4, 5, 6]) {
+          header.headingLevel = level;
+          await header.updateComplete;
+          headingEl = header.shadowRoot.querySelector("#heading");
+          is(
+            headingEl?.localName,
+            `h${level}`,
+            `Heading renders as <h${level}> when headingLevel is ${level}.`
+          );
+          is(
+            headingEl?.textContent.trim(),
+            HEADING,
+            `Heading text is preserved at level ${level}.`
+          );
+        }
+
+        header.headingLevel = 2;
+        await header.updateComplete;
+        headingEl = header.shadowRoot.querySelector("#heading");
+        is(
+          headingEl?.localName,
+          "h2",
+          "Heading returns to <h2> when headingLevel is set back to 2."
         );
       });
 

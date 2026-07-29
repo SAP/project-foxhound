@@ -1,5 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -110,7 +109,7 @@ export class AsyncTabSwitcher {
     this.lastPrimaryTab = tabbrowser.selectedTab; // Tab with primary="true"
 
     this.tabbrowser = tabbrowser;
-    this.window = tabbrowser.ownerGlobal;
+    this.window = tabbrowser.documentGlobal;
     this.loadTimer = null; // TAB_SWITCH_TIMEOUT nsITimer instance.
     this.unloadTimer = null; // UNLOAD_DELAY nsITimer instance.
 
@@ -886,7 +885,7 @@ export class AsyncTabSwitcher {
     // our window. We save the state of otherBrowser since ourBrowser
     // needs to take on that state at the end of the swap.
 
-    let otherTabbrowser = otherBrowser.ownerGlobal.gBrowser;
+    let otherTabbrowser = otherBrowser.documentGlobal.gBrowser;
     let otherState;
     if (otherTabbrowser && otherTabbrowser._switcher) {
       let otherTab = otherTabbrowser.getTabForBrowser(otherBrowser);

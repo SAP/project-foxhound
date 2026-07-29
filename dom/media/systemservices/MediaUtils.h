@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,9 +24,14 @@ class nsIEventTarget;
 
 namespace mozilla::media {
 
-/* Utility function, given a string pref and an URI, returns whether or not
- * the URI occurs in the pref. Wildcards are supported (e.g. *.example.com)
- * and multiple hostnames can be present, separated by commas.
+/* Utility function, given a comma-separated list of hostnames and a hostname,
+ * returns whether the hostname occurs in the list. Wildcards are supported
+ * (e.g. *.example.com). Safe to call from any thread.
+ */
+bool HostnameInValue(const nsACString& aList, const nsCString& aHostName);
+
+/* Like HostnameInValue but reads the list from a string preference. Must be
+ * called on the main thread (Preferences::GetCString is main-thread only).
  */
 bool HostnameInPref(const char* aPrefList, const nsCString& aHostName);
 
@@ -350,8 +353,8 @@ void AwaitAll(
       TaskQueue::Create(do_AddRef(pool), "MozPromiseAwaitAll");
   RefPtr<typename Promise::AllPromiseType> p =
       Promise::All(taskQueue, aPromises);
-  Await(pool.forget(), p, std::move(aResolveFunction),
-        std::move(aRejectFunction));
+  Await(pool.forget(), p, std::forward<ResolveFunction>(aResolveFunction),
+        std::forward<RejectFunction>(aRejectFunction));
 }
 
 // Note: only works with exclusive MozPromise, as Promise::All would attempt

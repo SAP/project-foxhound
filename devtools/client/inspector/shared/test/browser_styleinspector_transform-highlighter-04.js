@@ -45,7 +45,7 @@ add_task(async function () {
   );
 
   info("Disabling the applied property");
-  const classRuleEditor = getRuleViewRuleEditor(view, 1);
+  const classRuleEditor = getRuleViewRuleEditorAt(view, 1);
   const propEditor = classRuleEditor.rule.textProps[0].editor;
   propEditor.enable.click();
   await classRuleEditor.rule.applyingModifications;

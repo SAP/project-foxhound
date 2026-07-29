@@ -261,7 +261,6 @@ function runTest() {// Disable mixed-content upgrading as this test is expecting
   return SpecialPowers.pushPrefEnv(
     {"set": [
       ["security.mixed_content.upgrade_display_content", false],
-      ["network.http.rcwn.enabled", false],
     ]}
     )
     .then(executeTest)

@@ -8,10 +8,10 @@ import android.os.Bundle
 import androidx.navigation.fragment.navArgs
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
-import androidx.preference.SwitchPreference
+import androidx.preference.SwitchPreferenceCompat
 import org.mozilla.fenix.R
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.showToolbar
 import org.mozilla.fenix.utils.Settings
 
@@ -21,7 +21,7 @@ import org.mozilla.fenix.utils.Settings
  * Includes an automatic font sizing toggle. When turned on, font sizing follows the Android device settings.
  * When turned off, the font sizing can be controlled manually within the app.
  */
-class AccessibilityFragment : PreferenceFragmentCompat() {
+class AccessibilityFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFragment {
 
     private val args by navArgs<AccessibilityFragmentArgs>()
 
@@ -29,14 +29,14 @@ class AccessibilityFragment : PreferenceFragmentCompat() {
         super.onResume()
         showToolbar(getString(R.string.preferences_accessibility))
 
-        val forceZoomPreference = requirePreference<SwitchPreference>(
+        val forceZoomPreference = requirePreference<SwitchPreferenceCompat>(
             R.string.pref_key_accessibility_force_enable_zoom,
         )
 
-        forceZoomPreference.setOnPreferenceChangeListener<Boolean> { preference, shouldForce ->
-            val settings = preference.context.settings()
-            val components = preference.context.components
+        val components = requireContext().components
+        val settings = components.settings
 
+        forceZoomPreference.setOnPreferenceChangeListener<Boolean> { preference, shouldForce ->
             settings.forceEnableZoom = shouldForce
             components.core.engine.settings.forceUserScalableContent = shouldForce
 
@@ -49,7 +49,6 @@ class AccessibilityFragment : PreferenceFragmentCompat() {
 
         textSizePreference.onPreferenceChangeListener = Preference.OnPreferenceChangeListener { preference, newValue ->
             val newTextScale = newValue as Float
-            val components = preference.context.components
 
             // Save new text scale value. We assume auto sizing is off if this change listener was called.
             components.core.engine.settings.fontSizeFactor = newTextScale
@@ -60,10 +59,8 @@ class AccessibilityFragment : PreferenceFragmentCompat() {
         }
 
         val useAutoSizePreference =
-            requirePreference<SwitchPreference>(R.string.pref_key_accessibility_auto_size)
+            requirePreference<SwitchPreferenceCompat>(R.string.pref_key_accessibility_auto_size)
         useAutoSizePreference.setOnPreferenceChangeListener<Boolean> { preference, useAutoSize ->
-            val settings = preference.context.settings()
-            val components = preference.context.components
 
             // Save the new setting value
             settings.shouldUseAutoSize = useAutoSize
@@ -82,10 +79,10 @@ class AccessibilityFragment : PreferenceFragmentCompat() {
             true
         }
 
-        textSizePreference.setIsSliderEnabled(!requireContext().settings().shouldUseAutoSize)
+        textSizePreference.setIsSliderEnabled(!settings.shouldUseAutoSize)
 
         args.preferenceToScrollTo?.let {
-            scrollToPreference(it)
+            scrollToPreferenceWithHighlight(it)
         }
     }
 

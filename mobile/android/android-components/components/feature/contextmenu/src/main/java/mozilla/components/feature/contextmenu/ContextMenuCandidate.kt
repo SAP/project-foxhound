@@ -28,6 +28,7 @@ import mozilla.components.support.ktx.kotlin.stripMailToProtocol
 import mozilla.components.support.ktx.kotlin.takeOrReplace
 import mozilla.components.ui.widgets.DefaultSnackbarDelegate
 import mozilla.components.ui.widgets.SnackbarDelegate
+import kotlin.String
 
 /**
  * A candidate for an item to be displayed in the context menu.
@@ -60,6 +61,7 @@ data class ContextMenuCandidate(
             contextMenuUseCases: ContextMenuUseCases,
             snackBarParentView: View,
             snackbarDelegate: SnackbarDelegate = DefaultSnackbarDelegate(),
+            downloadsLocation: () -> String,
         ): List<ContextMenuCandidate> = listOf(
             createOpenInNewTabCandidate(
                 context,
@@ -75,7 +77,7 @@ data class ContextMenuCandidate(
             ),
             createCopyLinkCandidate(context, snackBarParentView, snackbarDelegate),
             createCopyLinkTextCandidate(context, snackBarParentView, snackbarDelegate),
-            createDownloadLinkCandidate(context, contextMenuUseCases),
+            createDownloadLinkCandidate(context, contextMenuUseCases, downloadsLocation),
             createShareLinkCandidate(context),
             createShareImageCandidate(context, contextMenuUseCases),
             createOpenImageInNewTabCandidate(
@@ -88,8 +90,8 @@ data class ContextMenuCandidate(
                 context,
                 contextMenuUseCases,
             ),
-            createSaveImageCandidate(context, contextMenuUseCases),
-            createSaveVideoAudioCandidate(context, contextMenuUseCases),
+            createSaveImageCandidate(context, contextMenuUseCases, downloadsLocation),
+            createSaveVideoAudioCandidate(context, contextMenuUseCases, downloadsLocation),
             createCopyImageLocationCandidate(context, snackBarParentView, snackbarDelegate),
             createAddContactCandidate(context),
             createShareEmailAddressCandidate(context),
@@ -352,6 +354,7 @@ data class ContextMenuCandidate(
         fun createSaveImageCandidate(
             context: Context,
             contextMenuUseCases: ContextMenuUseCases,
+            downloadsLocation: () -> String,
             additionalValidation: (SessionState, HitResult) -> Boolean = { _, _ -> true },
         ) = ContextMenuCandidate(
             id = "mozac.feature.contextmenu.save_image",
@@ -368,6 +371,7 @@ data class ContextMenuCandidate(
                         hitResult.src,
                         skipConfirmation = true,
                         private = tab.content.private,
+                        directoryPath = downloadsLocation(),
                         referrerUrl = tab.content.url,
                     ),
                 )
@@ -411,12 +415,14 @@ data class ContextMenuCandidate(
          *
          * @param context [Context] used for various system interactions.
          * @param contextMenuUseCases [ContextMenuUseCases] used to integrate other features.
+         * @param downloadsLocation Callback providing the directory path where the file should be saved.
          * @param additionalValidation Callback for the final validation in deciding whether this menu option
          * will be shown. Will only be called if all the intrinsic validations passed.
          */
         fun createSaveVideoAudioCandidate(
             context: Context,
             contextMenuUseCases: ContextMenuUseCases,
+            downloadsLocation: () -> String,
             additionalValidation: (SessionState, HitResult) -> Boolean = { _, _ -> true },
         ) = ContextMenuCandidate(
             id = "mozac.feature.contextmenu.save_video",
@@ -433,6 +439,7 @@ data class ContextMenuCandidate(
                         hitResult.src,
                         skipConfirmation = true,
                         private = tab.content.private,
+                        directoryPath = downloadsLocation(),
                         referrerUrl = tab.content.url,
                     ),
                 )
@@ -444,12 +451,14 @@ data class ContextMenuCandidate(
          *
          * @param context [Context] used for various system interactions.
          * @param contextMenuUseCases [ContextMenuUseCases] used to integrate other features.
+         * @param downloadsLocation Callback providing the directory path where the file should be saved.
          * @param additionalValidation Callback for the final validation in deciding whether this menu option
          * will be shown. Will only be called if all the intrinsic validations passed.
          */
         fun createDownloadLinkCandidate(
             context: Context,
             contextMenuUseCases: ContextMenuUseCases,
+            downloadsLocation: () -> String,
             additionalValidation: (SessionState, HitResult) -> Boolean = { _, _ -> true },
         ) = ContextMenuCandidate(
             id = "mozac.feature.contextmenu.download_link",
@@ -466,6 +475,7 @@ data class ContextMenuCandidate(
                         hitResult.getLink(),
                         skipConfirmation = true,
                         private = tab.content.private,
+                        directoryPath = downloadsLocation(),
                         referrerUrl = tab.content.url,
                     ),
                 )

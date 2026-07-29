@@ -11,7 +11,6 @@
 
 #include "seccomon.h"
 #include "secmod.h"
-#include "nssilock.h"
 #include "secmodi.h"
 #include "secmodti.h"
 #include "pkcs11.h"
@@ -47,7 +46,7 @@ pk11_getKeyFromList(PK11SlotInfo *slot, PRBool needSession)
 {
     PK11SymKey *symKey = NULL;
 
-    PZ_Lock(slot->freeListLock);
+    PR_Lock(slot->freeListLock);
     /* own session list are symkeys with sessions that the symkey owns.
      * 'most' symkeys will own their own session. */
     if (needSession) {
@@ -66,7 +65,7 @@ pk11_getKeyFromList(PK11SlotInfo *slot, PRBool needSession)
             slot->keyCount--;
         }
     }
-    PZ_Unlock(slot->freeListLock);
+    PR_Unlock(slot->freeListLock);
     if (symKey) {
         symKey->next = NULL;
         if (!needSession) {
@@ -207,7 +206,7 @@ PK11_FreeSymKey(PK11SymKey *symKey)
             (*symKey->freeFunc)(symKey->userData);
         }
         slot = symKey->slot;
-        PZ_Lock(slot->freeListLock);
+        PR_Lock(slot->freeListLock);
         if (slot->keyCount < slot->maxKeyCount) {
             /*
              * freeSymkeysWithSessionHead contain a list of reusable
@@ -233,7 +232,7 @@ PK11_FreeSymKey(PK11SymKey *symKey)
             symKey->slot = NULL;
             freeit = PR_FALSE;
         }
-        PZ_Unlock(slot->freeListLock);
+        PR_Unlock(slot->freeListLock);
         if (freeit) {
             pk11_CloseSession(symKey->slot, symKey->session,
                               symKey->sessionOwner);
@@ -372,7 +371,10 @@ PK11_GetWrapKey(PK11SlotInfo *slot, int wrap, CK_MECHANISM_TYPE type,
     CK_OBJECT_HANDLE keyHandle;
 
     PK11_EnterSlotMonitor(slot);
-    if (slot->series != series ||
+    /* refKeys is a fixed-size array; bounds-check wrap to match
+     * PK11_SetWrapKey. */
+    if (wrap < 0 || (size_t)wrap >= PR_ARRAY_SIZE(slot->refKeys) ||
+        slot->series != series ||
         slot->refKeys[wrap] == CK_INVALID_HANDLE) {
         PK11_ExitSlotMonitor(slot);
         return NULL;
@@ -1954,6 +1956,11 @@ pk11_ANSIX963Derive(PK11SymKey *sharedSecret,
         SharedInfoLen = 0;
     else
         SharedInfoLen = sharedData->len;
+
+    if (SharedInfoLen > PR_UINT32_MAX - 4) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        return NULL;
+    }
 
     bufferLen = SharedInfoLen + 4;
 

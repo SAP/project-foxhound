@@ -12,12 +12,13 @@ use api::{DebugFlags, Parameter, BoolParameter, PrimitiveFlags, MinimapData};
 use api::{DocumentId, ExternalScrollId, HitTestResult};
 use api::{IdNamespace, PipelineId, RenderNotifier, SampledScrollOffset};
 use api::{NotificationRequest, Checkpoint, QualitySettings};
-use api::{FramePublishId, PrimitiveKeyKind, RenderReasons};
+use api::{FramePublishId, RenderReasons};
 use api::units::*;
 use api::channel::{single_msg_channel, Sender, Receiver};
 use crate::bump_allocator::ChunkPool;
 use crate::AsyncPropertySampler;
 use crate::box_shadow::BoxShadow;
+use crate::prim_store::rectangle::RectanglePrim;
 #[cfg(any(feature = "capture", feature = "replay"))]
 use crate::render_api::CaptureBits;
 #[cfg(feature = "replay")]
@@ -38,9 +39,9 @@ use crate::internal_types::{FastHashMap, FrameId, FrameStamp, RenderedDocument, 
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 use crate::picture::{PictureScratchBuffer, SurfaceInfo, RasterConfig};
 use crate::tile_cache::{SliceId, TileCacheInstance, TileCacheParams};
-use crate::picture::PicturePrimitive;
+use crate::picture::PictureInstance;
 use crate::prim_store::{PrimitiveScratchBuffer, PrimitiveInstance};
-use crate::prim_store::{PrimitiveInstanceKind, PrimTemplateCommonData};
+use crate::prim_store::{PrimitiveKind, PrimTemplateCommonData};
 use crate::prim_store::interned::*;
 use crate::profiler::{self, TransactionProfile};
 use crate::render_task_graph::RenderTaskGraphBuilder;
@@ -139,16 +140,18 @@ crate::enumerate_interners!(declare_data_stores);
 
 impl DataStores {
     /// Returns the local rect for a primitive. For most primitives, this is
-    /// stored in the template. For pictures, this is stored inside the picture
-    /// primitive instance itself, since this is determined during frame building.
+    /// the device-snapped local rect carried on the per-draw header. For
+    /// pictures, the rect is reconstructed from the picture's raster surface
+    /// since it's only known during frame building.
     pub fn get_local_prim_rect(
         &self,
         prim_instance: &PrimitiveInstance,
-        pictures: &[PicturePrimitive],
+        snapped_local_rect: LayoutRect,
+        pictures: &[PictureInstance],
         surfaces: &[SurfaceInfo],
     ) -> LayoutRect {
         match prim_instance.kind {
-            PrimitiveInstanceKind::Picture { pic_index, .. } => {
+            PrimitiveKind::Picture { pic_index, .. } => {
                 let pic = &pictures[pic_index.0];
 
                 match pic.raster_config {
@@ -162,23 +165,23 @@ impl DataStores {
                     }
                 }
             }
-            _ => {
-                self.as_common_data(prim_instance).prim_rect
-            }
+            _ => snapped_local_rect,
         }
     }
 
-    /// Returns the local coverage (space occupied) for a primitive. For most primitives,
-    /// this is stored in the template. For pictures, this is stored inside the picture
-    /// primitive instance itself, since this is determined during frame building.
+    /// Returns the local coverage (space occupied) for a primitive. For most
+    /// primitives, this is the device-snapped local rect carried on the
+    /// per-draw header. For pictures, the coverage is reconstructed from the
+    /// picture's raster surface since it's only known during frame building.
     pub fn get_local_prim_coverage_rect(
         &self,
         prim_instance: &PrimitiveInstance,
-        pictures: &[PicturePrimitive],
+        snapped_local_rect: LayoutRect,
+        pictures: &[PictureInstance],
         surfaces: &[SurfaceInfo],
     ) -> LayoutRect {
         match prim_instance.kind {
-            PrimitiveInstanceKind::Picture { pic_index, .. } => {
+            PrimitiveKind::Picture { pic_index, .. } => {
                 let pic = &pictures[pic_index.0];
 
                 match pic.raster_config {
@@ -192,26 +195,7 @@ impl DataStores {
                     }
                 }
             }
-            _ => {
-                self.as_common_data(prim_instance).prim_rect
-            }
-        }
-    }
-
-    /// Returns true if this primitive might need repition.
-    // TODO(gw): This seems like the wrong place for this - maybe this flag should
-    //           not be in the common prim template data?
-    pub fn prim_may_need_repetition(
-        &self,
-        prim_instance: &PrimitiveInstance,
-    ) -> bool {
-        match prim_instance.kind {
-            PrimitiveInstanceKind::Picture { .. } => {
-                false
-            }
-            _ => {
-                self.as_common_data(prim_instance).may_need_repetition
-            }
+            _ => snapped_local_rect,
         }
     }
 
@@ -221,7 +205,7 @@ impl DataStores {
         prim_instance: &PrimitiveInstance,
     ) -> bool {
         match prim_instance.kind {
-            PrimitiveInstanceKind::Picture { .. } => {
+            PrimitiveKind::Picture { .. } => {
                 false
             }
             _ => {
@@ -235,59 +219,58 @@ impl DataStores {
         prim_inst: &PrimitiveInstance
     ) -> &PrimTemplateCommonData {
         match prim_inst.kind {
-            PrimitiveInstanceKind::Rectangle { data_handle, .. } => {
+            PrimitiveKind::Rectangle { data_handle, .. } => {
                 let prim_data = &self.prim[data_handle];
                 &prim_data.common
             }
-            PrimitiveInstanceKind::Image { data_handle, .. } => {
+            PrimitiveKind::Image { data_handle, .. } => {
                 let prim_data = &self.image[data_handle];
                 &prim_data.common
             }
-            PrimitiveInstanceKind::ImageBorder { data_handle, .. } => {
+            PrimitiveKind::ImageBorder { data_handle, .. } => {
                 let prim_data = &self.image_border[data_handle];
                 &prim_data.common
             }
-            PrimitiveInstanceKind::LineDecoration { data_handle, .. } => {
+            PrimitiveKind::LineDecoration { data_handle, .. } => {
                 let prim_data = &self.line_decoration[data_handle];
                 &prim_data.common
             }
-            PrimitiveInstanceKind::LinearGradient { data_handle, .. }
-            | PrimitiveInstanceKind::CachedLinearGradient { data_handle, .. } => {
+            PrimitiveKind::LinearGradient { data_handle, .. } => {
                 let prim_data = &self.linear_grad[data_handle];
                 &prim_data.common
             }
-            PrimitiveInstanceKind::NormalBorder { data_handle, .. } => {
+            PrimitiveKind::NormalBorder { data_handle, .. } => {
                 let prim_data = &self.normal_border[data_handle];
                 &prim_data.common
             }
-            PrimitiveInstanceKind::Picture { .. } => {
+            PrimitiveKind::Picture { .. } => {
                 panic!("BUG: picture prims don't have common data!");
             }
-            PrimitiveInstanceKind::RadialGradient { data_handle, .. } => {
+            PrimitiveKind::RadialGradient { data_handle, .. } => {
                 let prim_data = &self.radial_grad[data_handle];
                 &prim_data.common
             }
-            PrimitiveInstanceKind::ConicGradient { data_handle, .. } => {
+            PrimitiveKind::ConicGradient { data_handle, .. } => {
                 let prim_data = &self.conic_grad[data_handle];
                 &prim_data.common
             }
-            PrimitiveInstanceKind::TextRun { data_handle, .. }  => {
+            PrimitiveKind::TextRun { data_handle, .. }  => {
                 let prim_data = &self.text_run[data_handle];
                 &prim_data.common
             }
-            PrimitiveInstanceKind::YuvImage { data_handle, .. } => {
+            PrimitiveKind::YuvImage { data_handle, .. } => {
                 let prim_data = &self.yuv_image[data_handle];
                 &prim_data.common
             }
-            PrimitiveInstanceKind::BackdropCapture { data_handle, .. } => {
+            PrimitiveKind::BackdropCapture { data_handle, .. } => {
                 let prim_data = &self.backdrop_capture[data_handle];
                 &prim_data.common
             }
-            PrimitiveInstanceKind::BackdropRender { data_handle, .. } => {
+            PrimitiveKind::BackdropRender { data_handle, .. } => {
                 let prim_data = &self.backdrop_render[data_handle];
                 &prim_data.common
             }
-            PrimitiveInstanceKind::BoxShadow { data_handle, .. } => {
+            PrimitiveKind::BoxShadow { data_handle, .. } => {
                 let prim_data = &self.box_shadow[data_handle];
                 &prim_data.common
             }
@@ -1062,6 +1045,18 @@ impl RenderBackend {
                 has_built_scene,
                 None,
             );
+
+            if self.debug_flags.contains(DebugFlags::DUMP_SPATIAL_TREE) {
+                if let Some(doc) = self.documents.get(&txn.document_id) {
+                    let spatial_tree = doc.spatial_tree.print_to_string();
+                    if !spatial_tree.is_empty() {
+                        eprintln!(
+                            "-- WebRender spatial tree ({:?}) --\n{}",
+                            txn.document_id, spatial_tree
+                        );
+                    }
+                }
+            }
         }
 
         built_frame
@@ -1168,6 +1163,53 @@ impl RenderBackend {
                         }
 
                         return RenderBackendStatus::Continue;
+                    }
+                    #[cfg(feature = "debugger")]
+                    DebugCommand::CaptureRenderDoc(..) => {
+                        // A single-frame RenderDoc capture can't replay WebRender's
+                        // persistent caches (picture tiles, glyph atlas, image cache)
+                        // populated in earlier frames. So make the captured frame
+                        // re-render everything from scratch: clear cached resources so
+                        // glyphs/images re-rasterize and re-upload, and force a full
+                        // invalidated rebuild so all picture cache tiles re-rasterize.
+                        // Then forward the command so the renderer captures that frame.
+                        self.resource_cache.clear(ClearCache::all());
+
+                        let documents: Vec<DocumentId> = self.documents.keys()
+                            .cloned()
+                            .collect();
+                        for document_id in documents {
+                            let mut invalidation_config = false;
+                            if let Some(doc) = self.documents.get_mut(&document_id) {
+                                doc.frame_is_valid = false;
+                                invalidation_config = doc.scene.config.force_invalidation;
+                                doc.scene.config.force_invalidation = true;
+                            }
+
+                            self.update_document(
+                                document_id,
+                                Vec::default(),
+                                Vec::default(),
+                                Vec::default(),
+                                true,
+                                true,
+                                false,
+                                RenderReasons::empty(),
+                                None,
+                                true,
+                                frame_counter,
+                                false,
+                                None,
+                            );
+
+                            if let Some(doc) = self.documents.get_mut(&document_id) {
+                                doc.scene.config.force_invalidation = invalidation_config;
+                            }
+                        }
+
+                        // Forward to the renderer to arm the capture for the frame
+                        // just published by the rebuild above.
+                        ResultMsg::DebugCommand(option)
                     }
                     #[cfg(feature = "capture")]
                     DebugCommand::SaveCapture(root, bits) => {
@@ -1463,7 +1505,6 @@ impl RenderBackend {
                 .cloned()
                 .filter(|key| !document_already_present(*key))
                 .collect();
-            #[allow(unused_variables)]
             let mut built_frame = false;
             for &document_id in &nop_documents {
                 built_frame |= self.update_document(
@@ -1481,9 +1522,12 @@ impl RenderBackend {
                     false,
                     None);
             }
-            #[cfg(feature = "capture")]
             match built_frame {
-                true => self.save_capture_sequence(),
+                true =>
+                {
+                    #[cfg(feature = "capture")]
+                    self.save_capture_sequence()
+                }
                 _ => {},
             }
         }

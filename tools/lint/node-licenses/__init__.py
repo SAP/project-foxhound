@@ -146,7 +146,12 @@ def run_license_checker(binary, path, lintargs):
     orig = signal.signal(signal.SIGINT, signal.SIG_IGN)
 
     proc = subprocess.run(
-        cmd_args, shell=shell, capture_output=True, text=True, check=False
+        cmd_args,
+        shell=shell,
+        capture_output=True,
+        text=True,
+        check=False,
+        encoding="utf-8",
     )
 
     signal.signal(signal.SIGINT, orig)

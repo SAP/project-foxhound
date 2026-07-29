@@ -12,8 +12,8 @@ nsstring = { path = "../../../xpcom/rust/nsstring" }
 xpcom = { path = "../../../xpcom/rust/xpcom" }
 static_prefs = { path = "../../../modules/libpref/init/static_prefs" }
 
-mls-platform-api = { git = "https://github.com/beurdouche/mls-platform-api", rev="3acd8e7de512940207d45477a6034a38a9424652", features = ["gecko"] }
-nss-gk-api = { git = "https://github.com/beurdouche/nss-gk-api", rev = "e48a946811ffd64abc78de3ee284957d8d1c0d63", default-features = false }
+mls-platform-api = { git = "https://github.com/mozilla/mls-platform-api", rev="2a2e344019bfc76b7e566ee6e0549cf668d90127", features = ["gecko"] }
+nss-rs = { git = "https://github.com/mozilla/nss-rs", version = "0.13", default-features = false }
 thin-vec = { version = "^0.2.12", features = ["gecko-ffi"] }
 hex = "^0.4.3"
 rusqlite = "^0.37.0"

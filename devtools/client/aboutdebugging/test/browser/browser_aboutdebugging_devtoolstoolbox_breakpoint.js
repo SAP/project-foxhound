@@ -97,7 +97,7 @@ add_task(async function () {
 });
 
 function invokeTestMethod(tab) {
-  return ContentTask.spawn(tab.linkedBrowser, {}, function () {
+  return SpecialPowers.spawn(tab.linkedBrowser, [], function () {
     content.wrappedJSObject.testMethod();
   });
 }

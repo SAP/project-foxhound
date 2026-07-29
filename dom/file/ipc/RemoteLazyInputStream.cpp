@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -148,7 +146,7 @@ RemoteLazyInputStream::RemoteLazyInputStream(RemoteLazyInputStreamChild* aActor,
                        getter_AddRefs(stream));
     if (stream) {
       mState = eRunning;
-      mInnerStream = stream;
+      mInnerStream = std::move(stream);
     }
   }
 }
@@ -614,47 +612,32 @@ RemoteLazyInputStream::CloneWithRange(uint64_t aStart, uint64_t aLength,
     innerStream = mAsyncInnerStream;
   }
 
-  nsCOMPtr<nsICloneableInputStream> cloneable = do_QueryInterface(innerStream);
-  if (!cloneable || !cloneable->GetCloneable()) {
-    MOZ_LOG(gRemoteLazyStreamLog, LogLevel::Verbose,
-            ("Cloning non-cloneable stream - copying to pipe"));
+  nsCOMPtr<nsIInputStream> replacement;
+  nsCOMPtr<nsICloneableInputStream> cloneable;
+  rv = NS_EnsureInputStreamIsCloneable(innerStream, getter_AddRefs(cloneable),
+                                       getter_AddRefs(replacement));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
 
-    // If our internal stream isn't cloneable, to perform a clone we'll need to
-    // copy into a pipe and replace our internal stream.
-    nsCOMPtr<nsIAsyncInputStream> pipeIn;
-    nsCOMPtr<nsIAsyncOutputStream> pipeOut;
-    NS_NewPipe2(getter_AddRefs(pipeIn), getter_AddRefs(pipeOut), true, true);
-
-    RefPtr<RemoteLazyInputStreamThread> thread =
-        RemoteLazyInputStreamThread::GetOrCreate();
-    if (NS_WARN_IF(!thread)) {
-      return NS_ERROR_ILLEGAL_DURING_SHUTDOWN;
-    }
-
-    mAsyncInnerStream = pipeIn;
+  // If we have a replacement stream, record it.
+  if (replacement) {
+    mAsyncInnerStream = do_QueryInterface(replacement);
     mInnerStream = nullptr;
 
+    MOZ_ASSERT(mAsyncInnerStream, "The replacement stream is always async");
+
     // If we have a callback pending, we need to re-call AsyncWait on the inner
-    // stream. This should not re-enter us immediately, as `pipeIn` hasn't been
-    // sent any data yet, but we may be called again as soon as `NS_AsyncCopy`
-    // has begun copying.
+    // stream.
     if (mInputStreamCallback) {
+      MOZ_DIAGNOSTIC_ASSERT(
+          mInputStreamCallbackEventTarget,
+          "We made sure we have an event target in AsyncWait. If we don't, we "
+          "could be called back synchronously here and deadlock.");
       mAsyncInnerStream->AsyncWait(this, mInputStreamCallbackFlags,
                                    mInputStreamCallbackRequestedCount,
                                    mInputStreamCallbackEventTarget);
     }
-
-    rv = NS_AsyncCopy(innerStream, pipeOut, thread,
-                      NS_ASYNCCOPY_VIA_WRITESEGMENTS);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      // The copy failed, revert the changes we did and restore our previous
-      // inner stream.
-      mAsyncInnerStream = nullptr;
-      mInnerStream = std::move(innerStream);
-      return rv;
-    }
-
-    cloneable = do_QueryInterface(mAsyncInnerStream);
   }
 
   MOZ_ASSERT(cloneable && cloneable->GetCloneable());

@@ -362,6 +362,28 @@ CreateIoCompletionPort = CreateIoCompletionPortProto(
 )
 CreateIoCompletionPort.errcheck = ErrCheckHandle
 
+# PostQueuedCompletionStatus
+# http://msdn.microsoft.com/en-us/library/aa365458%28v=vs.85%29.aspx
+# Note: dwCompletionKey is ULONG_PTR (a value, not a pointer), unlike
+# GetQueuedCompletionStatus where lpCompletionKey is PULONG_PTR (output pointer).
+PostQueuedCompletionStatusProto = WINFUNCTYPE(
+    BOOL,  # Return Type
+    HANDLE,  # Completion Port
+    DWORD,  # Number of bytes transferred
+    LPVOID,  # Completion Key (ULONG_PTR value)
+    LPVOID,  # lpOverlapped (may be null)
+)
+PostQueuedCompletionStatusFlags = (
+    (1, "CompletionPort", INVALID_HANDLE_VALUE),
+    (1, "dwNumberOfBytesTransferred", c_ulong(0)),
+    (1, "dwCompletionKey", LPVOID(0)),
+    (1, "lpOverlapped", LPVOID()),
+)
+PostQueuedCompletionStatus = PostQueuedCompletionStatusProto(
+    ("PostQueuedCompletionStatus", windll.kernel32),
+    PostQueuedCompletionStatusFlags,
+)
+
 # SetInformationJobObject
 SetInformationJobObjectProto = WINFUNCTYPE(
     BOOL,  # Return Type

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,7 +26,8 @@ class D3D11RecycleAllocator final : public TextureClientRecycleAllocator {
 
   already_AddRefed<TextureClient> CreateOrRecycleClient(
       gfx::ColorSpace2 aColorSpace, gfx::ColorRange aColorRange,
-      const gfx::IntSize& aSize);
+      gfx::TransferFunction aTransferFunction,
+      const Maybe<gfx::HDRMetadata>& aHDRMetadata, const gfx::IntSize& aSize);
 
   void SetPreferredSurfaceFormat(gfx::SurfaceFormat aPreferredFormat);
   gfx::SurfaceFormat GetUsableSurfaceFormat() const {
@@ -70,6 +69,8 @@ class D3D11ShareHandleImage final : public Image {
   D3D11ShareHandleImage(const gfx::IntSize& aSize, const gfx::IntRect& aRect,
                         gfx::ColorSpace2 aColorSpace,
                         gfx::ColorRange aColorRange,
+                        gfx::TransferFunction aTransferFunction,
+                        const Maybe<gfx::HDRMetadata>& aHDRMetadata,
                         gfx::ColorDepth aColorDepth);
   virtual ~D3D11ShareHandleImage() = default;
 
@@ -87,6 +88,12 @@ class D3D11ShareHandleImage final : public Image {
   ID3D11Texture2D* GetTexture() const;
 
   gfx::ColorRange GetColorRange() const { return mColorRange; }
+
+  gfx::TransferFunction GetTransferFunction() const {
+    return mTransferFunction;
+  }
+
+  const Maybe<gfx::HDRMetadata>& GetHDRMetadata() const { return mHDRMetadata; }
 
   gfx::ColorDepth GetColorDepth() const override { return mColorDepth; }
 
@@ -107,6 +114,8 @@ class D3D11ShareHandleImage final : public Image {
 
  private:
   gfx::ColorRange mColorRange;
+  gfx::TransferFunction mTransferFunction;
+  Maybe<gfx::HDRMetadata> mHDRMetadata;
   gfx::ColorDepth mColorDepth;
   RefPtr<TextureClient> mTextureClient;
   RefPtr<ID3D11Texture2D> mTexture;

@@ -1,0 +1,64 @@
+From e429f14657b8bfb2f2b4535223d26c0e921d95b9 Mon Sep 17 00:00:00 2001
+From: Jonathan Kew <jkew@mozilla.com>
+Date: Wed, 22 Apr 2026 13:00:22 -0700
+Subject: [PATCH 16/29] Adapt cairo-quartz for iOS builds
+
+Note: the original upstream changeset also modified cairo-features.h to define
+CAIRO_HAS_IMAGE_IO for MOZ_WIDGET_UIKIT builds. That change is maintained
+directly in the in-tree cairo-features.h (which is a Mozilla-maintained file
+that is not overwritten by upstream imports), so no hunk for it appears here.
+---
+ src/cairo-quartz-image-surface.c | 4 ++++
+ src/cairo-quartz-surface.c       | 2 ++
+ src/cairo-quartz.h               | 4 ++++
+ 3 files changed, 10 insertions(+)
+
+diff --git a/src/cairo-quartz-image-surface.c b/src/cairo-quartz-image-surface.c
+index 4f9bc2118..03fea5b37 100644
+--- a/src/cairo-quartz-image-surface.c
++++ b/src/cairo-quartz-image-surface.c
+@@ -307,7 +307,11 @@ cairo_quartz_image_surface_create (cairo_surface_t *surface)
+ 	colorspace = _cairo_quartz_create_color_space (context);
+     }
+     else {
++#if CAIRO_HAS_QUARTZ_APPLICATION_SERVICES /* available on macOS but not iOS */
+ 	colorspace = CGDisplayCopyColorSpace (CGMainDisplayID ());
++#else
++	colorspace = CGColorSpaceCreateDeviceRGB ();
++#endif
+     }
+ 
+     bitinfo |= format == CAIRO_FORMAT_ARGB32 ? kCGImageAlphaPremultipliedFirst : kCGImageAlphaNoneSkipFirst;
+diff --git a/src/cairo-quartz-surface.c b/src/cairo-quartz-surface.c
+index 59145fe57..67ad5c7aa 100644
+--- a/src/cairo-quartz-surface.c
++++ b/src/cairo-quartz-surface.c
+@@ -201,8 +201,10 @@ _cairo_quartz_create_color_space (CGContextRef context)
+         if (color_space)
+             return color_space;
+     }
++#if CAIRO_HAS_QUARTZ_APPLICATION_SERVICES /* available on macOS but not iOS */
+     if (!color_space)
+         color_space =  CGDisplayCopyColorSpace (CGMainDisplayID ());
++#endif
+ 
+     if (!color_space)
+         color_space = CGColorSpaceCreateDeviceRGB ();
+diff --git a/src/cairo-quartz.h b/src/cairo-quartz.h
+index d79d1c102..009e3e9fb 100644
+--- a/src/cairo-quartz.h
++++ b/src/cairo-quartz.h
+@@ -49,6 +49,10 @@
+ #include <ApplicationServices/ApplicationServices.h>
+ #endif
+ 
++#if CAIRO_HAS_IMAGE_IO
++#include <ImageIO/ImageIO.h>
++#endif
++
+ CAIRO_BEGIN_DECLS
+ 
+ cairo_public cairo_surface_t *
+-- 
+2.53.0
+

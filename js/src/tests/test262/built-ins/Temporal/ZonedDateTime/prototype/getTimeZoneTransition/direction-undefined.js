@@ -13,5 +13,6 @@ features: [Temporal]
 const zdt = new Temporal.ZonedDateTime(0n, "UTC");
 assert.throws(RangeError, () => zdt.getTimeZoneTransition({}));
 assert.throws(RangeError, () => zdt.getTimeZoneTransition({ direction: undefined }));
+assert.throws(RangeError, () => zdt.getTimeZoneTransition(() => {}));
 
 reportCompare(0, 0);

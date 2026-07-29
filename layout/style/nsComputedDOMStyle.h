@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,15 +9,11 @@
 
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/PseudoStyleType.h"
-#include "mozilla/StyleColorInlines.h"
 #include "mozilla/WritingModes.h"
 #include "mozilla/gfx/Types.h"
-#include "nsCOMPtr.h"
 #include "nsColor.h"
-#include "nsContentUtils.h"
 #include "nsCoord.h"
 #include "nsDOMCSSDeclaration.h"
-#include "nsIWeakReferenceUtils.h"
 #include "nsStubMutationObserver.h"
 #include "nsStyleStruct.h"
 #include "nsStyleStructList.h"
@@ -100,11 +94,7 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
 
   static already_AddRefed<const ComputedStyle> GetComputedStyleNoFlush(
       const Element* aElement, const PseudoStyleRequest& aPseudo = {},
-      StyleType aStyleType = StyleType::All) {
-    return DoGetComputedStyleNoFlush(
-        aElement, aPseudo, nsContentUtils::GetPresShellForContent(aElement),
-        aStyleType);
-  }
+      StyleType aStyleType = StyleType::All);
 
   static already_AddRefed<const ComputedStyle>
   GetUnanimatedComputedStyleNoFlush(Element*, const PseudoStyleRequest&);
@@ -124,9 +114,9 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
   // nsDOMCSSDeclaration abstract methods which should never be called
   // on a nsComputedDOMStyle object, but must be defined to avoid
   // compile errors.
-  mozilla::DeclarationBlock* GetOrCreateCSSDeclaration(
-      Operation aOperation, mozilla::DeclarationBlock** aCreated) final;
-  virtual nsresult SetCSSDeclaration(mozilla::DeclarationBlock*,
+  Block* GetOrCreateCSSDeclaration(Operation aOperation,
+                                   Block** aCreated) final;
+  virtual nsresult SetCSSDeclaration(Block*,
                                      mozilla::MutationClosureData*) override;
   virtual mozilla::dom::Document* DocToUpdate() final;
 
@@ -392,6 +382,8 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
   friend struct ComputedStyleMap;
   friend AnchorPosResolutionParams AnchorPosResolutionParams::From(
       const nsComputedDOMStyle*);
+
+  bool HasLonghandProperty(const nsACString& aMaybeCustomPropertyName) final;
 };
 
 already_AddRefed<nsComputedDOMStyle> NS_NewComputedDOMStyle(

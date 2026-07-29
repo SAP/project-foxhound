@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -597,6 +595,13 @@ class nsPresContext : public nsISupports,
   void SetColorSchemeOverride(mozilla::dom::PrefersColorSchemeOverride);
 
   /**
+   * Sets the effective link parameters overrides, and invalidate stuff as
+   * needed.
+   */
+  void SetLinkParametersOverride(
+      const mozilla::StyleLinkParameters& aLinkParameters);
+
+  /**
    * Return the device's screen size in inches, for font size
    * inflation.
    *
@@ -1095,16 +1100,6 @@ class nsPresContext : public nsISupports,
     }
   }
 
-  // Return the cached value of the about:config pref
-  // 'layout.abspos.fragmentainer-aware-positioning.enabled'.
-  //
-  // Note: Layout code should use this helper rather than the actual "live" pref
-  // value. This ensures a given frame tree handles abspos fragmentation
-  // consistently even if the actual pref value changes.
-  bool FragmentainerAwarePositioningEnabled() const {
-    return mFragmentainerAwarePositioningEnabled;
-  }
-
  protected:
   void DoUpdateHiddenByContentVisibilityForAnimations();
   friend class nsRunnableMethod<nsPresContext>;
@@ -1428,11 +1423,6 @@ class nsPresContext : public nsISupports,
 
   unsigned mUserInputEventsAllowed : 1;
 
-  // Cached value of the about:config pref
-  // 'layout.abspos.fragmentainer-aware-positioning.enabled'
-  // from when this nsPresContext was initialized.
-  bool mFragmentainerAwarePositioningEnabled : 1 = false;
-
 #ifdef DEBUG
   unsigned mInitialized : 1;
 #endif
@@ -1442,6 +1432,7 @@ class nsPresContext : public nsISupports,
   FontVisibility mFontVisibility = FontVisibility::Unknown;
   mozilla::dom::PrefersColorSchemeOverride mOverriddenOrEmbedderColorScheme;
   mozilla::StyleForcedColors mForcedColors;
+  mozilla::StyleLinkParameters mLinkParameters;
 
  protected:
   virtual ~nsPresContext();

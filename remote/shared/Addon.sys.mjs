@@ -32,6 +32,20 @@ const ERRORS = {
     "ERROR_UNSUPPORTED_ADDON_TYPE: The add-on type is not supported by the platform.",
 };
 
+// Maps the ID of a temporarily installed add-on to the path of the XPI file
+// created for it in `installWithBase64`. The file has to outlive the install
+// so that the add-on's content scripts keep working, and is removed once the
+// add-on is uninstalled.
+const temporaryAddonFilePaths = new Map();
+
+async function removeTemporaryAddonFile(id) {
+  if (temporaryAddonFilePaths.has(id)) {
+    const path = temporaryAddonFilePaths.get(id);
+    temporaryAddonFilePaths.delete(id);
+    await IOUtils.remove(path, { ignoreAbsent: true });
+  }
+}
+
 async function installAddon(file, temporary, allowPrivateBrowsing) {
   let addon;
   try {
@@ -114,7 +128,19 @@ export class Addon {
     try {
       const file = new lazy.FileUtils.File(path);
       addon = await installAddon(file, temporary, allowPrivateBrowsing);
-    } finally {
+    } catch (e) {
+      await IOUtils.remove(path, { ignoreAbsent: true });
+      throw e;
+    }
+
+    if (temporary) {
+      // We have to keep the file for a temporary extension around to make
+      // content scripts work. Store it so that we can remove it
+      // once the addon is uninstalled.
+      // Remove any stale file first in case we're reinstalling the addon.
+      await removeTemporaryAddonFile(addon.id);
+      temporaryAddonFilePaths.set(addon.id, path);
+    } else {
       await IOUtils.remove(path);
     }
 
@@ -165,6 +191,14 @@ export class Addon {
     return addon.id;
   }
 
+  static async cleanupTemporaryAddonFiles() {
+    await Promise.all(
+      Array.from(temporaryAddonFilePaths.keys(), id =>
+        removeTemporaryAddonFile(id)
+      )
+    );
+  }
+
   /**
    * Uninstall a Firefox addon.
    *
@@ -182,7 +216,7 @@ export class Addon {
    *     Raised if the WebExtension with provided id could not be found.
    */
   static async uninstall(id) {
-    let candidate = await lazy.AddonManager.getAddonByID(id);
+    const candidate = await lazy.AddonManager.getAddonByID(id);
     if (candidate === null) {
       // `AddonManager.getAddonByID` never rejects but instead
       // returns `null` if the requested addon cannot be found.
@@ -202,9 +236,10 @@ export class Addon {
           }
         },
 
-        onUninstalled: addon => {
+        onUninstalled: async addon => {
           if (addon.id === candidate.id) {
             lazy.AddonManager.removeAddonListener(listener);
+            await removeTemporaryAddonFile(candidate.id);
             resolve();
           }
         },

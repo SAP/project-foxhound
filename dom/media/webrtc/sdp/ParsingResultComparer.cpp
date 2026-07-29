@@ -1,13 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "sdp/ParsingResultComparer.h"
 
-#include <ostream>
 #include <regex>
+#include <sstream>
 #include <string>
 
 #include "mozilla/Assertions.h"
@@ -19,8 +17,10 @@
 using mozilla::LogLevel;
 static mozilla::LazyLogModule sSdpDiffLogger("sdpdiff_logger");
 
-#define LOGD(msg) MOZ_LOG(sSdpDiffLogger, LogLevel::Debug, msg)
-#define LOGE(msg) MOZ_LOG(sSdpDiffLogger, LogLevel::Error, msg)
+#define LOGD(...) \
+  MOZ_LOG_FMT(sSdpDiffLogger, LogLevel::Debug, MOZ_LOG_EXPAND_ARGS __VA_ARGS__)
+#define LOGE(...) \
+  MOZ_LOG_FMT(sSdpDiffLogger, LogLevel::Error, MOZ_LOG_EXPAND_ARGS __VA_ARGS__)
 
 #define LOG_EXPECT(result, expect, msg)                         \
   {                                                             \
@@ -74,7 +74,7 @@ bool ParsingResultComparer::Compare(const Sdp& rsdparsaSdp, const Sdp& sipccSdp,
   const std::string rsdparsaSdpStr = rsdparsaSdp.ToString();
 
   bool result = rsdparsaSdpStr == sipccSdpStr;
-  LOG_EXPECT(result, expect, ("The original sdp: \n%s", mOriginalSdp.c_str()));
+  LOG_EXPECT(result, expect, ("The original sdp: \n{}", mOriginalSdp.c_str()));
   if (result) {
     LOG_EXPECT(result, expect, ("Serialization is equal"));
     return result;
@@ -85,9 +85,9 @@ bool ParsingResultComparer::Compare(const Sdp& rsdparsaSdp, const Sdp& sipccSdp,
   LOG_EXPECT(result, expect,
              ("Serialization is not equal\n"
               " --- Sipcc SDP ---\n"
-              "%s\n"
+              "{}\n"
               "--- Rsdparsa SDP ---\n"
-              "%s\n",
+              "{}\n",
               sipccSdpStr.c_str(), rsdparsaSdpStr.c_str()));
 
   const std::string rsdparsaOriginStr = ToString(rsdparsaSdp.GetOrigin());
@@ -97,7 +97,7 @@ bool ParsingResultComparer::Compare(const Sdp& rsdparsaSdp, const Sdp& sipccSdp,
   if (rsdparsaOriginStr != sipccOriginStr) {
     result = false;
     LOG_EXPECT(result, expect,
-               ("origin is not equal\nrust origin: %s\nsipcc origin: %s",
+               ("origin is not equal\nrust origin: {}\nsipcc origin: {}",
                 rsdparsaOriginStr.c_str(), sipccOriginStr.c_str()));
   }
 
@@ -107,8 +107,8 @@ bool ParsingResultComparer::Compare(const Sdp& rsdparsaSdp, const Sdp& sipccSdp,
 
     if (rust_sess_attr_count != sipcc_sess_attr_count) {
       LOG_EXPECT(false, expect,
-                 ("Session level attribute count is NOT equal, rsdparsa: %u, "
-                  "sipcc: %u\n",
+                 ("Session level attribute count is NOT equal, rsdparsa: {}, "
+                  "sipcc: {}\n",
                   rust_sess_attr_count, sipcc_sess_attr_count));
     }
   }
@@ -124,7 +124,7 @@ bool ParsingResultComparer::Compare(const Sdp& rsdparsaSdp, const Sdp& sipccSdp,
   if (sipccMediaSecCount != rsdparsaMediaSecCount) {
     result = false;
     LOG_EXPECT(result, expect,
-               ("Media section count is NOT equal, rsdparsa: %d, sipcc: %d \n",
+               ("Media section count is NOT equal, rsdparsa: {}, sipcc: {} \n",
                 rsdparsaMediaSecCount, sipccMediaSecCount));
   }
 
@@ -147,9 +147,9 @@ bool ParsingResultComparer::CompareMediaSections(
                                     const nsString& valueDescription) {
     result = false;
     LOG_EXPECT(result, expect,
-               ("The media line values %s are not equal\n"
-                "rsdparsa value: %s\n"
-                "sipcc value: %s\n",
+               ("The media line values {} are not equal\n"
+                "rsdparsa value: {}\n"
+                "sipcc value: {}\n",
                 NS_LossyConvertUTF16toASCII(valueDescription).get(),
                 ToString(rustValue).c_str(), ToString(sipccValue).c_str()));
   };
@@ -192,7 +192,7 @@ bool ParsingResultComparer::CompareMediaSections(
 
 bool ParsingResultComparer::CompareAttrLists(
     const SdpAttributeList& rustAttrlist, const SdpAttributeList& sipccAttrlist,
-    int level, const SdpComparisonResult expect) const {
+    const int level, const SdpComparisonResult expect) const {
   bool result = true;
 
   for (size_t i = AttributeType::kFirstAttribute;
@@ -211,9 +211,9 @@ bool ParsingResultComparer::CompareAttrLists(
       if (!rustAttrlist.HasAttribute(type, false)) {
         result = false;
         LOG_EXPECT(result, expect,
-                   ("Rust is missing the attribute: %s\n", attrStr.c_str()));
+                   ("Rust is missing the attribute: {}\n", attrStr.c_str()));
         LOG_EXPECT(result, expect,
-                   ("Rust is missing: %s\n", sipccAttrStr.c_str()));
+                   ("Rust is missing: {}\n", sipccAttrStr.c_str()));
 
         continue;
       }
@@ -231,13 +231,13 @@ bool ParsingResultComparer::CompareAttrLists(
         if (rustAttrStr != originalAttrStr) {
           result = false;
           LOG_EXPECT(result, expect,
-                     ("%s is neither equal to sipcc nor to the orginal sdp\n"
+                     ("{} is neither equal to sipcc nor to the orginal sdp\n"
                       "--------------rsdparsa attribute---------------\n"
-                      "%s"
+                      "{}"
                       "--------------sipcc attribute---------------\n"
-                      "%s"
+                      "{}"
                       "--------------original attribute---------------\n"
-                      "%s\n",
+                      "{}\n",
                       attrStr.c_str(), rustAttrStr.c_str(),
                       sipccAttrStr.c_str(), originalAttrStr.c_str()));
         } else {
@@ -265,7 +265,7 @@ std::vector<std::string> SplitLines(const std::string& sdp) {
 }
 
 std::string ParsingResultComparer::GetAttributeLines(
-    const std::string& attrType, int level) const {
+    const std::string& attrType, const int level) const {
   std::vector<std::string> lines = SplitLines(mOriginalSdp);
   std::string attrToFind = attrType + ":";
   std::string attrLines;

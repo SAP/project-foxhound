@@ -20,13 +20,20 @@
 
 /* Splitter styling to match the left sidebar */
 #ai-window-splitter {
-  width: var(--splitter-width);
-  border: 0;
+  background-clip: padding-box;
   background-color: transparent;
-  position: relative;
+  border-inline: calc((var(--space-medium) - var(--splitter-width)) / 2) solid transparent;
+  margin-inline: 0 calc(-1 * var(--space-medium));
+  /* Matching sidebar "revamp" splitter width */
+  width: var(--space-medium);
   z-index: var(--browser-area-z-index-sidebar-splitter);
 }
 
 #ai-window-splitter:hover {
-  background-color: var(--toolbarbutton-hover-background);
+  background-color: var(--focus-outline-color);
+}
+
+/* adjust splitter negative margin when the smartwindow sidebar is on the left */
+#sidebar-container[sidebar-positionend] ~ #ai-window-splitter {
+  margin-inline: calc(-1 * var(--space-medium)) 0;
 }

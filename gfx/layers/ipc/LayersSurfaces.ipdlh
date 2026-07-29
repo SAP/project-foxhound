@@ -18,6 +18,7 @@ using mozilla::gfx::ColorDepth from "mozilla/gfx/Types.h";
 using mozilla::gfx::ColorRange from "mozilla/gfx/Types.h";
 using mozilla::gfx::ColorSpace2 from "mozilla/gfx/Types.h";
 using mozilla::gfx::TransferFunction from "mozilla/gfx/Types.h";
+using mozilla::gfx::HDRMetadata from "mozilla/gfx/Types.h";
 using mozilla::gfx::SurfaceFormat from "mozilla/gfx/Types.h";
 using mozilla::gfx::IntRect from "mozilla/gfx/Rect.h";
 using mozilla::gfx::IntSize from "mozilla/gfx/Point.h";
@@ -47,6 +48,8 @@ namespace layers {
   IntSize size;
   ColorSpace2 colorSpace;
   ColorRange colorRange;
+  TransferFunction transferFunction;
+  HDRMetadata? hdrMetadata;
   bool hasKeyedMutex;
   CompositeProcessFencesHolderId? fencesHolderId;
 };
@@ -61,6 +64,7 @@ namespace layers {
   ColorDepth colorDepth;
   YUVColorSpace yUVColorSpace;
   ColorRange colorRange;
+  TransferFunction transferFunction;
   CompositeProcessFencesHolderId fencesHolderId;
 };
 
@@ -68,6 +72,7 @@ namespace layers {
   uint32_t surfaceId;
   bool isOpaque;
   YUVColorSpace yUVColorSpace;
+  TransferFunction transferFunction;
   nullable GpuFence gpuFence;
 };
 
@@ -94,6 +99,7 @@ namespace layers {
   uint32_t pid;
   FileDescriptor[] refCount;
   nullable FileHandleWrapper semaphoreFd;
+  bool semaphoreFdIsSyncFd;
 };
 
 [Comparable] struct SurfaceTextureDescriptor {
@@ -155,6 +161,8 @@ namespace layers {
 [Comparable] struct RGBDescriptor {
   IntSize size;
   SurfaceFormat format;
+  ColorSpace2 colorSpace;
+  TransferFunction transferFunction;
 };
 
 [Comparable] struct YCbCrDescriptor {
@@ -170,7 +178,9 @@ namespace layers {
   ColorDepth colorDepth;
   YUVColorSpace yUVColorSpace;
   ColorRange colorRange;
+  TransferFunction transferFunction;
   ChromaSubsampling chromaSubsampling;
+  HDRMetadata? hdrMetadata;
 };
 
 [Comparable] union BufferDescriptor {

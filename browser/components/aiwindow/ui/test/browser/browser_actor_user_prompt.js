@@ -58,9 +58,10 @@ add_task(async function test_streaming_ai_response() {
 });
 
 /**
- * Test if the error component shows the generic message after the error is thrown
+ * Test that the loader does not show when a previous user message is dispatched
+ * (e.g. on tab select or conversation reload)
  */
-add_task(async function test_error_shows_on_assistant_error() {
+add_task(async function test_loader_does_not_show_for_previous_user_message() {
   await SpecialPowers.pushPrefEnv({
     set: [["browser.smartwindow.enabled", true]],
   });
@@ -69,54 +70,25 @@ add_task(async function test_error_shows_on_assistant_error() {
     const actor =
       browser.browsingContext.currentWindowGlobal.getActor("AIChatContent");
 
-    const errorMessage = {
-      role: "",
-      content: { isError: true, status: 400 },
-    };
-
-    await actor.dispatchMessageToChatContent(errorMessage);
-
-    await SpecialPowers.spawn(browser, [], async () => {
-      const contentEl = content.document.querySelector("ai-chat-content");
-      await contentEl.updateComplete;
-
-      let errorEl;
-      await ContentTaskUtils.waitForMutationCondition(
-        contentEl.shadowRoot,
-        { childList: true, subtree: true },
-        () => {
-          errorEl = contentEl.shadowRoot.querySelector("chat-assistant-error");
-          return errorEl;
-        }
-      );
-      Assert.ok(errorEl, "chat-assistant-error component exists");
-
-      const errorHeader = errorEl.shadowRoot?.querySelector(
-        ".chat-assistant-error__header"
-      );
-      Assert.ok(errorHeader, "chat-assistant-error header prop exists");
-      Assert.equal(
-        errorHeader.getAttribute("data-l10n-id"),
-        "smartwindow-assistant-error-generic-header",
-        "chat-assistant-error header has the correct text"
-      );
+    await actor.dispatchMessageToChatContent({
+      role: "user",
+      content: { body: "Previous message" },
+      convId: "test-conv-id",
+      ordinal: 0,
+      isPreviousMessage: true,
     });
 
-    /* simulating a user prompt to test if the error message is hidden */
-    const userPrompt = {
-      role: "user",
-      content: { body: "Show loader please" },
-    };
-    await actor.dispatchMessageToChatContent(userPrompt);
-
     await SpecialPowers.spawn(browser, [], async () => {
       const contentEl = content.document.querySelector("ai-chat-content");
       await contentEl.updateComplete;
 
-      const errorEl = contentEl.shadowRoot.querySelector(
-        "chat-assistant-error"
+      const loaderEl = contentEl.shadowRoot.querySelector(
+        "chat-assistant-loader"
       );
-      Assert.ok(!errorEl, "chat-assistant-error component no longer exists");
+      Assert.ok(
+        !loaderEl,
+        "Loader should not appear when replaying previous user messages"
+      );
     });
   });
 
@@ -140,6 +112,7 @@ add_task(async function test_loader_shows_on_user_submit() {
       content: { body: "Show loader please" },
     };
     await actor.dispatchMessageToChatContent(userPrompt);
+    actor.setGeneratingOnChatContent(true);
 
     await SpecialPowers.spawn(browser, [], async () => {
       const contentEl = content.document.querySelector("ai-chat-content");
@@ -167,3 +140,62 @@ add_task(async function test_loader_shows_on_user_submit() {
 
   await SpecialPowers.popPrefEnv();
 });
+
+/**
+ * Regression: intermediate assistant-message-complete events (e.g. from a
+ * tool-call sub-response mid-turn) should not hide the loader. Loader
+ * visibility is driven solely by setGeneratingOnChatContent.
+ */
+add_task(
+  async function test_loader_persists_through_intermediate_message_complete() {
+    await SpecialPowers.pushPrefEnv({
+      set: [["browser.smartwindow.enabled", true]],
+    });
+
+    await BrowserTestUtils.withNewTab("about:aichatcontent", async browser => {
+      const actor =
+        browser.browsingContext.currentWindowGlobal.getActor("AIChatContent");
+
+      actor.setGeneratingOnChatContent(true);
+
+      await SpecialPowers.spawn(browser, [], async () => {
+        const contentEl = content.document.querySelector("ai-chat-content");
+        await ContentTaskUtils.waitForMutationCondition(
+          contentEl.shadowRoot,
+          { childList: true, subtree: true },
+          () => contentEl.shadowRoot.querySelector("chat-assistant-loader")
+        );
+        Assert.ok(
+          contentEl.shadowRoot.querySelector("chat-assistant-loader"),
+          "Loader appears when isGenerating is true"
+        );
+      });
+
+      await actor.dispatchMessageToChatContent({
+        role: "assistant-message-complete",
+        content: { id: "intermediate-msg-id" },
+      });
+
+      await SpecialPowers.spawn(browser, [], async () => {
+        const contentEl = content.document.querySelector("ai-chat-content");
+        await contentEl.updateComplete;
+        Assert.ok(
+          contentEl.shadowRoot.querySelector("chat-assistant-loader"),
+          "Loader stays visible after intermediate assistant-message-complete"
+        );
+      });
+
+      actor.setGeneratingOnChatContent(false);
+
+      await SpecialPowers.spawn(browser, [], async () => {
+        const contentEl = content.document.querySelector("ai-chat-content");
+        await ContentTaskUtils.waitForCondition(
+          () => !contentEl.shadowRoot.querySelector("chat-assistant-loader"),
+          "Loader hides when isGenerating becomes false"
+        );
+      });
+    });
+
+    await SpecialPowers.popPrefEnv();
+  }
+);

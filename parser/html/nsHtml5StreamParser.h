@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -495,7 +494,7 @@ class nsHtml5StreamParser final : public nsISupports {
    * Dispatch an event to a Quantum DOM main thread-ish thread.
    * (Not the parser thread.)
    */
-  nsresult DispatchToMain(already_AddRefed<nsIRunnable>&& aRunnable);
+  nsresult DispatchToMain(already_AddRefed<nsIRunnable> aRunnable);
 
   /**
    * Notify any devtools listeners about content newly received for parsing.

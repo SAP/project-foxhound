@@ -44,6 +44,10 @@ add_task(async function test_about_translations_no_resize_for_small_input() {
     {
       expected: [
         [
+          AboutTranslationsTestUtils.Events.SourceTextInputDebounced,
+          { sourceText: "Hello world" },
+        ],
+        [
           AboutTranslationsTestUtils.Events.TranslationRequested,
           { translationId: 1 },
         ],
@@ -106,6 +110,10 @@ add_task(async function test_about_translations_resize_by_input() {
     {
       expected: [
         [
+          AboutTranslationsTestUtils.Events.SourceTextInputDebounced,
+          { sourceText: largeExpandingInput },
+        ],
+        [
           AboutTranslationsTestUtils.Events.TranslationRequested,
           { translationId: 1 },
         ],
@@ -128,6 +136,16 @@ add_task(async function test_about_translations_resize_by_input() {
       );
     }
   );
+
+  {
+    const { sourceSectionHeight, targetSectionHeight } =
+      await aboutTranslationsTestUtils.getSectionHeights();
+    is(
+      sourceSectionHeight,
+      targetSectionHeight,
+      "Expected section heights to match after expanding the source input."
+    );
+  }
 
   info(
     "The text areas should expand again if the translated output is taller than the input."
@@ -160,12 +178,26 @@ add_task(async function test_about_translations_resize_by_input() {
     sourceText: largeExpandingInput,
   });
 
+  {
+    const { sourceSectionHeight, targetSectionHeight } =
+      await aboutTranslationsTestUtils.getSectionHeights();
+    is(
+      sourceSectionHeight,
+      targetSectionHeight,
+      "Expected section heights to match after the translation completes."
+    );
+  }
+
   info(
     "The text areas should reduce their size if the content height is reduced."
   );
   await aboutTranslationsTestUtils.assertEvents(
     {
       expected: [
+        [
+          AboutTranslationsTestUtils.Events.SourceTextInputDebounced,
+          { sourceText: halfLargeExpandingInput },
+        ],
         [
           AboutTranslationsTestUtils.Events.TranslationRequested,
           { translationId: 2 },
@@ -200,12 +232,26 @@ add_task(async function test_about_translations_resize_by_input() {
     sourceText: halfLargeExpandingInput,
   });
 
+  {
+    const { sourceSectionHeight, targetSectionHeight } =
+      await aboutTranslationsTestUtils.getSectionHeights();
+    is(
+      sourceSectionHeight,
+      targetSectionHeight,
+      "Expected section heights to match after reducing the input size."
+    );
+  }
+
   info(
     "The text areas should reset to default height when all content is removed."
   );
   await aboutTranslationsTestUtils.assertEvents(
     {
       expected: [
+        [
+          AboutTranslationsTestUtils.Events.SourceTextInputDebounced,
+          { sourceText: "" },
+        ],
         [
           AboutTranslationsTestUtils.Events.SectionHeightsChanged,
           {
@@ -225,11 +271,23 @@ add_task(async function test_about_translations_resize_by_input() {
     }
   );
 
+  {
+    const { sourceSectionHeight, targetSectionHeight } =
+      await aboutTranslationsTestUtils.getSectionHeights();
+    is(
+      sourceSectionHeight,
+      targetSectionHeight,
+      "Expected section heights to match after clearing the input."
+    );
+  }
+
   await aboutTranslationsTestUtils.assertSourceTextArea({
+    languageTag: null,
     showsPlaceholder: true,
   });
 
   await aboutTranslationsTestUtils.assertTargetTextArea({
+    languageTag: null,
     showsPlaceholder: true,
   });
 

@@ -34,9 +34,10 @@
 #include "prlog.h"
 
 #undef LOG
-#define LOG(arg, ...)                                         \
-  MOZ_LOG(sAndroidDecoderModuleLog, mozilla::LogLevel::Debug, \
-          ("RemoteDataDecoder(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
+#define LOG(arg, ...)                                                      \
+  MOZ_LOG_FMT(sAndroidDecoderModuleLog, mozilla::LogLevel::Debug,          \
+              "RemoteDataDecoder({})::{}: " arg, fmt::ptr(this), __func__, \
+              ##__VA_ARGS__)
 
 using namespace mozilla;
 using namespace mozilla::gl;
@@ -428,18 +429,17 @@ class RemoteVideoDecoder final : public RemoteDataDecoder {
       return;
     }
 
-    InputInfo inputInfo;
-    ok = mInputInfos.Find(presentationTimeUs, inputInfo);
+    Maybe<InputInfo> inputInfo = mInputInfos.Take(presentationTimeUs);
     bool isEOS = !!(flags & java::sdk::MediaCodec::BUFFER_FLAG_END_OF_STREAM);
-    if (!ok && !isEOS) {
+    if (!inputInfo && !isEOS) {
       LOG("No corresponding input");
       // Ignore output with no corresponding input.
       return;
     }
 
-    LOG("flags=%" PRIx32 " size=%" PRIi32 " presentationTimeUs=%" PRIi64, flags,
-        size, presentationTimeUs);
-    if (ok && (size > 0 || presentationTimeUs >= 0)) {
+    LOG("flags={:x} size={} presentationTimeUs={}", flags, size,
+        presentationTimeUs);
+    if (inputInfo && (size > 0 || presentationTimeUs >= 0)) {
       bool forceBT709ColorSpace = false;
       // On certain devices SMPTE 432 color primaries are rendered incorrectly,
       // so we force BT709 to be used instead.
@@ -468,16 +468,16 @@ class RemoteVideoDecoder final : public RemoteDataDecoder {
       }
 
       RefPtr<layers::Image> img = new layers::SurfaceTextureImage(
-          mSurfaceHandle, inputInfo.mImageSize, false /* NOT continuous */,
+          mSurfaceHandle, inputInfo->mImageSize, false /* NOT continuous */,
           gl::OriginPos::BottomLeft, mConfig.HasAlpha(), forceBT709ColorSpace,
           /* aTransformOverride */ Nothing());
       img->AsSurfaceTextureImage()->RegisterSetCurrentCallback(
           std::move(releaseSample));
 
       RefPtr<VideoData> v = VideoData::CreateFromImage(
-          inputInfo.mDisplaySize, offset,
+          inputInfo->mDisplaySize, offset,
           TimeUnit::FromMicroseconds(presentationTimeUs),
-          TimeUnit::FromMicroseconds(inputInfo.mDurationUs), img.forget(),
+          TimeUnit::FromMicroseconds(inputInfo->mDurationUs), img.forget(),
           !!(flags & java::sdk::MediaCodec::BUFFER_FLAG_SYNC_FRAME),
           TimeUnit::FromMicroseconds(presentationTimeUs));
 
@@ -745,7 +745,7 @@ class RemoteAudioDecoder final : public RemoteDataDecoder {
 
       int32_t sampleRate = 0;
       aFormat->GetInteger(u"sample-rate"_ns, &sampleRate);
-      LOG("Audio output format changed: channels:%d sample rate:%d",
+      LOG("Audio output format changed: channels:{} sample rate:{}",
           outputChannels, sampleRate);
 
       mDecoder->ProcessOutputFormatChange(outputChannels, sampleRate);
@@ -823,7 +823,7 @@ class RemoteAudioDecoder final : public RemoteDataDecoder {
     if (!ok ||
         (IsSampleTimeSmallerThanFirstDemuxedSampleTime(presentationTimeUs) &&
          !isEOS)) {
-      LOG("ProcessOutput: decoding error ok[%s], pts[%" PRId64 "], eos[%s]",
+      LOG("ProcessOutput: decoding error ok[{}], pts[{}], eos[{}]",
           ok ? "true" : "false", presentationTimeUs, isEOS ? "true" : "false");
       Error(MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR, __func__));
       return;
@@ -839,14 +839,19 @@ class RemoteAudioDecoder final : public RemoteDataDecoder {
         LOG("OOM while allocating temporary output buffer");
         return;
       }
-      jni::ByteBuffer::LocalRef dest = jni::ByteBuffer::New(audio.get(), size);
-      aBuffer->WriteToByteBuffer(dest, offset, size);
+      nsresult rv =
+          aBuffer->NativeCopy(reinterpret_cast<jlong>(audio.get()),
+                              audio.Length() * sampleSize, offset, size);
+      if (NS_FAILED(rv)) {
+        LOG("Fail to copy audio buffer");
+        Error(MediaResult(rv, __func__));
+        return;
+      }
       AlignedFloatBuffer converted = audio.Inflate();
 
       TimeUnit pts = TimeUnit::FromMicroseconds(presentationTimeUs);
 
-      LOG("Decoded: %u frames of %s audio, pts: %s, %d channels, %" PRId32
-          " Hz",
+      LOG("Decoded: {} frames of {} audio, pts: {}, {} channels, {} Hz",
           numSamples / mOutputChannels,
           sampleSize == sizeof(int16_t) ? "int16" : "f32", pts.ToString().get(),
           mOutputChannels, mOutputSampleRate);
@@ -1162,7 +1167,7 @@ void RemoteDataDecoder::ReturnDecodedData() {
   MOZ_ASSERT(GetState() != State::SHUTDOWN);
 
   // We only want to clear mDecodedData when we have resolved the promises.
-  LOG("have decode promise=%i, have drain promise=%i, state=%i",
+  LOG("have decode promise={}, have drain promise={}, state={}",
       static_cast<int>(!mDecodePromise.IsEmpty()),
       static_cast<int>(!mDrainPromise.IsEmpty()), static_cast<int>(GetState()));
   MOZ_ASSERT(mDecodePromise.IsEmpty() || mDrainPromise.IsEmpty());
@@ -1218,7 +1223,7 @@ void RemoteDataDecoder::Error(const MediaResult& aError) {
     return;
   }
 
-  LOG("ErrorName=%s Message=%s", aError.ErrorName().get(),
+  LOG("ErrorName={} Message={}", aError.ErrorName().get(),
       aError.Message().get());
   // If we know we need a new decoder (eg because RemoteVideoDecoder's mSurface
   // has been released due to a GPU process crash) then override the error to
@@ -1234,7 +1239,7 @@ void RemoteDataDecoder::Error(const MediaResult& aError) {
 }
 
 void RemoteDataDecoder::SetState(RemoteDataDecoder::State aState) {
-  LOG("%i", static_cast<int>(aState));
+  LOG("{}", static_cast<int>(aState));
   AssertOnThread();
   mState = aState;
 }

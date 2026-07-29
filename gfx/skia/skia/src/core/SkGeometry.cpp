@@ -952,7 +952,7 @@ static SkScalar SkScalarCubeRoot(SkScalar x) {
 }
 
 /*  Solve coeff(t) == 0, returning the number of roots that
-    lie withing 0 < t < 1.
+    lie within 0 < t < 1.
     coeff[0]t^3 + coeff[1]t^2 + coeff[2]t + coeff[3]
 
     Eliminates repeated roots (so that all tValues are distinct, and are always
@@ -1693,7 +1693,7 @@ void SkConic::computeTightBounds(SkRect* bounds) const {
     SkPoint pts[4];
     pts[0] = fPts[0];
     pts[1] = fPts[2];
-    int count = 2;
+    size_t count = 2;
 
     SkScalar t;
     if (this->findXExtrema(&t)) {

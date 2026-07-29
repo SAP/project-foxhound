@@ -10,7 +10,7 @@
   "name": "Firefox Alpenglow",
   "description": "Use a colorful appearance for buttons, menus, and windows.",
   "author": "Mozilla",
-  "version": "1.5.1",
+  "version": "1.5.3",
   "icons": { "32": "icon.svg" },
 
   "theme": {
@@ -18,7 +18,7 @@
       "additional_backgrounds": [
         "background-noodles-right.svg",
         "background-noodles-left.svg",
-        "background-gradient.svg"
+        { "linear-gradient": "to bottom, #FF6BBA -18.096%, #FFC999 50%" }
       ]
     },
 
@@ -29,10 +29,11 @@
         "right top"
       ],
       "additional_backgrounds_tiling": ["no-repeat", "no-repeat", "repeat-x"],
+      "additional_backgrounds_size": ["auto", "auto", "auto 144px"],
       "zap_gradient": "linear-gradient(90deg, #9059FF 0%, #FF4AA2 52.08%, #FFBD4F 100%)"
     },
     "colors": {
-      "frame": "hsla(240, 20%, 98%, 1)",
+      "frame": "#ffc999",
       "toolbar": "hsla(0, 0%, 100%, .76)",
       "button_background_active": "hsla(240, 26%, 11%, .16)",
       "button_background_hover": "hsla(240, 26%, 11%, .08)",
@@ -74,7 +75,7 @@
       "additional_backgrounds": [
         "background-noodles-right-dark.svg",
         "background-noodles-left-dark.svg",
-        "background-gradient-dark.svg"
+        { "linear-gradient": "to bottom, #20123A 0%, #291D4F 50%" }
       ]
     },
 
@@ -85,6 +86,7 @@
         "right top"
       ],
       "additional_backgrounds_tiling": ["no-repeat", "no-repeat", "repeat-x"],
+      "additional_backgrounds_size": ["auto", "auto", "auto 144px"],
       "zap_gradient": "linear-gradient(90deg, #9059FF 0%, #FF4AA2 52.08%, #FFBD4F 100%)"
     },
     "colors": {

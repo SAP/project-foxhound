@@ -29,6 +29,7 @@ skip-if = [
 ["browser_toolbarKeyNav.js"]
 support-files = ["!/browser/base/content/test/permissions/permissions.html"]
 skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan && swgl", # Bug 1775713
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1775713
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan && swgl", # Bug 1775713

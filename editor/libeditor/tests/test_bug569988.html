@@ -63,7 +63,7 @@ function runTest() {
         .loadSubScript("chrome://mochikit/content/tests/SimpleTest/EventUtils.js",
                        EventUtils);
       EventUtils.synthesizeKey("VK_ESCAPE", {},
-                               gPromptInput.ownerGlobal);
+                               gPromptInput.documentGlobal);
     }
 
     addMessageListener("destroy", function() {

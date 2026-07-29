@@ -27,6 +27,9 @@ only-for-build-platforms:
 tasks:
     shippable-l10n-mac-signing:
         from-deps:
+            # One might think that using separate tasks per-locale would be faster, but
+            # this turns out not to be the case. Due to the overhead of chain of trust
+            # verification this roughly doubles total runtime of these tasks.
             group-by: chunk-locales
         treeherder:
             symbol: BMS

@@ -137,7 +137,15 @@ data class Wallpaper(
             val textColor = settings.currentWallpaperTextColor
             val cardColorLight = settings.currentWallpaperCardColorLight
             val cardColorDark = settings.currentWallpaperCardColorDark
-            return if (name.isNotEmpty() && textColor != 0L && cardColorLight != 0L && cardColorDark != 0L) {
+            return if (name == EDGE_TO_EDGE && settings.enableHomepageEdgeToEdgeBackgroundFeature) {
+                EdgeToEdge
+            } else if (
+                name.isNotEmpty() &&
+                name != EDGE_TO_EDGE &&
+                textColor != 0L &&
+                cardColorLight != 0L &&
+                cardColorDark != 0L
+            ) {
                 Wallpaper(
                     name = name,
                     textColor = textColor,
@@ -147,8 +155,6 @@ data class Wallpaper(
                     thumbnailFileState = ImageFileState.Downloaded,
                     assetsFileState = ImageFileState.Downloaded,
                 )
-            } else if (name == EDGE_TO_EDGE) {
-                EdgeToEdge
             } else {
                 null
             }

@@ -27,12 +27,12 @@ const TEST_DATA = [
     expectedAnimationNameLabel: "div-after",
   },
   {
-    expectedTargetLabel: "::backdrop",
-    expectedAnimationNameLabel: "dialog-backdrop",
-  },
-  {
     expectedTargetLabel: "::marker",
     expectedAnimationNameLabel: "div-marker",
+  },
+  {
+    expectedTargetLabel: "::backdrop",
+    expectedAnimationNameLabel: "dialog-backdrop",
   },
   {
     expectedTargetLabel: "::view-transition-group(root)",

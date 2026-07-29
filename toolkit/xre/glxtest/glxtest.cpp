@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=8 et :
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,6 +24,7 @@
 #include <getopt.h>
 #include <vector>
 #include <stdint.h>
+#include <inttypes.h>
 #include <string.h>
 #include <gdk/gdk.h>
 
@@ -122,6 +120,14 @@ typedef void* (*PFNEGLGETPROCADDRESS)(const char*);
 #define EGL_DEVICE_EXT 0x322C
 #define EGL_DRM_DEVICE_FILE_EXT 0x3233
 #define EGL_DRM_RENDER_NODE_FILE_EXT 0x3377
+
+// DRM fourcc format codes
+#define DRM_FORMAT_XRGB8888 0x34325258
+#define DRM_FORMAT_ARGB8888 0x34325241
+#define DRM_FORMAT_NV12 0x3231564e
+#define DRM_FORMAT_P010 0x30313050
+#define DRM_FORMAT_YUV420 0x32315559
+#define DRM_FORMAT_MOD_INVALID ((1ULL << 56) - 1)
 
 // stuff from xf86drm.h
 #define DRM_NODE_RENDER 2
@@ -384,6 +390,89 @@ static bool get_render_name(const char* name) {
   return result;
 }
 
+static void query_egl_dmabuf_modifiers(EGLDisplay dpy,
+                                       PFNEGLGETPROCADDRESS eglGetProcAddress) {
+  typedef const char* (*PFNEGLQUERYSTRINGPROC)(EGLDisplay dpy, EGLint name);
+  typedef EGLBoolean (*PFNEGLQUERYDMABUFMODIFIERSEXTPROC)(
+      EGLDisplay dpy, EGLint format, EGLint max_modifiers, uint64_t* modifiers,
+      EGLBoolean* external_only, EGLint* num_modifiers);
+
+  PFNEGLQUERYDMABUFMODIFIERSEXTPROC eglQueryDmaBufModifiersEXT =
+      [&]() -> PFNEGLQUERYDMABUFMODIFIERSEXTPROC {
+    PFNEGLQUERYSTRINGPROC eglQueryString =
+        cast<PFNEGLQUERYSTRINGPROC>(eglGetProcAddress("eglQueryString"));
+    if (!eglQueryString) {
+      return nullptr;
+    }
+    const char* extensions = eglQueryString(dpy, EGL_EXTENSIONS);
+    if (!extensions ||
+        !strstr(extensions, "EGL_EXT_image_dma_buf_import_modifiers")) {
+      return nullptr;
+    }
+    return cast<PFNEGLQUERYDMABUFMODIFIERSEXTPROC>(
+        eglGetProcAddress("eglQueryDmaBufModifiersEXT"));
+  }();
+
+  if (!eglQueryDmaBufModifiersEXT) {
+    return;
+  }
+
+  struct {
+    uint32_t format;
+    const char* name;
+  } formats[] = {
+      {DRM_FORMAT_XRGB8888, "DMABUF_MODIFIERS_XRGB"},
+      {DRM_FORMAT_ARGB8888, "DMABUF_MODIFIERS_ARGB"},
+      {DRM_FORMAT_NV12, "DMABUF_MODIFIERS_NV12"},
+      {DRM_FORMAT_P010, "DMABUF_MODIFIERS_P010"},
+      {DRM_FORMAT_YUV420, "DMABUF_MODIFIERS_YUV420"},
+  };
+
+  for (const auto& fmt : formats) {
+    EGLint numMods = 0;
+    if (!eglQueryDmaBufModifiersEXT(dpy, static_cast<EGLint>(fmt.format), 0,
+                                    nullptr, nullptr, &numMods) ||
+        numMods <= 0) {
+      continue;
+    }
+
+    std::vector<uint64_t> mods(numMods);
+    EGLint n = numMods;
+    if (!eglQueryDmaBufModifiersEXT(dpy, static_cast<EGLint>(fmt.format), n,
+                                    mods.data(), nullptr, &n) ||
+        n <= 0) {
+      continue;
+    }
+
+    // Build the modifier list, skipping DRM_FORMAT_MOD_INVALID.
+    // Count valid modifiers first to avoid emitting a key with no value,
+    // which would confuse the line-based key-value parser.
+    int validCount = 0;
+    for (EGLint i = 0; i < n; i++) {
+      if (mods[i] != DRM_FORMAT_MOD_INVALID) {
+        validCount++;
+      }
+    }
+    if (validCount == 0) {
+      continue;
+    }
+
+    record_value("%s\n", fmt.name);
+    bool first = true;
+    for (EGLint i = 0; i < n; i++) {
+      if (mods[i] == DRM_FORMAT_MOD_INVALID) {
+        continue;
+      }
+      if (!first) {
+        record_value(",");
+      }
+      record_value("%" PRIx64, mods[i]);
+      first = false;
+    }
+    record_value("\n");
+  }
+}
+
 static bool get_egl_gl_status(EGLDisplay dpy,
                               PFNEGLGETPROCADDRESS eglGetProcAddress) {
   typedef EGLBoolean (*PFNEGLCHOOSECONFIGPROC)(
@@ -551,7 +640,8 @@ static bool get_egl_gl_status(EGLDisplay dpy,
   return true;
 }
 
-static bool get_egl_status(EGLNativeDisplayType native_dpy) {
+static bool get_egl_status(EGLNativeDisplayType native_dpy,
+                           bool aLoadModifiers) {
   log("GLX_TEST: get_egl_status start\n");
 
   EGLDisplay dpy = nullptr;
@@ -628,6 +718,11 @@ static bool get_egl_status(EGLNativeDisplayType native_dpy) {
   }
 
   bool ret = get_egl_gl_status(dpy, eglGetProcAddress);
+
+  if (aLoadModifiers) {
+    query_egl_dmabuf_modifiers(dpy, eglGetProcAddress);
+  }
+
   log("GLX_TEST: get_egl_status finished with return: %d\n", ret);
 
   return ret;
@@ -908,7 +1003,7 @@ bool x11_egltest() {
 
   XSetErrorHandler(x_error_handler);
 
-  if (!get_egl_status(dpy)) {
+  if (!get_egl_status(dpy, /* aLoadModifiers */ true)) {
     return false;
   }
 
@@ -960,7 +1055,7 @@ void wayland_egltest() {
     return;
   }
 
-  if (!get_egl_status((EGLNativeDisplayType)dpy)) {
+  if (!get_egl_status((EGLNativeDisplayType)dpy, /* aLoadModifiers */ false)) {
     record_error("EGL test failed");
   }
 

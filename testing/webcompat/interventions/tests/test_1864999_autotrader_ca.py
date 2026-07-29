@@ -6,7 +6,7 @@ from webdriver import NoSuchElementException, WebDriverException
 URL = "https://www.autotrader.ca/lst?adtype=Dealer&atype=C&cy=CA&damaged_listing=exclude&desc=0&hprc=True&inMarket=advancedSearch&lat=49.1848258972168&loc=v2p5p4&lon=-121.93928527832031&offer=U&prv=British%20Columbia&prx=250&rcp=20&rcs=0&search_id=hf3of1x3pk&showcpo=1&size=20&sort=price&srt=4&sts=New&wcp=False&zip=V2P5P4%20Chilliwack%2C%20BC&zipr=250"
 
 COOKIES_CSS = "#cookie-banner"
-FILTER_BUTTON_CSS = "button[class^=SearchMaskFilterTags_mobile_filter]"
+FILTER_BUTTON_CSS = "button[class^=SearchMaskFilterTags_mobileFilter]"
 MAKE_FILTER_CSS = "[aria-controls=make-model-filter-details]"
 MAKE_FILTER_OPTS_CSS = "#select-make-container"
 

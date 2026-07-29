@@ -78,7 +78,7 @@ impl MemoryDistributionMetric {
         }
     }
 
-    pub fn accumulate_samples(&self, samples: Vec<u64>) {
+    pub fn accumulate_samples_unsigned(&self, samples: Vec<u64>) {
         #[cfg(feature = "with_gecko")]
         let marker_samples = truncate_vector_for_marker(&samples);
 
@@ -193,6 +193,10 @@ impl MemoryDistribution for MemoryDistributionMetric {
                 DistributionValues::Sample(sample)
             )
         );
+    }
+
+    pub fn accumulate_samples(&self, samples: Vec<i64>) {
+        self.accumulate_samples_unsigned(samples.into_iter().map(|s| s as _).collect());
     }
 
     /// **Exported for test purposes.**

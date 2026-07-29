@@ -62,9 +62,8 @@ export class MigrationWizardParent extends JSWindowActorParent {
     // make sure that any messages from content are coming from the privileged
     // about content process type.
     if (
-      !this.browsingContext.currentWindowGlobal.isInProcess &&
-      this.browsingContext.currentRemoteType !=
-        E10SUtils.PRIVILEGEDABOUT_REMOTE_TYPE
+      !this.manager.isInProcess &&
+      this.manager.remoteType != E10SUtils.PRIVILEGEDABOUT_REMOTE_TYPE
     ) {
       throw new Error(
         "MigrationWizardParent: received message from the wrong content process type."
@@ -156,8 +155,8 @@ export class MigrationWizardParent extends JSWindowActorParent {
       }
 
       case "OpenAboutAddons": {
-        let browser = this.browsingContext.topChromeWindow;
-        this.#openAboutAddons(browser);
+        let window = this.browsingContext.topChromeWindow;
+        this.#openAboutAddons(window);
         break;
       }
 
@@ -815,11 +814,10 @@ export class MigrationWizardParent extends JSWindowActorParent {
    * Opens the about:addons page in a new background tab in the same window
    * as the passed browser.
    *
-   * @param {Element} browser
-   *   The browser element requesting that about:addons opens.
+   * @param {ChromeWindow} window
+   *   The window requesting that about:addons opens.
    */
-  #openAboutAddons(browser) {
-    let window = browser.ownerGlobal;
+  #openAboutAddons(window) {
     window.openTrustedLinkIn("about:addons", "tab", { inBackground: true });
   }
 
@@ -835,7 +833,7 @@ export class MigrationWizardParent extends JSWindowActorParent {
    *   Where the URL will be opened. Defaults to current tab.
    */
   #openURL(browser, url, where) {
-    let window = browser.ownerGlobal;
+    let window = browser.documentGlobal;
     window.openLinkIn(
       Services.urlFormatter.formatURL(url),
       where || "current",

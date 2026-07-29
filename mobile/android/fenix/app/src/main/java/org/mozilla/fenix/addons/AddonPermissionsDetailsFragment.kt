@@ -18,6 +18,7 @@ import mozilla.components.feature.addons.Addon
 import mozilla.components.feature.addons.Addon.Companion.isAllURLsPermission
 import mozilla.components.feature.addons.ui.translateName
 import org.mozilla.fenix.addons.ui.AddonPermissionsScreen
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.openToBrowser
 import org.mozilla.fenix.ext.requireComponents
@@ -37,7 +38,7 @@ data class AddonPermissionsUpdateRequest(
 /**
  * A fragment to show and allow a user to change permissions for an addon.
  */
-class AddonPermissionsDetailsFragment : Fragment() {
+class AddonPermissionsDetailsFragment : Fragment(), SystemInsetsPaddedFragment {
 
     private val args by navArgs<AddonPermissionsDetailsFragmentArgs>()
 

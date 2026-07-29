@@ -6,10 +6,7 @@
  * Test the JS Tracing feature.
  */
 add_task(async function test_profile_feature_jstracing() {
-  Assert.ok(
-    !Services.profiler.IsActive(),
-    "The profiler is not currently active"
-  );
+  await ProfilerTestUtils.assertProfilerInactive();
 
   await ProfilerTestUtils.startProfiler({ features: ["tracing"] });
 
@@ -25,16 +22,17 @@ add_task(async function test_profile_feature_jstracing() {
       const { contentThread } = await stopProfilerNowAndGetThreads(contentPid);
 
       // First lookup for all our expected symbols in the string table
-      const functionAFrameStringIdx = contentThread.stringTable.indexOf(
-        `a (${url}:7:15)`
+      // Note: Frame locations now include [sourceIndex] suffix
+      const functionAFrameStringIdx = contentThread.stringTable.findIndex(s =>
+        s.startsWith(`a (${url}:7:15)`)
       );
       Assert.greater(
         functionAFrameStringIdx,
         0,
         "Found string for 'a' method call"
       );
-      const functionBFrameStringIdx = contentThread.stringTable.indexOf(
-        `b (${url}:10:15)`
+      const functionBFrameStringIdx = contentThread.stringTable.findIndex(s =>
+        s.startsWith(`b (${url}:10:15)`)
       );
       Assert.greater(
         functionBFrameStringIdx,
@@ -54,8 +52,8 @@ add_task(async function test_profile_feature_jstracing() {
         0,
         "Found string for 'CustomEvent' DOM event"
       );
-      const customEventHandlerStringIdx = contentThread.stringTable.indexOf(
-        `customEventHandler (${url}:18:71)`
+      const customEventHandlerStringIdx = contentThread.stringTable.findIndex(
+        s => s.startsWith(`customEventHandler (${url}:18:71)`)
       );
       Assert.greater(
         customEventHandlerStringIdx,

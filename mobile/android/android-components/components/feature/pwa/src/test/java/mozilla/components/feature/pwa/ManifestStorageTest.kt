@@ -73,7 +73,6 @@ class ManifestStorageTest {
 
         storage.saveManifest(firefoxManifest)
         verify(dao).insertManifest(any())
-        Unit
     }
 
     @Test
@@ -86,7 +85,6 @@ class ManifestStorageTest {
 
         storage.updateManifest(firefoxManifest)
         verify(dao).updateManifest(any())
-        Unit
     }
 
     @Test
@@ -98,7 +96,6 @@ class ManifestStorageTest {
 
         storage.updateManifest(firefoxManifest)
         verify(dao, never()).updateManifest(any())
-        Unit
     }
 
     @Test
@@ -108,7 +105,6 @@ class ManifestStorageTest {
 
         storage.removeManifests(listOf("https://example.com", "https://proxx.app"))
         verify(dao).deleteManifests(listOf("https://example.com", "https://proxx.app"))
-        Unit
     }
 
     @Test

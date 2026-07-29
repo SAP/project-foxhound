@@ -1,0 +1,71 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+task-defaults:
+    worker-type: b-osx-arm64
+    worker:
+        max-run-time: 1800
+
+macosx64-jdk-repack:
+    description: "Java JDK (macOS) repack toolchain build"
+    treeherder:
+        symbol: TL(jdk-macos)
+    run:
+        using: toolchain-script
+        script: repack-jdk-macos.sh
+        resources:
+            - 'python/mozboot/**/*android*'
+        toolchain-artifact: project/gecko/jdk/jdk-macos.tar.zst
+        toolchain-alias: macosx64-jdk
+
+macosx64-android-sdk-repack:
+    description: "Android SDK (macOS) repack toolchain build"
+    treeherder:
+        symbol: TL(android-sdk-macos)
+    run:
+        using: toolchain-script
+        script: repack-android-sdk-macos.sh
+        resources:
+            - 'python/mozboot/**/*android*'
+        toolchain-artifact: project/gecko/android-sdk/android-sdk-macos.tar.zst
+        toolchain-alias: android-sdk-macos
+    fetches:
+        toolchain:
+            - macosx64-jdk-repack
+
+macosx64-android-avd-arm64-repack:
+    description: "Android AVD arm64 (macOS) repack toolchain build"
+    treeherder:
+        symbol: TL(avd-arm64-macos)
+    run:
+        using: toolchain-script
+        script: repack-android-avd-macos.sh
+        arguments:
+            - 'python/mozboot/mozboot/android-avds/arm64.json'
+        resources:
+            - 'python/mozboot/**/*android*'
+            - 'python/mozboot/mozboot/android-avds/arm64.json'
+        toolchain-artifact: public/build/android-avd-macos.tar.zst
+        toolchain-alias: android-avd-arm64-macos
+    fetches:
+        toolchain:
+            - macosx64-jdk-repack
+
+macosx64-android-system-image-arm64-repack:
+    description: "Android System Images arm64 (macOS) repack toolchain build"
+    treeherder:
+        symbol: TL(arm64-avd-img-macos)
+    run:
+        using: toolchain-script
+        script: repack-android-system-images-macos.sh
+        arguments:
+            - 'python/mozboot/mozboot/android-avds/arm64.json'
+        resources:
+            - 'python/mozboot/**/*android*'
+            - 'python/mozboot/mozboot/android-avds/arm64.json'
+        toolchain-artifact: project/gecko/android-system-images/android-system-images-macos.tar.zst
+        toolchain-alias: android-system-image-arm64-macos
+    fetches:
+        toolchain:
+            - macosx64-jdk-repack

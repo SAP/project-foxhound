@@ -14,8 +14,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from io import StringIO
-from typing import Generator, TextIO
+from typing import TextIO
 
 from iniparse import ini  # type: ignore[import-untyped]
 
@@ -98,7 +99,7 @@ def ini_parse(source: TextIO | str | bytes) -> Resource[Message]:
     return resource
 
 
-def ini_lines(data: ini.LineContainer) -> Generator[ini.LineType, None, None]:
+def ini_lines(data: ini.LineContainer) -> Generator[ini.LineType]:
     for line in data.contents:
         if isinstance(line, ini.LineContainer):
             yield from ini_lines(line)

@@ -368,6 +368,57 @@ TEST(TestStandardURL, Deserialize_Bug1392739)
   ASSERT_EQ(mutator->Deserialize(params), NS_ERROR_FAILURE);
 }
 
+TEST(TestStandardURL, Deserialize_Bug2027976)
+{
+  mozilla::ipc::StandardURLParams params;
+
+  nsAutoCString evilSpec;
+  evilSpec.AssignLiteral("http://127.0.0.1:8888/");
+  for (int i = 0; i < 500; i++) {
+    evilSpec.Append('x');
+  }
+  evilSpec.Append('/');
+
+  uint32_t specLen = evilSpec.Length();
+  uint32_t pathPos = specLen - 1;
+
+  params.spec() = evilSpec;
+  params.urlType() = nsIStandardURL::URLTYPE_AUTHORITY;
+  params.port() = 8888;
+  params.defaultPort() = 80;
+  params.supportsFileURL() = false;
+  params.isSubstituting() = false;
+
+  params.scheme() = mozilla::ipc::StandardURLSegment(0, 4);
+  params.authority() = mozilla::ipc::StandardURLSegment(7, 14);
+  params.username() = mozilla::ipc::StandardURLSegment(0, -1);
+  params.password() = mozilla::ipc::StandardURLSegment(0, -1);
+  params.host() = mozilla::ipc::StandardURLSegment(7, 9);
+  params.path() = mozilla::ipc::StandardURLSegment(pathPos, 1);
+  params.filePath() = mozilla::ipc::StandardURLSegment(pathPos, 1);
+  params.directory() = mozilla::ipc::StandardURLSegment(21, 1);
+  params.baseName() = mozilla::ipc::StandardURLSegment(0, -1);
+  params.extension() = mozilla::ipc::StandardURLSegment(0, -1);
+  params.query() = mozilla::ipc::StandardURLSegment(0, -1);
+  params.ref() = mozilla::ipc::StandardURLSegment(0, -1);
+
+  mozilla::ipc::URIParams uriParams(params);
+
+  nsCOMPtr<nsIURIMutator> mutator =
+      do_CreateInstance(NS_STANDARDURLMUTATOR_CID);
+  nsresult rv = mutator->Deserialize(uriParams);
+  ASSERT_EQ(rv, NS_ERROR_FAILURE);
+  if (NS_FAILED(rv)) {
+    return;
+  }
+  // The following code should not normally be reachable.
+  nsCOMPtr<nsIURI> uri;
+  rv = mutator->Finalize(getter_AddRefs(uri));
+  ASSERT_EQ(rv, NS_OK);
+  nsAutoCString spec;
+  uri->Resolve("foo"_ns, spec);
+}
+
 TEST(TestStandardURL, CorruptSerialization)
 {
   auto spec = "http://user:pass@example.com/path/to/file.ext?query#hash"_ns;
@@ -433,6 +484,23 @@ TEST(TestStandardURL, ParseIPv4Num)
   uint32_t number;
   mozilla::net::IPv4Parser::ParseIPv4Number("0x10"_ns, 16, number, 255);
   ASSERT_EQ(number, (uint32_t)16);
+
+  // Inputs whose mathematical value exceeds 0xFFFFFFFF must be rejected,
+  // even when they wrap modulo 2^64 back into the valid uint32_t range.
+  // 18446744073709551616 == 2^64             => wraps to 0
+  // 18446744075840258049 == 2^64 + 0x7F000001 => wraps to 127.0.0.1
+  nsCString wrapResult;
+  ASSERT_EQ(NS_ERROR_FAILURE,
+            Test_NormalizeIPv4("18446744073709551616"_ns, wrapResult));
+  ASSERT_EQ(NS_ERROR_FAILURE,
+            Test_NormalizeIPv4("18446744075840258049"_ns, wrapResult));
+
+  ASSERT_EQ(NS_ERROR_FAILURE,
+            mozilla::net::IPv4Parser::ParseIPv4Number10(
+                "18446744075840258049"_ns, number, 0xffffffffu));
+  ASSERT_EQ(NS_ERROR_FAILURE,
+            mozilla::net::IPv4Parser::ParseIPv4Number("18446744075840258049"_ns,
+                                                      10, number, 0xffffffffu));
 }
 
 TEST(TestStandardURL, CoalescePath)

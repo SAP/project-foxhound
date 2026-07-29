@@ -9,7 +9,9 @@ import stat
 import subprocess
 import sys
 import time
+from configparser import RawConfigParser
 from enum import Enum
+from io import StringIO
 from pathlib import Path
 from typing import Optional, Union
 
@@ -24,8 +26,8 @@ from mozboot.bootstrap import MOZCONFIG_SUGGESTION_TEMPLATE
 # to pass down the NDK version to all relevant places, so we have this global
 # variable.
 NDK_VERSION = "r29"
-CMDLINE_TOOLS_VERSION_STRING = "19.0"
-CMDLINE_TOOLS_VERSION = "13114758"
+CMDLINE_TOOLS_VERSION_STRING = "20.0"
+CMDLINE_TOOLS_VERSION = "14742923"
 
 BUNDLETOOL_VERSION = "1.18.3"
 BUNDLETOOL_URL = f"https://github.com/google/bundletool/releases/download/{BUNDLETOOL_VERSION}/bundletool-all-{BUNDLETOOL_VERSION}.jar"
@@ -48,8 +50,8 @@ AVD_HOME_PATH = Path(
 )
 
 JAVA_VERSION_MAJOR = "17"
-JAVA_VERSION_MINOR = "0.17"
-JAVA_VERSION_PATCH = "10"
+JAVA_VERSION_MINOR = "0.18"
+JAVA_VERSION_PATCH = "8"
 
 ANDROID_NDK_EXISTS = """
 Looks like you have the correct version of the Android NDK installed at:
@@ -136,7 +138,7 @@ def install_mobile_android_sdk_or_ndk(url: str, path: Path):
         else:
             raise
 
-    file_name = url.split("/")[-1]
+    file_name = url.rsplit("/", 1)[-1]
     download_file_path = download_path / file_name
     download(url, download_file_path)
 
@@ -465,6 +467,7 @@ def ensure_android_avd(
     no_interactive=False,
     avd_manifest=None,
     prewarm_avd=False,
+    sdk_path: Optional[Path] = None,
 ):
     """
     Use the given sdkmanager tool (like 'sdkmanager') to install required
@@ -483,7 +486,8 @@ def ensure_android_avd(
     # avdmanager needs Java
     ensure_java(os_name, os_arch)
 
-    sdk_path = get_sdk_path(os_name)
+    if sdk_path is None:
+        sdk_path = get_sdk_path(os_name)
     avdmanager_tool = get_avdmanager_tool_path(sdk_path)
     adb_tool = get_adb_tool_path(sdk_path)
     emulator_tool = get_emulator_tool_path(sdk_path)
@@ -679,7 +683,7 @@ def ensure_android_packages(
         e = subprocess.CalledProcessError(retcode, cmd)
         raise e
     if list_packages:
-        subprocess.check_call([str(sdkmanager_tool), "--list"])
+        subprocess.check_call([str(sdkmanager_tool), "--list"], env=env)
 
     suggest_platform_tools_path(packages, sdk_path)
 
@@ -836,7 +840,8 @@ def main():
         return 0
 
     if options.jdk_only:
-        ensure_java(os_name, os_arch)
+        java_path = ensure_java(os_name, os_arch)
+        ensure_gradle_jdk_installations(java_path.parent)
         return 0
 
     if options.ndk_only:
@@ -891,7 +896,7 @@ def ensure_java(os_name: str, os_arch: str):
         ext = "zip" if os_name == "windows" else "tar.gz"
 
         # e.g. https://github.com/adoptium/temurin17-binaries/releases/
-        #      download/jdk-17.0.17%2B10/OpenJDK17U-jdk_x64_linux_hotspot_17.0.17_10.tar.gz
+        #      download/jdk-17.0.18%2B8/OpenJDK17U-jdk_x64_linux_hotspot_17.0.18_8.tar.gz
         java_url = (
             f"https://github.com/adoptium/temurin{JAVA_VERSION_MAJOR}-binaries/releases/"
             f"download/jdk-{JAVA_VERSION_MAJOR}.{JAVA_VERSION_MINOR}%2B{JAVA_VERSION_PATCH}/"
@@ -899,9 +904,75 @@ def ensure_java(os_name: str, os_arch: str):
         )
         install_mobile_android_sdk_or_ndk(java_url, MOZBUILD_PATH / "jdk")
 
+    return java_path
+
+
+def ensure_gradle_jdk_installations(
+    new_jdk_home: Path, gradle_props: Optional[Path] = None
+):
+    """Update ~/.gradle/gradle.properties so Gradle can find the .mozbuild JDK.
+
+    gradle/gradle-daemon-jvm.properties tells Gradle and Android Studio
+    which JDK major version to use for the daemon. Gradle looks for a
+    matching JDK in the paths listed under org.gradle.java.installations.paths
+    in ~/.gradle/gradle.properties.
+
+    This function keeps that property in sync with what bootstrap installs:
+      - Adds the newly installed JDK to the list of installation paths.
+      - Removes stale .mozbuild JDK paths that no longer exist on disk.
+      - Preserves any non-.mozbuild paths the user may have added.
+
+    Usually, we don't want to adjust the user's configuration outside of
+    the object directory, to both respect the user's choices and to allow
+    for multiple object directories.  In this case, however, we have
+    regular builds and Android Studio builds using different JVMs, which
+    is causing significant issues for developers.  And it's exceedingly
+    rare to work with object directories across multiple JVMs; most of
+    the time, that's a mistake.
+    """
+    if gradle_props is None:
+        gradle_props = Path.home() / ".gradle" / "gradle.properties"
+    key = "org.gradle.java.installations.paths"
+    mozbuild_prefix = MOZBUILD_PATH.resolve().as_posix() + "/"
+
+    # gradle.properties has no [section] header, so prepend a synthetic one
+    # to satisfy configparser, then strip it back out on write.
+    config = RawConfigParser()
+    if gradle_props.exists():
+        config.read_string("[DEFAULT]\n" + gradle_props.read_text(encoding="utf-8"))
+    existing_paths = [
+        p.strip()
+        for p in config.get("DEFAULT", key, fallback="").split(",")
+        if p.strip()
+    ]
+
+    out_paths = []
+    for p in existing_paths:
+        resolved_path = Path(p).resolve()
+        resolved = resolved_path.as_posix()
+        if resolved.startswith(mozbuild_prefix):
+            # Purge .mozbuild paths that no longer exist.
+            if resolved_path.is_dir():
+                out_paths.append(resolved)
+        else:
+            # Paths outside .mozbuild were probably added by the user, and we should preserve them.
+            out_paths.append(p)
+    out_paths.append(new_jdk_home.resolve().as_posix())
+
+    # Remove duplicates while preserving order.
+    out_paths = list(dict.fromkeys(out_paths))
+
+    config["DEFAULT"][key] = ",".join(out_paths)
+    gradle_props.parent.mkdir(parents=True, exist_ok=True)
+    buf = StringIO()
+    config.write(buf)
+    gradle_props.write_text(
+        buf.getvalue().removeprefix("[DEFAULT]\n"), encoding="utf-8"
+    )
+
 
 def get_java_bin_path(os_name: str, toolchain_path: Path):
-    # Like jdk-17.0.17+10
+    # Like jdk-17.0.18+8
     jdk_folder = f"jdk-{JAVA_VERSION_MAJOR}.{JAVA_VERSION_MINOR}+{JAVA_VERSION_PATCH}"
 
     java_path = toolchain_path / "jdk" / jdk_folder

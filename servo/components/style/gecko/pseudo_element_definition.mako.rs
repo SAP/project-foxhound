@@ -63,9 +63,13 @@ impl PseudoElement {
     fn flags_for_index(i: usize) -> PseudoStyleTypeFlags {
         static FLAGS: [PseudoStyleTypeFlags; PSEUDO_COUNT + 1] = [
         % for pseudo in PSEUDOS:
-        PseudoStyleTypeFlags::from_bits_truncate(${' | '.join(f"PseudoStyleTypeFlags::{flag}.bits()" for flag in pseudo.flags())}),
+        PseudoStyleTypeFlags::from_bits_truncate(${' | '.join(f"PseudoStyleTypeFlags::{flag}.bits()" for flag in pseudo.flags())}), // ${pseudo.name}
         % endfor
-        PseudoStyleTypeFlags::NONE, // :-webkit-*
+        // Unknown ::-webkit-* pseudos allow user-action state pseudo-classes.
+        PseudoStyleTypeFlags::from_bits_truncate(
+            PseudoStyleTypeFlags::IS_PSEUDO_ELEMENT.bits() |
+            PseudoStyleTypeFlags::SUPPORTS_USER_ACTION_STATE.bits()
+        ),
         ];
         FLAGS[i]
     }
@@ -94,6 +98,21 @@ impl PseudoElement {
         % endif
         % endfor
             _ => false,
+        }
+    }
+
+    /// Returns the current value of the `disabled_domains_pref` pref for
+    /// this pseudo, if it has one. The value is a list of domains for which
+    /// this pseudo should be treated as disabled (see
+    /// `nsContentUtils::IsURIInList` for the format).
+    pub fn disabled_domains(&self) -> Option<nsstring::nsCString> {
+        match *self {
+        % for pseudo in PSEUDOS:
+        % if pseudo.is_pseudo_element() and pseudo.disabled_domains_pref:
+            ${pseudo_element_variant(pseudo)} => Some(pref!("${pseudo.disabled_domains_pref}")),
+        % endif
+        % endfor
+            _ => None,
         }
     }
 
@@ -170,7 +189,7 @@ impl PseudoElement {
     ///
     /// Returns `None` if the pseudo-element is not recognised.
     #[inline]
-    pub fn from_slice(name: &str, allow_unkown_webkit: bool) -> Option<Self> {
+    pub fn from_slice(name: &str) -> Option<Self> {
         // We don't need to support tree pseudos because functional
         // pseudo-elements needs arguments, and thus should be created
         // via other methods.
@@ -194,12 +213,18 @@ impl PseudoElement {
         if starts_with_ignore_ascii_case(name, "-moz-tree-") {
             return PseudoElement::tree_pseudo_element(name, Default::default())
         }
-        const WEBKIT_PREFIX: &str = "-webkit-";
-        if allow_unkown_webkit && starts_with_ignore_ascii_case(name, WEBKIT_PREFIX) {
-            let part = string_as_ascii_lowercase(&name[WEBKIT_PREFIX.len()..]);
-            return Some(PseudoElement::UnknownWebkit(part.into()));
-        }
         None
+    }
+
+    /// Produces an `UnknownWebkit` pseudo-element for any `-webkit-*` name.
+    #[inline]
+    pub fn unknown_webkit_from_name(name: &str) -> Option<Self> {
+        const WEBKIT_PREFIX: &str = "-webkit-";
+        if !starts_with_ignore_ascii_case(name, WEBKIT_PREFIX) {
+            return None;
+        }
+        let part = string_as_ascii_lowercase(&name[WEBKIT_PREFIX.len()..]);
+        Some(PseudoElement::UnknownWebkit(part.into()))
     }
 
     /// Constructs a tree pseudo-element from the given name and arguments.

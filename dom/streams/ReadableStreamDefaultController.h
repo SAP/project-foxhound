@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -113,51 +111,6 @@ class ReadableStreamDefaultController final
   double mStrategyHWM = false;
   RefPtr<QueuingStrategySize> mStrategySizeAlgorithm;
 };
-
-namespace streams_abstract {
-
-MOZ_CAN_RUN_SCRIPT void SetUpReadableStreamDefaultController(
-    JSContext* aCx, ReadableStream* aStream,
-    ReadableStreamDefaultController* aController,
-    UnderlyingSourceAlgorithmsBase* aAlgorithms, double aHighWaterMark,
-    QueuingStrategySize* aSizeAlgorithm, ErrorResult& aRv);
-
-MOZ_CAN_RUN_SCRIPT void
-SetupReadableStreamDefaultControllerFromUnderlyingSource(
-    JSContext* aCx, ReadableStream* aStream,
-    JS::Handle<JSObject*> aUnderlyingSource,
-    UnderlyingSource& aUnderlyingSourceDict, double aHighWaterMark,
-    QueuingStrategySize* aSizeAlgorithm, ErrorResult& aRv);
-
-MOZ_CAN_RUN_SCRIPT void ReadableStreamDefaultControllerEnqueue(
-    JSContext* aCx, ReadableStreamDefaultController* aController,
-    JS::Handle<JS::Value> aChunk, ErrorResult& aRv);
-
-MOZ_CAN_RUN_SCRIPT void ReadableStreamDefaultControllerClose(
-    JSContext* aCx, ReadableStreamDefaultController* aController,
-    ErrorResult& aRv);
-
-MOZ_CAN_RUN_SCRIPT void ReadableStreamDefaultReaderRead(
-    JSContext* aCx, ReadableStreamGenericReader* reader, ReadRequest* aRequest,
-    ErrorResult& aRv);
-
-void ReadableStreamDefaultControllerError(
-    JSContext* aCx, ReadableStreamDefaultController* aController,
-    JS::Handle<JS::Value> aValue, ErrorResult& aRv);
-
-Nullable<double> ReadableStreamDefaultControllerGetDesiredSize(
-    ReadableStreamDefaultController* aController);
-
-enum class CloseOrEnqueue { Close, Enqueue };
-
-bool ReadableStreamDefaultControllerCanCloseOrEnqueueAndThrow(
-    ReadableStreamDefaultController* aController,
-    CloseOrEnqueue aCloseOrEnqueue, ErrorResult& aRv);
-
-bool ReadableStreamDefaultControllerShouldCallPull(
-    ReadableStreamDefaultController* aController);
-
-}  // namespace streams_abstract
 
 }  // namespace mozilla::dom
 

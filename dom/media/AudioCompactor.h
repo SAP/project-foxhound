@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -59,7 +57,7 @@ class AudioCompactor {
       uint32_t framesCopied = aCopyFunc(buffer.get(), samples);
 
       NS_ASSERTION(framesCopied <= aFrames, "functor copied too many frames");
-      buffer.SetLength(size_t(framesCopied) * aChannels);
+      MOZ_RELEASE_ASSERT(buffer.SetLength(size_t(framesCopied) * aChannels));
 
       auto duration = media::TimeUnit(framesCopied, aSampleRate);
       if (!duration.IsValid()) {

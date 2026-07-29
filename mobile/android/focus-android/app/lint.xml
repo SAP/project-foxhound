@@ -7,10 +7,12 @@
          there will always be missing or extra translations. -->
     <issue id="MissingTranslation" severity="ignore" />
     <issue id="MissingQuantity" severity="ignore" />
+    <issue id="ImpliedQuantity" severity="ignore" />
     <issue id="PluralsCandidate" severity="ignore" />
     <issue id="StringFormatCount" severity="ignore" />
     <issue id="TypographyEllipsis" severity="ignore" />
     <issue id="ExtraTranslation" severity="warning" />
+    <issue id="Untranslatable" severity="ignore" />
     <issue id="MissingDefaultResource" severity="ignore" />
     <issue id="BlankString" severity="error">
         <ignore path="**/values/preference_keys.xml" />
@@ -46,6 +48,9 @@
 
     <!-- Ignore due to baseline bloat and lack of actionability -->
     <issue id="VectorPath" severity="ignore" />
+
+    <!-- pixelSizeFor() helper only exists in fenix -->
+    <issue id="Resources.GetDimensionPixelSizeInsteadOfPixelSizeFor" severity="ignore" />
 
     <issue id="InvalidPackage">
         <!-- Sentry: it uses one SDK for desktop apps and Android apps so I assume it's

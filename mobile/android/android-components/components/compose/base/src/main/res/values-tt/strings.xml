@@ -9,4 +9,6 @@
 <resources>
   <!-- Announcement made by the screen reader when the progress bar is shown and a page is loading -->
   <string name="mozac_compose_base_progress_loading">Йөкләү</string>
+  <!-- Content description for the close icon of a Banner -->
+  <string name="mozac_compose_base_close_button_content_description">Ябу</string>
 </resources>

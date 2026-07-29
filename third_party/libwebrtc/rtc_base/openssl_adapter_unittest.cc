@@ -26,11 +26,10 @@
 #include "rtc_base/socket.h"
 #include "rtc_base/socket_address.h"
 #include "rtc_base/ssl_certificate.h"
-#include "rtc_base/ssl_stream_adapter.h"           // IWYU pragma: keep
-#include "rtc_base/third_party/sigslot/sigslot.h"  // IWYU pragma: keep
-#include "rtc_base/thread.h"
+#include "rtc_base/ssl_stream_adapter.h"  // IWYU pragma: keep
 #include "test/gmock.h"
 #include "test/gtest.h"
+#include "test/run_loop.h"
 #include "test/wait_until.h"  // IWYU pragma: keep
 
 namespace webrtc {
@@ -71,7 +70,7 @@ class MockCertVerifier : public SSLCertificateVerifier {
 
 #if defined(WEBRTC_EXCLUDE_BUILT_IN_SSL_ROOT_CERTS)
 // Helper class to handle SSL connection events and state for testing.
-class SSLConnectionHandler : public sigslot::has_slots<> {
+class SSLConnectionHandler {
  public:
   explicit SSLConnectionHandler(absl::string_view hostname)
       : hostname_(hostname) {}
@@ -146,7 +145,7 @@ TEST(OpenSSLAdapterTest, TestTransformAlpnProtocols) {
 // Verifies that SSLStart works when OpenSSLAdapter is started in standalone
 // mode.
 TEST(OpenSSLAdapterTest, TestBeginSSLBeforeConnection) {
-  AutoThread main_thread;
+  test::RunLoop main_thread;
   Socket* async_socket = new MockAsyncSocket();
   OpenSSLAdapter adapter(async_socket);
   EXPECT_EQ(adapter.StartSSL("webrtc.org"), 0);
@@ -159,7 +158,7 @@ TEST(OpenSSLAdapterTest, TestBeginSSLBeforeConnection) {
 // build and run this test.
 TEST(OpenSSLAdaptorTest, TestRealSSLConnection) {
   PhysicalSocketServer socket_server;
-  AutoSocketServerThread main_thread(&socket_server);
+  test::RunLoop main_thread(&socket_server);
 
   constexpr absl::string_view kHostname = "webrtc.org";
   constexpr int kPort = 443;
@@ -214,7 +213,7 @@ TEST(OpenSSLAdaptorTest, TestRealSSLConnection) {
 
 // Verifies that the adapter factory can create new adapters.
 TEST(OpenSSLAdapterFactoryTest, CreateSingleOpenSSLAdapter) {
-  AutoThread main_thread;
+  test::RunLoop main_thread;
   OpenSSLAdapterFactory adapter_factory;
   Socket* async_socket = new MockAsyncSocket();
   auto simple_adapter = std::unique_ptr<OpenSSLAdapter>(
@@ -225,7 +224,7 @@ TEST(OpenSSLAdapterFactoryTest, CreateSingleOpenSSLAdapter) {
 // Verifies that setting a custom verifier still allows for adapters to be
 // created.
 TEST(OpenSSLAdapterFactoryTest, CreateWorksWithCustomVerifier) {
-  AutoThread main_thread;
+  test::RunLoop main_thread;
   MockCertVerifier* mock_verifier = new MockCertVerifier();
   EXPECT_CALL(*mock_verifier, Verify(_)).WillRepeatedly(Return(true));
   auto cert_verifier = std::unique_ptr<SSLCertificateVerifier>(mock_verifier);

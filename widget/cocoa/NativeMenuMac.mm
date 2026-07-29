@@ -1,4 +1,3 @@
-/* -*- Mode: c++; tab-width: 2; indent-tabs-mode: nil; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,6 +27,8 @@
 #include "nsIFrame.h"
 #include "nsPresContext.h"
 #include "nsDeviceContext.h"
+#include "nsMenuPopupFrame.h"
+#include "nsComputedDOMStyle.h"
 
 namespace mozilla {
 
@@ -244,11 +245,10 @@ static NSAppearance* NativeAppearanceForContent(nsIContent* aContent) {
 }
 
 void NativeMenuMac::ShowMenuAnchored(nsIFrame* aClickedFrame,
-                                     const CSSIntRect& aRect,
-                                     const nsAString& aPosition) {
+                                     const nsMenuPopupFrame* aPopupFrame) {
+  const int8_t position = aPopupFrame->GetAlignmentPosition();
   // "Pulls down" in Cocoa means the menu does not overlap its anchor.
-  const bool pullsDown =
-      !aPosition.Equals(u"overlap"_ns) && !aPosition.Equals(u"selection"_ns);
+  const bool pullsDown = position < POPUPPOSITION_OVERLAP;
 
   mMenu->SetIsAnchoredPopUp(!pullsDown);
   mMenu->SetIsAnchoredPullDown(pullsDown);
@@ -262,7 +262,8 @@ void NativeMenuMac::ShowMenuAnchored(nsIFrame* aClickedFrame,
       pc->CSSToDevPixelScale() / pc->DeviceContext()->GetDesktopToDeviceScale();
 
   // Convert Gecko screen coordinates to Cocoa window coordinates.
-  const DesktopRect desktopRect = aRect * cssToDesktopScale;
+  const DesktopRect desktopRect =
+      aPopupFrame->GetScreenAnchorRect() * cssToDesktopScale;
   NSPoint windowPoint = NSMakePoint(
       desktopRect.x - window.frame.origin.x,
       nsCocoaUtils::FlippedScreenY(desktopRect.y) - window.frame.origin.y);
@@ -274,39 +275,26 @@ void NativeMenuMac::ShowMenuAnchored(nsIFrame* aClickedFrame,
 
   NSAppearance* appearance = NativeAppearanceForContent(mMenu->Content());
   NSMenu* menu = mMenu->NativeNSMenu();
+  NSRectEdge edge = nsCocoaUtils::PopupPositionToNSRectEdge(position);
 
-  // XUL accepts many more anchor popup alignments than Cocoa. Map to the best
-  // approximate edge setting.
-  NSRectEdge edge;
-  if (StringBeginsWith(aPosition, u"topcenter bottom"_ns) ||
-      StringBeginsWith(aPosition, u"topleft bottom"_ns) ||
-      StringBeginsWith(aPosition, u"topright bottom"_ns) ||
-      StringBeginsWith(aPosition, u"before"_ns)) {
-    edge = NSRectEdgeMinY;
-  } else if ((StringEndsWith(aPosition, u"right"_ns) &&
-              (StringBeginsWith(aPosition, u"left"_ns) ||
-               StringBeginsWith(aPosition, u"topleft"_ns) ||
-               StringBeginsWith(aPosition, u"bottomleft"_ns))) ||
-             StringBeginsWith(aPosition, u"start"_ns)) {
-    edge = NSRectEdgeMinX;
-  } else if ((StringEndsWith(aPosition, u"left"_ns) &&
-              (StringBeginsWith(aPosition, u"right"_ns) ||
-               StringBeginsWith(aPosition, u"topright"_ns) ||
-               StringBeginsWith(aPosition, u"bottomright"_ns))) ||
-             StringBeginsWith(aPosition, u"end"_ns)) {
-    edge = NSRectEdgeMaxX;
-  } else {
-    edge = NSRectEdgeMaxY;
+  // Get the font size of the menupopup element which will be used to size the
+  // NSPopUpButtonCell, except for pull-down menus, which do not use custom font
+  // sizing. This affects the size of the checkmark image in the menu.
+  CGFloat fontSize = 0.f;
+  if (!pullsDown) {
+    fontSize = aPopupFrame->PresContext()->GetFullZoom() *
+               aPopupFrame->StyleFont()->mSize.ToCSSPixels();
   }
 
   // Let the MOZMenuOpeningCoordinator do the actual opening, so that this
-  // ShowAsAnchoredMenu call does not spawn a nested event loop, which would be
+  // ShowMenuAnchored call does not spawn a nested event loop, which would be
   // surprising to our callers.
   mOpeningHandle = [MOZMenuOpeningCoordinator.sharedInstance
       asynchronouslyOpenMenu:menu
             atScreenPosition:buttonRect.origin  // unused for anchored popups
                      forView:view
               withAppearance:appearance
+                withFontSize:fontSize
                asContextMenu:false  // unused for anchored popups
               asAnchoredMenu:true
                   anchorRect:buttonRect
@@ -330,13 +318,14 @@ void NativeMenuMac::ShowMenuAtPosition(nsIFrame* aClickedFrame,
   NSPoint locationOnScreen = nsCocoaUtils::GeckoPointToCocoaPoint(desktopPoint);
 
   // Let the MOZMenuOpeningCoordinator do the actual opening, so that this
-  // ShowAsContextMenu call does not spawn a nested event loop, which would be
+  // ShowMenuAtPosition call does not spawn a nested event loop, which would be
   // surprising to our callers.
   mOpeningHandle = [MOZMenuOpeningCoordinator.sharedInstance
       asynchronouslyOpenMenu:menu
             atScreenPosition:locationOnScreen
                      forView:view
               withAppearance:appearance
+                withFontSize:0.f  // unused
                asContextMenu:aIsContextMenu
               asAnchoredMenu:false
                   anchorRect:NSMakeRect(0, 0, 0, 0)  // unused

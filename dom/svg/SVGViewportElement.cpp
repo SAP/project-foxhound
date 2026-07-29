@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -46,7 +44,7 @@ SVGElement::LengthInfo SVGViewportElement::sLengthInfo[4] = {
 // Implementation
 
 SVGViewportElement::SVGViewportElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : SVGGraphicsElement(std::move(aNodeInfo)) {}
 
 //----------------------------------------------------------------------
@@ -231,10 +229,10 @@ gfxMatrix SVGViewportElement::ChildToUserSpaceTransform() const {
   }
   if (IsRootSVGSVGElement()) {
     const auto* svg = static_cast<const SVGSVGElement*>(this);
-    const SVGPoint& translate = svg->GetCurrentTranslate();
+    const Point& translate = svg->GetCurrentTranslate();
     float scale = svg->CurrentScale();
-    return ThebesMatrix(viewBox.PostScale(scale, scale)
-                            .PostTranslate(translate.GetX(), translate.GetY()));
+    return ThebesMatrix(
+        viewBox.PostScale(scale, scale).PostTranslate(translate));
   }
   // outer-<svg>, but inline in some other content:
   return ThebesMatrix(viewBox);

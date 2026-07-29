@@ -11,105 +11,133 @@ run-using handlers in `taskcluster/gecko_taskgraph/transforms/job`.
 
 import logging
 import os
+from typing import Literal, Union
+from typing import Optional as TOptional
 
 import mozpack.path as mozpath
-from packaging.version import Version
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.transforms.run import rewrite_when_to_optimization
 from taskgraph.util import json
 from taskgraph.util.copy import deepcopy
 from taskgraph.util.python_path import import_sibling_modules
-from taskgraph.util.schema import LegacySchema, validate_schema
+from taskgraph.util.schema import LegacySchema, Schema, validate_schema
 from taskgraph.util.taskcluster import get_artifact_prefix
-from voluptuous import Any, Coerce, Exclusive, Extra, Optional, Required
 
 from gecko_taskgraph.transforms.cached_tasks import order_tasks
-from gecko_taskgraph.transforms.task import task_description_schema
+from gecko_taskgraph.transforms.task import (
+    TaskDescriptionSchema,
+)
 from gecko_taskgraph.util.workertypes import worker_type_implementation
 
 logger = logging.getLogger(__name__)
 
-# Schema for a build description
-job_description_schema = LegacySchema({
+
+class FetchArtifactSchema(Schema, kw_only=True):
+    artifact: str
+    dest: TOptional[str] = None
+    extract: TOptional[bool] = None
+    verify_hash: TOptional[bool] = None
+
+
+class JobRunSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    # The key to a job implementation in a peer module to this one
+    using: str
+    # Base work directory used to set up the task.
+    workdir: TOptional[str] = None
+
+
+class WhenSchema(Schema, kw_only=True):
+    # This task only needs to be run if a file matching one of the given
+    # patterns has changed in the push.  The patterns use the mozpack
+    # match function (python/mozbuild/mozpack/path.py).
+    files_changed: TOptional[list[str]] = None
+
+
+class JobDescriptionSchema(Schema, kw_only=True):
     # The name of the job and the job's label.  At least one must be specified,
     # and the label will be generated from the name if necessary, by prepending
     # the kind.
-    Optional("name"): str,
-    Optional("label"): str,
+    name: TOptional[str] = None
+    label: TOptional[str] = None
     # the following fields are passed directly through to the task description,
     # possibly modified by the run implementation.  See
     # taskcluster/gecko_taskgraph/transforms/task.py for the schema details.
-    Required("description"): task_description_schema["description"],
-    Optional("attributes"): task_description_schema["attributes"],
-    Optional("task-from"): task_description_schema["task-from"],
-    Optional("dependencies"): task_description_schema["dependencies"],
-    Optional("if-dependencies"): task_description_schema["if-dependencies"],
-    Optional("soft-dependencies"): task_description_schema["soft-dependencies"],
-    Optional("if-dependencies"): task_description_schema["if-dependencies"],
-    Optional("requires"): task_description_schema["requires"],
-    Optional("expires-after"): task_description_schema["expires-after"],
-    Optional("expiration-policy"): task_description_schema["expiration-policy"],
-    Optional("routes"): task_description_schema["routes"],
-    Optional("scopes"): task_description_schema["scopes"],
-    Optional("tags"): task_description_schema["tags"],
-    Optional("extra"): task_description_schema["extra"],
-    Optional("treeherder"): task_description_schema["treeherder"],
-    Optional("index"): task_description_schema["index"],
-    Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
-    Optional("run-on-projects"): task_description_schema["run-on-projects"],
-    Optional("run-on-git-branches"): task_description_schema["run-on-git-branches"],
-    Optional("shipping-phase"): task_description_schema["shipping-phase"],
-    Optional("shipping-product"): task_description_schema["shipping-product"],
-    Optional("always-target"): task_description_schema["always-target"],
-    Exclusive("optimization", "optimization"): task_description_schema["optimization"],
-    Optional("use-sccache"): task_description_schema["use-sccache"],
-    Optional("use-python"): Any("system", "default", Coerce(Version)),
+    description: TaskDescriptionSchema.__annotations__["description"]  # noqa: F821
+    attributes: TOptional[TaskDescriptionSchema.__annotations__["attributes"]] = None  # type: ignore
+    task_from: TOptional[TaskDescriptionSchema.__annotations__["task_from"]] = None  # type: ignore
+    dependencies: TOptional[TaskDescriptionSchema.__annotations__["dependencies"]] = (
+        None  # type: ignore
+    )
+    if_dependencies: TOptional[
+        TaskDescriptionSchema.__annotations__["if_dependencies"]
+    ] = None  # type: ignore
+    soft_dependencies: TOptional[
+        TaskDescriptionSchema.__annotations__["soft_dependencies"]
+    ] = None  # type: ignore
+    requires: TOptional[TaskDescriptionSchema.__annotations__["requires"]] = None  # type: ignore
+    expires_after: TOptional[TaskDescriptionSchema.__annotations__["expires_after"]] = (
+        None  # type: ignore
+    )
+    expiration_policy: TOptional[
+        TaskDescriptionSchema.__annotations__["expiration_policy"]
+    ] = None  # type: ignore
+    routes: TOptional[TaskDescriptionSchema.__annotations__["routes"]] = None  # type: ignore
+    scopes: TOptional[TaskDescriptionSchema.__annotations__["scopes"]] = None  # type: ignore
+    tags: TOptional[TaskDescriptionSchema.__annotations__["tags"]] = None  # type: ignore
+    extra: TOptional[TaskDescriptionSchema.__annotations__["extra"]] = None  # type: ignore
+    treeherder: TOptional[TaskDescriptionSchema.__annotations__["treeherder"]] = None  # type: ignore
+    index: TOptional[TaskDescriptionSchema.__annotations__["index"]] = None  # type: ignore
+    run_on_repo_type: TOptional[
+        TaskDescriptionSchema.__annotations__["run_on_repo_type"]
+    ] = None  # type: ignore
+    run_on_projects: TOptional[
+        TaskDescriptionSchema.__annotations__["run_on_projects"]
+    ] = None  # type: ignore
+    run_on_git_branches: TOptional[
+        TaskDescriptionSchema.__annotations__["run_on_git_branches"]
+    ] = None  # type: ignore
+    shipping_phase: TOptional[
+        TaskDescriptionSchema.__annotations__["shipping_phase"]
+    ] = None  # type: ignore
+    shipping_product: TOptional[
+        TaskDescriptionSchema.__annotations__["shipping_product"]
+    ] = None  # type: ignore
+    always_target: TOptional[TaskDescriptionSchema.__annotations__["always_target"]] = (
+        None  # type: ignore
+    )
+    # Exclusive("optimization", "optimization") — mutually exclusive with 'when'
+    optimization: TOptional[TaskDescriptionSchema.__annotations__["optimization"]] = (
+        None  # type: ignore
+    )
+    use_sccache: TOptional[TaskDescriptionSchema.__annotations__["use_sccache"]] = None  # type: ignore
+    use_python: TOptional[Union[Literal["system", "default"], str]] = None
     # Fetch uv binary and add it to PATH
-    Optional("use-uv"): bool,
-    Optional("priority"): task_description_schema["priority"],
+    use_uv: TOptional[bool] = None
+    priority: TOptional[TaskDescriptionSchema.__annotations__["priority"]] = None  # type: ignore
     # The "when" section contains descriptions of the circumstances under which
     # this task should be included in the task graph.  This will be converted
     # into an optimization, so it cannot be specified in a job description that
     # also gives 'optimization'.
-    Exclusive("when", "optimization"): Any(
-        None,
-        {
-            # This task only needs to be run if a file matching one of the given
-            # patterns has changed in the push.  The patterns use the mozpack
-            # match function (python/mozbuild/mozpack/path.py).
-            Optional("files-changed"): [str],
-        },
-    ),
+    # Exclusive("when", "optimization") — mutually exclusive with 'optimization'
+    when: TOptional[WhenSchema] = None
     # A list of artifacts to install from 'fetch' tasks.
-    Optional("fetches"): {
-        str: [
-            str,
-            {
-                Required("artifact"): str,
-                Optional("dest"): str,
-                Optional("extract"): bool,
-                Optional("verify-hash"): bool,
-            },
-        ],
-    },
+    fetches: TOptional[dict[str, list[Union[str, FetchArtifactSchema]]]] = None
     # A description of how to run this job.
-    "run": {
-        # The key to a job implementation in a peer module to this one
-        "using": str,
-        # Base work directory used to set up the task.
-        Optional("workdir"): str,
-        # Any remaining content is verified against that job implementation's
-        # own schema.
-        Extra: object,
-    },
-    Required("worker-type"): task_description_schema["worker-type"],
+    run: JobRunSchema
+    worker_type: TaskDescriptionSchema.__annotations__["worker_type"]  # noqa: F821
     # This object will be passed through to the task description, with additions
     # provided by the job's run-using function
-    Optional("worker"): dict,
-})
+    worker: TOptional[dict] = None
+
+    def __post_init__(self):
+        super().__post_init__()
+        # Exclusive: optimization and when are mutually exclusive
+        if self.optimization is not None and self.when is not None:
+            raise ValueError("'optimization' and 'when' are mutually exclusive")
+
 
 transforms = TransformSequence()
-transforms.add_validate(job_description_schema)
+transforms.add_validate(JobDescriptionSchema)
 transforms.add(rewrite_when_to_optimization)
 
 

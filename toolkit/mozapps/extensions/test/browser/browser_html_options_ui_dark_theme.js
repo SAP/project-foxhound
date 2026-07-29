@@ -90,7 +90,7 @@ async function getColorsForOptionsUI({ browser_style, open_in_tab }) {
     // at about:addons. In that case, the background color of the container
     // element (i.e. the <browser>) is used to render the contents.
     Assert.ok(!open_in_tab, "Background only transparent without open_in_tab");
-    let style = optionsBrowser.ownerGlobal.getComputedStyle(optionsBrowser);
+    let style = optionsBrowser.documentGlobal.getComputedStyle(optionsBrowser);
     colors.bgColor = style.backgroundColor;
   }
 

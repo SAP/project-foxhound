@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -47,9 +45,15 @@ mozilla::ipc::IPCResult MessagePortParent::RecvPostMessages(
   }
 
   if (!mEntangled) {
-    // If we were shut down, the above condition already bailed out. So this
-    // should actually never happen and returning a failure is fine.
-    return IPC_FAIL(this, "RecvPostMessages not entangled");
+    // The child may send PostMessages before the Entangled() callback arrives
+    // (e.g. if it calls postMessage() then Atomics.wait() before the entangling
+    // IPC round-trip completes). Buffer these messages and flush them when
+    // Entangled() is called.
+    if (!mPendingMessages.AppendElements(std::move(aMessages),
+                                         mozilla::fallible)) {
+      return IPC_FAIL(this, "RecvPostMessages OOM");
+    }
+    return IPC_OK();
   }
 
   if (aMessages.IsEmpty()) {
@@ -130,6 +134,14 @@ bool MessagePortParent::Entangled(
     nsTArray<NotNull<RefPtr<SharedMessageBody>>>&& aMessages) {
   MOZ_ASSERT(!mEntangled);
   mEntangled = true;
+
+  // Flush any messages that arrived via PostMessages before entangling
+  // completed.
+  if (!mPendingMessages.IsEmpty() && mService) {
+    mService->PostMessages(this, std::move(mPendingMessages));
+    mPendingMessages.Clear();
+  }
+
   return SendEntangled(aMessages);
 }
 

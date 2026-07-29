@@ -24,7 +24,7 @@ add_task(async function () {
 
   const { inspector, view } = await openRuleView();
   await selectNode("#testid", inspector);
-  const rule = getRuleViewRuleEditor(view, 1).rule;
+  const rule = getRuleViewRuleEditorAt(view, 1).rule;
 
   is(
     rule.textProps[0].name,

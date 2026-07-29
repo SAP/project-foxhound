@@ -41,7 +41,7 @@
 
   &.attention .fxview-tab-row-favicon::after,
   &.attention .fxview-tab-row-button::after {
-    background-image: radial-gradient(circle, var(--attention-dot-color), var(--attention-dot-color) 2px, transparent 2px);
+    background-image: radial-gradient(circle, var(--button-attention-dot-color), var(--button-attention-dot-color) 2px, transparent 2px);
     height: 4px;
     width: 100%;
     inset-block-start: 20px;

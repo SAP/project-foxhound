@@ -86,7 +86,7 @@ add_task(
 
     SearchService.reset();
 
-    await SearchService.addEnginesFromExtension(extension.extension);
+    await SearchService.addEngineFromExtension(extension.extension);
 
     let settingsWritten = promiseAfterSettings();
     await SearchService.init();

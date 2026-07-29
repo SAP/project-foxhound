@@ -13,6 +13,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
 const SETTINGS_DEFAULTURI_BYPASS_LIST_KEY =
   "url-parser-default-unknown-schemes-interventions";
 
+/**
+ * Manages the Remote Settings-backed list of URI schemes that should be parsed
+ * using the simple URI parser instead of the default URI parser.
+ */
 export class SimpleURIUnknownSchemesRemoteObserver {
   #initialized = false;
   #bypassListSettings;

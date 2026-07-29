@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -51,6 +50,8 @@ interface HTMLMediaElement : HTMLElement {
   [Throws]
   undefined fastSeek(double time);
   readonly attribute unrestricted double duration;
+  [Func="IsChromeOrUAWidget"]
+  undefined updateCueDisplay();
   [ChromeOnly]
   readonly attribute boolean isEncrypted;
   // TODO: Bug 847376 - readonly attribute any startDate;
@@ -115,10 +116,6 @@ partial interface HTMLMediaElement {
   attribute MediaStream? srcObject;
 
   attribute boolean preservesPitch;
-
-  // NB: for internal use with the video controls:
-  [Func="IsChromeOrUAWidget"] attribute boolean mozAllowCasting;
-  [Func="IsChromeOrUAWidget"] attribute boolean mozIsCasting;
 
   // Mozilla extension: return embedded metadata from the stream as a
   // JSObject with key:value pairs for each tag. This can be used by

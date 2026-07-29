@@ -4,23 +4,23 @@
 
 package org.mozilla.fenix.experimentintegration
 
-import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.helpers.HomeActivityTestRule
 import org.mozilla.fenix.helpers.TestHelper
 import org.mozilla.fenix.ui.robots.homeScreen
+import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidComposeTestRuleV2
 
 class GenericExperimentIntegrationTest {
     private val experimentName = InstrumentationRegistry.getArguments().getString("EXP_NAME", "Viewpoint")
 
     @get:Rule
     val composeTestRule =
-        AndroidComposeTestRule(
+        AndroidComposeTestRuleV2(
             HomeActivityTestRule(
                 isPWAsPromptEnabled = false,
             ),
@@ -28,12 +28,12 @@ class GenericExperimentIntegrationTest {
 
     @Before
     fun setUp() {
-        TestHelper.appContext.settings().showSecretDebugMenuThisSession = true
+        TestHelper.appContext.components.settings.showSecretDebugMenuThisSession = true
     }
 
     @After
     fun tearDown() {
-        TestHelper.appContext.settings().showSecretDebugMenuThisSession = false
+        TestHelper.appContext.components.settings.showSecretDebugMenuThisSession = false
     }
 
     @Test

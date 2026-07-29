@@ -21,7 +21,7 @@ add_task(async function () {
       `<script>document.cookie = "foo=bar";</script>`
   );
   const URL_IFRAME = buildURLWithContent(
-    "example.org",
+    MAIN_DOMAIN,
     `<h1>example.org</h1>` +
       `<script>document.cookie = "hello=world; SameSite=None; Secure; Partitioned;";</script>`
   );

@@ -80,8 +80,9 @@ add_task(async function test_static_embeddings() {
     })
   );
 
-  const { output } = await engine.run({
-    args: ["The quick brown fox jumped over the lazy fox"],
+  const inputText = "The quick brown fox jumped over the lazy fox";
+  const { output, metrics } = await engine.run({
+    args: [inputText],
     options: {
       pooling: "mean",
       normalize: true,
@@ -105,5 +106,51 @@ add_task(async function test_static_embeddings() {
     ],
     "The embeddings were computed as expected.",
     0.00001 // epsilon
+  );
+
+  Assert.ok(metrics, "metrics should be present on the run result");
+  Assert.ok(
+    Array.isArray(metrics.runTimestamps),
+    "metrics.runTimestamps should be an array"
+  );
+  const timestampNames = metrics.runTimestamps.map(t => t.name);
+  for (const name of [
+    "initializationStart",
+    "initializationEnd",
+    "runStart",
+    "runEnd",
+  ]) {
+    Assert.ok(
+      timestampNames.includes(name),
+      `metrics.runTimestamps should include ${name}`
+    );
+  }
+  Assert.equal(
+    metrics.inputChars,
+    inputText.length,
+    "inputChars should equal the input string length"
+  );
+  Assert.greater(metrics.inputTokens, 0, "inputTokens should be > 0");
+  Assert.greaterOrEqual(
+    metrics.inferenceTime,
+    0,
+    "inferenceTime should be >= 0"
+  );
+
+  // inputChars measures UTF-16 code units, so a non-BMP character like an
+  // emoji (encoded as a surrogate pair) contributes 2 to inputChars.
+  const emojiText = "😄";
+  Assert.equal(emojiText.length, 2, "The emoji should be 2 UTF-16 code units");
+  const { metrics: emojiMetrics } = await engine.run({
+    args: [emojiText],
+    options: {
+      pooling: "mean",
+      normalize: true,
+    },
+  });
+  Assert.equal(
+    emojiMetrics.inputChars,
+    emojiText.length,
+    "inputChars should equal text.length (UTF-16 code units) for non-BMP input"
   );
 });

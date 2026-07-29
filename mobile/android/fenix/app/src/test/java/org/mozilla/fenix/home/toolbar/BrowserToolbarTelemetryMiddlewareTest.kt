@@ -9,7 +9,6 @@ import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteractio
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarStore
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -23,6 +22,7 @@ import org.mozilla.fenix.home.toolbar.TabCounterInteractions.TabCounterClicked
 import org.mozilla.fenix.home.toolbar.TabCounterInteractions.TabCounterLongClicked
 import org.mozilla.fenix.telemetry.SOURCE_ADDRESS_BAR
 import org.mozilla.fenix.telemetry.SOURCE_NAVIGATION_BAR
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class BrowserToolbarTelemetryMiddlewareTest {
@@ -80,7 +80,7 @@ class BrowserToolbarTelemetryMiddlewareTest {
     ) {
         val values = Toolbar.buttonTapped.testGetValue()
         assertNotNull(values)
-        val last = values!!.last()
+        val last = values.last()
         val expectedSource = when (source) {
             is Source.AddressBar, Source.Unknown -> SOURCE_ADDRESS_BAR
             Source.NavigationBar -> SOURCE_NAVIGATION_BAR

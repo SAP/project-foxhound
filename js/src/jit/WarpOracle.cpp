@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -8,6 +6,7 @@
 
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Try.h"
+#include "mozilla/Variant.h"
 
 #include <algorithm>
 
@@ -190,8 +189,8 @@ AbortReasonOr<WarpSnapshot*> WarpOracle::createSnapshot() {
 
 #ifdef JS_JITSPEW
   if (JitSpewEnabled(JitSpew_WarpSnapshots)) {
-    Fprinter& out = JitSpewPrinter();
-    snapshot->dump(out);
+    AutoJitSpewMessage msg(JitSpew_WarpSnapshots);
+    snapshot->dump(msg.printer());
   }
 #endif
 
@@ -656,12 +655,8 @@ AbortReasonOr<WarpScriptSnapshot*> WarpScriptOracle::createScriptSnapshot() {
       case JSOp::Goto:
       case JSOp::DebugCheckSelfHosted:
       case JSOp::DynamicImport:
-#ifdef ENABLE_SOURCE_PHASE_IMPORTS
-      case JSOp::DynamicImportSource:
-#endif
       case JSOp::ToString:
       case JSOp::GlobalOrEvalDeclInstantiation:
-      case JSOp::BindVar:
       case JSOp::MutateProto:
       case JSOp::Callee:
       case JSOp::ToAsyncIter:
@@ -833,48 +828,41 @@ struct RealmFuseDependency final : public CompilationDependency {
   }
 };
 
-bool WarpOracle::addFuseDependency(RealmFuses::FuseIndex fuseIndex,
-                                   bool* stillValid) {
-  auto addIfStillValid = [&](const auto& dep) {
-    if (!dep.checkDependency(cx_)) {
-      *stillValid = false;
-      return true;
-    }
-    *stillValid = true;
+bool WarpOracle::addFuseDependency(RealmFuses::FuseIndex fuseIndex) {
+  MOZ_ASSERT(RealmFuses::isInvalidatingFuse(fuseIndex));
+
+  auto addDep = [&](const auto& dep) {
+    MOZ_ASSERT(dep.checkDependency(cx_));
     return mirGen().tracker.addDependency(alloc_, dep);
   };
 
-  // Register a compilation dependency for all invalidating fuses that are still
-  // valid.
   switch (fuseIndex) {
     case RealmFuses::FuseIndex::OptimizeGetIteratorBytecodeFuse: {
       using Dependency =
           RealmFuseDependency<&RealmFuses::optimizeGetIteratorBytecodeFuse,
                               CompilationDependency::Type::GetIteratorBytecode>;
-      return addIfStillValid(Dependency());
+      return addDep(Dependency());
     }
     case RealmFuses::FuseIndex::OptimizeArraySpeciesFuse: {
       using Dependency =
           RealmFuseDependency<&RealmFuses::optimizeArraySpeciesFuse,
                               CompilationDependency::Type::ArraySpecies>;
-      return addIfStillValid(Dependency());
+      return addDep(Dependency());
     }
     case RealmFuses::FuseIndex::OptimizeTypedArraySpeciesFuse: {
       using Dependency =
           RealmFuseDependency<&RealmFuses::optimizeTypedArraySpeciesFuse,
                               CompilationDependency::Type::TypedArraySpecies>;
-      return addIfStillValid(Dependency());
+      return addDep(Dependency());
     }
     case RealmFuses::FuseIndex::OptimizeRegExpPrototypeFuse: {
       using Dependency =
           RealmFuseDependency<&RealmFuses::optimizeRegExpPrototypeFuse,
                               CompilationDependency::Type::RegExpPrototype>;
-      return addIfStillValid(Dependency());
+      return addDep(Dependency());
     }
     default:
-      MOZ_ASSERT(!RealmFuses::isInvalidatingFuse(fuseIndex));
-      *stillValid = true;
-      return true;
+      MOZ_CRASH("Unexpected invalidating fuse");
   }
 }
 
@@ -905,17 +893,12 @@ struct RuntimeFuseDependency final : public CompilationDependency {
   }
 };
 
-bool WarpOracle::addFuseDependency(RuntimeFuses::FuseIndex fuseIndex,
-                                   bool* stillValid) {
+bool WarpOracle::addFuseDependency(RuntimeFuses::FuseIndex fuseIndex) {
   MOZ_ASSERT(RuntimeFuses::isInvalidatingFuse(fuseIndex),
              "All current runtime fuses are invalidating");
 
-  auto addIfStillValid = [&](const auto& dep) {
-    if (!dep.checkDependency(cx_)) {
-      *stillValid = false;
-      return true;
-    }
-    *stillValid = true;
+  auto addDep = [&](const auto& dep) {
+    MOZ_ASSERT(dep.checkDependency(cx_));
     return mirGen().tracker.addDependency(alloc_, dep);
   };
 
@@ -925,19 +908,19 @@ bool WarpOracle::addFuseDependency(RuntimeFuses::FuseIndex fuseIndex,
       using Dependency = RuntimeFuseDependency<
           &RuntimeFuses::hasSeenObjectEmulateUndefinedFuse,
           CompilationDependency::Type::EmulatesUndefined>;
-      return addIfStillValid(Dependency());
+      return addDep(Dependency());
     }
     case RuntimeFuses::FuseIndex::HasSeenArrayExceedsInt32LengthFuse: {
       using Dependency = RuntimeFuseDependency<
           &RuntimeFuses::hasSeenArrayExceedsInt32LengthFuse,
           CompilationDependency::Type::ArrayExceedsInt32Length>;
-      return addIfStillValid(Dependency());
+      return addDep(Dependency());
     }
     case RuntimeFuses::FuseIndex::DefaultLocaleHasDefaultCaseMappingFuse: {
       using Dependency = RuntimeFuseDependency<
           &RuntimeFuses::defaultLocaleHasDefaultCaseMappingFuse,
           CompilationDependency::Type::DefaultCaseMapping>;
-      return addIfStillValid(Dependency());
+      return addDep(Dependency());
     }
     case RuntimeFuses::FuseIndex::LastFuseIndex:
       break;
@@ -986,6 +969,12 @@ class ObjectPropertyFuseDependency final : public CompilationDependency {
            propSlot_ == other.propSlot_;
   }
 };
+
+bool WarpOracle::addFuseDependency(const ObjectFuseInfo& info) {
+  ObjectPropertyFuseDependency dep(info.fuse, info.generation, info.propSlot);
+  MOZ_ASSERT(dep.checkDependency(cx_));
+  return mirGen().tracker.addDependency(alloc_, dep);
+}
 
 AbortReasonOr<Ok> WarpScriptOracle::maybeInlineIC(WarpOpSnapshotList& snapshots,
                                                   BytecodeLocation loc) {
@@ -1115,6 +1104,11 @@ AbortReasonOr<Ok> WarpScriptOracle::maybeInlineIC(WarpOpSnapshotList& snapshots,
   mozilla::Maybe<ShapeListSnapshot> shapeList;
   mozilla::Maybe<ShapeListWithOffsetsSnapshot> shapeListWithOffsets;
 
+  using PendingFuseDependency =
+      mozilla::Variant<RealmFuses::FuseIndex, RuntimeFuses::FuseIndex,
+                       ObjectFuseInfo>;
+  Vector<PendingFuseDependency, 4, SystemAllocPolicy> pendingFuseDeps;
+
   // Only create a snapshot if all opcodes are supported by the transpiler.
   CacheIRReader reader(stubInfo);
   bool hasInvalidFuseGuard = false;
@@ -1174,22 +1168,26 @@ AbortReasonOr<Ok> WarpScriptOracle::maybeInlineIC(WarpOpSnapshotList& snapshots,
         break;
       case CacheOp::GuardFuse: {
         auto [fuseIndex] = reader.argsForGuardFuse();
-        bool stillValid;
-        if (!oracle_->addFuseDependency(fuseIndex, &stillValid)) {
-          return abort(AbortReason::Alloc);
+        if (!RealmFuses::isInvalidatingFuse(fuseIndex)) {
+          break;
         }
-        if (!stillValid) {
+        if (cx_->realm()->realmFuses.getFuseByIndex(fuseIndex)->intact()) {
+          if (!pendingFuseDeps.emplaceBack(fuseIndex)) {
+            return abort(AbortReason::Alloc);
+          }
+        } else {
           hasInvalidFuseGuard = true;
         }
         break;
       }
       case CacheOp::GuardRuntimeFuse: {
         auto [fuseIndex] = reader.argsForGuardRuntimeFuse();
-        bool stillValid;
-        if (!oracle_->addFuseDependency(fuseIndex, &stillValid)) {
-          return abort(AbortReason::Alloc);
-        }
-        if (!stillValid) {
+        JSRuntime* rt = cx_->runtime();
+        if (rt->runtimeFuses.ref().getFuseByIndex(fuseIndex)->intact()) {
+          if (!pendingFuseDeps.emplaceBack(fuseIndex)) {
+            return abort(AbortReason::Alloc);
+          }
+        } else {
           hasInvalidFuseGuard = true;
         }
         break;
@@ -1206,9 +1204,9 @@ AbortReasonOr<Ok> WarpScriptOracle::maybeInlineIC(WarpOpSnapshotList& snapshots,
             stubInfo->getStubRawInt32(stubData, args.propMaskOffset);
         uint32_t propSlot =
             ObjectFuse::propertySlotFromIndexAndMask(propIndex, propMask);
-        ObjectPropertyFuseDependency dep(fuse, generation, propSlot);
-        if (dep.checkDependency(cx_)) {
-          if (!oracle_->mirGen().tracker.addDependency(alloc_, dep)) {
+        if (fuse->checkPropertyIsConstant(generation, propSlot)) {
+          ObjectFuseInfo info{fuse, generation, propSlot};
+          if (!pendingFuseDeps.emplaceBack(info)) {
             return abort(AbortReason::Alloc);
           }
         } else {
@@ -1283,6 +1281,15 @@ AbortReasonOr<Ok> WarpScriptOracle::maybeInlineIC(WarpOpSnapshotList& snapshots,
     std::copy_n(stubData, bytesNeeded, stubDataCopy);
 
     if (!replaceNurseryAndAllocSitePointers(stub, stubInfo, stubDataCopy)) {
+      return abort(AbortReason::Alloc);
+    }
+  }
+
+  for (auto& pending : pendingFuseDeps) {
+    auto addDep = [&](const auto& dep) {
+      return oracle_->addFuseDependency(dep);
+    };
+    if (!pending.match(addDep)) {
       return abort(AbortReason::Alloc);
     }
   }

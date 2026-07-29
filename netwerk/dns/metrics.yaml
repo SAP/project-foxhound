@@ -31,7 +31,6 @@ dns:
     notification_emails:
       - necko@mozilla.com
     expires: never
-    telemetry_mirror: DNS_LOOKUP_METHOD2
 
 
   cleanup_age:
@@ -78,12 +77,12 @@ dns:
     time_unit: minute
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1460305
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037081
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1460305
     notification_emails:
       - necko@mozilla.com
     expires: never
-    telemetry_mirror: DNS_PREMATURE_EVICTION
 
   by_type_premature_eviction:
     type: timing_distribution
@@ -96,12 +95,12 @@ dns:
     time_unit: minute
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1481251
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037081
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1481251
     notification_emails:
       - necko@mozilla.com
     expires: never
-    telemetry_mirror: DNS_BY_TYPE_PREMATURE_EVICTION
 
   trr_lookup_time:
     type: labeled_timing_distribution
@@ -123,7 +122,6 @@ dns:
       - necko@mozilla.com
       - vgosu@mozilla.com
     expires: never
-    telemetry_mirror: DNS_TRR_LOOKUP_TIME3
 
   trr_processing_time:
     type: timing_distribution
@@ -141,7 +139,6 @@ dns:
     notification_emails:
       - necko@mozilla.com
     expires: never
-    telemetry_mirror: DNS_TRR_PROCESSING_TIME
 
   trr_skip_reason_trr_first:
     type: labeled_custom_distribution
@@ -165,7 +162,6 @@ dns:
       - necko@mozilla.com
       - vgosu@mozilla.com
     expires: never
-    telemetry_mirror: TRR_SKIP_REASON_TRR_FIRST2
 
   trr_skip_reason_native_success:
     type: labeled_custom_distribution
@@ -182,6 +178,7 @@ dns:
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1649143
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1699523
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037081
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1649143
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1699523
@@ -189,7 +186,6 @@ dns:
       - necko@mozilla.com
       - vgosu@mozilla.com
     expires: never
-    telemetry_mirror: TRR_SKIP_REASON_NATIVE_SUCCESS
 
   trr_skip_reason_native_failed:
     type: labeled_custom_distribution
@@ -205,13 +201,13 @@ dns:
     histogram_type: linear
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1699523
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037081
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1699523
     notification_emails:
       - necko@mozilla.com
       - vgosu@mozilla.com
     expires: never
-    telemetry_mirror: TRR_SKIP_REASON_NATIVE_FAILED
 
   trr_relevant_skip_reason_trr_first:
     type: labeled_custom_distribution
@@ -237,7 +233,6 @@ dns:
       - necko@mozilla.com
       - vgosu@mozilla.com
     expires: never
-    telemetry_mirror: TRR_RELEVANT_SKIP_REASON_TRR_FIRST
 
   trr_relevant_skip_reason_native_success:
     type: labeled_custom_distribution
@@ -256,6 +251,7 @@ dns:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1649143
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1699523
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1742408
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037081
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1649143
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1699523
@@ -264,7 +260,6 @@ dns:
       - necko@mozilla.com
       - vgosu@mozilla.com
     expires: never
-    telemetry_mirror: TRR_RELEVANT_SKIP_REASON_NATIVE_SUCCESS
 
   trr_relevant_skip_reason_native_failed:
     type: labeled_custom_distribution
@@ -282,6 +277,7 @@ dns:
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1699523
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1742408
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037081
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1699523
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1742408
@@ -289,7 +285,6 @@ dns:
       - necko@mozilla.com
       - vgosu@mozilla.com
     expires: never
-    telemetry_mirror: TRR_RELEVANT_SKIP_REASON_NATIVE_FAILED
 
   trr_skip_reason_strict_mode:
     type: labeled_custom_distribution
@@ -306,12 +301,12 @@ dns:
     histogram_type: linear
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1737198
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037081
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1737198
     notification_emails:
       - necko@mozilla.com
     expires: never
-    telemetry_mirror: TRR_SKIP_REASON_STRICT_MODE
 
   trr_skip_reason_retry_success:
     type: labeled_custom_distribution
@@ -327,12 +322,12 @@ dns:
     histogram_type: linear
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1737198
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037081
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1737198
     notification_emails:
       - necko@mozilla.com
     expires: never
-    telemetry_mirror: TRR_SKIP_REASON_RETRY_SUCCESS
 
   trr_skip_reason_retry_failed:
     type: labeled_custom_distribution
@@ -348,12 +343,12 @@ dns:
     histogram_type: linear
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1737198
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037081
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1737198
     notification_emails:
       - necko@mozilla.com
     expires: never
-    telemetry_mirror: TRR_SKIP_REASON_RETRY_FAILED
 
   trr_relevant_skip_reason_trr_first_type_rec:
     type: labeled_custom_distribution
@@ -376,7 +371,6 @@ dns:
       - necko@mozilla.com
       - kershaw@mozilla.com
     expires: never
-    telemetry_mirror: TRR_RELEVANT_SKIP_REASON_TRR_FIRST_TYPE_REC
 
   trr_attempt_count:
     type: labeled_custom_distribution
@@ -392,12 +386,12 @@ dns:
     histogram_type: linear
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1737198
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037081
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1737198
     notification_emails:
       - necko@mozilla.com
     expires: never
-    telemetry_mirror: TRR_ATTEMPT_COUNT
 
   native_lookup_time:
     type: timing_distribution
@@ -409,12 +403,12 @@ dns:
     time_unit: millisecond
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1434852
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037081
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1434852
     notification_emails:
       - necko@mozilla.com
     expires: never
-    telemetry_mirror: DNS_NATIVE_LOOKUP_TIME
 
   by_type_failed_lookup_time:
     type: timing_distribution
@@ -431,24 +425,24 @@ dns:
     notification_emails:
       - necko@mozilla.com
     expires: never
-    telemetry_mirror: DNS_BY_TYPE_FAILED_LOOKUP_TIME
 
-  by_type_succeeded_lookup_time:
-    type: timing_distribution
+  https_rr_lookup_time:
+    type: labeled_timing_distribution
     description: >
-      Time for a completed by-type resolution that succeeded (msec).
-
-      This metric was generated to correspond to the Legacy Telemetry
-      exponential histogram DNS_BY_TYPE_SUCCEEDED_LOOKUP_TIME.
+      Time for a completed HTTPS RR (type 65) resolution (msec), keyed by
+      whether it was resolved over DoH/TRR or natively.
     time_unit: millisecond
+    labels:
+      - doh
+      - native
     bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1481251
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2044935
     data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1481251
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2044935
     notification_emails:
       - necko@mozilla.com
+      - kershaw@mozilla.com
     expires: never
-    telemetry_mirror: DNS_BY_TYPE_SUCCEEDED_LOOKUP_TIME
 
   native_queuing:
     type: timing_distribution
@@ -460,12 +454,12 @@ dns:
     time_unit: millisecond
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1470215
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037081
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1470215
     notification_emails:
       - necko@mozilla.com
     expires: never
-    telemetry_mirror: DNS_NATIVE_QUEUING
 
   lookup_algorithm:
     type: labeled_counter
@@ -487,27 +481,6 @@ dns:
     notification_emails:
       - necko@mozilla.com
     expires: never
-    telemetry_mirror: h#DNS_LOOKUP_ALGORITHM
-
-  blocklist_count:
-    type: custom_distribution
-    description: >
-      The number of unusable addresses reported for each record
-
-      This metric was generated to correspond to the Legacy Telemetry linear
-      histogram DNS_BLACKLIST_COUNT.
-    range_min: 1
-    range_max: 21
-    bucket_count: 20
-    histogram_type: linear
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
-    notification_emails:
-      - necko@mozilla.com
-    expires: never
-    telemetry_mirror: DNS_BLACKLIST_COUNT
 
   trr_http_version:
     type: dual_labeled_counter
@@ -535,7 +508,6 @@ dns:
     notification_emails:
       - necko@mozilla.com
     expires: never
-    telemetry_mirror: DNS_TRR_HTTP_VERSION2
 
   trr_first:
     type: dual_labeled_counter
@@ -560,6 +532,7 @@ dns:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1497252
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1640867
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1646452
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037081
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1497252
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1640867
@@ -568,7 +541,6 @@ dns:
       - necko@mozilla.com
       - vgosu@mozilla.com
     expires: never
-    telemetry_mirror: DNS_TRR_FIRST4
 
   trr_disabled:
     type: dual_labeled_counter
@@ -590,6 +562,7 @@ dns:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1472659
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1640867
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1646452
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037081
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1472659
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1640867
@@ -598,7 +571,6 @@ dns:
       - necko@mozilla.com
       - vgosu@mozilla.com
     expires: never
-    telemetry_mirror: DNS_TRR_DISABLED3
 
   trr_blacklisted:
     type: dual_labeled_counter
@@ -619,6 +591,7 @@ dns:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1434852
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1640867
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1646452
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037081
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1434852
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1640867
@@ -627,7 +600,6 @@ dns:
       - necko@mozilla.com
       - vgosu@mozilla.com
     expires: never
-    telemetry_mirror: DNS_TRR_BLACKLISTED3
 
   trr_ns_verfified:
     type: dual_labeled_counter
@@ -648,6 +620,7 @@ dns:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1453825
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1640867
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1646452
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037081
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1453825
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1640867
@@ -656,7 +629,6 @@ dns:
       - necko@mozilla.com
       - vgosu@mozilla.com
     expires: never
-    telemetry_mirror: DNS_TRR_NS_VERFIFIED3
 
   trr_success:
     type: dual_labeled_counter
@@ -680,6 +652,7 @@ dns:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1497438
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1640867
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1646452
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037081
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1497438
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1640867
@@ -688,7 +661,6 @@ dns:
       - necko@mozilla.com
       - vgosu@mozilla.com
     expires: never
-    telemetry_mirror: DNS_TRR_SUCCESS3
 
   trr_http3_0rtt_state:
     type: labeled_counter
@@ -767,4 +739,3 @@ dns:
       - necko@mozilla.com
       - vgosu@mozilla.com
     expires: never
-    telemetry_mirror: DNS_LOOKUP_DISPOSITION3

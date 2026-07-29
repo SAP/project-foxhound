@@ -6,7 +6,7 @@ package org.mozilla.focus.helpers
 
 import android.net.Uri
 import androidx.core.net.toUri
-import okhttp3.mockwebserver.MockWebServer
+import mockwebserver3.MockWebServer
 
 /**
  * Helper for hosting web pages locally for testing purposes.

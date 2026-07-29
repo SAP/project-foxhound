@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -12,11 +10,12 @@ include("js-cxxflags.mozbuild")
 
 # Directory metadata
 component_engine = ("Core", "JavaScript Engine")
+component_debugger = ("Core", "JavaScript: Debugger API")
 component_gc = ("Core", "JavaScript: GC")
 component_intl = ("Core", "JavaScript: Internationalization API")
 component_jit = ("Core", "JavaScript Engine: JIT")
 component_stl = ("Core", "JavaScript: Standard Library")
-component_wasm = ("Core", "Javascript: Web Assembly")
+component_wasm = ("Core", "JavaScript: WebAssembly")
 
 FILES_PER_UNIFIED_FILE = 6
 
@@ -33,6 +32,8 @@ with Files("builtin/**"):
     BUG_COMPONENT = component_stl
 with Files("ctypes/**"):
     BUG_COMPONENT = ("Core", "js-ctypes")
+with Files("debugger/**"):
+    BUG_COMPONENT = component_debugger
 with Files("gc/**"):
     BUG_COMPONENT = component_gc
 with Files("jit/**"):
@@ -45,6 +46,9 @@ for gcfile in ["devtools/rootAnalysis", "devtools/gc-ubench", "devtools/gctrace"
 
 with Files("builtin/intl/*"):
     BUG_COMPONENT = component_intl
+
+with Files("doc/Debugger/**"):
+    BUG_COMPONENT = component_debugger
 
 if not CONFIG["JS_DISABLE_SHELL"]:
     DIRS += [
@@ -204,6 +208,7 @@ EXPORTS.js += [
     "../public/Vector.h",
     "../public/WaitCallbacks.h",
     "../public/Warnings.h",
+    "../public/WasmComponent.h",
     "../public/WasmFeatures.h",
     "../public/WasmModule.h",
     "../public/WeakMap.h",
@@ -236,6 +241,7 @@ EXPORTS.js.experimental += [
 # a clean design.  Use this only if you absolutely must, and feel free to
 # propose clean APIs to replace what's here!
 EXPORTS.js.friend += [
+    "../public/friend/CycleCollector.h",
     "../public/friend/DOMProxy.h",
     "../public/friend/DumpFunctions.h",
     "../public/friend/ErrorMessages.h",
@@ -246,6 +252,7 @@ EXPORTS.js.friend += [
     "../public/friend/StackLimits.h",
     "../public/friend/UsageStatistics.h",
     "../public/friend/WindowProxy.h",
+    "../public/friend/Wrapper.h",
     "../public/friend/XrayJitInfo.h",
 ]
 
@@ -306,6 +313,7 @@ DIRS += [
     "vm",
     "wasm",
     "xsum",
+    "builtin/normalizer_glue",
 ]
 
 # Glean integration
@@ -332,7 +340,13 @@ if CONFIG["MOZ_VTUNE"]:
     DIRS += ["vtune"]
 
 if CONFIG["JS_HAS_INTL_API"]:
-    DIRS += ["builtin/intl", "builtin/temporal"]
+    DIRS += [
+        "builtin/intl",
+        "builtin/temporal",
+        "builtin/intl/collator_glue",
+        "builtin/intl/locale_glue",
+        "irregexp/properties_glue",
+    ]
 
 CXXFLAGS += CONFIG["MOZ_ZLIB_CFLAGS"]
 

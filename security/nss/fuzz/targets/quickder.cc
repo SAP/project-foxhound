@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 #include "certt.h"
@@ -12,9 +13,8 @@
 #include "secport.h"
 
 #include "asn1/mutators.h"
-#include "base/mutate.h"
 
-const std::vector<const SEC_ASN1Template *> templates = {
+const std::vector<const SEC_ASN1Template*> kTemplates = {
     CERT_AttributeTemplate,
     CERT_CertExtensionTemplate,
     CERT_CertificateRequestTemplate,
@@ -49,10 +49,10 @@ const std::vector<const SEC_ASN1Template *> templates = {
     SEC_PointerToGeneralizedTimeTemplate,
     SEC_PointerToOctetStringTemplate,
     SEC_PrintableStringTemplate,
-    SEC_SetOfAnyTemplate,
-    SEC_SetOfEnumeratedTemplate,
     SEC_SequenceOfAnyTemplate,
     SEC_SequenceOfObjectIDTemplate,
+    SEC_SetOfAnyTemplate,
+    SEC_SetOfEnumeratedTemplate,
     SEC_SignedCertificateTemplate,
     SEC_SkipTemplate,
     SEC_T61StringTemplate,
@@ -64,31 +64,42 @@ const std::vector<const SEC_ASN1Template *> templates = {
     SECKEY_DHPublicKeyTemplate,
     SECKEY_DSAPrivateKeyExportTemplate,
     SECKEY_DSAPublicKeyTemplate,
+    SECKEY_EncryptedPrivateKeyInfoTemplate,
     SECKEY_PQGParamsTemplate,
+    SECKEY_PointerToEncryptedPrivateKeyInfoTemplate,
+    SECKEY_PointerToPrivateKeyInfoTemplate,
     SECKEY_PrivateKeyInfoTemplate,
     SECKEY_RSAPSSParamsTemplate,
     SECKEY_RSAPublicKeyTemplate,
     SECOID_AlgorithmIDTemplate};
 
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-  static char *dest[2048];
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
+  alignas(std::max_align_t) static char dest[2048 * sizeof(void*)];
 
-  PORTCheapArenaPool pool;
-  PORT_InitCheapArena(&pool, DER_DEFAULT_CHUNKSIZE);
+  for (auto tpl : kTemplates) {
+    memset(dest, 0, sizeof(dest));
 
-  for (auto tpl : templates) {
-    SECItem buf = {siBuffer, (unsigned char *)data, (unsigned int)size};
+    PORTCheapArenaPool pool;
+    PORT_InitCheapArena(&pool, DER_DEFAULT_CHUNKSIZE);
+
+    SECItem buf = {siBuffer, (unsigned char*)data, (unsigned int)size};
     (void)SEC_QuickDERDecodeItem(&pool.arena, dest, tpl, &buf);
-  }
 
-  PORT_DestroyCheapArena(&pool);
+    PORT_DestroyCheapArena(&pool);
+  }
 
   return 0;
 }
 
-extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
-                                          size_t max_size, unsigned int seed) {
-  return CustomMutate(
-      Mutators({ASN1Mutators::FlipConstructed, ASN1Mutators::ChangeType}), data,
-      size, max_size, seed);
+extern "C" size_t LLVMFuzzerCustomMutator(uint8_t* data, size_t size,
+                                          size_t maxSize, unsigned int seed) {
+  return ASN1Mutators::CustomMutator(data, size, maxSize, seed);
+}
+
+extern "C" size_t LLVMFuzzerCustomCrossOver(const uint8_t* data1, size_t size1,
+                                            const uint8_t* data2, size_t size2,
+                                            uint8_t* out, size_t maxOutSize,
+                                            unsigned int seed) {
+  return ASN1Mutators::CustomCrossOver(data1, size1, data2, size2, out,
+                                       maxOutSize, seed);
 }

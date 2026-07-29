@@ -10,6 +10,7 @@ import com.google.mlkit.genai.prompt.Generation
 import com.google.mlkit.genai.prompt.GenerativeModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import mozilla.components.concept.llm.LlmProvider
 import mozilla.components.concept.llm.LocalLlmProvider
 import mozilla.components.concept.llm.LocalLlmProvider.State
 
@@ -34,6 +35,7 @@ import mozilla.components.concept.llm.LocalLlmProvider.State
 class GeminiNanoLlmProvider(
     private val buildModel: () -> GenerativeModel = { Generation.getClient() },
 ) : LocalLlmProvider {
+    override val info = LlmProvider.Info(nameRes = R.string.gemininano_llm_provider_name)
     private val _state = MutableStateFlow<State>(State.Idle)
 
     /**

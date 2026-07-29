@@ -8,13 +8,13 @@
 
 add_task(async function () {
   await openTabAndSetupStorage(
-    MAIN_DOMAIN_SECURED + "storage-sessionstorage.html"
+    MAIN_URL_SECURED + "storage-sessionstorage.html"
   );
   showAllColumns(true);
 
-  await performAdd(["sessionStorage", "https://test1.example.org"]);
-  await performAdd(["sessionStorage", "https://test1.example.org"]);
-  await performAdd(["sessionStorage", "https://test1.example.org"]);
-  await performAdd(["sessionStorage", "https://test1.example.org"]);
-  await performAdd(["sessionStorage", "https://test1.example.org"]);
+  await performAdd(["sessionStorage", MAIN_ORIGIN_SECURED]);
+  await performAdd(["sessionStorage", MAIN_ORIGIN_SECURED]);
+  await performAdd(["sessionStorage", MAIN_ORIGIN_SECURED]);
+  await performAdd(["sessionStorage", MAIN_ORIGIN_SECURED]);
+  await performAdd(["sessionStorage", MAIN_ORIGIN_SECURED]);
 });

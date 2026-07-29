@@ -7,17 +7,17 @@
 "use strict";
 
 add_task(async function () {
-  const TEST_URL = MAIN_DOMAIN + "storage-cookies.html";
+  const TEST_URL = MAIN_URL + "storage-cookies.html";
   await openTabAndSetupStorage(TEST_URL);
   showAllColumns(true);
 
-  const rowId = await performAdd(["cookies", "http://test1.example.org"]);
+  const rowId = await performAdd(["cookies", MAIN_ORIGIN]);
   checkCookieData(rowId);
 
-  await performAdd(["cookies", "http://test1.example.org"]);
-  await performAdd(["cookies", "http://test1.example.org"]);
-  await performAdd(["cookies", "http://test1.example.org"]);
-  await performAdd(["cookies", "http://test1.example.org"]);
+  await performAdd(["cookies", MAIN_ORIGIN]);
+  await performAdd(["cookies", MAIN_ORIGIN]);
+  await performAdd(["cookies", MAIN_ORIGIN]);
+  await performAdd(["cookies", MAIN_ORIGIN]);
 
   info("Check it does work in private tabs too");
   const privateWindow = await BrowserTestUtils.openNewBrowserWindow({
@@ -26,19 +26,16 @@ add_task(async function () {
   ok(PrivateBrowsingUtils.isWindowPrivate(privateWindow), "window is private");
   const privateTab = await addTab(TEST_URL, { window: privateWindow });
   await openStoragePanel({ tab: privateTab });
-  const privateTabRowId = await performAdd([
-    "cookies",
-    "http://test1.example.org",
-  ]);
+  const privateTabRowId = await performAdd(["cookies", MAIN_ORIGIN]);
   checkCookieData(privateTabRowId);
 
-  await performAdd(["cookies", "http://test1.example.org"]);
+  await performAdd(["cookies", MAIN_ORIGIN]);
   privateWindow.close();
 });
 
 function checkCookieData(rowId) {
   is(getCellValue(rowId, "value"), "value", "value is correct");
-  is(getCellValue(rowId, "host"), "test1.example.org", "host is correct");
+  is(getCellValue(rowId, "host"), MAIN_HOST, "host is correct");
   is(getCellValue(rowId, "path"), "/", "path is correct");
   const actualExpiry = Math.floor(
     new Date(getCellValue(rowId, "expires")) / 1000

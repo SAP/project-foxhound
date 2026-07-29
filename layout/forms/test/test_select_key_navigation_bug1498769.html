@@ -14,12 +14,18 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1498769
 
   SimpleTest.waitForExplicitFinish();
 
+  function isDisplayNone(option) {
+    return option.style.display == "none" ||
+           option.parentElement.style.display == "none";
+  }
+
   function test() {
     const kIsMac = navigator.platform.indexOf("Mac") == 0;
     SimpleTest.waitForFocus(function() {
       [...document.querySelectorAll('select')].forEach(function(e) {
         e.focus();
-        const description = ` (size ${e.size})`;
+        const description =
+          ` (size ${e.size}) (${e.innerHTML.replaceAll('\n', '').trim()})`;
         is(e.selectedIndex, 1, "the 'selected' attribute is respected" + description);
         if (kIsMac && e.size == "1") {
           // On OSX, UP/DOWN opens the dropdown menu rather than changing
@@ -29,9 +35,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1498769
         synthesizeKey("VK_DOWN", {});
         is(e.selectedIndex, 2, "VK_DOWN selected the first option below" + description);
         synthesizeKey("VK_UP", {});
-        is(e.selectedIndex, 0, "VK_UP skips the display:none/contents option" + description);
+        let expected = (e.size != "1" || isDisplayNone(e.options[1])) ? 0 : 1;
+        is(e.selectedIndex, expected, "VK_UP skips the display:none option but not contents" + description);
         synthesizeKey("VK_DOWN", {});
-        is(e.selectedIndex, 2, "VK_DOWN skips the display:none/contents option" + description);
+        is(e.selectedIndex, 2, "VK_DOWN skips the display:none/contents option again if needed" + description);
       });
       SimpleTest.finish();
     });

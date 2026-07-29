@@ -18,7 +18,7 @@ import org.junit.Before
 import org.junit.Test
 import org.mozilla.experiments.nimbus.NimbusInterface
 import org.mozilla.fenix.experiments.maybeFetchExperiments
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.utils.Settings
 
 class NimbusSystemTest {
@@ -48,7 +48,7 @@ class NimbusSystemTest {
         nimbus = NimbusUnderTest(context)
 
         settings = mockk(relaxed = true)
-        every { context.settings() } returns settings
+        every { context.components.settings } returns settings
 
         every { settings.nimbusLastFetchTime = capture(lastTimeSlot) } just runs
         every { settings.nimbusLastFetchTime } returns 0L
@@ -60,7 +60,7 @@ class NimbusSystemTest {
     fun `GIVEN a nimbus object WHEN calling maybeFetchExperiments after an interval THEN call fetchExperiments`() {
         val elapsedTime: Long = Settings.ONE_HOUR_MS + 1
         nimbus.maybeFetchExperiments(
-            context,
+            context.components.settings,
             config,
             elapsedTime,
         )
@@ -72,7 +72,7 @@ class NimbusSystemTest {
     fun `GIVEN a nimbus object WHEN calling maybeFetchExperiments at exactly an interval THEN call fetchExperiments`() {
         val elapsedTime: Long = Settings.ONE_HOUR_MS
         nimbus.maybeFetchExperiments(
-            context,
+            context.components.settings,
             config,
             elapsedTime,
         )
@@ -84,7 +84,7 @@ class NimbusSystemTest {
     fun `GIVEN a nimbus object WHEN calling maybeFetchExperiments before an interval THEN do not call fetchExperiments`() {
         val elapsedTime: Long = Settings.ONE_HOUR_MS - 1
         nimbus.maybeFetchExperiments(
-            context,
+            context.components.settings,
             config,
             elapsedTime,
         )
@@ -95,7 +95,7 @@ class NimbusSystemTest {
     fun `GIVEN a nimbus object WHEN calling maybeFetchExperiments at without an elapsedTime THEN call fetchExperiments`() {
         // since elapsedTime = currentTimeMillis
         nimbus.maybeFetchExperiments(
-            context,
+            context.components.settings,
             config,
         )
         assertTrue(nimbus.isFetching)
@@ -106,7 +106,7 @@ class NimbusSystemTest {
         var currentTime = 0L
         fun assertFetchEveryTime() {
             nimbus.maybeFetchExperiments(
-                context,
+                context.components.settings,
                 config,
                 currentTime,
             )
@@ -132,7 +132,7 @@ class NimbusSystemTest {
 
         currentTime += Settings.ONE_MINUTE_MS
         nimbus.maybeFetchExperiments(
-            context,
+            context.components.settings,
             config,
             currentTime,
         )
@@ -145,7 +145,7 @@ class NimbusSystemTest {
         // doesn't call fetch.
         currentTime += Settings.ONE_MINUTE_MS
         nimbus.maybeFetchExperiments(
-            context,
+            context.components.settings,
             config,
             currentTime,
         )
@@ -154,7 +154,7 @@ class NimbusSystemTest {
         // Now wait, another hour, and we've reset the behaviour back to normal operation.
         currentTime += Settings.ONE_HOUR_MS + Settings.ONE_MINUTE_MS
         nimbus.maybeFetchExperiments(
-            context,
+            context.components.settings,
             config,
             currentTime,
         )

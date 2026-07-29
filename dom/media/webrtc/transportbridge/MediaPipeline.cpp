@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,8 +6,7 @@
 
 #include "MediaPipeline.h"
 
-#include <inttypes.h>
-#include <math.h>
+#include <stdint.h>
 
 #include <sstream>
 #include <utility>
@@ -262,7 +260,7 @@ MediaPipeline::MediaPipeline(const std::string& aPc,
       mRtpBytesSent(0),
       mRtpBytesReceived(0),
       mPc(aPc),
-      mRtpHeaderExtensionMap(new webrtc::RtpHeaderExtensionMap()),
+      mRtpHeaderExtensionMap(MakeUnique<webrtc::RtpHeaderExtensionMap>()),
       mPacketDumper(PacketDumper::GetPacketDumper(mPc)) {
   if (mDirection == DirectionType::TRANSMIT) {
     mRtpSendEventListener = mConduit->SenderRtpSendEvent().Connect(
@@ -281,8 +279,8 @@ MediaPipeline::MediaPipeline(const std::string& aPc,
 #undef INIT_MIRROR
 
 MediaPipeline::~MediaPipeline() {
-  MOZ_LOG(gMediaPipelineLog, LogLevel::Info,
-          ("Destroying MediaPipeline: %s", mDescription.c_str()));
+  MOZ_LOG_FMT(gMediaPipelineLog, LogLevel::Info, "Destroying MediaPipeline: {}",
+              mDescription);
 }
 
 void MediaPipeline::Shutdown() {
@@ -298,8 +296,8 @@ void MediaPipeline::Shutdown() {
 void MediaPipeline::DetachTransport_s() {
   ASSERT_ON_THREAD(mStsThread);
 
-  MOZ_LOG(gMediaPipelineLog, LogLevel::Info,
-          ("%s in %s", mDescription.c_str(), __FUNCTION__));
+  MOZ_LOG_FMT(gMediaPipelineLog, LogLevel::Info, "{} in {}", mDescription,
+              __FUNCTION__);
 
   disconnect_all();
   mRtpState = TransportLayer::TS_NONE;
@@ -385,7 +383,7 @@ void MediaPipeline::GetContributingSourceStats(
   // Get the expiry from now
   DOMHighResTimeStamp expiry =
       RtpCSRCStats::GetExpiryFromTime(GetTimestampMaker().GetNow().ToDom());
-  for (auto info : mCsrcStats) {
+  for (const auto& info : mCsrcStats) {
     if (!info.second.Expired(expiry)) {
       RTCRTPContributingSourceStats stats;
       info.second.GetWebidlInstance(stats, aInboundRtpStreamId);
@@ -397,7 +395,8 @@ void MediaPipeline::GetContributingSourceStats(
 }
 
 void MediaPipeline::RtpStateChange(const std::string& aTransportId,
-                                   TransportLayer::State aState) {
+                                   TransportLayer::State aState,
+                                   const nsTArray<nsTArray<uint8_t>>&) {
   if (mTransportId != aTransportId) {
     return;
   }
@@ -421,9 +420,9 @@ void MediaPipeline::CheckTransportStates() {
       mRtpState == TransportLayer::TS_ERROR ||
       mRtcpState == TransportLayer::TS_CLOSED ||
       mRtcpState == TransportLayer::TS_ERROR) {
-    MOZ_LOG(gMediaPipelineLog, LogLevel::Warning,
-            ("RTP Transport failed for pipeline %p flow %s", this,
-             mDescription.c_str()));
+    MOZ_LOG_FMT(gMediaPipelineLog, LogLevel::Warning,
+                "RTP Transport failed for pipeline {} flow {}", fmt::ptr(this),
+                mDescription);
 
     NS_WARNING(
         "MediaPipeline Transport failed. This is not properly cleaned up yet");
@@ -439,15 +438,15 @@ void MediaPipeline::CheckTransportStates() {
   }
 
   if (mRtpState == TransportLayer::TS_OPEN) {
-    MOZ_LOG(gMediaPipelineLog, LogLevel::Info,
-            ("RTP Transport ready for pipeline %p flow %s", this,
-             mDescription.c_str()));
+    MOZ_LOG_FMT(gMediaPipelineLog, LogLevel::Info,
+                "RTP Transport ready for pipeline {} flow {}", fmt::ptr(this),
+                mDescription);
   }
 
   if (mRtcpState == TransportLayer::TS_OPEN) {
-    MOZ_LOG(gMediaPipelineLog, LogLevel::Info,
-            ("RTCP Transport ready for pipeline %p flow %s", this,
-             mDescription.c_str()));
+    MOZ_LOG_FMT(gMediaPipelineLog, LogLevel::Info,
+                "RTCP Transport ready for pipeline {} flow {}", fmt::ptr(this),
+                mDescription);
   }
 
   if (mRtpState == TransportLayer::TS_OPEN && mRtcpState == mRtpState) {
@@ -485,9 +484,8 @@ void MediaPipeline::SendPacket(MediaPacket&& aPacket) {
     IncrementRtcpPacketsSent();
   }
 
-  MOZ_LOG(
-      gMediaPipelineLog, LogLevel::Debug,
-      ("%s sending %s packet", mDescription.c_str(), (isRtp ? "RTP" : "RTCP")));
+  MOZ_LOG_FMT(gMediaPipelineLog, LogLevel::Debug, "{} sending {} packet",
+              mDescription, (isRtp ? "RTP" : "RTCP"));
 
   mTransportHandler->SendPacket(mTransportId, std::move(aPacket));
 }
@@ -498,9 +496,9 @@ void MediaPipeline::IncrementRtpPacketsSent(const MediaPacket& aPacket) {
   mRtpBytesSent += aPacket.len();
 
   if (!(mRtpPacketsSent % 100)) {
-    MOZ_LOG(gMediaPipelineLog, LogLevel::Info,
-            ("RTP sent packet count for %s Pipeline %p: %u (%" PRId64 " bytes)",
-             mDescription.c_str(), this, mRtpPacketsSent, mRtpBytesSent));
+    MOZ_LOG_FMT(gMediaPipelineLog, LogLevel::Info,
+                "RTP sent packet count for {} Pipeline {}: {} ({} bytes)",
+                mDescription, fmt::ptr(this), mRtpPacketsSent, mRtpBytesSent);
   }
 }
 
@@ -508,9 +506,9 @@ void MediaPipeline::IncrementRtcpPacketsSent() {
   ASSERT_ON_THREAD(mStsThread);
   ++mRtcpPacketsSent;
   if (!(mRtcpPacketsSent % 100)) {
-    MOZ_LOG(gMediaPipelineLog, LogLevel::Info,
-            ("RTCP sent packet count for %s Pipeline %p: %u",
-             mDescription.c_str(), this, mRtcpPacketsSent));
+    MOZ_LOG_FMT(gMediaPipelineLog, LogLevel::Info,
+                "RTCP sent packet count for {} Pipeline {}: {}", mDescription,
+                fmt::ptr(this), mRtcpPacketsSent);
   }
 }
 
@@ -519,10 +517,10 @@ void MediaPipeline::IncrementRtpPacketsReceived(int32_t aBytes) {
   ++mRtpPacketsReceived;
   mRtpBytesReceived += aBytes;
   if (!(mRtpPacketsReceived % 100)) {
-    MOZ_LOG(
-        gMediaPipelineLog, LogLevel::Info,
-        ("RTP received packet count for %s Pipeline %p: %u (%" PRId64 " bytes)",
-         mDescription.c_str(), this, mRtpPacketsReceived, mRtpBytesReceived));
+    MOZ_LOG_FMT(gMediaPipelineLog, LogLevel::Info,
+                "RTP received packet count for {} Pipeline {}: {} ({} bytes)",
+                mDescription, fmt::ptr(this), mRtpPacketsReceived,
+                mRtpBytesReceived);
   }
 }
 
@@ -610,8 +608,8 @@ void MediaPipeline::RtpPacketReceived(std::string& aTransportId,
     }
   }
 
-  MOZ_LOG(gMediaPipelineLog, LogLevel::Debug,
-          ("%s received RTP packet.", mDescription.c_str()));
+  MOZ_LOG_FMT(gMediaPipelineLog, LogLevel::Debug, "{} received RTP packet.",
+              mDescription);
   IncrementRtpPacketsReceived(packet.len());
 
   RtpLogger::LogPacket(packet, true, mDescription);
@@ -635,8 +633,8 @@ void MediaPipeline::RtcpPacketReceived(std::string& aTransportId,
   // with.
   MediaPacket packet(std::move(aPacket));
 
-  MOZ_LOG(gMediaPipelineLog, LogLevel::Debug,
-          ("%s received RTCP packet.", mDescription.c_str()));
+  MOZ_LOG_FMT(gMediaPipelineLog, LogLevel::Debug, "{} received RTCP packet.",
+              mDescription);
 
   RtpLogger::LogPacket(packet, true, mDescription);
 
@@ -649,8 +647,8 @@ void MediaPipeline::RtcpPacketReceived(std::string& aTransportId,
                       packet.data(), packet.len());
 
   if (StaticPrefs::media_webrtc_net_force_disable_rtcp_reception()) {
-    MOZ_LOG(gMediaPipelineLog, LogLevel::Debug,
-            ("%s RTCP packet forced to be dropped", mDescription.c_str()));
+    MOZ_LOG_FMT(gMediaPipelineLog, LogLevel::Debug,
+                "{} RTCP packet forced to be dropped", mDescription);
     return;
   }
 
@@ -766,7 +764,7 @@ MediaPipelineTransmit::MediaPipelineTransmit(
                     std::move(aConduit)),
       mWatchManager(this, AbstractThread::MainThread()),
       mIsVideo(aIsVideo),
-      mListener(new PipelineListener(mConduit)),
+      mListener(MakeRefPtr<PipelineListener>(mConduit)),
       mDomTrack(nullptr, "MediaPipelineTransmit::mDomTrack"),
       mSendTrackOverride(nullptr, "MediaPipelineTransmit::mSendTrackOverride") {
   if (!IsVideo()) {
@@ -910,20 +908,23 @@ void MediaPipelineTransmit::UpdateSendState() {
   mTransmitting = mActive && (haveLiveDomTrack || haveLiveOverrideTrack) &&
                   !mustRemoveSendTrack;
 
-  MOZ_LOG(gMediaPipelineLog, LogLevel::Debug,
-          ("MediaPipeline %p UpdateSendState wasTransmitting=%d, active=%d, "
-           "sendTrack=%p (%s), domTrack=%p (%s), "
-           "sendTrackOverride=%p (%s), mustRemove=%d, mTransmitting=%d",
-           this, wasTransmitting, mActive.Ref(), mSendTrack.get(),
-           haveLiveSendTrack ? "live" : "ended", mDomTrack.Ref().get(),
-           haveLiveDomTrack ? "live" : "ended", mSendTrackOverride.Ref().get(),
-           haveLiveOverrideTrack ? "live" : "ended", mustRemoveSendTrack,
-           mTransmitting));
+  MOZ_LOG_FMT(gMediaPipelineLog, LogLevel::Debug,
+              "MediaPipeline {} UpdateSendState wasTransmitting={}, active={}, "
+              "sendTrack={} ({}), domTrack={} ({}), "
+              "sendTrackOverride={} ({}), mustRemove={}, mTransmitting={}",
+              fmt::ptr(this), wasTransmitting, mActive.Ref(),
+              fmt::ptr(mSendTrack.get()), haveLiveSendTrack ? "live" : "ended",
+              fmt::ptr(mDomTrack.Ref().get()),
+              haveLiveDomTrack ? "live" : "ended",
+              fmt::ptr(mSendTrackOverride.Ref().get()),
+              haveLiveOverrideTrack ? "live" : "ended", mustRemoveSendTrack,
+              mTransmitting);
 
   if (!wasTransmitting && mTransmitting) {
-    MOZ_LOG(gMediaPipelineLog, LogLevel::Debug,
-            ("Attaching pipeline %p to track %p conduit type=%s", this,
-             mDomTrack.Ref().get(), mIsVideo ? "video" : "audio"));
+    MOZ_LOG_FMT(gMediaPipelineLog, LogLevel::Debug,
+                "Attaching pipeline {} to track {} conduit type={}",
+                fmt::ptr(this), fmt::ptr(mDomTrack.Ref().get()),
+                mIsVideo ? "video" : "audio");
     if (mDescriptionInvalidated) {
       // Only update the description when we attach to a track, as detaching is
       // always a longer async step than updating the description. Updating on
@@ -956,9 +957,10 @@ void MediaPipelineTransmit::UpdateSendState() {
   }
 
   if (wasTransmitting && !mTransmitting) {
-    MOZ_LOG(gMediaPipelineLog, LogLevel::Debug,
-            ("Detaching pipeline %p from track %p conduit type=%s", this,
-             mDomTrack.Ref().get(), mIsVideo ? "video" : "audio"));
+    MOZ_LOG_FMT(gMediaPipelineLog, LogLevel::Debug,
+                "Detaching pipeline {} from track {} conduit type={}",
+                fmt::ptr(this), fmt::ptr(mDomTrack.Ref().get()),
+                mIsVideo ? "video" : "audio");
     mUnsettingSendTrack = true;
     if (mIsVideo) {
       mSendTrack->RemoveDirectListener(mListener);
@@ -999,8 +1001,8 @@ void MediaPipelineTransmit::PrincipalChanged(dom::MediaStreamTrack* aTrack) {
     if (doc) {
       UpdateSinkIdentity(doc->NodePrincipal(), pcw.impl()->GetPeerIdentity());
     } else {
-      MOZ_LOG(gMediaPipelineLog, LogLevel::Info,
-              ("Can't update sink principal; document gone"));
+      MOZ_LOG_FMT(gMediaPipelineLog, LogLevel::Info,
+                  "Can't update sink principal; document gone");
     }
   }
 }
@@ -1045,10 +1047,11 @@ nsresult MediaPipelineTransmit::SetTrack(
   if (aDomTrack) {
     nsString nsTrackId;
     aDomTrack->GetId(nsTrackId);
-    MOZ_LOG(gMediaPipelineLog, LogLevel::Debug,
-            ("Reattaching pipeline to track %p track %s conduit type: %s",
-             aDomTrack.get(), NS_ConvertUTF16toUTF8(nsTrackId).get(),
-             mIsVideo ? "video" : "audio"));
+    MOZ_LOG_FMT(gMediaPipelineLog, LogLevel::Debug,
+                "Reattaching pipeline to track {} track {} conduit type: {}",
+                fmt::ptr(aDomTrack.get()),
+                NS_ConvertUTF16toUTF8(nsTrackId).get(),
+                mIsVideo ? "video" : "audio");
   }
 
   mDescriptionInvalidated = true;
@@ -1079,11 +1082,10 @@ void MediaPipelineTransmit::SetSendTrackOverride(
 // Called if we're attached with AddDirectListener()
 void MediaPipelineTransmit::PipelineListener::NotifyRealtimeTrackData(
     MediaTrackGraph* aGraph, TrackTime aOffset, const MediaSegment& aMedia) {
-  MOZ_LOG(
-      gMediaPipelineLog, LogLevel::Debug,
-      ("MediaPipeline::NotifyRealtimeTrackData() listener=%p, offset=%" PRId64
-       ", duration=%" PRId64,
-       this, aOffset, aMedia.GetDuration()));
+  MOZ_LOG_FMT(gMediaPipelineLog, LogLevel::Debug,
+              "MediaPipeline::NotifyRealtimeTrackData() listener={}, "
+              "offset={}, duration={}",
+              fmt::ptr(this), aOffset, aMedia.GetDuration());
   TRACE_COMMENT(
       "MediaPipelineTransmit::PipelineListener::NotifyRealtimeTrackData", "%s",
       aMedia.GetType() == MediaSegment::VIDEO ? "Video" : "Audio");
@@ -1093,8 +1095,8 @@ void MediaPipelineTransmit::PipelineListener::NotifyRealtimeTrackData(
 void MediaPipelineTransmit::PipelineListener::NotifyQueuedChanges(
     MediaTrackGraph* aGraph, TrackTime aOffset,
     const MediaSegment& aQueuedMedia) {
-  MOZ_LOG(gMediaPipelineLog, LogLevel::Debug,
-          ("MediaPipeline::NotifyQueuedChanges()"));
+  MOZ_LOG_FMT(gMediaPipelineLog, LogLevel::Debug,
+              "MediaPipeline::NotifyQueuedChanges()");
 
   if (aQueuedMedia.GetType() == MediaSegment::VIDEO) {
     // We always get video from the direct listener.
@@ -1129,19 +1131,19 @@ void MediaPipelineTransmit::PipelineListener::NotifyEnabledStateChanged(
 
 void MediaPipelineTransmit::PipelineListener::NotifyDirectListenerInstalled(
     InstallationResult aResult) {
-  MOZ_LOG(gMediaPipelineLog, LogLevel::Info,
-          ("MediaPipeline::NotifyDirectListenerInstalled() listener=%p,"
-           " result=%d",
-           this, static_cast<int32_t>(aResult)));
+  MOZ_LOG_FMT(gMediaPipelineLog, LogLevel::Info,
+              "MediaPipeline::NotifyDirectListenerInstalled() listener={},"
+              " result={}",
+              fmt::ptr(this), static_cast<int32_t>(aResult));
 
   mDirectConnect = InstallationResult::SUCCESS == aResult;
 }
 
 void MediaPipelineTransmit::PipelineListener::
     NotifyDirectListenerUninstalled() {
-  MOZ_LOG(
-      gMediaPipelineLog, LogLevel::Info,
-      ("MediaPipeline::NotifyDirectListenerUninstalled() listener=%p", this));
+  MOZ_LOG_FMT(gMediaPipelineLog, LogLevel::Info,
+              "MediaPipeline::NotifyDirectListenerUninstalled() listener={}",
+              fmt::ptr(this));
 
   if (mConduit->type() == MediaSessionConduit::VIDEO) {
     // Reset the converter's track-enabled state. If re-added to a new track
@@ -1171,8 +1173,8 @@ void MediaPipelineTransmit::PipelineListener::NewData(
     MOZ_RELEASE_ASSERT(aRate > 0);
 
     if (!mActive) {
-      MOZ_LOG(gMediaPipelineLog, LogLevel::Debug,
-              ("Discarding audio packets because transport not ready"));
+      MOZ_LOG_FMT(gMediaPipelineLog, LogLevel::Debug,
+                  "Discarding audio packets because transport not ready");
       return;
     }
 
@@ -1335,11 +1337,11 @@ class MediaPipelineReceiveAudio::PipelineListener
 
       if (err != kMediaConduitNoError) {
         // Insert silence on conduit/GIPS failure (extremely unlikely)
-        MOZ_LOG(gMediaPipelineLog, LogLevel::Error,
-                ("Audio conduit failed (%d) to return data @ %" PRId64
-                 " (desired %" PRId64 " -> %f)",
-                 err, mPlayedTicks, aDesiredTime,
-                 mSource->TrackTimeToSeconds(aDesiredTime)));
+        MOZ_LOG_FMT(
+            gMediaPipelineLog, LogLevel::Error,
+            "Audio conduit failed ({}) to return data @ {} (desired {} -> {})",
+            static_cast<int>(err), mPlayedTicks, aDesiredTime,
+            mSource->TrackTimeToSeconds(aDesiredTime));
         constexpr size_t mono = 1;
         mAudioFrame->UpdateFrame(
             mAudioFrame->timestamp_, nullptr, samplesPer10ms, mRate,
@@ -1347,10 +1349,10 @@ class MediaPipelineReceiveAudio::PipelineListener
             std::max(mono, mAudioFrame->num_channels()));
       }
 
-      MOZ_LOG(
-          gMediaPipelineLog, LogLevel::Debug,
-          ("Audio conduit returned buffer for %zu channels, %zu frames",
-           mAudioFrame->num_channels(), mAudioFrame->samples_per_channel()));
+      MOZ_LOG_FMT(gMediaPipelineLog, LogLevel::Debug,
+                  "Audio conduit returned buffer for {} channels, {} frames",
+                  mAudioFrame->num_channels(),
+                  mAudioFrame->samples_per_channel());
 
       AudioSegment segment;
       if (mForceSilence || mAudioFrame->muted()) {
@@ -1387,7 +1389,7 @@ class MediaPipelineReceiveAudio::PipelineListener
       if (TrackTime appended = mSource->AppendData(&segment)) {
         mPlayedTicks += appended;
       } else {
-        MOZ_LOG(gMediaPipelineLog, LogLevel::Error, ("AppendData failed"));
+        MOZ_LOG_FMT(gMediaPipelineLog, LogLevel::Error, "AppendData failed");
         // we can't un-read the data, but that's ok since we don't want to
         // buffer - but don't i-loop!
         break;
@@ -1427,7 +1429,7 @@ MediaPipelineReceiveAudio::MediaPipelineReceiveAudio(
     : MediaPipelineReceive(aPc, std::move(aTransportHandler),
                            std::move(aCallThread), std::move(aStsThread),
                            std::move(aConduit)),
-      mListener(aSource ? new PipelineListener(
+      mListener(aSource ? MakeRefPtr<PipelineListener>(
                               std::move(aSource), std::move(aTrackingId),
                               mConduit, std::move(aPrincipalHandle), aPrivacy)
                         : nullptr) {
@@ -1606,8 +1608,8 @@ MediaPipelineReceiveVideo::MediaPipelineReceiveVideo(
     : MediaPipelineReceive(aPc, std::move(aTransportHandler),
                            std::move(aCallThread), std::move(aStsThread),
                            std::move(aConduit)),
-      mRenderer(new PipelineRenderer(this)),
-      mListener(aSource ? new PipelineListener(
+      mRenderer(MakeRefPtr<PipelineRenderer>(this)),
+      mListener(aSource ? MakeRefPtr<PipelineListener>(
                               std::move(aSource), std::move(aTrackingId),
                               std::move(aPrincipalHandle), aPrivacy)
                         : nullptr) {

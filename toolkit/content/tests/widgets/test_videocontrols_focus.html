@@ -62,7 +62,10 @@
         // the controlbarchange event to know when it's fully hidden. Aside from
         // avoiding waitForCondition, this is necessary to avoid racing with the
         // animation.
-        const hidden = BrowserTestUtils.waitForEvent(video, "controlbarchange");
+        const hidden = BrowserTestUtils.waitForEvent(
+          controlBar,
+          "controlbarchange"
+        );
         sendMouseEvent({ type: "mouseout" }, controlBar);
         info("Waiting for controls to hide");
         await hidden;
@@ -70,18 +73,24 @@
 
       add_task(async function testShowControlsOnFocus() {
         ok(controlBar.hidden, "Controls initially hidden");
-        const shown = BrowserTestUtils.waitForEvent(video, "controlbarchange");
+        const shown = BrowserTestUtils.waitForEvent(
+          controlBar,
+          "controlbarchange"
+        );
         info("Focusing play button");
         playButton.focus();
         await shown;
         ok(!controlBar.hidden, "Controls shown after focus");
-        await BrowserTestUtils.waitForEvent(video, "controlbarchange");
+        await BrowserTestUtils.waitForEvent(controlBar, "controlbarchange");
         ok(controlBar.hidden, "Controls hidden after timeout");
       });
 
       add_task(async function testCcMenuStaysVisible() {
         ok(controlBar.hidden, "Controls initially hidden");
-        const shown = BrowserTestUtils.waitForEvent(video, "controlbarchange");
+        const shown = BrowserTestUtils.waitForEvent(
+          controlBar,
+          "controlbarchange"
+        );
         info("Focusing CC button");
         const ccButton = getElementWithinVideo(video, "closedCaptionButton");
         ccButton.focus();
@@ -109,7 +118,7 @@
         ok(!controlBar.hidden, "Controls still shown");
         ok(widget.impl.Utils._hideControlsTimeout, "Hide timeout set");
 
-        await BrowserTestUtils.waitForEvent(video, "controlbarchange");
+        await BrowserTestUtils.waitForEvent(controlBar, "controlbarchange");
         ok(controlBar.hidden, "Controls hidden after timeout");
       });
     </script>

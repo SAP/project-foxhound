@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -629,6 +627,12 @@ void RunTestsContent(SandboxTestingChild* child) {
     return fd;
   });
 
+  child->ErrnoValueTest("symlink"_ns, EPERM,
+                        [] { return symlink("something", "/tmp/testlink"); });
+  child->ErrnoValueTest("symlinkat"_ns, EPERM, [] {
+    return symlinkat("something", AT_FDCWD, "/tmp/testlink");
+  });
+
 #  endif  // XP_LINUX
 
 #  ifdef XP_MACOSX
@@ -899,7 +903,7 @@ void RunTestsRDD(SandboxTestingChild* child) {
   });
 
 #  elif XP_MACOSX
-  RunMacTestLaunchProcess(child);
+  RunMacTestLaunchProcess(child, EPERM);
   RunMacTestWindowServer(child);
   RunMacTestAudioAPI(child, true);
 #  endif

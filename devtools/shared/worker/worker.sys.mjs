@@ -2,11 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-let MESSAGE_COUNTER = 0;
+const logger = console.createInstance({
+  prefix: "devtools_worker",
+  maxLogLevel: "Warn",
+});
 
-function dumpn(_msg) {
-  // dump(msg + "\n");
-}
+let MESSAGE_COUNTER = 0;
 
 /**
  * Creates a wrapper around a ChromeWorker, providing easy
@@ -18,12 +19,10 @@ function dumpn(_msg) {
  * @param Object opts
  *        An option with the following optional fields:
  *        - name: a name that will be printed with logs
- *        - verbose: log incoming and outgoing messages
  */
 export function DevToolsWorker(url, opts) {
   opts = opts || {};
   this._worker = new ChromeWorker(url);
-  this._verbose = opts.verbose;
   this._name = opts.name;
 
   this._worker.addEventListener("error", this.onError);
@@ -52,8 +51,8 @@ DevToolsWorker.prototype.performTask = function (task, data, transfer) {
   const id = ++MESSAGE_COUNTER;
   const payload = { task, id, data };
 
-  if (this._verbose && dumpn) {
-    dumpn(
+  if (logger.shouldLog("Log")) {
+    logger.log(
       "Sending message to worker" +
         (this._name ? " (" + this._name + ")" : "") +
         ": " +
@@ -64,8 +63,8 @@ DevToolsWorker.prototype.performTask = function (task, data, transfer) {
 
   return new Promise((resolve, reject) => {
     const listener = ({ data: result }) => {
-      if (this._verbose && dumpn) {
-        dumpn(
+      if (logger.shouldLog("Log")) {
+        logger.log(
           "Received message from worker" +
             (this._name ? " (" + this._name + ")" : "") +
             ": " +
@@ -100,58 +99,3 @@ DevToolsWorker.prototype.destroy = function () {
 DevToolsWorker.prototype.onError = function ({ message, filename, lineno }) {
   dump(new Error(message + " @ " + filename + ":" + lineno) + "\n");
 };
-
-/**
- * Takes a function and returns a Worker-wrapped version of the same function.
- * Returns a promise upon resolution.
- *
- * @see `./devtools/shared/shared/tests/browser/browser_devtools-worker-03.js
- *
- * ⚠ This should only be used for tests or A/B testing performance ⚠
- *
- * The original function must:
- *
- * Be a pure function, that is, not use any variables not declared within the
- * function, or its arguments.
- *
- * Return a value or a promise.
- *
- * Note any state change in the worker will not affect the callee's context.
- *
- * @param {function} fn
- * @return {function}
- */
-export function workerify(fn) {
-  console.warn(
-    "`workerify` should only be used in tests or measuring performance. " +
-      "This creates an object URL on the browser window, and should not be " +
-      "used in production."
-  );
-  // Fetch modules here as we don't want to include it normally.
-  // eslint-disable-next-line no-shadow
-  const { URL, Blob } = Services.wm.getMostRecentBrowserWindow();
-  const stringifiedFn = createWorkerString(fn);
-  const blob = new Blob([stringifiedFn]);
-  const url = URL.createObjectURL(blob);
-  const worker = new DevToolsWorker(url);
-
-  const wrapperFn = (data, transfer) =>
-    worker.performTask("workerifiedTask", data, transfer);
-
-  wrapperFn.destroy = function () {
-    URL.revokeObjectURL(url);
-    worker.destroy();
-  };
-
-  return wrapperFn;
-}
-
-/**
- * Takes a function, and stringifies it, attaching the worker-helper.js
- * boilerplate hooks.
- */
-function createWorkerString(fn) {
-  return `importScripts("resource://gre/modules/workers/require.js");
-          const { createTask } = require("resource://devtools/shared/worker/helper.js");
-          createTask(self, "workerifiedTask", ${fn.toString()});`;
-}

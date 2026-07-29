@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,7 +16,6 @@ void ParamTraits<DisplayListData>::Write(IPC::MessageWriter* aWriter,
   WriteParam(aWriter, aParam.mRect);
   WriteParam(aWriter, aParam.mCommands);
   WriteParam(aWriter, std::move(aParam.mDLItems));
-  WriteParam(aWriter, std::move(aParam.mDLCache));
   WriteParam(aWriter, std::move(aParam.mDLSpatialTree));
   WriteParam(aWriter, aParam.mDLDesc);
   WriteParam(aWriter, aParam.mResourceUpdates);
@@ -33,7 +30,6 @@ bool ParamTraits<DisplayListData>::Read(IPC::MessageReader* aReader,
          ReadParam(aReader, &aResult->mRect) &&
          ReadParam(aReader, &aResult->mCommands) &&
          ReadParam(aReader, &aResult->mDLItems) &&
-         ReadParam(aReader, &aResult->mDLCache) &&
          ReadParam(aReader, &aResult->mDLSpatialTree) &&
          ReadParam(aReader, &aResult->mDLDesc) &&
          ReadParam(aReader, &aResult->mResourceUpdates) &&

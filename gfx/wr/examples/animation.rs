@@ -46,7 +46,6 @@ impl App {
         pipeline_id: PipelineId,
         property_key: PropertyBindingKey<LayoutTransform>,
         opacity_key: Option<PropertyBindingKey<f32>>,
-        spatial_tree_item_key: SpatialTreeItemKey,
     ) {
         let filters = match opacity_key {
             Some(opacity_key) => {
@@ -69,11 +68,9 @@ impl App {
                 should_snap: false,
                 paired_with_perspective: false,
             },
-            spatial_tree_item_key,
         );
 
         builder.push_simple_stacking_context_with_filters(
-            LayoutPoint::zero(),
             spatial_id,
             PrimitiveFlags::IS_BACKFACE_VISIBLE,
             &filters,
@@ -138,7 +135,6 @@ impl Example for App {
             pipeline_id,
             key0,
             Some(opacity_key),
-            SpatialTreeItemKey::new(0, 0)
         );
 
         let bounds = (400, 400).to(600, 600);
@@ -150,7 +146,6 @@ impl Example for App {
             pipeline_id,
             key1,
             None,
-            SpatialTreeItemKey::new(0, 1)
         );
 
         let bounds = (200, 500).to(350, 580);
@@ -162,7 +157,6 @@ impl Example for App {
             pipeline_id,
             key2,
             None,
-            SpatialTreeItemKey::new(0, 2)
         );
     }
 
@@ -177,19 +171,20 @@ impl Example for App {
 
         match win_event {
             winit::event::WindowEvent::KeyboardInput {
-                input: winit::event::KeyboardInput {
+                event: winit::event::KeyEvent {
                     state: winit::event::ElementState::Pressed,
-                    virtual_keycode: Some(key),
+                    ref logical_key,
                     ..
                 },
                 ..
             } => {
-                let (delta_angle, delta_opacity) = match key {
-                    winit::event::VirtualKeyCode::Down => (0.0, -0.1),
-                    winit::event::VirtualKeyCode::Up => (0.0, 0.1),
-                    winit::event::VirtualKeyCode::Right => (1.0, 0.0),
-                    winit::event::VirtualKeyCode::Left => (-1.0, 0.0),
-                    winit::event::VirtualKeyCode::R => {
+                use winit::keyboard::{Key, NamedKey};
+                let (delta_angle, delta_opacity) = match logical_key.as_ref() {
+                    Key::Named(NamedKey::ArrowDown) => (0.0, -0.1),
+                    Key::Named(NamedKey::ArrowUp) => (0.0, 0.1),
+                    Key::Named(NamedKey::ArrowRight) => (1.0, 0.0),
+                    Key::Named(NamedKey::ArrowLeft) => (-1.0, 0.0),
+                    Key::Character("r") | Key::Character("R") => {
                         rebuild_display_list = true;
                         (0.0, 0.0)
                     }

@@ -116,7 +116,7 @@ impl FontBuilder {
             font.lfWeight = Gdi::FW_BOLD as i32;
 
             let ptr = Gdi::CreateFontIndirectW(&font);
-            if ptr == 0 {
+            if ptr.is_null() {
                 return None;
             }
             Some(Font(ptr))

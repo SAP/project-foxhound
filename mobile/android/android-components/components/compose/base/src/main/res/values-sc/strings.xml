@@ -19,4 +19,6 @@
   <string name="mozac_compose_base_progress_loading">Carrighende</string>
   <!-- Content description for the dismiss icon of a Snackbar -->
   <string name="mozac_compose_base_snackbar_dismiss_content_description">Iscarta su messàgiu</string>
+  <!-- Content description for the close icon of a Banner -->
+  <string name="mozac_compose_base_close_button_content_description">Serra</string>
 </resources>

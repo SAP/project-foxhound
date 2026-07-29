@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -533,8 +531,8 @@ TEST_F(Strings, DependentStrings) {
     auto data = tmp.Data();
     nsDependentCString foo(tmp);
     // Neither string should be using a shared buffer.
-    EXPECT_FALSE(tmp.GetDataFlags() & DataFlags::REFCOUNTED);
-    EXPECT_FALSE(foo.GetDataFlags() & DataFlags::REFCOUNTED);
+    EXPECT_FALSE(tmp.GetDataFlags() & DataFlags::STRINGBUFFER);
+    EXPECT_FALSE(foo.GetDataFlags() & DataFlags::STRINGBUFFER);
     // Both strings should be pointing to the original buffer.
     EXPECT_EQ(data, tmp.Data());
     EXPECT_EQ(data, foo.Data());
@@ -545,8 +543,8 @@ TEST_F(Strings, DependentStrings) {
     auto data = tmp.Data();
     nsDependentCString foo(std::move(tmp));
     // Neither string should be using a shared buffer.
-    EXPECT_FALSE(tmp.GetDataFlags() & DataFlags::REFCOUNTED);
-    EXPECT_FALSE(foo.GetDataFlags() & DataFlags::REFCOUNTED);
+    EXPECT_FALSE(tmp.GetDataFlags() & DataFlags::STRINGBUFFER);
+    EXPECT_FALSE(foo.GetDataFlags() & DataFlags::STRINGBUFFER);
     // First string should be reset, the second should be pointing to the
     // original buffer.
     EXPECT_NE(data, tmp.Data());
@@ -559,8 +557,8 @@ TEST_F(Strings, DependentStrings) {
     auto data = tmp.Data();
     nsCString foo(tmp);
     // Original string should not be shared, copy should be shared.
-    EXPECT_FALSE(tmp.GetDataFlags() & DataFlags::REFCOUNTED);
-    EXPECT_TRUE(foo.GetDataFlags() & DataFlags::REFCOUNTED);
+    EXPECT_FALSE(tmp.GetDataFlags() & DataFlags::STRINGBUFFER);
+    EXPECT_TRUE(foo.GetDataFlags() & DataFlags::STRINGBUFFER);
     // First string should remain the same, the second should be pointing to
     // a new buffer.
     EXPECT_EQ(data, tmp.Data());
@@ -1305,6 +1303,109 @@ TEST_F(Strings, string_to_unsigned_integer) {
   nsresult rv;
   for (const ToUnsignedIntegerTest* t = kToUnsignedIntegerTests; t->str; ++t) {
     uint32_t result = nsAutoCString(t->str).ToUnsignedInteger(&rv, t->radix);
+    EXPECT_EQ(rv, t->rv);
+    EXPECT_EQ(result, t->result);
+  }
+}
+
+struct ToInteger64Test {
+  const char* str;
+  uint32_t radix;
+  int64_t result;
+  nsresult rv;
+};
+
+static const ToInteger64Test kToInteger64Tests[] = {
+    {"123", 10, 123, NS_OK},
+    {"7b", 16, 123, NS_OK},
+
+    // int64_t limits
+    {"9223372036854775807", 10, INT64_C(9223372036854775807), NS_OK},
+    // XXX The minimum should be -9223372036854775808, but that is currently
+    // treated as an illegal value. See bug 2028596
+    {"-9223372036854775808", 10, 0, NS_ERROR_ILLEGAL_VALUE},
+    {"-9223372036854775807", 10, INT64_MIN + 1, NS_OK},
+
+    {"7fffffffffffffff", 16, INT64_C(0x7fffffffffffffff), NS_OK},
+    // XXX The minimum should be -0x8000000000000000, but that is currently
+    // treated as an illegal value. See bug 2028596
+    {"-8000000000000000", 16, 0, NS_ERROR_ILLEGAL_VALUE},
+    {"-7fffffffffffffff", 16, -INT64_C(0x7fffffffffffffff), NS_OK},
+
+    // overflow / underflow
+    {"9223372036854775808", 10, 0, NS_ERROR_ILLEGAL_VALUE},
+    {"-9223372036854775809", 10, 0, NS_ERROR_ILLEGAL_VALUE},
+
+    {"8000000000000000", 16, 0, NS_ERROR_ILLEGAL_VALUE},
+    {"-8000000000000001", 16, 0, NS_ERROR_ILLEGAL_VALUE},
+
+    // random other values
+    {"90194313659", 10, INT64_C(90194313659), NS_OK},
+    {"8abc1234", 16, INT64_C(0x8abc1234), NS_OK},
+
+    // XXX Leading 'x' or '0x' is currently accepted while the parsed value
+    // is still 0, even with radix 10. See bug 2028608
+    {"x500", 10, 500, NS_OK},
+    {"X500", 10, 500, NS_OK},
+    {"0x500", 10, 500, NS_OK},
+    {"0X500", 10, 500, NS_OK},
+    {"000000x500", 10, 500, NS_OK},
+    {"000000X500", 10, 500, NS_OK},
+
+    {"xbeef", 16, 0xbeef, NS_OK},
+    {"Xbeef", 16, 0xbeef, NS_OK},
+    {"0xbeef", 16, 0xbeef, NS_OK},
+    {"0Xbeef", 16, 0xbeef, NS_OK},
+    {"000000xbeef", 16, 0xbeef, NS_OK},
+    {"000000Xbeef", 16, 0xbeef, NS_OK},
+
+    // XXX Multiple leading 'x' characters are also accepted. See bug 2028608
+    {"xxxbeef", 16, 0xbeef, NS_OK},
+
+    {nullptr, 0, 0, NS_OK}};
+
+TEST_F(Strings, string_tointeger64) {
+  nsresult rv;
+  for (const ToInteger64Test* t = kToInteger64Tests; t->str; ++t) {
+    int64_t result = nsAutoCString(t->str).ToInteger64(&rv, t->radix);
+    EXPECT_EQ(rv, t->rv);
+    EXPECT_EQ(result, t->result);
+  }
+}
+
+struct ToUnsignedInteger64Test {
+  const char* str;
+  uint32_t radix;
+  uint64_t result;
+  nsresult rv;
+};
+
+static const ToUnsignedInteger64Test kToUnsignedInteger64Tests[] = {
+    {"123", 10, 123, NS_OK},
+    {"7b", 16, 123, NS_OK},
+
+    // uint64_t limits
+    {"18446744073709551615", 10, UINT64_MAX, NS_OK},
+    {"ffffffffffffffff", 16, UINT64_MAX, NS_OK},
+
+    // overflow
+    {"18446744073709551616", 10, 0, NS_ERROR_ILLEGAL_VALUE},
+    {"10000000000000000", 16, 0, NS_ERROR_ILLEGAL_VALUE},
+
+    // random other values
+    {"90194313659", 10, UINT64_C(90194313659), NS_OK},
+    {"8abc1234", 16, UINT64_C(0x8abc1234), NS_OK},
+
+    // invalid input
+    {"-194313659", 10, 0, NS_ERROR_ILLEGAL_VALUE},
+
+    {nullptr, 0, 0, NS_OK}};
+
+TEST_F(Strings, string_to_unsigned_integer64) {
+  nsresult rv;
+  for (const ToUnsignedInteger64Test* t = kToUnsignedInteger64Tests; t->str;
+       ++t) {
+    uint64_t result = nsAutoCString(t->str).ToUnsignedInteger64(&rv, t->radix);
     EXPECT_EQ(rv, t->rv);
     EXPECT_EQ(result, t->result);
   }

@@ -29,20 +29,10 @@ const settings = {
 };
 
 function workload() {
-  // We use a Blob for the worker content to avoid an external JS file, and data
-  // URLs seem to be blocked in a chrome environment.
-  const workerContent = new Blob(
-    [ "console.log('hello world!')" ],
-    { type: "application/javascript" }
-  );
-  const blobURL = URL.createObjectURL(workerContent);
-
   // We start a worker and then terminate it right away to trigger our bug.
   info("Starting the worker, and terminate it right away.");
-  const myWorker = new Worker(blobURL);
+  const myWorker = new Worker("chrome://mochitests/content/chrome/tools/profiler/tests/chrome/file_worker.js");
   myWorker.terminate();
-
-  URL.revokeObjectURL(blobURL);
 
   // We're deferring some little time so that the worker has the time to be
   // properly cleaned up and the profiler actually saves the worker data.

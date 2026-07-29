@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -693,10 +692,10 @@ NS_IMETHODIMP EditorBase::SetFlags(uint32_t aFlags) {
   MOZ_ASSERT_IF(IsTextEditor(), !(aFlags & nsIEditor::eEditorAllowInteraction));
 
   const bool isCalledByPostCreate = (mFlags == ~aFlags);
-  // We don't support dynamic password flag change.
-  MOZ_ASSERT_IF(!isCalledByPostCreate,
-                !((mFlags ^ aFlags) & nsIEditor::eEditorPasswordMask));
-  bool spellcheckerWasEnabled = !isCalledByPostCreate && CanEnableSpellCheck();
+  const bool spellcheckerWasEnabled =
+      !isCalledByPostCreate && CanEnableSpellCheck();
+  const bool wasPasswordEditor = !isCalledByPostCreate && IsPasswordEditor();
+
   mFlags = aFlags;
 
   if (!IsInitialized()) {
@@ -704,6 +703,10 @@ NS_IMETHODIMP EditorBase::SetFlags(uint32_t aFlags) {
     // SetFlags() will be called by PostCreate(),
     // we should synchronize some stuff for the flags at that time.
     return NS_OK;
+  }
+
+  if (!isCalledByPostCreate && IsPasswordEditor() != wasPasswordEditor) {
+    AsTextEditor()->ResetPasswordMaskData();
   }
 
   // The flag change may cause the spellchecker state change
@@ -1284,7 +1287,10 @@ void EditorBase::EndPlaceholderTransaction(
       if (!mComposition) {
         NotifyEditorObservers(eNotifyEditorObserversOfEnd);
       }
-    } else {
+    } else if (!mComposition) {
+      // notify editor observers of action but if composing, it's done by
+      // compositionchange event handler. (EditContext can reach here
+      // with mPlaceholderTransaction = null while composing.)
       NotifyEditorObservers(eNotifyEditorObserversOfCancel);
     }
   }
@@ -3272,7 +3278,8 @@ nsresult EditorBase::ScrollSelectionFocusIntoView() const {
 
   DebugOnly<nsresult> rvIgnored = selectionController->ScrollSelectionIntoView(
       SelectionType::eNormal, nsISelectionController::SELECTION_FOCUS_REGION,
-      ScrollAxis(), ScrollAxis(), ScrollFlags::ScrollOverflowHidden);
+      AxisScrollParams(), AxisScrollParams(),
+      ScrollFlags::ScrollOverflowHidden);
   NS_WARNING_ASSERTION(
       NS_SUCCEEDED(rvIgnored),
       "nsISelectionController::ScrollSelectionIntoView() failed, but ignored");
@@ -3463,10 +3470,8 @@ EditorBase::InsertTextIntoTextNodeWithTransaction(
     if (NS_WARN_IF(!mComposition->GetContainerTextNode())) {
       return aPointToInsert;
     }
-    return EditorDOMPointInText(
-        mComposition->GetContainerTextNode(),
-        std::min(mComposition->XPOffsetInTextNode(),
-                 mComposition->GetContainerTextNode()->TextDataLength()));
+    return EditorDOMPointInText(mComposition->GetContainerTextNode(),
+                                mComposition->ClampedStartOffsetInTextNode());
   }();
 
   EditorDOMPoint endOfInsertedText(
@@ -4057,9 +4062,9 @@ nsresult EditorBase::OnCompositionChange(
   if (IsHTMLEditor() && mComposition->GetContainerTextNode()) {
     RefPtr<StaticRange> targetRange = StaticRange::Create(
         mComposition->GetContainerTextNode(),
-        mComposition->XPOffsetInTextNode(),
+        mComposition->ClampedStartOffsetInTextNode(),
         mComposition->GetContainerTextNode(),
-        mComposition->XPEndOffsetInTextNode(), IgnoreErrors());
+        mComposition->ClampedEndOffsetInTextNode(), IgnoreErrors());
     NS_WARNING_ASSERTION(targetRange && targetRange->IsPositioned(),
                          "StaticRange::Create() failed");
     if (targetRange && targetRange->IsPositioned()) {
@@ -4122,7 +4127,7 @@ nsresult EditorBase::OnCompositionChange(
                                                __FUNCTION__);
 
     // XXX Why don't we get caret after the DOM mutation?
-    RefPtr<nsCaret> caret = GetCaret();
+    RefPtr<nsCaret> caret = GetCaretForSelection();
 
     MOZ_ASSERT(
         mIsInEditSubAction,
@@ -5850,7 +5855,7 @@ nsresult EditorBase::InitializeSelection(
   }
 
   // Init the caret
-  RefPtr<nsCaret> caret = GetCaret();
+  RefPtr<nsCaret> caret = GetCaretForSelection();
   if (NS_WARN_IF(!caret)) {
     return NS_ERROR_FAILURE;
   }
@@ -5901,18 +5906,19 @@ nsresult EditorBase::InitializeSelection(
     MOZ_ASSERT(textNode,
                "There must be text node if composition string is not empty");
     if (textNode) {
-      MOZ_ASSERT(textNode->Length() >= mComposition->XPEndOffsetInTextNode(),
+      MOZ_ASSERT(textNode->Length() >=
+                     mComposition->EndOffsetMaybeInFollowingTextNode(),
                  "The text node must be different from the old text node");
       RefPtr<TextRangeArray> ranges = mComposition->GetRanges();
       DebugOnly<nsresult> rvIgnored = CompositionTransaction::SetIMESelection(
-          *this, textNode, mComposition->XPOffsetInTextNode(),
-          mComposition->XPLengthInTextNode(), ranges);
+          *this, textNode, mComposition->StartOffsetMaybeInFollowingTextNode(),
+          mComposition->LengthMaybeInFollowingTextNode(), ranges);
       NS_WARNING_ASSERTION(
           NS_SUCCEEDED(rvIgnored),
           "CompositionTransaction::SetIMESelection() failed, but ignored");
       mComposition->OnUpdateCompositionInEditor(
           mComposition->String(), *textNode,
-          mComposition->XPOffsetInTextNode());
+          mComposition->StartOffsetMaybeInFollowingTextNode());
     }
   }
 
@@ -5937,7 +5943,7 @@ nsresult EditorBase::FinalizeSelection() {
     return NS_ERROR_NOT_INITIALIZED;
   }
 
-  if (RefPtr<nsCaret> caret = GetCaret()) {
+  if (RefPtr<nsCaret> caret = GetCaretForSelection()) {
     DebugOnly<nsresult> rvIgnored = selectionController->SetCaretEnabled(false);
     NS_WARNING_ASSERTION(
         NS_SUCCEEDED(rvIgnored),
@@ -6260,6 +6266,10 @@ bool EditorBase::CanKeepHandlingFocusEvent(
   if (!focusedElement) {
     return false;
   }
+  // If focused element is not editable, don't focus the HTML editor.
+  if (IsHTMLEditor() && !focusedElement->IsEditable()) {
+    return false;
+  }
 
   // If there's an HTMLEditor registered in the target document and we
   // are not that HTMLEditor (for cases like nested documents), let
@@ -6286,32 +6296,38 @@ nsresult EditorBase::OnFocus(const nsINode& aOriginalEventTargetNode) {
   MOZ_ASSERT(IsEditActionDataAvailable());
 
   InitializeSelection(aOriginalEventTargetNode);
+  MOZ_ASSERT(CanKeepHandlingFocusEvent(aOriginalEventTargetNode),
+             "Selection listeners shouldn't change the focus");
+  return NS_OK;
+}
+
+void EditorBase::PostHandleFocusEvent(const nsINode& aFocusEventTargetNode) {
+  if (!CanKeepHandlingFocusEvent(aFocusEventTargetNode)) [[unlikely]] {
+    return;
+  }
+
   mSpellCheckerDictionaryUpdated = false;
   if (mInlineSpellChecker && CanEnableSpellCheck()) {
     DebugOnly<nsresult> rvIgnored =
         mInlineSpellChecker->UpdateCurrentDictionary();
     NS_WARNING_ASSERTION(
         NS_SUCCEEDED(rvIgnored),
-        "mozInlineSpellCHecker::UpdateCurrentDictionary() failed, but ignored");
+        "mozInlineSpellChecker::UpdateCurrentDictionary() failed, but ignored");
     mSpellCheckerDictionaryUpdated = true;
   }
-  // XXX Why don't we stop handling focus with the spell checker immediately
-  //     after calling InitializeSelection?
-  if (MOZ_UNLIKELY(!CanKeepHandlingFocusEvent(aOriginalEventTargetNode))) {
-    return NS_ERROR_EDITOR_DESTROYED;
+  if (!CanKeepHandlingFocusEvent(aFocusEventTargetNode)) [[unlikely]] {
+    return;
   }
 
   const RefPtr<Element> focusedElement = GetFocusedElement();
-  RefPtr<nsPresContext> presContext =
+  const RefPtr<nsPresContext> presContext =
       focusedElement ? focusedElement->GetPresContext(
                            Element::PresContextFor::eForComposedDoc)
                      : GetPresContext();
   if (NS_WARN_IF(!presContext)) {
-    return NS_ERROR_FAILURE;
+    return;
   }
   IMEStateManager::OnFocusInEditor(*presContext, focusedElement, *this);
-
-  return NS_OK;
 }
 
 void EditorBase::HideCaret(bool aHide) {
@@ -6319,7 +6335,7 @@ void EditorBase::HideCaret(bool aHide) {
     return;
   }
 
-  RefPtr<nsCaret> caret = GetCaret();
+  RefPtr<nsCaret> caret = GetCaretForSelection();
   if (NS_WARN_IF(!caret)) {
     return;
   }
@@ -6431,6 +6447,11 @@ EditorBase::AutoCaretBidiLevelManager::AutoCaretBidiLevelManager(
     const EditorDOMPointBase<PT, CT>& aPointAtCaret) {
   MOZ_ASSERT(aEditorBase.IsEditActionDataAvailable());
 
+  if (aEditorBase.GetEditContext()) {
+    // Don't set the caret bidi level for EditContext, since the
+    // selection is managed by the web developer.
+    return;
+  }
   nsPresContext* presContext = aEditorBase.GetPresContext();
   if (NS_WARN_IF(!presContext)) {
     mFailed = true;
@@ -6845,6 +6866,15 @@ void EditorBase::AutoEditActionDataSetter::UpdateSelectionCache(
   }
 }
 
+LimitersAndCaretData
+EditorBase::AutoEditActionDataSetter::SelectionLimitersAndCaretData() const {
+  if (nsFrameSelection* const frameSelection =
+          SelectionRef().GetFrameSelection()) {
+    return LimitersAndCaretData{*frameSelection};
+  }
+  return {};
+}
+
 void EditorBase::AutoEditActionDataSetter::SetColorData(
     const nsAString& aData) {
   MOZ_ASSERT(!HasTriedToDispatchBeforeInputEvent(),
@@ -7036,7 +7066,15 @@ nsresult EditorBase::AutoEditActionDataSetter::MaybeDispatchBeforeInputEvent(
   }
   OwningNonNull<EditorBase> editorBase = mEditorBase;
   EditorInputType inputType = ToInputType(mEditAction);
-  if (editorBase->IsHTMLEditor() && mTargetRanges.IsEmpty()) {
+  if (targetElement->HasFlag(ELEMENT_HAS_EDIT_CONTEXT) &&
+      (targetElement->IsHTMLElement(nsGkAtoms::canvas) ||
+       mEditAction == EditAction::eUpdateComposition ||
+       mEditAction == EditAction::eUpdateCompositionToCommit)) {
+    // targetRanges should be empty for <canvas>-based EditContext.
+    // Also probably for composition in DOM-based EditContext
+    // as well: https://github.com/w3c/edit-context/issues/133
+    mTargetRanges.Clear();
+  } else if (editorBase->IsHTMLEditor() && mTargetRanges.IsEmpty()) {
     // If the edit action will delete selected ranges, compute the range
     // strictly.
     if (MayEditActionDeleteAroundCollapsedSelection(mEditAction) ||
@@ -7479,12 +7517,12 @@ nsPresContext* EditorBase::GetPresContext() const {
   return presShell ? presShell->GetPresContext() : nullptr;
 }
 
-already_AddRefed<nsCaret> EditorBase::GetCaret() const {
+already_AddRefed<nsCaret> EditorBase::GetCaretForSelection() const {
   PresShell* presShell = GetPresShell();
   if (NS_WARN_IF(!presShell)) {
     return nullptr;
   }
-  return presShell->GetCaret();
+  return presShell->GetOriginalCaret();
 }
 
 nsISelectionController* EditorBase::GetSelectionController() const {
@@ -7649,4 +7687,10 @@ nsresult EditorBase::GetDataFromDataTransferOrClipboard(
   }
   return NS_OK;
 }
+
+LimitersAndCaretData EditorBase::SelectionLimitersAndCaretData() const {
+  MOZ_ASSERT(mEditActionData);
+  return mEditActionData->SelectionLimitersAndCaretData();
+}
+
 }  // namespace mozilla

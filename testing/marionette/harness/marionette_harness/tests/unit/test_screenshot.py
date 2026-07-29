@@ -32,6 +32,11 @@ box = inline(
 input = inline("<body><input id='text-input'></input></body>")
 long = inline("<body style='height: 300vh'><p style='margin-top: 100vh'>foo</p></body>")
 short = inline("<body style='height: 10vh'></body>")
+partially_visible = inline(
+    "<body style='height: 300vh'>"
+    "<div id='abs' style='position:absolute;margin-top:200px;width:20px;height:100vh;background:green'></div>"
+    "</body>"
+)
 svg = inline(
     """
     <svg xmlns="http://www.w3.org/2000/svg" height="20" width="20">
@@ -281,8 +286,8 @@ class TestScreenCaptureContent(WindowManagerMixin, ScreenCaptureTestCase):
         self.assertNotEqual(before, self.page_y_offset)
 
     def test_scroll_off(self):
-        self.marionette.navigate(long)
-        el = self.marionette.find_element(By.TAG_NAME, "p")
+        self.marionette.navigate(partially_visible)
+        el = self.marionette.find_element(By.ID, "abs")
         before = self.page_y_offset
         self.marionette.screenshot(element=el, format="hash", scroll=False)
         self.assertEqual(before, self.page_y_offset)

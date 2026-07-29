@@ -178,7 +178,7 @@ Each instance of firefox.exe has a type.  To identify a process to attach
 a debugger to, you need to know its process type first.
 
 When a crash happens, if all Firefox windows are suddenly gone and Mozilla
-Crash Reporter window is opend, a process that crashed is the main process.
+Crash Reporter window is opened, a process that crashed is the main process.
 
 .. image:: img/crashreporter.png
 

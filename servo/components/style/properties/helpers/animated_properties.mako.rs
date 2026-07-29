@@ -5,7 +5,7 @@
 <%namespace name="helpers" file="/helpers.mako.rs" />
 
 <%
-    from data import to_idl_name, SYSTEM_FONT_LONGHANDS, to_camel_case
+    from data import SYSTEM_FONT_LONGHANDS, to_camel_case
     from itertools import groupby
 %>
 
@@ -26,6 +26,7 @@ use std::ptr;
 use std::mem;
 use rustc_hash::FxHashMap;
 use super::ComputedValues;
+#[cfg(feature = "servo")] use crate::context::SharedStyleContext;
 use crate::derives::*;
 use crate::properties::OwnedPropertyDeclarationId;
 use crate::dom::AttributeTracker;
@@ -326,6 +327,7 @@ impl AnimationValue {
                         let style_struct = match declaration.keyword {
                             % if not prop.style_struct.inherited:
                             CSSWideKeyword::Revert |
+                            CSSWideKeyword::RevertRule |
                             CSSWideKeyword::RevertLayer |
                             CSSWideKeyword::Unset |
                             % endif
@@ -334,6 +336,7 @@ impl AnimationValue {
                             },
                             % if prop.style_struct.inherited:
                             CSSWideKeyword::Revert |
+                            CSSWideKeyword::RevertRule |
                             CSSWideKeyword::RevertLayer |
                             CSSWideKeyword::Unset |
                             % endif
@@ -368,7 +371,7 @@ impl AnimationValue {
             PropertyDeclaration::WithVariables(ref declaration) => {
                 let mut cache = Default::default();
                 let substituted = {
-                    let custom_properties = &context.style().custom_properties();
+                    let substitution_functions = &context.style().substitution_functions();
 
                     debug_assert!(
                         context.builder.stylist.is_some(),
@@ -376,7 +379,7 @@ impl AnimationValue {
                     );
                     declaration.value.substitute_variables(
                         declaration.id,
-                        custom_properties,
+                        substitution_functions,
                         context.builder.stylist.unwrap(),
                         context,
                         &mut cache,
@@ -395,8 +398,6 @@ impl AnimationValue {
                 AnimationValue::Custom(CustomAnimatedValue::from_declaration(
                     declaration,
                     context,
-                    initial,
-                    attribute_tracker
                 )?)
             },
             _ => return None // non animatable properties will get included because of shorthands. ignore.
@@ -430,12 +431,7 @@ impl AnimationValue {
         match longhand {
             % for prop in data.longhands:
             % if prop.animatable and not prop.logical:
-            LonghandId::${prop.camel_case} => {
-                // TODO: Could avoid some clones here.
-                let before_value = before.clone_${prop.ident}();
-                let after_value = after.clone_${prop.ident}();
-                before_value != after_value
-            }
+            LonghandId::${prop.camel_case} => !before.${prop.ident}_equals(after),
             % endif
             % endfor
             _ => false,
@@ -454,7 +450,7 @@ impl AnimationValue {
                 // corresponds to an inherited custom property and then choose the
                 // inherited/non_inherited map accordingly.
                 let p = &style.custom_properties();
-                let value = p.inherited.get(*name).or_else(|| p.non_inherited.get(*name))?;
+                let value = p.inherited.get(*name).or_else(|| p.non_inherited.get(*name));
                 return Some(AnimationValue::Custom(CustomAnimatedValue::from_computed(name, value)))
             }
         };
@@ -483,7 +479,7 @@ impl AnimationValue {
     /// SERVO ONLY: This doesn't properly handle things like updating 'em' units
     /// when animated font-size.
     #[cfg(feature = "servo")]
-    pub fn set_in_style_for_servo(&self, style: &mut ComputedValues) {
+    pub fn set_in_style_for_servo(&self, style: &mut ComputedValues, context: &SharedStyleContext) {
         match self {
             % for prop in data.longhands:
             % if prop.animatable and not prop.logical:
@@ -500,13 +496,14 @@ impl AnimationValue {
             AnimationValue::${prop.camel_case}(..) => unreachable!(),
             % endif
             % endfor
-            AnimationValue::Custom(..) => unreachable!(),
+            AnimationValue::Custom(CustomAnimatedValue { name, value }) => {
+                let registration = context.stylist.get_custom_property_registration(&name);
+                match value {
+                    Some(value) => style.custom_properties.insert(registration, name, value.clone()),
+                    None => style.custom_properties.remove(registration, name),
+                }
+            },
         }
-    }
-
-    /// As above, but a stub for Gecko.
-    #[cfg(feature = "gecko")]
-    pub fn set_in_style_for_servo(&self, _: &mut ComputedValues) {
     }
 }
 

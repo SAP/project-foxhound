@@ -55,7 +55,7 @@ add_task(async function test_open_bookmark_from_library() {
         placesContext,
         "popupshown"
       );
-      synthesizeClickOnSelectedTreeCell(library.ContentTree.view, {
+      await synthesizeClickOnSelectedTreeCell(library.ContentTree.view, {
         button: 2,
         type: "contextmenu",
       });

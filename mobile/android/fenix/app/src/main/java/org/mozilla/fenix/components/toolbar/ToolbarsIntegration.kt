@@ -42,7 +42,7 @@ class ToolbarsIntegration(
     private val settings: Settings,
     private val browserLayout: ViewGroup,
     private val engineView: EngineView,
-    private val toolbar: FenixBrowserToolbarView,
+    private val toolbar: BrowserToolbarComposable,
     private val topToolbarHeight: () -> Int,
     private val onToolbarsReset: () -> Unit,
 ) : LifecycleAwareFeature {

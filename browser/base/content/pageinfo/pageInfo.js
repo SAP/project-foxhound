@@ -398,6 +398,9 @@ window.addEventListener(
         case "security-view-cert":
           security.viewCert();
           break;
+        case "security-view-qwac":
+          security.viewQWAC();
+          break;
         case "security-clear-sitedata":
           security.clearSiteData();
           break;
@@ -423,7 +426,7 @@ async function loadPageInfo(browsingContext, imageElement, browser) {
   let actor = browsingContext.currentWindowGlobal.getActor("PageInfo");
 
   let result = await actor.sendQuery("PageInfo:getData");
-  await onNonMediaPageInfoLoad(browser, result, imageElement);
+  await onNonMediaPageInfoLoad(browsingContext, result, imageElement);
 
   // Here, we are walking the frame tree via BrowsingContexts to collect all of the
   // media information for each frame
@@ -474,7 +477,12 @@ function createPreviewBrowserElement(browser, docInfo) {
  * onNonMediaPageInfoLoad is responsible for populating the page info
  * UI other than the media tab. This includes general, permissions, and security.
  */
-async function onNonMediaPageInfoLoad(browser, pageInfoData, imageInfo) {
+async function onNonMediaPageInfoLoad(
+  browsingContext,
+  pageInfoData,
+  imageInfo
+) {
+  let browser = browsingContext.top.embedderElement;
   const { docInfo, windowInfo } = pageInfoData;
   let uri = Services.io.newURI(docInfo.documentURIObject.spec);
   let principal = docInfo.principal;
@@ -507,7 +515,7 @@ async function onNonMediaPageInfoLoad(browser, pageInfoData, imageInfo) {
     );
   }
   onLoadPermission(uri, principal);
-  securityOnLoad(uri, windowInfo);
+  securityOnLoad(uri, windowInfo, browsingContext);
 }
 
 function resetPageInfo(args) {

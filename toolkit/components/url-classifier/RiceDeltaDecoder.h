@@ -29,7 +29,7 @@ class RiceDeltaDecoder {
   //                     and the buffer length (in byte) should be
   //                     ((aNumEntries + 1) * sizeof(uint32_t)).
   bool Decode(uint32_t aRiceParameter, uint32_t aFirstValue,
-              uint32_t aNumEntries, uint32_t* aDecodedData);
+              uint32_t aNumEntries, uint32_t* aDecodedData, bool aIsV5 = false);
 
   // Decode the 64-bit encoded data.
   //

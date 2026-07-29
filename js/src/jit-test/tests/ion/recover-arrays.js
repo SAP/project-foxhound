@@ -304,7 +304,7 @@ for (var i = 0; i < 100; i++) {
     arrayLarge0(i);
     arrayLarge1(i);
     arrayLarge2(i);
-    //arrayCond(i); See bug 1697691.
+    arrayCond(i);
     arrayHole0(i);
     arrayAlloc0(i);
     arrayAlloc1(i);

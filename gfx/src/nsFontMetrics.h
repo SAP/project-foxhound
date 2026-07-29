@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,13 +8,10 @@
 #include <stdint.h>          // for uint32_t
 #include <sys/types.h>       // for int32_t
 #include "mozilla/RefPtr.h"  // for RefPtr
-#include "nsCOMPtr.h"        // for nsCOMPtr
 #include "nsCoord.h"         // for nscoord
-#include "nsError.h"         // for nsresult
 #include "nsFont.h"          // for nsFont
 #include "nsISupports.h"     // for NS_INLINE_DECL_REFCOUNTING
-#include "nsStyleConsts.h"
-#include "nscore.h"  // for char16_t
+#include "nscore.h"          // for char16_t
 
 class gfxContext;
 class gfxFontGroup;
@@ -26,6 +22,7 @@ class nsAtom;
 struct nsBoundingMetrics;
 
 namespace mozilla {
+enum class StyleTextOrientation : uint8_t;
 namespace gfx {
 class DrawTarget;
 }  // namespace gfx

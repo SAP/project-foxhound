@@ -104,11 +104,14 @@ const MAX_TRIM_LENGTH = 100;
  */
 
 /**
- * nsIAccessibilityService service.
+ * nsIAccessibilityService service. Eagerly instantiated unless
+ * window.gDisableAccServiceInit is set before this script is loaded.
  */
-var gAccService = Cc["@mozilla.org/accessibilityService;1"].getService(
-  nsIAccessibilityService
-);
+var gAccService = window.gDisableAccServiceInit
+  ? null
+  : Cc["@mozilla.org/accessibilityService;1"].getService(
+      nsIAccessibilityService
+    );
 
 /**
  * Enable/disable logging.

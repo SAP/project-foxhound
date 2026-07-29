@@ -61,6 +61,8 @@ private fun reduce(state: BrowserToolbarState, action: BrowserToolbarAction): Br
             mode = Mode.DISPLAY,
             editState = state.editState.copy(
                 query = BrowserToolbarQuery(""),
+                queryWasPrefilled = false,
+                suggestion = null,
             ),
         )
 
@@ -106,10 +108,22 @@ private fun reduce(state: BrowserToolbarState, action: BrowserToolbarAction): Br
             ),
         )
 
+        is BrowserDisplayToolbarAction.ToolbarCFRShown -> state.copy(
+            displayState = state.displayState.copy(
+                cfr = action.cfr,
+            ),
+        )
+
+        is BrowserDisplayToolbarAction.ToolbarCFRDismissed -> state.copy(
+            displayState = state.displayState.copy(cfr = null),
+        )
+
         is BrowserEditToolbarAction.SearchQueryUpdated -> state.copy(
             editState = state.editState.copy(
                 query = action.query,
                 isQueryPrefilled = action.isQueryPrefilled,
+                queryWasPrefilled = state.editState.queryWasPrefilled ||
+                    (action.isQueryPrefilled && action.query.current.isNotEmpty()),
             ),
         )
 

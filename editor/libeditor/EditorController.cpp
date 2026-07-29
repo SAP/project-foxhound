@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -74,6 +73,10 @@ void EditorController::RegisterEditorCommands(
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_endLine");
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectBeginLine");
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectEndLine");
+  NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_beginParagraph");
+  NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_endParagraph");
+  NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectBeginParagraph");
+  NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectEndParagraph");
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_wordPrevious");
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_wordNext");
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectWordPrevious");
@@ -94,6 +97,8 @@ void EditorController::RegisterEditorCommands(
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_moveRight2");
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_moveUp2");
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_moveDown2");
+  NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_moveLeft3");
+  NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_moveRight3");
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectLeft");
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectRight");
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectUp");
@@ -102,6 +107,8 @@ void EditorController::RegisterEditorCommands(
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectRight2");
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectUp2");
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectDown2");
+  NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectLeft3");
+  NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectRight3");
 }
 
 // static

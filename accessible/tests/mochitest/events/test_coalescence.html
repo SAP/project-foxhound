@@ -19,667 +19,489 @@
   <script type="application/javascript">
 
     // //////////////////////////////////////////////////////////////////////////
-    // Invoker base classes
+    // Do tests.
+    // enableLogging("eventTree");
 
-    const kRemoveElm = 1;
-    const kHideElm = 2;
-    const kAddElm = 3;
-    const kShowElm = 4;
+    async function doTests() {
+      // removeChildNParent("option1", "select1")
+      {
+        let childAcc = getAccessible(getNode("option1"));
+        let parentAcc = getAccessible(getNode("select1"));
+        let hostNode = getNode("select1").parentNode;
+        let evts = waitForEvents({
+          expected: [
+            [EVENT_HIDE, getNode("select1")],
+            [EVENT_REORDER, hostNode],
+          ],
+          unexpected: [
+            [EVENT_HIDE, childAcc],
+            [EVENT_REORDER, getNode("select1")],
+          ],
+        });
+        getNode("option1").remove();
+        getNode("select1").remove();
+        await evts;
+        testIsDefunct(childAcc);
+        testIsDefunct(parentAcc);
+      }
 
-    /**
-     * Base class to test of mutation events coalescence.
-     */
-    function coalescenceBase(aChildAction, aParentAction,
-                             aPerformActionOnChildInTheFirstPlace) {
-      // Invoker interface
+      // removeParentNChild("option2", "select2")
+      {
+        let select2 = getNode("select2");
+        let option2 = getNode("option2");
+        let childAcc = getAccessible(option2);
+        let parentAcc = getAccessible(select2);
+        let hostNode = getNode("select2").parentNode;
+        let evts = waitForEvents({
+          expected: [
+            [EVENT_HIDE, getNode("select2")],
+            [EVENT_REORDER, hostNode],
+          ],
+          unexpected: [
+            [EVENT_HIDE, childAcc],
+            [EVENT_REORDER, getNode("select2")],
+          ],
+        });
+        select2.remove();
+        option2.remove();
+        await evts;
+        testIsDefunct(childAcc);
+        testIsDefunct(parentAcc);
+      }
 
-      this.invoke = function coalescenceBase_invoke() {
-        if (aPerformActionOnChildInTheFirstPlace) {
-          this.invokeAction(this.childNode, aChildAction);
-          this.invokeAction(this.parentNode, aParentAction);
-        } else {
-          this.invokeAction(this.parentNode, aParentAction);
-          this.invokeAction(this.childNode, aChildAction);
-        }
-      };
+      // hideChildNParent("option3", "select3")
+      {
+        let childAcc = getAccessible(getNode("option3"));
+        let parentAcc = getAccessible(getNode("select3"));
+        let hostNode = getNode("select3").parentNode;
+        let evts = waitForEvents({
+          expected: [
+            [EVENT_HIDE, getNode("select3")],
+            [EVENT_REORDER, hostNode],
+          ],
+          unexpected: [
+            [EVENT_HIDE, childAcc],
+            [EVENT_REORDER, getNode("select3")],
+          ],
+        });
+        getNode("option3").style.display = "none";
+        getNode("select3").style.display = "none";
+        await evts;
+        testIsDefunct(parentAcc);
+      }
 
-      this.getID = function coalescenceBase_getID() {
-        var childAction = this.getActionName(aChildAction) + " child";
-        var parentAction = this.getActionName(aParentAction) + " parent";
+      // hideParentNChild("option4", "select4")
+      {
+        let childAcc = getAccessible(getNode("option4"));
+        let parentAcc = getAccessible(getNode("select4"));
+        let hostNode = getNode("select4").parentNode;
+        let evts = waitForEvents({
+          expected: [
+            [EVENT_HIDE, getNode("select4")],
+            [EVENT_REORDER, hostNode],
+          ],
+          unexpected: [
+            [EVENT_HIDE, childAcc],
+            [EVENT_REORDER, getNode("select4")],
+          ],
+        });
+        getNode("select4").style.display = "none";
+        getNode("option4").style.display = "none";
+        await evts;
+        testIsDefunct(parentAcc);
+      }
 
-        if (aPerformActionOnChildInTheFirstPlace)
-          return childAction + " and then " + parentAction;
+      // hideChildNRemoveParent("option5", "select5")
+      {
+        let childAcc = getAccessible(getNode("option5"));
+        let parentAcc = getAccessible(getNode("select5"));
+        let hostNode = getNode("select5").parentNode;
+        let evts = waitForEvents({
+          expected: [
+            [EVENT_HIDE, getNode("select5")],
+            [EVENT_REORDER, hostNode],
+          ],
+          unexpected: [
+            [EVENT_HIDE, childAcc],
+            [EVENT_REORDER, getNode("select5")],
+          ],
+        });
+        getNode("option5").style.display = "none";
+        getNode("select5").remove();
+        await evts;
+        testIsDefunct(parentAcc);
+      }
 
-        return parentAction + " and then " + childAction;
-      };
+      // hideParentNRemoveChild("option6", "select6")
+      {
+        let childAcc = getAccessible(getNode("option6"));
+        let parentAcc = getAccessible(getNode("select6"));
+        let hostNode = getNode("select6").parentNode;
+        let evts = waitForEvents({
+          expected: [
+            [EVENT_HIDE, getNode("select6")],
+            [EVENT_REORDER, hostNode],
+          ],
+          unexpected: [
+            [EVENT_HIDE, childAcc],
+            [EVENT_REORDER, getNode("select6")],
+          ],
+        });
+        getNode("select6").style.display = "none";
+        getNode("option6").remove();
+        await evts;
+        testIsDefunct(parentAcc);
+      }
 
-      this.finalCheck = function coalescenceBase_check() {
-        if (this.getEventType(aChildAction) == EVENT_HIDE) {
-          testIsDefunct(this.child);
-        }
-        if (this.getEventType(aParentAction) == EVENT_HIDE) {
-          testIsDefunct(this.parent);
-        }
-      };
+      // removeChildNHideParent("option7", "select7")
+      {
+        let childAcc = getAccessible(getNode("option7"));
+        let parentAcc = getAccessible(getNode("select7"));
+        let hostNode = getNode("select7").parentNode;
+        let evts = waitForEvents({
+          expected: [
+            [EVENT_HIDE, getNode("select7")],
+            [EVENT_REORDER, hostNode],
+          ],
+          unexpected: [
+            [EVENT_HIDE, childAcc],
+            [EVENT_REORDER, getNode("select7")],
+          ],
+        });
+        getNode("option7").remove();
+        getNode("select7").style.display = "none";
+        await evts;
+        testIsDefunct(parentAcc);
+      }
 
-      // Implementation details
+      // removeParentNHideChild("option8", "select8")
+      {
+        let childAcc = getAccessible(getNode("option8"));
+        let parentAcc = getAccessible(getNode("select8"));
+        let hostNode = getNode("select8").parentNode;
+        let evts = waitForEvents({
+          expected: [
+            [EVENT_HIDE, getNode("select8")],
+            [EVENT_REORDER, hostNode],
+          ],
+          unexpected: [
+            [EVENT_HIDE, childAcc],
+            [EVENT_REORDER, getNode("select8")],
+          ],
+        });
+        getNode("select8").style.display = "none";
+        getNode("option8").remove();
+        await evts;
+        testIsDefunct(parentAcc);
+      }
 
-      this.invokeAction = function coalescenceBase_invokeAction(aNode, aAction) {
-        switch (aAction) {
-          case kRemoveElm:
-            aNode.remove();
-            break;
+      // addParentNChild("testContainer", false) - parent added first, then child
+      {
+        let hostNode = getNode("testContainer");
+        let parentNode = document.createElement("select");
+        let childNode = document.createElement("option");
+        childNode.textContent = "testing";
+        let evts = waitForEvents({
+          expected: [[EVENT_SHOW, parentNode], [EVENT_REORDER, hostNode]],
+          unexpected: [[EVENT_SHOW, childNode], [EVENT_REORDER, parentNode]],
+        });
+        hostNode.appendChild(parentNode);
+        parentNode.appendChild(childNode);
+        await evts;
+      }
 
-          case kHideElm:
-            aNode.style.display = "none";
-            break;
+      // addParentNChild("testContainer", true) - child added first, then parent
+      {
+        let hostNode = getNode("testContainer");
+        let parentNode = document.createElement("select");
+        let childNode = document.createElement("option");
+        childNode.textContent = "testing";
+        let evts = waitForEvents({
+          expected: [[EVENT_SHOW, parentNode], [EVENT_REORDER, hostNode]],
+          unexpected: [[EVENT_SHOW, childNode], [EVENT_REORDER, parentNode]],
+        });
+        parentNode.appendChild(childNode);
+        hostNode.appendChild(parentNode);
+        await evts;
+      }
 
-          case kAddElm:
-            if (aNode == this.parentNode)
-              this.hostNode.appendChild(this.parentNode);
-            else
-              this.parentNode.appendChild(this.childNode);
-            break;
+      // showParentNChild("select9", "option9", false) - parent shown first, then child
+      {
+        let parentNode = getNode("select9");
+        let childNode = getNode("option9");
+        let hostNode = parentNode.parentNode;
+        let evts = waitForEvents({
+          expected: [[EVENT_SHOW, parentNode], [EVENT_REORDER, hostNode]],
+          unexpected: [[EVENT_SHOW, childNode], [EVENT_REORDER, parentNode]],
+        });
+        parentNode.style.display = "block";
+        childNode.style.display = "block";
+        await evts;
+      }
 
-          case kShowElm:
-            aNode.style.display = "block";
-            break;
+      // showParentNChild("select10", "option10", true) - child shown first, then parent
+      {
+        let parentNode = getNode("select10");
+        let childNode = getNode("option10");
+        let hostNode = parentNode.parentNode;
+        let evts = waitForEvents({
+          expected: [[EVENT_SHOW, parentNode], [EVENT_REORDER, hostNode]],
+          unexpected: [[EVENT_SHOW, childNode], [EVENT_REORDER, parentNode]],
+        });
+        childNode.style.display = "block";
+        parentNode.style.display = "block";
+        await evts;
+      }
 
-          default:
-            return INVOKER_ACTION_FAILED;
-        }
-        // 0 means the action succeeded.
-        return 0;
-      };
+      // showParentNAddChild("select11", false) - parent shown first, then child added
+      {
+        let parentNode = getNode("select11");
+        let hostNode = parentNode.parentNode;
+        let childNode = document.createElement("option");
+        childNode.textContent = "testing";
+        let evts = waitForEvents({
+          expected: [[EVENT_SHOW, parentNode], [EVENT_REORDER, hostNode]],
+          unexpected: [[EVENT_SHOW, childNode], [EVENT_REORDER, parentNode]],
+        });
+        parentNode.style.display = "block";
+        parentNode.appendChild(childNode);
+        await evts;
+      }
 
-      this.getEventType = function coalescenceBase_getEventType(aAction) {
-        switch (aAction) {
-          case kRemoveElm: case kHideElm:
-            return EVENT_HIDE;
-          case kAddElm: case kShowElm:
-            return EVENT_SHOW;
-        }
-        return 0;
-      };
+      // showParentNAddChild("select12", true) - child added first, then parent shown
+      {
+        let parentNode = getNode("select12");
+        let hostNode = parentNode.parentNode;
+        let childNode = document.createElement("option");
+        childNode.textContent = "testing";
+        let evts = waitForEvents({
+          expected: [[EVENT_SHOW, parentNode], [EVENT_REORDER, hostNode]],
+          unexpected: [[EVENT_SHOW, childNode], [EVENT_REORDER, parentNode]],
+        });
+        parentNode.appendChild(childNode);
+        parentNode.style.display = "block";
+        await evts;
+      }
 
-      this.getActionName = function coalescenceBase_getActionName(aAction) {
-        switch (aAction) {
-          case kRemoveElm:
-            return "remove";
-          case kHideElm:
-            return "hide";
-          case kAddElm:
-            return "add";
-          case kShowElm:
-            return "show";
-          default:
-            return "??";
-        }
-      };
+      // removeGrandChildrenNHideParent("t1_child1", "t1_child2", "t1_parent")
+      {
+        let child1 = getNode("t1_child1");
+        let child2 = getNode("t1_child2");
+        let parentAcc = getAccessible("t1_parent");
+        let child1Acc = getAccessible("t1_child1");
+        let child2Acc = getAccessible("t1_child2");
+        let evts = waitForEvents({
+          expected: [
+            [EVENT_HIDE, parentAcc],
+            [EVENT_REORDER, getNode("t1_parent").parentNode],
+          ],
+          unexpected: [
+            [EVENT_HIDE, child1Acc],
+            [EVENT_HIDE, child2Acc],
+            [EVENT_REORDER, parentAcc],
+          ],
+        });
+        child1.remove();
+        child2.remove();
+        getNode("t1_parent").hidden = true;
+        await evts;
+      }
 
-      this.initSequence = function coalescenceBase_initSequence() {
-        // expected events
-        var eventType = this.getEventType(aParentAction);
-        this.eventSeq = [
-          new invokerChecker(eventType, this.parentNode),
-          new invokerChecker(EVENT_REORDER, this.hostNode),
-        ];
-
-        // unexpected events
-        this.unexpectedEventSeq = [
-          new invokerChecker(this.getEventType(aChildAction), this.childNode),
-          new invokerChecker(EVENT_REORDER, this.parentNode),
-        ];
-      };
-    }
-
-    /**
-     * Remove or hide mutation events coalescence testing.
-     */
-    function removeOrHideCoalescenceBase(aChildID, aParentID,
-                                         aChildAction, aParentAction,
-                                         aPerformActionOnChildInTheFirstPlace) {
-      this.__proto__ = new coalescenceBase(aChildAction, aParentAction,
-                                           aPerformActionOnChildInTheFirstPlace);
-
-      this.init = function removeOrHideCoalescenceBase_init() {
-        this.childNode = getNode(aChildID);
-        this.parentNode = getNode(aParentID);
-        this.child = getAccessible(this.childNode);
-        this.parent = getAccessible(this.parentNode);
-        this.hostNode = this.parentNode.parentNode;
-      };
-
-      // Initalization
-
-      this.init();
-      this.initSequence();
-    }
-
-    // //////////////////////////////////////////////////////////////////////////
-    // Invokers
-
-    /**
-     * Remove child node and then its parent node from DOM tree.
-     */
-    function removeChildNParent(aChildID, aParentID) {
-      this.__proto__ = new removeOrHideCoalescenceBase(aChildID, aParentID,
-                                                       kRemoveElm, kRemoveElm,
-                                                       true);
-    }
-
-    /**
-     * Remove parent node and then its child node from DOM tree.
-     */
-    function removeParentNChild(aChildID, aParentID) {
-      this.__proto__ = new removeOrHideCoalescenceBase(aChildID, aParentID,
-                                                       kRemoveElm, kRemoveElm,
-                                                       false);
-    }
-
-    /**
-     * Hide child node and then its parent node.
-     */
-    function hideChildNParent(aChildID, aParentID) {
-      this.__proto__ = new removeOrHideCoalescenceBase(aChildID, aParentID,
-                                                       kHideElm, kHideElm,
-                                                       true);
-    }
-
-    /**
-     * Hide parent node and then its child node.
-     */
-    function hideParentNChild(aChildID, aParentID) {
-      this.__proto__ = new removeOrHideCoalescenceBase(aChildID, aParentID,
-                                                       kHideElm, kHideElm,
-                                                       false);
-    }
-
-    /**
-     * Hide child node and then remove its parent node.
-     */
-    function hideChildNRemoveParent(aChildID, aParentID) {
-      this.__proto__ = new removeOrHideCoalescenceBase(aChildID, aParentID,
-                                                       kHideElm, kRemoveElm,
-                                                       true);
-    }
-
-    /**
-     * Hide parent node and then remove its child node.
-     */
-    function hideParentNRemoveChild(aChildID, aParentID) {
-      this.__proto__ = new removeOrHideCoalescenceBase(aChildID, aParentID,
-                                                       kRemoveElm, kHideElm,
-                                                       false);
-    }
-
-    /**
-     * Remove child node and then hide its parent node.
-     */
-    function removeChildNHideParent(aChildID, aParentID) {
-      this.__proto__ = new removeOrHideCoalescenceBase(aChildID, aParentID,
-                                                       kRemoveElm, kHideElm,
-                                                       true);
-    }
-
-    /**
-     * Remove parent node and then hide its child node.
-     */
-    function removeParentNHideChild(aChildID, aParentID) {
-      this.__proto__ = new removeOrHideCoalescenceBase(aChildID, aParentID,
-                                                       kHideElm, kRemoveElm,
-                                                       false);
-    }
-
-    /**
-     * Create and append parent node and create and append child node to it.
-     */
-    function addParentNChild(aHostID, aPerformActionOnChildInTheFirstPlace) {
-      this.init = function addParentNChild_init() {
-        this.hostNode = getNode(aHostID);
-        this.parentNode = document.createElement("select");
-        this.childNode = document.createElement("option");
-        this.childNode.textContent = "testing";
-      };
-
-      this.__proto__ = new coalescenceBase(kAddElm, kAddElm,
-                                           aPerformActionOnChildInTheFirstPlace);
-
-      this.init();
-      this.initSequence();
-    }
-
-    /**
-     * Show parent node and show child node to it.
-     */
-    function showParentNChild(aParentID, aChildID,
-                              aPerformActionOnChildInTheFirstPlace) {
-      this.init = function showParentNChild_init() {
-        this.parentNode = getNode(aParentID);
-        this.hostNode = this.parentNode.parentNode;
-        this.childNode = getNode(aChildID);
-      };
-
-      this.__proto__ = new coalescenceBase(kShowElm, kShowElm,
-                                           aPerformActionOnChildInTheFirstPlace);
-
-      this.init();
-      this.initSequence();
-    }
-
-    /**
-     * Create and append child node to the DOM and then show parent node.
-     */
-    function showParentNAddChild(aParentID,
-                                 aPerformActionOnChildInTheFirstPlace) {
-      this.init = function showParentNAddChild_init() {
-        this.parentNode = getNode(aParentID);
-        this.hostNode = this.parentNode.parentNode;
-        this.childNode = document.createElement("option");
-        this.childNode.textContent = "testing";
-      };
-
-      this.__proto__ = new coalescenceBase(kAddElm, kShowElm,
-                                           aPerformActionOnChildInTheFirstPlace);
-
-      this.init();
-      this.initSequence();
-    }
-
-    /**
-     * Remove children and parent
-     */
-    function removeGrandChildrenNHideParent(aChild1Id, aChild2Id, aParentId) {
-      this.child1 = getNode(aChild1Id);
-      this.child2 = getNode(aChild2Id);
-      this.parent = getNode(aParentId);
-
-      this.eventSeq = [
-        new invokerChecker(EVENT_HIDE, getAccessible(aParentId)),
-        new invokerChecker(EVENT_REORDER, getNode(aParentId).parentNode),
-        new unexpectedInvokerChecker(EVENT_HIDE, getAccessible(aChild1Id)),
-        new unexpectedInvokerChecker(EVENT_HIDE, getAccessible(aChild2Id)),
-        new unexpectedInvokerChecker(EVENT_REORDER, getAccessible(aParentId)),
-      ];
-
-      this.invoke = function removeGrandChildrenNHideParent_invoke() {
-        this.child1.remove();
-        this.child2.remove();
-        this.parent.hidden = true;
-      };
-
-      this.getID = function removeGrandChildrenNHideParent_getID() {
-        return "remove grand children of different parents and then hide their grand parent";
-      };
-    }
-
-    /**
-     * Remove a child, and then its parent.
-     */
-    function test3() {
-      this.o = getAccessible("t3_o");
-      this.ofc = getAccessible("t3_o").firstChild;
-
-      this.eventSeq = [
-        new invokerChecker(EVENT_HIDE, this.o),
-        new invokerChecker(EVENT_REORDER, "t3_lb"),
-        new unexpectedInvokerChecker(EVENT_HIDE, this.ofc),
-        new unexpectedInvokerChecker(EVENT_REORDER, this.o),
-      ];
-
-      this.invoke = function test3_invoke() {
+      // test3: remove a child, and then its parent
+      {
+        let o = getAccessible("t3_o");
+        let ofc = getAccessible("t3_o").firstChild;
+        let evts = waitForEvents({
+          expected: [[EVENT_HIDE, o], [EVENT_REORDER, "t3_lb"]],
+          unexpected: [[EVENT_HIDE, ofc], [EVENT_REORDER, o]],
+        });
         getNode("t3_o").textContent = "";
         getNode("t3_lb").removeChild(getNode("t3_o"));
-      };
+        await evts;
+        testIsDefunct(o);
+        testIsDefunct(ofc);
+      }
 
-      this.finalCheck = function test3_finalCheck() {
-        testIsDefunct(this.o);
-        testIsDefunct(this.ofc);
-      };
-
-      this.getID = function test3_getID() {
-        return "remove a child, and then its parent";
-      };
-    }
-
-    /**
-     * Remove children, and then a parent of 2nd child.
-     */
-    function test4() {
-      this.o1 = getAccessible("t4_o1");
-      this.o1fc = this.o1.firstChild;
-      this.o2 = getAccessible("t4_o2");
-      this.o2fc = this.o2.firstChild;
-
-      this.eventSeq = [
-        new invokerChecker(EVENT_HIDE, this.o1fc),
-        new invokerChecker(EVENT_HIDE, this.o2),
-        new invokerChecker(EVENT_REORDER, "t4_lb"),
-        new unexpectedInvokerChecker(EVENT_HIDE, this.o2fc),
-        new unexpectedInvokerChecker(EVENT_REORDER, this.o1),
-        new unexpectedInvokerChecker(EVENT_REORDER, this.o2),
-      ];
-
-      this.invoke = function test4_invoke() {
+      // test4: remove children, and then a parent of 2nd child
+      {
+        let o1 = getAccessible("t4_o1");
+        let o1fc = o1.firstChild;
+        let o2 = getAccessible("t4_o2");
+        let o2fc = o2.firstChild;
+        let evts = waitForEvents({
+          expected: [
+            [EVENT_HIDE, o1fc],
+            [EVENT_HIDE, o2],
+            [EVENT_REORDER, "t4_lb"],
+          ],
+          unexpected: [
+            [EVENT_HIDE, o2fc],
+            [EVENT_REORDER, o1],
+            [EVENT_REORDER, o2],
+          ],
+        });
         getNode("t4_o1").textContent = "";
         getNode("t4_o2").textContent = "";
         getNode("t4_lb").removeChild(getNode("t4_o2"));
-      };
+        await evts;
+        testIsDefunct(o1fc);
+        testIsDefunct(o2);
+        testIsDefunct(o2fc);
+      }
 
-      this.finalCheck = function test4_finalCheck() {
-        testIsDefunct(this.o1fc);
-        testIsDefunct(this.o2);
-        testIsDefunct(this.o2fc);
-      };
-
-      this.getID = function test4_getID() {
-        return "remove children, and then a parent of 2nd child";
-      };
-    }
-
-    /**
-     * Remove a child, remove a parent sibling, remove the parent
-     */
-    function test5() {
-      this.o = getAccessible("t5_o");
-      this.ofc = this.o.firstChild;
-      this.b = getAccessible("t5_b");
-      this.lb = getAccessible("t5_lb");
-
-      this.eventSeq = [
-        new invokerChecker(EVENT_HIDE, this.b),
-        new invokerChecker(EVENT_HIDE, this.o),
-        new invokerChecker(EVENT_REORDER, "t5"),
-        new unexpectedInvokerChecker(EVENT_HIDE, this.ofc),
-        new unexpectedInvokerChecker(EVENT_REORDER, this.o),
-        new unexpectedInvokerChecker(EVENT_REORDER, this.lb),
-      ];
-
-      this.invoke = function test5_invoke() {
+      // test5: remove a child, remove a parent sibling, remove the parent
+      {
+        let o = getAccessible("t5_o");
+        let ofc = o.firstChild;
+        let b = getAccessible("t5_b");
+        let evts = waitForEvents({
+          expected: [[EVENT_HIDE, b], [EVENT_HIDE, o], [EVENT_REORDER, "t5"]],
+          unexpected: [
+            [EVENT_HIDE, ofc],
+            [EVENT_REORDER, o],
+            [EVENT_REORDER, getAccessible("t5_lb")],
+          ],
+        });
         getNode("t5_o").textContent = "";
         getNode("t5").removeChild(getNode("t5_b"));
         getNode("t5_lb").removeChild(getNode("t5_o"));
-      };
+        await evts;
+        testIsDefunct(ofc);
+        testIsDefunct(o);
+        testIsDefunct(b);
+      }
 
-      this.finalCheck = function test5_finalCheck() {
-        testIsDefunct(this.ofc);
-        testIsDefunct(this.o);
-        testIsDefunct(this.b);
-      };
-
-      this.getID = function test5_getID() {
-        return "remove a child, remove a parent sibling, remove the parent";
-      };
-    }
-
-    /**
-     * Insert accessibles with a child node moved by aria-owns
-     * Markup:
-     * <div id="t6_fc">
-     *   <div id="t6_owns"></div>
-     * </div>
-     * <div id="t6_sc" aria-owns="t6_owns"></div>
-     */
-    function test6() {
-      this.parent = getNode("t6");
-      this.fc = document.createElement("div");
-      this.fc.setAttribute("id", "t6_fc");
-      this.owns = document.createElement("div");
-      this.owns.setAttribute("id", "t6_owns");
-      this.sc = document.createElement("div");
-      this.sc.setAttribute("id", "t6_sc");
-
-      this.eventSeq = [
-        new invokerChecker(EVENT_SHOW, this.fc),
-        new invokerChecker(EVENT_SHOW, this.sc),
-        new invokerChecker(EVENT_REORDER, this.parent),
-        new unexpectedInvokerChecker(EVENT_REORDER, this.fc),
-        new unexpectedInvokerChecker(EVENT_REORDER, this.sc),
-        new unexpectedInvokerChecker(EVENT_HIDE, this.owns),
-        new unexpectedInvokerChecker(EVENT_SHOW, this.owns),
-      ];
-
-      this.invoke = function test6_invoke() {
-        getNode("t6").appendChild(this.fc);
-        getNode("t6_fc").appendChild(this.owns);
-        getNode("t6").appendChild(this.sc);
+      // test6: Insert accessibles with a child node moved by aria-owns
+      {
+        let parent = getNode("t6");
+        let fc = document.createElement("div");
+        fc.setAttribute("id", "t6_fc");
+        let owns = document.createElement("div");
+        owns.setAttribute("id", "t6_owns");
+        let sc = document.createElement("div");
+        sc.setAttribute("id", "t6_sc");
+        let evts = waitForEvents({
+          expected: [
+            [EVENT_SHOW, fc],
+            [EVENT_SHOW, sc],
+            [EVENT_REORDER, parent],
+          ],
+          unexpected: [
+            [EVENT_REORDER, fc],
+            [EVENT_REORDER, sc],
+            [EVENT_HIDE, owns],
+            [EVENT_SHOW, owns],
+          ],
+        });
+        parent.appendChild(fc);
+        getNode("t6_fc").appendChild(owns);
+        parent.appendChild(sc);
         getNode("t6_sc").setAttribute("aria-owns", "t6_owns");
-      };
+        await evts;
+      }
 
-      this.getID = function test6_getID() {
-        return "Insert accessibles with a child node moved by aria-owns";
-      };
-    }
-
-    /**
-     * Insert text nodes under direct and grand children, and then hide
-     * their container by means of aria-owns.
-     *
-     * Markup:
-     * <div id="t7_moveplace" aria-owns="t7_c"></div>
-     * <div id="t7_c">
-     *   <div id="t7_c_directchild">ha</div>
-     *   <div><div id="t7_c_grandchild">ha</div></div>
-     * </div>
-     */
-    function test7() {
-      this.eventSeq = [
-        new invokerChecker(EVENT_HIDE, getNode("t7_c")),
-        new invokerChecker(EVENT_SHOW, getNode("t7_c")),
-        new invokerChecker(EVENT_REORDER, getNode("t7")),
-        new unexpectedInvokerChecker(EVENT_REORDER, getNode("t7_c_directchild")),
-        new unexpectedInvokerChecker(EVENT_REORDER, getNode("t7_c_grandchild")),
-        new unexpectedInvokerChecker(EVENT_SHOW, () => getNode("t7_c_directchild").firstChild),
-        new unexpectedInvokerChecker(EVENT_SHOW, () => getNode("t7_c_grandchild").firstChild),
-      ];
-
-      this.invoke = function test7_invoke() {
+      info(
+        "test7: Insert text nodes under direct and grand children, then hide via aria-owns"
+      );
+      {
+        let evts = waitForEvents({
+          expected: [
+            [EVENT_HIDE, "t7_c"],
+            [EVENT_SHOW, "t7_c"],
+            [EVENT_REORDER, "t7"],
+          ],
+          unexpected: [
+            [EVENT_REORDER, "t7_c_directchild"],
+            [EVENT_REORDER, "t7_c_grandchild"],
+            [EVENT_SHOW, e => e.accessible.parent.id == "t7_c_directchild"],
+            [EVENT_SHOW, e => e.accessible.parent.id == "t7_c_grandchild"],
+          ],
+        });
         getNode("t7_c_directchild").textContent = "ha";
         getNode("t7_c_grandchild").textContent = "ha";
         getNode("t7_moveplace").setAttribute("aria-owns", "t7_c");
-      };
+        await evts;
+      }
 
-      this.getID = function test7_getID() {
-        return "Show child accessibles and then hide their container";
-      };
-    }
-
-    /**
-     * Move a node by aria-owns from right to left in the tree, so that
-     * the eventing looks this way:
-     * reorder for 't8_c1'
-     *   hide for 't8_c1_child'
-     *   show for 't8_c2_moved'
-     * reorder for 't8_c2'
-     *   hide for 't8_c2_moved'
-     *
-     * The hide event should be delivered before the paired show event.
-     */
-    function test8() {
-      this.eventSeq = [
-        new invokerChecker(EVENT_HIDE, getNode("t8_c1_child")),
-        new invokerChecker(EVENT_HIDE, "t8_c2_moved"),
-        new invokerChecker(EVENT_SHOW, "t8_c2_moved"),
-        new invokerChecker(EVENT_REORDER, "t8_c2"),
-        new invokerChecker(EVENT_REORDER, "t8_c1"),
-      ];
-
-      this.invoke = function test8_invoke() {
-        // Remove a node from 't8_c1' container to give the event tree a
-        // desired structure (the 't8_c1' container node goes first in the event
-        // tree)
+      info("test8: Move a node by aria-owns from right to left in the tree");
+      {
+        let evts = waitForEvents([
+          [EVENT_HIDE, getNode("t8_c1_child")],
+          [EVENT_HIDE, "t8_c2_moved"],
+          [EVENT_SHOW, "t8_c2_moved"],
+          [EVENT_REORDER, "t8_c2"],
+          [EVENT_REORDER, "t8_c1"],
+        ]);
         getNode("t8_c1_child").remove();
-        // then move 't8_c2_moved' from 't8_c2' to 't8_c1'.
         getNode("t8_c1").setAttribute("aria-owns", "t8_c2_moved");
-      };
+        await evts;
+      }
 
-      this.getID = function test8_getID() {
-        return "Move a node by aria-owns to left within the tree";
-      };
-    }
-
-    /**
-     * Move 't9_c3_moved' node under 't9_c2_moved', and then move 't9_c2_moved'
-     * node by aria-owns (same as test10 but has different aria-owns
-     * ordering), the eventing looks same way as in test10:
-     * reorder for 't9_c1'
-     *   hide for 't9_c1_child'
-     *   show for 't9_c2_moved'
-     * reorder for 't9_c2'
-    *    hide for 't9_c2_child'
-     *   hide for 't9_c2_moved'
-     * reorder for 't9_c3'
-     *   hide for 't9_c3_moved'
-     *
-     * The hide events for 't9_c2_moved' and 't9_c3_moved' should be delivered
-     * before the show event for 't9_c2_moved'.
-     */
-    function test9() {
-      this.eventSeq = [
-        new invokerChecker(EVENT_HIDE, getNode("t9_c1_child")),
-        new invokerChecker(EVENT_HIDE, getNode("t9_c2_child")),
-        new invokerChecker(EVENT_HIDE, "t9_c3_moved"),
-        new invokerChecker(EVENT_HIDE, "t9_c2_moved"),
-        new invokerChecker(EVENT_SHOW, "t9_c2_moved"),
-        new invokerChecker(EVENT_REORDER, "t9_c3"),
-        new invokerChecker(EVENT_REORDER, "t9_c2"),
-        new invokerChecker(EVENT_REORDER, "t9_c1"),
-        new unexpectedInvokerChecker(EVENT_SHOW, "t9_c3_moved"),
-      ];
-
-      this.invoke = function test9_invoke() {
-        // Remove child nodes from 't9_c1' and 't9_c2' containers to give
-        // the event tree a needed structure ('t9_c1' and 't9_c2' nodes go
-        // first in the event tree),
+      // test9: Move node #1 by aria-owns and then move node #2 into node #1
+      {
+        let evts = waitForEvents({
+          expected: [
+            [EVENT_HIDE, getNode("t9_c1_child")],
+            [EVENT_HIDE, getNode("t9_c2_child")],
+            [EVENT_HIDE, "t9_c3_moved"],
+            [EVENT_HIDE, "t9_c2_moved"],
+            [EVENT_SHOW, "t9_c2_moved"],
+            [EVENT_REORDER, "t9_c3"],
+            [EVENT_REORDER, "t9_c2"],
+            [EVENT_REORDER, "t9_c1"],
+          ],
+          unexpected: [[EVENT_SHOW, "t9_c3_moved"]],
+        });
         getNode("t9_c1_child").remove();
         getNode("t9_c2_child").remove();
-        // then do aria-owns magic.
         getNode("t9_c2_moved").setAttribute("aria-owns", "t9_c3_moved");
         getNode("t9_c1").setAttribute("aria-owns", "t9_c2_moved");
-      };
+        await evts;
+      }
 
-      this.getID = function test9_getID() {
-        return "Move node #1 by aria-owns and then move node #2 into node #1";
-      };
-    }
-
-    /**
-     * Move a node 't10_c3_moved' by aria-owns under a node 't10_c2_moved',
-     * moved by under 't10_1', so that the eventing looks this way:
-     * reorder for 't10_c1'
-     *   hide for 't10_c1_child'
-     *   show for 't10_c2_moved'
-     * reorder for 't10_c2'
-     *   hide for 't10_c2_child'
-     *   hide for 't10_c2_moved'
-     * reorder for 't10_c3'
-     *   hide for 't10_c3_moved'
-     *
-     * The hide events for 't10_c2_moved' and 't10_c3_moved' should be delivered
-     * before the show event for 't10_c2_moved'.
-     */
-    function test10() {
-      this.eventSeq = [
-        new invokerChecker(EVENT_HIDE, getNode("t10_c1_child")),
-        new invokerChecker(EVENT_HIDE, getNode("t10_c2_child")),
-        new invokerChecker(EVENT_HIDE, getNode("t10_c2_moved")),
-        new invokerChecker(EVENT_HIDE, getNode("t10_c3_moved")),
-        new invokerChecker(EVENT_SHOW, getNode("t10_c2_moved")),
-        new invokerChecker(EVENT_REORDER, "t10_c2"),
-        new invokerChecker(EVENT_REORDER, "t10_c1"),
-        new invokerChecker(EVENT_REORDER, "t10_c3"),
-      ];
-
-      this.invoke = function test10_invoke() {
-        // Remove child nodes from 't10_c1' and 't10_c2' containers to give
-        // the event tree a needed structure ('t10_c1' and 't10_c2' nodes go first
-        // in the event tree),
+      // test10: Move a node by aria-owns into a node moved by aria-owns
+      {
+        let evts = waitForEvents([
+          [EVENT_HIDE, getNode("t10_c1_child")],
+          [EVENT_HIDE, getNode("t10_c2_child")],
+          [EVENT_HIDE, getNode("t10_c2_moved")],
+          [EVENT_HIDE, getNode("t10_c3_moved")],
+          [EVENT_SHOW, getNode("t10_c2_moved")],
+          [EVENT_REORDER, "t10_c2"],
+          [EVENT_REORDER, "t10_c1"],
+          [EVENT_REORDER, "t10_c3"],
+        ]);
         getNode("t10_c1_child").remove();
         getNode("t10_c2_child").remove();
-        // then do aria-owns stuff.
         getNode("t10_c1").setAttribute("aria-owns", "t10_c2_moved");
         getNode("t10_c2_moved").setAttribute("aria-owns", "t10_c3_moved");
-      };
+        await evts;
+      }
 
-      this.getID = function test10_getID() {
-        return "Move a node by aria-owns into a node moved by aria-owns to left within the tree";
-      };
-    }
-
-    /**
-     * Move a node by aria-owns from right to left in the tree, and then
-     * move its parent too by aria-owns. No hide event should be fired for
-     * original node.
-     */
-    function test11() {
-      this.eventSeq = [
-        new invokerChecker(EVENT_HIDE, getNode("t11_c1_child")),
-        new invokerChecker(EVENT_HIDE, getNode("t11_c2")),
-        new orderChecker(),
-        new asyncInvokerChecker(EVENT_SHOW, "t11_c2_child"),
-        new asyncInvokerChecker(EVENT_SHOW, "t11_c2"),
-        new orderChecker(),
-        new invokerChecker(EVENT_REORDER, "t11"),
-        new unexpectedInvokerChecker(EVENT_HIDE, "t11_c2_child"),
-        new unexpectedInvokerChecker(EVENT_REORDER, "t11_c1"),
-        new unexpectedInvokerChecker(EVENT_REORDER, "t11_c2"),
-        new unexpectedInvokerChecker(EVENT_REORDER, "t11_c3"),
-      ];
-
-      this.invoke = function test11_invoke() {
-        // Remove a node from 't11_c1' container to give the event tree a
-        // desired structure (the 't11_c1' container node goes first in
-        // the event tree),
+      // test11: Move a node by aria-owns to left within the tree
+      {
+        let evts = waitForEvents({
+          expected: [
+            [EVENT_HIDE, getNode("t11_c1_child")],
+            [EVENT_HIDE, getNode("t11_c2")],
+            [EVENT_SHOW, "t11_c2_child"],
+            [EVENT_SHOW, "t11_c2"],
+            [EVENT_REORDER, "t11"],
+          ],
+          unexpected: [
+            [EVENT_HIDE, "t11_c2_child"],
+            [EVENT_REORDER, "t11_c1"],
+            [EVENT_REORDER, "t11_c2"],
+            [EVENT_REORDER, "t11_c3"],
+          ],
+        });
         getNode("t11_c1_child").remove();
-        // then move 't11_c2_moved' from 't11_c2' to 't11_c1', and then move
-        // 't11_c2' to 't11_c3'.
         getNode("t11_c1").setAttribute("aria-owns", "t11_c2_child");
         getNode("t11_c3").setAttribute("aria-owns", "t11_c2");
-      };
+        await evts;
+      }
 
-      this.getID = function test11_getID() {
-        return "Move a node by aria-owns to left within the tree";
-      };
-    }
-
-    // //////////////////////////////////////////////////////////////////////////
-    // Do tests.
-
-    gA11yEventDumpToConsole = true; // debug stuff
-    // enableLogging("eventTree");
-
-    var gQueue = null;
-    function doTests() {
-      gQueue = new eventQueue();
-
-      gQueue.push(new removeChildNParent("option1", "select1"));
-      gQueue.push(new removeParentNChild("option2", "select2"));
-      gQueue.push(new hideChildNParent("option3", "select3"));
-      gQueue.push(new hideParentNChild("option4", "select4"));
-      gQueue.push(new hideChildNRemoveParent("option5", "select5"));
-      gQueue.push(new hideParentNRemoveChild("option6", "select6"));
-      gQueue.push(new removeChildNHideParent("option7", "select7"));
-      gQueue.push(new removeParentNHideChild("option8", "select8"));
-
-      gQueue.push(new addParentNChild("testContainer", false));
-      gQueue.push(new addParentNChild("testContainer", true));
-      gQueue.push(new showParentNChild("select9", "option9", false));
-      gQueue.push(new showParentNChild("select10", "option10", true));
-      gQueue.push(new showParentNAddChild("select11", false));
-      gQueue.push(new showParentNAddChild("select12", true));
-
-      gQueue.push(new removeGrandChildrenNHideParent("t1_child1", "t1_child2", "t1_parent"));
-      gQueue.push(new test3());
-      gQueue.push(new test4());
-      gQueue.push(new test5());
-      gQueue.push(new test6());
-      gQueue.push(new test7());
-      gQueue.push(new test8());
-      gQueue.push(new test9());
-      gQueue.push(new test10());
-      gQueue.push(new test11());
-
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

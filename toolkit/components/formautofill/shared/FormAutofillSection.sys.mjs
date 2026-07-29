@@ -661,9 +661,10 @@ export class FormAutofillCreditCardSection extends FormAutofillSection {
     // disabled.
     if (profile["cc-number-decrypted"]) {
       profile["cc-number"] = profile["cc-number-decrypted"];
-    } else if (!profile["cc-number"].startsWith("****")) {
-      // Show the previewed credit card as "**** 4444" which is
-      // needed when a credit card number field has a maxlength of four.
+    } else if (/^\d+$/.test(profile["cc-number"])) {
+      // If cc-number is an unmasked digit-only number, prepend mask characters
+      // so that fields with a maxlength of four correctly show only the last 4
+      // digits in the preview.
       profile["cc-number"] = "****" + profile["cc-number"];
     }
 

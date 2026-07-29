@@ -7,7 +7,7 @@ add_setup(async () => {
   await SpecialPowers.pushPrefEnv({
     set: [[VERTICAL_TABS_PREF, true]],
   });
-  await waitForTabstripOrientation("vertical");
+  await SidebarTestUtils.waitForTabstripOrientation(window, "vertical");
   Assert.equal(
     Services.prefs.getStringPref(SIDEBAR_VISIBILITY_PREF),
     "always-show",
@@ -24,7 +24,7 @@ add_task(async function test_toggle_collapse_close_button() {
   ok(sidebar, "Sidebar is shown.");
 
   if (SidebarController._state.launcherExpanded) {
-    await SidebarController.initializeUIState({ launcherExpanded: false });
+    await SidebarController.updateUIState({ launcherExpanded: false });
     await sidebar.updateComplete;
   }
   ok(!sidebar.expanded, "Sidebar is collapsed by default.");
@@ -101,7 +101,7 @@ add_task(async function test_toggle_collapse_close_button() {
   is(gBrowser.tabs.length, 1, "Tabstrip now has one tab");
 
   // Expand the sidebar and make sure the collased close button no longer shows
-  await SidebarController.initializeUIState({ launcherExpanded: true });
+  await SidebarController.updateUIState({ launcherExpanded: true });
   await sidebar.updateComplete;
   info("Waiting for sidebar to be expanded");
   await BrowserTestUtils.waitForMutationCondition(

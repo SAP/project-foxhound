@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -24,9 +22,9 @@ class MediaKeys;
 
 class PMFCDMChild;
 class PMFMediaEngineChild;
-class RemoteCDMChild;
+class RemoteCDMProxy;
 class RemoteDecoderChild;
-class RemoteMediaDataEncoderChild;
+class RemoteMediaDataEncoder;
 
 enum class RemoteMediaIn {
   Unspecified,
@@ -72,7 +70,7 @@ class RemoteMediaManagerChild final
       const CreateDecoderParams& aParams, RemoteMediaIn aLocation);
   static RefPtr<PlatformDecoderModule::CreateDecoderPromise> CreateVideoDecoder(
       const CreateDecoderParams& aParams, RemoteMediaIn aLocation);
-  static RefPtr<RemoteCDMChild> CreateCDM(RemoteMediaIn aLocation,
+  static RefPtr<RemoteCDMProxy> CreateCDM(RemoteMediaIn aLocation,
                                           dom::MediaKeys* aKeys,
                                           const nsAString& aKeySystem,
                                           bool aDistinctiveIdentifierRequired,
@@ -81,8 +79,7 @@ class RemoteMediaManagerChild final
   static media::EncodeSupportSet Supports(RemoteMediaIn aLocation,
                                           CodecType aCodec);
   static RefPtr<PlatformEncoderModule::CreateEncoderPromise> InitializeEncoder(
-      RefPtr<RemoteMediaDataEncoderChild>&& aEncoder,
-      const EncoderConfig& aConfig);
+      RefPtr<RemoteMediaDataEncoder>&& aEncoder, const EncoderConfig& aConfig);
 
   // Can be called from any thread.
   static nsCOMPtr<nsISerialEventTarget> GetManagerThread();
@@ -146,20 +143,6 @@ class RemoteMediaManagerChild final
 
  protected:
   void HandleFatalError(const char* aMsg) override;
-
-  PRemoteDecoderChild* AllocPRemoteDecoderChild(
-      const RemoteDecoderInfoIPDL& aRemoteDecoderInfo,
-      const CreateDecoderParams::OptionSet& aOptions,
-      const Maybe<layers::TextureFactoryIdentifier>& aIdentifier,
-      const Maybe<uint64_t>& aMediaEngineId,
-      const Maybe<TrackingId>& aTrackingId, PRemoteCDMChild* aCDM);
-  bool DeallocPRemoteDecoderChild(PRemoteDecoderChild* actor);
-
-  PMFMediaEngineChild* AllocPMFMediaEngineChild();
-  bool DeallocPMFMediaEngineChild(PMFMediaEngineChild* actor);
-
-  PMFCDMChild* AllocPMFCDMChild(const nsAString& aKeySystem);
-  bool DeallocPMFCDMChild(PMFCDMChild* actor);
 
  private:
   explicit RemoteMediaManagerChild(RemoteMediaIn aLocation);

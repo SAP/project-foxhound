@@ -14,7 +14,6 @@ import mozilla.components.feature.top.sites.TopSite
 import mozilla.components.feature.top.sites.TopSitesConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -25,6 +24,7 @@ import org.mozilla.fenix.home.topsites.TopSitesConfigConstants.TOP_SITES_PROVIDE
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.nimbus.HomepageHideFrecentTopSites
 import org.mozilla.fenix.utils.Settings
+import kotlin.test.assertNotNull
 
 /**
  * Tests the top-level function [getTopSitesConfig] we use to create [TopSitesConfig]

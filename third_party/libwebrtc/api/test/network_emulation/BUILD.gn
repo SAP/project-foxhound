@@ -24,8 +24,8 @@ if (rtc_enable_protobuf) {
     ]
     deps = [
       ":network_config_schedule_proto",
+      ":network_queue",
       "../..:network_emulation_manager_api",
-      "../../../rtc_base:timeutils",
       "../../../test/network:schedulable_network_behavior",
       "../../units:timestamp",
       "//third_party/abseil-cpp/absl/functional:any_invocable",
@@ -93,7 +93,6 @@ rtc_library("network_queue") {
     "../..:simulated_network_api",
     "../../../rtc_base:checks",
     "../../../rtc_base:logging",
-    "../../../rtc_base:macromagic",
     "../../../rtc_base:random",
     "../../transport:ecn_marking",
     "../../units:data_rate",
@@ -119,5 +118,32 @@ rtc_library("network_queue_unittests") {
     "../../units:data_size",
     "../../units:time_delta",
     "../../units:timestamp",
+  ]
+}
+
+rtc_library("token_bucket_network_behavior_config") {
+  visibility = [ "*" ]
+  sources = [ "token_bucket_network_behavior_config.h" ]
+  deps = [
+    "../../units:data_rate",
+    "../../units:data_size",
+  ]
+}
+
+rtc_library("token_bucket_network_behavior_builder") {
+  visibility = [ "*" ]
+  sources = [
+    "token_bucket_network_behavior_builder.cc",
+    "token_bucket_network_behavior_builder.h",
+  ]
+  deps = [
+    ":network_queue",
+    ":token_bucket_network_behavior_config",
+    "../..:function_view",
+    "../..:network_emulation_manager_api",
+    "../../../test/network:token_bucket_network_behavior",
+    "../../units:data_rate",
+    "../../units:data_size",
+    "//third_party/abseil-cpp/absl/functional:any_invocable",
   ]
 }

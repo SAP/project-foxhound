@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -41,29 +40,6 @@ class WordBreaker final {
   static WordRange FindWord(
       const nsAString& aText, uint32_t aPos,
       const FindWordOptions aOptions = FindWordOptions::None);
-
-  // Find the next word break opportunity starting from aPos + 1. It can return
-  // aLen if there's no break opportunity between [aPos + 1, aLen - 1].
-  //
-  // If aPos is already at the end of aText or beyond, i.e. aPos >= aLen, return
-  // NS_WORDBREAKER_NEED_MORE_TEXT.
-  //
-  // DEPRECATED: Use WordBreakIteratorUtf16 instead.
-  static int32_t Next(const char16_t* aText, uint32_t aLen, uint32_t aPos);
-
- private:
-  enum WordBreakClass : uint8_t {
-    kWbClassSpace = 0,
-    kWbClassAlphaLetter,
-    kWbClassPunct,
-    kWbClassHanLetter,
-    kWbClassKatakanaLetter,
-    kWbClassHiraganaLetter,
-    kWbClassHWKatakanaLetter,
-    kWbClassScriptioContinua
-  };
-
-  static WordBreakClass GetClass(char16_t aChar);
 };
 
 }  // namespace intl

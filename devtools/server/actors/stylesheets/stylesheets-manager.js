@@ -498,7 +498,7 @@ class StyleSheetsManager extends EventEmitter {
   #startTransition(resourceId, kind, cause) {
     const styleSheet = this.#styleSheetMap.get(resourceId);
     const document = styleSheet.associatedDocument;
-    const window = document.ownerGlobal;
+    const window = document.documentGlobal;
 
     if (!this.#transitionSheetLoaded) {
       this.#transitionSheetLoaded = true;
@@ -644,7 +644,7 @@ class StyleSheetsManager extends EventEmitter {
     let win;
     const getStyleSheetAssociatedWindow = () => {
       if (!win) {
-        win = styleSheet.associatedDocument?.ownerGlobal;
+        win = styleSheet.associatedDocument?.documentGlobal;
       }
       return win;
     };
@@ -794,7 +794,12 @@ class StyleSheetsManager extends EventEmitter {
    * @returns {string}
    */
   getNodeHref(styleSheet) {
-    const { ownerNode } = styleSheet;
+    const { associatedDocument, constructed, ownerNode } = styleSheet;
+
+    if (constructed && associatedDocument) {
+      return styleSheet.associatedDocument.location.href;
+    }
+
     if (!ownerNode) {
       return null;
     }
@@ -927,7 +932,7 @@ class StyleSheetsManager extends EventEmitter {
       applicable &&
       styleSheet.associatedDocument &&
       (!this.#targetActor.ignoreSubFrames ||
-        styleSheet.associatedDocument.ownerGlobal ===
+        styleSheet.associatedDocument.documentGlobal ===
           this.#targetActor.window) &&
       this.#shouldListSheet(styleSheet) &&
       !this.#haveAncestorWithSameURL(styleSheet)

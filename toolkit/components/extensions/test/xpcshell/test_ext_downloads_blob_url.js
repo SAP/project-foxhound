@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 // An arbitrary time, chosen to be long enough such that there is enough time
@@ -34,12 +32,9 @@ add_setup(() => {
 });
 
 add_setup(async function setup_MockFilePicker() {
-  // MockFilePicker requires a window, so create a temporary one:
-  const browser = Services.appShell.createWindowlessBrowser(true);
-  MockFilePicker.init(browser.browsingContext);
+  MockFilePicker.init();
   registerCleanupFunction(() => {
     MockFilePicker.cleanup();
-    browser.close();
   });
 
   downloadDir = await IOUtils.createUniqueDirectory(PathUtils.tempDir, "dldir");

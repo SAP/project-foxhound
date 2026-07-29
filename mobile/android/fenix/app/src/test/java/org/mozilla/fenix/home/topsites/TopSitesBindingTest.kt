@@ -14,7 +14,6 @@ import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.SearchState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.feature.top.sites.presenter.DefaultTopSitesPresenter
-import mozilla.components.support.test.mock
 import org.junit.Before
 import org.junit.Test
 import org.mozilla.fenix.home.topsites.TopSitesConfigConstants.AMAZON_SEARCH_ENGINE_NAME
@@ -35,19 +34,19 @@ class TopSitesBindingTest {
                         SearchEngine(
                             id = "google",
                             name = "Google",
-                            icon = mock(),
+                            icon = mockk(),
                             type = SearchEngine.Type.BUNDLED,
                         ),
                         SearchEngine(
                             id = "duckduckgo",
                             name = "DuckDuckGo",
-                            icon = mock(),
+                            icon = mockk(),
                             type = SearchEngine.Type.BUNDLED,
                         ),
                         SearchEngine(
                             id = AMAZON_SEARCH_ENGINE_NAME,
                             name = AMAZON_SEARCH_ENGINE_NAME,
-                            icon = mock(),
+                            icon = mockk(),
                             type = SearchEngine.Type.BUNDLED,
                         ),
                     ),

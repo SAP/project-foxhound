@@ -48,7 +48,6 @@ class TranslationsBannerBehavior<V : View>(
         add(R.id.addressSelectBar)
         add(R.id.findInPageView)
         if (isAddressBarAtBottom) {
-            add(R.id.toolbarLayout)
             add(R.id.toolbar)
             add(R.id.composable_toolbar)
         } else if (isNavBarShown) {
@@ -60,7 +59,6 @@ class TranslationsBannerBehavior<V : View>(
         if (!isAddressBarAtBottom && isNavBarShown) {
             add(R.id.navigation_bar)
         }
-        add(R.id.toolbarLayout)
         add(R.id.toolbar)
         add(R.id.composable_toolbar)
     }

@@ -12,12 +12,15 @@ import mozilla.components.lib.crash.store.CrashState
 import mozilla.components.lib.state.State
 import org.mozilla.fenix.browser.StandardSnackbarError
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
+import org.mozilla.fenix.components.appstate.blockedtrackers.BlockedTrackersState
+import org.mozilla.fenix.components.appstate.lens.LensState
 import org.mozilla.fenix.components.appstate.qrScanner.QrScannerState
 import org.mozilla.fenix.components.appstate.readerview.ReaderViewState
 import org.mozilla.fenix.components.appstate.recommendations.ContentRecommendationsState
 import org.mozilla.fenix.components.appstate.search.SearchState
 import org.mozilla.fenix.components.appstate.setup.checklist.SetupChecklistState
 import org.mozilla.fenix.components.appstate.snackbar.SnackbarState
+import org.mozilla.fenix.components.appstate.sports.SportsWidgetState
 import org.mozilla.fenix.components.appstate.webcompat.WebCompatState
 import org.mozilla.fenix.home.HomeFragment
 import org.mozilla.fenix.home.bookmarks.Bookmark
@@ -51,7 +54,6 @@ import org.mozilla.fenix.wallpapers.WallpaperState
  * @property mode Whether the app is in private browsing mode.
  * @property orientation Current orientation of the application.
  * @property topSites The list of [TopSite] in the [HomeFragment].
- * @property showCollectionPlaceholder If true, shows a placeholder when there are no collections.
  * @property recentTabs The list of recent [RecentTab] in the [HomeFragment].
  * @property recentSyncedTabState The [RecentSyncedTabState] in the [HomeFragment].
  * @property bookmarks The list of recently saved [BookmarkNode]s to show on the [HomeFragment].
@@ -74,11 +76,16 @@ import org.mozilla.fenix.wallpapers.WallpaperState
  * @property webCompatState The [WebCompatState] when the feature was last used.
  * @property setupChecklistState Optional [SetupChecklistState] for the Setup Checklist feature.
  * @property searchState The current search state.
+ * @property lensState The [LensState] for Google Lens image search.
  * @property qrScannerState The [QrScannerState] when the feature was last used.
  * @property isPrivateScreenLocked Whether the private browsing mode is currently locked behind
  * authentication.
  * @property reviewPrompt Whether we should show a review prompt and whether we ran the eligibility check at all
  * @property voiceSearchState The [VoiceSearchState] representing the current state of voice search functionality.
+ * @property isDefaultBrowser Whether Firefox is the default browser or not.
+ * @property blockedTrackersState The [BlockedTrackersState] with data about blocked trackers.
+ * @property sportsWidgetState The [sportsWidgetState] to display.
+ * @property longfoxEntryPointReady Whether the fox peek animation should play on the next homepage view.
  */
 data class AppState(
     val isForeground: Boolean = true,
@@ -91,7 +98,6 @@ data class AppState(
     val mode: BrowsingMode = BrowsingMode.Normal,
     val orientation: OrientationMode = OrientationMode.Undefined,
     val topSites: List<TopSite> = emptyList(),
-    val showCollectionPlaceholder: Boolean = false,
     val recentTabs: List<RecentTab> = emptyList(),
     val recentSyncedTabState: RecentSyncedTabState = RecentSyncedTabState.None,
     val bookmarks: List<Bookmark> = emptyList(),
@@ -111,8 +117,13 @@ data class AppState(
     val webCompatState: WebCompatState? = null,
     val setupChecklistState: SetupChecklistState? = null,
     val searchState: SearchState = SearchState.EMPTY,
+    val lensState: LensState = LensState.DEFAULT,
     val qrScannerState: QrScannerState = QrScannerState.DEFAULT,
     val isPrivateScreenLocked: Boolean = false,
     val reviewPrompt: ReviewPromptState = Unknown,
     val voiceSearchState: VoiceSearchState = VoiceSearchState(),
+    val isDefaultBrowser: Boolean = false,
+    val blockedTrackersState: BlockedTrackersState = BlockedTrackersState(),
+    val sportsWidgetState: SportsWidgetState = SportsWidgetState(),
+    val longfoxEntryPointReady: Boolean = false,
 ) : State

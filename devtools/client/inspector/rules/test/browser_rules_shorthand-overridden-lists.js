@@ -28,7 +28,7 @@ add_task(async function () {
 });
 
 function testComputedList(inspector, view) {
-  const rule = getRuleViewRuleEditor(view, 2).rule;
+  const rule = getRuleViewRuleEditorAt(view, 2).rule;
   const propEditor = rule.textProps[0].editor;
   const expander = propEditor.expander;
   const overriddenItems = propEditor.shorthandOverridden.children;

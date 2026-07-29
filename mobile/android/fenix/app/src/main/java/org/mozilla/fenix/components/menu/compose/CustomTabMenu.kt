@@ -23,7 +23,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
@@ -166,15 +165,12 @@ internal fun CustomTabMenu(
         MenuGroup {
             val badgeText: String
             val menuItemState: MenuItemState
-            val badgeBackgroundColor: Color
 
             if (isDesktopMode) {
                 badgeText = stringResource(id = R.string.browser_feature_desktop_site_on)
-                badgeBackgroundColor = MaterialTheme.colorScheme.primaryContainer
                 menuItemState = if (isPdf) MenuItemState.DISABLED else MenuItemState.ACTIVE
             } else {
                 badgeText = stringResource(id = R.string.browser_feature_desktop_site_off)
-                badgeBackgroundColor = MaterialTheme.colorScheme.surfaceContainerHighest
                 menuItemState = if (isPdf) MenuItemState.DISABLED else MenuItemState.ENABLED
             }
 
@@ -183,7 +179,7 @@ internal fun CustomTabMenu(
                     id = R.string.browser_menu_open_in_fenix,
                     stringResource(id = R.string.app_name),
                 ),
-                beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_open_in),
+                beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_external_link_24),
                 onClick = onOpenInFirefoxMenuClick,
                 state = if (isSandboxCustomTab) {
                     MenuItemState.DISABLED

@@ -346,3 +346,10 @@
       label: Inference
     - name: ML_SETUP
       label: Setup
+
+- name: LOGS
+  label: Logs
+  color: lightblue
+  subcategories:
+    - name: LOGS
+      label: Other

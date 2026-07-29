@@ -8,7 +8,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import mozilla.appservices.places.BookmarkRoot
 import mozilla.components.lib.state.State
-import org.mozilla.fenix.R
 
 internal sealed class BookmarksListSortOrder {
     abstract val asString: String
@@ -64,6 +63,8 @@ internal sealed class BookmarksListSortOrder {
  *
  * @property bookmarkItems Bookmark items to be displayed in the current list screen.
  * @property selectedItems The bookmark items that are currently selected by the user for bulk actions.
+ * @property rootMenuShown Whether the root bookmarks overflow menu is shown.
+ * @property showBookmarksImport Whether the import bookmarks UI should be shown.
  * @property sortMenuShown Whether the bookmark sorting menu is shown.
  * @property sortOrder Describes how to sort the bookmark list.
  * @property recursiveSelectedCount the total number of children of the [selectedItems] found in bookmark storage.
@@ -77,14 +78,14 @@ internal sealed class BookmarksListSortOrder {
  * @property bookmarksSelectFolderState State representing the select folder subscreen, if visible.
  * @property bookmarksEditFolderState State representing the edit folder subscreen, if visible.
  * @property bookmarksMultiselectMoveState State representing multi-select moving.
- * @property bookmarksDeletionSnackbarQueueCount State representing the number of queued deletions before a
- * snack bar dismiss.
  * @property isLoading State representing if the initial load has completed.
  * @property isSearching State representing if currently in search mode.
  */
 internal data class BookmarksState(
     val bookmarkItems: List<BookmarkItem>,
     val selectedItems: List<BookmarkItem>,
+    val rootMenuShown: Boolean,
+    val showBookmarksImport: Boolean,
     val sortMenuShown: Boolean,
     val sortOrder: BookmarksListSortOrder,
     val recursiveSelectedCount: Int?,
@@ -98,7 +99,6 @@ internal data class BookmarksState(
     val bookmarksSelectFolderState: BookmarksSelectFolderState?,
     val bookmarksEditFolderState: BookmarksEditFolderState?,
     val bookmarksMultiselectMoveState: MultiselectMoveState?,
-    val bookmarksDeletionSnackbarQueueCount: Int,
     val isLoading: Boolean,
     val isSearching: Boolean,
 ) : State {
@@ -110,6 +110,8 @@ internal data class BookmarksState(
         val default: BookmarksState = BookmarksState(
             bookmarkItems = listOf(),
             selectedItems = listOf(),
+            rootMenuShown = false,
+            showBookmarksImport = true,
             sortMenuShown = false,
             sortOrder = BookmarksListSortOrder.default,
             recursiveSelectedCount = null,
@@ -123,32 +125,10 @@ internal data class BookmarksState(
             bookmarksSelectFolderState = null,
             bookmarksEditFolderState = null,
             bookmarksMultiselectMoveState = null,
-            bookmarksDeletionSnackbarQueueCount = 0,
             isLoading = true,
             isSearching = false,
         )
     }
-}
-
-internal fun BookmarksState.undoSnackbarText(): Pair<Int, String> = bookmarksSnackbarState.let { state ->
-    when {
-        state is BookmarksSnackbarState.UndoDeletion && state.guidsToDelete.size == 1 -> {
-            val stringId = R.string.bookmark_delete_single_item
-            val title = this.bookmarkItems.firstOrNull { it.guid == state.guidsToDelete.first() }?.title
-            stringId to (title ?: "error")
-        }
-        state is BookmarksSnackbarState.UndoDeletion -> {
-            val stringId = R.string.bookmark_delete_multiple_items
-            val numberOfBookmarks = "${state.guidsToDelete.size}"
-            stringId to numberOfBookmarks
-        }
-        else -> 0 to ""
-    }
-}
-
-internal fun BookmarksState.isGuidMarkedForDeletion(guid: String): Boolean = when (bookmarksSnackbarState) {
-    is BookmarksSnackbarState.UndoDeletion -> bookmarksSnackbarState.guidsToDelete.contains(guid)
-    else -> false
 }
 
 internal fun BookmarksState.isGuidBeingMoved(guid: String): Boolean {
@@ -192,23 +172,9 @@ internal val DeletionDialogState.guidsToDelete: List<String>
 internal sealed class BookmarksSnackbarState {
     data object None : BookmarksSnackbarState()
     data object CantEditDesktopFolders : BookmarksSnackbarState()
-    data class UndoDeletion(val guidsToDelete: List<String>) : BookmarksSnackbarState()
     data class BookmarkMoved(val from: String, val to: String) : BookmarksSnackbarState()
     data object SelectFolderFailed : BookmarksSnackbarState()
-}
-
-internal fun BookmarksSnackbarState.addGuidToDelete(guid: String) = when (this) {
-    is BookmarksSnackbarState.UndoDeletion -> BookmarksSnackbarState.UndoDeletion(
-        guidsToDelete = this.guidsToDelete + listOf(guid),
-    )
-    else -> BookmarksSnackbarState.UndoDeletion(guidsToDelete = listOf(guid))
-}
-
-internal fun BookmarksSnackbarState.addGuidsToDelete(guids: List<String>) = when (this) {
-    is BookmarksSnackbarState.UndoDeletion -> BookmarksSnackbarState.UndoDeletion(
-        guidsToDelete = this.guidsToDelete + guids,
-    )
-    else -> BookmarksSnackbarState.UndoDeletion(guidsToDelete = guids)
+    data object ImportFailed : BookmarksSnackbarState()
 }
 
 internal data class BookmarksEditBookmarkState(

@@ -30,7 +30,6 @@ import android.view.WindowManager
 import android.view.WindowMetrics
 import android.widget.TextView
 import androidx.appcompat.widget.AppCompatImageButton
-import androidx.appcompat.widget.AppCompatImageView
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -51,11 +50,9 @@ import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.whenever
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
-import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.ArgumentMatchers.anyBoolean
@@ -72,6 +69,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.nio.ByteBuffer
 import java.util.concurrent.ExecutorService
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class QrFragmentTest {
@@ -792,7 +790,7 @@ class QrFragmentTest {
 
         qrFragment.maybeStartExecutorService()
 
-        assertNotNull(null, qrFragment.backgroundExecutor)
+        assertNotNull(qrFragment.backgroundExecutor)
     }
 
     @Test

@@ -150,17 +150,6 @@ print:
     share-print-enabled:
       type: boolean
       description: "If true, a print button from the share menu is available."
-re-engagement-notification:
-  description: A feature that shows the re-engagement notification if the user is inactive.
-  hasExposure: true
-  exposureDescription: ""
-  variables:
-    enabled:
-      type: boolean
-      description: "If true, the re-engagement notification is shown to the inactive user."
-    type:
-      type: int
-      description: The type of re-engagement notification that is shown to the inactive user.
 search-extra-params:
   description: A feature that provides additional args for search.
   hasExposure: true
@@ -189,11 +178,3 @@ splash-screen:
     maximum_duration_ms:
       type: int
       description: The maximum amount of time in milliseconds the splashscreen will be visible while waiting for initialization calls to complete.
-unified-search:
-  description: A feature allowing user to easily search for specified results directly in the search bar.
-  hasExposure: true
-  exposureDescription: ""
-  variables:
-    enabled:
-      type: boolean
-      description: "If true, the feature shows up in the search bar."

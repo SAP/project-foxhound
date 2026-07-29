@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -345,13 +343,15 @@ static void ComposeSortedEffects(
         dom::EndpointBehavior::Exclusive) {
   const bool isTransition =
       aCascadeLevel == EffectCompositor::CascadeLevel::Transitions;
-  InvertibleAnimatedPropertyIDSet propertiesToSkip;
   // Transitions should be overridden by running animations of the same
   // property per https://drafts.csswg.org/css-transitions/#application:
   //
   // > Implementations must add this value to the cascade if and only if that
   // > property is not currently undergoing a CSS Animation on the same element.
   //
+  InvertibleAnimatedPropertyIDSet propertiesToSkip;
+  AnimatedPropertyIDSet animatedProperties;
+
   // FIXME(emilio, bug 1606176): This should assert that
   // aEffectSet->PropertiesForAnimationsLevel() is up-to-date, and it may not
   // follow the spec in those cases. There are various places where we get style
@@ -359,11 +359,22 @@ static void ComposeSortedEffects(
   //
   // MOZ_ASSERT_IF(aEffectSet, !aEffectSet->CascadeNeedsUpdate());
   if (aEffectSet) {
+    animatedProperties.AddProperties(
+        aEffectSet->PropertiesForAnimationsLevel());
+    // When CommitStyles is called and its endpoint-inclusive behavior is
+    // enabled, the animation that CommitStyles targets is already finished and
+    // so aEffectSet doesn't include it. But its properties still has to be
+    // included in propertiesToSkip. So its properties have to be added manually
+    // here.
+    if (aEndpointBehavior == dom::EndpointBehavior::Inclusive &&
+        aCascadeLevel == EffectCompositor::CascadeLevel::Animations) {
+      animatedProperties.AddProperties(
+          aSortedEffects.LastElement()->GetPropertySet());
+    }
     // Note that we do invert the set on CascadeLevel::Animations because we
     // don't want to skip those properties when composing the animation rule on
     // CascadeLevel::Animations.
-    propertiesToSkip.Setup(&aEffectSet->PropertiesForAnimationsLevel(),
-                           !isTransition);
+    propertiesToSkip.Setup(&animatedProperties, !isTransition);
   }
 
   for (KeyframeEffect* effect : aSortedEffects) {

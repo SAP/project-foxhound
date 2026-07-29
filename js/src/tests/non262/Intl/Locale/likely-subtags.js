@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl'))
-
 var testDataMaximal = {
     // Used to keep "und" primary language before CLDR 44.
     "und-AQ": "en-Latn-AQ",

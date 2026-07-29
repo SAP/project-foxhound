@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,6 +34,9 @@ nsCString MapInternalContentPolicyTypeToDest(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_JSON:
     case nsIContentPolicy::TYPE_INTERNAL_JSON_PRELOAD:
       return "json"_ns;
+    case nsIContentPolicy::TYPE_TEXT:
+    case nsIContentPolicy::TYPE_INTERNAL_TEXT_PRELOAD:
+      return "text"_ns;
     case nsIContentPolicy::TYPE_INTERNAL_WORKER:
     case nsIContentPolicy::TYPE_INTERNAL_WORKER_STATIC_MODULE:
       return "worker"_ns;
@@ -119,7 +120,6 @@ nsCString MapInternalContentPolicyTypeToDest(nsContentPolicyType aType) {
       return "webtransport"_ns;
     case nsIContentPolicy::TYPE_INTERNAL_EXTERNAL_RESOURCE:
       return "image"_ns;
-    case nsIContentPolicy::TYPE_END:
     case nsIContentPolicy::TYPE_INVALID:
       break;
       // Do not add default: so that compilers can catch the missing case.

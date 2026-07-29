@@ -11,14 +11,23 @@ import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
  * Emits `aiwindow-context-button:on-click`.
  */
 export class ContextIconButton extends MozLitElement {
+  static shadowRootOptions = {
+    ...MozLitElement.shadowRootOptions,
+    delegatesFocus: true,
+  };
+
   static properties = {
+    active: { type: Boolean, reflect: true },
     disabled: { type: Boolean, reflect: true },
   };
 
-  // Prevent mousedown from closing `panel-list` before the CustomEvent
-  // `aiwindow-context-button:on-click` can be handled.
+  // stopPropagation: keep `panel-list` open until the on-click CustomEvent
+  // fires. preventDefault: keep focus on the Smartbar input on
+  // Windows/Linux (the stopPropagation above hides this mousedown from
+  // the Smartbar's own focus-preserving guard).
   #onMousedown(event) {
     event.stopPropagation();
+    event.preventDefault();
   }
 
   #onClick(event) {
@@ -39,6 +48,7 @@ export class ContextIconButton extends MozLitElement {
       />
       <moz-button
         ?disabled=${this.disabled}
+        aria-pressed=${this.active ? "true" : "false"}
         data-l10n-id="smartbar-context-menu-button"
         data-l10n-attrs="tooltiptext,aria-label"
         type="ghost"

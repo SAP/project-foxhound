@@ -107,7 +107,7 @@ export class ContentMetaChild extends JSWindowActorChild {
   }
 
   onMetaTag(metaTag) {
-    const window = metaTag.ownerGlobal;
+    const window = metaTag.documentGlobal;
 
     // If there's no meta tag, ignore this. Also verify that the window
     // matches just to be safe.

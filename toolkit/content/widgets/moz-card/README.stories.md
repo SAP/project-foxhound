@@ -10,7 +10,7 @@
 
 ## Code
 
-The source for `moz-card` can be found under [toolkit/content/widgets/moz-card/](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/moz-card)
+The source for `moz-card` can be found under [toolkit/content/widgets/moz-card/](https://searchfox.org/firefox-main/source/toolkit/content/widgets/moz-card)
 
 ## How to use `moz-card`
 

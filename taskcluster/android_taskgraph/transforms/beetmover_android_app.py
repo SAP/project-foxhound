@@ -6,36 +6,36 @@ Transform the beetmover task into an actual task description.
 """
 
 import logging
+from typing import Optional
 
-from gecko_taskgraph.transforms.task import (
-    task_description_schema as gecko_task_description_schema,
-)
+from gecko_taskgraph.transforms.task import TaskDescriptionSchema
+from gecko_taskgraph.util.scriptworker import generate_beetmover_artifact_map
 from taskgraph.transforms.base import TransformSequence
-from taskgraph.transforms.task import task_description_schema
-from taskgraph.util.schema import optionally_keyed_by, resolve_keyed_by
-from voluptuous import ALLOW_EXTRA, Optional, Required, Schema
-
-from android_taskgraph.util.scriptworker import generate_beetmover_artifact_map
+from taskgraph.util.schema import Schema, optionally_keyed_by, resolve_keyed_by
 
 logger = logging.getLogger(__name__)
 
-beetmover_description_schema = Schema(
-    {
-        # unique name to describe this beetmover task, defaults to {dep.label}-beetmover
-        Required("name"): str,
-        Required("worker"): {"upstream-artifacts": [dict]},
-        # treeherder is allowed here to override any defaults we use for beetmover.
-        Optional("treeherder"): task_description_schema["treeherder"],
-        Optional("attributes"): task_description_schema["attributes"],
-        Optional("dependencies"): task_description_schema["dependencies"],
-        Optional("bucket-scope"): optionally_keyed_by("level", "build-type", str),
-        Optional("run-on-repo-type"): gecko_task_description_schema["run-on-repo-type"],
-    },
-    extra=ALLOW_EXTRA,
-)
+
+class BeetmoverWorkerSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    upstream_artifacts: list[dict]
+
+
+class BeetmoverDescriptionSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    # unique name to describe this beetmover task, defaults to {dep.label}-beetmover
+    name: str
+    worker: BeetmoverWorkerSchema
+    # treeherder is allowed here to override any defaults we use for beetmover.
+    treeherder: TaskDescriptionSchema.__annotations__["treeherder"] = None
+    attributes: TaskDescriptionSchema.__annotations__["attributes"] = None
+    dependencies: TaskDescriptionSchema.__annotations__["dependencies"] = None
+    bucket_scope: Optional[  # type: ignore
+        optionally_keyed_by("level", "build-type", str, use_msgspec=True)
+    ] = None
+    run_on_repo_type: TaskDescriptionSchema.__annotations__["run_on_repo_type"] = None
+
 
 transforms = TransformSequence()
-transforms.add_validate(beetmover_description_schema)
+transforms.add_validate(BeetmoverDescriptionSchema)
 
 
 @transforms.add

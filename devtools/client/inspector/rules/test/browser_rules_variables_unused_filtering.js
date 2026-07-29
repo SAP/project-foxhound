@@ -70,14 +70,13 @@ add_task(async function testUnusedVariablesAndFiltering() {
         {
           name: "--my-var-1",
           value: `a`,
-          highlighted: true,
         },
         {
           name: "--my-var-2",
           value: `b`,
-          highlighted: true,
         },
       ],
+      highlighted: ["--my-var-1: a;", "--my-var-2: b;"],
     },
   ]);
 
@@ -107,12 +106,10 @@ add_task(async function testUnusedVariablesAndFiltering() {
         {
           name: "--my-var-1",
           value: `a`,
-          highlighted: false,
         },
         {
           name: "--my-var-2",
           value: `b`,
-          highlighted: false,
         },
       ],
     },
@@ -139,19 +136,17 @@ add_task(async function testUnusedVariablesAndFiltering() {
         {
           name: "--my-var-1",
           value: `a`,
-          highlighted: false,
         },
         {
           name: "--my-var-2",
           value: `b`,
-          highlighted: false,
         },
         {
           name: "--x",
           value: `hotpink`,
-          highlighted: true,
         },
       ],
+      highlighted: ["--x: hotpink;"],
     },
   ]);
 
@@ -174,12 +169,12 @@ add_task(async function testUnusedVariablesAndFiltering() {
   await focusEditableField(view, myVar2Prop.editor.valueSpan);
 
   info("hit tab");
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
   let onFocus = once(ruleEditor.element, "focus", true);
-  let onRuleViewChanged = view.once("ruleview-changed");
+  let onModifications = view.once("property-value-updated");
   EventUtils.synthesizeKey("VK_TAB", {}, view.styleWindow);
   await onFocus;
-  await onRuleViewChanged;
+  await onModifications;
 
   is(
     inplaceEditor(view.styleDocument.activeElement),
@@ -200,10 +195,10 @@ add_task(async function testUnusedVariablesAndFiltering() {
 
   // Blur the field to put back the UI in its initial state (and avoid pending
   // requests when the test ends).
-  onRuleViewChanged = view.once("ruleview-changed");
+  onModifications = view.once("property-value-updated");
   EventUtils.synthesizeKey("VK_ESCAPE", {}, view.styleWindow);
   view.debounce.flush();
-  await onRuleViewChanged;
+  await onModifications;
 
   info(
     "Check that clicking on the Show unused button does show all the variables at the expected positions"
@@ -226,9 +221,8 @@ add_task(async function testUnusedVariablesAndFiltering() {
       declarations: declarations.map(({ name, value }) => ({
         name,
         value,
-        // We didn't clear the search, --x should still be highlighted
-        highlighted: name === "--x",
       })),
+      highlighted: ["--x: hotpink;"],
     },
   ]);
 });

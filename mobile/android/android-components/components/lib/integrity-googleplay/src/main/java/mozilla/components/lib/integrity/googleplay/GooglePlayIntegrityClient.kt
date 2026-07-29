@@ -11,52 +11,8 @@ import com.google.android.play.core.integrity.StandardIntegrityManager
 import com.google.android.play.core.integrity.model.StandardIntegrityErrorCode.INTEGRITY_TOKEN_PROVIDER_INVALID
 import mozilla.components.concept.integrity.IntegrityClient
 import mozilla.components.concept.integrity.IntegrityToken
+import mozilla.components.lib.integrity.googleplay.GleanMetrics.Integrity
 import mozilla.components.lib.integrity.googleplay.ext.prepare
-import java.util.UUID
-
-/**
- * Represents a Google Cloud project number parsed from an external value (i.e. BuildConfig).
- *
- * This sealed class models the result of attempting to interpret a string
- * as a valid Google project number. It avoids throwing exceptions by
- * explicitly representing invalid input.
- */
-sealed class GoogleProjectNumber {
-
-    /**
-     * A successfully parsed Google project number.
-     *
-     * @property value The numeric project number.
-     */
-    internal data class Valid(val value: Long) : GoogleProjectNumber()
-
-    /**
-     * Represents an invalid or unparsable project number.
-     */
-    internal object Invalid : GoogleProjectNumber()
-
-    companion object {
-
-        /**
-         * Attempts to create a [GoogleProjectNumber] from the given string token.
-         *
-         * The token is considered invalid if it is empty or cannot be parsed
-         * as a [Long]. No exceptions are thrown; failures result in [Invalid].
-         *
-         * @param token The string representation of a Google project number.
-         * @return [Valid] if parsing succeeds, otherwise [Invalid].
-         */
-        fun create(token: String): GoogleProjectNumber {
-            if (token.isEmpty()) {
-                return Invalid
-            }
-
-            return Result.runCatching { token.toLong() }
-                .map { Valid(it) }
-                .getOrElse { Invalid }
-        }
-    }
-}
 
 /**
  * Provides instances of [StandardIntegrityManager].
@@ -64,7 +20,7 @@ sealed class GoogleProjectNumber {
  * This interface exists to allow indirection and easier testing
  * when creating integrity managers.
  */
-fun interface IntegrityManagerProvider {
+internal fun interface IntegrityManagerProvider {
 
     /**
      * Creates a new [StandardIntegrityManager] instance.
@@ -93,7 +49,7 @@ fun interface IntegrityManagerProvider {
  * Implementations are responsible for requesting and returning an
  * [IntegrityToken].
  */
-fun interface TokenProvider {
+internal fun interface TokenProvider {
 
     /**
      * Requests a new [IntegrityToken].
@@ -111,7 +67,7 @@ fun interface TokenProvider {
 /**
  * Factory for creating [TokenProvider] instances.
  */
-fun interface TokenProviderFactory {
+internal fun interface TokenProviderFactory {
 
     /**
      * Creates a [TokenProvider].
@@ -128,30 +84,40 @@ fun interface TokenProviderFactory {
          *
          * @param integrityManagerProvider Provider for creating integrity managers.
          * @param projectNumber The Google Cloud project number to use.
-         * @return A [TokenProviderFactory] appropriate for the given configuration.
+         * @return A [TokenProviderFactory] that yields a working [TokenProvider]
+         * when [projectNumber] is non-null, or a failing one otherwise.
          */
         fun create(
             integrityManagerProvider: IntegrityManagerProvider,
-            projectNumber: GoogleProjectNumber,
-        ) = when (projectNumber) {
-            is GoogleProjectNumber.Valid ->
-                GooglePlayTokenProviderFactory(integrityManagerProvider, projectNumber)
-
-            is GoogleProjectNumber.Invalid ->
-                TokenProviderFactory {
-                    Result.failure(InvalidProjectNumber())
-                }
+            projectNumber: Long?,
+        ) = if (projectNumber != null) {
+            GooglePlayTokenProviderFactory(integrityManagerProvider, projectNumber)
+        } else {
+            TokenProviderFactory { Result.failure(InvalidProjectNumber()) }
         }
     }
 }
 
 /**
-* Generates a hash value to uniquely identify a request.
-*
-* This functional interface allows the hash generation strategy to be
-* customized or mocked, making it suitable for dependency injection
-* and testing.
-*/
+ * Identifies the caller that issued an integrity request, used for telemetry
+ * attribution in the `integrity.token_request` event.
+ */
+@JvmInline
+value class IntegrityConsumer(val value: String) {
+    companion object {
+        val Summarize = IntegrityConsumer("summarize")
+        val IpProtection = IntegrityConsumer("ip_protection")
+        val Unknown = IntegrityConsumer("unknown")
+    }
+}
+
+/**
+ * Generates a hash value to uniquely identify a request.
+ *
+ * This functional interface allows the hash generation strategy to be
+ * customized or mocked, making it suitable for dependency injection
+ * and testing.
+ */
 fun interface RequestHashProvider {
 
     /**
@@ -163,25 +129,13 @@ fun interface RequestHashProvider {
      * @return A newly generated hash string.
      */
     fun generateHash(): String
-
-    companion object {
-
-        /**
-         * Creates a [RequestHashProvider] that generates random UUID-based hashes.
-         *
-         * @return A provider that produces random request hashes.
-         */
-        fun randomHashProvider() = RequestHashProvider {
-            UUID.randomUUID().toString()
-        }
-    }
 }
 
 internal class GooglePlayTokenProviderFactory(
     integrityManagerProvider: IntegrityManagerProvider,
-    private val projectNumber: GoogleProjectNumber.Valid,
+    private val projectNumber: Long,
 ) : TokenProviderFactory {
-    private val integrityManager = integrityManagerProvider.create()
+    private val integrityManager by lazy { integrityManagerProvider.create() }
 
     override suspend fun create() = integrityManager.prepare(projectNumber)
 }
@@ -191,15 +145,37 @@ internal class GooglePlayTokenProviderFactory(
  *
  * @param tokenProviderFactory Factory used to create [TokenProvider] instances.
  * @param requestHashProvider Provider used to generate per-request hashes.
- * @param logger Optional logger for non-fatal errors encountered during
- * provider creation.
+ * @param currentTimeMillis Injectable wall-clock source, used to measure warmup
+ * duration. Defaults to [System.currentTimeMillis]; override in tests.
  */
-class GooglePlayIntegrityClient(
+class GooglePlayIntegrityClient internal constructor(
     private val tokenProviderFactory: TokenProviderFactory,
     private val requestHashProvider: RequestHashProvider,
-    private val logger: (String) -> Unit = { },
+    private val currentTimeMillis: () -> Long = { System.currentTimeMillis() },
 ) : IntegrityClient {
-    internal var tokenProvider: TokenProvider? = null
+    internal var tokenProvider: Result<TokenProvider>? = null
+
+    companion object {
+
+        /**
+         * Creates a [GooglePlayIntegrityClient] from a project number string and [Context].
+         *
+         * @param context The Android [Context] used to initialize the integrity manager.
+         * @param projectNumberToken String representation of the Google Cloud project number.
+         * @param requestHashProvider Provider used to generate per-request hashes.
+         */
+        fun create(
+            context: Context,
+            projectNumberToken: String,
+            requestHashProvider: RequestHashProvider,
+        ) = GooglePlayIntegrityClient(
+            TokenProviderFactory.create(
+                IntegrityManagerProvider.create(context),
+                projectNumberToken.toLongOrNull(),
+            ),
+            requestHashProvider,
+        )
+    }
 
     /**
      * Eagerly initializes the underlying [TokenProvider], if needed.
@@ -207,10 +183,18 @@ class GooglePlayIntegrityClient(
      * This method is safe to call multiple times and will only attempt
      * provider creation once unless the provider is refreshed.
      */
-    suspend fun warmUp() {
+    suspend fun warmUp(): Boolean {
         if (tokenProvider == null) {
+            val start = currentTimeMillis()
             refreshTokenProvider()
+            Integrity.warmedUp.record(
+                Integrity.WarmedUpExtra(
+                    success = tokenProvider?.isSuccess == true,
+                    durationMs = (currentTimeMillis() - start).toInt(),
+                ),
+            )
         }
+        return tokenProvider?.isSuccess == true
     }
 
     /**
@@ -218,36 +202,50 @@ class GooglePlayIntegrityClient(
      *
      * If no provider is available, or if token creation fails, the error
      * is returned via [Result]. When a token expiration is detected, the
-     * provider is refreshed and the request is retried once automatically.
+     * provider is refreshed and the request is retried automatically.
      *
      * @return A [Result] containing an [IntegrityToken] on success, or a
      * failure if the request could not be fulfilled.
      */
-    override suspend fun request(): Result<IntegrityToken> {
+    override suspend fun request(): Result<IntegrityToken> =
+        request(consumer = IntegrityConsumer.Unknown, retries = 0)
+
+    /**
+     * Returns an [IntegrityClient] view that tags every request it issues with
+     * [consumer] for telemetry attribution. The returned view delegates to this
+     * client and shares its token-provider state, so consumers share the same
+     * Phase 1 warmup.
+     */
+    fun forConsumer(consumer: IntegrityConsumer): IntegrityClient =
+        IntegrityClient { request(consumer = consumer, retries = 0) }
+
+    private suspend fun request(consumer: IntegrityConsumer, retries: Int): Result<IntegrityToken> = runCatching {
         warmUp()
 
-        val result =
-            tokenProvider?.request(requestHashProvider)
-                ?: Result.failure(MissingTokenProvider())
+        val provider = checkNotNull(tokenProvider) {
+            "GooglePlayIntegrityClient is missing a token provider"
+        }.getOrThrow()
 
-        return result.fold(
-            onSuccess = { Result.success(it) },
-            onFailure = { throwable ->
-                if (throwable.tokenHasExpired) {
+        return provider.request(requestHashProvider)
+            .onFailure {
+                if (it.tokenHasExpired) {
                     refreshTokenProvider()
-                    return request()
+                    return request(consumer = consumer, retries = retries + 1)
                 }
-
-                Result.failure(throwable)
-            },
-        )
+            }
+            .also { result ->
+                Integrity.tokenRequest.record(
+                    Integrity.TokenRequestExtra(
+                        retries = retries,
+                        requestSuccess = result.isSuccess,
+                        consumer = consumer.value,
+                    ),
+                )
+            }
     }
 
     private suspend fun refreshTokenProvider() {
-        tokenProviderFactory.create()
-            .onFailure { logger("Failed to create TokenProvider: ${it.message}") }
-            .getOrNull()
-            ?.also { tokenProvider = it }
+        tokenProvider = tokenProviderFactory.create()
     }
 }
 
@@ -255,14 +253,7 @@ class GooglePlayIntegrityClient(
  * Thrown when a Google project number is required but invalid.
  */
 class InvalidProjectNumber :
-    IllegalStateException("GoogleProjectNumber is Invalid.")
-
-/**
- * Thrown when a token request is attempted without an initialized
- * [TokenProvider].
- */
-class MissingTokenProvider :
-    IllegalStateException("GooglePlayIntegrityClient is missing a token provider")
+    IllegalStateException("Google Cloud project number is missing or not a valid number.")
 
 private val Throwable.tokenHasExpired: Boolean
     get() = (this as? StandardIntegrityException)?.tokenProviderHasExpired ?: false

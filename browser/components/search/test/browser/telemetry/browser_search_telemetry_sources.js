@@ -278,8 +278,9 @@ add_task(async function test_source_urlbar_handoff() {
 
       info("Focus on search input in newtab content");
       await SpecialPowers.spawn(tab.linkedBrowser, [], async () => {
-        let handoffUI = content.document.querySelector(
-          "content-search-handoff-ui"
+        let handoffUI = await ContentTaskUtils.waitForCondition(
+          () => content.document.querySelector("content-search-handoff-ui"),
+          "Wait for content-search-handoff-ui to be created"
         );
         await handoffUI.updateComplete;
         let fakeEditable = handoffUI.shadowRoot.querySelector(".fake-editable");
@@ -422,6 +423,123 @@ add_task(async function test_source_system() {
       });
 
       await loadPromise;
+      return tab;
+    },
+    async () => {
+      BrowserTestUtils.removeTab(tab);
+    }
+  );
+});
+
+add_task(async function test_source_searchModeSwitcher() {
+  let tab;
+  await track_ad_click(
+    "urlbar-searchmode",
+    "urlbar_searchmode",
+    async () => {
+      tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
+      await UrlbarTestUtils.promiseAutocompleteResultPopup({
+        window,
+        value: "searchSuggestion",
+      });
+      let popup = await UrlbarTestUtils.openSearchModeSwitcher(window);
+      let loadPromise = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+      popup
+        .querySelector("panel-item[data-engine-name=Example]")
+        .button.click();
+      EventUtils.synthesizeKey("KEY_Enter");
+      await loadPromise;
+      return tab;
+    },
+    async () => {
+      BrowserTestUtils.removeTab(tab);
+    }
+  );
+});
+
+add_task(async function test_source_searchModeSwitcherNewtab() {
+  let tab;
+  await track_ad_click(
+    "urlbar-searchmode",
+    "urlbar_searchmode",
+    async () => {
+      await UrlbarTestUtils.promiseAutocompleteResultPopup({
+        window,
+        value: "searchSuggestion",
+      });
+      let popup = await UrlbarTestUtils.openSearchModeSwitcher(window);
+
+      let newTabPromise = BrowserTestUtils.waitForNewTab(gBrowser);
+      EventUtils.synthesizeMouseAtCenter(
+        popup.querySelector("panel-item[data-engine-name=Example]"),
+        { accelKey: true }
+      );
+      let popupHidden = UrlbarTestUtils.searchModeSwitcherPopupClosed(window);
+      popup.hide();
+      await popupHidden;
+
+      tab = await newTabPromise;
+      return tab;
+    },
+    async () => {
+      BrowserTestUtils.removeTab(tab);
+    }
+  );
+});
+
+add_task(async function test_source_searchModeSwitcherNewtabForeground() {
+  let tab;
+  await track_ad_click(
+    "urlbar-searchmode",
+    "urlbar_searchmode",
+    async () => {
+      await UrlbarTestUtils.promiseAutocompleteResultPopup({
+        window,
+        value: "searchSuggestion",
+      });
+      let popup = await UrlbarTestUtils.openSearchModeSwitcher(window);
+
+      let newTabPromise = BrowserTestUtils.waitForNewTab(gBrowser);
+      EventUtils.synthesizeMouseAtCenter(
+        popup.querySelector("panel-item[data-engine-name=Example]"),
+        { accelKey: true, shiftKey: true }
+      );
+      let popupHidden = UrlbarTestUtils.searchModeSwitcherPopupClosed(window);
+      popup.hide();
+      await popupHidden;
+
+      tab = await newTabPromise;
+      return tab;
+    },
+    async () => {
+      BrowserTestUtils.removeTab(tab);
+    }
+  );
+});
+
+add_task(async function test_source_searchModeSwitcherSearchbar() {
+  let tab;
+  await track_ad_click(
+    "searchbar",
+    "searchbar",
+    async () => {
+      await SearchbarTestUtils.promiseAutocompleteResultPopup({
+        window,
+        value: "searchSuggestion",
+      });
+      let popup = await SearchbarTestUtils.openSearchModeSwitcher(window);
+
+      let newTabPromise = BrowserTestUtils.waitForNewTab(gBrowser);
+      EventUtils.synthesizeMouseAtCenter(
+        popup.querySelector("panel-item[data-engine-name=Example]"),
+        { accelKey: true }
+      );
+      let popupHidden =
+        SearchbarTestUtils.searchModeSwitcherPopupClosed(window);
+      popup.hide();
+      await popupHidden;
+
+      tab = await newTabPromise;
       return tab;
     },
     async () => {

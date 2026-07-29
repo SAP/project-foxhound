@@ -5,6 +5,10 @@ Services.scriptloader.loadSubScript(
   this
 );
 
+const { MLTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/MLTestUtils.sys.mjs"
+);
+
 async function setupEvaluation({ url }) {
   {
     const { RemoteSettingsClient } = ChromeUtils.importESModule(
@@ -36,21 +40,6 @@ function clearDirtyPrefs() {
     "browser.translations.mostRecentTargetLanguages"
   );
   Services.prefs.clearUserPref("intl.locale.requested");
-}
-
-/**
- * Report eval data out to stdout, which will be picked up by the test harness for
- * analysis.
- *
- * @param {any} data - JSON serializable data.
- */
-function reportEvalResult(data) {
-  info("evalDataPayload | " + JSON.stringify(data));
-
-  dump("-------------------------------------\n");
-  dump("Eval result:\n");
-  dump(JSON.stringify(data, null, 2));
-  dump("\n");
 }
 
 /**

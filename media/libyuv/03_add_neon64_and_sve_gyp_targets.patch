@@ -1,8 +1,8 @@
 diff --git a/libyuv.gyp b/libyuv.gyp
-index 45df0d2e26192..e2aa2d7c69404 100644
+index 07bb5494..f3da0203 100644
 --- a/libyuv.gyp
 +++ b/libyuv.gyp
-@@ -71,9 +71,7 @@
+@@ -64,9 +64,7 @@
              # '-mthumb',  # arm32 not thumb
            ],
            'cflags_mozilla!': [
@@ -13,7 +13,7 @@ index 45df0d2e26192..e2aa2d7c69404 100644
            ],
            'conditions': [
              # Disable LTO in libyuv_neon target due to gcc 4.9 compiler bug.
-@@ -108,16 +106,6 @@
+@@ -76,16 +74,6 @@
                  '-ffat-lto-objects',
                ],
              }],
@@ -29,9 +29,9 @@ index 45df0d2e26192..e2aa2d7c69404 100644
 -            }],
            ],
          }],
-         ['build_msa != 0', {
-@@ -157,6 +145,11 @@
-             }],
+         ['build_with_mozilla == 1', {
+@@ -96,6 +84,11 @@
+             '$(MOZ_JPEG_CFLAGS)',
            ],
          }],
 +        ['target_arch == "arm64" and moz_have_arm_sve2 != 1 and build_with_mozilla == 1', {
@@ -39,10 +39,10 @@ index 45df0d2e26192..e2aa2d7c69404 100644
 +            'LIBYUV_DISABLE_SVE',
 +          ]
 +        }],
-       ], #conditions
-       'defines': [
-         # Enable the following 3 macros to turn off assembly for specified CPU.
-@@ -186,12 +179,94 @@
+         ['OS != "ios" and libyuv_disable_jpeg != 1 and build_with_mozilla != 1', {
+           'defines': [
+             'HAVE_JPEG'
+@@ -149,12 +142,94 @@
                '-Wl,--dynamic-linker,/system/bin/linker',
              ],
            }],
@@ -138,7 +138,7 @@ index 45df0d2e26192..e2aa2d7c69404 100644
  }
  
 diff --git a/libyuv.gypi b/libyuv.gypi
-index 74fa0fe63b57b..1fd1be71e3414 100644
+index 44b12741..ba5f7960 100644
 --- a/libyuv.gypi
 +++ b/libyuv.gypi
 @@ -8,6 +8,29 @@
@@ -171,26 +171,25 @@ index 74fa0fe63b57b..1fd1be71e3414 100644
      'libyuv_sources': [
        # includes.
        'include/libyuv.h',
-@@ -41,8 +64,6 @@
+@@ -39,8 +62,6 @@
+       'source/compare.cc',
        'source/compare_common.cc',
        'source/compare_gcc.cc',
-       'source/compare_msa.cc',
 -      'source/compare_neon.cc',
 -      'source/compare_neon64.cc',
        'source/compare_win.cc',
        'source/convert.cc',
        'source/convert_argb.cc',
-@@ -62,8 +83,6 @@
+@@ -59,16 +80,12 @@
+       'source/rotate_common.cc',
        'source/rotate_gcc.cc',
        'source/rotate_lsx.cc',
-       'source/rotate_msa.cc',
 -      'source/rotate_neon.cc',
 -      'source/rotate_neon64.cc',
        'source/rotate_win.cc',
        'source/row_any.cc',
        'source/row_common.cc',
-@@ -71,8 +90,6 @@
-       'source/row_msa.cc',
+       'source/row_gcc.cc',
        'source/row_lasx.cc',
        'source/row_lsx.cc',
 -      'source/row_neon.cc',
@@ -198,10 +197,10 @@ index 74fa0fe63b57b..1fd1be71e3414 100644
        'source/row_win.cc',
        'source/scale.cc',
        'source/scale_any.cc',
-@@ -81,8 +98,6 @@
+@@ -76,8 +93,6 @@
+       'source/scale_common.cc',
        'source/scale_gcc.cc',
        'source/scale_lsx.cc',
-       'source/scale_msa.cc',
 -      'source/scale_neon.cc',
 -      'source/scale_neon64.cc',
        'source/scale_rgb.cc',

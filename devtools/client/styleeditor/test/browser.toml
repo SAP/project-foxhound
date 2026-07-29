@@ -75,7 +75,6 @@ support-files = [
   "!/devtools/client/inspector/test/head.js",
   "!/devtools/client/inspector/test/shared-head.js",
   "!/devtools/client/shared/test/shared-head.js",
-  "!/devtools/client/shared/test/telemetry-test-helpers.js",
   "!/devtools/client/shared/test/highlighter-test-actor.js",
 ]
 
@@ -145,6 +144,8 @@ fail-if = [
 ["browser_styleeditor_loading.js"]
 
 ["browser_styleeditor_loading_with_containers.js"]
+
+["browser_styleeditor_local_mode.js"]
 
 ["browser_styleeditor_media_sidebar_links.js"]
 fail-if = [
@@ -243,4 +244,5 @@ fail-if = [
 ["browser_toolbox_styleeditor.js"]
 skip-if = [
   "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1929428
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1929428, Bug 2028047
 ]

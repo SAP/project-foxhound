@@ -29,7 +29,9 @@ const TEST_URI = `
 `;
 
 const TEST_DATA = [
-  { node: "#testid", expected: "#testid", expectedIndex: 4 },
+  // This new rule is displayed as the 3rd rule because
+  // a pseudo element is displayed first.
+  { node: "#testid", expected: "#testid", expectedIndex: 2 },
   { node: ".testclass2", expected: ".testclass2" },
   { node: ".class1.class2", expected: ".class1.class2" },
   { node: ".class3.class4", expected: ".class3.class4" },
@@ -65,8 +67,8 @@ add_task(async function () {
 
   info(`Check that clicking the "Add Rule" button clears the filter`);
   await selectNode("footer", inspector);
-  is(
-    view.element.children.length,
+  assertDisplayedRulesCount(
+    view,
     1,
     "footer only has 1 rule before clicking on the button."
   );
@@ -75,5 +77,5 @@ add_task(async function () {
   await addNewRuleAndDismissEditor(inspector, view, "footer", 1);
   await onRuleViewFiltered;
   is(view.searchField.value, "", "Search filter was cleared.");
-  is(view.element.children.length, 2, "A new rule was added");
+  assertDisplayedRulesCount(view, 2, "A new rule was added");
 });

@@ -226,7 +226,7 @@ class SettingsSubMenuAboutRobot {
         )
         Log.i(TAG, "verifyLibrariesUsedLink: Verified that the toolbar has title: \"$appName | OSS Libraries\"")
         Log.i(TAG, "verifyTheLibrariesListNotEmpty: Trying to verify that the OSS Libraries list has more then 10 items.")
-        onView(withId(R.id.about_libraries_listview))
+        onView(withId(mozilla.components.support.license.R.id.about_libraries_listview))
             .check(matches(isDisplayed()))
             .check(matches(hasMinimumChildCount(10)))
         Log.i(TAG, "verifyTheLibrariesListNotEmpty: Verify that the OSS Libraries list has more then 10 items.")

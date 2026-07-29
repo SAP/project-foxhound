@@ -9,10 +9,6 @@
 /* import-globals-from head_channels.js */
 /* import-globals-from head_http3.js */
 
-const { HttpServer } = ChromeUtils.importESModule(
-  "resource://testing-common/httpd.sys.mjs"
-);
-
 function makeChan(uri) {
   let chan = NetUtil.newChannel({
     uri,
@@ -163,8 +159,22 @@ async function waitForHttp3Route(
 ) {
   let listenerRef;
 
+  let firstAttempt = true;
   // Function to (re)open the channel using the same listener instance.
   const retry = () => {
+    if (!firstAttempt) {
+      // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+      do_timeout(1000, () => {
+        Services.obs.notifyObservers(null, "net:cancel-all-connections");
+        const chan = makeChan(uri);
+        if (altSvc) {
+          chan.setRequestHeader("x-altsvc", altSvc, false);
+        }
+        chan.asyncOpen(listenerRef);
+      });
+      return;
+    }
+    firstAttempt = false;
     const chan = makeChan(uri);
     if (altSvc) {
       chan.setRequestHeader("x-altsvc", altSvc, false);
@@ -335,6 +345,38 @@ async function do_test_request_cancelled_by_server(h3Route, httpsOrigin) {
   chan.asyncOpen(listener);
 
   // Resolves at the point where run_next_test() used to be called
+  await promise;
+}
+
+// Server resets request stream with an unrecognized application error code.
+// The transaction must retry via H2/H1 and succeed.
+async function do_test_unknown_reset(httpsOrigin) {
+  dump("do_test_unknown_reset()\n");
+
+  const chan = makeChan(httpsOrigin + "UnknownReset");
+  const promise = new Promise(resolve => {
+    const listener = {
+      onStartRequest(request) {
+        Assert.ok(request instanceof Ci.nsIHttpChannel);
+        Assert.equal(request.status, Cr.NS_OK);
+        Assert.equal(request.responseStatus, 200);
+      },
+      onDataAvailable(request, stream, off, cnt) {
+        read_stream(stream, cnt);
+      },
+      onStopRequest(request, status) {
+        Assert.equal(status, Cr.NS_OK);
+        let httpVersion = "";
+        try {
+          httpVersion = request.protocolVersion;
+        } catch (e) {}
+        Assert.notEqual(httpVersion, "h3");
+        resolve(request);
+      },
+    };
+    chan.asyncOpen(listener);
+  });
+
   await promise;
 }
 
@@ -519,59 +561,6 @@ async function do_test_patch(httpsOrigin, h3Route) {
 
   chan.asyncOpen(listener);
   await promise;
-}
-
-let h1Server = null;
-let altsvcHost = "";
-let httpOrigin = "";
-
-function h1Response(metadata, response) {
-  response.setStatusLine(metadata.httpVersion, 200, "OK");
-  response.setHeader("Content-Type", "text/plain", false);
-  response.setHeader("Connection", "close", false);
-  response.setHeader("Cache-Control", "no-cache", false);
-  response.setHeader("Access-Control-Allow-Origin", "*", false);
-  response.setHeader("Access-Control-Allow-Method", "GET", false);
-  response.setHeader("Access-Control-Allow-Headers", "x-altsvc", false);
-
-  try {
-    let hval = "h3=" + metadata.getHeader("x-altsvc");
-    response.setHeader("Alt-Svc", hval, false);
-  } catch (e) {}
-
-  let body = "Q: What did 0 say to 8? A: Nice Belt!\n";
-  response.bodyOutputStream.write(body, body.length);
-}
-
-function h1ServerWK(metadata, response) {
-  response.setStatusLine(metadata.httpVersion, 200, "OK");
-  response.setHeader("Content-Type", "application/json", false);
-  response.setHeader("Connection", "close", false);
-  response.setHeader("Cache-Control", "no-cache", false);
-  response.setHeader("Access-Control-Allow-Origin", "*", false);
-  response.setHeader("Access-Control-Allow-Method", "GET", false);
-  response.setHeader("Access-Control-Allow-Headers", "x-altsvc", false);
-
-  let body = `["http://${altsvcHost}:${h1Server.identity.primaryPort}"]`;
-  response.bodyOutputStream.write(body, body.length);
-}
-
-function setup_h1_server(host) {
-  altsvcHost = host;
-  h1Server = new HttpServer();
-  h1Server.registerPathHandler("/http3-test", h1Response);
-  h1Server.registerPathHandler("/.well-known/http-opportunistic", h1ServerWK);
-  h1Server.registerPathHandler("/VersionFallback", h1Response);
-  h1Server.start(-1);
-  h1Server.identity.setPrimary(
-    "http",
-    altsvcHost,
-    h1Server.identity.primaryPort
-  );
-  httpOrigin = `http://${altsvcHost}:${h1Server.identity.primaryPort}/`;
-  registerCleanupFunction(() => {
-    h1Server.stop();
-  });
 }
 
 // Promise-backed base assumed available:

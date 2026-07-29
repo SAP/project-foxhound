@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -24,6 +22,7 @@
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Services.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_html5.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/TextUtils.h"
@@ -1075,7 +1074,8 @@ nsresult nsHtml5StreamParser::OnStartRequest(nsIRequest* aRequest) {
   auto detectorCreator = MakeScopeExit([&] {
     if ((mForceAutoDetection || mCharsetSource < kCharsetFromParentFrame) ||
         !(mMode == LOAD_AS_DATA || mMode == VIEW_SOURCE_XML)) {
-      mDetector = mozilla::EncodingDetector::Create();
+      mDetector = mozilla::EncodingDetector::Create(mMode == PLAIN_TEXT ||
+                                                    mMode == VIEW_SOURCE_PLAIN);
     }
   });
 
@@ -1819,8 +1819,7 @@ bool nsHtml5StreamParser::internalEncodingDeclaration(nsHtml5String aEncoding) {
                                             mTokenizer->getLineNumber());
   }
 
-  if (mForceAutoDetection &&
-      (encoding->IsAsciiCompatible() || encoding == ISO_2022_JP_ENCODING)) {
+  if (mForceAutoDetection && encoding->IsAsciiCompatible()) {
     return false;
   }
 
@@ -2214,8 +2213,7 @@ bool nsHtml5StreamParser::ProcessLookingForMetaCharset(bool aEof) {
         encoding = xmldecl_parse(contiguous.begin(), contiguous.length());
       }
       if (encoding) {
-        if (!(mForceAutoDetection && (encoding->IsAsciiCompatible() ||
-                                      encoding == ISO_2022_JP_ENCODING))) {
+        if (!(mForceAutoDetection && encoding->IsAsciiCompatible())) {
           mForceAutoDetection = false;
           mNeedsEncodingSwitchTo = encoding;
           mEncodingSwitchSource = kCharsetFromXmlDeclaration;
@@ -2729,7 +2727,7 @@ void nsHtml5StreamParser::ContinueAfterScriptsOrEncodingCommitment(
 
       nsContentUtils::ReportToConsole(
           nsIScriptError::warningFlag, "DOM Events"_ns,
-          mExecutor->GetDocument(), nsContentUtils::eDOM_PROPERTIES,
+          mExecutor->GetDocument(), PropertiesFile::DOM_PROPERTIES,
           "SpeculationFailed2", nsTArray<nsString>(),
           SourceLocation(mExecutor->GetDocument()->GetDocumentURI(),
                          speculation->GetStartLineNumber(),
@@ -2932,6 +2930,6 @@ void nsHtml5StreamParser::MarkAsBroken(nsresult aRv) {
 }
 
 nsresult nsHtml5StreamParser::DispatchToMain(
-    already_AddRefed<nsIRunnable>&& aRunnable) {
+    already_AddRefed<nsIRunnable> aRunnable) {
   return SchedulerGroup::Dispatch(std::move(aRunnable));
 }

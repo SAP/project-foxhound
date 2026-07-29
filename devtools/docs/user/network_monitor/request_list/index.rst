@@ -72,7 +72,6 @@ Here is a list of all available columns:
 - **Transferred**: The number of bytes that were actually transferred to load the resource, or a message about why the resource was not transferred. A number value is less than **Size** if the resource was compressed.
 
   - If the resource was fetched from a `service worker <https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API>`_ cache, then this cell displays "service worker".
-  - Cached resources may be fetched from the cache and the network simultaneously, which may improve load time for slow caches. The transferred column lists either "cached (raced)" or "[size] (raced)" depending on the faster source. This feature is called `Race Cache With Network (RCWN) <https://slides.com/valentingosu/race-cache-with-network-2017#>`_.
   - If the resource was blocked, the message indicates why it was blocked. For example, "CSP", "Malware", "CORS Missing Allow Origin", "Blocked by [Name of Extension]".
 
 - **Size**: The size of the transferred resource.

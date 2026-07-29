@@ -226,7 +226,7 @@ add_task(async function test_message_on_autofill_with_document_interaction() {
     let EventUtils = ContentTaskUtils.getEventUtils(content);
     let target = this.content.document.querySelector(sel);
 
-    await EventUtils.synthesizeMouseAtCenter(target, {}, this.content);
+    EventUtils.synthesizeMouseAtCenter(target, {}, this.content);
   });
 
   userInteracted = await checkDocumentUserHasInteracted();

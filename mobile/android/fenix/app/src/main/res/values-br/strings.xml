@@ -6,7 +6,7 @@
   file, You can obtain one at http://mozilla.org/MPL/2.0/.
 -->
 
-<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
   <string name="app_name_private_5">%s prevez</string>
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
@@ -31,10 +31,6 @@
   <string name="tab_search_hint">Klask en ivinelloù</string>
   <!-- Placeholder text shown in the search bar when using application search engines -->
   <string name="application_search_hint">Skrivit gerioù ar c’hlask</string>
-  <!-- No Open Tabs Message Description -->
-  <string name="no_open_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">Diskouezet e vo amañ hocʼh ivinelloù digoret.</string>
-  <!-- No Private Tabs Message Description -->
-  <string name="no_private_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">Diskouezet e vo amañ hocʼh ivinelloù prevez.</string>
   <!-- Tab tray multi select title in app bar. %1$d is the number of tabs selected -->
   <string name="tab_tray_multi_select_title">%1$d diuzet</string>
   <!-- Tab tray multi select title in app bar when no tabs are selected -->
@@ -47,8 +43,6 @@
   <string name="tab_tray_select_collection">Diuzañ an dastumad</string>
   <!-- Content description for close button while in multiselect mode in tab tray -->
   <string name="tab_tray_close_multiselect_content_description">Kuitaat ar mod lies-diuzañ</string>
-  <!-- Content description for save to collection button while in multiselect mode in tab tray -->
-  <string name="tab_tray_collection_button_multiselect_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Enrollañ an ivinelloù diuzet en dastumad</string>
   <!--
     Home - Bookmarks
 
@@ -60,7 +54,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">Dilemel</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">Gant Mozilla eo produet %1$s.</string>
+  <string name="about_content" tools:ignore="BrandUsage">Gant Mozilla eo produet %1$s.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Mojennoù a vez alies diwar-benn ar merdeiñ prevez</string>
   <!--
@@ -173,8 +167,6 @@
   <string name="browser_menu_stop">Paouez</string>
   <!-- Browser menu button that opens the extensions manager -->
   <string name="browser_menu_extensions">Askouezhioù</string>
-  <!-- Browser menu banner header text for extensions onboarding when all installed extensions have been disabled. -->
-  <string name="browser_menu_disabled_extensions_banner_onboarding_header" tools:ignore="UnusedResources" moz:removedIn="149">Staliet eo askouezhioù met n\'int ket gweredekaet</string>
   <!-- Browser menu button that opens the extensions manager -->
   <string name="browser_menu_manage_extensions">Merañ an askouezhioù</string>
   <!-- Browser menu group that contains additional settings in collapsed state -->
@@ -192,18 +184,12 @@
   <string name="browser_menu_no_extensions_installed_description">N\'eus askouezh ebet gweredekaet</string>
   <!-- Browser menu button that opens account settings -->
   <string name="browser_menu_account_settings">Titouroù ar gont</string>
-  <!-- Browser menu button that sends a user to help articles -->
-  <string name="browser_menu_help" tools:ignore="UnusedResources" moz:removedIn="149">Skoazell</string>
-  <!-- Browser menu button that sends a to a the what's new article -->
-  <string name="browser_menu_whats_new" tools:ignore="UnusedResources" moz:removedIn="149">Petra nevez</string>
   <!-- Browser menu button that opens the settings menu -->
   <string name="browser_menu_settings">Arventennoù</string>
   <!-- Browser menu button that opens a user's library -->
   <string name="browser_menu_library">Levraoueg</string>
   <!-- Browser menu toggle that requests a desktop site -->
   <string name="browser_menu_desktop_site">Lecʼhienn urzhiataer</string>
-  <!-- Browser menu button that reopens a private tab as a regular tab -->
-  <string name="browser_menu_open_in_regular_tab" tools:ignore="UnusedResources" moz:removedIn="149">Digeriñ en un ivinell ordinal</string>
   <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
   <string name="browser_menu_add_to_homescreen">Ouzhpennañ dʼar skramm degemer</string>
   <!-- Browser menu toggle that adds a PWA of the site on the device home screen. -->
@@ -229,11 +215,6 @@
     Browser menu text shown in custom tabs to indicate this is a Fenix tab
     %1$s is the name of the app (for example "Firefox").
   -->
-  <string name="browser_menu_powered_by" tools:ignore="UnusedResources" moz:removedIn="149">LUSKET GANT %1$s</string>
-  <!--
-    Browser menu text shown in custom tabs to indicate this is a Fenix tab
-    %1$s is the name of the app (for example "Firefox").
-  -->
   <string name="browser_menu_powered_by2">Lusket gant %1$s</string>
   <!-- Browser menu button to put the current page in reader mode -->
   <string name="browser_menu_read">Mod Lenn</string>
@@ -242,15 +223,7 @@
   <!-- Browser menu button to open the current page in an external app -->
   <string name="browser_menu_open_app_link">Digeriñ en arload</string>
   <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
-  <string name="browser_menu_customize_reader_view" tools:ignore="UnusedResources" moz:removedIn="149">Personelaat ar mod lenn</string>
-  <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
   <string name="browser_menu_customize_reader_view_2">Personelaat ar mod lenn</string>
-  <!-- Browser menu label for adding a bookmark -->
-  <string name="browser_menu_add" tools:ignore="UnusedResources" moz:removedIn="149">Ouzhpennañ</string>
-  <!-- Browser menu label for editing a bookmark -->
-  <string name="browser_menu_edit" tools:ignore="UnusedResources" moz:removedIn="149">Embann</string>
-  <!-- Button shown on the home page that opens the Customize home settings -->
-  <string name="browser_menu_customize_home_1" tools:ignore="UnusedResources" moz:removedIn="149">Personelaat an degemer</string>
   <!-- Browser menu label to sign in to sync on the device using Mozilla accounts -->
   <string name="browser_menu_sign_in">Kennaskañ</string>
   <!-- Browser menu label to sign back in to sync on the device when the user's account needs to be reauthenticated -->
@@ -263,12 +236,6 @@
   <string name="browser_menu_passwords">Gerioù-tremen</string>
   <!-- Content description (not visible, for screen readers etc.) for main menu navigation header. -->
   <string name="browser_main_menu_content_description_navigation_header">Merdeiñ</string>
-  <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar extensions menu. -->
-  <string name="browser_extensions_menu_handlebar_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Serriñ panell al lañser askouezhioù</string>
-  <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar save menu. -->
-  <string name="browser_save_menu_handlebar_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Serriñ panell al lañser enrollañ</string>
-  <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar tools menu. -->
-  <string name="browser_tools_menu_handlebar_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Serriñ panell al lañser ostilhoù</string>
   <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar custom tab menu. -->
   <string name="browser_custom_tab_menu_handlebar_content_description">Serriñ panell al lañser ivinelloù personelaet</string>
   <!-- Browser menu label that bookmarks the currently visited page -->
@@ -279,8 +246,6 @@
   <string name="browser_menu_save_as_pdf_2">Enrollañ evel PDF</string>
   <!-- Browser menu label for navigating to the translation feature, which provides language translation options the current visited page -->
   <string name="browser_menu_translate_page_2">Treiñ ar bajenn</string>
-  <!-- Browser menu label for navigating to the Web Compat Reporter feature, which provides users the ability to send bug reports for broken sites. -->
-  <string name="browser_menu_webcompat_reporter" tools:ignore="UnusedResources" moz:removedIn="149">Danevelliñ ul lec\'hienn torret…</string>
   <!-- Browser menu label for navigating to the Web Compat Reporter feature, which provides users the ability to send bug reports for broken sites. -->
   <string name="browser_menu_webcompat_reporter_2">Danevelliñ ul lec’hienn torret</string>
   <!-- Browser menu label that is displayed when the current page has been translated by the translation feature. -->
@@ -311,17 +276,9 @@
   <!--
     Browser Toolbar
 
-    Content description for the Home screen button on the browser toolbar
+    Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
-  <string name="browser_toolbar_home">Skramm degemer</string>
-  <!-- Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred. -->
   <string name="browser_toolbar_translate">Treiñ ar bajenn</string>
-  <!--
-    Content description (not visible, for screen readers etc.) for the translate page toolbar button that opens the translations dialog when the page is translated successfully.
-    %1$s is the name of the language that is displayed in the original page. (For example: English)
-    %2$s is the name of the language which the page was translated to. (For example: French)
-  -->
-  <string name="browser_toolbar_translated_successfully">Pajenn troet eus %1$s betek %2$s.</string>
   <!--
     Locale Settings Fragment
 
@@ -335,12 +292,8 @@
   <!--
     Search Fragment
 
-    Button in the search view that lets a user search by scanning a QR code
+    Button in the search view that lets a user navigate to the site in their clipboard
   -->
-  <string name="search_scan_button_2">C’hwilerviñ ur c’hod QR</string>
-  <!-- Button in the search view when shortcuts are displayed that takes a user to the search engine settings -->
-  <string name="search_shortcuts_engine_settings">Arventennoù al lusker klask</string>
-  <!-- Button in the search view that lets a user navigate to the site in their clipboard -->
   <string name="awesomebar_clipboard_title">Leuniañ diwar ar golver</string>
   <!-- Button in the search suggestions onboarding that allows search suggestions in private sessions -->
   <string name="search_suggestions_onboarding_allow_button">Aotren</string>
@@ -375,62 +328,6 @@
     Content description (not visible, for screen readers etc.): Close button for the home onboarding dialog
   -->
   <string name="onboarding_home_content_description_close_button">Serriñ</string>
-  <!--
-    Juno first user onboarding flow experiment, strings are marked unused as they are only referenced by Nimbus experiments.
-
-    Description for learning more about our privacy notice.
-  -->
-  <string name="juno_onboarding_privacy_notice_text" tools:ignore="BrandUsage">Politikerezh prevezded Firefox</string>
-  <!-- Title for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_title_nimbus_2">Ho surentez a zo talvoudus deomp</string>
-  <!-- Description for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_description_nimbus_3">Hor merdeer harpet gant un aozadur hep gounidoù a sikour da herzel an embregerezhioù d\'ho heuliañ pep lec\'h er web.</string>
-  <!-- Text for the button to set firefox as default browser on the device -->
-  <string name="juno_onboarding_default_browser_positive_button" tools:ignore="UnusedResources">Lakaat da verdeer dre ziouer</string>
-  <!-- Text for the button dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_default_browser_negative_button" tools:ignore="UnusedResources">Ket bremañ</string>
-  <!-- Title for sign in to sync screen. -->
-  <string name="juno_onboarding_sign_in_title_2">Chomit enrineget pa tremenit eus un trevnad d\'egile</string>
-  <!--
-    Description for sign in to sync screen. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_sign_in_description_3" tools:ignore="BrandUsage">Firefox a enrineg ho kerioù tremen, sinedoù, ha muioc’h c’hoazh pa goubredit.</string>
-  <!-- Text for the button to sign in to sync on the device -->
-  <string name="juno_onboarding_sign_in_positive_button" tools:ignore="UnusedResources">Kennaskañ</string>
-  <!-- Text for the button dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_sign_in_negative_button" tools:ignore="UnusedResources">Ket bremañ</string>
-  <!--
-    Title for enable notification permission screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_enable_notifications_title_nimbus_2" tools:ignore="BrandUsage">Gant ar rebuzadurioù e c’hallit chom suroc\'h gant Firefox</string>
-  <!--
-    Description for enable notification permission screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_enable_notifications_description_nimbus_2" tools:ignore="BrandUsage">Kas ivinelloù etre ho trevnadoù ha dizoloit keweriusterioù prevezded all Firefox.</string>
-  <!-- Text for the button to request notification permission on the device -->
-  <string name="juno_onboarding_enable_notifications_positive_button" tools:ignore="UnusedResources">Gweredekaat ar rebuzadurioù</string>
-  <!-- Text for the button dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_enable_notifications_negative_button" tools:ignore="UnusedResources">Ket bremañ</string>
-  <!--
-    Title for add search widget screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_add_search_widget_title" tools:ignore="BrandUsage,UnusedResources">Esaeit widjet klask Firefox</string>
-  <!--
-    Description for add search widget screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_add_search_widget_description" tools:ignore="BrandUsage,UnusedResources">Gant Firefox war ho skramm degemer e c’halloc’h digeriñ ar merdeer a lak ho puhez prevez da gentañ hag a stank an heulierien etre al lec’hiennoù.</string>
-  <!--
-    Text for the button to add search widget on the device used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_add_search_widget_positive_button" tools:ignore="BrandUsage,UnusedResources">Ouzhpennañ ur widjet FIrefox</string>
-  <!-- Text for the button to dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_add_search_widget_negative_button" tools:ignore="UnusedResources">Ket bremañ</string>
   <!-- Title for the privacy preferences dialog shown during onboarding. Note: The word "Firefox" should NOT be translated. -->
   <string name="onboarding_preferences_dialog_title" tools:ignore="BrandUsage">Sikourit ac’hanomp da wellaat Firefox</string>
   <!-- Title for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
@@ -440,17 +337,13 @@
   <!-- Learn more link for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
   <string name="onboarding_preferences_dialog_crash_reporting_learn_more_2">Gouzout hiroc\'h</string>
   <!-- Title for the usage data option in the privacy preferences dialog shown during onboarding. Note: The word "Mozilla" should NOT be translated. -->
-  <string name="onboarding_preferences_dialog_usage_data_title">Kas roadennoù teknikel hag etreoberiañ da vMozilla</string>
+  <string name="onboarding_preferences_dialog_usage_data_title" tools:ignore="BrandUsage">Kas roadennoù teknikel hag etreoberiañ da vMozilla</string>
   <string name="onboarding_preferences_dialog_usage_data_description_2" tools:ignore="BrandUsage">Roadennoù diwar-benn ho trevnad, kefluniadur ar periant ha penaos e implijit Firefox a sikour da wellaat ar c\'heweriusterioù, an digonusted hag ar stabilded evit an holl.</string>
   <string name="onboarding_preferences_dialog_usage_data_learn_more_2">Gouzout hiroc\'h</string>
   <!-- Positive button label for the privacy preferences dialog shown during onboarding. -->
   <string name="onboarding_preferences_dialog_positive_button">Graet</string>
   <!-- Terms of service onboarding title card label. 'Firefox' intentionally hardcoded here -->
   <string name="onboarding_welcome_to_firefox" tools:ignore="BrandUsage">Donemat e Firefox</string>
-  <!-- Terms of service sub header label. -->
-  <string name="onboarding_terms_of_service_sub_header_2">Merdeiñ buan ha diogel</string>
-  <!-- Terms of service onboarding page continue button label. -->
-  <string name="onboarding_term_of_service_agree_and_continue_button_label_2">Kenderc’hel</string>
   <!-- Line one of the terms of service onboarding page. %1$s is replaced by an active link, using onboarding_term_of_service_line_one_link_text_2 as text (“Firefox Terms of Use”). -->
   <string name="onboarding_term_of_service_line_one_2">En ur genderc\'hel e asantit d\'ar %1$s</string>
   <!-- Used as text for the link in onboarding_term_of_service_line_one_2. -->
@@ -463,14 +356,6 @@
   <string name="onboarding_term_of_service_line_three" tools:ignore="BrandUsage">Evit sikour da wellaat ar merdeer, Firefox a gas roadennoù dielfennañ hag etreoberiañ da vMozilla. %1$s</string>
   <!-- Used as text for the link in onboarding_term_of_service_line_three. -->
   <string name="onboarding_term_of_service_line_three_link_text">Ardeiñ</string>
-  <!-- Marketing onboarding page title. 'Firefox' is intentionally hardcoded. -->
-  <string name="onboarding_marketing_title" tools:ignore="BrandUsage,UnusedResources">Sikourit ac’hanomp da vrudañ Firefox</string>
-  <!-- Marketing onboarding page body. 'Firefox' is intentionally hardcoded. -->
-  <string name="onboarding_marketing_body" tools:ignore="BrandUsage,UnusedResources">Pa rannit penaos ho peus graet anaoudegezh gant Firefox ha penaos e implijit anezhañ e sikourit ac\'hanomp da vrudañ ho merdeer.</string>
-  <!-- Marketing onboarding page clickable link text to "learn more" on how data is used. -->
-  <string name="onboarding_marketing_learn_more" tools:ignore="UnusedResources">Penaos e implijomp ar roadennoù</string>
-  <!-- Marketing onboarding page button label. Button to confirm choice and start browsing. -->
-  <string name="onboarding_marketing_positive_button" tools:ignore="UnusedResources">Kadarnaat ha kregiñ da verdeiñ</string>
   <!-- Marketing onboarding page title variant. “One last thing” refers to the final step or action in the onboarding process that we’re asking users to take before they can start using the browser. -->
   <string name="onboarding_marketing_title_1" tools:ignore="UnusedResources">Un draig diwezhañ</string>
   <!-- Marketing onboarding page body variant. 'Firefox' is intentionally hardcoded. -->
@@ -481,41 +366,6 @@
 
   <!-- ==== End of Project "Nova" onboarding strings ==== -->
 
-  <!-- Onboarding header for the toolbar selection card, used by Nimbus experiments. -->
-  <string name="onboarding_customize_toolbar_title" tools:ignore="UnusedResources">Dibab ul lec’h barrenn-ostilhoù</string>
-  <!-- Onboarding sub header for toolbar selection card, used by Nimbus experiments. -->
-  <string name="onboarding_customize_toolbar_description" tools:ignore="UnusedResources">Mirit ar c\'hlaskoù tost ouzhoc’h.</string>
-  <!-- Onboarding label for 'Save and continue' button, used by Nimbus experiments. -->
-  <string name="onboarding_save_and_continue_button">Enrollañ ha kenderc\'hel</string>
-  <!-- Onboarding toolbar selection card label for 'top' option, used by Nimbus experiments. -->
-  <string name="onboarding_customize_toolbar_top_option">Krec’h</string>
-  <!-- Onboarding toolbar selection card label for 'bottom' option, used by Nimbus experiments. -->
-  <string name="onboarding_customize_toolbar_bottom_option">Traoñ</string>
-  <!-- Onboarding toolbar selection card content description for the main image. -->
-  <string name="onboarding_customize_toolbar_main_image_content_description">Skeudenn dalbenn vras er gwel diuzañ ar varrenn ostilhoù o tiskouez ur varrenn ostilhoù skeudennet.</string>
-  <!-- Onboarding toolbar selection card content description for the toolbar placement image. -->
-  <string name="onboarding_customize_toolbar_placement_bottom_content_description">Skeudenn ar varrenn-ostilhoù izelañ</string>
-  <string name="onboarding_customize_toolbar_placement_top_content_description">Skeudenn ar varrenn-ostilhoù uhelañ</string>
-  <!-- Action label for toolbar options that can be selected. Talkback will append this to say "Double tap to select". -->
-  <string name="onboarding_customize_toolbar_a11y_action_label_select">diuzañ</string>
-  <!-- Onboarding header for the theme selection card, used by Nimbus experiments. -->
-  <string name="onboarding_customize_theme_title" tools:ignore="UnusedResources">Dibab un neuz</string>
-  <!-- Onboarding sub header for theme selection card, used by Nimbus experiments. -->
-  <string name="onboarding_customize_theme_description" tools:ignore="UnusedResources">Sellit ouzh ar web bravañ</string>
-  <!-- Onboarding label for 'Save and start browsing' button, used by Nimbus experiments. -->
-  <string name="onboarding_save_and_start_button">Enrollañ ha kregiñ da verdeiñ</string>
-  <!-- Onboarding theme selection card label for 'dark' option, used by Nimbus experiments. -->
-  <string name="onboarding_customize_theme_dark_option">Teñval</string>
-  <!-- Onboarding theme selection card label for 'light' option, used by Nimbus experiments. -->
-  <string name="onboarding_customize_theme_light_option">Sklaer</string>
-  <!-- Onboarding theme selection card label for 'System auto' option, used by Nimbus experiments. -->
-  <string name="onboarding_customize_theme_system_option">Reizhiad emgefreek</string>
-  <!-- Onboarding theme selection card content description for the main image. -->
-  <string name="onboarding_customize_theme_main_image_content_description">Skeudenn dalbenn vras er gwel diuzañ an neuz o tiskouez an arzourien skeudennet hag ostilhoù krouiñ.</string>
-  <!-- Onboarding theme selection card content description for the theme selection image. %1$s is placeholder for either 'system', 'light' or 'dark'. -->
-  <string name="onboarding_customize_theme_content_description">Skeudenn an neuz %1$s</string>
-  <!-- Action label for options that can be selected. Talkback will append this to say "Double tap to select". -->
-  <string name="onboarding_customize_theme_a11y_action_label_select">diuzañ</string>
   <!--
     Widget Picker
 
@@ -544,8 +394,6 @@
   <string name="preferences_category_general">Hollek</string>
   <!-- Preference category for all links about Fenix -->
   <string name="preferences_category_about">A-zivout</string>
-  <!-- Preference category for settings related to changing the default search engine -->
-  <string name="preferences_category_select_default_search_engine">Dibabit unan</string>
   <!-- Preference for settings related to managing search shortcuts for the quick search menu -->
   <string name="preferences_manage_search_shortcuts_2">Merañ al luskerioù enklask all</string>
   <!-- Summary for preference for settings related to managing search shortcuts for the quick search menu -->
@@ -650,7 +498,7 @@
   <!-- Preference for accessibility -->
   <string name="preferences_accessibility">Haezadusted</string>
   <!-- Preference to override the Mozilla account server -->
-  <string name="preferences_override_account_server">Dafariad kont Mozilla personelaet</string>
+  <string name="preferences_override_account_server" tools:ignore="BrandUsage">Dafariad kont Mozilla personelaet</string>
   <!-- Preference to override the Sync token server -->
   <string name="preferences_override_sync_tokenserver">Dafariad Sync personelaet</string>
   <!-- Preference category for account information -->
@@ -668,7 +516,7 @@
   <!-- Preference for settings related to visual options -->
   <string name="preferences_customize">Personelaat</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
-  <string name="preferences_account_default_name_2">Kont Mozilla</string>
+  <string name="preferences_account_default_name_2" tools:ignore="BrandUsage">Kont Mozilla</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
   <string name="preferences_account_sync_error">Adkennaskit evit kendercʼhel gant ar goubredañ</string>
   <!-- Preference for language -->
@@ -729,8 +577,6 @@
   <string name="preferences_open_links_in_apps_ask">Goulenn a-raok digeriñ</string>
   <!-- Preference for open links in third party apps never open in apps option -->
   <string name="preferences_open_links_in_apps_never">Morse</string>
-  <!-- Preference for downloads -->
-  <string name="preferences_downloads">Pellgargadurioù</string>
   <!-- Preference for enabling gecko engine logs -->
   <string name="preferences_enable_gecko_logs">Gweredekaat kerzhlevr Gecko</string>
   <!-- Message to indicate users that we are quitting the application to apply the changes -->
@@ -976,7 +822,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">Studioù</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">Aotren Mozilla da staliañ ha da luskañ studioù</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">Aotren Mozilla da staliañ ha da luskañ studioù</string>
   <!-- Preference for reconnecting to FxA sync -->
   <string name="preferences_sync_sign_in_to_reconnect">Kennaskit en-dro</string>
   <!-- Preference for removing FxA account -->
@@ -1019,8 +865,6 @@
   <string name="preference_gestures_website_pull_to_refresh">Sachit da azgrenaat</string>
   <!-- Preference for using the dynamic toolbar -->
   <string name="preference_gestures_dynamic_toolbar">Dibunit da guzhat ar varrenn-ostilhoù</string>
-  <!-- Preference for showing the opened tabs by swiping up on the toolbar -->
-  <string name="preference_gestures_swipe_toolbar_show_tabs">Rikli ar ar varrenn-ostilhoù war-zu an nec’h evit digeriñ ivinelloù</string>
   <!-- Preference for switching tabs by swiping horizontally on the addressbar -->
   <string name="preference_gestures_swipe_toolbar_switch_tabs_2">Riklit ar varrenn chomlec’h war ar c’hostez evit cheñch ivinell</string>
   <!--
@@ -1041,8 +885,6 @@
   <string name="library_desktop_bookmarks_unfiled">Sinedoù all</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Roll istor</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">Ivinell nevez</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Arventennoù</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -1159,28 +1001,14 @@
   <string name="add_tab">Ouzhpennañ un ivinell</string>
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">Ouzhpennañ un ivinell prevez</string>
-  <!-- Text for the new tab button to indicate adding a new private tab in the tab -->
-  <string name="tab_drawer_fab_content" tools:ignore="UnusedResources" moz:removedIn="149">Prevez</string>
-  <!-- Text for the new tab button to indicate syncing command on the synced tabs page -->
-  <string name="tab_drawer_fab_sync" tools:ignore="UnusedResources" moz:removedIn="149">Goubredañ</string>
-  <!-- Text shown in the menu for sharing all tabs -->
-  <string name="tab_tray_menu_item_share" tools:ignore="UnusedResources" moz:removedIn="149">Rannañ an holl ivinelloù</string>
   <!-- Text shown in the menu to view recently closed tabs -->
   <string name="tab_tray_menu_recently_closed">Ivinelloù serret nevez zo</string>
-  <!-- Text shown in the tabs tray inactive tabs section -->
-  <string name="tab_tray_inactive_recently_closed" tools:ignore="UnusedResources" moz:removedIn="149">Serret nevez ’zo</string>
   <!-- Text shown in the menu to view account settings -->
   <string name="tab_tray_menu_account_settings">Arventennoù ar gont</string>
   <!-- Text shown in the menu to view tab settings -->
   <string name="tab_tray_menu_tab_settings">Arventennoù an ivinelloù</string>
   <!-- Text shown in the menu for closing all tabs -->
   <string name="tab_tray_menu_item_close">Serriñ an holl ivinelloù</string>
-  <!-- Text shown in the multiselect menu for bookmarking selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_bookmark" tools:ignore="UnusedResources" moz:removedIn="149">Sined</string>
-  <!-- Text shown in the multiselect menu for closing selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_close" tools:ignore="UnusedResources" moz:removedIn="149">Serriñ</string>
-  <!-- Content description for tabs tray multiselect share button -->
-  <string name="tab_tray_multiselect_share_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Serriñ an ivinelloù diuzet</string>
   <!-- Content description for tabs tray multiselect menu -->
   <string name="tab_tray_multiselect_menu_content_description">Lañser an ivinelloù diuzet</string>
   <!-- Title text displayed for a homepage tab in the tabs tray. -->
@@ -1405,7 +1233,7 @@
   -->
   <string name="tab_crash_title_2">Digarezit. %1$s ne cʼhall ket kargañ ar bajenn.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">Kas an danevell sacʼhadenn da vMozilla</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">Kas an danevell sacʼhadenn da vMozilla</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">Serriñ an ivinell</string>
   <!-- Restore tab button text on the tab crash page -->
@@ -1443,8 +1271,6 @@
   <string name="bookmark_menu_move_button">Dilec\'hiañ</string>
   <!-- Bookmark overflow menu edit button -->
   <string name="bookmark_menu_edit_button">Embann</string>
-  <!-- Bookmark overflow menu copy button -->
-  <string name="bookmark_menu_copy_button" tools:ignore="UnusedResources" moz:removedIn="150">Eilañ</string>
   <!-- Bookmark overflow menu share button -->
   <string name="bookmark_menu_share_button">Rannañ</string>
   <!-- Bookmark overflow menu select all bookmarks -->
@@ -1474,12 +1300,8 @@
   <string name="edit_bookmark_folder_fragment_title">Embann an teuliad</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">TEULIAD</string>
   <!-- Text indicating which folder a bookmark or folder will be saved in -->
   <string name="bookmark_save_in_label">Enrollañ e-barzh</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">ANV</string>
   <!-- Label for a text input field for a bookmark or folder name -->
   <string name="bookmark_name_label_normal_case">Anv</string>
   <!-- Bookmark select folder screen title -->
@@ -1491,13 +1313,11 @@
     %1$s is the host part of the URL of the bookmark deleted, if any
   -->
   <string name="bookmark_deletion_snackbar_message">Dilamet %1$s</string>
-  <!-- Bookmark undo button for deletion snackbar action -->
-  <string name="bookmark_undo_deletion" tools:ignore="UnusedResources" moz:removedIn="150">DIZOBER</string>
-  <!-- Bookmark snackbar message for deleting a single item. %s is the title of the item being deleted -->
-  <string name="bookmark_delete_single_item" tools:ignore="UnusedResources" moz:removedIn="150">%s dilamet</string>
-  <!-- Bookmark snackbar message for deleting multiple items. %s is the number of items being deleted -->
-  <string name="bookmark_delete_multiple_items" tools:ignore="UnusedResources" moz:removedIn="150">Elfennoù dilamet: %s</string>
-  <!-- Content description for the bookmark navigation bar back button -->
+  <!--
+    Bookmark undo button for deletion snackbar action
+
+    Content description for the bookmark navigation bar back button
+  -->
   <string name="bookmark_navigate_back_button_content_description">Kent</string>
   <!-- Content description for the bookmark list new folder navigation bar button -->
   <string name="bookmark_add_new_folder_button_content_description">Ouzhpennañ un teuliad</string>
@@ -1511,8 +1331,6 @@
   <string name="bookmark_item_menu_button_content_description">Elfenn lañser evit %s</string>
   <!-- Title for the bookmark list empty state -->
   <string name="bookmark_empty_list_title">N’eus tamm sined ebet c’hoazh</string>
-  <!-- Description for the bookmark list empty state when you're not signed into sync. -->
-  <string name="bookmark_empty_list_guest_description">Enrollit al lec’hiennoù a feur ma verdeit. Kennaskit da dapout sinedoù eus trevnadoù goubredet all.</string>
   <!-- Text for the button to navigate to sync authentication -->
   <string name="bookmark_empty_list_guest_cta">Kennaskañ evit goubredañ</string>
   <!-- Description for the add new folder button when selecting a folder. -->
@@ -1617,8 +1435,6 @@
   <string name="collections_header">Dastumadoù</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">Lañser an dastumadoù</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">Dastumit an traoù a gont evidoc’h.\nStrollit ar c’hlaskoù, al lec’hiennoù hag an ivinelloù liammet evit mont d’o sellet diwezhatoc’h.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">Diuzañ ivinelloù</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -1735,24 +1551,6 @@
     The app name is in the text, due to limitations with localizing Nimbus experiments
   -->
   <string name="nimbus_notification_default_browser_text" tools:ignore="BrandUsage,UnusedResources">Lakaat Firefox da vezañ ho merdeer dre ziouer</string>
-  <!-- Title shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_title" tools:ignore="UnusedResources" moz:removedIn="150">Klask ar merdeiñ prevez</string>
-  <!--
-    Text shown in the notification that pops up to re-engage the user.
-    %1$s is a placeholder that will be replaced by the app name.
-  -->
-  <string name="notification_re_engagement_text" tools:ignore="UnusedResources" moz:removedIn="150">Merdeiñ hep toupin enrollet pe roll istor e %1$s</string>
-  <!-- Title A shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_A_title" tools:ignore="UnusedResources" moz:removedIn="150">Merdeiñ hep roud ebet</string>
-  <!--
-    Text A shown in the notification that pops up to re-engage the user.
-    %1$s is a placeholder that will be replaced by the app name.
-  -->
-  <string name="notification_re_engagement_A_text" tools:ignore="UnusedResources" moz:removedIn="150">Ar merdeiñ prevez e %1$s ne enroll ket ho titouroù.</string>
-  <!-- Title B shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_B_title" tools:ignore="UnusedResources" moz:removedIn="150">Kregiñ gant ho klask kentañ</string>
-  <!-- Text B shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_B_text" tools:ignore="UnusedResources" moz:removedIn="150">Klask un dra nes. Pe dizoloit un dra bennak plijus.</string>
   <!--
     Survey
 
@@ -1770,16 +1568,12 @@
     Text shown in snackbar when user closes a tab
   -->
   <string name="snackbar_tab_closed">Ivinell serret</string>
-  <!-- Text shown in snackbar when user closes all tabs -->
-  <string name="snackbar_tabs_closed">Ivinelloù serret</string>
   <!-- Text shown in snackbar when user closes multiple inactive tabs. %1$s will be replaced with the number of tabs closed. -->
   <string name="snackbar_num_tabs_closed">Ivinelloù serret: %1$s</string>
   <!-- Text shown in snackbar when user adds a site to shortcuts -->
   <string name="snackbar_added_to_shortcuts">Ouzhpennet er berradennoù!</string>
   <!-- Text shown in snackbar when user closes a private tab -->
   <string name="snackbar_private_tab_closed">Ivinell prevez serret</string>
-  <!-- Text shown in snackbar when user erases their private browsing data -->
-  <string name="snackbar_private_data_deleted">Dilamet eo bet ar roadennoù merdeiñ prevez</string>
   <!-- Text shown in snackbar to undo deleting a tab, top site or collection -->
   <string name="snackbar_deleted_undo">DIZOBER</string>
   <!--
@@ -1803,8 +1597,6 @@
   <string name="preference_accessibility_text_size_summary">Kreskiñ pe zigreskiñ an destenn war al lecʼhiennoù</string>
   <!-- Title for Accessibility Text Size Scaling Preference -->
   <string name="preference_accessibility_font_size_title">Ment an nodrezh</string>
-  <!-- %d is the percentage of the slide bar for setting the text font size and %% will be announced as "percent". -->
-  <string name="a11y_preference_accessibility_font_size_percentage" tools:ignore="UnusedResources" moz:removedIn="148">%d %%.</string>
   <!-- Title for Accessibility Text Automatic Size Scaling Preference -->
   <string name="preference_accessibility_auto_size_2">Ment emgefreek an nodrezh</string>
   <!-- Summary for Accessibility Text Automatic Size Scaling Preference -->
@@ -1844,8 +1636,6 @@
   <string name="preferences_delete_browsing_data_on_quit">Dilemel ar roadennoù merdeiñ pa vez kuitaet</string>
   <!-- Summary for the Delete browsing data on quit preference. "Quit" translation should match delete_browsing_data_on_quit_action translation. -->
   <string name="preference_summary_delete_browsing_data_on_quit_2">Dilemel a raio ar roadennoù merdeiñ ent emgefreek pa zibabot \"Kuitaat\" el lañser pennañ</string>
-  <!-- Action item in menu for the Delete browsing data on quit feature -->
-  <string name="delete_browsing_data_on_quit_action" tools:ignore="UnusedResources" moz:removedIn="149">Kuitaat</string>
   <!-- Title text of a delete browsing data dialog. -->
   <string name="delete_history_prompt_title">Mare da zilemel</string>
   <!-- Body text of a delete browsing data dialog. -->
@@ -1910,7 +1700,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Arventennoù gwarez</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Gwarez heuliañ araoket</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Bremañ gant ar gwarez e-enep an toupinoù, an harz brasañ a-enep an heulierien etre al lec’hiennoù an hini eo.</string>
@@ -2395,26 +2189,12 @@
     the certificate authority that verified the ticket
   -->
   <string name="certificate_info_verified_by">Gwiriet gant:%1$s</string>
-  <!-- Login overflow menu delete button -->
-  <string name="login_menu_delete_button" tools:ignore="UnusedResources" moz:removedIn="149">Dilemel</string>
-  <!-- Login overflow menu edit button -->
-  <string name="login_menu_edit_button" tools:ignore="UnusedResources" moz:removedIn="149">Embann</string>
   <!-- Message in delete confirmation dialog for password -->
   <string name="login_deletion_confirmation_2">Sur ocʼh e fell deocʼh dilemel ar ger-tremen-mañ?</string>
   <!-- Positive action of a dialog asking to delete -->
   <string name="dialog_delete_positive">Dilemel</string>
   <!-- Negative action of a dialog asking to delete login -->
   <string name="dialog_delete_negative">Nullañ</string>
-  <!-- The saved password options menu description. -->
-  <string name="login_options_menu_2" tools:ignore="UnusedResources" moz:removedIn="149">Dibarzhioù ar gerioù-tremen</string>
-  <!-- The editable text field for a website address. -->
-  <string name="saved_login_hostname_description_3" tools:ignore="UnusedResources" moz:removedIn="149">Ar vaezienn destenn kemmus evit chomlec’h ar lec’hienn web.</string>
-  <!-- The editable text field for a username. -->
-  <string name="saved_login_username_description_3" tools:ignore="UnusedResources" moz:removedIn="149">Ar vaezienn destenn kemmus evit an anv arveriad.</string>
-  <!-- The editable text field for a login's password. -->
-  <string name="saved_login_password_description_2" tools:ignore="UnusedResources" moz:removedIn="149">Ar vaezienn destenn kemmus evit ar ger-tremen.</string>
-  <!-- The button description to save changes to an edited password. -->
-  <string name="save_changes_to_login_2" tools:ignore="UnusedResources" moz:removedIn="149">Enrollañ ar cʼhemmoù.</string>
   <!-- The page title for editing a saved password. -->
   <string name="edit_2">Aozañ ar ger-tremen</string>
   <!-- The page title for adding new password. -->
@@ -2541,8 +2321,6 @@
   <string name="default_browser_experiment_card_title">Cheñch ho merdeer dre ziouer</string>
   <!-- Default browser card text -->
   <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">Digeriñ liammoù al lec’hiennoù, posteloù ha kemennadennoù e Firefox en un doare emgefreek.</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">Dilemel</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">Klikit da gaout muioc’h a vunudoù</string>
   <!-- Content description for the action bar "up" button -->
@@ -2560,35 +2338,15 @@
   <!-- Snackbar button text to navigate to telemetry settings. -->
   <string name="experiments_snackbar_button">Mont d’an arventennoù</string>
   <!--
-    Review quality check feature
-
-    Paragraph explaining the grading system we use to classify the reliability of a product's reviews.
-  -->
-  <string name="review_quality_check_info_review_grade_header" moz:removedIn="136" tools:ignore="UnusedResources"><![CDATA[Reiñ a reomp d\'an holl alioù un <b>notenn</b> etre A ha F.]]></string>
-  <!-- Paragraph explaining how a product's adjusted grading is calculated. -->
-  <string name="review_quality_check_explanation_body_adjusted_grading" moz:removedIn="136" tools:ignore="UnusedResources"><![CDATA[An <b>notenn reizhet</b> a zo diazezet war an alioù fizius.]]></string>
-  <!-- Paragraph explaining product review highlights. %s is the name of the retailer (e.g. Amazon). -->
-  <string name="review_quality_check_explanation_body_highlights" moz:removedIn="136" tools:ignore="UnusedResources"><![CDATA[Ar <b>poentoù pouezus</b> a zeu eus alioù %s er 80 devezh diwezhañ a soñj deomp int fizius.]]></string>
-  <!--
     Accessibility services actions labels. These will be appended to accessibility actions like "Double tap to.." but not by or applications but by services like Talkback.
 
     Action label for elements that can be collapsed if interacting with them. Talkback will append this to say "Double tap to collapse".
   -->
   <string name="a11y_action_label_collapse">bihanaat</string>
-  <!-- Current state for elements that can be collapsed if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_collapsed">kuzhet</string>
   <!-- Action label for elements that can be expanded if interacting with them. Talkback will append this to say "Double tap to expand". -->
   <string name="a11y_action_label_expand">astenn</string>
-  <!-- Current state for elements that can be expanded if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_expanded">dispaket</string>
   <!-- Action label for links to a website containing documentation about a wallpaper collection. Talkback will append this to say "Double tap to open link to learn more about this collection". -->
   <string name="a11y_action_label_wallpaper_collection_learn_more">digeriñ an ere evit gouzout hiroc’h diwar-benn an dastumad-mañ</string>
-  <!-- Content description for headings announced by accessibility service. %s is the text of the heading. Talkback will announce the text and then speak the word "Heading" indicating to the user that this text is a heading for a section. -->
-  <string name="a11y_heading">%s, titl</string>
-  <!-- Title for dialog displayed when trying to access links present in a text. -->
-  <string name="a11y_links_title">Ereoù</string>
-  <!-- Additional content description for text bodies that contain urls. -->
-  <string name="a11y_links_available">Liammoù da gaout</string>
   <!-- Translations feature -->
 
   <!--
@@ -2623,8 +2381,6 @@
   <string name="translation_error_could_not_translate_warning_text">Ur gudenn zo bet gant an droidigezh. Klaskit en-dro.</string>
   <!-- The title of the warning card informs the user that the list of languages cannot be loaded. -->
   <string name="translation_error_could_not_load_languages_warning_text">N’haller ket kargañ ar yezhoù. Gwiriit ma’z oc’h kennasket ouzh ar genrouedad.</string>
-  <!-- The title of the warning card informs the user that a language is not supported. %1$s is the name of the language that is not supported. -->
-  <string name="translation_error_language_not_supported_warning_text">Hon digarezit, n’eo ket skoret ar yezh \"%1$s\" c’hoazh.</string>
   <!-- Snackbar title shown if the user closes the Translation Request dialogue and a translation is in progress. -->
   <string name="translation_in_progress_snackbar">O treiñ…</string>
   <!--

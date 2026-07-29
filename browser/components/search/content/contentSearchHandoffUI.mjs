@@ -1324,7 +1324,7 @@ class ContentSearchHandoffUI extends MozLitElement {
   }
 
   #handoffTemplate() {
-    return html` <button
+    return html`<button
       class="search-handoff-button"
       @click=${this.#onSearchHandoffClick}
       tabindex="-1"

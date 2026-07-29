@@ -4,11 +4,11 @@
 
 package mozilla.components.feature.prompts.dialog
 
-import androidx.fragment.app.DialogFragment
 import mozilla.components.concept.engine.prompt.PromptRequest
 import mozilla.components.concept.storage.CreditCardValidationDelegate
 import mozilla.components.concept.storage.LoginValidationDelegate
 import mozilla.components.feature.prompts.login.LoginExceptions
+import mozilla.components.support.base.android.NoObscuredTouchesDialogFragment
 
 internal const val KEY_SESSION_ID = "KEY_SESSION_ID"
 internal const val KEY_TITLE = "KEY_TITLE"
@@ -20,7 +20,7 @@ internal const val KEY_SHOULD_DISMISS_ON_LOAD = "KEY_SHOULD_DISMISS_ON_LOAD"
  * An abstract representation for all different types of prompt dialogs.
  * for handling [PromptFeature] dialogs.
  */
-internal abstract class PromptDialogFragment : DialogFragment() {
+internal abstract class PromptDialogFragment : NoObscuredTouchesDialogFragment() {
     var feature: Prompter? = null
 
     internal val sessionId: String by lazy { requireNotNull(arguments).getString(KEY_SESSION_ID)!! }

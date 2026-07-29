@@ -131,7 +131,7 @@ enum class PhoneFeature(val androidPermissionsList: Array<String>) : Parcelable 
             MEDIA_KEY_SYSTEM_ACCESS -> iconsR.drawable.mozac_ic_link_24
             AUTOPLAY, AUTOPLAY_AUDIBLE, AUTOPLAY_INAUDIBLE -> iconsR.drawable.mozac_ic_autoplay_24
             LOCAL_DEVICE_ACCESS -> iconsR.drawable.mozac_ic_device_desktop_24
-            LOCAL_NETWORK_ACCESS -> iconsR.drawable.mozac_ic_router_24
+            LOCAL_NETWORK_ACCESS -> iconsR.drawable.mozac_ic_local_network_24
         }
     }
 

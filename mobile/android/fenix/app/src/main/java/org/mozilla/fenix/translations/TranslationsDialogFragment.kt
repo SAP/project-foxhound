@@ -38,7 +38,6 @@ import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.openToBrowser
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.runIfFragmentIsAttached
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.theme.FirefoxTheme
@@ -101,7 +100,7 @@ class TranslationsDialogFragment : BottomSheetDialogFragment() {
             listOf(
                 TranslationsDialogMiddleware(
                     browserStore = browserStore,
-                    settings = requireContext().settings(),
+                    settings = requireComponents.settings,
                 ),
             ),
         )
@@ -255,7 +254,7 @@ class TranslationsDialogFragment : BottomSheetDialogFragment() {
             translationsDialogState = translationsDialogState,
             learnMoreUrl = learnMoreUrl,
             showPageSettings = showPageSettings,
-            showFirstTime = requireContext().settings().showFirstTimeTranslation,
+            showFirstTime = requireComponents.settings.showFirstTimeTranslation,
             onSettingClicked = onSettingClicked,
             onLearnMoreClicked = { openBrowserAndLoad(learnMoreUrl) },
             onPositiveButtonClicked = {
@@ -320,7 +319,7 @@ class TranslationsDialogFragment : BottomSheetDialogFragment() {
             translationsDialogStore.dispatch(TranslationsDialogAction.FetchSupportedLanguages)
         } else {
             if (isDataSaverEnabledAndWifiDisabled &&
-                !requireContext().settings().ignoreTranslationsDataSaverWarning &&
+                !requireComponents.settings.ignoreTranslationsDataSaverWarning &&
                 translationsDialogState?.translationDownloadSize != null
             ) {
                 onShowDownloadLanguageFileDialog()
@@ -345,7 +344,7 @@ class TranslationsDialogFragment : BottomSheetDialogFragment() {
             isCheckBoxEnabled = checkBoxEnabled,
             onSavingModeStateChange = { checkBoxEnabled = it },
             onConfirmDownload = {
-                requireContext().settings().ignoreTranslationsDataSaverWarning = checkBoxEnabled
+                requireComponents.settings.ignoreTranslationsDataSaverWarning = checkBoxEnabled
                 onConfirmDownload()
                 translationsDialogStore.dispatch(TranslationsDialogAction.TranslateAction)
             },
@@ -433,8 +432,8 @@ class TranslationsDialogFragment : BottomSheetDialogFragment() {
     }
 
     private fun dismissDialog() {
-        if (requireContext().settings().showFirstTimeTranslation) {
-            requireContext().settings().showFirstTimeTranslation = false
+        if (requireComponents.settings.showFirstTimeTranslation) {
+            requireComponents.settings.showFirstTimeTranslation = false
         }
         dismiss()
     }

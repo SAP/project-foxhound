@@ -60,7 +60,7 @@ class nsHtml5Portability {
                                            int32_t length,
                                            const StringTaint& taint,
                                            nsHtml5TreeBuilder* treeBuilder,
-                                           bool maybeAtomize);
+                                           nsHtml5AtomTable* interner);
   static nsHtml5String newEmptyString();
   static nsHtml5String newStringFromLiteral(const char* literal);
   static nsHtml5String newStringFromString(nsHtml5String string);
@@ -75,6 +75,8 @@ class nsHtml5Portability {
   static bool stringEqualsString(nsHtml5String one, nsHtml5String other);
   static void initializeStatics();
   static void releaseStatics();
+
+#include "nsHtml5PortabilityHSupplement.h"
 };
 
 #endif

@@ -174,7 +174,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">URL అతికించండి లేదా ఇవ్వండి</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">ఉదాహరణ: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">ఉదాహరణ: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">ఉదాహరణ: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -234,12 +234,12 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">%1$s‌ను అప్రమేయ విహారిణి చేయి</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">వాడుక దత్తాంశాన్ని పంపించు</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">ఇంకా తెలుసుకోండి</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">%1$s‌ని అందరికీ అందించడానికి, మెరుగుపరచడానికి ఎంత తక్కవ అవసరమో అంతే సేకరించడానికి మొజిల్లా కృషిచేస్తుంది.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">%1$s‌ని అందరికీ అందించడానికి, మెరుగుపరచడానికి ఎంత తక్కవ అవసరమో అంతే సేకరించడానికి మొజిల్లా కృషిచేస్తుంది.</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">గోప్యతా విధానం</string>
   <!-- Item in Preferences that shows the about page. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar"). -->
@@ -504,7 +504,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">ట్యాబును మూసివేయి</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">క్రాష్ నివేదికను మొజిల్లాకు పంపు</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">క్రాష్ నివేదికను మొజిల్లాకు పంపు</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

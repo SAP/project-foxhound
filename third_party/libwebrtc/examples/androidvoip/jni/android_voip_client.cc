@@ -20,12 +20,12 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "absl/memory/memory.h"
-#include "api/array_view.h"
 #include "api/audio/builtin_audio_processing_builder.h"
 #include "api/audio_codecs/audio_format.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
@@ -138,14 +138,14 @@ namespace webrtc_examples {
 
 AndroidVoipClient::AndroidVoipClient(
     JNIEnv* env,
-    const jni_zero::JavaParamRef<jobject>& j_voip_client)
+    const jni_zero::JavaRef<jobject>& j_voip_client)
     : webrtc_env_(webrtc::CreateEnvironment()),
       voip_thread_(webrtc::Thread::CreateWithSocketServer()),
       j_voip_client_(env, j_voip_client) {}
 
 void AndroidVoipClient::Init(
     JNIEnv* env,
-    const jni_zero::JavaParamRef<jobject>& application_context) {
+    const jni_zero::JavaRef<jobject>& application_context) {
   webrtc::VoipEngineConfig config;
   config.encoder_factory = webrtc::CreateBuiltinAudioEncoderFactory();
   config.decoder_factory = webrtc::CreateBuiltinAudioDecoderFactory();
@@ -190,8 +190,8 @@ AndroidVoipClient::~AndroidVoipClient() {
 
 AndroidVoipClient* AndroidVoipClient::Create(
     JNIEnv* env,
-    const jni_zero::JavaParamRef<jobject>& application_context,
-    const jni_zero::JavaParamRef<jobject>& j_voip_client) {
+    const jni_zero::JavaRef<jobject>& application_context,
+    const jni_zero::JavaRef<jobject>& j_voip_client) {
   // Using `new` to access a non-public constructor.
   auto voip_client =
       absl::WrapUnique(new AndroidVoipClient(env, j_voip_client));
@@ -249,7 +249,7 @@ void AndroidVoipClient::SetEncoder(const std::string& encoder) {
 
 void AndroidVoipClient::SetEncoder(
     JNIEnv* env,
-    const jni_zero::JavaParamRef<jstring>& j_encoder_string) {
+    const jni_zero::JavaRef<jstring>& j_encoder_string) {
   const std::string& chosen_encoder =
       webrtc::JavaToNativeString(env, j_encoder_string);
   voip_thread_->PostTask(
@@ -278,7 +278,7 @@ void AndroidVoipClient::SetDecoders(const std::vector<std::string>& decoders) {
 
 void AndroidVoipClient::SetDecoders(
     JNIEnv* env,
-    const jni_zero::JavaParamRef<jobject>& j_decoder_strings) {
+    const jni_zero::JavaRef<jobject>& j_decoder_strings) {
   const std::vector<std::string>& chosen_decoders =
       webrtc::JavaListToNativeVector<std::string, jstring>(
           env, j_decoder_strings, &webrtc::JavaToNativeString);
@@ -296,7 +296,7 @@ void AndroidVoipClient::SetLocalAddress(const std::string& ip_address,
 
 void AndroidVoipClient::SetLocalAddress(
     JNIEnv* env,
-    const jni_zero::JavaParamRef<jstring>& j_ip_address_string,
+    const jni_zero::JavaRef<jstring>& j_ip_address_string,
     jint j_port_number_int) {
   const std::string& ip_address =
       webrtc::JavaToNativeString(env, j_ip_address_string);
@@ -315,7 +315,7 @@ void AndroidVoipClient::SetRemoteAddress(const std::string& ip_address,
 
 void AndroidVoipClient::SetRemoteAddress(
     JNIEnv* env,
-    const jni_zero::JavaParamRef<jstring>& j_ip_address_string,
+    const jni_zero::JavaRef<jstring>& j_ip_address_string,
     jint j_port_number_int) {
   const std::string& ip_address =
       webrtc::JavaToNativeString(env, j_ip_address_string);
@@ -481,7 +481,7 @@ void AndroidVoipClient::SendRtpPacket(const std::vector<uint8_t>& packet_copy) {
   }
 }
 
-bool AndroidVoipClient::SendRtp(webrtc::ArrayView<const uint8_t> packet,
+bool AndroidVoipClient::SendRtp(std::span<const uint8_t> packet,
                                 const webrtc::PacketOptions& options) {
   std::vector<uint8_t> packet_copy(packet.begin(), packet.end());
   voip_thread_->PostTask([this, packet_copy = std::move(packet_copy)] {
@@ -501,7 +501,7 @@ void AndroidVoipClient::SendRtcpPacket(
   }
 }
 
-bool AndroidVoipClient::SendRtcp(webrtc::ArrayView<const uint8_t> packet,
+bool AndroidVoipClient::SendRtcp(std::span<const uint8_t> packet,
                                  const webrtc::PacketOptions& options) {
   std::vector<uint8_t> packet_copy(packet.begin(), packet.end());
   voip_thread_->PostTask([this, packet_copy = std::move(packet_copy)] {
@@ -519,7 +519,7 @@ void AndroidVoipClient::ReadRTPPacket(const std::vector<uint8_t>& packet_copy) {
   }
   webrtc::VoipResult result = voip_engine_->Network().ReceivedRTPPacket(
       *channel_,
-      webrtc::ArrayView<const uint8_t>(packet_copy.data(), packet_copy.size()));
+      std::span<const uint8_t>(packet_copy.data(), packet_copy.size()));
   RTC_CHECK(result == webrtc::VoipResult::kOk);
 }
 
@@ -543,7 +543,7 @@ void AndroidVoipClient::ReadRTCPPacket(
   }
   webrtc::VoipResult result = voip_engine_->Network().ReceivedRTCPPacket(
       *channel_,
-      webrtc::ArrayView<const uint8_t>(packet_copy.data(), packet_copy.size()));
+      std::span<const uint8_t>(packet_copy.data(), packet_copy.size()));
   RTC_CHECK(result == webrtc::VoipResult::kOk);
 }
 
@@ -559,8 +559,8 @@ void AndroidVoipClient::OnSignalReadRTCPPacket(
 
 static jlong JNI_VoipClient_CreateClient(
     JNIEnv* env,
-    const jni_zero::JavaParamRef<jobject>& application_context,
-    const jni_zero::JavaParamRef<jobject>& j_voip_client) {
+    const jni_zero::JavaRef<jobject>& application_context,
+    const jni_zero::JavaRef<jobject>& j_voip_client) {
   return webrtc::NativeToJavaPointer(
       AndroidVoipClient::Create(env, application_context, j_voip_client));
 }

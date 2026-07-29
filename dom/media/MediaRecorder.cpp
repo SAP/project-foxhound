@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -42,7 +40,8 @@
 #include "nsTArray.h"
 
 mozilla::LazyLogModule gMediaRecorderLog("MediaRecorder");
-#define LOG(type, msg) MOZ_LOG(gMediaRecorderLog, type, msg)
+#define LOG(type, ...) \
+  MOZ_LOG_FMT(gMediaRecorderLog, type, MOZ_LOG_EXPAND_ARGS __VA_ARGS__)
 
 constexpr int MIN_VIDEO_BITRATE_BPS = 10e3;        // 10kbps
 constexpr int DEFAULT_VIDEO_BITRATE_BPS = 2500e3;  // 2.5Mbps
@@ -607,7 +606,7 @@ static nsTArray<nsCString> GetMIMELabelStrings(const ParsedMIMEType& aType) {
   if (aType.mCodecs.IsEmpty()) {
     nsCString label = baseLabel;
     label.AppendLiteral("_unspecified");
-    labels.AppendElement(label);
+    labels.AppendElement(std::move(label));
     return labels;
   }
   for (const auto& codec : aType.mCodecs) {
@@ -620,10 +619,10 @@ static nsTArray<nsCString> GetMIMELabelStrings(const ParsedMIMEType& aType) {
       label.AppendLiteral("_others");
     }
     LOG(LogLevel::Verbose,
-        ("GetMIMELabelStrings: type: %s, container: %s, codec: %s => label: %s",
+        ("GetMIMELabelStrings: type: {}, container: {}, codec: {} => label: {}",
          ToString(aType.mMediaType).c_str(), ToString(aType.mContainer).c_str(),
          ToString(codec).c_str(), label.get()));
-    labels.AppendElement(label);
+    labels.AppendElement(std::move(label));
   }
   return labels;
 }
@@ -633,7 +632,7 @@ static nsTArray<nsCString> GetMIMELabelStrings(const ParsedMIMEType& aType) {
 // secondary benefit.
 static void RecordQueriedMIMEType(const Maybe<MediaContainerType>& aMimeType,
                                   const nsAString& aMimeTypeString) {
-  LOG(LogLevel::Verbose, ("RecordQueriedMIMEType: %s",
+  LOG(LogLevel::Verbose, ("RecordQueriedMIMEType: {}",
                           NS_ConvertUTF16toUTF8(aMimeTypeString).get()));
   if (aMimeTypeString.IsEmpty()) {
     LOG(LogLevel::Verbose, ("MIME queried is empty"));
@@ -643,7 +642,7 @@ static void RecordQueriedMIMEType(const Maybe<MediaContainerType>& aMimeType,
   ParsedMIMEType aType = ParseMimeType(aMimeType);
   nsTArray<nsCString> labels = GetMIMELabelStrings(aType);
   for (const auto& label : labels) {
-    LOG(LogLevel::Verbose, ("MIME queried: %s", label.get()));
+    LOG(LogLevel::Verbose, ("MIME queried: {}", label.get()));
     glean::media_recorder::mime_type_query.Get(label).Add(1);
   }
 }
@@ -838,8 +837,8 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
 
   void NotifyTrackAdded(const RefPtr<MediaStreamTrack>& aTrack) override {
     LOG(LogLevel::Warning,
-        ("Session.NotifyTrackAdded %p Raising error due to track set change",
-         this));
+        ("Session.NotifyTrackAdded {} Raising error due to track set change",
+         fmt::ptr(this)));
     // There's a chance we have a sensible JS stack here.
     if (!mRecorder->mOtherDomException) {
       mRecorder->mOtherDomException = DOMException::Create(
@@ -856,8 +855,8 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
       return;
     }
     LOG(LogLevel::Warning,
-        ("Session.NotifyTrackRemoved %p Raising error due to track set change",
-         this));
+        ("Session.NotifyTrackRemoved {} Raising error due to track set change",
+         fmt::ptr(this)));
     // There's a chance we have a sensible JS stack here.
     if (!mRecorder->mOtherDomException) {
       mRecorder->mOtherDomException = DOMException::Create(
@@ -869,7 +868,7 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
   }
 
   void Start(TimeDuration aTimeslice) {
-    LOG(LogLevel::Debug, ("Session.Start %p", this));
+    LOG(LogLevel::Debug, ("Session.Start {}", fmt::ptr(this)));
     MOZ_ASSERT(NS_IsMainThread());
 
     if (mRecorder->mStream) {
@@ -893,7 +892,7 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
         t->AddPrincipalChangeObserver(this);
       }
 
-      LOG(LogLevel::Debug, ("Session.Start track types = (%d)", trackTypes));
+      LOG(LogLevel::Debug, ("Session.Start track types = ({})", trackTypes));
       InitEncoder(trackTypes, mMediaStreamTracks[0]->Graph()->GraphRate(),
                   aTimeslice);
       return;
@@ -912,7 +911,7 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
   }
 
   void Stop() {
-    LOG(LogLevel::Debug, ("Session.Stop %p", this));
+    LOG(LogLevel::Debug, ("Session.Stop {}", fmt::ptr(this)));
     MOZ_ASSERT(NS_IsMainThread());
 
     if (mEncoder) {
@@ -933,7 +932,8 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
 
     if (mRunningState.isOk() &&
         mRunningState.inspect() == RunningState::Idling) {
-      LOG(LogLevel::Debug, ("Session.Stop Explicit end task %p", this));
+      LOG(LogLevel::Debug,
+          ("Session.Stop Explicit end task {}", fmt::ptr(this)));
       // End the Session directly if there is no encoder.
       DoSessionEndTask(NS_OK);
     } else if (mRunningState.isOk() &&
@@ -1019,12 +1019,12 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
     MOZ_ASSERT(NS_IsMainThread());
     MOZ_ASSERT(mShutdownPromise);
     MOZ_ASSERT(!mShutdownBlocker);
-    LOG(LogLevel::Debug, ("Session.~Session (%p)", this));
+    LOG(LogLevel::Debug, ("Session.~Session ({})", fmt::ptr(this)));
   }
 
   void InitEncoder(uint8_t aTrackTypes, TrackRate aTrackRate,
                    TimeDuration aTimeslice) {
-    LOG(LogLevel::Debug, ("Session.InitEncoder %p", this));
+    LOG(LogLevel::Debug, ("Session.InitEncoder {}", fmt::ptr(this)));
     MOZ_ASSERT(NS_IsMainThread());
 
     if (!mRunningState.isOk() ||
@@ -1038,9 +1038,9 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
     RefPtr<SharedThreadPool> pool =
         GetMediaThreadPool(MediaThreadType::WEBRTC_WORKER);
     if (!pool) {
-      LOG(LogLevel::Debug, ("Session.InitEncoder %p Failed to create "
+      LOG(LogLevel::Debug, ("Session.InitEncoder {} Failed to create "
                             "MediaRecorderReadThread thread pool",
-                            this));
+                            fmt::ptr(this)));
       DoSessionEndTask(NS_ERROR_FAILURE);
       return;
     }
@@ -1066,7 +1066,8 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
     nsCOMPtr<nsIAsyncShutdownClient> barrier = GetShutdownBarrier();
     if (!barrier) {
       LOG(LogLevel::Error,
-          ("Session.InitEncoder %p Failed to get shutdown barrier", this));
+          ("Session.InitEncoder {} Failed to get shutdown barrier",
+           fmt::ptr(this)));
       DoSessionEndTask(NS_ERROR_FAILURE);
       return;
     }
@@ -1087,7 +1088,8 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
         aTrackTypes, aTrackRate, maxMemory, aTimeslice);
 
     if (!mEncoder) {
-      LOG(LogLevel::Error, ("Session.InitEncoder !mEncoder %p", this));
+      LOG(LogLevel::Error,
+          ("Session.InitEncoder !mEncoder {}", fmt::ptr(this)));
       DoSessionEndTask(NS_ERROR_ABORT);
       return;
     }
@@ -1256,7 +1258,8 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
     }
     if (NS_WARN_IF(NS_FAILED(mRecorder->CreateAndDispatchBlobEvent(aBlob)))) {
       LOG(LogLevel::Warning,
-          ("MediaRecorder %p Creating or dispatching BlobEvent failed", this));
+          ("MediaRecorder {} Creating or dispatching BlobEvent failed",
+           fmt::ptr(this)));
       DoSessionEndTask(NS_OK);
     }
   }
@@ -1273,7 +1276,7 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
 
   RefPtr<ShutdownPromise> Shutdown() {
     MOZ_ASSERT(NS_IsMainThread());
-    LOG(LogLevel::Debug, ("Session Shutdown %p", this));
+    LOG(LogLevel::Debug, ("Session Shutdown {}", fmt::ptr(this)));
 
     if (mShutdownPromise) {
       return mShutdownPromise;
@@ -1395,7 +1398,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(MediaRecorder::Session)
 NS_INTERFACE_MAP_END_INHERITING(DOMMediaStream::TrackListener)
 
 MediaRecorder::~MediaRecorder() {
-  LOG(LogLevel::Debug, ("~MediaRecorder (%p)", this));
+  LOG(LogLevel::Debug, ("~MediaRecorder ({})", fmt::ptr(this)));
   UnRegisterActivityObserver();
 }
 
@@ -1426,7 +1429,7 @@ void MediaRecorder::GetMimeType(nsString& aMimeType) { aMimeType = mMimeType; }
 
 void MediaRecorder::Start(const Optional<uint32_t>& aTimeslice,
                           ErrorResult& aResult) {
-  LOG(LogLevel::Debug, ("MediaRecorder.Start %p", this));
+  LOG(LogLevel::Debug, ("MediaRecorder.Start {}", fmt::ptr(this)));
 
   InitializeDomExceptions();
 
@@ -1480,7 +1483,8 @@ void MediaRecorder::Start(const Optional<uint32_t>& aTimeslice,
   }
   if (mAudioNode && !AudioNodePrincipalSubsumes(this, mAudioNode)) {
     LOG(LogLevel::Warning,
-        ("MediaRecorder %p Start AudioNode principal check failed", this));
+        ("MediaRecorder {} Start AudioNode principal check failed",
+         fmt::ptr(this)));
     aResult.ThrowSecurityError(
         "The AudioNode's isolation properties disallow access from "
         "MediaRecorder");
@@ -1602,7 +1606,7 @@ void MediaRecorder::Start(const Optional<uint32_t>& aTimeslice,
 }
 
 void MediaRecorder::Stop(ErrorResult& aResult) {
-  LOG(LogLevel::Debug, ("MediaRecorder.Stop %p", this));
+  LOG(LogLevel::Debug, ("MediaRecorder.Stop {}", fmt::ptr(this)));
   MediaRecorderReporter::RemoveMediaRecorder(this);
 
   // When a MediaRecorder object’s stop() method is invoked, the UA MUST run the
@@ -1632,7 +1636,7 @@ void MediaRecorder::Stop(ErrorResult& aResult) {
 }
 
 void MediaRecorder::Pause(ErrorResult& aResult) {
-  LOG(LogLevel::Debug, ("MediaRecorder.Pause %p", this));
+  LOG(LogLevel::Debug, ("MediaRecorder.Pause {}", fmt::ptr(this)));
 
   // When a MediaRecorder object’s pause() method is invoked, the UA MUST run
   // the following steps:
@@ -1671,7 +1675,7 @@ void MediaRecorder::Pause(ErrorResult& aResult) {
 }
 
 void MediaRecorder::Resume(ErrorResult& aResult) {
-  LOG(LogLevel::Debug, ("MediaRecorder.Resume %p", this));
+  LOG(LogLevel::Debug, ("MediaRecorder.Resume {}", fmt::ptr(this)));
 
   // When a MediaRecorder object’s resume() method is invoked, the UA MUST run
   // the following steps:
@@ -1709,7 +1713,7 @@ void MediaRecorder::Resume(ErrorResult& aResult) {
 }
 
 void MediaRecorder::RequestData(ErrorResult& aResult) {
-  LOG(LogLevel::Debug, ("MediaRecorder.RequestData %p", this));
+  LOG(LogLevel::Debug, ("MediaRecorder.RequestData {}", fmt::ptr(this)));
 
   // When a MediaRecorder object’s requestData() method is invoked, the UA MUST
   // run the following steps:
@@ -1940,12 +1944,12 @@ bool MediaRecorder::IsTypeSupported(const nsAString& aMIMEType) {
 nsresult MediaRecorder::CreateAndDispatchBlobEvent(BlobImpl* aBlobImpl) {
   MOZ_ASSERT(NS_IsMainThread(), "Not running on main thread");
 
-  if (!GetOwnerGlobal()) {
+  if (!GetRelevantGlobal()) {
     // This MediaRecorder has been disconnected in the meantime.
     return NS_ERROR_FAILURE;
   }
 
-  RefPtr<Blob> blob = Blob::Create(GetOwnerGlobal(), aBlobImpl);
+  RefPtr<Blob> blob = Blob::Create(GetRelevantGlobal(), aBlobImpl);
   if (NS_WARN_IF(!blob)) {
     return NS_ERROR_FAILURE;
   }
@@ -1973,8 +1977,8 @@ void MediaRecorder::DispatchSimpleEvent(const nsAString& aStr) {
   rv = DOMEventTargetHelper::DispatchTrustedEvent(aStr);
   if (NS_FAILED(rv)) {
     LOG(LogLevel::Error,
-        ("MediaRecorder.DispatchSimpleEvent: DispatchTrustedEvent failed  %p",
-         this));
+        ("MediaRecorder.DispatchSimpleEvent: DispatchTrustedEvent failed  {}",
+         fmt::ptr(this)));
     NS_ERROR("Failed to dispatch the event!!!");
   }
 }
@@ -2003,7 +2007,7 @@ void MediaRecorder::NotifyError(nsresult aRv) {
     default:
       if (mOtherDomException && aRv == mOtherDomException->GetResult()) {
         LOG(LogLevel::Debug, ("MediaRecorder.NotifyError: "
-                              "mOtherDomException being fired for aRv: %X",
+                              "mOtherDomException being fired for aRv: {:X}",
                               uint32_t(aRv)));
         init.mError = std::move(mOtherDomException);
         break;
@@ -2014,7 +2018,7 @@ void MediaRecorder::NotifyError(nsresult aRv) {
         mUnknownDomException = DOMException::Create(NS_ERROR_DOM_UNKNOWN_ERR);
       }
       LOG(LogLevel::Debug, ("MediaRecorder.NotifyError: "
-                            "mUnknownDomException being fired for aRv: %X",
+                            "mUnknownDomException being fired for aRv: {:X}",
                             uint32_t(aRv)));
       init.mError = std::move(mUnknownDomException);
       break;
@@ -2032,7 +2036,8 @@ void MediaRecorder::NotifyError(nsresult aRv) {
 }
 
 void MediaRecorder::RemoveSession(Session* aSession) {
-  LOG(LogLevel::Debug, ("MediaRecorder.RemoveSession (%p)", aSession));
+  LOG(LogLevel::Debug,
+      ("MediaRecorder.RemoveSession ({})", fmt::ptr(aSession)));
   mSessions.RemoveElement(aSession);
 }
 
@@ -2042,10 +2047,10 @@ void MediaRecorder::NotifyOwnerDocumentActivityChanged() {
   Document* doc = window->GetExtantDoc();
   NS_ENSURE_TRUE_VOID(doc);
 
-  LOG(LogLevel::Debug, ("MediaRecorder %p NotifyOwnerDocumentActivityChanged "
-                        "IsActive=%d, "
-                        "IsVisible=%d, ",
-                        this, doc->IsActive(), doc->IsVisible()));
+  LOG(LogLevel::Debug, ("MediaRecorder {} NotifyOwnerDocumentActivityChanged "
+                        "IsActive={}, "
+                        "IsVisible={}, ",
+                        fmt::ptr(this), doc->IsActive(), doc->IsVisible()));
   if (!doc->IsActive() || !doc->IsVisible()) {
     // Stop the session.
     ErrorResult result;
@@ -2055,7 +2060,7 @@ void MediaRecorder::NotifyOwnerDocumentActivityChanged() {
 }
 
 void MediaRecorder::Inactivate() {
-  LOG(LogLevel::Debug, ("MediaRecorder.Inactivate %p", this));
+  LOG(LogLevel::Debug, ("MediaRecorder.Inactivate {}", fmt::ptr(this)));
   // The Inactivate the recorder algorithm given a recorder, is as follows:
 
   // 1. Set recorder’s mimeType attribute to the value of the

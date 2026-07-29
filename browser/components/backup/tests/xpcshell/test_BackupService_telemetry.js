@@ -49,8 +49,7 @@ add_setup(function setup() {
 });
 
 /**
- * Gets a telemetry event and checks that it looks the same between Glean and
- * legacy telemetry, i.e. that the extra data is equal.
+ * Gets a telemetry event and returns its extra data.
  *
  * @param {string} name
  *   The Glean programming name of the event, e.g. turnOn instead of turn_on.
@@ -60,19 +59,6 @@ add_setup(function setup() {
 function assertSingleTelemetryEvent(name) {
   let value = Glean.browserBackup[name].testGetValue();
   Assert.equal(value.length, 1, `${name} Glean event was recorded once.`);
-
-  let snakeName = name.replace(/([A-Z])/g, "_$1").toLowerCase();
-  let legacy = TelemetryTestUtils.getEvents(
-    { category: "browser.backup", method: snakeName, object: "BackupService" },
-    { process: "parent" }
-  );
-  Assert.equal(legacy.length, 1, `${name} legacy event was recorded once.`);
-
-  Assert.deepEqual(
-    legacy[0].extra,
-    value[0].extra,
-    "Legacy telemetry measured the same data as Glean."
-  );
   return value[0].extra;
 }
 
@@ -107,8 +93,7 @@ function assertEventMatches(name, destPath, encrypted) {
 }
 
 /**
- * Determines the path to 'source' from the profile directory to reduce the
- * length and avoid truncation within legacy telemetry.
+ * Determines the path to 'source' from the profile directory.
  *
  * @param {string} path
  *   The file that should be pointed to.
@@ -167,7 +152,6 @@ async function template(name, encrypted, reason) {
   let resolver = Promise.withResolvers();
   locks.request(BackupService.WRITE_BACKUP_LOCK_NAME, () => {
     Services.fog.testResetFOG();
-    Services.telemetry.clearEvents();
 
     let promise = bs.createBackup({ profilePath, reason });
 
@@ -217,49 +201,148 @@ add_task(async function test_toggleOn() {
   });
 
   Services.fog.testResetFOG();
-  Services.telemetry.clearEvents();
   bs.onUpdateScheduledBackups(true);
   assertEventMatches("toggleOn", backupDir, false);
 
   Services.fog.testResetFOG();
-  Services.telemetry.clearEvents();
   bs.onUpdateScheduledBackups(false);
   assertSingleTelemetryEvent("toggleOff");
 
   await bs.enableEncryption(TEST_PASSWORD, profilePath);
   Services.fog.testResetFOG();
-  Services.telemetry.clearEvents();
   bs.onUpdateScheduledBackups(true);
   assertEventMatches("toggleOn", backupDir, true);
 
   Services.fog.testResetFOG();
-  Services.telemetry.clearEvents();
   bs.onUpdateScheduledBackups(false);
   assertSingleTelemetryEvent("toggleOff");
 });
 
+add_task(async function test_schedulerToggleSource() {
+  // setScheduledBackups() flips the pref, which fires a pref observer that
+  // calls BackupService.get().onUpdateScheduledBackups(...). We need to drive
+  // the singleton (not a fresh `new BackupService()`) so the stashed source
+  // and the observer-invoked metric write live on the same instance.
+  let bs = BackupService.init();
+  registerCleanupFunction(() => BackupService.uninit());
+
+  let backupDir = PathUtils.join(PathUtils.tempDir, "schedulerSource_dest");
+  Services.prefs.setStringPref(BACKUP_DIR_PREF_NAME, backupDir);
+
+  // Make sure scheduled backups are off before each sub-case.
+  if (bs.state.scheduledBackupsEnabled) {
+    bs.onUpdateScheduledBackups(false);
+  }
+  Services.prefs.clearUserPref("browser.backup.scheduled.enabled");
+
+  sinon.stub(bs, "classifyLocationForTelemetry").callsFake(() => "documents");
+
+  // setScheduledBackups(true, source) should propagate the source string to
+  // the scheduler_toggle_source metric via onUpdateScheduledBackups.
+  Services.fog.testResetFOG();
+  bs.setScheduledBackups(true, "ENABLE_MESSAGE_ID");
+  Assert.equal(
+    Glean.browserBackup.schedulerToggleSource.testGetValue(),
+    "ENABLE_MESSAGE_ID",
+    "Source argument propagated to scheduler_toggle_source on enable."
+  );
+
+  // setScheduledBackups(false, source) should propagate the source string on
+  // disable as well.
+  Services.fog.testResetFOG();
+  bs.setScheduledBackups(false, "DISABLE_MESSAGE_ID");
+  Assert.equal(
+    Glean.browserBackup.schedulerToggleSource.testGetValue(),
+    "DISABLE_MESSAGE_ID",
+    "Source argument propagated to scheduler_toggle_source on disable."
+  );
+
+  // Default is "unknown" if no source is passed (enable).
+  Services.fog.testResetFOG();
+  bs.setScheduledBackups(true);
+  Assert.equal(
+    Glean.browserBackup.schedulerToggleSource.testGetValue(),
+    "unknown",
+    "scheduler_toggle_source defaults to 'unknown' when no source given on enable."
+  );
+
+  // Default is "unknown" if no source is passed (disable).
+  Services.fog.testResetFOG();
+  bs.setScheduledBackups(false);
+  Assert.equal(
+    Glean.browserBackup.schedulerToggleSource.testGetValue(),
+    "unknown",
+    "scheduler_toggle_source defaults to 'unknown' when no source given on disable."
+  );
+
+  // Empty string should fall back to "unknown".
+  Services.fog.testResetFOG();
+  bs.setScheduledBackups(true, "");
+  Assert.equal(
+    Glean.browserBackup.schedulerToggleSource.testGetValue(),
+    "unknown",
+    "Empty source falls back to 'unknown'."
+  );
+
+  // After a stashed source is consumed by onUpdateScheduledBackups, a
+  // subsequent direct pref flip should not inherit the previous credit.
+  Services.fog.testResetFOG();
+  bs.setScheduledBackups(false);
+  Services.fog.testResetFOG();
+  bs.setScheduledBackups(true, "FIRST_MESSAGE");
+  Assert.equal(
+    Glean.browserBackup.schedulerToggleSource.testGetValue(),
+    "FIRST_MESSAGE",
+    "First enable was credited to FIRST_MESSAGE."
+  );
+  // Now flip the pref off and on directly without going through
+  // setScheduledBackups, simulating a stale source on a second enable.
+  Services.fog.testResetFOG();
+  bs.onUpdateScheduledBackups(false);
+  Services.fog.testResetFOG();
+  bs.onUpdateScheduledBackups(true);
+  Assert.equal(
+    Glean.browserBackup.schedulerToggleSource.testGetValue(),
+    "unknown",
+    "Stashed source is consumed once; subsequent toggles default to 'unknown'."
+  );
+
+  // Clean up.
+  bs.setScheduledBackups(false);
+  Services.prefs.clearUserPref("browser.backup.scheduled.enabled");
+});
+
 add_task(async function test_classifyLocationForTelemetry() {
+  // classifyLocationForTelemetry takes the grandparent of the given path
+  // (file -> "Restore Firefox" subfolder -> known location), so we need
+  // paths that are two levels deep under the known directory to match.
   let bs = new BackupService();
   for (const prop of Object.keys(kKnownMappings)) {
     let file = Services.dirsvc.get(prop, Ci.nsIFile);
+
+    // The known dir itself (0 levels deep) should not match.
     Assert.equal(
       bs.classifyLocationForTelemetry(file.path),
       "other",
-      `'${file.path}' was correctly classified.`
+      `'${file.path}' (known dir itself) was correctly classified as other.`
     );
 
+    // One level deep (e.g. Documents/child) should not match either,
+    // since grandparent would be above the known dir.
     file.append("child");
     Assert.equal(
       bs.classifyLocationForTelemetry(file.path),
-      kKnownMappings[prop],
-      `'${file.path}' was correctly classified.`
+      "other",
+      `'${file.path}' (one level deep) was correctly classified as other.`
     );
 
-    file = file.parent.parent;
+    // Two levels deep (e.g. Documents/Restore Firefox/backup.html) should
+    // match, since the grandparent is the known dir.
+    file.append("grandchild");
     Assert.equal(
       bs.classifyLocationForTelemetry(file.path),
-      "other",
-      `'${file.path}' was correctly classified.`
+      kKnownMappings[prop],
+      `'${file.path}' (two levels deep) was correctly classified.`
     );
   }
 

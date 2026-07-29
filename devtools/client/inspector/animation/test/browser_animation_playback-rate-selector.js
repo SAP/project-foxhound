@@ -3,65 +3,88 @@
 
 "use strict";
 
-// Test for following PlaybackRateSelector component:
-// * element existence
-// * make playback rate of animations by the selector
-// * in case of animations have mixed playback rate
-// * in case of animations have playback rate which is not default selectable value
+// Test for the PlaybackRateSelector component
 
 add_task(async function () {
   await addTab(URL_ROOT + "doc_custom_playback_rate.html");
   const { animationInspector, inspector, panel } =
     await openAnimationInspector();
 
-  info("Checking playback rate selector existence");
-  const selectEl = panel.querySelector(".playback-rate-selector");
-  ok(selectEl, "scrubber controller should exist");
+  info("Checking PlaybackRateSelector existence");
+  let selectEl = panel.querySelector(".playback-rate-selector");
+  ok(selectEl, "PlaybackRateSelector element exists");
 
-  info(
-    "Checking playback rate existence which includes custom rate of animations"
-  );
-  const expectedPlaybackRates = [0.01, 0.1, 0.25, 0.5, 1, 1.5, 2, 5, 10];
-  await assertPlaybackRateOptions(selectEl, expectedPlaybackRates);
+  info("Checking PlaybackRateSelector options");
+  const expectedPlaybackRates = [0.01, 0.1, 0.25, 0.5, 1, 2, 5, 10];
+  await assertPlaybackRateMultiplierOptions(selectEl, expectedPlaybackRates);
+  // When not set, the browsing context flag is 1
+  await assertPlaybackRateMultiplier(1);
 
-  info("Checking selected playback rate");
-  is(Number(selectEl.value), 1.5, "Selected option should be 1.5");
+  info("Check setting a playback rate multiplier different than 1");
+  await changePlaybackRateMultiplierSelector(animationInspector, panel, 0.5);
+  await assertPlaybackRateMultiplier(0.5);
 
-  info("Checking playback rate of animations");
-  await changePlaybackRateSelector(animationInspector, panel, 0.5);
-  await assertPlaybackRate(animationInspector, 0.5);
+  info("Check that plaback rate stays set after reloading");
+  await reloadSelectedTab();
+  await assertPlaybackRateMultiplier(0.5);
 
-  info("Checking mixed playback rate");
-  await selectNode("div", inspector);
+  info("Checking playback rate multiplier after setting it back to 1");
+  await changePlaybackRateMultiplierSelector(animationInspector, panel, 1);
+  await assertPlaybackRateMultiplier(1);
+
+  info("Checking PlaybackRateSelector options again");
+  await assertPlaybackRateMultiplierOptions(selectEl, expectedPlaybackRates);
+
+  info("Checking setting playback rate before starting animations");
+  await selectNode("aside", inspector);
+  await waitUntil(() => panel.querySelectorAll(".animation-item").length === 0);
+  selectEl = panel.querySelector(".playback-rate-selector");
+  ok(!!selectEl, "playback rate selector is still displayed");
+  await changePlaybackRateMultiplierSelector(animationInspector, panel, 0.01);
+
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async () => {
+    const document = content.document;
+    content.testAnimation = document
+      .querySelector("aside")
+      .animate([{ opacity: 0 }], 10000);
+  });
   await waitUntil(() => panel.querySelectorAll(".animation-item").length === 1);
-  await changePlaybackRateSelector(animationInspector, panel, 2);
-  await assertPlaybackRate(animationInspector, 2);
-  await selectNode("body", inspector);
-  await waitUntil(() => panel.querySelectorAll(".animation-item").length === 2);
-  await waitUntil(() => selectEl.value === "");
-  ok(true, "Selected option should be empty");
+  await assertPlaybackRateMultiplier(0.01);
 
-  info("Checking playback rate after re-setting");
-  await changePlaybackRateSelector(animationInspector, panel, 1);
-  await assertPlaybackRate(animationInspector, 1);
+  info("Checking setting playback rate on non-element node");
+  const { nodes } = await inspector.walker.children(inspector.walker.rootNode);
 
-  info(
-    "Checking whether custom playback rate exist " +
-      "after selecting another playback rate"
+  const doctypeNode = nodes[0];
+  // Sanity check
+  const nodeConstants = require("resource://devtools/shared/dom-node-constants.js");
+  is(
+    doctypeNode.nodeType,
+    nodeConstants.DOCUMENT_TYPE_NODE,
+    "We do have the doctype node"
   );
-  await assertPlaybackRateOptions(selectEl, expectedPlaybackRates);
+  await selectNode(doctypeNode, inspector);
+  await waitUntil(() => panel.querySelectorAll(".animation-item").length === 0);
+
+  selectEl = panel.querySelector(".playback-rate-selector");
+  ok(!!selectEl, "playback rate selector is still displayed");
+  await changePlaybackRateMultiplierSelector(animationInspector, panel, 0.25);
+  await assertPlaybackRateMultiplier(0.25);
 });
 
-async function assertPlaybackRate(animationInspector, rate) {
-  await waitUntil(() =>
-    animationInspector.state?.animations.every(
-      ({ state }) => state.playbackRate === rate
-    )
-  );
-  ok(true, `Playback rate of animations should be ${rate}`);
+async function assertPlaybackRateMultiplier(rate) {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [rate], r => {
+    is(
+      content.browsingContext.animationsPlayBackRateMultiplier,
+      r,
+      "Expected browsingContext.animationsPlayBackRateMultiplier"
+    );
+  });
 }
 
-async function assertPlaybackRateOptions(selectEl, expectedPlaybackRates) {
+async function assertPlaybackRateMultiplierOptions(
+  selectEl,
+  expectedPlaybackRates
+) {
   await waitUntil(() => {
     if (selectEl.options.length !== expectedPlaybackRates.length) {
       return false;

@@ -14,7 +14,13 @@ function TimePicker(context) {
 
 {
   const DAY_PERIOD_IN_HOURS = 12,
-    DAY_IN_MS = 86400000;
+    DAY_IN_MS = 86400000,
+    // The min value is 0001-01-01 based on HTML spec:
+    // https://html.spec.whatwg.org/#valid-date-string
+    MIN_DATE = -62135596800000,
+    // The max value is derived from the ECMAScript spec (275760-09-13):
+    // http://ecma-international.org/ecma-262/5.1/#sec-15.9.1.1
+    MAX_DATE = 8640000000000000;
 
   TimePicker.prototype = {
     /**
@@ -22,6 +28,10 @@ function TimePicker(context) {
      *
      * @param  {object} props
      *         {
+     *           {String} type: "date", "time", or "datetime-local"
+     *           {Number} year [optional]
+     *           {Number} month [optional]
+     *           {Number} day [optional]
      *           {Number} hour [optional]: Hour in 24 hours format (0~23), default is current hour
      *           {Number} minute [optional]: Minute (0~59), default is current minute
      *           {Number} min: Minimum time, in ms
@@ -75,18 +85,45 @@ function TimePicker(context) {
      * and format (12 or 24).
      */
     _setDefaultState() {
-      const { hour, minute, min, max, step, format } = this.props;
+      const { type, year, month, day, hour, minute, min, max, step, format } =
+        this.props;
       const now = new Date();
 
       let timerHour = hour == undefined ? now.getHours() : hour;
       let timerMinute = minute == undefined ? now.getMinutes() : minute;
+      let defaultMin = 0;
+      let defaultMax = DAY_IN_MS - 1;
+      if (type == "datetime-local") {
+        defaultMin = MIN_DATE;
+        defaultMax = MAX_DATE;
+      }
       let timeKeeper = new TimeKeeper({
-        min: new Date(Number.isNaN(min) ? 0 : min),
-        max: new Date(Number.isNaN(max) ? DAY_IN_MS - 1 : max),
+        type,
+        year,
+        month,
+        day,
+        min: new Date(Number.isNaN(min) ? defaultMin : min),
+        max: new Date(Number.isNaN(max) ? defaultMax : max),
         step,
         format: format || "12",
       });
       timeKeeper.setState({ hour: timerHour, minute: timerMinute });
+      if (timeKeeper.state.isInvalid) {
+        // Value is set to min if it's first opened and time state is invalid
+        // Work from largest to smallest component to find the lowest valid time
+        const validPeriods = timeKeeper.ranges.dayPeriod.filter(m => m.enabled);
+        if (validPeriods.length) {
+          timeKeeper.setDayPeriod(validPeriods[0].value);
+        }
+        const validHours = timeKeeper.ranges.hours.filter(h => h.enabled);
+        if (validHours.length) {
+          timeKeeper.setHour(validHours[0].value);
+        }
+        const validMinutes = timeKeeper.ranges.minutes.filter(m => m.enabled);
+        if (validMinutes.length) {
+          timeKeeper.setMinute(validMinutes[0].value);
+        }
+      }
 
       this.state = { timeKeeper };
     },
@@ -192,14 +229,9 @@ function TimePicker(context) {
     _setComponentStates() {
       const { timeKeeper, isHourSet, isMinuteSet, isDayPeriodSet } = this.state;
       const isInvalid = timeKeeper.state.isInvalid;
-      // Value is set to min if it's first opened and time state is invalid
-      const setToMinValue =
-        !isHourSet && !isMinuteSet && !isDayPeriodSet && isInvalid;
 
       this.components.hour.setState({
-        value: setToMinValue
-          ? timeKeeper.ranges.hours[0].value
-          : timeKeeper.hour,
+        value: timeKeeper.hour,
         items: timeKeeper.ranges.hours,
         isInfiniteScroll: true,
         isValueSet: isHourSet,
@@ -207,9 +239,7 @@ function TimePicker(context) {
       });
 
       this.components.minute.setState({
-        value: setToMinValue
-          ? timeKeeper.ranges.minutes[0].value
-          : timeKeeper.minute,
+        value: timeKeeper.minute,
         items: timeKeeper.ranges.minutes,
         isInfiniteScroll: true,
         isValueSet: isMinuteSet,
@@ -219,9 +249,7 @@ function TimePicker(context) {
       // The AM/PM spinner is only available in 12hr mode
       if (this.props.format == "12") {
         this.components.dayPeriod.setState({
-          value: setToMinValue
-            ? timeKeeper.ranges.dayPeriod[0].value
-            : timeKeeper.dayPeriod,
+          value: timeKeeper.dayPeriod,
           items: timeKeeper.ranges.dayPeriod,
           isInfiniteScroll: false,
           isValueSet: isDayPeriodSet,
@@ -355,6 +383,27 @@ function TimePicker(context) {
       switch (event.data.name) {
         case "PickerInit": {
           this.init(event.data.detail);
+          break;
+        }
+        case "PickerPopupChanged": {
+          // For datetime-local pickers, if the date is changed, notify the
+          // timekeeper so it can provide updated valid ranges.
+          if (this.props?.type != "datetime-local") {
+            break;
+          }
+          if (
+            event.data.detail?.year === undefined ||
+            event.data.detail?.month === undefined ||
+            event.data.detail?.day === undefined
+          ) {
+            break;
+          }
+          this.state.timeKeeper?.setState({
+            year: event.data.detail.year,
+            month: event.data.detail.month,
+            day: event.data.detail.day,
+          });
+          this._setComponentStates();
           break;
         }
       }

@@ -47,7 +47,7 @@ class PerformanceInflaterTest {
     @Test
     fun `WHEN we inflate a view,THEN the inflation counter should increase`() {
         assertEquals(0, InflationCounter.inflationCount.get())
-        perfInflater.inflate(R.layout.fragment_home, null, false)
+        perfInflater.inflate(R.layout.fragment_about, null, false)
         assertEquals(1, InflationCounter.inflationCount.get())
     }
 

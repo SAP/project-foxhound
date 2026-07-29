@@ -234,9 +234,9 @@ add_task(async function resultMenu_notInterested() {
   await doDismissTest("not_interested", true);
 });
 
-// Tests the "Not relevant" result menu dismissal command.
-add_task(async function resultMenu_notRelevant() {
-  await doDismissTest("not_relevant", false);
+// Tests the "Dismiss" result menu dismissal command.
+add_task(async function resultMenu_dismiss() {
+  await doDismissTest("dismiss", false);
 });
 
 // Tests the "Manage" result menu.

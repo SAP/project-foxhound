@@ -207,6 +207,98 @@
           "support link is placed next to the description when provided."
         );
       });
+
+      add_task(async function testMozBoxItemSlottedDescription() {
+        let slottedTemplate = testHelpers.templateFn({
+          label: "Testing slotted description",
+        });
+        let renderTarget = await testHelpers.renderTemplate(slottedTemplate);
+        let item = renderTarget.firstElementChild;
+
+        ok(!item.hasDescription, "Item initially has no description.");
+
+        const SLOTTED_DESCRIPTION = "This is a slotted description";
+        let slottedDesc = document.createElement("span");
+        slottedDesc.textContent = SLOTTED_DESCRIPTION;
+        slottedDesc.slot = "description";
+
+        item.append(slottedDesc);
+        await item.updateComplete;
+
+        let descriptionSlot = item.shadowRoot.querySelector(
+          "slot[name='description']"
+        );
+        ok(descriptionSlot, "Description slot exists in shadow DOM");
+
+        let slottedElements = descriptionSlot.assignedElements();
+        is(
+          slottedElements.length,
+          1,
+          "Description slot has one assigned element"
+        );
+        is(
+          slottedElements[0],
+          slottedDesc,
+          "Slotted description is assigned to description slot"
+        );
+        ok(item.hasDescription, "Item has description after slotting content");
+      });
+
+      add_task(async function testMozBoxItemSlottedSupportLink() {
+        let slottedTemplate = testHelpers.templateFn({
+          label: "Testing slotted support link",
+        });
+        let renderTarget = await testHelpers.renderTemplate(slottedTemplate);
+        let item = renderTarget.firstElementChild;
+
+        ok(!item.hasSupportPage, "Item initially has no support page.");
+
+        let slottedLink = document.createElement("a");
+        slottedLink.href = "https://example.com/support";
+        slottedLink.textContent = "Learn more";
+        slottedLink.slot = "support-link";
+
+        item.append(slottedLink);
+        await item.updateComplete;
+
+        let supportLinkSlot = item.shadowRoot.querySelector(
+          "slot[name='support-link']"
+        );
+        ok(supportLinkSlot, "Support link slot exists in shadow DOM");
+
+        let slottedElements = supportLinkSlot.assignedElements();
+        is(
+          slottedElements.length,
+          1,
+          "Support link slot has one assigned element"
+        );
+        is(
+          slottedElements[0],
+          slottedLink,
+          "Slotted link is assigned to support-link slot"
+        );
+        ok(item.hasSupportPage, "Item has support page after slotting content");
+
+        let adjacentEl = supportLinkSlot.previousElementSibling;
+        is(
+          adjacentEl.id,
+          "label",
+          "support link slot is placed next to the label when no description is provided."
+        );
+
+        item.description = "now we have a description.";
+        await item.updateComplete;
+
+        supportLinkSlot = item.shadowRoot.querySelector(
+          "slot[name='support-link']"
+        );
+        adjacentEl = supportLinkSlot.previousElementSibling;
+        is(
+          adjacentEl.id,
+          "description",
+          "support link slot is placed next to the description when provided."
+        );
+      });
     </script>
   </head>
   <body>

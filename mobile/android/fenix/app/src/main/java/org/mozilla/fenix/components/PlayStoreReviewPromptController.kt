@@ -9,12 +9,12 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import androidx.annotation.VisibleForTesting
 import androidx.core.net.toUri
-import androidx.fragment.app.FragmentActivity
-import androidx.navigation.fragment.NavHostFragment
 import com.google.android.play.core.review.ReviewException
 import com.google.android.play.core.review.ReviewInfo
 import com.google.android.play.core.review.ReviewManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import mozilla.components.support.base.log.logger.Logger
 import org.mozilla.fenix.GleanMetrics.ReviewPrompt
@@ -22,8 +22,6 @@ import org.mozilla.fenix.components.ReviewPromptAttemptResult.Displayed
 import org.mozilla.fenix.components.ReviewPromptAttemptResult.Error
 import org.mozilla.fenix.components.ReviewPromptAttemptResult.NotDisplayed
 import org.mozilla.fenix.components.ReviewPromptAttemptResult.Unknown
-import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.ext.openToBrowser
 import org.mozilla.fenix.settings.SupportUtils
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -42,57 +40,57 @@ class PlayStoreReviewPromptController(
     /**
      * Launch the in-app review flow, unless we've hit the quota.
      */
-    suspend fun tryPromptReview(
-        activity: Activity,
-        onNotDisplayed: () -> Unit = {},
-        onError: () -> Unit = {},
-    ) {
+    @Suppress("TooGenericExceptionCaught")
+    suspend fun tryPromptReview(activity: Activity): ReviewPromptAttemptResult {
         logger.info("tryPromptReview in progress...")
         val reviewInfoTask = withContext(Dispatchers.IO) { manager.requestReviewFlow() }
 
-        reviewInfoTask.addOnCompleteListener(activity) { task ->
-            val result = if (task.isSuccessful) {
-                logger.info("Review flow launched.")
-                // Launch the in-app flow.
-                manager.launchReviewFlow(activity, task.result)
+        val result = try {
+            val reviewInfo = reviewInfoTask.await()
 
-                ReviewPromptAttemptResult.from(task.result.toString())
-            } else {
-                Error
-            }
+            logger.info("Review flow launched.")
+            // Launch the in-app flow.
+            manager.launchReviewFlow(activity, reviewInfo)
 
-            when (result) {
-                NotDisplayed -> {
-                    logger.warn("In-app review flow reported as not displayed, even though there was no error.")
-
-                    onNotDisplayed()
-                }
-
-                Error -> {
-                    val reviewErrorCode =
-                        (task.exception as? ReviewException)?.errorCode ?: ERROR_CODE_UNEXPECTED
-                    logger.warn("Failed to launch in-app review flow due to: $reviewErrorCode.")
-
-                    onError()
-                }
-
-                Displayed, Unknown -> {}
-            }
-
-            recordReviewPromptEvent(
-                promptAttemptResult = result,
-                numberOfAppLaunches = numberOfAppLaunches(),
-                now = Date(),
-            )
+            ReviewPromptAttemptResult.from(reviewInfo.toString())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Error(e)
         }
 
+        when (result) {
+            NotDisplayed -> {
+                logger.warn("In-app review flow reported as not displayed, even though there was no error.")
+            }
+
+            is Error -> {
+                val reviewErrorCode =
+                    (result.exception as? ReviewException)?.errorCode ?: ERROR_CODE_UNEXPECTED
+                logger.warn("Failed to launch in-app review flow due to: $reviewErrorCode.")
+            }
+
+            Displayed, Unknown -> {}
+        }
+
+        recordReviewPromptEvent(
+            promptAttemptResult = result,
+            numberOfAppLaunches = numberOfAppLaunches(),
+            now = Date(),
+        )
+
         logger.info("tryPromptReview completed.")
+
+        return result
     }
 
     /**
      * Try to launch the play store review flow.
      */
-    fun tryLaunchPlayStoreReview(activity: Activity) {
+    fun tryLaunchPlayStoreReview(
+        activity: Activity,
+        openInNewTab: (url: String) -> Unit,
+    ) {
         logger.info("tryLaunchPlayStoreReview in progress...")
 
         try {
@@ -103,19 +101,7 @@ class PlayStoreReviewPromptController(
         } catch (e: ActivityNotFoundException) {
             // Device without the play store installed.
             // Opening the play store website.
-
-            activity.applicationContext.components.useCases.fenixBrowserUseCases.loadUrlOrSearch(
-                searchTermOrURL = SupportUtils.FENIX_PLAY_STORE_URL,
-                newTab = true,
-            )
-
-            // https://bugzilla.mozilla.org/show_bug.cgi?id=1997148
-            (activity as? FragmentActivity)
-                ?.supportFragmentManager
-                ?.fragments
-                ?.firstOrNull { it is NavHostFragment }
-                ?.let { (it as NavHostFragment).navController }
-                ?.openToBrowser()
+            openInNewTab(SupportUtils.FENIX_PLAY_STORE_URL)
 
             logger.warn("Failed to launch play store review flow due to: $e.")
         }
@@ -134,28 +120,26 @@ class PlayStoreReviewPromptController(
 /**
  * Result of an attempt to show a Play Store In-App Review Prompt.
  */
-@VisibleForTesting
-enum class ReviewPromptAttemptResult {
+sealed interface ReviewPromptAttemptResult {
     /**
      * Attempted completed without error, but the API didn't allow to display the prompt.
      */
-    NotDisplayed,
+    data object NotDisplayed : ReviewPromptAttemptResult
 
     /**
      * Prompt has been shown.
      */
-    Displayed,
+    data object Displayed : ReviewPromptAttemptResult
 
     /**
      * There was an error, for example this is a device without Play Store.
      */
-    Error,
+    data class Error(val exception: Exception) : ReviewPromptAttemptResult
 
     /**
      * Attempt completed without error, but we weren't able to determine if prompt has been shown or not.
      */
-    Unknown,
-    ;
+    data object Unknown : ReviewPromptAttemptResult
 
     companion object {
         /**
@@ -197,7 +181,7 @@ fun recordReviewPromptEvent(
     val promptWasDisplayed = when (promptAttemptResult) {
         NotDisplayed -> "false"
         Displayed -> "true"
-        Error, Unknown -> "error"
+        is Error, Unknown -> "error"
     }
 
     ReviewPrompt.promptAttempt.record(

@@ -19,6 +19,8 @@ import {
 import { createLocation } from "../../utils/location";
 import { getDisplayURL } from "../../utils/sources-tree/getURL";
 
+const ResourceCommand = require("resource://devtools/shared/commands/resource/resource-command.js");
+
 let store;
 
 /**
@@ -173,7 +175,7 @@ export async function waitForSourceToBeRegisteredInStore(sourceId) {
 // The last three actually try to represent the exact same thing.
 //
 // Here this method received a SOURCE resource (the 3rd bullet point)
-export function makeSourceId(sourceResource) {
+export function makeScriptSourceId(sourceResource) {
   // Allows Jest to use custom, simplier IDs
   if ("mockedJestID" in sourceResource) {
     return sourceResource.mockedJestID;
@@ -208,8 +210,12 @@ export function makeSourceId(sourceResource) {
   return `source-actor-${sourceResource.actor}`;
 }
 
+export function makeStyleSheetSourceId(sourceResource) {
+  return `source-url-${sourceResource.href}`;
+}
+
 /**
- * Create the source object for a generated source that is stored in sources.js reducer.
+ * Create the source object for a generated source that is stored in the sources.js reducer.
  * These generated sources relate to JS code which run in the
  * debugged runtime (as oppose to original sources
  * which are only available in debugger's environment).
@@ -219,15 +225,38 @@ export function makeSourceId(sourceResource) {
  *        This represents the `SourceActor` from the server codebase.
  */
 export function createGeneratedSource(sourceResource) {
-  return createSourceObject({
-    id: makeSourceId(sourceResource),
-    url: sourceResource.url,
-    extensionName: sourceResource.extensionName,
+  return {
+    ...createSourceObject({
+      id: makeScriptSourceId(sourceResource),
+      url: sourceResource.url,
+      extensionName: sourceResource.extensionName,
+      isExtension:
+        (sourceResource.url && isUrlExtension(sourceResource.url)) || false,
+    }),
+    // Script specific properties
     isWasm: !!features.wasm && sourceResource.introductionType === "wasm",
-    isExtension:
-      (sourceResource.url && isUrlExtension(sourceResource.url)) || false,
     isHTML: !!sourceResource.isInlineSource,
-  });
+    type: ResourceCommand.TYPES.SOURCE,
+  };
+}
+
+/**
+ * Create the source object for a stylesheet source that is stored in the sources.js reducer.
+ * These sources relate to CSS
+ *
+ * @param {*} stylesheetResource
+ * @returns
+ */
+export function createStyleSheet(stylesheetResource) {
+  return {
+    ...createSourceObject({
+      id: makeStyleSheetSourceId(stylesheetResource),
+      url: stylesheetResource.href,
+    }),
+    // Stylesheet specific properties
+    isStyleSheet: true,
+    type: ResourceCommand.TYPES.STYLESHEET,
+  };
 }
 
 /**
@@ -245,7 +274,9 @@ function createSourceObject({
   isPrettyPrinted = false,
   isOriginal = false,
   isHTML = false,
+  isStyleSheet = false,
   generatedSource = null,
+  type,
 }) {
   // Ensure removing the internal :formatted suffix for the display URL object.
   const displayURL = getDisplayURL(
@@ -254,7 +285,7 @@ function createSourceObject({
   );
   return {
     // The ID, computed by:
-    // * `makeSourceId` for generated,
+    // * `makeScriptSourceId` for generated,
     // * `generatedToOriginalId` for both source map and pretty printed original,
     id,
 
@@ -292,11 +323,11 @@ function createSourceObject({
     // (Note that when debugging an add-on all generated sources will most likely have this flag set to true)
     isExtension,
 
-    // True if WASM is enabled *and* the generated source is a WASM source
+    // True if WASM is enabled *and* the generated source is a WASM source (This is only used for script sources)
     isWasm,
 
     // True if this source is an HTML and relates to many sources actors,
-    // one for each of its inline <script>
+    // one for each of its inline <script> (This is only used for script sources)
     isHTML,
 
     // True, if this is an original pretty printed source
@@ -305,8 +336,14 @@ function createSourceObject({
     // True for source map original files, as well as pretty printed sources
     isOriginal,
 
+    // True for only style sheet sources,
+    isStyleSheet,
+
     // If this is an original/pretty printed source, reference to the related generated/minimized source
     generatedSource,
+
+    // This property defines the type of source object
+    type,
   };
 }
 
@@ -325,12 +362,15 @@ function createSourceObject({
  *        The Source object for the related generated source this original source maps to.
  */
 export function createSourceMapOriginalSource(id, url, generatedSource) {
-  return createSourceObject({
-    id,
-    url,
-    isOriginal: true,
-    generatedSource,
-  });
+  return {
+    ...createSourceObject({
+      id,
+      url,
+      isOriginal: true,
+      generatedSource,
+    }),
+    type: ResourceCommand.TYPES.SOURCE,
+  };
 }
 
 /**
@@ -349,13 +389,16 @@ export function createSourceMapOriginalSource(id, url, generatedSource) {
  *        The Source object for the related minimized source that related to this pretty printed source.
  */
 export function createPrettyPrintOriginalSource(id, url, generatedSource) {
-  return createSourceObject({
-    id,
-    url,
-    isOriginal: true,
-    isPrettyPrinted: true,
-    generatedSource,
-  });
+  return {
+    ...createSourceObject({
+      id,
+      url,
+      isOriginal: true,
+      isPrettyPrinted: true,
+      generatedSource,
+    }),
+    type: ResourceCommand.TYPES.SOURCE,
+  };
 }
 
 /**
@@ -368,7 +411,7 @@ export function createPrettyPrintOriginalSource(id, url, generatedSource) {
  * @param {object} sourceObject
  *        Source object stored in redux, i.e. created via createSourceObject.
  */
-export function createSourceActor(sourceResource, sourceObject) {
+export function createScriptSourceActor(sourceResource, sourceObject) {
   const actorId = sourceResource.actor;
 
   return {
@@ -376,17 +419,43 @@ export function createSourceActor(sourceResource, sourceObject) {
     actor: actorId,
     // As sourceResource is only SourceActor's form and not the SourceFront,
     // we have to go through the target to retrieve the related ThreadActor's ID.
+    // TODO: Remove this when we move to depend on targets. See Bug 2041750
     thread: sourceResource.targetFront.getCachedFront("thread").actorID,
-    // `source` is the reducer source ID
-    source: makeSourceId(sourceResource),
+    targetFront: sourceResource.targetFront,
     sourceObject,
     sourceMapBaseURL: sourceResource.sourceMapBaseURL,
     sourceMapURL: sourceResource.sourceMapURL,
-    url: sourceResource.url,
     introductionType: sourceResource.introductionType,
     sourceStartLine: sourceResource.sourceStartLine,
     sourceStartColumn: sourceResource.sourceStartColumn,
     sourceLength: sourceResource.sourceLength,
+  };
+}
+
+/**
+ * Creates a source actor object for a syle sheet that is stored in source-actor.js reducer.
+ * This will represent server's source actor in the reducer universe.
+ *
+ * @param {STYLESHEET} stylesheetResource
+ *        STYLESHEET resource coming from the ResourceCommand API.
+ *        This represents the `StyleSheetsActor` from the server codebase.
+ * @param {object} styleSheetObject
+ *        style sheet object stored in redux, i.e. created via createSourceObject.
+ */
+export function createStyleSheetActor(stylesheetResource, styleSheetObject) {
+  return {
+    id: stylesheetResource.resourceId,
+    actor: stylesheetResource.resourceId,
+    targetFront: stylesheetResource.targetFront,
+    // TODO: Remove this when we move to depend on targets. See Bug 2041750
+    thread: stylesheetResource.targetFront.getCachedFront("thread").actorID,
+    // `source` is the reducer source ID
+    source: makeStyleSheetSourceId(stylesheetResource),
+    sourceObject: styleSheetObject,
+    sourceMapBaseURL: stylesheetResource.sourceMapBaseURL,
+    sourceMapURL: stylesheetResource.sourceMapURL,
+    // There is no `url` for stylesheets, lets use the href
+    url: stylesheetResource.href,
   };
 }
 

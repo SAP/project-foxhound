@@ -1,12 +1,13 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=2 et lcs=trail\:.,tab\:>~ :
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "BaseVFS.h"
 #include "ErrorList.h"
+#include "ScopedNSSTypes.h"
+#include "nsNetUtil.h"
 #include "nsError.h"
+#include "nsLocalFile.h"
 #include "nsThreadUtils.h"
 #include "nsIFile.h"
 #include "nsIFileURL.h"
@@ -21,7 +22,9 @@
 #include "mozilla/ErrorNames.h"
 #include "mozilla/dom/quota/QuotaObject.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/storage/SQLiteEncryption.h"
 #include "mozilla/SpinEventLoopUntil.h"
+#include "mozilla/StaticPrefs_security.h"
 #include "mozilla/StaticPrefs_storage.h"
 
 #include "mozIStorageCompletionCallback.h"
@@ -39,7 +42,8 @@
 #include "ObfuscatingVFS.h"
 #include "QuotaVFS.h"
 #include "StorageBaseStatementInternal.h"
-#include "SQLCollations.h"
+#include "mozilla/storage/StoragePathUtil.h"
+#include "mozilla/intl/AppCollator.h"
 #include "FileSystemModule.h"
 #include "mozStorageHelper.h"
 
@@ -252,6 +256,53 @@ void basicFunctionHelper(sqlite3_context* aCtx, int aArgc,
   }
 }
 
+using mozilla::storage::PreparePathForURI;
+
+nsresult ExtractURIPathAndQuery(const char* aURI, nsCString& aPath,
+                                nsCString& aQuery) {
+  if (strncmp(aURI, "file:", 5) != 0) {
+    aPath.Assign(aURI);
+    aQuery.Truncate();
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIURI> uri;
+  nsresult rv = NS_NewURI(getter_AddRefs(uri), nsDependentCString(aURI));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsIFileURL> fileURL = do_QueryInterface(uri, &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsIFile> file;
+  rv = fileURL->GetFile(getter_AddRefs(file));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsAutoString path;
+  rv = file->GetPath(path);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  aPath = NS_ConvertUTF16toUTF8(path);
+
+  rv = uri->GetQuery(aQuery);
+  NS_ENSURE_SUCCESS(rv, rv);
+  return NS_OK;
+}
+
+void BuildFileURIWithKey(const nsACString& aEscapedPath,
+                         const nsACString& aQuery, const nsACString& aDBKey,
+                         nsACString& aURI) {
+  aURI.AssignLiteral("file:");
+  aURI.Append(aEscapedPath);
+  if (aQuery.IsEmpty()) {
+    aURI.AppendLiteral("?key=");
+  } else {
+    aURI.AppendLiteral("?");
+    aURI.Append(aQuery);
+    aURI.AppendLiteral("&key=");
+  }
+  aURI.Append(aDBKey);
+}
+
 RefPtr<QuotaObject> GetQuotaObject(sqlite3_file* aFile, bool obfuscatingVFS) {
   return obfuscatingVFS
              ? mozilla::storage::obfsvfs::GetQuotaObjectForFile(aFile)
@@ -393,8 +444,8 @@ class AsyncInitializeClone final : public Runnable {
 
  private:
   nsresult Dispatch(nsresult aResult, nsISupports* aValue) {
-    RefPtr<CallbackComplete> event =
-        new CallbackComplete(aResult, aValue, mCallback.forget());
+    auto event =
+        MakeRefPtr<CallbackComplete>(aResult, aValue, mCallback.forget());
     return mClone->eventTargetOpenedOn->Dispatch(event, NS_DISPATCH_NORMAL);
   }
 
@@ -741,8 +792,8 @@ class AsyncBackupDatabaseFile final : public Runnable, public nsITimerCallback {
   }
 
   nsresult Dispatch(nsresult aResult, nsISupports* aValue) {
-    RefPtr<CallbackComplete> event =
-        new CallbackComplete(aResult, aValue, mCallback.forget());
+    auto event =
+        MakeRefPtr<CallbackComplete>(aResult, aValue, mCallback.forget());
     return mConnection->eventTargetOpenedOn->Dispatch(event,
                                                       NS_DISPATCH_NORMAL);
   }
@@ -806,6 +857,8 @@ Connection::Connection(Service* aService, int aFlags,
       mOpenNotExclusive(aOpenNotExclusive),
       mAsyncExecutionThreadShuttingDown(false),
       mConnectionClosed(false),
+      mDatabaseEncrypted(false),
+      mPageSize(Service::kDefaultPageSize),
       mGrowthChunkSize(0) {
   MOZ_ASSERT(!mIgnoreLockingMode || mFlags & SQLITE_OPEN_READONLY,
              "Can't ignore locking for a non-readonly connection!");
@@ -1077,6 +1130,65 @@ nsresult Connection::initialize(nsIFile* aDatabaseFile) {
   nsresult rv = aDatabaseFile->GetPath(path);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  // Open through obfsvfs with a per-file key when encryption is on and the DB
+  // lives inside the profile. Outside-profile DBs (e.g. xpcshell tmp files)
+  // are explicitly opened as plaintext on the base VFS below.
+  if (StaticPrefs::security_storage_encryption_sqlite_enabled()) {
+    nsAutoCString dbPath = NS_ConvertUTF16toUTF8(path);
+    EncryptionStatus encStatus;
+    rv = GetDatabaseEncryptionStatus(dbPath, encStatus);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    bool exists = false;
+    aDatabaseFile->Exists(&exists);
+    const bool readOnly = mFlags & SQLITE_OPEN_READONLY;
+
+    // A read-only open of a database that does not exist has nothing to
+    // decrypt and cannot mint a key; fall through to the base open, which
+    // fails with the natural file error rather than a key-lookup failure.
+    if (encStatus == EncryptionStatus::Encrypted && !(readOnly && !exists)) {
+      if (!EnsureNSSInitializedChromeOrContent()) {
+        return NS_ERROR_FAILURE;
+      }
+
+      OpenIntent intent =
+          exists ? OpenIntent::LoadExisting : OpenIntent::CreateIfNew;
+
+      nsCString dbKey;
+      rv = GetEncryptionKey(dbPath, intent, dbKey);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      SetDatabaseEncrypted(true);
+
+      PreparePathForURI(dbPath);
+      nsAutoCString dbSpec = "file:"_ns + dbPath + "?key="_ns + dbKey;
+
+      int srv =
+          ::sqlite3_open_v2(dbSpec.get(), &mDBConn, mFlags | SQLITE_OPEN_URI,
+                            obfsvfs::GetVFSName());
+      if (srv != SQLITE_OK) {
+        ::sqlite3_close(mDBConn);
+        mDBConn = nullptr;
+        rv = convertResultCode(srv);
+        RecordOpenStatus(rv);
+        return rv;
+      }
+
+      rv = initializeInternal();
+      RecordOpenStatus(rv);
+      NS_ENSURE_SUCCESS(rv, rv);
+      return NS_OK;
+    }
+    // Plaintext (out-of-profile), or a read-only open of a missing database:
+    // fall through to the base-VFS open below. The encrypted branch above is
+    // the only way an in-profile encrypted database opens; an existing one must
+    // never reach the plaintext base VFS.
+    MOZ_ASSERT(
+        encStatus != EncryptionStatus::Encrypted || (readOnly && !exists),
+        "an existing encrypted database must not fall through to a "
+        "plaintext VFS");
+  }
+
   bool exclusive =
       StaticPrefs::storage_sqlite_exclusiveLock_enabled() && !mOpenNotExclusive;
   int srv;
@@ -1151,6 +1263,10 @@ nsresult Connection::initialize(nsIFileURL* aFileURL) {
 
   bool hasKey = false;
   bool hasDirectoryLockId = false;
+  // Set when the encryption policy says this database must be encrypted; used
+  // below to fail closed rather than ever open an expected-encrypted database
+  // through a plaintext VFS.
+  bool mustEncrypt = false;
 
   MOZ_ALWAYS_TRUE(
       URLParams::Parse(query, true,
@@ -1166,6 +1282,60 @@ nsresult Connection::initialize(nsIFileURL* aFileURL) {
                          }
                          return true;
                        }));
+
+  if (StaticPrefs::security_storage_encryption_sqlite_enabled()) {
+    // A key already in the URL means the caller is opening an encrypted DB
+    // with its own key, so trust it. Otherwise look up the per-file key for
+    // in-profile databases; databases outside the profile have no stable key
+    // and stay unencrypted on the base VFS.
+    if (!hasKey) {
+      nsAutoString dbPathUtf16;
+      rv = mDatabaseFile->GetPath(dbPathUtf16);
+      NS_ENSURE_SUCCESS(rv, rv);
+      nsAutoCString dbPath = NS_ConvertUTF16toUTF8(dbPathUtf16);
+
+      EncryptionStatus encStatus;
+      rv = GetDatabaseEncryptionStatus(dbPath, encStatus);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      bool exists = false;
+      mDatabaseFile->Exists(&exists);
+      const bool readOnly = mFlags & SQLITE_OPEN_READONLY;
+
+      // A read-only open of a database that does not exist has nothing to
+      // decrypt and cannot mint a key; leave it unencrypted so the base open
+      // fails with the natural file error rather than a key-lookup failure.
+      mustEncrypt =
+          encStatus == EncryptionStatus::Encrypted && !(readOnly && !exists);
+      if (mustEncrypt) {
+        if (!EnsureNSSInitializedChromeOrContent()) {
+          return NS_ERROR_FAILURE;
+        }
+
+        OpenIntent intent =
+            exists ? OpenIntent::LoadExisting : OpenIntent::CreateIfNew;
+
+        nsCString dbKey;
+        rv = GetEncryptionKey(dbPath, intent, dbKey);
+        NS_ENSURE_SUCCESS(rv, rv);
+        spec += (query.IsEmpty() ? "?key="_ns : "&key="_ns) + dbKey;
+        hasKey = true;
+      }
+    }
+    // hasKey now decides whether we open through obfsvfs (see the VFS
+    // selection below); keep mDatabaseEncrypted and the page size in step.
+    SetDatabaseEncrypted(hasKey);
+  }
+
+  // Conservative fail-closed: a database the encryption policy says must be
+  // encrypted opens through obfsvfs with its key, or not at all -- it must
+  // never fall through to a plaintext VFS. GetEncryptionKey failures already
+  // return above, so this also guards against a future regression adding a
+  // silent-plaintext path.
+  if (mustEncrypt && !hasKey) {
+    RecordOpenStatus(NS_ERROR_FAILURE);
+    return NS_ERROR_FAILURE;
+  }
 
   bool exclusive =
       StaticPrefs::storage_sqlite_exclusiveLock_enabled() && !mOpenNotExclusive;
@@ -1217,7 +1387,12 @@ nsresult Connection::initializeInternal() {
         ("Opening connection to '%s' (%p)", mTelemetryFilename.get(), this));
   }
 
-  int64_t pageSize = Service::kDefaultPageSize;
+  // Encrypted DBs go through obfsvfs which writes whole pages of exactly
+  // obfsvfs::kObfsPageSize. If we issued PRAGMA page_size = 32768 here, the
+  // obfsvfs xWrite would see iAmt != kObfsPageSize and silently pass writes
+  // through to the base VFS plaintext, even though a DEK had been minted in
+  // lockstore. Match GetDefaultPageSize.
+  int64_t pageSize = mPageSize;
 
   // Set page_size to the preferred default value.  This is effective only if
   // the database has just been created, otherwise, if the database does not
@@ -1248,7 +1423,7 @@ nsresult Connection::initializeInternal() {
   }
 
   // Register our built-in SQL collating sequences.
-  srv = registerCollations(mDBConn, mStorageService);
+  srv = mozilla::intl::AppCollator::InstallCallbacks(mDBConn);
   if (srv != SQLITE_OK) {
     return convertResultCode(srv);
   }
@@ -1504,8 +1679,8 @@ nsresult Connection::internalClose(sqlite3* aNativeConnection) {
       // are done here.
       SQLiteMutexAutoLock lockedScope(sharedDBMutex);
       // We still have non-finalized statements. Finalize them.
-      sqlite3_stmt* stmt = nullptr;
-      while ((stmt = ::sqlite3_next_stmt(aNativeConnection, stmt))) {
+      while (sqlite3_stmt* stmt =
+                 ::sqlite3_next_stmt(aNativeConnection, nullptr)) {
         MOZ_LOG(gStorageLog, LogLevel::Debug,
                 ("Auto-finalizing SQL statement '%s' (%p)", ::sqlite3_sql(stmt),
                  stmt));
@@ -1518,21 +1693,7 @@ nsresult Connection::internalClose(sqlite3* aNativeConnection) {
         NS_WARNING(msg.get());
 #endif  // DEBUG
 
-        srv = ::sqlite3_finalize(stmt);
-
-#ifdef DEBUG
-        if (srv != SQLITE_OK) {
-          SmprintfPointer msg = ::mozilla::Smprintf(
-              "Could not finalize SQL statement (%p)", stmt);
-          NS_WARNING(msg.get());
-        }
-#endif  // DEBUG
-
-        // Ensure that the loop continues properly, whether closing has
-        // succeeded or not.
-        if (srv == SQLITE_OK) {
-          stmt = nullptr;
-        }
+        (void)::sqlite3_finalize(stmt);
       }
       // Scope exiting will unlock the mutex before we invoke sqlite3_close()
       // again, since Sqlite will try to acquire it.
@@ -1775,7 +1936,7 @@ Connection::SpinningSynchronousClose() {
     return NS_ERROR_UNEXPECTED;
   }
 
-  RefPtr<CloseListener> listener = new CloseListener();
+  auto listener = MakeRefPtr<CloseListener>();
   rv = AsyncClose(listener);
   NS_ENSURE_SUCCESS(rv, rv);
   MOZ_ALWAYS_TRUE(
@@ -1925,12 +2086,12 @@ Connection::AsyncClone(bool aReadOnly,
 
   // The cloned connection will still implement the synchronous API, but throw
   // if any synchronous methods are called on the main thread.
-  RefPtr<Connection> clone =
-      new Connection(mStorageService, flags, ASYNCHRONOUS, mTelemetryFilename,
-                     mInterruptible, mIgnoreLockingMode, mOpenNotExclusive);
+  auto clone = MakeRefPtr<Connection>(mStorageService, flags, ASYNCHRONOUS,
+                                      mTelemetryFilename, mInterruptible,
+                                      mIgnoreLockingMode, mOpenNotExclusive);
 
-  RefPtr<AsyncInitializeClone> initEvent =
-      new AsyncInitializeClone(this, clone, aReadOnly, aCallback);
+  auto initEvent =
+      MakeRefPtr<AsyncInitializeClone>(this, clone, aReadOnly, aCallback);
   // Dispatch to our async thread, since the originating connection must remain
   // valid and open for the whole cloning process.  This also ensures we are
   // properly serialized with a `close` operation, rather than race with it.
@@ -1977,6 +2138,31 @@ nsresult Connection::initializeClone(Connection* aClone, bool aReadOnly) {
           rv = aClone->CreateStatement("ATTACH DATABASE :path AS "_ns + name,
                                        getter_AddRefs(attachStmt));
           NS_ENSURE_SUCCESS(rv, rv);
+
+          if (mDatabaseEncrypted) {
+            // Extract into a distinct dbPath: BuildFileURIWithKey must not
+            // alias its input and output. It assigns "file:" to the output
+            // first and then appends the input path, so passing the same
+            // string for both clobbers the path and yields "file:file:?key="
+            // -- a malformed URI that fails the ATTACH and the whole clone.
+            nsCString dbKey, query, dbPath;
+            rv = ExtractURIPathAndQuery(path.get(), dbPath, query);
+            NS_ENSURE_SUCCESS(rv, rv);
+
+            EncryptionStatus encStatus;
+            rv = GetDatabaseEncryptionStatus(dbPath, encStatus);
+            NS_ENSURE_SUCCESS(rv, rv);
+
+            // An out-of-profile attached DB stays unencrypted (path left as
+            // is). In-profile attached DBs always pre-exist, so load the DEK.
+            if (encStatus == EncryptionStatus::Encrypted) {
+              rv = GetEncryptionKey(dbPath, OpenIntent::LoadExisting, dbKey);
+              NS_ENSURE_SUCCESS(rv, rv);
+
+              PreparePathForURI(dbPath);
+              BuildFileURIWithKey(dbPath, query, dbKey, path);
+            }
+          }
           rv = attachStmt->BindUTF8StringByName("path"_ns, path);
           NS_ENSURE_SUCCESS(rv, rv);
           rv = attachStmt->Execute();
@@ -2102,9 +2288,9 @@ Connection::Clone(bool aReadOnly, mozIStorageConnection** _connection) {
     flags = (~SQLITE_OPEN_CREATE & flags);
   }
 
-  RefPtr<Connection> clone =
-      new Connection(mStorageService, flags, mSupportedOperations,
-                     mTelemetryFilename, mInterruptible);
+  auto clone =
+      MakeRefPtr<Connection>(mStorageService, flags, mSupportedOperations,
+                             mTelemetryFilename, mInterruptible);
 
   rv = initializeClone(clone, aReadOnly);
   if (NS_FAILED(rv)) {
@@ -2176,9 +2362,20 @@ Connection::AsyncVacuum(mozIStorageCompletionCallback* aCallback,
   return NS_OK;
 }
 
+void Connection::SetDatabaseEncrypted(bool aEncrypted) {
+  mDatabaseEncrypted = aEncrypted;
+  // Encrypted DBs go through obfsvfs, which writes whole pages of exactly
+  // kObfsPageSize. Keep the default page size in sync here so
+  // initializeInternal() and GetDefaultPageSize() can't disagree.
+  mPageSize = aEncrypted ? obfsvfs::kObfsPageSize : Service::kDefaultPageSize;
+}
+
 NS_IMETHODIMP
 Connection::GetDefaultPageSize(int32_t* _defaultPageSize) {
-  *_defaultPageSize = Service::kDefaultPageSize;
+  // Mirrors the PRAGMA page_size set in initializeInternal(); both read
+  // mPageSize, which SetDatabaseEncrypted() keeps in step with
+  // mDatabaseEncrypted (a mismatch makes obfsvfs drop writes silently).
+  *_defaultPageSize = mPageSize;
   return NS_OK;
 }
 
@@ -2499,7 +2696,7 @@ Connection::BeginTransaction() {
 nsresult Connection::beginTransactionInternal(
     const SQLiteMutexAutoLock& aProofOfLock, sqlite3* aNativeConnection,
     int32_t aTransactionType) {
-  if (transactionInProgress(aProofOfLock)) {
+  if (transactionInProgress(aProofOfLock, aNativeConnection)) {
     return NS_ERROR_FAILURE;
   }
   nsresult rv;
@@ -2535,7 +2732,7 @@ Connection::CommitTransaction() {
 
 nsresult Connection::commitTransactionInternal(
     const SQLiteMutexAutoLock& aProofOfLock, sqlite3* aNativeConnection) {
-  if (!transactionInProgress(aProofOfLock)) {
+  if (!transactionInProgress(aProofOfLock, aNativeConnection)) {
     return NS_ERROR_UNEXPECTED;
   }
   nsresult rv =
@@ -2559,7 +2756,7 @@ Connection::RollbackTransaction() {
 
 nsresult Connection::rollbackTransactionInternal(
     const SQLiteMutexAutoLock& aProofOfLock, sqlite3* aNativeConnection) {
-  if (!transactionInProgress(aProofOfLock)) {
+  if (!transactionInProgress(aProofOfLock, aNativeConnection)) {
     return NS_ERROR_UNEXPECTED;
   }
 
@@ -2585,6 +2782,57 @@ Connection::CreateTable(const char* aTableName, const char* aTableSchema) {
   int srv = executeSql(mDBConn, buf.get());
 
   return convertResultCode(srv);
+}
+
+NS_IMETHODIMP
+Connection::AttachDatabase(const char* aPath, const char* aName,
+                           mozIStorageStatementCallback* aCallback,
+                           mozIStoragePendingStatement** _handle) {
+  nsresult rv;
+  nsCString uri;
+
+  bool encryptionEnabled =
+      StaticPrefs::security_storage_encryption_sqlite_enabled();
+  if (encryptionEnabled) {
+    nsCString dbKey, path, query;
+
+    rv = ExtractURIPathAndQuery(aPath, path, query);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    EncryptionStatus encStatus;
+    rv = GetDatabaseEncryptionStatus(path, encStatus);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    if (encStatus == EncryptionStatus::Encrypted) {
+      // Attach targets always pre-exist, so load the DEK (never create one).
+      rv = GetEncryptionKey(path, OpenIntent::LoadExisting, dbKey);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      PreparePathForURI(path);
+      BuildFileURIWithKey(path, query, dbKey, uri);
+    } else {
+      // Outside-profile DB; attach it unencrypted.
+      uri = aPath;
+    }
+  } else {
+    uri = aPath;
+  }
+
+  nsCOMPtr<mozIStorageAsyncStatement> stmt;
+  rv = CreateAsyncStatement("ATTACH DATABASE :path AS "_ns + nsCString(aName),
+                            getter_AddRefs(stmt));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = stmt->BindUTF8StringByName("path"_ns, uri);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<mozIStoragePendingStatement> pendingStatement;
+  rv = stmt->ExecuteAsync(aCallback, getter_AddRefs(pendingStatement));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  pendingStatement.forget(_handle);
+
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -2626,14 +2874,18 @@ Connection::RemoveFunction(const nsACString& aFunctionName) {
   }
 
   SQLiteMutexAutoLock lockedScope(sharedDBMutex);
-  NS_ENSURE_TRUE(mFunctions.Get(aFunctionName, nullptr), NS_ERROR_FAILURE);
+  auto entry = mFunctions.Lookup(aFunctionName);
+  NS_ENSURE_TRUE(entry, NS_ERROR_FAILURE);
 
+  // SQLite allows to register the same function name with different number
+  // of arguments, thus to properly remove our function we must use the same
+  // nArg used at registration time.
   int srv = ::sqlite3_create_function(
-      mDBConn, nsPromiseFlatCString(aFunctionName).get(), 0, SQLITE_ANY,
-      nullptr, nullptr, nullptr, nullptr);
+      mDBConn, nsPromiseFlatCString(aFunctionName).get(), entry->numArgs,
+      SQLITE_ANY, nullptr, nullptr, nullptr, nullptr);
   if (srv != SQLITE_OK) return convertResultCode(srv);
 
-  mFunctions.Remove(aFunctionName);
+  entry.Remove();
 
   return NS_OK;
 }
@@ -2810,7 +3062,7 @@ Connection::LoadExtension(const nsACString& aExtensionName,
 
   RefPtr<Runnable> loadTask = NS_NewRunnableFunction(
       "mozStorageConnection::LoadExtension",
-      [this, self = RefPtr(this), entryPoint,
+      [this, self = RefPtr(this), entryPoint = std::move(entryPoint),
        callback = RefPtr(aCallback)]() mutable {
         MOZ_ASSERT(
             !NS_IsMainThread() ||

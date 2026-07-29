@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -194,6 +192,20 @@ bool SRIMetadata::CanTrustBeDelegatedTo(const SRIMetadata& aOther) const {
   }
 
   return true;
+}
+
+size_t SRIMetadata::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
+  size_t bytes = aMallocSizeOf(this);
+
+  for (const auto& hash : mHashes) {
+    bytes += hash.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
+  }
+
+  bytes += mIntegrityString.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
+
+  bytes += mAlgorithm.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
+
+  return bytes;
 }
 
 }  // namespace mozilla::dom

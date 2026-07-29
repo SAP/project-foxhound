@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -32,6 +31,7 @@
 
 #include "gfxPlatform.h"
 #include "nsXULAppAPI.h"
+#include "GRefPtr.h"
 #include "nsFilePicker.h"
 
 #undef LOG
@@ -51,6 +51,14 @@ using mozilla::dom::Promise;
 #define MAX_PREVIEW_SOURCE_SIZE 8192
 
 static nsIFile* sPrevDisplayDirectory = nullptr;
+
+// Use an application-defined response ID (non-negative) for the accept button
+// instead of GTK_RESPONSE_ACCEPT (-3). GTK's built-in negative response IDs
+// cause the button to be treated as the dialog's default widget, meaning it
+// activates on Enter. A non-negative ID prevents this, so a page that tricks
+// the user into holding Enter before the dialog appears cannot auto-confirm
+// an unintended file upload. See bug 2033848 and the equivalent Chrome fix.
+static const gint kFilePickerAccept = 0;
 
 void nsFilePicker::Shutdown() { NS_IF_RELEASE(sPrevDisplayDirectory); }
 
@@ -690,7 +698,7 @@ void nsFilePicker::OpenNonPortal() {
 
   GtkFileChooser* file_chooser = GTK_FILE_CHOOSER(gtk_file_chooser_dialog_new(
       title.get(), parent_widget, action, g_dgettext("gtk30", "_Cancel"),
-      GTK_RESPONSE_CANCEL, accept_button, GTK_RESPONSE_ACCEPT, nullptr));
+      GTK_RESPONSE_CANCEL, accept_button, kFilePickerAccept, nullptr));
 
   // If we have --enable-proxy-bypass-protection, then don't allow
   // remote URLs to be used.
@@ -764,11 +772,6 @@ void nsFilePicker::OpenNonPortal() {
       }
       gtk_file_chooser_set_current_folder(file_chooser, directory.get());
     }
-  }
-
-  if (GTK_IS_DIALOG(file_chooser)) {
-    gtk_dialog_set_default_response(GTK_DIALOG(file_chooser),
-                                    GTK_RESPONSE_ACCEPT);
   }
 
   size_t count = mFilters.Length();
@@ -860,10 +863,10 @@ bool nsFilePicker::WarnForNonReadableFile() {
       mParentWidget
           ? GTK_WINDOW(mParentWidget->GetNativeData(NS_NATIVE_SHELLWIDGET))
           : nullptr;
-  auto* cancel_dialog = gtk_message_dialog_new(
+  RefPtr<GtkWidget> cancel_dialog = gtk_message_dialog_new(
       parent_window, flags, GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE, "%s",
       NS_ConvertUTF16toUTF8(errorMessage).get());
-  gtk_dialog_run(GTK_DIALOG(cancel_dialog));
+  gtk_dialog_run(GTK_DIALOG(cancel_dialog.get()));
   gtk_widget_destroy(cancel_dialog);
 
   return true;
@@ -875,7 +878,8 @@ void nsFilePicker::DoneNonPortal(GtkWidget* file_chooser, gint response) {
   nsIFilePicker::ResultCode result;
   switch (response) {
     case GTK_RESPONSE_OK:
-    case GTK_RESPONSE_ACCEPT:
+    case GTK_RESPONSE_ACCEPT:  // emitted by GTK internally on double-click
+    case kFilePickerAccept:
       ReadValuesFromNonPortalFileChooser(GTK_FILE_CHOOSER(file_chooser));
       result = nsIFilePicker::returnOK;
       break;

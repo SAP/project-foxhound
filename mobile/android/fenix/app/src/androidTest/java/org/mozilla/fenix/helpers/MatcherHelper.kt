@@ -91,7 +91,7 @@ object MatcherHelper {
 
     fun itemWithResIdAndDescription(resourceId: String, description: String): UiObject {
         Log.i(TAG, "Looking for item with resource id: $resourceId and description: $description")
-        return mDevice.findObject(UiSelector().resourceId(resourceId).descriptionContains(description))
+        return mDevice.findObject(UiSelector().descriptionContains(description).resourceId(resourceId))
     }
 
     fun itemWithResIdAndText(resourceId: String, text: String): UiObject {

@@ -33,18 +33,26 @@ Adding new words to the en-US dictionary
 
 This section describes the process for adding new words to the dictionary:
 
-#. Get a clone of mozilla-central (see :ref:`Firefox Contributors' Quick
+#. Get a clone of the `firefox repository`_ (see :ref:`Firefox Contributors' Quick
    Reference`), if you don’t already have one, and make sure you can build it
    successfully.
 #. Move in the dictionary sources directory using this command:
    ``cd extensions/spellcheck/locales/en-US/hunspell/dictionary-sources``.
 #. Identify the current version of SCOWL by checking the file
-   ``README_en_US.txt`` (at the beginning of the file there is a line similar to
-   ``Generated from SCOWL Version 2020.12.07``, where ``2020.12.07`` is the
-   SCOWL version).
-#. Download the same version of the dictionary from the `SCOWL`_ homepage or
-   `SourceForce`_ as a tarball (tag.gz) and unpack it in the working directory.
-   Rename the resulting folder from ``scowl-YYYY.MM.DD`` to ``scowl``.
+   ``README_en_US.txt``: near the top of the file there is a line similar to
+   ``Version rel-2026.02.25``, where ``rel-2026.02.25`` is the upstream SCOWL
+   release tag.
+#. Clone the upstream SCOWL repository into the working directory and check out
+   the tag matching that version:
+
+   .. code-block:: sh
+
+      git clone https://github.com/en-wl/wordlist scowl
+      cd scowl
+      git checkout rel-YYYY.MM.DD
+      cd ..
+
+   SCOWLv2 requires Python 3.7+ and SQLite 3.33+.
 #. There’s a special script used for editing dictionaries. The script
    only works if you have the environment variable ``EDITOR`` set to the
    executable of an editor program; if you don’t have it set, you can use
@@ -61,9 +69,9 @@ This section describes the process for adding new words to the dictionary:
 #. Run the script ``sh make-new-dict.sh`` to generate a new dictionary and make
    sure it runs without errors. For more details on this script, see the
    `make-new-dict.sh`_ section.
-#. Do a sanity check on the resulting dictionary file ``en_US-mozilla.dic``. For
-   example, make sure that the size is about the same as the original dictionary
-   (or slightly larger).
+#. Run ``sh verify-new-dict.sh`` to sanity-check the regenerated dictionary
+   (see the `verify-new-dict.sh`_ section). The script must report
+   ``Errors: 0`` before proceeding.
 #. If everything looks correct, use ``sh install-new-dict.sh`` to copy the
    generated file in the right position.
 #. Build Firefox and test your updated dictionary. Once you’re
@@ -103,22 +111,30 @@ in `Adding new words to the en-US dictionary`_. Instead of running the
 Upgrading dictionary to a new upstream version of SCOWL
 =======================================================
 
-The English dictionary available in mozilla-central is based on the
+The English dictionary available in the `firefox repository`_ is based on the
 `SCOWL`_ dictionary. Some scripts distributed with the SCOWL package are
 used to generate the files for the en-US dictionary.
 
 The working directory for this process is
 ``extensions/spellcheck/locales/en-US/hunspell/dictionary-sources``.
 
-#. Download the latest version of the dictionary from the `SCOWL`_ homepage or
-   `SourceForce`_ as a tarball (tag.gz) and unpack it in the working directory.
-   Rename the resulting folder from ``scowl-YYYY.MM.DD`` to ``scowl``.
+#. Clone the upstream SCOWL repository into the working directory and check out
+   the desired release tag (e.g. ``rel-2026.02.25``):
+
+   .. code-block:: sh
+
+      git clone https://github.com/en-wl/wordlist scowl
+      cd scowl
+      git checkout rel-2026.02.25
+      cd ..
+
+   SCOWLv2 requires Python 3.7+ and SQLite 3.33+.
 #. Run the script ``sh make-new-dict.sh`` to generate a new dictionary and make
    sure it runs without errors. For more details on this script, see the
    `make-new-dict.sh`_ section.
-#. Do a sanity check on the resulting dictionary file ``en_US-mozilla.dic``. For
-   example, make sure that the size is about the same as the original dictionary
-   (or slightly larger).
+#. Run ``sh verify-new-dict.sh`` to sanity-check the regenerated dictionary
+   (see the `verify-new-dict.sh`_ section). The script must report
+   ``Errors: 0`` before proceeding.
 #. If everything looks correct, use ``sh install-new-dict.sh`` to copy the
    generated file in the right position and use the process described in
    :ref:`write_a_patch` to create a patch.
@@ -148,23 +164,31 @@ Info about the included scripts
 make-new-dict.sh
 ----------------
 
-The dictionary upgrade scripts ``make-new-dict.sh`` works by expanding (i.e.
+The dictionary upgrade script ``make-new-dict.sh`` works by expanding (i.e.
 “unmunching”) the affix compression dictionaries to create wordlists and
-use those to generate a new dictionary.
+using those to generate a new dictionary.
 
 The upgrade script expects the current upstream version to be kept in the
-directory ``orig``.
+directory ``orig``. On first run (or whenever ``scowl/scowl.db`` has been
+removed) the script will run ``make scowl.db`` inside ``scowl/`` to build the
+SCOWLv2 SQLite database that ``mk-list`` reads from.
 
-The script will create a few files in ``dictionary-sources/support_file`` in the
-following order:
+The script writes intermediate files to ``dictionary-sources/support_files/``:
 
 * ``0-special.txt`` contains numbers and ordinals expanded from SCOWL
   ``en.dic.supp``.
 * ``1-base.txt`` contains words expanded from ``en_US-custom.dic`` in the
   **previous** version of SCOWL (from the ``orig`` folder).
-* ``2-mozilla.txt`` contains words expanded from the current Mozilla dictionary.
+* ``2-mozilla-nosug-munched.txt`` contains the suggestion exclusions (lines
+  ending in ``!``) from the current Mozilla dictionary, kept in their
+  compressed (munched) form so they can be appended back at the end.
+* ``2-mozilla-nosug.txt`` is the expanded form of the same suggestion
+  exclusions, used later to filter the ``5-*`` files.
+* ``2-mozilla.txt`` contains words expanded from the current Mozilla
+  dictionary, with the suggestion exclusions stripped out first.
 * ``3-upstream.txt`` contains words expanded from ``en_US-custom.dic`` in the
-  **new** version of SCOWL (from the ``scowl/speller`` folder).
+  **new** version of SCOWL (regenerated under ``scowl/speller/`` by
+  ``make-hunspell-dict``).
 * ``2-mozilla-removed.txt`` contains words that are only available in the SCOWL
   dictionary, i.e. removed by Mozilla.
 * ``2-mozilla-added.txt`` contains words that are only available in the current
@@ -172,8 +196,13 @@ following order:
 * ``4-patched.txt`` contains words from the new SCOWL dictionary
   (``3-upstream.txt``), with words from (``2-mozilla-removed.txt``) removed and
   words (``2-mozilla-added.txt``) added.
-* ``5-mozilla-specific.txt`` is expanded from ``mozilla-specific.txt`` using the
-  current affix rules from the Mozilla dictionary.
+
+In addition, the script writes three files directly to the working directory
+(``dictionary-sources/``) so they can be inspected and committed alongside the
+generated dictionary:
+
+* ``5-mozilla-specific.txt`` is expanded from ``mozilla-specific.txt`` using
+  the current affix rules from the Mozilla dictionary.
 * ``5-mozilla-removed.txt`` and ``5-mozilla-added.txt`` contain words that are
   respectively removed and added by Mozilla compared to the **new** SCOWL
   version. These files could be used to submit upstream changes, but words
@@ -181,6 +210,32 @@ following order:
 
 The new dictionary is available as ``en_US-mozilla.dic`` and should be copied
 over using the ``install-new-dict.sh`` script.
+
+verify-new-dict.sh
+------------------
+
+This script runs sanity checks on the dictionary produced by
+``make-new-dict.sh`` and must be run before ``install-new-dict.sh``. It reports:
+
+* Whether the regenerated ``.dic`` passes the ISO-8859-1 round-trip that
+  ``install-new-dict.sh`` performs (a failure here means upstream introduced
+  characters that the legacy ISO-8859-1 path can't represent).
+* Whether each entry from ``mozilla-specific.txt`` is still present in the
+  regenerated dictionary.
+* Whether every previous suggestion exclusion (line ending in ``!``) is
+  preserved, and lists any new exclusions introduced upstream.
+* The line-count delta against the previous shipped dictionary (producing a
+  warning above a 25% change).
+* That the upstream ``en_US.txt`` from the `wordlist-diff`_ mirror (fetched
+  via ``curl`` from raw.githubusercontent.com at the same release tag as
+  ``scowl/``) is a subset of the regenerated wordlist, ignoring words that
+  Mozilla intentionally removed (``5-mozilla-removed.txt``). The Mozilla
+  dictionary should equal upstream ``en_US.txt`` minus Mozilla removals,
+  plus Mozilla additions, variants and accented words. The check is skipped
+  (with a warning) when offline, when ``curl`` is unavailable, or when the
+  local ``scowl/`` checkout is not on a tagged release.
+
+The script exits with non-zero if any check fails.
 
 install-new-dict.sh
 -------------------
@@ -192,11 +247,34 @@ The script:
 * Copies the existing Mozilla dictionary in ``support_files/mozilla-bk``.
 * Converts the dictionary (.dic) generated by ``make-new-dict.sh`` from UTF-8 to
   ISO-8859-1 and moves it to the parent folder.
-* Sets the affix file (.aff) to use ``ISO8859-1`` as ``SET`` instead of the
-  original ``UTF-8``, removes ``ICONV`` patterns (input conversion tables).
+* Saves the SCOWLv2 affix file verbatim to ``utf8/en-US-utf8.aff`` (the
+  UTF-8 mirror) and then runs ``convert-aff.py`` (see below) to rewrite
+  the affix file in the Mozilla-shipped ISO-8859-1 form.
+
+Python helpers
+--------------
+
+A couple of small Python scripts live alongside the shell scripts and handle
+encoding-sensitive transformations that are awkward to express portably in
+shell. They depend only on the Python standard library and target Python 3.7+,
+which is already required by SCOWLv2 itself.
+
+* ``assemble-dic.py`` is invoked at the end of ``make-new-dict.sh``. It takes
+  the freshly generated UTF-8 ``en_US-mozilla.dic`` and the munched
+  suggestion-exclusion list (``support_files/2-mozilla-nosug-munched.txt``,
+  ISO-8859-1) and rewrites the dictionary with both lists merged, sorted, and
+  an updated count line on top.
+* ``convert-aff.py`` is invoked from ``install-new-dict.sh`` to convert the
+  SCOWLv2 UTF-8 affix file to the shipped ``en-US.aff``. It strips
+  ``ICONV`` rules, rewrites ``SET UTF-8`` as ``SET ISO8859-1``, drops the
+  curly apostrophe (U+2019) that SCOWLv2 adds to ``WORDCHARS`` (since
+  ISO-8859-1 can't represent it), and writes the result back as
+  ISO-8859-1. The UTF-8 mirror in ``utf8/en-US-utf8.aff`` is a verbatim copy
+  of the SCOWLv2 output and does not go through this script.
 
 
 .. _SCOWL: http://wordlist.aspell.net
 .. _file a new bug: https://bugzilla.mozilla.org/show_bug.cgi?id=enus-dictionary
-.. _SourceForce: https://sourceforge.net/projects/wordlist/files/SCOWL/
 .. _bug 237921: https://bugzilla.mozilla.org/show_bug.cgi?id=237921
+.. _firefox repository: https://github.com/mozilla-firefox/firefox
+.. _wordlist-diff: https://github.com/en-wl/wordlist-diff

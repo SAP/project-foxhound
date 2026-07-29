@@ -148,10 +148,11 @@ class DefaultDeleteBrowsingDataController(
     }
 
     override suspend fun deleteBrowsingHistory() {
+        dataStorage.history.deleteEverything()
+        stores.browserStore.dispatch(EngineAction.PurgeHistoryAction)
+        stores.browserStore.dispatch(RecentlyClosedAction.RemoveAllClosedTabAction)
         withContext(coroutineContext) {
-            dataStorage.history.deleteEverything()
-            stores.browserStore.dispatch(EngineAction.PurgeHistoryAction)
-            stores.browserStore.dispatch(RecentlyClosedAction.RemoveAllClosedTabAction)
+            engine.clearTrackingProtectionData()
         }
     }
 

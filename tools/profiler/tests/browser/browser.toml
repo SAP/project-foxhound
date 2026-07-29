@@ -10,6 +10,9 @@ skip-if = [
 ["browser_test_feature_ipcmessages.js"]
 support-files = ["simple.html"]
 
+["browser_test_feature_js_source_table.js"]
+support-files = ["simple.html", "inline_script_test.html"]
+
 ["browser_test_feature_js_sourceindex.js"]
 support-files = ["simple.html", "tracing.html"]
 
@@ -17,17 +20,28 @@ support-files = ["simple.html", "tracing.html"]
 support-files = ["simple.html", "test_dedup_script.js"]
 
 ["browser_test_feature_js_sources_retrieval.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
 support-files = [
   "simple.html",
   "page_with_external_js.html",
   "external_script.js"
 ]
 
+["browser_test_feature_js_sources_shutdown_process.js"]
+support-files = ["simple.html"]
+
 ["browser_test_feature_jsallocations.js"]
 support-files = ["do_work_500ms.html"]
 
 ["browser_test_feature_jstracing.js"]
 support-files = ["tracing.html"]
+skip-if = [
+  "!nightly_build", # This features is only enabled on nightly via MOZ_EXECUTION_TRACING build flag
+]
+
+["browser_test_feature_jstracing_filter_values.js"]
 skip-if = [
   "!nightly_build", # This features is only enabled on nightly via MOZ_EXECUTION_TRACING build flag
 ]

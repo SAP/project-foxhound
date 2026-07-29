@@ -27,6 +27,7 @@ task-defaults:
                 mozilla-beta: firefox-beta
                 mozilla-release: firefox-release
                 mozilla-esr140: firefox-esr140
+                mozilla-esr153: firefox-esr153
                 autoland: firefox-autoland
                 # change this if you want to test esr bumps against other
                 # branches on try; there's rarely a need though.
@@ -39,6 +40,64 @@ task-defaults:
                 # XXX whenever the `beta` config changes, make sure to make
                 #     the corresponding change in merge-automation/kind.yml
                 beta:
+                    - l10n-bump:
+                          - name: Firefox l10n changesets
+                            path: browser/locales/l10n-changesets.json
+                            l10n-repo-url: https://github.com/mozilla-l10n/firefox-l10n
+                            l10n-repo-target-branch: main
+                            ignore-config:
+                                ja:
+                                    - macosx64
+                                    - macosx64-devedition
+                                ja-JP-mac:
+                                    - linux64
+                                    - linux64-devedition
+                                    - linux64-aarch64-devedition
+                                    - linux64-aarch64
+                                    - win32
+                                    - win32-devedition
+                                    - win64
+                                    - win64-devedition
+                                    - win64-aarch64
+                                    - win64-aarch64-devedition
+                            platform-configs:
+                                [
+                                    {
+                                        "platforms":
+                                            [
+                                                "linux64",
+                                                "linux64-aarch64",
+                                                "linux64-devedition",
+                                                "linux64-aarch64-devedition",
+                                                "macosx64",
+                                                "macosx64-devedition",
+                                                "win32",
+                                                "win32-devedition",
+                                                "win64",
+                                                "win64-devedition",
+                                                "win64-aarch64",
+                                                "win64-aarch64-devedition",
+                                            ],
+                                        "path": "browser/locales/shipped-locales",
+                                    },
+                                ]
+                          - name: Mobile l10n changesets
+                            path: mobile/locales/l10n-changesets.json
+                            l10n-repo-url: https://github.com/mozilla-l10n/firefox-l10n
+                            l10n-repo-target-branch: main
+                            platform-configs:
+                                [
+                                    {
+                                        "platforms":
+                                            [
+                                                "android",
+                                                "android-arm",
+                                                "android-multilocale",
+                                            ],
+                                        "path": "mobile/android/locales/all-locales",
+                                    },
+                                ]
+                release:
                     - l10n-bump:
                           - name: Firefox l10n changesets
                             path: browser/locales/l10n-changesets.json

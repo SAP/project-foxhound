@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -89,11 +88,15 @@ nsresult MaybeLoadLibSecret() {
     return NS_ERROR_NOT_SAME_THREAD;
   }
 
+  MOZ_ASSERT(!libsecret, "libsecret should not be loaded more than once");
+  if (libsecret) {
+    return NS_ERROR_ALREADY_INITIALIZED;
+  }
+
+  libsecret = PR_LoadLibrary("libsecret-1.so.0");
   if (!libsecret) {
-    libsecret = PR_LoadLibrary("libsecret-1.so.0");
-    if (!libsecret) {
-      return NS_ERROR_NOT_AVAILABLE;
-    }
+    return NS_ERROR_NOT_AVAILABLE;
+  }
 
 // With TSan, we cannot unload libsecret once we have loaded it because
 // TSan does not support unloading libraries that are matched from its
@@ -113,13 +116,12 @@ nsresult MaybeLoadLibSecret() {
     libsecret = nullptr;                                                 \
     return NS_ERROR_NOT_AVAILABLE;                                       \
   }
-    FIND_FUNCTION_SYMBOL(secret_password_clear_sync);
-    FIND_FUNCTION_SYMBOL(secret_password_lookup_sync);
-    FIND_FUNCTION_SYMBOL(secret_password_store_sync);
-    FIND_FUNCTION_SYMBOL(secret_password_free);
-    FIND_FUNCTION_SYMBOL(secret_error_get_quark);
+  FIND_FUNCTION_SYMBOL(secret_password_clear_sync);
+  FIND_FUNCTION_SYMBOL(secret_password_lookup_sync);
+  FIND_FUNCTION_SYMBOL(secret_password_store_sync);
+  FIND_FUNCTION_SYMBOL(secret_password_free);
+  FIND_FUNCTION_SYMBOL(secret_error_get_quark);
 #undef FIND_FUNCTION_SYMBOL
-  }
 
   return NS_OK;
 }

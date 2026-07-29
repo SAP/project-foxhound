@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,7 +17,7 @@
 using namespace mozilla;
 using namespace mozilla::a11y;
 
-MOZ_RUNINIT static nsTHashMap<nsStringHashKey, nsString> sLocalizedStrings;
+constinit static nsTHashMap<nsStringHashKey, nsString> sLocalizedStrings;
 
 void a11y::PlatformInit() {
   nsresult rv = NS_OK;
@@ -160,7 +158,6 @@ void a11y::PlatformCaretMoveEvent(Accessible* aTarget, int32_t aOffset,
     // Pivot to the caret's position if it has an expanded selection.
     // This is used mostly for find in page.
     Accessible* leaf = TextLeafPoint::GetCaret(aTarget).mAcc;
-    MOZ_ASSERT(leaf);
     if (leaf) {
       if (Accessible* result = AccessibleWrap::DoPivot(
               leaf, java::SessionAccessibility::HTML_GRANULARITY_DEFAULT, true,
@@ -235,4 +232,8 @@ uint64_t a11y::GetCacheDomainsForKnownClients(uint64_t aCacheDomains) {
   // XXX: Respond to clients such as TalkBack. For now, be safe and default to
   // caching all domains.
   return CacheDomain::All;
+}
+
+void a11y::GetHumanReadableInstantiatorStr(nsAString& aResult) {
+  aResult.Truncate();
 }

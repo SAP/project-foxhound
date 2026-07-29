@@ -11,6 +11,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "chrome://remote/content/shared/messagehandler/MessageHandler.sys.mjs",
   RootMessageHandler:
     "chrome://remote/content/shared/messagehandler/RootMessageHandler.sys.mjs",
+  SessionDataCategory:
+    "chrome://remote/content/shared/messagehandler/sessiondata/SessionData.sys.mjs",
   WindowGlobalMessageHandler:
     "chrome://remote/content/shared/messagehandler/WindowGlobalMessageHandler.sys.mjs",
 });
@@ -47,8 +49,12 @@ class _ConfigurationModule extends WindowGlobalBiDiModule {
   async observe(subject, topic) {
     if (topic === "content-document-global-created") {
       const window = subject;
-      // Ignore events without a window.
-      if (window !== this.messageHandler.window) {
+      // Ignore events without a window or with the wrong innerWindowId.
+      if (
+        window !== this.messageHandler.window ||
+        window.windowGlobalChild?.innerWindowId !==
+          this.messageHandler.innerWindowId
+      ) {
         return;
       }
 
@@ -137,13 +143,13 @@ class _ConfigurationModule extends WindowGlobalBiDiModule {
   _applySessionData(params) {
     const { category, sessionData } = params;
 
-    if (category === "preload-script") {
+    if (category === lazy.SessionDataCategory.PreloadScript) {
       this.#updatePreloadScripts(sessionData);
     }
 
     // The geolocation override applies only to top-level traversables.
     if (
-      category === "geolocation-override" &&
+      category === lazy.SessionDataCategory.GeolocationOverride &&
       !this.messageHandler.context.parent
     ) {
       let geolocationOverridePerContext = null;

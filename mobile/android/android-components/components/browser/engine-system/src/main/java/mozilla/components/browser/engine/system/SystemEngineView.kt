@@ -10,7 +10,6 @@ import android.content.res.Resources
 import android.graphics.Bitmap
 import android.net.Uri
 import android.net.http.SslError
-import android.os.Environment
 import android.os.Handler
 import android.os.Message
 import android.util.AttributeSet
@@ -599,11 +598,6 @@ class SystemEngineView @JvmOverloads constructor(
                 session.internalNotifyObservers {
                     val fileName = DefaultDownloadFileUtils(
                         context = context,
-                        downloadLocation = {
-                            Environment.getExternalStoragePublicDirectory(
-                                Environment.DIRECTORY_DOWNLOADS,
-                            ).path
-                        },
                     ).guessFileName(
                         contentDisposition = contentDisposition,
                         url = url,

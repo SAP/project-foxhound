@@ -74,7 +74,7 @@ def lint(paths, config, fix=None, **lintargs):
         return {"results": results, "fixed": 0}
 
     # This only impacts "EXPIRED" rules which we're ignoring anyway
-    irrelevant_version_number = "500.0"
+    irrelevant_version_number = "1.0"
     options = get_parser_options(irrelevant_version_number, False)
 
     for group_name, group_data in groups.items():

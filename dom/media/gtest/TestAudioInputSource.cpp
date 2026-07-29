@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -25,16 +23,16 @@ using testing::ContainerEq;
   while (NS_ProcessNextEvent(nullptr, false)) { \
   }
 
-class MockEventListener : public AudioInputSource::EventListener {
+class MockAudioEventListener : public AudioInputSource::EventListener {
  public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MockEventListener, override);
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MockAudioEventListener, override);
   MOCK_METHOD1(AudioDeviceChanged, void(AudioInputSource::Id));
   MOCK_METHOD2(AudioStateCallback,
                void(AudioInputSource::Id,
                     AudioInputSource::EventListener::State));
 
  private:
-  ~MockEventListener() = default;
+  ~MockAudioEventListener() = default;
 };
 
 TEST(TestAudioInputSource, StartAndStop)
@@ -50,7 +48,7 @@ TEST(TestAudioInputSource, StartAndStop)
   const TrackRate sourceRate = 44100;
   const TrackRate targetRate = 48000;
 
-  auto listener = MakeRefPtr<MockEventListener>();
+  auto listener = MakeRefPtr<MockAudioEventListener>();
   EXPECT_CALL(*listener,
               AudioStateCallback(
                   sourceId, AudioInputSource::EventListener::State::Started))
@@ -121,7 +119,7 @@ TEST(TestAudioInputSource, DataOutputBeforeStartAndAfterStop)
 
   const TrackTime requestFrames = 2 * WEBAUDIO_BLOCK_SIZE;
 
-  auto listener = MakeRefPtr<MockEventListener>();
+  auto listener = MakeRefPtr<MockAudioEventListener>();
   EXPECT_CALL(*listener,
               AudioStateCallback(
                   sourceId, AudioInputSource::EventListener::State::Started));
@@ -202,7 +200,7 @@ TEST(TestAudioInputSource, ErrorCallback)
   const TrackRate sourceRate = 44100;
   const TrackRate targetRate = 48000;
 
-  auto listener = MakeRefPtr<MockEventListener>();
+  auto listener = MakeRefPtr<MockAudioEventListener>();
   EXPECT_CALL(*listener,
               AudioStateCallback(
                   sourceId, AudioInputSource::EventListener::State::Started));
@@ -252,7 +250,7 @@ TEST(TestAudioInputSource, DeviceChangedCallback)
   const TrackRate sourceRate = 44100;
   const TrackRate targetRate = 48000;
 
-  auto listener = MakeRefPtr<MockEventListener>();
+  auto listener = MakeRefPtr<MockAudioEventListener>();
   EXPECT_CALL(*listener, AudioDeviceChanged(sourceId));
   EXPECT_CALL(*listener,
               AudioStateCallback(
@@ -302,7 +300,7 @@ TEST(TestAudioInputSource, InputProcessing)
   using ProcessingPromise =
       AudioInputSource::SetRequestedProcessingParamsPromise;
 
-  auto listener = MakeRefPtr<MockEventListener>();
+  auto listener = MakeRefPtr<MockAudioEventListener>();
   EXPECT_CALL(*listener,
               AudioStateCallback(
                   sourceId, AudioInputSource::EventListener::State::Started))

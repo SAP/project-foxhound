@@ -235,7 +235,7 @@
   }
 
   &:hover {
-    box-shadow: var(--box-shadow-card);
+    box-shadow: var(--card-box-shadow);
   }
 
   a {
@@ -266,9 +266,9 @@
 
   dialog {
     background: var(--newtab-background-color-secondary);
-    border: 1px solid var(--border-color-card);
+    border: 1px solid var(--card-border-color);
     border-radius: var(--border-radius-medium);
-    box-shadow: var(--box-shadow-card);
+    box-shadow: var(--card-box-shadow);
     display: flex;
     width: 332px;
 
@@ -299,7 +299,7 @@
 
     h3 {
       font-size: var(--button-font-size);
-      font-weight: var(--heading-font-weight);
+      font-weight: var(--font-weight-heading);
       margin-block: 0 var(--space-medium);
     }
 
@@ -329,14 +329,14 @@ dialog {
     height: 16px;
     width: 16px;
     background: var(--newtab-background-color-secondary);
-    box-shadow: 4px 4px 6px -2px var(--box-shadow-card);
-    border-inline-end: 1px solid var(--border-color-card);
-    border-block-end: 1px solid var(--border-color-card);
+    box-shadow: 4px 4px 6px -2px var(--card-box-shadow);
+    border-inline-end: 1px solid var(--card-border-color);
+    border-block-end: 1px solid var(--card-border-color);
   }
 
   &:dir(rtl)::after {
-    border-inline-start: 1px solid var(--border-color-card);
-    border-block-end: 1px solid var(--border-color-card);
+    border-inline-start: 1px solid var(--card-border-color);
+    border-block-end: 1px solid var(--card-border-color);
     border-inline-end: none;
     inset-inline-end: 10%;
   }
@@ -675,7 +675,8 @@ dialog {
   }
 }
 
-.location-input-wrapper {
+.weatherWrapper .location-input-wrapper,
+.weather-forecast-widget .location-input-wrapper {
   background-color: light-dark(var(--color-white), var(--newtab-background-color-secondary));
   color: var(--newtab-text-primary-color);
   border-radius: var(--border-radius-medium);

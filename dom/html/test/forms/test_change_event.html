@@ -61,7 +61,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=722599
 
   SimpleTest.waitForExplicitFinish();
   var MockFilePicker = SpecialPowers.MockFilePicker;
-  MockFilePicker.init(SpecialPowers.wrap(window).browsingContext);
+  MockFilePicker.init();
 
   function fileInputBlurTest() {
     var btn = document.getElementById('fileInput');
@@ -234,32 +234,39 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=722599
     is(rangeChange, 2, "Change event shouldn't be dispatched on range input element when range loses focus after a drag");
     synthesizeMouse(range, centerOfRangeX - 10, centerOfRangeY, {});
     is(rangeChange, 3, "Change event should be dispatched on range input element for a click that gives the range focus");
+    range.value = 50;
+    is(rangeChange, 3, "Change event shouldn't be dispatched on range input element when setting value via script");
+    // Test for bug 2026562
+    range.addEventListener('input', () => { range.value++; }, { once: true });
+    synthesizeMouse(range, centerOfRangeX - 10, centerOfRangeY, {});
+    is(rangeChange, 4, "Change event should be dispatched on range input element when input event handler sets value");
 
     if (isDesktop) { // up/down arrow keys not supported on android/b2g
+      rangeChange = 0;
       synthesizeKey("KEY_ArrowUp");
-      is(rangeChange, 4, "Change event should be dispatched on range input element for key changes that change its value (KEY_ArrowUp)");
+      is(rangeChange, 1, "Change event should be dispatched on range input element for key changes that change its value (KEY_ArrowUp)");
       synthesizeKey("KEY_ArrowDown");
-      is(rangeChange, 5, "Change event should be dispatched on range input element for key changes that change its value (KEY_ArrowDown)");
+      is(rangeChange, 2, "Change event should be dispatched on range input element for key changes that change its value (KEY_ArrowDown)");
       synthesizeKey("KEY_ArrowRight");
-      is(rangeChange, 6, "Change event should be dispatched on range input element for key changes that change its value (KEY_ArrowRight)");
+      is(rangeChange, 3, "Change event should be dispatched on range input element for key changes that change its value (KEY_ArrowRight)");
       synthesizeKey("KEY_ArrowLeft");
-      is(rangeChange, 7, "Change event should be dispatched on range input element for key changes that change its value (KEY_ArrowLeft)");
+      is(rangeChange, 4, "Change event should be dispatched on range input element for key changes that change its value (KEY_ArrowLeft)");
       synthesizeKey("KEY_ArrowUp", {shiftKey: true});
-      is(rangeChange, 8, "Change event should be dispatched on range input element for key changes that change its value (Shift+KEY_ArrowUp)");
+      is(rangeChange, 5, "Change event should be dispatched on range input element for key changes that change its value (Shift+KEY_ArrowUp)");
       synthesizeKey("KEY_ArrowDown", {shiftKey: true});
-      is(rangeChange, 9, "Change event should be dispatched on range input element for key changes that change its value (Shift+KEY_ArrowDown)");
+      is(rangeChange, 6, "Change event should be dispatched on range input element for key changes that change its value (Shift+KEY_ArrowDown)");
       synthesizeKey("KEY_ArrowRight", {shiftKey: true});
-      is(rangeChange, 10, "Change event should be dispatched on range input element for key changes that change its value (Shift+KEY_ArrowRight)");
+      is(rangeChange, 7, "Change event should be dispatched on range input element for key changes that change its value (Shift+KEY_ArrowRight)");
       synthesizeKey("KEY_ArrowLeft", {shiftKey: true});
-      is(rangeChange, 11, "Change event should be dispatched on range input element for key changes that change its value (Shift+KEY_ArrowLeft)");
+      is(rangeChange, 8, "Change event should be dispatched on range input element for key changes that change its value (Shift+KEY_ArrowLeft)");
       synthesizeKey("KEY_PageUp");
-      is(rangeChange, 12, "Change event should be dispatched on range input element for key changes that change its value (KEY_PageUp)");
+      is(rangeChange, 9, "Change event should be dispatched on range input element for key changes that change its value (KEY_PageUp)");
       synthesizeKey("KEY_PageDown");
-      is(rangeChange, 13, "Change event should be dispatched on range input element for key changes that change its value (KEY_PageDown");
+      is(rangeChange, 10, "Change event should be dispatched on range input element for key changes that change its value (KEY_PageDown");
       synthesizeKey("KEY_ArrowRight", {shiftKey: true});
-      is(rangeChange, 14, "Change event should be dispatched on range input element for key changes that change its value (Shift+KEY_PageUp)");
+      is(rangeChange, 11, "Change event should be dispatched on range input element for key changes that change its value (Shift+KEY_PageUp)");
       synthesizeKey("KEY_ArrowLeft", {shiftKey: true});
-      is(rangeChange, 15, "Change event should be dispatched on range input element for key changes that change its value (Shift+KEY_PageDown)");
+      is(rangeChange, 12, "Change event should be dispatched on range input element for key changes that change its value (Shift+KEY_PageDown)");
     }
     //Input type change test.
     input = document.getElementById("input_checkbox");

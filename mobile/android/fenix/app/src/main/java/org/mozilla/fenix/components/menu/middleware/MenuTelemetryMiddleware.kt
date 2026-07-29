@@ -37,6 +37,12 @@ class MenuTelemetryMiddleware(
         next(action)
 
         when (action) {
+            MenuAction.Navigate.Wallpaper -> Events.browserMenuAction.record(
+                Events.BrowserMenuActionExtra(
+                    item = "change_wallpaper",
+                ),
+            )
+
             MenuAction.AddBookmark -> Events.browserMenuAction.record(
                 Events.BrowserMenuActionExtra(
                     item = "add_bookmark",
@@ -183,6 +189,12 @@ class MenuTelemetryMiddleware(
                 )
             }
 
+            MenuAction.MoveToNonPrivateTab -> Events.browserMenuAction.record(
+                Events.BrowserMenuActionExtra(
+                    item = "move_to_non_private_tab",
+                ),
+            )
+
             MenuAction.DeleteBrowsingDataAndQuit -> Events.browserMenuAction.record(
                 Events.BrowserMenuActionExtra(
                     item = "quit",
@@ -291,6 +303,11 @@ class MenuTelemetryMiddleware(
             is MenuAction.InstallAddonSuccess,
             is MenuAction.UpdateInstallAddonInProgress,
             is MenuAction.UpdateAvailableAddons,
+            is MenuAction.OnSummarizationMenuExposed,
+            is MenuAction.InitializeSummarizationMenuState,
+            is MenuAction.UpdateIPProtectionMenuState,
+            is MenuAction.OnMoreMenuClicked,
+            is MenuAction.Navigate.IPProtectionSettings,
             -> Unit
         }
     }

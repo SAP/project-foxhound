@@ -499,7 +499,7 @@ static bool ParseKeys(ParserContext& aCtx, vector<KeyIdPair>& aOutKeys) {
     }
 
     assert(!key.mKey.empty() && !key.mKeyId.empty());
-    aOutKeys.push_back(key);
+    aOutKeys.push_back(std::move(key));
 
     uint8_t sym = PeekSymbol(aCtx);
     if (!sym || sym == ']') {
@@ -569,7 +569,7 @@ static bool ParseKeyIds(ParserContext& aCtx, vector<KeyId>& aOutKeyIds) {
       return false;
     }
     if (!keyId.empty() && keyId.size() <= kMaxKeyIdsLength) {
-      aOutKeyIds.push_back(keyId);
+      aOutKeyIds.push_back(std::move(keyId));
     }
 
     uint8_t sym = PeekSymbol(aCtx);

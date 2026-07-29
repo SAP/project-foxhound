@@ -1,16 +1,12 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MatroskaDecoder.h"
 
-#ifdef MOZ_AV1
-#  include "AOMDecoder.h"
-#endif
+#include "AOMDecoder.h"
 #include "MediaContainerType.h"
-#include "PDMFactory.h"
+#include "PDMFactorySupport.h"
 #include "PlatformDecoderModule.h"
 #include "VideoUtils.h"
 #include "mozilla/StaticPrefs_media.h"
@@ -98,7 +94,6 @@ nsTArray<UniquePtr<TrackInfo>> MatroskaDecoder::GetTracksInfo(
       tracks.AppendElement(std::move(trackInfo));
       continue;
     }
-#ifdef MOZ_AV1
     if (StaticPrefs::media_av1_enabled() && IsAV1CodecString(codec)) {
       auto trackInfo =
           CreateTrackInfoWithMIMETypeAndContainerTypeExtraParameters(
@@ -107,7 +102,6 @@ nsTArray<UniquePtr<TrackInfo>> MatroskaDecoder::GetTracksInfo(
       tracks.AppendElement(std::move(trackInfo));
       continue;
     }
-#endif
     aError = MediaResult(
         NS_ERROR_DOM_MEDIA_FATAL_ERR,
         RESULT_DETAIL("Unknown codec:%s", NS_ConvertUTF16toUTF8(codec).get()));
@@ -130,11 +124,10 @@ bool MatroskaDecoder::IsSupportedType(const MediaContainerType& aContainerType,
 
   if (!tracks.IsEmpty()) {
     // Look for exact match as we know the codecs used.
-    RefPtr<PDMFactory> platform = new PDMFactory();
     for (const auto& track : tracks) {
-      if (!track ||
-          platform->Supports(SupportDecoderParams(*track), aDiagnostics)
-              .isEmpty()) {
+      if (!track || PDMFactorySupport::IsSupported(SupportDecoderParams(*track),
+                                                   aDiagnostics)
+                        .isEmpty()) {
         return false;
       }
     }
@@ -168,19 +161,17 @@ bool MatroskaDecoder::IsSupportedType(const MediaContainerType& aContainerType,
     tracks.AppendElement(
         CreateTrackInfoWithMIMETypeAndContainerTypeExtraParameters(
             "video/vp9"_ns, aContainerType));
-#ifdef MOZ_AV1
     if (StaticPrefs::media_av1_enabled()) {
       tracks.AppendElement(
           CreateTrackInfoWithMIMETypeAndContainerTypeExtraParameters(
               "video/av1"_ns, aContainerType));
     }
-#endif
   }
 
   // Check that something is supported at least.
-  RefPtr<PDMFactory> platform = new PDMFactory();
   for (const auto& track : tracks) {
-    if (track && !platform->Supports(SupportDecoderParams(*track), aDiagnostics)
+    if (track && !PDMFactorySupport::IsSupported(SupportDecoderParams(*track),
+                                                 aDiagnostics)
                       .isEmpty()) {
       return true;
     }

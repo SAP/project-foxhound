@@ -96,20 +96,6 @@ mozbuild:
     expires: never
     send_in_pings:
       - usage
-  icecream:
-    type: boolean
-    description: True if icecream in use.
-    lifetime: application
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1291053
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1291053#c34
-    notification_emails:
-      - build-telemetry@mozilla.com
-      - ahochheiden@mozilla.com
-    expires: never
-    send_in_pings:
-      - usage
   clobber:
     type: boolean
     description: True if the build was a clobber/full build.

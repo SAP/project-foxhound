@@ -7,6 +7,9 @@ package org.mozilla.focus.settings.permissions.permissionoptions
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.Store
 
+/**
+ * Middleware that handles persistence for site permission options.
+ */
 class SitePermissionOptionsStorageMiddleware(
     val sitePermission: SitePermission,
     val storage: SitePermissionOptionsStorage,

@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -54,6 +53,12 @@ interface nsITLSSocketControl : nsISupports {
      * the handshake finishes this attribute will be set to appropriate value.
      */
     readonly attribute boolean earlyDataAccepted;
+
+    /* True if a TLS session resumption token was loaded from the token cache
+     * and offered in the ClientHello (regardless of whether the server
+     * accepted the resumption or whether early data was also sent).
+     */
+    readonly attribute boolean resumptionTokenPresent;
 
     /* When 0RTT is performed, PR_Write will not drive the handshake forward.
      * It must be forced by calling this function.

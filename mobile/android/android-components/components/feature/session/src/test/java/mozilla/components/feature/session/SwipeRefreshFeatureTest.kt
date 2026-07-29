@@ -6,6 +6,8 @@ package mozilla.components.feature.session
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.Build
+import android.view.HapticFeedbackConstants
 import android.widget.FrameLayout
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import kotlinx.coroutines.flow.flowOf
@@ -73,11 +75,14 @@ class SwipeRefreshFeatureTest {
     }
 
     @Test
-    fun `onRefresh should refresh the active session`() = runTest(testDispatcher) {
+    fun `onRefresh should refresh the active session and perform haptic feedback`() = runTest(testDispatcher) {
         refreshFeature.start()
         testDispatcher.scheduler.advanceUntilIdle()
         refreshFeature.onRefresh()
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            verify(mockLayout).performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+        }
         verify(useCase).invoke("B")
     }
 

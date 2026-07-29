@@ -311,6 +311,13 @@ interface TabHandler {
      * @return true if the tab was closed, otherwise false.
      */
     fun onCloseTab(webExtension: WebExtension, engineSession: EngineSession) = false
+
+    /**
+     * Invoked when an extension wants to open its options page.
+     *
+     * @param extension the extension that wants to open its options page.
+     */
+    fun onOpenOptionsPage(extension: WebExtension) = Unit
 }
 
 /**

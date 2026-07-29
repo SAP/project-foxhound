@@ -33,17 +33,25 @@ import { useSelector } from "react-redux";
  * @param {string} props.type - The component type to load (e.g., "SEARCH")
  * @param {string} props.className - CSS class name(s) to apply to the wrapper div
  * @param {Function} props.importModule - Function to import modules (for testing)
+ * @param {object} props.props - Properties to assign to the component, where
+ *   each key is the property name, and the value is the property value.
  */
+// eslint-disable-next-line no-unsanitized/method
+const defaultImportModule = url => import(/* webpackIgnore: true */ url);
+
 function ExternalComponentWrapper({
   type,
   className,
-  // importFunction is declared as an arrow function here purely so that we can
-  // override it for testing.
-  // eslint-disable-next-line no-unsanitized/method
-  importModule = url => import(/* webpackIgnore: true */ url),
+  // importModule can be overridden for testing.
+  importModule = defaultImportModule,
+  ...props
 }) {
   const containerRef = React.useRef(null);
   const customElementRef = React.useRef(null);
+  const cleanupRef = React.useRef(null);
+  const scriptRef = React.useRef(null);
+  const styleRef = React.useRef(null);
+  const shadowRootRef = React.useRef(null);
   const l10nLinksRef = React.useRef([]);
   const [error, setError] = React.useState(null);
   const { components } = useSelector(state => state.ExternalComponents);
@@ -62,16 +70,55 @@ function ExternalComponentWrapper({
           return;
         }
 
-        await importModule(config.componentURL);
-
         l10nLinksRef.current = [];
-        for (let l10nURL of config.l10nURLs) {
+        for (const l10nURL of config.l10nURLs ?? []) {
           const l10nEl = document.createElement("link");
           l10nEl.rel = "localization";
           l10nEl.href = l10nURL;
           document.head.appendChild(l10nEl);
           l10nLinksRef.current.push(l10nEl);
         }
+
+        if (config.mountStrategy === "react-bundle") {
+          if (!shadowRootRef.current) {
+            shadowRootRef.current =
+              container.shadowRoot ?? container.attachShadow({ mode: "open" });
+            document.l10n.connectRoot(shadowRootRef.current);
+          }
+          const shadowRoot = shadowRootRef.current;
+
+          for (const stylesURL of config.stylesURLs) {
+            const link = document.createElement("link");
+            link.rel = "stylesheet";
+            link.href = stylesURL;
+            shadowRoot.appendChild(link);
+          }
+
+          if (config.moduleURLs?.length) {
+            await Promise.all(config.moduleURLs.map(url => importModule(url)));
+          }
+
+          const mountPoint = document.createElement("div");
+          shadowRoot.appendChild(mountPoint);
+
+          await new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = config.bundleURL;
+            script.onload = () => {
+              cleanupRef.current = window[config.mountFunction](
+                mountPoint,
+                props
+              );
+              resolve();
+            };
+            script.onerror = reject;
+            document.head.appendChild(script);
+            scriptRef.current = script;
+          });
+          return;
+        }
+
+        await importModule(config.componentURL);
 
         if (containerRef.current && !customElementRef.current) {
           const element = document.createElement(config.tagName);
@@ -90,6 +137,12 @@ function ExternalComponentWrapper({
             }
           }
 
+          if (props) {
+            for (let [propName, propValue] of Object.entries(props)) {
+              element[propName] = propValue;
+            }
+          }
+
           customElementRef.current = element;
           containerRef.current.appendChild(element);
         }
@@ -105,6 +158,22 @@ function ExternalComponentWrapper({
     loadComponent();
 
     return () => {
+      cleanupRef.current?.();
+      cleanupRef.current = null;
+      scriptRef.current?.remove();
+      scriptRef.current = null;
+
+      if (shadowRootRef.current) {
+        document.l10n.disconnectRoot(shadowRootRef.current);
+        while (shadowRootRef.current.firstChild) {
+          shadowRootRef.current.firstChild.remove();
+        }
+        shadowRootRef.current = null;
+      } else {
+        styleRef.current?.remove();
+        styleRef.current = null;
+      }
+
       if (customElementRef.current && container) {
         container.removeChild(customElementRef.current);
         customElementRef.current = null;
@@ -115,6 +184,11 @@ function ExternalComponentWrapper({
       }
       l10nLinksRef.current = [];
     };
+    // props is intentionally excluded from the dependency array because it creates
+    // a new object reference on every render, which would cause the effect to
+    // re-run unnecessarily. The props are only used during initial element creation,
+    // which is guarded by the !customElementRef.current check.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type, components, importModule]);
 
   if (error) {

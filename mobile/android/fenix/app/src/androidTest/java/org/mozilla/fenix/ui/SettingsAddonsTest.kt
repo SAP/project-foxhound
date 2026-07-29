@@ -4,37 +4,43 @@
 
 package org.mozilla.fenix.ui
 
-import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.core.net.toUri
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.R
 import org.mozilla.fenix.customannotations.SmokeTest
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.helpers.AppAndSystemHelper.registerAndCleanupIdlingResources
+import org.mozilla.fenix.helpers.FenixTestRule
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.RecyclerViewIdlingResource
 import org.mozilla.fenix.helpers.TestAssetHelper.enhancedTrackingProtectionAsset
+import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
 import org.mozilla.fenix.helpers.TestHelper
-import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
 import org.mozilla.fenix.ui.robots.addonsMenu
 import org.mozilla.fenix.ui.robots.homeScreen
 import org.mozilla.fenix.ui.robots.navigationToolbar
+import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidComposeTestRuleV2
 
 /**
  *  Tests for verifying the functionality of installing or removing addons
  *
  */
-class SettingsAddonsTest : TestSetup() {
-    @get:Rule
+class SettingsAddonsTest {
+    @get:Rule(order = 0)
+    val fenixTestRule: FenixTestRule = FenixTestRule()
+
+    private val mockWebServer get() = fenixTestRule.mockWebServer
+
+    @get:Rule(order = 1)
     val composeTestRule =
-        AndroidComposeTestRule(
+        AndroidComposeTestRuleV2(
             HomeActivityIntentTestRule.withDefaultSettingsOverrides(),
         ) { it.activity }
 
-    @get:Rule
-    val memoryLeaksRule = DetectMemoryLeaksRule()
+    @get:Rule(order = 2)
+    val memoryLeaksRule = DetectMemoryLeaksRule(composeTestRule = { composeTestRule })
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/875780
     // Walks through settings add-ons menu to ensure all items are present
@@ -110,7 +116,7 @@ class SettingsAddonsTest : TestSetup() {
     @Test
     fun noCrashWithAddonInstalledTest() {
         // setting ETP to Strict mode to test it works with add-ons
-        composeTestRule.activity.settings().setStrictETP()
+        composeTestRule.activity.components.settings.setStrictETP()
 
         val uBlockAddon = "uBlock Origin"
         val darkReaderAddon = "Dark Reader"
@@ -142,7 +148,7 @@ class SettingsAddonsTest : TestSetup() {
     @SmokeTest
     @Test
     fun verifyUBlockWorksInPrivateModeTest() {
-        TestHelper.appContext.settings().shouldShowCookieBannersCFR = false
+        TestHelper.appContext.components.settings.shouldShowCookieBannersCFR = false
         val addonName = "uBlock Origin"
         val webPage = "https://mozilla-mobile.github.io/testapp/"
 
@@ -155,6 +161,7 @@ class SettingsAddonsTest : TestSetup() {
         }.enterURLAndEnterToBrowser(webPage.toUri()) {
             verifyPageContent("Lets test!")
         }.openThreeDotMenu {
+        }.clickExtensionsButton {
             verifyExtensionsButtonWithInstalledExtension(addonName)
         }
     }
@@ -162,18 +169,25 @@ class SettingsAddonsTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/875785
     @Test
     fun verifyUBlockWorksInNormalModeTest() {
+        val genericURL = mockWebServer.getGenericAsset(1)
         val addonName = "uBlock Origin"
         val webPage = "https://mozilla-mobile.github.io/testapp/"
 
         addonsMenu(composeTestRule) {
             installAddon(addonName, composeTestRule.activityRule)
             closeAddonInstallCompletePrompt()
+            verifyAddonIsInstalled(addonName)
         }.goBackToHomeScreen {
+        }
+        navigationToolbar(composeTestRule) {
+        }.enterURLAndEnterToBrowser(genericURL.url) {
+            verifyPageContent(genericURL.content)
         }
         navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(webPage.toUri()) {
             verifyPageContent("Lets test!")
         }.openThreeDotMenu {
+        }.clickExtensionsButton {
             verifyExtensionsButtonWithInstalledExtension(addonName)
         }
     }

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,7 +17,6 @@
 #include "mozilla/PendingStyles.h"       // for PendingStyle, PendingStyleCache
 #include "mozilla/RangeBoundary.h"       // for RawRangeBoundary, RangeBoundary
 #include "mozilla/SelectionState.h"      // for RangeUpdater, etc.
-#include "mozilla/StyleSheet.h"          // for StyleSheet
 #include "mozilla/TransactionManager.h"  // for TransactionManager
 #include "mozilla/WeakPtr.h"             // for WeakPtr
 #include "mozilla/dom/DataTransfer.h"    // for dom::DataTransfer
@@ -73,6 +71,7 @@ class PresShell;
 class TextComposition;
 class TextInputListener;
 class TextServicesDocument;
+struct LimitersAndCaretData;
 namespace dom {
 class AbstractRange;
 class DataTransfer;
@@ -193,7 +192,7 @@ class EditorBase : public nsIEditor,
 
   PresShell* GetPresShell() const;
   nsPresContext* GetPresContext() const;
-  already_AddRefed<nsCaret> GetCaret() const;
+  already_AddRefed<nsCaret> GetCaretForSelection() const;
 
   already_AddRefed<nsIWidget> GetWidget() const;
 
@@ -242,6 +241,9 @@ class EditorBase : public nsIEditor,
    * plaintext editors.
    */
   Element* GetExposedRoot() const;
+
+  /** Get EditContext used for this editor. */
+  virtual dom::EditContext* GetEditContext() const { return nullptr; }
 
   /**
    * Set or unset TextInputListener.  If setting non-nullptr when the editor
@@ -594,7 +596,10 @@ class EditorBase : public nsIEditor,
   [[nodiscard]] virtual Element* FindSelectionRoot(const nsINode& aNode) const;
 
   /**
-   * OnFocus() is called when we get a focus event.
+   * Called before `eFocus` event is dispatched into the DOM. Any state of the
+   * DOM which can be referred by web content's script should be initialized
+   * during this call because `focus` event should be fired after the focus move
+   * finished.
    *
    * @param aOriginalEventTargetNode    The original event target node of the
    *                                    focus event.
@@ -603,11 +608,23 @@ class EditorBase : public nsIEditor,
       const nsINode& aOriginalEventTargetNode);
 
   /**
-   * OnBlur() is called when we're blurred.
+   * Called when `eFocus` event propagation ends in the web content. The focused
+   * element may be redirected by a `focus` event listener so this editor may
+   * not have focus anymore when this is called.
+   */
+  MOZ_CAN_RUN_SCRIPT virtual void PostHandleFocusEvent(
+      const nsINode& aFocusEventTargetNode);
+
+  /**
+   * Called before `eBlur` event is dispatched into the DOM. Any state of the
+   * DOM which can be referred by web content's script should be finalized
+   * during this call because `blur` event should be fired after the blur
+   * finished.
    *
    * @param aEventTarget        The event target of the blur event.
    */
-  virtual nsresult OnBlur(const dom::EventTarget* aEventTarget) = 0;
+  MOZ_CAN_RUN_SCRIPT virtual nsresult OnBlur(
+      const dom::EventTarget* aEventTarget) = 0;
 
   /** Resyncs spellchecking state (enabled/disabled).  This should be called
    * when anything that affects spellchecking state changes, such as the
@@ -821,6 +838,8 @@ class EditorBase : public nsIEditor,
   struct MOZ_STACK_CLASS TopLevelEditSubActionData final {
     friend class AutoEditActionDataSetter;
 
+    TopLevelEditSubActionData(const TopLevelEditSubActionData& aOther) = delete;
+
     // Set selected range before edit.  Then, RangeUpdater keep modifying
     // the range while we're changing the DOM tree.
     RefPtr<RangeItem> mSelectedRange;
@@ -942,7 +961,6 @@ class EditorBase : public nsIEditor,
                                     const EditorRawDOMPoint& aEnd);
 
     TopLevelEditSubActionData() = default;
-    TopLevelEditSubActionData(const TopLevelEditSubActionData& aOther) = delete;
   };
 
   struct MOZ_STACK_CLASS EditSubActionData final {
@@ -1126,6 +1144,8 @@ class EditorBase : public nsIEditor,
                  (mSelection->GetType() == SelectionType::eNormal));
       return *mSelection;
     }
+
+    LimitersAndCaretData SelectionLimitersAndCaretData() const;
 
     Text* GetCachedTextNode() const {
       MOZ_ASSERT(mEditorBase.IsTextEditor());
@@ -1596,6 +1616,7 @@ class EditorBase : public nsIEditor,
                SelectionType::eNormal);
     return mEditActionData->SelectionRef();
   }
+  LimitersAndCaretData SelectionLimitersAndCaretData() const;
 
   // Return the Text if and only if we're a TextEditor instance.  It's cached
   // while we're handling an edit action, so, this stores the latest value even
@@ -1902,6 +1923,16 @@ class EditorBase : public nsIEditor,
     PaddingForEmptyEditor,
     PaddingForEmptyLastLine
   };
+  friend inline auto format_as(const BRElementType& aType) {
+    constexpr const char* sNames[] = {"Normal", "PaddingForEmptyEditor",
+                                      "PaddingForEmptyLastLine"};
+    return std::string(sNames[static_cast<size_t>(aType)]);
+  }
+  friend inline std::ostream& operator<<(std::ostream& aStream,
+                                         const BRElementType& aType) {
+    return aStream << format_as(aType);
+  }
+
   /**
    * Updates the type of aBRElement.  If it will be hidden or shown from
    * IMEContentObserver and ContentEventHandler points of view, this temporarily

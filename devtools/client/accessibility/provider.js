@@ -73,7 +73,13 @@ class Provider {
    * @returns {string} accessible object label.
    */
   getLabel(accessible) {
-    return accessible.role;
+    const role = accessible.role;
+
+    if (role === "heading" && accessible.level !== undefined) {
+      return `${role} (level ${accessible.level})`;
+    }
+
+    return role;
   }
 
   /**

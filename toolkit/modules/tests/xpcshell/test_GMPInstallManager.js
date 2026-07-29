@@ -5,10 +5,17 @@
 const URL_HOST = "http://localhost";
 const PR_USEC_PER_MSEC = 1000;
 
-const { GMPAddon, GMPExtractor, GMPInstallManager } =
-  ChromeUtils.importESModule(
-    "resource://gre/modules/GMPInstallManager.sys.mjs"
-  );
+const {
+  GMPAddon,
+  GMPExtractor,
+  GMPInstallManager,
+  GMPInstallManagerTestUtils,
+} = ChromeUtils.importESModule(
+  "resource://gre/modules/GMPInstallManager.sys.mjs"
+);
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
 const { setTimeout } = ChromeUtils.importESModule(
   "resource://gre/modules/Timer.sys.mjs"
 );
@@ -27,6 +34,14 @@ const { ProductAddonCheckerTestUtils } = ChromeUtils.importESModule(
 
 Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
 Services.prefs.setBoolPref("media.gmp-manager.updateEnabled", true);
+Services.prefs.setBoolPref(
+  "media.gmp-widevinecdm.allow-chromium-update",
+  false
+);
+Services.prefs.setBoolPref(
+  "media.gmp-widevinecdm-l1.allow-chromium-update",
+  false
+);
 // Gather the telemetry even where the probes don't exist (i.e. Thunderbird).
 Services.prefs.setBoolPref(
   "toolkit.telemetry.testing.overrideProductsCheck",
@@ -35,6 +50,11 @@ Services.prefs.setBoolPref(
 registerCleanupFunction(() => {
   Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
   Services.prefs.clearUserPref("media.gmp-manager.updateEnabled");
+  Services.prefs.clearUserPref("media.gmp-widevinecdm.allow-chromium-update");
+  Services.prefs.clearUserPref("media.gmp-widevinecdm.force-chromium-update");
+  Services.prefs.clearUserPref(
+    "media.gmp-widevinecdm-l1.allow-chromium-update"
+  );
   Services.prefs.clearUserPref(
     "toolkit.telemetry.testing.overrideProductsCheck"
   );
@@ -68,7 +88,6 @@ add_task(async function test_prefs() {
   GMPPrefs.setInt(GMPPrefs.KEY_PLUGIN_LAST_UPDATE, 3, addon2);
   GMPPrefs.setInt(GMPPrefs.KEY_PLUGIN_VERSION, 4, addon2);
   GMPPrefs.setBool(GMPPrefs.KEY_PLUGIN_AUTOUPDATE, false, addon2);
-  GMPPrefs.setBool(GMPPrefs.KEY_CERT_CHECKATTRS, true);
   GMPPrefs.setString(GMPPrefs.KEY_PLUGIN_HASHVALUE, "5", addon1);
 
   Assert.equal(GMPPrefs.getString(GMPPrefs.KEY_URL), "http://not-really-used");
@@ -87,7 +106,6 @@ add_task(async function test_prefs() {
     GMPPrefs.getBool(GMPPrefs.KEY_PLUGIN_AUTOUPDATE, undefined, addon2),
     false
   );
-  Assert.ok(GMPPrefs.getBool(GMPPrefs.KEY_CERT_CHECKATTRS));
   GMPPrefs.setBool(GMPPrefs.KEY_PLUGIN_AUTOUPDATE, true, addon2);
   Assert.equal(
     GMPPrefs.getString(GMPPrefs.KEY_PLUGIN_HASHVALUE, "", addon1),
@@ -280,13 +298,6 @@ add_test(function test_checkForAddons_bad_ssl() {
   );
   Preferences.reset(GMPPrefs.KEY_URL_OVERRIDE);
 
-  let CERTS_BRANCH_DOT_ONE = GMPPrefs.KEY_CERTS_BRANCH + ".1";
-  let PREF_CERTS_BRANCH_DOT_ONE_BACKUP = Preferences.get(
-    CERTS_BRANCH_DOT_ONE,
-    ""
-  );
-  Services.prefs.setCharPref(CERTS_BRANCH_DOT_ONE, "funky value");
-
   let myRequest = new mockRequest(200, "");
   let installManager = new GMPInstallManager();
   let promise = ProductAddonCheckerTestUtils.overrideServiceRequest(
@@ -301,9 +312,6 @@ add_test(function test_checkForAddons_bad_ssl() {
     installManager.uninit();
     if (PREF_KEY_URL_OVERRIDE_BACKUP) {
       Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, PREF_KEY_URL_OVERRIDE_BACKUP);
-    }
-    if (PREF_CERTS_BRANCH_DOT_ONE_BACKUP) {
-      Preferences.set(CERTS_BRANCH_DOT_ONE, PREF_CERTS_BRANCH_DOT_ONE_BACKUP);
     }
     run_next_test();
   });
@@ -450,6 +458,146 @@ add_task(async function test_checkForAddons_updatesWithAddons() {
   Assert.ok(!gmpAddon.isInstalled);
   installManager.uninit();
 });
+
+/**
+ * Tests that adjustForChromiumUpdateService works as expected.
+ */
+add_task(
+  {
+    skip_if: () => AppConstants.MOZ_APP_NAME == "thunderbird",
+  },
+  async function test_checkForAddons_chromiumUpdateService() {
+    let installManager = new GMPInstallManager();
+
+    function setPluginKey(key, value) {
+      Preferences.set(GMPPrefs.getPrefKey(key, "gmp-widevinecdm"), value);
+    }
+
+    const defaultAddons = [
+      {
+        id: "gmp-widevinecdm",
+        URL: "http://default/path",
+        mirrorURLs: [],
+        version: "4.10.1000.0",
+        hashFunction: "sha256",
+        hashValue: "defaultHash",
+      },
+    ];
+
+    // We've disabled the Chromium update by default for tests, so nothing
+    // should happen.
+    try {
+      let addons = structuredClone(defaultAddons);
+      await installManager.adjustForChromiumUpdateService(addons);
+      Assert.equal(addons[0].URL, "http://default/path");
+      Assert.equal(addons[0].mirrorURLs.length, 0);
+      Assert.equal(addons[0].version, "4.10.1000.0");
+      Assert.equal(addons[0].hashFunction, "sha256");
+      Assert.equal(addons[0].hashValue, "defaultHash");
+    } catch (e) {
+      Assert.ok(false, "adjustForChromiumUpdateService should succeed");
+    }
+
+    setPluginKey(GMPPrefs.KEY_PLUGIN_ALLOW_CHROMIUM_UPDATE, true);
+
+    // Different URL for same version, should prefer new URL.
+    try {
+      let addons = structuredClone(defaultAddons);
+      let myRequest = new mockRequest(200, "");
+      myRequest.responseURL = "http://new/path_4.10.1000.0/bin";
+      await GMPInstallManagerTestUtils.overrideServiceRequest(myRequest, () =>
+        installManager.adjustForChromiumUpdateService(addons)
+      );
+      Assert.equal(addons[0].URL, "http://new/path_4.10.1000.0/bin");
+      Assert.equal(addons[0].mirrorURLs.length, 1);
+      Assert.equal(addons[0].mirrorURLs[0], "http://default/path");
+      Assert.equal(addons[0].version, "4.10.1000.0");
+      Assert.equal(addons[0].hashFunction, "sha256");
+      Assert.equal(addons[0].hashValue, "defaultHash");
+    } catch (e) {
+      Assert.ok(false, "adjustForChromiumUpdateService should succeed");
+    }
+
+    // Malformed URL, should prefer old URL.
+    try {
+      let addons = structuredClone(defaultAddons);
+      let myRequest = new mockRequest(200, "");
+      myRequest.responseURL = "http://new/path4.10.1000.0";
+      await GMPInstallManagerTestUtils.overrideServiceRequest(myRequest, () =>
+        installManager.adjustForChromiumUpdateService(addons)
+      );
+      Assert.equal(addons[0].URL, "http://default/path");
+      Assert.equal(addons[0].mirrorURLs.length, 0);
+      Assert.equal(addons[0].version, "4.10.1000.0");
+      Assert.equal(addons[0].hashFunction, "sha256");
+      Assert.equal(addons[0].hashValue, "defaultHash");
+    } catch (e) {
+      Assert.ok(false, "adjustForChromiumUpdateService should succeed");
+    }
+
+    // Different URL for different version, should prefer old URL.
+    try {
+      let addons = structuredClone(defaultAddons);
+      let myRequest = new mockRequest(200, "");
+      myRequest.responseURL = "http://new/path_4.10.1100.0/bin";
+      await GMPInstallManagerTestUtils.overrideServiceRequest(myRequest, () =>
+        installManager.adjustForChromiumUpdateService(addons)
+      );
+      Assert.equal(addons[0].URL, "http://default/path");
+      Assert.equal(addons[0].mirrorURLs.length, 0);
+      Assert.equal(addons[0].version, "4.10.1000.0");
+      Assert.equal(addons[0].hashFunction, "sha256");
+      Assert.equal(addons[0].hashValue, "defaultHash");
+    } catch (e) {
+      Assert.ok(false, "adjustForChromiumUpdateService should succeed");
+    }
+
+    // URL is already a mirror, should promote mirror and demote old URL.
+    try {
+      let addons = structuredClone(defaultAddons);
+      addons[0].mirrorURLs = [
+        "http://new/path_4.10.1000.0/bin",
+        "http://another/mirror",
+      ];
+      let myRequest = new mockRequest(200, "");
+      myRequest.responseURL = "http://new/path_4.10.1000.0/bin";
+      await GMPInstallManagerTestUtils.overrideServiceRequest(myRequest, () =>
+        installManager.adjustForChromiumUpdateService(addons)
+      );
+      Assert.equal(addons[0].URL, "http://new/path_4.10.1000.0/bin");
+      Assert.equal(addons[0].mirrorURLs.length, 2);
+      Assert.equal(addons[0].mirrorURLs[0], "http://default/path");
+      Assert.equal(addons[0].mirrorURLs[1], "http://another/mirror");
+      Assert.equal(addons[0].version, "4.10.1000.0");
+      Assert.equal(addons[0].hashFunction, "sha256");
+      Assert.equal(addons[0].hashValue, "defaultHash");
+    } catch (e) {
+      Assert.ok(false, "adjustForChromiumUpdateService should succeed");
+    }
+
+    setPluginKey(GMPPrefs.KEY_PLUGIN_FORCE_CHROMIUM_UPDATE, true);
+
+    // Forced update, should accept new URL and drop hash checks.
+    try {
+      let addons = structuredClone(defaultAddons);
+      let myRequest = new mockRequest(200, "");
+      myRequest.responseURL = "http://new/path_4.10.1100.0/bin";
+      await GMPInstallManagerTestUtils.overrideServiceRequest(myRequest, () =>
+        installManager.adjustForChromiumUpdateService(addons)
+      );
+      Assert.equal(addons[0].URL, "http://new/path_4.10.1100.0/bin");
+      Assert.equal(addons[0].mirrorURLs.length, 0);
+      Assert.equal(addons[0].version, "4.10.1100.0");
+      Assert.equal(addons[0].hashFunction, undefined);
+      Assert.equal(addons[0].hashValue, undefined);
+    } catch (e) {
+      Assert.ok(false, "adjustForChromiumUpdateService should succeed");
+    }
+
+    setPluginKey(GMPPrefs.KEY_PLUGIN_ALLOW_CHROMIUM_UPDATE, false);
+    setPluginKey(GMPPrefs.KEY_PLUGIN_FORCE_CHROMIUM_UPDATE, false);
+  }
+);
 
 /**
  * Tests that checkForAddons() works as expected when content signature
@@ -761,7 +909,7 @@ add_task(async function test_checkForAddons_get_verifier_url() {
   );
 
   // Stage URL documented at https://mozilla-balrog.readthedocs.io/en/latest/infrastructure.html
-  const stageUrl = "https://stage.balrog.nonprod.cloudops.mozgcp.net/etc.";
+  const stageUrl = "https://stage.balrog.nonprod.webservices.mozgcp.net/etc.";
   Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, stageUrl);
   Assert.equal(
     await rootForUrl(),

@@ -124,6 +124,13 @@ Show file without diff
   This item is shown on the annotated diff view.
   (See :ref:`Blame <searchfox-blame>` for the link for the annotated diff view.)
 
+Generated file
+--------------
+
+Raw
+  Open the raw file of the current generated file.
+  In contrast to source files, this file is hosted on searchfox itself, and there's no historical data.
+
 Symbol
 ------
 
@@ -196,6 +203,29 @@ Code Block
         MOZ_CRASH("unexpected type");
       }
       ```
+
+Editor
+------
+
+.. image:: img/navigation-panel-editor.png
+    :class: border
+    :alt: The navigation panel Editor section
+    :width: 357px
+
+This is behind the alpha feature gate "Fancy Bar", and "Enable Open in Editor widget" flag.
+
+You can enable it in https://searchfox.org/firefox-main/pages/settings.html
+
+This section shows a button to open the current file in your local text editor.
+The mapping from the tree name to the local path can be configured in the settings page.
+
+For the files in the tree configured there, this section is shown in the panel.
+
+  Open in Editor
+    Open the current file in pre-configured editor
+
+    This item has associated shortcut key :kbd:`\\`, and hitting the :kbd:`\\` key also does the same.
+
 
 Other Tools
 -----------

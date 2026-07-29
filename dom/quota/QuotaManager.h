@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -291,7 +289,7 @@ class QuotaManager final : public BackgroundThreadObject {
   Result<Ok, nsresult> EnsureTemporaryOriginDirectoryCreated(
       const OriginMetadata& aOriginMetadata);
 
-  static nsresult CreateDirectoryMetadata2(
+  nsresult CreateDirectoryMetadata2(
       nsIFile& aDirectory, const FullOriginMetadata& aFullOriginMetadata);
 
   nsresult RestoreDirectoryMetadata2(nsIFile* aDirectory);
@@ -844,6 +842,22 @@ class QuotaManager final : public BackgroundThreadObject {
 
   Result<Ok, nsresult> CreateEmptyLocalStorageArchive(
       nsIFile& aLsArchiveFile) const;
+
+  template <typename OriginFunc>
+  Result<Ok, nsresult> InitializeOriginDirectory(
+      const nsCOMPtr<nsIFile>& aChildDirectory, const nsAutoString& aLeafName,
+      PersistenceType aPersistenceType,
+      nsTArray<struct RenameAndInitInfo>& aRenameAndInitInfos,
+      OriginFunc&& aOriginFunc);
+
+  // Determine the type of a repository entry (directory, file, or absent)
+  // and handle it accordingly.
+  template <typename OriginFunc>
+  Result<Ok, nsresult> ResolveRepositoryEntry(
+      const nsCOMPtr<nsIFile>& aChildDirectory,
+      PersistenceType aPersistenceType,
+      nsTArray<RenameAndInitInfo>& aRenameAndInitInfos,
+      OriginFunc&& aOriginFunc);
 
   template <typename OriginFunc>
   nsresult InitializeRepository(PersistenceType aPersistenceType,

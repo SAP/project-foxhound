@@ -1,5 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -183,6 +182,7 @@ function createUserContextMenu(
     excludeUserContextId = 0,
     showDefaultTab = false,
     useAccessKeys = true,
+    showManageContainers = true,
   } = {}
 ) {
   while (event.target.hasChildNodes()) {
@@ -192,14 +192,15 @@ function createUserContextMenu(
   MozXULElement.insertFTLIfNeeded("toolkit/global/contextual-identity.ftl");
   let docfrag = document.createDocumentFragment();
 
-  // If we are excluding a userContextId, we want to add a 'no-container' item.
+  // Add an item for a tab without a container, labeled "New Tab".
   if (excludeUserContextId || showDefaultTab) {
     let menuitem = document.createXULElement("menuitem");
     if (useAccessKeys) {
-      document.l10n.setAttributes(menuitem, "user-context-none");
+      document.l10n.setAttributes(menuitem, "user-context-new-tab");
     } else {
-      const label =
-        ContextualIdentityService.formatContextLabel("user-context-none");
+      const label = ContextualIdentityService.formatContextLabel(
+        "user-context-new-tab"
+      );
       menuitem.setAttribute("label", label);
     }
     menuitem.setAttribute("data-usercontextid", "0");
@@ -243,7 +244,7 @@ function createUserContextMenu(
     docfrag.appendChild(menuitem);
   });
 
-  if (!isContextMenu) {
+  if (showManageContainers) {
     docfrag.appendChild(document.createXULElement("menuseparator"));
 
     let menuitem = document.createXULElement("menuitem");
@@ -373,7 +374,8 @@ function openAboutDialog() {
     features += "centerscreen,dependent,dialog=no";
   }
 
-  window.openDialog("chrome://browser/content/aboutDialog.xhtml", "", features);
+  var win = BrowserWindowTracker.getTopWindow() || window;
+  win.openDialog("chrome://browser/content/aboutDialog.xhtml", "", features);
 }
 
 async function openPreferences(paneID, extraArgs) {

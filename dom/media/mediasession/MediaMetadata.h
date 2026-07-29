@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -96,7 +94,8 @@ class MediaMetadata final : public nsISupports,
   // This function will always resolve successfully, even when no artwork was
   // loaded.
   // At most, it returns one decoded image of the artwork.
-  RefPtr<MediaMetadataBasePromise> LoadMetadataArtwork();
+  // `aDoc` must be non-null.
+  RefPtr<MediaMetadataBasePromise> LoadMetadataArtwork(Document* aDoc);
 
   // Before LoadMetadataArtwork() resolves the mDataSurface of the
   // MediaImageData is going to be null.
@@ -115,8 +114,7 @@ class MediaMetadata final : public nsISupports,
                           ErrorResult& aRv);
 
   static RefPtr<MediaMetadataBasePromise> FetchArtwork(
-      const MediaMetadataBase& aMetadata, nsIPrincipal* aPrincipal,
-      const size_t aIndex);
+      const MediaMetadataBase& aMetadata, Document* aDoc, const size_t aIndex);
 
   nsCOMPtr<nsIGlobalObject> mParent;
   MediaEventProducer<void> mMetadataChangeEvent;

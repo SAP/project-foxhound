@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright 2016 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -471,7 +469,7 @@ bool Code::createManyLazyEntryStubs(const WriteGuard& guard,
   CodeSource codeSource(masm, nullptr, nullptr);
   stubCodeBlock->segment = CodeSegment::allocate(
       codeSource, &guard->lazyStubSegments,
-      /* allowLastDitchGC = */ true, &codeStart, &allocationLength);
+      /* allowLastDitchGC = */ false, &codeStart, &allocationLength);
   if (!stubCodeBlock->segment) {
     return false;
   }
@@ -590,13 +588,33 @@ bool Code::getOrCreateInterpEntry(uint32_t funcIndex,
 
   MOZ_ASSERT(!codeMetaForAsmJS_, "only wasm can lazily export functions");
 
-  auto guard = data_.writeLock();
-  *interpEntry = lookupLazyInterpEntry(guard, funcIndex);
-  if (*interpEntry) {
+  auto tryGetOrCreate = [&]() -> bool {
+    auto guard = data_.writeLock();
+    *interpEntry = lookupLazyInterpEntry(guard, funcIndex);
+    if (*interpEntry) {
+      return true;
+    }
+
+    return createOneLazyEntryStub(guard, funcExportIndex, codeBlock,
+                                  interpEntry);
+  };
+
+  // Try to get or create the interpreter entry.
+  if (tryGetOrCreate()) {
     return true;
   }
 
-  return createOneLazyEntryStub(guard, funcExportIndex, codeBlock, interpEntry);
+  // The allocation failed. Release the lock and try a last-ditch GC before
+  // retrying, to avoid a mutex ordering violation between WasmCodeProtected
+  // and GlobalHelperThreadState.
+  if (!OnLargeAllocationFailure) {
+    return false;
+  }
+  OnLargeAllocationFailure();
+
+  // Try again. We need to redo the lookup too in the case that someone is
+  // racing with us.
+  return tryGetOrCreate();
 }
 
 bool Code::createTier2LazyEntryStubs(const WriteGuard& guard,
@@ -670,15 +688,12 @@ class Module::PartialTier2CompileTaskImpl : public PartialTier2CompileTask {
   }
 };
 
+// The caller must call tryClaimTierUp() before.
 bool Code::requestTierUp(uint32_t funcIndex) const {
   // Note: this runs on the requesting (wasm-running) thread, not on a
   // compilation-helper thread.
-  MOZ_ASSERT(mode_ == CompileMode::LazyTiering);
-  FuncState& state = funcStates_[funcIndex - codeMeta_->numFuncImports];
-  if (!state.tierUpState.compareExchange(TierUpState::NotRequested,
-                                         TierUpState::Requested)) {
-    return true;
-  }
+  MOZ_ASSERT(funcStates_[funcIndex - codeMeta_->numFuncImports].tierUpState ==
+             TierUpState::Requested);
 
   auto task =
       js::MakeUnique<Module::PartialTier2CompileTaskImpl>(*this, funcIndex);
@@ -825,28 +840,41 @@ SharedCodeSegment Code::createFuncCodeSegmentFromPool(
     uint8_t** codeStartOut, uint32_t* codeLengthOut) const {
   uint32_t codeLength = masm.bytesNeeded();
 
-  // Allocate the code segment
-  uint8_t* codeStart;
-  uint32_t allocationLength;
-  SharedCodeSegment segment;
-  {
+  auto tryAllocate = [&]() -> SharedCodeSegment {
     auto guard = data_.writeLock();
+
+    uint8_t* codeStart;
+    uint32_t allocationLength;
     CodeSource codeSource(masm, &linkData, this);
-    segment =
-        CodeSegment::allocate(codeSource, &guard->lazyFuncSegments,
-                              allowLastDitchGC, &codeStart, &allocationLength);
-    if (!segment) {
+    SharedCodeSegment result = CodeSegment::allocate(
+        codeSource, &guard->lazyFuncSegments,
+        /* allowLastDitchGC = */ false, &codeStart, &allocationLength);
+
+    if (!result) {
       return nullptr;
     }
 
-    // This function is always used with tier-2
+    *codeStartOut = codeStart;
+    *codeLengthOut = codeLength;
     guard->tier2Stats.codeBytesMapped += allocationLength;
     guard->tier2Stats.codeBytesUsed += codeLength;
+    return result;
+  };
+
+  // Try to allocate the code segment.
+  if (SharedCodeSegment segment = tryAllocate()) {
+    return segment;
   }
 
-  *codeStartOut = codeStart;
-  *codeLengthOut = codeLength;
-  return segment;
+  // The allocation failed. Release the lock and try a last-ditch GC before
+  // retrying, to avoid a mutex ordering violation between WasmCodeProtected
+  // and GlobalHelperThreadState.
+  if (!allowLastDitchGC || !OnLargeAllocationFailure) {
+    return nullptr;
+  }
+
+  OnLargeAllocationFailure();
+  return tryAllocate();
 }
 
 const LazyFuncExport* Code::lookupLazyFuncExport(const WriteGuard& guard,
@@ -924,7 +952,7 @@ static JS::UniqueChars DescribeCodeRangeForProfiler(
   }
 
   const char* category = "";
-  const char* filename = codeMeta.scriptedCaller().filename.get();
+  const char* filename = codeMeta.scriptedCaller().source.get();
   const char* suffix = "";
   if (codeRange.isFunction()) {
     category = "Wasm";
@@ -1388,7 +1416,7 @@ bool Code::appendProfilingLabels(
       return false;
     }
 
-    if (const char* filename = codeMeta().scriptedCaller().filename.get()) {
+    if (const char* filename = codeMeta().scriptedCaller().source.get()) {
       if (!name.append(filename, strlen(filename))) {
         return false;
       }
@@ -1611,6 +1639,7 @@ void wasm::PatchDebugSymbolicAccesses(uint8_t* codeBase, MacroAssembler& masm) {
       case SymbolicAddress::PrintF32:
       case SymbolicAddress::PrintF64:
       case SymbolicAddress::PrintText:
+      case SymbolicAddress::Printf:
         break;
       default:
         MOZ_CRASH("unexpected symbol in PatchDebugSymbolicAccesses");

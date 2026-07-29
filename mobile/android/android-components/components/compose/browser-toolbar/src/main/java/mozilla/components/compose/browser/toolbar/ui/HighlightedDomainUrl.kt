@@ -6,6 +6,8 @@ package mozilla.components.compose.browser.toolbar.ui
 
 import android.content.res.Configuration.UI_MODE_NIGHT_YES
 import android.content.res.Configuration.UI_MODE_TYPE_NORMAL
+import androidx.annotation.VisibleForTesting
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -14,10 +16,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -25,6 +27,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -41,7 +44,6 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
 import mozilla.components.compose.base.modifier.thenConditional
 import mozilla.components.compose.base.theme.AcornTheme
 
@@ -59,7 +61,8 @@ private const val FADE_LENGTH_PX = 20
 /**
  * How many other characters to try showing to the end of the scrolled to domain
  */
-private const val END_SCROLL_OFFSET = 1
+@VisibleForTesting
+internal const val END_SCROLL_OFFSET = 1
 
 /**
  * The LTR mark character which will force all other characters following it to be rendered from left to right.
@@ -140,9 +143,15 @@ private fun Modifier.focusTextIndexRange(
         val density = LocalDensity.current
         val textMeasurer = rememberTextMeasurer()
         val scrollState = rememberScrollState()
-        val coroutineScope = rememberCoroutineScope()
         var textLayoutState: TextLayoutResult? by remember { mutableStateOf(null) }
         var fadeFraction = remember { 0f }
+
+        LaunchedEffect(textLayoutState, scrollState.maxValue) {
+            val layout = textLayoutState ?: return@LaunchedEffect
+            val endScrollValue = computeDomainEndScrollValue(text, highlightRange, scrollState, layout)
+
+            scrollState.scrollTo(endScrollValue)
+        }
 
         onSizeChanged {
             val currentWidth = with(density) { it.width.toDp() }
@@ -154,22 +163,7 @@ private fun Modifier.focusTextIndexRange(
                 style = textStyle,
                 softWrap = false,
                 constraints = Constraints(maxWidth = it.width),
-            ).also {
-                coroutineScope.launch {
-                    val endOffset = when (highlightRange?.second == text.length) {
-                        true -> scrollState.maxValue
-                        else -> {
-                            val index = (highlightRange?.second?.plus(END_SCROLL_OFFSET) ?: 0)
-                                .coerceAtMost(text.lastIndex)
-                            val offset = it.getBoundingBox(index)
-                            // Ensure the end of [highlightRange] is shown to the end of the viewport.
-                            (offset.right - scrollState.viewportSize).toInt().coerceIn(0, scrollState.maxValue)
-                        }
-                    }
-
-                    scrollState.scrollTo(endOffset)
-                }
-            }
+            )
         }
             .thenConditional(
                 Modifier
@@ -177,28 +171,12 @@ private fun Modifier.focusTextIndexRange(
                     .drawWithContent {
                         drawContent()
 
-                        val brush = when {
-                            // Don't fade the start if the highlight is also at the start of the text.
-                            highlightRange?.first == LTR_MARK_OFFSET -> Brush.horizontalGradient(
-                                (1f - fadeFraction) to Color.Black,
-                                1f to Color.Transparent,
-                            )
-
-                            // Don't fade the end if the highlight is also at the end of the text.
-                            (highlightRange?.second ?: 0) >= text.lastIndex -> Brush.horizontalGradient(
-                                0f to Color.Transparent,
-                                fadeFraction to Color.Black,
-                            )
-
-                            else -> Brush.horizontalGradient(
-                                colorStops = arrayOf(
-                                    0f to Color.Transparent,
-                                    fadeFraction to Color.Black,
-                                    (1f - fadeFraction) to Color.Black,
-                                    1f to Color.Transparent,
-                                ),
-                            )
-                        }
+                        val brush = createUrlFadeBrush(
+                            scrolledPixels = scrollState.value,
+                            maxScrollPixels = scrollState.maxValue,
+                            viewportSize = scrollState.viewportSize,
+                            fadeFraction = fadeFraction,
+                        )
 
                         drawRect(
                             brush = brush,
@@ -225,6 +203,65 @@ private fun Modifier.focusTextIndexRange(
         properties["fadeLengthDp"] = fadeLength.value
     },
 )
+
+@VisibleForTesting
+internal fun computeDomainEndScrollValue(
+    text: String,
+    highlightRange: Pair<Int, Int>?,
+    scrollState: ScrollState,
+    textLayoutResult: TextLayoutResult,
+): Int = when (highlightRange?.second == text.length) {
+    true -> scrollState.maxValue
+    else -> {
+        val startIndex = highlightRange?.first ?: 0
+
+        val endIndex = (highlightRange?.second?.plus(END_SCROLL_OFFSET) ?: 0)
+            .coerceAtMost(text.length)
+
+        // Compute the exact visual boundaries of the domain.
+        val path = textLayoutResult.getPathForRange(startIndex, endIndex)
+        val maxRightEdge = path.getBounds().right
+
+        // Ensure the furthest visual right edge is shown in the viewport.
+        (maxRightEdge - scrollState.viewportSize).toInt().coerceIn(0, scrollState.maxValue)
+    }
+}
+
+@VisibleForTesting
+internal fun createUrlFadeBrush(
+    scrolledPixels: Int,
+    maxScrollPixels: Int,
+    viewportSize: Int,
+    fadeFraction: Float,
+): Brush {
+    val fadeWidthPixels = viewportSize * fadeFraction
+    val needsLeftFade = scrolledPixels > 0
+    val remainingScroll = maxScrollPixels - scrolledPixels
+    val needsRightFade = remainingScroll > fadeWidthPixels
+
+    return when {
+        !needsLeftFade && !needsRightFade -> SolidColor(Color.Black)
+
+        !needsLeftFade && needsRightFade -> Brush.horizontalGradient(
+            (1f - fadeFraction) to Color.Black,
+            1f to Color.Transparent,
+        )
+
+        needsLeftFade && !needsRightFade -> Brush.horizontalGradient(
+            0f to Color.Transparent,
+            fadeFraction to Color.Black,
+        )
+
+        else -> Brush.horizontalGradient(
+            colorStops = arrayOf(
+                0f to Color.Transparent,
+                fadeFraction to Color.Black,
+                (1f - fadeFraction) to Color.Black,
+                1f to Color.Transparent,
+            ),
+        )
+    }
+}
 
 @Composable
 @Preview(uiMode = UI_MODE_NIGHT_YES or UI_MODE_TYPE_NORMAL)

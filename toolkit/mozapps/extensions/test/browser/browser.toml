@@ -81,6 +81,10 @@ https_first_disabled = true
 
 ["browser_html_detail_permissions.js"]
 
+["browser_html_detail_permissions_file_access.js"]
+
+["browser_html_detail_permissions_policy_blocked.js"]
+
 ["browser_html_detail_permissions_userScripts.js"]
 
 ["browser_html_detail_view.js"]
@@ -95,6 +99,8 @@ skip-if = [
 ["browser_html_discover_view_clientid.js"]
 
 ["browser_html_discover_view_prefs.js"]
+
+["browser_html_embedder_hook.js"]
 
 ["browser_html_forced_colors_notice.js"]
 run-if = [
@@ -129,6 +135,8 @@ https_first_disabled = true
 ["browser_html_scroll_restoration.js"]
 
 ["browser_html_sitepermission_addons.js"]
+
+["browser_html_smartwindow_themes_notice.js"]
 
 ["browser_html_updates.js"]
 https_first_disabled = true
@@ -208,9 +216,15 @@ https_first_disabled = true
 ["browser_webapi_sendAbuseReport.js"]
 
 ["browser_webapi_theme.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
 
 ["browser_webapi_uninstall.js"]
 
 ["browser_webext_icon.js"]
 
 ["browser_webext_incognito.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]

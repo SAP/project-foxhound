@@ -3,6 +3,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import argparse
 import os
 import re
 import subprocess
@@ -50,17 +51,28 @@ def check_uncommitted_changes():
         sys.exit(1)
 
 
-def get_bug_id():
-    """Get BUG_ID from script arguments."""
-    if len(sys.argv) < 2:
-        print("Usage: python script.py BUG_ID")
-        sys.exit(1)
-    return sys.argv[1]
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Perform the Android beta cut: update changelog, remove "
+        "expired strings, and sync search telemetry JSON."
+    )
+    parser.add_argument("bug_id", help="Bugzilla bug ID for the commit message")
+    parser.add_argument(
+        "--version",
+        type=int,
+        help="New nightly version number (default: derived from changelog)",
+    )
+    parser.add_argument(
+        "--no-commit",
+        action="store_true",
+        help="Skip git add/commit",
+    )
+    return parser.parse_args()
 
 
 def get_previous_version():
     """Extract the previous version number from the changelog."""
-    with open(CHANGELOG_FILE) as file:
+    with open(CHANGELOG_FILE, encoding="utf-8") as file:
         content = file.read()
     match = re.search(r"# (\d+)\.0 \(In Development\)", content)
     if not match:
@@ -73,13 +85,21 @@ def get_previous_version():
 
 def update_changelog(previous_version, new_version):
     """Update the changelog with the new version number."""
-    with open(CHANGELOG_FILE) as file:
+    with open(CHANGELOG_FILE, encoding="utf-8") as file:
         content = file.read()
+    marker = f"# {previous_version}.0 (In Development)"
+    if marker not in content:
+        print(
+            f"ERROR: Could not find '{marker}' in changelog. "
+            f"The --version value may not match the current development cycle.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     updated_content = content.replace(
-        f"# {previous_version}.0 (In Development)",
+        marker,
         f"# {new_version}.0 (In Development)\n\n# {previous_version}.0",
     )
-    with open(CHANGELOG_FILE, "w") as file:
+    with open(CHANGELOG_FILE, "w", encoding="utf-8") as file:
         file.write(updated_content)
 
 
@@ -176,11 +196,18 @@ def commit_changes(bug_id, new_version_number, strings_removed, json_updated):
 
 
 def main():
+    args = parse_args()
     check_ripgrep_installed()
-    check_uncommitted_changes()
-    bug_id = get_bug_id()
-    previous_version = get_previous_version()
-    new_version = previous_version + 1
+    if not args.no_commit:
+        check_uncommitted_changes()
+
+    if args.version:
+        new_version = args.version
+        previous_version = new_version - 1
+    else:
+        previous_version = get_previous_version()
+        new_version = previous_version + 1
+
     expired_string_version = new_version - EXPIRED_STRING_VERSION_OFFSET
 
     # Update changelog
@@ -199,7 +226,8 @@ def main():
     json_updated = update_json_if_necessary()
 
     # Commit changes
-    commit_changes(bug_id, new_version, strings_removed, json_updated)
+    if not args.no_commit:
+        commit_changes(args.bug_id, new_version, strings_removed, json_updated)
 
     # Output final message
     print(f"✅ Changelog updated to version {new_version}")
@@ -212,28 +240,25 @@ def main():
         print("✅ search_telemetry_v2.json was updated in Android Components")
     else:
         print("ℹ️  search_telemetry_v2.json was already up to date and was not modified")
-    print(f"✅ Changes committed with Bug ID {bug_id}.")
+
+    if not args.no_commit:
+        print(f"✅ Changes committed with Bug ID {args.bug_id}.")
 
     if remaining_use_message:
         print(
             "\n⚠️  Some of the strings that were removed might still be used in the codebase."
         )
-        print(
-            "These are the potential remaining usages. Keep in mind that it is purely indicative and might show false positives."
-        )
-        print("Please remove the real remaining usages and amend the commit.")
         print(remaining_use_message)
+        sys.exit(1)
 
-    print("\n\033[1mPlease make sure you complete the following steps:\033[0m")
-    if remaining_use_message:
+    if not args.no_commit:
+        print("\n\033[1mPlease make sure you complete the following steps:\033[0m")
+        print("☐ Review the changes and make sure they are correct")
+        print("☐ Run `moz-phab submit --no-wip`")
         print(
-            "☐ Remove the remaining uses of the removed strings and amend the commit."
+            "☐ Run `mach try --preset firefox-android` and add a comment "
+            "with the try link on the patch"
         )
-    print("☐ Review the changes and make sure they are correct")
-    print("☐ Run `moz-phab submit --no-wip`")
-    print(
-        "☐ Run `mach try --preset firefox-android` and add a comment with the try link on the patch"
-    )
 
 
 if __name__ == "__main__":

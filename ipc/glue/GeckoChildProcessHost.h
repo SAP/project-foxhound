@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -210,7 +208,7 @@ class GeckoChildProcessHost : public SupportsWeakPtr,
   GeckoProcessType mProcessType;
   GeckoChildID mChildID;
   bool mIsFileContent;
-  Monitor mMonitor;
+  mutable Monitor mMonitor;
   FilePath mProcessPath;
 #ifdef ALLOW_GECKO_CHILD_PROCESS_ARCH
   // Used on platforms where we may launch a child process with a different
@@ -297,6 +295,8 @@ class GeckoChildProcessHost : public SupportsWeakPtr,
   // the child event loop is up.
   virtual bool AppendMacSandboxParams(StringVector& aArgs);
 #endif
+
+  virtual void OnProcessLaunchError(const LaunchError aError);
 
  private:
   DISALLOW_EVIL_CONSTRUCTORS(GeckoChildProcessHost);

@@ -3,6 +3,67 @@
 
 "use strict";
 
+function triggerSidebarToggleKeybind(win) {
+  const modifiers =
+    AppConstants.platform === "macosx"
+      ? { ctrlKey: true }
+      : { ctrlKey: true, altKey: true };
+  EventUtils.synthesizeKey("x", modifiers, win);
+}
+
+add_task(
+  async function test_aichat_sidebar_toggle_keybinding_in_smartwindow_fullpage() {
+    let win;
+    try {
+      win = await openAIWindow();
+
+      Assert.ok(!AIWindowUI.isSidebarOpen(win), "Should have sidebar closed");
+      triggerSidebarToggleKeybind(win);
+      Assert.ok(
+        !AIWindowUI.isSidebarOpen(win),
+        "Should have sidebar still closed"
+      );
+    } finally {
+      if (win) {
+        await BrowserTestUtils.closeWindow(win);
+      }
+    }
+  }
+);
+
+add_task(
+  async function test_aichat_sidebar_toggle_keybinding_in_smartwindow_sidebar() {
+    let win;
+    try {
+      const { win: w } = await openAIWindowWithSidebar();
+      win = w;
+
+      const box = win.document.getElementById(AIWindowUI.BOX_ID);
+
+      Assert.ok(AIWindowUI.isSidebarOpen(win), "Should have sidebar open");
+      triggerSidebarToggleKeybind(win);
+      await BrowserTestUtils.waitForMutationCondition(
+        box,
+        { attributes: true, attributeFilter: ["collapsed"] },
+        () => !AIWindowUI.isSidebarOpen(win)
+      );
+      Assert.ok(!AIWindowUI.isSidebarOpen(win), "Should toggle sidebar closed");
+
+      triggerSidebarToggleKeybind(win);
+      await BrowserTestUtils.waitForMutationCondition(
+        box,
+        { attributes: true, attributeFilter: ["collapsed"] },
+        () => AIWindowUI.isSidebarOpen(win)
+      );
+      Assert.ok(AIWindowUI.isSidebarOpen(win), "Should toggle sidebar open");
+    } finally {
+      if (win) {
+        await BrowserTestUtils.closeWindow(win);
+      }
+    }
+  }
+);
+
 /**
  * Test that AI chat sidebar is hidden in AI Window.
  */
@@ -37,7 +98,7 @@ add_task(async function test_aichat_sidebar_not_restored_in_aiwindow() {
   const aiWin = await BrowserTestUtils.openNewBrowserWindow({ aiWindow: true });
   await aiWin.SidebarController.promiseInitialized;
 
-  await aiWin.SidebarController.initializeUIState({
+  await aiWin.SidebarController.updateUIState({
     command: "viewGenaiChatSidebar",
     panelOpen: true,
   });

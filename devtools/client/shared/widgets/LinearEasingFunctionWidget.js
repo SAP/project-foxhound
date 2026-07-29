@@ -59,7 +59,7 @@ class LinearEasingFunctionWidget extends EventEmitter {
 
     // Add the timing function previewer
     // if prefers-reduced-motion is not set
-    this.#reducedMotion = parent.ownerGlobal.matchMedia(
+    this.#reducedMotion = parent.documentGlobal.matchMedia(
       "(prefers-reduced-motion)"
     );
     if (!this.#reducedMotion.matches) {

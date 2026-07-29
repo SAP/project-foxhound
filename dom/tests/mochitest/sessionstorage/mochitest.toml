@@ -2,6 +2,8 @@
 support-files = [
   "file_http.html",
   "file_https.html",
+  "file_targetBlankChild.html",
+  "file_targetBlankChild_xorigin_wrapper.html",
   "frameEqual.html",
   "frameNotEqual.html",
   "frameReplace.html",
@@ -26,6 +28,12 @@ skip-if = [
 ]
 
 ["test_sessionStorageReplace.html"]
+skip-if = [
+  "http2",
+  "http3",
+]
+
+["test_sessionStorageTargetBlank.html"]
 skip-if = [
   "http2",
   "http3",

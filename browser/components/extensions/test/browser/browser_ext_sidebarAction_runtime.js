@@ -1,12 +1,7 @@
 "use strict";
 
-registerCleanupFunction(() => {
-  // Ensure sidebar is hidden after the test
-  if (!document.getElementById("sidebar-box").hidden) {
-    info("Hiding sidebar that was still open at the end of the test");
-    SidebarController.hide({ dismissPanel: true });
-  }
-});
+// Schedule reset to the initial sidebar state after the test.
+SidebarTestUtils.restoreStateAtCleanup(window);
 
 function background() {
   browser.runtime.onConnect.addListener(port => {

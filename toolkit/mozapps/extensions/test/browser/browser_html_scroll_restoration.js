@@ -118,7 +118,7 @@ function scrollTopLeftIntoView(elem) {
   // Sanity check: In this test, a large padding has been added to the top and
   // left of the document. So when an element has been scrolled into view, the
   // top and left offsets must be non-zero.
-  assertNonZeroScrollOffsets(getScrollOffset(elem.ownerGlobal));
+  assertNonZeroScrollOffsets(getScrollOffset(elem.documentGlobal));
 }
 
 function assertNonZeroScrollOffsets(offsets) {

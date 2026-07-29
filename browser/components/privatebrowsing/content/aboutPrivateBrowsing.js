@@ -24,58 +24,6 @@ function translateElements(items) {
   });
 }
 
-function renderInfo({
-  infoEnabled,
-  infoTitle,
-  infoTitleEnabled,
-  infoBody,
-  infoLinkText,
-  infoLinkUrl,
-  infoIcon,
-} = {}) {
-  const container = document.querySelector(".info");
-  if (infoEnabled === false) {
-    container.hidden = true;
-    return;
-  }
-  container.hidden = false;
-
-  const titleEl = document.getElementById("info-title");
-  const bodyEl = document.getElementById("info-body");
-  const linkEl = document.getElementById("private-browsing-myths");
-
-  let feltPrivacyEnabled = RPMGetBoolPref(
-    "browser.privatebrowsing.felt-privacy-v1",
-    false
-  );
-
-  if (infoIcon && !feltPrivacyEnabled) {
-    container.style.backgroundImage = `url(${infoIcon})`;
-  }
-
-  if (feltPrivacyEnabled) {
-    // Record exposure event for Felt Privacy experiment
-    window.FeltPrivacyExposureTelemetry();
-
-    infoTitleEnabled = true;
-    infoTitle = "fluent:about-private-browsing-felt-privacy-v1-info-header";
-    infoBody = "fluent:about-private-browsing-felt-privacy-v1-info-body";
-    infoLinkText = "fluent:about-private-browsing-felt-privacy-v1-info-link";
-  }
-
-  titleEl.hidden = !infoTitleEnabled;
-
-  translateElements([
-    [titleEl, infoTitle],
-    [bodyEl, infoBody],
-    [linkEl, infoLinkText],
-  ]);
-
-  if (infoLinkUrl) {
-    linkEl.setAttribute("href", infoLinkUrl);
-  }
-}
-
 async function renderPromo({
   messageId = null,
   promoEnabled = false,
@@ -257,7 +205,6 @@ async function setupMessageConfig(config = null) {
     } catch (e) {}
   }
 
-  renderInfo(config);
   let hasRendered = await renderPromo(config);
   if (hasRendered && message) {
     recordOnceVisible(message);
@@ -302,6 +249,14 @@ document.addEventListener("DOMContentLoaded", function () {
   linkEl.addEventListener("click", () => {
     window.PrivateBrowsingRecordClick("InfoLink");
   });
+
+  if (RPMGetBoolPref("browser.nova.enabled", false)) {
+    document.getElementById("info-title").hidden = true;
+    document.l10n.setAttributes(
+      document.getElementById("info-body"),
+      "about-private-browsing-nova-info-body"
+    );
+  }
 
   // We don't do this setup until now, because we don't want to record any impressions until we're
   // sure we're actually running a private window, not just about:privatebrowsing in a normal window.

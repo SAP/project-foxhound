@@ -77,7 +77,7 @@ var FormDB = {
     if (results.length > 1) {
       throw new Error("more than 1 result for this query");
     }
-    return results;
+    return results.length ? results[0] : null;
   },
 
   /**

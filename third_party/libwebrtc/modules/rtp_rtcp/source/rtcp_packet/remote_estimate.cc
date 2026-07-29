@@ -12,10 +12,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <span>
 #include <utility>
 #include <vector>
 
-#include "api/array_view.h"
 #include "api/transport/network_types.h"
 #include "api/units/data_rate.h"
 #include "modules/rtp_rtcp/source/byte_io.h"
@@ -86,24 +86,22 @@ class RemoteEstimateSerializerImpl : public RemoteEstimateSerializer {
 
   Buffer Serialize(const NetworkStateEstimate& src) const override {
     size_t max_size = fields_.size() * kFieldSize;
-    size_t size = 0;
-    Buffer buf(max_size);
+    Buffer buf = Buffer::CreateWithCapacity(max_size);
     for (const auto& field : fields_) {
-      if (field.Write(src, buf.data() + size)) {
-        size += kFieldSize;
-      }
+      buf.AppendData(kFieldSize, [&](std::span<uint8_t> dst) {
+        return field.Write(src, dst.data()) ? kFieldSize : 0;
+      });
     }
-    buf.SetSize(size);
     return buf;
   }
 
-  bool Parse(ArrayView<const uint8_t> src,
+  bool Parse(std::span<const uint8_t> src,
              NetworkStateEstimate* target) const override {
     if (src.size() % kFieldSize != 0)
       return false;
     RTC_DCHECK_EQ(src.size() % kFieldSize, 0);
-    for (const uint8_t* data_ptr = src.data(); data_ptr < src.end();
-         data_ptr += kFieldSize) {
+    for (const uint8_t* data_ptr = src.data();
+         data_ptr < src.data() + src.size(); data_ptr += kFieldSize) {
       uint8_t field_id = ByteReader<uint8_t>::ReadBigEndian(data_ptr);
       for (const auto& field : fields_) {
         if (field.id() == field_id) {

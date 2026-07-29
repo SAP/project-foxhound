@@ -27,8 +27,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import org.mozilla.fenix.R
 import org.mozilla.fenix.theme.FirefoxTheme
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * Expandable header for sections of lists
@@ -86,7 +86,11 @@ fun ExpandableListHeader(
 
                 Icon(
                     painter = painterResource(
-                        if (expanded) R.drawable.ic_chevron_up else R.drawable.ic_chevron_down,
+                        id = if (expanded) {
+                            iconsR.drawable.mozac_ic_chevron_up_24
+                        } else {
+                            iconsR.drawable.mozac_ic_chevron_down_24
+                        },
                     ),
                     contentDescription = if (expanded) {
                         collapseActionContentDescription
@@ -141,7 +145,7 @@ private fun HeaderWithClickableIconPreview() {
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_delete),
+                        painter = painterResource(iconsR.drawable.mozac_ic_delete_24),
                         contentDescription = "click me",
                         modifier = Modifier.size(20.dp),
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -167,7 +171,7 @@ private fun CollapsibleHeaderWithClickableIconPreview() {
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_delete),
+                        painter = painterResource(iconsR.drawable.mozac_ic_delete_24),
                         contentDescription = "click me",
                         modifier = Modifier.size(20.dp),
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,

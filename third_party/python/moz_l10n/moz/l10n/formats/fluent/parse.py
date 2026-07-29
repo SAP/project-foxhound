@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from itertools import product
 from re import finditer
-from typing import Tuple, cast
+from typing import cast
 
 from fluent.syntax import FluentParser, ParseError
 from fluent.syntax import ast as ftl
@@ -284,7 +284,7 @@ def message(ftl_pattern: ftl.Pattern) -> Message:
         return PatternMessage(next(iter(msg_variants.values())))
 
 
-Key = Tuple[str, bool, bool]
+Key = tuple[str, bool, bool]
 "(name, is_numeric, is_default)"
 
 

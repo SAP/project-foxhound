@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -124,14 +122,14 @@ void SVGViewportFrame::NotifySVGChanged(ChangeFlags aFlags) {
 }
 
 SVGBBox SVGViewportFrame::GetBBoxContribution(const Matrix& aToBBoxUserspace,
-                                              uint32_t aFlags) {
+                                              SVGBBoxFlags aFlags) {
   // XXXjwatt It seems like authors would want the result to be clipped by the
   // viewport we establish if IsScrollableOverflow() is true.  We should
   // consider doing that.  See bug 1350755.
 
   SVGBBox bbox;
 
-  if (aFlags & SVGUtils::eForGetClientRects) {
+  if (aFlags.contains(SVGBBoxFlag::ForGetClientRects)) {
     // XXXjwatt For consistency with the old code this code includes the
     // viewport we establish in the result, but only includes the bounds of our
     // descendants if they are not clipped to that viewport.  However, this is

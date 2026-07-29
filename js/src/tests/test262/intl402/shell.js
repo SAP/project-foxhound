@@ -2100,7 +2100,7 @@ function allCollations() {
  * Returns an array of all known numbering systems.
  */
 function allNumberingSystems() {
-  // source: CLDR file common/bcp47/number.xml; version CLDR 40 & new in Unicode 14.0
+  // source: CLDR file common/bcp47/number.xml; version CLDR 48 & new in Unicode 17.0
   // https://github.com/unicode-org/cldr/blob/master/common/bcp47/number.xml
   return [
     "adlm",
@@ -2174,14 +2174,15 @@ function allNumberingSystems() {
     "newa",
     "nkoo",
     "olck",
-    "onao", 
+    "onao",
     "orya",
     "osma",
-    "outlined", 
+    "outlined",
     "rohg",
     "roman",
     "romanlow",
     "saur",
+    "segment",
     "shrd",
     "sind",
     "sinh",
@@ -2197,6 +2198,7 @@ function allNumberingSystems() {
     "thai",
     "tirh",
     "tibt",
+    "tols",
     "traditio",
     "vaii",
     "wara",
@@ -2230,7 +2232,7 @@ function isValidNumberingSystem(name) {
 
 /**
  * Provides the digits of numbering systems with simple digit mappings,
- * as specified in 11.3.2.
+ * as specified in <https://tc39.es/ecma402/#table-numbering-system-digits>.
  */
 
 var numberingSystemDigits = {
@@ -2247,9 +2249,11 @@ var numberingSystemDigits = {
   deva: "०१२३४५६७८९",
   diak: "𑥐𑥑𑥒𑥓𑥔𑥕𑥖𑥗𑥘𑥙",
   fullwide: "０１２３４５６７８９",
+  gara: "\u{10D40}\u{10D41}\u{10D42}\u{10D43}\u{10D44}\u{10D45}\u{10D46}\u{10D47}\u{10D48}\u{10D49}",
   gong: "𑶠𑶡𑶢𑶣𑶤𑶥𑶦𑶧𑶨𑶩",
   gonm: "𑵐𑵑𑵒𑵓𑵔𑵕𑵖𑵗𑵘𑵙",
   gujr: "૦૧૨૩૪૫૬૭૮૯",
+  gukh: "\u{16130}\u{16131}\u{16132}\u{16133}\u{16134}\u{16135}\u{16136}\u{16137}\u{16138}\u{16139}",
   guru: "੦੧੨੩੪੫੬੭੮੯",
   hanidec: "〇一二三四五六七八九",
   hmng: "𖭐𖭑𖭒𖭓𖭔𖭕𖭖𖭗𖭘𖭙",
@@ -2259,13 +2263,13 @@ var numberingSystemDigits = {
   kawi: "\u{11F50}\u{11F51}\u{11F52}\u{11F53}\u{11F54}\u{11F55}\u{11F56}\u{11F57}\u{11F58}\u{11F59}",
   khmr: "០១២៣៤៥៦៧៨៩",
   knda: "೦೧೨೩೪೫೬೭೮೯",
+  krai: "\u{16D70}\u{16D71}\u{16D72}\u{16D73}\u{16D74}\u{16D75}\u{16D76}\u{16D77}\u{16D78}\u{16D79}",
   lana: "᪀᪁᪂᪃᪄᪅᪆᪇᪈᪉",
   lanatham: "᪐᪑᪒᪓᪔᪕᪖᪗᪘᪙",
   laoo: "໐໑໒໓໔໕໖໗໘໙",
   latn: "0123456789",
   lepc: "᱀᱁᱂᱃᱄᱅᱆᱇᱈᱉",
   limb: "\u1946\u1947\u1948\u1949\u194A\u194B\u194C\u194D\u194E\u194F",
-  nagm: "\u{1E4F0}\u{1E4F1}\u{1E4F2}\u{1E4F3}\u{1E4F4}\u{1E4F5}\u{1E4F6}\u{1E4F7}\u{1E4F8}\u{1E4F9}",
   mathbold: "𝟎𝟏𝟐𝟑𝟒𝟓𝟔𝟕𝟖𝟗",
   mathdbl: "𝟘𝟙𝟚𝟛𝟜𝟝𝟞𝟟𝟠𝟡",
   mathmono: "𝟶𝟷𝟸𝟹𝟺𝟻𝟼𝟽𝟾𝟿",
@@ -2277,13 +2281,18 @@ var numberingSystemDigits = {
   mroo: "𖩠𖩡𖩢𖩣𖩤𖩥𖩦𖩧𖩨𖩩",
   mtei: "꯰꯱꯲꯳꯴꯵꯶꯷꯸꯹",
   mymr: "၀၁၂၃၄၅၆၇၈၉",
+  mymrepka: "\u{116DA}\u{116DB}\u{116DC}\u{116DD}\u{116DE}\u{116DF}\u{116E0}\u{116E1}\u{116E2}\u{116E3}",
+  mymrpao: "\u{116D0}\u{116D1}\u{116D2}\u{116D3}\u{116D4}\u{116D5}\u{116D6}\u{116D7}\u{116D8}\u{116D9}",
   mymrshan: "႐႑႒႓႔႕႖႗႘႙",
   mymrtlng: "꧰꧱꧲꧳꧴꧵꧶꧷꧸꧹",
+  nagm: "\u{1E4F0}\u{1E4F1}\u{1E4F2}\u{1E4F3}\u{1E4F4}\u{1E4F5}\u{1E4F6}\u{1E4F7}\u{1E4F8}\u{1E4F9}",
   newa: "𑑐𑑑𑑒𑑓𑑔𑑕𑑖𑑗𑑘𑑙",
   nkoo: "߀߁߂߃߄߅߆߇߈߉",
   olck: "᱐᱑᱒᱓᱔᱕᱖᱗᱘᱙",
+  onao: "\u{1E5F1}\u{1E5F2}\u{1E5F3}\u{1E5F4}\u{1E5F5}\u{1E5F6}\u{1E5F7}\u{1E5F8}\u{1E5F9}\u{1E5FA}",
   orya: "୦୧୨୩୪୫୬୭୮୯",
   osma: "𐒠𐒡𐒢𐒣𐒤𐒥𐒦𐒧𐒨𐒩",
+  outlined: "\u{1CCF0}\u{1CCF1}\u{1CCF2}\u{1CCF3}\u{1CCF4}\u{1CCF5}\u{1CCF6}\u{1CCF7}\u{1CCF8}\u{1CCF9}",
   rohg: "𐴰𐴱𐴲𐴳𐴴𐴵𐴶𐴷𐴸𐴹",
   saur: "꣐꣑꣒꣓꣔꣕꣖꣗꣘꣙",
   segment: "🯰🯱🯲🯳🯴🯵🯶🯷🯸🯹",
@@ -2292,14 +2301,16 @@ var numberingSystemDigits = {
   sinh: "෦෧෨෩෪෫෬෭෮෯",
   sora: "𑃰𑃱𑃲𑃳𑃴𑃵𑃶𑃷𑃸𑃹",
   sund: "᮰᮱᮲᮳᮴᮵᮶᮷᮸᮹",
+  sunu: "\u{11BF0}\u{11BF1}\u{11BF2}\u{11BF3}\u{11BF4}\u{11BF5}\u{11BF6}\u{11BF7}\u{11BF8}\u{11BF9}",
   takr: "𑛀𑛁𑛂𑛃𑛄𑛅𑛆𑛇𑛈𑛉",
   talu: "᧐᧑᧒᧓᧔᧕᧖᧗᧘᧙",
   tamldec: "௦௧௨௩௪௫௬௭௮௯",
-  tnsa: "\u{16AC0}\u{16AC1}\u{16AC2}\u{16AC3}\u{16AC4}\u{16AC5}\u{16AC6}\u{16AC7}\u{16AC8}\u{16AC9}",
   telu: "౦౧౨౩౪౫౬౭౮౯",
   thai: "๐๑๒๓๔๕๖๗๘๙",
   tibt: "༠༡༢༣༤༥༦༧༨༩",
   tirh: "𑓐𑓑𑓒𑓓𑓔𑓕𑓖𑓗𑓘𑓙",
+  tnsa: "\u{16AC0}\u{16AC1}\u{16AC2}\u{16AC3}\u{16AC4}\u{16AC5}\u{16AC6}\u{16AC7}\u{16AC8}\u{16AC9}",
+  tols: "\u{11DE0}\u{11DE1}\u{11DE2}\u{11DE3}\u{11DE4}\u{11DE5}\u{11DE6}\u{11DE7}\u{11DE8}\u{11DE9}",
   vaii: "꘠꘡꘢꘣꘤꘥꘦꘧꘨꘩",
   wara: "𑣠𑣡𑣢𑣣𑣤𑣥𑣦𑣧𑣨𑣩",
   wcho: "𞋰𞋱𞋲𞋳𞋴𞋵𞋶𞋷𞋸𞋹",

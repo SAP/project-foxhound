@@ -22,7 +22,7 @@ transforms:
 task-defaults:
     run-on-repo-type: [hg]
     shipping-product: firefox
-    run-on-releases: [release, beta, esr140]
+    run-on-releases: [release, beta, esr153]
     treeherder:
         kind: other
         tier: 2
@@ -48,7 +48,7 @@ task-defaults:
             ./mach update-test
     worker-type:
         by-test-platform:
-            windows11-64-24h2-shippable: win11-64-24h2-source
+            windows11-64-25h2-shippable: win11-64-25h2-source
             windows10-64-2009-shippable-qr: win10-64-2009-source
             macosx1500-aarch64-shippable: t-osx-1500-m4
             macosx1470-64-shippable: t-osx-1400-r8
@@ -59,7 +59,7 @@ tasks:
     update-test-locale-fx:
         shipping-phase: promote
         test-platforms:
-            - windows11-64-24h2-shippable
+            - windows11-64-25h2-shippable
             - windows10-64-2009-shippable-qr
             - macosx1500-aarch64-shippable
             - macosx1470-64-shippable
@@ -84,7 +84,7 @@ tasks:
     update-test-source-version-fx:
         shipping-phase: promote
         test-platforms:
-            - windows11-64-24h2-shippable
+            - windows11-64-25h2-shippable
             - windows10-64-2009-shippable-qr
             - macosx1500-aarch64-shippable
             - macosx1470-64-shippable
@@ -112,7 +112,7 @@ tasks:
             command: >-
                 ./mach update-test --test-type Background
         test-platforms:
-            - windows11-64-24h2-shippable
+            - windows11-64-25h2-shippable
             - windows10-64-2009-shippable-qr
             - macosx1500-aarch64-shippable
             - macosx1470-64-shippable
@@ -135,14 +135,14 @@ tasks:
             - linux2404-64-shippable
 
     update-test-push-locale-fx:
-        run-on-releases: [release, esr140]
+        run-on-releases: [release, esr153]
         shipping-phase: push
         test-platforms:
-            - windows11-64-24h2-shippable
+            - windows11-64-25h2-shippable
             - macosx1500-aarch64-shippable
 
     update-test-linux-docker-push-locale-fx:
-        run-on-releases: [release, esr140]
+        run-on-releases: [release, esr153]
         shipping-phase: push
         worker-type: t-linux-docker-amd
         worker:

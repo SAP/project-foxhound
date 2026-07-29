@@ -43,7 +43,7 @@ Be sure to link to this document at the top of the file!
 It contains many useful tidbits of information that anyone adding new metrics should know.
 Preferably, use this blank template to get started,
 substituting your component's `product :: component` tag from
-[the list](https://searchfox.org/mozilla-central/source/toolkit/components/glean/tags.yaml):
+[the list](https://searchfox.org/firefox-main/source/toolkit/components/glean/tags.yaml):
 
 ```yaml
 # This Source Code Form is subject to the terms of the Mozilla Public

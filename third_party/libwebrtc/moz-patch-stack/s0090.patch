@@ -1,23 +1,26 @@
-From: Michael Froman <mfroman@mozilla.com>
-Date: Fri, 17 May 2024 22:30:00 -0500
-Subject: Bug 1897501 - (fix-09bb4f09e1) keep default python intepreter as
- python3
+From: Byron Campen <docfaraday@gmail.com>
+Date: Fri, 26 Jul 2024 09:26:00 -0500
+Subject: Bug 1909234 - (fix-a0d1a51217) Move this errant include where it
+ belongs. r?mjf
 
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/b21ca84c8b2620a98515624de0e43a237698726c
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/6baf67202c67b27c6464cb8e4dbb419485aa6c4c
 ---
- .gn | 2 +-
+ api/test/network_emulation/BUILD.gn | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/.gn b/.gn
-index ffafaf0a4a..161ec4c54c 100644
---- a/.gn
-+++ b/.gn
-@@ -13,7 +13,7 @@ buildconfig = "//build/config/BUILDCONFIG.gn"
+diff --git a/api/test/network_emulation/BUILD.gn b/api/test/network_emulation/BUILD.gn
+index d7cd5d7a71..84508a53c5 100644
+--- a/api/test/network_emulation/BUILD.gn
++++ b/api/test/network_emulation/BUILD.gn
+@@ -6,10 +6,10 @@
+ # in the file PATENTS.  All contributing project authors may
+ # be found in the AUTHORS file in the root of the source tree.
  
- # The python interpreter to use by default. On Windows, this will look
- # for vpython3.exe and vpython3.bat.
--script_executable = "vpython3"
-+script_executable = "python3"
+-import("//third_party/protobuf/proto_library.gni")
+ import("../../../webrtc.gni")
  
- # The secondary source root is a parallel directory tree where
- # GN build files are placed when they can not be placed directly
+ if (rtc_enable_protobuf) {
++  import("//third_party/protobuf/proto_library.gni")
+   proto_library("network_config_schedule_proto") {
+     visibility = [ "*" ]
+     sources = [ "network_config_schedule.proto" ]

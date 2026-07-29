@@ -71,7 +71,7 @@ Notification.prototype = {
 
     // Return if the notification was explicitly closed while waiting for the image.
     if (!this.notificationsMap.has(this.id)) {
-      this.observe(null, "alertfinished", this.id);
+      this.observe(null, "alertfinished");
       return;
     }
 
@@ -90,28 +90,27 @@ Notification.prototype = {
         title: this.options.title,
         text: this.options.message,
         textClickable: true,
-        cookie: this.id,
         name: this.id,
         inPrivateBrowsing: context.incognito,
       });
       svc.showAlert(alert, this);
     } catch (e) {
       // This will fail if alerts aren't available on the system.
-      this.observe(null, "alertfinished", this.id);
+      this.observe(null, "alertfinished");
     }
   },
 
-  observe(subject, topic, data) {
+  observe(subject, topic) {
     switch (topic) {
       case "alertclickcallback":
-        this.notificationsMap.emit("clicked", data);
+        this.notificationsMap.emit("clicked", this.id);
         break;
       case "alertfinished":
-        this.notificationsMap.emit("closed", data);
+        this.notificationsMap.emit("closed", this.id);
         this.notificationsMap.delete(this.id);
         break;
       case "alertshow":
-        this.notificationsMap.emit("shown", data);
+        this.notificationsMap.emit("shown", this.id);
         break;
     }
   },

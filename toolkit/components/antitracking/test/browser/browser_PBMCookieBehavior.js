@@ -10,7 +10,7 @@ const COOKIE_BEHAVIORS = [
   Ci.nsICookieService.BEHAVIOR_REJECT,
   Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN,
   Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
-  Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+  Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
 ];
 
 async function verifyCookieBehavior(browser, expected) {

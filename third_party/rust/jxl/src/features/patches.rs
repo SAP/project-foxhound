@@ -172,6 +172,13 @@ pub struct PatchesDictionary {
 }
 
 impl PatchesDictionary {
+    pub fn new(num_extra_channels: usize) -> Self {
+        Self {
+            blendings_stride: num_extra_channels + 1,
+            ..Default::default()
+        }
+    }
+
     #[cfg(test)]
     pub fn random<R: rand::Rng>(
         size: (usize, usize),
@@ -624,6 +631,7 @@ impl PatchesDictionary {
         Ok(patches_dict)
     }
 
+    #[inline(always)]
     pub fn set_patches_for_row(&self, y: usize, patches_for_row_result: &mut Vec<usize>) {
         patches_for_row_result.clear();
         if self.num_patches.len() <= y || self.num_patches[y] == 0 {
@@ -671,6 +679,7 @@ impl PatchesDictionary {
         patches_for_row_result.sort();
     }
 
+    #[inline(always)]
     pub fn add_one_row(
         &self,
         row: &mut [&mut [f32]],

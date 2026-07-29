@@ -179,11 +179,6 @@ impl LoginStore {
     }
 
     #[handle_error(Error)]
-    pub fn is_potentially_breached(&self, id: &str) -> ApiResult<bool> {
-        self.lock_db()?.is_potentially_breached(id)
-    }
-
-    #[handle_error(Error)]
     pub fn are_potentially_vulnerable_passwords(&self, ids: Vec<String>) -> ApiResult<Vec<String>> {
         // Note: Vec<&str> is not supported with UDL, so we receive Vec<String> and convert
         let db = self.lock_db()?;
@@ -204,19 +199,8 @@ impl LoginStore {
     }
 
     #[handle_error(Error)]
-    pub fn record_breach(&self, id: &str, timestamp: i64) -> ApiResult<()> {
-        let db = self.lock_db()?;
-        db.record_breach(id, timestamp, db.encdec.as_ref())
-    }
-
-    #[handle_error(Error)]
     pub fn reset_all_breaches(&self) -> ApiResult<()> {
         self.lock_db()?.reset_all_breaches()
-    }
-
-    #[handle_error(Error)]
-    pub fn is_breach_alert_dismissed(&self, id: &str) -> ApiResult<bool> {
-        self.lock_db()?.is_breach_alert_dismissed(id)
     }
 
     #[handle_error(Error)]
@@ -386,7 +370,7 @@ mod tests {
     use super::*;
     use crate::encryption::test_utils::TEST_ENCDEC;
     use crate::util;
-    use nss::ensure_initialized;
+    use nss_as::ensure_initialized;
     use std::cmp::Reverse;
     use std::time::SystemTime;
 
@@ -605,7 +589,7 @@ mod tests_keydb {
     use super::*;
     use crate::{ManagedEncryptorDecryptor, NSSKeyManager, PrimaryPasswordAuthenticator};
     use async_trait::async_trait;
-    use nss::ensure_initialized_with_profile_dir;
+    use nss_as::ensure_initialized_with_profile_dir;
     use std::path::PathBuf;
 
     struct MockPrimaryPasswordAuthenticator {

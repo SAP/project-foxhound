@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /*
@@ -551,9 +549,6 @@ class MOZ_STACK_CLASS PerHandlerParser : public ParserBase {
   inline bool processExport(Node node);
   inline bool processExportFrom(BinaryNodeType node);
   inline bool processImport(BinaryNodeType node);
-#ifdef ENABLE_SOURCE_PHASE_IMPORTS
-  inline bool processImportSource(BinaryNodeType node);
-#endif
 
   // If ParseHandler is SyntaxParseHandler:
   //   Do nothing.
@@ -794,9 +789,6 @@ class MOZ_STACK_CLASS GeneralParser : public PerHandlerParser<ParseHandler> {
   using Base::processExport;
   using Base::processExportFrom;
   using Base::processImport;
-#ifdef ENABLE_SOURCE_PHASE_IMPORTS
-  using Base::processImportSource;
-#endif
   using Base::setFunctionEndFromCurrentToken;
 
  private:
@@ -853,7 +845,7 @@ class MOZ_STACK_CLASS GeneralParser : public PerHandlerParser<ParseHandler> {
    */
   class MOZ_STACK_CLASS PossibleError {
    private:
-    enum class ErrorKind { Expression, Destructuring, DestructuringWarning };
+    enum class ErrorKind { Expression, Destructuring };
 
     enum class ErrorState { None, Pending };
 
@@ -868,7 +860,6 @@ class MOZ_STACK_CLASS GeneralParser : public PerHandlerParser<ParseHandler> {
     GeneralParser<ParseHandler, Unit>& parser_;
     Error exprError_;
     Error destructuringError_;
-    Error destructuringWarning_;
 
     // Returns the error report.
     Error& error(ErrorKind kind);
@@ -901,12 +892,6 @@ class MOZ_STACK_CLASS GeneralParser : public PerHandlerParser<ParseHandler> {
     // won't overwrite the existing pending error.
     void setPendingDestructuringErrorAt(const TokenPos& pos,
                                         unsigned errorNumber);
-
-    // Set a pending destructuring warning. Only a single warning may be
-    // set per instance, i.e. subsequent calls to this method are ignored
-    // and won't overwrite the existing pending warning.
-    void setPendingDestructuringWarningAt(const TokenPos& pos,
-                                          unsigned errorNumber);
 
     // Set a pending expression error. Only a single error may be set per
     // instance, i.e. subsequent calls to this method are ignored and won't

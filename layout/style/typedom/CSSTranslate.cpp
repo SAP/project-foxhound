@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,16 +6,46 @@
 
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/RefPtr.h"
+#include "mozilla/ServoStyleConsts.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/CSSNumericValue.h"
 #include "mozilla/dom/CSSTranslateBinding.h"
+#include "mozilla/dom/CSSUnitValue.h"
+#include "nsCOMPtr.h"
 #include "nsString.h"
 
 namespace mozilla::dom {
 
-CSSTranslate::CSSTranslate(nsCOMPtr<nsISupports> aParent)
-    : CSSTransformComponent(std::move(aParent),
-                            TransformComponentType::Translate) {}
+CSSTranslate::CSSTranslate(nsCOMPtr<nsISupports> aParent, bool aIs2D,
+                           RefPtr<CSSNumericValue> aX,
+                           RefPtr<CSSNumericValue> aY,
+                           RefPtr<CSSNumericValue> aZ)
+    : CSSTransformComponent(std::move(aParent), aIs2D,
+                            TransformComponentType::Translate),
+      mX(std::move(aX)),
+      mY(std::move(aY)),
+      mZ(std::move(aZ)) {}
+
+// static
+RefPtr<CSSTranslate> CSSTranslate::Create(
+    nsCOMPtr<nsISupports> aParent,
+    const StyleTranslateComponent& aTranslateComponent) {
+  RefPtr<CSSNumericValue> x =
+      CSSNumericValue::Create(aParent, aTranslateComponent.x);
+  RefPtr<CSSNumericValue> y =
+      CSSNumericValue::Create(aParent, aTranslateComponent.y);
+  RefPtr<CSSNumericValue> z =
+      CSSNumericValue::Create(aParent, aTranslateComponent.z);
+
+  return MakeAndAddRef<CSSTranslate>(std::move(aParent),
+                                     aTranslateComponent.is_2d, std::move(x),
+                                     std::move(y), std::move(z));
+}
+
+NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(CSSTranslate,
+                                               CSSTransformComponent)
+NS_IMPL_CYCLE_COLLECTION_INHERITED(CSSTranslate, CSSTransformComponent, mX, mY,
+                                   mZ)
 
 JSObject* CSSTranslate::WrapObject(JSContext* aCx,
                                    JS::Handle<JSObject*> aGivenProto) {
@@ -26,35 +54,44 @@ JSObject* CSSTranslate::WrapObject(JSContext* aCx,
 
 // start of CSSTranslate Web IDL implementation
 
+// https://drafts.css-houdini.org/css-typed-om-1/#dom-csstranslate-csstranslate
+//
+// XXX This is not yet fully implemented!
+//
 // static
 already_AddRefed<CSSTranslate> CSSTranslate::Constructor(
     const GlobalObject& aGlobal, CSSNumericValue& aX, CSSNumericValue& aY,
     const Optional<NonNull<CSSNumericValue>>& aZ, ErrorResult& aRv) {
-  return MakeAndAddRef<CSSTranslate>(aGlobal.GetAsSupports());
+  nsCOMPtr<nsISupports> global = aGlobal.GetAsSupports();
+
+  // TODO: The spec step ordering could be adjusted to better match typical
+  // implementations, which usually initialize all slots at once.
+
+  // Step 3-6.
+  if (aZ.WasPassed()) {
+    return MakeAndAddRef<CSSTranslate>(std::move(global), /* aIs2D */ false,
+                                       &aX, &aY, &aZ.Value());
+  }
+
+  RefPtr<CSSUnitValue> z = CSSUnitValue::Create(global, 0.0, "px"_ns);
+
+  return MakeAndAddRef<CSSTranslate>(std::move(global), /* aIs2D */ true, &aX,
+                                     &aY, std::move(z));
 }
 
-CSSNumericValue* CSSTranslate::GetX(ErrorResult& aRv) const {
-  aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
-  return nullptr;
-}
+CSSNumericValue* CSSTranslate::X() const { return mX; }
 
 void CSSTranslate::SetX(CSSNumericValue& aArg, ErrorResult& aRv) {
   aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
 }
 
-CSSNumericValue* CSSTranslate::GetY(ErrorResult& aRv) const {
-  aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
-  return nullptr;
-}
+CSSNumericValue* CSSTranslate::Y() const { return mY; }
 
 void CSSTranslate::SetY(CSSNumericValue& aArg, ErrorResult& aRv) {
   aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
 }
 
-CSSNumericValue* CSSTranslate::GetZ(ErrorResult& aRv) const {
-  aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
-  return nullptr;
-}
+CSSNumericValue* CSSTranslate::Z() const { return mZ; }
 
 void CSSTranslate::SetZ(CSSNumericValue& aArg, ErrorResult& aRv) {
   aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
@@ -64,9 +101,19 @@ void CSSTranslate::SetZ(CSSNumericValue& aArg, ErrorResult& aRv) {
 
 void CSSTranslate::ToCssTextWithProperty(const CSSPropertyId& aPropertyId,
                                          nsACString& aDest) const {
-  // XXX: This is not yet fully implemented.
+  aDest.Append(mIs2D ? "translate("_ns : "translate3d("_ns);
 
-  aDest.Append("translate3d()"_ns);
+  mX->ToCssTextWithProperty(aPropertyId, aDest);
+
+  aDest.Append(", "_ns);
+  mY->ToCssTextWithProperty(aPropertyId, aDest);
+
+  if (!mIs2D) {
+    aDest.Append(", "_ns);
+    mZ->ToCssTextWithProperty(aPropertyId, aDest);
+  }
+
+  aDest.Append(")"_ns);
 }
 
 const CSSTranslate& CSSTransformComponent::GetAsCSSTranslate() const {

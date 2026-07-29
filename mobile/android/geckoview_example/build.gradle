@@ -23,7 +23,7 @@ android {
     buildTypes {
         release {
             minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 
@@ -32,7 +32,7 @@ android {
     // See also:
     //  - https://issuetracker.google.com/issues/36911326
     //  - https://stackoverflow.com/questions/9206117/how-to-workaround-autoomitting-fiiles-folders-starting-with-underscore-in
-    aaptOptions {
+    androidResources {
         ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         noCompress 'ja'
     }
@@ -51,6 +51,6 @@ dependencies {
     implementation libs.androidx.appcompat
     implementation libs.androidx.constraintlayout
     implementation libs.androidx.core
-    implementation libs.androidx.preferences
+    implementation libs.androidx.preference
     implementation libs.google.material
 }

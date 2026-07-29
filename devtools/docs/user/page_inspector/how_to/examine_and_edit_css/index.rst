@@ -204,11 +204,17 @@ There's a button to the right of the filter box:
   :class: border
 
 
-Click the button to see checkboxes that you can use to enable the `:hover <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/:hover>`_, `:active <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/:active>`_ and `:focus <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/:focus>`_, `:focus-within <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/:focus-within>`_, `:focus-visible <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/:focus-visible>`_, `:visited <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/:visited>`_, and `:target <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/:target>`_ pseudo-classes for the selected element:
+Click the button to see checkboxes that you can use to enable different pseudo-classes for the selected element:
 
-
-.. image:: show_pseudo_classes_hover.png
+.. image:: pseudo_classes_panel.png
   :class: border
+
+
+Some elements have pseudo-classes that are only applicable to that element. For example, dialogs have the `:open <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/:open>`_ pseudo-class. If there are any such pseudo-classes for the selected element, they are displayed in a separate section below the common pseudo-classes.
+
+.. image:: pseudo_classes_panel_element_specific.png
+  :class: border
+
 
 This feature can also be accessed from the :ref:`popup menu in the HTML view <page-inspector-how-to-element-popup-context-menu>`
 

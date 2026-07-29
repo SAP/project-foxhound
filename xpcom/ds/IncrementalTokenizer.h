@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -101,21 +99,21 @@ class IncrementalTokenizer : public TokenizerBase<char> {
 
 #ifdef DEBUG
   // True when inside the consumer callback, used only for assertions.
-  bool mConsuming;
+  bool mConsuming{false};
 #endif  // DEBUG
   // Modifyable only from the Consumer callback, tells the parser to break,
   // rollback and wait for more input.
-  bool mNeedMoreInput;
+  bool mNeedMoreInput{false};
   // Modifyable only from the Consumer callback, tells the parser to rollback
   // and parse the input again, with (if modified) new settings of the
   // tokenizer.
-  bool mRollback;
+  bool mRollback{false};
   // The input buffer.  Updated with each call to Feed/FinishInput.
   nsCString mInput;
   // Numerical index pointing at the current cursor position.  We don't keep
   // direct reference to the string buffer since the buffer gets often
   // reallocated.
-  nsCString::index_type mInputCursor;
+  nsCString::index_type mInputCursor{0};
   // Refernce to the consumer function.
   Consumer mConsumer;
 };

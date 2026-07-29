@@ -58,6 +58,8 @@ fxviewtabrow-move-tab-window = Move to New Window
     .accesskey = W
 fxviewtabrow-send-to-device = Send to Device
     .accesskey = n
+fxviewtabrow-send-to-mobile = Send to Mobile
+    .accesskey = n
 fxviewtabrow-pin-tab = Pin Tab
     .accesskey = P
 fxviewtabrow-unpin-tab = Unpin Tab
@@ -78,3 +80,12 @@ fxviewtabrow-mute-tab-button-no-context =
   .title = Mute tab
 fxviewtabrow-unmute-tab-button-no-context =
   .title = Unmute tab
+
+## The following strings are for displaying elements in Firefox View to prompt users to sign in, enable sync, pair a device, or troubleshoot device issues.
+
+fxviewtabrow-send-to-mobile-sign-in = Sign in to Send Tabs
+fxviewtabrow-send-to-mobile-turn-on-sync = Turn on Sync to Send Tabs
+fxviewtabrow-send-to-mobile-connect-device = Connect a Device to Send Tabs
+fxviewtabrow-send-to-mobile-device-missing2 = Don’t See Your Device?
+fxviewtabrow-send-to-mobile-not-verified = Account Not Verified
+fxviewtabrow-send-to-mobile-verify-account = Verify Your Account

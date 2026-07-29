@@ -367,8 +367,10 @@ const TESTS = [
  * @param {string} [expectedAdKey]
  *   The expected key to be logged for the scalar. Omit if no scalar should be
  *   logged.
+ * @param {object} browser
+ *   The browser object for the request.
  */
-async function testAdUrlClicked(serpUrl, adUrl, expectedAdKey) {
+async function testAdUrlClicked(serpUrl, adUrl, expectedAdKey, browser) {
   info(`Testing Ad URL: ${adUrl}`);
   let channel = NetUtil.newChannel({
     uri: NetUtil.newURI(adUrl),
@@ -377,6 +379,15 @@ async function testAdUrlClicked(serpUrl, adUrl, expectedAdKey) {
       {}
     ),
     loadUsingSystemPrincipal: true,
+  });
+  // ChannelWrapper.get returns a C++ backed object whose browserElement
+  // getter resolves via the channel's load context. In xpcshell there is
+  // no real browsing context, so browserElement is null. Override the
+  // getter on this specific wrapper instance to return our mock browser.
+  let wrapper = ChannelWrapper.get(channel);
+  Object.defineProperty(wrapper, "browserElement", {
+    get: () => browser,
+    configurable: true,
   });
   SearchSERPTelemetry._contentHandler.observeActivity(
     channel,
@@ -433,7 +444,10 @@ add_task(async function test_parsing_search_urls() {
         },
       },
     };
-    SearchSERPTelemetry.updateTrackingStatus(browser, test.trackingUrl);
+    SearchSERPTelemetry.updateTrackingStatus(
+      browser,
+      Services.io.newURI(test.trackingUrl)
+    );
     SearchSERPTelemetry.reportPageImpression(
       {
         url: test.trackingUrl,
@@ -451,10 +465,15 @@ add_task(async function test_parsing_search_urls() {
 
     if ("adUrls" in test) {
       for (const adUrl of test.adUrls) {
-        await testAdUrlClicked(test.trackingUrl, adUrl, test.expectedAdKey);
+        await testAdUrlClicked(
+          test.trackingUrl,
+          adUrl,
+          test.expectedAdKey,
+          browser
+        );
       }
       for (const nonAdUrls of test.nonAdUrls) {
-        await testAdUrlClicked(test.trackingUrl, nonAdUrls);
+        await testAdUrlClicked(test.trackingUrl, nonAdUrls, null, browser);
       }
     }
 

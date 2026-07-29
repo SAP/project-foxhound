@@ -20,6 +20,13 @@ We also submit some more general information about releases (version number, MAR
 
 All balrog submission is done by `balrogscript workers`_, and happens in the ``promote`` phase.
 
+WNP and Release Notes URL Configuration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The What's New Page (WNP) and release notes URLs submitted to Balrog are
+configured in ``browser/config/whats_new_page.yml``. See the
+`relengdocs explanation <https://mozilla-releng.net/relengdocs/explanations/balrog/wnp-release-notes-urls.html>`_
+for full details.
+
 Update Test Channels
 --------------------
 Balrog has "test" channels that we use to allow verification of new release updates prior to shipping. The ``release-balrog-submit-toplevel`` task is responsible for updating these test channels whenever we prepare a new release. This happens in the ``promote`` phase.

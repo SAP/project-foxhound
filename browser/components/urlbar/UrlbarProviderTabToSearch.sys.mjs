@@ -17,13 +17,12 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   ActionsProviderContextualSearch:
     "moz-src:///browser/components/urlbar/ActionsProviderContextualSearch.sys.mjs",
-  UrlbarView: "moz-src:///browser/components/urlbar/UrlbarView.sys.mjs",
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
   UrlbarProviderAutofill:
     "moz-src:///browser/components/urlbar/UrlbarProviderAutofill.sys.mjs",
   UrlbarProviderGlobalActions:
     "moz-src:///browser/components/urlbar/UrlbarProviderGlobalActions.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
   UrlbarSearchUtils:
     "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
   UrlUtils: "resource://gre/modules/UrlUtils.sys.mjs",
@@ -91,15 +90,6 @@ const VIEW_TEMPLATE = {
 };
 
 /**
- * Initializes this provider's dynamic result. To be called after the creation
- *  of the provider singleton.
- */
-function initializeDynamicResult() {
-  lazy.UrlbarResult.addDynamicResultType(DYNAMIC_RESULT_TYPE);
-  lazy.UrlbarView.addDynamicViewTemplate(DYNAMIC_RESULT_TYPE, VIEW_TEMPLATE);
-}
-
-/**
  * Class used to create the provider.
  */
 export class UrlbarProviderTabToSearch extends UrlbarProvider {
@@ -145,6 +135,10 @@ export class UrlbarProviderTabToSearch extends UrlbarProvider {
    */
   getPriority() {
     return 0;
+  }
+
+  getViewTemplate(_result) {
+    return VIEW_TEMPLATE;
   }
 
   /**
@@ -231,7 +225,7 @@ export class UrlbarProviderTabToSearch extends UrlbarProvider {
       // Confirm search mode, but only for the onboarding (dynamic) result. The
       // input will handle confirming search mode for the non-onboarding
       // `RESULT_TYPE.SEARCH` result since it sets `providesSearchMode`.
-      element.ownerGlobal.gURLBar.maybeConfirmSearchModeFromResult({
+      element.documentGlobal.gURLBar.maybeConfirmSearchModeFromResult({
         result,
         checkValue: false,
       });
@@ -397,5 +391,3 @@ function searchUrlDomainWithoutSuffix(engine) {
   });
   return value.substr(0, value.length - engine.searchUrlPublicSuffix.length);
 }
-
-initializeDynamicResult();

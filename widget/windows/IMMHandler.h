@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -123,6 +122,7 @@ class IMMHandler final {
   static void OnSelectionChange(nsWindow* aWindow,
                                 const IMENotification& aIMENotification,
                                 bool aIsIMMActive);
+  static void OnDestroyWindow(nsWindow* aWindow);
 
   static IMENotificationRequests GetIMENotificationRequests();
 
@@ -369,9 +369,15 @@ class IMMHandler final {
     mPassedIMEChar.AppendElement(msg);
   }
 
+  void ClearComposingData() {
+    mComposingWindow = nullptr;
+    mDispatcher = nullptr;
+    mIsComposing = false;
+  }
+
   TextEventDispatcher* GetTextEventDispatcherFor(nsWindow* aWindow);
 
-  nsWindow* mComposingWindow;
+  RefPtr<nsWindow> mComposingWindow;
   RefPtr<TextEventDispatcher> mDispatcher;
   nsString mCompositionString;
   nsTArray<uint32_t> mClauseArray;

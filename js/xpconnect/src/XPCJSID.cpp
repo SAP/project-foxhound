@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -59,16 +57,9 @@ static bool IID_MayResolve(const JSAtomState& names, jsid id,
                            JSObject* maybeObj);
 
 static const JSClassOps sIID_ClassOps = {
-    nullptr,           // addProperty
-    nullptr,           // delProperty
-    nullptr,           // enumerate
-    IID_NewEnumerate,  // newEnumerate
-    IID_Resolve,       // resolve
-    IID_MayResolve,    // mayResolve
-    nullptr,           // finalize
-    nullptr,           // call
-    nullptr,           // construct
-    nullptr,           // trace
+    .newEnumerate = IID_NewEnumerate,
+    .resolve = IID_Resolve,
+    .mayResolve = IID_MayResolve,
 };
 
 // Interface ID objects use a single reserved slot containing a pointer to the
@@ -179,7 +170,7 @@ static JSObject* GetIDObject(HandleValue aVal, const JSClass* aClass) {
   return nullptr;
 }
 
-static const nsXPTInterfaceInfo* GetInterfaceInfo(JSObject* obj) {
+static const nsXPTInterfaceInfo* GetInterfaceInfo(const JSObject* obj) {
   MOZ_ASSERT(JS::GetClass(obj) == &sIID_Class);
   return static_cast<const nsXPTInterfaceInfo*>(
       JS::GetReservedSlot(obj, kIID_InfoSlot).toPrivate());

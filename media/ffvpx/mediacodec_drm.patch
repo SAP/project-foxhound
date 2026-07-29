@@ -1,10 +1,10 @@
 diff --git a/media/ffvpx/libavcodec/avcodec.h b/media/ffvpx/libavcodec/avcodec.h
 --- a/media/ffvpx/libavcodec/avcodec.h
 +++ b/media/ffvpx/libavcodec/avcodec.h
-@@ -2105,6 +2105,8 @@ typedef struct AVCodecContext {
+@@ -1942,6 +1942,8 @@ typedef struct AVCodecContext {
+      * - decoding: Set by libavcodec
       */
-     AVFrameSideData  **decoded_side_data;
-     int             nb_decoded_side_data;
+     enum AVAlphaMode alpha_mode;
 +
 +    void* moz_ndk_crypto;
  } AVCodecContext;

@@ -7,6 +7,7 @@ ChromeUtils.defineESModuleGetters(this, {
   AdsFeed: "resource://newtab/lib/AdsFeed.sys.mjs",
   actionCreators: "resource://newtab/common/Actions.mjs",
   actionTypes: "resource://newtab/common/Actions.mjs",
+  ContextId: "moz-src:///browser/modules/ContextId.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
 });
 
@@ -569,6 +570,8 @@ add_task(async function test_fetchData_noOHTTP() {
 
 add_task(async function test_fetchData_OHTTP() {
   const sandbox = sinon.createSandbox();
+  const CONTEXT_ID = "ContextId";
+  sandbox.stub(ContextId, "request").returns(CONTEXT_ID);
   const feed = getAdsFeedForTest();
 
   Services.prefs.setBoolPref(PREF_UNIFIED_ADS_OHTTP_ENABLED, true);
@@ -609,6 +612,110 @@ add_task(async function test_fetchData_OHTTP() {
     ObliviousHTTP.ohttpRequest.firstCall.args[3].credentials,
     "omit",
     "should not send cookies"
+  );
+
+  info("AdsFeed: fetchData() should construct request body");
+  Assert.equal(
+    ObliviousHTTP.ohttpRequest.firstCall.args[3].body,
+    JSON.stringify({
+      context_id: CONTEXT_ID,
+      flags: {},
+      placements: [
+        {
+          placement: "newtab_tile_1",
+          count: 1,
+        },
+        {
+          placement: "newtab_tile_2",
+          count: 1,
+        },
+        {
+          placement: "newtab_tile_3",
+          count: 1,
+        },
+      ],
+      blocks: [""],
+    })
+  );
+
+  sandbox.restore();
+});
+
+add_task(async function test_fetchData_OHTTP_with_adsBackendConfig() {
+  const sandbox = sinon.createSandbox();
+  const CONTEXT_ID = "ContextId";
+  sandbox.stub(ContextId, "request").returns(CONTEXT_ID);
+  const feed = getAdsFeedForTest();
+
+  Services.prefs.setBoolPref(PREF_UNIFIED_ADS_OHTTP_ENABLED, true);
+  Services.prefs.setStringPref(
+    PREF_UNIFIED_ADS_OHTTP_RELAY_URL,
+    "https://relay.test"
+  );
+  Services.prefs.setStringPref(
+    PREF_UNIFIED_ADS_OHTTP_CONFIG_URL,
+    "https://config.test"
+  );
+  feed.store.state.Prefs.values.adsBackendConfig = {
+    feature1: false,
+    feature2: true,
+  };
+
+  const mockConfig = { config: "mocked" };
+
+  sandbox
+    .stub(AdsFeed.prototype, "PersistentCache")
+    .returns({ get: () => {}, set: () => {} });
+  sandbox.stub(feed, "Date").returns({ now: () => 123 });
+
+  sandbox.stub(ObliviousHTTP, "getOHTTPConfig").resolves(mockConfig);
+  sandbox.stub(ObliviousHTTP, "ohttpRequest").resolves({
+    status: 200,
+    json: () => {
+      return Promise.resolve(mockedFetchTileData);
+    },
+  });
+
+  const result = await feed.fetchData({ tiles: true, spocs: false });
+
+  info("AdsFeed: fetchData() should fetch via OHTTP when enabled");
+
+  Assert.ok(ObliviousHTTP.getOHTTPConfig.calledOnce);
+  Assert.ok(ObliviousHTTP.ohttpRequest.calledOnce);
+  Assert.deepEqual(result.tiles[0].id, "test1");
+
+  info("AdsFeed: fetchData() should not send cookies");
+  Assert.equal(
+    ObliviousHTTP.ohttpRequest.firstCall.args[3].credentials,
+    "omit",
+    "should not send cookies"
+  );
+
+  info("AdsFeed: fetchData() should construct request body");
+  Assert.equal(
+    ObliviousHTTP.ohttpRequest.firstCall.args[3].body,
+    JSON.stringify({
+      context_id: CONTEXT_ID,
+      flags: {
+        feature1: false,
+        feature2: true,
+      },
+      placements: [
+        {
+          placement: "newtab_tile_1",
+          count: 1,
+        },
+        {
+          placement: "newtab_tile_2",
+          count: 1,
+        },
+        {
+          placement: "newtab_tile_3",
+          count: 1,
+        },
+      ],
+      blocks: [""],
+    })
   );
 
   sandbox.restore();

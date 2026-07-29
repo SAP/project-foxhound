@@ -19,13 +19,13 @@ import mozilla.components.concept.engine.EngineSession
 import mozilla.components.support.test.any
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.mockito.ArgumentMatchers.anyBoolean
 import org.mockito.Mockito.anyString
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
+import kotlin.test.assertNotNull
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class LinkingMiddlewareTest {
@@ -187,7 +187,7 @@ class LinkingMiddlewareTest {
         val engineObserver = store.state.findTab(tab2.id)?.engineState?.engineObserver
         assertNotNull(engineObserver)
 
-        verify(engineSession2).register(engineObserver!!)
+        verify(engineSession2).register(engineObserver)
         engineObserver.onTitleChange("test")
         advanceUntilIdle()
 
@@ -236,7 +236,7 @@ class LinkingMiddlewareTest {
         // We only have a session for tab2 so we should only register an observer for tab2
         val engineObserver = store.state.findTab(tab2.id)?.engineState?.engineObserver
         assertNotNull(engineObserver)
-        verify(engineSession).register(engineObserver!!)
+        verify(engineSession).register(engineObserver)
         engineObserver.onTitleChange("test")
         advanceUntilIdle()
 

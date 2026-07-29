@@ -8,15 +8,20 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
+import mozilla.components.compose.base.badge.StatusBadge
+import mozilla.components.compose.base.theme.information
 import org.mozilla.fenix.R
+import org.mozilla.fenix.components.menu.store.SummarizationMenuState
 import org.mozilla.fenix.components.menu.store.TranslationInfo
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.PreviewThemeProvider
@@ -32,14 +37,15 @@ internal fun MoreSettingsSubmenu(
     hasExternalApp: Boolean,
     externalAppName: String,
     isReaderViewActive: Boolean,
-    isWebCompatReporterSupported: Boolean,
     isWebCompatEnabled: Boolean,
     isOpenInAppMenuHighlighted: Boolean,
     translationInfo: TranslationInfo,
     showShortcuts: Boolean,
     isAndroidAutomotiveAvailable: Boolean,
-    showSummarization: Boolean,
+    summarizationMenuState: SummarizationMenuState,
+    isPrivate: Boolean,
     onWebCompatReporterClick: () -> Unit,
+    onSummarizePageMenuExposed: () -> Unit,
     onSummarizePageClick: () -> Unit,
     onShortcutsMenuClick: () -> Unit,
     onAddToHomeScreenMenuClick: () -> Unit,
@@ -47,6 +53,7 @@ internal fun MoreSettingsSubmenu(
     onSaveAsPDFMenuClick: () -> Unit,
     onPrintMenuClick: () -> Unit,
     onOpenInAppMenuClick: () -> Unit,
+    onMoveToNonPrivateTabMenuClick: () -> Unit,
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -56,11 +63,15 @@ internal fun MoreSettingsSubmenu(
             isReaderViewActive = isReaderViewActive,
         )
         SummarizationMenuItem(
-            showSummarization = showSummarization,
+            summarizationMenuState = summarizationMenuState,
+            onSummarizePageMenuExposed = onSummarizePageMenuExposed,
             onSummarizePageClick = onSummarizePageClick,
         )
+        MoveToNonPrivateTabMenuItem(
+            isPrivate = isPrivate,
+            onMoveToNonPrivateTabMenuClick = onMoveToNonPrivateTabMenuClick,
+        )
         WebCompatReporterMenuItem(
-            isWebCompatReporterSupported = isWebCompatReporterSupported,
             isWebCompatEnabled = isWebCompatEnabled,
             onWebCompatReporterClick = onWebCompatReporterClick,
         )
@@ -106,34 +117,69 @@ private fun TranslationSection(
     }
 }
 
+/**
+ * Summarization menu item.
+ *
+ * @param summarizationMenuState The state of the summarization menu.
+ * @param onSummarizePageMenuExposed A callback to be executed when the menu is exposed to the user.
+ * it will be used to know when to remove the highlight.
+ * @param onSummarizePageClick A callback to be executed when the menu item is clicked.
+ */
 @Composable
 private fun SummarizationMenuItem(
-    showSummarization: Boolean,
+    summarizationMenuState: SummarizationMenuState,
+    onSummarizePageMenuExposed: () -> Unit,
     onSummarizePageClick: () -> Unit,
 ) {
-    if (showSummarization) {
+    if (summarizationMenuState.visible) {
+        LaunchedEffect(Unit) {
+            if (summarizationMenuState.highlighted) {
+                onSummarizePageMenuExposed()
+            }
+        }
+        val state: MenuItemState = if (summarizationMenuState.enabled) {
+            MenuItemState.ENABLED
+        } else {
+            MenuItemState.DISABLED
+        }
+
+        val containerColor = if (summarizationMenuState.enabled) {
+            MaterialTheme.colorScheme.information
+        } else {
+            MaterialTheme.colorScheme.information.copy(alpha = 0.38f)
+        }
+
         MenuItem(
             label = stringResource(id = R.string.browser_menu_summarize_page),
+            labelModifier = Modifier.wrapContentWidth(),
             beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_lightning_24),
+            isBeforeIconHighlighted = summarizationMenuState.highlighted,
             onClick = onSummarizePageClick,
+            state = state,
+            afterContent = {
+                if (summarizationMenuState.showNewFeatureBadge) {
+                    StatusBadge(
+                        containerColor = containerColor,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        status = stringResource(R.string.browser_menu_summarize_page_badge),
+                    )
+                }
+            },
         )
     }
 }
 
 @Composable
 private fun WebCompatReporterMenuItem(
-    isWebCompatReporterSupported: Boolean,
     isWebCompatEnabled: Boolean,
     onWebCompatReporterClick: () -> Unit,
 ) {
-    if (isWebCompatReporterSupported) {
-        MenuItem(
-            label = stringResource(id = R.string.browser_menu_webcompat_reporter_2),
-            beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_lightbulb_24),
-            state = if (isWebCompatEnabled) MenuItemState.ENABLED else MenuItemState.DISABLED,
-            onClick = onWebCompatReporterClick,
-        )
-    }
+    MenuItem(
+        label = stringResource(id = R.string.browser_menu_webcompat_reporter_2),
+        beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_lightbulb_24),
+        state = if (isWebCompatEnabled) MenuItemState.ENABLED else MenuItemState.DISABLED,
+        onClick = onWebCompatReporterClick,
+    )
 }
 
 @Composable
@@ -178,6 +224,20 @@ private fun SaveToCollectionMenuItem(
         beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_collection_24),
         onClick = onSaveToCollectionMenuClick,
     )
+}
+
+@Composable
+private fun MoveToNonPrivateTabMenuItem(
+    isPrivate: Boolean,
+    onMoveToNonPrivateTabMenuClick: () -> Unit,
+) {
+    if (isPrivate) {
+        MenuItem(
+            label = stringResource(id = R.string.browser_menu_move_to_non_private_tab),
+            beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_external_link_24),
+            onClick = onMoveToNonPrivateTabMenuClick,
+        )
+    }
 }
 
 @Composable
@@ -305,7 +365,6 @@ private fun MoreSettingsSubmenuPreview(
                     hasExternalApp = true,
                     externalAppName = "Pocket",
                     isReaderViewActive = false,
-                    isWebCompatReporterSupported = true,
                     isWebCompatEnabled = true,
                     isOpenInAppMenuHighlighted = false,
                     translationInfo = TranslationInfo(
@@ -317,8 +376,14 @@ private fun MoreSettingsSubmenuPreview(
                     ),
                     showShortcuts = true,
                     isAndroidAutomotiveAvailable = false,
-                    showSummarization = true,
+                    summarizationMenuState = SummarizationMenuState.Default.copy(
+                        visible = true,
+                        highlighted = true,
+                        showNewFeatureBadge = true,
+                    ),
+                    isPrivate = true,
                     onWebCompatReporterClick = {},
+                    onSummarizePageMenuExposed = {},
                     onSummarizePageClick = {},
                     onShortcutsMenuClick = {},
                     onAddToHomeScreenMenuClick = {},
@@ -326,6 +391,7 @@ private fun MoreSettingsSubmenuPreview(
                     onSaveAsPDFMenuClick = {},
                     onPrintMenuClick = {},
                     onOpenInAppMenuClick = {},
+                    onMoveToNonPrivateTabMenuClick = {},
                 )
             }
         }
@@ -351,7 +417,6 @@ private fun MoreSettingsSubmenuDisabledOpenPreview(
                     hasExternalApp = false,
                     externalAppName = "Pocket",
                     isReaderViewActive = false,
-                    isWebCompatReporterSupported = true,
                     isWebCompatEnabled = true,
                     isOpenInAppMenuHighlighted = true,
                     translationInfo = TranslationInfo(
@@ -363,8 +428,10 @@ private fun MoreSettingsSubmenuDisabledOpenPreview(
                     ),
                     showShortcuts = true,
                     isAndroidAutomotiveAvailable = false,
-                    showSummarization = false,
+                    summarizationMenuState = SummarizationMenuState.Default,
+                    isPrivate = false,
                     onWebCompatReporterClick = {},
+                    onSummarizePageMenuExposed = {},
                     onSummarizePageClick = {},
                     onShortcutsMenuClick = {},
                     onAddToHomeScreenMenuClick = {},
@@ -372,6 +439,7 @@ private fun MoreSettingsSubmenuDisabledOpenPreview(
                     onSaveAsPDFMenuClick = {},
                     onPrintMenuClick = {},
                     onOpenInAppMenuClick = {},
+                    onMoveToNonPrivateTabMenuClick = {},
                 )
             }
         }

@@ -53,7 +53,7 @@ add_task(async function () {
   info("Select the host and check that :host is matching");
   {
     await selectNode("#host", inspector);
-    let selector = getRuleViewRuleEditor(view, 1).selectorText;
+    let selector = getRuleViewRuleEditorAt(view, 1).selectorText;
     is(selector.textContent, ":host", "Got expected rule selector");
     is(
       selector.querySelector(".matched").textContent,
@@ -61,7 +61,7 @@ add_task(async function () {
       ":host should be matched."
     );
 
-    selector = getRuleViewRuleEditor(view, 2).selectorText;
+    selector = getRuleViewRuleEditorAt(view, 2).selectorText;
     is(
       selector.textContent,
       ":where(:host), [test-rule-shared]",
@@ -88,7 +88,7 @@ add_task(async function () {
     );
     await selectNode(nodeFront, inspector);
 
-    let selector = getRuleViewRuleEditor(view, 4).selectorText;
+    let selector = getRuleViewRuleEditorAt(view, 3).selectorText;
     is(selector.textContent, ":host", "Got expected rule selector");
     is(
       selector.querySelector(".matched").textContent,
@@ -96,7 +96,7 @@ add_task(async function () {
       ":host should be matched."
     );
 
-    selector = getRuleViewRuleEditor(view, 5).selectorText;
+    selector = getRuleViewRuleEditorAt(view, 4).selectorText;
     is(
       selector.textContent,
       ":where(:host), [test-rule-shared]",
@@ -163,7 +163,7 @@ add_task(async function () {
       inspector
     );
     await selectNode(nestedShadowHostNodeFront, inspector);
-    let selector = getRuleViewRuleEditor(view, 1).selectorText;
+    let selector = getRuleViewRuleEditorAt(view, 1).selectorText;
     is(selector.textContent, ":host", "Got expected rule selector");
     is(
       selector.querySelector(".matched").textContent,
@@ -171,7 +171,7 @@ add_task(async function () {
       ":host should be matched for the nested host."
     );
 
-    selector = getRuleViewRuleEditor(view, 2).selectorText;
+    selector = getRuleViewRuleEditorAt(view, 2).selectorText;
     is(
       selector.textContent,
       ":where(:host), [test-rule-shared]",
@@ -203,7 +203,7 @@ add_task(async function () {
     );
     await selectNode(nodeFront, inspector);
 
-    let selector = getRuleViewRuleEditor(view, 4).selectorText;
+    let selector = getRuleViewRuleEditorAt(view, 3).selectorText;
     is(selector.textContent, ":host", "Got expected rule selector");
     is(
       selector.querySelector(".matched").textContent,
@@ -211,7 +211,7 @@ add_task(async function () {
       ":host should be matched for the nested shadow dom element."
     );
 
-    selector = getRuleViewRuleEditor(view, 5).selectorText;
+    selector = getRuleViewRuleEditorAt(view, 4).selectorText;
     is(
       selector.textContent,
       ":where(:host), [test-rule-shared]",

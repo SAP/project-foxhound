@@ -88,7 +88,7 @@ add_task(async function clientid_enabled() {
     "Moz-Client-Id should be set when telemetry & discovery are enabled"
   );
 
-  let tabbrowser = win.windowRoot.ownerGlobal.gBrowser;
+  let tabbrowser = win.windowRoot.window.gBrowser;
   let expectedUrl = `${serverBaseUrl}sumo/personalized-addons`;
   let tabPromise = BrowserTestUtils.waitForNewTab(tabbrowser, expectedUrl);
 

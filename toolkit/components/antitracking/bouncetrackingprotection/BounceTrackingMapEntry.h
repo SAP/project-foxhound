@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,7 @@
 #ifndef mozilla_BounceTrackingMapEntry_h
 #define mozilla_BounceTrackingMapEntry_h
 
+#include "BounceTrackingRecord.h"
 #include "mozilla/OriginAttributes.h"
 #include "nsIBounceTrackingMapEntry.h"
 #include "nsString.h"
@@ -72,11 +71,16 @@ class BounceTrackingPurgeEntry final : public BTPMapEntry,
 
   const PRTime& PurgeTimeRefConst() const { return mPurgeTime; }
 
+  void SetBounceChainRecord(BounceTrackingRecord* aRecord) {
+    mChainRecord = aRecord;
+  }
+
  private:
   ~BounceTrackingPurgeEntry() = default;
   // Timestamp of when the purge completed. mTimeStamp is the time of when the
   // bounce ocurred.
   PRTime mPurgeTime;
+  RefPtr<BounceTrackingRecord> mChainRecord;
 };
 
 }  // namespace mozilla

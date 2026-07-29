@@ -10,7 +10,7 @@ BOTTOM_BAR_CSS = ".w-mc.transition-all"
 async def is_bottom_bar_full_width(client, platform):
     await client.navigate(URL, wait="none")
     client.add_stylesheet(f"{BOTTOM_BAR_CSS} {{ transition-duration:0s !important; }}")
-    map = client.await_css(MAP_CSS, is_displayed=True)
+    map = client.await_css(MAP_CSS, is_displayed=True, timeout=30)
     aside = client.await_css(ASIDE_CSS, is_displayed=True)
     bottom_bar = client.await_css(BOTTOM_BAR_CSS, is_displayed=True)
     return client.execute_script(

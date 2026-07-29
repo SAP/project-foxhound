@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.components.appstate.snackbar
 
+import org.mozilla.fenix.components.appstate.AppAction.IPProtectionSnackbarAction
 import org.mozilla.fenix.components.appstate.AppAction.SnackbarAction
 import org.mozilla.fenix.components.appstate.AppState
 
@@ -24,6 +25,14 @@ internal object SnackbarStateReducer {
         is SnackbarAction.Reset,
         -> state.copy(
             snackbarState = SnackbarState.None(state.snackbarState),
+        )
+
+        is IPProtectionSnackbarAction.ConnectionError -> state.copy(
+            snackbarState = SnackbarState.IPProtectionConnectionError(action.title),
+        )
+
+        is IPProtectionSnackbarAction.DataLimitReached -> state.copy(
+            snackbarState = SnackbarState.IPProtectionDataLimitReached(action.title),
         )
     }
 }

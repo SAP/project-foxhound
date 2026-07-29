@@ -154,7 +154,7 @@ async function openPopupAndGetEngineButton(
   baseId,
   engineName
 ) {
-  const win = oneOffInstance.container.ownerGlobal;
+  const win = oneOffInstance.container.documentGlobal;
   // Open the popup.
   win.gURLBar.blur();
   let shownPromise = promiseEvent(popup, "popupshown");
@@ -222,7 +222,7 @@ async function openPopupAndGetEngineButton(
 async function promiseClosePopup(popup) {
   // close the panel using the escape key.
   let promise = promiseEvent(popup, "popuphidden");
-  EventUtils.synthesizeKey("KEY_Escape", {}, popup.ownerGlobal);
+  EventUtils.synthesizeKey("KEY_Escape", {}, popup.documentGlobal);
   await promise;
 
   // Move the cursor out of the panel area to avoid messing with other tests.
@@ -231,6 +231,6 @@ async function promiseClosePopup(popup) {
     target: popup,
     offsetX: 0,
     offsetY: 0,
-    win: popup.ownerGlobal,
+    win: popup.documentGlobal,
   });
 }

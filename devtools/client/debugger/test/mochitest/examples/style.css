@@ -1,0 +1,10 @@
+#example-style-1 {
+  background-color: #20123a;
+  color: #fff;
+  color-scheme: dark;
+}
+
+.example-style-2 {
+  margin-inline: 30px;
+  padding-top: 64px;
+}

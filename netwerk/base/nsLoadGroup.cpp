@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=4 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -213,6 +211,7 @@ nsLoadGroup::Cancel(nsresult status) {
 
   mStatus = NS_OK;
   mIsCanceling = false;
+  mCanceledReason.Truncate();
 
   return firstError;
 }
@@ -345,7 +344,7 @@ nsLoadGroup::SetDefaultLoadRequest(nsIRequest* aRequest) {
     // Mask off any bits that are not part of the nsIRequest flags.
     // in particular, nsIChannel::LOAD_DOCUMENT_URI...
     //
-    mLoadFlags &= nsIRequest::LOAD_REQUESTMASK;
+    mLoadFlags &= nsIRequest::LOAD_INHERIT_MASK;
 
     nsCOMPtr<nsITimedChannel> timedChannel = do_QueryInterface(aRequest);
     mDefaultLoadIsTimed = timedChannel != nullptr;
@@ -416,6 +415,7 @@ nsLoadGroup::AddRequest(nsIRequest* request, nsISupports* ctxt) {
     // the load group.
     //
     nsCOMPtr<nsIRequestObserver> observer = do_QueryReferent(mObserver);
+    RefPtr<nsLoadGroup> self{this};
     if (observer) {
       LOG(
           ("LOADGROUP [%p]: Firing OnStartRequest for request %p."
@@ -570,6 +570,7 @@ nsresult nsLoadGroup::NotifyRemovalObservers(nsIRequest* request,
   if (foreground || mNotifyObserverAboutBackgroundRequests) {
     // Fire the OnStopRequest out to the observer...
     nsCOMPtr<nsIRequestObserver> observer = do_QueryReferent(mObserver);
+    RefPtr<nsLoadGroup> self{this};
     if (observer) {
       LOG(
           ("LOADGROUP [%p]: Firing OnStopRequest for request %p."

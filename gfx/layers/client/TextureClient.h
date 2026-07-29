@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,6 +27,7 @@
 #include "mozilla/layers/ISurfaceAllocator.h"
 #include "mozilla/layers/LayersSurfaces.h"  // for SurfaceDescriptor
 #include "mozilla/layers/LayersTypes.h"
+#include "mozilla/layers/PTextureChild.h"  // for PTextureChild
 #include "mozilla/layers/SyncObject.h"
 #include "mozilla/mozalloc.h"             // for operator delete
 #include "mozilla/UniquePtrExtensions.h"  // for UniqueFileHandle
@@ -62,6 +61,7 @@ class TextureClient;
 class ITextureClientRecycleAllocator;
 class SharedSurfaceTextureData;
 class TextureForwarder;
+class ImageBridgeChild;
 class RecordedTextureData;
 struct RemoteTextureOwnerId;
 
@@ -385,7 +385,9 @@ class TextureClient : public AtomicRefCountedWithFinalize<TextureClient> {
       const gfx::IntSize& aCbCrSize, uint32_t aCbCrStride,
       StereoMode aStereoMode, gfx::ColorDepth aColorDepth,
       gfx::YUVColorSpace aYUVColorSpace, gfx::ColorRange aColorRange,
-      gfx::ChromaSubsampling aSubsampling, TextureFlags aTextureFlags);
+      gfx::TransferFunction aTransferFunction,
+      gfx::ChromaSubsampling aSubsampling, TextureFlags aTextureFlags,
+      const Maybe<gfx::HDRMetadata>& aHDRMetadata = Nothing());
 
   // Creates and allocates a TextureClient (can be accessed through raw
   // pointers).
@@ -495,15 +497,12 @@ class TextureClient : public AtomicRefCountedWithFinalize<TextureClient> {
                            const gfx::IntPoint* aPoint);
 
   /**
-   * Allocate and deallocate a TextureChild actor.
+   * Allocate a TextureChild actor.
    *
    * TextureChild is an implementation detail of TextureClient that is not
-   * exposed to the rest of the code base. CreateIPDLActor and DestroyIPDLActor
-   * are for use with the managing IPDL protocols only (so that they can
-   * implement AllocPextureChild and DeallocPTextureChild).
+   * exposed to the rest of the code base.
    */
-  static PTextureChild* CreateIPDLActor();
-  static bool DestroyIPDLActor(PTextureChild* actor);
+  static already_AddRefed<PTextureChild> CreateIPDLActor();
 
   /**
    * Get the TextureClient corresponding to the actor passed in parameter.
@@ -779,6 +778,9 @@ class TextureClient : public AtomicRefCountedWithFinalize<TextureClient> {
   friend class TextureChild;
   friend void TestTextureClientSurface(TextureClient*, gfxImageSurface*);
   friend void TestTextureClientYCbCr(TextureClient*, PlanarYCbCrData&);
+  friend void TestYCbCrDescriptorTransferFunction(gfx::TransferFunction,
+                                                  Maybe<gfx::HDRMetadata>,
+                                                  RefPtr<ImageBridgeChild>);
   friend already_AddRefed<TextureHost> CreateTextureHostWithBackend(
       TextureClient*, ISurfaceAllocator*, LayersBackend&);
 };

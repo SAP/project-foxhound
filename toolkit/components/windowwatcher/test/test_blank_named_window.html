@@ -23,13 +23,13 @@ name result in new windows being opened.
         ["browser.link.open_newwindow", 2],
       ]});
 
-      let win1 = window.open("data:text/html,<p>This is window 1 for test_blank_named_window.html</p>", "_blank");
+      let win1 = window.open("about:blank", "_blank");
 
       let name = SpecialPowers.wrap(win1).docShell.name;
 
       is(name, "", "Should have no name");
 
-      let win2 = window.open("data:text/html,<p>This is window 2 for test_blank_named_window.html</p>", "_blank");
+      let win2 = window.open("about:blank", "_blank");
       isnot(win1, win2, "Should not have gotten back the same window");
 
       win1.close();

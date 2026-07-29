@@ -8,13 +8,13 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.Store
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppState
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class PrivateBrowsingLockMiddlewareTest {

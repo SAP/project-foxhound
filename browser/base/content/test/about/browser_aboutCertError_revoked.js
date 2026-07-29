@@ -50,6 +50,7 @@ add_task(async function checkRevokedCertificateAdvancedCopy() {
         content.document.querySelector("net-error-card").wrappedJSObject;
       const info = Cu.cloneInto(mockErrorInfo, netErrorCard);
       netErrorCard.errorInfo = info;
+      netErrorCard.resolvedErrorId = "SEC_ERROR_REVOKED_CERTIFICATE";
       netErrorCard.hostname = "revoked.example.com";
       netErrorCard.domainMismatchNames = null;
       netErrorCard.domainMismatchNamesPromise = null;

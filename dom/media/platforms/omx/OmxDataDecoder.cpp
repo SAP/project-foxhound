@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -992,19 +990,20 @@ already_AddRefed<VideoData> MediaDataHelper::CreateYUV420VideoData(
 
   if (result.isErr()) {
     MediaResult r = result.unwrapErr();
-    MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug,
-            ("Failed to create a YUV420 VideoData - %s: %s",
-             r.ErrorName().get(), r.Message().get()));
+    MOZ_LOG_FMT(sPDMLog, mozilla::LogLevel::Debug,
+                "Failed to create a YUV420 VideoData - {}: {}",
+                r.ErrorName().get(), r.Message().get());
     return nullptr;
   }
 
   RefPtr<VideoData> data = result.unwrap();
   MOZ_ASSERT(data);
-  MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug,
-          ("YUV420 VideoData: disp width %d, height %d, pic width %d, height "
-           "%d, time %lld",
-           info.mDisplay.width, info.mDisplay.height, info.mImage.width,
-           info.mImage.height, aBufferData->mBuffer->nTimeStamp));
+  MOZ_LOG_FMT(
+      sPDMLog, mozilla::LogLevel::Debug,
+      "YUV420 VideoData: disp width {}, height {}, pic width {}, height "
+      "{}, time {}",
+      info.mDisplay.width, info.mDisplay.height, info.mImage.width,
+      info.mImage.height, aBufferData->mBuffer->nTimeStamp);
 
   return data.forget();
 }

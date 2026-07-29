@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -326,7 +324,7 @@ already_AddRefed<gfxPattern> SVGEmbeddingContextPaint::GetFillPattern(
   // fill opacities we don't try to cache the gfxPattern that we create.
   DeviceColor fill = *mFill;
   fill.a *= aFillOpacity;
-  return do_AddRef(new gfxPattern(fill));
+  return MakeAndAddRef<gfxPattern>(fill);
 }
 
 already_AddRefed<gfxPattern> SVGEmbeddingContextPaint::GetStrokePattern(
@@ -337,7 +335,7 @@ already_AddRefed<gfxPattern> SVGEmbeddingContextPaint::GetStrokePattern(
   }
   DeviceColor stroke = *mStroke;
   stroke.a *= aStrokeOpacity;
-  return do_AddRef(new gfxPattern(stroke));
+  return MakeAndAddRef<gfxPattern>(stroke);
 }
 
 uint32_t SVGEmbeddingContextPaint::Hash() const {

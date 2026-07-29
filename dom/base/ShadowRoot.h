@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -24,6 +22,8 @@ class nsAtom;
 class nsIContent;
 class nsIPrincipal;
 
+enum class CustomElementRegistryState : uint8_t;
+
 namespace mozilla {
 
 struct StyleAuthorStyles;
@@ -42,6 +42,7 @@ class Rule;
 namespace dom {
 
 class CSSImportRule;
+class CustomElementRegistry;
 class Element;
 class HTMLInputElement;
 class OwningTrustedHTMLOrNullIsEmptyString;
@@ -74,11 +75,19 @@ enum : uint32_t {
   // https://dom.spec.whatwg.org/#shadowroot-available-to-element-internals
   SHADOW_ROOT_IS_AVAILABLE_TO_ELEMENT_INTERNALS = SHADOW_ROOT_FLAG_BIT(6),
 
-  // Whether this is the <details> internal shadow tree
-  SHADOW_ROOT_IS_DETAILS_SHADOW_TREE = SHADOW_ROOT_FLAG_BIT(7),
+  // Whether the host element overrides slot dispatch (GetSlotNameFor,
+  // OnChildBeforeSlotted, OnChildUnslotted). When unset, the common-case
+  // default logic is inlined to avoid virtual calls.
+  SHADOW_ROOT_HAS_CUSTOM_SLOT_DISPATCH = SHADOW_ROOT_FLAG_BIT(7),
+
+  // 2-bit field encoding the shadow root's custom element registry state.
+  // See CustomElementRegistryState for the possible values.
+  SHADOWROOT_CUSTOM_ELEMENT_REGISTRY_LOW_BIT = SHADOW_ROOT_FLAG_BIT(8),
+  SHADOWROOT_CUSTOM_ELEMENT_REGISTRY_MASK =
+      SHADOW_ROOT_FLAG_BIT(8) | SHADOW_ROOT_FLAG_BIT(9),
 
   // Remaining bits are unused
-  SHADOW_ROOT_FLAGS_BITS_USED = 8
+  SHADOW_ROOT_FLAGS_BITS_USED = 10
 };
 
 #undef SHADOW_ROOT_FLAG_BIT
@@ -94,17 +103,22 @@ class ShadowRoot final : public DocumentFragment, public DocumentOrShadowRoot {
   using IsClonable = Element::ShadowRootClonable;
   using IsSerializable = Element::ShadowRootSerializable;
 
+  using CustomSlotDispatch = Element::CustomSlotDispatch;
+
  public:
   NS_IMPL_FROMNODE_HELPER(ShadowRoot, IsShadowRoot());
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(ShadowRoot, DocumentFragment)
   NS_DECL_ISUPPORTS_INHERITED
 
+  // Part of https://dom.spec.whatwg.org/#concept-attach-a-shadow-root step 5
   ShadowRoot(Element* aElement, ShadowRootMode aMode,
              Element::DelegatesFocus aDelegatesFocus,
              SlotAssignmentMode aSlotAssignment, IsClonable aClonable,
              IsSerializable aIsSerializable, Declarative aDeclarative,
-             already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+             CustomSlotDispatch aCustomSlotDispatch,
+             const Maybe<CustomElementRegistry*> aRegistry,
+             already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
   void AddSizeOfExcludingThis(nsWindowSizes&, size_t* aNodeSize) const final;
 
@@ -130,6 +144,9 @@ class ShadowRoot final : public DocumentFragment, public DocumentOrShadowRoot {
                                             : ShadowRootMode::Open;
   }
   bool DelegatesFocus() const { return HasFlag(SHADOW_ROOT_DELEGATES_FOCUS); }
+  bool HasCustomSlotDispatch() const {
+    return HasFlag(SHADOW_ROOT_HAS_CUSTOM_SLOT_DISPATCH);
+  }
   SlotAssignmentMode SlotAssignment() const {
     return HasFlag(SHADOW_ROOT_SLOT_ASSIGNMENT_MANUAL)
                ? SlotAssignmentMode::Manual
@@ -184,7 +201,7 @@ class ShadowRoot final : public DocumentFragment, public DocumentOrShadowRoot {
    * It is important that this runs _before_ actually shuffling the flat tree
    * around, so that layout knows the actual tree that it needs to invalidate.
    */
-  void InvalidateStyleAndLayoutOnSubtree(Element*);
+  static void InvalidateStyleAndLayoutOnSubtree(Element*);
 
  private:
   void InsertSheetIntoAuthorData(size_t aIndex, StyleSheet&,
@@ -192,10 +209,6 @@ class ShadowRoot final : public DocumentFragment, public DocumentOrShadowRoot {
 
   void AppendStyleSheet(StyleSheet& aSheet) {
     InsertSheetAt(SheetCount(), aSheet);
-  }
-
-  bool IsDetailsShadowTree() const {
-    return HasFlag(SHADOW_ROOT_IS_DETAILS_SHADOW_TREE);
   }
 
   /**
@@ -226,21 +239,13 @@ class ShadowRoot final : public DocumentFragment, public DocumentOrShadowRoot {
    */
   void GetSlotNameFor(const nsIContent&, nsAString&) const;
 
-  /**
-   * Re-assign the current main summary if it has changed.
-   *
-   * Must be called only if IsDetailsShadowTree() is true.
-   */
-  enum class SummaryChangeReason { Deletion, Insertion };
-  void MaybeReassignMainSummary(SummaryChangeReason);
-
  public:
   void AddSlot(HTMLSlotElement* aSlot);
   void RemoveSlot(HTMLSlotElement* aSlot);
   bool HasSlots() const { return !mSlotMap.IsEmpty(); };
-  HTMLSlotElement* GetDefaultSlot() const {
-    SlotArray* list = mSlotMap.Get(u""_ns);
-    return list ? (*list).AsSpan()[0] : nullptr;
+  HTMLSlotElement* GetFirstNamedSlot(const nsAString& aName) const {
+    SlotArray* list = mSlotMap.Get(aName);
+    return list ? list->ElementAt(0) : nullptr;
   }
 
   void PartAdded(const Element&);
@@ -288,6 +293,12 @@ class ShadowRoot final : public DocumentFragment, public DocumentOrShadowRoot {
     SetFlags(NODE_HAS_BEEN_IN_UA_WIDGET);
   }
 
+  /**
+   * Return true if this is a UA shadow tree root, e.g., for <details>,
+   * <video> or SVG <use>, etc, i.e., if it's not created by JS.
+   */
+  [[nodiscard]] bool IsUAShadowRootSlow() const;
+
   bool IsAvailableToElementInternals() const {
     return HasFlag(SHADOW_ROOT_IS_AVAILABLE_TO_ELEMENT_INTERNALS);
   }
@@ -295,6 +306,28 @@ class ShadowRoot final : public DocumentFragment, public DocumentOrShadowRoot {
   void SetAvailableToElementInternals() {
     SetFlags(SHADOW_ROOT_IS_AVAILABLE_TO_ELEMENT_INTERNALS);
   }
+
+  CustomElementRegistryState GetCustomElementRegistryState() const {
+    return static_cast<CustomElementRegistryState>(
+        (GetFlags() & SHADOWROOT_CUSTOM_ELEMENT_REGISTRY_MASK) /
+        SHADOWROOT_CUSTOM_ELEMENT_REGISTRY_LOW_BIT);
+  }
+  void SetCustomElementRegistryState(CustomElementRegistryState aState) {
+    UnsetFlags(SHADOWROOT_CUSTOM_ELEMENT_REGISTRY_MASK);
+    SetFlags(static_cast<uint32_t>(aState) *
+             SHADOWROOT_CUSTOM_ELEMENT_REGISTRY_LOW_BIT);
+  }
+
+  bool HasCustomElementRegistry() const {
+    return GetCustomElementRegistryState() !=
+           CustomElementRegistryState::Global;
+  }
+
+  void SetCustomElementRegistry(CustomElementRegistry* aRegistry);
+  // https://dom.spec.whatwg.org/#shadowroot-keep-custom-element-registry-null
+  void SetKeepCustomElementRegistryNull();
+  // https://dom.spec.whatwg.org/#shadowroot-custom-element-registry
+  CustomElementRegistry* GetCustomElementRegistry();
 
   void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
 

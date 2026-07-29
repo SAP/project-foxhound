@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -71,8 +69,8 @@ class DOMEventTargetHelper : public dom::EventTarget,
 
   NS_INLINE_DECL_STATIC_IID(NS_DOMEVENTTARGETHELPER_IID)
 
-  nsIGlobalObject* GetOwnerGlobal() const override {
-    return GlobalTeardownObserver::GetOwnerGlobal();
+  nsIGlobalObject* GetRelevantGlobal() const override {
+    return GlobalTeardownObserver::GetRelevantGlobal();
   }
 
   static DOMEventTargetHelper* FromSupports(nsISupports* aSupports) {
@@ -94,8 +92,6 @@ class DOMEventTargetHelper : public dom::EventTarget,
   bool HasListenersFor(const nsAString& aType) const;
 
   bool HasListenersFor(nsAtom* aTypeWithOn) const;
-
-  nsPIDOMWindowOuter* GetOwnerGlobalForBindingsInternal() override;
 
   // Like GetOwner, but only returns non-null if the window being returned is
   // current (in the "current document" sense of the HTML spec).

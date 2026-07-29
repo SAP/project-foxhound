@@ -1,6 +1,3 @@
-/* -*- Mode: C; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -213,14 +210,6 @@ static bool moz_container_wayland_ensure_surface(MozContainer* container,
   nsWindow* window = moz_container_get_nsWindow(container);
   MOZ_RELEASE_ASSERT(window);
 
-  if (!surface->MapLocked(lock, parentSurface,
-                          aPosition ? *aPosition : DesktopIntPoint())) {
-    return false;
-  }
-
-  surface->AddOpaqueSurfaceHandlerLocked(lock, gdkWindow,
-                                         /* aRegisterCommitHandler */ true);
-
   GtkWindow* parent =
       gtk_window_get_transient_for(GTK_WINDOW(window->GetGtkWidget()));
   if (parent) {
@@ -231,20 +220,30 @@ static bool moz_container_wayland_ensure_surface(MozContainer* container,
                              MOZ_WL_SURFACE(parentWindow->GetMozContainer()));
   }
 
-  bool fractionalScale = false;
-  if (StaticPrefs::widget_wayland_fractional_scale_enabled()) {
-    fractionalScale = surface->EnableFractionalScaleLocked(
-        lock,
+  if (!surface->MapLocked(lock, parentSurface,
+                          aPosition ? *aPosition : DesktopIntPoint())) {
+    return false;
+  }
+
+  surface->SetViewportFollowsSizeChangesLocked(lock);
+  surface->AddOpaqueSurfaceHandlerLocked(lock, gdkWindow,
+                                         /* aRegisterCommitHandler */ true);
+
+  bool fractionalScale = StaticPrefs::widget_wayland_fractional_scale_enabled();
+  bool setHandler = surface->IsToplevelSurface() && fractionalScale;
+  if (setHandler) {
+    surface->SetScaleCallbackLocked(
+        lock, WaylandSurface::ScaleCallbackType::Widget,
         [win = RefPtr{window}]() {
           win->RefreshScale(/* aRefreshScreen */ true,
                             /* aForceRefresh */ true);
-        },
-        /* aManageViewport */ true);
+        });
   }
-
-  if (!fractionalScale) {
-    surface->EnableCeiledScaleLocked(lock);
-  }
+  surface->SetScaleTypeLocked(lock,
+                              fractionalScale
+                                  ? WaylandSurface::ScaleType::Fractional
+                                  : WaylandSurface::ScaleType::Ceiled,
+                              /* aSetHandler */ setHandler);
 
   surface->SetOpaqueRegionLocked(lock,
                                  window->GetOpaqueRegion().ToUnknownRegion());
@@ -255,6 +254,10 @@ static bool moz_container_wayland_ensure_surface(MozContainer* container,
   surface->CommitLocked(lock);
 
   moz_container_wayland_invalidate(container);
+
+  // We're set so run map callback now
+  surface->RunMapCallbackLocked(lock);
+
   return true;
 }
 

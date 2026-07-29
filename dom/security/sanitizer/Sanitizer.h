@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -58,6 +56,10 @@ class Sanitizer final : public nsISupports, public nsWrapperCache {
   bool RemoveElement(const StringOrSanitizerElementNamespace& aElement);
   bool ReplaceElementWithChildren(
       const StringOrSanitizerElementNamespace& aElement);
+  bool AllowProcessingInstruction(
+      const StringOrSanitizerProcessingInstruction& aPI);
+  bool RemoveProcessingInstruction(
+      const StringOrSanitizerProcessingInstruction& aPI);
   bool AllowAttribute(const StringOrSanitizerAttributeNamespace& aAttribute);
   bool RemoveAttribute(const StringOrSanitizerAttributeNamespace& aAttribute);
   bool SetComments(bool aAllow);
@@ -77,13 +79,13 @@ class Sanitizer final : public nsISupports, public nsWrapperCache {
   ~Sanitizer() = default;
 
   void CanonicalizeConfiguration(const SanitizerConfig& aConfig,
-                                 bool aAllowCommentsAndDataAttributes,
+                                 bool aAllowCommentsPIsAndDataAttributes,
                                  ErrorResult& aRv);
   void IsValid(ErrorResult& aRv);
 
   void SetDefaultConfig();
   void SetConfig(const SanitizerConfig& aConfig,
-                 bool aAllowCommentsAndDataAttributes, ErrorResult& aRv);
+                 bool aAllowCommentsPIsAndDataAttributes, ErrorResult& aRv);
 
   void MaybeMaterializeDefaultConfig();
 
@@ -91,13 +93,14 @@ class Sanitizer final : public nsISupports, public nsWrapperCache {
   bool RemoveAttributeCanonical(sanitizer::CanonicalAttribute&& aAttribute);
 
   template <bool IsDefaultConfig>
-  void SanitizeChildren(nsINode* aNode, bool aSafe);
-  void SanitizeAttributes(Element* aChild,
-                          const sanitizer::CanonicalElement& aElementName,
-                          bool aSafe);
-  void SanitizeDefaultConfigAttributes(Element* aChild,
-                                       StaticAtomSet* aElementAttributes,
-                                       bool aSafe);
+  void SanitizeChildren(nsINode* aNode, bool aSafe) const;
+
+  bool IsAttributeAllowed(StaticAtomSet* aElementAttributes,
+                          nsAtom* aAttrLocalName, int32_t aAttrNs,
+                          bool aSafe) const;
+  bool IsAttributeAllowed(
+      sanitizer::CanonicalElementAttributes* aElementAttributes,
+      nsAtom* aAttrLocalName, int32_t aAttrNs, bool aSafe) const;
 
   void AssertIsValid();
 
@@ -105,6 +108,8 @@ class Sanitizer final : public nsISupports, public nsWrapperCache {
     MOZ_ASSERT(!mElements);
     MOZ_ASSERT(!mRemoveElements);
     MOZ_ASSERT(!mReplaceWithChildrenElements);
+    MOZ_ASSERT(!mProcessingInstructions);
+    MOZ_ASSERT(!mRemoveProcessingInstructions);
     MOZ_ASSERT(!mAttributes);
     MOZ_ASSERT(!mRemoveAttributes);
   }
@@ -114,6 +119,9 @@ class Sanitizer final : public nsISupports, public nsWrapperCache {
   Maybe<sanitizer::CanonicalElementMap> mElements;
   Maybe<sanitizer::CanonicalElementSet> mRemoveElements;
   Maybe<sanitizer::CanonicalElementSet> mReplaceWithChildrenElements;
+
+  Maybe<sanitizer::CanonicalPISet> mProcessingInstructions;
+  Maybe<sanitizer::CanonicalPISet> mRemoveProcessingInstructions;
 
   Maybe<sanitizer::CanonicalAttributeSet> mAttributes;
   Maybe<sanitizer::CanonicalAttributeSet> mRemoveAttributes;

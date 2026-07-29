@@ -6,6 +6,7 @@ with Files("**"):
     BUG_COMPONENT = ("Core", "Machine Learning: Frontend")
 
 BROWSER_CHROME_MANIFESTS += ["test/browser/browser.toml"]
+MARIONETTE_MANIFESTS += ["test/marionette/manifest.toml"]
 XPCSHELL_TESTS_MANIFESTS += ["test/xpcshell/xpcshell.toml"]
 
 MOZ_SRC_FILES += [
@@ -15,10 +16,11 @@ MOZ_SRC_FILES += [
     "actors/AISmartBarParent.sys.mjs",
     "modules/AIWindow.sys.mjs",
     "modules/AIWindowAccountAuth.sys.mjs",
+    "modules/AIWindowConstants.sys.mjs",
     "modules/AIWindowMenu.sys.mjs",
     "modules/AIWindowTabStatesManager.sys.mjs",
+    "modules/AIWindowTelemetry.sys.mjs",
     "modules/AIWindowUI.sys.mjs",
-    "modules/ChatConstants.sys.mjs",
     "modules/ChatConversation.sys.mjs",
     "modules/ChatEnums.sys.mjs",
     "modules/ChatMessage.sys.mjs",
@@ -26,10 +28,20 @@ MOZ_SRC_FILES += [
     "modules/ChatSql.sys.mjs",
     "modules/ChatStore.sys.mjs",
     "modules/ChatUtils.sys.mjs",
+    "modules/FeedbackModal.sys.mjs",
+    "modules/SmartWindowTelemetry.sys.mjs",
+    "modules/TabManagementService.sys.mjs",
+    "modules/ToolActionLog.sys.mjs",
+    "modules/ToolUI.sys.mjs",
+    "modules/ToolUITelemetry.sys.mjs",
 ]
 
 TESTING_JS_MODULES += [
     "test/AIWindowTestUtils.sys.mjs",
+]
+
+EXTRA_COMPONENTS += [
+    "aiwindow.manifest",
 ]
 
 JAR_MANIFESTS += ["jar.mn"]

@@ -21,6 +21,8 @@
   <string name="mozac_feature_contextmenu_share_image">Подели слику</string>
   <!-- Text for context menu item to copy the link to the clipboard. -->
   <string name="mozac_feature_contextmenu_copy_link">Копирај везу</string>
+  <!-- Text for context menu item to copy the link text to the clipboard. -->
+  <string name="mozac_feature_contextmenu_copy_link_text">Копирај текст везе</string>
   <!-- Text for context menu item to copy the URL pointing to the image to the clipboard. -->
   <string name="mozac_feature_contextmenu_copy_image_location">Копирај локацију слике</string>
   <!-- Text for context menu item to save / download the image. -->
@@ -35,6 +37,8 @@
   <string name="mozac_feature_contextmenu_snackbar_new_private_tab_opened">Нови приватни језичак је отворен</string>
   <!-- Text for confirmation "snackbar" shown after copying a link or image URL to the clipboard. -->
   <string name="mozac_feature_contextmenu_snackbar_link_copied">Веза је копирана у привремену меморију</string>
+  <!-- Text for confirmation "snackbar" shown after copying a link text to the clipboard. -->
+  <string name="mozac_feature_contextmenu_snackbar_link_text_copied">Текст везе је умножен у оставу</string>
   <!-- Action shown in a "snacbkar" after opening a new/private tab. Clicking this action will switch to the newly opened tab. -->
   <string name="mozac_feature_contextmenu_snackbar_action_switch">Пребаци</string>
   <!-- Text for context menu item to open the link in an external app. -->

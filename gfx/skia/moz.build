@@ -34,6 +34,7 @@ UNIFIED_SOURCES += [
     'skia/src/base/SkDeque.cpp',
     'skia/src/base/SkFloatingPoint.cpp',
     'skia/src/base/SkHalf.cpp',
+    'skia/src/base/SkLog.cpp',
     'skia/src/base/SkMalloc.cpp',
     'skia/src/base/SkMathPriv.cpp',
     'skia/src/base/SkQuads.cpp',
@@ -50,6 +51,7 @@ UNIFIED_SOURCES += [
     'skia/src/codec/SkCodec.cpp',
     'skia/src/codec/SkCodecImageGenerator.cpp',
     'skia/src/codec/SkColorPalette.cpp',
+    'skia/src/codec/SkEncodedInfo.cpp',
     'skia/src/codec/SkImageGenerator_FromEncoded.cpp',
     'skia/src/codec/SkPixmapUtils.cpp',
     'skia/src/codec/SkSampler.cpp',
@@ -145,15 +147,17 @@ UNIFIED_SOURCES += [
     'skia/src/core/SkMipmapHQDownSampler.cpp',
     'skia/src/core/SkPaint.cpp',
     'skia/src/core/SkPaintPriv.cpp',
+    'skia/src/core/SkPath_interpolate.cpp',
     'skia/src/core/SkPath_serial.cpp',
     'skia/src/core/SkPathBuilder.cpp',
+    'skia/src/core/SkPathData.cpp',
+    'skia/src/core/SkPathDump.cpp',
     'skia/src/core/SkPathEffect.cpp',
     'skia/src/core/SkPathIter.cpp',
     'skia/src/core/SkPathMeasure.cpp',
     'skia/src/core/SkPathPriv.cpp',
     'skia/src/core/SkPathRaw.cpp',
     'skia/src/core/SkPathRawShapes.cpp',
-    'skia/src/core/SkPathRef.cpp',
     'skia/src/core/SkPathUtils.cpp',
     'skia/src/core/SkPicture.cpp',
     'skia/src/core/SkPictureFlat.cpp',
@@ -161,6 +165,7 @@ UNIFIED_SOURCES += [
     'skia/src/core/SkPictureRecord.cpp',
     'skia/src/core/SkPictureRecorder.cpp',
     'skia/src/core/SkPixelRef.cpp',
+    'skia/src/core/SkPixelStorage.cpp',
     'skia/src/core/SkPixmap.cpp',
     'skia/src/core/SkPixmapDraw.cpp',
     'skia/src/core/SkPoint.cpp',
@@ -286,7 +291,6 @@ UNIFIED_SOURCES += [
     'skia/src/pathops/SkReduceOrder.cpp',
     'skia/src/ports/SkDiscardableMemory_none.cpp',
     'skia/src/ports/SkGlobalInitialization_default.cpp',
-    'skia/src/ports/SkImageGenerator_none.cpp',
     'skia/src/ports/SkMemory_mozalloc.cpp',
     'skia/src/ports/SkOSFile_stdio.cpp',
     'skia/src/sfnt/SkOTTable_name.cpp',
@@ -456,8 +460,8 @@ SOURCES += [
     'skia/src/core/SkBlitMask_opts_ssse3.cpp',
     'skia/src/core/SkBlitRow_D32.cpp',
     'skia/src/core/SkBlitRow_opts.cpp',
-    'skia/src/core/SkBlitRow_opts_hsw.cpp',
     'skia/src/core/SkBlitRow_opts_lasx.cpp',
+    'skia/src/core/SkBlitRow_opts_ml3.cpp',
     'skia/src/core/SkBlitter.cpp',
     'skia/src/core/SkBlitter_A8.cpp',
     'skia/src/core/SkBlitter_ARGB32.cpp',
@@ -477,8 +481,8 @@ SOURCES += [
     'skia/src/core/SkScan_AntiPath.cpp',
     'skia/src/core/SkSpriteBlitter_ARGB32.cpp',
     'skia/src/core/SkSwizzler_opts.cpp',
-    'skia/src/core/SkSwizzler_opts_hsw.cpp',
     'skia/src/core/SkSwizzler_opts_lasx.cpp',
+    'skia/src/core/SkSwizzler_opts_ml3.cpp',
     'skia/src/core/SkSwizzler_opts_ssse3.cpp',
     'skia/src/core/SkVertices.cpp',
     'skia/src/effects/colorfilters/SkColorSpaceXformColorFilter.cpp',
@@ -498,8 +502,8 @@ SOURCES['skia/src/core/SkBlitMask_opts.cpp'].flags += skia_opt_flags
 SOURCES['skia/src/core/SkBlitMask_opts_ssse3.cpp'].flags += skia_opt_flags
 SOURCES['skia/src/core/SkBlitRow_D32.cpp'].flags += skia_opt_flags
 SOURCES['skia/src/core/SkBlitRow_opts.cpp'].flags += skia_opt_flags
-SOURCES['skia/src/core/SkBlitRow_opts_hsw.cpp'].flags += skia_opt_flags
 SOURCES['skia/src/core/SkBlitRow_opts_lasx.cpp'].flags += skia_opt_flags
+SOURCES['skia/src/core/SkBlitRow_opts_ml3.cpp'].flags += skia_opt_flags
 SOURCES['skia/src/core/SkBlitter.cpp'].flags += skia_opt_flags
 SOURCES['skia/src/core/SkBlitter_A8.cpp'].flags += skia_opt_flags
 SOURCES['skia/src/core/SkBlitter_ARGB32.cpp'].flags += skia_opt_flags
@@ -511,8 +515,8 @@ SOURCES['skia/src/core/SkMemset_opts_erms.cpp'].flags += skia_opt_flags
 SOURCES['skia/src/core/SkOpts.cpp'].flags += skia_opt_flags
 SOURCES['skia/src/core/SkSpriteBlitter_ARGB32.cpp'].flags += skia_opt_flags
 SOURCES['skia/src/core/SkSwizzler_opts.cpp'].flags += skia_opt_flags
-SOURCES['skia/src/core/SkSwizzler_opts_hsw.cpp'].flags += skia_opt_flags
 SOURCES['skia/src/core/SkSwizzler_opts_lasx.cpp'].flags += skia_opt_flags
+SOURCES['skia/src/core/SkSwizzler_opts_ml3.cpp'].flags += skia_opt_flags
 SOURCES['skia/src/core/SkSwizzler_opts_ssse3.cpp'].flags += skia_opt_flags
 if CONFIG['MOZ_ENABLE_SKIA_PDF']:
     UNIFIED_SOURCES += [
@@ -542,7 +546,7 @@ if CONFIG['MOZ_ENABLE_SKIA_PDF']:
     ]
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
     UNIFIED_SOURCES += [
-        'skia/src/ports/SkDebug_android.cpp',
+        'skia/src/ports/SkLog_android.cpp',
         'skia/src/ports/SkOSFile_posix.cpp',
     ]
     SOURCES += [
@@ -551,8 +555,8 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
     ]
 if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('cocoa', 'uikit'):
     UNIFIED_SOURCES += [
-        'skia/src/ports/SkDebug_stdio.cpp',
         'skia/src/ports/SkFontMgr_mac_ct.cpp',
+        'skia/src/ports/SkLog_stdio.cpp',
         'skia/src/ports/SkOSFile_posix.cpp',
         'skia/src/ports/SkScalerContext_mac_ct.cpp',
     ]
@@ -561,7 +565,7 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('cocoa', 'uikit'):
     ]
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk':
     UNIFIED_SOURCES += [
-        'skia/src/ports/SkDebug_stdio.cpp',
+        'skia/src/ports/SkLog_stdio.cpp',
         'skia/src/ports/SkOSFile_posix.cpp',
     ]
     SOURCES += [
@@ -570,9 +574,9 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk':
     ]
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
     SOURCES += [
-        'skia/src/ports/SkDebug_win.cpp',
         'skia/src/ports/SkFontHost_win.cpp',
         'skia/src/ports/SkFontMgr_win_dw.cpp',
+        'skia/src/ports/SkLog_win.cpp',
         'skia/src/ports/SkOSFile_win.cpp',
         'skia/src/ports/SkScalerContext_win_dw.cpp',
         'skia/src/ports/SkTypeface_win_dw.cpp',
@@ -580,10 +584,10 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
 if CONFIG['INTEL_ARCHITECTURE']:
     SOURCES += [
         'skia/modules/skcms/src/skcms_TransformHsw.cc',
-        'skia/src/opts/SkOpts_hsw.cpp',
+        'skia/src/opts/SkOpts_ml3.cpp',
     ]
     SOURCES['skia/modules/skcms/src/skcms_TransformHsw.cc'].flags += skia_opt_flags
-    SOURCES['skia/src/opts/SkOpts_hsw.cpp'].flags += skia_opt_flags
+    SOURCES['skia/src/opts/SkOpts_ml3.cpp'].flags += skia_opt_flags
 
 
 # We allow warnings for third-party code that can be updated from upstream.
@@ -609,19 +613,22 @@ if CONFIG['INTEL_ARCHITECTURE']:
     SOURCES['skia/src/core/SkBlitMask_opts_ssse3.cpp'].flags += skia_ssse3_flags
     SOURCES['skia/src/core/SkSwizzler_opts_ssse3.cpp'].flags += ['-Dskvx=skvx_ssse3']
     SOURCES['skia/src/core/SkMemset_opts_avx.cpp'].flags += skia_avx_flags
-    SOURCES['skia/src/core/SkBlitRow_opts_hsw.cpp'].flags += skia_hsw_flags
-    SOURCES['skia/src/core/SkSwizzler_opts_hsw.cpp'].flags += ['-Dskvx=skvx_hsw']
-    SOURCES['skia/src/opts/SkOpts_hsw.cpp'].flags += skia_hsw_flags
+    SOURCES['skia/src/core/SkBlitRow_opts_ml3.cpp'].flags += skia_hsw_flags
+    SOURCES['skia/src/core/SkSwizzler_opts_ml3.cpp'].flags += ['-Dskvx=skvx_hsw']
+    SOURCES['skia/src/opts/SkOpts_ml3.cpp'].flags += skia_hsw_flags
     SOURCES['skia/modules/skcms/src/skcms_TransformHsw.cc'].flags += skia_hsw_flags
 
 DEFINES['MOZ_SKIA'] = True
 
 DEFINES['SKIA_IMPLEMENTATION'] = 1
 
-DEFINES['SK_PDF_USE_HARFBUZZ_SUBSETTING'] = 1
+DEFINES['SK_PDF_USE_HARFBUZZ_SUBSET'] = 1
 
 if CONFIG['MOZ_TREE_FREETYPE']:
     DEFINES['SK_CAN_USE_DLOPEN'] = 0
+
+if CONFIG['MOZ_VALGRIND']:
+    DEFINES['SK_CPU_LIMIT_AVX'] = True
 
 # Suppress warnings in third-party code.
 CXXFLAGS += [
@@ -643,6 +650,10 @@ if CONFIG['CC_TYPE'] in ('clang', 'clang-cl'):
         '-Wno-macro-redefined',
         '-Wno-unused-private-field',
     ]
+
+LOCAL_INCLUDES += [
+    "/gfx/harfbuzz/src",
+]
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('gtk', 'android'):
     LOCAL_INCLUDES += [

@@ -61,6 +61,7 @@ import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.robolectric.annotation.Config
+import kotlin.test.assertIs
 
 @RunWith(AndroidJUnit4::class)
 class CustomTabsToolbarFeatureTest {
@@ -1355,7 +1356,7 @@ class CustomTabsToolbarFeatureTest {
         val menuBuilder = toolbar.display.menuBuilder!!
 
         assertEquals(3, menuBuilder.items.size)
-        assertTrue(menuBuilder.items[1] is SimpleBrowserMenuItem)
+        assertIs<SimpleBrowserMenuItem>(menuBuilder.items[1])
     }
 
     @Test
@@ -1396,7 +1397,7 @@ class CustomTabsToolbarFeatureTest {
         val menuBuilder = toolbar.display.menuBuilder!!
 
         assertEquals(3, menuBuilder.items.size)
-        assertTrue(menuBuilder.items[2] is SimpleBrowserMenuItem)
+        assertIs<SimpleBrowserMenuItem>(menuBuilder.items[2])
     }
 
     @Test
@@ -1437,7 +1438,7 @@ class CustomTabsToolbarFeatureTest {
         val menuBuilder = toolbar.display.menuBuilder!!
 
         assertEquals(3, menuBuilder.items.size)
-        assertTrue(menuBuilder.items[0] is SimpleBrowserMenuItem)
+        assertIs<SimpleBrowserMenuItem>(menuBuilder.items[0])
     }
 
     @Test

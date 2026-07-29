@@ -19,6 +19,8 @@ def patch_history_path(tmpdir, monkeypatch):
 
 
 def test_try_again(monkeypatch):
+    monkeypatch.setattr(push, "MACH_TRY_REMOTE", "ssh://hg.mozilla.org/try")
+
     metrics = MagicMock()
     push.push_to_try(
         "fuzzy",

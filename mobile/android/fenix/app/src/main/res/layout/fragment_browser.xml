@@ -25,6 +25,7 @@
 
             <mozilla.components.ui.widgets.VerticalSwipeRefreshLayout
                 android:id="@+id/swipeRefresh"
+                android:background="@null"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent">
 
@@ -33,7 +34,7 @@
                     android:id="@+id/engineView"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:visibility="gone" />
+                    android:visibility="visible" />
             </mozilla.components.ui.widgets.VerticalSwipeRefreshLayout>
 
             <ViewStub

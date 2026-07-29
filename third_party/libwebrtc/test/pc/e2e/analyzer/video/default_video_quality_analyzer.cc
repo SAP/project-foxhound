@@ -17,13 +17,13 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "absl/flags/flag.h"
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/numerics/samples_stats_counter.h"
 #include "api/rtp_packet_info.h"
 #include "api/test/metrics/metric.h"
@@ -33,7 +33,6 @@
 #include "api/units/timestamp.h"
 #include "api/video/encoded_image.h"
 #include "api/video/video_frame.h"
-#include "api/video_codecs/video_encoder.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/strings/string_builder.h"
@@ -151,7 +150,7 @@ DefaultVideoQualityAnalyzer::~DefaultVideoQualityAnalyzer() {
 }
 
 void DefaultVideoQualityAnalyzer::Start(std::string test_case_name,
-                                        ArrayView<const std::string> peer_names,
+                                        std::span<const std::string> peer_names,
                                         int max_threads_count) {
   test_label_ = std::move(test_case_name);
   frames_comparator_.Start(max_threads_count);
@@ -375,7 +374,7 @@ void DefaultVideoQualityAnalyzer::OnFrameEncoded(
   size_t stream_index = encoded_image.SpatialIndex().value_or(
       encoded_image.SimulcastIndex().value_or(0));
   frame_in_flight.OnFrameEncoded(
-      now, time_between_encoded_frames, encoded_image._frameType,
+      now, time_between_encoded_frames, encoded_image.frame_type(),
       DataSize::Bytes(encoded_image.size()), stats.target_encode_bitrate,
       stream_index, stats.qp, used_encoder);
 
@@ -385,9 +384,7 @@ void DefaultVideoQualityAnalyzer::OnFrameEncoded(
   }
 }
 
-void DefaultVideoQualityAnalyzer::OnFrameDropped(
-    absl::string_view peer_name,
-    EncodedImageCallback::DropReason reason) {
+void DefaultVideoQualityAnalyzer::OnFrameDropped(absl::string_view peer_name) {
   // Here we do nothing, because we will see this drop on renderer side.
 }
 
@@ -435,7 +432,7 @@ void DefaultVideoQualityAnalyzer::OnFramePreDecode(
   it->second.OnFramePreDecode(peer_index,
                               /*received_time=*/last_receive_time,
                               /*decode_start_time=*/Now(),
-                              input_image._frameType,
+                              input_image.frame_type(),
                               DataSize::Bytes(input_image.size()));
 
   if (options_.report_infra_metrics) {

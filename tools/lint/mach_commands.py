@@ -57,10 +57,12 @@ def get_global_excludes(**lintargs):
         if name.startswith("obj") and os.path.isdir(name)
     ])
 
-    if lintargs.get("include_third-party"):
-        # For some linters, we want to include the thirdparty code too.
-        # Example: trojan-source linter should run also on third party code.
-        return excludes
+    return excludes
+
+
+def get_third_party_excludes(**lintargs):
+    excludes = []
+    topsrcdir = lintargs["root"]
 
     for path in EXCLUSION_FILES + EXCLUSION_FILES_OPTIONAL:
         with open(os.path.join(topsrcdir, path)) as fh:
@@ -92,6 +94,7 @@ def lint(command_context, *runargs, **lintargs):
 
     lintargs.setdefault("root", command_context.topsrcdir)
     lintargs["exclude"] = get_global_excludes(**lintargs)
+    lintargs["third_party_exclude"] = get_third_party_excludes(**lintargs)
     lintargs["config_paths"].insert(0, here)
     lintargs["virtualenv_bin_path"] = command_context.virtualenv_manager.bin_path
     lintargs["virtualenv_manager"] = command_context.virtualenv_manager
@@ -211,7 +214,14 @@ def prettier(command_context, paths, extra_args=[], **kwargs):
 @Command(
     "format",
     category="devenv",
-    description="Format files, alternative to 'lint --fix' ",
+    description=(
+        "Format files, alternative to 'lint --fix'. "
+        "Runs the following formatters: "
+        + ", ".join(sorted(VALID_FORMATTERS))
+        + " (plus "
+        + ", ".join(sorted(VALID_ANDROID_FORMATTERS))
+        + " on Android, unless --skip-android is passed)."
+    ),
     parser=setup_argument_parser,
 )
 @CommandArgument(

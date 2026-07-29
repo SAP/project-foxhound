@@ -62,7 +62,7 @@ class SettingsSubMenuPrivateBrowsingRobot {
 
     fun verifyOpenLinksInPrivateTabOff() {
         assertUIObjectExists(
-            checkedItemWithResId("android:id/switch_widget", isChecked = true),
+            checkedItemWithResId("android:id/switchWidget", isChecked = true),
             exists = false,
         )
         Log.i(TAG, "verifyOpenLinksInPrivateTabOff: Trying to verify that the \"Open links in a private tab\" toggle is visible")

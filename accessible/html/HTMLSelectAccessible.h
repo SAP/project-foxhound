@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,25 +30,31 @@ namespace a11y {
  */
 class HTMLSelectListAccessible : public AccessibleWrap {
  public:
+  enum { eAction_Click = 0 };
+
   HTMLSelectListAccessible(nsIContent* aContent, DocAccessible* aDoc);
-  virtual ~HTMLSelectListAccessible() {}
+  virtual ~HTMLSelectListAccessible() = default;
 
   // LocalAccessible
-  virtual a11y::role NativeRole() const override;
-  virtual uint64_t NativeState() const override;
-  virtual bool IsAcceptableChild(nsIContent* aEl) const override;
-  virtual bool AttributeChangesState(nsAtom* aAttribute) override;
+  a11y::role NativeRole() const override;
+  uint64_t NativeState() const override;
+  bool IsAcceptableChild(nsIContent* aEl) const override;
+  bool AttributeChangesState(nsAtom* aAttribute) override;
 
   // SelectAccessible
-  virtual bool SelectAll() override;
-  virtual bool UnselectAll() override;
+  bool SelectAll() override;
+  bool UnselectAll() override;
+
+  // ActionAccessible
+  bool HasPrimaryAction() const override { return true; }
+  void ActionNameAt(uint8_t aIndex, nsAString& aName) override;
 
   // Widgets
-  virtual bool IsWidget() const override;
-  virtual bool IsActiveWidget() const override;
-  virtual bool AreItemsOperable() const override;
-  virtual LocalAccessible* CurrentItem() const override;
-  virtual void SetCurrentItem(const LocalAccessible* aItem) override;
+  bool IsWidget() const override;
+  bool IsActiveWidget() const override;
+  bool AreItemsOperable() const override;
+  LocalAccessible* CurrentItem() const override;
+  void SetCurrentItem(const LocalAccessible* aItem) override;
 };
 
 /*
@@ -60,7 +65,7 @@ class HTMLSelectOptionAccessible : public HyperTextAccessible {
   enum { eAction_Select = 0 };
 
   HTMLSelectOptionAccessible(nsIContent* aContent, DocAccessible* aDoc);
-  virtual ~HTMLSelectOptionAccessible() {}
+  virtual ~HTMLSelectOptionAccessible() = default;
 
   // LocalAccessible
   virtual a11y::role NativeRole() const override;
@@ -130,7 +135,7 @@ class HTMLSelectOptGroupAccessible : public HTMLSelectOptionAccessible {
       : HTMLSelectOptionAccessible(aContent, aDoc) {
     mType = eHTMLOptGroupType;
   }
-  virtual ~HTMLSelectOptGroupAccessible() {}
+  virtual ~HTMLSelectOptGroupAccessible() = default;
 
   // LocalAccessible
   virtual a11y::role NativeRole() const override;
@@ -155,7 +160,7 @@ class HTMLComboboxAccessible final : public AccessibleWrap {
   enum { eAction_Click = 0 };
 
   HTMLComboboxAccessible(nsIContent* aContent, DocAccessible* aDoc);
-  virtual ~HTMLComboboxAccessible() {}
+  virtual ~HTMLComboboxAccessible() = default;
 
   // LocalAccessible
   virtual void Shutdown() override;
@@ -198,7 +203,7 @@ class HTMLComboboxListAccessible : public HTMLSelectListAccessible {
  public:
   HTMLComboboxListAccessible(LocalAccessible* aParent, nsIContent* aContent,
                              DocAccessible* aDoc);
-  virtual ~HTMLComboboxListAccessible() {}
+  virtual ~HTMLComboboxListAccessible() = default;
 
   // LocalAccessible
   virtual a11y::role NativeRole() const override;

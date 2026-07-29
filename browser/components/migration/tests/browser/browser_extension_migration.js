@@ -94,7 +94,7 @@ async function assertSuccessLink(link, message) {
       gBrowser,
       "about:addons"
     );
-    EventUtils.synthesizeMouseAtCenter(link, {}, link.ownerGlobal);
+    EventUtils.synthesizeMouseAtCenter(link, {}, link.documentGlobal);
     let tab = await aboutAddonsOpened;
     BrowserTestUtils.removeTab(tab);
   }
@@ -121,7 +121,7 @@ async function assertSupportLink(link, url, message) {
   if (message && url) {
     link.href = "data:text/html,";
     let linkOpened = BrowserTestUtils.waitForNewTab(gBrowser, link.href);
-    EventUtils.synthesizeMouseAtCenter(link, {}, link.ownerGlobal);
+    EventUtils.synthesizeMouseAtCenter(link, {}, link.documentGlobal);
     let tab = await linkOpened;
     BrowserTestUtils.removeTab(tab);
   }

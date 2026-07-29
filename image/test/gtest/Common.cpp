@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -156,7 +155,7 @@ already_AddRefed<nsIInputStream> LoadFile(const char* aRelativePath) {
     rv = NS_NewBufferedInputStream(getter_AddRefs(bufStream),
                                    inputStream.forget(), 1024);
     ASSERT_TRUE_OR_RETURN(NS_SUCCEEDED(rv), nullptr);
-    inputStream = bufStream;
+    inputStream = std::move(bufStream);
   }
 
   return inputStream.forget();
@@ -760,6 +759,12 @@ ImageTestCase GreenFirstFrameAnimatedJXLTestCase() {
                        TEST_CASE_IS_TRANSPARENT | TEST_CASE_IS_ANIMATED,
                        /* aFrameCount */ 2);
 }
+
+ImageTestCase LongAnimatedJXLTestCase() {
+  return ImageTestCase("long-animated.jxl", "image/jxl", IntSize(100, 100),
+                       TEST_CASE_IS_TRANSPARENT | TEST_CASE_IS_ANIMATED,
+                       /* aFrameCount */ 1000);
+}
 #endif
 
 ImageTestCase BlendAnimatedGIFTestCase() {
@@ -784,6 +789,14 @@ ImageTestCase BlendAnimatedAVIFTestCase() {
                        TEST_CASE_IS_TRANSPARENT | TEST_CASE_IS_ANIMATED,
                        /* aFrameCount */ 2);
 }
+
+#ifdef MOZ_JXL
+ImageTestCase BlendAnimatedJXLTestCase() {
+  return ImageTestCase("blend.jxl", "image/jxl", IntSize(100, 100),
+                       TEST_CASE_IS_TRANSPARENT | TEST_CASE_IS_ANIMATED,
+                       /* aFrameCount */ 2);
+}
+#endif
 
 ImageTestCase CorruptTestCase() {
   return ImageTestCase("corrupt.jpg", "image/jpeg", IntSize(100, 100),
@@ -826,24 +839,30 @@ ImageTestCase CorruptAVIFTestCase() {
 }
 
 ImageTestCase TransparentAVIFTestCase() {
-  return ImageTestCase("transparent.avif", "image/avif", IntSize(1200, 1200),
-                       TEST_CASE_IS_TRANSPARENT);
+  auto testCase = ImageTestCase("transparent.avif", "image/avif",
+                                IntSize(100, 100), TEST_CASE_IS_TRANSPARENT);
+  testCase.mColor = BGRAColor(0x00, 0xFF, 0x00, 0x80);
+  return testCase;
 }
 
 ImageTestCase TransparentPNGTestCase() {
-  return ImageTestCase("transparent.png", "image/png", IntSize(32, 32),
-                       TEST_CASE_IS_TRANSPARENT);
+  auto testCase = ImageTestCase("transparent.png", "image/png",
+                                IntSize(100, 100), TEST_CASE_IS_TRANSPARENT);
+  testCase.mColor = BGRAColor(0x00, 0xFF, 0x00, 0x80);
+  return testCase;
 }
 
 ImageTestCase TransparentGIFTestCase() {
-  return ImageTestCase("transparent.gif", "image/gif", IntSize(16, 16),
-                       TEST_CASE_IS_TRANSPARENT);
+  auto testCase = ImageTestCase("transparent.gif", "image/gif",
+                                IntSize(100, 100), TEST_CASE_IS_TRANSPARENT);
+  testCase.mColor = BGRAColor::Transparent();
+  return testCase;
 }
 
 ImageTestCase TransparentWebPTestCase() {
   ImageTestCase test("transparent.webp", "image/webp", IntSize(100, 100),
                      TEST_CASE_IS_TRANSPARENT);
-  test.mColor = BGRAColor::Transparent();
+  test.mColor = BGRAColor(0x00, 0xFF, 0x00, 0x80);
   return test;
 }
 
@@ -855,7 +874,7 @@ ImageTestCase TransparentNoAlphaHeaderWebPTestCase() {
 }
 
 ImageTestCase FirstFramePaddingGIFTestCase() {
-  return ImageTestCase("transparent.gif", "image/gif", IntSize(16, 16),
+  return ImageTestCase("first-frame-padding.gif", "image/gif", IntSize(16, 16),
                        TEST_CASE_IS_TRANSPARENT);
 }
 
@@ -1025,6 +1044,10 @@ ImageTestCase GreenJXLTestCase() {
   return ImageTestCase("green.jxl", "image/jxl", IntSize(100, 100));
 }
 
+ImageTestCase ProgressiveJXLTestCase() {
+  return ImageTestCase("progressive.jxl", "image/jxl", IntSize(500, 375));
+}
+
 ImageTestCase DownscaledJXLTestCase() {
   return ImageTestCase("downscaled.jxl", "image/jxl", IntSize(100, 100),
                        IntSize(20, 20));
@@ -1036,8 +1059,34 @@ ImageTestCase LargeJXLTestCase() {
 }
 
 ImageTestCase TransparentJXLTestCase() {
-  return ImageTestCase("transparent.jxl", "image/jxl", IntSize(1200, 1200),
-                       TEST_CASE_IS_TRANSPARENT);
+  auto testCase = ImageTestCase("transparent.jxl", "image/jxl",
+                                IntSize(100, 100), TEST_CASE_IS_TRANSPARENT);
+  testCase.mColor = BGRAColor(0x00, 0xFF, 0x00, 0x80);
+  return testCase;
+}
+
+ImageTestCase CorruptJXLTestCase() {
+  return ImageTestCase("corrupt.jxl", "image/jxl", IntSize(100, 100),
+                       TEST_CASE_HAS_ERROR);
+}
+
+ImageTestCase PerfRgbLosslessJXLTestCase() {
+  return ImageTestCase("perf_srgb_lossless.jxl", "image/jxl",
+                       IntSize(1000, 1000));
+}
+
+ImageTestCase PerfRgbAlphaLosslessJXLTestCase() {
+  return ImageTestCase("perf_srgb_alpha_lossless.jxl", "image/jxl",
+                       IntSize(1000, 1000), TEST_CASE_IS_TRANSPARENT);
+}
+
+ImageTestCase PerfRgbLossyJXLTestCase() {
+  return ImageTestCase("perf_srgb_lossy.jxl", "image/jxl", IntSize(1000, 1000));
+}
+
+ImageTestCase PerfRgbAlphaLossyJXLTestCase() {
+  return ImageTestCase("perf_srgb_alpha_lossy.jxl", "image/jxl",
+                       IntSize(1000, 1000), TEST_CASE_IS_TRANSPARENT);
 }
 #endif
 

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -9,6 +7,7 @@
 #include "builtin/Promise.h"  // js::PromiseHandler, js::CreatePromiseObjectForAsyncGenerator, js::AsyncFromSyncIteratorMethod, js::ResolvePromiseInternal, js::RejectPromiseInternal, js::InternalAsyncGeneratorAwait
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/PropertySpec.h"
+#include "vm/AsyncFunction.h"  // js::AutoAsyncResumeDepth
 #include "vm/CompletionKind.h"
 #include "vm/FunctionFlags.h"  // js::FunctionFlags
 #include "vm/GeneratorObject.h"
@@ -35,16 +34,7 @@ const JSClass AsyncGeneratorObject::class_ = {
 };
 
 const JSClassOps AsyncGeneratorObject::classOps_ = {
-    nullptr,                                   // addProperty
-    nullptr,                                   // delProperty
-    nullptr,                                   // enumerate
-    nullptr,                                   // newEnumerate
-    nullptr,                                   // resolve
-    nullptr,                                   // mayResolve
-    nullptr,                                   // finalize
-    nullptr,                                   // call
-    nullptr,                                   // construct
-    CallTraceMethod<AbstractGeneratorObject>,  // trace
+    .trace = CallTraceMethod<AbstractGeneratorObject>,
 };
 
 // ES2026 draft rev bdfd596ffad5aeb2957aed4e1db36be3665c69ec
@@ -153,10 +143,8 @@ AsyncGeneratorRequest* AsyncGeneratorObject::createRequest(
       return false;
     }
 
-    if (!queue->append(cx, ObjectValue(*generator->singleQueueRequest()))) {
-      return false;
-    }
-    if (!queue->append(cx, ObjectValue(*request))) {
+    if (!queue->append(cx, ObjectValue(*generator->singleQueueRequest()),
+                       ObjectValue(*request))) {
       return false;
     }
 
@@ -496,6 +484,9 @@ AsyncGeneratorRequest* AsyncGeneratorRequest::create(
 // https://tc39.es/ecma262/#sec-asyncgeneratorcompletestep
 //
 // "normal" case.
+//
+// Per spec, this function should never fail.
+// Our implementation can fail due to OOM.
 [[nodiscard]] static bool AsyncGeneratorCompleteStepNormal(
     JSContext* cx, Handle<AsyncGeneratorObject*> generator, HandleValue value,
     bool done) {
@@ -549,6 +540,9 @@ AsyncGeneratorRequest* AsyncGeneratorRequest::create(
 // https://tc39.es/ecma262/#sec-asyncgeneratorcompletestep
 //
 // "throw" case.
+//
+// Per spec, this function should never fail.
+// Our implementation can fail due to OOM.
 [[nodiscard]] static bool AsyncGeneratorCompleteStepThrow(
     JSContext* cx, Handle<AsyncGeneratorObject*> generator,
     HandleValue exception) {
@@ -739,10 +733,11 @@ AsyncGeneratorRequest* AsyncGeneratorRequest::create(
 
   // Step 2. Let queue be generator.[[AsyncGeneratorQueue]].
   // Step 3. Repeat, while queue is not empty,
+  Rooted<AsyncGeneratorRequest*> next(cx);
+  RootedValue value(cx);
   while (!generator->isQueueEmpty()) {
     // Step 3.a. Let next be the first element of queue.
-    Rooted<AsyncGeneratorRequest*> next(
-        cx, AsyncGeneratorObject::peekRequest(generator));
+    next = AsyncGeneratorObject::peekRequest(generator);
     if (!next) {
       return false;
     }
@@ -752,7 +747,7 @@ AsyncGeneratorRequest* AsyncGeneratorRequest::create(
 
     // Step 3.c. If completion is a return completion, then
     if (completionKind == CompletionKind::Return) {
-      RootedValue value(cx, next->completionValue());
+      value = next->completionValue();
 
       // Step 3.c.i. Perform AsyncGeneratorAwaitReturn(generator).
       // Step 3.c.ii. Return unused.
@@ -761,7 +756,7 @@ AsyncGeneratorRequest* AsyncGeneratorRequest::create(
 
     // Step 3.d. Else,
     if (completionKind == CompletionKind::Throw) {
-      RootedValue value(cx, next->completionValue());
+      value = next->completionValue();
 
       // Step 3.d.ii. Perform AsyncGeneratorCompleteStep(generator, completion,
       //              true).
@@ -1220,9 +1215,13 @@ bool js::AsyncGeneratorThrow(JSContext* cx, unsigned argc, Value* vp) {
 //
 // AsyncGeneratorResume ( generator, completion )
 // https://tc39.es/ecma262/#sec-asyncgeneratorresume
+//
+// This returns false only for internal errors.
 [[nodiscard]] static bool AsyncGeneratorResume(
     JSContext* cx, Handle<AsyncGeneratorObject*> generator,
     CompletionKind completionKind, HandleValue argument) {
+  AutoAsyncResumeDepth autoDepth(cx);
+
   // Given that yield can resume again, we implement it as a loop.
   JS::Rooted<JS::Value> resumeArgument(cx, argument);
   while (true) {
@@ -1255,6 +1254,14 @@ bool js::AsyncGeneratorThrow(JSContext* cx, unsigned argc, Value* vp) {
     //         from the execution context stack and callerContext is the
     //         currently running execution context.
     // Step 10. Return unused.
+    //
+    // NOTE: Once the CallSelfHostedFunction call returns, the generator itslef
+    //       is suspended implementation-wise.
+    //       On the other hand, spec-wise, the generator may still be running
+    //       and some operations (a part of Await or Yield, etc) are supposed
+    //       to be handled with the genContext.
+    //       when the execution continues, we resume the generator with
+    //       the corresponding completion value.
     Handle<PropertyName*> funName = completionKind == CompletionKind::Normal
                                         ? cx->names().AsyncGeneratorNext
                                     : completionKind == CompletionKind::Throw
@@ -1271,14 +1278,63 @@ bool js::AsyncGeneratorThrow(JSContext* cx, unsigned argc, Value* vp) {
     }
 
     if (generator->isAfterAwait()) {
-      return AsyncGeneratorAwait(cx, generator, thisOrRval);
+      if (!AsyncGeneratorAwait(cx, generator, thisOrRval)) {
+        // Not much we can do about uncatchable exceptions, so just bail.
+        if (!cx->isExceptionPending()) {
+          return false;
+        }
+        // This can happen if PromiseResolve inside Await fails.
+        //
+        // Per spec, that happens without suspending the generator.
+        // Given that implementation-wise we've already suspended the generator,
+        // resume it with a throw completion.
+        //
+        // Other OOM can also hit this path, but that should also be
+        // treated as an error before suspending the generator.
+        if (!GetAndClearException(cx, &resumeArgument)) {
+          return false;
+        }
+        completionKind = CompletionKind::Throw;
+        continue;
+      }
+      return true;
     }
 
     if (generator->isAfterYield()) {
       bool resumeAgain = false;
       if (!AsyncGeneratorYield(cx, generator, thisOrRval, &resumeAgain,
                                &completionKind, &resumeArgument)) {
-        return false;
+        // Not much we can do about uncatchable exceptions, so just bail.
+        if (!cx->isExceptionPending()) {
+          return false;
+        }
+        // This can also happen if PromiseResolve inside Await fails
+        // during AsyncGeneratorUnwrapYieldResumption.
+        // AsyncGeneratorUnwrapYieldResumption is performed only if the
+        // queue is not empty.
+        //
+        // Per spec, the PromiseResolve failure happens before suspending the
+        // generator.
+        // Given that implementation-wise we've already suspended the generator,
+        // resume it with a throw completion.
+        //
+        // On the other hand, per spec, if the queue is empty, this generator
+        // is getting suspended and there's no fallible operation.
+        // However, we can hit OOM during it, for example in
+        // AsyncGeneratorCompleteStep while creating the iterator result object.
+        //
+        // And in this case, there's no spec-compliant way to report it, to
+        // either to the generator itself or to the consumer of the generator.
+        // Treat it as an error happened as a a part of microtask handling,
+        // and propagate it to the microtask queue.
+        if (generator->isQueueEmpty()) {
+          return false;
+        }
+        if (!GetAndClearException(cx, &resumeArgument)) {
+          return false;
+        }
+        completionKind = CompletionKind::Throw;
+        continue;
       }
       if (resumeAgain) {
         MOZ_ASSERT(completionKind != CompletionKind::Return);

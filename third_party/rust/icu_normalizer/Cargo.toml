@@ -76,7 +76,9 @@ utf16_iter = [
     "dep:write16",
 ]
 utf8_iter = ["dep:utf8_iter"]
-write16 = []
+# For dealing with Latin1 strings
+latin1 = ["dep:write16"]
+harfbuzz_traits = ["dep:harfbuzz-traits"]
 
 [lib]
 name = "icu_normalizer"
@@ -129,6 +131,15 @@ features = ["derive"]
 optional = true
 default-features = false
 
+[dependencies.harfbuzz-traits]
+version = "0.6.0"
+default-features = false
+optional = true
+
+[dependencies.displaydoc]
+version = "0.2.3"
+default-features = false
+
 [dependencies.icu_collections]
 version = "~2.1.1"
 default-features = false
@@ -164,11 +175,13 @@ default-features = false
 version = "1.0.2"
 optional = true
 default-features = false
+features = ["icu_collections"]
 
 [dependencies.utf8_iter]
 version = "1.0.2"
 optional = true
 default-features = false
+features = ["icu_collections"]
 
 [dependencies.write16]
 version = "1.0.0"

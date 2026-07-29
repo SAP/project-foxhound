@@ -23,6 +23,6 @@ testWithTypedArrayConstructors(function(TA) {
   assert.throws(TypeError, function() {
     new TA(s);
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,7 @@
 #include "mozilla/dom/NumericInputTypes.h"
 
 #include "ICUUtils.h"
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/TextControlState.h"
 #include "mozilla/dom/HTMLInputElement.h"
 
@@ -54,7 +53,7 @@ nsresult NumericInputTypeBase::GetRangeOverflowMessage(nsAString& aMessage) {
   nsAutoString maxStr;
   ConvertNumberToString(maximum, Localized::Yes, maxStr);
   return nsContentUtils::FormatMaybeLocalizedString(
-      aMessage, nsContentUtils::eDOM_PROPERTIES,
+      aMessage, PropertiesFile::DOM_PROPERTIES,
       "FormValidationNumberRangeOverflow", mInputElement->OwnerDoc(), maxStr);
 }
 
@@ -65,11 +64,12 @@ nsresult NumericInputTypeBase::GetRangeUnderflowMessage(nsAString& aMessage) {
   nsAutoString minStr;
   ConvertNumberToString(minimum, Localized::Yes, minStr);
   return nsContentUtils::FormatMaybeLocalizedString(
-      aMessage, nsContentUtils::eDOM_PROPERTIES,
+      aMessage, PropertiesFile::DOM_PROPERTIES,
       "FormValidationNumberRangeUnderflow", mInputElement->OwnerDoc(), minStr);
 }
 
-auto NumericInputTypeBase::ConvertStringToNumber(const nsAString& aValue) const
+auto NumericInputTypeBase::ConvertStringToNumber(const nsAString& aValue,
+                                                 Localized) const
     -> StringToNumberResult {
   return {HTMLInputElement::StringToDecimal(aValue)};
 }
@@ -93,7 +93,20 @@ bool NumberInputType::IsValueMissing() const {
     return false;
   }
 
-  return IsValueEmpty();
+  // We shouldn't try to parse the value during shutdown, since it
+  // can access ICU stuff which gets cleaned up during shutdown.
+  if (PastShutdownPhase(ShutdownPhase::XPCOMShutdown)) {
+    return false;
+  }
+
+  // We have to return true here if the user has entered an invalid number:
+  //  User agents must not allow the user to set the value to a non-empty
+  //  string that is not a valid floating-point number.
+  // https://html.spec.whatwg.org/multipage/input.html#number-state-(type=number)
+  //  If the element is required, ..., and the element's value is the empty
+  //  string, then the element is suffering from being missing.
+  // https://html.spec.whatwg.org/multipage/input.html#the-required-attribute
+  return mInputElement->GetValueAsDecimal().isNaN();
 }
 
 bool NumberInputType::HasBadInput() const {
@@ -102,10 +115,12 @@ bool NumberInputType::HasBadInput() const {
   return !value.IsEmpty() && mInputElement->GetValueAsDecimal().isNaN();
 }
 
-auto NumberInputType::ConvertStringToNumber(const nsAString& aValue) const
+auto NumberInputType::ConvertStringToNumber(const nsAString& aValue,
+                                            Localized aLocalized) const
     -> StringToNumberResult {
-  auto result = NumericInputTypeBase::ConvertStringToNumber(aValue);
-  if (result.mResult.isFinite()) {
+  auto result =
+      NumericInputTypeBase::ConvertStringToNumber(aValue, Localized::No);
+  if (result.mResult.isFinite() || aLocalized == Localized::No) {
     return result;
   }
   // Try to read the localized value from the user.
@@ -133,13 +148,13 @@ bool NumberInputType::ConvertNumberToString(Decimal aValue,
 
 nsresult NumberInputType::GetValueMissingMessage(nsAString& aMessage) {
   return nsContentUtils::GetMaybeLocalizedString(
-      nsContentUtils::eDOM_PROPERTIES, "FormValidationBadInputNumber",
+      PropertiesFile::DOM_PROPERTIES, "FormValidationBadInputNumber",
       mInputElement->OwnerDoc(), aMessage);
 }
 
 nsresult NumberInputType::GetBadInputMessage(nsAString& aMessage) {
   return nsContentUtils::GetMaybeLocalizedString(
-      nsContentUtils::eDOM_PROPERTIES, "FormValidationBadInputNumber",
+      PropertiesFile::DOM_PROPERTIES, "FormValidationBadInputNumber",
       mInputElement->OwnerDoc(), aMessage);
 }
 

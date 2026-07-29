@@ -7,6 +7,7 @@ loader: taskgraph.loader.transform:loader
 transforms:
     - taskgraph.transforms.from_deps
     - gecko_taskgraph.transforms.name_sanity
+    - taskgraph.transforms.task_context
     - gecko_taskgraph.transforms.beetmover_geckoview
     - gecko_taskgraph.transforms.task
 
@@ -34,11 +35,18 @@ not-for-build-platforms:
     - win32-devedition/opt
     - win64-devedition/opt
     - win64-aarch64-devedition/opt
-    - linux64-asan-reporter-shippable/opt
-    - win64-asan-reporter-shippable/opt
 
 task-defaults:
     run-on-repo-type: [hg]
+    task-context:
+        from-parameters:
+            project: project
+        from-custom:
+            - release-level
+        substitution-fields:
+            - run-on-hg-branches
+            - shipping-phase
+            - bucket-scope
 
 tasks:
     beetmover-geckoview:

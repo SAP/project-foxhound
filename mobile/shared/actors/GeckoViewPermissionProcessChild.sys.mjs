@@ -148,7 +148,6 @@ export class GeckoViewPermissionProcessChild extends JSProcessActorChild {
     }
 
     const response = await this.getActor(window).getMediaPermission({
-      uri: window.document.documentURI,
       video: constraints.video
         ? sources.filter(source => source.type === "videoinput")
         : null,

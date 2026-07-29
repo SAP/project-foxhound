@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,7 +10,7 @@
 
 using namespace mozilla;
 
-static PRThread* spawn(void (*run)(void*), void* arg) {
+static PRThread* spawn_thread(void (*run)(void*), void* arg) {
   return PR_CreateThread(PR_SYSTEM_THREAD, run, arg, PR_PRIORITY_NORMAL,
                          PR_GLOBAL_THREAD, PR_JOINABLE_THREAD, 0);
 }
@@ -73,9 +71,9 @@ TEST(Synchronization, MutexContention)
   gLock1 = new Mutex("lock1");
   // PURPOSELY not checking for OOM.  YAY!
 
-  PRThread* t1 = spawn(MutexContention_thread, nullptr);
-  PRThread* t2 = spawn(MutexContention_thread, nullptr);
-  PRThread* t3 = spawn(MutexContention_thread, nullptr);
+  PRThread* t1 = spawn_thread(MutexContention_thread, nullptr);
+  PRThread* t2 = spawn_thread(MutexContention_thread, nullptr);
+  PRThread* t3 = spawn_thread(MutexContention_thread, nullptr);
 
   PR_JoinThread(t1);
   PR_JoinThread(t2);
@@ -101,9 +99,9 @@ TEST(Synchronization, MonitorContention)
 {
   gMon1 = new Monitor("mon1");
 
-  PRThread* t1 = spawn(MonitorContention_thread, nullptr);
-  PRThread* t2 = spawn(MonitorContention_thread, nullptr);
-  PRThread* t3 = spawn(MonitorContention_thread, nullptr);
+  PRThread* t1 = spawn_thread(MonitorContention_thread, nullptr);
+  PRThread* t2 = spawn_thread(MonitorContention_thread, nullptr);
+  PRThread* t3 = spawn_thread(MonitorContention_thread, nullptr);
 
   PR_JoinThread(t1);
   PR_JoinThread(t2);
@@ -133,9 +131,9 @@ TEST(Synchronization, MonitorContention2)
 {
   gMon2 = new ReentrantMonitor("mon1");
 
-  PRThread* t1 = spawn(MonitorContention2_thread, nullptr);
-  PRThread* t2 = spawn(MonitorContention2_thread, nullptr);
-  PRThread* t3 = spawn(MonitorContention2_thread, nullptr);
+  PRThread* t1 = spawn_thread(MonitorContention2_thread, nullptr);
+  PRThread* t2 = spawn_thread(MonitorContention2_thread, nullptr);
+  PRThread* t3 = spawn_thread(MonitorContention2_thread, nullptr);
 
   PR_JoinThread(t1);
   PR_JoinThread(t2);
@@ -171,8 +169,8 @@ TEST(Synchronization, MonitorSyncSanity)
 
   for (int32_t i = 0; i < 10000; ++i) {
     gMonFirst = 1;
-    PRThread* ping = spawn(MonitorSyncSanity_thread, nullptr);
-    PRThread* pong = spawn(MonitorSyncSanity_thread, nullptr);
+    PRThread* ping = spawn_thread(MonitorSyncSanity_thread, nullptr);
+    PRThread* pong = spawn_thread(MonitorSyncSanity_thread, nullptr);
     PR_JoinThread(ping);
     PR_JoinThread(pong);
   }
@@ -207,8 +205,8 @@ TEST(Synchronization, CondVarSanity)
 
   for (int32_t i = 0; i < 10000; ++i) {
     gCvFirst = 1;
-    PRThread* ping = spawn(CondVarSanity_thread, nullptr);
-    PRThread* pong = spawn(CondVarSanity_thread, nullptr);
+    PRThread* ping = spawn_thread(CondVarSanity_thread, nullptr);
+    PRThread* pong = spawn_thread(CondVarSanity_thread, nullptr);
     PR_JoinThread(ping);
     PR_JoinThread(pong);
   }

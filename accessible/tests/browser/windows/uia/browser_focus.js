@@ -22,7 +22,7 @@ async function testHasFocus(pyVar, hasFocus) {
   }
 }
 
-addUiaTask(
+addAccessibleTask(
   `
 <button id="button1">button1</button>
 <p id="p">p</p>

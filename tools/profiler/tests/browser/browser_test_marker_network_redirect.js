@@ -20,10 +20,7 @@ add_task(async function test_network_markers_service_worker_setup() {
 add_task(async function test_network_markers_redirect_simple() {
   // In this test, we request an HTML page that gets redirected. This is a
   // top-level navigation.
-  Assert.ok(
-    !Services.profiler.IsActive(),
-    "The profiler is not currently active"
-  );
+  await ProfilerTestUtils.assertProfilerInactive();
 
   await ProfilerTestUtils.startProfilerForMarkerTests();
 
@@ -156,10 +153,7 @@ add_task(async function test_network_markers_redirect_simple() {
 add_task(async function test_network_markers_redirect_resources() {
   // In this test we request an HTML file that itself contains resources that
   // are redirected.
-  Assert.ok(
-    !Services.profiler.IsActive(),
-    "The profiler is not currently active"
-  );
+  await ProfilerTestUtils.assertProfilerInactive();
 
   await ProfilerTestUtils.startProfilerForMarkerTests();
 

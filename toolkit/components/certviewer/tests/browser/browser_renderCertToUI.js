@@ -20,8 +20,8 @@ add_task(async function test() {
   await BrowserTestUtils.withNewTab(url, async function (browser) {
     await SpecialPowers.spawn(
       browser,
-      [[certItems, tabName]],
-      async function ([adjustedCerts, expectedTabName]) {
+      [certItems, tabName],
+      async function (adjustedCerts, expectedTabName) {
         let certificateSection = await ContentTaskUtils.waitForCondition(() => {
           return content.document.querySelector("certificate-section");
         }, "Certificate section found");

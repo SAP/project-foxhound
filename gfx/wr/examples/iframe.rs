@@ -41,7 +41,6 @@ impl Example for App {
         sub_builder.begin();
 
         sub_builder.push_simple_stacking_context(
-            sub_bounds.min,
             space_and_clip.spatial_id,
             PrimitiveFlags::IS_BACKFACE_VISIBLE,
         );
@@ -71,12 +70,10 @@ impl Example for App {
                 should_snap: false,
                 paired_with_perspective: false,
             },
-            SpatialTreeItemKey::new(0, 0),
         );
 
         // And this is for the root pipeline
         builder.push_simple_stacking_context(
-            sub_bounds.min,
             space_and_clip.spatial_id,
             PrimitiveFlags::IS_BACKFACE_VISIBLE,
         );

@@ -28,6 +28,7 @@ import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
 import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectExists
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
+import org.mozilla.fenix.helpers.MatcherHelper.itemWithDescription
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResId
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdContainingText
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
@@ -42,12 +43,20 @@ import org.mozilla.fenix.helpers.ext.waitNotNull
  */
 class HistoryRobot {
 
-    fun verifyHistoryMenuView() {
-        Log.i(TAG, "verifyHistoryMenuView: Trying to verify that history menu view is visible")
-        onView(
-            allOf(withText("History"), withParent(withId(R.id.navigationToolbar))),
-        ).check(matches(withEffectiveVisibility(ViewMatchers.Visibility.VISIBLE)))
-        Log.i(TAG, "verifyHistoryMenuView: Verified that history menu view is visible")
+    fun verifyHistoryMenuView(historyItemExists: Boolean = false) {
+        assertUIObjectExists(
+            itemWithDescription(getStringResource(R.string.action_bar_up_description)),
+            itemContainingText("History"),
+            itemWithResId("$packageName:id/history_search"),
+            itemWithResId("$packageName:id/history_delete"),
+            itemWithResId("$packageName:id/recently_closed_tabs_header"),
+            itemWithResId("$packageName:id/recently_closed_tabs_description"),
+            if (historyItemExists) {
+                itemWithResId("$packageName:id/history_list")
+            } else {
+                itemWithResId("$packageName:id/history_empty_view")
+            },
+        )
     }
 
     fun verifyEmptyHistoryView() {

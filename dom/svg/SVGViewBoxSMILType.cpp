@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -120,11 +118,10 @@ nsresult SVGViewBoxSMILType::Interpolate(const SMILValue& aStartVal,
 
   SVGViewBox* current = static_cast<SVGViewBox*>(aResult.mU.mPtr);
 
-  float x = (start->x + (end->x - start->x) * aUnitDistance);
-  float y = (start->y + (end->y - start->y) * aUnitDistance);
-  float width = (start->width + (end->width - start->width) * aUnitDistance);
-  float height =
-      (start->height + (end->height - start->height) * aUnitDistance);
+  float x = std::lerp(start->x, end->x, aUnitDistance);
+  float y = std::lerp(start->y, end->y, aUnitDistance);
+  float width = std::lerp(start->width, end->width, aUnitDistance);
+  float height = std::lerp(start->height, end->height, aUnitDistance);
 
   *current = SVGViewBox(x, y, width, height);
 

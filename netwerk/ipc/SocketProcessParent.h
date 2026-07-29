@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -96,6 +95,12 @@ class SocketProcessParent final
 
   mozilla::ipc::IPCResult RecvGeckoTraceExport(ByteBuf&& aBuf);
 
+  mozilla::ipc::IPCResult RecvSSLTokensCacheData(ByteBuf&& aBuf);
+
+#if defined(XP_MACOSX) || defined(XP_IOS)
+  mozilla::ipc::IPCResult RecvAppleFastDatapathProbeResult(
+      const bool& aAvailable);
+#endif
 #if defined(XP_WIN)
   mozilla::ipc::IPCResult RecvGetModulesTrust(
       ModulePaths&& aModPaths, bool aRunAtNormalPriority,

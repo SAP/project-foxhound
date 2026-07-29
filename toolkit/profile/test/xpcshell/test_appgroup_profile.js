@@ -12,7 +12,7 @@ add_task(async function test_appgroup_profile_location() {
   Services.env.set("MOZ_APP_GROUP", "1");
   const profileName = "testappgroup";
   const service = getProfileService();
-  const profile = service.createProfile(null, profileName);
+  const profile = service.createProfile(null, profileName, "tests");
   profile.lock({});
   service.flush();
 

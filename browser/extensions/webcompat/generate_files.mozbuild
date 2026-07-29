@@ -1,0 +1,29 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+
+@template
+def GenerateWebCompatAddonFiles(preprocessed_interventions, relsrcpath="", outpath=""):
+    GeneratedFile(
+        outpath + "run.js",
+        script=relsrcpath + "codegen.py",
+        entry_point="generate_run_js",
+        inputs=[
+            relsrcpath + "run.js",
+            relsrcpath + "data/interventions",
+            relsrcpath + "codegen.py",
+        ],
+        flags=preprocessed_interventions,
+    )
+
+    for generated_filename in preprocessed_interventions:
+        GeneratedFile(
+            f"{outpath}injections/generated/{generated_filename}",
+            script=relsrcpath + "codegen.py",
+            entry_point=f"generate_file",
+            inputs=[
+                f"{relsrcpath}data/interventions",
+                relsrcpath + "codegen.py",
+            ],
+        )

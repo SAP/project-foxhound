@@ -40,6 +40,6 @@ testWithTypedArrayConstructors(TA => {
     target.set(source, 0);
     throw new Test262Error('The `set` operation completed successfully.');
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

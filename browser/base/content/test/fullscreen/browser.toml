@@ -50,6 +50,14 @@ skip-if = [
   "os == 'win'", # Bug 1818796
 ]
 
+["browser_fullscreen_keyboard_lock.js"]
+
+["browser_fullscreen_keyboard_lock_ctrltab.js"]
+
+["browser_fullscreen_keyboard_lock_reserved.js"]
+
+["browser_fullscreen_keyboard_lock_warning.js"]
+
 ["browser_fullscreen_keydown_reservation.js"]
 
 ["browser_fullscreen_menus.js"]
@@ -57,6 +65,9 @@ skip-if = [
 ["browser_fullscreen_newtab.js"]
 
 ["browser_fullscreen_newwindow.js"]
+skip-if = [
+  "os == 'win' && arch == 'x86_64' && asan", # Bug 2012615
+]
 
 ["browser_fullscreen_notification.js"]
 
@@ -67,6 +78,9 @@ skip-if = [
   "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && opt", # Bug 1949995
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1949995
 ]
+
+["browser_fullscreen_toplevel_warning.js"]
+support-files = ["fullscreen.html"]
 
 ["browser_fullscreen_ui_state.js"]
 skip-if = [
@@ -84,6 +98,7 @@ skip-if = [
 
 ["browser_fullscreen_window_focus.js"]
 skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
   "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1568570
   "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1568570
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug", # Bug 1568570

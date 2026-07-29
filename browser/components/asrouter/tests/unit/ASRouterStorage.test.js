@@ -40,6 +40,72 @@ describe("ASRouterStorage", () => {
       assert.calledTwice(indexedDB.open);
       assert.equal(db, newDb);
     });
+
+    it("should allow retry after both open attempts fail", async () => {
+      indexedDB.open.onCall(0).rejects(new Error("first open fail"));
+      indexedDB.open.onCall(1).rejects(new Error("second open fail"));
+      const newDb = {};
+      indexedDB.open.onCall(2).resolves(newDb);
+
+      let threw = false;
+      try {
+        await storage.db;
+      } catch (e) {
+        threw = true;
+      }
+      assert.isTrue(threw);
+
+      const db = await storage.db;
+      assert.equal(db, newDb);
+    });
+
+    it("should still succeed if deleteDatabase fails", async () => {
+      const newDb = {};
+      indexedDB.open.onFirstCall().rejects(new Error("open fail"));
+      indexedDB.open.onSecondCall().resolves(newDb);
+      indexedDB.deleteDatabase.rejects(new Error("delete fail"));
+
+      const db = await storage.db;
+      assert.equal(db, newDb);
+      assert.calledWith(storage.telemetry.handleUndesiredEvent, {
+        event: "INDEXEDDB_DELETE_FAILED",
+      });
+    });
+
+    it("should register onversionchange handler on the database", async () => {
+      const dbObj = { close: sandbox.stub() };
+      indexedDB.open.resolves(dbObj);
+
+      await storage.db;
+      assert.isFunction(dbObj.onversionchange);
+    });
+
+    it("should close db and clear cache on versionchange", async () => {
+      const dbObj = { close: sandbox.stub() };
+      indexedDB.open.resolves(dbObj);
+
+      await storage.db;
+      dbObj.onversionchange();
+
+      assert.calledOnce(dbObj.close);
+      assert.isNull(storage._db);
+    });
+
+    it("should clear db cache on close event and allow re-open", async () => {
+      const dbObj1 = { close: sandbox.stub() };
+      const dbObj2 = {};
+      indexedDB.open.onFirstCall().resolves(dbObj1);
+      indexedDB.open.onSecondCall().resolves(dbObj2);
+
+      await storage.db;
+      dbObj1.onclose();
+
+      assert.isNull(storage._db);
+
+      const db = await storage.db;
+      assert.equal(db, dbObj2);
+      assert.calledTwice(indexedDB.open);
+    });
   });
   describe("#getDbTable", () => {
     let testStorage;
@@ -55,10 +121,20 @@ describe("ASRouterStorage", () => {
       testStorage = storage.getDbTable("storage_test");
     });
     it("should reverse key value parameters for put", async () => {
-      await testStorage.set("key", "value");
+      testStorage.set("key", "value");
+      await storage.flush();
 
       assert.calledOnce(storeStub.put);
       assert.calledWith(storeStub.put, "value", "key");
+    });
+    it("flush should await all in-flight writes", async () => {
+      testStorage.set("key1", "a");
+      testStorage.set("key2", "b");
+      assert.equal(storage.pendingWriteCount, 2);
+      await storage.flush();
+
+      assert.calledTwice(storeStub.put);
+      assert.equal(storage.pendingWriteCount, 0);
     });
     it("should return the correct value for get", async () => {
       storeStub.get.withArgs("foo").resolves("foo");
@@ -94,11 +170,20 @@ describe("ASRouterStorage", () => {
       assert.throws(() => storage.getDbTable("undefined_store"));
     });
   });
-  it("should get the correct objectStore when calling _getStore", async () => {
+  it("should open objectStore in readonly mode by default", async () => {
     const objectStoreStub = sandbox.stub();
     indexedDB.open.resolves({ objectStore: objectStoreStub });
 
     await storage._getStore("foo");
+
+    assert.calledOnce(objectStoreStub);
+    assert.calledWithExactly(objectStoreStub, "foo", "readonly");
+  });
+  it("should open objectStore in readwrite mode when specified", async () => {
+    const objectStoreStub = sandbox.stub();
+    indexedDB.open.resolves({ objectStore: objectStoreStub });
+
+    await storage._getStore("foo", "readwrite");
 
     assert.calledOnce(objectStoreStub);
     assert.calledWithExactly(objectStoreStub, "foo", "readwrite");
@@ -149,6 +234,30 @@ describe("ASRouterStorage", () => {
     indexedDB.open.args[0][2](dbStub);
 
     assert.notCalled(dbStub.createObjectStore);
+  });
+  it("should propagate createObjectStore errors during upgrade", async () => {
+    const error = new Error("disk error");
+    const dbStub = {
+      createObjectStore: sandbox.stub().throws(error),
+      objectStoreNames: { contains: sandbox.stub().returns(false) },
+    };
+
+    indexedDB.open.callsFake((name, version, callback) => {
+      callback(dbStub);
+      return Promise.reject(error);
+    });
+
+    storage = new ASRouterStorage({
+      storeNames: ["storage_test"],
+      telemetry: { handleUndesiredEvent: sandbox.stub() },
+    });
+
+    try {
+      await storage._openDatabase();
+      assert.fail("should have thrown");
+    } catch (e) {
+      assert.equal(e, error);
+    }
   });
   describe("#_requestWrapper", () => {
     it("should return a successful result", async () => {
@@ -417,27 +526,23 @@ describe("Shared database methods", () => {
       });
     });
 
-    it("should still create a record if the array is empty", async () => {
+    it("should delete the record when impressions is falsy", async () => {
       mockConnection.executeCached.resolves();
 
-      await storage.setSharedMessageImpressions("test_message", []);
+      await storage.setSharedMessageImpressions("test_message", null);
 
       assert.calledOnce(mockConnection.executeCached);
       let executeCall = mockConnection.executeCached.getCall(0);
       assert.match(
         executeCall.args[0],
-        /INSERT INTO MessagingSystemMessageImpressions/
+        /DELETE FROM MessagingSystemMessageImpressions/
       );
-      assert.deepEqual(executeCall.args[1], {
-        messageId: "test_message",
-        impressions: JSON.stringify([]),
-      });
     });
 
-    it("should delete the record when impressions is falsy", async () => {
+    it("should delete the record when impressions is empty", async () => {
       mockConnection.executeCached.resolves();
 
-      await storage.setSharedMessageImpressions("test_message", null);
+      await storage.setSharedMessageImpressions("test_message", []);
 
       assert.calledOnce(mockConnection.executeCached);
       let executeCall = mockConnection.executeCached.getCall(0);

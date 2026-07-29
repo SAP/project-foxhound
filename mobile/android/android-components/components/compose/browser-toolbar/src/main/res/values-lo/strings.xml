@@ -17,10 +17,6 @@
   <string name="mozac_browser_toolbar_long_press_popup_paste">ວາງ</string>
   <!-- Contextual menu option for long pressing on the toolbar URL. Clicking it will paste the text from clipboard and search for or load it as an URL. '&amp;' is replaced with the ampersand symbol: & -->
   <string name="mozac_browser_toolbar_long_press_popup_paste_and_go">ວາງແລ້ວໄປ</string>
-  <!-- Text for the title displayed in the contextual feature recommendation popup promoting the new toolbar redesign. -->
-  <string name="mozac_toolbar_cfr_title">ອອກແບບມາສຳລັບ Android. ປັບປຸງໃຫ້ດີຂຶ້ນສຳລັບທ່ານ</string>
-  <!-- Text for the description displayed in the contextual feature recommendation popup promoting the new toolbar redesign. -->
-  <string name="mozac_toolbar_cfr_description">ພວກເຮົາໄດ້ປັບປຸງການອອກແບບໃຫ້ທັນສະໄໝ ແລະ ລຽບງ່າຍ</string>
   <!-- Content description (not visible, for screen readers etc.) for the "minimal toolbar" containing just the URL instead of the big toolbar containing also other buttons. %1$s will be replaced with the domain name of the current website. -->
   <string name="mozac_minimal_display_toolbar_content_description">ກຳລັງພິມຂໍ້ຄວາມໃນ %1$s. ແຕະສອງເທື່ອເພື່ອຢຸດ</string>
 </resources>

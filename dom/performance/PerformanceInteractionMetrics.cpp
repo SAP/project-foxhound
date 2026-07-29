@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,10 +5,13 @@
 #include "PerformanceInteractionMetrics.h"
 
 #include "mozilla/EventForwards.h"
+#include "mozilla/Logging.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/RandomNum.h"
 #include "mozilla/TextEvents.h"
+
+static mozilla::LazyLogModule gEventTimingLog("EventTiming");
 
 // Interaction ID increment. We increase this value by an integer greater than 1
 // to discourage developers from using the value to 'count' the number of user
@@ -105,9 +106,15 @@ Maybe<uint64_t> PerformanceInteractionMetrics::ComputeInteractionId(
     // This is not part of the spec yet, but it's being discussed and will be
     // added to the spec soon.
     // See: https://github.com/w3c/event-timing/issues/153
+    MOZ_LOG(gEventTimingLog, mozilla::LogLevel::Debug,
+            ("PendingKeyDowns: inserting keydown code=%u, total pending=%u",
+             code, mPendingKeyDowns.Count() + 1));
     mPendingKeyDowns.InsertOrUpdate(code, aEventTiming);
     uint64_t interactionId = IncreaseInteractionValueAndCount();
     mLastKeydownInteractionValue = Some(interactionId);
+    MOZ_LOG(gEventTimingLog, mozilla::LogLevel::Debug,
+            ("PendingKeyDowns: keydown assigned interactionId=%" PRIu64,
+             interactionId));
     return Some(interactionId);
   }
 
@@ -133,10 +140,18 @@ Maybe<uint64_t> PerformanceInteractionMetrics::ComputeInteractionId(
     auto entry = mPendingKeyDowns.MaybeGet(code);
     // Step 8.3. If pendingKeyDowns[code] does not exist, return 0.
     if (!entry) {
+      MOZ_LOG(gEventTimingLog, mozilla::LogLevel::Debug,
+              ("PendingKeyDowns: keyup code=%u not found in pendingKeyDowns "
+               "(size=%u), returning 0",
+               code, mPendingKeyDowns.Count()));
       return Some(0);
     }
 
     uint64_t interactionId = (*entry)->InteractionId();
+    MOZ_LOG(gEventTimingLog, mozilla::LogLevel::Debug,
+            ("PendingKeyDowns: keyup code=%u found, interactionId=%" PRIu64
+             ", removing from pendingKeyDowns",
+             code, interactionId));
 
     // Step 8.9. Remove pendingKeyDowns[code].
     mPendingKeyDowns.Remove(code);
@@ -147,6 +162,9 @@ Maybe<uint64_t> PerformanceInteractionMetrics::ComputeInteractionId(
 
   // Step 9. If type is compositionstart:
   if (eventType == eCompositionStart) {
+    MOZ_LOG(gEventTimingLog, mozilla::LogLevel::Debug,
+            ("PendingKeyDowns: compositionstart clearing %u pending keydowns",
+             mPendingKeyDowns.Count()));
     // Step 9.1 For each entry in the values of pendingKeyDowns:
     for (auto iter = mPendingKeyDowns.Iter(); !iter.Done(); iter.Next()) {
       PerformanceEventTiming* entry = iter.Data();

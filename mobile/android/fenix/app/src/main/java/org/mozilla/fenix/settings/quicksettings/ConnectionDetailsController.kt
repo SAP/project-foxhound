@@ -4,7 +4,6 @@
 
 package org.mozilla.fenix.settings.quicksettings
 
-import android.content.Context
 import androidx.fragment.app.Fragment
 import androidx.navigation.NavController
 import kotlinx.coroutines.CoroutineDispatcher
@@ -17,9 +16,8 @@ import mozilla.components.concept.engine.cookiehandling.CookieBannersStorage
 import mozilla.components.concept.engine.permission.SitePermissions
 import mozilla.components.support.ktx.kotlin.isContentUrl
 import org.mozilla.fenix.browser.BrowserFragmentDirections
-import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.components.Components
 import org.mozilla.fenix.ext.runIfFragmentIsAttached
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.settings.quicksettings.protections.cookiebanners.getCookieBannerUIMode
 
 /**
@@ -40,7 +38,7 @@ interface ConnectionDetailsController {
  */
 @Suppress("LongParameterList")
 class DefaultConnectionDetailsController(
-    private val context: Context,
+    private val components: Components,
     private val fragment: Fragment,
     private val scope: CoroutineScope,
     private val cookieBannersStorage: CookieBannersStorage,
@@ -53,13 +51,13 @@ class DefaultConnectionDetailsController(
 
     override fun handleBackPressed() {
         getCurrentTab()?.let { tab ->
-            context.components.useCases.trackingProtectionUseCases.containsException(tab.id) { contains ->
+            components.useCases.trackingProtectionUseCases.containsException(tab.id) { contains ->
                 scope.launch {
                     val cookieBannerUIMode = withContext(ioDispatcher) {
                         cookieBannersStorage.getCookieBannerUIMode(
                             tab = tab,
-                            isFeatureEnabledInPrivateMode = context.settings().shouldUseCookieBannerPrivateMode,
-                            publicSuffixList = context.components.publicSuffixList,
+                            isFeatureEnabledInPrivateMode = components.settings.shouldUseCookieBannerPrivateMode,
+                            publicSuffixList = components.publicSuffixList,
                         )
                     }
                     fragment.runIfFragmentIsAttached {

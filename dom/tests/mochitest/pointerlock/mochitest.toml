@@ -32,10 +32,7 @@ support-files = [
   "file_changeLockElement.html",
 ]
 skip-if = [
-  "opt", # Bug 1833142
-  "os == 'android'", # Bug 1612553
-  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1857057
-  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && debug", # Bug 1886190
+  "true", # Disabled for many intermittent and permanent failure on various configurations.
 ]
 
 ["test_pointerlock_focus.html"]
@@ -49,6 +46,7 @@ support-files = [
   "file_pointerlock_xorigin_iframe_not_focused.html",
 ]
 skip-if = [
+  "os == 'win' && os_version == '11.26200'", # Bug 2019745
   "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1857057
 ]
 
@@ -59,5 +57,7 @@ skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && xorigin", # Bug 1897207
   "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # Bug 1897207
   "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && opt", # Bug 1897207
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2034604
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt && xorigin && verify-standalone", # Bug 1897207
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && opt && xorigin && verify-standalone", # Bug 1897207
 ]

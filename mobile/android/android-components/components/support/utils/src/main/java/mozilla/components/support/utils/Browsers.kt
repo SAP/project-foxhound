@@ -5,12 +5,14 @@
 package mozilla.components.support.utils
 
 import android.annotation.SuppressLint
+import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.net.Uri
+import android.os.Build
 import androidx.annotation.VisibleForTesting
 import androidx.core.net.toUri
 import mozilla.components.support.utils.ext.PackageManagerCompatHelper
@@ -112,8 +114,7 @@ class Browsers private constructor(
     /**
      * The [ActivityInfo] of the default browser of the user (or null if none could be found).
      */
-    val defaultBrowser: ActivityInfo? =
-        findDefault(context, context.packageManagerCompatHelper, uri)
+    val defaultBrowser: ActivityInfo? = findDefault(context, uri)
 
     /**
      * The [ActivityInfo] of the installed Firefox, including Focus, browser (or null if none could be found).
@@ -198,11 +199,6 @@ class Browsers private constructor(
     fun isInstalled(packageName: String): Boolean {
         return browsers.containsKey(packageName)
     }
-
-    /**
-     * Is **this** application the default browser?
-     */
-    val isDefaultBrowser: Boolean = defaultBrowser != null && packageName == defaultBrowser.packageName
 
     private fun findMozillaBrandedBrowser(): ActivityInfo? {
         return when {
@@ -308,15 +304,20 @@ class Browsers private constructor(
         }
     }
 
+    /**
+     * Find the current browser set as default for the device.
+     *
+     * This can return null if there are no browsers installed or if none is set as default.
+     *
+     * @param context Android [Context] used for querying other installed browsers and checking if
+     * **this** is the default.
+     * @param uri [Uri] to use for checking whether installed browsers can open.
+     */
     private fun findDefault(
         context: Context,
-        packageManager: PackageManagerCompatHelper,
         uri: Uri,
     ): ActivityInfo? {
-        val intent = Intent(Intent.ACTION_VIEW, uri)
-        intent.addCategory(Intent.CATEGORY_BROWSABLE)
-
-        val resolveInfo = packageManager.resolveActivityCompat(intent, PackageManager.MATCH_DEFAULT_ONLY)
+        val resolveInfo = findDefaultBrowserInfo(context, uri)
             ?: return null
 
         if (resolveInfo.activityInfo == null || !resolveInfo.activityInfo.exported) {
@@ -350,6 +351,24 @@ class Browsers private constructor(
             return KnownBrowser.entries.firstOrNull { browser ->
                 browser.packageName == packageName
             } != null
+        }
+
+        /**
+         * Is **this** application the default browser?
+         *
+         * @param context Android [Context] used for querying other installed browsers and checking if
+         * **this** is the default.
+         */
+        fun isDefaultBrowser(context: Context): Boolean {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val roleManager = context.getSystemService(RoleManager::class.java)
+                return roleManager != null &&
+                    roleManager.isRoleAvailable(RoleManager.ROLE_BROWSER) &&
+                    roleManager.isRoleHeld(RoleManager.ROLE_BROWSER)
+            }
+
+            val defaultBrowserInfo = findDefaultBrowserInfo(context)
+            return defaultBrowserInfo?.activityInfo?.packageName == context.packageName
         }
 
         /**
@@ -420,6 +439,14 @@ class Browsers private constructor(
                             it.activityInfo.packageName != context.packageName
                         )
                 }
+        }
+
+        private fun findDefaultBrowserInfo(context: Context, uri: Uri = SAMPLE_BROWSER_URI): ResolveInfo? {
+            val intent = Intent(Intent.ACTION_VIEW, uri)
+            intent.addCategory(Intent.CATEGORY_BROWSABLE)
+
+            val packageManager = context.packageManagerCompatHelper
+            return packageManager.resolveActivityCompat(intent, PackageManager.MATCH_DEFAULT_ONLY)
         }
     }
 }

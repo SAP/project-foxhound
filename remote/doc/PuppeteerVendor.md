@@ -120,6 +120,6 @@ to check for stability.
 [Puppeteer test suite]: https://github.com/GoogleChrome/puppeteer/tree/master/test
 [install the project]: https://github.com/puppeteer/puppeteer/blob/main/docs/contributing.md#getting-started
 [run tests against both Chromium and Firefox]: https://github.com/puppeteer/puppeteer/blob/main/test/README.md#running-tests
-[TestExpectations.json]: https://searchfox.org/mozilla-central/source/remote/test/puppeteer/test/TestExpectations.json
-[CanaryTestExpectations.json]: https://searchfox.org/mozilla-central/source/remote/test/puppeteer/test/CanaryTestExpectations.json
+[TestExpectations.json]: https://searchfox.org/firefox-main/source/remote/test/puppeteer/test/TestExpectations.json
+[CanaryTestExpectations.json]: https://searchfox.org/firefox-main/source/remote/test/puppeteer/test/CanaryTestExpectations.json
 [contributing.md]: https://github.com/puppeteer/puppeteer/blob/main/docs/contributing.md

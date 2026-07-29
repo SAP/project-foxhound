@@ -25,7 +25,7 @@ const browserMLPref = "browser.ml.enable";
 const altTextModelDownloadPref = "pdfjs.enableAltTextModelDownload";
 
 add_setup(async function () {
-  MockFilePicker.init(window.browsingContext);
+  MockFilePicker.init();
   MockFilePicker.setFiles([file]);
   MockFilePicker.returnValue = MockFilePicker.returnOK;
   registerCleanupFunction(function () {

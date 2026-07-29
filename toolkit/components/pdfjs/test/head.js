@@ -162,6 +162,7 @@ async function waitForSelector(
 }
 
 async function click(browser, selector) {
+  info(`Click on: ${selector}`);
   await waitForSelector(browser, selector);
   await SpecialPowers.spawn(browser, [selector], async function (sel) {
     const el = content.document.querySelector(sel);

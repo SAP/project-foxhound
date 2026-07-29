@@ -336,7 +336,7 @@ async function selectResourceTypesAndStartMigration(
 
   // First, select the InternalTestingProfileMigrator browser.
   let selector = shadow.querySelector("#browser-profile-selector");
-  EventUtils.synthesizeMouseAtCenter(selector, {}, wizard.ownerGlobal);
+  EventUtils.synthesizeMouseAtCenter(selector, {}, wizard.documentGlobal);
 
   await new Promise(resolve => {
     panelList.addEventListener("shown", resolve, { once: true });
@@ -347,7 +347,7 @@ async function selectResourceTypesAndStartMigration(
     panelItem.openOrClosedShadowRoot.querySelector("button"),
     "The panel-list button exists."
   );
-  panelItem.click();
+  EventUtils.synthesizeMouseAtCenter(panelItem, {}, wizard.documentGlobal);
 
   await new Promise(resolve => {
     panelList.addEventListener("hidden", resolve, { once: true });

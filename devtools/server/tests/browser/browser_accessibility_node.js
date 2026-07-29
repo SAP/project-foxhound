@@ -88,13 +88,13 @@ add_task(async function () {
   );
 
   const controlRelations = await controlAccessibleFront.getRelations();
-  is(controlRelations.length, 3, "Control has correct number of relations");
-  is(controlRelations[2].type, "details", "Control has a details relation");
-  is(controlRelations[2].targets.length, 1, "Control has one details target");
+  is(controlRelations.length, 4, "Control has correct number of relations");
+  is(controlRelations[3].type, "details", "Control has a details relation");
+  is(controlRelations[3].targets.length, 1, "Control has one details target");
   const detailsNode = await walker.querySelector(walker.rootNode, "#details");
   const detailsAccessibleFront = await a11yWalker.getAccessibleFor(detailsNode);
   is(
-    controlRelations[2].targets[0],
+    controlRelations[3].targets[0],
     detailsAccessibleFront,
     "Control has correct details target"
   );

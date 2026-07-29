@@ -21,7 +21,6 @@
 #include "api/media_stream_interface.h"
 #include "api/video_codecs/video_decoder.h"
 #include "api/video_codecs/video_encoder.h"
-#include "call/call_basic_stats.h"
 /** This file hosts several structures identifying different aspects
  * of a RTP Session.
  */
@@ -152,6 +151,10 @@ class WebrtcVideoConduit : public VideoSessionConduit,
                      const TrackingId& aRecvTrackingId);
   virtual ~WebrtcVideoConduit();
 
+  // Don't allow copying/assigning.
+  WebrtcVideoConduit(const WebrtcVideoConduit&) = delete;
+  void operator=(const WebrtcVideoConduit&) = delete;
+
   // Call thread.
   void InitControl(VideoConduitControlInterface* aControl) override;
 
@@ -190,7 +193,7 @@ class WebrtcVideoConduit : public VideoSessionConduit,
   Maybe<webrtc::VideoReceiveStreamInterface::Stats> GetReceiverStats()
       const override;
   Maybe<webrtc::VideoSendStream::Stats> GetSenderStats() const override;
-  Maybe<webrtc::CallBasicStats> GetCallStats() const override;
+  Maybe<webrtc::Call::Stats> GetCallStats() const override;
 
   bool AddFrameHistory(dom::Sequence<dom::RTCVideoFrameHistoryInternal>*
                            outHistories) const override;
@@ -252,10 +255,6 @@ class WebrtcVideoConduit : public VideoSessionConduit,
                         FrameTransformerProxy* aProxy) override;
 
  private:
-  // Don't allow copying/assigning.
-  WebrtcVideoConduit(const WebrtcVideoConduit&) = delete;
-  void operator=(const WebrtcVideoConduit&) = delete;
-
   // Utility function to dump recv codec database
   void DumpCodecDB() const;
 

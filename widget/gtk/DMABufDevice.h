@@ -1,6 +1,3 @@
-/* -*- Mode: C; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +8,6 @@
 #include "mozilla/StaticMutex.h"
 #include "mozilla/widget/DMABufFormats.h"
 #include <gbm.h>
-#include <mutex>
 
 #undef LOGDMABUF
 #ifdef MOZ_LOGGING
@@ -182,7 +178,7 @@ class GbmLib {
                                            uint32_t width, uint32_t height,
                                            uint32_t format, uint32_t flags) {
     if (!gbm) {
-      return 0;
+      return nullptr;
     }
     return sCreateSurface(gbm, width, height, format, flags);
   }
@@ -223,6 +219,8 @@ class DRMFormat;
 class DMABufDeviceLock;
 
 class DMABufDevice final {
+  friend class DMABufDeviceLock;
+
  public:
   bool Init();
 
@@ -261,6 +259,8 @@ class MOZ_RAII DMABufDeviceLock final {
  public:
   DMABufDeviceLock();
   ~DMABufDeviceLock();
+
+  static void Shutdown();
 
   gbm_device* GetGBMDevice() {
     sMutex.AssertCurrentThreadOwns();

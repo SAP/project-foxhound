@@ -11,7 +11,7 @@ import React, { PureComponent } from "devtools/client/shared/vendor/react";
 import { div, span } from "devtools/client/shared/vendor/react-dom-factories";
 import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 import { connect } from "devtools/client/shared/vendor/react-redux";
-import DebuggerImage from "../shared/DebuggerImage";
+import DebuggerImage from "devtools/client/shared/components/DebuggerImage";
 import actions from "../../actions/index";
 
 const Reps = ChromeUtils.importESModule(

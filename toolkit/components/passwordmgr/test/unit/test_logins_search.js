@@ -73,7 +73,11 @@ async function checkAllSearches(aQuery, aExpectedCount) {
   let httpRealm = "httpRealm" in aQuery ? aQuery.httpRealm : "";
 
   // Test countLogins.
-  let count = Services.logins.countLogins(origin, formActionOrigin, httpRealm);
+  let count = await Services.logins.countLoginsAsync(
+    origin,
+    formActionOrigin,
+    httpRealm
+  );
   Assert.equal(count, expectedLogins.length);
 
   // Test searchLogins.

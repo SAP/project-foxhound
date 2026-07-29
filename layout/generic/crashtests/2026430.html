@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<style>
+#s { overflow: scroll; width: 100px; height: 100px; }
+</style>
+<div id="s"><div style="width:200px;height:200px"></div></div>
+<div id="o"></div>
+<script>
+window.onload = function() {
+  var style = document.createElement("style");
+  style.textContent = "::-webkit-scrollbar { width: 8px; height: 8px; }";
+  document.head.appendChild(style);
+  document.getElementById("s").style.overflow = "visible";
+  document.getElementById("o").offsetTop;
+  document.documentElement.classList.remove("reftest-wait");
+};
+</script>
+</html>

@@ -48,7 +48,7 @@ testRule({
       description: "Using button-font-weight token is valid.",
     },
     {
-      code: ".a { font-weight: var(--heading-font-weight); }",
+      code: ".a { font-weight: var(--font-weight-heading); }",
       description: "Using heading-font-weight token is valid.",
     },
     {

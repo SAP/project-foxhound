@@ -6,35 +6,37 @@ This transform constructs tasks generate conditioned profiles from
 the condprof/kind.yml file
 """
 
+from typing import Optional
+
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.copy import deepcopy
-from taskgraph.util.schema import LegacySchema
-from voluptuous import Optional
+from taskgraph.util.schema import Schema
 
-from gecko_taskgraph.transforms.job import job_description_schema
-from gecko_taskgraph.transforms.task import task_description_schema
+from gecko_taskgraph.transforms.job import JobDescriptionSchema
+from gecko_taskgraph.transforms.task import TaskDescriptionSchema
 
-diff_description_schema = LegacySchema({
+
+class DiffDescriptionSchema(Schema, kw_only=True):
     # default is settled, but add 'full' to get both
-    Optional("scenarios"): [str],
-    Optional("description"): task_description_schema["description"],
-    Optional("dependencies"): task_description_schema["dependencies"],
-    Optional("fetches"): job_description_schema["fetches"],
-    Optional("index"): task_description_schema["index"],
-    Optional("task-from"): str,
-    Optional("name"): str,
-    Optional("run"): job_description_schema["run"],
-    Optional("run-on-projects"): task_description_schema["run-on-projects"],
-    Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
-    Optional("scopes"): task_description_schema["scopes"],
-    Optional("treeherder"): task_description_schema["treeherder"],
-    Optional("use-python"): job_description_schema["use-python"],
-    Optional("worker"): job_description_schema["worker"],
-    Optional("worker-type"): task_description_schema["worker-type"],
-})
+    scenarios: Optional[list[str]] = None
+    description: TaskDescriptionSchema.__annotations__["description"] = None
+    dependencies: TaskDescriptionSchema.__annotations__["dependencies"] = None
+    fetches: JobDescriptionSchema.__annotations__["fetches"] = None
+    index: TaskDescriptionSchema.__annotations__["index"] = None
+    task_from: Optional[str] = None
+    name: Optional[str] = None
+    run: JobDescriptionSchema.__annotations__["run"] = None
+    run_on_projects: TaskDescriptionSchema.__annotations__["run_on_projects"] = None
+    run_on_repo_type: TaskDescriptionSchema.__annotations__["run_on_repo_type"] = None
+    scopes: TaskDescriptionSchema.__annotations__["scopes"] = None
+    treeherder: TaskDescriptionSchema.__annotations__["treeherder"] = None
+    use_python: JobDescriptionSchema.__annotations__["use_python"] = None
+    worker: JobDescriptionSchema.__annotations__["worker"] = None
+    worker_type: TaskDescriptionSchema.__annotations__["worker_type"] = None
+
 
 transforms = TransformSequence()
-transforms.add_validate(diff_description_schema)
+transforms.add_validate(DiffDescriptionSchema)
 
 
 @transforms.add

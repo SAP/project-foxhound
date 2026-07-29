@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +8,7 @@
 
 #include "mozilla/ServoBindings.h"
 #include "mozilla/StyleSheet.h"
+#include "mozilla/dom/CSSAppearanceBaseRule.h"
 #include "mozilla/dom/CSSContainerRule.h"
 #include "mozilla/dom/CSSCounterStyleRule.h"
 #include "mozilla/dom/CSSCustomMediaRule.h"
@@ -32,6 +31,7 @@
 #include "mozilla/dom/CSSStartingStyleRule.h"
 #include "mozilla/dom/CSSStyleRule.h"
 #include "mozilla/dom/CSSSupportsRule.h"
+#include "mozilla/dom/CSSViewTransitionRule.h"
 #include "mozilla/dom/Document.h"
 
 using namespace mozilla::dom;
@@ -106,9 +106,11 @@ css::Rule* ServoCSSRuleList::GetRule(uint32_t aIndex) {
       CASE_RULE_UNLOCKED(Container, Container)
       CASE_RULE_UNLOCKED(Scope, Scope)
       CASE_RULE_UNLOCKED(StartingStyle, StartingStyle)
+      CASE_RULE_UNLOCKED(AppearanceBase, AppearanceBase)
       CASE_RULE_LOCKED(PositionTry, PositionTry)
       CASE_RULE_LOCKED(NestedDeclarations, NestedDeclarations)
       CASE_RULE_UNLOCKED(CustomMedia, CustomMedia)
+      CASE_RULE_UNLOCKED(ViewTransition, ViewTransition)
 #undef CASE_RULE_LOCKED
 #undef CASE_RULE_UNLOCKED
 #undef CASE_RULE_WITH_PREFIX
@@ -202,7 +204,7 @@ nsresult ServoCSSRuleList::InsertRule(const nsACString& aRule,
   mStyleSheet->WillDirty();
 
   css::Loader* loader = nullptr;
-  auto allowImportRules = mStyleSheet->SelfOrAncestorIsConstructed()
+  auto allowImportRules = mStyleSheet->IsConstructed()
                               ? StyleAllowImportRules::No
                               : StyleAllowImportRules::Yes;
 
@@ -286,9 +288,11 @@ void ServoCSSRuleList::SetRawContents(RefPtr<StyleLockedCssRules> aNewRules,
       RULE_CASE_UNLOCKED(Container, Container)
       RULE_CASE_UNLOCKED(Scope, Scope)
       RULE_CASE_UNLOCKED(StartingStyle, StartingStyle)
+      RULE_CASE_UNLOCKED(AppearanceBase, AppearanceBase)
       RULE_CASE_LOCKED(PositionTry, PositionTry)
       RULE_CASE_LOCKED(NestedDeclarations, NestedDeclarations)
       RULE_CASE_UNLOCKED(CustomMedia, CustomMedia)
+      RULE_CASE_UNLOCKED(ViewTransition, ViewTransition)
       case StyleCssRuleType::Keyframe:
         MOZ_ASSERT_UNREACHABLE("keyframe rule cannot be here");
         break;

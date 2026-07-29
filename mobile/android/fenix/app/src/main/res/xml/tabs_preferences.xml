@@ -52,9 +52,14 @@
         android:key="@string/pref_key_inactive_tabs_category"
         app:allowDividerAbove="true"
         app:iconSpaceReserved="false">
-        <SwitchPreference
+        <SwitchPreferenceCompat
             android:defaultValue="true"
             android:key="@string/pref_key_inactive_tabs"
             android:title="@string/preferences_inactive_tabs_title"/>
     </androidx.preference.PreferenceCategory>
+
+    <androidx.preference.SwitchPreferenceCompat
+        android:defaultValue="true"
+        android:key="@string/pref_key_privacy_report_tab_manager"
+        android:title="@string/customize_toggle_privacy_report" />
 </androidx.preference.PreferenceScreen>

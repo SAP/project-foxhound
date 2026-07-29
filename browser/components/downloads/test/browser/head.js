@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -203,13 +201,13 @@ async function task_resetState() {
   for (let download of downloads) {
     await publicList.remove(download);
     if (await IOUtils.exists(download.target.path)) {
-      await download.finalize(true);
       info("removing " + download.target.path);
       if (Services.appinfo.OS === "WINNT") {
         // We need to make the file writable to delete it on Windows.
         await IOUtils.setPermissions(download.target.path, 0o600);
       }
-      await IOUtils.remove(download.target.path);
+      await download.finalize(true);
+      await IOUtils.remove(download.target.path, { ignoreAbsent: true });
     }
   }
 

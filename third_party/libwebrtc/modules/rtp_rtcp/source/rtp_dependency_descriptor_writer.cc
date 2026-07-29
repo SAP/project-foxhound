@@ -14,10 +14,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <span>
 #include <vector>
 
 #include "absl/algorithm/container.h"
-#include "api/array_view.h"
 #include "api/transport/rtp/dependency_descriptor.h"
 #include "api/video/render_resolution.h"
 #include "rtc_base/bit_buffer.h"
@@ -57,7 +57,7 @@ NextLayerIdc GetNextLayerIdc(const FrameDependencyTemplate& previous,
 }  // namespace
 
 RtpDependencyDescriptorWriter::RtpDependencyDescriptorWriter(
-    ArrayView<uint8_t> data,
+    std::span<uint8_t> data,
     const FrameDependencyStructure& structure,
     std::bitset<32> active_chains,
     const DependencyDescriptor& descriptor)
@@ -87,14 +87,8 @@ bool RtpDependencyDescriptorWriter::Write() {
     WriteExtendedFields();
     WriteFrameDependencyDefinition();
   }
-  size_t remaining_bits = bit_writer_.RemainingBitCount();
   // Zero remaining memory to avoid leaving it uninitialized.
-  if (remaining_bits % 64 != 0) {
-    WriteBits(/*val=*/0, remaining_bits % 64);
-  }
-  for (size_t i = 0; i < remaining_bits / 64; ++i) {
-    WriteBits(/*val=*/0, 64);
-  }
+  bit_writer_.ZeroBits(bit_writer_.RemainingBitCount());
   return !build_failed_;
 }
 

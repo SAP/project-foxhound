@@ -5,7 +5,7 @@
 window,
 dialog {
   appearance: none;
-  background-color: var(--background-color-canvas);
+  background-color: var(--background-color-box);
   color: var(--text-color);
   margin: 0;
   padding: 0;

@@ -41,6 +41,36 @@ add_task(async function test_disable_builtin_pdf() {
   is(handlerInfo.alwaysAskBeforeHandling, false);
 });
 
+add_task(async function test_disable_builtin_pdf_false_preserves_user_choice() {
+  EnterprisePolicyTesting.resetRunOnceState();
+
+  await setupPolicyEngineWithJson({
+    policies: {
+      DisableBuiltinPDFViewer: false,
+    },
+  });
+
+  let handlerInfo = gMIMEService.getFromTypeAndExtension("application/pdf", "");
+  is(handlerInfo.preferredAction, handlerInfo.handleInternally);
+
+  handlerInfo.preferredAction = handlerInfo.useSystemDefault;
+  gHandlerService.store(handlerInfo);
+
+  // Re-applying the same policy (e.g. next startup) must not override the
+  // user's handler choice.
+  await setupPolicyEngineWithJson({
+    policies: {
+      DisableBuiltinPDFViewer: false,
+    },
+  });
+
+  handlerInfo = gMIMEService.getFromTypeAndExtension("application/pdf", "");
+  is(handlerInfo.preferredAction, handlerInfo.useSystemDefault);
+
+  gHandlerService.remove(handlerInfo);
+  EnterprisePolicyTesting.resetRunOnceState();
+});
+
 add_task(async function test_handler_unchanged() {
   await setupPolicyEngineWithJson({
     policies: {

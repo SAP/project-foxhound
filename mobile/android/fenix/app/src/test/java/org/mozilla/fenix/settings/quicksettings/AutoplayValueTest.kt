@@ -6,7 +6,7 @@ package org.mozilla.fenix.settings.quicksettings
 
 import io.mockk.MockKAnnotations
 import io.mockk.every
-import io.mockk.impl.annotations.MockK
+import io.mockk.impl.annotations.RelaxedMockK
 import io.mockk.mockk
 import mozilla.components.concept.engine.permission.SitePermissions
 import mozilla.components.concept.engine.permission.SitePermissions.AutoplayStatus
@@ -25,7 +25,7 @@ import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class AutoplayValueTest {
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var settings: Settings
 
     @Before

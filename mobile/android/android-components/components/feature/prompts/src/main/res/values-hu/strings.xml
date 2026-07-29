@@ -69,6 +69,12 @@
   <string name="mozac_feature_prompts_before_unload_stay">Maradás</string>
   <!-- Leave button of the dialog shown when a user is leaving a website and there is still data not saved yet, this indicates that the user wants to leave in the website. -->
   <string name="mozac_feature_prompts_before_unload_leave">Távozás</string>
+  <!-- Message shown when a site wants to create a passkey for a related domain. %1$s is the requesting site, %2$s is the related domain the passkey is for. -->
+  <string name="webauthn_related_origin_create_message">A(z) %1$s jelkódot akar létrehozni a következőhöz: %2$s.</string>
+  <!-- Message shown when a site wants to use a passkey from a related domain. %1$s is the requesting site, %2$s is the related domain the passkey is for. -->
+  <string name="webauthn_related_origin_use_message">A(z) %1$s jelkódot akar használni a következőhöz: %2$s.</string>
+  <!-- Continue button label for WebAuthn related origin prompt. -->
+  <string name="webauthn_continue">Folytatás</string>
   <!-- Title of the month chooser dialog. -->
   <string name="mozac_feature_prompts_set_month">Válasszon hónapot</string>
   <!-- January (short description), used on the month chooser dialog. -->
@@ -166,6 +172,8 @@
   <string name="mozac_feature_prompts_collapse_address_content_description_2">Mentett címek összecsukása</string>
   <!-- Text for the manage addresses button. -->
   <string name="mozac_feature_prompts_manage_address">Címek kezelése</string>
+  <!-- Text for the title of a save address dialog. -->
+  <string name="mozac_feature_prompts_save_address_prompt_title">Menti a címet?</string>
   <!--
     Federated Credential Management prompts
 

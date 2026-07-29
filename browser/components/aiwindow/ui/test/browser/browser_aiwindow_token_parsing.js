@@ -79,6 +79,17 @@ add_task(function test_consumeStreamChunk_followup_token() {
   Assert.deepEqual(r.tokens, [{ key: "followup", value: "Summarize this" }]);
 });
 
+add_task(function test_consumeStreamChunk_kit_token() {
+  const state = createParserState();
+
+  const r = consumeStreamChunk(
+    "Yes, §kit: MENTION_DEFINITE§ Kit is our mascot.",
+    state
+  );
+  Assert.equal(r.plainText, "Yes,  Kit is our mascot.");
+  Assert.deepEqual(r.tokens, [{ key: "kit", value: "MENTION_DEFINITE" }]);
+});
+
 add_task(function test_consumeStreamChunk_unknown_key_is_literal_text() {
   const state = createParserState();
 

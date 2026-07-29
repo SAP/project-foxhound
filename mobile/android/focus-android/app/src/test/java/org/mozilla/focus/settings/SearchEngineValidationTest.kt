@@ -5,12 +5,12 @@
 package org.mozilla.focus.settings
 
 import kotlinx.coroutines.test.runTest
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import mozilla.components.concept.fetch.Client
 import mozilla.components.concept.fetch.Request
 import mozilla.components.concept.fetch.Response
 import mozilla.components.lib.fetch.okhttp.OkHttpClient
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -84,16 +84,14 @@ private suspend fun withMockWebServer(
     try {
         block(server)
     } finally {
-        server.shutdown()
+        server.close()
     }
 }
 
 private fun MockWebServer.rootUrl(): String = url("/").toString()
 
 private fun responseWithStatus(status: Int) =
-    MockResponse()
-        .setResponseCode(status)
-        .setBody("")
+    MockResponse.Builder().code(status).body("").build()
 
 private class OkHttpWrapper : Client() {
     private val actual = OkHttpClient()

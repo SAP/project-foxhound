@@ -261,6 +261,9 @@ ResultCode BrokerServicesBase::Init(
   if (job_port_.IsValid() || thread_pool_)
     return SBOX_ERROR_UNEXPECTED_CALL;
 
+  if (!SharedMemIPCServer::CreateBrokerAliveMutex())
+    return SBOX_ERROR_CANNOT_INIT_BROKERSERVICES;
+
   job_port_.Set(::CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 0));
   if (!job_port_.IsValid())
     return SBOX_ERROR_CANNOT_INIT_BROKERSERVICES;
@@ -291,9 +294,6 @@ ResultCode BrokerServicesBase::Init(
     // Returning cleans up params.
     return SBOX_ERROR_CANNOT_INIT_BROKERSERVICES;
   }
-
-  if (!SharedMemIPCServer::CreateBrokerAliveMutex())
-    return SBOX_ERROR_CANNOT_INIT_BROKERSERVICES;
 
   params.release();
   return SBOX_ALL_OK;

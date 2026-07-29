@@ -9,7 +9,7 @@ Differential Revision: https://phabricator.services.mozilla.com/D110589
  1 file changed, 1 insertion(+)
 
 diff --git a/modules/video_capture/linux/device_info_v4l2.cc b/modules/video_capture/linux/device_info_v4l2.cc
-index 05205a6138..0d410ed16d 100644
+index 0b9c92f00c..31f5e50cec 100644
 --- a/modules/video_capture/linux/device_info_v4l2.cc
 +++ b/modules/video_capture/linux/device_info_v4l2.cc
 @@ -330,6 +330,7 @@ int32_t DeviceInfoV4l2::CreateCapabilityMap(const char* deviceUniqueIdUTF8) {

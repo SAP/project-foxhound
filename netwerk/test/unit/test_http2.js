@@ -1,60 +1,9 @@
 /* import-globals-from http2_test_common.js */
 
-const { HttpServer } = ChromeUtils.importESModule(
-  "resource://testing-common/httpd.sys.mjs"
-);
-
 var concurrent_channels = [];
-var httpserv = null;
-var httpserv2 = null;
 
 var loadGroup;
 var serverPort;
-
-function altsvcHttp1Server(metadata, response) {
-  response.setStatusLine(metadata.httpVersion, 200, "OK");
-  response.setHeader("Content-Type", "text/plain", false);
-  response.setHeader("Connection", "close", false);
-  response.setHeader("Alt-Svc", 'h2=":' + serverPort + '"', false);
-  var body = "this is where a cool kid would write something neat.\n";
-  response.bodyOutputStream.write(body, body.length);
-}
-
-function h1ServerWK(metadata, response) {
-  response.setStatusLine(metadata.httpVersion, 200, "OK");
-  response.setHeader("Content-Type", "application/json", false);
-  response.setHeader("Connection", "close", false);
-  response.setHeader("Cache-Control", "no-cache", false);
-  response.setHeader("Access-Control-Allow-Origin", "*", false);
-  response.setHeader("Access-Control-Allow-Method", "GET", false);
-
-  var body = '["http://foo.example.com:' + httpserv.identity.primaryPort + '"]';
-  response.bodyOutputStream.write(body, body.length);
-}
-
-function altsvcHttp1Server2(metadata, response) {
-  // this server should never be used thanks to an alt svc frame from the
-  // h2 server.. but in case of some async lag in setting the alt svc route
-  // up we have it.
-  response.setStatusLine(metadata.httpVersion, 200, "OK");
-  response.setHeader("Content-Type", "text/plain", false);
-  response.setHeader("Connection", "close", false);
-  var body = "hanging.\n";
-  response.bodyOutputStream.write(body, body.length);
-}
-
-function h1ServerWK2(metadata, response) {
-  response.setStatusLine(metadata.httpVersion, 200, "OK");
-  response.setHeader("Content-Type", "application/json", false);
-  response.setHeader("Connection", "close", false);
-  response.setHeader("Cache-Control", "no-cache", false);
-  response.setHeader("Access-Control-Allow-Origin", "*", false);
-  response.setHeader("Access-Control-Allow-Method", "GET", false);
-
-  var body =
-    '["http://foo.example.com:' + httpserv2.identity.primaryPort + '"]';
-  response.bodyOutputStream.write(body, body.length);
-}
 
 add_setup(async function setup() {
   serverPort = Services.env.get("MOZHTTP2_PORT");
@@ -77,7 +26,6 @@ add_setup(async function setup() {
 
   Services.prefs.setBoolPref("network.http.http2.enabled", true);
   Services.prefs.setBoolPref("network.http.altsvc.enabled", true);
-  Services.prefs.setBoolPref("network.http.altsvc.oe", true);
   Services.prefs.setCharPref(
     "network.dns.localDomains",
     "foo.example.com, bar.example.com"
@@ -90,39 +38,16 @@ add_setup(async function setup() {
   loadGroup = Cc["@mozilla.org/network/load-group;1"].createInstance(
     Ci.nsILoadGroup
   );
-
-  httpserv = new HttpServer();
-  httpserv.registerPathHandler("/altsvc1", altsvcHttp1Server);
-  httpserv.registerPathHandler("/.well-known/http-opportunistic", h1ServerWK);
-  httpserv.start(-1);
-  httpserv.identity.setPrimary(
-    "http",
-    "foo.example.com",
-    httpserv.identity.primaryPort
-  );
-
-  httpserv2 = new HttpServer();
-  httpserv2.registerPathHandler("/altsvc2", altsvcHttp1Server2);
-  httpserv2.registerPathHandler("/.well-known/http-opportunistic", h1ServerWK2);
-  httpserv2.start(-1);
-  httpserv2.identity.setPrimary(
-    "http",
-    "foo.example.com",
-    httpserv2.identity.primaryPort
-  );
 });
 
-registerCleanupFunction(async () => {
+registerCleanupFunction(() => {
   Services.prefs.clearUserPref("network.http.speculative-parallel-limit");
   Services.prefs.clearUserPref("network.http.http2.enabled");
   Services.prefs.clearUserPref("network.http.altsvc.enabled");
-  Services.prefs.clearUserPref("network.http.altsvc.oe");
   Services.prefs.clearUserPref("network.dns.localDomains");
   Services.prefs.clearUserPref(
     "network.cookieJarSettings.unblocked_for_testing"
   );
-  await httpserv.stop();
-  await httpserv2.stop();
 });
 
 // hack - the header test resets the multiplex object on the server,
@@ -165,15 +90,6 @@ add_task(async function do_test_http2_basic_unblocked_dep() {
 
 add_task(async function do_test_http2_nospdy() {
   const { httpProxyConnectResponseCode } = await test_http2_nospdy(serverPort);
-  Assert.equal(httpProxyConnectResponseCode, -1);
-});
-
-add_task(async function do_test_http2_altsvc() {
-  const { httpProxyConnectResponseCode } = await test_http2_altsvc(
-    httpserv.identity.primaryPort,
-    httpserv2.identity.primaryPort,
-    false
-  );
   Assert.equal(httpProxyConnectResponseCode, -1);
 });
 
@@ -325,6 +241,12 @@ add_task(async function do_test_http2_h11required_session() {
 add_task(async function do_test_http2_retry_rst() {
   const { httpProxyConnectResponseCode } =
     await test_http2_retry_rst(serverPort);
+  Assert.equal(httpProxyConnectResponseCode, -1);
+});
+
+add_task(async function do_test_http2_unknown_rst() {
+  const { httpProxyConnectResponseCode } =
+    await test_http2_unknown_rst(serverPort);
   Assert.equal(httpProxyConnectResponseCode, -1);
 });
 

@@ -13,7 +13,6 @@ test:
     worker:
         docker-image: {in-tree: "lint"}
         max-run-time: 1800
-    run-on-repo-type: [hg]
     run:
         using: mach
         mach: webidl-parser-test --verbose

@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.76"
 name = "wgpu-core-deps-windows-linux-android"
-version = "28.0.0"
+version = "29.0.0"
 authors = ["gfx-rs developers"]
 build = false
 autolib = false
@@ -29,6 +29,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/gfx-rs/wgpu"
 
 [features]
+drm = ["wgpu-hal/drm"]
 dx12 = ["wgpu-hal/dx12"]
 gles = ["wgpu-hal/gles"]
 renderdoc = ["wgpu-hal/renderdoc"]
@@ -39,5 +40,5 @@ name = "wgpu_core_deps_windows_linux_android"
 path = "src/lib.rs"
 
 [target.'cfg(any(windows, target_os = "linux", target_os = "android", target_os = "freebsd", target_os = "netbsd"))'.dependencies.wgpu-hal]
-version = "28.0.0"
+version = "29.0.0"
 path = "../../../wgpu-hal"

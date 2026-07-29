@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Google LLC.
+ * Copyright 2024 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -12,11 +12,11 @@
 
 #include <optional>
 #include "include/core/SkImageInfo.h"
+#include "include/core/SkSpan.h"
 #include "include/encode/SkEncoder.h"
 #include "include/private/SkEncodedInfo.h"
 
 class SkPixmap;
-template <typename T> class SkSpan;
 
 // This class implements functionality shared between `SkPngEncoderImpl` and
 // `SkPngRustEncoderImpl`.

@@ -485,7 +485,7 @@ Search Interventions
 
 Search interventions help the user perform a task based on their search string.
 There are three kinds of interventions, and each is triggered by typing a
-certain set of phrases_ in the input. They always appear as the second result,
+certain set of :searchfox:`phrases <mozilla-central/rev/c4d682be93f090e99d5f4049ceb7b6b6c03d0632:browser/components/urlbar/UrlbarProviderInterventions.jsm#64>` in the input. They always appear as the second result,
 after the heuristic result.
 
 The three kinds of interventions are:
@@ -517,8 +517,6 @@ The three kinds of interventions are:
 Currently this feature is limited to English-speaking locales, but work is
 ongoing to build a more sophisticated intent-matching platform to support other
 locales, more complex search strings, and more kinds of interventions.
-
-.. _phrases: https://searchfox.org/mozilla-central/rev/c4d682be93f090e99d5f4049ceb7b6b6c03d0632/browser/components/urlbar/UrlbarProviderInterventions.jsm#64
 
 Search Tips
 ~~~~~~~~~~~

@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * Any copyright is dedicated to the Public Domain.
+/* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 package org.mozilla.geckoview.test
@@ -38,6 +37,17 @@ import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.AssertCalled
 @RunWith(AndroidJUnit4::class)
 @MediumTest
 class AutocompleteTest : BaseSessionTest() {
+	@org.junit.Before
+    fun setup() {
+        // Ensure programmatic focus is allowed to open the autofill popup
+        // for all tests in this class.
+        sessionRule.setPrefsUntilTestEnd(
+            mapOf(
+                "extensions.formautofill.skipProgrammaticCheckForTests" to true,
+            ),
+        )
+    }
+
     val acceptDelay: Long = 100
 
     // This is a utility to delete previous credit card and address information.

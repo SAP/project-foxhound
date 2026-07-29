@@ -869,7 +869,7 @@ add_task(async function activate_multi() {
     let item = items[index];
 
     let newTabOpened = BrowserTestUtils.waitForNewTab(gBrowser, value.url);
-    await EventUtils.synthesizeMouseAtCenter(item, {}, item.ownerGlobal);
+    EventUtils.synthesizeMouseAtCenter(item, {}, item.documentGlobal);
 
     let newTab = await newTabOpened;
     Assert.ok(true, `Expected URL is loaded [${value.url}]`);
@@ -896,7 +896,7 @@ add_task(async function activate_multi() {
     let item = items[index];
 
     let newTabOpened = BrowserTestUtils.waitForNewTab(gBrowser, value.url);
-    await EventUtils.synthesizeMouseAtCenter(item, {}, item.ownerGlobal);
+    EventUtils.synthesizeMouseAtCenter(item, {}, item.documentGlobal);
     let newTab = await newTabOpened;
     Assert.ok(true, `Expected URL is loaded [${value.url}]`);
     BrowserTestUtils.removeTab(newTab);

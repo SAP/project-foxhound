@@ -2030,3 +2030,108 @@ add_task(async function test_download_cancellation_after_fetch() {
     fetchUrlStub.restore();
   }
 });
+
+/**
+ * Bug 1967279: Verify the 6 -> 7 schema migration rewrites a row tagged with
+ * the old "wllamapreview" engineId to "link-preview" without dropping the
+ * underlying OPFS model file, so the renamed feature can still uninstall it.
+ */
+add_task(async function test_migrateStore_renamesWllamapreviewEngineId() {
+  const dbName = `modelFiles-${crypto.randomUUID()}`;
+  await TestIndexedDBCache.deleteDatabaseAndWait(dbName).catch(() => {});
+
+  const model = "org/link-preview";
+  const revision = "v1";
+  const file = "weights.bin";
+
+  // Seed a row under the pre-migration schema with the obsolete engineId.
+  let cache = await IndexedDBCache.init({ dbName, version: 6 });
+  await cache.put({
+    engineId: "wllamapreview",
+    taskName: "wllama-text-generation",
+    model,
+    revision,
+    file,
+    data: createBlob(),
+    headers: null,
+  });
+
+  let listed = await cache.listFiles({ model, revision });
+  Assert.deepEqual(
+    listed.metadata.engineIds,
+    ["wllamapreview"],
+    "Row should be seeded with the legacy engineId."
+  );
+  cache.db.close();
+
+  // Reopen at the current schema version and confirm the rename happened.
+  cache = await IndexedDBCache.init({ dbName });
+
+  listed = await cache.listFiles({ model, revision });
+  Assert.deepEqual(
+    listed.metadata.engineIds,
+    ["link-preview"],
+    "Migration should rewrite the legacy engineId to its replacement."
+  );
+  Assert.equal(
+    listed.files.length,
+    1,
+    "Migration must not drop the OPFS model file."
+  );
+
+  // The uninstall path used by LinkPreview should now find and remove the row.
+  await cache.deleteFilesByEngine({ engineId: "link-preview" });
+  listed = await cache.listFiles({ model, revision });
+  Assert.deepEqual(
+    listed.files,
+    [],
+    "Uninstall via the new engineId should physically delete the file."
+  );
+
+  await deleteCache(cache);
+});
+
+/**
+ * Bug 1967279: If a row already carries both the legacy and the new engineId
+ * (e.g. a re-download happened before the migration), the rewrite must
+ * de-duplicate rather than leaving the stale id behind.
+ */
+add_task(async function test_migrateStore_dedupsLegacyAndNewEngineIds() {
+  const dbName = `modelFiles-${crypto.randomUUID()}`;
+  await TestIndexedDBCache.deleteDatabaseAndWait(dbName).catch(() => {});
+
+  const model = "org/link-preview";
+  const revision = "v1";
+  const file = "weights.bin";
+
+  let cache = await IndexedDBCache.init({ dbName, version: 6 });
+  await cache.put({
+    engineId: "wllamapreview",
+    taskName: "wllama-text-generation",
+    model,
+    revision,
+    file,
+    data: createBlob(),
+    headers: null,
+  });
+  await cache.put({
+    engineId: "link-preview",
+    taskName: "wllama-text-generation",
+    model,
+    revision,
+    file,
+    data: createBlob(),
+    headers: null,
+  });
+  cache.db.close();
+
+  cache = await IndexedDBCache.init({ dbName });
+  const listed = await cache.listFiles({ model, revision });
+  Assert.deepEqual(
+    listed.metadata.engineIds,
+    ["link-preview"],
+    "Migration should collapse duplicate ids to the new engineId only."
+  );
+
+  await deleteCache(cache);
+});

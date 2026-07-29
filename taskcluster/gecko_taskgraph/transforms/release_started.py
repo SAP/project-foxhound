@@ -8,7 +8,6 @@ Add notifications via taskcluster-notify for release tasks
 from shlex import quote as shell_quote
 
 from taskgraph.transforms.base import TransformSequence
-from taskgraph.util.schema import resolve_keyed_by
 
 transforms = TransformSequence()
 
@@ -16,10 +15,7 @@ transforms = TransformSequence()
 @transforms.add
 def add_notifications(config, jobs):
     for job in jobs:
-        label = "{}-{}".format(config.kind, job["name"])
-
-        resolve_keyed_by(job, "emails", label, project=config.params["project"])
-        emails = [email.format(config=config.__dict__) for email in job.pop("emails")]
+        emails = job.pop("emails")
 
         command = [
             "release",

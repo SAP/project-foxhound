@@ -38,7 +38,7 @@ $glyph-forward: url('chrome://browser/skin/forward.svg');
   .search-inner-wrapper {
     cursor: default;
     display: flex;
-    min-height: $search-height-new;
+    height: $search-height-new;
     margin: 0 auto;
     position: relative;
     width: 304px;
@@ -53,86 +53,6 @@ $glyph-forward: url('chrome://browser/skin/forward.svg');
 
     @media (min-width: $break-point-widest) {
       width: 720px;
-    }
-  }
-
-  .search-inner-wrapper:has(.trending-searches-pill-wrapper) {
-    display: flex;
-    flex-direction: column;
-
-    .search-handoff-button {
-      height: 52px;
-    }
-  }
-
-  /**
-   * @backward-compat { version 148 }
-   *
-   * Temporary dual implementation to support train hopping. The old handoff UI
-   * is kept alongside the new contentSearchHandoffUI.mjs custom element until
-   * the module lands on all channels. Controlled by the pref
-   * browser.newtabpage.activity-stream.search.useHandoffComponent.
-   * Remove the old implementation and the pref once this ships to Release.
-   */
-  .search-handoff-button {
-    background: var(--newtab-background-color-secondary) var(--newtab-search-icon) $search-icon-padding center no-repeat;
-    background-size: $search-icon-size;
-    // Bug 1967304 - $variable
-    padding-inline-start: $search-icon-width; // stylelint-disable-line declaration-property-value-disallowed-list
-    padding-inline-end: var(--space-small);
-    padding-block: 0;
-    width: 100%;
-    box-shadow: $shadow-card;
-    border: 1px solid transparent;
-    border-radius: var(--border-radius-medium);
-    color: var(--newtab-text-primary-color);
-    -moz-context-properties: fill;
-    fill: var(--newtab-text-secondary-color);
-
-    &:dir(rtl) {
-      background-position-x: right $search-icon-padding;
-    }
-  }
-
-  /**
-   * @backward-compat { version 148 }
-   *
-   * Temporary dual implementation to support train hopping. The old handoff UI
-   * is kept alongside the new contentSearchHandoffUI.mjs custom element until
-   * the module lands on all channels. Controlled by the pref
-   * browser.newtabpage.activity-stream.search.useHandoffComponent.
-   * Remove the old implementation and the pref once this ships to Release.
-   */
-  &.fake-focus:not(.search.disabled) {
-    .search-handoff-button {
-      border: 1px solid var(--newtab-primary-action-background);
-      box-shadow: $shadow-focus;
-    }
-  }
-
-  /**
-   * @backward-compat { version 148 }
-   *
-   * Temporary dual implementation to support train hopping. The old handoff UI
-   * is kept alongside the new contentSearchHandoffUI.mjs custom element until
-   * the module lands on all channels. Controlled by the pref
-   * browser.newtabpage.activity-stream.search.useHandoffComponent.
-   * Remove the old implementation and the pref once this ships to Release.
-   */
-  .search-handoff-button {
-    padding-inline-end: var(--space-large);
-    color: var(--newtab-text-primary-color);
-    fill: var(--newtab-text-secondary-color);
-    -moz-context-properties: fill;
-
-    .fake-caret {
-      inset-block-start: var(--space-large);
-      // Bug 1967304 - $variable
-      inset-inline-start: $search-icon-width; // stylelint-disable-line declaration-property-value-disallowed-list
-
-      &:dir(rtl) {
-        background-position-x: right $search-icon-padding;
-      }
     }
   }
 
@@ -271,81 +191,75 @@ $glyph-forward: url('chrome://browser/skin/forward.svg');
   }
 }
 
-.search-handoff-button {
-  background: var(--newtab-background-color-secondary) var(--newtab-search-icon) $search-icon-padding center no-repeat;
-  background-size: $search-icon-size;
-  border: solid 1px transparent;
-  border-radius: var(--border-radius-small);
-  box-shadow: $shadow-secondary, 0 0 0 1px $black-15;
-  cursor: text;
-  font-size: inherit;
-  padding: 0;
-  // Bug 1967304 - Large number (48px)
-  padding-inline: calc(var(--space-xlarge) * 2);
-  opacity: 1;
-  width: 100%;
-
-  &:dir(rtl) {
-    background-position-x: right $search-icon-padding;
+// @nova-cleanup(remove-conditional): Remove this selector; make search-wrapper subgrid layout and search-inner-wrapper width styles the default, and remove the classic media-query widths in .search-wrapper .search-inner-wrapper.
+.nova-enabled {
+  .search-wrapper {
+    container-type: normal;
+    display: grid;
+    grid-template-columns: subgrid;
   }
 
-  .fake-focus:not(.search-disabled) & {
-    border: 1px solid var(--border-color-interactive);
-    box-shadow: var(--newtab-textbox-focus-boxshadow);
+  .search-inner-wrapper {
+    grid-column: 1 / -1;
+    margin-inline: auto;
+    width: calc(4 * var(--col-width) + 3 * var(--space-medium));
 
-    .fake-caret {
-      display: block;
+    @include at-content-cols(6) {
+      width: calc(6 * var(--col-width) + 5 * var(--space-medium));
+    }
+
+    @include at-content-cols(10) {
+      width: calc(10 * var(--col-width) + 9 * var(--space-medium));
     }
   }
 
-  .search-disabled & {
-    opacity: 0.5;
-    box-shadow: none;
+  // Sentinel observed by IntersectionObserver in Base.jsx — when it
+  // leaves the viewport the search-wrapper is stuck at the top.
+  .sticky-search-sentinel {
+    grid-column: 1 / -1;
+    block-size: 1px;
+    // Compensate for the 1px sentinel so it doesn't shift search-wrapper. We
+    // use a negative margin to do that, so that it's technically laid out,
+    // and can trigger an IntersectionObserver, but doesn't actually take space.
+    // stylelint-disable-next-line declaration-property-value-disallowed-list
+    margin-block-end: -1px;
+    visibility: hidden;
+    pointer-events: none;
   }
 
-  .fake-editable:focus {
-    outline: none;
-    caret-color: transparent;
-  }
-
-  .fake-editable {
-    color: transparent;
-    height: 100%;
-    opacity: 0;
-    position: absolute;
-    inset: 0;
-  }
-
-  .fake-textbox {
-    opacity: 0.54;
-    text-align: start;
-    -webkit-line-clamp: 1;
-    overflow: hidden;
-  }
-
-  .fake-caret {
-    /* To replicate the default caret blink rate of 567ms (https://searchfox.org/mozilla-central/source/widget/cocoa/nsLookAndFeel.mm#397):
-     - Multiply the blink time by 2 to cover both the visible and hidden states.
-     - Use steps(2, start) to divide the animation into 2 phases:
-       1. First 567ms (Step 1) → Caret is visible
-       2. Next 567ms (Step 2) → Caret is hidden
-    This gives a sharp ON/OFF effect instead of a smooth transition. */
-
-    animation: caret-animation var(--caret-blink-time, 1134ms) steps(2, start) var(--caret-blink-count, infinite);
-    background: var(--newtab-text-primary-color);
-    display: none;
-    // Bug 1967304 - Large number (48px)
-    inset-inline-start:calc(var(--space-xlarge) * 2);
-    height: 17px;
-    position: absolute;
-    inset-block-start: var(--space-large);
-    width: 1px;
-
-    @keyframes caret-animation {
-      to {
-        visibility: hidden;
-      }
+  @media (height > 700px) {
+    .search-wrapper {
+      position: sticky;
+      inset-block-start: 0;
+      z-index: 3;
+      // Reserved always (not just when stuck) so the input's viewport-relative
+      // Y is identical pre- and post-sticky, eliminating the snap at activation.
+      padding-block: var(--space-xlarge);
     }
+  }
+}
+
+@media (height > 700px) {
+  // Full-bleed backdrop drawn via pseudo-element on .nova-outer-wrapper
+  // (which has no containment) so position: fixed anchors to the viewport.
+  // Mounting the pseudo on .search-wrapper instead doesn't work because
+  // .content and .container set container-type: inline-size, which makes
+  // them the containing block for fixed-positioned descendants — the
+  // backdrop would then track the wrapper's off-center position in narrow
+  // viewports instead of spanning the full viewport width.
+  .nova-outer-wrapper.stuck-search::before {
+    content: '';
+    position: fixed;
+    inset-block-start: 0;
+    inset-inline: 0;
+    block-size: calc(#{$search-height-new} + 2 * var(--space-xlarge));
+    background-color: var(--newtab-overlay-color);
+    border-block-end: var(--border-width) solid var(--border-color);
+    // Above .weather (z-index 1) and any other absolutely-positioned page
+    // chrome, below the sticky search-wrapper (z-index 3) so the input
+    // still paints on top, and below .personalizeButtonWrapper (z-index 5).
+    z-index: 2;
+    pointer-events: none;
   }
 }
 
@@ -373,25 +287,8 @@ $glyph-forward: url('chrome://browser/skin/forward.svg');
         min-height: $search-height;
       }
 
-      .search-handoff-button .fake-caret {
-        inset-block-start: var(--space-large);
-      }
-
       .logo-and-wordmark {
         display: none;
-      }
-    }
-
-    .search-handoff-button {
-      background-position-x: var(--space-large);
-      background-size: $search-icon-size;
-
-      &:dir(rtl) {
-        background-position-x: right var(--space-large);
-      }
-
-      .fake-caret {
-        inset-block-start: var(--space-small);
       }
     }
   }

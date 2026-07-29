@@ -22,13 +22,13 @@ task-defaults:
     run-on-repo-type: [hg]
     name: update-verify-next
     run-on-projects: []  # to make sure this never runs as part of CI
-    run-on-releases: [esr140]
+    run-on-releases: [esr153]
     shipping-phase: promote
     worker-type: b-linux
     worker:
         artifacts:
             - name: 'public/build/diff-summary.log'
-              path: '/builds/worker/tools/release/updates/diff-summary.log'
+              path: '/builds/worker/workspace/diff-summary.log'
               type: file
         docker-image:
             in-tree: "update-verify"

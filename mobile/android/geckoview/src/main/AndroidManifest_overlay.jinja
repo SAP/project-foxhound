@@ -3,36 +3,95 @@
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 
+{# Tag added to child process names to reduce startup time by preventing
+   Android from loading the app image. #}
+{% set tag = "_disable_art_image_" %}
+
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools"
           package="org.mozilla.geckoview">
     <application
             android:zygotePreloadName="org.mozilla.gecko.process.ZygotePreload"
             tools:targetApi="q">
+        <service
+                android:name="org.mozilla.gecko.crashhelper.CrashHelper"
+                android:enabled="true"
+                android:exported="false"
+                android:isolatedProcess="false"
+                android:process=":crashhelper{{ tag }}"
+                android:stopWithTask="true">
+        </service>
+        <service
+                android:name="org.mozilla.gecko.media.MediaManager"
+                android:enabled="true"
+                android:exported="false"
+                android:isolatedProcess="false"
+                android:process=":media">
+        </service>
+        <service
+                android:name="org.mozilla.gecko.process.GeckoChildProcessServices$gmplugin"
+                android:enabled="true"
+                android:exported="false"
+                android:isolatedProcess="false"
+                android:process=":gmplugin{{ tag }}">
+        </service>
+        <service
+                android:name="org.mozilla.gecko.process.GeckoChildProcessServices$socket"
+                android:enabled="true"
+                android:exported="false"
+                android:isolatedProcess="false"
+                android:process=":socket{{ tag }}">
+        </service>
+        <service
+                android:name="org.mozilla.gecko.process.GeckoChildProcessServices$gpu"
+                android:enabled="true"
+                android:exported="false"
+                android:isolatedProcess="false"
+                android:process=":gpu{{ tag }}">
+        </service>
+        <service
+                android:name="org.mozilla.gecko.process.GeckoChildProcessServices$rdd"
+                android:enabled="true"
+                android:exported="false"
+                android:isolatedProcess="false"
+                android:process=":rdd{{ tag }}">
+        </service>
+        <service
+                android:name="org.mozilla.gecko.process.GeckoChildProcessServices$utility"
+                android:enabled="true"
+                android:exported="false"
+                android:isolatedProcess="false"
+                android:process=":utility{{ tag }}">
+        </service>
+        <service
+                android:name="org.mozilla.gecko.process.GeckoChildProcessServices$ipdlunittest"
+                android:enabled="true"
+                android:exported="false"
+                android:isolatedProcess="false"
+                android:process=":ipdlunittest{{ tag }}">
+        </service>
     {% for id in range(0, MOZ_ANDROID_CONTENT_SERVICE_COUNT | int) %}
         <service
                 android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab{{ id }}"
                 android:enabled="true"
                 android:exported="false"
                 android:isolatedProcess="false"
-                android:process=":tab{{ id }}">
+                android:process=":tab{{ tag }}{{ id }}">
         </service>
         <service
                 android:name="org.mozilla.gecko.process.GeckoChildProcessServices$isolatedTab{{ id }}"
                 android:enabled="true"
                 android:exported="false"
                 android:isolatedProcess="true"
-                android:process=":isolatedTab{{ id }}">
+                android:process=":isolatedTab{{ tag }}{{ id }}">
         </service>
+    {% endfor %}
         <service
-                android:name="org.mozilla.gecko.process.GeckoChildProcessServices$isolatedTabWithZygote{{ id }}"
+                android:name="org.mozilla.gecko.process.GeckoChildProcessServices$zygoteTab"
                 android:enabled="true"
                 android:exported="false"
                 android:isolatedProcess="true"
-                {% if (id == 0) %}
-                    android:useAppZygote="true"
-                {% endif %}
-                android:process=":isolatedTabWithZygote{{ id }}">
+                android:useAppZygote="true"
+                android:process=":zygoteTab{{ tag }}">
         </service>
-    {% endfor %}
     </application>
 </manifest>

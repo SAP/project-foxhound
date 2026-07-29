@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -10,11 +8,11 @@
 #include "mozilla/Assertions.h"         // MOZ_DIAGNOSTIC_ASSERT, MOZ_ASSERT
 #include "mozilla/BaseProfilerUtils.h"  // profiler_current_thread_id
 #include "mozilla/EndianUtils.h"        // NativeEndian
-#include "mozilla/MathAlgorithms.h"     // mozilla::IsPowerOfTwo
 #include "mozilla/Maybe.h"  // mozilla::Maybe, mozilla::Some, mozilla::Nothing
 #include "mozilla/Span.h"
 #include "mozilla/TimeStamp.h"
 
+#include <bit>       // std::has_single_bit
 #include <limits>    // std::numeric_limits
 #include <stddef.h>  // size_t
 #include <stdint.h>  // uint8_t, uint16_t
@@ -60,7 +58,7 @@ using TracingScratchBuffer = mozilla::Vector<char, 512>;
 // the next steps for making that prototype a reality.
 template <size_t BUFFER_SIZE>
 class TracingBuffer {
-  static_assert(mozilla::IsPowerOfTwo(BUFFER_SIZE));
+  static_assert(std::has_single_bit(BUFFER_SIZE));
 
   // BUFFER_SIZE is the size of the underlying ring buffer, and BUFFER_MASK
   // masks off indices into it in order to wrap around
@@ -136,8 +134,7 @@ class TracingBuffer {
     MOZ_RELEASE_ASSERT(uncommittedWriteHead_ - writeHead_ <=
                        std::numeric_limits<uint16_t>::max());
     uint16_t entryHeader = uint16_t(uncommittedWriteHead_ - writeHead_);
-    writeBytesAtOffset(reinterpret_cast<const uint8_t*>(&entryHeader),
-                       sizeof(entryHeader), writeHead_);
+    writeAtOffset(entryHeader, writeHead_);
     writeHead_ = uncommittedWriteHead_;
   }
 
@@ -150,8 +147,7 @@ class TracingBuffer {
 
   void finishReadingEntry() {
     uint16_t entryHeader;
-    readBytesAtOffset(reinterpret_cast<uint8_t*>(&entryHeader),
-                      sizeof(entryHeader), readHead_);
+    readAtOffset(&entryHeader, readHead_);
     size_t read = uncommittedReadHead_ - readHead_;
 
     MOZ_RELEASE_ASSERT(entryHeader == uint16_t(read));
@@ -161,8 +157,7 @@ class TracingBuffer {
 
   void skipEntry() {
     uint16_t entryHeader;
-    readBytesAtOffset(reinterpret_cast<uint8_t*>(&entryHeader),
-                      sizeof(entryHeader), readHead_);
+    readAtOffset(&entryHeader, readHead_);
     readHead_ += entryHeader;
     uncommittedReadHead_ = readHead_;
   }
@@ -333,6 +328,16 @@ class TracingBuffer {
     static_assert(std::is_arithmetic_v<T>);
 
     readBytes(reinterpret_cast<uint8_t*>(val), sizeof(T));
+    if constexpr (sizeof(T) > 1) {
+      *val = mozilla::NativeEndian::swapFromLittleEndian(*val);
+    }
+  }
+
+  template <typename T>
+  void readAtOffset(T* val, uint64_t offset) {
+    static_assert(std::is_arithmetic_v<T>);
+
+    readBytesAtOffset(reinterpret_cast<uint8_t*>(val), sizeof(T), offset);
     if constexpr (sizeof(T) > 1) {
       *val = mozilla::NativeEndian::swapFromLittleEndian(*val);
     }

@@ -15,5 +15,15 @@ object SettingsSearchSelectors {
         groups = listOf("requiredForPage"),
     )
 
-    val all = listOf(SETTINGS_SEARCH_TITLE)
+    val DEFAULT_SEARCH_ENGINE_SETTING_OPTION = Selector(
+        strategy = SelectorStrategy.ESPRESSO_BY_TEXT,
+        value = "Default search engine",
+        description = "Default search engine option",
+        groups = listOf("requiredForPage"),
+    )
+
+    val all = listOf(
+        SETTINGS_SEARCH_TITLE,
+        DEFAULT_SEARCH_ENGINE_SETTING_OPTION,
+    )
 }

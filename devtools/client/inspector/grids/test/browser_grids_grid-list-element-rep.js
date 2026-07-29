@@ -123,7 +123,7 @@ async function highlightAndSelectNode(inspector, repEl) {
     10,
     5,
     { type: "mouseover" },
-    openInspectorButton.ownerGlobal
+    openInspectorButton.documentGlobal
   );
   const { nodeFront } = await onHighlight;
 
@@ -137,7 +137,7 @@ async function highlightAndSelectNode(inspector, repEl) {
   EventUtils.sendMouseEvent(
     { type: "click" },
     openInspectorButton,
-    openInspectorButton.ownerGlobal
+    openInspectorButton.documentGlobal
   );
   await onSelection;
   await onHighlight;

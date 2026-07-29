@@ -1,0 +1,15 @@
+[package]
+name = "cirrus"
+version = "0.1.0"
+authors = ["Nimbus Team <project-nimbus@mozilla.com>"]
+edition = "2021"
+license = "MPL-2.0"
+
+[lib]
+crate-type = ["cdylib"]
+path = "./lib.rs"
+
+[dependencies]
+nimbus-sdk = { path = "../../components/nimbus", default-features = false }
+nimbus-fml = { path = "../../components/support/nimbus-fml", features = ["uniffi-bindings"] }
+lazy_static = "1.4"

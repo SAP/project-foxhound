@@ -22,6 +22,7 @@
 #include "api/environment/environment.h"
 #include "api/fec_controller_override.h"
 #include "api/video/encoded_image.h"
+#include "api/video/resolution.h"
 #include "api/video/video_frame.h"
 #include "api/video/video_frame_type.h"
 #include "api/video_codecs/scalability_mode.h"
@@ -44,7 +45,7 @@ class FakeWebRtcVideoEncoderFactory;
 class FakeWebRtcVideoDecoder : public VideoDecoder {
  public:
   explicit FakeWebRtcVideoDecoder(FakeWebRtcVideoDecoderFactory* factory);
-  ~FakeWebRtcVideoDecoder();
+  ~FakeWebRtcVideoDecoder() override;
 
   bool Configure(const Settings& settings) override;
   int32_t Decode(const EncodedImage&, int64_t) override;
@@ -83,7 +84,7 @@ class FakeWebRtcVideoDecoderFactory : public VideoDecoderFactory {
 class FakeWebRtcVideoEncoder : public VideoEncoder {
  public:
   explicit FakeWebRtcVideoEncoder(FakeWebRtcVideoEncoderFactory* factory);
-  ~FakeWebRtcVideoEncoder();
+  ~FakeWebRtcVideoEncoder() override;
 
   void SetFecControllerOverride(
       FecControllerOverride* fec_controller_override) override;
@@ -114,10 +115,12 @@ class FakeWebRtcVideoEncoderFactory : public VideoEncoderFactory {
  public:
   FakeWebRtcVideoEncoderFactory();
 
+  using VideoEncoderFactory::QueryCodecSupport;
   std::vector<SdpVideoFormat> GetSupportedFormats() const override;
   VideoEncoderFactory::CodecSupport QueryCodecSupport(
       const SdpVideoFormat& format,
-      std::optional<std::string> scalability_mode) const override;
+      std::optional<std::string> scalability_mode,
+      std::optional<Resolution> resolution) const override;
   std::unique_ptr<VideoEncoder> Create(const Environment& env,
                                        const SdpVideoFormat& format) override;
 

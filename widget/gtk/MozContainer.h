@@ -1,6 +1,3 @@
-/* -*- Mode: C; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,17 +10,23 @@
 #endif
 
 #include <gtk/gtk.h>
-#include <functional>
 
 /*
  * MozContainer
  *
- * This class serves two purposes in the nsIWidget implementation.
+ * This class serves three purposes in the nsIWidget implementation.
  *
  *   - It provides objects to receive signals from GTK for events on native
  *     windows.
  *
- *   - It provides GdkWindow to draw content.
+ *   - It provides GdkWindow to draw content on Wayland or when Gtk+ renders
+ *     client side decorations to mShell.
+ *
+ *   - It provides a container parent for GtkEntry used for emoji selector.
+ *
+ * Note that the window hierarchy in Mozilla differs from conventional
+ * GtkWidget hierarchies.
+ *
  */
 
 #define MOZ_CONTAINER_TYPE (moz_container_get_type())
@@ -46,15 +49,17 @@ typedef struct _MozContainer MozContainer;
 typedef struct _MozContainerClass MozContainerClass;
 
 struct _MozContainer {
-  GtkWidget widget;
+  GtkContainer container;
   gboolean destroyed;
+  // Child widget is used for GtkEntry of emoji selector
+  GtkWidget* entry_widget = nullptr;
 #ifdef MOZ_WAYLAND
   MozContainerWayland* wl;
 #endif
 };
 
 struct _MozContainerClass {
-  GtkWidgetClass parent_class;
+  GtkContainerClass parent_class;
 };
 
 namespace mozilla::widget {
@@ -69,5 +74,10 @@ void moz_container_class_init(MozContainerClass* klass);
 
 class nsWindow;
 nsWindow* moz_container_get_nsWindow(MozContainer* container);
+
+GtkWidget* moz_container_get_entry(MozContainer* container);
+GtkWidget* moz_container_entry_set(MozContainer* container, GtkWidget* widget);
+void moz_container_entry_position(MozContainer* container, int x, int y,
+                                  int height);
 
 #endif /* MOZ_CONTAINER_H_ */

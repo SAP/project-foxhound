@@ -20,13 +20,13 @@ import mozilla.components.service.digitalassetlinks.RelationChecker
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.verify
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class AbstractCustomTabsServiceTest {

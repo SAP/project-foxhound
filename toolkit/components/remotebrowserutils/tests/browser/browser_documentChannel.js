@@ -2,8 +2,6 @@
 
 const PRINT_POSTDATA = httpURL("print_postdata.sjs");
 const FILE_DUMMY = fileURL("dummy_page.html");
-const DATA_URL = "data:text/html,Hello%2C World!";
-const DATA_STRING = "Hello, World!";
 
 async function performLoad(browser, opts, action) {
   let loadedPromise = BrowserTestUtils.browserLoaded(
@@ -103,10 +101,7 @@ async function postFrom(start, target) {
         browser,
         {
           url(url) {
-            let enable =
-              url.startsWith(PRINT_POSTDATA) ||
-              url == target ||
-              url == DATA_URL;
+            let enable = url.startsWith(PRINT_POSTDATA) || url == target;
             if (!enable) {
               info(`url ${url} is invalid to perform load`);
             }
@@ -257,22 +252,14 @@ async function sendMessage(ext, method, url) {
 
 // TODO: Currently no test framework for ftp://.
 add_task(async function test_protocol() {
-  // TODO: Processes should be switched due to navigation of different origins.
-  await testLoadAndRedirect("data:,foo", false, true);
+  // Chrome-initiated data: URI loads should work without process switch.
+  // Skip redirect test: redirecting to data: URIs is always blocked.
+  await testLoadAndRedirect("data:,foo", false, false);
 
   // Redirecting to file:// is not allowed.
   await testLoadAndRedirect(FILE_DUMMY, true, false);
 
-  await withExtensionDummy(async (extOrigin, extension) => {
-    await sendMessage(extension, "setRedirectUrl", DATA_URL);
-
-    let respExtRedirect = await postFrom(
-      extOrigin + "redirect.html",
-      PRINT_POSTDATA
-    );
-
-    ok(E10SUtils.isWebRemoteType(respExtRedirect.remoteType), "process switch");
-    is(respExtRedirect.location, DATA_URL, "correct location");
-    is(respExtRedirect.body, DATA_STRING, "correct POST body");
-  });
+  // Extension webRequest redirect to data: URIs is no longer possible since
+  // top-level data: URI navigation is unconditionally blocked. Extension
+  // redirects to HTTP URLs are already covered by test_enabled.
 });

@@ -33,7 +33,7 @@ Python development files as well to install some pip packages.
 
 You should be able to install Python and git using your system package manager:
 
--  For Debian-based Linux (such as Ubuntu): ``sudo apt update && sudo apt install curl python3 python3-venv git``
+-  For Debian-based Linux (such as Ubuntu): ``sudo apt update && sudo apt install curl python3 python3-venv git make``
 -  For Fedora Linux: ``sudo dnf install python3 git``
 
 If you need a version of Python that your package manager doesn't have,

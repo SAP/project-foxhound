@@ -58,6 +58,7 @@ skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && verify-standalone",
   "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1775902
   "os == 'win' && os_version == '10.2009' && arch == 'x86_64' && opt", # Bug 1775902
+  "os == 'win' && debug && artifact", # bug 1775902
 ]
 
 ["browser_autocomplete_insecure_warning.js"]
@@ -94,6 +95,7 @@ skip-if = [
 ["browser_context_menu.js"]
 skip-if = [
   "os == 'win' && os_version == '11.26100' && opt && verify-standalone",
+  "os == 'win' && os_version == '11.26200' && opt && verify-standalone",
 ]
 
 ["browser_context_menu_autocomplete_interaction.js"]
@@ -139,6 +141,7 @@ skip-if = [
   "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug", # Bug 1729196
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1729196
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 1729196
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64'", # Bug 1729196
 ]
 
 ["browser_doorhanger_httpsUpgrade.js"]
@@ -185,6 +188,9 @@ support-files = ["subtst_notifications_12_target_blank.html"]
 ["browser_doorhanger_username_edits.js"]
 
 ["browser_doorhanger_window_open.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
 support-files = [
   "subtst_notifications_11.html",
   "subtst_notifications_11_popup.html",
@@ -247,6 +253,7 @@ skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1840479
   "os == 'win' && os_version == '10.2009' && arch == 'x86_64' && debug", # Bug 1840479
   "os == 'win' && os_version == '11.26100' && debug", # Bug 1840479
+  "os == 'win' && os_version == '11.26200' && debug", # Bug 1840479
   "tsan",
 ]
 
@@ -260,6 +267,7 @@ support-files = [
 skip-if = [
   "os == 'android'",
   "os == 'win' && os_version == '11.26100' && verify-standalone",
+  "os == 'win' && os_version == '11.26200' && verify-standalone",
 ]
 
 ["browser_relay_signup_flow.js"]

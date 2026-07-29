@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -226,7 +224,7 @@ static wchar_t* ParseVP(wchar_t* aPart, VersionPartW& aResult) {
 static int32_t ns_strcmp(const char* aStr1, const char* aStr2) {
   // any string is *before* no string
   if (!aStr1) {
-    return aStr2 != 0;
+    return aStr2 != nullptr;
   }
 
   if (!aStr2) {
@@ -241,7 +239,7 @@ static int32_t ns_strnncmp(const char* aStr1, uint32_t aLen1, const char* aStr2,
                            uint32_t aLen2) {
   // any string is *before* no string
   if (!aStr1) {
-    return aStr2 != 0;
+    return aStr2 != nullptr;
   }
 
   if (!aStr2) {
@@ -317,7 +315,7 @@ static int32_t CompareVP(VersionPartW& aVer1, VersionPartW& aVer2) {
   }
 
   if (!aVer1.extraD) {
-    return aVer2.extraD != 0;
+    return aVer2.extraD != nullptr;
   }
 
   if (!aVer2.extraD) {

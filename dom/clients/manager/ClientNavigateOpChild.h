@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,7 +14,8 @@ class ClientNavigateOpChild final : public PClientNavigateOpChild {
   nsCOMPtr<nsISerialEventTarget> mSerialEventTarget;
 
   [[nodiscard]] RefPtr<ClientOpPromise> DoNavigate(
-      const ClientNavigateOpConstructorArgs& aArgs);
+      const ClientNavigateOpConstructorArgs& aArgs,
+      mozilla::ipc::ActorLifecycleProxy* aProxy);
 
   // PClientNavigateOpChild interface
   void ActorDestroy(ActorDestroyReason aReason) override;
@@ -25,7 +24,8 @@ class ClientNavigateOpChild final : public PClientNavigateOpChild {
   ClientNavigateOpChild() = default;
   ~ClientNavigateOpChild() = default;
 
-  void Init(const ClientNavigateOpConstructorArgs& aArgs);
+  void Init(const ClientNavigateOpConstructorArgs& aArgs,
+            mozilla::ipc::ActorLifecycleProxy* aProxy);
 };
 
 }  // namespace mozilla::dom

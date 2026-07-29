@@ -17,6 +17,8 @@ private const val IDS_CONTROLLER_CLASS = "android.app.IdsController"
 private const val INSTRUMENTED_HOOKS_CLASS = "com.android.tools.deploy.instrument.InstrumentationHooks"
 private const val ACTIVITY_MANAGER_SERVICE_CLASS = "com.android.server.am.ActivityManagerService"
 private const val IN_MEMORY_DEX_CLASS_LOADER_CLASS = "dalvik.system.InMemoryDexClassLoader"
+private const val MIUI_MULTI_LANG_HELPER_CLASS = "miui.util.font.MultiLangHelper"
+private const val PLATFORM_PREFERENCE_CLASS = "androidx.preference.Preference"
 
 /**
  * A [StrictMode.OnThreadViolationListener] that recreates
@@ -54,8 +56,10 @@ class ThreadPenaltyDeathWithIgnoresListener(
         isSamsungLgEdmStorageProviderStartupViolation(violation) ||
                 containsInstrumentedHooksClass(violation) ||
                 isSamsungIdsController(violation) ||
+                isXiaomiMultiLangHelperViolation(violation) ||
                 isFinishAttachApplication(violation) ||
-                containsInMemoryDexClassLoader(violation)
+                containsInMemoryDexClassLoader(violation) ||
+                isInflatingPlatformPreference(violation)
 
     private fun isSamsungIdsController(violation: Violation): Boolean {
         // See https://bugzilla.mozilla.org/show_bug.cgi?id=1806469
@@ -113,5 +117,20 @@ class ThreadPenaltyDeathWithIgnoresListener(
         // injects the [dalvik.system.InMemoryDexClassLoader] into call stacks leading
         // to StrictMode violations if it happens on main thread.
         return violation.stackTrace.any { it.className == IN_MEMORY_DEX_CLASS_LOADER_CLASS }
+    }
+
+    private fun isXiaomiMultiLangHelperViolation(violation: Violation): Boolean {
+        return manufacturerChecker.isXiaomi() &&
+                violation.stackTrace.any { it.className == MIUI_MULTI_LANG_HELPER_CLASS }
+    }
+
+    private fun isInflatingPlatformPreference(violation: Violation): Boolean {
+        // See https://bugzilla.mozilla.org/show_bug.cgi?id=2030682
+        // See https://issuetracker.google.com/issues/266976877
+        // While inflating Preferences (on the main thread) this framework may try to read the SharedPreference file.
+        // Google accepts it as an issue and won't fix it as the Preferences framework is in maintenance mode.
+        return violation.stackTrace.any {
+            it.className == PLATFORM_PREFERENCE_CLASS && it.methodName == "getSharedPreferences"
+        }
     }
 }

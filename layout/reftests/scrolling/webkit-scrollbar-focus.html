@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<style>
+.scrollable {
+  overflow: scroll;
+  height: 100px;
+  width: 100px;
+  border: 2px solid black;
+}
+.scrollable::before {
+  display: block;
+  content: "overflowing content";
+  height: 300px;
+  width: 300px;
+}
+.pseudo8:focus {
+  outline-style: none;
+}
+.pseudo8:focus::-webkit-scrollbar  {
+  width: 8px;
+  height: 8px;
+}
+</style>
+<div class="scrollable"></div>
+<div class="scrollable pseudo8"></div>
+<div class="scrollable pseudo20"></div>
+<script>
+document.addEventListener("MozReftestInvalidate", () => {
+  const target = document.querySelector(".pseudo8");
+  target.addEventListener("focus", () => {
+    document.documentElement.classList.remove("reftest-wait");
+  });
+  target.focus();
+});
+</script>
+</html>

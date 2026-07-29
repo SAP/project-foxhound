@@ -5,6 +5,7 @@
 import argparse
 import logging
 import os
+import shutil
 import subprocess
 import sys
 
@@ -194,8 +195,6 @@ def setup_zed(command_context, interactive):
 
     # Our C/C++ tab size does not match the default
     new_settings["languages"] = {"C": {"tab_size": 2}, "C++": {"tab_size": 2}}
-    # FIXME: Remove once modelines are supported:
-    # https://github.com/zed-industries/zed/issues/4762
     new_settings["file_types"] = {
         "Python": [
             "**/moz.build",
@@ -252,7 +251,9 @@ def rust_analyzer_config(command_context):
         if sys.platform == "win32":
             cargo_check_command = [sys.executable, "../../mach"]
         else:
-            cargo_check_command = ["../../mach"]
+            # This needs to be an absolute path so the searchfox indexing can
+            # find the mach binary.
+            cargo_check_command = [os.path.join(command_context.topsrcdir, "mach")]
     elif sys.platform == "win32":
         cargo_check_command = [sys.executable, "mach"]
     else:
@@ -266,6 +267,8 @@ def rust_analyzer_config(command_context):
         str(cpu_count() // 2),
         "--all-crates",
         "--message-format-json",
+        "--workspace",
+        "--keep-going",
     ]
 
     config = {
@@ -532,11 +535,18 @@ def setup_clangd_rust_in_vscode(command_context):
     clangd_cfg = {
         "CompileFlags": {
             "CompilationDatabase": clangd_cc_path,
-        }
+        },
+        "Completion": {
+            # NOTE(emilio): This got ported from previous code, but it's unclear if it's
+            # what we want...
+            "HeaderInsertion": "Never",
+        },
     }
 
     with open(".clangd", "w") as file:
         yaml.dump(clangd_cfg, file)
+
+    shutil.copyfile(".clangd", mozpath.join(command_context.topobjdir, ".clangd"))
 
     config = {
         "clangd.path": clangd_path,
@@ -547,14 +557,6 @@ def setup_clangd_rust_in_vscode(command_context):
             "0",
             "--completion-style",
             "detailed",
-            "--background-index",
-            "--all-scopes-completion",
-            "--log",
-            "info",
-            "--pch-storage",
-            "disk",
-            "--clang-tidy",
-            "--header-insertion=never",
         ],
     }
 

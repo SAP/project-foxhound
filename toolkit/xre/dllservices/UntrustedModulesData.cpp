@@ -1,18 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #include "UntrustedModulesData.h"
 
+#include <bit>
 #include <windows.h>
 
 #include "mozilla/CmdLineAndEnvUtils.h"
 #include "mozilla/DynamicallyLinkedFunctionPtr.h"
 #include "mozilla/FileUtilsWin.h"
 #include "mozilla/Likely.h"
-#include "mozilla/MathAlgorithms.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WinDllServices.h"
 #include "ModuleEvaluator.h"
@@ -192,9 +190,7 @@ bool ModuleRecord::IsTrusted() const {
 
   // The remaining flags, when set, each count for 50 points toward a
   // trustworthiness score.
-  int32_t score = static_cast<int32_t>(
-                      CountPopulation32(static_cast<uint32_t>(mTrustFlags))) *
-                  50;
+  int32_t score = std::popcount(static_cast<uint32_t>(mTrustFlags)) * 50;
   return score >= GetScoreThreshold();
 }
 

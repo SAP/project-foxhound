@@ -7,4 +7,8 @@ support-files = [
 
 ["browser_framebusting_identity.js"]
 
+["browser_framebusting_navigation.js"]
+
 ["browser_framebusting_notification.js"]
+
+["browser_framebusting_sandbox.js"]

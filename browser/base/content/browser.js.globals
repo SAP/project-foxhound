@@ -26,6 +26,7 @@
   "gSessionHistoryObserver",
   "gStoragePressureObserver",
   "PopupAndRedirectBlockerObserver",
+  "ReducedProtectionNotification",
   "gKeywordURIFixup",
   "HandleAppCommandEvent",
   "BrowserCommands",
@@ -57,11 +58,9 @@
   "displaySecurityInfo",
   "gUIDensity",
   "DynamicShortcutTooltip",
-  "hrefAndLinkNodeForClickEvent",
   "contentAreaClick",
   "handleLinkClick",
   "middleMousePaste",
-  "handleDroppedLink",
   "ToolbarContextMenu",
   "BrowserOffline",
   "CanCloseWindow",
@@ -108,7 +107,6 @@
   "NewTabPagePreloading",
   "NewTabUtils",
   "NimbusFeatures",
-  "OpenInTabsUtils",
   "PageActions",
   "PageThumbs",
   "PanelMultiView",
@@ -228,7 +226,6 @@
   "gAddonAbuseReportEnabled",
   "gMiddleClickNewTabUsesPasteboard",
   "gPrintEnabled",
-  "gUseFeltPrivacyUI",
   "gReduceMotion",
   "gFindBar",
   "gFindBarInitialized",
@@ -237,5 +234,6 @@
   "ActionsProviderContextualSearch",
   "ToolbarDropHandler",
   "ProfilesDatastoreService",
-  "gTrustPanelHandler"
+  "gTrustPanelHandler",
+  "ContentSharingUtils"
 ]

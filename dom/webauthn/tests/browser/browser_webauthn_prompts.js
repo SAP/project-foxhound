@@ -429,7 +429,7 @@ async function test_no_fullscreen_dom() {
 
   let fullScreenPaintPromise = promiseFullScreenPaint();
   // Make a DOM element fullscreen
-  await ContentTask.spawn(tab.linkedBrowser, [], () => {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
     return content.document.body.requestFullscreen();
   });
   await fullScreenPaintPromise;

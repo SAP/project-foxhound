@@ -9,7 +9,13 @@ run-if = ["os == 'mac'"]
 
 ["test_async_flush.js"]
 
+["test_async_flush_cp_path.js"]
+
+["test_async_flush_cp_storeID.js"]
+
 ["test_async_flush_current_profile.js"]
+
+["test_bad_ini.js"]
 
 ["test_check_backup.js"]
 
@@ -24,6 +30,8 @@ run-if = ["os == 'mac'"]
 ["test_create_default.js"]
 
 ["test_delete_dirs.js"]
+
+["test_encrypted_databases_marker.js"]
 
 ["test_find_currentProfile.js"]
 
@@ -44,6 +52,13 @@ run-if = ["os == 'mac'"]
 ["test_missing_profilesini.js"]
 
 ["test_new_default.js"]
+
+["test_new_profile_ping_sent.js"]
+skip-if = [
+  "artifact", # Bug 2012613 - known limitation of FOG ping testing APIs
+]
+
+["test_new_profile_ping_skipped.js"]
 
 ["test_previous_dedicated.js"]
 

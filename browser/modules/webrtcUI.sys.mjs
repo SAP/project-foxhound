@@ -237,7 +237,7 @@ export var webrtcUI = {
         // browser can be null when we are in the process of closing a tab
         // and our stream list hasn't been updated yet.
         // gBrowser will be null if a stream is used outside a tabbrowser window.
-        let tab = browser?.ownerGlobal.gBrowser?.getTabForBrowser(browser);
+        let tab = browser?.documentGlobal.gBrowser?.getTabForBrowser(browser);
         return {
           uri: state.documentURI,
           tab,
@@ -575,7 +575,7 @@ export var webrtcUI = {
     let mostRecentStream = activeStreams[activeStreams.length - 1];
     let { browser: browserToSelect } = mostRecentStream;
 
-    let window = browserToSelect.ownerGlobal;
+    let window = browserToSelect.documentGlobal;
     let gBrowser = browserToSelect.getTabBrowser();
     let tab = gBrowser.getTabForBrowser(browserToSelect);
     window.focus();
@@ -710,7 +710,7 @@ export var webrtcUI = {
    *        undefined / null if no such event exists.
    */
   showSharingDoorhanger(aActiveStream, aEvent) {
-    let browserWindow = aActiveStream.browser.ownerGlobal;
+    let browserWindow = aActiveStream.browser.documentGlobal;
     if (aActiveStream.tab) {
       browserWindow.gBrowser.selectedTab = aActiveStream.tab;
     } else {

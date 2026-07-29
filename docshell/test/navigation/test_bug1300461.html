@@ -17,25 +17,22 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=
 <pre id="test">
   <script type="application/javascript">
 
-    let chromeScript = null;
-    if (SpecialPowers.Services.appinfo.sessionHistoryInParent) {
-      chromeScript = SpecialPowers.loadChromeScript(() => {
-        function doSend(message, fn) {
-          try {
-            sendAsyncMessage(message, {success: true, value: fn()});
-          } catch(_) {
-            sendAsyncMessage(message, {success: false});
-          }
+    let chromeScript = SpecialPowers.loadChromeScript(() => {
+      function doSend(message, fn) {
+        try {
+          sendAsyncMessage(message, {success: true, value: fn()});
+        } catch(_) {
+          sendAsyncMessage(message, {success: false});
         }
+      }
 
-        addMessageListener("requestedIndex", (id) => {
-          doSend("requestedIndex", () => {
-            let shistory = BrowsingContext.get(id).top.sessionHistory;
-            return shistory.requestedIndex;
-          })
-        });
+      addMessageListener("requestedIndex", (id) => {
+        doSend("requestedIndex", () => {
+          let shistory = BrowsingContext.get(id).top.sessionHistory;
+          return shistory.requestedIndex;
+        })
       });
-    }
+    });
 
     async function getSHRequestedIndex(browsingContextId) {
       let p = chromeScript.promiseOneMessage("requestedIndex");

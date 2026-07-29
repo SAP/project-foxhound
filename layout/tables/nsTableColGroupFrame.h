@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,6 +22,7 @@ class PresShell;
 class nsTableColGroupFrame final : public nsContainerFrame {
  public:
   NS_DECL_FRAMEARENA_HELPERS(nsTableColGroupFrame)
+  NS_DECL_QUERYFRAME
 
   /**
    * instantiate a new instance of nsTableRowFrame.
@@ -50,6 +50,9 @@ class nsTableColGroupFrame final : public nsContainerFrame {
                "Col group should always be in a first-in-flow table frame");
     return static_cast<nsTableFrame*>(parent);
   }
+
+  // Gets the synthetic colgroup of our table.
+  nsTableColGroupFrame* GetSyntheticColGroup() const;
 
   void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                         const nsDisplayListSet& aLists) override;
@@ -166,13 +169,17 @@ class nsTableColGroupFrame final : public nsContainerFrame {
 
   /** set the column index for all frames starting at aStartColFrame, it
    * will also reset the column indices in all subsequent colgroups
-   * @param aFirstColGroup - start the reset operation inside this colgroup
+   * @param aFirstFrame - start the reset operation from this frame
+   * @param aSyntheticColGroup - the explicit reference to the synthetic col
+   *                             group which is always logically at the end.
    * @param aFirstColIndex - first column that is reset should get this index
    * @param aStartColFrame - if specified the reset starts with this column
    *                         inside the colgroup; if not specified, the reset
    *                         starts with the first column
    */
-  static void ResetColIndices(nsIFrame* aFirstColGroup, int32_t aFirstColIndex,
+  static void ResetColIndices(nsIFrame* aFirstFrame,
+                              nsTableColGroupFrame* aSyntheticColGroup,
+                              int32_t aFirstColIndex,
                               nsIFrame* aStartColFrame = nullptr);
 
   void InvalidateFrame(uint32_t aDisplayItemKey = 0,

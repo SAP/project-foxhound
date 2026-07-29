@@ -45,15 +45,26 @@ add_task(async function () {
 
   info("Check the copied values for the various copy*Path helpers");
   await waitForClipboardPromise(
-    () => inspector.markup.contextMenu._copyXPath(),
+    () =>
+      clickContextMenuEntry(inspector, divContainer.elt, "node-menu-copyxpath"),
     '//*[@id="el1"]'
   );
   await waitForClipboardPromise(
-    () => inspector.markup.contextMenu._copyCssPath(),
+    () =>
+      clickContextMenuEntry(
+        inspector,
+        divContainer.elt,
+        "node-menu-copycsspath"
+      ),
     "div#el1"
   );
   await waitForClipboardPromise(
-    () => inspector.markup.contextMenu._copyUniqueSelector(),
+    () =>
+      clickContextMenuEntry(
+        inspector,
+        divContainer.elt,
+        "node-menu-copyuniqueselector"
+      ),
     "#el1"
   );
 
@@ -66,15 +77,37 @@ add_task(async function () {
 
   info("Check the copied values for the various copy*Path helpers");
   await waitForClipboardPromise(
-    () => inspector.markup.contextMenu._copyXPath(),
+    () =>
+      clickContextMenuEntry(
+        inspector,
+        spanContainer.elt,
+        "node-menu-copyxpath"
+      ),
     "/div/span[3]"
   );
   await waitForClipboardPromise(
-    () => inspector.markup.contextMenu._copyCssPath(),
+    () =>
+      clickContextMenuEntry(
+        inspector,
+        spanContainer.elt,
+        "node-menu-copycsspath"
+      ),
     "div#el1 span"
   );
   await waitForClipboardPromise(
-    () => inspector.markup.contextMenu._copyUniqueSelector(),
+    () =>
+      clickContextMenuEntry(
+        inspector,
+        spanContainer.elt,
+        "node-menu-copyuniqueselector"
+      ),
     "#el1 > span:nth-child(3)"
   );
 });
+
+function clickContextMenuEntry(inspector, target, contextMenuId) {
+  const items = openContextMenuAndGetAllItems(inspector, {
+    target,
+  });
+  items.find(({ id }) => id == contextMenuId).click();
+}

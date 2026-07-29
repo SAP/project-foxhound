@@ -688,3 +688,152 @@ Task IDs and minidumps are omitted to reduce size. They are available in the det
   "messageIds": [23, 24]
 }
 ```
+
+---
+
+## Bucket Files Format (Per-Test Detail)
+
+When running with `--days N` where N > 1, 64 bucket files are generated per harness alongside the aggregated issues files:
+
+```
+xpcshell-00.json
+xpcshell-01.json
+...
+xpcshell-3f.json
+```
+
+Each test is assigned to a bucket using a deterministic hash of its full path. The dashboard loads only the bucket file containing the requested test, avoiding downloading the full dataset.
+
+### Bucket Assignment
+
+The `getBucketIndex` hash function (identical to the dashboard's `getChunkIndex`):
+
+```javascript
+function getBucketIndex(fullPath, totalBuckets = 64) {
+    let hash = 0;
+    for (let i = 0; i < fullPath.length; i++) {
+        hash = ((hash << 5) - hash + fullPath.charCodeAt(i)) | 0;
+    }
+    return ((hash % totalBuckets) + totalBuckets) % totalBuckets;
+}
+```
+
+The bucket index (0-63) is encoded as two-digit lowercase hex in the filename: bucket 10 = `0a`, bucket 63 = `3f`.
+
+### Top-Level Structure
+
+```json
+{
+  "metadata": { ... },
+  "tables": { ... },
+  "taskInfo": { ... },
+  "testInfo": { ... },
+  "testRuns": [ ... ]
+}
+```
+
+### metadata
+
+```json
+{
+  "startDate": "2025-11-12",
+  "endDate": "2025-12-02",
+  "days": 21,
+  "startTime": 1731456000,
+  "generatedAt": "...",
+  "totalTestCount": 85,
+  "testsWithFailures": 12,
+  "totalBuckets": 64,
+  "bucketIndex": 10,
+  "aggregatedFrom": ["xpcshell-2025-11-12.json", ...]
+}
+```
+
+Additional fields compared to issues files:
+- `totalBuckets`: Always 64
+- `bucketIndex`: The bucket number (0-63) for this file
+- `totalTestCount` and `testsWithFailures` are scoped to this bucket only
+
+### tables
+
+Same string table names as issues files, but scoped to only the strings used by tests in this bucket. One key difference:
+
+- `jobNames` contain **chunk-stripped** base names (e.g., `"test-linux1804-64/opt-xpcshell"` instead of `"test-linux1804-64/opt-xpcshell-1"`). The `-cf` (confirm-failures) suffix is preserved: `"test-linux1804-64/opt-mochitest-browser-chrome-14-cf"` becomes `"test-linux1804-64/opt-mochitest-browser-chrome-cf"` with chunk `14`.
+
+### taskInfo
+
+```json
+{
+  "repositoryIds": [0, 1, 0, ...],
+  "jobNameIds": [0, 0, 1, ...],
+  "commitIds": [0, 1, null, ...],
+  "chunks": [1, 2, null, ...]
+}
+```
+
+The `chunks` array is new compared to issues files. It stores the chunk number extracted from the original job name at each taskIdId position. `null` means the job had no chunk suffix.
+
+### testRuns Format Differences
+
+Bucket files use three distinct status group formats depending on the status type:
+
+#### Passing Tests (status starts with "PASS")
+
+```json
+{
+  "durations": [[1234, 1456], [1289, 1300, 1100], ...],
+  "days": [0, 1, ...],
+  "jobNameIds": [0, 1, ...]
+}
+```
+
+- `durations[i]` is an **array of individual pass durations** (ms) for the job on that day
+- `jobNameIds[i]` is the index into `tables.jobNames` for that entry
+- Entries are bucketed by (day, jobNameId) — one entry per unique combination
+- No `taskIdIds` or `counts` — use `durations[i].length` to get the count
+
+#### Skip Tests (status = "SKIP")
+
+```json
+{
+  "counts": [5, 12, ...],
+  "days": [0, 1, ...],
+  "jobNameIds": [0, 1, ...],
+  "messageIds": [3, 3, ...]
+}
+```
+
+- `jobNameIds[i]` identifies which job name produced these skips
+- Entries are bucketed by (day, jobNameId, messageId)
+- `messageIds` may be `null` for skips without a message
+
+#### Failing Tests (FAIL, CRASH, TIMEOUT, etc.)
+
+Same format as `xpcshell-issues-with-taskids.json`:
+
+```json
+{
+  "taskIdIds": [[45, 67], [89, 12, 56], ...],
+  "days": [0, 1, ...],
+  "messageIds": [23, 23, ...],
+  "crashSignatureIds": [5, 5, ...],
+  "minidumps": [["abc", "def"], ["ghi", null, "jkl"], ...]
+}
+```
+
+Task IDs are resolved to job names via `taskInfo.jobNameIds[taskIdId]` and chunk numbers via `taskInfo.chunks[taskIdId]`.
+
+### Example: Get durations for a specific test by job name
+
+```javascript
+const testId = 5;
+const passStatusId = data.tables.statuses.findIndex(s => s.startsWith("PASS"));
+const sg = data.testRuns[testId]?.[passStatusId];
+if (sg?.durations) {
+  for (let i = 0; i < sg.durations.length; i++) {
+    const jobName = data.tables.jobNames[sg.jobNameIds[i]];
+    const durations = sg.durations[i];  // Array of ms values
+    console.log(`${jobName}: ${durations.length} runs, median ${durations.sort((a,b)=>a-b)[Math.floor(durations.length/2)]}ms`);
+  }
+}
+```

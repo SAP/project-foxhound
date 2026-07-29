@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -83,7 +81,7 @@ LoggingIdString<CheckLoggingMode>::LoggingIdString(const nsID& aID) {
     SetLength(NSID_LENGTH - 1);
 
     aID.ToProvidedString(
-        *reinterpret_cast<char(*)[NSID_LENGTH]>(BeginWriting()));
+        *reinterpret_cast<char (*)[NSID_LENGTH]>(BeginWriting()));
   }
 }
 
@@ -147,35 +145,52 @@ LoggingString::LoggingString(IDBIndex* aIndex) : nsAutoCString(kQuote) {
   Append(kQuote);
 }
 
+void LoggingString::AssignKeyRange(bool aIsOnly, const Key& aLower,
+                                   const Key& aUpper, bool aLowerOpen,
+                                   bool aUpperOpen) {
+  if (aIsOnly) {
+    Assign(LoggingString(aLower));
+  } else {
+    if (aLowerOpen) {
+      Assign(kOpenParen);
+    } else {
+      Assign(kOpenBracket);
+    }
+    Append(LoggingString(aLower));
+    AppendLiteral(", ");
+    Append(LoggingString(aUpper));
+    if (aUpperOpen) {
+      Append(kCloseParen);
+    } else {
+      Append(kCloseBracket);
+    }
+  }
+}
+
+void LoggingString::AssignUndefined() { AssignLiteral("<undefined>"); }
+
 LoggingString::LoggingString(IDBKeyRange* aKeyRange) {
   if (aKeyRange) {
-    if (aKeyRange->IsOnly()) {
-      Assign(LoggingString(aKeyRange->Lower()));
-    } else {
-      if (aKeyRange->LowerOpen()) {
-        Assign(kOpenParen);
-      } else {
-        Assign(kOpenBracket);
-      }
-
-      Append(LoggingString(aKeyRange->Lower()));
-      AppendLiteral(", ");
-      Append(LoggingString(aKeyRange->Upper()));
-
-      if (aKeyRange->UpperOpen()) {
-        Append(kCloseParen);
-      } else {
-        Append(kCloseBracket);
-      }
-    }
+    AssignKeyRange(aKeyRange->IsOnly(), aKeyRange->Lower(), aKeyRange->Upper(),
+                   aKeyRange->LowerOpen(), aKeyRange->UpperOpen());
   } else {
-    AssignLiteral("<undefined>");
+    AssignUndefined();
   }
+}
+
+LoggingString::LoggingString(const Maybe<SerializedKeyRange>& aKeyRange) {
+  if (aKeyRange.isNothing()) {
+    AssignUndefined();
+    return;
+  }
+  const SerializedKeyRange& keyRange = aKeyRange.ref();
+  AssignKeyRange(keyRange.isOnly(), keyRange.lower(), keyRange.upper(),
+                 keyRange.lowerOpen(), keyRange.upperOpen());
 }
 
 LoggingString::LoggingString(const Key& aKey) {
   if (aKey.IsUnset()) {
-    AssignLiteral("<undefined>");
+    AssignUndefined();
   } else if (aKey.IsFloat()) {
     AppendPrintf("%g", aKey.ToFloat());
   } else if (aKey.IsDate()) {
@@ -213,15 +228,17 @@ LoggingString::LoggingString(const Optional<uint64_t>& aVersion) {
   if (aVersion.WasPassed()) {
     AppendInt(aVersion.Value());
   } else {
-    AssignLiteral("<undefined>");
+    AssignUndefined();
   }
 }
+
+LoggingString::LoggingString(uint32_t aLimit) { AppendInt(aLimit); }
 
 LoggingString::LoggingString(const Optional<uint32_t>& aLimit) {
   if (aLimit.WasPassed()) {
     AppendInt(aLimit.Value());
   } else {
-    AssignLiteral("<undefined>");
+    AssignUndefined();
   }
 }
 

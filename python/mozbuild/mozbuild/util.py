@@ -21,6 +21,12 @@ import time
 from io import BytesIO, StringIO
 from pathlib import Path
 
+try:
+    # FIXME: requires python 3.10
+    from types import NoneType
+except ImportError:
+    NoneType = type(None)
+
 from mozbuild.dirutils import ensureParentDir
 
 try:
@@ -465,7 +471,7 @@ class List(list):
     def __add__(self, other):
         # Allow None and EmptyValue is a special case because it makes undefined
         # variable references in moz.build behave better.
-        other = [] if isinstance(other, (type(None), EmptyValue)) else other
+        other = [] if isinstance(other, (NoneType, EmptyValue)) else other
         if not isinstance(other, list):
             raise ValueError("Only lists can be appended to lists.")
 
@@ -474,7 +480,7 @@ class List(list):
         return new_list
 
     def __iadd__(self, other):
-        other = [] if isinstance(other, (type(None), EmptyValue)) else other
+        other = [] if isinstance(other, (NoneType, EmptyValue)) else other
         if not isinstance(other, list):
             raise ValueError("Only lists can be appended to lists.")
 
@@ -937,52 +943,6 @@ class ReadOnlyKeyedDefaultDict(KeyedDefaultDict, ReadOnlyDict):
     """Like KeyedDefaultDict, but read-only."""
 
 
-class memoize(dict):
-    """A decorator to memoize the results of function calls depending
-    on its arguments.
-    Both functions and instance methods are handled, although in the
-    instance method case, the results are cache in the instance itself.
-    """
-
-    def __init__(self, func):
-        self.func = func
-        functools.update_wrapper(self, func)
-
-    def __call__(self, *args):
-        if args not in self:
-            self[args] = self.func(*args)
-        return self[args]
-
-    def method_call(self, instance, *args):
-        name = "_%s" % self.func.__name__
-        if not hasattr(instance, name):
-            setattr(instance, name, {})
-        cache = getattr(instance, name)
-        if args not in cache:
-            cache[args] = self.func(instance, *args)
-        return cache[args]
-
-    def __get__(self, instance, cls):
-        return functools.update_wrapper(
-            functools.partial(self.method_call, instance), self.func
-        )
-
-
-class memoized_property:
-    """A specialized version of the memoize decorator that works for
-    class instance properties.
-    """
-
-    def __init__(self, func):
-        self.func = func
-
-    def __get__(self, instance, cls):
-        name = "_%s" % self.func.__name__
-        if not hasattr(instance, name):
-            setattr(instance, name, self.func(instance))
-        return getattr(instance, name)
-
-
 def TypedNamedTuple(name, fields):
     """Factory for named tuple types with strong typing.
 
@@ -1032,7 +992,34 @@ def TypedNamedTuple(name, fields):
     return TypedTuple
 
 
-@memoize
+class CompilerFlag(str):
+    """
+    A compiler Flag that cannot be a warning.
+    """
+
+    def __new__(cls, f):
+        if f.startswith("-W") and not f.startswith("-Wno-"):
+            ishost = cls.__name__.startswith("Host")
+            iscxx = cls.__name__.endswith("CxxCompilerFlag")
+            raise ValueError(
+                f"Warning flag '{f}' must be added to {'HOST_' if ishost else ''}COMPILE_FLAGS['WARNINGS_C{'XX' if iscxx else ''}FLAGS']"
+            )
+        return super().__new__(cls, f)
+
+
+class CCompilerFlag(CompilerFlag): ...
+
+
+class CxxCompilerFlag(CompilerFlag): ...
+
+
+class HostCCompilerFlag(CompilerFlag): ...
+
+
+class HostCxxCompilerFlag(CompilerFlag): ...
+
+
+@functools.cache
 def TypedList(type, base_class=List):
     """A list with type coercion.
 
@@ -1076,11 +1063,13 @@ def TypedList(type, base_class=List):
             return super().__setitem__(key, val)
 
         def __add__(self, other):
+            other = [] if isinstance(other, (NoneType, EmptyValue)) else other
             other = self._ensure_type(other)
 
             return super().__add__(other)
 
         def __iadd__(self, other):
+            other = [] if isinstance(other, (NoneType, EmptyValue)) else other
             other = self._ensure_type(other)
 
             return super().__iadd__(other)
@@ -1477,3 +1466,8 @@ def find_task_from_index(index_paths):
             pass
 
     return None
+
+
+def set_taskcluster_root_url():
+    if "TASKCLUSTER_ROOT_URL" not in os.environ:
+        os.environ["TASKCLUSTER_ROOT_URL"] = TASKCLUSTER_ROOT_URL

@@ -14,7 +14,7 @@ checkbox {
   }
 
   &[disabled]:not([native]) > .checkbox-label-box {
-    opacity: 0.4;
+    color: var(--text-color-disabled);
   }
 }
 

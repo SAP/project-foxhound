@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +5,7 @@
 #ifndef nsXREAppData_h
 #define nsXREAppData_h
 
-#include <stdint.h>
+#include "mozilla/StaticXREAppData.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "nsCOMPtr.h"
 #include "nsCRTGlue.h"
@@ -195,42 +193,6 @@ class XREAppData {
   // https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-marshaling-object-path
   static void SanitizeNameForDBus(nsACString&);
   void GetDBusAppName(nsACString&) const;
-};
-
-/**
- * Indicates whether or not the profile migrator service may be
- * invoked at startup when creating a profile.
- */
-#define NS_XRE_ENABLE_PROFILE_MIGRATOR (1 << 1)
-
-/**
- * Indicates whether or not to use Breakpad crash reporting.
- */
-#define NS_XRE_ENABLE_CRASH_REPORTER (1 << 3)
-
-/**
- * A static version of the XRE app data is compiled into the application
- * so that it is not necessary to read application.ini at startup.
- *
- * This structure is initialized into and matches nsXREAppData
- */
-struct StaticXREAppData {
-  const char* vendor;
-  const char* name;
-  const char* remotingName;
-  const char* version;
-  const char* buildID;
-  const char* ID;
-  const char* copyright;
-  uint32_t flags;
-  const char* minVersion;
-  const char* maxVersion;
-  const char* crashReporterURL;
-  const char* profile;
-  const char* UAName;
-  const char* sourceURL;
-  const char* sourceRevision;
-  const char* updateURL;
 };
 
 }  // namespace mozilla

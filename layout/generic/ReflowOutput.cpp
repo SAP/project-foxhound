@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -56,6 +54,24 @@ void OverflowAreas::UnionWith(const OverflowAreas& aOther) {
   if (IsValidOverflowRect(aOther.ScrollableOverflow())) {
     ScrollableOverflow().UnionRect(ScrollableOverflow(),
                                    aOther.ScrollableOverflow());
+  }
+}
+
+void OverflowAreas::UnionWithAbsoluteOverflowAreas(
+    const OverflowAreas& aOther) {
+  // Note(dshin, Bug 2025540): This is different from
+  // `OverflowAreas::UnionWith`, which adds overflows as long as at least one
+  // axis has a non-zero size, is explicitly avoided here. This is not
+  // explicitly specified in spec, but not being strict here can lead to
+  // surprises when the inset value causes the abspos frame to lie outside its
+  // containing block.
+  for (const auto t : AllOverflowTypes()) {
+    const auto& kidOverflow = aOther.Overflow(t);
+    if (kidOverflow.IsEmpty()) {
+      continue;
+    }
+    auto& overflow = Overflow(t);
+    overflow.UnionRect(overflow, kidOverflow);
   }
 }
 

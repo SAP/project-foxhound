@@ -119,7 +119,7 @@
   align-self: center;
   margin: 0;
   font-size: 1.13em;
-  font-weight: var(--heading-font-weight);
+  font-weight: var(--font-weight-heading);
   overflow: hidden;
   text-overflow: ellipsis;
   user-select: none;

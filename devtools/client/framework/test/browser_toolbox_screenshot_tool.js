@@ -4,11 +4,15 @@
 const exampleOrgDocument = `https://example.org/document-builder.sjs`;
 const exampleComDocument = `https://example.com/document-builder.sjs`;
 
+const { MAX_CAPTURE_DIMENSION } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/screenshots/ScreenshotsUtils.sys.mjs"
+);
+
 const TEST_URL = `${exampleOrgDocument}?html=
   <style>
     body {
       margin: 0;
-      height: 10001px;
+      height: ${MAX_CAPTURE_DIMENSION + 1}px;
     }
     iframe {
       height: 50px;

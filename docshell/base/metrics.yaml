@@ -14,7 +14,6 @@ performance.page:
   total_content_page_load:
     type: timing_distribution
     time_unit: millisecond
-    telemetry_mirror: TOTAL_CONTENT_PAGE_LOAD_TIME
     description: >
       Time to load all of a page's resources and render.
       (Migrated from the geckoview metric of the same name.)
@@ -68,7 +67,9 @@ bfcache:
   page_restored:
     type: labeled_counter
     description: >
-      Whether bfcache is used when loading a page from session history
+      Whether bfcache is used when loading a page from session history.
+      This metric was disabled between bugs 1892551 and 2037998, so the data
+      may have discontinuities over that period.
 
       This metric was generated to correspond to the Legacy Telemetry boolean
       histogram BFCACHE_PAGE_RESTORED.
@@ -78,13 +79,15 @@ bfcache:
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1531917
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1551935
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037998
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1531917
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1551935
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037998
     notification_emails:
       - sefeng@mozilla.com
+      - avandolder@mozilla.com
     expires: never
-    telemetry_mirror: h#BFCACHE_PAGE_RESTORED
 
 page:
   load_error:

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -76,14 +75,21 @@ const uint32_t WEBAUDIO_BLOCK_SIZE = 1 << WEBAUDIO_BLOCK_SIZE_BITS;
 template <typename SrcT, typename DestT>
 static void InterleaveAndConvertBuffer(const SrcT* const* aSourceChannels,
                                        uint32_t aLength, float aVolume,
-                                       uint32_t aChannels, DestT* aOutput) {
-  DestT* output = aOutput;
-  for (size_t i = 0; i < aLength; ++i) {
-    for (size_t channel = 0; channel < aChannels; ++channel) {
-      float v =
-          ConvertAudioSample<float>(aSourceChannels[channel][i]) * aVolume;
-      *output = FloatToAudioSample<DestT>(v);
-      ++output;
+                                       uint32_t aChannelCount, DestT* aOutput) {
+  for (size_t channel = 0; channel < aChannelCount; ++channel) {
+    DestT* output = aOutput + channel;
+    if (aSourceChannels[channel]) {
+      for (size_t i = 0; i < aLength; ++i) {
+        float v =
+            ConvertAudioSample<float>(aSourceChannels[channel][i]) * aVolume;
+        *output = FloatToAudioSample<DestT>(v);
+        output += aChannelCount;
+      }
+    } else {
+      for (size_t i = 0; i < aLength; ++i) {
+        *output = static_cast<DestT>(0);
+        output += aChannelCount;
+      }
     }
   }
 }
@@ -474,7 +480,7 @@ void WriteChunk(const AudioChunk& aChunk, uint32_t aOutputChannels,
     // Up-mix. Note that this might actually make channelData have more
     // than aOutputChannels temporarily.
     AudioChannelsUpMix(&channelData, aOutputChannels,
-                       SilentChannel::ZeroChannel<SrcT>());
+                       static_cast<const SrcT*>(nullptr));
   }
   if (channelData.Length() > aOutputChannels) {
     // Down-mix.

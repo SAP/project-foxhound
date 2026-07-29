@@ -70,19 +70,6 @@ impl VisitedHandlingMode {
     }
 }
 
-/// The mode to use whether we should matching rules inside @starting-style.
-/// https://drafts.csswg.org/css-transitions-2/#starting-style
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum IncludeStartingStyle {
-    /// All without rules inside @starting-style. This is for the most common case because the
-    /// primary/pseudo styles doesn't use rules inside @starting-style.
-    No,
-    /// Get the starting style. The starting style for an element as the after-change style with
-    /// @starting-style rules applied in addition. In other words, this matches all rules,
-    /// including rules inside @starting-style.
-    Yes,
-}
-
 /// Whether we need to set selector invalidation flags on elements for this
 /// match request.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -170,12 +157,6 @@ where
     /// Controls how matching for links is handled.
     visited_handling: VisitedHandlingMode,
 
-    /// Controls if we should match rules in @starting-style.
-    pub include_starting_style: IncludeStartingStyle,
-
-    /// Whether there are any rules inside @starting-style.
-    pub has_starting_style: bool,
-
     /// Whether we're currently matching a featureless element.
     pub featureless: bool,
 
@@ -229,7 +210,6 @@ where
             bloom_filter,
             selector_caches,
             VisitedHandlingMode::AllLinksUnvisited,
-            IncludeStartingStyle::No,
             quirks_mode,
             needs_selector_flags,
             matching_for_invalidation,
@@ -251,7 +231,6 @@ where
             bloom_filter,
             selector_caches,
             VisitedHandlingMode::AllLinksUnvisited,
-            IncludeStartingStyle::No,
             quirks_mode,
             needs_selector_flags,
             MatchingForInvalidation::No,
@@ -265,7 +244,6 @@ where
         bloom_filter: Option<&'a BloomFilter>,
         selector_caches: &'a mut SelectorCaches,
         visited_handling: VisitedHandlingMode,
-        include_starting_style: IncludeStartingStyle,
         quirks_mode: QuirksMode,
         needs_selector_flags: NeedsSelectorFlags,
         matching_for_invalidation: MatchingForInvalidation,
@@ -275,7 +253,6 @@ where
             bloom_filter,
             selector_caches,
             visited_handling,
-            include_starting_style,
             quirks_mode,
             needs_selector_flags,
             matching_for_invalidation,
@@ -288,7 +265,6 @@ where
         bloom_filter: Option<&'a BloomFilter>,
         selector_caches: &'a mut SelectorCaches,
         visited_handling: VisitedHandlingMode,
-        include_starting_style: IncludeStartingStyle,
         quirks_mode: QuirksMode,
         needs_selector_flags: NeedsSelectorFlags,
         matching_for_invalidation: MatchingForInvalidation,
@@ -298,8 +274,6 @@ where
             matching_mode,
             bloom_filter,
             visited_handling,
-            include_starting_style,
-            has_starting_style: false,
             quirks_mode,
             classes_and_ids_case_sensitivity: quirks_mode.classes_and_ids_case_sensitivity(),
             needs_selector_flags,

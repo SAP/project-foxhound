@@ -8,7 +8,7 @@ Additionally, we also have domain-specific widgets that are similar to the reusa
 
 There are existing UI widgets in `toolkit/content/widgets/` that belong to one of two groups: Mozilla Custom Elements or User Agent (UA) Widgets.
 These [existing custom elements](https://searchfox.org/mozilla-central/rev/cde3d4a8d228491e8b7f1bd94c63bbe039850696/toolkit/content/customElements.js#792-809,847-866) are loaded into all privileged main process documents automatically.
-You can determine if a custom element belongs to the existing UI widgets category by either [viewing the array](https://searchfox.org/mozilla-central/rev/cde3d4a8d228491e8b7f1bd94c63bbe039850696/toolkit/content/customElements.js#792-809,847-866) or by viewing the [files in toolkit/content/widgets](https://searchfox.org/mozilla-central/source/toolkit/content/widgets).
+You can determine if a custom element belongs to the existing UI widgets category by either [viewing the array](https://searchfox.org/mozilla-central/rev/cde3d4a8d228491e8b7f1bd94c63bbe039850696/toolkit/content/customElements.js#792-809,847-866) or by viewing the [files in toolkit/content/widgets](https://searchfox.org/firefox-main/source/toolkit/content/widgets).
 Additionally, these older custom elements are a mix of XUL and HTML elements.
 
 
@@ -21,10 +21,10 @@ For example `arrowscrollbox.js` is an older single file custom element versus `m
 
 User agent (UA) widgets are like custom elements but run in per-origin UA widget scope instead of the chrome or content scope.
 There are a much smaller number of these widgets compared to the Mozilla Custom Elements:
-- [datetimebox.js](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/datetimebox.js)
-- [marquee.js](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/marquee.js)
-- [textrecognition.js](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/textrecognition.js)
-- [videocontrols.js](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/videocontrols.js)
+- [datetimebox.js](https://searchfox.org/firefox-main/source/toolkit/content/widgets/datetimebox.js)
+- [marquee.js](https://searchfox.org/firefox-main/source/toolkit/content/widgets/marquee.js)
+- [textrecognition.js](https://searchfox.org/firefox-main/source/toolkit/content/widgets/textrecognition.js)
+- [videocontrols.js](https://searchfox.org/firefox-main/source/toolkit/content/widgets/videocontrols.js)
 
 Please refer to the existing [UA widgets documentation](https://firefox-source-docs.mozilla.org/toolkit/content/toolkit_widgets/ua_widget.html) for more details.
 
@@ -34,7 +34,7 @@ The existing Mozilla Custom Elements are either [automatically imported](https:/
 In either case, these existing elements do not need to be imported individually via `<script>` tag.
 As long as you are working in a chrome privileged document, you will have access to the existing Mozilla Custom Elements.
 You can dynamically create one of the existing custom elements by using `document.createDocument("customElement)` or `document.createXULElement("customElement")` in the relevant JS file, or by using the custom element tag in the relevant XHTML document.
-For example, `document.createXULElement("checkbox")` creates an instance of [widgets/checkbox.js](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/checkbox.js) while using `<checkbox>` declares an instance in the XUL document.
+For example, `document.createXULElement("checkbox")` creates an instance of [widgets/checkbox.js](https://searchfox.org/firefox-main/source/toolkit/content/widgets/checkbox.js) while using `<checkbox>` declares an instance in the XUL document.
 You can see the checkbox widget in use in about:preferences.
 
 ### How to use existing UA Widgets
@@ -54,7 +54,7 @@ Since these elements cannot be used in regular web content, there is no differen
 Not all reusable components should be used throughout the entirety of Firefox.
 While we do have global UI patterns and components such as a button and modals, there are also specific features within the browser that include their own unique reusable patterns.
 These patterns and components are known as "domain-specific widgets".
-For example, the [login-timeline widget](https://searchfox.org/mozilla-central/source/browser/components/aboutlogins/content/components/login-timeline.mjs) is a domain-specific widget.
+For example, the [login-timeline widget](https://searchfox.org/firefox-main/source/browser/components/aboutlogins/content/components/login-timeline.mjs) is a domain-specific widget.
 
 ### Adding new domain-specific widgets
 

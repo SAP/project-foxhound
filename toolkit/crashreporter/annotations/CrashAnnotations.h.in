@@ -16,14 +16,10 @@ namespace CrashReporter {
 using mozilla::Maybe;
 
 // Typed enum representing all crash annotations
-enum class Annotation : uint32_t {
-${enum}
-};
+enum class Annotation : uint32_t { ${enum} };
 
 // Stringified crash annotation names
-const char* const kAnnotationStrings[] = {
-${strings}
-};
+const char* const kAnnotationStrings[] = {${strings}};
 
 // Type of each annotation
 enum class AnnotationType : uint8_t {
@@ -36,25 +32,14 @@ enum class AnnotationType : uint8_t {
 };
 
 // Type of each annotation
-const AnnotationType kAnnotationTypes[] = {
-${types}
-};
+const AnnotationType kAnnotationTypes[] = {${types}};
 
 // Allowlist of crash annotations that can be included in a crash ping
-const Annotation kCrashPingAllowedList[] = {
-${pingallowedlist}
-};
-
-// Allowlist of crash annotations that can be only included in a crash ping
-const Annotation kCrashPingOnlyAllowedList[] = {
-${pingonlyallowedlist}
-};
+const Annotation kCrashPingAllowedList[] = {${pingallowedlist}};
 
 // Allowlist of crash annotations that can be included in a crash report
 // (excludes those in kCrashPingAllowedList).
-const Annotation kCrashReportAllowedList[] = {
-${reportallowedlist}
-};
+const Annotation kCrashReportAllowedList[] = {${reportallowedlist}};
 
 // Annotations which should be skipped when they have specific values
 struct AnnotationSkipValue {
@@ -62,9 +47,7 @@ struct AnnotationSkipValue {
   const char* value;
 };
 
-const AnnotationSkipValue kSkipIfList[] = {
-${skiplist}
-};
+const AnnotationSkipValue kSkipIfList[] = {${skiplist}};
 
 /**
  * Return the type of a crash annotation.
@@ -93,16 +76,6 @@ static inline const char* AnnotationToString(Annotation aAnnotation) {
  * @return the annotation corresponding to the string or nothing
  */
 Maybe<Annotation> AnnotationFromString(const nsACString& aValue);
-
-/**
- * Checks if the given crash annotation is allowed for inclusion in a crash
- * ping.
- *
- * @param aAnnotation the crash annotation to be checked
- * @return true if the annotation can be included in a crash ping, false
- *         otherwise
- */
-bool IsAnnotationAllowedForPing(Annotation aAnnotation);
 
 /**
  * Checks if the given crash annotation is allowed for inclusion in a crash

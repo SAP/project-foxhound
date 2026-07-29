@@ -125,7 +125,7 @@ export class HighlightsFeed {
     }
 
     return splitHighlights.chronologicalCandidates
-      .sort((a, b) => a.date_added < b.date_added)
+      .sort((a, b) => b.date_added - a.date_added)
       .concat(splitHighlights.visited);
   }
 

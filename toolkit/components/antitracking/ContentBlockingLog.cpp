@@ -1,11 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AntiTrackingLog.h"
 #include "ContentBlockingLog.h"
+
+#include <bit>
 
 #include "nsIEffectiveTLDService.h"
 #include "nsITrackingDBService.h"
@@ -195,13 +195,26 @@ void ContentBlockingLog::ReportLog() {
     return;
   }
 
+  // Emit only the delta since the last flush. This lets ReportLog() be called
+  // multiple times during a document's lifetime (e.g. from a flush-on-query
+  // barrier in TrackingDBService) without double-counting entries against the
+  // daily aggregated counters in protections.sqlite.
+  nsAutoCString payload = Stringify(/* aOnlyUnreported */ true);
+
+  // Stringify() emits "{}" when every origin's cursor is already at the end
+  // and all origin-level flags have been reported. Skip the IPC round-trip.
+  if (payload.EqualsLiteral("{}")) {
+    return;
+  }
+
   nsCOMPtr<nsITrackingDBService> trackingDBService =
       do_GetService("@mozilla.org/tracking-db-service;1");
   if (NS_WARN_IF(!trackingDBService)) {
     return;
   }
 
-  trackingDBService->RecordContentBlockingLog(Stringify());
+  trackingDBService->RecordContentBlockingLog(payload);
+  MarkAsReported();
 }
 
 void ContentBlockingLog::ReportCanvasFingerprintingLog(
@@ -270,7 +283,7 @@ void ContentBlockingLog::ReportCanvasFingerprintingLog(
         for (uint32_t b = canvasFingerprintingEvent.knownTextBitmask; b;
              b &= (b - 1)) {
           uint32_t singleSetBit_Text = b & (~b + 1);
-          uint32_t exponent = mozilla::CountTrailingZeroes32(singleSetBit_Text);
+          uint32_t exponent = std::countr_zero(singleSetBit_Text);
 
           nsAutoCString key, category;
           key.AppendInt(exponent);

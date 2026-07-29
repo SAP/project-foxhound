@@ -18,23 +18,24 @@ internal object EngineStateReducer {
      * [EngineAction] Reducer function for modifying a specific [EngineState]
      * of a [SessionState].
      */
-    @Suppress("LongMethod")
     fun reduce(state: BrowserState, action: EngineAction): BrowserState {
         return when (action) {
-            is EngineAction.LinkEngineSessionAction -> state.copyWithEngineState(action.tabId) {
-                it.copy(
+            is EngineAction.LinkEngineSessionAction -> state.copyWithEngineState(action.tabId) { engineState ->
+                engineState.copy(
                     engineSession = action.engineSession,
                     timestamp = action.timestamp,
                 )
             }
-            is EngineAction.UnlinkEngineSessionAction -> state.copyWithEngineState(action.tabId) {
-                it.copy(
+            is EngineAction.UnlinkEngineSessionAction -> state.copyWithEngineState(action.tabId) { engineState ->
+                engineState.copy(
                     engineSession = null,
                     engineObserver = null,
                 )
             }
-            is EngineAction.UpdateEngineSessionObserverAction -> state.copyWithEngineState(action.tabId) {
-                it.copy(engineObserver = action.engineSessionObserver)
+            is EngineAction.UpdateEngineSessionObserverAction -> state.copyWithEngineState(
+                action.tabId,
+            ) { engineState ->
+                engineState.copy(engineObserver = action.engineSessionObserver)
             }
             is EngineAction.UpdateEngineSessionStateAction -> state.copyWithEngineState(action.tabId) { engineState ->
                 if (engineState.crashed) {
@@ -45,8 +46,10 @@ internal object EngineStateReducer {
                     engineState.copy(engineSessionState = action.engineSessionState)
                 }
             }
-            is EngineAction.UpdateEngineSessionInitializingAction -> state.copyWithEngineState(action.tabId) {
-                it.copy(initializing = action.initializing)
+            is EngineAction.UpdateEngineSessionInitializingAction -> state.copyWithEngineState(
+                action.tabId,
+            ) { engineState ->
+                engineState.copy(initializing = action.initializing)
             }
             is EngineAction.OptimizedLoadUrlTriggeredAction -> {
                 state
@@ -82,25 +85,29 @@ internal object EngineStateReducer {
                     customTabs = purgeEngineStates(state.customTabs),
                 )
             }
-            is EngineAction.KillEngineSessionAction -> {
-                val updatedKilledTabs = LinkedHashSet(state.recentlyKilledTabs)
-                updatedKilledTabs.add(action.tabId)
-
-                // Enforce max size of 50 recently killed tabs
-                if (updatedKilledTabs.size > MAX_RECENTLY_KILLED_TABS) {
-                    val oldestEntry = updatedKilledTabs.first()
-                    updatedKilledTabs.remove(oldestEntry)
-                }
-
-                state.copy(recentlyKilledTabs = updatedKilledTabs)
-            }
-            is EngineAction.CreateEngineSessionAction -> {
-                if (state.recentlyKilledTabs.isEmpty()) return state
-                val updatedKilledTabs = LinkedHashSet(state.recentlyKilledTabs)
-                updatedKilledTabs.remove(action.tabId)
-                state.copy(recentlyKilledTabs = updatedKilledTabs)
-            }
+            is EngineAction.KillEngineSessionAction -> state.killTab(action.tabId)
+            is EngineAction.CreateEngineSessionAction -> state.restoreTab(action.tabId)
         }
+    }
+
+    private fun BrowserState.killTab(tabId: String): BrowserState {
+        val updatedKilledTabs = LinkedHashSet(recentlyKilledTabs)
+        updatedKilledTabs.add(tabId)
+
+        // Enforce max size of 50 recently killed tabs
+        if (updatedKilledTabs.size > MAX_RECENTLY_KILLED_TABS) {
+            val oldestEntry = updatedKilledTabs.first()
+            updatedKilledTabs.remove(oldestEntry)
+        }
+
+        return copy(recentlyKilledTabs = updatedKilledTabs)
+    }
+
+    private fun BrowserState.restoreTab(tabId: String): BrowserState {
+        if (recentlyKilledTabs.isEmpty()) return this
+        val updatedKilledTabs = LinkedHashSet(recentlyKilledTabs)
+        updatedKilledTabs.remove(tabId)
+        return copy(recentlyKilledTabs = updatedKilledTabs)
     }
 }
 

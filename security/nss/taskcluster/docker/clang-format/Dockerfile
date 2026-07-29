@@ -10,6 +10,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
     ca-certificates \
     clang-format-13 \
+    git \
     locales \
     mercurial \
  && rm -rf /var/lib/apt/lists/* \

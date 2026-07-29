@@ -70,11 +70,11 @@ STEPS = {
         """
         echo foo > file1.txt
         jj desc -m "FIRST PATCH"
-        jj new "description('BASE PATCH')"
+        jj new "description(glob:'BASE PATCH*')"
         echo notfoo > file1.txt
         echo bar > anotherfile.txt
         jj desc -m "OTHER PATCH"
-        jj new "description('FIRST PATCH')" @ -m "SECOND PATCH"
+        jj new "description(glob:'FIRST PATCH*')" @ -m "SECOND PATCH"
         jj new -m "resolve conflict"
         echo merged > file1.txt
        """,
@@ -105,7 +105,11 @@ def test_diff_stream(repo):
         files = set()
         for line in stream:
             print(line, end="")
+            # Match both git format (diff --git a/file) and hg format (diff -r hash file)
             if m := re.match(r"diff --git \w/(\S+)", line):
+                files.add(m[1])
+            # Handle hg format: both single revision (diff -r hash file) and dual revision (diff -r hash1 -r hash2 file)
+            elif m := re.match(r"diff -r \S+(?: -r \S+)? (\S+)$", line):
                 files.add(m[1])
         return files
 

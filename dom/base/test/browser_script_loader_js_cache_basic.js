@@ -147,17 +147,13 @@ add_task(async function testDiskCache() {
 });
 
 add_task(async function testMemoryCache() {
-  if (!AppConstants.NIGHTLY_BUILD) {
-    todo(false, "navigation cache is not yet enabled on non-nightly");
-    return;
-  }
-
   await SpecialPowers.pushPrefEnv({
     set: [
       ["dom.expose_test_interfaces", true],
       ["dom.script_loader.bytecode_cache.enabled", true],
       ["dom.script_loader.bytecode_cache.strategy", 0],
       ["dom.script_loader.experimental.navigation_cache", true],
+      ["dom.script_loader.disk_cache_delay_ms", 0],
     ],
   });
 
@@ -318,6 +314,97 @@ add_task(async function testMemoryCache() {
           file: "file_js_cache_large_syntax_error.js",
           events: [
             ev("load:source", "file_js_cache_large_syntax_error.js"),
+            ev("diskcache:noschedule"),
+          ],
+        },
+      ],
+    },
+  ]);
+
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function testMemoryCache_timer() {
+  // Do the same large file test as above, with non-zero delay.
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["dom.expose_test_interfaces", true],
+      ["dom.script_loader.bytecode_cache.enabled", true],
+      ["dom.script_loader.bytecode_cache.strategy", 0],
+      ["dom.script_loader.experimental.navigation_cache", true],
+      ["dom.script_loader.disk_cache_delay_ms", 1000],
+    ],
+  });
+
+  await runJSCacheTests([
+    {
+      title: "large file",
+      items: [
+        {
+          file: "file_js_cache_large.js",
+          events: [
+            ev("load:source", "file_js_cache_large.js"),
+            ev("memorycache:saved", "file_js_cache_large.js"),
+            ev("evaluate:classic", "file_js_cache_large.js"),
+            ev("diskcache:noschedule"),
+          ],
+        },
+        {
+          file: "file_js_cache_large.js",
+          events: [
+            ev("load:memorycache", "file_js_cache_large.js"),
+            ev("evaluate:classic", "file_js_cache_large.js"),
+            ev("diskcache:noschedule"),
+          ],
+        },
+        {
+          file: "file_js_cache_large.js",
+          events: [
+            ev("load:memorycache", "file_js_cache_large.js"),
+            ev("evaluate:classic", "file_js_cache_large.js"),
+            ev("diskcache:noschedule"),
+          ],
+        },
+        {
+          file: "file_js_cache_large.js",
+          events: [
+            ev("load:memorycache", "file_js_cache_large.js"),
+            ev("evaluate:classic", "file_js_cache_large.js"),
+            ev("diskcache:saved", "file_js_cache_large.js", false),
+          ],
+        },
+        {
+          file: "file_js_cache_large.js",
+          events: [
+            ev("load:memorycache", "file_js_cache_large.js"),
+            ev("evaluate:classic", "file_js_cache_large.js"),
+            ev("diskcache:noschedule"),
+          ],
+        },
+        {
+          file: "file_js_cache_large.js",
+          events: [
+            ev("load:memorycache", "file_js_cache_large.js"),
+            ev("evaluate:classic", "file_js_cache_large.js"),
+            ev("diskcache:noschedule"),
+          ],
+        },
+
+        {
+          clearMemory: true,
+          file: "file_js_cache_large.js",
+          events: [
+            ev("load:diskcache", "file_js_cache_large.js"),
+            ev("memorycache:saved", "file_js_cache_large.js"),
+            ev("evaluate:classic", "file_js_cache_large.js"),
+            ev("diskcache:noschedule"),
+          ],
+        },
+        {
+          file: "file_js_cache_large.js",
+          events: [
+            ev("load:memorycache", "file_js_cache_large.js"),
+            ev("evaluate:classic", "file_js_cache_large.js"),
             ev("diskcache:noschedule"),
           ],
         },

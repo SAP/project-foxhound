@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,6 +19,7 @@ namespace mozilla {
 
 namespace gl {
 class GLContext;
+class MozFramebuffer;
 }  // namespace gl
 
 namespace wr {
@@ -257,6 +257,50 @@ class NativeLayer {
 
  protected:
   virtual ~NativeLayer() = default;
+};
+
+// Utility classes for NativeLayerRootSnapshotter (NLRS) profiler screenshots.
+
+class RenderSourceNLRS : public profiler_screenshots::RenderSource {
+ public:
+  explicit RenderSourceNLRS(UniquePtr<gl::MozFramebuffer>&& aFramebuffer);
+  auto& FB() { return *mFramebuffer; }
+
+ protected:
+  UniquePtr<gl::MozFramebuffer> mFramebuffer;
+};
+
+class DownscaleTargetNLRS : public profiler_screenshots::DownscaleTarget {
+ public:
+  DownscaleTargetNLRS(gl::GLContext* aGL,
+                      UniquePtr<gl::MozFramebuffer>&& aFramebuffer);
+  already_AddRefed<profiler_screenshots::RenderSource> AsRenderSource()
+      override {
+    return do_AddRef(mRenderSource);
+  };
+  bool DownscaleFrom(profiler_screenshots::RenderSource* aSource,
+                     const gfx::IntRect& aSourceRect,
+                     const gfx::IntRect& aDestRect) override;
+
+ protected:
+  RefPtr<gl::GLContext> mGL;
+  RefPtr<RenderSourceNLRS> mRenderSource;
+};
+
+class AsyncReadbackBufferNLRS
+    : public profiler_screenshots::AsyncReadbackBuffer {
+ public:
+  AsyncReadbackBufferNLRS(gl::GLContext* aGL, const gfx::IntSize& aSize,
+                          GLuint aBufferHandle, bool aYFlip);
+  void CopyFrom(profiler_screenshots::RenderSource* aSource) override;
+  bool MapAndCopyInto(gfx::DataSourceSurface* aSurface,
+                      const gfx::IntSize& aReadSize) override;
+
+ protected:
+  virtual ~AsyncReadbackBufferNLRS();
+  RefPtr<gl::GLContext> mGL;
+  GLuint mBufferHandle = 0;
+  bool mYFlip;
 };
 
 }  // namespace layers

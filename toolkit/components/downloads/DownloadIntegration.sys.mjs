@@ -85,6 +85,13 @@ XPCOMUtils.defineLazyServiceGetter(
   Ci.nsPIExternalAppLauncher
 );
 
+XPCOMUtils.defineLazyServiceGetter(
+  lazy,
+  "powerManager",
+  "@mozilla.org/power/powermanagerservice;1",
+  Ci.nsIPowerManagerService
+);
+
 const Timer = Components.Constructor(
   "@mozilla.org/timer;1",
   "nsITimer",
@@ -914,6 +921,14 @@ export var DownloadIntegration = {
       );
     } catch (e) {}
 
+    // An attempt will be made to launch the download, thus clear the
+    // `launchWhenSucceeded` flag, so future opens can go through Firefox, and
+    // not be treated as auto-opens. This is done early to ensure it's cleared
+    // in case of early returns below, but we still need the current value
+    // for this call.
+    let launchWhenSucceeded = aDownload.launchWhenSucceeded;
+    aDownload.launchWhenSucceeded = false;
+
     if (aDownload.launcherPath || aDownload.launcherId) {
       if (!mimeInfo) {
         // This should not happen on normal circumstances because launcherPath
@@ -948,10 +963,6 @@ export var DownloadIntegration = {
       mimeInfo.preferredAction = Ci.nsIMIMEInfo.useHelperApp;
 
       this.launchFile(file, mimeInfo);
-      // After an attempt has been made to launch the download, clear the
-      // launchWhenSucceeded bit so future attempts to open the download can go
-      // through Firefox when possible.
-      aDownload.launchWhenSucceeded = false;
       return;
     }
 
@@ -970,22 +981,18 @@ export var DownloadIntegration = {
               mimeInfo.type
             ) &&
               mimeInfo.preferredAction === Ci.nsIHandlerInfo.saveToDisk)) &&
-          !aDownload.launchWhenSucceeded)
+          !launchWhenSucceeded)
       ) {
         lazy.DownloadUIHelper.loadFileIn(file, {
           browsingContextId: aDownload.source.browsingContextId,
           isPrivate: aDownload.source.isPrivate,
           openWhere,
           userContextId: aDownload.source.userContextId,
+          openInBackgroundIfSwitchedBrowsingContext: launchWhenSucceeded,
         });
         return;
       }
     }
-
-    // An attempt will now be made to launch the download, clear the
-    // launchWhenSucceeded bit so future attempts to open the download can go
-    // through Firefox when possible.
-    aDownload.launchWhenSucceeded = false;
 
     // When a file has no extension, and there's an executable file with the
     // same name in the same folder, Windows shell can get confused.
@@ -1186,6 +1193,10 @@ export var DownloadIntegration = {
     }
     return Promise.resolve();
   },
+
+  get _testGetDownloadObserver() {
+    return DownloadObserver;
+  },
 };
 
 var DownloadObserver = {
@@ -1199,6 +1210,11 @@ var DownloadObserver = {
    * online.
    */
   _wakeTimer: null,
+
+  /**
+   * WakeLock used to request OS to refrain from sleeping during a download.
+   */
+  _downloadWakeLock: null,
 
   /**
    * Set that contains the in progress publics downloads.
@@ -1233,9 +1249,46 @@ var DownloadObserver = {
   _canceledOfflineDownloads: new Set(),
 
   /**
+   * Whether any public or private downloads are currently in progress.
+   * Used to decide when to hold the download wake lock.
+   *
+   * Note: _contentAnalysisWarnInProgressDownloads is intentionally not
+   * accounted for here. Those downloads have already finished transferring
+   * data and are waiting on a user decision for a content analysis
+   * warning.
+   */
+  get _hasInProgressDownloads() {
+    return (
+      this._publicInProgressDownloads.size > 0 ||
+      this._privateInProgressDownloads.size > 0
+    );
+  },
+
+  _acquireDownloadWakeLock() {
+    if (!this._downloadWakeLock) {
+      this._downloadWakeLock = lazy.powerManager.newWakeLock(
+        "download-in-progress",
+        null
+      );
+    }
+  },
+
+  _releaseDownloadWakeLock() {
+    if (this._downloadWakeLock) {
+      try {
+        this._downloadWakeLock.unlock();
+      } catch (e) {
+        // Ignore error since wakelock is already unlocked
+      }
+      this._downloadWakeLock = null;
+    }
+  },
+
+  /**
    * Registers a view that updates the corresponding downloads state set, based
    * on the aIsPrivate argument. The set is updated when a download is added,
-   * removed or changes its properties.
+   * removed or changes its properties. A wakelock is used to keep OS from
+   * sleeping during active downloads.
    *
    * @param aList
    *        The public or private downloads list.
@@ -1250,6 +1303,9 @@ var DownloadObserver = {
       onDownloadAdded: aDownload => {
         if (!aDownload.stopped) {
           downloadsSet.add(aDownload);
+          if (this._hasInProgressDownloads) {
+            this._acquireDownloadWakeLock();
+          }
         }
       },
       onDownloadChanged: aDownload => {
@@ -1268,8 +1324,14 @@ var DownloadObserver = {
             this._contentAnalysisInProgressDownloads.delete(aDownload);
           }
           downloadsSet.delete(aDownload);
+          if (!this._hasInProgressDownloads) {
+            this._releaseDownloadWakeLock();
+          }
         } else {
           downloadsSet.add(aDownload);
+          if (this._hasInProgressDownloads) {
+            this._acquireDownloadWakeLock();
+          }
         }
       },
       onDownloadRemoved: aDownload => {
@@ -1278,6 +1340,9 @@ var DownloadObserver = {
         this._contentAnalysisInProgressDownloads.delete(aDownload);
         // The download must also be removed from the canceled when offline set.
         this._canceledOfflineDownloads.delete(aDownload);
+        if (!this._hasInProgressDownloads) {
+          this._releaseDownloadWakeLock();
+        }
       },
     };
 
@@ -1311,6 +1376,20 @@ var DownloadObserver = {
     }
 
     if (!aDownloadsCount) {
+      return;
+    }
+
+    const isPromptGranted = Cc["@mozilla.org/supports-PRBool;1"].createInstance(
+      Ci.nsISupportsPRBool
+    );
+    isPromptGranted.data = true;
+    Services.obs.notifyObservers(
+      isPromptGranted,
+      "before-cancel-download-prompt"
+    );
+
+    if (!isPromptGranted.data) {
+      aCancel.data = false;
       return;
     }
 
@@ -1429,6 +1508,12 @@ var DownloadObserver = {
         }
         break;
       }
+      // While downloads are in progress we hold a wakelock asking the OS
+      // not to enter automatic sleep. The wakelock is advisory: the OS may
+      // still sleep on explicit user request (e.g. sleep menu, lid close)
+      // or for other reasons (low battery, thermal). In the cases where the
+      // sleep notification still fires, we cancel the active downloads so they
+      // can be resumed on wake.
       case "sleep_notification":
       case "suspend_process_notification":
       case "network:offline-about-to-go-offline":

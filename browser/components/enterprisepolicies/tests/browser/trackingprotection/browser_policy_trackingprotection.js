@@ -4,14 +4,11 @@
 "use strict";
 
 add_task(async function test_enabletrackingprotection_strict() {
-  await BrowserTestUtils.withNewTab(
-    "about:preferences#privacy",
-    async browser => {
-      let strictRadio = browser.contentDocument.getElementById("strictRadio");
-      is(strictRadio.selected, true, "Strict checkbox should be selected");
-      is(strictRadio.disabled, true, "Strict checkbox should be disabled");
-    }
-  );
+  await BrowserTestUtils.withNewTab("about:preferences#etp", async browser => {
+    let strictRadio = browser.contentDocument.getElementById("etpLevelStrict");
+    is(strictRadio.checked, true, "Strict checkbox should be selected");
+    is(strictRadio.disabled, true, "Strict checkbox should be disabled");
+  });
 });
 
 add_task(async function test_enabletrackingprotection_strict_preferences() {

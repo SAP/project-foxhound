@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 package org.mozilla.focus.activity
 
-import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -12,17 +11,15 @@ import org.mozilla.focus.R
 import org.mozilla.focus.activity.robots.homeScreen
 import org.mozilla.focus.activity.robots.searchScreen
 import org.mozilla.focus.helpers.FeatureSettingsHelper
+import org.mozilla.focus.helpers.FocusTestRule
 import org.mozilla.focus.helpers.MainActivityFirstrunTestRule
-import org.mozilla.focus.helpers.MockWebServerHelper
 import org.mozilla.focus.helpers.TestHelper.exitToTop
 import org.mozilla.focus.helpers.TestHelper.getStringResource
-import org.mozilla.focus.helpers.TestSetup
 import org.mozilla.focus.testAnnotations.SmokeTest
 import mozilla.components.browser.errorpages.R as errorpagesR
 
 // These tests verify the Safe Browsing feature by visiting unsafe URLs and checking they are blocked
-class SafeBrowsingTest : TestSetup() {
-    private lateinit var webServer: MockWebServer
+class SafeBrowsingTest {
     private val malwareWarning = getStringResource(errorpagesR.string.mozac_browser_errorpages_safe_browsing_malware_uri_title)
     private val phishingWarning = getStringResource(errorpagesR.string.mozac_browser_errorpages_safe_phishing_uri_title)
     private val unwantedSoftwareWarning =
@@ -31,23 +28,20 @@ class SafeBrowsingTest : TestSetup() {
     private val tryAgainButton = getStringResource(errorpagesR.string.mozac_browser_errorpages_page_refresh)
     private val featureSettingsHelper = FeatureSettingsHelper()
 
+    @get:Rule(order = 0)
+    val focusTestRule: FocusTestRule = FocusTestRule()
+
     @get:Rule
     val mActivityTestRule = MainActivityFirstrunTestRule(showFirstRun = false)
 
     @Before
-    override fun setUp() {
-        super.setUp()
+    fun setUp() {
         featureSettingsHelper.setCfrForTrackingProtectionEnabled(false)
         featureSettingsHelper.setSearchWidgetDialogEnabled(false)
-        webServer = MockWebServer().apply {
-            dispatcher = MockWebServerHelper.AndroidAssetDispatcher()
-            start()
-        }
     }
 
     @After
     fun tearDown() {
-        webServer.shutdown()
         featureSettingsHelper.resetAllFeatureFlags()
     }
 

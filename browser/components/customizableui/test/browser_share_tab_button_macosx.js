@@ -50,6 +50,13 @@ registerCleanupFunction(function () {
   MockRegistrar.unregister(mockMacSharingService);
 });
 
+const qrCodeEnabled = Services.prefs.getBoolPref(
+  "browser.shareqrcode.enabled",
+  false
+);
+// copy link + service + More, plus QR code if enabled.
+const expectedItemCount = qrCodeEnabled ? 4 : 3;
+
 async function openShareTabPopup() {
   await waitForOverflowButtonShown();
   await document.getElementById("nav-bar").overflowable.show();
@@ -108,8 +115,8 @@ add_task(async function test_popup_opens_with_share_services() {
     let items = Array.from(popupElement.querySelectorAll("menuitem"));
     is(
       items.length,
-      3,
-      "There should be 3 menu items (copy link, share service, more)"
+      expectedItemCount,
+      `There should be ${expectedItemCount} menu items`
     );
 
     let shareButton = items.find(
@@ -161,8 +168,8 @@ add_task(async function test_copy_link() {
     let { popupElement } = await openShareTabPopup();
 
     let items = Array.from(popupElement.querySelectorAll("menuitem"));
-    let copyLinkItem = items.find(
-      item => item.getAttribute("data-l10n-id") == "menu-share-copy-link"
+    let copyLinkItem = items.find(item =>
+      item.classList.contains("share-copy-link")
     );
     ok(copyLinkItem, "Copy link item exists");
 

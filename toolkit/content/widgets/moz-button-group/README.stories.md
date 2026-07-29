@@ -23,7 +23,7 @@
 
 ## Code
 
-The source for `moz-button-group` can be found under [toolkit/content/widgets/moz-button-group/](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/moz-button-group)
+The source for `moz-button-group` can be found under [toolkit/content/widgets/moz-button-group/](https://searchfox.org/firefox-main/source/toolkit/content/widgets/moz-button-group)
 
 ## How to use `moz-button-group`
 

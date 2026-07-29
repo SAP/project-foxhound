@@ -97,13 +97,13 @@
   }
 
   #viewGroup > radio:hover {
-    background-color: #e0e8f6;
-    color: black;
+    background-color: light-dark(#e0e8f6, var(--button-background-color-hover));
+    color: light-dark(black, var(--button-text-color-hover));
   }
 
   #viewGroup > radio[selected] {
-    background-color: #c1d2ee;
-    color: black;
+    background-color: light-dark(#c1d2ee, var(--button-background-color-active));
+    color: light-dark(black, var(--button-text-color-active));
   }
 
   #viewGroup > radio:is(:hover, [selected]) .radio-icon {
@@ -156,7 +156,7 @@ html|input.header {
 
 #imagecontainerbox {
   margin: 0.5em;
-  background: white;
+  background: Field;
   overflow: auto;
   border: 1px solid ThreeDLightShadow;
 }

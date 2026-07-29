@@ -7,6 +7,8 @@ ChromeUtils.defineESModuleGetters(this, {
   ExtensionStorageIDB: "resource://gre/modules/ExtensionStorageIDB.sys.mjs",
   ExtensionStorageLocalIDB:
     "resource://gre/modules/ExtensionStorageIDB.sys.mjs",
+  ERROR_OPEN_ON_INACTIVE_POLICY:
+    "resource://gre/modules/ExtensionStorageIDB.sys.mjs",
   Sqlite: "resource://gre/modules/Sqlite.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
 });
@@ -17,6 +19,43 @@ AddonTestUtils.createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1");
 
 // The userContextID reserved for the extension storage.
 const WEBEXT_STORAGE_USER_CONTEXT_ID = -1 >>> 0;
+
+async function assertStorageLocalCorruptedGleanEvents(expected, msg) {
+  await Services.fog.testFlushAllChildren();
+  const gleanEvents =
+    Glean.extensionsData.storageLocalCorruptedReset
+      .testGetValue()
+      ?.map(event => event.extra) ?? [];
+  Assert.deepEqual(gleanEvents, expected, msg);
+}
+
+function assertNoStorageLocalCorruptedGleanEvents() {
+  return assertStorageLocalCorruptedGleanEvents(
+    [],
+    "Expected no storageLocalCorruptedReset Glean events to be found"
+  );
+}
+
+// IndexedDB internals are releasing the underlying sqlite file asynchronously
+// from a background thread, and so the calls to Sqlite.openConnection that this
+// test is using to recreate the corrupted datatase scenario are hitting intermittenly
+// an NS_ERROR_STORAGE_BUSY error if the sqlite file has not been fully released
+// yet. This helper is meant to reduce the changes to hit intermittent failure
+// when that happens by using TestUtils.waitForCondition to retry a few times
+// before giving up and raise a test failure.
+function openSqliteConnectionWithRetry(path) {
+  return TestUtils.waitForCondition(async () => {
+    try {
+      const db = await Sqlite.openConnection({ path });
+      return db;
+    } catch (e) {
+      if (e.result === Cr.NS_ERROR_STORAGE_BUSY) {
+        return null;
+      }
+      throw e;
+    }
+  }, "Waiting for IDB to release the SQLite file");
+}
 
 add_setup(async () => {
   Services.fog.testResetFOG();
@@ -81,7 +120,7 @@ add_task(async function test_idb_reset_on_missing_object_store() {
   info(
     `Mock corrupted IndexedDB by tampering sqlite3 file at ${sqliteFilePath}`
   );
-  let db = await Sqlite.openConnection({ path: sqliteFilePath });
+  let db = await openSqliteConnectionWithRetry(sqliteFilePath);
   let rows = await db.execute("SELECT * FROM object_store;");
   // Sanity check.
   Assert.equal(
@@ -141,6 +180,7 @@ add_task(async function test_idb_reset_on_missing_object_store() {
         reason: "ObjectStoreNotFound",
         after_reset: "false",
         reset_disabled: "true",
+        is_addon_active: "true",
       },
     ],
     "Got the expected telemetry event recorded when the NotFoundError is being hit"
@@ -185,6 +225,7 @@ add_task(async function test_idb_reset_on_missing_object_store() {
         reason: "ObjectStoreNotFound",
         after_reset: "false",
         reset_disabled: "false",
+        is_addon_active: "true",
       },
       {
         addon_id: extension.id,
@@ -192,6 +233,7 @@ add_task(async function test_idb_reset_on_missing_object_store() {
         after_reset: "true",
         reset_disabled: "false",
         reset_error_name: "MockResetFailureErrorName",
+        is_addon_active: "true",
       },
     ],
     "Got the expected telemetry event recorded when the NotFoundError is being hit"
@@ -220,6 +262,7 @@ add_task(async function test_idb_reset_on_missing_object_store() {
         reason: "ObjectStoreNotFound",
         after_reset: "false",
         reset_disabled: "false",
+        is_addon_active: "true",
       },
     ],
     "Got the expected telemetry event recorded when the NotFoundError is being hit"
@@ -341,7 +384,7 @@ add_task(async function test_corrupted_idb_key() {
     filePath => filePath.endsWith(".sqlite")
   );
 
-  let db = await Sqlite.openConnection({ path: sqliteFilePath });
+  let db = await openSqliteConnectionWithRetry(sqliteFilePath);
   let rows = await db.execute(
     "SELECT * FROM object_data WHERE file_ids IS NOT NULL;"
   );
@@ -433,6 +476,7 @@ add_task(async function test_corrupted_idb_key() {
       {
         addon_id: extension.id,
         reason: "RejectedClear:UnknownError",
+        is_addon_active: "true",
       },
     ],
     "Got the expected telemetry event recorded when the UnknownError is being hit by storage.local.clear API calls"
@@ -440,3 +484,205 @@ add_task(async function test_corrupted_idb_key() {
 
   await extension.unload();
 });
+
+add_task(async function testErrorOnInactiveAddonBeforeOpenForPrincipal() {
+  Services.fog.testResetFOG();
+
+  // NOTE: this test extension is only used to derive the storagePrincipal,
+  // it is then shutdown to recreate the scenario being tested.
+  let extension = ExtensionTestUtils.loadExtension({
+    useAddonManager: "permanent",
+    manifest: {
+      browser_specific_settings: {
+        gecko: { id: "test-inactive-before-open@test-ext" },
+      },
+    },
+  });
+  await extension.startup();
+  let storagePrincipal = ExtensionStorageIDB.getStoragePrincipal(
+    extension.extension
+  );
+  await extension.unload();
+
+  info(
+    "Verify ExtensionStorageLocalIDB.openForPrincipal does get to call super.openForPrincipal for already inactive addons"
+  );
+  const sandbox = sinon.createSandbox();
+  // Add spy on ExtensionStorageLocalIDB super class openForPrincipal static method call,
+  // to explicitly verify that ExtensionStorageIDB.openForPrincipal doesn't get to the
+  // `super.openForPrincipal` call if the add-on was not active anymore.
+  // NOTE: the other test task `testSkipResetForPrincipalOnInactiveAddon` is instead
+  // verifying that super.openForPrincipal is called when the add-on wasn't already
+  // inactive.
+  const openForPrincipalSpy = sandbox.spy(
+    Object.getPrototypeOf(ExtensionStorageLocalIDB),
+    "openForPrincipal"
+  );
+  await Assert.rejects(
+    ExtensionStorageIDB.open(storagePrincipal),
+    new RegExp(ERROR_OPEN_ON_INACTIVE_POLICY),
+    "ExtensionStorageIDB open should be rejected with the expected Error"
+  );
+  Assert.equal(
+    openForPrincipalSpy.callCount,
+    0,
+    "Expect sinon spy wrapping super.openForPrincipal to not have been called"
+  );
+
+  sandbox.restore();
+
+  await assertNoStorageLocalCorruptedGleanEvents();
+});
+
+add_task(
+  {
+    pref_set: [
+      ["extensions.webextensions.keepStorageOnCorrupted.storageLocal", false],
+    ],
+  },
+  async function testSkipResetForPrincipalOnInactiveAddon() {
+    Services.fog.testResetFOG();
+
+    let extension = ExtensionTestUtils.loadExtension({
+      useAddonManager: "permanent",
+      manifest: {
+        browser_specific_settings: {
+          gecko: { id: "test-inactive-extension-skips-reset@test-ext" },
+        },
+      },
+    });
+    await extension.startup();
+    const { id } = extension;
+    let storagePrincipal = ExtensionStorageIDB.getStoragePrincipal(
+      extension.extension
+    );
+
+    info(
+      "Verify ExtensionStorageLocalIDB.openForPrincipal skips resetForPrincipal when addon becomes inactive"
+    );
+    const sandbox = sinon.createSandbox();
+
+    const deferredOpenForPrincipalCallReceived = Promise.withResolvers();
+    const deferredOpenForPrincipalCallResult = Promise.withResolvers();
+
+    // Mock the objectStoreNames to be missing by stubbing the helper method.
+    sandbox
+      .stub(ExtensionStorageLocalIDB, "isMissingObjectStore")
+      .callsFake(() => true);
+    // Spy on the resetForPrincipal method.
+    sandbox.spy(ExtensionStorageLocalIDB, "resetForPrincipal");
+
+    // Intercept calls to super.openForPrincipal originated from
+    // ExtensionStorageLocalIDB.openForPrincipal, as part of recreating
+    // the scenario where the add-on becomes inactive after super.openForPrincipal
+    // has successfully resolved and verify that we don't call resetForPrincipal
+    // is the add-on is already inactive.
+    const openForPrincipalStub = sandbox
+      .stub(Object.getPrototypeOf(ExtensionStorageLocalIDB), "openForPrincipal")
+      .callsFake(async (...args) => {
+        const result = await openForPrincipalStub.wrappedMethod.apply(
+          ExtensionStorageLocalIDB,
+          args
+        );
+        deferredOpenForPrincipalCallReceived.resolve();
+        await deferredOpenForPrincipalCallResult.promise;
+        return result;
+      });
+
+    const openCallPromise = ExtensionStorageIDB.open(storagePrincipal);
+
+    info("Wait for call to super.openForPrincipal sinon stub to be received");
+    await deferredOpenForPrincipalCallReceived.promise;
+    info(
+      "Unload test extension while super.openForPrincipal async call is still pending resolution"
+    );
+    await extension.unload();
+    deferredOpenForPrincipalCallResult.resolve();
+    await Assert.rejects(
+      openCallPromise,
+      err => err.message === `${ERROR_OPEN_ON_INACTIVE_POLICY} (${id})`,
+      "ExtensionStorageIDB open should be rejected with the expected Error"
+    );
+    Assert.equal(
+      ExtensionStorageLocalIDB.resetForPrincipal.callCount,
+      0,
+      "Expect ExtensionStorageLocalIDB.resetForPrincipal spy to not have been called"
+    );
+
+    sandbox.restore();
+
+    await assertStorageLocalCorruptedGleanEvents(
+      [
+        {
+          addon_id: id,
+          reason: "ObjectStoreNotFound",
+          is_addon_active: "false",
+          after_reset: "false",
+          reset_disabled: "false",
+        },
+      ],
+      "Got glean event is is_addon_active set to false as expected"
+    );
+  }
+);
+
+add_task(
+  {
+    pref_set: [
+      ["extensions.webextensions.keepStorageOnCorrupted.storageLocal", false],
+    ],
+  },
+  async function testDropAndReopenOnInactiveAddon() {
+    Services.fog.testResetFOG();
+
+    let extension = ExtensionTestUtils.loadExtension({
+      useAddonManager: "permanent",
+      manifest: {
+        browser_specific_settings: {
+          gecko: { id: "test-inactive-extension-skips-reset@test-ext" },
+        },
+      },
+    });
+    await extension.startup();
+    const { id } = extension;
+    let storagePrincipal = ExtensionStorageIDB.getStoragePrincipal(
+      extension.extension
+    );
+
+    info(
+      "Verify ExtensionStorageLocalIDB dropAndReopen does not call resetForPrincipal when addon is already inactive"
+    );
+    const sandbox = sinon.createSandbox();
+    sandbox.spy(ExtensionStorageLocalIDB, "resetForPrincipal");
+
+    const storageInstance =
+      await ExtensionStorageLocalIDB.openForPrincipal(storagePrincipal);
+    const prevDbInstance = storageInstance.db;
+
+    // Shutdown the test extension to make sure storagePrincipal.addonPolicy
+    // isn't going to be set anymore by the time we'll call dropAndReopen.
+    await extension.unload();
+
+    await Assert.rejects(
+      storageInstance.dropAndReopen(),
+      err => err.message === `${ERROR_OPEN_ON_INACTIVE_POLICY} (${id})`,
+      "ExtensionStorageIDB dropAndReopen should be rejected with the expected Error"
+    );
+
+    Assert.equal(
+      ExtensionStorageLocalIDB.resetForPrincipal.callCount,
+      0,
+      "resetForPrincipal method is expected to not be called"
+    );
+
+    Assert.equal(
+      prevDbInstance,
+      storageInstance.db,
+      "ExtensionStorageLocalIDB db property did not change as expected"
+    );
+
+    sandbox.restore();
+
+    await assertNoStorageLocalCorruptedGleanEvents();
+  }
+);

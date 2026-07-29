@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -118,7 +117,7 @@ class Buffer final : public nsWrapperCache,
 
  private:
   Buffer(Device* const aParent, RawId aId, BufferAddress aSize, uint32_t aUsage,
-         ipc::SharedMemoryMapping&& aShmem);
+         mozilla::ipc::SharedMemoryMapping&& aShmem);
   virtual ~Buffer();
   void Cleanup();
   void UnmapArrayBuffers(JSContext* aCx, ErrorResult& aRv);
@@ -151,7 +150,7 @@ class Buffer final : public nsWrapperCache,
   // Otherwise, this points to `SharedMemoryMapping()` (the default
   // constructor), a zero-length mapping that doesn't point to any shared
   // memory.
-  std::shared_ptr<ipc::SharedMemoryMapping> mShmem;
+  std::shared_ptr<mozilla::ipc::SharedMemoryMapping> mShmem;
 };
 
 }  // namespace webgpu

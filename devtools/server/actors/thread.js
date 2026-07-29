@@ -459,6 +459,12 @@ class ThreadActor extends Actor {
 
     const { window } = this.targetActor;
 
+    if (Cu && Cu.isRemoteProxy(window)) {
+      // Do not try to access any property on window if it is a remote proxy,
+      // it would throw a security error.
+      return false;
+    }
+
     // The CanvasFrameAnonymousContentHelper class we're using to create the paused overlay
     // need to have access to a documentElement.
     // We might have access to a non-chrome window getter that is a Sandox (e.g. in the

@@ -44,6 +44,21 @@ function notifyPromptObservers(aIsPrivate, aExpectedCount, aExpectedPBCount) {
   delete DownloadIntegration._testPromptDownloads;
 }
 
+/**
+ * Creates an interruptible download, starts it, and adds it to the given list.
+ *
+ * @param list
+ *        The DownloadList to add the new download to.
+ * @returns {Promise<Download>}
+ *   Resolves to the newly created Download object.
+ */
+async function addDownload(list) {
+  let download = await promiseNewDownload(httpUrl("interruptible.txt"));
+  download.start().catch(() => {});
+  list.add(download);
+  return download;
+}
+
 // Tests
 
 /**
@@ -334,15 +349,6 @@ add_task(async function test_suspend_resume() {
   // faster for these tests.
   Services.prefs.setIntPref("browser.download.manager.resumeOnWakeDelay", 5);
 
-  let addDownload = function (list) {
-    return (async function () {
-      let download = await promiseNewDownload(httpUrl("interruptible.txt"));
-      download.start().catch(() => {});
-      list.add(download);
-      return download;
-    })();
-  };
-
   let publicList = await promiseNewList();
   let privateList = await promiseNewList(true);
 
@@ -478,3 +484,214 @@ add_task(async function test_exit_private_browsing_via_clear_data_service() {
 
   continueResponses();
 });
+
+/**
+ * Tests if system sleep is prevented while downloads are active.
+ */
+add_task(async function test_wake_lock_during_download() {
+  let publicList = await promiseNewList();
+  mustInterruptResponses();
+
+  // assert that downloads are not holding wakelock before downloads start
+  await waitForExpectedWakeLockState("download-in-progress", {
+    needLock: false,
+  });
+
+  let download1 = await addDownload(publicList);
+  let download2 = await addDownload(publicList);
+  let download3 = await addDownload(publicList);
+  //assert that wakelock is in place when downloads are in progress
+  await waitForExpectedWakeLockState("download-in-progress", {
+    needLock: true,
+  });
+  continueResponses();
+
+  await download1.whenSucceeded();
+  await download2.whenSucceeded();
+  await download3.whenSucceeded();
+  //assert that wakelock has been released when all downloads are finished
+  await waitForExpectedWakeLockState("download-in-progress", {
+    needLock: false,
+  });
+});
+
+/**
+ * Tests wakelock is released after canceled download.
+ */
+add_task(async function test_wake_lock_released_on_cancel() {
+  let publicList = await promiseNewList();
+
+  mustInterruptResponses();
+
+  let download1 = await addDownload(publicList);
+  await waitForExpectedWakeLockState("download-in-progress", {
+    needLock: true,
+  });
+  await download1.cancel();
+  await waitForExpectedWakeLockState("download-in-progress", {
+    needLock: false,
+  });
+
+  continueResponses();
+});
+
+/**
+ * Tests that the wakelock is held until the last active download finishes,
+ * even when earlier downloads are canceled first.
+ */
+add_task(async function test_wake_lock_held_until_last_download_completes() {
+  let publicList = await promiseNewList();
+  mustInterruptResponses();
+
+  let download1 = await addDownload(publicList);
+  let download2 = await addDownload(publicList);
+  let download3 = await addDownload(publicList);
+
+  await waitForExpectedWakeLockState("download-in-progress", {
+    needLock: true,
+  });
+
+  await download1.cancel();
+  await download2.cancel();
+
+  await waitForExpectedWakeLockState("download-in-progress", {
+    needLock: true,
+  });
+
+  continueResponses();
+  await download3.whenSucceeded();
+
+  await waitForExpectedWakeLockState("download-in-progress", {
+    needLock: false,
+  });
+
+  await publicList.remove(download1);
+  await publicList.remove(download2);
+  await publicList.remove(download3);
+});
+
+/**
+ * Tests that adding an already-stopped download to a list does not acquire
+ * the wakelock.
+ */
+add_task(async function test_wake_lock_not_acquired_for_stopped_download() {
+  let list = await promiseNewList();
+
+  await waitForExpectedWakeLockState("download-in-progress", {
+    needLock: false,
+  });
+
+  let download = await promiseNewDownload(httpUrl("source.txt"));
+  await download.start();
+  Assert.ok(download.stopped);
+
+  await list.add(download);
+
+  await waitForExpectedWakeLockState("download-in-progress", {
+    needLock: false,
+  });
+
+  await list.remove(download);
+});
+
+/**
+ * Tests that the wakelock is held as long as either public or private
+ * downloads remain active, and released only when both lists are empty.
+ */
+add_task(async function test_wake_lock_mixed_public_private() {
+  mustInterruptResponses();
+
+  let publicList = await promiseNewList();
+  let privateList = await Downloads.getList(Downloads.PRIVATE);
+
+  let download1 = await promiseNewDownload(httpUrl("interruptible.txt"));
+  let download2 = await promiseNewDownload(httpUrl("interruptible.txt"));
+  download1.start().catch(() => {});
+  download2.start().catch(() => {});
+
+  await publicList.add(download1);
+  await privateList.add(download2);
+
+  await waitForExpectedWakeLockState("download-in-progress", {
+    needLock: true,
+  });
+
+  await download1.cancel();
+
+  await waitForExpectedWakeLockState("download-in-progress", {
+    needLock: true,
+  });
+
+  continueResponses();
+  await download2.whenSucceeded();
+
+  await waitForExpectedWakeLockState("download-in-progress", {
+    needLock: false,
+  });
+
+  await publicList.remove(download1);
+  await privateList.remove(download2);
+});
+
+/**
+ * Tests that _releaseDownloadWakeLock swallows errors thrown by unlock().
+ */
+add_task(async function test_release_wake_lock_swallows_unlock_error() {
+  let observer = DownloadIntegration._testGetDownloadObserver;
+
+  observer._downloadWakeLock = {
+    unlock() {
+      throw new Error("already unlocked");
+    },
+  };
+
+  observer._releaseDownloadWakeLock();
+
+  Assert.equal(observer._downloadWakeLock, null);
+});
+
+/**
+ * Check if current wakelock is equal to expected state, if not, then wait until
+ * the wakelock changes its state to expected state. Modified from /toolkit/content/tests/browser/head.js.
+ *
+ * @param needLock
+ *        the wakelock should be locked or not. Downloads are always windowless,
+ *        so a locked state will always be "locked-background".
+ */
+async function waitForExpectedWakeLockState(topic, { needLock }) {
+  const powerManagerService = Cc["@mozilla.org/power/powermanagerservice;1"];
+  const powerManager = powerManagerService.getService(
+    Ci.nsIPowerManagerService
+  );
+  const wakeLockState = powerManager.getWakeLockState(topic);
+  const expectedLockState = needLock ? "locked-background" : "unlocked";
+  if (wakeLockState != expectedLockState) {
+    info(`wait until wakelock becomes ${expectedLockState}`);
+    await wakeLockObserved(
+      powerManager,
+      topic,
+      state => state == expectedLockState
+    );
+  }
+  Assert.equal(
+    powerManager.getWakeLockState(topic),
+    expectedLockState,
+    `the wakelock state for '${topic}' is equal to '${expectedLockState}'`
+  );
+}
+
+function wakeLockObserved(powerManager, observeTopic, checkFn) {
+  return new Promise(resolve => {
+    function wakeLockListener() {}
+    wakeLockListener.prototype = {
+      QueryInterface: ChromeUtils.generateQI(["nsIDOMMozWakeLockListener"]),
+      callback(topic, state) {
+        if (topic == observeTopic && checkFn(state)) {
+          powerManager.removeWakeLockListener(wakeLockListener.prototype);
+          resolve();
+        }
+      },
+    };
+    powerManager.addWakeLockListener(wakeLockListener.prototype);
+  });
+}

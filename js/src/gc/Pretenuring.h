@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -239,7 +237,6 @@ class AllocSite {
   Heap initialHeap() const {
     Heap heap = Heap(uint32_t(state()) & LONG_LIVED_BIT);
     MOZ_ASSERT_IF(isTenuring(), heap == Heap::Tenured);
-    MOZ_ASSERT_IF(!isTenuring() && !isNormal(), heap == Heap::Default);
     return heap;
   }
 
@@ -282,7 +279,6 @@ class AllocSite {
 
   void trace(JSTracer* trc);
   bool traceWeak(JSTracer* trc);
-  bool needsSweep(JSTracer* trc) const;
 
   static void printInfoHeader(GCRuntime* gc, JS::GCReason reason,
                               double promotionRate);

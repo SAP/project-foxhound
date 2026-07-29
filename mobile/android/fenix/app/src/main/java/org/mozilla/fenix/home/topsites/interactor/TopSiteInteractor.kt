@@ -80,6 +80,14 @@ interface TopSiteInteractor {
      *
      */
     fun onShortcutsLibraryViewed()
+
+    /**
+     * Saves a new shortcut. Called when the user confirms adding a website from the "Add shortcut" dialog.
+     *
+     * @param title The title of the new shortcut.
+     * @param url The URL of the new shortcut.
+     */
+    fun onSaveShortcut(title: String, url: String)
 }
 
 /**
@@ -128,6 +136,10 @@ class DefaultTopSiteInteractor(
 
     override fun onShowAllTopSitesClicked() {
         controller.handleShowAllTopSitesClicked()
+    }
+
+    override fun onSaveShortcut(title: String, url: String) {
+        controller.handleSaveShortcut(title = title, url = url)
     }
 
     override fun onShortcutsLibraryViewed() {

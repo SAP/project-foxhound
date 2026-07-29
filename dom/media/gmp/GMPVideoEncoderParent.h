@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,7 +21,7 @@ class GMPContentParent;
 
 class GMPVideoEncoderParent final : public GMPVideoEncoderProxy,
                                     public PGMPVideoEncoderParent,
-                                    public GMPSharedMemManager,
+                                    public GMPVideoHostImpl,
                                     public GMPCrashHelperHolder {
   friend class PGMPVideoEncoderParent;
 
@@ -33,7 +32,6 @@ class GMPVideoEncoderParent final : public GMPVideoEncoderProxy,
 
   explicit GMPVideoEncoderParent(GMPContentParent* aPlugin);
 
-  GMPVideoHostImpl& Host();
   void Shutdown();
 
   // GMPVideoEncoderProxy
@@ -55,9 +53,14 @@ class GMPVideoEncoderParent final : public GMPVideoEncoderProxy,
     return AllocShmem(aSize, aMem);
   }
 
-  void MgrDeallocShmem(Shmem& aMem) override { DeallocShmem(aMem); }
+  void MgrDeallocShmem(Shmem& aMem) override {
+    if (CanSend()) {
+      DeallocShmem(aMem);
+    }
+  }
 
  protected:
+  bool MgrCanSend() const override { return CanSend(); }
   bool MgrIsOnOwningThread() const override;
 
  private:
@@ -83,7 +86,6 @@ class GMPVideoEncoderParent final : public GMPVideoEncoderProxy,
   bool mActorDestroyed;
   RefPtr<GMPContentParent> mPlugin;
   RefPtr<GMPVideoEncoderCallbackProxy> mCallback;
-  GMPVideoHostImpl mVideoHost;
   const uint32_t mPluginId;
 };
 

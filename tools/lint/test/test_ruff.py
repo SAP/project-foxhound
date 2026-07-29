@@ -41,7 +41,7 @@ def test_lint_fix_warning(lint, create_temp_file):
     assert fixed == 3
 
 
-def test_lint_fix_withotu_warning(lint, create_temp_file):
+def test_lint_fix_without_warning(lint, create_temp_file):
     contents = dedent(
         """
         import distutils

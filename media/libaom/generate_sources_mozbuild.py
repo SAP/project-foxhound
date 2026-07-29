@@ -17,7 +17,7 @@ AOM_DIR = '../../third_party/aom'
 def write_aom_config(system, arch, variables, cache_variables):
     # read template cmake file
     variables['year'] = datetime.datetime.now().year
-    cmake_parse(variables, [], [AOM_DIR], os.path.join(AOM_DIR, 'build', 'cmake',
+    cmake_parse(variables, [], [AOM_DIR], os.path.join(AOM_DIR, 'cmake',
                 'generate_aom_config_templates.cmake'), 'libaom')
 
     # filter variables

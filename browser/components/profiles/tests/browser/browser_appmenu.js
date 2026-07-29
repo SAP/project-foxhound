@@ -109,7 +109,7 @@ add_task(async function test_appmenu_layout_no_profiles() {
 add_task(async function test_appmenu_layout_two_profiles() {
   await SelectableProfileService.init();
 
-  await SelectableProfileService.createNewProfile();
+  await SelectableProfileService.createNewProfile(true, null, "tests");
 
   await promiseSubViewOpened();
   let {

@@ -1118,7 +1118,7 @@ add_task(async function test_register_dynamic_rules_after_restart() {
 });
 
 add_task(async function test_dynamic_rules_telemetry() {
-  resetTelemetryData();
+  Services.fog.testResetFOG();
 
   let { extension } = await runAsDNRExtension({
     unloadTestAtEnd: false,
@@ -1172,8 +1172,6 @@ add_task(async function test_dynamic_rules_telemetry() {
     [
       {
         metric: "validateRulesTime",
-        mirroredName: "WEBEXT_DNR_VALIDATE_RULES_MS",
-        mirroredType: "histogram",
       },
     ],
     "before test extension have been loaded"
@@ -1212,8 +1210,6 @@ add_task(async function test_dynamic_rules_telemetry() {
     [
       {
         metric: "validateRulesTime",
-        mirroredName: "WEBEXT_DNR_VALIDATE_RULES_MS",
-        mirroredType: "histogram",
       },
     ],
     "no additional rule validation expected for dynamic rules pre-validated on a updateDynamicRules API call"
@@ -1233,8 +1229,6 @@ add_task(async function test_dynamic_rules_telemetry() {
     [
       {
         metric: "validateRulesTime",
-        mirroredName: "WEBEXT_DNR_VALIDATE_RULES_MS",
-        mirroredType: "histogram",
       },
     ],
     "no additional rule validation expected for dynamic rules removed by a updateDynamicRules API call"
@@ -1247,8 +1241,6 @@ add_task(async function test_dynamic_rules_telemetry() {
     [
       {
         metric: "validateRulesTime",
-        mirroredName: "WEBEXT_DNR_VALIDATE_RULES_MS",
-        mirroredType: "histogram",
       },
     ],
     "no rule validation hit after disabling the extension"
@@ -1266,8 +1258,6 @@ add_task(async function test_dynamic_rules_telemetry() {
     [
       {
         metric: "validateRulesTime",
-        mirroredName: "WEBEXT_DNR_VALIDATE_RULES_MS",
-        mirroredType: "histogram",
         expectedSamplesCount: 1,
       },
     ],
@@ -1278,13 +1268,9 @@ add_task(async function test_dynamic_rules_telemetry() {
       // Expected no startup cache file to be loaded or used on re-enabling a disabled extension.
       {
         metric: "startupCacheReadSize",
-        mirroredName: "WEBEXT_DNR_STARTUPCACHE_READ_BYTES",
-        mirroredType: "histogram",
       },
       {
         metric: "startupCacheReadTime",
-        mirroredName: "WEBEXT_DNR_STARTUPCACHE_READ_MS",
-        mirroredType: "histogram",
       },
     ],
     "on loading dnr rules for newly installed extension"
@@ -1296,13 +1282,9 @@ add_task(async function test_dynamic_rules_telemetry() {
     [
       {
         metric: "evaluateRulesTime",
-        mirroredName: "WEBEXT_DNR_EVALUATE_RULES_MS",
-        mirroredType: "histogram",
       },
       {
         metric: "evaluateRulesCountMax",
-        mirroredName: "extensions.apis.dnr.evaluate_rules_count_max",
-        mirroredType: "scalar",
       },
     ],
     "before any request have been intercepted"
@@ -1318,13 +1300,9 @@ add_task(async function test_dynamic_rules_telemetry() {
     [
       {
         metric: "evaluateRulesTime",
-        mirroredName: "WEBEXT_DNR_EVALUATE_RULES_MS",
-        mirroredType: "histogram",
       },
       {
         metric: "evaluateRulesCountMax",
-        mirroredName: "extensions.apis.dnr.evaluate_rules_count_max",
-        mirroredType: "scalar",
       },
     ],
     "after restricted request have been intercepted (but no rules evaluated)"
@@ -1351,8 +1329,6 @@ add_task(async function test_dynamic_rules_telemetry() {
     [
       {
         metric: "evaluateRulesTime",
-        mirroredName: "WEBEXT_DNR_EVALUATE_RULES_MS",
-        mirroredType: "histogram",
         expectedSamplesCount: expectedEvaluateRulesTimeSamples,
       },
     ],
@@ -1364,8 +1340,6 @@ add_task(async function test_dynamic_rules_telemetry() {
     [
       {
         metric: "evaluateRulesCountMax",
-        mirroredName: "extensions.apis.dnr.evaluate_rules_count_max",
-        mirroredType: "scalar",
         expectedGetValue: expectedEvaluateRulesCountMax,
       },
     ],
@@ -1391,8 +1365,6 @@ add_task(async function test_dynamic_rules_telemetry() {
     [
       {
         metric: "evaluateRulesTime",
-        mirroredName: "WEBEXT_DNR_EVALUATE_RULES_MS",
-        mirroredType: "histogram",
         expectedSamplesCount: expectedEvaluateRulesTimeSamples,
       },
     ],
@@ -1405,8 +1377,6 @@ add_task(async function test_dynamic_rules_telemetry() {
     [
       {
         metric: "evaluateRulesCountMax",
-        mirroredName: "extensions.apis.dnr.evaluate_rules_count_max",
-        mirroredType: "scalar",
         expectedGetValue: expectedEvaluateRulesCountMax,
       },
     ],
@@ -1429,8 +1399,6 @@ add_task(async function test_dynamic_rules_telemetry() {
     [
       {
         metric: "evaluateRulesCountMax",
-        mirroredName: "extensions.apis.dnr.evaluate_rules_count_max",
-        mirroredType: "scalar",
         expectedGetValue: expectedEvaluateRulesCountMax,
       },
     ],

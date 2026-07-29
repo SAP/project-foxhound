@@ -8,7 +8,7 @@ import android.view.View
 import android.widget.FrameLayout
 import io.mockk.MockKAnnotations
 import io.mockk.coEvery
-import io.mockk.impl.annotations.MockK
+import io.mockk.impl.annotations.RelaxedMockK
 import io.mockk.mockk
 import io.mockk.spyk
 import io.mockk.verify
@@ -38,7 +38,7 @@ class CookieBannerHandlingDetailsViewTest {
     private lateinit var binding: ComponentCookieBannerDetailsPanelBinding
     private lateinit var interactor: CookieBannerDetailsInteractor
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var publicSuffixList: PublicSuffixList
 
     private val testDispatcher = StandardTestDispatcher()

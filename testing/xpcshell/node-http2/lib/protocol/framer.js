@@ -491,7 +491,7 @@ typeSpecificAttributes.RST_STREAM = ['error'];
 
 Serializer.RST_STREAM = function writeRstStream(frame, buffers) {
   var buffer = Buffer.alloc(4);
-  var code = errorCodes.indexOf(frame.error);
+  var code = (typeof frame.error === 'number') ? frame.error : errorCodes.indexOf(frame.error);
   assert((0 <= code) && (code <= 0xffffffff), code);
   buffer.writeUInt32BE(code, 0);
   buffers.push(buffer);

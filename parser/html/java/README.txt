@@ -57,7 +57,7 @@ java nu.validator.htmlparser.impl.AttributeName
 cd ../.. # Back to parser/html/java/
 make translate
 cd ../../..
-./mach clang-format
+./mach format
 
 ## How to add an element
 
@@ -82,7 +82,7 @@ java nu.validator.htmlparser.impl.ElementName ../../../../../parser/htmlparser/n
 cd ../.. # Back to parser/html/java/
 make translate
 cd ../../..
-./mach clang-format
+./mach format
 
 Ben Newman (23 September 2009)
-Henri Sivonen (10 August 2017, 10 February 2020)
+Henri Sivonen (10 August 2017, 10 February 2020, 1 June 2026)

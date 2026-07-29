@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=4:tabstop=4:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,21 +9,14 @@
 
 #include "CubebUtils.h"
 #include "HeadlessSound.h"
-#include "nsIURL.h"
-#include "nsNetUtil.h"
-#include "nsIChannel.h"
 #include "nsCOMPtr.h"
+#include "nsServiceManagerUtils.h"
 #include "nsString.h"
-#include "nsDirectoryService.h"
-#include "nsDirectoryServiceDefs.h"
-#include "mozilla/FileUtils.h"
 #include "mozilla/WidgetUtils.h"
 #include "nsIXULAppInfo.h"
-#include "nsContentUtils.h"
 #include "gfxPlatform.h"
 #include "mozilla/ClearOnShutdown.h"
 
-#include <stdio.h>
 #include <unistd.h>
 
 #include <gtk/gtk.h>
@@ -48,9 +38,6 @@ typedef int (*ca_proplist_create_fn)(ca_proplist**);
 typedef int (*ca_proplist_destroy_fn)(ca_proplist*);
 typedef int (*ca_proplist_sets_fn)(ca_proplist* c, const char* key,
                                    const char* value);
-typedef int (*ca_context_play_full_fn)(ca_context* c, uint32_t id,
-                                       ca_proplist* p, ca_finish_callback_t cb,
-                                       void* userdata);
 
 static ca_context_create_fn ca_context_create;
 static ca_context_destroy_fn ca_context_destroy;
@@ -60,23 +47,6 @@ static ca_context_change_props_fn ca_context_change_props;
 static ca_proplist_create_fn ca_proplist_create;
 static ca_proplist_destroy_fn ca_proplist_destroy;
 static ca_proplist_sets_fn ca_proplist_sets;
-static ca_context_play_full_fn ca_context_play_full;
-
-struct ScopedCanberraFile {
-  explicit ScopedCanberraFile(nsIFile* file) : mFile(file) {};
-
-  ~ScopedCanberraFile() {
-    if (mFile) {
-      mFile->Remove(false);
-    }
-  }
-
-  void forget() { mFile.forget().leak(); }
-  nsIFile* operator->() { return mFile; }
-  operator nsIFile*() { return mFile; }
-
-  nsCOMPtr<nsIFile> mFile;
-};
 
 static ca_context* ca_context_get_default() {
   // This allows us to avoid race conditions with freeing the context by handing
@@ -156,16 +126,7 @@ static ca_context* ca_context_get_default() {
   return ctx;
 }
 
-static void ca_finish_cb(ca_context* c, uint32_t id, int error_code,
-                         void* userdata) {
-  nsIFile* file = reinterpret_cast<nsIFile*>(userdata);
-  if (file) {
-    file->Remove(false);
-    NS_RELEASE(file);
-  }
-}
-
-NS_IMPL_ISUPPORTS(nsSound, nsISound, nsIStreamLoaderObserver)
+NS_IMPL_ISUPPORTS(nsSound, nsISound)
 
 ////////////////////////////////////////////////////////////////////////
 nsSound::nsSound() { mInited = false; }
@@ -213,8 +174,6 @@ nsSound::Init() {
             libcanberra, "ca_proplist_destroy");
         ca_proplist_sets = (ca_proplist_sets_fn)PR_FindFunctionSymbol(
             libcanberra, "ca_proplist_sets");
-        ca_context_play_full = (ca_context_play_full_fn)PR_FindFunctionSymbol(
-            libcanberra, "ca_context_play_full");
       }
     }
   }
@@ -254,132 +213,9 @@ already_AddRefed<nsISound> nsSound::GetInstance() {
   return service.forget();
 }
 
-NS_IMETHODIMP nsSound::OnStreamComplete(nsIStreamLoader* aLoader,
-                                        nsISupports* context, nsresult aStatus,
-                                        uint32_t dataLen, const uint8_t* data) {
-  // print a load error on bad status, and return
-  if (NS_FAILED(aStatus)) {
-#ifdef DEBUG
-    if (aLoader) {
-      nsCOMPtr<nsIRequest> request;
-      aLoader->GetRequest(getter_AddRefs(request));
-      if (request) {
-        nsCOMPtr<nsIURI> uri;
-        nsCOMPtr<nsIChannel> channel = do_QueryInterface(request);
-        if (channel) {
-          channel->GetURI(getter_AddRefs(uri));
-          if (uri) {
-            printf("Failed to load %s\n", uri->GetSpecOrDefault().get());
-          }
-        }
-      }
-    }
-#endif
-    return aStatus;
-  }
-
-  nsCOMPtr<nsIFile> tmpFile;
-  nsDirectoryService::gService->Get(NS_OS_TEMP_DIR, NS_GET_IID(nsIFile),
-                                    getter_AddRefs(tmpFile));
-
-  nsresult rv =
-      tmpFile->AppendNative(nsDependentCString("mozilla_audio_sample"));
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  rv = tmpFile->CreateUnique(nsIFile::NORMAL_FILE_TYPE, PR_IRUSR | PR_IWUSR);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  ScopedCanberraFile canberraFile(tmpFile);
-
-  mozilla::AutoFDClose fd;
-  rv = canberraFile->OpenNSPRFileDesc(PR_WRONLY, PR_IRUSR | PR_IWUSR,
-                                      getter_Transfers(fd));
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  // XXX: Should we do this on another thread?
-  uint32_t length = dataLen;
-  while (length > 0) {
-    int32_t amount = PR_Write(fd.get(), data, length);
-    if (amount < 0) {
-      return NS_ERROR_FAILURE;
-    }
-    length -= amount;
-    data += amount;
-  }
-
-  ca_context* ctx = ca_context_get_default();
-  if (!ctx) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
-  ca_proplist* p;
-  ca_proplist_create(&p);
-  if (!p) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
-  nsAutoCString path;
-  rv = canberraFile->GetNativePath(path);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  ca_proplist_sets(p, "media.filename", path.get());
-  if (ca_context_play_full(ctx, 0, p, ca_finish_cb, canberraFile) >= 0) {
-    // Don't delete the temporary file here if ca_context_play_full succeeds
-    canberraFile.forget();
-  }
-  ca_proplist_destroy(p);
-
-  return NS_OK;
-}
-
 NS_IMETHODIMP nsSound::Beep() {
   ::gdk_beep();
   return NS_OK;
-}
-
-NS_IMETHODIMP nsSound::Play(nsIURL* aURL) {
-  if (!mInited) Init();
-
-  if (!libcanberra) return NS_ERROR_NOT_AVAILABLE;
-
-  nsresult rv;
-  if (aURL->SchemeIs("file")) {
-    ca_context* ctx = ca_context_get_default();
-    if (!ctx) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
-
-    nsAutoCString spec;
-    rv = aURL->GetSpec(spec);
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-    gchar* path = g_filename_from_uri(spec.get(), nullptr, nullptr);
-    if (!path) {
-      return NS_ERROR_FILE_UNRECOGNIZED_PATH;
-    }
-
-    ca_context_play(ctx, 0, "media.filename", path, nullptr);
-    g_free(path);
-  } else {
-    nsCOMPtr<nsIStreamLoader> loader;
-    rv = NS_NewStreamLoader(
-        getter_AddRefs(loader), aURL,
-        this,  // aObserver
-        nsContentUtils::GetSystemPrincipal(),
-        nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
-        nsIContentPolicy::TYPE_OTHER);
-  }
-
-  return rv;
 }
 
 NS_IMETHODIMP nsSound::PlayEventSound(uint32_t aEventId) {

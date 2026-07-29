@@ -555,7 +555,7 @@ var focusEditableField = async function (
       xOffset,
       yOffset,
       options,
-      editable.ownerGlobal
+      editable.documentGlobal
     );
     options.type = "mouseup";
     EventUtils.synthesizeMouse(
@@ -563,7 +563,7 @@ var focusEditableField = async function (
       xOffset,
       yOffset,
       options,
-      editable.ownerGlobal
+      editable.documentGlobal
     );
   } else {
     EventUtils.synthesizeMouse(
@@ -571,7 +571,7 @@ var focusEditableField = async function (
       xOffset,
       yOffset,
       options,
-      editable.ownerGlobal
+      editable.documentGlobal
     );
   }
   await onFocus;
@@ -837,7 +837,7 @@ function openStyleContextMenuAndGetAllItems(view, target) {
  * @return An array of MenuItems
  */
 function openContextMenuAndGetAllItems(inspector, options) {
-  const menu = inspector.markup.contextMenu._openMenu(options);
+  const menu = inspector.markup.contextMenu.openMenu(options);
   return buildContextMenuItems(menu);
 }
 
@@ -851,9 +851,9 @@ function openContextMenuAndGetAllItems(inspector, options) {
  */
 async function waitUntilVisitedState(tab, selectors) {
   await asyncWaitUntil(async () => {
-    const hasVisitedState = await ContentTask.spawn(
+    const hasVisitedState = await SpecialPowers.spawn(
       tab.linkedBrowser,
-      selectors,
+      [selectors],
       args => {
         // ElementState::VISITED
         const ELEMENT_STATE_VISITED = 1 << 18;
@@ -1018,25 +1018,24 @@ async function removeContentPageElementAttribute(selector, attribute) {
 }
 
 /**
- * Get the rule editor from the rule-view given its index
+ * Get the rule editor from the rule-view given its index.
+ * The index is based on the list of all the applied rule
+ * for the currently selected DOM Element.
+ * This starts with any pseudo element rules (if any, and
+ * which may be hidden by default), then the element rule
+ * and finally all the other rules (including the inherited
+ * at the end).
  *
  * @param {CssRuleView} ruleView
  *        The instance of the rule-view panel
- * @param {number} childrenIndex
- *        The children index of the element to get
- * @param {number} nodeIndex
- *        The child node index of the element to get
+ * @param {number} index
+ *        The index of the element to get
  * @return {DOMNode} The rule editor if any at this index
  */
-function getRuleViewRuleEditor(ruleView, childrenIndex, nodeIndex) {
-  const child = ruleView.element.children[childrenIndex];
-  if (!child) {
-    return null;
-  }
-
-  return nodeIndex !== undefined
-    ? child.childNodes[nodeIndex]?._ruleEditor
-    : child._ruleEditor;
+function getRuleViewRuleEditorAt(ruleView, index) {
+  const ruleEl =
+    ruleView.styleDocument.querySelectorAll(".ruleview-rule")[index];
+  return ruleEl?._ruleEditor;
 }
 
 /**
@@ -1053,7 +1052,7 @@ function getRuleViewRuleEditor(ruleView, childrenIndex, nodeIndex) {
  * @return {TextProperty}
  */
 function getTextProperty(ruleView, ruleIndex, declaration) {
-  const ruleEditor = getRuleViewRuleEditor(ruleView, ruleIndex);
+  const ruleEditor = getRuleViewRuleEditorAt(ruleView, ruleIndex);
   const [[name, value]] = Object.entries(declaration);
   const textProp = ruleEditor.rule.textProps.find(prop => {
     return prop.name === name && prop.value === value;
@@ -1075,7 +1074,7 @@ function getTextProperty(ruleView, ruleIndex, declaration) {
  *        The instance of the rule-view panel
  * @param {TextProperty} textProp
  *        The instance of the TextProperty to be changed
- * @param {string} value
+ * @param {null|string} value
  *        The new value to be used. If null is passed, then the value will be
  *        deleted
  * @param {object} options
@@ -1083,18 +1082,21 @@ function getTextProperty(ruleView, ruleIndex, declaration) {
  *        After the value has been changed, a new property would have been
  *        focused. This parameter is true by default, and that causes the new
  *        property to be blurred. Set to false if you don't want this.
- * @param {number} options.flushCount
- *        The ruleview uses a manual flush for tests only, and some properties are
- *        only updated after several flush. Allow tests to trigger several flushes
- *        if necessary. Defaults to 1.
  */
 async function setProperty(
   ruleView,
   textProp,
   value,
-  { blurNewProperty = true, flushCount = 1 } = {}
+  { blurNewProperty = true } = {}
 ) {
   info("Set property to: " + value);
+  const previousValue = textProp.value;
+  const wasImportant = !!textProp.priority;
+  // The value will be set if important state changes, but only when committing the value (on Return/Tab press)
+  // covered by browser_rules_edit-property_06.js, browser_changes_declaration_edit_value.js
+  // and browser_rules_edit-property_06.js and browser_rules_edit-size-property-dragging.js.
+  const willBeUpdated =
+    previousValue != value || wasImportant != value?.endsWith("!important");
   const editor = await focusEditableField(ruleView, textProp.editor.valueSpan);
 
   // Because of the manual flush approach used for tests, we might have an
@@ -1102,13 +1104,13 @@ async function setProperty(
   // synchronously emit "start-preview-property-value".
   // Listen to both this event and "ruleview-changed" which is emitted at the
   // end of a preview and make sure each preview completes successfully.
-  let previewStartedCounter = 0;
-  const onStartPreview = () => previewStartedCounter++;
-  ruleView.on("start-preview-property-value", onStartPreview);
+  let startedCounter = 0;
+  const onStartSet = () => startedCounter++;
+  ruleView.on("start-set-property-value", onStartSet);
 
-  let previewCounter = 0;
-  const onPreviewApplied = () => previewCounter++;
-  ruleView.on("ruleview-changed", onPreviewApplied);
+  let changedCounter = 0;
+  const onChanged = () => changedCounter++;
+  ruleView.on("ruleview-changed", onChanged);
 
   if (value === null) {
     const onPopupOpened = once(ruleView.popup, "popup-opened");
@@ -1124,28 +1126,17 @@ async function setProperty(
     EventUtils.sendString(value, ruleView.styleWindow);
   }
 
-  info(`Flush debounced ruleview methods (remaining: ${flushCount})`);
+  info(`Flush debounced ruleview methods`);
   ruleView.debounce.flush();
-  await waitFor(() => previewCounter >= previewStartedCounter);
+  await waitFor(() => changedCounter >= startedCounter);
 
-  flushCount--;
+  ruleView.off("start-set-property-value", onStartSet);
+  ruleView.off("ruleview-changed", onChanged);
 
-  while (flushCount > 0) {
-    // Wait for some time before triggering a new flush to let new debounced
-    // functions queue in-between.
-    await wait(100);
+  const onValueDone = ruleView.once(
+    willBeUpdated ? "ruleview-changed" : "property-value-updated"
+  );
 
-    info(`Flush debounced ruleview methods (remaining: ${flushCount})`);
-    ruleView.debounce.flush();
-    await waitFor(() => previewCounter >= previewStartedCounter);
-
-    flushCount--;
-  }
-
-  ruleView.off("start-preview-property-value", onStartPreview);
-  ruleView.off("ruleview-changed", onPreviewApplied);
-
-  const onValueDone = ruleView.once("ruleview-changed");
   // In case the popup was opened, wait until it closes
   let onPopupClosed;
   if (ruleView.popup?.isOpen) {
@@ -1166,8 +1157,22 @@ async function setProperty(
     ruleView.styleWindow
   );
 
-  info("Waiting for another ruleview-changed after setting property");
-  await onValueDone;
+  // Only wait for a full ruleview-change update if:
+  // * the property was was meant to change, and,
+  // * if debounce didn't already trigerred an update (startCounter == 0), or,
+  //   the property isn't yet set to the final expected value.
+  // Covered by browser_rules_edit-property-remove_02.js, browser_changes_declaration_edit_value.js
+  if (
+    willBeUpdated &&
+    (startedCounter == 0 ||
+      textProp.value + (textProp.priority ? " !important" : "") != value)
+  ) {
+    info("Waiting for another ruleview-changed after setting property");
+    await onValueDone;
+  } else if (!willBeUpdated) {
+    info("Waiting for another property value update after setting property");
+    await onValueDone;
+  }
 
   const focusNextOnEnter = Services.prefs.getBoolPref(
     "devtools.inspector.rule-view.focusNextOnEnter"
@@ -1215,4 +1220,16 @@ async function searchInMarkupView(inspector, search) {
 
   info("Wait for the search results highlighted to be updated");
   await onSearchResultHighlightingUpdated;
+}
+
+/**
+ * Assert the number of rules displayed in the Rules View.
+ */
+async function assertDisplayedRulesCount(
+  view,
+  expected,
+  message = "Got the expected number of displayed rules in the rules view"
+) {
+  const ruleElements = view.element.querySelectorAll(".ruleview-rule");
+  is(ruleElements.length, expected, message);
 }

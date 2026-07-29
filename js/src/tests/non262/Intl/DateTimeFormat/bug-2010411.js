@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 var date = new Intl.DateTimeFormat("en-GB", {
   timeZone: "US/Central",
   hour: "numeric",

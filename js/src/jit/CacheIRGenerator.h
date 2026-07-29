@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -10,6 +8,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/Variant.h"
 
 #include <stdint.h>
 
@@ -36,6 +35,7 @@ class RegExpFlags;
 
 namespace js {
 
+class ArrayObject;
 class BoundFunctionObject;
 class NativeObject;
 class ObjectFuse;
@@ -126,8 +126,11 @@ class MOZ_RAII IRGenerator {
                               HandleId id, PropertyInfo prop,
                               ObjOperandId objId, AccessorKind accessorKind);
 
-  bool canOptimizeConstantDataProperty(NativeObject* holder, PropertyInfo prop,
-                                       ObjectFuse** objFuse);
+  bool canOptimizeConstantDataProperty(NativeObject* holder, PropertyKey key,
+                                       PropertyInfo prop, ObjectFuse** objFuse);
+  void emitGuardConstantDataProperty(NativeObject* holder,
+                                     ObjOperandId holderId, PropertyKey key,
+                                     PropertyInfo prop, ObjectFuse* objFuse);
   void emitConstantDataPropertyResult(NativeObject* holder,
                                       ObjOperandId holderId, PropertyKey key,
                                       PropertyInfo prop, ObjectFuse* objFuse);
@@ -136,12 +139,29 @@ class MOZ_RAII IRGenerator {
                                   ObjOperandId objId);
 
   bool canOptimizeConstantAccessorProperty(NativeObject* holder,
-                                           PropertyInfo prop,
+                                           PropertyKey key, PropertyInfo prop,
                                            ObjectFuse** objFuse);
   void emitGuardConstantAccessorProperty(NativeObject* holder,
                                          ObjOperandId holderId, PropertyKey key,
                                          PropertyInfo prop,
                                          ObjectFuse* objFuse);
+
+  bool canOptimizeConstantNativeFunctionProperty(
+      NativeObject* obj, PropertyKey propKey, JSNative nativeFn,
+      NativeObject** holder, mozilla::Maybe<PropertyInfo>* propInfo,
+      ObjectFuse** holderFuse);
+
+  struct DateObjectToNumberInfo {
+    NativeObject* holder = nullptr;
+    ObjectFuse* holderFuse = nullptr;
+    mozilla::Maybe<PropertyInfo> valueOfProp;
+    mozilla::Maybe<PropertyInfo> toPrimitiveProp;
+  };
+  bool canOptimizeDateObjectToNumber(NativeObject* obj,
+                                     DateObjectToNumberInfo* result);
+  NumberOperandId emitGuardDateObjectToNumber(NativeObject* obj,
+                                              ValOperandId valId,
+                                              DateObjectToNumberInfo& info);
 
   gc::AllocSite* maybeCreateAllocSite();
 
@@ -600,9 +620,16 @@ class MOZ_RAII CallIRGenerator : public IRGenerator {
   HandleValue callee_;
   HandleValue thisval_;
   HandleValue newTarget_;
-  HandleValueArray args_;
+  mozilla::Variant<HandleValueArray, Handle<ArrayObject*>> args_;
 
   friend class InlinableNativeIRGenerator;
+
+  Value arg(uint32_t index) const;
+  size_t argsLength() const;
+  HandleValueArray argsAsHandleValueArray() const {
+    MOZ_ASSERT(args_.is<HandleValueArray>());
+    return args_.as<HandleValueArray>();
+  }
 
   ScriptedThisResult getThisShapeForScripted(
       HandleFunction calleeFunc, Handle<JSObject*> newTarget,
@@ -642,6 +669,10 @@ class MOZ_RAII CallIRGenerator : public IRGenerator {
                   ICState state, BaselineFrame* frame, uint32_t argc,
                   HandleValue callee, HandleValue thisval,
                   HandleValue newTarget, HandleValueArray args);
+  CallIRGenerator(JSContext* cx, HandleScript script, jsbytecode* pc,
+                  ICState state, BaselineFrame* frame, uint32_t argc,
+                  HandleValue callee, HandleValue thisval,
+                  HandleValue newTarget, Handle<ArrayObject*> args);
 
   AttachDecision tryAttachStub();
 };
@@ -656,13 +687,20 @@ class MOZ_RAII InlinableNativeIRGenerator {
   HandleFunction target_;
   HandleValue newTarget_;
   HandleValue thisval_;
-  HandleValueArray args_;
+  mozilla::Variant<HandleValueArray, Handle<ArrayObject*>> args_;
   Handle<BoundFunctionObject*> boundTarget_;
   CallFlags flags_;
   uint32_t stackArgc_;
 
   // |this| for inlined accesor operations.
   ValOperandId receiverId_;
+
+  Value arg(uint32_t index) const;
+  size_t argsLength() const;
+  HandleValueArray argsAsHandleValueArray() const {
+    MOZ_ASSERT(args_.is<HandleValueArray>());
+    return args_.as<HandleValueArray>();
+  }
 
   HandleScript script() const { return generator_.script_; }
   JSObject* callee() const { return callee_; }
@@ -884,8 +922,11 @@ class MOZ_RAII InlinableNativeIRGenerator {
   AttachDecision tryAttachMapDelete();
   AttachDecision tryAttachMapSet();
   AttachDecision tryAttachMapSize();
+  AttachDecision tryAttachDateConstructor();
   AttachDecision tryAttachDateGetTime();
   AttachDecision tryAttachDateGet(DateComponent component);
+  AttachDecision tryAttachDateNow();
+  AttachDecision tryAttachDateParse();
   AttachDecision tryAttachWeakMapHas();
   AttachDecision tryAttachWeakMapGet();
   AttachDecision tryAttachWeakSetHas();
@@ -901,9 +942,48 @@ class MOZ_RAII InlinableNativeIRGenerator {
   }
 
  public:
+  // Take the variant directly
+  InlinableNativeIRGenerator(
+      CallIRGenerator& generator, HandleObject callee, HandleFunction target,
+      HandleValue newTarget, HandleValue thisValue,
+      const mozilla::Variant<HandleValueArray, Handle<ArrayObject*>>& args,
+      CallFlags flags, Handle<BoundFunctionObject*> boundTarget = nullptr)
+      : gen_(&generator),
+        generator_(generator),
+        writer(generator.writer),
+        cx_(generator.cx_),
+        callee_(callee),
+        target_(target),
+        newTarget_(newTarget),
+        thisval_(thisValue),
+        args_(args),
+        boundTarget_(boundTarget),
+        flags_(flags),
+        stackArgc_(generator.argc_),
+        receiverId_() {}
+
   InlinableNativeIRGenerator(CallIRGenerator& generator, HandleObject callee,
                              HandleFunction target, HandleValue newTarget,
                              HandleValue thisValue, HandleValueArray args,
+                             CallFlags flags,
+                             Handle<BoundFunctionObject*> boundTarget = nullptr)
+      : gen_(&generator),
+        generator_(generator),
+        writer(generator.writer),
+        cx_(generator.cx_),
+        callee_(callee),
+        target_(target),
+        newTarget_(newTarget),
+        thisval_(thisValue),
+        args_(args),
+        boundTarget_(boundTarget),
+        flags_(flags),
+        stackArgc_(generator.argc_),
+        receiverId_() {}
+
+  InlinableNativeIRGenerator(CallIRGenerator& generator, HandleObject callee,
+                             HandleFunction target, HandleValue newTarget,
+                             HandleValue thisValue, Handle<ArrayObject*> args,
                              CallFlags flags,
                              Handle<BoundFunctionObject*> boundTarget = nullptr)
       : gen_(&generator),
@@ -1017,6 +1097,7 @@ class MOZ_RAII UnaryArithIRGenerator : public IRGenerator {
   AttachDecision tryAttachBigIntPtr();
   AttachDecision tryAttachStringInt32();
   AttachDecision tryAttachStringNumber();
+  AttachDecision tryAttachDateToNumber();
 
   void trackAttached(const char* name /* must be a C string literal */);
 

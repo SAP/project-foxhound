@@ -54,3 +54,6 @@ path:config/milestone.txt
 
 # mots configuration
 path:mots.yaml
+
+# ETP matrix generation needs pref definitions
+path:modules/libpref/init/StaticPrefList.yaml

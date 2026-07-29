@@ -21,20 +21,17 @@
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
 #include "rtc_base/synchronization/mutex.h"
-#include "test/time_controller/simulated_time_controller.h"
+#include "test/time_controller/simulated_time_controller_impl.h"
 
 namespace webrtc {
 
 SimulatedTaskQueue::SimulatedTaskQueue(
     sim_time_impl::SimulatedTimeControllerImpl* handler,
     absl::string_view name)
-    : handler_(handler), name_(new char[name.size()]) {
-  std::copy_n(name.begin(), name.size(), name_);
-}
+    : handler_(handler), name_(name) {}
 
 SimulatedTaskQueue::~SimulatedTaskQueue() {
   handler_->Unregister(this);
-  delete[] name_;
 }
 
 void SimulatedTaskQueue::Delete() {

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -10,6 +8,7 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/intl/PluralRules.h"
+#include "mozilla/UsingEnum.h"
 
 #include "builtin/Array.h"
 #include "builtin/intl/CommonFunctions.h"
@@ -17,7 +16,6 @@
 #include "builtin/intl/LocaleNegotiation.h"
 #include "builtin/intl/NumberFormatOptions.h"
 #include "builtin/intl/ParameterNegotiation.h"
-#include "builtin/intl/UsingEnum.h"
 #include "gc/GCContext.h"
 #include "js/PropertySpec.h"
 #include "vm/GlobalObject.h"
@@ -32,16 +30,7 @@ using namespace js;
 using namespace js::intl;
 
 const JSClassOps PluralRulesObject::classOps_ = {
-    nullptr,                      // addProperty
-    nullptr,                      // delProperty
-    nullptr,                      // enumerate
-    nullptr,                      // newEnumerate
-    nullptr,                      // resolve
-    nullptr,                      // mayResolve
-    PluralRulesObject::finalize,  // finalize
-    nullptr,                      // call
-    nullptr,                      // construct
-    nullptr,                      // trace
+    .finalize = PluralRulesObject::finalize,
 };
 
 const JSClass PluralRulesObject::class_ = {
@@ -117,11 +106,7 @@ void js::intl::PluralRulesObject::setOptions(
 
 static constexpr std::string_view PluralRulesTypeToString(
     PluralRulesOptions::Type type) {
-#ifndef USING_ENUM
-  using enum PluralRulesOptions::Type;
-#else
-  USING_ENUM(PluralRulesOptions::Type, Cardinal, Ordinal);
-#endif
+  MOZ_USING_ENUM(PluralRulesOptions::Type, Cardinal, Ordinal);
   switch (type) {
     case Cardinal:
       return "cardinal";
@@ -133,12 +118,8 @@ static constexpr std::string_view PluralRulesTypeToString(
 
 static constexpr std::string_view PluralRulesNotationToString(
     PluralRulesOptions::Notation notation) {
-#ifndef USING_ENUM
-  using enum PluralRulesOptions::Notation;
-#else
-  USING_ENUM(PluralRulesOptions::Notation, Standard, Scientific, Engineering,
-             Compact);
-#endif
+  MOZ_USING_ENUM(PluralRulesOptions::Notation, Standard, Scientific,
+                 Engineering, Compact);
   switch (notation) {
     case Standard:
       return "standard";
@@ -154,11 +135,7 @@ static constexpr std::string_view PluralRulesNotationToString(
 
 static constexpr std::string_view PluralRulesCompactDisplayToString(
     PluralRulesOptions::CompactDisplay compactDisplay) {
-#ifndef USING_ENUM
-  using enum PluralRulesOptions::CompactDisplay;
-#else
-  USING_ENUM(PluralRulesOptions::CompactDisplay, Short, Long);
-#endif
+  MOZ_USING_ENUM(PluralRulesOptions::CompactDisplay, Short, Long);
   switch (compactDisplay) {
     case Short:
       return "short";
@@ -195,17 +172,11 @@ static bool PluralRules(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // ResolveOptions, step 1.
-  Rooted<LocalesList> requestedLocales(cx, cx);
-  if (!CanonicalizeLocaleList(cx, args.get(0), &requestedLocales)) {
+  auto* requestedLocales = CanonicalizeLocaleList(cx, args.get(0));
+  if (!requestedLocales) {
     return false;
   }
-
-  Rooted<ArrayObject*> requestedLocalesArray(
-      cx, LocalesListToArray(cx, requestedLocales));
-  if (!requestedLocalesArray) {
-    return false;
-  }
-  pluralRules->setRequestedLocales(requestedLocalesArray);
+  pluralRules->setRequestedLocales(requestedLocales);
 
   PluralRulesOptions plOptions{};
 
@@ -336,7 +307,11 @@ static bool ResolveLocale(JSContext* cx,
   }
 
   // Finish initialization by setting the actual locale.
-  pluralRules->setLocale(resolved.dataLocale());
+  auto* locale = resolved.toLocale(cx);
+  if (!locale) {
+    return false;
+  }
+  pluralRules->setLocale(locale);
 
   MOZ_ASSERT(pluralRules->isLocaleResolved(), "locale successfully resolved");
   return true;
@@ -344,12 +319,8 @@ static bool ResolveLocale(JSContext* cx,
 
 static JSString* KeywordToString(mozilla::intl::PluralRules::Keyword keyword,
                                  JSContext* cx) {
-#ifndef USING_ENUM
-  using enum mozilla::intl::PluralRules::Keyword;
-#else
-  USING_ENUM(mozilla::intl::PluralRules::Keyword, Zero, One, Two, Few, Many,
-             Other);
-#endif
+  MOZ_USING_ENUM(mozilla::intl::PluralRules::Keyword, Zero, One, Two, Few, Many,
+                 Other);
   switch (keyword) {
     case Zero:
       return cx->names().zero;

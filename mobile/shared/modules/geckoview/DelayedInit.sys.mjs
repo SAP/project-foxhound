@@ -96,7 +96,11 @@ var Impl = {
           return false;
         }
         this.complete = true;
-        this.fn.call();
+        try {
+          this.fn.call();
+        } catch (e) {
+          console.error("Error running init", e);
+        }
         this.fn = null;
         return true;
       },

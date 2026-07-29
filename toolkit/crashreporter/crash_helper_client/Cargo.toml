@@ -18,8 +18,8 @@ nix = { version = "0.30", features = ["process"] }
 mach2 = { version = "0.4" }
 
 [target."cfg(any(target_os = \"android\", target_os = \"linux\"))".dependencies]
-minidump-writer = "0.11"
+minidump-writer = { git = "https://github.com/rust-minidump/minidump-writer.git", rev = "107e531a7a06f8e886ffcee13eb07e9ded43473b" }
 rust_minidump_writer_linux = { path = "../rust_minidump_writer_linux" }
 
 [target."cfg(target_os = \"windows\")".dependencies]
-windows-sys = { version = "0.52" } # All features inherited from crash_helper_common
+windows-sys = { version = "0.61" } # All features inherited from crash_helper_common

@@ -150,10 +150,9 @@ class TestToolkitMozConfigure(BaseConfigureTest):
                 {},
                 ["--disable-bootstrap", "--disable-release"] + args,
             )
-            value_for_depends = getattr(sandbox, "__value_for_depends")
             # Trick the sandbox into not running too much
             dep = sandbox._depends[sandbox["c_compiler"]]
-            value_for_depends[(dep,)] = CompilerResult(
+            sandbox._dependency_overrides[dep] = CompilerResult(
                 compiler="/usr/bin/mockcc",
                 language="C",
                 type="clang",
@@ -161,7 +160,7 @@ class TestToolkitMozConfigure(BaseConfigureTest):
                 flags=[],
             )
             dep = sandbox._depends[sandbox["readelf"]]
-            value_for_depends[(dep,)] = "/usr/bin/readelf"
+            sandbox._dependency_overrides[dep] = "/usr/bin/readelf"
 
             return (
                 sandbox._value_for(sandbox["select_linker"]).KIND,

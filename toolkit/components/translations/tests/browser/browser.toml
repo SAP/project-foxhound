@@ -24,14 +24,15 @@ support-files = [
   "translations-text-cleaning.html",
 ]
 
+["browser_about_translations_accessible_invocation.js"]
+
+["browser_about_translations_app_menu.js"]
+
 ["browser_about_translations_copy_button_enabled_states.js"]
 
 ["browser_about_translations_copy_button_functionality.js"]
 
-["browser_about_translations_debounce.js"]
-skip-if = [
-  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1821461
-]
+["browser_about_translations_detected_language_unsupported.js"]
 
 ["browser_about_translations_directions.js"]
 
@@ -41,11 +42,20 @@ skip-if = [
 
 ["browser_about_translations_flip_lexical_shortlist.js"]
 
+["browser_about_translations_hash_updates.js"]
+
 ["browser_about_translations_resize_sections_by_input.js"]
 
 ["browser_about_translations_resize_sections_by_window.js"]
 
 ["browser_about_translations_resize_sections_by_zoom.js"]
+
+["browser_about_translations_resize_sections_with_messages.js"]
+
+["browser_about_translations_scheduling.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1821461
+]
 
 ["browser_about_translations_source_clear_button_functionality.js"]
 
@@ -55,7 +65,25 @@ skip-if = [
 
 ["browser_about_translations_swap_languages_button_explicit.js"]
 
+["browser_about_translations_tab_focus_order.js"]
+
+["browser_about_translations_telemetry_clear_source_text_button.js"]
+
+["browser_about_translations_telemetry_copy_button.js"]
+
+["browser_about_translations_telemetry_feature_blocked_info_message.js"]
+
 ["browser_about_translations_telemetry_open.js"]
+
+["browser_about_translations_telemetry_standalone_messages.js"]
+
+["browser_about_translations_telemetry_swap_button.js"]
+
+["browser_about_translations_telemetry_translation_request.js"]
+
+["browser_about_translations_telemetry_unsupported_language_message.js"]
+
+["browser_about_translations_translate_error.js"]
 
 ["browser_about_translations_url_load.js"]
 

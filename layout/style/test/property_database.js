@@ -1,6 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* eslint-disable dot-notation */
-/* vim: set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -502,6 +500,11 @@ var validNonUrlImageValues = [
   "-webkit-repeating-radial-gradient(circle, red, blue 10%, red 20%)",
   "-webkit-repeating-radial-gradient(circle farthest-corner, gray 10px, yellow 20px)",
   "-webkit-repeating-radial-gradient(top left, circle, red, blue 4%, red 8%)",
+
+  // image() function
+  "image(red)",
+  "image(transparent)",
+  "image(color-mix(in srgb, red, blue))",
 ];
 var invalidNonUrlImageValues = [
   "-moz-element(#a:1)",
@@ -829,6 +832,8 @@ var invalidNonUrlImageValues = [
         "cross-fade(#F0F8FF, rgb(0, 0, 0), rgba(0, 255, 0, 1), 25%)",
       ]
     : []),
+
+  "image(none)",
 ];
 var unbalancedGradientAndElementValues = ["-moz-element(#a()"];
 
@@ -868,6 +873,7 @@ var basicShapeOtherValues = [
   "circle(calc(20px + 30px))",
   "circle(farthest-side)",
   "circle(closest-side)",
+  "circle(closest-corner)",
   "circle(closest-side at center)",
   "circle(farthest-side at top)",
   "circle(20px at top right)",
@@ -886,6 +892,7 @@ var basicShapeOtherValues = [
   "ellipse(closest-side farthest-side)",
   "ellipse(farthest-side farthest-side)",
   "ellipse(closest-side closest-side)",
+  "ellipse(closest-corner farthest-corner)",
   "ellipse(closest-side closest-side at center)",
   "ellipse(20% farthest-side at top)",
   "ellipse(20px 50% at top right)",
@@ -949,7 +956,6 @@ var basicShapeInvalidValues = [
   "circle(at 20% 20% 30%)",
   "circle(20px 2px at center)",
   "circle(2at center)",
-  "circle(closest-corner)",
   "circle(at center top closest-side)",
   "circle(-20px)",
   "circle(farthest-side closest-side)",
@@ -962,7 +968,6 @@ var basicShapeInvalidValues = [
   "ellipse(at 20% 20% 30%)",
   "ellipse(20px at center)",
   "ellipse(-20px 20px)",
-  "ellipse(closest-corner farthest-corner)",
   "ellipse(20px -20px)",
   "ellipse(-20px -20px)",
   "ellipse(farthest-side)",
@@ -13445,10 +13450,9 @@ if (IsCSSPropertyPrefEnabled("layout.css.anchor-positioning.enabled")) {
     domProp: "positionAnchor",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
-    initial_values: ["none"],
-    other_values: ["auto", "--foo"],
+    initial_values: ["normal"],
+    other_values: ["none", "auto", "--foo"],
     invalid_values: [
-      "normal",
       "none, auto",
       "--foo none",
       "--foo, auto",
@@ -13979,16 +13983,14 @@ gCSSProperties["math-style"] = {
   invalid_values: [],
 };
 
-if (IsCSSPropertyPrefEnabled("mathml.math_shift.enabled")) {
-  gCSSProperties["math-shift"] = {
-    domProp: "mathShift",
-    inherited: true,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: ["normal"],
-    other_values: ["compact"],
-    invalid_values: [],
-  };
-}
+gCSSProperties["math-shift"] = {
+  domProp: "mathShift",
+  inherited: true,
+  type: CSS_TYPE_LONGHAND,
+  initial_values: ["normal"],
+  other_values: ["compact"],
+  invalid_values: [],
+};
 
 gCSSProperties["forced-color-adjust"] = {
   domProp: "forcedColorAdjust",
@@ -14104,9 +14106,21 @@ if (IsCSSPropertyPrefEnabled("layout.css.prefixes.animations")) {
 if (IsCSSPropertyPrefEnabled("layout.css.scroll-driven-animations.enabled")) {
   // Basically, web-platform-tests should cover most cases, so here we only
   // put some basic test cases.
-  gCSSProperties["animation"].subproperties.push("animation-timeline");
-  gCSSProperties["-moz-animation"].subproperties.push("animation-timeline");
-  gCSSProperties["-webkit-animation"].subproperties.push("animation-timeline");
+  gCSSProperties["animation"].subproperties.push(
+    "animation-timeline",
+    "animation-range-start",
+    "animation-range-end"
+  );
+  gCSSProperties["-moz-animation"].subproperties.push(
+    "animation-timeline",
+    "animation-range-start",
+    "animation-range-end"
+  );
+  gCSSProperties["-webkit-animation"].subproperties.push(
+    "animation-timeline",
+    "animation-range-start",
+    "animation-range-end"
+  );
 
   gCSSProperties["animation-duration"].initial_values.push("auto");
 
@@ -14265,6 +14279,92 @@ if (IsCSSPropertyPrefEnabled("layout.css.scroll-driven-animations.enabled")) {
       "--a block, --b inline, --c y",
     ],
     invalid_values: ["", ",", "--abc --abc", "x --a", "block --abc"],
+  };
+
+  gCSSProperties["timeline-scope"] = {
+    domProp: "timelineScope",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["none"],
+    other_values: [
+      "all",
+      "--foo",
+      "--foo, --baz",
+      "--foo,--baz",
+      "--foo ,--baz",
+    ],
+    invalid_values: [
+      "all, --foo",
+      "--foo, all",
+      "--foo --bar",
+      "foo",
+      "none bar",
+      "none --baz",
+      "--foo bar",
+      ",--foo",
+      "--foo,",
+    ],
+  };
+
+  gCSSProperties["animation-range-start"] = {
+    domProp: "animationRangeStart",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    applies_to_marker: true,
+    initial_values: ["normal"],
+    other_values: [
+      "0%",
+      "10px",
+      "-20%",
+      "calc(1em + 10%)",
+      "cover",
+      "contain -123%",
+      "entry calc(1em), entry-crossing 5px",
+      "exit 1%, exit-crossing",
+      "scroll 110%",
+    ],
+    invalid_values: ["abc", "cover contain", "scroll a", "10px cover"],
+  };
+
+  gCSSProperties["animation-range-end"] = {
+    domProp: "animationRangeEnd",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    applies_to_marker: true,
+    initial_values: ["normal"],
+    other_values: [
+      "100%",
+      "10px",
+      "-20%",
+      "calc(1em + 10%)",
+      "cover",
+      "contain -123%",
+      "entry calc(1em), entry-crossing 5px",
+      "exit 1%, exit-crossing",
+      "scroll 110%",
+    ],
+    invalid_values: ["abc", "cover contain", "scroll a", "10px cover"],
+  };
+
+  gCSSProperties["animation-range"] = {
+    domProp: "animationRange",
+    inherited: false,
+    type: CSS_TYPE_TRUE_SHORTHAND,
+    applies_to_marker: true,
+    subproperties: ["animation-range-start", "animation-range-end"],
+    initial_values: ["normal normal", "normal"],
+    other_values: [
+      "cover",
+      "10%",
+      "cover exit",
+      "0px 100%",
+      "0% cover",
+      "contain 10%",
+      "contain 10px exit 10%",
+      "scroll -10% exit-crossing 123%",
+      "entry 10px exit",
+    ],
+    invalid_values: ["", "10% 10% cover", "normal 10% 13%", "abc", "1s 2s"],
   };
 }
 
@@ -14619,6 +14719,164 @@ if (IsCSSPropertyPrefEnabled("layout.css.text-decoration-inset.enabled")) {
         "0px 10% 9em",
         "calc(10% + 1cm)",
         "0 calc(100% - 10px)",
+      ],
+    },
+  });
+}
+
+if (IsCSSPropertyPrefEnabled("layout.css.corner-shape.enabled")) {
+  const cornerShapeLonghand = {
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["round"],
+    other_values: [
+      "scoop",
+      "bevel",
+      "notch",
+      "square",
+      "squircle",
+      "superellipse(0)",
+      "superellipse(1)",
+      "superellipse(2)",
+      "superellipse(-1)",
+      "superellipse(0.5)",
+      "superellipse(infinity)",
+      "superellipse(-infinity)",
+    ],
+    invalid_values: [
+      "none",
+      "auto",
+      "1",
+      "2px",
+      "superellipse()",
+      "superellipse(round)",
+      "superellipse(1, 2)",
+      "superellipse 1",
+      "round scoop",
+    ],
+  };
+  Object.assign(gCSSProperties, {
+    "corner-shape": {
+      domProp: "cornerShape",
+      subproperties: [
+        "corner-top-left-shape",
+        "corner-top-right-shape",
+        "corner-bottom-right-shape",
+        "corner-bottom-left-shape",
+      ],
+      ...cornerShapeLonghand,
+      type: CSS_TYPE_TRUE_SHORTHAND,
+    },
+    "corner-top-left-shape": {
+      domProp: "cornerTopLeftShape",
+      ...cornerShapeLonghand,
+    },
+    "corner-top-right-shape": {
+      domProp: "cornerTopRightShape",
+      ...cornerShapeLonghand,
+    },
+    "corner-bottom-right-shape": {
+      domProp: "cornerBottomRightShape",
+      ...cornerShapeLonghand,
+    },
+    "corner-bottom-left-shape": {
+      domProp: "cornerBottomLeftShape",
+      ...cornerShapeLonghand,
+    },
+    "corner-start-start-shape": {
+      domProp: "cornerStartStartShape",
+      logical: true,
+      ...cornerShapeLonghand,
+    },
+    "corner-start-end-shape": {
+      domProp: "cornerStartEndShape",
+      logical: true,
+      ...cornerShapeLonghand,
+    },
+    "corner-end-start-shape": {
+      domProp: "cornerEndStartShape",
+      logical: true,
+      ...cornerShapeLonghand,
+    },
+    "corner-end-end-shape": {
+      domProp: "cornerEndEndShape",
+      logical: true,
+      ...cornerShapeLonghand,
+    },
+    "corner-top-shape": {
+      domProp: "cornerTopShape",
+      subproperties: ["corner-top-left-shape", "corner-top-right-shape"],
+      ...cornerShapeLonghand,
+      type: CSS_TYPE_TRUE_SHORTHAND,
+    },
+    "corner-right-shape": {
+      domProp: "cornerRightShape",
+      subproperties: ["corner-top-right-shape", "corner-bottom-right-shape"],
+      ...cornerShapeLonghand,
+      type: CSS_TYPE_TRUE_SHORTHAND,
+    },
+    "corner-bottom-shape": {
+      domProp: "cornerBottomShape",
+      subproperties: ["corner-bottom-left-shape", "corner-bottom-right-shape"],
+      ...cornerShapeLonghand,
+      type: CSS_TYPE_TRUE_SHORTHAND,
+    },
+    "corner-left-shape": {
+      domProp: "cornerLeftShape",
+      subproperties: ["corner-top-left-shape", "corner-bottom-left-shape"],
+      ...cornerShapeLonghand,
+      type: CSS_TYPE_TRUE_SHORTHAND,
+    },
+    "corner-block-start-shape": {
+      domProp: "cornerBlockStartShape",
+      subproperties: ["corner-start-start-shape", "corner-start-end-shape"],
+      ...cornerShapeLonghand,
+      type: CSS_TYPE_TRUE_SHORTHAND,
+    },
+    "corner-block-end-shape": {
+      domProp: "cornerBlockEndShape",
+      subproperties: ["corner-end-start-shape", "corner-end-end-shape"],
+      ...cornerShapeLonghand,
+      type: CSS_TYPE_TRUE_SHORTHAND,
+    },
+    "corner-inline-start-shape": {
+      domProp: "cornerInlineStartShape",
+      subproperties: ["corner-start-start-shape", "corner-end-start-shape"],
+      ...cornerShapeLonghand,
+      type: CSS_TYPE_TRUE_SHORTHAND,
+    },
+    "corner-inline-end-shape": {
+      domProp: "cornerInlineEndShape",
+      subproperties: ["corner-start-end-shape", "corner-end-end-shape"],
+      ...cornerShapeLonghand,
+      type: CSS_TYPE_TRUE_SHORTHAND,
+    },
+  });
+}
+
+if (IsCSSPropertyPrefEnabled("layout.css.link-parameters.enabled")) {
+  Object.assign(gCSSProperties, {
+    "link-parameters": {
+      domProp: "linkParameters",
+      inherited: false,
+      type: CSS_TYPE_LONGHAND,
+      applies_to_first_letter: false,
+      applies_to_first_line: false,
+      applies_to_placeholder: false,
+      initial_values: ["none"],
+      other_values: []
+        .concat(validNonUrlImageValues)
+        .concat(basicShapeSVGBoxValues)
+        .concat(basicShapeOtherValues)
+        .concat(basicShapeOtherValuesWithFillRule)
+        .concat(basicShapeXywhRectValues)
+        .concat(basicShapeShapeValues)
+        .concat(basicShapeShapeValuesWithFillRule)
+        .map(i => `param(--a, ${i})`)
+        .concat("param(--foo)")
+        .concat("param(--foo), param(--bar)"),
+      invalid_values: [
+        "param(--foo) param(--bar)", // Needs comma
       ],
     },
   });

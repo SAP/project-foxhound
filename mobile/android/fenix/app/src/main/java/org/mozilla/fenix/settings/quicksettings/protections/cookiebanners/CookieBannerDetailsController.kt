@@ -33,7 +33,6 @@ import org.mozilla.fenix.compose.snackbar.SnackbarState
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.getRootView
 import org.mozilla.fenix.ext.runIfFragmentIsAttached
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.trackingprotection.CookieBannerUIMode
 import org.mozilla.fenix.trackingprotection.ProtectionsAction
 import org.mozilla.fenix.trackingprotection.ProtectionsStore
@@ -90,7 +89,8 @@ class DefaultCookieBannerDetailsController(
                     val cookieBannerUIMode = withContext(ioDispatcher) {
                         cookieBannersStorage.getCookieBannerUIMode(
                             tab = tab,
-                            isFeatureEnabledInPrivateMode = context.settings().shouldUseCookieBannerPrivateMode,
+                            isFeatureEnabledInPrivateMode =
+                                context.components.settings.shouldUseCookieBannerPrivateMode,
                             publicSuffixList = publicSuffixList,
                         )
                     }

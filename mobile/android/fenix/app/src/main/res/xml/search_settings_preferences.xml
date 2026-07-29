@@ -18,7 +18,7 @@
             android:key="@string/pref_key_manage_search_shortcuts"
             android:title="@string/preferences_manage_search_shortcuts_2"
             android:summary="@string/preferences_manage_search_shortcuts_summary"/>
-        <SwitchPreference
+        <SwitchPreferenceCompat
             app:iconSpaceReserved="false"
             android:key="@string/pref_key_search_widget_installed_2"
             android:title="@string/preferences_add_search_widget_from_settings"/>
@@ -29,7 +29,7 @@
         android:selectable="false"
         app:iconSpaceReserved="false"
         android:layout="@layout/preference_category_no_icon_style">
-         <SwitchPreference
+         <SwitchPreferenceCompat
             app:iconSpaceReserved="false"
             android:defaultValue="true"
             android:key="@string/pref_key_show_search_suggestions"
@@ -48,7 +48,7 @@
             android:layout="@layout/checkbox_left_preference"
             android:title="@string/preferences_show_trending_search_suggestions"
             app:iconSpaceReserved="false" />
-        <SwitchPreference
+        <SwitchPreferenceCompat
             app:iconSpaceReserved="false"
             android:defaultValue="true"
             android:key="@string/pref_key_show_recent_search_suggestions"
@@ -60,27 +60,34 @@
         android:selectable="false"
         app:iconSpaceReserved="false"
         android:layout="@layout/preference_category_no_icon_style">
-         <SwitchPreference
+         <SwitchPreferenceCompat
             app:iconSpaceReserved="false"
             android:defaultValue="true"
             android:key="@string/pref_key_search_browsing_history"
             android:title='@string/preferences_search_browsing_history' />
-        <SwitchPreference
+        <SwitchPreferenceCompat
             app:iconSpaceReserved="false"
             android:defaultValue="true"
             android:key="@string/pref_key_search_bookmarks"
             android:title='@string/preferences_search_bookmarks' />
-        <SwitchPreference
+        <SwitchPreferenceCompat
             app:iconSpaceReserved="false"
             android:defaultValue="true"
             android:key="@string/pref_key_search_synced_tabs"
             android:title='@string/preferences_search_synced_tabs' />
-        <SwitchPreference
+        <SwitchPreferenceCompat
             app:iconSpaceReserved="false"
             android:key="@string/pref_key_show_nonsponsored_suggestions"
             android:title="@string/preferences_show_nonsponsored_suggestions"
             android:summary="@string/preferences_show_nonsponsored_suggestions_summary" />
-        <SwitchPreference
+        <CheckBoxPreference
+            android:defaultValue="false"
+            android:dependency="@string/pref_key_show_nonsponsored_suggestions"
+            android:key="@string/pref_key_search_optimization_cards"
+            android:layout="@layout/checkbox_left_preference"
+            android:title="@string/preferences_show_search_optimization_cards"
+            app:iconSpaceReserved="false" />
+        <SwitchPreferenceCompat
             app:iconSpaceReserved="false"
             android:key="@string/pref_key_show_sponsored_suggestions"
             android:title="@string/preferences_show_sponsored_suggestions"
@@ -96,17 +103,17 @@
         android:selectable="false"
         app:iconSpaceReserved="false"
         android:layout="@layout/preference_category_no_icon_style">
-        <SwitchPreference
+        <SwitchPreferenceCompat
             app:iconSpaceReserved="false"
             android:defaultValue="true"
             android:key="@string/pref_key_show_clipboard_suggestions"
             android:title="@string/preferences_show_clipboard_suggestions" />
-        <SwitchPreference
+        <SwitchPreferenceCompat
             app:iconSpaceReserved="false"
             android:defaultValue="true"
             android:key="@string/pref_key_show_voice_search"
             android:title="@string/preferences_show_voice_search" />
-        <SwitchPreference
+        <SwitchPreferenceCompat
             app:iconSpaceReserved="false"
             android:defaultValue="true"
             android:key="@string/pref_key_enable_autocomplete_urls"

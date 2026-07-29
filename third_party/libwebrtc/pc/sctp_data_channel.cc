@@ -20,6 +20,7 @@
 #include <utility>
 
 #include "absl/functional/any_invocable.h"
+#include "absl/strings/string_view.h"
 #include "api/data_channel_interface.h"
 #include "api/make_ref_counted.h"
 #include "api/priority.h"
@@ -28,7 +29,6 @@
 #include "api/sequence_checker.h"
 #include "api/task_queue/pending_task_safety_flag.h"
 #include "api/transport/data_channel_transport_interface.h"
-#include "media/sctp/sctp_transport_internal.h"
 #include "pc/data_channel_utils.h"
 #include "pc/proxy.h"
 #include "pc/sctp_utils.h"
@@ -145,7 +145,7 @@ bool InternalDataChannelInit::IsValid() const {
 std::optional<StreamId> SctpSidAllocator::AllocateSid(SSLRole role) {
   RTC_DCHECK_RUN_ON(&sequence_checker_);
   int potential_sid = (role == SSL_CLIENT) ? 0 : 1;
-  while (potential_sid <= static_cast<int>(kMaxSctpSid)) {
+  while (potential_sid <= max_sid_) {
     StreamId sid(potential_sid);
     if (used_sids_.insert(sid).second)
       return sid;
@@ -305,7 +305,7 @@ class SctpDataChannel::ObserverAdapter : public DataChannelObserver {
 // static
 scoped_refptr<SctpDataChannel> SctpDataChannel::Create(
     WeakPtr<SctpDataChannelControllerInterface> controller,
-    const std::string& label,
+    absl::string_view label,
     bool connected_to_transport,
     const InternalDataChannelInit& config,
     Thread* signaling_thread,
@@ -332,7 +332,7 @@ scoped_refptr<DataChannelInterface> SctpDataChannel::CreateProxy(
 SctpDataChannel::SctpDataChannel(
     const InternalDataChannelInit& config,
     WeakPtr<SctpDataChannelControllerInterface> controller,
-    const std::string& label,
+    absl::string_view label,
     bool connected_to_transport,
     Thread* signaling_thread,
     Thread* network_thread)
@@ -348,15 +348,13 @@ SctpDataChannel::SctpDataChannel(
       negotiated_(config.negotiated),
       ordered_(config.ordered),
       observer_(nullptr),
-      controller_(std::move(controller)) {
+      controller_(std::move(controller)),
+      connected_to_transport_(connected_to_transport) {
   RTC_DCHECK_RUN_ON(network_thread_);
   // Since we constructed on the network thread we can't (yet) check the
   // `controller_` pointer since doing so will trigger a thread check.
   RTC_UNUSED(network_thread_);
   RTC_DCHECK(config.IsValid());
-
-  if (connected_to_transport)
-    network_safety_->SetAlive();
 
   switch (config.open_handshake_role) {
     case InternalDataChannelInit::kNone:  // pre-negotiated
@@ -412,6 +410,9 @@ void SctpDataChannel::RegisterObserver(DataChannelObserver* observer) {
   auto register_observer = [me = std::move(me), observer = observer] {
     RTC_DCHECK_RUN_ON(me->network_thread_);
     me->observer_ = observer;
+    if (me->max_message_size_) {
+      observer->OnMaxMessageSize(*me->max_message_size_);
+    }
     me->DeliverQueuedReceivedData();
   };
 
@@ -581,13 +582,12 @@ uint64_t SctpDataChannel::bytes_received() const {
 bool SctpDataChannel::Send(const DataBuffer& buffer) {
   RTC_DCHECK_RUN_ON(network_thread_);
   RTCError err = SendImpl(buffer);
-  if (err.type() == RTCErrorType::INVALID_STATE ||
-      err.type() == RTCErrorType::RESOURCE_EXHAUSTED) {
-    return false;
+  if (!err.ok() && err.type() != RTCErrorType::INVALID_STATE &&
+      err.type() != RTCErrorType::RESOURCE_EXHAUSTED &&
+      err.type() != RTCErrorType::NETWORK_ERROR) {
+    RTC_LOG(LS_INFO) << "Unexpected error code: " << err;
   }
-
-  // Always return true for SCTP DataChannel per the spec.
-  return true;
+  return err.ok();
 }
 
 // RTC_RUN_ON(network_thread_);
@@ -613,14 +613,17 @@ void SctpDataChannel::SendAsync(
   // thread. So we always post to the network thread (even if the current thread
   // might be the network thread - in theory a call could even come from within
   // the `on_complete` callback).
-  network_thread_->PostTask(SafeTask(
-      network_safety_, [this, buffer = std::move(buffer),
-                        on_complete = std::move(on_complete)]() mutable {
-        RTC_DCHECK_RUN_ON(network_thread_);
-        RTCError err = SendImpl(std::move(buffer));
-        if (on_complete)
-          std::move(on_complete)(err);
-      }));
+  scoped_refptr<SctpDataChannel> me(this);
+  network_thread_->PostTask([me = std::move(me), buffer = std::move(buffer),
+                             on_complete = std::move(on_complete)]() mutable {
+    RTC_DCHECK_RUN_ON(me->network_thread_);
+    if (!me->connected_to_transport()) {
+      return;
+    }
+    RTCError err = me->SendImpl(std::move(buffer));
+    if (on_complete)
+      std::move(on_complete)(err);
+  });
 }
 
 void SctpDataChannel::SetSctpSid_n(StreamId sid) {
@@ -663,7 +666,7 @@ void SctpDataChannel::OnClosingProcedureComplete() {
 
 void SctpDataChannel::OnTransportChannelCreated() {
   RTC_DCHECK_RUN_ON(network_thread_);
-  network_safety_->SetAlive();
+  connected_to_transport_ = true;
 }
 
 void SctpDataChannel::OnTransportChannelClosed(RTCError error) {
@@ -683,6 +686,15 @@ void SctpDataChannel::OnBufferedAmountLow() {
       id_n_.has_value() && buffered_amount() == 0) {
     started_closing_procedure_ = true;
     controller_->RemoveSctpDataStream(*id_n_);
+  }
+}
+
+void SctpDataChannel::OnMaxMessageSize(int max_message_size) {
+  RTC_DCHECK_RUN_ON(network_thread_);
+
+  max_message_size_ = max_message_size;
+  if (observer_) {
+    observer_->OnMaxMessageSize(max_message_size);
   }
 }
 
@@ -775,7 +787,7 @@ void SctpDataChannel::CloseAbruptlyWithError(RTCError error) {
     return;
   }
 
-  network_safety_->SetNotAlive();
+  connected_to_transport_ = false;
 
   // Still go to "kClosing" before "kClosed", since observers may be expecting
   // that.
@@ -861,6 +873,7 @@ void SctpDataChannel::SetState(DataState state) {
   }
 
   state_ = state;
+
   if (observer_) {
     observer_->OnStateChange();
   }

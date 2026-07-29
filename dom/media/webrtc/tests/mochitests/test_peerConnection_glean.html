@@ -1335,6 +1335,41 @@
       pc2.close();
     },
 
+    async function checkRtcpMuxPolicyNegotiateCount() {
+      await gleanResetTestValues();
+      let count = await GleanTest.rtcpeerconnection.countRtcpMuxPolicyNegotiate.testGetValue();
+      is(count, null, "Counter should be null before creating any PCs");
+
+      // rtcpMuxPolicy "negotiate" causes a deprecation warning.
+      await withPrefs(
+        [["media.peerconnection.treat_warnings_as_errors", false]],
+        async () => {
+          const pc1 = new RTCPeerConnection({rtcpMuxPolicy: "negotiate"});
+          await gleanFlushChildren();
+          count = await GleanTest.rtcpeerconnection.countRtcpMuxPolicyNegotiate.testGetValue();
+          is(count, 1, "Counter should be 1 after one PC with negotiate");
+
+          pc1.setConfiguration({rtcpMuxPolicy: "negotiate"});
+          await gleanFlushChildren();
+          count = await GleanTest.rtcpeerconnection.countRtcpMuxPolicyNegotiate.testGetValue();
+          is(count, 1, "Counter should still be 1 after a setConfiguration");
+
+          const pc2 = new RTCPeerConnection({rtcpMuxPolicy: "require"});
+          await gleanFlushChildren();
+          count = await GleanTest.rtcpeerconnection.countRtcpMuxPolicyNegotiate.testGetValue();
+          is(count, 1, "Counter should still be 1 after a PC with require");
+
+          const pc3 = new RTCPeerConnection({rtcpMuxPolicy: "negotiate"});
+          await gleanFlushChildren();
+          count = await GleanTest.rtcpeerconnection.countRtcpMuxPolicyNegotiate.testGetValue();
+          is(count, 2, "Counter should be 2 after another PC with negotiate");
+
+          pc1.close();
+          pc2.close();
+          pc3.close();
+        });
+    },
+
   ];
 
   runNetworkTest(async () => {

@@ -16,16 +16,40 @@ ChromeUtils.defineLazyGetter(
 );
 
 export const Spotlight = {
+  _dialog: null,
+  _dialogWindow: null,
+
+  get isOpen() {
+    return !!this._dialog;
+  },
+
+  close(window) {
+    if (!this._dialog) {
+      return;
+    }
+    // Only close if no window specified or if the window owns the dialog
+    if (!window || this._dialogWindow === window) {
+      let dialog = this._dialog;
+      this._dialog = null;
+      this._dialogWindow = null;
+      dialog.close();
+    }
+  },
+
   sendUserEventTelemetry(event, message, dispatch) {
-    const ping = {
+    if (message.content?.metrics === "block") {
+      return;
+    }
+    const data = {
+      action: "spotlight_user_event",
       message_id: message.content.id,
       event,
-      event_context: { writeInMicrosurvey: message.content.writeInMicrosurvey },
+      event_context: {},
     };
-    dispatch({
-      type: "SPOTLIGHT_TELEMETRY",
-      data: { action: "spotlight_user_event", ...ping },
-    });
+    if (message.content.write_in_microsurvey) {
+      data.event_context.write_in_microsurvey = true;
+    }
+    dispatch({ type: "SPOTLIGHT_TELEMETRY", data });
   },
 
   defaultDispatch(message) {
@@ -44,7 +68,7 @@ export const Spotlight = {
    * @return                    boolean value capturing if spotlight was displayed
    */
   async showSpotlightDialog(browser, message, dispatch = this.defaultDispatch) {
-    const win = browser?.ownerGlobal;
+    const win = browser?.documentGlobal;
     if (!win || win.gDialogBox.isOpen) {
       return false;
     }
@@ -59,18 +83,37 @@ export const Spotlight = {
     this.sendUserEventTelemetry("IMPRESSION", message, dispatchCFRAction);
     dispatchCFRAction({ type: "IMPRESSION", data: message });
 
-    if (message.content?.modal === "tab") {
-      let { closedPromise } = win.gBrowser.getTabDialogBox(browser).open(
-        spotlight_url,
-        {
-          features: "resizable=no",
-          allowDuplicateDialogs: false,
-        },
-        message.content
-      );
-      await closedPromise;
-    } else {
-      await win.gDialogBox.open(spotlight_url, message.content);
+    let unloadHandler = () => {
+      this._dialog = null;
+      this._dialogWindow = null;
+    };
+    win.addEventListener("unload", unloadHandler, { once: true });
+
+    try {
+      if (message.content?.modal === "tab") {
+        let { closedPromise, dialog } = win.gBrowser
+          .getTabDialogBox(browser)
+          .open(
+            spotlight_url,
+            {
+              features: "resizable=no",
+              allowDuplicateDialogs: false,
+            },
+            message.content
+          );
+        this._dialog = dialog;
+        this._dialogWindow = win;
+        await closedPromise;
+      } else {
+        let openPromise = win.gDialogBox.open(spotlight_url, message.content);
+        this._dialog = win.gDialogBox.dialog;
+        this._dialogWindow = win;
+        await openPromise;
+      }
+    } finally {
+      win.removeEventListener("unload", unloadHandler);
+      this._dialog = null;
+      this._dialogWindow = null;
     }
 
     // If dismissed report telemetry and exit

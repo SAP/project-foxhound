@@ -58,6 +58,63 @@ browser_addManyNodes.js
 
 **Audit a11y performance when adding 100000 nodes to DOM.**
 
+browser_bounds.js
+=================
+
+:owner: Accessibility Team
+:name: browser_bounds.js
+:Default options:
+
+::
+
+ --extra-args headless
+ --manifest perftest.toml
+ --manifest-flavor browser-chrome
+ --perfherder
+ --perfherder-metrics name:A11Y_TotalTime,unit:ms,shouldAlert:True, name:A11Y_DoInitialUpdate_parent,unit:ms,shouldAlert:False, name:A11Y_ProcessQueuedCacheUpdate_parent,unit:ms,shouldAlert:False, name:A11Y_ContentRemovedNode_parent,unit:ms,shouldAlert:False, name:A11Y_ContentRemovedAcc_parent,unit:ms,shouldAlert:False, name:A11Y_PruneOrInsertSubtree_parent,unit:ms,shouldAlert:False, name:A11Y_ShutdownChildrenInSubtree_parent,unit:ms,shouldAlert:False, name:A11Y_ShowEvent_parent,unit:ms,shouldAlert:False, name:A11Y_RecvCache_parent,unit:ms,shouldAlert:False, name:A11Y_ProcessShowEvent_parent,unit:ms,shouldAlert:False, name:A11Y_CoalesceEvents_parent,unit:ms,shouldAlert:False, name:A11Y_CoalesceMutationEvents_parent,unit:ms,shouldAlert:False, name:A11Y_ProcessHideEvent_parent,unit:ms,shouldAlert:False, name:A11Y_SendCache_parent,unit:ms,shouldAlert:False, name:A11Y_WillRefresh_parent,unit:ms,shouldAlert:False, name:A11Y_AccessibilityServiceInit_parent,unit:ms,shouldAlert:False, name:A11Y_PlatformShowHideEvent_parent,unit:ms,shouldAlert:False, name:A11Y_DoInitialUpdate_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_ProcessQueuedCacheUpdate_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_ContentRemovedNode_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_ContentRemovedAcc_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_PruneOrInsertSubtree_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_ShutdownChildrenInSubtree_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_ShowEvent_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_RecvCache_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_ProcessShowEvent_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_CoalesceEvents_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_CoalesceMutationEvents_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_ProcessHideEvent_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_SendCache_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_WillRefresh_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_AccessibilityServiceInit_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_PlatformShowHideEvent_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_DoInitialUpdate_content,unit:ms,shouldAlert:False, name:A11Y_ProcessQueuedCacheUpdate_content,unit:ms,shouldAlert:False, name:A11Y_ContentRemovedNode_content,unit:ms,shouldAlert:False, name:A11Y_ContentRemovedAcc_content,unit:ms,shouldAlert:False, name:A11Y_PruneOrInsertSubtree_content,unit:ms,shouldAlert:False, name:A11Y_ShutdownChildrenInSubtree_content,unit:ms,shouldAlert:False, name:A11Y_ShowEvent_content,unit:ms,shouldAlert:False, name:A11Y_RecvCache_content,unit:ms,shouldAlert:False, name:A11Y_ProcessShowEvent_content,unit:ms,shouldAlert:False, name:A11Y_CoalesceEvents_content,unit:ms,shouldAlert:False, name:A11Y_CoalesceMutationEvents_content,unit:ms,shouldAlert:False, name:A11Y_ProcessHideEvent_content,unit:ms,shouldAlert:False, name:A11Y_SendCache_content,unit:ms,shouldAlert:False, name:A11Y_WillRefresh_content,unit:ms,shouldAlert:False, name:A11Y_AccessibilityServiceInit_content,unit:ms,shouldAlert:False, name:A11Y_PlatformShowHideEvent_content,unit:ms,shouldAlert:False, name:A11Y_DoInitialUpdate_Count_content,unit:iterations,shouldAlert:False, name:A11Y_ProcessQueuedCacheUpdate_Count_content,unit:iterations,shouldAlert:False, name:A11Y_ContentRemovedNode_Count_content,unit:iterations,shouldAlert:False, name:A11Y_ContentRemovedAcc_Count_content,unit:iterations,shouldAlert:False, name:A11Y_PruneOrInsertSubtree_Count_content,unit:iterations,shouldAlert:False, name:A11Y_ShutdownChildrenInSubtree_Count_content,unit:iterations,shouldAlert:False, name:A11Y_ShowEvent_Count_content,unit:iterations,shouldAlert:False, name:A11Y_RecvCache_Count_content,unit:iterations,shouldAlert:False, name:A11Y_ProcessShowEvent_Count_content,unit:iterations,shouldAlert:False, name:A11Y_CoalesceEvents_Count_content,unit:iterations,shouldAlert:False, name:A11Y_CoalesceMutationEvents_Count_content,unit:iterations,shouldAlert:False, name:A11Y_ProcessHideEvent_Count_content,unit:iterations,shouldAlert:False, name:A11Y_SendCache_Count_content,unit:iterations,shouldAlert:False, name:A11Y_WillRefresh_Count_content,unit:iterations,shouldAlert:False, name:A11Y_AccessibilityServiceInit_Count_content,unit:iterations,shouldAlert:False, name:A11Y_PlatformShowHideEvent_Count_content,unit:iterations,shouldAlert:False
+ --try-platform linux, mac, win
+ --verbose
+
+**Audit a11y performance when computing bounds for a framed (non-display:contents) accessible with 10000 children. Baseline counterpart to browser_displayContentsBounds.js.**
+
+browser_displayContentsBounds.js
+================================
+
+:owner: Accessibility Team
+:name: browser_displayContentsBounds.js
+:Default options:
+
+::
+
+ --extra-args headless
+ --manifest perftest.toml
+ --manifest-flavor browser-chrome
+ --perfherder
+ --perfherder-metrics name:A11Y_TotalTime,unit:ms,shouldAlert:True, name:A11Y_DoInitialUpdate_parent,unit:ms,shouldAlert:False, name:A11Y_ProcessQueuedCacheUpdate_parent,unit:ms,shouldAlert:False, name:A11Y_ContentRemovedNode_parent,unit:ms,shouldAlert:False, name:A11Y_ContentRemovedAcc_parent,unit:ms,shouldAlert:False, name:A11Y_PruneOrInsertSubtree_parent,unit:ms,shouldAlert:False, name:A11Y_ShutdownChildrenInSubtree_parent,unit:ms,shouldAlert:False, name:A11Y_ShowEvent_parent,unit:ms,shouldAlert:False, name:A11Y_RecvCache_parent,unit:ms,shouldAlert:False, name:A11Y_ProcessShowEvent_parent,unit:ms,shouldAlert:False, name:A11Y_CoalesceEvents_parent,unit:ms,shouldAlert:False, name:A11Y_CoalesceMutationEvents_parent,unit:ms,shouldAlert:False, name:A11Y_ProcessHideEvent_parent,unit:ms,shouldAlert:False, name:A11Y_SendCache_parent,unit:ms,shouldAlert:False, name:A11Y_WillRefresh_parent,unit:ms,shouldAlert:False, name:A11Y_AccessibilityServiceInit_parent,unit:ms,shouldAlert:False, name:A11Y_PlatformShowHideEvent_parent,unit:ms,shouldAlert:False, name:A11Y_DoInitialUpdate_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_ProcessQueuedCacheUpdate_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_ContentRemovedNode_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_ContentRemovedAcc_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_PruneOrInsertSubtree_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_ShutdownChildrenInSubtree_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_ShowEvent_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_RecvCache_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_ProcessShowEvent_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_CoalesceEvents_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_CoalesceMutationEvents_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_ProcessHideEvent_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_SendCache_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_WillRefresh_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_AccessibilityServiceInit_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_PlatformShowHideEvent_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_DoInitialUpdate_content,unit:ms,shouldAlert:False, name:A11Y_ProcessQueuedCacheUpdate_content,unit:ms,shouldAlert:False, name:A11Y_ContentRemovedNode_content,unit:ms,shouldAlert:False, name:A11Y_ContentRemovedAcc_content,unit:ms,shouldAlert:False, name:A11Y_PruneOrInsertSubtree_content,unit:ms,shouldAlert:False, name:A11Y_ShutdownChildrenInSubtree_content,unit:ms,shouldAlert:False, name:A11Y_ShowEvent_content,unit:ms,shouldAlert:False, name:A11Y_RecvCache_content,unit:ms,shouldAlert:False, name:A11Y_ProcessShowEvent_content,unit:ms,shouldAlert:False, name:A11Y_CoalesceEvents_content,unit:ms,shouldAlert:False, name:A11Y_CoalesceMutationEvents_content,unit:ms,shouldAlert:False, name:A11Y_ProcessHideEvent_content,unit:ms,shouldAlert:False, name:A11Y_SendCache_content,unit:ms,shouldAlert:False, name:A11Y_WillRefresh_content,unit:ms,shouldAlert:False, name:A11Y_AccessibilityServiceInit_content,unit:ms,shouldAlert:False, name:A11Y_PlatformShowHideEvent_content,unit:ms,shouldAlert:False, name:A11Y_DoInitialUpdate_Count_content,unit:iterations,shouldAlert:False, name:A11Y_ProcessQueuedCacheUpdate_Count_content,unit:iterations,shouldAlert:False, name:A11Y_ContentRemovedNode_Count_content,unit:iterations,shouldAlert:False, name:A11Y_ContentRemovedAcc_Count_content,unit:iterations,shouldAlert:False, name:A11Y_PruneOrInsertSubtree_Count_content,unit:iterations,shouldAlert:False, name:A11Y_ShutdownChildrenInSubtree_Count_content,unit:iterations,shouldAlert:False, name:A11Y_ShowEvent_Count_content,unit:iterations,shouldAlert:False, name:A11Y_RecvCache_Count_content,unit:iterations,shouldAlert:False, name:A11Y_ProcessShowEvent_Count_content,unit:iterations,shouldAlert:False, name:A11Y_CoalesceEvents_Count_content,unit:iterations,shouldAlert:False, name:A11Y_CoalesceMutationEvents_Count_content,unit:iterations,shouldAlert:False, name:A11Y_ProcessHideEvent_Count_content,unit:iterations,shouldAlert:False, name:A11Y_SendCache_Count_content,unit:iterations,shouldAlert:False, name:A11Y_WillRefresh_Count_content,unit:iterations,shouldAlert:False, name:A11Y_AccessibilityServiceInit_Count_content,unit:iterations,shouldAlert:False, name:A11Y_PlatformShowHideEvent_Count_content,unit:iterations,shouldAlert:False
+ --try-platform linux, mac, win
+ --verbose
+
+**Audit a11y performance when computing bounds for a display:contents accessible with 10000 children.**
+
+browser_implicitRoleARIAExpanded.js
+===================================
+
+:owner: Accessibility Team
+:name: browser_implicitRoleARIAExpanded.js
+:Default options:
+
+::
+
+ --extra-args headless
+ --manifest perftest.toml
+ --manifest-flavor browser-chrome
+ --perfherder
+ --perfherder-metrics name:A11Y_TotalTime,unit:ms,shouldAlert:True, name:A11Y_DoInitialUpdate_parent,unit:ms,shouldAlert:False, name:A11Y_ProcessQueuedCacheUpdate_parent,unit:ms,shouldAlert:False, name:A11Y_ContentRemovedNode_parent,unit:ms,shouldAlert:False, name:A11Y_ContentRemovedAcc_parent,unit:ms,shouldAlert:False, name:A11Y_PruneOrInsertSubtree_parent,unit:ms,shouldAlert:False, name:A11Y_ShutdownChildrenInSubtree_parent,unit:ms,shouldAlert:False, name:A11Y_ShowEvent_parent,unit:ms,shouldAlert:False, name:A11Y_RecvCache_parent,unit:ms,shouldAlert:False, name:A11Y_ProcessShowEvent_parent,unit:ms,shouldAlert:False, name:A11Y_CoalesceEvents_parent,unit:ms,shouldAlert:False, name:A11Y_CoalesceMutationEvents_parent,unit:ms,shouldAlert:False, name:A11Y_ProcessHideEvent_parent,unit:ms,shouldAlert:False, name:A11Y_SendCache_parent,unit:ms,shouldAlert:False, name:A11Y_WillRefresh_parent,unit:ms,shouldAlert:False, name:A11Y_AccessibilityServiceInit_parent,unit:ms,shouldAlert:False, name:A11Y_PlatformShowHideEvent_parent,unit:ms,shouldAlert:False, name:A11Y_DoInitialUpdate_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_ProcessQueuedCacheUpdate_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_ContentRemovedNode_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_ContentRemovedAcc_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_PruneOrInsertSubtree_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_ShutdownChildrenInSubtree_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_ShowEvent_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_RecvCache_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_ProcessShowEvent_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_CoalesceEvents_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_CoalesceMutationEvents_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_ProcessHideEvent_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_SendCache_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_WillRefresh_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_AccessibilityServiceInit_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_PlatformShowHideEvent_Count_parent,unit:iterations,shouldAlert:False, name:A11Y_DoInitialUpdate_content,unit:ms,shouldAlert:False, name:A11Y_ProcessQueuedCacheUpdate_content,unit:ms,shouldAlert:False, name:A11Y_ContentRemovedNode_content,unit:ms,shouldAlert:False, name:A11Y_ContentRemovedAcc_content,unit:ms,shouldAlert:False, name:A11Y_PruneOrInsertSubtree_content,unit:ms,shouldAlert:False, name:A11Y_ShutdownChildrenInSubtree_content,unit:ms,shouldAlert:False, name:A11Y_ShowEvent_content,unit:ms,shouldAlert:False, name:A11Y_RecvCache_content,unit:ms,shouldAlert:False, name:A11Y_ProcessShowEvent_content,unit:ms,shouldAlert:False, name:A11Y_CoalesceEvents_content,unit:ms,shouldAlert:False, name:A11Y_CoalesceMutationEvents_content,unit:ms,shouldAlert:False, name:A11Y_ProcessHideEvent_content,unit:ms,shouldAlert:False, name:A11Y_SendCache_content,unit:ms,shouldAlert:False, name:A11Y_WillRefresh_content,unit:ms,shouldAlert:False, name:A11Y_AccessibilityServiceInit_content,unit:ms,shouldAlert:False, name:A11Y_PlatformShowHideEvent_content,unit:ms,shouldAlert:False, name:A11Y_DoInitialUpdate_Count_content,unit:iterations,shouldAlert:False, name:A11Y_ProcessQueuedCacheUpdate_Count_content,unit:iterations,shouldAlert:False, name:A11Y_ContentRemovedNode_Count_content,unit:iterations,shouldAlert:False, name:A11Y_ContentRemovedAcc_Count_content,unit:iterations,shouldAlert:False, name:A11Y_PruneOrInsertSubtree_Count_content,unit:iterations,shouldAlert:False, name:A11Y_ShutdownChildrenInSubtree_Count_content,unit:iterations,shouldAlert:False, name:A11Y_ShowEvent_Count_content,unit:iterations,shouldAlert:False, name:A11Y_RecvCache_Count_content,unit:iterations,shouldAlert:False, name:A11Y_ProcessShowEvent_Count_content,unit:iterations,shouldAlert:False, name:A11Y_CoalesceEvents_Count_content,unit:iterations,shouldAlert:False, name:A11Y_CoalesceMutationEvents_Count_content,unit:iterations,shouldAlert:False, name:A11Y_ProcessHideEvent_Count_content,unit:iterations,shouldAlert:False, name:A11Y_SendCache_Count_content,unit:iterations,shouldAlert:False, name:A11Y_WillRefresh_Count_content,unit:iterations,shouldAlert:False, name:A11Y_AccessibilityServiceInit_Count_content,unit:iterations,shouldAlert:False, name:A11Y_PlatformShowHideEvent_Count_content,unit:iterations,shouldAlert:False
+ --try-platform linux, mac, win
+ --verbose
+
+**Audit a11y performance when adding 10000 elements with implicit ARIA roles**
+
 browser_reflowPseudoelements.js
 ===============================
 
@@ -405,6 +462,36 @@ perftest_http3_youtube_watch_scroll.js
 netwerk/test/unit
 -----------------
 Performance tests from the 'netwerk/test/unit' folder.
+
+test_dns_stress.js
+==================
+
+:owner: Network Team
+:name: DNS Benchmark
+:Default options:
+
+::
+
+ --perfherder
+
+**Benchmark for DNS resolver lock contention under low and high concurrency.**
+
+This test measures DNS resolver throughput by comparing baseline resolution times with low concurrency (within the thread pool) against performance under high concurrency (far exceeding the thread pool). It validates that the resolver scales with available threads rather than serializing all requests.
+
+test_trr_bench.js
+=================
+
+:owner: Network Team
+:name: TRR Benchmark
+:Default options:
+
+::
+
+ --perfherder
+
+**Benchmark for TRR (Trusted Recursive Resolver) DNS lookup performance under various load conditions.**
+
+This test measures TRR DNS lookup performance by comparing baseline DNS resolution times with low contention against performance under high contention with many concurrent requests. It validates that TRR requests maintain acceptable performance even when the network is busy with other requests.
 
 test_http3_perf.js
 ==================

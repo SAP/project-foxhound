@@ -40,7 +40,7 @@ def is_release_promotion_available(parameters):
                 # this enum should be kept in sync with the merge-automation kind
                 "enum": [
                     "bump-main",
-                    "bump-esr140",
+                    "bump-esr153",
                     "early-to-late-beta",
                     "main-to-beta",
                     "beta-to-release",
@@ -63,6 +63,14 @@ def is_release_promotion_available(parameters):
             "to-branch": {
                 "type": "string",
                 "description": "The fx head of the target, such as beta",
+            },
+            "from-revision": {
+                "type": "string",
+                "description": "The revision on the from_branch to fetch its current version from, tag with `_BASE` tags, and use as the target revision for merge actions.",
+            },
+            "to-revision": {
+                "type": "string",
+                "description": "The revision on the to_branch to fetch its current version from and use to base l10n bumps, version bumps, and replacements on.",
             },
             "fetch-version-from": {
                 "type": "string",
@@ -89,8 +97,10 @@ def merge_automation_action(parameters, graph_config, input, task_group_id, task
     for field in [
         "from-repo",
         "from-branch",
+        "from-revision",
         "to-repo",
         "to-branch",
+        "to-revision",
         "push",
         "fetch-version-from",
         "merge-automation-id",
@@ -98,7 +108,7 @@ def merge_automation_action(parameters, graph_config, input, task_group_id, task
         if input.get(field):
             parameters["merge_config"][field] = input[field]
     parameters["tasks_for"] = "action"
-
+    parameters["dontbuild"] = False
     # make parameters read-only
     parameters = Parameters(**parameters)
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -57,8 +55,8 @@ class WorkerErrorReport : public WorkerErrorBase, public SerializedStackHolder {
   // TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1743443)
   MOZ_CAN_RUN_SCRIPT_BOUNDARY static void ReportError(
       JSContext* aCx, WorkerPrivate* aWorkerPrivate, bool aFireAtScope,
-      DOMEventTargetHelper* aTarget, UniquePtr<WorkerErrorReport> aReport,
-      uint64_t aInnerWindowId,
+      RefPtr<DOMEventTargetHelper> aTarget,
+      UniquePtr<WorkerErrorReport> aReport, uint64_t aInnerWindowId,
       JS::Handle<JS::Value> aException = JS::NullHandleValue);
 
   static void LogErrorToConsole(JSContext* aCx, WorkerErrorReport& aReport,

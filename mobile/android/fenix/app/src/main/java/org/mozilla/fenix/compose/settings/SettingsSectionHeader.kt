@@ -24,11 +24,14 @@ import org.mozilla.fenix.theme.Theme
  * @param modifier [Modifier] to be applied to the layout.
  */
 @Composable
-fun SettingsSectionHeader(text: String, modifier: Modifier = Modifier) {
+fun SettingsSectionHeader(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
     Text(
         text = text,
         style = FirefoxTheme.typography.headline8,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = MaterialTheme.colorScheme.onSurface,
         modifier = modifier.semantics { heading() },
     )
 }

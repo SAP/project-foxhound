@@ -2,27 +2,38 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* global ExtensionAPI, ExtensionCommon, Cr */
+/* global ExtensionAPI, ExtensionCommon, Cr, XPCOMUtils */
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   ExtensionParent: "resource://gre/modules/ExtensionParent.sys.mjs",
   IPPExceptionsManager:
-    "moz-src:///browser/components/ipprotection/IPPExceptionsManager.sys.mjs",
+    "moz-src:///toolkit/components/ipprotection/IPPExceptionsManager.sys.mjs",
   IPPProxyManager:
-    "moz-src:///browser/components/ipprotection/IPPProxyManager.sys.mjs",
+    "moz-src:///toolkit/components/ipprotection/IPPProxyManager.sys.mjs",
   IPPProxyStates:
-    "moz-src:///browser/components/ipprotection/IPPProxyManager.sys.mjs",
+    "moz-src:///toolkit/components/ipprotection/IPPProxyManager.sys.mjs",
+  Region: "resource://gre/modules/Region.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "tabTracker", () => {
   return lazy.ExtensionParent.apiManager.global.tabTracker;
 });
 
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "siteExceptionsEnabled",
+  "browser.ipProtection.features.siteExceptions",
+  false
+);
+
 const PREF_DYNAMIC_TAB_BREAKAGES =
   "extensions.ippactivator.dynamicTabBreakages";
 const PREF_DYNAMIC_WEBREQUEST_BREAKAGES =
   "extensions.ippactivator.dynamicWebRequestBreakages";
+const PREF_TAB_BREAKAGES_URL = "extensions.ippactivator.tabBreakagesUrl";
+const PREF_WEBREQUEST_BREAKAGES_URL =
+  "extensions.ippactivator.webrequestBreakagesUrl";
 const PREF_NOTIFIED_DOMAINS = "extensions.ippactivator.notifiedDomains";
 
 this.ippActivator = class extends ExtensionAPI {
@@ -39,7 +50,9 @@ this.ippActivator = class extends ExtensionAPI {
           register: fire => {
             const topics = ["IPPProxyManager:StateChanged"];
             const observer = _event => {
-              fire.async();
+              fire.async(
+                lazy.IPPProxyManager.state === lazy.IPPProxyStates.ACTIVE
+              );
             };
 
             topics.forEach(topic =>
@@ -53,19 +66,13 @@ this.ippActivator = class extends ExtensionAPI {
             };
           },
         }).api(),
-        isTesting() {
-          return Services.prefs.getBoolPref(
-            "extensions.ippactivator.testMode",
-            false
-          );
-        },
         hideMessage(tabId) {
           try {
             const tab = tabId
               ? lazy.tabTracker.getTab(tabId)
               : lazy.tabTracker.activeTab;
             const browser = tab?.linkedBrowser;
-            const win = browser?.ownerGlobal;
+            const win = browser?.documentGlobal;
             if (!browser || !win || !win.gBrowser) {
               return;
             }
@@ -82,6 +89,9 @@ this.ippActivator = class extends ExtensionAPI {
         },
         isIPPActive() {
           return lazy.IPPProxyManager.state === lazy.IPPProxyStates.ACTIVE;
+        },
+        getRegion() {
+          return lazy.Region.home;
         },
         getDynamicTabBreakages() {
           try {
@@ -106,6 +116,15 @@ this.ippActivator = class extends ExtensionAPI {
           } catch (_) {
             return [];
           }
+        },
+        getTabBreakagesUrl() {
+          return Services.prefs.getStringPref(PREF_TAB_BREAKAGES_URL, "");
+        },
+        getWebRequestBreakagesUrl() {
+          return Services.prefs.getStringPref(
+            PREF_WEBREQUEST_BREAKAGES_URL,
+            ""
+          );
         },
         getNotifiedDomains() {
           try {
@@ -167,12 +186,7 @@ this.ippActivator = class extends ExtensionAPI {
           }
         },
         hasExclusion(url) {
-          if (
-            !Services.prefs.getBoolPref(
-              "browser.ipProtection.features.siteExceptions",
-              false
-            )
-          ) {
+          if (!lazy.siteExceptionsEnabled) {
             return false;
           }
 
@@ -192,7 +206,7 @@ this.ippActivator = class extends ExtensionAPI {
               ? lazy.tabTracker.getTab(tabId)
               : lazy.tabTracker.activeTab;
             const browser = tab?.linkedBrowser;
-            const win = browser?.ownerGlobal;
+            const win = browser?.documentGlobal;
             if (!browser || !win || !win.gBrowser) {
               return Promise.resolve(false);
             }
@@ -219,6 +233,9 @@ this.ippActivator = class extends ExtensionAPI {
                   label: { "l10n-id": message.l10nId },
                   priority: nbox.PRIORITY_WARNING_HIGH,
                   eventCallback: param => {
+                    if (param === "dismissed") {
+                      Glean.ipprotection.breakageMessageDismissed.record();
+                    }
                     resolveDismiss(param === "dismissed");
                   },
                 },
@@ -228,6 +245,7 @@ this.ippActivator = class extends ExtensionAPI {
                 // Persist the notification until the user removes so it
                 // doesn't get removed on redirects.
                 notification.persistence = -1;
+                Glean.ipprotection.breakageMessageShown.record();
               });
 
             return dismissedPromise;
@@ -315,6 +333,22 @@ this.ippActivator = class extends ExtensionAPI {
 
             Services.obs.addObserver(observer, "perm-changed");
             return () => Services.obs.removeObserver(observer, "perm-changed");
+          },
+        }).api(),
+        onRegionChanged: new ExtensionCommon.EventManager({
+          context,
+          name: "ippActivator.onRegionChanged",
+          register: fire => {
+            const observer = {
+              observe(_subject, topic) {
+                if (topic === "browser-region-updated") {
+                  fire.async(lazy.Region.home);
+                }
+              },
+            };
+            Services.obs.addObserver(observer, "browser-region-updated");
+            return () =>
+              Services.obs.removeObserver(observer, "browser-region-updated");
           },
         }).api(),
       },

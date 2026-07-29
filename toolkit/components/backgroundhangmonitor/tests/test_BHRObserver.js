@@ -286,3 +286,71 @@ add_task(async function test_BHRObserver() {
   telSvc.submit();
   Assert.ok(pingSubmitted, "the glean 'hang-report' ping has been submitted");
 });
+
+// Wait for the next parent-process Gecko hang matching matchFn (if given)
+// and resolve with its nsIHangDetails.
+function captureNextGeckoHang(matchFn) {
+  return new Promise(resolve => {
+    const onThreadHang = subject => {
+      let hang = subject.QueryInterface(Ci.nsIHangDetails);
+      if (hang.thread !== "Gecko") {
+        return;
+      }
+      if (matchFn && !matchFn(hang)) {
+        return;
+      }
+      Services.obs.removeObserver(onThreadHang, "bhr-thread-hang");
+      resolve(hang);
+    };
+    Services.obs.addObserver(onThreadHang, "bhr-thread-hang");
+  });
+}
+
+function induceMainThreadHang() {
+  executeSoon(() => {
+    let start = Date.now();
+    // eslint-disable-next-line no-empty
+    while (Date.now() - start < 1000) {}
+  });
+}
+
+function annotationKeys(hang) {
+  return new Set(hang.annotations.map(([k]) => k));
+}
+
+// Verifies that once trackStartupCrashEnd() has run, hangs no longer carry
+// the BeforeStartupCrashAndHangTrackingEnded annotation, and that
+// ShutdownImpending is absent while we are still well before shutdown.
+add_task(async function test_StartupTrackingEnded_annotation() {
+  if (!Services.telemetry.canRecordExtended) {
+    return;
+  }
+
+  // trackStartupCrashEnd() reads toolkit.startup.last_success before
+  // flipping mStartupCrashAndHangTrackingEnded; populate it so the call
+  // reaches the assignment. Pattern from test_startup_crash.js.
+  let nowSec = Math.floor(Date.now() / 1000);
+  Services.prefs.setIntPref("toolkit.startup.last_success", nowSec - 10);
+
+  try {
+    Services.startup.trackStartupCrashBegin();
+  } catch (x) {}
+  Services.startup.trackStartupCrashEnd();
+
+  // Skip any stale hang notifications from earlier tests that were captured
+  // before trackStartupCrashEnd() was called and still carry the annotation.
+  let hangPromise = captureNextGeckoHang(
+    hang => !annotationKeys(hang).has("BeforeStartupCrashAndHangTrackingEnded")
+  );
+  induceMainThreadHang();
+  let keys = annotationKeys(await hangPromise);
+
+  ok(
+    !keys.has("BeforeStartupCrashAndHangTrackingEnded"),
+    "BeforeStartupCrashAndHangTrackingEnded is cleared after trackStartupCrashEnd()"
+  );
+  ok(
+    !keys.has("ShutdownImpending"),
+    "ShutdownImpending is not present before shutdown is impending"
+  );
+});

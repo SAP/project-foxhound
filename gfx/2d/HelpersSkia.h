@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -238,6 +236,10 @@ static inline SkColor ColorToSkColor(const DeviceColor& color, Float aAlpha) {
   return SkColorSetARGB(ColorFloatToByte(color.a * aAlpha),
                         ColorFloatToByte(color.r), ColorFloatToByte(color.g),
                         ColorFloatToByte(color.b));
+}
+
+static inline SkColor4f ColorToSkColor4f(const DeviceColor& color) {
+  return SkColor4f{color.r, color.g, color.b, color.a};
 }
 
 static inline SkPoint PointToSkPoint(const Point& aPoint) {

@@ -13,6 +13,10 @@ const { TestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/TestUtils.sys.mjs"
 );
 
+const { ObjectUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/ObjectUtils.sys.mjs"
+);
+
 const {
   createMissingIndexedDBDirs,
   extensionScriptWithMessageListener,
@@ -22,9 +26,14 @@ const {
   shutdown,
   startupExtension,
 } = require("resource://test/webextension-helpers.js");
+const {
+  SEPARATOR_GUID,
+} = require("resource://devtools/server/actors/resources/storage/index.js");
 
 const l10n = new Localization(["devtools/client/storage.ftl"], true);
 const sessionString = l10n.formatValueSync("storage-expires-session");
+const getExtensionStorageUniqueKey = (area, name) =>
+  name + SEPARATOR_GUID + area;
 
 // Ignore rejection related to the storage.onChanged listener being removed while the extension context is being closed.
 const { PromiseTestUtils } = ChromeUtils.importESModule(
@@ -113,7 +122,7 @@ add_task(
  * - For each modification, the storage data in the panel should match the
  *   changes made by the extension.
  */
-add_task(async function test_panel_live_updates() {
+add_task(async function test_panel_live_updates_for_storage_local_changes() {
   const extension = await startupExtension(
     getExtensionConfig({ background: extensionScriptWithMessageListener })
   );
@@ -157,6 +166,7 @@ add_task(async function test_panel_live_updates() {
   const bulkStorageObjects = [];
   for (const [name, value] of Object.entries(bulkStorageItems)) {
     bulkStorageObjects.push({
+      uniqueKey: getExtensionStorageUniqueKey("local", name),
       area: "local",
       name,
       value: { str: String(value) },
@@ -170,36 +180,42 @@ add_task(async function test_panel_live_updates() {
     [
       ...bulkStorageObjects,
       {
+        uniqueKey: getExtensionStorageUniqueKey("local", "a"),
         area: "local",
         name: "a",
         value: { str: "123" },
         isValueEditable: true,
       },
       {
+        uniqueKey: getExtensionStorageUniqueKey("local", "b"),
         area: "local",
         name: "b",
         value: { str: "[4,5]" },
         isValueEditable: true,
       },
       {
+        uniqueKey: getExtensionStorageUniqueKey("local", "c"),
         area: "local",
         name: "c",
         value: { str: '{"d":678}' },
         isValueEditable: true,
       },
       {
+        uniqueKey: getExtensionStorageUniqueKey("local", "d"),
         area: "local",
         name: "d",
         value: { str: "true" },
         isValueEditable: true,
       },
       {
+        uniqueKey: getExtensionStorageUniqueKey("local", "e"),
         area: "local",
         name: "e",
         value: { str: "hi" },
         isValueEditable: true,
       },
       {
+        uniqueKey: getExtensionStorageUniqueKey("local", "f"),
         area: "local",
         name: "f",
         value: { str: "null" },
@@ -229,36 +245,42 @@ add_task(async function test_panel_live_updates() {
     [
       ...bulkStorageObjects,
       {
+        uniqueKey: getExtensionStorageUniqueKey("local", "a"),
         area: "local",
         name: "a",
         value: { str: '["c","d"]' },
         isValueEditable: true,
       },
       {
+        uniqueKey: getExtensionStorageUniqueKey("local", "b"),
         area: "local",
         name: "b",
         value: { str: "456" },
         isValueEditable: true,
       },
       {
+        uniqueKey: getExtensionStorageUniqueKey("local", "c"),
         area: "local",
         name: "c",
         value: { str: "false" },
         isValueEditable: true,
       },
       {
+        uniqueKey: getExtensionStorageUniqueKey("local", "d"),
         area: "local",
         name: "d",
         value: { str: "true" },
         isValueEditable: true,
       },
       {
+        uniqueKey: getExtensionStorageUniqueKey("local", "e"),
         area: "local",
         name: "e",
         value: { str: "hi" },
         isValueEditable: true,
       },
       {
+        uniqueKey: getExtensionStorageUniqueKey("local", "f"),
         area: "local",
         name: "f",
         value: { str: "null" },
@@ -284,18 +306,21 @@ add_task(async function test_panel_live_updates() {
     [
       ...bulkStorageObjects,
       {
+        uniqueKey: getExtensionStorageUniqueKey("local", "a"),
         area: "local",
         name: "a",
         value: { str: '["c","d"]' },
         isValueEditable: true,
       },
       {
+        uniqueKey: getExtensionStorageUniqueKey("local", "b"),
         area: "local",
         name: "b",
         value: { str: "456" },
         isValueEditable: true,
       },
       {
+        uniqueKey: getExtensionStorageUniqueKey("local", "c"),
         area: "local",
         name: "c",
         value: { str: "false" },
@@ -318,6 +343,69 @@ add_task(async function test_panel_live_updates() {
     [],
     "Got the expected results on populated storage.local"
   );
+
+  await shutdown(extension, commands);
+});
+
+add_task(async function test_panel_live_updates_for_storage_sync_changes() {
+  const extension = await startupExtension(
+    getExtensionConfig({
+      background: extensionScriptWithMessageListener,
+      // storage.sync API requires the Add-on ID.
+      manifest: {
+        browser_specific_settings: {
+          gecko: { id: "panel-live-updates-for-storage-sync@xpcshell" },
+        },
+      },
+    })
+  );
+
+  const host = await extension.awaitMessage("extension-origin");
+  const { commands, extensionStorage } = await openAddonStoragePanel(
+    extension.id
+  );
+
+  const getExpectedItem = (name, value) => ({
+    uniqueKey: getExtensionStorageUniqueKey("sync", name),
+    area: "sync",
+    name,
+    value: { str: value },
+    isValueEditable: true,
+  });
+  const getData = async () =>
+    (await extensionStorage.getStoreObjects(host, null, { sessionString }))
+      .data;
+  const waitForData = expected =>
+    TestUtils.waitForCondition(
+      async () => ObjectUtils.deepEqual(await getData(), expected),
+      "Wait for the extension storage panel to update"
+    );
+
+  let expected = [];
+  Assert.deepEqual(await getData(), expected, "Got empty storage.sync");
+
+  extension.sendMessage("storage-sync-set", { a: "valueA", b: "valueB" });
+  await extension.awaitMessage("storage-sync-set:done");
+  expected = [getExpectedItem("a", "valueA"), getExpectedItem("b", "valueB")];
+  await waitForData(expected);
+
+  extension.sendMessage("storage-sync-set", { a: "updatedValueA" });
+  await extension.awaitMessage("storage-sync-set:done");
+  expected = [
+    getExpectedItem("a", "updatedValueA"),
+    getExpectedItem("b", "valueB"),
+  ];
+  await waitForData(expected);
+
+  extension.sendMessage("storage-sync-remove", "b");
+  await extension.awaitMessage("storage-sync-remove:done");
+  expected = [getExpectedItem("a", "updatedValueA")];
+  await waitForData(expected);
+
+  extension.sendMessage("storage-sync-clear");
+  await extension.awaitMessage("storage-sync-clear:done");
+  expected = [];
+  await waitForData(expected);
 
   await shutdown(extension, commands);
 });
@@ -356,6 +444,7 @@ add_task(
       data,
       [
         {
+          uniqueKey: getExtensionStorageUniqueKey("local", "a"),
           area: "local",
           name: "a",
           value: { str: "123" },
@@ -405,6 +494,7 @@ add_task(async function test_panel_data_matches_extension_with_no_pages_open() {
     data,
     [
       {
+        uniqueKey: getExtensionStorageUniqueKey("local", "a"),
         area: "local",
         name: "a",
         value: { str: "123" },
@@ -464,6 +554,7 @@ add_task(
       data,
       [
         {
+          uniqueKey: getExtensionStorageUniqueKey("local", "a"),
           area: "local",
           name: "a",
           value: { str: "123" },
@@ -483,6 +574,7 @@ add_task(
       data,
       [
         {
+          uniqueKey: getExtensionStorageUniqueKey("local", "a"),
           area: "local",
           name: "a",
           value: { str: "123" },
@@ -552,7 +644,11 @@ add_task(
       await extensionStorage.editItem({
         host,
         field: "value",
-        items: { name: key, value: editItemValueStr },
+        items: {
+          uniqueKey: getExtensionStorageUniqueKey("local", key),
+          name: key,
+          value: editItemValueStr,
+        },
         oldValue,
       });
 
@@ -564,6 +660,7 @@ add_task(
         data,
         [
           {
+            uniqueKey: getExtensionStorageUniqueKey("local", key),
             area: "local",
             name: key,
             value: { str: toStoreObjectValueStr },
@@ -603,7 +700,7 @@ add_task(
  *   data in the panel.
  */
 add_task(
-  async function test_modifying_items_in_panel_updates_extension_storage_data() {
+  async function test_modifying_items_in_panel_updates_extension_storage_local_data() {
     const extension = await startupExtension(
       getExtensionConfig({ background: extensionScriptWithMessageListener })
     );
@@ -632,7 +729,11 @@ add_task(
       {
         added: {
           extensionStorage: {
-            [host]: ["guid_1", "guid_2", "guid_3"],
+            [host]: [
+              getExtensionStorageUniqueKey("local", "guid_1"),
+              getExtensionStorageUniqueKey("local", "guid_2"),
+              getExtensionStorageUniqueKey("local", "guid_3"),
+            ],
           },
         },
         changed: undefined,
@@ -647,7 +748,11 @@ add_task(
     await extensionStorage.editItem({
       host,
       field: "value",
-      items: { name: "guid_1", value: "anotherValue" },
+      items: {
+        uniqueKey: getExtensionStorageUniqueKey("local", "guid_1"),
+        name: "guid_1",
+        value: "anotherValue",
+      },
       DEFAULT_VALUE,
     });
 
@@ -658,7 +763,7 @@ add_task(
         added: undefined,
         changed: {
           extensionStorage: {
-            [host]: ["guid_1"],
+            [host]: [getExtensionStorageUniqueKey("local", "guid_1")],
           },
         },
         deleted: undefined,
@@ -682,7 +787,10 @@ add_task(
 
     info("Waiting for panel to remove an item");
     storesUpdate = extensionStorage.once("single-store-update");
-    await extensionStorage.removeItem(host, "guid_3");
+    await extensionStorage.removeItem(
+      host,
+      getExtensionStorageUniqueKey("local", "guid_3")
+    );
 
     info("Waiting for the storage actor to emit a 'stores-update' event");
     data = await storesUpdate;
@@ -692,7 +800,7 @@ add_task(
         changed: undefined,
         deleted: {
           extensionStorage: {
-            [host]: ["guid_3"],
+            [host]: [getExtensionStorageUniqueKey("local", "guid_3")],
           },
         },
       },
@@ -740,6 +848,243 @@ add_task(
     await shutdown(extension, commands);
   }
 );
+
+add_task(
+  async function test_modifying_items_in_panel_updates_extension_storage_sync_data() {
+    const extension = await startupExtension(
+      getExtensionConfig({
+        background: extensionScriptWithMessageListener,
+        // storage.sync API requires the Add-on ID.
+        manifest: {
+          browser_specific_settings: {
+            gecko: { id: "panel-updates-extension-storage-sync@xpcshell" },
+          },
+        },
+      })
+    );
+
+    const host = await extension.awaitMessage("extension-origin");
+    const { commands, extensionStorage } = await openAddonStoragePanel(
+      extension.id
+    );
+
+    extension.sendMessage("storage-sync-set", {
+      guid_1: "value",
+      guid_2: "value",
+      guid_3: "value",
+    });
+    await extension.awaitMessage("storage-sync-set:done");
+    await TestUtils.waitForCondition(async () => {
+      const { data } = await extensionStorage.getStoreObjects(host, null, {
+        sessionString,
+      });
+      return data.length === 3;
+    }, "Wait for storage.sync items to appear in the panel");
+
+    await extensionStorage.editItem({
+      host,
+      field: "value",
+      items: {
+        uniqueKey: getExtensionStorageUniqueKey("sync", "guid_1"),
+        name: "guid_1",
+        value: "anotherValue",
+      },
+    });
+    extension.sendMessage("storage-sync-get", null);
+    Assert.deepEqual(
+      await extension.awaitMessage("storage-sync-get:done"),
+      {
+        guid_1: "anotherValue",
+        guid_2: "value",
+        guid_3: "value",
+      },
+      "The edited storage.sync item matches the item in the panel"
+    );
+
+    await extensionStorage.removeItem(
+      host,
+      getExtensionStorageUniqueKey("sync", "guid_3")
+    );
+    extension.sendMessage("storage-sync-get", null);
+    Assert.deepEqual(
+      await extension.awaitMessage("storage-sync-get:done"),
+      {
+        guid_1: "anotherValue",
+        guid_2: "value",
+      },
+      "The removed storage.sync item was removed from the extension"
+    );
+
+    await extensionStorage.removeAll(host);
+    extension.sendMessage("storage-sync-get", null);
+    Assert.deepEqual(
+      await extension.awaitMessage("storage-sync-get:done"),
+      {},
+      "The storage.sync items were removed from the extension"
+    );
+
+    await shutdown(extension, commands);
+  }
+);
+
+add_task(async function test_remove_all_clears_local_and_sync() {
+  const extension = await startupExtension(
+    getExtensionConfig({
+      background: extensionScriptWithMessageListener,
+      // storage.sync API requires the Add-on ID.
+      manifest: {
+        browser_specific_settings: {
+          gecko: { id: "extension-storage-remove-all@test" },
+        },
+      },
+    })
+  );
+  const host = await extension.awaitMessage("extension-origin");
+
+  extension.sendMessage("storage-local-set", { localItem: "localValue" });
+  await extension.awaitMessage("storage-local-set:done");
+  extension.sendMessage("storage-sync-set", { syncItem: "syncValue" });
+  await extension.awaitMessage("storage-sync-set:done");
+
+  const { commands, extensionStorage } = await openAddonStoragePanel(
+    extension.id
+  );
+
+  const { data } = await extensionStorage.getStoreObjects(host, null, {
+    sessionString,
+  });
+  Assert.deepEqual(
+    data,
+    [
+      {
+        uniqueKey: getExtensionStorageUniqueKey("local", "localItem"),
+        area: "local",
+        name: "localItem",
+        value: { str: "localValue" },
+        isValueEditable: true,
+      },
+      {
+        uniqueKey: getExtensionStorageUniqueKey("sync", "syncItem"),
+        area: "sync",
+        name: "syncItem",
+        value: { str: "syncValue" },
+        isValueEditable: true,
+      },
+    ],
+    "Both storage.local and storage.sync items are present before removing all"
+  );
+
+  info("Removing all items should clear both storage.local and storage.sync");
+  await extensionStorage.removeAll(host);
+
+  extension.sendMessage("storage-local-get", null);
+  Assert.deepEqual(
+    await extension.awaitMessage("storage-local-get:done"),
+    {},
+    "The storage.local items were removed from the extension"
+  );
+  extension.sendMessage("storage-sync-get", null);
+  Assert.deepEqual(
+    await extension.awaitMessage("storage-sync-get:done"),
+    {},
+    "The storage.sync items were removed from the extension"
+  );
+
+  await shutdown(extension, commands);
+});
+
+add_task(async function test_local_and_sync_items_with_same_name() {
+  const extension = await startupExtension(
+    getExtensionConfig({
+      background: extensionScriptWithMessageListener,
+      // storage.sync API requires the Add-on ID.
+      manifest: {
+        browser_specific_settings: {
+          gecko: { id: "extension-storage-sync@test" },
+        },
+      },
+    })
+  );
+  const host = await extension.awaitMessage("extension-origin");
+
+  extension.sendMessage("storage-local-set", { sameName: "localValue" });
+  await extension.awaitMessage("storage-local-set:done");
+  extension.sendMessage("storage-sync-set", { sameName: "syncValue" });
+  await extension.awaitMessage("storage-sync-set:done");
+
+  const { commands, extensionStorage } = await openAddonStoragePanel(
+    extension.id
+  );
+
+  const { data } = await extensionStorage.getStoreObjects(host, null, {
+    sessionString,
+  });
+  Assert.deepEqual(
+    data,
+    [
+      {
+        uniqueKey: getExtensionStorageUniqueKey("local", "sameName"),
+        area: "local",
+        name: "sameName",
+        value: { str: "localValue" },
+        isValueEditable: true,
+      },
+      {
+        uniqueKey: getExtensionStorageUniqueKey("sync", "sameName"),
+        area: "sync",
+        name: "sameName",
+        value: { str: "syncValue" },
+        isValueEditable: true,
+      },
+    ],
+    "Got items with the same name from storage.local and storage.sync"
+  );
+
+  info("Editing the storage.local item should not affect the storage.sync one");
+  await extensionStorage.editItem({
+    host,
+    field: "value",
+    items: {
+      uniqueKey: getExtensionStorageUniqueKey("local", "sameName"),
+      name: "sameName",
+      value: "editedLocalValue",
+    },
+  });
+  extension.sendMessage("storage-local-get", "sameName");
+  Assert.deepEqual(
+    await extension.awaitMessage("storage-local-get:done"),
+    { sameName: "editedLocalValue" },
+    "The storage.local item was edited in the extension"
+  );
+  extension.sendMessage("storage-sync-get", "sameName");
+  Assert.deepEqual(
+    await extension.awaitMessage("storage-sync-get:done"),
+    { sameName: "syncValue" },
+    "The storage.sync item was left untouched in the extension"
+  );
+
+  info(
+    "Removing the storage.sync item should not affect the storage.local one"
+  );
+  await extensionStorage.removeItem(
+    host,
+    getExtensionStorageUniqueKey("sync", "sameName")
+  );
+  extension.sendMessage("storage-sync-get", "sameName");
+  Assert.deepEqual(
+    await extension.awaitMessage("storage-sync-get:done"),
+    {},
+    "The storage.sync item was removed from the extension"
+  );
+  extension.sendMessage("storage-local-get", "sameName");
+  Assert.deepEqual(
+    await extension.awaitMessage("storage-local-get:done"),
+    { sameName: "editedLocalValue" },
+    "The storage.local item was left untouched in the extension"
+  );
+
+  await shutdown(extension, commands);
+});
 
 /**
  * Test case: Storage panel shows extension storage data added prior to extension startup
@@ -793,6 +1138,7 @@ add_task(
       data,
       [
         {
+          uniqueKey: getExtensionStorageUniqueKey("local", "a"),
           area: "local",
           name: "a",
           value: { str: "123" },
@@ -815,12 +1161,14 @@ add_task(
       data,
       [
         {
+          uniqueKey: getExtensionStorageUniqueKey("local", "a"),
           area: "local",
           name: "a",
           value: { str: "123" },
           isValueEditable: true,
         },
         {
+          uniqueKey: getExtensionStorageUniqueKey("local", "b"),
           area: "local",
           name: "b",
           value: { str: "456" },
@@ -910,6 +1258,7 @@ add_task(async function test_panel_live_reload_for_extension_without_bg_page() {
     data,
     [
       {
+        uniqueKey: getExtensionStorageUniqueKey("local", "a"),
         area: "local",
         name: "a",
         value: { str: "123" },
@@ -983,12 +1332,14 @@ add_task(
       data,
       [
         {
+          uniqueKey: getExtensionStorageUniqueKey("local", "a"),
           area: "local",
           name: "a",
           value: { str: '{"b":123}' },
           isValueEditable: true,
         },
         {
+          uniqueKey: getExtensionStorageUniqueKey("local", "c"),
           area: "local",
           name: "c",
           value: { str: '{"d":456}' },
@@ -1006,59 +1357,67 @@ add_task(
  * Test case: Bg page adds one storage.local item and one storage.sync item.
  * - Load extension with background page that automatically adds two storage items on startup.
  * - Open the add-on storage panel.
- * - Assert that only the storage.local item is shown in the panel.
+ * - Assert that both items are shown in the panel.
  */
-add_task(
-  async function test_panel_data_only_updates_for_storage_local_changes() {
-    async function background() {
-      await browser.storage.local.set({ a: { b: 123 } });
-      await browser.storage.sync.set({ c: { d: 456 } });
-      // window is available in background scripts
-      // eslint-disable-next-line no-undef
-      browser.test.sendMessage("extension-origin", window.location.origin);
-    }
-
-    // Using the storage.sync API requires a non-temporary extension ID, see Bug 1323228.
-    const EXTENSION_ID =
-      "test_panel_data_only_updates_for_storage_local_changes@xpcshell.mozilla.org";
-    const manifest = {
-      browser_specific_settings: {
-        gecko: {
-          id: EXTENSION_ID,
-        },
+add_task(async function test_panel_data_includes_storage_sync_items() {
+  // Using the storage.sync API requires a non-temporary extension ID, see Bug 1323228.
+  const EXTENSION_ID =
+    "test_panel_data_includes_storage_sync_items@xpcshell.mozilla.org";
+  const manifest = {
+    browser_specific_settings: {
+      gecko: {
+        id: EXTENSION_ID,
       },
-    };
+    },
+  };
 
-    info("Loading and starting extension");
-    const extension = await startupExtension(
-      getExtensionConfig({ manifest, background })
-    );
+  info("Loading and starting extension");
+  const extension = await startupExtension(
+    getExtensionConfig({
+      manifest,
+      background: extensionScriptWithMessageListener,
+    })
+  );
 
-    info("Waiting for message from test extension");
-    const host = await extension.awaitMessage("extension-origin");
+  info("Waiting for message from test extension");
+  const host = await extension.awaitMessage("extension-origin");
 
-    info("Opening storage panel");
-    const { commands, extensionStorage } = await openAddonStoragePanel(
-      extension.id
-    );
+  extension.sendMessage("storage-local-set", { a: { b: 123 } });
+  await extension.awaitMessage("storage-local-set:done");
+  extension.sendMessage("storage-sync-set", { c: { d: 456 } });
+  await extension.awaitMessage("storage-sync-set:done");
 
-    const { data } = await extensionStorage.getStoreObjects(host);
-    Assert.deepEqual(
-      data,
-      [
-        {
-          area: "local",
-          name: "a",
-          value: { str: '{"b":123}' },
-          isValueEditable: true,
-        },
-      ],
-      "Got the expected results on populated storage.local"
-    );
+  info("Opening storage panel");
+  const { commands, extensionStorage } = await openAddonStoragePanel(
+    extension.id
+  );
 
-    await shutdown(extension, commands);
-  }
-);
+  const { data } = await extensionStorage.getStoreObjects(host, null, {
+    sessionString,
+  });
+  Assert.deepEqual(
+    data,
+    [
+      {
+        uniqueKey: getExtensionStorageUniqueKey("local", "a"),
+        area: "local",
+        name: "a",
+        value: { str: '{"b":123}' },
+        isValueEditable: true,
+      },
+      {
+        uniqueKey: getExtensionStorageUniqueKey("sync", "c"),
+        area: "sync",
+        name: "c",
+        value: { str: '{"d":456}' },
+        isValueEditable: true,
+      },
+    ],
+    "Got the expected results on populated extension storage"
+  );
+
+  await shutdown(extension, commands);
+});
 
 // This test verifies that Bug 1802929 fix doesn't regress.
 add_task(async function test_live_update_with_no_extension_listener() {
@@ -1129,6 +1488,7 @@ add_task(async function test_live_update_with_no_extension_listener() {
       data,
       [
         {
+          uniqueKey: getExtensionStorageUniqueKey("local", "storageKeyName"),
           area: "local",
           name: "storageKeyName",
           value: { str: `${storageValue}` },
@@ -1215,6 +1575,7 @@ add_task(
       data,
       [
         {
+          uniqueKey: getExtensionStorageUniqueKey("local", "testKey"),
           area: "local",
           name: "testKey",
           value: { str: JSON.stringify(TEST_VALUE_INITIAL) },
@@ -1240,6 +1601,7 @@ add_task(
       data,
       [
         {
+          uniqueKey: getExtensionStorageUniqueKey("local", "testKey"),
           area: "local",
           name: "testKey",
           value: { str: JSON.stringify(TEST_VALUE_UPDATED) },

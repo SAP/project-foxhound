@@ -25,79 +25,82 @@
 
   <script type="application/javascript">
   <![CDATA[
-    //gA11yEventDumpToConsole = true;
-    //enableLogging("tree,verbose"); // debug
-
     SimpleTest.expectAssertions(0, 1);
 
-    function doTest()
+    async function doTest()
     {
-      var actionsArray = [
-        {
-          ID: "menu",
-          actionName: "click",
-          events: CLICK_EVENTS,
-          // Wait for the submenu to show up.
-          eventSeq: [
-            new invokerChecker(EVENT_SHOW, getNode("submenu"))
-          ]
-        },
-        {
-          ID: "submenu",
-          actionName: "click",
-          events: CLICK_EVENTS
-        },
-        {
-          ID: "menuitem",
-          actionName: "click",
-          events: XUL_EVENTS
-        },
-        {
-          ID: "button",
-          actionName: "press",
-          events: XUL_EVENTS
-        },
-        {
-          ID: "buttonmenu",
-          actionName: "press",
-          events: CLICK_EVENTS
-        },
-        {
-          ID: "name_entry_label",
-          actionName: "click",
-          events: CLICK_EVENTS
-        },
-        {
-          ID: "labelWithPopup",
-          actionName: "click",
-          events: CLICK_EVENTS
-        },
-        {
-          ID: "toolbarbutton_label",
-          actionName: "click",
-          targetID: "toolbarbutton",
-          events: XUL_EVENTS,
-          allowBubbling: true
-        },
-        {
-          ID: "menulist_label",
-          actionName: "click",
-          // focusChecker expects a unique focus event. However, there might
-          // still be pending focus events not caught by previous tests.
-          eventSeq: [
-            new invokerChecker(EVENT_FOCUS, getNode("menulist"))
-          ]
-        }/*, // XXX: bug 490288
-        {
-          ID: "buttonmenu_item",
-          actionName: "click",
-          events: CLICK_EVENTS
-        }*/
-      ];
+      await testAction({
+        id: "menu",
+        actionName: "click",
+        events: CLICK_EVENTS,
+        // Wait for the submenu to show up.
+        eventSeq: [
+          [EVENT_SHOW, getNode("submenu")]
+        ]
+      });
+
+      await testAction({
+        id: "submenu",
+        actionName: "click",
+        events: CLICK_EVENTS
+      });
+
+      await testAction({
+        id: "menuitem",
+        actionName: "click",
+        events: XUL_EVENTS
+      });
+
+      await testAction({
+        id: "button",
+        actionName: "press",
+        events: XUL_EVENTS
+      });
+
+      await testAction({
+        id: "buttonmenu",
+        actionName: "press",
+        events: CLICK_EVENTS
+      });
+
+      await testAction({
+        id: "name_entry_label",
+        actionName: "click",
+        events: CLICK_EVENTS
+      });
+
+      await testAction({
+        id: "labelWithPopup",
+        actionName: "click",
+        events: CLICK_EVENTS
+      });
+
+      await testAction({
+        id: "toolbarbutton_label",
+        actionName: "click",
+        targetId: "toolbarbutton",
+        events: XUL_EVENTS
+      });
+
+      await testAction({
+        id: "menulist_label",
+        actionName: "click",
+        eventSeq: [
+          [EVENT_FOCUS, getNode("menulist")]
+        ]
+      });
+
+      /*, // XXX: bug 490288
+      await testAction({
+        id: "buttonmenu_item",
+        actionName: "click",
+        events: CLICK_EVENTS
+      })
+        */
 
       is(getAccessible("name_entry_label").firstChild.actionCount, 1, "label text should have 1 action");
 
-      testActions(actionsArray);
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();
@@ -127,10 +130,10 @@
     <vbox flex="1">
       <menubar>
         <menu label="menu" id="menu">
-          <menupopup native="false">
+          <menupopup nonnative="">
             <menuitem label="menu item" id="menuitem"/>
             <menu label="submenu" id="submenu">
-              <menupopup native="false">
+              <menupopup nonnative="">
                 <menuitem label="menu item"/>
               </menupopup>
             </menu>

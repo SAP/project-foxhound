@@ -1,6 +1,3 @@
-/* -*- Mode: C; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -35,7 +32,11 @@ class WaylandSurface final {
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(WaylandSurface);
 
-  explicit WaylandSurface(RefPtr<WaylandSurface> aParent);
+  WaylandSurface();
+
+  // aRootLayer is a WaylandSurface root which is used by layered (HDR)
+  // rendering.
+  void Init(RefPtr<WaylandSurface> aRootLayer = nullptr);
 
 #ifdef MOZ_LOGGING
   nsAutoCString GetDebugTag() const;
@@ -43,30 +44,46 @@ class WaylandSurface final {
   void SetLoggingWidget(void* aWidget) { mLoggingWidget = aWidget; }
 #endif
 
-  void FrameCallbackHandler(struct wl_callback* aCallback, uint32_t aTime,
-                            bool aRoutedFromChildSurface);
+  // Fire VSync handler registered to this surface.
+  void VSyncCallbackHandler(struct wl_callback* aCallback, uint32_t aTime,
+                            bool aEmulated, bool aRoutedFromChildSurface);
 
-  // Run frame callback repeatedly. Callback is removed on Unmap.
-  // If aEmulateFrameCallback is set to true and WaylandSurface is mapped and
-  // ready to draw and we don't have buffer attached yet,
-  // fire aFrameCallbackHandler without frame callback from
-  // compositor in sFrameCheckTimeoutMs.
-  void SetFrameCallbackLocked(
+  // Set VSync handler which is fired when it's good time for painting
+  // and WalandSurface is visible and VSync is enabled.
+  //
+  // If aEmulateVSyncCallback is set to true, we file VSync handler even
+  // if WaylandSurface is not visible. It's used for painting to hidden
+  // surface.
+  //
+  // Once set, the aVSyncCallbackHandler is preserved between unmap/map.
+  //
+  // It's VSync source responsibility to disable emulated VSync events
+  // by SetVSyncCallbackStateLocked().
+  void SetVSyncCallbackHandlerLocked(
       const WaylandSurfaceLock& aProofOfLock,
-      const std::function<void(wl_callback*, uint32_t)>& aFrameCallbackHandler,
-      bool aEmulateFrameCallback = false);
+      const std::function<void(wl_callback*, uint32_t, bool)>&
+          aVSyncCallbackHandler,
+      bool aEmulateVSyncCallback = false);
 
-  // Clears frame callback handler. It's used if frame callback handler
+  // Clears VSync callback handler. It's used if frame callback handler
   // contains strong reference to WaylandSurface class owner
   // which we want to clear.
-  void ClearFrameCallbackHandlerLocked(const WaylandSurfaceLock& aProofOfLock);
+  void ClearVSyncCallbackHandlerLocked(const WaylandSurfaceLock& aProofOfLock);
 
   // Enable/Disable any frame callback emission (includes emulated ones).
-  void SetFrameCallbackStateLocked(const WaylandSurfaceLock& aProofOfLock,
+  void SetVSyncCallbackStateLocked(const WaylandSurfaceLock& aProofOfLock,
                                    bool aEnabled);
-  void SetFrameCallbackStateHandlerLocked(
+  // Register handler which is called on VSync state change set by
+  // SetVSyncCallbackStateLocked().
+  void SetVSyncCallbackStateHandlerLocked(
       const WaylandSurfaceLock& aProofOfLock,
-      const std::function<void(bool)>& aFrameCallbackStateHandler);
+      const std::function<void(bool)>& aVSyncCallbackStateHandler);
+
+  // Set a routine which returns whether we should run emulated callback
+  // or not. Don't overwrite existing one unless aForce is set.
+  void SetVSyncEmulateCheckLocked(
+      const WaylandSurfaceLock& aProofOfLock,
+      const std::function<bool(void)>& aVSyncEmulateCheck, bool aForce = false);
 
   wl_egl_window* GetEGLWindow(DesktopIntSize aSize);
   bool HasEGLWindow() const { return !!mEGLWindow; }
@@ -88,6 +105,8 @@ class WaylandSurface final {
 
   // We've got first frame callback so we're really visible now.
   bool IsVisible() const { return mIsVisible; }
+
+  bool IsToplevelSurface() const { return !mParent; }
 
   // Called from frame callback and sets the visible flag
   void VisibleCallbackHandler();
@@ -116,20 +135,26 @@ class WaylandSurface final {
   // Clean up Gdk resources, on main thread only
   void GdkCleanUpLocked(const WaylandSurfaceLock& aProofOfLock);
 
-  // Allow to register and run unmap callback.
-  // Unmap callback needs to be called *before* UnmapLocked() call
-  // on main thread.
+  // Allow to register and run a callback when associated widget (nsWindow)
+  // is mapped.
+  //
+  // Map callback is called *after* WaylandSurface::MapLocked() call
+  // by widget code on main thread.
+  void SetMapCallbackLocked(
+      const WaylandSurfaceLock& aProofOfLock,
+      const std::function<void(WaylandSurfaceLock& aProofOfLock)>& aMapCB);
+  void ClearMapCallbackLocked(const WaylandSurfaceLock& aProofOfLock);
+  void RunMapCallbackLocked(WaylandSurfaceLock& aProofOfLock);
+
+  // Allow to register and run a callback when associated widget (nsWindow)
+  // is unmapped.
+  //
+  // Unmap callback is called *before* WaylandSurface::UnmapLocked() call
+  // by widget code on main thread.
   void SetUnmapCallbackLocked(const WaylandSurfaceLock& aProofOfLock,
                               const std::function<void(void)>& aUnmapCB);
   void ClearUnmapCallbackLocked(const WaylandSurfaceLock& aProofOfLock);
-
   void RunUnmapCallback();
-
-  // Create Viewport to manage surface transformations.
-  // aFollowsSizeChanges if set, Viewport destination size
-  // is updated according to buffer size.
-  bool CreateViewportLocked(const WaylandSurfaceLock& aProofOfLock,
-                            bool aFollowsSizeChanges);
 
   // Attach WaylandBuffer which shows WaylandBuffer content
   // on screen.
@@ -169,6 +194,8 @@ class WaylandSurface final {
                         WaylandSurfaceLock& aLowerSurfaceLock);
   void MoveLocked(const WaylandSurfaceLock& aProofOfLock,
                   DesktopIntPoint aPosition);
+  void SetViewportFollowsSizeChangesLocked(
+      const WaylandSurfaceLock& aProofOfLock);
   void SetViewPortSourceRectLocked(const WaylandSurfaceLock& aProofOfLock,
                                    const DesktopIntRect& aRect);
   void SetViewPortDestLocked(const WaylandSurfaceLock& aProofOfLock,
@@ -183,40 +210,93 @@ class WaylandSurface final {
   void ClearOpaqueRegionLocked(const WaylandSurfaceLock& aProofOfLock);
   void OpaqueCallbackHandler();
 
+  void ClearOpaqueCallbackLocked(const WaylandSurfaceLock& aProofOfLock);
+  void SetOpaqueCallbackLocked(const WaylandSurfaceLock& aProofOfLock);
+
   bool DisableUserInputLocked(const WaylandSurfaceLock& aProofOfLock);
   void InvalidateRegionLocked(const WaylandSurfaceLock& aProofOfLock,
                               const gfx::IntRegion& aInvalidRegion);
   void InvalidateLocked(const WaylandSurfaceLock& aProofOfLock);
 
-  bool EnableFractionalScaleLocked(
-      const WaylandSurfaceLock& aProofOfLock,
-      std::function<void(void)> aFractionalScaleCallback, bool aManageViewport);
-  bool EnableCeiledScaleLocked(const WaylandSurfaceLock& aProofOfLock);
+  // We use two scale systems in Firefox/Wayland. Ceiled (integer) scale and
+  // fractional scale. Ceiled scale is easy to implement but comes with
+  // rendering overhead while fractional rendering paints buffers with exact
+  // scale.
+  //
+  // Fractional scale is used as rendering optimization.
+  // For instance if 225% scale is used, ceiled scale is 3
+  // and fractional 2.20.
+  //
+  // If we paint content with ceiled scale 3 and desktop uses scale 225%,
+  // Wayland compositor downscales buffer to 2.20 on rendering
+  // but we paint more pixels than necessary (so we use name ceiled).
+  //
+  // Scale is used by wp_viewport. If a surface has a surface-local size
+  // of 100 px by 50 px and wishes to submit buffers with a scale of 1.5,
+  // then a buffer of 150px by 75 px should be used and the wp_viewport
+  // destination rectangle should be 100 px by 50 px.
+  // The wl_surface buffer scale should remain set to 1.
+  //
+  // For scale 2 (200%) we use surface size 200 x 100 px and set
+  // viewport size to 100 x 50 px.
+  //
+  // We're getting fractional scale number with a small delay from
+  // wp_fractional_scale_v1 after first commit to surface.
+  // Meanwhile we can use ceiled scale number instead of fractional one or
+  // get fractional scale from parent window (if there's any).
+  //
+  enum ScaleType {
+    Disabled = 0,
+    Ceiled = 1,
+    Fractional = 2,
+    Coordinates = 3,
+  };
 
-  bool IsFractionalScaleLocked(const WaylandSurfaceLock& aProofOfLock) const {
-    return mScaleType == ScaleType::Disabled;
+  void SetScaleTypeLocked(const WaylandSurfaceLock& aProofOfLock,
+                          ScaleType aScaleType, bool aSetHandler);
+  bool IsCoordinatesScaleLocked(const WaylandSurfaceLock& aProofOfLock) const {
+    MOZ_DIAGNOSTIC_ASSERT(&aProofOfLock == mSurfaceLock);
+    return mScaleType == ScaleType::Coordinates;
   }
-  bool IsCeiledScaleLocked(const WaylandSurfaceLock& aProofOfLock) const {
-    return mScaleType == ScaleType::Ceiled;
-  }
-  bool IsScaleEnabledLocked(const WaylandSurfaceLock& aProofOfLock) const {
-    return mScaleType != ScaleType::Disabled;
-  }
+
+  // Right now we support two scale change callbacks.
+  // ScaleCallbackType::Widget is used by nsWindow & co to promote scale
+  // changes to layout.
+  // ScaleCallbackType::Layers is used by HDR compositor to propagate
+  // changes to rendered layers/subsurfaces.
+  //
+  // At least one scale callbacks needs to be set before SetScaleTypeLocked()
+  // to run the callback.
+  enum ScaleCallbackType {
+    Widget = 0,
+    Layers = 1,
+    CallbackNum = 2,
+  };
+  void SetScaleCallbackLocked(const WaylandSurfaceLock& aProofOfLock,
+                              ScaleCallbackType aCallbackType,
+                              std::function<void(void)> aScaleCallback);
+  bool HasScaleCallbacksLocked(const WaylandSurfaceLock& aProofOfLock);
+  void ClearScaleCallbacksLocked(const WaylandSurfaceLock& aProofOfLock);
 
   // Returns scale as float point number. If WaylandSurface is not mapped,
   // return fractional scale of parent surface or monitor.
   static constexpr const double sNoScale = -1;
   double GetScale() const;
+  uint32_t GetCoordinatesScale() const { return mCoordinatesScale; }
+  double GetCoordinatesScaleRounded() const {
+    return ((double)mCoordinatesScale) / (1 << 24);
+  }
+  bool HasCoordinatesScaleLocked(const WaylandSurfaceLock& aProofOfLock) const {
+    return !!mCoordinatesScaleManager;
+  }
 
-  // Called when screen ceiled scale changed or set initial scale before we map
+  // Called when screen ceiled scale changes or sets initial scale before we map
   // and paint the surface.
   void SetCeiledScaleLocked(const WaylandSurfaceLock& aProofOfLock,
                             int aScreenCeiledScale);
-
-  // Called by wayland compositor when fractional scale is changed.
-  static void FractionalScaleHandler(void* data,
-                                     struct wp_fractional_scale_v1* info,
-                                     uint32_t wire_scale);
+  // Sets coordinates scale explicitly to the surface,
+  bool SetCoordinatesScaleLocked(const WaylandSurfaceLock& aProofOfLock,
+                                 uint32_t scale_8_24);
 
   static void AfterPaintHandler(GdkFrameClock* aClock, void* aData);
 
@@ -259,7 +339,9 @@ class WaylandSurface final {
   void SetParentLocked(const WaylandSurfaceLock& aProofOfLock,
                        RefPtr<WaylandSurface> aParent);
 
-  bool EnableColorManagementLocked(const WaylandSurfaceLock& aProofOfLock);
+  bool EnableColorManagementLocked(const WaylandSurfaceLock& aProofOfLock,
+                                   mozilla::gfx::YUVColorSpace aColorSpace,
+                                   gfx::TransferFunction aTransferFunction);
   void SetColorRepresentationLocked(const WaylandSurfaceLock& aProofOfLock,
                                     mozilla::gfx::YUVColorSpace aColorSpace,
                                     bool aFullRange,
@@ -300,12 +382,24 @@ class WaylandSurface final {
   // Force release/detele all transactions and wl_buffers attached to them.
   void ReleaseAllWaylandTransactionsLocked(WaylandSurfaceLock& aSurfaceLock);
 
-  void RequestFrameCallbackLocked(const WaylandSurfaceLock& aProofOfLock);
-  void ClearFrameCallbackLocked(const WaylandSurfaceLock& aProofOfLock);
-  bool HasEmulatedFrameCallbackLocked(
+  void SetVSyncCallbackLocked(const WaylandSurfaceLock& aProofOfLock);
+  void ClearVSyncCallbackLocked(const WaylandSurfaceLock& aProofOfLock);
+  bool HasEmulatedVSyncCallbackLocked(
       const WaylandSurfaceLock& aProofOfLock) const;
+  bool IsEmulatedVSyncEnabledLocked(const WaylandSurfaceLock& aProofOfLock);
+  void RequestEmulatedVSyncLocked(const WaylandSurfaceLock& aProofOfLock);
 
-  void ClearScaleLocked(const WaylandSurfaceLock& aProofOfLock);
+  // Configures requested scale type. If aSetHandler is set it also
+  // install wayland-protocol handlers to call the scale change callbacks.
+  //
+  // We usually want to install handler to toplevel surfaces only
+  // and propagate the scale change to child surfaces.
+  bool ConfigureScaleLocked(const WaylandSurfaceLock& aProofOfLock,
+                            ScaleType aScaleType, bool aSetProtocolHandler);
+  bool ConfigureCoordinateScaleLocked(const WaylandSurfaceLock& aProofOfLock,
+                                      bool aSetProtocolHandler);
+  bool ConfigureFractionalScaleLocked(const WaylandSurfaceLock& aProofOfLock,
+                                      bool aSetProtocolHandler);
 
   // Calculate 'stable' rounded size for subsurface based
   // on its size and position.
@@ -326,6 +420,7 @@ class WaylandSurface final {
   mozilla::Atomic<bool, mozilla::Relaxed> mIsPendingGdkCleanup{false};
 
   std::function<void(void)> mGdkCommitCallback;
+  std::function<void(WaylandSurfaceLock& aProofOfLock)> mMapCallback;
   std::function<void(void)> mUnmapCallback;
 
   DesktopIntSize mSize;
@@ -376,7 +471,7 @@ class WaylandSurface final {
 
   mozilla::Atomic<wl_egl_window*, mozilla::Relaxed> mEGLWindow{nullptr};
 
-  bool mViewportFollowsSizeChanges = true;
+  bool mViewportFollowsSizeChanges = false;
   wp_viewport* mViewport = nullptr;
   DesktopIntRect mViewportSourceRect{-1, -1, -1, -1};
   DesktopIntSize mViewportDestinationSize{-1, -1};
@@ -388,21 +483,24 @@ class WaylandSurface final {
   // Frame callback for mIsVisible flag
   wl_callback* mVisibleFrameCallback = nullptr;
 
-  // Frame callbacks of this surface
-  wl_callback* mFrameCallback = nullptr;
-
-  struct FrameCallback {
-    std::function<void(wl_callback*, uint32_t)> mCb = nullptr;
+  // VSync callback handler called every frame or by time for emulated ones.
+  struct VSyncCallback {
+    std::function<void(wl_callback*, uint32_t, bool)> mCb = nullptr;
     bool mEmulated = false;
     bool IsSet() const { return !!mCb; }
   };
+  VSyncCallback mVSyncCallbackHandler;
 
-  bool mFrameCallbackEnabled = true;
-  std::function<void(bool)> mFrameCallbackStateHandler = nullptr;
+  wl_callback* mVSyncFrameCallback = nullptr;
 
-  // Frame callback handler called every frame
-  FrameCallback mFrameCallbackHandler;
+  bool mVSyncCallbackEnabled = true;
+  std::function<void(bool)> mVSyncCallbackStateHandler = nullptr;
+  std::function<bool(void)> mVSyncEmulateCheck = nullptr;
 
+  guint mEmulatedVSyncCallbackTimerID = 0;
+  constexpr static int sEmulatedVSyncCallbackTimeoutMs = (int)(1000.0 / 60.0);
+
+  // Frame callback used to set opaque region to wl_surface.
   wl_region* mPendingOpaqueRegion = nullptr;
   wl_callback* mOpaqueRegionFrameCallback = nullptr;
 
@@ -419,53 +517,31 @@ class WaylandSurface final {
                                                      struct wl_surface*);
   static void (*sGdkWaylandWindowRemoveCallbackSurface)(GdkWindow*,
                                                         struct wl_surface*);
-  guint mEmulatedFrameCallbackTimerID = 0;
-  constexpr static int sEmulatedFrameCallbackTimeoutMs = (int)(1000.0 / 60.0);
-
-  // We use two scale systems in Firefox/Wayland. Ceiled (integer) scale and
-  // fractional scale. Ceiled scale is easy to implement but comes with
-  // rendering overhead while fractional rendering paints buffers with exact
-  // scale.
-  //
-  // Fractional scale is used as rendering optimization.
-  // For instance if 225% scale is used, ceiled scale is 3
-  // and fractional 2.20.
-  //
-  // If we paint content with ceiled scale 3 and desktop uses scale 225%,
-  // Wayland compositor downscales buffer to 2.20 on rendering
-  // but we paint more pixels than neccessary (so we use name ceiled).
-  //
-  // Scale is used by wp_viewport. If a surface has a surface-local size
-  // of 100 px by 50 px and wishes to submit buffers with a scale of 1.5,
-  // then a buffer of 150px by 75 px should be used and the wp_viewport
-  // destination rectangle should be 100 px by 50 px.
-  // The wl_surface buffer scale should remain set to 1.
-  //
-  // For scale 2 (200%) we use surface size 200 x 100 px and set
-  // viewport size to 100 x 50 px.
-  //
-  // We're getting fractional scale number with a small delay from
-  // wp_fractional_scale_v1 after fist commit to surface.
-  // Meanwhile we can use ceiled scale number instead of fractional one or
-  // get fractional scale from parent window (if there's any).
-  //
-  enum class ScaleType {
-    Disabled,
-    Ceiled,
-    Fractional,
-  };
 
   ScaleType mScaleType = ScaleType::Disabled;
 
   // mScreenScale is set from main thread only but read from
   // different threads.
   mozilla::Atomic<double, mozilla::Relaxed> mScreenScale{sNoScale};
+  // Coordinates scale is in fixed-point 8.24 format.
+  // Use GetCoordinatesScaleRounded() to convert it to float point.
+  mozilla::Atomic<uint32_t, mozilla::Relaxed> mCoordinatesScale{1 << 24};
 
+  // wp_fractional_scale_v1 / xx_fractional_scale_v2 works differently.
+  //
+  // wp_fractional_scale_v1 is needed for scale changes listener only
+  // so it's optional and we don't need it for every surface.
+  //
+  // xx_fractional_scale_v2 is used to set coordinates scale to particular
+  // surface so it must be present.
   wp_fractional_scale_v1* mFractionalScaleListener = nullptr;
+  xx_fractional_scale_v2* mCoordinatesScaleManager = nullptr;
 
-  // mFractionalScaleCallback is called from
-  // wp_fractional_scale_v1_add_listener when scale is changed.
-  std::function<void(void)> mFractionalScaleCallback = []() {};
+  // Callback issued when fractional / coordinates scale changes.
+  // Ceiled (integer) scale changes is monitored by nsWindow as it's
+  // tied to GtkWindow.
+  std::function<void(void)> mScaleCallbacks[ScaleCallbackType::CallbackNum] = {
+      nullptr, nullptr};
 
   bool mUseDMABufFormats = false;
   // Wayland display notifies us when available DRM formats are are changed.

@@ -50,32 +50,32 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1334537
     var mediumString = launder(t.getMediumLiteralString());
     var longString = launder(t.getLongLiteralString());
 
-    // A short or medium non-external string will become an inline FakeString.
+    // A short or medium non-external string will become an inline string.
     is(t.getStringType(shortString), "inline",
        "Short string should become inline");
     is(t.getStringType(mediumString), "inline",
        "Medium string should become inline");
-    // A long string will become a stringbuffer FakeString on the way in.
+    // A long string will become a stringbuffer string on the way in.
     is(t.getStringType(longString), "stringbuffer",
        "Long string should become a stringbuffer");
 
     // A short literal string will become an inline JS string on the way out
-    // and then become an inline FakeString on the way in.
+    // and then become an inline string on the way in.
     is(t.getStringType(t.getShortLiteralString()), "inline",
        "Short literal string should become inline");
     // A medium or long literal string will become an external JS string on the
-    // way out and then become a literal FakeString on the way in.
+    // way out and then become a literal string on the way in.
     is(t.getStringType(t.getMediumLiteralString()), "literal",
        "Medium literal string should become literal");
     is(t.getStringType(t.getLongLiteralString()), "literal",
        "Long literal string should become literal");
 
     // A short stringbuffer string will become an inline JS string on the way
-    // out and then become an inline FakeString on the way in.
+    // out and then become an inline string  on the way in.
     is(t.getStringType(t.getStringbufferString(shortString)), "inline",
        "Short stringbuffer string should become inline");
     // A medium or long stringbuffer string will become an external JS string
-    // on the way out and then become a stringbuffer FakeString on the way in.
+    // on the way out and then become a stringbuffer string on the way in.
     is(t.getStringType(t.getStringbufferString(mediumString)), "stringbuffer",
        "Medium stringbuffer string should become stringbuffer");
     is(t.getStringType(t.getStringbufferString(longString)), "stringbuffer",

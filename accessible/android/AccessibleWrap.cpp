@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -34,7 +33,7 @@
 
 // icu TRUE conflicting with java::sdk::Boolean::TRUE()
 // https://searchfox.org/mozilla-central/rev/ce02064d8afc8673cef83c92896ee873bd35e7ae/intl/icu/source/common/unicode/umachine.h#265
-// https://searchfox.org/mozilla-central/source/__GENERATED__/widget/android/bindings/JavaBuiltins.h#78
+// https://searchfox.org/firefox-main/source/__GENERATED__/widget/android/bindings/JavaBuiltins.h#78
 #ifdef TRUE
 #  undef TRUE
 #endif
@@ -441,7 +440,7 @@ bool AccessibleWrap::HandleLiveRegionEvent(AccEvent* aEvent) {
     return false;
   }
 
-  RefPtr<AccAttributes> attributes = new AccAttributes();
+  auto attributes = MakeRefPtr<AccAttributes>();
   nsAccUtils::SetLiveContainerAttributes(attributes, this);
   nsString live;
   if (!attributes->GetAttribute(nsGkAtoms::containerLive, live)) {

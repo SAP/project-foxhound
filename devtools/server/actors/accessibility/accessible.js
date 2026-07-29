@@ -481,6 +481,7 @@ class AccessibleActor extends Actor {
     return {
       actor: this.actorID,
       role: this.role,
+      level: this.role === "heading" ? this.attributes.level : undefined,
       name: this.name,
       useChildTargetToFetchChildren: this.useChildTargetToFetchChildren,
       childCount: this.childCount,
@@ -532,7 +533,7 @@ class AccessibleActor extends Actor {
     }
 
     const { DOMNode: rawNode } = this.rawAccessible;
-    const win = rawNode.ownerGlobal;
+    const win = rawNode.documentGlobal;
 
     // Keep the reference to the walker actor in case the actor gets destroyed
     // during the colour contrast ratio calculation.

@@ -42,15 +42,15 @@ be brought up to our design systems standards.
 * When there is only one action.
 * When the actions are frequently needed.
 * In the browser chrome, you probably want to use
-  [menupopup](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/menupopup.js)
+  [menupopup](https://searchfox.org/firefox-main/source/toolkit/content/widgets/menupopup.js)
   or
-  [panel](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/panel.js)
+  [panel](https://searchfox.org/firefox-main/source/toolkit/content/widgets/panel.js)
   instead.
 
 ## Basic usage
 
 The source for `panel-list` can be found under
-[toolkit/content/widgets/panel-list/panel-list.js](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/panel-list/panel-list.js).
+[toolkit/content/widgets/panel-list/panel-list.mjs](https://searchfox.org/firefox-main/source/toolkit/content/widgets/panel-list/panel-list.mjs).
 You can find an examples of `panel-list` in use in the Firefox codebase in both
 [about:addons](https://searchfox.org/mozilla-central/rev/6f4bc07bd9eb07ed34774841ecf3b1f3678791e8/toolkit/mozapps/extensions/content/aboutaddons.html#209,252,280)
 and the
@@ -68,7 +68,10 @@ a template.
 In non-chrome documents it can be imported into `.html`/`.xhtml` files:
 
 ```html
-<script src="chrome://global/content/elements/panel-list.js"></script>
+<script
+  src="chrome://global/content/elements/panel-list.mjs"
+  type="module"
+></script>
 ```
 
 And used as follows:
@@ -196,8 +199,8 @@ panel-item[action="save"]::part(button) {
 
 ### Badging
 
-Icons may be badged by setting the `badged` attribute. This adds a dot next to
-the icon.
+There are two types of badging. Icons may be badged by setting the `badged`
+attribute. This adds a dot next to the icon.
 
 ```html
 <panel-list>
@@ -210,6 +213,25 @@ the icon.
 <panel-list stay-open open>
   <panel-item action="new">New</panel-item>
   <panel-item action="save" badged>Save</panel-item>
+</panel-list>
+```
+
+A `moz-badge` element can be added next to the label by setting the `badge-type`
+attribute.
+
+```html
+<panel-list>
+  <panel-item action="new">New</panel-item>
+  <panel-item action="save" badge-type="new">Save</panel-item>
+  <panel-item action="delete" badge-type="beta">Delete</panel-item>
+</panel-list>
+```
+
+```html story
+<panel-list stay-open open>
+  <panel-item action="new">New</panel-item>
+  <panel-item action="save" badge-type="new">Save</panel-item>
+  <panel-item action="delete" badge-type="beta">Delete</panel-item>
 </panel-list>
 ```
 

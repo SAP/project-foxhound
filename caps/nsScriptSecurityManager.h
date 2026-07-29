@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=4 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -66,7 +64,6 @@ class nsScriptSecurityManager final : public nsIScriptSecurityManager {
    * false otherwise.
    */
   static bool SecurityCompareURIs(nsIURI* aSourceURI, nsIURI* aTargetURI);
-  static uint32_t SecurityHashURI(nsIURI* aURI);
   static bool IsHttpOrHttpsAndCrossOrigin(nsIURI* aUriA, nsIURI* aUriB);
 
   static nsresult ReportError(const char* aMessageTag, nsIURI* aSource,

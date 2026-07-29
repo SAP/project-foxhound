@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +8,6 @@
 
 #include <algorithm>
 #include <iomanip>
-#include <queue>
 #include <sstream>
 
 #include "dtlsidentity.h"
@@ -832,20 +829,49 @@ bool TransportLayerDtls::SetupCipherSuites(UniquePRFileDesc& ssl_fd) {
   return true;
 }
 
-nsresult TransportLayerDtls::GetCipherSuite(uint16_t* cipherSuite) const {
+nsresult TransportLayerDtls::GetChannelInfo(SSLChannelInfo* info) const {
   CheckThread();
+  if (state_ != TS_OPEN) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  if (SSL_GetChannelInfo(ssl_fd_.get(), info, sizeof(*info)) != SECSuccess) {
+    return NS_ERROR_FAILURE;
+  }
+  return NS_OK;
+}
+
+nsTArray<nsTArray<uint8_t>> TransportLayerDtls::GetPeerCertChainDer() const {
+  CheckThread();
+  nsTArray<nsTArray<uint8_t>> result;
+  UniqueCERTCertList chain(SSL_PeerCertificateChain(ssl_fd_.get()));
+  if (!chain) {
+    MOZ_MTLOG(ML_NOTICE,
+              LAYER_INFO << "SSL_PeerCertificateChain returned no certs");
+    return result;
+  }
+  for (CERTCertListNode* node = CERT_LIST_HEAD(chain);
+       !CERT_LIST_END(node, chain); node = CERT_LIST_NEXT(node)) {
+    const SECItem& der = node->cert->derCert;
+    nsTArray<uint8_t> bytes;
+    bytes.AppendElements(der.data, der.len);
+    result.AppendElement(std::move(bytes));
+  }
+  return result;
+}
+
+nsresult TransportLayerDtls::GetCipherSuite(uint16_t* cipherSuite) const {
   if (!cipherSuite) {
     MOZ_MTLOG(ML_ERROR, LAYER_INFO << "GetCipherSuite passed a nullptr");
     return NS_ERROR_NULL_POINTER;
   }
-  if (state_ != TS_OPEN) {
-    return NS_ERROR_NOT_AVAILABLE;
-  }
   SSLChannelInfo info;
-  SECStatus rv = SSL_GetChannelInfo(ssl_fd_.get(), &info, sizeof(info));
-  if (rv != SECSuccess) {
-    MOZ_MTLOG(ML_NOTICE, LAYER_INFO << "GetCipherSuite can't get channel info");
-    return NS_ERROR_FAILURE;
+  nsresult rv = GetChannelInfo(&info);
+  if (NS_FAILED(rv)) {
+    if (rv == NS_ERROR_FAILURE) {
+      MOZ_MTLOG(ML_NOTICE,
+                LAYER_INFO << "GetCipherSuite can't get channel info");
+    }
+    return rv;
   }
   *cipherSuite = info.cipherSuite;
   return NS_OK;
@@ -866,6 +892,20 @@ std::vector<uint16_t> TransportLayerDtls::GetDefaultSrtpCiphers() {
 #endif
 
   return ciphers;
+}
+
+const char* TransportLayerDtls::GetSrtpCipherName(uint16_t cipher) {
+  switch (cipher) {
+    case kDtlsSrtpAes128CmHmacSha1_80:
+      return "SRTP_AES128_CM_HMAC_SHA1_80";
+    case kDtlsSrtpAes128CmHmacSha1_32:
+      return "SRTP_AES128_CM_HMAC_SHA1_32";
+    case kDtlsSrtpAeadAes128Gcm:
+      return "SRTP_AEAD_AES_128_GCM";
+    case kDtlsSrtpAeadAes256Gcm:
+      return "SRTP_AEAD_AES_256_GCM";
+  }
+  return nullptr;
 }
 
 void TransportLayerDtls::StateChange(TransportLayer* layer, State state) {
@@ -1046,7 +1086,7 @@ bool TransportLayerDtls::CheckAlpn() {
                                    << "'; permitted:" << ss.str());
     return false;
   }
-  alpn_ = chosen;
+  alpn_ = std::move(chosen);
   return true;
 }
 
@@ -1496,7 +1536,7 @@ SECStatus TransportLayerDtls::AuthCertificateHook(PRFileDesc* fd,
 
       // Checking functions call PR_SetError()
       SECStatus rv = SECFailure;
-      for (auto digest : digests_) {
+      for (const auto& digest : digests_) {
         rv = CheckDigest(digest, peer_cert);
 
         // Matches a digest, we are good to go
@@ -1543,10 +1583,12 @@ void TransportLayerDtls::RecordStartedHandshakeTelemetry() {
 void TransportLayerDtls::RecordTlsTelemetry() {
   MOZ_ASSERT(state_ == TS_OPEN);
   SSLChannelInfo info;
-  SECStatus ss = SSL_GetChannelInfo(ssl_fd_.get(), &info, sizeof(info));
-  if (ss != SECSuccess) {
-    MOZ_MTLOG(ML_NOTICE,
-              LAYER_INFO << "RecordTlsTelemetry failed to get channel info");
+  nsresult rv = GetChannelInfo(&info);
+  if (NS_FAILED(rv)) {
+    if (rv == NS_ERROR_FAILURE) {
+      MOZ_MTLOG(ML_NOTICE,
+                LAYER_INFO << "RecordTlsTelemetry failed to get channel info");
+    }
     return;
   }
 
@@ -1580,7 +1622,7 @@ void TransportLayerDtls::RecordTlsTelemetry() {
       info.keaType);
 
   uint16_t cipher;
-  nsresult rv = GetSrtpCipher(&cipher);
+  rv = GetSrtpCipher(&cipher);
 
   if (NS_FAILED(rv)) {
     MOZ_MTLOG(ML_DEBUG, "No SRTP cipher suite");

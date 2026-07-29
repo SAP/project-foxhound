@@ -7,6 +7,7 @@ loader: taskgraph.loader.transform:loader
 transforms:
     - taskgraph.transforms.from_deps
     - gecko_taskgraph.transforms.name_sanity
+    - taskgraph.transforms.task_context
     - gecko_taskgraph.transforms.release_beetmover_signed_addons
     - gecko_taskgraph.transforms.task
 
@@ -20,6 +21,15 @@ only-for-attributes:
 
 task-defaults:
     run-on-repo-type: [hg]
+    task-context:
+        from-parameters:
+            release-type: release_type
+            project: project
+        from-custom:
+            - release-level
+        substitution-fields:
+            - worker-type
+            - attributes.artifact_map
 
 only-for-build-platforms:
     - linux64-shippable/opt

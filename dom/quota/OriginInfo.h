@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +7,7 @@
 
 #include "Assertions.h"
 #include "ClientUsageArray.h"
+#include "mozilla/ThreadSafeWeakPtr.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 
 namespace mozilla::dom::quota {
@@ -16,20 +15,21 @@ namespace mozilla::dom::quota {
 class CanonicalQuotaObject;
 class GroupInfo;
 
-class OriginInfo final {
+class OriginInfo final : public SupportsThreadSafeWeakPtr<OriginInfo> {
   friend class CanonicalQuotaObject;
   friend class GroupInfo;
   friend class PersistOp;
   friend class QuotaManager;
+  friend class SupportsThreadSafeWeakPtr<OriginInfo>;
 
  public:
+  MOZ_DECLARE_REFCOUNTED_TYPENAME(OriginInfo)
+
   OriginInfo(GroupInfo* aGroupInfo, const nsACString& aOrigin,
              const nsACString& aStorageOrigin, bool aIsPrivate,
              const ClientUsageArray& aClientUsages, uint64_t aUsage,
              int64_t aAccessTime, int32_t aMaintenanceDate, bool aPersisted,
              bool aDirectoryExists);
-
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(OriginInfo)
 
   GroupInfo* GetGroupInfo() const { return mGroupInfo; }
 

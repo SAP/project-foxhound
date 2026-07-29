@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,6 +14,7 @@
 #include "mozilla/gfx/2D.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
+#include "nsIURIWithSizeOf.h"
 #include "nsNetUtil.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Image)
@@ -56,7 +55,7 @@ NS_IMPL_ISUPPORTS_INHERITED(SVGImageElement, SVGImageElementBase,
 namespace SVGT = SVGGeometryProperty::Tags;
 
 SVGImageElement::SVGImageElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : SVGImageElementBase(std::move(aNodeInfo)) {
   // We start out broken
   AddStatesSilently(ElementState::BROKEN);
@@ -343,9 +342,10 @@ void SVGImageElement::AddSizeOfExcludingThis(nsWindowSizes& aSizes,
   // It is okay to include the size of mSrcURI here even though it might have
   // strong references from elsewhere because the URI was created for this
   // object, in nsImageLoadingContent::StringToURI(). Only objects that created
-  // their own URI will call nsIURI::SizeOfIncludingThis().
+  // their own URI will call nsIURIWithSizeOf::SizeOfIncludingThis().
   if (mSrcURI) {
-    *aNodeSize += mSrcURI->SizeOfIncludingThis(aSizes.mState.mMallocSizeOf);
+    *aNodeSize += SizeOfIncludingThisIfURIWithSizeOf(
+        mSrcURI, aSizes.mState.mMallocSizeOf);
   }
 }
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -59,12 +57,11 @@ class DOMSVGTransform final : public nsWrapperCache {
   explicit DOMSVGTransform(const SVGTransform& aTransform);
 
   /**
-   * Create an unowned copy of an owned transform. The caller is responsible for
-   * the first AddRef().
+   * Create an unowned copy of an owned transform.
    */
-  DOMSVGTransform* Clone() {
+  already_AddRefed<DOMSVGTransform> Clone() {
     NS_ASSERTION(mList, "unexpected caller");
-    return new DOMSVGTransform(InternalItem());
+    return MakeAndAddRef<DOMSVGTransform>(InternalItem());
   }
 
   bool IsInList() const { return !!mList; }
@@ -99,7 +96,10 @@ class DOMSVGTransform final : public nsWrapperCache {
   }
 
   /// This method is called to notify this object that its list index changed.
-  void UpdateListIndex(uint32_t aListIndex) { mListIndex = aListIndex; }
+  void UpdateListIndex(uint32_t aListIndex) {
+    MOZ_RELEASE_ASSERT(aListIndex <= MaxListIndex());
+    mListIndex = aListIndex;
+  }
 
   /**
    * This method is called to notify this DOM object that it is about to be
@@ -131,7 +131,6 @@ class DOMSVGTransform final : public nsWrapperCache {
   // Interface for SVGMatrix's use
   friend class dom::SVGMatrix;
   bool IsAnimVal() const { return mIsAnimValItem; }
-  const gfxMatrix& Matrixgfx() const { return Transform().GetMatrix(); }
   void SetMatrix(const gfxMatrix& aMatrix);
 
  private:

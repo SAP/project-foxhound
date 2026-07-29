@@ -48,6 +48,25 @@ loader.lazyRequireGetter(
   true
 );
 
+const logger = console.createInstance({
+  prefix: "devtools_rdp",
+  maxLogLevel: "Warn",
+});
+
+// Hack MOZ_LOG/Console.cpp usage of ToSource logic
+// to be able to write raw strings to stdout.
+// This prevent being wrapped with quotes, and use color characters.
+const SEND_MOZ_LOG_STRING = {
+  toSource() {
+    return "\x1b[2m->\x1b[0m";
+  },
+};
+const RECEIVE_MOZ_LOG_STRING = {
+  toSource() {
+    return "\x1b[2m<-\x1b[0m";
+  },
+};
+
 /**
  * Creates a client for the remote debugging protocol server. This client
  * provides the means to communicate with the server and exchange the messages
@@ -193,7 +212,7 @@ class DevToolsClient extends EventEmitter {
    *                           completion by resolving / rejecting this promise.
    *                           If it's rejected, the transport will be closed.
    *                           If an Error is supplied as a rejection value, it
-   *                           will be logged via |dumpn|.  If you do use
+   *                           will be logged via MOZ_LOG.  If you do use
    *                           |copyTo| or |copyToBuffer|, resolving is taken
    *                           care of for you when copying completes.
    *           * copyTo:       A helper function for getting your data out of the
@@ -306,7 +325,7 @@ class DevToolsClient extends EventEmitter {
    *                             completion by resolving / rejecting this
    *                             promise.  If it's rejected, the transport will
    *                             be closed.  If an Error is supplied as a
-   *                             rejection value, it will be logged via |dumpn|.
+   *                             rejection value, it will be logged via MOZ_LOG.
    *                             If you do use |copyFrom| or |copyFromBuffer|,
    *                             resolving is taken care of for you when copying
    *                             completes.
@@ -345,7 +364,7 @@ class DevToolsClient extends EventEmitter {
    *                           by resolving / rejecting this promise.  If it's
    *                           rejected, the transport will be closed.  If an
    *                           Error is supplied as a rejection value, it will
-   *                           be logged via |dumpn|.  If you do use |copyTo| or
+   *                           be logged via MOZ_LOG.  If you do use |copyTo| or
    *                           |copyToBuffer|, resolving is taken care of for
    *                           you when copying completes.
    *           * copyTo:       A helper function for getting your data out of the
@@ -414,6 +433,10 @@ class DevToolsClient extends EventEmitter {
     this.expectReply(actor, request);
 
     if (request.format === "json") {
+      // Log outgoing RDP packet being sent via DevToolsClient.
+      // (packet sent via protocol.js will be logged from protocol.js codebase)
+      logger.log(SEND_MOZ_LOG_STRING, request.request);
+
       this._transport.send(request.request);
       return;
     }
@@ -487,6 +510,7 @@ class DevToolsClient extends EventEmitter {
    */
   onPacket(packet) {
     if (!packet.from) {
+      logger.log(RECEIVE_MOZ_LOG_STRING, packet);
       DevToolsUtils.reportException(
         "onPacket",
         new Error(
@@ -505,6 +529,7 @@ class DevToolsClient extends EventEmitter {
       packet.from == this.mainRoot.actorID &&
       packet.type == "forwardingCancelled"
     ) {
+      logger.log(RECEIVE_MOZ_LOG_STRING, packet);
       this.purgeRequests(packet.prefix);
       return;
     }
@@ -516,6 +541,10 @@ class DevToolsClient extends EventEmitter {
       front.onPacket(packet);
       return;
     }
+
+    // Log incoming RDP packet being sent via DevToolsClient.
+    // (packet received via protocol.js will be logged from protocol.js codebase)
+    logger.log(RECEIVE_MOZ_LOG_STRING, packet);
 
     let activeRequest;
     // See if we have a handler function waiting for a reply from this
@@ -571,7 +600,7 @@ class DevToolsClient extends EventEmitter {
    *                        by resolving / rejecting this promise.  If it's
    *                        rejected, the transport will be closed.  If an Error
    *                        is supplied as a rejection value, it will be logged
-   *                        via |dumpn|.  If you do use |copyTo| or
+   *                        via MOZ_LOG.  If you do use |copyTo| or
    *                        |copyToBuffer|, resolving is taken care of for you
    *                        when copying completes.
    *        * copyTo:       A helper function for getting your data out of the stream

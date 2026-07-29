@@ -76,7 +76,7 @@ async function testAttributeDeletion(inspector) {
     focusedAttr.classList.contains("styleinspector-propertyeditor"),
     "in newattr"
   );
-  is(focusedAttr.tagName, "textarea", "newattr is active");
+  is(focusedAttr.tagName.toLowerCase(), "textarea", "newattr is active");
 }
 
 async function editAttributeAndTab(newValue, inspector, goPrevious) {

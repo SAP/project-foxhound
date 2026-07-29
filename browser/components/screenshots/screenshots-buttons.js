@@ -8,7 +8,8 @@
 // a block to prevent accidentally leaking globals onto `window`.
 {
   ChromeUtils.defineESModuleGetters(this, {
-    ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.sys.mjs",
+    ScreenshotsUtils:
+      "moz-src:///browser/components/screenshots/ScreenshotsUtils.sys.mjs",
   });
 
   class ScreenshotsButtons extends MozXULElement {

@@ -399,6 +399,7 @@ tasks:
         run-on-projects: ['release']
         fetches:
             toolchain:
+                - linux64-7zz
                 - linux64-clang
                 - linux64-rust-cross
                 - linux64-rust-size
@@ -406,15 +407,15 @@ tasks:
                 - linux64-node
                 - linux64-cbindgen
                 - linux64-dump_syms
-                - linux64-wine
+                - linux64-upx
                 - linux64-winchecksec
+                - linux64-wine
                 - nsis
                 - sysroot-x86_64-linux-gnu
                 - sysroot-wasm32-wasi
                 - vs
                 - winappsdk-x86-pc-windows-msvc
             fetch:
-                - upx-3.95-win
                 - windows-rs
 
     win64-nightlyasrelease/opt:
@@ -440,6 +441,7 @@ tasks:
         run-on-projects: [trunk-only]
         fetches:
             toolchain:
+                - linux64-7zz
                 - linux64-clang
                 - linux64-rust-cross
                 - linux64-rust-size
@@ -447,8 +449,9 @@ tasks:
                 - linux64-node
                 - linux64-cbindgen
                 - linux64-dump_syms
-                - linux64-wine
+                - linux64-upx
                 - linux64-winchecksec
+                - linux64-wine
                 - nsis
                 - sysroot-x86_64-linux-gnu
                 - sysroot-wasm32-wasi
@@ -456,7 +459,6 @@ tasks:
                 - dxc-x86_64-pc-windows-msvc
                 - winappsdk-x86_64-pc-windows-msvc
             fetch:
-                - upx-3.95-win
                 - windows-rs
 
     win64-shippable/opt:
@@ -480,6 +482,7 @@ tasks:
         run-on-projects: ['release']
         fetches:
             toolchain:
+                - linux64-7zz
                 - linux64-clang
                 - linux64-rust-cross
                 - linux64-rust-size
@@ -487,8 +490,9 @@ tasks:
                 - linux64-node
                 - linux64-cbindgen
                 - linux64-dump_syms
-                - linux64-wine
+                - linux64-upx
                 - linux64-winchecksec
+                - linux64-wine
                 - nsis
                 - sysroot-x86_64-linux-gnu
                 - sysroot-wasm32-wasi
@@ -496,7 +500,6 @@ tasks:
                 - dxc-x86_64-pc-windows-msvc
                 - winappsdk-x86_64-pc-windows-msvc
             fetch:
-                - upx-3.95-win
                 - windows-rs
 
     win64-aarch64-shippable/opt:
@@ -520,6 +523,7 @@ tasks:
         run-on-projects: ['release']
         fetches:
             toolchain:
+                - linux64-7zz
                 - linux64-clang
                 - linux64-rust-cross
                 - linux64-rust-size
@@ -527,8 +531,8 @@ tasks:
                 - linux64-node
                 - linux64-cbindgen
                 - linux64-dump_syms
-                - linux64-wine
                 - linux64-winchecksec
+                - linux64-wine
                 - nsis
                 - sysroot-x86_64-linux-gnu
                 - sysroot-wasm32-wasi
@@ -536,5 +540,4 @@ tasks:
                 - dxc-aarch64-pc-windows-msvc
                 - winappsdk-aarch64-pc-windows-msvc
             fetch:
-                - upx-3.95-win
                 - windows-rs

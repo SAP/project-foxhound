@@ -1,0 +1,91 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test Web Serial API - Cross-Worker Forget Propagation</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="serial_test_utils.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script>
+
+"use strict";
+
+add_task(async function testWorkerForgetPropagesToOtherWorker() {
+  await cleanupSerialPorts();
+
+  info("Requesting port in window context");
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  ok(port, "requestPort should succeed in window context");
+
+  let ports = await navigator.serial.getPorts();
+  is(ports.length, 1, "Should have 1 port after requestPort");
+
+  info("Creating Worker A (will forget) and Worker B (will check)");
+  const workerA = new Worker("serial_worker_forget_and_signal.js");
+  const workerB = new Worker("serial_worker_wait_and_getports.js");
+
+  function workerPromise(worker, name) {
+    return new Promise((resolve, reject) => {
+      const origHandler = worker.onmessage;
+      worker.onmessage = (e) => {
+        if (origHandler) {
+          origHandler(e);
+        }
+        if (e.data.type === "test") {
+          ok(e.data.result, `[${name}] ${e.data.message}`);
+        } else if (e.data.type === "done") {
+          resolve();
+        } else if (e.data.type === "error") {
+          reject(new Error(`[${name}] ${e.data.message}`));
+        }
+      };
+      worker.onerror = (e) => {
+        reject(new Error(`[${name}] Worker error: ${e.message}`));
+      };
+    });
+  }
+
+  // Wait for Worker B to get its initial port reference.
+  const workerBReady = new Promise(resolve => {
+    const origHandler = workerB.onmessage;
+    workerB.onmessage = (e) => {
+      if (e.data.type === "ready") {
+        resolve();
+      }
+      if (origHandler) {
+        origHandler(e);
+      }
+    };
+  });
+
+  const promiseA = workerPromise(workerA, "Worker A");
+  const promiseB = workerPromise(workerB, "Worker B");
+
+  info("Waiting for Worker B to be ready (has cloned the port)");
+  await workerBReady;
+
+  info("Telling Worker A to forget the port");
+  workerA.postMessage("forget");
+
+  info("Waiting for Worker A to finish forgetting");
+  await promiseA;
+
+  // Verify main thread also lost the port.
+  ports = await navigator.serial.getPorts();
+  is(ports.length, 0, "Main thread should have 0 ports after Worker A forget");
+
+  info("Telling Worker B to check its ports");
+  workerB.postMessage("check");
+
+  await promiseB;
+
+  workerA.terminate();
+  workerB.terminate();
+});
+
+</script>
+</body>
+</html>

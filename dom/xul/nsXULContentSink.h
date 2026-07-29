@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,11 +5,13 @@
 #ifndef nsXULContentSink_h_
 #define nsXULContentSink_h_
 
+#include "mozilla/Span.h"
 #include "mozilla/WeakPtr.h"
 #include "nsIExpatSink.h"
 #include "nsIWeakReferenceUtils.h"
 #include "nsIXMLContentSink.h"
 #include "nsNodeInfoManager.h"
+#include "nsTArray.h"
 #include "nsXULElement.h"
 
 class nsIScriptSecurityManager;
@@ -24,7 +25,7 @@ class XULContentSinkImpl final : public nsIXMLContentSink, public nsIExpatSink {
   XULContentSinkImpl();
 
   // nsISupports
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_NSIEXPATSINK
 
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(XULContentSinkImpl,
@@ -51,9 +52,7 @@ class XULContentSinkImpl final : public nsIXMLContentSink, public nsIExpatSink {
   virtual ~XULContentSinkImpl();
 
   // pseudo-constants
-  char16_t* mText;
-  int32_t mTextLength;
-  int32_t mTextSize;
+  nsTArray<char16_t> mText;
   bool mConstrainSize;
 
   nsresult AddAttributes(const char16_t** aAttributes, const uint32_t aAttrLen,
@@ -74,11 +73,11 @@ class XULContentSinkImpl final : public nsIXMLContentSink, public nsIExpatSink {
   // element.
   nsresult OpenScript(const char16_t** aAttributes, const uint32_t aLineNumber);
 
-  static bool IsDataInBuffer(char16_t* aBuffer, int32_t aLength);
+  bool IsDataInBuffer() const;
 
   // Text management
   nsresult FlushText(bool aCreateTextNode = true);
-  nsresult AddText(const char16_t* aText, int32_t aLength);
+  nsresult AddText(mozilla::Span<const char16_t> aNewText);
 
   RefPtr<nsNodeInfoManager> mNodeInfoManager;
 

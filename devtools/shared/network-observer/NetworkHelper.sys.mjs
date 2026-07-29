@@ -595,9 +595,13 @@ export var NetworkHelper = {
      *   => securityInfo is null
      *      => state === "insecure"
      *
-     * - request is HTTPS, the connection is secure
+     * - request is HTTPS, the connection is secure (built-in root)
      *   => .securityState has STATE_IS_SECURE flag
      *      => state === "secure"
+     *
+     * - request is HTTPS, the connection is secure (third-party root)
+     *   => .securityState has STATE_IS_SECURE flag
+     *      => state === "secure-custom-root"
      *
      * - request is HTTPS, the connection has security issues
      *   => .securityState has STATE_IS_INSECURE flag
@@ -640,7 +644,9 @@ export var NetworkHelper = {
         info.state = "insecure";
       } else if (state & wpl.STATE_IS_SECURE) {
         // The connection is secure if the scheme is sufficient
-        info.state = "secure";
+        info.state = securityInfo.isBuiltCertChainRootBuiltInRoot
+          ? "secure"
+          : "secure-custom-root";
       } else if (state & wpl.STATE_IS_BROKEN) {
         // The connection is not secure, there was no error but there's some
         // minor security issues.

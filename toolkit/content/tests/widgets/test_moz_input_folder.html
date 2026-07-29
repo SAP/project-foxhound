@@ -70,7 +70,7 @@
           Ci.nsIFile
         );
         dummyFile.initWithPath(mockCustomParentDir);
-        MockFilePicker.init(window.browsingContext);
+        MockFilePicker.init();
         let filePickerShownPromise = new Promise(resolve => {
           MockFilePicker.showCallback = () => {
             ok(true, "Filepicker shown");
@@ -186,7 +186,7 @@
           Ci.nsIFile
         );
         dummyFile.initWithPath(mockCustomParentDir);
-        MockFilePicker.init(window.browsingContext);
+        MockFilePicker.init();
         MockFilePicker.showCallback = () => {
           ok(true, "Filepicker shown");
           MockFilePicker.setFiles([dummyFile]);
@@ -236,6 +236,33 @@
         );
 
         MockFilePicker.cleanup();
+      });
+
+      add_task(async function testActionsSlot() {
+        let slottedActionTemplate = html`<moz-input-folder label="More actions">
+          <moz-button id="test-action-button" slot="actions"
+            >Additional Action</moz-button
+          >
+        </moz-input-folder>`;
+        let target = await testHelpers.renderTemplate(slottedActionTemplate);
+        let inputFolder = target.querySelector("moz-input-folder");
+        await inputFolder.updateComplete;
+
+        let actionButton = inputFolder.querySelector("#test-action-button");
+        ok(actionButton, "Button in actions slot is present");
+
+        let actionsSlot = inputFolder.shadowRoot.querySelector(
+          "slot[name='actions']"
+        );
+        ok(actionsSlot, "Actions slot exists in shadow DOM");
+
+        let slottedElements = actionsSlot.assignedElements();
+        is(slottedElements.length, 1, "Actions slot has one assigned element");
+        is(
+          slottedElements[0],
+          actionButton,
+          "Button is assigned to actions slot"
+        );
       });
     </script>
   </head>

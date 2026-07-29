@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,19 +7,18 @@
 
 #include "js/TypeDecls.h"  // for Handle, Value, JSObject, JSContext
 #include "mozilla/RefPtr.h"
-#include "nsINodeList.h"  // base class
+#include "mozilla/dom/NodeList.h"  // base class
 #include "nsISupportsImpl.h"
 
 class nsIContent;
 class nsINode;
 
 /**
- * Class that implements the nsINodeList interface (a list of children of
+ * Class that implements the NodeList interface (a list of children of
  * the content), by holding a reference to the content and delegating Length
  * and Item to its existing child list.
- * @see nsINodeList
  */
-class nsAttrChildContentList : public nsINodeList {
+class nsAttrChildContentList : public mozilla::dom::NodeList {
  public:
   explicit nsAttrChildContentList(nsINode* aNode) : mNode(aNode) {}
 
@@ -31,7 +28,7 @@ class nsAttrChildContentList : public nsINodeList {
   // nsWrapperCache
   JSObject* WrapObject(JSContext*, JS::Handle<JSObject*> aGivenProto) override;
 
-  // nsINodeList interface
+  // NodeList interface
   int32_t IndexOf(nsIContent* aContent) override;
   nsIContent* Item(uint32_t aIndex) override;
   uint32_t Length() override;
@@ -53,7 +50,7 @@ class nsParentNodeChildContentList final : public nsAttrChildContentList {
     ValidateCache();
   }
 
-  // nsINodeList interface
+  // NodeList interface
   int32_t IndexOf(nsIContent* aContent) override;
   nsIContent* Item(uint32_t aIndex) override;
   uint32_t Length() override;

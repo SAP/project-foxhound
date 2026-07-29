@@ -328,7 +328,7 @@ add_task(async function register_and_update_all_values() {
     let [{ jsPaths }] = await lookupScriptsInChild(extension.id, ["jsPaths"]);
     equal(jsPaths.length, 3, "test case had 3 script registrations");
     ok(
-      jsPaths[0].startsWith("blob:null"),
+      jsPaths[0].startsWith("blob:system"),
       `js with 'code' key (short string) becomes a blob:-URL: ${jsPaths[0]}`
     );
     equal(
@@ -337,7 +337,7 @@ add_task(async function register_and_update_all_values() {
       "js with 'file' key becomes a moz-extension:-URL"
     );
     ok(
-      jsPaths[2].startsWith("blob:null"),
+      jsPaths[2].startsWith("blob:system"),
       `js with 'code' key (long string) becomes a blob:-URL: ${jsPaths[0]}`
     );
     if (previousJsPaths) {

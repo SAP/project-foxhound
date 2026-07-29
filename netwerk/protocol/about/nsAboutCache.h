@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -112,7 +111,17 @@
   }                                                                            \
   NS_IMETHOD GetCanceled(bool* aCanceled) override {                           \
     return !(_to) ? NS_ERROR_NULL_POINTER : (_to)->GetCanceled(aCanceled);     \
-  };
+  }                                                                            \
+  NS_IMETHOD GetParentProcessChannelHandle(                                    \
+      mozilla::dom::ParentProcessChannelHandle** aValue) override {            \
+    return !(_to) ? NS_ERROR_NULL_POINTER                                      \
+                  : (_to)->GetParentProcessChannelHandle(aValue);              \
+  }                                                                            \
+  NS_IMETHOD SetParentProcessChannelHandle(                                    \
+      mozilla::dom::ParentProcessChannelHandle* aValue) override {             \
+    return !(_to) ? NS_ERROR_NULL_POINTER                                      \
+                  : (_to)->SetParentProcessChannelHandle(aValue);              \
+  }
 
 class nsAboutCache final : public nsIAboutModule {
  public:

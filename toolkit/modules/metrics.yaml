@@ -63,6 +63,40 @@ first_startup:
     send_in_pings:
       - first-startup
 
+  nimbus_store_init_time: &nimbus_startup_metric
+    type: quantity
+    unit: milliseconds
+    description: >
+      Number of milliseconds until the Nimbus ExperimentStore is initialized.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2043752
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2043752
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - beth@mozilla.com
+      - project-nimbus@mozilla.com
+    expires: never
+    send_in_pings:
+      - first-startup
+
+  nimbus_manager_init_time:
+    <<: *nimbus_startup_metric
+    description: >
+      Number of milliseconds until the Nimbus ExperimentManager is initialized.
+
+  nimbus_loader_init_time:
+    <<: *nimbus_startup_metric
+    description: >
+      Number of milliseconds until the Nimbus RemoteSettingsExperimentLoader is
+      initialized (including the AFTER_REMOTE_SETTINGS_UPDATE migration phase).
+
+  nimbus_init_time:
+    <<: *nimbus_startup_metric
+    description: >
+      Number of milliseconds until Nimbus is fully initialized.
+
   delete_tasks_time:
     type: quantity
     unit: milliseconds

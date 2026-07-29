@@ -18,20 +18,37 @@ async function newtabWithSponsoredTopsites(callback = () => {}) {
   let browser = tab.linkedBrowser;
   await waitForPreloaded(browser);
 
-  // Wait for React to render something
+  // Force TopSitesFeed to re-broadcast its state to the now-connected content
+  // process. The initial broadcast from add_setup may have fired before this
+  // tab's content process was registered to receive messages.
+  Services.prefs.setBoolPref(
+    "browser.newtabpage.activity-stream.showSponsoredTopSites",
+    false
+  );
+  Services.prefs.setBoolPref(
+    "browser.newtabpage.activity-stream.showSponsoredTopSites",
+    true
+  );
+
+  // Wait for the re-broadcast to conclude and for sponsored topsites to render.
   await BrowserTestUtils.waitForCondition(
     () =>
       SpecialPowers.spawn(
         browser,
         [],
-        () => content.document.getElementById("root").children.length
+        () =>
+          content.document.querySelector(
+            '.top-sites [data-is-sponsored-link="true"]'
+          ) !== null
       ),
-    "Should render activity stream content"
+    "Should find sponsored topsites after pref re-broadcast"
   );
 
-  await SpecialPowers.spawn(browser, [], callback);
-
-  BrowserTestUtils.removeTab(tab);
+  try {
+    await SpecialPowers.spawn(browser, [], callback);
+  } finally {
+    BrowserTestUtils.removeTab(tab);
+  }
 }
 
 add_setup(async function () {
@@ -66,6 +83,10 @@ add_setup(async function () {
     "browser.newtabpage.activity-stream.showSponsoredTopSites",
     true,
   ]);
+  let topSitesFeed = AboutNewTab.activityStream.store.feeds.get(
+    "feeds.system.topsites"
+  );
+  await topSitesFeed.refresh({ broadcast: true });
 
   registerCleanupFunction(async () => {
     lazy.DEFAULT_TOP_SITES.length = 0;
@@ -95,6 +116,11 @@ add_task(async function test_dismiss() {
     );
 
     contextMenuButton.click();
+
+    await ContentTaskUtils.waitForCondition(
+      () => contextMenuDiv.querySelector(".context-menu"),
+      "Should find context menu after clicking button"
+    );
 
     const contextMenu = contextMenuDiv.querySelector(".context-menu");
 

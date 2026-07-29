@@ -439,6 +439,46 @@ session_restore:
       - sessionRestoreInitialized
       - sessionRestoreRestoring
 
+  new_tab_on_restore_enabled:
+    type: boolean
+    lifetime: application
+    description: >
+      Whether the browser.sessionstore.newTabOnRestore pref is enabled.
+      Set on startup and updated when the pref changes.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2023459
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2023459
+    notification_emails:
+      - hsohaney@mozilla.com
+    expires: never
+    data_sensitivity:
+      - interaction
+
+  startup_session_auto_restored:
+    type: event
+    description: >
+      Recorded each time "Open previous windows and tabs" triggers session
+      restore at startup. The new_tab_action extra indicates what happened
+      with the new-tab-on-restore feature.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2023459
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2023459
+    notification_emails:
+      - hsohaney@mozilla.com
+    expires: never
+    extra_keys:
+      new_tab_action:
+        description: >
+          "disabled" if the new-tab-on-restore feature was not enabled,
+          "opened" if a new tab was created, "reused" if the
+          selected or rightmost tab was already a new tab page,
+          "preempted" if a command-line URL took precedence.
+        type: string
+    data_sensitivity:
+      - interaction
+
 browser.engagement:
   sessionrestore_interstitial:
     type: labeled_counter

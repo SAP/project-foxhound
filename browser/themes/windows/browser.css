@@ -27,17 +27,15 @@
 }
 
 :root[customtitlebar]:not([lwtheme], [builtintheme]) {
-  /* stylelint-disable-next-line media-query-no-invalid */
   @media (-moz-windows-mica) or ((-moz-windows-accent-color-in-titlebar) and -moz-pref("browser.theme.windows.accent-color-in-tabs.enabled")) {
-    --toolbox-bgcolor: ActiveCaption;
-    --toolbox-textcolor: CaptionText;
-    --toolbox-bgcolor-inactive: InactiveCaption;
-    --toolbox-textcolor-inactive: InactiveCaptionText;
+    --toolbox-background-color: ActiveCaption;
+    --toolbox-text-color: CaptionText;
+    --toolbox-background-color-inactive: InactiveCaption;
+    --toolbox-text-color-inactive: InactiveCaptionText;
   }
 
   @media (-moz-windows-mica) {
     background-color: transparent;
-    /* stylelint-disable-next-line media-query-no-invalid */
     @media -moz-pref("widget.windows.mica.toplevel-backdrop", 2) {
       /* For acrylic, do the same we do for popups to guarantee some contrast */
       /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens, stylelint-plugin-mozilla/no-base-design-tokens */
@@ -49,22 +47,21 @@
      * as the backdrop matches our color scheme. The .6 matches what we do for
      * acrylic, and the .15 matches the 85% we do for the default toolbar
      * background on the native theme. */
-    --toolbar-bgcolor: light-dark(var(--color-white-alpha-60), var(--color-white-alpha-20));
+    --toolbar-background-color: light-dark(var(--color-white-alpha-60), var(--color-white-alpha-20));
   }
 
-  /* stylelint-disable-next-line media-query-no-invalid */
   @media (-moz-windows-accent-color-in-titlebar) and ((-moz-windows-mica) or -moz-pref("browser.theme.windows.accent-color-in-tabs.enabled")) {
-    .browser-toolbox-background {
+    body {
       /* These colors match the Linux/HCM default button colors. We need to
        * override these on the toolbox-like elements because the accent color
        * is arbitrary, so the hardcoded brand colors from browser-colors.css
        * might not provide sufficient contrast. */
       --toolbarbutton-icon-fill: currentColor;
-      --toolbar-field-color: currentColor;
-      --urlbar-box-bgcolor: var(--button-background-color-hover);
-      --urlbar-box-focus-bgcolor: var(--button-background-color);
-      --urlbar-box-hover-bgcolor: var(--button-background-color-hover);
-      --urlbar-box-active-bgcolor: var(--button-background-color-active);
+      --toolbar-field-text-color: currentColor;
+      --urlbar-box-background-color: var(--button-background-color-hover);
+      --urlbar-box-background-color-focus: var(--button-background-color);
+      --urlbar-box-background-color-hover: var(--button-background-color-hover);
+      --urlbar-box-background-color-active: var(--button-background-color-active);
     }
   }
 }
@@ -142,10 +139,10 @@
 
   @media not (prefers-contrast) {
     &:hover {
-      background-color: var(--toolbarbutton-hover-background);
+      background-color: var(--toolbarbutton-background-color-hover);
 
       &:active {
-        background-color: var(--toolbarbutton-active-background);
+        background-color: var(--toolbarbutton-background-color-active);
       }
     }
 
@@ -237,9 +234,9 @@
     /* Windows HCM conventions use these colors for chiclets. We can't use them on
        other platforms because AccentColor can be shown atop SelectedItem,
        which has zero contrast. */
-    --urlbar-box-hover-bgcolor: SelectedItem;
-    --urlbar-box-active-bgcolor: SelectedItem;
-    --urlbar-box-hover-text-color: SelectedItemText;
+    --urlbar-box-background-color-hover: SelectedItem;
+    --urlbar-box-background-color-active: SelectedItem;
+    --urlbar-box-text-color-hover: SelectedItemText;
   }
 
   :root:not([lwtheme]) {
@@ -280,7 +277,7 @@
 
 #UITourTooltipButtons {
   /**
-   * Override the --arrowpanel-padding so the background extends
+   * Override the --panel-padding so the background extends
    * to the sides and bottom of the panel.
    */
   margin-inline: -10px;
@@ -290,25 +287,25 @@
 /* Make menu items larger when opened through touch. */
 panel[touchmode],
 menupopup[touchmode] {
-  --arrowpanel-menuitem-padding-block: 12px;
-  --arrowpanel-menuitem-padding: var(--arrowpanel-menuitem-padding-block) var(--arrowpanel-menuitem-padding-inline);
+  --panel-menuitem-padding-block: 12px;
+  --panel-menuitem-padding: var(--panel-menuitem-padding-block) var(--panel-menuitem-padding-inline);
   /* The value for the header back icon padding is selected in a way that the
    * height of the header and its separator will be equal to the panel inner
    * top padding plus standard menuitem, so that the header's separator will
    * be located excatly where a normal toolbarseparator would be located after
    * the first menuitem, in a menu without a header. */
-  --arrowpanel-header-back-icon-padding: 10px;
+  --panel-header-back-icon-padding: 10px;
 }
 
 :root[uidensity="compact"] panel[touchmode] {
-  --arrowpanel-header-back-icon-padding: 12px;
+  --panel-header-back-icon-padding: 12px;
 }
 
 menupopup[touchmode] :is(menu, menuitem, menucaption) {
   /* Use the var set in the rule above to increase menu items height in menupopups when
    * they are opened through touch.
    * Panel menu items already have their padding set in panelUI-shared.css with the same var. */
-  padding-block: var(--arrowpanel-menuitem-padding-block);
+  padding-block: var(--panel-menuitem-padding-block);
 }
 
 #contentAreaContextMenu[touchmode] > #context-navigation > menuitem {

@@ -6,6 +6,7 @@
 #define mozilla_dom_ViewTransition_h
 
 #include "mozilla/Attributes.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/layers/IpcResourceUpdateQueue.h"
 #include "nsAtomHashKeys.h"
 #include "nsClassHashtable.h"
@@ -78,15 +79,33 @@ enum class ViewTransitionPhase : uint8_t {
   Done,
 };
 
+struct ViewTransitionCapturedElement;
+
+using ViewTransitionNamedElements =
+    nsClassHashtable<nsAtomHashKey, ViewTransitionCapturedElement>;
+
+// https://drafts.csswg.org/css-view-transitions-2/#view-transition-params
+// See the same members on ViewTransition
+struct ViewTransitionParams {
+  ViewTransitionNamedElements namedElements;
+  AutoTArray<RefPtr<nsAtom>, 8> names;
+  nsSize initialSnapshotContainingBlockSize;
+
+  ~ViewTransitionParams();
+};
+
 class ViewTransition final : public nsISupports, public nsWrapperCache {
  public:
   using Phase = ViewTransitionPhase;
   using TypeList = nsTArray<RefPtr<nsAtom>>;
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(ViewTransition)
 
   ViewTransition(Document&, ViewTransitionUpdateCallback*, TypeList&&);
+
+  static already_AddRefed<ViewTransition> CreateCrossDocument(
+      Document&, UniquePtr<ViewTransitionParams>, TypeList&&);
 
   Promise* GetUpdateCallbackDone(ErrorResult&);
   Promise* GetReady(ErrorResult&);
@@ -154,15 +173,16 @@ class ViewTransition final : public nsISupports, public nsWrapperCache {
   nsIGlobalObject* GetParentObject() const;
   JSObject* WrapObject(JSContext*, JS::Handle<JSObject*> aGivenProto) override;
 
-  struct CapturedElement;
-
   static nsRect SnapshotContainingBlockRect(nsPresContext*);
   static nsRect CapturedInkOverflowRectForFrame(nsIFrame*, bool aIsRoot);
   MOZ_CAN_RUN_SCRIPT void CallUpdateCallback(ErrorResult&);
 
- private:
-  MOZ_CAN_RUN_SCRIPT void MaybeScheduleUpdateCallback();
   void Activate();
+
+ private:
+  using CapturedElement = ViewTransitionCapturedElement;
+
+  MOZ_CAN_RUN_SCRIPT void MaybeScheduleUpdateCallback();
 
   void ClearActiveTransition(bool aIsDocumentHidden);
   void Timeout();
@@ -192,8 +212,7 @@ class ViewTransition final : public nsISupports, public nsWrapperCache {
   RefPtr<ViewTransitionUpdateCallback> mUpdateCallback;
 
   // https://drafts.csswg.org/css-view-transitions/#viewtransition-named-elements
-  using NamedElements = nsClassHashtable<nsAtomHashKey, CapturedElement>;
-  NamedElements mNamedElements;
+  ViewTransitionNamedElements mNamedElements;
   // mNamedElements is an unordered map, we need to keep the tree order. This
   // also keeps the strong reference to the view-transition-name which may be
   // auto-generated for this view transition.

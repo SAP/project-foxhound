@@ -7,10 +7,6 @@ import { GeckoViewActorChild } from "resource://gre/modules/GeckoViewActorChild.
 export class ScrollDelegateChild extends GeckoViewActorChild {
   // eslint-disable-next-line complexity
   handleEvent(aEvent) {
-    if (aEvent.originalTarget.ownerGlobal != this.contentWindow) {
-      return;
-    }
-
     debug`handleEvent: ${aEvent.type}`;
 
     switch (aEvent.type) {
@@ -28,4 +24,4 @@ export class ScrollDelegateChild extends GeckoViewActorChild {
   }
 }
 
-const { debug, warn } = ScrollDelegateChild.initLogging("ScrollDelegate");
+const { debug } = ScrollDelegateChild.initLogging("ScrollDelegate");

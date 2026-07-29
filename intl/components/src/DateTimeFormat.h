@@ -3,11 +3,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #ifndef intl_components_DateTimeFormat_h_
 #define intl_components_DateTimeFormat_h_
-#include <functional>
 #include "unicode/udat.h"
 
 #include "mozilla/intl/ICU4CGlue.h"
 #include "mozilla/intl/ICUError.h"
+#include "mozilla/intl/Locale.h"
 
 #include "mozilla/intl/DateTimePart.h"
 #include "mozilla/intl/DateTimePatternGenerator.h"
@@ -494,14 +494,9 @@ class DateTimeFormat final {
 
   /**
    * Returns the allowed hour cycles for the input locale.
-   *
-   * NOTE: This function currently takes a language subtag and an optional
-   * region subtag. This is a restriction until bug 1719746 has migrated
-   * language tag processing into the unified Intl component. After bug 1719746,
-   * this function should be changed to accept a single locale tag.
    */
   static Result<HourCyclesVector, ICUError> GetAllowedHourCycles(
-      Span<const char> aLanguage, Maybe<Span<const char>> aRegion);
+      const LanguageSubtag& aLanguage, const RegionSubtag& aRegion);
 
   /**
    * Returns an iterator over all supported date-time formatter locales.

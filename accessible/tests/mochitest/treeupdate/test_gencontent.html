@@ -27,139 +27,79 @@
   <script type="application/javascript">
 
     // //////////////////////////////////////////////////////////////////////////
-    // Invokers
-    // //////////////////////////////////////////////////////////////////////////
-
-    /**
-     * Insert new node with CSS generated content style applied to container.
-     */
-    function insertNodeHavingGenContent(aContainerID) {
-      this.containerNode = getNode(aContainerID);
-      this.container = getAccessible(this.containerNode);
-
-      this.eventSeq = [
-        new invokerChecker(EVENT_SHOW, getFirstChild, this.container),
-        new invokerChecker(EVENT_REORDER, this.container),
-      ];
-
-      this.invoke = function insertNodeHavingGenContent_invoke() {
-        var node = document.createElement("div");
-        node.textContent = "text";
-        node.setAttribute("class", "gentext");
-        this.containerNode.appendChild(node);
-      };
-
-      this.finalCheck = function insertNodeHavingGenContent_finalCheck() {
-        var accTree =
-          { SECTION: [ // container
-            { SECTION: [ // inserted node
-              { STATICTEXT: [] }, // :before
-              { TEXT_LEAF: [] }, // primary text
-              { STATICTEXT: [] }, // :after
-            ] },
-          ] };
-        testAccessibleTree(this.container, accTree);
-      };
-
-      this.getID = function insertNodeHavingGenContent_getID() {
-        return "insert node having generated content to " + prettyName(aContainerID);
-      };
-    }
-
-    /**
-     * Add CSS generated content to the given node contained by container node.
-     */
-    function addGenContent(aContainerID, aNodeID) {
-      this.container = getAccessible(aContainerID);
-      this.nodeAcc = getAccessible(aNodeID);
-      this.node = getNode(aNodeID);
-
-      this.eventSeq = [
-        new invokerChecker(EVENT_SHOW, getFirstChild, this.nodeAcc),
-        new invokerChecker(EVENT_SHOW, getLastChild, this.nodeAcc),
-        new invokerChecker(EVENT_REORDER, this.nodeAcc),
-      ];
-
-      this.invoke = function addGenContent_invoke() {
-        this.node.classList.add("gentext");
-      };
-
-      this.finalCheck = function insertNodeHavingGenContent_finalCheck() {
-        var accTree =
-          { SECTION: [ // container
-            { SECTION: [ // inserted node
-              { STATICTEXT: [] }, // :before
-              { TEXT_LEAF: [] }, // primary text
-              { STATICTEXT: [] }, // :after
-            ] },
-          ] };
-        testAccessibleTree(this.container, accTree);
-      };
-
-      this.getID = function addGenContent_getID() {
-        return "add generated content to" + prettyName(aNodeID);
-      };
-    }
-
-    /**
-     * Remove CSS generated content from the given node contained by container node.
-     */
-    function removeGenContent(aContainerID, aNodeID) {
-      this.container = getAccessible(aContainerID);
-      this.nodeAcc = getAccessible(aNodeID);
-      this.node = getNode(aNodeID);
-
-      this.eventSeq = [
-        new invokerChecker(EVENT_HIDE, this.nodeAcc.firstChild),
-        new invokerChecker(EVENT_HIDE, this.nodeAcc.lastChild),
-        new invokerChecker(EVENT_REORDER, this.nodeAcc),
-      ];
-
-      this.invoke = function removeGenContent_invoke() {
-        this.node.classList.remove("gentext");
-      };
-
-      this.finalCheck = function removeGenContent_finalCheck() {
-        var accTree =
-          { SECTION: [ // container
-            { SECTION: [ // inserted node
-              { TEXT_LEAF: [] }, // primary text
-            ] },
-          ] };
-        testAccessibleTree(this.container, accTree);
-      };
-
-      this.getID = function addGenContent_getID() {
-        return "remove generated content from" + prettyName(aNodeID);
-      };
-    }
-    /**
-     * Target getters.
-     */
-    function getFirstChild(aAcc) {
-      try { return aAcc.firstChild; } catch (e) { return null; }
-    }
-
-    function getLastChild(aAcc) {
-      try { return aAcc.lastChild; } catch (e) { return null; }
-    }
-
-    // //////////////////////////////////////////////////////////////////////////
     // Do tests
     // //////////////////////////////////////////////////////////////////////////
 
-    var gQueue = null;
-    // gA11yEventDumpID = "eventdump"; // debug stuff
-    // gA11yEventDumpToConsole = true;
+    async function doTests() {
+      // insertNodeHavingGenContent("container1")
+      {
+        let containerNode = getNode("container1");
+        let container = getAccessible(containerNode);
+        let p = waitForEvents([
+          [EVENT_SHOW, e => e.accessible && e.accessible == container.firstChild],
+          [EVENT_REORDER, container],
+        ]);
+        const node = document.createElement("div");
+        node.textContent = "text";
+        node.setAttribute("class", "gentext");
+        containerNode.appendChild(node);
+        await p;
+        const accTree =
+          { SECTION: [ // container
+            { SECTION: [ // inserted node
+              { STATICTEXT: [] }, // :before
+              { TEXT_LEAF: [] }, // primary text
+              { STATICTEXT: [] }, // :after
+            ] },
+          ] };
+        testAccessibleTree(container, accTree);
+      }
 
-    function doTests() {
-      gQueue = new eventQueue();
+      // addGenContent("container2", "container2_child")
+      {
+        let container = getAccessible("container2");
+        let nodeAcc = getAccessible("container2_child");
+        let p = waitForEvents([
+          [EVENT_SHOW, e => e.accessible && e.accessible == nodeAcc.firstChild],
+          [EVENT_SHOW, e => e.accessible && e.accessible == nodeAcc.lastChild],
+          [EVENT_REORDER, nodeAcc],
+        ]);
+        getNode("container2_child").classList.add("gentext");
+        await p;
+        const accTree =
+          { SECTION: [ // container
+            { SECTION: [ // inserted node
+              { STATICTEXT: [] }, // :before
+              { TEXT_LEAF: [] }, // primary text
+              { STATICTEXT: [] }, // :after
+            ] },
+          ] };
+        testAccessibleTree(container, accTree);
+      }
 
-      gQueue.push(new insertNodeHavingGenContent("container1"));
-      gQueue.push(new addGenContent("container2", "container2_child"));
-      gQueue.push(new removeGenContent("container3", "container3_child"));
+      // removeGenContent("container3", "container3_child")
+      {
+        let container = getAccessible("container3");
+        let nodeAcc = getAccessible("container3_child");
+        let firstChild = nodeAcc.firstChild;
+        let lastChild = nodeAcc.lastChild;
+        let p = waitForEvents([
+          [EVENT_HIDE, firstChild],
+          [EVENT_HIDE, lastChild],
+          [EVENT_REORDER, nodeAcc],
+        ]);
+        getNode("container3_child").classList.remove("gentext");
+        await p;
+        const accTree =
+          { SECTION: [ // container
+            { SECTION: [ // inserted node
+              { TEXT_LEAF: [] }, // primary text
+            ] },
+          ] };
+        testAccessibleTree(container, accTree);
+      }
 
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

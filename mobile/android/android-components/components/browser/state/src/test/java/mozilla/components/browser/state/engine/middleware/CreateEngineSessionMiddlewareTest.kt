@@ -77,7 +77,6 @@ class CreateEngineSessionMiddlewareTest {
         testScheduler.advanceUntilIdle()
 
         verify(engineSession).restoreState(engineSessionState)
-        Unit
     }
 
     @Test
@@ -95,7 +94,6 @@ class CreateEngineSessionMiddlewareTest {
         testScheduler.advanceUntilIdle()
 
         verify(engine, never()).createSession(anyBoolean(), any())
-        Unit
     }
 
     @Test
@@ -118,7 +116,6 @@ class CreateEngineSessionMiddlewareTest {
         testScheduler.advanceUntilIdle()
 
         verify(engine, never()).createSession(anyBoolean(), any())
-        Unit
     }
 
     @Test

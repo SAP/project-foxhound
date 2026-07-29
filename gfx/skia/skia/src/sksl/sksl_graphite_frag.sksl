@@ -1381,7 +1381,7 @@ $pure half4 sample_indexed_atlas(float2 textureCoords,
 
 $pure half3 $sample_indexed_atlas_lcd(float2 textureCoords,
                                       int atlasIndex,
-                                      half2 offset,
+                                      float2 offset,
                                       sampler2D atlas0,
                                       sampler2D atlas1,
                                       sampler2D atlas2,
@@ -1389,21 +1389,25 @@ $pure half3 $sample_indexed_atlas_lcd(float2 textureCoords,
     half3 distance = half3(1);
     switch (atlasIndex) {
         case 1:
-            distance.x = sample(atlas1, half2(textureCoords) - offset).r;
+            distance.x = sample(atlas1, textureCoords - offset).r;
             distance.y = sample(atlas1, textureCoords).r;
-            distance.z = sample(atlas1, half2(textureCoords) + offset).r;
+            distance.z = sample(atlas1, textureCoords + offset).r;
+            break;
         case 2:
-            distance.x = sample(atlas2, half2(textureCoords) - offset).r;
+            distance.x = sample(atlas2, textureCoords - offset).r;
             distance.y = sample(atlas2, textureCoords).r;
-            distance.z = sample(atlas2, half2(textureCoords) + offset).r;
+            distance.z = sample(atlas2, textureCoords + offset).r;
+            break;
         case 3:
-            distance.x = sample(atlas3, half2(textureCoords) - offset).r;
+            distance.x = sample(atlas3, textureCoords - offset).r;
             distance.y = sample(atlas3, textureCoords).r;
-            distance.z = sample(atlas3, half2(textureCoords) + offset).r;
+            distance.z = sample(atlas3, textureCoords + offset).r;
+            break;
         default:
-            distance.x = sample(atlas0, half2(textureCoords) - offset).r;
+            distance.x = sample(atlas0, textureCoords - offset).r;
             distance.y = sample(atlas0, textureCoords).r;
-            distance.z = sample(atlas0, half2(textureCoords) + offset).r;
+            distance.z = sample(atlas0, textureCoords + offset).r;
+            break;
     }
     return distance;
 }
@@ -1414,8 +1418,8 @@ $pure half4 bitmap_text_coverage_fn(half4 texColor, int maskFormat) {
 }
 
 $pure half4 sdf_text_coverage_fn(half texColor,
-                                 half2 gammaParams,
-                                 float2 unormTexCoords) {
+                                 float2 unormTexCoords, // unormalized texture coords
+                                 half2 gammaParams) {
     // TODO: To minimize the number of shaders generated this is the full affine shader.
     // For best performance it may be worth creating the uniform scale shader as well,
     // as that's the most common case.
@@ -1461,10 +1465,10 @@ $pure half4 sdf_text_coverage_fn(half texColor,
     }
 }
 
-$pure half4 sdf_text_lcd_coverage_fn(float2 textureCoords,
-                                     half2 pixelGeometryDelta,
+$pure half4 sdf_text_lcd_coverage_fn(half2 pixelGeometryDelta,
                                      half4 gammaParams,
-                                     float2 unormTexCoords,
+                                     float2 unormTexCoords, // unormalized texture coords
+                                     float2 textureCoords,
                                      float texIndex,
                                      sampler2D atlas0,
                                      sampler2D atlas1,
@@ -1475,7 +1479,7 @@ $pure half4 sdf_text_lcd_coverage_fn(float2 textureCoords,
     // as that's the most common case.
 
     float2x2 jacobian = float2x2(dFdx(unormTexCoords), dFdy(unormTexCoords));
-    half2 offset = half2(jacobian * pixelGeometryDelta);
+    float2 offset = jacobian * float2(pixelGeometryDelta);
 
     half3 distance = $sample_indexed_atlas_lcd(textureCoords,
                                                int(texIndex),

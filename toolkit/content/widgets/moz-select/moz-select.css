@@ -2,26 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+@import url("chrome://global/content/elements/moz-select.tokens.css");
+
 :host {
-  --select-border: var(--button-border);
-  --select-border-radius: var(--button-border-radius);
-  --select-border-color-hover: var(--button-border-color-hover);
-  --select-border-color-disabled: var(--button-border-color-disabled);
-  --select-background-color: var(--button-background-color);
-  --select-background-color-hover: var(--button-background-color-hover);
-  --select-background-color-disabled: var(--button-background-color-disabled);
-  --select-opacity-disabled: var(--button-opacity-disabled);
   --select-margin-block: var(--input-margin-block-adjust);
   --select-margin-inline: var(--input-margin-inline-start-adjust) var(--space-small);
-  --select-min-height: var(--button-min-height);
-  --select-font-size: var(--button-font-size);
-  --select-font-weight: var(--button-font-weight);
-  --select-option-font-weight: var(--font-weight);
-  --select-text-color: var(--button-text-color);
-  --select-text-color-hover: var(--button-text-color-hover);
-  --select-text-color-disabled: var(--button-text-color-disabled);
-  --select-option-text-color: var(--text-color);
-  --select-icon-fill: var(--button-icon-fill);
 }
 
 :host([inputlayout="inline-end"]) {
@@ -40,8 +25,8 @@
   color: var(--select-text-color);
   margin-block: var(--select-margin-block);
   margin-inline: var(--select-margin-inline);
-  min-width: var(--select-min-width);
-  max-width: var(--select-max-width);
+  min-width: var(--select-min-width, none);
+  max-width: var(--select-max-width, none);
   -moz-context-properties: fill;
   fill: var(--select-icon-fill);
 
@@ -71,6 +56,12 @@
   align-items: center;
   outline: none;
   font-family: inherit;
+  margin-block-start: 0;
+}
+
+.panel-trigger-text {
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 panel-item[icon]::part(button) {

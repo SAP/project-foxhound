@@ -1,0 +1,5 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+._base_5218p_1{margin:3rem auto 0;border-radius:.5rem;background-color:#ddd;width:50vw;box-shadow:0 0 .5rem #0003;font-family:system-ui,sans-serif}._title_5218p_10{border-bottom:1px solid #bababa;border-radius:.5rem .5rem 0 0;padding:1rem;h1,h2{font-family:system-ui,sans-serif;margin:0}h2{font-weight:300;span{font-style:italic}}}._content_5218p_26{display:grid;grid-template-columns:repeat(2,1fr)}._renderer_5218p_31,._state_5218p_32{margin:1rem;background-color:#fff;border-radius:.25rem;ul{list-style-type:none;padding:1rem}header{background-color:#d1d1d1;border-radius:.25rem .25rem 0 0;padding:.5rem;font-weight:500;border-bottom:5px solid transparent}&._willUpdate_5218p_47 header{border-color:#b0f}}._state_5218p_32{pre{padding:.5rem;font-family:monospace}code{font-size:.75rem}}._updateIndicator_5218p_62{padding:1rem;border-radius:.25rem;border-style:solid;border-width:0 0 .25rem 0;border-color:transparent}

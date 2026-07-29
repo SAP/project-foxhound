@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -53,7 +51,7 @@ SVGElement::EnumInfo SVGMarkerElement::sEnumInfo[1] = {
 // Implementation
 
 SVGMarkerElement::SVGMarkerElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : SVGMarkerElementBase(std::move(aNodeInfo)), mCoordCtx(nullptr) {}
 
 //----------------------------------------------------------------------
@@ -165,12 +163,13 @@ gfx::Matrix SVGMarkerElement::GetMarkerTransform(float aStrokeWidth,
       angle = aMark.angle + (aMark.type == SVGMark::Type::Start ? M_PI : 0.0f);
       break;
     default:  // SVG_MARKER_ORIENT_ANGLE
-      angle = mOrient.GetAnimValue() * M_PI / 180.0f;
+      angle = mOrient.GetAnimValue() * kRadPerDegree;
       break;
   }
 
   return gfx::Matrix(cos(angle) * scale, sin(angle) * scale,
-                     -sin(angle) * scale, cos(angle) * scale, aMark.x, aMark.y);
+                     -sin(angle) * scale, cos(angle) * scale, aMark.pos.x,
+                     aMark.pos.y);
 }
 
 SVGViewBox SVGMarkerElement::GetViewBox() {

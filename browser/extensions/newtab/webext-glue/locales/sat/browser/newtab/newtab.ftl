@@ -21,6 +21,56 @@ newtab-personalize-dialog-label =
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = ᱱᱟᱶᱟ ᱴᱮᱵᱽ ᱠᱚ
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } ᱫᱷᱟᱹᱲ
+            [two] { $num } ᱫᱷᱟᱹᱲ ᱠᱤᱱ
+           *[other] { $num } ᱫᱷᱟᱹᱲ ᱠᱚ
+        }
+# Dropdown option shown when an extension replaces the contents of new windows or tabs.
+# Variables:
+#   $extension (string) - Name of the extension
+home-prefs-homepage-extension-option =
+    .label = ᱮᱠᱥᱴᱮᱱᱥᱚᱱ ({ $extension })
+home-restore-defaults-srd =
+    .label = ᱦᱩᱲᱟᱹᱜ ᱠᱚ ᱡᱚᱜᱟᱣ ᱫᱚᱦᱲᱟᱹ
+    .accesskey = R
+home-mode-choice-default-fx-srd =
+    .label = { -firefox-home-brand-name } (ᱢᱩᱞ)
+home-mode-choice-custom-srd =
+    .label = ᱠᱩᱥᱤᱭᱟᱠ URLs…
+home-mode-choice-blank-srd =
+    .label = ᱮᱠᱷᱮᱱᱟ ᱥᱟᱦᱴᱟ
+home-prefs-shortcuts-header-srd =
+    .label = ᱠᱷᱟᱴᱚᱢᱟᱪᱷᱟ
+home-prefs-shortcuts-select =
+    .aria-label = ᱠᱷᱟᱴᱚᱢᱟᱪᱷᱟ
+home-prefs-shortcuts-by-option-sponsored-srd =
+    .label = ᱠᱟᱹᱢᱤᱼᱤᱡ ᱠᱷᱟᱴᱚ ᱢᱟᱪᱷᱟ ᱠᱚ
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = ᱜᱟᱲᱚ ᱠᱟᱱ ᱠᱟᱹᱦᱱᱤ ᱠᱚ
+home-prefs-highlights-option-visited-pages-srd =
+    .label = ᱦᱤᱨᱤ ᱠᱟᱱ ᱥᱟᱦᱴᱟ
+home-prefs-highlights-options-bookmarks-srd =
+    .label = ᱵᱩᱠᱢᱟᱨᱠ ᱠᱚ
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = ᱱᱮᱱᱮ ᱰᱟᱣᱱᱞᱚᱰ ᱠᱟᱱ
+home-prefs-recent-activity-header-srd =
+    .label = ᱱᱤᱛᱚᱜᱟᱜ ᱠᱟᱹᱢᱤ ᱠᱚ
+home-prefs-recent-activity-select =
+    .aria-label = ᱱᱤᱛᱚᱜᱟᱜ ᱠᱟᱹᱢᱤ ᱠᱚ
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -46,7 +96,7 @@ newtab-search-box-input =
     .placeholder = ᱣᱮᱵᱽ ᱨᱮ ᱥᱮᱸᱫᱽᱨᱟᱭ ᱢᱮ
     .aria-label = ᱣᱮᱵᱽ ᱨᱮ ᱥᱮᱸᱫᱽᱨᱟᱭ ᱢᱮ
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = ᱥᱮᱸᱫᱽᱨᱟ ᱤᱧᱡᱤᱱ ᱥᱮᱞᱮᱫ ᱢᱮ
 newtab-topsites-add-shortcut-header = ᱱᱟᱶᱟ ᱠᱷᱟᱴᱚᱢᱟᱪᱷᱟ
@@ -120,6 +170,8 @@ newtab-menu-delete-pocket = { -pocket-brand-name } ᱠᱷᱚᱱ ᱢᱮᱴᱟᱣ 
 newtab-menu-archive-pocket = { -pocket-brand-name } ᱨᱮ ᱫᱚᱦᱚ ᱵᱟᱭ ᱠᱟᱜ ᱢᱮ
 newtab-menu-show-privacy-info = ᱟᱞᱮ ᱠᱟᱹᱢᱤᱠᱚ ᱟᱨ ᱟᱢᱟᱜ ᱱᱤᱥᱚᱱ ᱠᱚ
 newtab-menu-about-fakespot = { -fakespot-brand-name } ᱵᱚᱵᱚᱛ
+# Context menu option to open a support page explaining the New Tab personalization features and privacy controls.
+newtab-menu-section-learn-more = ᱰᱷᱮᱨ ᱥᱮᱬᱟᱭ ᱢᱮ
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -274,9 +326,22 @@ newtab-error-fallback-refresh-link = ᱫᱩᱦᱲᱟᱹ ᱠᱩᱨᱩᱢᱩᱴᱩ
 
 newtab-custom-shortcuts-title = ᱠᱷᱟᱴᱚᱢᱟᱪᱷᱟ
 newtab-custom-shortcuts-subtitle = ᱟᱢ ᱥᱟᱺᱪᱟᱣ ᱠᱟᱫ ᱟᱨ ᱵᱟᱝ ᱪᱟᱞᱟᱜ ᱠᱟᱱ ᱥᱟᱭᱤᱴ ᱠᱚ
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = ᱠᱷᱟᱴᱚᱢᱟᱪᱷᱟ
     .description = ᱟᱢ ᱥᱟᱺᱪᱟᱣ ᱠᱟᱫ ᱟᱨ ᱵᱟᱝ ᱪᱟᱞᱟᱜ ᱠᱟᱱ ᱥᱟᱭᱤᱴ ᱠᱚ
+newtab-custom-shortcuts-nova =
+    .label = ᱠᱷᱟᱴᱚᱢᱟᱪᱷᱟ
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+            [one] { $num } ᱛᱷᱟᱨ
+            [two] { $num } ᱛᱷᱟᱨ ᱠᱤᱱ
+           *[other] { $num } ᱛᱷᱟᱨ ᱠᱚ
+        }
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector =
@@ -288,9 +353,12 @@ newtab-custom-row-selector =
 newtab-custom-sponsored-sites = ᱠᱟᱹᱢᱤᱼᱤᱡ ᱠᱷᱟᱴᱚ ᱢᱟᱪᱷᱟ ᱠᱚ
 newtab-custom-pocket-title = { -pocket-brand-name } ᱮᱛ ᱵᱟᱛᱟᱣᱟᱜ
 newtab-custom-pocket-subtitle = { -pocket-brand-name } ᱫᱚ { -brand-product-name } ᱜᱷᱟᱨᱚᱸᱡᱽ ᱨᱮᱱᱟᱜ ᱢᱤᱫ ᱟᱹᱰᱤ ᱱᱟᱯᱟᱭ ᱞᱮᱠᱷᱟᱛᱮ ᱠᱭᱩᱨᱮᱴ ᱠᱟᱱᱟ
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be having a description under "Recommended stories" anymore
 newtab-custom-stories-toggle =
     .label = ᱥᱚᱞᱦᱟ ᱟᱠᱟᱱ ᱠᱟᱹᱦᱱᱤ ᱠᱚ
     .description = { -brand-product-name } ᱜᱷᱟᱨᱚᱧᱡᱽ ᱦᱚᱛᱮᱛᱮ ᱠᱭᱩᱨᱮᱴ ᱟᱠᱟᱱ ᱥᱟᱨᱦᱟᱣᱮᱱ ᱡᱤᱱᱤᱥ
+newtab-recommended-stories-toggle =
+    .label = ᱥᱚᱞᱦᱟ ᱟᱠᱟᱱ ᱠᱟᱹᱦᱱᱤ ᱠᱚ
 newtab-custom-pocket-sponsored = ᱜᱟᱲᱚ ᱠᱟᱱ ᱠᱟᱹᱦᱱᱤ ᱠᱚ
 newtab-custom-pocket-show-recent-saves = ᱱᱮᱱᱮ ᱥᱟᱧᱪᱟᱣ ᱠᱚ ᱫᱮᱠᱷᱟᱣ ᱢᱮ
 newtab-custom-recent-title = ᱱᱤᱛᱚᱜᱟᱜ ᱠᱟᱹᱢᱤ ᱠᱚ
@@ -305,6 +373,8 @@ newtab-custom-settings = ᱥᱟᱡᱟᱣ ᱠᱚ ᱥᱚᱢᱵᱷᱲᱟᱣ ᱢᱮ
 
 newtab-wallpaper-title = ᱠᱟᱸᱛᱷᱪᱤᱛᱟᱹᱨ
 newtab-wallpaper-reset = ᱢᱩᱞ ᱞᱮᱠᱷᱟ ᱛᱮ ᱨᱤᱥᱮᱴ ᱢᱮ
+newtab-wallpaper-toggle-title =
+    .label = ᱠᱟᱸᱛᱷᱪᱤᱛᱟᱹᱨ
 newtab-wallpaper-light-red-panda = ᱟᱨᱟᱜ ᱯᱟᱱᱰᱟ
 newtab-wallpaper-light-mountain = ᱯᱟᱸᱰ ᱵᱩᱨᱩ
 newtab-wallpaper-light-sky = ᱵᱮᱝᱜᱟᱲ ᱟᱨ ᱜᱩᱞᱟᱯᱤ ᱨᱤᱢᱤᱞ ᱥᱟᱶ ᱥᱮᱨᱢᱟ
@@ -322,6 +392,7 @@ newtab-wallpaper-light-fox-anniversary = ᱢᱤᱫ ᱛᱩᱭᱩ ᱢᱤᱫ ᱜᱷ
 
 ## Solid Colors
 
+#  (developer note): @nova-cleanup(remove-string): Remove old "Solid colors" string once Nova lands. The simplified "Colors" string will take over
 newtab-wallpaper-category-title-colors = ᱠᱮᱴᱮᱡ ᱨᱚᱝ
 newtab-wallpaper-blue = ᱞᱤᱞ
 newtab-wallpaper-light-blue = ᱦᱟᱞᱠᱟ ᱞᱤᱞ

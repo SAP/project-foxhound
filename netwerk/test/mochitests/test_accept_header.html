@@ -31,12 +31,21 @@ function test_iframe() {
   document.body.appendChild(ifr);
 }
 
+function expectedImageAcceptHeader() {
+  let header = "image/avif,";
+  if (SpecialPowers.getBoolPref("image.jxl.enabled", false)) {
+    header += "image/jxl,";
+  }
+  header += "image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5";
+  return header;
+}
+
 function test_image() {
   let i = new Image();
   i.src = "test_accept_header.sjs?image";
   i.onload = function() {
     // Fetch spec says we should have: "image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5"
-    test_last_request_and_continue("image", "image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5");
+    test_last_request_and_continue("image", expectedImageAcceptHeader());
   }
 }
 

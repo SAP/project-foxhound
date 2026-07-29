@@ -157,7 +157,7 @@ function revert_allow_unsafe_parent_loads_when_extensions_not_remote() {
 }
 
 /**
- * Clears the HTTP and content image caches.
+ * Clears the HTTP and all subresource caches.
  */
 function clearCache() {
   Services.cache2.clear();
@@ -166,6 +166,8 @@ function clearCache() {
     .getService(Ci.imgITools)
     .getImgCacheForDocument(null);
   imageCache.clearCache(false);
+
+  ChromeUtils.clearResourceCache();
 }
 
 var promiseConsoleOutput = async function (task) {
@@ -493,6 +495,14 @@ async function assertIsPersistentScriptsCachedFlag(ext, expectedValue) {
   );
 }
 
+// Number of anticipated crashes triggered by a call to crashFrame or
+// crashExtensionBackground. The setup_crash_reporter_override_and_cleaner
+// helper waits until it has observed that many crashes before cleanup
+// to prevent crash reports for expected crashes from being left behind.
+let gNumTriggeredCrashes = 0;
+
+// Only use this function if AppConstants.MOZ_CRASHREPORTER is set. In other
+// cases crash dumps are not generated and we do not need to clean up.
 function setup_crash_reporter_override_and_cleaner() {
   const crashIds = [];
   // Override CrashService.sys.mjs to intercept crash dumps, for two reasons:
@@ -511,6 +521,7 @@ function setup_crash_reporter_override_and_cleaner() {
       // until the end of the test, to minimize noise during the test, and to
       // ensure that the cleanup completes fully.
       crashIds.push(id);
+      info(`Detected crash with dumpID: ${id} (total: ${crashIds.length})`);
     },
     QueryInterface: ChromeUtils.generateQI(["nsICrashService"]),
   });
@@ -523,6 +534,30 @@ function setup_crash_reporter_override_and_cleaner() {
       Ci.nsICrashReporter
     );
 
+    let errorIfCrashDumpsNotFound;
+    if (crashIds.length !== gNumTriggeredCrashes) {
+      // We must wait while crashIds.length < gNumTriggeredCrashes in order to
+      // find all crashes that we want to clean up.
+      // If crashIds.length > gNumTriggeredCrashes, we don't have to wait, but
+      // still enter this block to print the informational message showing the
+      // discrepancy between expected vs actual crashes. The test would most
+      // likely fail anyway due to the presence of unexpected crashes.
+      info(
+        `Got ${crashIds.length} instead of ${gNumTriggeredCrashes} crash dumps`
+      );
+      try {
+        await TestUtils.waitForCondition(
+          () => crashIds.length >= gNumTriggeredCrashes,
+          `Waiting for all expected crash dumps to have been written`
+        );
+      } catch (e) {
+        // Even if we did not get all expected crashes, just continue to clean
+        // up the crashes that we did have so far, so that these (expected)
+        // crash dumps are not flagged as unexpected crashes.
+        info(`Did not find all expected crash dumps, cleaning up what we have`);
+        errorIfCrashDumpsNotFound = e;
+      }
+    }
     info(`Observed ${crashIds.length} crash dump(s).`);
     let deletedCount = 0;
     for (let id of crashIds) {
@@ -548,6 +583,9 @@ function setup_crash_reporter_override_and_cleaner() {
       ++deletedCount;
     }
     info(`Removed ${deletedCount} crash dumps out of ${crashIds.length}`);
+    if (errorIfCrashDumpsNotFound) {
+      throw errorIfCrashDumpsNotFound;
+    }
   });
 }
 
@@ -558,6 +596,8 @@ function crashFrame(browser) {
     // The browser should be remote, or the test runner would be killed.
     throw new Error("<browser> must be remote");
   }
+
+  ++gNumTriggeredCrashes;
 
   const { BrowserTestUtils } = ChromeUtils.importESModule(
     "resource://testing-common/BrowserTestUtils.sys.mjs"

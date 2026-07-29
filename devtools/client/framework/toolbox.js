@@ -91,7 +91,8 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
   ExtensionUtils: "resource://gre/modules/ExtensionUtils.sys.mjs",
-  TYPES: "resource://devtools/shared/highlighters.mjs",
+  LocalModeMappings:
+    "resource://devtools/client/framework/LocalModeMappings.sys.mjs",
 });
 loader.lazyRequireGetter(this, "flags", "resource://devtools/shared/flags.js");
 loader.lazyRequireGetter(
@@ -227,6 +228,9 @@ loader.lazyGetter(this, "ProfilerBackground", () => {
   );
 });
 
+const DEVTOOLS_STYLESHEETS_IN_DEBUGGER =
+  "devtools.debugger.features.stylesheets-in-debugger";
+
 const BOOLEAN_CONFIGURATION_PREFS = {
   "devtools.cache.disabled": {
     name: "cacheDisabled",
@@ -244,7 +248,7 @@ const BOOLEAN_CONFIGURATION_PREFS = {
     name: "pauseOverlay",
     thread: true,
   },
-  "devtools.debugger.features.javascript-tracing": {
+  "devtools.command-button-jstracer.enabled": {
     name: "isTracerFeatureEnabled",
   },
 };
@@ -358,8 +362,8 @@ class Toolbox extends EventEmitter {
     this._onMouseDown = this._onMouseDown.bind(this);
     this.updateToolboxButtonsVisibility =
       this.updateToolboxButtonsVisibility.bind(this);
-    this.updateToolboxButtons = this.updateToolboxButtons.bind(this);
     this.selectTool = this.selectTool.bind(this);
+    this._renderToolboxButtons = this._renderToolboxButtons.bind(this);
     this._pingTelemetrySelectTool = this._pingTelemetrySelectTool.bind(this);
     this.toggleSplitConsole = this.toggleSplitConsole.bind(this);
     this.toggleOptions = this.toggleOptions.bind(this);
@@ -952,6 +956,10 @@ class Toolbox extends EventEmitter {
         "target-thread-wrong-order-on-resume",
         this._onTargetThreadFrontResumeWrongOrder.bind(this)
       );
+      this.commands.targetCommand.on(
+        "target-location-updated",
+        this.#onTargetLocationUpdated.bind(this)
+      );
       registerStoreObserver(
         this.commands.targetCommand.store,
         this._onTargetCommandStateChange.bind(this)
@@ -989,7 +997,7 @@ class Toolbox extends EventEmitter {
       let tracerInitialization;
       if (
         Services.prefs.getBoolPref(
-          "devtools.debugger.features.javascript-tracing",
+          "devtools.command-button-jstracer.enabled",
           false
         )
       ) {
@@ -1134,26 +1142,36 @@ class Toolbox extends EventEmitter {
       }
 
       await this.initHarAutomation();
+      // Local Mode mappings only work with local tab debugging.
+      // It sounds irrelevant for workers/add-ons, and would require
+      // some very specific work to be functional for remote tabs debugging.
+      if (this._descriptorFront.isLocalTab) {
+        await lazy.LocalModeMappings.setup(this);
+      }
 
       this.emit("ready");
       this._resolveIsOpen();
-    } catch (error) {
+    } catch (exception) {
       console.error(
         "Exception while opening the toolbox",
-        String(error),
-        error
+        String(exception),
+        exception
       );
       // While the exception stack is correctly printed in the Browser console when
       // passing `e` to console.error, it is not on the stdout, so print it via dump.
-      dump(error.stack + "\n");
-      if (error.clientPacket) {
+      dump(exception.stack + "\n");
+      if (exception.clientPacket) {
         dump(
-          "Client packet:" + JSON.stringify(error.clientPacket, null, 2) + "\n"
+          "Client packet:" +
+            JSON.stringify(exception.clientPacket, null, 2) +
+            "\n"
         );
       }
-      if (error.serverPacket) {
+      if (exception.serverPacket) {
         dump(
-          "Server packet:" + JSON.stringify(error.serverPacket, null, 2) + "\n"
+          "Server packet:" +
+            JSON.stringify(exception.serverPacket, null, 2) +
+            "\n"
         );
       }
 
@@ -1165,7 +1183,7 @@ class Toolbox extends EventEmitter {
         // If React managed to load, try to display the exception to the user via AppErrorBoundary component.
         // But ignore the exception if the React component itself thrown while rendering (errorInfo is defined)
         if (this._appBoundary && !this._appBoundary.state.errorInfo) {
-          this._appBoundary.toolboxDidCatch(error, this);
+          this._appBoundary.handleException(exception, this, true);
         }
       } catch (e) {
         // Ignore any further error related to AppErrorBoundary as it would prevent closing the toolbox.
@@ -1483,8 +1501,8 @@ class Toolbox extends EventEmitter {
   }
 
   _getDebugTargetData() {
-    const url = new URL(this.win.location);
-    const remoteId = url.searchParams.get("remoteId");
+    const url = URL.parse(this.win.location);
+    const remoteId = url ? url.searchParams.get("remoteId") : null;
     const runtimeInfo = remoteClientManager.getRuntimeInfoByRemoteId(remoteId);
     const connectionType =
       remoteClientManager.getConnectionTypeByRemoteId(remoteId);
@@ -1703,6 +1721,7 @@ class Toolbox extends EventEmitter {
       isToggle,
       onKeyDown,
       experimentalURL,
+      highlighterTypes,
     } = options;
     const toolbox = this;
     const button = {
@@ -1741,6 +1760,7 @@ class Toolbox extends EventEmitter {
       // holding buttons. By default the buttons are placed in the end container.
       isInStartContainer: !!isInStartContainer,
       experimentalURL,
+      highlighterTypes,
       getContextMenu() {
         if (options.getContextMenu) {
           return options.getContextMenu(toolbox);
@@ -2186,7 +2206,7 @@ class Toolbox extends EventEmitter {
       this.toolbarButtons.push(button);
     });
 
-    this.component.setToolboxButtons(this.toolbarButtons);
+    this._renderToolboxButtons();
   }
 
   /**
@@ -2457,28 +2477,40 @@ class Toolbox extends EventEmitter {
 
   /**
    * Update the visibility of the buttons.
+   *
+   * @param {object} options
+   * @param {boolean} options.fromWillNavigate: true if this is called because the
+   *        page is going to navigate
    */
-  updateToolboxButtonsVisibility() {
-    this.toolbarButtons.forEach(button => {
-      button.isVisible = this._commandIsVisible(button);
-    });
-    this.component.setToolboxButtons(this.toolbarButtons);
-  }
-
-  /**
-   * Update the buttons.
-   */
-  updateToolboxButtons() {
+  updateToolboxButtonsVisibility({ fromWillNavigate = false } = {}) {
     const inspectorFront = this.target.getCachedFront("inspector");
-    // two of the buttons have highlighters that need to be cleared
-    // on will-navigate, otherwise we hold on to the stale highlighter
-    const hasHighlighters =
-      inspectorFront &&
-      (inspectorFront.hasHighlighter(lazy.TYPES.RULERS) ||
-        inspectorFront.hasHighlighter(lazy.TYPES.MEASURING));
-    if (hasHighlighters) {
-      inspectorFront.destroyHighlighters();
-      this.component.setToolboxButtons(this.toolbarButtons);
+
+    let hasHighlighters = false;
+    for (const button of this.toolbarButtons) {
+      button.isVisible = this._commandIsVisible(button);
+
+      if (
+        inspectorFront &&
+        // We want to destroy highlighters associated with the toolbox button when:
+        // - the button gets hidden (from the Settings panel)
+        // - or when we're going to navigate
+        (!button.isVisible || fromWillNavigate)
+      ) {
+        if (!button.highlighterTypes) {
+          continue;
+        }
+
+        for (const type of button.highlighterTypes) {
+          if (inspectorFront.getKnownHighlighter(type)?.isShown()) {
+            inspectorFront.destroyHighlighterByType(type);
+            hasHighlighters = true;
+          }
+        }
+      }
+    }
+
+    if (hasHighlighters || !fromWillNavigate) {
+      this._renderToolboxButtons();
     }
   }
 
@@ -3100,6 +3132,13 @@ class Toolbox extends EventEmitter {
     });
   }
 
+  /**
+   * Render the toolbox buttons
+   */
+  _renderToolboxButtons() {
+    this.component.setToolboxButtons(this.toolbarButtons);
+  }
+
   _pingTelemetrySelectTool(id, reason) {
     const width = Math.ceil(this.win.outerWidth / 50) * 50;
     const panelName = this.getTelemetryPanelNameOrOther(id);
@@ -3444,7 +3483,9 @@ class Toolbox extends EventEmitter {
     if (!isFrameSwitching) {
       this._updateFrames({ destroyAll: true });
     }
-    this.updateToolboxButtons();
+
+    this.updateToolboxButtonsVisibility({ fromWillNavigate: true });
+
     const toolId = this.currentToolId;
     // For now, only inspector, webconsole, netmonitor and accessibility fire "reloaded" event
     if (
@@ -3812,7 +3853,7 @@ class Toolbox extends EventEmitter {
         () => {
           // Toolbox may have been destroyed in the meantime
           if (this.component) {
-            this.component.setToolboxButtons(this.toolbarButtons);
+            this._renderToolboxButtons();
           }
           this.debouncedToolbarUpdate = null;
         },
@@ -4231,8 +4272,8 @@ class Toolbox extends EventEmitter {
     this.updateFrameButton();
     this.updateErrorCountButton();
 
-    // Calling setToolboxButtons in case the visibility of a button changed.
-    this.component.setToolboxButtons(this.toolbarButtons);
+    // Calling _renderToolboxButtons in case the visibility of a button changed.
+    this._renderToolboxButtons();
   }
 
   /**
@@ -4295,7 +4336,7 @@ class Toolbox extends EventEmitter {
    * Public API to check is the current toolbox is currently being destroyed.
    */
   isDestroying() {
-    return this._destroyer;
+    return !!this._destroyer;
   }
 
   /**
@@ -4340,6 +4381,7 @@ class Toolbox extends EventEmitter {
       BROWSERTOOLBOX_SCOPE_PREF,
       this._refreshHostTitle
     );
+    lazy.LocalModeMappings.destroy(this);
 
     // We normally handle toolClosed from selectTool() but in the event of the
     // toolbox closing we need to handle it here instead.
@@ -4426,7 +4468,7 @@ class Toolbox extends EventEmitter {
 
     if (
       Services.prefs.getBoolPref(
-        "devtools.debugger.features.javascript-tracing",
+        "devtools.command-button-jstracer.enabled",
         false
       )
     ) {
@@ -4632,7 +4674,7 @@ class Toolbox extends EventEmitter {
    *
    * @param {string} url The URL of the CSS file to open.
    */
-  async viewGeneratedSourceInStyleEditor(url) {
+  async viewStyleGeneratedSource(url) {
     if (typeof url !== "string") {
       console.warn("Failed to open generated source, no url given");
       return false;
@@ -4641,16 +4683,19 @@ class Toolbox extends EventEmitter {
     // The style editor hides the generated file if the file has original
     // sources, so we have no choice but to open whichever original file
     // corresponds to the first line of the generated file.
-    return viewSource.viewSourceInStyleEditor(this, url, 1);
+    // TODO: Update this when sourcemaps support for stylesheets is supported
+    // in the debugger.
+    return this.viewStyleSourceByURL(url, 1);
   }
 
   /**
-   * Given a URL for a stylesheet (generated or original), open in the style
-   * editor if possible. Falls back to plain "view-source:".
+   * Given a URL for a stylesheet (generated or original), open in the debugger
+   * if the `devtools.debugger.features.stylesheets-in-debugger` pref is enabled
+   *  or open in the style editor if possible. Falls back to plain "view-source:".
    * If the stylesheet has a sourcemap, we will attempt to open the original
    * version of the file instead of the generated version.
    */
-  async viewSourceInStyleEditorByURL(url, line, column) {
+  async viewStyleSourceByURL(url, line, column) {
     if (typeof url !== "string") {
       console.warn("Failed to open source, no url given");
       return false;
@@ -4661,9 +4706,14 @@ class Toolbox extends EventEmitter {
       );
 
       // This is a fallback in case of programming errors, but in a perfect
-      // world, viewSourceInStyleEditorByURL would always get a line/colum.
+      // world, viewStyleSourceByURL would always get a line/column.
       line = 1;
       column = null;
+    }
+
+    // Instead view the stylesheet in the debugger since the pref is enabled
+    if (Services.prefs.getBoolPref(DEVTOOLS_STYLESHEETS_IN_DEBUGGER)) {
+      return viewSource.viewSourceInDebugger(this, url, line, column, null);
     }
 
     return viewSource.viewSourceInStyleEditor(this, url, line, column);
@@ -4674,7 +4724,7 @@ class Toolbox extends EventEmitter {
    * If the stylesheet has a sourcemap, we will attempt to open the original
    * version of the file instead of the generated version.
    */
-  async viewSourceInStyleEditorByResource(stylesheetResource, line, column) {
+  async viewStyleSourceByResource(stylesheetResource, line, column) {
     if (!stylesheetResource || typeof stylesheetResource !== "object") {
       console.warn("Failed to open source, no stylesheet given");
       return false;
@@ -4685,9 +4735,20 @@ class Toolbox extends EventEmitter {
       );
 
       // This is a fallback in case of programming errors, but in a perfect
-      // world, viewSourceInStyleEditorByResource would always get a line/colum.
+      // world, viewStyleSourceByResource would always get a line/colum.
       line = 1;
       column = null;
+    }
+
+    // Instead view the stylesheet in the debugger since the pref is enabled
+    if (Services.prefs.getBoolPref(DEVTOOLS_STYLESHEETS_IN_DEBUGGER)) {
+      return viewSource.viewSourceInDebugger(
+        this,
+        stylesheetResource.href,
+        line,
+        column,
+        stylesheetResource.resourceId
+      );
     }
 
     return viewSource.viewSourceInStyleEditor(
@@ -4999,39 +5060,6 @@ class Toolbox extends EventEmitter {
         errors = 0;
       }
 
-      if (
-        resourceType === TYPES.DOCUMENT_EVENT &&
-        !resource.isFrameSwitching &&
-        // `url` is set on the targetFront when we receive dom-loading, and `title` when
-        // `dom-interactive` is received. Here we're only updating the window title in
-        // the "newer" event.
-        resource.name === "dom-interactive"
-      ) {
-        // the targetFront title and url are updated on dom-interactive, so delay refreshing
-        // the host title a bit in order for the event listener in targetCommand to be
-        // executed.
-        setTimeout(() => {
-          if (resource.targetFront.isDestroyed()) {
-            // The resource's target might have been destroyed in between and
-            // would no longer have a valid actorID available.
-            return;
-          }
-
-          this._updateFrames({
-            frameData: {
-              id: resource.targetFront.actorID,
-              url: resource.targetFront.url,
-              title: resource.targetFront.title,
-            },
-          });
-
-          if (resource.targetFront.isTopLevel) {
-            this._refreshHostTitle();
-            this._setDebugTargetData();
-          }
-        }, 0);
-      }
-
       if (resourceType == TYPES.THREAD_STATE) {
         this._onThreadStateChanged(resource);
       }
@@ -5059,6 +5087,25 @@ class Toolbox extends EventEmitter {
     }
 
     this.setErrorCount(errors);
+  }
+
+  /**
+   * Called by TargetCommand whenever the top level target navigated to a new document
+   * and its `url` and `title` are guaranteed to be updated to the new location.
+   */
+  #onTargetLocationUpdated(targetFront) {
+    this._updateFrames({
+      frameData: {
+        id: targetFront.actorID,
+        url: targetFront.url,
+        title: targetFront.title,
+      },
+    });
+
+    if (targetFront.isTopLevel) {
+      this._refreshHostTitle();
+      this._setDebugTargetData();
+    }
   }
 
   /**

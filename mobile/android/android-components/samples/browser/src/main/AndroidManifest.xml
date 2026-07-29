@@ -38,6 +38,7 @@
         android:theme="@style/Theme.AppCompat.Light.NoActionBar"
         android:name=".SampleApplication"
         android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config"
         tools:ignore="DataExtractionRules,UnusedAttribute"
         android:dataExtractionRules="@xml/data_extraction_rules">
         <activity android:name=".BrowserActivity"

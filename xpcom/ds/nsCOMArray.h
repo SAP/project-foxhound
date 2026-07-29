@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,6 +20,10 @@
 // work of this class in the XPCOM dll
 class nsCOMArray_base {
   friend class nsArrayBase;
+
+ public:
+  // don't implement this, defaults will muck with refcounts!
+  nsCOMArray_base& operator=(const nsCOMArray_base& aOther) = delete;
 
  protected:
   nsCOMArray_base() = default;
@@ -155,10 +157,6 @@ class nsCOMArray_base {
  protected:
   // the actual storage
   nsTArray<nsISupports*> mArray;
-
- private:
-  // don't implement these, defaults will muck with refcounts!
-  nsCOMArray_base& operator=(const nsCOMArray_base& aOther) = delete;
 };
 
 inline void ImplCycleCollectionUnlink(nsCOMArray_base& aField) {
@@ -209,6 +207,7 @@ class nsCOMArray : public nsCOMArray_base {
 
   // We have a move assignment operator, but no copy assignment operator.
   nsCOMArray<T>& operator=(nsCOMArray<T>&& aOther) = default;
+  nsCOMArray<T>& operator=(const nsCOMArray<T>& aOther) = delete;
 
   // these do NOT refcount on the way out, for speed
   T* ObjectAt(int32_t aIndex) const {
@@ -361,10 +360,6 @@ class nsCOMArray : public nsCOMArray_base {
     return const_reverse_iterator(begin());
   }
   const_reverse_iterator crend() const { return rend(); }
-
- private:
-  // don't implement these!
-  nsCOMArray<T>& operator=(const nsCOMArray<T>& aOther) = delete;
 };
 
 template <typename T>

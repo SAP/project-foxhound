@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -172,7 +171,9 @@ RefPtr<gfx::DrawTarget> NativeLayerMacSurfaceHandler::NextSurfaceAsDrawTarget(
     return nullptr;
   }
 
-  auto surf = MakeRefPtr<MacIOSurface>(mInProgressSurface->mSurface);
+  auto surf = MakeRefPtr<MacIOSurface>(
+      mInProgressSurface->mSurface, gfx::YUVColorSpace::Identity,
+      gfx::TransferFunction::SRGB, MacIOSurface::AllowAlpha::Yes);
   if (NS_WARN_IF(!surf->Lock(false))) {
     gfxCriticalError() << "NextSurfaceAsDrawTarget lock surface failed.";
     return nullptr;
@@ -186,7 +187,9 @@ RefPtr<gfx::DrawTarget> NativeLayerMacSurfaceHandler::NextSurfaceAsDrawTarget(
       aDisplayRect, aUpdateRegion,
       [&](CFTypeRefPtr<IOSurfaceRef> validSource,
           const gfx::IntRegion& copyRegion) {
-        RefPtr<MacIOSurface> source = new MacIOSurface(validSource);
+        RefPtr<MacIOSurface> source = new MacIOSurface(
+            validSource, gfx::YUVColorSpace::Identity,
+            gfx::TransferFunction::SRGB, MacIOSurface::AllowAlpha::Yes);
         if (source->Lock(true)) {
           RefPtr<gfx::DrawTarget> sourceDT =
               source->GetAsDrawTargetLocked(aBackendType);

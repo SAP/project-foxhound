@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<body>
+<script>
+function go() {
+  let voices = speechSynthesis.getVoices();
+  if (voices.length === 0) {
+    speechSynthesis.onvoiceschanged = go;
+    return;
+  }
+  document.documentElement.removeAttribute("class");
+}
+window.onload = go;
+</script>
+</body>
+</html>

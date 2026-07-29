@@ -74,6 +74,31 @@ class Entry:
             pos = self.val_span[0] + offset
         return self.ctx.linecol(pos)
 
+    def id_position(self):
+        """Return a 1-based (line, col) position indicating where the
+        identifier of this entity appears in the source file.
+
+        Defaults to the start of the entity span, which is correct for
+        most formats. Can be overridden when the entity span starts before
+        the identifier (e.g. in Fluent a message's span includes its leading
+        comment).
+        """
+        return self.position()
+
+    def line_offset(self):
+        """Return how many additional lines a full-entity warning should
+        cover beyond 'id_position'.
+
+        This can be used to create a line range ('lineoffset' in mozlint),
+        allowing the warning to be displayed in Phabricator even when the
+        line with the entity ID is not part of the diff.
+
+        Defaults to 0, meaning the warning applies to a single line.
+        Override for entities that can extend across several lines,
+        e.g. a multi-line Fluent message, or a message with attributes.
+        """
+        return 0
+
     def _span_start(self):
         start = self.span[0]
         if hasattr(self, "pre_comment") and self.pre_comment is not None:
@@ -339,7 +364,7 @@ class Parser:
 
         contents are in native encoding, but with normalized line endings.
         """
-        (contents, _) = codecs.getdecoder(self.encoding)(contents, "replace")
+        contents, _ = codecs.getdecoder(self.encoding)(contents, "replace")
         self.readUnicode(contents)
 
     def readUnicode(self, contents):

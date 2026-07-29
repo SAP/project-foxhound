@@ -239,7 +239,6 @@ function run_test() {
   prefs.setIntPref("network.proxy.http_port", httpserv.identity.primaryPort);
   prefs.setBoolPref("network.proxy.allow_hijacking_localhost", true);
   prefs.setIntPref("network.proxy.type", 1);
-  prefs.setBoolPref("network.http.rcwn.enabled", false);
 
   tests.shift()();
   do_test_pending();

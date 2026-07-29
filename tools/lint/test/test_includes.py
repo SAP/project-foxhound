@@ -5,6 +5,7 @@ import mozunit
 import yaml
 
 LINTER = "includes"
+fixed = 0
 
 topsrcdir = os.path.join(os.path.dirname(__file__), "..", "..", "..")
 api_yaml = os.path.join(topsrcdir, "mfbt", "api.yml")
@@ -109,6 +110,18 @@ def test_lint_c_std_includes(lint, paths):
     assert results[0].message.endswith(
         "incorrect_cstdio.h includes <cstdio> but does not reference any of its API"
     )
+
+
+def test_lint_fix_mfbt_and_std_includes(lint, create_temp_file):
+    """Test diskarzhan does not overwrite fixes written by lint_mfbt_headers"""
+    contents = '#include "mozilla/Assertions.h"\n#include <tuple>\n\nvoid foo() {}\n'
+    path = create_temp_file(contents, "incorrect_mfbt_and_std.h")
+    lint([path], fix=True)
+    assert fixed == 2
+    with open(path) as f:
+        fixed_content = f.read()
+    assert '#include "mozilla/Assertions.h"' not in fixed_content
+    assert "#include <tuple>" not in fixed_content
 
 
 if __name__ == "__main__":

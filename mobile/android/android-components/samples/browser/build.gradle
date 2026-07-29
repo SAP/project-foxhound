@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import static org.mozilla.conventions.BuildConfigKt.updateExtensionVersion
+
 plugins {
     alias(libs.plugins.dependency.analysis)
     alias(libs.plugins.kotlin.android)
@@ -28,7 +30,7 @@ android {
     buildTypes {
         release {
             minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 
@@ -45,14 +47,6 @@ android {
         }
     }
 
-    variantFilter { variant ->
-        if (variant.buildType.name == "release") {
-            // This is a sample app that we are not releasing. Save some time and do not build
-            // release versions.
-            setIgnore(true)
-        }
-    }
-
     buildFeatures {
         viewBinding = true
         compose = true
@@ -61,12 +55,20 @@ android {
     namespace = 'org.mozilla.samples.browser'
 }
 
+androidComponents {
+    beforeVariants(selector().withBuildType("release")) { variantBuilder ->
+        // This is a sample app that we are not releasing. Save some time and do not build
+        // release versions.
+        variantBuilder.enable = false
+    }
+}
+
 tasks.register("updateBorderifyExtensionVersion", Copy) { task ->
-    updateExtensionVersion(task, 'src/main/assets/extensions/borderify')
+    updateExtensionVersion(task, 'src/main/assets/extensions/borderify', rootProject.ext.config.componentsVersion)
 }
 
 tasks.register("updateTestExtensionVersion", Copy) { task ->
-    updateExtensionVersion(task, 'src/main/assets/extensions/test')
+    updateExtensionVersion(task, 'src/main/assets/extensions/test', rootProject.ext.config.componentsVersion)
 }
 
 // Make sure DAGP asset-source exploding happens after ExtensionVersion tasks
@@ -137,6 +139,8 @@ dependencies {
     implementation project(':components:support-utils')
     implementation project(':components:support-webextensions')
     implementation project(':components:ui-autocomplete')
+    implementation project(':components:ui-colors')
+    implementation project(':components:ui-icons')
     implementation project(':components:ui-tabcounter')
     implementation project(':components:ui-widgets')
 
@@ -169,7 +173,14 @@ dependencies {
     androidTestImplementation libs.androidx.test.runner
     androidTestImplementation libs.androidx.test.uiautomator
     androidTestImplementation libs.leakcanary.instrumentation
-    androidTestImplementation libs.mockwebserver
+    androidTestImplementation libs.okhttp
+    androidTestRuntimeOnly libs.okio
+    constraints {
+        // Various AndroidX dependencies pull in 1.1.1 transitively; OkHttp 5 requires 1.2.0.
+        implementation(libs.androidx.startup.runtime)
+        // okhttp is test-only; prevents older releases being resolved on the main classpath.
+        implementation(libs.okio)
+    }
 }
 
 preBuild.dependsOn updateBorderifyExtensionVersion

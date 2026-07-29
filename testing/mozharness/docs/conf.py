@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Moz Harness documentation build configuration file, created by
 # sphinx-quickstart on Mon Apr 14 17:35:24 2014.

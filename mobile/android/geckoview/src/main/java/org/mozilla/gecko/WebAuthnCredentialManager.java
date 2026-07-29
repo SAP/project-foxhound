@@ -1,5 +1,3 @@
-/* -*- Mode: Java; c-basic-offset: 2; tab-width: 2; indent-tabs-mode: nil -*- */
-/* vim: set ts=2 et sw=2 tw=100: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,6 +21,7 @@ import android.os.Bundle;
 import android.os.OutcomeReceiver;
 import android.util.Log;
 import androidx.annotation.UiThread;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -160,6 +159,7 @@ public class WebAuthnCredentialManager {
       return GeckoResult.fromException(new WebAuthnUtils.Exception("UNKNOWN_ERR"));
     }
     final GeckoResult<WebAuthnUtils.MakeCredentialResponse> result = new GeckoResult<>();
+    final AtomicBoolean completed = new AtomicBoolean();
     try {
       manager.createCredential(
           context,
@@ -169,6 +169,9 @@ public class WebAuthnCredentialManager {
           new OutcomeReceiver<CreateCredentialResponse, CreateCredentialException>() {
             @Override
             public void onResult(final CreateCredentialResponse createCredentialResponse) {
+              if (!completed.compareAndSet(false, true)) {
+                return;
+              }
               final Bundle data = createCredentialResponse.getData();
               final String responseJson = data.getString(BUNDLE_KEY_REGISTRATION_RESPONSE_JSON);
               if (responseJson == null) {
@@ -191,6 +194,9 @@ public class WebAuthnCredentialManager {
 
             @Override
             public void onError(final CreateCredentialException exception) {
+              if (!completed.compareAndSet(false, true)) {
+                return;
+              }
               final String errorType = exception.getType();
               if (DEBUG) {
                 Log.d(LOGTAG, "Couldn't create credential. errorType=" + errorType);
@@ -235,7 +241,6 @@ public class WebAuthnCredentialManager {
     final CredentialOption credentialOption =
         new CredentialOption.Builder(TYPE_PUBLIC_KEY_CREDENTIAL, requestBundle, requestBundle)
             .build();
-    final Bundle bundle = new Bundle();
     final GetCredentialRequest request =
         new GetCredentialRequest.Builder(requestBundle)
             .addCredentialOption(credentialOption)
@@ -253,6 +258,7 @@ public class WebAuthnCredentialManager {
 
     final GeckoResult<PrepareGetCredentialResponse.PendingGetCredentialHandle> result =
         new GeckoResult<>();
+    final AtomicBoolean completed = new AtomicBoolean();
     try {
       manager.prepareGetCredential(
           request,
@@ -261,6 +267,9 @@ public class WebAuthnCredentialManager {
           new OutcomeReceiver<PrepareGetCredentialResponse, GetCredentialException>() {
             @Override
             public void onResult(final PrepareGetCredentialResponse prepareGetCredentialResponse) {
+              if (!completed.compareAndSet(false, true)) {
+                return;
+              }
               final boolean hasPublicKeyCredentials =
                   prepareGetCredentialResponse.hasCredentialResults(TYPE_PUBLIC_KEY_CREDENTIAL);
               final boolean hasAuthenticationResults =
@@ -285,9 +294,16 @@ public class WebAuthnCredentialManager {
 
             @Override
             public void onError(final GetCredentialException exception) {
+              if (!completed.compareAndSet(false, true)) {
+                return;
+              }
+              final String errorType = exception.getType();
               if (DEBUG) {
-                final String errorType = exception.getType();
                 Log.d(LOGTAG, "Couldn't get credential. errorType=" + errorType);
+              }
+              if (errorType.equals(GetCredentialException.TYPE_NO_CREDENTIAL)) {
+                result.complete(null);
+                return;
               }
               result.completeExceptionally(new WebAuthnUtils.Exception("UNKNOWN_ERR"));
             }
@@ -311,6 +327,7 @@ public class WebAuthnCredentialManager {
       return GeckoResult.fromException(new WebAuthnUtils.Exception("NOT_SUPPORTED_ERR"));
     }
     final GeckoResult<WebAuthnUtils.GetAssertionResponse> result = new GeckoResult<>();
+    final AtomicBoolean completed = new AtomicBoolean();
     final Context context = GeckoAppShell.getApplicationContext();
     final CredentialManager manager =
         (CredentialManager) context.getSystemService(Context.CREDENTIAL_SERVICE);
@@ -326,6 +343,9 @@ public class WebAuthnCredentialManager {
           new OutcomeReceiver<GetCredentialResponse, GetCredentialException>() {
             @Override
             public void onResult(final GetCredentialResponse getCredentialResponse) {
+              if (!completed.compareAndSet(false, true)) {
+                return;
+              }
               final Bundle data = getCredentialResponse.getCredential().getData();
               final String responseJson = data.getString(BUNDLE_KEY_AUTHENTICATION_RESPONSE_JSON);
               if (responseJson == null) {
@@ -348,6 +368,9 @@ public class WebAuthnCredentialManager {
 
             @Override
             public void onError(final GetCredentialException exception) {
+              if (!completed.compareAndSet(false, true)) {
+                return;
+              }
               final String errorType = exception.getType();
               if (DEBUG) {
                 Log.d(LOGTAG, "Couldn't get credential. errorType=" + errorType);

@@ -10,15 +10,16 @@
 <hbox id="browserPrivacyCategory"
       class="subcategory"
       hidden="true"
-      data-category="panePrivacy">
+      data-category="panePrivacy"
+      data-srd-groupid="etpStatus">
   <html:h1 data-l10n-id="privacy-header"/>
 </hbox>
 
-<html:setting-group hidden="true" groupid="securityPrivacyStatus" data-category="panePrivacy" />
-<html:setting-group hidden="true" groupid="securityPrivacyWarnings" data-category="panePrivacy" />
+<html:setting-group hidden="true" groupid="securityPrivacyStatus" data-category="panePrivacy" data-srd-migrated="" />
+<html:setting-group hidden="true" groupid="securityPrivacyWarnings" data-category="panePrivacy" data-srd-migrated="" />
 
 <!-- Enhanced Tracking Protection Status Section -->
-<html:setting-group groupid="etpStatus" id="etpStatusCard" data-category="panePrivacy" data-subcategory="etpStatus" hidden="true"></html:setting-group>
+<html:setting-group groupid="etpStatus" id="etpStatusCard" data-category="panePrivacy" data-subcategory="etpStatus" hidden="true" data-srd-migrated=""></html:setting-group>
 
 <!-- Tracking / Content Blocking -->
 <groupbox id="trackingGroup" data-category="panePrivacy" data-srd-groupid="etpStatus" hidden="true" aria-describedby="contentBlockingDescription" class="highlighting-group">
@@ -285,7 +286,7 @@
                               preference="network.cookie.cookieBehavior">
                       <menupopup>
                         <menuitem id="blockCookiesSocialMedia" data-l10n-id="sitedata-option-block-cross-site-trackers" value="trackers"/>
-                        <menuitem id="isolateCookiesSocialMedia" data-l10n-id="sitedata-option-block-cross-site-cookies2" value="trackers-plus-isolate"/>
+                        <menuitem id="isolateCookiesSocialMedia" data-l10n-id="sitedata-option-block-cross-site-cookies2" value="isolate"/>
                         <menuitem data-l10n-id="sitedata-option-block-unvisited" value="unvisited"/>
                         <menuitem data-l10n-id="sitedata-option-block-all-cross-site-cookies" value="all-third-parties"/>
                         <menuitem data-l10n-id="sitedata-option-block-all" value="always"/>
@@ -394,35 +395,16 @@
   </vbox>
 </groupbox>
 <html:setting-group id="nonTechnicalPrivacyGroup" groupid="nonTechnicalPrivacy" data-category="panePrivacy" hidden="true" data-srd-groupid="nonTechnicalPrivacy2"/>
-<html:setting-group groupid="nonTechnicalPrivacy2" data-category="panePrivacy" hidden="true"/>
+<html:setting-group groupid="nonTechnicalPrivacy2" data-category="panePrivacy" hidden="true" data-srd-migrated=""/>
 
 <!-- Firefox VPN - IP Protection -->
-<html:setting-group groupid="ipprotection" data-category="panePrivacy" data-subcategory="vpn" hidden="true"></html:setting-group>
+<html:setting-group groupid="ipprotection" data-category="panePrivacy" data-subcategory="vpn" hidden="true" data-srd-migrated=""></html:setting-group>
 
 <html:setting-group groupid="cookiesAndSiteData" data-category="panePrivacy" hidden="true" data-srd-groupid="cookiesAndSiteData2"/>
-<html:setting-group groupid="cookiesAndSiteData2" data-category="panePrivacy" hidden="true" />
-
-<!-- Cookie Banner Handling -->
-<groupbox id="cookieBannerHandlingGroup" data-category="panePrivacy" data-subcategory="cookiebanner" hidden="true">
-  <label><html:h2 data-l10n-id="cookie-banner-blocker-header" /></label>
-  <vbox flex="1">
-    <hbox>
-      <description class="description-deemphasized">
-        <html:span id="cookieBannerReductionExplanation" data-l10n-id="cookie-banner-blocker-description" ></html:span>
-        <html:a is="moz-support-link" id="cookieBannerHandlingLearnMore" class="learnMore"  data-l10n-id="cookie-banner-learn-more" support-page="cookie-banner-reduction"/>
-      </description>
-    </hbox>
-    <hbox>
-      <checkbox id="handleCookieBanners"
-                preference="cookiebanners.service.mode.privateBrowsing"
-                data-l10n-id="cookie-banner-blocker-checkbox-label"
-                flex="1" />
-    </hbox>
-  </vbox>
-</groupbox>
+<html:setting-group groupid="cookiesAndSiteData2" data-category="panePrivacy" hidden="true" data-srd-migrated="" />
 
 <!-- Passwords -->
-<groupbox data-srd-groupid="passwords" id="passwordsGroup" orient="vertical" data-category="panePrivacy" data-subcategory="logins" hidden="true">
+<groupbox id="passwordsGroup" orient="vertical" data-category="panePrivacy" data-subcategory="logins" hidden="true" data-srd-groupid="passwords" data-srd-migrated="">
   <label><html:h2 data-l10n-id="pane-privacy-passwords-header" data-l10n-attrs="searchkeywords"/></label>
 
   <vbox id="passwordSettings">
@@ -551,137 +533,24 @@
   <label id="fips-desc" hidden="true" data-l10n-id="forms-master-pw-fips-desc"></label>
 </groupbox>
 
-<html:setting-group groupid="passwords" hidden="true" data-category="panePrivacy" />
+<html:setting-group groupid="passwords" hidden="true" data-category="panePrivacy" data-srd-migrated=""/>
 
-<html:setting-group data-category="panePrivacy" data-subcategory="payment-methods-autofill credit-card-autofill" groupid="payments" data-group="formAutofill" hidden="true" />
-<html:setting-group data-category="panePrivacy" data-subcategory="addresses-autofill address-autofill" groupid="addresses" data-group="formAutofill" hidden="true" />
+<html:setting-group data-category="panePrivacy" data-subcategory="payment-methods-autofill credit-card-autofill" groupid="payments" data-group="formAutofill" hidden="true" data-srd-migrated="" />
+<html:setting-group data-category="panePrivacy" data-subcategory="addresses-autofill address-autofill" groupid="addresses" data-group="formAutofill" hidden="true" data-srd-migrated="" />
 
 <!-- History -->
 <html:setting-group groupid="history" data-category="panePrivacy" hidden="true" data-srd-groupid="history2"/>
-<html:setting-group groupid="history2"  data-category="panePrivacy" hidden="true"/>
+<html:setting-group groupid="history2" data-category="panePrivacy" hidden="true" data-srd-migrated=""/>
 
 <!-- Permissions -->
-<html:setting-group groupid="permissions" data-category="panePrivacy" data-subcategory="permissions" hidden="true"></html:setting-group>
+<html:setting-group groupid="permissions" data-category="panePrivacy" data-subcategory="permissions" hidden="true" data-srd-migrated=""></html:setting-group>
 
 <!-- Firefox Data Collection and Use -->
-<hbox id="dataCollectionCategory"
-      class="subcategory"
-      hidden="true"
-      data-category="panePrivacy">
-  <html:h1 data-l10n-id="collection-header2" data-l10n-attrs="searchkeywords"/>
-</hbox>
+<html:setting-group groupid="dataCollection" data-category="panePrivacy" hidden="true"
+  class="subcategory" data-srd-migrated=""></html:setting-group>
+<html:setting-group groupid="privacyPanel" id="privacyPanelGroup" data-category="panePrivacy" hidden="true" data-srd-migrated=""></html:setting-group>
 
-<groupbox id="dataCollectionGroup" data-category="panePrivacy" hidden="true">
-  <label class="search-header" hidden="true"><html:h2 data-l10n-id="collection-header2" data-l10n-attrs="searchkeywords"/></label>
-
-  <description class="description-deemphasized">
-    <html:span data-l10n-id="preferences-collection-description"/>
-    <html:a id="dataCollectionPrivacyNotice"
-            class="learnMore"
-            target="_blank"
-            data-l10n-id="preferences-collection-privacy-notice"/>
-  </description>
-  <description class="description-deemphasized"
-               id="preferences-privacy-profiles"
-               hidden="true">
-    <html:span data-l10n-id="preferences-across-profiles"/>
-    <html:a id="dataCollectionViewProfiles"
-            target="_blank"
-            data-l10n-id="preferences-view-profiles"/>
-  </description>
-#ifdef MOZ_DATA_REPORTING
-  <hbox id="telemetry-container" class="info-box-container smaller-font-size" hidden="true">
-    <hbox class="info-icon-container">
-      <html:img class="info-icon"></html:img>
-    </hbox>
-    <description>
-      <html:span id="telemetryDisabledDescription"
-                 data-l10n-id="collection-health-report-telemetry-disabled"/>
-      <html:a is="moz-support-link"
-              support-page="telemetry-clientid"
-              class="learnMore"
-              data-l10n-id="collection-health-report-telemetry-disabled-link"/>
-    </description>
-  </hbox>
-
-  <vbox data-subcategory="reports">
-    <checkbox id="submitHealthReportBox"
-              data-l10n-id="collection-health-report2"/>
-    <description class="indent tip-caption">
-#ifdef MOZ_TELEMETRY_REPORTING
-      <html:span data-l10n-id="collection-health-report-description"/>
-#else # !MOZ_TELEMETRY_REPORTING
-      <html:span data-l10n-id="collection-health-report-disabled2"/>
-#endif # MOZ_TELEMETRY_REPORTING
-      <html:a id="FHRLearnMore"
-              is="moz-support-link"
-              support-page="technical-and-interaction-data"
-              class="learnMore"
-              data-l10n-id="collection-health-report-link"/>
-    </description>
-
-    <vbox class="indent">
-      <checkbox id="addonRecommendationEnabled"
-                data-l10n-id="addon-recommendations2"/>
-      <description class="indent tip-caption">
-        <html:span data-l10n-id="addon-recommendations-description"/>
-        <html:a is="moz-support-link"
-                id="addonRecommendationLearnMore"
-                class="learnMore"
-                support-page="personalized-addons"/>
-      </description>
-
-#ifdef MOZ_NORMANDY
-      <checkbox id="optOutStudiesEnabled"
-                data-l10n-id="collection-studies2"/>
-      <description class="indent tip-caption">
-        <html:span data-l10n-id="collection-studies-description"/>
-        <html:a id="viewShieldStudies"
-                href="about:studies"
-                class="learnMore"
-                target="_blank"
-                data-l10n-id="collection-studies-link"/>
-      </description>
-#endif # MOZ_NORMANDY
-    </vbox>
-#ifdef MOZ_NORMANDY
-    <checkbox id="enableNimbusRollouts"
-              data-l10n-id="nimbus-rollouts-enabled"
-              preference="nimbus.rollouts.enabled"/>
-    <description class="indent tip-caption">
-      <html:span data-l10n-id="nimbus-rollouts-enabled-description" />
-      <html:a is="moz-support-link"
-              id="enableRolloutsLearnMore"
-              class="learnMore"
-              support-page="remote-improvements" />
-    </description>
-#endif # MOZ_NORMANDY
-
-    <checkbox id="submitUsagePingBox"
-              data-l10n-id="collection-usage-ping"
-              preference="datareporting.usage.uploadEnabled"/>
-    <description class="indent tip-caption">
-      <html:span data-l10n-id="collection-usage-ping-description"/>
-      <html:a id="submitUsagePingLearnMore"
-              is="moz-support-link"
-              class="learnMore"
-              support-page="usage-ping-settings"/>
-    </description>
-
-#ifdef MOZ_CRASHREPORTER
-    <checkbox id="automaticallySubmitCrashesBox"
-              data-l10n-id="collection-backlogged-crash-reports2"
-              preference="browser.crashReports.unsubmittedCheck.autoSubmit2"/>
-    <description class="indent tip-caption">
-      <html:span data-l10n-id="collection-backlogged-crash-reports-description"/>
-      <html:a is="moz-support-link"
-              class="learnMore"
-              support-page="crash-reports"
-              id="crashReporterLearnMore"/>
-    </description>
-#endif # MOZ_CRASHREPORTER
-  </vbox>
-#endif MOZ_DATA_REPORTING
+<groupbox data-category="panePrivacy" hidden="true" data-srd-groupid="dataCollection">
   <vbox id="privacySegmentationSection" data-subcategory="privacy-segmentation" hidden="true">
     <label>
       <html:h2 data-l10n-id="privacy-segmentation-section-header"/>
@@ -689,11 +558,11 @@
     <label data-l10n-id="privacy-segmentation-section-description"/>
     <radiogroup id="privacyDataFeatureRecommendationRadioGroup" preference="browser.dataFeatureRecommendations.enabled">
         <radio id="privacyDataFeatureRecommendationEnabled"
-               data-l10n-id="privacy-segmentation-radio-off"
-               value="true"/>
+                data-l10n-id="privacy-segmentation-radio-off"
+                value="true"/>
         <radio id="privacyDataFeatureRecommendationDisabled"
-               data-l10n-id="privacy-segmentation-radio-on"
-               value="false"/>
+                data-l10n-id="privacy-segmentation-radio-on"
+                value="false"/>
     </radiogroup>
   </vbox>
 </groupbox>
@@ -701,21 +570,22 @@
 <hbox id="securityCategory"
       class="subcategory"
       hidden="true"
-      data-category="panePrivacy">
+      data-category="panePrivacy"
+      data-srd-groupid="etpStatus">
   <html:h1 data-l10n-id="security-header"/>
 </hbox>
 
 <!-- addons, forgery (phishing) UI Security -->
-<html:setting-group groupid="browsingProtection" data-category="panePrivacy" hidden="true"></html:setting-group>
+<html:setting-group groupid="browsingProtection" data-category="panePrivacy" hidden="true" data-srd-migrated=""></html:setting-group>
 
 <!-- Certificates -->
-<html:setting-group groupid="certificates" data-category="panePrivacy" hidden="true"></html:setting-group>
+<html:setting-group groupid="certificates" data-category="panePrivacy" hidden="true" data-srd-migrated=""></html:setting-group>
 
 <!-- HTTPS-ONLY Mode -->
-<html:setting-group groupid="httpsOnly" data-category="panePrivacy" hidden="true"/>
+<html:setting-group groupid="httpsOnly" data-category="panePrivacy" hidden="true" data-srd-migrated=""/>
 
 <!-- DoH -->
-<html:setting-group hidden="true" data-category="panePrivacy" groupid="dnsOverHttps" />
+<html:setting-group hidden="true" data-category="panePrivacy" groupid="dnsOverHttps" data-srd-migrated="" />
 
 <hbox id="DoHCategory"
       class="subcategory"

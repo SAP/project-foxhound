@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -13,10 +11,12 @@ UNIFIED_SOURCES += [
     "../FFmpegEncoderModule.cpp",
     "../FFmpegVideoDecoder.cpp",
     "../FFmpegVideoEncoder.cpp",
+    "../FFmpegVulkanVideoDecoder.cpp",
 ]
 LOCAL_INCLUDES += [
     "..",
     "/media/mozva",
+    "/third_party/khronos/vulkan-headers/include",
     "include",
 ]
 
@@ -32,7 +32,7 @@ if CONFIG["CC_TYPE"] == "gcc":
     ]
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
     CXXFLAGS += CONFIG["MOZ_GTK3_CFLAGS"]
-if CONFIG["MOZ_ENABLE_VAAPI"] or CONFIG["MOZ_ENABLE_V4L2"]:
+if CONFIG["MOZ_ENABLE_VAAPI"] or CONFIG["MOZ_ENABLE_V4L2"] or CONFIG["MOZ_ENABLE_VULKAN_VIDEO"]:
     UNIFIED_SOURCES += ["../FFmpegVideoFramePool.cpp"]
     CXXFLAGS += CONFIG['MOZ_DRM_CFLAGS']
     if not CONFIG['MOZ_SYSTEM_LIBDRM']:

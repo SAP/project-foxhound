@@ -2,27 +2,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use crate::Parameters;
 use crate::command::{WebDriverCommand, WebDriverMessage};
 use crate::error::{ErrorStatus, WebDriverError, WebDriverResult};
 use crate::httpapi::{
-    standard_routes, Route, VoidWebDriverExtensionRoute, WebDriverExtensionRoute,
+    Route, VoidWebDriverExtensionRoute, WebDriverExtensionRoute, standard_routes,
 };
 use crate::response::{CloseWindowResponse, WebDriverResponse};
-use crate::Parameters;
 use bytes::Bytes;
 use http::{Method, StatusCode};
 use std::marker::PhantomData;
 use std::net::{SocketAddr, TcpListener as StdTcpListener};
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use bytes::Buf;
 use tokio::net::TcpListener;
-use tokio_stream::wrappers::TcpListenerStream;
 use url::{Host, Url};
-use warp::{Buf, Filter, Rejection};
+use warp::{Filter, Rejection};
 
-// Silence warning about Quit being unused for now.
-#[allow(dead_code)]
 enum DispatchMessage<U: WebDriverExtensionRoute> {
     HandleWebDriver(
         WebDriverMessage<U>,
@@ -112,7 +110,11 @@ impl<T: WebDriverHandler<U>, U: WebDriverExtensionRoute> Dispatcher<T, U> {
                         error!("Sending response to the main thread failed");
                     };
                 }
-                Ok(DispatchMessage::Quit) => break,
+                Ok(DispatchMessage::Quit) => {
+                    debug!("Quit signal received, tearing down session");
+                    self.teardown_session(SessionTeardownKind::NotDeleted);
+                    break;
+                }
                 Err(e) => panic!("Error receiving message in handler: {:?}", e),
             }
         }
@@ -192,13 +194,73 @@ impl<T: WebDriverHandler<U>, U: WebDriverExtensionRoute> Dispatcher<T, U> {
 }
 
 pub struct Listener {
-    guard: Option<thread::JoinHandle<()>>,
+    server: Option<thread::JoinHandle<()>>,
+    dispatcher: Option<thread::JoinHandle<()>>,
     pub socket: SocketAddr,
 }
 
 impl Drop for Listener {
     fn drop(&mut self) {
-        let _ = self.guard.take().map(|j| j.join());
+        let _ = self.server.take().map(|j| j.join());
+        let _ = self.dispatcher.take().map(|j| j.join());
+    }
+}
+
+#[cfg(unix)]
+struct ShutdownSignal {
+    sigint: Option<tokio::signal::unix::Signal>,
+    sigterm: Option<tokio::signal::unix::Signal>,
+}
+
+#[cfg(unix)]
+impl ShutdownSignal {
+    fn new() -> Self {
+        use tokio::signal::unix::{SignalKind, signal};
+        ShutdownSignal {
+            sigint: signal(SignalKind::interrupt())
+                .map_err(|_| warn!("Failed to register SIGINT handler"))
+                .ok(),
+            sigterm: signal(SignalKind::terminate())
+                .map_err(|_| warn!("Failed to register SIGTERM handler"))
+                .ok(),
+        }
+    }
+
+    async fn recv(&mut self) {
+        tokio::select! {
+            _ = async { self.sigint.as_mut().unwrap().recv().await }, if self.sigint.is_some() => {},
+            _ = async { self.sigterm.as_mut().unwrap().recv().await }, if self.sigterm.is_some() => {},
+            _ = std::future::pending::<()>(), if self.sigint.is_none() && self.sigterm.is_none() => {},
+        }
+    }
+}
+
+#[cfg(windows)]
+struct ShutdownSignal {
+    ctrl_c: Option<tokio::signal::windows::CtrlC>,
+    ctrl_break: Option<tokio::signal::windows::CtrlBreak>,
+}
+
+#[cfg(windows)]
+impl ShutdownSignal {
+    fn new() -> Self {
+        use tokio::signal::windows;
+        ShutdownSignal {
+            ctrl_c: windows::ctrl_c()
+                .map_err(|_| warn!("Failed to register ctrl_c handler"))
+                .ok(),
+            ctrl_break: windows::ctrl_break()
+                .map_err(|_| warn!("Failed to register ctrl_break handler"))
+                .ok(),
+        }
+    }
+
+    async fn recv(&mut self) {
+        tokio::select! {
+            _ = async { self.ctrl_c.as_mut().unwrap().recv().await }, if self.ctrl_c.is_some() => {},
+            _ = async { self.ctrl_break.as_mut().unwrap().recv().await }, if self.ctrl_break.is_some() => {},
+            _ = std::future::pending::<()>(), if self.ctrl_c.is_none() && self.ctrl_break.is_none() => {},
+        }
     }
 }
 
@@ -222,9 +284,11 @@ where
         address.set_port(addr.port())
     }
     let (msg_send, msg_recv) = channel();
+    let (dispatcher_done_send, dispatcher_done_recv) = tokio::sync::oneshot::channel();
 
     let builder = thread::Builder::new().name("webdriver server".to_string());
-    let handle = builder.spawn(move || {
+    let msg_send_signal = msg_send.clone();
+    let server_handle = builder.spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_io()
             .build()
@@ -237,18 +301,35 @@ where
             &extension_routes,
             msg_send.clone(),
         );
-        let fut = warp::serve(wroutes).run_incoming(TcpListenerStream::new(listener));
-        rt.block_on(fut);
+        let fut = warp::serve(wroutes).incoming(listener).run();
+        rt.block_on(async move {
+            let mut shutdown_signal = ShutdownSignal::new();
+            tokio::select! {
+                _ = fut => {}
+                _ =  shutdown_signal.recv() => {
+                    info!("Shutting down");
+                    let _ = msg_send_signal.send(DispatchMessage::Quit);
+                    tokio::select! {
+                        _ = dispatcher_done_recv => {},
+                        _ = shutdown_signal.recv() => {
+                            std::process::exit(130);
+                        }
+                    }
+                }
+            }
+        });
     })?;
 
     let builder = thread::Builder::new().name("webdriver dispatcher".to_string());
-    builder.spawn(move || {
+    let dispatcher_handle = builder.spawn(move || {
         let mut dispatcher = Dispatcher::new(handler);
         dispatcher.run(&msg_recv);
+        let _ = dispatcher_done_send.send(());
     })?;
 
     Ok(Listener {
-        guard: Some(handle),
+        server: Some(server_handle),
+        dispatcher: Some(dispatcher_handle),
         socket: addr,
     })
 }
@@ -259,7 +340,7 @@ fn build_warp_routes<U: 'static + WebDriverExtensionRoute + Send + Sync>(
     allow_origins: Vec<Url>,
     ext_routes: &[(Method, &'static str, U)],
     chan: Sender<DispatchMessage<U>>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone + 'static {
     let chan = Arc::new(Mutex::new(chan));
     let mut std_routes = standard_routes::<U>();
 

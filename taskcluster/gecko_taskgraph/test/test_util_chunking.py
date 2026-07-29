@@ -5,6 +5,7 @@
 
 import re
 from itertools import combinations
+from unittest.mock import patch
 
 import pytest
 from mozunit import main
@@ -51,10 +52,10 @@ def mock_manifest_runtimes_file():
             "test-linux2404-64-shippable/opt-reftest",
             "test-linux2404-64-shippable/opt-xpcshell",
             "test-linux2404-64-shippable/opt-web-platform-tests",
-            "test-windows11-64-24h2-shippable/opt-crashtest",
-            "test-windows11-64-24h2-shippable/opt-reftest",
-            "test-windows11-64-24h2-shippable/opt-xpcshell",
-            "test-windows11-64-24h2-shippable/opt-web-platform-tests",
+            "test-windows11-64-25h2-shippable/opt-crashtest",
+            "test-windows11-64-25h2-shippable/opt-reftest",
+            "test-windows11-64-25h2-shippable/opt-xpcshell",
+            "test-windows11-64-25h2-shippable/opt-web-platform-tests",
             "test-android-em-14-x86_64-shippable/opt-geckoview-crashtest",
             "test-android-em-14-x86_64-shippable/opt-geckoview-reftest",
             "test-android-em-14-x86_64-shippable/opt-geckoview-xpcshell",
@@ -80,11 +81,10 @@ def mock_manifest_runtimes_file():
         },
     }
 
-    # Inject mock data directly into the memoize cache
-    chunking._load_manifest_runtimes_data[()] = mock_data
-    yield
-    # Clean up
-    chunking._load_manifest_runtimes_data.clear()
+    with patch.object(chunking, "_load_manifest_runtimes_data", return_value=mock_data):
+        chunking.get_runtimes.cache_clear()
+        yield
+    chunking.get_runtimes.cache_clear()
 
 
 @pytest.fixture(scope="module")
@@ -286,10 +286,10 @@ def test_guess_mozinfo_from_task(params, exception, mock_task_definition):
         ("linux2404-64-shippable/opt", "reftest"),
         ("linux2404-64-shippable/opt", "web-platform-tests"),
         ("linux2404-64-shippable/opt", "xpcshell"),
-        ("windows11-64-24h2-shippable/opt", "crashtest"),
-        ("windows11-64-24h2-shippable/opt", "reftest"),
-        ("windows11-64-24h2-shippable/opt", "web-platform-tests"),
-        ("windows11-64-24h2-shippable/opt", "xpcshell"),
+        ("windows11-64-25h2-shippable/opt", "crashtest"),
+        ("windows11-64-25h2-shippable/opt", "reftest"),
+        ("windows11-64-25h2-shippable/opt", "web-platform-tests"),
+        ("windows11-64-25h2-shippable/opt", "xpcshell"),
         ("android-em-14-x86_64-shippable/opt", "crashtest"),
         ("android-em-14-x86_64-shippable/opt", "reftest"),
         ("android-em-14-x86_64-shippable/opt", "web-platform-tests"),
@@ -299,7 +299,7 @@ def test_guess_mozinfo_from_task(params, exception, mock_task_definition):
 def test_get_runtimes(platform, suite, mock_manifest_runtimes_file):
     """Tests that runtime information is returned for known good configurations."""
     # Clear get_runtimes cache so each parametrized test gets fresh results
-    chunking.get_runtimes.clear()
+    chunking.get_runtimes.cache_clear()
 
     result = chunking.get_runtimes(platform, suite)
     assert isinstance(result, dict)

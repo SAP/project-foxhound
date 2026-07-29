@@ -1,6 +1,3 @@
-/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=4:tabstop=4:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -80,6 +77,15 @@ static inline void wl_data_offer_set_actions(
 }
 #else
 typedef struct wl_data_offer_listener moz_wl_data_offer_listener;
+#endif
+
+#ifndef WL_DATA_OFFER_FINISH
+#  define WL_DATA_OFFER_FINISH 3
+static inline void wl_data_offer_finish(struct wl_data_offer* wl_data_offer) {
+  wl_proxy_marshal_flags(
+      (struct wl_proxy*)wl_data_offer, WL_DATA_OFFER_FINISH, NULL,
+      wl_proxy_get_version((struct wl_proxy*)wl_data_offer), 0);
+}
 #endif
 
 #ifndef WL_SUBCOMPOSITOR_GET_SUBSURFACE
@@ -592,6 +598,128 @@ struct moz_wl_pointer_listener {
 
 #ifndef WL_POINTER_AXIS_VALUE120_SINCE_VERSION
 #  define WL_POINTER_AXIS_VALUE120_SINCE_VERSION 8
+#endif
+
+#ifndef WL_FIXES_DESTROY_SINCE_VERSION
+#  define WL_FIXES_DESTROY_SINCE_VERSION 1
+
+#  define WL_FIXES_DESTROY 0
+#  define WL_FIXES_DESTROY_REGISTRY 1
+#  define WL_FIXES_DESTROY_SINCE_VERSION 1
+#  define WL_FIXES_DESTROY_REGISTRY_SINCE_VERSION 1
+
+static inline void wl_fixes_set_user_data(struct wl_fixes* wl_fixes,
+                                          void* user_data) {
+  wl_proxy_set_user_data((struct wl_proxy*)wl_fixes, user_data);
+}
+
+static inline void* wl_fixes_get_user_data(struct wl_fixes* wl_fixes) {
+  return wl_proxy_get_user_data((struct wl_proxy*)wl_fixes);
+}
+
+static inline uint32_t wl_fixes_get_version(struct wl_fixes* wl_fixes) {
+  return wl_proxy_get_version((struct wl_proxy*)wl_fixes);
+}
+
+static inline void wl_fixes_destroy(struct wl_fixes* wl_fixes) {
+  wl_proxy_marshal_flags((struct wl_proxy*)wl_fixes, WL_FIXES_DESTROY, NULL,
+                         wl_proxy_get_version((struct wl_proxy*)wl_fixes),
+                         WL_MARSHAL_FLAG_DESTROY);
+}
+
+/**
+ * @ingroup iface_wl_fixes
+ *
+ * This request destroys a wl_registry object.
+ *
+ * The client should no longer use the wl_registry after making this
+ * request.
+ *
+ * The compositor will emit a wl_display.delete_id event with the object ID
+ * of the registry and will no longer emit any events on the registry. The
+ * client should re-use the object ID once it receives the
+ * wl_display.delete_id event.
+ */
+static inline void wl_fixes_destroy_registry(struct wl_fixes* wl_fixes,
+                                             struct wl_registry* registry) {
+  wl_proxy_marshal_flags((struct wl_proxy*)wl_fixes, WL_FIXES_DESTROY_REGISTRY,
+                         NULL, wl_proxy_get_version((struct wl_proxy*)wl_fixes),
+                         0, registry);
+}
+#endif
+
+#ifndef WL_FIXES_ERROR_ENUM
+#  define WL_FIXES_ERROR_ENUM
+/**
+ * @ingroup iface_wl_fixes
+ * wl_fixes error values
+ *
+ * These errors can be emitted in response to wl_fixes requests.
+ */
+enum wl_fixes_error {
+  /**
+   * unknown global or the global is not removed
+   */
+  WL_FIXES_ERROR_INVALID_ACK_REMOVE = 0,
+};
+#endif /* WL_FIXES_ERROR_ENUM */
+
+#ifndef WL_FIXES_ACK_GLOBAL_REMOVE_SINCE_VERSION
+#  define WL_FIXES_ACK_GLOBAL_REMOVE_SINCE_VERSION 2
+
+#  define WL_FIXES_ACK_GLOBAL_REMOVE 2
+
+/**
+ * @ingroup iface_wl_fixes
+ *
+ * Acknowledge the removal of the specified global.
+ *
+ * If no global with the specified name exists or the global is not removed,
+ * the wl_fixes.invalid_ack_remove protocol error will be posted.
+ *
+ * Due to the Wayland protocol being asynchronous, the wl_global objects
+ * cannot be destroyed immediately. For example, if a wl_global is removed
+ * and a client attempts to bind that global around same time, it can
+ * result in a protocol error due to an unknown global name in the bind
+ * request.
+ *
+ * In order to avoid crashing clients, the compositor should remove the
+ * wl_global once it is guaranteed that no more bind requests will come.
+ *
+ * The wl_fixes.ack_global_remove() request is used to signal to the
+ * compositor that the client will not bind the given global anymore. After
+ * all clients acknowledge the removal of the global, the compositor can
+ * safely destroy it.
+ *
+ * The client must call the wl_fixes.ack_global_remove() request in
+ * response to a wl_registry.global_remove() event even if it did not bind
+ * the corresponding global.
+ */
+static inline void wl_fixes_ack_global_remove(struct wl_fixes* wl_fixes,
+                                              struct wl_registry* registry,
+                                              uint32_t name) {
+  wl_proxy_marshal_flags((struct wl_proxy*)wl_fixes, WL_FIXES_ACK_GLOBAL_REMOVE,
+                         NULL, wl_proxy_get_version((struct wl_proxy*)wl_fixes),
+                         0, registry, name);
+}
+#endif
+
+#ifndef WL_OUTPUT_RELEASE_SINCE_VERSION
+#  define WL_OUTPUT_RELEASE_SINCE_VERSION 3
+
+#  define WL_OUTPUT_RELEASE 0
+
+/**
+ * @ingroup iface_wl_output
+ *
+ * Using this request a client can tell the server that it is not going to
+ * use the output object anymore.
+ */
+static inline void wl_output_release(struct wl_output* wl_output) {
+  wl_proxy_marshal_flags((struct wl_proxy*)wl_output, WL_OUTPUT_RELEASE, NULL,
+                         wl_proxy_get_version((struct wl_proxy*)wl_output),
+                         WL_MARSHAL_FLAG_DESTROY);
+}
 #endif
 
 #ifdef __cplusplus

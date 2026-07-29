@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -316,7 +314,7 @@ nsresult StoragePrincipalHelper::GetPrincipal(nsIChannel* aChannel,
     case eForeignPartitionedPrincipal:
       // We only support foreign partitioned principal when dFPI is enabled.
       if (cjs->GetCookieBehavior() ==
-              nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN &&
+              nsICookieService::BEHAVIOR_PARTITION_FOREIGN &&
           AntiTrackingUtils::IsThirdPartyChannel(aChannel)) {
         outPrincipal = partitionedPrincipal;
       }
@@ -355,7 +353,7 @@ nsresult StoragePrincipalHelper::GetPrincipal(nsPIDOMWindowInner* aWindow,
     case eForeignPartitionedPrincipal:
       // We only support foreign partitioned principal when dFPI is enabled.
       if (doc->CookieJarSettings()->GetCookieBehavior() ==
-              nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN &&
+              nsICookieService::BEHAVIOR_PARTITION_FOREIGN &&
           AntiTrackingUtils::IsThirdPartyWindow(aWindow, nullptr)) {
         outPrincipal = doc->PartitionedPrincipal();
       } else {
@@ -407,7 +405,7 @@ bool StoragePrincipalHelper::ShouldUsePartitionPrincipalForServiceWorker(
 
   // We only support partitioned service workers when dFPI is enabled.
   if (cookieJarSettings->GetCookieBehavior() !=
-      nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN) {
+      nsICookieService::BEHAVIOR_PARTITION_FOREIGN) {
     return false;
   }
 
@@ -435,7 +433,7 @@ bool StoragePrincipalHelper::ShouldUsePartitionPrincipalForServiceWorker(
 
   // We only support partitioned service workers when dFPI is enabled.
   if (cookieJarSettings->GetCookieBehavior() !=
-      nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN) {
+      nsICookieService::BEHAVIOR_PARTITION_FOREIGN) {
     return false;
   }
 
@@ -484,7 +482,7 @@ bool StoragePrincipalHelper::GetOriginAttributes(
       // We only support foreign partitioned principal when dFPI is enabled.
       // Otherwise, we will use the regular principal.
       if (cjs->GetCookieBehavior() ==
-              nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN &&
+              nsICookieService::BEHAVIOR_PARTITION_FOREIGN &&
           AntiTrackingUtils::IsThirdPartyChannel(aChannel)) {
         ChooseOriginAttributes(aChannel, aAttributes, true);
       }

@@ -123,6 +123,7 @@ export class PopupAndRedirectBlocker {
             browsingContext: currentBC,
             innerWindowId: currentWG.innerWindowId,
             popupWindowURISpec: popup.popupWindowURISpec,
+            reportIndex: popup.reportIndex,
           });
         }
       }
@@ -160,14 +161,14 @@ export class PopupAndRedirectBlocker {
     };
   }
 
-  unblockPopup(aBrowsingContext, aInnerWindowId, aPopupIndex) {
+  unblockPopup(aBrowsingContext, aInnerWindowId, aReportIndex) {
     const sourceWG = aBrowsingContext.currentWindowGlobal;
     if (sourceWG?.innerWindowId != aInnerWindowId) {
       return;
     }
 
     const actor = sourceWG.getActor("PopupAndRedirectBlocking");
-    actor.sendAsyncMessage("UnblockPopup", { index: aPopupIndex });
+    actor.sendAsyncMessage("UnblockPopup", { reportIndex: aReportIndex });
   }
 
   unblockRedirect(aBrowsingContext, aInnerWindowId, aRedirectURISpec) {
@@ -184,9 +185,13 @@ export class PopupAndRedirectBlocker {
 
   async unblockAllPopups() {
     const popups = await this.getBlockedPopups();
-    for (let idx = 0; idx < popups.length; ++idx) {
-      const popup = popups[idx];
-      this.unblockPopup(popup.browsingContext, popup.innerWindowId, idx);
+    for (let i = 0; i < popups.length; ++i) {
+      const popup = popups[i];
+      this.unblockPopup(
+        popup.browsingContext,
+        popup.innerWindowId,
+        popup.reportIndex
+      );
     }
   }
 

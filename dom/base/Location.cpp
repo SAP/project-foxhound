@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -34,7 +32,6 @@
 #include "nsIScriptContext.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIURIMutator.h"
-#include "nsIURL.h"
 #include "nsIWebNavigation.h"
 #include "nsJSUtils.h"
 #include "nsNetUtil.h"
@@ -86,7 +83,8 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(Location)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(Location, mInnerWindow)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(Location, mInnerWindow,
+                                      mRelevantDocNullAncestorOriginsList)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(Location)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(Location)
@@ -191,6 +189,12 @@ void Location::SetHash(const nsACString& aHash, nsIPrincipal& aSubjectPrincipal,
     return;
   }
 
+  nsAutoCString currentHash;
+  aRv = uri->GetRef(currentHash);
+  if (NS_WARN_IF(aRv.Failed())) {
+    return;
+  }
+
   if (aHash.IsEmpty() || aHash.First() != '#') {
     aRv = NS_MutateURI(uri).SetRef("#"_ns + aHash).Finalize(uri);
   } else {
@@ -204,6 +208,16 @@ void Location::SetHash(const nsACString& aHash, nsIPrincipal& aSubjectPrincipal,
   // TODO(samuel) why?
   ReportTaintSink(aHash, "location.hash");
 
+  // If the new hash is the same as the current hash, then return without
+  // navigating to the anchor again. This bailout is necessary for
+  // compatibility with deployed content, which redundantly sets
+  // location.hash on scroll. https://github.com/whatwg/html/issues/7386
+  nsAutoCString newHash;
+  aRv = uri->GetRef(newHash);
+  if (NS_WARN_IF(aRv.Failed()) || newHash == currentHash) {
+    return;
+  }
+
   Navigate(uri, aSubjectPrincipal, aRv);
 }
 
@@ -213,7 +227,11 @@ RefPtr<DOMStringList> Location::GetAncestorOrigins(
   Document* doc = mInnerWindow->GetExtantDoc();
   // Step 1. If this's relevant Document is null, then return an empty list.
   if (!doc || !doc->IsActive()) {
-    return MakeRefPtr<DOMStringList>();
+    if (!mRelevantDocNullAncestorOriginsList) {
+      mRelevantDocNullAncestorOriginsList =
+          MakeRefPtr<DOMStringList>(mInnerWindow);
+    }
+    return mRelevantDocNullAncestorOriginsList;
   }
 
   // Step 2. If this's relevant Document's origin is not same origin-domain with
@@ -557,23 +575,22 @@ void Location::GetSearch(nsACString& aSearch, nsIPrincipal& aSubjectPrincipal,
   aSearch.SetLength(0);
 
   nsCOMPtr<nsIURI> uri;
-  nsresult result = NS_OK;
+  aRv = GetURI(getter_AddRefs(uri));
+  if (NS_WARN_IF(aRv.Failed()) || !uri) {
+    return;
+  }
 
-  result = GetURI(getter_AddRefs(uri));
+  nsAutoCString search;
+  aRv = uri->GetQuery(search);
+  if (NS_WARN_IF(aRv.Failed())) {
+    return;
+  }
 
-  nsCOMPtr<nsIURL> url(do_QueryInterface(uri));
-
-  if (url) {
-    nsAutoCString search;
-
-    result = url->GetQuery(search);
-
-    if (NS_SUCCEEDED(result) && !search.IsEmpty()) {
-      aSearch.SetCapacity(search.Length() + 1);
-      aSearch.Assign('?');
-      aSearch.Append(search);
-      MarkTaintSource(aSearch, "location.search");
-    }
+  if (!search.IsEmpty()) {
+    aSearch.SetCapacity(search.Length() + 1);
+    aSearch.Assign('?');
+    aSearch.Append(search);
+    MarkTaintSource(aSearch, "location.search");
   }
 }
 
@@ -586,8 +603,7 @@ void Location::SetSearch(const nsACString& aSearch,
 
   nsCOMPtr<nsIURI> uri;
   aRv = GetURI(getter_AddRefs(uri));
-  nsCOMPtr<nsIURL> url(do_QueryInterface(uri));
-  if (NS_WARN_IF(aRv.Failed()) || !url) {
+  if (NS_WARN_IF(aRv.Failed())) {
     return;
   }
 

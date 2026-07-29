@@ -202,8 +202,12 @@ add_task(async function () {
         {
           name: "position-try",
           value: "left, --custom-right,--custom-bottom",
-          highlighted: true,
         },
+      ],
+      highlighted: [
+        "position-try: left, --custom-right,--custom-bottom;",
+        // longhand property
+        "position-try-fallbacks: left, --custom-right, --custom-bottom;",
       ],
     },
     {
@@ -220,6 +224,7 @@ add_task(async function () {
         { name: "color", value: "tomato", inactiveCSS: true },
         { name: "--m", value: "10px", inactiveCSS: true },
       ],
+      highlighted: ["--custom-right"],
     },
   ]);
 

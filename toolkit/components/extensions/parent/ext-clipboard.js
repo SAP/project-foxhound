@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -67,7 +65,7 @@ this.clipboard = class extends ExtensionAPI {
           // a cached copy of nsITransferable if available, e.g. when the copy
           // was initiated by the same browser instance. To make sure that a
           // nsIInputStream is returned instead of the cached imgIContainer,
-          // the image is exported as as `kNativeImageMime`. Data associated
+          // the image is exported as `kNativeImageMime`. Data associated
           // with this type is converted to a platform-specific image format
           // when written to the clipboard. The type is not used when images
           // are read from the clipboard (on all platforms, not just macOS).

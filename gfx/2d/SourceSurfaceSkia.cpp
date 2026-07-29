@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -141,10 +139,11 @@ bool SourceSurfaceSkia::InitFromImage(const sk_sp<SkImage>& aImage,
     if (info.bytesPerPixel() != BytesPerPixel(mFormat)) {
       return false;
     }
-    mStride = GetAlignedStride<4>(info.width(), info.bytesPerPixel());
-    if (mStride <= 0 || size_t(mStride) < info.minRowBytes64()) {
+    auto stride = GetAlignedStride<4>(info.width(), info.bytesPerPixel());
+    if (stride.isNothing() || size_t(stride.value()) < info.minRowBytes64()) {
       return false;
     }
+    mStride = stride.value();
   } else {
     return false;
   }
@@ -164,11 +163,12 @@ already_AddRefed<SourceSurface> SourceSurfaceSkia::ExtractSubrect(
     return nullptr;
   }
   SkImageInfo info = MakeSkiaImageInfo(aRect.Size(), mFormat);
-  size_t stride = GetAlignedStride<4>(info.width(), info.bytesPerPixel());
-  if (!stride) {
+  auto stride = GetAlignedStride<4>(info.width(), info.bytesPerPixel());
+  if (stride.isNothing()) {
     return nullptr;
   }
-  sk_sp<SkImage> subImage = ReadSkImage(mImage, info, stride, aRect.x, aRect.y);
+  sk_sp<SkImage> subImage =
+      ReadSkImage(mImage, info, stride.value(), aRect.x, aRect.y);
   if (!subImage) {
     return nullptr;
   }

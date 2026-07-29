@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,8 +7,6 @@
 
 #include "InputUtils.h"
 #include "gtest/gtest.h"
-
-#include <cmath>
 
 class APZCAxisLockCompatTester : public APZCTreeManagerTester,
                                  public testing::WithParamInterface<int> {
@@ -684,6 +680,51 @@ TEST_P(APZCAxisLockCompatTester, TestPanGestureStart) {
 
   EXPECT_EQ(currentOffset.x, 0);
   EXPECT_EQ(currentOffset.y, 10);
+}
+
+TEST_P(APZCAxisLockCompatTester, LockUnscrollableAxis) {
+  const char* treeShape = "x";
+  LayerIntRect layerVisibleRect[] = {
+      LayerIntRect(0, 0, 100, 100),
+  };
+  CreateScrollData(treeShape, layerVisibleRect);
+  SetScrollableFrameMetrics(root, ScrollableLayerGuid::START_SCROLL_ID,
+                            CSSRect(0, 0, 100, 500));
+
+  registration = MakeUnique<ScopedLayerTreeRegistration>(LayersId{0}, mcc);
+
+  UpdateHitTestingTree();
+
+  apzc = ApzcOf(root);
+
+  // Swipe left and verify that scrolling locks on the X axis even though the
+  // scroll container is not scrollable on the X axis.
+  QueueMockHitResult(ScrollableLayerGuid::START_SCROLL_ID);
+  (void)TouchDown(apzc, ScreenIntPoint(50, 50), mcc->Time());
+  mcc->AdvanceByMillis(50);
+
+  (void)TouchMove(apzc, ScreenIntPoint(60, 50), mcc->Time());
+  mcc->AdvanceByMillis(400);
+
+  (void)TouchMove(apzc, ScreenIntPoint(70, 50), mcc->Time());
+  mcc->AdvanceByMillis(400);
+
+  apzc->AssertStateIsPanningLockedX();
+
+  ParentLayerPoint lastOffset = apzc->GetCurrentAsyncScrollOffset(
+      AsyncTransformConsumer::eForEventHandling);
+
+  // Keep swiping left but with a small downward delta.
+  (void)TouchMove(apzc, ScreenIntPoint(80, 60), mcc->Time());
+  mcc->AdvanceByMillis(200);
+
+  ParentLayerPoint currentOffset = apzc->GetCurrentAsyncScrollOffset(
+      AsyncTransformConsumer::eForEventHandling);
+  // The scroll position should be unchanged.
+  EXPECT_EQ(currentOffset.y, lastOffset.y);
+  EXPECT_EQ(currentOffset.x, lastOffset.x);
+
+  (void)TouchUp(apzc, ScreenIntPoint(50, 70), mcc->Time());
 }
 
 #ifdef MOZ_WIDGET_ANDROID

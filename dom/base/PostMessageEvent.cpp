@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,12 +15,14 @@
 #include "mozilla/dom/MessageEventBinding.h"
 #include "mozilla/dom/MessagePort.h"
 #include "mozilla/dom/RootedDictionary.h"
+#include "mozilla/dom/WindowContext.h"
 #include "nsDocShell.h"
 #include "nsGlobalWindowInner.h"
 #include "nsGlobalWindowOuter.h"
 #include "nsIConsoleService.h"
 #include "nsIPrincipal.h"
 #include "nsIScriptError.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsPresContext.h"
 #include "nsQueryObject.h"
 #include "nsServiceManagerUtils.h"
@@ -52,6 +52,12 @@ PostMessageEvent::~PostMessageEvent() = default;
 
 // TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230, bug 1535398)
 MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP PostMessageEvent::Run() {
+  if (mCallerWindowID) {
+    RefPtr<WindowContext> wc = WindowContext::GetById(mCallerWindowID);
+    if (!wc || !wc->IsCurrent()) {
+      mSource = nullptr;
+    }
+  }
   // Note: We don't init this AutoJSAPI with targetWindow, because we do not
   // want exceptions during message deserialization to trigger error events on
   // targetWindow.
@@ -130,7 +136,7 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP PostMessageEvent::Run() {
 
       nsAutoString errorText;
       nsContentUtils::FormatLocalizedString(
-          errorText, nsContentUtils::eDOM_PROPERTIES,
+          errorText, PropertiesFile::DOM_PROPERTIES,
           "TargetPrincipalDoesNotMatch", providedOrigin, targetOrigin);
 
       nsCOMPtr<nsIScriptError> errorObject =

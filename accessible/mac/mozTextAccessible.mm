@@ -1,5 +1,4 @@
 /* clang-format off */
-/* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -148,7 +147,12 @@ static GeckoTextMarkerRange GetTextMarkerRangeFromRange(mozAccessible* aObj,
       GetTextMarkerRangeFromRange(self, selectedTextRange);
 
   if (markerRange.IsValid()) {
-    markerRange.Select();
+    // Set DOM focus in addition to selection. We do
+    // this because we want navigations over focusable controls
+    // like inputs, text areas to automatically drop VO focus
+    // inside the control. This is distinct from the behaviour in
+    // moxSetSelectedTextMarkerRange.
+    markerRange.Select(/* aSetFocus */ true);
   }
 }
 

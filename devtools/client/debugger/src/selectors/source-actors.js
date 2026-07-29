@@ -15,7 +15,7 @@ export function hasSourceActor(state, sourceActorId) {
 }
 
 /**
- * Get the Source Actor object. See create.js:createSourceActor()
+ * Get the Source Actor object. See create.js:createScriptSourceActor()
  *
  * @param {object} state
  * @param {string} sourceActorId
@@ -50,7 +50,7 @@ export function getSourceMapResolvedURL(state, sourceActorId) {
 
 // Used by threads selectors
 /**
- * Get all Source Actor objects for a given thread. See create.js:createSourceActor()
+ * Get all Source Actor objects for a given thread. See create.js:createScriptSourceActor()
  *
  * @param {object} state
  * @param {Array<string>} threadActorIDs

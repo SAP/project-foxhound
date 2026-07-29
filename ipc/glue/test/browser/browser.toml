@@ -37,6 +37,7 @@ run-if = [
   "os == 'win' && crashreporter",
 ]
 skip-if = [
+  "os == 'win' && os_version == '11.26200'", # Bug 2019745
   "ccov",
 ]
 
@@ -57,8 +58,12 @@ support-files = [
 
 ["browser_utility_profiler.js"]
 skip-if = [
-  "!gecko_profiler",
   "tsan",
 ] # from tools/profiler/tests/browser/browser.toml, timing out on profiler tests?
 
 ["browser_utility_start_clean_shutdown.js"]
+
+["browser_zombies.js"]
+run-if = [
+  "os == 'linux'",
+]

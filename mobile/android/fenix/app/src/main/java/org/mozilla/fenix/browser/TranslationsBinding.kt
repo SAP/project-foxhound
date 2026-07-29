@@ -85,6 +85,8 @@ class TranslationsBinding(
                 val translateToLanguages =
                     browserTranslationsState.supportedLanguages?.toLanguages
                 val isEngineSupported = browserTranslationsState.isEngineSupported
+                val isTranslationsEnabled = browserTranslationsState.isTranslationsEnabled
+                val isTranslationsActive = isEngineSupported == true && isTranslationsEnabled
 
                 // Session Translations State Behavior (Tab)
                 val sessionTranslationsState = state.sessionState.translationsState
@@ -97,7 +99,8 @@ class TranslationsBinding(
                             isTranslateProcessing = false,
                         ),
                     )
-                } else if (isEngineSupported == true && sessionTranslationsState.isTranslated) {
+                // The already translated case
+                } else if (isTranslationsActive && sessionTranslationsState.isTranslated) {
                     val fromSelected =
                         sessionTranslationsState.translationEngineState?.initialFromLanguage(
                             translateFromLanguages,
@@ -118,7 +121,8 @@ class TranslationsBinding(
                             ),
                         )
                     }
-                } else if (isEngineSupported == true && sessionTranslationsState.isExpectedTranslate) {
+                // A translation is processing or expected to process
+                } else if (isTranslationsActive && sessionTranslationsState.isExpectedTranslate) {
                     onTranslationStateUpdated(
                         PageTranslationStatus(
                             isTranslationPossible = true,
@@ -135,8 +139,8 @@ class TranslationsBinding(
                         ),
                     )
                 }
-
-                if (isEngineSupported == true && sessionTranslationsState.isOfferTranslate) {
+                // A translation offer is expected
+                if (isTranslationsActive && sessionTranslationsState.isOfferTranslate) {
                     browserStore.dispatch(
                         TranslationsAction.TranslateOfferAction(
                             tabId = state.sessionState.id,
@@ -146,8 +150,9 @@ class TranslationsBinding(
                     offerToTranslateCurrentPage()
                 }
 
+                // Trigger automatic popup to show errors
                 if (
-                    isEngineSupported == true &&
+                    isTranslationsActive &&
                     sessionTranslationsState.isExpectedTranslate &&
                     sessionTranslationsState.translationError != null
                 ) {

@@ -1,6 +1,4 @@
-/* vim: se cin sw=2 ts=2 et : */
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -141,6 +139,57 @@ class GfxInfoBase : public nsIGfxInfo,
                                    int32_t aBlockedMax,
                                    VersionComparisonOp aCmp);
 
+  static constexpr bool IsFeatureStatusAllowed(int32_t aFeature,
+                                               int32_t aStatus) {
+    return IsFeatureAllowlisted(aFeature) || !MatchingAllowStatus(aStatus);
+  }
+
+  static constexpr bool MatchingAllowStatus(int32_t aStatus) {
+    switch (aStatus) {
+      case nsIGfxInfo::FEATURE_ALLOW_ALWAYS:
+      case nsIGfxInfo::FEATURE_ALLOW_QUALIFIED:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  static constexpr bool IsFeatureAllowlisted(int32_t aFeature) {
+    switch (aFeature) {
+#define GFXINFO_FEATURE_ALLOWLIST(id, pref) \
+  case nsIGfxInfo::FEATURE_##id:            \
+    return true;
+#define GFXINFO_FEATURE(id, pref)
+#define GFXINFO_FEATURE_RETIRED(id, pref)
+#define GFXINFO_FEATURE_MISMATCHED(id, name, pref)
+#include "mozilla/widget/GfxInfoFeatureDefs.inc"
+#undef GFXINFO_FEATURE
+#undef GFXINFO_FEATURE_RETIRED
+#undef GFXINFO_FEATURE_MISMATCHED
+#undef GFXINFO_FEATURE_ALLOWLIST
+      default:
+        return false;
+    }
+  }
+
+  static constexpr bool IsFeatureRetired(int32_t aFeature) {
+    switch (aFeature) {
+#define GFXINFO_FEATURE_RETIRED(id, pref) \
+  case nsIGfxInfo::FEATURE_##id:          \
+    return true;
+#define GFXINFO_FEATURE(id, pref)
+#define GFXINFO_FEATURE_ALLOWLIST(id, pref)
+#define GFXINFO_FEATURE_MISMATCHED(id, name, pref)
+#include "mozilla/widget/GfxInfoFeatureDefs.inc"
+#undef GFXINFO_FEATURE
+#undef GFXINFO_FEATURE_RETIRED
+#undef GFXINFO_FEATURE_MISMATCHED
+#undef GFXINFO_FEATURE_ALLOWLIST
+      default:
+        return false;
+    }
+  }
+
  protected:
   virtual ~GfxInfoBase();
 
@@ -192,8 +241,6 @@ class GfxInfoBase : public nsIGfxInfo,
 
   std::pair<nsIGfxInfo::FontVisibilityDeviceDetermination, nsString>*
   GetFontVisibilityDeterminationPair();
-
-  bool IsFeatureAllowlisted(int32_t aFeature) const;
 
   void EvaluateDownloadedBlocklist(
       nsTArray<RefPtr<GfxDriverInfo>>& aDriverInfo);

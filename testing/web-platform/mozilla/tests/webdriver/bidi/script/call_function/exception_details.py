@@ -1,8 +1,9 @@
 import pytest
 from webdriver.bidi.modules.script import ContextTarget, ScriptEvaluateResultException
 
+pytestmark = pytest.mark.asyncio
 
-@pytest.mark.asyncio
+
 @pytest.mark.parametrize("await_promise", [True, False])
 @pytest.mark.parametrize(
     "expression",
@@ -13,7 +14,6 @@ from webdriver.bidi.modules.script import ContextTarget, ScriptEvaluateResultExc
         "{ toString: () => true }",
     ],
 )
-@pytest.mark.asyncio
 async def test_call_function_without_to_string_interface(
     bidi_session, top_context, await_promise, expression
 ):

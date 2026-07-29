@@ -104,7 +104,8 @@ SEARCH_COUNTS - SAP usage
     - ``urlbar-handoff`` Used when searching from about:newtab.
     - ``urlbar-persisted`` Used when searching from the Urlbar while it
       was in a Persisted Search state.
-    - ``urlbar-searchmode`` Used when the Urlbar is in search mode.
+    - ``urlbar-searchmode`` Used when the Urlbar is in search mode or the search
+      was started using the unified search button popup.
     - ``webextension``
 
 browser.engagement.navigation.*
@@ -211,5 +212,5 @@ browser.search.adclicks.*
 
 .. _additional telemetry of its own: /browser/urlbar/telemetry.html
 .. _SearchSERPTelemetry.sys.mjs and the associated parent/child actors: https://searchfox.org/mozilla-central/search?q=&path=SearchSERPTelemetry*.sys.mjs&case=false&regexp=false
-.. _BrowserSearchTelemetry: https://searchfox.org/mozilla-central/source/browser/components/search/BrowserSearchTelemetry.sys.mjs
+.. _BrowserSearchTelemetry: :searchfox:`browser/components/search/BrowserSearchTelemetry.sys.mjs`
 .. _sap.counts Event documentation: https://dictionary.telemetry.mozilla.org/apps/firefox_desktop/metrics/sap_counts

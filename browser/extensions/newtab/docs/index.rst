@@ -70,6 +70,39 @@ For near real-time reloading, run the following commands in **two separate termi
 **IMPORTANT NOTE**: This task will add inline source maps to help with debugging, which changes the memory footprint. Do not use the ``watch`` task for profiling or performance testing! After finishing your work, **be sure to stop the watch process**. When stopped, it will automatically run a final bundle step to remove the temporary inline source maps.
 
 
+Pre-commit git hook
+-------------------
+
+A pre-commit hook is available in ``tools/lint/hooks_newtab.py``. When installed,
+it runs the following checks in order, stopping at the first failure:
+
+1. **Bundle** — if newtab source or bundle output files are staged, runs
+   ``./mach newtab bundle`` and blocks the commit if the output files differ
+   from what is staged.
+2. **Lint** — runs `mozlint <https://firefox-source-docs.mozilla.org/code-quality/lint/usage.html>`_
+   on staged files and blocks the commit if there are errors.
+3. **Tests** — optionally runs unit tests (configurable, disabled by default).
+
+To install the hook, run the following from the root of the mozilla-central repository:
+
+.. code-block:: shell
+
+  ln -sf "$(git rev-parse --show-toplevel)/tools/lint/hooks_newtab.py" \
+         "$(git rev-parse --show-toplevel)/.git/hooks/pre-commit"
+
+By default, no tests are run on commit. To configure which tests run, use
+``git config newtab.pre-commit.tests`` with one of the following values:
+
+.. code-block:: shell
+
+  git config newtab.pre-commit.tests jest       # Jest only (~30 seconds)
+  git config newtab.pre-commit.tests jest-karma # Jest + Karma/Enzyme (~3-5 minutes)
+  git config newtab.pre-commit.tests all        # all tests including xpcshell and browser (10+ minutes)
+  git config newtab.pre-commit.tests none       # skip tests (default)
+
+To commit despite failing tests, use ``git commit --no-verify`` to bypass the hook entirely.
+
+
 Running tests
 -------------
 The majority of New Tab / Messaging unit tests are written using

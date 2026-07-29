@@ -22,13 +22,27 @@ pub(in crate::back::glsl) const fn glsl_scalar(
     use crate::ScalarKind as Sk;
 
     Ok(match scalar.kind {
-        Sk::Sint => ScalarString {
-            prefix: "i",
-            full: "int",
+        Sk::Sint => match scalar.width {
+            2 => ScalarString {
+                prefix: "i16",
+                full: "int16_t",
+            },
+            4 => ScalarString {
+                prefix: "i",
+                full: "int",
+            },
+            _ => return Err(Error::UnsupportedScalar(scalar)),
         },
-        Sk::Uint => ScalarString {
-            prefix: "u",
-            full: "uint",
+        Sk::Uint => match scalar.width {
+            2 => ScalarString {
+                prefix: "u16",
+                full: "uint16_t",
+            },
+            4 => ScalarString {
+                prefix: "u",
+                full: "uint",
+            },
+            _ => return Err(Error::UnsupportedScalar(scalar)),
         },
         Sk::Float => match scalar.width {
             4 => ScalarString {
@@ -76,7 +90,7 @@ pub(in crate::back::glsl) const fn glsl_built_in(
         // vertex
         Bi::BaseInstance => "uint(gl_BaseInstance)",
         Bi::BaseVertex => "uint(gl_BaseVertex)",
-        Bi::ClipDistance => "gl_ClipDistance",
+        Bi::ClipDistances => "gl_ClipDistance",
         Bi::CullDistance => "gl_CullDistance",
         Bi::InstanceIndex => {
             if options.draw_parameters {
@@ -88,7 +102,7 @@ pub(in crate::back::glsl) const fn glsl_built_in(
         }
         Bi::PointSize => "gl_PointSize",
         Bi::VertexIndex => "uint(gl_VertexID)",
-        Bi::DrawID => "gl_DrawID",
+        Bi::DrawIndex => "gl_DrawID",
         // fragment
         Bi::FragDepth => "gl_FragDepth",
         Bi::PointCoord => "gl_PointCoord",
@@ -126,7 +140,20 @@ pub(in crate::back::glsl) const fn glsl_built_in(
         | Bi::VertexCount
         | Bi::PrimitiveCount
         | Bi::Vertices
-        | Bi::Primitives => {
+        | Bi::Primitives
+        | Bi::RayInvocationId
+        | Bi::NumRayInvocations
+        | Bi::InstanceCustomData
+        | Bi::GeometryIndex
+        | Bi::WorldRayOrigin
+        | Bi::WorldRayDirection
+        | Bi::ObjectRayOrigin
+        | Bi::ObjectRayDirection
+        | Bi::RayTmin
+        | Bi::RayTCurrentMax
+        | Bi::ObjectToWorld
+        | Bi::WorldToObject
+        | Bi::HitKind => {
             unimplemented!()
         }
     }
@@ -146,7 +173,7 @@ pub(in crate::back::glsl) const fn glsl_storage_qualifier(
         As::Handle => Some("uniform"),
         As::WorkGroup => Some("shared"),
         As::Immediate => Some("uniform"),
-        As::TaskPayload => unreachable!(),
+        As::TaskPayload | As::RayPayload | As::IncomingRayPayload => unreachable!(),
     }
 }
 

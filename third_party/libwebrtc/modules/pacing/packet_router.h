@@ -19,11 +19,11 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
 #include "absl/functional/any_invocable.h"
-#include "api/array_view.h"
 #include "api/sequence_checker.h"
 #include "api/transport/network_types.h"
 #include "api/units/data_size.h"
@@ -56,10 +56,12 @@ class PacketRouter : public PacingController::PacketSender {
       absl::AnyInvocable<void(const RtpPacketToSend& packet,
                               const PacedPacketInfo& pacing_info)> callback);
 
-  // Ensures that PacketRouter generates transport sequence numbers for all RTP
-  // packets. If `send_rtp_packets_as_ect1` is true, packets will be requested
-  // to be sent as ect1.
-  void ConfigureForRfc8888Feedback(bool send_rtp_packets_as_ect1);
+  // If `set_transport_seq` is true, PacketRouter generates transport sequence
+  // numbers for all RTP packets even if transport sequence number header
+  // extension has not been negotiated. If `send_rtp_packets_as_ect1` is true,
+  // packets will be requested to be sent as ect1.
+  void ConfigureForRtcpFeedback(bool set_transport_seq,
+                                bool send_rtp_packets_as_ect1);
 
   void AddSendRtpModule(RtpRtcpInterface* rtp_module, bool remb_candidate);
   void RemoveSendRtpModule(RtpRtcpInterface* rtp_module);
@@ -77,7 +79,7 @@ class PacketRouter : public PacingController::PacketSender {
       DataSize size) override;
   void OnAbortedRetransmissions(
       uint32_t ssrc,
-      ArrayView<const uint16_t> sequence_numbers) override;
+      std::span<const uint16_t> sequence_numbers) override;
   std::optional<uint32_t> GetRtxSsrcForMedia(uint32_t ssrc) const override;
   void OnBatchComplete() override;
 
@@ -87,6 +89,10 @@ class PacketRouter : public PacingController::PacketSender {
   // Sends `packets` in one or more IP packets.
   void SendCombinedRtcpPacket(
       std::vector<std::unique_ptr<rtcp::RtcpPacket>> packets);
+
+  // Gives the SSRC of a sender associated with this packet router that
+  // can be used for sending RTCP messages. std::nullopt if no sender exists.
+  std::optional<uint32_t> SsrcOfFirstSender();
 
  private:
   void AddRembModuleCandidate(RtcpFeedbackSenderInterface* candidate_module,
@@ -121,8 +127,9 @@ class PacketRouter : public PacingController::PacketSender {
       RTC_GUARDED_BY(thread_checker_);
 
   uint64_t transport_seq_ RTC_GUARDED_BY(thread_checker_);
-  bool use_cc_feedback_according_to_rfc8888_ RTC_GUARDED_BY(thread_checker_) =
-      false;
+  // If `set_transport_seq_` is true, a transport sequence number is created per
+  // packet even if it is not sent in a header extension.
+  bool set_transport_seq_ RTC_GUARDED_BY(thread_checker_) = false;
   bool send_rtp_packets_as_ect1_ RTC_GUARDED_BY(thread_checker_) = false;
   absl::AnyInvocable<void(RtpPacketToSend& packet,
                           const PacedPacketInfo& pacing_info)>

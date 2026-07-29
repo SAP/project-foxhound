@@ -27,23 +27,23 @@ release that causes the leaked object to go away.
 
 ## Prerequisites
 
--   A debug DMD build of Firefox. [This
-    page](dmd.md)
-    describes how to do that. This should probably be an optimized
-    build. Non-optimized DMD builds will generate better stack traces,
-    but they can be so slow as to be useless.
--   The build is going to be very slow, so you may need to disable some
-    shutdown checks. First, in
-    `toolkit/components/terminator/nsTerminator.cpp`, delete everything
-    in `RunWatchDog` but the call to `NS_SetCurrentThreadName`. This
-    will keep the watch dog from killing the browser when shut down
-    takes multiple minutes. Secondly, you may need to comment out the
-    call to `MOZ_CRASH("NSS_Shutdown failed");` in
-    `xpcom/build/XPCOMInit.cpp`, as this also seems to trigger when
-    shutdown is extremely slow.
--   You need the cycle collector analysis script `find_roots.py`, which
-    can be downloaded as part of [this repo on
-    Github](https://github.com/amccreight/heapgraph).
+- A debug DMD build of Firefox. [This
+  page](dmd.md)
+  describes how to do that. This should probably be an optimized
+  build. Non-optimized DMD builds will generate better stack traces,
+  but they can be so slow as to be useless.
+- The build is going to be very slow, so you may need to disable some
+  shutdown checks. First, in
+  `toolkit/components/terminator/nsTerminator.cpp`, delete everything
+  in `RunWatchDog` but the call to `NS_SetCurrentThreadName`. This
+  will keep the watch dog from killing the browser when shut down
+  takes multiple minutes. Secondly, you may need to comment out the
+  call to `MOZ_CRASH("NSS_Shutdown failed");` in
+  `xpcom/build/XPCOMInit.cpp`, as this also seems to trigger when
+  shutdown is extremely slow.
+- You need the cycle collector analysis script `find_roots.py`, which
+  can be downloaded as part of [this repo on
+  Github](https://github.com/amccreight/heapgraph).
 
 ## Generating Logs
 
@@ -63,42 +63,42 @@ The command you need to run Firefox will look something like this:
 
 Breaking this down:
 
--   `XPCOM_MEM_BLOAT_LOG=1`: This reports a list of the counts of every
-    object created and destroyed and tracked by the XPCOM leak tracking
-    system. From this chart, you can see how many objects of a
-    particular type were leaked through shutdown. This can come in handy
-    during the manual analysis phase later, to get evidence to support
-    your hunches. For instance, if you think that an `nsFoo` object
-    might be holding your leaking object alive, you can use this to
-    easily see if we leaked an `nsFoo` object.
--   `MOZ_CC_LOG_SHUTDOWN=1`: This generates a cycle collector log during
-    shutdown. Creating this log during shutdown is nice because there
-    are less things unrelated to the leak in the log, and various cycle
-    collector optimizations are disabled. A garbage collector log will
-    also be created, which you may not need.
--   `MOZ_DISABLE_CONTENT_SANDBOX=t`: This disables the content process
-    sandbox, which is needed because the DMD and CC log files are
-    created directly by the child processes.
--   `MOZ_CC_LOG_DIRECTORY=$logdir`: This selects the location for cycle
-    collector logs to be saved.
--   `MOZ_CC_LOG_PROCESS=content MOZ_CC_LOG_THREAD=main`: These options
-    specify that we only want CC logs for the main thread of content
-    processes, to make shutdown less slow. If your leak is happening in
-    a different process or thread, change the options, which are listed
-    in `xpcom/base/nsCycleCollector.cpp`.
--   `MOZ_DMD_SHUTDOWN_LOG=$logdir`: This option specifies that we want a
-    DMD log to be taken very late in XPCOM shutdown, and the location
-    for that log to be saved. Like with the CC log, we want this log
-    very late to avoid as many non-leaking things as possible.
--   `MOZ_DMD_LOG_PROCESS=tab`: As with the CC, this means that we only
-    want these logs in content processes, in order to make shutdown
-    faster. The allowed values here are the same as those returned by
-    `XRE_GetProcessType()`, so adjust as needed.
--   Finally, the `--dmd` option need to be passed in so that DMD will be
-    run. `--mode=scan` is needed so that when we get a DMD log the
-    entire contents of each block of memory is saved for later analysis. If
-    you aren't running Firefox through `mach`, you can activate DMD directly
-    with an environment variable with `DMD="--mode=scan"`.
+- `XPCOM_MEM_BLOAT_LOG=1`: This reports a list of the counts of every
+  object created and destroyed and tracked by the XPCOM leak tracking
+  system. From this chart, you can see how many objects of a
+  particular type were leaked through shutdown. This can come in handy
+  during the manual analysis phase later, to get evidence to support
+  your hunches. For instance, if you think that an `nsFoo` object
+  might be holding your leaking object alive, you can use this to
+  easily see if we leaked an `nsFoo` object.
+- `MOZ_CC_LOG_SHUTDOWN=1`: This generates a cycle collector log during
+  shutdown. Creating this log during shutdown is nice because there
+  are less things unrelated to the leak in the log, and various cycle
+  collector optimizations are disabled. A garbage collector log will
+  also be created, which you may not need.
+- `MOZ_DISABLE_CONTENT_SANDBOX=t`: This disables the content process
+  sandbox, which is needed because the DMD and CC log files are
+  created directly by the child processes.
+- `MOZ_CC_LOG_DIRECTORY=$logdir`: This selects the location for cycle
+  collector logs to be saved.
+- `MOZ_CC_LOG_PROCESS=content MOZ_CC_LOG_THREAD=main`: These options
+  specify that we only want CC logs for the main thread of content
+  processes, to make shutdown less slow. If your leak is happening in
+  a different process or thread, change the options, which are listed
+  in `xpcom/base/nsCycleCollector.cpp`.
+- `MOZ_DMD_SHUTDOWN_LOG=$logdir`: This option specifies that we want a
+  DMD log to be taken very late in XPCOM shutdown, and the location
+  for that log to be saved. Like with the CC log, we want this log
+  very late to avoid as many non-leaking things as possible.
+- `MOZ_DMD_LOG_PROCESS=tab`: As with the CC, this means that we only
+  want these logs in content processes, in order to make shutdown
+  faster. The allowed values here are the same as those returned by
+  `XRE_GetProcessType()`, so adjust as needed.
+- Finally, the `--dmd` option need to be passed in so that DMD will be
+  run. `--mode=scan` is needed so that when we get a DMD log the
+  entire contents of each block of memory is saved for later analysis. If
+  you aren't running Firefox through `mach`, you can activate DMD directly
+  with an environment variable with `DMD="--mode=scan"`.
 
 With that command line in hand, you can start Firefox. Be aware that
 this may take multiple minutes if you have optimization disabled.
@@ -188,7 +188,7 @@ a head element and a JS object (the JS reflector of the script element).
 We need to figure out what the unknown reference is from, as that is
 where our leak really is.
 
-### Figure out what is holding the leaking object alive.
+### Figure out what is holding the leaking object alive
 
 Now we need to use the DMD heap scan logs. These contain the contents of
 every live block of memory.

@@ -39,6 +39,7 @@ let JSPROCESSACTORS = {
         "moz-src:///browser/components/mozcachedohttp/actors/MozCachedOHTTPParent.sys.mjs",
     },
     includeParent: true,
+    remoteTypes: ["parent", "privilegedabout"],
   },
 
   RefreshBlockerObserver: {
@@ -90,6 +91,7 @@ let JSWINDOWACTORS = {
     matches: ["chrome://global/content/megalist/megalist.html"],
     allFrames: true,
     enablePreference: "browser.contextual-password-manager.enabled",
+    remoteTypes: ["parent"],
   },
 
   AboutLogins: {
@@ -201,6 +203,7 @@ let JSWINDOWACTORS = {
     },
 
     matches: ["about:tabcrashed*"],
+    remoteTypes: ["parent"],
   },
 
   AboutWelcome: {
@@ -232,15 +235,21 @@ let JSWINDOWACTORS = {
       esModuleURI:
         "moz-src:///browser/components/aiwindow/ui/actors/AIChatContentChild.sys.mjs",
       events: {
-        "AIChatContent:DispatchSearch": { wantUntrusted: true },
         "AIChatContent:DispatchFollowUp": { wantUntrusted: true },
         "AIChatContent:Ready": { wantUntrusted: true },
         "AIChatContent:DispatchAction": { wantUntrusted: true },
         "AIChatContent:OpenLink": { wantUntrusted: true },
+        "AIChatContent:DispatchNewChat": { wantUntrusted: true },
+        "AIChatContent:AccountSignIn": { wantUntrusted: true },
+        "AIChatContent:ToolUIUpdate": { wantUntrusted: true },
+        "AIChatContent:RequestAssets": { wantUntrusted: true },
+        "AIChatContent:HistoryGridRender": { wantUntrusted: true },
+        "AIChatContent:HistoryGridItemClick": { wantUntrusted: true },
       },
     },
     allFrames: true,
     matches: ["about:aichatcontent"],
+    remoteTypes: ["privilegedabout"],
     enablePreference: "browser.smartwindow.enabled",
   },
 
@@ -277,12 +286,12 @@ let JSWINDOWACTORS = {
         "BackupUI:EnableEncryption": { wantUntrusted: true },
         "BackupUI:DisableEncryption": { wantUntrusted: true },
         "BackupUI:ShowBackupLocation": { wantUntrusted: true },
-        "BackupUI:EditBackupLocation": { wantUntrusted: true },
         "BackupUI:SetEmbeddedComponentPersistentData": { wantUntrusted: true },
         "BackupUI:FlushEmbeddedComponentPersistentData": {
           wantUntrusted: true,
         },
         "BackupUI:ErrorBarDismissed": { wantUntrusted: true },
+        "BackupUI:FindBackupsInWellKnownLocations": { wantUntrusted: true },
       },
     },
     includeChrome: true,
@@ -292,7 +301,10 @@ let JSWINDOWACTORS = {
       "about:settings*",
       "about:welcome*",
       "chrome://browser/content/spotlight.html",
+      "about:newtab*",
+      "about:home*",
     ],
+    remoteTypes: ["parent", "privilegedabout"],
   },
 
   BlockedSite: {
@@ -457,6 +469,8 @@ let JSWINDOWACTORS = {
         "MozDOMFullscreen:NewOrigin": {},
         "MozDOMFullscreen:Exit": {},
         "MozDOMFullscreen:Exited": {},
+        "MozDOMFullscreen:WarnAboutKeyboardLock": {},
+        "MozDOMFullscreen:UpdateKeyboardLock": {},
       },
     },
 
@@ -511,11 +525,13 @@ let JSWINDOWACTORS = {
     onAddActor(register, unregister) {
       let isRegistered = false;
 
-      // Register the actor if we have a provider or support provider-less
+      // Register the actor if an external chat provider is set, page summarization is enabled, or shortcuts are enabled
       const maybeRegister = () => {
         if (
           Services.prefs.getCharPref("browser.ml.chat.provider", "") ||
-          Services.prefs.getBoolPref("browser.ml.chat.page")
+          Services.prefs.getBoolPref("browser.ml.chat.page") ||
+          Services.prefs.getBoolPref("browser.ml.chat.shortcuts") ||
+          Services.prefs.getBoolPref("browser.ml.chat.shortcuts.smartwindow")
         ) {
           if (!isRegistered) {
             register();
@@ -529,6 +545,11 @@ let JSWINDOWACTORS = {
 
       Services.prefs.addObserver("browser.ml.chat.page", maybeRegister);
       Services.prefs.addObserver("browser.ml.chat.provider", maybeRegister);
+      Services.prefs.addObserver("browser.ml.chat.shortcuts", maybeRegister);
+      Services.prefs.addObserver(
+        "browser.ml.chat.shortcuts.smartwindow",
+        maybeRegister
+      );
       maybeRegister();
     },
   },
@@ -551,16 +572,20 @@ let JSWINDOWACTORS = {
       "chrome://browser/content/syncedtabs/sidebar.xhtml",
       "chrome://browser/content/places/historySidebar.xhtml",
       "chrome://browser/content/places/bookmarksSidebar.xhtml",
+      "chrome://browser/content/sidebar/sidebar-bookmarks.html",
       "chrome://browser/content/sidebar/sidebar-history.html",
       "chrome://browser/content/sidebar/sidebar-customize.html",
       "chrome://browser/content/sidebar/sidebar-syncedtabs.html",
+      "chrome://browser/content/sidebar/sidebar-opentabs.html",
       "chrome://browser/content/genai/chat.html",
       "about:firefoxview",
       "about:editprofile",
       "about:deleteprofile",
       "about:newprofile",
       "about:opentabs",
+      "about:aichatcontent",
     ],
+    remoteTypes: ["parent", "privilegedabout"],
   },
 
   LinkHandler: {
@@ -711,7 +736,8 @@ let JSWINDOWACTORS = {
 
   ScreenshotsComponent: {
     parent: {
-      esModuleURI: "resource:///modules/ScreenshotsUtils.sys.mjs",
+      esModuleURI:
+        "moz-src:///browser/components/screenshots/ScreenshotsUtils.sys.mjs",
     },
     child: {
       esModuleURI: "resource:///actors/ScreenshotsComponentChild.sys.mjs",
@@ -731,10 +757,12 @@ let JSWINDOWACTORS = {
 
   ScreenshotsHelper: {
     parent: {
-      esModuleURI: "resource:///modules/ScreenshotsUtils.sys.mjs",
+      esModuleURI:
+        "moz-src:///browser/components/screenshots/ScreenshotsUtils.sys.mjs",
     },
     child: {
-      esModuleURI: "resource:///modules/ScreenshotsHelperChild.sys.mjs",
+      esModuleURI:
+        "moz-src:///browser/components/screenshots/ScreenshotsHelperChild.sys.mjs",
     },
     allFrames: true,
     enablePreference: "screenshots.browser.component.enabled",
@@ -799,7 +827,13 @@ let JSWINDOWACTORS = {
         DOMDocElementInserted: {},
       },
     },
-    matches: ["about:asrouter*", "about:welcome*", "about:privatebrowsing*"],
+    matches: [
+      "about:asrouter*",
+      "about:welcome*",
+      "about:privatebrowsing*",
+      "about:newtab*",
+      "about:home*",
+    ],
     remoteTypes: ["privilegedabout"],
   },
 
@@ -809,14 +843,6 @@ let JSWINDOWACTORS = {
     },
 
     allFrames: true,
-  },
-
-  TLSCertificateBinding: {
-    child: {
-      esModuleURI: "resource:///actors/TLSCertificateBindingChild.sys.mjs",
-    },
-
-    messageManagerGroups: ["browsers"],
   },
 
   UITour: {

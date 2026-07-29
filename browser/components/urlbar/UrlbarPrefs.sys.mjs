@@ -66,13 +66,24 @@ const PREF_URLBAR_DEFAULTS = /** @type {PreferenceDefinition[]} */ ([
   // textbox.  If false, autofill will be disabled.
   ["autoFill", true],
 
-  // Whether enabling adaptive history autofill. This pref is a fallback for the
-  // Nimbus variable `autoFillAdaptiveHistoryEnabled`.
+  // Whether enabling adaptive history autofill. The Nimbus variable
+  // `autoFillAdaptiveHistoryEnabled` writes to this pref via `setPref`.
   ["autoFill.adaptiveHistory.enabled", false],
 
+  // Duration in ms to block after backspace penalty. Default: 2 days.
+  ["autoFill.backspaceBlockDurationMs", 172800000],
+
+  // How many times the user must consecutively backspace away an autofill
+  // suggestion before we penalize and temporarily suppress it from autofilling.
+  // The result may still appear as a regular history result.
+  ["autoFill.backspaceThreshold", 3],
+
+  // Duration in ms to block an origin/URL after dismiss. Default: 7 days.
+  ["autoFill.dismissalBlockDurationMs", 604800000],
+
   // Minimum char length of the user's search string to enable adaptive history
-  // autofill. This pref is a fallback for the Nimbus variable
-  // `autoFillAdaptiveHistoryMinCharsThreshold`.
+  // autofill. The Nimbus variable `autoFillAdaptiveHistoryMinCharsThreshold`
+  // writes to this pref via `setPref`.
   ["autoFill.adaptiveHistory.minCharsThreshold", 0],
 
   // Threshold for use count of input history that we handle as adaptive history
@@ -81,11 +92,6 @@ const PREF_URLBAR_DEFAULTS = /** @type {PreferenceDefinition[]} */ ([
   // 30 days since user input it as the default.
   ["autoFill.adaptiveHistory.useCountThreshold", [0.47, "float"]],
 
-  // Affects the frecency threshold of the autofill algorithm.  The threshold is
-  // the mean of all origin frecencies plus one standard deviation multiplied by
-  // this value.  See UrlbarProviderPlaces.
-  ["autoFill.stddevMultiplier", [0.0, "float"]],
-
   // Feature gate pref for clipboard suggestions in the urlbar.
   ["clipboard.featureGate", false],
 
@@ -93,6 +99,9 @@ const PREF_URLBAR_DEFAULTS = /** @type {PreferenceDefinition[]} */ ([
   // This feature gate exists just as an emergency rollback in case of
   // unexpected issues in Release. We normally want this behavior.
   ["closeOtherPanelsOnOpen", true],
+
+  // Feature gate pref for context menu on the urlbar.
+  ["contextMenu.featureGate", false],
 
   // Whether to show a link for using the search functionality provided by the
   // active view if the the view utilizes OpenSearch.
@@ -175,6 +184,12 @@ const PREF_URLBAR_DEFAULTS = /** @type {PreferenceDefinition[]} */ ([
   // future.
   ["groupLabels.enabled", true],
 
+  // Whether semantic history results are placed in their own result group that
+  // fills only the space left after the other (non-semantic) result groups, so
+  // semantic results never evict them. When false, semantic results share the
+  // general group with plain history results.
+  ["suggest.semanticHistory.separateGroup", false],
+
   // Feature gate pref for important-dates suggestions in the urlbar.
   ["importantDates.featureGate", false],
 
@@ -245,7 +260,11 @@ const PREF_URLBAR_DEFAULTS = /** @type {PreferenceDefinition[]} */ ([
   ["merino.providers", ""],
 
   // Timeout for Merino fetches (ms).
-  ["merino.timeoutMs", 200],
+  ["merino.timeoutMs", 500],
+
+  // Merino endpoint prefs to be used for weather widgets
+  ["merino.weather.reportEndpointURL", ""],
+  ["merino.weather.hourlyEndpointURL", ""],
 
   // Set default NER threshold value of 0.5
   ["nerThreshold", [0.5, "float"]],
@@ -253,11 +272,6 @@ const PREF_URLBAR_DEFAULTS = /** @type {PreferenceDefinition[]} */ ([
   // Whether addresses and search results typed into the address bar
   // should be opened in new tabs by default.
   ["openintab", false],
-
-  // Once Perplexity has entered search mode at least once,
-  // we no longer show the Perplexity onboarding callout.
-  // This pref will be set to true when perplexity search mode is detected.
-  ["perplexity.hasBeenInSearchMode", false],
 
   // If disabled, QuickActions will not be included in either the default search
   // mode or the QuickActions search mode.
@@ -414,6 +428,9 @@ const PREF_URLBAR_DEFAULTS = /** @type {PreferenceDefinition[]} */ ([
 
   // Allow the result menu button to be reached with the Tab key.
   ["resultMenu.keyboardAccessible", true],
+
+  // Timeout in milliseconds before stale rows are removed from the view.
+  ["removeStaleRowsTimeout", 400],
 
   // Feature gate pref for rich suggestions being shown in the urlbar.
   ["richSuggestions.featureGate", true],
@@ -633,6 +650,12 @@ const PREF_URLBAR_DEFAULTS = /** @type {PreferenceDefinition[]} */ ([
   // and panels in the Urlbar.
   ["trustPanel.featureGate", false],
 
+  // Enable the banner warning the user of breached websites in the trust panel:
+  ["trustPanel.breachAlerts", false],
+
+  // Feature gate to show/hide the breach alerts setting in Preferences:
+  ["trustPanel.breachAlerts.featureGate", false],
+
   // Whether unit conversion is enabled.
   ["unitConversion.enabled", false],
 
@@ -708,7 +731,7 @@ const PREF_OTHER_DEFAULTS = /** @type {PreferenceDefinition[]} */ ([
   ["browser.search.openintab", false],
   ["browser.search.suggest.enabled", true],
   ["browser.search.suggest.enabled.private", false],
-  ["browser.search.widget.new", false],
+  ["browser.search.widget.new", true],
   ["keyword.enabled", true],
   ["security.insecure_connection_text.enabled", true],
   [TelemetryReportingPolicy.TOU_ACCEPTED_DATE_PREF, 0],
@@ -784,8 +807,14 @@ const PREF_TYPES = new Map([
  * @param {object} options
  * @param {boolean} options.showSearchSuggestionsFirst
  *   If true, the suggestions group will come before the general group.
+ * @param {boolean} [options.separateSemanticGroup]
+ *   If true, semantic history results get their own group that fills only the
+ *   space left after the other general groups.
  */
-function makeDefaultResultGroups({ showSearchSuggestionsFirst }) {
+function makeDefaultResultGroups({
+  showSearchSuggestionsFirst,
+  separateSemanticGroup = false,
+}) {
   /**
    * @type {ResultGroup}
    */
@@ -817,6 +846,34 @@ function makeDefaultResultGroups({ showSearchSuggestionsFirst }) {
       },
     ],
   };
+
+  // When semantic history has its own group, split the general slot so that
+  // semantic history takes roughly 1 of every 10 of these results (9:1) and
+  // otherwise yields to general results, while filling the space when there
+  // are no general results. Nesting keeps the general group's weight relative
+  // to its siblings (remote tabs, about pages) unchanged.
+  let generalChild = separateSemanticGroup
+    ? {
+        flex: 2,
+        flexChildren: true,
+        children: [
+          {
+            flex: 9,
+            group: lazy.UrlbarUtils.RESULT_GROUP.GENERAL,
+            orderBy: "frecency",
+          },
+          {
+            flex: 1,
+            group: lazy.UrlbarUtils.RESULT_GROUP.SEMANTIC_HISTORY,
+            orderBy: "frecency",
+          },
+        ],
+      }
+    : {
+        flex: 2,
+        group: lazy.UrlbarUtils.RESULT_GROUP.GENERAL,
+        orderBy: "frecency",
+      };
 
   // Prepare the parent group for suggestions and general.
   let mainGroup = {
@@ -864,11 +921,7 @@ function makeDefaultResultGroups({ showSearchSuggestionsFirst }) {
                 flex: 1,
                 group: lazy.UrlbarUtils.RESULT_GROUP.REMOTE_TAB,
               },
-              {
-                flex: 2,
-                group: lazy.UrlbarUtils.RESULT_GROUP.GENERAL,
-                orderBy: "frecency",
-              },
+              generalChild,
               {
                 // We show relatively many about-page results because they're
                 // only added for queries starting with "about:".
@@ -898,10 +951,112 @@ function makeDefaultResultGroups({ showSearchSuggestionsFirst }) {
   return rootGroup;
 }
 
-function makeSmartBarGroups() {
-  /**
-   * @type {ResultGroup}
-   */
+/**
+ * @param {object} options
+ * @param {boolean} options.showSearchSuggestionsFirst
+ *   If true, the suggestions group will come before the general group.
+ * @param {boolean} [options.separateSemanticGroup]
+ *   If true, semantic history results get their own group that fills only the
+ *   space left after the other general groups.
+ */
+function makeSmartBarGroups({
+  showSearchSuggestionsFirst,
+  separateSemanticGroup = false,
+}) {
+  // See makeDefaultResultGroups for the rationale of this 9:1 split.
+  let generalChild = separateSemanticGroup
+    ? {
+        flex: 2,
+        flexChildren: true,
+        children: [
+          {
+            flex: 9,
+            group: lazy.UrlbarUtils.RESULT_GROUP.GENERAL,
+            orderBy: "frecency",
+          },
+          {
+            flex: 1,
+            group: lazy.UrlbarUtils.RESULT_GROUP.SEMANTIC_HISTORY,
+            orderBy: "frecency",
+          },
+        ],
+      }
+    : {
+        flex: 2,
+        group: lazy.UrlbarUtils.RESULT_GROUP.GENERAL,
+        orderBy: "frecency",
+      };
+
+  let mainGroup = {
+    flexChildren: true,
+    children: [
+      // search suggestions
+      {
+        children: [
+          {
+            availableSpan: 2,
+            group: lazy.UrlbarUtils.RESULT_GROUP.AI,
+          },
+          {
+            flexChildren: true,
+            children: [
+              {
+                // If `maxHistoricalSearchSuggestions` == 0, the muxer forces
+                // `maxResultCount` to be zero and flex is ignored, per query.
+                flex: 2,
+                group: lazy.UrlbarUtils.RESULT_GROUP.FORM_HISTORY,
+              },
+              {
+                flex: 99,
+                group: lazy.UrlbarUtils.RESULT_GROUP.RECENT_SEARCH,
+              },
+              {
+                flex: 4,
+                group: lazy.UrlbarUtils.RESULT_GROUP.REMOTE_SUGGESTION,
+              },
+            ],
+          },
+          {
+            group: lazy.UrlbarUtils.RESULT_GROUP.TAIL_SUGGESTION,
+          },
+        ],
+      },
+      // general
+      {
+        group: lazy.UrlbarUtils.RESULT_GROUP.GENERAL_PARENT,
+        children: [
+          {
+            availableSpan: 3,
+            group: lazy.UrlbarUtils.RESULT_GROUP.INPUT_HISTORY,
+          },
+          {
+            flexChildren: true,
+            children: [
+              generalChild,
+              {
+                flex: 1,
+                group: lazy.UrlbarUtils.RESULT_GROUP.REMOTE_TAB,
+              },
+              {
+                // We show relatively many about-page results because they're
+                // only added for queries starting with "about:".
+                flex: 2,
+                group: lazy.UrlbarUtils.RESULT_GROUP.ABOUT_PAGES,
+              },
+            ],
+          },
+          {
+            group: lazy.UrlbarUtils.RESULT_GROUP.INPUT_HISTORY,
+          },
+        ],
+      },
+    ],
+  };
+  if (!showSearchSuggestionsFirst) {
+    mainGroup.children.reverse();
+  }
+  mainGroup.children[0].flex = 2;
+  mainGroup.children[1].flex = 1;
   return {
     children: [
       // heuristic
@@ -915,78 +1070,7 @@ function makeSmartBarGroups() {
           { group: lazy.UrlbarUtils.RESULT_GROUP.HEURISTIC_FALLBACK },
         ],
       },
-      // main
-      {
-        flexChildren: true,
-        children: [
-          // search suggestions
-          {
-            flex: 2,
-            children: [
-              {
-                availableSpan: 2,
-                group: lazy.UrlbarUtils.RESULT_GROUP.AI,
-              },
-              {
-                flexChildren: true,
-                children: [
-                  {
-                    // If `maxHistoricalSearchSuggestions` == 0, the muxer forces
-                    // `maxResultCount` to be zero and flex is ignored, per query.
-                    flex: 2,
-                    group: lazy.UrlbarUtils.RESULT_GROUP.FORM_HISTORY,
-                  },
-                  {
-                    flex: 99,
-                    group: lazy.UrlbarUtils.RESULT_GROUP.RECENT_SEARCH,
-                  },
-                  {
-                    flex: 4,
-                    group: lazy.UrlbarUtils.RESULT_GROUP.REMOTE_SUGGESTION,
-                  },
-                ],
-              },
-              {
-                group: lazy.UrlbarUtils.RESULT_GROUP.TAIL_SUGGESTION,
-              },
-            ],
-          },
-          // general
-          {
-            flex: 1,
-            group: lazy.UrlbarUtils.RESULT_GROUP.GENERAL_PARENT,
-            children: [
-              {
-                availableSpan: 3,
-                group: lazy.UrlbarUtils.RESULT_GROUP.INPUT_HISTORY,
-              },
-              {
-                flexChildren: true,
-                children: [
-                  {
-                    flex: 2,
-                    group: lazy.UrlbarUtils.RESULT_GROUP.GENERAL,
-                    orderBy: "frecency",
-                  },
-                  {
-                    flex: 1,
-                    group: lazy.UrlbarUtils.RESULT_GROUP.REMOTE_TAB,
-                  },
-                  {
-                    // We show relatively many about-page results because they're
-                    // only added for queries starting with "about:".
-                    flex: 2,
-                    group: lazy.UrlbarUtils.RESULT_GROUP.ABOUT_PAGES,
-                  },
-                ],
-              },
-              {
-                group: lazy.UrlbarUtils.RESULT_GROUP.INPUT_HISTORY,
-              },
-            ],
-          },
-        ],
-      },
+      mainGroup,
     ],
   };
 }
@@ -1119,40 +1203,62 @@ class Preferences {
     return this.get("scotchBonnet.enableOverride") || this.get(pref);
   }
 
+  #getShowSearchSuggestionsFirst(context) {
+    let showSearchSuggestionsFirst =
+      context.searchString ||
+      (!this.get("suggest.trending") && !this.get("suggest.recentsearches"));
+
+    let inSearchEngineMode = !!context.searchMode?.engineName;
+
+    // If we're in a case were search suggestions would be shown first, but not
+    // in search engine mode, then just use the user preference.
+    if (!inSearchEngineMode && showSearchSuggestionsFirst) {
+      showSearchSuggestionsFirst = this.get("showSearchSuggestionsFirst");
+    }
+    return showSearchSuggestionsFirst;
+  }
+
   getResultGroups({ context }) {
     // We try to cache result groups so we don't have to rebuild them each time.
     // This key may be modified per each SAP, and will track the cached groups,
     // any additionally used condition must be added to the key.
     let key = context.sapName;
+    let separateSemanticGroup = this.get(
+      "suggest.semanticHistory.separateGroup"
+    );
+    key += separateSemanticGroup;
     switch (context.sapName) {
       case "urlbar": {
         let showSearchSuggestionsFirst =
-          context.searchString ||
-          (!this.get("suggest.trending") &&
-            !this.get("suggest.recentsearches"));
-
-        let inSearchEngineMode = !!context.searchMode?.engineName;
-
-        // If we're in a case were search suggestions would be shown first, but not
-        // in search engine mode, then just use the user preference.
-        if (!inSearchEngineMode && showSearchSuggestionsFirst) {
-          showSearchSuggestionsFirst = this.get("showSearchSuggestionsFirst");
-        }
-
+          this.#getShowSearchSuggestionsFirst(context);
         key += showSearchSuggestionsFirst;
         return this.#getOrCacheResultGroups(key, () =>
-          makeDefaultResultGroups({ showSearchSuggestionsFirst })
+          makeDefaultResultGroups({
+            showSearchSuggestionsFirst,
+            separateSemanticGroup,
+          })
         );
       }
       case "searchbar": {
         // This is a temporary placeholder until searchbar gets its own config.
         return this.#getOrCacheResultGroups(key, () =>
-          makeDefaultResultGroups({ showSearchSuggestionsFirst: true })
+          makeDefaultResultGroups({
+            showSearchSuggestionsFirst: true,
+            separateSemanticGroup,
+          })
         );
       }
       case "smartbar": {
         // This is a temporary placeholder until smartbar gets its own config.
-        return this.#getOrCacheResultGroups(key, makeSmartBarGroups);
+        let showSearchSuggestionsFirst =
+          this.#getShowSearchSuggestionsFirst(context);
+        key += showSearchSuggestionsFirst;
+        return this.#getOrCacheResultGroups(key, () =>
+          makeSmartBarGroups({
+            showSearchSuggestionsFirst,
+            separateSemanticGroup,
+          })
+        );
       }
       default: {
         throw new Error(`Unknown SAP name: ${context.sapName}`);
@@ -1229,6 +1335,7 @@ class Preferences {
         this._map.delete("autoFillAdaptiveHistoryUseCountThreshold");
         return;
       case "showSearchSuggestionsFirst":
+      case "suggest.semanticHistory.separateGroup":
         this.#cachedResultGroups.clear();
         return;
     }

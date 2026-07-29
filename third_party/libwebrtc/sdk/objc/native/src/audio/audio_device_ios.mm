@@ -15,8 +15,8 @@
 
 #include <mach/mach_time.h>
 #include <cmath>
+#include <span>
 
-#include "api/array_view.h"
 #include "api/environment/environment.h"
 #include "api/task_queue/pending_task_safety_flag.h"
 #include "helpers.h"
@@ -25,7 +25,6 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/thread_annotations.h"
-#include "rtc_base/time_utils.h"
 #include "system_wrappers/include/metrics.h"
 
 #import "base/RTCLogging.h"
@@ -484,7 +483,7 @@ OSStatus AudioDeviceIOS::OnGetPlayoutData(AudioUnitRenderActionFlags* flags,
   // If so, we have an indication of a glitch in the output audio since the
   // core audio layer will most likely run dry in this state.
   ++num_playout_callbacks_;
-  const int64_t now_time = webrtc::TimeMillis();
+  const int64_t now_time = env_.clock().TimeInMilliseconds();
   if (time_stamp->mSampleTime != num_frames) {
     const int64_t delta_time = now_time - last_playout_time_;
     const int glitch_threshold =
@@ -531,8 +530,8 @@ OSStatus AudioDeviceIOS::OnGetPlayoutData(AudioUnitRenderActionFlags* flags,
   // the native I/O audio unit) and copy the result to the audio buffer in the
   // `io_data` destination.
   fine_audio_buffer_->GetPlayoutData(
-      webrtc::ArrayView<int16_t>(static_cast<int16_t*>(audio_buffer->mData),
-                                 num_frames),
+      std::span<int16_t>(static_cast<int16_t*>(audio_buffer->mData),
+                         num_frames),
       playout_delay_ms);
 
   last_hw_output_latency_update_sample_count_ += num_frames;
@@ -711,7 +710,8 @@ void AudioDeviceIOS::HandlePlayoutGlitchDetected(uint64_t glitch_duration_ms) {
   // Avoid doing glitch detection for two seconds after a volume change
   // has been detected to reduce the risk of false alarm.
   if (last_output_volume_change_time_ > 0 &&
-      webrtc::TimeSince(last_output_volume_change_time_) < 2000) {
+      env_.clock().TimeInMilliseconds() - last_output_volume_change_time_ <
+          2000) {
     RTCLog(@"Ignoring audio glitch due to recent output volume change.");
     return;
   }
@@ -734,7 +734,7 @@ void AudioDeviceIOS::HandleOutputVolumeChange() {
   RTCLog(@"Output volume change detected.");
   // Store time of this detection so it can be used to defer detection of
   // glitches too close in time to this event.
-  last_output_volume_change_time_ = webrtc::TimeMillis();
+  last_output_volume_change_time_ = env_.clock().TimeInMilliseconds();
 }
 
 void AudioDeviceIOS::UpdateAudioDeviceBuffer() {

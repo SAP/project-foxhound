@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +7,7 @@
 #include "ConsoleCommon.h"
 #include "js/Array.h"               // JS::GetArrayLength, JS::NewArrayObject
 #include "js/PropertyAndElement.h"  // JS_DefineElement, JS_DefineProperty, JS_GetElement
+#include "mozilla/AutoRestore.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/JSObjectHolder.h"
@@ -427,6 +426,7 @@ class ConsoleRunnable : public StructuredCloneHolderBase {
     }
 
     Sequence<JS::Value> arguments;
+    SequenceRooter<JS::Value> rooter(aCx, &arguments);
 
     for (uint32_t i = 0; i < length; ++i) {
       JS::Rooted<JS::Value> value(aCx);
@@ -1309,7 +1309,7 @@ struct ConsoleTimingMarker : public BaseMarkerType<ConsoleTimingMarker> {
 
   using MS = MarkerSchema;
   static constexpr MS::PayloadField PayloadFields[] = {
-      {"label", MS::InputType::String, "Label", MS::Format::String},
+      {"label", MS::InputType::CString, "Label", MS::Format::String},
       {"entryType", MS::InputType::CString, "Entry Type", MS::Format::String}};
 
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
@@ -1317,12 +1317,6 @@ struct ConsoleTimingMarker : public BaseMarkerType<ConsoleTimingMarker> {
   static constexpr const char* AllLabels = "{timeStamper.data.label}";
 
   static constexpr MS::ETWMarkerGroup Group = MS::ETWMarkerGroup::UserMarkers;
-
-  static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
-                                   const ProfilerString8View& aLabel,
-                                   const ProfilerString8View& aEntryType) {
-    StreamJSONMarkerDataImpl(aWriter, aLabel, aEntryType);
-  }
 };
 
 void Console::MethodInternal(JSContext* aCx, MethodName aMethodName,
@@ -1496,11 +1490,58 @@ void Console::MethodInternal(JSContext* aCx, MethodName aMethodName,
     } else if (!mPassedInnerID.IsEmpty()) {
       callData->SetIDs(u"jsm"_ns, mPassedInnerID);
     } else {
-      nsAutoCString filename;
-      if (callData->mTopStackFrame.isSome()) {
-        filename = callData->mTopStackFrame->mFilename;
+      // Derive a window ID so inner-window-destroyed can clean up
+      // this message. Check the stack first (a SavedFrame whose global
+      // is a window), then fall back to scanning arguments.
+
+      // Returns the inner window ID for an object whose global is a
+      // window or a sandbox whose prototype is a window, or 0.
+      auto WindowIDFromObject = [aCx](JSObject* aObj) -> uint64_t {
+        JSObject* obj = js::UncheckedUnwrap(aObj);
+        if (nsGlobalWindowInner* win = xpc::WindowGlobalOrNull(obj)) {
+          return win->WindowID();
+        }
+        JSObject* global = JS::GetNonCCWObjectGlobal(obj);
+        if (nsGlobalWindowInner* win = xpc::SandboxWindowOrNull(global, aCx)) {
+          return win->WindowID();
+        }
+        return 0;
+      };
+
+      uint64_t innerID = 0;
+      nsCOMPtr<nsIStackFrame> frame = callData->mStack;
+      while (frame) {
+        JS::Rooted<JS::Value> savedFrame(aCx);
+        frame->GetNativeSavedFrame(&savedFrame);
+        if (savedFrame.isObject()) {
+          innerID = WindowIDFromObject(&savedFrame.toObject());
+          if (innerID) {
+            break;
+          }
+        }
+        frame = frame->GetCaller(aCx);
       }
-      callData->SetIDs(u"jsm"_ns, NS_ConvertUTF8toUTF16(filename));
+      if (!innerID) {
+        for (const auto& arg : aData) {
+          if (arg.isObject()) {
+            innerID = WindowIDFromObject(&arg.toObject());
+            if (innerID) {
+              break;
+            }
+          }
+        }
+      }
+      if (innerID) {
+        nsAutoString idStr;
+        idStr.AppendInt(innerID);
+        callData->SetIDs(u"jsm"_ns, idStr);
+      } else {
+        nsAutoCString filename;
+        if (callData->mTopStackFrame.isSome()) {
+          filename = callData->mTopStackFrame->mFilename;
+        }
+        callData->SetIDs(u"jsm"_ns, NS_ConvertUTF8toUTF16(filename));
+      }
     }
 
     GetOrCreateMainThreadData()->ProcessCallData(aCx, callData, aData);
@@ -2491,6 +2532,10 @@ bool Console::StoreCallData(JSContext* aCx, ConsoleCallData* aCallData,
                             const Sequence<JS::Value>& aArguments) {
   AssertIsOnOwningThread();
 
+  if (mIsRetrievingConsoleEvent) {
+    return false;
+  }
+
   if (NS_WARN_IF(!mArgumentStorage.growBy(1))) {
     return false;
   }
@@ -2518,6 +2563,10 @@ void Console::UnstoreCallData(ConsoleCallData* aCallData) {
 
   MOZ_ASSERT(aCallData);
   MOZ_ASSERT(mCallDataStorage.Length() == mArgumentStorage.length());
+
+  if (mIsRetrievingConsoleEvent) {
+    return;
+  }
 
   size_t index = mCallDataStorage.IndexOf(aCallData);
   // It can be that mCallDataStorage has been already cleaned in case the
@@ -2574,6 +2623,9 @@ void Console::RetrieveConsoleEvents(JSContext* aCx,
 
   JS::Rooted<JSObject*> targetScope(aCx, JS::CurrentGlobalOrNull(aCx));
 
+  AutoRestore<bool> retrievingGuard(mIsRetrievingConsoleEvent);
+  mIsRetrievingConsoleEvent = true;
+
   for (uint32_t i = 0; i < mArgumentStorage.length(); ++i) {
     JS::Rooted<JS::Value> value(aCx);
 
@@ -2592,10 +2644,10 @@ void Console::RetrieveConsoleEvents(JSContext* aCx,
     // targetScope is the destination scope and value will be populated in its
     // compartment.
     {
-      MutexAutoLock lock(mCallDataStorage[i]->mMutex);
+      RefPtr<ConsoleCallData> callData = mCallDataStorage[i];
+      MutexAutoLock lock(callData->mMutex);
       if (NS_WARN_IF(!PopulateConsoleNotificationInTheTargetScope(
-              aCx, sequence, targetScope, &value, mCallDataStorage[i],
-              &mGroupStack))) {
+              aCx, sequence, targetScope, &value, callData, &mGroupStack))) {
         aRv.Throw(NS_ERROR_FAILURE);
         return;
       }

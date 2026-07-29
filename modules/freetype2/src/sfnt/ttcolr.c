@@ -4,7 +4,7 @@
  *
  *   TrueType and OpenType colored glyph layer support (body).
  *
- * Copyright (C) 2018-2025 by
+ * Copyright (C) 2018-2026 by
  * David Turner, Robert Wilhelm, Dominik Röttsches, and Werner Lemberg.
  *
  * Originally written by Shao Yu Zhang <shaozhang@fb.com>.
@@ -236,8 +236,10 @@
       p1                 = (FT_Byte*)( table + base_glyphs_offset_v1 );
       num_base_glyphs_v1 = FT_PEEK_ULONG( p1 );
 
-      if ( ( table_size - base_glyphs_offset_v1 ) / BASE_GLYPH_PAINT_RECORD_SIZE
-               < num_base_glyphs_v1 )
+      /* Account for 4 byte numBaseGlyphPaintRecords at the beginning of */
+      /* the BaseGlyphPaintRecord array.                                 */
+      if ( ( table_size - base_glyphs_offset_v1 - 4 ) /
+               BASE_GLYPH_PAINT_RECORD_SIZE < num_base_glyphs_v1 )
         goto InvalidTable;
 
       colr->num_base_glyphs_v1 = num_base_glyphs_v1;
@@ -451,20 +453,14 @@
                           FT_UInt           *acolor_index,
                           FT_LayerIterator*  iterator )
   {
-    Colr*            colr = (Colr*)face->colr;
-    BaseGlyphRecord  glyph_record;
-
-
-    if ( !colr )
-      return 0;
-
-    if ( !iterator->p )
+    if ( !iterator->p )  /* first call to function */
     {
-      FT_ULong  offset;
+      Colr*            colr = (Colr*)face->colr;
+      BaseGlyphRecord  glyph_record;
 
 
-      /* first call to function */
-      iterator->layer = 0;
+      if ( !colr )
+        return 0;
 
       if ( !find_base_glyph_record( colr->base_glyphs,
                                     colr->num_base_glyphs,
@@ -472,21 +468,18 @@
                                     &glyph_record ) )
         return 0;
 
-      if ( glyph_record.num_layers )
-        iterator->num_layers = glyph_record.num_layers;
-      else
+      if ( glyph_record.num_layers == 0                               ||
+           glyph_record.first_layer_index + glyph_record.num_layers >
+             colr->num_layers                                         )
         return 0;
 
-      offset = LAYER_SIZE * glyph_record.first_layer_index;
-      if ( offset + LAYER_SIZE * glyph_record.num_layers > colr->table_size )
-        return 0;
-
-      iterator->p = colr->layers + offset;
+      iterator->num_layers = glyph_record.num_layers;
+      iterator->layer      = 0;
+      iterator->p          = colr->layers +
+                               LAYER_SIZE * glyph_record.first_layer_index;
     }
 
-    if ( iterator->layer >= iterator->num_layers                     ||
-         iterator->p < colr->layers                                  ||
-         iterator->p >= ( (FT_Byte*)colr->table + colr->table_size ) )
+    if ( iterator->layer >= iterator->num_layers )
       return 0;
 
     *aglyph_index = FT_NEXT_USHORT( iterator->p );
@@ -1869,7 +1862,11 @@
       alpha = face->palette[color_index].alpha;
     }
 
-    /* XXX Convert if srcSlot.bitmap is not grey? */
+    /* Reject pixel modes other than GRAY/MONO. */
+    if ( srcSlot->bitmap.pixel_mode != FT_PIXEL_MODE_GRAY &&
+         srcSlot->bitmap.pixel_mode != FT_PIXEL_MODE_MONO )
+      return FT_Err_Invalid_Glyph_Format;
+
     src = srcSlot->bitmap.buffer;
     dst = dstSlot->bitmap.buffer +
           dstSlot->bitmap.pitch * ( dstSlot->bitmap_top - srcSlot->bitmap_top ) +
@@ -1879,7 +1876,9 @@
     {
       for ( x = 0; x < srcSlot->bitmap.width; x++ )
       {
-        int  aa = src[x];
+        int  aa = srcSlot->bitmap.pixel_mode == FT_PIXEL_MODE_MONO
+                    ? ( src[x >> 3] & ( 0x80 >> ( x & 7 ) ) ) ? 255 : 0
+                    : src[x];
         int  fa = alpha * aa / 255;
 
         int  fb = b * fa / 255;

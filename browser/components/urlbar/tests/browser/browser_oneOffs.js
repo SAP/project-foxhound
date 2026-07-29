@@ -36,6 +36,9 @@ add_setup(async function () {
       ["browser.search.separatePrivateDefault.ui.enabled", false],
       ["browser.urlbar.suggest.quickactions", false],
       ["browser.urlbar.scotchBonnet.enableOverride", false],
+      // Force settings redesign to false, so that `hideOneOffButton` will correctly
+      // work for the time being.
+      ["browser.settings-redesign.enabled", false],
     ],
   });
 
@@ -671,15 +674,14 @@ add_task(async function localShortcutEmptySearchString() {
 
     let resultCount = UrlbarTestUtils.getResultCount(window);
     if (!resultCount) {
-      Assert.equal(
-        gURLBar.panel.getAttribute("noresults"),
-        "true",
+      Assert.ok(
+        gURLBar.hasAttribute("noresults"),
         "Panel has no results, therefore should have noresults attribute"
       );
       continue;
     }
     Assert.ok(
-      !gURLBar.panel.hasAttribute("noresults"),
+      !gURLBar.hasAttribute("noresults"),
       "Panel has results, therefore should not have noresults attribute"
     );
     let result = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +9,7 @@
 #include "StorageAccessAPIHelper.h"
 
 #include "mozilla/net/HttpBaseChannel.h"
-#include "mozilla/net/UrlClassifierCommon.h"
+#include "mozilla/net/ChannelClassifierUtils.h"
 #include "mozilla/glean/AntitrackingMetrics.h"
 #include "nsContentUtils.h"
 #include "nsIChannel.h"
@@ -154,7 +152,7 @@ void AddConsoleReport(nsIChannel* aNewChannel, nsIURI* aNewURI,
 
   httpChannel->AddConsoleReport(nsIScriptError::warningFlag,
                                 ANTITRACKING_CONSOLE_CATEGORY,
-                                nsContentUtils::eNECKO_PROPERTIES, uri, 0, 0,
+                                PropertiesFile::NECKO_PROPERTIES, uri, 0, 0,
                                 "CookieAllowedForDFPIByHeuristic"_ns, params);
 }
 
@@ -177,7 +175,7 @@ bool ShouldRedirectHeuristicApplyTrackingResource(nsIChannel* aOldChannel,
   uint32_t oldClassificationFlags =
       classifiedOldChannel->GetFirstPartyClassificationFlags();
 
-  if (net::UrlClassifierCommon::IsTrackingClassificationFlag(
+  if (net::ChannelClassifierUtils::IsTrackingClassificationFlag(
           oldClassificationFlags, NS_UsePrivateBrowsing(aOldChannel))) {
     // This is a redirect from tracking.
     LOG_SPEC2(("Ignoring redirect for %s to %s because it's from tracking ",
@@ -238,8 +236,7 @@ void DynamicFpiRedirectHeuristic(nsIChannel* aOldChannel, nsIURI* aOldURI,
   }
 
   int32_t behavior = cookieJarSettings->GetCookieBehavior();
-  if (behavior !=
-      nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN) {
+  if (behavior != nsICookieService::BEHAVIOR_PARTITION_FOREIGN) {
     LOG(
         ("Disabled by network.cookie.cookieBehavior pref (%d), bailing out "
          "early",

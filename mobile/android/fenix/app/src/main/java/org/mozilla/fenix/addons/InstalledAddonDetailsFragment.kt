@@ -30,6 +30,7 @@ import mozilla.components.support.ktx.android.content.appName
 import mozilla.components.support.ktx.android.content.appVersionName
 import org.mozilla.fenix.BuildConfig
 import org.mozilla.fenix.databinding.FragmentInstalledAddOnDetailsBinding
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.runIfFragmentIsAttached
 import org.mozilla.fenix.ext.showToolbar
@@ -39,7 +40,7 @@ import mozilla.components.feature.addons.R as addonsR
  * An activity to show the details of a installed add-on.
  */
 @Suppress("LargeClass", "TooManyFunctions")
-class InstalledAddonDetailsFragment : Fragment() {
+class InstalledAddonDetailsFragment : Fragment(), SystemInsetsPaddedFragment {
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
     internal lateinit var addon: Addon
     internal val logger = Logger("InstalledAddonDetailsFragment")
@@ -143,7 +144,7 @@ class InstalledAddonDetailsFragment : Fragment() {
         runIfFragmentIsAttached {
             showSnackBar(
                 binding.root,
-                getString(addonsR.string.mozac_feature_addons_failed_to_query_extensions),
+                getString(addonsR.string.mozac_feature_addons_failed_to_load_extensions),
             )
             findNavController().popBackStack()
         }
@@ -368,7 +369,11 @@ class InstalledAddonDetailsFragment : Fragment() {
                     InstalledAddonDetailsFragmentDirections.actionGlobalBrowser(null)
                 } else {
                     InstalledAddonDetailsFragmentDirections
-                        .actionInstalledAddonFragmentToAddonInternalSettingsFragment(addon)
+                        .actionInstalledAddonFragmentToAddonInternalSettingsFragment(
+                            webExtensionName = addon.translateName(requireContext()),
+                            optionsPageUrl = settingUrl,
+                            webExtensionId = addon.id,
+                        )
                 }
                 this.findNavController().navigate(directions)
             }

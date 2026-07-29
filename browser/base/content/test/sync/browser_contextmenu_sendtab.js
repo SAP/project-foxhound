@@ -54,10 +54,7 @@ function updateTabContextMenu(tab = gBrowser.selectedTab) {
 
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["browser.urlbar.trustPanel.featureGate", false],
-      ["test.wait300msAfterTabSwitch", true],
-    ],
+    set: [["test.wait300msAfterTabSwitch", true]],
   });
 
   await promiseSyncReady();
@@ -184,6 +181,11 @@ add_task(async function test_tab_contextmenu() {
     "Send tab to device is shown"
   );
   is(
+    document.getElementById("context_sendTabToDevice").label,
+    "Send to Device",
+    "Send tab to device label changed"
+  );
+  is(
     document.getElementById("context_sendTabToDeviceSeparator").hidden,
     false,
     "Send tab to device separator is shown"
@@ -201,19 +203,82 @@ add_task(async function test_tab_contextmenu() {
   sandbox.restore();
 });
 
+add_task(async function test_tab_contextmenu_send_to_mobile() {
+  let mobileFxaDevices = [
+    {
+      id: 1,
+      name: "Foo",
+      type: "mobile",
+      availableCommands: { "https://identity.mozilla.com/cmd/open-uri": "baz" },
+      lastAccessTime: Date.now(),
+    },
+    {
+      id: 2,
+      name: "Bar",
+      type: "tablet",
+      availableCommands: { "https://identity.mozilla.com/cmd/open-uri": "boo" },
+      lastAccessTime: Date.now() + 60000, // add 30min
+    },
+  ];
+
+  const sandbox = setupSendTabMocks({ fxaDevices: mobileFxaDevices });
+  let expectation = sandbox
+    .mock(gSync)
+    .expects("sendTabToDevice")
+    .once()
+    .withExactArgs(
+      {
+        url: "about:mozilla",
+        title: "The Book of Mozilla, 6:27",
+        private: false,
+      },
+      [mobileFxaDevices[1]]
+    )
+    .returns(true);
+
+  updateTabContextMenu(testTab);
+  await openTabContextMenu("context_sendTabToDevice");
+  is(
+    document.getElementById("context_sendTabToDevice").hidden,
+    false,
+    "Send tab to mobile is shown"
+  );
+  is(
+    document.getElementById("context_sendTabToDevice").label,
+    "Send to Mobile",
+    "Send tab to mobile label changed"
+  );
+  is(
+    document.getElementById("context_sendTabToDeviceSeparator").hidden,
+    false,
+    "Send tab to device separator is shown"
+  );
+  is(
+    document.getElementById("context_sendTabToDevice").disabled,
+    false,
+    "Send tab to mobile is enabled"
+  );
+
+  await activateMenuItem();
+  await closeConfirmationHint();
+
+  expectation.verify();
+  sandbox.restore();
+});
+
 add_task(async function test_tab_contextmenu_unconfigured() {
   const sandbox = setupSendTabMocks({ state: UIState.STATUS_NOT_CONFIGURED });
 
   updateTabContextMenu(testTab);
   is(
     document.getElementById("context_sendTabToDevice").hidden,
-    true,
-    "Send tab to device is hidden"
+    false,
+    "Send tab to device should not be hidden"
   );
   is(
     document.getElementById("context_sendTabToDeviceSeparator").hidden,
-    true,
-    "Send tab to device separator is hidden"
+    false,
+    "Send tab to device separator should not be hidden"
   );
   is(
     document.getElementById("context_sendTabToDevice").disabled,
@@ -302,13 +367,13 @@ add_task(async function test_tab_contextmenu_sync_not_ready_other_state() {
   updateTabContextMenu(testTab);
   is(
     document.getElementById("context_sendTabToDevice").hidden,
-    true,
-    "Send tab to device is hidden"
+    false,
+    "Send tab to device should not be hidden"
   );
   is(
     document.getElementById("context_sendTabToDeviceSeparator").hidden,
-    true,
-    "Send tab to device separator is hidden"
+    false,
+    "Send tab to device separator should not be hidden"
   );
   is(
     document.getElementById("context_sendTabToDevice").disabled,

@@ -10,6 +10,8 @@ import mozilla.components.feature.contextmenu.ContextMenuCandidate
 import mozilla.components.feature.contextmenu.ContextMenuUseCases
 import mozilla.components.ui.widgets.DefaultSnackbarDelegate
 import mozilla.components.ui.widgets.SnackbarDelegate
+import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.settings.downloads.DownloadLocationManager
 
 object CustomTabContextMenuCandidate {
     /**
@@ -28,8 +30,20 @@ object CustomTabContextMenuCandidate {
             snackbarDelegate,
         ),
         ContextMenuCandidate.createShareLinkCandidate(context),
-        ContextMenuCandidate.createSaveImageCandidate(context, contextMenuUseCases),
-        ContextMenuCandidate.createSaveVideoAudioCandidate(context, contextMenuUseCases),
+        ContextMenuCandidate.createSaveImageCandidate(
+            context = context,
+            contextMenuUseCases = contextMenuUseCases,
+            downloadsLocation = {
+                DownloadLocationManager(context.components.settings, context.contentResolver).defaultLocation
+            },
+        ),
+        ContextMenuCandidate.createSaveVideoAudioCandidate(
+            context = context,
+            contextMenuUseCases = contextMenuUseCases,
+            downloadsLocation = {
+                DownloadLocationManager(context.components.settings, context.contentResolver).defaultLocation
+            },
+        ),
         ContextMenuCandidate.createCopyImageLocationCandidate(
             context,
             snackBarParentView,

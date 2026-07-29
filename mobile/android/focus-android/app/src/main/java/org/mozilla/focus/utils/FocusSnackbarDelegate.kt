@@ -8,6 +8,9 @@ import android.view.View
 import androidx.compose.ui.text.style.TextOverflow
 import mozilla.components.ui.widgets.SnackbarDelegate
 
+/**
+ * A [SnackbarDelegate] implementation that uses [FocusSnackbar].
+ */
 class FocusSnackbarDelegate(private val view: View) : SnackbarDelegate {
 
     override fun show(

@@ -69,7 +69,7 @@ auto WebrtcGlobalStatsHistory::Entry::MakeReportElement(
   auto* elem = new ReportElement();
   elem->report = std::move(aReport);
   // We don't want to store a copy of the SDP history with each stats entry.
-  // SDP History is stored seperately, see MakeSdpElements.
+  // SDP History is stored separately, see MakeSdpElements.
   elem->report->mSdpHistory.Clear();
   return elem;
 }

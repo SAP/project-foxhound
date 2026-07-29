@@ -5,7 +5,7 @@
 package mozilla.components.lib.state.ext
 
 import androidx.compose.runtime.collectAsState
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import kotlinx.coroutines.flow.map
 import mozilla.components.lib.state.Action
 import mozilla.components.lib.state.State

@@ -151,7 +151,7 @@ TEST(TestHttpResponseHead, atoms)
   ASSERT_EQ(atom1, atom2);
   ASSERT_EQ(atom1.get(), atom2.get());
   // Check that we get the expected pointer back.
-  ASSERT_EQ(atom2.get(), header1.BeginReading());
+  ASSERT_EQ(atom2.get(), header1.get());
 }
 
 TEST(ContentTypeParsing, CommentHandling1)

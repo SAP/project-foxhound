@@ -34,10 +34,11 @@ class ReceiveStreamInterface {
     // This member will not change mid-stream and can be assumed to be const
     // post initialization.
     uint32_t remote_ssrc = 0;
-
-    // Sender SSRC used for sending RTCP (such as receiver reports).
-    // This value may change mid-stream and must be done on the same thread
-    // that the value is read on (i.e. packet delivery).
+    // This member is no longer used by WebRTC, but retained in order to
+    // allow downstream code to compile.
+    // TODO: issues.webrtc.org/41480926 - Delete when downstream changed.
+    // Mozilla: Undeprecated to allow using the signaled send ssrc in RTCP for
+    //          recvonly m-sections to make Teams happy.
     uint32_t local_ssrc = 0;
   };
 

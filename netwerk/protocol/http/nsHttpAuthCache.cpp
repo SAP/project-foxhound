@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,7 +35,8 @@ static inline void GetAuthKey(const nsACString& scheme, const nsACString& host,
 //-----------------------------------------------------------------------------
 // nsHttpAuthCache <public>
 //-----------------------------------------------------------------------------
-NS_IMPL_ISUPPORTS(nsHttpAuthCache, nsIHttpAuthCache)
+NS_IMPL_ISUPPORTS(nsHttpAuthCache, nsIHttpAuthCache, nsIObserver,
+                  nsISupportsWeakReference)
 
 NS_IMETHODIMP
 nsHttpAuthCache::GetEntries(nsTArray<RefPtr<nsIHttpAuthEntry>>& aEntries) {
@@ -73,21 +73,24 @@ nsHttpAuthCache::ClearEntry(nsIHttpAuthEntry* aEntry) {
 
 nsHttpAuthCache::nsHttpAuthCache() : mDB(128) {
   LOG(("nsHttpAuthCache::nsHttpAuthCache %p", this));
+}
 
+// Observer registration must happen after construction: weak registration QIs
+// |this| for nsISupportsWeakReference, and the transient AddRef/Release would
+// destroy the object mid-construction (before its owning RefPtr exists).
+void nsHttpAuthCache::Init() {
   nsCOMPtr<nsIObserverService> obsSvc = services::GetObserverService();
   if (obsSvc) {
-    obsSvc->AddObserver(this, "clear-origin-attributes-data", true);
+    MOZ_ALWAYS_SUCCEEDS(
+        obsSvc->AddObserver(this, "clear-origin-attributes-data", true));
   }
 }
 
 nsHttpAuthCache::~nsHttpAuthCache() {
   LOG(("nsHttpAuthCache::~nsHttpAuthCache %p", this));
 
+  // Weak reference: auto-nulls on destruction, so no RemoveObserver needed.
   ClearAll();
-  nsCOMPtr<nsIObserverService> obsSvc = services::GetObserverService();
-  if (obsSvc) {
-    obsSvc->RemoveObserver(this, "clear-origin-attributes-data");
-  }
 }
 
 nsresult nsHttpAuthCache::GetAuthEntryForPath(const nsACString& scheme,
@@ -97,7 +100,7 @@ nsresult nsHttpAuthCache::GetAuthEntryForPath(const nsACString& scheme,
                                               nsACString const& originSuffix,
                                               RefPtr<nsHttpAuthEntry>& entry) {
   LOG(("nsHttpAuthCache::GetAuthEntryForPath %p [path=%s]\n", this,
-       path.BeginReading()));
+       PromiseFlatCString(path).get()));
 
   nsAutoCString key;
   nsHttpAuthNode* node = LookupAuthNode(scheme, host, port, originSuffix, key);
@@ -117,7 +120,7 @@ nsresult nsHttpAuthCache::GetAuthEntryForDomain(const nsACString& scheme,
 
 {
   LOG(("nsHttpAuthCache::GetAuthEntryForDomain %p [realm=%s]\n", this,
-       realm.BeginReading()));
+       PromiseFlatCString(realm).get()));
 
   nsAutoCString key;
   nsHttpAuthNode* node = LookupAuthNode(scheme, host, port, originSuffix, key);
@@ -136,7 +139,8 @@ nsresult nsHttpAuthCache::SetAuthEntry(
   nsresult rv;
 
   LOG(("nsHttpAuthCache::SetAuthEntry %p [realm=%s path=%s metadata=%p]\n",
-       this, realm.BeginReading(), path.BeginReading(), metadata));
+       this, PromiseFlatCString(realm).get(), PromiseFlatCString(path).get(),
+       metadata));
 
   nsAutoCString key;
   nsHttpAuthNode* node = LookupAuthNode(scheme, host, port, originSuffix, key);

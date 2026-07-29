@@ -196,7 +196,7 @@ void EncoderTest::RunLoop(VideoSource *video) {
     ASSERT_NO_FATAL_FAILURE(video->Begin());
     encoder->InitEncoder(video);
 
-    if (mode_ == kRealTime) {
+    if (mode_ == kRealTime && cfg_.g_lag_in_frames == 0) {
       encoder->Control(AOME_SET_ENABLEAUTOALTREF, 0);
     }
 

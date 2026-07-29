@@ -17,7 +17,7 @@ info: |
       i. Perform ? IntegerIndexedElementSet(O, numericIndex, V).
       ii. Return true.
   ...
-includes: [testBigIntTypedArray.js, detachArrayBuffer.js]
+includes: [testTypedArray.js, detachArrayBuffer.js]
 features: [align-detached-buffer-semantics-with-web-reality, BigInt, Reflect, TypedArray]
 ---*/
 
@@ -35,6 +35,6 @@ testWithBigIntTypedArrayConstructors(function(TA) {
   assert.sameValue(result, true);
   assert.sameValue(ta[0], undefined);
   assert.sameValue(isDetached, true);
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

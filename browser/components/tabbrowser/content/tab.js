@@ -35,9 +35,6 @@
                 pack="center"
                 flex="1">
             <label class="tab-text tab-label" role="presentation"/>
-            <hbox class="tab-secondary-label">
-              <label class="tab-icon-sound-label tab-icon-sound-pip-label" data-l10n-id="browser-tab-audio-pip" role="presentation"/>
-            </hbox>
           </vbox>
           <image class="tab-note-icon" role="presentation"/>
           <image class="tab-close-button close-icon" role="button" data-l10n-id="tabbrowser-close-tabs-button" data-l10n-args='{"tabCount": 1}' keyNav="false"/>
@@ -103,8 +100,6 @@
           "pinned,selected=visuallyselected,labeldirection",
         ".tab-label":
           "text=label,accesskey,fadein,pinned,selected=visuallyselected,attention",
-        ".tab-label-container .tab-secondary-label":
-          "pinned,blocked,selected=visuallyselected,pictureinpicture",
         ".tab-close-button": "fadein,pinned,selected=visuallyselected",
       };
     }
@@ -325,7 +320,7 @@
      */
     get lastSeenActive() {
       const isForegroundWindow =
-        this.ownerGlobal ==
+        this.documentGlobal ==
         BrowserWindowTracker.getTopWindow({ allowPopups: true });
       // the timestamp for the selected tab in the active window is always now
       if (isForegroundWindow && this.selected) {
@@ -570,6 +565,11 @@
             gBrowser.addToMultiSelectedTabs(this);
             gBrowser.lastMultiSelectedTab = this;
           }
+        } else if (
+          event.altKey &&
+          Services.prefs.getBoolPref("browser.tabs.splitView.enabled", false)
+        ) {
+          eventMaySelectTab = false;
         } else if (!this.selected && this.multiselected) {
           gBrowser.lockClearMultiSelectionOnce();
         }
@@ -594,6 +594,27 @@
 
     on_click(event) {
       if (event.button != 0) {
+        return;
+      }
+
+      if (event.altKey) {
+        if (
+          !event.target.classList.contains("tab-close-button") &&
+          !event.target.classList.contains("tab-icon-overlay") &&
+          !event.target.classList.contains("tab-audio-button") &&
+          !this.selected &&
+          !gBrowser.selectedTab.hidden &&
+          Services.prefs.getBoolPref("browser.tabs.splitView.enabled", false) &&
+          !this.splitview &&
+          !gBrowser.selectedTab.splitview &&
+          !this.pinned &&
+          !gBrowser.selectedTab.pinned
+        ) {
+          gBrowser.addTabSplitView([gBrowser.selectedTab, this], {
+            insertBefore: gBrowser.selectedTab,
+            trigger: "alt_click",
+          });
+        }
         return;
       }
 

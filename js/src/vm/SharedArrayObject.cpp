@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -432,8 +430,12 @@ bool SharedArrayBufferObject::growImpl(JSContext* cx, const CallArgs& args) {
 
     Pages newPages =
         Pages::fromByteLengthExact(newByteLength, buffer->wasmPageSize());
-    return buffer->rawWasmBufferObject()->wasmGrowToPagesInPlace(
-        *lock, buffer->wasmAddressType(), newPages);
+    if (!buffer->rawWasmBufferObject()->wasmGrowToPagesInPlace(
+            *lock, buffer->wasmAddressType(), newPages)) {
+      return false;
+    }
+    args.rval().setUndefined();
+    return true;
   }
 
   if (!buffer->rawBufferObject()->growJS(newByteLength)) {
@@ -937,16 +939,7 @@ void SharedArrayBufferObject::wasmDiscard(Handle<SharedArrayBufferObject*> buf,
 }
 
 static const JSClassOps SharedArrayBufferObjectClassOps = {
-    nullptr,                            // addProperty
-    nullptr,                            // delProperty
-    nullptr,                            // enumerate
-    nullptr,                            // newEnumerate
-    nullptr,                            // resolve
-    nullptr,                            // mayResolve
-    SharedArrayBufferObject::Finalize,  // finalize
-    nullptr,                            // call
-    nullptr,                            // construct
-    nullptr,                            // trace
+    .finalize = SharedArrayBufferObject::Finalize,
 };
 
 static const JSFunctionSpec sharedarray_functions[] = {

@@ -1,13 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef SDPMEDIASECTION_H_
-#define SDPMEDIASECTION_H_
+#ifndef DOM_MEDIA_WEBRTC_SDP_SDPMEDIASECTION_H_
+#define DOM_MEDIA_WEBRTC_SDP_SDPMEDIASECTION_H_
 
-#include <sstream>
+#include <ostream>
 #include <string>
 #include <vector>
 
@@ -103,7 +101,7 @@ class SdpMediaSection {
 
   inline bool IsSending() const { return GetDirection() & sdp::kSend; }
 
-  inline void SetReceiving(bool receiving) {
+  inline void SetReceiving(const bool receiving) {
     auto direction = GetDirection();
     if (direction & sdp::kSend) {
       SetDirection(receiving ? SdpDirectionAttribute::kSendrecv
@@ -114,7 +112,7 @@ class SdpMediaSection {
     }
   }
 
-  inline void SetSending(bool sending) {
+  inline void SetSending(const bool sending) {
     auto direction = GetDirection();
     if (direction & sdp::kRecv) {
       SetDirection(sending ? SdpDirectionAttribute::kSendrecv
@@ -125,8 +123,9 @@ class SdpMediaSection {
     }
   }
 
-  inline void SetDirection(SdpDirectionAttribute::Direction direction) {
-    GetAttributeList().SetAttribute(new SdpDirectionAttribute(direction));
+  inline void SetDirection(const SdpDirectionAttribute::Direction direction) {
+    GetAttributeList().SetAttribute(
+        MakeUnique<SdpDirectionAttribute>(direction));
   }
 
   inline SdpDirectionAttribute::Direction GetDirection() const {
@@ -140,7 +139,7 @@ class SdpMediaSection {
   const SdpSctpmapAttributeList::Sctpmap* GetSctpmap() const;
   uint32_t GetSctpPort() const;
   bool GetMaxMessageSize(uint32_t* size) const;
-  bool HasRtcpFb(const std::string& pt, SdpRtcpFbAttributeList::Type type,
+  bool HasRtcpFb(const std::string& pt, const SdpRtcpFbAttributeList::Type type,
                  const std::string& subType) const;
   SdpRtcpFbAttributeList GetRtcpFbs() const;
   void SetRtcpFbs(const SdpRtcpFbAttributeList& rtcpfbs);
@@ -162,7 +161,7 @@ inline std::ostream& operator<<(std::ostream& os, const SdpMediaSection& ms) {
 }
 
 inline std::ostream& operator<<(std::ostream& os,
-                                SdpMediaSection::MediaType t) {
+                                const SdpMediaSection::MediaType t) {
   switch (t) {
     case SdpMediaSection::kAudio:
       return os << "audio";
@@ -179,7 +178,8 @@ inline std::ostream& operator<<(std::ostream& os,
   return os << "?";
 }
 
-inline std::ostream& operator<<(std::ostream& os, SdpMediaSection::Protocol p) {
+inline std::ostream& operator<<(std::ostream& os,
+                                const SdpMediaSection::Protocol p) {
   switch (p) {
     case SdpMediaSection::kRtpAvp:
       return os << "RTP/AVP";
@@ -268,10 +268,10 @@ inline std::ostream& operator<<(std::ostream& os, SdpMediaSection::Protocol p) {
 
 class SdpConnection {
  public:
-  SdpConnection(sdp::AddrType addrType, std::string addr, uint8_t ttl = 0,
-                uint32_t count = 0)
-      : mAddrType(addrType), mAddr(addr), mTtl(ttl), mCount(count) {}
-  ~SdpConnection() {}
+  SdpConnection(const sdp::AddrType addrType, std::string addr,
+                const uint8_t ttl = 0, const uint32_t count = 0)
+      : mAddrType(addrType), mAddr(std::move(addr)), mTtl(ttl), mCount(count) {}
+  ~SdpConnection() = default;
 
   sdp::AddrType GetAddrType() const { return mAddrType; }
   const std::string& GetAddress() const { return mAddr; }

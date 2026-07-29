@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -10,7 +9,7 @@
 /**
  * imgIEncoder interface
  */
-[scriptable, builtinclass, uuid(4baa2d6e-fee7-42df-ae3f-5fbebc0c267c)]
+[scriptable, builtinclass, uuid(a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d)]
 interface imgIEncoder : nsIAsyncInputStream
 {
   // Possible values for outputOptions. Multiple values are semicolon-separated.
@@ -92,6 +91,93 @@ interface imgIEncoder : nsIAsyncInputStream
     // PRE-MULTIPLIED alpha is used (That is, 50% transparent red is 0x80800000,
     // not 0x80ff0000
   const uint32_t INPUT_FORMAT_HOSTARGB = 2;
+
+    // Input is R10G10B10A2 packed in a single uint32 (4 bytes/pixel).
+    // Bit layout: 0bAARRRRRRRRRRGGGGGGGGGGBBBBBBBBBB (little-endian).
+    // 10-bit color channels [0, 1023], 2-bit alpha [0, 3].
+    // POST-MULTIPLIED alpha is used.
+  const uint32_t INPUT_FORMAT_R10G10B10A2 = 3;
+
+    // Input is RGBA with 10-bit unsigned integer per channel, right-justified
+    // in uint16 (8 bytes/pixel). Values in [0, 1023].
+    // POST-MULTIPLIED alpha is used.
+  const uint32_t INPUT_FORMAT_RGBA_U10 = 4;
+
+    // Input is RGBA with 12-bit unsigned integer per channel, right-justified
+    // in uint16 (8 bytes/pixel). Values in [0, 4095].
+    // POST-MULTIPLIED alpha is used.
+  const uint32_t INPUT_FORMAT_RGBA_U12 = 5;
+
+    // Input is RGBA with 16-bit unsigned integer per channel (8 bytes/pixel).
+    // POST-MULTIPLIED alpha is used.
+  const uint32_t INPUT_FORMAT_RGBA_U16 = 6;
+
+    // Input is RGBA with 16-bit float (half-float) per channel (8 bytes/pixel).
+    // POST-MULTIPLIED alpha is used.
+  const uint32_t INPUT_FORMAT_RGBA_F16 = 7;
+
+  // CICP colour primaries (ISO/IEC 23091-2 / ITU-T H.273).
+  cenum CICPColourPrimaries : 8 {
+    CP_BT709 = 1,
+    CP_UNSPECIFIED = 2,
+    CP_BT470M = 4,
+    CP_BT470BG = 5,
+    CP_BT601 = 6,
+    CP_SMPTE240 = 7,
+    CP_GENERIC_FILM = 8,
+    CP_BT2020 = 9,
+    CP_XYZ = 10,
+    CP_SMPTE431 = 11,
+    CP_SMPTE432 = 12,
+    CP_EBU3213 = 22,
+  };
+
+  // CICP transfer characteristics (ISO/IEC 23091-2 / ITU-T H.273).
+  cenum CICPTransferCharacteristics : 8 {
+    TC_BT709 = 1,
+    TC_UNSPECIFIED = 2,
+    TC_BT470M = 4,
+    TC_BT470BG = 5,
+    TC_BT601 = 6,
+    TC_SMPTE240 = 7,
+    TC_LINEAR = 8,
+    TC_LOG_100 = 9,
+    TC_LOG_100_SQRT10 = 10,
+    TC_IEC61966 = 11,
+    TC_BT_1361 = 12,
+    TC_SRGB = 13,
+    TC_BT2020_10BIT = 14,
+    TC_BT2020_12BIT = 15,
+    TC_SMPTE2084 = 16,
+    TC_SMPTE428 = 17,
+    TC_HLG = 18,
+  };
+
+  // CICP matrix coefficients (ISO/IEC 23091-2 / ITU-T H.273).
+  cenum CICPMatrixCoefficients : 8 {
+    MC_IDENTITY = 0,
+    MC_BT709 = 1,
+    MC_UNSPECIFIED = 2,
+    MC_FCC = 4,
+    MC_BT470BG = 5,
+    MC_BT601 = 6,
+    MC_SMPTE240 = 7,
+    MC_YCGCO = 8,
+    MC_BT2020_NCL = 9,
+    MC_BT2020_CL = 10,
+    MC_SMPTE2085 = 11,
+    MC_CHROMAT_NCL = 12,
+    MC_CHROMAT_CL = 13,
+    MC_ICTCP = 14,
+  };
+
+  // Set color space information using CICP values. Must be called before
+  // initFromData or startImageEncode. Encoders that do not support color space
+  // metadata may ignore this.
+  void setColorSpaceInfo(in imgIEncoder_CICPColourPrimaries colourPrimaries,
+                         in imgIEncoder_CICPTransferCharacteristics transferCharacteristics,
+                         in imgIEncoder_CICPMatrixCoefficients matrixCoefficients,
+                         in boolean fullRange);
 
   /* data - list of bytes in the format specified by inputFormat
    * width  - width in pixels

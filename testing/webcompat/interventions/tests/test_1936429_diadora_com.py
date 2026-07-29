@@ -4,17 +4,17 @@ URL = "https://www.diadora.com/en/us/men/?srule=sorting-in-season&prefn1=descriz
 
 POPUPS_CSS = "#CybotCookiebotDialog, #CybotCookiebotDialog *, #modal-geolocation-change, #modal-geolocation-change *, .modal-backdrop, .modal-backdrop *"
 SELECT_CSS = ".paginationNumbers .select2.select2-container"
-CONTAINER_CSS = ".select2-results"
+CONTAINER_CSS = "#select2-select-pagination-results"
 
 
-async def get_container_width_difference(client):
+async def have_horizontal_scrollbar(client):
     await client.navigate(URL, wait="none")
     client.hide_elements(POPUPS_CSS)
     client.click(client.await_css(SELECT_CSS, is_displayed=True))
-    container = client.await_css(CONTAINER_CSS)
+    container = client.await_css(CONTAINER_CSS, is_displayed=True)
     return client.execute_script(
         """
-      return arguments[0].getBoundingClientRect().width - arguments[0].firstChild.getBoundingClientRect().width;
+      return arguments[0].scrollWidth != arguments[0].clientWidth;
     """,
         container,
     )
@@ -25,8 +25,7 @@ async def get_container_width_difference(client):
 @pytest.mark.asyncio
 @pytest.mark.with_interventions
 async def test_enabled(client):
-    # the site applies 10px of padding to the scrollable area.
-    assert 10 == await get_container_width_difference(client)
+    assert not await have_horizontal_scrollbar(client)
 
 
 @pytest.mark.skip_platforms("android")
@@ -34,5 +33,4 @@ async def test_enabled(client):
 @pytest.mark.asyncio
 @pytest.mark.without_interventions
 async def test_disabled(client):
-    # the inner container will be more than 10px smaller if there is an extra scrollbar.
-    assert 10 < await get_container_width_difference(client)
+    assert await have_horizontal_scrollbar(client)

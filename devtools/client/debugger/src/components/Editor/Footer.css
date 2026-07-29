@@ -76,7 +76,7 @@
   display: inline-flex;
   align-items: center;
   margin: 0;
-  --menuitem-icon-image: url("chrome://devtools/content/debugger/images/sourcemap.svg");
+  --menuitem-icon-image: url("chrome://devtools/content/shared/components/images/sourcemap.svg");
 
   &.not-mapped {
     --icon-color: var(--theme-icon-dimmed-color);
@@ -97,7 +97,7 @@
   }
 
   &.loading {
-    --menuitem-icon-image: url("chrome://devtools/content/debugger/images/loader.svg");
+    --menuitem-icon-image: url("chrome://devtools/content/shared/components/images/loader.svg");
   }
 
   &::before {

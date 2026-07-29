@@ -397,14 +397,22 @@ Result<Span<const char>, ICUError> TimeZone::GetTZDataVersion() {
 }
 
 Result<SpanEnumeration<char>, ICUError> TimeZone::GetAvailableTimeZones(
-    const char* aRegion) {
+    const RegionSubtag& aRegion) {
+  auto regionSpan = aRegion.Span();
+  MOZ_ASSERT(IsStructurallyValidRegionTag(regionSpan));
+
+  // Zero-terminated region string.
+  char region[LanguageTagLimits::RegionLength + 1] = {};
+  std::copy_n(regionSpan.Elements(), regionSpan.Length(), region);
+
   // Get the time zones that are commonly used in the given region. Uses the
-  // UCAL_ZONE_TYPE_ANY filter so we have more fine-grained control over the
-  // returned time zones and don't omit time zones which are considered links in
-  // ICU, but are treated as proper zones in IANA.
+  // UCAL_ZONE_TYPE_CANONICAL filter so we have more fine-grained control over
+  // the returned time zones. Otherwise ICU can return time zones attached to
+  // other countries, for example the time zone id "Iceland" is returned when
+  // requesting all times zones for "CI" (Ivory Coast).
   UErrorCode status = U_ZERO_ERROR;
   UEnumeration* enumeration = ucal_openTimeZoneIDEnumeration(
-      UCAL_ZONE_TYPE_ANY, aRegion, nullptr, &status);
+      UCAL_ZONE_TYPE_CANONICAL, region, nullptr, &status);
   if (U_FAILURE(status)) {
     return Err(ToICUError(status));
   }

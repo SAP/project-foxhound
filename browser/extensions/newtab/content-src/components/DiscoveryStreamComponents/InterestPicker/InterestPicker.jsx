@@ -43,24 +43,22 @@ function InterestPicker({ title, subtitle, interests, receivedFeedRank }) {
   const ref = useIntersectionObserver(handleIntersection);
 
   const onKeyDown = useCallback(e => {
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      // prevent the page from scrolling up/down while navigating.
-      e.preventDefault();
-    }
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      // Arrow direction should match visual navigation direction in RTL
+      const isRTL = document.dir === "rtl";
+      const navigateToPrevious = isRTL
+        ? e.key === "ArrowRight"
+        : e.key === "ArrowLeft";
 
-    if (
-      focusedRef.current?.nextSibling?.querySelector("input") &&
-      e.key === "ArrowDown"
-    ) {
-      focusedRef.current.nextSibling.querySelector("input").tabIndex = 0;
-      focusedRef.current.nextSibling.querySelector("input").focus();
-    }
-    if (
-      focusedRef.current?.previousSibling?.querySelector("input") &&
-      e.key === "ArrowUp"
-    ) {
-      focusedRef.current.previousSibling.querySelector("input").tabIndex = 0;
-      focusedRef.current.previousSibling.querySelector("input").focus();
+      const target = navigateToPrevious
+        ? focusedRef.current?.previousSibling
+        : focusedRef.current?.nextSibling;
+
+      const input = target?.querySelector("input");
+      if (input) {
+        input.tabIndex = 0;
+        input.focus();
+      }
     }
   }, []);
 
@@ -131,36 +129,40 @@ function InterestPicker({ title, subtitle, interests, receivedFeedRank }) {
         onBlur={onWrapperBlur}
         ref={focusRef}
       >
-        {interests.map((interest, index) => {
-          const checked =
-            sectionPersonalization[interest.sectionId]?.isFollowed;
-          return (
-            <li
-              key={interest.sectionId}
-              ref={index === focusedIndex ? focusedRef : null}
-            >
-              <label>
-                <input
-                  type="checkbox"
-                  id={interest.sectionId}
-                  name={interest.sectionId}
-                  checked={checked}
-                  aria-checked={checked}
-                  onChange={e => handleChange(e, index)}
-                  key={`${interest.sectionId}-${checked}`} // Force remount to sync DOM state with React state
-                  tabIndex={index === focusedIndex ? 0 : -1}
-                  onFocus={() => {
-                    onItemFocus(index);
-                  }}
-                />
-                <span className="topic-item-label">{interest.title || ""}</span>
-                <div
-                  className={`topic-item-icon icon ${checked ? "icon-check-filled" : "icon-add-circle-fill"}`}
-                ></div>
-              </label>
-            </li>
-          );
-        })}
+        {interests
+          .filter(interest => interest.followable !== false)
+          .map((interest, index) => {
+            const checked =
+              sectionPersonalization[interest.sectionId]?.isFollowed;
+            return (
+              <li
+                key={interest.sectionId}
+                ref={index === focusedIndex ? focusedRef : null}
+              >
+                <label>
+                  <input
+                    type="checkbox"
+                    id={interest.sectionId}
+                    name={interest.sectionId}
+                    checked={checked}
+                    aria-checked={checked}
+                    onChange={e => handleChange(e, index)}
+                    key={`${interest.sectionId}-${checked}`} // Force remount to sync DOM state with React state
+                    tabIndex={index === focusedIndex ? 0 : -1}
+                    onFocus={() => {
+                      onItemFocus(index);
+                    }}
+                  />
+                  <span className="topic-item-label">
+                    {interest.title || ""}
+                  </span>
+                  <div
+                    className={`topic-item-icon icon ${checked ? "icon-check-filled" : "icon-add-circle-fill"}`}
+                  ></div>
+                </label>
+              </li>
+            );
+          })}
       </ul>
       <p className="learn-more-copy">
         <a

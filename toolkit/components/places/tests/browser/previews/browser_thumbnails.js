@@ -94,7 +94,7 @@ add_task(async function async_test_deleteOrphans() {
   // Create a file in the given path that doesn't have an entry in Places.
   let fakePath = PathUtils.join(
     PlacesPreviews.getPath(),
-    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa." + PlacesPreviews.fileExtension
+    "a".repeat(64) + PlacesPreviews.fileExtension
   );
   // File contents don't matter.
   await IOUtils.writeJSON(fakePath, { test: true });
@@ -114,6 +114,45 @@ add_task(async function async_test_deleteOrphans() {
   );
 
   Assert.ok(await IOUtils.exists(path), "Ensure valid preview is still there");
+});
+
+add_task(async function test_deleteOrphans_sql_injection() {
+  // Create files whose names don't match the expected filename format. These
+  // should be filtered out by the filename validation and not cause any SQL
+  // error. Note that filenames with characters like | are already rejected by
+  // the OS on some platforms, so we only test with cross-platform valid names.
+  let maliciousNames = [
+    // SQL injection attempt using only characters valid on all platforms.
+    "'UNION SELECT url FROM moz_places'.webp",
+    // Wrong hash length (32 instead of 64).
+    "a".repeat(32) + ".webp",
+    // Non-hex characters in the hash portion.
+    "z".repeat(64) + ".webp",
+  ];
+  let maliciousPaths = maliciousNames.map(name =>
+    PathUtils.join(PlacesPreviews.getPath(), name)
+  );
+  registerCleanupFunction(async () => {
+    for (let p of maliciousPaths) {
+      await IOUtils.remove(p, { ignoreAbsent: true });
+    }
+  });
+
+  for (let p of maliciousPaths) {
+    await IOUtils.writeJSON(p, { test: true });
+  }
+
+  await PlacesPreviews.deleteOrphans();
+
+  Assert.equal(
+    await countTombstones(),
+    0,
+    "Malicious filenames were filtered out and no tombstone was inserted"
+  );
+
+  for (let p of maliciousPaths) {
+    await IOUtils.remove(p, { ignoreAbsent: true });
+  }
 });
 
 async function testImageFile(path) {
@@ -141,7 +180,7 @@ function fetchImage(url) {
   return new Promise((resolve, reject) => {
     NetUtil.asyncFetch(
       {
-        uri: NetUtil.newURI(url),
+        uri: Services.io.newURI(url),
         loadUsingSystemPrincipal: true,
         contentPolicyType: Ci.nsIContentPolicy.TYPE_INTERNAL_IMAGE,
       },

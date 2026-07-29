@@ -1,10 +1,8 @@
-/* -*- Mode: rust; rust-indent-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 extern crate urlpattern;
-use urlpattern::parser::RegexSyntax;
 use urlpattern::quirks;
 use urlpattern::regexp::RegExp;
 
@@ -31,42 +29,20 @@ pub extern "C" fn urlpattern_parse_pattern_from_string(
     res: *mut UrlPatternGlue,
 ) -> bool {
     debug!("urlpattern_parse_pattern_from_string()");
-    let init = if let Some(init) = init_from_string_and_base_url(input, base_url) {
-        init
-    } else {
+    let Some(init) = init_from_string_and_base_url(input, base_url) else {
         return false;
     };
-
-    let options = urlpattern::UrlPatternOptions {
-        regex_syntax: RegexSyntax::EcmaScript,
-        ignore_case: options.ignore_case,
-    };
-    if let Ok(pattern) = quirks::parse_pattern_as_lib::<SpiderMonkeyRegexp>(init, options) {
-        unsafe {
-            *res = UrlPatternGlue(Box::into_raw(Box::new(pattern)) as *mut _);
-        }
-        return true;
-    }
-    false
+    parse_pattern_from_init(init.into(), options, res)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn urlpattern_parse_pattern_from_init(
+pub extern "C" fn urlpattern_parse_pattern_from_init(
     init: &UrlPatternInit,
     options: UrlPatternOptions,
     res: *mut UrlPatternGlue,
 ) -> bool {
     debug!("urlpattern_parse_pattern_from_init()");
-
-    let options = urlpattern::UrlPatternOptions {
-        regex_syntax: RegexSyntax::EcmaScript,
-        ignore_case: options.ignore_case,
-    };
-    if let Ok(pattern) = quirks::parse_pattern_as_lib::<SpiderMonkeyRegexp>(init.into(), options) {
-        *res = UrlPatternGlue(Box::into_raw(Box::new(pattern)) as *mut _);
-        return true;
-    }
-    false
+    parse_pattern_from_init(init.into(), options, res)
 }
 
 // When dom::URLPattern goes out of scope destructor will drop the underlying
@@ -229,7 +205,7 @@ pub unsafe extern "C" fn urlpattern_component_matches(
 // note: can't return Result<Option<...>> since cbindgen doesn't handle well
 // so we need to return a type that can be used in C++ and rust
 #[no_mangle]
-pub extern "C" fn urlpattern_process_match_input_from_string(
+pub unsafe extern "C" fn urlpattern_process_match_input_from_string(
     url_str: *const nsACString,
     base_url: *const nsACString,
     res: *mut UrlPatternMatchInputAndInputs,
@@ -289,7 +265,7 @@ pub extern "C" fn urlpattern_process_match_input_from_string(
 }
 
 #[no_mangle]
-pub extern "C" fn urlpattern_process_match_input_from_init(
+pub unsafe extern "C" fn urlpattern_process_match_input_from_init(
     init: &UrlPatternInit,
     base_url: *const nsACString,
     res: *mut UrlPatternMatchInputAndInputs,

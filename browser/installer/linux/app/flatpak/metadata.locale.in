@@ -1,5 +1,5 @@
 [Runtime]
-name=org.mozilla.firefox.Locale
+name=${FLATPAK_NAME}.Locale
 
 [ExtensionOf]
-ref=app/org.mozilla.firefox/${ARCH_NAME}/${FLATPAK_BRANCH}
+ref=app/${FLATPAK_NAME}/${ARCH_NAME}/${FLATPAK_BRANCH}

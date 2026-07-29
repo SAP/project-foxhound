@@ -9,13 +9,6 @@
 <resources>
   <!-- The tile for the list of external apps to open the link in -->
   <string name="mozac_feature_applinks_open_in">បើក​ក្នុង...</string>
-  <!-- The description to warn users that their private browsing session changes -->
-  <string name="mozac_feature_applinks_confirm_dialog_title">បើកក្នុងកម្មវិធី? សកម្មភាពរបស់អ្នកអាចលែងជាឯកជនទៀតហើយ។</string>
-  <!--
-    The description to warn users that their private browsing session changes
-    %s is a placeholder that will be replaced by an app name
-  -->
-  <string name="mozac_feature_applinks_confirm_dialog_title_with_app_name">បើកនៅក្នុង %s? សកម្មភាពរបស់អ្នកអាចលែងជាឯកជនទៀតហើយ។</string>
   <!-- The title of the prompt that warns users their normal browsing session is trying to open another app -->
   <string name="mozac_feature_applinks_normal_confirm_dialog_title">បើកនៅក្នុងកម្មវិធីផ្សេងទៀត</string>
   <!--

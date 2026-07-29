@@ -11,8 +11,6 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-// Services.prefs.setBoolPref("devtools.debugger.log", true);
-
 // Import helpers for the inspector that are also shared with others
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/inspector/test/shared-head.js",
@@ -1006,12 +1004,30 @@ async function assertTooltipHiddenOnMouseOut(tooltip, target) {
 }
 
 /**
+ * Given a `tooltip` instance, simulate hitting the Escape key and check that the tooltip
+ * correctly disappears.
+ *
+ * @param {Tooltip} tooltip
+ *        The tooltip instance
+ * @param {CssRuleView} view
+ */
+async function assertTooltipHiddenOnEscape(tooltip, view) {
+  const onTooltipHidden = tooltip.once("hidden");
+  EventUtils.sendKey("ESCAPE", view.inspector.toolbox.win);
+  await onTooltipHidden;
+
+  ok(!tooltip.isVisible(), "The tooltip is hidden on Escape");
+}
+
+/**
  * Check the content of a `var()` tooltip on a given rule and property name.
  *
  * @param {CssRuleView} view
  * @param {string} ruleSelector
  * @param {string} propertyName
  * @param {object} tooltipExpected
+ * @param {boolean} tooltipExpected.closeWithEscape: Set to true to close the tooltip using
+ *        the Escape key. Defaults to false.
  * @param {string} tooltipExpected.header: The HTML for the top section
  *        (might be the only section when the variable is not a registered property and
  *        there is no starting-style, nor computed value).
@@ -1039,6 +1055,7 @@ async function assertVariableTooltipForProperty(
   ruleSelector,
   propertyName,
   {
+    closeWithEscape = false,
     computed,
     computedClasses = ["theme-fg-color1"],
     header,
@@ -1073,7 +1090,7 @@ async function assertVariableTooltipForProperty(
       `CSS variable #${index} for ${propertyName} in ${ruleSelector} is unmatched`
     );
   }
-
+  variableEl.scrollIntoView();
   const previewTooltip = await assertShowPreviewTooltip(view, variableEl);
   const valueEl = previewTooltip.panel.querySelector(".variable-value");
   const computedValueEl = previewTooltip.panel.querySelector(".computed div");
@@ -1163,7 +1180,11 @@ async function assertVariableTooltipForProperty(
     );
   }
 
-  await assertTooltipHiddenOnMouseOut(previewTooltip, variableEl);
+  if (closeWithEscape) {
+    await assertTooltipHiddenOnEscape(previewTooltip, view);
+  } else {
+    await assertTooltipHiddenOnMouseOut(previewTooltip, variableEl);
+  }
 }
 
 /**
@@ -1526,6 +1547,9 @@ async function deleteNodeWithContextMenu(node, inspector) {
 
 /**
  * Forces the content page to reflow and waits for the next repaint.
+ *
+ * This is often used by highlighter test to wait for AutoRefreshHighlighter logic
+ * using requestAnimationFrame to update highlighter coordinates.
  */
 function reflowContentPage() {
   return SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {

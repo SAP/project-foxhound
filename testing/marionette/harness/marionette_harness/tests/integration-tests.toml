@@ -12,6 +12,8 @@
 [DEFAULT]
 # browser tests
 
+["include:../../../../../browser/components/aiwindow/ui/test/marionette/manifest.toml"]
+
 ["include:../../../../../browser/components/backup/tests/marionette/manifest.toml"]
 
 ["include:../../../../../browser/components/customizableui/test/marionette/manifest.toml"]

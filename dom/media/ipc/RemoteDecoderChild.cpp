@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,6 +24,16 @@ RemoteDecoderChild::~RemoteDecoderChild() = default;
 // ActorDestroy is called if the channel goes down while waiting for a response.
 void RemoteDecoderChild::ActorDestroy(ActorDestroyReason aWhy) {
   mRemoteDecoderCrashed = (aWhy == AbnormalShutdown);
+  mInitPromiseRequest.DisconnectIfExists();
+
+  const nsresult err = mRemoteDecoderCrashed ? GetCrashedErrorCode()
+                                             : NS_ERROR_DOM_MEDIA_CANCELED;
+
+  mInitPromise.RejectIfExists(err, __func__);
+  mDecodePromise.RejectIfExists(err, __func__);
+  mDrainPromise.RejectIfExists(err, __func__);
+  mFlushPromise.RejectIfExists(err, __func__);
+  mShutdownPromise.ResolveIfExists(true, __func__);
   mDecodedData.Clear();
   CleanupShmemRecycleAllocator();
   RecordShutdownTelemetry(mRemoteDecoderCrashed);
@@ -42,8 +50,6 @@ void RemoteDecoderChild::DestroyIPDL() {
     PRemoteDecoderChild::Send__delete__(this);
   }
 }
-
-void RemoteDecoderChild::IPDLActorDestroyed() { mIPDLSelfRef = nullptr; }
 
 // MediaDataDecoder methods
 
@@ -101,14 +107,8 @@ RefPtr<MediaDataDecoder::DecodePromise> RemoteDecoderChild::Decode(
   AssertOnManagerThread();
 
   if (mRemoteDecoderCrashed) {
-    nsresult err = NS_ERROR_DOM_MEDIA_REMOTE_CRASHED_UTILITY_ERR;
-    if (mLocation == RemoteMediaIn::GpuProcess ||
-        mLocation == RemoteMediaIn::RddProcess) {
-      err = NS_ERROR_DOM_MEDIA_REMOTE_CRASHED_RDD_OR_GPU_ERR;
-    } else if (mLocation == RemoteMediaIn::UtilityProcess_MFMediaEngineCDM) {
-      err = NS_ERROR_DOM_MEDIA_REMOTE_CRASHED_MF_CDM_ERR;
-    }
-    return MediaDataDecoder::DecodePromise::CreateAndReject(err, __func__);
+    return MediaDataDecoder::DecodePromise::CreateAndReject(
+        GetCrashedErrorCode(), __func__);
   }
 
   auto samples = MakeRefPtr<ArrayOfRemoteMediaRawData>();
@@ -233,7 +233,7 @@ RefPtr<mozilla::ShutdownPromise> RemoteDecoderChild::Shutdown() {
       mThread, __func__,
       [self](
           PRemoteDecoderChild::ShutdownPromise::ResolveOrRejectValue&& aValue) {
-        self->mShutdownPromise.Resolve(aValue.IsResolve(), __func__);
+        self->mShutdownPromise.ResolveIfExists(aValue.IsResolve(), __func__);
       });
   return mShutdownPromise.Ensure(__func__);
 }
@@ -278,6 +278,17 @@ bool RemoteDecoderChild::ShouldDecoderAlwaysBeRecycled() const {
 
 void RemoteDecoderChild::AssertOnManagerThread() const {
   MOZ_ASSERT(mThread->IsOnCurrentThread());
+}
+
+nsresult RemoteDecoderChild::GetCrashedErrorCode() const {
+  if (mLocation == RemoteMediaIn::GpuProcess ||
+      mLocation == RemoteMediaIn::RddProcess) {
+    return NS_ERROR_DOM_MEDIA_REMOTE_CRASHED_RDD_OR_GPU_ERR;
+  }
+  if (mLocation == RemoteMediaIn::UtilityProcess_MFMediaEngineCDM) {
+    return NS_ERROR_DOM_MEDIA_REMOTE_CRASHED_MF_CDM_ERR;
+  }
+  return NS_ERROR_DOM_MEDIA_REMOTE_CRASHED_UTILITY_ERR;
 }
 
 RemoteMediaManagerChild* RemoteDecoderChild::GetManager() {

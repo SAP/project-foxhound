@@ -7,52 +7,85 @@ package mozilla.components.concept.llm
 import kotlinx.coroutines.flow.Flow
 
 /**
- * A value type representing a prompt that can be delivered to a LLM.
+ * A prompt that can be delivered to a LLM.
+ *
+ * @param userPrompt The user message to send to the LLM.
+ * @param systemPrompt An optional system-level instruction that shapes LLM behavior.
  */
-@JvmInline
-value class Prompt(val value: String)
+data class Prompt(
+    val userPrompt: String,
+    val systemPrompt: String? = null,
+)
+
+/**
+ * Marker interface for any failure surfaced by a cloud-based LLM provider.
+ *
+ * Implementation modules attach more specific category interfaces (e.g. [RateLimited],
+ * [RequestTooLarge]) to their concrete exception types. Consumers may type-check the
+ * categories to drive UI or recovery behavior without depending on any particular impl.
+ */
+interface CloudFailure
+
+/** The request body or content exceeded what the service accepts. */
+interface RequestTooLarge : CloudFailure
+
+/**
+ * Rate or token limit hit.
+ *
+ * @property retryAfter Seconds the caller should wait before retrying, if the service
+ *  provided a hint. `null` if no hint was given.
+ */
+interface RateLimited : CloudFailure {
+    val retryAfter: Long?
+}
+
+/** Authentication or authorization failure. */
+interface AuthFailure : CloudFailure
+
+/** A network-level failure reaching the service. */
+interface NetworkError : CloudFailure
+
+/**
+ * The service responded with a server-side error.
+ *
+ * @property statusCode The HTTP status code returned.
+ */
+interface ServerError : CloudFailure {
+    val statusCode: Int
+}
 
 /**
  * An abstract definition of a LLM that can receive prompts.
  */
 interface Llm {
     /**
-     * A prompt request delivered to the LLM for inference, which will stream a series
-     * of [Response]s as they are made available.
+     * A prompt request delivered to the LLM for inference.
+     *
+     * @param prompt a [Prompt] that will be sent to the [Llm].
+     * @return a [Flow] of [String] of the response from the [Llm].
      */
-    suspend fun prompt(prompt: Prompt): Flow<Response>
+    suspend fun prompt(prompt: Prompt): Flow<String>
 
     /**
-     * A response from prompting a LLM.
+     * An exception thrown by an LLM. Implementation modules may subclass this to
+     * attach additional context (rate-limit metadata, HTTP status, etc.). Consumers
+     * that need numeric codes for UI or telemetry should maintain their own mapping
+     * from subtypes to codes.
+     *
+     * @param message A human-readable description of the failure.
+     * @param cause The original throwable that caused this exception, if any.
      */
-    sealed class Response {
-
-        /**
-         * A successful response from the LLM has occurred. This may include partial data,
-         * or be an indication that the reply has completed.
-         */
-        sealed class Success : Response() {
+    open class Exception(
+        message: String,
+        cause: Throwable? = null,
+    ) : kotlin.Exception(message, cause) {
+        companion object {
             /**
-             * A (potentially) partial reply from the LLM. This may be a complete reply if
-             * it is short or the underlying implementation does not stream responses.
+             * Create an unspecified error.
              */
-            data class ReplyPart(val value: String) : Success()
-
-            /**
-             * An indication that the reply from the LLM is finishes.
-             */
-            data object ReplyFinished : Success()
+            fun unknown(message: String?) = Llm.Exception(
+                message = message ?: "Unknown Llm Exception",
+            )
         }
-
-        /**
-         * The LLM is engaged in getting ready to receive prompts. This may include actions like
-         * authenticating with a remote or downloading a local model.
-         */
-        data class Preparing(val status: String) : Response()
-
-        /**
-         * A failure response from a LLM.
-         */
-        data class Failure(val reason: String) : Response()
     }
 }

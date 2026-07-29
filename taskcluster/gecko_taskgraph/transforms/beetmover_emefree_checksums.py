@@ -5,25 +5,26 @@
 Transform release-beetmover-source-checksums into an actual task description.
 """
 
+from typing import Optional
+
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
-from taskgraph.util.schema import LegacySchema
-from voluptuous import Optional
+from taskgraph.util.schema import Schema
 
 from gecko_taskgraph.transforms.beetmover import craft_release_properties
-from gecko_taskgraph.transforms.task import task_description_schema
+from gecko_taskgraph.transforms.task import TaskDescriptionSchema
 from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
 
-beetmover_checksums_description_schema = LegacySchema({
-    Optional("label"): str,
-    Optional("extra"): object,
-    Optional("shipping-phase"): task_description_schema["shipping-phase"],
-    Optional("shipping-product"): task_description_schema["shipping-product"],
-    Optional("task-from"): task_description_schema["task-from"],
-    Optional("attributes"): task_description_schema["attributes"],
-    Optional("dependencies"): task_description_schema["dependencies"],
-    Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
-})
+
+class BeetmoverChecksumsDescriptionSchema(Schema, kw_only=True):
+    label: Optional[str] = None
+    extra: Optional[object] = None
+    shipping_phase: TaskDescriptionSchema.__annotations__["shipping_phase"] = None
+    shipping_product: TaskDescriptionSchema.__annotations__["shipping_product"] = None
+    task_from: TaskDescriptionSchema.__annotations__["task_from"] = None
+    attributes: TaskDescriptionSchema.__annotations__["attributes"] = None
+    dependencies: TaskDescriptionSchema.__annotations__["dependencies"] = None
+    run_on_repo_type: TaskDescriptionSchema.__annotations__["run_on_repo_type"] = None
 
 
 transforms = TransformSequence()
@@ -37,7 +38,7 @@ def remove_name(config, jobs):
         yield job
 
 
-transforms.add_validate(beetmover_checksums_description_schema)
+transforms.add_validate(BeetmoverChecksumsDescriptionSchema)
 
 
 @transforms.add

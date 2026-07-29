@@ -1,15 +1,25 @@
 [DEFAULT]
 
 ["browser_pageinfo_iframe_media.js"]
-support-files = ["iframes.html"]
+support-files = [
+  "iframes.html",
+  "../general/moz.png",
+]
 
 ["browser_pageinfo_image_info.js"]
+support-files = ["../general/moz.png"]
 skip-if = [
   "true", # Bug 1998143, 1997129, 1161699
 ]
 
 ["browser_pageinfo_images.js"]
-support-files = ["all_images.html"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
+support-files = [
+  "all_images.html",
+  "../general/moz.png",
+]
 
 ["browser_pageinfo_permissions.js"]
 

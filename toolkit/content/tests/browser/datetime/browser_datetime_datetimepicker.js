@@ -74,3 +74,102 @@ add_task(async function test_datetimepicker_time_clicked() {
 
   await helper.tearDown();
 });
+
+/**
+ * The time picker has the correct options enabled based on the selected date at the min attribute.
+ */
+add_task(async function test_datetimepicker_min_time() {
+  info(
+    "The time picker has the correct options enabled based on the selected date at the min attribute"
+  );
+  const inputValue = "2001-01-01T23:59";
+  const minValue = "2001-01-01T23:55";
+
+  await helper.openPicker(
+    `data:text/html, <input id="datetime" type="datetime-local" value="${inputValue}" min="${minValue}">`
+  );
+
+  Assert.equal(helper.panel.state, "open", "Panel should be opened");
+
+  const hours = helper.getSpinnerOptions(SPINNER_HOUR);
+  const minutes = helper.getSpinnerOptions(SPINNER_MIN);
+
+  Assert.deepEqual(
+    hours,
+    ["11"],
+    "The valid hours are available in the picker"
+  );
+
+  Assert.deepEqual(
+    minutes,
+    ["55", "56", "57", "58", "59"],
+    "The valid minutes are available in the picker"
+  );
+
+  await helper.tearDown();
+});
+
+/**
+ * The time picker has the correct options enabled based on the selected date at the max attribute.
+ */
+add_task(async function test_datetimepicker_max_time() {
+  info(
+    "The time picker has the correct options enabled based on the selected date at the max attribute"
+  );
+  const inputValue = "2001-01-01T00:00";
+  const maxValue = "2001-01-01T00:05";
+
+  await helper.openPicker(
+    `data:text/html, <input id="datetime" type="datetime-local" value="${inputValue}" max="${maxValue}">`
+  );
+
+  Assert.equal(helper.panel.state, "open", "Panel should be opened");
+
+  const hours = helper.getSpinnerOptions(SPINNER_HOUR);
+  const minutes = helper.getSpinnerOptions(SPINNER_MIN);
+
+  Assert.deepEqual(
+    hours,
+    ["12"],
+    "The valid hours are available in the picker"
+  );
+
+  Assert.deepEqual(
+    minutes,
+    ["0", "1", "2", "3", "4", "5"],
+    "The valid minutes are available in the picker"
+  );
+
+  await helper.tearDown();
+});
+
+/**
+ * The time picker has the correct options enabled based on the selected date between the min and max attribute.
+ */
+add_task(async function test_datetimepicker_minmax_time() {
+  info(
+    "The time picker has the correct options enabled based on the selected date between the min and max attribute"
+  );
+  const inputValue = "2001-01-02T00:00";
+  const minValue = "2001-01-01T12:00";
+  const maxValue = "2001-01-03T06:00";
+
+  await helper.openPicker(
+    `data:text/html, <input id="datetime" type="datetime-local" value="${inputValue}" min="${minValue}" max="${maxValue}">`
+  );
+
+  Assert.equal(helper.panel.state, "open", "Panel should be opened");
+
+  const hours = helper.getSpinnerOptions(SPINNER_HOUR);
+  const minutes = helper.getSpinnerOptions(SPINNER_MIN);
+
+  Assert.equal(hours.length, 12, "The valid hours are available in the picker");
+
+  Assert.equal(
+    minutes.length,
+    60,
+    "The valid minutes are available in the picker"
+  );
+
+  await helper.tearDown();
+});

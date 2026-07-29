@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,10 +21,9 @@ ConsoleReportCollector::ConsoleReportCollector()
 
 void ConsoleReportCollector::AddConsoleReport(
     uint32_t aErrorFlags, const nsACString& aCategory,
-    nsContentUtils::PropertiesFile aPropertiesFile,
-    const nsACString& aSourceFileURI, uint32_t aLineNumber,
-    uint32_t aColumnNumber, const nsACString& aMessageName,
-    const nsTArray<nsString>& aStringParams) {
+    PropertiesFile aPropertiesFile, const nsACString& aSourceFileURI,
+    uint32_t aLineNumber, uint32_t aColumnNumber,
+    const nsACString& aMessageName, const nsTArray<nsString>& aStringParams) {
   // any thread
   MutexAutoLock lock(mMutex);
 

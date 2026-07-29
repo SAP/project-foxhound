@@ -42,7 +42,7 @@ fun AwesomeBar(
     providers: List<AwesomeBar.SuggestionProvider>,
     hiddenSuggestions: Set<GroupedSuggestion> = emptySet(),
     orientation: AwesomeBarOrientation = AwesomeBarOrientation.TOP,
-    onSuggestionClicked: (AwesomeBar.Suggestion) -> Unit,
+    onSuggestionClicked: (AwesomeBar.SuggestionItem) -> Unit,
     onAutoComplete: (AwesomeBar.Suggestion) -> Unit,
     onRemoveClicked: (GroupedSuggestion) -> Unit,
     onVisibilityStateUpdated: (AwesomeBar.VisibilityState) -> Unit = {},
@@ -52,10 +52,11 @@ fun AwesomeBar(
     val groups = remember(providers) {
         providers
             .groupBy { it.groupTitle() }
-            .map {
+            .map { (title, groupedProviders) ->
                 AwesomeBar.SuggestionProviderGroup(
-                    providers = it.value,
-                    title = it.key,
+                    providers = groupedProviders,
+                    title = title,
+                    displayTitle = groupedProviders.first().displayGroupTitle(),
                 )
             }
     }
@@ -95,7 +96,7 @@ fun AwesomeBar(
     groups: List<AwesomeBar.SuggestionProviderGroup>,
     hiddenSuggestions: Set<GroupedSuggestion> = emptySet(),
     orientation: AwesomeBarOrientation = AwesomeBarOrientation.TOP,
-    onSuggestionClicked: (AwesomeBar.SuggestionProviderGroup, AwesomeBar.Suggestion) -> Unit,
+    onSuggestionClicked: (AwesomeBar.SuggestionProviderGroup, AwesomeBar.SuggestionItem) -> Unit,
     onAutoComplete: (AwesomeBar.SuggestionProviderGroup, AwesomeBar.Suggestion) -> Unit,
     onRemoveClicked: (AwesomeBar.SuggestionProviderGroup, AwesomeBar.Suggestion) -> Unit,
     onVisibilityStateUpdated: (AwesomeBar.VisibilityState) -> Unit = {},

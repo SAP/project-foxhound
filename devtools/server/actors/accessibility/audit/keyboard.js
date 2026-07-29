@@ -119,7 +119,7 @@ function isInvalidNode(node) {
     !node ||
     Cu.isDeadWrapper(node) ||
     node.nodeType !== nodeConstants.ELEMENT_NODE ||
-    !node.ownerGlobal
+    !node.documentGlobal
   );
 }
 

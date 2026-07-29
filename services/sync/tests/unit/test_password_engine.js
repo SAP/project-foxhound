@@ -377,7 +377,7 @@ add_task(async function test_sync_outgoing() {
     // Finally, remove the login. The server record should be marked as deleted.
     _("Remove the login");
     equal(collection.count(), 1);
-    equal(Services.logins.countLogins("", "", ""), 2);
+    equal(await Services.logins.countLoginsAsync("", "", ""), 2);
     equal((await Services.logins.getAllLogins()).length, 2);
     ok(await engine._store.itemExists(guid));
 
@@ -405,7 +405,7 @@ add_task(async function test_sync_outgoing() {
     equal(Object.keys(await engine.getChangedIDs()), 0);
 
     // All of these should not include the deleted login. Only the FxA password should exist.
-    equal(Services.logins.countLogins("", "", ""), 1);
+    equal(await Services.logins.countLoginsAsync("", "", ""), 1);
     equal((await Services.logins.getAllLogins()).length, 1);
     ok(!(await engine._store.itemExists(guid)));
 

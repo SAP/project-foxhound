@@ -27,7 +27,7 @@ async function runTest(testUri) {
   const { inspector, view } = await openRuleView();
   await selectNode("#testid", inspector);
 
-  const rule = getRuleViewRuleEditor(view, 1).rule;
+  const rule = getRuleViewRuleEditorAt(view, 1).rule;
   const prop = rule.textProps[0];
 
   info("Disabling red background color property");

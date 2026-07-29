@@ -26,6 +26,10 @@ add_task(
       {
         expected: [
           [
+            AboutTranslationsTestUtils.Events.SourceTextInputDebounced,
+            { sourceText: "Hello world" },
+          ],
+          [
             AboutTranslationsTestUtils.Events.TranslationRequested,
             { translationId: 1 },
           ],
@@ -81,6 +85,10 @@ add_task(async function test_copy_button_disables_when_translation_cleared() {
     {
       expected: [
         [
+          AboutTranslationsTestUtils.Events.SourceTextInputDebounced,
+          { sourceText: "Hello again" },
+        ],
+        [
           AboutTranslationsTestUtils.Events.TranslationRequested,
           { translationId: 1 },
         ],
@@ -129,7 +137,10 @@ add_task(async function test_copy_button_disables_when_translation_cleared() {
         ],
         [AboutTranslationsTestUtils.Events.ShowTranslatingPlaceholder],
       ],
-      unexpected: [AboutTranslationsTestUtils.Events.CopyButtonEnabled],
+      unexpected: [
+        AboutTranslationsTestUtils.Events.CopyButtonEnabled,
+        AboutTranslationsTestUtils.Events.SourceTextInputDebounced,
+      ],
     },
     async () => {
       await aboutTranslationsTestUtils.setTargetLanguageSelectorValue("de");
@@ -171,6 +182,7 @@ add_task(async function test_copy_button_disables_when_translation_cleared() {
       unexpected: [
         AboutTranslationsTestUtils.Events.CopyButtonEnabled,
         AboutTranslationsTestUtils.Events.TranslationRequested,
+        AboutTranslationsTestUtils.Events.SourceTextInputDebounced,
       ],
     },
     async () => {
@@ -179,6 +191,7 @@ add_task(async function test_copy_button_disables_when_translation_cleared() {
   );
 
   await aboutTranslationsTestUtils.assertTargetTextArea({
+    languageTag: null,
     showsPlaceholder: true,
   });
   await aboutTranslationsTestUtils.assertCopyButton({ enabled: false });

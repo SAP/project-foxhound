@@ -22,65 +22,37 @@
       "resource://gre/modules/AppConstants.sys.mjs"
     );
 
-    ////////////////////////////////////////////////////////////////////////////
-    // Invokers
+    async function doTest() {
+      // openMenu("button1")
+      let button1Acc = getAccessible("button1");
+      let menupopup1 = button1Acc.firstChild;
 
-    function openMenu(aButtonID, aIsTree)
-    {
-      var menuItemRole = aIsTree ? ROLE_CHECK_MENU_ITEM : ROLE_MENUITEM;
-      this.button = getAccessible(aButtonID);
-      this.menupopup = aIsTree ? this.button.nextSibling : this.button.firstChild;
+      testAccessibleTree(button1Acc, { PUSHBUTTON: [{ MENUPOPUP: [] }] });
+      let reordered = waitForEvent(EVENT_REORDER, menupopup1);
+      synthesizeMouse(getNode("button1"), 1, 1, {});
+      await reordered;
+      testAccessibleTree(button1Acc, { PUSHBUTTON: [{ MENUPOPUP: [
+        { role: ROLE_MENUITEM, children: [] },
+        { role: ROLE_MENUITEM, children: [] }
+      ] }] });
+      synthesizeKey("KEY_Escape");
 
-      var checker = new invokerChecker(EVENT_REORDER, this.menupopup);
-      this.__proto__ = new synthClick(aButtonID, checker);
+      // openMenu("button3")
+      let button3Acc = getAccessible("button3");
+      let menupopup3 = button3Acc.firstChild;
 
-      let testButton = popup => {
-        var children = [];
-        if (!aIsTree) {
-          children.push(popup);
-        }
-        var tree = { PUSHBUTTON: children };
-        testAccessibleTree(this.button, tree);
-        testAccessibleTree(this.menupop, popup);
-      }
+      testAccessibleTree(button3Acc, { PUSHBUTTON: [{ MENUPOPUP: [] }] });
+      reordered = waitForEvent(EVENT_REORDER, menupopup3);
+      synthesizeMouse(getNode("button3"), 1, 1, {});
+      await reordered;
+      testAccessibleTree(button3Acc, { PUSHBUTTON: [{ MENUPOPUP: [
+        { role: ROLE_MENUITEM, children: [] },
+        { role: ROLE_MENUITEM, children: [] }
+      ] }] });
+      synthesizeKey("KEY_Escape");
 
-      this.invoke = function openMenu_invoke()
-      {
-        testButton({ MENUPOPUP: [ ] });
-        this.__proto__.invoke();
-      }
-
-      this.finalCheck = function openMenu_finalCheck()
-      {
-        testButton({ MENUPOPUP: [
-          { role: menuItemRole, children: [ ] },
-          { role: menuItemRole, children: [ ] }
-        ] });
-
-        synthesizeKey("KEY_Escape");
-      }
-
-      this.getID = function openMenu_getID()
-      {
-        return "open menu of the button " + prettyName(aButtonID);
-      }
-    }
-
-    ////////////////////////////////////////////////////////////////////////////
-    // Do test
-
-    gA11yEventDumpToConsole = true; // debug stuff
-
-    var gQueue = null;
-
-    function doTest()
-    {
-      gQueue = new eventQueue();
-
-      gQueue.push(new openMenu("button1"));
-      gQueue.push(new openMenu("button3"));
-
-      var columnPickerBtn = getAccessible("tree").firstChild.lastChild.previousSibling;
+      const columnPickerBtn =
+        getAccessible("tree").firstChild.lastChild.previousSibling;
 
       if (!(
         AppConstants.platform == "macosx" &&
@@ -88,10 +60,21 @@
       ) {
         // The column picker is always native, and menus are intentionally
         // hidden from accessibility events
-        gQueue.push(new openMenu(columnPickerBtn, true));
+        let menupopupCP = columnPickerBtn.nextSibling;
+
+        testAccessibleTree(columnPickerBtn, { PUSHBUTTON: [] });
+        reordered = waitForEvent(EVENT_REORDER, menupopupCP);
+        synthesizeMouse(getNode(columnPickerBtn), 1, 1, {});
+        await reordered;
+        testAccessibleTree(columnPickerBtn, { PUSHBUTTON: [] });
+        testAccessibleTree(menupopupCP, { MENUPOPUP: [
+          { role: ROLE_CHECK_MENU_ITEM, children: [] },
+          { role: ROLE_CHECK_MENU_ITEM, children: [] }
+        ] });
+        synthesizeKey("KEY_Escape");
       }
 
-      gQueue.invoke(); // SimpleTest.finish()
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();
@@ -126,14 +109,14 @@
 
     <vbox flex="1">
       <button id="button1" type="menu" label="button">
-        <menupopup native="false">
+        <menupopup nonnative="">
           <menuitem label="menuitem"/>
           <menuitem label="menuitem"/>
         </menupopup>
       </button>
 
       <toolbarbutton id="button3" type="menu" label="toolbarbutton">
-        <menupopup native="false">
+        <menupopup nonnative="">
           <menuitem label="menuitem"/>
           <menuitem label="menuitem"/>
         </menupopup>

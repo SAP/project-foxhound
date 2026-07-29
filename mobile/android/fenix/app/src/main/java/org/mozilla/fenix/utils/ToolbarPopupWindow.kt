@@ -17,9 +17,11 @@ import androidx.annotation.VisibleForTesting
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.view.isVisible
 import mozilla.components.browser.state.selector.findCustomTab
+import mozilla.components.browser.state.selector.findCustomTabOrSelectedTab
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.support.base.log.logger.Logger
+import mozilla.components.support.utils.ClipboardHandler
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.R
@@ -83,30 +85,7 @@ object ToolbarPopupWindow {
         binding.pasteAndGo.isVisible = containsUrl && !isCustomTabSession
 
         if (copyVisible) {
-            binding.copy.setOnClickListener { copyView ->
-                popupWindow.dismiss()
-                clipboard.text = getUrlForClipboard(
-                    copyView.context.components.core.store,
-                    customTabId,
-                )
-
-                // Android 13+ shows by default a popup for copied text.
-                // Avoid overlapping popups informing the user when the URL is copied to the clipboard.
-                // and only show our snackbar when Android will not show an indication by default.                 *
-                // See https://developer.android.com/develop/ui/views/touch-and-input/copy-paste#duplicate-notifications).
-                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) {
-                    snackbarParent.get()?.let { snackbarParent ->
-                        Snackbar.make(
-                            snackBarParentView = snackbarParent,
-                            snackbarState = SnackbarState(
-                                message = context.getString(R.string.browser_toolbar_url_copied_to_clipboard_snackbar),
-                                duration = SnackbarState.Duration.Preset.Long,
-                            ),
-                        ).show()
-                    }
-                }
-                Events.copyUrlTapped.record(NoExtras())
-            }
+            setupCopyButton(binding, popupWindow, clipboard, customTabId, snackbarParent, context)
         }
 
         if (binding.paste.isVisible) {
@@ -139,6 +118,42 @@ object ToolbarPopupWindow {
         }
     }
 
+    private fun setupCopyButton(
+        binding: BrowserToolbarPopupWindowBinding,
+        popupWindow: PopupWindow,
+        clipboard: ClipboardHandler,
+        customTabId: String?,
+        snackbarParent: WeakReference<ViewGroup>,
+        context: Context,
+    ) {
+        binding.copy.setOnClickListener { copyView ->
+            popupWindow.dismiss()
+            val store = copyView.context.components.core.store
+            val url = getUrlForClipboard(store, customTabId)
+            if (isPrivateTab(store, customTabId)) {
+                clipboard.sensitiveText = url
+            } else {
+                clipboard.text = url
+            }
+            // Android 13+ shows by default a popup for copied text.
+            // Avoid overlapping popups informing the user when the URL is copied to the clipboard.
+            // and only show our snackbar when Android will not show an indication by default.
+            // See https://developer.android.com/develop/ui/views/touch-and-input/copy-paste#duplicate-notifications).
+            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) {
+                snackbarParent.get()?.let { snackbarParent ->
+                    Snackbar.make(
+                        snackBarParentView = snackbarParent,
+                        snackbarState = SnackbarState(
+                            message = context.getString(R.string.browser_toolbar_url_copied_to_clipboard_snackbar),
+                            duration = SnackbarState.Duration.Preset.Long,
+                        ),
+                    ).show()
+                }
+            }
+            Events.copyUrlTapped.record(NoExtras())
+        }
+    }
+
     /**
      * Calculates if the popup should be shown above or below the toolbar.
      */
@@ -168,5 +183,13 @@ object ToolbarPopupWindow {
             val selectedTab = store.state.selectedTab
             selectedTab?.readerState?.activeUrl ?: selectedTab?.content?.url
         }
+    }
+
+    @VisibleForTesting
+    internal fun isPrivateTab(
+        store: BrowserStore,
+        customTabId: String? = null,
+    ): Boolean {
+        return store.state.findCustomTabOrSelectedTab(customTabId)?.content?.private ?: true
     }
 }

@@ -1,4 +1,75 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <issues format="6" by="lint 8.13.2" type="baseline" client="gradle" dependencies="false" name="AGP (8.13.2)" variant="all" version="8.13.2">
 
+    <issue
+        id="NoSystemCurrentTimeMillis"
+        message="`System.currentTimeMillis()` must be injectable. Only permitted as a default value of a parameter on a top-level function or on a class."
+        errorLine1="        @VisibleForTesting currentTimeMs: Long = System.currentTimeMillis(),"
+        errorLine2="                                                 ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mozilla/components/feature/pwa/ManifestStorage.kt"
+            line="60"
+            column="50"/>
+    </issue>
+    <issue
+        id="NoSystemCurrentTimeMillis"
+        message="`System.currentTimeMillis()` must be injectable. Only permitted as a default value of a parameter on a top-level function or on a class."
+        errorLine1="        @VisibleForTesting currentTimeMs: Long = System.currentTimeMillis(),"
+        errorLine2="                                                 ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mozilla/components/feature/pwa/ManifestStorage.kt"
+            line="73"
+            column="50"/>
+    </issue>
+    <issue
+        id="NoSystemCurrentTimeMillis"
+        message="`System.currentTimeMillis()` must be injectable. Only permitted as a default value of a parameter on a top-level function or on a class."
+        errorLine1="        val entity = ManifestEntity(manifest, currentTime = System.currentTimeMillis())"
+        errorLine2="                                                            ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mozilla/components/feature/pwa/ManifestStorage.kt"
+            line="119"
+            column="61"/>
+    </issue>
+    <issue
+        id="NoSystemCurrentTimeMillis"
+        message="`System.currentTimeMillis()` must be injectable. Only permitted as a default value of a parameter on a top-level function or on a class."
+        errorLine1="            val update = existing.copy(manifest = manifest, updatedAt = System.currentTimeMillis())"
+        errorLine2="                                                                        ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mozilla/components/feature/pwa/ManifestStorage.kt"
+            line="128"
+            column="73"/>
+    </issue>
+    <issue
+        id="NoSystemCurrentTimeMillis"
+        message="`System.currentTimeMillis()` must be injectable. Only permitted as a default value of a parameter on a top-level function or on a class."
+        errorLine1="            val update = existing.copy(usedAt = System.currentTimeMillis())"
+        errorLine2="                                                ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mozilla/components/feature/pwa/ManifestStorage.kt"
+            line="140"
+            column="49"/>
+    </issue>
+    <issue
+        id="NoSystemCurrentTimeMillis"
+        message="`System.currentTimeMillis()` must be injectable. Only permitted as a default value of a parameter on a top-level function or on a class."
+        errorLine1="        @VisibleForTesting currentTimeMs: Long = System.currentTimeMillis(),"
+        errorLine2="                                                 ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mozilla/components/feature/pwa/WebAppShortcutManager.kt"
+            line="223"
+            column="50"/>
+    </issue>
+    <issue
+        id="NoSystemCurrentTimeMillis"
+        message="`System.currentTimeMillis()` must be injectable. Only permitted as a default value of a parameter on a top-level function or on a class."
+        errorLine1="            currentTimeMs: Long = System.currentTimeMillis(),"
+        errorLine2="                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mozilla/components/feature/pwa/WebAppUseCases.kt"
+            line="78"
+            column="35"/>
+    </issue>
+
 </issues>

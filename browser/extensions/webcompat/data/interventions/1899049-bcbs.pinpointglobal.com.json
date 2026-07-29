@@ -1,0 +1,15 @@
+{
+  "label": "bcbs.pinpointglobal.com",
+  "bugs": {
+    "1899049": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://bcbs.pinpointglobal.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

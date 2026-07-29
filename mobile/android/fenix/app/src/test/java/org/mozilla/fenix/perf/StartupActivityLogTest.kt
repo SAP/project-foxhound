@@ -9,7 +9,7 @@ import android.app.Application
 import androidx.lifecycle.LifecycleOwner
 import io.mockk.Called
 import io.mockk.MockKAnnotations
-import io.mockk.impl.annotations.MockK
+import io.mockk.impl.annotations.RelaxedMockK
 import io.mockk.mockk
 import io.mockk.verify
 import mozilla.components.support.base.log.Log.Priority
@@ -26,7 +26,7 @@ class StartupActivityLogTest {
     private lateinit var appObserver: StartupActivityLog.StartupLogAppLifecycleObserver
     private lateinit var activityCallbacks: StartupActivityLog.StartupLogActivityLifecycleCallbacks
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var logger: Logger
 
     @Before

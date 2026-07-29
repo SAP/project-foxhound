@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import mozilla.components.browser.state.action.ContentAction
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.prompt.PromptRequest
@@ -48,9 +49,26 @@ internal class EmailMaskPromptViewListener(
         emailMaskBar.showPrompt()
     }
 
+    /**
+     * Dismisses the current email mask prompt.
+     *
+     * @param promptRequest The specific prompt to dismiss. When provided, only that prompt is
+     * consumed, avoiding accidentally dismissing a concurrently added [PromptRequest.SelectLoginPrompt].
+     */
     @Suppress("TooGenericExceptionCaught")
-    fun dismissCurrentEmailMaskPrompt() {
+    fun dismissCurrentEmailMaskPrompt(promptRequest: PromptRequest.SelectLoginPrompt? = null) {
         try {
+            if (promptRequest != null) {
+                promptRequest.onDismiss()
+                sessionId?.let {
+                    browserStore.dispatch(
+                        ContentAction.ConsumePromptRequestAction(it, promptRequest),
+                    )
+                }
+                emailMaskBar.hidePrompt()
+                return
+            }
+
             browserStore.consumePromptFrom<PromptRequest.SelectLoginPrompt>(sessionId) {
                 it.onDismiss()
             }

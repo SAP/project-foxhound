@@ -404,13 +404,6 @@
     "comment": "shell always emulates a focused page"
   },
   {
-    "testIdPattern": "[emulation.spec] Emulation Page.emulateNetworkConditions should support offline",
-    "platforms": ["darwin", "linux", "win32"],
-    "parameters": ["firefox"],
-    "expectations": ["FAIL"],
-    "comment": "Not supported by WebDriver BiDi"
-  },
-  {
     "testIdPattern": "[evaluation.spec] Evaluation specs Page.evaluate should replace symbols with undefined",
     "platforms": ["darwin", "linux", "win32"],
     "parameters": ["cdp"],
@@ -598,6 +591,13 @@
     "parameters": ["webDriverBiDi"],
     "expectations": ["FAIL"],
     "comment": "See https://github.com/puppeteer/puppeteer/issues/4840"
+  },
+  {
+    "testIdPattern": "[page.spec] Page Page.Events.Console should work for different console API calls with group functions",
+    "platforms": ["darwin", "linux", "win32"],
+    "parameters": ["firefox", "webDriverBiDi"],
+    "expectations": ["FAIL"],
+    "comment": "See https://github.com/w3c/webdriver-bidi/issues/1097"
   },
   {
     "testIdPattern": "[page.spec] Page Page.addStyleTag should throw when added with content to the CSP page",
@@ -963,13 +963,6 @@
     "comment": "We can't connect to a browser started with pipe:true"
   },
   {
-    "testIdPattern": "[browsercontext.spec] BrowserContext should fire target events",
-    "platforms": ["darwin", "linux", "win32"],
-    "parameters": ["firefox", "webDriverBiDi"],
-    "expectations": ["FAIL"],
-    "comment": "In BiDi currently more events than needed are fired (because target is updated more often). We probably need to adjust the test as the behavior is not broken per se"
-  },
-  {
     "testIdPattern": "[browsercontext.spec] BrowserContext should work across sessions",
     "platforms": ["darwin", "linux", "win32"],
     "parameters": ["firefox", "webDriverBiDi"],
@@ -1189,13 +1182,6 @@
   {
     "testIdPattern": "[keyboard.spec] Keyboard should report shiftKey",
     "platforms": ["darwin"],
-    "parameters": ["firefox", "webDriverBiDi"],
-    "expectations": ["FAIL"],
-    "comment": "TODO: add a comment explaining why this expectation is required (include links to issues)"
-  },
-  {
-    "testIdPattern": "[launcher.spec] Launcher specs Browser target events should work",
-    "platforms": ["darwin", "linux", "win32"],
     "parameters": ["firefox", "webDriverBiDi"],
     "expectations": ["FAIL"],
     "comment": "TODO: add a comment explaining why this expectation is required (include links to issues)"
@@ -1532,13 +1518,6 @@
     "comment": "See https://github.com/puppeteer/puppeteer/issues/4840"
   },
   {
-    "testIdPattern": "[page.spec] Page Page.Events.Console should work for different console API calls with timing functions",
-    "platforms": ["darwin", "linux", "win32"],
-    "parameters": ["firefox", "webDriverBiDi"],
-    "expectations": ["FAIL"],
-    "comment": "https://bugzilla.mozilla.org/show_bug.cgi?id=1866749"
-  },
-  {
     "testIdPattern": "[page.spec] Page Page.newPage should open pages in a new window in maximized state",
     "platforms": ["darwin"],
     "parameters": ["chrome", "headless"],
@@ -1553,18 +1532,11 @@
     "comment": "Unknown command emulation.setScriptingEnabled"
   },
   {
-    "testIdPattern": "[page.spec] Page Page.setOfflineMode should emulate navigator.onLine",
-    "platforms": ["darwin", "linux", "win32"],
-    "parameters": ["firefox", "webDriverBiDi"],
-    "expectations": ["FAIL"],
-    "comment": "Not supported by WebDriver BiDi"
-  },
-  {
     "testIdPattern": "[page.spec] Page Page.setOfflineMode should work",
     "platforms": ["darwin", "linux", "win32"],
     "parameters": ["firefox", "webDriverBiDi"],
-    "expectations": ["FAIL"],
-    "comment": "Not supported by WebDriver BiDi"
+    "expectations": ["TIMEOUT"],
+    "comment": "See Bug 2019202 and https://github.com/puppeteer/puppeteer/issues/14722"
   },
   {
     "testIdPattern": "[page.spec] Page Page.setUserAgent should work with additional userAgentMetdata",

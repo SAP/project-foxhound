@@ -34,7 +34,6 @@ add_setup(async function setup() {
   Services.prefs.setBoolPref("network.http.http3.enable", true);
   Services.prefs.setBoolPref("network.http.http2.enabled", true);
   Services.prefs.setBoolPref("network.http.altsvc.enabled", true);
-  Services.prefs.setBoolPref("network.http.altsvc.oe", true);
   Services.prefs.setCharPref(
     "network.dns.localDomains",
     "foo.example.com, alt1.example.com, bar.example.com"
@@ -74,7 +73,6 @@ add_setup(async function setup() {
     Services.prefs.clearUserPref("network.http.http3.enable");
     Services.prefs.clearUserPref("network.dns.localDomains");
     Services.prefs.clearUserPref("network.proxy.allow_hijacking_localhost");
-    Services.prefs.clearUserPref("network.http.altsvc.oe");
     Services.prefs.clearUserPref(
       "network.http.http3.alt-svc-mapping-for-testing"
     );

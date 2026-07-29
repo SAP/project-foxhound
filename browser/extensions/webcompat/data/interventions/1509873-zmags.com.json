@@ -1,0 +1,15 @@
+{
+  "label": "zmags.com",
+  "bugs": {
+    "1509873": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.viewer.zmags.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

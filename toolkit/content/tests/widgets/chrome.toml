@@ -10,6 +10,9 @@ support-files = [
 prefs = ["app.support.baseURL='https://support.mozilla.org/'"]
 
 ["test_contextmenu_menugroup.xhtml"]
+skip-if = [
+  "debug && standalone", # Bug 2026600
+]
 
 ["test_contextmenu_nested.xhtml"]
 
@@ -20,6 +23,7 @@ prefs = ["app.support.baseURL='https://support.mozilla.org/'"]
 ["test_menubar.xhtml"]
 skip-if = [
   "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1933983
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2023967
 ]
 
 ["test_moz_badge.html"]
@@ -94,9 +98,15 @@ skip-if = [
   "os == 'win' && os_version == '10.2009' && arch == 'x86_64' && debug", # Bug 1997197
   "os == 'win' && os_version == '11.26100' && arch == 'x86' && debug", # Bug 1997197
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug", # Bug 1997197
+  "os == 'win' && os_version == '11.26200' && arch == 'x86' && debug", # Bug 1997197
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && debug", # Bug 1997197
 ]
 
+["test_moz_select_panel.html"]
+
 ["test_moz_support_link.html"]
+
+["test_moz_textarea.html"]
 
 ["test_moz_toggle.html"]
 
@@ -104,9 +114,13 @@ skip-if = [
 
 ["test_panel_item_accesskey.html"]
 
+["test_panel_item_badge.html"]
+
 ["test_panel_item_checkbox.html"]
 
 ["test_panel_item_disabled.html"]
+
+["test_panel_item_mouseup_click.html"]
 
 ["test_panel_list_accessibility.html"]
 
@@ -116,7 +130,12 @@ skip-if = [
 
 ["test_panel_list_min_width_from_anchor.html"]
 
+["test_panel_list_popover.html"]
+
 ["test_popupanchor.xhtml"]
+skip-if = [
+  "os == 'win' && standalone", # Bug 2026600
+]
 
 ["test_popupreflows.xhtml"]
 

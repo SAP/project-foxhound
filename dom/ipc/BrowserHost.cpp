@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -47,12 +45,7 @@ BrowsingContext* BrowserHost::GetBrowsingContext() const {
   return mRoot->GetBrowsingContext();
 }
 
-nsILoadContext* BrowserHost::GetLoadContext() const {
-  RefPtr<nsILoadContext> loadContext = mRoot->GetLoadContext();
-  return loadContext;
-}
-
-bool BrowserHost::CanRecv() const { return mRoot && mRoot->CanRecv(); }
+bool BrowserHost::CanSend() const { return mRoot && mRoot->CanSend(); }
 
 a11y::DocAccessibleParent* BrowserHost::GetTopLevelDocAccessible() const {
   return mRoot ? mRoot->GetTopLevelDocAccessible() : nullptr;

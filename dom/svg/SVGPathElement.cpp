@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -64,7 +62,7 @@ JSObject* SVGPathElement::WrapNode(JSContext* aCx,
 // Implementation
 
 SVGPathElement::SVGPathElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : SVGPathElementBase(std::move(aNodeInfo)) {}
 
 //----------------------------------------------------------------------
@@ -254,12 +252,10 @@ void SVGPathElement::GetAsSimplePath(SimplePath* aSimplePath) {
     const nsStyleSVGReset* styleSVGReset = s->StyleSVGReset();
     if (styleSVGReset->mD.IsPath()) {
       auto pathData = styleSVGReset->mD.AsPath()._0.AsSpan();
-      auto maybeRect = SVGPathToAxisAlignedRect(pathData);
+      auto maybeRect = SVGPathSegUtils::SVGPathToAxisAlignedRect(pathData);
       if (maybeRect.isSome()) {
-        const Rect& r = *maybeRect;
-        float zoom = s->EffectiveZoom().ToFloat();
-        aSimplePath->SetRect(r.x * zoom, r.y * zoom, r.width * zoom,
-                             r.height * zoom);
+        maybeRect->Scale(s->EffectiveZoom().ToFloat());
+        aSimplePath->SetRect(*maybeRect);
       }
     }
   };

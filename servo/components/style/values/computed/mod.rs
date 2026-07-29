@@ -15,16 +15,18 @@ use super::generics::{self, GreaterThanOrEqualToOne, NonNegative, ZeroToOne};
 use super::specified;
 use super::{CSSFloat, CSSInteger};
 use crate::computed_value_flags::ComputedValueFlags;
-use crate::context::QuirksMode;
+use crate::context::{QuirksMode, TreeCountingCaches};
 use crate::custom_properties::ComputedCustomProperties;
 use crate::derives::*;
+use crate::device::Device;
+use crate::dom::DummyElementContext;
+use crate::dom::ElementContext;
 use crate::font_metrics::{FontMetrics, FontMetricsOrientation};
-use crate::media_queries::Device;
 #[cfg(feature = "gecko")]
 use crate::properties;
 use crate::properties::{ComputedValues, StyleBuilder};
 use crate::rule_cache::RuleCacheConditions;
-use crate::rule_tree::CascadeLevel;
+use crate::rule_tree::{CascadeLevel, RuleCascadeFlags};
 use crate::stylesheets::container_rule::{
     ContainerInfo, ContainerSizeQuery, ContainerSizeQueryResult,
 };
@@ -44,11 +46,11 @@ pub use self::align::{ContentDistribution, ItemPlacement, JustifyItems, SelfAlig
 pub use self::angle::Angle;
 pub use self::animation::{
     AnimationComposition, AnimationDirection, AnimationDuration, AnimationFillMode,
-    AnimationIterationCount, AnimationName, AnimationPlayState, AnimationTimeline, ScrollAxis,
-    TimelineName, TransitionBehavior, TransitionProperty, ViewTimelineInset, ViewTransitionClass,
-    ViewTransitionName,
+    AnimationIterationCount, AnimationName, AnimationPlayState, AnimationRangeEnd,
+    AnimationRangeStart, AnimationTimeline, ScrollAxis, TimelineName, TransitionBehavior,
+    TransitionProperty, ViewTimelineInset, ViewTransitionClass, ViewTransitionName,
 };
-pub use self::background::{BackgroundRepeat, BackgroundSize};
+pub use self::background::{BackgroundClip, BackgroundRepeat, BackgroundSize};
 pub use self::basic_shape::FillRule;
 pub use self::border::{
     BorderCornerRadius, BorderImageRepeat, BorderImageSideWidth, BorderImageSlice,
@@ -66,6 +68,7 @@ pub use self::color::{
     Color, ColorOrAuto, ColorPropertyValue, ColorScheme, ForcedColorAdjust, PrintColorAdjust,
 };
 pub use self::column::ColumnCount;
+pub use self::corner_shape::{CornerShape, CornerShapeRect};
 pub use self::counters::{Content, ContentItem, CounterIncrement, CounterReset, CounterSet};
 pub use self::easing::TimingFunction;
 pub use self::effects::{BoxShadow, Filter, SimpleShadow};
@@ -88,10 +91,10 @@ pub use self::list::Quotes;
 pub use self::motion::{OffsetPath, OffsetPosition, OffsetRotate};
 pub use self::outline::OutlineStyle;
 pub use self::page::{PageName, PageOrientation, PageSize, PageSizeOrientation, PaperSize};
+pub use self::param::LinkParameters;
 pub use self::percentage::{NonNegativePercentage, Percentage};
 pub use self::position::AnchorFunction;
 pub use self::position::AnchorName;
-pub use self::position::AnchorScope;
 pub use self::position::AspectRatio;
 pub use self::position::DashedIdentAndOrTryTactic;
 pub use self::position::Inset;
@@ -99,6 +102,7 @@ pub use self::position::PositionAnchor;
 pub use self::position::PositionTryFallbacks;
 pub use self::position::PositionTryOrder;
 pub use self::position::PositionVisibility;
+pub use self::position::ScopedName;
 pub use self::position::{
     GridAutoFlow, GridTemplateAreas, MasonryAutoFlow, Position, PositionOrAuto, ZIndex,
 };
@@ -121,6 +125,7 @@ pub use self::text::{
 pub use self::time::Time;
 pub use self::transform::{Rotate, Scale, Transform, TransformBox, TransformOperation};
 pub use self::transform::{TransformOrigin, TransformStyle, Translate};
+pub use self::tree_counting::TreeCountingResult;
 #[cfg(feature = "gecko")]
 pub use self::ui::CursorImage;
 pub use self::ui::{
@@ -139,8 +144,10 @@ pub mod basic_shape;
 pub mod border;
 #[path = "box.rs"]
 pub mod box_;
+pub mod calc;
 pub mod color;
 pub mod column;
+pub mod corner_shape;
 pub mod counters;
 pub mod easing;
 pub mod effects;
@@ -153,6 +160,7 @@ pub mod list;
 pub mod motion;
 pub mod outline;
 pub mod page;
+pub mod param;
 pub mod percentage;
 pub mod position;
 pub mod ratio;
@@ -163,6 +171,7 @@ pub mod table;
 pub mod text;
 pub mod time;
 pub mod transform;
+pub mod tree_counting;
 pub mod ui;
 pub mod url;
 
@@ -196,11 +205,10 @@ pub struct Context<'a> {
     /// The quirks mode of this context.
     pub quirks_mode: QuirksMode,
 
-    /// Whether this computation is being done for a SMIL animation.
+    /// Whether this computation is being done for animation.
     ///
-    /// This is used to allow certain properties to generate out-of-range
-    /// values, which SMIL allows.
-    pub for_smil_animation: bool,
+    /// Allows opacity to interpolate out-of-range values
+    pub for_animation: bool,
 
     /// Returns the container information to evaluate a given container query.
     pub container_info: Option<ContainerInfo>,
@@ -218,8 +226,21 @@ pub struct Context<'a> {
     /// The cascade level in the shadow tree hierarchy.
     pub scope: CascadeLevel,
 
+    /// The set of RuleCascadeFlags whose rules should be included during the
+    /// cascade. STARTING_STYLE is set from the caller for re-cascade.
+    /// APPEARANCE_BASE is added dynamically after the appearance property is
+    /// resolved to a non-None value.
+    pub included_cascade_flags: RuleCascadeFlags,
+
     /// Container size query for this context.
     container_size_query: RefCell<ContainerSizeQuery<'a>>,
+
+    /// Element context for the element being styled, used to resolve tree-counting functions
+    /// (`sibling-index()`, `sibling-count()`) and attribute values (`attr()`).
+    element_context: &'a dyn ElementContext,
+
+    /// Caches for evaluation of tree-counting functions.
+    pub tree_counting_caches: RefCell<&'a mut TreeCountingCaches>,
 }
 
 impl<'a> Context<'a> {
@@ -237,18 +258,22 @@ impl<'a> Context<'a> {
         F: FnOnce(&Context) -> R,
     {
         let mut conditions = RuleCacheConditions::default();
+        let mut tree_counting_caches = TreeCountingCaches::default();
         let context = Context {
             builder: StyleBuilder::for_inheritance(device, None, None, None),
             cached_system_font: None,
             in_media_query: true,
             in_container_query: false,
             quirks_mode,
-            for_smil_animation: false,
+            for_animation: false,
             container_info: None,
             for_non_inherited_property: false,
             rule_cache_conditions: RefCell::new(&mut conditions),
             scope: CascadeLevel::same_tree_author_normal(),
+            included_cascade_flags: RuleCascadeFlags::empty(),
             container_size_query: RefCell::new(ContainerSizeQuery::none()),
+            element_context: &DummyElementContext {},
+            tree_counting_caches: RefCell::new(&mut tree_counting_caches),
         };
         f(&context)
     }
@@ -260,12 +285,14 @@ impl<'a> Context<'a> {
         stylist: Option<&Stylist>,
         container_info_and_style: Option<(ContainerInfo, Arc<ComputedValues>)>,
         container_size_query: ContainerSizeQuery,
+        element_context: &dyn ElementContext,
         f: F,
     ) -> R
     where
         F: FnOnce(&Context) -> R,
     {
         let mut conditions = RuleCacheConditions::default();
+        let mut tree_counting_caches = TreeCountingCaches::default();
 
         let (container_info, style) = match container_info_and_style {
             Some((ci, s)) => (Some(ci), Some(s)),
@@ -280,12 +307,15 @@ impl<'a> Context<'a> {
             in_media_query: false,
             in_container_query: true,
             quirks_mode,
-            for_smil_animation: false,
+            for_animation: false,
             container_info,
             for_non_inherited_property: false,
             rule_cache_conditions: RefCell::new(&mut conditions),
             scope: CascadeLevel::same_tree_author_normal(),
+            included_cascade_flags: RuleCascadeFlags::empty(),
             container_size_query: RefCell::new(container_size_query),
+            element_context,
+            tree_counting_caches: RefCell::new(&mut tree_counting_caches),
         };
 
         f(&context)
@@ -297,7 +327,16 @@ impl<'a> Context<'a> {
         quirks_mode: QuirksMode,
         rule_cache_conditions: &'a mut RuleCacheConditions,
         container_size_query: ContainerSizeQuery<'a>,
+        mut included_cascade_flags: RuleCascadeFlags,
+        element_context: &'a dyn ElementContext,
+        tree_counting_caches: &'a mut TreeCountingCaches,
     ) -> Self {
+        if builder
+            .flags()
+            .intersects(ComputedValueFlags::IS_IN_APPEARANCE_BASE_SUBTREE)
+        {
+            included_cascade_flags.insert(RuleCascadeFlags::APPEARANCE_BASE);
+        }
         Self {
             builder,
             cached_system_font: None,
@@ -305,21 +344,25 @@ impl<'a> Context<'a> {
             in_container_query: false,
             quirks_mode,
             container_info: None,
-            for_smil_animation: false,
+            for_animation: false,
             for_non_inherited_property: false,
             rule_cache_conditions: RefCell::new(rule_cache_conditions),
             scope: CascadeLevel::same_tree_author_normal(),
+            included_cascade_flags,
             container_size_query: RefCell::new(container_size_query),
+            element_context,
+            tree_counting_caches: RefCell::new(tree_counting_caches),
         }
     }
 
     /// Creates a context suitable for computing animations.
     pub fn new_for_animation(
         builder: StyleBuilder<'a>,
-        for_smil_animation: bool,
         quirks_mode: QuirksMode,
         rule_cache_conditions: &'a mut RuleCacheConditions,
         container_size_query: ContainerSizeQuery<'a>,
+        element_context: &'a dyn ElementContext,
+        tree_counting_caches: &'a mut TreeCountingCaches,
     ) -> Self {
         Self {
             builder,
@@ -328,11 +371,14 @@ impl<'a> Context<'a> {
             in_container_query: false,
             quirks_mode,
             container_info: None,
-            for_smil_animation,
+            for_animation: true,
             for_non_inherited_property: false,
             rule_cache_conditions: RefCell::new(rule_cache_conditions),
             scope: CascadeLevel::same_tree_author_normal(),
+            included_cascade_flags: RuleCascadeFlags::empty(),
             container_size_query: RefCell::new(container_size_query),
+            element_context,
+            tree_counting_caches: RefCell::new(tree_counting_caches),
         }
     }
 
@@ -340,6 +386,7 @@ impl<'a> Context<'a> {
     pub fn new_for_initial_at_property_value(
         stylist: &'a Stylist,
         rule_cache_conditions: &'a mut RuleCacheConditions,
+        tree_counting_caches: &'a mut TreeCountingCaches,
     ) -> Self {
         Self {
             builder: StyleBuilder::new(stylist.device(), Some(stylist), None, None, None, false),
@@ -351,11 +398,14 @@ impl<'a> Context<'a> {
             in_container_query: false,
             quirks_mode: stylist.quirks_mode(),
             container_info: None,
-            for_smil_animation: false,
+            for_animation: false,
             for_non_inherited_property: false,
             rule_cache_conditions: RefCell::new(rule_cache_conditions),
             scope: CascadeLevel::same_tree_author_normal(),
+            included_cascade_flags: RuleCascadeFlags::empty(),
             container_size_query: RefCell::new(ContainerSizeQuery::none()),
+            element_context: &DummyElementContext {},
+            tree_counting_caches: RefCell::new(tree_counting_caches),
         }
     }
 
@@ -423,6 +473,43 @@ impl<'a> Context<'a> {
         self.builder
             .device
             .au_viewport_size_for_viewport_unit_resolution(variant)
+    }
+
+    fn resolve_tree_counting_result(&self) -> TreeCountingResult {
+        // https://drafts.csswg.org/css-values-5/#tree-counting
+        // > A tree-counting function is a type of loosely-matched tree-scoped reference.
+        //
+        // As a loosely-matched reference, the tree-counting function can only match if
+        // the declaration is in the same or descendant shadow tree of the element. It
+        // does not match if the declaration is in a containing tree, so it must return 0.
+        if self
+            .current_scope()
+            .shadow_order()
+            .is_in_same_or_containing_tree()
+        {
+            return TreeCountingResult::default();
+        }
+
+        self.tree_counting_caches
+            .borrow_mut()
+            .get_or_compute(self.element_context)
+    }
+
+    /// Returns the number of siblings of the element that matches the declaration
+    /// (including the element itself). Also marks the style as depending on sibling-count().
+    pub fn query_sibling_count(&self) -> u32 {
+        self.builder
+            .add_flags(ComputedValueFlags::USES_SIBLING_COUNT);
+        self.resolve_tree_counting_result().sibling_count
+    }
+
+    /// Returns the 1-based index of the element that matches the declaration amongst its
+    /// siblings. Also marks the style as depending on sibling-index().
+    pub fn query_sibling_index(&self) -> u32 {
+        self.builder
+            .add_flags(ComputedValueFlags::USES_SIBLING_INDEX);
+        self.rule_cache_conditions.borrow_mut().set_uncacheable();
+        self.resolve_tree_counting_result().sibling_index
     }
 
     /// Whether we're in a media or container query.
@@ -775,7 +862,7 @@ impl ToComputedValue for specified::AngleOrPercentage {
 
     #[inline]
     fn to_computed_value(&self, context: &Context) -> AngleOrPercentage {
-        match *self {
+        match self {
             specified::AngleOrPercentage::Percentage(percentage) => {
                 AngleOrPercentage::Percentage(percentage.to_computed_value(context))
             },
@@ -917,6 +1004,16 @@ pub enum NumberOrPercentage {
     Number(Number),
 }
 
+impl NumberOrPercentage {
+    /// Get the underlying value of this number or percentage.
+    pub fn value(&self) -> f32 {
+        match self {
+            NumberOrPercentage::Percentage(p) => p.0,
+            NumberOrPercentage::Number(n) => *n,
+        }
+    }
+}
+
 impl ClampToNonNegative for NumberOrPercentage {
     fn clamp_to_non_negative(self) -> Self {
         match self {
@@ -933,7 +1030,7 @@ impl ToComputedValue for specified::NumberOrPercentage {
 
     #[inline]
     fn to_computed_value(&self, context: &Context) -> NumberOrPercentage {
-        match *self {
+        match self {
             specified::NumberOrPercentage::Percentage(percentage) => {
                 NumberOrPercentage::Percentage(percentage.to_computed_value(context))
             },

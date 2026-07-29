@@ -8,14 +8,16 @@
 'unsafe-inline'; ?>
 
 <window
-  id="ContainersDialog"
   xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
   xmlns:html="http://www.w3.org/1999/xhtml"
   data-l10n-attrs="title, style"
+  headerparent="containers-dialog"
+  neediconheader="true"
   persist="width height"
 >
   <dialog
-    buttons="accept"
+    id="containers-dialog"
+    buttons="accept,cancel"
     buttondisabledaccept="true"
     data-l10n-id="containers-dialog"
     data-l10n-attrs="buttonlabelaccept, buttonaccesskeyaccept"
@@ -26,46 +28,42 @@
         rel="stylesheet"
         href="chrome://browser/skin/preferences/containers-dialog.css"
       />
-
       <html:link rel="localization" href="browser/preferences/containers.ftl" />
     </linkset>
 
+    <script src="chrome://global/content/adjustableTitle.js" />
+    <script
+      type="module"
+      src="chrome://global/content/elements/moz-input-text.mjs"
+    />
+    <script
+      type="module"
+      src="chrome://global/content/elements/moz-visual-picker.mjs"
+    />
     <script src="chrome://browser/content/preferences/dialogs/containers.js" />
 
-    <keyset>
-      <key
-        id="key_close"
-        data-l10n-id="containers-window-close"
-        modifiers="accel"
+    <html:form id="containerForm">
+      <html:moz-input-text
+        id="name"
+        name="name"
+        data-l10n-id="containers-name-label2"
       />
-    </keyset>
 
-    <vbox class="contentPane" hidden="true" id="containers-content">
-      <hbox align="start">
-        <label
-          id="nameLabel"
-          control="name"
-          data-l10n-id="containers-name-label"
-          data-l10n-attrs="style"
-        />
-        <html:input id="name" type="text" data-l10n-id="containers-name-text" />
-      </hbox>
-      <hbox align="center" id="colorWrapper">
-        <label
-          id="colorLabel"
-          control="color"
-          data-l10n-id="containers-color-label"
-          data-l10n-attrs="style"
-        />
-      </hbox>
-      <hbox align="center" id="iconWrapper">
-        <label
-          id="iconLabel"
-          control="icon"
-          data-l10n-id="containers-icon-label"
-          data-l10n-attrs="style"
-        />
-      </hbox>
-    </vbox>
+      <html:moz-visual-picker
+        type="radio"
+        name="color"
+        id="colorSwatches"
+        class="swatches"
+        data-l10n-id="containers-color-label2"
+      />
+
+      <html:moz-visual-picker
+        type="radio"
+        name="icon"
+        id="iconSwatches"
+        class="swatches"
+        data-l10n-id="containers-icon-label2"
+      />
+    </html:form>
   </dialog>
 </window>

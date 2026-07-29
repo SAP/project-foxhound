@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -149,39 +148,6 @@ static const struct EVInfo kEVInfos[] = {
   },
 #endif
   {
-    // CN=SwissSign Gold CA - G2,O=SwissSign AG,C=CH
-    "2.16.756.1.89.1.2.1.1",
-    "SwissSign EV OID",
-    { 0x62, 0xDD, 0x0B, 0xE9, 0xB9, 0xF5, 0x0A, 0x16, 0x3E, 0xA0, 0xF8,
-      0xE7, 0x5C, 0x05, 0x3B, 0x1E, 0xCA, 0x57, 0xEA, 0x55, 0xC8, 0x68,
-      0x8F, 0x64, 0x7C, 0x68, 0x81, 0xF2, 0xC8, 0x35, 0x7B, 0x95 },
-    "MEUxCzAJBgNVBAYTAkNIMRUwEwYDVQQKEwxTd2lzc1NpZ24gQUcxHzAdBgNVBAMT"
-    "FlN3aXNzU2lnbiBHb2xkIENBIC0gRzI=",
-    "ALtAHEP1Xk+w",
-  },
-  {
-    // CN=SecureTrust CA,O=SecureTrust Corporation,C=US
-    "2.16.840.1.114404.1.1.2.4.1",
-    "Trustwave EV OID",
-    { 0xF1, 0xC1, 0xB5, 0x0A, 0xE5, 0xA2, 0x0D, 0xD8, 0x03, 0x0E, 0xC9,
-      0xF6, 0xBC, 0x24, 0x82, 0x3D, 0xD3, 0x67, 0xB5, 0x25, 0x57, 0x59,
-      0xB4, 0xE7, 0x1B, 0x61, 0xFC, 0xE9, 0xF7, 0x37, 0x5D, 0x73 },
-    "MEgxCzAJBgNVBAYTAlVTMSAwHgYDVQQKExdTZWN1cmVUcnVzdCBDb3Jwb3JhdGlv"
-    "bjEXMBUGA1UEAxMOU2VjdXJlVHJ1c3QgQ0E=",
-    "DPCOXAgWpa1Cf/DrJxhZ0A==",
-  },
-  {
-    // CN=Secure Global CA,O=SecureTrust Corporation,C=US
-    "2.16.840.1.114404.1.1.2.4.1",
-    "Trustwave EV OID",
-    { 0x42, 0x00, 0xF5, 0x04, 0x3A, 0xC8, 0x59, 0x0E, 0xBB, 0x52, 0x7D,
-      0x20, 0x9E, 0xD1, 0x50, 0x30, 0x29, 0xFB, 0xCB, 0xD4, 0x1C, 0xA1,
-      0xB5, 0x06, 0xEC, 0x27, 0xF1, 0x5A, 0xDE, 0x7D, 0xAC, 0x69 },
-    "MEoxCzAJBgNVBAYTAlVTMSAwHgYDVQQKExdTZWN1cmVUcnVzdCBDb3Jwb3JhdGlv"
-    "bjEZMBcGA1UEAxMQU2VjdXJlIEdsb2JhbCBDQQ==",
-    "B1YipOjUiolN9BPI8PjqpQ==",
-  },
-  {
     // CN=COMODO ECC Certification Authority,O=COMODO CA Limited,L=Salford,ST=Greater Manchester,C=GB
     "1.3.6.1.4.1.6449.1.2.1.5.1",
     "Comodo EV OID",
@@ -192,18 +158,6 @@ static const struct EVInfo kEVInfos[] = {
     "DgYDVQQHEwdTYWxmb3JkMRowGAYDVQQKExFDT01PRE8gQ0EgTGltaXRlZDErMCkG"
     "A1UEAxMiQ09NT0RPIEVDQyBDZXJ0aWZpY2F0aW9uIEF1dGhvcml0eQ==",
     "H0evqmIAcFBUTAGem2OZKg==",
-  },
-  {
-    // CN=COMODO Certification Authority,O=COMODO CA Limited,L=Salford,ST=Greater Manchester,C=GB
-    "1.3.6.1.4.1.6449.1.2.1.5.1",
-    "Comodo EV OID",
-    { 0x0C, 0x2C, 0xD6, 0x3D, 0xF7, 0x80, 0x6F, 0xA3, 0x99, 0xED, 0xE8,
-      0x09, 0x11, 0x6B, 0x57, 0x5B, 0xF8, 0x79, 0x89, 0xF0, 0x65, 0x18,
-      0xF9, 0x80, 0x8C, 0x86, 0x05, 0x03, 0x17, 0x8B, 0xAF, 0x66 },
-    "MIGBMQswCQYDVQQGEwJHQjEbMBkGA1UECBMSR3JlYXRlciBNYW5jaGVzdGVyMRAw"
-    "DgYDVQQHEwdTYWxmb3JkMRowGAYDVQQKExFDT01PRE8gQ0EgTGltaXRlZDEnMCUG"
-    "A1UEAxMeQ09NT0RPIENlcnRpZmljYXRpb24gQXV0aG9yaXR5",
-    "ToEtioJl4AsC7j41AkblPQ==",
   },
   {
     // CN=Go Daddy Root Certificate Authority - G2,O="GoDaddy.com, Inc.",L=Scottsdale,ST=Arizona,C=US
@@ -231,56 +185,6 @@ static const struct EVInfo kEVInfos[] = {
     "AA==",
   },
   {
-    // CN=DigiCert High Assurance EV Root CA,OU=www.digicert.com,O=DigiCert Inc,C=US
-    "2.16.840.1.114412.2.1",
-    "DigiCert EV OID",
-    { 0x74, 0x31, 0xE5, 0xF4, 0xC3, 0xC1, 0xCE, 0x46, 0x90, 0x77, 0x4F,
-      0x0B, 0x61, 0xE0, 0x54, 0x40, 0x88, 0x3B, 0xA9, 0xA0, 0x1E, 0xD0,
-      0x0B, 0xA6, 0xAB, 0xD7, 0x80, 0x6E, 0xD3, 0xB1, 0x18, 0xCF },
-    "MGwxCzAJBgNVBAYTAlVTMRUwEwYDVQQKEwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsT"
-    "EHd3dy5kaWdpY2VydC5jb20xKzApBgNVBAMTIkRpZ2lDZXJ0IEhpZ2ggQXNzdXJh"
-    "bmNlIEVWIFJvb3QgQ0E=",
-    "AqxcJmoLQJuPC3nyrkYldw==",
-  },
-  {
-    // CN=QuoVadis Root CA 2,O=QuoVadis Limited,C=BM
-    "1.3.6.1.4.1.8024.0.2.100.1.2",
-    "Quo Vadis EV OID",
-    { 0x85, 0xA0, 0xDD, 0x7D, 0xD7, 0x20, 0xAD, 0xB7, 0xFF, 0x05, 0xF8,
-      0x3D, 0x54, 0x2B, 0x20, 0x9D, 0xC7, 0xFF, 0x45, 0x28, 0xF7, 0xD6,
-      0x77, 0xB1, 0x83, 0x89, 0xFE, 0xA5, 0xE5, 0xC4, 0x9E, 0x86 },
-    "MEUxCzAJBgNVBAYTAkJNMRkwFwYDVQQKExBRdW9WYWRpcyBMaW1pdGVkMRswGQYD"
-    "VQQDExJRdW9WYWRpcyBSb290IENBIDI=",
-    "BQk=",
-  },
-  {
-    // CN=Entrust Root Certification Authority,OU="(c) 2006 Entrust, Inc.",OU=www.entrust.net/CPS is incorporated by reference,O="Entrust, Inc.",C=US
-    "2.16.840.1.114028.10.1.2",
-    "Entrust EV OID",
-    { 0x73, 0xC1, 0x76, 0x43, 0x4F, 0x1B, 0xC6, 0xD5, 0xAD, 0xF4, 0x5B,
-      0x0E, 0x76, 0xE7, 0x27, 0x28, 0x7C, 0x8D, 0xE5, 0x76, 0x16, 0xC1,
-      0xE6, 0xE6, 0x14, 0x1A, 0x2B, 0x2C, 0xBC, 0x7D, 0x8E, 0x4C },
-    "MIGwMQswCQYDVQQGEwJVUzEWMBQGA1UEChMNRW50cnVzdCwgSW5jLjE5MDcGA1UE"
-    "CxMwd3d3LmVudHJ1c3QubmV0L0NQUyBpcyBpbmNvcnBvcmF0ZWQgYnkgcmVmZXJl"
-    "bmNlMR8wHQYDVQQLExYoYykgMjAwNiBFbnRydXN0LCBJbmMuMS0wKwYDVQQDEyRF"
-    "bnRydXN0IFJvb3QgQ2VydGlmaWNhdGlvbiBBdXRob3JpdHk=",
-    "RWtQVA==",
-  },
-  {
-    // CN=Entrust Root Certification Authority - G4,OU="(c) 2015 Entrust, Inc. - for authorized use only",OU=See www.entrust.net/legal-terms,O="Entrust, Inc.",C=US
-    "2.16.840.1.114028.10.1.2",
-    "Entrust EV OID",
-    { 0xDB, 0x35, 0x17, 0xD1, 0xF6, 0x73, 0x2A, 0x2D, 0x5A, 0xB9, 0x7C,
-      0x53, 0x3E, 0xC7, 0x07, 0x79, 0xEE, 0x32, 0x70, 0xA6, 0x2F, 0xB4,
-      0xAC, 0x42, 0x38, 0x37, 0x24, 0x60, 0xE6, 0xF0, 0x1E, 0x88 },
-    "MIG+MQswCQYDVQQGEwJVUzEWMBQGA1UEChMNRW50cnVzdCwgSW5jLjEoMCYGA1UE"
-    "CxMfU2VlIHd3dy5lbnRydXN0Lm5ldC9sZWdhbC10ZXJtczE5MDcGA1UECxMwKGMp"
-    "IDIwMTUgRW50cnVzdCwgSW5jLiAtIGZvciBhdXRob3JpemVkIHVzZSBvbmx5MTIw"
-    "MAYDVQQDEylFbnRydXN0IFJvb3QgQ2VydGlmaWNhdGlvbiBBdXRob3JpdHkgLSBH"
-    "NA==",
-    "ANm1Q3+vqTkPAAAAAFVlrVg=",
-  },
-  {
     // CN=GlobalSign,O=GlobalSign,OU=GlobalSign Root CA - R3
     "2.23.140.1.1",
     "CA/Browser Forum EV OID",
@@ -301,50 +205,6 @@ static const struct EVInfo kEVInfos[] = {
     "ME4xCzAJBgNVBAYTAk5PMR0wGwYDVQQKDBRCdXlwYXNzIEFTLTk4MzE2MzMyNzEg"
     "MB4GA1UEAwwXQnV5cGFzcyBDbGFzcyAzIFJvb3QgQ0E=",
     "Ag==",
-  },
-  {
-    // CN=AffirmTrust Commercial,O=AffirmTrust,C=US
-    "1.3.6.1.4.1.34697.2.1",
-    "AffirmTrust EV OID a",
-    { 0x03, 0x76, 0xAB, 0x1D, 0x54, 0xC5, 0xF9, 0x80, 0x3C, 0xE4, 0xB2,
-      0xE2, 0x01, 0xA0, 0xEE, 0x7E, 0xEF, 0x7B, 0x57, 0xB6, 0x36, 0xE8,
-      0xA9, 0x3C, 0x9B, 0x8D, 0x48, 0x60, 0xC9, 0x6F, 0x5F, 0xA7 },
-    "MEQxCzAJBgNVBAYTAlVTMRQwEgYDVQQKDAtBZmZpcm1UcnVzdDEfMB0GA1UEAwwW"
-    "QWZmaXJtVHJ1c3QgQ29tbWVyY2lhbA==",
-    "d3cGJyapsXw=",
-  },
-  {
-    // CN=AffirmTrust Networking,O=AffirmTrust,C=US
-    "1.3.6.1.4.1.34697.2.2",
-    "AffirmTrust EV OID b",
-    { 0x0A, 0x81, 0xEC, 0x5A, 0x92, 0x97, 0x77, 0xF1, 0x45, 0x90, 0x4A,
-      0xF3, 0x8D, 0x5D, 0x50, 0x9F, 0x66, 0xB5, 0xE2, 0xC5, 0x8F, 0xCD,
-      0xB5, 0x31, 0x05, 0x8B, 0x0E, 0x17, 0xF3, 0xF0, 0xB4, 0x1B },
-    "MEQxCzAJBgNVBAYTAlVTMRQwEgYDVQQKDAtBZmZpcm1UcnVzdDEfMB0GA1UEAwwW"
-    "QWZmaXJtVHJ1c3QgTmV0d29ya2luZw==",
-    "fE8EORzUmS0=",
-  },
-  {
-    // CN=AffirmTrust Premium,O=AffirmTrust,C=US
-    "1.3.6.1.4.1.34697.2.3",
-    "AffirmTrust EV OID c",
-    { 0x70, 0xA7, 0x3F, 0x7F, 0x37, 0x6B, 0x60, 0x07, 0x42, 0x48, 0x90,
-      0x45, 0x34, 0xB1, 0x14, 0x82, 0xD5, 0xBF, 0x0E, 0x69, 0x8E, 0xCC,
-      0x49, 0x8D, 0xF5, 0x25, 0x77, 0xEB, 0xF2, 0xE9, 0x3B, 0x9A },
-    "MEExCzAJBgNVBAYTAlVTMRQwEgYDVQQKDAtBZmZpcm1UcnVzdDEcMBoGA1UEAwwT"
-    "QWZmaXJtVHJ1c3QgUHJlbWl1bQ==",
-    "bYwURrGmCu4=",
-  },
-  {
-    // CN=AffirmTrust Premium ECC,O=AffirmTrust,C=US
-    "1.3.6.1.4.1.34697.2.4",
-    "AffirmTrust EV OID d",
-    { 0xBD, 0x71, 0xFD, 0xF6, 0xDA, 0x97, 0xE4, 0xCF, 0x62, 0xD1, 0x64,
-      0x7A, 0xDD, 0x25, 0x81, 0xB0, 0x7D, 0x79, 0xAD, 0xF8, 0x39, 0x7E,
-      0xB4, 0xEC, 0xBA, 0x9C, 0x5E, 0x84, 0x88, 0x82, 0x14, 0x23 },
-    "MEUxCzAJBgNVBAYTAlVTMRQwEgYDVQQKDAtBZmZpcm1UcnVzdDEgMB4GA1UEAwwX"
-    "QWZmaXJtVHJ1c3QgUHJlbWl1bSBFQ0M=",
-    "dJclisc/elQ=",
   },
   {
     // CN=Certum Trusted Network CA,OU=Certum Certification Authority,O=Unizeto Technologies S.A.,C=PL
@@ -602,34 +462,6 @@ static const struct EVInfo kEVInfos[] = {
     "Rea7A4Mzw4VlSOb/RVE=",
   },
   {
-    // CN=Entrust Root Certification Authority - G2,OU="(c) 2009 Entrust, Inc. - for authorized use only",OU=See www.entrust.net/legal-terms,O="Entrust, Inc.",C=US
-    "2.16.840.1.114028.10.1.2",
-    "Entrust EV OID",
-    { 0x43, 0xDF, 0x57, 0x74, 0xB0, 0x3E, 0x7F, 0xEF, 0x5F, 0xE4, 0x0D,
-      0x93, 0x1A, 0x7B, 0xED, 0xF1, 0xBB, 0x2E, 0x6B, 0x42, 0x73, 0x8C,
-      0x4E, 0x6D, 0x38, 0x41, 0x10, 0x3D, 0x3A, 0xA7, 0xF3, 0x39 },
-    "MIG+MQswCQYDVQQGEwJVUzEWMBQGA1UEChMNRW50cnVzdCwgSW5jLjEoMCYGA1UE"
-    "CxMfU2VlIHd3dy5lbnRydXN0Lm5ldC9sZWdhbC10ZXJtczE5MDcGA1UECxMwKGMp"
-    "IDIwMDkgRW50cnVzdCwgSW5jLiAtIGZvciBhdXRob3JpemVkIHVzZSBvbmx5MTIw"
-    "MAYDVQQDEylFbnRydXN0IFJvb3QgQ2VydGlmaWNhdGlvbiBBdXRob3JpdHkgLSBH"
-    "Mg==",
-    "SlOMKA==",
-  },
-  {
-    // CN=Entrust Root Certification Authority - EC1,OU="(c) 2012 Entrust, Inc. - for authorized use only",OU=See www.entrust.net/legal-terms,O="Entrust, Inc.",C=US
-    "2.16.840.1.114028.10.1.2",
-    "Entrust EV OID",
-    { 0x02, 0xED, 0x0E, 0xB2, 0x8C, 0x14, 0xDA, 0x45, 0x16, 0x5C, 0x56,
-      0x67, 0x91, 0x70, 0x0D, 0x64, 0x51, 0xD7, 0xFB, 0x56, 0xF0, 0xB2,
-      0xAB, 0x1D, 0x3B, 0x8E, 0xB0, 0x70, 0xE5, 0x6E, 0xDF, 0xF5 },
-    "MIG/MQswCQYDVQQGEwJVUzEWMBQGA1UEChMNRW50cnVzdCwgSW5jLjEoMCYGA1UE"
-    "CxMfU2VlIHd3dy5lbnRydXN0Lm5ldC9sZWdhbC10ZXJtczE5MDcGA1UECxMwKGMp"
-    "IDIwMTIgRW50cnVzdCwgSW5jLiAtIGZvciBhdXRob3JpemVkIHVzZSBvbmx5MTMw"
-    "MQYDVQQDEypFbnRydXN0IFJvb3QgQ2VydGlmaWNhdGlvbiBBdXRob3JpdHkgLSBF"
-    "QzE=",
-    "AKaLeSkAAAAAUNCR+Q==",
-  },
-  {
     // CN=CFCA EV ROOT,O=China Financial Certification Authority,C=CN
     "2.16.156.112554.3",
     "CFCA EV OID",
@@ -870,38 +702,6 @@ static const struct EVInfo kEVInfos[] = {
     "CgFCgAAAAUUjyES1AAAAAg==",
   },
   {
-    // CN=Trustwave Global Certification Authority,O="Trustwave Holdings, Inc.",L=Chicago,ST=Illinois,C=US
-    "2.23.140.1.1",
-    "CA/Browser Forum EV OID",
-    { 0x97, 0x55, 0x20, 0x15, 0xF5, 0xDD, 0xFC, 0x3C, 0x87, 0x88, 0xC0, 0x06, 0x94, 0x45, 0x55, 0x40, 0x88, 0x94, 0x45, 0x00, 0x84, 0xF1, 0x00, 0x86, 0x70, 0x86, 0xBC, 0x1A, 0x2B, 0xB5, 0x8D, 0xC8 },
-    "MIGIMQswCQYDVQQGEwJVUzERMA8GA1UECAwISWxsaW5vaXMxEDAOBgNVBAcMB0No"
-    "aWNhZ28xITAfBgNVBAoMGFRydXN0d2F2ZSBIb2xkaW5ncywgSW5jLjExMC8GA1UE"
-    "AwwoVHJ1c3R3YXZlIEdsb2JhbCBDZXJ0aWZpY2F0aW9uIEF1dGhvcml0eQ==",
-    "BfcOhtpJ80Y1Lrqy",
-  },
-  {
-    // CN=Trustwave Global ECC P256 Certification Authority,O="Trustwave Holdings, Inc.",L=Chicago,ST=Illinois,C=US
-    "2.23.140.1.1",
-    "CA/Browser Forum EV OID",
-    { 0x94, 0x5B, 0xBC, 0x82, 0x5E, 0xA5, 0x54, 0xF4, 0x89, 0xD1, 0xFD, 0x51, 0xA7, 0x3D, 0xDF, 0x2E, 0xA6, 0x24, 0xAC, 0x70, 0x19, 0xA0, 0x52, 0x05, 0x22, 0x5C, 0x22, 0xA7, 0x8C, 0xCF, 0xA8, 0xB4 },
-    "MIGRMQswCQYDVQQGEwJVUzERMA8GA1UECBMISWxsaW5vaXMxEDAOBgNVBAcTB0No"
-    "aWNhZ28xITAfBgNVBAoTGFRydXN0d2F2ZSBIb2xkaW5ncywgSW5jLjE6MDgGA1UE"
-    "AxMxVHJ1c3R3YXZlIEdsb2JhbCBFQ0MgUDI1NiBDZXJ0aWZpY2F0aW9uIEF1dGhv"
-    "cml0eQ==",
-    "DWpfCD8oXD5Rld9d",
-  },
-  {
-    // CN=Trustwave Global ECC P384 Certification Authority,O="Trustwave Holdings, Inc.",L=Chicago,ST=Illinois,C=US
-    "2.23.140.1.1",
-    "CA/Browser Forum EV OID",
-    { 0x55, 0x90, 0x38, 0x59, 0xC8, 0xC0, 0xC3, 0xEB, 0xB8, 0x75, 0x9E, 0xCE, 0x4E, 0x25, 0x57, 0x22, 0x5F, 0xF5, 0x75, 0x8B, 0xBD, 0x38, 0xEB, 0xD4, 0x82, 0x76, 0x60, 0x1E, 0x1B, 0xD5, 0x80, 0x97 },
-    "MIGRMQswCQYDVQQGEwJVUzERMA8GA1UECBMISWxsaW5vaXMxEDAOBgNVBAcTB0No"
-    "aWNhZ28xITAfBgNVBAoTGFRydXN0d2F2ZSBIb2xkaW5ncywgSW5jLjE6MDgGA1UE"
-    "AxMxVHJ1c3R3YXZlIEdsb2JhbCBFQ0MgUDM4NCBDZXJ0aWZpY2F0aW9uIEF1dGhv"
-    "cml0eQ==",
-    "CL2Fl2yZJ6SAaEc7",
-  },
-  {
     // CN=GlobalSign Root R46,O=GlobalSign nv-sa,C=BE
     "2.23.140.1.1",
     "CA/Browser Forum EV OID",
@@ -928,15 +728,6 @@ static const struct EVInfo kEVInfos[] = {
     "ZXMxGDAWBgNVBGEMD1ZBVEVTLVEyODI2MDA0SjEsMCoGA1UEAwwjQUMgUkFJWiBG"
     "Tk1ULVJDTSBTRVJWSURPUkVTIFNFR1VST1M=",
     "YvYybOXE42hcG2LdnC6dlQ==",
-  },
-  {
-    // CN=GLOBALTRUST 2020,O=e-commerce monitoring GmbH,C=AT
-    "2.23.140.1.1",
-    "CA/Browser Forum EV OID",
-    { 0x9A, 0x29, 0x6A, 0x51, 0x82, 0xD1, 0xD4, 0x51, 0xA2, 0xE3, 0x7F, 0x43, 0x9B, 0x74, 0xDA, 0xAF, 0xA2, 0x67, 0x52, 0x33, 0x29, 0xF9, 0x0F, 0x9A, 0x0D, 0x20, 0x07, 0xC3, 0x34, 0xE2, 0x3C, 0x9A },
-    "ME0xCzAJBgNVBAYTAkFUMSMwIQYDVQQKExplLWNvbW1lcmNlIG1vbml0b3Jpbmcg"
-    "R21iSDEZMBcGA1UEAxMQR0xPQkFMVFJVU1QgMjAyMA==",
-    "Wku9WvtPilv6ZeU=",
   },
   {
     // CN=Certum Extended Validation ECC CA,OU=Certum Certification Authority,O=Asseco Data Systems S.A.,C=PL
@@ -1140,29 +931,6 @@ static const struct EVInfo kEVInfos[] = {
     "aXR5IEdtYkgxKzApBgNVBAMMIlRlbGVrb20gU2VjdXJpdHkgVExTIFJTQSBSb290"
     "IDIwMjM=",
     "IZxULej27HF3+k7ow3BXlw==",
-  },
-  {
-    // CN=FIRMAPROFESIONAL CA ROOT-A WEB,OID.2.5.4.97=VATES-A62634068,O=Firmaprofesional SA,C=ES
-    "2.23.140.1.1",
-    "CA/Browser Forum EV OID",
-    { 0xBE, 0xF2, 0x56, 0xDA, 0xF2, 0x6E, 0x9C, 0x69, 0xBD, 0xEC, 0x16,
-      0x02, 0x35, 0x97, 0x98, 0xF3, 0xCA, 0xF7, 0x18, 0x21, 0xA0, 0x3E,
-      0x01, 0x82, 0x57, 0xC5, 0x3C, 0x65, 0x61, 0x7F, 0x3D, 0x4A },
-    "MG4xCzAJBgNVBAYTAkVTMRwwGgYDVQQKDBNGaXJtYXByb2Zlc2lvbmFsIFNBMRgw"
-    "FgYDVQRhDA9WQVRFUy1BNjI2MzQwNjgxJzAlBgNVBAMMHkZJUk1BUFJPRkVTSU9O"
-    "QUwgQ0EgUk9PVC1BIFdFQg==",
-    "MZch7a+JQn81QYehZ1ZMbQ==",
-  },
-  {
-    // CN=SecureSign Root CA12,O="Cybertrust Japan Co., Ltd.",C=JP
-    "2.23.140.1.1",
-    "CA/Browser Forum EV OID",
-    { 0x3F, 0x03, 0x4B, 0xB5, 0x70, 0x4D, 0x44, 0xB2, 0xD0, 0x85, 0x45,
-      0xA0, 0x20, 0x57, 0xDE, 0x93, 0xEB, 0xF3, 0x90, 0x5F, 0xCE, 0x72,
-      0x1A, 0xCB, 0xC7, 0x30, 0xC0, 0x6D, 0xDA, 0xEE, 0x90, 0x4E },
-    "MFExCzAJBgNVBAYTAkpQMSMwIQYDVQQKExpDeWJlcnRydXN0IEphcGFuIENvLiwg"
-    "THRkLjEdMBsGA1UEAxMUU2VjdXJlU2lnbiBSb290IENBMTI=",
-    "ZvnHwa/swlG07VOX5uaCwysckBY=",
   },
   {
     // CN=SecureSign Root CA14,O="Cybertrust Japan Co., Ltd.",C=JP

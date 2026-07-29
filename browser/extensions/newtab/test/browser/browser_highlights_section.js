@@ -1,8 +1,41 @@
 "use strict";
 
+const { PREFS_CONFIG } = ChromeUtils.importESModule(
+  "resource://newtab/lib/ActivityStream.sys.mjs"
+);
+
 add_setup(async function () {
+  let sandbox = sinon.createSandbox();
+
+  sandbox
+    .stub(DiscoveryStreamFeed.prototype, "generateFeedUrl")
+    .returns(
+      "https://example.com/browser/browser/extensions/newtab/test/browser/topstories.json"
+    );
+
   await SpecialPowers.pushPrefEnv({
-    set: [["test.wait300msAfterTabSwitch", true]],
+    set: [
+      [
+        "browser.newtabpage.activity-stream.discoverystream.config",
+        PREFS_CONFIG.get("discoverystream.config").getValue({
+          geo: "US",
+          locale: "en-US",
+        }),
+      ],
+      [
+        "browser.newtabpage.activity-stream.discoverystream.endpoints",
+        "https://example.com",
+      ],
+      ["test.wait300msAfterTabSwitch", true],
+    ],
+  });
+
+  registerCleanupFunction(async () => {
+    // This seems silly, since the mochitest harness will pop the pref off
+    // automatically, but this seems to help avoid a "waiting for vsync to be
+    // disabled" issue.
+    await SpecialPowers.popPrefEnv();
+    sandbox.restore();
   });
 });
 
@@ -59,12 +92,14 @@ test_highlights(
 
 test_highlights(
   1, // Number of highlights cards
-  function check_highlights_context_menu() {
+  async function check_highlights_context_menu() {
     const menuButton = content.document.querySelector(
       "[data-section-id='highlights'] .card-outer .context-menu-button"
     );
     // Open the menu.
     menuButton.click();
+    // Wait for React to re-render the context menu.
+    await new Promise(r => content.requestAnimationFrame(r));
     const found = content.document.querySelector(
       "[data-section-id='highlights'] .card-outer .context-menu"
     );
@@ -80,6 +115,8 @@ test_highlights(
     );
     // Open the menu.
     menuButton.click();
+    // Wait for React to re-render the context menu.
+    await new Promise(r => content.requestAnimationFrame(r));
     const contextMenu = content.document.querySelector(
       "[data-section-id='highlights'] .card-outer .context-menu"
     );

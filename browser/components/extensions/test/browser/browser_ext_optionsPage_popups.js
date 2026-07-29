@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 async function openContextMenuInOptionsPage(optionsBrowser) {
@@ -22,7 +20,7 @@ async function openContextMenuInOptionsPage(optionsBrowser) {
       new content.MouseEvent("contextmenu", {
         bubbles: true,
         cancelable: true,
-        view: el.ownerGlobal,
+        view: el.documentGlobal,
       })
     );
   });

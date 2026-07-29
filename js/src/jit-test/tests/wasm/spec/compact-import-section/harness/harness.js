@@ -243,6 +243,12 @@ function assert_trap(thunk, message) {
   }
 }
 
+function assert_suspension(thunk, message) {
+  // TODO: basically a duplicate of assert_trap, not sure what this actually
+  // is supposed to be.
+  assert_trap(thunk, message);
+}
+
 let StackOverflow;
 try {
   (function f() {
@@ -282,9 +288,17 @@ function assert_unlinkable(thunk, message) {
     thunk();
     throw new Error(`got no error`);
   } catch (err) {
+    // Allow type errors only when they pertain to imports
+    if (err instanceof TypeError && err.message.match(/import object field.*is not a/)) {
+      return;
+    }
+
+    // Allow link errors and compile errors generally (we do not really care
+    // about the specifics)
     if (err instanceof WebAssembly.LinkError || err instanceof WebAssembly.CompileError) {
       return;
     }
+
     err.message = `expected an unlinkable module (${message}): ${err.message}`;
     throw err;
   }
@@ -476,7 +490,7 @@ class Thread {
       // Get shared module's exports from main thread. (We do this one at a
       // time for reasons explained below.)
       const ${sharedModuleName} = {};
-      ${Object.keys(sharedModule).map(name =>
+      ${Object.keys(sharedModule ?? {}).map(name =>
         `${sharedModuleName}["${name}"] = receive();`
       )}
       waitForState(${this.STATE_RUN_CODE});
@@ -497,7 +511,7 @@ class Thread {
     // Send shared module exports to worker. We send values one at a time
     // because setGlobalObject can only take very specific objects, like wasm
     // memories, not generic objects like the whole exports object.
-    for (const exportedValue of Object.values(sharedModule)) {
+    for (const exportedValue of Object.values(sharedModule ?? {})) {
       this.send(exportedValue);
     }
 

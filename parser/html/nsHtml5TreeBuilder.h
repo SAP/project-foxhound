@@ -227,10 +227,6 @@ class nsHtml5TreeBuilder : public nsAHtml5TreeBuilderState {
 
   static const int32_t IN_COLUMN_GROUP = 9;
 
-  static const int32_t IN_SELECT_IN_TABLE = 10;
-
-  static const int32_t IN_SELECT = 11;
-
   static const int32_t AFTER_BODY = 12;
 
   static const int32_t IN_FRAMESET = 13;
@@ -360,9 +356,6 @@ class nsHtml5TreeBuilder : public nsAHtml5TreeBuilderState {
   bool isTemplateContents();
   bool isTemplateModeStackEmpty();
   bool isSpecialParentInForeign(nsHtml5StackNode* stackNode);
-  nsIContentHandle* getDeclarativeShadowRoot(nsIContentHandle* currentNode,
-                                             nsIContentHandle* templateNode,
-                                             nsHtml5HtmlAttributes* attributes);
 
  public:
   static nsHtml5String extractCharsetFromContent(nsHtml5String attributeValue,
@@ -477,6 +470,8 @@ class nsHtml5TreeBuilder : public nsAHtml5TreeBuilderState {
       nsHtml5ElementName* elementName, nsHtml5HtmlAttributes* attributes);
   void appendToCurrentNodeAndPushElement(nsHtml5ElementName* elementName,
                                          nsHtml5HtmlAttributes* attributes);
+  void appendToCurrentNodeAndPushTemplateElement(
+      nsHtml5HtmlAttributes* attributes);
   void appendToCurrentNodeAndPushElementMayFoster(
       nsHtml5ElementName* elementName, nsHtml5HtmlAttributes* attributes);
   void appendToCurrentNodeAndPushElementMayFosterMathML(
@@ -517,6 +512,7 @@ class nsHtml5TreeBuilder : public nsAHtml5TreeBuilderState {
   nsIContentHandle* createHtmlElementSetAsRoot(
       nsHtml5HtmlAttributes* attributes);
   void detachFromParent(nsIContentHandle* element);
+  void optionElementPopped(nsIContentHandle* option);
   bool hasChildren(nsIContentHandle* element);
   void appendElement(nsIContentHandle* child, nsIContentHandle* newParent);
   void appendChildrenToNewParent(nsIContentHandle* oldParent,

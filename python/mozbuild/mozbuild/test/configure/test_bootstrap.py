@@ -63,16 +63,16 @@ class TestBootstrap(BaseConfigureTest):
             {},
         )
         dep = sandbox._depends[sandbox["vcs_checkout_type"]]
-        getattr(sandbox, "__value_for_depends")[(dep,)] = None
+        sandbox._dependency_overrides[dep] = None
         dep = sandbox._depends[sandbox["original_path"]]
-        getattr(sandbox, "__value_for_depends")[(dep,)] = ["dummy"]
+        sandbox._dependency_overrides[dep] = ["dummy"]
 
         tmp_dir = TemporaryDirectory()
         dep = sandbox._depends[sandbox["toolchains_base_dir"]]
-        getattr(sandbox, "__value_for_depends")[(dep,)] = tmp_dir.name
+        sandbox._dependency_overrides[dep] = tmp_dir.name
 
         dep = sandbox._depends[sandbox["bootstrap_toolchain_tasks"]]
-        getattr(sandbox, "__value_for_depends")[(dep,)] = ReadOnlyNamespace(
+        sandbox._dependency_overrides[dep] = ReadOnlyNamespace(
             prefix="linux64",
             tasks={
                 "toolchain-foo": {

@@ -266,7 +266,7 @@ add_task(async function test_store_preferredAction() {
  * this entry is ignored when reloading.
  */
 add_task(async function test_store_localHandlerApp_missing() {
-  if (!("@mozilla.org/uriloader/dbus-handler-app;1" in Cc)) {
+  if (!("@mozilla.org/uriloader/local-handler-app;1" in Cc)) {
     info("Skipping test because it does not apply to this platform.");
     return;
   }
@@ -295,51 +295,6 @@ add_task(async function test_store_localHandlerApp_missing() {
     preferredAction: Ci.nsIHandlerInfo.saveToDisk,
     alwaysAskBeforeHandling: false,
     possibleApplicationHandlers: [expectedWebHandlerApp],
-  });
-});
-
-/**
- * Test saving and reloading an instance of nsIDBusHandlerApp.
- */
-add_task(async function test_store_dBusHandlerApp() {
-  if (!("@mozilla.org/uriloader/dbus-handler-app;1" in Cc)) {
-    info("Skipping test because it does not apply to this platform.");
-    return;
-  }
-
-  // Set up an nsIDBusHandlerApp instance for testing.
-  let dBusHandlerApp = Cc[
-    "@mozilla.org/uriloader/dbus-handler-app;1"
-  ].createInstance(Ci.nsIDBusHandlerApp);
-  dBusHandlerApp.name = "DBus Handler";
-  dBusHandlerApp.service = "test.method.server";
-  dBusHandlerApp.method = "Method";
-  dBusHandlerApp.dBusInterface = "test.method.Type";
-  dBusHandlerApp.objectPath = "/test/method/Object";
-  let expectedDBusHandlerApp = {
-    name: dBusHandlerApp.name,
-    service: dBusHandlerApp.service,
-    method: dBusHandlerApp.method,
-    dBusInterface: dBusHandlerApp.dBusInterface,
-    objectPath: dBusHandlerApp.objectPath,
-  };
-
-  await deleteHandlerStore();
-
-  let handlerInfo = getKnownHandlerInfo("example/new");
-  handlerInfo.preferredApplicationHandler = dBusHandlerApp;
-  handlerInfo.possibleApplicationHandlers.appendElement(dBusHandlerApp);
-  gHandlerService.store(handlerInfo);
-
-  await unloadHandlerStore();
-
-  let actualHandlerInfo = HandlerServiceTestUtils.getHandlerInfo("example/new");
-  HandlerServiceTestUtils.assertHandlerInfoMatches(actualHandlerInfo, {
-    type: "example/new",
-    preferredAction: Ci.nsIHandlerInfo.saveToDisk,
-    alwaysAskBeforeHandling: false,
-    preferredApplicationHandler: expectedDBusHandlerApp,
-    possibleApplicationHandlers: [expectedDBusHandlerApp],
   });
 });
 

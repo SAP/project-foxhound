@@ -1,4 +1,3 @@
-/* vim:t ts=4 sw=2 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -24,26 +23,23 @@ class PendingTransactionInfo final : public ARefBase {
   // a connection in TLS handshake phase.
   bool IsAlreadyClaimedInitializingConn();
 
-  // This function return a weak poointer to DnsAndConnectSocket.
+  // This function return a weak poointer to ConnectionAttempt.
   // The pointer is used by the caller(ConnectionEntry) to remove the
-  // DnsAndConnectSocket from the internal list. PendingTransactionInfo
+  // ConnectionAttempt from the internal list. PendingTransactionInfo
   // cannot perform this opereation.
-  [[nodiscard]] nsWeakPtr ForgetDnsAndConnectSocketAndActiveConn();
+  [[nodiscard]] nsWeakPtr ForgetConnectionAttemptAndActiveConn();
 
-  // Remember associated DnsAndConnectSocket.
-  void RememberDnsAndConnectSocket(DnsAndConnectSocket* sock);
+  // Remember associated ConnectionAttempt.
+  void RememberConnectionAttempt(ConnectionAttempt* sock);
   // Similar as above, but for a ActiveConn that is performing a TLS handshake
   // and has only a NullTransaction associated.
   bool TryClaimingActiveConn(HttpConnectionBase* conn);
-  // It is similar as above, but in tihs case the halfOpen is made for this
-  // PendingTransactionInfo and it is already claimed.
-  void AddDnsAndConnectSocket(DnsAndConnectSocket* sock);
 
   nsHttpTransaction* Transaction() const { return mTransaction; }
 
  private:
   RefPtr<nsHttpTransaction> mTransaction;
-  nsWeakPtr mDnsAndSock;
+  nsWeakPtr mConnectionAttempt;
   nsWeakPtr mActiveConn;
 
   ~PendingTransactionInfo();

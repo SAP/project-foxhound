@@ -31,14 +31,14 @@ For example, we require that a `panel` can be drawn outside of a window's bounds
 
 The following is not an exhaustive list of elements that require XUL:
 - Browser Window
-  - https://searchfox.org/mozilla-central/source/xpfe/appshell/nsIXULBrowserWindow.idl
+  - https://searchfox.org/firefox-main/source/xpfe/appshell/nsIXULBrowserWindow.idl
 - Popups
-  - https://searchfox.org/mozilla-central/source/dom/webidl/XULPopupElement.webidl
-  - https://searchfox.org/mozilla-central/source/layout/xul/nsMenuPopupFrame.cpp
-  - https://searchfox.org/mozilla-central/source/toolkit/content/widgets/autocomplete-popup.js
-  - https://searchfox.org/mozilla-central/source/toolkit/content/widgets/menupopup.js
+  - https://searchfox.org/firefox-main/source/dom/webidl/XULPopupElement.webidl
+  - https://searchfox.org/firefox-main/source/layout/xul/nsMenuPopupFrame.cpp
+  - https://searchfox.org/firefox-main/source/toolkit/content/widgets/autocomplete-popup.js
+  - https://searchfox.org/firefox-main/source/toolkit/content/widgets/menupopup.js
 - Panels
-  - https://searchfox.org/mozilla-central/source/toolkit/content/widgets/panel.js
+  - https://searchfox.org/firefox-main/source/toolkit/content/widgets/panel.js
 
 ## When to use HTML or XUL
 

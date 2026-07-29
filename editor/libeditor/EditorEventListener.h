@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -86,10 +85,10 @@ class EditorEventListener : public nsIDOMEventListener {
   }
   MOZ_CAN_RUN_SCRIPT virtual nsresult PointerClick(
       WidgetMouseEvent* aPointerClick);
-  MOZ_CAN_RUN_SCRIPT nsresult Focus(const InternalFocusEvent& aFocusEvent);
-  nsresult Blur(const InternalFocusEvent& aBlurEvent);
   MOZ_CAN_RUN_SCRIPT nsresult DragOverOrDrop(dom::DragEvent* aDragEvent);
   nsresult DragLeave(dom::DragEvent* aDragEvent);
+
+  MOZ_CAN_RUN_SCRIPT void DidFocus(const InternalFocusEvent& aFocusEvent);
 
   void RefuseToDropAndHideCaret(dom::DragEvent* aDragEvent);
   bool DragEventHasSupportingData(dom::DragEvent* aDragEvent) const;

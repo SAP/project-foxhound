@@ -29,7 +29,7 @@ NSS sources building testing
 
    .. code:: sh
 
-      hg clone https://hg.mozilla.org/projects/nspr
+      git clone https://github.com/mozilla/nspr
       hg clone https://hg.mozilla.org/projects/nss
 
    After the above commands complete, you should have two local directories, named nspr and nss,
@@ -67,7 +67,6 @@ NSS sources building testing
    listed in the .def files, NSS promises that the binary function interface (ABI) will remain
    stable.
 
-.. _building_nss:
 
 `Building NSS <#building_nss>`__
 --------------------------------

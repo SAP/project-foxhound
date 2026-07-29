@@ -10,8 +10,8 @@ fuzzy(0-1,0-800000) == linear-flipped-1.html linear-flipped-1-ref.html
 == linear-position-1a.html linear-position-1-ref.html
 == linear-repeat-1a.html linear-repeat-1-ref.html
 == linear-repeat-1b.html linear-repeat-1-ref.html
-== linear-repeat-1c.html linear-repeat-1-ref.html
-== linear-repeat-1d.html linear-repeat-1-ref.html
+fuzzy(0-128,0-600) == linear-repeat-1c.html linear-repeat-1-ref.html
+fuzzy(0-170,0-600) == linear-repeat-1d.html linear-repeat-1-ref.html
 == linear-repeat-1e.html linear-repeat-1-ref.html
 == linear-repeat-1f.html linear-repeat-1-ref.html
 == linear-repeat-1g.html linear-repeat-1-ref.html # bug 582236
@@ -106,6 +106,6 @@ fuzzy(0-2,0-800000) == large-gradient-5.html large-gradient-5-ref.html
 
 fuzzy(0-4,0-800000) fails-if(useDrawSnapshot) == mask-gradient-translucent-end-color-1.html mask-gradient-translucent-end-color-1-ref.html
 
-== scaled-color-stop-position.html scaled-color-stop-position-ref.html
+fuzzy(0-1,0-100) == scaled-color-stop-position.html scaled-color-stop-position-ref.html
 fuzzy(0-1,0-40000) == color-stop-clamp-interpolation.html color-stop-clamp-interpolation-ref.html
 fuzzy(0-1,0-4896) fuzzy-if(swgl,0-2,0-81000) == linear-gradient-repeated.html linear-gradient-repeated-ref.html

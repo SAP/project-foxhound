@@ -58,7 +58,7 @@ const makeFakeWin = ({
     gBrowser: { selectedBrowser },
   };
 
-  const browser = { ownerGlobal: win, id: selectedBrowser };
+  const browser = { documentGlobal: win, id: selectedBrowser };
   win.gBrowser = { selectedBrowser: browser };
   return win;
 };
@@ -116,9 +116,9 @@ add_task(async function showNotificationAllWindows() {
 add_task(async function removeUniversalInfobars() {
   const sandbox = sinon.createSandbox();
   let browser = BrowserWindowTracker.getTopWindow().gBrowser.selectedBrowser;
-  let origBox = browser.ownerGlobal.gNotificationBox;
-  browser.ownerGlobal.gNotificationBox = {
-    appendNotification: sandbox.stub().resolves({}),
+  let origBox = browser.documentGlobal.gNotificationBox;
+  browser.documentGlobal.gNotificationBox = {
+    appendNotification: sandbox.stub().resolves(document.createElement("span")),
     removeNotification: sandbox.stub(),
   };
 
@@ -138,7 +138,7 @@ add_task(async function removeUniversalInfobars() {
   notification.removeUniversalInfobars();
 
   Assert.ok(
-    browser.ownerGlobal.gNotificationBox.removeNotification.calledWith(
+    browser.documentGlobal.gNotificationBox.removeNotification.calledWith(
       notification.notification
     )
   );
@@ -147,16 +147,16 @@ add_task(async function removeUniversalInfobars() {
 
   // Cleanup
   cleanupInfobars();
-  browser.ownerGlobal.gNotificationBox = origBox;
+  browser.documentGlobal.gNotificationBox = origBox;
   sandbox.restore();
 });
 
 add_task(async function initialUniversal_showsAllWindows_andSendsTelemetry() {
   const sandbox = sinon.createSandbox();
   let browser = BrowserWindowTracker.getTopWindow().gBrowser.selectedBrowser;
-  let origBox = browser.ownerGlobal.gNotificationBox;
-  browser.ownerGlobal.gNotificationBox = {
-    appendNotification: sandbox.stub().resolves({}),
+  let origBox = browser.documentGlobal.gNotificationBox;
+  browser.documentGlobal.gNotificationBox = {
+    appendNotification: sandbox.stub().resolves(document.createElement("span")),
     removeNotification: sandbox.stub(),
   };
 
@@ -184,7 +184,7 @@ add_task(async function initialUniversal_showsAllWindows_andSendsTelemetry() {
 
   // Cleanup
   cleanupInfobars();
-  browser.ownerGlobal.gNotificationBox = origBox;
+  browser.documentGlobal.gNotificationBox = origBox;
   sandbox.restore();
 });
 
@@ -326,7 +326,7 @@ add_task(async function universalInfobar_persists_original_window_closure() {
     dispatch: sandbox.stub(),
   };
   InfoBar._universalInfobars = [
-    { box: { ownerGlobal: fakeWindow }, notification: {} },
+    { box: { documentGlobal: fakeWindow }, notification: {} },
   ];
 
   Assert.ok(InfoBar._activeInfobar, "Got a universal infobar");
@@ -464,9 +464,9 @@ add_task(async function universal_inline_anchor_dismiss_multiple_windows() {
   dispatch1.resetHistory();
   dispatch2.resetHistory();
 
-  const link = getNotification1().messageText.querySelector(
-    'a[data-l10n-name="test"]'
-  );
+  const link = getNotification1()
+    .querySelector(':scope > [slot="message"]')
+    .querySelector('a[data-l10n-name="test"]');
   Assert.ok(link, "Inline anchor exists in window 1");
   EventUtils.synthesizeMouseAtCenter(link, {}, win1);
 

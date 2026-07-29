@@ -496,7 +496,7 @@ export class LoginDataSource extends DataSourceBase {
       allowFromInactiveWorkspace: true,
     }).gBrowser;
     try {
-      lazy.MigrationUtils.showMigrationWizard(browser.ownerGlobal, {
+      lazy.MigrationUtils.showMigrationWizard(browser.documentGlobal, {
         entrypoint: lazy.MigrationUtils.MIGRATION_ENTRYPOINTS.PASSWORDS,
       });
     } catch (ex) {
@@ -561,12 +561,9 @@ export class LoginDataSource extends DataSourceBase {
       allowFromInactiveWorkspace: true,
     }).browsingContext;
 
-    const isOSAuthEnabled = LoginHelper.getOSAuthEnabled();
-
     const reason = "export_cpm";
     let { isAuthorized, telemetryEvent } = await LoginHelper.requestReauth(
       browsingContext,
-      isOSAuthEnabled,
       null, // Prompt regardless of a recent prompt
       this.#exportPasswordsStrings.OSReauthMessage,
       this.#exportPasswordsStrings.OSAuthDialogCaption,
@@ -628,7 +625,7 @@ export class LoginDataSource extends DataSourceBase {
     const browser = BrowserWindowTracker.getTopWindow({
       allowFromInactiveWorkspace: true,
     }).gBrowser;
-    browser.ownerGlobal.switchToTabHavingURI(url, true, {
+    browser.documentGlobal.switchToTabHavingURI(url, true, {
       ignoreFragment: "whenComparingAndReplace",
     });
   }
@@ -825,8 +822,12 @@ export class LoginDataSource extends DataSourceBase {
     const breachesMap = lazy.BREACH_ALERTS_ENABLED
       ? await lazy.LoginBreaches.getPotentialBreachesByLoginGUID(logins)
       : new Map();
+    const vulnerableMap =
+      await lazy.LoginBreaches.getPotentiallyVulnerablePasswordsByLoginGUID(
+        logins
+      );
 
-    this.#syncReloadDataSource(logins, breachesMap);
+    this.#syncReloadDataSource(logins, breachesMap, vulnerableMap);
 
     this.doneReloadDataSource = true;
   }
@@ -836,13 +837,13 @@ export class LoginDataSource extends DataSourceBase {
    * should be synchronous because the two functions operates on member variable
    * #linesToForget and they don't expect it to be changed in the middle of reloading.
    */
-  #syncReloadDataSource(logins, breachesMap) {
+  #syncReloadDataSource(logins, breachesMap, vulnerableMap) {
     this.beforeReloadingDataSource();
 
     const loginsWithAlerts = logins.filter(
       login =>
         breachesMap.has(login.guid) ||
-        lazy.LoginBreaches.isVulnerablePassword(login) ||
+        vulnerableMap.has(login.guid) ||
         !login.username.length
     );
 
@@ -860,7 +861,7 @@ export class LoginDataSource extends DataSourceBase {
         parts.length -= 1;
       }
       const isLoginBreached = breachesMap.has(login.guid);
-      const isLoginVulnerable = lazy.LoginBreaches.isVulnerablePassword(login);
+      const isLoginVulnerable = vulnerableMap.has(login.guid);
       const loginNoUsername = !login.username.length;
 
       let alertValue;

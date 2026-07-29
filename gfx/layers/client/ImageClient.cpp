@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -94,7 +92,8 @@ already_AddRefed<TextureClient> ImageClient::CreateTextureClientForImage(
         aKnowsCompositor, data->mPictureRect, data->YDataSize(), data->mYStride,
         data->CbCrDataSize(), data->mCbCrStride, data->mStereoMode,
         data->mColorDepth, data->mYUVColorSpace, data->mColorRange,
-        data->mChromaSubsampling, TextureFlags::DEFAULT);
+        data->mTransferFunction, data->mChromaSubsampling,
+        TextureFlags::DEFAULT, data->mHDRMetadata);
     if (!texture) {
       return nullptr;
     }
@@ -118,7 +117,7 @@ already_AddRefed<TextureClient> ImageClient::CreateTextureClientForImage(
         typedImage->GetOriginPos(), typedImage->GetHasAlpha(),
         typedImage->GetForceBT709ColorSpace(),
         typedImage->GetTransformOverride(),
-        aKnowsCompositor->GetTextureForwarder(), TextureFlags::DEFAULT);
+        aKnowsCompositor->GetTextureForwarder().get(), TextureFlags::DEFAULT);
 #endif
   } else {
     RefPtr<gfx::SourceSurface> surface = aImage->GetAsSourceSurface();

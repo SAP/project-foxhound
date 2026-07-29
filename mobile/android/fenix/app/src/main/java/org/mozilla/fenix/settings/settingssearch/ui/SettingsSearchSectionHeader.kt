@@ -31,7 +31,7 @@ fun SettingsSearchSectionHeader(title: String) {
         Text(
             text = title,
             style = FirefoxTheme.typography.headline8,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = MaterialTheme.colorScheme.onSurface,
         )
     }
 }

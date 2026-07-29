@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -86,8 +84,8 @@ void TestFunctions::GetShortLiteralString(nsAString& aString) {
 
 void TestFunctions::GetMediumLiteralString(nsAString& aString) {
   // JS inline strings are at most 2 * sizeof(void*) chars, so at most 16 on
-  // 64-bit.  FakeString can hold 63 chars in its inline buffer (plus the null
-  // terminator).  Let's return 40 chars; that way if we ever move to 128-bit
+  // 64-bit. nsTAutoString can hold 63 chars in its inline buffer (plus the null
+  // terminator). Let's return 40 chars; that way if we ever move to 128-bit
   // void* or something this test will still be valid.
   aString.AssignLiteral(u"0123456789012345678901234567890123456789");
 }

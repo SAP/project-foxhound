@@ -4,24 +4,31 @@
 
 package org.mozilla.gecko.media;
 
+import android.content.Context;
 import android.media.MediaCodec;
 import android.media.MediaCodec.BufferInfo;
 import android.media.MediaCodec.CryptoInfo;
 import android.util.Log;
+import androidx.annotation.NonNull;
+import androidx.annotation.OptIn;
+import androidx.media3.common.C;
+import androidx.media3.common.Format;
+import androidx.media3.common.MimeTypes;
+import androidx.media3.common.util.UnstableApi;
+import androidx.media3.decoder.DecoderInputBuffer;
+import androidx.media3.exoplayer.ExoPlaybackException;
+import androidx.media3.exoplayer.RendererCapabilities;
+import androidx.media3.exoplayer.mediacodec.MediaCodecInfo;
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector;
+import androidx.media3.exoplayer.mediacodec.MediaCodecUtil;
 import java.nio.ByteBuffer;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.geckoview.BuildConfig;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.C;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.ExoPlaybackException;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.Format;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.RendererCapabilities;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.decoder.DecoderInputBuffer;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.mediacodec.MediaCodecInfo;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.mediacodec.MediaCodecSelector;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.mediacodec.MediaCodecUtil;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.util.MimeTypes;
 
+@OptIn(markerClass = UnstableApi.class)
 public class GeckoHlsVideoRenderer extends GeckoHlsRendererBase {
   /*
    * By configuring these states, initialization data is provided for
@@ -33,6 +40,12 @@ public class GeckoHlsVideoRenderer extends GeckoHlsRendererBase {
     NONE,
     WRITE_PENDING,
     QUEUE_PENDING
+  }
+
+  @NonNull
+  @Override
+  public String getName() {
+    return "GeckoHlsVideoRenderer";
   }
 
   private boolean mRendererReconfigured;
@@ -86,7 +99,7 @@ public class GeckoHlsVideoRenderer extends GeckoHlsRendererBase {
      */
     final String mimeType = format.sampleMimeType;
     if (!MimeTypes.isVideo(mimeType)) {
-      return RendererCapabilities.create(FORMAT_UNSUPPORTED_TYPE);
+      return RendererCapabilities.create(C.FORMAT_UNSUPPORTED_TYPE);
     }
 
     List<MediaCodecInfo> decoderInfos = null;
@@ -97,26 +110,19 @@ public class GeckoHlsVideoRenderer extends GeckoHlsRendererBase {
       Log.e(LOGTAG, e.getMessage());
     }
     if (decoderInfos == null || decoderInfos.isEmpty()) {
-      return RendererCapabilities.create(FORMAT_UNSUPPORTED_SUBTYPE);
+      return RendererCapabilities.create(C.FORMAT_UNSUPPORTED_SUBTYPE);
     }
 
-    boolean decoderCapable = false;
-    MediaCodecInfo info = null;
-    for (final MediaCodecInfo i : decoderInfos) {
-      if (i.isCodecSupported(format)) {
-        decoderCapable = true;
-        info = i;
-      }
-    }
-    if (decoderCapable && format.width > 0 && format.height > 0) {
-      decoderCapable =
-          info.isVideoSizeAndRateSupportedV21(format.width, format.height, format.frameRate);
-    }
+    final Context ctx = GeckoAppShell.getApplicationContext();
+    final Optional<MediaCodecInfo> info =
+        decoderInfos.stream().filter(i -> i.isFormatSupported(ctx, format)).findFirst();
 
     return RendererCapabilities.create(
-        decoderCapable ? FORMAT_HANDLED : FORMAT_EXCEEDS_CAPABILITIES,
-        info != null && info.adaptive ? ADAPTIVE_SEAMLESS : ADAPTIVE_NOT_SEAMLESS,
-        TUNNELING_NOT_SUPPORTED);
+        info.isPresent() ? C.FORMAT_HANDLED : C.FORMAT_EXCEEDS_CAPABILITIES,
+        info.isPresent() && info.get().adaptive
+            ? RendererCapabilities.ADAPTIVE_SEAMLESS
+            : RendererCapabilities.ADAPTIVE_NOT_SEAMLESS,
+        RendererCapabilities.TUNNELING_NOT_SUPPORTED);
   }
 
   @Override
@@ -136,9 +142,13 @@ public class GeckoHlsVideoRenderer extends GeckoHlsRendererBase {
       Log.e(LOGTAG, "cannot allocate input buffer of size " + mCodecMaxValues.inputSize, e);
       throw ExoPlaybackException.createForRenderer(
           new Exception(e),
+          getName(),
           getIndex(),
           mFormats.isEmpty() ? null : getFormat(mFormats.size() - 1),
-          RendererCapabilities.FORMAT_HANDLED);
+          C.FORMAT_HANDLED,
+          null,
+          false,
+          ExoPlaybackException.ERROR_CODE_DECODER_INIT_FAILED);
     }
   }
 
@@ -231,7 +241,7 @@ public class GeckoHlsVideoRenderer extends GeckoHlsRendererBase {
     mInputBuffer.clear();
 
     final CryptoInfo cryptoInfo =
-        bufferForRead.isEncrypted() ? bufferForRead.cryptoInfo.getFrameworkCryptoInfoV16() : null;
+        bufferForRead.isEncrypted() ? bufferForRead.cryptoInfo.getFrameworkCryptoInfo() : null;
     final BufferInfo bufferInfo = new BufferInfo();
     // Flags in DecoderInputBuffer are synced with MediaCodec Buffer flags.
     int flags = 0;
@@ -252,8 +262,9 @@ public class GeckoHlsVideoRenderer extends GeckoHlsRendererBase {
   }
 
   @Override
-  protected void onPositionReset(final long positionUs, final boolean joining) {
-    super.onPositionReset(positionUs, joining);
+  protected void onPositionReset(
+      final long positionUs, final boolean joining, final boolean sampleStreamIsResetToKeyFrame) {
+    super.onPositionReset(positionUs, joining, sampleStreamIsResetToKeyFrame);
     if (mInitialized && mRendererReconfigured && mFormats.size() != 0) {
       if (DEBUG) {
         Log.d(LOGTAG, "[onPositionReset] WRITE_PENDING");
@@ -431,7 +442,6 @@ public class GeckoHlsVideoRenderer extends GeckoHlsRendererBase {
     return nextKeyFrameTime;
   }
 
-  @Override
   protected void onStreamChanged(final Format[] formats, final long offsetUs) {
     mStreamFormats = formats;
   }
@@ -441,11 +451,14 @@ public class GeckoHlsVideoRenderer extends GeckoHlsRendererBase {
     int maxWidth = format.width;
     int maxHeight = format.height;
     int maxInputSize = getMaxInputSize(format);
-    for (final Format streamFormat : streamFormats) {
-      if (areAdaptationCompatible(format, streamFormat)) {
-        maxWidth = Math.max(maxWidth, streamFormat.width);
-        maxHeight = Math.max(maxHeight, streamFormat.height);
-        maxInputSize = Math.max(maxInputSize, getMaxInputSize(streamFormat));
+    if (streamFormats != null) {
+      // Stream changed. Re-calculate new max values for new codec config.
+      for (final Format streamFormat : streamFormats) {
+        if (areAdaptationCompatible(format, streamFormat)) {
+          maxWidth = Math.max(maxWidth, streamFormat.width);
+          maxHeight = Math.max(maxHeight, streamFormat.height);
+          maxInputSize = Math.max(maxInputSize, getMaxInputSize(streamFormat));
+        }
       }
     }
     return new CodecMaxValues(maxWidth, maxHeight, maxInputSize);

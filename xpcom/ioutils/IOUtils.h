@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -96,7 +94,7 @@ class IOUtils final {
 
   static already_AddRefed<dom::Promise> WriteJSON(
       dom::GlobalObject& aGlobal, const nsAString& aPath,
-      JS::Handle<JS::Value> aValue, const dom::WriteOptions& aOptions,
+      JS::Handle<JS::Value> aValue, const dom::WriteJSONOptions& aOptions,
       ErrorResult& aError);
 
   static already_AddRefed<dom::Promise> Move(dom::GlobalObject& aGlobal,
@@ -738,9 +736,12 @@ struct IOUtils::InternalWriteOpts {
   dom::WriteMode mMode;
   bool mFlush = false;
   bool mCompress = false;
+  size_t mLengthHint = 0;
 
   static Result<InternalWriteOpts, IOUtils::IOError> FromBinding(
       const dom::WriteOptions& aOptions);
+  static Result<InternalWriteOpts, IOUtils::IOError> FromBinding(
+      const dom::WriteJSONOptions& aOptions);
 };
 
 /**

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright 2021 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -88,6 +86,12 @@ const char* wasm::ToString(Trap trap) {
       return "StackOverflow";
     case Trap::CheckInterrupt:
       return "CheckInterrupt";
+#  ifdef ENABLE_WASM_JSPI
+    case Trap::ThrowSuspendError:
+      return "ThrowSuspendError";
+#  endif
+    case Trap::Unimplemented:
+      return "Unimplemented";
     case Trap::ThrowReported:
       return "ThrowReported";
     case Trap::Limit:
@@ -191,6 +195,9 @@ CodeRange::CodeRange(Kind kind, Offsets offsets)
     case FarJumpIsland:
     case TrapExit:
     case Throw:
+#  ifdef ENABLE_WASM_JSPI
+    case ContBaseFrame:
+#  endif
       break;
     default:
       MOZ_CRASH("should use more specific constructor");

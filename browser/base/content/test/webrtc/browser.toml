@@ -217,11 +217,13 @@ skip-if = [
   "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1869787
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1707735
   "os == 'win' && os_version == '11.26100' && ccov", # Bug 1775943
+  "os == 'win' && os_version == '11.26200' && ccov", # Bug 1775943
 ]
 
 ["browser_tab_switch_warning.js"]
 skip-if = [
   "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # platform migration
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2019466
 ]
 
 ["browser_webrtc_hooks.js"]

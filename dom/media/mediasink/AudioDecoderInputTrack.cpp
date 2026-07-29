@@ -7,6 +7,7 @@
 #include "MediaData.h"
 #include "RLBoxSoundTouch.h"
 #include "Tracing.h"
+#include "mozilla/CheckedInt.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_media.h"
 
@@ -14,13 +15,13 @@ namespace mozilla {
 
 extern LazyLogModule gMediaDecoderLog;
 
-#define LOG(msg, ...)                        \
-  MOZ_LOG(gMediaDecoderLog, LogLevel::Debug, \
-          ("AudioDecoderInputTrack=%p " msg, this, ##__VA_ARGS__))
+#define LOG(msg, ...)                            \
+  MOZ_LOG_FMT(gMediaDecoderLog, LogLevel::Debug, \
+              "AudioDecoderInputTrack={} " msg, fmt::ptr(this), ##__VA_ARGS__)
 
-#define LOG_M(msg, this, ...)                \
-  MOZ_LOG(gMediaDecoderLog, LogLevel::Debug, \
-          ("AudioDecoderInputTrack=%p " msg, this, ##__VA_ARGS__))
+#define LOG_M(msg, this, ...)                    \
+  MOZ_LOG_FMT(gMediaDecoderLog, LogLevel::Debug, \
+              "AudioDecoderInputTrack={} " msg, fmt::ptr(this), ##__VA_ARGS__)
 
 /* static */
 AudioDecoderInputTrack* AudioDecoderInputTrack::Create(
@@ -69,7 +70,7 @@ bool AudioDecoderInputTrack::ConvertAudioDataToSegment(
                         aPrincipalHandle);
   const TrackRate newInputRate = static_cast<TrackRate>(aAudio->mRate);
   if (newInputRate != mInputSampleRate) {
-    LOG("Input sample rate changed %u -> %u", mInputSampleRate, newInputRate);
+    LOG("Input sample rate changed {} -> {}", mInputSampleRate, newInputRate);
     mInputSampleRate = newInputRate;
     mResampler.own(nullptr);
     mResamplerChannelCount = 0;
@@ -138,8 +139,8 @@ void AudioDecoderInputTrack::BatchData(
     mBatchedData.mStartTime = aAudio->mTime;
   }
   mBatchedData.mEndTime = aAudio->GetEndTime();
-  LOG("batched data [%" PRId64 ":%" PRId64 "] sz=%" PRId64,
-      aAudio->mTime.ToMicroseconds(), aAudio->GetEndTime().ToMicroseconds(),
+  LOG("batched data [{}:{}] sz={}", aAudio->mTime.ToMicroseconds(),
+      aAudio->GetEndTime().ToMicroseconds(),
       mBatchedData.mSegment.GetDuration());
   DispatchPushBatchedDataIfNeeded();
 }
@@ -180,7 +181,7 @@ void AudioDecoderInputTrack::PushBatchedDataIfNeeded() {
   if (!HasBatchedData()) {
     return;
   }
-  LOG("Append batched data [%" PRId64 ":%" PRId64 "], available SPSC sz=%u",
+  LOG("Append batched data [{}:{}], available SPSC sz={}",
       mBatchedData.mStartTime.ToMicroseconds(),
       mBatchedData.mEndTime.ToMicroseconds(), mSPSCQueue.AvailableWrite());
   SPSCData data({SPSCData::DecodedData(std::move(mBatchedData))});
@@ -196,7 +197,7 @@ void AudioDecoderInputTrack::NotifyEndOfStream() {
   // early without sending all data.
   PushBatchedDataIfNeeded();
   SPSCData data({SPSCData::EOS()});
-  LOG("Set EOS, available SPSC sz=%u", mSPSCQueue.AvailableWrite());
+  LOG("Set EOS, available SPSC sz={}", mSPSCQueue.AvailableWrite());
   PushDataToSPSCQueue(data);
 }
 
@@ -206,7 +207,7 @@ void AudioDecoderInputTrack::ClearFutureData() {
   mBatchedData.Clear();
   mDelayedScheduler.Reset();
   SPSCData data({SPSCData::ClearFutureData()});
-  LOG("Set clear future data, available SPSC sz=%u",
+  LOG("Set clear future data, available SPSC sz={}",
       mSPSCQueue.AvailableWrite());
   PushDataToSPSCQueue(data);
 }
@@ -225,7 +226,7 @@ void AudioDecoderInputTrack::PushDataToSPSCQueue(SPSCData& data) {
 
 void AudioDecoderInputTrack::SetPlaybackRate(float aPlaybackRate) {
   AssertOnDecoderThread();
-  LOG("Set playback rate=%f", aPlaybackRate);
+  LOG("Set playback rate={}", aPlaybackRate);
   GetMainThreadSerialEventTarget()->Dispatch(NS_NewRunnableFunction(
       "AudioDecoderInputTrack::SetPlaybackRate",
       [self = RefPtr<AudioDecoderInputTrack>(this), aPlaybackRate] {
@@ -238,7 +239,7 @@ void AudioDecoderInputTrack::SetPlaybackRateImpl(float aPlaybackRate) {
   QueueControlMessageWithNoShutdown([self = RefPtr{this}, this, aPlaybackRate] {
     TRACE_COMMENT("AudioDecoderInputTrack::SetPlaybackRate ControlMessage",
                   "%f", aPlaybackRate);
-    LOG_M("Apply playback rate=%f", this, aPlaybackRate);
+    LOG_M("Apply playback rate={}", this, aPlaybackRate);
     mPlaybackRate = aPlaybackRate;
     SetTempoAndRateForTimeStretcher();
   });
@@ -246,7 +247,7 @@ void AudioDecoderInputTrack::SetPlaybackRateImpl(float aPlaybackRate) {
 
 void AudioDecoderInputTrack::SetPreservesPitch(bool aPreservesPitch) {
   AssertOnDecoderThread();
-  LOG("Set preserves pitch=%d", aPreservesPitch);
+  LOG("Set preserves pitch={}", aPreservesPitch);
   GetMainThreadSerialEventTarget()->Dispatch(NS_NewRunnableFunction(
       "AudioDecoderInputTrack::SetPreservesPitch",
       [self = RefPtr<AudioDecoderInputTrack>(this), aPreservesPitch] {
@@ -260,7 +261,7 @@ void AudioDecoderInputTrack::SetPreservesPitchImpl(bool aPreservesPitch) {
       [self = RefPtr{this}, this, aPreservesPitch] {
         TRACE_COMMENT("AudioDecoderInputTrack::SetPreservesPitch", "%s",
                       aPreservesPitch ? "true" : "false");
-        LOG_M("Apply preserves pitch=%d", this, aPreservesPitch);
+        LOG_M("Apply preserves pitch={}", this, aPreservesPitch);
         mPreservesPitch = aPreservesPitch;
         SetTempoAndRateForTimeStretcher();
       });
@@ -278,10 +279,7 @@ void AudioDecoderInputTrack::DestroyImpl() {
   LOG("DestroyImpl");
   AssertOnGraphThreadOrNotRunning();
   mBufferedData.Clear();
-  if (mTimeStretcher) {
-    delete mTimeStretcher;
-    mTimeStretcher = nullptr;
-  }
+  mTimeStretcher = nullptr;
   ProcessedMediaTrack::DestroyImpl();
 }
 
@@ -310,8 +308,7 @@ void AudioDecoderInputTrack::ProcessInput(GraphTime aFrom, GraphTime aTo,
   }
 
   const TrackTime expectedDuration = aTo - aFrom;
-  LOG("ProcessInput [%" PRId64 " to %" PRId64 "], duration=%" PRId64, aFrom,
-      aTo, expectedDuration);
+  LOG("ProcessInput [{} to {}], duration={}", aFrom, aTo, expectedDuration);
 
   // Drain all data from SPSC queue first, because we want that the SPSC queue
   // always has capacity of accepting data from the producer. In addition, we
@@ -334,7 +331,7 @@ void AudioDecoderInputTrack::HandleSPSCData(SPSCData& aData) {
   if (aData.IsDecodedData()) {
     MOZ_ASSERT(!mReceivedEOS);
     AudioSegment& segment = aData.AsDecodedData()->mSegment;
-    LOG("popped out data [%" PRId64 ":%" PRId64 "] sz=%" PRId64,
+    LOG("popped out data [{}:{}] sz={}",
         aData.AsDecodedData()->mStartTime.ToMicroseconds(),
         aData.AsDecodedData()->mEndTime.ToMicroseconds(),
         segment.GetDuration());
@@ -387,12 +384,12 @@ TrackTime AudioDecoderInputTrack::AppendBufferedDataToOutput(
         "Only used for logging.");
   }
 
-  LOG("Appended %" PRId64 ", consumed %" PRId64
-      ", remaining raw buffered %" PRId64 ", remaining time-stretched %u",
+  LOG("Appended {}, consumed {}, remaining raw buffered {}, remaining "
+      "time-stretched {}",
       appendedDuration, consumedDuration, mBufferedData.GetDuration(),
       numSamples);
   if (auto gap = aExpectedDuration - appendedDuration; gap > 0) {
-    LOG("Audio underrun, fill silence %" PRId64, gap);
+    LOG("Audio underrun, fill silence {}", gap);
     MOZ_ASSERT(mBufferedData.IsEmpty());
     mSegment->AppendNullData(gap);
   }
@@ -406,8 +403,11 @@ TrackTime AudioDecoderInputTrack::AppendTimeStretchedDataToSegment(
 
   MOZ_ASSERT(mPlaybackRate != 1.0f);
   MOZ_ASSERT(aExpectedDuration >= 0);
-  MOZ_ASSERT(mTimeStretcher);
   MOZ_ASSERT(aOutput.IsEmpty());
+
+  if (!mTimeStretcher) {
+    return AppendUnstretchedDataToSegment(aExpectedDuration, aOutput);
+  }
 
   // If we don't have enough data that have been time-stretched, fill raw data
   // into the time stretcher until the amount of samples that time stretcher
@@ -441,7 +441,14 @@ TrackTime AudioDecoderInputTrack::FillDataToTimeStretcher(
       // Skip this chunk and wait for next one.
       return false;
     }
-    const uint32_t bufferLength = channels * aChunk->GetDuration();
+    CheckedInt<uint32_t> checkedBufferLength =
+        CheckedInt<uint32_t>(channels) * aChunk->GetDuration();
+    if (!checkedBufferLength.isValid()) {
+      LOG("Invalid interleave buffer length for channels={} duration={}",
+          channels, aChunk->GetDuration());
+      return true;
+    }
+    const uint32_t bufferLength = checkedBufferLength.value();
     if (bufferLength > mInterleavedBuffer.Capacity()) {
       mInterleavedBuffer.SetCapacity(bufferLength);
     }
@@ -527,7 +534,7 @@ TrackTime AudioDecoderInputTrack::GetDataFromTimeStretcher(
   mTimeStretcher->numUnprocessedSamples().copy_and_verify([&](auto samples) {
     if (HasSentAllData() && samples) {
       mTimeStretcher->flush();
-      LOG("Flush %u frames from the time stretcher", numSamples);
+      LOG("Flush {} frames from the time stretcher", numSamples);
     }
   });
 
@@ -545,7 +552,14 @@ TrackTime AudioDecoderInputTrack::GetDataFromTimeStretcher(
 
   // Retrieve interleaved data from the time stretcher.
   const uint32_t channelCount = GetChannelCountForTimeStretcher();
-  const uint32_t bufferLength = channelCount * available;
+  CheckedInt<uint32_t> checkedBufferLength =
+      CheckedInt<uint32_t>(channelCount) * available;
+  if (!checkedBufferLength.isValid()) {
+    LOG("Invalid interleave buffer length for channels={} available={}",
+        channelCount, available);
+    return 0;
+  }
+  const uint32_t bufferLength = checkedBufferLength.value();
   if (bufferLength > mInterleavedBuffer.Capacity()) {
     mInterleavedBuffer.SetCapacity(bufferLength);
   }
@@ -576,8 +590,8 @@ void AudioDecoderInputTrack::NotifyInTheEndOfProcessInput(
     TrackTime aFillDuration) {
   AssertOnGraphThread();
   mWrittenFrames += aFillDuration;
-  LOG("Notify, fill=%" PRId64 ", total written=%" PRId64 ", ended=%d",
-      aFillDuration, mWrittenFrames, Ended());
+  LOG("Notify, fill={}, total written={}, ended={}", aFillDuration,
+      mWrittenFrames, Ended());
   if (aFillDuration > 0) {
     mOnOutput.Notify(mWrittenFrames);
   }
@@ -601,9 +615,17 @@ uint32_t AudioDecoderInputTrack::NumberOfChannels() const {
 void AudioDecoderInputTrack::EnsureTimeStretcher() {
   AssertOnGraphThread();
   if (!mTimeStretcher) {
-    mTimeStretcher = new RLBoxSoundTouch();
-    MOZ_RELEASE_ASSERT(mTimeStretcher);
-    MOZ_RELEASE_ASSERT(mTimeStretcher->Init());
+    mTimeStretcher = std::make_unique<RLBoxSoundTouch>();
+    if (!mTimeStretcher->Init()) {
+      MOZ_LOG_FMT(gMediaDecoderLog, LogLevel::Error,
+                  "AudioDecoderInputTrack={} Failed to initialize time "
+                  "stretcher, audio will play at normal speed",
+                  fmt::ptr(this));
+      mTimeStretcher = nullptr;
+      mPlaybackRate = 1.0f;
+      mOnPlaybackRateFallback.Notify();
+      return;
+    }
 
     mTimeStretcher->setSampleRate(Graph()->GraphRate());
     mTimeStretcher->setChannels(GetChannelCountForTimeStretcher());
@@ -626,7 +648,7 @@ void AudioDecoderInputTrack::EnsureTimeStretcher() {
         SETTING_OVERLAP_MS,
         StaticPrefs::media_audio_playbackrate_soundtouch_overlap_ms());
     SetTempoAndRateForTimeStretcher();
-    LOG("Create TimeStretcher (channel=%d, playbackRate=%f, preservePitch=%d)",
+    LOG("Create TimeStretcher (channel={}, playbackRate={}, preservePitch={})",
         GetChannelCountForTimeStretcher(), mPlaybackRate, mPreservesPitch);
   }
 }

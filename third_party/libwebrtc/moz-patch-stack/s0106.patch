@@ -1,25 +1,23 @@
 From: Michael Froman <mfroman@mozilla.com>
-Date: Tue, 19 Nov 2024 16:05:00 -0600
-Subject: Bug 1928110 - (fix-b9c4c242d4) handle upstream last_arrival_timestamp
- to last_arrival_ntp_timestamp
+Date: Fri, 7 Mar 2025 17:43:00 -0600
+Subject: Bug 1952339 - (fix-68e7b00928) add default param to emplace() to fix
+ compile issue
 
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/6918cf2d9126fa3e3676386349f6e383c298d8ab
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/26c916591791b13a3d8888066c22c5ba49c86c47
 ---
- modules/rtp_rtcp/source/rtcp_receiver.cc | 4 ++--
- 1 file changed, 2 insertions(+), 2 deletions(-)
+ call/rtp_config.cc | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/modules/rtp_rtcp/source/rtcp_receiver.cc b/modules/rtp_rtcp/source/rtcp_receiver.cc
-index c78494af8a..862bc3f5dc 100644
---- a/modules/rtp_rtcp/source/rtcp_receiver.cc
-+++ b/modules/rtp_rtcp/source/rtcp_receiver.cc
-@@ -346,8 +346,8 @@ void RTCPReceiver::RemoteRTCPSenderInfo(uint32_t* packet_count,
-   MutexLock lock(&rtcp_receiver_lock_);
-   *packet_count = remote_sender_.packets_sent;
-   *octet_count = remote_sender_.bytes_sent;
--  *ntp_timestamp_ms = remote_sender_.last_arrival_timestamp.ToMs();
--  *remote_ntp_timestamp_ms = remote_sender_.last_remote_timestamp.ToMs();
-+  *ntp_timestamp_ms = remote_sender_.last_arrival_ntp_timestamp.ToMs();
-+  *remote_ntp_timestamp_ms = remote_sender_.last_remote_ntp_timestamp.ToMs();
- }
- 
- std::vector<ReportBlockData> RTCPReceiver::GetLatestReportBlockData() const {
+diff --git a/call/rtp_config.cc b/call/rtp_config.cc
+index 560ec099d6..ce31b4e301 100644
+--- a/call/rtp_config.cc
++++ b/call/rtp_config.cc
+@@ -251,7 +251,7 @@ RtpStreamConfig RtpConfig::GetStreamConfig(size_t index) const {
+   stream_config.raw_payload = raw_payload;
+   if (!rtx.ssrcs.empty()) {
+     RTC_DCHECK_EQ(ssrcs.size(), rtx.ssrcs.size());
+-    auto& stream_config_rtx = stream_config.rtx.emplace();
++    auto& stream_config_rtx = stream_config.rtx.emplace(RtpStreamConfig::Rtx());
+     stream_config_rtx.ssrc = rtx.ssrcs[index];
+     stream_config_rtx.payload_type = rtx.payload_type;
+   }

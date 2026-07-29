@@ -14,6 +14,48 @@ newtab-personalize-icon-label =
 newtab-personalize-dialog-label =
     .aria-label = Personalitza
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Pestanyes noves
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } fila
+           *[other] { $num } files
+        }
+home-restore-defaults-srd =
+    .label = Restaura els valors per defecte
+    .accesskey = R
+home-mode-choice-custom-srd =
+    .label = URL personalitzats…
+home-mode-choice-blank-srd =
+    .label = Pàgina en blanc
+home-prefs-shortcuts-header-srd =
+    .label = Dreceres
+home-prefs-shortcuts-select =
+    .aria-label = Dreceres
+home-prefs-shortcuts-by-option-sponsored-srd =
+    .label = Dreceres patrocinades
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Articles patrocinats
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Pàgines visitades
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Adreces d'interés
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Baixada més recent
+home-prefs-recent-activity-header-srd =
+    .label = Activitat recent
+home-prefs-recent-activity-select =
+    .aria-label = Activitat recent
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -39,7 +81,7 @@ newtab-search-box-input =
     .placeholder = Cerca al web
     .aria-label = Cerca al web
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Afig un motor de cerca
 newtab-topsites-add-shortcut-header = Drecera nova
@@ -237,9 +279,21 @@ newtab-error-fallback-refresh-link = Actualitzeu la pàgina per tornar-ho a prov
 
 newtab-custom-shortcuts-title = Dreceres
 newtab-custom-shortcuts-subtitle = Llocs que guardeu o visiteu
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = Dreceres
     .description = Llocs que guardeu o visiteu
+newtab-custom-shortcuts-nova =
+    .label = Dreceres
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+            [one] { $num } fila
+           *[other] { $num } files
+        }
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector =

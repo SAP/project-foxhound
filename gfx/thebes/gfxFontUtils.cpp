@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,6 +11,7 @@
 
 #include "mozilla/Preferences.h"
 #include "mozilla/BinarySearch.h"
+#include "mozilla/EndianUtils.h"
 #include "mozilla/Sprintf.h"
 
 #include "nsCOMPtr.h"
@@ -26,6 +26,11 @@
 
 #ifdef XP_DARWIN
 #  include <CoreFoundation/CoreFoundation.h>
+#endif
+
+#ifdef MOZ_ENABLE_FREETYPE
+#  include "ft2build.h"
+#  include FT_FREETYPE_H
 #endif
 
 #define LOG(log, args) MOZ_LOG(gfxPlatform::GetLog(log), LogLevel::Debug, args)
@@ -411,11 +416,12 @@ nsresult gfxFontUtils::ReadCMAPTableFormat14(const uint8_t* aBuf,
     (((p) == PLATFORM_ID_MICROSOFT && (e) == EncodingIDMicrosoft && !(k)) || \
      ((p) == PLATFORM_ID_UNICODE))
 
-#  define acceptableUCS4Encoding(p, e, k)           \
-    (((p) == PLATFORM_ID_MICROSOFT &&               \
-      (e) == EncodingIDUCS4ForMicrosoftPlatform) && \
-         (k) != 12 ||                               \
-     ((p) == PLATFORM_ID_UNICODE && ((e) != EncodingIDUVSForUnicodePlatform)))
+#  define acceptableUCS4Encoding(p, e, k)                                     \
+    (((p) == PLATFORM_ID_MICROSOFT &&                                         \
+      (e) == EncodingIDUCS4ForMicrosoftPlatform) &&                           \
+         (k) != 12 ||                                                         \
+     ((p) == PLATFORM_ID_UNICODE && (e) != EncodingIDUVSForUnicodePlatform && \
+      (e) != EncodingIDFullRepertoireForUnicodePlatform))
 #else
 #  define acceptableFormat4(p, e, k)                                 \
     (((p) == PLATFORM_ID_MICROSOFT && (e) == EncodingIDMicrosoft) || \
@@ -425,9 +431,35 @@ nsresult gfxFontUtils::ReadCMAPTableFormat14(const uint8_t* aBuf,
     ((p) == PLATFORM_ID_MICROSOFT && (e) == EncodingIDUCS4ForMicrosoftPlatform)
 #endif
 
+#ifndef MOZ_ENABLE_FREETYPE
+static inline bool CheckFullFormat13Support() {
+  // On non-FreeType platforms, we can think format 13 table are always
+  // supported.
+  return true;
+}
+#else
+static inline bool CheckFullFormat13Support() {
+  // FreeType 2.14.1 and below has bug on cmap format 13 table,
+  // so only allow newer FreeType to use format 13 cmap with plat 0 encoding 6.
+  // https://gitlab.freedesktop.org/freetype/freetype/-/commit/914b47403052ad6979029f51de925cd7f96053c1
+  FT_Int major, minor, patch;
+  FT_Library_Version(gfx::Factory::GetFTLibrary(), &major, &minor, &patch);
+  return major * 1000000 + minor * 1000 + patch > 2014001;
+}
+#endif
+
 #define acceptablePlatform(p) \
   ((p) == PLATFORM_ID_UNICODE || (p) == PLATFORM_ID_MICROSOFT)
 #define isSymbol(p, e) ((p) == PLATFORM_ID_MICROSOFT && (e) == EncodingIDSymbol)
+#define acceptableFormat13(p, e) \
+  ((p) == PLATFORM_ID_UNICODE && \
+   (e) == EncodingIDFullRepertoireForUnicodePlatform)
+// OpenType spec only recommand platform == unicode && encoding ==
+// FullRepertoireForUnicode, but AdobeBlank2 use platform == microsoft &&
+// encoding == UCS4ForMicrosoft, since AdobeBlank2 has been widely use, we
+// accept it as well.
+#define acceptableFormat13Compatible(p, e) \
+  ((p) == PLATFORM_ID_MICROSOFT && (e) == EncodingIDUCS4ForMicrosoftPlatform)
 #define isUVSEncoding(p, e) \
   ((p) == PLATFORM_ID_UNICODE && (e) == EncodingIDUVSForUnicodePlatform)
 
@@ -454,6 +486,7 @@ uint32_t gfxFontUtils::FindPreferredSubtable(const uint8_t* aBuf,
     EncodingIDDefaultForUnicodePlatform = 0,
     EncodingIDUCS4ForUnicodePlatform = 3,
     EncodingIDUVSForUnicodePlatform = 5,
+    EncodingIDFullRepertoireForUnicodePlatform = 6,
     EncodingIDUCS4ForMicrosoftPlatform = 10
   };
 
@@ -505,7 +538,7 @@ uint32_t gfxFontUtils::FindPreferredSubtable(const uint8_t* aBuf,
                acceptableFormat4(platformID, encodingID, keepFormat)) {
       keepFormat = format;
       *aTableOffset = offset;
-    } else if ((format == 10 || format == 12 || format == 13) &&
+    } else if ((format == 10 || format == 12) &&
                acceptableUCS4Encoding(platformID, encodingID, keepFormat)) {
       keepFormat = format;
       *aTableOffset = offset;
@@ -514,6 +547,15 @@ uint32_t gfxFontUtils::FindPreferredSubtable(const uint8_t* aBuf,
         break;  // we don't want to try anything else when this format is
                 // available.
       }
+    } else if (format == 13 &&
+               (acceptableFormat13Compatible(platformID, encodingID) ||
+                (acceptableFormat13(platformID, encodingID) &&
+                 CheckFullFormat13Support()))) {
+      keepFormat = format;
+      *aTableOffset = offset;
+      // A last resort font shouldn't use any other encodings or subtable
+      // formats.
+      break;
     } else if (format == 14 && isUVSEncoding(platformID, encodingID) &&
                aUVSTableOffset) {
       *aUVSTableOffset = offset;
@@ -1243,7 +1285,7 @@ nsresult gfxFontUtils::GetFullNameFromTable(hb_blob_t* aNameTable,
   nsresult rv = gfxFontUtils::ReadCanonicalName(
       aNameTable, gfxFontUtils::NAME_ID_FULL, name);
   if (NS_SUCCEEDED(rv) && !name.IsEmpty()) {
-    aFullName = name;
+    aFullName = std::move(name);
     return NS_OK;
   }
   rv = gfxFontUtils::ReadCanonicalName(aNameTable, gfxFontUtils::NAME_ID_FAMILY,
@@ -1255,7 +1297,7 @@ nsresult gfxFontUtils::GetFullNameFromTable(hb_blob_t* aNameTable,
     if (NS_SUCCEEDED(rv) && !styleName.IsEmpty()) {
       name.Append(' ');
       name.Append(styleName);
-      aFullName = name;
+      aFullName = std::move(name);
     }
     return NS_OK;
   }
@@ -1269,7 +1311,7 @@ nsresult gfxFontUtils::GetFamilyNameFromTable(hb_blob_t* aNameTable,
   nsresult rv = gfxFontUtils::ReadCanonicalName(
       aNameTable, gfxFontUtils::NAME_ID_FAMILY, name);
   if (NS_SUCCEEDED(rv) && !name.IsEmpty()) {
-    aFamilyName = name;
+    aFamilyName = std::move(name);
     return NS_OK;
   }
   return NS_ERROR_NOT_AVAILABLE;
@@ -1842,7 +1884,220 @@ bool gfxFontUtils::IsCffFont(const uint8_t* aFontData) {
 }
 #endif
 
+double StyleDistance(const mozilla::SlantStyleRange& aRange,
+                     const mozilla::StyleFontStyle& aTargetStyle,
+                     bool aItalicToObliqueFallback) {
+  const mozilla::FontSlantStyle minStyle = aRange.Min();
+  const mozilla::FontSlantStyle maxStyle = aRange.Max();
+  if (aTargetStyle == minStyle || aTargetStyle == maxStyle) {
+    return 0.0;  // styles match exactly ==> 0
+  }
+
+  // bias added to angle difference when searching in the non-preferred
+  // direction from a target angle
+  const double kReverse = 100.0;
+
+  // bias added when we've crossed from positive to negative angles or
+  // vice versa
+  const double kNegate = 200.0;
+
+  // bias added for oblique faces when italic is requested, and only-oblique
+  // font-synthesis-style is in effect
+  const double kBadFallback = 400.0;
+
+  if (aTargetStyle.IsNormal()) {
+    if (minStyle.IsItalic() || maxStyle.IsItalic()) {
+      // italic is the worst match (prefer any oblique; 0deg was requested)
+      return kBadFallback + kNegate + kReverse;
+    }
+    const double minAngle = minStyle.ObliqueAngle();
+    if (minAngle >= 0.0) {
+      return minAngle;
+    }
+    const double maxAngle = maxStyle.ObliqueAngle();
+    if (maxAngle >= 0.0) {
+      // [min,max] range includes 0.0, so it's a perfect match
+      return 0.0;
+    }
+    return kNegate - maxAngle;
+  }
+
+  const double kDefaultAngle = mozilla::FontSlantStyle::DEFAULT_OBLIQUE_DEGREES;
+
+  if (aTargetStyle.IsItalic()) {
+    MOZ_ASSERT(!minStyle.IsItalic());  // we checked for equality above
+    double targetAngle = kDefaultAngle;
+    double fallbackBias = 0.0;
+    if (!aItalicToObliqueFallback) {
+      // If 'font-style-synthesis: oblique-only' is applied, we should not use
+      // oblique as a fallback for italic, so we add a large "fallback bias" to
+      // all results here, and prefer an angle as close to zero as possible.
+      targetAngle = 0.0;
+      fallbackBias = kBadFallback;
+    }
+    const double minAngle = minStyle.ObliqueAngle();
+    if (minAngle >= targetAngle) {
+      // Add 1.0 to ensure italic vs non-italic never returns 0.0, even if the
+      // angle matches.
+      return fallbackBias + minAngle - targetAngle + 1.0;
+    }
+    const double maxAngle = maxStyle.ObliqueAngle();
+    if (maxAngle >= targetAngle) {
+      return fallbackBias + 1.0;
+    }
+    if (maxAngle > 0.0) {
+      // wrong direction but still > 0, add bias of 100
+      return fallbackBias + kReverse + (targetAngle - maxAngle);
+    }
+    // negative oblique angle, add bias of 300
+    return fallbackBias + kReverse + kNegate + (targetAngle - maxAngle);
+  }
+
+  // target is oblique <angle>: four different cases depending on
+  // the value of the <angle>, which determines the preferred direction
+  // of search
+  const double targetAngle = aTargetStyle.ObliqueAngle();
+
+  // italic is a bad fallback if it was not requested
+  if (minStyle.IsItalic() || maxStyle.IsItalic()) {
+    return kBadFallback + kNegate + kReverse;
+  }
+
+  if (targetAngle >= kDefaultAngle) {
+    const double minAngle = minStyle.ObliqueAngle();
+    if (minAngle >= targetAngle) {
+      return minAngle - targetAngle;
+    }
+    const double maxAngle = maxStyle.ObliqueAngle();
+    if (maxAngle >= targetAngle) {
+      return 0.0;
+    }
+    if (maxAngle > 0.0) {
+      return kReverse + (targetAngle - maxAngle);
+    }
+    return kReverse + kNegate + (targetAngle - maxAngle);
+  }
+
+  if (targetAngle <= -kDefaultAngle) {
+    const double maxAngle = maxStyle.ObliqueAngle();
+    if (maxAngle <= targetAngle) {
+      return targetAngle - maxAngle;
+    }
+    const double minAngle = minStyle.ObliqueAngle();
+    if (minAngle <= targetAngle) {
+      return 0.0;
+    }
+    if (minAngle < 0.0) {
+      return kReverse + (minAngle - targetAngle);
+    }
+    return kReverse + kNegate + (minAngle - targetAngle);
+  }
+
+  if (targetAngle >= 0.0) {
+    const double minAngle = minStyle.ObliqueAngle();
+    if (minAngle > targetAngle) {
+      return kReverse + (minAngle - targetAngle);
+    }
+    const double maxAngle = maxStyle.ObliqueAngle();
+    if (maxAngle >= targetAngle) {
+      return 0.0;
+    }
+    if (maxAngle > 0.0) {
+      return targetAngle - maxAngle;
+    }
+    return kReverse + kNegate + (targetAngle - maxAngle);
+  }
+
+  // last case: (targetAngle < 0.0 && targetAngle > kDefaultAngle)
+  const double maxAngle = maxStyle.ObliqueAngle();
+  if (maxAngle < targetAngle) {
+    return kReverse + (targetAngle - maxAngle);
+  }
+  const double minAngle = minStyle.ObliqueAngle();
+  if (minAngle <= targetAngle) {
+    return 0.0;
+  }
+  if (minAngle < 0.0) {
+    return minAngle - targetAngle;
+  }
+  return kReverse + kNegate + (minAngle - targetAngle);
+}
+
+double StretchDistance(const mozilla::StretchRange& aRange,
+                       const mozilla::StyleFontStretch& aTargetStretch) {
+  const double kReverseDistance = 1000.0;
+
+  mozilla::FontStretch minStretch = aRange.Min();
+  mozilla::FontStretch maxStretch = aRange.Max();
+
+  // The stretch value is a (non-negative) percentage; currently we support
+  // values in the range 0 .. 1000. (If the upper limit is ever increased,
+  // the kReverseDistance value used here may need to be adjusted.)
+  // If aTargetStretch is >100, we prefer larger values if available;
+  // if <=100, we prefer smaller values if available.
+  if (aTargetStretch < minStretch) {
+    if (aTargetStretch > mozilla::FontStretch::NORMAL) {
+      return minStretch.ToFloat() - aTargetStretch.ToFloat();
+    }
+    return (minStretch.ToFloat() - aTargetStretch.ToFloat()) + kReverseDistance;
+  }
+  if (aTargetStretch > maxStretch) {
+    if (aTargetStretch <= mozilla::FontStretch::NORMAL) {
+      return aTargetStretch.ToFloat() - maxStretch.ToFloat();
+    }
+    return (aTargetStretch.ToFloat() - maxStretch.ToFloat()) + kReverseDistance;
+  }
+  return 0.0;
+}
+
+double WeightDistance(const mozilla::WeightRange& aRange,
+                      const mozilla::StyleFontWeight& aTargetWeight) {
+  const double kNotWithinCentralRange = 100.0;
+  const double kReverseDistance = 600.0;
+
+  mozilla::FontWeight minWeight = aRange.Min();
+  mozilla::FontWeight maxWeight = aRange.Max();
+
+  if (aTargetWeight >= minWeight && aTargetWeight <= maxWeight) {
+    // Target is within the face's range, so it's a perfect match
+    return 0.0;
+  }
+
+  if (aTargetWeight < mozilla::FontWeight::NORMAL) {
+    // Requested a lighter-than-400 weight
+    if (maxWeight < aTargetWeight) {
+      return aTargetWeight.ToFloat() - maxWeight.ToFloat();
+    }
+    // Add reverse-search penalty for bolder faces
+    return (minWeight.ToFloat() - aTargetWeight.ToFloat()) + kReverseDistance;
+  }
+
+  if (aTargetWeight > mozilla::FontWeight::FromInt(500)) {
+    // Requested a bolder-than-500 weight
+    if (minWeight > aTargetWeight) {
+      return minWeight.ToFloat() - aTargetWeight.ToFloat();
+    }
+    // Add reverse-search penalty for lighter faces
+    return (aTargetWeight.ToFloat() - maxWeight.ToFloat()) + kReverseDistance;
+  }
+
+  // Special case for requested weight in the [400..500] range
+  if (minWeight > aTargetWeight) {
+    if (minWeight <= mozilla::FontWeight::FromInt(500)) {
+      // Bolder weight up to 500 is first choice
+      return minWeight.ToFloat() - aTargetWeight.ToFloat();
+    }
+    // Other bolder weights get a reverse-search penalty
+    return (minWeight.ToFloat() - aTargetWeight.ToFloat()) + kReverseDistance;
+  }
+  // Lighter weights are not as good as bolder ones within [400..500]
+  return (aTargetWeight.ToFloat() - maxWeight.ToFloat()) +
+         kNotWithinCentralRange;
+}
+
 #undef acceptablePlatform
+#undef acceptableFormat13
+#undef acceptableFormat13Compatible
 #undef isSymbol
 #undef isUVSEncoding
 #undef LOG

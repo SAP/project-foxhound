@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -436,14 +434,16 @@ class nsContainerFrame : public nsSplittableFrame {
                                  const nsDisplayListSet& aLists);
 
   /**
-   * Add pushed absolute frames to the display list.
-   *
-   * Note: for an absolute frame's first-in-flow without the
-   * NS_FRAME_IS_PUSHED_OUT_OF_FLOW bit, it will be painted through its
-   * placeholder frame.
+   * Add absolute frames to the display list that should not be built via their
+   * placeholder. This includes:
+   * - Pushed out-of-flow frames (NS_FRAME_IS_PUSHED_OUT_OF_FLOW), whose
+   *   containing block is not an ancestor of the placeholder.
+   * - Under a transformed absolute containing block, abspos frames whose
+   *   placeholder is in a different continuation's subtree, so that they end up
+   *   in the correct fragment's nsDisplayTransform.
    */
-  void DisplayPushedAbsoluteFrames(nsDisplayListBuilder* aBuilder,
-                                   const nsDisplayListSet& aLists);
+  void DisplayAbsoluteFramesNotBuiltByPlaceholder(
+      nsDisplayListBuilder* aBuilder, const nsDisplayListSet& aLists);
 
   /**
    * Builds display lists for the children. The background
@@ -515,7 +515,9 @@ class nsContainerFrame : public nsSplittableFrame {
   // Incorporate the child overflow areas into aOverflowAreas.
   // If the child does not have a overflow, use the child area.
   void ConsiderChildOverflow(mozilla::OverflowAreas& aOverflowAreas,
-                             nsIFrame* aChildFrame, bool aAsIfScrolled = false);
+                             nsIFrame* aChildFrame,
+                             mozilla::OverflowAreaUnionFlags aFlags =
+                                 mozilla::OverflowAreaUnionFlags::None);
 
  protected:
   nsContainerFrame(ComputedStyle* aStyle, nsPresContext* aPresContext,

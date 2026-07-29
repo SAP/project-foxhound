@@ -725,7 +725,7 @@ class InputTestHelpers extends LitTestHelpers {
     let renderTarget = await this.renderTemplate(whitespaceTemplate);
     let firstInput = renderTarget.querySelector(selector);
 
-    if (!firstInput.isInlineLayout) {
+    if (firstInput.inputLayout == "block") {
       return;
     }
 

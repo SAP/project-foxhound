@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -102,15 +101,6 @@ class nsIOService final : public nsIIOService,
   // Converts an internal URI (e.g. one that has a username and password in
   // it) into one which we can expose to the user, for example on the URL bar.
   static already_AddRefed<nsIURI> CreateExposableURI(nsIURI*);
-
-  // Used to count the total number of HTTP requests made
-  void IncrementRequestNumber() { mTotalRequests++; }
-  uint32_t GetTotalRequestNumber() { return mTotalRequests; }
-  // Used to keep "race cache with network" stats
-  void IncrementCacheWonRequestNumber() { mCacheWon++; }
-  uint32_t GetCacheWonRequestNumber() { return mCacheWon; }
-  void IncrementNetWonRequestNumber() { mNetWon++; }
-  uint32_t GetNetWonRequestNumber() { return mNetWon; }
 
   // Used to trigger a recheck of the captive portal status
   nsresult RecheckCaptivePortal();
@@ -254,9 +244,6 @@ class nsIOService final : public nsIIOService,
   nsTHashMap<nsCString, RuntimeProtocolHandler> mRuntimeProtocolHandlers
       MOZ_GUARDED_BY(mLock);
 
-  uint32_t mTotalRequests{0};
-  uint32_t mCacheWon{0};
-  uint32_t mNetWon{0};
   static uint32_t sSocketProcessCrashedCount;
 
   // These timestamps are needed for collecting telemetry on PR_Connect,

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,6 +15,7 @@
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/StaticPrefs_webgl.h"
 #include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/ContentList.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "mozilla/dom/OffscreenCanvas.h"
@@ -26,10 +26,10 @@
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/gfx/Matrix.h"
 #include "mozilla/gfx/gfxVars.h"
+#include "mozilla/webgpu/Instance.h"
 #include "nsContentUtils.h"
 #include "nsGfxCIID.h"
 #include "nsICanvasRenderingContextInternal.h"
-#include "nsIHTMLCollection.h"
 #include "nsIObserverService.h"
 #include "nsIPermissionManager.h"
 #include "nsIPrincipal.h"
@@ -475,7 +475,7 @@ bool IsImageExtractionAllowed(dom::OffscreenCanvas* aOffscreenCanvas,
     }
 
     if (NS_IsMainThread()) {
-      nsCOMPtr<nsIGlobalObject> global = canvasRef->GetOwnerGlobal();
+      nsCOMPtr<nsIGlobalObject> global = canvasRef->GetRelevantGlobal();
       NS_ENSURE_TRUE_VOID(global);
 
       RefPtr<nsPIDOMWindowInner> window = global->GetAsInnerWindow();
@@ -546,14 +546,20 @@ ImageExtraction ImageExtractionResult(dom::OffscreenCanvas* aOffscreenCanvas,
     return ImageExtraction::Placeholder;
   }
 
+  if (GetCanvasExtractDataPermission(aPrincipal) ==
+      nsIPermissionManager::ALLOW_ACTION) {
+    return ImageExtraction::Unrestricted;
+  }
+
+  if (aOffscreenCanvas->ShouldResistFingerprinting(
+          RFPTarget::EfficientCanvasRandomization)) {
+    return ImageExtraction::EfficientRandomize;
+  }
+
   if (aOffscreenCanvas->ShouldResistFingerprinting(
           RFPTarget::CanvasRandomization) ||
       aOffscreenCanvas->ShouldResistFingerprinting(
           RFPTarget::WebGLRandomization)) {
-    if (GetCanvasExtractDataPermission(aPrincipal) ==
-        nsIPermissionManager::ALLOW_ACTION) {
-      return ImageExtraction::Unrestricted;
-    }
     return ImageExtraction::Randomize;
   }
 
@@ -579,7 +585,7 @@ bool GetCanvasContextType(const nsAString& str,
     }
   }
 
-  if (gfxVars::AllowWebGPU()) {
+  if (webgpu::Instance::PrefEnabled() && gfxVars::AllowWebGPU()) {
     if (str.EqualsLiteral("webgpu")) {
       *out_type = dom::CanvasContextType::WebGPU;
       return true;
@@ -688,7 +694,7 @@ void DoDrawImageSecurityCheck(dom::OffscreenCanvas* aOffscreenCanvas,
   }
 
   // If we are on a worker thread, we might not have any principals at all.
-  nsIGlobalObject* global = aOffscreenCanvas->GetOwnerGlobal();
+  nsIGlobalObject* global = aOffscreenCanvas->GetRelevantGlobal();
   nsIPrincipal* canvasPrincipal = global ? global->PrincipalOrNull() : nullptr;
   if (!aPrincipal || !canvasPrincipal) {
     aOffscreenCanvas->SetWriteOnly();

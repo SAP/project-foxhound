@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s daje ti kontrolu.</p>\n<p>Koristi ga kao privatni pretraživač:\n<ul>\n<li>traži i pretražuj direktno u aplikaciji</li>\n<li>blokiraj programe za praćenje (ili ih omogući u postavkama)</li>\n<li>izbriši sve kolačiće kao i povijest pretraživanja i pregledavanja</li>\n</ul> </p>\n<p>%1$s je kreirala Mozilla. Naša misija je njegovanje zdravog i otvorenog interneta.<br/>\n<a href=\"%2$s\">Saznaj više</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s daje ti kontrolu.</p>\n<p>Koristi ga kao privatni pretraživač:\n<ul>\n<li>traži i pretražuj direktno u aplikaciji</li>\n<li>blokiraj programe za praćenje (ili ih omogući u postavkama)</li>\n<li>izbriši sve kolačiće kao i povijest pretraživanja i pregledavanja</li>\n</ul> </p>\n<p>%1$s je kreirala Mozilla. Naša misija je njegovanje zdravog i otvorenog interneta.<br/>\n<a href=\"%2$s\">Saznaj više</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Saznaj više</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -249,9 +249,9 @@
   <!-- Label for the "custom autocomplete URL" input field -->
   <string name="preference_autocomplete_add_title">URL za dodati</string>
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
-  <string name="preference_autocomplete_add_hint">Zalijepi ili unesi URL</string>
+  <string name="preference_autocomplete_add_hint">Umetni ili upiši URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Primjer: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Primjer: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Primjer: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Učini %1$s zadanim preglednikom</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Šalji podatke o korištenju</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Saznaj više</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla nastoji sakupljati samo onoliko koliko nam treba da osiguramo i poboljšamo %1$s za sve.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla nastoji sakupljati samo onoliko koliko nam treba da osiguramo i poboljšamo %1$s za sve.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Ping dnevne upotrebe</string>
-  <string name="preference_daily_usage_ping_description">Ovo pomaže Mozilli procijeniti broj aktivnih korisnika.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Ovo pomaže Mozilli procijeniti broj aktivnih korisnika.</string>
   <string name="preference_daily_usage_ping_learn_more">Saznaj više</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Napomene o privatnosti</string>
@@ -584,6 +584,21 @@
   <string name="security_popup_security_verified">Potvrdio: %1$s</string>
   <!-- Content Description of Security Icon in toolbar -->
   <string name="site_security_icon_content_description">Sigurnost stranice</string>
+  <!--
+    %1$s will be replaced with the organization for which the certificate
+    used by the site was issued. For example, the certificate in use by
+    the site https://eidas.ec.europa.eu/ was issued to "The European
+    Commission".
+  -->
+  <string name="qualified_identity">Certifikat izdan za %1$s</string>
+  <!--
+    The European Union eIDAS Regulation specifies a type of certificate
+    called a "qualified website authentication certificate" (QWAC) and
+    requires that browsers identify and indicate such certificates. This
+    text was paraphrased from ETSI TS 119 411-5 V2.1.1 section 6.3 and
+    indicates that the website uses a QWAC.
+  -->
+  <string name="qualified_text">Kvalificirano prema Uredbi (EU) 2024/1183.</string>
   <string name="preference_autocomplete_duplicate_url_error">URL već postoji</string>
   <!-- Label for the Find in page button -->
   <string name="find_in_page">Pronađi na stranici</string>
@@ -814,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Zatvori karticu</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Pošalji Mozilli izvještaj o rušenju</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Pošalji Mozilli izvještaj o rušenju</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

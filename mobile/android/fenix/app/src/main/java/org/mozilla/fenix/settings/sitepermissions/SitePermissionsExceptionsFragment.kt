@@ -32,14 +32,18 @@ import mozilla.components.support.ktx.kotlin.stripDefaultPort
 import mozilla.components.ui.widgets.withCenterAlignedButtons
 import org.mozilla.fenix.NavHostActivity
 import org.mozilla.fenix.R
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.loadIntoView
 import org.mozilla.fenix.ext.nav
 
 private const val MAX_ITEMS_PER_PAGE = 50
 
+/**
+ * Settings screen allowing users to configure browser permissions exceptions for specific websites.
+ */
 class SitePermissionsExceptionsFragment :
-    Fragment(R.layout.fragment_site_permissions_exceptions), View.OnClickListener {
+    Fragment(R.layout.fragment_site_permissions_exceptions), View.OnClickListener, SystemInsetsPaddedFragment {
     private lateinit var emptyContainerMessage: View
     private lateinit var recyclerView: RecyclerView
     private lateinit var clearButton: Button

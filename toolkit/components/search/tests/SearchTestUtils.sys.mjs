@@ -82,6 +82,8 @@ class _SearchTestUtils {
           MockRegistrar.unregister(this.#idleServiceCID);
           this.#idleServiceCID = null;
         }
+
+        this.#testScope = null;
       });
     }
   }

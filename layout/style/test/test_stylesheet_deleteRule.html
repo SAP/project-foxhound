@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Error message when deleting a rule with an invalid index</title>
+        <!-- See: https://bugzilla.mozilla.org/show_bug.cgi?id=1567317 -->
+        <script src="/resources/testharness.js"></script>
+        <script src="/resources/testharnessreport.js"></script>
+    </head>
+    <script>
+        test(
+            function(t) {
+                let styleElement = document.createElement('style');
+
+                t.add_cleanup(function(){
+                    styleElement.remove();
+                })
+
+                document.head.appendChild(styleElement);
+
+                let exception;
+                try {
+                    styleElement.sheet.deleteRule(0);
+                } catch (e) {
+                    exception = e;
+                }
+
+                assert_true(!!exception, "deleteRule(0) should throw");
+                assert_equals(exception.name, "IndexSizeError", "Exception name");
+                assert_equals(exception.message, "CSSStyleSheet.deleteRule: Cannot delete rule at index 0 because the number of rules is only 0",
+                "Verify exception message");
+                assert_equals(styleElement.sheet.cssRules.length, 0, "styleElement length should remain unchanged");
+            }, "No elements, accessing element at index 0 throws"
+        )
+        test(
+            function(t) {
+                let styleElement = document.createElement('style');
+
+                t.add_cleanup(function(){
+                    styleElement.remove();
+                })
+
+                document.head.appendChild(styleElement);
+                styleElement.sheet.insertRule("body { color: green; }", 0);
+                styleElement.sheet.insertRule("div { color: blue; }", 1);
+
+                let exception;
+                try {
+                    styleElement.sheet.deleteRule(2);
+                } catch (e) {
+                    exception = e;
+                }
+
+                assert_true(!!exception, "deleteRule(2) should throw");
+                assert_equals(exception.name, "IndexSizeError", "Exception name");
+                assert_equals(exception.message, "CSSStyleSheet.deleteRule: Cannot delete rule at index 2 because the number of rules is only 2",
+                "Verify exception message");
+                assert_equals(styleElement.sheet.cssRules.length, 2, "styleElement length should remain unchanged");
+            }, "2 elements, accessing element at index 2 throws"
+        )
+        test(
+            function(t) {
+                let styleElement = document.createElement('style');
+
+                t.add_cleanup(function(){
+                    styleElement.remove();
+                })
+
+                document.head.appendChild(styleElement);
+                styleElement.sheet.insertRule("body { color: green; }", 0);
+                styleElement.sheet.insertRule("div { color: blue; }", 1);
+                styleElement.sheet.insertRule("p { color: red; }", 2);
+
+                let exception;
+                try {
+                    styleElement.sheet.deleteRule(7);
+                } catch (e) {
+                    exception = e;
+                }
+
+                assert_true(!!exception, "deleteRule(7) should throw");
+                assert_equals(exception.name, "IndexSizeError", "Exception name");
+                assert_equals(exception.message, "CSSStyleSheet.deleteRule: Cannot delete rule at index 7 because the number of rules is only 3",
+                "Verify exception message");
+                assert_equals(styleElement.sheet.cssRules.length, 3, "styleElement length should remain unchanged");
+            }, "3 elements, accessing element at index 7 throws"
+        )
+    </script>
+</html>

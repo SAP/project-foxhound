@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -139,7 +137,7 @@ Result<PrincipalMetadata, nsresult> GetInfoFromValidatedPrincipalInfo(
         QM_TRY_UNWRAP(principalMetadata.mStorageOrigin,
                       aQuotaManager.EnsureStorageOriginFromOrigin(origin));
       } else {
-        principalMetadata.mStorageOrigin = origin;
+        principalMetadata.mStorageOrigin = std::move(origin);
       }
 
       principalMetadata.mIsPrivate = info.attrs().IsPrivateBrowsing();
@@ -252,7 +250,7 @@ Result<PrincipalMetadata, nsresult> GetInfoFromWindow(
   nsCOMPtr<nsIScriptObjectPrincipal> sop = do_QueryInterface(aWindow);
   QM_TRY(OkIf(sop), Err(NS_ERROR_FAILURE));
 
-  nsCOMPtr<nsIPrincipal> principal = sop->GetPrincipal();
+  nsCOMPtr<nsIPrincipal> principal = sop->GetEffectiveStoragePrincipal();
   QM_TRY(OkIf(principal), Err(NS_ERROR_FAILURE));
 
   return GetInfoFromPrincipal(principal);
@@ -291,7 +289,7 @@ Result<nsAutoCString, nsresult> GetOriginFromWindow(
   nsCOMPtr<nsIScriptObjectPrincipal> sop = do_QueryInterface(aWindow);
   QM_TRY(OkIf(sop), Err(NS_ERROR_FAILURE));
 
-  nsCOMPtr<nsIPrincipal> principal = sop->GetPrincipal();
+  nsCOMPtr<nsIPrincipal> principal = sop->GetEffectiveStoragePrincipal();
   QM_TRY(OkIf(principal), Err(NS_ERROR_FAILURE));
 
   QM_TRY_RETURN(GetOriginFromPrincipal(principal));

@@ -22,7 +22,7 @@ Firefox source tree comes with its own set of recommendations of Visual Studio
 Code extensions. They will be offered when you first open the project.
 
 If you need to refer to them later, the extensions are listed in
-`.vscode/extensions.json <https://searchfox.org/mozilla-central/source/.vscode/extensions.json>`__.
+:searchfox:`.vscode/extensions.json`.
 
 For Rust development, the `rust-analyzer <https://marketplace.visualstudio.com/items?itemName=matklad.rust-analyzer>`__ extension is recommended.
 `See the manual <https://rust-analyzer.github.io/manual.html>`__ for more information.

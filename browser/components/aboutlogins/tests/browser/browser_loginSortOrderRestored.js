@@ -35,10 +35,10 @@ add_task(async function test_sort_order_persisted() {
       url: "about:logins",
     },
     async function (browser) {
-      await ContentTask.spawn(
+      await SpecialPowers.spawn(
         browser,
         [TEST_LOGIN1.guid, TEST_LOGIN3.guid],
-        async function ([testLogin1Guid, testLogin3Guid]) {
+        async function (testLogin1Guid, testLogin3Guid) {
           let loginList = Cu.waiveXrays(
             content.document.querySelector("login-list")
           );
@@ -91,9 +91,9 @@ add_task(async function test_sort_order_persisted() {
       url: "about:logins",
     },
     async function (browser) {
-      await ContentTask.spawn(
+      await SpecialPowers.spawn(
         browser,
-        TEST_LOGIN3.guid,
+        [TEST_LOGIN3.guid],
         async function (testLogin3Guid) {
           let loginList = Cu.waiveXrays(
             content.document.querySelector("login-list")
@@ -139,9 +139,9 @@ add_task(async function test_sort_order_persisted() {
       url: "about:logins",
     },
     async function (browser) {
-      await ContentTask.spawn(
+      await SpecialPowers.spawn(
         browser,
-        TEST_LOGIN2.guid,
+        [TEST_LOGIN2.guid],
         async function (testLogin2Guid) {
           let loginList = Cu.waiveXrays(
             content.document.querySelector("login-list")

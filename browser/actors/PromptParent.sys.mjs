@@ -1,4 +1,3 @@
-/* vim: set ts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -97,13 +96,16 @@ export class PromptParent extends JSWindowActorParent {
   // itself.
   isEmbeddedInSidebar(browser) {
     if (
-      browser?.ownerGlobal?.browsingContext.embedderElement?.id != "sidebar"
+      browser?.documentGlobal?.browsingContext.embedderElement?.id != "sidebar"
     ) {
       return false;
     }
     // Extensions in the sidebar have more layers of nesting, and this causes
     // window leaks in tests. We would like to fix this at some point (bug 1513656)
-    if (browser.getAttribute("messagemanagergroup") == "webext-browsers") {
+    if (
+      browser.getAttribute("messagemanagergroup") == "webext-browsers" ||
+      browser.getAttribute("messagemanagergroup") == "chatbot-browser"
+    ) {
       return false;
     }
     return true;
@@ -144,7 +146,7 @@ export class PromptParent extends JSWindowActorParent {
 
     let isEmbeddedInSidebar = this.isEmbeddedInSidebar(browser);
     if (isEmbeddedInSidebar || this.isAboutAddonsOptionsPage(browsingContext)) {
-      browser = browser.ownerGlobal.browsingContext.embedderElement;
+      browser = browser.documentGlobal.browsingContext.embedderElement;
     }
 
     let promptRequiresBrowser =
@@ -170,7 +172,7 @@ export class PromptParent extends JSWindowActorParent {
     if (!browsingContext.isContent && browsingContext.window) {
       win = browsingContext.window;
     } else {
-      win = browser?.ownerGlobal;
+      win = browser?.documentGlobal;
     }
 
     // There's a requirement for prompts to be blocked if a window is

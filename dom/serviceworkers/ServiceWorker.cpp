@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -37,8 +35,8 @@ namespace mozilla::dom {
 
 // static
 already_AddRefed<ServiceWorker> ServiceWorker::Create(
-    nsIGlobalObject* aOwner, const ServiceWorkerDescriptor& aDescriptor) {
-  RefPtr<ServiceWorker> ref = new ServiceWorker(aOwner, aDescriptor);
+    nsIGlobalObject* aGlobal, const ServiceWorkerDescriptor& aDescriptor) {
+  RefPtr<ServiceWorker> ref = new ServiceWorker(aGlobal, aDescriptor);
   return ref.forget();
 }
 
@@ -172,7 +170,7 @@ void ServiceWorker::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
     return;
   }
 
-  nsIGlobalObject* global = GetOwnerGlobal();
+  nsIGlobalObject* global = GetRelevantGlobal();
   if (NS_WARN_IF(!global)) {
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return;

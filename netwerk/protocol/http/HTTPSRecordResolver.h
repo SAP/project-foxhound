@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim:set ts=4 sw=4 sts=4 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -40,13 +38,13 @@ class HTTPSRecordResolver : public nsIDNSListener {
   nsresult InvokeCallback();
 
   mozilla::Mutex mMutex{"HTTPSRecordResolver::mMutex"};
-  RefPtr<nsAHttpTransaction> mTransaction;
-  RefPtr<nsHttpConnectionInfo> mConnInfo;
+  RefPtr<nsAHttpTransaction> mTransaction MOZ_GUARDED_BY(mMutex);
+  RefPtr<nsHttpConnectionInfo> mConnInfo;  // Set in constructor only
   nsCOMPtr<nsICancelable> mCnameRequest MOZ_GUARDED_BY(mMutex);
   nsCOMPtr<nsICancelable> mHTTPSRecordRequest MOZ_GUARDED_BY(mMutex);
-  nsCOMPtr<nsIDNSAddrRecord> mAddrRecord;
-  nsCOMPtr<nsIDNSHTTPSSVCRecord> mHTTPSRecord;
-  bool mDone = false;
+  nsCOMPtr<nsIDNSAddrRecord> mAddrRecord MOZ_GUARDED_BY(mMutex);
+  nsCOMPtr<nsIDNSHTTPSSVCRecord> mHTTPSRecord MOZ_GUARDED_BY(mMutex);
+  bool mDone MOZ_GUARDED_BY(mMutex) = false;
 };
 
 }  // namespace net

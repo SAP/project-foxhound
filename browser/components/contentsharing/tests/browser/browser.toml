@@ -1,0 +1,31 @@
+[DEFAULT]
+support-files = ["head.js"]
+
+prefs = [
+  "browser.contentsharing.enabled=true",
+]
+
+
+["browser_testFeatureDisabled.js"]
+
+["browser_testLoadingState.js"]
+
+["browser_testModalErrors.js"]
+
+["browser_testPrivateBrowsing.js"]
+
+["browser_testReuseAuthCompleteTab.js"]
+
+["browser_testServerErrors.js"]
+
+["browser_testShareBookmarks.js"]
+
+["browser_testShareBookmarksFromSidebar.js"]
+support-files = [ "!/browser/components/places/tests/browser/head.js"]
+
+["browser_testShareFolderEmpties.js"]
+support-files = [ "!/browser/components/places/tests/browser/head.js"]
+
+["browser_testShareTabGroup.js"]
+
+["browser_testShareTabs.js"]

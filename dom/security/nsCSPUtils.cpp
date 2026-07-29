@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -380,6 +378,8 @@ CSPDirective CSP_ContentTypeToDirective(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_WEB_TRANSPORT:
     case nsIContentPolicy::TYPE_JSON:
     case nsIContentPolicy::TYPE_INTERNAL_JSON_PRELOAD:
+    case nsIContentPolicy::TYPE_TEXT:
+    case nsIContentPolicy::TYPE_INTERNAL_TEXT_PRELOAD:
       return nsIContentSecurityPolicy::CONNECT_SRC_DIRECTIVE;
 
     case nsIContentPolicy::TYPE_OBJECT:
@@ -409,7 +409,6 @@ CSPDirective CSP_ContentTypeToDirective(nsContentPolicyType aType) {
 
     // Fall through to error for all other directives
     case nsIContentPolicy::TYPE_INVALID:
-    case nsIContentPolicy::TYPE_END:
       MOZ_ASSERT(false, "Can not map nsContentPolicyType to CSPDirective");
       // Do not add default: so that compilers can catch the missing case.
   }
@@ -496,9 +495,9 @@ bool CSP_IsQuotelessKeyword(const nsAString& aKey) {
   ToLowerCase(aKey, lowerKey);
 
   nsAutoString keyword;
-  for (uint32_t i = 0; i < CSP_LAST_KEYWORD_VALUE; i++) {
+  for (auto& gCSPUTF8Keyword : gCSPUTF8Keywords) {
     // skipping the leading ' and trimming the trailing '
-    keyword.AssignASCII(gCSPUTF8Keywords[i] + 1);
+    keyword.AssignASCII(gCSPUTF8Keyword + 1);
     keyword.Trim("'", false, true);
     if (lowerKey.Equals(keyword)) {
       return true;
@@ -606,7 +605,7 @@ nsresult CSP_AppendCSPFromHeader(nsIContentSecurityPolicy* aCsp,
 
 /* ===== nsCSPSrc ============================ */
 
-nsCSPBaseSrc::nsCSPBaseSrc() {}
+nsCSPBaseSrc::nsCSPBaseSrc() = default;
 
 nsCSPBaseSrc::~nsCSPBaseSrc() = default;
 
@@ -1340,10 +1339,14 @@ bool nsCSPDirective::permits(CSPDirective aDirective, nsILoadInfo* aLoadInfo,
 
       // Step 1.4. If directive’s value contains a source expression that is an
       // ASCII case-insensitive match for the "'strict-dynamic'" keyword-source:
+      if (hasStrictDynamicKeyword) {
+        // GetParserCreatedScript() isn't set for XSLT.
+        if (aLoadInfo->InternalContentPolicyType() ==
+            nsIContentPolicy::TYPE_XSLT) {
+          CSPUTILSLOG(("  Blocked XSLT by default with 'strict-dynamic'"));
+          return false;
+        }
 
-      // XXX I don't think we should apply strict-dynamic to XSLT.
-      if (hasStrictDynamicKeyword && aLoadInfo->InternalContentPolicyType() !=
-                                         nsIContentPolicy::TYPE_XSLT) {
         // Step 1.4.1  If the request’s parser metadata is "parser-inserted",
         // return "Blocked". Otherwise, return "Allowed".
         if (aLoadInfo->GetParserCreatedScript()) {

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -134,6 +132,8 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
   struct TreeBuildingState;
 
  public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(APZCTreeManager, final);
+
   static mozilla::LazyLogModule sLog;
 
   static already_AddRefed<APZCTreeManager> Create(
@@ -429,6 +429,24 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
    * as a long tap. This allows tests to disable long tap gesture detection.
    */
   void SetLongTapEnabled(bool aTapGestureEnabled) override;
+
+  /**
+   * Fast-path notification that a non-passive APZ-aware event listener has
+   * just been registered in the content process, with |aGuid| identifying
+   * the nearest scroll container ancestor of the listener target. While
+   * |aGuid| is in the recorded set, hit-test results whose target APZC
+   * matches it or descends from it (within the same layers id) will have
+   * eApzAwareListeners ORed in.
+   */
+  void NotifyApzAwareListenerAdded(const ScrollableLayerGuid& aGuid) override;
+
+  /**
+   * Returns true if the APZC tree chain rooted at the APZC identified by
+   * |aHitGuid| (i.e. itself or any ancestor with the same layers id)
+   * has been the target of a fast-path APZ-aware listener notification.
+   * Safe to call from the sampler thread; acquires mMapLock.
+   */
+  bool ChainHasFastPathApzAwareListener(const ScrollableLayerGuid& aHitGuid);
 
   APZInputBridge* InputBridge() override { return this; }
 
@@ -935,6 +953,19 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
                      ScrollableLayerGuid::HashIgnoringPresShellFn,
                      ScrollableLayerGuid::EqualIgnoringPresShellFn>
       mApzcMap MOZ_GUARDED_BY(mMapLock);
+
+  /**
+   * Set of ScrollableLayerGuids that have been notified by content as
+   * having a non-passive APZ-aware event listener registered in their
+   * subtree. Populated via NotifyApzAwareListenerAdded() and read on the
+   * sampler thread during hit-testing via
+   * ChainHasFastPathApzAwareListener(). mMapLock must be acquired while
+   * accessing or modifying.
+   */
+  std::unordered_set<ScrollableLayerGuid,
+                     ScrollableLayerGuid::HashIgnoringPresShellFn,
+                     ScrollableLayerGuid::EqualIgnoringPresShellFn>
+      mFastPathApzAwareGuids MOZ_GUARDED_BY(mMapLock);
   /**
    * A helper structure to store all the information needed to compute the
    * async transform for a scrollthumb on the sampler thread.

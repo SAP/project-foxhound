@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -44,6 +42,7 @@ enum class ModuleType : uint32_t {
   JSON,
   CSS,
   Bytes,
+  Text,
 
   // The specification has renamed the "javascript" module type to
   // "javascript-or-wasm". For now, we'll add JavaScriptOrWasm as
@@ -53,7 +52,7 @@ enum class ModuleType : uint32_t {
   // JavaScriptOrWasm, we'll can just rename JavaScript to JavaScriptOrWasm.
   JavaScriptOrWasm = JavaScript,
 
-  Limit = Bytes,
+  Limit = Text,
 };
 
 /**
@@ -136,7 +135,8 @@ extern JS_PUBLIC_API bool LoadRequestedModules(
  * This is based on the spec's HostGetImportMetaProperties hook but defines
  * properties on the meta object directly rather than returning a list.
  */
-using ModuleMetadataHook = bool (*)(JSContext* cx, Handle<Value> privateValue,
+using ModuleMetadataHook = bool (*)(JSContext* cx,
+                                    Handle<JSObject*> moduleRecord,
                                     Handle<JSObject*> metaObject);
 
 /**
@@ -213,13 +213,19 @@ extern JS_PUBLIC_API JSObject* CompileJsonModule(
  * https://tc39.es/ecma262/#sec-create-default-export-synthetic-module
  */
 extern JS_PUBLIC_API JSObject* CreateDefaultExportSyntheticModule(
-    JSContext* cx, const Value& defaultExport);
+    JSContext* cx, Handle<Value> defaultExport);
 
 /**
- * Parse the given source buffer as a module in the scope of the current global
- * of cx and return a source text module record.
+ * Compile the given wasm source buffer as an evaluation phase module record.
  */
 extern JS_PUBLIC_API JSObject* CompileWasmModule(
+    JSContext* cx, const ReadOnlyCompileOptions& options,
+    js::Vector<uint8_t, 0, js::MallocAllocPolicy>& srcBuf);
+
+/**
+ * Compile the given wasm source buffer as a source phase module record.
+ */
+extern JS_PUBLIC_API JSObject* CompileWasmModuleAsSource(
     JSContext* cx, const ReadOnlyCompileOptions& options,
     js::Vector<uint8_t, 0, js::MallocAllocPolicy>& srcBuf);
 
@@ -245,6 +251,22 @@ extern JS_PUBLIC_API Value GetModulePrivate(JSObject* module);
  * Checks if the given module is a cyclic module.
  */
 extern JS_PUBLIC_API bool IsCyclicModule(JSObject* module);
+
+#ifdef DEBUG
+/**
+ * A helper function to set the isPreload flag on the ModuleObject.
+ * The flag will be verified later when ResetPreloadedModule is called.
+ */
+extern JS_PUBLIC_API void SetModulePreload(JSObject* module, bool isPreload);
+#endif
+
+/**
+ * Set module status to New and clear the [[LoadedModules]] slot and in a Cycloc
+ * Module.
+ * Used to reset modules that were preloaded earlier, in case the resolution of
+ * their specifiers may have changed.
+ */
+extern JS_PUBLIC_API void ResetPreloadedModule(JSObject* module);
 
 /*
  * Perform the ModuleLink operation on the given source text module record.
@@ -314,6 +336,12 @@ extern JS_PUBLIC_API JSString* GetModuleRequestSpecifier(
  */
 extern JS_PUBLIC_API ModuleType
 GetModuleRequestType(JSContext* cx, Handle<JSObject*> moduleRequestArg);
+
+/*
+ * Return true if the specified module request is a source phase import.
+ */
+extern JS_PUBLIC_API bool ModuleRequestIsSourcePhase(
+    JSContext* cx, Handle<JSObject*> moduleRequestArg);
 
 /*
  * Get the module record for a module script.

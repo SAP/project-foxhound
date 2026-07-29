@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,6 +23,12 @@ class RealTimeRequestSimulator final {
 
   // A test-only function to clean the simulated local cache.
   void CleanCache();
+
+  // A test-only function to force-expire all cache entries.
+  void ExpireCache();
+
+  static const nsCString& ContentBlockingCategory();
+  static bool RealTimeDebugEnabled();
 
  private:
   RealTimeRequestSimulator() = default;
@@ -53,6 +57,9 @@ class RealTimeRequestSimulator final {
 
   // Only accessed from the URL Classifier background thread.
   FullHashResponseMap mSimulatedCache;
+
+  // Caches prefixes that had no hits in the simulated response.
+  FullHashResponseMap mNegativeCache;
 
   static StaticRefPtr<RealTimeRequestSimulator> sInstance;
 };

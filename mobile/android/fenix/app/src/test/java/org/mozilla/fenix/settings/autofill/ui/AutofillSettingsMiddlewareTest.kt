@@ -5,12 +5,12 @@
 package org.mozilla.fenix.settings.autofill.ui
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.mockk.mockk
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import mozilla.components.lib.dataprotect.SecureAbove22Preferences
 import mozilla.components.service.fxa.manager.FxaAccountManager
 import mozilla.components.service.sync.autofill.AutofillCreditCardsAddressesStorage
-import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -37,7 +37,7 @@ class AutofillSettingsMiddlewareTest {
         securePrefs = SecureAbove22Preferences(testContext, "autofill", forceInsecure = true)
         autofillSettingsStorage =
             AutofillCreditCardsAddressesStorage(testContext, lazy { securePrefs })
-        accountManager = mock()
+        accountManager = mockk(relaxUnitFun = true)
         updateSaveFillStatus = { _, _ -> }
         updateSyncStatusAcrossDevices = { _, _ -> }
         goToScreen = { }

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -360,9 +358,7 @@ static bool ExpandErrorArgumentsHelper(FrontendContext* fc,
       if (efs->format) {
         const char* fmt;
         char* out;
-#ifdef DEBUG
-        int expandedArgs = 0;
-#endif
+        size_t expandedArgs = 0;
         size_t expandedLength;
         size_t len = strlen(efs->format);
 
@@ -372,6 +368,7 @@ static bool ExpandErrorArgumentsHelper(FrontendContext* fc,
           return false;
         }
 
+        MOZ_RELEASE_ASSERT(3 * args.count() <= len);
         expandedLength = len - (3 * args.count()) /* exclude the {n} */
                          + args.totalLength();
 
@@ -394,22 +391,20 @@ static bool ExpandErrorArgumentsHelper(FrontendContext* fc,
               strncpy(out, args.args(d), args.lengths(d));
               out += args.lengths(d);
               fmt += 3;
-#ifdef DEBUG
               expandedArgs++;
-#endif
               continue;
             }
           }
           *out++ = *fmt++;
         }
-        MOZ_ASSERT(expandedArgs == args.count());
+        MOZ_RELEASE_ASSERT(expandedArgs == args.count());
         *out = 0;
 
         reportp->initOwnedMessage(utf8);
       }
     } else {
       /* Non-null messageArgs should have at least one non-null arg. */
-      MOZ_ASSERT(!messageArgs);
+      MOZ_RELEASE_ASSERT(!messageArgs);
       /*
        * Zero arguments: the format string (if it exists) is the
        * entire message.

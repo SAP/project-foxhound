@@ -132,7 +132,7 @@ async function userAgentStylesVisible(inspector, view) {
   ok(
     uaRules.some(rule => {
       const matchedSelectors = rule.matchedSelectorIndexes.map(
-        index => rule.selector.selectors[index]
+        index => rule.domRule.selectors[index]
       );
       return matchedSelectors.includes(":any-link");
     }),
@@ -141,7 +141,7 @@ async function userAgentStylesVisible(inspector, view) {
   ok(
     uaRules.some(rule => {
       const matchedSelectors = rule.matchedSelectorIndexes.map(
-        index => rule.selector.selectors[index]
+        index => rule.domRule.selectors[index]
       );
       return matchedSelectors.includes(":link");
     }),
@@ -192,11 +192,7 @@ async function compareAppliedStylesWithUI(inspector, view, filter) {
 
   const elementStyle = view.elementStyle;
   await waitFor(() => elementStyle.rules.length === entries.length);
-  is(
-    elementStyle.rules.length,
-    entries.length,
-    "Should have correct number of rules (" + entries.length + ")"
-  );
+  assertDisplayedRulesCount(view, entries.length);
 
   entries = entries.sort((a, b) => {
     return (a.pseudoElement || "z") > (b.pseudoElement || "z");

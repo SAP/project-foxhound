@@ -104,10 +104,11 @@ private fun generateTabList(
     quantity: Int,
     isInactive: Boolean = false,
     isPrivate: Boolean = false,
-) = List(quantity) {
+) = List(quantity) { index ->
     createTab(
         url = "www.example.com",
         private = isPrivate,
+        title = "Debug Tab $index",
         createdAt = if (isInactive) 0L else System.currentTimeMillis(),
     )
 }

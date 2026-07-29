@@ -36,8 +36,7 @@ h3.device-header {
   display: grid;
   align-items: center;
   cursor: inherit;
-  font-weight: var(--fxview-card-header-font-weight, var(--heading-font-weight));
-  font-size: 1em;
+  font-size: var(--font-size-small);
   grid-template-columns: min-content 1fr;
   gap: 0 16px;
   margin: 0;
@@ -48,8 +47,11 @@ h3.device-header:not([slot="header"]) {
   margin-inline: 0.5em 0;
 }
 
+/* hairline separators between synced tabs device lists */
 h3.device-header:not([slot="header"]):not(:first-child) {
-  margin-block-start: 1.6em;
+  margin-block-start: var(--space-medium);
+  padding-block-start: var(--space-medium);
+  border-top: 2px solid var(--card-border-color);
 }
 
 .notabs {
@@ -74,7 +76,7 @@ h3.device-header:not([slot="header"]):not(:first-child) {
   overflow-wrap: anywhere;
 }
 
-button.primary {
+.primary {
   white-space: nowrap;
   min-width: fit-content;
 }

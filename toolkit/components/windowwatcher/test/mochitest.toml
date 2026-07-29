@@ -10,4 +10,7 @@ skip-if = [
 support-files = ["file_named_window.html"]
 
 ["test_storage_copied.html"]
-support-files = ["file_storage_copied.html"]
+support-files = [
+  "file_storage_copied.html",
+  "file_storage_copied_xorigin_wrapper.html",
+]

@@ -148,12 +148,12 @@ RequestTracker.prototype = {
 
     var type = evt.type,
       expectedType;
-    // The XHR responds after 3000 milliseconds with a load event.
+    // The XHR responds after 2500 milliseconds with a load event.
     var timeLimit =
-      this.mustReset && this.resetAfter < Math.min(3000, this.timeLimit)
+      this.mustReset && this.resetAfter < Math.min(2500, this.timeLimit)
         ? this.resetTo
         : this.timeLimit;
-    if (timeLimit == 0 || timeLimit >= 3000) {
+    if (timeLimit == 0 || timeLimit >= 2500) {
       expectedType = "load";
     } else {
       expectedType = "timeout";
@@ -291,7 +291,7 @@ var TestRequests = [
   // Simple timeouts.
   new RequestTracker(true, "no time out scheduled, load fires normally", 0),
   new RequestTracker(true, "load fires normally", 5000),
-  new RequestTracker(true, "timeout hit before load", 2000),
+  new RequestTracker(true, "timeout hit before load", 1500),
 
   // Timeouts reset after a certain delay.
   new RequestTracker(
@@ -311,9 +311,9 @@ var TestRequests = [
   new RequestTracker(
     true,
     "timeout fires normally with same timeout set twice",
-    2000,
-    1000,
-    2000
+    1500,
+    750,
+    1500
   ),
 
   new RequestTracker(
@@ -328,7 +328,7 @@ var TestRequests = [
     "timeout overrides load after a delay",
     5000,
     1000,
-    2000
+    1500
   ),
   new RequestTracker(
     true,
@@ -379,7 +379,7 @@ var WorkerThreadTestRequests = [
   // Simple timeouts.
   new RequestTracker(false, "no time out scheduled, load fires normally", 0),
   new RequestTracker(false, "load fires normally", 5000),
-  new RequestTracker(false, "timeout hit before load", 2000),
+  new RequestTracker(false, "timeout hit before load", 1500),
 
   // Reset timeouts don't make much sense with a sync request ...
 ];

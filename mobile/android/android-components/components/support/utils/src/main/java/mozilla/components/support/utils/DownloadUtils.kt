@@ -12,6 +12,7 @@ import android.provider.MediaStore
 import android.webkit.MimeTypeMap
 import mozilla.components.support.utils.DownloadUtils.CONTENT_DISPOSITION_TYPE
 import mozilla.components.support.utils.DownloadUtils.fileNameAsteriskContentDispositionPattern
+import mozilla.components.support.utils.ext.decodeIfNeeded
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.UnsupportedEncodingException
@@ -167,7 +168,7 @@ object DownloadUtils {
      */
     private const val MIN_FILE_NAME_LENGTH = 5
 
-    private const val SCHEME_CONTENT = "content://"
+    const val SCHEME_CONTENT = "content://"
 
     /**
      * The HTTP response code for a successful request.
@@ -275,7 +276,7 @@ object DownloadUtils {
         // If all the other http-related approaches failed, use the plain uri
         if (filename.isNullOrEmpty()) {
             // If there is a query string strip it, same as desktop browsers
-            val decodedUrl: String? = Uri.decode(url)?.substringBefore('?')
+            val decodedUrl: String? = url?.decodeIfNeeded()?.substringBefore('?')
             if (decodedUrl?.endsWith('/') == false) {
                 filename = decodedUrl.substringAfterLast('/')
             }
@@ -293,7 +294,7 @@ object DownloadUtils {
         return try {
             val fileName = parseContentDispositionWithFileName(contentDisposition)
                 ?: parseContentDispositionWithFileNameAsterisk(contentDisposition)
-            Uri.decode(fileName)
+            fileName?.decodeIfNeeded()
         } catch (_: IllegalStateException) {
             // This function is defined as returning null when it can't parse the header
             null

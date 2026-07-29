@@ -50,6 +50,7 @@ describe("ASRouter", () => {
   let fakeTargetingContext;
   let FakeToolbarBadgeHub;
   let FakeMomentsPageHub;
+  let FakeSpecialMessageActions;
   let ASRouterTargeting;
   let gBrowser;
   let screenImpressions;
@@ -94,6 +95,7 @@ describe("ASRouter", () => {
         getSharedMessageBlocklist: sandbox
           .stub()
           .resolves(multiProfileMessageBlocklist),
+        resetSharedMessageStorage: sandbox.stub().resolves(),
       },
       sendTelemetry: sandbox.stub().resolves(),
       clearChildMessages: sandbox.stub().resolves(),
@@ -101,6 +103,7 @@ describe("ASRouter", () => {
       updateAdminState: sandbox.stub().resolves(),
       dispatchCFRAction: sandbox.stub().resolves(),
     };
+    MessageLoaderUtils._recordedReachIds = new Set();
     sandbox.stub(router, "loadMessagesFromAllProviders").callThrough();
     return router.init(initParams);
   }
@@ -184,7 +187,6 @@ describe("ASRouter", () => {
         platformName: "macosx",
         scores: {},
         scoreThreshold: 5000,
-        isChinaRepack: false,
         userId: "adsf",
         currentProfileId: "1",
         canCreateSelectableProfiles: false,
@@ -194,7 +196,7 @@ describe("ASRouter", () => {
     gBrowser = {
       selectedBrowser: {
         constructor: { name: "MozBrowser" },
-        get ownerGlobal() {
+        get documentGlobal() {
           return { gBrowser };
         },
       },
@@ -252,12 +254,16 @@ describe("ASRouter", () => {
       "fxms-message-15",
     ].reduce((features, featureId) => {
       features[featureId] = {
-        getEnrollmentMetadata: sandbox.stub().returns({
-          slug: "experiment-slug",
-          branch: "experiment-branch-slug",
-          isRollout: false,
-        }),
-        getAllVariables: sandbox.stub().returns(undefined),
+        getAllEnrollments: sandbox.stub().returns([
+          {
+            meta: {
+              slug: "experiment-slug",
+              branch: "experiment-branch-slug",
+              isRollout: false,
+            },
+            value: undefined,
+          },
+        ]),
         recordExposureEvent: sandbox.stub(),
       };
       return features;
@@ -289,9 +295,9 @@ describe("ASRouter", () => {
         getAllBranches: sandbox.stub().resolves([]),
         ready: sandbox.stub().resolves(),
       },
-      SpecialMessageActions: {
+      SpecialMessageActions: (FakeSpecialMessageActions = {
         handleAction: sandbox.stub(),
-      },
+      }),
       TargetingContext: class {
         static combineContexts(...args) {
           return fakeTargetingContext.combineContexts.apply(sandbox, args);
@@ -403,8 +409,8 @@ describe("ASRouter", () => {
 
       assert.deepEqual(Router.state.screenImpressions, screenImpressions);
     });
-    it("should clear impressions for groups that are not active", async () => {
-      groupImpressions = { foo: [0, 1, 2] };
+    it("should clear impressions for groups that are not active once they are more than six months old", async () => {
+      groupImpressions = { foo: [Date.now() - SIX_MONTHS_IN_MS - 1] };
       Router = new _ASRouter();
       await initASRouter(Router);
 
@@ -882,6 +888,127 @@ describe("ASRouter", () => {
       assert.notCalled(CFRPageActions.addRecommendation);
       assert.notCalled(FakeToolbarBadgeHub.registerBadgeNotificationListener);
       assert.notCalled(FakeMomentsPageHub.executeAction);
+    });
+    describe("action template", () => {
+      let addImpressionStub;
+      let blockMessageByIdStub;
+      const allowedMessage = {
+        id: "TEST_ACTION",
+        template: "action_only",
+        content: { action: { type: "CONFIRM_LAUNCH_ON_LOGIN" } },
+      };
+      beforeEach(() => {
+        addImpressionStub = sandbox.stub(Router, "addImpression");
+        blockMessageByIdStub = sandbox.stub(Router, "blockMessageById");
+      });
+      it("calls handleAction and records an impression without blocking for an allowed action", async () => {
+        Router.routeCFRMessage(allowedMessage, browser, {});
+        await Promise.resolve(); // let dispatchCFRAction's async wrapper resolve
+
+        assert.calledOnceWithExactly(
+          FakeSpecialMessageActions.handleAction,
+          allowedMessage.content.action,
+          browser
+        );
+        assert.calledWithMatch(initParams.dispatchCFRAction, {
+          type: "ACTION_ONLY_TELEMETRY",
+          data: {
+            action: "action_only_user_event",
+            message_id: allowedMessage.id,
+            event: "IMPRESSION",
+          },
+        });
+        assert.calledWithMatch(initParams.dispatchCFRAction, {
+          type: "IMPRESSION",
+          data: allowedMessage,
+        });
+        assert.notCalled(addImpressionStub);
+        assert.notCalled(blockMessageByIdStub);
+      });
+      it("does nothing for a non-allowlisted action", () => {
+        const badMessage = {
+          id: "BAD",
+          template: "action_only",
+          content: { action: { type: "OPEN_URL" } },
+        };
+        Router.routeCFRMessage(badMessage, browser, {});
+
+        assert.notCalled(FakeSpecialMessageActions.handleAction);
+        assert.notCalled(addImpressionStub);
+        assert.notCalled(blockMessageByIdStub);
+      });
+      it("allows MULTI_ACTION when every nested action is allowlisted", async () => {
+        const multiMessage = {
+          id: "MULTI",
+          template: "action_only",
+          content: {
+            action: {
+              type: "MULTI_ACTION",
+              data: {
+                actions: [
+                  { type: "CONFIRM_LAUNCH_ON_LOGIN" },
+                  { type: "PIN_FIREFOX_TO_TASKBAR" },
+                ],
+              },
+            },
+          },
+        };
+        Router.routeCFRMessage(multiMessage, browser, {});
+        await Promise.resolve(); // let dispatchCFRAction's async wrapper resolve
+
+        assert.calledOnce(FakeSpecialMessageActions.handleAction);
+        assert.calledWithMatch(initParams.dispatchCFRAction, {
+          type: "IMPRESSION",
+          data: multiMessage,
+        });
+        assert.notCalled(addImpressionStub);
+      });
+      it("rejects MULTI_ACTION when any nested action is not allowlisted", () => {
+        const badMulti = {
+          id: "BAD_MULTI",
+          template: "action_only",
+          content: {
+            action: {
+              type: "MULTI_ACTION",
+              data: {
+                actions: [
+                  { type: "CONFIRM_LAUNCH_ON_LOGIN" },
+                  { type: "OPEN_URL" },
+                ],
+              },
+            },
+          },
+        };
+        Router.routeCFRMessage(badMulti, browser, {});
+
+        assert.notCalled(FakeSpecialMessageActions.handleAction);
+        assert.notCalled(addImpressionStub);
+      });
+      it("rejects a MULTI_ACTION with no nested actions", () => {
+        const emptyMulti = {
+          id: "EMPTY_MULTI",
+          template: "action_only",
+          content: {
+            action: { type: "MULTI_ACTION", data: { actions: [] } },
+          },
+        };
+        Router.routeCFRMessage(emptyMulti, browser, {});
+
+        assert.notCalled(FakeSpecialMessageActions.handleAction);
+        assert.notCalled(addImpressionStub);
+      });
+      it("does nothing when the message has no action", () => {
+        const noAction = {
+          id: "NO_ACTION",
+          template: "action_only",
+          content: {},
+        };
+        Router.routeCFRMessage(noAction, browser, {});
+
+        assert.notCalled(FakeSpecialMessageActions.handleAction);
+        assert.notCalled(addImpressionStub);
+        assert.notCalled(blockMessageByIdStub);
+      });
     });
   });
 
@@ -1729,18 +1856,20 @@ describe("ASRouter", () => {
     beforeEach(() => {
       let getAllBranchesStub = sandbox.stub();
       featureIds.forEach(feature => {
-        global.NimbusFeatures[feature].getAllVariables.returns({
-          id: `message-${feature}`,
-        });
-        global.NimbusFeatures[feature].getEnrollmentMetadata.returns({
-          slug: `slug-${feature}`,
-          branch: `branch-${feature}`,
-          isRollout: false,
-        });
+        global.NimbusFeatures[feature].getAllEnrollments.returns([
+          {
+            meta: {
+              slug: `slug-${feature}`,
+              branch: `branch-${feature}`,
+              isRollout: false,
+            },
+            value: { id: `message-${feature}`, recordReach: true },
+          },
+        ]);
         getAllBranchesStub.withArgs(`slug-${feature}`).resolves([
           {
             slug: `other-branch-${feature}`,
-            [feature]: { value: { trigger: "unit-test" } },
+            [feature]: { value: { trigger: "unit-test", recordReach: true } },
           },
         ]);
       });
@@ -1752,7 +1881,7 @@ describe("ASRouter", () => {
     afterEach(() => {
       sandbox.restore();
     });
-    it("should tag `forReachEvent` for all the expected message types", async () => {
+    it("should tag `_reachId` for all the expected message types", async () => {
       // This should match the `providers.messaging-experiments`
       let response = await MessageLoaderUtils.loadMessagesForProvider({
         type: "remote-experiments",
@@ -1763,7 +1892,7 @@ describe("ASRouter", () => {
       assert.property(response, "messages");
       assert.lengthOf(response.messages, featureIds.length * 2);
       assert.lengthOf(
-        response.messages.filter(m => m.forReachEvent),
+        response.messages.filter(m => m._reachId),
         featureIds.length
       );
     });
@@ -1800,7 +1929,21 @@ describe("ASRouter", () => {
       assert.strictEqual(trigger.id, "firstRun");
       assert.strictEqual(trigger.param, undefined);
       assert.isObject(trigger.context);
+      assert.strictEqual(trigger.context.isAIWindow, false);
       assert.strictEqual(trigger.context.browserIsSelected, true);
+      assert.strictEqual(trigger.context.onThirdPartyPage, true);
+      assert.deepEqual(
+        ASRouterTargeting.findMatchingMessage.firstCall.args[0].trigger,
+        {
+          id: "firstRun",
+          param: undefined,
+          context: {
+            isAIWindow: false,
+            browserIsSelected: true,
+            onThirdPartyPage: true,
+          },
+        }
+      );
     });
     it("should record telemetry information", async () => {
       const fakeTimerId = 42;
@@ -1817,9 +1960,9 @@ describe("ASRouter", () => {
         id: "firstRun",
       });
 
-      assert.calledTwice(start);
+      assert.calledOnce(start);
       assert.calledWithExactly(start);
-      assert.calledTwice(stopAndAccumulate);
+      assert.calledOnce(stopAndAccumulate);
       assert.calledWithExactly(stopAndAccumulate, fakeTimerId);
     });
     it("should have previousSessionEnd in the message context", () => {
@@ -1833,9 +1976,11 @@ describe("ASRouter", () => {
       let messages = [
         {
           id: "foo1",
-          forReachEvent: { sent: false, group: "cfr" },
-          experimentSlug: "exp01",
-          branchSlug: "branch01",
+          recordReach: true,
+          _reachId: "foo1",
+          _nimbusFeature: "cfr",
+          _nimbusSlug: "exp01",
+          _branchSlug: "branch01",
           template: "simple_template",
           trigger: { id: "foo" },
           content: { title: "Foo1", body: "Foo123-1" },
@@ -1849,9 +1994,11 @@ describe("ASRouter", () => {
         },
         {
           id: "foo3",
-          forReachEvent: { sent: false, group: "cfr" },
-          experimentSlug: "exp02",
-          branchSlug: "branch02",
+          recordReach: true,
+          _reachId: "foo3",
+          _nimbusFeature: "cfr",
+          _nimbusSlug: "exp02",
+          _branchSlug: "branch02",
           template: "simple_template",
           trigger: { id: "foo" },
           content: { title: "Foo1", body: "Foo123-1" },
@@ -1871,14 +2018,17 @@ describe("ASRouter", () => {
       let messages = [
         {
           id: "foo1",
-          forReachEvent: { sent: true, group: "cfr" },
-          experimentSlug: "exp01",
-          branchSlug: "branch01",
+          recordReach: true,
+          _reachId: "foo1",
+          _nimbusFeature: "cfr",
+          _nimbusSlug: "exp01",
+          _branchSlug: "branch01",
           template: "simple_template",
           trigger: { id: "foo" },
           content: { title: "Foo1", body: "Foo123-1" },
         },
       ];
+      MessageLoaderUtils._recordedReachIds.add("foo1");
       sandbox.stub(Router, "handleMessageRequest").resolves(messages);
       sandbox.spy(Glean.messagingExperiments.reachCfr, "record");
 
@@ -1929,21 +2079,19 @@ describe("ASRouter", () => {
     it("should send Exposure and route messages if recording reach fails", async () => {
       const template = "feature_callout";
       const featureId = "fxms-message-15";
-      const featureIdReachGroup = "FxmsMessage15";
+      const invalidFeatureIdForReach = "FxmsMessage15";
       let messages = [
         {
-          _nimbusFeature: [featureId], // from _experimentsAPILoader
-          forReachEvent: {
-            sent: false,
-            group: featureIdReachGroup,
-          },
+          _nimbusFeature: invalidFeatureIdForReach,
+          recordReach: true,
+          _reachId: "foo1",
           id: "foo1",
           template,
           trigger: { id: "fakeTrigger" },
           content: { title: "Foo1", body: "Foo123-1" },
         },
         {
-          _nimbusFeature: [featureId], // from _experimentsAPILoader
+          _nimbusFeature: featureId,
           id: "foo2",
           template,
           trigger: { id: "fakeTrigger" },
@@ -1954,17 +2102,14 @@ describe("ASRouter", () => {
       sandbox.spy(Router, "routeCFRMessage");
       sandbox
         .stub(
-          Glean.messagingExperiments[`reach${featureIdReachGroup}`],
+          Glean.messagingExperiments[`reach${invalidFeatureIdForReach}`],
           "record"
         )
         .throws(new Error("stuff"));
       assert.notCalled(global.NimbusFeatures[featureId].recordExposureEvent);
 
       await Router.sendTriggerMessage(
-        {
-          browser: {},
-          id: "foo",
-        },
+        { browser: {}, id: "fakeTrigger" },
         true // skipMessagesLoaded to avoid irrelevant calls spy/stub calls
       );
 
@@ -2339,30 +2484,48 @@ describe("ASRouter", () => {
     });
 
     describe("cleanup on init", () => {
-      it("should clear messageImpressions for messages which do not exist in state.messages", async () => {
-        const messages = [{ id: "foo", frequency: { lifetime: 10 } }];
-        messageImpressions = { foo: [0], bar: [0, 1] };
-        // Impressions for "bar" should be removed since that id does not exist in messages
-        const result = { foo: [0] };
-
-        await createRouterAndInit([
-          { id: "onboarding", type: "local", messages, enabled: true },
-        ]);
-        assert.calledWith(Router._storage.set, "messageImpressions", result);
-        assert.deepEqual(Router.state.messageImpressions, result);
-      });
-      it("should clear messageImpressions older than the period if no lifetime impression cap is included", async () => {
-        const CURRENT_TIME = ONE_DAY_IN_MS * 2;
-        clock.tick(CURRENT_TIME);
+      it("should clear old messageImpressions for missing messages", async () => {
         const messages = [
           {
-            id: "foo",
-            frequency: { custom: [{ period: ONE_DAY_IN_MS, cap: 5 }] },
+            id: "recentImpressionForActiveMessage",
+            frequency: { lifetime: 10 },
           },
+          { id: "oldImpressionForActiveMessage", frequency: { lifetime: 10 } },
         ];
-        messageImpressions = { foo: [0, 1, CURRENT_TIME - 10] };
-        // Only 0 and 1 are more than 24 hours before CURRENT_TIME
-        const result = { foo: [CURRENT_TIME - 10] };
+        let now = Date.now();
+        let old = now - SIX_MONTHS_IN_MS - 1;
+        messageImpressions = {
+          recentImpressionForActiveMessage: [now],
+          oldImpressionForActiveMessage: [old],
+          recentImpressionForInactiveMessage: [now],
+          oldImpressionForInactiveMessage: [old],
+          mixedImpressionsForInactiveMessage: [now, old],
+        };
+        // Impressions older than six months for nonexistent messages should be
+        // cleared. If that results in an empty impressions array, the key
+        // should be removed altogether.
+        const expectedResult = {
+          recentImpressionForActiveMessage: [now],
+          oldImpressionForActiveMessage: [old],
+          recentImpressionForInactiveMessage: [now],
+          mixedImpressionsForInactiveMessage: [now],
+        };
+
+        await createRouterAndInit([
+          { id: "onboarding", type: "local", messages, enabled: true },
+        ]);
+        assert.calledWith(
+          Router._storage.set,
+          "messageImpressions",
+          expectedResult
+        );
+        assert.deepEqual(Router.state.messageImpressions, expectedResult);
+      });
+      it("should clear messageImpressions if they are not properly formatted", async () => {
+        const messages = [{ id: "foo", frequency: { lifetime: 10 } }];
+        // this is impromperly formatted since messageImpressions are supposed to be an array
+        messageImpressions = { foo: 0, bar: undefined, baz: [] };
+        const result = {};
 
         await createRouterAndInit([
           { id: "onboarding", type: "local", messages, enabled: true },
@@ -2370,10 +2533,10 @@ describe("ASRouter", () => {
         assert.calledWith(Router._storage.set, "messageImpressions", result);
         assert.deepEqual(Router.state.messageImpressions, result);
       });
-      it("should clear messageImpressions older than the longest period if no lifetime impression cap is included", async () => {
+      it("should clear groupImpressions older than the longest period if no lifetime impression cap is included", async () => {
         const CURRENT_TIME = ONE_DAY_IN_MS * 2;
         clock.tick(CURRENT_TIME);
-        const messages = [
+        const groups = [
           {
             id: "foo",
             frequency: {
@@ -2384,54 +2547,24 @@ describe("ASRouter", () => {
             },
           },
         ];
-        messageImpressions = { foo: [0, 1, CURRENT_TIME - 10] };
+        groupImpressions = { foo: [0, 1, CURRENT_TIME - 10] };
         // Only 0 and 1 are more than 24 hours before CURRENT_TIME
         const result = { foo: [CURRENT_TIME - 10] };
 
-        await createRouterAndInit([
-          { id: "onboarding", type: "local", messages, enabled: true },
-        ]);
-        assert.calledWith(Router._storage.set, "messageImpressions", result);
-        assert.deepEqual(Router.state.messageImpressions, result);
-      });
-      it("should clear messageImpressions if they are not properly formatted", async () => {
-        const messages = [{ id: "foo", frequency: { lifetime: 10 } }];
-        // this is impromperly formatted since messageImpressions are supposed to be an array
-        messageImpressions = { foo: 0 };
-        const result = {};
-
-        await createRouterAndInit([
-          { id: "onboarding", type: "local", messages, enabled: true },
-        ]);
-        assert.calledWith(Router._storage.set, "messageImpressions", result);
-        assert.deepEqual(Router.state.messageImpressions, result);
-      });
-      it("should not clear messageImpressions for messages which do exist in state.messages", async () => {
-        const messages = [
-          { id: "foo", frequency: { lifetime: 10 } },
-          { id: "bar", frequency: { lifetime: 10 } },
-        ];
-        messageImpressions = { foo: [0], bar: [] };
-
-        await createRouterAndInit([
-          { id: "onboarding", type: "local", messages, enabled: true },
-        ]);
-        assert.notCalled(Router._storage.set);
-        assert.deepEqual(Router.state.messageImpressions, messageImpressions);
+        Router = new _ASRouter();
+        await initASRouter(Router);
+        await Router.setState({
+          groups,
+          groupImpressions,
+        });
+        Router.cleanupImpressions();
+        assert.calledWith(Router._storage.set, "groupImpressions", result);
+        assert.deepEqual(Router.state.groupImpressions, result);
       });
     });
   });
 
   describe("#_onLocaleChanged", () => {
-    it("should call _maybeUpdateL10nAttachment in the handler", async () => {
-      sandbox.spy(Router, "_maybeUpdateL10nAttachment");
-      await Router._onLocaleChanged();
-
-      assert.calledOnce(Router._maybeUpdateL10nAttachment);
-    });
-  });
-
-  describe("#_maybeUpdateL10nAttachment", () => {
     it("should update the l10n attachment if the locale was changed", async () => {
       const getter = sandbox.stub();
       getter.onFirstCall().returns("en-US");
@@ -2447,7 +2580,7 @@ describe("ASRouter", () => {
       sandbox.spy(Router, "setState");
       Router.loadMessagesFromAllProviders.resetHistory();
 
-      await Router._maybeUpdateL10nAttachment();
+      await Router._onLocaleChanged();
 
       assert.calledWith(Router.setState, {
         localeInUse: "fr",
@@ -2478,7 +2611,7 @@ describe("ASRouter", () => {
       Router.loadMessagesFromAllProviders.resetHistory();
       sandbox.spy(Router, "setState");
 
-      await Router._maybeUpdateL10nAttachment();
+      await Router._onLocaleChanged();
 
       assert.notCalled(Router.setState);
       assert.notCalled(Router.loadMessagesFromAllProviders);
@@ -2655,8 +2788,7 @@ describe("ASRouter", () => {
 
       await MessageLoaderUtils.loadMessagesForProvider(args);
 
-      assert.calledOnce(global.NimbusFeatures.spotlight.getEnrollmentMetadata);
-      assert.calledOnce(global.NimbusFeatures.spotlight.getAllVariables);
+      assert.calledOnce(global.NimbusFeatures.spotlight.getAllEnrollments);
     });
     it("should handle the case of no experiments in the ExperimentAPI", async () => {
       const args = {
@@ -2684,14 +2816,16 @@ describe("ASRouter", () => {
         },
       };
 
-      global.NimbusFeatures.infobar.getAllVariables.returns(
-        enrollment.branch.infobar.value
-      );
-      global.NimbusFeatures.infobar.getEnrollmentMetadata.returns({
-        slug: enrollment.slug,
-        branch: enrollment.branch.slug,
-        isRollout: false,
-      });
+      global.NimbusFeatures.infobar.getAllEnrollments.returns([
+        {
+          meta: {
+            slug: enrollment.slug,
+            branch: enrollment.branch.slug,
+            isRollout: false,
+          },
+          value: enrollment.branch.infobar.value,
+        },
+      ]);
       global.ExperimentAPI.getAllBranches.returns([
         enrollment.branch,
         {
@@ -2707,19 +2841,7 @@ describe("ASRouter", () => {
 
       assert.lengthOf(result.messages, 1);
     });
-    it("should skip disabled features and not load the messages", async () => {
-      const args = {
-        type: "remote-experiments",
-        featureIds: ["cfr"],
-      };
-
-      global.NimbusFeatures.cfr.getAllVariables.returns(null);
-
-      const result = await MessageLoaderUtils.loadMessagesForProvider(args);
-
-      assert.lengthOf(result.messages, 0);
-    });
-    it("should fetch branches with trigger", async () => {
+    it("should load branches for reach", async () => {
       const args = {
         type: "remote-experiments",
         featureIds: ["cfr"],
@@ -2735,29 +2857,43 @@ describe("ASRouter", () => {
         },
       };
 
-      global.NimbusFeatures.cfr.getAllVariables.returns(
-        enrollment.branch.cfr.value
-      );
-      global.NimbusFeatures.cfr.getEnrollmentMetadata.returns({
-        slug: enrollment.slug,
-        branch: enrollment.branch.slug,
-        isRollout: false,
-      });
+      global.NimbusFeatures.cfr.getAllEnrollments.returns([
+        {
+          meta: {
+            slug: enrollment.slug,
+            branch: enrollment.branch.slug,
+            isRollout: false,
+          },
+          value: enrollment.branch.cfr.value,
+        },
+      ]);
       global.ExperimentAPI.getAllBranches.resolves([
         enrollment.branch,
         {
           slug: "branch02",
           cfr: {
             featureId: "cfr",
-            value: { id: "id02", trigger: { id: "openURL" } },
+            value: {
+              id: "id02",
+              trigger: { id: "openURL" },
+              recordReach: true,
+            },
           },
         },
         {
-          // This branch should not be loaded as it doesn't have the trigger
+          // This branch should not be loaded as it doesn't have a trigger
           slug: "branch03",
           cfr: {
             featureId: "cfr",
-            value: { id: "id03" },
+            value: { id: "id03", recordReach: true },
+          },
+        },
+        {
+          // This branch should not be loaded as it doesn't have recordReach
+          slug: "branch03",
+          cfr: {
+            featureId: "cfr",
+            value: { id: "id04" },
           },
         },
       ]);
@@ -2767,68 +2903,9 @@ describe("ASRouter", () => {
       assert.equal(result.messages.length, 2);
       assert.equal(result.messages[0].id, "id01");
       assert.equal(result.messages[1].id, "id02");
-      assert.equal(result.messages[1].experimentSlug, "exp01");
-      assert.equal(result.messages[1].branchSlug, "branch02");
-      assert.deepEqual(result.messages[1].forReachEvent, {
-        sent: false,
-        group: "cfr",
-      });
-    });
-    it("should fetch branches with trigger even if enrolled branch is disabled", async () => {
-      const args = {
-        type: "remote-experiments",
-        featureIds: ["cfr"],
-      };
-      const enrollment = {
-        slug: "exp01",
-        branch: {
-          slug: "branch01",
-          cfr: {
-            featureId: "cfr",
-            value: {},
-          },
-        },
-      };
-
-      // Needs to match the `featureIds` value to return an enrollment
-      // for that feature
-      global.NimbusFeatures.cfr.getAllVariables.returns(
-        enrollment.branch.cfr.value
-      );
-      global.NimbusFeatures.cfr.getEnrollmentMetadata.returns({
-        slug: enrollment.slug,
-        branch: enrollment.branch.slug,
-        isRollout: false,
-      });
-      global.ExperimentAPI.getAllBranches.resolves([
-        enrollment.branch,
-        {
-          slug: "branch02",
-          cfr: {
-            featureId: "cfr",
-            value: { id: "id02", trigger: { id: "openURL" } },
-          },
-        },
-        {
-          // This branch should not be loaded as it doesn't have the trigger
-          slug: "branch03",
-          cfr: {
-            featureId: "cfr",
-            value: { id: "id03" },
-          },
-        },
-      ]);
-
-      const result = await MessageLoaderUtils.loadMessagesForProvider(args);
-
-      assert.equal(result.messages.length, 1);
-      assert.equal(result.messages[0].id, "id02");
-      assert.equal(result.messages[0].experimentSlug, "exp01");
-      assert.equal(result.messages[0].branchSlug, "branch02");
-      assert.deepEqual(result.messages[0].forReachEvent, {
-        sent: false,
-        group: "cfr",
-      });
+      assert.equal(result.messages[1]._nimbusSlug, "exp01");
+      assert.equal(result.messages[1]._branchSlug, "branch02");
+      assert.equal(result.messages[1]._nimbusFeature, "cfr");
     });
   });
   describe("#_remoteSettingsLoader", () => {
@@ -2937,18 +3014,17 @@ describe("ASRouter", () => {
       });
       await Router.setState({
         messageImpressions: { 1: [0, 1, 2], 2: [0, 1, 2] },
-      }); // Add impressions for test messages
-      let impressions = Object.values(Router.state.messageImpressions);
-      assert.equal(impressions.filter(i => i.length).length, 2); // Both messages have impressions
+      });
+      assert.equal(
+        Object.values(Router.state.messageImpressions).filter(i => i.length)
+          .length,
+        2
+      );
 
       Router.resetMessageState();
-      impressions = Object.values(Router.state.messageImpressions);
-
-      assert.isEmpty(impressions.filter(i => i.length)); // Both messages now have zero impressions
-      assert.calledWithExactly(Router._storage.set, "messageImpressions", {
-        1: [],
-        2: [],
-      });
+      assert.isEmpty(
+        Object.values(Router.state.messageImpressions).filter(i => i.length)
+      );
     });
   });
   describe("#resetGroupsState", () => {
@@ -2958,31 +3034,31 @@ describe("ASRouter", () => {
       });
       await Router.setState({
         groupImpressions: { 1: [0, 1, 2], 2: [0, 1, 2] },
-      }); // Add impressions for test groups
-      let impressions = Object.values(Router.state.groupImpressions);
-      assert.equal(impressions.filter(i => i.length).length, 2); // Both groups have impressions
+      });
+      assert.equal(
+        Object.values(Router.state.groupImpressions).filter(i => i.length)
+          .length,
+        2
+      );
 
       Router.resetGroupsState();
-      impressions = Object.values(Router.state.groupImpressions);
-
-      assert.isEmpty(impressions.filter(i => i.length)); // Both groups now have zero impressions
-      assert.calledWithExactly(Router._storage.set, "groupImpressions", {
-        1: [],
-        2: [],
-      });
+      assert.isEmpty(
+        Object.values(Router.state.groupImpressions).filter(i => i.length)
+      );
     });
   });
   describe("#resetScreenImpressions", () => {
     it("should reset all screen impressions", async () => {
       await Router.setState({ screenImpressions: { 1: 1, 2: 2 } });
-      let impressions = Object.values(Router.state.screenImpressions);
-      assert.equal(impressions.filter(i => i).length, 2); // Both screens have impressions
+      assert.equal(
+        Object.values(Router.state.screenImpressions).filter(i => i).length,
+        2
+      );
 
       Router.resetScreenImpressions();
-      impressions = Object.values(Router.state.screenImpressions);
-
-      assert.isEmpty(impressions.filter(i => i)); // Both screens now have zero impressions
-      assert.calledWithExactly(Router._storage.set, "screenImpressions", {});
+      assert.isEmpty(
+        Object.values(Router.state.screenImpressions).filter(i => i)
+      );
     });
   });
   describe("#editState", () => {
@@ -2992,8 +3068,11 @@ describe("ASRouter", () => {
       await Router.setState({
         messageImpressions: { 1: [0, 1, 2], 2: [0, 1, 2] },
       });
-      let impressions = Object.values(Router.state.messageImpressions);
-      assert.equal(impressions.filter(i => i.length).length, 2); // Both messages have impressions
+      assert.equal(
+        Object.values(Router.state.messageImpressions).filter(i => i.length)
+          .length,
+        2
+      );
 
       Router.editState("messageImpressions", {
         1: [],
@@ -3159,44 +3238,22 @@ describe("ASRouter", () => {
       it("should remove impressions from shared multiprofile impressions if the message is not in state & is older than six months", async () => {
         await Router.setState(() => ({
           multiProfileMessageImpressions: {
-            foo: [Date.now() - SIX_MONTHS_IN_MS - 1, Date.now()],
+            deadMessage: [Date.now() - SIX_MONTHS_IN_MS - 1, Date.now()],
           },
           messageImpressions: {
-            foo: [Date.now() - SIX_MONTHS_IN_MS - 1, Date.now()],
+            deadMessage: [Date.now() - SIX_MONTHS_IN_MS - 1, Date.now()],
           },
         }));
 
         Router.cleanupImpressions();
 
-        assert.property(Router.state.multiProfileMessageImpressions, "foo");
-        assert.lengthOf(Router.state.multiProfileMessageImpressions.foo, 1);
-        assert.notProperty(Router.state.messageImpressions, "foo");
-      });
-      it("should remove impressions from shared multiprofile impressions if the frequency cap is exceeded", async () => {
-        const CURRENT_TIME = ONE_DAY_IN_MS * 2;
-        clock.tick(CURRENT_TIME);
-        const testMessages = [
-          {
-            id: "foo",
-            profileScope: "single",
-            frequency: { custom: [{ period: ONE_DAY_IN_MS, cap: 5 }] },
-          },
-        ];
-        messageImpressions = { foo: [0, 1, CURRENT_TIME - 10] };
-        // Only 0 and 1 are more than 24 hours before CURRENT_TIME
-        const result = { foo: [CURRENT_TIME - 10] };
-
-        await Router.setState(() => ({
-          messages: testMessages,
-          multiProfileMessageImpressions: messageImpressions,
-        }));
-
-        Router.cleanupImpressions();
-
-        assert.deepEqual(
+        assert.property(
           Router.state.multiProfileMessageImpressions,
-          result,
-          "foo message shared multiprofile impressions"
+          "deadMessage"
+        );
+        assert.lengthOf(
+          Router.state.multiProfileMessageImpressions.deadMessage,
+          1
         );
       });
     });

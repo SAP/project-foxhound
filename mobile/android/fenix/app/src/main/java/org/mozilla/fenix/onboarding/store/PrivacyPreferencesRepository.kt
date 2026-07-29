@@ -4,7 +4,9 @@
 
 package org.mozilla.fenix.onboarding.store
 
+import mozilla.components.lib.crash.CrashReporter
 import mozilla.components.lib.crash.store.CrashReportOption
+import mozilla.components.service.nimbus.NimbusApi
 import org.mozilla.fenix.crashes.crashReportOption
 import org.mozilla.fenix.utils.Settings
 
@@ -41,9 +43,13 @@ enum class PreferenceType {
  * The default implementation of [PrivacyPreferencesRepository].
  *
  * @param settings The [Settings] instance for accessing and modifying privacy-related settings.
+ * @param nimbusSdk The [NimbusApi] instance for disabling experimentation when disabling telemetry.
+ * @param crashReporter The [CrashReporter] instance for propagating the telemetry setting.
  */
 class DefaultPrivacyPreferencesRepository(
     private val settings: Settings,
+    private val nimbusSdk: NimbusApi,
+    private val crashReporter: CrashReporter,
 ) : PrivacyPreferencesRepository {
 
     override fun getPreference(type: PreferenceType): Boolean {
@@ -72,8 +78,21 @@ class DefaultPrivacyPreferencesRepository(
                 }
             }
             PreferenceType.UsageData -> {
-                settings.isExperimentationEnabled = enabled
                 settings.isTelemetryEnabled = enabled
+                crashReporter.setTelemetryEnabled(enabled)
+                settings.isExperimentationEnabled = enabled
+                nimbusSdk.experimentParticipation = enabled
+
+                // Reset experiment identifiers on both opt-in and opt-out; it's likely
+                // that in future we will need to pass in the new telemetry client_id
+                // to this method when the user opts back in.
+                nimbusSdk.resetTelemetryIdentifiers()
+
+                // `metrics.stop(MetricServiceType.Data)` isn't required
+                // as no metrics should be started at this point during onboarding.
+                // IMPORTANT: definitely do not introduce `metrics.start(MetricServiceType.Data)`!
+
+                // `engine.notifyTelemetryPrefChanged` isn't required, because the engine should not be used yet.
             }
         }
     }

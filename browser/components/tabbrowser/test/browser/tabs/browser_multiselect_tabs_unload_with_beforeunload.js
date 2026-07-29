@@ -12,7 +12,7 @@ async function openTabMenuFor(tab) {
   EventUtils.synthesizeMouseAtCenter(
     tab,
     { type: "contextmenu" },
-    tab.ownerGlobal
+    tab.documentGlobal
   );
   await tabMenuShown;
 
@@ -33,7 +33,7 @@ async function addBrowserTabs(numberOfTabs) {
 }
 
 function injectBeforeUnload(browser) {
-  return ContentTask.spawn(browser, null, async function () {
+  return SpecialPowers.spawn(browser, [], async function () {
     content.window.addEventListener(
       "beforeunload",
       function (event) {

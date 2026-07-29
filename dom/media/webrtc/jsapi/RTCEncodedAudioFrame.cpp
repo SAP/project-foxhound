@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -16,7 +14,7 @@
 #include "js/RootingAPI.h"
 #include "jsapi/RTCEncodedFrameBase.h"
 #include "jsapi/RTCRtpScriptTransform.h"
-#include "mozilla/HoldDropJSObjects.h"
+#include "jsapi/RTCStatsReport.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/RTCEncodedAudioFrameBinding.h"
 #include "mozilla/dom/RTCRtpScriptTransformer.h"
@@ -24,44 +22,35 @@
 #include "mozilla/dom/StructuredCloneTags.h"
 #include "mozilla/fallible.h"
 #include "nsContentUtils.h"
-#include "nsCycleCollectionParticipant.h"
 #include "nsIGlobalObject.h"
-#include "nsISupports.h"
-#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
-
-NS_IMPL_CYCLE_COLLECTION_CLASS(RTCEncodedAudioFrame)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(RTCEncodedAudioFrame,
-                                                RTCEncodedFrameBase)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mOwner)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(RTCEncodedAudioFrame,
-                                                  RTCEncodedFrameBase)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mOwner)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(RTCEncodedAudioFrame,
-                                               RTCEncodedFrameBase)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_PRESERVED_WRAPPER
-NS_IMPL_CYCLE_COLLECTION_TRACE_END
-NS_IMPL_ADDREF_INHERITED(RTCEncodedAudioFrame, RTCEncodedFrameBase)
-NS_IMPL_RELEASE_INHERITED(RTCEncodedAudioFrame, RTCEncodedFrameBase)
-
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(RTCEncodedAudioFrame)
-  NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
-NS_INTERFACE_MAP_END_INHERITING(RTCEncodedFrameBase)
 
 RTCEncodedAudioFrame::RTCEncodedAudioFrame(
     nsIGlobalObject* aGlobal,
     std::unique_ptr<webrtc::TransformableFrameInterface> aFrame,
-    uint64_t aCounter, RTCRtpScriptTransformer* aOwner)
+    uint64_t aCounter, RTCRtpScriptTransformer* aOwner,
+    const Maybe<RTCStatsTimestampMaker>& aTimestampMaker)
     : RTCEncodedAudioFrameData{RTCEncodedFrameState{std::move(aFrame), aCounter,
                                                     /*timestamp*/ 0}},
-      RTCEncodedFrameBase(aGlobal, static_cast<RTCEncodedFrameState&>(*this)),
-      mOwner(aOwner) {
+      RTCEncodedFrameBase(aGlobal, static_cast<RTCEncodedFrameState&>(*this),
+                          aOwner) {
   mMetadata.mSynchronizationSource.Construct(mFrame->GetSsrc());
   mMetadata.mPayloadType.Construct(mFrame->GetPayloadType());
+  mMetadata.mMimeType.Construct(NS_ConvertASCIItoUTF16(mFrame->GetMimeType()));
+  mMetadata.mRtpTimestamp.Construct(mFrame->GetTimestamp());
+  const DebugOnly<bool> isReceived =
+      mFrame->GetDirection() ==
+      webrtc::TransformableFrameInterface::Direction::kReceiver;
+  MOZ_ASSERT_IF(isReceived, aTimestampMaker);
+  MOZ_ASSERT_IF(isReceived, mFrame->ReceiveTime());
+  if (aTimestampMaker) {
+    if (const auto receiveTime = mFrame->ReceiveTime()) {
+      mMetadata.mReceiveTime.Construct(
+          RTCStatsTimestamp::FromRealtime(*aTimestampMaker, *receiveTime)
+              .ToDomNoTimeOrigin());
+    }
+  }
   const auto& audioFrame(
       static_cast<webrtc::TransformableAudioFrameInterface&>(*mFrame));
   mMetadata.mContributingSources.Construct();
@@ -71,10 +60,17 @@ RTCEncodedAudioFrame::RTCEncodedAudioFrame(
   if (const auto optionalSeqNum = audioFrame.SequenceNumber()) {
     mMetadata.mSequenceNumber.Construct(*optionalSeqNum);
   }
-
-  // Base class needs this, but can't do it itself because of an assertion in
-  // the cycle-collector.
-  mozilla::HoldJSObjects(this);
+  if (const auto optionalAudioLevel = audioFrame.AudioLevel()) {
+    // Audio level is in dBov with a range [0, 127] and needs to be converted.
+    // See
+    // https://w3c.github.io/webrtc-encoded-transform/#dom-rtcencodedaudioframemetadata-audiolevel
+    if (optionalAudioLevel >= 127u) {
+      mMetadata.mAudioLevel.Construct(0.0);
+    } else {
+      mMetadata.mAudioLevel.Construct(
+          std::pow(10.0, -static_cast<double>(*optionalAudioLevel) / 20.0));
+    }
+  }
 }
 
 RTCEncodedAudioFrame::RTCEncodedAudioFrame(nsIGlobalObject* aGlobal,
@@ -83,21 +79,8 @@ RTCEncodedAudioFrame::RTCEncodedAudioFrame(nsIGlobalObject* aGlobal,
                                                     aData.mCounter,
                                                     aData.mTimestamp},
                                std::move(aData.mMetadata)},
-      RTCEncodedFrameBase(aGlobal, static_cast<RTCEncodedFrameState&>(*this)),
-      mOwner(nullptr) {
-  // Base class needs this, but can't do it itself because of an assertion in
-  // the cycle-collector.
-  mozilla::HoldJSObjects(this);
-}
-
-RTCEncodedAudioFrame::~RTCEncodedAudioFrame() {
-  // Clear JS::Heap<> members before unregistering as a script holder,
-  // so their destructors don't barrier against a finalized JS object.
-  mData = nullptr;  // from RTCEncodedFrameBase (protected)
-  // Base class needs this, but can't do it itself because of an assertion in
-  // the cycle-collector.
-  mozilla::DropJSObjects(this);
-}
+      RTCEncodedFrameBase(aGlobal, static_cast<RTCEncodedFrameState&>(*this),
+                          nullptr) {}
 
 JSObject* RTCEncodedAudioFrame::WrapObject(JSContext* aCx,
                                            JS::Handle<JSObject*> aGivenProto) {
@@ -125,8 +108,12 @@ already_AddRefed<RTCEncodedAudioFrame> RTCEncodedAudioFrame::Constructor(
     };
     set_if(dst.mSynchronizationSource, src.mSynchronizationSource);
     set_if(dst.mPayloadType, src.mPayloadType);
+    set_if(dst.mMimeType, src.mMimeType);
+    set_if(dst.mRtpTimestamp, src.mRtpTimestamp);
+    set_if(dst.mReceiveTime, src.mReceiveTime);
     set_if(dst.mContributingSources, src.mContributingSources);
     set_if(dst.mSequenceNumber, src.mSequenceNumber);
+    set_if(dst.mAudioLevel, src.mAudioLevel);
   }
   return frame.forget();
 }
@@ -137,10 +124,6 @@ RTCEncodedAudioFrameData RTCEncodedAudioFrameData::Clone() const {
           static_cast<webrtc::TransformableAudioFrameInterface*>(
               mFrame.get()))},
       RTCEncodedAudioFrameMetadata(mMetadata)};
-}
-
-nsIGlobalObject* RTCEncodedAudioFrame::GetParentObject() const {
-  return mGlobal;
 }
 
 void RTCEncodedAudioFrame::GetMetadata(

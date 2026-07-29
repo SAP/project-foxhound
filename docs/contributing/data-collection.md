@@ -101,18 +101,18 @@ to provide such a guarantee in different situations:
 1. **On-Device Processing:** This is the default, and should be used wherever
    possible.
 2. **End-to-End Encryption:** This is used for situations where Mozilla needs to
-    store user data as an opaque payload. The bookmark, history, and password
-    sync feature is the canonical use-case for this feature. To be clear, the
-    ‘ends’ of this type of End-to-End encryption are a users’ devices, and
-    exclude Mozilla.
+   store user data as an opaque payload. The bookmark, history, and password
+   sync feature is the canonical use-case for this feature. To be clear, the
+   ‘ends’ of this type of End-to-End encryption are a users’ devices, and
+   exclude Mozilla.
 3. **Oblivious HTTP:** OHTTP is an [IETF standard][ietf-ohttp] for concealing
    the IP address in HTTPS transactions which can be used to create a verifiable
    guarantee that a network service cannot link a request to a client. It does
    this by routing the request through an independently-operated relay (in our
    case, [Fastly][dap-ohttp-partners]). The protocol ensures that the relay
    provider sees the source of the request but not the contents, and the
-   endpoint sees the contents but not the source (more explanation
-   [here][sumo-ohttp]). For this to work, the payload must be carefully vetted
+   endpoint sees the contents but not the source (see the
+   [SUMO OHTTP explanation][sumo-ohttp]). For this to work, the payload must be carefully vetted
    to ensure that its contents are non-identifying. There are obvious ways to
    get this wrong (e.g., including any sort of personal identifier), but subtler
    ones as well (e.g., a set of innocuous values that could be jointly unique
@@ -162,7 +162,7 @@ code reviewers are responsible for manually flagging anything that slips through
 the cracks.
 
 The details of the data review process for Firefox patches are documented
-[here][data-review].
+in the [data review process][data-review].
 
 [^1]: To Mozilla. To state the obvious, the architecture of the web platform
 means that interactions with a website are generally observable to the operator

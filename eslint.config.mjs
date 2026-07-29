@@ -185,7 +185,19 @@ let config = [
       "tools/lint/eslint/**",
     ],
     languageOptions: {
-      globals: globals.browser,
+      // `when` is a global that has been added by Google Chrome as a result of
+      // adding it to `EventTarget.prototype`. `window` is an `EventTarget`, hence
+      // it is available in the global scope.
+      // This is part of the Observable proposal
+      // https://wicg.github.io/observable/#event-target-integration
+      // If Firefox implements the proposal (bug 1871732), then we may need to
+      // reconsider this exclusion.
+      // For now, it is conflicting with Lit's definition of `when`, and hence
+      // to avoid having to disable no-shadow on a lot of files using lit, we
+      // instead skip it here for now.
+      globals: Object.fromEntries(
+        Object.entries(globals.browser).filter(([key]) => key != "when")
+      ),
     },
   },
   {

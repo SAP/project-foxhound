@@ -4,11 +4,16 @@
 
 package org.mozilla.fenix.snackbar
 
+import android.content.Context
 import android.view.View
 import androidx.annotation.StringRes
 import androidx.annotation.VisibleForTesting
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.ui.text.style.TextOverflow
 import com.google.android.material.snackbar.Snackbar.LENGTH_LONG
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import mozilla.components.compose.base.snackbar.displaySnackbar
 import mozilla.components.ui.widgets.SnackbarDelegate
 import org.mozilla.fenix.compose.core.Action
 import org.mozilla.fenix.compose.snackbar.Snackbar
@@ -35,6 +40,28 @@ class FenixSnackbarDelegate(
         )
     },
 ) : SnackbarDelegate {
+
+    private var snackbarHostState: SnackbarHostState? = null
+    private var scope: CoroutineScope? = null
+    private var context: Context? = null
+
+    /**
+     * Creates a Compose-aware snackbar delegate that uses [SnackbarHostState] instead of View-based
+     * snackbars.
+     *
+     * @param snackbarHostState The [SnackbarHostState] to display snackbars in.
+     * @param scope The [CoroutineScope] used to launch snackbar display coroutines.
+     * @param context The [Context] used to resolve string resources.
+     */
+    constructor(
+        snackbarHostState: SnackbarHostState,
+        scope: CoroutineScope,
+        context: Context,
+    ) : this(view = View(context)) {
+        this.snackbarHostState = snackbarHostState
+        this.scope = scope
+        this.context = context
+    }
 
     // Holds onto a reference of a [Snackbar] that is displayed.
     private var snackbar: Snackbar? = null
@@ -115,17 +142,20 @@ class FenixSnackbarDelegate(
         @StringRes action: Int,
         withDismissAction: Boolean,
         listener: ((v: View) -> Unit)?,
-    ) = show(
-        snackBarParentView = snackBarParentView,
-        text = snackBarParentView.context.getString(text),
-        subText = subText,
-        subTextOverflow = subTextOverflow,
-        duration = duration,
-        isError = isError,
-        action = if (action == 0) null else snackBarParentView.context.getString(action),
-        withDismissAction = withDismissAction,
-        listener = listener,
-    )
+    ) {
+        val context = this@FenixSnackbarDelegate.context ?: snackBarParentView.context
+        show(
+            snackBarParentView = snackBarParentView,
+            text = context.getString(text),
+            subText = subText,
+            subTextOverflow = subTextOverflow,
+            duration = duration,
+            isError = isError,
+            action = if (action == 0) null else context.getString(action),
+            withDismissAction = withDismissAction,
+            listener = listener,
+        )
+    }
 
     override fun show(
         snackBarParentView: View,
@@ -138,32 +168,50 @@ class FenixSnackbarDelegate(
         withDismissAction: Boolean,
         listener: ((v: View) -> Unit)?,
     ) {
-        val snackbar = snackbarFactory(
-            snackBarParentView,
-            makeSnackbarState(
-                snackBarParentView = snackBarParentView,
-                text = text,
-                subText = subText,
-                subTextOverflow = subTextOverflow,
-                duration = duration,
-                isError = isError,
-                actionText = action,
-                withDismissAction = withDismissAction,
-                listener = listener,
-            ),
+        val state = makeSnackbarState(
+            snackBarParentView = snackBarParentView,
+            text = text,
+            subText = subText,
+            subTextOverflow = subTextOverflow,
+            duration = duration,
+            isError = isError,
+            actionText = action,
+            withDismissAction = withDismissAction,
+            listener = listener,
         )
+        val hostState = snackbarHostState
+        val coroutineScope = scope
 
-        this.snackbar?.dismiss()
-        this.snackbar = snackbar
+        if (hostState != null && coroutineScope != null) {
+            val snackbarData = state.toSnackbarData()
 
-        snackbar.show()
+            coroutineScope.launch {
+                hostState.currentSnackbarData?.dismiss()
+                hostState.displaySnackbar(
+                    visuals = snackbarData.visuals,
+                    onActionPerformed = { snackbarData.performAction() },
+                    onDismissPerformed = { state.onDismiss() },
+                )
+            }
+        } else {
+            val snackbar = snackbarFactory(snackBarParentView, state)
+            this.snackbar?.dismiss()
+            this.snackbar = snackbar
+
+            snackbar.show()
+        }
     }
 
     /**
      * Dismiss the existing snackbar.
      */
     fun dismiss() {
-        snackbar?.dismiss()
+        val hostState = snackbarHostState
+        if (hostState != null) {
+            hostState.currentSnackbarData?.dismiss()
+        } else {
+            snackbar?.dismiss()
+        }
     }
 
     @VisibleForTesting

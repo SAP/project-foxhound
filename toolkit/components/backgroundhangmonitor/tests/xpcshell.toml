@@ -8,6 +8,23 @@ run-sequentially = [
 ]
 support-files = ["child_cause_hang.js"]
 skip-if = [
+  "artifact", # Bug 2040417 - known limitation of FOG ping testing APIs
+  "debug",
+  "os == 'android' && arch == 'armeabi-v7a'", # Bug 1969481
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # Bug 1417723
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && opt", # Bug 1417723
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1417723
+  "os == 'win' && msix",
+  "release_or_beta",
+]
+
+["test_BHRShutdownAnnotation.js"]
+# BHR is disabled outside of nightly
+run-sequentially = [
+  "os == 'win'", # almost perma-fail in parallel on Windows
+  "os == 'linux'", # almost perma-fail in parallel on Linux
+]
+skip-if = [
   "debug",
   "os == 'android' && arch == 'armeabi-v7a'", # Bug 1969481
   "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # Bug 1417723

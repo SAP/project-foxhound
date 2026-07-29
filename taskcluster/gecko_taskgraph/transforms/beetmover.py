@@ -5,13 +5,14 @@
 Transform the beetmover task into an actual task description.
 """
 
+from typing import Optional
+
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
-from taskgraph.util.schema import LegacySchema
+from taskgraph.util.schema import Schema
 from taskgraph.util.treeherder import replace_group
-from voluptuous import Optional, Required
 
-from gecko_taskgraph.transforms.task import task_description_schema
+from gecko_taskgraph.transforms.task import TaskDescriptionSchema
 from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
 from gecko_taskgraph.util.scriptworker import (
     generate_beetmover_artifact_map,
@@ -22,22 +23,22 @@ from gecko_taskgraph.util.scriptworker import (
 
 transforms = TransformSequence()
 
-beetmover_description_schema = LegacySchema({
+
+class BeetmoverDescriptionSchema(Schema, kw_only=True):
     # unique label to describe this beetmover task
-    Required("label"): str,
-    Required("dependencies"): task_description_schema["dependencies"],
+    label: str
+    dependencies: TaskDescriptionSchema.__annotations__["dependencies"]  # noqa: F821
     # treeherder is allowed here to override any defaults we use for beetmover.  See
     # taskcluster/gecko_taskgraph/transforms/task.py for the schema details, and the
     # below transforms for defaults of various values.
-    Optional("treeherder"): task_description_schema["treeherder"],
+    treeherder: TaskDescriptionSchema.__annotations__["treeherder"] = None
     # locale is passed only for l10n beetmoving
-    Optional("locale"): str,
-    Required("shipping-phase"): task_description_schema["shipping-phase"],
-    Optional("shipping-product"): task_description_schema["shipping-product"],
-    Optional("attributes"): task_description_schema["attributes"],
-    Optional("task-from"): task_description_schema["task-from"],
-    Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
-})
+    locale: Optional[str] = None
+    shipping_phase: TaskDescriptionSchema.__annotations__["shipping_phase"]  # noqa: F821
+    shipping_product: TaskDescriptionSchema.__annotations__["shipping_product"] = None
+    attributes: TaskDescriptionSchema.__annotations__["attributes"] = None
+    task_from: TaskDescriptionSchema.__annotations__["task_from"] = None
+    run_on_repo_type: TaskDescriptionSchema.__annotations__["run_on_repo_type"] = None
 
 
 @transforms.add
@@ -48,7 +49,7 @@ def remove_name(config, jobs):
         yield job
 
 
-transforms.add_validate(beetmover_description_schema)
+transforms.add_validate(BeetmoverDescriptionSchema)
 
 
 @transforms.add
@@ -64,7 +65,8 @@ def make_task_description(config, jobs):
             "symbol", replace_group(dep_job.task["extra"]["treeherder"]["symbol"], "BM")
         )
         dep_th_platform = (
-            dep_job.task.get("extra", {})
+            dep_job.task
+            .get("extra", {})
             .get("treeherder", {})
             .get("machine", {})
             .get("platform", "")

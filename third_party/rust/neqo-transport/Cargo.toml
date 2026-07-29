@@ -10,12 +10,12 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2021"
-rust-version = "1.87.0"
+edition = "2024"
+rust-version = "1.90.0"
 name = "neqo-transport"
-version = "0.22.2"
+version = "0.29.0"
 authors = ["The Neqo Authors <necko@mozilla.com>"]
-build = "build.rs"
+build = false
 autolib = false
 autobins = false
 autoexamples = false
@@ -47,28 +47,39 @@ name = "transfer_walltime"
 
 [package.metadata.bench.codspeed]
 mode = "walltime"
+memory = false
 
 [[package.metadata.bench]]
 name = "transfer_simulated"
 
 [package.metadata.bench.codspeed]
 mode = "simulation"
+memory = false
+
+[[package.metadata.bench]]
+name = "min_bandwidth"
+
+[package.metadata.bench.codspeed]
+memory = false
 
 [features]
 bench = [
     "neqo-common/bench",
-    "neqo-crypto/bench",
+    "nss/bench",
+    "test-fixture/bench",
     "log/release_max_level_info",
 ]
+blapi = ["nss/blapi"]
 build-fuzzing-corpus = [
     "neqo-common/build-fuzzing-corpus",
-    "neqo-crypto/disable-encryption",
-    "neqo-crypto/disable-random",
+    "nss/disable-encryption",
+    "nss/disable-random",
     "test-fixture/disable-random",
 ]
-disable-encryption = ["neqo-crypto/disable-encryption"]
+default = ["blapi"]
+disable-encryption = ["nss/disable-encryption"]
 draft-29 = []
-gecko = ["mtu/gecko"]
+gecko = []
 
 [lib]
 name = "neqo_transport"
@@ -148,7 +159,7 @@ version = "1.1"
 default-features = false
 
 [dependencies.indexmap]
-version = "2.2"
+version = "2"
 default-features = false
 
 [dependencies.log]
@@ -161,11 +172,13 @@ path = "../mtu"
 [dependencies.neqo-common]
 path = "../neqo-common"
 
-[dependencies.neqo-crypto]
-path = "../neqo-crypto"
+[dependencies.nss]
+version = "0.13.0"
+git = "https://github.com/mozilla/nss-rs"
+package = "nss-rs"
 
 [dependencies.qlog]
-version = "0.15.1"
+version = "0.16.0"
 default-features = false
 
 [dependencies.rustc-hash]
@@ -174,7 +187,7 @@ features = ["std"]
 default-features = false
 
 [dependencies.smallvec]
-version = "1.13"
+version = "1"
 features = [
     "union",
     "const_generics",
@@ -202,6 +215,7 @@ package = "codspeed-criterion-compat"
 [dev-dependencies.neqo-transport]
 path = "."
 features = ["draft-29"]
+default-features = false
 
 [dev-dependencies.test-fixture]
 path = "../test-fixture"
@@ -247,6 +261,7 @@ precedence_bits = "warn"
 pub_without_shorthand = "warn"
 rc_buffer = "warn"
 rc_mutex = "warn"
+redundant_test_prefix = "warn"
 redundant_type_annotations = "warn"
 ref_patterns = "warn"
 renamed_function_params = "warn"

@@ -156,7 +156,7 @@ actions-callout-title = Complete common tasks or access basic settings
 # These example text inputs correlate to the the following strings
 # (either matching the whole string, or the first word of the string).
 # "print" - quickactions-cmd-print
-# "clear" - quickactions-cmd-clearrecenthistory
+# "clear" - quickactions-cmd-clearrecenthistory2
 # When localizing, ensure the translations match to ensure the action button appears as expected.
 actions-callout-subtitle = Try typing an action like “print” to print a page, or “clear” to clear your history.
 
@@ -216,6 +216,14 @@ perplexity-callout-primary-label = Ask Perplexity
 perplexity-callout-secondary-label-1 = Dismiss
 perplexity-callout-secondary-label-2 = Got it
 
+## Startpage callout strings. Startpage (https://www.startpage.com/) is a
+## brand name and should not be translated or transliterated.
+
+start-page-callout-title = Want to try a new privacy-focused search?
+start-page-callout-subtitle = Try Startpage. It’s designed to keep your searches more private from the start.
+start-page-callout-primary-label = Try Startpage
+start-page-callout-secondary-label = Dismiss
+
 ## Account Adoption Passwords callout strings
 
 # Suggestion to backup passwords by signing up for Mozilla account and using sync
@@ -273,3 +281,23 @@ windows-10-eos-sync-callout-primary-advance-button-label = Next
 
 link-preview-onboarding-callout-title = New: Click and hold to preview links
 link-preview-onboarding-callout-description = See a short description, reading time, and more to decide if a link is worth the click. Also available on right-click.
+
+## Tab Groups Onboarding Strings
+## These strings appear in a callout shown to users to introduce tab groups,
+## a feature that lets people organize related tabs into named collections.
+## Translators should feel free to adapt these strings to phrasing that sounds
+## natural in their language rather than translating literally — the goal is
+## an inviting, conversational tone, not a word-for-word match.
+
+# "Cut the clutter" is an English idiom meaning "reduce visual mess." Please
+# adapt to a phrase that conveys the idea of cleaning up or organizing a busy
+# tab strip in a way that sounds natural in your language.
+tab-groups-2026-onboarding-callout-title = Cut the clutter with tab groups
+
+# "Drag more in as you go" means users can add additional tabs to the group
+# over time, while they’re working. Please adapt for natural phrasing.
+tab-groups-2026-onboarding-callout-subtitle = Group your tabs by task or topic. Drag more in as you go.
+
+# Button label — keep short (ideally under ~15 characters) so it fits in the
+# callout UI. "Start a group" means "create a new tab group."
+tab-groups-2026-onboarding-cta-button = Start a group

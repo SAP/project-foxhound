@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl'))
-
 const defaultLocale = "en";
 const defaultCalendar = new Intl.DateTimeFormat(defaultLocale).resolvedOptions().calendar;
 
@@ -54,7 +52,7 @@ const canonical = {
   "islamicc": "islamic-civil",
   "ethiopic-amete-alem": "ethioaa",
   "islamic": "islamic-tbla",
-  "islamic-rgsa": "islamic-tbla",
+  "islamic-rgsa": "gregory",
 };
 
 for (let calendar of calendars) {

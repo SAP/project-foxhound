@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -1400,12 +1398,12 @@ class UpgradeSchemaFrom17_0To18_0Helper final {
   static nsresult DoUpgrade(mozIStorageConnection& aConnection,
                             const nsACString& aOrigin);
 
+  UpgradeSchemaFrom17_0To18_0Helper() = delete;
+  ~UpgradeSchemaFrom17_0To18_0Helper() = delete;
+
  private:
   static nsresult DoUpgradeInternal(mozIStorageConnection& aConnection,
                                     const nsACString& aOrigin);
-
-  UpgradeSchemaFrom17_0To18_0Helper() = delete;
-  ~UpgradeSchemaFrom17_0To18_0Helper() = delete;
 };
 
 class UpgradeSchemaFrom17_0To18_0Helper::InsertIndexDataValuesFunction final
@@ -2737,7 +2735,8 @@ class DeserializeUpgradeValueHelper final : public Runnable {
       : Runnable("DeserializeUpgradeValueHelper"),
         mMonitor("DeserializeUpgradeValueHelper::mMonitor"),
         mCloneReadInfo(aCloneReadInfo),
-        mStatus(NS_ERROR_FAILURE) {}
+        mStatus(NS_ERROR_FAILURE),
+        mDone{false} {}
 
   nsresult DispatchAndWait(nsAString& aFileIds) {
     // We don't need to go to the main-thread and use the sandbox.
@@ -2758,7 +2757,9 @@ class DeserializeUpgradeValueHelper final : public Runnable {
       return rv;
     }
 
-    lock.Wait();
+    while (!mDone) {
+      lock.Wait();
+    }
 
     if (NS_FAILED(mStatus)) {
       return mStatus;
@@ -2837,12 +2838,14 @@ class DeserializeUpgradeValueHelper final : public Runnable {
     mStatus = aStatus;
 
     MonitorAutoLock lock(mMonitor);
+    mDone = true;
     lock.Notify();
   }
 
-  Monitor mMonitor MOZ_UNANNOTATED;
+  Monitor mMonitor;
   StructuredCloneReadInfoParent& mCloneReadInfo;
   nsresult mStatus;
+  bool mDone MOZ_GUARDED_BY(mMonitor);
 };
 
 nsresult DeserializeUpgradeValueToFileIds(

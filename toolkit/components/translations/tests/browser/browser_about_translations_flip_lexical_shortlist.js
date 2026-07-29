@@ -17,6 +17,10 @@ add_task(async function test_about_translations_flip_lexical_shortlist_pref() {
     {
       expected: [
         [
+          AboutTranslationsTestUtils.Events.SourceTextInputDebounced,
+          { sourceText: "Text to translate." },
+        ],
+        [
           AboutTranslationsTestUtils.Events.TranslationRequested,
           { translationId: 1 },
         ],
@@ -56,6 +60,7 @@ add_task(async function test_about_translations_flip_lexical_shortlist_pref() {
           { translationId: 2 },
         ],
       ],
+      unexpected: [AboutTranslationsTestUtils.Events.SourceTextInputDebounced],
     },
     async () => {
       info('Flipping "browser.translations.useLexicalShortlist" to true.');
@@ -88,6 +93,7 @@ add_task(async function test_about_translations_flip_lexical_shortlist_pref() {
           { translationId: 3 },
         ],
       ],
+      unexpected: [AboutTranslationsTestUtils.Events.SourceTextInputDebounced],
     },
     async () => {
       info('Flipping "browser.translations.useLexicalShortlist" to false.');

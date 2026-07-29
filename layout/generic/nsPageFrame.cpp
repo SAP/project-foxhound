@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,6 +9,7 @@
 #include "mozilla/AppUnits.h"
 #include "mozilla/Logging.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ReflowInput.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPrefs_print.h"
 #include "mozilla/gfx/2D.h"
@@ -102,9 +101,13 @@ nsReflowStatus nsPageFrame::ReflowPageContent(
     return {};
   }
 
-  ReflowInput kidReflowInput(
-      aPresContext, aPageReflowInput, frame,
-      LogicalSize(frame->GetWritingMode(), availableSpace));
+  const auto kidWM = frame->GetWritingMode();
+  LogicalSize availSizeForKid(kidWM, availableSpace);
+  if (aPageReflowInput.mFlags.mIsInFragmentainerMeasuringReflow) {
+    availSizeForKid.BSize(kidWM) = NS_UNCONSTRAINEDSIZE;
+  }
+  ReflowInput kidReflowInput(aPresContext, aPageReflowInput, frame,
+                             availSizeForKid);
   kidReflowInput.mFlags.mIsTopOfPage = true;
   kidReflowInput.mFlags.mTableIsSplittable = true;
 
@@ -501,6 +504,13 @@ class nsDisplayHeaderFooter final : public nsPaintedDisplayItem {
 #ifdef DEBUG
     nsPageFrame* pageFrame = do_QueryFrame(mFrame);
     MOZ_ASSERT(pageFrame, "We should have an nsPageFrame");
+#endif
+#ifdef ACCESSIBILITY
+    // There will likely have been a prior AccessibleId item to associate all
+    // subsequent items  with a node in the accessibility tree. However, this
+    // header/footer isn't part of that accessibility node. An AccessibleId of
+    // (0, 0) disassociates subsequent content from any accessibility node.
+    aCtx->GetDrawTarget()->AccessibleId(0, 0);
 #endif
     static_cast<nsPageFrame*>(mFrame)->PaintHeaderFooter(
         *aCtx, ToReferenceFrame(), false);

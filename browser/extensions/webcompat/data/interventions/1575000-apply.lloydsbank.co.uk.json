@@ -1,0 +1,18 @@
+{
+  "label": "apply.lloydsbank.co.uk",
+  "bugs": {
+    "1575000": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://apply.lloydsbank.co.uk/*"]
+    }
+  },
+  "css": {
+    "fix_misaligned_radio_buttons": ".radio-content-field .radio.inline label span.text { position: relative; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "css": ["fix_misaligned_radio_buttons"]
+    }
+  ]
+}

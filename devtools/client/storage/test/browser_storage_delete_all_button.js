@@ -6,56 +6,56 @@
 
 // Test deleting all storage entries using the toolbar delete-all button
 add_task(async function testDeleteAllButton() {
-  await openTabAndSetupStorage(MAIN_DOMAIN_SECURED + "storage-listings.html");
+  await openTabAndSetupStorage(MAIN_URL_SECURED + "storage-listings.html");
 
   // Test deleting all cookies for a specific host using the toolbar button
   info("Test state before delete");
   await checkState([
     [
-      ["cookies", "https://test1.example.org"],
+      ["cookies", MAIN_ORIGIN_SECURED],
       [
-        getCookieId("c1", "test1.example.org", "/browser"),
-        getCookieId("c3", "test1.example.org", "/"),
-        getCookieId("cs2", ".example.org", "/"),
-        getCookieId("c4", ".example.org", "/"),
+        getCookieId("c1", MAIN_HOST, "/browser"),
+        getCookieId("c3", MAIN_HOST, "/"),
+        getCookieId("cs2", "." + MAIN_DOMAIN, "/"),
+        getCookieId("c4", "." + MAIN_DOMAIN, "/"),
       ],
     ],
   ]);
 
   info("Delete all cookies using toolbar button");
-  await performRemoveAll(["cookies", "https://test1.example.org"]);
+  await performRemoveAll(["cookies", MAIN_ORIGIN_SECURED]);
 
   info("Test state after delete");
-  await checkState([[["cookies", "https://test1.example.org"], []]]);
+  await checkState([[["cookies", MAIN_ORIGIN_SECURED], []]]);
 
   // Test deleting all localStorage for a specific host using the toolbar button
   info("Test state before delete");
   await checkState([
     [
-      ["localStorage", "https://test1.example.org"],
+      ["localStorage", MAIN_ORIGIN_SECURED],
       ["key", "ls1", "ls2"],
     ],
   ]);
 
   info("Delete all localStorage using toolbar button");
-  await performRemoveAll(["localStorage", "https://test1.example.org"]);
+  await performRemoveAll(["localStorage", MAIN_ORIGIN_SECURED]);
 
   info("Test state after delete");
-  await checkState([[["localStorage", "https://test1.example.org"], []]]);
+  await checkState([[["localStorage", MAIN_ORIGIN_SECURED], []]]);
 
   // Test deleting all sessionStorage for a specific host using the toolbar button
   info("Test state before delete");
   await checkState([
     [
-      ["sessionStorage", "https://test1.example.org"],
+      ["sessionStorage", MAIN_ORIGIN_SECURED],
       ["key", "ss1"],
     ],
   ]);
 
   info("Delete all sessionStorage using toolbar button");
 
-  await performRemoveAll(["sessionStorage", "https://test1.example.org"]);
+  await performRemoveAll(["sessionStorage", MAIN_ORIGIN_SECURED]);
 
   info("Test state after delete");
-  await checkState([[["sessionStorage", "https://test1.example.org"], []]]);
+  await checkState([[["sessionStorage", MAIN_ORIGIN_SECURED], []]]);
 });

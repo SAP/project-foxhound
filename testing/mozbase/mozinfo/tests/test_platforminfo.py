@@ -98,6 +98,12 @@ def test_os_version():
     platform_info = PlatformInfo(test_settings)
     assert platform_info.os_version == "11.26100"
 
+    test_settings["platform"]["os"]["name"] = "windows"
+    test_settings["platform"]["os"]["version"] = "11"
+    test_settings["platform"]["os"]["build"] = "25h2"
+    platform_info = PlatformInfo(test_settings)
+    assert platform_info.os_version == "11.26200"
+
 
 def test_os_arch():
     test_settings = deepcopy(BASE_TEST_SETTINGS)

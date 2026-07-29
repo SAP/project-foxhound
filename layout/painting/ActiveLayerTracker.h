@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -59,29 +57,19 @@ class ActiveLayerTracker {
    * layer.
    */
   static void NotifyNeedsRepaint(nsIFrame* aFrame);
-  /**
-   * Return true if aFrame's property style in |aPropertySet| should be
-   * considered as being animated for constructing active layers.
-   */
-  static bool IsStyleAnimated(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
-                              const nsCSSPropertyIDSet& aPropertySet);
-  /**
-   * Return true if aFrame's transform-like property,
-   * i.e. transform/translate/rotate/scale, is animated.
-   */
-  static bool IsTransformAnimated(nsDisplayListBuilder* aBuilder,
-                                  nsIFrame* aFrame);
-  /**
-   * Return true if aFrame's transform style should be considered as being
-   * animated for pre-rendering.
-   */
-  static bool IsTransformMaybeAnimated(nsIFrame* aFrame);
+
+  /** Return true if aFrame's transform-like properties are animated. */
+  static bool IsTransformAnimated(nsIFrame* aFrame);
+
   /**
    * Return true if aFrame either has an animated scale now, or is likely to
    * have one in the future because it has a CSS animation or transition
    * (which may not be playing right now) that affects its scale.
    */
   static bool IsScaleSubjectToAnimation(nsIFrame* aFrame);
+
+  /** Return true if aFrame's opacity property is animated. */
+  static bool IsOpacityAnimated(nsIFrame* aFrame);
 
   /**
    * Transfer the LayerActivity property to the frame's content node when the

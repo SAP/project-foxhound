@@ -83,6 +83,16 @@ ssl_init()
     padd=$(echo $cwd | cut -d "/" -f4 | sed 's/[^0-9]//g')
     PORT=$(($PORT + $padd))
   fi
+
+  # Check if the port is already in use before starting tests.
+  if command -v ss > /dev/null 2>&1; then
+    if ss -tln 2>/dev/null | grep -q ":${PORT} "; then
+      echo "$SCRIPTNAME: ERROR: Port ${PORT} is already in use." >&2
+      echo "  Set a different port with: PORT=9443 ./all.sh" >&2
+      Exit 10 "Port ${PORT} is already in use"
+    fi
+  fi
+
   NSS_SSL_TESTS=${NSS_SSL_TESTS:-normal_normal}
   nss_ssl_run="stapling signed_cert_timestamps cov auth dtls scheme exporter"
   NSS_SSL_RUN=${NSS_SSL_RUN:-$nss_ssl_run}
@@ -126,7 +136,7 @@ ssl_init()
   # in fips mode, turn off curve25519 until it's NIST approved
   ALL_GROUPS="P256,P384,P521,x25519,FF2048,FF3072,FF4096,FF6144,FF8192,xyber768d00,x25519mlkem768,secp256r1mlkem768,secp384r1mlkem1024"
   NON_PQ_GROUPS="P256,P384,P521,x25519,FF2048,FF3072,FF4096,FF6144,FF8192"
-  FIPS_GROUPS="P256,P384,P521,FF2048,FF3072,FF4096,FF6144,FF8192,mx25519mlkem768,secp256r1mlkem768,secp384r1mlkem1024"
+  FIPS_GROUPS="P256,P384,P521,FF2048,FF3072,FF4096,FF6144,FF8192,x25519mlkem768,secp256r1mlkem768,secp384r1mlkem1024"
   FIPS_NON_PQ_GROUPS="P256,P384,P521,FF2048,FF3072,FF4096,FF6144,FF8192"
 
 
@@ -158,7 +168,7 @@ is_selfserv_alive()
   fi
 
   if [ "${OS_ARCH}" = "WINNT" ] && \
-     [ "$OS_NAME" = "CYGWIN_NT" -o "$OS_NAME" = "MINGW32_NT" ]; then
+     [ "$OS_NAME" = "CYGWIN_NT" -o "$OS_NAME" = "MINGW32_NT" -o "$OS_NAME" = "MSYS_NT" ]; then
       PID=${SHELL_SERVERPID}
   else
       PID=`cat ${SERVERPID}`
@@ -200,23 +210,11 @@ wait_for_selfserv()
 ########################################################################
 kill_selfserv()
 {
-  if [ "${OS_ARCH}" = "WINNT" ] && \
-     [ "$OS_NAME" = "CYGWIN_NT" -o "$OS_NAME" = "MINGW32_NT" ]; then
-      PID=${SHELL_SERVERPID}
-  else
-      PID=`cat ${SERVERPID}`
-  fi
+  PID=`cat ${SERVERPID}`
 
   echo "trying to kill selfserv with PID ${PID} at `date`"
 
-  if [ "${OS_ARCH}" = "WINNT" ]; then
-      echo "${KILL} ${PID}"
-      ${KILL} ${PID}
-  else
-      echo "${KILL} -USR1 ${PID}"
-      ${KILL} -USR1 ${PID}
-  fi
-  wait ${PID}
+  safe_kill ${PID} ${SHELL_SERVERPID}
   if [ ${fileout} -eq 1 ]; then
       cat ${SERVEROUTFILE}
   fi
@@ -295,14 +293,7 @@ start_selfserv()
   SHELL_SERVERPID=$!
   wait_for_selfserv
 
-  if [ "${OS_ARCH}" = "WINNT" ] && \
-     [ "$OS_NAME" = "CYGWIN_NT" -o "$OS_NAME" = "MINGW32_NT" ]; then
-      PID=${SHELL_SERVERPID}
-  else
-      PID=`cat ${SERVERPID}`
-  fi
-
-  echo "selfserv with PID ${PID} started at `date`"
+  echo "selfserv with PID `cat ${SERVERPID}` started at `date`"
 }
 
 ############################## ssl_cov #################################

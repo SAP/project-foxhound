@@ -24,6 +24,9 @@ import org.mozilla.focus.GleanMetrics.Downloads
 import org.mozilla.focus.GleanMetrics.TabCount
 import kotlin.collections.forEach as withEach
 
+/**
+ * Middleware that collects telemetry based on browser actions.
+ */
 class TelemetryMiddleware : Middleware<BrowserState, BrowserAction> {
     override fun invoke(
         store: Store<BrowserState, BrowserAction>,

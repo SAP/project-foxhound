@@ -34,14 +34,16 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1151186
   // Register next macro task to check whether `focus` event of the document
   // is fired as expected.  If not, let's focus our window manually.  Then,
   // the `focus` event listener starts the test anyway.
-  setTimeout(() => {
-   if (focusEventFired) {
-     return; // We've gotten `focus` event as expected.
-   }
-   ok(!document.hasFocus(), "The document should not have focus yet");
-   info("Setting focus to the window forcibly...");
-   window.focus();
-  }, 0);
+  addEventListener("load", function() {
+    setTimeout(() => {
+     if (focusEventFired) {
+       return; // We've gotten `focus` event as expected.
+     }
+     ok(!document.hasFocus(), "The document should not have focus yet");
+     info("Setting focus to the window forcibly...");
+     window.focus();
+    }, 0);
+  });
 
   function runTests() {
     let description = focusEventFired ?

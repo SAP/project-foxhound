@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -234,7 +232,7 @@ TEST_F(DispatchTest, TestNonMethodRet) {
 TEST_F(DispatchTest, TestDestructorRef) {
   bool destroyed = false;
   {
-    RefPtr<Destructor> destructor = new Destructor(&destroyed);
+    RefPtr destructor = MakeRefPtr<Destructor>(&destroyed);
     NS_DispatchAndSpinEventLoopUntilComplete(
         "DispatchTest::TestDestructorRef"_ns, target_,
         do_AddRef(WrapRunnable(&cl_, &TargetClass::destructor_target_ref,
@@ -246,7 +244,7 @@ TEST_F(DispatchTest, TestDestructorRef) {
   // Now try with a move.
   destroyed = false;
   {
-    RefPtr<Destructor> destructor = new Destructor(&destroyed);
+    RefPtr destructor = MakeRefPtr<Destructor>(&destroyed);
     NS_DispatchAndSpinEventLoopUntilComplete(
         "DispatchTest::TestDestructorRef"_ns, target_,
         do_AddRef(WrapRunnable(&cl_, &TargetClass::destructor_target_ref,

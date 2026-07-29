@@ -611,6 +611,8 @@
   overflow:clip;
   opacity:1;
   line-height:1;
+  letter-spacing:normal;
+  word-spacing:normal;
   text-size-adjust:none;
   forced-color-adjust:none;
   transform-origin:0 0;
@@ -627,6 +629,7 @@
     white-space:pre;
     cursor:text;
     transform-origin:0% 0%;
+    user-select:text;
   }
   --min-font-size:1;
   --text-scale-factor:calc(var(--total-scale-factor) * var(--min-font-size));
@@ -693,11 +696,20 @@
     &.selected{
       background-color:var(--highlight-selected-bg-color);
       backdrop-filter:var(--highlight-selected-backdrop-filter);
+      scroll-margin-top:50px;
     }
   }
 
   ::selection{
-    background:color-mix(in srgb, AccentColor, transparent 75%);
+    background:color-mix(in srgb, AccentColor, transparent 50%);
+    color:transparent;
+  }
+
+  &.selectionRendering{
+    ::selection{
+      background:transparent;
+      color:transparent;
+    }
   }
 
   .endOfContent{
@@ -714,10 +726,22 @@
   }
 }
 
+.textLayerImages{
+  position:absolute;
+  inset:0;
+  user-select:none;
+
+  canvas{
+    position:absolute;
+    transform-origin:0% 0%;
+  }
+}
+
 .annotationLayer{
   color-scheme:only light;
 
   --annotation-unfocused-field-background:url("data:image/svg+xml;charset=UTF-8,<svg width='1px' height='1px' xmlns='http://www.w3.org/2000/svg'><rect width='100%' height='100%' style='fill:rgba(0, 54, 255, 0.13);'/></svg>");
+  --annotation-unfocused-field-filter:url("data:image/svg+xml;charset=UTF-8,<svg xmlns='http://www.w3.org/2000/svg'><filter id='pdfjsFillableField' x='0%' y='0%' width='100%' height='100%' color-interpolation-filters='sRGB'><feFlood flood-color='rgb(0,54,255)' flood-opacity='0.13' result='f'/><feComposite in='f' in2='SourceGraphic' operator='over'/></filter></svg>#pdfjsFillableField");
   --input-focus-border-color:Highlight;
   --input-focus-outline:1px solid Canvas;
   --input-unfocused-border-color:transparent;
@@ -838,6 +862,13 @@
       overflow:hidden;
     }
   }
+  .hasOwnCanvas:not(.sandboxModified) :is(input, textarea){
+    display:none;
+  }
+
+  .hasOwnCanvas.sandboxModified canvas.annotationContent{
+    display:none;
+  }
 
   .textLayer.selecting ~ & section{
     pointer-events:none;
@@ -898,10 +929,6 @@
     padding:0;
   }
 
-  .buttonWidgetAnnotation.radioButton input{
-    border-radius:50%;
-  }
-
   .textWidgetAnnotation textarea{
     resize:none;
   }
@@ -949,50 +976,71 @@
     outline:var(--input-focus-outline);
   }
 
-  .buttonWidgetAnnotation.checkBox input:checked::before,
-  .buttonWidgetAnnotation.checkBox input:checked::after,
-  .buttonWidgetAnnotation.radioButton input:checked::before{
-    background-color:CanvasText;
-    content:"";
-    display:block;
-    position:absolute;
-  }
+  .buttonWidgetAnnotation:is(.checkBox, .radioButton){
+    [data-canvas-name]{
+      filter:var(--annotation-unfocused-field-filter);
+    }
 
-  .buttonWidgetAnnotation.checkBox input:checked::before,
-  .buttonWidgetAnnotation.checkBox input:checked::after{
-    height:80%;
-    left:45%;
-    width:1px;
-  }
+    &:focus-within [data-canvas-name]{
+      filter:none;
+    }
 
-  .buttonWidgetAnnotation.checkBox input:checked::before{
-    transform:rotate(45deg);
-  }
+    [data-canvas-name="checked"]{
+      &:has(~ input:checked){
+        display:block;
+      }
 
-  .buttonWidgetAnnotation.checkBox input:checked::after{
-    transform:rotate(-45deg);
-  }
+      &:has(~ input:not(:checked)){
+        display:none;
+      }
+    }
 
-  .buttonWidgetAnnotation.radioButton input:checked::before{
-    border-radius:50%;
-    height:50%;
-    left:25%;
-    top:25%;
-    width:50%;
+    [data-canvas-name="unchecked"]{
+      &:has(~ input:checked){
+        display:none;
+      }
+
+      &:has(~ input:not(:checked)){
+        display:block;
+      }
+    }
   }
 
   .textWidgetAnnotation input.comb{
+    --comb-width:0px;
+    --comb-letter-spacing:calc(var(--comb-width) - 1ch);
+
     font-family:monospace;
-    padding-left:2px;
-    padding-right:0;
+    letter-spacing:var(--comb-letter-spacing);
+    overflow-x:hidden;
+    padding:0;
+    text-indent:calc(
+      var(--comb-offset, 0) * var(--comb-width) + var(--comb-letter-spacing) / 2
+    );
   }
 
   .textWidgetAnnotation input.comb:focus{
-    width:103%;
+    background-image:repeating-linear-gradient(
+      to right,
+      transparent 0 calc(var(--comb-width) - 1px),
+      var(--input-focus-border-color) calc(var(--comb-width) - 1px)
+        var(--comb-width)
+    );
   }
 
   .buttonWidgetAnnotation:is(.checkBox, .radioButton) input{
     appearance:none;
+  }
+
+  .buttonWidgetAnnotation:is(.checkBox, .radioButton):has(
+      [data-canvas-name="checked"]
+    )
+    input:checked,
+  .buttonWidgetAnnotation:is(.checkBox, .radioButton):has(
+      [data-canvas-name="unchecked"]
+    )
+    input:not(:checked){
+    background-image:none;
   }
 
   .fileAttachmentAnnotation .popupTriggerArea{
@@ -1417,6 +1465,16 @@
 }
 
 .canvasWrapper{
+  .selection{
+    position:absolute;
+    top:0;
+    left:0;
+    width:100%;
+    height:100%;
+    pointer-events:none;
+    background:rgb(0 90 255 / 0.22);
+  }
+
   svg{
     transform:none;
 
@@ -2769,6 +2827,7 @@
   padding-bottom:16px;
   flex-direction:column;
   align-items:flex-start;
+  overflow-y:visible;
 
   #editorCommentsSidebarHeader{
     width:100%;
@@ -3419,6 +3478,7 @@
     pointer-events:auto;
     box-sizing:content-box;
     padding:var(--editor-toolbar-padding);
+    user-select:none;
 
     position:absolute;
     inset-inline-end:0;
@@ -4214,6 +4274,7 @@
 
   &::-moz-color-swatch{
     border-radius:100%;
+    margin:0;
   }
 
 }
@@ -4560,6 +4621,7 @@ button.hasPopupMenu{
     transparent 79%
   );
   --menuitem-text-active-fg:var(--menu-text-color);
+  --menuitem-active-border-color:var(--menuitem-border-color);
   --menuitem-focus-bg:color-mix(
     in srgb,
     var(--menu-text-color),
@@ -4575,6 +4637,7 @@ button.hasPopupMenu{
   --menuitem-border-radius:8px;
   --menu-backdrop-filter:none;
   --menu-text-color:light-dark(#15141a, #fbfbfe);
+  --menu-text-disabled-color:var(--menu-text-color);
   --menuitem-text-hover-fg:var(--menu-text-color);
   --menuitem-hover-bg:color-mix(
     in srgb,
@@ -4582,6 +4645,7 @@ button.hasPopupMenu{
     transparent 86%
   );
   --menuitem-hover-background-blend-mode:normal;
+  --disabled-opacity:0.62;
 
   @media screen and (forced-colors: active){
     --menu-bg:Canvas;
@@ -4589,14 +4653,18 @@ button.hasPopupMenu{
     --menu-box-shadow:none;
     --menu-backdrop-filter:none;
     --menu-text-color:ButtonText;
+    --menu-text-disabled-color:GrayText;
     --menu-border-color:CanvasText;
     --menuitem-border-color:none;
     --menuitem-hover-bg:SelectedItemText;
     --menuitem-text-hover-fg:SelectedItem;
     --menuitem-active-bg:SelectedItemText;
+    --menuitem-active-border-color:ButtonText;
     --menuitem-text-active-fg:SelectedItem;
+    --menuitem-focus-bg:ButtonFace;
     --menuitem-focus-outline-color:CanvasText;
     --menuitem-focus-border-color:none;
+    --disabled-opacity:1;
   }
 
   display:flex;
@@ -4621,12 +4689,12 @@ button.hasPopupMenu{
     --menu-mark-icon-size:16px;
   }
 
-  > li{
+  > button{
     display:flex;
     align-items:center;
-    list-style:none;
+    position:relative;
     width:100%;
-    height:24px;
+    height:26px;
     padding-inline:calc(var(--menu-mark-icon-size) + var(--menuitem-gap)) var(--menuitem-gap);
     gap:var(--menuitem-gap);
     box-sizing:border-box;
@@ -4634,7 +4702,7 @@ button.hasPopupMenu{
     border:1px solid var(--menuitem-border-color);
     background:transparent;
 
-    &:has(button.selected)::before{
+    &.selected::after{
       content:"";
       display:inline-block;
       width:11px;
@@ -4644,84 +4712,88 @@ button.hasPopupMenu{
       mask-image:var(--menuitem-checkmark-icon);
       background-color:var(--menu-text-color);
       position:absolute;
-      margin-inline-start:-16px;
+      inset-inline-start:var(--menuitem-gap);
+      top:50%;
+      transform:translateY(-50%);
     }
 
-    &:has(button:disabled){
-      opacity:0.62;
-      pointer-events:none;
-    }
+    &:disabled{
+      opacity:var(--disabled-opacity);
 
-    &:hover{
-      background:var(--menuitem-hover-bg);
-      background-blend-mode:var(--menuitem-hover-background-blend-mode);
-      > button{
-        &:not(.noIcon)::before{
-          background-color:var(--menuitem-text-hover-fg);
-        }
-        > span{
-          color:var(--menuitem-text-hover-fg);
-        }
+      &.selected::after{
+        background-color:var(--menu-text-disabled-color);
       }
-      &:has(button.selected)::before{
-        background-color:var(--menuitem-text-hover-fg);
-      }
-    }
-
-    &:active{
-      background-color:var(--menuitem-active-bg);
-      > button > span{
-        color:var(--menuitem-text-active-fg);
-      }
-    }
-
-    &:has(> button:focus-visible){
-      border-color:var(--menuitem-focus-border-color);
-      background-color:var(--menuitem-focus-bg);
-      outline:2px solid var(--menuitem-focus-outline-color);
-      outline-offset:2px;
-    }
-
-    > button{
-      display:flex;
-      flex-direction:row;
-      align-items:center;
-      width:100%;
-      height:auto;
-      padding:var(--menuitem-gap);
-      gap:var(--menuitem-gap);
-      background:transparent;
-      border:none;
 
       &:not(.noIcon)::before{
-        display:inline-block;
-        width:var(--menu-icon-size);
-        height:var(--menu-icon-size);
-        content:"";
-        mask-size:cover;
-        mask-position:center;
-        background-color:var(--menu-text-color);
-      }
-
-      &:focus-visible{
-        outline:none;
+        background-color:var(--menu-text-disabled-color);
       }
 
       > span{
-        display:inline-block;
-        width:max-content;
-        height:auto;
-        text-align:start;
-        color:var(--menu-text-color);
-        user-select:none;
-        padding-inline-start:6px;
-
-        font:menu;
-        font-size:13px;
-        font-style:normal;
-        font-weight:510;
-        line-height:normal;
+        color:var(--menu-text-disabled-color);
       }
+    }
+
+    &:not(:disabled){
+      &:hover{
+        background:var(--menuitem-hover-bg);
+        background-blend-mode:var(--menuitem-hover-background-blend-mode);
+
+        &:not(.noIcon)::before{
+          background-color:var(--menuitem-text-hover-fg);
+        }
+
+        > span{
+          color:var(--menuitem-text-hover-fg);
+        }
+
+        &.selected::after{
+          background-color:var(--menuitem-text-hover-fg);
+        }
+      }
+
+      &:active{
+        background-color:var(--menuitem-active-bg);
+        border-color:var(--menuitem-active-border-color);
+
+        > span{
+          color:var(--menuitem-text-active-fg);
+        }
+      }
+
+      &:focus-visible{
+        border-color:var(--menuitem-focus-border-color);
+        background-color:var(--menuitem-focus-bg);
+        outline:2px solid var(--menuitem-focus-outline-color);
+        outline-offset:2px;
+      }
+    }
+
+    &:not(.noIcon)::before{
+      display:inline-block;
+      width:var(--menu-icon-size);
+      height:var(--menu-icon-size);
+      content:"";
+      mask-size:cover;
+      mask-position:center;
+      background-color:var(--menu-text-color);
+    }
+
+    > span{
+      display:flex;
+      align-items:center;
+      align-self:stretch;
+      width:100%;
+      min-width:max-content;
+      text-align:start;
+      color:var(--menu-text-color);
+      user-select:none;
+      padding-inline-start:6px;
+
+      font:menu;
+      font-size:13px;
+      font-style:normal;
+      font-weight:510;
+      line-height:normal;
     }
   }
 }
@@ -4845,7 +4917,7 @@ button.hasPopupMenu{
   &.viewsManagerOpen{
     #viewsManager{
       visibility:visible;
-      inset-inline-start:1px;
+      inset-inline-start:8px;
     }
 
     #viewerContainer:not(.pdfPresentationMode){
@@ -4874,11 +4946,12 @@ button.hasPopupMenu{
   --pages-selected-icon:url(images/pages_selected.svg);
   --spinner-icon:url(images/altText_spinner.svg);
 
-  --sidebar-bg-color:light-dark(rgb(255 255 255 / 0.92), rgb(35 34 43 / 0.92));
+  --sidebar-bg-color:light-dark(rgb(255 255 255 / 0.92), rgb(66 65 77 / 0.92));
   --sidebar-backdrop-filter:blur(7px);
   --sidebar-width:230px;
   --sidebar-min-width:min-content;
   --sidebar-max-width:50vw;
+  --sidebar-block-padding:8px;
 
   --text-color:light-dark(#15141a, #fbfbfe);
   --button-fg:var(--text-color);
@@ -4905,16 +4978,22 @@ button.hasPopupMenu{
   --status-warning-bg:light-dark(#ffe8ea, #6e001f);
   --indicator-warning-color:light-dark(#b20037, #ffa0aa);
   --header-shadow:0 0.25px 0.75px -0.75px light-dark(rgb(0 0 0 / 0.05), rgb(0 0 0 / 0.2)), 0 2px 6px -6px light-dark(rgb(0 0 0 / 0.1), rgb(0 0 0 / 0.4));
+  --header-bg:light-dark(rgb(255 255 255 / 0.92), #42414e);
   --image-outline:none;
   --image-border-width:6px;
   --image-border-color:light-dark(#cfcfd8, #3a3944);
   --image-hover-border-color:#bfbfc9;
   --image-current-border-color:var(--button-focus-outline-color);
   --image-current-focused-outline-color:var(--image-hover-border-color);
-  --image-page-number-bg:light-dark(#f0f0f4, #23222b);
+  --image-page-number-bg:light-dark(#f0f0f4, #42414d);
   --image-page-number-fg:var(--text-color);
+  --image-page-number-border-color:transparent;
+  --image-hover-page-number-bg:var(--image-page-number-bg);
+  --image-hover-page-number-fg:var(--image-page-number-fg);
   --image-current-page-number-bg:var(--image-current-border-color);
   --image-current-page-number-fg:light-dark(#fff, #15141a);
+  --image-current-hover-page-number-bg:var(--image-current-page-number-bg);
+  --image-current-hover-page-number-fg:var(--image-current-page-number-fg);
   --image-shadow:0 0.375px 1.5px 0 light-dark(rgb(0 0 0 / 0.05), rgb(0 0 0 / 0.2)), 0 0 0 1px var(--image-border-color), 0 3px 12px 0 light-dark(rgb(0 0 0 / 0.1), rgb(0 0 0 / 0.4));
   --image-hover-shadow:0 0.375px 1.5px 0 light-dark(rgb(0 0 0 / 0.05), rgb(0 0 0 / 0.2)), 0 0 0 1px light-dark(rgb(21 20 26 / 0.1), rgb(251 251 254 / 0.1)), 0 0 0 var(--image-border-width) var(--image-hover-border-color), 0 3px 12px 0 light-dark(rgb(0 0 0 / 0.1), rgb(0 0 0 / 0.4));
   --image-current-shadow:0 0.375px 1.5px 0 light-dark(rgb(0 0 0 / 0.05), rgb(0 0 0 / 0.2)), 0 0 0 var(--image-border-width) var(--image-current-border-color), 0 3px 12px 0 light-dark(rgb(0 0 0 / 0.1), rgb(0 0 0 / 0.4));
@@ -4922,9 +5001,11 @@ button.hasPopupMenu{
     rgb(0 98 250 / 0.08),
     rgb(0 202 219 / 0.08)
   );
+  --image-dragging-placeholder-border:var(--image-outline);
   --multiple-dragging-bg:white;
   --image-multiple-dragging-shadow:0 0 0 var(--image-border-width) var(--image-current-border-color), var(--image-border-width) var(--image-border-width) 0 calc(var(--image-border-width) / 2) var(--multiple-dragging-bg), var(--image-border-width) var(--image-border-width) 0 calc(3 * var(--image-border-width) / 2) var(--image-current-border-color);
   --image-dragging-shadow:0 0 0 var(--image-border-width) var(--image-current-border-color);
+  --multiple-dragging-indicator-bg:var(--indicator-color);
   --multiple-dragging-text-color:light-dark(#fbfbfe, #15141a);
 
   @media screen and (forced-colors: active){
@@ -4948,24 +5029,35 @@ button.hasPopupMenu{
     --status-warning-bg:none;
     --indicator-warning-color:CanvasText;
     --header-shadow:none;
-    --image-shadow:0 0 0 1px CanvasText;
-    --image-outline:1px solid CanvasText;
-    --image-border-color:CanvasText;
+    --image-shadow:none;
+    --image-outline:1px solid ButtonText;
+    --image-focus-outline-color:CanvasText;
     --image-hover-border-color:SelectedItem;
-    --image-current-border-color:ButtonBorder;
+    --image-hover-page-number-bg:SelectedItemText;
+    --image-hover-page-number-fg:SelectedItem;
+    --image-current-page-number-bg:ButtonText;
+    --image-current-page-number-fg:ButtonFace;
+    --image-current-border-color:ButtonText;
     --image-current-focused-outline-color:var(--image-hover-border-color);
+    --image-current-hover-page-number-bg:SelectedItem;
+    --image-current-hover-page-number-fg:SelectedItemText;
     --image-page-number-bg:ButtonFace;
-    --image-page-number-fg:CanvasText;
+    --image-page-number-fg:ButtonText;
+    --image-page-number-border-color:var(--image-page-number-fg);
     --multiple-dragging-bg:Canvas;
+    --multiple-dragging-indicator-bg:ButtonBorder;
+    --multiple-dragging-text-color:Canvas;
+    --image-dragging-placeholder-bg:Canvas;
+    --image-dragging-placeholder-border:1px GrayText solid;
   }
 
   display:flex;
   padding-bottom:16px;
   flex-direction:column;
   align-items:flex-start;
+  inset-block-start:calc(100% + var(--sidebar-block-padding));
   height:calc(
-    var(--viewer-container-height) - var(--toolbar-height) -
-      var(--doorhanger-height)
+    var(--viewer-container-height) - 2 * var(--sidebar-block-padding)
   );
   position:absolute;
 
@@ -4977,7 +5069,7 @@ button.hasPopupMenu{
   transition-timing-function:var(--sidebar-transition-timing-function);
 
   .sidebarResizer{
-    inset-inline-start:100%;
+    inset-inline-start:calc(100% + 4px);
   }
 
   .viewsManagerButton{
@@ -5012,10 +5104,11 @@ button.hasPopupMenu{
     }
 
     &.viewsCloseButton{
-      width:32px;
-      height:32px;
+      width:26px;
+      height:26px;
       padding:4px;
       border-radius:8px;
+      background:none;
 
       &::before{
         mask-image:var(--close-button-icon);
@@ -5031,12 +5124,14 @@ button.hasPopupMenu{
     width:100%;
     box-shadow:var(--header-shadow);
     flex:0 0 auto;
+    background-color:var(--header-bg);
 
     .viewsManagerLabel{
-      flex:1 0 0;
+      flex:1 1 auto;
       color:var(--text-color);
       text-align:center;
       height:fit-content;
+      width:fit-content;
       user-select:none;
 
       font:menu;
@@ -5054,6 +5149,15 @@ button.hasPopupMenu{
       justify-content:space-between;
       width:auto;
       padding:12px 16px 12px 8px;
+
+      &:not(:has(#viewsManagerHeaderLabel ~ button:not([hidden])))::after{
+
+        content:"";
+        flex:0 0 auto;
+        width:32px;
+        height:32px;
+        pointer-events:none;
+      }
 
       #viewsManagerSelector{
         width:48px;
@@ -5073,13 +5177,6 @@ button.hasPopupMenu{
             mask-repeat:no-repeat;
             mask-image:var(--views-manager-button-icon);
             background-color:var(--button-fg);
-
-            &:hover{
-              background-color:var(--button-hover-fg) !important;
-            }
-            &:active{
-              background-color:var(--button-active-fg) !important;
-            }
           }
 
           &::after{
@@ -5092,11 +5189,18 @@ button.hasPopupMenu{
             mask-position:center;
             mask-image:var(--views-manager-button-arrow-icon);
             background-color:var(--button-fg);
+          }
 
-            &:hover{
+          &:hover{
+            &::before,
+            &::after{
               background-color:var(--button-hover-fg) !important;
             }
-            &:active{
+          }
+
+          &:active{
+            &::before,
+            &::after{
               background-color:var(--button-active-fg) !important;
             }
           }
@@ -5106,7 +5210,7 @@ button.hasPopupMenu{
           min-width:182px;
           z-index:1;
 
-          > li > button{
+          > button{
             &#thumbnailsViewMenu::before{
               mask-image:var(--menuitem-thumbnailsView-icon);
             }
@@ -5135,6 +5239,11 @@ button.hasPopupMenu{
         &::before{
           mask-repeat:no-repeat;
           mask-image:var(--views-manager-add-file-button-icon);
+          background-color:var(--button-fg);
+        }
+
+        > input{
+          display:none;
         }
       }
 
@@ -5150,22 +5259,27 @@ button.hasPopupMenu{
         &::before{
           mask-repeat:no-repeat;
           mask-image:var(--current-outline-button-icon);
+          background-color:var(--button-fg);
         }
       }
     }
 
     #viewsManagerStatus{
-      display:flex;
-      align-items:center;
-      align-self:stretch;
-      justify-content:space-between;
-      width:auto;
+      display:grid;
+      width:100%;
       border:1px solid var(--status-border-color);
 
       > div{
         min-height:64px;
         width:100%;
         padding-inline:16px;
+        grid-area:1 / 1;
+        box-sizing:border-box;
+
+        &.hidden{
+          visibility:hidden;
+          display:unset !important;
+        }
       }
 
       .viewsManagerStatusLabel{
@@ -5184,15 +5298,53 @@ button.hasPopupMenu{
         align-self:stretch;
         background-color:var(--status-actions-bg);
 
-        > span.selected::before{
-          content:"";
-          display:inline-block;
+        #viewsManagerStatusActionLabelContainer > button{
+          position:relative;
           width:var(--icon-size);
           height:var(--icon-size);
-          mask-repeat:no-repeat;
-          mask-position:center;
-          background-color:var(--indicator-color);
-          mask-image:var(--pages-selected-icon);
+          border:none;
+          padding:0;
+          flex:0 0 auto;
+
+          &::before{
+            content:"";
+            position:absolute;
+            inset:0;
+            mask-repeat:no-repeat;
+            mask-position:center;
+            background-color:var(--indicator-color);
+            mask-image:var(--pages-selected-icon);
+          }
+
+          @media screen and (forced-colors: active){
+            border-radius:2px;
+            background-color:var(--button-bg);
+
+            &::before{
+              background-color:var(--button-fg);
+            }
+            &:hover{
+              background-color:var(--button-hover-bg);
+
+              &::before{
+                background-color:var(--button-hover-fg);
+              }
+            }
+            &:active{
+              background-color:var(--button-active-bg);
+
+              &::before{
+                background-color:var(--button-active-fg);
+              }
+            }
+          }
+
+          &#viewsManagerStatusActionDeselectButton:focus-visible{
+            outline:2px solid var(--button-focus-outline-color);
+            border:1px solid var(--button-focus-border-color);
+            border-radius:2px;
+            outline-offset:1px;
+          }
         }
 
         #actionSelector{
@@ -5219,18 +5371,20 @@ button.hasPopupMenu{
               mask-position:center;
               mask-image:var(--manage-button-icon);
               background-color:var(--button-fg);
+            }
 
-              &:hover{
-                background-color:var(--button-hover-fg) !important;
-              }
-              &:active{
-                background-color:var(--button-active-fg) !important;
-              }
+            &:hover::after{
+              background-color:var(--button-hover-fg) !important;
+            }
+
+            &:active::after{
+              background-color:var(--button-active-fg) !important;
             }
           }
 
           > .popupMenu{
-            width:auto;
+            width:100%;
+            min-width:fit-content;
             z-index:1;
           }
         }
@@ -5323,13 +5477,14 @@ button.hasPopupMenu{
 
     #thumbnailsView{
       --thumbnail-width:126px;
+      --gap-between-input-and-thumbnail:16px;
 
       display:flex;
       flex-flow:row wrap;
       align-items:center;
       justify-content:space-evenly;
       padding:20px 32px;
-      gap:20px;
+      gap:44px;
       width:100%;
       box-sizing:border-box;
       position:relative;
@@ -5350,17 +5505,20 @@ button.hasPopupMenu{
             pointer-events:none;
           }
         }
+      }
 
-        > .dragMarker{
-          position:absolute;
-          top:0;
-          left:0;
-          border:2px solid var(--indicator-color);
-          contain:strict;
-        }
+      &.isDragging > .dragMarker,
+      &.isDraggingFile > .dragMarker{
+        position:absolute;
+        top:0;
+        left:0;
+        border:2px solid var(--indicator-color);
+        contain:strict;
       }
 
       &.pasteMode{
+        gap:var(--gap-between-input-and-thumbnail);
+
         > .thumbnail{
           flex-direction:column;
 
@@ -5390,12 +5548,22 @@ button.hasPopupMenu{
       }
 
       > .thumbnail{
+        --input-dim:16px;
+
+        &:not(&:has(input)){
+          --input-dim:0px;
+          --gap-between-input-and-thumbnail:0px;
+        }
+
         display:inline-flex;
-        justify-content:center;
+        justify-content:flex-end;
         align-items:center;
         flex-direction:row-reverse;
-        gap:16px;
-        width:auto;
+        gap:var(--gap-between-input-and-thumbnail);
+        width:calc(
+          var(--thumbnail-width) + 2 *
+            (var(--input-dim) + var(--gap-between-input-and-thumbnail))
+        );
         height:auto;
         position:relative;
         scroll-margin-top:20px;
@@ -5408,6 +5576,7 @@ button.hasPopupMenu{
         &:not(.isDragging) > .thumbnailImageContainer::after{
           content:attr(page-number);
           border-radius:8px;
+          border:1px solid var(--image-page-number-border-color);
           background-color:var(--image-page-number-bg);
           color:var(--image-page-number-fg);
           position:absolute;
@@ -5416,10 +5585,11 @@ button.hasPopupMenu{
           min-width:32px;
           height:16px;
           text-align:center;
+          box-sizing:content-box;
           translate:calc(var(--dir-factor) * 50%);
 
           font:menu;
-          font-size:13px;
+          font-size:12px;
           font-style:normal;
           font-weight:400;
           line-height:normal;
@@ -5432,6 +5602,7 @@ button.hasPopupMenu{
           > .thumbnailImageContainer::after{
           background-color:var(--image-current-page-number-bg);
           color:var(--image-current-page-number-fg);
+          outline:1px solid var(--image-current-border-color);
         }
 
         &.isDragging > input{
@@ -5440,6 +5611,9 @@ button.hasPopupMenu{
 
         > input{
           margin:0;
+          width:var(--input-dim);
+          height:var(--input-dim);
+          accent-color:var(--indicator-color);
         }
 
         > .thumbnailImageContainer{
@@ -5457,8 +5631,8 @@ button.hasPopupMenu{
           img{
             width:100%;
             height:100%;
-            border:inherit;
-            border-radius:inherit;
+            border:none;
+            border-radius:8px;
             outline:none;
             user-select:none;
             pointer-events:none;
@@ -5471,27 +5645,79 @@ button.hasPopupMenu{
           &:hover{
             cursor:pointer;
             box-shadow:var(--image-hover-shadow);
+
+            &::after{
+              background-color:var(--image-hover-page-number-bg);
+              color:var(--image-hover-page-number-fg);
+            }
+
+            @media screen and (forced-colors: active){
+              box-shadow:none;
+              outline:var(--image-border-width) var(--image-hover-border-color) solid;
+            }
           }
 
           &:focus-visible{
             &:not([aria-current="page"]){
               box-shadow:var(--image-hover-shadow);
               outline:none;
+
+              @media screen and (forced-colors: active){
+                box-shadow:none;
+                outline:var(--image-border-width) var(--image-focus-outline-color) solid;
+              }
             }
 
             &[aria-current="page"]{
               outline:var(--image-border-width) solid var(--image-current-focused-outline-color);
               outline-offset:var(--image-border-width);
+
+              @media screen and (forced-colors: active){
+                box-shadow:none;
+                outline:var(--image-border-width) var(--image-current-border-color) solid;
+                outline-offset:0;
+
+                > img{
+                  outline:var(--image-border-width) var(--image-focus-outline-color) solid;
+                  outline-offset:var(--image-border-width);
+                }
+              }
+            }
+
+            @media screen and (forced-colors: active){
+              box-shadow:none;
+              outline:var(--image-border-width) var(--image-current-border-color) solid;
+
+              &:hover > img{
+                outline:var(--image-border-width) var(--image-hover-border-color) solid;
+                outline-offset:var(--image-border-width);
+              }
             }
           }
 
           &[aria-current="page"]{
             box-shadow:var(--image-current-shadow);
+
+            &:hover::after{
+              background-color:var(--image-current-hover-page-number-bg);
+              color:var(--image-current-hover-page-number-fg);
+            }
+
+            @media screen and (forced-colors: active){
+              box-shadow:none;
+              outline:var(--image-border-width) var(--image-current-border-color) solid;
+
+              &:hover > img{
+                outline:var(--image-border-width) var(--image-hover-border-color) solid;
+                outline-offset:var(--image-border-width);
+              }
+            }
           }
 
           &.placeholder{
             background-color:var(--image-dragging-placeholder-bg);
             box-shadow:none !important;
+            outline:var(--image-dragging-placeholder-border);
           }
 
           &.draggingThumbnail{
@@ -5506,6 +5732,11 @@ button.hasPopupMenu{
 
             &.multiple{
               box-shadow:var(--image-multiple-dragging-shadow);
+
+              @media screen and (forced-colors: active){
+                forced-color-adjust:none;
+                box-shadow:var(--image-multiple-dragging-shadow);
+              }
 
               > .thumbnailImageContainer{
                 position:absolute;
@@ -5523,7 +5754,7 @@ button.hasPopupMenu{
               &::after{
                 content:attr(data-multiple-count);
                 border-radius:calc(8px * var(--thumbnail-dragging-scale));
-                background-color:var(--indicator-color);
+                background-color:var(--multiple-dragging-indicator-bg);
                 color:var(--multiple-dragging-text-color);
                 position:absolute;
                 inset-block-end:calc(4px * var(--thumbnail-dragging-scale));
@@ -5601,6 +5832,7 @@ button.hasPopupMenu{
   --sidebar-max-width:632px;
   --sidebar-width:239px;
   --resizer-width:4px;
+  --resizer-shift:calc(0px - var(--resizer-width) - 2px);
   --resizer-hover-bg-color:light-dark(#0062fa, #00cadb);
 
   @media screen and (forced-colors: active){
@@ -5621,6 +5853,7 @@ button.hasPopupMenu{
   max-width:var(--sidebar-max-width);
   backdrop-filter:var(--sidebar-backdrop-filter);
   box-sizing:border-box;
+  position:relative;
 
   .sidebarResizer{
     width:var(--resizer-width);
@@ -5628,9 +5861,9 @@ button.hasPopupMenu{
     forced-color-adjust:none;
     cursor:ew-resize;
     position:absolute;
-    inset-block:calc(var(--sidebar-padding) + var(--sidebar-border-radius));
-    inset-inline-start:calc(0px - var(--resizer-width) / 2);
-    transition:background-color 0.5s ease-in-out;
+    inset-block:0;
+    inset-inline-start:var(--resizer-shift);
+    transition:background-color 0.5s ease-in-out, border-color 0.5s ease-in-out;
     box-sizing:border-box;
     border:1px solid transparent;
     border-block-width:0;
@@ -5638,6 +5871,7 @@ button.hasPopupMenu{
 
     &:hover{
       background-color:var(--resizer-hover-bg-color);
+      border-color:white;
     }
     &:focus-visible{
       background-color:var(--resizer-hover-bg-color);
@@ -5670,6 +5904,9 @@ button.hasPopupMenu{
   --loading-icon-delay:400ms;
   --focus-ring-color:light-dark(#0060df, #0df);
   --focus-ring-outline:2px solid var(--focus-ring-color);
+  --new-badge-bg:light-dark(#070, #37b847);
+  --new-badge-color:light-dark(#fff, #15141a);
+  --new-badge-border-color:light-dark(#fbfbfe / 40%, #15141a / 40%);
 
   @media screen and (forced-colors: active){
     --pdfViewer-padding-bottom:9px;
@@ -5677,7 +5914,26 @@ button.hasPopupMenu{
     --page-border:1px solid CanvasText;
     --spreadHorizontalWrapped-margin-LR:3.5px;
     --focus-ring-color:CanvasText;
+    --new-badge-bg:AccentColor;
+    --new-badge-color:ButtonFace;
+    --new-badge-border-color:CanvasText;
   }
+}
+
+.newBadge{
+  background-color:var(--new-badge-bg);
+  color:var(--new-badge-color);
+  border-radius:4px;
+  border:1px solid var(--new-badge-border-color);
+  padding-inline:4px;
+  margin-inline:4px;
+  font:menu;
+  font-size:12px;
+  font-style:normal;
+  font-weight:400;
+  line-height:normal;
+  flex:0 0 fit-content;
+  user-select:none;
 }
 
 [data-main-rotation="90"]{
@@ -5688,16 +5944,6 @@ button.hasPopupMenu{
 }
 [data-main-rotation="270"]{
   transform:rotate(270deg) translateX(-100%);
-}
-
-#hiddenCopyElement,
-.hiddenCanvasElement{
-  position:absolute;
-  top:0;
-  left:0;
-  width:0;
-  height:0;
-  display:none;
 }
 
 .pdfViewer{
@@ -7138,9 +7384,13 @@ dialog :link{
       height:1px;
     }
 
-    #toolbarViewerLeft #numPages.toolbarLabel{
-      padding-inline-start:3px;
-      flex:none;
+    #toolbarViewerLeft{
+      margin-inline-start:8px;
+
+      #numPages.toolbarLabel{
+        padding-inline-start:3px;
+        flex:none;
+      }
     }
   }
 

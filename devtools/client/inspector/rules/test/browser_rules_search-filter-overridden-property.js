@@ -29,9 +29,9 @@ add_task(async function () {
 
 async function testFilterOverriddenProperty(inspector, ruleView) {
   info("Check that the correct rules are visible");
-  is(ruleView.element.children.length, 3, "Should have 3 rules.");
+  assertDisplayedRulesCount(ruleView, 3);
 
-  let rule = getRuleViewRuleEditor(ruleView, 1).rule;
+  let rule = getRuleViewRuleEditorAt(ruleView, 1).rule;
   let textPropEditor = getTextProperty(ruleView, 1, { width: "100%" }).editor;
   is(rule.selectorText, "#testid", "Second rule is #testid.");
   ok(
@@ -43,7 +43,7 @@ async function testFilterOverriddenProperty(inspector, ruleView) {
     "Overridden search button is not rendered."
   );
 
-  rule = getRuleViewRuleEditor(ruleView, 2).rule;
+  rule = getRuleViewRuleEditorAt(ruleView, 2).rule;
   textPropEditor = getTextProperty(ruleView, 2, { width: "50%" }).editor;
   is(rule.selectorText, "h1", "Third rule is h1.");
   ok(
@@ -66,7 +66,7 @@ async function testFilterOverriddenProperty(inspector, ruleView) {
   is(searchField.value, "`width`", "The search field value is width.");
   ok(searchField.matches(":focus"), "The search field is focused");
 
-  rule = getRuleViewRuleEditor(ruleView, 1).rule;
+  rule = getRuleViewRuleEditorAt(ruleView, 1).rule;
   textPropEditor = getTextProperty(ruleView, 1, { width: "100%" }).editor;
   is(rule.selectorText, "#testid", "Second rule is #testid.");
   ok(
@@ -74,7 +74,7 @@ async function testFilterOverriddenProperty(inspector, ruleView) {
     "width property is correctly highlighted."
   );
 
-  rule = getRuleViewRuleEditor(ruleView, 2).rule;
+  rule = getRuleViewRuleEditorAt(ruleView, 2).rule;
   textPropEditor = getTextProperty(ruleView, 2, { width: "50%" }).editor;
   is(rule.selectorText, "h1", "Third rule is h1.");
   ok(

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /*
@@ -411,7 +409,10 @@ class JS_PUBLIC_API LSprinter final : public GenericPrinter {
 
  public:
   explicit LSprinter(LifoAlloc* lifoAlloc);
-  ~LSprinter();
+
+  // This LSprinter might be allocated as part of the same LifoAlloc, so we
+  // should not expect the destructor to be called.
+  ~LSprinter() = default;
 
   // Copy the content of the chunks into another printer, such that we can
   // flush the content of this printer to a file.

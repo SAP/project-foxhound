@@ -354,6 +354,50 @@ add_task(async function limit_results() {
 });
 
 /**
+ * Tests that tail suggestions are not suppressed by an AI chat result.
+ */
+add_task(async function ai_chat_does_not_suppress_tail() {
+  let aiChatResult = new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.AI_CHAT,
+    source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+    suggestedIndex: 1,
+    payload: {
+      icon: "chrome://browser/content/aiwindow/assets/ask-icon.svg",
+      query: "what time is it in t",
+      title: "what time is it in t",
+    },
+  });
+  let provider = registerBasicTestProvider([aiChatResult]);
+
+  const query = "what time is it in t";
+  let context = createContext(query, { isPrivate: false });
+  await check_results({
+    context,
+    matches: [
+      makeSearchResult(context, {
+        engineName: TAIL_SUGGESTIONS_ENGINE_NAME,
+        heuristic: true,
+      }),
+      aiChatResult,
+      makeSearchResult(context, {
+        engineName: TAIL_SUGGESTIONS_ENGINE_NAME,
+        suggestion: query + "oronto",
+        tail: "toronto",
+      }),
+      makeSearchResult(context, {
+        engineName: TAIL_SUGGESTIONS_ENGINE_NAME,
+        suggestion: query + "unisia",
+        tail: "tunisia",
+      }),
+    ],
+  });
+
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.unregisterProvider(provider);
+  await cleanUpSuggestions();
+});
+
+/**
  * Tests that tail suggestions are hidden if the pref is disabled.
  */
 add_task(async function disable_pref() {

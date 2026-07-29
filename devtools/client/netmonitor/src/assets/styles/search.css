@@ -117,7 +117,7 @@ button.case-sensitive-btn {
 }
 
 .search-panel .img.loader {
-  background-image: url(chrome://devtools/content/debugger/images/loader.svg);
+  background-image: url(chrome://devtools/content/shared/components/images/loader.svg);
   background-repeat: no-repeat;
   background-position: center;
   background-size: contain;
@@ -136,6 +136,7 @@ button.case-sensitive-btn {
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }

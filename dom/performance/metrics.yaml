@@ -14,7 +14,6 @@ performance.time:
   response_start:
     type: timing_distribution
     time_unit: millisecond
-    telemetry_mirror: TIME_TO_RESPONSE_START_MS
     description: >
       Time from navigationStart to responseStart as per the W3C
       Performance Timing API.

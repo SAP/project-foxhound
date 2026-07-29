@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -476,7 +474,7 @@ static already_AddRefed<gfx::Path> BuildDefaultPathForURL(
   }
 
   using CommandEndPoint =
-      StyleCommandEndPoint<StyleShapePosition<StyleCSSFloat>, StyleCSSFloat>;
+      StyleCommandEndPoint<StyleSVGPathPosition, StyleCSSFloat>;
   Array<const StylePathCommand, 1> array(
       StylePathCommand::Move(CommandEndPoint::ByCoordinate({0.0, 0.0})));
   return SVGPathData::BuildPath(array, aBuilder, StyleStrokeLinecap::Butt, 0.0);

@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=4:tabstop=4:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -40,7 +37,7 @@ typedef struct {
   unsigned long event_mask;    // event stuff
 } XScreenSaverInfo;
 
-typedef bool (*_XScreenSaverQueryExtension_fn)(Display* dpy, int* event_base,
+typedef Bool (*_XScreenSaverQueryExtension_fn)(Display* dpy, int* event_base,
                                                int* error_base);
 typedef XScreenSaverInfo* (*_XScreenSaverAllocInfo_fn)(void);
 typedef void (*_XScreenSaverQueryInfo_fn)(Display* dpy, Drawable drw,

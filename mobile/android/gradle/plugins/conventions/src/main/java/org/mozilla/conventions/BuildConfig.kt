@@ -13,6 +13,66 @@ import org.gradle.api.artifacts.component.ProjectComponentIdentifier
 import org.gradle.api.initialization.Settings
 import org.gradle.api.logging.Logging
 import java.io.File
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import org.gradle.api.tasks.Copy
+
+private val buildIdLogger = Logging.getLogger("org.mozilla.conventions.BuildId")
+
+// Mimic Python: open(os.path.join(buildconfig.topobjdir, 'buildid.h')).readline().split()[2]
+fun getBuildId(topobjdir: String): String {
+    val envDate = System.getenv("MOZ_BUILD_DATE")
+    if (envDate != null) {
+        if (envDate.length == 14) {
+            return envDate
+        }
+        buildIdLogger.warn("Ignoring invalid MOZ_BUILD_DATE: $envDate")
+    }
+
+    return File(topobjdir, "buildid.h").readText().split(Regex("\\s+"))[2]
+}
+
+// Return a manifest version string that respects the Firefox version format,
+// see: https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/version#version_format
+fun getManifestVersionString(componentsVersion: String, topobjdir: String): String {
+    // We assume that the `version.txt` file will always contain a version
+    // string with at least two parts separated with a dot. Below, we extract
+    // each part, and we make sure that there is no letter, e.g. `"0a2"` would
+    // become `"0"`.
+    val parts = componentsVersion.split(".").map { part ->
+        part.split(Regex("[ab]"))[0]
+    }
+
+    // Per https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/version,
+    // each part can have up to 9 digits. Note the single `H` when formatting the output to avoid
+    // leading zeros, which are not allowed.
+    val buildDate = LocalDateTime.parse(
+        getBuildId(topobjdir),
+        DateTimeFormatter.ofPattern("yyyyMMddHHmmss"),
+    )
+    val dateAndTime = buildDate.format(DateTimeFormatter.ofPattern("YYYYMMdd.Hmmss"))
+
+    return "${parts[0]}.${parts[1]}.$dateAndTime"
+}
+
+// Configure a reusable task for updating the version in manifest.json for modules that package
+// a web extension. We automate this to make sure we never forget to update the version, either
+// in local development or for releases. In both cases, we want to make sure the latest version
+// of all extensions (including their latest changes) are installed on first start-up.
+@Suppress("UNCHECKED_CAST")
+fun updateExtensionVersion(task: Copy, extDir: String, componentsVersion: String) {
+    val mozconfig = task.project.gradle.extensions.extraProperties["mozconfig"] as Map<String, Any>
+    val topobjdir = mozconfig["topobjdir"] as String
+
+    task.from(extDir)
+    task.include("manifest.template.json")
+    task.rename { "manifest.json" }
+    task.into(extDir)
+
+    val values = mapOf("version" to getManifestVersionString(componentsVersion, topobjdir))
+    task.inputs.properties(values)
+    task.expand(values)
+}
 
 @Serializable
 data class BuildConfig(

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -223,13 +221,13 @@ bool WindowFeatures::Tokenize(const nsACString& aFeatures) {
 void WindowFeatures::Stringify(nsAutoCString& aOutput) {
   MOZ_ASSERT(aOutput.IsEmpty());
 
-  for (auto r = tokenizedFeatures_.all(); !r.empty(); r.popFront()) {
+  for (auto iter = tokenizedFeatures_.iter(); !iter.done(); iter.next()) {
     if (!aOutput.IsEmpty()) {
       aOutput.Append(',');
     }
 
-    const nsCString& name = r.front().key();
-    const nsCString& value = r.front().value();
+    const nsCString& name = iter.get().key();
+    const nsCString& value = iter.get().value();
 
     aOutput.Append(name);
 

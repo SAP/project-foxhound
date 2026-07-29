@@ -24,6 +24,8 @@ const lazy = XPCOMUtils.declareLazy({
     "moz-src:///browser/components/search/BrowserSearchTelemetry.sys.mjs",
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
+  ConfigSearchEngine:
+    "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
   CustomizableUI:
     "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
@@ -275,7 +277,7 @@ export var SearchUIUtils = {
   updatePlaceholderNamePreference(engine, isPrivate) {
     const prefName =
       "browser.urlbar.placeholderName" + (isPrivate ? ".private" : "");
-    if (engine.isConfigEngine) {
+    if (engine instanceof lazy.ConfigSearchEngine) {
       Services.prefs.setStringPref(prefName, engine.name);
     } else {
       Services.prefs.clearUserPref(prefName);
@@ -407,6 +409,11 @@ export var SearchUIUtils = {
    *   `SearchUtils.URL_TYPE.SEARCH`, which will perform a usual web search.
    * @param {keyof typeof lazy.BrowserSearchTelemetry.KNOWN_SEARCH_SOURCES} options.sapSource
    *   The search access point source.
+   * @param {boolean} [options.avoidBrowserFocus]
+   *   When loading into the current tab, skip focusing the target browser
+   *   element so keyboard focus stays where it was. Used by callers (e.g.
+   *   the Smart Window assistant) that drive a search without user keyboard
+   *   intent and need focus to remain with the initiating UI.
    */
   async loadSearch({
     window,
@@ -420,6 +427,7 @@ export var SearchUIUtils = {
     tab,
     searchUrlType,
     sapSource,
+    avoidBrowserFocus = false,
   }) {
     if (!triggeringPrincipal) {
       throw new Error(
@@ -451,6 +459,7 @@ export var SearchUIUtils = {
       triggeringPrincipal,
       policyContainer,
       targetBrowser: tab?.linkedBrowser,
+      avoidBrowserFocus,
       globalHistoryOptions: {
         triggeringSearchEngine: engine.name,
       },

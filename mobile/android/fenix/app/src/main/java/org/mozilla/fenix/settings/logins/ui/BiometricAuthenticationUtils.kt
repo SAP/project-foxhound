@@ -23,8 +23,8 @@ import androidx.fragment.app.FragmentActivity
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import mozilla.components.ui.widgets.withCenterAlignedButtons
 import org.mozilla.fenix.R
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.secure
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.settings.biometric.BiometricPromptFeature
 
 /**
@@ -178,7 +178,7 @@ object DefaultBiometricUtils : BiometricAuthenticationUtils {
         activity: FragmentActivity,
         onAuthSuccess: () -> Unit,
     ) {
-        if (activity.settings().shouldShowSecurityPinWarning) {
+        if (activity.components.settings.shouldShowSecurityPinWarning) {
             showPinDialogWarning(activity, onAuthSuccess)
         } else {
             onAuthSuccess()
@@ -211,5 +211,5 @@ private fun showPinDialogWarning(
         }
         create().withCenterAlignedButtons()
     }.show().secure(activity)
-    activity.settings().incrementSecureWarningCount()
+    activity.components.settings.incrementSecureWarningCount()
 }

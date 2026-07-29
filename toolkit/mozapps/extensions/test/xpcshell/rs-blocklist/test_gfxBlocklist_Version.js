@@ -85,9 +85,6 @@ async function run_test() {
     Assert.equal(status, "BLOCKED_DRIVER_VERSION");
     Assert.equal(failureId.value, "FEATURE_FAILURE_DL_BLOCKLIST_NO_ID");
 
-    status = gfxInfo.getFeatureStatusStr("STAGEFRIGHT", failureId);
-    Assert.equal(status, "STATUS_OK");
-
     status = gfxInfo.getFeatureStatusStr(
       "WEBRTC_HW_ACCELERATION_H264",
       failureId

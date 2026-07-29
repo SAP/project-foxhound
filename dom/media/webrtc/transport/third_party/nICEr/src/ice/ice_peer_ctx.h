@@ -34,10 +34,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef _ice_peer_ctx_h
 #define _ice_peer_ctx_h
-#ifdef __cplusplus
-using namespace std;
-extern "C" {
-#endif /* __cplusplus */
 
 struct nr_ice_peer_ctx_ {
   int state;
@@ -92,8 +88,5 @@ int nr_ice_peer_ctx_deliver_packet_maybe(nr_ice_peer_ctx *pctx, nr_ice_component
 int nr_ice_peer_ctx_pair_new_trickle_candidate(nr_ice_ctx *ctx, nr_ice_peer_ctx *pctx, nr_ice_candidate *cand);
 void nr_ice_peer_ctx_switch_controlling_role(nr_ice_peer_ctx *pctx);
 
-#ifdef __cplusplus
-}
-#endif /* __cplusplus */
 #endif
 

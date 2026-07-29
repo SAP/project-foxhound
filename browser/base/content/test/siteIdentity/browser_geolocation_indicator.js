@@ -13,6 +13,11 @@ const { PermissionTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/PermissionTestUtils.sys.mjs"
 );
 
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/browser/components/urlbar/tests/browser-UrlbarInput/head.js",
+  this
+);
+
 const CP = Cc["@mozilla.org/content-pref/service;1"].getService(
   Ci.nsIContentPrefService2
 );
@@ -379,4 +384,66 @@ add_task(async function test_permission_no_duplicate_last_access_label() {
   gBrowser.updateBrowserSharing(tab.linkedBrowser, { geo: true });
   await testPermissionPopupGeoContainer(true, true);
   await cleanup(tab);
+});
+
+/**
+ * Tests that on a page with persisted search terms, the geo sharing icon
+ * stays visible, the trust panel is hidden, and the permission popup
+ * can still be opened via the identity-permission-box click handler.
+ */
+add_task(async function test_indicator_on_serp_with_persist_search_terms() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.urlbar.recentsearches.featureGate", false],
+      ["browser.urlbar.showSearchTerms.featureGate", true],
+    ],
+  });
+  let engineCleanup = await installPersistTestEngines();
+
+  let { tab } = await searchWithTab("chocolate cake");
+  ok(
+    gURLBar.hasAttribute("persistsearchterms"),
+    "Urlbar should have persistsearchterms attribute after search."
+  );
+  is(
+    gURLBar.getAttribute("pageproxystate"),
+    "invalid",
+    "Pageproxystate should be invalid on SERP with persisted search terms."
+  );
+
+  gBrowser.updateBrowserSharing(tab.linkedBrowser, { geo: true });
+
+  await testGeoSharingIconVisible(true);
+
+  let identityPermissionBox = document.getElementById(
+    "identity-permission-box"
+  );
+  ok(
+    BrowserTestUtils.isVisible(identityPermissionBox),
+    "Identity permission box is visible on SERP with persisted search terms"
+  );
+
+  let trustIconContainer = document.getElementById("trust-icon-container");
+  ok(
+    !BrowserTestUtils.isVisible(trustIconContainer),
+    "Identity icon box is hidden on SERP with persisted search terms"
+  );
+
+  let mainView = document.getElementById("permission-popup-mainView");
+  let viewShown = BrowserTestUtils.waitForEvent(mainView, "ViewShown");
+  EventUtils.synthesizeMouseAtCenter(identityPermissionBox, {});
+  await viewShown;
+  ok(true, "Permission popup opens on click with persisted search terms");
+
+  let popupHidden = BrowserTestUtils.waitForEvent(
+    gPermissionPanel._permissionPopup,
+    "popuphidden"
+  );
+  gPermissionPanel._permissionPopup.hidePopup();
+  await popupHidden;
+
+  await cleanup(tab);
+  await PlacesUtils.history.clear();
+  engineCleanup();
+  await SpecialPowers.popPrefEnv();
 });

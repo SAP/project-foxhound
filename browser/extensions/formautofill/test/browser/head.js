@@ -62,7 +62,16 @@ const EDIT_ADDRESS_DIALOG_URL =
   "chrome://formautofill/content/editAddress.xhtml";
 const EDIT_CREDIT_CARD_DIALOG_URL =
   "chrome://formautofill/content/editCreditCard.xhtml";
-const PRIVACY_PREF_URL = "about:preferences#privacy";
+// FormAutofill's autocomplete footer + prompts open
+// openPreferences("privacy-payment-methods-autofill"/"privacy-address-autofill"),
+// which the Settings Redesign LegacyPaneMappings shim routes to the
+// passwordsAutofill pane. Pick the matching URL for the active mode.
+const PRIVACY_PREF_URL = Services.prefs.getBoolPref(
+  "browser.settings-redesign.enabled",
+  false
+)
+  ? "about:preferences#passwordsAutofill"
+  : "about:preferences#privacy";
 
 const HTTP_TEST_PATH = "/browser/browser/extensions/formautofill/test/browser/";
 const BASE_URL = "http://mochi.test:8888" + HTTP_TEST_PATH;
@@ -880,12 +889,16 @@ async function clickDoorhangerButton(buttonType, index = 0) {
       "popupshown"
     );
 
-    notification.menubutton.click();
+    notification.menubutton.chevronButtonEl.click();
     info("expecting notification popup show up");
     await dropdownPromise;
 
     button = notification.querySelectorAll("menuitem")[index];
-    notification.menupopup.activateItem(button);
+    if (notification.menupopup.isNativeMenu) {
+      notification.menupopup.activateItem(button);
+    } else {
+      button.click();
+    }
   }
 
   info("expecting notification popup hidden");
@@ -896,7 +909,7 @@ async function clickAddressDoorhangerButton(buttonType, subType) {
   const notification = getNotification();
   let button;
   if (buttonType == EDIT_ADDRESS_BUTTON) {
-    button = AddressSaveDoorhanger.editButton(notification);
+    button = notification.querySelector(`#${AddressSaveDoorhanger.editLinkId}`);
   } else if (buttonType == ADDRESS_MENU_BUTTON) {
     const menu = AutofillDoorhanger.menuButton(notification);
     const menupopup = AutofillDoorhanger.menuPopup(notification);
@@ -908,8 +921,10 @@ async function clickAddressDoorhangerButton(buttonType, subType) {
     } else if (subType == ADDRESS_MENU_LEARN_MORE) {
       button = AutofillDoorhanger.learnMoreButton(notification);
     }
-    menupopup.activateItem(button);
-    return;
+    if (menupopup.isNativeMenu) {
+      menupopup.activateItem(button);
+      return;
+    }
   } else {
     await clickDoorhangerButton(buttonType);
     return;
@@ -1054,7 +1069,9 @@ function fillEditDoorhanger(record) {
   for (const [key, value] of Object.entries(record)) {
     const id = AddressEditDoorhanger.getInputId(key);
     const element = notification.querySelector(`#${id}`);
-    element.value = value;
+    if (element) {
+      element.value = value;
+    }
   }
 }
 
@@ -1078,7 +1095,7 @@ async function verifyConfirmationHint(
   forceClose,
   anchorID = "identity-icon-box"
 ) {
-  let hintElem = browser.ownerGlobal.ConfirmationHint._panel;
+  let hintElem = browser.documentGlobal.ConfirmationHint._panel;
   let popupshown = BrowserTestUtils.waitForPopupEvent(hintElem, "shown");
   let popuphidden;
 
@@ -1597,7 +1614,7 @@ async function add_heuristic_tests(
 
     let regionInfo = null;
     if (testPattern.region) {
-      regionInfo = { home: Region._home, current: Region._current };
+      regionInfo = { home: Region._home, current: Region.current };
 
       const region = testPattern.region;
       Region._setCurrentRegion(region);

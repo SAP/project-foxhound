@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,7 +34,6 @@ class SandboxBrokerClient final : private SandboxBrokerCommon {
   int Chmod(const char* aPath, int aMode);
   int Link(const char* aPath, const char* aPath2);
   int Mkdir(const char* aPath, int aMode);
-  int Symlink(const char* aOldPath, const char* aNewPath);
   int Rename(const char* aOldPath, const char* aNewPath);
   int Unlink(const char* aPath);
   int Rmdir(const char* aPath);

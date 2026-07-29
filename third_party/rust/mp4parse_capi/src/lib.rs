@@ -35,9 +35,11 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use byteorder::WriteBytesExt;
+use fallible_collections::TryReserveError;
 use mp4parse::unstable::rational_scale;
 use std::convert::TryFrom;
 use std::convert::TryInto;
+use std::hash::Hash;
 
 use std::io::Read;
 
@@ -254,6 +256,32 @@ impl Default for Mp4parseTrackAudioInfo {
     }
 }
 
+/// Mastering display colour volume from an `mdcv` box (ISO 14496-12).
+/// Primary indices are R\[0\], G\[1\], B\[2\]. Divide chromaticity values by 50000.0
+/// and luminance values by 10000.0 to obtain physical units (chromaticity, cd/m²).
+#[repr(C)]
+#[derive(Default, Debug)]
+pub struct Mp4parseMasteringDisplayColourVolume {
+    pub display_primaries_x: [u16; 3],
+    pub display_primaries_y: [u16; 3],
+    pub white_point_x: u16,
+    pub white_point_y: u16,
+    /// In units of 0.0001 cd/m²
+    pub max_display_mastering_luminance: u32,
+    /// In units of 0.0001 cd/m²
+    pub min_display_mastering_luminance: u32,
+}
+
+/// Content light level from a `clli` box (ISO 14496-12).
+#[repr(C)]
+#[derive(Default, Debug)]
+pub struct Mp4parseContentLightLevel {
+    /// Maximum content light level in cd/m²
+    pub max_content_light_level: u16,
+    /// Maximum picture average light level in cd/m²
+    pub max_pic_average_light_level: u16,
+}
+
 #[repr(C)]
 #[derive(Default, Debug)]
 pub struct Mp4parseTrackVideoSampleInfo {
@@ -262,6 +290,24 @@ pub struct Mp4parseTrackVideoSampleInfo {
     pub image_height: u16,
     pub extra_data: Mp4parseByteData,
     pub protected_data: Mp4parseSinfInfo,
+    /// True when a `colr` box with `colour_type = 'nclx'` was present. When false,
+    /// the CICP fields below are all zero and must not be interpreted.
+    pub has_colour_info: bool,
+    /// CICP colour primaries (ISO 23091-2 § 8.1). Valid only when `has_colour_info`.
+    pub colour_primaries: u8,
+    /// CICP transfer characteristics (ISO 23091-2 § 8.2). Valid only when `has_colour_info`.
+    pub transfer_characteristics: u8,
+    /// CICP matrix coefficients (ISO 23091-2 § 8.3). Valid only when `has_colour_info`.
+    /// Note: value 0 is a valid CICP value (Identity/GBR), not an absence indicator.
+    pub matrix_coefficients: u8,
+    /// Full range flag from the colr nclx box. Valid only when `has_colour_info`.
+    pub full_range_flag: bool,
+    /// True when an `mdcv` box was present. When false, `mastering_display` must not be read.
+    pub has_mastering_display: bool,
+    pub mastering_display: Mp4parseMasteringDisplayColourVolume,
+    /// True when a `clli` box was present. When false, `content_light_level` must not be read.
+    pub has_content_light_level: bool,
+    pub content_light_level: Mp4parseContentLightLevel,
 }
 
 #[repr(C)]
@@ -433,6 +479,24 @@ impl ContextParser for Mp4parseParser {
 pub struct Mp4parseAvifParser {
     context: AvifContext,
     sample_table: TryHashMap<u32, TryVec<Indice>>,
+}
+
+trait CacheInsertExt<K, V> {
+    fn insert_cache_entry(&mut self, key: K, value: V) -> Result<(), TryReserveError>;
+}
+
+impl<K, V> CacheInsertExt<K, V> for TryHashMap<K, V>
+where
+    K: Eq + Hash,
+{
+    fn insert_cache_entry(&mut self, key: K, value: V) -> Result<(), TryReserveError> {
+        let replaced = self.insert(key, value)?;
+        debug_assert!(
+            replaced.is_none(),
+            "cache entries must never be replaced once published"
+        );
+        Ok(())
+    }
 }
 
 impl Mp4parseAvifParser {
@@ -854,7 +918,7 @@ fn get_track_audio_info(
                         return Err(Mp4parseStatus::Invalid);
                     }
                     Ok(_) => {
-                        opus_header.insert((track_index, desc_i), v)?;
+                        opus_header.insert_cache_entry((track_index, desc_i), v)?;
                         if let Some(v) = opus_header.get(&(track_index, desc_i)) {
                             if v.len() > u32::MAX as usize {
                                 return Err(Mp4parseStatus::Invalid);
@@ -913,7 +977,7 @@ fn get_track_audio_info(
 
     parser
         .audio_track_sample_descriptions
-        .insert(track_index, audio_sample_infos)?;
+        .insert_cache_entry(track_index, audio_sample_infos)?;
     match parser.audio_track_sample_descriptions.get(&track_index) {
         Some(sample_info) => {
             if sample_info.len() > u32::MAX as usize {
@@ -1100,12 +1164,38 @@ fn mp4parse_get_track_video_info_safe(
                 };
             }
         }
+        if let Some(mp4parse::ColourInformation::Nclx(ref nclx)) = video.colour_info {
+            sample_info.has_colour_info = true;
+            sample_info.colour_primaries = nclx.colour_primaries;
+            sample_info.transfer_characteristics = nclx.transfer_characteristics;
+            sample_info.matrix_coefficients = nclx.matrix_coefficients;
+            sample_info.full_range_flag = nclx.full_range_flag;
+        }
+        if let Some(ref mdcv) = video.hdr_mastering_display {
+            sample_info.has_mastering_display = true;
+            sample_info.mastering_display = Mp4parseMasteringDisplayColourVolume {
+                display_primaries_x: mdcv.display_primaries_x,
+                display_primaries_y: mdcv.display_primaries_y,
+                white_point_x: mdcv.white_point_x,
+                white_point_y: mdcv.white_point_y,
+                max_display_mastering_luminance: mdcv.max_display_mastering_luminance,
+                min_display_mastering_luminance: mdcv.min_display_mastering_luminance,
+            };
+        }
+        if let Some(ref clli) = video.hdr_content_light_level {
+            sample_info.has_content_light_level = true;
+            sample_info.content_light_level = Mp4parseContentLightLevel {
+                max_content_light_level: clli.max_content_light_level,
+                max_pic_average_light_level: clli.max_pic_average_light_level,
+            };
+        }
+
         video_sample_infos.push(sample_info)?;
     }
 
     parser
         .video_track_sample_descriptions
-        .insert(track_index, video_sample_infos)?;
+        .insert_cache_entry(track_index, video_sample_infos)?;
     match parser.video_track_sample_descriptions.get(&track_index) {
         Some(sample_info) => {
             if sample_info.len() > u32::MAX as usize {
@@ -1481,7 +1571,7 @@ fn get_indice_table(
 
     if let Some(v) = create_sample_table(track, offset_time) {
         indices.set_indices(&v);
-        sample_table_cache.insert(track_id, v)?;
+        sample_table_cache.insert_cache_entry(track_id, v)?;
         return Ok(());
     }
 

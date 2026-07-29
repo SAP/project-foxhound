@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -458,7 +456,7 @@ class EventRunnable final : public MainThreadProxyRunnable {
         mReadyState(0),
         mUploadEvent(aUploadEvent),
         mProgressEvent(false),
-        mLengthComputable(0),
+        mLengthComputable(false),
         mStatusResult(NS_OK),
         mErrorDetail(NS_OK),
         mScopeObj(RootingCx(), aScopeObj) {}
@@ -767,6 +765,8 @@ bool Proxy::Init(WorkerPrivate* aWorkerPrivate) {
 
   mXHR->SetParameters(mMozAnon, mMozSystem);
   mXHR->SetClientInfoAndController(mClientInfo, mController);
+  mXHR->SetAssociatedBrowsingContextID(
+      aWorkerPrivate->AssociatedBrowsingContextID());
 
   ErrorResult rv;
   mXHRUpload = mXHR->GetUpload(rv);
@@ -1393,6 +1393,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(XMLHttpRequestWorker,
   tmp->mResponseBlob = nullptr;
   tmp->mResponseArrayBufferValue = nullptr;
   tmp->mResponseJSONValue.setUndefined();
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_PTR
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(XMLHttpRequestWorker,
@@ -2297,7 +2298,7 @@ void XMLHttpRequestWorker::GetResponse(JSContext* aCx,
 
       if (!mResponseBlob) {
         mResponseBlob =
-            Blob::Create(GetOwnerGlobal(), mResponseData->mResponseBlobImpl);
+            Blob::Create(GetRelevantGlobal(), mResponseData->mResponseBlobImpl);
       }
 
       if (!mResponseBlob ||

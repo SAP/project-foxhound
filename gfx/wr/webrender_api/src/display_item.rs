@@ -31,10 +31,6 @@ use std::hash::{Hash, Hasher};
 /// events.
 pub type ItemTag = (u64, u16);
 
-/// An identifier used to refer to previously sent display items. Currently it
-/// refers to individual display items, but this may change later.
-pub type ItemKey = u16;
-
 #[repr(C)]
 #[derive(Copy, PartialEq, Eq, Clone, PartialOrd, Ord, Hash, Deserialize, MallocSizeOf, Serialize, PeekPoke)]
 pub struct PrimitiveFlags(u8);
@@ -130,26 +126,6 @@ impl SpaceAndClipInfo {
     }
 }
 
-/// Defines a caller provided key that is unique for a given spatial node, and is stable across
-/// display lists. WR uses this to determine which spatial nodes are added / removed for a new
-/// display list. The content itself is arbitrary and opaque to WR, the only thing that matters
-/// is that it's unique and stable between display lists.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, PeekPoke, Default, Eq, Hash)]
-pub struct SpatialTreeItemKey {
-    key0: u64,
-    key1: u64,
-}
-
-impl SpatialTreeItemKey {
-    pub fn new(key0: u64, key1: u64) -> Self {
-        SpatialTreeItemKey {
-            key0,
-            key1,
-        }
-    }
-}
-
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub enum SpatialTreeItem {
@@ -200,9 +176,6 @@ pub enum DisplayItem {
     PopReferenceFrame,
     PopStackingContext,
     PopAllShadows,
-
-    ReuseItems(ItemKey),
-    RetainedItems(ItemKey),
 
     // For debugging purposes.
     DebugMarker(u32),
@@ -316,16 +289,6 @@ pub struct StickyFrameDescriptor {
     /// original position relative to non-sticky content within the same scrolling frame.
     pub horizontal_offset_bounds: StickyOffsetBounds,
 
-    /// The amount of offset that has already been applied to the sticky frame. A positive y
-    /// component this field means that a top-sticky item was in a scrollframe that has been
-    /// scrolled down, such that the sticky item's position needed to be offset downwards by
-    /// `previously_applied_offset.y`. A negative y component corresponds to the upward offset
-    /// applied due to bottom-stickiness. The x-axis works analogously.
-    pub previously_applied_offset: LayoutVector2D,
-
-    /// A unique (per-pipeline) key for this spatial that is stable across display lists.
-    pub key: SpatialTreeItemKey,
-
     /// A property binding that we use to store an animation ID for APZ
     pub transform: Option<PropertyBinding<LayoutTransform>>,
 }
@@ -350,8 +313,6 @@ pub struct ScrollFrameDescriptor {
     pub scroll_offset_generation: APZScrollGeneration,
     /// Whether this scrollframe document has any scroll-linked effect or not.
     pub has_scroll_linked_effect: HasScrollLinkedEffect,
-    /// A unique (per-pipeline) key for this spatial that is stable across display lists.
-    pub key: SpatialTreeItemKey,
 }
 
 /// A solid or an animating color to draw (may not actually be a rectangle due to complex clips)
@@ -425,7 +386,6 @@ pub struct TextDisplayItem {
     pub font_key: font::FontInstanceKey,
     pub color: ColorF,
     pub glyph_options: Option<font::GlyphOptions>,
-    pub ref_frame_offset: LayoutVector2D,
 } // IMPLICIT: glyphs: Vec<font::GlyphInstance>
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, MallocSizeOf, PartialEq, Serialize, PeekPoke)]
@@ -565,6 +525,10 @@ pub struct BorderRadius {
     pub top_right: LayoutSize,
     pub bottom_left: LayoutSize,
     pub bottom_right: LayoutSize,
+    pub shape_top_left: f32,
+    pub shape_top_right: f32,
+    pub shape_bottom_left: f32,
+    pub shape_bottom_right: f32,
 }
 
 impl Default for BorderRadius {
@@ -574,7 +538,21 @@ impl Default for BorderRadius {
             top_right: LayoutSize::zero(),
             bottom_left: LayoutSize::zero(),
             bottom_right: LayoutSize::zero(),
+            shape_top_left: 1.0,
+            shape_top_right: 1.0,
+            shape_bottom_left: 1.0,
+            shape_bottom_right: 1.0,
         }
+    }
+}
+
+impl BorderRadius {
+    /// True when every corner uses the default round (ellipse) shape.
+    pub fn shapes_all_round(&self) -> bool {
+        self.shape_top_left == 1.0 &&
+        self.shape_top_right == 1.0 &&
+        self.shape_bottom_left == 1.0 &&
+        self.shape_bottom_right == 1.0
     }
 }
 
@@ -866,8 +844,6 @@ pub struct ReferenceFrame {
     /// matrix.
     pub transform: ReferenceTransformBinding,
     pub id: SpatialId,
-    /// A unique (per-pipeline) key for this spatial that is stable across display lists.
-    pub key: SpatialTreeItemKey,
 }
 
 /// If passed in a stacking context display item, inform WebRender that
@@ -901,11 +877,9 @@ pub struct SnapshotInfo {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub struct PushStackingContextDisplayItem {
-    pub origin: LayoutPoint,
     pub spatial_id: SpatialId,
     pub snapshot: Option<SnapshotInfo>,
     pub prim_flags: PrimitiveFlags,
-    pub ref_frame_offset: LayoutVector2D,
     pub stacking_context: StackingContext,
 }
 
@@ -1732,6 +1706,73 @@ pub enum FilterOp {
         base_frequency_x: f32, base_frequency_y: f32, num_octaves: u32, seed: u32},
 }
 
+impl FilterOp {
+    /// Mutable access to the SVGFE filter-graph node carried by every `SVGFE*`
+    /// filter op (the `node` field), or `None` for non-SVGFE ops. The node's
+    /// `subregion` is the only absolutely-positioned geometry an SVGFE op
+    /// carries (in filter/layout space); every other SVGFE coordinate is
+    /// relative. Used by the display-list builder to pre-normalize the
+    /// subregion by the external scroll offset.
+    pub fn svgfe_node_mut(&mut self) -> Option<&mut FilterOpGraphNode> {
+        match self {
+            FilterOp::SVGFEBlendColor { node, .. } |
+            FilterOp::SVGFEBlendColorBurn { node, .. } |
+            FilterOp::SVGFEBlendColorDodge { node, .. } |
+            FilterOp::SVGFEBlendDarken { node, .. } |
+            FilterOp::SVGFEBlendDifference { node, .. } |
+            FilterOp::SVGFEBlendExclusion { node, .. } |
+            FilterOp::SVGFEBlendHardLight { node, .. } |
+            FilterOp::SVGFEBlendHue { node, .. } |
+            FilterOp::SVGFEBlendLighten { node, .. } |
+            FilterOp::SVGFEBlendLuminosity { node, .. } |
+            FilterOp::SVGFEBlendMultiply { node, .. } |
+            FilterOp::SVGFEBlendNormal { node, .. } |
+            FilterOp::SVGFEBlendOverlay { node, .. } |
+            FilterOp::SVGFEBlendSaturation { node, .. } |
+            FilterOp::SVGFEBlendScreen { node, .. } |
+            FilterOp::SVGFEBlendSoftLight { node, .. } |
+            FilterOp::SVGFEColorMatrix { node, .. } |
+            FilterOp::SVGFEComponentTransfer { node, .. } |
+            FilterOp::SVGFECompositeArithmetic { node, .. } |
+            FilterOp::SVGFECompositeATop { node, .. } |
+            FilterOp::SVGFECompositeIn { node, .. } |
+            FilterOp::SVGFECompositeLighter { node, .. } |
+            FilterOp::SVGFECompositeOut { node, .. } |
+            FilterOp::SVGFECompositeOver { node, .. } |
+            FilterOp::SVGFECompositeXOR { node, .. } |
+            FilterOp::SVGFEConvolveMatrixEdgeModeDuplicate { node, .. } |
+            FilterOp::SVGFEConvolveMatrixEdgeModeNone { node, .. } |
+            FilterOp::SVGFEConvolveMatrixEdgeModeWrap { node, .. } |
+            FilterOp::SVGFEDiffuseLightingDistant { node, .. } |
+            FilterOp::SVGFEDiffuseLightingPoint { node, .. } |
+            FilterOp::SVGFEDiffuseLightingSpot { node, .. } |
+            FilterOp::SVGFEDisplacementMap { node, .. } |
+            FilterOp::SVGFEDropShadow { node, .. } |
+            FilterOp::SVGFEFlood { node, .. } |
+            FilterOp::SVGFEGaussianBlur { node, .. } |
+            FilterOp::SVGFEIdentity { node, .. } |
+            FilterOp::SVGFEImage { node, .. } |
+            FilterOp::SVGFEMorphologyDilate { node, .. } |
+            FilterOp::SVGFEMorphologyErode { node, .. } |
+            FilterOp::SVGFEOffset { node, .. } |
+            FilterOp::SVGFEOpacity { node, .. } |
+            FilterOp::SVGFESourceAlpha { node, .. } |
+            FilterOp::SVGFESourceGraphic { node, .. } |
+            FilterOp::SVGFESpecularLightingDistant { node, .. } |
+            FilterOp::SVGFESpecularLightingPoint { node, .. } |
+            FilterOp::SVGFESpecularLightingSpot { node, .. } |
+            FilterOp::SVGFETile { node, .. } |
+            FilterOp::SVGFEToAlpha { node, .. } |
+            FilterOp::SVGFETurbulenceWithFractalNoiseWithNoStitching { node, .. } |
+            FilterOp::SVGFETurbulenceWithFractalNoiseWithStitching { node, .. } |
+            FilterOp::SVGFETurbulenceWithTurbulenceNoiseWithNoStitching { node, .. } |
+            FilterOp::SVGFETurbulenceWithTurbulenceNoiseWithStitching { node, .. }
+ => Some(node),
+            _ => None,
+        }
+    }
+}
+
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, PeekPoke)]
 pub enum ComponentTransferFuncType {
@@ -2048,6 +2089,10 @@ impl BorderRadius {
             top_right: LayoutSize::new(0.0, 0.0),
             bottom_left: LayoutSize::new(0.0, 0.0),
             bottom_right: LayoutSize::new(0.0, 0.0),
+            shape_top_left: 1.0,
+            shape_top_right: 1.0,
+            shape_bottom_left: 1.0,
+            shape_bottom_right: 1.0,
         }
     }
 
@@ -2057,6 +2102,10 @@ impl BorderRadius {
             top_right: LayoutSize::new(radius, radius),
             bottom_left: LayoutSize::new(radius, radius),
             bottom_right: LayoutSize::new(radius, radius),
+            shape_top_left: 1.0,
+            shape_top_right: 1.0,
+            shape_bottom_left: 1.0,
+            shape_bottom_right: 1.0,
         }
     }
 
@@ -2066,6 +2115,10 @@ impl BorderRadius {
             top_right: radius,
             bottom_left: radius,
             bottom_right: radius,
+            shape_top_left: 1.0,
+            shape_top_right: 1.0,
+            shape_bottom_left: 1.0,
+            shape_bottom_right: 1.0,
         }
     }
 
@@ -2078,6 +2131,9 @@ impl BorderRadius {
     }
 
     pub fn can_use_fast_path_in(&self, rect: &LayoutRect) -> bool {
+        if !self.shapes_all_round() {
+            return false;
+        }
         if !self.all_sides_uniform() {
             // The fast path needs uniform sides.
             return false;
@@ -2283,8 +2339,6 @@ impl DisplayItem {
             DisplayItem::RadialGradient(..) => "radial_gradient",
             DisplayItem::Rectangle(..) => "rectangle",
             DisplayItem::SetGradientStops => "set_gradient_stops",
-            DisplayItem::ReuseItems(..) => "reuse_item",
-            DisplayItem::RetainedItems(..) => "retained_items",
             DisplayItem::Text(..) => "text",
             DisplayItem::YuvImage(..) => "yuv_image",
             DisplayItem::BackdropFilter(..) => "backdrop_filter",

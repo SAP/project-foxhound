@@ -13,10 +13,10 @@
 
 namespace mozilla {
 
-#define LOG(msg, ...)                           \
-  MOZ_LOG(gMFMediaEngineLog, LogLevel::Debug,   \
-          ("MFMediaStream=%p (%s), " msg, this, \
-           this->GetDescriptionName().get(), ##__VA_ARGS__))
+#define LOG(msg, ...)                                        \
+  MOZ_LOG_FMT(gMFMediaEngineLog, LogLevel::Debug,            \
+              "MFMediaStream={} ({}), " msg, fmt::ptr(this), \
+              this->GetDescriptionName().get(), ##__VA_ARGS__)
 
 using Microsoft::WRL::ComPtr;
 using Microsoft::WRL::MakeAndInitialize;
@@ -73,8 +73,8 @@ HRESULT MFMediaEngineAudioStream::CreateMediaType(const TrackInfo& aInfo,
     RETURN_IF_FAILED(mediaType->SetBlob(
         MF_MT_USER_DATA, mAACUserData.Elements(), mAACUserData.Length()));
   }
-  LOG("Created audio type, subtype=%s, channel=%" PRIu32 ", rate=%" PRIu32
-      ", bitDepth=%" PRIu64 ", encrypted=%d",
+  LOG("Created audio type, subtype={}, channel={}, rate={}, bitDepth={}, "
+      "encrypted={}",
       GUIDToStr(subType), info.mChannels, info.mRate, bitDepth,
       mAudioInfo.mCrypto.IsEncrypted());
 

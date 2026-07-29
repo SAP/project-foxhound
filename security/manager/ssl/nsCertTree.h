@@ -73,7 +73,7 @@ class nsCertTree final : public nsICertTree {
   };
 
  private:
-  virtual ~nsCertTree();
+  ~nsCertTree();
 
   void ClearCompareHash();
   void RemoveCacheEntry(nsIX509Cert* key);

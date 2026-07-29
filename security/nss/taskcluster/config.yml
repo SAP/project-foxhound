@@ -42,9 +42,9 @@ taskgraph:
         nspr:
             name: NSPR
             project-regex: nspr
-            default-repository: https://hg.mozilla.org/projects/nspr
-            default-ref: default
-            type: hg
+            default-repository: https://github.com/mozilla/nspr
+            default-ref: main
+            type: git
 
     decision-parameters: 'nss_taskgraph:decision_parameters'
     register: 'nss_taskgraph:register'

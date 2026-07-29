@@ -524,6 +524,7 @@ def build_src(install_dir, host, targets, patches):
                 "CC_x86_64_pc_windows_msvc": "clang-cl.bat",
                 "CXX_x86_64_pc_windows_msvc": "clang-cl.bat",
                 "AR_x86_64_pc_windows_msvc": "llvm-lib",
+                "RUSTC_WINDOWS_RC": "llvm-rc",
             })
 
         # x.py install does everything we need for us.

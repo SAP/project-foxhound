@@ -28,9 +28,10 @@ class ToolbarsIntegrationTest {
     private val context: Context = mockk(relaxed = true)
     private val browserLayout: ViewGroup = mockk(relaxed = true)
     private val engineView: EngineView = mockk(relaxed = true)
-    private val toolbar: FenixBrowserToolbarView = mockk(relaxed = true)
+    private val toolbar: BrowserToolbarComposable = mockk(relaxed = true)
     private val navbar: BrowserNavigationBar = mockk(relaxed = true)
-    private val onToolbarsReset: () -> Unit = mockk(relaxed = true)
+    private var onToolbarsResetCount = 0
+    private val onToolbarsReset: () -> Unit = { onToolbarsResetCount++ }
 
     private val topToolbarHeight = 150
     private val minimalBottomToolbarHeight = 32
@@ -72,7 +73,7 @@ class ToolbarsIntegrationTest {
 
         toolbarsIntegration.onKeyboardShown(isKeyboardShown = true)
 
-        verify(exactly = 0) { onToolbarsReset() }
+        assertEquals(0, onToolbarsResetCount)
         verify(exactly = 0) { toolbar.enableScrolling() }
         assertEquals(23, layoutParams.topMargin)
         assertEquals(32, layoutParams.bottomMargin)
@@ -87,7 +88,7 @@ class ToolbarsIntegrationTest {
 
         toolbarsIntegration.onKeyboardShown(isKeyboardShown = true)
 
-        verify(exactly = 0) { onToolbarsReset() }
+        assertEquals(0, onToolbarsResetCount)
         assertEquals(34, layoutParams.topMargin)
         assertEquals(45, layoutParams.bottomMargin)
     }
@@ -104,7 +105,7 @@ class ToolbarsIntegrationTest {
 
         assertEquals(0, layoutParams.topMargin)
         assertEquals(0, layoutParams.bottomMargin)
-        verify { onToolbarsReset() }
+        assertEquals(1, onToolbarsResetCount)
         verify { toolbar.enableScrolling() }
     }
 

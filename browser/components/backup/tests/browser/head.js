@@ -90,3 +90,36 @@ function createMockPassInputEventPromise(inputEl, mockPassword) {
   inputEl.dispatchEvent(new Event("input"));
   return promise;
 }
+
+/**
+ * Waits for the backup-settings element to be rendered in the DOM and returns it.
+ *
+ * @param {Browser} browser
+ *  the browser instance containing the about:preferences page
+ * @returns {Promise<Element>}
+ *  resolves to the backup-settings element once it's rendered
+ */
+async function waitForBackupSettings(browser) {
+  let settingsGroup = browser.contentDocument.querySelector(
+    "setting-group[groupid='backup']"
+  );
+
+  await BrowserTestUtils.waitForMutationCondition(
+    settingsGroup,
+    { childList: true, subtree: true },
+    () => browser.contentDocument.querySelector("backup-settings")
+  );
+
+  let settings = browser.contentDocument.querySelector("backup-settings");
+  await settings.updateComplete;
+
+  // Wait for BackupService state to propagate to the component, which
+  // happens asynchronously after the element is connected to the DOM.
+  await BrowserTestUtils.waitForMutationCondition(
+    settings.shadowRoot,
+    { childList: true, subtree: true },
+    () => settings.backupServiceState.archiveEnabledStatus
+  );
+
+  return settings;
+}

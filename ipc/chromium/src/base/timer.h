@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -78,7 +76,7 @@ class BaseTimer_Helper {
   }
 
  protected:
-  BaseTimer_Helper() {}
+  BaseTimer_Helper() = default;
 
   // We have access to the timer_ member so we can orphan this task.
   class TimerTask : public mozilla::Runnable {
@@ -88,7 +86,7 @@ class BaseTimer_Helper {
           delay_(delay) {
       // timer_ is set in InitiateDelayedTask.
     }
-    virtual ~TimerTask() {}
+    virtual ~TimerTask() = default;
     BaseTimer_Helper* timer_;
     TimeDelta delay_;
   };

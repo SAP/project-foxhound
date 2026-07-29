@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -795,7 +793,8 @@ class Replay {
           num_sloppy_objects++;
         }
 
-        if (used <= stats.quantum_wide_max) {
+        if (used <=
+            (stats.subpage_max ? stats.subpage_max : stats.quantum_wide_max)) {
           // We know that this is an inefficient linear search, but there's a
           // small number of bins and this is simple.
           for (unsigned i = 0; i < num_bins; i++) {
@@ -840,6 +839,7 @@ class Replay {
     FdPrintf(mStdErr, "bin-unused:       %9zu\n", stats.bin_unused);
     FdPrintf(mStdErr, "quantum-max:      %9zu\n", stats.quantum_max);
     FdPrintf(mStdErr, "quantum-wide-max: %9zu\n", stats.quantum_wide_max);
+    FdPrintf(mStdErr, "subpage-max:      %9zu\n", stats.subpage_max);
     FdPrintf(mStdErr, "large-max:        %9zu\n", stats.large_max);
     if (mCalculateSlop) {
       size_t slop = mTotalAllocatedSize - mTotalRequestedSize;

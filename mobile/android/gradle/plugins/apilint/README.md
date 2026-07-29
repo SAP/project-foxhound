@@ -2,7 +2,7 @@
 Tracks the API of an Android library and helps maintain backward compatibility.
 
 ## Tasks
-The apilint plugin provies the following tasks.
+The apilint plugin provides the following tasks.
 
 <code><b>apiLint<i>VariantName</i></b></code> Checks that the current API is
 backward compatible with the API specified in a file, by default located in

@@ -11,11 +11,15 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "chrome://remote/content/shared/listeners/ConsoleAPIListener.sys.mjs",
   ConsoleListener:
     "chrome://remote/content/shared/listeners/ConsoleListener.sys.mjs",
+  formatConsoleMessage:
+    "chrome://remote/content/webdriver-bidi/ConsoleMessageFormatter.sys.mjs",
   isChromeFrame: "chrome://remote/content/shared/Stack.sys.mjs",
   OwnershipModel: "chrome://remote/content/webdriver-bidi/RemoteValue.sys.mjs",
   setDefaultSerializationOptions:
     "chrome://remote/content/webdriver-bidi/RemoteValue.sys.mjs",
 });
+
+const METHODS_WITHOUT_PRINTER = ["clear", "groupEnd"];
 
 class LogModule extends WindowGlobalBiDiModule {
   #consoleAPIListener;
@@ -107,33 +111,48 @@ class LogModule extends WindowGlobalBiDiModule {
     const {
       // `arguments` cannot be used as variable name in functions
       arguments: messageArguments,
+      columnNumber,
+      counter,
+      filename,
+      functionName,
       // `level` corresponds to the console method used
       level: method,
+      lineNumber,
       stacktrace,
+      timer,
       timeStamp,
     } = data;
+
+    // Skip the console methods which don't print anything in the console.
+    // And "console.time" if it doesn't contain error
+    // (the error has to be reported in the console).
+    if (
+      METHODS_WITHOUT_PRINTER.includes(method) ||
+      (method === "time" && !timer?.error)
+    ) {
+      return;
+    }
 
     // Step numbers below refer to the specifications at
     //   https://w3c.github.io/webdriver-bidi/#event-log-entryAdded
 
-    // Translate the console message method to a log.LogEntry level
-    const logEntrylevel = this.#getLogEntryLevelFromConsoleMethod(method);
+    let logEntrylevel;
+    if (
+      (["time", "timeEnd", "timeLog"].includes(method) && timer?.error) ||
+      (method === "countReset" && counter?.error)
+    ) {
+      // For the "console.countReset/time/timeEnd/timeLog"
+      // we have to report a warning in a case of an error.
+      logEntrylevel = "warn";
+    } else {
+      // Translate the console message method to a log.LogEntry level
+      logEntrylevel = this.#getLogEntryLevelFromConsoleMethod(method);
+    }
 
     // Use the message's timeStamp or fallback on the current time value.
     const timestamp = timeStamp || Date.now();
 
-    // Start assembling the text representation of the message.
-    let text = "";
-
-    // Formatters have already been applied at this points.
-    // message.arguments corresponds to the "formatted args" from the
-    // specifications.
-
-    // Concatenate all formatted arguments in text
-    // TODO: For m1 we only support string arguments, so we rely on the builtin
-    // toString for each argument which will be available in message.arguments.
     const args = messageArguments || [];
-    text += args.map(String).join(" ");
 
     const defaultRealm = this.messageHandler.getRealm();
     const serializedArgs = [];
@@ -155,14 +174,28 @@ class LogModule extends WindowGlobalBiDiModule {
       );
     }
 
+    // Start assembling the text representation of the message.
+    const text = lazy.formatConsoleMessage({
+      counter,
+      messageArguments,
+      method,
+      serializedArgs,
+      timer,
+    });
+
     // Set source to an object which contains realm and browsing context.
     // TODO: Bug 1742589. Use an actual realm from which the event came from.
     const source = this.#buildSource(defaultRealm);
 
-    // Set stack trace only for certain methods.
     let stackTrace;
-    if (["assert", "error", "trace", "warn"].includes(method)) {
+    if (stacktrace) {
       stackTrace = this.#buildStackTrace(stacktrace);
+    } else if (filename) {
+      // Bug 1944136: Build a top-most frame until we have
+      // full stacktrace support for all console API types.
+      stackTrace = this.#buildStackTrace([
+        { columnNumber, filename, functionName, lineNumber },
+      ]);
     }
 
     // Build the ConsoleLogEntry

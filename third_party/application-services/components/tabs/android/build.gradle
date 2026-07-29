@@ -1,0 +1,17 @@
+apply from: "$appServicesRootDir/build-scripts/component-common.gradle"
+apply from: "$appServicesRootDir/publish.gradle"
+
+android {
+    namespace 'org.mozilla.appservices.remotetabs'
+}
+
+dependencies {
+    // Part of the public API.
+    api project(':sync15')
+
+    testImplementation project(':syncmanager')
+}
+
+ext.configureUniFFIBindgen("tabs")
+ext.dependsOnTheMegazord()
+ext.configurePublish()

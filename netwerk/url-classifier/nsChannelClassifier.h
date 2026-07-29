@@ -9,8 +9,6 @@
 #include "nsIURIClassifier.h"
 #include "nsCOMPtr.h"
 
-#include <functional>
-
 class nsIChannel;
 
 namespace mozilla {

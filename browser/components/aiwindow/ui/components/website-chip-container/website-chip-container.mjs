@@ -21,6 +21,7 @@ export class WebsiteChipContainer extends MozLitElement {
   static properties = {
     websites: { type: Array },
     chipType: { type: String },
+    removable: { type: Boolean },
   };
 
   constructor() {
@@ -28,6 +29,7 @@ export class WebsiteChipContainer extends MozLitElement {
     /** @type {ContextWebsite[]} */
     this.websites = [];
     this.chipType = "context-chip";
+    this.removable = false;
   }
 
   #onRemoveWebsite(website, event) {
@@ -56,16 +58,26 @@ export class WebsiteChipContainer extends MozLitElement {
           ${repeat(
             this.websites,
             website => website.url,
-            website => html`
-              <ai-website-chip
-                .type=${this.chipType}
-                .label=${website.label}
-                .href=${website.url}
-                .iconSrc=${website.iconSrc ?? ""}
-                @ai-website-chip:remove=${e =>
-                  this.#onRemoveWebsite(website, e)}
-              ></ai-website-chip>
-            `
+            website =>
+              website.historyDeleted
+                ? html`<div class="chip-history-deleted" role="listitem">
+                    <img
+                      class="chip-history-deleted-icon"
+                      src="chrome://global/skin/icons/defaultFavicon.svg"
+                    />
+                    <span
+                      data-l10n-id="aiwindow-website-chip-history-deleted"
+                    ></span>
+                  </div>`
+                : html`<ai-website-chip
+                    .type=${this.chipType}
+                    .label=${website.label}
+                    .href=${website.url}
+                    .iconSrc=${website.iconSrc ?? ""}
+                    .removable=${this.removable}
+                    @ai-website-chip:remove=${e =>
+                      this.#onRemoveWebsite(website, e)}
+                  ></ai-website-chip>`
           )}
         </div>
       </div>

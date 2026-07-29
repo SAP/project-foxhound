@@ -12,13 +12,11 @@ support-files = [
   "fonts/Ahem.sjs",
   "!/accessible/tests/browser/shared-head.js",
   "!/accessible/tests/mochitest/*.js",
-  "!/accessible/tests/mochitest/events/slow_image.sjs",
+  "!/accessible/tests/browser/events/slow_doc.sjs",
   "!/accessible/tests/mochitest/letters.gif",
   "!/accessible/tests/mochitest/moz.png",
 ]
 prefs = [
-  # Required for the commandfor tests
-  "dom.element.commandfor.enabled=true",
   # Required for the eval in invokeContentTask in shared-head.js
   "security.allow_eval_with_system_principal=true"
 ]
@@ -35,6 +33,8 @@ prefs = [
 https_first_disabled = true
 
 ["browser_caching_domnodeid.js"]
+
+["browser_caching_headinglevel.js"]
 
 ["browser_caching_hyperlink.js"]
 

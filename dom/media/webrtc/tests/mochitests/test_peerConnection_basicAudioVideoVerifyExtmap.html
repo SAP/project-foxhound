@@ -14,6 +14,7 @@
   var test;
   runNetworkTest(async function (options) {
     await pushPrefs(["media.navigator.video.use_transport_cc", true]);
+    await pushPrefs(["media.navigator.audio.use_transport_cc", true]);
 
     test = new PeerConnectionTest(options);
     test.setMediaConstraints([{audio: true}, {video: true}],
@@ -31,6 +32,7 @@
           ["1", "urn:ietf:params:rtp-hdrext:ssrc-audio-level", ""],
           ["2", "urn:ietf:params:rtp-hdrext:csrc-audio-level", "recvonly"],
           ["3", "urn:ietf:params:rtp-hdrext:sdes:mid", ""],
+          ["7", "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01", ""],
         ];
         // *Ugh* ...
         ok(JSON.stringify(audio) ===
@@ -67,6 +69,7 @@
           extensions. */
           ["1", "urn:ietf:params:rtp-hdrext:ssrc-audio-level",""],
           ["3", "urn:ietf:params:rtp-hdrext:sdes:mid",""],
+          ["7", "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01", ""],
         ];
         // *Ugh* ...
         ok(JSON.stringify(audio) ===

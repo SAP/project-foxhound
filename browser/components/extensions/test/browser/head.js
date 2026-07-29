@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 /* exported CustomizableUI makeWidgetId focusWindow forceGC
@@ -56,12 +54,16 @@ const { AppUiTestDelegate, AppUiTestInternals } = ChromeUtils.importESModule(
   "resource://testing-common/AppUiTestDelegate.sys.mjs"
 );
 
-const { Preferences } = ChromeUtils.importESModule(
-  "resource://gre/modules/Preferences.sys.mjs"
-);
-
 ChromeUtils.defineESModuleGetters(this, {
   Management: "resource://gre/modules/Extension.sys.mjs",
+});
+
+ChromeUtils.defineLazyGetter(this, "SidebarTestUtils", () => {
+  const { SidebarTestUtils: utils } = ChromeUtils.importESModule(
+    "resource://testing-common/SidebarTestUtils.sys.mjs"
+  );
+  utils.init(this);
+  return utils;
 });
 
 var { makeWidgetId, promisePopupShown, getPanelForNode, awaitBrowserLoaded } =
@@ -159,7 +161,7 @@ function _ensurePopupsInitialized(element) {
 
 function getRawListStyleImage(button) {
   _ensurePopupsInitialized(button);
-  return button.ownerGlobal.getComputedStyle(button).listStyleImage;
+  return button.documentGlobal.getComputedStyle(button).listStyleImage;
 }
 
 function getListStyleImage(button) {
@@ -169,7 +171,7 @@ function getListStyleImage(button) {
 
 function getRawMenuitemImage(menuitem) {
   _ensurePopupsInitialized(menuitem);
-  return menuitem.ownerGlobal
+  return menuitem.documentGlobal
     .getComputedStyle(menuitem)
     .getPropertyValue("--webextension-menuitem-image");
 }
@@ -194,9 +196,9 @@ async function promiseBrowserContentUnloaded(browser) {
     });
   });
 
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     browser,
-    MSG_WINDOW_DESTROYED,
+    [MSG_WINDOW_DESTROYED],
     MSG_WINDOW_DESTROYED => {
       let innerWindowId = this.content.windowGlobalChild.innerWindowId;
       let observer = subject => {
@@ -498,7 +500,7 @@ async function openContextMenuInPopup(
 
   // Ensure that the document layout has been flushed before triggering the mouse event
   // (See Bug 1519808 for a rationale).
-  await browser.ownerGlobal.promiseDocumentFlushed(() => {});
+  await browser.documentGlobal.promiseDocumentFlushed(() => {});
   let popupShownPromise = BrowserTestUtils.waitForEvent(
     contentAreaContextMenu,
     "popupshown"
@@ -527,7 +529,7 @@ registerCleanupFunction(async function () {
     !ObjectUtils.deepEqual(SidebarController.getUIState(), initialSidebarState)
   ) {
     info("Restoring to initial sidebar state");
-    await SidebarController.initializeUIState(initialSidebarState);
+    await SidebarController.updateUIState(initialSidebarState);
   }
 });
 
@@ -756,7 +758,7 @@ function openTabContextMenu(tab = gBrowser.selectedTab) {
   return openChromeContextMenu(
     "tabContextMenu",
     `.tabbrowser-tab:nth-child(${indexOfTab + 1})`,
-    tab.ownerGlobal
+    tab.documentGlobal
   );
 }
 
@@ -858,15 +860,6 @@ async function triggerPageActionWithKeyboardInPanel(
 
 function closePageAction(extension, win = window) {
   return AppUiTestDelegate.closePageAction(win, extension.id);
-}
-
-function promisePrefChangeObserved(pref) {
-  return new Promise(resolve =>
-    Preferences.observe(pref, function prefObserver() {
-      Preferences.ignore(pref, prefObserver);
-      resolve();
-    })
-  );
 }
 
 function promiseWindowRestored(window) {
@@ -1097,21 +1090,19 @@ function roundCssPixcel(pixel, screen) {
 }
 
 function getCssAvailRect(screen) {
-  const availDeviceLeft = {};
-  const availDeviceTop = {};
-  const availDeviceWidth = {};
-  const availDeviceHeight = {};
-  screen.GetAvailRect(
-    availDeviceLeft,
-    availDeviceTop,
-    availDeviceWidth,
-    availDeviceHeight
-  );
-  const factor = screen.defaultCSSScaleFactor;
-  const left = Math.floor(availDeviceLeft.value / factor);
-  const top = Math.floor(availDeviceTop.value / factor);
-  const width = Math.floor(availDeviceWidth.value / factor);
-  const height = Math.floor(availDeviceHeight.value / factor);
+  const availLeft = {};
+  const availTop = {};
+  const availWidth = {};
+  const availHeight = {};
+  // GetAvailRectDisplayPix is in desktop pixels; divide by the screen's own
+  // CSS-to-desktop scale to get the CSS pixels that window.screenX uses.
+  screen.GetAvailRectDisplayPix(availLeft, availTop, availWidth, availHeight);
+  const cssToDesktop =
+    screen.defaultCSSScaleFactor / screen.contentsScaleFactor;
+  const left = Math.floor(availLeft.value / cssToDesktop);
+  const top = Math.floor(availTop.value / cssToDesktop);
+  const width = Math.floor(availWidth.value / cssToDesktop);
+  const height = Math.floor(availHeight.value / cssToDesktop);
   return {
     left,
     top,
@@ -1135,10 +1126,10 @@ function isRectContained(actualRect, maxRect) {
 }
 
 function getToolboxBackgroundColor() {
-  let toolbox = document.getElementById("navigator-toolbox");
+  let body = document.body;
   // Ignore any potentially ongoing transition.
-  toolbox.style.transitionProperty = "none";
-  let color = window.getComputedStyle(toolbox).backgroundColor;
-  toolbox.style.transitionProperty = "";
+  body.style.transitionProperty = "none";
+  let color = window.getComputedStyle(body).backgroundColor;
+  body.style.transitionProperty = "";
   return color;
 }

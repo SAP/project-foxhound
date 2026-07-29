@@ -11,11 +11,6 @@ function test() {
   waitForExplicitFinish();
 
   (async function () {
-    // Disable rcwn to make cache behavior deterministic.
-    await SpecialPowers.pushPrefEnv({
-      set: [["network.http.rcwn.enabled", false]],
-    });
-
     let tab = await addTab(TAB_URL);
 
     // Create a worker. Post a message to it, and check the reply. Since the

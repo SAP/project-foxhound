@@ -10,7 +10,7 @@ import org.mozilla.fenix.ui.efficiency.helpers.SelectorStrategy
 object CollectionsSelectors {
 
     val ADD_NEW_COLLECTION_BUTTON = Selector(
-        strategy = SelectorStrategy.UIAUTOMATOR2_BY_TEXT,
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
         value = "Add new collection",
         description = "Add new collection from tabs tray collections section",
         groups = listOf("tabsTrayCollectionsSection"),

@@ -246,8 +246,7 @@ export class AddonSearchEngine extends SearchEngine {
 
     let manifest = extension.manifest;
 
-    // For user installed add-ons, we have to simulate the add-on manager
-    // code for loading the correct locale.
+    // We have to simulate the add-on manager code for loading the correct locale.
     // We do this, as in the case of a live language switch, the add-on manager
     // may not have yet reloaded the extension, and there's no way for us to
     // listen for that reload to complete.
@@ -275,10 +274,7 @@ export class AddonSearchEngine extends SearchEngine {
   static async getWebExtensionPolicy(id) {
     let policy = WebExtensionPolicy.getByID(id);
     if (!policy) {
-      let idPrefix = id.split("@")[0];
-      let path = `resource://search-extensions/${idPrefix}/`;
-      await lazy.AddonManager.installBuiltinAddon(path);
-      policy = WebExtensionPolicy.getByID(id);
+      throw new Error("Could not find add-on information");
     }
     // On startup the extension may have not finished parsing the
     // manifest, wait for that here.

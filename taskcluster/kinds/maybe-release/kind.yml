@@ -5,12 +5,18 @@
 loader: taskgraph.loader.transform:loader
 
 transforms:
-    - gecko_taskgraph.transforms.maybe_release:transforms
+    - taskgraph.transforms.task_context
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
     run-on-repo-type: [hg]
     description: Check recent releases and trigger a new ship-it phase if worthwhile.
+    task-context:
+        from-custom:
+            - release-level
+        substitution-fields:
+            - worker-type
+            - scopes
     worker-type: shipit
     worker:
         implementation: shipit-maybe-release

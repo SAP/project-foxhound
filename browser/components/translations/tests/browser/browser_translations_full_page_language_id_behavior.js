@@ -505,3 +505,57 @@ add_task(async function test_norwegian_bokmal_offered_for_translation() {
   panel.removeEventListener("popupshown", handlePopupShown);
   await cleanup();
 });
+
+add_task(
+  async function test_norwegian_bokmal_offered_for_generic_norwegan_translation() {
+    TranslationsParent.testAutomaticPopup = true;
+
+    let wasPopupShown = false;
+    window.FullPageTranslationsPanel.elements; // De-lazify the panel.
+    const { promise: popupShown, resolve } = Promise.withResolvers();
+    const panel = window.document.getElementById(
+      "full-page-translations-panel"
+    );
+    function handlePopupShown() {
+      wasPopupShown = true;
+      panel.removeEventListener("popupshown", handlePopupShown);
+      resolve();
+    }
+    panel.addEventListener("popupshown", handlePopupShown);
+
+    const html = String.raw;
+    const { cleanup, win } = await loadTestPage({
+      html: html`
+        <!DOCTYPE html>
+        <html lang="no">
+          <head>
+            <meta charset="utf-8" />
+          </head>
+          <body>
+            <h1>Hei!</h1>
+            <p>Dette er et enkelt testdokument på norsk bokmål.</p>
+          </body>
+        </html>
+      `,
+      languagePairs: [
+        { fromLang: "nb", toLang: "en" },
+        { fromLang: "en", toLang: "nb" },
+      ],
+    });
+
+    await popupShown;
+    ok(wasPopupShown, "Translation offered");
+    FullPageTranslationsTestUtils.assertSelectedFromLanguage({
+      win,
+      langTag: "nb",
+    });
+    FullPageTranslationsTestUtils.assertSelectedToLanguage({
+      win,
+      langTag: "en",
+    });
+
+    TranslationsParent.testAutomaticPopup = false;
+    panel.removeEventListener("popupshown", handlePopupShown);
+    await cleanup();
+  }
+);

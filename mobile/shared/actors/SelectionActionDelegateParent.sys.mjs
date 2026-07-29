@@ -28,16 +28,14 @@ export class SelectionActionDelegateParent extends GeckoViewActorParent {
       }
 
       case "GeckoView:ShowMagnifier": {
-        return this.eventDispatcher.sendRequest({
-          ...data,
-          type: "GeckoView:ShowMagnifier",
-        });
+        return this.eventDispatcher.sendRequest(
+          "GeckoView:ShowMagnifier",
+          data
+        );
       }
 
       case "GeckoView:HideMagnifier": {
-        return this.eventDispatcher.sendRequest({
-          type: "GeckoView:HideMagnifier",
-        });
+        return this.eventDispatcher.sendRequest("GeckoView:HideMagnifier");
       }
 
       default: {
@@ -56,8 +54,7 @@ export class SelectionActionDelegateParent extends GeckoViewActorParent {
       this.actionId = null;
     }
 
-    this.eventDispatcher?.sendRequest({
-      type: "GeckoView:HideSelectionAction",
+    this.eventDispatcher?.sendRequest("GeckoView:HideSelectionAction", {
       reason,
     });
   }
@@ -66,10 +63,9 @@ export class SelectionActionDelegateParent extends GeckoViewActorParent {
     this.actionId = Services.uuid.generateUUID().toString();
     this.respondTo = aRespondTo;
 
-    this.eventDispatcher?.sendRequest({
-      type: "GeckoView:ShowSelectionAction",
-      actionId: this.actionId,
+    this.eventDispatcher?.sendRequest("GeckoView:ShowSelectionAction", {
       ...aData,
+      actionId: this.actionId,
     });
   }
 

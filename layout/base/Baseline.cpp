@@ -8,80 +8,95 @@
 
 namespace mozilla {
 
-nscoord Baseline::SynthesizeBOffsetFromMarginBox(const nsIFrame* aFrame,
-                                                 WritingMode aWM,
-                                                 BaselineSharingGroup aGroup) {
-  MOZ_ASSERT(!aWM.IsOrthogonalTo(aFrame->GetWritingMode()));
-  auto margin = aFrame->GetLogicalUsedMargin(aWM);
-  if (aGroup == BaselineSharingGroup::First) {
-    if (aWM.IsAlphabeticalBaseline()) {
-      // First baseline for inverted-line content is the block-start margin
-      // edge, as the frame is in effect "flipped" for alignment purposes.
-      return MOZ_UNLIKELY(aWM.IsLineInverted())
-                 ? -margin.BStart(aWM)
-                 : aFrame->BSize(aWM) + margin.BEnd(aWM);
-    }
-    nscoord marginBoxCenter = (aFrame->BSize(aWM) + margin.BStartEnd(aWM)) / 2;
-    return marginBoxCenter - margin.BStart(aWM);
-  }
-  MOZ_ASSERT(aGroup == BaselineSharingGroup::Last);
-  if (aWM.IsAlphabeticalBaseline()) {
-    // Last baseline for inverted-line content is the block-start margin edge,
-    // as the frame is in effect "flipped" for alignment purposes.
-    return MOZ_UNLIKELY(aWM.IsLineInverted())
-               ? aFrame->BSize(aWM) + margin.BStart(aWM)
-               : -margin.BEnd(aWM);
-  }
-  // Round up for central baseline offset, to be consistent with ::First.
-  nscoord marginBoxSize = aFrame->BSize(aWM) + margin.BStartEnd(aWM);
-  nscoord marginBoxCenter = (marginBoxSize / 2) + (marginBoxSize % 2);
-  return marginBoxCenter - margin.BEnd(aWM);
+static inline nscoord ComputeBStartOffset(WritingMode aWM,
+                                          BaselineSharingGroup aGroup,
+                                          nscoord aBSize,
+                                          const LogicalMargin& aMargin) {
+  return aGroup == BaselineSharingGroup::First ? -aMargin.BStart(aWM)
+                                               : aBSize + aMargin.BStart(aWM);
 }
 
-enum class BoxType { Border, Padding, Content };
+static inline nscoord ComputeBEndOffset(WritingMode aWM,
+                                        BaselineSharingGroup aGroup,
+                                        nscoord aBSize,
+                                        const LogicalMargin& aMargin) {
+  return aGroup == BaselineSharingGroup::First ? aBSize + aMargin.BEnd(aWM)
+                                               : -aMargin.BEnd(aWM);
+}
+
+enum class BoxType { Margin, Border, Padding, Content };
 
 template <BoxType aType>
 static nscoord SynthesizeBOffsetFromInnerBox(const nsIFrame* aFrame,
-                                             WritingMode aCBWM,
+                                             WritingMode aWM,
                                              BaselineSharingGroup aGroup) {
   WritingMode wm = aFrame->GetWritingMode();
-  MOZ_ASSERT_IF(aType != BoxType::Border, !aCBWM.IsOrthogonalTo(wm));
-  const nscoord borderBoxSize = aFrame->BSize(aCBWM);
+  MOZ_ASSERT_IF(aType != BoxType::Border, !aWM.IsOrthogonalTo(wm));
+
   const LogicalMargin bp = ([&] {
     switch (aType) {
+      case BoxType::Margin:
+        // Bug 2034085 - This is not currently applying the logical skip sides
+        // to the margin box, unlike the other boxes below. This may be
+        // resulting in incorrect offset calculations if the box is fragmented.
+        return aFrame->GetLogicalUsedMargin(aWM);
       case BoxType::Border:
-        return LogicalMargin(aCBWM);
+        return LogicalMargin(aWM);
       case BoxType::Padding:
-        return aFrame->GetLogicalUsedBorder(wm)
-            .ApplySkipSides(aFrame->GetLogicalSkipSides())
-            .ConvertTo(aCBWM, wm);
+        return LogicalMargin(aWM) -
+               aFrame->GetLogicalUsedBorder(aWM)
+                   .ApplySkipSides(aFrame->GetLogicalSkipSides())
+                   .ConvertTo(aWM, wm);
       case BoxType::Content:
-        return aFrame->GetLogicalUsedBorderAndPadding(wm)
-            .ApplySkipSides(aFrame->GetLogicalSkipSides())
-            .ConvertTo(aCBWM, wm);
+        return LogicalMargin(aWM) -
+               aFrame->GetLogicalUsedBorderAndPadding(wm)
+                   .ApplySkipSides(aFrame->GetLogicalSkipSides())
+                   .ConvertTo(aWM, wm);
     }
     MOZ_CRASH();
   })();
-  if (MOZ_UNLIKELY(aCBWM.IsCentralBaseline())) {
-    nscoord boxBSize = borderBoxSize - bp.BStartEnd(aCBWM);
-    if (aGroup == BaselineSharingGroup::First) {
-      return boxBSize / 2 + bp.BStart(aCBWM);
+
+  BaselineSharingGroup group = aGroup;
+  if (aWM.IsLineInverted()) {
+    group = GetOppositeBaselineSharingGroup(aGroup);
+  }
+
+  // Atomic inlines (inline boxes that are either replaced or which establish
+  // new non-inline formatting contexts) can synthesize a baseline according to
+  // its `alignment-baseline` property. Otherwise, synthesize the baseline
+  // using the default dominant baseline defined by the writing mode.
+  StyleAlignmentBaseline baseline = aFrame->AlignmentBaseline();
+  if (!aFrame->IsAtomicInline() ||
+      baseline == StyleAlignmentBaseline::Baseline) {
+    baseline = aWM.IsCentralBaseline() ? StyleAlignmentBaseline::Central
+                                       : StyleAlignmentBaseline::Alphabetic;
+  }
+
+  // See: https://drafts.csswg.org/css-inline-3/#baseline-synthesis-box
+  switch (baseline) {
+    case StyleAlignmentBaseline::Baseline:
+      MOZ_ASSERT_UNREACHABLE("Baseline is already handled");
+      [[fallthrough]];
+
+    default:
+    case StyleAlignmentBaseline::Alphabetic:
+    case StyleAlignmentBaseline::Ideographic:
+    case StyleAlignmentBaseline::TextBottom:
+      return ComputeBEndOffset(aWM, group, aFrame->BSize(aWM), bp);
+
+    case StyleAlignmentBaseline::Central:
+    case StyleAlignmentBaseline::Mathematical:
+    case StyleAlignmentBaseline::Middle: {
+      nscoord boxBSize = aFrame->BSize(aWM) + bp.BStartEnd(aWM);
+      nscoord halfBoxBSize = (boxBSize / 2) + (boxBSize % 2);
+      return aWM.IsLineInverted() ? -bp.BEnd(aWM) + halfBoxBSize
+                                  : -bp.BStart(aWM) + halfBoxBSize;
     }
-    // Return the same center position as for ::First, but as offset from end:
-    nscoord halfBoxBSize = (boxBSize / 2) + (boxBSize % 2);
-    return halfBoxBSize + bp.BEnd(aCBWM);
+
+    case StyleAlignmentBaseline::Hanging:
+    case StyleAlignmentBaseline::TextTop:
+      return ComputeBStartOffset(aWM, group, aFrame->BSize(aWM), bp);
   }
-  if (aGroup == BaselineSharingGroup::First) {
-    // First baseline for inverted-line content is the block-start content
-    // edge, as the frame is in effect "flipped" for alignment purposes.
-    return MOZ_UNLIKELY(aCBWM.IsLineInverted())
-               ? bp.BStart(aCBWM)
-               : borderBoxSize - bp.BEnd(aCBWM);
-  }
-  // Last baseline for inverted-line content is the block-start content edge,
-  // as the frame is in effect "flipped" for alignment purposes.
-  return MOZ_UNLIKELY(aCBWM.IsLineInverted()) ? borderBoxSize - bp.BStart(aCBWM)
-                                              : bp.BEnd(aCBWM);
 }
 
 nscoord Baseline::SynthesizeBOffsetFromContentBox(const nsIFrame* aFrame,
@@ -100,6 +115,12 @@ nscoord Baseline::SynthesizeBOffsetFromBorderBox(const nsIFrame* aFrame,
                                                  WritingMode aWM,
                                                  BaselineSharingGroup aGroup) {
   return SynthesizeBOffsetFromInnerBox<BoxType::Border>(aFrame, aWM, aGroup);
+}
+
+nscoord Baseline::SynthesizeBOffsetFromMarginBox(const nsIFrame* aFrame,
+                                                 WritingMode aWM,
+                                                 BaselineSharingGroup aGroup) {
+  return SynthesizeBOffsetFromInnerBox<BoxType::Margin>(aFrame, aWM, aGroup);
 }
 
 }  // namespace mozilla

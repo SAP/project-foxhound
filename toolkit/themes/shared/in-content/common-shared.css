@@ -17,30 +17,16 @@
    *    browser.display.background_color.dark
    */
 
-  --in-content-border-invalid: light-dark(var(--red-50), rgb(255, 132, 139));
-
   --categories-width: var(--size-sidebar);
-
-  --dialog-warning-text-color: light-dark(var(--red-60), var(--red-40));
-
-  --blue-40: #45a1ff;
-  --blue-50: #0a84ff;
-  --blue-60: #0060df;
-  --grey-30: #d7d7db;
-  --grey-90-a10: rgba(12, 12, 13, 0.1);
-  --grey-90-a20: rgba(12, 12, 13, 0.2);
-  --grey-90-a30: rgba(12, 12, 13, 0.3);
-  --green-70: #058b00;
-  --orange-50: #ff9400;
-  --red-40: #ff4f5e;
-  --red-50: #ff0039;
-  --red-60: #d70022;
-  --yellow-50: #ffe900;
-  --yellow-60: #d7b600;
-  --yellow-60-a30: rgba(215, 182, 0, 0.3);
-  --yellow-90: #3e2800;
-
-  --card-padding: 16px;
+  --dialog-warning-text-color: var(--text-color-error);
+  --message-bar-button-background-color: oklch(from var(--color-gray-100) l c h / 10%);
+  --message-bar-button-background-color-hover: oklch(from var(--color-gray-100) l c h / 20%);
+  --message-bar-button-background-color-active: oklch(from var(--color-gray-100) l c h / 30%);
+  --message-bar-background-color-warning: var(--color-yellow-20);
+  --message-bar-text-color-warning: var(--color-yellow-100);
+  --input-border-color-warning: var(--color-yellow-30);
+  --input-box-shadow-color-warning: oklch(from var(--color-yellow-30) l c h / 30%);
+  --card-padding: var(--space-large);
 
   -moz-theme: non-native;
   color-scheme: light dark;
@@ -54,18 +40,13 @@
    * this in forced colors mode, as we should be using system colours then.
    */
   :root[dialogroot] {
-    --background-color-canvas: #42414d;
+    --background-color-canvas: var(--color-gray-80);
   }
 }
 
 @media (forced-colors) {
   :host(.anonymous-content-host),
   :root {
-    /* This is not great, but there is no suitable keyword for this.
-     * In theory, we shouldn't be conveying invalid state just with a colour
-     * change... */
-    --in-content-border-invalid: ThreeDShadow;
-
     --dialog-warning-text-color: -moz-FieldText;
   }
 }
@@ -90,7 +71,7 @@ html|hr {
 }
 
 .main-content {
-  padding: 40px 28px;
+  padding: var(--space-xxlarge);
   overflow: auto;
 }
 
@@ -102,13 +83,13 @@ xul|tabpanels {
 }
 
 xul|tabs {
-  margin-bottom: 10px;
+  margin-block-end: var(--space-small);
   border-bottom: var(--button-border);
 }
 
 xul|tab {
-  padding: 2px 20px 0;
-  min-height: 44px;
+  padding: var(--space-xxsmall) var(--space-xlarge) 0;
+  min-height: var(--size-item-xlarge);
   border-bottom: 2px solid transparent;
   transition: background-color 50ms ease 0s;
 
@@ -154,15 +135,15 @@ html|select,
 html|input[type="color"],
 xul|menulist {
   appearance: none;
-  min-height: var(--button-min-height);
+  min-height: var(--button-min-height, 32px);
   color: var(--button-text-color);
   border: var(--button-border);
   border-radius: var(--button-border-radius);
   background-color: var(--button-background-color);
   font-weight: normal;
-  padding: 0.45em 1em;
+  padding: var(--button-padding);
   text-decoration: none;
-  margin: 4px 8px;
+  margin: var(--space-xsmall) var(--space-small);
   /* Ensure font-size isn't overridden by widget styling (e.g. in forms.css) */
   font-size: 1em;
 }
@@ -171,11 +152,8 @@ button {
   font-weight: var(--button-font-weight);
 }
 
-/* Small buttons get sized to 6/12px padding (when adding the 1px border) */
 button.small-button {
-  padding: 0.25em 1em;
   font-size: var(--font-size-small);
-  min-height: 28px;
 }
 
 /* Remove margin added by button.css */
@@ -185,7 +163,7 @@ xul|button > .button-box > .button-text {
 
 button {
   /* Use the same margin of other elements for the alignment */
-  margin-inline: 4px;
+  margin-inline: var(--space-xsmall);
 }
 
 button:focus-visible,
@@ -228,7 +206,9 @@ html|select:not([size], [multiple]) {
   font-weight: var(--font-weight-semibold);
 
   /* See above for some explanation about these values. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   padding-inline-start: var(--start-padding);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   padding-inline-end: calc(var(--background-image-width) + var(--end-padding));
   text-overflow: ellipsis;
 }
@@ -269,7 +249,10 @@ html|select:disabled,
 html|input[type="color"]:disabled,
 xul|button[disabled],
 xul|menulist[disabled] {
-  opacity: 0.4;
+  background-color: var(--button-background-color-disabled);
+  border-color: var(--button-border-color-disabled);
+  color: var(--button-text-color-disabled);
+  opacity: var(--button-opacity-disabled);
 }
 
 html|button[autofocus],
@@ -279,6 +262,15 @@ button.primary {
   background-color: var(--button-background-color-primary);
   color: var(--button-text-color-primary);
   border-color: var(--button-border-color-primary);
+}
+
+html|button[autofocus]:disabled,
+html|button[type="submit"]:disabled,
+xul|button[default]:disabled,
+button.primary:disabled {
+  background-color: var(--button-background-color-primary-disabled);
+  border-color: var(--button-border-color-primary-disabled);
+  color: var(--button-text-color-primary-disabled);
 }
 
 html|button[autofocus]:enabled:hover,
@@ -338,8 +330,8 @@ html|button.ghost-button:not(.semi-transparent):enabled:hover:active {
 }
 
 html|button.ghost-button.icon-button {
-  height: 16px;
-  width: 16px;
+  height: var(--icon-size);
+  width: var(--icon-size);
   min-width: auto;
   background-repeat: no-repeat;
   background-size: 16px;
@@ -349,12 +341,12 @@ html|button.ghost-button.icon-button {
 }
 
 html|input[type="color"] {
-  padding: 6px;
-  width: 50px;
+  padding: var(--space-small);
+  width: var(--size-item-xlarge);
 }
 
 xul|menulist[image]::part(icon) {
-  margin-inline-end: 5px;
+  margin-inline-end: var(--space-xsmall);
 }
 
 xul|menulist > xul|menupopup {
@@ -364,10 +356,10 @@ xul|menulist > xul|menupopup {
   border: none;
   background-color: transparent;
 
+  --panel-background-color: var(--background-color-box);
   --panel-border-color: var(--border-color);
   --panel-border-radius: 2px;
-  --panel-background: var(--background-color-box);
-  --panel-color: var(--text-color);
+  --panel-text-color: var(--text-color);
   --panel-padding: 0;
 }
 
@@ -375,8 +367,8 @@ xul|menulist > xul|menupopup xul|menu,
 xul|menulist > xul|menupopup xul|menuitem {
   appearance: none;
   font-size: 1em;
-  padding-block: 0.2em;
-  padding-inline: 10px 30px;
+  padding-block: var(--space-xsmall);
+  padding-inline: var(--space-small) var(--space-xxlarge);
 }
 
 xul|menulist > xul|menupopup > xul|menu:not([disabled])[_moz-menuactive="true"],
@@ -389,14 +381,6 @@ xul|menulist > xul|menupopup > xul|menu:not([disabled])[selected],
 xul|menulist > xul|menupopup > xul|menuitem:not([disabled])[selected] {
   color: var(--text-color-accent-primary-selected);
   background-color: var(--color-accent-primary-selected);
-}
-
-xul|menulist > xul|menupopup > xul|menu[disabled],
-xul|menulist > xul|menupopup > xul|menuitem[disabled] {
-  color: #999;
-  /* override the [_moz-menuactive="true"] background color from
-     global/menu.css */
-  background-color: transparent;
 }
 
 xul|menulist > xul|menupopup xul|menuseparator {
@@ -423,8 +407,8 @@ html|textarea {
   box-sizing: border-box;
   font-family: inherit;
   font-size: inherit;
-  padding: 0.45em;
-  margin: 2px 4px;
+  padding: var(--space-small);
+  margin: var(--space-xxsmall) var(--space-xsmall);
   min-height: var(--input-text-min-height);
 }
 
@@ -444,12 +428,13 @@ xul|richlistbox:focus-visible {
 html|input:where([type="email"], [type="tel"], [type="text"], [type="password"], [type="url"], [type="number"]):user-invalid,
 html|textarea:user-invalid {
   border-color: transparent;
-  outline: 2px solid var(--in-content-border-invalid);
+  outline: 2px solid var(--border-color-error);
   outline-offset: -1px; /* Prevents antialising around the corners */
 }
 
 html|input:where([type="email"], [type="tel"], [type="text"], [type="password"], [type="url"], [type="number"]):disabled,
 html|textarea:disabled {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens -- to be addressed in Bug 2033872 */
   opacity: 0.4;
 }
 
@@ -505,9 +490,8 @@ button.text-link {
 xul|*.radio-check,
 xul|*.checkbox-check,
 html|input:where([type="checkbox"], [type="radio"]) {
-  /* TODO Bug 1876537: Make this em-based, probably? */
-  height: 16px;
-  width: 16px;
+  height: var(--checkbox-size);
+  width: var(--checkbox-size);
   padding: 0;
   margin-block: var(--space-xxsmall);
   margin-inline: 0 var(--checkbox-margin-inline);
@@ -515,7 +499,7 @@ html|input:where([type="checkbox"], [type="radio"]) {
 }
 
 xul|richlistitem > xul|*.checkbox-check {
-  margin: 3px 6px;
+  margin: var(--space-xsmall) var(--checkbox-margin-inline);
 }
 
 html|*.radio-container-with-text,
@@ -530,7 +514,7 @@ xul|radio {
 }
 
 xul|*.radio-label-box {
-  margin-inline: 0 8px;
+  margin-inline: 0 var(--space-small);
   padding-inline-start: 0;
 }
 
@@ -545,14 +529,17 @@ xul|label[disabled] {
 xul|checkbox[disabled] > .checkbox-label-box,
 xul|radio[disabled] > .radio-label-box,
 xul|label[disabled] {
-  opacity: 0.5;
+  color: var(--text-color-disabled);
 }
 
 /* Category List */
 
-#categories {
+#categories:not(moz-page-nav) {
   appearance: none;
   background-color: initial; /* override the background-color set on all richlistboxes in common.inc.css */
+  /* This spacing matches the height of sections with search bars. Ideally this would be calculated from
+   * input height and spacing from those sections. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   margin: 70px 0 0;
   border-width: 0;
   width: var(--categories-width);
@@ -560,12 +547,12 @@ xul|label[disabled] {
 }
 
 @media print {
-  #categories {
+  #categories:not(moz-page-nav) {
     display: none;
   }
 }
 
-html|*#categories {
+html|*#categories:not(moz-page-nav) {
   box-sizing: border-box;
   padding: 1px;
 }
@@ -574,11 +561,11 @@ html|*#categories {
   border: var(--button-border);
   border-color: var(--button-border-color-primary);
   border-radius: var(--border-radius-small);
-  min-height: 48px;
+  min-height: var(--size-item-xlarge);
   appearance: none;
   color: inherit;
-  margin-inline-start: 34px;
-  padding-inline: 10px;
+  margin-inline-start: var(--space-xxlarge);
+  padding-inline: var(--space-small);
   transition: background-color 150ms;
 }
 
@@ -592,7 +579,7 @@ html|*#categories > html|*.category {
   background-position-y: 12px;
   margin-inline-end: 0;
   min-width: auto;
-  padding-inline-start: 34px;
+  padding-inline-start: var(--space-xxlarge);
   text-align: start;
   -moz-context-properties: fill, fill-opacity;
   fill: currentColor;
@@ -638,6 +625,7 @@ html|*#categories > html|*.category:dir(rtl) {
     transition: none;
     /* We need a true transparent but in HCM this would compute to an actual color,
      * so select the page's background color instead: */
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
     border-color: var(--background-color-canvas);
   }
 
@@ -660,16 +648,17 @@ html|*#categories[last-input-type="mouse"] > html|button.category:focus-visible 
 }
 
 .category-name {
-  font-size: 1.07em;
+  font-size: var(--font-size-large);
   line-height: 1.4em;
-  padding-inline-start: 9px;
+  padding-inline-start: var(--space-small);
   margin: 0;
   user-select: none;
 }
 
 .category-icon {
-  width: 24px;
-  height: 24px;
+  width: var(--icon-size-large);
+  height: var(--icon-size-large);
+  margin-inline: auto;
   -moz-context-properties: fill, fill-opacity;
   fill: currentColor;
 }
@@ -690,12 +679,11 @@ html|*#categories[last-input-type="mouse"] > html|button.category:focus-visible 
   }
 
   #categories > .category {
-    padding-inline-start: 12px; /* make category icons align center */
-    margin-inline-end: 33px;
+    margin-inline-end: var(--space-xxlarge);
   }
 
   html|*#categories > html|*.category {
-    width: 48px;
+    width: var(--size-item-xlarge);
     min-width: auto;
     box-sizing: border-box;
   }
@@ -711,16 +699,16 @@ html|*#categories[last-input-type="mouse"] > html|button.category:focus-visible 
   }
 
   .pane-container {
-    margin-inline-end: 10px;
+    margin-inline-end: var(--space-small);
   }
 }
 
 /* header */
 
 .header {
-  margin-inline-end: 4px; /* add the 4px end-margin of other elements */
-  margin-bottom: 15px;
-  padding-bottom: 15px;
+  margin-inline-end: var(--space-xsmall); /* add the same end-margin as other elements */
+  margin-block-end: var(--space-large);
+  padding-block-end: var(--space-large);
   align-items: baseline;
 }
 
@@ -756,7 +744,7 @@ xul|listheader + xul|richlistbox {
 
 html|select[size][multiple] > html|option,
 xul|treechildren::-moz-tree-row {
-  padding: 0.3em;
+  padding: var(--space-xsmall);
   margin: 0;
   border: none;
   border-radius: 0;
@@ -826,8 +814,8 @@ xul|tree {
 xul|treecols {
   appearance: none;
   border: none;
-  border-top-left-radius: 4px;
-  border-top-right-radius: 4px;
+  border-top-left-radius: var(--border-radius-small);
+  border-top-right-radius: var(--border-radius-small);
   border-bottom: var(--button-border);
   overflow: clip; /* Clip border-radius */
   padding: 0;
@@ -840,7 +828,7 @@ xul|treecol:not([hideheader="true"]),
   border-radius: unset;
   background-color: var(--button-background-color);
   color: var(--button-text-color, inherit);
-  padding: 5px 10px;
+  padding: var(--space-small);
 }
 
 xul|treecol:not([hideheader="true"], [sortable="false"]):hover,
@@ -873,8 +861,8 @@ xul|treecol[sortDirection]:not([hideheader="true"]) > xul|*.treecol-sortdirectio
   list-style-image: url("chrome://global/skin/icons/sort-arrow.svg");
   -moz-context-properties: fill;
   fill: currentColor;
-  width: 18px;
-  height: 18px;
+  width: var(--icon-size);
+  height: var(--icon-size);
 }
 
 xul|treecol[sortDirection="ascending"]:not([hideheader="true"]) > xul|*.treecol-sortdirection {
@@ -902,13 +890,13 @@ xul|treechildren::-moz-tree-image(selected) {
 .message-bar {
   background-color: var(--background-color-box-info);
   border-radius: var(--border-radius-small);
-  min-height: 32px;
+  min-height: var(--size-item-large);
   align-items: center;
-  padding: 4px;
+  padding: var(--space-xsmall);
 }
 
 .message-bar-description {
-  margin: 2px 0;
+  margin: var(--space-xxsmall) 0;
   line-height: 1.25;
 }
 
@@ -920,36 +908,36 @@ xul|treechildren::-moz-tree-image(selected) {
 /* The message-bar-button styles have extra specificity to override
  * the defaults for buttons. */
 .message-bar-content > .message-bar-button {
-  background-color: var(--grey-90-a10);
+  background-color: var(--message-bar-button-background-color);
   border: none;
   border-radius: var(--border-radius-xsmall);
-  height: 24px;
-  margin-inline-start: 8px;
-  padding: 0 8px;
+  height: var(--size-item-medium);
+  margin-inline-start: var(--space-small);
+  padding: 0 var(--space-small);
 }
 
 .message-bar-content > .message-bar-button:hover {
-  background-color: var(--grey-90-a20);
+  background-color: var(--message-bar-button-background-color-hover);
 }
 
 .message-bar-content > .message-bar-button:hover:active {
-  background-color: var(--grey-90-a30);
+  background-color: var(--message-bar-button-background-color-active);
 }
 
 .message-bar-icon {
   content: url("chrome://global/skin/icons/info.svg");
-  width: 24px;
-  height: 24px;
-  padding: 4px;
-  margin-inline-end: 4px;
+  width: var(--icon-size-large);
+  height: var(--icon-size-large);
+  padding: var(--space-xsmall);
+  margin-inline-end: var(--space-xsmall);
   -moz-context-properties: fill;
   fill: currentColor;
 }
 
 /* Warning styles */
 .message-bar-warning {
-  background-color: var(--yellow-50);
-  color: var(--yellow-90);
+  background-color: var(--message-bar-background-color-warning);
+  color: var(--message-bar-text-color-warning);
 }
 
 .message-bar-warning > .message-bar-icon {
@@ -957,10 +945,12 @@ xul|treechildren::-moz-tree-image(selected) {
 }
 
 input[type="text"][warning]:enabled:not(:focus) {
-  border-color: var(--yellow-60);
+  border-color: var(--input-border-color-warning);
+  /* Custom box shadow for the warning outline. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   box-shadow:
-    0 0 0 1px var(--yellow-60),
-    0 0 0 4px var(--yellow-60-a30);
+    0 0 0 1px var(--input-border-color-warning),
+    0 0 0 4px var(--input-box-shadow-color-warning);
 }
 
 /* Cards */
@@ -968,23 +958,24 @@ input[type="text"][warning]:enabled:not(:focus) {
 .card {
   background: var(--background-color-box);
   /* Needed for high-contrast where the border will appear. */
-  border: 1px solid var(--border-color-card);
-  border-radius: var(--border-radius-small);
-  box-shadow: var(--box-shadow-card);
-  margin: 0 0 8px;
+  border: 1px solid var(--card-border-color);
+  border-radius: var(--card-border-radius);
+  box-shadow: var(--card-box-shadow);
+  margin: 0 0 var(--space-small);
   /* Remove the border from the overall padding. */
   padding: calc(var(--card-padding) - 1px);
   transition: box-shadow 150ms;
 }
 
 .card:not(.card-no-hover):hover {
-  box-shadow: var(--box-shadow-card-hover);
+  box-shadow: var(--card-box-shadow-hover);
 }
 
 .card-heading-image {
-  border-top-left-radius: 4px;
-  border-top-right-radius: 4px;
-  margin: -16px -16px 16px;
+  border-top-left-radius: var(--border-radius-small);
+  border-top-right-radius: var(--border-radius-small);
+  margin-block: calc(var(--card-padding) * -1) var(--card-padding);
+  margin-inline: calc(var(--card-padding) * -1);
 }
 
 .card-heading-image:dir(rtl) {
@@ -995,13 +986,13 @@ input[type="text"][warning]:enabled:not(:focus) {
 
 .sidebar-footer-list {
   list-style-type: none;
-  margin-block: 0 36px;
-  margin-inline: 34px 0;
+  margin-block-end: var(--space-xxlarge);
+  margin-inline-start: var(--space-xxlarge);
   padding: 0;
 }
 
 .sidebar-footer-link {
-  height: 36px;
+  padding-block: var(--space-xsmall);
   cursor: default;
   border: var(--button-border);
   border-radius: var(--border-radius-small);
@@ -1013,6 +1004,7 @@ input[type="text"][warning]:enabled:not(:focus) {
   .sidebar-footer-link {
     /* We need a true transparent but in HCM this would compute to an actual color,
      * so select the page's background color instead: */
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
     border-color: var(--background-color-canvas);
   }
 }
@@ -1049,33 +1041,34 @@ xul|*.sidebar-footer-link {
 .sidebar-footer-icon {
   -moz-context-properties: fill, fill-opacity;
   fill: currentColor;
-  width: 16px;
-  height: 16px;
-  margin: 10px;
-  margin-inline-start: 13px;
+  width: var(--icon-size);
+  height: var(--icon-size);
+  margin: var(--space-small);
+  margin-inline-start: var(--space-medium);
 }
 
 .sidebar-footer-label {
-  font-size: 0.9em;
-  margin: 0 4px;
+  font-size: var(--font-size-small);
+  margin: 0 var(--space-xsmall);
   user-select: none;
 }
 
 @media (max-width: 830px) {
   .sidebar-footer-list {
-    margin-inline-start: 40px;
-    align-items: flex-start;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-inline: auto;
   }
 
   .sidebar-footer-link {
-    width: 36px;
-    height: 36px;
+    width: var(--size-item-large);
+    height: var(--size-item-large);
     padding-inline-start: 0;
-    margin-inline-start: 1px;
   }
 
   .sidebar-footer-icon {
-    margin-inline-start: 10px;
+    margin-inline: auto;
   }
 
   .sidebar-footer-label {
@@ -1102,7 +1095,7 @@ xul|*.addons-icon {
   background-repeat: no-repeat;
   background-position: center;
   min-width: auto;
-  width: 32px;
+  width: var(--icon-size-xlarge);
   margin-block: 0;
   margin-inline-start: 0;
 }

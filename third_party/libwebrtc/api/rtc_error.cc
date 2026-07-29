@@ -14,6 +14,9 @@
 #include <string>
 
 #include "absl/strings/string_view.h"
+#include "rtc_base/strings/string_builder.h"
+
+namespace webrtc {
 
 namespace {
 
@@ -31,11 +34,10 @@ absl::string_view kRTCErrorTypeNames[] = {
     "INTERNAL_ERROR",
     "OPERATION_ERROR_WITH_DATA",
 };
-static_assert(
-    static_cast<int>(webrtc::RTCErrorType::OPERATION_ERROR_WITH_DATA) ==
-        (std::size(kRTCErrorTypeNames) - 1),
-    "kRTCErrorTypeNames must have as many strings as RTCErrorType "
-    "has values.");
+static_assert(static_cast<int>(RTCErrorType::OPERATION_ERROR_WITH_DATA) ==
+                  (std::size(kRTCErrorTypeNames) - 1),
+              "kRTCErrorTypeNames must have as many strings as RTCErrorType "
+              "has values.");
 
 absl::string_view kRTCErrorDetailTypeNames[] = {
     "NONE",
@@ -47,15 +49,12 @@ absl::string_view kRTCErrorDetailTypeNames[] = {
     "HARDWARE_ENCODER_NOT_AVAILABLE",
     "HARDWARE_ENCODER_ERROR",
 };
-static_assert(
-    static_cast<int>(webrtc::RTCErrorDetailType::HARDWARE_ENCODER_ERROR) ==
-        (std::size(kRTCErrorDetailTypeNames) - 1),
-    "kRTCErrorDetailTypeNames must have as many strings as "
-    "RTCErrorDetailType has values.");
+static_assert(static_cast<int>(RTCErrorDetailType::HARDWARE_ENCODER_ERROR) ==
+                  (std::size(kRTCErrorDetailTypeNames) - 1),
+              "kRTCErrorDetailTypeNames must have as many strings as "
+              "RTCErrorDetailType has values.");
 
 }  // namespace
-
-namespace webrtc {
 
 // static
 RTCError RTCError::OK() {
@@ -63,11 +62,11 @@ RTCError RTCError::OK() {
 }
 
 const char* RTCError::message() const {
-  return message_.c_str();
+  return message_.str().c_str();
 }
 
 void RTCError::set_message(absl::string_view message) {
-  message_ = std::string(message);
+  message_ = StringBuilder(message);
 }
 
 absl::string_view ToString(RTCErrorType error) {

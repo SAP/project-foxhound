@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources>
+  <!-- Link text to learn more about downloading Gemini Nano -->
+  <string name="mozac_summarize_learn_more_link">ਹੋਰ ਜਾਣੋ</string>
+  <!-- Title for the off-device shake summarization consent screen. Localization note: Asking if the user wants to use the shake gesture to summarize the page they are viewing. -->
+  <string name="mozac_summarize_shake_consent_off_device_title">ਸਿਰਫ਼ ਹਿਲਾਉਣ ਨਾਲ ਸੰਖੇਪ ਜਾਣਕਾਰੀ ਲੈਣੀ ਹੈ?</string>
+  <!-- Message for the off-device shake summarization consent screen. %1$s is 'Firefox' -->
+  <string name="mozac_summarize_shake_consent_off_device_message">ਆਪਣੇ ਡਿਵਾਈਸ ਨੂੰ ਹਿਲਾਓ ਅਤੇ %1$s ਸਕਿੰਟਾਂ ਵਿੱਚ ਸਫ਼ੇ ਦਾ ਸਾਰ ਲਵੋ।</string>
+  <!-- Button text for the off-device shake summarization consent screen approving shake consent. Localization note: "Continue" turns on the shake to summarize feature. -->
+  <string name="mozac_summarize_shake_consent_off_device_button_positive">ਜਾਰੀ ਰੱਖੋ</string>
+  <!-- Button text for the off-device shake summarization consent screen denying shake consent. Localization note: "Not now" dismisses the request to turn on the shake to summarize feature. -->
+  <string name="mozac_summarize_shake_consent_off_device_negative_button">ਹੁਣੇ ਨਹੀਂ</string>
+  <!-- Title for the on-device shake summarization and download consent screen -->
+  <string name="mozac_summarize_shake_consent_on_device_title">ਇਸ ਸਫ਼ੇ ਦਾ ਸਾਰ</string>
+  <!-- Message for the on-device shake summarization and download consent screen. %s will be replaced by app name. -->
+  <string name="mozac_summarize_shake_consent_on_device_message">ਇੱਕ ਵਾਰ ਦੇ ਫ਼ੌਰੀ ਡਾਊਨਲੋਡ ਦੇ ਬਾਅਦ %s ਤੁਹਾਡੇ ਡਿਵਾਈਸ ਨੂੰ ਹਿਲਾਉਣ ਦੇ ਬਾਅਦ ਸਫ਼ੇ ਦਾ ਸਾਰ ਤਿਆਰ ਕਰ ਸਕਦਾ ਹੈ।</string>
+  <!-- Button text for the on-device shake summarization and download consent screen approving shake and download consent -->
+  <string name="mozac_summarize_shake_consent_on_device_button_positive">ਸਾਰ ਲੈਣ ਲਈ ਡਾਊਨਲੋਡ ਕਰੋ</string>
+  <!-- Button text for the on-device shake summarization and download consent screen denying shake and download consent -->
+  <string name="mozac_summarize_shake_consent_on_device_negative_button">ਹੁਣੇ ਨਹੀਂ</string>
+  <!-- Title for the download consent screen -->
+  <string name="mozac_summarize_download_consent_title">ਪ੍ਰਾਈਵੇਟ ਸਾਰ ਲਈ ਸੈਟਅੱਪ ਕਰੋ</string>
+  <!-- Message for the consent to download when using an on-device model. %s will be replaced by app name. -->
+  <string name="mozac_summarize_download_nano_consent_message">ਇੱਕ ਵਾਰ ਡਾਊਨਲੋਡ ਕਰਨ ਨਾਲ %s ਤੁਹਾਡੇ ਵਲੋਂ ਕੰਟਰੋਲ ਹੇਠ ਰਹਿਣ ਵਾਲੇ ਸਫ਼ੇ ਸਾਰ ਤਿਆਰ ਕਰਦਾ ਹੈ।</string>
+  <!-- Button text for the consent to download an on-device model approving download consent -->
+  <string name="mozac_summarize_download_consent_button_positive">ਸਾਰ ਲੈਣ ਲਈ ਡਾਊਨਲੋਡ ਕਰੋ</string>
+  <!-- Button text for the consent to download an on-device model denying download consent -->
+  <string name="mozac_summarize_download_consent_button_negative">ਰੱਦ ਕਰੋ</string>
+  <!-- Title for the download in progress screen -->
+  <string name="mozac_summarize_download_progress_title">ਸਾਰ ਸੈੱਟਅੱਪ ਕੀਤਾ ਜਾ ਰਿਹਾ ਹੈ</string>
+  <!-- Message to describe that a download is in progress using an on-device, private model -->
+  <string name="mozac_summarize_download_progress_message">ਪ੍ਰਾਈਵੇਟ ਸਾਰ ਲੈਣ ਲਈ ਇੱਕ ਵਾਰ ਡਾਊਨਲਡੋ ਕਰੋ।</string>
+  <!-- Caption to describe the progress of the download. %1$.2f is bytes downloaded, %2$.2f is total bytes required for download to complete. -->
+  <string name="mozac_summarize_download_progress_caption">%1$.2f MB / %2$.2f MB</string>
+  <!-- Button text shown while a download is in progress to cancel the download -->
+  <string name="mozac_summarize_download_progress_button_negative">ਰੱਦ ਕਰੋ</string>
+  <!-- Title for the download error screen -->
+  <string name="mozac_summarize_download_error_title">ਗਲਤੀ</string>
+  <!-- Generic fallback message for the download error screen -->
+  <string name="mozac_summarize_download_error_fallback_message">ਅਣਜਾਣੀ ਗਲਤੀ</string>
+  <!-- Button for the download error screen to try again -->
+  <string name="mozac_summarize_download_error_positive_button">ਫੇਰ ਕੋਸ਼ਿਸ਼ ਕਰੋ</string>
+  <!-- Button for the download error screen to cancel -->
+  <string name="mozac_summarize_download_error_negative_button">ਰੱਦ ਕਰੋ</string>
+  <!-- Title for the error screen when page is too long to summarize -->
+  <string name="mozac_summarize_content_too_long_error_title">ਸਾਰ ਵਾਸਤੇ ਸਫ਼ਾ ਬਹੁਤ ਲੰਮਾ ਹੈ</string>
+  <!-- Title for the info error screen -->
+  <string name="mozac_summarize_info_error_title">ਹੁਣੇ ਸਾਰ ਨਹੀਂ ਲਿਆ ਜਾ ਸਕਦਾ ਹੈ</string>
+  <!-- Generic fallback message for the info error screen -->
+  <string name="mozac_summarize_info_error_message">ਬਾਅਦ ਵਿੱਚ ਫੇਰ ਕੋਸ਼ਿਸ਼ ਕਰੋ।</string>
+  <!-- Error code shown on long press of the error icon. %1$d is an error code. -->
+  <string name="mozac_summarize_info_error_code">ਗਲਤੀ ਕੋਡ: %1$d</string>
+  <!-- Loading text displayed while a page summary is being generated -->
+  <string name="mozac_feature_summarize_loading_title">…ਸਾਰ ਬਣਾਇਆ ਜਾ ਰਿਹਾ ਹੈ</string>
+  <!-- Content description for the settings icon button in the summarized view -->
+  <string name="mozac_summarize_settings_button_content_description">ਸਫ਼ਾ ਸਾਰ ਲਈ ਸੈਟਿੰਗਾਂ</string>
+  <!-- Title for the settings screen shown in the summarization bottom sheet -->
+  <string name="mozac_summarize_settings_title">ਸਫ਼ਾ ਸਾਰ</string>
+  <!-- Label for the summarize pages toggle in settings -->
+  <string name="mozac_summarize_settings_summarize_pages">ਸਫ਼ਿਆਂ ਦਾ ਸਾਰ</string>
+  <!-- Description for the summarize pages toggle -->
+  <string name="mozac_summarize_settings_summarize_pages_cloud">AI ਨਾਲ ਸਫ਼ੇ ਦੇ ਸਾਰ ਤਿਆਰ ਕਰੋ। ਸਫ਼ੇ ਅਤੇ ਸਾਰ ਪ੍ਰਾਈਵੇਟ ਰਹਿੰਦੇ ਹਨ ਅਤੇ ਕਦੇ ਵੀ ਸੰਭਾਲੇ ਨਹੀਂ ਜਾਂਦੇ ਹਨ।</string>
+  <!-- Link text to learn more about page summaries in settings -->
+  <string name="mozac_summarize_settings_learn_more">ਹੋਰ ਜਾਣੋ</string>
+  <!-- Section header for gesture settings -->
+  <string name="mozac_summarize_settings_gestures">ਇਸ਼ਾਰੇ</string>
+  <!-- Label for the shake to summarize toggle in settings -->
+  <string name="mozac_summarize_settings_shake_to_summarize">ਸਾਰ ਲੈਣ ਲਈ ਹਿਲਾਓ</string>
+  <!-- Description for the shake to summarize toggle in settings -->
+  <string name="mozac_summarize_settings_shake_to_summarize_description">ਸਫ਼ੇ ਦਾ ਸਾਰ ਲੈਣ ਲਈ ਆਪਣੇ ਡਿਵਾਈਸ ਨੂੰ ਇੱਕ ਪਾਸੇ ਤੋਂ ਦੂਜੇ ਵੱਲ ਹਿਲਾਓ।</string>
+  <!-- Label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity">ਹਿੱਲਣ ਦੀ ਸੰਵੇਦਨਸ਼ੀਲਤਾ</string>
+  <!-- Description for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_description">ਸਾਰ ਲੈਣ ਲਈ ਹਿਲਾਉਣ ਦੀ ਤੀਬਰਤਾ ਨੂੰ ਅਡਜੱਸਟ ਕਰੋ।</string>
+  <!-- Low option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_low">ਘੱਟ</string>
+  <!-- Medium option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_medium">ਮੱਧਮ</string>
+  <!-- High option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_high">ਵੱਧ</string>
+  <!-- Message for summary by model, %1$s is the name of the model that is being displayed -->
+  <string name="mozac_feature_summarize_summary_model">%1$s ਰਾਹੀਂ ਸਾਰ</string>
+  <!-- Disclaimer message -->
+  <string name="mozac_feature_summarize_disclaimer_message">AI ਗਲਤੀਆਂ ਕਰ ਸਕਦੀ ਹੈ</string>
+  <!-- Title for the page summary AI controllable feature -->
+  <string name="mozac_ai_controls_page_summary_title">ਸਫ਼ਾ ਸਾਰ</string>
+  <!-- Description for the page summary AI controllable feature -->
+  <string name="mozac_ai_controls_page_summary_description">ਸਫ਼ਿਆਂ ਅਤੇ ਸਾਰਾਂ ਨੂੰ ਕਦੇ ਵੀ ਨਹੀਂ ਸੰਭਾਲਿਆ ਜਾਂਦਾ ਹੈ।</string>
+  <!-- Button text for the Error dismiss button on Shake to Summarize -->
+  <string name="mozac_summarize_error_dissmiss">ਖ਼ਾਰਜ ਕਰੋ</string>
+</resources>

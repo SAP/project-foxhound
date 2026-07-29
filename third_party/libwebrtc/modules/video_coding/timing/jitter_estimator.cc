@@ -72,11 +72,13 @@ constexpr TimeDelta kMaxJitterEstimate = TimeDelta::Seconds(10);
 // decoding delay estimate.
 constexpr TimeDelta OPERATING_SYSTEM_JITTER = TimeDelta::Millis(10);
 
-// Time constant for reseting the NACK count.
+// Time constant for resetting the NACK count.
 constexpr TimeDelta kNackCountTimeout = TimeDelta::Seconds(60);
 
 // RTT mult activation.
 constexpr int kNackLimit = 3;
+constexpr double kRttMult = 0.9;
+constexpr TimeDelta kRttMultAddCap = TimeDelta::Millis(200);
 
 // Frame rate estimate clamping limit.
 constexpr Frequency kMaxFramerateEstimate = Frequency::Hertz(200);
@@ -237,7 +239,8 @@ void JitterEstimator::UpdateEstimate(TimeDelta frame_delay,
       config_.num_stddev_delay_clamp.value_or(kNumStdDevDelayClamp);
   TimeDelta max_time_deviation =
       TimeDelta::Millis(num_stddev_delay_clamp * sqrt(var_noise_ms2_) + 0.5);
-  frame_delay.Clamp(-max_time_deviation, max_time_deviation);
+  frame_delay =
+      std::clamp(frame_delay, -max_time_deviation, max_time_deviation);
 
   double delay_deviation_ms =
       frame_delay.ms() -
@@ -431,9 +434,7 @@ void JitterEstimator::PostProcessEstimate() {
 
 // Returns the current filtered estimate if available,
 // otherwise tries to calculate an estimate.
-TimeDelta JitterEstimator::GetJitterEstimate(
-    double rtt_multiplier,
-    std::optional<TimeDelta> rtt_mult_add_cap) {
+TimeDelta JitterEstimator::GetEstimate() {
   TimeDelta jitter = CalculateEstimate() + OPERATING_SYSTEM_JITTER;
   Timestamp now = clock_->CurrentTime();
 
@@ -445,12 +446,7 @@ TimeDelta JitterEstimator::GetJitterEstimate(
   if (filter_jitter_estimate_ > jitter)
     jitter = filter_jitter_estimate_;
   if (nack_count_ >= config_.nack_limit.value_or(kNackLimit)) {
-    if (rtt_mult_add_cap.has_value()) {
-      jitter += std::min(rtt_filter_.Rtt() * rtt_multiplier,
-                         rtt_mult_add_cap.value());
-    } else {
-      jitter += rtt_filter_.Rtt() * rtt_multiplier;
-    }
+    jitter += std::min(rtt_filter_.Rtt() * kRttMult, kRttMultAddCap);
   }
 
   static const Frequency kJitterScaleLowThreshold = Frequency::Hertz(5);

@@ -28,6 +28,7 @@ import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.never
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
+import kotlin.test.assertIs
 
 class StickyItemsLinearLayoutManagerTest {
     // For shorter test names "StickyItemsLinearLayoutManager" is referred to as SILLM.
@@ -63,7 +64,7 @@ class StickyItemsLinearLayoutManagerTest {
 
         val result: SavedState = manager.onSaveInstanceState() as SavedState
 
-        assertTrue(result.superState is LinearLayoutManager.SavedState)
+        assertIs<LinearLayoutManager.SavedState>(result.superState)
         assertEquals(42, result.scrollPosition)
         assertEquals(422, result.scrollOffset)
     }
@@ -589,7 +590,7 @@ class StickyItemsLinearLayoutManagerTest {
             true,
         )
 
-        assertTrue(result is StickyHeaderLinearLayoutManager)
+        assertIs<StickyHeaderLinearLayoutManager<*>>(result)
         assertTrue(result.reverseLayout)
     }
 
@@ -601,7 +602,7 @@ class StickyItemsLinearLayoutManagerTest {
             false,
         )
 
-        assertTrue(result is StickyHeaderLinearLayoutManager)
+        assertIs<StickyHeaderLinearLayoutManager<*>>(result)
         assertFalse(result.reverseLayout)
     }
 
@@ -613,7 +614,7 @@ class StickyItemsLinearLayoutManagerTest {
             true,
         )
 
-        assertTrue(result is StickyFooterLinearLayoutManager)
+        assertIs<StickyFooterLinearLayoutManager<*>>(result)
         assertTrue(result.reverseLayout)
     }
 
@@ -625,7 +626,7 @@ class StickyItemsLinearLayoutManagerTest {
             false,
         )
 
-        assertTrue(result is StickyFooterLinearLayoutManager)
+        assertIs<StickyFooterLinearLayoutManager<*>>(result)
         assertFalse(result.reverseLayout)
     }
 }

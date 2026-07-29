@@ -13,14 +13,15 @@
 
 namespace mozilla {
 
-#define LOG(msg, ...)                         \
-  MOZ_LOG(gMFMediaEngineLog, LogLevel::Debug, \
-          ("MFMediaEngineExtension=%p, " msg, this, ##__VA_ARGS__))
+#define LOG(msg, ...)                                            \
+  MOZ_LOG_FMT(gMFMediaEngineLog, LogLevel::Debug,                \
+              "MFMediaEngineExtension={}, " msg, fmt::ptr(this), \
+              ##__VA_ARGS__)
 
 using Microsoft::WRL::ComPtr;
 
 void MFMediaEngineExtension::SetMediaSource(IMFMediaSource* aMediaSource) {
-  LOG("SetMediaSource=%p", aMediaSource);
+  LOG("SetMediaSource={}", fmt::ptr(aMediaSource));
   mMediaSource = aMediaSource;
 }
 
@@ -75,8 +76,8 @@ IFACEMETHODIMP MFMediaEngineExtension::EndCreateObject(IMFAsyncResult* aResult,
 
 IFACEMETHODIMP MFMediaEngineExtension::CanPlayType(
     BOOL aIsAudioOnly, BSTR aMimeType, MF_MEDIA_ENGINE_CANPLAY* aResult) {
-  // We use MF_MEDIA_ENGINE_EXTENSION to resolve as custom media source for
-  // MFMediaEngine, MIME types are not used.
+  // We use MF_MEDIA_ENGINE_EXTENSION to resolve as custom media
+  // source for MFMediaEngine, MIME types are not used.
   *aResult = MF_MEDIA_ENGINE_CANPLAY_NOT_SUPPORTED;
   return S_OK;
 }

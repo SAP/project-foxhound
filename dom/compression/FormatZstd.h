@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,7 +10,7 @@
 struct ZSTD_DCtx_s;
 
 // See the zstd manual in https://facebook.github.io/zstd/zstd_manual.html or in
-// https://searchfox.org/mozilla-central/source/third_party/zstd/lib/zstd.h
+// https://searchfox.org/firefox-main/source/third_party/zstd/lib/zstd.h
 
 namespace mozilla::dom::compression {
 

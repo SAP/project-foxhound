@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -43,7 +42,7 @@ struct IResumable {
   virtual void Resume() = 0;
 
  protected:
-  virtual ~IResumable() {}
+  virtual ~IResumable() = default;
 };
 
 /**
@@ -99,6 +98,9 @@ class SourceBufferIterator final {
 
   SourceBufferIterator& operator=(SourceBufferIterator&& aOther);
 
+  SourceBufferIterator(const SourceBufferIterator&) = delete;
+  SourceBufferIterator& operator=(const SourceBufferIterator&) = delete;
+
   /**
    * Returns true if there are no more than @aBytes remaining in the
    * SourceBuffer. If the SourceBuffer is not yet complete, returns false.
@@ -144,6 +146,18 @@ class SourceBufferIterator final {
    *           data).
    */
   State AdvanceOrScheduleResume(size_t aRequestedBytes, IResumable* aConsumer);
+
+  /**
+   * Records that only @aConsumed bytes of the current chunk have been
+   * processed. The iterator position advances by @aConsumed and
+   * mNextReadLength is set to the remaining bytes, so that Data()/Length()
+   * immediately reflect the unconsumed portion and IsReady() remains true.
+   * Once all remaining bytes are consumed and mNextReadLength reaches zero,
+   * the next AdvanceOrScheduleResume() will fetch the next chunk.
+   */
+  void MarkConsumed(size_t aConsumed);
+
+  bool IsReady() const { return mState == READY; }
 
   /// If at the end, returns the status passed to SourceBuffer::Complete().
   nsresult CompletionStatus() const {
@@ -191,9 +205,6 @@ class SourceBufferIterator final {
 
  private:
   friend class SourceBuffer;
-
-  SourceBufferIterator(const SourceBufferIterator&) = delete;
-  SourceBufferIterator& operator=(const SourceBufferIterator&) = delete;
 
   bool HasMore() const { return mState != COMPLETE; }
 
@@ -400,7 +411,9 @@ class SourceBuffer final {
     Chunk(Chunk&& aOther)
         : mCapacity(aOther.mCapacity),
           mLength(aOther.mLength),
-          mData(aOther.mData) {
+          mData(aOther.mData),
+          mRealloc(aOther.mRealloc),
+          mFree(aOther.mFree) {
       aOther.mCapacity = aOther.mLength = 0;
       aOther.mData = nullptr;
     }
@@ -410,6 +423,8 @@ class SourceBuffer final {
       mCapacity = aOther.mCapacity;
       mLength = aOther.mLength;
       mData = aOther.mData;
+      mRealloc = aOther.mRealloc;
+      mFree = aOther.mFree;
       aOther.mCapacity = aOther.mLength = 0;
       aOther.mData = nullptr;
       return *this;
@@ -445,10 +460,10 @@ class SourceBuffer final {
       return true;
     }
 
-   private:
     Chunk(const Chunk&) = delete;
     Chunk& operator=(const Chunk&) = delete;
 
+   private:
     size_t mCapacity;
     size_t mLength;
     char* mData;

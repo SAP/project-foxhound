@@ -7,11 +7,14 @@ loader: taskgraph.loader.transform:loader
 transforms:
     - taskgraph.transforms.from_deps
     - gecko_taskgraph.transforms.name_sanity
+    - gecko_taskgraph.transforms.zucchini_partial_rollout
     - gecko_taskgraph.transforms.mar_signing
     - gecko_taskgraph.transforms.task
 
 kind-dependencies:
     - partials
+    - partials-zucchini
+    - partials-zucchini-l10n
 
 task-defaults:
     run-on-repo-type: [hg]
@@ -23,5 +26,3 @@ tasks:
         shipping-phase: promote
         treeherder-group: ps
         description-suffix: 'partial signing'
-        required_signoffs:
-            - mar-signing

@@ -8,8 +8,10 @@ import android.content.Context
 import androidx.appcompat.app.AppCompatActivity
 import androidx.preference.Preference
 import io.mockk.MockKAnnotations
+import io.mockk.Runs
 import io.mockk.every
-import io.mockk.impl.annotations.MockK
+import io.mockk.impl.annotations.RelaxedMockK
+import io.mockk.just
 import io.mockk.spyk
 import io.mockk.verify
 import mozilla.components.concept.engine.permission.SitePermissions
@@ -29,10 +31,10 @@ import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class SitePermissionsDetailsExceptionsFragmentTest {
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var settings: Settings
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var permissions: SitePermissions
 
     private lateinit var fragment: SitePermissionsDetailsExceptionsFragment
@@ -64,10 +66,10 @@ class SitePermissionsDetailsExceptionsFragmentTest {
 
     @Test
     fun `WHEN bindCategoryPhoneFeatures is called THEN all categories must be initialized`() {
-        every { fragment.initPhoneFeature(any()) } returns Unit
-        every { fragment.initPhoneFeature(any(), any()) } returns Unit
-        every { fragment.initAutoplayFeature() } returns Unit
-        every { fragment.bindClearPermissionsButton() } returns Unit
+        every { fragment.initPhoneFeature(any()) } just Runs
+        every { fragment.initPhoneFeature(any(), any()) } just Runs
+        every { fragment.initAutoplayFeature() } just Runs
+        every { fragment.bindClearPermissionsButton() } just Runs
 
         fragment.bindCategoryPhoneFeatures()
 
@@ -131,7 +133,7 @@ class SitePermissionsDetailsExceptionsFragmentTest {
 
         every { context.getString(R.string.phone_feature_blocked_by_android) } returns label
         every { fragment.getPreference((any())) } returns preference
-        every { fragment.navigateToPhoneFeature((any())) } returns Unit
+        every { fragment.navigateToPhoneFeature((any())) } just Runs
 
         fragment.initPhoneFeature(feature)
 
@@ -151,7 +153,7 @@ class SitePermissionsDetailsExceptionsFragmentTest {
 
         every { fragment.getAutoplayLabel() } returns label
         every { fragment.getPreference((any())) } returns preference
-        every { fragment.navigateToPhoneFeature((any())) } returns Unit
+        every { fragment.navigateToPhoneFeature((any())) } just Runs
 
         fragment.initAutoplayFeature()
 

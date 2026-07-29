@@ -1,9 +1,10 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ipc/IPCMessageUtils.h"
+
+#include <algorithm>
 
 #if defined(XP_UNIX)
 #  include <unistd.h>
@@ -197,7 +198,8 @@ nsresult nsFileStreamBase::Read(char* aBuf, uint32_t aCount,
     return rv;
   }
 
-  int32_t bytesRead = PR_Read(mFD, aBuf, aCount);
+  MOZ_ASSERT(aCount <= INT32_MAX);
+  int32_t bytesRead = PR_Read(mFD, aBuf, std::min<uint32_t>(aCount, INT32_MAX));
   if (bytesRead == -1) {
     return NS_ErrorAccordingToNSPR();
   }
@@ -266,7 +268,8 @@ nsresult nsFileStreamBase::Write(const char* buf, uint32_t count,
   nsresult rv = DoPendingOpen();
   NS_ENSURE_SUCCESS(rv, rv);
 
-  int32_t cnt = PR_Write(mFD, buf, count);
+  MOZ_ASSERT(count <= INT32_MAX);
+  int32_t cnt = PR_Write(mFD, buf, std::min<uint32_t>(count, INT32_MAX));
   if (cnt == -1) {
     return NS_ErrorAccordingToNSPR();
   }
@@ -802,8 +805,8 @@ nsresult nsAtomicFileOutputStream::DoOpen() {
     // nsFileOutputStream::DoOpen will work on the temporary file, so we
     // prepare it and place it in mOpenParams.localFile.
     mOpenParams.localFile = tempResult;
-    mTempFile = tempResult;
-    mTargetFile = file;
+    mTempFile = std::move(tempResult);
+    mTargetFile = std::move(file);
     rv = nsFileOutputStream::DoOpen();
   }
   return rv;

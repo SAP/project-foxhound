@@ -45,7 +45,9 @@ fail-if = [
 ]
 skip-if = [
   "os == 'win' && os_version == '11.26100' && arch == 'x86' && debug && verify-standalone",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86' && debug && verify-standalone",
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt && verify-standalone",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && opt && verify-standalone",
 ]
 
 ["browser_fail_async.js"]
@@ -64,6 +66,7 @@ fail-if = [
 ]
 skip-if = [
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt && socketprocess_networking && verify-standalone",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && opt && socketprocess_networking && verify-standalone",
 ]
 
 ["browser_fail_timeout.js"]
@@ -85,6 +88,7 @@ skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && debug && swgl && verify-standalone",
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt",
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug && socketprocess_networking && verify-standalone",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && debug && socketprocess_networking && verify-standalone",
 ]
 
 ["browser_fail_uncaught_rejection_expected_multi.js"]
@@ -99,6 +103,8 @@ support-files = [
   "waitForFocusPage.html"]
 
 ["browser_head.js"]
+
+["browser_nodeserver_simple.js"]
 
 ["browser_parameters.js"]
 

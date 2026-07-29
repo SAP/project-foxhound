@@ -5,6 +5,7 @@
 package org.mozilla.fenix.tabhistory
 
 import android.app.Dialog
+import android.content.res.ColorStateList
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -13,6 +14,9 @@ import androidx.navigation.fragment.findNavController
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
+import com.google.android.material.shape.CornerFamily
+import com.google.android.material.shape.MaterialShapeDrawable
+import com.google.android.material.shape.ShapeAppearanceModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.mapNotNull
@@ -49,7 +53,20 @@ class TabHistoryDialogFragment : BottomSheetDialogFragment() {
 
         val binding = FragmentTabHistoryDialogBinding.bind(view)
 
-        view.setBackgroundColor(view.context.getColorFromAttr(materialR.attr.colorSurface))
+        view.background = MaterialShapeDrawable(
+            ShapeAppearanceModel.builder()
+                .setTopLeftCorner(
+                    CornerFamily.ROUNDED,
+                    resources.getDimension(R.dimen.bottom_sheet_corner_radius_28dp),
+                )
+                .setTopRightCorner(
+                    CornerFamily.ROUNDED,
+                    resources.getDimension(R.dimen.bottom_sheet_corner_radius_28dp),
+                )
+                .build(),
+        ).apply {
+            fillColor = ColorStateList.valueOf(view.context.getColorFromAttr(materialR.attr.colorSurface))
+        }
 
         customTabSessionId = requireArguments().getString(EXTRA_SESSION_ID)
 

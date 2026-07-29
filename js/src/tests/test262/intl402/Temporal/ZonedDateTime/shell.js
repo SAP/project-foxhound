@@ -69,11 +69,11 @@ var TemporalHelpers = {
       { era: "am" },
     ],
     ethiopic: [
-      { era: "aa", aliases: ["mundi"] },
-      { era: "am", aliases: ["incar"] },
+      { era: "aa" },
+      { era: "am" },
     ],
     ethioaa: [
-      { era: "aa", aliases: ["mundi"] },
+      { era: "aa" },
     ],
     gregory: [
       { era: "bce", aliases: ["bc"] },
@@ -85,15 +85,7 @@ var TemporalHelpers = {
     indian: [
       { era: "shaka" },
     ],
-    islamic: [
-      { era: "ah" },
-      { era: "bh" },
-    ],
     "islamic-civil": [
-      { era: "bh" },
-      { era: "ah" },
-    ],
-    "islamic-rgsa": [
       { era: "bh" },
       { era: "ah" },
     ],
@@ -118,10 +110,27 @@ var TemporalHelpers = {
       { era: "ap" },
     ],
     roc: [
-      { era: "roc", aliases: ["minguo"] },
-      { era: "broc", aliases: ["before-roc", "minguo-qian"] },
+      { era: "roc" },
+      { era: "broc" },
     ],
   },
+
+
+  /**
+   * Apple's fork of ICU contains code for these calendars, but they are not yet
+   * allowed to be supported in AvailableCalendars. See
+   * https://github.com/tc39/ecma402/blob/main/meetings/notes-2025-12-04.md#datetimeformatconstructor-options-calendar-islamic-fallbackjs-should-allow-other-fallback-values-4677
+   */
+  NotYetSupportedCalendars: [
+    "bangla",
+    "gujarati",
+    "kannada",
+    "marathi",
+    "odia",
+    "tamil",
+    "telugu",
+    "vikram",
+  ],
 
   /*
    * Return the canonical era code.

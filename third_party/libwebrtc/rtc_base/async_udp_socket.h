@@ -43,7 +43,7 @@ class AsyncUDPSocket : public AsyncPacketSocket {
 
   AsyncUDPSocket(const Environment& env,
                  absl_nonnull std::unique_ptr<Socket> socket);
-  ~AsyncUDPSocket() = default;
+  ~AsyncUDPSocket() override = default;
 
   SocketAddress GetLocalAddress() const override;
   SocketAddress GetRemoteAddress() const override;
@@ -63,6 +63,8 @@ class AsyncUDPSocket : public AsyncPacketSocket {
   void SetError(int error) override;
 
  private:
+  // called when the underlying socket is connected - DTLS handshake case
+  void OnConnectEvent(Socket* socket);
   // Called when the underlying socket is ready to be read from.
   void OnReadEvent(Socket* socket);
   // Called when the underlying socket is ready to send.

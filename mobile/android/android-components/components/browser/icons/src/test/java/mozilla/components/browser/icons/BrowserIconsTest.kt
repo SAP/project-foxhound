@@ -14,6 +14,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import mozilla.components.browser.icons.generator.IconGenerator
 import mozilla.components.browser.icons.loader.MemoryInfoProvider
 import mozilla.components.concept.engine.manifest.Size
@@ -23,13 +25,10 @@ import mozilla.components.support.test.eq
 import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
 import okio.buffer
 import okio.source
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertSame
 import org.junit.Before
 import org.junit.Test
@@ -43,6 +42,7 @@ import org.mockito.Mockito.`when`
 import org.robolectric.Shadows.shadowOf
 import java.io.OutputStream
 import kotlin.coroutines.ContinuationInterceptor
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class BrowserIconsTest {
@@ -87,9 +87,7 @@ class BrowserIconsTest {
         val server = MockWebServer()
 
         server.enqueue(
-            MockResponse().setBody(
-                javaClass.getResourceAsStream("/png/mozac.png")!!.source().buffer().buffer,
-            ),
+            MockResponse.Builder().body(javaClass.getResourceAsStream("/png/mozac.png")!!.source().buffer().buffer).build(),
         )
 
         server.start()
@@ -129,9 +127,9 @@ class BrowserIconsTest {
             assertNotNull(icon.bitmap)
 
             val serverRequest = server.takeRequest()
-            assertEquals("/icon128.png", serverRequest.requestUrl?.encodedPath)
+            assertEquals("/icon128.png", serverRequest.target)
         } finally {
-            server.shutdown()
+            server.close()
         }
     }
 
@@ -140,9 +138,7 @@ class BrowserIconsTest {
         val server = MockWebServer()
 
         server.enqueue(
-            MockResponse().setBody(
-                javaClass.getResourceAsStream("/png/mozac.png")!!.source().buffer().buffer,
-            ),
+            MockResponse.Builder().body(javaClass.getResourceAsStream("/png/mozac.png")!!.source().buffer().buffer).build(),
         )
 
         server.start()
@@ -181,7 +177,7 @@ class BrowserIconsTest {
 
             assertSame(icon.bitmap, secondIcon.bitmap)
         } finally {
-            server.shutdown()
+            server.close()
         }
     }
 
@@ -190,9 +186,7 @@ class BrowserIconsTest {
         val server = MockWebServer()
 
         server.enqueue(
-            MockResponse().setBody(
-                javaClass.getResourceAsStream("/png/mozac.png")!!.source().buffer().buffer,
-            ),
+            MockResponse.Builder().body(javaClass.getResourceAsStream("/png/mozac.png")!!.source().buffer().buffer).build(),
         )
 
         server.start()
@@ -231,7 +225,7 @@ class BrowserIconsTest {
             assertEquals(Icon.Source.DISK, secondIcon.source)
             assertNotNull(secondIcon.bitmap)
         } finally {
-            server.shutdown()
+            server.close()
         }
     }
 

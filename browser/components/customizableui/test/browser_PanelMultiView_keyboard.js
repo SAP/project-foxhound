@@ -40,6 +40,11 @@ let gComponentView;
 let gShadowRoot;
 let gShadowRootButtonA;
 let gShadowRootButtonB;
+let gNonDelegatingComponentView;
+let gNonDelegatingShadowRoot;
+let gNonDelegatingShadowRootInput;
+let gNonDelegatingShadowRootButton;
+let gNonDelegatingShadowRootSibling;
 
 async function openPopup() {
   let shown = BrowserTestUtils.waitForEvent(gMainView, "ViewShown");
@@ -95,7 +100,7 @@ add_setup(async function () {
   gMainView.id = "testMainView";
   gPanelMultiView.appendChild(gMainView);
   gMainContext = document.createXULElement("menupopup");
-  gMainContext.setAttribute("native", "false");
+  gMainContext.toggleAttribute("nonnative", true);
   gMainContext.id = "gMainContext";
   gMainView.appendChild(gMainContext);
   gMainContext.appendChild(document.createXULElement("menuitem"));
@@ -109,7 +114,7 @@ add_setup(async function () {
   gMainMenulist.id = "gMainMenulist";
   gMainView.appendChild(gMainMenulist);
   let menuPopup = document.createXULElement("menupopup");
-  menuPopup.setAttribute("native", "false");
+  menuPopup.toggleAttribute("nonnative", true);
   gMainMenulist.appendChild(menuPopup);
   let item = document.createXULElement("menuitem");
   item.setAttribute("value", "1");
@@ -245,6 +250,30 @@ add_setup(async function () {
   gShadowRoot.shadowRoot.appendChild(gShadowRootButtonA);
   gShadowRoot.shadowRoot.appendChild(gShadowRootButtonB);
   gComponentView.appendChild(gShadowRoot);
+
+  // Shadow root that does not delegate focus, but has internal
+  // focusable inputs which ought to be cycled-through one by one.
+  gNonDelegatingComponentView = document.createXULElement("panelview");
+  gNonDelegatingComponentView.id = "testNonDelegatingComponentView";
+  gPanelMultiView.appendChild(gNonDelegatingComponentView);
+  gNonDelegatingShadowRoot = document.createElement("non-delegating-component");
+  gNonDelegatingShadowRoot.dataset.focusOnInnerElements = "true";
+  gNonDelegatingShadowRoot.id = "gNonDelegatingShadowRoot";
+  gNonDelegatingShadowRoot.attachShadow({ mode: "open" });
+  gNonDelegatingShadowRootInput = document.createElement("input");
+  gNonDelegatingShadowRootInput.id = "gNonDelegatingShadowRootInput";
+  gNonDelegatingShadowRootButton = document.createElement("button");
+  gNonDelegatingShadowRootButton.id = "gNonDelegatingShadowRootButton";
+  gNonDelegatingShadowRootButton.label = "Button";
+  gNonDelegatingShadowRoot.shadowRoot.appendChild(
+    gNonDelegatingShadowRootInput
+  );
+  gNonDelegatingShadowRoot.shadowRoot.appendChild(
+    gNonDelegatingShadowRootButton
+  );
+  gNonDelegatingComponentView.appendChild(gNonDelegatingShadowRoot);
+  gNonDelegatingShadowRootSibling = document.createElement("input");
+  gNonDelegatingComponentView.appendChild(gNonDelegatingShadowRootSibling);
 
   registerCleanupFunction(() => {
     gAnchor.remove();
@@ -683,6 +712,43 @@ add_task(async function testTabCapturesFocus() {
   await expectFocusAfterKey("Tab", gShadowRootButtonB);
 
   await expectFocusAfterKey("Tab", backButton);
+
+  await hidePopup();
+});
+
+// Test that tab key cycles through the inner elements of non-focus-delegating shadow roots.
+add_task(async function testTabbingThroughNonDelegatingShadowRoots() {
+  await openPopup();
+  await showSubView(gNonDelegatingComponentView);
+
+  let backButton = gNonDelegatingComponentView.querySelector(
+    ".subviewbutton-back"
+  );
+  await expectFocusAfterKey("Tab", backButton);
+
+  // The inner input, then the inner button (not the root itself)
+  // are navigated to to before the next sibling.
+  await expectFocusAfterKey("Tab", gNonDelegatingShadowRootInput);
+  await expectFocusAfterKey("Tab", gNonDelegatingShadowRootButton);
+  await expectFocusAfterKey("Tab", gNonDelegatingShadowRootSibling);
+
+  // Likewise, the button, then the input, are navigated to with
+  // shift-tab before returning to the back button.
+  await expectFocusAfterKey("Shift+Tab", gNonDelegatingShadowRootButton);
+  await expectFocusAfterKey("Shift+Tab", gNonDelegatingShadowRootInput);
+  await expectFocusAfterKey("Shift+Tab", backButton);
+
+  await hidePopup();
+});
+
+// Test that tab is not confused if we are focused on an input in a shadowRoot
+add_task(async function testTabbingThroughNonDelegatingShadowRoots() {
+  await openPopup();
+  await showSubView(gNonDelegatingComponentView);
+
+  gNonDelegatingShadowRoot.focus();
+  gNonDelegatingShadowRootInput.focus();
+  await expectFocusAfterKey("Tab", gNonDelegatingShadowRootButton);
 
   await hidePopup();
 });

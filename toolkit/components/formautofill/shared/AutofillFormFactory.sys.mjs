@@ -17,7 +17,7 @@ export const AutofillFormFactory = {
   findRootForField(element) {
     let ignoreForm;
     try {
-      const bc = element.ownerGlobal.browsingContext;
+      const bc = element.documentGlobal.browsingContext;
       ignoreForm = bc != bc.top;
     } catch {
       ignoreForm = false;
@@ -32,7 +32,7 @@ export const AutofillFormFactory = {
   createFromField(aField) {
     let ignoreForm;
     try {
-      const bc = aField.ownerGlobal.browsingContext;
+      const bc = aField.documentGlobal.browsingContext;
       ignoreForm = bc != bc.top;
     } catch {
       ignoreForm = false;

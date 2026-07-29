@@ -11,6 +11,8 @@
   --input-field-color-hover: var(--button-text-color-ghost-hover);
   --input-field-color-active: var(--button-text-color-ghost-active);
   --copy-transition: opacity 250ms linear;
+  --check-icon-color: var(--color-accent-attention);
+
   color: inherit;
   padding: 3px;
 }
@@ -149,7 +151,7 @@ input[readonly] {
       height: var(--icon-size);
       width: var(--icon-size);
       -moz-context-properties: fill;
-      fill: var(--attention-dot-color);
+      fill: var(--check-icon-color);
       opacity: 0;
       visibility: hidden;
 

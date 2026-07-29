@@ -34,6 +34,8 @@ urlbar-web-notification-anchor =
     .tooltiptext = Change whether you can receive notifications from the site
 urlbar-midi-notification-anchor =
     .tooltiptext = Open MIDI panel
+urlbar-serial-notification-anchor =
+    .tooltiptext = Open Serial panel
 urlbar-eme-notification-anchor =
     .tooltiptext = Manage use of DRM software
 urlbar-web-authn-anchor =
@@ -165,6 +167,8 @@ urlbar-canvas-blocked =
     .tooltiptext = You have blocked canvas data extraction for this website.
 urlbar-midi-blocked =
     .tooltiptext = You have blocked MIDI access for this website.
+urlbar-serial-blocked =
+    .tooltiptext = You have blocked serial port access for this website.
 urlbar-install-blocked =
     .tooltiptext = You have blocked add-on installation for this website.
 
@@ -181,6 +185,12 @@ urlbar-star-add-bookmark =
 urlbar-split-view-button =
     .tooltiptext = Split view
     .aria-label = Split view
+
+## Searchbar context menu
+
+clear-search-history =
+    .label = Clear Search History
+    .accesskey = H
 
 ## Page Action Context Menu
 
@@ -257,7 +267,7 @@ search-one-offs-actions =
 
 ## QuickActions are shown in the urlbar as the user types a matching string
 ## The -cmd- strings are comma separated list of keywords that will match
-## the action.
+## the action. English commas should be used, i.e. ,
 
 # Opens the about:addons page in the home / recommendations section
 quickactions-addons = View add-ons
@@ -272,7 +282,7 @@ quickactions-cmd-bookmarks = bookmarks
 
 # Opens a SUMO article explaining how to clear history
 quickactions-clearrecenthistory = Clear recent history
-quickactions-cmd-clearrecenthistory = clear recent history, history
+quickactions-cmd-clearrecenthistory2 = cookies, clear cookies, cache, clear cache, browsing data, clear browsing data, history, clear recent history
 
 # Opens about:downloads page
 quickactions-downloads2 = View downloads
@@ -297,9 +307,24 @@ quickactions-cmd-help = help, support
 quickactions-inspector2 = Open Developer Tools
 quickactions-cmd-inspector2 = inspector, devtools, dev tools
 
+# Opens the devtools eyedropper to pick a color from the page
+quickactions-colorpicker = Pick a color
+quickactions-cmd-colorpicker = color picker, eyedropper, pick color
+
+# Opens Firefox Library
+quickactions-cmd-library = library
+quickactions-library = Open Library
+
 # Opens about:logins
 quickactions-logins2 = Manage passwords
 quickactions-cmd-logins = logins, passwords
+
+# Mutes all tabs playing audio
+quickactions-mute = Mute tabs playing audio
+# List of words that would trigger the "mute tabs" action from the address bar.
+# Replace with idiomatic expressions in your language to silence something or
+# someone.
+quickactions-cmd-mute = mute, shush, sssssh
 
 # Opens the print dialog
 quickactions-print2 = Print page
@@ -348,6 +373,10 @@ quickactions-cmd-update = update
 # Opens the view-source UI with current pages source
 quickactions-viewsource2 = View page source
 quickactions-cmd-viewsource2 = view source, source, page source
+
+# Opens about:preferences:experimental (Firefox Labs)
+quickactions-labs = Open { -firefoxlabs-brand-name }
+quickactions-cmd-labs = labs, experiment
 
 # Tooltip text for the help button shown in the result.
 quickactions-learn-more =
@@ -430,9 +459,11 @@ identity-clear-site-data =
 identity-connection-not-secure-security-view = You are not securely connected to this site.
 identity-connection-verified = You are securely connected to this site.
 identity-ev-owner-label = Certificate issued to:
+identity-verifier-label = Verified by:
 # "qualified" here refers to the qualified website authentication certificate presented by the site.
 identity-etsi = Qualified as specified in Regulation (EU) 2024/1183.
 identity-description-custom-root2 = Mozilla does not recognize this certificate issuer. It may have been added from your operating system or by an administrator.
+identity-cert-exception-overridden = You have added a security exception for this site.
 identity-remove-cert-exception =
     .label = Remove Exception
     .accesskey = R
@@ -461,11 +492,6 @@ browser-window-close-button =
 # Clicking this button closes the window and returns to the tab where it was opened from
 browser-window-return-to-opener =
     .tooltiptext = Return
-
-## Tab actions
-
-# This label should be written in all capital letters if your locale supports them.
-browser-tab-audio-pip = PICTURE-IN-PICTURE
 
 ## Bookmarks toolbar items
 
@@ -502,6 +528,11 @@ sharing-warning-proceed-to-tab =
   .label = Proceed to Tab
 sharing-warning-disable-for-session =
   .label = Disable sharing protection for this session
+
+## WebSerial "select a port" popup
+
+webserial-select-port-label = Select a serial port:
+webserial-no-ports-available = No serial ports available
 
 ## URL Bar
 
@@ -576,8 +607,8 @@ urlbar-switch-to-tab =
 urlbar-extension =
   .value = Extension:
 
-urlbar-go-button =
-  .tooltiptext = Go to the address in the Location Bar
+urlbar-go-button2 =
+  .title = Go to the address in the Location Bar
 urlbar-page-action-button =
   .tooltiptext = Page actions
 urlbar-revert-button =
@@ -638,6 +669,58 @@ urlbar-result-action-tabtosearch-other-engine = Search { $engine } directly from
 urlbar-result-action-copy-to-clipboard = Copy
 # The string returned for an undefined calculator result such as when dividing by 0
 urlbar-result-action-undefined-calculator-result = undefined
+
+## "Last visited" and "bookmarked" explanation strings. For bookmarks and urlbar
+## results with last-visited dates like history and top sites, these strings
+## explain why the result is shown.
+
+# This explanation is used when the last-visited date is formatted as one of the
+# following relative dates: "yesterday", "today"
+# Variables:
+#   $date (string) - A localized relative date string
+urlbar-result-explanation-last-visited-relative = You last visited { $date }
+
+# This explanation is used when the last-visited date is a small number of days
+# in the past.
+# Variables:
+#   $daysAgo (number) - The number of days ago
+urlbar-result-explanation-last-visited-days =
+    { $daysAgo ->
+        [one] You last visited { $daysAgo } day ago
+        *[other] You last visited { $daysAgo } days ago
+    }
+
+# This explanation is used when the last-visited date is a small number of weeks
+# in the past.
+# Variables:
+#   $weeksAgo (number) - The number of weeks ago
+urlbar-result-explanation-last-visited-weeks =
+    { $weeksAgo ->
+        [one] You last visited { $weeksAgo } week ago
+        *[other] You last visited { $weeksAgo } weeks ago
+    }
+
+# This explanation is used when the last-visited date is a small number of
+# months in the past.
+# Variables:
+#   $monthsAgo (number) - The number of months ago
+urlbar-result-explanation-last-visited-months =
+    { $monthsAgo ->
+        [one] You last visited { $monthsAgo } month ago
+        *[other] You last visited { $monthsAgo } months ago
+    }
+
+# This explanation is used when the last-visited date is further in the past.
+# The date will be formatted as an absolute date like: "11 May", "11 May 2026"
+# Variables:
+#   $date (string) - A localized absolute date string
+urlbar-result-explanation-last-visited-absolute = You last visited on { $date }
+
+# This explanation is used when the result is bookmarked. The date will be
+# formatted as an absolute date like: "11 May", "11 May 2026"
+# Variables:
+#   $date (string) - A localized absolute date string
+urlbar-result-explanation-bookmarked = Bookmarked { $date }
 
 # The sub title of an add-on suggestion in the urlbar.
 urlbar-result-addons-subtitle = { -brand-product-name } extension
@@ -780,46 +863,40 @@ urlbar-result-dates-ends-today = { $name } · Ends today
 # Searchmode Switcher button
 # Variables:
 #   $engine (String): the current default search engine.
-urlbar-searchmode-button2 =
-    .label = { $engine }, pick a search engine
-    .tooltiptext = { $engine }, pick a search engine
-urlbar-searchmode-button-no-engine =
-    .label = No shortcut selected, pick a shortcut
-    .tooltiptext = No shortcut selected, pick a shortcut
+urlbar-searchmode-button3 =
+    .title = { $engine }, pick a search engine
+urlbar-searchmode-button-no-engine2 =
+    .title = No shortcut selected, pick a shortcut
 
 # Refers to the ability to search using keywords in the address bar
-urlbar-searchmode-no-keyword =
-    .label = Keyword search is disabled
-    .tooltiptext = Keyword search is disabled
+urlbar-searchmode-no-keyword2 =
+    .title = Keyword search is disabled
 
-urlbar-searchmode-dropmarker =
-    .tooltiptext = Pick a Search Engine
-urlbar-searchmode-bookmarks =
-    .label = Bookmarks
-urlbar-searchmode-tabs =
-    .label = Tabs
-urlbar-searchmode-history =
-    .label = History
-urlbar-searchmode-actions =
-    .label = Actions
-urlbar-searchmode-exit-button =
-    .tooltiptext = Close
-urlbar-searchmode-default =
-    .tooltiptext = Default search engine
+urlbar-searchmode-dropmarker2 =
+    .title = Pick a Search Engine
+urlbar-searchmode-bookmarks2 = Bookmarks
+urlbar-searchmode-tabs2 = Tabs
+urlbar-searchmode-history2 = History
+urlbar-searchmode-actions2 = Actions
+urlbar-searchmode-exit-button2 =
+    .title = Close
+urlbar-searchmode-default2 =
+    .title = Default search engine
+
+# Shown when adding new search engines from the search mode switcher.
+# Variables:
+#  $engineName (String): The name of the search engine.
+urlbar-searchmode-popup-add-engine = Add “{ $engineName }”
+    .title = Add search engine “{ $engineName }”
 
 # Label shown on the top of Searchmode Switcher popup. After this label, the
 # available search engines will be listed.
-urlbar-searchmode-popup-description-menucaption =
-    .label = This time search with:
+urlbar-searchmode-popup-one-off-header = This time search with:
 # Label shown on the top of Searchmode Switcher popup when the search engine won't automatically
 # reset after submitting.
-urlbar-searchmode-popup-sticky-description-menucaption =
-    .label = Search with:
-urlbar-searchmode-popup-search-settings-menuitem =
-    .label = Search Settings
-
-# Label shown next to a new search engine in the Searchmode Switcher popup to promote it.
-urlbar-searchmode-new = New
+urlbar-searchmode-popup-header = Search with:
+urlbar-searchmode-popup-search-settings-panelitem = Search Settings
+urlbar-searchmode-popup-settings-panelitem = Settings
 
 # Label prompting user to search with a particular search engine.
 #  $engine (String): the name of a search engine that searches a specific site
@@ -851,6 +928,21 @@ urlbar-result-action-switch-to-tabgroup = Switch to { $group }
 # Label for a quickaction result used to re-opan a saved tab group.
 #  $group (String): the name of the tab group to re-open
 urlbar-result-action-open-saved-tabgroup = Open { $group }
+
+## Used in the context menu in urlbar view.
+
+urlbar-view-context-menu-open-in-tab =
+  .label = Open in New Tab
+  .accesskey = w
+urlbar-view-context-menu-open-in-container-tab =
+  .label = Open in New Container Tab
+  .accesskey = i
+urlbar-view-context-menu-open-in-window =
+  .label = Open in New Window
+  .accesskey = N
+urlbar-view-context-menu-open-in-private-window =
+  .label = Open in New Private Window
+  .accesskey = P
 
 ## Labels shown above groups of urlbar results
 
@@ -928,6 +1020,10 @@ fullscreen-warning-no-domain = This document is now full screen
 fullscreen-exit-button = Exit Full Screen (Esc)
 # "esc" is lowercase on mac keyboards, but uppercase elsewhere.
 fullscreen-exit-mac-button = Exit Full Screen (esc)
+
+fullscreen-keyboardlock-exit-button = Exit Full Screen (Press and hold Esc)
+# "esc" is lowercase on mac keyboards, but uppercase elsewhere.
+fullscreen-keyboardlock-exit-mac-button = Exit Full Screen (Press and hold esc)
 
 # Please ensure that the domain stays in the `<span data-l10n-name="domain">` markup.
 # Variables
@@ -1032,6 +1128,36 @@ toolbar-button-logins =
   .label = Passwords
   .tooltiptext = View and manage your saved passwords
 
+qrcode-panel-error =
+    .message = Failed to generate QR code. Please try again.
+
+qrcode-copy-button =
+    .label = Copy
+qrcode-copy-success =
+    .message = QR code copied to clipboard.
+qrcode-copy-error =
+    .message = Failed to copy QR code.
+
+qrcode-save-button =
+    .label = Save
+
+## Default filenames used when saving a QR code. The file extension (.png)
+## is added automatically.
+
+qrcode-save-filename-base = qrcode
+# Variables:
+#  $domain (String): The current page's domain used in the suggested filename.
+qrcode-save-filename-with-domain-base = qrcode-{ $domain }
+
+##
+
+qrcode-window-title = QR Code
+qrcode-dialog-title = QR Code
+qrcode-image =
+    .aria-label = QR code
+qrcode-close-button =
+    .aria-label = Close
+
 # Variables:
 #  $shortcut (String): keyboard shortcut to save a copy of the page
 toolbar-button-save-page =
@@ -1048,6 +1174,10 @@ toolbar-button-synced-tabs =
   .label = Synced tabs
   .tooltiptext = Show tabs from other devices
 
+toolbar-button-send-tab =
+  .label = Send tab
+  .tooltiptext = Send current tab to another device
+
 # Variables
 # $shortcut (string) - Keyboard shortcut to open a new private browsing window
 toolbar-button-new-private-window =
@@ -1057,6 +1187,10 @@ toolbar-button-new-private-window =
 toolbar-button-share-tab =
   .label = Share
   .tooltiptext = Share this page
+
+toolbar-button-tab-groups =
+  .label = Tab groups
+  .tooltiptext = Show your tab groups
 
 ## EME notification panel
 
@@ -1068,16 +1202,26 @@ eme-notifications-drm-content-playing-dismiss-accesskey = D
 
 ## Password save/update panel
 
-panel-save-update-username = Username
-panel-save-update-password = Password
+panel-save-update-username-2 =
+    .label = Username
+panel-save-update-password-2 =
+    .label = Password
 
 ##
 
 # "More" item in macOS share menu
 menu-share-more =
     .label = More…
-menu-share-copy-link =
-    .label = Copy Link
+menu-share-windows =
+    .label = More Options
+# Variables:
+#   $count (Number) - The number of links that will be copied.
+menu-share-copy-links =
+    .label =
+        { $count ->
+            [one] Copy Link
+           *[other] Copy { $count } Links
+        }
     .accesskey = L
 ui-tour-info-panel-close =
     .tooltiptext = Close
@@ -1233,20 +1377,20 @@ unified-extensions-button-blocklisted =
 
 ## Private browsing reset button
 
-reset-pbm-toolbar-button =
-    .label = End Private Session
-    .tooltiptext = End Private Session
-reset-pbm-panel-heading = End your private session?
-reset-pbm-panel-description = Close all private tabs and delete history, cookies, and all other site data.
+reset-pbm-toolbar-button2 =
+    .label = Clear Private Session
+    .tooltiptext = Clear Private Session
+reset-pbm-panel-heading2 = Clear data and start a fresh private session?
+reset-pbm-panel-description2 = This deletes history, cookies, and all other site data without closing your Private Window.
 reset-pbm-panel-always-ask-checkbox =
      .label = Always ask me
      .accesskey = A
 reset-pbm-panel-cancel-button =
     .label = Cancel
     .accesskey = C
-reset-pbm-panel-confirm-button =
-    .label = Delete session data
-    .accesskey = D
+reset-pbm-panel-confirm-button2 =
+    .label = Clear private session
+    .accesskey = l
 reset-pbm-panel-complete = Private session data deleted
 
 ## Autorefresh blocker
@@ -1512,3 +1656,17 @@ trustpanel-cryptominer-not-blocking-tab-header = { $count ->
   *[other] { -brand-product-name } allowed { $count } cryptominers
 }
 trustpanel-cryptominer-tab-list-header = These sites are trying to cryptomine:
+# "account on this site" refers to the (breached) site the user is currently visiting, not a Mozilla Monitor account.
+trustpanel-breachalerts-anonymous-breached-header = Have an account on this site?
+trustpanel-breachalerts-anonymous-breached-description = { -brand-product-name } found that this site had a data breach in the last 12 months. Find out if you were affected.
+trustpanel-breachalerts-anonymous-breached-button-dismiss = Dismiss
+trustpanel-breachalerts-anonymous-breached-button-check-monitor = Start free scan
+
+## Reduced Protection Infobar ("ReducedProtectionNotification.sys.mjs")
+
+# "temporarily lower your tracking protection" refers to temporarily decreasing the amount of tracking protection.
+reduced-protection-infobar-message = <strong>Site looks broken?</strong> Reload the page to temporarily lower your tracking protection.
+reduced-protection-infobar-reload-button = Reload
+  .accesskey = R
+reduced-protection-infobar-never-show-button = Don’t show again
+  .accesskey = D

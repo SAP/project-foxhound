@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -303,6 +302,15 @@ partial interface Document {
   // Events handlers
   attribute EventHandler onfullscreenchange;
   attribute EventHandler onfullscreenerror;
+
+  [ChromeOnly, BinaryName="getFullscreenKeyboardLockStatus"]
+  readonly attribute FullscreenKeyboardLock fullscreenKeyboardLock;
+};
+
+// https://w3c.github.io/picture-in-picture/#extensions-to-the-document-interface
+partial interface Document {
+  [Pref="dom.media-pip.enabled"] readonly attribute boolean pictureInPictureEnabled;
+  [Pref="dom.media-pip.enabled", NewObject, Throws] Promise<undefined> exitPictureInPicture();
 };
 
 // https://w3c.github.io/pointerlock/#extensions-to-the-document-interface
@@ -355,6 +363,9 @@ dictionary CaretPositionFromPointOptions {
 // https://drafts.csswg.org/cssom-view/#extensions-to-the-document-interface
 partial interface Document {
     CaretPosition? caretPositionFromPoint(float x, float y, optional CaretPositionFromPointOptions options = {});
+
+    [Pref="dom.caretRangeFromPoint.enabled"]
+    Range? caretRangeFromPoint(optional long x = 0, optional long y = 0);
 
     readonly attribute Element? scrollingElement;
 };
@@ -658,7 +669,7 @@ partial interface Document {
    * tracking, fingerprinting, cryptomining and so on. This method is for
    * testing only.
    */
-  [ChromeOnly, Pure]
+  [ChromeOnly]
   readonly attribute NodeList blockedNodesByClassifier;
 };
 

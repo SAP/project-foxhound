@@ -21,7 +21,6 @@
 #include <vector>
 
 #include "absl/base/nullability.h"
-#include "absl/strings/string_view.h"
 #include "api/audio/audio_processing.h"
 #include "api/scoped_refptr.h"
 #include "common_audio/channel_buffer.h"
@@ -99,7 +98,6 @@ struct SimulationSettings {
   std::optional<std::string> artificial_nearend_filename;
   std::optional<std::string> linear_aec_output_filename;
   std::optional<bool> use_aec;
-  std::optional<bool> use_aecm;
   std::optional<bool> use_ed;  // Residual Echo Detector.
   std::optional<std::string> ed_graph_output_filename;
   std::optional<bool> use_agc;
@@ -153,13 +151,12 @@ struct SimulationSettings {
   std::optional<std::string> call_order_input_filename;
   std::optional<std::string> call_order_output_filename;
   std::optional<std::string> aec_settings_filename;
-  std::optional<absl::string_view> aec_dump_input_string;
-  std::vector<float>* processed_capture_samples = nullptr;
   bool analysis_only = false;
   std::optional<int> dump_start_frame;
   std::optional<int> dump_end_frame;
   std::optional<int> init_to_process;
   std::optional<std::string> neural_echo_residual_estimator_model;
+  std::optional<bool> use_adaptive_stereo_downmixing_for_aec;
 };
 
 // State used by the audio processor, but not owned by it.
@@ -244,7 +241,6 @@ class AudioProcessingSimulator {
   size_t num_reverse_process_stream_calls_ = 0;
   std::unique_ptr<ChannelBufferWavWriter> buffer_file_writer_;
   std::unique_ptr<ChannelBufferWavWriter> reverse_buffer_file_writer_;
-  std::unique_ptr<ChannelBufferVectorWriter> buffer_memory_writer_;
   std::unique_ptr<WavWriter> linear_aec_output_file_writer_;
   ApiCallStatistics api_call_statistics_;
   std::ofstream residual_echo_likelihood_graph_writer_;

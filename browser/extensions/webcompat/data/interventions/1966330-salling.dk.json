@@ -1,0 +1,18 @@
+{
+  "label": "salling.dk",
+  "bugs": {
+    "1966330": {
+      "issue": "broken-scrolling",
+      "matches": ["*://salling.dk/*"]
+    }
+  },
+  "css": {
+    "fix_mobile_filter_scrolling": "@media (max-width: 767px) { .overlay-mobile--bottom[class], .overlay-mobile--top[class] { max-height: 100%; } }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "css": ["fix_mobile_filter_scrolling"]
+    }
+  ]
+}

@@ -83,7 +83,6 @@ UNUSED_SOURCES = set(
         "intl/icu/source/i18n/uni2name.cpp",
         "intl/icu/source/i18n/uregexc.cpp",
         "intl/icu/source/i18n/uregex.cpp",
-        "intl/icu/source/i18n/uregion.cpp",
         "intl/icu/source/i18n/uspoof_build.cpp",
         "intl/icu/source/i18n/uspoof_conf.cpp",
         "intl/icu/source/i18n/utrans.cpp",
@@ -240,6 +239,8 @@ def update_data_file(topsrcdir):
             + "-DUCONFIG_NO_BREAK_ITERATION "
             + "-DUCONFIG_NO_IDNA "
             + "-DUCONFIG_NO_MF2 "
+            + "-DUCONFIG_NO_NORMALIZATION=1 "
+            + "-DUCONFIG_NO_COLLATION "
             + "-DU_CHARSET_IS_UTF8 "
         )
     })

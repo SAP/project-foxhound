@@ -1,23 +1,40 @@
-From: Michael Froman <mfroman@mozilla.com>
-Date: Tue, 15 Oct 2024 16:46:00 -0500
-Subject: Bug 1924098 - (fix-e432503389) upstream changed signature of
- LibvpxVp9Encoder::InitAndSetControlSettings
+From: Andreas Pehrson <apehrson@mozilla.com>
+Date: Tue, 28 Jan 2025 21:45:00 +0000
+Subject: Bug 1938047 - Link adapted_video_track_source.cc and generate webrtc
+ moz.build files. r=ng,webrtc-reviewers
 
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/fadad7695efe0d9cc6b999a613b9e1f536e660bd
+Differential Revision: https://phabricator.services.mozilla.com/D234863
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/b6dd815fc9d2df718a1b48b96f58f99c0cfb7e19
 ---
- modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
+ media/BUILD.gn | 11 -----------
+ 1 file changed, 11 deletions(-)
 
-diff --git a/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc b/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc
-index d0c7f1fc9f..55fa94dc51 100644
---- a/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc
-+++ b/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc
-@@ -1340,7 +1340,7 @@ int LibvpxVp9Encoder::UpdateCodecFrameSize(
-   // bugs in trying to do it the "right" way, we basically re-do
-   // the initialization.
-   vpx_codec_destroy(encoder_); // clean up old state
--  int result = InitAndSetControlSettings(&codec_);
-+  int result = InitAndSetControlSettings();
-   if (result == WEBRTC_VIDEO_CODEC_OK) {
-     // TODO: Mozilla rates have become much more complicated, we need to store
-     // more state or find another way of doing this.
+diff --git a/media/BUILD.gn b/media/BUILD.gn
+index 88c96939ff..a46e700d6a 100644
+--- a/media/BUILD.gn
++++ b/media/BUILD.gn
+@@ -54,11 +54,6 @@ rtc_library("rtc_media_base") {
+     "base/video_broadcaster.h",  # Used downstream
+     "base/video_common.h",  # Used downstream
+   ]
+-  if (build_with_mozilla) {
+-    sources -= [
+-      "base/adapted_video_track_source.h",
+-    ]
+-  }
+   deps = [
+     ":adapted_video_track_source",
+     ":codec",
+@@ -137,12 +132,6 @@ rtc_library("adapted_video_track_source") {
+     "base/adapted_video_track_source.cc",
+     "base/adapted_video_track_source.h",
+   ]
+-  if (build_with_mozilla) {
+-    sources -= [
+-      "base/adapted_video_track_source.cc",
+-      "base/adapted_video_track_source.h",
+-    ]
+-  }
+   deps = [
+     ":video_adapter",
+     ":video_broadcaster",

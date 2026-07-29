@@ -145,7 +145,7 @@ async function testUseInConsole(
   await wait(100);
 
   const onConsoleReady = inspector.once("console-var-ready");
-  const menu = inspector.markup.contextMenu._openMenu({
+  const menu = inspector.markup.contextMenu.openMenu({
     target: container.tagLine,
   });
   const useInConsoleItem = menu.items.find(

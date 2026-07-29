@@ -1,0 +1,122 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl2-deqp"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/closure-library/**",
+  "../checkout/deqp/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_00.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_01.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_02.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_03.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_04.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_05.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_06.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_07.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_08.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_09.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_10.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_11.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_12.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_13.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_14.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_15.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_16.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_17.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_18.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_19.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_20.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_21.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_22.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_23.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_24.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_25.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_26.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_27.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_28.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_29.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_30.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_31.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_32.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_33.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__conversion_34.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__default_framebuffer_00.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__default_framebuffer_01.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__default_framebuffer_02.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__default_framebuffer_03.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__default_framebuffer_04.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__default_framebuffer_05.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__default_framebuffer_06.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__depth_stencil.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__rect_00.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__rect_01.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__rect_02.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__rect_03.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__rect_04.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__rect_05.html"]
+
+["test_2_deqp__functional__gles3__framebufferblit__rect_06.html"]

@@ -8,9 +8,10 @@ import mozilla.components.browser.state.search.RegionState
 import mozilla.components.browser.state.search.SearchEngine
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Test
+import kotlin.test.assertNotNull
 
 class SearchStateTest {
     @Test
@@ -45,7 +46,7 @@ class SearchStateTest {
         )
 
         val searchEngine = state.selectedOrDefaultSearchEngine
-        assertNotNull(searchEngine!!)
+        assertNotNull(searchEngine)
         assertEquals("engine-e", searchEngine.id)
         assertEquals("Engine E", searchEngine.name)
     }
@@ -82,7 +83,7 @@ class SearchStateTest {
         )
 
         val searchEngine = state.selectedOrDefaultSearchEngine
-        assertNotNull(searchEngine!!)
+        assertNotNull(searchEngine)
         assertEquals("engine-d", searchEngine.id)
         assertEquals("Engine D", searchEngine.name)
     }
@@ -119,7 +120,7 @@ class SearchStateTest {
         )
 
         val searchEngine = state.selectedOrDefaultSearchEngine
-        assertNotNull(searchEngine!!)
+        assertNotNull(searchEngine)
         assertEquals("engine-b", searchEngine.id)
         assertEquals("Engine B", searchEngine.name)
     }
@@ -156,7 +157,7 @@ class SearchStateTest {
         )
 
         val searchEngine = state.selectedOrDefaultSearchEngine
-        assertNotNull(searchEngine!!)
+        assertNotNull(searchEngine)
         assertEquals("engine-a", searchEngine.id)
         assertEquals("Engine A", searchEngine.name)
     }
@@ -244,5 +245,75 @@ class SearchStateTest {
         assertEquals("engine-i", available[0].id)
         assertEquals("engine-g", available[1].id)
         assertEquals("engine-h", available[2].id)
+    }
+
+    @Test
+    fun `GIVEN a userSelectedPrivateSearchEngineId that matches an engine WHEN getting selectedOrDefaultPrivateSearchEngine THEN return the engine matching that id`() {
+        val state = SearchState(
+            regionSearchEngines = listOf(
+                SearchEngine("engine-a", "Engine A", mock(), type = SearchEngine.Type.BUNDLED),
+                SearchEngine("engine-b", "Engine B", mock(), type = SearchEngine.Type.BUNDLED),
+            ),
+            regionDefaultSearchEngineId = "engine-a",
+            userSelectedSearchEngineId = "engine-a",
+            userSelectedPrivateSearchEngineId = "engine-b",
+        )
+
+        val searchEngine = state.selectedOrDefaultPrivateSearchEngine
+        assertNotNull(searchEngine)
+        assertEquals("engine-b", searchEngine.id)
+    }
+
+    @Test
+    fun `GIVEN a userSelectedPrivateSearchEngineId that does not match any engine WHEN getting selectedOrDefaultPrivateSearchEngine THEN fall back to matching by userSelectedPrivateSearchEngineName`() {
+        val state = SearchState(
+            regionSearchEngines = listOf(
+                SearchEngine("engine-a", "Engine A", mock(), type = SearchEngine.Type.BUNDLED),
+                SearchEngine("engine-b", "Engine B", mock(), type = SearchEngine.Type.BUNDLED),
+            ),
+            regionDefaultSearchEngineId = "engine-a",
+            userSelectedSearchEngineId = "engine-a",
+            userSelectedPrivateSearchEngineId = "non-existent-id",
+            userSelectedPrivateSearchEngineName = "Engine B",
+        )
+
+        val searchEngine = state.selectedOrDefaultPrivateSearchEngine
+        assertNotNull(searchEngine)
+        assertEquals("engine-b", searchEngine.id)
+    }
+
+    @Test
+    fun `GIVEN no userSelectedPrivateSearchEngineId or name WHEN getting selectedOrDefaultPrivateSearchEngine THEN return the same engine as selectedOrDefaultSearchEngine`() {
+        val state = SearchState(
+            regionSearchEngines = listOf(
+                SearchEngine("engine-a", "Engine A", mock(), type = SearchEngine.Type.BUNDLED),
+                SearchEngine("engine-b", "Engine B", mock(), type = SearchEngine.Type.BUNDLED),
+            ),
+            regionDefaultSearchEngineId = "engine-a",
+            userSelectedSearchEngineId = "engine-a",
+            userSelectedPrivateSearchEngineId = null,
+            userSelectedPrivateSearchEngineName = null,
+        )
+
+        val normalDefault = state.selectedOrDefaultSearchEngine
+        val privateDefault = state.selectedOrDefaultPrivateSearchEngine
+        assertSame(normalDefault, privateDefault)
+        assertEquals("engine-a", privateDefault!!.id)
+    }
+
+    @Test
+    fun `GIVEN different selected normal and private search engines WHEN getting selectedOrDefaultSearchEngine with the private parameter THEN return the correct engine for each mode`() {
+        val state = SearchState(
+            regionSearchEngines = listOf(
+                SearchEngine("engine-a", "Engine A", mock(), type = SearchEngine.Type.BUNDLED),
+                SearchEngine("engine-b", "Engine B", mock(), type = SearchEngine.Type.BUNDLED),
+            ),
+            regionDefaultSearchEngineId = "engine-a",
+            userSelectedSearchEngineId = "engine-a",
+            userSelectedPrivateSearchEngineId = "engine-b",
+        )
+
+        assertEquals("engine-a", state.selectedOrDefaultSearchEngine(private = false)!!.id)
+        assertEquals("engine-b", state.selectedOrDefaultSearchEngine(private = true)!!.id)
     }
 }

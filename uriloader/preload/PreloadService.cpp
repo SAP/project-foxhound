@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -186,7 +185,8 @@ PreloadService::PreloadOrCoalesceResult PreloadService::PreloadOrCoalesce(
     const nsAString& aIntegrity, const nsAString& aCORS,
     const nsAString& aReferrerPolicy, const nsAString& aFetchPriority,
     bool aFromHeader, uint64_t aEarlyHintPreloaderId) {
-  if (!aURI) {
+  if (!aURI &&
+      !(aPolicyType == nsIContentPolicy::TYPE_IMAGE && !aSrcset.IsEmpty())) {
     MOZ_ASSERT_UNREACHABLE("Should not pass null nsIURI");
     return {nullptr, false};
   }
@@ -199,8 +199,7 @@ PreloadService::PreloadOrCoalesceResult PreloadService::PreloadOrCoalesce(
     preloadKey = PreloadHashKey::CreateAsScript(uri, aCORS, aType);
   } else if (aAs.LowerCaseEqualsASCII("style")) {
     preloadKey = PreloadHashKey::CreateAsStyle(
-        uri, mDocument->NodePrincipal(), dom::Element::StringToCORSMode(aCORS),
-        css::eAuthorSheetFeatures /* see Loader::LoadSheet */);
+        uri, mDocument->NodePrincipal(), dom::Element::StringToCORSMode(aCORS));
   } else if (aAs.LowerCaseEqualsASCII("image")) {
     uri = mDocument->ResolvePreloadImage(BaseURIForPreload(), aURL, aSrcset,
                                          aSizes, &isImgSet);
@@ -313,7 +312,7 @@ void PreloadService::PreloadFont(nsIURI* aURI, const nsAString& aCrossOrigin,
       SupportsPriorityValueFor::LinkRelPreloadFont(fetchPriority);
   LogPriorityMapping(sPreloadServiceLog, fetchPriority, supportsPriorityValue);
 
-  RefPtr<FontPreloader> preloader = new FontPreloader();
+  RefPtr preloader = MakeRefPtr<FontPreloader>();
   dom::ReferrerPolicy referrerPolicy = PreloadReferrerPolicy(aReferrerPolicy);
   preloader->OpenChannel(key, aURI, cors, referrerPolicy, mDocument,
                          aEarlyHintPreloaderId, supportsPriorityValue);
@@ -330,7 +329,7 @@ void PreloadService::PreloadFetch(nsIURI* aURI, const nsAString& aCrossOrigin,
     return;
   }
 
-  RefPtr<FetchPreloader> preloader = new FetchPreloader();
+  RefPtr preloader = MakeRefPtr<FetchPreloader>();
   dom::ReferrerPolicy referrerPolicy = PreloadReferrerPolicy(aReferrerPolicy);
 
   const auto fetchPriority =
@@ -356,7 +355,7 @@ void PreloadService::NotifyNodeEvent(nsINode* aNode, bool aSuccess) {
   // that we're not allowed to touch. (Our network request happens in the
   // DocGroup of one of the mSources nodes--not necessarily this one).
 
-  RefPtr<AsyncEventDispatcher> dispatcher = new AsyncEventDispatcher(
+  RefPtr dispatcher = MakeRefPtr<AsyncEventDispatcher>(
       aNode, aSuccess ? u"load"_ns : u"error"_ns, CanBubble::eNo);
 
   dispatcher->RequireNodeInDocument();

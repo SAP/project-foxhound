@@ -24,7 +24,9 @@ _PerfService.prototype = {
    * @return {void}
    */
   mark: function mark(str) {
-    this._perf.mark(str);
+    if (typeof this._perf.mark === "function") {
+      this._perf.mark(str);
+    }
   },
 
   /**
@@ -36,7 +38,10 @@ _PerfService.prototype = {
    * @return {Array}       Performance* objects
    */
   getEntriesByName: function getEntriesByName(entryName, type) {
-    return this._perf.getEntriesByName(entryName, type);
+    if (typeof this._perf.getEntriesByName === "function") {
+      return this._perf.getEntriesByName(entryName, type);
+    }
+    return [];
   },
 
   /**

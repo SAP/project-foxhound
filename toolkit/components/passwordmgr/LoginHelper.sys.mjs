@@ -276,6 +276,8 @@ class ImportRowProcessor {
     login.timePasswordChanged =
       loginData.timePasswordChanged || loginData.timeCreated;
     login.timesUsed = loginData.timesUsed || 1;
+    login.timeLastBreachAlertDismissed =
+      loginData.timeLastBreachAlertDismissed || null;
     login.guid = loginData.guid || null;
     return login;
   }
@@ -657,19 +659,6 @@ export const LoginHelper = {
   },
 
   /**
-   * Helper to avoid the property bags when calling
-   * Services.logins.searchLogins from JS.
-   *
-   * @deprecated Use Services.logins.searchLoginsAsync instead.
-   *
-   * @param {object} aSearchOptions - A regular JS object to copy to a property bag before searching
-   * @return {nsILoginInfo[]} - The result of calling searchLogins.
-   */
-  searchLoginsWithObject(aSearchOptions) {
-    return Services.logins.searchLogins(this.newPropertyBag(aSearchOptions));
-  },
-
-  /**
    * @param {string} aURL
    * @returns {string} which is the hostPort of aURL if supported by the scheme
    *                   otherwise, returns the original aURL.
@@ -911,6 +900,7 @@ export const LoginHelper = {
           case "timeLastUsed":
           case "timePasswordChanged":
           case "timesUsed":
+          case "timeLastBreachAlertDismissed":
             newLogin[prop.name] = prop.value;
             break;
 
@@ -1514,6 +1504,7 @@ export const LoginHelper = {
       "timeLastUsed",
       "timePasswordChanged",
       "timesUsed",
+      "timeLastBreachAlertDismissed",
     ]) {
       formLogin[prop] = login[prop];
     }
@@ -1535,10 +1526,9 @@ export const LoginHelper = {
    * Returns true if the user has a primary password set and false otherwise.
    */
   isPrimaryPasswordSet() {
-    let tokenDB = Cc["@mozilla.org/security/pk11tokendb;1"].getService(
-      Ci.nsIPK11TokenDB
+    let token = Cc["@mozilla.org/security/internalkeytoken;1"].createInstance(
+      Ci.nsIPKCS11Token
     );
-    let token = tokenDB.getInternalKeyToken();
     return token.hasPassword;
   },
 
@@ -1635,7 +1625,6 @@ export const LoginHelper = {
    *
    * @param {Element} browser
    *        The <browser> that the prompt should be shown on
-   * @param OSReauthEnabled Boolean indicating if OS reauth should be tried
    * @param expirationTime Optional timestamp indicating next required re-authentication
    * @param messageText Formatted and localized string to be displayed when the OS auth dialog is used.
    * @param captionText Formatted and localized string to be displayed when the OS auth dialog is used.
@@ -1643,7 +1632,6 @@ export const LoginHelper = {
    */
   async requestReauth(
     browser,
-    OSReauthEnabled,
     expirationTime,
     messageText,
     captionText,
@@ -1653,10 +1641,9 @@ export const LoginHelper = {
     let telemetryEvent;
 
     // This does no harm if primary password isn't set.
-    let tokendb = Cc["@mozilla.org/security/pk11tokendb;1"].createInstance(
-      Ci.nsIPK11TokenDB
+    let token = Cc["@mozilla.org/security/internalkeytoken;1"].createInstance(
+      Ci.nsIPKCS11Token
     );
-    let token = tokendb.getInternalKeyToken();
 
     // Do we have a recent authorization?
     if (expirationTime && Date.now() < expirationTime) {
@@ -1672,12 +1659,16 @@ export const LoginHelper = {
       };
     }
 
+    let isOSAuthEnabled = this.getOSAuthEnabled();
+
     // Default to true if there is no primary password and OS reauth is not available
-    if (!token.hasPassword && !OSReauthEnabled) {
+    if (!token.hasPassword && !isOSAuthEnabled) {
       isAuthorized = true;
       telemetryEvent = {
         name: "reauthenticateOsAuth",
-        value: "success_disabled",
+        value: lazy.OSKeyStore.canReauth()
+          ? "success_disabled"
+          : "success_unsupported_platform",
       };
       return {
         isAuthorized,
@@ -1685,15 +1676,15 @@ export const LoginHelper = {
       };
     }
     // Use the OS auth dialog if there is no primary password
-    // or if primary password is already unlocked.
-    if ((!token.hasPassword || token.isLoggedIn()) && OSReauthEnabled) {
+    // or if primary password is already unlocked and os auth is enabled.
+    if (isOSAuthEnabled && (!token.hasPassword || token.isLoggedIn)) {
       let result;
       try {
         isAuthorized = await this.verifyUserOSAuth(
           OS_AUTH_FOR_PASSWORDS_BOOL_PREF,
           messageText,
           captionText,
-          browser.ownerGlobal,
+          browser.documentGlobal,
           false
         );
         result = isAuthorized ? "success" : "fail_user_canceled";
@@ -1719,8 +1710,8 @@ export const LoginHelper = {
         telemetryEvent,
       };
     }
-    // We'll attempt to re-auth via Primary Password, force a log-out
-    token.checkPassword("");
+    // We'll attempt to re-auth via Primary Password, so log out.
+    token.logout();
 
     // If a primary password prompt is already open, just exit early and return false.
     // The user can re-trigger it after responding to the already open dialog.
@@ -1732,16 +1723,15 @@ export const LoginHelper = {
       };
     }
 
-    // So there's a primary password. But since checkPassword didn't succeed, we're logged out (per nsIPK11Token.idl).
     try {
-      // Relogin and ask for the primary password.
-      token.login(true); // 'true' means always prompt for token password. User will be prompted until
-      // clicking 'Cancel' or entering the correct password.
+      // Log in again, which prompts for the primary password.
+      token.login();
     } catch (e) {
-      // An exception will be thrown if the user cancels the login prompt dialog.
-      // User is also logged out of Software Security Device.
+      // An exception will be thrown if the user cancels the login prompt
+      // dialog. The user will still be logged out of Software Security Device
+      // in this case.
     }
-    isAuthorized = token.isLoggedIn();
+    isAuthorized = token.isLoggedIn;
     telemetryEvent = {
       name: "reauthenticateMasterPassword",
       value: isAuthorized ? "success" : "fail",
@@ -1825,7 +1815,7 @@ export const LoginHelper = {
    *                    which could be in a different window.
    */
   getBrowserForPrompt(browser) {
-    let chromeWindow = browser.ownerGlobal;
+    let chromeWindow = browser.documentGlobal;
     let openerBrowsingContext = browser.browsingContext.opener;
     let openerBrowser = openerBrowsingContext
       ? openerBrowsingContext.top.embedderElement

@@ -18,7 +18,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import mozilla.components.lib.state.helpers.StoreProvider.Companion.composableStore
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.settings.biometric.ui.state.BiometricAuthenticationState
 import org.mozilla.fenix.settings.biometric.ui.state.SecureScreenAction
 import org.mozilla.fenix.settings.biometric.ui.state.SecureScreenAction.AuthenticationFlowAction
@@ -155,7 +155,7 @@ private fun ObserveLifecycle(
 
             override fun onResume(owner: LifecycleOwner) {
                 super.onResume(owner)
-                if (activityContext.settings().allowScreenCaptureInSecureScreens) {
+                if (activityContext.components.settings.allowScreenCaptureInSecureScreens) {
                     activityContext.window?.unlock()
                 } else {
                     activityContext.window?.lock()

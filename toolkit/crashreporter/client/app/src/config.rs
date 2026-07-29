@@ -12,13 +12,8 @@ use crate::{lang, logging::LogTarget, std};
 use anyhow::Context;
 use once_cell::sync::Lazy;
 
-/// The number of the most recent minidump files to retain when pruning.
-const MINIDUMP_PRUNE_SAVE_COUNT: usize = 10;
-
 #[cfg(test)]
 pub mod test {
-    pub const MINIDUMP_PRUNE_SAVE_COUNT: usize = super::MINIDUMP_PRUNE_SAVE_COUNT;
-
     cfg_if::cfg_if! {
         if #[cfg(target_os = "linux")] {
             use crate::std::{mock, env, fs::MockFS, fs::MockFiles};
@@ -75,6 +70,42 @@ pub mod test {
             }
         }
     }
+
+    #[test]
+    fn restart_command_no_extra() {
+        let extra = serde_json::from_str("{}").unwrap();
+        assert!(!super::Config::should_suppress_restart(&extra));
+    }
+
+    #[test]
+    fn restart_command_wer() {
+        let extra = serde_json::from_str(r#"{"WindowsErrorReporting": "1"}"#).unwrap();
+        assert!(super::Config::should_suppress_restart(&extra));
+    }
+
+    #[test]
+    fn restart_command_standard_shutdown() {
+        let extra = serde_json::from_str(
+            r#"{
+            "ShutdownProgress": "quit-application",
+            "ShutdownReason": "AppClose"
+        }"#,
+        )
+        .unwrap();
+        assert!(super::Config::should_suppress_restart(&extra));
+    }
+
+    #[test]
+    fn restart_command_shutdown_for_restart() {
+        let extra = serde_json::from_str(
+            r#"{
+            "ShutdownProgress": "quit-application",
+            "ShutdownReason": "AppRestart"
+        }"#,
+        )
+        .unwrap();
+        assert!(!super::Config::should_suppress_restart(&extra));
+    }
 }
 
 mod buildid_section {
@@ -100,8 +131,6 @@ pub struct Config {
     pub data_dir: Option<PathBuf>,
     /// The events directory.
     pub events_dir: Option<PathBuf>,
-    /// The ping directory.
-    pub ping_dir: Option<PathBuf>,
     /// The profile directory in use when the crash occurred.
     pub profile_dir: Option<PathBuf>,
     /// The dump file.
@@ -151,7 +180,6 @@ impl Config {
         self.run_memtest = env_bool(ekey!("RUN_MEMTEST"));
         self.data_dir = env_path(ekey!("DATA_DIRECTORY"));
         self.events_dir = env_path(ekey!("EVENTS_DIRECTORY"));
-        self.ping_dir = env_path(ekey!("PING_DIRECTORY"));
         self.app_file = std::env::var_os(ekey!("RESTART_XUL_APP_FILE"));
 
         self.update_log_file();
@@ -245,15 +273,20 @@ impl Config {
             self.update_log_file();
         }
 
-        // Clear the restart command if WER handled the crash. This prevents restarting the
-        // program. See bug 1872920.
-        if extra.get("WindowsErrorReporting").is_some() {
+        if Self::should_suppress_restart(&extra) {
             self.restart_command = None;
         }
 
         self.load_profile_directory_from_extra(&extra);
-
         Ok(extra)
+    }
+
+    // Clear the restart command if the browser was already shutting down or if WER handled the
+    // crash. This prevents restarting the program. See bugs 1872920 and 2012347.
+    fn should_suppress_restart(extra: &serde_json::Value) -> bool {
+        extra.get("WindowsErrorReporting").is_some()
+            || (extra.get("ShutdownProgress").is_some()
+                && extra.get("ShutdownReason").and_then(|v| v.as_str()) != Some("AppRestart"))
     }
 
     /// Load the profile directory from the extra file information.
@@ -396,70 +429,6 @@ impl Config {
         }
     }
 
-    /// Prune old minidump files adjacent to the dump file.
-    pub fn prune_files(&self) -> anyhow::Result<()> {
-        log::info!("pruning minidump files to the {MINIDUMP_PRUNE_SAVE_COUNT} most recent");
-        let Some(file) = &self.dump_file else {
-            anyhow::bail!("no dump file")
-        };
-        let Some(dir) = file.parent() else {
-            anyhow::bail!("no parent directory for dump file")
-        };
-        log::debug!("pruning {} directory", dir.display());
-        let read_dir = dir.read_dir().with_context(|| {
-            format!(
-                "failed to read dump file parent directory {}",
-                dir.display()
-            )
-        })?;
-
-        let mut minidump_files = Vec::new();
-        for entry in read_dir {
-            match entry {
-                Err(e) => log::error!(
-                    "error while iterating over {} directory entry: {e}",
-                    dir.display()
-                ),
-                Ok(e) if e.path().extension() == Some("dmp".as_ref()) => {
-                    // Return if the metadata can't be read, since not being able to get metadata
-                    // for any file could make the selection of minidumps to delete incorrect.
-                    let meta = e.metadata().with_context(|| {
-                        format!("failed to read metadata for {}", e.path().display())
-                    })?;
-                    if meta.is_file() {
-                        let modified_time =
-                            meta.modified().expect(
-                                "file modification time should be available on all crashreporter platforms",
-                            );
-                        minidump_files.push((modified_time, e.path()));
-                    }
-                }
-                _ => (),
-            }
-        }
-
-        // Sort by modification time first, then path (just to have a defined behavior in the case
-        // of identical times). The reverse leaves the files in order from newest to oldest.
-        minidump_files.sort_unstable_by(|a, b| a.cmp(b).reverse());
-
-        // Delete files, skipping the most recent MINIDUMP_PRUNE_SAVE_COUNT.
-        for dump_file in minidump_files
-            .into_iter()
-            .skip(MINIDUMP_PRUNE_SAVE_COUNT)
-            .map(|v| v.1)
-        {
-            log::debug!("pruning {} and related files", dump_file.display());
-            if let Err(e) = std::fs::remove_file(&dump_file) {
-                log::warn!("failed to delete {}: {e}", dump_file.display());
-            }
-
-            // Ignore errors for the extra file and the memory file: they may not exist.
-            let _ = std::fs::remove_file(extra_file_for_dump_file(dump_file.clone()));
-            let _ = std::fs::remove_file(memory_file_for_dump_file(dump_file));
-        }
-        Ok(())
-    }
-
     /// Restart the program based on the configured restart command.
     pub fn restart_process(&self) {
         if self.restart_command.is_none() {
@@ -590,7 +559,7 @@ impl Config {
                 };
 
                 let mut path: PWSTR = std::ptr::null_mut();
-                let result = unsafe { SHGetKnownFolderPath(&FOLDERID_RoamingAppData, 0, 0, &mut path) };
+                let result = unsafe { SHGetKnownFolderPath(&FOLDERID_RoamingAppData, 0, std::ptr::null_mut(), &mut path) };
                 if result != 0 {
                     unsafe { CoTaskMemFree(path as _) };
                     anyhow::bail!("failed to get known path for roaming appdata");

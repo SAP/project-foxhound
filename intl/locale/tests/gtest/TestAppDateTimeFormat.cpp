@@ -11,8 +11,8 @@ using ComponentsBag = DateTimeFormat::ComponentsBag;
 static DateTimeFormat::StyleBag ToStyleBag(Maybe<DateTimeFormat::Style> date,
                                            Maybe<DateTimeFormat::Style> time) {
   DateTimeFormat::StyleBag style;
-  style.date = date;
-  style.time = time;
+  style.date = std::move(date);
+  style.time = std::move(time);
   return style;
 }
 

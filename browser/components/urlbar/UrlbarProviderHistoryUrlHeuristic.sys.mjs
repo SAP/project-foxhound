@@ -17,7 +17,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
 });
 
 /**
@@ -86,6 +86,12 @@ export class UrlbarProviderHistoryUrlHeuristic extends UrlbarProvider {
           hash('https://www.' || :strippedURL),
           hash('http://' || :strippedURL),
           hash('http://www.' || :strippedURL)
+        )
+        AND url IN (
+          'https://' || :strippedURL,
+          'https://www.' || :strippedURL,
+          'http://' || :strippedURL,
+          'http://www.' || :strippedURL
         )
         AND frecency <> 0
       ORDER BY

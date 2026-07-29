@@ -10,11 +10,12 @@ let log = [];
 g.log = log;
 
 g.eval(`
+    thenCalled = false;
     async function f() {
         log.push("START");
         await {};
         log.push("MIDDLE");
-        await {};
+        await {then: () => { thenCalled = true; }};
         log.push("END");
     }
 `);
@@ -35,6 +36,8 @@ g.f().then(() => {
         "enter: f", // Await not optimised away in JSOP_TRYSKIPAWAIT!
         "END",
     ]), true);
+}).then(() => {
+    assertEq(g.thenCalled, true);
 }).catch(neverCalled);
 
 dbg.onEnterFrame = frame => {

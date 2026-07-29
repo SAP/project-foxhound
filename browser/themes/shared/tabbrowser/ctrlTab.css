@@ -6,11 +6,12 @@
 
 #ctrlTab-panel {
   appearance: none;
-  --panel-background: hsla(0, 0%, 40%, 0.85);
-  --panel-color: white;
+  --panel-background-color: hsla(0, 0%, 40%, 0.85);
+  --panel-text-color: white;
   --panel-border-color: transparent;
   --panel-padding: 20px 10px 10px;
   -moz-window-shadow: none;
+  background-color: transparent;
   @media not (-moz-platform: macos) {
     font-weight: var(--font-weight-bold);
   }

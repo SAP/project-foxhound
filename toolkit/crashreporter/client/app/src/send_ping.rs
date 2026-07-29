@@ -20,6 +20,8 @@ pub fn main() {
     let _glean_handle = glean::InitOptions {
         data_dir: data_path.into(),
         locale: None,
+        // Assume that this is only invoked to send a ping when upload is enabled.
+        upload_enabled: true,
     }
     .init()
     .expect("failed to acquire Glean store");
@@ -27,10 +29,39 @@ pub fn main() {
     ping::CrashPing {
         extra: &extra,
         reason: reason.to_str(),
-        legacy_telemetry: None,
     }
     .send();
 
     // Increase our chances of sending the ping immediately by explicitly shutting down Glean.
+    ::glean::shutdown();
+}
+
+/// Just initialize Glean to allow any unsubmitted pings to be sent.
+pub fn cleanup_main() {
+    logging::init();
+
+    let mut args = env::args_os().skip(2);
+    let data_path = args.next().expect("no data path provided");
+    let upload_enabled: bool = args
+        .next()
+        .expect("upload enabled missing")
+        .to_str()
+        .expect("non-unicode upload enabled value")
+        .parse()
+        .expect("invalid upload enabled value");
+
+    let _glean_handle = glean::InitOptions {
+        data_dir: data_path.into(),
+        locale: None,
+        upload_enabled,
+    }
+    .init()
+    .expect("failed to acquire Glean store");
+
+    // Sleep for a short period for Glean to do its thing in the background (and so that
+    // `glean::shutdown()` won't log a warning about waiting for init to complete).
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
+    // Glean shutdown will block (for a period) on at least one ping to be sent.
     ::glean::shutdown();
 }

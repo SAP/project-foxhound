@@ -11,15 +11,15 @@
 #include "p2p/dtls/dtls_utils.h"
 
 #include <cstdint>
+#include <span>
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"
-#include "api/array_view.h"
 #include "test/gtest.h"
 
 namespace webrtc {
 
-std::vector<uint8_t> ToVector(ArrayView<const uint8_t> array) {
+std::vector<uint8_t> ToVector(std::span<const uint8_t> array) {
   return std::vector<uint8_t>(array.begin(), array.end());
 }
 
@@ -154,6 +154,31 @@ TEST(PacketStash, PruneSize) {
   EXPECT_EQ(ToVector(stash.GetNext()), packet4);
   EXPECT_EQ(ToVector(stash.GetNext()), packet5);
   EXPECT_EQ(ToVector(stash.GetNext()), packet6);
+}
+
+TEST(PacketStash, PruneSome) {
+  PacketStash stash;
+  std::vector<uint8_t> packet1 = {1};
+  std::vector<uint8_t> packet2 = {2};
+  std::vector<uint8_t> packet3 = {3};
+
+  stash.AddIfUnique(packet1);
+  stash.AddIfUnique(packet2);
+  stash.AddIfUnique(packet3);
+  EXPECT_EQ(stash.size(), 3);
+
+  EXPECT_EQ(ToVector(stash.GetNext()), packet1);
+  EXPECT_EQ(ToVector(stash.GetNext()), packet2);
+  EXPECT_EQ(ToVector(stash.GetNext()), packet3);
+  EXPECT_EQ(ToVector(stash.GetNext()), packet1);
+
+  absl::flat_hash_set<uint32_t> remove;
+  remove.insert(PacketStash::Hash(packet1));
+  remove.insert(PacketStash::Hash(packet2));
+  EXPECT_EQ(stash.Prune(remove), 2u);
+  EXPECT_EQ(stash.Prune(remove), 0u);
+
+  EXPECT_EQ(ToVector(stash.GetNext()), packet3);
 }
 
 }  // namespace webrtc

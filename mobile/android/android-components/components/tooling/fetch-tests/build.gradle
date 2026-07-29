@@ -10,21 +10,19 @@ apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
 android {
-    packaging {
-        resources {
-            excludes += ['META-INF/LICENSE.md', 'META-INF/LICENSE-notice.md']
-        }
-    }
-
     namespace = 'mozilla.components.tooling.fetch.tests'
 }
 
 dependencies {
     implementation project(':components:concept-fetch')
 
+    api libs.mockwebserver
+
     implementation libs.junit4
+    implementation libs.kotlin.test
     implementation libs.kotlinx.coroutines
-    implementation libs.mockwebserver
+    implementation libs.okhttp
+    implementation libs.okio
 }
 
 apply from: '../../../common-config.gradle'

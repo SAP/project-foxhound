@@ -1,4 +1,3 @@
-/* vim:set ts=4 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -459,7 +458,7 @@ nsHttpNegotiateAuth::GenerateCredentials(
   *flags = USING_INTERNAL_IDENTITY;
 
   LOG(("nsHttpNegotiateAuth::GenerateCredentials() [challenge=%s]\n",
-       aChallenge.BeginReading()));
+       PromiseFlatCString(aChallenge).get()));
 
 #ifdef DEBUG
   bool isGssapiAuth = StringBeginsWith(aChallenge, "Negotiate"_ns,

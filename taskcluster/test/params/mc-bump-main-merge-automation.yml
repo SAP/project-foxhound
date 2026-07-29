@@ -65,7 +65,6 @@ level: '3'
 merge_config:
   behavior: bump-main
   force-dry-run: false
-message: ''
 moz_build_date: '20250526095203'
 next_version: null
 optimize_strategies: null
@@ -86,8 +85,6 @@ release_partners: []
 release_product: null
 release_type: nightly
 repository_type: hg
-required_signoffs: []
-signoff_urls: {}
 target_tasks_method: merge_automation
 tasks_for: action
 test_manifest_loader: default

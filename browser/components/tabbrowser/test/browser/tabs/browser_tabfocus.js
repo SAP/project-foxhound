@@ -95,16 +95,19 @@ function focusInChild(event) {
   // Stop the shim code from seeing this event process.
   event.stopImmediatePropagation();
 
+  let window;
   var id;
   if (event.target instanceof Ci.nsIDOMWindow) {
     id = getWindowDocId(event.originalTarget) + "-window";
+    window = event.target;
   } else if (event.target.nodeType == event.target.DOCUMENT_NODE) {
     id = getWindowDocId(event.originalTarget) + "-document";
+    window = event.target.documentGlobal;
   } else {
     id = event.originalTarget.id;
+    window = event.target.documentGlobal;
   }
 
-  let window = event.target.ownerGlobal;
   if (!window._eventsOccurred) {
     window._eventsOccurred = [];
   }

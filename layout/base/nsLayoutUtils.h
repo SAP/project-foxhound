@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -298,6 +296,24 @@ class nsLayoutUtils {
    */
   static mozilla::dom::Element* GetBackdropPseudo(const nsIContent* aContent);
   static nsIFrame* GetBackdropFrame(const nsIContent* aContent);
+
+  /**
+   * Returns the ::checkmark pseudo-element for aContent, if any.
+   */
+  static mozilla::dom::Element* GetCheckmarkPseudo(const nsIContent* aContent);
+  static nsIFrame* GetCheckmarkFrame(const nsIContent* aContent);
+
+  /**
+   * Returns the ::picker-icon pseudo-element for aContent, if any.
+   */
+  static mozilla::dom::Element* GetPickerIconPseudo(const nsIContent* aContent);
+  static nsIFrame* GetPickerIconFrame(const nsIContent* aContent);
+
+  /**
+   * Stores generated content pseudos such as ::after into aPseudos.
+   */
+  static void AppendGeneratedContentPseudos(
+      const mozilla::dom::Element* aElement, nsTArray<nsIContent*>& aPseudos);
 
 #ifdef ACCESSIBILITY
   /**
@@ -1391,7 +1407,8 @@ class nsLayoutUtils {
   static already_AddRefed<nsFontMetrics> GetFontMetricsForComputedStyle(
       const ComputedStyle* aComputedStyle, nsPresContext* aPresContext,
       float aSizeInflation = 1.0f,
-      uint8_t aVariantWidth = NS_FONT_VARIANT_WIDTH_NORMAL);
+      uint8_t aVariantWidth = NS_FONT_VARIANT_WIDTH_NORMAL,
+      bool aForceHorizontalMetrics = false);
 
   /**
    * Get the font metrics of emphasis marks corresponding to the given
@@ -2373,6 +2390,14 @@ class nsLayoutUtils {
                               aSurfaceFlags, target);
   }
 
+  // Computes the target size for a resize operation given the source size
+  // and optional resize dimensions. If only one dimension is given, the other
+  // is computed to preserve the aspect ratio. Returns Nothing on overflow.
+  static mozilla::Maybe<mozilla::gfx::IntSize> ComputeResizedSize(
+      const mozilla::gfx::IntSize& aSrcSize,
+      const mozilla::Maybe<int32_t>& aResizeWidth,
+      const mozilla::Maybe<int32_t>& aResizeHeight);
+
   // There are a bunch of callers of SurfaceFromElement.  Just mark it as
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   static mozilla::SurfaceFromElementResult SurfaceFromElement(
@@ -2440,11 +2465,10 @@ class nsLayoutUtils {
    * want to maintain a mapping from gfxFontEntry to InspectorFontFace
    * records, so use a temporary hashtable for that.
    */
-  typedef nsTArray<mozilla::UniquePtr<mozilla::dom::InspectorFontFace>>
-      UsedFontFaceList;
-  typedef nsTHashMap<nsPtrHashKey<gfxFontEntry>,
-                     mozilla::dom::InspectorFontFace*>
-      UsedFontFaceTable;
+  using UsedFontFaceList =
+      nsTArray<mozilla::UniquePtr<mozilla::dom::InspectorFontFace>>;
+  using UsedFontFaceTable =
+      nsTHashMap<nsPtrHashKey<gfxFontEntry>, mozilla::dom::InspectorFontFace*>;
 
   /**
    * Adds all font faces used in the frame tree starting from aFrame
@@ -2626,7 +2650,7 @@ class nsLayoutUtils {
    */
   static bool InvalidationDebuggingIsEnabled() {
     return mozilla::StaticPrefs::nglayout_debug_invalidation() ||
-           getenv("MOZ_DUMP_INVALIDATION") != 0;
+           getenv("MOZ_DUMP_INVALIDATION") != nullptr;
   }
 
   static void Initialize();
@@ -3151,6 +3175,11 @@ class nsLayoutUtils {
    * used for the given scrollbar part frame.
    */
   static ComputedStyle* StyleForScrollbar(const nsIFrame* aScrollbarPart);
+
+  static bool UseOverlayScrollbars(const nsIFrame* aScrollbarPart);
+
+  static mozilla::StyleScrollbarWidth ScrollbarWidthFor(
+      const nsIFrame* aScrollbarPart);
 
   /**
    * Returns true if |aFrame| is scrolled out of view by a scrollable element in

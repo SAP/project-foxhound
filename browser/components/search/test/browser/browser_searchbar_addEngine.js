@@ -69,7 +69,7 @@ add_task(async function test_invalidEngine() {
     rootDir + "opensearch.html"
   );
   let promise = promiseEvent(searchPopup, "popupshown");
-  await EventUtils.synthesizeMouseAtCenter(
+  EventUtils.synthesizeMouseAtCenter(
     searchbar.querySelector(".searchbar-search-button"),
     {}
   );
@@ -95,7 +95,7 @@ add_task(async function test_invalidEngine() {
     promptType: "alert",
   });
 
-  await EventUtils.synthesizeMouseAtCenter(item, {});
+  EventUtils.synthesizeMouseAtCenter(item, {});
 
   let prompt = await promptPromise;
 
@@ -126,7 +126,7 @@ add_task(async function test_onOnlyDefaultEngine() {
     rootDir + "opensearch.html"
   );
   const onShown = promiseEvent(searchPopup, "popupshown");
-  await EventUtils.synthesizeMouseAtCenter(
+  EventUtils.synthesizeMouseAtCenter(
     searchbar.querySelector(".searchbar-search-button"),
     {}
   );

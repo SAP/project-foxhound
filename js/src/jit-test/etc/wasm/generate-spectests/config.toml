@@ -26,6 +26,10 @@ url = "https://github.com/WebAssembly/threads"
 branch = "main"
 parent = "spec"
 excluded_tests = [
+  # These tests run very slowly and are a mess to handle in the harness anyway.
+  "^deeply_nested.wast.js",
+  "^nested.wast.js",
+
   # tests that are unrelated and out of date
   "^address.wast.js",
   "^align.wast.js",
@@ -53,6 +57,7 @@ excluded_tests = [
   "^load.wast.js",
   "^local_get.wast.js",
   "^local_tee.wast.js",
+  "^loop.wast.js",
   "^memory(_.*)?.wast.js",
   "^ref_func.wast.js",
   "^ref_is_null.wast.js",
@@ -77,6 +82,8 @@ parent = "spec"
 excluded_tests = [
   # tests that are unrelated and out of date
   "^address.wast.js",
+  "^array_init_elem.wast.js",
+  "^array_new_elem.wast.js",
   "^align.wast.js",
   "^binary.wast.js",
   "^binary-leb128.wast.js",
@@ -128,8 +135,95 @@ name = "compact-import-section"
 url = "https://github.com/WebAssembly/compact-import-section"
 branch = "main"
 parent = "spec"
-excluded_tests = []
+excluded_tests = [
+  # tests that are unrelated and out of date
+  "^array_init_elem.wast.js",
+  "^array_new_elem.wast.js",
+  "^table_init.wast.js",
+]
 directive = "; skip-if: !wasmCompactImportsEnabled(); test-also=-P wasm_compact_imports"
+
+[[repos]]
+name = "stack-switching"
+url = "https://github.com/WebAssembly/stack-switching"
+branch = "main"
+parent = "spec"
+excluded_tests = [
+  "^cont.wast.js",
+  "^address64.wast.js",
+  "^load64.wast.js",
+  "^relaxed_min_max.wast.js",
+  "^table_get.wast.js",
+  "^align.wast.js",
+  "^data.wast.js",
+  "^memory_copy.wast.js",
+  "^return_call_indirect.wast.js",
+  "^table_grow.wast.js",
+  "^align64.wast.js",
+  "^memory_fill.wast.js",
+  "^return_call.wast.js",
+  "^table_init.wast.js",
+  "^array_copy.wast.js",
+  "^endianness64.wast.js",
+  "^memory_grow.wast.js",
+  "^simd_align.wast.js",
+  "^table_set.wast.js",
+  "^array_fill.wast.js",
+  "^extern.wast.js",
+  "^memory_grow64.wast.js",
+  "^simd_const.wast.js",
+  "^table_size.wast.js",
+  "^array_init_data.wast.js",
+  "^float_exprs.wast.js",
+  "^memory_init.wast.js",
+  "^simd_i32x4_dot_i16x8.wast.js",
+  "^table-sub.wast.js",
+  "^array_init_elem.wast.js",
+  "^float_memory.wast.js",
+  "^memory_redundancy64.wast.js",
+  "^simd_lane.wast.js",
+  "^table.wast.js",
+  "^array_new_data.wast.js",
+  "^float_memory64.wast.js",
+  "^memory_size.wast.js",
+  "^simd_load.wast.js",
+  "^tag.wast.js",
+  "^array.wast.js",
+  "^global.wast.js",
+  "^memory_trap64.wast.js",
+  "^simd_memory-multi.wast.js",
+  "^throw_ref.wast.js",
+  "^binary-leb128.wast.js",
+  "^memory-multi.wast.js",
+  "^simd_store.wast.js",
+  "^throw.wast.js",
+  "^binary.wast.js",
+  "^i16x8_relaxed_q15mulr_s.wast.js",
+  "^memory.wast.js",
+  "^store.wast.js",
+  "^try_table.wast.js",
+  "^br_on_non_null.wast.js",
+  "^i32x4_relaxed_trunc.wast.js",
+  "^memory64.wast.js",
+  "^struct.wast.js",
+  "^type-rec.wast.js",
+  "^br_table.wast.js",
+  "^i8x16_relaxed_swizzle.wast.js",
+  "^relaxed_dot_product.wast.js",
+  "^table_copy_mixed.wast.js",
+  "^type-subtyping.wast.js",
+  "^bulk.wast.js",
+  "^imports.wast.js",
+  "^relaxed_laneselect.wast.js",
+  "^table_copy.wast.js",
+  "^call_indirect.wast.js",
+  "^load.wast.js",
+  "^relaxed_madd_nmadd.wast.js",
+  "^table_fill.wast.js",
+  "^array_new_elem.wast.js",
+  "^loop.wast.js",
+]
+directive = "; skip-if: !wasmStackSwitchingEnabled(); test-also=--wasm-compiler=ion -P wasm_stack_switching;"
 
 # Example proposal config:
 #

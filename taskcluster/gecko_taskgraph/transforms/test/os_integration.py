@@ -29,6 +29,7 @@ def maybe_setup_os_integration(config, tasks):
             and isinstance(task["chunks"], int)
             and task["chunks"] > 1
         ):
+            task["default-chunks"] = task["chunks"]
             task["chunks"] = "dynamic"
 
         env = task.setdefault("worker", {}).setdefault("env", {})

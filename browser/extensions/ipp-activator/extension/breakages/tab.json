@@ -1,10 +1,1832 @@
 [
   {
+    "domains": [
+      "tubitv.com",
+      "fox.com",
+      "directv.com",
+      "hulu.com",
+      "fubo.tv",
+      "peacocktv.com"
+    ],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["US"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["zdf.de", "ardmediathek.de", "sportschau.de", "magenta.tv"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["DE"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["m6.fr", "canalplus.com"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["FR"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["raiplay.it"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["IT"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["rtve.es"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "url",
+          "pattern": "^https?://(www\\.)?rtve\\.es/play(/|$)"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["ES"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["dazn.com"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "url",
+                  "pattern": "^https?://(www\\.)?dazn\\.com/it-IT(/|$)"
+                },
+                {
+                  "type": "or",
+                  "conditions": [
+                    {
+                      "type": "vpn",
+                      "active": true
+                    },
+                    {
+                      "type": "and",
+                      "conditions": [
+                        {
+                          "type": "not",
+                          "condition": {
+                            "type": "region",
+                            "regions": ["IT"]
+                          }
+                        },
+                        {
+                          "type": "region",
+                          "regions": [
+                            "AU",
+                            "AT",
+                            "BE",
+                            "BG",
+                            "CA",
+                            "CL",
+                            "CO",
+                            "DK",
+                            "FI",
+                            "FR",
+                            "DE",
+                            "IE",
+                            "IT",
+                            "MY",
+                            "MX",
+                            "NL",
+                            "NZ",
+                            "NO",
+                            "PT",
+                            "SG",
+                            "ZA",
+                            "ES",
+                            "SE",
+                            "TH",
+                            "GB",
+                            "US"
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "url",
+                  "pattern": "^https?://(www\\.)?dazn\\.com/es-ES(/|$)"
+                },
+                {
+                  "type": "or",
+                  "conditions": [
+                    {
+                      "type": "vpn",
+                      "active": true
+                    },
+                    {
+                      "type": "and",
+                      "conditions": [
+                        {
+                          "type": "not",
+                          "condition": {
+                            "type": "region",
+                            "regions": ["ES"]
+                          }
+                        },
+                        {
+                          "type": "region",
+                          "regions": [
+                            "AU",
+                            "AT",
+                            "BE",
+                            "BG",
+                            "CA",
+                            "CL",
+                            "CO",
+                            "DK",
+                            "FI",
+                            "FR",
+                            "DE",
+                            "IE",
+                            "IT",
+                            "MY",
+                            "MX",
+                            "NL",
+                            "NZ",
+                            "NO",
+                            "PT",
+                            "SG",
+                            "ZA",
+                            "ES",
+                            "SE",
+                            "TH",
+                            "GB",
+                            "US"
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["tsn.ca", "rds.ca", "crave.ca"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["CA"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["bbc.co.uk"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "url",
+          "pattern": "^https?://(www\\.)?bbc\\.co\\.uk/iplayer(/|$)"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["GB"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["itv.com", "stv.tv"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["GB"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["tvazteca.com", "vix.com"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["MX"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["sbs.com.au"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["AU"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["npo.nl", "nos.nl"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["NL"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["orf.at", "servustv.com"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["AT"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["rtbf.be", "vrt.be"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["BE"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["yle.fi", "mtv.fi"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["FI"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["canalrcn.com", "caracoltv.com", "directvla.com"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["CO"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["winplay.co"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "url",
+          "pattern": "^https?://(www\\.)?winplay\\.co/co(/|$)"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["CO"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["tv4play.se", "svtplay.se"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["SE"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["sporttv.pt"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["PT"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["chilevision.cl", "directvgo.com", "paramountplus.com"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["CL"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["bnt.bg"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["BG"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["dr.dk"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "url",
+          "pattern": "^https?://(www\\.)?dr\\.dk/drtv(/|$)"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["DK"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["tv2.dk"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["DK"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["nrk.no", "tv2.no"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["NO"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["tvnz.co.nz"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["NZ"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["rte.ie"],
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "date",
+          "start": "2026-06-11T00:00:00Z",
+          "end": "2026-07-20T23:59:59Z"
+        },
+        {
+          "type": "url",
+          "pattern": "^https?://(www\\.)?rte\\.ie/player(/|$)"
+        },
+        {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "vpn",
+              "active": true
+            },
+            {
+              "type": "and",
+              "conditions": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "region",
+                    "regions": ["IE"]
+                  }
+                },
+                {
+                  "type": "region",
+                  "regions": [
+                    "AU",
+                    "AT",
+                    "BE",
+                    "BG",
+                    "CA",
+                    "CL",
+                    "CO",
+                    "DK",
+                    "FI",
+                    "FR",
+                    "DE",
+                    "IE",
+                    "IT",
+                    "MY",
+                    "MX",
+                    "NL",
+                    "NZ",
+                    "NO",
+                    "PT",
+                    "SG",
+                    "ZA",
+                    "ES",
+                    "SE",
+                    "TH",
+                    "GB",
+                    "US"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
     "domains": ["youtube.com"],
     "l10nId": "ipp-activator-breakage-sign-in-warning",
     "condition": {
       "type": "and",
       "conditions": [
+        {
+          "type": "vpn",
+          "active": true
+        },
         {
           "type": "not",
           "condition": {
@@ -28,12 +1850,21 @@
     "domains": ["reddit.com"],
     "l10nId": "ipp-activator-breakage-sign-in-warning",
     "condition": {
-      "type": "not",
-      "condition": {
-        "type": "cookie",
-        "domain": ".reddit.com",
-        "name": "reddit_session"
-      }
+      "type": "and",
+      "conditions": [
+        {
+          "type": "vpn",
+          "active": true
+        },
+        {
+          "type": "not",
+          "condition": {
+            "type": "cookie",
+            "domain": ".reddit.com",
+            "name": "reddit_session"
+          }
+        }
+      ]
     }
   },
   {
@@ -43,6 +1874,10 @@
       "wiki.mozilla.org",
       "bugs.webkit.org"
     ],
-    "l10nId": "ipp-activator-breakage-turn-off-warning"
+    "l10nId": "ipp-activator-breakage-turn-off-warning",
+    "condition": {
+      "type": "vpn",
+      "active": true
+    }
   }
 ]

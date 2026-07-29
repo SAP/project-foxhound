@@ -163,6 +163,7 @@ async function getRandomKeyHexFromBrowser(
 add_task(async function test_randomization_disabled_with_rfp_disabled() {
   await SpecialPowers.pushPrefEnv({
     set: [
+      ["privacy.baselineFingerprintingProtection", false],
       ["privacy.resistFingerprinting", false],
       ["privacy.resistFingerprinting.pbmode", false],
       ["privacy.fingerprintingProtection", false],
@@ -352,6 +353,7 @@ add_task(async function test_reset_key_after_pbm_session_ends() {
 add_task(async function test_randomization_with_exempted_normal_window() {
   await SpecialPowers.pushPrefEnv({
     set: [
+      ["privacy.baselineFingerprintingProtection", false],
       ["privacy.resistFingerprinting", false],
       ["privacy.resistFingerprinting.pbmode", true],
       ["privacy.fingerprintingProtection", false],

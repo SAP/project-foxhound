@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim set:sw=2 ts=2 et lcs=trail\:.,tab\:>~ : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -101,8 +100,7 @@ class DatabaseTester : public DatabaseLocker {
 
     // Finalize our statement and null out our connection before notifying to
     // ensure that we close on the proper thread.
-    rv = stmt->Finalize();
-    do_check_eq(rv, NS_ERROR_FILE_IS_LOCKED);
+    stmt->Finalize();
     mConnection = nullptr;
 
     Notify(TEST_DONE);
@@ -175,8 +173,8 @@ void test_drop_index_does_not_loop() {
       db->CreateStatement("SELECT * FROM test"_ns, getter_AddRefs(stmt));
   do_check_success(rv);
 
-  RefPtr<DatabaseTester> tester =
-      new DatabaseTester(db, "DROP INDEX unique_data");
+  auto tester =
+      mozilla::MakeRefPtr<DatabaseTester>(db, "DROP INDEX unique_data");
   do_check_true(tester);
   {
     mozilla::ReentrantMonitorAutoEnter lock(tester->monitor);

@@ -1,4 +1,3 @@
-// vim: set ts=8 sts=4 et sw=4 tw=99:
 document = {
     ready: function (x) {
         this.exec = x;

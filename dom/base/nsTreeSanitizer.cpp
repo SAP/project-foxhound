@@ -1,19 +1,18 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsTreeSanitizer.h"
 
+#include <algorithm>
 #include <iterator>
 
 #include "NonCustomCSSPropertyId.h"
-#include "mozilla/Algorithm.h"
 #include "mozilla/DeclarationBlock.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StyleSheetInlines.h"
+#include "mozilla/dom/CustomElementRegistry.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentFragment.h"
 #include "mozilla/dom/HTMLFormElement.h"
@@ -636,14 +635,16 @@ constexpr const nsStaticAtom* const kAttributesSVG[] = {
 constexpr const nsStaticAtom* const kURLAttributesSVG[] = {nsGkAtoms::href,
                                                            nullptr};
 
-static_assert(AllOf(std::begin(kURLAttributesSVG), std::end(kURLAttributesSVG),
-                    [](auto aURLAttributeSVG) {
-                      return AnyOf(std::begin(kAttributesSVG),
-                                   std::end(kAttributesSVG),
-                                   [&](auto aAttributeSVG) {
-                                     return aAttributeSVG == aURLAttributeSVG;
-                                   });
-                    }));
+static_assert(std::all_of(std::begin(kURLAttributesSVG),
+                          std::end(kURLAttributesSVG),
+                          [](auto aURLAttributeSVG) {
+                            return std::any_of(std::begin(kAttributesSVG),
+                                               std::end(kAttributesSVG),
+                                               [&](auto aAttributeSVG) {
+                                                 return aAttributeSVG ==
+                                                        aURLAttributeSVG;
+                                               });
+                          }));
 
 const nsStaticAtom* const kElementsMathML[] = {
     nsGkAtoms::abs,                  // abs
@@ -970,14 +971,14 @@ const nsStaticAtom* const kURLAttributesMathML[] = {
     // clang-format on
 };
 
-StaticAtomSet* nsTreeSanitizer::sElementsHTML = nullptr;
-StaticAtomSet* nsTreeSanitizer::sAttributesHTML = nullptr;
-StaticAtomSet* nsTreeSanitizer::sPresAttributesHTML = nullptr;
-StaticAtomSet* nsTreeSanitizer::sElementsSVG = nullptr;
-StaticAtomSet* nsTreeSanitizer::sAttributesSVG = nullptr;
-StaticAtomSet* nsTreeSanitizer::sElementsMathML = nullptr;
-StaticAtomSet* nsTreeSanitizer::sAttributesMathML = nullptr;
-nsIPrincipal* nsTreeSanitizer::sNullPrincipal = nullptr;
+StaticAutoPtr<StaticAtomSet> nsTreeSanitizer::sElementsHTML;
+StaticAutoPtr<StaticAtomSet> nsTreeSanitizer::sAttributesHTML;
+StaticAutoPtr<StaticAtomSet> nsTreeSanitizer::sPresAttributesHTML;
+StaticAutoPtr<StaticAtomSet> nsTreeSanitizer::sElementsSVG;
+StaticAutoPtr<StaticAtomSet> nsTreeSanitizer::sAttributesSVG;
+StaticAutoPtr<StaticAtomSet> nsTreeSanitizer::sElementsMathML;
+StaticAutoPtr<StaticAtomSet> nsTreeSanitizer::sAttributesMathML;
+StaticRefPtr<nsIPrincipal> nsTreeSanitizer::sNullPrincipal;
 
 nsTreeSanitizer::nsTreeSanitizer(uint32_t aFlags)
     : mAllowStyles(aFlags & nsIParserUtils::SanitizerAllowStyle),
@@ -1124,9 +1125,8 @@ static void SanitizeStyleSheet(const nsAString& aOriginal,
       Servo_StyleSheet_FromUTF8Bytes(
           /* loader = */ nullptr,
           /* stylesheet = */ nullptr,
-          /* load_data = */ nullptr, &style,
-          css::SheetParsingMode::eAuthorSheetFeatures, extraData.get(),
-          aDocument->GetCompatibilityMode(),
+          /* load_data = */ nullptr, &style, StyleOrigin::Author,
+          extraData.get(), aDocument->GetCompatibilityMode(),
           /* reusable_sheets = */ nullptr, StyleAllowImportRules::Yes,
           aSanitizationKind, &aSanitized)
           .Consume();
@@ -1143,7 +1143,7 @@ bool nsTreeSanitizer::SanitizeInlineStyle(
 
   nsAutoString sanitizedStyle;
   SanitizeStyleSheet(styleText, sanitizedStyle, aElement->OwnerDoc(),
-                     aElement->GetBaseURI(), StyleSanitizationKind::Standard);
+                     aElement->GetBaseURI(), aSanitizationKind);
   RemoveAllAttributesFromDescendants(aElement);
   nsContentUtils::SetNodeTextContent(aElement, sanitizedStyle, true);
 
@@ -1260,7 +1260,7 @@ void nsTreeSanitizer::SanitizeAttributes(mozilla::dom::Element* aElement,
       }
       // else not allowed
     }
-    aElement->UnsetAttr(kNameSpaceID_None, attrLocal, false);
+    aElement->UnsetAttr(attrNs, attrLocal, false);
     if (mLogRemovals) {
       LogMessage("Removed unsafe attribute.", aElement->OwnerDoc(), aElement,
                  attrLocal);
@@ -1388,7 +1388,7 @@ void nsTreeSanitizer::SanitizeChildren(nsINode* aRoot) {
           }
         }
         nsIContent* next = node->GetNextNonChildNode(aRoot);
-        node->RemoveFromParent();
+        node->Remove();
         node = next;
         continue;
       }
@@ -1444,13 +1444,18 @@ void nsTreeSanitizer::SanitizeChildren(nsINode* aRoot) {
             break;
           }
         }
-        node->RemoveFromParent();
+        node->Remove();
         node = next;
         continue;
       }
       NS_ASSERTION(ns == kNameSpaceID_XHTML || ns == kNameSpaceID_SVG ||
                        ns == kNameSpaceID_MathML,
                    "Should have only HTML, MathML or SVG here!");
+      if (elt->HasCustomElementData()) {
+        MOZ_ASSERT(elt->GetCustomElementData()->GetIs(elt),
+                   "CustomElementData without an |is| attribute?");
+        elt->ClearCustomElementData();
+      }
       AllowedAttributes allowed;
       if (ns == kNameSpaceID_XHTML) {
         allowed.mNames = sAttributesHTML;
@@ -1476,7 +1481,7 @@ void nsTreeSanitizer::SanitizeChildren(nsINode* aRoot) {
     NS_ASSERTION(!node->GetFirstChild(), "How come non-element node had kids?");
     nsIContent* next = node->GetNextNonChildNode(aRoot);
     if (!mAllowComments && node->IsComment()) {
-      node->RemoveFromParent();
+      node->Remove();
     }
     node = next;
   }
@@ -1558,32 +1563,16 @@ void nsTreeSanitizer::InitializeStatics() {
     sAttributesMathML->Insert(kAttributesMathML[i]);
   }
 
-  nsCOMPtr<nsIPrincipal> principal =
-      NullPrincipal::CreateWithoutOriginAttributes();
-  principal.forget(&sNullPrincipal);
+  sNullPrincipal = NullPrincipal::CreateWithoutOriginAttributes();
 }
 
 void nsTreeSanitizer::ReleaseStatics() {
-  delete sElementsHTML;
   sElementsHTML = nullptr;
-
-  delete sAttributesHTML;
   sAttributesHTML = nullptr;
-
-  delete sPresAttributesHTML;
   sPresAttributesHTML = nullptr;
-
-  delete sElementsSVG;
   sElementsSVG = nullptr;
-
-  delete sAttributesSVG;
   sAttributesSVG = nullptr;
-
-  delete sElementsMathML;
   sElementsMathML = nullptr;
-
-  delete sAttributesMathML;
   sAttributesMathML = nullptr;
-
-  NS_IF_RELEASE(sNullPrincipal);
+  sNullPrincipal = nullptr;
 }

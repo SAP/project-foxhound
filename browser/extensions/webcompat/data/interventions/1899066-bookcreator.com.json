@@ -1,0 +1,15 @@
+{
+  "label": "bookcreator.com",
+  "bugs": {
+    "1899066": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://app.bookcreator.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

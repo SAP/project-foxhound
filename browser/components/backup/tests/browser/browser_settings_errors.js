@@ -20,7 +20,7 @@ add_task(async function test_error_visibility_heuristic() {
   });
 
   await BrowserTestUtils.withNewTab("about:preferences#sync", async browser => {
-    let settings = browser.contentDocument.querySelector("backup-settings");
+    let settings = await waitForBackupSettings(browser);
     let sandbox = sinon.createSandbox();
 
     registerCleanupFunction(() => {

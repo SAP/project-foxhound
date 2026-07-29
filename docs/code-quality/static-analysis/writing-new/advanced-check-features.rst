@@ -8,7 +8,7 @@ This page covers additional ways to improve and extend the check you've added to
 Adding Tests
 ------------
 
-No doubt you've seen the tests for existing checks in `build/clang-plugin/tests <https://searchfox.org/mozilla-central/source/build/clang-plugin/tests>`_. Adding tests is straightforward; and your reviewer should insist you do so. Simply copying the existing format of any test and how diagnostics are marked as expected.
+No doubt you've seen the tests for existing checks in :searchfox:`build/clang-plugin/tests`. Adding tests is straightforward; and your reviewer should insist you do so. Simply copying the existing format of any test and how diagnostics are marked as expected.
 
 One wrinkle - all clang plugin checks are applied to all tests. We try to write tests so that only one check applies to it.  If you write a check that triggers on an existing test, try to fix the existing test slightly so the new check does not trigger on it.
 

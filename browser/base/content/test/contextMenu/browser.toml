@@ -1,5 +1,6 @@
 [DEFAULT]
 support-files = [
+  "head.js",
   "subtst_contextmenu_webext.html",
   "test_contextmenu_links.html",
   "subtst_contextmenu.html",
@@ -42,6 +43,9 @@ skip-if = [
 ]
 
 ["browser_contextmenu_bookmark_link_text.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2019466
+]
 
 ["browser_contextmenu_chrome_images.js"]
 
@@ -93,6 +97,7 @@ skip-if = [
 ]
 
 ["browser_contextmenu_share_linux.js"]
+support-files = ["browser_contextmenu_shareurl.html"]
 run-if = [
   "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
@@ -123,6 +128,11 @@ skip-if = [
 ["browser_contextmenu_touch.js"]
 skip-if = [
   "true", # Bug 1424433, disable due to very high frequency failure rate also on Windows 10
+]
+
+["browser_copy_canvas_image.js"]
+skip-if = [
+  "headless", # HeadlessClipboard only supports text/plain and text/html
 ]
 
 ["browser_copy_image_link.js"]

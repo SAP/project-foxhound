@@ -118,6 +118,8 @@ typedef struct nr_turn_client_ctx_ {
   void *connected_timer_handle;
   void *refresh_timer_handle;
 
+  int last_error_code; /* Last STUN error code seen during allocation */
+
   // ice telemetry
   UINT2 cnt_401s;
   UINT2 cnt_403s;

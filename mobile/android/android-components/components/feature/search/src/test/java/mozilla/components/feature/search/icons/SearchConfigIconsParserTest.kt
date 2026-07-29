@@ -3,15 +3,14 @@ package mozilla.components.feature.search.icons
 import mozilla.appservices.remotesettings.Attachment
 import mozilla.appservices.remotesettings.RemoteSettingsRecord
 import org.json.JSONArray
-import org.json.JSONException
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 class SearchConfigIconsParserTest {
@@ -50,13 +49,13 @@ class SearchConfigIconsParserTest {
         val result = parser.parseRecord(record)
 
         assertNotNull(result)
-        assertEquals(1L, result!!.schema)
+        assertEquals(1L, result.schema)
         assertEquals(64, result.imageSize)
         assertEquals(listOf("google", "bing"), result.engineIdentifier)
         assertEquals("test-filter", result.filterExpression)
 
         assertNotNull(result.attachment)
-        assertEquals("icon.png", result.attachment!!.filename)
+        assertEquals("icon.png", result.attachment.filename)
         assertEquals("image/png", result.attachment.mimetype)
         assertEquals("location/path", result.attachment.location)
         assertEquals("abc123hash", result.attachment.hash)
@@ -82,7 +81,7 @@ class SearchConfigIconsParserTest {
         val result = parser.parseRecord(record)
 
         assertNotNull(result)
-        assertEquals(2L, result!!.schema)
+        assertEquals(2L, result.schema)
         assertEquals(32, result.imageSize)
         assertEquals(listOf("duckduckgo"), result.engineIdentifier)
         assertEquals("", result.filterExpression)

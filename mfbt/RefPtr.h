@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,8 +8,9 @@
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/DbgMacro.h"
+#include "mozilla/DbgMacro.h"  // for mozilla::DebugValue
 
+#include <fmt/ostream.h>
 #include <type_traits>
 
 /*****************************************************************************/
@@ -52,7 +51,7 @@ struct RefPtrTraits {
 }  // namespace mozilla
 
 template <class T>
-class MOZ_IS_REFPTR RefPtr {
+class MOZ_IS_REFPTR MOZ_NULL_AFTER_MOVE RefPtr {
  private:
   void assign_with_AddRef(T* aRawPtr) {
     if (aRawPtr) {
@@ -577,6 +576,9 @@ std::ostream& operator<<(std::ostream& aOut, const RefPtr<T>& aObj) {
   return mozilla::DebugValue(aOut, aObj.get());
 }
 
+template <typename T>
+struct fmt::formatter<RefPtr<T>> : fmt::ostream_formatter {};
+
 /*****************************************************************************/
 
 template <class T>
@@ -592,7 +594,6 @@ inline already_AddRefed<T> do_AddRef(const RefPtr<T>& aObj) {
 }
 
 namespace mozilla {
-
 /**
  * Helper function to be able to conveniently write things like:
  *

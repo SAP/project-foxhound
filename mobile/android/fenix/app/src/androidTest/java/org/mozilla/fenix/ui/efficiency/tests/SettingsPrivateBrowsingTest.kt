@@ -4,11 +4,13 @@
 
 package org.mozilla.fenix.ui.efficiency.tests
 
+import org.junit.Ignore
 import org.junit.Test
 import org.mozilla.fenix.ui.efficiency.helpers.BaseTest
 
 class SettingsPrivateBrowsingTest : BaseTest() {
 
+    @Ignore("Covered by verifyNavigationReachability[1: SettingsPrivateBrowsingPage (TBD) — Navigation Reachability]")
     @Test
     fun verifyTheSettingsPrivateBrowsingTest() {
         on.settingsPrivateBrowsing.navigateToPage()

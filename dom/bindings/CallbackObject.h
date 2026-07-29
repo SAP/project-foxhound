@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -272,6 +270,10 @@ class MOZ_STACK_CLASS CallSetup {
   // ErrorResult it was handed.
   BindingCallContext& GetCallContext() { return *mCallContext; }
 
+  static nsIGlobalObject* GetActiveGlobalObjectForCall(
+      JS::Handle<JSObject*> callbackOrGlobal, bool aIsMainThread,
+      bool aIsJSImplementedWebIDL, ErrorResult& aRv);
+
  private:
   CallSetup(CallbackObjectBase* aCallback, ErrorResult& aRv,
             const char* aExecutionReason,
@@ -288,10 +290,6 @@ class MOZ_STACK_CLASS CallSetup {
   CallSetup(const CallSetup&) = delete;
 
   bool ShouldRethrowException(JS::Handle<JS::Value> aException);
-
-  static nsIGlobalObject* GetActiveGlobalObjectForCall(
-      JS::Handle<JSObject*> callbackOrGlobal, bool aIsMainThread,
-      bool aIsJSImplementedWebIDL, ErrorResult& aRv);
 
   static bool CheckBeforeExecution(nsIGlobalObject* aGlobalObject,
                                    JSObject* aCallbackOrGlobal,

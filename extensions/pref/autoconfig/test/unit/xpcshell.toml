@@ -39,3 +39,8 @@ run-sequentially = ["true"] # fails 70% of the time in parallel
 skip-if = [
   "os == 'android' && os_version == '14' && arch == 'x86_64' && debug && !fission", # Bug 1982954
 ]
+
+["test_autoconfig_sysconfd.js"]
+run-if = [
+  "os == 'linux'",
+]

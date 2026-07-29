@@ -19,6 +19,7 @@ from textwrap import dedent
 import mozpack.path as mozpath
 import requests
 from mozbuild.base import BuildEnvironmentNotFoundException, MozbuildObject
+from mozbuild.util import set_taskcluster_root_url
 
 from .tasks import resolve_tests_by_suite
 from .util.ssh import get_ssh_user
@@ -348,6 +349,8 @@ class ExistingTasks(ParameterConfig):
     def find_decision_task(self, use_existing_tasks):
         from taskgraph.util import taskcluster
 
+        set_taskcluster_root_url()
+
         branch = "try"
         if use_existing_tasks == "last_try_push":
             # Use existing tasks from user's previous try push.
@@ -376,6 +379,8 @@ class ExistingTasks(ParameterConfig):
             return
 
         from taskgraph.util import taskcluster
+
+        set_taskcluster_root_url()
 
         if use_existing_tasks.startswith("task-id="):
             tid = use_existing_tasks[len("task-id=") :]
@@ -568,6 +573,23 @@ class GeckoProfile(TryConfig):
                 "gecko-profile-threads": gecko_profile_threads,
             }
             return {key: value for key, value in cfg.items() if value is not None}
+
+
+class NativeProfiling(TryConfig):
+    arguments = [
+        [
+            ["--native-profiling"],
+            {
+                "action": "store_true",
+                "default": False,
+                "help": "Use OS-native profilers (Simpleperf for Android and xperf for Windows) when running tests. Only available in raptor-browsertime tests at the moment.",
+            },
+        ],
+    ]
+
+    def try_config(self, native_profiling, **kwargs):
+        if native_profiling:
+            return {"native-profiling": True}
 
 
 class Browsertime(TryConfig):
@@ -790,6 +812,7 @@ all_task_configs = {
     "env": Environment,
     "existing-tasks": ExistingTasks,
     "gecko-profile": GeckoProfile,
+    "native-profiling": NativeProfiling,
     "new-test-config": NewConfig,
     "path": Path,
     "test-tag": Tag,

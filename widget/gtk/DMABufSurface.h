@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -147,21 +145,40 @@ class DMABufSurface {
       mozilla::layers::Image::BuildSdbFlags aFlags,
       const std::function<mozilla::layers::MemoryOrShmem(uint32_t)>& aAllocate);
 
-  virtual mozilla::gfx::YUVColorSpace GetYUVColorSpace() {
-    return mozilla::gfx::YUVColorSpace::Default;
-  };
+  void SetYUVColorSpace(mozilla::gfx::YUVColorSpace aColorSpace) {
+    mColorSpace = aColorSpace;
+  }
+  mozilla::gfx::YUVColorSpace GetYUVColorSpace() { return mColorSpace; }
+  void SetColorPrimaries(mozilla::gfx::ColorSpace2 aColorPrimaries) {
+    mColorPrimaries = aColorPrimaries;
+  }
+  void SetTransferFunction(mozilla::gfx::TransferFunction aTransferFunction) {
+    mTransferFunction = aTransferFunction;
+  }
+  mozilla::gfx::TransferFunction GetTransferFunction() {
+    return mTransferFunction;
+  }
+  bool IsHDRSurface() {
+    return mTransferFunction == mozilla::gfx::TransferFunction::PQ ||
+           mTransferFunction == mozilla::gfx::TransferFunction::HLG;
+  }
 
   bool IsFullRange() { return mColorRange == mozilla::gfx::ColorRange::FULL; };
   void SetColorRange(mozilla::gfx::ColorRange aColorRange) {
     mColorRange = aColorRange;
   };
-  virtual bool IsHDRSurface() { return false; }
 
   void FenceSet();
   void FenceWait();
+  static void FenceWait(RefPtr<mozilla::gl::GLContext> aGL,
+                        RefPtr<mozilla::gfx::FileHandleWrapper> aSyncFd);
   void FenceDelete();
+  static void FenceDelete(RefPtr<mozilla::gl::GLContext> aGL, EGLSyncKHR aSync);
+  void FenceDeleteLocked(const mozilla::MutexAutoLock& aProofOfLock)
+      MOZ_REQUIRES(mSurfaceLock);
 
   void MaybeSemaphoreWait(GLuint aGlTexture);
+  void SetSemaphoreFd(int aDuppedRawFd, bool aIsSyncFd = false);
 
   // Set and get a global surface UID. The UID is shared across process
   // and it's used to track surface lifetime in various parts of rendering
@@ -210,7 +227,7 @@ class DMABufSurface {
 
 #ifdef MOZ_LOGGING
   virtual void Clear(unsigned int aValue) {};
-  virtual void DumpToFile(const char* pFile) {};
+  virtual void DumpToFile(const char* pFile) = 0;
 #endif
 
 #ifdef MOZ_WAYLAND
@@ -293,6 +310,7 @@ class DMABufSurface {
   RefPtr<mozilla::gfx::FileHandleWrapper> mSyncFd;
   EGLSyncKHR mSync;
   RefPtr<mozilla::gfx::FileHandleWrapper> mSemaphoreFd;
+  bool mSemaphoreFdIsSyncFd = false;
   // mGL is tied to textures/eglimages created over dmabuf and it's null for
   // dmabuf without textures/eglimages.
   RefPtr<mozilla::gl::GLContext> mGL;
@@ -318,6 +336,13 @@ class DMABufSurface {
   mozilla::Mutex mSurfaceLock MOZ_UNANNOTATED;
 
   mozilla::gfx::ColorRange mColorRange = mozilla::gfx::ColorRange::LIMITED;
+
+  mozilla::gfx::YUVColorSpace mColorSpace =
+      mozilla::gfx::YUVColorSpace::Default;
+  mozilla::gfx::ColorSpace2 mColorPrimaries =
+      mozilla::gfx::ColorSpace2::UNKNOWN;
+  mozilla::gfx::TransferFunction mTransferFunction =
+      mozilla::gfx::TransferFunction::Default;
 };
 
 class DMABufSurfaceRGBA final : public DMABufSurface {
@@ -376,10 +401,10 @@ class DMABufSurfaceRGBA final : public DMABufSurface {
 #endif
 
   DMABufSurfaceRGBA();
-
- private:
   DMABufSurfaceRGBA(const DMABufSurfaceRGBA&) = delete;
   DMABufSurfaceRGBA& operator=(const DMABufSurfaceRGBA&) = delete;
+
+ private:
   ~DMABufSurfaceRGBA();
 
   bool Create(mozilla::gl::GLContext* aGLContext, int aWidth, int aHeight,
@@ -412,6 +437,9 @@ class DMABufSurfaceRGBA final : public DMABufSurface {
 
 class DMABufSurfaceYUV final : public DMABufSurface {
  public:
+  DMABufSurfaceYUV(const DMABufSurfaceYUV&) = delete;
+  DMABufSurfaceYUV& operator=(const DMABufSurfaceYUV&) = delete;
+
   static already_AddRefed<DMABufSurfaceYUV> CreateYUVSurface(
       const VADRMPRIMESurfaceDescriptor& aDesc, int aWidth, int aHeight);
   static already_AddRefed<DMABufSurfaceYUV> CopyYUVSurface(
@@ -440,6 +468,10 @@ class DMABufSurfaceYUV final : public DMABufSurface {
 
   bool CreateTexture(mozilla::gl::GLContext* aGLContext,
                      int aPlane = 0) override;
+  bool CreateTextureViaCopyYUV(mozilla::gl::GLContext* aGLContext,
+                               int aPlane = 0);
+  bool CreateTextureViaCopyP010(mozilla::gl::GLContext* aGLContext,
+                                int aPlane = 0);
   void ReleaseTextures() override;
 
   void ReleaseSurface() override;
@@ -452,23 +484,6 @@ class DMABufSurfaceYUV final : public DMABufSurface {
   int GetTextureCount() override;
   bool HoldsTexture() override;
 
-  void SetYUVColorSpace(mozilla::gfx::YUVColorSpace aColorSpace) {
-    mColorSpace = aColorSpace;
-  }
-  mozilla::gfx::YUVColorSpace GetYUVColorSpace() override {
-    return mColorSpace;
-  }
-  void SetColorPrimaries(mozilla::gfx::ColorSpace2 aColorPrimaries) {
-    mColorPrimaries = aColorPrimaries;
-  }
-  void SetTransferFunction(mozilla::gfx::TransferFunction aTransferFunction) {
-    mTransferFunction = aTransferFunction;
-  }
-  bool IsHDRSurface() override {
-    return mColorPrimaries == mozilla::gfx::ColorSpace2::BT2020 &&
-           (mTransferFunction == mozilla::gfx::TransferFunction::PQ ||
-            mTransferFunction == mozilla::gfx::TransferFunction::HLG);
-  }
   void SetWPChromaLocation(uint32_t aWPChromaLocation) {
     mWPChromaLocation = aWPChromaLocation;
   }
@@ -486,9 +501,11 @@ class DMABufSurfaceYUV final : public DMABufSurface {
   wl_buffer* CreateWlBuffer() override;
 #endif
 
+#ifdef MOZ_LOGGING
+  void DumpToFile(const char* pFile) override;
+#endif
+
  private:
-  DMABufSurfaceYUV(const DMABufSurfaceYUV&) = delete;
-  DMABufSurfaceYUV& operator=(const DMABufSurfaceYUV&) = delete;
   ~DMABufSurfaceYUV();
 
   bool Create(const mozilla::layers::SurfaceDescriptor& aDesc) override;
@@ -526,12 +543,6 @@ class DMABufSurfaceYUV final : public DMABufSurface {
   EGLImageKHR mEGLImage[DMABUF_BUFFER_PLANES];
   GLuint mTexture[DMABUF_BUFFER_PLANES];
   uint64_t mBufferModifiers[DMABUF_BUFFER_PLANES];
-  mozilla::gfx::YUVColorSpace mColorSpace =
-      mozilla::gfx::YUVColorSpace::Default;
-  mozilla::gfx::ColorSpace2 mColorPrimaries =
-      mozilla::gfx::ColorSpace2::UNKNOWN;
-  mozilla::gfx::TransferFunction mTransferFunction =
-      mozilla::gfx::TransferFunction::Default;
   // Chroma location in wp_color_representation_surface_v1_chroma_location
   // format.
   uint32_t mWPChromaLocation = 0;

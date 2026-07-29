@@ -1,13 +1,18 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #ifndef PKCS11ModuleDB_h
 #define PKCS11ModuleDB_h
 
+#include "mozilla/MozPromise.h"
+#include "nsIPKCS11Module.h"
 #include "nsIPKCS11ModuleDB.h"
 #include "nsTLiteralString.h"
+
+#if defined(NIGHTLY_BUILD) && !defined(MOZ_NO_SMART_CARDS)
+#  include "mozilla/ipc/UtilityProcessManager.h"
+#endif  // NIGHTLY_BUILD && !MOZ_NO_SMART_CARDS
 
 namespace mozilla {
 namespace psm {
@@ -17,15 +22,39 @@ namespace psm {
 
 class PKCS11ModuleDB : public nsIPKCS11ModuleDB {
  public:
-  PKCS11ModuleDB() = default;
+  PKCS11ModuleDB();
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIPKCS11MODULEDB
 
   static already_AddRefed<PKCS11ModuleDB> GetSingleton();
 
+  static nsresult DoDeleteModule(const nsCString& moduleName);
+  static nsresult DoAddModule(const nsCString& moduleName,
+                              const nsCString& libraryPath,
+                              uint32_t mechanismFlags, uint32_t cipherFlags);
+
+#if defined(NIGHTLY_BUILD) && !defined(MOZ_NO_SMART_CARDS)
+  static nsresult DoListModules(nsTArray<mozilla::psm::ModuleInfo>& modules);
+#endif  // NIGHTLY_BUILD && !MOZ_NO_SMART_CARDS
+
  protected:
   virtual ~PKCS11ModuleDB() = default;
+
+ private:
+  using ListModulesPromise =
+      MozPromise<nsTArray<RefPtr<nsIPKCS11Module>>, nsresult, true>;
+  RefPtr<ListModulesPromise> ListMainProcessModules();
+
+#if defined(NIGHTLY_BUILD) && !defined(MOZ_NO_SMART_CARDS)
+  using PKCS11ModuleProcessPromise =
+      MozPromise<RefPtr<PKCS11ModuleParent>, nsresult, false>;
+  RefPtr<PKCS11ModuleProcessPromise> mPKCS11ModuleProcessPromise;
+
+  RefPtr<ListModulesPromise> ListRemoteProcessModules();
+  static RefPtr<ListModulesPromise> ListRemoteProcessModulesGivenParent(
+      const RefPtr<PKCS11ModuleParent>& parent);
+#endif  // NIGHTLY_BUILD && !MOZ_NO_SMART_CARDS
 };
 
 const nsLiteralCString kIPCClientCertsModuleName("IPC Client Cert Module");

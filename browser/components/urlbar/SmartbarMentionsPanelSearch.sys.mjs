@@ -101,7 +101,12 @@ export class SmartbarMentionsPanelSearch {
       results.push({
         url,
         title: tab.label || url,
-        icon: `page-icon:${url}`,
+        // Try to avoid fetching remote images. tab.image should normally be a data uri or a
+        // moz-remote-image data uri. If it's an http(s) url fallback to the page-icon protocol.
+        icon:
+          tab.image && !tab.image.startsWith("http")
+            ? tab.image
+            : lazy.UrlbarUtils.getIconForUrl(url),
         type: MENTION_TYPE.TAB_OPEN,
         timestamp: tab.lastAccessed,
       });
@@ -131,7 +136,7 @@ export class SmartbarMentionsPanelSearch {
         results.push({
           url,
           title: entry.title || url,
-          icon: `page-icon:${url}`,
+          icon: lazy.UrlbarUtils.getIconForUrl(url),
           type: MENTION_TYPE.TAB_RECENTLY_CLOSED,
           timestamp: closedTab.closedAt,
         });

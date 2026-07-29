@@ -331,7 +331,6 @@ gfx:
   composite_time:
     type: timing_distribution
     time_unit: millisecond
-    telemetry_mirror: COMPOSITE_TIME
     description: >
       The time taken to composite a frame.
       On non-webrender this is the time taken in
@@ -351,7 +350,15 @@ gfx:
     notification_emails:
       - gfx-telemetry-alerts@mozilla.com
       - jnicol@mozilla.com
+      - perf-telemetry-alerts@mozilla.com
     expires: never
+    metadata:
+      monitor:
+        alert: False
+        lower_is_better: True
+        platforms:
+          - All
+
 
   scroll_present_latency:
     type: timing_distribution
@@ -361,7 +368,6 @@ gfx:
       event on the event loop and compositing
       its result onto the screen (ms).
       (Migrated from the geckoview metric of the same name).
-    telemetry_mirror: SCROLL_PRESENT_LATENCY
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1604818
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1875170
@@ -371,6 +377,12 @@ gfx:
       - sefeng@mozilla.com
       - perf-telemetry-alerts@mozilla.com
     expires: never
+    metadata:
+      monitor:
+        alert: False
+        lower_is_better: True
+        platforms:
+          - All
 
   skipped_composites:
     type: counter
@@ -387,7 +399,6 @@ gfx:
       - gfx-telemetry-alerts@mozilla.com
       - perf-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: GFX_SKIPPED_COMPOSITES
 
   os_compositor:
     type: boolean
@@ -460,7 +471,6 @@ gfx:
       - gfx-telemetry-alerts@mozilla.com
       - jmuizelaar@mozilla.com
     expires: never
-    telemetry_mirror: COMPOSITE_SWAP_TIME
 
   composite_frame_roundtrip_time:
     type: timing_distribution
@@ -478,7 +488,6 @@ gfx:
       - gfx-telemetry-alerts@mozilla.com
       - rhunt@mozilla.com
     expires: never
-    telemetry_mirror: COMPOSITE_FRAME_ROUNDTRIP_TIME
 
   device_reset_reason:
     type: custom_distribution
@@ -719,13 +728,11 @@ gfx.display:
     notification_emails:
       - perf-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: DISPLAY_SCALING
 
 gfx.checkerboard:
   duration:
     type: timing_distribution
     time_unit: millisecond
-    telemetry_mirror: CHECKERBOARD_DURATION
     description: >
       The duration of a checkerboard event.
       Checkerboarding is when painting has not kept up with asynchronous
@@ -751,7 +758,6 @@ gfx.checkerboard:
     bucket_count: 50
     histogram_type: exponential
     unit: Pixels
-    telemetry_mirror: CHECKERBOARD_PEAK
     description: >
       The peak number of CSS pixels that checkerboarded during a checkerboard
       event. The minimum value of the largest histogram bucket is the size of
@@ -772,7 +778,6 @@ gfx.checkerboard:
   potential_duration:
     type: timing_distribution
     time_unit: millisecond
-    telemetry_mirror: CHECKERBOARD_POTENTIAL_DURATION
     description: >
       The total amount of time that we could reasonably be checkerboarding.
       This is the union of two possibly-intersecting sets of time periods:
@@ -802,7 +807,6 @@ gfx.checkerboard:
     bucket_count: 50
     histogram_type: exponential
     unit: Opaque unit
-    telemetry_mirror: CHECKERBOARD_SEVERITY
     description: >
       An opaque measurement of the severity of a checkerboard event.
       This doesn't have units, it's just useful for comparing two checkerboard
@@ -909,7 +913,6 @@ gfx.content.frame_time:
     bucket_count: 50
     histogram_type: exponential
     unit: Percentage of vsync interval
-    telemetry_mirror: CONTENT_FRAME_TIME
     description: >
       The time, in percentage of a vsync interval, spent from beginning a paint
       in the content process until that frame is presented in the compositor.
@@ -933,7 +936,6 @@ gfx.content.frame_time:
     bucket_count: 100
     histogram_type: linear
     unit: Percentage of vsync interval
-    telemetry_mirror: CONTENT_FRAME_TIME_VSYNC
     description: >
       The time, in percentage of a vsync interval, spent from the vsync that
       started a paint in the content process until that frame is presented in
@@ -955,7 +957,6 @@ gfx.content.frame_time:
     bucket_count: 50
     histogram_type: exponential
     unit: Percentage of vsync interval
-    telemetry_mirror: CONTENT_FRAME_TIME_WITH_SVG
     description: >
       The time, in percentage of a vsync interval, spent from beginning a paint
       in the content process until that frame is presented in the compositor,
@@ -978,7 +979,6 @@ gfx.content.frame_time:
     bucket_count: 50
     histogram_type: exponential
     unit: Percentage of vsync interval
-    telemetry_mirror: CONTENT_FRAME_TIME_WITHOUT_RESOURCE_UPLOAD
     description: >
       The time, in percentage of a vsync interval, spent from beginning a paint
       in the content process until that frame is presented in the compositor by
@@ -1000,7 +1000,6 @@ gfx.content.frame_time:
     bucket_count: 50
     histogram_type: exponential
     unit: Percentage of vsync interval
-    telemetry_mirror: CONTENT_FRAME_TIME_WITHOUT_UPLOAD
     description: >
       The time, in percentage of a vsync interval, spent from beginning a paint
       in the content process until that frame is presented in the compositor by
@@ -1045,7 +1044,6 @@ gfx.content:
   paint_time:
     type: timing_distribution
     time_unit: millisecond
-    telemetry_mirror: CONTENT_PAINT_TIME
     description: >
       Time spent in the main-thread paint pipeline for content.
       For non-webrender, this includes display list building, layer building,
@@ -1067,7 +1065,6 @@ gfx.content:
   full_paint_time:
     type: timing_distribution
     time_unit: millisecond
-    telemetry_mirror: CONTENT_FULL_PAINT_TIME
     description: >
       Time spent in the full paint pipeline for content until it's ready for
       composition.
@@ -1085,6 +1082,12 @@ gfx.content:
       - gfx-telemetry-alerts@mozilla.com
       - jmuizelaar@mozilla.com
     expires: never
+    metadata:
+      monitor:
+        alert: False
+        lower_is_better: True
+        platforms:
+          - All
 
   small_paint_phase_weight_partial:
     type: labeled_custom_distribution
@@ -1115,7 +1118,6 @@ gfx.content:
       - gfx-telemetry-alerts@mozilla.com
       - mmynttinen@mozilla.com
     expires: never
-    telemetry_mirror: CONTENT_SMALL_PAINT_PHASE_WEIGHT_PARTIAL
 
   large_paint_phase_weight_partial:
     type: labeled_custom_distribution
@@ -1146,7 +1148,6 @@ gfx.content:
       - gfx-telemetry-alerts@mozilla.com
       - mmynttinen@mozilla.com
     expires: never
-    telemetry_mirror: CONTENT_LARGE_PAINT_PHASE_WEIGHT_PARTIAL
 
   small_paint_phase_weight_full:
     type: labeled_custom_distribution
@@ -1177,7 +1178,6 @@ gfx.content:
       - gfx-telemetry-alerts@mozilla.com
       - mmynttinen@mozilla.com
     expires: never
-    telemetry_mirror: CONTENT_SMALL_PAINT_PHASE_WEIGHT_FULL
 
   large_paint_phase_weight_full:
     type: labeled_custom_distribution
@@ -1208,7 +1208,6 @@ gfx.content:
       - gfx-telemetry-alerts@mozilla.com
       - mmynttinen@mozilla.com
     expires: never
-    telemetry_mirror: CONTENT_LARGE_PAINT_PHASE_WEIGHT_FULL
 
 gfx.adapter.primary:
   description:
@@ -1388,7 +1387,6 @@ performance.interaction:
   keypress_present_latency:
     type: timing_distribution
     time_unit: millisecond
-    telemetry_mirror: KEYPRESS_PRESENT_LATENCY
     description: >
       Time between receiving a keypress event in the event loop and compositing
       its result onto the screen.
@@ -1401,13 +1399,17 @@ performance.interaction:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1580077#c10
     notification_emails:
       - perf-telemetry-alerts@mozilla.com
-      - vchin@mozilla.com
     expires: never
+    metadata:
+      monitor:
+        alert: False
+        lower_is_better: True
+        platforms:
+          - All
 
   mouseup_click_present_latency:
     type: timing_distribution
     time_unit: millisecond
-    telemetry_mirror: MOUSEUP_FOLLOWED_BY_CLICK_PRESENT_LATENCY
     description: >
       Time between receiving a mouseup which follow by a mouseclick
       on the event loop and compositing its result onto the screen.
@@ -1421,6 +1423,12 @@ performance.interaction:
       - perf-telemetry-alerts@mozilla.com
       - sefeng@mozilla.com
     expires: never
+    metadata:
+      monitor:
+        alert: False
+        lower_is_better: True
+        platforms:
+          - All
 
 gfx.hdr:
   windows_display_colorspace_bitfield:

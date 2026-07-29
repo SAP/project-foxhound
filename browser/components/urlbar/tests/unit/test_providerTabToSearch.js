@@ -11,6 +11,9 @@
 let testEngine;
 
 add_setup(async () => {
+  // Force settings redesign to false, so that `hideOneOffButton` will correctly
+  // work for the time being.
+  Services.prefs.setBoolPref("browser.settings-redesign.enabled", false);
   // Disable search suggestions for a less verbose test.
   Services.prefs.setBoolPref("browser.search.suggest.enabled", false);
   // Disable ScotchBonnet that provides its own tab to search implementation.
@@ -86,6 +89,54 @@ add_task(async function basic() {
     ],
   });
   Services.prefs.clearUserPref("browser.urlbar.suggest.engines");
+
+  await cleanupPlaces();
+});
+
+add_task(async function noTabToSearchResultsInSmartbar() {
+  await PlacesTestUtils.addVisits([
+    {
+      url: "https://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+  ]);
+
+  // Sanity check: the tab-to-search result appears in the urlbar SAP.
+  let urlbarController = UrlbarTestUtils.newMockController();
+  let urlbarContext = createContext("examp", {
+    isPrivate: false,
+  });
+
+  await urlbarController.startQuery(urlbarContext);
+  Assert.ok(
+    urlbarContext.results.some(
+      r => r.providerName == "UrlbarProviderTabToSearch"
+    ),
+    "Tab-to-search result should appear in the urlbar SAP"
+  );
+
+  // The same result should not appear in the smartbar SAP.
+  let smartbarController = UrlbarTestUtils.newMockController({
+    sapName: "smartbar",
+  });
+  let smartbarContext = createContext("examp", {
+    isPrivate: false,
+    sapName: "smartbar",
+  });
+
+  await smartbarController.startQuery(smartbarContext);
+
+  Assert.greater(
+    smartbarContext.results.length,
+    0,
+    "Smartbar query should return some results"
+  );
+  Assert.ok(
+    !smartbarContext.results.some(
+      r => r.providerName == "UrlbarProviderTabToSearch"
+    ),
+    "Tab-to-search result should not appear in the smartbar SAP"
+  );
 
   await cleanupPlaces();
 });

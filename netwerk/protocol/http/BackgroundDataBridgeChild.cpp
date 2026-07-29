@@ -21,7 +21,7 @@ void BackgroundDataBridgeChild::ActorDestroy(ActorDestroyReason aWhy) {
 }
 
 mozilla::ipc::IPCResult BackgroundDataBridgeChild::RecvOnTransportAndData(
-    const uint64_t& offset, const uint32_t& count, const nsACString& data,
+    const uint64_t& offset, const nsACString& data,
     const TimeStamp& aOnDataAvailableStartTime) {
   if (!mBgChild) {
     return IPC_OK();

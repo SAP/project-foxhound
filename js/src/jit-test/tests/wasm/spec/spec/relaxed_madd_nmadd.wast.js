@@ -151,7 +151,7 @@ assert_return(
   ],
 );
 
-// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:76
+// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:75
 assert_return(
   () => invoke($0, `f64x2.relaxed_madd`, [
     f64x2([
@@ -175,7 +175,7 @@ assert_return(
   ],
 );
 
-// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:92
+// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:91
 assert_return(
   () => invoke($0, `f64x2.relaxed_madd`, [
     f64x2([1.0000000009313226, 1.0000000009313226]),
@@ -193,7 +193,7 @@ assert_return(
   ],
 );
 
-// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:99
+// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:98
 assert_return(
   () => invoke($0, `f64x2.relaxed_nmadd`, [
     f64x2([-1.0000000009313226, -1.0000000009313226]),
@@ -211,7 +211,7 @@ assert_return(
   ],
 );
 
-// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:106
+// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:105
 assert_return(
   () => invoke($0, `f64x2.relaxed_nmadd`, [
     f64x2([1.0000000009313226, 1.0000000009313226]),
@@ -229,7 +229,7 @@ assert_return(
   ],
 );
 
-// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:120
+// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:119
 assert_return(
   () => invoke($0, `f32x4.relaxed_madd_cmp`, [
     f32x4([
@@ -249,7 +249,7 @@ assert_return(
   [i32x4([0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff])],
 );
 
-// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:135
+// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:134
 assert_return(
   () => invoke($0, `f32x4.relaxed_madd_cmp`, [
     f32x4([1.0000002, 1.0000002, 1.0000002, 1.0000002]),
@@ -259,7 +259,7 @@ assert_return(
   [i32x4([0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff])],
 );
 
-// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:141
+// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:140
 assert_return(
   () => invoke($0, `f32x4.relaxed_nmadd_cmp`, [
     f32x4([-1.0000002, -1.0000002, -1.0000002, -1.0000002]),
@@ -269,7 +269,7 @@ assert_return(
   [i32x4([0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff])],
 );
 
-// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:147
+// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:146
 assert_return(
   () => invoke($0, `f32x4.relaxed_nmadd_cmp`, [
     f32x4([1.0000002, 1.0000002, 1.0000002, 1.0000002]),
@@ -279,7 +279,7 @@ assert_return(
   [i32x4([0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff])],
 );
 
-// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:159
+// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:157
 assert_return(
   () => invoke($0, `f64x2.relaxed_madd_cmp`, [
     f64x2([
@@ -295,7 +295,7 @@ assert_return(
   [i64x2([0xffffffffffffffffn, 0xffffffffffffffffn])],
 );
 
-// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:174
+// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:172
 assert_return(
   () => invoke($0, `f64x2.relaxed_madd_cmp`, [
     f64x2([1.0000000009313226, 1.0000000009313226]),
@@ -305,7 +305,7 @@ assert_return(
   [i64x2([0xffffffffffffffffn, 0xffffffffffffffffn])],
 );
 
-// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:180
+// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:178
 assert_return(
   () => invoke($0, `f64x2.relaxed_nmadd_cmp`, [
     f64x2([-1.0000000009313226, -1.0000000009313226]),
@@ -315,7 +315,7 @@ assert_return(
   [i64x2([0xffffffffffffffffn, 0xffffffffffffffffn])],
 );
 
-// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:186
+// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:184
 assert_return(
   () => invoke($0, `f64x2.relaxed_nmadd_cmp`, [
     f64x2([1.0000000009313226, 1.0000000009313226]),
@@ -325,7 +325,7 @@ assert_return(
   [i64x2([0xffffffffffffffffn, 0xffffffffffffffffn])],
 );
 
-// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:207
+// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:205
 let $1 = instantiate(`(module
   (func (export "test-consistent-nondeterminism") (param v128 v128 v128) (result v128)
     (f32x4.eq
@@ -339,7 +339,7 @@ let $1 = instantiate(`(module
   )
 )`);
 
-// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:219
+// ./test/core/relaxed-simd/relaxed_madd_nmadd.wast:217
 assert_return(
   () => invoke($1, `test-consistent-nondeterminism`, [
     f32x4([

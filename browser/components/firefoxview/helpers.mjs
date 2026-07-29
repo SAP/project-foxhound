@@ -9,6 +9,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   Log: "resource://gre/modules/Log.sys.mjs",
   PlacesUIUtils: "moz-src:///browser/components/places/PlacesUIUtils.sys.mjs",
+  AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "relativeTimeFormat", () => {
@@ -96,17 +97,26 @@ export function navigateToLink(
   { forceNewTab = true } = {}
 ) {
   let currentWindow =
-    e.target.ownerGlobal.browsingContext.embedderWindowGlobal.browsingContext
+    e.target.documentGlobal.browsingContext.embedderWindowGlobal.browsingContext
       .window;
   if (currentWindow.openTrustedLinkIn) {
-    let where = lazy.BrowserUtils.whereToOpenLink(
-      e.detail.originalEvent,
-      false,
-      true
-    );
-    if (where == "current" && forceNewTab) {
+    const originalEvent = e.detail.originalEvent;
+    const isModifierClick =
+      lazy.AppConstants.platform == "macosx"
+        ? originalEvent.metaKey
+        : originalEvent.ctrlKey;
+    let where;
+
+    if (isModifierClick) {
       where = "tab";
+    } else {
+      where = lazy.BrowserUtils.whereToOpenLink(originalEvent, false, true);
+      if (where == "current" && forceNewTab) {
+        where = "tab";
+      }
     }
-    currentWindow.openTrustedLinkIn(url, where);
+    currentWindow.openTrustedLinkIn(url, where, {
+      inBackground: isModifierClick,
+    });
   }
 }

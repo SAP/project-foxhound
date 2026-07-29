@@ -310,6 +310,10 @@ const DOMAPIs = [
       el;
     `,
   },
+  {
+    context: CONTEXTS.PAGE,
+    expression: `new Document()`,
+  },
 ];
 
 const Errors = [

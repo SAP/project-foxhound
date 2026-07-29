@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -85,7 +83,10 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
               nsReflowStatus&) override;
   bool IsLeafDynamic() const override;
 
-  nsIContent* GetContentForEvent(const mozilla::WidgetEvent*) const final;
+  nsIContent* GetExplicitEventTargetContent(
+      const mozilla::WidgetEvent* = nullptr) const final;
+  using nsIFrame::GetExplicitEventTargetContent;
+
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   nsresult HandleEvent(nsPresContext*, mozilla::WidgetGUIEvent*,
                        nsEventStatus*) override;
@@ -206,6 +207,8 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
 
   mozilla::AspectRatio ComputeIntrinsicRatioForImage(
       imgIContainer*, bool aIgnoreContainment = false) const;
+
+  nsSize GetComputedSize() const { return mComputedSize; }
 
  private:
   friend nsIFrame* NS_NewImageFrame(mozilla::PresShell*, ComputedStyle*);

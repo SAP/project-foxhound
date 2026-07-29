@@ -36,20 +36,40 @@ skip script test262/built-ins/Function/prototype/arguments/prop-desc.js
 # Test262 tests disabled when features are only conditionally available #
 #########################################################################
 
-skip-if(!String.prototype.normalize) include test262/built-ins/String/prototype/normalize/jstests.list
-
 # Requires ICU to detect Final_Sigma case mapping context
 skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/String/prototype/toLowerCase/Final_Sigma_U180E.js
 skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/String/prototype/toLowerCase/special_casing_conditional.js
 skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/String/prototype/toLocaleLowerCase/Final_Sigma_U180E.js
 skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/String/prototype/toLocaleLowerCase/special_casing_conditional.js
 
+# Unicode RegExps require ICU support.
+skip-if(!this.hasOwnProperty("Intl")) include test262/built-ins/RegExp/property-escapes/jstests.list
+skip-if(!this.hasOwnProperty("Intl")) include test262/built-ins/RegExp/unicodeSets/jstests.list
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/RegExp/unicode_full_case_folding.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/RegExp/prototype/exec/regexp-builtin-exec-v-u-flag.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/RegExp/regexp-modifiers/add-ignoreCase-affects-slash-lower-b.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/RegExp/regexp-modifiers/add-ignoreCase-affects-slash-lower-p.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/RegExp/regexp-modifiers/add-ignoreCase-affects-slash-lower-w.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/RegExp/regexp-modifiers/add-ignoreCase-affects-slash-upper-b.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/RegExp/regexp-modifiers/add-ignoreCase-affects-slash-upper-p.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/RegExp/regexp-modifiers/add-ignoreCase-affects-slash-upper-w.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/RegExp/regexp-modifiers/remove-ignoreCase-affects-slash-lower-p.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/RegExp/regexp-modifiers/remove-ignoreCase-affects-slash-upper-p.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/String/prototype/match/regexp-prototype-match-v-u-flag.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/String/prototype/matchAll/regexp-prototype-matchAll-v-u-flag.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/String/prototype/replace/regexp-prototype-replace-v-u-flag.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/String/prototype/search/regexp-prototype-search-v-flag.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/String/prototype/search/regexp-prototype-search-v-u-flag.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/language/literals/regexp/u-case-mapping.js
+
 # Skip intl402 tests when Intl isn't available.
 skip-if(!this.hasOwnProperty("Intl")) include test262/intl402/jstests.list
+skip-if(!this.hasOwnProperty("Intl")) include non262/Intl/jstests.list
 
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1415303
 skip-if(!this.hasOwnProperty("Atomics")) include test262/built-ins/Atomics/jstests.list
 skip-if(!this.hasOwnProperty("SharedArrayBuffer")) include test262/built-ins/SharedArrayBuffer/jstests.list
+
 
 #####################################
 # Test262 tests disabled on browser #
@@ -440,11 +460,6 @@ fails-if(!xulRuntime.shell) script test262/staging/sm/Atomics/cross-compartment.
 fails-if(!xulRuntime.shell) script test262/staging/built-ins/Reflect/preventExtensions/preventExtensions-variable-length-typed-arrays.js
 fails-if(!xulRuntime.shell) script test262/staging/built-ins/Object/seal/seal-variable-length-typed-arrays.js
 
-# https://github.com/tc39/test262/pull/3955
-# https://bugzilla.mozilla.org/show_bug.cgi?id=1892186
-skip script test262/language/module-code/top-level-await/async-module-does-not-block-sibling-modules.js
-
-
 ##################################################
 # Test262 tests skipped due to SpiderMonkey bugs #
 ##################################################
@@ -661,6 +676,39 @@ skip script test262/language/statements/with/set-mutable-binding-idref-compound-
 # See https://bugzilla.mozilla.org/show_bug.cgi?id=1983837
 skip script test262/staging/top-level-await/tla-hang-entry.js
 
+# Before Hijri era not implemented in ICU: <https://unicode-org.atlassian.net/browse/ICU-23327>
+# Missing localizations for Before Hijri era: <https://unicode-org.atlassian.net/browse/CLDR-19320>
+skip script test262/intl402/DateTimeFormat/prototype/formatToParts/era.js
+
+# Bug 2046165 (Source phase imports)
+skip script test262/language/module-code/ambiguous-export-bindings/namespace-unambiguous-if-import-source-and-export.js
+skip script test262/language/module-code/source-phase-import/reexport-source-binding-namespace-get.js
+skip script test262/language/module-code/source-phase-import/reexport-source-binding-named-import.js
+
+# Bug 2045859 (Error stack accessor proposal)
+skip script test262/staging/sm/Error/constructor-proto.js
+skip script test262/staging/sm/Error/prototype.js
+skip script test262/staging/sm/Error/prototype-properties.js
+skip script test262/built-ins/Error/prototype/stack/setter-non-writable-stack.js
+skip script test262/built-ins/Error/prototype/stack/setter-proxy-trap-throws.js
+skip script test262/built-ins/Error/prototype/stack/setter-existing-own-property.js
+skip script test262/built-ins/Error/prototype/stack/getter-error-as-prototype.js
+skip script test262/built-ins/Error/prototype/stack/getter-no-error-data.js
+skip script test262/built-ins/Error/prototype/stack/setter-non-string-value.js
+skip script test262/built-ins/Error/prototype/stack/setter-receiver-is-prototype.js
+skip script test262/built-ins/Error/prototype/stack/setter-proxy-wrapping-prototype.js
+skip script test262/built-ins/Error/prototype/stack/setter-cross-realm.js
+skip script test262/built-ins/Error/prototype/stack/setter-own-accessor.js
+skip script test262/built-ins/Error/prototype/stack/setter-via-assignment.js
+skip script test262/built-ins/Error/prototype/stack/setter-creates-own-property.js
+skip script test262/built-ins/Error/prototype/stack/setter-proxy-trap-rejects.js
+skip script test262/built-ins/Error/prototype/stack/setter-receiver-is-proxy.js
+skip script test262/built-ins/Error/prototype/stack/getter-receiver-is-proxy.js
+skip script test262/built-ins/Error/prototype/stack/getter-error-prototype.js
+skip script test262/built-ins/Error/prototype/stack/getter-cross-realm.js
+
+# Bug 2046890
+skip script test262/intl402/FallbackSymbol/per-realm.js
 
 ###########################################################
 # Tests disabled due to issues in test262 importer script #
@@ -694,19 +742,6 @@ skip script test262/staging/sm/TypedArray/getter-name.js
 # These tests seem incorrect, see https://github.com/tc39/test262/pull/3907
 skip script test262/language/statements/class/decorator/syntax/class-valid/decorator-member-expr-private-identifier.js
 skip script test262/language/expressions/class/decorator/syntax/class-valid/decorator-member-expr-private-identifier.js
-
-# https://github.com/rbuckton/ecma262/pull/14
-skip script test262/staging/explicit-resource-management/call-dispose-methods.js
-skip script test262/staging/explicit-resource-management/await-using-in-switch-case-block.js
-
-# https://github.com/tc39/test262/pull/4898
-skip script test262/staging/sm/String/string-upper-lower-mapping.js
-
-# https://github.com/tc39/test262/pull/4910
-skip script test262/staging/Intl402/Temporal/old/datetime-toLocaleString.js
-
-# https://github.com/tc39/test262/pull/4911
-skip script test262/intl402/PluralRules/prototype/selectRange/argument-tonumber-throws.js
 
 
 ##############################################

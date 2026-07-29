@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,9 +19,7 @@ class WinWebAuthnService final : public nsIWebAuthnService {
   static bool AreWebAuthNApisAvailable();
   static nsresult EnsureWinWebAuthnModuleLoaded();
 
-  WinWebAuthnService()
-      : mTransactionState(Nothing(), "WinWebAuthnService::mTransactionState") {
-        };
+  WinWebAuthnService() = default;
 
  private:
   ~WinWebAuthnService();
@@ -32,16 +28,11 @@ class WinWebAuthnService final : public nsIWebAuthnService {
 
   struct TransactionState {
     uint64_t transactionId;
-    uint64_t browsingContextId;
-    Maybe<RefPtr<nsIWebAuthnSignArgs>> pendingSignArgs;
-    Maybe<RefPtr<nsIWebAuthnSignPromise>> pendingSignPromise;
     GUID cancellationId;
   };
 
-  using TransactionStateMutex = DataMutex<Maybe<TransactionState>>;
-  TransactionStateMutex mTransactionState;
-  void DoGetAssertion(Maybe<nsTArray<uint8_t>>&& aSelectedCredentialId,
-                      const TransactionStateMutex::AutoLock& aGuard);
+  // Main thread only:
+  Maybe<TransactionState> mActiveTransaction;
 };
 
 }  // namespace mozilla::dom

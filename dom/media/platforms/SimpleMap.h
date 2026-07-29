@@ -34,9 +34,9 @@ struct NoOpPolicy {
   ~NoOpPolicy() = default;
 };
 
-// An map employing an array instead of a hash table to optimize performance,
-// particularly beneficial when the number of expected items in the map is
-// small.
+// A multimap employing an array to optimize performance, particularly
+// beneficial when the number of expected items is small. Duplicate keys are
+// allowed; Find and Take return the first match in insertion order (FIFO).
 template <typename K, typename V, typename Policy = NoOpPolicy>
 class SimpleMap {
   using ElementType = std::pair<K, V>;
@@ -47,61 +47,47 @@ class SimpleMap {
 
   // Check if aKey is in the map.
   bool Contains(const K& aKey) {
-    struct Comparator {
-      bool Equals(const ElementType& aElement, const K& aKey) const {
-        return aElement.first == aKey;
-      }
-    };
     Policy guard(mLock);
-    return mMap.Contains(aKey, Comparator());
+    return FindIndex(aKey).isSome();
   }
-  // Insert Key and Value pair at the end of our map.
+
+  // Insert key and value pair at the end of our map.
   void Insert(const K& aKey, const V& aValue) {
     Policy guard(mLock);
     mMap.AppendElement(std::make_pair(aKey, aValue));
   }
-  // Sets aValue matching aKey and remove it from the map if found.
-  // The element returned is the first one found.
-  // Returns true if found, false otherwise.
-  bool Find(const K& aKey, V& aValue) {
-    if (Maybe<V> v = Take(aKey)) {
-      aValue = v.extract();
+
+  // Take the value matching aKey and remove it from the map if found.
+  Maybe<V> Take(const K& aKey) {
+    Policy guard(mLock);
+    if (Maybe<size_t> index = FindIndex(aKey)) {
+      Maybe<V> value = Some(std::move(mMap[*index].second));
+      mMap.RemoveElementAt(*index);
+      return value;
+    }
+    return Nothing();
+  }
+
+  // Find the value matching aKey, call the function F, remove it from the map.
+  // Unlike Take(key) which returns the value after releasing the lock, this
+  // variant executes the callback while the lock is still held.
+  template <typename F>
+  bool Take(const K& aKey, F&& aCallback) {
+    Policy guard(mLock);
+    if (Maybe<size_t> index = FindIndex(aKey)) {
+      aCallback(mMap[*index].second);
+      mMap.RemoveElementAt(*index);
       return true;
     }
     return false;
   }
-  // Take the value matching aKey and remove it from the map if found.
-  Maybe<V> Take(const K& aKey) {
-    Policy guard(mLock);
-    for (uint32_t i = 0; i < mMap.Length(); i++) {
-      ElementType& element = mMap[i];
-      if (element.first == aKey) {
-        Maybe<V> value = Some(element.second);
-        mMap.RemoveElementAt(i);
-        return value;
-      }
-    }
-    return Nothing();
-  }
-  // Find the value matching aKey, call the function F, remove it from the map.
-  template <typename F>
-  bool Take(const K& aKey, F&& aCallback) {
-    Policy guard(mLock);
-    for (uint32_t i = 0; i < mMap.Length(); i++) {
-      ElementType& element = mMap[i];
-      if (element.first == aKey) {
-        aCallback(element.second);
-        mMap.RemoveElementAt(i);
-        return true;
-      }
-    }
-    return false;
-  }
+
   // Remove all elements of the map.
   void Clear() {
     Policy guard(mLock);
     mMap.Clear();
   }
+
   // Iterate through all elements of the map and call the function F. After,
   // remove all elements of the map.
   template <typename F>
@@ -112,16 +98,25 @@ class SimpleMap {
     }
     mMap.Clear();
   }
-  // Iterate through all elements of the map and call the function F.
-  template <typename F>
-  void ForEach(F&& aCallback) {
+
+  // Return the number of elements in the map.
+  size_t Count() {
     Policy guard(mLock);
-    for (const auto& element : mMap) {
-      aCallback(element.first, element.second);
-    }
+    return mMap.Length();
   }
 
  private:
+  // Return the index of the first element matching aKey, or Nothing() if not
+  // found.
+  Maybe<size_t> FindIndex(const K& aKey) const {
+    for (size_t i = 0; i < mMap.Length(); ++i) {
+      if (mMap[i].first == aKey) {
+        return Some(i);
+      }
+    }
+    return Nothing();
+  }
+
   typename Policy::PolicyLock mLock;
   MapType mMap;
 };

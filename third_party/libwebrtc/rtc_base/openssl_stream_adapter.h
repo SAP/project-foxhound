@@ -17,27 +17,29 @@
 
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
 #include "absl/functional/any_invocable.h"
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
+#include "api/environment/environment.h"
+#include "api/task_queue/pending_task_safety_flag.h"
+#include "api/task_queue/task_queue_base.h"
 #include "rtc_base/buffer.h"
 #include "rtc_base/ssl_certificate.h"
+#include "rtc_base/ssl_identity.h"
+#include "rtc_base/ssl_stream_adapter.h"
+#include "rtc_base/stream.h"
+#include "rtc_base/task_utils/repeating_task.h"
+#include "system_wrappers/include/clock.h"
+
 #ifdef OPENSSL_IS_BORINGSSL
 #include "rtc_base/boringssl_identity.h"
 #include "rtc_base/openssl.h"
 #else
 #include "rtc_base/openssl_identity.h"
 #endif
-#include "api/field_trials_view.h"
-#include "api/task_queue/pending_task_safety_flag.h"
-#include "rtc_base/ssl_identity.h"
-#include "rtc_base/ssl_stream_adapter.h"
-#include "rtc_base/stream.h"
-#include "rtc_base/task_utils/repeating_task.h"
-#include "rtc_base/thread.h"
 
 namespace webrtc {
 
@@ -70,9 +72,9 @@ namespace webrtc {
 class OpenSSLStreamAdapter final : public SSLStreamAdapter {
  public:
   OpenSSLStreamAdapter(
+      std::optional<Environment> env,
       std::unique_ptr<StreamInterface> stream,
-      absl::AnyInvocable<void(SSLHandshakeError)> handshake_error,
-      const FieldTrialsView* field_trials = nullptr);
+      absl::AnyInvocable<void(SSLHandshakeError)> handshake_error);
   ~OpenSSLStreamAdapter() override;
 
   void SetIdentity(std::unique_ptr<SSLIdentity> identity) override;
@@ -82,7 +84,7 @@ class OpenSSLStreamAdapter final : public SSLStreamAdapter {
   void SetServerRole(SSLRole role = SSL_SERVER) override;
   SSLPeerCertificateDigestError SetPeerCertificateDigest(
       absl::string_view digest_alg,
-      ArrayView<const uint8_t> digest_val) override;
+      std::span<const uint8_t> digest_val) override;
 
   std::unique_ptr<SSLCertChain> GetPeerSSLCertChain() const override;
 
@@ -92,10 +94,11 @@ class OpenSSLStreamAdapter final : public SSLStreamAdapter {
   [[deprecated]] void SetMode(SSLMode mode) override;
   void SetMaxProtocolVersion(SSLProtocolVersion version) override;
   void SetInitialRetransmissionTimeout(int timeout_ms) override;
+  void UpdateRetransmissionTimeout(int timeout_ms) override;
   void SetMTU(int mtu) override;
 
-  StreamResult Read(ArrayView<uint8_t> data, size_t& read, int& error) override;
-  StreamResult Write(ArrayView<const uint8_t> data,
+  StreamResult Read(std::span<uint8_t> data, size_t& read, int& error) override;
+  StreamResult Write(std::span<const uint8_t> data,
                      size_t& written,
                      int& error) override;
   void Close() override;
@@ -109,6 +112,8 @@ class OpenSSLStreamAdapter final : public SSLStreamAdapter {
   bool GetSslVersionBytes(int* version) const override;
   // Key Extractor interface
   bool ExportSrtpKeyingMaterial(
+      ZeroOnFreeBuffer<uint8_t>& keying_material) override;
+  bool AppendSrtpKeyingMaterial(
       ZeroOnFreeBuffer<uint8_t>& keying_material) override;
 
   uint16_t GetPeerSignatureAlgorithm() const override;
@@ -212,10 +217,11 @@ class OpenSSLStreamAdapter final : public SSLStreamAdapter {
 
   void MaybeSetTimeout();
 
+  const std::optional<Environment> env_;
   const std::unique_ptr<StreamInterface> stream_;
   absl::AnyInvocable<void(SSLHandshakeError)> handshake_error_;
 
-  Thread* const owner_;
+  TaskQueueBase* const owner_;
   ScopedTaskSafety task_safety_;
   RepeatingTaskHandle timeout_task_;
 
@@ -263,16 +269,20 @@ class OpenSSLStreamAdapter final : public SSLStreamAdapter {
   // MTU configured for dtls.
   int dtls_mtu_ = 1200;
 
-  // 0 == Disabled
-  // 1 == Max
-  // 2 == Enabled (both min and max)
-  const int force_dtls_13_ = 0;
-
   int retransmission_count_ = 0;
 
   // Kill switch (from field-trial) flag to disable the use of
   // SSL_set_group_ids.
   const bool disable_ssl_group_ids_ = false;
+
+#ifdef OPENSSL_IS_BORINGSSL
+  class ScopedClockForTesting {
+   public:
+    ScopedClockForTesting(SSL_CTX* ctx, Clock* clock);
+    ~ScopedClockForTesting();
+  };
+  std::optional<ScopedClockForTesting> clock_for_testing_;
+#endif
 };
 
 /////////////////////////////////////////////////////////////////////////////

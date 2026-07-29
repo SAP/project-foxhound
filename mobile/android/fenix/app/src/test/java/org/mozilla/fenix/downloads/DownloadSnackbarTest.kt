@@ -5,6 +5,8 @@
 package org.mozilla.fenix.downloads
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.mockk.spyk
+import io.mockk.verify
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.state.BrowserState
@@ -13,9 +15,6 @@ import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mockito.Mockito.spy
-import org.mockito.Mockito.times
-import org.mockito.Mockito.verify
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.AppState
@@ -28,7 +27,7 @@ class DownloadSnackbarTest {
 
     @Test
     fun `GIVEN previous snackbar was DownloadInProgress WHEN download is cancelled THEN snackbar is dismissed`() = runTest(testDispatcher) {
-        val appStore = spy(
+        val appStore = spyk(
             AppStore(
                 AppState(
                     snackbarState = SnackbarState.None(previous = SnackbarState.DownloadInProgress("downloadId")),
@@ -55,7 +54,7 @@ class DownloadSnackbarTest {
         downloadSnackbar.start()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        verify(appStore).dispatch(AppAction.SnackbarAction.SnackbarDismissed)
+        verify { appStore.dispatch(AppAction.SnackbarAction.SnackbarDismissed) }
     }
 
     @Test
@@ -67,7 +66,7 @@ class DownloadSnackbarTest {
             status = DownloadState.Status.COMPLETED,
         )
 
-        val appStore = spy(
+        val appStore = spyk(
             AppStore(
                 AppState(
                     snackbarState = SnackbarState.None(
@@ -92,6 +91,6 @@ class DownloadSnackbarTest {
         downloadSnackbar.start()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        verify(appStore, times(0)).dispatch(AppAction.SnackbarAction.SnackbarDismissed)
+        verify(exactly = 0) { appStore.dispatch(AppAction.SnackbarAction.SnackbarDismissed) }
     }
 }

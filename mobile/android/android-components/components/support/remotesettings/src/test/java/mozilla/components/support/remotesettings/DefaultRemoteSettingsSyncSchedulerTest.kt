@@ -33,7 +33,7 @@ class DefaultRemoteSettingsSyncSchedulerTest {
 
     @Test
     fun `WHEN registerForSync is called THEN work is scheduled for syncs`() = runTest {
-        val frequency = Frequency(24, TimeUnit.HOURS)
+        val frequency = Frequency(2, TimeUnit.HOURS)
         val checker = DefaultRemoteSettingsSyncScheduler(testContext, frequency)
 
         val workId = REMOTE_SETTINGS_SYNC_WORKER_TAG
@@ -52,7 +52,7 @@ class DefaultRemoteSettingsSyncSchedulerTest {
 
     @Test
     fun `WHEN unregisterForSync is called THEN work is unscheduled for syncs`() = runTest {
-        val frequency = Frequency(24, TimeUnit.HOURS)
+        val frequency = Frequency(2, TimeUnit.HOURS)
         val checker = DefaultRemoteSettingsSyncScheduler(testContext, frequency)
 
         val workId = REMOTE_SETTINGS_SYNC_WORKER_TAG

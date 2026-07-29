@@ -72,6 +72,10 @@ def valgrind_handler_wrapper(handler):
     return handlers.ValgrindHandler(handler)
 
 
+def unexpected_only_handler_wrapper(handler):
+    return handlers.UnexpectedOnlyHandler(handler)
+
+
 def default_formatter_options(log_type, overrides):
     formatter_option_defaults = {"raw": {"level": "debug"}}
     rv = {"verbose": False, "level": "info"}
@@ -122,6 +126,12 @@ fmt_options = {
         "Disable logging reftest-analyzer compatible screenshot data.",
         {"mach"},
         "store_false",
+    ),
+    "unexpectedonly": (
+        unexpected_only_handler_wrapper,
+        "Suppress process output for tests with expected results.",
+        {"mach", "raw", "tbpl"},
+        "store_true",
     ),
 }
 
@@ -227,6 +237,8 @@ def setup_handlers(logger, formatters, formatter_options, allow_unused_options=F
             wrapper, wrapper_args = None, ()
             if option == "valgrind":
                 wrapper = valgrind_handler_wrapper
+            elif option == "unexpectedonly":
+                wrapper = unexpected_only_handler_wrapper
             elif option == "buffer":
                 wrapper, wrapper_args = fmt_options[option][0], (value,)
             else:
@@ -337,6 +349,7 @@ def setup_logging(
         for name in formatters:
             formatter_options[name]["valgrind"] = True
     setup_handlers(logger, formatters, formatter_options, allow_unused_options)
+
     set_default_logger(logger)
 
     return logger

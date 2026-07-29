@@ -93,19 +93,6 @@ add_task(async function test_executeScript_params_validation() {
           },
           expectedError: "Invalid frame IDs: [1, 2].",
         },
-        {
-          title: "throw non-structurally cloneable data in all frames",
-          executeScriptParams: {
-            target: {
-              tabId,
-              allFrames: true,
-            },
-            func: () => {
-              throw window;
-            },
-          },
-          expectedError: /Script '<anonymous code>' result is non-structured-clonable data/,
-        },
       ];
 
       for (const { title, executeScriptParams, expectedError } of TEST_CASES) {
@@ -516,6 +503,7 @@ add_task(async function test_executeScript_in_multiple_frameIds() {
       browser.test.assertEq(2, frames.length, "expected 2 frames");
 
       const frameIds = frames.map(frame => frame.frameId);
+      const documentIds = frames.map(frame => frame.documentId);
 
       const getTitle = () => {
         return document.title;
@@ -531,10 +519,12 @@ add_task(async function test_executeScript_in_multiple_frameIds() {
           expectedResults: [
             {
               frameId: frameIds[0],
+              documentId: documentIds[0],
               result: "file contains iframe",
             },
             {
               frameId: frameIds[1],
+              documentId: documentIds[1],
               result: "file contains img",
             },
           ],
@@ -765,6 +755,7 @@ add_task(async function test_executeScript_with_iframe_srcdoc_and_aboutblank() {
       browser.test.assertEq(5, frames.length, "expected 5 frames");
 
       const frameIds = frames.map(frame => frame.frameId);
+      const documentIds = frames.map(frame => frame.documentId);
 
       const TEST_CASES = [
         {
@@ -777,10 +768,12 @@ add_task(async function test_executeScript_with_iframe_srcdoc_and_aboutblank() {
             entriesAtIndex: {
               3: {
                 frameId: frameIds[3],
+                documentId: documentIds[3],
                 result: "iframe with srcdoc",
               },
               4: {
                 frameId: frameIds[4],
+                documentId: documentIds[4],
                 result: "about:blank",
               },
             },
@@ -796,10 +789,12 @@ add_task(async function test_executeScript_with_iframe_srcdoc_and_aboutblank() {
             entriesAtIndex: {
               3: {
                 frameId: frameIds[3],
+                documentId: documentIds[3],
                 result: "iframe with srcdoc",
               },
               4: {
                 frameId: frameIds[4],
+                documentId: documentIds[4],
                 result: "about:blank",
               },
             },
@@ -815,6 +810,7 @@ add_task(async function test_executeScript_with_iframe_srcdoc_and_aboutblank() {
             entriesAtIndex: {
               0: {
                 frameId: frameIds[3],
+                documentId: documentIds[3],
                 result: "iframe with srcdoc",
               },
             },
@@ -997,6 +993,7 @@ add_task(async function test_executeScript_allFrames() {
       // 2. Frame that loads `file_contains_img.html`
       browser.test.assertEq(2, frames.length, "expected 2 frames");
       const frameIds = frames.map(frame => frame.frameId);
+      const documentIds = frames.map(frame => frame.documentId);
 
       const getTitle = () => {
         return document.title;
@@ -1012,10 +1009,12 @@ add_task(async function test_executeScript_allFrames() {
           expectedResults: [
             {
               frameId: frameIds[0],
+              documentId: documentIds[0],
               result: "file contains iframe",
             },
             {
               frameId: frameIds[1],
+              documentId: documentIds[1],
               result: "file contains img",
             },
           ],
@@ -1029,10 +1028,13 @@ add_task(async function test_executeScript_allFrames() {
           expectedResults: [
             {
               frameId: frameIds[0],
+              documentId: documentIds[0],
               result: "file contains iframe",
             },
           ],
         },
+        // Note: No test cases for documentId targeting here, because
+        // test_ext_scripting_documentId.html provides test coverage for that.
       ];
 
       for (const { title, scriptingParams, expectedResults } of TEST_CASES) {
@@ -1279,6 +1281,23 @@ add_task(async function test_executeScript_runtime_errors() {
           );
         }
       }
+
+      // TODO Currently the promises is rejected
+      // Expected behaviour: return individual error messages per frame in the result array
+      // See bug 2041680
+      await browser.test.assertRejects(
+        browser.scripting.executeScript({
+          target: {
+            tabId,
+            allFrames: true,
+          },
+          func: () => {
+            throw window;
+          },
+        }),
+        /Script '<anonymous code>' result is non-structured-clonable data/,
+        "throw non-structurally cloneable data in all frames"
+      );
 
       browser.test.notifyPass("execute-script");
     },

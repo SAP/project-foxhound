@@ -58,7 +58,7 @@ function checkSubmit(formNum) {
     is(numSubmittedForms, 999, "Ensuring all forms submitted for testing.");
 
     (async () => {
-      var numEndingLogins = await LoginManager.countLogins("", "", "");
+      var numEndingLogins = await LoginManager.countLoginsAsync("", "", "");
 
       ok(numEndingLogins > 0, "counting logins at end");
       is(numStartingLogins, numEndingLogins + 222, "counting logins at end");

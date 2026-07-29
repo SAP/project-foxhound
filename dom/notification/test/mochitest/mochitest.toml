@@ -118,12 +118,14 @@ support-files = ["create_notification.html"]
 ["test_notification_worker.html"]
 skip-if = [
   "os == 'android'", # Bug 1948752, Notification.onshow/close are broken on Android
+  "xorigin", # Third-party notifications are forbidden
 ]
 support-files = ["notification_worker.js"]
 
 ["test_notification_worker_child.html"]
 skip-if = [
   "os == 'android'", # Bug 1948752, Notification.onshow/close are broken on Android
+  "xorigin", # Third-party notifications are forbidden
 ]
 support-files = [
   "notification_worker_child-child.js",
@@ -133,6 +135,7 @@ support-files = [
 ["test_notification_worker_click.html"]
 skip-if = [
   "os == 'android'", # Bug 1948752, Notification.onshow/close are broken on Android
+  "xorigin", # Third-party notifications are forbidden
 ]
 
 ["test_notification_worker_permission.html"]

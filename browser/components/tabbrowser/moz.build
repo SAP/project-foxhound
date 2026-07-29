@@ -10,6 +10,8 @@ with Files("content/tabgroup.js"):
     BUG_COMPONENT = ("Firefox", "Tabbed Browser: Tab Groups")
 with Files("content/tabgroup-menu.js"):
     BUG_COMPONENT = ("Firefox", "Tabbed Browser: Tab Groups")
+with Files("content/tab-groups-list.mjs"):
+    BUG_COMPONENT = ("Firefox", "Tabbed Browser: Tab Groups")
 
 JAR_MANIFESTS += ["jar.mn"]
 

@@ -21,11 +21,17 @@ export const TRUSTED_FAVICON_SCHEMES = Object.freeze([
 /**
  * Creates a moz-remote-image: URL wrapping the specified URL.
  *
- * @param {string} url The URL to (remotely) load the image from.
- * @param {object} options Further configuration options for loading.
- * @param {number} options.size The size of the final image. Should be > 0.
- * @param {string} options.colorScheme Either "dark" or "light". Used for SVGs.
- * @param {number} options.contentParentId Which process to render the image in.
+ * @param {string} url
+ *   The URL to (remotely) load the image from.
+ * @param {object} options
+ *   Further configuration options for loading.
+ * @param {number} [options.size]
+ *   The size of the final image. Should be > 0. Assumes that all images are
+ *   square.
+ * @param {string} [options.colorScheme]
+ *   Either "dark" or "light". Used for SVGs.
+ * @param {number} [options.contentParentId]
+ *   Which process to render the image in.
  */
 function getMozRemoteImageURL(url, options = {}) {
   if (options.size !== undefined) {
@@ -61,5 +67,6 @@ export function blobAsDataURL(blob) {
 // Shim for tabbrowser.js that uses `defineESModuleGetters`.
 export let FaviconUtils = {
   SVG_DATA_URI_PREFIX,
+  TRUSTED_FAVICON_SCHEMES,
   getMozRemoteImageURL,
 };

@@ -1,0 +1,34 @@
+From: Jan Grulich <jgrulich@redhat.com>
+Date: Mon, 18 May 2026 08:35:00 +0000
+Subject: Bug 2040112 - WebRTC backport: Wayland capture: Fix integer overflow
+ in cursor bitmap validation r=pehrsons
+
+Use 64-bit arithmetic for the cursor bitmap bounds check to avoid
+incorrect results with large values.
+
+This is a simple backport of an WebRTC upstream change.
+
+Upstream commit: 7ff59ed9c9d1c7f9126225d30e7a72d80ab3ab4d
+
+Differential Revision: https://phabricator.services.mozilla.com/D301009
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/46682a4768b903d875f0cff9777e1b052d311aa0
+---
+ .../linux/wayland/shared_screencast_stream.cc                | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/modules/desktop_capture/linux/wayland/shared_screencast_stream.cc b/modules/desktop_capture/linux/wayland/shared_screencast_stream.cc
+index 90985c5ae2..9a322d1df7 100644
+--- a/modules/desktop_capture/linux/wayland/shared_screencast_stream.cc
++++ b/modules/desktop_capture/linux/wayland/shared_screencast_stream.cc
+@@ -799,8 +799,9 @@ void SharedScreenCastStreamPrivate::ProcessBuffer(pw_buffer* buffer) {
+             bitmap->size.height <= kMaxCursorSize &&
+             bitmap->stride >=
+                 static_cast<int32_t>(bitmap->size.width * kBytesPerPixel) &&
+-            bitmap->stride * bitmap->size.height <=
+-                kMaxCursorSize * kMaxCursorSize * kBytesPerPixel) {
++            static_cast<uint64_t>(bitmap->stride) * bitmap->size.height <=
++                static_cast<uint64_t>(kMaxCursorSize) * kMaxCursorSize *
++                    kBytesPerPixel) {
+           const uint8_t* bitmap_data =
+               SPA_MEMBER(bitmap, bitmap->offset, uint8_t);
+           // TODO(bugs.webrtc.org/436974448): Convert `spa_video_format` to

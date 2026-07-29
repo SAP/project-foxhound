@@ -340,7 +340,7 @@ class AccessibleHighlighter extends AutoRefreshHighlighter {
       zoom *= zoom;
       options = { ...options, zoom };
       getBoundsFn = getBoundsXUL;
-      win = this.win.parent.ownerGlobal;
+      win = this.win.parent.documentGlobal;
     }
 
     return getBoundsFn(win, options);

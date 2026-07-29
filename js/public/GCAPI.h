@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -541,21 +539,7 @@ typedef enum JSGCParamKey {
  */
 typedef void (*JSTraceDataOp)(JSTracer* trc, void* data);
 
-/*
- * Trace hook used to trace gray roots incrementally.
- *
- * This should return whether tracing is finished. It will be called repeatedly
- * in subsequent GC slices until it returns true.
- *
- * While tracing this should check the budget and return false if it has been
- * exceeded. When passed an unlimited budget it should always return true.
- */
-typedef bool (*JSGrayRootsTracer)(JSTracer* trc, JS::SliceBudget& budget,
-                                  void* data);
-
 typedef enum JSGCStatus { JSGC_BEGIN, JSGC_END } JSGCStatus;
-
-typedef void (*JSObjectsTenuredCallback)(JS::GCContext* gcx, void* data);
 
 typedef enum JSFinalizeStatus {
   /**
@@ -1007,15 +991,6 @@ extern JS_PUBLIC_API bool AddGCNurseryCollectionCallback(
 extern JS_PUBLIC_API void RemoveGCNurseryCollectionCallback(
     JSContext* cx, GCNurseryCollectionCallback callback, void* data);
 
-typedef void (*DoCycleCollectionCallback)(JSContext* cx);
-
-/**
- * The purge gray callback is called after any COMPARTMENT_REVIVED GC in which
- * the majority of compartments have been marked gray.
- */
-extern JS_PUBLIC_API DoCycleCollectionCallback
-SetDoCycleCollectionCallback(JSContext* cx, DoCycleCollectionCallback callback);
-
 using CreateSliceBudgetCallback = JS::SliceBudget (*)(JS::GCReason reason,
                                                       int64_t millis);
 
@@ -1240,9 +1215,6 @@ extern JS_PUBLIC_API void JS_MaybeGC(JSContext* cx);
 extern JS_PUBLIC_API void JS_SetGCCallback(JSContext* cx, JSGCCallback cb,
                                            void* data);
 
-extern JS_PUBLIC_API void JS_SetObjectsTenuredCallback(
-    JSContext* cx, JSObjectsTenuredCallback cb, void* data);
-
 extern JS_PUBLIC_API bool JS_AddFinalizeCallback(JSContext* cx,
                                                  JSFinalizeCallback cb,
                                                  void* data);
@@ -1402,11 +1374,6 @@ extern JS_PUBLIC_API void SetHostCleanupFinalizationRegistryCallback(
  * https://tc39.es/proposal-weakrefs/#sec-clear-kept-objects
  */
 extern JS_PUBLIC_API void ClearKeptObjects(JSContext* cx);
-
-inline JS_PUBLIC_API bool NeedGrayRootsForZone(Zone* zoneArg) {
-  shadow::Zone* zone = shadow::Zone::from(zoneArg);
-  return zone->isGCMarkingBlackAndGray() || zone->isGCCompacting();
-}
 
 extern JS_PUBLIC_API bool AtomsZoneIsCollecting(JSRuntime* runtime);
 extern JS_PUBLIC_API bool IsAtomsZone(Zone* zone);

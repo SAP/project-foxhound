@@ -18,125 +18,124 @@
     </html:h1>
   </box>
   <toolbarseparator/>
-  <!-- This form is used purely in JS for validation. We hide it here
-       rather than nesting it in the vbox to keep our CSS simpler. -->
-  <html:form id="report-broken-site-panel-form"/>
   <vbox id="report-broken-site-panel-container"
         class="panel-subview-body">
-    <html:p>
-      <html:span id="report-broken-site-popup-intro"
+    <html:p class="report-broken-site-url-label"
+            data-l10n-id="report-broken-site-panel-url-label"
+            data-l10n-attrs="label"/>
+    <html:url-input></html:url-input>
+    <html:p id="report-broken-site-reason-selector-intro"
+            data-l10n-id="report-broken-site-panel-reason-intro-text"/>
+    <moz-box-group xmlns="http://www.w3.org/1999/xhtml">
+      <moz-box-button id="report-broken-site-popup-reason-account"
+              class="reason-button progression"
+              data-l10n-id="report-broken-site-panel-reason-account-moz-box-button"/>
+      <moz-box-button id="report-broken-site-popup-reason-load"
+              class="reason-button progression"
+              data-l10n-id="report-broken-site-panel-reason-load-moz-box-button"/>
+      <moz-box-button id="report-broken-site-popup-reason-media"
+              class="reason-button progression"
+              data-l10n-id="report-broken-site-panel-reason-media-moz-box-button"/>
+      <moz-box-button id="report-broken-site-popup-reason-content"
+              class="reason-button progression"
+              data-l10n-id="report-broken-site-panel-reason-content-moz-box-button"/>
+      <moz-box-button id="report-broken-site-popup-reason-notsupported"
+              class="reason-button progression"
+              data-l10n-id="report-broken-site-panel-reason-notsupported-moz-box-button"/>
+      <moz-box-button id="report-broken-site-popup-reason-adblocker"
+              class="reason-button progression"
+              data-l10n-id="report-broken-site-panel-reason-adblocker-moz-box-button"/>
+      <moz-box-button id="report-broken-site-popup-reason-slow"
+              class="reason-button progression"
+              data-l10n-id="report-broken-site-panel-reason-slow-moz-box-button"/>
+      <moz-box-button id="report-broken-site-popup-reason-checkout"
+              class="reason-button progression"
+              data-l10n-id="report-broken-site-panel-reason-checkout-moz-box-button"/>
+      <moz-box-button id="report-broken-site-popup-reason-deceptive"
+              class="reason-button progression"
+              data-l10n-id="report-broken-site-panel-reason-deceptive-moz-box-button"/>
+      <moz-box-button id="report-broken-site-popup-reason-other"
+              class="reason-button progression"
+              data-l10n-id="report-broken-site-panel-reason-other-moz-box-button"/>
+    </moz-box-group>
+    <vbox flex="1"/>
+    <div xmlns="http://www.w3.org/1999/xhtml">
+      <p id="report-broken-site-popup-intro">
+        <span class="text-deemphasized"
               data-l10n-id="report-broken-site-panel-intro-text"/>
-      <html:a id="report-broken-site-popup-learn-more-link"
-              data-l10n-id="report-broken-site-panel-learn-more-link"
-              is="moz-support-link"
-              support-page="report-broken-site"
-              class="popup-notification-learnmore-link"/>
-    </html:p>
-    <label id="report-broken-site-popup-url-label"
-           control="report-broken-site-popup-url"
-           data-l10n-id="report-broken-site-panel-url"/>
-    <html:input id="report-broken-site-popup-url"
-                form="report-broken-site-panel-form"
-                allow-arrow-navigation="true"
-                type="url" required="required" aria-required="true" />
-    <label id="report-broken-site-popup-invalid-url-msg"
-           class="invalid-message text-error"
-           role="alert"
-           data-l10n-id="report-broken-site-panel-invalid-url-label"/>
-    <label id="report-broken-site-popup-reason-label"
-           control="report-broken-site-popup-reason"
-           hidden="true"
-           data-l10n-attrs="aria-label"
-           data-l10n-id="report-broken-site-panel-reason-label"/>
-    <label id="report-broken-site-popup-reason-optional-label"
-           control="report-broken-site-popup-reason"
-           hidden="true"
-           data-l10n-attrs="aria-label"
-           data-l10n-id="report-broken-site-panel-reason-optional-label"/>
-    <html:select id="report-broken-site-popup-reason"
-                 form="report-broken-site-panel-form">
-      <html:option id="report-broken-site-popup-reason-choose"
-                   value=""
-                   hidden="true"
-                   disabled="true"
-                   selected="selected"
-                   data-l10n-id="report-broken-site-panel-reason-choose"/>
-      <html:option id="report-broken-site-popup-reason-checkout"
-                   data-l10n-id="report-broken-site-panel-reason-checkout"/>
-      <html:option id="report-broken-site-popup-reason-load"
-                   data-l10n-id="report-broken-site-panel-reason-load"/>
-      <html:option id="report-broken-site-popup-reason-slow"
-                   data-l10n-id="report-broken-site-panel-reason-slow2"/>
-      <html:option id="report-broken-site-popup-reason-media"
-                   data-l10n-id="report-broken-site-panel-reason-media2"/>
-      <html:option id="report-broken-site-popup-reason-content"
-                   data-l10n-id="report-broken-site-panel-reason-content2"/>
-      <html:option id="report-broken-site-popup-reason-account"
-                   data-l10n-id="report-broken-site-panel-reason-account2"/>
-      <html:option id="report-broken-site-popup-reason-adblocker"
-                   data-l10n-id="report-broken-site-panel-reason-adblocker2"/>
-      <html:option id="report-broken-site-popup-reason-notsupported"
-                   data-l10n-id="report-broken-site-panel-reason-notsupported"/>
-      <html:option id="report-broken-site-popup-reason-other"
-                   data-l10n-id="report-broken-site-panel-reason-other"/>
-    </html:select>
-    <label id="report-broken-site-popup-missing-reason-msg"
-           class="invalid-message text-error"
-           role="alert"
-           data-l10n-id="report-broken-site-panel-missing-reason-label"/>
-    <label id="report-broken-site-popup-description-label"
-           control="report-broken-site-popup-description"
-           hidden="true"
-           data-l10n-id="report-broken-site-panel-description-label"/>
-    <label id="report-broken-site-popup-description-optional-label"
-           control="report-broken-site-popup-description"
-           hidden="true"
-           data-l10n-id="report-broken-site-panel-description-optional-label"/>
-    <html:textarea id="report-broken-site-popup-description"
-                   data-l10n-id="report-broken-site-panel-description"
-                   form="report-broken-site-panel-form"
-                   allow-arrow-navigation="true"
-                   rows="4"></html:textarea>
-    <vbox id="report-broken-site-popup-blocked-trackers">
-      <checkbox id="report-broken-site-popup-blocked-trackers-checkbox" data-l10n-id="report-broken-site-panel-blocked-trackers-label" />
-      <html:p data-l10n-id="report-broken-site-panel-blocked-trackers-description"/>
-    </vbox>
-    <hbox>
-      <html:a id="report-broken-site-popup-send-more-info-link"
-              href="#"
-              data-l10n-id="report-broken-site-panel-send-more-info-link"/>
-    </hbox>
-    <html:moz-box-button id="report-broken-site-popup-preview-button"
-                         data-l10n-id="report-broken-site-panel-preview-button" />
+        <a id="report-broken-site-popup-learn-more-link"
+                data-l10n-id="report-broken-site-panel-learn-more-link"
+                is="moz-support-link"
+                support-page="report-broken-site"
+                class="popup-notification-learnmore-link"/>
+      </p>
+    </div>
   </vbox>
+</panelview>
+
+<panelview id="report-broken-site-popup-detailsView"
+           class="report-broken-site-view details-view PanelUI-subView"
+           role="dialog"
+           aria-describedby="report-broken-site-panel-preview-label">
+  <toolbarseparator/>
+  <vbox class="panel-subview-body">
+    <html:p class="report-broken-site-url-label"
+            data-l10n-id="report-broken-site-panel-url-label"
+            data-l10n-attrs="label"/>
+    <html:url-input></html:url-input>
+    <html:p id="report-broken-site-details-instructions"/>
+    <html:textarea id="report-broken-site-popup-description"
+                   data-l10n-id="report-broken-site-panel-description2"
+                   allow-arrow-navigation="true"
+                   rows="14"></html:textarea>
+    <label id="report-broken-site-details-description-error"
+           class="invalid-message text-error"
+           role="alert"/>
+    <html:moz-toggle id="report-broken-site-popup-blocked-trackers-toggle"
+                     action="toggle-blocked-trackers"
+                     data-l10n-id="report-broken-site-panel-blocked-trackers-label2"
+                     data-l10n-attrs="label"></html:moz-toggle>
+    <html:moz-toggle id="report-broken-site-popup-screenshot-toggle"
+                     action="toggle-screenshot"
+                     pressed="true"
+                     data-l10n-id="report-broken-site-panel-screenshot-label"
+                     data-l10n-attrs="label">
+      <html:img slot="nested" decoding="sync" id="report-broken-site-popup-screenshot"/>
+    </html:moz-toggle>
+    <button id="report-broken-site-popup-send-more-info-button" class="arrow-button footer-button progression"
+                         data-l10n-id="report-broken-site-panel-send-more-info-button" />
+    <button id="report-broken-site-popup-preview-button" class="arrow-button footer-button progression"
+                         data-l10n-id="report-broken-site-panel-preview-button"/>
+  </vbox>
+  <toolbarseparator/>
   <html:moz-button-group class="panel-footer">
-    <button id="report-broken-site-popup-cancel-button"
-            class="footer-button"
+    <button id="report-broken-site-popup-details-cancel-button"
+            class="footer-button cancel-button"
             data-l10n-id="report-broken-site-panel-button-cancel"/>
     <button id="report-broken-site-popup-send-button"
-            class="footer-button"
+            class="footer-button send-button progression"
             default="true"
-            data-l10n-id="report-broken-site-panel-button-send"/>
+            data-l10n-id="report-broken-site-panel-button-send-report"/>
   </html:moz-button-group>
 </panelview>
 
 <panelview id="report-broken-site-popup-previewView"
            class="report-broken-site-view preview-view PanelUI-subView"
            role="dialog"
-           data-l10n-id="report-broken-site-panel-preview-header"
+           data-l10n-id="report-broken-site-panel-preview-header2"
            data-l10n-attrs="title"
            aria-describedby="report-broken-site-panel-preview-label">
   <vbox class="panel-subview-body">
-    <vbox id="report-broken-site-panel-preview-items"/>
+    <vbox id="report-broken-site-panel-preview-items" class="update"/>
   </vbox>
   <html:moz-button-group class="panel-footer">
     <button id="report-broken-site-popup-preview-cancel-button"
-            class="footer-button"
+            class="footer-button cancel-button"
             data-l10n-id="report-broken-site-panel-button-cancel"/>
     <button id="report-broken-site-popup-preview-send-button"
-            class="footer-button"
+            class="footer-button send-button"
             default="true"
-            data-l10n-id="report-broken-site-panel-button-send"/>
+            data-l10n-id="report-broken-site-panel-button-send-report"/>
   </html:moz-button-group>
 </panelview>
 

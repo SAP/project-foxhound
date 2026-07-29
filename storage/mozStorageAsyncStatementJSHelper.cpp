@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=2 et lcs=trail\:.,tab\:>~ :
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -49,13 +47,8 @@ nsresult AsyncStatementJSHelper::getParams(AsyncStatement* aStatement,
     nsCOMPtr<nsPIDOMWindowInner> window =
         do_QueryInterface(global.GetAsSupports());
 
-    RefPtr<AsyncStatementParams> params(
-        new AsyncStatementParams(window, aStatement));
-    NS_ENSURE_TRUE(params, NS_ERROR_OUT_OF_MEMORY);
-
-    RefPtr<AsyncStatementParamsHolder> paramsHolder =
-        new AsyncStatementParamsHolder(params);
-    NS_ENSURE_TRUE(paramsHolder, NS_ERROR_OUT_OF_MEMORY);
+    auto params = MakeRefPtr<AsyncStatementParams>(window, aStatement);
+    auto paramsHolder = MakeRefPtr<AsyncStatementParamsHolder>(params);
 
     aStatement->mStatementParamsHolder =
         new nsMainThreadPtrHolder<AsyncStatementParamsHolder>(

@@ -19,6 +19,10 @@ import {
   actionTypes as at,
   actionUtils as au,
 } from "resource://newtab/common/Actions.mjs";
+import {
+  WIDGET_REGISTRY,
+  isWidgetEnabled,
+} from "resource://newtab/common/WidgetsRegistry.mjs";
 import { Prefs } from "resource://newtab/lib/ActivityStreamPrefs.sys.mjs";
 import { classifySite } from "resource://newtab/lib/SiteClassifier.sys.mjs";
 
@@ -53,8 +57,10 @@ const PREF_SHOW_SPONSORED_STORIES = "showSponsored";
 const PREF_SHOW_SPONSORED_TOPSITES = "showSponsoredTopSites";
 const BLANK_HOMEPAGE_URL = "chrome://browser/content/blanktab.html";
 const PREF_PRIVATE_PING_ENABLED = "telemetry.privatePing.enabled";
-const PREF_REDACT_NEWTAB_PING_NEABLED =
+const PREF_REDACT_NEWTAB_PING_ENABLED =
   "telemetry.privatePing.redactNewtabPing.enabled";
+const PREF_MERINO_FEED_EXPERIMENT =
+  "browser.newtabpage.activity-stream.discoverystream.merino-feed-experiment";
 const PREF_PRIVATE_PING_INFERRED_ENABLED =
   "telemetry.privatePing.inferredInterests.enabled";
 const PREF_NEWTAB_PING_ENABLED = "browser.newtabpage.ping.enabled";
@@ -199,7 +205,7 @@ export class TelemetryFeed {
   }
 
   get redactNewTabPingEnabled() {
-    return this._prefs.get(PREF_REDACT_NEWTAB_PING_NEABLED);
+    return this._prefs.get(PREF_REDACT_NEWTAB_PING_ENABLED);
   }
 
   get privatePingInferredInterestsEnabled() {
@@ -246,6 +252,11 @@ export class TelemetryFeed {
       ?.coarsePrivateInferredInterests;
   }
 
+  get inferredTelemetrySettingsOverrides() {
+    return this.store?.getState()?.InferredPersonalization
+      ?.inferredTelemetrySettingsOverrides;
+  }
+
   /**
    * Checks if the Coarse Interest Vector (CIV) has recorded any clicks.
    * Used for the optimizeInferred feature to determine if private ping
@@ -283,18 +294,9 @@ export class TelemetryFeed {
    * Initializes the Glean session type based on configuration and CIV state.
    * Determines whether to use NormalGleanSession (queue events) or
    * PrivateGleanSession (send to both pings immediately).
-   *
-   * @backward-compat { version 149 } Checking for trainhopConfig length
-   * can be remove after 149 lands
    */
   initializeGleanSession() {
     if (this._gleanSessionInitialized) {
-      return;
-    }
-
-    const trainhopConfig =
-      this.store?.getState()?.Prefs?.values?.trainhopConfig;
-    if (!trainhopConfig || Object.keys(trainhopConfig).length === 0) {
       return;
     }
 
@@ -795,15 +797,9 @@ export class TelemetryFeed {
     // Legacy telemetry expects 1-based tile positions.
     const legacyTelemetryPosition = position + 1;
 
-    const unifiedAdsTilesEnabled = this._prefs.get(
-      PREF_UNIFIED_ADS_TILES_ENABLED
-    );
-
-    let pingType;
     const session = this.sessions.get(au.getPortIdOfSender(action));
 
     if (type === "impression") {
-      pingType = "topsites-impression";
       Glean.contextualServicesTopsites.impression[
         `${source}_${legacyTelemetryPosition}`
       ].add(1);
@@ -831,7 +827,6 @@ export class TelemetryFeed {
         }
       }
     } else if (type === "click") {
-      pingType = "topsites-click";
       Glean.contextualServicesTopsites.click[
         `${source}_${legacyTelemetryPosition}`
       ].add(1);
@@ -861,19 +856,6 @@ export class TelemetryFeed {
     } else {
       console.error("Unknown ping type for sponsored TopSites impression");
       return;
-    }
-
-    if (!this.sovEnabled()) {
-      Glean.topSites.pingType.set(pingType);
-      Glean.topSites.position.set(legacyTelemetryPosition);
-      Glean.topSites.source.set(source);
-      Glean.topSites.tileId.set(tile_id);
-      if (data.reporting_url && !unifiedAdsTilesEnabled) {
-        Glean.topSites.reportingUrl.set(data.reporting_url);
-      }
-      Glean.topSites.advertiser.set(advertiser_name);
-      Glean.topSites.contextId.set(await lazy.ContextId.request());
-      GleanPings.topSites.submit();
     }
 
     if (data.reporting_url && this.canSendUnifiedAdsTilesCallbacks) {
@@ -1023,6 +1005,7 @@ export class TelemetryFeed {
     if (item.is_sponsored) {
       return item; // Don't alter spocs
     }
+
     const epsilon =
       this._privateRandomContentTelemetryProbablityValues?.epsilon ?? 0;
     if (!epsilon) {
@@ -1103,8 +1086,6 @@ export class TelemetryFeed {
           corpus_item_id,
           event_source,
           feature,
-          fetchTimestamp,
-          firstVisibleTimestamp,
           format,
           is_section_followed,
           layout_name,
@@ -1188,17 +1169,6 @@ export class TelemetryFeed {
                 url: shim,
                 position: action.data.action_position,
               });
-            } else {
-              Glean.pocket.shim.set(shim);
-              if (fetchTimestamp) {
-                Glean.pocket.fetchTimestamp.set(fetchTimestamp * 1000);
-              }
-              if (firstVisibleTimestamp) {
-                Glean.pocket.newtabCreationTimestamp.set(
-                  firstVisibleTimestamp * 1000
-                );
-              }
-              GleanPings.spoc.submit("click");
             }
           }
         }
@@ -1417,23 +1387,45 @@ export class TelemetryFeed {
   async configureContentPing() {
     let privateMetrics = {};
     const prefs = this.store?.getState()?.Prefs.values; // Needed for experimenter configs
+    // An override from model response may turn the inclusion of inferred interests
+    // in telemetry off but not on.
+    const includeInferredInterestsInTelemetry =
+      this.privatePingInferredInterestsEnabled &&
+      (this.inferredTelemetrySettingsOverrides?.iv_in_telemetry ?? true);
     const inferredInterests =
-      this.privatePingInferredInterestsEnabled && this.inferredInterests;
+      includeInferredInterestsInTelemetry && this.inferredInterests;
     if (inferredInterests) {
       privateMetrics.inferredInterests = inferredInterests;
     }
+    let epsilonMicroRaw =
+      prefs?.trainhopConfig?.newtabPrivatePing?.[
+        TRAINHOP_PREF_RANDOM_CLICK_PROBABILITY_MICRO
+      ] || 0;
+    if (
+      this.inferredTelemetrySettingsOverrides
+        ?.random_content_click_probability_epsilon_micro !== undefined
+    ) {
+      epsilonMicroRaw =
+        this.inferredTelemetrySettingsOverrides
+          .random_content_click_probability_epsilon_micro;
+    }
+
     this._privateRandomContentTelemetryProbablityValues = {
-      epsilon:
-        (prefs?.trainhopConfig?.newtabPrivatePing?.[
-          TRAINHOP_PREF_RANDOM_CLICK_PROBABILITY_MICRO
-        ] || 0) / 1e6,
+      epsilon: epsilonMicroRaw / 1e6,
     };
     const privatePingConfig = prefs?.trainhopConfig?.newtabPrivatePing || {};
     // Set the daily cap for content pings
     const impressionCap = privatePingConfig[TRAINHOP_PREF_DAILY_EVENT_CAP] || 0;
     this.newtabContentPing.setMaxEventsPerDay(impressionCap);
-    const clickDailyCap =
+    let clickDailyCap =
       privatePingConfig[TRAINHOP_PREF_DAILY_CLICK_EVENT_CAP] || 0;
+    if (
+      this.inferredTelemetrySettingsOverrides?.daily_click_event_cap !==
+      undefined
+    ) {
+      clickDailyCap =
+        this.inferredTelemetrySettingsOverrides.daily_click_event_cap;
+    }
     this.newtabContentPing.setMaxClickEventsPerDay(clickDailyCap);
     const weeklyClickCap =
       privatePingConfig[TRAINHOP_PREF_WEEKLY_CLICK_EVENT_CAP] || 0;
@@ -1463,14 +1455,20 @@ export class TelemetryFeed {
         : PRIVATE_PING_SURFACE_COUNTRY_MAP[surfaceId][0];
     }
 
-    if (prefs.inferredPersonalizationConfig?.normalized_time_zone_offset) {
+    if (prefs?.inferredPersonalizationConfig?.normalized_time_zone_offset) {
       privateMetrics.utcOffset = lazy.NewTabUtils.getUtcOffset(surfaceId);
     }
     // To prevent fingerprinting we only send one current experiment / branch
     const experimentMetadata =
       lazy.NimbusFeatures.pocketNewtab.getEnrollmentMetadata();
-    privateMetrics.experimentName = experimentMetadata?.slug ?? "";
-    privateMetrics.experimentBranch = experimentMetadata?.branch ?? "";
+    const isMerinoFeedExperiment = Services.prefs.getBoolPref(
+      PREF_MERINO_FEED_EXPERIMENT
+    );
+
+    privateMetrics.experimentName =
+      (isMerinoFeedExperiment && experimentMetadata?.slug) || "";
+    privateMetrics.experimentBranch =
+      (isMerinoFeedExperiment && experimentMetadata?.branch) || "";
     privateMetrics.pingVersion = CONTENT_PING_VERSION;
     this.newtabContentPing.scheduleSubmission(privateMetrics);
   }
@@ -1546,6 +1544,8 @@ export class TelemetryFeed {
       // Intentional fall-through
       case at.CARD_SECTION_IMPRESSION:
       // Intentional fall-through
+      case at.CLICK_SECTION_LEARN_MORE:
+      // Intentional fall-through
       case at.FOLLOW_SECTION:
       // Intentional fall-through
       case at.UNBLOCK_SECTION:
@@ -1585,6 +1585,9 @@ export class TelemetryFeed {
       case at.WIDGETS_ENABLED:
         this.handleUnifiedWidgetEnabled(action);
         break;
+      case at.WIDGETS_HIDE_ALL:
+        this.handleWidgetsHideAll(action);
+        break;
       case at.WIDGETS_ERROR:
         this.handleUnifiedWidgetError(action);
         break;
@@ -1595,14 +1598,7 @@ export class TelemetryFeed {
         break;
       case at.PREFS_INITIAL_VALUES:
         this.initializeGleanSession();
-        break;
-      case at.PREF_CHANGED:
-        if (action.data.name === "trainhopConfig") {
-          // @backward-compat { version 149 } trainhopConfig may not have existed
-          // at PREFS_INITIAL_VALUES time, so we need to check for it here as well.
-          // can be removed once 149 lands.
-          this.initializeGleanSession();
-        }
+        this.recordEnabledWidgets();
         break;
     }
   }
@@ -1732,6 +1728,41 @@ export class TelemetryFeed {
       }
 
       Glean.newtab.widgetsEnabled.record(payload);
+      this.recordEnabledWidgets();
+    }
+  }
+
+  recordEnabledWidgets() {
+    const prefs = this.store?.getState()?.Prefs.values;
+    if (!prefs) {
+      return;
+    }
+    const widgetsEnabled = prefs["widgets.enabled"];
+    Glean.newtab.widgetsEnabledList.set(
+      WIDGET_REGISTRY.filter(w =>
+        isWidgetEnabled(w, prefs, widgetsEnabled)
+      ).map(w => w.telemetryName)
+    );
+  }
+
+  handleWidgetsHideAll(action) {
+    const { targets, widget_size } = action.data;
+    this.handleUnifiedWidgetContainerAction({
+      ...action,
+      data: { action_type: "hide_all", widget_size },
+    });
+    for (const target of targets) {
+      if (target.active) {
+        this.handleUnifiedWidgetEnabled({
+          ...action,
+          data: {
+            widget_name: target.telemetryName,
+            widget_source: "widget",
+            enabled: false,
+            widget_size,
+          },
+        });
+      }
     }
   }
 
@@ -1926,6 +1957,11 @@ export class TelemetryFeed {
             );
           }
           break;
+        case "CLICK_SECTION_LEARN_MORE":
+          Glean.newtab.sectionsLearnMore.record({
+            newtab_visit_id: session.session_id,
+          });
+          break;
         default:
           break;
       }
@@ -2003,12 +2039,14 @@ export class TelemetryFeed {
           newtab_visit_id: session.session_id,
           display_status: action.data.value,
         });
+        this.recordEnabledWidgets();
         break;
       case "widgets.focusTimer.enabled":
         Glean.newtab.widgetsTimerChangeDisplay.record({
           newtab_visit_id: session.session_id,
           display_status: action.data.value,
         });
+        this.recordEnabledWidgets();
         break;
     }
   }
@@ -2265,17 +2303,6 @@ export class TelemetryFeed {
             url: tile.shim,
             position: tile.pos,
           });
-        } else {
-          Glean.pocket.shim.set(tile.shim);
-          if (tile.fetchTimestamp) {
-            Glean.pocket.fetchTimestamp.set(tile.fetchTimestamp * 1000);
-          }
-          if (data.firstVisibleTimestamp) {
-            Glean.pocket.newtabCreationTimestamp.set(
-              data.firstVisibleTimestamp * 1000
-            );
-          }
-          GleanPings.spoc.submit("impression");
         }
       }
     });

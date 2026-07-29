@@ -30,7 +30,6 @@ export function registerWebDriverWorkerListenerActor() {
   }
 
   ChromeUtils.registerProcessActor("WebDriverWorkerListener", {
-    kind: "JSProcessActor",
     parent: {
       esModuleURI:
         "chrome://remote/content/shared/js-process-actors/WebDriverWorkerListenerParent.sys.mjs",

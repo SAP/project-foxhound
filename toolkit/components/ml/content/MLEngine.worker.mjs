@@ -154,3 +154,5 @@ export class MLEngineWorker {
 }
 
 new MLEngineWorker();
+
+export { lazy as _lazyForTestMocking };

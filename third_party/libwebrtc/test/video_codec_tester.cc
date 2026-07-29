@@ -23,6 +23,7 @@
 #include <numeric>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -31,7 +32,6 @@
 #include "absl/functional/any_invocable.h"
 #include "absl/strings/match.h"
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/environment/environment.h"
 #include "api/field_trials_view.h"
 #include "api/make_ref_counted.h"
@@ -79,7 +79,6 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/strings/string_builder.h"
 #include "rtc_base/synchronization/mutex.h"
-#include "rtc_base/system/file_wrapper.h"
 #include "rtc_base/task_queue_for_test.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/thread_annotations.h"
@@ -353,11 +352,10 @@ class TesterIvfWriter {
       if (ivf_file_writers_.find(spatial_idx) == ivf_file_writers_.end()) {
         std::string ivf_path =
             base_path_ + "-s" + std::to_string(spatial_idx) + ".ivf";
-        FileWrapper ivf_file = FileWrapper::OpenWriteOnly(ivf_path);
-        RTC_CHECK(ivf_file.is_open());
-
+        int error = 0;
         std::unique_ptr<IvfFileWriter> ivf_writer =
-            IvfFileWriter::Wrap(std::move(ivf_file), /*byte_limit=*/0);
+            IvfFileWriter::Wrap(ivf_path, /*byte_limit=*/0, &error);
+        RTC_CHECK(error == 0);
         RTC_CHECK(ivf_writer);
 
         ivf_file_writers_[spatial_idx] = std::move(ivf_writer);
@@ -442,7 +440,7 @@ class VideoCodecAnalyzer : public VideoCodecTester::VideoCodecStats {
          temporal_idx = encoded_frame.TemporalIndex().value_or(0),
          width = encoded_frame._encodedWidth,
          height = encoded_frame._encodedHeight,
-         frame_type = encoded_frame._frameType,
+         v_frame_type = encoded_frame.frame_type(),
          frame_size_bytes = encoded_frame.size(), qp = encoded_frame.qp_,
          encode_finished]() {
           if (spatial_idx > 0) {
@@ -461,7 +459,7 @@ class VideoCodecAnalyzer : public VideoCodecTester::VideoCodecStats {
           frame.height = height;
           frame.frame_size = DataSize::Bytes(frame_size_bytes);
           frame.qp = qp;
-          frame.keyframe = frame_type == VideoFrameType::kVideoFrameKey;
+          frame.keyframe = v_frame_type == VideoFrameType::kVideoFrameKey;
           frame.encode_time = encode_finished - frame.encode_start;
           frame.encoded = true;
         });
@@ -476,7 +474,7 @@ class VideoCodecAnalyzer : public VideoCodecTester::VideoCodecStats {
          temporal_idx = encoded_frame.TemporalIndex().value_or(0),
          width = encoded_frame._encodedWidth,
          height = encoded_frame._encodedHeight,
-         frame_type = encoded_frame._frameType, qp = encoded_frame.qp_,
+         v_frame_type = encoded_frame.frame_type(), qp = encoded_frame.qp_,
          frame_size_bytes = encoded_frame.size(), decode_start]() {
           bool decode_only = frames_.find(timestamp_rtp) == frames_.end();
           if (decode_only || frames_.at(timestamp_rtp).find(spatial_idx) ==
@@ -487,7 +485,7 @@ class VideoCodecAnalyzer : public VideoCodecTester::VideoCodecStats {
                               .temporal_idx = temporal_idx};
             frame.width = width;
             frame.height = height;
-            frame.keyframe = frame_type == VideoFrameType::kVideoFrameKey;
+            frame.keyframe = v_frame_type == VideoFrameType::kVideoFrameKey;
             frame.qp = qp;
             if (decode_only) {
               frame.frame_size = DataSize::Bytes(frame_size_bytes);
@@ -589,7 +587,7 @@ class VideoCodecAnalyzer : public VideoCodecTester::VideoCodecStats {
 
       Frame superframe = subframes.back();
       for (const Frame& frame :
-           ArrayView<Frame>(subframes).subview(0, subframes.size() - 1)) {
+           std::span<Frame>(subframes).subspan(0, subframes.size() - 1)) {
         superframe.decoded |= frame.decoded;
         superframe.encoded |= frame.encoded;
         superframe.frame_size += frame.frame_size;
@@ -868,6 +866,7 @@ class Decoder : public DecodedImageCallback {
           VideoCodecAnalyzer* analyzer)
       : env_(env),
         decoder_factory_(decoder_factory),
+        decoder_settings_(decoder_settings),
         analyzer_(analyzer),
         pacer_(&env.clock(), decoder_settings.pacing_settings),
         task_queue_(&env.clock()) {
@@ -896,7 +895,7 @@ class Decoder : public DecodedImageCallback {
 
       VideoDecoder::Settings ds;
       ds.set_codec_type(*codec_type_);
-      ds.set_number_of_cores(1);
+      ds.set_number_of_cores(decoder_settings_.num_cores);
       ds.set_max_render_resolution({1280, 720});
       bool result = decoder_->Configure(ds);
       RTC_CHECK(result) << "Failed to configure decoder";
@@ -971,6 +970,7 @@ class Decoder : public DecodedImageCallback {
 
   const Environment env_;
   VideoDecoderFactory* decoder_factory_;
+  const DecoderSettings decoder_settings_;
   std::unique_ptr<VideoDecoder> decoder_;
   VideoCodecAnalyzer* const analyzer_;
   Pacer pacer_;
@@ -994,6 +994,7 @@ class Encoder : public EncodedImageCallback {
           VideoCodecAnalyzer* analyzer)
       : env_(env),
         encoder_factory_(encoder_factory),
+        encoder_settings_(encoder_settings),
         analyzer_(analyzer),
         pacer_(&env.clock(), encoder_settings.pacing_settings),
         task_queue_(&env.clock()) {
@@ -1084,6 +1085,10 @@ class Encoder : public EncodedImageCallback {
     scoped_refptr<EncodedImageBuffer> encoded_data;
     ScalabilityMode scalability_mode;
   };
+
+  void OnFrameDropped(uint32_t /*rtp_timestamp*/,
+                      int /*spatial_id*/,
+                      bool /*is_end_of_temporal_unit*/) override {}
 
   Result OnEncodedImage(const EncodedImage& encoded_frame,
                         const CodecSpecificInfo* codec_specific_info) override {
@@ -1243,7 +1248,7 @@ class Encoder : public EncodedImageCallback {
 
     VideoEncoder::Settings ves(
         VideoEncoder::Capabilities(/*loss_notification=*/false),
-        /*number_of_cores=*/1,
+        /*number_of_cores=*/encoder_settings_.num_cores,
         /*max_payload_size=*/1440);
 
     int result = encoder_->InitEncode(&vc, ves);
@@ -1291,7 +1296,7 @@ class Encoder : public EncodedImageCallback {
     ScalabilityMode scalability_mode = *codec_specific_info.scalability_mode;
     return (kFullSvcScalabilityModes.count(scalability_mode) ||
             (kKeySvcScalabilityModes.count(scalability_mode) &&
-             encoded_frame.FrameType() == VideoFrameType::kVideoFrameKey));
+             encoded_frame.IsKey()));
   }
 
   const EncodedImage& MakeSuperFrame(
@@ -1331,6 +1336,7 @@ class Encoder : public EncodedImageCallback {
 
   const Environment env_;
   VideoEncoderFactory* const encoder_factory_;
+  const EncoderSettings encoder_settings_;
   std::unique_ptr<VideoEncoder> encoder_;
   VideoCodecAnalyzer* const analyzer_;
   Pacer pacer_;

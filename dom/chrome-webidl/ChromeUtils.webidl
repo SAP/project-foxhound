@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -285,6 +284,31 @@ namespace ChromeUtils {
    */
   [Throws]
   undefined invalidateResourceCache();
+
+  /**
+   * Get the script source for the in-memory cached JavaScript.
+   * Returns an empty string if the cache is not found.
+   *
+   * The key parameter should be the data parameter passed to the
+   * http-on-resource-cache-response observer notification, and uri and
+   * hintCharset parameters should be extracted from the channel
+   * of the notification.
+   * nonce and hintCharset should be empty strings if they're not set for the
+   * channel.
+   *
+   * If the cached entry has already been cleared, for example by
+   * `clearResourceCache` above, this returns undefined.
+   *
+   * For cached entries invalidated with `invalidateResourceCache` above,
+   * this API doesn't check the state nor re-validate, and just returns the
+   * script source.
+   *
+   * This function uses `any` as the return value to avoid the
+   * JS::Value -> Gecko String -> JS::Value turnaround.
+   */
+  [Throws]
+  any getCachedJavaScriptSource(UTF8String key, UTF8String uri,
+                                UTF8String hintCharset);
 
   /**
    * Clears the bfcache (backward-forward cache)
@@ -926,6 +950,38 @@ partial namespace ChromeUtils {
   // or null if no OOM stack trace is available. The stack trace shows the JavaScript
   // call stack at the time the out-of-memory condition occurred
   DOMString getLastOOMStackTrace();
+
+  /**
+   * Given a URI to be loaded, predict a remote type which is reasonable to
+   * start the load within. A null `uri` argument is treated as about:blank.
+   *
+   * This is not guaranteed to be the same remoteType as will be used to
+   * complete the navigation, as that can only be known when the network
+   * response is received.
+   *
+   * In general, the remote type returned here is used to initialize the initial
+   * remote type for a newly created <browser> element to avoid unnecessary
+   * process creation or switches.
+   *
+   * See PredictRemoteTypeOptions for documentation on additional flags. While
+   * these are technically optional, not providing them can often lead to
+   * incorrect predictions.
+   *
+   * NOTE: Because it's a pain to change, `null` (a.k.a. E10SUtils.NOT_REMOTE)
+   * is a remote type indicating the parent process, and must not be used to
+   * indicate the absence of a remote type.
+   */
+  [Throws]
+  UTF8String? predictRemoteTypeForURI(URI? uri,
+                                      optional PredictRemoteTypeOptions options = {});
+
+  /**
+   * Like predictRemoteTypeForURI(URI uri), except will attempt to parse (with
+   * uri fixup) the given URI string, and use that for predicting.
+   */
+  [Throws]
+  UTF8String? predictRemoteTypeForURI(UTF8String uriString,
+                                      optional PredictRemoteTypeOptions options = {});
 };
 
 /*
@@ -1263,6 +1319,7 @@ dictionary LibcConstants {
   long O_CREAT;
   long O_NONBLOCK;
   long O_WRONLY;
+  long O_CLOEXEC;
 
   long POLLIN;
   long POLLOUT;
@@ -1274,6 +1331,7 @@ dictionary LibcConstants {
 
 #ifdef XP_LINUX
   long PR_CAPBSET_READ;
+  long O_PATH;
 #endif
 };
 #endif
@@ -1300,4 +1358,47 @@ dictionary HTTPCacheControlParseResult {
   boolean public = false;
   boolean private = false;
   boolean immutable = false;
+};
+
+dictionary PredictRemoteTypeOptions {
+  /**
+   * The chrome window where this load will be performed.
+   */
+  Window? window = null;
+
+  /**
+   * If specified, this remote type is "preferred" when the final remote type
+   * would otherwise be ambiguous. This is generally only specified if a process
+   * with the given remote type is known to already be launched.
+   */
+  UTF8String? preferredRemoteType;
+
+  /**
+   * Which container the load will be performed in.
+   */
+  unsigned long userContextId = 0;
+  DOMString geckoViewSessionContextId = "";
+
+  /**
+   * The private browsing state of the context where the load will occur.
+   * If not provided, this will be inferred from the window.
+   */
+  unsigned long privateBrowsingId;
+
+  /**
+   * Specify whether or not the BrowsingContext which this remote type will be
+   * used in has `useRemoteTabs` enabled. If it does not, this method will only
+   * return `NOT_REMOTE_TYPE`. Usually inferred from the window.
+   */
+  boolean useRemoteTabs;
+
+  /**
+   * Specify whether or not the BrowsingContext which this remote type will be
+   * used in has 'useRemoteSubframes' enabled, and therefore can perform
+   * per-origin isolation. Usually inferred from the window.
+   *
+   * NOTE: This method respects the fission.webContentIsolationStrategy
+   * preference, which may disable per-origin isolation.
+   */
+  boolean useRemoteSubframes;
 };

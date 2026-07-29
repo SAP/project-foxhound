@@ -8,7 +8,10 @@
     reason = "These are needed here."
 )]
 
-use nserror::{nsresult, NS_ERROR_FAILURE, NS_ERROR_NULL_POINTER, NS_ERROR_UNEXPECTED, NS_OK};
+use nserror::{
+    nsresult, NS_ERROR_FAILURE, NS_ERROR_INVALID_ARG, NS_ERROR_NULL_POINTER, NS_ERROR_UNEXPECTED,
+    NS_OK,
+};
 use nsstring::{nsACString, nsCString};
 use sfv::{
     BareItem, Decimal, Dictionary, InnerList, Integer, Item, List, ListEntry, Parameters, Token,
@@ -874,5 +877,919 @@ fn interface_from_list_entry(
                 SFVInnerList::new(nsi_inner_list, &nsi_params).coerce::<nsISFVItemOrInnerList>(),
             ))
         }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_parse_item_token(
+    input: *const nsACString,
+    output: *mut nsACString,
+) -> nsresult {
+    if input.is_null() || output.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let input = &*input;
+    let output = &mut *output;
+
+    let item: Item = match Parser::new(input).parse() {
+        Ok(item) => item,
+        Err(_) => return NS_ERROR_FAILURE,
+    };
+
+    match item.bare_item {
+        BareItem::Token(token) => {
+            output.assign(token.as_str());
+            NS_OK
+        }
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_parse_item_string(
+    input: *const nsACString,
+    output: *mut nsACString,
+) -> nsresult {
+    if input.is_null() || output.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let input = &*input;
+    let output = &mut *output;
+
+    let item: Item = match Parser::new(input).parse() {
+        Ok(item) => item,
+        Err(_) => return NS_ERROR_FAILURE,
+    };
+
+    match item.bare_item {
+        BareItem::String(string) => {
+            output.assign(string.as_str());
+            NS_OK
+        }
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_parse_item_byte_seq(
+    input: *const nsACString,
+    output: *mut nsACString,
+) -> nsresult {
+    if input.is_null() || output.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let input = &*input;
+    let output = &mut *output;
+
+    let item: Item = match Parser::new(input).parse() {
+        Ok(item) => item,
+        Err(_) => return NS_ERROR_FAILURE,
+    };
+
+    match item.bare_item {
+        BareItem::ByteSequence(bytes) => {
+            let Ok(string) = String::from_utf8(bytes) else {
+                return NS_ERROR_UNEXPECTED;
+            };
+            output.assign(&string);
+            NS_OK
+        }
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_parse_item_integer(
+    input: *const nsACString,
+    output: *mut i64,
+) -> nsresult {
+    if input.is_null() || output.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let input = &*input;
+
+    let item: Item = match Parser::new(input).parse() {
+        Ok(item) => item,
+        Err(_) => return NS_ERROR_FAILURE,
+    };
+
+    match item.bare_item {
+        BareItem::Integer(int) => {
+            *output = int.into();
+            NS_OK
+        }
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_parse_item_decimal(
+    input: *const nsACString,
+    output: *mut f64,
+) -> nsresult {
+    if input.is_null() || output.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let input = &*input;
+
+    let item: Item = match Parser::new(input).parse() {
+        Ok(item) => item,
+        Err(_) => return NS_ERROR_FAILURE,
+    };
+
+    match item.bare_item {
+        BareItem::Decimal(dec) => {
+            *output = f64::from(dec);
+            NS_OK
+        }
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_parse_item_bool(
+    input: *const nsACString,
+    output: *mut bool,
+) -> nsresult {
+    if input.is_null() || output.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let input = &*input;
+
+    let item: Item = match Parser::new(input).parse() {
+        Ok(item) => item,
+        Err(_) => return NS_ERROR_FAILURE,
+    };
+
+    match item.bare_item {
+        BareItem::Boolean(b) => {
+            *output = b;
+            NS_OK
+        }
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+pub struct SFVDictHandle {
+    dict: Dictionary,
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_parse_dict(
+    input: *const nsACString,
+    out_dict: *mut *mut SFVDictHandle,
+) -> nsresult {
+    if input.is_null() || out_dict.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let input = &*input;
+
+    let dict: Dictionary = match Parser::new(input).parse() {
+        Ok(dict) => dict,
+        Err(_) => return NS_ERROR_FAILURE,
+    };
+
+    let sfv_dict = Box::new(SFVDictHandle { dict });
+    *out_dict = Box::into_raw(sfv_dict);
+    NS_OK
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_dict_get_keys(
+    dict: *const SFVDictHandle,
+    keys: *mut ThinVec<nsCString>,
+) -> nsresult {
+    if dict.is_null() || keys.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let dict = &*dict;
+    let out_keys = &mut *keys;
+
+    for key in dict.dict.keys() {
+        out_keys.push(nsCString::from(key.as_str()));
+    }
+
+    NS_OK
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_dict_get_token(
+    dict: *const SFVDictHandle,
+    key: *const nsACString,
+    output: *mut nsACString,
+) -> nsresult {
+    if dict.is_null() || key.is_null() || output.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let dict = &*dict;
+    let key = &*key;
+    let output = &mut *output;
+
+    let key_str = key.to_utf8();
+    let Some(entry) = dict.dict.get(key_str.as_ref()) else {
+        return NS_ERROR_UNEXPECTED;
+    };
+
+    match entry {
+        ListEntry::Item(item) => match &item.bare_item {
+            BareItem::Token(token) => {
+                output.assign(token.as_str());
+                NS_OK
+            }
+            _ => NS_ERROR_UNEXPECTED,
+        },
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_dict_get_string(
+    dict: *const SFVDictHandle,
+    key: *const nsACString,
+    output: *mut nsACString,
+) -> nsresult {
+    if dict.is_null() || key.is_null() || output.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let dict = &*dict;
+    let key = &*key;
+    let output = &mut *output;
+
+    let key_str = key.to_utf8();
+    let Some(entry) = dict.dict.get(key_str.as_ref()) else {
+        return NS_ERROR_UNEXPECTED;
+    };
+
+    match entry {
+        ListEntry::Item(item) => match &item.bare_item {
+            BareItem::String(string) => {
+                output.assign(string.as_str());
+                NS_OK
+            }
+            _ => NS_ERROR_UNEXPECTED,
+        },
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_dict_get_byte_seq(
+    dict: *const SFVDictHandle,
+    key: *const nsACString,
+    output: *mut nsACString,
+) -> nsresult {
+    if dict.is_null() || key.is_null() || output.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let dict = &*dict;
+    let key = &*key;
+    let output = &mut *output;
+
+    let key_str = key.to_utf8();
+    let Some(entry) = dict.dict.get(key_str.as_ref()) else {
+        return NS_ERROR_UNEXPECTED;
+    };
+
+    match entry {
+        ListEntry::Item(item) => match &item.bare_item {
+            BareItem::ByteSequence(bytes) => {
+                let Ok(string) = String::from_utf8(bytes.clone()) else {
+                    return NS_ERROR_UNEXPECTED;
+                };
+                output.assign(&string);
+                NS_OK
+            }
+            _ => NS_ERROR_UNEXPECTED,
+        },
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_dict_get_integer(
+    dict: *const SFVDictHandle,
+    key: *const nsACString,
+    output: *mut i64,
+) -> nsresult {
+    if dict.is_null() || key.is_null() || output.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let dict = &*dict;
+    let key = &*key;
+
+    let key_str = key.to_utf8();
+    let Some(entry) = dict.dict.get(key_str.as_ref()) else {
+        return NS_ERROR_UNEXPECTED;
+    };
+
+    match entry {
+        ListEntry::Item(item) => match item.bare_item {
+            BareItem::Integer(int) => {
+                *output = int.into();
+                NS_OK
+            }
+            _ => NS_ERROR_UNEXPECTED,
+        },
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_dict_get_decimal(
+    dict: *const SFVDictHandle,
+    key: *const nsACString,
+    output: *mut f64,
+) -> nsresult {
+    if dict.is_null() || key.is_null() || output.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let dict = &*dict;
+    let key = &*key;
+
+    let key_str = key.to_utf8();
+    let Some(entry) = dict.dict.get(key_str.as_ref()) else {
+        return NS_ERROR_UNEXPECTED;
+    };
+
+    match entry {
+        ListEntry::Item(item) => match &item.bare_item {
+            BareItem::Decimal(dec) => {
+                *output = f64::from(*dec);
+                NS_OK
+            }
+            _ => NS_ERROR_UNEXPECTED,
+        },
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_dict_get_bool(
+    dict: *const SFVDictHandle,
+    key: *const nsACString,
+    output: *mut bool,
+) -> nsresult {
+    if dict.is_null() || key.is_null() || output.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let dict = &*dict;
+    let key = &*key;
+
+    let key_str = key.to_utf8();
+    let Some(entry) = dict.dict.get(key_str.as_ref()) else {
+        return NS_ERROR_UNEXPECTED;
+    };
+
+    match entry {
+        ListEntry::Item(item) => match item.bare_item {
+            BareItem::Boolean(b) => {
+                *output = b;
+                NS_OK
+            }
+            _ => NS_ERROR_UNEXPECTED,
+        },
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_dict_get_inner_list(
+    dict: *const SFVDictHandle,
+    key: *const nsACString,
+    out_inner_list: *mut *mut SFVInnerListHandle,
+) -> nsresult {
+    if dict.is_null() || key.is_null() || out_inner_list.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let dict = &*dict;
+    let key = &*key;
+
+    let key_str = key.to_utf8();
+    let Some(entry) = dict.dict.get(key_str.as_ref()) else {
+        return NS_ERROR_UNEXPECTED;
+    };
+
+    match entry {
+        ListEntry::InnerList(inner_list) => {
+            let sfv_inner_list = Box::new(SFVInnerListHandle {
+                inner_list: inner_list.clone(),
+            });
+            *out_inner_list = Box::into_raw(sfv_inner_list);
+            NS_OK
+        }
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_dict_free(dict: *mut SFVDictHandle) {
+    if !dict.is_null() {
+        drop(Box::from_raw(dict));
+    }
+}
+
+pub struct SFVInnerListHandle {
+    inner_list: InnerList,
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_inner_list_length(
+    inner_list: *const SFVInnerListHandle,
+    length: *mut usize,
+) -> nsresult {
+    if inner_list.is_null() || length.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let inner_list = &*inner_list;
+    *length = inner_list.inner_list.items.len();
+    NS_OK
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_inner_list_get_item_at(
+    inner_list: *const SFVInnerListHandle,
+    index: usize,
+    out_item: *mut *mut SFVItemHandle,
+) -> nsresult {
+    if inner_list.is_null() || out_item.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let inner_list = &*inner_list;
+
+    let Some(item) = inner_list.inner_list.items.get(index) else {
+        return NS_ERROR_INVALID_ARG;
+    };
+
+    let sfv_item = Box::new(SFVItemHandle { item: item.clone() });
+    *out_item = Box::into_raw(sfv_item);
+    NS_OK
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_inner_list_free(inner_list: *mut SFVInnerListHandle) {
+    if !inner_list.is_null() {
+        drop(Box::from_raw(inner_list));
+    }
+}
+
+pub struct SFVItemHandle {
+    item: Item,
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_parse_item_with_params(
+    input: *const nsACString,
+    out_item: *mut *mut SFVItemHandle,
+) -> nsresult {
+    if input.is_null() || out_item.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let input = &*input;
+
+    let item: Item = match Parser::new(input).parse() {
+        Ok(item) => item,
+        Err(_) => return NS_ERROR_FAILURE,
+    };
+
+    let sfv_item = Box::new(SFVItemHandle { item });
+    *out_item = Box::into_raw(sfv_item);
+    NS_OK
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_item_get_token(
+    item: *const SFVItemHandle,
+    output: *mut nsACString,
+) -> nsresult {
+    if item.is_null() || output.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let item = &*item;
+    let output = &mut *output;
+
+    match &item.item.bare_item {
+        BareItem::Token(token) => {
+            output.assign(token.as_str());
+            NS_OK
+        }
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_item_get_string(
+    item: *const SFVItemHandle,
+    output: *mut nsACString,
+) -> nsresult {
+    if item.is_null() || output.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let item = &*item;
+    let output = &mut *output;
+
+    match &item.item.bare_item {
+        BareItem::String(string) => {
+            output.assign(string.as_str());
+            NS_OK
+        }
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_item_get_integer(
+    item: *const SFVItemHandle,
+    output: *mut i64,
+) -> nsresult {
+    if item.is_null() || output.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let item = &*item;
+
+    match item.item.bare_item {
+        BareItem::Integer(int) => {
+            *output = int.into();
+            NS_OK
+        }
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_item_get_bool(
+    item: *const SFVItemHandle,
+    output: *mut bool,
+) -> nsresult {
+    if item.is_null() || output.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let item = &*item;
+
+    match item.item.bare_item {
+        BareItem::Boolean(b) => {
+            *output = b;
+            NS_OK
+        }
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_item_get_decimal(
+    item: *const SFVItemHandle,
+    output: *mut f64,
+) -> nsresult {
+    if item.is_null() || output.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let item = &*item;
+
+    match &item.item.bare_item {
+        BareItem::Decimal(dec) => {
+            *output = f64::from(*dec);
+            NS_OK
+        }
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_item_get_byte_seq(
+    item: *const SFVItemHandle,
+    output: *mut nsACString,
+) -> nsresult {
+    if item.is_null() || output.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let item = &*item;
+    let output = &mut *output;
+
+    match &item.item.bare_item {
+        BareItem::ByteSequence(bytes) => {
+            let Ok(string) = String::from_utf8(bytes.clone()) else {
+                return NS_ERROR_UNEXPECTED;
+            };
+            output.assign(&string);
+            NS_OK
+        }
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_item_get_param_keys(
+    item: *const SFVItemHandle,
+    keys: *mut ThinVec<nsCString>,
+) -> nsresult {
+    if item.is_null() || keys.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let item = &*item;
+    let out_keys = &mut *keys;
+
+    for key in item.item.params.keys() {
+        out_keys.push(nsCString::from(key.as_str()));
+    }
+
+    NS_OK
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_item_get_param_token(
+    item: *const SFVItemHandle,
+    key: *const nsACString,
+    output: *mut nsACString,
+) -> nsresult {
+    if item.is_null() || key.is_null() || output.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let item = &*item;
+    let key = &*key;
+    let output = &mut *output;
+
+    let key_str = key.to_utf8();
+    let Some(param) = item.item.params.get(key_str.as_ref()) else {
+        return NS_ERROR_UNEXPECTED;
+    };
+
+    match param {
+        BareItem::Token(token) => {
+            output.assign(token.as_str());
+            NS_OK
+        }
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_item_get_param_string(
+    item: *const SFVItemHandle,
+    key: *const nsACString,
+    output: *mut nsACString,
+) -> nsresult {
+    if item.is_null() || key.is_null() || output.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let item = &*item;
+    let key = &*key;
+    let output = &mut *output;
+
+    let key_str = key.to_utf8();
+    let Some(param) = item.item.params.get(key_str.as_ref()) else {
+        return NS_ERROR_UNEXPECTED;
+    };
+
+    match param {
+        BareItem::String(string) => {
+            output.assign(string.as_str());
+            NS_OK
+        }
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_item_get_param_integer(
+    item: *const SFVItemHandle,
+    key: *const nsACString,
+    output: *mut i64,
+) -> nsresult {
+    if item.is_null() || key.is_null() || output.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let item = &*item;
+    let key = &*key;
+
+    let key_str = key.to_utf8();
+    let Some(param) = item.item.params.get(key_str.as_ref()) else {
+        return NS_ERROR_UNEXPECTED;
+    };
+
+    match param {
+        BareItem::Integer(i) => {
+            *output = (*i).into();
+            NS_OK
+        }
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_item_get_param_bool(
+    item: *const SFVItemHandle,
+    key: *const nsACString,
+    output: *mut bool,
+) -> nsresult {
+    if item.is_null() || key.is_null() || output.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let item = &*item;
+    let key = &*key;
+
+    let key_str = key.to_utf8();
+    let Some(param) = item.item.params.get(key_str.as_ref()) else {
+        return NS_ERROR_UNEXPECTED;
+    };
+
+    match param {
+        BareItem::Boolean(b) => {
+            *output = *b;
+            NS_OK
+        }
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_item_get_param_decimal(
+    item: *const SFVItemHandle,
+    key: *const nsACString,
+    output: *mut f64,
+) -> nsresult {
+    if item.is_null() || key.is_null() || output.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let item = &*item;
+    let key = &*key;
+
+    let key_str = key.to_utf8();
+    let Some(param) = item.item.params.get(key_str.as_ref()) else {
+        return NS_ERROR_UNEXPECTED;
+    };
+
+    match param {
+        BareItem::Decimal(dec) => {
+            *output = f64::from(*dec);
+            NS_OK
+        }
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_item_get_param_byte_seq(
+    item: *const SFVItemHandle,
+    key: *const nsACString,
+    output: *mut nsACString,
+) -> nsresult {
+    if item.is_null() || key.is_null() || output.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let item = &*item;
+    let key = &*key;
+    let output = &mut *output;
+
+    let key_str = key.to_utf8();
+    let Some(param) = item.item.params.get(key_str.as_ref()) else {
+        return NS_ERROR_UNEXPECTED;
+    };
+
+    match param {
+        BareItem::ByteSequence(bytes) => {
+            let Ok(string) = String::from_utf8(bytes.clone()) else {
+                return NS_ERROR_UNEXPECTED;
+            };
+            output.assign(&string);
+            NS_OK
+        }
+        _ => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_item_free(item: *mut SFVItemHandle) {
+    if !item.is_null() {
+        drop(Box::from_raw(item));
+    }
+}
+
+pub struct SFVListHandle {
+    list: List,
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_parse_list(
+    input: *const nsACString,
+    out_list: *mut *mut SFVListHandle,
+) -> nsresult {
+    if input.is_null() || out_list.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let input = &*input;
+
+    let list: List = match Parser::new(input).parse() {
+        Ok(list) => list,
+        Err(_) => return NS_ERROR_FAILURE,
+    };
+
+    let sfv_list = Box::new(SFVListHandle { list });
+    *out_list = Box::into_raw(sfv_list);
+    NS_OK
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_list_length(
+    list: *const SFVListHandle,
+    length: *mut usize,
+) -> nsresult {
+    if list.is_null() || length.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let list = &*list;
+    *length = list.list.len();
+    NS_OK
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_list_get_item_at(
+    list: *const SFVListHandle,
+    index: usize,
+    out_item: *mut *mut SFVItemHandle,
+) -> nsresult {
+    if list.is_null() || out_item.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let list = &*list;
+
+    let Some(entry) = list.list.get(index) else {
+        return NS_ERROR_INVALID_ARG;
+    };
+
+    match entry {
+        ListEntry::Item(item) => {
+            let sfv_item = Box::new(SFVItemHandle { item: item.clone() });
+            *out_item = Box::into_raw(sfv_item);
+            NS_OK
+        }
+        ListEntry::InnerList(_) => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_list_get_inner_list_at(
+    list: *const SFVListHandle,
+    index: usize,
+    out_inner_list: *mut *mut SFVInnerListHandle,
+) -> nsresult {
+    if list.is_null() || out_inner_list.is_null() {
+        return NS_ERROR_NULL_POINTER;
+    }
+
+    let list = &*list;
+
+    let Some(entry) = list.list.get(index) else {
+        return NS_ERROR_INVALID_ARG;
+    };
+
+    match entry {
+        ListEntry::InnerList(inner_list) => {
+            let sfv_inner_list = Box::new(SFVInnerListHandle {
+                inner_list: inner_list.clone(),
+            });
+            *out_inner_list = Box::into_raw(sfv_inner_list);
+            NS_OK
+        }
+        ListEntry::Item(_) => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sfv_list_free(list: *mut SFVListHandle) {
+    if !list.is_null() {
+        drop(Box::from_raw(list));
     }
 }

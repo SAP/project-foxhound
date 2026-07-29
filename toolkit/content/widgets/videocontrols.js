@@ -898,9 +898,6 @@ this.VideoControlsImplWidget = class {
               case this.muteButton:
                 this.toggleMute();
                 break;
-              case this.castingButton:
-                this.toggleCasting();
-                break;
               case this.closedCaptionButton:
                 this.toggleClosedCaption();
                 break;
@@ -992,9 +989,6 @@ this.VideoControlsImplWidget = class {
             break;
           case "removetrack":
             this.onTextTrackRemove(aEvent);
-            break;
-          case "media-videoCasting":
-            this.updateCasting(aEvent.detail);
             break;
           case "focusin":
             // Show the controls to highlight the focused control, but only
@@ -1991,10 +1985,6 @@ this.VideoControlsImplWidget = class {
         return textTrack.kind == "subtitles" || textTrack.kind == "captions";
       },
 
-      get isCastingAvailable() {
-        return !this.isAudioOnly && this.video.mozAllowCasting;
-      },
-
       get isClosedCaptionAvailable() {
         // There is no rendering area, no need to show the caption.
         if (this.isAudioOnly) {
@@ -2017,27 +2007,6 @@ this.VideoControlsImplWidget = class {
 
         // fallback to off button if there's no showing track.
         return showingTT ? showingTT.index : 0;
-      },
-
-      get isCastingOn() {
-        return this.isCastingAvailable && this.video.mozIsCasting;
-      },
-
-      setCastingButtonState() {
-        this.castingButton.toggleAttribute("enabled", this.isCastingOn);
-        this.adjustControlSize();
-      },
-
-      updateCasting(eventDetail) {
-        let castingData = JSON.parse(eventDetail);
-        if ("allow" in castingData) {
-          this.video.mozAllowCasting = !!castingData.allow;
-        }
-
-        if ("active" in castingData) {
-          this.video.mozIsCasting = !!castingData.active;
-        }
-        this.setCastingButtonState();
       },
 
       get isClosedCaptionOn() {
@@ -2113,16 +2082,12 @@ this.VideoControlsImplWidget = class {
 
       onControlBarAnimationFinished() {
         this.hideClosedCaptionMenu();
-        this.video.dispatchEvent(
+        this.video.updateCueDisplay();
+        // Note this is useful only for testing.
+        this.controlBar.dispatchEvent(
           new this.window.CustomEvent("controlbarchange")
         );
         this.adjustControlSize();
-      },
-
-      toggleCasting() {
-        this.videocontrols.dispatchEvent(
-          new this.window.CustomEvent("VideoBindingCast")
-        );
       },
 
       hideClosedCaptionMenu() {
@@ -2345,7 +2310,6 @@ this.VideoControlsImplWidget = class {
         this.fullscreenButton.isWanted = !this.controlBar.hasAttribute(
           "fullscreen-unavailable"
         );
-        this.castingButton.isWanted = this.isCastingAvailable;
         this.closedCaptionButton.isWanted = this.isClosedCaptionAvailable;
         this.volumeStack.isWanted = !this.muteButton.hasAttribute("noAudio");
 
@@ -2521,7 +2485,6 @@ this.VideoControlsImplWidget = class {
         this.clickToPlay = this.shadowRoot.getElementById("clickToPlay");
         this.fullscreenButton =
           this.shadowRoot.getElementById("fullscreenButton");
-        this.castingButton = this.shadowRoot.getElementById("castingButton");
         this.closedCaptionButton = this.shadowRoot.getElementById(
           "closedCaptionButton"
         );
@@ -2556,7 +2519,6 @@ this.VideoControlsImplWidget = class {
           this.playButton,
           this.muteButton,
           this.fullscreenButton,
-          this.castingButton,
           this.closedCaptionButton,
           this.positionDurationBox,
           this.scrubberStack,
@@ -2582,7 +2544,6 @@ this.VideoControlsImplWidget = class {
 
         this.controlsEvents = [
           { el: this.muteButton, type: "click" },
-          { el: this.castingButton, type: "click" },
           { el: this.closedCaptionButton, type: "click" },
           { el: this.fullscreenButton, type: "click" },
           { el: this.playButton, type: "click" },
@@ -2615,8 +2576,6 @@ this.VideoControlsImplWidget = class {
           { el: this.video.textTracks, type: "addtrack" },
           { el: this.video.textTracks, type: "removetrack" },
           { el: this.video.textTracks, type: "change" },
-
-          { el: this.video, type: "media-videoCasting", touchOnly: true },
 
           { el: this.controlBar, type: "focusin" },
           { el: this.scrubber, type: "mousedown" },
@@ -2865,8 +2824,6 @@ this.VideoControlsImplWidget = class {
                 <input type="range" id="volumeControl" class="volumeControl" min="0" max="100" step="1" tabindex="-1"
                        data-l10n-id="videocontrols-volume-control"/>
               </div>
-              <button id="castingButton" class="button castingButton"
-                      data-l10n-id="videocontrols-casting-button-label"/>
               <button id="closedCaptionButton" class="button closedCaptionButton" aria-controls="textTrackList"
                       aria-haspopup="menu" aria-expanded="false" data-l10n-id="videocontrols-closed-caption-button"/>
               <div id="textTrackListContainer" class="textTrackListContainer" hidden="true" role="presentation">

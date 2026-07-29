@@ -13,7 +13,7 @@
 
 .stars {
   --rating-star-size: var(--icon-size);
-  --rating-star-spacing: 0.3ch;
+  --rating-star-spacing: var(--space-xxsmall);
   display: inline-flex;
   align-content: center;
   justify-content: center;
@@ -27,7 +27,7 @@
   background-position: center;
   background-repeat: no-repeat;
   background-size: var(--rating-star-size) var(--rating-star-size);
-  padding-inline: calc(var(--rating-star-spacing) / 2);
+  padding-inline: var(--rating-star-spacing);
 
   fill: var(--icon-color);
   -moz-context-properties: fill;

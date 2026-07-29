@@ -1,5 +1,4 @@
 /* clang-format off */
-/* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -24,6 +23,7 @@
 
 #if defined(__OBJC__)
 @class mozAccessible;
+@class NSView;
 #endif
 
 namespace mozilla {
@@ -42,6 +42,15 @@ class AccessibleWrap : public LocalAccessible {
    * Get the native Obj-C object (mozAccessible).
    */
   virtual void GetNativeInterface(void** aOutAccessible) override;
+
+  /**
+   * Get the NSView parallel to this accessible.
+   */
+#if defined(__OBJC__)
+  NSView* GetNativeWidget();
+#else
+  id GetNativeWidget();
+#endif
 
   /**
    * The objective-c |Class| type that this accessible's native object

@@ -18,6 +18,9 @@ import org.mozilla.focus.ext.showToolbar
 import org.mozilla.focus.settings.BaseSettingsFragment
 import kotlin.system.exitProcess
 
+/**
+ * Settings fragment for secret/debug options.
+ */
 class SecretSettingsFragment :
     BaseSettingsFragment(),
     SharedPreferences.OnSharedPreferenceChangeListener {

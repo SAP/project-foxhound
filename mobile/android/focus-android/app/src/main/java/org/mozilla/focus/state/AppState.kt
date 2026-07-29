@@ -119,10 +119,21 @@ sealed class Screen {
      * be redirected to a certain screen.It comes from the external intent.
      */
     data class Locked(val bundle: Bundle? = null) : Screen()
+
+    /**
+     * Screen for site permission options.
+     */
     data class SitePermissionOptionsScreen(val sitePermission: SitePermission) : Screen()
+
+    /**
+     * Settings screen.
+     */
     data class Settings(
         val page: Page = Page.Start,
     ) : Screen() {
+        /**
+         * Pages within the settings screen.
+         */
         enum class Page(val fragmentClass: Class<out Fragment>) {
             Start(SettingsFragment::class.java),
 

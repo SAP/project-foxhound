@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,8 +26,7 @@ static constexpr nsLiteralCString kDisallowedSchemes[] = {
     "javascript"_ns,    "mailbox"_ns,        "news"_ns,
     "page-icon"_ns,     "resource"_ns,       "view-source"_ns,
     "moz-extension"_ns, "moz-page-thumb"_ns, "moz-src"_ns,
-    "x-moz-ews"_ns,
-};
+    "x-moz-ews"_ns,     "x-moz-graph"_ns};
 
 bool BaseHistory::CanStore(nsIURI* aURI) {
   nsAutoCString scheme;

@@ -7,6 +7,7 @@ package org.mozilla.fenix.browser.infobanner
 import android.content.Context
 import android.view.ViewGroup
 import androidx.coordinatorlayout.widget.CoordinatorLayout
+import org.mozilla.fenix.ext.components
 
 /**
  * [InfoBanner] that will automatically scroll with the top [BrowserToolbar].
@@ -34,6 +35,7 @@ class DynamicInfoBanner(
     actionToPerform: (() -> Unit)? = null,
 ) : InfoBanner(
     context,
+    context.components.settings,
     container,
     message,
     dismissText,

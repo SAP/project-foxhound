@@ -6,11 +6,13 @@ package org.mozilla.fenix.settings
 
 import android.content.Context
 import android.util.AttributeSet
+import androidx.preference.PreferenceManager
 import org.mozilla.fenix.R
 
 /**
- * Custom [DropDownListPreference] that automatically builds the list of available options for the
- * custom Enhanced Tracking Protection option depending on the current Nimbus experiments.
+ * Custom [DropDownListPreference] that builds the list of available cookie behavior options for
+ * the custom Enhanced Tracking Protection setting. Deprecated modes ([R.string.social] and
+ * [R.string.unvisited]) are hidden unless the user's current selection is one of them.
  */
 class CustomEtpCookiesOptionsDropDownListPreference @JvmOverloads constructor(
     context: Context,
@@ -35,5 +37,17 @@ class CustomEtpCookiesOptionsDropDownListPreference @JvmOverloads constructor(
 
         // Default to first (Total Cookie Protection)
         setDefaultValue(entryValues.first())
+    }
+
+    override fun onAttachedToHierarchy(preferenceManager: PreferenceManager) {
+        super.onAttachedToHierarchy(preferenceManager)
+        val legacyValues = setOf(
+            context.getString(R.string.social),
+            context.getString(R.string.unvisited),
+        )
+        val filteredPairs = entries.zip(entryValues)
+            .filter { (_, v) -> v.toString() !in legacyValues || v.toString() == value }
+        entries = filteredPairs.map { it.first }.toTypedArray()
+        entryValues = filteredPairs.map { it.second }.toTypedArray()
     }
 }

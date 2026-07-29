@@ -484,7 +484,7 @@ const JSON_FIELDS = Object.freeze([
 ]);
 
 class XPIState {
-  constructor(location, id, saved = {}) {
+  constructor(location, id, saved = {}, isRelocatedLocation = false) {
     this.location = location;
     this.id = id;
 
@@ -497,10 +497,24 @@ class XPIState {
       }
     }
 
-    // Builds prior to be 1512436 did not include the rootURI property.
-    // If we're updating from such a build, add that property now.
-    if (!("rootURI" in this) && this.file) {
+    // Recompute rootURI for:
+    //
+    // - A location that was detected as relocated when being restored
+    //   from the addonStartup.json.lz4 data (See Bug 1429838).
+    // - Builds prior to Bug 1512436 did not include the rootURI property.
+    //   If we're updating from such a build, add that property now.
+    //
+    // NOTE: path and rootURI on the AddonDB side will be updated accordingly
+    // by XPIDatabaseReconcile.updatePath (called from XPIDatabaseReconcile.updateExistingAddon
+    // when the oldAddon.path and newAddon.path are mismatching, as part of the
+    // XPIDatabaseReconcile.processFileChanges logic).
+    if (this.file && (isRelocatedLocation || !("rootURI" in this))) {
       this.rootURI = getURIForResourceInFile(this.file, "").spec;
+      if (isRelocatedLocation) {
+        logger.warn(
+          `Recomputed XPIState rootURI for ${id} due to relocated location ${this.location.name}.`
+        );
+      }
     }
 
     if (!this.telemetryKey) {
@@ -741,15 +755,33 @@ class XPIStateLocation extends Map {
   }
 
   restore(saved) {
+    // If saved.path mismatches with this.path, then the location has been
+    // reloaded and the rootURI for all the add-ons in the relocated location
+    // will have to be recomputed to make sure it points to the new absolute
+    // path to the XPI file (See Bug 1429838).
+    //
+    // NOTE: This method is going to be called with the `saved` parameter (which
+    // contains the location data coming from addonStartup.json.lz4 data) when it
+    // is called from `XPIStates.scanForChanges`.
+    const isRelocatedLocation =
+      this.path && saved.path && this.path != saved.path;
+    if (isRelocatedLocation) {
+      logger.warn(
+        `Detected relocated XPIStateLocation ${this.name} (from "${saved.path}" to "${this.path}"). ` +
+          `XPIState rootURI will be recomputed for each add-on in this location.`
+      );
+    }
+
     if (!this.path && saved.path) {
       this.path = saved.path;
       this.dir = new nsIFile(this.path);
     }
     this.staged = saved.staged || {};
-    this.changed = saved.changed || false;
+
+    this.changed = saved.changed || isRelocatedLocation || false;
 
     for (let [id, data] of Object.entries(saved.addons || {})) {
-      let xpiState = this._addState(id, data);
+      let xpiState = this._addState(id, data, isRelocatedLocation);
 
       // Make a note that this state was restored from saved data. But
       // only if this location hasn't moved since the last startup,
@@ -793,8 +825,8 @@ class XPIStateLocation extends Map {
     return false;
   }
 
-  _addState(addonId, saved) {
-    let xpiState = new XPIState(this, addonId, saved);
+  _addState(addonId, saved, isRelocatedLocation) {
+    let xpiState = new XPIState(this, addonId, saved, isRelocatedLocation);
     this.set(addonId, xpiState);
     return xpiState;
   }
@@ -1462,25 +1494,6 @@ var XPIStates = {
       state = lazy.aomStartup.readStartupData();
     } catch (e) {
       logger.warn("Error parsing extensions state: ${error}", { error: e });
-    }
-
-    // Let's remove invalid `_processedColors` properties in the theme add-ons.
-    for (let location of Object.values(state || {})) {
-      for (let data of Object.values(location.addons || {})) {
-        if (data.type === "theme" && data.startupData) {
-          // Some profiles have an outdated version of `startupData` containing
-          // `_processedColors` properties, which in certain cases prevent the
-          // data from being updated correctly. These properties are removed
-          // here. See bug 1830136.
-          delete data.startupData.lwtData?.darkTheme?._processedColors;
-          delete data.startupData.lwtData?.theme?._processedColors;
-          // These properties are obsolete since bug 2004905, let's clean them up
-          // while at it.
-          delete data.startupData.lwtDarkStyles;
-          delete data.startupData.lwtStyles;
-          delete data.startupData.experiment;
-        }
-      }
     }
 
     // When upgrading from a build prior to bug 857456, convert startup
@@ -2700,7 +2713,6 @@ export var XPIProvider = {
    */
   startup(aAppChanged, aOldAppVersion, aOldPlatformVersion) {
     try {
-      AddonManagerPrivate.recordTimestamp("XPI_startup_begin");
       Glean.addonsManager.startupTimeline.XPI_startup_begin.set(
         Services.telemetry.msSinceProcessStart()
       );
@@ -2795,7 +2807,6 @@ export var XPIProvider = {
       }
 
       try {
-        AddonManagerPrivate.recordTimestamp("XPI_bootstrap_addons_begin");
         Glean.addonsManager.startupTimeline.XPI_bootstrap_addons_begin.set(
           Services.telemetry.msSinceProcessStart()
         );
@@ -2842,7 +2853,6 @@ export var XPIProvider = {
             );
           }
         }
-        AddonManagerPrivate.recordTimestamp("XPI_bootstrap_addons_end");
         Glean.addonsManager.startupTimeline.XPI_bootstrap_addons_end.set(
           Services.telemetry.msSinceProcessStart()
         );
@@ -2918,7 +2928,6 @@ export var XPIProvider = {
 
       // Detect final-ui-startup for telemetry reporting
       Services.obs.addObserver(function observer() {
-        AddonManagerPrivate.recordTimestamp("XPI_finalUIStartup");
         Glean.addonsManager.startupTimeline.XPI_finalUIStartup.set(
           Services.telemetry.msSinceProcessStart()
         );
@@ -2971,7 +2980,6 @@ export var XPIProvider = {
         }
       }
 
-      AddonManagerPrivate.recordTimestamp("XPI_startup_end");
       Glean.addonsManager.startupTimeline.XPI_startup_end.set(
         Services.telemetry.msSinceProcessStart()
       );
@@ -3182,13 +3190,10 @@ export var XPIProvider = {
    *        reload them later
    * @param {string} [aAppChanged]
    *        See checkForChanges
-   * @param {string?} [aOldAppVersion]
-   *        The version of the application last run with this profile or null
-   *        if it is a new profile or the version is unknown
    * @returns {boolean}
    *        True if any new add-ons were installed
    */
-  installDistributionAddons(aManifests, aAppChanged, aOldAppVersion) {
+  installDistributionAddons(aManifests, aAppChanged) {
     let distroDirs = [];
     try {
       distroDirs.push(
@@ -3252,12 +3257,7 @@ export var XPIProvider = {
         try {
           let loc = XPIStates.getLocation(KEY_APP_PROFILE);
           let addon = awaitPromise(
-            XPIExports.XPIInstall.installDistributionAddon(
-              id,
-              file,
-              loc,
-              aOldAppVersion
-            )
+            XPIExports.XPIInstall.installDistributionAddon(id, file, loc)
           );
 
           if (addon) {
@@ -3368,11 +3368,7 @@ export var XPIProvider = {
 
     // If the application has changed then check for new distribution add-ons
     if (Services.prefs.getBoolPref(PREF_INSTALL_DISTRO_ADDONS, true)) {
-      updated = this.installDistributionAddons(
-        manifests,
-        aAppChanged,
-        aOldAppVersion
-      );
+      updated = this.installDistributionAddons(manifests, aAppChanged);
       if (updated) {
         updateReasons.push("installDistributionAddons");
       }

@@ -1,0 +1,20 @@
+{
+  "label": "recochoku.jp",
+  "bugs": {
+    "1902399": {
+      "issue": "unsupported-warning",
+      "matches": ["*://recochoku.jp/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "hide_messages": [
+        {
+          "container": ".header-caution",
+          "message": "Chrome"
+        }
+      ]
+    }
+  ]
+}

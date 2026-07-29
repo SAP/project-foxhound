@@ -45,7 +45,6 @@ impl Example for App {
         let spatial_id = root_space_and_clip.spatial_id;
 
         builder.push_simple_stacking_context(
-            content_bounds.min,
             spatial_id,
             PrimitiveFlags::IS_BACKFACE_VISIBLE,
         );

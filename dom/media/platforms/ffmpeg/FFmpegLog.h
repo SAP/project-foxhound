@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,33 +11,34 @@ static mozilla::LazyLogModule sFFmpegVideoLog("FFmpegVideo");
 static mozilla::LazyLogModule sFFmpegAudioLog("FFmpegAudio");
 
 #ifdef FFVPX_VERSION
-#  define FFMPEG_LOG(str, ...)                               \
-    MOZ_LOG(mVideoCodec ? sFFmpegVideoLog : sFFmpegAudioLog, \
-            mozilla::LogLevel::Debug, ("FFVPX: " str, ##__VA_ARGS__))
-#  define FFMPEGV_LOG(str, ...)                        \
-    MOZ_LOG(sFFmpegVideoLog, mozilla::LogLevel::Debug, \
-            ("FFVPX: " str, ##__VA_ARGS__))
-#  define FFMPEGA_LOG(str, ...)                        \
-    MOZ_LOG(sFFmpegAudioLog, mozilla::LogLevel::Debug, \
-            ("FFVPX: " str, ##__VA_ARGS__))
+#  define FFMPEG_LOG(str, ...)                                   \
+    MOZ_LOG_FMT(mVideoCodec ? sFFmpegVideoLog : sFFmpegAudioLog, \
+                mozilla::LogLevel::Debug, "FFVPX: " str, ##__VA_ARGS__)
+#  define FFMPEGV_LOG(str, ...)                                           \
+    MOZ_LOG_FMT(sFFmpegVideoLog, mozilla::LogLevel::Debug, "FFVPX: " str, \
+                ##__VA_ARGS__)
+#  define FFMPEGA_LOG(str, ...)                                           \
+    MOZ_LOG_FMT(sFFmpegAudioLog, mozilla::LogLevel::Debug, "FFVPX: " str, \
+                ##__VA_ARGS__)
 #  define FFMPEGP_LOG(str, ...) \
-    MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, ("FFVPX: " str, ##__VA_ARGS__))
+    MOZ_LOG_FMT(sPDMLog, mozilla::LogLevel::Debug, "FFVPX: " str, ##__VA_ARGS__)
 #else
-#  define FFMPEG_LOG(str, ...)                               \
-    MOZ_LOG(mVideoCodec ? sFFmpegVideoLog : sFFmpegAudioLog, \
-            mozilla::LogLevel::Debug, ("FFMPEG: " str, ##__VA_ARGS__))
-#  define FFMPEGV_LOG(str, ...)                        \
-    MOZ_LOG(sFFmpegVideoLog, mozilla::LogLevel::Debug, \
-            ("FFMPEG: " str, ##__VA_ARGS__))
-#  define FFMPEGA_LOG(str, ...)                        \
-    MOZ_LOG(sFFmpegAudioLog, mozilla::LogLevel::Debug, \
-            ("FFMPEG: " str, ##__VA_ARGS__))
-#  define FFMPEGP_LOG(str, ...) \
-    MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, ("FFMPEG: " str, ##__VA_ARGS__))
+#  define FFMPEG_LOG(str, ...)                                   \
+    MOZ_LOG_FMT(mVideoCodec ? sFFmpegVideoLog : sFFmpegAudioLog, \
+                mozilla::LogLevel::Debug, "FFMPEG: " str, ##__VA_ARGS__)
+#  define FFMPEGV_LOG(str, ...)                                            \
+    MOZ_LOG_FMT(sFFmpegVideoLog, mozilla::LogLevel::Debug, "FFMPEG: " str, \
+                ##__VA_ARGS__)
+#  define FFMPEGA_LOG(str, ...)                                            \
+    MOZ_LOG_FMT(sFFmpegAudioLog, mozilla::LogLevel::Debug, "FFMPEG: " str, \
+                ##__VA_ARGS__)
+#  define FFMPEGP_LOG(str, ...)                                    \
+    MOZ_LOG_FMT(sPDMLog, mozilla::LogLevel::Debug, "FFMPEG: " str, \
+                ##__VA_ARGS__)
 #endif
 
-#define FFMPEG_LOGV(...)                                   \
-  MOZ_LOG(mVideoCodec ? sFFmpegVideoLog : sFFmpegAudioLog, \
-          mozilla::LogLevel::Verbose, (__VA_ARGS__))
+#define FFMPEG_LOGV(...)                                       \
+  MOZ_LOG_FMT(mVideoCodec ? sFFmpegVideoLog : sFFmpegAudioLog, \
+              mozilla::LogLevel::Verbose, __VA_ARGS__)
 
 #endif  // FFmpegLog_h_

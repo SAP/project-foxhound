@@ -5,7 +5,7 @@ import pytest
 URL = "https://www.sigadoc.mt.gov.br/"
 
 HERO_CSS = "#username"
-UNSUPPORTED_TEXT = "Recomendamos o navegador Google Chrome para acesso"
+UNSUPPORTED_TEXT = "Google Chrome"
 UNSUPPORTED_CSS = "#isChrome"
 
 

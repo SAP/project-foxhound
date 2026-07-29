@@ -2,13 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{LineStyle, LineOrientation, ClipMode, ColorF, FilterOpGraphPictureBufferId};
+use api::{LineStyle, LineOrientation, ColorF, FilterOpGraphPictureBufferId};
 use api::{MAX_RENDER_TASK_SIZE, SVGFE_GRAPH_MAX};
 use api::units::*;
 use std::time::Duration;
 use crate::box_shadow::BLUR_SAMPLE_SCALE;
 use crate::render_task_graph::SubTaskRange;
-use crate::clip::{ClipDataStore, ClipItemKind, ClipStore, ClipNodeRange};
+use crate::clip::ClipNodeRange;
 use crate::command_buffer::{CommandBufferIndex, QuadFlags};
 use crate::pattern::{PatternKind, PatternShaderInput};
 use crate::profiler::{add_text_marker};
@@ -21,19 +21,14 @@ use crate::picture::ResolvedSurfaceTexture;
 use crate::tile_cache::MAX_SURFACE_SIZE;
 use crate::transform::GpuTransformId;
 use crate::prim_store::ClipData;
-use crate::prim_store::gradient::{
-    FastLinearGradientTask, RadialGradientTask,
-    ConicGradientTask, LinearGradientTask,
-};
-use crate::resource_cache::{ResourceCache, ImageRequest};
+use crate::resource_cache::ImageRequest;
 use std::{usize, f32, i32, u32};
 use crate::renderer::{GpuBufferAddress, GpuBufferBuilder, GpuBufferBuilderF};
 use crate::render_backend::DataStores;
 use crate::render_target::{ResolveOp, RenderTargetKind};
 use crate::render_task_graph::{PassId, RenderTaskId, RenderTaskGraphBuilder};
-use crate::render_task_cache::{RenderTaskCacheEntryHandle, RenderTaskCacheKey, RenderTaskCacheKeyKind, RenderTaskParent};
+use crate::render_task_cache::RenderTaskCacheEntryHandle;
 use crate::segment::EdgeMask;
-use crate::surface::SurfaceBuilder;
 use smallvec::SmallVec;
 
 const FLOATS_PER_RENDER_TASK_INFO: usize = 8;
@@ -370,10 +365,6 @@ pub enum RenderTaskKind {
     Blit(BlitTask),
     Border(BorderTask),
     LineDecoration(LineDecorationTask),
-    FastLinearGradient(FastLinearGradientTask),
-    LinearGradient(LinearGradientTask),
-    RadialGradient(RadialGradientTask),
-    ConicGradient(ConicGradientTask),
     SVGFENode(SVGFEFilterTask),
     TileComposite(TileCompositeTask),
     Prim(PrimTask),
@@ -421,10 +412,6 @@ impl RenderTaskKind {
             RenderTaskKind::Blit(..) => "Blit",
             RenderTaskKind::Border(..) => "Border",
             RenderTaskKind::LineDecoration(..) => "LineDecoration",
-            RenderTaskKind::FastLinearGradient(..) => "FastLinearGradient",
-            RenderTaskKind::LinearGradient(..) => "LinearGradient",
-            RenderTaskKind::RadialGradient(..) => "RadialGradient",
-            RenderTaskKind::ConicGradient(..) => "ConicGradient",
             RenderTaskKind::SVGFENode(..) => "SVGFENode",
             RenderTaskKind::TileComposite(..) => "TileComposite",
             RenderTaskKind::Prim(..) => "Prim",
@@ -440,10 +427,6 @@ impl RenderTaskKind {
             RenderTaskKind::LineDecoration(..) |
             RenderTaskKind::Readback(..) |
             RenderTaskKind::Border(..) |
-            RenderTaskKind::FastLinearGradient(..) |
-            RenderTaskKind::LinearGradient(..) |
-            RenderTaskKind::RadialGradient(..) |
-            RenderTaskKind::ConicGradient(..) |
             RenderTaskKind::Picture(..) |
             RenderTaskKind::Blit(..) |
             RenderTaskKind::TileComposite(..) |
@@ -599,31 +582,13 @@ impl RenderTaskKind {
         outer_rect: DeviceIntRect,
         clip_node_range: ClipNodeRange,
         root_spatial_node_index: SpatialNodeIndex,
-        clip_store: &mut ClipStore,
-        gpu_buffer_builder: &mut GpuBufferBuilderF,
-        resource_cache: &mut ResourceCache,
         rg_builder: &mut RenderTaskGraphBuilder,
-        clip_data_store: &mut ClipDataStore,
         device_pixel_scale: DevicePixelScale,
         fb_config: &FrameBuilderConfig,
-        surface_builder: &mut SurfaceBuilder,
     ) -> RenderTaskId {
-        // Step through the clip sources that make up this mask. If we find
-        // any box-shadow clip sources, request that image from the render
-        // task cache. This allows the blurred box-shadow rect to be cached
-        // in the texture cache across frames.
-        // TODO(gw): Consider moving this logic outside this function, especially
-        //           as we add more clip sources that depend on render tasks.
-        // TODO(gw): If this ever shows up in a profile, we could pre-calculate
-        //           whether a ClipSources contains any box-shadows and skip
-        //           this iteration for the majority of cases.
         let task_size = outer_rect.size();
 
-        // If we have a potentially tiled clip mask, clear the mask area first. Otherwise,
-        // the first (primary) clip mask will overwrite all the clip mask pixels with
-        // blending disabled to set to the initial value.
-
-        let clip_task_id = rg_builder.add().init(
+        rg_builder.add().init(
             RenderTask::new_dynamic(
                 task_size,
                 RenderTaskKind::CacheMask(CacheMaskTask {
@@ -634,70 +599,7 @@ impl RenderTaskKind {
                     clear_to_one: fb_config.gpu_supports_fast_clears,
                 }),
             )
-        );
-
-        for i in 0 .. clip_node_range.count {
-            let clip_instance = clip_store.get_instance_from_range(&clip_node_range, i);
-            let clip_node = &mut clip_data_store[clip_instance.handle];
-            match clip_node.item.kind {
-                ClipItemKind::BoxShadow { ref mut source } => {
-                    let (cache_size, cache_key) = source.cache_key
-                        .as_ref()
-                        .expect("bug: no cache key set")
-                        .clone();
-                    let blur_radius_dp = cache_key.blur_radius_dp as f32;
-                    let device_pixel_scale = DevicePixelScale::new(cache_key.device_pixel_scale.to_f32_px());
-
-                    // Request a cacheable render task with a blurred, minimal
-                    // sized box-shadow rect.
-                    source.render_task = Some(resource_cache.request_render_task(
-                        Some(RenderTaskCacheKey {
-                            size: cache_size,
-                            kind: RenderTaskCacheKeyKind::BoxShadow(cache_key),
-                        }),
-                        false,
-                        RenderTaskParent::RenderTask(clip_task_id),
-                        gpu_buffer_builder,
-                        rg_builder,
-                        surface_builder,
-                        &mut |rg_builder, _| {
-                            let clip_data = ClipData::rounded_rect(
-                                source.minimal_shadow_rect.size(),
-                                &source.shadow_radius,
-                                ClipMode::Clip,
-                            );
-
-                            // Draw the rounded rect.
-                            let mask_task_id = rg_builder.add().init(RenderTask::new_dynamic(
-                                cache_size,
-                                RenderTaskKind::new_rounded_rect_mask(
-                                    source.minimal_shadow_rect.min,
-                                    clip_data,
-                                    device_pixel_scale,
-                                    fb_config,
-                                ),
-                            ));
-
-                            // Blur it
-                            RenderTask::new_blur(
-                                DeviceSize::new(blur_radius_dp, blur_radius_dp),
-                                mask_task_id,
-                                rg_builder,
-                                RenderTargetKind::Alpha,
-                                None,
-                                cache_size,
-                                BlurEdgeMode::Duplicate,
-                            )
-                        }
-                    ));
-                }
-                ClipItemKind::Rectangle { .. } |
-                ClipItemKind::RoundedRectangle { .. } |
-                ClipItemKind::Image { .. } => {}
-            }
-        }
-
-        clip_task_id
+        )
     }
 
     // Write (up to) 8 floats of data specific to the type
@@ -776,10 +678,6 @@ impl RenderTaskKind {
             RenderTaskKind::Scaling(..) |
             RenderTaskKind::Border(..) |
             RenderTaskKind::LineDecoration(..) |
-            RenderTaskKind::FastLinearGradient(..) |
-            RenderTaskKind::LinearGradient(..) |
-            RenderTaskKind::RadialGradient(..) |
-            RenderTaskKind::ConicGradient(..) |
             RenderTaskKind::TileComposite(..) |
             RenderTaskKind::Blit(..) => {
                 [0.0; 4]

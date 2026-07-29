@@ -109,7 +109,6 @@ def get_stack_info(
     base64_patches = [
         convert_bytes_patch_to_base64(patch_bytes) for patch_bytes in patches
     ]
-    print("Patches gathered for submission.")
 
     return base_commit, base_commit_vcs, base64_patches
 
@@ -226,7 +225,6 @@ class Auth0Config:
                 options={"verify_signature": False},
             )
         )
-        print("Auth0 token validated.")
         return user_token
 
     def device_authorization_flow(self) -> dict:
@@ -271,7 +269,8 @@ class Auth0Config:
             response_data = response.json()
 
             if response.status_code == 200:
-                print("\nLogin successful.")
+                # Terminate the in-progress "Waiting......" line.
+                print()
                 return response_data
 
             if response_data["error"] not in ("authorization_pending", "slow_down"):
@@ -321,6 +320,7 @@ class LandoAPI:
 
     access_token: str
     api_url: str
+    instance_id: str
     verify_tls: bool = True
 
     @property
@@ -329,8 +329,12 @@ class LandoAPI:
         return f"https://{self.api_url}/try/patches"
 
     def lando_try_status_api_url(self, job_id: int) -> str:
-        """URL of the Lando Try Job Status endpoint."""
+        """URL of the Lando Try Job Status JSON endpoint."""
         return f"https://{self.api_url}/landing_jobs/{job_id}"
+
+    def lando_try_status_url(self, job_id: int) -> str:
+        """URL of the Lando Try Job Status HTML endpoint in new Lando."""
+        return f"https://{self.api_url}/landings/{job_id}"
 
     @property
     def api_headers(self) -> dict[str, str]:
@@ -366,6 +370,7 @@ class LandoAPI:
         return LandoAPI(
             api_url=parser.get(section, "api_domain"),
             access_token=token["access_token"],
+            instance_id=parser.get(section, "instance_id", fallback=section),
             verify_tls=parser.getboolean(section, "verify_tls", fallback=True),
         )
 
@@ -412,16 +417,21 @@ class LandoAPI:
             "patches": patches,
         }
 
-        print("Submitting patches to Lando.")
         response_json = self.post(self.lando_try_api_url, request_json_body)
 
         return response_json
 
 
 def push_to_lando_try(
-    vcs: SupportedVcsRepository, commit_message: str, changed_files: dict, metrics
+    vcs: SupportedVcsRepository,
+    commit_message: str,
+    changed_files: dict,
+    metrics,
+    *,
+    force_old_lando: bool = False,
 ):
     """Push a set of patches to Lando's try endpoint."""
+
     metrics.mach_try.vcs_prep.start()
     # Map `Repository` subclasses to the `patch_format` value Lando expects.
     PATCH_FORMAT_STRING_MAPPING = {
@@ -434,13 +444,8 @@ def push_to_lando_try(
         # Other VCS types (namely `src`) are unsupported.
         raise ValueError(f"Try push via Lando is not supported for `{vcs.name}`.")
 
-    # Use LANDO_TRY_CONFIG so select which configuration section from .lando.ini to use.
-    # Default to using `lando-prod`.
-    lando_config_section = os.getenv("LANDO_TRY_CONFIG", "lando-prod")
-
     # Load Auth0 config from `.lando.ini`.
-    lando_ini_path = Path(vcs.path) / ".lando.ini"
-    lando_api = LandoAPI.from_lando_config_file(lando_ini_path, lando_config_section)
+    lando_api = get_lando_api_config(vcs.path)
 
     # Get the time when the push was initiated, not including Auth0 login time.
     push_start_time = time.perf_counter()
@@ -484,14 +489,36 @@ def push_to_lando_try(
     duration = time.perf_counter() - push_start_time
 
     job_id = response_json["id"]
-    success_msg = f"Lando try submission success, took {duration:.1f} seconds. Landing job id: {job_id}."
-    print(success_msg)
-
-    lando_api_status_url = lando_api.lando_try_status_api_url(job_id)
-    print(f"Lando Job Status API: {lando_api_status_url}")
 
     # Send a notification only if the push took an unexpectedly long time
     if duration > 30:
-        build.notify(success_msg)
+        build.notify(f"try submission success in {duration:.1f}s")
 
-    return job_id
+    return {
+        "lando_instance": lando_api.instance_id,
+        "lando_job_id": job_id,
+        "duration": duration,
+    }
+
+
+def get_lando_instance_id(vcs_path: str, section_name: str | None = None) -> str:
+    """Return the lando instance ID from the given config section, with default."""
+    lando_api = get_lando_api_config(vcs_path, section_name)
+    return lando_api.instance_id
+
+
+def get_lando_api_config(vcs_path: str, section_name: str | None = None) -> LandoAPI:
+    """Initialise a LandoAPI object from the .lando.ini for the given section_name"""
+    lando_ini_path = Path(vcs_path) / ".lando.ini"
+    section_name = section_name or get_lando_config_section_name()
+
+    return LandoAPI.from_lando_config_file(lando_ini_path, section_name)
+
+
+def get_lando_config_section_name() -> str:
+    """Determine which lando config section to use.
+
+    This is based on defaults and overrides such as the LANDO_TRY_CONFIG env variable.
+    """
+    default_lando_config_section = "lando-prod-new"
+    return os.getenv("LANDO_TRY_CONFIG", default_lando_config_section)

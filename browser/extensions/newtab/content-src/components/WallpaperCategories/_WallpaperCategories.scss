@@ -14,6 +14,11 @@
     text-align: center;
     width: 100%;
   }
+
+  // @nova-cleanup (remove .nova-enabled class and move this rule to the style above)
+  .nova-enabled & {
+    gap: calc(var(--space-xlarge) * 2) var(--space-medium);
+  }
 }
 
 .category-header {
@@ -23,9 +28,19 @@
   .wallpapers-reset {
     margin: unset;
   }
+
+  // @nova-cleanup (remove .nova-enabled class and instead move up these .wallpaper-reset styles to above. Don't add the justify-content: unset rule, just remove the current justify-content in .category-header when nova lands)
+  .nova-enabled & {
+    justify-content: unset;
+
+    .wallpapers-reset {
+      margin-block-end: var(--space-medium);
+      margin-inline-start: auto;
+    }
+  }
 }
 
-.arrow-button {
+button.arrow-button {
   background: url('chrome://global/skin/icons/arrow-left.svg') no-repeat left center;
 
   &:dir(rtl) {
@@ -41,6 +56,10 @@
   min-height: 1rem;
   margin-inline-start: var(--space-xsmall);
   margin-block-start: var(--space-xsmall);
+}
+
+.wallpapers-arrow-button {
+  margin-block-end: var(--space-xlarge);
 }
 
 .wallpaper-input {
@@ -109,6 +128,11 @@
     filter: brightness(55%);
     outline-color: transparent;
   }
+
+  // @nova-cleanup (remove .nova-enabled class and move this rule to the style above)
+  .nova-enabled & {
+    border-radius: var(--border-radius-small);
+  }
 }
 
 .theme-custom-color-picker {
@@ -159,7 +183,7 @@
     color-scheme: dark;
 
     @media (prefers-color-scheme: dark) {
-      color: #FBFBFE; // var(--color-gray-05);
+      color: #FBFBFE; // var(--color-gray-0);
     }
   }
 
@@ -199,13 +223,11 @@
   gap: var(--space-large);
   grid-template-columns: 1fr 1fr 1fr;
   grid-auto-rows: 86px;
-  margin: var(--space-large) 0;
+  margin: 0;
   padding: 0;
   border: none;
 
   &.category {
-    --wallpaper-panel-width: 430px;
-
     background-color: var(--newtab-background-color-secondary);
     color: var(--newtab-text-primary-color);
     display: unset;
@@ -219,7 +241,7 @@
     position: absolute;
     inset-block-start: 0;
     inset-inline-start: 100%;
-    width: var(--wallpaper-panel-width);
+    width: 100%;
     z-index: 2;
     overflow-y: auto;
 
@@ -229,6 +251,7 @@
       gap: var(--space-large);
       grid-auto-rows: 86px;
       grid-template-columns: 1fr 1fr 1fr;
+      padding: 0;
     }
 
     @media (prefers-reduced-motion: no-preference) {
@@ -242,7 +265,7 @@
 
     &.wallpaper-list-enter-done,
     &.wallpaper-list-enter-active {
-      inset-inline-start: calc(100% - var(--wallpaper-panel-width));
+      inset-inline-start: 0;
     }
   }
 

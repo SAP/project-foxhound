@@ -8,6 +8,7 @@ import android.app.DownloadManager.EXTRA_DOWNLOAD_ID
 import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Environment
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -33,7 +34,11 @@ import mozilla.components.support.test.argumentCaptor
 import mozilla.components.support.test.eq
 import mozilla.components.support.test.middleware.CaptureActionsMiddleware
 import mozilla.components.support.test.mock
+import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.whenever
+import mozilla.components.support.utils.DefaultDownloadFileUtils
+import mozilla.components.support.utils.DownloadFileUtils
+import mozilla.components.support.utils.FakeDownloadFileUtils
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -60,6 +65,7 @@ class DownloadMiddlewareTest {
                 coroutineContext = dispatcher,
                 downloadStorage = mock(),
                 deleteFileFromStorage = { false },
+                downloadFileUtils = FakeDownloadFileUtils(),
             ),
         )
         val store = BrowserStore(
@@ -67,7 +73,7 @@ class DownloadMiddlewareTest {
             middleware = listOf(downloadMiddleware),
         )
 
-        val download = DownloadState("https://mozilla.org/download", destinationDirectory = "")
+        val download = DownloadState("https://mozilla.org/download")
         store.dispatch(DownloadAction.AddDownloadAction(download))
         dispatcher.scheduler.advanceUntilIdle()
 
@@ -99,6 +105,7 @@ class DownloadMiddlewareTest {
                 coroutineContext = dispatcher,
                 downloadStorage = mock(),
                 deleteFileFromStorage = { false },
+                downloadFileUtils = FakeDownloadFileUtils(),
             ),
         )
         val store = BrowserStore(
@@ -123,6 +130,7 @@ class DownloadMiddlewareTest {
             AbstractFetchDownloadService::class.java,
             downloadStorage = downloadStorage,
             coroutineContext = dispatcher,
+            downloadFileUtils = FakeDownloadFileUtils(),
             deleteFileFromStorage = { false },
         )
         val store = BrowserStore(
@@ -130,13 +138,13 @@ class DownloadMiddlewareTest {
             middleware = listOf(downloadMiddleware),
         )
 
-        var download = DownloadState("https://mozilla.org/download", destinationDirectory = "")
+        var download = DownloadState("https://mozilla.org/download")
         store.dispatch(DownloadAction.RestoreDownloadStateAction(download))
         dispatcher.scheduler.advanceUntilIdle()
 
         verify(downloadStorage, never()).add(download)
 
-        download = DownloadState("https://mozilla.org/download", destinationDirectory = "")
+        download = DownloadState("https://mozilla.org/download")
         store.dispatch(DownloadAction.AddDownloadAction(download))
         dispatcher.scheduler.advanceUntilIdle()
 
@@ -153,6 +161,7 @@ class DownloadMiddlewareTest {
             AbstractFetchDownloadService::class.java,
             downloadStorage = downloadStorage,
             coroutineContext = dispatcher,
+            downloadFileUtils = FakeDownloadFileUtils(),
             deleteFileFromStorage = { false },
         )
         val store = BrowserStore(
@@ -175,11 +184,13 @@ class DownloadMiddlewareTest {
             val contentResolver: ContentResolver = mock()
             doReturn(contentResolver).`when`(applicationContext).contentResolver
             val downloadStorage: DownloadStorage = mock()
+            val downloadFileUtils: DownloadFileUtils = spy<DownloadFileUtils>(FakeDownloadFileUtils(fileExists = { _, _ -> true }))
 
             val downloadMiddleware = spy(
                 DownloadMiddleware(
-                applicationContext,
-                AbstractFetchDownloadService::class.java,
+                    applicationContext = applicationContext,
+                    downloadServiceClass = AbstractFetchDownloadService::class.java,
+                    downloadFileUtils = downloadFileUtils,
                 downloadStorage = downloadStorage,
                 coroutineContext = dispatcher,
                 deleteFileFromStorage = { true },
@@ -209,7 +220,11 @@ class DownloadMiddlewareTest {
 
             verify(downloadStorage).remove(download)
 
-            verify(downloadMiddleware).deleteMediaFile(eq(contentResolver), eq(tempFile))
+            verify(downloadFileUtils).deleteMediaFile(
+                eq(contentResolver),
+                eq(tempFile.name),
+                eq(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).path),
+            )
         }
 
     @Test
@@ -222,6 +237,7 @@ class DownloadMiddlewareTest {
                 AbstractFetchDownloadService::class.java,
                 downloadStorage = downloadStorage,
                 coroutineContext = dispatcher,
+                downloadFileUtils = FakeDownloadFileUtils(),
                 deleteFileFromStorage = { false },
             )
             val store = BrowserStore(
@@ -260,6 +276,7 @@ class DownloadMiddlewareTest {
             AbstractFetchDownloadService::class.java,
             downloadStorage = downloadStorage,
             coroutineContext = dispatcher,
+            downloadFileUtils = FakeDownloadFileUtils(),
             deleteFileFromStorage = { false },
         )
         val store = BrowserStore(
@@ -267,7 +284,7 @@ class DownloadMiddlewareTest {
             middleware = listOf(downloadMiddleware),
         )
 
-        val download = DownloadState("https://mozilla.org/download", destinationDirectory = "")
+        val download = DownloadState("https://mozilla.org/download")
         store.dispatch(DownloadAction.AddDownloadAction(download))
         dispatcher.scheduler.advanceUntilIdle()
 
@@ -286,6 +303,7 @@ class DownloadMiddlewareTest {
             AbstractFetchDownloadService::class.java,
             downloadStorage = downloadStorage,
             coroutineContext = dispatcher,
+            downloadFileUtils = FakeDownloadFileUtils(),
             deleteFileFromStorage = { false },
         )
         val store = BrowserStore(
@@ -329,8 +347,9 @@ class DownloadMiddlewareTest {
             val applicationContext: Context = mock()
             val downloadStorage: DownloadStorage = mock()
             val downloadMiddleware = DownloadMiddleware(
-                applicationContext,
-                AbstractFetchDownloadService::class.java,
+                applicationContext = applicationContext,
+                downloadServiceClass = AbstractFetchDownloadService::class.java,
+                downloadFileUtils = FakeDownloadFileUtils(fileExists = { _, _ -> true }),
                 downloadStorage = downloadStorage,
                 coroutineContext = dispatcher,
                 deleteFileFromStorage = { false },
@@ -375,6 +394,7 @@ class DownloadMiddlewareTest {
             AbstractFetchDownloadService::class.java,
             downloadStorage = downloadStorage,
             coroutineContext = dispatcher,
+            downloadFileUtils = FakeDownloadFileUtils(),
             deleteFileFromStorage = { false },
         )
         val store = BrowserStore(
@@ -401,6 +421,7 @@ class DownloadMiddlewareTest {
                 DownloadMiddleware(
                     applicationContext,
                     AbstractFetchDownloadService::class.java,
+                    downloadFileUtils = FakeDownloadFileUtils(),
                     deleteFileFromStorage = { false },
                 ),
             )
@@ -432,6 +453,7 @@ class DownloadMiddlewareTest {
                     AbstractFetchDownloadService::class.java,
                     coroutineContext = dispatcher,
                     downloadStorage = mock(),
+                    downloadFileUtils = FakeDownloadFileUtils(),
                     deleteFileFromStorage = { false },
                 ),
             )
@@ -461,6 +483,7 @@ class DownloadMiddlewareTest {
                     AbstractFetchDownloadService::class.java,
                     coroutineContext = dispatcher,
                     downloadStorage = mock(),
+                    downloadFileUtils = FakeDownloadFileUtils(),
                     deleteFileFromStorage = { false },
                 ),
             )
@@ -492,6 +515,7 @@ class DownloadMiddlewareTest {
                     AbstractFetchDownloadService::class.java,
                     coroutineContext = dispatcher,
                     downloadStorage = mock(),
+                    downloadFileUtils = FakeDownloadFileUtils(),
                     deleteFileFromStorage = { false },
                 ),
             )
@@ -523,6 +547,7 @@ class DownloadMiddlewareTest {
                     AbstractFetchDownloadService::class.java,
                     coroutineContext = dispatcher,
                     downloadStorage = mock(),
+                    downloadFileUtils = FakeDownloadFileUtils(),
                     deleteFileFromStorage = { false },
                 ),
             )
@@ -553,6 +578,7 @@ class DownloadMiddlewareTest {
                     AbstractFetchDownloadService::class.java,
                     coroutineContext = dispatcher,
                     downloadStorage = mock(),
+                    downloadFileUtils = FakeDownloadFileUtils(),
                     deleteFileFromStorage = { false },
                 ),
             )
@@ -583,6 +609,7 @@ class DownloadMiddlewareTest {
                 AbstractFetchDownloadService::class.java,
                 coroutineContext = dispatcher,
                 downloadStorage = mock(),
+                downloadFileUtils = FakeDownloadFileUtils(),
                 deleteFileFromStorage = { false },
             ),
         )
@@ -614,6 +641,7 @@ class DownloadMiddlewareTest {
                     AbstractFetchDownloadService::class.java,
                     coroutineContext = dispatcher,
                     downloadStorage = mock(),
+                    downloadFileUtils = FakeDownloadFileUtils(),
                     deleteFileFromStorage = { false },
                 ),
             )
@@ -638,6 +666,7 @@ class DownloadMiddlewareTest {
                     AbstractFetchDownloadService::class.java,
                     coroutineContext = dispatcher,
                     downloadStorage = mock(),
+                    downloadFileUtils = FakeDownloadFileUtils(),
                     deleteFileFromStorage = { false },
                 ),
             )
@@ -667,6 +696,7 @@ class DownloadMiddlewareTest {
                     AbstractFetchDownloadService::class.java,
                     coroutineContext = dispatcher,
                     downloadStorage = mock(),
+                    downloadFileUtils = FakeDownloadFileUtils(),
                     deleteFileFromStorage = { false },
                 ),
             )
@@ -696,6 +726,7 @@ class DownloadMiddlewareTest {
                 AbstractFetchDownloadService::class.java,
                 coroutineContext = dispatcher,
                 downloadStorage = mock(),
+                downloadFileUtils = FakeDownloadFileUtils(),
                 deleteFileFromStorage = { false },
             ),
         )
@@ -721,7 +752,8 @@ class DownloadMiddlewareTest {
             val downloadStorage = mock<DownloadStorage>()
             val downloadMiddleware = DownloadMiddleware(
                 applicationContext = mock(),
-                AbstractFetchDownloadService::class.java,
+                downloadServiceClass = AbstractFetchDownloadService::class.java,
+                downloadFileUtils = FakeDownloadFileUtils(fileExists = { _, _ -> false }),
                 coroutineContext = dispatcher,
                 downloadStorage = downloadStorage,
                 deleteFileFromStorage = { false },
@@ -760,9 +792,10 @@ class DownloadMiddlewareTest {
             val downloadStorage = mock<DownloadStorage>()
             val downloadMiddleware = DownloadMiddleware(
                 applicationContext = mock(),
-                AbstractFetchDownloadService::class.java,
+                downloadServiceClass = AbstractFetchDownloadService::class.java,
                 coroutineContext = dispatcher,
                 downloadStorage = downloadStorage,
+                downloadFileUtils = FakeDownloadFileUtils(),
                 deleteFileFromStorage = { false },
             )
 
@@ -770,6 +803,7 @@ class DownloadMiddlewareTest {
                 id = "1",
                 url = "test.tmp",
                 fileName = "test.tmp",
+                directoryPath = "downloads",
                 status = COMPLETED,
             )
             whenever(downloadStorage.getDownloadsList()).thenReturn(listOf(download))
@@ -796,7 +830,8 @@ class DownloadMiddlewareTest {
             val downloadStorage = mock<DownloadStorage>()
             val downloadMiddleware = DownloadMiddleware(
                 applicationContext = mock(),
-                AbstractFetchDownloadService::class.java,
+                downloadServiceClass = AbstractFetchDownloadService::class.java,
+                downloadFileUtils = FakeDownloadFileUtils(fileExists = { _, _ -> true }),
                 coroutineContext = dispatcher,
                 downloadStorage = downloadStorage,
                 deleteFileFromStorage = { false },
@@ -835,6 +870,52 @@ class DownloadMiddlewareTest {
         }
 
     @Test
+    fun `WHEN RemoveDeletedDownloads is called on a completed default-directory file with missing uri THEN the download is not deleted`() =
+        runTest(dispatcher) {
+            val downloadStorage = mock<DownloadStorage>()
+            val tempFile = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                "download-middleware-fallback.pdf",
+            )
+            tempFile.writeText("test")
+
+            val downloadFileUtils = spy(DefaultDownloadFileUtils(testContext))
+            doReturn(Uri.fromFile(tempFile)).`when`(downloadFileUtils).findDownloadFileUri(
+                tempFile.name,
+                tempFile.parent ?: "",
+            )
+
+            val downloadMiddleware = DownloadMiddleware(
+                applicationContext = mock(),
+                downloadServiceClass = AbstractFetchDownloadService::class.java,
+                downloadFileUtils = downloadFileUtils,
+                coroutineContext = dispatcher,
+                downloadStorage = downloadStorage,
+                deleteFileFromStorage = { false },
+            )
+
+            val download = DownloadState(
+                id = "1",
+                url = tempFile.toURI().toURL().toString(),
+                fileName = tempFile.name,
+                directoryPath = tempFile.parent ?: "",
+                status = COMPLETED,
+            )
+            whenever(downloadStorage.getDownloadsList()).thenReturn(listOf(download))
+
+            val store = BrowserStore(
+                initialState = BrowserState(downloads = mapOf(download.id to download)),
+                middleware = listOf(downloadMiddleware),
+            )
+
+            store.dispatch(DownloadAction.RemoveDeletedDownloads)
+            dispatcher.scheduler.advanceUntilIdle()
+
+            assertEquals(BrowserState(downloads = mapOf(download.id to download)), store.state)
+            tempFile.delete()
+        }
+
+    @Test
     fun `WHEN RemoveDeletedDownloads is called on an in progress download and the file doesn't exist THEN the download is not deleted and browser state is not updated`() =
         runTest(dispatcher) {
             val downloadStorage = mock<DownloadStorage>()
@@ -843,6 +924,7 @@ class DownloadMiddlewareTest {
                 AbstractFetchDownloadService::class.java,
                 coroutineContext = dispatcher,
                 downloadStorage = downloadStorage,
+                downloadFileUtils = FakeDownloadFileUtils(),
                 deleteFileFromStorage = { false },
             )
 
@@ -879,6 +961,7 @@ class DownloadMiddlewareTest {
                 AbstractFetchDownloadService::class.java,
                 coroutineContext = dispatcher,
                 downloadStorage = downloadStorage,
+                downloadFileUtils = FakeDownloadFileUtils(),
                 deleteFileFromStorage = { false },
             )
 
@@ -915,6 +998,7 @@ class DownloadMiddlewareTest {
                 AbstractFetchDownloadService::class.java,
                 coroutineContext = dispatcher,
                 downloadStorage = downloadStorage,
+                downloadFileUtils = FakeDownloadFileUtils(),
                 deleteFileFromStorage = { false },
             )
 
@@ -951,6 +1035,7 @@ class DownloadMiddlewareTest {
                 AbstractFetchDownloadService::class.java,
                 coroutineContext = dispatcher,
                 downloadStorage = downloadStorage,
+                downloadFileUtils = FakeDownloadFileUtils(),
                 deleteFileFromStorage = { false },
             )
 
@@ -984,9 +1069,10 @@ class DownloadMiddlewareTest {
             val downloadStorage = mock<DownloadStorage>()
             val downloadMiddleware = DownloadMiddleware(
                 applicationContext = mock(),
-                AbstractFetchDownloadService::class.java,
+                downloadServiceClass = AbstractFetchDownloadService::class.java,
                 coroutineContext = dispatcher,
                 downloadStorage = downloadStorage,
+                downloadFileUtils = FakeDownloadFileUtils(),
                 deleteFileFromStorage = { false },
             )
 
@@ -994,6 +1080,7 @@ class DownloadMiddlewareTest {
                 id = "1",
                 url = "test.tmp",
                 fileName = "test.tmp",
+                directoryPath = "downloads",
                 status = CANCELLED,
             )
             whenever(downloadStorage.getDownloadsList()).thenReturn(listOf(download))

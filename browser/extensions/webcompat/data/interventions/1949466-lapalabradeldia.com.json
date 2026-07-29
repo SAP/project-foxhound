@@ -1,0 +1,18 @@
+{
+  "label": "lapalabradeldia.com",
+  "bugs": {
+    "1949466": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://lapalabradeldia.com/*"]
+    }
+  },
+  "css": {
+    "fix-vanishing-letters": ".react-card-front { transform-style: initial !important; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "css": ["fix-vanishing-letters"]
+    }
+  ]
+}

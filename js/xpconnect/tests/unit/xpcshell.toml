@@ -77,6 +77,14 @@ support-files = [
   "sync_and_async_in_worker.js",
   "lazy_non_shared_in_worker.js",
   "lazy_shared_in_worker.js",
+  "error_twice.mjs",
+  "import_attributes.mjs",
+  "import_attributes_css.mjs",
+  "import_attributes_data.css",
+  "import_attributes_data.json",
+  "import_attributes_data.txt",
+  "import_attributes_text.mjs",
+  "import_attributes_worker.js",
 ]
 
 ["test_Cu_reportError_column.js"]
@@ -210,6 +218,8 @@ skip-if = [
 
 ["test_exportFunction.js"]
 
+["test_exportFunction_constructor.js"]
+
 ["test_file2.js"]
 
 ["test_fileReader.js"]
@@ -221,6 +231,13 @@ skip-if = [
 ["test_getCallerLocation.js"]
 
 ["test_getObjectPrincipal.js"]
+
+["test_import_attributes.js"]
+
+["test_import_attributes_worker.js"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'x86_64'",
+]
 
 ["test_import_data.js"]
 
@@ -321,7 +338,11 @@ head = "head_ongc.js"
 
 ["test_sandbox_DOMException.js"]
 
+["test_sandbox_SharedArrayBuffer.js"]
+
 ["test_sandbox_atob.js"]
+
+["test_sandbox_builtins.js"]
 
 ["test_sandbox_csp.js"]
 

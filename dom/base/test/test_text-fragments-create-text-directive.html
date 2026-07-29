@@ -78,6 +78,14 @@
   <!-- note that "text" must already exist in the page to trigger this. -->
   <p id="rangeBasedWithPunctuationAfterFirstWordStart">Text: the colon</p>
   <p id="rangeBasedWithPunctuationAfterFirstWordEnd">is important here</p>
+  <!-- Test case for Bug 2043324: nsFind's ComparePoints endpoint check returned
+       a wrong result for native anonymous content (::before pseudo-elements).-->
+  <style>
+    #beforeBugContainer::before { content: "x"; display: block; }
+  </style>
+  <div id="beforeBugContainer">
+    <p id="beforeBugFirst">By default, using this method will cause focus to reset when any handlers' returned promises settle. Focus will be reset to the first element with the autofocus attribute set, or the body element if the attribute isn't present. The focusReset option can be set to "manual" to avoid this behavior.</p>
+    <p id="beforeBugSecond">By default, using this method will delay the browser's scroll restoration logic for "traverse" or "reload" navigations, or its scroll-reset/scroll-to-a-fragment logic for "push" or "replace" navigations, until any handlers' returned promises settle</p></div>
   <!-- (crash)Test case for bug 1989891 -->
   <p>1 1111111111111
 1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
@@ -103,6 +111,13 @@
 1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
 1111111111111 1
 </p>
+  <!-- Test case for Bug 2043347. A range-based text directive where start==end and nothing in between
+       should match, because the search for the end term must not include the start term itself. -->
+  <p id="rangeBasedStartEqualsEndStart">rangeBasedStartEqualsEnd</p><p id="rangeBasedStartEqualsEndEnd">rangeBasedStartEqualsEnd</p>
+  <!-- Test case for Bug 2043329: <br> should act as a block boundary for text
+       fragment purposes. Without this, text across <br> gets concatenated
+       (e.g. "test<br>test" becomes "testtest"). -->
+  <p id="brWordBoundary">unique_br_start<br id="brWordBoundaryBr">unique_br_end</p>
   <script>
     document.addEventListener("DOMContentLoaded", () => {
       const empty = document.createTextNode("");
@@ -481,6 +496,15 @@
           textDirective: "text=Nuclear%20weapons,debate",
         },
         {
+          name: "Test for Bug 2022547: Long selection ending with punctuation",
+          startContainer: rangeBasedWihSpaceInTheMiddle.firstChild,
+          startOffset: 0,
+          endContainer: rangeBasedWihSpaceInTheMiddle.firstChild,
+          endOffset: rangeBasedWihSpaceInTheMiddle.textContent.indexOf(" These "),
+          content: "Nuclear weapons have only twice been used in warfare, both times by the United States against Japan at the end of World War II. On August 6, 1945, the United States Army Air Forces (USAAF) detonated a uranium gun-type fission bomb nicknamed \"Little Boy\" over the Japanese city of Hiroshima; three days later, on August 9, the USAAF[4] detonated a plutonium implosion-type fission bomb nicknamed \"Fat Man\" over the Japanese city of Nagasaki.",
+          textDirective: "text=Nuclear%20weapons,Nagasaki%2E",
+        },
+        {
           name: "Test for Bug 1987845: Punctuation after first word of range",
           startContainer: rangeBasedWithPunctuationAfterFirstWordStart.firstChild,
           startOffset: 0,
@@ -488,6 +512,33 @@
           endOffset: rangeBasedWithPunctuationAfterFirstWordEnd.firstChild.length,
           content: "Text: the colon\n  is important here",
           textDirective: "text=Text%3A%20the,here",
+        },
+        {
+          name: "::before pseudo-element must not break text directive disambiguation",
+          startContainer: beforeBugSecond.firstChild,
+          startOffset: 0,
+          endContainer: beforeBugSecond.firstChild,
+          endOffset: beforeBugSecond.firstChild.length,
+          content: "By default, using this method will delay the browser's scroll restoration logic for \"traverse\" or \"reload\" navigations, or its scroll-reset/scroll-to-a-fragment logic for \"push\" or \"replace\" navigations, until any handlers' returned promises settle",
+          textDirective: "text=behavior%2E-,By,settle",
+        },
+        {
+          name: "Word boundary extension must stop at <br> element",
+          startContainer: brWordBoundaryBr.nextSibling,
+          startOffset: 0,
+          endContainer: brWordBoundaryBr.nextSibling,
+          endOffset: brWordBoundaryBr.nextSibling.length,
+          content: "unique_br_end",
+          textDirective: "text=unique%5Fbr%5Fend",
+        },
+        {
+          name: "Selection across <br> produces range-based text directive",
+          startContainer: brWordBoundary.firstChild,
+          startOffset: 0,
+          endContainer: brWordBoundaryBr.nextSibling,
+          endOffset: brWordBoundaryBr.nextSibling.length,
+          content: "unique_br_startunique_br_end",
+          textDirective: "text=unique%5Fbr%5Fstart,unique%5Fbr%5Fend",
         },
         {
           name: "Prefix and suffix hit max length at whitespace",
@@ -498,6 +549,15 @@
           content: "test",
           textDirective: "text=test,-1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
         },
+        {
+          name: "Range-based matching where start and end are the same and end can't expand",
+          startContainer: rangeBasedStartEqualsEndStart.firstChild,
+          startOffset: 0,
+          endContainer: rangeBasedStartEqualsEndEnd.firstChild,
+          endOffset: rangeBasedStartEqualsEndEnd.firstChild.length,
+          content: "rangeBasedStartEqualsEndrangeBasedStartEqualsEnd",
+          textDirective: "text=rangeBasedStartEqualsEnd,rangeBasedStartEqualsEnd"
+        }
       ]) {
         const range = document.createRange();
         range.setStart(testCase.startContainer, testCase.startOffset);

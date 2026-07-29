@@ -19,7 +19,7 @@ import mozilla.components.ui.widgets.behavior.DependencyGravity.Bottom
 import mozilla.components.ui.widgets.behavior.EngineViewScrollingBehavior
 import mozilla.components.ui.widgets.behavior.EngineViewScrollingBehaviorFactory
 import org.mozilla.fenix.R
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.components
 
 /**
  *  A helper class to add a bottom toolbar container view to the given [parent].
@@ -56,7 +56,7 @@ class BottomToolbarContainerView(
             val engineView = parent.findViewInHierarchy { it is EngineView } as? EngineView
             if (hideOnScroll && engineView != null) {
                 behavior = EngineViewScrollingBehaviorFactory(
-                    useScrollData = context.settings().useNewDynamicToolbarBehaviour,
+                    useScrollData = context.components.settings.useNewDynamicToolbarBehaviour,
                 ).build(
                     engineView = engineView,
                     dependency = toolbarContainerView,

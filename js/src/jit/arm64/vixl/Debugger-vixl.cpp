@@ -24,14 +24,11 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 // EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "jstypes.h"
-
-#ifdef JS_SIMULATOR_ARM64
-
 #include "jit/arm64/vixl/Debugger-vixl.h"
 
 #include "mozilla/Vector.h"
 
+#include "jstypes.h"
 #include "js/AllocPolicy.h"
 
 namespace vixl {
@@ -1531,5 +1528,3 @@ bool InvalidCommand::Run(Debugger* debugger) {
 }
 
 }  // namespace vixl
-
-#endif  // JS_SIMULATOR_ARM64

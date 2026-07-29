@@ -638,9 +638,18 @@ async function testPermissionsView({ manifest_version, expectGranted }) {
   for (let ext of Object.values(extensions)) {
     await ext.unload();
   }
-
-  await SpecialPowers.popPrefEnv();
 }
+
+add_setup(async () => {
+  // With the opt-in, <all_urls> and file://*/* permissions result in the
+  // addition of an extra "Allow access to file URLs" entry to the Optional
+  // permission section. The test expectations were written before this
+  // feature existed, so disable it. Test coverage for these file permissions
+  // is at browser_html_detail_permissions_file_access.js.
+  await SpecialPowers.pushPrefEnv({
+    set: [["extensions.webextensions.fileSchemeAccess.requireOptIn", false]],
+  });
+});
 
 add_task(async function testPermissionsView_MV2() {
   await testPermissionsView({ manifest_version: 2 });

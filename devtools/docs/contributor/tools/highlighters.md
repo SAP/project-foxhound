@@ -91,7 +91,7 @@ In this example, the test DIV will be inserted in the page, and will be displaye
 
 ### The AnonymousContent API
 
-In the previous example, the returned `insertedEl` object isn't a DOM node, and it certainly is not `el`. It is a new object, whose type is `AnonymousContent` ([see the WebIDL here](https://searchfox.org/mozilla-central/source/dom/webidl/AnonymousContent.webidl)).
+In the previous example, the returned `insertedEl` object isn't a DOM node, and it certainly is not `el`. It is a new object, whose type is `AnonymousContent` ([see the WebIDL here](https://searchfox.org/firefox-main/source/dom/webidl/AnonymousContent.webidl)).
 
 Because of the way content is inserted into the page, it isn't wanted to give consumers a direct reference to the inserted DOM node. This is why `document.insertAnonymousContent(el)` actually **clones** `el` and returns a new object whose API lets consumers make changes to the inserted element in a way that never gives back a reference to the inserted DOM node.
 
@@ -122,7 +122,7 @@ The returned object provides the following API:
 | `content`                                 | This property returns the wrapped AnonymousContent object. |
 | `destroy()`                               | Destroy the helper instance.                               |
 
-  ### Creating a new highlighter class
+### Creating a new highlighter class
 
 A good way to get started is by taking a look at [existing highlighters here](https://searchfox.org/mozilla-central/rev/1a973762afcbc5066f73f1508b0c846872fe3952/devtools/server/actors/highlighters.js#519-530).
 

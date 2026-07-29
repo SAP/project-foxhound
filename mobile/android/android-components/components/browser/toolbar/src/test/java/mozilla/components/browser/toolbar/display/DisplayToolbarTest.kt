@@ -30,7 +30,6 @@ import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -42,6 +41,7 @@ import org.mockito.Mockito.never
 import org.mockito.Mockito.reset
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
+import kotlin.test.assertNotNull
 import mozilla.components.ui.icons.R as iconsR
 
 @RunWith(AndroidJUnit4::class)
@@ -317,7 +317,7 @@ class DisplayToolbarTest {
 
         assertFalse(callbackExecuted)
 
-        view?.performClick()
+        view.performClick()
 
         assertTrue(callbackExecuted)
     }
@@ -404,7 +404,7 @@ class DisplayToolbarTest {
         val view = displayToolbar.views.pageActions.getChildAt(0)
 
         assertNotNull(view)
-        view!!.performClick()
+        view.performClick()
 
         assertTrue(listenerExecuted)
     }
@@ -558,7 +558,7 @@ class DisplayToolbarTest {
         displayToolbar.setUrlBackground(
             ContextCompat.getDrawable(
                 testContext,
-                iconsR.drawable.mozac_ic_broken_lock,
+                iconsR.drawable.mozac_ic_lock_slash_critical_24,
             ),
         )
 
@@ -581,8 +581,8 @@ class DisplayToolbarTest {
 
         val layoutParams = displayToolbar.views.background.layoutParams as? ConstraintLayout.LayoutParams
         assertNotNull(layoutParams)
-        assertEquals(margins.goneStartMargin, layoutParams?.goneStartMargin)
-        assertEquals(margins.goneEndMargin, layoutParams?.goneEndMargin)
+        assertEquals(margins.goneStartMargin, layoutParams.goneStartMargin)
+        assertEquals(margins.goneEndMargin, layoutParams.goneEndMargin)
     }
 
     @Test

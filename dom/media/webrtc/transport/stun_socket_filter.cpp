@@ -1,20 +1,23 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
+#include "stun_socket_filter.h"
+
 #include <iomanip>
 #include <set>
 
-extern "C" {
+// clang-format off
+// For Windows builds, nr_api.h needs to appear before
+// mozilla/net/DNS.h
 #include "nr_api.h"
-#include "stun.h"
-#include "transport_addr.h"
-}
+// clang-format on
 
 #include "logging.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/net/DNS.h"
 #include "nr_socket_prsock.h"
-#include "stun_socket_filter.h"
+#include "stun.h"
+#include "transport_addr.h"
 
 namespace {
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -253,16 +251,11 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
                   const nsAString& aOptions,
                   mozilla::dom::BrowsingContext** _retval);
 
-  virtual mozilla::EventListenerManager* GetExistingListenerManager()
-      const override;
-
-  virtual mozilla::EventListenerManager* GetOrCreateListenerManager() override;
-
+  mozilla::EventListenerManager* GetExistingListenerManager() const override;
+  mozilla::EventListenerManager* GetOrCreateListenerManager() override;
   bool ComputeDefaultWantsUntrusted(mozilla::ErrorResult& aRv) final;
 
-  virtual nsPIDOMWindowOuter* GetOwnerGlobalForBindingsInternal() override;
-
-  virtual nsIGlobalObject* GetOwnerGlobal() const override;
+  nsIGlobalObject* GetRelevantGlobal() const override;
 
   EventTarget* GetTargetForEventTargetChain() override;
 
@@ -284,11 +277,8 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
       mozilla::dom::EventTarget* aChromeEventHandler) override;
 
   // Outer windows only.
-  virtual void SetInitialPrincipal(nsIPrincipal* aNewWindowPrincipal) override;
-
-  virtual already_AddRefed<nsISupports> SaveWindowState() override;
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual nsresult RestoreWindowState(
-      nsISupports* aState) override;
+  MOZ_CAN_RUN_SCRIPT virtual void SetInitialPrincipal(
+      nsIPrincipal* aNewWindowPrincipal) override;
 
   virtual bool IsSuspended() const override;
   virtual bool IsFrozen() const override;
@@ -973,7 +963,7 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
   }
 
   // Dispatch a runnable related to the global.
-  nsresult Dispatch(already_AddRefed<nsIRunnable>&&) const final;
+  nsresult Dispatch(already_AddRefed<nsIRunnable>) const final;
   nsISerialEventTarget* SerialEventTarget() const final;
 
  protected:

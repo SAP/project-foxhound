@@ -92,7 +92,7 @@ GeckoViewPdf.sys.mjs
   }
 
   async saveToPDF() {
-   // Reference: https://searchfox.org/mozilla-central/source/remote/cdp/domains/parent/Page.sys.mjs#519
+   // Reference: :searchfox:`remote/cdp/domains/parent/Page.sys.mjs#519`
   }
 
 

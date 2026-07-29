@@ -179,4 +179,19 @@ sealed class SnackbarState {
      * @property downloadState The state object containing information about the failed download.
      */
     data class CannotOpenFileError(val downloadState: DownloadState) : SnackbarState()
+
+    /**
+     * Display a snackbar when there is a connection error.
+     *
+     * @property title The title to display in the snackbar.
+     */
+    data class IPProtectionConnectionError(val title: String) : SnackbarState()
+
+    /**
+     * Display a snackbar when the IP protection monthly data limit has been reached, offering an
+     * action to navigate to the VPN settings screen.
+     *
+     * @property title The title to display in the snackbar.
+     */
+    data class IPProtectionDataLimitReached(val title: String) : SnackbarState()
 }

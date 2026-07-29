@@ -193,7 +193,7 @@ async function exit_to_arg_test_1() {
     // trigger normal fullscreen so that we continue
     FULLSCREEN_ELEMENT.requestFullscreen();
   }
-  ok(!threw, "requestFullscreen with bogus arg (123) shouldn't throw exception");
+  ok(threw, "requestFullscreen with bogus arg (123) should throw exception");
 }
 
 function enter_from_arg_test_1() {

@@ -1,0 +1,19 @@
+[DEFAULT]
+run-if = [
+  "os != 'android'",
+]
+head = "head.js"
+firefox-appdir = "browser"
+
+prefs = [
+  "browser.contentsharing.enabled=true",
+]
+
+["test_cookies.js"]
+
+["test_detectLogin.js"]
+
+["test_makeValid.js"]
+
+["test_schema.js"]
+support-files = ["invalidContentSharing.0.1.0.json", "validContentSharing.0.1.0.json"]

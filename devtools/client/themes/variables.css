@@ -225,13 +225,10 @@
   --theme-highlight-pink: light-dark(#b82ee5, #df80ff);
   --theme-highlight-gray: light-dark(#dde1e4, #e9f4fe);
 
-  /* Colors that were used in Graphs in the old performance tools, which was removed.
-   * They're also used on other panels and should be renamed (See Bug 1767617) */
-  --theme-graphs-purple: light-dark(#b693eb, #df80ff);
-  --theme-graphs-yellow: light-dark(#efc052, #d99b28);
-  --theme-graphs-orange: light-dark(#d97e00, #d96629);
-  --theme-graphs-grey: light-dark(#cccccc, #757873);
-  --theme-graphs-full-red: #f00;
+  /* Colors used for breakpoints and logpoints */
+  --theme-breakpoint-logpoint: light-dark(#b693eb, #df80ff);
+  --theme-breakpoint-conditional-background: light-dark(#efc052, #d99b28);
+  --theme-breakpoint-conditional-border-color: light-dark(#d97e00, #d96629);
 
   /* Common popup styles(used by HTMLTooltip and autocomplete) */
   --theme-popup-background: light-dark(Field, var(--grey-60));

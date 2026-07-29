@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -1195,6 +1193,7 @@ class FTUserFontData final
   explicit FTUserFontData(const char* aFilename) : mFilename(aFilename) {}
 
   const uint8_t* FontData() const { return mFontData; }
+  uint32_t FontDataLength() const { return mLength; }
 
   already_AddRefed<mozilla::gfx::SharedFTFace> CloneFace(
       int aFaceIndex = 0) override;
@@ -1451,6 +1450,13 @@ class DrawTarget : public external::AtomicRefCounted<DrawTarget> {
   virtual void Link(const char* aLocalDest, const char* aURI,
                     const Rect& aRect) {}
   virtual void Destination(const char* aDestination, const Point& aPoint) {}
+
+  /**
+   * Associate subsequent calls to other methods with a specific accessibility
+   * node. This is used to generate tagged PDF output. Specifying an id of (0,
+   * 0) disassociates subsequent calls from any accessibility node.
+   */
+  virtual void AccessibleId(uint64_t aBrowsingContextId, uint64_t aAccId) {}
 
   /**
    * Returns a SourceSurface which is a snapshot of the current contents of the
@@ -2158,9 +2164,6 @@ class GFX2D_API Factory {
   static void Init(const Config& aConfig);
   static void ShutDown();
 
-  static bool HasSSE2();
-  static bool HasSSE4();
-
   /**
    * Returns false if any of the following are true:
    *
@@ -2379,10 +2382,10 @@ class GFX2D_API Factory {
   static void SetSystemTextQuality(uint8_t aQuality);
 
   static already_AddRefed<DataSourceSurface>
-  CreateBGRA8DataSourceSurfaceForD3D11Texture(ID3D11Texture2D* aSrcTexture,
-                                              uint32_t aArrayIndex,
-                                              gfx::ColorSpace2 aColorSpace,
-                                              gfx::ColorRange aColorRange);
+  CreateBGRA8DataSourceSurfaceForD3D11Texture(
+      ID3D11Texture2D* aSrcTexture, uint32_t aArrayIndex,
+      gfx::ColorSpace2 aColorSpace, gfx::ColorRange aColorRange,
+      gfx::TransferFunction aTransferFunction);
 
   static nsresult CreateSdbForD3D11Texture(
       ID3D11Texture2D* aSrcTexture, const IntSize& aSrcSize,
@@ -2393,7 +2396,8 @@ class GFX2D_API Factory {
                               ID3D11Texture2D* aSrcTexture,
                               uint32_t aArrayIndex,
                               gfx::ColorSpace2 aColorSpace,
-                              gfx::ColorRange aColorRange);
+                              gfx::ColorRange aColorRange,
+                              gfx::TransferFunction aTransferFunction);
 
  private:
   static StaticRefPtr<ID3D11Device> mD3D11Device;
@@ -2405,11 +2409,10 @@ class GFX2D_API Factory {
                               ID3D11Texture2D* aSrcTexture);
 
   // DestTextureT can be TextureData or DataSourceSurface.
-  static bool ConvertSourceAndRetryReadback(DataSourceSurface* aDestCpuTexture,
-                                            ID3D11Texture2D* aSrcTexture,
-                                            uint32_t aArrayIndex,
-                                            gfx::ColorSpace2 aColorSpace,
-                                            gfx::ColorRange aColorRange);
+  static bool ConvertSourceAndRetryReadback(
+      DataSourceSurface* aDestCpuTexture, ID3D11Texture2D* aSrcTexture,
+      uint32_t aArrayIndex, gfx::ColorSpace2 aColorSpace,
+      gfx::ColorRange aColorRange, gfx::TransferFunction aTransferFunction);
 
  protected:
   // This guards access to the singleton devices above, as well as the

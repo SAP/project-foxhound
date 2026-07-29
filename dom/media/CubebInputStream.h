@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -60,8 +58,8 @@ class CubebInputStream final {
   struct CubebDestroyPolicy {
     void operator()(cubeb_stream* aStream) const;
   };
-  CubebInputStream(already_AddRefed<Listener>&& aListener,
-                   already_AddRefed<CubebUtils::CubebHandle>&& aCubeb,
+  CubebInputStream(already_AddRefed<Listener> aListener,
+                   already_AddRefed<CubebUtils::CubebHandle> aCubeb,
                    UniquePtr<cubeb_stream, CubebDestroyPolicy>&& aStream);
 
   void Init();

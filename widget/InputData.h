@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -318,6 +317,7 @@ class MouseInput : public InputData {
   // fields must be reflected in its ParamTraits<>, in nsGUIEventIPC.h
   MouseType mType;
   ButtonType mButtonType;
+  uint32_t mClickCount = 0;
   uint16_t mInputSource;
   int16_t mButtons;
   ScreenPoint mOrigin;
@@ -619,9 +619,9 @@ class PinchGestureInput : public InputData {
   // don't need a mLineOrPageDeltaX. This field is used to dispatch legacy mouse
   // events which are only dispatched when the corresponding field on
   // WidgetWheelEvent is non-zero.
-  int32_t mLineOrPageDeltaY;
+  int32_t mLineOrPageDeltaY = 0;
 
-  bool mHandledByAPZ;
+  bool mHandledByAPZ = false;
 };
 
 /**
@@ -797,11 +797,12 @@ class ScrollWheelInput : public InputData {
 
   bool mMayHaveMomentum;
   bool mIsMomentum;
-  bool mAllowToOverrideSystemScrollSpeed;
+  bool mAllowToOverrideSystemScrollSpeed = false;
 
   // Sometimes a wheel event input's wheel delta should be adjusted. This member
   // specifies how to adjust the wheel delta.
-  WheelDeltaAdjustmentStrategy mWheelDeltaAdjustmentStrategy;
+  WheelDeltaAdjustmentStrategy mWheelDeltaAdjustmentStrategy =
+      WheelDeltaAdjustmentStrategy::eNone;
 
   APZWheelAction mAPZAction;
 };

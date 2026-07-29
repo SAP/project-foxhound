@@ -1,4 +1,3 @@
-/* vim:set ts=4 sw=2 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -282,16 +281,12 @@ class AddrHostRecord final : public nsHostRecord {
 
   /* the lock protects |addr_info| and |addr_info_gencnt| because they
    * are mutable and accessed by the resolver worker thread and the
-   * nsDNSService2 class.  |addr| doesn't change after it has been
-   * assigned a value.  only the resolver worker thread modifies
-   * nsHostRecord (and only in nsHostResolver::CompleteLookup);
-   * the other threads just read it.  therefore the resolver worker
-   * thread doesn't need to lock when reading |addr_info|.
+   * nsDNSService2 class.
    */
-  Mutex addr_info_lock MOZ_UNANNOTATED{"AddrHostRecord.addr_info_lock"};
+  mutable Mutex addr_info_lock{"AddrHostRecord.addr_info_lock"};
   // generation count of |addr_info|
-  int addr_info_gencnt = 0;
-  RefPtr<mozilla::net::AddrInfo> addr_info;
+  int addr_info_gencnt MOZ_GUARDED_BY(addr_info_lock) = 0;
+  RefPtr<mozilla::net::AddrInfo> addr_info MOZ_GUARDED_BY(addr_info_lock);
   mozilla::UniquePtr<mozilla::net::NetAddr> addr;
 
   // hold addr_info_lock when calling the blocklist functions
@@ -316,7 +311,7 @@ class AddrHostRecord final : public nsHostRecord {
   explicit AddrHostRecord(const nsHostKey& key);
   ~AddrHostRecord();
 
-  // Checks if the record is usable (not expired and has a value)
+  // Checks if the record is usable (not expired and has a value).
   bool HasUsableResultInternal(
       const mozilla::TimeStamp& now,
       nsIDNSService::DNSFlags queryFlags) const override;
@@ -343,14 +338,10 @@ class AddrHostRecord final : public nsHostRecord {
 
   void ResolveComplete() override;
 
-  // The number of times ReportUnusable() has been called in the record's
-  // lifetime.
-  uint32_t mUnusableCount = 0;
-
   // a list of addresses associated with this record that have been reported
   // as unusable. the list is kept as a set of strings to make it independent
   // of gencnt.
-  nsTArray<nsCString> mUnusableItems;
+  nsTArray<nsCString> mUnusableItems MOZ_GUARDED_BY(addr_info_lock);
 };
 
 // 77b786a7-04be-44f2-987c-ab8aa96676e0
@@ -389,7 +380,7 @@ class TypeHostRecord final : public nsHostRecord,
 
   mozilla::net::TypeRecordResultType mResults MOZ_GUARDED_BY(mResultsLock) =
       AsVariant(mozilla::Nothing());
-  mozilla::Mutex mResultsLock{"TypeHostRecord.mResultsLock"};
+  mutable mozilla::Mutex mResultsLock{"TypeHostRecord.mResultsLock"};
 
   mozilla::Maybe<nsCString> mOriginHost MOZ_GUARDED_BY(mResultsLock);
   bool mAllRecordsExcluded = false;

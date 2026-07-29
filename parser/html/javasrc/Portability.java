@@ -55,7 +55,7 @@ public final class Portability {
     }
 
     public static String newStringFromBuffer(@NoLength char[] buf, int offset, int length
-        // CPPONLY: , TreeBuilder treeBuilder, boolean maybeAtomize
+        // CPPONLY: , TreeBuilder treeBuilder, Interner interner
     ) {
         return new String(buf, offset, length);
     }
@@ -150,6 +150,26 @@ public final class Portability {
     public static boolean stringEqualsString(String one, String other) {
         return one.equals(other);
     }
+
+    // [NOCPP[
+    public static boolean bufferStartsWithLiteralAssumeSufficientLength(char[] buf, String literal) {
+        for (int i = 0; i < literal.length(); i++) {
+            if (buf[i] != literal.charAt(i)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static boolean bufferStartsWithLiteralAtOffsetAssumeSufficientLength(char[] buf, String literal, int offset) {
+        for (int i = 0; i < literal.length(); i++) {
+            if (buf[offset + i] != literal.charAt(i)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    // ]NOCPP]
 
     public static void delete(Object o) {
 

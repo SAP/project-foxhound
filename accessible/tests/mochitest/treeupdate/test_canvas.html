@@ -19,45 +19,17 @@
   <script type="application/javascript">
 
     // //////////////////////////////////////////////////////////////////////////
-    // Invokers
-
-    function addSubtree(aID) {
-      this.node = getNode(aID);
-
-      this.eventSeq = [
-        new invokerChecker(EVENT_SHOW, this.node),
-      ];
-
-      this.invoke = function addSubtree_invoke() {
-        // ensure we start with no subtree
-        testAccessibleTree("canvas", { CANVAS: [] });
-        getNode("dialog").style.display = "block";
-      };
-
-      this.finalCheck = function addSubtree_finalCheck() {
-        testAccessibleTree("dialog", { DIALOG: [] });
-      };
-
-      this.getID = function addSubtree_getID() {
-        return "show canvas subdom";
-      };
-    }
-
-    // //////////////////////////////////////////////////////////////////////////
     // Test
 
-    // gA11yEventDumpID = "eventdump"; // debug stuff
-    // gA11yEventDumpToConsole = true;
-
-    var gQueue = null;
-
-    function doTest() {
-      gQueue = new eventQueue();
-
+    async function doTest() {
       // make the subdom come alive!
-      gQueue.push(new addSubtree("dialog"));
-
-      gQueue.invoke(); // SimpleTest.finish() will be called in the end
+      let shown = waitForEvent(EVENT_SHOW, getNode("dialog"));
+      // ensure we start with no subtree
+      testAccessibleTree("canvas", { CANVAS: [] });
+      getNode("dialog").style.display = "block";
+      await shown;
+      testAccessibleTree("dialog", { DIALOG: [] });
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

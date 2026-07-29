@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -8,15 +6,56 @@
 #define vm_Int128_h
 
 #include "mozilla/Assertions.h"
-#include "mozilla/EndianUtils.h"
-#include "mozilla/MathAlgorithms.h"
+#include "mozilla/Compiler.h"
 
+#include <bit>
 #include <climits>
 #include <limits>
 #include <stdint.h>
 #include <utility>
 
 namespace js {
+
+// Workaround for <https://gcc.gnu.org/bugzilla/show_bug.cgi?id=98712>.
+#if MOZ_IS_GCC
+#  if MOZ_GCC_VERSION_AT_LEAST(12, 1, 0)
+#    define CONSTEXPR_DEFAULT_COMPARE_WITH_INHERITANCE 1
+#  else
+#    define CONSTEXPR_DEFAULT_COMPARE_WITH_INHERITANCE 0
+#  endif
+#else
+#  define CONSTEXPR_DEFAULT_COMPARE_WITH_INHERITANCE 1
+#endif
+
+namespace detail {
+template <std::endian endianness>
+struct Uint128Layout;
+
+template <>
+struct Uint128Layout<std::endian::little> {
+  uint64_t low = 0;
+  uint64_t high = 0;
+
+  constexpr Uint128Layout(uint64_t low, uint64_t high) : low(low), high(high) {}
+  constexpr Uint128Layout() = default;
+
+  constexpr bool operator==(const Uint128Layout&) const = default;
+};
+
+template <>
+struct Uint128Layout<std::endian::big> {
+  uint64_t high = 0;
+  uint64_t low = 0;
+
+  constexpr Uint128Layout(uint64_t low, uint64_t high) : high(high), low(low) {}
+  constexpr Uint128Layout() = default;
+
+  constexpr bool operator==(const Uint128Layout&) const = default;
+};
+
+template <std::endian endianness>
+using Int128Layout = Uint128Layout<endianness>;
+}  // namespace detail
 
 class Int128;
 class Uint128;
@@ -26,18 +65,13 @@ class Uint128;
  *
  * Supports all basic arithmetic operators.
  */
-class alignas(16) Uint128 final {
-#if MOZ_LITTLE_ENDIAN()
-  uint64_t low = 0;
-  uint64_t high = 0;
-#else
-  uint64_t high = 0;
-  uint64_t low = 0;
-#endif
-
+class alignas(16) Uint128 final
+    : private detail::Uint128Layout<std::endian::native> {
   friend class Int128;
 
-  constexpr Uint128(uint64_t low, uint64_t high) : low(low), high(high) {}
+  using Uint128Layout = detail::Uint128Layout<std::endian::native>;
+
+  constexpr Uint128(uint64_t low, uint64_t high) : Uint128Layout(low, high) {}
 
   /**
    * Return the high double-word of the multiplication of `u * v`.
@@ -87,7 +121,13 @@ class alignas(16) Uint128 final {
     return high <=> other.high;
   }
 
+#if CONSTEXPR_DEFAULT_COMPARE_WITH_INHERITANCE
   constexpr bool operator==(const Uint128&) const = default;
+#else
+  constexpr bool operator==(const Uint128& other) const {
+    return Uint128Layout::operator==(other);
+  }
+#endif
 
   explicit constexpr operator bool() const { return !(*this == Uint128{}); }
 
@@ -296,7 +336,7 @@ class alignas(16) Uint128 final {
     }
 
     // Shift amount for normalization. (0 <= s <= 63)
-    int64_t s = mozilla::CountLeadingZeroes64(v);
+    int64_t s = std::countl_zero(v);
 
     // Normalize the divisor.
     v = v << s;
@@ -387,7 +427,7 @@ class alignas(16) Uint128 final {
     // Here v >= 2**64.
 
     // 0 <= n <= 63
-    auto n = mozilla::CountLeadingZeroes64(v.high);
+    auto n = std::countl_zero(v.high);
 
     // Normalize the divisor so its MSB is 1.
     auto v1 = (v << n).high;
@@ -423,18 +463,13 @@ class alignas(16) Uint128 final {
  *
  * Supports all basic arithmetic operators.
  */
-class alignas(16) Int128 final {
-#if MOZ_LITTLE_ENDIAN()
-  uint64_t low = 0;
-  uint64_t high = 0;
-#else
-  uint64_t high = 0;
-  uint64_t low = 0;
-#endif
-
+class alignas(16) Int128 final
+    : private detail::Int128Layout<std::endian::native> {
   friend class Uint128;
 
-  constexpr Int128(uint64_t low, uint64_t high) : low(low), high(high) {}
+  using Int128Layout = detail::Int128Layout<std::endian::native>;
+
+  constexpr Int128(uint64_t low, uint64_t high) : Int128Layout(low, high) {}
 
   /**
    * Based on "Signed doubleword division from unsigned doubleword division"
@@ -476,7 +511,13 @@ class alignas(16) Int128 final {
     return int64_t(high) <=> int64_t(other.high);
   }
 
+#if CONSTEXPR_DEFAULT_COMPARE_WITH_INHERITANCE
   constexpr bool operator==(const Int128&) const = default;
+#else
+  constexpr bool operator==(const Int128& other) const {
+    return Int128Layout::operator==(other);
+  }
+#endif
 
   explicit constexpr operator bool() const { return !(*this == Int128{}); }
 
@@ -652,6 +693,8 @@ class alignas(16) Int128 final {
 };
 
 constexpr Uint128::operator Int128() const { return Int128{low, high}; }
+
+#undef CONSTEXPR_DEFAULT_COMPARE_WITH_INHERITANCE
 
 } /* namespace js */
 

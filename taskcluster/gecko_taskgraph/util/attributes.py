@@ -23,22 +23,20 @@ PROJECT_RELEASE_BRANCHES: dict[str, Union[list[str], Literal[True]]] = {
         "main",
         "beta",
         "release",
-        "esr115",
-        "esr128",
         "esr140",
+        "esr153",
     ],
     "mozilla-central": True,
     "mozilla-beta": True,
     "mozilla-release": True,
     "mozilla-esr115": True,
-    "mozilla-esr128": True,
     "mozilla-esr140": True,
+    "mozilla-esr153": True,
     "comm-central": True,
     "comm-beta": True,
     "comm-release": True,
-    "comm-esr115": True,
-    "comm-esr128": True,
     "comm-esr140": True,
+    "comm-esr153": True,
     # bug 1845368: pine is a permanent project branch used for testing
     # nightly updates
     "pine": True,
@@ -85,8 +83,9 @@ RUN_ON_PROJECT_ALIASES = {
     "trunk-only": lambda params: params["project"] in TRUNK_PROJECTS,
     "autoland": lambda params: params["project"] in ("autoland", "toolchains"),
     "autoland-only": lambda params: params["project"] == "autoland",
-    "mozilla-central": lambda params: params["project"]
-    in ("mozilla-central", "toolchains"),
+    "mozilla-central": lambda params: (
+        params["project"] in ("mozilla-central", "toolchains")
+    ),
     "mozilla-central-only": lambda params: params["project"] == "mozilla-central",
 }
 
@@ -101,7 +100,6 @@ _COPYABLE_ATTRIBUTES = (
     "mar-channel-id",
     "maven_packages",
     "nightly",
-    "required_signoffs",
     "shippable",
     "shipping_phase",
     "shipping_product",
@@ -171,14 +169,6 @@ def release_level(params):
             return "production"
 
     return "staging"
-
-
-def is_try(params):
-    """
-    Determine whether this graph is being built on a try project or for
-    `mach try fuzzy`.
-    """
-    return "try" in params["project"] or params["try_mode"] == "try_select"
 
 
 def task_name(task):

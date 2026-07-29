@@ -18,6 +18,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "api/candidate.h"
 #include "api/crypto/crypto_options.h"
 #include "api/dtls_transport_interface.h"
@@ -29,15 +30,12 @@
 #include "api/make_ref_counted.h"
 #include "api/peer_connection_interface.h"
 #include "api/rtc_error.h"
+#include "api/rtp_transport_factory.h"
 #include "api/scoped_refptr.h"
 #include "api/test/rtc_error_matchers.h"
 #include "api/transport/data_channel_transport_interface.h"
 #include "api/transport/enums.h"
 #include "api/units/time_delta.h"
-#include "call/payload_type.h"
-#include "call/payload_type_picker.h"
-#include "media/base/codec.h"
-#include "media/base/media_constants.h"
 #include "p2p/base/ice_transport_internal.h"
 #include "p2p/base/p2p_constants.h"
 #include "p2p/base/port_allocator.h"
@@ -47,7 +45,9 @@
 #include "p2p/dtls/dtls_transport_internal.h"
 #include "p2p/dtls/fake_dtls_transport.h"
 #include "p2p/test/fake_ice_transport.h"
+#include "p2p/test/fake_port_allocator.h"
 #include "pc/dtls_transport.h"
+#include "pc/rtp_transport.h"
 #include "pc/rtp_transport_internal.h"
 #include "pc/session_description.h"
 #include "pc/transport_stats.h"
@@ -63,12 +63,12 @@
 #include "rtc_base/ssl_identity.h"
 #include "rtc_base/ssl_stream_adapter.h"
 #include "rtc_base/task_queue_for_test.h"
-#include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/thread.h"
 #include "system_wrappers/include/metrics.h"
 #include "test/create_test_field_trials.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
+#include "test/run_loop.h"
 #include "test/wait_until.h"
 
 namespace webrtc {
@@ -99,25 +99,23 @@ class FakeIceTransportFactory : public IceTransportFactory {
       const std::string& transport_name,
       int component,
       IceTransportInit init) override {
-    return make_ref_counted<FakeIceTransportWrapper>(
-        std::make_unique<FakeIceTransport>(transport_name, component));
+    return make_ref_counted<FakeIceTransport>(
+        std::make_unique<FakeIceTransportInternal>(transport_name, component));
   }
 };
 
 class FakeDtlsTransportFactory : public DtlsTransportFactory {
  public:
   std::unique_ptr<DtlsTransportInternal> CreateDtlsTransport(
-      IceTransportInternal* ice,
+      scoped_refptr<IceTransportInterface> ice,
       const CryptoOptions& crypto_options,
       SSLProtocolVersion max_version) override {
-    return std::make_unique<FakeDtlsTransport>(
-        static_cast<FakeIceTransport*>(ice));
+    return std::make_unique<FakeDtlsTransport>(std::move(ice));
   }
 };
 
 class JsepTransportControllerTest : public JsepTransportController::Observer,
-                                    public ::testing::Test,
-                                    public sigslot::has_slots<> {
+                                    public ::testing::Test {
  public:
   JsepTransportControllerTest()
       : env_(CreateEnvironment(&field_trials_)),
@@ -125,10 +123,22 @@ class JsepTransportControllerTest : public JsepTransportController::Observer,
     fake_ice_transport_factory_ = std::make_unique<FakeIceTransportFactory>();
     fake_dtls_transport_factory_ = std::make_unique<FakeDtlsTransportFactory>();
   }
+  ~JsepTransportControllerTest() override {
+    if (network_thread_ != nullptr && port_allocator_) {
+      network_thread_->BlockingCall([&] { port_allocator_ = std::nullopt; });
+    }
+  }
 
   void CreateJsepTransportController(JsepTransportController::Config config,
                                      Thread* network_thread = Thread::Current(),
                                      PortAllocator* port_allocator = nullptr) {
+    if (port_allocator == nullptr) {
+      if (!port_allocator_) {
+        port_allocator_.emplace(env_, network_thread->socketserver(),
+                                network_thread);
+      }
+      port_allocator = &*port_allocator_;
+    }
     config.transport_observer = this;
     config.rtcp_handler = [](const CopyOnWriteBuffer& packet,
                              int64_t packet_time_us) {
@@ -136,38 +146,29 @@ class JsepTransportControllerTest : public JsepTransportController::Observer,
     };
     config.ice_transport_factory = fake_ice_transport_factory_.get();
     config.dtls_transport_factory = fake_dtls_transport_factory_.get();
-    config.on_dtls_handshake_error_ = [](SSLHandshakeError s) {};
-    transport_controller_ = std::make_unique<JsepTransportController>(
-        env_, network_thread, port_allocator,
-        /*async_resolver_factory=*/nullptr,
-        /*lna_permission_factory=*/nullptr, payload_type_picker_,
-        std::move(config));
-    SendTask(network_thread, [&] { ConnectTransportControllerSignals(); });
-  }
-
-  void ConnectTransportControllerSignals() {
-    transport_controller_->SubscribeIceConnectionState(
-        [this](IceConnectionState s) {
-          JsepTransportControllerTest::OnConnectionState(s);
-        });
-    transport_controller_->SubscribeConnectionState(
-        [this](PeerConnectionInterface::PeerConnectionState s) {
-          JsepTransportControllerTest::OnCombinedConnectionState(s);
-        });
-    transport_controller_->SubscribeStandardizedIceConnectionState(
-        [this](PeerConnectionInterface::IceConnectionState s) {
-          JsepTransportControllerTest::OnStandardizedIceConnectionState(s);
-        });
-    transport_controller_->SubscribeIceGatheringState(
-        [this](IceGatheringState s) {
-          JsepTransportControllerTest::OnGatheringState(s);
-        });
-    transport_controller_->SubscribeIceCandidateGathered(
-        [this](const std::string& transport,
+    config.signal_ice_candidates_gathered =
+        [this](absl::string_view transport,
                const std::vector<Candidate>& candidates) {
-          JsepTransportControllerTest::OnCandidatesGathered(transport,
-                                                            candidates);
-        });
+          OnCandidatesGathered(transport, candidates);
+        };
+    config.signal_ice_connection_state = [this](IceConnectionState s) {
+      OnConnectionState(s);
+    };
+    config.signal_connection_state =
+        [this](PeerConnectionInterface::PeerConnectionState s) {
+          OnCombinedConnectionState(s);
+        };
+    config.signal_standardized_ice_connection_state =
+        [this](PeerConnectionInterface::IceConnectionState s) {
+          OnStandardizedIceConnectionState(s);
+        };
+    config.signal_ice_gathering_state = [this](IceGatheringState s) {
+      OnGatheringState(s);
+    };
+    transport_controller_ = std::make_unique<JsepTransportController>(
+        env_, signaling_thread_, network_thread, port_allocator,
+        /*async_resolver_factory=*/nullptr,
+        /*lna_permission_factory=*/nullptr, std::move(config));
   }
 
   std::unique_ptr<SessionDescription> CreateSessionDescriptionWithoutBundle() {
@@ -288,39 +289,34 @@ class JsepTransportControllerTest : public JsepTransportController::Observer,
     return c;
   }
 
-  void CreateLocalDescriptionAndCompleteConnectionOnNetworkThread() {
-    if (!network_thread_->IsCurrent()) {
-      SendTask(network_thread_.get(), [&] {
-        CreateLocalDescriptionAndCompleteConnectionOnNetworkThread();
-      });
-      return;
-    }
-
+  void CreateLocalDescriptionAndCompleteConnection() {
     auto description = CreateSessionDescriptionWithBundleGroup();
     EXPECT_TRUE(
         transport_controller_
             ->SetLocalDescription(SdpType::kOffer, description.get(), nullptr)
             .ok());
-
     transport_controller_->MaybeStartGathering();
-    auto fake_audio_dtls = static_cast<FakeDtlsTransport*>(
-        transport_controller_->GetDtlsTransport(kAudioMid1));
-    auto fake_video_dtls = static_cast<FakeDtlsTransport*>(
-        transport_controller_->GetDtlsTransport(kVideoMid1));
-    fake_audio_dtls->fake_ice_transport()->NotifyCandidateGathered(
-        fake_audio_dtls->fake_ice_transport(), CreateCandidate());
-    fake_video_dtls->fake_ice_transport()->NotifyCandidateGathered(
-        fake_video_dtls->fake_ice_transport(), CreateCandidate());
-    fake_audio_dtls->fake_ice_transport()->SetCandidatesGatheringComplete();
-    fake_video_dtls->fake_ice_transport()->SetCandidatesGatheringComplete();
-    fake_audio_dtls->fake_ice_transport()->SetConnectionCount(2);
-    fake_video_dtls->fake_ice_transport()->SetConnectionCount(2);
-    fake_audio_dtls->SetReceiving(true);
-    fake_video_dtls->SetReceiving(true);
-    fake_audio_dtls->SetWritable(true);
-    fake_video_dtls->SetWritable(true);
-    fake_audio_dtls->fake_ice_transport()->SetConnectionCount(1);
-    fake_video_dtls->fake_ice_transport()->SetConnectionCount(1);
+
+    SendTask(network_thread_.get(), [this] {
+      auto fake_audio_dtls = static_cast<FakeDtlsTransport*>(
+          transport_controller_->GetDtlsTransport(kAudioMid1));
+      auto fake_video_dtls = static_cast<FakeDtlsTransport*>(
+          transport_controller_->GetDtlsTransport(kVideoMid1));
+      fake_audio_dtls->fake_ice_transport()->NotifyCandidateGathered(
+          fake_audio_dtls->fake_ice_transport(), CreateCandidate());
+      fake_video_dtls->fake_ice_transport()->NotifyCandidateGathered(
+          fake_video_dtls->fake_ice_transport(), CreateCandidate());
+      fake_audio_dtls->fake_ice_transport()->SetCandidatesGatheringComplete();
+      fake_video_dtls->fake_ice_transport()->SetCandidatesGatheringComplete();
+      fake_audio_dtls->fake_ice_transport()->SetConnectionCount(2);
+      fake_video_dtls->fake_ice_transport()->SetConnectionCount(2);
+      fake_audio_dtls->SetReceiving(true);
+      fake_video_dtls->SetReceiving(true);
+      fake_audio_dtls->SetWritable(true);
+      fake_video_dtls->SetWritable(true);
+      fake_audio_dtls->fake_ice_transport()->SetConnectionCount(1);
+      fake_video_dtls->fake_ice_transport()->SetConnectionCount(1);
+    });
   }
 
  protected:
@@ -352,32 +348,30 @@ class JsepTransportControllerTest : public JsepTransportController::Observer,
     ++gathering_state_signal_count_;
   }
 
-  void OnCandidatesGathered(const std::string& transport_name,
+  void OnCandidatesGathered(absl::string_view transport_name,
                             const Candidates& candidates) {
     ice_signaled_on_thread_ = Thread::Current();
-    candidates_[transport_name].insert(candidates_[transport_name].end(),
-                                       candidates.begin(), candidates.end());
+    std::string str_name(transport_name);
+    candidates_[str_name].insert(candidates_[str_name].end(),
+                                 candidates.begin(), candidates.end());
     ++candidates_signal_count_;
   }
 
   // JsepTransportController::Observer overrides.
   bool OnTransportChanged(
-      const std::string& mid,
+      absl::string_view mid,
       RtpTransportInternal* rtp_transport,
       scoped_refptr<DtlsTransport> dtls_transport,
       DataChannelTransportInterface* data_channel_transport) override {
-    changed_rtp_transport_by_mid_[mid] = rtp_transport;
-    if (dtls_transport) {
-      changed_dtls_transport_by_mid_[mid] = dtls_transport->internal();
-    } else {
-      changed_dtls_transport_by_mid_[mid] = nullptr;
-    }
+    std::string str_mid(mid);
+    changed_rtp_transport_by_mid_[str_mid] = rtp_transport;
+    changed_dtls_transport_by_mid_[str_mid] = dtls_transport;
     return true;
   }
 
   FieldTrials field_trials_ = CreateTestFieldTrials();
   Environment env_;
-  AutoThread main_thread_;
+  test::RunLoop main_thread_;
   // Information received from signals from transport controller.
   IceConnectionState connection_state_ = kIceConnectionConnecting;
   PeerConnectionInterface::IceConnectionState ice_connection_state_ =
@@ -400,13 +394,15 @@ class JsepTransportControllerTest : public JsepTransportController::Observer,
   std::unique_ptr<Thread> network_thread_;
   std::unique_ptr<FakeIceTransportFactory> fake_ice_transport_factory_;
   std::unique_ptr<FakeDtlsTransportFactory> fake_dtls_transport_factory_;
+  std::optional<FakePortAllocator> port_allocator_;
   Thread* const signaling_thread_ = nullptr;
   Thread* ice_signaled_on_thread_ = nullptr;
   // Used to verify the SignalRtpTransportChanged/SignalDtlsTransportChanged are
   // signaled correctly.
   std::map<std::string, RtpTransportInternal*> changed_rtp_transport_by_mid_;
-  std::map<std::string, DtlsTransportInternal*> changed_dtls_transport_by_mid_;
-  PayloadTypePicker payload_type_picker_;
+  std::map<std::string, scoped_refptr<DtlsTransport>>
+      changed_dtls_transport_by_mid_;
+  std::unique_ptr<RtpTransportFactory> custom_rtp_transport_factory_ = nullptr;
   // Transport controller needs to be destroyed first, because it may issue
   // callbacks that modify the changed_*_by_mid in the destructor.
   std::unique_ptr<JsepTransportController> transport_controller_;
@@ -438,11 +434,9 @@ TEST_F(JsepTransportControllerTest, GetDtlsTransport) {
           ->SetLocalDescription(SdpType::kOffer, description.get(), nullptr)
           .ok());
   EXPECT_NE(nullptr, transport_controller_->GetDtlsTransport(kAudioMid1));
-  EXPECT_NE(nullptr, transport_controller_->GetRtcpDtlsTransport(kAudioMid1));
   EXPECT_NE(nullptr,
             transport_controller_->LookupDtlsTransportByMid(kAudioMid1));
   EXPECT_NE(nullptr, transport_controller_->GetDtlsTransport(kVideoMid1));
-  EXPECT_NE(nullptr, transport_controller_->GetRtcpDtlsTransport(kVideoMid1));
   EXPECT_NE(nullptr,
             transport_controller_->LookupDtlsTransportByMid(kVideoMid1));
   // Lookup for all MIDs should return different transports (no bundle)
@@ -450,7 +444,6 @@ TEST_F(JsepTransportControllerTest, GetDtlsTransport) {
             transport_controller_->LookupDtlsTransportByMid(kVideoMid1));
   // Return nullptr for non-existing ones.
   EXPECT_EQ(nullptr, transport_controller_->GetDtlsTransport(kVideoMid2));
-  EXPECT_EQ(nullptr, transport_controller_->GetRtcpDtlsTransport(kVideoMid2));
   EXPECT_EQ(nullptr,
             transport_controller_->LookupDtlsTransportByMid(kVideoMid2));
   // Take a pointer to a transport, shut down the transport controller,
@@ -459,9 +452,9 @@ TEST_F(JsepTransportControllerTest, GetDtlsTransport) {
       transport_controller_->LookupDtlsTransportByMid(kVideoMid1);
   DtlsTransport* my_transport =
       static_cast<DtlsTransport*>(dtls_transport.get());
-  EXPECT_NE(nullptr, my_transport->internal());
+  EXPECT_EQ(DtlsTransportState::kNew, my_transport->Information().state());
   transport_controller_.reset();
-  EXPECT_EQ(nullptr, my_transport->internal());
+  EXPECT_EQ(DtlsTransportState::kClosed, my_transport->Information().state());
 }
 
 TEST_F(JsepTransportControllerTest, GetDtlsTransportWithRtcpMux) {
@@ -474,9 +467,7 @@ TEST_F(JsepTransportControllerTest, GetDtlsTransportWithRtcpMux) {
           ->SetLocalDescription(SdpType::kOffer, description.get(), nullptr)
           .ok());
   EXPECT_NE(nullptr, transport_controller_->GetDtlsTransport(kAudioMid1));
-  EXPECT_EQ(nullptr, transport_controller_->GetRtcpDtlsTransport(kAudioMid1));
   EXPECT_NE(nullptr, transport_controller_->GetDtlsTransport(kVideoMid1));
-  EXPECT_EQ(nullptr, transport_controller_->GetRtcpDtlsTransport(kVideoMid1));
 }
 
 TEST_F(JsepTransportControllerTest, SetIceConfig) {
@@ -529,9 +520,11 @@ TEST_F(JsepTransportControllerTest, NeedIceRestart) {
   // Initially NeedsIceRestart should return false.
   EXPECT_FALSE(transport_controller_->NeedsIceRestart(kAudioMid1));
   EXPECT_FALSE(transport_controller_->NeedsIceRestart(kVideoMid1));
-  // Set the needs-ice-restart flag and verify NeedsIceRestart starts returning
-  // true.
+  // Set the needs-ice-restart flag, synchronize the transport states and verify
+  // NeedsIceRestart starts returning true.
   transport_controller_->SetNeedsIceRestartFlag();
+  transport_controller_->SetTransportStates(
+      transport_controller_->GetTransportStates_n());
   EXPECT_TRUE(transport_controller_->NeedsIceRestart(kAudioMid1));
   EXPECT_TRUE(transport_controller_->NeedsIceRestart(kVideoMid1));
   // For a nonexistent transport, false should be returned.
@@ -702,7 +695,7 @@ TEST_F(JsepTransportControllerTest, SignalConnectionStateFailed) {
           ->SetLocalDescription(SdpType::kOffer, description.get(), nullptr)
           .ok());
 
-  auto fake_ice = static_cast<FakeIceTransport*>(
+  auto fake_ice = static_cast<FakeIceTransportInternal*>(
       transport_controller_->GetDtlsTransport(kAudioMid1)->ice_transport());
   fake_ice->SetCandidatesGatheringComplete();
   fake_ice->SetConnectionCount(1);
@@ -770,8 +763,8 @@ TEST_F(JsepTransportControllerTest,
 
   fake_audio_dtls->SetDtlsState(DtlsTransportState::kConnected);
   fake_video_dtls->SetDtlsState(DtlsTransportState::kConnected);
-  // Set the connection count to be 2 and the webrtc::FakeIceTransport will set
-  // the transport state to be STATE_CONNECTING.
+  // Set the connection count to be 2 and the webrtc::FakeIceTransportInternal
+  // will set the transport state to be STATE_CONNECTING.
   fake_video_dtls->fake_ice_transport()->SetConnectionCount(2);
   fake_video_dtls->SetWritable(true);
   EXPECT_THAT(
@@ -854,8 +847,8 @@ TEST_F(JsepTransportControllerTest, SignalConnectionStateComplete) {
 
   fake_audio_dtls->SetDtlsState(DtlsTransportState::kConnected);
   fake_video_dtls->SetDtlsState(DtlsTransportState::kConnected);
-  // Set the connection count to be 1 and the webrtc::FakeIceTransport will set
-  // the transport state to be STATE_COMPLETED.
+  // Set the connection count to be 1 and the webrtc::FakeIceTransportInternal
+  // will set the transport state to be STATE_COMPLETED.
   fake_video_dtls->fake_ice_transport()->SetTransportState(
       IceTransportState::kCompleted,
       IceTransportStateInternal::STATE_COMPLETED);
@@ -1107,7 +1100,7 @@ TEST_F(JsepTransportControllerTest, IceSignalingOccursOnNetworkThread) {
   CreateJsepTransportController(JsepTransportController::Config(),
                                 network_thread_.get(),
                                 /*port_allocator=*/nullptr);
-  CreateLocalDescriptionAndCompleteConnectionOnNetworkThread();
+  CreateLocalDescriptionAndCompleteConnection();
 
   // connecting --> connected --> completed
   EXPECT_THAT(
@@ -2782,62 +2775,6 @@ TEST_F(JsepTransportControllerTest,
                   .ok());
 }
 
-TEST_F(JsepTransportControllerTest, SuggestPayloadTypeBasic) {
-  auto config = JsepTransportController::Config();
-  CreateJsepTransportController(std::move(config));
-  Codec pcmu_codec = CreateAudioCodec(-1, kPcmuCodecName, 8000, 1);
-  RTCErrorOr<PayloadType> pcmu_pt =
-      transport_controller_->SuggestPayloadType("mid", pcmu_codec);
-  ASSERT_TRUE(pcmu_pt.ok());
-  EXPECT_EQ(pcmu_pt.value(), PayloadType(0));
-}
-
-TEST_F(JsepTransportControllerTest, SuggestPayloadTypeReusesRemotePayloadType) {
-  auto config = JsepTransportController::Config();
-  CreateJsepTransportController(std::move(config));
-  const PayloadType remote_lyra_pt(99);
-  Codec remote_lyra_codec = CreateAudioCodec(remote_lyra_pt, "lyra", 8000, 1);
-  auto offer = std::make_unique<SessionDescription>();
-  AddAudioSection(offer.get(), kAudioMid1, kIceUfrag1, kIcePwd1, ICEMODE_FULL,
-                  CONNECTIONROLE_ACTPASS, nullptr);
-  offer->contents()[0].media_description()->set_codecs({remote_lyra_codec});
-  EXPECT_TRUE(transport_controller_
-                  ->SetRemoteDescription(SdpType::kOffer, nullptr, offer.get())
-                  .ok());
-  Codec local_lyra_codec = CreateAudioCodec(-1, "lyra", 8000, 1);
-  RTCErrorOr<PayloadType> lyra_pt =
-      transport_controller_->SuggestPayloadType(kAudioMid1, local_lyra_codec);
-  ASSERT_TRUE(lyra_pt.ok());
-  EXPECT_EQ(lyra_pt.value(), remote_lyra_pt);
-}
-
-TEST_F(JsepTransportControllerTest,
-       SuggestPayloadTypeAvoidsRemoteLocalConflict) {
-  auto config = JsepTransportController::Config();
-  CreateJsepTransportController(std::move(config));
-  // libwebrtc will normally allocate 110 to DTMF/48000
-  const PayloadType remote_opus_pt(110);
-  Codec remote_opus_codec = CreateAudioCodec(remote_opus_pt, "opus", 48000, 2);
-  auto offer = std::make_unique<SessionDescription>();
-  AddAudioSection(offer.get(), kAudioMid1, kIceUfrag1, kIcePwd1, ICEMODE_FULL,
-                  CONNECTIONROLE_ACTPASS, nullptr);
-  offer->contents()[0].media_description()->set_codecs({remote_opus_codec});
-  EXPECT_TRUE(transport_controller_
-                  ->SetRemoteDescription(SdpType::kOffer, nullptr, offer.get())
-                  .ok());
-  // Check that we get the Opus codec back with the remote PT
-  Codec local_opus_codec = CreateAudioCodec(-1, "opus", 48000, 2);
-  RTCErrorOr<PayloadType> local_opus_pt =
-      transport_controller_->SuggestPayloadType(kAudioMid1, local_opus_codec);
-  EXPECT_EQ(local_opus_pt.value(), remote_opus_pt);
-  // Check that we don't get 110 allocated for DTMF, since it's in use for opus
-  Codec local_other_codec = CreateAudioCodec(-1, kDtmfCodecName, 48000, 1);
-  RTCErrorOr<PayloadType> other_pt =
-      transport_controller_->SuggestPayloadType(kAudioMid1, local_other_codec);
-  ASSERT_TRUE(other_pt.ok());
-  EXPECT_NE(other_pt.value(), remote_opus_pt);
-}
-
 TEST_F(JsepTransportControllerTest, RtpTransportCountHistogramNoBundle) {
   metrics::Reset();
   CreateJsepTransportController(JsepTransportController::Config());
@@ -2868,6 +2805,114 @@ TEST_F(JsepTransportControllerTest, RtpTransportCountHistogramWithBundleGroup) {
   EXPECT_METRIC_THAT(
       metrics::Samples("WebRTC.PeerConnection.RtpTransportCount"),
       ElementsAre(Pair(1, 1)));
+}
+
+TEST_F(JsepTransportControllerTest,
+       IceRoleRemainsControllingAfterIceLiteSequence) {
+  CreateJsepTransportController(JsepTransportController::Config());
+  auto local_offer = std::make_unique<SessionDescription>();
+  AddAudioSection(local_offer.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
+
+  // 1. Send Offer
+  EXPECT_TRUE(
+      transport_controller_
+          ->SetLocalDescription(SdpType::kOffer, local_offer.get(), nullptr)
+          .ok());
+  // Check Role -> Controlling
+  auto fake_dtls = static_cast<FakeDtlsTransport*>(
+      transport_controller_->GetDtlsTransport(kAudioMid1));
+  EXPECT_EQ(ICEROLE_CONTROLLING, fake_dtls->fake_ice_transport()->GetIceRole());
+
+  // 2. Receive Answer
+  auto remote_answer = std::make_unique<SessionDescription>();
+  AddAudioSection(remote_answer.get(), kAudioMid1, kIceUfrag2, kIcePwd2,
+                  ICEMODE_LITE, CONNECTIONROLE_PASSIVE, nullptr);
+  EXPECT_TRUE(transport_controller_
+                  ->SetRemoteDescription(SdpType::kAnswer, local_offer.get(),
+                                         remote_answer.get())
+                  .ok());
+  // Check Role -> no change.
+  EXPECT_EQ(ICEROLE_CONTROLLING, fake_dtls->fake_ice_transport()->GetIceRole());
+
+  // 3. Receive Offer
+  auto remote_offer = std::make_unique<SessionDescription>();
+  AddAudioSection(remote_offer.get(), kAudioMid1, kIceUfrag3, kIcePwd3,
+                  ICEMODE_LITE, CONNECTIONROLE_ACTPASS, nullptr);
+  EXPECT_TRUE(transport_controller_
+                  ->SetRemoteDescription(SdpType::kOffer, local_offer.get(),
+                                         remote_offer.get())
+                  .ok());
+  // Check Role -> no change.
+  EXPECT_EQ(ICEROLE_CONTROLLING, fake_dtls->fake_ice_transport()->GetIceRole());
+
+  // 4. Send Answer
+  auto local_answer = std::make_unique<SessionDescription>();
+  AddAudioSection(local_answer.get(), kAudioMid1, kIceUfrag4, kIcePwd4,
+                  ICEMODE_FULL, CONNECTIONROLE_PASSIVE, nullptr);
+  EXPECT_TRUE(transport_controller_
+                  ->SetLocalDescription(SdpType::kAnswer, local_answer.get(),
+                                        remote_offer.get())
+                  .ok());
+  // Check Role -> should still be ICEROLE_CONTROLLING.
+  EXPECT_EQ(ICEROLE_CONTROLLING, fake_dtls->fake_ice_transport()->GetIceRole());
+}
+
+TEST_F(JsepTransportControllerTest, CustomRtpTransportFactory) {
+  class CustomRtpTransportFactory : public RtpTransportFactory {
+   public:
+    explicit CustomRtpTransportFactory(const FieldTrialsView& field_trials)
+        : field_trials_view_(field_trials) {}
+    std::unique_ptr<RtpTransport> CreateRtpTransport(
+        absl::string_view transport_name,
+        std::unique_ptr<DtlsTransportInternal> rtp_dtls_transport,
+        std::unique_ptr<DtlsTransportInternal> rtcp_dtls_transport) override {
+      auto transport = std::make_unique<RtpTransport>(
+          /*rtcp_mux_enabled*/ false, field_trials_view_);
+      transport->SetRtpPacketTransport(rtp_dtls_transport.get());
+      if (transport_name == kAudioMid1) {
+        audio_transport_ = transport.get();
+        audio_rtp_dtls_transport_ = std::move(rtp_dtls_transport);
+        audio_rtcp_dtls_transport_ = std::move(rtcp_dtls_transport);
+      } else if (transport_name == kVideoMid1) {
+        video_transport_ = transport.get();
+        video_rtp_dtls_transport_ = std::move(rtp_dtls_transport);
+        video_rtcp_dtls_transport_ = std::move(rtcp_dtls_transport);
+      }
+      return transport;
+    }
+
+    RtpTransport* audio_transport_;
+    RtpTransport* video_transport_;
+
+   private:
+    // These DtlsTransportInternals just need to be kept alive.
+    std::unique_ptr<DtlsTransportInternal> audio_rtp_dtls_transport_;
+    std::unique_ptr<DtlsTransportInternal> audio_rtcp_dtls_transport_;
+    std::unique_ptr<DtlsTransportInternal> video_rtp_dtls_transport_;
+    std::unique_ptr<DtlsTransportInternal> video_rtcp_dtls_transport_;
+    const FieldTrialsView& field_trials_view_;
+  };
+
+  custom_rtp_transport_factory_ =
+      std::make_unique<CustomRtpTransportFactory>(field_trials_);
+  CustomRtpTransportFactory* factory = static_cast<CustomRtpTransportFactory*>(
+      custom_rtp_transport_factory_.get());
+
+  JsepTransportController::Config config;
+  config.rtp_transport_factory = custom_rtp_transport_factory_.get();
+  CreateJsepTransportController(std::move(config));
+  auto description = CreateSessionDescriptionWithoutBundle();
+  EXPECT_TRUE(
+      transport_controller_
+          ->SetLocalDescription(SdpType::kOffer, description.get(), nullptr)
+          .ok());
+  auto audio_rtp_transport = transport_controller_->GetRtpTransport(kAudioMid1);
+  auto video_rtp_transport = transport_controller_->GetRtpTransport(kVideoMid1);
+  EXPECT_NE(nullptr, audio_rtp_transport);
+  EXPECT_EQ(factory->audio_transport_, audio_rtp_transport);
+  EXPECT_NE(nullptr, video_rtp_transport);
+  EXPECT_EQ(factory->video_transport_, video_rtp_transport);
 }
 
 }  // namespace

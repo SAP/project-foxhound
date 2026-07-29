@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * Any copyright is dedicated to the Public Domain.
+/* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 package org.mozilla.geckoview.test
@@ -1108,8 +1107,7 @@ class AccessibilityTest : BaseSessionTest() {
             override fun onFocused(event: AccessibilityEvent) {
                 nodeId = getSourceId(event)
                 val node = createNodeInfo(nodeId)
-                val nodeChild = createNodeInfo(node.getChildId(0))
-                assertThat("Focused outsideSelectable", nodeChild.text.toString(), equalTo("outside selectable "))
+                assertThat("Focused outsideSelectable", node.text.toString(), equalTo("outside selectable"))
             }
         })
     }
@@ -2076,6 +2074,97 @@ class AccessibilityTest : BaseSessionTest() {
                     "Accessibility focus on ARIA 1.1 combobox",
                     node.extras.getString("AccessibilityNodeInfo.hint"),
                     equalTo("ARIA 1.1 combobox"),
+                )
+            }
+        })
+    }
+
+    @Test fun testSearchBoxesMovingByDefault() {
+        loadTestPage("test-searchboxes")
+        waitForInitialFocus()
+        var nodeId = View.NO_ID
+
+        provider.performAction(nodeId, AccessibilityNodeInfo.ACTION_NEXT_HTML_ELEMENT, null)
+        sessionRule.waitUntilCalled(object : EventDelegate {
+            @AssertCalled(count = 1)
+            override fun onAccessibilityFocused(event: AccessibilityEvent) {
+                nodeId = getSourceId(event)
+                val node = createNodeInfo(nodeId)
+                assertThat(
+                    "Accessibility focus is EditText",
+                    node.className.toString(),
+                    equalTo("android.widget.EditText"),
+                )
+                assertThat(
+                    "Accessibility focus on ARIA searchbox",
+                    node.extras.getString("AccessibilityNodeInfo.hint"),
+                    equalTo("ARIA searchbox"),
+                )
+            }
+        })
+
+        provider.performAction(nodeId, AccessibilityNodeInfo.ACTION_NEXT_HTML_ELEMENT, null)
+        sessionRule.waitUntilCalled(object : EventDelegate {
+            @AssertCalled(count = 1)
+            override fun onAccessibilityFocused(event: AccessibilityEvent) {
+                nodeId = getSourceId(event)
+                val node = createNodeInfo(nodeId)
+                assertThat(
+                    "Accessibility focus is EditText",
+                    node.className.toString(),
+                    equalTo("android.widget.EditText"),
+                )
+                assertThat(
+                    "Accessibility focus on HTML search input",
+                    node.extras.getString("AccessibilityNodeInfo.hint"),
+                    equalTo("HTML search input"),
+                )
+            }
+        })
+    }
+
+    @Test fun testSearchBoxesMovingByControl() {
+        loadTestPage("test-searchboxes")
+        waitForInitialFocus()
+        var nodeId = View.NO_ID
+
+        val bundle = Bundle()
+        bundle.putString(AccessibilityNodeInfo.ACTION_ARGUMENT_HTML_ELEMENT_STRING, "CONTROL")
+
+        provider.performAction(nodeId, AccessibilityNodeInfo.ACTION_NEXT_HTML_ELEMENT, bundle)
+        sessionRule.waitUntilCalled(object : EventDelegate {
+            @AssertCalled(count = 1)
+            override fun onAccessibilityFocused(event: AccessibilityEvent) {
+                nodeId = getSourceId(event)
+                val node = createNodeInfo(nodeId)
+                assertThat(
+                    "Accessibility focus is EditText",
+                    node.className.toString(),
+                    equalTo("android.widget.EditText"),
+                )
+                assertThat(
+                    "Accessibility focus on ARIA searchbox",
+                    node.extras.getString("AccessibilityNodeInfo.hint"),
+                    equalTo("ARIA searchbox"),
+                )
+            }
+        })
+
+        provider.performAction(nodeId, AccessibilityNodeInfo.ACTION_NEXT_HTML_ELEMENT, bundle)
+        sessionRule.waitUntilCalled(object : EventDelegate {
+            @AssertCalled(count = 1)
+            override fun onAccessibilityFocused(event: AccessibilityEvent) {
+                nodeId = getSourceId(event)
+                val node = createNodeInfo(nodeId)
+                assertThat(
+                    "Accessibility focus is EditText",
+                    node.className.toString(),
+                    equalTo("android.widget.EditText"),
+                )
+                assertThat(
+                    "Accessibility focus on HTML search input",
+                    node.extras.getString("AccessibilityNodeInfo.hint"),
+                    equalTo("HTML search input"),
                 )
             }
         })

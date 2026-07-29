@@ -16,5 +16,6 @@ MOZ_SRC_FILES += [
     "MemoriesManager.sys.mjs",
     "MemoriesSchedulers.sys.mjs",
     "MemoriesSchemas.sys.mjs",
+    "MemoriesSessions.sys.mjs",
     "SensitiveInfoDetector.sys.mjs",
 ]

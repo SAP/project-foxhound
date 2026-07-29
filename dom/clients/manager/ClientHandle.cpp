@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,7 +20,7 @@ using mozilla::dom::ipc::StructuredCloneData;
 ClientHandle::~ClientHandle() { Shutdown(); }
 
 void ClientHandle::Shutdown() {
-  NS_ASSERT_OWNINGTHREAD(ClientSource);
+  NS_ASSERT_OWNINGTHREAD(ClientHandle);
   if (IsShutdown()) {
     return;
   }
@@ -167,7 +165,7 @@ RefPtr<GenericErrorResultPromise> ClientHandle::PostMessage(
 }
 
 RefPtr<GenericPromise> ClientHandle::OnDetach() {
-  NS_ASSERT_OWNINGTHREAD(ClientSource);
+  NS_ASSERT_OWNINGTHREAD(ClientHandle);
 
   if (!mDetachPromise) {
     mDetachPromise = new GenericPromise::Private(__func__);

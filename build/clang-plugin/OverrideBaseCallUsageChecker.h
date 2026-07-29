@@ -18,6 +18,9 @@ public:
       : BaseCheck(CheckName, Context) {}
   void registerMatchers(MatchFinder *AstMatcher) override;
   void check(const MatchFinder::MatchResult &Result) override;
+  bool isLanguageVersionSupported(const LangOptions &LangOpts) const override {
+    return LangOpts.CPlusPlus;
+  }
 };
 
 #endif

@@ -6,11 +6,16 @@
 
 {
   const CONTENT_TAG = "ipprotection-content";
+  const LOCATIONS_TAG = "ipprotection-locations";
 
   for (let [tag, script] of [
     [
       CONTENT_TAG,
       "chrome://browser/content/ipprotection/ipprotection-content.mjs",
+    ],
+    [
+      LOCATIONS_TAG,
+      "chrome://browser/content/ipprotection/ipprotection-locations.mjs",
     ],
   ]) {
     if (!customElements.get(tag)) {

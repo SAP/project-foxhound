@@ -78,6 +78,10 @@ class OpenInAppOnboardingObserver(
     }
 
     private fun maybeShowOpenInAppBanner(url: String, loading: Boolean) {
+        if (!settings.inAppMessagesEnabled) {
+            return
+        }
+
         if (loading || settings.shouldOpenLinksInApp() || !settings.shouldShowOpenInAppCfr) {
             return
         }

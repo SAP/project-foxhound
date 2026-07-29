@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -37,19 +36,32 @@ static unsigned int HexStrToInt(NSString* str) {
 - (void)open:(NSColor*)aInitialColor title:(NSString*)aTitle;
 - (void)colorChanged:(NSColorPanel*)aPanel;
 - (void)windowWillClose:(NSNotification*)aNotification;
+- (void)cancel;
 - (void)close;
 @end
 
 @implementation NSColorPanelWrapper
 - (id)initWithPicker:(nsColorPicker*)aPicker {
+  self = [super init];
+  if (!self) {
+    return nil;
+  }
+
   mColorPicker = aPicker;
   mColorPanel = [NSColorPanel sharedColorPanel];
 
-  self = [super init];
   return self;
 }
 
 - (void)open:(NSColor*)aInitialColor title:(NSString*)aTitle {
+  // If another color input already has the panel open, close it first so its
+  // HTMLInputElement gets PickerClosed() and can be reopened later.
+  id oldDelegate = [mColorPanel delegate];
+  if (oldDelegate && oldDelegate != self &&
+      [oldDelegate isKindOfClass:[NSColorPanelWrapper class]]) {
+    [oldDelegate cancel];
+  }
+
   [mColorPanel setTarget:self];
   [mColorPanel setAction:@selector(colorChanged:)];
   [mColorPanel setDelegate:self];
@@ -68,6 +80,13 @@ static unsigned int HexStrToInt(NSString* str) {
 }
 
 - (void)windowWillClose:(NSNotification*)aNotification {
+  if (!mColorPicker) {
+    return;
+  }
+  mColorPicker->Done();
+}
+
+- (void)cancel {
   if (!mColorPicker) {
     return;
   }
@@ -111,20 +130,15 @@ nsresult nsColorPicker::InitNative(const nsTArray<nsString>& aDefaultColors) {
       HexStrToInt([str substringWithRange:NSMakeRange(3, 2)]) / 255.0;
   double blue = HexStrToInt([str substringWithRange:NSMakeRange(5, 2)]) / 255.0;
 
-  return [NSColor colorWithDeviceRed:red green:green blue:blue alpha:1.0];
+  return [NSColor colorWithSRGBRed:red green:green blue:blue alpha:1.0];
 }
 
 /* static */ void nsColorPicker::GetHexStringFromNSColor(NSColor* aColor,
                                                          nsAString& aResult) {
   CGFloat redFloat, greenFloat, blueFloat;
 
-  NSColor* color = aColor;
-  @try {
-    [color getRed:&redFloat green:&greenFloat blue:&blueFloat alpha:nil];
-  } @catch (NSException* e) {
-    color = [color colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]];
-    [color getRed:&redFloat green:&greenFloat blue:&blueFloat alpha:nil];
-  }
+  NSColor* color = [aColor colorUsingColorSpace:[NSColorSpace sRGBColorSpace]];
+  [color getRed:&redFloat green:&greenFloat blue:&blueFloat alpha:nil];
 
   nsCocoaUtils::GetStringForNSString(
       [NSString stringWithFormat:@"#%02x%02x%02x", (int)(redFloat * 255),

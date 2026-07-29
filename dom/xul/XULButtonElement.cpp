@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,7 +34,7 @@
 namespace mozilla::dom {
 
 XULButtonElement::XULButtonElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : nsXULElement(std::move(aNodeInfo)),
       mIsAlwaysMenu(IsAnyOfXULElements(nsGkAtoms::menu, nsGkAtoms::menulist,
                                        nsGkAtoms::menuitem)),
@@ -77,7 +75,7 @@ void XULButtonElement::PopupClosed(bool aDeselectMenu) {
     return;
   }
   nsContentUtils::AddScriptRunner(
-      new nsUnsetAttrRunnable(this, nsGkAtoms::open));
+      MakeAndAddRef<nsUnsetAttrRunnable>(this, nsGkAtoms::open));
 
   if (aDeselectMenu) {
     if (RefPtr<XULMenuParentElement> parent = GetMenuParent()) {
@@ -555,7 +553,8 @@ nsresult XULButtonElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
       if (!keyEvent) {
         break;
       }
-      if (keyEvent->ShouldWorkAsSpaceKey() && aVisitor.mPresContext) {
+      if (keyEvent->ShouldWorkAsSpaceKey() && aVisitor.mPresContext &&
+          !IsDisabled()) {
         EventStateManager* esm = aVisitor.mPresContext->EventStateManager();
         // :hover:active state
         esm->SetContentState(this, ElementState::HOVER);
@@ -565,13 +564,13 @@ nsresult XULButtonElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
       break;
     }
 
-// On mac, Return fires the default button, not the focused one.
-#ifndef XP_MACOSX
     case eKeyPress: {
       WidgetKeyboardEvent* keyEvent = event->AsKeyboardEvent();
       if (!keyEvent) {
         break;
       }
+// On mac, Return fires the default button, not the focused one.
+#ifndef XP_MACOSX
       if (NS_VK_RETURN == keyEvent->mKeyCode) {
         if (RefPtr<nsIDOMXULButtonElement> button = AsXULButton()) {
           if (OnPointerClicked(*keyEvent)) {
@@ -579,9 +578,13 @@ nsresult XULButtonElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
           }
         }
       }
+#endif
+      if (keyEvent->ShouldWorkAsSpaceKey() && mIsHandlingKeyEvent) {
+        // Prevent scrolling.
+        aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
+      }
       break;
     }
-#endif
 
     case eKeyUp: {
       WidgetKeyboardEvent* keyEvent = event->AsKeyboardEvent();
@@ -590,9 +593,7 @@ nsresult XULButtonElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
       }
       if (keyEvent->ShouldWorkAsSpaceKey()) {
         mIsHandlingKeyEvent = false;
-        ElementState buttonState = State();
-        if (buttonState.HasAllStates(ElementState::ACTIVE |
-                                     ElementState::HOVER) &&
+        if (State().HasAllStates(ElementState::ACTIVE | ElementState::HOVER) &&
             aVisitor.mPresContext) {
           // return to normal state
           EventStateManager* esm = aVisitor.mPresContext->EventStateManager();
@@ -624,9 +625,8 @@ nsresult XULButtonElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
 }
 
 void XULButtonElement::Blurred() {
-  ElementState buttonState = State();
   if (mIsHandlingKeyEvent &&
-      buttonState.HasAllStates(ElementState::ACTIVE | ElementState::HOVER)) {
+      State().HasAllStates(ElementState::ACTIVE | ElementState::HOVER)) {
     // Return to normal state
     if (nsPresContext* pc = OwnerDoc()->GetPresContext()) {
       EventStateManager* esm = pc->EventStateManager();

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -63,7 +62,9 @@ static bool ValidateBufferUsageEnum(WebGLContext* webgl, GLenum usage) {
     case LOCAL_GL_STATIC_READ:
     case LOCAL_GL_STREAM_COPY:
     case LOCAL_GL_STREAM_READ:
-      if (MOZ_LIKELY(webgl->IsWebGL2())) return true;
+      if (webgl->IsWebGL2()) [[likely]] {
+        return true;
+      }
       break;
 
     default:
@@ -118,7 +119,7 @@ void WebGLBuffer::BufferData(const GLenum target, const uint64_t size,
   UniqueBuffer newIndexCache;
   const bool needsIndexCache = mContext->mNeedsIndexValidation ||
                                mContext->mMaybeNeedsLegacyVertexAttrib0Handling;
-  if (target == LOCAL_GL_ELEMENT_ARRAY_BUFFER && needsIndexCache) {
+  if (mContent == WebGLBuffer::Kind::ElementArray && needsIndexCache) {
     newIndexCache = UniqueBuffer::Take(malloc(AssertedCast<size_t>(size)));
     if (!newIndexCache) {
       mContext->ErrorOutOfMemory("Failed to alloc index cache.");

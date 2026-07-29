@@ -160,4 +160,14 @@ final class RemoteMediaDrmBridge implements GeckoMediaDrm {
       throw new RuntimeException(e);
     }
   }
+
+  @Override
+  public synchronized void setOriginID(final String originID) {
+    try {
+      mRemote.setOriginID(originID);
+    } catch (final Exception e) {
+      Log.e(LOGTAG, "Got exception while setting origin ID.", e);
+      throw new RuntimeException(e);
+    }
+  }
 }

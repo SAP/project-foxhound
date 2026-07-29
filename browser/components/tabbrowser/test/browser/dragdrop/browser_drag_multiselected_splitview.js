@@ -178,3 +178,94 @@ add_task(async function test_drag_multiple_split_views_after_last_tab() {
     BrowserTestUtils.removeTab(tab);
   }
 });
+
+add_task(async function test_drag_multiselected_splitview_over_pinned_area() {
+  // Need at least one pinned tab to make the pinned tabs container visible.
+  let pinnedTab = BrowserTestUtils.addTab(gBrowser, "about:blank", {
+    pinned: true,
+  });
+  let regularTab = await addTab();
+  let splitTab1 = await addTab();
+  let splitTab2 = await addTab();
+  let splitview = gBrowser.addTabSplitView([splitTab1, splitTab2]);
+
+  await BrowserTestUtils.switchTab(gBrowser, regularTab);
+  await triggerClickOn(splitTab1, { ctrlKey: true });
+
+  is(gBrowser.selectedTab, regularTab, "Regular tab is active");
+  is(gBrowser.selectedTabs.length, 2, "Two tabs selected");
+  ok(splitview.multiselected, "Splitview is multiselected");
+
+  let pinnedTabsContainer = document.getElementById("pinned-tabs-container");
+  await customDragAndDrop(
+    regularTab,
+    pinnedTabsContainer,
+    null,
+    BrowserTestUtils.waitForEvent(regularTab, "TabPinned")
+  );
+
+  ok(regularTab.pinned, "Regular tab is pinned");
+  ok(!splitTab1.pinned, "Split view tab 1 is not pinned");
+  ok(!splitTab2.pinned, "Split view tab 2 is not pinned");
+
+  BrowserTestUtils.removeTab(pinnedTab);
+  BrowserTestUtils.removeTab(regularTab);
+  BrowserTestUtils.removeTab(splitTab1);
+  BrowserTestUtils.removeTab(splitTab2);
+});
+
+add_task(
+  async function test_drag_multiselected_splitview_to_second_window_pinned_area() {
+    let win2 = await BrowserTestUtils.openNewBrowserWindow();
+    // Two pinned tabs guarantee the drop index lands within the pinned area
+    // regardless of whether synthesizeDrop places the cursor before or after
+    // the midpoint of the target tab.
+    let win2PinnedTab1 = BrowserTestUtils.addTab(win2.gBrowser, "about:blank", {
+      pinned: true,
+    });
+    BrowserTestUtils.addTab(win2.gBrowser, "about:blank", { pinned: true });
+    is(win2.gBrowser.pinnedTabCount, 2, "Two pinned tabs in win2");
+
+    let regularTab = await addTab();
+    let splitTab1 = await addTab();
+    let splitTab2 = await addTab();
+    let splitview = gBrowser.addTabSplitView([splitTab1, splitTab2]);
+
+    await BrowserTestUtils.switchTab(gBrowser, regularTab);
+    await triggerClickOn(splitTab1, { ctrlKey: true });
+
+    is(gBrowser.selectedTab, regularTab, "Regular tab is active");
+    is(gBrowser.selectedTabs.length, 2, "Two tabs selected");
+    ok(splitview.multiselected, "Splitview is multiselected");
+
+    let tabsClosePromise = Promise.all([
+      BrowserTestUtils.waitForEvent(regularTab, "TabClose"),
+      BrowserTestUtils.waitForEvent(splitTab1, "TabClose"),
+      BrowserTestUtils.waitForEvent(splitTab2, "TabClose"),
+    ]);
+
+    // Dragging regular tab plus multiselected splitview
+    EventUtils.synthesizeDrop(
+      regularTab,
+      win2PinnedTab1,
+      [[{ type: TAB_DROP_TYPE, data: regularTab }]],
+      null,
+      window,
+      win2
+    );
+
+    await tabsClosePromise;
+
+    is(win2.gBrowser.pinnedTabCount, 3, "Three pinned tabs in win2");
+    let adoptedSplitTabs = win2.gBrowser.tabs.filter(
+      t => !t.pinned && t.splitview
+    );
+    is(
+      adoptedSplitTabs.length,
+      2,
+      "Two unpinned splitview tabs adopted into win2"
+    );
+
+    await BrowserTestUtils.closeWindow(win2);
+  }
+);

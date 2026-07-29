@@ -97,6 +97,9 @@ Inspector
 *Show browser styles*
   A setting to control whether styles applied by the browser (`user-agent styles <https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Cascade/Introduction>`_) should be displayed in the Inspector's :doc:`Rules view <../page_inspector/how_to/examine_and_edit_css/index>`. Note that this setting is independent of the "Browser styles" checkbox in the Inspector's :ref:`Computed view <page_inspector_how_to_examine_and_edit_css_examine_computed_css>`.
 
+*Show comments*
+  A setting to control whether or not comment nodes are shown in the Inspector's markup view.
+
 *Truncate DOM attributes*
   By default, the Inspector truncates DOM attributes that are more than 120 characters long. Uncheck this box to prevent this behavior. This setting works by toggling the about:config preference ``devtools.markup.collapseAttributes``. To change the threshold at which attributes are truncated, you can edit the about:config preference ``devtools.markup.collapseAttributeLength``.
 

@@ -1,3 +1,4 @@
+// |jit-test| skip-if: !wasmJSPromiseIntegrationEnabled()
 
 var ins = wasmEvalText(`
 (module

@@ -17,7 +17,6 @@ import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.feature.tabs.TabsUseCases
 import mozilla.components.support.test.robolectric.testContext
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Rule
@@ -28,6 +27,7 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 class RecentTabControllerTest {
@@ -109,21 +109,6 @@ class RecentTabControllerTest {
 
     @Test
     fun handleRecentTabShowAllClickedFromHome() {
-        assertNull(RecentTabs.showAllClicked.testGetValue())
-
-        controller.handleRecentTabShowAllClicked()
-
-        verify {
-            navController.navigate(
-                match<NavDirections> { it.actionId == R.id.action_global_tabManagementFragment },
-            )
-        }
-
-        assertNotNull(RecentTabs.showAllClicked.testGetValue())
-    }
-
-    @Test
-    fun handleRecentTabShowAllClickedFromSearchDialog() {
         assertNull(RecentTabs.showAllClicked.testGetValue())
 
         controller.handleRecentTabShowAllClicked()

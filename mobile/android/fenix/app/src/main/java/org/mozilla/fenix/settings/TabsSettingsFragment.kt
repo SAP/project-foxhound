@@ -9,19 +9,21 @@ import android.view.View
 import androidx.navigation.fragment.navArgs
 import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceFragmentCompat
-import androidx.preference.SwitchPreference
+import androidx.preference.SwitchPreferenceCompat
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.GleanMetrics.Tabs
 import org.mozilla.fenix.R
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
+import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.showToolbar
 import org.mozilla.fenix.utils.view.addToRadioGroup
 
 /**
  * Lets the user customize auto closing tabs.
  */
-class TabsSettingsFragment : PreferenceFragmentCompat() {
+class TabsSettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFragment {
     private lateinit var listRadioButton: RadioButtonPreference
     private lateinit var gridRadioButton: RadioButtonPreference
     private lateinit var radioManual: RadioButtonPreference
@@ -29,7 +31,8 @@ class TabsSettingsFragment : PreferenceFragmentCompat() {
     private lateinit var radioOneWeek: RadioButtonPreference
     private lateinit var radioOneMonth: RadioButtonPreference
     private lateinit var inactiveTabsCategory: PreferenceCategory
-    private lateinit var inactiveTabs: SwitchPreference
+    private lateinit var inactiveTabs: SwitchPreferenceCompat
+    private lateinit var privacyReport: SwitchPreferenceCompat
     private val args by navArgs<TabsSettingsFragmentArgs>()
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
@@ -47,7 +50,7 @@ class TabsSettingsFragment : PreferenceFragmentCompat() {
 
         setupPreferences()
         args.preferenceToScrollTo?.let {
-            scrollToPreference(it)
+            scrollToPreferenceWithHighlight(it)
         }
     }
 
@@ -65,13 +68,24 @@ class TabsSettingsFragment : PreferenceFragmentCompat() {
         radioOneWeek = requirePreference(R.string.pref_key_close_tabs_after_one_week)
         radioOneDay = requirePreference(R.string.pref_key_close_tabs_after_one_day)
 
-        inactiveTabs = requirePreference<SwitchPreference>(R.string.pref_key_inactive_tabs).also {
-            it.isChecked = requireContext().settings().inactiveTabsAreEnabled
+        inactiveTabs = requirePreference<SwitchPreferenceCompat>(R.string.pref_key_inactive_tabs).also {
+            it.isChecked = requireComponents.settings.inactiveTabsAreEnabled
+            it.onPreferenceChangeListener = SharedPreferenceUpdater()
+        }
+
+        privacyReport = requirePreference<SwitchPreferenceCompat>(
+            R.string.pref_key_privacy_report_tab_manager,
+        ).also {
+            it.isChecked = requireComponents.settings.showPrivacyReportInTabManager
             it.onPreferenceChangeListener = SharedPreferenceUpdater()
         }
 
         inactiveTabsCategory = requirePreference<PreferenceCategory>(R.string.pref_key_inactive_tabs_category).also {
-            it.isEnabled = !(it.context.settings().closeTabsAfterOneDay || it.context.settings().closeTabsAfterOneWeek)
+            it.isEnabled =
+                !(
+                    it.context.components.settings.closeTabsAfterOneDay ||
+                        it.context.components.settings.closeTabsAfterOneWeek
+                    )
         }
 
         listRadioButton.onClickListener(::sendTabViewTelemetry)
@@ -117,7 +131,7 @@ class TabsSettingsFragment : PreferenceFragmentCompat() {
         inactiveTabsCategory.apply {
             isEnabled = false
             inactiveTabs.isChecked = false
-            context.settings().inactiveTabsAreEnabled = false
+            context.components.settings.inactiveTabsAreEnabled = false
         }
     }
 }

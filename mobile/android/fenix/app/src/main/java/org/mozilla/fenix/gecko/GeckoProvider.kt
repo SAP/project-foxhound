@@ -20,7 +20,6 @@ import mozilla.components.service.sync.logins.GeckoLoginStorageDelegate
 import org.mozilla.fenix.Config
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoRuntimeSettings
@@ -63,12 +62,12 @@ object GeckoProvider {
         geckoRuntime.autocompleteStorageDelegate = GeckoAutocompleteStorageDelegate(
             GeckoCreditCardsAddressesStorageDelegate(
                 storage = autofillStorage,
-                isCreditCardAutofillEnabled = { context.settings().shouldAutofillCreditCardDetails },
-                isAddressAutofillEnabled = { context.settings().shouldAutofillAddressDetails },
+                isCreditCardAutofillEnabled = { context.components.settings.shouldAutofillCreditCardDetails },
+                isAddressAutofillEnabled = { context.components.settings.shouldAutofillAddressDetails },
             ),
             GeckoLoginStorageDelegate(
                 loginStorage = loginStorage,
-                isLoginAutofillEnabled = { context.settings().shouldAutofillLogins },
+                isLoginAutofillEnabled = { context.components.settings.shouldAutofillLogins },
             ),
         )
 
@@ -93,23 +92,30 @@ object GeckoProvider {
             .experimentDelegate(NimbusExperimentDelegate())
             .contentBlocking(
                 policy.toContentBlockingSetting(
-                    cookieBannerHandlingMode = context.settings().getCookieBannerHandling(),
-                    cookieBannerHandlingModePrivateBrowsing = context.settings()
+                    cookieBannerHandlingMode = context.components.settings.getCookieBannerHandling(),
+                    cookieBannerHandlingModePrivateBrowsing = context.components.settings
                         .getCookieBannerHandlingPrivateMode(),
                     cookieBannerHandlingDetectOnlyMode =
-                    context.settings().shouldEnableCookieBannerDetectOnly,
+                    context.components.settings.shouldEnableCookieBannerDetectOnly,
                     cookieBannerGlobalRulesEnabled =
-                    context.settings().shouldEnableCookieBannerGlobalRules,
+                    context.components.settings.shouldEnableCookieBannerGlobalRules,
                     cookieBannerGlobalRulesSubFramesEnabled =
-                    context.settings().shouldEnableCookieBannerGlobalRulesSubFrame,
+                    context.components.settings.shouldEnableCookieBannerGlobalRulesSubFrame,
                     queryParameterStripping = false,
                     queryParameterStrippingPrivateBrowsing = false,
                     queryParameterStrippingAllowList = "",
                     queryParameterStrippingStripList = "",
                     allowListBaselineTrackingProtection =
-                    context.settings().strictAllowListBaselineTrackingProtection,
+                    context.components.settings.strictAllowListBaselineTrackingProtection,
                     allowListConvenienceTrackingProtection =
-                    context.settings().strictAllowListConvenienceTrackingProtection,
+                    context.components.settings.strictAllowListConvenienceTrackingProtection,
+                    safeBrowsingGlobalCacheEnabled = Config.channel.isNightlyOrDebug,
+                    safeBrowsingRealTimeEnabled = Config.channel.isNightlyOrDebug,
+                    safeBrowsingRealTimeSimulationEnabled = Config.channel.isNightlyOrDebug,
+                    safeBrowsingRealTimeSimulationHitProbability = 5,
+                    safeBrowsingRealTimeSimulationCacheTTLSec = 300,
+                    safeBrowsingRealTimeSimulationNegativeCacheEnabled = false,
+                    safeBrowsingRealTimeSimulationNegativeCacheTTLSec = 300,
                 ),
             )
             .consoleOutput(context.components.settings.enableGeckoLogs)
@@ -117,21 +123,20 @@ object GeckoProvider {
             .aboutConfigEnabled(Config.channel.isBeta || Config.channel.isNightlyOrDebug)
             .extensionsProcessEnabled(true)
             .extensionsWebAPIEnabled(true)
-            .translationsOfferPopup(context.settings().offerTranslation)
-            .crashPullNeverShowAgain(context.settings().crashPullNeverShowAgain)
+            .translationsOfferPopup(context.components.settings.offerTranslation)
+            .crashPullNeverShowAgain(context.components.settings.crashPullNeverShowAgain)
             .setSameDocumentNavigationOverridesLoadType(
                 FxNimbus.features.sameDocumentNavigationOverridesLoadType.value().enabled,
             )
             .setSameDocumentNavigationOverridesLoadTypeForceDisable(
                 FxNimbus.features.sameDocumentNavigationOverridesLoadType.value().forceDisableUri,
             )
-            .isolatedProcessEnabled(context.settings().isIsolatedProcessEnabled)
-            .appZygoteProcessEnabled(context.settings().isAppZygoteEnabled)
+            .isolatedProcessEnabled(context.components.settings.isIsolatedProcessEnabled)
+            .appZygoteProcessEnabled(context.components.settings.isAppZygoteEnabled)
 
         if (FxNimbus.features.fission.value().shouldUseNimbus) {
             builder
                 .fissionEnabled(FxNimbus.features.fission.value().enabled)
-                .disableShip(FxNimbus.features.ship.value().disabled)
         }
 
         return builder.build()

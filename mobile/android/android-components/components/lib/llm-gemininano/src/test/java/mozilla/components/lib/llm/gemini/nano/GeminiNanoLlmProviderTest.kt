@@ -15,8 +15,8 @@ import kotlinx.coroutines.test.runTest
 import mozilla.components.concept.llm.LocalLlmProvider.State
 import mozilla.components.lib.llm.gemini.nano.fakes.FakeGenerativeModel
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.test.assertIs
 
 class GeminiNanoLlmProviderTest {
     @Test
@@ -55,7 +55,7 @@ class GeminiNanoLlmProviderTest {
         val provider = GeminiNanoLlmProvider({ fakeModel })
         assertEquals(State.Idle, provider.state.value)
         provider.checkAvailability()
-        assertTrue(provider.state.value is State.Ready)
+        assertIs<State.Ready>(provider.state.value)
     }
 
     @Test
@@ -99,6 +99,6 @@ class GeminiNanoLlmProviderTest {
         assertEquals(State.Downloading(100L, 0L), states[2])
         assertEquals(State.Downloading(100L, 10L), states[3])
         assertEquals(State.Downloading(100L, 90L), states[4])
-        assertTrue(states[5] is State.Ready)
+        assertIs<State.Ready>(states[5])
     }
 }

@@ -140,9 +140,9 @@ async function runTest(options) {
       const name = options.name + " | ";
 
       // Open the identity popup.
-      let { gIdentityHandler } = gBrowser.ownerGlobal;
+      let { gIdentityHandler } = gBrowser.documentGlobal;
       let promisePanelOpen = BrowserTestUtils.waitForEvent(
-        gBrowser.ownerGlobal,
+        gBrowser.documentGlobal,
         "popupshown",
         true,
         event => event.target == gIdentityHandler._identityPopup
@@ -155,7 +155,7 @@ async function runTest(options) {
         "identity-popup-security-httpsonlymode"
       );
       is(
-        gBrowser.ownerGlobal.getComputedStyle(httpsOnlyUI).display != "none",
+        gBrowser.documentGlobal.getComputedStyle(httpsOnlyUI).display != "none",
         options.isUiVisible,
         options.isUiVisible
           ? name + "HTTPS-Only UI should be visible."

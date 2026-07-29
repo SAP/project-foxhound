@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -104,16 +102,12 @@ bool KeySystemConfig::Supports(const nsAString& aKeySystem) {
   config->mMP4.SetCanDecrypt(EME_CODEC_FLAC);
   config->mMP4.SetCanDecrypt(EME_CODEC_OPUS);
   config->mMP4.SetCanDecrypt(EME_CODEC_VP9);
-#ifdef MOZ_AV1
   config->mMP4.SetCanDecrypt(EME_CODEC_AV1);
-#endif
   config->mWebM.SetCanDecrypt(EME_CODEC_VORBIS);
   config->mWebM.SetCanDecrypt(EME_CODEC_OPUS);
   config->mWebM.SetCanDecrypt(EME_CODEC_VP8);
   config->mWebM.SetCanDecrypt(EME_CODEC_VP9);
-#ifdef MOZ_AV1
   config->mWebM.SetCanDecrypt(EME_CODEC_AV1);
-#endif
 
   if (StaticPrefs::media_clearkey_test_key_systems_enabled()) {
     // Add testing key systems. These offer the same capabilities as the
@@ -161,10 +155,8 @@ bool KeySystemConfig::Supports(const nsAString& aKeySystem) {
        &config->mMP4},
       {nsCString(VIDEO_MP4), EME_CODEC_VP9, java::MediaDrmProxy::AVC,
        &config->mMP4},
-#  ifdef MOZ_AV1
       {nsCString(VIDEO_MP4), EME_CODEC_AV1, java::MediaDrmProxy::AV1,
        &config->mMP4},
-#  endif
       {nsCString(AUDIO_MP4), EME_CODEC_AAC, java::MediaDrmProxy::AAC,
        &config->mMP4},
       {nsCString(AUDIO_MP4), EME_CODEC_FLAC, java::MediaDrmProxy::FLAC,
@@ -175,10 +167,8 @@ bool KeySystemConfig::Supports(const nsAString& aKeySystem) {
        &config->mWebM},
       {nsCString(VIDEO_WEBM), EME_CODEC_VP9, java::MediaDrmProxy::VP9,
        &config->mWebM},
-#  ifdef MOZ_AV1
       {nsCString(VIDEO_WEBM), EME_CODEC_AV1, java::MediaDrmProxy::AV1,
        &config->mWebM},
-#  endif
       {nsCString(AUDIO_WEBM), EME_CODEC_VORBIS, java::MediaDrmProxy::VORBIS,
        &config->mWebM},
       {nsCString(AUDIO_WEBM), EME_CODEC_OPUS, java::MediaDrmProxy::OPUS,
@@ -212,16 +202,12 @@ bool KeySystemConfig::Supports(const nsAString& aKeySystem) {
   config->mMP4.SetCanDecrypt(EME_CODEC_OPUS);
   config->mMP4.SetCanDecryptAndDecode(EME_CODEC_H264);
   config->mMP4.SetCanDecryptAndDecode(EME_CODEC_VP9);
-#  ifdef MOZ_AV1
   config->mMP4.SetCanDecryptAndDecode(EME_CODEC_AV1);
-#  endif
   config->mWebM.SetCanDecrypt(EME_CODEC_VORBIS);
   config->mWebM.SetCanDecrypt(EME_CODEC_OPUS);
   config->mWebM.SetCanDecryptAndDecode(EME_CODEC_VP8);
   config->mWebM.SetCanDecryptAndDecode(EME_CODEC_VP9);
-#  ifdef MOZ_AV1
   config->mWebM.SetCanDecryptAndDecode(EME_CODEC_AV1);
-#  endif
 #endif
 }
 

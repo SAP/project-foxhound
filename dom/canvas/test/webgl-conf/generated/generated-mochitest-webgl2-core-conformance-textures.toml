@@ -1,0 +1,167 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl2-core"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/conformance/textures/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_2_conformance__textures__misc__canvas-teximage-after-multiple-drawimages.html"]
+
+["test_2_conformance__textures__misc__copy-tex-image-2d-formats.html"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+]
+
+["test_2_conformance__textures__misc__copy-tex-image-and-sub-image-2d.html"]
+
+["test_2_conformance__textures__misc__copy-tex-image-crash.html"]
+
+["test_2_conformance__textures__misc__copytexsubimage2d-large-partial-copy-corruption.html"]
+
+["test_2_conformance__textures__misc__copytexsubimage2d-subrects.html"]
+
+["test_2_conformance__textures__misc__cube-incomplete-fbo.html"]
+
+["test_2_conformance__textures__misc__cube-map-uploads-out-of-order.html"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+]
+
+["test_2_conformance__textures__misc__default-texture.html"]
+
+["test_2_conformance__textures__misc__exif-orientation.html"]
+
+["test_2_conformance__textures__misc__format-filterable-renderable.html"]
+
+["test_2_conformance__textures__misc__gl-pixelstorei.html"]
+
+["test_2_conformance__textures__misc__gl-teximage.html"]
+
+["test_2_conformance__textures__misc__mipmap-fbo.html"]
+
+["test_2_conformance__textures__misc__origin-clean-conformance-offscreencanvas.html"]
+skip-if = [
+  "true",
+]
+
+["test_2_conformance__textures__misc__origin-clean-conformance.html"]
+skip-if = [
+  "true",
+]
+
+["test_2_conformance__textures__misc__png-image-types.html"]
+
+["test_2_conformance__textures__misc__tex-image-and-sub-image-2d-with-array-buffer-view.html"]
+
+["test_2_conformance__textures__misc__tex-image-and-uniform-binding-bugs.html"]
+
+["test_2_conformance__textures__misc__tex-image-canvas-corruption.html"]
+
+["test_2_conformance__textures__misc__tex-image-webgl.html"]
+
+["test_2_conformance__textures__misc__tex-image-with-format-and-type.html"]
+
+["test_2_conformance__textures__misc__tex-image-with-invalid-data.html"]
+
+["test_2_conformance__textures__misc__tex-sub-image-2d-bad-args.html"]
+
+["test_2_conformance__textures__misc__tex-sub-image-2d.html"]
+
+["test_2_conformance__textures__misc__tex-video-using-tex-unit-non-zero.html"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64' && debug",
+]
+
+["test_2_conformance__textures__misc__texparameter-test.html"]
+
+["test_2_conformance__textures__misc__texture-active-bind-2.html"]
+
+["test_2_conformance__textures__misc__texture-active-bind.html"]
+
+["test_2_conformance__textures__misc__texture-attachment-formats.html"]
+
+["test_2_conformance__textures__misc__texture-clear.html"]
+
+["test_2_conformance__textures__misc__texture-complete.html"]
+
+["test_2_conformance__textures__misc__texture-copying-and-deletion.html"]
+
+["test_2_conformance__textures__misc__texture-copying-feedback-loops.html"]
+
+["test_2_conformance__textures__misc__texture-corner-case-videos.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
+
+["test_2_conformance__textures__misc__texture-cube-as-fbo-attachment.html"]
+
+["test_2_conformance__textures__misc__texture-draw-with-2d-and-cube.html"]
+
+["test_2_conformance__textures__misc__texture-hd-dpi.html"]
+
+["test_2_conformance__textures__misc__texture-mips.html"]
+
+["test_2_conformance__textures__misc__texture-size-cube-maps.html"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_2_conformance__textures__misc__texture-size-limit.html"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
+]
+
+["test_2_conformance__textures__misc__texture-size.html"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_2_conformance__textures__misc__texture-srgb-upload.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'", # Bug 1796057
+]
+
+["test_2_conformance__textures__misc__texture-sub-image-cube-maps.html"]
+
+["test_2_conformance__textures__misc__texture-transparent-pixels-initialized.html"]
+
+["test_2_conformance__textures__misc__texture-upload-cube-maps.html"]
+
+["test_2_conformance__textures__misc__texture-upload-size.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
+
+["test_2_conformance__textures__misc__texture-video-transparent.html"]
+skip-if = [
+  "true",
+]
+
+["test_2_conformance__textures__misc__texture-with-flip-y-and-premultiply-alpha.html"]
+
+["test_2_conformance__textures__misc__upload-from-srcset-with-empty-data.html"]
+
+["test_2_conformance__textures__misc__video-rotation.html"]
+fail-if = [
+  "true",
+]

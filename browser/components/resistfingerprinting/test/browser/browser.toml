@@ -63,8 +63,14 @@ support-files = [
 https_first_disabled = true
 
 ["browser_canvas_iframes.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
 
 ["browser_canvas_popups.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
 
 ["browser_canvascompare_iframes.js"]
 
@@ -81,6 +87,7 @@ https_first_disabled = true
 ["browser_canvascompare_popups_blob.js"]
 
 ["browser_canvascompare_popups_data.js"]
+disabled = "Top-level data: URI navigations are now always blocked (Bug 1895528)"
 
 ["browser_color_scheme.js"]
 
@@ -131,8 +138,10 @@ skip-if = [
 ]
 
 ["browser_hwconcurrency_popups_data.js"]
+disabled = "Top-level data: URI navigations are now always blocked (Bug 1895528)"
 
 ["browser_hwconcurrency_popups_data_noopener.js"]
+disabled = "Top-level data: URI navigations are now always blocked (Bug 1895528)"
 
 ["browser_hwconcurrency_popups_noopener.js"]
 

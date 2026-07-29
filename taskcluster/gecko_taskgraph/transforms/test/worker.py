@@ -69,6 +69,10 @@ WINDOWS_WORKER_TYPES = {
         "virtual-with-gpu": "win11-64-24h2-gpu",
         "hardware": "win11-64-24h2-hw",
     },
+    "windows11-64-24h2-artifact": {
+        "virtual": "win11-64-24h2",
+        "virtual-with-gpu": "win11-64-24h2-gpu",
+    },
     "windows11-64-24h2-ccov": {
         "virtual": "win11-64-24h2",
         "virtual-with-gpu": "win11-64-24h2-gpu",
@@ -94,6 +98,60 @@ WINDOWS_WORKER_TYPES = {
     "windows11-aarch64-24h2": {
         "virtual": "win11-a64-24h2",
     },
+    "windows11-aarch64-24h2-devedition": {
+        "virtual": "win11-a64-24h2",
+    },
+    "windows11-aarch64-24h2-shippable": {
+        "virtual": "win11-a64-24h2",
+    },
+    "windows11-32-25h2-mingwclang": {
+        "virtual": "win11-64-25h2",
+        "virtual-with-gpu": "win11-64-25h2-gpu",
+    },
+    "windows11-32-25h2": {
+        "virtual": "win11-64-25h2",
+        "virtual-with-gpu": "win11-64-25h2-gpu",
+    },
+    "windows11-32-25h2-shippable": {
+        "virtual": "win11-64-25h2",
+        "virtual-with-gpu": "win11-64-25h2-gpu",
+    },
+    "windows11-64-25h2": {
+        "virtual": "win11-64-25h2",
+        "virtual-with-gpu": "win11-64-25h2-gpu",
+        "hardware": "win11-64-24h2-hw",
+    },
+    "windows11-64-25h2-ccov": {
+        "virtual": "win11-64-25h2",
+        "virtual-with-gpu": "win11-64-25h2-gpu",
+    },
+    "windows11-64-25h2-devedition": {
+        "virtual": "win11-64-25h2",
+        "virtual-with-gpu": "win11-64-25h2-gpu",
+    },
+    "windows11-64-25h2-shippable": {
+        "virtual": "win11-64-25h2",
+        "virtual-with-gpu": "win11-64-25h2-gpu",
+        "hardware": "win11-64-24h2-hw",
+    },
+    "windows11-64-25h2-asan": {
+        "virtual": "win11-64-25h2",
+        "large": "win11-64-25h2-large",
+        "virtual-with-gpu": "win11-64-25h2-gpu",
+    },
+    "windows11-64-25h2-mingwclang": {
+        "virtual": "win11-64-25h2",
+        "virtual-with-gpu": "win11-64-25h2-gpu",
+    },
+    "windows11-aarch64-25h2": {
+        "virtual": "win11-a64-25h2",
+    },
+    "windows11-aarch64-25h2-devedition": {
+        "virtual": "win11-a64-25h2",
+    },
+    "windows11-aarch64-25h2-shippable": {
+        "virtual": "win11-a64-25h2",
+    },
 }
 
 # os x worker types keyed by test-platform
@@ -103,6 +161,7 @@ MACOSX_WORKER_TYPES = {
     "macosx1400-64": "t-osx-1400-m2",
     "macosx1500-64": "t-osx-1500-m4",
     "macosx1500-aarch64": "t-osx-1500-m4",
+    "macosx1500-aarch64-vms": "t-osx-1500-m-vms",
 }
 
 transforms = TransformSequence()
@@ -127,6 +186,8 @@ def set_worker_type(config, tasks):
             task["worker-type"] = MACOSX_WORKER_TYPES["macosx1400-64"]
         elif test_platform.startswith("macosx1400-aarch64"):
             task["worker-type"] = MACOSX_WORKER_TYPES["macosx1400-aarch64"]
+        elif test_platform.startswith("macosx1500-aarch64-vms"):
+            task["worker-type"] = MACOSX_WORKER_TYPES["macosx1500-aarch64-vms"]
         elif test_platform.startswith("macosx1500-aarch64"):
             task["worker-type"] = MACOSX_WORKER_TYPES["macosx1500-aarch64"]
         elif test_platform.startswith("macosx1500-64"):
@@ -143,6 +204,8 @@ def set_worker_type(config, tasks):
                     win_worker_type_platform = WINDOWS_WORKER_TYPES["windows10-64"]
                 elif test_platform.startswith("windows11-64-24h2"):
                     win_worker_type_platform = WINDOWS_WORKER_TYPES["windows11-64-24h2"]
+                elif test_platform.startswith("windows11-64-25h2"):
+                    win_worker_type_platform = WINDOWS_WORKER_TYPES["windows11-64-25h2"]
                 else:
                     raise Exception(f"Unknown worker type for {test_platform}")
             else:
@@ -160,14 +223,12 @@ def set_worker_type(config, tasks):
             if task["instance-size"].startswith("large") and test_platform.startswith(
                 "windows11-"
             ):
-                task["worker-type"] = "win11-64-24h2-large"
+                if test_platform.startswith("windows11-64-25h2"):
+                    task["worker-type"] = "win11-64-25h2-large"
+                else:
+                    task["worker-type"] = "win11-64-24h2-large"
             else:
                 task["worker-type"] = win_worker_type_platform[task["virtualization"]]
-        elif test_platform.startswith("android-hw-p5"):
-            if task["suite"] != "raptor":
-                task["worker-type"] = "t-bitbar-gw-unit-p5"
-            else:
-                task["worker-type"] = "t-bitbar-gw-perf-p5"
         elif test_platform.startswith("android-hw-p6"):
             if task["suite"] != "raptor":
                 task["worker-type"] = "t-bitbar-gw-unit-p6"
@@ -194,7 +255,12 @@ def set_worker_type(config, tasks):
             elif task.get("suite", "") in ["talos", "raptor"] and not task[
                 "build-platform"
             ].startswith("linux64-ccov"):
-                if "browsertime-network-bench" in task.get("test-name"):
+                if test_platform.startswith("linux2404"):
+                    if "browsertime-network-bench" in task.get("test-name"):
+                        task["worker-type"] = "t-linux-netperf-2404"
+                    else:
+                        task["worker-type"] = "t-linux-talos-2404"
+                elif "browsertime-network-bench" in task.get("test-name"):
                     task["worker-type"] = "t-linux-netperf-1804"
                 else:
                     task["worker-type"] = "t-linux-talos-1804"

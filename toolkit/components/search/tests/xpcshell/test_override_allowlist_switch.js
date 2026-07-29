@@ -205,7 +205,7 @@ add_task(
         );
         await restartSearchService(true);
         // Ensure settings have been saved before the engines are added, so that
-        // we know we won't have race conditions when `addEnginesFromExtension`
+        // we know we won't have race conditions when `addEngineFromExtension`
         // loads the settings itself.
         await promiseAfterSettings();
 
@@ -350,7 +350,7 @@ async function simulateExtensionStartup(trySetDefault) {
   if (trySetDefault) {
     await SearchService.maybeSetAndOverrideDefault(extensionData);
   } else {
-    await SearchService.addEnginesFromExtension(extensionData);
+    await SearchService.addEngineFromExtension(extensionData);
   }
 }
 

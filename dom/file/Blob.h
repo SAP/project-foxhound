@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -42,7 +40,8 @@ class Blob : public nsSupportsWeakReference, public nsWrapperCache {
   using BlobPart = OwningArrayBufferViewOrArrayBufferOrBlobOrUTF8String;
 
   // This creates a Blob or a File based on the type of BlobImpl.
-  static Blob* Create(nsIGlobalObject* aGlobal, BlobImpl* aImpl);
+  static already_AddRefed<Blob> Create(nsIGlobalObject* aGlobal,
+                                       BlobImpl* aImpl);
 
   static already_AddRefed<Blob> CreateStringBlob(nsIGlobalObject* aGlobal,
                                                  const nsACString& aData,
@@ -55,6 +54,12 @@ class Blob : public nsSupportsWeakReference, public nsWrapperCache {
                                                  void* aMemoryBuffer,
                                                  uint64_t aLength,
                                                  const nsAString& aContentType);
+
+  // This clones the current Blob
+  already_AddRefed<Blob> Clone() const;
+
+  // Returns true if the blob's JS wrapper has user-added properties (expandos).
+  bool HasExpandos() const;
 
   BlobImpl* Impl() const { return mImpl; }
 

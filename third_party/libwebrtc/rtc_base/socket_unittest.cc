@@ -34,7 +34,6 @@
 #include "rtc_base/socket_unittest.h"
 #include "rtc_base/test_client.h"
 #include "rtc_base/test_utils.h"
-#include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/thread.h"
 #include "test/create_test_environment.h"
 #include "test/gmock.h"
@@ -662,7 +661,7 @@ void SocketTest::ServerCloseInternal(const IPAddress& loopback) {
   EXPECT_TRUE(client->GetRemoteAddress().IsNil());
 }
 
-class SocketCloser : public sigslot::has_slots<> {
+class SocketCloser {
  public:
   void OnClose(Socket* socket, int error) {
     socket->Close();  // Deleting here would blow up the vector of handlers
@@ -679,9 +678,10 @@ void SocketTest::CloseInClosedCallbackInternal(const IPAddress& loopback) {
   std::unique_ptr<Socket> client =
       socket_factory_->Create(loopback.family(), SOCK_STREAM);
   sink.Monitor(client.get());
-  client->SubscribeCloseEvent([&closer](webrtc::Socket* socket, int error) {
-    closer.OnClose(socket, error);
-  });
+  client->SubscribeCloseEvent(&closer,
+                              [&closer](webrtc::Socket* socket, int error) {
+                                closer.OnClose(socket, error);
+                              });
 
   // Create server and listen.
   std::unique_ptr<Socket> server =
@@ -726,7 +726,7 @@ void SocketTest::CloseInClosedCallbackInternal(const IPAddress& loopback) {
 }
 
 // Helper class specifically for the test below.
-class SocketDeleter : public sigslot::has_slots<> {
+class SocketDeleter {
  public:
   explicit SocketDeleter(std::unique_ptr<Socket> socket)
       : socket_(std::move(socket)) {}
@@ -757,7 +757,8 @@ void SocketTest::DeleteInReadCallbackInternal(const IPAddress& loopback) {
   // Configure the helper class to delete socket 2 when socket 1 has a read
   // event.
   SocketDeleter deleter(std::move(socket2));
-  socket1->SignalReadEvent.connect(&deleter, &SocketDeleter::Delete);
+  socket1->SubscribeReadEvent(
+      &deleter, [&deleter](Socket* socket) { deleter.Delete(socket); });
   EXPECT_THAT(WaitUntil([&] { return deleter.deleted(); }, ::testing::IsTrue()),
               IsRtcOk());
 }
@@ -854,13 +855,13 @@ void SocketTest::TcpInternal(const IPAddress& loopback,
   EXPECT_EQ(sender->GetRemoteAddress(), receiver->GetLocalAddress());
 
   // Create test data.
-  Buffer send_buffer(0, data_size);
-  Buffer recv_buffer(0, data_size);
+  Buffer send_buffer(Buffer::CreateWithCapacity(data_size));
+  Buffer recv_buffer(Buffer::CreateWithCapacity(data_size));
   for (size_t i = 0; i < data_size; ++i) {
     char ch = static_cast<char>(i % 256);
     send_buffer.AppendData(&ch, sizeof(ch));
   }
-  Buffer recved_data(0, data_size);
+  Buffer recved_data(Buffer::CreateWithCapacity(data_size));
 
   // Send and receive a bunch of data.
   size_t sent_size = 0;
@@ -1287,45 +1288,52 @@ void SocketTest::UdpSocketRecvTimestampUseRtcEpoch(const IPAddress& loopback) {
 
 void SocketTest::SocketSendRecvWithEcn(const IPAddress& loopback) {
   StreamSink sink;
-  std::unique_ptr<Socket> socket =
+  std::unique_ptr<Socket> receiving_socket =
       socket_factory_->Create(loopback.family(), SOCK_DGRAM);
-  EXPECT_EQ(0, socket->Bind(SocketAddress(loopback, 0)));
-  SocketAddress address = socket->GetLocalAddress();
-  sink.Monitor(socket.get());
+  std::unique_ptr<Socket> sending_socket =
+      socket_factory_->Create(loopback.family(), SOCK_DGRAM);
+  EXPECT_EQ(0, receiving_socket->Bind(SocketAddress(loopback, 0)));
+  EXPECT_EQ(0, sending_socket->Bind(SocketAddress(loopback, 0)));
+  SocketAddress address = receiving_socket->GetLocalAddress();
+  sink.Monitor(receiving_socket.get());
   Buffer buffer;
   Socket::ReceiveBuffer receive_buffer(buffer);
 
-  socket->SendTo("foo", 3, address);
-  EXPECT_THAT(WaitUntil([&] { return sink.Check(socket.get(), SSE_READ); },
-                        ::testing::IsTrue()),
-              IsRtcOk());
-  ASSERT_GT(socket->RecvFrom(receive_buffer), 0);
+  sending_socket->SendTo("foo", 3, address);
+  EXPECT_THAT(
+      WaitUntil([&] { return sink.Check(receiving_socket.get(), SSE_READ); },
+                ::testing::IsTrue()),
+      IsRtcOk());
+  ASSERT_GT(receiving_socket->RecvFrom(receive_buffer), 0);
   EXPECT_EQ(receive_buffer.ecn, EcnMarking::kNotEct);
 
-  socket->SetOption(Socket::OPT_SEND_ECN, 1);  // Ect(1)
-  socket->SetOption(Socket::OPT_RECV_ECN, 1);
+  sending_socket->SetOption(Socket::OPT_SEND_ECN, 1);  // Ect(1)
+  receiving_socket->SetOption(Socket::OPT_RECV_ECN, 1);
 
-  socket->SendTo("bar", 3, address);
-  EXPECT_THAT(WaitUntil([&] { return sink.Check(socket.get(), SSE_READ); },
-                        ::testing::IsTrue()),
-              IsRtcOk());
-  ASSERT_GT(socket->RecvFrom(receive_buffer), 0);
+  sending_socket->SendTo("bar", 3, address);
+  EXPECT_THAT(
+      WaitUntil([&] { return sink.Check(receiving_socket.get(), SSE_READ); },
+                ::testing::IsTrue()),
+      IsRtcOk());
+  ASSERT_GT(receiving_socket->RecvFrom(receive_buffer), 0);
   EXPECT_EQ(receive_buffer.ecn, EcnMarking::kEct1);
 
-  socket->SetOption(Socket::OPT_SEND_ECN, 2);  // Ect(0)
-  socket->SendTo("bar", 3, address);
-  EXPECT_THAT(WaitUntil([&] { return sink.Check(socket.get(), SSE_READ); },
-                        ::testing::IsTrue()),
-              IsRtcOk());
-  ASSERT_GT(socket->RecvFrom(receive_buffer), 0);
+  sending_socket->SetOption(Socket::OPT_SEND_ECN, 2);  // Ect(0)
+  sending_socket->SendTo("bar", 3, address);
+  EXPECT_THAT(
+      WaitUntil([&] { return sink.Check(receiving_socket.get(), SSE_READ); },
+                ::testing::IsTrue()),
+      IsRtcOk());
+  ASSERT_GT(receiving_socket->RecvFrom(receive_buffer), 0);
   EXPECT_EQ(receive_buffer.ecn, EcnMarking::kEct0);
 
-  socket->SetOption(Socket::OPT_SEND_ECN, 3);  // Ce
-  socket->SendTo("bar", 3, address);
-  EXPECT_THAT(WaitUntil([&] { return sink.Check(socket.get(), SSE_READ); },
-                        ::testing::IsTrue()),
-              IsRtcOk());
-  ASSERT_GT(socket->RecvFrom(receive_buffer), 0);
+  sending_socket->SetOption(Socket::OPT_SEND_ECN, 3);  // Ce
+  sending_socket->SendTo("bar", 3, address);
+  EXPECT_THAT(
+      WaitUntil([&] { return sink.Check(receiving_socket.get(), SSE_READ); },
+                ::testing::IsTrue()),
+      IsRtcOk());
+  ASSERT_GT(receiving_socket->RecvFrom(receive_buffer), 0);
   EXPECT_EQ(receive_buffer.ecn, EcnMarking::kCe);
 }
 

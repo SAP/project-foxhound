@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,6 +15,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
+#include "mozilla/ReflowInput.h"
 #include "mozilla/ServoStyleSet.h"
 #include "mozilla/ServoStyleSetInlines.h"
 #include "mozilla/dom/ChildIterator.h"
@@ -75,6 +74,7 @@ void nsFramesetDrag::UnSet() {
  ******************************************************************************/
 class nsHTMLFramesetBorderFrame final : public nsLeafFrame {
  public:
+  NS_DECL_QUERYFRAME
   NS_DECL_FRAMEARENA_HELPERS(nsHTMLFramesetBorderFrame)
 
 #ifdef DEBUG_FRAME_DUMP
@@ -300,7 +300,11 @@ void nsHTMLFramesetFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
       mChildFrameborder[mChildCount] = GetFrameBorder(child);
       mChildBorderColors[mChildCount].Set(GetBorderColor(child));
     }
-    child->SetPrimaryFrame(frame);
+    if (!child->GetPrimaryFrame()) [[likely]] {
+      // Child might have a pre-existing primary frame if we're doing fixed-pos
+      // replication... This code is really disgusting.
+      child->SetPrimaryFrame(frame);
+    }
 
     mFrames.AppendFrame(nullptr, frame);
 
@@ -332,11 +336,19 @@ void nsHTMLFramesetFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 
 void nsHTMLFramesetFrame::SetInitialChildList(ChildListID aListID,
                                               nsFrameList&& aChildList) {
-  // We do this weirdness where we create our child frames in Init().  On the
-  // other hand, we're going to get a SetInitialChildList() with an empty list
-  // and null list name after the frame constructor is done creating us.  So
-  // just ignore that call.
-  if (aListID == FrameChildListID::Principal && aChildList.IsEmpty()) {
+  if (aListID == FrameChildListID::Principal) {
+    // We do this weirdness where we create our child frames in Init().
+    // We're going to get a SetInitialChildList() after the frame constructor is
+    // done creating us. So deal with that like an append, it should only have
+    // placeholders anyways.
+    if (!aChildList.IsEmpty()) [[unlikely]] {
+#ifdef DEBUG
+      for (auto* frame : aChildList) {
+        MOZ_ASSERT(frame->IsPlaceholderFrame());
+      }
+#endif
+      mFrames.AppendFrames(nullptr, std::move(aChildList));
+    }
     return;
   }
 
@@ -855,17 +867,22 @@ void nsHTMLFramesetFrame::Reflow(nsPresContext* aPresContext,
   WritingMode wm = GetWritingMode();
   LogicalSize logicalSize(wm);
   nsIFrame* child = mFrames.FirstChild();
+  nsIFrame* lastNonPlaceholder = [&]() -> nsIFrame* {
+    auto* last = mFrames.LastChild();
+    while (last && last->IsPlaceholderFrame()) {
+      last = last->GetPrevSibling();
+    }
+    return last;
+  }();
 
   for (int32_t childX = 0; childX < mNonBorderChildCount; childX++) {
     nsIntPoint cellIndex;
     GetSizeOfChildAt(childX, wm, logicalSize, cellIndex);
     size = logicalSize.GetPhysicalSize(wm);
-
     if (lastRow != cellIndex.y) {  // changed to next row
       offset.x = 0;
       offset.y += lastSize.height;
       if (firstTime) {  // create horizontal border
-
         RefPtr<ComputedStyle> pseudoComputedStyle;
         pseudoComputedStyle = styleSet->ResolveNonInheritingAnonymousBoxStyle(
             PseudoStyleType::MozHframesetBorder);
@@ -874,13 +891,15 @@ void nsHTMLFramesetFrame::Reflow(nsPresContext* aPresContext,
             pseudoComputedStyle, PresContext(), borderWidth, false, false);
         borderFrame->Init(mContent, this, nullptr);
         mChildCount++;
-        mFrames.AppendFrame(nullptr, borderFrame);
+        mFrames.InsertFrame(nullptr, lastNonPlaceholder, borderFrame);
         mHorBorders[cellIndex.y - 1] = borderFrame;
         // set the neighbors for determining drag boundaries
         borderFrame->mPrevNeighbor = lastRow;
         borderFrame->mNextNeighbor = cellIndex.y;
+        lastNonPlaceholder = borderFrame;
       } else {
-        borderFrame = (nsHTMLFramesetBorderFrame*)mFrames.FrameAt(borderChildX);
+        borderFrame = do_QueryFrame(mFrames.FrameAt(borderChildX));
+        MOZ_RELEASE_ASSERT(borderFrame);
         borderFrame->mWidth = borderWidth;
         borderChildX++;
       }
@@ -903,14 +922,15 @@ void nsHTMLFramesetFrame::Reflow(nsPresContext* aPresContext,
                 pseudoComputedStyle, PresContext(), borderWidth, true, false);
             borderFrame->Init(mContent, this, nullptr);
             mChildCount++;
-            mFrames.AppendFrame(nullptr, borderFrame);
+            mFrames.InsertFrame(nullptr, lastNonPlaceholder, borderFrame);
             mVerBorders[cellIndex.x - 1] = borderFrame;
             // set the neighbors for determining drag boundaries
             borderFrame->mPrevNeighbor = lastCol;
             borderFrame->mNextNeighbor = cellIndex.x;
+            lastNonPlaceholder = borderFrame;
           } else {
-            borderFrame =
-                (nsHTMLFramesetBorderFrame*)mFrames.FrameAt(borderChildX);
+            borderFrame = do_QueryFrame(mFrames.FrameAt(borderChildX));
+            MOZ_RELEASE_ASSERT(borderFrame);
             borderFrame->mWidth = borderWidth;
             borderChildX++;
           }
@@ -928,8 +948,7 @@ void nsHTMLFramesetFrame::Reflow(nsPresContext* aPresContext,
 
     if (firstTime) {
       int32_t childVis;
-      nsHTMLFramesetFrame* framesetFrame = do_QueryFrame(child);
-      if (framesetFrame) {
+      if (nsHTMLFramesetFrame* framesetFrame = do_QueryFrame(child)) {
         childVis = framesetFrame->mEdgeVisibility;
         mChildBorderColors[childX] = framesetFrame->mEdgeColors;
       } else if (child->IsSubDocumentFrame()) {
@@ -1258,12 +1277,6 @@ void nsHTMLFramesetFrame::EndMouseDrag(nsPresContext* aPresContext) {
 
 nsIFrame* NS_NewHTMLFramesetFrame(PresShell* aPresShell,
                                   ComputedStyle* aStyle) {
-#ifdef DEBUG
-  const nsStyleDisplay* disp = aStyle->StyleDisplay();
-  NS_ASSERTION(!disp->IsAbsolutelyPositionedStyle() && !disp->IsFloatingStyle(),
-               "Framesets should not be positioned and should not float");
-#endif
-
   return new (aPresShell)
       nsHTMLFramesetFrame(aStyle, aPresShell->GetPresContext());
 }
@@ -1286,10 +1299,11 @@ nsHTMLFramesetBorderFrame::nsHTMLFramesetBorderFrame(
   mNextNeighbor = 0;
 }
 
-nsHTMLFramesetBorderFrame::~nsHTMLFramesetBorderFrame() {
-  // printf("nsHTMLFramesetBorderFrame destructor %p \n", this);
-}
+nsHTMLFramesetBorderFrame::~nsHTMLFramesetBorderFrame() = default;
 
+NS_QUERYFRAME_HEAD(nsHTMLFramesetBorderFrame)
+  NS_QUERYFRAME_ENTRY(nsHTMLFramesetBorderFrame)
+NS_QUERYFRAME_TAIL_INHERITING(nsLeafFrame)
 NS_IMPL_FRAMEARENA_HELPERS(nsHTMLFramesetBorderFrame)
 
 void nsHTMLFramesetBorderFrame::SetVisibility(bool aVisibility) {
@@ -1477,9 +1491,7 @@ NS_QUERYFRAME_TAIL_INHERITING(nsLeafFrame)
 
 NS_IMPL_FRAMEARENA_HELPERS(nsHTMLFramesetBlankFrame)
 
-nsHTMLFramesetBlankFrame::~nsHTMLFramesetBlankFrame() {
-  // printf("nsHTMLFramesetBlankFrame destructor %p \n", this);
-}
+nsHTMLFramesetBlankFrame::~nsHTMLFramesetBlankFrame() = default;
 
 void nsHTMLFramesetBlankFrame::Reflow(nsPresContext* aPresContext,
                                       ReflowOutput& aDesiredSize,

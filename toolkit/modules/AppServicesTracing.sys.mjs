@@ -17,11 +17,11 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 import {
-  registerMinLevelEventSink,
   registerEventSink,
-  unregisterMinLevelEventSink,
   unregisterEventSink,
   EventSink,
+  EventSinkSpecification,
+  EventTarget,
   TracingLevel,
 } from "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustTracing.sys.mjs";
 
@@ -53,25 +53,16 @@ class CallbackList {
    * If the callback is already in the list, then the level will be updated rather than adding a new
    * item.
    *
-   * If this changes the max level for the list, this returns the new max level otherwise it returns
-   * undefined;
-   *
    * @param {number} level
    * @param {(event: object) => void} callback
    */
   add(level, callback) {
-    const oldMaxLevel = this.maxLevel();
     const index = this.items.findIndex(item => item.callback === callback);
     if (index == -1) {
       this.items.push({ level, callback });
     } else {
       this.items[index].level = level;
     }
-    const newMaxLevel = this.maxLevel();
-    if (newMaxLevel != oldMaxLevel) {
-      return newMaxLevel;
-    }
-    return undefined;
   }
 
   /**
@@ -88,15 +79,8 @@ class CallbackList {
       lazy.console.trace(
         "ignoring attempt to remove an event handler that's not registered"
       );
-      return undefined;
     }
-    const oldMaxLevel = this.maxLevel();
     this.items.splice(index, 1);
-    const newMaxLevel = this.maxLevel();
-    if (newMaxLevel != oldMaxLevel) {
-      return newMaxLevel;
-    }
-    return undefined;
   }
 
   /**
@@ -127,6 +111,7 @@ class TracingEventHandler extends EventSink {
     this.targetCallbackLists = new Map();
     // CallbackList for callbacks registered with registerMinLevelEventSink
     this.minLevelCallbackList = new CallbackList();
+    this.eventSinkId = null;
 
     // Choose `profileBeforeChange` to call `#close()` and deregister our callbacks.
     //
@@ -154,13 +139,7 @@ class TracingEventHandler extends EventSink {
       return;
     }
     const callbackList = this._getTargetList(target);
-    const newMaxLevel = callbackList.add(level, callback);
-    if (newMaxLevel !== undefined) {
-      lazy.console.trace(
-        `calling registerEventSink (${target} ${newMaxLevel})`
-      );
-      registerEventSink(target, newMaxLevel, this);
-    }
+    callbackList.add(level, callback);
   }
 
   deregister(target, callback) {
@@ -171,19 +150,7 @@ class TracingEventHandler extends EventSink {
       return;
     }
     const callbackList = this._getTargetList(target);
-    const newMaxLevel = callbackList.remove(callback);
-    if (newMaxLevel !== undefined) {
-      if (newMaxLevel == -Infinity) {
-        lazy.console.trace(`calling unregisterEventSink (${target})`);
-        unregisterEventSink(target);
-        this.targetCallbackLists.delete(target);
-      } else {
-        lazy.console.trace(
-          `calling registerEventSink (${target} ${newMaxLevel})`
-        );
-        registerEventSink(target, newMaxLevel, this);
-      }
-    }
+    callbackList.remove(callback);
   }
 
   registerMinLevelEventSink(level, callback) {
@@ -194,11 +161,7 @@ class TracingEventHandler extends EventSink {
       return;
     }
 
-    const newMaxLevel = this.minLevelCallbackList.add(level, callback);
-    if (newMaxLevel !== undefined) {
-      lazy.console.trace(`calling registerMinLevelEventSink (${newMaxLevel})`);
-      registerMinLevelEventSink(newMaxLevel, this);
-    }
+    this.minLevelCallbackList.add(level, callback);
   }
 
   unregisterMinLevelEventSink(callback) {
@@ -209,18 +172,7 @@ class TracingEventHandler extends EventSink {
       return;
     }
 
-    const newMaxLevel = this.minLevelCallbackList.remove(callback);
-    if (newMaxLevel !== undefined) {
-      if (newMaxLevel == -Infinity) {
-        lazy.console.trace(`calling unregisterMinLevelEventSink`);
-        unregisterMinLevelEventSink();
-      } else {
-        lazy.console.trace(
-          `calling registerMinLevelEventSink (${newMaxLevel})`
-        );
-        registerMinLevelEventSink(newMaxLevel, this);
-      }
-    }
+    this.minLevelCallbackList.remove(callback);
   }
 
   _getTargetList(target) {
@@ -239,11 +191,44 @@ class TracingEventHandler extends EventSink {
     this.minLevelCallbackList.processEvent(event);
   }
 
-  #close() {
-    for (let target of this.targetCallbackLists.keys()) {
-      unregisterEventSink(target);
+  updateRustTracingRegistration() {
+    let minLevel = this.minLevelCallbackList.maxLevel();
+    if (minLevel == -Infinity) {
+      minLevel = null;
     }
-    unregisterMinLevelEventSink();
+    const spec = new EventSinkSpecification({
+      targets: [
+        ...this.targetCallbackLists.entries().map(([target, callbackList]) => {
+          let level = callbackList.maxLevel();
+          if (level == -Infinity) {
+            level = TracingLevel.DEBUG;
+          }
+          return new EventTarget({ target, level });
+        }),
+      ],
+      minLevel,
+    });
+    this.#unregisterWithRustTracing();
+    if (spec.minLevel !== null || spec.targets.length) {
+      lazy.console.trace("calling registerEventSink", spec);
+      this.eventSinkId = registerEventSink(spec, this);
+    } else {
+      lazy.console.trace(
+        "skipping registerEventSink, since there are callbacks"
+      );
+    }
+  }
+
+  #unregisterWithRustTracing() {
+    if (this.eventSinkId !== null) {
+      lazy.console.trace("calling unregisterEventSink", this.eventSinkId);
+      unregisterEventSink(this.eventSinkId);
+      this.eventSinkId = null;
+    }
+  }
+
+  #close() {
+    this.#unregisterWithRustTracing();
     this.targetCallbackLists = null;
     this.minLevelCallbackList = null;
   }
@@ -316,6 +301,7 @@ export function setupLoggerForTarget(target, log) {
   let logTargets = targetToLogNames.getOrInsert(target, []);
   logTargets.push(log.name);
   tracingEventHandler.register(target, tracing_level, loggerEventHandler);
+  tracingEventHandler.updateRustTracingRegistration();
 }
 
 /**
@@ -366,6 +352,7 @@ class LogForwarder extends EventSink {
     for (const oldTarget of oldRegisteredTargets) {
       tracingEventHandler.deregister(oldTarget, this.callback);
     }
+    tracingEventHandler.updateRustTracingRegistration();
   }
 
   /**

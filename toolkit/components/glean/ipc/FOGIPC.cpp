@@ -1,10 +1,10 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FOGIPC.h"
 
+#include <cstdint>
 #include <limits>
 #include "mozilla/glean/fog_ffi_generated.h"
 #include "mozilla/glean/ProcesstoolsMetrics.h"
@@ -20,6 +20,7 @@
 #include "mozilla/glean/bindings/jog/JOG.h"
 #include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/Hal.h"
+#include "mozilla/Logging.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/net/SocketProcessChild.h"
 #include "mozilla/net/SocketProcessParent.h"
@@ -107,6 +108,8 @@ struct ProcessEnergyMarker {
 }  // namespace geckoprofiler::markers
 
 namespace mozilla::glean {
+
+static LazyLogModule sLog("fog");
 
 // Echoes processtools/metrics.yaml's power.wakeups_per_thread
 enum ProcessType {
@@ -467,6 +470,7 @@ void FlushFOGData(std::function<void(ipc::ByteBuf&&)>&& aResolver) {
 void FlushAllChildData(
     std::function<void(nsTArray<ipc::ByteBuf>&&)>&& aResolver) {
   auto timerId = fog_ipc::flush_durations.Start();
+  MOZ_LOG(sLog, LogLevel::Verbose, ("glean::FlushAllChildData: start"));
 
   nsTArray<ContentParent*> parents;
   ContentParent::GetAll(parents);
@@ -511,30 +515,53 @@ void FlushAllChildData(
 
   if (promises.Length() == 0) {
     // No child processes at the moment. Resolve synchronously.
+    MOZ_LOG(sLog, LogLevel::Verbose,
+            ("glean::FlushAllChildData: No child processes at the moment."));
     fog_ipc::flush_durations.Cancel(std::move(timerId));
     nsTArray<ipc::ByteBuf> results;
     aResolver(std::move(results));
     return;
   }
 
-  // If fog.ipc.flush_failures ever gets too high:
-  // TODO: Don't throw away resolved data if some of the promises reject.
-  // (not sure how, but it'll mean not using ::All... maybe a custom copy of
-  // AllPromiseHolder? Might be impossible outside MozPromise.h)
-  FlushFOGDataPromise::All(GetCurrentSerialEventTarget(), promises)
-      ->Then(GetCurrentSerialEventTarget(), __func__,
-             [aResolver = std::move(aResolver), timerId](
-                 FlushFOGDataPromise::AllPromiseType::ResolveOrRejectValue&&
-                     aValue) {
-               fog_ipc::flush_durations.StopAndAccumulate(std::move(timerId));
-               if (aValue.IsResolve()) {
-                 aResolver(std::move(aValue.ResolveValue()));
-               } else {
-                 fog_ipc::flush_failures.Add(1);
-                 nsTArray<ipc::ByteBuf> results;
-                 aResolver(std::move(results));
-               }
-             });
+  FlushFOGDataPromise::AllSettled(GetCurrentSerialEventTarget(), promises)
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [aResolver = std::move(aResolver), timerId,
+           promiseCount = promises.Length()](
+              FlushFOGDataPromise::AllSettledPromiseType::ResolveOrRejectValue&&
+                  aValue) {
+            fog_ipc::flush_durations.StopAndAccumulate(std::move(timerId));
+            if (aValue.IsResolve()) {
+              MOZ_LOG(
+                  sLog, LogLevel::Verbose,
+                  ("glean::FlushAllChildData: AllSettled value is resolved"));
+              nsTArray<ipc::ByteBuf> results;
+              auto& allValues = aValue.ResolveValue();
+              for (auto& value : allValues) {
+                if (value.IsResolve()) {
+                  MOZ_LOG(sLog, LogLevel::Verbose,
+                          ("glean::FlushAllChildData: value is resolved, "
+                           "appending element to results"));
+                  results.AppendElement(std::move(value.ResolveValue()));
+                } else {
+                  MOZ_LOG(sLog, LogLevel::Verbose,
+                          ("glean::FlushAllChildData: value is rejected, "
+                           "appending 1 to flush rejections"));
+                  fog_ipc::flush_rejections.Add(1);
+                }
+              }
+              aResolver(std::move(results));
+            } else {
+              MOZ_LOG(sLog, LogLevel::Verbose,
+                      ("glean::FlushAllChildData: AllSettled value is "
+                       "rejected, adding %zu to flush failures count",
+                       promiseCount));
+              fog_ipc::flush_failures.Add((int32_t)promiseCount);
+              nsTArray<ipc::ByteBuf> results;
+              aResolver(std::move(results));
+            }
+          });
+  MOZ_LOG(sLog, LogLevel::Verbose, ("glean::FlushAllChildData: end"));
 }
 
 /**

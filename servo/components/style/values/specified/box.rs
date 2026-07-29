@@ -8,6 +8,7 @@ use crate::derives::*;
 pub use crate::logical_geometry::WritingModeProperty;
 use crate::parser::{Parse, ParserContext};
 use crate::properties::{LonghandId, PropertyDeclarationId, PropertyId};
+pub use crate::typed_om::{KeywordValue, ToTyped, TypedValue};
 use crate::values::generics::box_::{
     BaselineShiftKeyword, GenericBaselineShift, GenericContainIntrinsicSize, GenericLineClamp,
     GenericOverflowClipMargin, GenericPerspective, OverflowClipMarginBox,
@@ -18,8 +19,9 @@ use crate::values::CustomIdent;
 use cssparser::Parser;
 use num_traits::FromPrimitive;
 use std::fmt::{self, Write};
-use style_traits::{CssWriter, KeywordsCollectFn, ParseError};
+use style_traits::{CssWriter, KeywordsCollectFn, ParseError /*CssString*/};
 use style_traits::{SpecifiedValueInfo, StyleParseErrorKind, ToCss};
+use thin_vec::ThinVec;
 
 #[cfg(not(feature = "servo"))]
 fn grid_enabled() -> bool {
@@ -28,7 +30,12 @@ fn grid_enabled() -> bool {
 
 #[cfg(feature = "servo")]
 fn grid_enabled() -> bool {
-    style_config::get_bool("layout.grid.enabled")
+    static_prefs::pref!("layout.grid.enabled")
+}
+
+#[inline]
+fn appearance_base_enabled(_context: &ParserContext) -> bool {
+    static_prefs::pref!("layout.css.appearance-base.enabled")
 }
 
 #[inline]
@@ -155,7 +162,6 @@ impl DisplayInside {
     ToComputedValue,
     ToResolvedValue,
     ToShmem,
-    ToTyped,
 )]
 #[repr(C)]
 pub struct Display(u16);
@@ -528,6 +534,36 @@ impl ToCss for Display {
     }
 }
 
+impl ToTyped for Display {
+    fn to_typed(&self, dest: &mut ThinVec<TypedValue>) -> Result<(), ()> {
+        // Note: The specification does not currently define how display multi
+        // keywords should be reified into Typed OM. The current behavior
+        // follows existing WPT coverage (display.html). Syncing spec with
+        // UA/WPT behavior tracked in
+        // https://github.com/w3c/csswg-drafts/issues/13907
+
+        let outside = self.outside();
+        let inside = self.inside();
+
+        #[cfg(feature = "gecko")]
+        if outside == DisplayOutside::Block && inside == DisplayInside::Ruby {
+            return Err(());
+        }
+
+        if self.is_list_item()
+            && (outside != DisplayOutside::Block || inside != DisplayInside::Flow)
+        {
+            return Err(());
+        }
+
+        let keyword = self.to_css_cssstring();
+        debug_assert!(!AsRef::<[u8]>::as_ref(&keyword).contains(&b' '));
+
+        dest.push(TypedValue::Keyword(KeywordValue(keyword)));
+        return Ok(());
+    }
+}
+
 impl Parse for Display {
     fn parse<'i, 't>(
         _: &ParserContext,
@@ -663,7 +699,7 @@ pub enum DominantBaseline {
     /// writing modes when 'text-orientation' is 'mixed' or 'upright'.
     Auto,
     /// Use the text-under baseline.
-    #[parse(aliases = "text-before-edge")]
+    #[parse(aliases = "text-after-edge")]
     TextBottom,
     /// Use the alphabetic baseline.
     Alphabetic,
@@ -680,7 +716,7 @@ pub enum DominantBaseline {
     /// Use the hanging baseline.
     Hanging,
     /// Use the text-over baseline.
-    #[parse(aliases = "text-after-edge")]
+    #[parse(aliases = "text-before-edge")]
     TextTop,
 }
 
@@ -710,28 +746,23 @@ pub enum AlignmentBaseline {
     /// Use the text-under baseline.
     TextBottom,
     /// Use the alphabetic baseline.
-    /// TODO: Bug 2010717 - Remove css(skip) to support alignment-baseline: alphabetic
-    #[css(skip)]
+    #[cfg(feature = "gecko")]
     Alphabetic,
     /// Use the ideographic-under baseline.
-    /// TODO: Bug 2010718 - Remove css(skip) support alignment-baseline: ideographic
-    #[css(skip)]
+    #[cfg(feature = "gecko")]
     Ideographic,
     /// In general, use the x-middle baselines; except under text-orientation: upright
     /// (where the alphabetic and x-height baselines are essentially meaningless) use
     /// the central baseline instead.
     Middle,
     /// Use the central baseline.
-    /// TODO: Bug 2010719 - Remove css(skip) to support alignment-baseline: central
-    #[css(skip)]
+    #[cfg(feature = "gecko")]
     Central,
     /// Use the math baseline.
-    /// TODO: Bug 2010720 - Remove css(skip) to support alignment-baseline: mathematical
-    #[css(skip)]
+    #[cfg(feature = "gecko")]
     Mathematical,
     /// Use the hanging baseline.
-    /// TODO: Bug 2017197 - Remove css(skip) to support alignment-baseline: hanging
-    #[css(skip)]
+    #[cfg(feature = "gecko")]
     Hanging,
     /// Use the text-over baseline.
     TextTop,
@@ -846,6 +877,7 @@ pub enum ScrollSnapStrictness {
     ToTyped,
 )]
 #[repr(C)]
+#[typed(todo_derive_fields)]
 pub struct ScrollSnapType {
     axis: ScrollSnapAxis,
     strictness: ScrollSnapStrictness,
@@ -942,6 +974,7 @@ pub enum ScrollSnapAlignKeyword {
     ToTyped,
 )]
 #[repr(C)]
+#[typed(todo_derive_fields)]
 pub struct ScrollSnapAlign {
     block: ScrollSnapAlignKeyword,
     inline: ScrollSnapAlignKeyword,
@@ -1071,6 +1104,7 @@ pub enum OverflowAnchor {
 )]
 #[css(comma)]
 #[repr(C)]
+#[typed(no_multiple_values)]
 /// Provides a rendering hint to the user agent, stating what kinds of changes
 /// the author expects to perform on the element.
 ///
@@ -1686,8 +1720,11 @@ pub enum Appearance {
     Textfield,
     /// The dropdown button(s) that open up a dropdown list.
     MenulistButton,
-    /// Only relevant to the <select> element and ::picker(select) pseudo-element,
-    /// allowing them to be styled.
+    /// https://drafts.csswg.org/css-forms/#appearance
+    #[parse(condition = "appearance_base_enabled")]
+    Base,
+    /// Only relevant to the <select> element and ::picker(select) pseudo-element, allowing them to
+    /// be styled.
     #[parse(condition = "appearance_base_select_enabled")]
     BaseSelect,
     /// Menu Popup background.
@@ -2031,9 +2068,10 @@ impl ScrollbarGutter {
 
 /// A specified value for the zoom property.
 #[derive(
-    Clone, Copy, Debug, MallocSizeOf, PartialEq, Parse, SpecifiedValueInfo, ToCss, ToShmem, ToTyped,
+    Clone, Debug, MallocSizeOf, PartialEq, Parse, SpecifiedValueInfo, ToCss, ToShmem, ToTyped,
 )]
 #[allow(missing_docs)]
+#[typed(todo_derive_fields)]
 pub enum Zoom {
     Normal,
     /// An internal value that resets the effective zoom to 1. Used for scrollbar parts, which

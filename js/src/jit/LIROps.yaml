@@ -324,12 +324,6 @@
   result_type: WordSized
   num_temps: 1
 
-- name: WasmRefCastInfallible
-  mir_op: true
-  operands:
-    ref: WordSized
-  result_type: WordSized
-
 - name: WasmNewStructObject
   mir_op: true
   operands:
@@ -418,15 +412,6 @@
   operands:
     input: BoxedValue
   mir_op: TypeOfIs
-
-# Allocate a new arguments object for the frame.
-- name: CreateArgumentsObject
-  result_type: WordSized
-  operands:
-    callObject: WordSized
-  num_temps: 3
-  call_instruction: true
-  mir_op: true
 
 - name: CreateInlinedArgumentsObject
   gen_boilerplate: false
@@ -1799,18 +1784,6 @@
     input: WordSized
   mir_op: true
 
-- name: WrapInt64ToInt32
-  result_type: WordSized
-  operands:
-    input: Int64
-  mir_op: true
-
-- name: ExtendInt32ToInt64
-  result_type: Int64
-  operands:
-    input: WordSized
-  mir_op: true
-
 # Convert a boolean value to a string.
 - name: BooleanToString
   result_type: WordSized
@@ -2011,11 +1984,6 @@
     index: WordSized
     initLength: WordSized
   mir_op: true
-
-- name: GuardElementNotHole
-  operands:
-    elements: WordSized
-    index: WordSized
 
 # Load a value from an array's elements vector, loading |undefined| if we hit a
 # hole. Bail out if we get a negative index.
@@ -2726,16 +2694,6 @@
     input: WordSized
   mir_op: true
 
-- name: NonNegativeIntPtrToInt32
-  result_type: WordSized
-  operands:
-    input: WordSized
-
-- name: IntPtrToDouble
-  result_type: WordSized
-  operands:
-    input: WordSized
-
 - name: AdjustDataViewLength
   result_type: WordSized
   operands:
@@ -2764,20 +2722,6 @@
   num_temps: 1
   mir_op: ToInt64
 
-# Truncate a BigInt to an unboxed int64.
-- name: TruncateBigIntToInt64
-  result_type: Int64
-  operands:
-    input: WordSized
-  mir_op: true
-
-# Create a new BigInt* from an unboxed int64.
-- name: Int64ToBigInt
-  result_type: WordSized
-  operands:
-    input: Int64
-  num_temps64: 1
-
 # Create a new BigInt* from an unboxed uint64.
 - name: Uint64ToBigInt
   result_type: WordSized
@@ -2785,19 +2729,6 @@
     input: Int64
   num_temps: 1
   mir_op: Int64ToBigInt
-
-# Return intptr from an unboxed int64. Bails if the input exceeds intptr limits.
-- name: Int64ToIntPtr
-  result_type: WordSized
-  operands:
-    input: Int64
-  mir_op: true
-
-# Return an int64 from an intptr.
-- name: IntPtrToInt64
-  result_type: Int64
-  operands:
-    input: WordSized
 
 # Generational write barrier used when writing an object to another object.
 - name: PostWriteBarrierO
@@ -3129,7 +3060,7 @@
   operands:
     ptr: WordSized
     memoryBase: WordSized
-#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS64) || defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_RISCV64)
+#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS64) || defined(JS_CODEGEN_LOONG64)
   num_temps: 1
 #endif
   mir_op: true
@@ -3141,7 +3072,7 @@
     memoryBase: WordSized
 #ifdef JS_CODEGEN_ARM
   num_temps: 2
-#elif defined(JS_CODEGEN_MIPS64) || defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_RISCV64)
+#elif defined(JS_CODEGEN_MIPS64) || defined(JS_CODEGEN_LOONG64)
   num_temps: 1
 #endif
   mir_op: WasmLoad
@@ -3151,7 +3082,7 @@
     ptr: WordSized
     value: WordSized
     memoryBase: WordSized
-#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS64) || defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_RISCV64)
+#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS64) || defined(JS_CODEGEN_LOONG64)
   num_temps: 1
 #endif
   mir_op: true
@@ -3161,7 +3092,7 @@
     ptr: WordSized
     value: Int64
     memoryBase: WordSized
-#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS64) || defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_RISCV64)
+#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS64) || defined(JS_CODEGEN_LOONG64)
   num_temps: 1
 #endif
   mir_op: WasmStore
@@ -3456,6 +3387,11 @@
 - name: WasmStackResult64
   gen_boilerplate: false
 
+#ifdef ENABLE_WASM_JSPI
+- name: WasmResume
+  gen_boilerplate: false
+#endif
+
 - name: AssertRangeI
   operands:
     input: WordSized
@@ -3485,11 +3421,6 @@
   num_temps: 1
   mir_op: true
 
-- name: AssertShape
-  operands:
-    input: WordSized
-  mir_op: true
-
 - name: GuardValue
   operands:
     input: BoxedValue
@@ -3504,10 +3435,6 @@
 - name: LexicalCheck
   operands:
     input: BoxedValue
-  mir_op: true
-
-- name: ThrowMsg
-  call_instruction: true
   mir_op: true
 
 - name: MemoryBarrier
@@ -3840,6 +3767,13 @@
 #if !defined(JS_CODEGEN_X86) && !defined(JS_CODEGEN_X64)
   defer_init: true
 #endif
+
+- name: TimeClipCall
+  result_type: WordSized
+  operands:
+    time: WordSized
+  num_temps: 1
+  mir_op: TimeClip
 
 #if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
 - name: DivConstantI
@@ -4573,6 +4507,49 @@
     value: Int64
     memoryBase: WordSized
   mir_op: WasmAtomicExchangeHeap
+#endif
+
+#ifdef JS_64BIT
+- name: WasmAddSubI128HI64
+  result_type: WordSized
+  operands:
+    lhsLo: WordSized
+    lhsHi: WordSized
+    rhsLo: WordSized
+    rhsHi: WordSized
+  arguments:
+    isAdd: bool
+  mir_op: WasmAddSubI128HI64
+
+- name: WasmMulI64WideHI64
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+    rhs: WordSized
+  arguments:
+    isSigned: bool
+#ifdef JS_CODEGEN_X64
+  num_temps: 2
+#endif
+  mir_op: WasmMulI64WideHI64
+#endif
+
+#ifndef JS_64BIT
+- name: WasmLoadInstanceScratch2xI32
+  result_type: Int64
+  operands:
+    instance: WordSized
+  arguments:
+    byteOffset: uint32_t
+  mir_op: WasmLoadInstanceScratch2xI32
+
+- name: WasmStoreInstanceScratch2xI32
+  operands:
+    value: Int64
+    instance: WordSized
+  arguments:
+    byteOffset: uint32_t
+  mir_op: WasmStoreInstanceScratch2xI32
 #endif
 
 #ifdef FUZZING_JS_FUZZILLI

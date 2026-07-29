@@ -23,6 +23,8 @@ support-files = [
   "bug1071816-2_text.html",
   "bug1071816-3_text.html",
   "bug1071816-4_text.html",
+  "bug1362365_text.html",
+  "bug2048944.text",
 ]
 
 ["test_bug306272.html"]
@@ -70,3 +72,7 @@ support-files = [
 ["test_bug1071816-3.html"]
 
 ["test_bug1071816-4.html"]
+
+["test_bug1362365.html"]
+
+["test_bug2048944.html"]

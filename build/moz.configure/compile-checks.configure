@@ -1,5 +1,3 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -397,7 +395,7 @@ def check_and_add_warning_impl(warning, compiler=None, when=None, check=True):
 
 # When changing this version, please check that no warning support have been
 # removed.
-clang_latest_release = dependable("21.1.0")
+clang_latest_release = dependable("22.1.0")
 
 
 @depends(c_compiler, clang_latest_release, when=moz_automation)

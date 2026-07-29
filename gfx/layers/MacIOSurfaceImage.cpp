@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,7 +23,7 @@ TextureClient* MacIOSurfaceImage::GetTextureClient(
         IsDRM() ? TextureFlags::DRM_SOURCE : TextureFlags::DEFAULT;
     mTextureClient = TextureClient::CreateWithData(
         MacIOSurfaceTextureData::Create(mSurface, backend), flags,
-        aKnowsCompositor->GetTextureForwarder());
+        aKnowsCompositor->GetTextureForwarder().get());
   }
   return mTextureClient;
 }
@@ -306,7 +304,8 @@ already_AddRefed<MacIOSurface> MacIOSurfaceRecycleAllocator::Allocate(
     }
 #endif
 
-    return MakeAndAddRef<MacIOSurface>(surf, false, aYUVColorSpace);
+    return MakeAndAddRef<MacIOSurface>(surf, aYUVColorSpace, aTransferFunction,
+                                       MacIOSurface::AllowAlpha::No);
   }
 
   // Time to decide if we are creating a single planar or bi-planar surface.
@@ -322,11 +321,13 @@ already_AddRefed<MacIOSurface> MacIOSurfaceRecycleAllocator::Allocate(
   if (aChromaSubsampling == gfx::ChromaSubsampling::HALF_WIDTH &&
       aColorDepth == gfx::ColorDepth::COLOR_8) {
     result = MacIOSurface::CreateSinglePlanarSurface(
-        aYSize, aYUVColorSpace, aTransferFunction, aColorRange);
+        aYSize, aYUVColorSpace, aTransferFunction, aColorRange,
+        MacIOSurface::AllowAlpha::Yes);
   } else {
     result = MacIOSurface::CreateBiPlanarSurface(
         aYSize, aCbCrSize, aChromaSubsampling, aYUVColorSpace,
-        aTransferFunction, aColorRange, aColorDepth);
+        aTransferFunction, aColorRange, aColorDepth,
+        MacIOSurface::AllowAlpha::Yes);
   }
 
   if (result &&

@@ -138,21 +138,6 @@ browser.Context = class {
   }
 
   /**
-   * Gets the position and dimensions of the top-level browsing context.
-   *
-   * @returns {Map.<string, number>}
-   *     Object with |x|, |y|, |width|, and |height| properties.
-   */
-  get rect() {
-    return {
-      x: this.window.screenX,
-      y: this.window.screenY,
-      width: this.window.outerWidth,
-      height: this.window.outerHeight,
-    };
-  }
-
-  /**
    * Close the current window.
    *
    * @returns {Promise}

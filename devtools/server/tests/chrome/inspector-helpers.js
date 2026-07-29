@@ -21,9 +21,9 @@ const {
 } = require("resource://devtools/server/actors/inspector/document-walker.js");
 
 // Always log packets when running tests.
-Services.prefs.setBoolPref("devtools.debugger.log", true);
+Services.prefs.setIntPref("logging.devtools_rdp", 5);
 SimpleTest.registerCleanupFunction(function () {
-  Services.prefs.clearUserPref("devtools.debugger.log");
+  Services.prefs.clearUserPref("logging.devtools_rdp");
 });
 
 if (!DevToolsServer.initialized) {

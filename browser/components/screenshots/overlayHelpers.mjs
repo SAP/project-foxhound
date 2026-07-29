@@ -79,18 +79,18 @@ export async function getElementFromPoint(x, y, doc) {
       rect = await actor.sendQuery(
         "ScreenshotsHelper:GetElementRectFromPoint",
         {
-          x: x + ele.ownerGlobal.mozInnerScreenX,
-          y: y + ele.ownerGlobal.mozInnerScreenY,
-          bcId: ele.browsingContext.id,
+          x: x + ele.documentGlobal.mozInnerScreenX,
+          y: y + ele.documentGlobal.mozInnerScreenY,
+          bc: ele.browsingContext,
         }
       );
 
       if (rect) {
         rect = {
-          left: rect.left - ele.ownerGlobal.mozInnerScreenX,
-          right: rect.right - ele.ownerGlobal.mozInnerScreenX,
-          top: rect.top - ele.ownerGlobal.mozInnerScreenY,
-          bottom: rect.bottom - ele.ownerGlobal.mozInnerScreenY,
+          left: rect.left - ele.documentGlobal.mozInnerScreenX,
+          right: rect.right - ele.documentGlobal.mozInnerScreenX,
+          top: rect.top - ele.documentGlobal.mozInnerScreenY,
+          bottom: rect.bottom - ele.documentGlobal.mozInnerScreenY,
         };
       }
     } else if (ele.openOrClosedShadowRoot) {

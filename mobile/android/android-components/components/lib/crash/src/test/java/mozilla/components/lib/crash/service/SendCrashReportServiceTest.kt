@@ -17,7 +17,6 @@ import mozilla.components.support.test.eq
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
@@ -26,6 +25,7 @@ import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
 import org.robolectric.Robolectric
 import kotlin.coroutines.ContinuationInterceptor
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class SendCrashReportServiceTest {
@@ -126,8 +126,7 @@ class SendCrashReportServiceTest {
         verify(crashReporter).submitReport(eq(originalCrash), any())
         assertNotNull(caughtCrash)
 
-        val nativeCrash = caughtCrash
-            ?: throw AssertionError("Expected NativeCodeCrash instance")
+        val nativeCrash: Crash.NativeCodeCrash = caughtCrash
 
         assertEquals(123, nativeCrash.timestamp)
         assertEquals(false, nativeCrash.isFatal)

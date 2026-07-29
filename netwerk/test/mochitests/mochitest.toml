@@ -2,6 +2,7 @@
 support-files = [
   "method.sjs",
   "partial_content.sjs",
+  "prefetch_cache.sjs",
   "rel_preconnect.sjs",
   "set_cookie_xhr.sjs",
   "reset_cookie_xhr.sjs",
@@ -20,6 +21,7 @@ support-files = [
   "origin_header.sjs",
   "origin_header_form_post.html",
   "origin_header_form_post_xorigin.html",
+  "origin_header_form_post_redirect.html",
   "subResources.sjs",
   "beltzner.jpg",
   "beltzner.jpg^headers^",
@@ -181,10 +183,20 @@ skip-if = [
   "http3",
 ]
 
+["test_origin_header_redirect.html"]
+skip-if = [
+  "http2",
+  "http3",
+]
+
 ["test_partially_cached_content.html"]
 
 ["test_pdf.html"]
 support-files = ["file_pdfjs_test.pdf", "file_pdfjs_test.pdf^headers^"]
+
+["test_prefetch_cache.html"]
+
+["test_prefetch_cache_no_headers.html"]
 
 # test_1331680* fail with xorigin if 3pc are rejected by default (Bug 1873998).
 

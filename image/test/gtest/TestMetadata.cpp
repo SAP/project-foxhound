@@ -28,26 +28,58 @@ using namespace mozilla::image;
 
 enum class BMPWithinICO { NO, YES };
 
-static void CheckMetadataFrameCount(
-    const ImageTestCase& aTestCase,
-    NotNull<RefPtr<SourceBuffer>>& aSourceBuffer, BMPWithinICO aBMPWithinICO) {
-  // Create a metadata decoder.
+static void CheckMetadataFrameCount(const ImageTestCase& aTestCase,
+                                    BMPWithinICO aBMPWithinICO,
+                                    uint64_t aChunkSize = 0) {
+  nsCOMPtr<nsIInputStream> inputStream = LoadFile(aTestCase.mPath);
+  ASSERT_TRUE(inputStream != nullptr);
+
+  uint64_t length;
+  nsresult rv = inputStream->Available(&length);
+  ASSERT_NS_SUCCEEDED(rv);
+
+  auto sourceBuffer = MakeNotNull<RefPtr<SourceBuffer>>();
+  sourceBuffer->ExpectLength(length);
+
+  bool multiChunk = aChunkSize > 0;
+  if (!multiChunk) {
+    rv = sourceBuffer->AppendFromInputStream(inputStream, length);
+    ASSERT_NS_SUCCEEDED(rv);
+    sourceBuffer->Complete(NS_OK);
+  }
+
   DecoderType decoderType = DecoderFactory::GetDecoderType(aTestCase.mMimeType);
   DecoderFlags decoderFlags = DefaultDecoderFlags();
   decoderFlags |= DecoderFlags::COUNT_FRAMES;
   RefPtr<image::Decoder> decoder =
-      DecoderFactory::CreateAnonymousMetadataDecoder(decoderType, aSourceBuffer,
+      DecoderFactory::CreateAnonymousMetadataDecoder(decoderType, sourceBuffer,
                                                      decoderFlags);
   ASSERT_TRUE(decoder != nullptr);
-  RefPtr<IDecodingTask> task =
-      new AnonymousDecodingTask(WrapNotNull(decoder), /* aResumable */ false);
 
   if (aBMPWithinICO == BMPWithinICO::YES) {
     static_cast<nsBMPDecoder*>(decoder.get())->SetIsWithinICO();
   }
 
-  // Run the metadata decoder synchronously.
+  auto task = MakeRefPtr<AnonymousDecodingTask>(WrapNotNull(decoder),
+                                                /* aResumable */ multiChunk);
+
   task->Run();
+
+  if (multiChunk) {
+    uint64_t remaining = length;
+    while (remaining > 0) {
+      uint64_t read = std::min(remaining, aChunkSize);
+      remaining -= read;
+
+      rv = sourceBuffer->AppendFromInputStream(inputStream, read);
+      ASSERT_NS_SUCCEEDED(rv);
+
+      SpinPendingEvents();
+    }
+
+    sourceBuffer->Complete(NS_OK);
+    SpinPendingEvents();
+  }
 
   // Ensure that the metadata decoder didn't make progress it shouldn't have
   // (which would indicate that it decoded past the header of the image).
@@ -103,8 +135,8 @@ static void CheckMetadataCommon(const ImageTestCase& aTestCase,
       DecoderFactory::CreateAnonymousMetadataDecoder(decoderType, aSourceBuffer,
                                                      decoderFlags);
   ASSERT_TRUE(decoder != nullptr);
-  RefPtr<IDecodingTask> task =
-      new AnonymousDecodingTask(WrapNotNull(decoder), /* aResumable */ false);
+  auto task = MakeRefPtr<AnonymousDecodingTask>(WrapNotNull(decoder),
+                                                /* aResumable */ false);
 
   if (aBMPWithinICO == BMPWithinICO::YES) {
     static_cast<nsBMPDecoder*>(decoder.get())->SetIsWithinICO();
@@ -208,7 +240,10 @@ static void CheckMetadata(const ImageTestCase& aTestCase,
   }
 
   if (!aSkipFrameCount) {
-    CheckMetadataFrameCount(aTestCase, sourceBuffer, aBMPWithinICO);
+    CheckMetadataFrameCount(aTestCase, aBMPWithinICO);
+    for (uint64_t chunkSize : {1, 32, 64, 256}) {
+      CheckMetadataFrameCount(aTestCase, aBMPWithinICO, chunkSize);
+    }
   }
 }
 
@@ -236,6 +271,10 @@ TEST_F(ImageDecoderMetadata, Icon) { CheckMetadata(GreenIconTestCase()); }
 TEST_F(ImageDecoderMetadata, WebP) { CheckMetadata(GreenWebPTestCase()); }
 TEST_F(ImageDecoderMetadata, AVIF) { CheckMetadata(GreenAVIFTestCase()); }
 
+TEST_F(ImageDecoderMetadata, TransparentWebP) {
+  CheckMetadata(TransparentWebPTestCase());
+}
+
 #ifdef MOZ_JXL
 TEST_F(ImageDecoderMetadata, JXL) { CheckMetadata(GreenJXLTestCase()); }
 TEST_F(ImageDecoderMetadata, TransparentJXL) {
@@ -256,17 +295,16 @@ TEST_F(ImageDecoderMetadata, AnimatedWebP) {
 }
 
 TEST_F(ImageDecoderMetadata, AnimatedAVIF) {
-  // TODO: If we request first frame only decoding, the AVIF decoder says the
-  // animated image is not animated. This should be fixed at some point.
-  CheckMetadata(GreenFirstFrameAnimatedAVIFTestCase(), BMPWithinICO::NO,
-                /* aSkipCommon */ true, /* aSkipFrameCount */ false);
+  CheckMetadata(GreenFirstFrameAnimatedAVIFTestCase());
 }
 
 #ifdef MOZ_JXL
 TEST_F(ImageDecoderMetadata, AnimatedJXL) {
-  // TODO: Frame count decodes haven't been implemented for JXL yet.
-  CheckMetadata(GreenFirstFrameAnimatedJXLTestCase(), BMPWithinICO::NO,
-                /* aSkipCommon */ false, /* aSkipFrameCount */ true);
+  CheckMetadata(GreenFirstFrameAnimatedJXLTestCase());
+}
+
+TEST_F(ImageDecoderMetadata, LongAnimatedJXL) {
+  CheckMetadata(LongAnimatedJXLTestCase());
 }
 #endif
 

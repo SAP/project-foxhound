@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -1043,6 +1041,13 @@ nsresult nsParser::OnStopRequest(nsIRequest* request, nsresult status) {
   nsresult rv = NS_OK;
 
   mStreamStatus = status;
+
+  // If the load was aborted (because we were removed from the DOM tree for
+  // instance) we should abort the parser and terminate early. Resuming the
+  // parse may trigger synchronous script execution here.
+  if (status == NS_BINDING_ABORTED) {
+    return Terminate();
+  }
 
   // If there are scripts executing, this is probably due to a synchronous
   // XMLHttpRequest, see bug 460706 and 1938290.

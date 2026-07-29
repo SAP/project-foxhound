@@ -32,7 +32,15 @@ from . import util
 
 # Adding a metric here will require updating the `generate_metric_type` function
 # and require adjustments to `metrics` variables the the template.
-SUPPORTED_METRIC_TYPES = ["string", "quantity", "event", "datetime", "boolean", "string_list"]
+SUPPORTED_METRIC_TYPES = [
+    "string",
+    "quantity",
+    "event",
+    "datetime",
+    "boolean",
+    "labeled_boolean",  # static labels only; dynamic labels are not supported
+    "string_list",
+]
 
 
 def generate_ping_type_name(ping_name: str) -> str:
@@ -80,6 +88,28 @@ def clean_string(s: str) -> str:
     return s.replace("\n", " ").rstrip()
 
 
+def validate_labeled_boolean(metric: metrics.Metric) -> bool:
+    """
+    Validate that a labeled_boolean metric has static labels defined.
+
+    The Go server outputter requires labels to be listed in metrics.yaml
+    because it generates a Go struct with a field per label at build time.
+    Dynamic labels are not supported.
+
+    Returns:
+        bool: True if valid, False otherwise
+    """
+    if not getattr(metric, "ordered_labels", None):
+        print(
+            "❌ Ignoring labeled_boolean metric without static labels: "
+            + f"{metric.name}."
+            + " Define labels in metrics.yaml to use this metric type."
+        )
+        return False
+
+    return True
+
+
 def output_go(
     objs: metrics.ObjectTree, output_dir: Path, options: Optional[Dict[str, Any]]
 ) -> None:
@@ -111,6 +141,9 @@ def output_go(
     # unique list of event metrics used in any ping
     event_metrics: List[metrics.Metric] = []
 
+    # unique list of labeled_boolean metrics used in any ping
+    labeled_boolean_metrics: List[metrics.Metric] = []
+
     # Go through all metrics in objs and build a map of
     # ping->list of metric categories->list of metrics
     # for easier processing in the template.
@@ -127,9 +160,21 @@ def output_go(
                     )
                     continue
 
+                # Validate labeled_boolean metrics
+                if metric.type == "labeled_boolean" and not validate_labeled_boolean(
+                    metric
+                ):
+                    continue
+
                 for ping in metric.send_in_pings:
                     if metric.type == "event" and metric not in event_metrics:
                         event_metrics.append(metric)
+
+                    if (
+                        metric.type == "labeled_boolean"
+                        and metric not in labeled_boolean_metrics
+                    ):
+                        labeled_boolean_metrics.append(metric)
 
                     metrics_by_type = ping_to_metrics[ping]
                     metrics_list = metrics_by_type.setdefault(metric.type, [])
@@ -149,6 +194,9 @@ def output_go(
     with filepath.open("w", encoding="utf-8") as fd:
         fd.write(
             template.render(
-                parser_version=__version__, pings=ping_to_metrics, events=event_metrics
+                parser_version=__version__,
+                pings=ping_to_metrics,
+                events=event_metrics,
+                labeled_booleans=labeled_boolean_metrics,
             )
         )

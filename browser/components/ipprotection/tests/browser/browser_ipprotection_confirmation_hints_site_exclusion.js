@@ -5,7 +5,7 @@
 "use strict";
 
 const { IPPExceptionsManager } = ChromeUtils.importESModule(
-  "moz-src:///browser/components/ipprotection/IPPExceptionsManager.sys.mjs"
+  "moz-src:///toolkit/components/ipprotection/IPPExceptionsManager.sys.mjs"
 );
 
 /**
@@ -100,10 +100,14 @@ add_task(async function test_confirmation_hint_visbility_different_tab() {
 
   const PROTECTED_SITE = "https://example.com";
   const EXCLUDED_SITE = "https://example.org";
+  const EXCLUDED_SITE_2 = "https://example.net";
 
   sandbox.stub(IPPProxyManager, "state").value(IPPProxyStates.ACTIVE);
   sandbox.stub(IPPExceptionsManager, "hasExclusion").callsFake(principal => {
-    return principal?.origin === EXCLUDED_SITE;
+    return (
+      principal?.origin === EXCLUDED_SITE ||
+      principal?.origin === EXCLUDED_SITE_2
+    );
   });
 
   let showConfirmationHintSpy = sandbox.spy(window.ConfirmationHint, "show");
@@ -160,12 +164,12 @@ add_task(async function test_confirmation_hint_visbility_different_tab() {
 
   let excludedTab3 = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
-    EXCLUDED_SITE
+    EXCLUDED_SITE_2
   );
   Assert.equal(
     showConfirmationHintSpy.callCount,
     2,
-    "ConfirmationHint.show() should still have callCount == 2 after protected --> excluded new tab navigation"
+    "ConfirmationHint.show() should still have callCount == 2 after protected --> excluded (different site) new tab navigation"
   );
 
   [
@@ -177,7 +181,12 @@ add_task(async function test_confirmation_hint_visbility_different_tab() {
     protectedTab3,
   ].forEach(tab => BrowserTestUtils.removeTab(tab));
 
+  // sandbox.restore() unstubs IPPProxyManager.state back to NOT_READY,
+  // Dispatch IPPProxyManager:StateChanged so that #visitedExcludedSites can be cleared.
   sandbox.restore();
+  IPPProxyManager.dispatchEvent(
+    new CustomEvent("IPPProxyManager:StateChanged")
+  );
   await SpecialPowers.popPrefEnv();
 });
 
@@ -202,10 +211,14 @@ add_task(async function test_confirmation_hint_visbility_same_tab() {
 
   const PROTECTED_SITE = "https://example.com";
   const EXCLUDED_SITE = "https://example.org";
+  const EXCLUDED_SITE_2 = "https://example.net";
 
   sandbox.stub(IPPProxyManager, "state").value(IPPProxyStates.ACTIVE);
   sandbox.stub(IPPExceptionsManager, "hasExclusion").callsFake(principal => {
-    return principal?.origin === EXCLUDED_SITE;
+    return (
+      principal?.origin === EXCLUDED_SITE ||
+      principal?.origin === EXCLUDED_SITE_2
+    );
   });
 
   let showConfirmationHintSpy = sandbox.spy(window.ConfirmationHint, "show");
@@ -252,17 +265,22 @@ add_task(async function test_confirmation_hint_visbility_same_tab() {
     "ConfirmationHint.show() should still have callCount == 1 after protected --> protected same tab navigation"
   );
 
-  BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, EXCLUDED_SITE);
+  BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, EXCLUDED_SITE_2);
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
   Assert.equal(
     showConfirmationHintSpy.callCount,
     2,
-    "ConfirmationHint.show() should have callCount == 2 after protected --> excluded same tab navigation"
+    "ConfirmationHint.show() should have callCount == 2 after protected --> excluded (different site) same tab navigation"
   );
 
   BrowserTestUtils.removeTab(tab);
 
+  // sandbox.restore() unstubs IPPProxyManager.state back to NOT_READY,
+  // Dispatch IPPProxyManager:StateChanged so that #visitedExcludedSites can be cleared.
   sandbox.restore();
+  IPPProxyManager.dispatchEvent(
+    new CustomEvent("IPPProxyManager:StateChanged")
+  );
   await SpecialPowers.popPrefEnv();
 });
 
@@ -271,11 +289,9 @@ add_task(async function test_confirmation_hint_visbility_same_tab() {
  * after switching tabs.
  *
  * Test cases:
- * 1. protected tab 2 (active tab) --> protected tab 1: do not show
- * 2. protected tab 1 --> excluded tab 1: show (+1)
- * 3. excluded tab 1 --> excluded tab 2: do not show
- * 4. excluded tab 2 --> protected tab 1: do not show
- * 5. protected tab 2 --> excluded tab 1: show (+2)
+ * 1. protected tab (active tab) --> excluded tab 1: show (+1)
+ * 2. excluded tab 1 --> protected tab: do not show
+ * 3. protected tab --> excluded tab 2 (different site): show (+2)
  */
 add_task(async function test_confirmation_hint_visbility_tab_switch() {
   await SpecialPowers.pushPrefEnv({
@@ -286,81 +302,133 @@ add_task(async function test_confirmation_hint_visbility_tab_switch() {
 
   const PROTECTED_SITE = "https://example.com";
   const EXCLUDED_SITE = "https://example.org";
+  const EXCLUDED_SITE_2 = "https://example.net";
 
   sandbox.stub(IPPProxyManager, "state").value(IPPProxyStates.ACTIVE);
   sandbox.stub(IPPExceptionsManager, "hasExclusion").callsFake(principal => {
-    return principal?.origin === EXCLUDED_SITE;
+    return (
+      principal?.origin === EXCLUDED_SITE ||
+      principal?.origin === EXCLUDED_SITE_2
+    );
   });
+
+  // Load all tabs as background tabs first
+  let protectedTab = BrowserTestUtils.addTab(gBrowser, PROTECTED_SITE);
+  let excludedTab1 = BrowserTestUtils.addTab(gBrowser, EXCLUDED_SITE);
+  let excludedTab2 = BrowserTestUtils.addTab(gBrowser, EXCLUDED_SITE_2);
+
+  await Promise.all([
+    BrowserTestUtils.browserLoaded(protectedTab.linkedBrowser),
+    BrowserTestUtils.browserLoaded(excludedTab1.linkedBrowser),
+    BrowserTestUtils.browserLoaded(excludedTab2.linkedBrowser),
+  ]);
+
+  await BrowserTestUtils.switchTab(gBrowser, protectedTab);
 
   let showConfirmationHintSpy = sandbox.spy(window.ConfirmationHint, "show");
 
-  // Load all tabs first
-  let protectedTab1 = await BrowserTestUtils.openNewForegroundTab(
-    gBrowser,
-    PROTECTED_SITE
-  );
-  let excludedTab1 = await BrowserTestUtils.openNewForegroundTab(
-    gBrowser,
-    EXCLUDED_SITE
-  );
-  let excludedTab2 = await BrowserTestUtils.openNewForegroundTab(
-    gBrowser,
-    EXCLUDED_SITE
-  );
-  let protectedTab2 = await BrowserTestUtils.openNewForegroundTab(
-    gBrowser,
-    PROTECTED_SITE
-  );
-
-  // Reset spy history before we tab switch
-  showConfirmationHintSpy.resetHistory();
-
   Assert.equal(
     gBrowser.selectedTab,
-    protectedTab2,
-    "Active tab should be protected tab 2"
-  );
-
-  await BrowserTestUtils.switchTab(gBrowser, protectedTab1);
-  Assert.equal(
-    showConfirmationHintSpy.callCount,
-    0,
-    "ConfirmationHint.show() should have callCount == 0 after protected tab 2 --> protected tab 1 switch"
+    protectedTab,
+    "Active tab should be protected tab"
   );
 
   await BrowserTestUtils.switchTab(gBrowser, excludedTab1);
   Assert.equal(
     showConfirmationHintSpy.callCount,
     1,
-    "ConfirmationHint.show() should have callCount == 1 after protected tab 1 --> excluded tab 1 switch"
+    "ConfirmationHint.show() should have callCount == 1 after protected --> excluded tab 1 switch"
+  );
+
+  await BrowserTestUtils.switchTab(gBrowser, protectedTab);
+  Assert.equal(
+    showConfirmationHintSpy.callCount,
+    1,
+    "ConfirmationHint.show() should still have callCount == 1 after excluded tab 1 --> protected tab switch"
   );
 
   await BrowserTestUtils.switchTab(gBrowser, excludedTab2);
   Assert.equal(
     showConfirmationHintSpy.callCount,
-    1,
-    "ConfirmationHint.show() should still have callCount == 1 after excluded tab 1 --> excluded tab 2 switch"
-  );
-
-  await BrowserTestUtils.switchTab(gBrowser, protectedTab1);
-  Assert.equal(
-    showConfirmationHintSpy.callCount,
-    1,
-    "ConfirmationHint.show() should still have callCount == 1 after excluded tab 1 --> protected tab 1 switch"
-  );
-
-  await BrowserTestUtils.switchTab(gBrowser, excludedTab1);
-  Assert.equal(
-    showConfirmationHintSpy.callCount,
     2,
-    "ConfirmationHint.show() should have callCount == 1 after protected tab 1 --> excluded tab 1 switch"
+    "ConfirmationHint.show() should have callCount == 2 after protected --> excluded tab 2 (different site) switch"
   );
 
-  [excludedTab1, protectedTab1, excludedTab2, protectedTab2].forEach(tab =>
+  [protectedTab, excludedTab1, excludedTab2].forEach(tab =>
     BrowserTestUtils.removeTab(tab)
   );
 
+  // sandbox.restore() unstubs IPPProxyManager.state back to NOT_READY,
+  // Dispatch IPPProxyManager:StateChanged so that #visitedExcludedSites can be cleared.
   sandbox.restore();
+  IPPProxyManager.dispatchEvent(
+    new CustomEvent("IPPProxyManager:StateChanged")
+  );
+  await SpecialPowers.popPrefEnv();
+});
+
+/**
+ * Tests that the confirmation hint is shown only once per excluded site
+ * during a VPN session.
+ *
+ * Test cases:
+ * 1. protected --> excluded site A: show (+1)
+ * 2. excluded site A --> protected: do not show
+ * 3. protected --> excluded site A: do not show
+ */
+add_task(async function test_confirmation_hint_once_per_unique_excluded_site() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.ipProtection.siteExceptionsHintsEnabled", true]],
+  });
+
+  const sandbox = sinon.createSandbox();
+
+  const PROTECTED_SITE = "https://example.com";
+  const EXCLUDED_SITE_A = "https://example.org";
+
+  sandbox.stub(IPPProxyManager, "state").value(IPPProxyStates.ACTIVE);
+  sandbox.stub(IPPExceptionsManager, "hasExclusion").callsFake(principal => {
+    return principal?.origin === EXCLUDED_SITE_A;
+  });
+
+  let showConfirmationHintSpy = sandbox.spy(window.ConfirmationHint, "show");
+
+  let tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    PROTECTED_SITE
+  );
+
+  BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, EXCLUDED_SITE_A);
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+  Assert.equal(
+    showConfirmationHintSpy.callCount,
+    1,
+    "Hint should be shown on first visit to excluded site A"
+  );
+
+  BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, PROTECTED_SITE);
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+  Assert.equal(
+    showConfirmationHintSpy.callCount,
+    1,
+    "Hint should not be shown when navigating back to protected site"
+  );
+
+  BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, EXCLUDED_SITE_A);
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+  Assert.equal(
+    showConfirmationHintSpy.callCount,
+    1,
+    "Hint should not be shown again for excluded site A even after returning from protected site"
+  );
+
+  BrowserTestUtils.removeTab(tab);
+  // sandbox.restore() unstubs IPPProxyManager.state back to NOT_READY,
+  // Dispatch IPPProxyManager:StateChanged so that #visitedExcludedSites can be cleared.
+  sandbox.restore();
+  IPPProxyManager.dispatchEvent(
+    new CustomEvent("IPPProxyManager:StateChanged")
+  );
   await SpecialPowers.popPrefEnv();
 });
 
@@ -376,10 +444,8 @@ add_task(async function test_confirmation_hint_exclusions_toggle() {
   Services.perms.removeByType("ipp-vpn");
 
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: true,
+    isReady: true,
   });
-  await IPPEnrollAndEntitleManager.refetchEntitlement();
 
   sandbox.stub(IPPProxyManager, "state").value(IPPProxyStates.ACTIVE);
 
@@ -389,7 +455,6 @@ add_task(async function test_confirmation_hint_exclusions_toggle() {
   );
 
   let content = await openPanel({
-    isSignedOut: false,
     isProtectionEnabled: true,
     siteData: { isExclusion: false },
   });
@@ -418,6 +483,11 @@ add_task(async function test_confirmation_hint_exclusions_toggle() {
 
   Services.perms.removeByType("ipp-vpn");
   cleanupService();
+  // sandbox.restore() unstubs IPPProxyManager.state back to NOT_READY,
+  // Dispatch IPPProxyManager:StateChanged so that #visitedExcludedSites can be cleared.
   sandbox.restore();
+  IPPProxyManager.dispatchEvent(
+    new CustomEvent("IPPProxyManager:StateChanged")
+  );
   await SpecialPowers.popPrefEnv();
 });

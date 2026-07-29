@@ -2,6 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import functools
 import json
 import os
 import sys
@@ -16,7 +17,6 @@ from mozshellutil import quote as shell_quote
 from mozbuild.util import (
     FileAvoidWrite,
     ReadOnlyDict,
-    memoized_property,
     system_encoding,
 )
 
@@ -53,7 +53,7 @@ class BuildConfig:
             mod.__file__ = path
             sys.modules["config.status"] = mod
 
-            with open(path) as fh:
+            with open(path, encoding="utf-8") as fh:
                 source = fh.read()
                 code_cache[path] = (
                     mtime,
@@ -182,7 +182,7 @@ class ConfigEnvironment:
     def is_artifact_build(self):
         return self.substs.get("MOZ_ARTIFACT_BUILDS", False)
 
-    @memoized_property
+    @functools.cached_property
     def acdefines(self):
         acdefines = dict((name, self.defines[name]) for name in self.defines)
         return ReadOnlyDict(acdefines)
@@ -214,7 +214,7 @@ class PartialConfigDict:
     def _load_config_track(self):
         existing_files = set()
         try:
-            with open(self._config_track) as fh:
+            with open(self._config_track, encoding="utf-8") as fh:
                 existing_files.update(fh.read().splitlines())
         except OSError:
             pass

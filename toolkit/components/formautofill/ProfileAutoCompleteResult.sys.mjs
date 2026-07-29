@@ -11,7 +11,11 @@ ChromeUtils.defineESModuleGetters(lazy, {
 ChromeUtils.defineLazyGetter(
   lazy,
   "l10n",
-  () => new Localization(["toolkit/formautofill/formAutofill.ftl"], true)
+  () =>
+    new Localization(
+      ["branding/brand.ftl", "toolkit/formautofill/formAutofill.ftl"],
+      true
+    )
 );
 
 class ProfileAutoCompleteResult {
@@ -497,7 +501,7 @@ export class CreditCardResult extends ProfileAutoCompleteResult {
           : (ccType ?? ""); // Unknown card type
         const ariaLabel = [
           ccTypeName,
-          primary.toString().replaceAll("*", ""),
+          primary.toString().replaceAll("•", ""),
           secondary,
         ]
           .filter(chunk => !!chunk) // Exclude empty chunks.

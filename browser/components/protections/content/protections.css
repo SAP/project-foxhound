@@ -67,7 +67,7 @@ body[focuseddatatype="cryptominer"] {
 }
 
 h2 {
-  font-weight: var(--heading-font-weight);
+  font-weight: var(--font-weight-heading);
 }
 
 #report-title {
@@ -98,7 +98,6 @@ h2 {
 #manage-protections,
 .card-header > button,
 #save-passwords-button,
-#get-proxy-extension-link,
 #get-vpn-link,
 #vpn-banner-link,
 #manage-passwords-button,
@@ -150,7 +149,6 @@ h2 {
 .etp-card.custom-not-blocking #protection-settings,
 #manage-protections,
 .etp-card .icon.dark,
-.proxy-card .icon.dark,
 a.hidden,
 .loading .card-body,
 .lockwise-card.hidden,
@@ -173,7 +171,6 @@ a.hidden,
 .loading a,
 .loading button,
 .loading .wrapper,
-.proxy-card.hidden,
 .vpn-card.hidden,
 .card-body.hidden,
 .hidden {
@@ -206,18 +203,16 @@ a.hidden,
     --fingerprinter-highlight-color: var(--color-orange-30);
     --cryptominer-highlight-color: var(--color-gray-50);
 
-    --gear-icon-fill: oklch(from var(--color-gray-05) l c h / 60%);
-    --hover-grey-link: var(--grey-30);
+    --gear-icon-fill: oklch(from var(--color-gray-0) l c h / 60%);
+    --hover-grey-link: var(--color-gray-30);
     --feature-banner-color: var(--color-white-alpha-10);
   }
 
-  .etp-card .icon.dark,
-  .proxy-card .icon.dark {
+  .etp-card .icon.dark {
     display: block;
   }
 
-  .etp-card .icon.light,
-  .proxy-card .icon.light {
+  .etp-card .icon.light {
     display: none;
   }
 }
@@ -996,7 +991,6 @@ label[for="tab-cryptominer"]:hover ~ #highlight-hover {
 
 #manage-protections,
 #sign-up-for-monitor-link,
-#get-proxy-extension-link,
 #get-vpn-link,
 #vpn-banner-link,
 .monitor-partial-breaches-link-wrapper,
@@ -1012,7 +1006,6 @@ label[for="tab-cryptominer"]:hover ~ #highlight-hover {
 
 #manage-protections:hover,
 #sign-up-for-monitor-link:hover,
-#get-proxy-extension-link:hover,
 #get-vpn-link:hover,
 #vpn-banner-link:hover,
 #monitor-partial-breaches-link:hover,
@@ -1024,7 +1017,6 @@ label[for="tab-cryptominer"]:hover ~ #highlight-hover {
 
 #manage-protections:hover:active,
 #sign-up-for-monitor-link:hover:active,
-#get-proxy-extension-link:hover:active,
 #get-vpn-link:hover:active,
 #vpn-banner-link:hover:active,
 #monitor-partial-breaches-link:hover:active,
@@ -1036,7 +1028,6 @@ label[for="tab-cryptominer"]:hover ~ #highlight-hover {
 
 #manage-protections:focus-visible,
 #sign-up-for-monitor-link:focus-visible,
-#get-proxy-extension-link:focus-visible,
 #get-vpn-link:focus-visible,
 #vpn-banner-link:focus-visible,
 #monitor-partial-breaches-link:focus-visible,

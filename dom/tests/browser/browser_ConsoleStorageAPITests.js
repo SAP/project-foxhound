@@ -28,7 +28,7 @@ add_task(async function () {
   var tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URI);
   var browser = gBrowser.selectedBrowser;
 
-  const windowId = await ContentTask.spawn(browser, null, async function () {
+  const windowId = await SpecialPowers.spawn(browser, [], async function () {
     let ConsoleAPIStorage = Cc["@mozilla.org/consoleAPI-storage;1"].getService(
       Ci.nsIConsoleAPIStorage
     );

@@ -24,7 +24,6 @@ import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.browser.toolbar.BrowserToolbar
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.support.test.robolectric.testContext
-import org.junit.Assert.assertNotNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -32,6 +31,7 @@ import org.mozilla.fenix.ext.isLargeWindow
 import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.mozilla.fenix.utils.Settings
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertNotNull
 import mozilla.components.browser.toolbar.R as toolbarR
 
 @RunWith(RobolectricTestRunner::class)
@@ -49,6 +49,7 @@ class BrowserToolbarCFRPresenterTest {
         val settings: Settings = mockk(relaxed = true) {
             every { shouldShowCookieBannersCFR } returns true
             every { shouldUseCookieBannerPrivateMode } returns true
+            every { cfrPopupsEnabled } returns true
         }
         val presenter = createPresenter(
             isPrivate = true,
@@ -97,6 +98,7 @@ class BrowserToolbarCFRPresenterTest {
             every { isSwipeToolbarToSwitchTabsEnabled } returns true
             every { hasShownTabSwipeCFR } returns false
             every { isTabStripEnabled } returns false
+            every { cfrPopupsEnabled } returns true
         }
 
         val presenter = createPresenter(

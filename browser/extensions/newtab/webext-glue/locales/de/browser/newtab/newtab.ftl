@@ -7,18 +7,22 @@
 
 newtab-page-title = Neuer Tab
 newtab-settings-button =
-    .title = Einstellungen für neue Tabs anpassen
+    .title = Firefox-Startseite anpassen
+#  (developer note): @nova-cleanup(remove-string): Remove newtab-customize-panel-icon-button once Nova lands, will be using newtab-customize-panel-label instead
 newtab-customize-panel-icon-button =
     .title = Diese Seite anpassen
+#  (developer note): @nova-cleanup(remove-string): Remove newtab-customize-panel-icon-button-label once Nova lands, will be using newtab-customize-panel-label instead
 newtab-customize-panel-icon-button-label = Anpassen
+newtab-customize-panel-label =
+    .label = Anpassen
 newtab-personalize-settings-icon-label =
-    .title = Neuen Tab anpassen
+    .title = Firefox-Startseite anpassen
     .aria-label = Einstellungen
 newtab-settings-dialog-label =
     .aria-label = Einstellungen
 newtab-personalize-icon-label =
-    .title = Neuen Tab anpassen
-    .aria-label = Neuen Tab anpassen
+    .title = Firefox-Startseite anpassen
+    .aria-label = Firefox-Startseite anpassen
 newtab-personalize-dialog-label =
     .aria-label = Anpassen
 newtab-logo-and-wordmark =
@@ -26,6 +30,127 @@ newtab-logo-and-wordmark =
 newtab-card-dismiss-button =
     .title = Verwerfen
     .aria-label = Verwerfen
+
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-title =
+    .label = Startseite
+home-homepage-new-windows =
+    .label = Neue Fenster
+home-homepage-new-tabs =
+    .label = Neue Tabs
+# This option leads to the "Custom Homepage" subpage
+home-homepage-custom-homepage-button =
+    .label = Wählen Sie eine bestimmte Website
+
+## Custom URLs subpage
+
+# Subheader on the Custom Homepage subpage. Followed by a form to enter URLs and a list of URLs already saved, if any.
+home-custom-homepage-card-header =
+    .label = Website-Adresse(n)
+home-custom-homepage-address =
+    .placeholder = Adresse eingeben
+home-custom-homepage-address-button =
+    .label = Adresse hinzufügen
+# Shown when no custom websites/URLs to use as a homepage have been added yet
+home-custom-homepage-no-results =
+    .label = Noch keine Websites hinzugefügt.
+home-custom-homepage-delete-address-button =
+    .aria-label = Adresse löschen
+    .title = Adresse löschen
+# Further options to use when setting the home page. Two action buttons are placed in line with this prompt
+# to replace the current home page with a currently open page or bookmark.
+home-custom-homepage-replace-with-prompt =
+    .label = Ersetzen durch
+# Button that appears in-line after text "Replace with" (home-custom-homepage-replace-with-prompt)
+home-custom-homepage-current-pages-button =
+    .label = Derzeit geöffnete Seiten
+# Button that appears in-line after text "Replace with" (home-custom-homepage-replace-with-prompt)
+home-custom-homepage-bookmarks-button =
+    .label = Lesezeichen…
+
+## Firefox Home content
+
+home-prefs-content-header =
+    .label = { -firefox-home-brand-name }
+home-prefs-search-header2 =
+    .label = Suchen
+home-prefs-stories-header2 =
+    .label = Artikel
+    .description = Besondere Inhalte ausgewählt von der { -brand-product-name }-Familie
+home-prefs-widgets-header =
+    .label = Widgets
+# Lists is a widget on New Tab, similar to a to-do widget
+home-prefs-lists-header =
+    .label = Listen
+# Timer is a widget on New Tab, similar to the Pomodoro timer.
+home-prefs-timer-header =
+    .label = Timer
+# Sports is a widget on New Tab showing sports scores and schedules.
+home-prefs-sports-widget-header =
+    .label = Sport
+# Clock is a widget on New Tab that displays time zones around the world.
+home-prefs-clocks-header =
+    .label = Uhr
+home-prefs-mission-message2 =
+    .message = Unsere Sponsoren unterstützen unsere Mission, ein besseres Web zu erschaffen.
+home-prefs-manage-topics-link2 =
+    .label = Themen verwalten
+home-prefs-choose-wallpaper-link2 =
+    .label = Wählen Sie ein Hintergrundbild
+home-prefs-firefox-logo-header =
+    .label = { -brand-short-name }-Logo
+# Informational message bar that appears in the Firefox Home section when the options are disabled.
+# The user must select Firefox Home as their homepage for either new tabs or new windows to enable
+# the features in settings.
+home-prefs-firefox-home-disabled-notice =
+    .message = Wählen Sie die Option { -firefox-home-brand-name } unter "Startseite", um diese Funktionen verwenden zu können.
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } Zeile
+           *[other] { $num } Zeilen
+        }
+# Dropdown option shown when an extension replaces the contents of new windows or tabs.
+# Variables:
+#   $extension (string) - Name of the extension
+home-prefs-homepage-extension-option =
+    .label = Erweiterung ({ $extension })
+home-restore-defaults-srd =
+    .label = Standard wiederherstellen
+    .accesskey = w
+home-mode-choice-default-fx-srd =
+    .label = { -firefox-home-brand-name } (Standard)
+home-mode-choice-custom-srd =
+    .label = Benutzerdefinierte Adressen…
+home-mode-choice-blank-srd =
+    .label = Leere Seite
+home-prefs-shortcuts-header-srd =
+    .label = Verknüpfungen
+home-prefs-shortcuts-select =
+    .aria-label = Verknüpfungen
+home-prefs-shortcuts-by-option-sponsored-srd =
+    .label = Gesponserte Verknüpfungen
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Gesponserte Artikel
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Besuchte Seiten
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Lesezeichen
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Neueste Downloads
+home-prefs-recent-activity-header-srd =
+    .label = Neueste Aktivität
+home-prefs-recent-activity-select =
+    .aria-label = Neueste Aktivität
+home-prefs-weather-header-srd =
+    .label = Wetter
+home-prefs-support-firefox-header-srd =
+    .label = { -brand-product-name } unterstützen
+home-prefs-mission-message-learn-more-link-srd = Erfahren, wie das geht
 
 ## Search box component.
 
@@ -52,7 +177,7 @@ newtab-search-box-input =
     .placeholder = Das Web durchsuchen
     .aria-label = Das Web durchsuchen
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Suchmaschine hinzufügen
 newtab-topsites-add-shortcut-header = Neue Verknüpfung
@@ -72,6 +197,11 @@ newtab-topsites-url-validation = Gültige Adresse erforderlich
 newtab-topsites-image-url-label = Adresse von benutzerdefinierter Grafik
 newtab-topsites-use-image-link = Eine benutzerdefinierte Grafik verwenden…
 newtab-topsites-image-validation = Grafik konnte nicht geladen werden. Verwenden Sie eine andere Adresse.
+
+## Clear text button for the URL and image URL input fields in the Top Sites form.
+
+newtab-topsites-clear-input =
+    .aria-label = Text löschen
 
 ## Top Sites - General form dialog buttons. These are verbs/actions.
 
@@ -139,6 +269,11 @@ newtab-menu-report = Melden
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
 # e.g. "Sports". "Block" is a verb here.
 newtab-menu-section-block = Blockieren
+# "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
+# e.g. Following the travel section of stories.
+newtab-menu-section-unfollow-topic = Nicht mehr folgen
+# Context menu option to open a support page explaining the New Tab personalization features and privacy controls.
+newtab-menu-section-learn-more = Weitere Informationen
 # "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
 # e.g. Following the travel section of stories.
 newtab-menu-section-unfollow = Thema nicht mehr folgen
@@ -240,7 +375,7 @@ newtab-section-header-recent-activity = Neueste Aktivität
 # Variables:
 #   $provider (string) - Name of the corresponding content provider.
 newtab-section-header-pocket = Empfohlen von { $provider }
-newtab-section-header-stories = Geschichten, die zum Nachdenken anregen
+newtab-section-header-stories = Artikel, die zum Nachdenken anregen
 # "picks" refers to recommended articles
 newtab-section-header-todays-picks = Unsere heutigen Tipps für Sie
 
@@ -250,14 +385,14 @@ newtab-empty-section-highlights = Surfen Sie los und wir zeigen Ihnen hier einig
 # Ex. When there are no more Pocket story recommendations, in the space where there would have been stories, this is shown instead.
 # Variables:
 #   $provider (string) - Name of the content provider for this section, e.g "Pocket".
-newtab-empty-section-topstories = Jetzt kennen Sie die Neuigkeiten. Schauen Sie später wieder vorbei, um neue Informationen von { $provider } zu erhalten. Können Sie nicht warten? Wählen Sie ein beliebtes Thema und lesen Sie weitere interessante Geschichten aus dem Internet.
+newtab-empty-section-topstories = Das war's. Schauen Sie später wieder vorbei, um neue Artikel von { $provider } zu erhalten. Sie können es kaum erwarten? Wählen Sie ein beliebtes Thema aus, um weitere interessante Artikel aus dem Internet zu durchstöbern.
 # Ex. When there are no more story recommendations, in the space where there would have been stories, this is shown instead.
-newtab-empty-section-topstories-generic = Jetzt kennen Sie die Neuigkeiten. Schauen Sie später wieder vorbei, um neue Artikel zu erhalten. Können Sie nicht warten? Wählen Sie ein beliebtes Thema und lesen Sie weitere interessante Geschichten aus dem Internet.
+newtab-empty-section-topstories-generic = Das war's. Schauen Sie später wieder vorbei, um neue Artikel zu erhalten. Sie können es kaum erwarten? Wählen Sie ein beliebtes Thema, um weitere interessante Artikel aus dem Internet zu durchstöbern.
 
 ## Empty Section (Content Discovery Experience). These show when there are no more stories or when some stories fail to load.
 
 newtab-discovery-empty-section-topstories-header = Alle Artikel gelesen
-newtab-discovery-empty-section-topstories-content = Öffnen Sie diese Seite später ein weiteres Mal, um neue Artikel angezeigt zu bekommen.
+newtab-discovery-empty-section-topstories-content = Kommen Sie später wieder, um neue Artikel angezeigt zu bekommen.
 newtab-discovery-empty-section-topstories-try-again-button = Erneut versuchen
 newtab-discovery-empty-section-topstories-loading = Wird geladen…
 # Displays when a layout in a section took too long to fetch articles.
@@ -306,9 +441,23 @@ newtab-error-fallback-refresh-link = Aktualisieren Sie die Seite, um es erneut z
 
 newtab-custom-shortcuts-title = Verknüpfungen
 newtab-custom-shortcuts-subtitle = Websites, die Sie speichern oder besuchen
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = Verknüpfungen
     .description = Websites, die Sie speichern oder besuchen
+newtab-custom-shortcuts-nova =
+    .label = Verknüpfungen
+newtab-custom-row-description =
+    .description = Anzahl der Zeilen
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+            [one] { $num } Zeile
+           *[other] { $num } Zeilen
+        }
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector =
@@ -319,13 +468,16 @@ newtab-custom-row-selector =
 newtab-custom-sponsored-sites = Gesponserte Verknüpfungen
 newtab-custom-pocket-title = Empfohlen von { -pocket-brand-name }
 newtab-custom-pocket-subtitle = Besondere Inhalte ausgewählt von { -pocket-brand-name }, Teil der { -brand-product-name }-Familie
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be having a description under "Recommended stories" anymore
 newtab-custom-stories-toggle =
-    .label = Empfohlene Geschichten
+    .label = Empfohlene Artikel
     .description = Besondere Inhalte ausgewählt von der { -brand-product-name }-Familie
+newtab-recommended-stories-toggle =
+    .label = Empfohlene Artikel
 newtab-custom-stories-personalized-toggle =
-    .label = Geschichten
-newtab-custom-stories-personalized-checkbox-label = Personalisierte Geschichten basierend auf Ihrer Aktivität
-newtab-custom-pocket-sponsored = Gesponserte Inhalte
+    .label = Artikel
+newtab-custom-stories-personalized-checkbox-label = Artikel, die Ihnen gefallen könnten
+newtab-custom-pocket-sponsored = Gesponserte Artikel
 newtab-custom-pocket-show-recent-saves = Zuletzt hinzugefügte Einträge anzeigen
 newtab-custom-recent-title = Neueste Aktivität
 newtab-custom-recent-subtitle = Eine Auswahl kürzlich besuchter Websites und Inhalte
@@ -338,6 +490,12 @@ newtab-custom-widget-lists-toggle =
     .label = Listen
 newtab-custom-widget-timer-toggle =
     .label = Timer
+newtab-custom-widget-sports-toggle =
+    .label = Weltmeisterschaft
+newtab-custom-widget-clock-toggle =
+    .label = Uhr
+newtab-custom-widget-sports-toggle2 =
+    .label = Sport
 newtab-custom-widget-section-title = Widgets
 newtab-custom-widget-section-toggle =
     .label = Widgets
@@ -355,8 +513,12 @@ newtab-custom-settings = Weitere Einstellungen verwalten
 
 newtab-wallpaper-title = Hintergrundbilder
 newtab-wallpaper-reset = Standard wiederherstellen
+#  (developer note): @nova-cleanup(remove-string): Remove old "Upload an image" string once Nova lands. The new "Add an image"  string will take over
 newtab-wallpaper-upload-image = Grafik hochladen
+newtab-wallpaper-add-an-image = Ein Bild hinzufügen
 newtab-wallpaper-custom-color = Farbe auswählen
+newtab-wallpaper-toggle-title =
+    .label = Hintergrundbilder
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = Die Grafik hat die Größenbegrenzung von { $file_size } MB überschritten. Bitte versuchen Sie, eine kleinere Datei hochzuladen.
@@ -379,7 +541,9 @@ newtab-wallpaper-light-fox-anniversary = Ein Fuchs auf einer Weide vor einer neb
 
 ## Solid Colors
 
+#  (developer note): @nova-cleanup(remove-string): Remove old "Solid colors" string once Nova lands. The simplified "Colors" string will take over
 newtab-wallpaper-category-title-colors = Einfarbig
+newtab-wallpaper-colors = Farben
 newtab-wallpaper-blue = Blau
 newtab-wallpaper-light-blue = Hellblau
 newtab-wallpaper-light-purple = Helllila
@@ -430,7 +594,7 @@ newtab-wallpaper-blue-flowers = Detailaufnahmen von blühenden blauen Blumen
 #   $webpage_string (String) - The name of the webpage where the photo is located.
 newtab-wallpaper-attribution = Foto von <a data-l10n-name="name-link">{ $author_string }</a> auf <a data-l10n-name="webpage-link">{ $webpage_string }</a>
 newtab-wallpaper-feature-highlight-header = Wie wäre es mit einem Farbtupfer?
-newtab-wallpaper-feature-highlight-content = Geben Sie Ihrem neuen Tab einen frischen Anstrich mit Hintergrundbildern.
+newtab-wallpaper-feature-highlight-content = Geben Sie Ihrer Firefox-Startseite einen frischen Anstrich mit Hintergrundbildern.
 newtab-wallpaper-feature-highlight-button = Verstanden
 # Tooltip for dismiss button
 feature-highlight-dismiss-button =
@@ -470,6 +634,9 @@ newtab-weather-menu-change-location = Standort ändern
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Standort suchen
     .aria-label = Standort suchen
+# "Current" refers to the user's physical/geographic location detected via geolocation.
+newtab-weather-change-location-search-use-current =
+    .label = Aktuellen Standort verwenden
 newtab-weather-menu-weather-display = Wetteranzeige
 newtab-weather-todays-forecast = Die heutige Wettervorhersage
 newtab-weather-see-full-forecast = Vollständige Prognose ansehen
@@ -485,8 +652,7 @@ newtab-weather-menu-temperature-option-fahrenheit = Fahrenheit
 newtab-weather-menu-temperature-option-celsius = Celsius
 newtab-weather-menu-change-temperature-units-fahrenheit = Zu Fahrenheit wechseln
 newtab-weather-menu-change-temperature-units-celsius = Zu Celsius wechseln
-newtab-weather-menu-hide-weather-v2 = Wetter ausblenden
-newtab-weather-menu-hide-weather = Wetter bei neuem Tab ausblenden
+newtab-weather-menu-hide-weather = Wetter auf der Firefox-Startseite ausblenden
 newtab-weather-menu-learn-more = Weitere Informationen
 newtab-weather-menu-detect-my-location = Meinen Standort erkennen
 # This message is shown if user is working offline
@@ -496,8 +662,18 @@ newtab-weather-opt-in-not-now =
     .label = Nicht jetzt
 newtab-weather-opt-in-yes =
     .label = Ja
+newtab-weather-opt-in-headline = Holen Sie sich Ihre lokale Wettervorhersage
+newtab-weather-opt-in-use-location =
+    .label = Standort verwenden
+newtab-weather-opt-in-choose-location = Standort auswählen
 # We'll be showing static (fake) weather data if the user has not opted in to using their location
 newtab-weather-static-city = New York City
+# "Highest" here refers to the highest temperature of the day
+newtab-weather-high =
+    .aria-label = Höchste
+# "Lowest" here refers to the lowest temperature of the day
+newtab-weather-low =
+    .aria-label = Niedrigste
 # Variables:
 #   $provider (string) - Service provider for weather data
 newtab-weather-see-forecast-description =
@@ -536,7 +712,7 @@ newtab-topic-label-home = Haus und Garten
 newtab-topic-selection-title = Wählen Sie Themen aus, um Ihren Feed zu optimieren
 # “tailored” refers to process of (a tailor) making (clothes) to fit individual customers.
 # In other words, “Our expert curators prioritize stories to fit your selected interests”
-newtab-topic-selection-subtitle = Wählen Sie zwei oder mehr Themen aus. Unsere erfahrenen Kuratoren priorisieren Geschichten, die auf Ihre Interessen zugeschnitten sind. Passen Sie die Themen jederzeit an.
+newtab-topic-selection-subtitle = Wählen Sie zwei oder mehr Themen aus. Unsere erfahrenen Kuratoren priorisieren Artikel, die auf Ihre Interessen zugeschnitten sind. Passen Sie die Themen jederzeit an.
 newtab-topic-selection-save-button = Speichern
 newtab-topic-selection-cancel-button = Abbrechen
 newtab-topic-selection-button-maybe-later = Vielleicht später
@@ -549,8 +725,16 @@ newtab-topic-selection-button-pick-interests = Wählen Sie Ihre Interessen aus
 ## e.g. Following the travel section of stories.
 
 newtab-section-follow-button = Folgen
+# Variables:
+#   $topic (string) - Topic that the user can follow
+newtab-section-follow-button-label =
+    .aria-label = { $topic } folgen
 newtab-section-following-button = Folgen
 newtab-section-unfollow-button = Nicht mehr folgen
+# Variables:
+#   $topic (string) - Topic that the user is following and can unfollow
+newtab-section-unfollow-button-label =
+    .aria-label = Folgen: { $topic } nicht mehr folgen
 # A modal may appear next to the Follow button, directing users to try out the feature
 newtab-section-follow-highlight-title = Passen Sie Ihren Feed an
 newtab-section-follow-highlight-subtitle = Folgen Sie Ihren Interessen, um mehr von dem zu sehen, was Ihnen gefällt.
@@ -562,6 +746,22 @@ newtab-section-follow-highlight-subtitle = Folgen Sie Ihren Interessen, um mehr 
 newtab-section-block-button = Blockieren
 newtab-section-blocked-button = Blockiert
 newtab-section-unblock-button = Nicht mehr blockieren
+# Variables:
+#   $topic (string) - Name of topic that user is following
+newtab-section-follow-topic =
+    .aria-label = { $topic } folgen
+# Variables:
+#   $topic (string) - Name of topic that user is unfollowing
+newtab-section-unfollow-topic =
+    .aria-label = { $topic } nicht mehr folgen
+# Variables:
+#   $topic (string) - Name of topic that user is blocking
+newtab-section-block-topic =
+    .aria-label = { $topic } blockieren
+# Variables:
+#   $topic (string) - Name of topic that user is unblocking
+newtab-section-unblock-topic =
+    .aria-label = { $topic } nicht mehr blockieren
 
 ## Confirmation modal for blocking a section
 
@@ -571,6 +771,7 @@ newtab-section-confirm-block-topic-p2 = Blockierte Themen erscheinen nicht mehr 
 # Variables:
 #   $topic (string) - Name of topic that user is blocking
 newtab-section-block-topic-button = { $topic } blockieren
+newtab-section-block-cancel-button = Abbrechen
 
 ## Strings for custom wallpaper highlight
 
@@ -589,8 +790,14 @@ newtab-custom-wallpaper-cta = Ausprobieren
 ## Strings for new user activation custom wallpaper highlight
 
 newtab-new-user-custom-wallpaper-title = Wählen Sie ein Hintergrundbild, um { -brand-product-name } zu personalisieren
-newtab-new-user-custom-wallpaper-subtitle = Fühlen Sie sich in jedem Tab wie zu Hause — mit benutzerdefinierten Hintergrundbildern und Farben.
+newtab-new-user-custom-wallpaper-subtitle = Fühlen Sie sich auf Ihrer Firefox-Startseite wie zu Hause — mit benutzerdefinierten Hintergrundbildern und Farben.
 newtab-new-user-custom-wallpaper-cta = Jetzt ausprobieren
+
+## Strings for Nova wallpaper feature highlight
+
+newtab-wallpaper-feature-highlight-title = Neue Hintergrundbilder sind da
+newtab-wallpaper-feature-highlight-subtitle = Wählen Sie Ihren Favoriten und gestalten Sie jeden neuen Tab wie Sie möchten.
+newtab-wallpaper-feature-highlight-cta = Hintergrundbild auswählen
 
 ## Strings for download mobile highlight
 
@@ -632,6 +839,20 @@ newtab-report-cancel = Abbrechen
 newtab-report-submit = Absenden
 newtab-toast-thanks-for-reporting =
     .message = Danke für die Meldung.
+newtab-toast-widgets-hidden =
+    .message = Wählen Sie das Stiftsymbol, um jederzeit wieder Widgets hinzuzufügen.
+# Variables:
+#   $topic (string) - Topic that the user has followed
+newtab-section-toast-follow =
+    .message = Sie folgen jetzt { $topic }.
+# Variables:
+#   $topic (string) - Topic that the user has unfollowed
+newtab-section-toast-unfollow =
+    .message = Sie folgen { $topic } nicht mehr.
+# Variables:
+#   $topic (string) - Topic that the user has blocked
+newtab-section-toast-block =
+    .message = Sie sehen nun keine Artikel mehr über { $topic }.
 
 ## Strings for task / to-do list productivity widget
 
@@ -646,32 +867,62 @@ newtab-widget-lists-label-beta =
 # Variables:
 #   $number (number) - Amount of list items marked complete
 newtab-widget-lists-completed-list = Abgeschlossen ({ $number })
+newtab-widget-lists-celebration-headline = Gute Arbeit
+newtab-widget-lists-celebration-subhead = Alles erledigt
 newtab-widget-task-list-menu-copy = Kopieren
 newtab-widget-lists-menu-edit = Listenname bearbeiten
+newtab-widget-lists-menu-edit2 =
+    .aria-label = Listenname bearbeiten
 newtab-widget-lists-menu-create = Neue Liste erstellen
 newtab-widget-lists-menu-delete = Diese Liste löschen
 newtab-widget-lists-menu-copy = Liste in Zwischenablage kopieren
-newtab-widget-lists-menu-hide = Alle Listen ausblenden
 newtab-widget-lists-menu-learn-more = Weitere Informationen
-newtab-widget-lists-input-add-an-item =
+newtab-widget-lists-button-add-item = Einen Eintrag hinzufügen
+newtab-widget-lists-input-add-an-item2 =
     .placeholder = Einen Eintrag hinzufügen
+    .aria-label = Einen Eintrag hinzufügen
 newtab-widget-lists-input-error = Bitte fügen Sie Text hinzu, um einen Eintrag hinzuzufügen.
 newtab-widget-lists-input-menu-open-link = Link öffnen
 newtab-widget-lists-input-menu-move-up = Nach oben
 newtab-widget-lists-input-menu-move-down = Nach unten
 newtab-widget-lists-input-menu-delete = Löschen
 newtab-widget-lists-input-menu-edit = Bearbeiten
+newtab-widget-lists-input-menu-edit2 =
+    .aria-label = Eintrag bearbeiten
+newtab-widget-lists-edit-clear =
+    .aria-label = Abbrechen
+    .title = Abbrechen
 # the + symbol emphasises the functionality of adding a new list
 newtab-widget-lists-dropdown-create =
     .label = + Eine neue Liste erstellen
 newtab-widget-lists-name-label-default =
     .label = Aufgabenliste
+newtab-widget-lists-name-label-checklist =
+    .label = Checkliste
 newtab-widget-lists-name-placeholder-default =
     .placeholder = Aufgabenliste
+newtab-widget-lists-name-placeholder-checklist2 =
+    .placeholder = Checkliste
+    .aria-label = Listenname bearbeiten
 # The placeholder value of the name field for a newly created list
-newtab-widget-lists-name-placeholder-new =
+newtab-widget-lists-name-placeholder-new2 =
     .placeholder = Neue Liste
+    .aria-label = Listenname bearbeiten
 newtab-widget-section-title = Widgets
+newtab-widget-menu-hide = Widget ausblenden
+newtab-widget-menu-change-size = Größe ändern
+# Parent label for a submenu in the widget menu that reorders the widget
+# among its siblings. "Left" and "Right" appear as items inside this submenu.
+newtab-widget-menu-move = Verschieben
+# Submenu item under "Move"; moves the widget one position to the left.
+# RTL locales should translate this as "Right".
+newtab-widget-menu-move-left = Links
+# Submenu item under "Move"; moves the widget one position to the right.
+# RTL locales should translate this as "Left".
+newtab-widget-menu-move-right = Rechts
+newtab-widget-size-small = Klein
+newtab-widget-size-medium = Mittel
+newtab-widget-size-large = Groß
 # Tooltip for hide all widgets button
 newtab-widget-section-hide-all-button =
     .title = Widgets ausblenden
@@ -682,9 +933,27 @@ newtab-widget-section-maximize =
 newtab-widget-section-minimize =
     .title = Widgets minimieren
     .aria-label = Alle Widgets auf kompakte Größe reduzieren
+newtab-widget-section-menu-button =
+    .title = Widgets-Menü
+    .aria-label = Widgets-Menü öffnen
+newtab-widget-add-widgets-button =
+    .aria-label = Widget hinzufügen
+    .title = Widget hinzufügen
+newtab-widget-section-menu-manage = Widgets verwalten
+newtab-widget-section-menu-hide-all = Widgets ausblenden
+newtab-widget-section-menu-learn-more = Weitere Informationen
+newtab-widget-section-feedback = Sagen Sie uns Ihre Meinung
+# Button shown when additional widgets are hidden beyond the
+# first row, allowing users to show them.
+newtab-widget-section-show-more =
+    .label = Weitere Widgets anzeigen
+# Button shown when the widgets row is expanded to multiple rows,
+# allowing users to collapse it back to one row.
+newtab-widget-section-show-less =
+    .label = Weniger Widgets anzeigen
+newtab-widget-lists-name-default = Checkliste
 
-## Strings for timer productivity widget
-## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+## Strings introduced by the Nova redesign of the Timer widget
 
 newtab-widget-timer-notification-title = Timer
 newtab-widget-timer-notification-focus = Die Fokuszeit ist abgelaufen. Gute Arbeit. Benötigen Sie eine Pause?
@@ -702,7 +971,6 @@ newtab-widget-timer-reset =
     .title = Zurücksetzen
 newtab-widget-timer-menu-notifications = Benachrichtigungen deaktivieren
 newtab-widget-timer-menu-notifications-on = Benachrichtigungen aktivieren
-newtab-widget-timer-menu-hide = Timer ausblenden
 newtab-widget-timer-menu-learn-more = Weitere Informationen
 # The title displays above a set of top news headlines.
 newtab-daily-briefing-card-title = Wichtigste Schlagzeilen
@@ -717,12 +985,294 @@ newtab-daily-briefing-card-timestamp =
 newtab-widget-message-title = Bleiben Sie konzentriert mit Listen und einem integrierten Timer
 # to-dos stands for "things to do".
 newtab-widget-message-copy = Von kurzen Erinnerungen über tägliche Aufgaben bis hin zu Fokussitzungen und Dehnungspausen – bleiben Sie bei der Sache und im Zeitplan.
+# One spot refers to a dedicated section on new tab to manage and use widgets
+newtab-widget-message-focus-forecasts-title = Fokus, Wettervorhersage und mehr an einer Stelle
+newtab-widget-message-focus-forecasts-body = Gestalten Sie Ihren Tag mit { -brand-product-name }-Widgets. Sehen Sie sich die Wettervorhersage an, bleiben Sie bei einer Aufgabe oder verfolgen Sie die Zeit auf der ganzen Welt.
+# "Make Firefox yours" refers to about:newtab. The call to action here ("Try it now")
+# is to customize the new tab page with a background image or color from
+# the built-in wallpaper collection or uploading your own image.
+newtab-promo-card-title-addons = Passen Sie { -brand-product-name } an Ihre Wünsche an
+newtab-promo-card-body-addons = Wählen Sie ein Hintergrundbild aus unserer Sammlung, oder erstellen Sie Ihr eigenes.
+newtab-promo-card-cta-addons = Jetzt ausprobieren
 newtab-promo-card-title = { -brand-product-name } unterstützen
 newtab-promo-card-body = Unsere Sponsoren unterstützen unsere Mission, ein besseres Internet zu schaffen
 newtab-promo-card-cta = Weitere Informationen
 newtab-promo-card-dismiss-button =
     .title = Verwerfen
     .aria-label = Verwerfen
+
+## Strings introduced by the Nova redesign of the Timer widget
+
+# Variables:
+#   $minutes (number) - The currently selected timer duration in minutes
+newtab-widget-timer-start-aria =
+    .aria-label =
+        { $minutes ->
+            [one] { $minutes }-Minute-Timer starten
+           *[other] { $minutes }-Minuten-Timer starten
+        }
+newtab-widget-timer-pause-aria =
+    .aria-label = Timer pausieren
+# Variables:
+#   $minutes (number) - The currently selected timer duration in minutes
+newtab-widget-timer-spinbutton-name =
+    .aria-label =
+        { $minutes ->
+            [one] { $minutes } Minute
+           *[other] { $minutes } Minuten
+        }
+newtab-widget-timer-decrease-min =
+    .title = 1 Minute verringern
+newtab-widget-timer-increase-min =
+    .title = 1 Minute verlängern
+newtab-widget-timer-mode-group =
+    .aria-label = Timer-Modus
+# Small label shown beneath the live time while the focus timer is running or paused.
+newtab-widget-timer-running-focus = Fokus
+# Small label shown beneath the live time while the break timer is running or paused.
+newtab-widget-timer-running-break = Pause
+# Context-menu item to hide the Timer widget. Replaces the shared "Hide widget"
+# copy with a widget-specific string per the Nova design.
+newtab-widget-timer-menu-hide = Timer ausblenden
+# Heading shown inside the Timer widget after a focus session ends.
+newtab-widget-timer-celebration-heading-focus = Gute Arbeit
+# Heading shown inside the Timer widget after a break session ends.
+newtab-widget-timer-celebration-heading-break = Ihre Pause ist vorbei
+# Message shown inside the Timer widget after a focus session ends.
+newtab-widget-timer-celebration-message-focus = Benötigen Sie eine Pause?
+# Message shown inside the Timer widget after a break session ends.
+newtab-widget-timer-celebration-message-break = Bereit, sich zu konzentrieren?
+
+##
+
+newtab-sports-widget-menu-follow-teams = Teams folgen
+newtab-sports-widget-menu-view-schedule = Spielplan ansehen
+newtab-sports-widget-menu-view-upcoming = Kommende anzeigen
+newtab-sports-widget-menu-view-results = Ergebnisse anzeigen
+# Milestone dates (e.g. group stage, semifinals, etc.). Refers to calendar dates.
+newtab-sports-widget-menu-key-dates = Wichtige Daten
+newtab-sports-widget-menu-learn-more = Weitere Informationen
+# “Keep tabs on” is an informal expression meaning to stay updated on, stay informed on, or regularly follow something (in this case, World Cup matches and updates).
+newtab-sports-widget-keep-tabs = Behalten Sie die WM im Auge
+newtab-sports-widget-get-updates = Erhalten Sie Live-Updates zu Spielen und mehr.
+newtab-sports-widget-view-schedule =
+    .label = Spielplan ansehen
+newtab-sports-widget-follow-teams =
+    .label = Teams folgen
+newtab-sports-widget-view-matches =
+    .label = Spiele anzeigen
+# Variables:
+#   $number (number) - Maximum number of teams a user can choose to follow in the team selection state
+newtab-sports-widget-follow-teams-title =
+    { $number ->
+        [one] Meldungen von { $number } Team
+       *[other] Meldungen von { $number } Teams
+    }
+newtab-sports-widget-choose-wallpaper =
+    .label = Wählen Sie ein Hintergrundbild
+newtab-sports-widget-skip = Überspringen
+newtab-sports-widget-search-country =
+    .placeholder = Land suchen
+    .aria-label = Land suchen
+newtab-sports-widget-cancel = Abbrechen
+newtab-sports-widget-back-button =
+    .aria-label = Zurück
+newtab-sports-widget-done-button =
+    .label = Fertig
+# Shown in the follow-teams list for a team that has been knocked out of the tournament.
+# Variables:
+#   $teamName (string) - the localized team name (e.g. "Canada").
+newtab-sports-widget-team-name-eliminated = { $teamName } (ausgeschieden)
+newtab-sports-widget-view-all =
+    .label = Alle anzeigen
+newtab-sports-widget-show-less =
+    .label = Weniger anzeigen
+# Toggle that filters the list of teams the user follows
+newtab-sports-widget-followed-only-toggle =
+    .label = Nur Teams, denen gefolgt wird
+# Watch is a verb (as in watch matches online).
+newtab-sports-widget-watch =
+    .label = Ansehen
+    .title = Live ansehen
+# Watch is a verb (as in watch matches online).
+newtab-sports-widget-watch-icon =
+    .aria-label = Live ansehen
+    .title = Live ansehen
+newtab-sports-widget-watch-dialog-close =
+    .aria-label = Schließen
+    .title = Schließen
+# Tag: user can watch without paying (sign-in may still be required).
+newtab-sports-widget-watch-stream-free = Kostenlos
+# Tag: user can start watching via a trial; continued access may require payment after it ends.
+newtab-sports-widget-watch-stream-free-trial = Kostenlose Testversion
+# Tag: provider offers both a no-cost or trial path and a paid path.
+newtab-sports-widget-watch-stream-free-paid = Gratis und kostenpflichtig
+# Tag: user must pay to watch (subscription, TV provider, premium plan, or add-on).
+newtab-sports-widget-watch-stream-paid = Kostenpflichtig
+# Note: provider only streams some matches, not the full tournament.
+newtab-sports-widget-watch-stream-select-games-only = Nur ausgewählte Spiele
+# Heading for the list of streaming services available in the user’s country/region.
+newtab-sports-widget-watch-available-region = In Ihrer Region verfügbar
+# Heading for the list of streaming services available outside the user’s country/region.
+newtab-sports-widget-watch-available-other-regions = Andere Regionen
+# Button that opens the provider’s stream page in a new tab.
+newtab-sports-widget-watch-play =
+    .aria-label = Stream öffnen
+    .title = Stream öffnen
+newtab-sports-widget-group-stage = Gruppenphase
+newtab-sports-widget-group-a = Gruppe A
+newtab-sports-widget-group-b = Gruppe B
+newtab-sports-widget-group-c = Gruppe C
+newtab-sports-widget-group-d = Gruppe D
+newtab-sports-widget-group-e = Gruppe E
+newtab-sports-widget-group-f = Gruppe F
+newtab-sports-widget-group-g = Gruppe G
+newtab-sports-widget-group-h = Gruppe H
+newtab-sports-widget-group-i = Gruppe I
+newtab-sports-widget-group-j = Gruppe J
+newtab-sports-widget-group-k = Gruppe K
+newtab-sports-widget-group-l = Gruppe L
+newtab-sports-widget-round-32 = Runde der letzten 32
+newtab-sports-widget-round-16 = Runde der letzten 16
+newtab-sports-widget-quarter-finals = Viertelfinale
+# The "LIVE" string is meant to be uppercase in English, but other languages and locales may vary in how they handle this.
+newtab-sports-widget-live = LIVE
+newtab-custom-widget-live-refresh =
+    .title = Spielstände aktualisieren
+    .aria-label = Spielstände aktualisieren
+# Milestone dates (e.g. group stage, semifinals, etc.). Refers to calendar dates.
+newtab-sports-widget-key-dates = Wichtige Daten
+newtab-sports-widget-upcoming = In Kürze
+# Used for a match currently ongoing
+newtab-sports-widget-now = Jetzt
+newtab-sports-widget-results = Ergebnisse
+newtab-sports-widget-semi-finals = Halbfinale
+newtab-sports-widget-bronze-finals = Spiel um Platz 3
+# Final is the final match for 1st place.
+newtab-sports-widget-final = Finale
+# Variables:
+#   $start (Date) - Start date of a tournament stage
+#   $end (Date) - End date of a tournament stage
+newtab-sports-widget-key-date-range = { DATETIME($start, day: "numeric", month: "short") } – { DATETIME($end, day: "numeric", month: "short") }
+# Variables:
+#   $date (Date) - Date of a single tournament event
+newtab-sports-widget-key-date = { DATETIME($date, day: "numeric", month: "short") }
+newtab-sports-widget-delayed = Verzögert
+newtab-sports-widget-postponed = Verschoben
+newtab-sports-widget-suspended = Gesperrt
+newtab-sports-widget-cancelled = Abgebrochen
+newtab-sports-widget-information = Informationen über das Spiel
+newtab-sports-widget-no-live-data = Live-Daten zum Spiel werden derzeit nicht aktualisiert
+newtab-sports-widget-view-results-link = Ergebnisse anzeigen
+newtab-sports-widget-third-place = Dritter Platz
+# Runner-up is the team in 2nd place.
+newtab-sports-widget-runner-up = Zweiter
+newtab-sports-widget-champions = Meister
+newtab-sports-widget-world-cup-champions = Weltmeister 2026
+# Variables:
+#   $date (Date) - The match start time
+newtab-sports-widget-match-time = { DATETIME($date, hour: "2-digit", minute: "2-digit") }
+newtab-sports-widget-match-full-time = Spielende
+newtab-sports-widget-match-halftime = Halbzeit
+newtab-sports-widget-match-extra-time = Verlängerung
+newtab-sports-widget-match-penalties = Elfmeterschließen
+# Separator shown between two teams in a placeholder match row when no upcoming
+# match details are available yet.
+newtab-sports-widget-match-vs = :
+# Note shown in the Upcoming tab when no match details are available yet.
+newtab-sports-widget-no-upcoming-matches = Bleiben Sie dran für die kommenden Spieldetails
+
+## Sports widget live-games pagination. Shown when 2+ matches are live at the same time
+
+# arrow button that goes to the previous page of live matches.
+newtab-sports-widget-pagination-previous =
+    .aria-label = Vorherige
+    .title = Vorherige
+# arrow button that goes to the next page of live matches.
+newtab-sports-widget-pagination-next =
+    .aria-label = Nächste
+    .title = Nächste
+# Dot indicator that jumps directly to a given live match.
+# $index (number) - 1-based position of this dot in the list.
+# $total (number) - Total number of live matches.
+newtab-sports-widget-pagination-dot =
+    .aria-label = Live-Spiel { $index } von { $total }
+    .title = Live-Spiel { $index } von { $total }
+
+## Accessible labels for match rows in the sports widget. These are read by
+## screen readers to announce the match details and status.
+## Variables shared by all messages in this group:
+##   $homeTeam (String) - The full name of the home team (e.g. "Mexico")
+##   $awayTeam (String) - The full name of the away team (e.g. "Russia")
+
+# A finished match row (regular full-time result).
+# Variables:
+#   $homeScore (number) - The home team's regular-time score
+#   $awayScore (number) - The away team's regular-time score
+newtab-sports-widget-match-aria-label-results =
+    .aria-label = { $homeTeam }, { $homeScore } gegen { $awayTeam }, { $awayScore }
+# A finished match row that went to a penalty shootout.
+# Parenthesized values are the shootout score.
+# Variables:
+#   $homeScore (number) - The home team's regular-time score
+#   $awayScore (number) - The away team's regular-time score
+#   $homePenalty (number) - The home team's penalty shootout score
+#   $awayPenalty (number) - The away team's penalty shootout score
+newtab-sports-widget-match-aria-label-results-penalties =
+    .aria-label = { $homeTeam }, { $homeScore } ({ $homePenalty }) gegen { $awayTeam }, { $awayScore } ({ $awayPenalty })
+# A match that is currently in progress.
+# Variables:
+#   $homeScore (number) - The home team's current score
+#   $awayScore (number) - The away team's current score
+newtab-sports-widget-match-aria-label-now =
+    .aria-label = Live: { $homeTeam }, { $homeScore } gegen { $awayTeam }, { $awayScore }
+# An upcoming scheduled match row. Announces kickoff time and date.
+# Variables:
+#   $date (Date) - The scheduled kickoff date/time
+newtab-sports-widget-match-aria-label-upcoming =
+    .aria-label = { $homeTeam } gegen { $awayTeam }, { DATETIME($date, hour: "numeric", minute: "numeric") }, { DATETIME($date, day: "numeric", month: "long") }
+# An upcoming match row whose status is "delayed".
+newtab-sports-widget-match-aria-label-upcoming-delayed =
+    .aria-label = { $homeTeam } gegen { $awayTeam }, verzögert
+# An upcoming match row whose status is "postponed".
+newtab-sports-widget-match-aria-label-upcoming-postponed =
+    .aria-label = { $homeTeam } gegen { $awayTeam }, verschoben
+# An upcoming match row whose status is "suspended".
+newtab-sports-widget-match-aria-label-upcoming-suspended =
+    .aria-label = { $homeTeam } gegen { $awayTeam }, unterbrochen
+# An upcoming match row whose status is "cancelled".
+newtab-sports-widget-match-aria-label-upcoming-cancelled =
+    .aria-label = { $homeTeam } gegen { $awayTeam }, abgesagt
+
+## Sports widget — team names (FIFA country codes)
+## Only includes names not adequately covered by standard country-code
+## internationalization tooling.
+
+newtab-sports-widget-team-name-label-bih =
+    .label = Bosnien und Herzegowina
+newtab-sports-widget-team-name-label-civ =
+    .label = Elfenbeinküste
+newtab-sports-widget-team-name-label-cod =
+    .label = DR Kongo
+newtab-sports-widget-team-name-label-eng =
+    .label = England
+newtab-sports-widget-team-name-label-sco =
+    .label = Schottland
+# Placeholder used in a match row's aria-label for an undecided team (shown visually as "--").
+newtab-sports-widget-team-tbd = Wird noch festgelegt
+
+## Sports widget OMC messages
+## Shown as on-screen messages promoting the Sports widget and World Cup wallpapers.
+
+newtab-sports-widget-message-wallpapers-title = Beginnen Sie die Weltmeisterschaft mit neuen Hintergrundbildern
+newtab-sports-widget-message-wallpapers-body = Bringen Sie ein bisschen Spieltagsstimmung in Ihren Browser – für das Turnier.
+newtab-sports-widget-message-wallpapers-cta = Hintergrundbild auswählen
+newtab-sports-widget-message-add-widgets-cta =
+    .label = Widgets hinzufügen
+newtab-sports-widget-message-day-in-play-title = Behalten Sie den Überblick über Ihren Tag mit { -brand-product-name }-Widgets
+newtab-sports-widget-message-day-in-play-body = Verfolgen Sie die Weltmeisterschaft, bleiben Sie bei der Aufgabe, verfolgen Sie die Zeit auf der ganzen Welt und mehr.
+newtab-sports-widget-message-explore-widgets-cta =
+    .label = Widgets entdecken
 
 ## Strings for activation window message variants. In certain experiment configurations,
 ## the strings from these variants may be displayed in a message below the search input
@@ -736,7 +1286,7 @@ newtab-activation-window-message-dismiss-button =
 # is to customize newtab with a background image or colour, or by tweaking the
 # existing widgetry that appears on it.
 newtab-activation-window-message-customization-focus-header = Passen Sie diesen Raum an
-newtab-activation-window-message-customization-focus-message = Wählen Sie ein neues Hintergrundbild, fügen Sie Verknüpfungen zu Ihren Lieblingsseiten hinzu und bleiben Sie auf dem neuesten Stand, wenn es um Geschichten geht, die Sie interessieren.
+newtab-activation-window-message-customization-focus-message = Wählen Sie ein neues Hintergrundbild, fügen Sie Verknüpfungen zu Ihren Lieblingsseiten hinzu und bleiben Sie auf dem neuesten Stand. mit Artikeln, die Sie interessieren.
 newtab-activation-window-message-customization-focus-primary-button =
     .label = Beginnen Sie mit den Anpassungen
 # "This space" refers to about:newtab. The sentiment of "plays by your rules" is
@@ -745,3 +1295,76 @@ newtab-activation-window-message-customization-focus-primary-button =
 # the existing widgetry that appears on it.
 newtab-activation-window-message-values-focus-header = Dieser Platz spielt nach Ihren Regeln
 newtab-activation-window-message-values-focus-message = Mit { -brand-product-name } können Sie so surfen, wie Sie es möchten. Mit einer persönlicheren Möglichkeit, Ihren Tag online zu starten. Passen Sie { -brand-product-name } an Ihre Wünsche an.
+
+## Strings for the Clock widget
+
+# Context menu item: toggle the clock card off.
+newtab-clock-widget-menu-hide = Uhr ausblenden
+newtab-clock-widget-menu-learn-more = Weitere Informationen
+newtab-clock-widget-menu-edit = Uhren bearbeiten
+newtab-clock-widget-menu-switch-to-12h = Zum 12- Stunden-Format wechseln
+newtab-clock-widget-menu-switch-to-24h = Zum 24 Stunden-Format wechseln
+newtab-clock-widget-label-your-clocks = Ihre Uhren
+newtab-clock-widget-search-location-input =
+    .label = Standort
+    .placeholder = Ort suchen
+    .aria-label = Ort suchen
+# "Nickname (optional)" refers to a custom, user-defined label for a saved location
+# (e.g., "Home", "Office", or "School") to make it easier to recognize.
+# Not to be translated as a legal name, username, or alias used for identity verification.
+newtab-clock-widget-input-nickname =
+    .label = Name (optional)
+    .placeholder = Geben Sie einen Namen ein
+    .aria-label = Name (optional)
+# "Add new clock" is an icon-only button in the widget toolbar — the
+# attributes are consumed as tooltip/screen-reader label only. The button
+# never renders visible text.
+newtab-clock-widget-button-add =
+    .title = Neue Uhr hinzufügen
+    .aria-label = Neue Uhr hinzufügen
+newtab-clock-widget-button-add-clock = Hinzufügen
+newtab-clock-widget-button-cancel = Abbrechen
+newtab-clock-widget-button-back =
+    .title = Zurück
+    .aria-label = Zurück
+newtab-clock-widget-button-edit-clock =
+    .title = Uhr bearbeiten
+    .aria-label = Uhr bearbeiten
+newtab-clock-widget-button-save = Speichern
+newtab-clock-widget-button-remove-clock =
+    .title = Uhr entfernen
+    .aria-label = Uhr entfernen
+# Accessible name for a clock row in the "Your clocks" management panel
+# when the row has no user-provided nickname. Read aloud by screen
+# readers when focus lands on the row.
+# Variables:
+#   $city (string) - The city name displayed in the row.
+newtab-clock-widget-edit-item =
+    .aria-label = { $city }
+# Accessible name for a clock row when a user nickname has been set.
+# Variables:
+#   $city (string) - The city name displayed in the row.
+#   $nickname (string) - The user-provided nickname for the row.
+newtab-clock-widget-edit-item-with-nickname =
+    .aria-label = { $city }, Name: { $nickname }
+newtab-clock-widget-add-clock-form =
+    .aria-label = Uhr hinzufügen
+newtab-clock-widget-edit-clock-form =
+    .aria-label = Uhr bearbeiten
+# "Search results" is the accessible label for the listbox dropdown that appears
+# below the location search field, listing matching cities as the user types.
+# It means "results of the search", not "search within the results".
+newtab-clock-widget-search-results =
+    .aria-label = Suchergebnisse
+# Shown in place of the search results when the user's query does not match any
+# supported city — e.g. typing a misspelled name or a place not in the IANA
+# time zone list.
+newtab-clock-widget-search-no-results = Keine Übereinstimmungen
+# "Open menu for clock" is an icon-only button in the widget toolbar — the
+# attributes are consumed as tooltip/screen-reader label only. The button
+# never renders visible text.
+newtab-clock-widget-menu-button =
+    .title = Menü für Uhr öffnen
+    .aria-label = Menü für Uhr öffnen
+# $nickname (String) - The user-defined nickname for a saved clock location (e.g., "Home", "Office").
+newtab-clock-widget-label-nickname-with-value = Name: { $nickname }

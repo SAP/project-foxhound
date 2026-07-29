@@ -3,7 +3,47 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-import { makeGuid } from "./ChatUtils.sys.mjs";
+const TOKEN_LABELS = {
+  EXISTING_MEMORY: "existing_memory",
+  SEARCH: "search",
+  FOLLOWUP: "followup",
+  KIT: "kit",
+};
+
+// Deterministic fallback normalization for follow-up suggestions. Token/tag
+// extraction can leave whitespace artifacts ("sentence ."), and the model
+// sometimes emits a trailing period or other terminal punctuation that we
+// don't want to render in the suggestion chips.
+function normalizeFollowUp(value) {
+  if (!value) {
+    return "";
+  }
+  return value
+    .replace(/[.!?…]+\s*$/u, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/ ([.,!?…;:])/g, "$1");
+}
+
+/**
+ * @import { ContextWebsite } from "chrome://browser/content/urlbar/SmartbarInput.mjs"
+ */
+
+/**
+ * The text content for a conversation.
+ *
+ * @typedef {object} TextContent
+ * @property {"text"} type - The type discriminator.
+ * @property {string} body - The body of the content.
+ * @property {Array<ContextWebsite>} [contextMentions] - The mentioned websites.
+ * @property {string} [contextPageUrl] - The URL of the context.
+ */
+
+/**
+ * @typedef {object} FunctionContent
+ * @property {"function"} type - The type discriminator
+ * @property {{tool_calls: Array<any>}} body - The body of the content.
+ */
 
 /**
  * A message in a conversation.
@@ -19,6 +59,12 @@ export class ChatMessage {
   modelId;
   params;
   usage;
+
+  /**
+   * The message content object.
+   *
+   * @type {TextContent | FunctionContent}
+   */
   content;
   convId;
   pageUrl;
@@ -27,6 +73,11 @@ export class ChatMessage {
   memoriesFlagSource;
   memoriesApplied;
   webSearchQueries;
+  followUpSuggestions; // transient value
+  pageHistoryDeleted;
+  tokens;
+  toolUIData;
+  kit;
 
   /**
    * @param {object} param
@@ -37,7 +88,7 @@ export class ChatMessage {
    * prompt/reply for example would be one turn
    * @param {URL} [param.pageUrl = null] - A URL object defining which page
    * the user was on when submitting a message if role == user
-   * @param {string} [param.id = makeGuid()] - The row.message_id of the
+   * @param {string} [param.id = crypto.randomUUID()] - The row.message_id of the
    * message in the database
    * @param {number} [param.createdDate = Date.now()] - The date the message was
    * sent/stored in the database
@@ -56,6 +107,8 @@ export class ChatMessage {
    * that were applied to a response if memoriesEnabled == true
    * @param {?Array<string>} param.webSearchQueries - List of strings of web
    * search queries that were applied to a response if role == assistant
+   * @param {?Array<string>} param.followUpSuggestions - List of strings of follow up
+   * questions that were generated from a response if role == assistant
    * @param {object} [param.params = null] - Model params used if role == assistant|tool
    * @param {object} [param.usage = null] - Token usage data for the current
    * response if role == assistant
@@ -71,6 +124,9 @@ export class ChatMessage {
    * message is originally generated. If a message is edited/regenerated, the
    * edited message turns to false and the newly edited/regenerated message is
    * the only message of the revision branch set to true.
+   * @param {?boolean} param.pageHistoryDeleted - Whether pageUrl was removed due
+   * to a history removal action like Forget This Site or Delete Page
+   * @param {?object} param.toolUIData - Tool UI data to render with this message
    */
   constructor({
     ordinal,
@@ -78,19 +134,22 @@ export class ChatMessage {
     content,
     turnIndex,
     pageUrl = null,
-    id = makeGuid(),
+    id = crypto.randomUUID(),
     createdDate = Date.now(),
     parentMessageId = null,
     convId = null,
     memoriesEnabled = null,
     memoriesFlagSource = null,
-    memoriesApplied = null,
-    webSearchQueries = null,
+    memoriesApplied = [],
+    webSearchQueries = [],
+    followUpSuggestions = [],
     params = null,
     usage = null,
     modelId = null,
     revisionRootMessageId = id,
     isActiveBranch = true,
+    pageHistoryDeleted = false,
+    toolUIData = null,
   }) {
     this.id = id;
     this.createdDate = createdDate;
@@ -110,6 +169,51 @@ export class ChatMessage {
     this.memoriesFlagSource = memoriesFlagSource;
     this.memoriesApplied = memoriesApplied;
     this.webSearchQueries = webSearchQueries;
+    this.followUpSuggestions = followUpSuggestions;
+    this.pageHistoryDeleted = pageHistoryDeleted;
+    this.toolUIData = toolUIData;
+    this.tokens = {
+      search: [],
+      existing_memory: [],
+      followup: [],
+    };
+  }
+
+  /**
+   * Processes tokens from the AI response stream and updates the message.
+   * Adds all tokens to their respective arrays in the tokens object and
+   * builds the memoriesApplied array for existing_memory tokens.
+   *
+   * @param {Array<{key: string, value: string}>} tokens - Array of parsed tokens from the stream
+   */
+  addTokens(tokens) {
+    tokens.forEach(({ key, value }) => {
+      let storedValue = value;
+      if (key == TOKEN_LABELS.FOLLOWUP) {
+        storedValue = normalizeFollowUp(value);
+        if (!storedValue) {
+          return;
+        }
+      }
+
+      if (Array.isArray(this.tokens[key])) {
+        this.tokens[key].push(storedValue);
+      }
+
+      switch (key) {
+        case TOKEN_LABELS.EXISTING_MEMORY:
+          this.memoriesApplied.push(value);
+          break;
+        case TOKEN_LABELS.SEARCH:
+          this.webSearchQueries.push(value);
+          break;
+        case TOKEN_LABELS.FOLLOWUP:
+          this.followUpSuggestions.push(storedValue);
+          break;
+        case TOKEN_LABELS.KIT:
+          this.kit = value;
+      }
+    });
   }
 }
 
@@ -138,6 +242,8 @@ export class AssistantRoleOpts {
    * that were applied to a response
    * @param {?Array<string>} [webSearchQueries=[]] - List of strings of web search
    * queries that were applied to a response
+   * @param {?Array<string>} [followUpSuggestions=[]] - List of strings of follow up
+   * questions that were generated from a response
    */
   constructor(
     modelId = null,
@@ -146,12 +252,14 @@ export class AssistantRoleOpts {
     memoriesEnabled = false,
     memoriesFlagSource = null,
     memoriesApplied = [],
-    webSearchQueries = []
+    webSearchQueries = [],
+    followUpSuggestions = []
   ) {
     this.memoriesEnabled = memoriesEnabled;
     this.memoriesFlagSource = memoriesFlagSource;
     this.memoriesApplied = memoriesApplied;
     this.webSearchQueries = webSearchQueries;
+    this.followUpSuggestions = followUpSuggestions;
     this.params = params;
     this.usage = usage;
     this.modelId = modelId;

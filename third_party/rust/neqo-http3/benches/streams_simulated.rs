@@ -13,26 +13,13 @@
     reason = "Inherent in codspeed criterion_group! macro."
 )]
 
-use std::time::Duration;
-
-use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{Criterion, criterion_group, criterion_main};
 
 #[path = "common.rs"]
 mod common;
 
 fn benchmark(c: &mut Criterion) {
-    common::benchmark(c, |group, name, streams, data_size| {
-        group.throughput(Throughput::Bytes((streams * data_size) as u64));
-        group.bench_function(name, |b| {
-            b.iter_custom(|iters| {
-                let mut d_sum = Duration::ZERO;
-                for _i in 0..iters {
-                    d_sum += common::setup(streams, data_size).run();
-                }
-                d_sum
-            });
-        });
-    });
+    common::simulated(c);
 }
 
 criterion_group!(benches, benchmark);

@@ -113,7 +113,9 @@ tbody:nth-child(4n + 1) {
 
 .content-style {
   background-color: var(--background-color-box);
-  color: var(--blue-50);
+  /* In lieu of syntax highlighting, the code contents are given their own text color. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/no-base-design-tokens */
+  color: var(--color-blue-50);
 }
 
 tbody.collapsible td {

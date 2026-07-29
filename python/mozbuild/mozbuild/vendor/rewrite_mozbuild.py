@@ -1067,6 +1067,12 @@ def add_file_to_moz_build_file(
                 chosen_source_assignment_location
             ]
 
+            if (
+                normalized_filename_to_add
+                in guessed_list_containing_normalized_filenames
+            ):
+                return
+
             # unnormalize filenames so we can edit the moz.build file. They rarely use full paths.
             unnormalized_filename_to_add = unnormalize_filename(
                 normalized_mozbuild_filename, normalized_filename_to_add

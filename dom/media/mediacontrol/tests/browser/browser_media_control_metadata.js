@@ -397,7 +397,23 @@ add_task(async function testMetadataMutation() {
 
   info(`mutate existing MediaMetadata object`);
   const controller = tab.linkedBrowser.browsingContext.mediaController;
-  const metadataChanged = new Promise(r => (controller.onmetadatachange = r));
+  // Each MediaMetadata setter triggers an artwork reload whose async
+  // completion fires an extra metadatachange carrying a stale pre-resolution
+  // snapshot; wait for a metadatachange that actually reflects the mutated
+  // values in the parent (bug 2023406).
+  const mutatedMetadataReflected = BrowserTestUtils.waitForEvent(
+    controller,
+    "metadatachange",
+    false,
+    () => {
+      const current = MediaControlService.getCurrentActiveMediaMetadata();
+      return (
+        current.title === "mutated title" &&
+        current.artist === "mutated artist" &&
+        current.album === "mutated album"
+      );
+    }
+  );
 
   await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
     const metadata = content.navigator.mediaSession.metadata;
@@ -406,7 +422,7 @@ add_task(async function testMetadataMutation() {
     metadata.album = "mutated album";
   });
 
-  await metadataChanged;
+  await mutatedMetadataReflected;
 
   info(`verify mutated metadata is reflected`);
   await isCurrentMetadataEqualTo({

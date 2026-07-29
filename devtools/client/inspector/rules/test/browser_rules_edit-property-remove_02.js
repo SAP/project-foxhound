@@ -23,7 +23,7 @@ add_task(async function () {
   await selectNode("#testid", inspector);
 
   info("Getting the first property in the rule");
-  const rule = getRuleViewRuleEditor(view, 1).rule;
+  const rule = getRuleViewRuleEditorAt(view, 1).rule;
   let prop = rule.textProps[0];
 
   info("Clearing the property value");

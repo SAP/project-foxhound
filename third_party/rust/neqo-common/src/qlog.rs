@@ -15,7 +15,7 @@ use std::{
 };
 
 use qlog::{
-    streamer::QlogStreamer, CommonFields, Configuration, TraceSeq, VantagePoint, VantagePointType,
+    CommonFields, Configuration, TraceSeq, VantagePoint, VantagePointType, streamer::QlogStreamer,
 };
 
 use crate::Role;
@@ -65,7 +65,7 @@ impl Qlog {
             None,
             now,
             new_trace(role),
-            qlog::events::EventImportance::Base,
+            qlog::events::EventImportance::Extra,
             Box::new(BufWriter::new(file)),
         );
         Self::enabled(streamer, qlog_path)
@@ -94,6 +94,12 @@ impl Qlog {
     #[must_use]
     pub fn disabled() -> Self {
         Self::default()
+    }
+
+    /// Returns true if qlog is enabled.
+    #[must_use]
+    pub fn is_enabled(&self) -> bool {
+        self.inner.as_ref().is_some_and(|rc| rc.borrow().is_some())
     }
 
     /// If logging enabled, closure may generate an event to be logged.
@@ -128,14 +134,18 @@ impl Qlog {
             return;
         };
 
-        if let Err(e) = f(&mut shared_streamer.streamer) {
-            log::error!("Qlog event generation failed with error {e}; closing qlog.");
-            // Set the inner Option to None to disable future logging for other references.
-            *borrow = None;
-            // Explicitly drop the RefCell borrow to release the mutable borrow.
-            drop(borrow);
-            // Set the outer Option to None to prevent future dereferences.
-            self.inner = None;
+        match f(&mut shared_streamer.streamer) {
+            // `Error::Done` means "event was below the importance threshold" - not an actual error.
+            Ok(()) | Err(qlog::Error::Done) => (),
+            Err(e) => {
+                log::error!("Qlog event generation failed with error {e}; closing qlog.");
+                // Set the inner Option to None to disable future logging for other references.
+                *borrow = None;
+                // Explicitly drop the RefCell borrow to release the mutable borrow.
+                drop(borrow);
+                // Set the outer Option to None to prevent future dereferences.
+                self.inner = None;
+            }
         }
     }
 }
@@ -188,6 +198,8 @@ pub fn new_trace(role: Role) -> TraceSeq {
 mod test {
     use test_fixture::EXPECTED_LOG_HEADER;
 
+    use super::Qlog;
+
     const EV_DATA: qlog::events::EventData =
         qlog::events::EventData::SpinBitUpdated(qlog::events::connectivity::SpinBitUpdated {
             state: true,
@@ -237,5 +249,19 @@ mod test {
         // The cloned instance still has inner=Some, but the RefCell contains None.
         log_clone.add_event_at(|| Some(EV_DATA), test_fixture::now());
         assert_eq!(contents.to_string(), before_error);
+    }
+
+    #[test]
+    fn is_enabled() {
+        // Disabled by default.
+        assert!(!Qlog::disabled().is_enabled());
+        // Enabled when backed by a live streamer.
+        let (log, _contents) = test_fixture::new_neqo_qlog();
+        assert!(log.is_enabled());
+        // Disabled on a clone whose underlying streamer was killed by a write error.
+        let mut log = log;
+        let clone = log.clone();
+        log.add_event_with_stream(|_| Err(qlog::Error::IoError(std::io::Error::other("e"))));
+        assert!(!clone.is_enabled());
     }
 }

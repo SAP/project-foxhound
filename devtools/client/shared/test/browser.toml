@@ -46,7 +46,6 @@ support-files = [
   "highlighter-test-actor.js",
   "leakhunt.js",
   "shared-head.js",
-  "telemetry-test-helpers.js",
   "test-mocked-module.js",
   "testactors.js",
   "!/devtools/client/debugger/test/mochitest/shared-head.js",
@@ -188,7 +187,15 @@ skip-if = [
 
 ["browser_inplace-editor_autocomplete_02.js"]
 
+["browser_inplace-editor_autocomplete_anchor_function.js"]
+
+["browser_inplace-editor_autocomplete_anchor_size_function.js"]
+
+["browser_inplace-editor_autocomplete_color_function.js"]
+
 ["browser_inplace-editor_autocomplete_css_variable.js"]
+
+["browser_inplace-editor_autocomplete_gradient_functions.js"]
 
 ["browser_inplace-editor_autocomplete_offset.js"]
 

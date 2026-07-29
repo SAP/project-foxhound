@@ -86,26 +86,13 @@
       // so we call reloadCurrentEntry() (which is equivalent to reload(0) and
       // visible from JS) explicitly here.
       let reloaded = promisePageEvents(navData);
-      if (SpecialPowers.Services.appinfo.sessionHistoryInParent) {
-        TestWindow.getBrowser().browsingContext.sessionHistory.reloadCurrentEntry();
-      } else {
-        SpecialPowers.spawn(TestWindow.getBrowser(), [], () => {
-          docShell.QueryInterface(Ci.nsIWebNavigation).sessionHistory.legacySHistory.reloadCurrentEntry();
-        });
-      }
+      TestWindow.getBrowser().browsingContext.sessionHistory.reloadCurrentEntry();
       await reloaded;
 
       // After this sequence of events, we should be able to go back and forward
       is(TestWindow.getBrowser().canGoBack, true, "Should be able to go back!");
       is(TestWindow.getBrowser().canGoForward, true, "Should be able to go forward!");
-      let requestedIndex;
-      if (SpecialPowers.Services.appinfo.sessionHistoryInParent) {
-        requestedIndex = TestWindow.getBrowser().browsingContext.sessionHistory.requestedIndex;
-      } else {
-        requestedIndex = await SpecialPowers.spawn(TestWindow.getBrowser(), [], () => {
-          return docShell.sessionHistory.legacySHistory.requestedIndex;
-        })
-      }
+      let requestedIndex = TestWindow.getBrowser().browsingContext.sessionHistory.requestedIndex;
       is(requestedIndex, -1, "Requested index should be cleared!");
 
       Services.prefs.clearUserPref("browser.navigation.requireUserInteraction");

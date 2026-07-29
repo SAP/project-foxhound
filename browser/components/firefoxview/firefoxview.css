@@ -35,8 +35,6 @@
 
   /* copy over newtab background color from activity-stream-[os].css files */
   --newtab-background-color: light-dark(#f9f9fb, #2b2a33);
-  --fxview-card-header-font-weight: var(--heading-font-weight);
-
   &[lwt-newtab] {
     color-scheme: light;
   }
@@ -56,9 +54,15 @@
   }
 }
 
-@media (max-width: 52rem) {
+@media (max-width: 950px) {
   :root {
     --fxview-sidebar-width: 82px;
+  }
+}
+
+@media (min-width: 72rem) {
+  :root {
+    --fxview-sidebar-width: 320px;
   }
 }
 
@@ -69,7 +73,7 @@ body {
   background-color: var(--fxview-background-color);
   color: var(--fxview-text-primary-color);
 
-  @media (max-width: 52rem) {
+  @media (max-width: 950px) {
     display: flex;
   }
 }

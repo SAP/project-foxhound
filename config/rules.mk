@@ -1,5 +1,3 @@
-# -*- makefile -*-
-# vim:set ts=8 sw=8 sts=8 noet:
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
@@ -1065,7 +1063,7 @@ $(foreach category,$(PP_TARGETS), \
   ) \
   $(foreach file,$($(category)), \
     $(eval $(call create_dependency,$(call pp_target_result,$(category),$(file)), \
-                                    $(file) $(GLOBAL_DEPS))) \
+                                    $(file) $(GLOBAL_DEPS) $($(category)_EXTRA_DEPS))) \
   ) \
   $(eval $(call pp_target_results,$(category)): PP_TARGET_FLAGS=$($(category)_FLAGS)) \
 )

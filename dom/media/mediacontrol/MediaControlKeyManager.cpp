@@ -16,14 +16,16 @@
 #include "nsIObserverService.h"
 
 #undef LOG
-#define LOG(msg, ...)                        \
-  MOZ_LOG(gMediaControlLog, LogLevel::Debug, \
-          ("MediaControlKeyManager=%p, " msg, this, ##__VA_ARGS__))
+#define LOG(msg, ...)                                            \
+  MOZ_LOG_FMT(gMediaControlLog, LogLevel::Debug,                 \
+              "MediaControlKeyManager={}, " msg, fmt::ptr(this), \
+              ##__VA_ARGS__)
 
 #undef LOG_INFO
-#define LOG_INFO(msg, ...)                  \
-  MOZ_LOG(gMediaControlLog, LogLevel::Info, \
-          ("MediaControlKeyManager=%p, " msg, this, ##__VA_ARGS__))
+#define LOG_INFO(msg, ...)                                       \
+  MOZ_LOG_FMT(gMediaControlLog, LogLevel::Info,                  \
+              "MediaControlKeyManager={}, " msg, fmt::ptr(this), \
+              ##__VA_ARGS__)
 
 #define MEDIA_CONTROL_PREF "media.hardwaremediakeys.enabled"
 
@@ -118,7 +120,7 @@ void MediaControlKeyManager::SetPlaybackState(
     mEventSource->SetPlaybackState(aState);
   }
   mPlaybackState = aState;
-  LOG_INFO("playbackState=%s", ToMediaSessionPlaybackStateStr(mPlaybackState));
+  LOG_INFO("playbackState={}", ToMediaSessionPlaybackStateStr(mPlaybackState));
   if (StaticPrefs::media_mediacontrol_testingevents_enabled()) {
     if (nsCOMPtr<nsIObserverService> obs = services::GetObserverService()) {
       obs->NotifyObservers(nullptr, "media-displayed-playback-changed",
@@ -139,7 +141,7 @@ void MediaControlKeyManager::SetMediaMetadata(
     mEventSource->SetMediaMetadata(aMetadata);
   }
   mMetadata = aMetadata;
-  LOG_INFO("title=%s, artist=%s album=%s",
+  LOG_INFO("title={}, artist={} album={}",
            NS_ConvertUTF16toUTF8(mMetadata.mTitle).get(),
            NS_ConvertUTF16toUTF8(mMetadata.mArtist).get(),
            NS_ConvertUTF16toUTF8(mMetadata.mAlbum).get());
@@ -155,7 +157,7 @@ void MediaControlKeyManager::SetSupportedMediaKeys(
     const MediaKeysArray& aSupportedKeys) {
   mSupportedKeys.Clear();
   for (const auto& key : aSupportedKeys) {
-    LOG_INFO("Supported keys=%s", GetEnumString(key).get());
+    LOG_INFO("Supported keys={}", GetEnumString(key).get());
     mSupportedKeys.AppendElement(key);
   }
   if (mEventSource && mEventSource->IsOpened()) {
@@ -164,14 +166,14 @@ void MediaControlKeyManager::SetSupportedMediaKeys(
 }
 
 void MediaControlKeyManager::SetEnableFullScreen(bool aIsEnabled) {
-  LOG_INFO("Set fullscreen %s", aIsEnabled ? "enabled" : "disabled");
+  LOG_INFO("Set fullscreen {}", aIsEnabled ? "enabled" : "disabled");
   if (mEventSource && mEventSource->IsOpened()) {
     mEventSource->SetEnableFullScreen(aIsEnabled);
   }
 }
 
 void MediaControlKeyManager::SetEnablePictureInPictureMode(bool aIsEnabled) {
-  LOG_INFO("Set Picture-In-Picture mode %s",
+  LOG_INFO("Set Picture-In-Picture mode {}",
            aIsEnabled ? "enabled" : "disabled");
   if (mEventSource && mEventSource->IsOpened()) {
     mEventSource->SetEnablePictureInPictureMode(aIsEnabled);
@@ -181,7 +183,7 @@ void MediaControlKeyManager::SetEnablePictureInPictureMode(bool aIsEnabled) {
 void MediaControlKeyManager::SetPositionState(
     const Maybe<PositionState>& aState) {
   if (aState) {
-    LOG_INFO("Set PositionState, duration=%f, playbackRate=%f, position=%f",
+    LOG_INFO("Set PositionState, duration={}, playbackRate={}, position={}",
              aState->mDuration, aState->mPlaybackRate,
              aState->mLastReportedPlaybackPosition);
   } else {
@@ -205,7 +207,7 @@ void MediaControlKeyManager::OnPreferenceChange() {
   // controller that means already having media which need to be controlled.
   const bool shouldMonitorKeys =
       isPrefEnabled && MediaControlService::GetService()->GetMainController();
-  LOG_INFO("Preference change : %s media control",
+  LOG_INFO("Preference change : {} media control",
            isPrefEnabled ? "enable" : "disable");
   if (shouldMonitorKeys) {
     (void)StartMonitoringControlKeys();

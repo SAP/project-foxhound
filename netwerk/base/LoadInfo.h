@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,12 +8,12 @@
 #include "mozilla/dom/FeaturePolicy.h"
 #include "mozilla/dom/ReferrerPolicyBinding.h"
 #include "mozilla/dom/UserNavigationInvolvement.h"
+#include "nsContentUtils.h"
 #include "nsIInterceptionInfo.h"
 #include "nsILoadInfo.h"
 #include "nsIPrincipal.h"
-#include "nsIWeakReferenceUtils.h"  // for nsWeakPtr
 #include "nsIURI.h"
-#include "nsContentUtils.h"
+#include "nsIWeakReferenceUtils.h"  // for nsWeakPtr
 #include "nsString.h"
 #include "nsTArray.h"
 
@@ -115,6 +113,10 @@ nsresult LoadInfoArgsToLoadInfo(const mozilla::net::LoadInfoArgs& aLoadInfoArgs,
                                                                                \
   GETTER(uint64_t, BrowsingContextID, browsingContextID, 0)                    \
                                                                                \
+  GETTER(uint64_t, AssociatedBrowsingContextID, associatedBrowsingContextID,   \
+         0)                                                                    \
+  SETTER(uint64_t, AssociatedBrowsingContextID)                                \
+                                                                               \
   GETTER(uint64_t, FrameBrowsingContextID, frameBrowsingContextID, 0)          \
                                                                                \
   GETTER(bool, IsOn3PCBExceptionList, isOn3PCBExceptionList, false)            \
@@ -136,9 +138,6 @@ nsresult LoadInfoArgsToLoadInfo(const mozilla::net::LoadInfoArgs& aLoadInfoArgs,
   GETTER(bool, ForcePreflight, forcePreflight, false)                          \
                                                                                \
   GETTER(bool, IsPreflight, isPreflight, false)                                \
-                                                                               \
-  GETTER(bool, ServiceWorkerTaintingSynthesized,                               \
-         serviceWorkerTaintingSynthesized, false)                              \
                                                                                \
   GETTER(bool, DocumentHasUserInteracted, documentHasUserInteracted, false)    \
   SETTER(bool, DocumentHasUserInteracted)                                      \
@@ -416,7 +415,8 @@ class LoadInfo final : public nsILoadInfo {
            const Maybe<mozilla::dom::ClientInfo>& aInitialClientInfo,
            const Maybe<mozilla::dom::ServiceWorkerDescriptor>& aController,
            nsSecurityFlags aSecurityFlags, uint32_t aSandboxFlags,
-           nsContentPolicyType aContentPolicyType, LoadTainting aTainting,
+           nsContentPolicyType aContentPolicyType,
+           bool aServiceWorkerTaintingSynthesized, LoadTainting aTainting,
 
 #define DEFINE_PARAMETER(type, name, _n, _d) type a##name,
            LOADINFO_FOR_EACH_FIELD(DEFINE_PARAMETER, LOADINFO_DUMMY_SETTER)
@@ -509,13 +509,13 @@ class LoadInfo final : public nsILoadInfo {
   dom::ReferrerPolicy mFrameReferrerPolicySnapshot =
       dom::ReferrerPolicy::_empty;
   nsContentPolicyType mInternalContentPolicyType;
+  bool mServiceWorkerTaintingSynthesized = false;
   LoadTainting mTainting = LoadTainting::Basic;
 
 #define DEFINE_FIELD(type, name, _, default_init) type m##name = default_init;
   LOADINFO_FOR_EACH_FIELD(DEFINE_FIELD, LOADINFO_DUMMY_SETTER)
 #undef DEFINE_FIELD
 
-  uint64_t mWorkerAssociatedBrowsingContextID = 0;
   bool mInitialSecurityCheckDone = false;
   // NB: TYPE_DOCUMENT implies !third-party.
   bool mIsThirdPartyContext = false;

@@ -3,8 +3,9 @@
 
 "use strict";
 
-add_setup(() => {
+add_setup(async () => {
   Services.fog.initializeFOG();
+  await resetTelemetry();
 });
 
 registerCleanupFunction(async () => {
@@ -41,7 +42,8 @@ add_task(async function test_tabNoteAddedTabContextMenu() {
     "tab note textarea should be focused"
   );
   const input = BrowserTestUtils.waitForEvent(document.activeElement, "input");
-  EventUtils.sendString("Lorem ipsum dolor", window);
+  const noteText = "Lorem ipsum dolor";
+  EventUtils.sendString(noteText, window);
   await input;
   let menuHidden = BrowserTestUtils.waitForPopupEvent(tabNotePanel, "hidden");
   let tabNoteCreated = BrowserTestUtils.waitForEvent(tab, "TabNote:Created");
@@ -56,8 +58,11 @@ add_task(async function test_tabNoteAddedTabContextMenu() {
   const [addedEvent] = Glean.tabNotes.added.testGetValue();
   Assert.deepEqual(
     addedEvent.extra,
-    { source: "context_menu" },
-    "added event extra data should say the tab note was added from the tab context menu"
+    {
+      source: "context_menu",
+      note_length: noteText.length,
+    },
+    "added event extra data should include length and say the tab note was added from the tab context menu"
   );
 
   await closeTabNoteMenu();

@@ -100,19 +100,40 @@ class AppErrorBoundary extends Component {
                     .split("\n")
                     .map((part, idx) => p({ key: `strace${idx}` }, part))
                 : null;
+
+              // DevToolsProcessParent may receive stacktraces from the content process
+              // and put them onto the exception's contentProcessStack attribute
+              // which protocol.js Actor and Front layer will preserve so that we ultimately
+              // can read it from here.
+              // This is for server codebases using DevToolsProcess JS Actor to communicate
+              // with the content processes from the parent process. Typically most methods
+              // of the Watcher Actor.
+              const contentProcessStack = info[obj].contentProcessStack;
+              const contentProcessTraceParts = contentProcessStack
+                ? contentProcessStack
+                    .split("\n")
+                    .map((part, idx) =>
+                      p({ key: `contentProcessStrace${idx}` }, part)
+                    )
+                : null;
+
               return div(
                 { className: "stack-trace-section" },
                 h3(
                   {},
                   obj == "clientPacket" ? "Client packet" : "Server packet"
                 ),
-                // Display the packet as JSON, while removing the artifical `stack` attribute from it
+                // Display the packet as JSON, while removing the artificial `stack` attribute from it
                 p(
                   {},
                   JSON.stringify({ ...info[obj], stack: undefined }, null, 2)
                 ),
                 stack ? h3({}, "Server stack") : null,
-                traceParts
+                traceParts,
+                contentProcessStack
+                  ? h3({}, "Server content process stack")
+                  : null,
+                contentProcessTraceParts
               );
             }
           }
@@ -169,7 +190,7 @@ class AppErrorBoundary extends Component {
     return infoObj;
   }
 
-  // Called when a child component throws an error.
+  // Called automatically by React when a child component throws an error.
   componentDidCatch(error, info) {
     const validInfo = this.getValidInfo(info);
     const errorMessage = error.toString();
@@ -201,20 +222,21 @@ class AppErrorBoundary extends Component {
     this.#pingSubmitted = true;
   }
 
-  // This is explicitly called by the toolbox when a server issue is captured.
-  toolboxDidCatch(error, toolbox) {
-    const errorMessage = error.toString();
-    const clientPacket = error.clientPacket || {};
-    const serverPacket = error.serverPacket || {};
+  // Manually called by devtools code when an exception is triggered before
+  // or outside of React render codepath.
+  handleException(exception, toolbox, showToolboxCloseButton = false) {
+    const errorMessage = exception.toString();
+    const clientPacket = exception.clientPacket || {};
+    const serverPacket = exception.serverPacket || {};
 
     this.setState({
       errorMsg: errorMessage,
-      errorStack: error.stack,
+      errorStack: exception.stack,
       errorInfo: {
         clientPacket,
         serverPacket,
       },
-      // Toolbox state will be used to provide a button to close the toolbox.
+      showToolboxCloseButton,
       toolbox,
     });
 
@@ -224,14 +246,22 @@ class AppErrorBoundary extends Component {
       return;
     }
 
+    const descriptorFront = toolbox.commands?.descriptorFront;
     const extras = Telemetry.sanitizeEventExtras(
       {
-        error_name: error.name,
+        descriptor_type: descriptorFront?.descriptorType,
+        error_name: exception.name,
+        host_type: toolbox.hostType,
+        is_destroying: toolbox.isDestroying(),
+        is_local_tab: descriptorFront?.isLocalTab,
+        is_window_closed: !!toolbox.win?.closed,
         packet_error: serverPacket.error,
         packet_target: serverPacket.from,
         packet_type: clientPacket.type,
         server_stack: serverPacket.stack || "",
-        stack: error.stack || "",
+        server_content_process_stack: serverPacket.contentProcessStack || "",
+        session_id: toolbox.sessionId,
+        stack: exception.stack || "",
       },
       "devtoolsMain.toolboxServerError",
       // Allow up to 500 characters for each extra value (maximum value
@@ -261,9 +291,12 @@ class AppErrorBoundary extends Component {
     }
 
     if (serverPacket) {
-      // Display the packet as JSON, while removing the artifical `stack` attribute from it
-      msg += `## Server Packet:\n\`\`\`\n${JSON.stringify({ ...serverPacket, stack: undefined }, null, 2)}\n\`\`\`\n\n`;
+      // Display the packet as JSON, while removing the artificial `stack`/`contentProcessStack` attributes from it
+      msg += `## Server Packet:\n\`\`\`\n${JSON.stringify({ ...serverPacket, stack: undefined, contentProcessStack: undefined }, null, 2)}\n\`\`\`\n\n`;
       msg += `## Server Stack:\n\`\`\`\n${serverPacket.stack}\n\`\`\`\n\n`;
+      if (serverPacket.contentProcessStack) {
+        msg += `## Server Content Process Stack:\n\`\`\`\n${serverPacket.contentProcessStack}\n\`\`\`\n\n`;
+      }
     }
 
     msg += `## Stacktrace: \n\`\`\`\n${this.state.errorStack}\n\`\`\``;
@@ -299,7 +332,7 @@ class AppErrorBoundary extends Component {
           },
           FILE_BUG_BUTTON
         ),
-        this.state.toolbox
+        this.state.showToolboxCloseButton
           ? button({
               className: "devtools-tabbar-button error-panel-close",
               onClick: () => {

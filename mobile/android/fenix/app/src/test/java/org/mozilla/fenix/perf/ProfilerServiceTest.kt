@@ -24,7 +24,6 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -40,6 +39,7 @@ import org.robolectric.android.controller.ServiceController
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowNotificationManager
 import org.robolectric.shadows.ShadowService
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 @Config(application = FenixRobolectricTestApplication::class, sdk = [Build.VERSION_CODES.TIRAMISU])
@@ -107,12 +107,12 @@ class ProfilerServiceTest {
         val channel = createdChannels.find { it.id == PROFILING_CHANNEL_ID }
 
         assertNotNull(
-            "Channel with ID '${PROFILING_CHANNEL_ID}' should be created on Oreo+",
             channel,
+            "Channel with ID '${PROFILING_CHANNEL_ID}' should be created on Oreo+",
         )
-        assertEquals("Channel ID mismatch", PROFILING_CHANNEL_ID, channel?.id)
-        assertEquals("Channel name mismatch", "App Profiling Status", channel?.name.toString())
-        assertEquals("Channel importance mismatch", NotificationManager.IMPORTANCE_DEFAULT, channel?.importance)
+        assertEquals("Channel ID mismatch", PROFILING_CHANNEL_ID, channel.id)
+        assertEquals("Channel name mismatch", "App Profiling Status", channel.name.toString())
+        assertEquals("Channel importance mismatch", NotificationManager.IMPORTANCE_DEFAULT, channel.importance)
     }
 
     @Test
@@ -127,12 +127,12 @@ class ProfilerServiceTest {
         service.onStartCommand(startIntent, 0, 1)
 
         val postedNotification: Notification? = shadowNotificationManager.getNotification(PROFILING_NOTIFICATION_ID)
-        assertNotNull("Notification should be posted after start action", postedNotification)
+        assertNotNull(postedNotification, "Notification should be posted after start action")
 
         val shadowNotification = Shadows.shadowOf(postedNotification)
         assertEquals("Notification title mismatch", "Profiler active", shadowNotification.contentTitle.toString())
         assertEquals("Notification text mismatch", "Profiling is active. Tap to stop profiler", shadowNotification.contentText.toString())
-        assertNotEquals("FLAG_ONGOING_EVENT should be set", 0, postedNotification!!.flags and Notification.FLAG_ONGOING_EVENT)
+        assertNotEquals("FLAG_ONGOING_EVENT should be set", 0, postedNotification.flags and Notification.FLAG_ONGOING_EVENT)
         assertNotEquals("FLAG_FOREGROUND_SERVICE should be set", 0, postedNotification.flags and Notification.FLAG_FOREGROUND_SERVICE)
 
         assertFalse("Service should not be foreground-stopped after start", shadowService.isForegroundStopped)
@@ -148,8 +148,8 @@ class ProfilerServiceTest {
         val startIntent = Intent(context, ProfilerService::class.java)
         service.onStartCommand(startIntent, 0, 1)
         assertNotNull(
-            "Notification should be present after starting",
             shadowNotificationManager.getNotification(PROFILING_NOTIFICATION_ID),
+            "Notification should be present after starting",
         )
 
         val broadcast = Intent(INTENT_PROFILER_STATE_CHANGED).apply {
@@ -179,8 +179,8 @@ class ProfilerServiceTest {
         val startIntent = Intent(context, ProfilerService::class.java)
         service.onStartCommand(startIntent, 0, 1)
         assertNotNull(
-            "Notification should be present after starting",
             shadowNotificationManager.getNotification(PROFILING_NOTIFICATION_ID),
+            "Notification should be present after starting",
         )
 
         val unknownIntent = Intent(context, ProfilerService::class.java).apply {
@@ -190,8 +190,8 @@ class ProfilerServiceTest {
         service.onStartCommand(unknownIntent, 0, 2)
 
         assertNotNull(
-            "Notification should remain after unknown action",
             shadowNotificationManager.getNotification(PROFILING_NOTIFICATION_ID),
+            "Notification should remain after unknown action",
         )
         assertFalse("Service should not be foreground-stopped after unknown action", shadowService.isForegroundStopped)
         assertFalse("Service should not be self-stopped after unknown action", shadowService.isStoppedBySelf)
@@ -207,8 +207,8 @@ class ProfilerServiceTest {
         val startIntent = Intent(context, ProfilerService::class.java)
         service.onStartCommand(startIntent, 0, 1)
         assertNotNull(
-            "Notification should be present after starting",
             shadowNotificationManager.getNotification(PROFILING_NOTIFICATION_ID),
+            "Notification should be present after starting",
         )
 
         val nullActionIntent = Intent(context, ProfilerService::class.java)
@@ -216,8 +216,8 @@ class ProfilerServiceTest {
         service.onStartCommand(nullActionIntent, 0, 2)
 
         assertNotNull(
-            "Notification should remain after null action",
             shadowNotificationManager.getNotification(PROFILING_NOTIFICATION_ID),
+            "Notification should remain after null action",
         )
         assertFalse("Service should not be foreground-stopped after null action", shadowService.isForegroundStopped)
         assertFalse("Service should not be self-stopped after null action", shadowService.isStoppedBySelf)

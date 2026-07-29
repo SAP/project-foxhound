@@ -293,7 +293,7 @@ export const PageDataService = new (class PageDataService extends EventEmitter {
    *   The browser to track.
    */
   #trackBrowser(browser) {
-    let window = browser.ownerGlobal;
+    let window = browser.documentGlobal;
 
     let browsers = this.#trackedWindows.get(window);
     if (browsers) {
@@ -563,6 +563,6 @@ export const PageDataService = new (class PageDataService extends EventEmitter {
    *   True if the browser element is contained within a tab.
    */
   #isATabBrowser(browser) {
-    return browser.ownerGlobal.gBrowser?.getTabForBrowser(browser);
+    return browser.documentGlobal.gBrowser?.getTabForBrowser(browser);
   }
 })();

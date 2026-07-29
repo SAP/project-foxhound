@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -11,6 +9,8 @@
 #include "vm/GeckoProfiler.h"
 #include "vm/HelperThreadState.h"
 #include "vm/Runtime.h"
+
+#include "gc/WeakMap-inl.h"
 
 using namespace js;
 using namespace js::gc;
@@ -62,10 +62,9 @@ ParallelMarker::ParallelMarker(GCRuntime* gc, MarkColor color)
 size_t ParallelMarker::workerCount() const { return gc->markers.length(); }
 
 bool ParallelMarker::mark(const SliceBudget& sliceBudget) {
-  // Run a marking slice for a single color and return whether the stack is now
-  // empty.
+  // Run a marking slice for a single color and return whether it is complete.
 
-  if (!hasWork(color)) {
+  if (!gc->hasDeferredWeakMaps(color) && !anyMarkerHasEntries()) {
     return true;
   }
 
@@ -109,10 +108,10 @@ bool ParallelMarker::mark(const SliceBudget& sliceBudget) {
   MOZ_ASSERT(!hasWaitingTasks());
   MOZ_ASSERT(!hasActiveTasks(lock));
 
-  return !hasWork(color);
+  return !gc->hasDeferredWeakMaps(color) && !anyMarkerHasEntries();
 }
 
-bool ParallelMarker::hasWork(MarkColor color) const {
+bool ParallelMarker::anyMarkerHasEntries() const {
   for (const auto& marker : gc->markers) {
     if (marker->hasEntries(color)) {
       return true;
@@ -162,16 +161,27 @@ void ParallelMarkTask::run(AutoLockHelperThreadState& lock) {
 
   for (;;) {
     if (hasWork()) {
+      // There are entries on the mark stack. Mark them.
       if (!tryMarking(lock)) {
-        return;
+        // Marking stopped without finishing.
+        break;
       }
-    } else {
+    } else if (pm->hasActiveTasks(lock)) {
+      // Any active task can produce more work for this task.
       if (!requestWork(lock)) {
-        return;
+        break;  // Over budget.
       }
+    } else if (gc->hasDeferredWeakMaps(pm->color)) {
+      // All marking is done, but there are deferred weakmaps to process.
+      markDeferredWeakmaps(lock);
+    } else {
+      // No work remaining of any kind.
+      break;
     }
   }
 
+  // Allow other tasks to exit.
+  resumeWaitingTasks(lock);
   MOZ_ASSERT(!isWaiting);
 }
 
@@ -200,12 +210,38 @@ bool ParallelMarkTask::tryMarking(AutoLockHelperThreadState& lock) {
   return finished;
 }
 
+void ParallelMarkTask::markDeferredWeakmaps(AutoLockHelperThreadState& lock) {
+  MOZ_ASSERT(!pm->hasActiveTasks(lock));
+
+  // Transfer the list to a local while the lock is still held.
+  WeakMapList deferred(std::move(gc->deferredMapsList(pm->color)));
+
+#ifdef DEBUG
+  // Record that we are marking deferred weakmaps so that waiting tasks know
+  // they will still be resumed even though no task is active while the lock is
+  // released below.
+  pm->markingDeferredWeakmaps = true;
+#endif
+  {
+    // No other marking threads are running. Unlock helper thread state.
+    AutoUnlockHelperThreadState unlock(lock);
+    marker->markDeferredWeakMapChildren(deferred);
+  }
+#ifdef DEBUG
+  pm->markingDeferredWeakmaps = false;
+#endif
+
+  // All deferred weakmaps should have been moved to the marked list.
+  MOZ_ASSERT(deferred.isEmpty());
+
+  if (hasWork()) {
+    pm->setTaskActive(this, lock);
+  }
+}
+
 bool ParallelMarkTask::requestWork(AutoLockHelperThreadState& lock) {
   MOZ_ASSERT(!hasWork());
-
-  if (!pm->hasActiveTasks(lock)) {
-    return false;  // All other tasks are empty. We're finished.
-  }
+  MOZ_ASSERT(pm->hasActiveTasks(lock));
 
   budget.forceCheck();
   if (budget.isOverBudget()) {
@@ -219,6 +255,13 @@ bool ParallelMarkTask::requestWork(AutoLockHelperThreadState& lock) {
   return true;
 }
 
+void ParallelMarkTask::resumeWaitingTasks(AutoLockHelperThreadState& lock) {
+  while (pm->hasWaitingTasks()) {
+    auto* task = pm->takeWaitingTask();
+    task->resumeOnFinish(lock);
+  }
+}
+
 void ParallelMarkTask::waitUntilResumed(AutoLockHelperThreadState& lock) {
   AutoAddTimeDuration time(waitTime.ref());
 
@@ -229,7 +272,11 @@ void ParallelMarkTask::waitUntilResumed(AutoLockHelperThreadState& lock) {
   isWaiting = true;
 
   do {
-    MOZ_ASSERT(pm->hasActiveTasks(lock));
+    // An active task clears isWaiting before calling resumed.notify*(), so
+    // normally we can check that we're not hung by asserting that at least one
+    // active task exists. But a spurious wakeup during deferred weakmap marking
+    // could result in executing this body with no active marking tasks.
+    MOZ_ASSERT(pm->hasActiveTasks(lock) || pm->isMarkingDeferredWeakmaps(lock));
     resumed.wait(lock);
   } while (isWaiting);
 
@@ -318,12 +365,6 @@ void ParallelMarker::setTaskInactive(ParallelMarkTask* task,
   MOZ_ASSERT(id < workerCount());
   MOZ_ASSERT(activeTasks.ref()[id]);
   activeTasks.ref()[id] = false;
-
-  if (!hasActiveTasks(lock)) {
-    while (hasWaitingTasks()) {
-      takeWaitingTask()->resumeOnFinish(lock);
-    }
-  }
 }
 
 void ParallelMarkTask::donateWork() { pm->donateWorkFrom(marker); }

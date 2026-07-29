@@ -112,7 +112,7 @@ export class FormAutofillHandler {
   constructor(form, onFilledModifiedCallback = () => {}) {
     this._updateForm(form);
 
-    this.window = this.form.rootElement.ownerGlobal;
+    this.window = this.form.rootElement.documentGlobal;
 
     this.onFilledModifiedCallback = onFilledModifiedCallback;
 
@@ -1125,10 +1125,10 @@ export class FormAutofillHandler {
       // Set the value of the select element so that web event handlers can react accordingly
       element.value = value;
       element.dispatchEvent(
-        new element.ownerGlobal.Event("input", { bubbles: true })
+        new element.documentGlobal.Event("input", { bubbles: true })
       );
       element.dispatchEvent(
-        new element.ownerGlobal.Event("change", { bubbles: true })
+        new element.documentGlobal.Event("change", { bubbles: true })
       );
     }
   }

@@ -89,8 +89,14 @@ class ConsoleMessageWatcher {
 
     // It can happen that the targetActor does not have a window reference (e.g. in worker
     // thread, targetActor exposes a targetGlobal property which isn't a Window object)
-    const winStartTime =
-      targetActor.window?.performance?.timing?.navigationStart || 0;
+    let winStartTime = 0;
+
+    // Do not try to access performance if window is a remote proxy, it would
+    // throw a security error.
+    if (targetActor.window && !Cu.isRemoteProxy(targetActor.window)) {
+      winStartTime =
+        targetActor.window.performance?.timing?.navigationStart || 0;
+    }
 
     const cachedMessages = listener.getCachedMessages(!targetActor.isRootActor);
     const messages = [];

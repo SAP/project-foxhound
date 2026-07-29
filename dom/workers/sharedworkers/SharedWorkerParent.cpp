@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -122,6 +120,31 @@ IPCResult SharedWorkerParent::RecvThaw() {
   if (mStatus == eActive) {
     MOZ_ASSERT(mWorkerManagerWrapper);
     mWorkerManagerWrapper->Manager()->UpdateFrozen();
+  }
+
+  return IPC_OK();
+}
+
+IPCResult SharedWorkerParent::RecvSetLocaleOverride(
+    const nsCString& aLanguageOverride, nsTArray<nsString>&& aLanguages) {
+  AssertIsOnBackgroundThread();
+
+  if (mStatus == eActive) {
+    MOZ_ASSERT(mWorkerManagerWrapper);
+    mWorkerManagerWrapper->Manager()->SetLocaleOverride(aLanguageOverride,
+                                                        aLanguages);
+  }
+
+  return IPC_OK();
+}
+
+IPCResult SharedWorkerParent::RecvUpdateTimezoneOverride(
+    const nsString& aTimezoneOverride) {
+  AssertIsOnBackgroundThread();
+
+  if (mStatus == eActive) {
+    MOZ_ASSERT(mWorkerManagerWrapper);
+    mWorkerManagerWrapper->Manager()->UpdateTimezoneOverride(aTimezoneOverride);
   }
 
   return IPC_OK();

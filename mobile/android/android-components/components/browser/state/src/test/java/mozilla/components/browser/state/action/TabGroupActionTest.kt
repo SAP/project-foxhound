@@ -13,11 +13,11 @@ import mozilla.components.browser.state.state.getGroupById
 import mozilla.components.browser.state.state.getGroupByName
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.test.assertNotNull
 
 class TabGroupActionTest {
 
@@ -31,8 +31,8 @@ class TabGroupActionTest {
 
         val expectedPartition = state.tabPartitions[partition]
         assertNotNull(expectedPartition)
-        assertSame(testGroup, expectedPartition?.getGroupById(testGroup.id))
-        assertSame(testGroup, expectedPartition?.getGroupByName(testGroup.name))
+        assertSame(testGroup, expectedPartition.getGroupById(testGroup.id))
+        assertSame(testGroup, expectedPartition.getGroupByName(testGroup.name))
     }
 
     @Test
@@ -50,8 +50,8 @@ class TabGroupActionTest {
 
         val expectedPartition = state.tabPartitions[partition]
         assertNotNull(expectedPartition)
-        assertSame(testGroup, expectedPartition?.getGroupById(testGroup.id))
-        assertEquals(setOf("tab1", "tab2"), expectedPartition?.getGroupById(testGroup.id)?.tabIds)
+        assertSame(testGroup, expectedPartition.getGroupById(testGroup.id))
+        assertEquals(setOf("tab1", "tab2"), expectedPartition.getGroupById(testGroup.id)?.tabIds)
     }
 
     @Test
@@ -108,9 +108,9 @@ class TabGroupActionTest {
 
         val expectedPartition = state.tabPartitions[tabPartition.id]
         assertNotNull(expectedPartition)
-        val expectedGroup = expectedPartition!!.getGroupById(tabGroup.id)
+        val expectedGroup = expectedPartition.getGroupById(tabGroup.id)
         assertNotNull(expectedGroup)
-        assertTrue(expectedGroup!!.tabIds.contains(tab.id))
+        assertTrue(expectedGroup.tabIds.contains(tab.id))
     }
 
     @Test
@@ -127,9 +127,9 @@ class TabGroupActionTest {
 
         val expectedPartition = state.tabPartitions[tabPartition.id]
         assertNotNull(expectedPartition)
-        val expectedGroup = expectedPartition!!.getGroupById(tabGroup.id)
+        val expectedGroup = expectedPartition.getGroupById(tabGroup.id)
         assertNotNull(expectedGroup)
-        assertTrue(expectedGroup!!.tabIds.contains(tab.id))
+        assertTrue(expectedGroup.tabIds.contains(tab.id))
     }
 
     @Test
@@ -147,9 +147,9 @@ class TabGroupActionTest {
 
         val expectedPartition = state.tabPartitions[tabPartition.id]
         assertNotNull(expectedPartition)
-        val expectedGroup = expectedPartition!!.getGroupById(tabGroup.id)
+        val expectedGroup = expectedPartition.getGroupById(tabGroup.id)
         assertNotNull(expectedGroup)
-        assertTrue(expectedGroup!!.tabIds.contains(tab.id))
+        assertTrue(expectedGroup.tabIds.contains(tab.id))
         assertEquals(1, expectedGroup.tabIds.size)
     }
 
@@ -172,9 +172,9 @@ class TabGroupActionTest {
 
         val expectedPartition = state.tabPartitions[tabPartition.id]
         assertNotNull(expectedPartition)
-        val expectedGroup = expectedPartition!!.getGroupById(tabGroup.id)
+        val expectedGroup = expectedPartition.getGroupById(tabGroup.id)
         assertNotNull(expectedGroup)
-        assertTrue(expectedGroup!!.tabIds.contains(tab1.id))
+        assertTrue(expectedGroup.tabIds.contains(tab1.id))
         assertTrue(expectedGroup.tabIds.contains(tab2.id))
     }
 
@@ -196,9 +196,9 @@ class TabGroupActionTest {
 
         val expectedPartition = state.tabPartitions[tabPartition.id]
         assertNotNull(expectedPartition)
-        val expectedGroup = expectedPartition!!.getGroupById(tabGroup.id)
+        val expectedGroup = expectedPartition.getGroupById(tabGroup.id)
         assertNotNull(expectedGroup)
-        assertTrue(expectedGroup!!.tabIds.contains(tab1.id))
+        assertTrue(expectedGroup.tabIds.contains(tab1.id))
         assertTrue(expectedGroup.tabIds.contains(tab2.id))
     }
 
@@ -221,9 +221,9 @@ class TabGroupActionTest {
 
         val expectedPartition = state.tabPartitions[tabPartition.id]
         assertNotNull(expectedPartition)
-        val expectedGroup = expectedPartition!!.getGroupById(tabGroup.id)
+        val expectedGroup = expectedPartition.getGroupById(tabGroup.id)
         assertNotNull(expectedGroup)
-        assertTrue(expectedGroup!!.tabIds.contains(tab1.id))
+        assertTrue(expectedGroup.tabIds.contains(tab1.id))
         assertTrue(expectedGroup.tabIds.contains(tab2.id))
         assertEquals(2, expectedGroup.tabIds.size)
     }
@@ -245,9 +245,9 @@ class TabGroupActionTest {
 
         val expectedPartition = state.tabPartitions[tabPartition.id]
         assertNotNull(expectedPartition)
-        val expectedGroup = expectedPartition!!.getGroupById(tabGroup.id)
+        val expectedGroup = expectedPartition.getGroupById(tabGroup.id)
         assertNotNull(expectedGroup)
-        assertTrue(expectedGroup!!.tabIds.contains(tab1.id))
+        assertTrue(expectedGroup.tabIds.contains(tab1.id))
         assertEquals(1, expectedGroup.tabIds.size)
     }
 
@@ -267,9 +267,9 @@ class TabGroupActionTest {
 
         val expectedPartition = state.tabPartitions[tabPartition.id]
         assertNotNull(expectedPartition)
-        val expectedGroup = expectedPartition!!.getGroupById(tabGroup.id)
+        val expectedGroup = expectedPartition.getGroupById(tabGroup.id)
         assertNotNull(expectedGroup)
-        assertFalse(expectedGroup!!.tabIds.contains(tab1.id))
+        assertFalse(expectedGroup.tabIds.contains(tab1.id))
         assertTrue(expectedGroup.tabIds.contains(tab2.id))
     }
 
@@ -292,8 +292,8 @@ class TabGroupActionTest {
 
         val expectedPartition = state.tabPartitions[tabPartition.id]
         assertNotNull(expectedPartition)
-        val expectedGroup = expectedPartition!!.getGroupById(tabGroup.id)
+        val expectedGroup = expectedPartition.getGroupById(tabGroup.id)
         assertNotNull(expectedGroup)
-        assertTrue(expectedGroup!!.tabIds.isEmpty())
+        assertTrue(expectedGroup.tabIds.isEmpty())
     }
 }

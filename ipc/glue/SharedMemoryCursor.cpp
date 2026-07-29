@@ -1,8 +1,8 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include <bit>
 
 #include "mozilla/MathAlgorithms.h"
 #include "nsDebug.h"
@@ -35,7 +35,7 @@ MutableHandle Cursor::TakeHandle() {
 }
 
 void Cursor::SetChunkSize(size_t aChunkSize) {
-  MOZ_ASSERT(IsPowerOfTwo(aChunkSize),
+  MOZ_ASSERT(std::has_single_bit(aChunkSize),
              "Cannot specify non power-of-two maximum chunk size");
   MOZ_ASSERT(aChunkSize >= SystemAllocationGranularity(),
              "Cannot specify a chunk size which is smaller than the system "

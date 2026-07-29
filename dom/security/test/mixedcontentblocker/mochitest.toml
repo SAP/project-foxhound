@@ -33,6 +33,7 @@ skip-if = [
   "http2",
   "http3",
   "tsan", # tsan:bug 1612707
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2034604
 ]
 
 ["test_bug1550792.html"]

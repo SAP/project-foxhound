@@ -4,42 +4,99 @@
 
 "use strict";
 
-// Borrowed from browser_PanelMultiView_keyboard.js
-async function expectFocusAfterKey(aKey, aFocus) {
-  let res = aKey.match(/^(Shift\+)?(.+)$/);
-  let shift = Boolean(res[1]);
-  let key;
-  if (res[2].length == 1) {
-    key = res[2]; // Character.
-  } else {
-    key = "KEY_" + res[2]; // Tab, ArrowRight, etc.
-  }
-  info("Waiting for focus on " + aFocus.id);
-  let focused = BrowserTestUtils.waitForEvent(aFocus, "focus");
-  EventUtils.synthesizeKey(key, { shiftKey: shift });
-  await focused;
-  ok(true, aFocus.id + " focused after " + aKey + " pressed");
-}
+/**
+ * Tests that focus remains on the action button after the VPN toggle is activated.
+ */
+add_task(async function test_focus_preserved_after_toggle() {
+  let content = await openPanel({
+    isEnrolledAndEntitled: true,
+    isProtectionEnabled: false,
+  });
+
+  Assert.ok(
+    BrowserTestUtils.isVisible(content),
+    "ipprotection-content component should be present"
+  );
+
+  await BrowserTestUtils.waitForMutationCondition(
+    content.shadowRoot,
+    { childList: true, subtree: true },
+    () => content.statusCardEl
+  );
+
+  let statusCard = content.statusCardEl;
+  let actionButton = statusCard.actionButtonEl;
+
+  actionButton.focus();
+  actionButton.click();
+
+  // Simulate the service responding with the updated state.
+  statusCard.protectionEnabled = true;
+  await statusCard.updateComplete;
+  await statusCard.actionButtonEl.updateComplete;
+
+  Assert.ok(
+    statusCard.statusBoxEl.titleEl.matches(":focus-within"),
+    "Focus switches to the title after action button toggled"
+  );
+
+  await closePanel();
+  cleanupService();
+});
+
+/**
+ * Tests that focus is restored to the action button after the VPN goes through
+ * the activating state (button disabled then re-enabled).
+ */
+add_task(async function test_focus_restored_after_activating() {
+  let content = await openPanel({
+    isEnrolledAndEntitled: true,
+    isProtectionEnabled: false,
+  });
+
+  Assert.ok(
+    BrowserTestUtils.isVisible(content),
+    "ipprotection-content component should be present"
+  );
+
+  await BrowserTestUtils.waitForMutationCondition(
+    content.shadowRoot,
+    { childList: true, subtree: true },
+    () => content.statusCardEl
+  );
+
+  let statusCard = content.statusCardEl;
+  let actionButton = statusCard.actionButtonEl;
+
+  actionButton.focus();
+  actionButton.click();
+
+  statusCard.isActivating = true;
+  await statusCard.updateComplete;
+
+  statusCard.isActivating = false;
+  statusCard.protectionEnabled = true;
+  await statusCard.updateComplete;
+  await statusCard.actionButtonEl.updateComplete;
+
+  Assert.ok(
+    statusCard.statusBoxEl.titleEl.matches(":focus-within"),
+    "Focus should move to the title after activating completes"
+  );
+
+  await closePanel();
+  cleanupService();
+});
 
 /**
  * Tests that the panel can be navigated with Tab and Arrow keys
  * and that the help button responds to the Enter key
  */
 add_task(async function test_keyboard_navigation_in_panel() {
-  setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: true,
-    canEnroll: true,
-    proxyPass: {
-      status: 200,
-      error: undefined,
-      pass: makePass(),
-    },
-  });
-  await IPPEnrollAndEntitleManager.refetchEntitlement();
-
   const openLinkStub = sinon.stub(window, "openWebLinkIn");
-  let content = await openPanel();
+  let content = await openPanel({
+    isReady: true,
+  });
 
   Assert.ok(
     BrowserTestUtils.isVisible(content),
@@ -61,8 +118,11 @@ add_task(async function test_keyboard_navigation_in_panel() {
 
   let statusCard = content.statusCardEl;
   let turnOnButton = statusCard.actionButtonEl;
+  let locationButton = statusCard.locationButtonEl;
 
   await expectFocusAfterKey("Tab", turnOnButton);
+
+  await expectFocusAfterKey("Tab", locationButton);
 
   await expectFocusAfterKey("Tab", content.settingsButtonEl);
 
@@ -75,24 +135,27 @@ add_task(async function test_keyboard_navigation_in_panel() {
   );
   await expectFocusAfterKey("Tab", turnOnButton);
 
+  await expectFocusAfterKey("Tab", locationButton);
+
   await expectFocusAfterKey("Tab", content.settingsButtonEl);
 
-  // Loop back around
-  await expectFocusAfterKey(
-    "ArrowDown",
-    content.ownerDocument.querySelector(
-      `#${IPProtectionPanel.HEADER_BUTTON_ID}`
-    )
+  // Loop back around with ArrowDown
+  let headerButton = content.ownerDocument.querySelector(
+    `#${IPProtectionPanel.HEADER_BUTTON_ID}`
   );
+  await expectFocusAfterKey("ArrowDown", headerButton);
+  await expectFocusAfterKey("ArrowDown", turnOnButton);
+  await expectFocusAfterKey("ArrowDown", locationButton);
+
+  // Test ArrowUp (backward)
+  await expectFocusAfterKey("ArrowUp", turnOnButton);
+  await expectFocusAfterKey("ArrowUp", headerButton);
+
+  // Navigate forward to turnOnButton to set up for Shift+Tab test
   await expectFocusAfterKey("ArrowDown", turnOnButton);
 
-  // Loop backwards
-  await expectFocusAfterKey(
-    "Shift+Tab",
-    content.ownerDocument.querySelector(
-      `#${IPProtectionPanel.HEADER_BUTTON_ID}`
-    )
-  );
+  // Loop backwards with Shift+Tab
+  await expectFocusAfterKey("Shift+Tab", headerButton);
 
   // Check that header button responds to enter key
   let panelHiddenPromise = waitForPanelEvent(document, "popuphidden");

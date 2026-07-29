@@ -12,6 +12,8 @@ import mozilla.components.lib.state.State
  * @property loginItems Login items to be displayed in the current list screen.
  * @property searchText The text to filter login items.
  * @property sortOrder The order to display the login items.
+ * @property importPasswordsMenuShown Whether the import passwords menu is shown.
+ * @property showPasswordsImport Whether the import passwords UI should be shown.
  * @property loginsListState State representing the list login subscreen, if visible.
  * @property loginsAddLoginState State representing the add login subscreen, if visible.
  * @property loginsEditLoginState State representing the edit login subscreen, if visible.
@@ -24,6 +26,8 @@ internal data class LoginsState(
     val loginItems: List<LoginItem>,
     val searchText: String?,
     val sortOrder: LoginsSortOrder,
+    val importPasswordsMenuShown: Boolean,
+    val showPasswordsImport: Boolean,
     val loginsListState: LoginsListState?,
     val loginsAddLoginState: LoginsAddLoginState?,
     val loginsEditLoginState: LoginsEditLoginState?,
@@ -37,6 +41,8 @@ internal data class LoginsState(
             loginItems = listOf(),
             searchText = null,
             sortOrder = LoginsSortOrder.default,
+            importPasswordsMenuShown = false,
+            showPasswordsImport = true,
             loginsListState = null,
             loginsAddLoginState = null,
             loginsEditLoginState = null,

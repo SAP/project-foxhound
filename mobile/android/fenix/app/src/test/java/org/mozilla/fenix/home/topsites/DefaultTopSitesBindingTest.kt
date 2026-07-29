@@ -5,7 +5,7 @@
 package org.mozilla.fenix.home.topsites
 
 import android.content.res.Resources
-import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -21,12 +21,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import org.junit.runner.RunWith
 import org.mozilla.fenix.R
 import org.mozilla.fenix.utils.Settings
 import java.io.ByteArrayInputStream
 
-@RunWith(AndroidJUnit4::class)
 class DefaultTopSitesBindingTest {
 
     private lateinit var browserStore: BrowserStore
@@ -65,7 +63,7 @@ class DefaultTopSitesBindingTest {
                 SearchAction.SetRegionAction(RegionState.Default),
             )
 
-            verify(exactly = 0) {
+            coVerify(exactly = 0) {
                 topSitesStorage.addTopSites(topSites = any(), isDefault = any())
                 settings.defaultTopSitesAdded = any()
             }
@@ -86,7 +84,7 @@ class DefaultTopSitesBindingTest {
             val topSites = binding.getTopSites(region = "XX")
             dispatcher.scheduler.advanceUntilIdle()
 
-            verify {
+            coVerify {
                 topSitesStorage.addTopSites(topSites = topSites, isDefault = true)
                 settings.defaultTopSitesAdded = true
             }
@@ -108,7 +106,7 @@ class DefaultTopSitesBindingTest {
             val topSites = binding.getTopSites(region = region)
             dispatcher.scheduler.advanceUntilIdle()
 
-            verify {
+            coVerify {
                 topSitesStorage.addTopSites(topSites = topSites, isDefault = true)
                 settings.defaultTopSitesAdded = true
             }
@@ -127,7 +125,7 @@ class DefaultTopSitesBindingTest {
                 SearchAction.SetRegionAction(RegionState(home = region, current = region)),
             )
 
-            verify(exactly = 0) {
+            coVerify(exactly = 0) {
                 topSitesStorage.addTopSites(topSites = any(), isDefault = any())
                 settings.defaultTopSitesAdded = any()
             }
@@ -236,7 +234,7 @@ class DefaultTopSitesBindingTest {
                 crashReporter.recordCrashBreadcrumb(any())
                 crashReporter.submitCaughtException(any<SerializationException>())
             }
-            verify(exactly = 0) {
+            coVerify(exactly = 0) {
                 topSitesStorage.addTopSites(topSites = any(), isDefault = any())
                 settings.defaultTopSitesAdded = any()
             }
@@ -258,7 +256,7 @@ class DefaultTopSitesBindingTest {
                 crashReporter.recordCrashBreadcrumb(any())
                 crashReporter.submitCaughtException(any<SerializationException>())
             }
-            verify(exactly = 0) {
+            coVerify(exactly = 0) {
                 topSitesStorage.addTopSites(topSites = any(), isDefault = any())
                 settings.defaultTopSitesAdded = any()
             }

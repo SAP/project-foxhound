@@ -16,11 +16,11 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/audio_codecs/audio_encoder.h"
 #include "api/audio_codecs/audio_format.h"
 #include "api/audio_codecs/opus/audio_encoder_opus_config.h"
@@ -55,13 +55,13 @@ class AudioEncoderOpusImpl final : public AudioEncoder {
 
   static std::unique_ptr<AudioEncoderOpusImpl> CreateForTesting(
       const Environment& env,
-      const AudioEncoderOpusConfig& config,
+      AudioEncoderOpusConfig config,
       int payload_type,
       const AudioNetworkAdaptorCreator& audio_network_adaptor_creator,
       std::unique_ptr<SmoothingFilter> bitrate_smoother);
 
   AudioEncoderOpusImpl(const Environment& env,
-                       const AudioEncoderOpusConfig& config,
+                       AudioEncoderOpusConfig config,
                        int payload_type);
 
   ~AudioEncoderOpusImpl() override;
@@ -102,7 +102,7 @@ class AudioEncoderOpusImpl final : public AudioEncoder {
   ANAStats GetANAStats() const override;
   std::optional<std::pair<TimeDelta, TimeDelta> > GetFrameLengthRange()
       const override;
-  ArrayView<const int> supported_frame_lengths_ms() const {
+  std::span<const int> supported_frame_lengths_ms() const {
     return config_.supported_frame_lengths_ms;
   }
 
@@ -117,7 +117,7 @@ class AudioEncoderOpusImpl final : public AudioEncoder {
 
  protected:
   EncodedInfo EncodeImpl(uint32_t rtp_timestamp,
-                         ArrayView<const int16_t> audio,
+                         std::span<const int16_t> audio,
                          Buffer* encoded) override;
 
  private:
@@ -125,7 +125,7 @@ class AudioEncoderOpusImpl final : public AudioEncoder {
 
   AudioEncoderOpusImpl(
       const Environment& env,
-      const AudioEncoderOpusConfig& config,
+      AudioEncoderOpusConfig config,
       int payload_type,
       const AudioNetworkAdaptorCreator& audio_network_adaptor_creator,
       std::unique_ptr<SmoothingFilter> bitrate_smoother);
@@ -138,7 +138,8 @@ class AudioEncoderOpusImpl final : public AudioEncoder {
   size_t Num10msFramesPerPacket() const;
   size_t SamplesPer10msFrame() const;
   size_t SufficientOutputBufferSize() const;
-  bool RecreateEncoderInstance(const AudioEncoderOpusConfig& config);
+  bool RecreateEncoderInstance(AudioEncoderOpusConfig config);
+  bool RecreateEncoderInstance();
   void SetFrameLength(int frame_length_ms);
   void SetNumChannelsToEncode(size_t num_channels_to_encode);
   void SetProjectedPacketLossRate(float fraction);

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,12 +21,12 @@ SVGAnimatedRect::~SVGAnimatedRect() {
   SVGAnimatedViewBox::sSVGAnimatedRectTearoffTable.RemoveTearoff(mVal);
 }
 
-already_AddRefed<SVGRect> SVGAnimatedRect::GetBaseVal() {
-  return mVal->ToDOMBaseVal(mSVGElement);
+already_AddRefed<SVGRect> SVGAnimatedRect::BaseVal() {
+  return mVal->ToDOMBaseVal(mSVGElement).unwrapBasePtr().forget();
 }
 
-already_AddRefed<SVGRect> SVGAnimatedRect::GetAnimVal() {
-  return mVal->ToDOMAnimVal(mSVGElement);
+already_AddRefed<SVGRect> SVGAnimatedRect::AnimVal() {
+  return mVal->ToDOMAnimVal(mSVGElement).unwrapBasePtr().forget();
 }
 
 JSObject* SVGAnimatedRect::WrapObject(JSContext* aCx,

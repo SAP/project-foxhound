@@ -4,15 +4,18 @@
 
 package mozilla.components.support.ktx.android.view
 
+import android.app.Activity
+import android.content.ContextWrapper
 import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
-import android.view.inputmethod.InputMethodManager
+import android.view.Window
 import androidx.annotation.MainThread
-import androidx.core.content.getSystemService
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,20 +39,22 @@ val View.isLTR: Boolean
 
 /**
  * Tries to focus this view and show the soft input window for it.
- *
- *  @param flags Provides additional operating flags to be used with InputMethodManager.showSoftInput().
- *  Currently may be 0, SHOW_IMPLICIT or SHOW_FORCED.
  */
-fun View.showKeyboard(flags: Int = InputMethodManager.SHOW_IMPLICIT) {
-    ShowKeyboard(this, flags).post()
+fun View.showKeyboard() {
+    ShowKeyboard(this).post()
 }
 
 /**
  * Hides the soft input window.
+ *
+ * Note: this is a no-op when the view is not hosted in an Activity (e.g. a view attached to an
+ * application-context window such as a PopupWindow), since no Activity Window is reachable from
+ * which to obtain an InsetsController.
  */
 fun View.hideKeyboard() {
-    val imm = context.getSystemService<InputMethodManager>()
-    imm?.hideSoftInputFromWindow(windowToken, 0)
+    findWindow()?.let { window ->
+        WindowCompat.getInsetsController(window, this).hide(WindowInsetsCompat.Type.ime())
+    }
 }
 
 /**
@@ -138,10 +143,16 @@ inline fun View.onNextGlobalLayout(crossinline callback: () -> Unit) {
     viewTreeObserver.addOnGlobalLayoutListener(listener)
 }
 
-private class ShowKeyboard(
-    view: View,
-    private val flags: Int = InputMethodManager.SHOW_IMPLICIT,
-) : Runnable {
+private fun View.findWindow(): Window? {
+    var ctx = context
+    while (ctx is ContextWrapper) {
+        if (ctx is Activity) return ctx.window
+        ctx = ctx.baseContext
+    }
+    return null
+}
+
+private class ShowKeyboard(view: View) : Runnable {
     private val weakReference: WeakReference<View> = WeakReference(view)
     private val handler: Handler = Handler(Looper.getMainLooper())
     private var tries: Int = TRIES
@@ -159,18 +170,14 @@ private class ShowKeyboard(
                 return
             }
 
-            view.context?.getSystemService<InputMethodManager>()?.let { imm ->
-                if (!imm.isActive(view)) {
-                    // This view is not the currently active view for the input method yet.
-                    post()
-                    return
-                }
-
-                if (!imm.showSoftInput(view, flags)) {
-                    // Showing they keyboard failed. Try again later.
-                    post()
-                }
+            val window = view.findWindow()
+            if (window == null) {
+                // View is not yet attached to a window.
+                post()
+                return
             }
+
+            WindowCompat.getInsetsController(window, view).show(WindowInsetsCompat.Type.ime())
         }
     }
 

@@ -6,7 +6,7 @@
   file, You can obtain one at http://mozilla.org/MPL/2.0/.
 -->
 
-<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
+<resources>
   <!--
     Home Fragment
 
@@ -31,8 +31,6 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">ନୂଆ ବ୍ୟକ୍ତିଗତ ଟ୍ୟାବ୍</string>
   <!-- Button text for showing all the tabs in the tabs tray -->
   <string name="recent_tabs_show_all">ସମସ୍ତଙ୍କୁ ଦର୍ଶାନ୍ତୁ</string>
-  <!-- Browser menu button that sends a user to help articles -->
-  <string name="browser_menu_help" tools:ignore="UnusedResources" moz:removedIn="149">ସହାୟତା</string>
   <!-- Browser menu button that opens the settings menu -->
   <string name="browser_menu_settings">ସେଟିଂସମୂହ</string>
   <!-- Browser menu button that opens a user's library -->
@@ -46,10 +44,6 @@
     %1$s is the name of the app (for example "Firefox").
   -->
   <string name="browser_menu_open_in_fenix">%1$sରେ ଖୋଲନ୍ତୁ</string>
-  <!-- Browser menu label for adding a bookmark -->
-  <string name="browser_menu_add" tools:ignore="UnusedResources" moz:removedIn="149">ଯୋଡ଼ନ୍ତୁ</string>
-  <!-- Browser menu label for editing a bookmark -->
-  <string name="browser_menu_edit" tools:ignore="UnusedResources" moz:removedIn="149">ସମ୍ପାଦନା</string>
   <!--
     Locale Settings Fragment
 
@@ -58,8 +52,6 @@
   <string name="a11y_selected_locale_content_description">ମନୋନୀତ ଭାଷା</string>
   <!-- Text for default locale item -->
   <string name="default_locale_text">ଡିଭାଇସ୍ ର ଭାଷାକୁ ଅନୁସରଣ କରନ୍ତୁ</string>
-  <!-- Button in the search view when shortcuts are displayed that takes a user to the search engine settings -->
-  <string name="search_shortcuts_engine_settings">ସନ୍ଧାନ ଇଞ୍ଜିନ୍ ସେଟିଂସ୍</string>
   <!-- ==== Project "Nova" onboarding strings ==== -->
 
   <!-- ==== End of Project "Nova" onboarding strings ==== -->
@@ -110,8 +102,6 @@
   <string name="preference_follow_device_theme">ଡିଭାଇସ୍ ର ଥିମକୁ ଅନୁସରଣ କରନ୍ତୁ</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">ଇତିହାସ</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">ନୂଆ ଟ୍ୟାବ୍</string>
   <!-- Settings Page Title -->
   <string name="settings_title">ସେଟିଂସମୂହ</string>
   <!-- Option for auto closing tabs that will auto close tabs after one month -->
@@ -122,8 +112,6 @@
   <string name="add_tab">ଟ୍ୟାବ ଯୋଡ଼ନ୍ତୁ</string>
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">ବ୍ୟକ୍ତିଗତ ଟ୍ୟାବ୍ ଯୋଡ଼ନ୍ତୁ</string>
-  <!-- Text for the new tab button to indicate adding a new private tab in the tab -->
-  <string name="tab_drawer_fab_content" tools:ignore="UnusedResources" moz:removedIn="149">ବ୍ୟକ୍ତିଗତ</string>
   <!-- Text for the header that groups the history for today -->
   <string name="history_today">ଆଜି</string>
   <!-- Text for the header that groups the history for yesterday -->

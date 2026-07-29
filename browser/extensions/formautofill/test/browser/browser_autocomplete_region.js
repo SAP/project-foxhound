@@ -4,7 +4,7 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
 async function performTest(region, expectedCount) {
-  let regionInfo = { home: Region._home, current: Region._current };
+  let regionInfo = { home: Region.home, current: Region.current };
   Region._setCurrentRegion(region);
   Region._setHomeRegion(region);
 

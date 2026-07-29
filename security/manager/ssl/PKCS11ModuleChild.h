@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,10 +21,18 @@ class PKCS11ModuleChild final : public PPKCS11ModuleChild {
 
   PKCS11ModuleChild() = default;
 
-  nsresult Start(Endpoint<PPKCS11ModuleChild>&& aEndpoint);
+  nsresult Start(Endpoint<PPKCS11ModuleChild>&& aEndpoint,
+                 nsCString&& aProfilePath);
 
-  ipc::IPCResult RecvLoadModule(nsString&& aModule,
-                                LoadModuleResolver&& aResolver);
+  ipc::IPCResult RecvAddModule(nsCString&& aModuleName,
+                               nsCString&& aLibraryPath,
+                               uint32_t aMechanismFlags, uint32_t aCipherFlags,
+                               AddModuleResolver&& aResolver);
+
+  ipc::IPCResult RecvDeleteModule(nsCString&& aModuleName,
+                                  DeleteModuleResolver&& aResolver);
+
+  ipc::IPCResult RecvListModules(ListModulesResolver&& aResolver);
 
  private:
   nsCOMPtr<nsISerialEventTarget> mTaskQueue;

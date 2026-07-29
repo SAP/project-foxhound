@@ -4,12 +4,14 @@
 
 package org.mozilla.fenix.ui.efficiency.selectors
 
+import org.mozilla.fenix.R
+import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
 import org.mozilla.fenix.ui.efficiency.helpers.Selector
 import org.mozilla.fenix.ui.efficiency.helpers.SelectorStrategy
 
 object SettingsHomepageSelectors {
     val SETTINGS_HOMEPAGE_TITLE = Selector(
-        strategy = SelectorStrategy.UIAUTOMATOR2_BY_TEXT,
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
         value = "Homepage",
         description = "The Homepage Settings menu item",
         groups = listOf("requiredForPage"),
@@ -22,8 +24,48 @@ object SettingsHomepageSelectors {
         groups = listOf("homepageSettings"),
     )
 
+    val SHORTCUTS_BUTTON = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
+        value = "Shortcuts",
+        description = "the Shortcuts button",
+        groups = listOf("homepageSettings"),
+    )
+
+    val JUMP_BACK_IN_BUTTON = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
+        value = "Jump back in",
+        description = "the Jump Back In button",
+        groups = listOf("homepageSettings"),
+    )
+
+    val RECENT_BOOKMARKS_BUTTON = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
+        value = getStringResource(R.string.customize_toggle_bookmarks),
+        description = "the Recent bookmarks button",
+        groups = listOf("homepageSettings"),
+    )
+
+    val RECENTLY_VISITED_BUTTON = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
+        value = "Recently visited",
+        description = "the Recently visited button",
+        groups = listOf("homepageSettings"),
+    )
+
+    val POCKET_BUTTON = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
+        value = "Pocket",
+        description = "the Pocket button",
+        groups = listOf("homepageSettings"),
+    )
+
     val all = listOf(
         SETTINGS_HOMEPAGE_TITLE,
         SHOW_TOP_SITES_TOGGLE,
+        SHORTCUTS_BUTTON,
+        JUMP_BACK_IN_BUTTON,
+        RECENT_BOOKMARKS_BUTTON,
+        RECENTLY_VISITED_BUTTON,
+        POCKET_BUTTON,
     )
 }

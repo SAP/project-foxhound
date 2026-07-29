@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,10 +29,6 @@ void gfxConfigManager::Init() {
   mWrForceEnabled = gfxPlatform::WebRenderPrefEnabled();
   mWrSoftwareForceEnabled = StaticPrefs::gfx_webrender_software_AtStartup();
   mWrCompositorForceEnabled =
-#ifdef MOZ_WAYLAND
-      StaticPrefs::gfx_wayland_hdr_AtStartup() ||
-      StaticPrefs::gfx_wayland_hdr_force_enabled_AtStartup() ||
-#endif
       StaticPrefs::gfx_webrender_compositor_force_enabled_AtStartup();
   mWrForcePartialPresent =
       StaticPrefs::gfx_webrender_force_partial_present_AtStartup();
@@ -160,6 +154,11 @@ void gfxConfigManager::ConfigureWebRender() {
   if (mWrCompositorForceEnabled) {
     mFeatureWrCompositor->UserForceEnable("Force enabled by pref");
   }
+#ifdef MOZ_WAYLAND
+  else if (gfxPlatform::UseHDR()) {
+    mFeatureWrCompositor->UserForceEnable("Force enabled by HDR pref");
+  }
+#endif
 
   ConfigureFromBlocklist(nsIGfxInfo::FEATURE_WEBRENDER_COMPOSITOR,
                          mFeatureWrCompositor);

@@ -327,6 +327,8 @@ const _applyVectorFeature = (
 };
 
 export async function weightedSampleTopSites(input) {
+  const alpha = input.alpha ?? 1;
+  const beta = input.beta ?? 1;
   const updated_norms = {};
   const score_map = Object.fromEntries(
     input.guid.map(guid => [
@@ -361,9 +363,10 @@ export async function weightedSampleTopSites(input) {
 
   // 2) CTR feature (derived vector)
   if (input.features.includes("ctr")) {
-    const raw_ctr = input.impressions.map(
-      (imp, i) => (input.clicks[i] + 1) / (imp + 1)
-    );
+    const raw_ctr = input.impressions.map((imp, i) => {
+      const ctr = (input.clicks[i] + alpha) / (imp + alpha + beta);
+      return Number.isFinite(ctr) ? ctr : 0;
+    });
     _applyVectorFeature(
       "ctr",
       raw_ctr,
@@ -382,8 +385,8 @@ export async function weightedSampleTopSites(input) {
       obs_negative: input.impressions.map((imp, i) =>
         Math.max(0, imp - input.clicks[i])
       ),
-      prior_positive: input.clicks.map(() => input.alpha),
-      prior_negative: input.impressions.map(() => input.beta),
+      prior_positive: input.clicks.map(() => alpha),
+      prior_negative: input.impressions.map(() => beta),
       do_sort: false,
     });
     const [vals, n] = normUpdate(ranked_thetas[1], input.norms.thom);

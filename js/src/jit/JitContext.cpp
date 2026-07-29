@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -133,8 +131,10 @@ bool jit::InitializeJit() {
   if (!MacroAssembler::SupportsFloatingPoint()) {
     JitOptions.disableJitBackend = true;
   }
-  JitOptions.supportsUnalignedAccesses =
-      MacroAssembler::SupportsUnalignedAccesses();
+
+  bool supportsUnaligned = MacroAssembler::SupportsUnalignedAccesses();
+  JitOptions.supportsUnalignedAccesses = supportsUnaligned;
+  JitOptions.enable_regexp_unaligned_accesses = supportsUnaligned;
 
   if (HasJitBackend()) {
     if (!InitProcessExecutableMemory()) {

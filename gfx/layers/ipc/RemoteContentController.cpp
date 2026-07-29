@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -70,7 +68,9 @@ void RemoteContentController::HandleTapOnParentProcessMainThread(
           ("HandleTapOnMainThread(%d)", (int)aTapType));
   MOZ_ASSERT(NS_IsMainThread());
 
-  dom::BrowserParent* tab =
+  // Hold strong reference to BrowserParent because SendHandleTap
+  // can run script via SetFocus.
+  RefPtr<dom::BrowserParent> tab =
       dom::BrowserParent::GetBrowserParentFromLayersId(aGuid.mLayersId);
   if (tab) {
     tab->SendHandleTap(aTapType, aPoint, aModifiers, aGuid, aInputBlockId,
@@ -86,7 +86,7 @@ void RemoteContentController::HandleTapOnGPUProcessMainThread(
   MOZ_ASSERT(NS_IsMainThread());
 
   // Send a message to the controller thread to handle the single-tap gesture.
-  APZInputBridgeParent* apzib =
+  auto apzib =
       CompositorBridgeParent::GetApzInputBridgeParentForRoot(aGuid.mLayersId);
   if (apzib) {
     (void)apzib->SendHandleTap(aTapType, aPoint, aModifiers, aGuid,
@@ -157,7 +157,7 @@ void RemoteContentController::NotifyPinchGestureOnCompositorThread(
 
   // The raw pointer to APZCTreeManagerParent is ok here because we are on
   // the compositor thread.
-  APZCTreeManagerParent* apzctmp =
+  auto apzctmp =
       CompositorBridgeParent::GetApzcTreeManagerParentForRoot(aGuid.mLayersId);
   if (apzctmp) {
     (void)apzctmp->SendNotifyPinchGesture(aType, aGuid, aFocusPoint,
@@ -471,11 +471,8 @@ void RemoteContentController::CancelAutoscrollCrossProcess(
     return;
   }
 
-  // The raw pointer to APZCTreeManagerParent is ok here because we are on
-  // the compositor thread.
-  if (APZCTreeManagerParent* parent =
-          CompositorBridgeParent::GetApzcTreeManagerParentForRoot(
-              aGuid.mLayersId)) {
+  if (auto parent = CompositorBridgeParent::GetApzcTreeManagerParentForRoot(
+          aGuid.mLayersId)) {
     (void)parent->SendCancelAutoscroll(aGuid.mScrollId);
   }
 }
@@ -525,11 +522,8 @@ void RemoteContentController::NotifyScaleGestureCompleteCrossProcess(
     return;
   }
 
-  // The raw pointer to APZCTreeManagerParent is ok here because we are on
-  // the compositor thread.
-  if (APZCTreeManagerParent* parent =
-          CompositorBridgeParent::GetApzcTreeManagerParentForRoot(
-              aGuid.mLayersId)) {
+  if (auto parent = CompositorBridgeParent::GetApzcTreeManagerParentForRoot(
+          aGuid.mLayersId)) {
     (void)parent->SendNotifyScaleGestureComplete(aGuid.mScrollId, aScale);
   }
 }

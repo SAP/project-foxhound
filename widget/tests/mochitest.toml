@@ -34,6 +34,14 @@ support-files = ["file_test_clipboard.js"]
 ["test_clipboard_asyncSetData.html"]
 support-files = ["file_test_clipboard_asyncSetData.js"]
 
+["test_clipboard_getDataIfSmallerThan_ca_disabled.html"]
+support-files = "file_test_clipboard_getDataIfSmallerThan.js"
+subsuite = "clipboard_ca_disabled"
+
+["test_clipboard_getDataIfSmallerThan_ca_enabled.html"]
+support-files = "file_test_clipboard_getDataIfSmallerThan.js"
+subsuite = "clipboard_ca_enabled"
+
 ["test_clipboard_getDataSnapshot.html"]
 support-files = ["file_test_clipboard_getDataSnapshot.js"]
 skip-if = [
@@ -85,6 +93,8 @@ skip-if = [
   "opt && xorigin && verify-standalone",
   "os == 'android'", #  Fx on android does not currently support DND
 ]
+
+["test_ime_state_contenteditable_false.html"]
 
 ["test_keypress_event_with_alt_on_mac.html"]
 run-if = [

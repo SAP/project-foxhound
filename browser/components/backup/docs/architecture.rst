@@ -5,9 +5,7 @@ The ``BackupService`` module is architected in a way to make testing its
 individual components relatively easy with unit tests.
 
 The main entry point exists in a module called
-``BackupService.sys.mjs``, which is `invoked and initialized via in the
-BrowserGlue idle tasks
-list <https://searchfox.org/mozilla-central/rev/97feebcab27f1a92e70ceacaa77211e9eaba0e6e/browser/components/BrowserGlue.sys.mjs#2449-2470>`__
+``BackupService.sys.mjs``, which is :searchfox:`invoked and initialized via in the BrowserGlue idle tasks list <mozilla-central/rev/97feebcab27f1a92e70ceacaa77211e9eaba0e6e:browser/components/BrowserGlue.sys.mjs#2449-2470>`
 
 The ``BackupService`` manages two high-level operations: creation of
 backups, and recovery from such backups.

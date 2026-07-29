@@ -38,7 +38,7 @@ add_task(async function test_keyword_disabled() {
     document
       .querySelector("#searchbar-new .searchmode-switcher")
       .getAttribute("data-l10n-id"),
-    "urlbar-searchmode-button2",
+    "urlbar-searchmode-button3",
     "Searchbar has regular l10n id"
   );
 
@@ -46,7 +46,7 @@ add_task(async function test_keyword_disabled() {
     win.document
       .querySelector("#urlbar .searchmode-switcher")
       .getAttribute("data-l10n-id"),
-    "urlbar-searchmode-no-keyword",
+    "urlbar-searchmode-no-keyword2",
     "Urlbar has l10n id for keyword disabled"
   );
 
@@ -65,9 +65,8 @@ add_task(async function test_scotchbonnet_disabled() {
   let popup = await SearchbarTestUtils.openSearchModeSwitcher(window);
   Assert.ok(true, "Can still open search mode switcher");
   let popupHidden = SearchbarTestUtils.searchModeSwitcherPopupClosed(window);
-  popup.querySelector("menuitem[label=engine2]").click();
+  popup.querySelector("panel-item[data-engine-id=engine2]").click();
   await popupHidden;
-
   await SearchbarTestUtils.assertSearchMode(window, {
     engineName: "engine2",
     entry: "searchbutton",

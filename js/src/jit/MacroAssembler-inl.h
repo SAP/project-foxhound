@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -10,7 +8,8 @@
 #include "jit/MacroAssembler.h"
 
 #include "mozilla/FloatingPoint.h"
-#include "mozilla/MathAlgorithms.h"
+
+#include <bit>
 
 #include "gc/Zone.h"
 #include "jit/CalleeToken.h"
@@ -193,6 +192,9 @@ ABIFunctionType MacroAssembler::signature() const {
     case Args_Int32_Float32:
     case Args_Double_Double:
     case Args_Double_Int:
+    case Args_Double_IntInt:
+    case Args_Double_IntIntInt:
+    case Args_Double_IntInt64:
     case Args_Double_DoubleInt:
     case Args_Double_DoubleDouble:
     case Args_Double_IntDouble:
@@ -205,6 +207,7 @@ ABIFunctionType MacroAssembler::signature() const {
     case Args_Int64_GeneralGeneral:
     case Args_General_GeneralInt64GeneralGeneral:
     case Args_General_GeneralFloat32GeneralGeneral:
+    case Args_General_GeneralFloat64General:
       break;
     default:
       MOZ_CRASH("Unexpected type");
@@ -431,22 +434,23 @@ void MacroAssembler::branchIfNotNullOrUndefined(ValueOperand val,
 
 void MacroAssembler::branchIfRope(Register str, Label* label) {
   Address flags(str, JSString::offsetOfFlags());
-  branchTest32(Assembler::Zero, flags, Imm32(JSString::LINEAR_BIT), label);
+  branchTest32(Assembler::Zero, flags, Imm32(StringFlags::LINEAR_BIT), label);
 }
 
 void MacroAssembler::branchIfNotRope(Register str, Label* label) {
   Address flags(str, JSString::offsetOfFlags());
-  branchTest32(Assembler::NonZero, flags, Imm32(JSString::LINEAR_BIT), label);
+  branchTest32(Assembler::NonZero, flags, Imm32(StringFlags::LINEAR_BIT),
+               label);
 }
 
 void MacroAssembler::branchLatin1String(Register string, Label* label) {
   branchTest32(Assembler::NonZero, Address(string, JSString::offsetOfFlags()),
-               Imm32(JSString::LATIN1_CHARS_BIT), label);
+               Imm32(StringFlags::LATIN1_CHARS_BIT), label);
 }
 
 void MacroAssembler::branchTwoByteString(Register string, Label* label) {
   branchTest32(Assembler::Zero, Address(string, JSString::offsetOfFlags()),
-               Imm32(JSString::LATIN1_CHARS_BIT), label);
+               Imm32(StringFlags::LATIN1_CHARS_BIT), label);
 }
 
 void MacroAssembler::branchIfBigIntIsNegative(Register bigInt, Label* label) {
@@ -1105,7 +1109,7 @@ void MacroAssembler::assertStackAlignment(uint32_t alignment,
                                           int32_t offset /* = 0 */) {
 #ifdef DEBUG
   Label ok, bad;
-  MOZ_ASSERT(mozilla::IsPowerOfTwo(alignment));
+  MOZ_ASSERT(std::has_single_bit(alignment));
 
   // Wrap around the offset to be a non-negative number.
   offset %= alignment;
@@ -1116,7 +1120,7 @@ void MacroAssembler::assertStackAlignment(uint32_t alignment,
   // Test if each bit from offset is set.
   uint32_t off = offset;
   while (off) {
-    uint32_t lowestBit = 1 << mozilla::CountTrailingZeroes32(off);
+    uint32_t lowestBit = 1 << std::countr_zero(off);
     branchTestStackPtr(Assembler::Zero, Imm32(lowestBit), &bad);
     off ^= lowestBit;
   }

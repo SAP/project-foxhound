@@ -15,6 +15,8 @@
  * 4. Parameter types are valid and consistent
  */
 
+do_get_profile();
+
 const { toolsConfig, TOOLS } = ChromeUtils.importESModule(
   "moz-src:///browser/components/aiwindow/models/Tools.sys.mjs"
 );

@@ -43,7 +43,7 @@ add_task(async function () {
     browserContainerEl.clientWidth / 2,
     browserContainerEl.clientHeight - 30,
     {},
-    browserContainerEl.ownerGlobal
+    browserContainerEl.documentGlobal
   );
 
   isnot(

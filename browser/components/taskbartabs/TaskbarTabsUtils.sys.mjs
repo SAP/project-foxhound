@@ -1,11 +1,16 @@
-/* vim: se cin sw=2 ts=2 et filetype=javascript :
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 let lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  FaviconUtils: "moz-src:///toolkit/modules/FaviconUtils.sys.mjs",
+  ShellService: "moz-src:///browser/components/shell/ShellService.sys.mjs",
+});
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
   Favicons: ["@mozilla.org/browser/favicon-service;1", Ci.nsIFaviconService],
@@ -20,6 +25,13 @@ export const TaskbarTabsUtils = {
   isEnabled() {
     const pref = "browser.taskbarTabs.enabled";
     return Services.prefs.getBoolPref(pref, false);
+  },
+
+  isMSIX() {
+    return (
+      AppConstants.platform === "win" &&
+      Services.sysinfo.getProperty("hasWinPackageId", false)
+    );
   },
 
   /**
@@ -55,10 +67,71 @@ export const TaskbarTabsUtils = {
   },
 
   /**
-   * Retrieves an image container for the provided URL. May throw if an error
-   * occurs while decoding.
+   * Retrieves an image container for the provided URI and decodes it remotely,
+   * e.g. in the content process of aBrowser.
    *
-   * Raster images will be scaled to 256x256 pixels.
+   * May throw if an error occurs while decoding.
+   *
+   * @param {nsIFile} aFile - The file to parse the image from.
+   * @param {number} aSize - The width/height of the image to decode.
+   * @param {Browser} aBrowser - The browser to decode the image in. Can be
+   * null if there isn't a specific content process to use.
+   * @param {string} aMimeType - The MIME type to use when decoding the image.
+   * @returns {Promise<imgIContainer>} An image container with the decoded
+   * image.
+   * @throws {Components.Exception} The image could not be decoded.
+   */
+  async _remoteDecodeImageFromFile(aFile, aSize, aBrowser, aMimeType) {
+    // We can't use a file URI since the content process wouldn't be able to
+    // read it. Read the file now and create a data URI to read instead.
+    let content = await IOUtils.read(aFile.path);
+    let spec = `data:${aMimeType};base64,${content.toBase64()}`;
+    let uri = Services.io.newURI(spec);
+
+    return this._remoteDecodeImageFromURI(uri, aSize, aBrowser);
+  },
+
+  /**
+   * Retrieves an image container for the provided URI and decodes it remotely,
+   * e.g. in the content process of aBrowser.
+   *
+   * May throw if an error occurs while decoding.
+   *
+   * @param {nsIURI} aUri - The URI to parse the image from.
+   * @param {number} aSize - The width/height of the image to decode.
+   * @param {Browser?} [aBrowser] - The browser to decode the image in. Can be
+   * null if there isn't a specific content process to use.
+   * @returns {Promise<imgIContainer>} An image container with the decoded
+   * image.
+   * @throws {TypeError} aUri is not an nsIURI.
+   * @throws {Components.Exception} The image could not be decoded.
+   */
+  async _remoteDecodeImageFromURI(aUri, aSize, aBrowser = null) {
+    if (!(aUri instanceof Ci.nsIURI)) {
+      throw new TypeError(
+        "Invalid argument, `aUri` should be instance of `nsIURI`"
+      );
+    }
+
+    let params = { size: aSize };
+    if (aBrowser) {
+      params.contentParentId =
+        aBrowser.browsingContext.currentWindowContext.contentParentId;
+    }
+
+    let newUri = Services.io.newURI(
+      lazy.FaviconUtils.getMozRemoteImageURL(aUri.spec, params)
+    );
+    return unsafeDecodeImageFromAnyURI(newUri);
+  },
+
+  /**
+   * Retrieves an image container for the provided URI. The URI must be a local
+   * URI, like chrome: or data:. (Note that being local _doesn't_ mean that it
+   * is trusted---this usually should be used from tests or for images bundled
+   * with the browser.)
+   *
+   * May throw if an error occurs while decoding.
    *
    * @param {nsIURI} aUri - The URI to parse the image from. Must be a local
    * URI, like data:, chrome:, or file:.
@@ -80,16 +153,7 @@ export const TaskbarTabsUtils = {
       throw new Error("Attempting to create an image from a non-local URI");
     }
 
-    const channel = Services.io.newChannelFromURI(
-      aUri,
-      null,
-      Services.scriptSecurityManager.getSystemPrincipal(),
-      null,
-      Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
-      Ci.nsIContentPolicy.TYPE_IMAGE
-    );
-
-    return ChromeUtils.fetchDecodedImage(aUri, channel);
+    return unsafeDecodeImageFromAnyURI(aUri);
   },
 
   /**
@@ -114,4 +178,39 @@ export const TaskbarTabsUtils = {
       lazy.Favicons.defaultFavicon
     );
   },
+
+  /**
+   * Gets the name that should be used for a new desktop entry on Linux. This
+   * avoids duplicating the logic between TaskbarTabsWindowManager, where we
+   * want the name before pinning, and TaskbarTabsPin, where it is actually
+   * pinned. As such, this should be constant within a single session.
+   *
+   * @param {string} aTaskbarTabId - The ID of the taskbar tab.
+   * @returns {string} The desktop entry name, excluding the '.desktop' suffix.
+   */
+  _determineNewDesktopEntryName(aTaskbarTabId) {
+    return `${lazy.ShellService.getGlibPrgname()}.webapp-${aTaskbarTabId}`;
+  },
 };
+
+/**
+ * Shared helper function for _remoteDecodeImageFromURI and _imageFromLocalURI;
+ * fetches the given URI with the system principal and decodes it in the
+ * current process. Do not use with untrusted images.
+ *
+ * @param {nsIURI} aUri - The URI to fetch and decode.
+ * @returns {Promise<imgIContainer>} The parsed image container.
+ * @throws {Components.Exception} The image could not be decoded.
+ */
+async function unsafeDecodeImageFromAnyURI(aUri) {
+  const channel = Services.io.newChannelFromURI(
+    aUri,
+    null,
+    Services.scriptSecurityManager.getSystemPrincipal(),
+    null,
+    Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
+    Ci.nsIContentPolicy.TYPE_IMAGE
+  );
+
+  return ChromeUtils.fetchDecodedImage(aUri, channel);
+}

@@ -137,6 +137,12 @@ skip-if = [
 
 ["test_htmlcopyencoder_list.html"]
 
+["test_htmlcopyencoder_range_end_comment.html"]
+
+["test_htmlcopyencoder_range_end_promoted.html"]
+
+["test_htmlcopyencoder_range_end.html"]
+
 ["test_htmlcopyencoder_table.html"]
 
 ["test_plaintext_linebreak.html"]

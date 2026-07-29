@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,6 +14,7 @@
 #include "ErrorList.h"
 #include "js/BuildId.h"
 #include "js/ErrorReport.h"
+#include "js/friend/Wrapper.h"
 #include "js/GCAPI.h"
 #include "js/Object.h"
 #include "js/RootingAPI.h"
@@ -30,20 +29,14 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/TextUtils.h"
-#include "mozilla/dom/DOMString.h"
 #include "mozilla/StringBuffer.h"
 #include "mozilla/fallible.h"
-#include "nsAtom.h"
 #include "nsCOMPtr.h"
 #include "nsISupports.h"
 #include "nsIURI.h"
 #include "nsStringFwd.h"
 #include "nsTArray.h"
 #include "nsWrapperCache.h"
-
-// XXX only for NukeAllWrappersForRealm, which is only used in
-// dom/base/WindowDestroyedEvent.cpp outside of js
-#include "jsfriendapi.h"
 
 class JSObject;
 class JSString;
@@ -74,8 +67,6 @@ namespace dom {
 class Exception;
 }  // namespace dom
 }  // namespace mozilla
-
-using xpcGCCallback = void (*)(JSGCStatus);
 
 namespace xpc {
 
@@ -114,13 +105,6 @@ class Scriptability {
   // forbids script execution.
   bool mScriptBlockedByPolicy;
 };
-
-JSObject* TransplantObject(JSContext* cx, JS::Handle<JSObject*> origobj,
-                           JS::Handle<JSObject*> target);
-
-JSObject* TransplantObjectRetainingXrayExpandos(JSContext* cx,
-                                                JS::Handle<JSObject*> origobj,
-                                                JS::Handle<JSObject*> target);
 
 // If origObj has an xray waiver, nuke it before transplant.
 JSObject* TransplantObjectNukingXrayWaiver(JSContext* cx,
@@ -237,15 +221,6 @@ extern bool xpc_DumpJSStack(bool showArgs, bool showLocals, bool showThisProps);
 // current JS stack. Defined in XPCDebug.cpp.
 extern JS::UniqueChars xpc_PrintJSStack(JSContext* cx, bool showArgs,
                                         bool showLocals, bool showThisProps);
-
-inline void AssignFromStringBuffer(mozilla::StringBuffer* buffer, size_t len,
-                                   nsAString& dest) {
-  dest.Assign(buffer, len);
-}
-inline void AssignFromStringBuffer(mozilla::StringBuffer* buffer, size_t len,
-                                   nsACString& dest) {
-  dest.Assign(buffer, len);
-}
 
 // readable string conversions, static methods and members only
 class XPCStringConvert {
@@ -413,7 +388,7 @@ class XPCStringConvert {
         // with JS.  We can share that buffer ourselves if the string
         // corresponds to the whole buffer; otherwise we have to copy.
         if (chars[len] == '\0') {
-          AssignFromStringBuffer(buf, len, dest);
+          dest.Assign(buf, len);
           return true;
         }
         return false;
@@ -488,14 +463,70 @@ bool Base64Encode(JSContext* cx, JS::Handle<JS::Value> val,
 bool Base64Decode(JSContext* cx, JS::Handle<JS::Value> val,
                   JS::MutableHandle<JS::Value> out);
 
-/**
- * Convert an nsString to jsval, returning true on success.
- */
-[[nodiscard]] bool NonVoidStringToJsval(JSContext* cx, const nsAString& str,
-                                        JS::MutableHandle<JS::Value> rval);
+// Convert an nsAString to jsval, returning true on success.
+[[nodiscard]] inline bool NonVoidStringToJsval(JSContext* cx,
+                                               const nsAString& readable,
+                                               JS::MutableHandleValue vp) {
+  uint32_t length = readable.Length();
+  if (auto* buf = readable.GetStringBuffer()) {
+    return XPCStringConvert::UCStringBufferToJSVal(cx, buf, length, vp);
+  }
+  if (readable.IsLiteral()) {
+    return XPCStringConvert::StringLiteralToJSVal(cx, readable.BeginReading(),
+                                                  length, vp);
+  }
+  // blech, have to copy.
+  JSString* str = JS_NewUCStringCopyN(cx, readable.BeginReading(), length);
+  if (!str) {
+    return false;
+  }
+  vp.setString(str);
+  return true;
+}
 
-inline bool StringToJsval(JSContext* cx, const nsAString& str,
-                          JS::MutableHandle<JS::Value> rval) {
+// As above, but with latin1
+[[nodiscard]] inline bool NonVoidLatin1StringToJsval(
+    JSContext* cx, const nsACString& latin1, JS::MutableHandleValue vp) {
+  uint32_t length = latin1.Length();
+  if (auto* buf = latin1.GetStringBuffer()) {
+    return XPCStringConvert::Latin1StringBufferToJSVal(cx, buf, length, vp);
+  }
+  if (latin1.IsLiteral()) {
+    return XPCStringConvert::StringLiteralToJSVal(
+        cx, reinterpret_cast<const JS::Latin1Char*>(latin1.BeginReading()),
+        length, vp);
+  }
+  JSString* str = JS_NewStringCopyN(cx, latin1.BeginReading(), length);
+  if (!str) {
+    return false;
+  }
+  vp.setString(str);
+  return true;
+}
+
+// As above, but with utf-8
+[[nodiscard]] inline bool NonVoidUTF8StringToJsval(JSContext* cx,
+                                                   const nsACString& utf8,
+                                                   JS::MutableHandleValue vp) {
+  uint32_t length = utf8.Length();
+  if (auto* buf = utf8.GetStringBuffer()) {
+    return XPCStringConvert::UTF8StringBufferToJSVal(cx, buf, length, vp);
+  }
+  if (utf8.IsLiteral()) {
+    return XPCStringConvert::UTF8StringLiteralToJSVal(
+        cx, JS::UTF8Chars(utf8.BeginReading(), length), vp);
+  }
+  JSString* str =
+      JS_NewStringCopyUTF8N(cx, JS::UTF8Chars(utf8.BeginReading(), length));
+  if (!str) {
+    return false;
+  }
+  vp.setString(str);
+  return true;
+}
+
+[[nodiscard]] MOZ_ALWAYS_INLINE bool StringToJsval(
+    JSContext* cx, const nsAString& str, JS::MutableHandle<JS::Value> rval) {
   // From the T_ASTRING case in XPCConvert::NativeData2JS.
   if (str.IsVoid()) {
     rval.setNull();
@@ -514,26 +545,11 @@ inline bool NonVoidStringToJsval(JSContext* cx, mozilla::dom::DOMString& str,
     return true;
   }
   SafeStringTaint taint(str.Taint());
-
-  if (str.HasStringBuffer()) {
-    uint32_t length = str.StringBufferLength();
-    mozilla::StringBuffer* buf = str.StringBuffer();
-    if(!XPCStringConvert::UCStringBufferToJSVal(cx, buf, length, rval)) {
-      return false;
-    }
-    JS_SetTaint(cx, rval, taint);
-
-    return true;
+  if (!NonVoidStringToJsval(cx, static_cast<const nsAString&>(str), rval)) {
+    return false;
   }
-
-  if (str.HasLiteral()) {
-    return XPCStringConvert::StringLiteralToJSVal(cx, str.Literal(),
-                                                  str.LiteralLength(),
-                                                  taint, rval);
-  }
-
-  // It's an actual XPCOM string
-  return NonVoidStringToJsval(cx, str.AsAString(), rval);
+  JS_SetTaint(cx, rval, taint);
+  return true;
 }
 
 MOZ_ALWAYS_INLINE
@@ -552,8 +568,8 @@ bool StringToJsval(JSContext* cx, mozilla::dom::DOMString& str,
 [[nodiscard]] bool NonVoidLatin1StringToJsval(
     JSContext* cx, const nsACString& str, JS::MutableHandle<JS::Value> rval);
 
-inline bool Latin1StringToJsval(JSContext* cx, const nsACString& str,
-                                JS::MutableHandle<JS::Value> rval) {
+[[nodiscard]] MOZ_ALWAYS_INLINE bool Latin1StringToJsval(
+    JSContext* cx, const nsACString& str, JS::MutableHandle<JS::Value> rval) {
   if (str.IsVoid()) {
     rval.setNull();
     return true;
@@ -561,14 +577,8 @@ inline bool Latin1StringToJsval(JSContext* cx, const nsACString& str,
   return NonVoidLatin1StringToJsval(cx, str, rval);
 }
 
-/**
- * As above, but for nsACString with UTF-8 content.
- */
-bool NonVoidUTF8StringToJsval(JSContext* cx, const nsACString& str,
-                              JS::MutableHandle<JS::Value> rval);
-
-inline bool UTF8StringToJsval(JSContext* cx, const nsACString& str,
-                              JS::MutableHandle<JS::Value> rval) {
+[[nodiscard]] MOZ_ALWAYS_INLINE bool UTF8StringToJsval(
+    JSContext* cx, const nsACString& str, JS::MutableHandle<JS::Value> rval) {
   if (str.IsVoid()) {
     rval.setNull();
     return true;
@@ -591,6 +601,7 @@ class ZoneStatsExtras {
  public:
   ZoneStatsExtras() = default;
 
+  nsCString zoneName;
   nsCString pathPrefix;
 
  private:
@@ -877,9 +888,6 @@ extern void GetCurrentRealmName(JSContext*, nsCString& name);
 
 nsCString GetFunctionName(JSContext* cx, JS::Handle<JSObject*> obj);
 
-void AddGCCallback(xpcGCCallback cb);
-void RemoveGCCallback(xpcGCCallback cb);
-
 // We need an exact page size only if we run the binary in automation.
 #if (defined(XP_DARWIN) && defined(__aarch64__)) || defined(__loongarch__)
 const size_t kAutomationPageSize = 16384;
@@ -997,6 +1005,12 @@ bool IsNotUAWidget(JSContext* cx, JSObject* /* unused */);
  * chrome, XBL scopes, or UA Widget scopes.
  */
 bool IsChromeOrUAWidget(JSContext* cx, JSObject* /* unused */);
+
+/**
+ * A test for whether WebIDL methods that should only be visible to
+ * chrome or WorkerDebugger scopes.
+ */
+bool IsChromeOrWorkerDebugger(JSContext* cx, JSObject* /* unused */);
 
 /**
  * Same as IsChromeOrUAWidget but can be used in worker threads as well.

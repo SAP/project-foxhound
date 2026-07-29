@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -139,7 +137,9 @@ class AudioBufferSourceNodeEngine final : public AudioNodeEngine {
         NS_ERROR("Bad AudioBufferSourceNodeEngine Int32Parameter");
     }
   }
-  void SetBuffer(AudioChunk&& aBuffer) override { mBuffer = aBuffer; }
+  void SetBuffer(AudioChunk&& aBuffer) override {
+    mBuffer = std::move(aBuffer);
+  }
 
   bool BegunResampling() { return mBeginProcessing == -TRACK_TIME_MAX; }
 
@@ -166,14 +166,21 @@ class AudioBufferSourceNodeEngine final : public AudioNodeEngine {
       mChannels = aChannels;
       mResampler = speex_resampler_init(mChannels, mBufferSampleRate, aOutRate,
                                         SPEEX_RESAMPLER_QUALITY_MIN, nullptr);
+      if (!mResampler) {
+        return;
+      }
     } else {
       if (mResamplerOutRate == aOutRate) {
         return;
       }
-      if (speex_resampler_set_rate(mResampler, mBufferSampleRate, aOutRate) !=
-          RESAMPLER_ERR_SUCCESS) {
-        NS_ASSERTION(false, "speex_resampler_set_rate failed");
-        return;
+      int result =
+          speex_resampler_set_rate(mResampler, mBufferSampleRate, aOutRate);
+      if (result != RESAMPLER_ERR_SUCCESS) {
+        WEB_AUDIO_API_LOG("speex_resampler_set_rate failed: {}", result);
+        // mResampler den_rate and num_rate might have been updated, despite
+        // the error, in which case the resampler will output zeros but
+        // still consume input.  Continue below to update mBeginProcessing
+        // for any change in resampler behavior.
       }
     }
 
@@ -582,7 +589,7 @@ class AudioBufferSourceNodeEngine final : public AudioNodeEngine {
   uint32_t mLoopEnd;
   uint32_t mBufferPosition;
   int32_t mBufferSampleRate;
-  int32_t mResamplerOutRate;
+  int32_t mResamplerOutRate;  // used if mResampler is set or mChannels == 0
   uint32_t mChannels;
   RefPtr<AudioNodeTrack> mDestination;
 

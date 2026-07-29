@@ -81,6 +81,10 @@ style = "tag"
 prefix = "WGPU"
 renaming_overrides_prefixing = true
 exclude = [
+	# NOTE: Bindings for macOS that `wgpu` creates manually.
+	"dispatch_data_create",
+	"dispatch_release",
+
 	"LoadOpDontCare",
 	"Option_AdapterId",
 	"Option_BufferId",

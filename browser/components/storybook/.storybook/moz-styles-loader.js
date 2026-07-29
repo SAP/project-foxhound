@@ -163,9 +163,11 @@ async function rewriteCssUris(source) {
       .basename(localPath, ".css")
       .replaceAll("-", "")}Styles`;
 
-    // MozTextLabel is a special case for now since we don't use a template.
+    // Handle special cases where we don't use a template.
     if (
-      path.basename(this.resourcePath) == "moz-label.mjs" ||
+      ["moz-label.mjs", "panel-list.mjs"].includes(
+        path.basename(this.resourcePath)
+      ) ||
       this.resourcePath.endsWith(".js")
     ) {
       rewrittenSource = rewrittenSource.replaceAll(`"${cssUri}"`, cssImport);

@@ -20,7 +20,7 @@ add_task(async function () {
     "about:blank"
   );
 
-  await triggerFramebustingIntervention(tab);
+  await triggerFramebusting(tab);
   await openIdentityPopup();
 
   // Run actual checks.
@@ -86,6 +86,6 @@ async function checkGoToRedirect(tab) {
   );
 
   info("Resetting to initial state...");
-  await triggerFramebustingIntervention(tab);
+  await triggerFramebusting(tab);
   await openIdentityPopup();
 }

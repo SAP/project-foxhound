@@ -2,9 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-:host {
-  --moz-input-color-swatch-size: 24px;
+@import url("chrome://global/content/elements/moz-input-color.tokens.css");
 
+:host {
   display: flex;
   align-items: center;
 }
@@ -14,26 +14,26 @@ label {
   align-self: stretch;
   align-items: center;
   flex-grow: 1;
-  padding-inline: var(--space-medium);
-  padding-block: var(--space-small);
-  gap: var(--space-small);
+  padding-inline: var(--input-color-space-padding-inline);
+  padding-block: var(--input-color-space-padding-block);
+  gap: var(--input-color-gap);
   cursor: pointer;
-  border: var(--border-width) solid var(--border-color-interactive);
-  border-radius: var(--border-radius-medium);
-  background-color: var(--button-background-color-ghost);
-  color: var(--button-text-color);
+  border: var(--border-width) solid var(--input-color-border-color);
+  border-radius: var(--input-color-border-radius);
+  background-color: var(--input-color-background-color);
+  color: var(--input-color-text-color);
 }
 
 label:hover {
-  border-color: var(--border-color-interactive-hover);
-  background-color: var(--button-background-color-ghost-hover);
-  color: var(--button-text-color-hover);
+  border-color: var(--input-color-border-color-hover);
+  background-color: var(--input-color-background-color-hover);
+  color: var(--input-color-text-color-hover);
 }
 
 label:hover:active {
-  border-color: var(--border-color-interactive-active);
-  background-color: var(--button-background-color-ghost-active);
-  color: var(--button-text-color-active);
+  border-color: var(--input-color-border-color-active);
+  background-color: var(--input-color-background-color-active);
+  color: var(--input-color-text-color-active);
   outline: none;
 }
 
@@ -48,8 +48,8 @@ label span {
 
 .swatch {
   appearance: none;
-  width: var(--moz-input-color-swatch-size);
-  height: var(--moz-input-color-swatch-size);
+  width: var(--input-color-swatch-size);
+  height: var(--input-color-swatch-size);
   background-color: transparent;
   border: none;
   cursor: pointer;
@@ -61,8 +61,8 @@ label span {
 }
 
 .swatch::-moz-color-swatch {
-  border-radius: var(--border-radius-circle);
-  border: var(--border-width) solid var(--border-color-deemphasized);
+  border-radius: var(--input-color-swatch-border-radius);
+  border: var(--border-width) solid var(--input-color-swatch-border-color);
   box-sizing: border-box;
 }
 

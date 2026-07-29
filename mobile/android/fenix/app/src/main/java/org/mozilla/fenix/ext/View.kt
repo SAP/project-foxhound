@@ -14,12 +14,6 @@ import androidx.annotation.Dimension.Companion.DP
 import androidx.annotation.VisibleForTesting
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import mozilla.components.support.ktx.android.util.dpToPx
-import org.mozilla.fenix.components.Components
-
-/**
- * [View] helper to retrieve the [Components.settings].
- */
-fun View.settings() = context.components.settings
 
 fun View.increaseTapArea(
     @Dimension(unit = DP) extraDps: Int,
@@ -91,6 +85,7 @@ fun View.getRectWithScreenLocation(): Rect {
  * @param resId Resource ID of the dimension.
  * @return The pixel size corresponding to the given dimension resource.
  */
+@Suppress("Resources.GetDimensionPixelSizeInsteadOfPixelSizeFor")
 fun View.pixelSizeFor(
     @DimenRes resId: Int,
 ) = resources.getDimensionPixelSize(resId)

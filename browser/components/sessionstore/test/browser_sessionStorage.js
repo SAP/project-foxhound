@@ -11,7 +11,7 @@ const URL =
   RAND;
 
 const HAS_FIRST_PARTY_DOMAIN = [
-  Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+  Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
 ].includes(Services.prefs.getIntPref("network.cookie.cookieBehavior"));
 const OUTER_ORIGIN = "http://mochi.test:8888";
 const FIRST_PARTY_DOMAIN = escape("(http,mochi.test)");

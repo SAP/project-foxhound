@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +9,7 @@ interface nsIFile;
 interface nsIToolkitProfile;
 interface nsIProfileLock;
 
-[scriptable, builtinclass, uuid(fcb10bd5-3065-413f-a1ca-0c7818c5227b)]
+[scriptable, builtinclass, uuid(e3909911-5518-4bec-bbb1-37b54f36f162)]
 interface nsIToolkitProfileService : nsISupports
 {
     /**
@@ -18,6 +17,14 @@ interface nsIToolkitProfileService : nsISupports
      * loaded. When this is true attempts to flush changes to disk will fail.
      */
     [infallible] readonly attribute boolean isListOutdated;
+
+    /**
+     * True if no default profile was assigned to this install at startup,
+     * which normally indicates the very first run for this install.
+     * Distinguishes a brand-new install from a user creating an
+     * additional profile on an existing install or reinstalling.
+     */
+    [infallible] readonly attribute boolean isFirstRun;
 
     /**
      * When a downgrade is detected UI is presented to the user to ask how to
@@ -120,9 +127,12 @@ interface nsIToolkitProfileService : nsISupports
      *        default will be chosen based on the profile name.
      * @param aName
      *        The profile name.
+     * @param aSource
+     *        The source for the new profile, used in telemetry reporting.
      */
     nsIToolkitProfile createProfile(in nsIFile aRootDir,
-                                    in AUTF8String aName);
+                                    in AUTF8String aName,
+                                    in AUTF8String aSource);
 
     /**
      * Create a new profile with a unique name.
@@ -137,9 +147,12 @@ interface nsIToolkitProfileService : nsISupports
      *        The prefix to use for the profile name. If unused this will be
      *        used as the profile name otherwise additional characters will be
      *        added to make the name unique.
+     * @param aSource
+     *        The source for the new profile, used in telemetry reporting.
      */
     nsIToolkitProfile createUniqueProfile(in nsIFile aRootDir,
-                                          in AUTF8String aNamePrefix);
+                                          in AUTF8String aNamePrefix,
+                                          in AUTF8String aSource);
 
     /**
      * Gets the profile root directory descriptor for storing in profiles.ini or

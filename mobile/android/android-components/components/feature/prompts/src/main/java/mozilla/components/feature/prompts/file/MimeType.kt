@@ -67,7 +67,10 @@ internal sealed class MimeType(
 
             val photoUri = getUri(context, "${context.packageName}.feature.prompts.fileprovider", photoFile)
 
-            return intent.apply { putExtra(EXTRA_OUTPUT, photoUri) }.addCaptureHint(request.captureMode)
+            return intent.apply {
+                putExtra(EXTRA_OUTPUT, photoUri)
+                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }.addCaptureHint(request.captureMode)
         }
     }
 

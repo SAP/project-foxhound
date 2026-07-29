@@ -269,6 +269,8 @@ support-files = ["file_dynamic_toolbar_max_height.html"]
 
 ["test_emulate_forced_colors.html"]
 
+["test_emulate_prefers_reduced_motion.html"]
+
 ["test_event_target_radius.html"]
 support-files = ["helper_bug1733509.html"]
 skip-if = [
@@ -294,7 +296,7 @@ support-files = [
   "file_getBoxQuads_convertPointRectQuad_frame2.html",
 ]
 
-["test_getClientRects_emptytext.html"]
+["test_hit_test_no_display_list_build.html"]
 
 ["test_interactive_widget.html"]
 run-if = [
@@ -377,9 +379,6 @@ support-files = [
   "bug613433-ref.html",
   "bug613807-1.html",
   "bug613807-1-ref.html",
-  "bug632215-1.html",
-  "bug632215-2.html",
-  "bug632215-ref.html",
   "bug633044-1.html",
   "bug633044-1-ref.html",
   "bug634406-1.html",
@@ -630,6 +629,11 @@ support-files = [
 ]
 
 ["test_synthmousemove_after_dnd.html"]
+
+["test_synthmousemove_after_navigation.html"]
+support-files = [
+  "file_synthmousemove_after_navigation.html",
+]
 
 ["test_transformed_scrolling_repaints.html"]
 

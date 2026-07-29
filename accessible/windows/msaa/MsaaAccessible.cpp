@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -919,7 +917,13 @@ MsaaAccessible::get_accFocus(
 class AccessibleEnumerator final : public IEnumVARIANT {
  public:
   explicit AccessibleEnumerator(const nsTArray<Accessible*>& aArray)
-      : mArray(aArray.Clone()), mCurIndex(0) {}
+      : mCurIndex(0) {
+    mArray.SetCapacity(aArray.Length());
+    for (Accessible* acc : aArray) {
+      mArray.AppendElement(MsaaAccessible::GetFrom(acc));
+    }
+  }
+
   AccessibleEnumerator(const AccessibleEnumerator& toCopy)
       : mArray(toCopy.mArray.Clone()), mCurIndex(toCopy.mCurIndex) {}
   ~AccessibleEnumerator() {}
@@ -938,7 +942,7 @@ class AccessibleEnumerator final : public IEnumVARIANT {
   STDMETHODIMP Clone(IEnumVARIANT FAR* FAR* ppenum);
 
  private:
-  nsTArray<Accessible*> mArray;
+  nsTArray<RefPtr<MsaaAccessible>> mArray;
   uint32_t mCurIndex;
 };
 
@@ -973,8 +977,9 @@ AccessibleEnumerator::Next(unsigned long celt, VARIANT FAR* rgvar,
 
   // Copy the elements of the array into rgvar.
   for (uint32_t i = 0; i < celt; ++i, ++mCurIndex) {
+    RefPtr<IDispatch> disp = mArray[mCurIndex];
     rgvar[i].vt = VT_DISPATCH;
-    rgvar[i].pdispVal = MsaaAccessible::NativeAccessible(mArray[mCurIndex]);
+    disp.forget(&rgvar[i].pdispVal);
   }
 
   if (pceltFetched) *pceltFetched = celt;
@@ -984,8 +989,8 @@ AccessibleEnumerator::Next(unsigned long celt, VARIANT FAR* rgvar,
 
 STDMETHODIMP
 AccessibleEnumerator::Clone(IEnumVARIANT FAR* FAR* ppenum) {
-  *ppenum = new AccessibleEnumerator(*this);
-  NS_ADDREF(*ppenum);
+  auto newEnum = MakeRefPtr<AccessibleEnumerator>(*this);
+  newEnum.forget(ppenum);
   return S_OK;
 }
 
@@ -1041,8 +1046,7 @@ MsaaAccessible::get_accSelection(VARIANT __RPC_FAR* pvarChildren) {
     pvarChildren->vt = VT_DISPATCH;
     pvarChildren->pdispVal = NativeAccessible(selectedItems[0]);
   } else if (count > 1) {
-    RefPtr<AccessibleEnumerator> pEnum =
-        new AccessibleEnumerator(selectedItems);
+    auto pEnum = MakeRefPtr<AccessibleEnumerator>(selectedItems);
     pvarChildren->vt =
         VT_UNKNOWN;  // this must be VT_UNKNOWN for an IEnumVARIANT
     NS_ADDREF(pvarChildren->punkVal = pEnum);
@@ -1244,19 +1248,6 @@ MsaaAccessible::accHitTest(
 
   // if we got a child
   if (accessible) {
-    if (accessible != mAcc && accessible->IsTextLeaf()) {
-      Accessible* parent = accessible->Parent();
-      if (parent != mAcc && parent->Role() == roles::LINK) {
-        // Bug 1843832: The UI Automation -> IAccessible2 proxy barfs if we
-        // return the text leaf child of a link when hit testing an ancestor of
-        // the link. Therefore, we return the link instead. MSAA clients which
-        // call AccessibleObjectFromPoint will still get to the text leaf, since
-        // AccessibleObjectFromPoint keeps calling accHitTest until it can't
-        // descend any further. We should remove this tragic hack once we have
-        // a native UIA implementation.
-        accessible = parent;
-      }
-    }
     if (accessible == mAcc) {
       pvarChild->vt = VT_I4;
       pvarChild->lVal = CHILDID_SELF;

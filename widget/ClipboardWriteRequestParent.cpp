@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -63,8 +62,8 @@ IPCResult ClipboardWriteRequestParent::RecvSetData(
           {dom::ValidatePrincipalOptions::AllowNullPtr,
            dom::ValidatePrincipalOptions::AllowExpanded,
            dom::ValidatePrincipalOptions::AllowSystem})) {
-    ContentParent::LogAndAssertFailedPrincipalValidationInfo(
-        aTransferable.dataPrincipal(), __func__);
+    return ContentParent::PrincipalValidationIpcFail(
+        aTransferable.dataPrincipal(), this, __func__);
   }
 
   if (!mAsyncSetClipboardData) {
@@ -88,7 +87,11 @@ IPCResult ClipboardWriteRequestParent::RecvSetData(
     return IPC_OK();
   }
 
-  mAsyncSetClipboardData->SetData(trans, nullptr);
+  rv = mAsyncSetClipboardData->SetData(trans, nullptr);
+  if (rv == NS_ERROR_IN_PROGRESS) {
+    return IPC_FAIL(this, "reentrant SetData");
+  }
+  // Non-fatal errors are notified via the callback inside SetData.
   return IPC_OK();
 }
 

@@ -11,6 +11,7 @@ from gecko_taskgraph.transforms.task import (
     TREEHERDER_ROOT_URL,
     get_treeherder_link,
     get_treeherder_project,
+    try_task_config_env,
 )
 
 
@@ -104,6 +105,28 @@ from gecko_taskgraph.transforms.task import (
             "test-project-pr",
             id="pull_request",
         ),
+        pytest.param(
+            {
+                "head_ref": "refs/heads/test-branch",
+                "project": "test-project",
+                "repository_type": "git",
+                "tasks_for": "github-push",
+            },
+            {"test-.*": "foo", "default": "bar"},
+            "foo",
+            id="regex",
+        ),
+        pytest.param(
+            {
+                "head_ref": "refs/heads/release",
+                "project": "test-project",
+                "repository_type": "git",
+                "tasks_for": "github-push",
+            },
+            {"test-.*": "foo", "default": "bar"},
+            "bar",
+            id="regex-default",
+        ),
     ],
 )
 def test_get_treeherder_project(params, branch_map, expected_project):
@@ -146,6 +169,53 @@ def test_get_treeherder_link():
     link = get_treeherder_link(config)
     expected_link = f"{TREEHERDER_ROOT_URL}/#/jobs?repo={repo}&revision={params['head_rev']}&selectedTaskRun=<self>"
     assert link == expected_link
+
+
+@pytest.mark.parametrize(
+    "implementation",
+    ("docker-worker", "generic-worker"),
+)
+def test_try_task_config_env_applies(run_transform, implementation):
+    """Env vars from try_task_config are applied to workers that have an env field.
+
+    This covers both voluptuous (LegacySchema) and msgspec Struct payload
+    builder schemas, since docker-worker and generic-worker were converted to
+    msgspec in the upstream taskgraph library.
+    """
+    task = {
+        "worker": {
+            "implementation": implementation,
+            "env": {"EXISTING": "value"},
+        }
+    }
+    params = FakeParameters({"try_task_config": {"env": {"NEW_VAR": "new_value"}}})
+    result = list(run_transform(try_task_config_env, task, params=params))[0]
+    assert result["worker"]["env"] == {"EXISTING": "value", "NEW_VAR": "new_value"}
+
+
+def test_try_task_config_env_skips_no_env_impl(run_transform):
+    """Env vars are not applied to implementations without an env field."""
+    task = {
+        "worker": {
+            "implementation": "bouncer-aliases",
+        }
+    }
+    params = FakeParameters({"try_task_config": {"env": {"NEW_VAR": "new_value"}}})
+    result = list(run_transform(try_task_config_env, task, params=params))[0]
+    assert "env" not in result["worker"]
+
+
+def test_try_task_config_env_no_env_config(run_transform):
+    """Transform is a no-op when try_task_config has no env key."""
+    task = {
+        "worker": {
+            "implementation": "docker-worker",
+            "env": {"EXISTING": "value"},
+        }
+    }
+    params = FakeParameters({"try_task_config": {}})
+    result = list(run_transform(try_task_config_env, task, params=params))[0]
+    assert result["worker"]["env"] == {"EXISTING": "value"}
 
 
 if __name__ == "__main__":

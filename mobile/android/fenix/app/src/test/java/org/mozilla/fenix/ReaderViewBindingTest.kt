@@ -4,22 +4,19 @@
 
 package org.mozilla.fenix
 
-import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
-import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.mockito.Mockito.verify
 import org.mozilla.fenix.browser.readermode.ReaderModeController
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction.ReaderViewAction
 import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.components.appstate.readerview.ReaderViewState
 
-@RunWith(AndroidJUnit4::class)
 class ReaderViewBindingTest {
 
     private val testDispatcher = StandardTestDispatcher()
@@ -27,7 +24,7 @@ class ReaderViewBindingTest {
 
     @Before
     fun setUp() {
-        readerModeController = mock()
+        readerModeController = mockk(relaxUnitFun = true)
     }
 
     @Test
@@ -45,7 +42,7 @@ class ReaderViewBindingTest {
 
         testDispatcher.scheduler.advanceUntilIdle()
 
-        verify(readerModeController).showReaderView()
+        verify { readerModeController.showReaderView() }
 
         assertEquals(ReaderViewState.None, appStore.state.readerViewState)
     }
@@ -67,7 +64,7 @@ class ReaderViewBindingTest {
 
         testDispatcher.scheduler.advanceUntilIdle()
 
-        verify(readerModeController).hideReaderView()
+        verify { readerModeController.hideReaderView() }
 
         assertEquals(ReaderViewState.None, appStore.state.readerViewState)
     }
@@ -89,7 +86,7 @@ class ReaderViewBindingTest {
 
         testDispatcher.scheduler.advanceUntilIdle()
 
-        verify(readerModeController).showControls()
+        verify { readerModeController.showControls() }
 
         assertEquals(ReaderViewState.None, appStore.state.readerViewState)
     }

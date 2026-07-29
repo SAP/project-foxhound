@@ -5,38 +5,42 @@
 Transform the release-sign-and-push task into an actual task description.
 """
 
+from typing import Literal, Optional, Union
+
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
-from taskgraph.util.schema import LegacySchema, optionally_keyed_by, resolve_keyed_by
+from taskgraph.util.schema import Schema, optionally_keyed_by, resolve_keyed_by
 from taskgraph.util.treeherder import inherit_treeherder_from_dep
-from voluptuous import Any, Optional, Required
 
-from gecko_taskgraph.transforms.task import task_description_schema
-from gecko_taskgraph.util.attributes import (
-    copy_attributes_from_dependent_job,
-    release_level,
-)
+from gecko_taskgraph.transforms.task import TaskDescriptionSchema
+from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
 
 transforms = TransformSequence()
 
-langpack_sign_push_description_schema = LegacySchema({
-    Required("label"): str,
-    Required("description"): str,
-    Required("worker-type"): optionally_keyed_by("release-level", str),
-    Required("worker"): {
-        Required("channel"): optionally_keyed_by(
-            "project", "platform", Any("listed", "unlisted")
-        ),
-        Required("upstream-artifacts"): None,  # Processed here below
-    },
-    Required("run-on-projects"): [],
-    Required("scopes"): optionally_keyed_by("release-level", [str]),
-    Required("shipping-phase"): task_description_schema["shipping-phase"],
-    Optional("task-from"): task_description_schema["task-from"],
-    Optional("attributes"): task_description_schema["attributes"],
-    Optional("dependencies"): task_description_schema["dependencies"],
-    Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
-})
+
+class WorkerSchema(Schema, kw_only=True):
+    channel: optionally_keyed_by(  # type: ignore
+        "project",
+        "platform",
+        Union[Literal["listed"], Literal["unlisted"]],
+        use_msgspec=True,
+    )
+    # Processed below
+    upstream_artifacts: Optional[object] = None
+
+
+class LangpackSignPushDescriptionSchema(Schema, kw_only=True):
+    label: str
+    description: str
+    worker_type: optionally_keyed_by("release-level", str, use_msgspec=True)  # type: ignore  # noqa: F821
+    worker: WorkerSchema  # noqa: F821
+    run_on_projects: TaskDescriptionSchema.__annotations__["run_on_projects"]  # noqa: F821
+    scopes: optionally_keyed_by("release-level", list[str], use_msgspec=True)  # type: ignore  # noqa: F821
+    shipping_phase: TaskDescriptionSchema.__annotations__["shipping_phase"]  # noqa: F821
+    task_from: TaskDescriptionSchema.__annotations__["task_from"] = None
+    attributes: TaskDescriptionSchema.__annotations__["attributes"] = None
+    dependencies: TaskDescriptionSchema.__annotations__["dependencies"] = None
+    run_on_repo_type: TaskDescriptionSchema.__annotations__["run_on_repo_type"] = None
 
 
 @transforms.add
@@ -53,7 +57,7 @@ def set_label(config, jobs):
         yield job
 
 
-transforms.add_validate(langpack_sign_push_description_schema)
+transforms.add_validate(LangpackSignPushDescriptionSchema)
 
 
 @transforms.add
@@ -62,18 +66,6 @@ def resolve_keys(config, jobs):
         dep_job = get_primary_dependency(config, job)
         assert dep_job
 
-        resolve_keyed_by(
-            job,
-            "worker-type",
-            item_name=job["label"],
-            **{"release-level": release_level(config.params)},
-        )
-        resolve_keyed_by(
-            job,
-            "scopes",
-            item_name=job["label"],
-            **{"release-level": release_level(config.params)},
-        )
         resolve_keyed_by(
             job,
             "worker.channel",

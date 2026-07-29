@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -186,89 +184,17 @@ enum class VRControllerType : uint8_t {
   _end
 };
 
-}  // namespace gfx
-
-template <class T>
-bool IsEnumCase(T);
-
-template <>
-inline constexpr bool IsEnumCase<gfx::VRControllerType>(
-    const gfx::VRControllerType raw) {
-  switch (raw) {
-    case gfx::VRControllerType::_empty:
-    case gfx::VRControllerType::HTCVive:
-    case gfx::VRControllerType::HTCViveCosmos:
-    case gfx::VRControllerType::HTCViveFocus:
-    case gfx::VRControllerType::HTCViveFocusPlus:
-    case gfx::VRControllerType::MSMR:
-    case gfx::VRControllerType::ValveIndex:
-    case gfx::VRControllerType::OculusGo:
-    case gfx::VRControllerType::OculusTouch:
-    case gfx::VRControllerType::OculusTouch2:
-    case gfx::VRControllerType::OculusTouch3:
-    case gfx::VRControllerType::PicoGaze:
-    case gfx::VRControllerType::PicoG2:
-    case gfx::VRControllerType::PicoNeo2:
-    case gfx::VRControllerType::_end:
-      return true;
-  }
-  return false;
-}
-namespace gfx {
-
 // -
 
 enum class TargetRayMode : uint8_t { Gaze, TrackedPointer, Screen };
-
-}  // namespace gfx
-template <>
-inline constexpr bool IsEnumCase<gfx::TargetRayMode>(
-    const gfx::TargetRayMode raw) {
-  switch (raw) {
-    case gfx::TargetRayMode::Gaze:
-    case gfx::TargetRayMode::TrackedPointer:
-    case gfx::TargetRayMode::Screen:
-      return true;
-  }
-  return false;
-}
-namespace gfx {
 
 // -
 
 enum class GamepadMappingType : uint8_t { _empty, Standard, XRStandard };
 
-}  // namespace gfx
-template <>
-inline constexpr bool IsEnumCase<gfx::GamepadMappingType>(
-    const gfx::GamepadMappingType raw) {
-  switch (raw) {
-    case gfx::GamepadMappingType::_empty:
-    case gfx::GamepadMappingType::Standard:
-    case gfx::GamepadMappingType::XRStandard:
-      return true;
-  }
-  return false;
-}
-namespace gfx {
-
 // -
 
 enum class VRDisplayBlendMode : uint8_t { Opaque, Additive, AlphaBlend };
-
-}  // namespace gfx
-template <>
-inline constexpr bool IsEnumCase<gfx::VRDisplayBlendMode>(
-    const gfx::VRDisplayBlendMode raw) {
-  switch (raw) {
-    case gfx::VRDisplayBlendMode::Opaque:
-    case gfx::VRDisplayBlendMode::Additive:
-    case gfx::VRDisplayBlendMode::AlphaBlend:
-      return true;
-  }
-  return false;
-}
-namespace gfx {
 
 // -
 

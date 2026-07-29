@@ -18,9 +18,9 @@ async function runPrefTest(aURI, aDesc, aSecure) {
     BrowserTestUtils.startLoadingURIString(browser, aURI);
     await loaded;
 
-    await ContentTask.spawn(
+    await SpecialPowers.spawn(
       browser,
-      { aDesc, assertURLStartsWith },
+      [{ aDesc, assertURLStartsWith }],
       function ({ aDesc, assertURLStartsWith }) {
         dump(`The URL we ended up at: ${content.document.location.href}\n`);
         ok(

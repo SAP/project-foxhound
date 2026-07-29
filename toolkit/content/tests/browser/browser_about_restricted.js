@@ -99,11 +99,9 @@ add_task(async function test_correct_error_message() {
   BrowserTestUtils.startLoadingURIString(browser, RESTRICTED_EXAMPLE_URL);
   await doneLoading;
   ok(browser.isRemoteBrowser, "Browser should be remote.");
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     browser,
-    {
-      whyIsAlways: true,
-    },
+    [{ whyIsAlways: true }],
     validateErrorPageContents
   );
   BrowserTestUtils.removeTab(tab);
@@ -124,11 +122,9 @@ add_task(async function test_correct_error_message() {
   BrowserTestUtils.startLoadingURIString(browser, RESTRICTED_EXAMPLE_URL);
   await doneLoading;
   ok(browser.isRemoteBrowser, "Browser should be remote.");
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     browser,
-    {
-      whyIsAlways: false,
-    },
+    [{ whyIsAlways: false }],
     validateErrorPageContents
   );
   BrowserTestUtils.removeTab(tab);
@@ -148,7 +144,7 @@ add_task(async function test_inaction_for_safe_url() {
   BrowserTestUtils.startLoadingURIString(browser, SAFE_URL);
   await browserLoaded;
 
-  await ContentTask.spawn(browser, SAFE_URL, async function (safe_url) {
+  await SpecialPowers.spawn(browser, [SAFE_URL], async function (safe_url) {
     is(
       content.document.documentURI,
       safe_url,
@@ -174,7 +170,7 @@ add_task(async function test_inaction_for_not_enabled() {
   BrowserTestUtils.startLoadingURIString(browser, ADULT_URL);
   await browserLoaded;
 
-  await ContentTask.spawn(browser, ADULT_URL, async function (safe_url) {
+  await SpecialPowers.spawn(browser, [ADULT_URL], async function (safe_url) {
     is(
       content.document.documentURI,
       safe_url,
@@ -198,9 +194,9 @@ add_task(async function test_redirect() {
   BrowserTestUtils.startLoadingURIString(browser, ADULT_URL);
   await doneLoading;
   ok(browser.isRemoteBrowser, "Browser should be remote.");
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     browser,
-    { whyIsAlways: true, host: ADULT_URL_HOST, errorSourceURL: ADULT_URL },
+    [{ whyIsAlways: true, host: ADULT_URL_HOST, errorSourceURL: ADULT_URL }],
     validateErrorPageContents
   );
   BrowserTestUtils.removeTab(tab);
@@ -219,9 +215,9 @@ add_task(async function test_data_url() {
   BrowserTestUtils.startLoadingURIString(browser, ADULT_DATA_URL);
   await doneLoading;
   ok(browser.isRemoteBrowser, "Browser should be remote.");
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     browser,
-    { whyIsAlways: true, host: undefined, errorSourceURL: "" },
+    [{ whyIsAlways: true, host: undefined, errorSourceURL: "" }],
     validateErrorPageContents
   );
   BrowserTestUtils.removeTab(tab);
@@ -304,13 +300,15 @@ add_task(async function test_dynamic_bind() {
   BrowserTestUtils.startLoadingURIString(browser, ADULT_URL_DYNAMIC);
   await doneLoading;
   ok(browser.isRemoteBrowser, "Browser should be remote.");
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     browser,
-    {
-      whyIsAlways: true,
-      host: ADULT_URL_HOST,
-      errorSourceURL: ADULT_URL_DYNAMIC,
-    },
+    [
+      {
+        whyIsAlways: true,
+        host: ADULT_URL_HOST,
+        errorSourceURL: ADULT_URL_DYNAMIC,
+      },
+    ],
     validateErrorPageContents
   );
   is(
@@ -342,7 +340,7 @@ add_task(async function test_go_back() {
     "pageshow",
     true
   );
-  await ContentTask.spawn(browser, {}, async function () {
+  await SpecialPowers.spawn(browser, [], async function () {
     let returnButton = content.document.getElementById("goBack");
     returnButton.click();
   });
@@ -363,7 +361,7 @@ add_task(async function test_same_origin_iframe() {
   );
   BrowserTestUtils.startLoadingURIString(browser, PAGE_WITH_FRAMED_ADULT_URL);
   await doneLoading;
-  await ContentTask.spawn(browser, {}, async function () {
+  await SpecialPowers.spawn(browser, [], async function () {
     ok(
       !content.document.documentURI.startsWith("about:restricted"),
       "top document should not be an about:restricted page"
@@ -392,7 +390,7 @@ add_task(async function test_cross_site_iframe() {
     PAGE_WITH_FRAMED_ADULT_URL + "?host=" + CROSS_SITE_ADULT_URL_HOST
   );
   await doneLoading;
-  await ContentTask.spawn(browser, {}, async function () {
+  await SpecialPowers.spawn(browser, [], async function () {
     ok(
       !content.document.documentURI.startsWith("about:restricted"),
       "top document should not be an about:restricted page"
@@ -429,13 +427,9 @@ add_task(async function test_same_origin_navigation() {
 
   await BrowserTestUtils.synthesizeMouseAtCenter("#link", {}, browser);
   await doneLoading;
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     browser,
-    {
-      whyIsAlways: true,
-      host: ADULT_URL_HOST,
-      errorSourceURL: ADULT_URL,
-    },
+    [{ whyIsAlways: true, host: ADULT_URL_HOST, errorSourceURL: ADULT_URL }],
     validateErrorPageContents
   );
 
@@ -468,13 +462,15 @@ add_task(async function test_cross_site_navigation() {
 
   await BrowserTestUtils.synthesizeMouseAtCenter("#link", {}, browser);
   await doneLoading;
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     browser,
-    {
-      whyIsAlways: true,
-      host: CROSS_SITE_ADULT_URL_HOST,
-      errorSourceURL: CROSS_SITE_ADULT_URL,
-    },
+    [
+      {
+        whyIsAlways: true,
+        host: CROSS_SITE_ADULT_URL_HOST,
+        errorSourceURL: CROSS_SITE_ADULT_URL,
+      },
+    ],
     validateErrorPageContents
   );
 

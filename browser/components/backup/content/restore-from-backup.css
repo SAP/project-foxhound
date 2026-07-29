@@ -35,7 +35,7 @@
   #backup-restore-controls {
     display: flex;
     flex-direction: column;
-    row-gap: var(--space-xlarge);
+    row-gap: var(--space-medium);
   }
 
   #backup-filepicker-controls {
@@ -51,10 +51,10 @@
 
     #backup-filepicker-label {
       text-align: start;
-      font-weight: var(--label-font-weight, normal);
     }
 
-    #restore-from-backup-no-backup-file-link {
+    #restore-from-backup-no-backup-file-link,
+    #backup-generic-file-error {
       text-align: start;
     }
 
@@ -130,8 +130,9 @@
     grid-area: button-group;
   }
 
-  #backup-password-input[aria-invalid="true"] {
-    border-color: var(--outline-color-error);
+  #backup-password-input[aria-invalid="true"],
+  #backup-filepicker-input[aria-invalid="true"] {
+    border-color: var(--border-color-error);
   }
 
   /* Small, red helper text under the field */

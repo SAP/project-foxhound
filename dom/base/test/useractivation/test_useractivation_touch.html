@@ -1,0 +1,96 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>User activation test: touch event</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/EventUtils.js"></script>
+<script src="/tests/SimpleTest/paint_listener.js"></script>
+<script src="/tests/gfx/layers/apz/test/mochitest/apz_test_utils.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+<div id="scroller" style="width: 100%; height: 500px; overflow-y: scroll;">
+<div id="content" style="width: 100%; height: 2000px; background-color: green;"></div>
+<script>
+
+const scroller = document.getElementById("scroller");
+
+function waitForEventAndCheck(aElement, aEventType, aExpectedActivation) {
+  return new Promise((aResolve) => {
+    aElement.addEventListener(aEventType, (e) => {
+      info(`Received ${aEventType} event`);
+      is(navigator.userActivation.isActive, aExpectedActivation,
+         `${aEventType} event should ${aExpectedActivation ? "" : "not "}have activation`);
+      SpecialPowers.wrap(document).clearUserGestureActivation();
+      aResolve();
+    }, { once: true});
+  });
+}
+
+async function synthesizeTouchScrollAction(aElement, aX, aStartY, aDeltaY, aMoveCount) {
+  let currentY = aStartY;
+  synthesizeTouch(aElement, aX, currentY, { type: "touchstart" });
+  await promiseOnlyApzControllerFlushed();
+
+  //synthesizeTouch(aElement, aX, currentY, { type: "touchmove" });
+  for (let i = 0; i < aMoveCount; i++) {
+    synthesizeTouch(aElement, aX, currentY, { type: "touchmove" });
+    await promiseOnlyApzControllerFlushed();
+    currentY += aDeltaY;
+  }
+  synthesizeTouch(aElement, aX, currentY, { type: "touchend" });
+  await promiseOnlyApzControllerFlushed();
+}
+
+add_setup(async function init() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      // We need to synthesize touch events from the parent process in order for
+      // scrolling to occur.
+      ["test.events.async.enabled", true],
+      // Dropping the touch slop to 0 makes the tests easier to write because
+      // we can just do a one-pixel drag to get over the pan threshold rather
+      // than having to hard-code some larger value.
+      ["apz.touch_start_tolerance", "0.0"],
+    ],
+  });
+  await waitUntilApzStable();
+  await SimpleTest.promiseFocus(window);
+});
+
+add_task(async function test_touch_not_canceled() {
+  SpecialPowers.wrap(document).clearUserGestureActivation();
+
+  document.addEventListener("touchmove", (event) => {
+    event.preventDefault();
+  }, { once: true, passive: false });
+
+  let promiseEvent = Promise.all([waitForEventAndCheck(document, "pointerdown", false),
+                                  waitForEventAndCheck(document, "pointerup", true),
+                                  waitForEventAndCheck(document, "touchend", false)]);
+  synthesizeTouchScrollAction(scroller, 50, 50, -1, 20);
+  await promiseEvent;
+});
+
+add_task(async function test_touch_tap() {
+  SpecialPowers.wrap(document).clearUserGestureActivation();
+
+  let promiseEvent = Promise.all([waitForEventAndCheck(document, "pointerdown", false),
+                                  waitForEventAndCheck(document, "pointerup", true),
+                                  waitForEventAndCheck(document, "touchend", false)]);
+  synthesizeTouch(scroller, 50, 50, {});
+  await promiseEvent;
+});
+
+add_task(async function test_touch_canceled() {
+  SpecialPowers.wrap(document).clearUserGestureActivation();
+
+  let promiseEvent = Promise.all([waitForEventAndCheck(document, "pointerdown", false),
+                         waitForEventAndCheck(document, "pointercancel", false),
+                         waitForEventAndCheck(document, "touchend", false)]);
+  synthesizeTouchScrollAction(scroller, 50, 50, -1, 20);
+  await promiseEvent;
+});
+
+</script>
+</body>

@@ -24,6 +24,8 @@ prefs = [
 
 ["browser_dom_node_id_and_class_domain.js"]
 
+["browser_groupinfo_domain.js"]
+
 ["browser_initial_caching.js"]
 
 ["browser_inner_html_caching.js"]

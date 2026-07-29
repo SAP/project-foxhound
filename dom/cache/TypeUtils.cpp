@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -115,18 +113,36 @@ void TypeUtils::ToCacheRequest(CacheRequest& aOut, const InternalRequest& aIn,
                                BodyAction aBodyAction,
                                SchemeAction aSchemeAction, ErrorResult& aRv) {
   aIn.GetMethod(aOut.method());
-  nsCString url(aIn.GetURLWithoutFragment());
-  bool schemeValid;
-  ProcessURL(url, &schemeValid, &aOut.urlWithoutQuery(), &aOut.urlQuery(), aRv);
-  if (aRv.Failed()) {
+
+  nsIURI* url = aIn.GetURLWithoutFragment();
+
+  if (aSchemeAction == TypeErrorOnInvalidScheme && !URLHasValidScheme(url)) {
+    aRv.ThrowTypeError<MSG_INVALID_URL_SCHEME>("Request",
+                                               url->GetSpecOrDefault());
     return;
   }
-  if (!schemeValid) {
-    if (aSchemeAction == TypeErrorOnInvalidScheme) {
-      aRv.ThrowTypeError<MSG_INVALID_URL_SCHEME>("Request", url);
+
+  nsCOMPtr<nsIURI> urlWithoutQuery = url;
+
+  if (bool hasQuery = false;
+      NS_SUCCEEDED(url->GetHasQuery(&hasQuery)) && hasQuery) {
+    aRv = url->GetQuery(aOut.urlQuery());
+    if (aRv.Failed()) {
       return;
     }
+    aOut.urlQuery().Insert('?', 0);
+
+    aRv = NS_MutateURI(url)
+              .SetQuery(EmptyCString())
+              .Finalize(getter_AddRefs(urlWithoutQuery));
+    if (aRv.Failed()) {
+      return;
+    }
+  } else {
+    aOut.urlQuery() = EmptyCString();
   }
+
+  urlWithoutQuery->GetSpec(aOut.urlWithoutQuery());
   aOut.urlFragment() = aIn.GetFragment();
 
   aIn.GetReferrer(aOut.referrer());
@@ -169,16 +185,9 @@ void TypeUtils::ToCacheResponseWithoutBody(CacheResponse& aOut,
                                            ErrorResult& aRv) {
   aOut.type() = aIn.Type();
 
-  aIn.GetUnfilteredURLList(aOut.urlList());
-  AutoTArray<nsCString, 4> urlList;
-  aIn.GetURLList(urlList);
-
-  for (uint32_t i = 0; i < aOut.urlList().Length(); i++) {
-    MOZ_DIAGNOSTIC_ASSERT(!aOut.urlList()[i].IsEmpty());
-    // Pass all Response URL schemes through... The spec only requires we take
-    // action on invalid schemes for Request objects.
-    ProcessURL(aOut.urlList()[i], nullptr, nullptr, nullptr, aRv);
-  }
+  // Pass all Response URL schemes through... The spec only requires we take
+  // action on invalid schemes for Request objects.
+  aOut.urlList().Assign(aIn.GetUnfilteredURLList());
 
   aOut.status() = aIn.GetUnfilteredStatus();
   aOut.statusText() = aIn.GetUnfilteredStatusText();
@@ -311,10 +320,11 @@ already_AddRefed<Response> TypeUtils::ToResponse(const CacheResponse& aIn) {
 }
 SafeRefPtr<InternalRequest> TypeUtils::ToInternalRequest(
     const CacheRequest& aIn) {
-  nsAutoCString url(aIn.urlWithoutQuery());
-  url.Append(aIn.urlQuery());
-  auto internalRequest =
-      MakeSafeRefPtr<InternalRequest>(url, aIn.urlFragment());
+  nsCOMPtr<nsIURI> url;
+  MOZ_ALWAYS_SUCCEEDS(
+      NS_NewURI(getter_AddRefs(url), aIn.urlWithoutQuery() + aIn.urlQuery()));
+  auto internalRequest = MakeSafeRefPtr<InternalRequest>(WrapNotNull(url.get()),
+                                                         aIn.urlFragment());
   internalRequest->SetMethod(aIn.method());
   internalRequest->SetReferrer(aIn.referrer());
   internalRequest->SetReferrerPolicy(aIn.referrerPolicy());
@@ -365,65 +375,10 @@ already_AddRefed<InternalHeaders> TypeUtils::ToInternalHeaders(
   return ref.forget();
 }
 
-// Utility function to remove the fragment from a URL, check its scheme, and
-// optionally provide a URL without the query.  We're not using nsIURL or URL to
-// do this because they require going to the main thread. static
-void TypeUtils::ProcessURL(nsACString& aUrl, bool* aSchemeValidOut,
-                           nsACString* aUrlWithoutQueryOut,
-                           nsACString* aUrlQueryOut, ErrorResult& aRv) {
-  const nsCString& flatURL = PromiseFlatCString(aUrl);
-  const char* url = flatURL.get();
-
-  // off the main thread URL parsing using nsStdURLParser.
-  nsCOMPtr<nsIURLParser> urlParser = new nsStdURLParser();
-
-  uint32_t pathPos;
-  int32_t pathLen;
-  uint32_t schemePos;
-  int32_t schemeLen;
-  aRv = urlParser->ParseURL(url, flatURL.Length(), &schemePos, &schemeLen,
-                            nullptr, nullptr,  // ignore authority
-                            &pathPos, &pathLen);
-  if (NS_WARN_IF(aRv.Failed())) {
-    return;
-  }
-
-  if (aSchemeValidOut) {
-    nsAutoCString scheme(Substring(flatURL, schemePos, schemeLen));
-    *aSchemeValidOut =
-        scheme.LowerCaseEqualsLiteral("http") ||
-        scheme.LowerCaseEqualsLiteral("https") ||
-        (StaticPrefs::extensions_backgroundServiceWorker_enabled_AtStartup() &&
-         scheme.LowerCaseEqualsLiteral("moz-extension"));
-  }
-
-  uint32_t queryPos;
-  int32_t queryLen;
-
-  aRv = urlParser->ParsePath(url + pathPos, flatURL.Length() - pathPos, nullptr,
-                             nullptr,  // ignore filepath
-                             &queryPos, &queryLen, nullptr, nullptr);
-  if (NS_WARN_IF(aRv.Failed())) {
-    return;
-  }
-
-  if (!aUrlWithoutQueryOut) {
-    return;
-  }
-
-  MOZ_DIAGNOSTIC_ASSERT(aUrlQueryOut);
-
-  if (queryLen < 0) {
-    *aUrlWithoutQueryOut = aUrl;
-    aUrlQueryOut->Truncate();
-    return;
-  }
-
-  // ParsePath gives us query position relative to the start of the path
-  queryPos += pathPos;
-
-  *aUrlWithoutQueryOut = Substring(aUrl, 0, queryPos - 1);
-  *aUrlQueryOut = Substring(aUrl, queryPos - 1, queryLen + 1);
+bool TypeUtils::URLHasValidScheme(nsIURI* aUrl) {
+  return aUrl->SchemeIs("http") || aUrl->SchemeIs("https") ||
+         (StaticPrefs::extensions_backgroundServiceWorker_enabled_AtStartup() &&
+          aUrl->SchemeIs("moz-extension"));
 }
 
 void TypeUtils::CheckAndSetBodyUsed(JSContext* aCx, Request& aRequest,
@@ -450,7 +405,7 @@ void TypeUtils::CheckAndSetBodyUsed(JSContext* aCx, Request& aRequest,
 SafeRefPtr<InternalRequest> TypeUtils::ToInternalRequest(const nsACString& aIn,
                                                          ErrorResult& aRv) {
   RequestOrUTF8String requestOrString;
-  requestOrString.SetAsUTF8String().ShareOrDependUpon(aIn);
+  requestOrString.SetAsUTF8String() = aIn;
 
   // Re-create a GlobalObject stack object so we can use webidl Constructors.
   AutoJSAPI jsapi;

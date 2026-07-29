@@ -1,0 +1,15 @@
+[DEFAULT]
+firefox-appdir = "browser"
+
+["test_nsILockstore.js"]
+# Multiple tasks run several 800k-iteration PBKDF2 derivations back-to-back
+# for PrimaryPassword set / change / unlock cycles; the cumulative wall
+# time exceeds the default per-test budget on slower hardware.
+requesttimeoutfactor = 5
+# TSan instruments every NSS lock acquisition along the PBKDF2 path, so
+# the per-task budget blows out even with the 5x factor above (regular
+# `xpcshell-1` and the `test-verify` re-run loop both time out, bug
+# 1892964). The Rust/FFI layer has its own thread-safety tests under
+# `security/lockstore/lockstore_rs/tests/`; the JS-facing surface is
+# still exercised on every other config.
+skip-if = ["tsan"]

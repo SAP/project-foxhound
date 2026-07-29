@@ -18,17 +18,13 @@ Ping Definitions
 ----------------
 * `Desktop crash ping <https://dictionary.telemetry.mozilla.org/apps/firefox_desktop/pings/crash>`_
 
-  * `Desktop metrics definition
-    <https://searchfox.org/mozilla-central/source/toolkit/components/crashes/metrics.yaml>`_
-  * `Desktop ping definition
-    <https://searchfox.org/mozilla-central/source/toolkit/components/crashes/pings.yaml>`_
+  * :searchfox:`Desktop metrics definition <toolkit/components/crashes/metrics.yaml>`
+  * :searchfox:`Desktop ping definition <toolkit/components/crashes/pings.yaml>`
 
 * `Fenix crash ping <https://dictionary.telemetry.mozilla.org/apps/fenix/pings/crash>`_
 
-  * `Fenix metrics definition
-    <https://searchfox.org/mozilla-central/source/mobile/android/android-components/components/lib/crash/metrics.yaml>`_
-  * `Fenix ping definition
-    <https://searchfox.org/mozilla-central/source/mobile/android/android-components/components/lib/crash/pings.yaml>`_
+  * :searchfox:`Fenix metrics definition <mobile/android/android-components/components/lib/crash/metrics.yaml>`
+  * :searchfox:`Fenix ping definition <mobile/android/android-components/components/lib/crash/pings.yaml>`
 
 BigQuery Tables
 ---------------
@@ -73,11 +69,11 @@ BigQuery Tables
 
 Source
 ------
-All crash ping metrics are set in bulk at the same time, and typically come directly from `crash annotations <https://searchfox.org/mozilla-central/source/toolkit/crashreporter/CrashAnnotations.yaml>`_:
+All crash ping metrics are set in bulk at the same time, and typically come directly from :searchfox:`crash annotations <toolkit/crashreporter/CrashAnnotations.yaml>`:
 
-* `Desktop <https://searchfox.org/mozilla-central/rev/b598575345077063c55b618e43ccaa6249505d02/toolkit/components/crashes/CrashManager.in.sys.mjs#787>`__
-* `Crashreporter client <https://searchfox.org/mozilla-central/rev/b598575345077063c55b618e43ccaa6249505d02/toolkit/crashreporter/client/app/src/net/ping/glean.rs#11>`__
-* `Fenix <https://searchfox.org/mozilla-central/rev/b598575345077063c55b618e43ccaa6249505d02/mobile/android/android-components/components/lib/crash/src/main/java/mozilla/components/lib/crash/service/GleanCrashReporterService.kt#312>`__
+* :searchfox:`Desktop <mozilla-central/rev/b598575345077063c55b618e43ccaa6249505d02:toolkit/components/crashes/CrashManager.in.sys.mjs#787>`
+* :searchfox:`Crashreporter client <mozilla-central/rev/b598575345077063c55b618e43ccaa6249505d02:toolkit/crashreporter/client/app/src/net/ping/glean.rs#11>`
+* :searchfox:`Fenix <mozilla-central/rev/b598575345077063c55b618e43ccaa6249505d02:mobile/android/android-components/components/lib/crash/src/main/java/mozilla/components/lib/crash/service/GleanCrashReporterService.kt#312>`
 
 
 Post-Processing
@@ -86,7 +82,7 @@ The `crash-ping-ingest <https://github.com/mozilla/crash-ping-ingest>`_ repo is 
 taskcluster) to run daily ingestion. It will retrieve crash pings with submissions as recent as the
 prior UTC day, ensuring that indexed results for the past week are available by default (in case of
 outages/hiccups/etc). This runs at 2:00 UTC and takes 1-2 hours, so you can expect data to be
-availalbe for the prior UTC day around 4:00 UTC. It also supplies a taskcluster action to manually
+available for the prior UTC day around 4:00 UTC. It also supplies a taskcluster action to manually
 generate data for a given date, if necessary.
 
 Data Availability
@@ -127,8 +123,7 @@ efficient loading in the browser.
 
 Adding data to crash pings
 ==========================
-#. Add crash annotations to the `definition file
-   <https://searchfox.org/mozilla-central/source/toolkit/crashreporter/CrashAnnotations.yaml>`_ and
+#. Add crash annotations to the :searchfox:`definition file <toolkit/crashreporter/CrashAnnotations.yaml>` and
    populate the annotations with the generated APIs.
 #. Define corresponding glean metrics to the files listed in `Ping Definitions`_.
 #. Update the code that populates the metrics listed in `Source`_.

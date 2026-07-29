@@ -1,0 +1,99 @@
+From 8239b1b05ebd72502c7b464e36d1e073c2babff6 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Emilio=20Cobos=20=C3=81lvarez?= <emilio@crisal.io>
+Date: Tue, 16 Jun 2026 01:33:04 +0200
+Subject: [PATCH 3/3] [cff-subset] Check cff dict operator / operand sizes.
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Signed-off-by: Emilio Cobos Álvarez <emilio@crisal.io>
+---
+ src/cairo-cff-subset.c | 38 ++++++++++++++++++--------------------
+ 1 file changed, 18 insertions(+), 20 deletions(-)
+
+diff --git a/src/cairo-cff-subset.c b/src/cairo-cff-subset.c
+index 64a059c3e..0e18b3982 100644
+--- a/src/cairo-cff-subset.c
++++ b/src/cairo-cff-subset.c
+@@ -339,23 +339,9 @@ decode_number (unsigned char *p, double *number)
+     return p;
+ }
+ 
+-static unsigned char *
+-decode_operator (unsigned char *p, unsigned short *operator)
+-{
+-    unsigned short op = 0;
+-
+-    op = *p++;
+-    if (op == 12) {
+-        op <<= 8;
+-        op |= *p++;
+-    }
+-    *operator = op;
+-    return p;
+-}
+-
+ /* return 0 if not an operand */
+ static int
+-operand_length (unsigned char *p)
++operand_length (unsigned char *p, unsigned char* end)
+ {
+     unsigned char *begin = p;
+ 
+@@ -372,7 +358,7 @@ operand_length (unsigned char *p)
+         return 2;
+ 
+     if (*p == 30) {
+-        while ((*p & 0x0f) != 0x0f)
++        while (p < end && (*p & 0x0f) != 0x0f)
+             p++;
+         return p - begin + 1;
+     }
+@@ -649,28 +635,40 @@ cff_dict_create_operator (int            operator,
+     return CAIRO_STATUS_SUCCESS;
+ }
+ 
+-static cairo_status_t
++static cairo_int_status_t
+ cff_dict_read (cairo_hash_table_t *dict, unsigned char *p, int dict_size)
+ {
+     unsigned char *end;
+     cairo_array_t operands;
+     cff_dict_operator_t *op;
+     unsigned short operator;
+-    cairo_status_t status = CAIRO_STATUS_SUCCESS;
++    cairo_int_status_t status = CAIRO_STATUS_SUCCESS;
+     int size;
+ 
+     end = p + dict_size;
+     _cairo_array_init (&operands, 1);
+     while (p < end) {
+-        size = operand_length (p);
++        size = operand_length (p, end);
+         if (size != 0) {
++            if (unlikely(size > end - p)) {
++                status = CAIRO_INT_STATUS_UNSUPPORTED;
++                goto fail;
++            }
+             status = _cairo_array_append_multiple (&operands, p, size);
+             if (unlikely (status))
+                 goto fail;
+ 
+             p += size;
+         } else {
+-            p = decode_operator (p, &operator);
++            operator = *p++;
++            if (operator == 12) {
++                if (p >= end) {
++                  status = CAIRO_INT_STATUS_UNSUPPORTED;
++                  goto fail;
++                }
++                operator <<= 8;
++                operator |= *p++;
++            }
+             status = cff_dict_create_operator (operator,
+                                           _cairo_array_index (&operands, 0),
+                                           _cairo_array_num_elements (&operands),
+-- 
+2.54.0
+

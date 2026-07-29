@@ -7,14 +7,14 @@ add_task(async function test_customize_sidebar_actions() {
   SpecialPowers.pushPrefEnv({
     set: [[VERTICAL_TABS_PREF, true]],
   });
-  await waitForTabstripOrientation("vertical");
+  await SidebarTestUtils.waitForTabstripOrientation(window, "vertical");
   const win = await BrowserTestUtils.openNewBrowserWindow();
-  await waitForTabstripOrientation("vertical", win);
+  await SidebarTestUtils.waitForTabstripOrientation(win, "vertical");
 
   const { document } = win;
   const sidebar = document.querySelector("sidebar-main");
   ok(sidebar, "Sidebar is shown.");
-  await toggleSidebarPanel(win, "viewCustomizeSidebar");
+  await SidebarTestUtils.showPanel(win, "viewCustomizeSidebar");
 
   const initialViewportOuterWidth = win.outerWidth;
   const initialViewportOuterHeight = win.outerHeight;

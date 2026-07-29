@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -30,30 +28,28 @@ class StringOrOpenPopupOptions;
 struct ActivateMenuItemOptions;
 
 nsXULElement* NS_NewXULPopupElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
 class XULPopupElement : public XULMenuParentElement {
  private:
   nsMenuPopupFrame* GetFrame(FlushType);
 
  public:
-  explicit XULPopupElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+  explicit XULPopupElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
       : XULMenuParentElement(std::move(aNodeInfo)) {}
 
-  void GetLabel(DOMString& aValue) const {
-    GetXULAttr(nsGkAtoms::label, aValue);
-  }
+  void GetLabel(DOMString& aValue) const { GetAttr(nsGkAtoms::label, aValue); }
   void SetLabel(const nsAString& aValue, ErrorResult& rv) {
-    SetXULAttr(nsGkAtoms::label, aValue, rv);
+    SetAttr(nsGkAtoms::label, aValue, rv);
   }
 
   bool IsMenu() const { return IsXULElement(nsGkAtoms::menupopup); }
 
   void GetPosition(DOMString& aValue) const {
-    GetXULAttr(nsGkAtoms::position, aValue);
+    GetAttr(nsGkAtoms::position, aValue);
   }
   void SetPosition(const nsAString& aValue, ErrorResult& rv) {
-    SetXULAttr(nsGkAtoms::position, aValue, rv);
+    SetAttr(nsGkAtoms::position, aValue, rv);
   }
 
   void OpenPopup(Element* aAnchorElement,
@@ -97,6 +93,8 @@ class XULPopupElement : public XULMenuParentElement {
 
   bool IsWaylandDragSource() const;
   bool IsWaylandPopup() const;
+
+  bool IsNativeMenu() const;
 
   NS_IMPL_FROMNODE_HELPER(XULPopupElement,
                           IsAnyOfXULElements(nsGkAtoms::menupopup,

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -8,9 +6,9 @@
 #define jit_arm64_Architecture_arm64_h
 
 #include "mozilla/Assertions.h"
-#include "mozilla/MathAlgorithms.h"
 
 #include <algorithm>
+#include <bit>
 
 #include "jit/arm64/vixl/Cpu-Features-vixl.h"
 #include "jit/arm64/vixl/Instructions-vixl.h"
@@ -143,15 +141,14 @@ class Registers {
     uintptr_t r;
   };
 
-  static uint32_t SetSize(SetType x) {
-    static_assert(sizeof(SetType) == 4, "SetType must be 32 bits");
-    return mozilla::CountPopulation32(x);
-  }
+  static uint32_t SetSize(SetType x) { return std::popcount(x); }
   static uint32_t FirstBit(SetType x) {
-    return mozilla::CountTrailingZeroes32(x);
+    MOZ_ASSERT(x);
+    return std::countr_zero(x);
   }
   static uint32_t LastBit(SetType x) {
-    return 31 - mozilla::CountLeadingZeroes32(x);
+    MOZ_ASSERT(x);
+    return std::bit_width(x) - 1;
   }
 
   static const char* GetName(uint32_t code) {
@@ -198,7 +195,7 @@ class Registers {
       (1 << Registers::x28) | (1 << Registers::x29) | (1 << Registers::x30);
 
   static const SetType NonAllocatableMask =
-      (1 << Registers::x28) |  // PseudoStackPointer.
+      (1 << Registers::x20) |  // PseudoStackPointer.
       (1 << Registers::ip0) |  // First scratch register.
       (1 << Registers::ip1) |  // Second scratch register.
       (1 << Registers::tls) | (1 << Registers::lr) | (1 << Registers::sp) |
@@ -303,23 +300,23 @@ class Bitset128 {
     return *this;
   }
 
-  uint32_t size() const {
-    return mozilla::CountPopulation64(hi) + mozilla::CountPopulation64(lo);
-  }
+  uint32_t size() const { return std::popcount(hi) + std::popcount(lo); }
 
   uint32_t countTrailingZeroes() const {
     if (lo) {
-      return mozilla::CountTrailingZeroes64(lo);
+      return std::countr_zero(lo);
     }
-    return mozilla::CountTrailingZeroes64(hi) + 64;
+    return std::countr_zero(hi) + 64;
   }
 
   uint32_t countLeadingZeroes() const {
     if (hi) {
-      return mozilla::CountLeadingZeroes64(hi);
+      return std::countl_zero(hi);
     }
-    return mozilla::CountLeadingZeroes64(lo) + 64;
+    return std::countl_zero(lo) + 64;
   }
+
+  uint32_t bitWidth() const { return 128 - countLeadingZeroes(); }
 };
 
 class FloatRegisters {
@@ -567,22 +564,21 @@ struct FloatRegister {
   using SetType = Codes::SetType;
 
   static uint32_t SetSize(SetType x) {
-    static_assert(sizeof(SetType) == 16, "SetType must be 128 bits");
     x |= x >> FloatRegisters::TotalPhys;
     x |= x >> FloatRegisters::TotalPhys;
     x &= FloatRegisters::AllPhysMask;
     MOZ_ASSERT(x.high() == 0);
     MOZ_ASSERT((x.low() >> 32) == 0);
-    return mozilla::CountPopulation32(x.low());
+    return std::popcount(x.low());
   }
 
   static uint32_t FirstBit(SetType x) {
-    static_assert(sizeof(SetType) == 16, "SetType");
+    MOZ_ASSERT(x);
     return x.countTrailingZeroes();
   }
   static uint32_t LastBit(SetType x) {
-    static_assert(sizeof(SetType) == 16, "SetType");
-    return 127 - x.countLeadingZeroes();
+    MOZ_ASSERT(x);
+    return x.bitWidth() - 1;
   }
 
   static constexpr size_t SizeOfSimd128 = 16;

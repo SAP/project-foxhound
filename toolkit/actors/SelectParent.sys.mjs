@@ -1,4 +1,3 @@
-/* vim: set ts=2 sw=2 sts=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,24 +7,38 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
 
+let prefsChanged = false;
+
+const onPrefsChanged = () => (prefsChanged = true);
+
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "DOM_FORMS_SELECTSEARCH",
   "dom.forms.selectSearch",
-  false
+  false,
+  onPrefsChanged
 );
 
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "CUSTOM_STYLING_ENABLED",
   "dom.forms.select.customstyling",
-  false
+  false,
+  onPrefsChanged
 );
 
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "MAC_NATIVE_SELECT_ENABLED",
-  "widget.macos.native-anchored-select",
+  "widget.macos.allow-native-select",
+  false,
+  onPrefsChanged
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "MAC_NATIVE_ANCHORED_MENUS_ENABLED",
+  "widget.macos.native-anchored-menus",
   false
 );
 
@@ -113,6 +126,17 @@ export var SelectParentHelper = {
     menupopup.style.colorScheme = isDarkBackground ? "dark" : "light";
     menupopup.style.direction = selectStyle.direction;
 
+    // Apply the font size of the <select> to the <menupopup> for use with
+    // native menus, which do not have access to the <select>.
+    if (
+      AppConstants.platform == "macosx" &&
+      lazy.MAC_NATIVE_ANCHORED_MENUS_ENABLED &&
+      !this.disableMacNativeMenu()
+    ) {
+      menupopup.style.fontSize =
+        zoom * parseFloat(selectStyle["font-size"], 10) + "px";
+    }
+
     stylesheet = doc.createElementNS("http://www.w3.org/1999/xhtml", "style");
     stylesheet.setAttribute("id", "ContentSelectDropdownStylesheet");
     stylesheet.hidden = true;
@@ -170,7 +194,7 @@ export var SelectParentHelper = {
           property = "--content-select-scrollbar-width";
         }
         if (property == "color") {
-          property = "--panel-color";
+          property = "--panel-text-color";
         }
         menupopup.style.setProperty(property, value);
       }
@@ -191,7 +215,7 @@ export var SelectParentHelper = {
         menupopup.style.backgroundColor = "";
         // If the background is set, we also make sure we set the color, to
         // prevent contrast issues.
-        menupopup.style.setProperty("--panel-color", selectStyle.color);
+        menupopup.style.setProperty("--panel-text-color", selectStyle.color);
 
         sheet.insertRule(
           `#ContentSelectDropdown > menupopup > :is(menuitem, menucaption):not([_moz-menuactive="true"]) {
@@ -285,15 +309,10 @@ export var SelectParentHelper = {
 
   open(browser, menulist, rect, isOpenedViaTouch, selectParentActor) {
     const canOpen = (() => {
-      if (!menulist.ownerDocument.hasFocus()) {
-        // Don't open in inactive browser windows.
+      if (!selectParentActor.browsingContext.canOpenModalPicker) {
         return false;
       }
       if (browser) {
-        if (!browser.browsingContext.isActive) {
-          // Don't open in inactive tabs.
-          return false;
-        }
         let tabbrowser = browser.getTabBrowser();
         if (tabbrowser && tabbrowser.selectedBrowser != browser) {
           // AsyncTabSwitcher might delay activating our browser, check
@@ -319,7 +338,7 @@ export var SelectParentHelper = {
     let menupopup = menulist.menupopup;
     menupopup.classList.toggle("isOpenedViaTouch", isOpenedViaTouch);
 
-    let win = menulist.ownerGlobal;
+    let win = menulist.documentGlobal;
     if (browser) {
       browser.constrainPopup(menupopup);
       browser.style.pointerEvents = "none";
@@ -463,10 +482,14 @@ export var SelectParentHelper = {
     popup.addEventListener("popuphidden", this);
     popup.addEventListener("mouseover", this);
     popup.addEventListener("mouseout", this);
-    popup.ownerGlobal.addEventListener("mouseup", this, true);
-    popup.ownerGlobal.addEventListener("keydown", this, true);
-    popup.ownerGlobal.addEventListener("fullscreen", this, true);
-    popup.ownerGlobal.addEventListener("FullscreenWarningOnScreen", this, true);
+    popup.documentGlobal.addEventListener("mouseup", this, true);
+    popup.documentGlobal.addEventListener("keydown", this, true);
+    popup.documentGlobal.addEventListener("fullscreen", this, true);
+    popup.documentGlobal.addEventListener(
+      "FullscreenWarningOnScreen",
+      this,
+      true
+    );
   },
 
   _unregisterListeners(popup) {
@@ -474,10 +497,10 @@ export var SelectParentHelper = {
     popup.removeEventListener("popuphidden", this);
     popup.removeEventListener("mouseover", this);
     popup.removeEventListener("mouseout", this);
-    popup.ownerGlobal.removeEventListener("mouseup", this, true);
-    popup.ownerGlobal.removeEventListener("keydown", this, true);
-    popup.ownerGlobal.removeEventListener("fullscreen", this, true);
-    popup.ownerGlobal.removeEventListener(
+    popup.documentGlobal.removeEventListener("mouseup", this, true);
+    popup.documentGlobal.removeEventListener("keydown", this, true);
+    popup.documentGlobal.removeEventListener("fullscreen", this, true);
+    popup.documentGlobal.removeEventListener(
       "FullscreenWarningOnScreen",
       this,
       true
@@ -646,6 +669,15 @@ export var SelectParentHelper = {
     return nthChildIndex;
   },
 
+  disableMacNativeMenu() {
+    return (
+      AppConstants.platform == "macosx" &&
+      (lazy.CUSTOM_STYLING_ENABLED ||
+        lazy.DOM_FORMS_SELECTSEARCH ||
+        !lazy.MAC_NATIVE_SELECT_ENABLED)
+    );
+  },
+
   onSearchKeydown(event, menulist) {
     if (event.defaultPrevented) {
       return;
@@ -790,13 +822,8 @@ export class SelectParent extends JSWindowActorParent {
     if (AppConstants.platform == "win") {
       popup.setAttribute("consumeoutsideclicks", "false");
       popup.setAttribute("ignorekeys", "shortcuts");
-    } else if (
-      AppConstants.platform == "macosx" &&
-      (lazy.CUSTOM_STYLING_ENABLED ||
-        lazy.DOM_FORMS_SELECTSEARCH ||
-        !lazy.MAC_NATIVE_SELECT_ENABLED)
-    ) {
-      popup.setAttribute("native", "false");
+    } else if (SelectParentHelper.disableMacNativeMenu()) {
+      popup.toggleAttribute("nonnative", true);
     }
 
     let container =
@@ -814,6 +841,16 @@ export class SelectParent extends JSWindowActorParent {
     switch (message.name) {
       case "Forms:ShowDropDown": {
         let menulist = this._menulist || this._createMenulist();
+
+        if (prefsChanged) {
+          if (AppConstants.platform == "macosx") {
+            menulist.menupopup.toggleAttribute(
+              "nonnative",
+              SelectParentHelper.disableMacNativeMenu()
+            );
+          }
+          prefsChanged = false;
+        }
 
         let data = message.data;
 

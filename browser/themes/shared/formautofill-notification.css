@@ -12,12 +12,9 @@
  * "address-save-update" prefix is used for "save address doorhanger" and "update address doorhanger"
  */
 
-.popup-notification-body[popupid="address-save-update"] {
-  width: 25.8em;
-}
-
+.popup-notification-body[popupid="address-save-update"],
 .popup-notification-body[popupid="address-edit"] {
-  width: auto;
+  width: 25.8em;
 }
 
 .address-capture-notification {
@@ -35,30 +32,13 @@
   }
 
   /* define the default text format for the address capture doorhanger */
-  :is(p, textarea) {
+  p {
     margin-block: 0;
     line-height: 1.5;
     overflow-wrap: anywhere;
   }
 
-  menulist {
-    padding-block: 6px;
-    padding-inline: 16px 12px;
-  }
-
-  .address-capture-icon-button {
-    width: 32px;
-    height: 32px;
-    border: 0;
-    border-radius: var(--border-radius-small);
-    margin: 0;
-    padding: 0;
-    color: var(--button-text-color-ghost);
-    background-color: var(--button-background-color-ghost);
-    background-repeat: no-repeat;
-    background-position: center;
-    -moz-context-properties: fill;
-    fill: currentColor;
+  #address-capture-menu-button {
     margin-inline-start: auto;
 
     &:hover {
@@ -85,24 +65,11 @@
       background-image: url("chrome://browser/skin/formautofill/icon-doorhanger-menu.svg");
     }
   }
-
-  .popup-notification-primary-button {
-    color: var(--button-text-color-primary);
-    background-color: var(--color-accent-primary);
-
-    &:hover {
-      background-color: var(--color-accent-primary-hover);
-
-      &:active {
-        background-color: var(--color-accent-primary-active);
-      }
-    }
-  }
 }
 
 .address-capture-header {
-  margin-top: 8px;
-  margin-bottom: 12px;
+  margin-top: var(--space-large);
+  margin-bottom: var(--space-medium);
   display: flex;
   flex-direction: row;
 
@@ -114,25 +81,37 @@
 }
 
 .address-save-update-notification-content > .address-capture-content {
-  padding-inline: 4px 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .address-capture-description,
 .address-save-update-row-container,
 .address-edit-row-container {
-  margin-bottom: 16px;
+  margin-bottom: var(--space-large);
 }
 
 .address-save-update-row-container {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr;
   gap: 8px;
 
   > image {
-    width: 16px;
-    height: 16px;
+    width: var(--icon-size-small);
+    height: var(--icon-size-small);
     margin-top: 2px;
   }
+
+  &:first-child p:not(:first-child) {
+    color: var(--text-color-deemphasized);
+  }
+}
+
+.address-capture-edit-link-container {
+  /* Cancel the preceding section's margin-bottom so the link sits flush. */
+  margin-top: calc(-1 * var(--space-large));
+  /* Align with second column of .address-save-update-row-container (icon + gap). */
+  padding-inline-start: calc(var(--icon-size-small) + var(--space-small));
 }
 
 .address-update-text-diff-added,
@@ -148,14 +127,10 @@
 
 .address-capture-img-address {
   list-style-image: url("chrome://browser/skin/formautofill/icon-capture-address-fields.svg");
-  -moz-context-properties: fill;
-  fill: currentColor;
 }
 
 .address-capture-img-email {
   list-style-image: url("chrome://browser/skin/formautofill/icon-capture-email-fields.svg");
-  -moz-context-properties: fill;
-  fill: currentColor;
 }
 
 .address-edit-row-container {
@@ -164,49 +139,27 @@
   gap: 10px;
 }
 
-.address-edit-input-container {
+.address-edit-notification-content :is(moz-input-text, moz-textarea, moz-select) {
+  flex: 1;
+}
+
+.credit-card-capture-content {
   display: flex;
   flex-direction: column;
+  gap: var(--space-large);
+}
 
-  > label {
-    line-height: 1.5;
-    margin-bottom: 4px;
+.cc-icon {
+  height: var(--icon-size-small);
+  margin-inline-end: var(--space-small);
+}
+
+.payments-doorhanger-description {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xsmall);
+
+  > .line-two {
+    color: var(--text-color-deemphasized);
   }
-}
-
-/* Default size for input fields in address edit doorhanger */
-.address-edit-notification-content {
-  :is(input, textarea) {
-    width: 15.8em;
-    margin: 0;
-  }
-
-  menulist {
-    width: 17em;
-    height: 2.46em;
-    margin: 0;
-  }
-}
-
-#address-edit-street-address-input {
-  height: 4.6em;
-  resize: none;
-}
-
-#address-edit-postal-code-input,
-#address-edit-address-level2-input,
-#address-edit-address-level3-input {
-  width: 6.87em;
-}
-
-#address-edit-address-level1-input {
-  width: 8.1em;
-}
-
-#address-edit-tel-input {
-  width: 10.6em;
-}
-
-#address-edit-email-input {
-  width: 12em;
 }

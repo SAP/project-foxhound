@@ -41,7 +41,6 @@ class SnackbarBehavior<V : View>(
             toolbarPosition == ToolbarPosition.BOTTOM ||
             (toolbarPosition == ToolbarPosition.TOP && shouldUseExpandedToolbar)
         ) {
-            add(R.id.toolbarLayout)
             add(R.id.toolbar)
             add(R.id.composable_toolbar)
         }

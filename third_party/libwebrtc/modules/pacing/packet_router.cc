@@ -14,11 +14,11 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
 #include "absl/functional/any_invocable.h"
-#include "api/array_view.h"
 #include "api/rtp_headers.h"
 #include "api/sequence_checker.h"
 #include "api/transport/network_types.h"
@@ -87,9 +87,10 @@ void PacketRouter::RegisterNotifyBweCallback(
   notify_bwe_callback_ = std::move(callback);
 }
 
-void PacketRouter::ConfigureForRfc8888Feedback(bool send_rtp_packets_as_ect1) {
+void PacketRouter::ConfigureForRtcpFeedback(bool set_transport_seq,
+                                            bool send_rtp_packets_as_ect1) {
   RTC_DCHECK_RUN_ON(&thread_checker_);
-  use_cc_feedback_according_to_rfc8888_ = true;
+  set_transport_seq_ = set_transport_seq;
   send_rtp_packets_as_ect1_ = send_rtp_packets_as_ect1;
 }
 
@@ -200,8 +201,7 @@ void PacketRouter::SendPacket(std::unique_ptr<RtpPacketToSend> packet,
   // if the TransportSequenceNumber header extension is negotiated for the
   // specific media type. Historically, webrtc only used TransportSequenceNumber
   // on video packets.
-  if (use_cc_feedback_according_to_rfc8888_ ||
-      packet->HasExtension<TransportSequenceNumber>()) {
+  if (set_transport_seq_ || packet->HasExtension<TransportSequenceNumber>()) {
     packet->set_transport_sequence_number(transport_seq_++);
   }
   if (send_rtp_packets_as_ect1_) {
@@ -291,7 +291,7 @@ std::vector<std::unique_ptr<RtpPacketToSend>> PacketRouter::GeneratePadding(
 
 void PacketRouter::OnAbortedRetransmissions(
     uint32_t ssrc,
-    ArrayView<const uint16_t> sequence_numbers) {
+    std::span<const uint16_t> sequence_numbers) {
   RTC_DCHECK_RUN_ON(&thread_checker_);
   auto it = send_modules_map_.find(ssrc);
   if (it != send_modules_map_.end()) {
@@ -340,6 +340,18 @@ void PacketRouter::SendCombinedRtcpPacket(
   }
   auto* rtcp_sender = rtcp_feedback_senders_[0];
   rtcp_sender->SendCombinedRtcpPacket(std::move(packets));
+}
+
+std::optional<uint32_t> PacketRouter::SsrcOfFirstSender() {
+  RTC_DCHECK_RUN_ON(&thread_checker_);
+  // Prefer send modules.
+  for (RtpRtcpInterface* rtp_module : send_modules_list_) {
+    if (rtp_module->RTCP() == RtcpMode::kOff) {
+      continue;
+    }
+    return rtp_module->SSRC();
+  }
+  return std::nullopt;
 }
 
 void PacketRouter::AddRembModuleCandidate(

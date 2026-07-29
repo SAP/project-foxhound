@@ -4,14 +4,24 @@
 
 package org.mozilla.fenix.nimbus
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Deferred
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.mozilla.experiments.nimbus.NimbusEventStore
+import org.mozilla.fenix.nimbus.RecordEventMode.Cancel
+import org.mozilla.fenix.nimbus.RecordEventMode.CompleteSuccessfully
+import org.mozilla.fenix.nimbus.RecordEventMode.ThrowException
+
+enum class RecordEventMode {
+    CompleteSuccessfully, ThrowException, Cancel
+}
 
 /**
  * A [NimbusEventStore] implementation for unit test. Allows asserting conditions on recorded events.
  */
 class FakeNimbusEventStore : NimbusEventStore {
+    var recordEventMode = CompleteSuccessfully
     private val recordedEvents = mutableListOf<String>()
     private val pastEvents = mutableListOf<PastEvent>()
 
@@ -19,23 +29,29 @@ class FakeNimbusEventStore : NimbusEventStore {
      * @see [NimbusEventStore.recordEvent]
      */
     override fun recordEvent(count: Long, eventId: String) {
-        repeat(count) {
-            recordedEvents += eventId
+        if (recordEventMode == CompleteSuccessfully) {
+            repeat(count) {
+                recordedEvents += eventId
+            }
+        } else {
+            // [NimbusEventStore.recordEvent] catches all errors and swallows them.
+        }
+    }
+
+    override fun recordEventOrThrow(count: Long, eventId: String): Deferred<Unit> {
+        recordEvent(count, eventId)
+        return when (recordEventMode) {
+            CompleteSuccessfully -> CompletableDeferred(Unit)
+            ThrowException -> CompletableDeferred<Unit>().apply { completeExceptionally(RuntimeException()) }
+            Cancel -> CompletableDeferred<Unit>().apply { cancel() }
         }
     }
 
     /**
      * Asserts that recorded events are exactly equal to [events] (including order).
      */
-    fun assertEventsEqual(events: List<String>) {
-        assertEquals(events, recordedEvents)
-    }
-
-    /**
-     * Asserts that there was only a single event recorded and it's equal to [eventId].
-     */
-    fun assertSingleEventEquals(eventId: String) {
-        assertEquals(eventId, recordedEvents.single())
+    fun assertRecorded(vararg events: String) {
+        assertEquals(events.asList(), recordedEvents)
     }
 
     /**

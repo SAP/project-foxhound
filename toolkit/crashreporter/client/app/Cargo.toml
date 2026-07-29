@@ -43,7 +43,7 @@ objc = "0.2"
 gtk = { package = "gtkbind", path = "../gtkbind" }
 
 [target."cfg(target_os = \"windows\")".dependencies.windows-sys]
-version = "0.52"
+version = "0.61"
 features = [
     "Win32_Foundation",
     "Win32_Globalization",
@@ -74,4 +74,4 @@ yaml-rust = { version = "0.10", package = "yaml-rust2" }
 [dev-dependencies]
 bytes = "1.4"
 tokio = { version = "1.29", features = ["rt", "net", "time", "sync"] }
-warp = { version = "0.3", default-features = false }
+warp = { version = "0.4.2", default-features = false, features = ["server"] }

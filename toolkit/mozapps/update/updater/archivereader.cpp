@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -329,7 +326,8 @@ int ArchiveReader::ExtractItemToStream(const MarItem* item, FILE* fp) {
     // The return value of xz_dec_run is not XZ_OK and if it isn't XZ_STREAM_END
     // an error has occured.
     if (xz_rv != XZ_STREAM_END) {
-      ret = UNEXPECTED_XZ_ERROR;
+      ret = (xz_rv == XZ_MEM_ERROR) ? ARCHIVE_READER_MEM_ERROR
+                                    : UNEXPECTED_XZ_ERROR;
       break;
     }
 

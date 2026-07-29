@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -781,7 +779,7 @@ static nsresult ReadDir(nsDir* aDir, PRDirFlags aFlags, nsString& aName) {
       rv = ::FindNextFileW(aDir->handle, &(aDir->data));
     }
 
-    if (rv == 0) {
+    if (!rv) {
       break;
     }
 
@@ -986,7 +984,7 @@ nsLocalFile::nsLocalFile(const nsLocalFile& aOther)
       mWorkingPath(aOther.mWorkingPath) {}
 
 nsresult nsLocalFile::ResolveSymlink() {
-  std::wstring workingPath(mWorkingPath.Data());
+  std::wstring workingPath(mWorkingPath.get());
   if (!widget::WinUtils::ResolveJunctionPointsAndSymLinks(workingPath)) {
     return NS_ERROR_FAILURE;
   }
@@ -1137,7 +1135,8 @@ nsLocalFile::InitWithPath(const nsAString& aFilePath) {
   if (secondChar == L':') {
     // Make sure we have a valid drive, later code assumes the drive letter
     // is a single char a-z or A-Z.
-    if (MozPathGetDriveNumber<wchar_t>(aFilePath.Data()) == -1) {
+    if (MozPathGetDriveNumber<wchar_t>(PromiseFlatString(aFilePath).getW()) ==
+        -1) {
       return NS_ERROR_FILE_UNRECOGNIZED_PATH;
     }
   }
@@ -2162,7 +2161,7 @@ nsresult nsLocalFile::CopyMove(nsIFile* aParentDir, const nsAString& aNewName,
       }
     }
 
-    RefPtr<nsDirEnumerator> dirEnum = new nsDirEnumerator();
+    RefPtr dirEnum = MakeRefPtr<nsDirEnumerator>();
 
     rv = dirEnum->Init(this);
     if (NS_FAILED(rv)) {
@@ -2411,7 +2410,7 @@ nsLocalFile::Remove(bool aRecursive, uint32_t* aRemoveCount) {
       // with `\\?\` or longer than 260 characters on Windows 10+ system with
       // long paths enabled.
 
-      RefPtr<nsDirEnumerator> dirEnum = new nsDirEnumerator();
+      RefPtr dirEnum = MakeRefPtr<nsDirEnumerator>();
 
       rv = dirEnum->Init(this);
       if (NS_FAILED(rv)) {
@@ -3263,8 +3262,7 @@ nsLocalFile::GetDirectoryEntriesImpl(nsIDirectoryEnumerator** aEntries) {
 
   *aEntries = nullptr;
   if (mWorkingPath.EqualsLiteral("\\\\.")) {
-    RefPtr<nsDriveEnumerator> drives =
-        new nsDriveEnumerator(mUseDOSDevicePathSyntax);
+    RefPtr drives = MakeRefPtr<nsDriveEnumerator>(mUseDOSDevicePathSyntax);
     rv = drives->Init();
     if (NS_FAILED(rv)) {
       return rv;
@@ -3273,7 +3271,7 @@ nsLocalFile::GetDirectoryEntriesImpl(nsIDirectoryEnumerator** aEntries) {
     return NS_OK;
   }
 
-  RefPtr<nsDirEnumerator> dirEnum = new nsDirEnumerator();
+  RefPtr dirEnum = MakeRefPtr<nsDirEnumerator>();
   rv = dirEnum->Init(this);
   if (NS_FAILED(rv)) {
     return rv;

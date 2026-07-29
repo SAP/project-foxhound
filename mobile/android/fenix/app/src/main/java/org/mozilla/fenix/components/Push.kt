@@ -12,7 +12,7 @@ import mozilla.components.feature.push.PushConfig
 import mozilla.components.lib.crash.CrashReporter
 import mozilla.components.support.base.log.logger.Logger
 import org.mozilla.fenix.R
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.perf.lazyMonitored
 import org.mozilla.fenix.push.FirebasePushService
 
@@ -43,7 +43,7 @@ class Push(val context: Context, crashReporter: CrashReporter) {
 
         logger.debug("Creating push configuration for autopush.")
         val projectId = context.resources.getString(resId)
-        val serverOverride = context.settings().overridePushServer
+        val serverOverride = context.components.settings.overridePushServer
         if (serverOverride.isEmpty()) {
             PushConfig(projectId)
         } else {

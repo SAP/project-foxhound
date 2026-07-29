@@ -2,11 +2,24 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
 });
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "canvasMaxArea",
+  "gfx.canvas.max-area"
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "canvasMaxSize",
+  "gfx.canvas.max-size"
+);
 
 const CONTEXT_2D = "2d";
 const BG_COLOUR = "rgb(255,255,255)";
@@ -71,8 +84,27 @@ capture.canvas = async function (
   // influence rendering...
   const scale = browsingContext.overrideDPPX || win.devicePixelRatio;
 
-  let canvasHeight = height * scale;
-  let canvasWidth = width * scale;
+  const canvasHeight = height * scale;
+  const canvasWidth = width * scale;
+  const canvasArea = canvasWidth * canvasHeight;
+
+  if (canvasWidth > lazy.canvasMaxSize) {
+    throw new lazy.error.UnsupportedOperationError(
+      `${canvasWidth} exceeds the maximum allowed screenshot width of ${lazy.canvasMaxSize} pixels`
+    );
+  }
+
+  if (canvasHeight > lazy.canvasMaxSize) {
+    throw new lazy.error.UnsupportedOperationError(
+      `${canvasHeight} exceeds the maximum allowed screenshot height of ${lazy.canvasMaxSize} pixels`
+    );
+  }
+
+  if (canvasArea > lazy.canvasMaxArea) {
+    throw new lazy.error.UnsupportedOperationError(
+      `${canvasArea} exceeds the maximum allowed screenshot area of ${lazy.canvasMaxArea} square pixels`
+    );
+  }
 
   try {
     if (canvas === null) {
@@ -109,14 +141,11 @@ capture.canvas = async function (
       // because it is no longer needed.
       snapshot.close();
     }
-  } catch (e) {
-    // If we failed to create the canvas or draw the snapshot (likely due to OOM
-    // or excessive dimensions), we treat this as an unsupported operation.
-    throw new lazy.error.UnsupportedOperationError(
-      `Unable to capture screenshot: ${e.message}`
+  } catch (error) {
+    throw new lazy.error.UnknownError(
+      `Unable to capture screenshot: ${error.message}`
     );
   }
-
   return canvas;
 };
 

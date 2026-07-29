@@ -57,7 +57,7 @@ class RepeatingTaskHandle {
       absl::AnyInvocable<TimeDelta()> closure,
       TaskQueueBase::DelayPrecision precision =
           TaskQueueBase::DelayPrecision::kLow,
-      Clock* clock = Clock::GetRealTimeClockRaw(),
+      Clock* clock = Clock::GetRealTimeClockOnlyUseForRelativeTime(),
       const Location& location = Location::Current());
 
   // DelayedStart is equivalent to Start except that the first invocation of the
@@ -68,7 +68,7 @@ class RepeatingTaskHandle {
       absl::AnyInvocable<TimeDelta()> closure,
       TaskQueueBase::DelayPrecision precision =
           TaskQueueBase::DelayPrecision::kLow,
-      Clock* clock = Clock::GetRealTimeClockRaw(),
+      Clock* clock = Clock::GetRealTimeClockOnlyUseForRelativeTime(),
       const Location& location = Location::Current());
 
   // Stops future invocations of the repeating task closure. Can only be called

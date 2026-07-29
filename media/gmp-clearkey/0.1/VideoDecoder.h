@@ -20,18 +20,15 @@
 // This include is required in order for content_decryption_module to work
 // on Unix systems.
 
-#include <atomic>
 #include <queue>
-#include <thread>
 
 #include "content_decryption_module.h"
 #include "WMFH264Decoder.h"
 
 class VideoDecoder : public RefCounted {
  public:
-  explicit VideoDecoder(cdm::Host_11* aHost);
-
-  cdm::Status InitDecode(const cdm::VideoDecoderConfig_2& aConfig);
+  static VideoDecoder* Create(cdm::Host_11* aHost,
+                              const cdm::VideoDecoderConfig_2& aConfig);
 
   cdm::Status Decode(const cdm::InputBuffer_2& aEncryptedBuffer,
                      cdm::VideoFrame* aVideoFrame);
@@ -43,6 +40,7 @@ class VideoDecoder : public RefCounted {
   bool HasShutdown() { return mHasShutdown; }
 
  private:
+  VideoDecoder(cdm::Host_11* aHost, wmf::WMFH264Decoder* aDecoder);
   virtual ~VideoDecoder();
 
   cdm::Status Drain(cdm::VideoFrame* aVideoFrame);
@@ -63,9 +61,15 @@ class VideoDecoder : public RefCounted {
   cdm::Host_11* mHost;
   wmf::AutoPtr<wmf::WMFH264Decoder> mDecoder;
 
-  std::queue<wmf::CComPtr<IMFSample>> mOutputQueue;
+  struct OutputData {
+    wmf::CComPtr<IMFSample> mSample;
+    wmf::IntRect mPictureRegion;
+    int32_t mStride;
+    int32_t mFrameHeight;
+  };
+  std::queue<OutputData> mOutputQueue;
 
-  bool mHasShutdown;
+  bool mHasShutdown = false;
 };
 
 #endif  // VideoDecoder_h_

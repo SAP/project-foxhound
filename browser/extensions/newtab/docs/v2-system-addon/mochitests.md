@@ -13,10 +13,10 @@ If you add new tests, make sure to list them in the `browser.toml` file. You wil
 Here are a few tips for writing mochitests:
 
 * Only write mochitests for testing the interaction of multiple components on the page and to make sure that the protocol is working.
-* If you need to access the content page, use `ContentTask.spawn`:
+* If you need to access the content page, use `SpecialPowers.spawn`:
 
 ```js
-ContentTask.spawn(gBrowser.selectedBrowser, null, function* () {
+SpecialPowers.spawn(gBrowser.selectedBrowser, [], function* () {
   content.wrappedJSObject.foo();
 });
 ```

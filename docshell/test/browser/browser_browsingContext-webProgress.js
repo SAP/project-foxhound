@@ -34,9 +34,6 @@ add_task(async function () {
   await loaded;
 
   const firstPageBrowsingContext = browser.browsingContext;
-  const isBfcacheInParentEnabled =
-    SpecialPowers.Services.appinfo.sessionHistoryInParent &&
-    SpecialPowers.Services.prefs.getBoolPref("fission.bfcacheInParent");
   is(
     aboutBlankBrowsingContext,
     firstPageBrowsingContext,
@@ -103,6 +100,9 @@ add_task(async function () {
   await loaded;
 
   const secondPageBrowsingContext = browser.browsingContext;
+  const isBfcacheInParentEnabled = SpecialPowers.Services.prefs.getBoolPref(
+    "fission.bfcacheInParent"
+  );
   if (isBfcacheInParentEnabled) {
     isnot(
       firstPageBrowsingContext,

@@ -8,24 +8,34 @@ import android.media.MediaCodec;
 import android.media.MediaCodec.BufferInfo;
 import android.media.MediaCodec.CryptoInfo;
 import android.util.Log;
+import androidx.annotation.NonNull;
+import androidx.annotation.OptIn;
+import androidx.media3.common.C;
+import androidx.media3.common.Format;
+import androidx.media3.common.MimeTypes;
+import androidx.media3.common.util.UnstableApi;
+import androidx.media3.decoder.DecoderInputBuffer;
+import androidx.media3.exoplayer.ExoPlaybackException;
+import androidx.media3.exoplayer.RendererCapabilities;
+import androidx.media3.exoplayer.mediacodec.MediaCodecInfo;
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector;
+import androidx.media3.exoplayer.mediacodec.MediaCodecUtil;
 import java.nio.ByteBuffer;
 import java.util.List;
 import org.mozilla.geckoview.BuildConfig;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.C;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.ExoPlaybackException;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.Format;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.RendererCapabilities;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.decoder.DecoderInputBuffer;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.mediacodec.MediaCodecInfo;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.mediacodec.MediaCodecSelector;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.mediacodec.MediaCodecUtil;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.util.MimeTypes;
 
+@OptIn(markerClass = UnstableApi.class)
 public class GeckoHlsAudioRenderer extends GeckoHlsRendererBase {
   public GeckoHlsAudioRenderer(final GeckoHlsPlayer.ComponentEventDispatcher eventDispatcher) {
     super(C.TRACK_TYPE_AUDIO, eventDispatcher);
     LOGTAG = getClass().getSimpleName();
     DEBUG = !BuildConfig.MOZILLA_OFFICIAL;
+  }
+
+  @NonNull
+  @Override
+  public String getName() {
+    return "GeckoHlsAudioRenderer";
   }
 
   @Override
@@ -51,7 +61,7 @@ public class GeckoHlsAudioRenderer extends GeckoHlsRendererBase {
      */
     final String mimeType = format.sampleMimeType;
     if (!MimeTypes.isAudio(mimeType)) {
-      return RendererCapabilities.create(FORMAT_UNSUPPORTED_TYPE);
+      return RendererCapabilities.create(C.FORMAT_UNSUPPORTED_TYPE);
     }
     List<MediaCodecInfo> decoderInfos = null;
     try {
@@ -61,7 +71,7 @@ public class GeckoHlsAudioRenderer extends GeckoHlsRendererBase {
       Log.e(LOGTAG, e.getMessage());
     }
     if (decoderInfos == null || decoderInfos.isEmpty()) {
-      return RendererCapabilities.create(FORMAT_UNSUPPORTED_SUBTYPE);
+      return RendererCapabilities.create(C.FORMAT_UNSUPPORTED_SUBTYPE);
     }
     final MediaCodecInfo info = decoderInfos.get(0);
     /*
@@ -76,9 +86,9 @@ public class GeckoHlsAudioRenderer extends GeckoHlsRendererBase {
             && (format.channelCount == Format.NO_VALUE
                 || info.isAudioChannelCountSupportedV21(format.channelCount)));
     return RendererCapabilities.create(
-        decoderCapable ? FORMAT_HANDLED : FORMAT_EXCEEDS_CAPABILITIES,
-        ADAPTIVE_NOT_SEAMLESS,
-        TUNNELING_NOT_SUPPORTED);
+        decoderCapable ? C.FORMAT_HANDLED : C.FORMAT_EXCEEDS_CAPABILITIES,
+        RendererCapabilities.ADAPTIVE_NOT_SEAMLESS,
+        RendererCapabilities.TUNNELING_NOT_SUPPORTED);
   }
 
   @Override
@@ -121,7 +131,7 @@ public class GeckoHlsAudioRenderer extends GeckoHlsRendererBase {
     mInputBuffer.clear();
 
     final CryptoInfo cryptoInfo =
-        bufferForRead.isEncrypted() ? bufferForRead.cryptoInfo.getFrameworkCryptoInfoV16() : null;
+        bufferForRead.isEncrypted() ? bufferForRead.cryptoInfo.getFrameworkCryptoInfo() : null;
     final BufferInfo bufferInfo = new BufferInfo();
     // Flags in DecoderInputBuffer are synced with MediaCodec Buffer flags.
     int flags = 0;

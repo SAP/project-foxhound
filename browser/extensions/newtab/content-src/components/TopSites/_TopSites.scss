@@ -62,6 +62,10 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
     grid-template-columns: repeat(8, auto);
   }
 
+  @media (min-width: $break-point-sections-variant) {
+    grid-template-columns: repeat(var(--top-sites-max-per-row, 8), auto);
+  }
+
   a {
     text-decoration: none;
   }
@@ -137,6 +141,16 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
       display: inline-block;
     }
   }
+
+  .hide-for-small {
+    display: none;
+  }
+
+  @media (min-width: $break-point-sections-variant) {
+    .hide-for-small {
+      display: inline-block;
+    }
+  }
 }
 
 .discovery-stream.ds-layout.ds-layout-topsites {
@@ -145,6 +159,11 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
 
   .top-sites-list {
     padding-block-start: 0;
+  }
+
+  // @nova-cleanup(remove-conditional): Remove .nova-enabled selector, make default behavior
+  .nova-enabled & {
+    display: contents;
   }
 }
 
@@ -186,6 +205,10 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
 
   &:not(:hover, :active, .active) {
     @include wallpaper-contrast-fix;
+  }
+
+  .tile {
+    color-scheme: initial;
   }
 
   &.active .context-menu-button {
@@ -400,6 +423,8 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
     .tile {
       background-color: var(--button-background-color);
 
+      @include wallpaper-contrast-fix;
+
       .icon-wrapper {
         background-image: url('chrome://global/skin/icons/plus-20.svg');
         background-size: cover;
@@ -612,7 +637,7 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
     .invalid {
       input {
         &[type='text'] {
-          border: 1px solid var(--outline-color-error);
+          border: 1px solid var(--border-color-error);
           box-shadow: $input-error-boxshadow;
         }
       }

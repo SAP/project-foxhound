@@ -66,7 +66,6 @@ pub fn get_shader_features(flags: ShaderFeatureFlags) -> ShaderFeatures {
 
     // Clip shaders
     shaders.insert("cs_clip_rectangle", vec![String::new(), "FAST_PATH".to_string()]);
-    shaders.insert("cs_clip_box_shadow", vec!["TEXTURE_2D".to_string()]);
 
     // Cache shaders
     shaders.insert("cs_blur", vec!["ALPHA_TARGET".to_string(), "COLOR_TARGET".to_string()]);
@@ -75,25 +74,11 @@ pub fn get_shader_features(flags: ShaderFeatureFlags) -> ShaderFeatures {
 
     for name in &[
         "cs_line_decoration",
-        "cs_fast_linear_gradient",
         "cs_border_segment",
         "cs_border_solid",
         "cs_svg_filter_node",
     ] {
         shaders.insert(name, vec![String::new()]);
-    }
-
-    for name in &[
-        "cs_linear_gradient",
-        "cs_radial_gradient",
-        "cs_conic_gradient",
-    ] {
-        let mut features = Vec::new();
-        features.push(String::new());
-        if flags.contains(ShaderFeatureFlags::DITHERING) {
-            features.push("DITHERING".to_string());
-        }
-        shaders.insert(name, features);
     }
 
     let mut base_prim_features = FeatureList::new();
@@ -109,19 +94,6 @@ pub fn get_shader_features(flags: ShaderFeatureFlags) -> ShaderFeatures {
         shaders.insert(name, features);
     }
 
-    #[allow(clippy::single_element_loop)]
-    for name in &["brush_linear_gradient"] {
-        let mut list = FeatureList::new();
-        if flags.contains(ShaderFeatureFlags::DITHERING) {
-            list.add("DITHERING");
-        }
-        let features: Vec<String> = vec![
-            list.concat(&base_prim_features).finish(),
-            list.concat(&brush_alpha_features).finish(),
-            list.with("DEBUG_OVERDRAW").finish(),
-        ];
-        shaders.insert(name, features);
-    }
 
     {
         let features: Vec<String> = vec![
@@ -239,7 +211,24 @@ pub fn get_shader_features(flags: ShaderFeatureFlags) -> ShaderFeatures {
 
     shaders.insert("ps_split_composite", vec![base_prim_features.finish()]);
 
-    shaders.insert("ps_quad_textured", vec![base_prim_features.finish()]);
+    // ps_quad_textured needs per-texture-kind variants so that external image
+    // sources (e.g. ANGLE DXGI textures) are sampled with the correct sampler
+    // type.
+    let mut ps_quad_textured_features: Vec<String> = vec!["TEXTURE_2D".to_string()];
+    if flags.contains(ShaderFeatureFlags::GL) {
+        ps_quad_textured_features.push("TEXTURE_RECT".to_string());
+    }
+    if flags.contains(ShaderFeatureFlags::TEXTURE_EXTERNAL) {
+        ps_quad_textured_features.push("TEXTURE_EXTERNAL".to_string());
+    }
+    if flags.contains(ShaderFeatureFlags::TEXTURE_EXTERNAL_BT709) {
+        ps_quad_textured_features.push("TEXTURE_EXTERNAL_BT709".to_string());
+    }
+    shaders.insert("ps_quad_textured", ps_quad_textured_features);
+
+    shaders.insert("ps_quad_repeat", vec![base_prim_features.finish()]);
+
+    shaders.insert("ps_quad_box_shadow", vec![base_prim_features.finish()]);
 
     let mut maybe_dithering = FeatureList::new();
     if flags.contains(ShaderFeatureFlags::DITHERING) {

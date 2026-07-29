@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -47,7 +45,7 @@ class AsyncDragMetrics;
 struct APZHandledResult;
 
 class IAPZCTreeManager {
-  NS_INLINE_DECL_THREADSAFE_VIRTUAL_REFCOUNTING(IAPZCTreeManager)
+  NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
 
  public:
   /**
@@ -130,6 +128,19 @@ class IAPZCTreeManager {
    * as a long tap. This allows tests to disable long tap gesture detection.
    */
   virtual void SetLongTapEnabled(bool aTapGestureEnabled) = 0;
+
+  /**
+   * Notify APZ that the content process has just registered a non-passive
+   * APZ-aware event listener (touchstart/touchmove/touchend/wheel/...).
+   * |aGuid| identifies the nearest scroll container ancestor of the
+   * listener target (root scroll container for document/window listeners).
+   * APZ uses this signal to flag subsequent hit-test results whose target
+   * matches |aGuid| or any of its APZC-tree descendants with
+   * eApzAwareListeners, without waiting for a full paint and WebRender
+   * transaction.
+   */
+  virtual void NotifyApzAwareListenerAdded(
+      const ScrollableLayerGuid& aGuid) = 0;
 
   /**
    * Returns an APZInputBridge interface that can be used to send input

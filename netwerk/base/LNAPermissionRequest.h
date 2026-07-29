@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +9,8 @@
 #include "nsPIDOMWindow.h"
 
 namespace mozilla::net {
-static constexpr nsLiteralCString LOCAL_HOST_PERMISSION_KEY = "localhost"_ns;
+static constexpr nsLiteralCString LOOPBACK_NETWORK_PERMISSION_KEY =
+    "loopback-network"_ns;
 static constexpr nsLiteralCString LOCAL_NETWORK_PERMISSION_KEY =
     "local-network"_ns;
 
@@ -42,6 +41,7 @@ class LNAPermissionRequest final : public dom::ContentPermissionRequestBase {
  private:
   ~LNAPermissionRequest() = default;
   nsCOMPtr<nsILoadInfo> mLoadInfo;
+  RefPtr<mozilla::dom::BrowsingContext> mBrowsingContext;
   PermissionPromptCallback mPermissionPromptCallback;
   bool mPromptWasShown = false;
 };

@@ -2,13 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-:host {
-  --box-group-border: var(--border-width) solid var(--border-color);
-  --box-group-border-radius-inner: calc(var(--border-radius-medium) - var(--border-width));
+@import url("chrome://global/content/elements/moz-box.tokens.css");
 
+:host {
   display: block;
-  outline: var(--box-group-border);
-  border-radius: var(--border-radius-medium);
+  outline: var(--box-border);
+  border-radius: var(--box-border-radius);
   overflow: hidden;
 }
 
@@ -34,17 +33,17 @@ position 0 won't have the .first class */
 }
 
 ::slotted(.first) {
-  --box-border-radius-start: var(--box-group-border-radius-inner);
+  --box-border-radius-start: var(--box-border-radius-inner);
   --box-border-block-start: none;
 }
 
 ::slotted(.last) {
-  --box-border-radius-end: var(--box-group-border-radius-inner);
+  --box-border-radius-end: var(--box-border-radius-inner);
   --box-border-block-end: none;
 }
 
 slot[name="header"]::slotted(:first-child) {
-  --box-border-block-end: var(--box-group-border);
+  --box-border-block-end: var(--box-border);
 }
 
 .list {
@@ -54,6 +53,6 @@ slot[name="header"]::slotted(:first-child) {
 }
 
 .scroll-container {
-  max-height: var(--box-group-max-height);
+  max-height: var(--box-group-max-height, none);
   overflow-y: auto;
 }

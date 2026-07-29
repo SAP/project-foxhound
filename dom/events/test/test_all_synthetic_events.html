@@ -284,6 +284,8 @@ const kEventConstructors = {
                                                          return new PageTransitionEvent(aName, aProps);
                                                        },
                                              },
+  PictureInPictureEvent:                     { create: null, // Cannot create untrusted event from JS (requires a PictureInPictureWindow).
+                                             },
   PointerEvent:                              { create (aName, aProps) {
                                                          return new PointerEvent(aName, aProps);
                                                        },
@@ -316,6 +318,13 @@ const kEventConstructors = {
                                              },
   RTCDTMFToneChangeEvent:                       { create (aName, aProps) {
                                                          return new RTCDTMFToneChangeEvent(aName, aProps);
+                                                       },
+                                             },
+  RTCErrorEvent:                             {
+                                               // Difficult to test required arguments.
+                                             },
+  RTCPeerConnectionIceErrorEvent:            { create (aName, aProps) {
+                                                         return new RTCPeerConnectionIceErrorEvent(aName, Object.assign({errorCode: 701}, aProps));
                                                        },
                                              },
   RTCPeerConnectionIceEvent:                 { create (aName, aProps) {

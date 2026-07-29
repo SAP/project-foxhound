@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -57,11 +55,13 @@ uint32_t CallbackHandleAddRef(uint64_t aHandle) {
 uint32_t CallbackHandleRelease(uint64_t aHandle) {
   HandleRefCount* handlePointer =
       reinterpret_cast<HandleRefCount*>(aHandle & ~1);
-  auto refCount = --(*handlePointer);
-  if (refCount == 0) {
-    delete handlePointer;
-  }
-  return refCount;
+  return --(*handlePointer);
+}
+
+void CallbackHandleFree(uint64_t aHandle) {
+  HandleRefCount* handlePointer =
+      reinterpret_cast<HandleRefCount*>(aHandle & ~1);
+  delete handlePointer;
 }
 
 void AsyncCallbackMethodHandlerBase::ScheduleAsyncCall(

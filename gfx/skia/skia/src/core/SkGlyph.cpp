@@ -143,20 +143,17 @@ static size_t bits_to_bytes(size_t bits) {
 
 static size_t format_alignment(SkMask::Format format) {
     switch (format) {
-        case SkMask::kBW_Format:
-        case SkMask::kA8_Format:
-        case SkMask::k3D_Format:
+        case SkMask::kBW_Format:   [[fallthrough]];
+        case SkMask::kA8_Format:   [[fallthrough]];
+        case SkMask::k3D_Format:   [[fallthrough]];
         case SkMask::kSDF_Format:
             return alignof(uint8_t);
         case SkMask::kARGB32_Format:
             return alignof(uint32_t);
         case SkMask::kLCD16_Format:
             return alignof(uint16_t);
-        default:
-            SK_ABORT("Unknown mask format.");
-            break;
     }
-    return 0;
+    SkUNREACHABLE;
 }
 
 static size_t format_rowbytes(int width, SkMask::Format format) {
@@ -459,11 +456,12 @@ static std::tuple<SkScalar, SkScalar> calculate_path_gap(
     };
 
     auto addQuad = [&](SkSpan<const SkPoint> pts, SkScalar offset) {
-        SkScalar intersectionStorage[2];
+        float intersectionStorage[2];
         auto intersections = SkBezierQuad::IntersectWithHorizontalLine(
                 pts, offset, intersectionStorage);
-        for (SkScalar x : intersections) {
-            expandGap(x);
+
+        for(float intersection : intersections) {
+            expandGap(intersection);
         }
     };
 
@@ -472,7 +470,7 @@ static std::tuple<SkScalar, SkScalar> calculate_path_gap(
         auto intersections = SkBezierCubic::IntersectWithHorizontalLine(
                 pts, offset, intersectionStorage);
 
-        for(double intersection : intersections) {
+        for(float intersection : intersections) {
             expandGap(intersection);
         }
     };

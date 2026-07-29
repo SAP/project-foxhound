@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -324,7 +322,7 @@ bool gTelemetryEventCanRecordExtended;
 MOZ_RUNINIT nsTHashMap<nsCStringHashKey, EventKey> gEventNameIDMap(kEventCount);
 
 // The CategoryName set.
-MOZ_RUNINIT nsTHashSet<nsCString> gCategoryNames;
+constinit nsTHashSet<nsCString> gCategoryNames;
 
 // The main event storage. Events are inserted here, keyed by process id and
 // in recording order.
@@ -333,7 +331,7 @@ typedef nsTArray<EventRecord> EventRecordArray;
 typedef nsClassHashtable<ProcessIDHashKey, EventRecordArray>
     EventRecordsMapType;
 
-MOZ_RUNINIT EventRecordsMapType gEventRecords;
+constinit EventRecordsMapType gEventRecords;
 
 // The details on dynamic events that are recorded from addons are registered
 // here.
@@ -559,7 +557,7 @@ nsresult SerializeEventsArray(const EventRecordArray& events, JSContext* cx,
 
     // Add timestamp.
     JS::Rooted<JS::Value> val(cx);
-    if (!items.append(JS::NumberValue(floor(record.Timestamp())))) {
+    if (!items.append(JS_NumberValue(floor(record.Timestamp())))) {
       return NS_ERROR_FAILURE;
     }
 

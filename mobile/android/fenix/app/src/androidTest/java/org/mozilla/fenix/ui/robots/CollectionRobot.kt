@@ -16,12 +16,14 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.swipeRight
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.pressImeActionButton
 import androidx.test.espresso.matcher.RootMatchers
 import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.uiautomator.By
-import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiSelector
 import androidx.test.uiautomator.Until
 import org.mozilla.fenix.R
@@ -33,9 +35,9 @@ import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResId
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithText
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
+import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeLong
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.packageName
-import org.mozilla.fenix.helpers.TestHelper.waitForAppWindowToBeUpdated
 import org.mozilla.fenix.helpers.click
 import org.mozilla.fenix.helpers.ext.waitNotNull
 
@@ -96,7 +98,7 @@ class CollectionRobot(private val composeTestRule: ComposeTestRule) {
             composeTestRule.waitUntil(waitingTime) {
                 composeTestRule
                     .onAllNodesWithText(title)
-                    .fetchSemanticsNodes()
+                    .fetchSemanticsNodes(atLeastOneRootRequired = false)
                     .isNotEmpty()
             }
             Log.i(TAG, "verifyTabSavedInCollection: Tab with title '$title' is now present")
@@ -110,10 +112,10 @@ class CollectionRobot(private val composeTestRule: ComposeTestRule) {
             Log.i(TAG, "verifyTabSavedInCollection: Verified that tab with title: $title is displayed")
         } else {
             Log.i(TAG, "verifyTabSavedInCollection: Waiting for tab with title '$title' to be removed")
-            composeTestRule.waitUntil(waitingTime) {
+            composeTestRule.waitUntil(waitingTimeLong) {
                 composeTestRule
                     .onAllNodesWithText(title)
-                    .fetchSemanticsNodes()
+                    .fetchSemanticsNodes(atLeastOneRootRequired = false)
                     .isEmpty()
             }
             Log.i(TAG, "verifyTabSavedInCollection: Tab with title '$title' is no longer present")
@@ -247,16 +249,18 @@ class CollectionRobot(private val composeTestRule: ComposeTestRule) {
 
     fun swipeTabLeft(title: String) {
         Log.i(TAG, "swipeTabLeft: Trying to swipe left the collections tab with title: $title")
-        mDevice.findObject(By.textContains(title)).swipe(Direction.LEFT, 1.0f, 8000)
+        composeTestRule.onAllNodesWithText(title)[0].performTouchInput { swipeLeft() }
         Log.i(TAG, "swipeTabLeft: Swiped left the collections tab with title: $title")
-        waitForAppWindowToBeUpdated()
+        composeTestRule.waitForIdle()
+        mDevice.waitForIdle()
     }
 
     fun swipeTabRight(title: String) {
         Log.i(TAG, "swipeTabRight: Trying to swipe right the collections tab with title: $title")
-        mDevice.findObject(By.textContains(title)).swipe(Direction.RIGHT, 1.0f, 8000)
+        composeTestRule.onAllNodesWithText(title)[0].performTouchInput { swipeRight() }
         Log.i(TAG, "swipeTabRight: Swiped right the collections tab with title: $title")
-        waitForAppWindowToBeUpdated()
+        composeTestRule.waitForIdle()
+        mDevice.waitForIdle()
     }
 
     fun goBackInCollectionFlow() {

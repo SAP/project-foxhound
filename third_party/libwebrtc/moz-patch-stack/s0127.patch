@@ -1,23 +1,23 @@
 From: Michael Froman <mfroman@mozilla.com>
-Date: Wed, 8 Oct 2025 16:39:00 -0500
-Subject: Bug 1993083 - (fix-032f8c223e) add missing stub implementation for
- SSLStreamAdapter static method.
+Date: Fri, 16 Jan 2026 20:25:00 -0600
+Subject: Bug 2010312 - (fix-20159a54f6) fix new usage of GetRealTimeClock in
+ libaom_av1_encoder.cc
 
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/293f1877fead30723696b8f5cb354bdf819af5d3
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/c00f6910cab76176f0caf946f2af480cac016e38
 ---
- rtc_base/ssl_stream_adapter.h | 2 +-
+ modules/video_coding/codecs/av1/libaom_av1_encoder.cc | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/rtc_base/ssl_stream_adapter.h b/rtc_base/ssl_stream_adapter.h
-index 24fc299b82..ec16887eac 100644
---- a/rtc_base/ssl_stream_adapter.h
-+++ b/rtc_base/ssl_stream_adapter.h
-@@ -247,7 +247,7 @@ class SSLStreamAdapter : public StreamInterface {
-   static std::set<uint16_t> GetSupportedEphemeralKeyExchangeCipherGroups()
-       { return {}; }
-   static std::optional<std::string> GetEphemeralKeyExchangeCipherGroupName(
--      uint16_t group_id);
-+      uint16_t group_id) { return std::nullopt; }
-   static std::vector<uint16_t> GetDefaultEphemeralKeyExchangeCipherGroups(
-       const FieldTrialsView* field_trials) { return {}; }
+diff --git a/modules/video_coding/codecs/av1/libaom_av1_encoder.cc b/modules/video_coding/codecs/av1/libaom_av1_encoder.cc
+index dbfde9f90a..dc27b1f170 100644
+--- a/modules/video_coding/codecs/av1/libaom_av1_encoder.cc
++++ b/modules/video_coding/codecs/av1/libaom_av1_encoder.cc
+@@ -278,7 +278,7 @@ LibaomAv1Encoder::LibaomAv1Encoder(const Environment& env,
+       drop_repeat_frames_on_enhancement_layers_(env.field_trials().IsEnabled(
+           "WebRTC-LibaomAv1Encoder-DropRepeatFramesOnEnhancementLayers")),
+       encoder_speed_experiment_(env.field_trials()),
+-      realtime_clock_(Clock::GetRealTimeClock()) {}
++      realtime_clock_(Clock::GetRealTimeClockRaw()) {}
  
+ LibaomAv1Encoder::~LibaomAv1Encoder() {
+   Release();

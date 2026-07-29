@@ -25,12 +25,12 @@ var testData = [
   ["VK_DOWN", {}, "blanchedalmond", OPEN, SELECTED, CHANGE],
   ["VK_DOWN", {}, "blue", OPEN, SELECTED, CHANGE],
   ["VK_RIGHT", {}, "blue", !OPEN, !SELECTED, !CHANGE],
-  [" ", {}, "blue aliceblue", OPEN, SELECTED, CHANGE],
+  [" ", {}, "blue aliceblue", OPEN, SELECTED, !CHANGE], // There is no change as the value is only set to "blue"
   ["!", {}, "blue !important", !OPEN, !SELECTED, CHANGE],
-  ["VK_BACK_SPACE", {}, "blue !", !OPEN, !SELECTED, CHANGE],
+  ["VK_BACK_SPACE", {}, "blue !", !OPEN, !SELECTED, !CHANGE],
   ["VK_BACK_SPACE", {}, "blue ", !OPEN, !SELECTED, CHANGE],
-  ["VK_BACK_SPACE", {}, "blue", !OPEN, !SELECTED, CHANGE],
-  ["VK_TAB", { shiftKey: true }, "color", !OPEN, !SELECTED, CHANGE],
+  ["VK_BACK_SPACE", {}, "blue", !OPEN, !SELECTED, !CHANGE],
+  ["VK_TAB", { shiftKey: true }, "color", !OPEN, !SELECTED, !CHANGE],
   ["VK_BACK_SPACE", {}, "", !OPEN, !SELECTED, !CHANGE],
   ["d", {}, "display", OPEN, SELECTED, !CHANGE],
   ["VK_TAB", {}, "blue", !OPEN, !SELECTED, CHANGE],
@@ -86,7 +86,11 @@ async function testCompletion(
     // always be the last to be triggered and tells us when the preview has
     // been done.
     promises.push(view.once("ruleview-changed"));
-  } else if (key !== "VK_RIGHT" && key !== "VK_BACK_SPACE") {
+  } else if (
+    key !== "VK_RIGHT" &&
+    key !== "VK_BACK_SPACE" &&
+    key !== "VK_TAB"
+  ) {
     // Otherwise, expect an after-suggest event (except if the autocomplete gets dismissed).
     promises.push(editor.once("after-suggest"));
   }

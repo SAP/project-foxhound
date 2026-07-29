@@ -38,30 +38,18 @@ dependencyResolutionManagement {
 ext.topsrcdir = rootProject.projectDir.absolutePath.minus("mobile/android/fenix")
 
 apply from: file('../shared-settings.gradle')
-apply from: file('../autopublish-settings.gradle')
 
 if (gradle.ext.mozconfig.substs.MOZ_APPSERVICES_IN_TREE) {
-    apply from: file("${topsrcdir}/services/app-services/settings.gradle")
+    apply from: file("${topsrcdir}/third_party/application-services/settings.gradle")
 }
 
 include ':app'
+include ':app:longfox'
 include ':mozilla-detekt-rules'
 include ':benchmark'
 
-gradle.projectsLoaded { ->
-    // Disables A-C tests and lint when building Fenix.
-    gradle.allprojects { project ->
-        if (project.projectDir.absolutePath.contains("/android-components/")) {
-            project.tasks.withType(Test).configureEach {
-                enabled = false
-            }
-            project.tasks.configureEach { task ->
-                if (task.name.contains("lint")) {
-                    task.enabled = false
-                }
-            }
-        }
-    }
+mozilla {
+    disableAndroidComponentsTasks = true
 }
 
 def projectLocalProperties = file("local.properties").with { localPropertiesFile ->

@@ -20,12 +20,12 @@ async function openOverflowPanel() {
   await shown;
 }
 
-async function hideOverflowPanel() {
-  let overflowButton = document.getElementById("nav-bar-overflow-button");
+/**
+ * @returns {Promise}
+ */
+function promiseOverflowHidden() {
   let menu = document.getElementById("widget-overflow");
-  let hidden = BrowserTestUtils.waitForEvent(menu, "popuphidden");
-  overflowButton.click();
-  await hidden;
+  return BrowserTestUtils.waitForEvent(menu, "popuphidden");
 }
 
 add_setup(async function () {
@@ -57,12 +57,27 @@ add_task(async function test_fixedOverflow() {
   Assert.ok(searchbar.inOverflowPanel, "Was moved to overflow panel");
   await openOverflowPanel();
 
+  for (let i = 0; i < 10; i++) {
+    EventUtils.synthesizeKey("KEY_Tab");
+    if (searchbar.focused) {
+      break;
+    }
+  }
+  Assert.ok(searchbar.focused, "Searchbar is focused eventually");
+  EventUtils.synthesizeKey("KEY_Tab", { shiftKey: true });
+  Assert.equal(
+    document.activeElement,
+    searchbar.querySelector(".searchmode-switcher"),
+    "Previous focusable element is the searchmode switcher"
+  );
+  EventUtils.synthesizeKey("KEY_Tab");
+  Assert.ok(searchbar.focused, "Searchbar is focused again");
+
   // Clear lastQueryContextPromise in case another test ran before.
   searchbar.lastQueryContextPromise = Promise.resolve();
 
   // The search term is a URL but it should still be searched.
   let searchTerm = "https://example.com/";
-  searchbar.focus();
   EventUtils.sendString(searchTerm);
 
   let lastQueryContext = await searchbar.lastQueryContextPromise;
@@ -76,21 +91,19 @@ add_task(async function test_fixedOverflow() {
   Assert.equal(gBrowser.currentURI.spec, expectedUrl, "Search successful");
   Assert.equal(searchbar.value, searchTerm, "Search term was persisted");
 
-  info("Try entering search mode.");
+  info("Try searching");
   let popup = await SearchbarTestUtils.openSearchModeSwitcher(window);
   Assert.ok(true, "Can open search mode switcher");
-  popup.querySelector("menuitem[label=engine2]").click();
-  await SearchbarTestUtils.assertSearchMode(window, {
-    engineName: "engine2",
-    entry: "searchbutton",
-    source: 3,
-  });
-  Assert.ok(true, "Entered search mode");
-
-  info("Try searching in search mode.");
-  searchbar.querySelector(".urlbar-go-button").click();
-  await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
   expectedUrl = engine2.getSubmission(searchTerm).uri.spec;
+  let browserLoaded = BrowserTestUtils.browserLoaded(
+    gBrowser.selectedBrowser,
+    false,
+    expectedUrl
+  );
+  popup.querySelector('panel-item[data-engine-name="engine2"]').click();
+  EventUtils.synthesizeKey("KEY_Enter");
+
+  await browserLoaded;
   Assert.equal(gBrowser.currentURI.spec, expectedUrl, "Used correct engine");
   Assert.equal(searchbar.value, searchTerm, "Search term was persisted");
   await SearchbarTestUtils.assertSearchMode(window, {
@@ -106,7 +119,18 @@ add_task(async function test_fixedOverflow() {
   await SearchbarTestUtils.assertSearchMode(window, null);
   Assert.ok(true, "Exited search mode");
 
-  await hideOverflowPanel();
+  await SearchbarTestUtils.withContextMenu(window, () => {});
+  Assert.equal(
+    document.getElementById("widget-overflow").state,
+    "open",
+    "Opening the context menu doesn't close the overflow panel"
+  );
+
+  let hiddenPanelPromise = promiseOverflowHidden(window);
+  EventUtils.synthesizeKey("KEY_Escape");
+  await hiddenPanelPromise;
+  Assert.ok(true, "Escape closes overflow panel");
+
   // Move back to the navbar.
   await gCUITestUtils.addSearchBar();
 });
@@ -165,4 +189,27 @@ add_task(async function test_overflowing() {
   });
   Assert.ok(searchbar.view.isOpen, "Results panel is open");
   searchbar.handleRevert();
+});
+
+// Make sure tab navigation in the overflow panel didn't break tab
+// navigation in the navbar. This happened in the past because the
+// PanelView code set tabindex="-1" on the input element.
+add_task(async function test_tabNavigation() {
+  gURLBar.focus();
+  // Move across site actions.
+  for (let i = 0; i < 10; i++) {
+    EventUtils.synthesizeKey("KEY_Tab");
+    if (searchbar.focused) {
+      break;
+    }
+  }
+  Assert.ok(searchbar.focused, "Searchbar is focused eventually");
+  EventUtils.synthesizeKey("KEY_Tab", { shiftKey: true });
+  Assert.equal(
+    document.activeElement,
+    searchbar.querySelector(".searchmode-switcher"),
+    "Previous focusable element is the searchmode switcher"
+  );
+  EventUtils.synthesizeKey("KEY_Tab");
+  Assert.ok(searchbar.focused, "Searchbar is focused again");
 });

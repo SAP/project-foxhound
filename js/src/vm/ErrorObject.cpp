@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sw=2 et tw=80:
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,6 +10,8 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Maybe.h"
 
+#include <algorithm>
+#include <cmath>
 #include <utility>
 
 #include "jspubtd.h"
@@ -110,6 +110,12 @@ static const JSFunctionSpec error_static_methods[] = {
     JS_FS_END,
 };
 
+static const JSPropertySpec error_static_properties[] = {
+    JS_INT32_PS("stackTraceLimit", int32_t(MAX_REPORTED_STACK_DEPTH),
+                JSPROP_ENUMERATE),
+    JS_PS_END,
+};
+
 // Error.prototype and NativeError.prototype have own .message and .name
 // properties.
 #define COMMON_ERROR_PROPERTIES(name) \
@@ -167,7 +173,8 @@ IMPLEMENT_NATIVE_ERROR_PROPERTIES(SuspendError)
 
 const ClassSpec ErrorObject::classSpecs[JSEXN_ERROR_LIMIT] = {
     {ErrorObject::createConstructor, ErrorObject::createProto,
-     error_static_methods, nullptr, error_methods, error_properties},
+     error_static_methods, error_static_properties, error_methods,
+     error_properties},
 
     IMPLEMENT_NATIVE_ERROR_SPEC(InternalError),
     IMPLEMENT_NATIVE_ERROR_SPEC(AggregateError),
@@ -210,16 +217,7 @@ const ClassSpec ErrorObject::classSpecs[JSEXN_ERROR_LIMIT] = {
 static void exn_finalize(JS::GCContext* gcx, JSObject* obj);
 
 static const JSClassOps ErrorObjectClassOps = {
-    nullptr,       // addProperty
-    nullptr,       // delProperty
-    nullptr,       // enumerate
-    nullptr,       // newEnumerate
-    nullptr,       // resolve
-    nullptr,       // mayResolve
-    exn_finalize,  // finalize
-    nullptr,       // call
-    nullptr,       // construct
-    nullptr,       // trace
+    .finalize = exn_finalize,
 };
 
 const JSClass ErrorObject::classes[JSEXN_ERROR_LIMIT] = {
@@ -327,13 +325,24 @@ static ErrorObject* CreateErrorObject(JSContext* cx, const CallArgs& args,
     columnNumber = JS::ColumnNumberOneOrigin(tmp.oneOriginValue());
   }
 
+  mozilla::Maybe<uint32_t> limit = GetStackTraceLimit(cx);
   RootedObject stack(cx);
-  if (!CaptureStack(cx, &stack)) {
+  if (!CaptureStack(cx, &stack, limit.valueOr(0))) {
     return nullptr;
   }
 
-  return ErrorObject::create(cx, exnType, stack, fileName, sourceId, lineNumber,
-                             columnNumber, nullptr, message, cause, proto);
+  Rooted<ErrorObject*> errObject(
+      cx,
+      ErrorObject::create(cx, exnType, stack, fileName, sourceId, lineNumber,
+                          columnNumber, nullptr, message, cause, proto));
+  if (!errObject) {
+    return nullptr;
+  }
+  if (limit.isNothing() && !DefineDataProperty(cx, errObject, cx->names().stack,
+                                               JS::UndefinedHandleValue)) {
+    return nullptr;
+  }
+  return errObject;
 }
 
 static bool Error(JSContext* cx, unsigned argc, Value* vp) {
@@ -1013,6 +1022,42 @@ static bool exn_isError(JSContext* cx, unsigned argc, Value* vp) {
 
 // The below is the "documentation" from https://v8.dev/docs/stack-trace-api
 //
+// Setting it to 0 disables stack trace collection. Any finite integer value
+// can be used as the maximum number of frames to collect. Setting it to
+// Infinity means that all frames get collected. This variable only affects
+// the current context; it has to be set explicitly for each context that
+// needs a different value.
+//
+// Undocumented, but setting it to `undefined` will cause the `stack`
+// property to also be `undefined`. In this case, we return Nothing.
+mozilla::Maybe<uint32_t> js::GetStackTraceLimit(JSContext* cx) {
+  if (!JS::Prefs::experimental_error_stack_trace_limit()) {
+    return mozilla::Some(uint32_t(MAX_REPORTED_STACK_DEPTH));
+  }
+  JSObject* errorCtor = cx->global()->maybeGetConstructor(JSProto_Error);
+  if (!errorCtor) {
+    return mozilla::Some(uint32_t(MAX_REPORTED_STACK_DEPTH));
+  }
+  Value limitVal;
+  if (!GetPropertyPure(cx, errorCtor, NameToId(cx->names().stackTraceLimit),
+                       &limitVal)) {
+    return mozilla::Some(uint32_t(MAX_REPORTED_STACK_DEPTH));
+  }
+  if (limitVal.isUndefined()) {
+    return mozilla::Nothing();
+  }
+  if (!limitVal.isNumber()) {
+    return mozilla::Some(uint32_t(0));
+  }
+  double d = limitVal.toNumber();
+  if (std::isnan(d) || d < 0) {
+    return mozilla::Some(uint32_t(0));
+  }
+  return mozilla::Some(uint32_t(std::min(d, double(MAX_REPORTED_STACK_DEPTH))));
+}
+
+// The below is the "documentation" from https://v8.dev/docs/stack-trace-api
+//
 //  ## Stack trace collection for custom exceptions
 //
 //  The stack trace mechanism used for built-in errors is implemented using a
@@ -1065,27 +1110,32 @@ static bool exn_captureStackTrace(JSContext* cx, unsigned argc, Value* vp) {
     }
   }
 
-  RootedObject stack(cx);
-  if (!CaptureCurrentStack(
-          cx, &stack, JS::StackCapture(JS::MaxFrames(MAX_REPORTED_STACK_DEPTH)),
-          caller)) {
-    return false;
-  }
+  mozilla::Maybe<uint32_t> limit = GetStackTraceLimit(cx);
+  RootedValue stackVal(cx, UndefinedValue());
+  if (limit.isSome()) {
+    RootedObject stack(cx);
+    if (*limit > 0) {
+      if (!CaptureCurrentStack(
+              cx, &stack, JS::StackCapture(JS::MaxFrames(*limit)), caller)) {
+        return false;
+      }
+    }
 
-  RootedString stackString(cx);
+    RootedString stackString(cx);
 
-  // Do frame filtering based on the current realm, to filter out any
-  // chrome frames which could exist on the stack.
-  JSPrincipals* principals = cx->realm()->principals();
-  if (!BuildStackString(cx, principals, stack, &stackString)) {
-    return false;
+    // Do frame filtering based on the current realm, to filter out any
+    // chrome frames which could exist on the stack.
+    JSPrincipals* principals = cx->realm()->principals();
+    if (!BuildStackString(cx, principals, stack, &stackString)) {
+      return false;
+    }
+    stackVal.setString(stackString);
   }
 
   // V8 installs a non-enumerable, configurable getter-setter on the object.
   // JSC installs a non-enumerable, configurable, writable value on the
   // object. We are following JSC here, not V8.
-  RootedValue string(cx, StringValue(stackString));
-  if (!DefineDataProperty(cx, obj, cx->names().stack, string, 0)) {
+  if (!DefineDataProperty(cx, obj, cx->names().stack, stackVal, 0)) {
     return false;
   }
 
@@ -1243,16 +1293,19 @@ struct SuppressErrorsGuard {
   ~SuppressErrorsGuard() { JS::SetWarningReporter(cx, prevReporter); }
 };
 
-bool js::CaptureStack(JSContext* cx, MutableHandleObject stack) {
-  return CaptureCurrentStack(
-      cx, stack, JS::StackCapture(JS::MaxFrames(MAX_REPORTED_STACK_DEPTH)));
+bool js::CaptureStack(JSContext* cx, MutableHandleObject stack,
+                      uint32_t limit) {
+  if (limit == 0) {
+    return true;
+  }
+  return CaptureCurrentStack(cx, stack, JS::StackCapture(JS::MaxFrames(limit)));
 }
 
 JSString* js::ComputeStackString(JSContext* cx) {
   SuppressErrorsGuard seg(cx);
 
   RootedObject stack(cx);
-  if (!CaptureStack(cx, &stack)) {
+  if (!CaptureStack(cx, &stack, MAX_REPORTED_STACK_DEPTH)) {
     return nullptr;
   }
 
@@ -1366,8 +1419,9 @@ bool js::ErrorToException(JSContext* cx, JSErrorReport* reportp,
   // Error reports don't provide a |cause|, so we default to |Nothing| here.
   auto cause = JS::NothingHandleValue;
 
+  mozilla::Maybe<uint32_t> limit = GetStackTraceLimit(cx);
   RootedObject stack(cx);
-  if (!CaptureStack(cx, &stack)) {
+  if (!CaptureStack(cx, &stack, limit.valueOr(0))) {
     return false;
   }
 
@@ -1376,11 +1430,18 @@ bool js::ErrorToException(JSContext* cx, JSErrorReport* reportp,
     return false;
   }
 
-  ErrorObject* errObject =
+  Rooted<ErrorObject*> errObject(
+      cx,
       ErrorObject::create(cx, exnType, stack, fileName, sourceId, lineNumber,
-                          columnNumber, std::move(report), messageStr, cause);
+                          columnNumber, std::move(report), messageStr, cause));
   if (!errObject) {
     return false;
+  }
+  if (limit.isNothing()) {
+    if (!DefineDataProperty(cx, errObject, cx->names().stack,
+                            JS::UndefinedHandleValue)) {
+      return false;
+    }
   }
 
   // Throw it.
@@ -1839,9 +1900,21 @@ JSObject* js::CopyErrorObject(JSContext* cx, Handle<ErrorObject*> err) {
   JSExnType errorType = err->type();
 
   // Create the Error object.
-  return ErrorObject::create(cx, errorType, stack, fileName, sourceId,
-                             lineNumber, columnNumber, std::move(copyReport),
-                             message, cause);
+  Rooted<ErrorObject*> copy(
+      cx,
+      ErrorObject::create(cx, errorType, stack, fileName, sourceId, lineNumber,
+                          columnNumber, std::move(copyReport), message, cause));
+  if (!copy) {
+    return nullptr;
+  }
+
+  // Preserve the Wasm trap flag so that a copied trap remains uncatchable by
+  // Wasm exception handling (catch_all).
+  if (err->mightBeWasmTrap() && err->fromWasmTrap()) {
+    copy->setFromWasmTrap();
+  }
+
+  return copy;
 }
 
 JS_PUBLIC_API bool JS::CreateError(JSContext* cx, JSExnType type,

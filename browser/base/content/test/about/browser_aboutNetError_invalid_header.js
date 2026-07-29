@@ -45,7 +45,22 @@ add_task(async function test_invalidHeaderValue() {
         const card = netErrorCard.wrappedJSObject;
         await card.getUpdateComplete();
 
-        titleEl = card.netErrorTitleText;
+        titleEl = card.errorTitle;
+        is(
+          card.errorIntro.dataset.l10nId,
+          "fp-neterror-invalid-header-value-intro",
+          "Using the invalidHeaderValue intro"
+        );
+        const list = card.renderRoot.querySelector(".what-can-you-do-list");
+        ok(list, "NetErrorCard has what-can-you-do list");
+        ok(
+          list.querySelector('[data-l10n-id="neterror-load-error-try-again"]'),
+          "List includes try-again item"
+        );
+        ok(
+          list.querySelector('[data-l10n-id="neterror-http-error-page"]'),
+          "List includes http-error-page item"
+        );
       } else {
         titleEl = doc.querySelector(".title-text");
 

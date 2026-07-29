@@ -25,15 +25,22 @@ object SettingsSelectors {
         groups = listOf("generalSettingsSection"),
     )
 
+    val SETTINGS_TITLE = Selector(
+        strategy = SelectorStrategy.ESPRESSO_BY_TEXT,
+        value = getStringResource(R.string.settings),
+        description = "Settings screen title",
+        groups = listOf("requiredForPage"),
+    )
+
     val SEARCH_BUTTON = Selector(
-        strategy = SelectorStrategy.UIAUTOMATOR2_BY_TEXT,
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
         value = "Search",
         description = "the Search button",
         groups = listOf("generalSettingsSection"),
     )
 
     val TABS_BUTTON = Selector(
-        strategy = SelectorStrategy.UIAUTOMATOR2_BY_TEXT,
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
         value = "Tabs",
         description = "the Tabs button",
         groups = listOf("generalSettingsSection"),
@@ -82,35 +89,35 @@ object SettingsSelectors {
     )
 
     val DATA_COLLECTION_BUTTON = Selector(
-        strategy = SelectorStrategy.UIAUTOMATOR2_BY_TEXT,
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
         value = "Data collection",
         description = "the Data Collection button",
         groups = listOf("privacyAndSecuritySettingsSection"),
     )
 
     val DELETE_BROWSING_DATA_ON_QUIT_BUTTON = Selector(
-        strategy = SelectorStrategy.UIAUTOMATOR2_BY_TEXT,
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
         value = "Delete browsing data on quit",
         description = "the Delete browsing data on quit button",
         groups = listOf("privacyAndSecuritySettingsSection"),
     )
 
     val DELETE_BROWSING_DATA_BUTTON = Selector(
-        strategy = SelectorStrategy.UIAUTOMATOR2_BY_TEXT,
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
         value = "Delete browsing data",
         description = "the Delete browsing data button",
         groups = listOf("privacyAndSecuritySettingsSection"),
     )
 
     val ENHANCED_TRACKING_PROTECTION_BUTTON = Selector(
-        strategy = SelectorStrategy.UIAUTOMATOR2_BY_TEXT,
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
         value = "Enhanced Tracking Protection",
         description = "the Enhanced tracking protection button",
         groups = listOf("privacyAndSecuritySettingsSection"),
     )
 
     val HTTPS_ONLY_MODE_BUTTON = Selector(
-        strategy = SelectorStrategy.UIAUTOMATOR2_BY_TEXT,
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
         value = getStringResource(R.string.preferences_https_only_title),
         description = "the HTTPS only mode button",
         groups = listOf("privacyAndSecuritySettingsSection"),
@@ -124,23 +131,23 @@ object SettingsSelectors {
     )
 
     val OPEN_LINKS_IN_APPS_BUTTON = Selector(
-        strategy = SelectorStrategy.ESPRESSO_BY_TEXT,
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
         value = "Open links in apps",
         description = "the Open links in apps button",
         groups = listOf("advancedSettingsSection"),
     )
 
     val PRIVATE_BROWSING_BUTTON = Selector(
-        strategy = SelectorStrategy.UIAUTOMATOR2_BY_TEXT,
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
         value = "Private browsing",
         description = "the Private browsing button",
         groups = listOf("privacyAndSecuritySettingsSection"),
     )
 
     val TRANSLATIONS_BUTTON = Selector(
-        strategy = SelectorStrategy.UIAUTOMATOR2_BY_TEXT,
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
         value = "Translations",
-        description = "the Private browsing button",
+        description = "the Translations button",
         groups = listOf("generalSettingsSection"),
     )
 
@@ -152,7 +159,7 @@ object SettingsSelectors {
     )
 
     val NOTIFICATIONS_BUTTON = Selector(
-        strategy = SelectorStrategy.UIAUTOMATOR2_BY_TEXT,
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
         value = "Notifications",
         description = "the Notifications button",
         groups = listOf("privacyAndSecuritySettingsSection"),
@@ -166,14 +173,14 @@ object SettingsSelectors {
     )
 
     val SITE_SETTINGS_BUTTON = Selector(
-        strategy = SelectorStrategy.UIAUTOMATOR2_BY_TEXT,
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
         value = "Site settings",
         description = "the Site settings button",
         groups = listOf("privacyAndSecuritySettingsSection"),
     )
 
     val ABOUT_SECTION_TITLE = Selector(
-        strategy = SelectorStrategy.UIAUTOMATOR2_BY_TEXT,
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
         value = "About",
         description = "The About Section Title",
         groups = listOf("aboutSection", "requiresScroll"),
@@ -193,9 +200,66 @@ object SettingsSelectors {
         groups = listOf("aboutSection", "aboutFirefox", "requiresScroll"),
     )
 
+    val SEARCH_DEFAULT_SUMMARY = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
+        value = "Google",
+        description = "the Search default summary",
+        groups = listOf("defaultValues"),
+    )
+
+    val TABS_DEFAULT_SUMMARY = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
+        value = "Close manually",
+        description = "the Tabs default summary",
+        groups = listOf("defaultValues"),
+    )
+
+    val ETP_DEFAULT_SUMMARY = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
+        value = "Standard",
+        description = "the Enhanced Tracking Protection default summary",
+        groups = listOf("defaultValues"),
+    )
+
+    val NOTIFICATIONS_DEFAULT_SUMMARY = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
+        value = "Allowed",
+        description = "the Notifications default summary",
+        groups = listOf("defaultValues"),
+    )
+
+    val SET_AS_DEFAULT_BROWSER_BUTTON = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
+        value = "Set as default browser",
+        description = "the Set as default browser button",
+        groups = listOf("defaultValues"),
+    )
+
+    val DOWNLOADS_BUTTON = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
+        value = "Downloads",
+        description = "the Downloads button",
+        groups = listOf("advancedSettingsSection", "defaultValues"),
+    )
+
+    val OPEN_LINKS_IN_APPS_DEFAULT_SUMMARY = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
+        value = "Ask before opening",
+        description = "the Open links in apps default summary",
+        groups = listOf("defaultValues"),
+    )
+
+    val HTTPS_ONLY_MODE_ON_ALL_TABS_SUMMARY = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
+        value = "On in all tabs",
+        description = "HTTPS-Only Mode summary - On in all tabs",
+        groups = listOf(),
+    )
+
     val all = listOf(
         GO_BACK_BUTTON,
         GENERAL_HEADING,
+        SETTINGS_TITLE,
         SEARCH_BUTTON,
         TABS_BUTTON,
         ACCESSIBILITY_BUTTON,
@@ -220,5 +284,13 @@ object SettingsSelectors {
         ABOUT_FIREFOX_BUTTON,
         ABOUT_SECTION_TITLE,
         RATE_ON_GOOGLE_PLAY_BUTTON,
+        SEARCH_DEFAULT_SUMMARY,
+        TABS_DEFAULT_SUMMARY,
+        ETP_DEFAULT_SUMMARY,
+        NOTIFICATIONS_DEFAULT_SUMMARY,
+        SET_AS_DEFAULT_BROWSER_BUTTON,
+        DOWNLOADS_BUTTON,
+        OPEN_LINKS_IN_APPS_DEFAULT_SUMMARY,
+        HTTPS_ONLY_MODE_ON_ALL_TABS_SUMMARY,
     )
 }

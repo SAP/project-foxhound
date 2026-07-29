@@ -87,13 +87,6 @@ data class Login(
      */
     val timePasswordChanged: Long = 0L,
     /**
-     * Time of last breach in milliseconds from the unix epoch.
-     * A breach indicates that the login's origin has been found in a known data breach.
-     * This timestamp represents when the breach affecting this login's origin was last detected.
-     * Note: Breach information is ingested on Desktop.
-     */
-    val timeOfLastBreach: Long? = null,
-    /**
      * Time of last breach alert dismissal in milliseconds from the unix epoch.
      * This field is set on Desktop when a user discards the warning message of the breach.
      */
@@ -222,10 +215,24 @@ interface LoginsStorage : Storage, StorageMaintenanceRegistry, AutoCloseable {
      * (missing password, origin, or doesn't have exactly one of formSubmitURL
      * and httpRealm).
      *
-     * @param login [LoginEntry] to add.
+     * @param entry [LoginEntry] to add.
      * @return [EncryptedLogin] that was added
      */
     suspend fun add(entry: LoginEntry): Login
+
+    /**
+     * Inserts the provided logins into the database.
+     *
+     * Each entry is processed independently: the returned list contains one
+     * [Result] per input entry, in the same order as [entries]. A failed
+     * [Result] indicates the corresponding entry was invalid (missing password,
+     * origin, or doesn't have exactly one of formSubmitURL and httpRealm) and
+     * was not inserted; other entries are still inserted.
+     *
+     * @param entries [List] of [LoginEntry] to add.
+     * @return [List] of [Result] containing the [Login] that was added for each entry.
+     */
+    suspend fun addMany(entries: List<LoginEntry>): List<Result<Login>>
 
     /**
      * Updates an existing login in the database

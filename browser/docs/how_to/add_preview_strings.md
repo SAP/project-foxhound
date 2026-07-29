@@ -73,7 +73,7 @@ preview/myNewFeature.ftl      (../locales-preview/myNewFeature.ftl)
 We're mapping the Fluent file on disk to the path that will ultimately be used
 to access it in script and markup (`"preview/myNewFeature.ftl"`).
 
-### 3. Load the preview Fluent file in the areas where you need it.
+### 3. Load the preview Fluent file in the areas where you need it
 
 Supposing you need the strings in the main browser window, that would be in the
 `<head>` of the `browser.xhtml` document. If you needed the strings inside of

@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl')||!this.Intl.Segmenter)
-
 // Sentence boundaries can be locale dependent. The following locales don't use
 // any custom tailoring, so they should give the same results.
 const locales = [

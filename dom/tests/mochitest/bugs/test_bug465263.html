@@ -15,9 +15,13 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=465263
   <iframe src="http://mochi.test:8888"></iframe>
   <iframe src="http://mochi.test:8888"></iframe>
   <iframe src="http://mochi.test:8888"></iframe>
+  <iframe src="http://mochi.test:8888"></iframe>
+  <iframe src="http://mochi.test:8888"></iframe>
+  <iframe src="http://mochi.test:8888"></iframe>
+  <iframe id="about_blank_iframe"></iframe>
 </p>
 <div id="content" style="display: none">
-  
+
 </div>
 <pre id="test">
 <script type="application/javascript">
@@ -26,22 +30,57 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=465263
 SimpleTest.waitForExplicitFinish();
 addLoadEvent(function() {
   window.frames[0].location.hash = '';
-  is(window.frames[0].location.href, "http://mochi.test:8888/#",
-     "Should have '#' in href now");
+  is(window.frames[0].location.hash, "", "Should not have '#' in hash");
+  is(window.frames[0].location.href, "http://mochi.test:8888/",
+     "Should not have '#' in href now");
+
   window.frames[1].location.hash = '#';
-  is(window.frames[1].location.href, "http://mochi.test:8888/#",
-     "Should have only one '#' in href");
+  is(window.frames[1].location.hash, "", "Should not have '#' in hash");
+  is(window.frames[1].location.href, "http://mochi.test:8888/",
+     "Should not have '#' in href");
+
   window.frames[2].location.hash = 'foo';
+  is(window.frames[2].location.hash, "#foo", "Should have '#foo' in hash");
   is(window.frames[2].location.href, "http://mochi.test:8888/#foo",
      "Should have '#foo' in href");
+
   window.frames[3].location.hash = '#foo';
+  is(window.frames[3].location.hash, "#foo", "Should have one '#' in hash");
   is(window.frames[3].location.href, "http://mochi.test:8888/#foo",
      "Should have only one '#' in href here too");
+
+  window.frames[4].location.hash = '#foo';
+  window.frames[4].location.hash = '#bar';
+  is(window.frames[4].location.hash, "#bar", "Should have '#bar' in hash");
+  is(window.frames[4].location.href, "http://mochi.test:8888/#bar",
+     "Should have only one '#bar' in href here too");
+
+  // Note the difference between location.hash and location.href!
+  window.frames[5].location.hash = '#foo';
+  window.frames[5].location.hash = '';
+  is(window.frames[5].location.hash, "", "Should not have '#' in hash");
+  is(window.frames[5].location.href, "http://mochi.test:8888/#",
+     "Should have '#' in href here");
+
+  // Note the difference between location.hash and location.href!
+  window.frames[6].location.hash = '#foo';
+  window.frames[6].location.hash = '#';
+  is(window.frames[6].location.hash, "", "Should not have '#' in hash");
+  is(window.frames[6].location.href, "http://mochi.test:8888/#",
+     "Should have '#' in href here");
+
+  // Test URL-encoding of about:blank's location.hash.
+  window.location.hash = "<foo> <bar>";
+  is(window.location.hash, "#%3Cfoo%3E%20%3Cbar%3E",
+     "window hash should be URL-encoded");
+  about_blank_iframe.contentWindow.location.hash = "<bar> <foo>";
+  is(about_blank_iframe.contentWindow.location.hash, "#%3Cbar%3E%20%3Cfoo%3E",
+     "iframe hash should be URL-encoded");
+  is(window.location.hash, "#%3Cfoo%3E%20%3Cbar%3E",
+     "window hash should be unchanged");
+
   SimpleTest.finish();
 });
-
-
-
 
 </script>
 </pre>

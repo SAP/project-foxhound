@@ -46,7 +46,6 @@ platform_names:
         by-platform:
             linux64: 'linux64'
             linux64-aarch64-shippable: 'linux-aarch64'
-            linux64-asan-reporter-shippable: 'linux-x86_64-asan-reporter'
             macosx64: 'mac'
             macosx64-shippable: 'mac-shippable'
             macosx64-aarch64-shippable: 'mac-aarch64'
@@ -56,7 +55,6 @@ platform_names:
             win64-shippable: 'win64-shippable'
             win64-aarch64: 'win64-aarch64'
             win64-aarch64-shippable: 'win64-aarch64'
-            win64-asan-reporter-shippable: 'win64-asan-reporter'
 
 default: &default
     from:
@@ -105,7 +103,6 @@ mapping:
             - linux64
             - linux64-shippable
             - linux64-aarch64-shippable
-            - linux64-asan-reporter-shippable
         pretty_name: firefox-${version}.${locale}.${filename_platform}.tar.xz
         checksums_path: firefox-${version}.${locale}.${filename_platform}.tar.xz
     target.dmg:
@@ -129,7 +126,6 @@ mapping:
             - win64-shippable
             - win64-aarch64
             - win64-aarch64-shippable
-            - win64-asan-reporter-shippable
         pretty_name: firefox-${version}.${locale}.${filename_platform}.zip
         checksums_path: firefox-${version}.${locale}.${filename_platform}.zip
     target.installer.exe:
@@ -142,6 +138,5 @@ mapping:
             - win64-shippable
             - win64-aarch64
             - win64-aarch64-shippable
-            - win64-asan-reporter-shippable
         pretty_name: firefox-${version}.${locale}.${filename_platform}.installer.exe
         checksums_path: firefox-${version}.${locale}.${filename_platform}.installer.exe

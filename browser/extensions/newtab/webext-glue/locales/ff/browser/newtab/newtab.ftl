@@ -9,6 +9,38 @@ newtab-page-title = Tabbere hesere
 newtab-settings-button =
     .title = Neɗɗin tabbere maa hello hesere ndee
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Tabbe kese
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } gorol
+           *[other] { $num } gorol
+        }
+home-restore-defaults-srd =
+    .label = Artir Goowaaɗe
+    .accesskey = R
+home-mode-choice-custom-srd =
+    .label = Heertin URLs...
+home-mode-choice-blank-srd =
+    .label = Hello Meho
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Daari joɓanaaɗi
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Kelle jiyaaɗe
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Maantore
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Cakkitiiɗe awteede
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +48,7 @@ newtab-search-box-search-button =
     .title = Yiylo
     .aria-label = Yiylo
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Ɓeydu yiylorde
 newtab-topsites-edit-topsites-header = Taƴto Lowre Dowrowre

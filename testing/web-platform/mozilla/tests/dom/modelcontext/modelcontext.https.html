@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>ModelContext API Tests</title>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script>
+"use strict";
+
+promise_test(async t => {
+  t.add_cleanup(() => navigator.modelContext.unregisterTool("reverse"));
+
+  navigator.modelContext.registerTool({
+    name: "reverse",
+    description: "Reverses a string",
+    inputSchema: {
+      type: "object",
+      properties: { text: { type: "string" } },
+    },
+    execute: (input, _client) =>
+      Promise.resolve(input.text.split("").reverse().join("")),
+  });
+
+  let tools = navigator.modelContext.getTools();
+  assert_equals(tools.length, 1, "Should have one tool registered");
+  let tool = tools[0];
+  assert_equals(tool.name, "reverse", "Tool name should be 'reverse'");
+  assert_equals(
+    tool.description,
+    "Reverses a string",
+    "Tool description should match"
+  );
+  let schema = tool.inputSchema;
+  assert_equals(typeof schema, "object", "inputSchema should be an object");
+  assert_equals(schema.type, "object", "inputSchema.type should be 'object'");
+
+  let result = await navigator.modelContext.invokeTool("reverse", {
+    text: "hello",
+  });
+  assert_equals(result, "olleh", "Invoking reverse tool should return 'olleh'");
+}, "invokeTool basic usage");
+
+promise_test(async t => {
+  t.add_cleanup(() => navigator.modelContext.unregisterTool("existing"));
+
+  navigator.modelContext.registerTool({
+    name: "existing",
+    description: "A tool",
+    inputSchema: { type: "object" },
+    execute: (_input, _client) => Promise.resolve("ok"),
+  });
+
+  await promise_rejects_dom(
+    t,
+    "NotFoundError",
+    navigator.modelContext.invokeTool("nonexistent"),
+    "Invoking a nonexistent tool should reject"
+  );
+}, "invokeTool nonexistent tool rejects with NotFoundError");
+
+promise_test(async t => {
+  t.add_cleanup(() => navigator.modelContext.unregisterTool("getNum"));
+
+  navigator.modelContext.registerTool({
+    name: "getNum",
+    description: "Returns a number",
+    inputSchema: { type: "object" },
+    execute: (_input, _client) => Promise.resolve(42),
+  });
+
+  let result = await navigator.modelContext.invokeTool("getNum");
+  assert_equals(result, 42, "invokeTool should return numeric result");
+}, "invokeTool non-string return (number)");
+
+promise_test(async t => {
+  t.add_cleanup(() => navigator.modelContext.unregisterTool("echo"));
+
+  navigator.modelContext.registerTool({
+    name: "echo",
+    description: "Echoes argument as JSON",
+    inputSchema: { type: "object" },
+    execute: (input, _client) => Promise.resolve(JSON.stringify(input)),
+  });
+
+  let resultNum = await navigator.modelContext.invokeTool("echo", {
+    value: 42,
+  });
+  assert_equals(resultNum, '{"value":42}', "Should handle object with number");
+
+  let resultBool = await navigator.modelContext.invokeTool("echo", {
+    value: true,
+  });
+  assert_equals(
+    resultBool,
+    '{"value":true}',
+    "Should handle object with boolean"
+  );
+
+  let resultNested = await navigator.modelContext.invokeTool("echo", {
+    a: { b: [1, 2, 3] },
+  });
+  assert_equals(
+    resultNested,
+    '{"a":{"b":[1,2,3]}}',
+    "Should handle nested object argument"
+  );
+}, "invokeTool non-string argument types");
+
+promise_test(async t => {
+  t.add_cleanup(() => navigator.modelContext.unregisterTool("fail"));
+
+  navigator.modelContext.registerTool({
+    name: "fail",
+    description: "Always fails",
+    inputSchema: { type: "object" },
+    execute: (_input, _client) => Promise.reject(new Error("boom")),
+  });
+
+  await promise_rejects_js(t, Error,
+    navigator.modelContext.invokeTool("fail"),
+    "invokeTool should reject when tool throws asynchronously"
+  );
+}, "invokeTool with tool that rejects");
+
+promise_test(async t => {
+  t.add_cleanup(() => navigator.modelContext.unregisterTool("thrower"));
+
+  navigator.modelContext.registerTool({
+    name: "thrower",
+    description: "Throws synchronously",
+    inputSchema: { type: "object" },
+    execute: (_input, _client) => {
+      throw new Error("sync boom");
+    },
+  });
+
+  await promise_rejects_js(t, Error,
+    navigator.modelContext.invokeTool("thrower"),
+    "invokeTool should reject when tool throws synchronously"
+  );
+}, "invokeTool with tool that throws");
+
+promise_test(async t => {
+  t.add_cleanup(() => navigator.modelContext.unregisterTool("temp"));
+
+  navigator.modelContext.registerTool({
+    name: "temp",
+    description: "Temporary tool",
+    inputSchema: { type: "object" },
+    execute: (_input, _client) => Promise.resolve("hi"),
+  });
+
+  let tools = navigator.modelContext.getTools();
+  assert_equals(tools.length, 1, "Should have one tool before unregister");
+
+  navigator.modelContext.unregisterTool("temp");
+
+  tools = navigator.modelContext.getTools();
+  assert_equals(tools.length, 0, "Should have zero tools after unregister");
+
+  await promise_rejects_dom(
+    t,
+    "NotFoundError",
+    navigator.modelContext.invokeTool("temp"),
+    "Invoking unregistered tool should reject"
+  );
+}, "unregisterTool removes tool");
+
+promise_test(async t => {
+  t.add_cleanup(() => navigator.modelContext.unregisterTool("noSchema"));
+
+  navigator.modelContext.registerTool({
+    name: "noSchema",
+    description: "Tool without inputSchema",
+    execute: (_input, _client) => Promise.resolve("ok"),
+  });
+
+  let tools = navigator.modelContext.getTools();
+  assert_equals(tools.length, 1, "Should have one tool");
+  assert_equals(
+    tools[0].inputSchema,
+    undefined,
+    "inputSchema should be undefined when not provided"
+  );
+}, "tool without inputSchema");
+
+promise_test(async t => {
+  t.add_cleanup(() => navigator.modelContext.unregisterTool("readOnly"));
+
+  navigator.modelContext.registerTool({
+    name: "readOnly",
+    description: "A read-only tool",
+    inputSchema: { type: "object" },
+    annotations: { readOnlyHint: true },
+    execute: (_input, _client) => Promise.resolve("ok"),
+  });
+
+  let tools = navigator.modelContext.getTools();
+  assert_equals(tools.length, 1, "Should have one tool");
+  assert_true(!!tools[0].annotations, "annotations should be present");
+  assert_equals(
+    tools[0].annotations.readOnlyHint,
+    true,
+    "readOnlyHint should be true"
+  );
+}, "tool with annotations");
+
+promise_test(async t => {
+  t.add_cleanup(() => navigator.modelContext.unregisterTool("noAnnotations"));
+
+  navigator.modelContext.registerTool({
+    name: "noAnnotations",
+    description: "A tool without annotations",
+    inputSchema: { type: "object" },
+    execute: (_input, _client) => Promise.resolve("ok"),
+  });
+
+  let tools = navigator.modelContext.getTools();
+  assert_equals(tools.length, 1, "Should have one tool");
+  assert_equals(
+    tools[0].annotations,
+    undefined,
+    "annotations should be undefined when not provided"
+  );
+}, "tool without annotations");
+
+promise_test(async t => {
+  t.add_cleanup(() => navigator.modelContext.unregisterTool("slow"));
+
+  navigator.modelContext.registerTool({
+    name: "slow",
+    description: "A slow tool",
+    inputSchema: { type: "object" },
+    execute: (_input, _client) => new Promise(() => {}),
+  });
+
+  let controller = new AbortController();
+  controller.abort();
+
+  await promise_rejects_dom(
+    t,
+    "AbortError",
+    navigator.modelContext.invokeTool("slow", undefined, {
+      signal: controller.signal,
+    }),
+    "invokeTool with already-aborted signal should reject"
+  );
+}, "abort already-aborted signal");
+
+promise_test(async t => {
+  t.add_cleanup(() => navigator.modelContext.unregisterTool("slow"));
+
+  navigator.modelContext.registerTool({
+    name: "slow",
+    description: "A slow tool",
+    inputSchema: { type: "object" },
+    execute: (_input, _client) => new Promise(() => {}),
+  });
+
+  let controller = new AbortController();
+  let promise = navigator.modelContext.invokeTool("slow", undefined, {
+    signal: controller.signal,
+  });
+  controller.abort();
+
+  await promise_rejects_dom(
+    t,
+    "AbortError",
+    promise,
+    "invokeTool aborted mid-execution should reject"
+  );
+}, "abort mid-execution");
+
+promise_test(async t => {
+  t.add_cleanup(() => navigator.modelContext.unregisterTool("greet"));
+
+  navigator.modelContext.registerTool({
+    name: "greet",
+    description: "Returns a greeting",
+    inputSchema: { type: "object" },
+    execute: (_input, _client) => Promise.resolve("hi"),
+  });
+
+  let result = await navigator.modelContext.invokeTool("greet");
+  assert_equals(result, "hi", "invokeTool without signal should still work");
+}, "invokeTool without signal still works");
+
+promise_test(async t => {
+  t.add_cleanup(() => navigator.modelContext.unregisterTool("greet"));
+
+  navigator.modelContext.registerTool({
+    name: "greet",
+    description: "Returns a greeting",
+    inputSchema: { type: "object" },
+    execute: async (_input, client) => {
+      let result = await client.requestUserInteraction(() => "user interaction done");
+      assert_equals(result, "user interaction done", "invokeTool without signal should still work");
+      return Promise.resolve("hi");
+    },
+  });
+
+  let result = await navigator.modelContext.invokeTool("greet");
+  assert_equals(result, "hi", "invokeTool with user interaction in callback should still work");
+}, "invokeTool with requestUserInteraction");
+
+
+promise_test(async t => {
+  t.add_cleanup(() => navigator.modelContext.unregisterTool("greet"));
+
+  navigator.modelContext.registerTool({
+    name: "greet",
+    description: "Returns a greeting",
+    inputSchema: { type: "object" },
+    execute: async (_input, client) => {
+      let result = client.requestUserInteraction(() => {
+        throw new Error("problem!");
+      });
+      await promise_rejects_js(t, Error, result,
+        "requestUserInteraction throwing should reject inside of the callback"
+      );
+    },
+  });
+
+  let result = await navigator.modelContext.invokeTool("greet");
+}, "invokeTool with throwing requestUserInteraction");
+
+</script>

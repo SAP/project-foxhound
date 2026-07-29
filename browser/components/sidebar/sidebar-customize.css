@@ -43,10 +43,13 @@
   flex-direction: column;
   margin-top: var(--space-small);
   padding-inline: var(--space-medium);
-  background-color: var(--sidebar-box-background);
   color: var(--sidebar-box-color);
-  border: var(--sidebar-box-border);
   border-radius: var(--border-radius-medium);
+
+  @media not -moz-pref("browser.nova.enabled") {
+    background-color: var(--sidebar-box-background);
+    border: var(--sidebar-box-border);
+  }
 }
 
 .extension-item {
@@ -62,16 +65,18 @@
 
 .customize-extensions-heading {
   margin: 0;
-  font-weight: var(--heading-font-weight);
+  font-weight: var(--font-weight-heading);
 }
 
 moz-fieldset {
   display: block;
 
   &::part(inputs) {
-    background-color: var(--sidebar-box-background);
+    @media not -moz-pref("browser.nova.enabled") {
+      background-color: var(--sidebar-box-background);
+      border: var(--sidebar-box-border);
+    }
     color: var(--sidebar-box-color);
-    border: var(--sidebar-box-border);
     border-radius: var(--border-radius-medium);
     gap: 0;
     padding-inline: var(--space-medium);
@@ -81,8 +86,10 @@ moz-fieldset {
 moz-checkbox {
   padding-block: var(--space-medium);
 
-  &:not(:last-of-type) {
-    border-bottom: 0.5px solid var(--panel-separator-color);
+  @media not -moz-pref("browser.nova.enabled") {
+    &:not(:last-of-type) {
+      border-bottom: 0.5px solid var(--panel-separator-color);
+    }
   }
 
   > moz-checkbox:last-of-type {

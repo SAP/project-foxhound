@@ -33,6 +33,8 @@
   <string name="mozac_lib_crash_no_crashes">Cap de rapòrt de plantatge es pas estat mandat.</string>
   <!-- Text link that will show an app chooser to share a crash report with a third-party app (e.g. gmail) -->
   <string name="mozac_lib_crash_share">Partejar</string>
+  <!-- String for Ask before sending crash reports radio button in Data Collection Screen -->
+  <string name="crash_reporting_ask">Demandar abans d’enviar</string>
   <!-- String for Send crash reports automatically radio button in Data Collection Screen -->
   <string name="crash_reporting_auto">Enviar automaticament</string>
   <!-- String for Never sending crash reports radio button in Data Collection Screen -->

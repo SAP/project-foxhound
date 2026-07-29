@@ -44,6 +44,12 @@ https_first_disabled = true
 ["browser_asrouter_momentspagehub.js"]
 tags = "remote-settings"
 
+["browser_asrouter_newtab_messages.js"]
+tags = "newtab"
+
+["browser_asrouter_newtab_multistage_messages.js"]
+tags = "newtab"
+
 ["browser_asrouter_targeting.js"]
 
 ["browser_asrouter_toast_notification-gif.js"]
@@ -65,6 +71,9 @@ skip-if = [
 
 ["browser_bookmarks_bar_button.js"]
 
+["browser_coenrolling_messaging_features.js"]
+tags = "remote-settings"
+
 ["browser_feature_callout.js"]
 skip-if = [
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1796720
@@ -85,9 +94,8 @@ skip-if = [
 
 ["browser_remote_l10n.js"]
 
-["browser_spotlight_default_messages.js"]
-
 ["browser_trigger_listeners.js"]
 https_first_disabled = true
 
 ["browser_trigger_messagesLoaded.js"]
+tags = "remote-settings"

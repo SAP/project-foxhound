@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,6 +19,7 @@
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
+#include "mozilla/ReflowInput.h"
 #include "mozilla/SVGImageContext.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_image.h"
@@ -213,7 +212,7 @@ class BrokenImageIcon final : public imgINotificationObserver {
  private:
   static BrokenImageIcon& Get(const nsImageFrame& aFrame) {
     if (!gSingleton) {
-      gSingleton = new BrokenImageIcon(aFrame);
+      gSingleton = MakeRefPtr<BrokenImageIcon>(aFrame);
     }
     return *gSingleton;
   }
@@ -726,7 +725,7 @@ void nsImageFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 
   nsAtomicContainerFrame::Init(aContent, aParent, aPrevInFlow);
 
-  mListener = new nsImageListener(this);
+  mListener = MakeRefPtr<nsImageListener>(this);
 
   GetImageMap();  // Ensure to init the image map asap. This is important to
                   // make <area> elements focusable.
@@ -1617,9 +1616,14 @@ void nsImageFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
     currentRequest->GetImageStatus(&loadStatus);
   }
 
-  if (aPresContext->IsPaginated() &&
-      ((loadStatus & imgIRequest::STATUS_SIZE_AVAILABLE) ||
-       HasAnyStateBits(IMAGE_SIZECONSTRAINED)) &&
+  const bool haveSize = loadStatus & imgIRequest::STATUS_SIZE_AVAILABLE;
+
+  // Printing an image frame in vertical writing mode is not properly supported
+  // yet (Bug 1751260). In this case, don't split it, and let the display-list
+  // slicing fallback (layout.display-list.improve-fragmentation) handle
+  // fragmentation.
+  if (aPresContext->IsPaginated() && !wm.IsVertical() &&
+      (haveSize || HasAnyStateBits(IMAGE_SIZECONSTRAINED)) &&
       NS_UNCONSTRAINEDSIZE != aReflowInput.AvailableHeight() &&
       aMetrics.Height() > aReflowInput.AvailableHeight()) {
     // our desired height was greater than 0, so to avoid infinite
@@ -1632,9 +1636,6 @@ void nsImageFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
   aMetrics.SetOverflowAreasToDesiredBounds();
   const bool imageOK = mKind != Kind::ImageLoadingContent ||
                        ImageOk(mContent->AsElement()->State());
-
-  // Determine if the size is available
-  const bool haveSize = loadStatus & imgIRequest::STATUS_SIZE_AVAILABLE;
   if (!imageOK || !haveSize) {
     nsRect altFeedbackSize(
         0, 0,
@@ -2252,9 +2253,9 @@ ImgDrawResult nsImageFrame::DisplayAltFeedbackWithoutLayer(
 
   // Draw text
   if (!inner.IsEmpty()) {
-    RefPtr<TextDrawTarget> textDrawer =
-        new TextDrawTarget(aBuilder, aResources, aSc, aManager, aItem, inner,
-                           /* aCallerDoesSaveRestore = */ true);
+    auto textDrawer = MakeRefPtr<TextDrawTarget>(
+        aBuilder, aResources, aSc, aManager, aItem, inner,
+        /* aCallerDoesSaveRestore = */ true);
     MOZ_ASSERT(textDrawer->IsValid());
     if (textDrawer->IsValid()) {
       gfxContext captureCtx(textDrawer);
@@ -2751,7 +2752,7 @@ bool nsImageFrame::ShouldDisplaySelection() {
 nsImageMap* nsImageFrame::GetImageMap() {
   if (!mImageMap) {
     if (nsIContent* map = GetMapElement()) {
-      mImageMap = new nsImageMap();
+      mImageMap = MakeRefPtr<nsImageMap>();
       mImageMap->Init(this, map);
     }
   }
@@ -2809,8 +2810,9 @@ bool nsImageFrame::IsLeafDynamic() const {
   return !shadow;
 }
 
-nsIContent* nsImageFrame::GetContentForEvent(const WidgetEvent* aEvent) const {
-  if (mImageMap) {
+nsIContent* nsImageFrame::GetExplicitEventTargetContent(
+    const WidgetEvent* aEvent /* = nullptr */) const {
+  if (mImageMap && aEvent) {
     // XXX We need to make this special check for area element's capturing the
     // mouse due to bug 135040. Remove it once that's fixed.
     nsIContent* capturingContent = aEvent->HasMouseEventMessage()
@@ -2825,7 +2827,7 @@ nsIContent* nsImageFrame::GetContentForEvent(const WidgetEvent* aEvent) const {
       return area;
     }
   }
-  return nsIFrame::GetContentForEvent(aEvent);
+  return nsIFrame::GetExplicitEventTargetContent(aEvent);
 }
 
 // XXX what should clicks on transparent pixels do?

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -204,7 +203,7 @@ class MOZ_STACK_CLASS AutoClonedRangeArray {
   /**
    * For compatiblity with the other browsers, we should shrink ranges to
    * start from an atomic content and/or end after one instead of start
-   * from end of a preceding text node and end by start of a follwing text
+   * from end of a preceding text node and end by start of a following text
    * node.  Returns true if this modifies a range.
    */
   enum class IfSelectingOnlyOneAtomicContent {

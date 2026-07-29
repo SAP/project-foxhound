@@ -59,10 +59,12 @@ fun SearchOverlay(
                 SearchSuggestions(
                     text = query.value ?: "",
                     onSuggestionClicked = { suggestion ->
-                        viewModel.selectSearchSuggestion(
-                            suggestion.title!!,
-                            defaultSearchEngineName,
-                        )
+                        if (suggestion is AwesomeBar.Suggestion) {
+                            viewModel.selectSearchSuggestion(
+                                suggestion.title!!,
+                                defaultSearchEngineName,
+                            )
+                        }
                     },
                     onAutoComplete = { suggestion ->
                         val editSuggestion = suggestion.editSuggestion ?: return@SearchSuggestions
@@ -81,7 +83,7 @@ fun SearchOverlay(
 @Composable
 private fun SearchSuggestions(
     text: String,
-    onSuggestionClicked: (AwesomeBar.Suggestion) -> Unit,
+    onSuggestionClicked: (AwesomeBar.SuggestionItem) -> Unit,
     onAutoComplete: (AwesomeBar.Suggestion) -> Unit,
     onListScrolled: () -> Unit,
 ) {

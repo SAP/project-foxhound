@@ -25,14 +25,12 @@ How to Add a Keyword
 
 Where to add the new key depends on what type of information it is.
 
-1. If the key is a property of the build, you'll need to patch `this file
-   <https://searchfox.org/mozilla-central/source/python/mozbuild/mozbuild/mozinfo.py>`_.
+1. If the key is a property of the build, you'll need to patch :searchfox:`this file <python/mozbuild/mozbuild/mozinfo.py>`.
 2. If the key is a property of the test environment, you'll need to patch
    `mozinfo <https://firefox-source-docs.mozilla.org/mozbase/mozinfo.html>`_.
 3. If the key is a runtime configuration, for example based on a pref that is
    passed in via mach or the task configuration, then you'll need to update the
-   individual test harnesses. For example, `this location
-   <https://searchfox.org/mozilla-central/rev/a7e33b7f61e7729e2b1051d2a7a27799f11a5de6/testing/mochitest/runtests.py#3341>`_
+   individual test harnesses. For example, :searchfox:`this location <mozilla-central/rev/a7e33b7f61e7729e2b1051d2a7a27799f11a5de6:testing/mochitest/runtests.py#3341>`
    for Mochitest. Currently there is no shared location to set runtime keys
    across test harnesses.
 
@@ -55,16 +53,14 @@ In this case, ``cocoaWidget`` and ``isDebugbuild`` are booleans.
 
 The test will download the build's ``target.mozinfo.json``, then in addition to
 the mozinfo, will query runtime info from the browser to build a sandbox of
-keywords. This logic lives in `manifest.sys.mjs
-<https://searchfox.org/mozilla-central/source/layout/tools/reftest/manifest.sys.mjs#439>`__.
+keywords. This logic lives in :searchfox:`manifest.sys.mjs <layout/tools/reftest/manifest.sys.mjs#439>`.
 
 How to Add a Keyword
 ~~~~~~~~~~~~~~~~~~~~
 
 Where to add the new key depends on what type of information it is.
 
-1. If the key is a property of the build, you'll need to patch `this file
-   <https://searchfox.org/mozilla-central/source/python/mozbuild/mozbuild/mozinfo.py>`_.
+1. If the key is a property of the build, you'll need to patch :searchfox:`this file <python/mozbuild/mozbuild/mozinfo.py>`.
 2. If the key is a property of the test environment or a runtime configuration,
    then you'll need need to update manifest sandbox.
 

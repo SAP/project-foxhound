@@ -11,6 +11,16 @@ from pathlib import Path
 
 import pytest
 
+
+def setup_hg_default_path(working_dir):
+    """Set up default hg path to remoterepo."""
+    hgrc_path = Path(working_dir) / ".hg" / "hgrc"
+    hgrc_path.parent.mkdir(parents=True, exist_ok=True)  # Ensure .hg directory exists
+    with open(hgrc_path, "w") as f:
+        f.write("[paths]\n")
+        f.write("default = ../remoterepo\n")
+
+
 # Execute the first element in each list of steps within a `repo` directory,
 # then copy the whole directory to a `remoterepo`, and finally execute the
 # second element on just `repo`.
@@ -24,18 +34,15 @@ SETUP = {
         hg commit -m "Initial commit"
         hg phase --public .
         """,
-        """
-        echo [paths] > .hg/hgrc
-        echo "default = ../remoterepo" >> .hg/hgrc
-        """,
+        setup_hg_default_path,
     ],
     "git": [
         """
         echo "foo" > foo
         echo "bar" > bar
-        git init
+        git init -b master
         git config user.name "Testing McTesterson"
-        git config user.email "<test@example.org>"
+        git config user.email "test@example.org"
         git add *
         git commit -am "Initial commit"
         """,
@@ -49,9 +56,9 @@ SETUP = {
         """
         echo "foo" > foo
         echo "bar" > bar
-        git init
+        git init -b master
         git config user.name "Testing McTesterson"
-        git config user.email "<test@example.org>"
+        git config user.email "test@example.org"
         git add *
         git commit -am "Initial commit"
         jj git init --colocate
@@ -92,8 +99,15 @@ class RepoTestFixture:
 
 
 def shell(cmd, working_dir):
-    for step in cmd.split(os.linesep):
-        subprocess.check_call(step, shell=True, cwd=working_dir)
+    if callable(cmd):
+        # If it's a callable, execute it with the working directory
+        # Convert Path to string for consistency
+        cmd(str(working_dir))
+    else:
+        # Otherwise, treat it as shell commands
+        for step in cmd.split(os.linesep):
+            if step.strip():  # Skip empty lines
+                subprocess.check_call(step, shell=True, cwd=working_dir)
 
 
 @pytest.fixture(params=["git", "hg", "jj", "src"])
@@ -118,11 +132,22 @@ def repo(request):
         # Isolate jj tests from user's local config
         os.environ["JJ_CONFIG"] = ""
 
+    if request.param == "hg":
+        try:
+            subprocess.call(
+                ["hg", "--version"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError:
+            if not os.environ.get("MOZ_AUTOMATION"):
+                pytest.skip("hg unavailable")
+
     vcs = request.param
     # Use tempfile since pytest's tempdir is too long for jj on Windows
     td = tempfile.TemporaryDirectory(prefix=f"{vcs}-repo")
     tmpdir = Path(td.name)
-    steps = SETUP[vcs]
+    steps = list(SETUP[vcs])  # Create a copy of the list
 
     if hasattr(request.module, "STEPS"):
         if vcs == "src" and vcs not in request.module.STEPS:
@@ -140,6 +165,12 @@ def repo(request):
     repo_test_fixture.execute_next_step()
 
     shutil.copytree(str(repo_dir), str(tmpdir / "remoterepo"))
+
+    if vcs in ("git", "jj"):
+        subprocess.check_call(
+            ["git", "config", "receive.denyCurrentBranch", "updateInstead"],
+            cwd=str(tmpdir / "remoterepo"),
+        )
 
     repo_test_fixture.execute_next_step()
 

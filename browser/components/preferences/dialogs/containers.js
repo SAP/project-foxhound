@@ -2,163 +2,101 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/* globals AdjustableTitle */
+
 const { ContextualIdentityService } = ChromeUtils.importESModule(
   "resource://gre/modules/ContextualIdentityService.sys.mjs"
 );
 
-/**
- * We want to set the window title immediately to prevent flickers.
- */
 function setTitle() {
   let params = window.arguments[0] || {};
-
   let winElem = document.documentElement;
   if (params.userContextId) {
-    document.l10n.setAttributes(winElem, "containers-window-update-settings2", {
+    document.l10n.setAttributes(winElem, "containers-window-update-settings3", {
       name: params.identity.name,
     });
   } else {
-    document.l10n.setAttributes(winElem, "containers-window-new2");
+    document.l10n.setAttributes(winElem, "containers-window-new3");
   }
 }
 setTitle();
 
-let gContainersManager = {
-  icons: [
-    "fingerprint",
-    "briefcase",
-    "dollar",
-    "cart",
-    "vacation",
-    "gift",
-    "food",
-    "fruit",
-    "pet",
-    "tree",
-    "chill",
-    "circle",
-    "fence",
-  ],
+let loadedResolvers = Promise.withResolvers();
+document.mozSubdialogReady = loadedResolvers.promise;
 
-  colors: [
-    "blue",
-    "turquoise",
-    "green",
-    "yellow",
-    "orange",
-    "red",
-    "pink",
-    "purple",
-    "toolbar",
-  ],
-
-  onLoad() {
+class ContainerDialog {
+  constructor() {
     let params = window.arguments[0] || {};
-    this.init(params);
-  },
+    this.userContextId = params.userContextId || null;
+    this.identity = params.identity || {
+      name: "",
+      icon: ContextualIdentityService.containerIcons[0],
+      color: ContextualIdentityService.containerColors[0],
+    };
 
-  init(aParams) {
     this._dialog = document.querySelector("dialog");
-    this.userContextId = aParams.userContextId || null;
-    this.identity = aParams.identity;
+    this._form = document.getElementById("containerForm");
+    this._name = document.getElementById("name");
 
-    const iconWrapper = document.getElementById("iconWrapper");
-    iconWrapper.appendChild(this.createIconButtons());
+    this._name.value = this.identity.name;
+    this._form.addEventListener("input", () => this.validate());
+    document.addEventListener("dialogaccept", () => this.onAccept());
+  }
 
-    const colorWrapper = document.getElementById("colorWrapper");
-    colorWrapper.appendChild(this.createColorSwatches());
+  init() {
+    this._buildSwatches(
+      document.getElementById("colorSwatches"),
+      this.identity.color,
+      ContextualIdentityService.containerColors,
+      color => `identity-icon-circle identity-color-${color}`,
+      color => ContextualIdentityService.getContainerColorLabel(color)
+    );
+    this._buildSwatches(
+      document.getElementById("iconSwatches"),
+      this.identity.icon,
+      ContextualIdentityService.containerIcons,
+      icon => `identity-icon-${icon}`,
+      icon => ContextualIdentityService.getContainerIconLabel(icon)
+    );
+    this.validate();
+  }
 
-    const name = document.getElementById("name");
-    name.addEventListener("input", () => this.checkForm());
+  _buildSwatches(picker, selected, values, iconClass, getLabel) {
+    for (let value of values) {
+      let title = getLabel(value);
 
-    if (this.identity.name) {
-      name.value = this.identity.name;
-      this.checkForm();
+      let item = document.createElement("moz-visual-picker-item");
+      item.className = "swatch";
+      item.value = value;
+      item.ariaLabel = title;
+      item.title = title;
+
+      let icon = document.createElement("span");
+      icon.className = `userContext-icon ${iconClass(value)}`;
+
+      item.append(icon);
+      picker.append(item);
     }
 
-    document
-      .getElementById("key_close")
-      .addEventListener("command", () => window.close());
+    picker.value = selected;
+  }
 
-    document.addEventListener("dialogaccept", () => this.onApplyChanges());
+  validate() {
+    let nameValid = !!this._name.value.trim();
+    this._dialog.getButton("accept").disabled = !nameValid;
+  }
 
-    // This is to prevent layout jank caused by the svgs and outlines rendering at different times
-    document.getElementById("containers-content").removeAttribute("hidden");
-  },
+  onAccept() {
+    let formData = new FormData(this._form);
+    let name = formData.get("name").trim();
+    let color = formData.get("color");
+    let icon = formData.get("icon");
 
-  // Check if name is provided to determine if the form can be submitted
-  checkForm() {
-    const name = document.getElementById("name");
-    this._dialog.toggleAttribute("buttondisabledaccept", !name.value.trim());
-  },
-
-  createIconButtons() {
-    let radiogroup = document.createXULElement("radiogroup");
-    radiogroup.setAttribute("id", "icon");
-    radiogroup.className = "icon-buttons radio-buttons";
-
-    for (let icon of this.icons) {
-      let iconSwatch = document.createXULElement("radio");
-      iconSwatch.id = "iconbutton-" + icon;
-      iconSwatch.name = "icon";
-      iconSwatch.type = "radio";
-      iconSwatch.value = icon;
-
-      if (this.identity.icon && this.identity.icon == icon) {
-        iconSwatch.setAttribute("selected", true);
-      }
-
-      document.l10n.setAttributes(iconSwatch, `containers-icon-${icon}`);
-      let iconElement = document.createXULElement("hbox");
-      iconElement.className = "userContext-icon";
-      iconElement.classList.add("identity-icon-" + icon);
-
-      iconSwatch.appendChild(iconElement);
-      radiogroup.appendChild(iconSwatch);
-    }
-
-    return radiogroup;
-  },
-
-  createColorSwatches() {
-    let radiogroup = document.createXULElement("radiogroup");
-    radiogroup.setAttribute("id", "color");
-    radiogroup.className = "radio-buttons";
-
-    for (let color of this.colors) {
-      let colorSwatch = document.createXULElement("radio");
-      colorSwatch.id = "colorswatch-" + color;
-      colorSwatch.name = "color";
-      colorSwatch.type = "radio";
-      colorSwatch.value = color;
-
-      if (this.identity.color && this.identity.color == color) {
-        colorSwatch.setAttribute("selected", true);
-      }
-
-      document.l10n.setAttributes(colorSwatch, `containers-color-${color}`);
-      let iconElement = document.createXULElement("hbox");
-      iconElement.className = "userContext-icon";
-      iconElement.classList.add("identity-icon-circle");
-      iconElement.classList.add("identity-color-" + color);
-
-      colorSwatch.appendChild(iconElement);
-      radiogroup.appendChild(colorSwatch);
-    }
-    return radiogroup;
-  },
-
-  onApplyChanges() {
-    let icon = document.getElementById("icon").value;
-    let color = document.getElementById("color").value;
-    let name = document.getElementById("name").value;
-
-    if (!this.icons.includes(icon)) {
-      throw new Error("Internal error. The icon value doesn't match.");
-    }
-
-    if (!this.colors.includes(color)) {
+    if (!ContextualIdentityService.getContainerColorCode(color)) {
       throw new Error("Internal error. The color value doesn't match.");
+    }
+    if (!ContextualIdentityService.getContainerIconURL(icon)) {
+      throw new Error("Internal error. The icon value doesn't match.");
     }
 
     if (this.userContextId) {
@@ -166,8 +104,15 @@ let gContainersManager = {
     } else {
       ContextualIdentityService.create(name, icon, color);
     }
-    window.parent.location.reload();
-  },
-};
+  }
+}
 
-window.addEventListener("load", () => gContainersManager.onLoad());
+window.addEventListener("DOMContentLoaded", async () => {
+  try {
+    AdjustableTitle.hide();
+    let dialog = new ContainerDialog();
+    await dialog.init();
+  } finally {
+    loadedResolvers.resolve();
+  }
+});

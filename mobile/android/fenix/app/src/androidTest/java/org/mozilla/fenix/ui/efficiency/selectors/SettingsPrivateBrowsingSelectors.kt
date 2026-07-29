@@ -16,7 +16,15 @@ object SettingsPrivateBrowsingSelectors {
         groups = listOf("requiredForPage"),
     )
 
+    val OPEN_LINKS_IN_PRIVATE_TAB = Selector(
+        strategy = SelectorStrategy.ESPRESSO_BY_TEXT,
+        value = "Open links in a private tab",
+        description = "Open links in a private tab toggle",
+        groups = listOf("defaultValues"),
+    )
+
     val all = listOf(
         ADD_PRIVATE_BROWSING_SHORTCUT,
+        OPEN_LINKS_IN_PRIVATE_TAB,
     )
 }

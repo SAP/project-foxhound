@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +8,10 @@
 namespace mozilla {
 
 extern LazyLogModule gBounceTrackingProtectionLog;
+
+NS_IMPL_ISUPPORTS(BounceTrackingRecord, nsIBounceTrackingRecord);
+
+BounceTrackingRecord::~BounceTrackingRecord() = default;
 
 void BounceTrackingRecord::SetInitialHost(const nsACString& aHost) {
   mInitialHost = aHost;
@@ -35,12 +37,6 @@ void BounceTrackingRecord::AddBounceHost(const nsACString& aHost) {
               __FUNCTION__, *this);
 }
 
-void BounceTrackingRecord::AddStorageAccessHost(const nsACString& aHost) {
-  MOZ_ASSERT(!aHost.IsEmpty());
-
-  mStorageAccessHosts.Insert(aHost);
-}
-
 void BounceTrackingRecord::AddUserActivationHost(const nsACString& aHost) {
   if (!aHost.IsEmpty()) {
     mUserActivationHosts.Insert(aHost);
@@ -53,13 +49,30 @@ const nsTHashSet<nsCStringHashKey>& BounceTrackingRecord::GetBounceHosts()
 }
 
 const nsTHashSet<nsCStringHashKey>&
-BounceTrackingRecord::GetStorageAccessHosts() const {
-  return mStorageAccessHosts;
-}
-
-const nsTHashSet<nsCStringHashKey>&
 BounceTrackingRecord::GetUserActivationHosts() const {
   return mUserActivationHosts;
+}
+
+// nsIBounceTrackingRecord
+
+NS_IMETHODIMP BounceTrackingRecord::GetInitialHost(nsACString& aResult) {
+  aResult = mInitialHost;
+  return NS_OK;
+}
+
+NS_IMETHODIMP BounceTrackingRecord::GetFinalHost(nsACString& aResult) {
+  aResult = mFinalHost;
+  return NS_OK;
+}
+
+NS_IMETHODIMP BounceTrackingRecord::GetBounceHosts(
+    nsTArray<nsCString>& aResult) {
+  for (const auto& host : mBounceHosts) {
+    if (!host.EqualsLiteral("null")) {
+      aResult.AppendElement(host);
+    }
+  }
+  return NS_OK;
 }
 
 }  // namespace mozilla

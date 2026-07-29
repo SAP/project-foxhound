@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -258,7 +257,7 @@ void WebGL2Context::ReadBuffer(GLenum mode) {
     ErrorInvalidOperation(
         "If READ_FRAMEBUFFER is null, `mode` must be BACK or"
         " NONE. Was %s.",
-        enumName.BeginReading());
+        enumName.get());
     return;
   }
 

@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -22,6 +22,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -40,12 +42,17 @@ import mozilla.components.ui.icons.R as iconsR
 /**
  * Rectangular shape with only right angles used to display a middle tab.
  */
-private val MIDDLE_TAB_SHAPE = RoundedCornerShape(0.dp)
+private val MIDDLE_TAB_SHAPE = RectangleShape
 
 /**
- * Rectangular shape with only the bottom corners rounded used to display the last tab in a collection.
+ * Shape with only the bottom corners rounded used to display the last tab in a collection.
  */
-private val BOTTOM_TAB_SHAPE = RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp)
+private val BOTTOM_TAB_SHAPE: Shape
+    @Composable
+    get() = MaterialTheme.shapes.small.copy(
+        topStart = CornerSize(0.dp),
+        topEnd = CornerSize(0.dp),
+    )
 
 /**
  * Display an individual [Tab] as part of a collection.
@@ -104,7 +111,7 @@ fun CollectionItem(
             modifier = clippingModifier
                 .fillMaxWidth(),
             shape = if (isLastInCollection) BOTTOM_TAB_SHAPE else MIDDLE_TAB_SHAPE,
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceBright),
             elevation = CardDefaults.cardElevation(defaultElevation = 5.dp),
         ) {
             FaviconListItem(

@@ -17,4 +17,7 @@ TemporalHelpers.assertPlainMonthDay(explicit, "M02", 29, "default overflow is co
 const implicit = Temporal.PlainMonthDay.from(fields);
 TemporalHelpers.assertPlainMonthDay(implicit, "M02", 29, "default overflow is constrain");
 
+const lambda = Temporal.PlainMonthDay.from(fields, () => {});
+TemporalHelpers.assertPlainMonthDay(lambda, "M02", 29, "default overflow is constrain");
+
 reportCompare(0, 0);

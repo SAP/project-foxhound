@@ -8,6 +8,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
+  ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
   Normandy: "resource://normandy/Normandy.sys.mjs",
   TaskScheduler: "resource://gre/modules/TaskScheduler.sys.mjs",
 });
@@ -140,6 +141,33 @@ export var FirstStartup = {
     if (AppConstants.MOZ_NORMANDY) {
       Glean.firstStartup.normandyInitTime.set(
         Math.ceil(normandyInitEndTime || ChromeUtils.now() - startingTime)
+      );
+
+      const nimbusTimestamps =
+        lazy.ExperimentAPI.getAndClearFirstStartupTimestamps();
+
+      Glean.firstStartup.nimbusStoreInitTime.set(
+        Math.ceil(
+          nimbusTimestamps?.storeInitEnd ?? ChromeUtils.now() - startingTime
+        )
+      );
+
+      Glean.firstStartup.nimbusManagerInitTime.set(
+        Math.ceil(
+          nimbusTimestamps?.managerInitEnd ?? ChromeUtils.now() - startingTime
+        )
+      );
+
+      Glean.firstStartup.nimbusLoaderInitTime.set(
+        Math.ceil(
+          nimbusTimestamps?.loaderInitEnd ?? ChromeUtils.now() - startingTime
+        )
+      );
+
+      Glean.firstStartup.nimbusInitTime.set(
+        Math.ceil(
+          nimbusTimestamps?.nimbusInitEnd ?? ChromeUtils.now() - startingTime
+        )
       );
     }
 

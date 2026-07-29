@@ -31,13 +31,21 @@ import mozilla.components.service.mars.MozAdsClientProvider
 import mozilla.components.service.mars.MozAdsUseCases
 import mozilla.components.support.locale.LocaleManager
 import mozilla.components.support.locale.LocaleUseCases
+import mozilla.components.support.utils.DefaultDownloadFileUtils
+import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.bookmarks.BookmarksUseCase
+import org.mozilla.fenix.components.bookmarks.LastSavedFolderCache
+import org.mozilla.fenix.components.share.DefaultShareSheetLauncher
+import org.mozilla.fenix.components.share.ShareSheetLauncher
 import org.mozilla.fenix.components.usecases.FenixBrowserUseCases
+import org.mozilla.fenix.components.usecases.ShareUseCases
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.home.mars.MARSUseCases
 import org.mozilla.fenix.pbmlock.PrivateBrowsingLockUseCases
 import org.mozilla.fenix.perf.StrictModeManager
 import org.mozilla.fenix.perf.lazyMonitored
+import org.mozilla.fenix.settings.downloads.DownloadLocationManager
 import org.mozilla.fenix.wallpapers.WallpapersUseCases
 
 /**
@@ -54,6 +62,7 @@ class UseCases(
     private val topSitesStorage: Lazy<TopSitesStorage>,
     private val bookmarksStorage: Lazy<BookmarksStorage>,
     private val historyStorage: Lazy<HistoryStorage>,
+    private val lastSavedFolderCache: Lazy<LastSavedFolderCache>,
     private val syncedTabsCommands: Lazy<SyncedTabsCommands>,
     adsClientProvider: Lazy<MozAdsClientProvider>,
     appStore: Lazy<AppStore>,
@@ -99,7 +108,17 @@ class UseCases(
         WebAppUseCases(context, store.value, shortcutManager.value)
     }
 
-    val downloadUseCases by lazyMonitored { DownloadsUseCases(store.value, context.applicationContext) }
+    val downloadUseCases by lazyMonitored {
+        DownloadsUseCases(
+            store = store.value,
+            downloadFileUtils = DefaultDownloadFileUtils(
+                context = context.applicationContext,
+                downloadLocation = {
+                    DownloadLocationManager(context.components.settings, context.contentResolver).defaultLocation
+                },
+            ),
+        )
+    }
 
     val contextMenuUseCases by lazyMonitored { ContextMenuUseCases(store.value) }
 
@@ -118,7 +137,9 @@ class UseCases(
     /**
      * Use cases that provide bookmark management.
      */
-    val bookmarksUseCases by lazyMonitored { BookmarksUseCase(bookmarksStorage.value, historyStorage.value) }
+    val bookmarksUseCases by lazyMonitored {
+        BookmarksUseCase(bookmarksStorage.value, historyStorage.value, lastSavedFolderCache.value)
+    }
 
     val wallpaperUseCases by lazyMonitored {
         // Required to even access context.filesDir property and to retrieve current locale
@@ -128,7 +149,14 @@ class UseCases(
                 ?: LocaleManager.getSystemDefault().toLanguageTag()
             rootStorageDirectory to currentLocale
         }
-        WallpapersUseCases(context, appStore.value, client.value, rootStorageDirectory, currentLocale)
+        WallpapersUseCases(
+            context.components.settings,
+            rootStorageDirectory,
+            appStore.value,
+            client.value,
+            rootStorageDirectory,
+            currentLocale,
+        )
     }
 
     val closeSyncedTabsUseCases by lazyMonitored { CloseTabsUseCases(syncedTabsCommands.value) }
@@ -150,6 +178,26 @@ class UseCases(
             searchUseCases = searchUseCases,
             homepageTitle = context.getString(R.string.tab_tray_homepage_tab),
             profiler = engine.value.profiler,
+        )
+    }
+
+    val shareSheetLauncher: ShareSheetLauncher by lazyMonitored {
+        DefaultShareSheetLauncher(
+            applicationContext = context.applicationContext,
+            homeActivityClass = HomeActivity::class.java,
+            crashReporter = crashReporter.value,
+        )
+    }
+
+    /**
+     * Use cases for sharing content via the system share sheet or the in-app
+     * share fragment.
+     */
+    val shareUseCases by lazyMonitored {
+        ShareUseCases(
+            browserStore = store.value,
+            shareSheetLauncher = shareSheetLauncher,
+            settings = context.components.settings,
         )
     }
 

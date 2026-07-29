@@ -6,21 +6,21 @@
 import logging
 import os
 import re
+from typing import Optional
 
 import mozpack.path as mozpath
 import taskgraph
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util import json
 from taskgraph.util.docker import create_context_tar, generate_context_hash
-from taskgraph.util.schema import LegacySchema
-from voluptuous import Optional, Required
+from taskgraph.util.schema import Schema
 
 from gecko_taskgraph.util.docker import (
     image_path,
 )
 
 from .. import GECKO
-from .task import task_description_schema
+from .task import TaskDescriptionSchema
 
 logger = logging.getLogger(__name__)
 
@@ -36,37 +36,33 @@ IMAGE_BUILDER_IMAGE = (
 
 transforms = TransformSequence()
 
-docker_image_schema = LegacySchema({
+
+class DockerImageSchema(Schema, kw_only=True):
     # Name of the docker image.
-    Required("name"): str,
+    name: str
     # Name of the parent docker image.
-    Optional("parent"): str,
+    parent: Optional[str] = None
     # Treeherder symbol.
-    Required("symbol"): str,
+    symbol: str
     # relative path (from config.path) to the file the docker image was defined
     # in.
-    Optional("task-from"): str,
+    task_from: Optional[str] = None
     # Arguments to use for the Dockerfile.
-    Optional("args"): {str: str},
+    args: Optional[dict[str, str]] = None
     # Name of the docker image definition under taskcluster/docker, when
     # different from the docker image name.
-    Optional("definition"): str,
+    definition: Optional[str] = None
     # List of package tasks this docker image depends on.
-    Optional("packages"): [str],
-    Optional("arch"): str,
-    Optional(
-        "index",
-        description="information for indexing this build so its artifacts can be discovered",
-    ): task_description_schema["index"],
-    Optional(
-        "cache",
-        description="Whether this image should be cached based on inputs.",
-    ): bool,
-    Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
-})
+    packages: Optional[list[str]] = None
+    arch: Optional[str] = None
+    # information for indexing this build so its artifacts can be discovered
+    index: TaskDescriptionSchema.__annotations__["index"] = None
+    # Whether this image should be cached based on inputs.
+    cache: Optional[bool] = None
+    run_on_repo_type: TaskDescriptionSchema.__annotations__["run_on_repo_type"] = None
 
 
-transforms.add_validate(docker_image_schema)
+transforms.add_validate(DockerImageSchema)
 
 
 @transforms.add

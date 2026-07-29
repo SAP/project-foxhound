@@ -1,6 +1,6 @@
 import pytest
 from tests.classic.execute_async_script import execute_async_script
-from tests.support.asserts import assert_success
+from tests.support.classic.asserts import assert_success
 from tests.support.sync import Poll
 from webdriver.error import NoSuchAlertException
 

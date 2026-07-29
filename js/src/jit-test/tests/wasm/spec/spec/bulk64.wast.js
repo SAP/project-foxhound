@@ -68,7 +68,7 @@ invoke($1, `fill`, [0n, 0, 65536n]);
 invoke($1, `fill`, [65536n, 0, 0n]);
 
 // ./test/core/memory64/bulk64.wast:40
-assert_trap(() => invoke($1, `fill`, [65537n, 0, 0n]), `out of bounds`);
+assert_trap(() => invoke($1, `fill`, [65537n, 0, 0n]), `out of bounds memory access`);
 
 // ./test/core/memory64/bulk64.wast:45
 let $2 = instantiate(`(module
@@ -152,7 +152,7 @@ assert_return(() => invoke($2, `load8_u`, [15n]), [value("i32", 204)]);
 assert_return(() => invoke($2, `load8_u`, [16n]), [value("i32", 0)]);
 
 // ./test/core/memory64/bulk64.wast:89
-assert_trap(() => invoke($2, `copy`, [13n, 11n, -1n]), `out of bounds`);
+assert_trap(() => invoke($2, `copy`, [13n, 11n, -1n]), `out of bounds memory access`);
 
 // ./test/core/memory64/bulk64.wast:92
 assert_return(() => invoke($2, `load8_u`, [10n]), [value("i32", 0)]);
@@ -188,10 +188,10 @@ invoke($2, `copy`, [65536n, 0n, 0n]);
 invoke($2, `copy`, [0n, 65536n, 0n]);
 
 // ./test/core/memory64/bulk64.wast:109
-assert_trap(() => invoke($2, `copy`, [65537n, 0n, 0n]), `out of bounds`);
+assert_trap(() => invoke($2, `copy`, [65537n, 0n, 0n]), `out of bounds memory access`);
 
 // ./test/core/memory64/bulk64.wast:112
-assert_trap(() => invoke($2, `copy`, [0n, 65537n, 0n]), `out of bounds`);
+assert_trap(() => invoke($2, `copy`, [0n, 65537n, 0n]), `out of bounds memory access`);
 
 // ./test/core/memory64/bulk64.wast:117
 let $3 = instantiate(`(module
@@ -224,7 +224,7 @@ assert_return(() => invoke($3, `load8_u`, [2n]), [value("i32", 0)]);
 invoke($3, `init`, [65532n, 0, 4]);
 
 // ./test/core/memory64/bulk64.wast:140
-assert_trap(() => invoke($3, `init`, [65534n, 0, 3]), `out of bounds`);
+assert_trap(() => invoke($3, `init`, [65534n, 0, 3]), `out of bounds memory access`);
 
 // ./test/core/memory64/bulk64.wast:142
 assert_return(() => invoke($3, `load8_u`, [65534n]), [value("i32", 204)]);
@@ -239,10 +239,10 @@ invoke($3, `init`, [65536n, 0, 0]);
 invoke($3, `init`, [0n, 4, 0]);
 
 // ./test/core/memory64/bulk64.wast:150
-assert_trap(() => invoke($3, `init`, [65537n, 0, 0]), `out of bounds`);
+assert_trap(() => invoke($3, `init`, [65537n, 0, 0]), `out of bounds memory access`);
 
 // ./test/core/memory64/bulk64.wast:153
-assert_trap(() => invoke($3, `init`, [0n, 5, 0]), `out of bounds`);
+assert_trap(() => invoke($3, `init`, [0n, 5, 0]), `out of bounds memory access`);
 
 // ./test/core/memory64/bulk64.wast:158
 invoke($3, `init`, [0n, 0, 0]);

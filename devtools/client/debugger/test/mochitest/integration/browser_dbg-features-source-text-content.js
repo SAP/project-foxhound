@@ -63,6 +63,7 @@ const INDEX_PAGE_CONTENT = `<!DOCTYPE html>
             new Function("a\\n", "b" +inFunctionIncrement++, "debugger;")();
           }
         </script>
+        <link rel="stylesheet" href="/style.css">
       </head>
       <body>
         <iframe src="iframe.html"></iframe>
@@ -126,9 +127,16 @@ httpServer.registerPathHandler("/iframe.html", (request, response) => {
   response.setHeader("Content-Type", "text/html");
   response.write(IFRAME_CONTENT);
 });
+
+httpServer.registerPathHandler("/style.css", (request, response) => {
+  response.setHeader("Content-Type", "text/css");
+  response.write("body { background-color: powderblue; }");
+});
 add_task(async function testSourceTextContent() {
   const dbg = await initDebuggerWithAbsoluteURL("about:blank");
-
+  const isStylesheetsInDebuggerEnabled = Services.prefs.getBoolPref(
+    "devtools.debugger.features.stylesheets-in-debugger"
+  );
   const waitForSources = [
     "index.html",
     "normal-script.js",
@@ -137,6 +145,10 @@ add_task(async function testSourceTextContent() {
     "new-function.js",
     "iframe.html",
   ];
+
+  if (isStylesheetsInDebuggerEnabled) {
+    waitForSources.push("style.css");
+  }
 
   // Load the document *once* the debugger is opened
   // in order to avoid having any source being GC-ed.
@@ -198,6 +210,21 @@ add_task(async function testSourceTextContent() {
     "We get an arbitrary content for same-url, the first loaded one"
   );
 
+  if (isStylesheetsInDebuggerEnabled) {
+    await selectSourceFromSourceTreeWithIndex(
+      dbg,
+      "style.css",
+      9,
+      "Select `style.css` in the Main Thread"
+    );
+
+    is(
+      getEditorContent(dbg),
+      `body { background-color: powderblue; }`,
+      "We get the expected content for style.css"
+    );
+  }
+
   const sameUrlSource = findSource(dbg, "same-url.js");
   const sourceActors = dbg.selectors.getSourceActorsForSource(sameUrlSource.id);
 
@@ -215,28 +242,35 @@ add_task(async function testSourceTextContent() {
   await closeTab(dbg, "same-url.js");
 
   info("Click on the iframe tree node to show sources in the iframe");
-  await clickElement(dbg, "sourceDirectoryLabel", 9);
-  await waitForSourcesInSourceTree(
+
+  await clickElement(
     dbg,
-    [
-      "index.html",
-      "named-eval.js",
-      "normal-script.js",
-      "slow-loading-script.js",
-      "same-url.js",
-      "iframe.html",
-      "same-url.js",
-      "new-function.js",
-    ],
-    {
-      noExpand: true,
-    }
+    "sourceDirectoryLabel",
+    isStylesheetsInDebuggerEnabled ? 10 : 9
   );
+  const treeSources = [
+    "index.html",
+    "named-eval.js",
+    "normal-script.js",
+    "slow-loading-script.js",
+    "same-url.js",
+    "iframe.html",
+    "same-url.js",
+    "new-function.js",
+  ];
+
+  if (isStylesheetsInDebuggerEnabled) {
+    treeSources.push("style.css");
+  }
+
+  await waitForSourcesInSourceTree(dbg, treeSources, {
+    noExpand: true,
+  });
 
   await selectSourceFromSourceTreeWithIndex(
     dbg,
     "same-url.js",
-    12,
+    isStylesheetsInDebuggerEnabled ? 13 : 12,
     "Select `same-url.js` in the iframe"
   );
 
@@ -260,7 +294,11 @@ add_task(async function testSourceTextContent() {
 
   info("Click on the worker tree node to show sources in the worker");
 
-  await clickElement(dbg, "sourceDirectoryLabel", 13);
+  await clickElement(
+    dbg,
+    "sourceDirectoryLabel",
+    isStylesheetsInDebuggerEnabled ? 14 : 13
+  );
 
   const workerSources = [
     "index.html",
@@ -274,6 +312,10 @@ add_task(async function testSourceTextContent() {
     "same-url.js",
   ];
 
+  if (isStylesheetsInDebuggerEnabled) {
+    workerSources.push("style.css");
+  }
+
   await waitForSourcesInSourceTree(dbg, workerSources, {
     noExpand: true,
   });
@@ -281,7 +323,7 @@ add_task(async function testSourceTextContent() {
   await selectSourceFromSourceTreeWithIndex(
     dbg,
     "same-url.js",
-    15,
+    isStylesheetsInDebuggerEnabled ? 16 : 15,
     "Select `same-url.js` in the worker"
   );
 
@@ -380,7 +422,7 @@ const GARBAGED_PAGE_CONTENT = `<!DOCTYPE html>
       <head>
         <script type="text/javascript" src="/garbaged-script.js"></script>
         <script>
-          console.log("garbaged inline script");
+          console.log("garbaged inline script COUNT");
         </script>
       </head>
     </html>`;
@@ -390,7 +432,9 @@ httpServer.registerPathHandler(
   (request, response) => {
     loadCounts[request.path] = (loadCounts[request.path] || 0) + 1;
     response.setStatusLine(request.httpVersion, 200, "OK");
-    response.write(GARBAGED_PAGE_CONTENT);
+    response.write(
+      GARBAGED_PAGE_CONTENT.replace("COUNT", loadCounts[request.path])
+    );
   }
 );
 
@@ -413,37 +457,67 @@ add_task(async function testGarbageCollectedSourceTextContent() {
   );
 
   // Force freeing both the HTML page and script in memory
-  // so that the debugger has to fetch source content from http cache.
+  // so that the debugger has to fetch source content from http cache or network.
   await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
     Cu.forceGC();
   });
 
-  const toolbox = await openToolboxForTab(tab, "jsdebugger");
-  const dbg = createDebuggerContext(toolbox);
+  // Do a first pass without clearing http cache and debugger should retrieve sources
+  // from the http cache without trigerring any actual network request
+  let toolbox = await openToolboxForTab(tab, "jsdebugger");
+  let dbg = createDebuggerContext(toolbox);
   await waitForSources(dbg, "garbaged-collected.html", "garbaged-script.js");
 
   await selectSource(dbg, "garbaged-script.js");
-  // XXX Bug 1758454 - Source content of GC-ed script can be wrong!
-  // Even if we have to issue a new HTTP request for this source,
-  // we should be using HTTP cache and retrieve the first served version which
-  // is the one that actually runs in the page!
-  // We should be displaying `console.log("garbaged script 1")`,
-  // but instead, a new HTTP request is dispatched and we get a new content.
+  is(getEditorContent(dbg), `console.log("garbaged script 1")`);
+
+  await selectSource(dbg, "garbaged-collected.html");
+  is(getEditorContent(dbg), GARBAGED_PAGE_CONTENT.replace("COUNT", 1));
+
+  is(
+    loadCounts["/garbaged-collected.html"],
+    1,
+    "We loaded the html page once as debugger was able to retrieve it from http cache"
+  );
+  is(
+    loadCounts["/garbaged-script.js"],
+    1,
+    "We loaded the garbaged script once as debugger was able to retrieve it from http cache"
+  );
+
+  await gDevTools.closeToolboxForTab(tab);
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
+    Cu.forceGC();
+  });
+
+  // To prevent the SourcesManager from retrieving the data from cache,
+  // clear the network cache.
+  Services.cache2.clear();
+
+  // Now do a second pass which will trigger actual http requests
+  toolbox = await openToolboxForTab(tab, "jsdebugger");
+  dbg = createDebuggerContext(toolbox);
+  await waitForSources(dbg, "garbaged-collected.html", "garbaged-script.js");
+
+  await selectSource(dbg, "garbaged-script.js");
   is(getEditorContent(dbg), `console.log("garbaged script 2")`);
 
   await selectSource(dbg, "garbaged-collected.html");
-  is(getEditorContent(dbg), GARBAGED_PAGE_CONTENT);
+  is(getEditorContent(dbg), GARBAGED_PAGE_CONTENT.replace("COUNT", 2));
 
   is(
     loadCounts["/garbaged-collected.html"],
     2,
-    "We loaded the html page once as we haven't tried to display it in the debugger (2)"
+    "We loaded the html page a second time because of the debugger doing a request"
   );
   is(
     loadCounts["/garbaged-script.js"],
     2,
-    "We loaded the garbaged script twice as we lost its content"
+    "We loaded the garbaged script a second time as we lost its content from memory and http cache"
   );
+
+  await gDevTools.closeToolboxForTab(tab);
 });
 
 /**
@@ -481,6 +555,10 @@ add_task(async function testFailingHtmlSource() {
     BASE_URL + "200-then-connection-reset.html",
     "200-then-connection-reset.html"
   );
+
+  // To prevent the SourcesManager from retrieving the data from cache,
+  // clear the network cache.
+  Services.cache2.clear();
 
   // We can't select the HTML page as its source content isn't fetched
   // (waitForSelectedSource doesn't resolve)
@@ -530,6 +608,10 @@ add_task(async function testLoadingHtmlSource() {
     BASE_URL + "slow-loading-page.html",
     "slow-loading-page.html"
   );
+
+  // To prevent the SourcesManager from retrieving the data from cache,
+  // clear the network cache.
+  Services.cache2.clear();
 
   const onSelected = selectSource(dbg, "slow-loading-page.html");
   await waitFor(

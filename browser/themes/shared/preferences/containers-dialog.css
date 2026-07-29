@@ -1,50 +1,40 @@
-/* Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 @import url("chrome://browser/content/usercontext/usercontext.css");
 
-#name {
-  flex: 1;
+#name::part(label) {
+  font-weight: var(--font-weight-semibold);
 }
 
-.radio-buttons {
-  flex-direction: row;
-  margin-inline-start: 0.35rem;
+#containerForm {
+  display: flex;
+  padding: var(--space-large);
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-large);
 }
 
-.radio-buttons > radio {
-  user-select: none;
-  outline: 2px solid transparent;
-  outline-offset: 4px;
-  min-block-size: 24px;
-  min-inline-size: 24px;
-  border-radius: var(--border-radius-circle);
-  padding: 2px;
-  margin: 9px;
+.swatches::part(inputs) {
+  justify-content: space-between;
 }
 
-.icon-buttons > radio > .userContext-icon {
+.swatch {
+  --visual-picker-item-border-radius: var(--border-radius-circle);
+  --visual-picker-item-border-color: transparent;
+  inline-size: var(--size-item-large);
+  block-size: var(--size-item-large);
+}
+
+.swatch .userContext-icon {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  background-size: 22px;
+}
+
+#iconSwatches .userContext-icon {
   fill: var(--icon-color);
-}
-
-.radio-buttons > radio {
-  padding-inline-start: 2px;
-}
-
-radio > .userContext-icon {
-  inline-size: 22px;
-  block-size: 22px;
-}
-
-.radio-buttons > radio[selected] {
-  outline-color: var(--text-color);
-}
-
-.radio-buttons > radio[focused] {
-  outline-color: var(--border-color-selected);
-}
-
-.radio-buttons > radio:hover:active {
-  outline-color: var(--border-color-selected);
+  background-size: 16px;
 }

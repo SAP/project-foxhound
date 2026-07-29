@@ -561,7 +561,7 @@ const test = new SearchConfigTest([
   },
   {
     identifier: "ecosia",
-    aliases: [],
+    aliases: ["@ecosia"],
     default: {
       // Not default anywhere.
     },
@@ -620,7 +620,7 @@ const test = new SearchConfigTest([
             : "firefox-b-1-d",
       },
       {
-        excluded: [{ regions: ["us", "by", "kz", "ru", "tr"] }],
+        excluded: [{ regions: ["us", "by", "ru"] }],
         included: [{}],
         domain: "google.com",
         telemetryId:
@@ -637,11 +637,30 @@ const test = new SearchConfigTest([
             : "firefox-b-d",
       },
       {
-        included: [{ regions: ["by", "kz", "ru", "tr"] }],
+        included: [{ regions: ["by", "ru"] }],
         domain: "google.com",
         telemetryId: "google-com-nocodes",
         partnerCode: "",
         searchUrlParamNotInQuery: "client",
+      },
+    ],
+  },
+  {
+    identifier: "perplexity",
+    aliases: ["@perplexity"],
+    default: {
+      // Not default anywhere.
+    },
+    available: {
+      excluded: [
+        // Should be available everywhere.
+      ],
+    },
+    details: [
+      {
+        included: [{}],
+        domain: "www.perplexity.ai",
+        searchUrlCode: "pc=firefox",
       },
     ],
   },

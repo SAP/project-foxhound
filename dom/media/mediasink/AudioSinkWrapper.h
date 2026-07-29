@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +8,7 @@
 #include "AudioSink.h"
 #include "MediaSink.h"
 #include "mozilla/AbstractThread.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/EventTargetCapability.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
@@ -163,6 +162,9 @@ class AudioSinkWrapper : public MediaSink {
   TimeStamp mRetrySinkTime;
   // Number of async AudioSink creation tasks in flight
   uint32_t mAsyncCreateCount = 0;
+  // Lets the async-init runnable short-circuit when a newer
+  // MaybeAsyncCreateAudioSink dispatch has come in after it was queued.
+  mozilla::Atomic<uint32_t> mAsyncDispatchSeq{0};
 };
 
 }  // namespace mozilla

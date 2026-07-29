@@ -26,6 +26,7 @@ export const BACKENDS = Object.freeze({
   onnxNative: "onnx-native",
   llamaCpp: "llama.cpp",
   bestLlama: "best-llama",
+  bestOnnx: "best-onnx",
   openai: "openai",
   staticEmbeddings: "static-embeddings",
 });
@@ -165,18 +166,44 @@ export const FEATURES = {
     engineId: "smart-tab-topic-engine",
     fluentId: "mlmodel-smart-tab-topic-engine",
   },
+  // see toolkit/components/formautofill/shared/FormAutofillML.sys.mjs
+  "formfill-classification": {
+    engineId: "formfill-classification-engine",
+    fluentId: "mlmodel-formfill-engine",
+  },
   // see toolkit/components/ml/content/nlp/EmbeddingsGenerator.sys.mjs
   "simple-text-embedder": {
     engineId: "simple-text-embedder-engine",
   },
   // see browser/components/genai/LinkPreviewModel.sys.mjs
   "link-preview": {
-    engineId: "wllamapreview",
+    engineId: "link-preview",
     fluentId: "mlmodel-link-preview",
   },
   // see browser/components/aiwindow/models/IntentClassifier.sys.mjs
   "smart-intent": {
     engineId: "smart-intent",
+  },
+  chat: {
+    engineId: "smart-openai",
+  },
+  "title-generation": {
+    engineId: "title-generation-engine",
+  },
+  "conversation-suggestions-sidebar-starter": {
+    engineId: "smart-openai",
+  },
+  "conversation-suggestions-followup": {
+    engineId: "smart-openai",
+  },
+  "memories-initial-generation-system": {
+    engineId: "smart-openai-memories-generation",
+  },
+  "memories-message-classification-system": {
+    engineId: "smart-openai-memories-usage",
+  },
+  "llm-telemetry": {
+    engineId: "llm-telemetry-engine",
   },
 };
 
@@ -346,6 +373,7 @@ export const AllowedBoolean = [false, true];
 /**
  * @import { TranslationsEngineParent } from "../../translations/actors/TranslationsEngineParent.sys.mjs"
  * @import { StaticEmbeddingsOptions } from "./backends/StaticEmbeddingsPipeline.d.ts"
+ * @import { PURPOSES, SERVICE_TYPES } from "../../../../browser/components/aiwindow/models/Utils.sys.mjs"
  */
 
 const PIPELINE_TEST_NAMES = ["moz-echo", "test-echo"];
@@ -607,9 +635,16 @@ export class PipelineOptions {
   /**
    * The service type for an OpenAIPipeline.
    *
-   * @type {"ai" | "memories" | "s2s" | null}
+   * @type {SERVICE_TYPES[keyof SERVICE_TYPES] | null}
    */
   serviceType = null;
+
+  /**
+   * The purpose of the request, used for telemetry tracking.
+   *
+   * @type {PURPOSES[keyof PURPOSES] | null}
+   */
+  purpose = null;
 
   /**
    * This option allows for extra headers to be passed to
@@ -801,6 +836,7 @@ export class PipelineOptions {
       "timeoutMS",
       "modelId",
       "modelRevision",
+      "flowId",
       "tokenizerId",
       "tokenizerRevision",
       "processorId",
@@ -826,6 +862,7 @@ export class PipelineOptions {
       "apiKey",
       "staticEmbeddingsOptions",
       "serviceType",
+      "purpose",
       "extraHeaders",
     ];
 
@@ -948,6 +985,7 @@ export class PipelineOptions {
       timeoutMS: this.timeoutMS,
       modelId: this.modelId,
       modelRevision: this.modelRevision,
+      flowId: this.flowId,
       tokenizerId: this.tokenizerId,
       tokenizerRevision: this.tokenizerRevision,
       processorId: this.processorId,
@@ -973,6 +1011,7 @@ export class PipelineOptions {
       apiKey: this.apiKey,
       staticEmbeddingsOptions: this.staticEmbeddingsOptions,
       serviceType: this.serviceType,
+      purpose: this.purpose,
       extraHeaders: this.extraHeaders,
     };
   }
@@ -992,7 +1031,22 @@ export class PipelineOptions {
   }
 
   /**
-   * Checks if this PipelineOptions instance is equal to another.
+   * Per-request metadata fields that must not influence engine reuse.
+   * Callers differing only in these values should share one engine.
+   */
+  static #nonIdentityKeys = new Set([
+    "engineId",
+    "featureId",
+    "flowId",
+    "logLevel",
+    "timeoutMS",
+    "serviceType",
+    "purpose",
+  ]);
+
+  /**
+   * Checks if this PipelineOptions is equivalent to another for engine-reuse
+   * purposes. Fields in #nonIdentityKeys are intentionally ignored.
    *
    * @param {PipelineOptions} other - The other PipelineOptions instance to compare with.
    * @returns {boolean} True if the instances are equal, false otherwise.
@@ -1003,6 +1057,7 @@ export class PipelineOptions {
     }
     const options = this.getOptions();
     const otherOptions = other.getOptions();
+    const skip = PipelineOptions.#nonIdentityKeys;
 
     const isEqual = (val1, val2) => {
       if (val1 === val2) {
@@ -1022,9 +1077,38 @@ export class PipelineOptions {
       return keys1.every(key => isEqual(val1[key], val2[key]));
     };
 
-    return Object.keys(options).every(key =>
-      isEqual(options[key], otherOptions[key])
-    );
+    return Object.keys(options).every(key => {
+      if (skip.has(key)) {
+        return true;
+      }
+      if (key === "backend") {
+        return PipelineOptions.#backendsCompatible(
+          options.backend,
+          otherOptions.backend
+        );
+      }
+      return isEqual(options[key], otherOptions[key]);
+    });
+  }
+
+  /**
+   * Whether two backend identifiers should be considered equivalent for
+   * engine reuse. "best-onnx" is a sentinel that resolves at engine-creation
+   * time to either "onnx" or "onnx-native"; a cached engine using either
+   * concrete backend should still satisfy a new "best-onnx" request.
+   */
+  static #backendsCompatible(a, b) {
+    if (a === b) {
+      return true;
+    }
+    const isOnnxConcrete = v => v === "onnx" || v === "onnx-native";
+    if (a === "best-onnx" && isOnnxConcrete(b)) {
+      return true;
+    }
+    if (b === "best-onnx" && isOnnxConcrete(a)) {
+      return true;
+    }
+    return false;
   }
 }
 
@@ -1177,6 +1261,7 @@ export async function createEngine(
       engineId: options.engineId || "",
       modelId: options.modelId || "",
       featureId: options.featureId || "",
+      flow_id: options.flowId || "",
       taskName: options.taskName || "",
       error: e.constructor.name || "",
     });

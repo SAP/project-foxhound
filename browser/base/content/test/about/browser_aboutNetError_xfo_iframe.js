@@ -58,7 +58,7 @@ add_task(async function test_csp() {
       const card = netErrorCard.wrappedJSObject;
       await card.getUpdateComplete();
 
-      const contentElement = card.whatCanYouDo || card.netErrorIntro;
+      const contentElement = card.whatCanYouDo || card.errorIntro;
       if (contentElement) {
         await ContentTaskUtils.waitForCondition(() => {
           return !!contentElement.textContent.trim().length;
@@ -66,7 +66,7 @@ add_task(async function test_csp() {
         textLongDescription = contentElement.textContent;
       }
 
-      const learnMoreLink = card.netErrorLearnMoreLink || card.learnMoreLink;
+      const learnMoreLink = card.learnMoreLink;
       if (learnMoreLink) {
         learnMoreLinkLocation = learnMoreLink.href;
       }

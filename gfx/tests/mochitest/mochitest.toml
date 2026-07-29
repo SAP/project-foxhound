@@ -3,6 +3,7 @@
 ["test_acceleration.html"]
 skip-if = [
   "os == 'win'", # Bug 1430530
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2023606
 ]
 subsuite = "gpu"
 

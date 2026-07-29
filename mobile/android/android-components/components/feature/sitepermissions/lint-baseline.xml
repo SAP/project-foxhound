@@ -2,6 +2,39 @@
 <issues format="6" by="lint 8.13.2" type="baseline" client="gradle" dependencies="false" name="AGP (8.13.2)" variant="all" version="8.13.2">
 
     <issue
+        id="NoSystemCurrentTimeMillis"
+        message="`System.currentTimeMillis()` must be injectable. Only permitted as a default value of a parameter on a top-level function or on a class."
+        errorLine1="            savedAt = System.currentTimeMillis(),"
+        errorLine2="                      ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mozilla/components/feature/sitepermissions/SitePermissionsFeature.kt"
+            line="741"
+            column="23"/>
+    </issue>
+
+    <issue
+        id="NoSystemCurrentTimeMillis"
+        message="`System.currentTimeMillis()` must be injectable. Only permitted as a default value of a parameter on a top-level function or on a class."
+        errorLine1="            ?: SitePermissions(origin, savedAt = System.currentTimeMillis())"
+        errorLine2="                                                 ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mozilla/components/feature/sitepermissions/SitePermissionsFeature.kt"
+            line="743"
+            column="50"/>
+    </issue>
+
+    <issue
+        id="NoSystemCurrentTimeMillis"
+        message="`System.currentTimeMillis()` must be injectable. Only permitted as a default value of a parameter on a top-level function or on a class."
+        errorLine1="    fun toSitePermissions(origin: String, savedAt: Long = System.currentTimeMillis()): SitePermissions {"
+        errorLine2="                                                          ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mozilla/components/feature/sitepermissions/SitePermissionsRules.kt"
+            line="119"
+            column="59"/>
+    </issue>
+
+    <issue
         id="ButtonStyleXmlDetector"
         message="All buttons must have a style, try using NeutralButton or similar."
         errorLine1="    &lt;Button"

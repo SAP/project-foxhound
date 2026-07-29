@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.getSelfHostedValue||!this.hasOwnProperty('Intl'))
-
 const testcases = [
     // Language tag without Unicode extension.
     { locale: "en", start: -1, end: 0 },

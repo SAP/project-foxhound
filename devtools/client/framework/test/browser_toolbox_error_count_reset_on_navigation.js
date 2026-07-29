@@ -49,7 +49,7 @@ add_task(async function () {
   );
 
   info("Add another error so we have a different count");
-  ContentTask.spawn(tab.linkedBrowser, null, function () {
+  SpecialPowers.spawn(tab.linkedBrowser, [], function () {
     content.console.error("Live Error1");
   });
 

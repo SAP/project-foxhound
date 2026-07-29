@@ -45,10 +45,6 @@ void CopyFromConfigToEvent(const InternalAPMConfig& config,
   pb_cfg->set_aec_extended_filter_enabled(config.aec_extended_filter_enabled);
   pb_cfg->set_aec_suppression_level(config.aec_suppression_level);
 
-  pb_cfg->set_aecm_enabled(config.aecm_enabled);
-  pb_cfg->set_aecm_comfort_noise_enabled(config.aecm_comfort_noise_enabled);
-  pb_cfg->set_aecm_routing_mode(config.aecm_routing_mode);
-
   pb_cfg->set_agc_enabled(config.agc_enabled);
   pb_cfg->set_agc_mode(config.agc_mode);
   pb_cfg->set_agc_limiter_enabled(config.agc_limiter_enabled);
@@ -67,6 +63,7 @@ void CopyFromConfigToEvent(const InternalAPMConfig& config,
       config.pre_amplifier_fixed_gain_factor);
 
   pb_cfg->set_experiments_description(config.experiments_description);
+  pb_cfg->set_api_config_string(config.api_config_string);
 }
 
 }  // namespace
@@ -172,7 +169,7 @@ void AecDumpImpl::WriteRenderStreamMessage(
 
   for (int i = 0; i < src.num_channels(); ++i) {
     const auto& channel_view = src.channel(i);
-    msg->add_channel(channel_view.begin(), sizeof(float) * channel_view.size());
+    msg->add_channel(channel_view.data(), sizeof(float) * channel_view.size());
   }
 
   PostWriteToFileTask(std::move(event));
@@ -188,7 +185,7 @@ void AecDumpImpl::WriteRenderStreamMessage(const float* const* data,
 
   for (int i = 0; i < num_channels; ++i) {
     MonoView<const float> channel_view(data[i], samples_per_channel);
-    msg->add_channel(channel_view.begin(), sizeof(float) * channel_view.size());
+    msg->add_channel(channel_view.data(), sizeof(float) * channel_view.size());
   }
 
   PostWriteToFileTask(std::move(event));

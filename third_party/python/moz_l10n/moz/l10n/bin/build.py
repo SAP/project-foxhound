@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from argparse import ArgumentParser, RawDescriptionHelpFormatter
 from collections import defaultdict
@@ -61,6 +62,11 @@ def cli() -> None:
     parser.add_argument(
         "--locales", metavar="LOCALE", nargs="+", required=True, help="target locales"
     )
+    parser.add_argument(
+        "--coverage",
+        action="store_true",
+        help="write a coverage.json file per locale with the translation ratio",
+    )
     args = parser.parse_args()
 
     log_level = (
@@ -76,9 +82,17 @@ def cli() -> None:
     l10n_base: str = args.base
     l10n_target: str = args.target
     locales: set[str] = set(args.locales)
+    write_coverage: bool = args.coverage
 
     # locale -> [ftl_missing, src_fallback]
     msg_data: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+
+    # locale -> {file_path -> {"total": int, "missing": [id, ...]}}.
+    # Pre-initialized so every requested locale gets a coverage.json,
+    # even if no source files were parseable.
+    coverage_data: dict[str, dict[str, dict[str, int | list[str | list[str]]]]] = {
+        locale: {} for locale in locales
+    }
 
     paths = L10nConfigPaths(cfg_path)
     paths.base = l10n_base
@@ -95,13 +109,21 @@ def cli() -> None:
             tgt_path = join(l10n_target, rel_path)
             makedirs(dirname(tgt_path), exist_ok=True)
             if source:
-                msg_delta = write_target_file(rel_path, source, l10n_path, tgt_path)
+                msg_delta, total_count, missing_ids = write_target_file(
+                    rel_path, source, l10n_path, tgt_path
+                )
                 if msg_delta < 0:
                     msg_data[locale][0] -= msg_delta
                 elif msg_delta > 0:
                     msg_data[locale][1] += msg_delta
                 else:
                     msg_data[locale]
+                if write_coverage:
+                    file_key = relpath(l10n_path, join(l10n_base, locale))
+                    coverage_data[locale][file_key] = {
+                        "total": total_count,
+                        "missing": missing_ids,
+                    }
             else:
                 from_path = l10n_path if exists(l10n_path) else source_path
                 if from_path != tgt_path:
@@ -110,6 +132,13 @@ def cli() -> None:
                     copyfile(from_path, tgt_path)
                 else:
                     log.info(f"skip {rel_path}")
+
+    if write_coverage:
+        for locale, file_coverage in coverage_data.items():
+            coverage_path = join(l10n_target, locale, "coverage.json")
+            makedirs(dirname(coverage_path), exist_ok=True)
+            with open(coverage_path, "w", encoding="utf-8") as f:
+                json.dump(file_coverage, f, indent=2, sort_keys=True)
 
     log.info("----")
     for locale, (ftl_missing, src_fallback) in sorted(
@@ -125,7 +154,7 @@ def write_target_file(
     source_res: Resource[Message],
     l10n_path: str,
     tgt_path: str,
-) -> int:
+) -> tuple[int, int, list[str | list[str]]]:
     if exists(l10n_path):
         l10n_res = parse_resource(l10n_path)
         l10n_map = {
@@ -141,13 +170,20 @@ def write_target_file(
     # Fluent uses per-message fallback at runtime, allowing resources to be incomplete.
     is_fluent = source_res.format == Format.fluent
     msg_delta = 0
+    total_count = 0
+    missing_ids: list[str | list[str]] = []
+
+    def missing_id(id: tuple[str, ...]) -> str | list[str]:
+        # Keep the id structural; a single-part id is simplified to a string.
+        return id[0] if len(id) == 1 else list(id)
 
     def get_entry(
         section_id: tuple[str, ...], source_entry: Entry[Message] | Comment
     ) -> Entry[Message] | Comment | None:
-        nonlocal msg_delta
+        nonlocal msg_delta, total_count
         if isinstance(source_entry, Comment):
             return None
+        total_count += 1
         id = section_id + source_entry.id
         if id in l10n_map:
             l10n_entry = l10n_map[id]
@@ -164,13 +200,16 @@ def write_target_file(
                         }
                         return l10n_entry
                     msg_delta -= 1
+                    missing_ids.append(missing_id(id))
                     return None
             return l10n_entry
         elif is_fluent:
             msg_delta -= 1
+            missing_ids.append(missing_id(id))
             return None
         else:
             msg_delta += 1
+            missing_ids.append(missing_id(id))
             return source_entry
 
     for section in source_res.sections:
@@ -186,7 +225,7 @@ def write_target_file(
     with open(tgt_path, "w", encoding="utf-8") as file:
         for line in serialize_resource(l10n_res, trim_comments=True):
             file.write(line)
-    return msg_delta
+    return msg_delta, total_count, missing_ids
 
 
 if __name__ == "__main__":

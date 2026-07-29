@@ -72,7 +72,7 @@
 .if \space > 8192
         // Here, we'd need to touch two (or more) pages while decrementing
         // the stack pointer.
-        .error          "sub_sp_align doesn't support values over 8K at the moment"
+        .error          "sub_sp doesn't support values over 8K at the moment"
 .elseif \space > 4096
         sub             x16, sp,  #4096
         ldr             xzr, [x16]

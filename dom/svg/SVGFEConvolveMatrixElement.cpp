@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -42,13 +40,13 @@ SVGElement::BooleanInfo SVGFEConvolveMatrixElement::sBooleanInfo[1] = {
     {nsGkAtoms::preserveAlpha, false}};
 
 SVGEnumMapping SVGFEConvolveMatrixElement::sEdgeModeMap[] = {
-    {nsGkAtoms::duplicate, SVG_EDGEMODE_DUPLICATE},
-    {nsGkAtoms::wrap, SVG_EDGEMODE_WRAP},
-    {nsGkAtoms::none, SVG_EDGEMODE_NONE},
+    {nsGkAtoms::duplicate, uint8_t(SVGEdgeMode::Duplicate)},
+    {nsGkAtoms::wrap, uint8_t(SVGEdgeMode::Wrap)},
+    {nsGkAtoms::none, uint8_t(SVGEdgeMode::None)},
     {nullptr, 0}};
 
 SVGElement::EnumInfo SVGFEConvolveMatrixElement::sEnumInfo[1] = {
-    {nsGkAtoms::edgeMode, sEdgeModeMap, SVG_EDGEMODE_DUPLICATE}};
+    {nsGkAtoms::edgeMode, sEdgeModeMap, uint8_t(SVGEdgeMode::Duplicate)}};
 
 SVGElement::StringInfo SVGFEConvolveMatrixElement::sStringInfo[2] = {
     {nsGkAtoms::result, kNameSpaceID_None, true},
@@ -175,7 +173,7 @@ FilterPrimitiveDescription SVGFEConvolveMatrixElement::GetPrimitiveDescription(
     }
   }
 
-  uint32_t edgeMode = mEnumAttributes[EDGEMODE].GetAnimValue();
+  SVGEdgeMode edgeMode = SVGEdgeMode(mEnumAttributes[EDGEMODE].GetAnimValue());
   bool preserveAlpha = mBooleanAttributes[PRESERVEALPHA].GetAnimValue();
   float bias = mNumberAttributes[BIAS].GetAnimValue();
 

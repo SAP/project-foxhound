@@ -47,7 +47,7 @@ TooltipTextProvider.prototype = {
       return false;
     }
 
-    var defView = tipElement.ownerGlobal;
+    var defView = tipElement.documentGlobal;
     // XXX Work around bug 350679:
     // "Tooltips can be fired in documents with no view".
     if (!defView) {

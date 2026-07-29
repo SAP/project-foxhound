@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -117,7 +116,7 @@ class AccEvent {
   NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(AccEvent)
 
  protected:
-  virtual ~AccEvent() {}
+  virtual ~AccEvent() = default;
 
   bool mIsFromUserInput;
   uint32_t mEventType;
@@ -244,7 +243,7 @@ class AccMutationEvent : public AccTreeMutationEvent {
     // contained text change events.
     mParent = mAccessible->LocalParent();
   }
-  virtual ~AccMutationEvent() {}
+  virtual ~AccMutationEvent() = default;
 
   // Event
   static const EventGroup kEventGroup = eMutationEvent;
@@ -316,7 +315,7 @@ class AccReorderEvent : public AccTreeMutationEvent {
  public:
   explicit AccReorderEvent(LocalAccessible* aTarget)
       : AccTreeMutationEvent(::nsIAccessibleEvent::EVENT_REORDER, aTarget) {}
-  virtual ~AccReorderEvent() {}
+  virtual ~AccReorderEvent() = default;
 
   // Event
   static const EventGroup kEventGroup = eReorderEvent;
@@ -346,7 +345,7 @@ class AccCaretMoveEvent : public AccEvent {
         mIsSelectionCollapsed(aIsSelectionCollapsed),
         mIsAtEndOfLine(aIsAtEndOfLine),
         mGranularity(aGranularity) {}
-  virtual ~AccCaretMoveEvent() {}
+  virtual ~AccCaretMoveEvent() = default;
 
   // AccEvent
   static const EventGroup kEventGroup = eCaretMoveEvent;
@@ -419,7 +418,7 @@ class AccSelChangeEvent : public AccEvent {
   AccSelChangeEvent(LocalAccessible* aWidget, LocalAccessible* aItem,
                     SelChangeType aSelChangeType);
 
-  virtual ~AccSelChangeEvent() {}
+  virtual ~AccSelChangeEvent() = default;
 
   // AccEvent
   static const EventGroup kEventGroup = eSelectionChangeEvent;
@@ -462,7 +461,7 @@ class AccObjectAttrChangedEvent : public AccEvent {
  private:
   RefPtr<nsAtom> mAttribute;
 
-  virtual ~AccObjectAttrChangedEvent() {}
+  virtual ~AccObjectAttrChangedEvent() = default;
 };
 
 /**
@@ -479,7 +478,7 @@ class AccScrollingEvent : public AccEvent {
         mMaxScrollX(aMaxScrollX),
         mMaxScrollY(aMaxScrollY) {}
 
-  virtual ~AccScrollingEvent() {}
+  virtual ~AccScrollingEvent() = default;
 
   // AccEvent
   static const EventGroup kEventGroup = eScrollingEvent;
@@ -514,7 +513,7 @@ class AccAnnouncementEvent : public AccEvent {
         mAnnouncement(aAnnouncement),
         mPriority(aPriority) {}
 
-  virtual ~AccAnnouncementEvent() {}
+  virtual ~AccAnnouncementEvent() = default;
 
   // AccEvent
   static const EventGroup kEventGroup = eAnnouncementEvent;

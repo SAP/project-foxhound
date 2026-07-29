@@ -450,7 +450,7 @@ async function waitForOSKeyStoreLogin(login = false) {
 }
 
 function patchRecordCCNumber(record) {
-  const ccNumberFmt = "****" + record.cc["cc-number"].substr(-4);
+  const ccNumberFmt = "••••" + record.cc["cc-number"].substr(-4);
 
   return {
     cc: Object.assign({}, record.cc, { ccNumberFmt }),

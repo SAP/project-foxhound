@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -72,6 +70,7 @@ const uint8_t JS_POISONED_JSSCRIPT_DATA_PATTERN = 0xDB;
 const uint8_t JS_OOB_PARSE_NODE_PATTERN = 0xFF;
 const uint8_t JS_LIFO_UNDEFINED_PATTERN = 0xcd;
 const uint8_t JS_LIFO_UNINITIALIZED_PATTERN = 0xce;
+const uint8_t JS_SWEPT_CONT_STACK_PATTERN = 0x5B;
 
 // Even ones
 const uint8_t JS_SCOPE_DATA_TRAILING_NAMES_PATTERN = 0xCC;

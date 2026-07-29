@@ -39,6 +39,16 @@ const lazy = XPCOMUtils.declareLazy({
   mlUtils: { service: "@mozilla.org/ml-utils;1", iid: Ci.nsIMLUtils },
 });
 
+/**
+ * Cached resolution of "best-onnx" for this inference-child process. Null
+ * until the first engine creation attempt observes whether the native
+ * runtime is usable; thereafter set to the concrete backend that worked.
+ * See `dom/onnx/InferenceSession.cpp` for the underlying ORT load.
+ *
+ * @type {null | "onnx" | "onnx-native"}
+ */
+let gBestOnnxBackend = null;
+
 const SAFE_OVERRIDE_OPTIONS = [
   "dtype",
   "logLevel",
@@ -132,6 +142,7 @@ export class MLEngineChild extends JSProcessActorChild {
           port.postMessage({
             type: "EnginePort:EngineReady",
             error: null,
+            resolvedBackend: currentEngineDispatcher.pipelineOptions?.backend,
           });
           return;
         }
@@ -160,6 +171,9 @@ export class MLEngineChild extends JSProcessActorChild {
       port.postMessage({
         type: "EnginePort:EngineReady",
         error: null,
+        // The parent's requested backend may resolve to a more specific
+        // one, e.g. "best-onnx" will resolve to "onnx" or "onnx-native".
+        resolvedBackend: dispatcher.pipelineOptions?.backend,
       });
     } catch (error) {
       port.postMessage({
@@ -189,13 +203,19 @@ export class MLEngineChild extends JSProcessActorChild {
   }
 
   /**
-   * Selects the most appropriate backend for the current environment.
+   * Resolves a requested backend to a concrete backend identifier. "best-onnx"
+   * is handled locally: return the cached choice if one exists, otherwise
+   * optimistically try onnx-native (the caller's engine creation will update
+   * the cache on success or fallback). Other "best-*" values defer to the
+   * parent.
    *
-   * @static
-   * @param {?string} backend - Requested backend or an auto-select sentinel.
+   * @param {?string} backend - Requested backend or a "best-*" value.
    * @returns {Promise<string>} Resolved backend identifier.
    */
   chooseBestBackend(backend) {
+    if (backend === lazy.BACKENDS.bestOnnx) {
+      return Promise.resolve(gBestOnnxBackend ?? lazy.BACKENDS.onnxNative);
+    }
     return this.sendQuery("MLEngine:ChooseBestBackend", backend);
   }
 
@@ -387,37 +407,81 @@ class EngineDispatcher {
     lazy.console.debug("Inference engine options:", mergedOptions);
     this.pipelineOptions = mergedOptions;
 
-    this.pipelineOptions.backend = await this.mlEngineChild.chooseBestBackend(
-      pipelineOptions.backend
-    );
+    const requestedBackend = pipelineOptions.backend;
+    this.pipelineOptions.backend =
+      await this.mlEngineChild.chooseBestBackend(requestedBackend);
 
     // Retrigger validation
     this.pipelineOptions = new lazy.PipelineOptions(this.pipelineOptions);
 
-    // load the wasm if required.
-    let wasm = null;
-    if (
-      lazy.WASM_BACKENDS.includes(
-        this.pipelineOptions.backend || lazy.BACKENDS.onnx
-      )
-    ) {
-      wasm = await this.mlEngineChild.getWasmArrayBuffer(
-        this.pipelineOptions.backend
-      );
-    }
-
     const workerConfig = await this.mlEngineChild.getWorkerConfig();
 
-    return InferenceEngine.create({
-      workerUrl: workerConfig.url,
-      workerOptions: workerConfig.options,
-      wasm,
-      pipelineOptions: mergedOptions,
-      notificationsCallback,
-      getModelFileFn: this.mlEngineChild.getModelFile.bind(this.mlEngineChild),
-      notifyModelDownloadCompleteFn:
-        this.mlEngineChild.notifyModelDownloadComplete.bind(this.mlEngineChild),
-    });
+    const tryCreate = async () => {
+      const opts = /** @type {PipelineOptions} */ (this.pipelineOptions);
+      let wasm = null;
+      if (lazy.WASM_BACKENDS.includes(opts.backend || lazy.BACKENDS.onnx)) {
+        wasm = await this.mlEngineChild.getWasmArrayBuffer(opts.backend);
+      }
+      return InferenceEngine.create({
+        workerUrl: workerConfig.url,
+        workerOptions: workerConfig.options,
+        wasm,
+        pipelineOptions: opts,
+        notificationsCallback,
+        getModelFileFn: this.mlEngineChild.getModelFile.bind(
+          this.mlEngineChild
+        ),
+        notifyModelDownloadCompleteFn:
+          this.mlEngineChild.notifyModelDownloadComplete.bind(
+            this.mlEngineChild
+          ),
+      });
+    };
+
+    const triedNativeForBestOnnx =
+      requestedBackend === lazy.BACKENDS.bestOnnx &&
+      this.pipelineOptions.backend === lazy.BACKENDS.onnxNative;
+
+    try {
+      const engine = await tryCreate();
+      if (triedNativeForBestOnnx) {
+        gBestOnnxBackend = lazy.BACKENDS.onnxNative;
+      }
+      return engine;
+    } catch (error) {
+      // best-onnx promised the caller a working onnx engine. If the native
+      // attempt failed, fall back to the wasm onnx backend. The
+      // NotSupportedError raised from dom/onnx/InferenceSession.cpp gets
+      // wrapped at Pipeline.mjs:87, which strips the original .name, so
+      // match on the message text from the C++ source instead. On that
+      // match we cache the wasm choice; on any other failure we still
+      // retry once with wasm but leave the cache alone.
+      if (!triedNativeForBestOnnx) {
+        throw error;
+      }
+      // KEEP IN SYNC: dom/onnx/InferenceSession.cpp raises this exact
+      // string via MaybeRejectWithNotSupportedError when libonnxruntime
+      // is missing. We match on message text because the BackendError
+      // wrapper at Pipeline.mjs:87 strips the original error name.
+      const isOrtUnavailable =
+        /onnxruntime shared library could not be loaded/.test(
+          error?.message ?? ""
+        );
+      if (isOrtUnavailable) {
+        gBestOnnxBackend = lazy.BACKENDS.onnx;
+        lazy.console.warn(
+          "Native onnx runtime not available; falling back to wasm onnx backend."
+        );
+      } else {
+        lazy.console.warn(
+          "onnx-native engine creation failed; retrying with wasm onnx backend.",
+          error
+        );
+      }
+      this.pipelineOptions.backend = lazy.BACKENDS.onnx;
+      this.pipelineOptions = new lazy.PipelineOptions(this.pipelineOptions);
+      return tryCreate();
+    }
   }
 
   /**

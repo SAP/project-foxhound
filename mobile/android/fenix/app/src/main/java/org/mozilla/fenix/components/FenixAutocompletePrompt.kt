@@ -30,7 +30,7 @@ class FenixAutocompletePrompt<T, V>(
     private val viewProvider: () -> V,
     private val toolbarPositionProvider: () -> ToolbarPosition,
     private val onShow: () -> Unit,
-    private val onHide: () -> Unit,
+    private val onHide: () -> Unit = {},
 ) : AutocompletePrompt<T> where V : View, V : AutocompletePrompt<T>, V : ExpandablePrompt {
     private val view: V by lazy {
         viewProvider()

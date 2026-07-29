@@ -106,12 +106,12 @@ This filters the table to show only items which match the search term. Items mat
 You can use :kbd:`Ctrl` + :kbd:`F` (:kbd:`Cmd` + :kbd:`F` on a Mac) to focus the search box.
 
 
-Add and refresh storage
------------------------
+Add, clear and refresh storage
+------------------------------
 
-You'll also have buttons available to add a new storage entry or refresh the view of the currently viewed storage type where applicable (you can't add new entries to IndexedDB or Cache):
+You'll also have buttons available to add a new storage entry, delete all existing entries, or refresh the view of the currently viewed storage type where applicable (you can't add new entries to IndexedDB or Cache):
 
-.. image:: storage_detail_add_refresh.png
+.. image:: storage_detail_add_clear_refresh.png
   :class: border
 
 

@@ -41,27 +41,30 @@ add_task(async function () {
 
   await selectNode("h1", inspector);
 
-  const expectedRules = [
-    { selector: "element", ancestorRulesData: null },
-    { selector: `h1, [test-hint="no-rule-layer"]`, ancestorRulesData: null },
+  checkRuleViewContent(view, [
+    { selector: "element", selectorEditable: false, ancestorRulesData: null },
     {
-      selector: `h1, [test-hint="imported-no-layer--no-rule-layer"]`,
+      selector: `h1, ~~[test-hint="no-rule-layer"]~~`,
       ancestorRulesData: null,
     },
     {
-      selector: `h1, [test-hint="anonymous-layer"]`,
+      selector: `h1, ~~[test-hint="imported-no-layer--no-rule-layer"]~~`,
+      ancestorRulesData: null,
+    },
+    {
+      selector: `h1, ~~[test-hint="anonymous-layer"]~~`,
       ancestorRulesData: ["@layer {"],
     },
     {
-      selector: `h1, [test-hint="named-layer"]`,
+      selector: `h1, ~~[test-hint="named-layer"]~~`,
       ancestorRulesData: ["@layer myLayer {"],
     },
     {
-      selector: `h1, [test-hint="imported-named-layer--no-rule-layer"]`,
+      selector: `h1, ~~[test-hint="imported-named-layer--no-rule-layer"]~~`,
       ancestorRulesData: ["@layer importedLayer {", "  @media screen {"],
     },
     {
-      selector: `h1, [test-hint="imported-named-layer--named-layer"]`,
+      selector: `h1, ~~[test-hint="imported-named-layer--named-layer"]~~`,
       ancestorRulesData: [
         "@layer importedLayer {",
         "  @media screen {",
@@ -69,7 +72,7 @@ add_task(async function () {
       ],
     },
     {
-      selector: `h1, [test-hint="imported-nested-named-layer--named-layer"]`,
+      selector: `h1, ~~[test-hint="imported-nested-named-layer--named-layer"]~~`,
       ancestorRulesData: [
         "@layer importedLayer {",
         "  @layer importedNestedLayer {",
@@ -77,41 +80,10 @@ add_task(async function () {
       ],
     },
     {
-      selector: `h1, [test-hint="imported-anonymous-layer--no-rule-layer"]`,
+      selector: `h1, ~~[test-hint="imported-anonymous-layer--no-rule-layer"]~~`,
       ancestorRulesData: ["@layer {"],
     },
-  ];
-
-  const rulesInView = Array.from(view.element.children);
-  is(
-    rulesInView.length,
-    expectedRules.length,
-    "All expected rules are displayed"
-  );
-
-  for (let i = 0; i < expectedRules.length; i++) {
-    const expectedRule = expectedRules[i];
-    info(`Checking rule #${i}: ${expectedRule.selector}`);
-
-    const selector = rulesInView[i].querySelector(
-      ".ruleview-selectors-container"
-    ).innerText;
-    is(selector, expectedRule.selector, `Expected selector for ${selector}`);
-
-    if (expectedRule.ancestorRulesData == null) {
-      is(
-        getRuleViewAncestorRulesDataElementByIndex(view, i),
-        null,
-        `No ancestor rules data displayed for ${selector}`
-      );
-    } else {
-      is(
-        getRuleViewAncestorRulesDataTextByIndex(view, i),
-        expectedRule.ancestorRulesData.join("\n"),
-        `Expected ancestor rules data displayed for ${selector}`
-      );
-    }
-  }
+  ]);
 });
 
 add_task(async function editStylesheetLayerRule() {

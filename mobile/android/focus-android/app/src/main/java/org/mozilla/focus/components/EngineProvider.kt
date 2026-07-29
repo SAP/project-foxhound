@@ -148,6 +148,7 @@ object EngineProvider {
      *
      * @param context The application context, used to access the application's settings.
      * @param settings The application settings.
+     * @param newCookieValue The new value for the cookie blocking preference.
      * @return An [EngineSession.TrackingProtectionPolicy] object that defines the tracking protection rules.
      *
      * The tracking protection policy is built based on these settings:
@@ -164,6 +165,7 @@ object EngineProvider {
     fun createTrackingProtectionPolicy(
         context: Context,
         settings: Settings = context.settings,
+        newCookieValue: String? = null,
     ): EngineSession.TrackingProtectionPolicy {
         val trackingCategories: MutableList<EngineSession.TrackingProtectionPolicy.TrackingCategory> =
             mutableListOf(EngineSession.TrackingProtectionPolicy.TrackingCategory.SCRIPTS_AND_SUB_RESOURCES)
@@ -181,7 +183,7 @@ object EngineProvider {
             trackingCategories.add(EngineSession.TrackingProtectionPolicy.TrackingCategory.CONTENT)
         }
 
-        val cookiePolicy = getCookiePolicy(context)
+        val cookiePolicy = getCookiePolicy(context, settings, newCookieValue)
 
         return EngineSession.TrackingProtectionPolicy.select(
             cookiePolicy = cookiePolicy,
@@ -216,6 +218,7 @@ object EngineProvider {
      *
      * @param context The application context.
      * @param settings The application settings, defaults to `context.settings`.
+     * @param newCookieValue The new value for the cookie blocking preference.
      * @return The [CookiePolicy] corresponding to the user's cookie blocking preference.
      *
      * @see CookiePolicy
@@ -224,8 +227,10 @@ object EngineProvider {
     internal fun getCookiePolicy(
         context: Context,
         settings: Settings = context.settings,
+        newCookieValue: String? = null,
     ): CookiePolicy {
-        return when (settings.shouldBlockCookiesValue) {
+        val cookieValue = newCookieValue ?: settings.shouldBlockCookiesValue
+        return when (cookieValue) {
             context.getString(R.string.yes) -> CookiePolicy.ACCEPT_NONE
 
             context.getString(R.string.third_party_tracker) -> CookiePolicy.ACCEPT_NON_TRACKERS
@@ -252,7 +257,7 @@ object EngineProvider {
 
                 val cookieOptionIndex =
                     context.resources.getStringArray(R.array.cookies_options_entries)
-                        .asList().indexOf(settings.shouldBlockCookiesValue)
+                        .asList().indexOf(cookieValue)
 
                 val correspondingValue =
                     context.resources.getStringArray(R.array.cookies_options_entry_values).getOrNull(cookieOptionIndex)
@@ -273,9 +278,12 @@ object EngineProvider {
                     context.getString(R.string.cross_site) ->
                         CookiePolicy.ACCEPT_FIRST_PARTY_AND_ISOLATE_OTHERS
 
+                    context.getString(R.string.no) ->
+                        CookiePolicy.ACCEPT_ALL
+
                     else -> {
                         // Fallback to the default value.
-                        CookiePolicy.ACCEPT_ALL
+                        CookiePolicy.ACCEPT_FIRST_PARTY_AND_ISOLATE_OTHERS
                     }
                 }
             }

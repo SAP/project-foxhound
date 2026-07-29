@@ -31,6 +31,7 @@
 
     .div-marker::marker {
       content: "div-marker";
+      animation: div-marker 10s infinite;
     }
 
     dialog::backdrop {
@@ -99,6 +100,15 @@
         background-color: gold;
       }
     }
+
+    @keyframes div-marker {
+      from {
+        color: black;
+      }
+      to {
+        color: lime;
+      }
+    }
     </style>
   </head>
   <body>
@@ -110,21 +120,6 @@
 
     <script>
     "use strict";
-
-    // The reason why we currently run the animation on `::marker` with Web Animations API
-    // instead of CSS Animations is because it requires `layout.css.marker.restricted`
-    // pref change.
-    document.querySelector(".div-marker").animate(
-      {
-        color: ["black", "lime"],
-      },
-      {
-        id: "div-marker",
-        duration: 10000,
-        iterations: Infinity,
-        pseudoElement: "::marker",
-      }
-    );
 
     // show the dialog modal so the backdrop pseudo element node gets displayed
     document.querySelector("dialog").showModal();

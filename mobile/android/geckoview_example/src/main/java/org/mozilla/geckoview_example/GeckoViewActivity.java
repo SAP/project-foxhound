@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -54,6 +53,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.OptIn;
 import androidx.annotation.UiThread;
 import androidx.appcompat.app.ActionBar;
 import androidx.appcompat.app.AppCompatActivity;
@@ -80,10 +80,13 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.json.JSONObject;
+import org.mozilla.geckoview.AIFeaturesController;
+import org.mozilla.geckoview.AIFeaturesController.RuntimeAIFeatures;
 import org.mozilla.geckoview.AllowOrDeny;
 import org.mozilla.geckoview.Autocomplete;
 import org.mozilla.geckoview.BasicSelectionActionDelegate;
 import org.mozilla.geckoview.ContentBlocking;
+import org.mozilla.geckoview.ExperimentalGeckoViewApi;
 import org.mozilla.geckoview.GeckoResult;
 import org.mozilla.geckoview.GeckoRuntime;
 import org.mozilla.geckoview.GeckoRuntimeSettings;
@@ -106,6 +109,7 @@ import org.mozilla.geckoview.WebNotificationDelegate;
 import org.mozilla.geckoview.WebRequest;
 import org.mozilla.geckoview.WebRequestError;
 import org.mozilla.geckoview.WebResponse;
+import org.mozilla.geckoview_example.utils.EdgeToEdgeUtils;
 import org.mozilla.geckoview_example.utils.WindowUtils;
 
 interface WebExtensionDelegate {
@@ -485,6 +489,7 @@ public class GeckoViewActivity extends AppCompatActivity
   private boolean mFullScreen;
   private boolean mExpectedTranslate = false;
   private boolean mTranslateRestore = false;
+  private boolean mTranslationsEnabled = true;
   private boolean mPipFullscreenMedia = false;
   private boolean mPipIsPlaying = false;
 
@@ -772,6 +777,14 @@ public class GeckoViewActivity extends AppCompatActivity
         }
       };
 
+  private final BooleanSetting mEdgeToEdgeEnabled =
+      new BooleanSetting(R.string.key_edge_to_edge_enabled, R.bool.edge_to_edge_enabled_default) {
+        @Override
+        public void setValue(final GeckoRuntimeSettings settings, final Boolean value) {
+          EdgeToEdgeUtils.setEdgeToEdgeEnabled(value);
+        }
+      };
+
   private final StringSetting mEnhancedTrackingProtection =
       new StringSetting(
           R.string.key_enhanced_tracking_protection,
@@ -877,6 +890,7 @@ public class GeckoViewActivity extends AppCompatActivity
     }
   }
 
+  @OptIn(markerClass = ExperimentalGeckoViewApi.class)
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
@@ -895,7 +909,7 @@ public class GeckoViewActivity extends AppCompatActivity
     mGeckoView.setActivityContextDelegate(new ExampleActivityDelegate());
     mTabSessionManager = new TabSessionManager();
 
-    WindowUtils.setupPersistentInsets(getWindow());
+    WindowUtils.setupPersistentInsets(getWindow(), true);
     WindowUtils.setupImeBehavior(getWindow());
     setSupportActionBar(findViewById(R.id.toolbar));
 
@@ -903,6 +917,9 @@ public class GeckoViewActivity extends AppCompatActivity
     preferences.registerOnSharedPreferenceChangeListener(this);
     // Read initial preference state
     onPreferencesChange(preferences);
+
+    // This references a preference value, so this is after reading initial preference state
+    EdgeToEdgeUtils.init(getWindow(), mEdgeToEdgeEnabled.value());
 
     mToolbarView = new ToolbarLayout(this, mTabSessionManager);
     mToolbarView.setId(R.id.toolbar_layout);
@@ -1072,6 +1089,17 @@ public class GeckoViewActivity extends AppCompatActivity
 
     mToolbarView.getLocationView().setCommitListener(mCommitListener);
     mToolbarView.updateTabCount();
+
+    RuntimeAIFeatures.listFeatures()
+        .then(
+            features -> {
+              final AIFeaturesController.AIFeature translations = features.get("translations");
+              if (translations != null) {
+                mTranslationsEnabled = translations.isEnabled;
+                invalidateOptionsMenu();
+              }
+              return null;
+            });
   }
 
   private void openSettingsActivity() {
@@ -1344,6 +1372,8 @@ public class GeckoViewActivity extends AppCompatActivity
     menu.findItem(R.id.desktop_mode).setEnabled(hasSession);
     menu.findItem(R.id.translate).setVisible(mExpectedTranslate);
     menu.findItem(R.id.translate_restore).setVisible(mTranslateRestore);
+    menu.findItem(R.id.translate_disable).setVisible(mTranslationsEnabled);
+    menu.findItem(R.id.translate_enable).setVisible(!mTranslationsEnabled);
     return true;
   }
 
@@ -1395,6 +1425,10 @@ public class GeckoViewActivity extends AppCompatActivity
       translateRestore(session);
     } else if (id == R.id.translate_manage) {
       translateManage();
+    } else if (id == R.id.translate_disable) {
+      translateSetEnabled(false);
+    } else if (id == R.id.translate_enable) {
+      translateSetEnabled(true);
     } else if (id == R.id.webcompat_info) {
       webCompatInfo(session);
     } else {
@@ -1545,6 +1579,9 @@ public class GeckoViewActivity extends AppCompatActivity
                           final int langIndex =
                               toData.getPosition(
                                   new TranslationsController.Language(preferredList.get(i), null));
+                          if (langIndex < 0) {
+                            continue;
+                          }
                           TranslationsController.Language displayLanguage =
                               toData.getItem(langIndex);
                           toData.remove(displayLanguage);
@@ -1595,6 +1632,21 @@ public class GeckoViewActivity extends AppCompatActivity
                 mTranslateRestore = false;
                 return null;
               }
+            });
+  }
+
+  @OptIn(markerClass = ExperimentalGeckoViewApi.class)
+  private void translateSetEnabled(final boolean enabled) {
+    RuntimeAIFeatures.setFeatureEnablement("translations", enabled)
+        .then(
+            value -> {
+              mTranslationsEnabled = enabled;
+              invalidateOptionsMenu();
+              return null;
+            },
+            exception -> {
+              Log.e(LOGTAG, "Could not set translations enabled state: " + exception);
+              return null;
             });
   }
 

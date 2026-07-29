@@ -380,7 +380,7 @@ def mozillabuild(**kwargs) -> DoctorCheck:
         )
 
     try:
-        with open(mozpath.join(MOZILLABUILD, "VERSION")) as fh:
+        with open(mozpath.join(MOZILLABUILD, "VERSION"), encoding="utf-8") as fh:
             local_version = fh.readline()
 
         if not local_version:

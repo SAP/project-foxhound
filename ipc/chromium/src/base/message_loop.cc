@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2009 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -217,7 +215,7 @@ MessageLoop::MessageLoop(Type type, nsISerialEventTarget* aEventTarget)
       nestable_tasks_allowed_(true),
       exception_restoration_(false),
       incoming_queue_lock_("MessageLoop Incoming Queue Lock"),
-      state_(NULL),
+      state_(nullptr),
       run_depth_base_(1),
       shutting_down_(false),
 #ifdef XP_WIN
@@ -330,7 +328,7 @@ MessageLoop::~MessageLoop() {
   DCHECK(!did_work);
 
   // OK, now make it so that no one can find us.
-  get_tls_ptr().Set(NULL);
+  get_tls_ptr().Set(nullptr);
 }
 
 void MessageLoop::AddDestructionObserver(DestructionObserver* obs) {
@@ -633,7 +631,7 @@ MessageLoop::AutoRunState::AutoRunState(MessageLoop* loop) : loop_(loop) {
   // Initialize the other fields:
   quit_received = false;
 #if defined(XP_WIN)
-  dispatcher = NULL;
+  dispatcher = nullptr;
 #endif
 }
 

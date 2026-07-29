@@ -9,10 +9,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.support.test.mock
 import mozilla.components.ui.widgets.behavior.DependencyGravity.Bottom
 import mozilla.components.ui.widgets.behavior.DependencyGravity.Top
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.verify
+import kotlin.test.assertIs
 
 @RunWith(AndroidJUnit4::class)
 class ViewYTranslatorTest {
@@ -20,14 +20,14 @@ class ViewYTranslatorTest {
     fun `yTranslator should use BottomToolbarBehaviorStrategy for bottom placed toolbars`() {
         val yTranslator = ViewYTranslator(Bottom)
 
-        assertTrue(yTranslator.strategy is BottomViewBehaviorStrategy)
+        assertIs<BottomViewBehaviorStrategy>(yTranslator.strategy)
     }
 
     @Test
     fun `yTranslator should use TopToolbarBehaviorStrategy for top placed toolbars`() {
         val yTranslator = ViewYTranslator(Top)
 
-        assertTrue(yTranslator.strategy is TopViewBehaviorStrategy)
+        assertIs<TopViewBehaviorStrategy>(yTranslator.strategy)
     }
 
     @Test

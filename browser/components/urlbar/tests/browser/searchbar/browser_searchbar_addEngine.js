@@ -23,8 +23,10 @@ add_setup(async function () {
 // Adapted from ../browser_searchModeSwitcher_opensearchInstall.js.
 add_task(async function test_usingSearchModeSwitcher() {
   let promiseEngineAdded = SearchTestUtils.promiseEngine("Foo");
-  let popup = await SearchbarTestUtils.openSearchModeSwitcher(window);
-  popup.querySelector("menuitem[label=engine1]").click();
+  await SearchbarTestUtils.activateSearchModeSwitcherItem(
+    window,
+    "panel-item[data-engine-name=engine1]"
+  );
   let engine = await promiseEngineAdded;
   Assert.ok(true, "The engine was installed.");
 

@@ -33,7 +33,6 @@ for path in paths:
 from chrome_trace import ChromeTrace
 from cmdline import (
     CHROME_ANDROID_APPS,
-    DESKTOP_APPS,
     FIREFOX_ANDROID_APPS,
     FIREFOX_APPS,
     GECKO_PROFILER_APPS,
@@ -44,6 +43,7 @@ from condprof.util import get_current_platform
 from gecko_profile import GeckoProfile
 from logger.logger import RaptorLogger
 from results import RaptorResultsHandler
+from simpleperf import SimpleperfProfile
 
 LOG = RaptorLogger(component="raptor-perftest")
 
@@ -83,6 +83,7 @@ class Perftest(metaclass=ABCMeta):
         gecko_profile_threads=None,
         gecko_profile_features=None,
         extra_profiler_run=False,
+        simpleperf=False,
         symbols_path=None,
         host=None,
         cold=False,
@@ -136,6 +137,7 @@ class Perftest(metaclass=ABCMeta):
             "gecko_profile_threads": gecko_profile_threads,
             "gecko_profile_features": gecko_profile_features,
             "extra_profiler_run": extra_profiler_run,
+            "simpleperf": simpleperf,
             "symbols_path": symbols_path,
             "host": host,
             "cold": cold,
@@ -196,6 +198,7 @@ class Perftest(metaclass=ABCMeta):
         self.benchmark = None
         self.gecko_profiler = None
         self.chrome_trace = None
+        self.simpleperf_profiler = None
         self.device = None
         self.runtime_error = None
         self.profile_class = profile_class or app
@@ -539,6 +542,13 @@ class Perftest(metaclass=ABCMeta):
                 LOG.info("cleaning up after gathering chrome trace")
                 self.chrome_trace.clean()
 
+        # Simpleperf profiling symbolication. This is currently only enabled for CI runs
+        # as the dependencies for this symbolication (Samply) are
+        # not available locally yet. See Bug 2028955.
+        if self.config.get("simpleperf") and self.simpleperf_profiler:
+            self.simpleperf_profiler.symbolicate()
+            self.simpleperf_profiler.clean()
+
         return res
 
     @abstractmethod
@@ -599,14 +609,7 @@ class Perftest(metaclass=ABCMeta):
         # creating the playback tool
         playback_dir = os.path.join(here, "tooltool-manifests", "playback")
 
-        # Bug 1926419 avoid using mitm11 manifest on linux desktop tests.
-        if "linux" in self.config["platform"] and self.config["app"] in DESKTOP_APPS:
-            playback_manifest = test.get(
-                "playback_pageset_manifest_backup",
-                test.get("playback_pageset_manifest"),
-            )
-        else:
-            playback_manifest = test.get("playback_pageset_manifest")
+        playback_manifest = test.get("playback_pageset_manifest")
         playback_manifests = playback_manifest.split(",")
 
         self.config.update({
@@ -640,6 +643,15 @@ class Perftest(metaclass=ABCMeta):
             LOG.critical("Chrome Trace ignored because MOZ_UPLOAD_DIR was not set")
         else:
             self.chrome_trace = ChromeTrace(upload_dir, self.config, test)
+
+    def _init_simpleperf_profiling(self, test):
+        LOG.info("Initializing Simpleperf profiler")
+        upload_dir = os.getenv("MOZ_UPLOAD_DIR")
+        if not upload_dir:
+            LOG.critical("Profiling ignored because MOZ_UPLOAD_DIR was not set")
+            self.simpleperf_profiler = None
+        else:
+            self.simpleperf_profiler = SimpleperfProfile(upload_dir, self.config, test)
 
     def disable_non_local_connections(self):
         # For Firefox we need to set MOZ_DISABLE_NONLOCAL_CONNECTIONS=1 env var before startup

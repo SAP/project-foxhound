@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -155,7 +153,7 @@ void DecoderDoctorLogger::EnableLogging() { (void)EnsureLogIsEnabled(); }
 DecoderDoctorLogger::RetrieveMessages(
     const dom::HTMLMediaElement* aMediaElement) {
   if (MOZ_UNLIKELY(!EnsureLogIsEnabled())) {
-    DDL_WARN("Request (for %p) but there are no logs", aMediaElement);
+    DDL_WARN("Request (for {}) but there are no logs", fmt::ptr(aMediaElement));
     return DecoderDoctorLogger::LogMessagesPromise::CreateAndReject(
         NS_ERROR_DOM_MEDIA_ABORT_ERR, __func__);
   }

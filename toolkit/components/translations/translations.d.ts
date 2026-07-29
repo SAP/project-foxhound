@@ -89,6 +89,8 @@ export interface WasmRecord {
   filter_expression: string;
 }
 
+export type TranslationsRecord = TranslationModelRecord | WasmRecord;
+
 /**
  * The following are the types that are provided by the Bergamot wasm library.
  *
@@ -201,11 +203,29 @@ export namespace Bergamot {
  * The client to interact with RemoteSettings.
  * See services/settings/RemoteSettingsClient.sys.mjs
  */
-interface RemoteSettingsClient {
+export interface RemoteSettingsClient {
   on: Function;
   get: Function;
-  attachments: any;
   sync: Function;
+  attachments: Attachments;
+}
+
+export interface AttachmentDownloadResult {
+  buffer: ArrayBuffer;
+  blob?: Blob;
+  record?: TranslationsRecord;
+  _source?: string;
+}
+
+/**
+ * Attachments API for Remote Settings.
+ * Implemented by services/settings/Attachments.sys.mjs
+ */
+export interface Attachments {
+  download(record: TranslationsRecord): Promise<AttachmentDownloadResult>;
+  isDownloaded(record: TranslationsRecord): Promise<boolean>;
+  deleteAll(): Promise<void>;
+  deleteDownloaded(record: TranslationsRecord): Promise<void>;
 }
 
 /**

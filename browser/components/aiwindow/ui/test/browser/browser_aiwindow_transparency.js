@@ -3,8 +3,6 @@
 
 "use strict";
 
-const FIRSTRUN_URL = "chrome://browser/content/aiwindow/firstrun.html";
-
 /**
  * Checks if browser has transparent attribute
  *

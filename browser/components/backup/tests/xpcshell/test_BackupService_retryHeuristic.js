@@ -250,3 +250,86 @@ add_task(async function test_exponential_backoff() {
 
   sandbox.restore();
 });
+
+/**
+ * Tests that createBackupOnIdleDispatch does not delete the old backup file
+ * when the new archive path matches the old backup file path (same-minute
+ * filename collision).
+ */
+add_task(async function test_no_delete_when_archive_matches_old_backup() {
+  let bs = new BackupService();
+  let sandbox = sinon.createSandbox();
+
+  sandbox.stub(ChromeUtils, "idleDispatch").callsFake(callback => callback());
+
+  let backupDir = Services.prefs.getStringPref(
+    BACKUP_DEFAULT_LOCATION_PREF_NAME
+  );
+
+  let oldBackupFileName = "FirefoxBackup_profile_name_20260311-140000.000.html";
+  let oldBackupPath = PathUtils.join(backupDir, oldBackupFileName);
+
+  bs.onUpdateLastBackupFileName(oldBackupFileName);
+  Services.prefs.clearUserPref(BACKUP_DEBUG_INFO_PREF_NAME);
+
+  await IOUtils.writeUTF8(oldBackupPath, "fake backup content");
+
+  sandbox
+    .stub(bs, "createBackup")
+    .resolves({ manifest: {}, archivePath: oldBackupPath });
+
+  await bs.createBackupOnIdleDispatch({
+    deletePreviousBackup: true,
+    reason: "idle",
+  });
+
+  Assert.ok(
+    await IOUtils.exists(oldBackupPath),
+    "Old backup file was NOT deleted because archivePath matched"
+  );
+
+  await IOUtils.remove(oldBackupPath, { ignoreAbsent: true });
+  sandbox.restore();
+});
+
+/**
+ * Tests that createBackupOnIdleDispatch does delete the old backup file
+ * when the new archive path differs from the old backup file path.
+ */
+add_task(async function test_delete_when_archive_differs_from_old_backup() {
+  let bs = new BackupService();
+  let sandbox = sinon.createSandbox();
+
+  sandbox.stub(ChromeUtils, "idleDispatch").callsFake(callback => callback());
+
+  let backupDir = Services.prefs.getStringPref(
+    BACKUP_DEFAULT_LOCATION_PREF_NAME
+  );
+
+  let oldBackupFileName = "FirefoxBackup_profile_name_20260311-140000.000.html";
+  let newBackupFileName = "FirefoxBackup_profile_name_20260311-150000.000.html";
+  let oldBackupPath = PathUtils.join(backupDir, oldBackupFileName);
+  let newBackupPath = PathUtils.join(backupDir, newBackupFileName);
+
+  bs.onUpdateLastBackupFileName(oldBackupFileName);
+  Services.prefs.clearUserPref(BACKUP_DEBUG_INFO_PREF_NAME);
+
+  await IOUtils.writeUTF8(oldBackupPath, "fake backup content");
+
+  sandbox
+    .stub(bs, "createBackup")
+    .resolves({ manifest: {}, archivePath: newBackupPath });
+
+  await bs.createBackupOnIdleDispatch({
+    deletePreviousBackup: true,
+    reason: "idle",
+  });
+
+  Assert.ok(
+    !(await IOUtils.exists(oldBackupPath)),
+    "Old backup file was deleted because archivePath differed"
+  );
+
+  await IOUtils.remove(newBackupPath, { ignoreAbsent: true });
+  sandbox.restore();
+});

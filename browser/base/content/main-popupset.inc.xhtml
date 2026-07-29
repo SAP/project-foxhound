@@ -43,6 +43,9 @@
     <menuitem id="context_separateSplitView"
       data-lazy-l10n-id="tab-context-separate-split-view"
       hidden="true"/>
+    <menuitem id="context_reverseSplitView"
+      data-lazy-l10n-id="tab-context-reverse-split-view"
+      hidden="true"/>
     <menuseparator/>
     <menuitem id="context_reloadTab" data-lazy-l10n-id="reload-tab"/>
     <menuitem id="context_reloadSelectedTabs" data-lazy-l10n-id="reload-tabs" hidden="true"/>
@@ -68,15 +71,7 @@
     <menuitem id="context_bookmarkTab"
               data-lazy-l10n-id="tab-context-bookmark-tab"/>
     <menuitem id="context_addNote" hidden="true" data-lazy-l10n-id="tab-context-add-note" />
-    <menu id="context_updateNote"
-      hidden="true"
-      data-lazy-l10n-id="tab-context-update-note">
-      <menupopup id="tabUpdateOptionsMenu">
-        <menuitem id="context_editNote" data-lazy-l10n-id="tab-context-edit-note" />
-        <menuitem id="context_deleteNote" data-lazy-l10n-id="tab-context-delete-note" />
-      </menupopup>
-    </menu>
-
+    <menuitem id="context_editNote" hidden="true" data-lazy-l10n-id="tab-context-edit-note" />
     <menu id="context_moveTabOptions"
           data-lazy-l10n-id="tab-context-move-tabs"
           data-l10n-args='{"tabCount": 1}'>
@@ -99,6 +94,10 @@
     </menu>
     <menuitem id="context_selectAllTabs" data-lazy-l10n-id="select-all-tabs"/>
     <menuseparator/>
+    <menuitem id="context_shareSelectedTabs"
+          hidden="true"
+          data-lazy-l10n-id="tab-context-share-selected-tabs"/>
+    <menuseparator id="context_shareSelectedTabsSeparator" hidden="true"/>
     <menu id="context_sendTabToDevice"
           class="sync-ui-item"
           data-lazy-l10n-id="tab-context-send-to-device"
@@ -179,7 +178,8 @@
          hidden="true"
          overflowpadding="4"
          norolluponanchor="true"
-         nomaxresults="true" />
+         nomaxresults="true"
+         locationspecific="true" />
 
   <!-- for search with one-off buttons -->
   <panel is="search-autocomplete-richlistbox-popup"
@@ -195,6 +195,7 @@
          id="selection-shortcut-action-panel"
          noautofocus="true"
          consumeoutsideclicks="never"
+         nonnative=""
          type="arrow">
     <hbox class="panel-subview-body">
       <html:moz-button id="ai-action-button"/>
@@ -206,6 +207,7 @@
   <panel class="panel-no-padding"
          id="chat-shortcuts-options-panel"
          noautofocus="true"
+         nonnative=""
          type="arrow">
     <vbox class="panel-subview-body"/>
   </panel>
@@ -401,12 +403,26 @@
     <menuseparator/>
     <menuitem data-l10n-id="sidebar-history-context-menu-bookmark-page"
               id="sidebar-history-context-bookmark-page"/>
+    <menuitem data-l10n-id="places-open-all-in-tabs"
+              id="sidebar-history-context-open-all-in-tabs"
+              class="sidebar-history-multiselect-command"/>
+    <menuseparator class="sidebar-history-multiselect-command"/>
     <menuitem data-l10n-id="sidebar-history-context-menu-delete-pages"
               id="sidebar-history-context-delete-pages"
               class="sidebar-history-multiselect-command"/>
   </menupopup>
 
   <menupopup id="sidebar-synced-tabs-context-menu">
+    <menuitem data-l10n-id="sidebar-context-menu-open-in-tab"
+              id="sidebar-synced-tabs-context-open-in-tab"/>
+    <menu id="sidebar-synced-tabs-context-menu-container-tab"
+            data-l10n-id="sidebar-context-menu-open-in-container-tab"
+            selection-type="single"
+            node-type="link"
+            hide-if-private-browsing="true"
+            hide-if-usercontext-disabled="true">
+      <menupopup id="sidebar-synced-tabs-context-menu-container-popup"/>
+    </menu>
     <menuitem data-l10n-id="sidebar-context-menu-open-in-window"
               id="sidebar-synced-tabs-context-open-in-window"/>
     <menuitem data-l10n-id="sidebar-context-menu-open-in-private-window"
@@ -421,6 +437,58 @@
               id="sidebar-synced-tabs-context-bookmark-tab"/>
     <menuitem data-l10n-id="sidebar-context-menu-copy-link"
               id="sidebar-synced-tabs-context-copy-link"/>
+    <menuseparator/>
+    <menuitem data-l10n-id="synced-tabs-context-open-all-in-tabs"
+              id="sidebar-synced-tabs-context-open-all-in-tabs"/>
+    <menuitem data-l10n-id="synced-tabs-context-connect-another-device"
+              id="sidebar-synced-tabs-context-connect-another-device"/>
+    <menuitem data-l10n-id="synced-tabs-context-manage-this-device"
+              id="sidebar-synced-tabs-context-manage-this-device"/>
+  </menupopup>
+
+  <menupopup id="sidebar-bookmarks-context-menu">
+    <menuitem data-l10n-id="places-open-all-bookmarks"
+              id="sidebar-bookmarks-context-open-all-bookmarks"/>
+    <menuseparator id="sidebar-bookmarks-context-sep-open-all"/>
+    <menuitem data-l10n-id="sidebar-context-menu-open-in-tab"
+              id="sidebar-bookmarks-context-open-in-tab"/>
+    <menu id="sidebar-bookmarks-context-open-in-container-tab"
+            data-l10n-id="sidebar-context-menu-open-in-container-tab"
+            hide-if-private-browsing="true"
+            hide-if-usercontext-disabled="true">
+      <menupopup id="sidebar-bookmarks-context-container-tab-popup"/>
+    </menu>
+    <menuitem data-l10n-id="sidebar-context-menu-open-in-window"
+              id="sidebar-bookmarks-context-open-in-window"/>
+    <menuitem data-l10n-id="sidebar-context-menu-open-in-private-window"
+              id="sidebar-bookmarks-context-open-in-private-window"/>
+    <menuitem data-l10n-id="places-show-in-folder"
+              id="sidebar-bookmarks-context-show-in-folder"/>
+    <menuseparator id="sidebar-bookmarks-context-sep-open-options"/>
+    <menuitem data-l10n-id="sidebar-bookmarks-context-menu-edit-bookmark"
+              id="sidebar-bookmarks-context-edit-bookmark"/>
+    <menuitem data-l10n-id="sidebar-bookmarks-context-menu-delete-bookmark"
+              id="sidebar-bookmarks-context-delete-bookmark"/>
+    <menuseparator id="sidebar-bookmarks-context-sep-sort"/>
+    <menuitem data-l10n-id="places-sortby-name"
+              id="sidebar-bookmarks-context-sort-by-name"/>
+    <menuseparator id="sidebar-bookmarks-context-sep-cut-copy"/>
+    <menuitem data-l10n-id="text-action-cut"
+              id="sidebar-bookmarks-context-cut"/>
+    <menuitem data-l10n-id="text-action-copy"
+              id="sidebar-bookmarks-context-copy"/>
+    <menuitem data-l10n-id="text-action-paste"
+              id="sidebar-bookmarks-context-paste"/>
+    <menuseparator id="sidebar-bookmarks-context-sep-edit-copy"/>
+    <menuitem data-l10n-id="sidebar-context-menu-copy-link"
+              id="sidebar-bookmarks-context-copy-link"/>
+    <menuseparator id="sidebar-bookmarks-context-sep-add"/>
+    <menuitem data-l10n-id="places-add-bookmark"
+              id="sidebar-bookmarks-context-add-bookmark"/>
+    <menuitem data-l10n-id="places-add-folder-contextmenu"
+              id="sidebar-bookmarks-context-add-folder"/>
+    <menuitem data-l10n-id="places-add-separator"
+              id="sidebar-bookmarks-context-add-separator"/>
   </menupopup>
 
   <menupopup id="split-view-menu">
@@ -535,7 +603,7 @@
   <menupopup id="contentAreaContextMenu"
 # read by macOS cocoa code to enable the "services" menu here:
              showservicesmenu="true">
-#include browser-context.inc
+#include browser-context.inc.xhtml
   </menupopup>
 
   <menupopup id="pictureInPictureToggleContextMenu">
@@ -559,6 +627,7 @@
          noautofocus="true"
          norolluponanchor="true"
          consumeoutsideclicks="false"
+         nonnative=""
          role="tooltip">
     <html:div class="tab-preview-content-interactive"></html:div>
     <html:div class="tab-preview-content-main">
@@ -599,8 +668,10 @@
          role="tooltip">
     <html:div class="tab-note-preview-container">
       <html:div class="tab-note-preview-text"></html:div>
-      <!-- Not using a real button here to avoid having to unset default styles -->
-      <html:div role="button" class="tab-note-preview-expand" data-l10n-id="tab-note-preview-expand"></html:div>
+      <html:div class="tab-note-preview-actions">
+        <!-- Not using a real button here to avoid having to unset default styles -->
+        <html:div role="button" tabindex="0" class="tab-note-preview-expand" data-l10n-id="tab-note-preview-expand"></html:div>
+      </html:div>
     </html:div>
   </panel>
 
@@ -669,6 +740,11 @@
     <menuitem id="pageActionContextMenuRemoveExtension"
               class="pageActionContextMenuItem extensionPinned extensionUnpinned removeExtensionItem"
               data-l10n-id="page-action-remove-extension2"/>
+  </menupopup>
+
+  <menupopup id="userContext-indicator-menu">
+    <menuitem data-l10n-id="user-context-manage-containers"
+              command="Browser:OpenAboutContainers"/>
   </menupopup>
 
 #include ../../components/places/content/bookmarksHistoryTooltip.inc.xhtml

@@ -11,10 +11,10 @@
 // frecency calculation.
 add_task(async function test_eraseEverything() {
   await PlacesTestUtils.addVisits({
-    uri: NetUtil.newURI("http://example.com/"),
+    uri: Services.io.newURI("http://example.com/"),
   });
   await PlacesTestUtils.addVisits({
-    uri: NetUtil.newURI("http://mozilla.org/"),
+    uri: Services.io.newURI("http://mozilla.org/"),
   });
 
   let exampleFrecency = await PlacesTestUtils.getDatabaseValue(

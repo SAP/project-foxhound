@@ -26,6 +26,9 @@ support-files = [
 ["test_bug746272-1.html"]
 
 ["test_bug746272-2.html"]
+skip-if = [
+  "standalone", # Bug 2026600
+]
 
 ["test_cookieBlock.html"]
 

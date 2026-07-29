@@ -9,6 +9,9 @@
  */
 #include "test/run_loop.h"
 
+#include "absl/base/nullability.h"
+#include "absl/functional/any_invocable.h"
+#include "api/task_queue/pending_task_safety_flag.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/units/time_delta.h"
 #include "rtc_base/socket.h"
@@ -19,7 +22,14 @@
 namespace webrtc {
 namespace test {
 
-RunLoop::RunLoop() {
+RunLoop::RunLoop() : worker_thread_(&socket_server_), weak_factory_(this) {
+  worker_thread_.WrapCurrent();
+}
+
+RunLoop::RunLoop(SocketServer* absl_nullable custom_ss)
+    : socket_server_(custom_ss),
+      worker_thread_(&socket_server_),
+      weak_factory_(this) {
   worker_thread_.WrapCurrent();
 }
 
@@ -39,6 +49,23 @@ void RunLoop::Quit() {
   socket_server_.FailNextWait();
 }
 
+absl::AnyInvocable<void()> RunLoop::QuitClosure() {
+  return [loop = weak_factory_.GetWeakPtr()] {
+    if (loop) {
+      loop->Quit();
+    }
+  };
+}
+
+void RunLoop::RunFor(TimeDelta max_wait_duration) {
+  // If Quit is called before the timeout expires, then we'll cancel this post
+  // task automatically.
+  ScopedTaskSafety auto_cancel;
+  worker_thread_.PostDelayedHighPrecisionTask(
+      SafeTask(auto_cancel.flag(), QuitClosure()), max_wait_duration);
+  Run();
+}
+
 void RunLoop::Flush() {
   worker_thread_.PostTask([this]() { socket_server_.FailNextWait(); });
   // If a test clock is used, like with GlobalSimulatedTimeController then the
@@ -50,10 +77,21 @@ void RunLoop::Flush() {
 }
 
 RunLoop::FakeSocketServer::FakeSocketServer() = default;
+
+RunLoop::FakeSocketServer::FakeSocketServer(
+    SocketServer* absl_nullable custom_ss)
+    : custom_ss_(custom_ss) {}
+
 RunLoop::FakeSocketServer::~FakeSocketServer() = default;
 
 void RunLoop::FakeSocketServer::FailNextWait() {
   fail_next_wait_ = true;
+}
+
+void RunLoop::FakeSocketServer::SetMessageQueue(Thread* absl_nullable queue) {
+  if (custom_ss_) {
+    custom_ss_->SetMessageQueue(queue);
+  }
 }
 
 bool RunLoop::FakeSocketServer::Wait(TimeDelta max_wait_duration,
@@ -62,16 +100,27 @@ bool RunLoop::FakeSocketServer::Wait(TimeDelta max_wait_duration,
     fail_next_wait_ = false;
     return false;
   }
+  if (custom_ss_) {
+    return custom_ss_->Wait(max_wait_duration, process_io);
+  }
   return true;
 }
 
-void RunLoop::FakeSocketServer::WakeUp() {}
+void RunLoop::FakeSocketServer::WakeUp() {
+  if (custom_ss_) {
+    custom_ss_->WakeUp();
+  }
+}
 
-Socket* RunLoop::FakeSocketServer::CreateSocket(int family, int type) {
+Socket* absl_nullable RunLoop::FakeSocketServer::CreateSocket(int family,
+                                                              int type) {
+  if (custom_ss_) {
+    return custom_ss_->CreateSocket(family, type);
+  }
   return nullptr;
 }
 
-RunLoop::WorkerThread::WorkerThread(SocketServer* ss)
+RunLoop::WorkerThread::WorkerThread(SocketServer* absl_nullable ss)
     : Thread(ss), tq_setter_(this) {}
 
 }  // namespace test

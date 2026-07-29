@@ -5,12 +5,16 @@ package mozilla.components.browser.engine.gecko.preferences
 
 import androidx.annotation.OptIn
 import mozilla.components.concept.engine.preferences.Branch
+import mozilla.components.concept.engine.preferences.BrowserPrefType
 import mozilla.components.concept.engine.preferences.BrowserPreference
 import mozilla.components.concept.engine.preferences.SetBrowserPreference
 import org.mozilla.geckoview.ExperimentalGeckoViewApi
 import org.mozilla.geckoview.GeckoPreferenceController.GeckoPreference
 import org.mozilla.geckoview.GeckoPreferenceController.PREF_BRANCH_DEFAULT
 import org.mozilla.geckoview.GeckoPreferenceController.PREF_BRANCH_USER
+import org.mozilla.geckoview.GeckoPreferenceController.PREF_TYPE_BOOL
+import org.mozilla.geckoview.GeckoPreferenceController.PREF_TYPE_INT
+import org.mozilla.geckoview.GeckoPreferenceController.PREF_TYPE_STRING
 import org.mozilla.geckoview.GeckoPreferenceController.SetGeckoPreference
 
 /**
@@ -31,6 +35,20 @@ object GeckoPreferencesUtils {
     }
 
     /**
+     * Convenience method for mapping a Gecko preference type
+     * into the corresponding AC [BrowserPrefType]
+     */
+    @OptIn(ExperimentalGeckoViewApi::class)
+    fun Int.intoBrowserPrefType(): BrowserPrefType {
+        return when (this) {
+            PREF_TYPE_STRING -> BrowserPrefType.STRING
+            PREF_TYPE_INT -> BrowserPrefType.INT
+            PREF_TYPE_BOOL -> BrowserPrefType.BOOL
+            else -> BrowserPrefType.INVALID
+        }
+    }
+
+    /**
      * Convenience method for mapping a GeckoView [GeckoPreference]
      * into an Android Components [BrowserPreference].
      */
@@ -42,6 +60,7 @@ object GeckoPreferencesUtils {
             defaultValue = this.defaultValue,
             userValue = this.userValue,
             hasUserChangedValue = this.hasUserChangedValue,
+            prefType = this.type.intoBrowserPrefType(),
         )
     }
 

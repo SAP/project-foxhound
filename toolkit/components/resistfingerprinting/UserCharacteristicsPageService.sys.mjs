@@ -1,4 +1,3 @@
-// -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -9,7 +8,6 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   HiddenBrowserManager: "resource://gre/modules/HiddenFrame.sys.mjs",
-  Preferences: "resource://gre/modules/Preferences.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
   ProcessType: "resource://gre/modules/ProcessType.sys.mjs",
@@ -172,23 +170,23 @@ export class UserCharacteristicsPageService {
       [this.initWindowInfoActor, []],
       [
         this.populateWebGlInfo,
-        [browser.ownerGlobal, browser.ownerDocument, 1, false],
+        [browser.documentGlobal, browser.ownerDocument, 1, false],
       ],
       [
         this.populateWebGlInfo,
-        [browser.ownerGlobal, browser.ownerDocument, 1, true],
+        [browser.documentGlobal, browser.ownerDocument, 1, true],
       ],
       [
         this.populateWebGlInfo,
-        [browser.ownerGlobal, browser.ownerDocument, 2, false],
+        [browser.documentGlobal, browser.ownerDocument, 2, false],
       ],
       [
         this.populateWebGlInfo,
-        [browser.ownerGlobal, browser.ownerDocument, 2, true],
+        [browser.documentGlobal, browser.ownerDocument, 2, true],
       ],
       [this.populateCanvasData, []],
-      [this.populateWebGPUProperties, [browser.ownerGlobal]],
-      [this.populateUserAgent, [browser.ownerGlobal]],
+      [this.populateWebGPUProperties, [browser.documentGlobal]],
+      [this.populateUserAgent, [browser.documentGlobal]],
     ];
     // Bind them to the class and run them in parallel.
     // Timeout if any of them takes too long (5 minutes).
@@ -393,7 +391,7 @@ export class UserCharacteristicsPageService {
   // metrics, so we do this in a wrapper function
   async filterAllCanvasRawData(allCanvasData) {
     // Check if we should skip compression (test mode)
-    const skipCompression = lazy.Preferences.get(
+    const skipCompression = Services.prefs.getBoolPref(
       "toolkit.telemetry.user_characteristics_ping.test_skip_compression",
       false
     );
@@ -465,7 +463,7 @@ export class UserCharacteristicsPageService {
     // and the collect probability.
 
     // Check if we should ignore probability filtering
-    const ignoreProbability = lazy.Preferences.get(
+    const ignoreProbability = Services.prefs.getBoolPref(
       "toolkit.telemetry.user_characteristics_ping.ignore_canvas_probability",
       false
     );
@@ -1056,7 +1054,6 @@ export class UserCharacteristicsPageService {
         "mathml8",
         "mathml9",
         "mathml10",
-        "mathmlDiagFontFamily",
         "monochrome",
         "cssSystemColors",
         "cssSystemFonts",
@@ -1140,7 +1137,15 @@ export class UserCharacteristicsPageService {
 
     for (const type in metrics) {
       for (const metric of metrics[type]) {
-        Glean.characteristics[metric][type](data.get(metric));
+        const value = data.get(metric);
+        // Populators may omit a field when no valid value is available
+        // (e.g. populateVoiceList omits all voices_* fields when the 5s
+        // populate timeout wins, so timed-out runs are absent rather than
+        // collapsed to sha1("") / count=0).
+        if (value === undefined) {
+          continue;
+        }
+        Glean.characteristics[metric][type](value);
       }
     }
   }
@@ -1619,13 +1624,15 @@ export class UserCharacteristicsPageService {
       "media.mediasource.vp9.enabled",
     ];
 
-    const defaultPrefs = new lazy.Preferences({ defaultBranch: true });
+    const defaultBranch = Services.prefs.getDefaultBranch("");
     const changedPrefs = {};
     for (const pref of PREFS) {
-      const value = lazy.Preferences.get(pref);
-      if (lazy.Preferences.isSet(pref) && defaultPrefs.get(pref) !== value) {
-        const key = pref.substring(6).substring(0, pref.length - 8 - 6);
-        changedPrefs[key] = value;
+      if (Services.prefs.prefHasUserValue(pref)) {
+        const value = Services.prefs.getBoolPref(pref);
+        if (defaultBranch.getBoolPref(pref) !== value) {
+          const key = pref.substring(6).substring(0, pref.length - 8 - 6);
+          changedPrefs[key] = value;
+        }
       }
     }
     Glean.characteristics.changedMediaPrefs.set(JSON.stringify(changedPrefs));

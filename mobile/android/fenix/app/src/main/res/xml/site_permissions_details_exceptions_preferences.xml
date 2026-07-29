@@ -5,25 +5,25 @@
 <androidx.preference.PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <androidx.preference.Preference
-            android:icon="@drawable/ic_camera_enabled"
+            android:icon="@drawable/mozac_ic_camera_24"
             android:key="@string/pref_key_phone_feature_camera"
             android:title="@string/preference_phone_feature_camera"
             android:summary="@string/preference_option_phone_feature_ask_to_allow"/>
 
     <androidx.preference.Preference
-            android:icon="@drawable/ic_location_enabled"
+            android:icon="@drawable/mozac_ic_location_24"
             android:key="@string/pref_key_phone_feature_location"
             android:title="@string/preference_phone_feature_location"
             android:summary="@string/preference_option_phone_feature_ask_to_allow"/>
 
     <androidx.preference.Preference
-            android:icon="@drawable/ic_microphone_enabled"
+            android:icon="@drawable/mozac_ic_microphone_24"
             android:key="@string/pref_key_phone_feature_microphone"
             android:title="@string/preference_phone_feature_microphone"
             android:summary="@string/preference_option_phone_feature_ask_to_allow"/>
 
     <androidx.preference.Preference
-            android:icon="@drawable/ic_notifications_enabled"
+            android:icon="@drawable/mozac_ic_notification_24"
             android:key="@string/pref_key_phone_feature_notification"
             android:title="@string/preference_phone_feature_notification"
             android:summary="@string/preference_option_phone_feature_ask_to_allow"/>
@@ -41,7 +41,7 @@
         android:summary="@string/preference_option_phone_feature_ask_to_allow"/>
 
     <androidx.preference.Preference
-        android:icon="@drawable/ic_link"
+        android:icon="@drawable/mozac_ic_link_24"
         android:key="@string/pref_key_browser_feature_media_key_system_access"
         android:title="@string/preference_phone_feature_media_key_system_access"
         android:summary="@string/preference_option_phone_feature_ask_to_allow"/>
@@ -60,7 +60,7 @@
         app:isPreferenceVisible="false" />
 
     <androidx.preference.Preference
-        android:icon="@drawable/mozac_ic_router_24"
+        android:icon="@drawable/mozac_ic_local_network_24"
         android:key="@string/pref_key_browser_feature_local_network_access"
         android:summary="@string/preference_option_phone_feature_ask_to_allow"
         android:title="@string/preference_browser_feature_local_network_access"

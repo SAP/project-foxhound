@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,12 +24,13 @@ SVGElement::NumberPairInfo SVGFEMorphologyElement::sNumberPairInfo[1] = {
     {nsGkAtoms::radius, 0}};
 
 SVGEnumMapping SVGFEMorphologyElement::sOperatorMap[] = {
-    {nsGkAtoms::erode, SVG_OPERATOR_ERODE},
-    {nsGkAtoms::dilate, SVG_OPERATOR_DILATE},
+    {nsGkAtoms::erode, uint8_t(SVGMorphologyOperator::Erode)},
+    {nsGkAtoms::dilate, uint8_t(SVGMorphologyOperator::Dilate)},
     {nullptr, 0}};
 
 SVGElement::EnumInfo SVGFEMorphologyElement::sEnumInfo[1] = {
-    {nsGkAtoms::_operator, sOperatorMap, SVG_OPERATOR_ERODE}};
+    {nsGkAtoms::_operator, sOperatorMap,
+     uint8_t(SVGMorphologyOperator::Erode)}};
 
 SVGElement::StringInfo SVGFEMorphologyElement::sStringInfo[2] = {
     {nsGkAtoms::result, kNameSpaceID_None, true},
@@ -98,7 +97,8 @@ FilterPrimitiveDescription SVGFEMorphologyElement::GetPrimitiveDescription(
   GetRXY(&rx, &ry, *aInstance);
   MorphologyAttributes atts;
   atts.mRadii = Size(rx, ry);
-  atts.mOperator = (uint32_t)mEnumAttributes[OPERATOR].GetAnimValue();
+  atts.mOperator =
+      SVGMorphologyOperator(mEnumAttributes[OPERATOR].GetAnimValue());
   return FilterPrimitiveDescription(AsVariant(std::move(atts)));
 }
 

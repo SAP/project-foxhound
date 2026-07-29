@@ -1,0 +1,15 @@
+{
+  "label": "watch.sling.com",
+  "bugs": {
+    "1904417": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["https://watch.sling.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

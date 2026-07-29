@@ -115,7 +115,7 @@ HTTP load media-element-source-seek-1.html
 load offline-buffer-source-ended-1.html
 skip-if(gtkWidget&&/^24\.04$/.test(os_version)) load oscillator-ended-1.html
 skip-if(gtkWidget&&/^24\.04$/.test(os_version)) load oscillator-ended-2.html
-load video-replay-after-audio-end.html # bug 1315125, bug 1358876
+skip-if(macosVm) load video-replay-after-audio-end.html # bug 1315125, bug 1358876, Bug 2037084 hangs on no-display macOS VMs
 # This needs to run at the end to avoid leaking busted state into other tests.
 skip-if(Android||ThreadSanitizer) load 691096-1.html # Bug 1365451
 load 1236639.html
@@ -173,6 +173,7 @@ load invalidfmt.html
 load 1848660.html
 load 1835118.adts
 load trimming_needed_and_last_sample_invalid_duration.ogg
+load ogg-skeleton-index-negative-time-denominator-release-assert.html
 load 1839193.html
 load 1850453.html
 test-pref(media.hevc.enabled,true) load 1859384.mp4
@@ -182,6 +183,7 @@ load 1864450.html
 load 1872787.html
 load small-timebase.html
 load vp9cake_corrupt.webm
+load vpx_alpha_mismatch.webm
 load 1903669.html
 load 1905234.html
 load 1905231.webm
@@ -192,6 +194,7 @@ load 1999307.html
 load 2014845.html
 load dynamics-compressor-extreme-value.html
 load 2014824.html
+load 2014827.html
 load 2014849.html
 load 2014841.html
 load 2014856.html
@@ -206,3 +209,15 @@ load 2014861.html
 skip-if(Android) load 2016504.html
 skip-if(Android) load 2016883.html
 skip-if(Android) load 2016497.html
+load 2017511.html
+HTTP load 2014878.html
+load 2014896.html
+load 2022746.html
+load 2027433.html
+pref(media.decoder-doctor.testing,true) load 2024424.html
+skip-if(!winWidget) pref(media.hevc.enabled,true) load 1859400.html
+load 1603271.html
+load 1536243.html
+load 2027160.html
+load 2035081.html
+pref(media.autoplay.default,0) load bug2032944.html

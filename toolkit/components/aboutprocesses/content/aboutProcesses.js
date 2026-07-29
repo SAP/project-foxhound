@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-*/
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,6 +24,8 @@ const NS_PER_DAY = NS_PER_HOUR * 24;
 const ONE_GIGA = 1024 * 1024 * 1024;
 const ONE_MEGA = 1024 * 1024;
 const ONE_KILO = 1024;
+
+const WEB_ISOLATED_L10N_ID = "about-processes-web-isolated-process2";
 
 const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
@@ -72,6 +72,19 @@ const PROFILE_DURATION = Math.max(
  * }.
  */
 let gLocalizedUnits;
+
+/**
+ * To avoid needing to re-fetching at each update we prefetch the localized
+ * process properties.
+ *
+ * @type {
+ *   privateWindow: string,
+ *   serviceWorker: string,
+ *   jitDisabled: string,
+ *   withCoopCoep: string,
+ * }.
+ */
+let gLocalizedProcessProperties;
 
 let tabFinder = {
   update() {
@@ -443,6 +456,197 @@ var View = {
   },
 
   /**
+   * Updates the name cell of a process row.
+   *
+   * @param {ProcessDelta} data The data to display.
+   * @param {DOMElement} nameCell The cell displaying the process name.
+   */
+  updateProcessName(data, nameCell) {
+    let classNames = [];
+    let fluentName;
+    let fluentArgs = {
+      pid: "" + data.pid, // Make sure that this number is not localized
+    };
+    let processProperties = [];
+
+    switch (data.type) {
+      case "web":
+        fluentName = "about-processes-web-process";
+        break;
+      case "webIsolated":
+        fluentName = WEB_ISOLATED_L10N_ID;
+        fluentArgs.origin = data.origin;
+        processProperties.push(fluentArgs.pid);
+        break;
+      case "webServiceWorker":
+        fluentName = WEB_ISOLATED_L10N_ID;
+        fluentArgs.origin = data.origin;
+        processProperties.push(fluentArgs.pid);
+        processProperties.push(gLocalizedProcessProperties.serviceWorker);
+        break;
+      case "file":
+        fluentName = "about-processes-file-process";
+        break;
+      case "extension":
+        fluentName = "about-processes-extension-process";
+        classNames = ["extensions"];
+        break;
+      case "privilegedabout":
+        fluentName = "about-processes-privilegedabout-process";
+        break;
+      case "privilegedmozilla":
+        fluentName = "about-processes-privilegedmozilla-process";
+        break;
+      case "withCoopCoep":
+        fluentName = WEB_ISOLATED_L10N_ID;
+        fluentArgs.origin = data.origin;
+        processProperties.push(fluentArgs.pid);
+        processProperties.push(gLocalizedProcessProperties.withCoopCoep);
+        break;
+      case "browser":
+        fluentName = "about-processes-browser-process";
+        break;
+      case "plugin":
+        fluentName = "about-processes-plugin-process";
+        break;
+      case "gmpPlugin":
+        fluentName = "about-processes-gmp-plugin-process";
+        break;
+      case "gpu":
+        fluentName = "about-processes-gpu-process";
+        break;
+      case "vr":
+        fluentName = "about-processes-vr-process";
+        break;
+      case "rdd":
+        fluentName = "about-processes-rdd-process";
+        break;
+      case "socket":
+        fluentName = "about-processes-socket-process";
+        break;
+      case "forkServer":
+        fluentName = "about-processes-fork-server-process";
+        break;
+      case "preallocated":
+        fluentName = "about-processes-preallocated-process";
+        break;
+      case "utility":
+        fluentName = "about-processes-utility-process";
+        break;
+      case "inference":
+        fluentName = "about-processes-inference-process";
+        break;
+      // The following are probably not going to show up for users
+      // but let's handle the case anyway to avoid heisenoranges
+      // during tests in case of a leftover process from a previous
+      // test.
+      default:
+        fluentName = "about-processes-unknown-process";
+        fluentArgs.type = data.type;
+        break;
+    }
+
+    // Show container names instead of raw origin attribute suffixes.
+    if (fluentArgs.origin?.includes("^")) {
+      let origin = fluentArgs.origin;
+      if (
+        origin.endsWith("^disableJit=1") ||
+        origin.endsWith("&disableJit=1")
+      ) {
+        processProperties.push(gLocalizedProcessProperties.jitDisabled);
+      }
+
+      let privateBrowsingId, userContextId;
+      try {
+        ({ privateBrowsingId, userContextId } =
+          ChromeUtils.createOriginAttributesFromOrigin(origin));
+        fluentArgs.origin = origin.slice(0, origin.indexOf("^"));
+      } catch (e) {
+        // createOriginAttributesFromOrigin can throw NS_ERROR_FAILURE for incorrect origin strings.
+      }
+      if (userContextId) {
+        let identityLabel =
+          ContextualIdentityService.getUserContextLabel(userContextId);
+        if (identityLabel) {
+          fluentArgs.origin += ` — ${identityLabel}`;
+        }
+      }
+      if (privateBrowsingId) {
+        processProperties.push(gLocalizedProcessProperties.privateWindow);
+      }
+    }
+
+    if (processProperties.length) {
+      fluentArgs.properties = new Intl.ListFormat(undefined, {
+        type: "unit",
+      }).format(processProperties);
+    }
+
+    let processNameElement = nameCell;
+    if (SHOW_PROFILER_ICONS) {
+      if (!nameCell.firstChild) {
+        processNameElement = document.createElement("span");
+        nameCell.appendChild(processNameElement);
+
+        let profilerButton = document.createElement("span");
+        profilerButton.className = "profiler-icon";
+        profilerButton.setAttribute("role", "button");
+        profilerButton.setAttribute("tabindex", "0");
+        profilerButton.setAttribute("aria-pressed", "false");
+        document.l10n.setAttributes(
+          profilerButton,
+          "about-processes-profile-process",
+          { duration: PROFILE_DURATION }
+        );
+        nameCell.appendChild(profilerButton);
+      } else {
+        processNameElement = nameCell.firstChild;
+      }
+    }
+    document.l10n.setAttributes(processNameElement, fluentName, fluentArgs);
+    nameCell.className = ["type", "favicon", ...classNames].join(" ");
+    nameCell.setAttribute("id", data.pid + "-label");
+
+    let image;
+    switch (data.type) {
+      case "browser":
+      case "privilegedabout":
+        image = "chrome://branding/content/icon32.png";
+        break;
+      case "extension":
+        image = "chrome://mozapps/skin/extensions/extension.svg";
+        break;
+      default:
+        // If all favicons match, pick the shared favicon.
+        // Otherwise, pick a default icon.
+        // If some tabs have no favicon, we ignore them.
+        for (let win of data.windows || []) {
+          if (!win.tab) {
+            continue;
+          }
+          let favicon = win.tab.tab.getAttribute("image");
+          if (!favicon) {
+            // No favicon here, let's ignore the tab.
+          } else if (!image) {
+            // Let's pick a first favicon.
+            // We'll remove it later if we find conflicting favicons.
+            image = favicon;
+          } else if (image == favicon) {
+            // So far, no conflict, keep the favicon.
+          } else {
+            // Conflicting favicons, fallback to default.
+            image = null;
+            break;
+          }
+        }
+        if (!image) {
+          image = "chrome://global/skin/icons/link.svg";
+        }
+    }
+    nameCell.style.backgroundImage = `url('${image}')`;
+  },
+
+  /**
    * Display a row showing a single process (without its threads).
    *
    * @param {ProcessDelta} data The data to display.
@@ -464,170 +668,7 @@ var View = {
 
     // Column: Name
     let nameCell = row.firstChild;
-    {
-      let classNames = [];
-      let fluentName;
-      let fluentArgs = {
-        pid: "" + data.pid, // Make sure that this number is not localized
-      };
-      switch (data.type) {
-        case "web":
-          fluentName = "about-processes-web-process";
-          break;
-        case "webIsolated":
-          fluentName = "about-processes-web-isolated-process";
-          fluentArgs.origin = data.origin;
-          break;
-        case "webServiceWorker":
-          fluentName = "about-processes-web-serviceworker";
-          fluentArgs.origin = data.origin;
-          break;
-        case "file":
-          fluentName = "about-processes-file-process";
-          break;
-        case "extension":
-          fluentName = "about-processes-extension-process";
-          classNames = ["extensions"];
-          break;
-        case "privilegedabout":
-          fluentName = "about-processes-privilegedabout-process";
-          break;
-        case "privilegedmozilla":
-          fluentName = "about-processes-privilegedmozilla-process";
-          break;
-        case "withCoopCoep":
-          fluentName = "about-processes-with-coop-coep-process";
-          fluentArgs.origin = data.origin;
-          break;
-        case "browser":
-          fluentName = "about-processes-browser-process";
-          break;
-        case "plugin":
-          fluentName = "about-processes-plugin-process";
-          break;
-        case "gmpPlugin":
-          fluentName = "about-processes-gmp-plugin-process";
-          break;
-        case "gpu":
-          fluentName = "about-processes-gpu-process";
-          break;
-        case "vr":
-          fluentName = "about-processes-vr-process";
-          break;
-        case "rdd":
-          fluentName = "about-processes-rdd-process";
-          break;
-        case "socket":
-          fluentName = "about-processes-socket-process";
-          break;
-        case "forkServer":
-          fluentName = "about-processes-fork-server-process";
-          break;
-        case "preallocated":
-          fluentName = "about-processes-preallocated-process";
-          break;
-        case "utility":
-          fluentName = "about-processes-utility-process";
-          break;
-        case "inference":
-          fluentName = "about-processes-inference-process";
-          break;
-        // The following are probably not going to show up for users
-        // but let's handle the case anyway to avoid heisenoranges
-        // during tests in case of a leftover process from a previous
-        // test.
-        default:
-          fluentName = "about-processes-unknown-process";
-          fluentArgs.type = data.type;
-          break;
-      }
-
-      // Show container names instead of raw origin attribute suffixes.
-      if (fluentArgs.origin?.includes("^")) {
-        let origin = fluentArgs.origin;
-        let privateBrowsingId, userContextId;
-        try {
-          ({ privateBrowsingId, userContextId } =
-            ChromeUtils.createOriginAttributesFromOrigin(origin));
-          fluentArgs.origin = origin.slice(0, origin.indexOf("^"));
-        } catch (e) {
-          // createOriginAttributesFromOrigin can throw NS_ERROR_FAILURE for incorrect origin strings.
-        }
-        if (userContextId) {
-          let identityLabel =
-            ContextualIdentityService.getUserContextLabel(userContextId);
-          if (identityLabel) {
-            fluentArgs.origin += ` — ${identityLabel}`;
-          }
-        }
-        if (privateBrowsingId) {
-          fluentName += "-private";
-        }
-      }
-
-      let processNameElement = nameCell;
-      if (SHOW_PROFILER_ICONS) {
-        if (!nameCell.firstChild) {
-          processNameElement = document.createElement("span");
-          nameCell.appendChild(processNameElement);
-
-          let profilerButton = document.createElement("span");
-          profilerButton.className = "profiler-icon";
-          profilerButton.setAttribute("role", "button");
-          profilerButton.setAttribute("tabindex", "0");
-          profilerButton.setAttribute("aria-pressed", "false");
-          document.l10n.setAttributes(
-            profilerButton,
-            "about-processes-profile-process",
-            { duration: PROFILE_DURATION }
-          );
-          nameCell.appendChild(profilerButton);
-        } else {
-          processNameElement = nameCell.firstChild;
-        }
-      }
-      document.l10n.setAttributes(processNameElement, fluentName, fluentArgs);
-      nameCell.className = ["type", "favicon", ...classNames].join(" ");
-      nameCell.setAttribute("id", data.pid + "-label");
-
-      let image;
-      switch (data.type) {
-        case "browser":
-        case "privilegedabout":
-          image = "chrome://branding/content/icon32.png";
-          break;
-        case "extension":
-          image = "chrome://mozapps/skin/extensions/extension.svg";
-          break;
-        default:
-          // If all favicons match, pick the shared favicon.
-          // Otherwise, pick a default icon.
-          // If some tabs have no favicon, we ignore them.
-          for (let win of data.windows || []) {
-            if (!win.tab) {
-              continue;
-            }
-            let favicon = win.tab.tab.getAttribute("image");
-            if (!favicon) {
-              // No favicon here, let's ignore the tab.
-            } else if (!image) {
-              // Let's pick a first favicon.
-              // We'll remove it later if we find conflicting favicons.
-              image = favicon;
-            } else if (image == favicon) {
-              // So far, no conflict, keep the favicon.
-            } else {
-              // Conflicting favicons, fallback to default.
-              image = null;
-              break;
-            }
-          }
-          if (!image) {
-            image = "chrome://global/skin/icons/link.svg";
-          }
-      }
-      nameCell.style.backgroundImage = `url('${image}')`;
-    }
+    this.updateProcessName(data, nameCell);
 
     // Column: Memory
     let memoryCell = nameCell.nextSibling;
@@ -1068,28 +1109,54 @@ var Control = {
   init() {
     this._initHangReports();
 
-    // Start prefetching units.
-    this._promisePrefetchedUnits = (async function () {
-      let [ns, us, ms, s, m, h, d, B, KB, MB, GB, TB, PB, EB] =
-        await document.l10n.formatValues([
-          { id: "duration-unit-ns" },
-          { id: "duration-unit-us" },
-          { id: "duration-unit-ms" },
-          { id: "duration-unit-s" },
-          { id: "duration-unit-m" },
-          { id: "duration-unit-h" },
-          { id: "duration-unit-d" },
-          { id: "memory-unit-B" },
-          { id: "memory-unit-KB" },
-          { id: "memory-unit-MB" },
-          { id: "memory-unit-GB" },
-          { id: "memory-unit-TB" },
-          { id: "memory-unit-PB" },
-          { id: "memory-unit-EB" },
-        ]);
+    // Start prefetching localizations.
+    this._promiseLocalizations = (async function () {
+      let [
+        ns,
+        us,
+        ms,
+        s,
+        m,
+        h,
+        d,
+        B,
+        KB,
+        MB,
+        GB,
+        TB,
+        PB,
+        EB,
+        privateWindow,
+        serviceWorker,
+        jitDisabled,
+        withCoopCoep,
+      ] = await document.l10n.formatValues([
+        "duration-unit-ns",
+        "duration-unit-us",
+        "duration-unit-ms",
+        "duration-unit-s",
+        "duration-unit-m",
+        "duration-unit-h",
+        "duration-unit-d",
+        "memory-unit-B",
+        "memory-unit-KB",
+        "memory-unit-MB",
+        "memory-unit-GB",
+        "memory-unit-TB",
+        "memory-unit-PB",
+        "memory-unit-EB",
+        "about-processes-web-isolated-property-private",
+        "about-processes-web-isolated-property-serviceworker",
+        "about-processes-web-isolated-property-jit-disabled",
+        "about-processes-web-isolated-property-with-coop-coep",
+      ]);
+
       return {
-        duration: { ns, us, ms, s, m, h, d },
-        memory: { B, KB, MB, GB, TB, PB, EB },
+        units: {
+          duration: { ns, us, ms, s, m, h, d },
+          memory: { B, KB, MB, GB, TB, PB, EB },
+        },
+        properties: { privateWindow, serviceWorker, jitDisabled, withCoopCoep },
       };
     })();
 
@@ -1135,13 +1202,13 @@ var Control = {
           // We've clicked on a tab, navigate.
           let { tab, tabbrowser } = target.parentNode.win.tab;
           tabbrowser.selectedTab = tab;
-          tabbrowser.ownerGlobal.focus();
+          tabbrowser.documentGlobal.focus();
           return;
         }
         if (target.classList.contains("extensions")) {
           // We've clicked on the extensions process, open or reuse window.
           let parentWin =
-            window.docShell.browsingContext.embedderElement.ownerGlobal;
+            window.docShell.browsingContext.embedderElement.documentGlobal;
           parentWin.BrowserAddonUI.openAddonsMgr();
           return;
         }
@@ -1240,9 +1307,11 @@ var Control = {
   // moved recently.
   async _updateDisplay(force = false) {
     let counters = State.getCounters();
-    if (this._promisePrefetchedUnits) {
-      gLocalizedUnits = await this._promisePrefetchedUnits;
-      this._promisePrefetchedUnits = null;
+    if (this._promiseLocalizations) {
+      let { units, properties } = await this._promiseLocalizations;
+      gLocalizedUnits = units;
+      gLocalizedProcessProperties = properties;
+      this._promiseLocalizations = null;
     }
 
     // We reset `_hungItems`, based on the assumption that the process hang

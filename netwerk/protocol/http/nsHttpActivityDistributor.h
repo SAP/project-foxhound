@@ -27,8 +27,8 @@ class nsHttpActivityDistributor : public nsIHttpActivityDistributor {
  protected:
   virtual ~nsHttpActivityDistributor() = default;
 
-  ObserverArray mObservers;
-  Mutex mLock MOZ_UNANNOTATED{"nsHttpActivityDistributor.mLock"};
+  ObserverArray mObservers MOZ_GUARDED_BY(mLock);
+  Mutex mLock{"nsHttpActivityDistributor.mLock"};
   Atomic<bool, Relaxed> mActivated{false};
   Atomic<bool, Relaxed> mObserveProxyResponse{false};
   Atomic<bool, Relaxed> mObserveConnection{false};

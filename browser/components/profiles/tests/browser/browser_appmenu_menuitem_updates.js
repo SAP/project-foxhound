@@ -28,7 +28,7 @@ async function promiseAppMenuOpened() {
 add_task(async function test_appmenu_updates_on_edit() {
   // We need to create a second profile for the name to be shown in the app
   // menu.
-  await SelectableProfileService.createNewProfile();
+  await SelectableProfileService.createNewProfile(true, null, "tests");
 
   const INITIAL_NAME = "Initial name";
   const UPDATED_NAME = "Updated";
@@ -47,7 +47,7 @@ add_task(async function test_appmenu_updates_on_edit() {
 });
 
 add_task(async function test_profiles_panel_keyboard_focus() {
-  await SelectableProfileService.createNewProfile();
+  await SelectableProfileService.createNewProfile(true, null, "tests");
 
   await promiseAppMenuOpened();
   let profilesButton = PanelMultiView.getViewNode(

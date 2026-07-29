@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -2264,6 +2262,26 @@ add_task(async function test_blocked_applicationReputation_confirmBlock() {
   Assert.ok(!download.target.exists);
   Assert.equal(download.target.size, 0);
 });
+
+/**
+ * Checks that confirmBlock sets deleted to true.
+ */
+add_task(
+  async function test_blocked_applicationReputation_confirmBlock_sets_deleted() {
+    let download = await promiseBlockedDownload({
+      keepPartialData: true,
+      keepBlockedData: true,
+    });
+
+    Assert.ok(download.hasBlockedData);
+    Assert.ok(!download.deleted);
+
+    await download.confirmBlock();
+
+    Assert.ok(!download.hasBlockedData);
+    Assert.ok(download.deleted);
+  }
+);
 
 /**
  * Checks that application reputation blocks the download but maintains the

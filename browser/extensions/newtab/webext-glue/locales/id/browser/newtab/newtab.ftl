@@ -8,9 +8,13 @@
 newtab-page-title = Tab Baru
 newtab-settings-button =
     .title = Ubahsuai laman Tab Baru Anda
+#  (developer note): @nova-cleanup(remove-string): Remove newtab-customize-panel-icon-button once Nova lands, will be using newtab-customize-panel-label instead
 newtab-customize-panel-icon-button =
     .title = Ubahsuai laman ini
+#  (developer note): @nova-cleanup(remove-string): Remove newtab-customize-panel-icon-button-label once Nova lands, will be using newtab-customize-panel-label instead
 newtab-customize-panel-icon-button-label = Sesuaikan
+newtab-customize-panel-label =
+    .label = Sesuaikan
 newtab-personalize-settings-icon-label =
     .title = Personalisasikan Tab Baru
     .aria-label = Pengaturan
@@ -23,6 +27,58 @@ newtab-personalize-dialog-label =
     .aria-label = Personalisasikan
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
+
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Tab baru
+
+## Firefox Home content
+
+home-prefs-firefox-logo-header =
+    .label = Logo { -brand-short-name }
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label = { $num } baris
+# Dropdown option shown when an extension replaces the contents of new windows or tabs.
+# Variables:
+#   $extension (string) - Name of the extension
+home-prefs-homepage-extension-option =
+    .label = Ekstensi ({ $extension })
+home-restore-defaults-srd =
+    .label = Pulihkan Bawaan
+    .accesskey = B
+home-mode-choice-default-fx-srd =
+    .label = { -firefox-home-brand-name } (Baku)
+home-mode-choice-custom-srd =
+    .label = URL Ubahsuai…
+home-mode-choice-blank-srd =
+    .label = Laman Kosong
+home-prefs-shortcuts-header-srd =
+    .label = Pintasan
+home-prefs-shortcuts-select =
+    .aria-label = Pintasan
+home-prefs-shortcuts-by-option-sponsored-srd =
+    .label = Pintasan bersponsor
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Konten Sponsor
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Laman yang Dikunjungi
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Markah
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Unduhan Terbaru
+home-prefs-recent-activity-header-srd =
+    .label = Aktivitas terbaru
+home-prefs-recent-activity-select =
+    .aria-label = Aktivitas terbaru
+home-prefs-weather-header-srd =
+    .label = Cuaca
+home-prefs-support-firefox-header-srd =
+    .label = Dukung { -brand-product-name }
+home-prefs-mission-message-learn-more-link-srd = Cari tahu bagaimana
 
 ## Search box component.
 
@@ -49,7 +105,7 @@ newtab-search-box-input =
     .placeholder = Cari di web
     .aria-label = Cari di web
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Tambahkan Mesin Pencari
 newtab-topsites-add-shortcut-header = Pintasan Baru
@@ -136,6 +192,8 @@ newtab-menu-report = Laporkan
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
 # e.g. "Sports". "Block" is a verb here.
 newtab-menu-section-block = Blokir
+# Context menu option to open a support page explaining the New Tab personalization features and privacy controls.
+newtab-menu-section-learn-more = Pelajari lebih lanjut
 # "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
 # e.g. Following the travel section of stories.
 newtab-menu-section-unfollow = Berhenti Mengikuti Topik
@@ -299,9 +357,20 @@ newtab-error-fallback-refresh-link = Segarkan laman untuk mencoba lagi.
 
 newtab-custom-shortcuts-title = Pintasan
 newtab-custom-shortcuts-subtitle = Situs yang Anda simpan atau kunjungi
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = Pintasan
     .description = Situs yang Anda simpan atau kunjungi
+newtab-custom-shortcuts-nova =
+    .label = Pintasan
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+           *[other] { $num } baris
+        }
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector =
@@ -311,9 +380,12 @@ newtab-custom-row-selector =
 newtab-custom-sponsored-sites = Pintasan bersponsor
 newtab-custom-pocket-title = Disarankan oleh { -pocket-brand-name }
 newtab-custom-pocket-subtitle = Konten luar biasa yang dikelola oleh { -pocket-brand-name }, bagian dari keluarga { -brand-product-name }
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be having a description under "Recommended stories" anymore
 newtab-custom-stories-toggle =
     .label = Cerita yang direkomendasikan
     .description = Konten luar biasa yang dikurasi oleh keluarga { -brand-product-name }
+newtab-recommended-stories-toggle =
+    .label = Cerita yang direkomendasikan
 newtab-custom-stories-personalized-toggle =
     .label = Cerita
 newtab-custom-stories-personalized-checkbox-label = Cerita yang dipersonalisasi berdasarkan aktivitas Anda
@@ -343,8 +415,11 @@ newtab-custom-settings = Kelola pengaturan lainnya
 
 newtab-wallpaper-title = Gambar latar
 newtab-wallpaper-reset = Setel ulang ke bawaan
+#  (developer note): @nova-cleanup(remove-string): Remove old "Upload an image" string once Nova lands. The new "Add an image"  string will take over
 newtab-wallpaper-upload-image = Unggah gambar
 newtab-wallpaper-custom-color = Pilih warna
+newtab-wallpaper-toggle-title =
+    .label = Gambar latar
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = Gambar melebihi batas ukuran berkas sebesar { $file_size }MB. Coba unggah berkas yang lebih kecil.
@@ -367,6 +442,7 @@ newtab-wallpaper-light-fox-anniversary = Seekor rubah di padang berumput dengan 
 
 ## Solid Colors
 
+#  (developer note): @nova-cleanup(remove-string): Remove old "Solid colors" string once Nova lands. The simplified "Colors" string will take over
 newtab-wallpaper-category-title-colors = Warna-warni rata
 newtab-wallpaper-blue = Biru
 newtab-wallpaper-light-blue = Biru muda
@@ -598,10 +674,11 @@ newtab-widget-lists-label-beta =
     .label = Beta
 newtab-widget-task-list-menu-copy = Salin
 newtab-widget-lists-menu-edit = Sunting nama daftar
+newtab-widget-lists-menu-edit2 =
+    .aria-label = Sunting nama daftar
 newtab-widget-lists-menu-create = Buat daftar baru
 newtab-widget-lists-menu-delete = Hapus daftar ini
 newtab-widget-lists-menu-copy = Salin daftar ke papan klip
-newtab-widget-lists-menu-hide = Sembunyikan semua daftar
 newtab-widget-lists-menu-learn-more = Pelajari lebih lanjut
 newtab-widget-lists-input-menu-open-link = Buka tautan
 newtab-widget-lists-input-menu-move-up = Pindah ke atas
@@ -613,11 +690,11 @@ newtab-widget-lists-name-label-default =
 newtab-widget-lists-name-placeholder-default =
     .placeholder = Daftar tugas
 # The placeholder value of the name field for a newly created list
-newtab-widget-lists-name-placeholder-new =
+newtab-widget-lists-name-placeholder-new2 =
     .placeholder = Daftar baru
+    .aria-label = Sunting nama daftar
 
-## Strings for timer productivity widget
-## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+## Strings introduced by the Nova redesign of the Timer widget
 
 newtab-widget-timer-label-play =
     .label = Putar

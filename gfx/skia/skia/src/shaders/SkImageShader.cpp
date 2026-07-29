@@ -24,7 +24,6 @@
 #include "src/core/SkColorSpaceXformSteps.h"
 #include "src/core/SkEffectPriv.h"
 #include "src/core/SkImageInfoPriv.h"
-#include "src/core/SkImagePriv.h"
 #include "src/core/SkMipmapAccessor.h"
 #include "src/core/SkPicturePriv.h"
 #include "src/core/SkRasterPipeline.h"
@@ -355,43 +354,24 @@ sk_sp<SkShader> SkImageShader::MakeSubset(sk_sp<SkImage> image,
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-sk_sp<SkShader> SkMakeBitmapShaderForPaint(const SkPaint& paint, const SkBitmap& src,
-                                           SkTileMode tmx, SkTileMode tmy,
-                                           const SkSamplingOptions& sampling,
-                                           const SkMatrix* localMatrix, SkCopyPixelsMode mode) {
-    auto s = SkImageShader::Make(SkMakeImageFromRasterBitmap(src, mode),
-                                 tmx, tmy, sampling, localMatrix);
-    if (!s) {
-        return nullptr;
-    }
-    if (SkColorTypeIsAlphaOnly(src.colorType()) && paint.getShader()) {
-        // Compose the image shader with the paint's shader. Alpha images+shaders should output the
-        // texture's alpha multiplied by the shader's color. DstIn (d*sa) will achieve this with
-        // the source image and dst shader (MakeBlend takes dst first, src second).
-        s = SkShaders::Blend(SkBlendMode::kDstIn, paint.refShader(), std::move(s));
-    }
-    return s;
-}
-
-SkRect SkModifyPaintAndDstForDrawImageRect(const SkImage* image,
-                                           const SkSamplingOptions& sampling,
-                                           SkRect src,
-                                           SkRect dst,
-                                           bool strictSrcSubset,
-                                           SkPaint* paint) {
+std::pair<SkRect, sk_sp<SkShader>> SkImageShader::MakeForDrawRect(const SkImage* image,
+                                                                  const SkPaint& paint,
+                                                                  const SkSamplingOptions& sampling,
+                                                                  SkRect src,
+                                                                  SkRect dst,
+                                                                  bool strictSrcSubset) {
+    SkASSERT(image);
     // The paint should have already been cleaned for a regular drawImageRect, e.g. no path
     // effect and is a fill.
-    SkASSERT(paint);
-    SkASSERT(paint->getStyle() == SkPaint::kFill_Style && !paint->getPathEffect());
+    SkASSERT(paint.getStyle() == SkPaint::kFill_Style && !paint.getPathEffect());
 
-    SkASSERT(image);
     SkRect imgBounds = SkRect::Make(image->bounds());
 
     SkASSERT(src.isFinite() && dst.isFinite() && dst.isSorted());
     SkMatrix localMatrix = SkMatrix::RectToRectOrIdentity(src, dst);
     if (!imgBounds.contains(src)) {
         if (!src.intersect(imgBounds)) {
-            return SkRect::MakeEmpty(); // Nothing to draw for this entry
+            return {SkRect::MakeEmpty(), nullptr};  // Nothing to draw for this entry
         }
         // Update dst to match smaller src
         dst = localMatrix.mapRect(src);
@@ -409,17 +389,15 @@ SkRect SkModifyPaintAndDstForDrawImageRect(const SkImage* image,
                                       sampling, &localMatrix);
     }
     if (!imgShader) {
-        return SkRect::MakeEmpty();
+        return {SkRect::MakeEmpty(), nullptr};
     }
-    if (imageIsAlphaOnly && paint->getShader()) {
+    if (imageIsAlphaOnly && paint.getShader()) {
         // Compose the image shader with the paint's shader. Alpha images+shaders should output the
         // texture's alpha multiplied by the shader's color. DstIn (d*sa) will achieve this with
         // the source image and dst shader (MakeBlend takes dst first, src second).
-        imgShader = SkShaders::Blend(SkBlendMode::kDstIn, paint->refShader(), std::move(imgShader));
+        imgShader = SkShaders::Blend(SkBlendMode::kDstIn, paint.refShader(), std::move(imgShader));
     }
-
-    paint->setShader(std::move(imgShader));
-    return dst;
+    return {dst, std::move(imgShader)};
 }
 
 void SkShaderBase::RegisterFlattenables() { SK_REGISTER_FLATTENABLE(SkImageShader); }
@@ -605,9 +583,11 @@ bool SkImageShader::appendStages(const SkStageRec& rec, const SkShaders::MatrixR
             case kAlpha_8_SkColorType:      p->append(SkRasterPipelineOp::gather_a8,    ctx); break;
             case kA16_unorm_SkColorType:    p->append(SkRasterPipelineOp::gather_a16,   ctx); break;
             case kA16_float_SkColorType:    p->append(SkRasterPipelineOp::gather_af16,  ctx); break;
+            case kR16_float_SkColorType:    p->append(SkRasterPipelineOp::gather_rf16,  ctx); break;
             case kRGB_565_SkColorType:      p->append(SkRasterPipelineOp::gather_565,   ctx); break;
             case kARGB_4444_SkColorType:    p->append(SkRasterPipelineOp::gather_4444,  ctx); break;
             case kR8G8_unorm_SkColorType:   p->append(SkRasterPipelineOp::gather_rg88,  ctx); break;
+            case kR16_unorm_SkColorType:    p->append(SkRasterPipelineOp::gather_r16,   ctx); break;
             case kR16G16_unorm_SkColorType: p->append(SkRasterPipelineOp::gather_rg1616,ctx); break;
             case kR16G16_float_SkColorType: p->append(SkRasterPipelineOp::gather_rgf16, ctx); break;
             case kRGBA_8888_SkColorType:    p->append(SkRasterPipelineOp::gather_8888,  ctx); break;
@@ -712,11 +692,10 @@ bool SkImageShader::appendStages(const SkStageRec& rec, const SkShaders::MatrixR
     // Check for fast-path stages.
     // TODO: Could we use the fast-path stages for each level when doing linear mipmap filtering?
     SkColorType ct = upper.pm.colorType();
-    if (true
-        && (ct == kRGBA_8888_SkColorType || ct == kBGRA_8888_SkColorType)
-        && !sampling.useCubic && sampling.filter == SkFilterMode::kLinear
-        && sampling.mipmap != SkMipmapMode::kLinear
-        && fTileModeX == SkTileMode::kClamp && fTileModeY == SkTileMode::kClamp) {
+    if ((ct == kRGBA_8888_SkColorType || ct == kBGRA_8888_SkColorType) &&
+        !sampling.useCubic && sampling.filter == SkFilterMode::kLinear &&
+        sampling.mipmap != SkMipmapMode::kLinear &&
+        fTileModeX == SkTileMode::kClamp && fTileModeY == SkTileMode::kClamp) {
         // Check bounding box of points we will sample to see if we can use lowp
         // and not over/under flow.
         bool shouldUseHighPBilerp = false;
@@ -744,10 +723,9 @@ bool SkImageShader::appendStages(const SkStageRec& rec, const SkShaders::MatrixR
         }
         return append_misc();
     }
-    if (true
-        && (ct == kRGBA_8888_SkColorType || ct == kBGRA_8888_SkColorType)
-        && sampling.useCubic
-        && fTileModeX == SkTileMode::kClamp && fTileModeY == SkTileMode::kClamp) {
+    if ((ct == kRGBA_8888_SkColorType || ct == kBGRA_8888_SkColorType) &&
+        sampling.useCubic &&
+        fTileModeX == SkTileMode::kClamp && fTileModeY == SkTileMode::kClamp) {
 
         p->append(SkRasterPipelineOp::bicubic_clamp_8888, upper.gather);
         if (ct == kBGRA_8888_SkColorType) {

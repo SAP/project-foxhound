@@ -6,7 +6,6 @@ Glean Annotations repository: <https://github.com/mozilla/glean-annotations>
 
 See the documentation on how to [create new annotations](https://mozilla.github.io/glean-annotations/contributing/creating/).
 
-
 # Data review
 
 Data reviews are needed on all patches that add new telemetry or modify existing telemetry.

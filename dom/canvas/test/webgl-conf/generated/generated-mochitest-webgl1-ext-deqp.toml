@@ -1,0 +1,84 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl1-ext"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/closure-library/**",
+  "../checkout/deqp/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_deqp__data__gles2__shaders__conditionals.html"]
+
+["test_deqp__data__gles2__shaders__constant_expressions.html"]
+
+["test_deqp__data__gles2__shaders__constants.html"]
+
+["test_deqp__data__gles2__shaders__conversions_matrix_combine.html"]
+
+["test_deqp__data__gles2__shaders__conversions_matrix_to_matrix.html"]
+
+["test_deqp__data__gles2__shaders__conversions_scalar_to_matrix.html"]
+
+["test_deqp__data__gles2__shaders__conversions_scalar_to_scalar.html"]
+
+["test_deqp__data__gles2__shaders__conversions_scalar_to_vector.html"]
+
+["test_deqp__data__gles2__shaders__conversions_vector_combine.html"]
+
+["test_deqp__data__gles2__shaders__conversions_vector_illegal.html"]
+
+["test_deqp__data__gles2__shaders__conversions_vector_to_scalar.html"]
+
+["test_deqp__data__gles2__shaders__conversions_vector_to_vector.html"]
+
+["test_deqp__data__gles2__shaders__declarations.html"]
+
+["test_deqp__data__gles2__shaders__fragdata.html"]
+
+["test_deqp__data__gles2__shaders__functions.html"]
+
+["test_deqp__data__gles2__shaders__invalid_texture_functions.html"]
+
+["test_deqp__data__gles2__shaders__keywords.html"]
+
+["test_deqp__data__gles2__shaders__linkage.html"]
+
+["test_deqp__data__gles2__shaders__preprocessor.html"]
+
+["test_deqp__data__gles2__shaders__qualification_order.html"]
+
+["test_deqp__data__gles2__shaders__reserved_operators.html"]
+
+["test_deqp__data__gles2__shaders__scoping.html"]
+
+["test_deqp__data__gles2__shaders__swizzles_bvec2.html"]
+
+["test_deqp__data__gles2__shaders__swizzles_bvec3.html"]
+
+["test_deqp__data__gles2__shaders__swizzles_bvec4.html"]
+
+["test_deqp__data__gles2__shaders__swizzles_ivec2.html"]
+
+["test_deqp__data__gles2__shaders__swizzles_ivec3.html"]
+
+["test_deqp__data__gles2__shaders__swizzles_ivec4.html"]
+
+["test_deqp__data__gles2__shaders__swizzles_vec2.html"]
+
+["test_deqp__data__gles2__shaders__swizzles_vec3.html"]
+
+["test_deqp__data__gles2__shaders__swizzles_vec4.html"]

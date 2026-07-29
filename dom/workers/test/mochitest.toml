@@ -340,6 +340,9 @@ skip-if = [
 
 ["test_subworkers_suspended.html"]
 scheme = "https"
+skip-if = [
+  "xorigin", # tests bfcache recovery of workers, so xorigin iframes are out of scope.
+]
 
 ["test_suspend.html"]
 
@@ -350,6 +353,8 @@ scheme = "https"
 ["test_threadTimeouts.html"]
 
 ["test_throwingOnerror.html"]
+
+["test_timeZoneOverride.html"]
 
 ["test_timeoutTracing.html"]
 

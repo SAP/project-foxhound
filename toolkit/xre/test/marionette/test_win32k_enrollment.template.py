@@ -34,7 +34,6 @@ class Prefs:
         "security.sandbox.content.win32k-experiment.startupEnrollmentStatus"
     )
     WIN32K = "security.sandbox.content.win32k-disable"
-    WEBGL = "webgl.out-of-process"
 
 
 ENV_DISABLE_WIN32K = "MOZ_ENABLE_WIN32K"

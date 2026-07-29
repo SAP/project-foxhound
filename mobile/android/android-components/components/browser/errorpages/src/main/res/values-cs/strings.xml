@@ -36,7 +36,7 @@
   <!-- The text shown inside the advanced button used to expand the advanced options. It's only shown when a website uses HSTS. -->
   <string name="mozac_browser_errorpages_security_bad_hsts_cert_advanced">Rozšířené…</string>
   <!-- The advanced certificate information shown when a website uses HSTS. The %1$s will be replaced by the website URL and %2$s will be replaced by the app name. It's only shown when a website uses HSTS. -->
-  <string name="mozac_browser_errorpages_security_bad_hsts_cert_techInfo2"><![CDATA[Server <label> <b>%1$s</b> má nastaveno bezpečnostní pravidlo HTTP Strict Transport Security (HSTS), které od aplikace <b>%2$s</b> vyžaduje používání pouze zabezpečeného spojení. Pro připojení k této stránce nelze udělit výjimku.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_hsts_cert_techInfo2"><![CDATA[<label> Server <b>%1$s</b> má nastaveno bezpečnostní pravidlo HTTP Strict Transport Security (HSTS), které od aplikace <b>%2$s</b> vyžaduje použití pouze zabezpečeného spojení. K návštěvě tohoto webu nelze udělit výjimku. </label>]]></string>
   <!-- The text shown inside the advanced options button used to go back. It's only shown if the user has expanded the advanced options. -->
   <string name="mozac_browser_errorpages_security_bad_hsts_cert_back">Zpátky</string>
   <!-- The document title and heading of the error page shown when the user's network connection is interrupted while connecting to a website. -->

@@ -4,7 +4,7 @@
 
 /**
  * FinalizationRegistry callback, see
- * https://searchfox.org/mozilla-central/source/js/src/builtin/FinalizationRegistryObject.h
+ * https://searchfox.org/firefox-main/source/js/src/builtin/FinalizationRegistryObject.h
  *
  * Will be invoked when the channel corresponding to the weak reference is
  * "destroyed", at which point we can cleanup the corresponding entry in our
@@ -37,7 +37,7 @@ export class ChannelMap {
   #weakMap;
 
   constructor() {
-    // See https://searchfox.org/mozilla-central/source/js/src/builtin/FinalizationRegistryObject.h
+    // See https://searchfox.org/firefox-main/source/js/src/builtin/FinalizationRegistryObject.h
     this.#finalizationRegistry = new FinalizationRegistry(deleteIdFromRefMap);
 
     // Map of channel id to a channel weak reference.

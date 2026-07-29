@@ -13,10 +13,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use neqo_common::{datagram, hex, qdebug, qinfo, qlog::Qlog, qtrace, qwarn, Buffer, Encoder, Tos};
-use neqo_crypto::random;
+use neqo_common::{Buffer, Encoder, Tos, datagram, hex, qdebug, qinfo, qlog::Qlog, qtrace, qwarn};
+use nss::random;
 
 use crate::{
+    ConnectionParameters, Stats,
     ackrate::{AckRate, PeerAckDelay},
     cid::{ConnectionId, ConnectionIdRef, ConnectionIdStore, RemoteConnectionIdEntry},
     ecn,
@@ -25,10 +26,10 @@ use crate::{
     pmtud::Pmtud,
     recovery::{self, sent},
     rtt::{RttEstimate, RttSource},
+    scone::{Bitrate, Scone},
     sender::PacketSender,
     stateless_reset::Token as Srt,
     stats::FrameStats,
-    ConnectionParameters, Stats,
 };
 
 /// The maximum number of paths that `Paths` will track.
@@ -96,6 +97,9 @@ impl Paths {
                     Path::temporary(local, remote, conn_params, self.qlog.clone(), now, stats);
                 if let Some(primary) = self.primary.as_ref() {
                     p.prime_rtt(primary.borrow().rtt());
+                    if let Some(peer_max) = primary.borrow().pmtud().peer_max_udp_payload() {
+                        p.pmtud_mut().set_peer_max_udp_payload(peer_max);
+                    }
                 }
                 Rc::new(RefCell::new(p))
             })
@@ -318,10 +322,15 @@ impl Paths {
     }
 
     /// A `PATH_RESPONSE` was received.
-    /// Returns `true` if migration occurred.
+    /// Returns `Some` with the new primary path if migration occurred.
     /// If PMTUD is enabled and migration occurs, it will be started on the new primary path.
     #[must_use]
-    pub fn path_response(&mut self, response: [u8; 8], now: Instant, stats: &mut Stats) -> bool {
+    pub fn path_response(
+        &mut self,
+        response: [u8; 8],
+        now: Instant,
+        stats: &mut Stats,
+    ) -> Option<PathRef> {
         // TODO(mt) consider recording an RTT measurement here as we don't train
         // RTT for non-primary paths.
         for p in &self.paths {
@@ -336,12 +345,12 @@ impl Paths {
                     if self.pmtud {
                         primary.borrow_mut().pmtud_mut().start(now, stats);
                     }
-                    return true;
+                    return Some(primary);
                 }
                 break;
             }
         }
-        false
+        None
     }
 
     /// Retire all of the connection IDs prior to the indicated sequence number.
@@ -543,6 +552,8 @@ pub struct Path {
     sent_bytes: usize,
     /// The ECN-related state for this path (see RFC9000, Section 13.4 and Appendix A.4)
     ecn_info: ecn::Info,
+    /// SCONE info for this path.
+    scone: Option<Scone>,
     /// For logging of events.
     qlog: Qlog,
 }
@@ -601,6 +612,7 @@ impl Path {
             received_bytes: 0,
             sent_bytes: 0,
             ecn_info: ecn::Info::default(),
+            scone: None,
             qlog,
         }
     }
@@ -632,9 +644,7 @@ impl Path {
         local_cid: Option<ConnectionId>,
         remote_cid: RemoteConnectionIdEntry,
     ) {
-        if self.local_cid.is_none() {
-            self.local_cid = local_cid;
-        }
+        self.local_cid = self.local_cid.take().or(local_cid);
         self.remote_cid.replace(remote_cid);
     }
 
@@ -665,6 +675,26 @@ impl Path {
         qdebug!("[{self}] Path validated {now:?}");
         self.state = ProbeState::Valid;
         self.validated = Some(now);
+    }
+
+    /// Apply updated SCONE information to this path.
+    /// Return a bitrate signal if this was updated AND on the primary path.
+    pub fn update_scone(&mut self, now: Instant, signal: Option<Bitrate>) -> Option<Bitrate> {
+        let updated = if let Some(s) = &mut self.scone {
+            s.update(now, signal)
+        } else if let Some(rate) = signal
+            && rate.is_set()
+        {
+            self.scone = Some(Scone::new(now, rate));
+            true
+        } else {
+            false
+        };
+        if updated && self.is_primary() {
+            self.scone.as_ref().map(Scone::rate)
+        } else {
+            None
+        }
     }
 
     /// Update the last use of this path, if it is valid.
@@ -896,10 +926,10 @@ impl Path {
     /// Process a timer for this path.
     /// This returns true if the path is viable and can be kept alive.
     pub fn process_timeout(&mut self, now: Instant, pto: Duration, stats: &mut Stats) -> bool {
-        if let ProbeState::Probing { sent, .. } = &self.state {
-            if now >= *sent + pto {
-                self.probe(stats);
-            }
+        if let ProbeState::Probing { sent, .. } = &self.state
+            && now >= *sent + pto
+        {
+            self.probe(stats);
         }
         if matches!(self.state, ProbeState::Failed) {
             // Retire failed paths immediately.
@@ -1106,7 +1136,8 @@ impl Path {
 
     /// Update the `QLog` instance.
     pub fn set_qlog(&mut self, qlog: Qlog) {
-        self.sender.set_qlog(qlog);
+        self.sender.set_qlog(qlog.clone());
+        self.qlog = qlog;
     }
 }
 

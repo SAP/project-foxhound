@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use crate::android::{AndroidError, AndroidHandler};
+use crate::android::AndroidHandler;
 use crate::capabilities::{FirefoxOptions, ProfileType};
 use crate::logging;
 use crate::prefs;
@@ -14,8 +14,13 @@ use std::fs;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::time;
-use uuid::Uuid;
 use webdriver::error::{ErrorStatus, WebDriverError, WebDriverResult};
+
+// Status of the browser process.
+pub(crate) enum BrowserStatus {
+    Exited(Option<i32>),
+    Running,
+}
 
 /// A running Gecko instance.
 #[derive(Debug)]
@@ -32,7 +37,7 @@ impl Browser {
     pub(crate) fn close(self, wait_for_shutdown: bool) -> WebDriverResult<()> {
         match self {
             Browser::Local(x) => x.close(wait_for_shutdown),
-            Browser::Remote(x) => x.close(),
+            Browser::Remote(x) => x.close(wait_for_shutdown),
             Browser::Existing(_) => Ok(()),
         }
     }
@@ -42,6 +47,14 @@ impl Browser {
             Browser::Local(x) => x.marionette_port(),
             Browser::Remote(x) => x.marionette_port(),
             Browser::Existing(x) => Ok(Some(*x)),
+        }
+    }
+
+    pub(crate) fn check_status(&mut self) -> Option<(u32, BrowserStatus)> {
+        match self {
+            Browser::Local(x) => Some(x.check_status()),
+            Browser::Remote(x) => Some(x.check_status()),
+            Browser::Existing(_) => None,
         }
     }
 
@@ -55,39 +68,6 @@ impl Browser {
                         "Cannot re-assign Marionette port when connected to an existing browser"
                     );
                 }
-            }
-        }
-    }
-
-    pub(crate) fn create_file(&self, content: &[u8]) -> WebDriverResult<String> {
-        let addon_file = format!("addon-{}.xpi", Uuid::new_v4());
-        match self {
-            Browser::Remote(x) => {
-                let path = x.push_file(content, &addon_file).map_err(|e| {
-                    WebDriverError::new(
-                        ErrorStatus::UnknownError,
-                        format!("Failed to create an addon file: {}", e),
-                    )
-                })?;
-
-                Ok(path)
-            }
-            Browser::Local(_) | Browser::Existing(_) => {
-                let path = env::temp_dir().as_path().join(addon_file);
-                let mut xpi_file = fs::File::create(&path).map_err(|e| {
-                    WebDriverError::new(
-                        ErrorStatus::UnknownError,
-                        format!("Failed to create an addon file: {}", e),
-                    )
-                })?;
-                xpi_file.write_all(content).map_err(|e| {
-                    WebDriverError::new(
-                        ErrorStatus::UnknownError,
-                        format!("Failed to write data to the addon file: {}", e),
-                    )
-                })?;
-
-                Ok(path.display().to_string())
             }
         }
     }
@@ -223,17 +203,14 @@ impl LocalBrowser {
         self.marionette_port = port;
     }
 
-    pub(crate) fn check_status(&mut self) -> Option<String> {
-        match self.process.try_wait() {
-            Ok(Some(status)) => Some(
-                status
-                    .code()
-                    .map(|c| c.to_string())
-                    .unwrap_or_else(|| "signal".into()),
-            ),
-            Ok(None) => None,
-            Err(_) => Some("{unknown}".into()),
-        }
+    pub(crate) fn check_status(&mut self) -> (u32, BrowserStatus) {
+        let pid = self.process.pid();
+        let status = match self.process.try_wait() {
+            Ok(Some(exit_status)) => BrowserStatus::Exited(exit_status.code()),
+            Ok(None) => BrowserStatus::Running,
+            Err(_) => BrowserStatus::Exited(None),
+        };
+        (pid, status)
     }
 }
 
@@ -283,6 +260,7 @@ fn read_marionette_port(profile_path: &Path) -> Option<u16> {
 pub(crate) struct RemoteBrowser {
     pub(crate) handler: AndroidHandler,
     marionette_port: u16,
+    pid: u32,
     prefs_backup: Option<PrefsBackup>,
 }
 
@@ -331,16 +309,52 @@ impl RemoteBrowser {
 
         handler.prepare(&profile, options.args, options.env.unwrap_or_default())?;
 
-        handler.launch()?;
+        let pid = handler.launch()?;
 
         Ok(RemoteBrowser {
             handler,
             marionette_port,
+            pid,
             prefs_backup,
         })
     }
 
-    fn close(&self) -> WebDriverResult<()> {
+    fn close(&self, wait_for_shutdown: bool) -> WebDriverResult<()> {
+        if wait_for_shutdown {
+            // TODO(https://bugzil.la/1443922):
+            // Use toolkit.asyncshutdown.crash_timeout pref
+            let timeout = time::Duration::from_secs(70);
+            let poll_interval = time::Duration::from_millis(100);
+            let start = time::Instant::now();
+
+            debug!(
+                "Waiting {}s for Android process {} (package {}) to exit",
+                timeout.as_secs(),
+                self.pid,
+                &self.handler.process.package
+            );
+
+            loop {
+                let (_, status) = self.check_status();
+                if matches!(status, BrowserStatus::Exited(_)) {
+                    debug!(
+                        "Android package {} has exited",
+                        &self.handler.process.package
+                    );
+                    break;
+                }
+
+                if start.elapsed() >= timeout {
+                    warn!(
+                        "Timed out waiting for Android package {} to exit",
+                        &self.handler.process.package
+                    );
+                    break;
+                }
+
+                std::thread::sleep(poll_interval);
+            }
+        }
         self.handler.force_stop()?;
         Ok(())
     }
@@ -353,8 +367,22 @@ impl RemoteBrowser {
         self.marionette_port = port;
     }
 
-    fn push_file(&self, content: &[u8], path: &str) -> Result<String, AndroidError> {
-        self.handler.push_as_file(content, path)
+    pub(crate) fn check_status(&self) -> (u32, BrowserStatus) {
+        let command = format!("kill -0 {} 2>/dev/null; echo $?", self.pid);
+        let status = match self
+            .handler
+            .process
+            .device
+            .execute_host_shell_command(&command)
+        {
+            Ok(output) if output.trim() != "0" => BrowserStatus::Exited(None),
+            Err(e) => {
+                warn!("Failed to check browser status via adb: {}", e);
+                BrowserStatus::Running
+            }
+            _ => BrowserStatus::Running,
+        };
+        (self.pid, status)
     }
 }
 
@@ -516,6 +544,8 @@ fn copy_minidumps_files(profile_path: &Path) -> WebDriverResult<()> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(unsafe_code)]
+
     use super::*;
     use crate::browser::read_marionette_port;
     use crate::capabilities::{FirefoxOptions, ProfileType};
@@ -527,13 +557,8 @@ mod tests {
     use std::fs::File;
     use std::io::{Read, Write};
     use std::path::Path;
-    use std::sync::Mutex;
+    use std::sync::{LazyLock, Mutex, MutexGuard};
     use tempfile::TempDir;
-
-    // Mutex used to run environment variable–related tests sequentially.
-    lazy_static::lazy_static! {
-        static ref ENV_MUTEX: Mutex<()> = Mutex::new(());
-    }
 
     fn example_profile() -> Value {
         let mut profile_data = Vec::with_capacity(1024);
@@ -714,6 +739,45 @@ mod tests {
         assert!(extra_file_present);
     }
 
+    static ENV_MUTEX: LazyLock<Mutex<()>> = LazyLock::new(Mutex::default);
+    static MINIDUMP_KEY: &str = "MINIDUMP_SAVE_PATH";
+
+    pub(crate) struct MinidumpEnvironment<'environment> {
+        initial_environment: Option<String>,
+        #[allow(dead_code)]
+        guard: MutexGuard<'environment, ()>,
+    }
+
+    impl<'environment> MinidumpEnvironment<'environment> {
+        pub(crate) fn new() -> MinidumpEnvironment<'environment> {
+            MinidumpEnvironment {
+                initial_environment: env::var(MINIDUMP_KEY).ok(),
+                guard: ENV_MUTEX.lock().unwrap(),
+            }
+        }
+
+        pub(crate) fn set(&self, value: Option<&str>) {
+            fn set_env(key: &str, value: Option<&str>) {
+                // SAFETY: Safe as long as no other threads try to modify the environment
+                // This is enforced by Environment taking a mutex, so tests can't run
+                // in parallel.
+                unsafe {
+                    match value {
+                        Some(value) => env::set_var(key, value),
+                        None => env::remove_var(key),
+                    }
+                }
+            }
+            set_env(MINIDUMP_KEY, value);
+        }
+    }
+
+    impl Drop for MinidumpEnvironment<'_> {
+        fn drop(&mut self) {
+            self.set(self.initial_environment.clone().as_deref());
+        }
+    }
+
     fn create_file(folder: &Path, filename: &str) {
         let file = folder.join(filename);
         File::create(&file).unwrap();
@@ -742,7 +806,7 @@ mod tests {
 
     #[test]
     fn test_copy_minidumps() {
-        let _lock = ENV_MUTEX.lock().unwrap();
+        let env = MinidumpEnvironment::new();
 
         let tmp_dir_profile = TempDir::new().unwrap();
         let profile_path = tmp_dir_profile.path();
@@ -753,9 +817,8 @@ mod tests {
         let tmp_dir_minidumps = TempDir::new().unwrap();
         let minidumps_path = tmp_dir_minidumps.path();
 
-        std::env::set_var("MINIDUMP_SAVE_PATH", minidumps_path);
+        env.set(minidumps_path.to_str());
         assert!(copy_minidumps_files(profile_path).is_ok());
-        env::remove_var("MINIDUMP_SAVE_PATH");
 
         assert_minidump_files(minidumps_path, filename);
 
@@ -765,7 +828,7 @@ mod tests {
 
     #[test]
     fn test_copy_multiple_minidumps() {
-        let _lock = ENV_MUTEX.lock().unwrap();
+        let env = MinidumpEnvironment::new();
 
         let tmp_dir_profile = TempDir::new().unwrap();
         let profile_path = tmp_dir_profile.path();
@@ -779,9 +842,8 @@ mod tests {
         let tmp_dir_minidumps = TempDir::new().unwrap();
         let minidumps_path = tmp_dir_minidumps.path();
 
-        std::env::set_var("MINIDUMP_SAVE_PATH", minidumps_path);
+        env.set(minidumps_path.to_str());
         assert!(copy_minidumps_files(profile_path).is_ok());
-        env::remove_var("MINIDUMP_SAVE_PATH");
 
         assert_minidump_files(minidumps_path, filename_1);
         assert_minidump_files(minidumps_path, filename_1);
@@ -792,37 +854,35 @@ mod tests {
 
     #[test]
     fn test_copy_minidumps_with_non_existent_manifest_path() {
-        let _lock = ENV_MUTEX.lock().unwrap();
+        let env = MinidumpEnvironment::new();
 
         let tmp_dir_profile = TempDir::new().unwrap();
         let profile_path = tmp_dir_profile.path();
 
         create_minidump_folder(profile_path);
 
-        std::env::set_var("MINIDUMP_SAVE_PATH", Path::new("/non-existent"));
+        env.set(Path::new("/non-existent").to_str());
         assert!(copy_minidumps_files(profile_path).is_ok());
-        env::remove_var("MINIDUMP_SAVE_PATH");
 
         tmp_dir_profile.close().unwrap();
     }
 
     #[test]
     fn test_copy_minidumps_with_non_existent_profile_path() {
-        let _lock = ENV_MUTEX.lock().unwrap();
+        let env = MinidumpEnvironment::new();
 
         let tmp_dir_profile = TempDir::new().unwrap();
         let profile_path = tmp_dir_profile.path();
 
-        std::env::set_var("MINIDUMP_SAVE_PATH", Path::new("/non-existent"));
+        env.set(Path::new("/non-existent").to_str());
         assert!(copy_minidumps_files(profile_path).is_ok());
-        env::remove_var("MINIDUMP_SAVE_PATH");
 
         tmp_dir_profile.close().unwrap();
     }
 
     #[test]
     fn test_copy_minidumps_with_no_minidump_files() {
-        let _lock = ENV_MUTEX.lock().unwrap();
+        let env = MinidumpEnvironment::new();
 
         let tmp_dir_profile = TempDir::new().unwrap();
         let profile_path = tmp_dir_profile.path();
@@ -840,9 +900,8 @@ mod tests {
         let tmp_dir_minidumps = TempDir::new().unwrap();
         let minidumps_path = tmp_dir_minidumps.path();
 
-        std::env::set_var("MINIDUMP_SAVE_PATH", minidumps_path);
+        env.set(minidumps_path.to_str());
         assert!(copy_minidumps_files(profile_path).is_ok());
-        env::remove_var("MINIDUMP_SAVE_PATH");
 
         // Check that the non minidump file and the folder were not copied.
         assert!(minidumps_path.read_dir().unwrap().next().is_none());

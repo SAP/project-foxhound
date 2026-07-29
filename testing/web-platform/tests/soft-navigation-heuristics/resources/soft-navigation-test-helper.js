@@ -119,11 +119,19 @@ class SoftNavigationTestHelper {
    * @param {function(): (string|Promise<string>)} modifyDOM Function called in
    *    in the click handler to modify the DOM. Can be sync or async. Returns
    *    the ID of the mutated element which is expected to match the ICP entry.
+   * @param {function()} navigate Optional function called to navigate the
+   *    page. If no function is provided a push navigation to `url` is
+   *    performed.
+   * @return {!Promise} A promise that is resolved with the resulting soft
+   *    navigation and ICP entry.
    */
-  async clickAndExpectSoftNavigation(clickTarget, url, modifyDOM) {
+  async clickAndExpectSoftNavigation(clickTarget, url, modifyDOM, navigate) {
+    if (!navigate) {
+      navigate = targetUrl => history.pushState({}, '', targetUrl);
+    }
     let targetId;
     clickTarget.addEventListener('click', async () => {
-      history.pushState({}, '', url);
+      navigate(url);
       targetId = await modifyDOM();
     }, {once: true});
 
@@ -146,7 +154,30 @@ class SoftNavigationTestHelper {
 
     const icps = await this.withTimeoutMessage(
         icpPromise, 'ICP not detected.', /*timeout=*/ 3000);
-    assert_equals(icps.length, 1, 'Expected exactly one ICP entry.');
-    assert_equals(icps[0].id, targetId, `Expected ICP candidate to be "${targetId}"`);
+    assert_greater_than_equal(icps.length, 1, 'Expected at least one ICP entry.');
+    const validIcp = icps.filter(i => !!i.largestContentfulPaint).at(-1);
+    assert_true(!!validIcp, "Expected at least one ICP entry with a valid largestContentfulPaint sub-object");
+    assert_equals(validIcp.largestContentfulPaint.id, targetId, `Expected ICP candidate to be "${targetId}"`);
+
+    return {softNav: softNavs[0], icp: validIcp};
+  }
+
+  /**
+   * Waits for on ICP entry matching the givein `condition`. Returns an array of
+   * all ICP entries detected.
+   *
+   * @param {function(): (boolean)} condition A function that returns true when
+   * the relevant ICP has been found.
+   */
+  async waitForIcp(condition = entry => true) {
+    let allIcps = [];
+    while (!allIcps.some(condition)) {
+      const icpPromise =
+          SoftNavigationTestHelper.getPerformanceEntries('interaction-contentful-paint');
+      const newIcps = await this.withTimeoutMessage(
+          icpPromise, 'ICP not detected.', /*timeout=*/ 3000);
+      allIcps = allIcps.concat(newIcps);
+    }
+    return allIcps;
   }
 }

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -67,14 +65,12 @@ class ExternalHelperAppParent
   mozilla::ipc::IPCResult RecvOnStartRequest(
       const nsACString& entityID) override;
   mozilla::ipc::IPCResult RecvOnDataAvailable(const nsACString& data,
-                                              const uint64_t& offset,
-                                              const uint32_t& count) override;
+                                              const uint64_t& offset) override;
   mozilla::ipc::IPCResult RecvOnStopRequest(const nsresult& code) override;
 
   bool WasFileChannel() override { return mWasFileChannel; }
 
   ExternalHelperAppParent(nsIURI* uri, const int64_t& contentLength,
-                          const bool& wasFileChannel,
                           const nsACString& aContentDispositionHeader,
                           const uint32_t& aContentDispositionHint,
                           const nsAString& aContentDispositionFilename);

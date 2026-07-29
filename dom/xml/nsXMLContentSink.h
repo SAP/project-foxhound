@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +6,7 @@
 #define nsXMLContentSink_h_
 
 #include "js/ColumnNumber.h"  // JS::ColumnNumberOneOrigin
+#include "mozilla/Span.h"
 #include "mozilla/dom/FromParser.h"
 #include "nsCOMPtr.h"
 #include "nsCRT.h"
@@ -105,7 +104,7 @@ class nsXMLContentSink : public nsContentSink,
 
   virtual nsresult AddAttributes(const char16_t** aNode,
                                  mozilla::dom::Element* aElement);
-  nsresult AddText(const char16_t* aString, int32_t aLength);
+  nsresult AddText(mozilla::Span<const char16_t> aText);
 
   virtual bool OnOpenContainer(const char16_t** aAtts, uint32_t aAttsCount,
                                int32_t aNameSpaceID, nsAtom* aTagName,
@@ -187,9 +186,6 @@ class nsXMLContentSink : public nsContentSink,
 
   XMLContentSinkState mState = eXMLContentSinkState_InProlog;
 
-  // The length of the valid data in mText.
-  int32_t mTextLength = 0;
-
   int32_t mNotifyLevel = 0;
   RefPtr<nsTextNode> mLastTextNode;
 
@@ -213,9 +209,8 @@ class nsXMLContentSink : public nsContentSink,
   // discard the children.
   nsTArray<nsCOMPtr<nsIContent>> mDocumentChildren;
 
-  static const int NS_ACCUMULATION_BUFFER_SIZE = 4096;
   // Our currently accumulated text that we have not flushed to a textnode yet.
-  char16_t mText[NS_ACCUMULATION_BUFFER_SIZE] = {0};
+  AutoTArray<char16_t, 4096> mText;
 };
 
 #endif  // nsXMLContentSink_h_

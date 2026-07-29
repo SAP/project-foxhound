@@ -45,6 +45,7 @@ register_strategy(
     kwargs={"split_args": lambda *args: (["docs"], None)},
 )(All)
 register_strategy("test", args=("skip-unless-schedules",))(Alias)
+register_strategy("test-backstop", args=("skip-unless-backstop",))(Alias)
 register_strategy("test-inclusive", args=("skip-unless-schedules",))(Alias)
 register_strategy("test-verify", args=("skip-unless-schedules",))(Alias)
 register_strategy("upload-symbols", args=("never",))(Alias)
@@ -121,15 +122,18 @@ class project:
     """Strategy overrides that apply to autoland."""
 
     beta = {
-        # Helps reduce how frequently constrained tasks (typically tasks using
-        # hardware limited pools) run. Unconstrained tasks run on every push as
-        # normal, constrained tasks run every 5 pushes.
-        "test": All(
-            "skip-unless-push-interval-5",
-            "skip-constrained",
-        ),
+        # Don't run tests on-push on beta.  The run-missing-tests action and
+        # cron job take care of running them regularly.
+        "test": Alias("always"),
+        "test-backstop": Alias("always"),
     }
     """Strategy overrides that apply to beta."""
+
+    pull_request = {
+        "upload-symbols": Alias("always"),
+        "reprocess-symbols": Alias("always"),
+    }
+    """Strategy overrides that apply to pull requests."""
 
 
 class experimental:

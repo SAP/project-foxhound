@@ -10,13 +10,12 @@
 
 #include "video/corruption_detection/evaluation/utils.h"
 
-#include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <span>
 #include <string>
 
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/video/video_codec_type.h"
 #include "api/video_codecs/sdp_video_format.h"
 #include "api/video_codecs/video_codec.h"
@@ -30,10 +29,10 @@ namespace {
 
 constexpr char kFrameHeader[] = "FRAME\n";
 
-// Reading 30 bytes from the Y4M header should be enough to get the resolution
+// Reading 40 bytes from the Y4M header should be enough to get the resolution
 // and framerate. The header starts with: `YUV4MPEG2 W<WIDTH> H<HEIGTH>
-// Fn<NUMERATOR>:Fd<DENOMINATOR>`.
-constexpr int kHeaderBytesToRead = 30;
+// F<NUMERATOR>:<DENOMINATOR>`.
+constexpr int kHeaderBytesToRead = 40;
 
 }  // namespace
 
@@ -52,7 +51,7 @@ TempY4mFileCreator::~TempY4mFileCreator() {
 }
 
 void TempY4mFileCreator::CreateTempY4mFile(
-    ArrayView<const uint8_t> file_content) {
+    std::span<const uint8_t> file_content) {
   RTC_CHECK_EQ(file_content.size() % frame_size_, 0)
       << "Content size is not a multiple of frame size. Probably some data is "
          "missing.";
@@ -92,7 +91,7 @@ Y4mMetadata ReadMetadataFromY4mHeader(absl::string_view clip_path) {
   int fps_denominator;
   int width;
   int height;
-  RTC_CHECK_EQ(sscanf(header, "YUV4MPEG2 W%u H%u F%i:%i", &width, &height,
+  RTC_CHECK_EQ(sscanf(header, "YUV4MPEG2 W%u H%u F%u:%u", &width, &height,
                       &fps_numerator, &fps_denominator),
                4);
   RTC_CHECK_NE(fps_denominator, 0);

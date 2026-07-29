@@ -71,6 +71,7 @@ user_pref("dom.ipc.reportProcessHangs", true); // process hang monitor
 // Don't forceably kill content processes after a timeout
 user_pref("dom.ipc.tabs.shutdownTimeoutSecs", 0);
 user_pref("dom.min_background_timeout_value", 1000);
+user_pref("dom.permissions.testing.enabled", true);
 user_pref("dom.popup_maximum", -1);
 // Prevent connection to the push server for tests.
 user_pref("dom.push.connection.enabled", false);
@@ -212,4 +213,3 @@ user_pref("security.data_uri.block_toplevel_data_uri_navigations", false);
 
 // Turn off update
 user_pref("app.update.disabledForTesting", true);
-

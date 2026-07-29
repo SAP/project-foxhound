@@ -8,7 +8,7 @@ MOBILE_ERROR_TEXT = "Discuz! Mobile System Error"
 
 async def check_content_is_all_onscreen(client):
     await client.navigate(URL, wait="none")
-    client.await_css(HERO_CSS, is_displayed=True)
+    client.await_css(HERO_CSS, is_displayed=True, timeout=30)
     return client.execute_script(
         "return document.scrollingElement.scrollWidth <= window.outerWidth"
     )

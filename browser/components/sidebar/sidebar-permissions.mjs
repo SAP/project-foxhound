@@ -49,7 +49,7 @@ function removeNotificationsForBrowser(popupNotifications, browser) {
   const notifications = popupNotifications.getNotificationsForBrowser(browser);
   if (notifications?.length) {
     for (const notification of [...notifications]) {
-      popupNotifications.remove(notification, true);
+      popupNotifications.remove(notification, /* withoutUserResponse = */ true);
     }
   }
 }

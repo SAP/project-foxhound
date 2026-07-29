@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=4 sw=2 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -113,7 +111,12 @@ bool NetAddr::ToStringBuffer(char* buf, uint32_t bufSize) const {
   }
 #if defined(XP_UNIX)
   if (addr->raw.family == AF_LOCAL) {
-    if (bufSize < sizeof(addr->local.path)) {
+    // local.path is NOT guaranteed to be NUL-terminated: PR_Accept casts
+    // PRNetAddr* to struct sockaddr* and Linux sun_path is 108 bytes vs
+    // our 104, so a peer bound to a >=104-char path fills the whole field
+    // with non-NUL data. We must write our own terminator, so require
+    // strictly more than sizeof(path) bytes.
+    if (bufSize <= sizeof(addr->local.path)) {
       // Many callers don't bother checking our return value, so
       // null-terminate just in case.
       if (bufSize > 0) {
@@ -128,26 +131,54 @@ bool NetAddr::ToStringBuffer(char* buf, uint32_t bufSize) const {
     // using the destination's size may cause us to read off the end of the
     // source.
     memcpy(buf, addr->local.path, sizeof(addr->local.path));
+    buf[sizeof(addr->local.path)] = '\0';
     return true;
   }
 #endif
   return false;
 }
 
+bool NetAddr::ToString(nsACString& aOutput) const {
+  size_t bufferSize = 0;
+  if (raw.family == AF_INET) {
+    bufferSize = INET_ADDRSTRLEN;
+  } else if (raw.family == AF_INET6) {
+    bufferSize = INET6_ADDRSTRLEN;
+  }
+#if defined(XP_UNIX)
+  else if (raw.family == AF_LOCAL) {
+    // +1 for the NUL terminator that ToStringBuffer writes.
+    bufferSize = sizeof(local.path) + 1;
+  }
+#endif
+
+  auto handleOrErr = aOutput.BulkWrite(bufferSize, /* aPrefixToPreserve */ 0,
+                                       /* aAllowShrinking */ false);
+  if (handleOrErr.isErr()) {
+    NS_ABORT_OOM(bufferSize);
+    return false;
+  }
+  auto handle = handleOrErr.unwrap();
+
+  if (!ToStringBuffer(handle.Elements(), bufferSize)) {
+    handle.Finish(0, /* aAllowShrinking */ false);
+    return false;
+  }
+  handle.Finish(strlen(handle.Elements()), /* aAllowShrinking */ false);
+  return true;
+}
+
 nsCString NetAddr::ToString() const {
   nsCString out;
-  out.SetLength(kNetAddrMaxCStrBufSize);
-  if (ToStringBuffer(out.BeginWriting(), kNetAddrMaxCStrBufSize)) {
-    out.SetLength(strlen(out.BeginWriting()));
-    return out;
-  }
-  return ""_ns;
+  ToString(out);
+  return out;
 }
 
 void NetAddr::ToAddrPortString(nsACString& aOutput) const {
+  ToString(aOutput);
   uint16_t port = 0;
   GetPort(&port);
-  aOutput.Assign(nsPrintfCString("%s:%d", ToString().get(), port));
+  aOutput.AppendPrintf(":%d", port);
 }
 
 bool NetAddr::IsLoopbackAddr() const {
@@ -267,7 +298,7 @@ nsILoadInfo::IPAddressSpace NetAddr::GetIpAddressSpace() const {
 }
 
 nsresult NetAddr::InitFromString(const nsACString& aString, uint16_t aPort) {
-  PRNetAddr prAddr{};
+  PRNetAddr prAddr;
   memset(&prAddr, 0, sizeof(PRNetAddr));
   if (PR_StringToNetAddr(PromiseFlatCString(aString).get(), &prAddr) !=
       PR_SUCCESS) {

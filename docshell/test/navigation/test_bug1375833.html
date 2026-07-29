@@ -23,27 +23,24 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1375833
     let count = 0;
     let webNav, shistory;
     let frameDocShellId;
-    let chromeScript = null;
-    if (SpecialPowers.Services.appinfo.sessionHistoryInParent) {
-      chromeScript = SpecialPowers.loadChromeScript(() => {
-        function doSend(message, fn) {
-          try {
-            sendAsyncMessage(message, {success: true, value: fn()});
-          } catch(_) {
-            sendAsyncMessage(message, {success: false});
-          }
+    let chromeScript = SpecialPowers.loadChromeScript(() => {
+      function doSend(message, fn) {
+        try {
+          sendAsyncMessage(message, {success: true, value: fn()});
+        } catch(_) {
+          sendAsyncMessage(message, {success: false});
         }
+      }
 
-        addMessageListener("test1", id => {
-          doSend("test1", () => {
-            let sessionHistory = BrowsingContext.get(id).top.sessionHistory;
-            let entry = sessionHistory.getEntryAtIndex(sessionHistory.index);
-            let frameEntry = entry.GetChildAt(0);
-            return String(frameEntry.docshellID);
-          })
-        });
+      addMessageListener("test1", id => {
+        doSend("test1", () => {
+          let sessionHistory = BrowsingContext.get(id).top.sessionHistory;
+          let entry = sessionHistory.getEntryAtIndex(sessionHistory.index);
+          let frameEntry = entry.GetChildAt(0);
+          return String(frameEntry.docshellID);
+        })
       });
-    }
+    });
 
     window.addEventListener("message", async e => {
       switch (count++) {
@@ -71,11 +68,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1375833
           ok(newFrameDocShellId, "sanity check for docshell ID");
           is(newFrameDocShellId, frameDocShellId, "check docshell ID remains after reload");
 
-          if (!SpecialPowers.Services.appinfo.sessionHistoryInParent) {
-            let entry = shistory.legacySHistory.getEntryAtIndex(shistory.index);
-            let frameEntry = entry.GetChildAt(0);
-            is(String(frameEntry.docshellID), frameDocShellId, "check newly added shentry uses the same docshell ID");
-          } else {
+          {
             let p = chromeScript.promiseOneMessage("test1");
             chromeScript.sendAsyncMessage("test1", SpecialPowers.wrap(testWin).browsingContext.id);
             let result = await p;

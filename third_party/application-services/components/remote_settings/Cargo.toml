@@ -11,6 +11,8 @@ exclude = ["/android", "/ios"]
 [features]
 default = []
 signatures = ["dep:canonical_json", "dep:rc_crypto"]
+# submitting glean telemetry is tricky on desktop for now.
+telemetry-submission = []
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -45,4 +47,5 @@ mockito = { version = "0.31", default-features = false}
 # We add the perserve_order feature to guarantee ordering of the keys in our
 # JSON objects as they get serialized/deserialized.
 serde_json = { version = "1", features = ["preserve_order"] }
-nss = { path = "../support/rc_crypto/nss" }
+nss-as = { path = "../support/rc_crypto/nss" }
+tempfile = "3"

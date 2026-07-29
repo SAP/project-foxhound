@@ -1,4 +1,3 @@
-//* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -782,7 +781,7 @@ nsresult ProtocolParserProtobuf::ProcessOneResponse(
   // per provider and return the first one. See bug 1287059."
   nsTArray<nsCString> possibleListNameArray;
   Classifier::SplitTables(possibleListNames, possibleListNameArray);
-  for (auto possibleName : possibleListNameArray) {
+  for (const auto& possibleName : possibleListNameArray) {
     if (mRequestedTables.Contains(possibleName)) {
       aListName = possibleName;
       break;
@@ -1238,7 +1237,7 @@ static nsresult DoRiceDeltaDecode4Bytes(
   bool rv = decoder.Decode(
       aEncoding.rice_parameter(), first_value,
       aEncoding.entries_count(),  // # of entries (first value not included).
-      &aDecoded[0]);
+      &aDecoded[0], /* aIsV5 */ true);
 
   NS_ENSURE_TRUE(rv, NS_ERROR_UC_PARSER_DECODE_FAILURE);
 

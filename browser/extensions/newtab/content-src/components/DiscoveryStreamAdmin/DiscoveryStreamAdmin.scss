@@ -5,33 +5,68 @@
   // Adjust spacing for DevTools wrench icon to avoid overlapping the customize button
   inset-block-end: calc(var(--button-size-icon) + var(--space-xxlarge) + var(--space-small));
   inset-inline-end: var(--space-xlarge);
+  appearance: none;
   border: 0;
-  background: none;
-  z-index: 4;
   border-radius: var(--border-radius-small);
+  background-color: var(--button-background-color, rgba(21, 20, 26, 7%));
+  box-shadow: 0 0.8px 1.6px 0 rgba(58, 57, 68, 20%);
+  padding: calc(5 * var(--space-xxsmall));
+  z-index: 4;
+  display: flex;
+  align-items: center;
 
-  .icon-devtools {
-    background-color: var(--button-background-color, rgba(21, 20, 26, 7%));
-    background-image: url('chrome://global/skin/icons/developer.svg');
-    background-size: var(--icon-size-medium);
-    box-shadow: 0 0.8px 1.6px 0 rgba(58, 57, 68, 20%);
-    padding: calc(5 * var(--space-xsmall));
+  .lightWallpaper &,
+  .darkWallpaper & {
+    background-color: var(--newtab-weather-background-color);
+
+    @media (prefers-contrast) {
+      background-color: var(--background-color-box);
+    }
+  }
+
+  &:hover {
+    background-color: var(--newtab-button-static-hover-background);
+  }
+
+  &:active {
+    background-color: var(--newtab-button-static-active-background);
+  }
+
+  &:focus-visible {
+    @include ds-focus;
+
+    background-color: var(--newtab-button-static-active-background);
   }
 
   &:dir(rtl) {
     transform: scaleX(-1);
   }
 
-  &:hover {
-    background: var(--newtab-element-hover-color);
-  }
+  > div {
+    width: var(--icon-size-medium);
+    height: var(--icon-size-medium);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
 
-  &.expanded {
-    background: $black-20;
+    > img {
+      -moz-context-properties: fill;
+      display: inline-block;
+      color: var(--icon-color);
+      fill: currentColor;
+      height: 100%;
+      object-fit: contain;
+      vertical-align: middle;
+      width: 100%;
+    }
   }
 }
 
 .discoverystream-admin {
+  .personalization-data {
+    padding-block-end: var(--space-xlarge);
+  }
   $monospace: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', 'Droid Sans Mono',
     'Source Code Pro', monospace;
 
@@ -50,6 +85,23 @@
     display: none;
   }
 
+  main.main-panel {
+    margin: 0 auto;
+    width: $wrapper-default-width;
+
+    @media (min-width: $break-point-medium) {
+      width: $wrapper-max-width-medium;
+    }
+
+    @media (min-width: $break-point-large) {
+      width: $wrapper-max-width-large;
+    }
+
+    @media (min-width: $break-point-widest) {
+      width: $wrapper-max-width-widest;
+    }
+  }
+
   h1 {
     font-size: var(--font-size-xxlarge);
   }
@@ -65,6 +117,110 @@
   .toggle-wrapper {
     margin-block: var(--space-large);
     width: 200px;
+  }
+
+  .inferred-personalization-overrides {
+    margin-block: var(--space-large);
+  }
+
+  .inferred-overrides-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-medium);
+  }
+
+  .inferred-overrides-title {
+    margin: 0;
+  }
+
+  .inferred-overrides-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-medium);
+
+    .button {
+      margin: 0;
+    }
+  }
+
+  .inferred-overrides-toggle-row td:first-child {
+    font-weight: var(--font-weight-bold);
+  }
+
+  .inferred-overrides-last-refreshed {
+    display: flex;
+    align-items: center;
+    gap: var(--space-small);
+    font-size: var(--font-size-small);
+    margin-block: var(--space-small) var(--space-medium);
+    padding-inline-start: var(--space-small);
+  }
+
+  .inferred-overrides-last-refreshed-label {
+    font-weight: var(--font-weight-bold);
+  }
+
+  .inferred-vectors-row {
+    display: flex;
+    align-items: stretch;
+    gap: var(--space-xlarge);
+    margin-block-start: var(--space-xlarge);
+  }
+
+  .inferred-vector-column {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-small);
+  }
+
+  .inferred-vector-panel {
+    border: 1px solid var(--border-color);
+    padding: var(--space-small);
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+
+    pre {
+      margin-block-start: 0;
+      flex: 1;
+      overflow: auto;
+    }
+  }
+
+  .inferred-vector-title {
+    font-weight: var(--font-weight-bold);
+  }
+
+  .inferred-overrides-table-header td {
+    font-weight: var(--font-weight-bold);
+  }
+
+  .inferred-score-col {
+    width: 1%;
+    white-space: nowrap;
+    text-align: center;
+    padding-inline: 0;
+  }
+
+  .inferred-overrides-toggle-row td {
+    vertical-align: middle;
+  }
+
+  .inferred-override-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--space-medium);
+  }
+
+  .inferred-override-slider {
+    width: 160px;
+  }
+
+  .inferred-override-value {
+    min-width: 2ch;
+    text-align: end;
   }
 
   .details-section {

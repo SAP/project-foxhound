@@ -908,7 +908,12 @@ pub mod filters {
     }
 
     // Render an expression to check if two instances of this type are equal
-    pub fn field_equals(field: &Field, _: &dyn askama::Values, first_obj: &str, second_obj: &str) -> Result<String> {
+    pub fn field_equals(
+        field: &Field,
+        _: &dyn askama::Values,
+        first_obj: &str,
+        second_obj: &str,
+    ) -> Result<String> {
         let name = &field.name;
         Ok(match &field.ty.ty {
             Type::Record { .. } => format!("{first_obj}.{name}.equals({second_obj}.{name})"),
@@ -919,7 +924,10 @@ pub mod filters {
     // Remove the trailing comma from a block of text.
     //
     // This can make generating argument lists more convenient.
-    pub fn remove_trailing_comma<T: std::fmt::Display>(text: T, _: &dyn askama::Values) -> Result<String> {
+    pub fn remove_trailing_comma<T: std::fmt::Display>(
+        text: T,
+        _: &dyn askama::Values,
+    ) -> Result<String> {
         let text = text.to_string();
         let Some(last_comma) = text.rfind(',') else {
             return Ok(text.to_string());

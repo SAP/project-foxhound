@@ -69,6 +69,7 @@ mod logging;
 mod logic;
 mod memory_test;
 mod net;
+mod prefs_parser;
 mod process;
 mod send_ping;
 mod settings;
@@ -87,6 +88,7 @@ fn main() {
         Some(s) if s == "--analyze" => analyze::main(),
         Some(s) if s == "--memtest" => memory_test::main(),
         Some(s) if s == "--send-ping" => send_ping::main(),
+        Some(s) if s == "--ping-cleanup" => send_ping::cleanup_main(),
         _ => report_main(),
     }
 }
@@ -144,9 +146,7 @@ fn report_main() {
                             "ProductName": "Bar",
                             "ReleaseChannel": "release",
                             "BuildID": "1234",
-                            "StackTraces": {
-                                "status": "OK"
-                            },
+                            "StackTraces": "{}",
                             "Version": "100.0",
                             "ServerURL": "https://reports.example",
                             "TelemetryServerURL": "https://telemetry.example",
@@ -159,7 +159,6 @@ fn report_main() {
     // Actual content doesn't matter, aside from the hash that is generated.
     const MOCK_MINIDUMP_FILE: &[u8] = &[1, 2, 3, 4];
     const MOCK_CURRENT_TIME: &str = "2004-11-09T12:34:56Z";
-    const MOCK_PING_UUID: uuid::Uuid = uuid::Uuid::nil();
     const MOCK_REMOTE_CRASH_ID: &str = "8cbb847c-def2-4f68-be9e-000000000000";
 
     // Initialize logging but don't set it in the configuration, so that it won't be redirected to
@@ -203,14 +202,12 @@ fn report_main() {
         .unwrap()
         .into(),
     )
-    .set(mock::MockHook::new("ping_uuid"), MOCK_PING_UUID)
     .set(mock::MockHook::new("enable_glean_pings"), false);
 
     let result = mock.run(|| {
         let mut cfg = Config::new();
         cfg.data_dir = Some("data_dir".into());
         cfg.events_dir = Some("events_dir".into());
-        cfg.ping_dir = Some("ping_dir".into());
         cfg.dump_file = Some("minidump.dmp".into());
         cfg.restart_command = Some("mockfox".into());
         cfg.strings = Some(lang::load());

@@ -235,7 +235,7 @@ add_task(async function testRecentlyClosedRestoreAllTabs() {
     "https://example.org/",
   ];
 
-  const closedTabGroupInOpenWindowUrls = ["about:logo", "about:logo"];
+  const closedTabGroupInOpenWindowUrls = ["about:mozilla", "about:mozilla"];
   const closedTabGroupInOpenWindowId = "1234567890-1";
 
   const closedTabGroupInClosedWindowUrls = ["about:robots", "about:robots"];
@@ -510,19 +510,22 @@ add_task(async function testRecentlyClosedTabGroupsSingleTab() {
 
   is(gBrowser.visibleTabs.length, 1, "We start with one tab already open");
 
-  let aboutMozillaTab = BrowserTestUtils.addTab(gBrowser, "about:mozilla");
-  let aboutLogoTab = BrowserTestUtils.addTab(gBrowser, "about:logo");
-  let mozillaTabGroup = gBrowser.addTabGroup([aboutMozillaTab, aboutLogoTab], {
-    color: "red",
-    label: "mozilla stuff",
-  });
+  let aboutMozillaTabA = BrowserTestUtils.addTab(gBrowser, "about:mozilla?foo");
+  let aboutMozillaTabB = BrowserTestUtils.addTab(gBrowser, "about:mozilla?bar");
+  let mozillaTabGroup = gBrowser.addTabGroup(
+    [aboutMozillaTabA, aboutMozillaTabB],
+    {
+      color: "red",
+      label: "mozilla stuff",
+    }
+  );
   const mozillaTabGroupId = mozillaTabGroup.id;
   const mozillaTabGroupName = mozillaTabGroup.label;
   let aboutRobotsTab = BrowserTestUtils.addTab(gBrowser, "about:robots");
 
   info("load all of the tabs");
   await Promise.all(
-    [aboutMozillaTab, aboutLogoTab, aboutRobotsTab].map(async t => {
+    [aboutMozillaTabA, aboutMozillaTabB, aboutRobotsTab].map(async t => {
       await BrowserTestUtils.browserLoaded(t.linkedBrowser);
       await TabStateFlusher.flush(t.linkedBrowser);
     })
@@ -785,7 +788,7 @@ add_task(async function testOpenTabFromClosedGroupInClosedWindow() {
   const ORIG_STATE = SessionStore.getBrowserState();
 
   const closedTabUrl = "about:robots";
-  const closedTabGroupUrls = ["about:logo", "https://example.com"];
+  const closedTabGroupUrls = ["about:mozilla", "https://example.com"];
   const closedTabGroupId = "1234567890-1";
 
   await SessionStoreTestUtils.promiseBrowserState({

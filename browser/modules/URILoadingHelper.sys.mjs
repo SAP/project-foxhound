@@ -74,8 +74,12 @@ function openInWindow(url, params, sourceWindow) {
     policyContainer,
     resolveOnContentBrowserCreated,
     chromeless,
+    width,
+    height,
   } = params;
-  const CHROMELESS_FEATURES = `resizable,minimizable,titlebar,close`;
+  const chromelessDimensions =
+    chromeless && width && height ? `,width=${width},height=${height}` : "";
+  const CHROMELESS_FEATURES = `resizable,minimizable,titlebar,close${chromelessDimensions}`;
   let features = `chrome,dialog=no,${chromeless ? CHROMELESS_FEATURES : "all"}`;
   if (params.private) {
     features += ",private";
@@ -145,6 +149,9 @@ function openInWindow(url, params, sourceWindow) {
   }
   if (params.schemelessInput !== undefined) {
     extraOptions.setPropertyAsUint32("schemelessInput", params.schemelessInput);
+  }
+  if (params.aiWindow) {
+    extraOptions.setPropertyAsBool("ai-window", true);
   }
 
   var allowThirdPartyFixupSupports = Cc[
@@ -414,6 +421,7 @@ export const URILoadingHelper = {
    *                  Force allow a data URI to load as a toplevel load.
    * @param {number}  params.userContextId
    *                  The userContextId (container identifier) to use for the load.
+   *                  If where is "current" and the specified userContextId differs, a new tab is opened instead.
    * @param {boolean} params.allowInheritPrincipal
    *                  Allow the load to inherit the triggering principal.
    * @param {boolean} params.forceAboutBlankViewerInCurrent
@@ -529,12 +537,11 @@ export const URILoadingHelper = {
     w.focus();
 
     let targetBrowser;
-    let loadInBackground;
     let uriObj;
+    let loadInBackground = BrowserUtils.willLoadInBackground(where, params);
 
     if (where == "current") {
       targetBrowser = params.targetBrowser || w.gBrowser.selectedBrowser;
-      loadInBackground = false;
       uriObj = URL.parse(url)?.URI;
 
       // In certain tabs, we restrict what if anything may replace the loaded
@@ -542,6 +549,13 @@ export const URILoadingHelper = {
       // we'll open a new tab instead.
       let tab = w.gBrowser.getTabForBrowser(targetBrowser);
       if (tab == w.FirefoxViewHandler.tab) {
+        where = "tab";
+        targetBrowser = null;
+      } else if (
+        params.userContextId != null &&
+        params.userContextId !==
+          targetBrowser.browsingContext.originAttributes.userContextId
+      ) {
         where = "tab";
         targetBrowser = null;
       } else if (
@@ -564,14 +578,6 @@ export const URILoadingHelper = {
           targetBrowser = null;
         }
       }
-    } else {
-      // `where` is "tab" or "tabshifted", so we'll load the link in a new tab.
-      loadInBackground = params.inBackground;
-      if (loadInBackground == null) {
-        loadInBackground = params.forceForeground
-          ? false
-          : Services.prefs.getBoolPref("browser.tabs.loadInBackground");
-      }
     }
 
     let focusUrlBar = false;
@@ -586,10 +592,8 @@ export const URILoadingHelper = {
           w.document.activeElement == w.gURLBar.inputField &&
           w.isBlankPageURL(url);
         break;
-      case "tabshifted":
-        loadInBackground = !loadInBackground;
-      // fall through
-      case "tab": {
+      case "tab":
+      case "tabshifted": {
         focusUrlBar =
           !loadInBackground &&
           w.isBlankPageURL(url) &&
@@ -682,7 +686,7 @@ export const URILoadingHelper = {
    */
   _resolveInitialTargetWindow(where, params, win, forceNonPrivate) {
     if (where === "current" && params.targetBrowser) {
-      return params.targetBrowser.ownerGlobal;
+      return params.targetBrowser.documentGlobal;
     }
 
     if (where === "tab" || where === "tabshifted") {
@@ -1021,14 +1025,14 @@ export const URILoadingHelper = {
 
           if (!doAdopt) {
             if (aSplitView) {
-              let tabToReplace = aSplitView.tabs.find(tab => tab.selected);
               let tabToMove = aWindow.gBrowser.tabs[i];
-              aSplitView.replaceTab(tabToReplace, tabToMove);
-              aSplitView.ownerGlobal.gBrowser.setIsSplitViewActive(
-                true,
-                aSplitView.tabs
-              );
-              aSplitView.ownerGlobal.focus();
+              if (aSplitView.tabs.includes(tabToMove)) {
+                aWindow.gBrowser.selectedTab = tabToMove;
+              } else {
+                let tabToReplace = aSplitView.tabs.find(tab => tab.selected);
+                aSplitView.replaceTab(tabToReplace, tabToMove);
+              }
+              aSplitView.documentGlobal.focus();
             } else {
               aWindow.gBrowser.tabContainer.selectedIndex = i;
             }

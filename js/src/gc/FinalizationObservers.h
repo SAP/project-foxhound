@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -10,6 +8,8 @@
 #include "gc/Barrier.h"
 #include "gc/WeakMap.h"  // For GetSymbolHash.
 #include "gc/ZoneAllocator.h"
+#include "js/friend/CycleCollector.h"
+#include "js/friend/Wrapper.h"
 #include "js/GCHashTable.h"
 #include "js/GCVector.h"
 #include "js/Value.h"
@@ -23,8 +23,6 @@ class FinalizationQueueObject;
 class WeakRefObject;
 
 namespace gc {
-
-JS::Zone* GetWeakTargetZone(const Value& value);
 
 // ObserverList
 //
@@ -127,6 +125,8 @@ class ObserverList {
   void setPrev(Ptr link);
   friend class ObserverListPtr;
 
+  void makeEmpty();
+
  public:
   class Iter;
 
@@ -145,6 +145,7 @@ class ObserverList {
   Iter iter();
 
   void insertFront(ObserverListObject* obj);
+  void append(ObserverList&& other);
 };
 
 // A hasher for GC things used as WeakRef and FinalizationRegistry targets. Uses
@@ -198,13 +199,14 @@ class FinalizationObservers {
   // of finalization records representing registries that the target is
   // registered with and their associated held values. The records may be in
   // other zones. They are direct pointers and are not wrapped.
-  using RecordMap = GCHashMap<HeapPtr<Value>, ObserverList, WeakTargetHasher,
-                              ZoneAllocPolicy>;
-  RecordMap recordMap;
+  using ObserverMap = GCHashMap<HeapPtr<Value>, ObserverList, WeakTargetHasher,
+                                ZoneAllocPolicy>;
+  ObserverMap recordMap;
 
-  using WeakRefMap = GCHashMap<HeapPtr<Value>, ObserverList, WeakTargetHasher,
-                               ZoneAllocPolicy>;
-  WeakRefMap weakRefMap;
+  // A map from weak ref targets in the associated zone to a list of weak ref
+  // objects that reference that target. The weak refs may be in other zones.
+  // They are direct pointers and are not wrapped.
+  ObserverMap weakRefMap;
 
  public:
   explicit FinalizationObservers(Zone* zone);
@@ -220,10 +222,26 @@ class FinalizationObservers {
   void removeWeakRefTarget(Handle<Value> target,
                            Handle<WeakRefObject*> weakRef);
 
-  void traceWeakEdges(JSTracer* trc);
+  // Integration with cycle collector:
+  void maybeClearWeakRefTargets(JS::ShouldClearWeakRefTargetCallback callback,
+                                void* data);
+
+  // Integration with object transplanting:
+  bool isTarget(const Value& target);
+  ObserverList extractWeakRefObservers(const Value& target);
+  bool addWeakRefObservers(const Value& target, ObserverList&& list);
+  ObserverList extractRecordObservers(const Value& target);
+  bool addRecordObservers(const Value& target, ObserverList&& list);
+
+  // Integration with nuking CCWs:
+  void clearWeakRefTargets(JS::Compartment* source, const Value& target);
+  void clearWeakRefTargets(const CompartmentFilter& sourceFilter,
+                           JS::Realm* targetFilter);
+
+  void traceWeakEdges(JSTracer* trc, JS::Zone* zone);
 
  private:
-  void traceWeakFinalizationRegistryEdges(JSTracer* trc);
+  void traceWeakFinalizationRegistryEdges(JSTracer* trc, JS::Zone* zone);
   void traceWeakWeakRefEdges(JSTracer* trc);
   void traceWeakWeakRefList(JSTracer* trc, ObserverList& weakRefs,
                             Value target);

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,7 @@
 #include "FakeVideoSource.h"
 
 #include "ImageContainer.h"
+#include "mozilla/CheckedInt.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/gfx/Tools.h"
 
@@ -33,9 +32,50 @@ int32_t FakeVideoSource::StartCapture(int32_t aWidth, int32_t aHeight,
     return -1;
   }
 
+  Maybe<int32_t> maybeYStride = GetAlignedStride<2>(aWidth, 1);
+  if (!maybeYStride) {
+    return -1;
+  }
+  CheckedInt32 yStride = *maybeYStride;
+  CheckedInt<size_t> yLen = yStride.toChecked<size_t>() * aHeight;
+  CheckedInt32 cbcrStride = yStride / 2;
+  Maybe<int32_t> maybeHeightStride = GetAlignedStride<2>(aHeight, 1);
+  if (!maybeHeightStride) {
+    return -1;
+  }
+  CheckedInt<size_t> cbLen =
+      cbcrStride.toChecked<size_t>() * *maybeHeightStride / 2;
+  CheckedInt<size_t> crLen = cbLen;
+  CheckedInt<size_t> frameLen = yLen + cbLen + crLen;
+  if (!frameLen.isValid() || frameLen.value() == 0) {
+    return -1;
+  }
+  MOZ_ASSERT(yStride.isValid());
+  MOZ_ASSERT(yLen.isValid());
+  MOZ_ASSERT(cbcrStride.isValid());
+  MOZ_ASSERT(cbLen.isValid());
+  MOZ_ASSERT(crLen.isValid());
+
+  nsTArray<uint8_t> frame;
+  if (!frame.SetLength(frameLen.value(), fallible)) {
+    return -1;
+  }
+
+  auto data = std::make_unique<layers::PlanarYCbCrData>();
+  data->mYChannel = frame.Elements();
+  data->mYStride = yStride.value();
+  data->mCbCrStride = cbcrStride.value();
+  data->mCbChannel = data->mYChannel + yLen.value();
+  data->mCrChannel = data->mCbChannel + cbLen.value();
+  data->mPictureRect = IntRect(0, 0, aWidth, aHeight);
+  data->mStereoMode = StereoMode::MONO;
+  data->mYUVColorSpace = gfx::YUVColorSpace::BT601;
+  data->mChromaSubsampling = gfx::ChromaSubsampling::HALF_WIDTH_AND_HEIGHT;
+
   MOZ_ALWAYS_SUCCEEDS(mTarget.Dispatch(NS_NewRunnableFunction(
       "FakeVideoSource::StartCapture",
-      [self = RefPtr(this), this, aWidth, aHeight] {
+      [self = RefPtr(this), this, aWidth, aHeight, frame = std::move(frame),
+       data = std::move(data)]() mutable {
         mTarget.AssertOnCurrentThread();
         if (!mImageContainer) {
           mImageContainer = MakeAndAddRef<layers::ImageContainer>(
@@ -44,6 +84,8 @@ int32_t FakeVideoSource::StartCapture(int32_t aWidth, int32_t aHeight,
         }
         mWidth = aWidth;
         mHeight = aHeight;
+        mFrame = std::move(frame);
+        mFrameData = std::move(data);
       })));
 
   // Start timer for subsequent frames
@@ -80,6 +122,8 @@ int32_t FakeVideoSource::StopCapture() {
                   layers::ImageUsageType::Webrtc,
                   layers::ImageContainer::ASYNCHRONOUS);
             }
+            mFrameData = nullptr;
+            mFrame.Clear();
           })));
 
   return 0;
@@ -102,38 +146,6 @@ void FakeVideoSource::SetTrackingId(uint32_t aTrackingIdProcId) {
         }
         mTrackingId.emplace(TrackingId::Source::Camera, aTrackingIdProcId);
       })));
-}
-
-static bool AllocateSolidColorFrame(layers::PlanarYCbCrData& aData, int aWidth,
-                                    int aHeight, int aY, int aCb, int aCr) {
-  // Allocate a single frame with a solid color
-  int yStride = GetAlignedStride<2>(aWidth, 1);
-  int yLen = yStride * aHeight;
-  int cbcrStride = yStride / 2;
-  int cbLen = cbcrStride * GetAlignedStride<2>(aHeight, 1) / 2;
-  int crLen = cbLen;
-  uint8_t* frame = (uint8_t*)malloc(yLen + cbLen + crLen);
-  if (!frame) {
-    return false;
-  }
-  memset(frame, aY, yLen);
-  memset(frame + yLen, aCb, cbLen);
-  memset(frame + yLen + cbLen, aCr, crLen);
-
-  aData.mYChannel = frame;
-  aData.mYStride = yStride;
-  aData.mCbCrStride = cbcrStride;
-  aData.mCbChannel = frame + yLen;
-  aData.mCrChannel = aData.mCbChannel + cbLen;
-  aData.mPictureRect = IntRect(0, 0, aWidth, aHeight);
-  aData.mStereoMode = StereoMode::MONO;
-  aData.mYUVColorSpace = gfx::YUVColorSpace::BT601;
-  aData.mChromaSubsampling = gfx::ChromaSubsampling::HALF_WIDTH_AND_HEIGHT;
-  return true;
-}
-
-static void ReleaseFrame(layers::PlanarYCbCrData& aData) {
-  free(aData.mYChannel);
 }
 
 void FakeVideoSource::GenerateImage() {
@@ -169,29 +181,26 @@ void FakeVideoSource::GenerateImage() {
     mCr--;
   }
 
-  // Allocate a single solid color image
   RefPtr<layers::PlanarYCbCrImage> ycbcr_image =
       mImageContainer->CreatePlanarYCbCrImage();
-  layers::PlanarYCbCrData data;
-  if (NS_WARN_IF(
-          !AllocateSolidColorFrame(data, mWidth, mHeight, 0x80, mCb, mCr))) {
-    return;
-  }
+  const size_t yLen = mFrameData->mCbChannel - mFrameData->mYChannel;
+  const size_t cbLen = mFrameData->mCrChannel - mFrameData->mCbChannel;
+  const size_t crLen = cbLen;
+  MOZ_RELEASE_ASSERT(mFrame.Length() == yLen + cbLen + crLen);
+  memset(mFrame.Elements(), 0x80, yLen);
+  memset(mFrame.Elements() + yLen, mCb, cbLen);
+  memset(mFrame.Elements() + yLen + cbLen, mCr, crLen);
 
 #ifdef MOZ_WEBRTC
   uint64_t timestamp = PR_Now();
-  YuvStamper::Encode(mWidth, mHeight, mWidth, data.mYChannel,
+  YuvStamper::Encode(mWidth, mHeight, mWidth, mFrameData->mYChannel,
                      reinterpret_cast<unsigned char*>(&timestamp),
                      sizeof(timestamp), 0, 0);
 #endif
 
-  bool setData = NS_SUCCEEDED(ycbcr_image->CopyData(data));
-  MOZ_ASSERT(setData);
-
-  // SetData copies data, so we can free the frame
-  ReleaseFrame(data);
-
-  if (!setData) {
+  bool copied = NS_SUCCEEDED(ycbcr_image->CopyData(*mFrameData));
+  MOZ_ASSERT(copied);
+  if (!copied) {
     return;
   }
 

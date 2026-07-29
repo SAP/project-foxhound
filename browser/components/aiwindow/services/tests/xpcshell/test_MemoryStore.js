@@ -325,6 +325,51 @@ add_task(async function test_reasoning_field_persistence() {
   await FreshStore.hardDeleteMemory(memory.id);
 });
 
+add_task(async function test_getMemories_filters_by_memoryIds_set() {
+  await MemoryStore.ensureInitialized();
+
+  const mem1 = await MemoryStore.addMemory({
+    memory_summary: "likes coffee",
+    category: "Food & Drink",
+    intent: "Plan / Organize",
+    score: 1,
+  });
+  const mem2 = await MemoryStore.addMemory({
+    memory_summary: "likes tea",
+    category: "Food & Drink",
+    intent: "Communicate / Share",
+    score: 1,
+  });
+  const mem3 = await MemoryStore.addMemory({
+    memory_summary: "likes playing tennis",
+    category: "Sports & Fitness",
+    intent: "Plan / Organize",
+    score: 1,
+  });
+
+  const result = await MemoryStore.getMemories({
+    memoryIds: new Set([mem1.id, mem3.id]),
+  });
+
+  Assert.equal(result.length, 2, "Should return only the 2 requested memories");
+  Assert.ok(
+    result.some(m => m.id === mem1.id),
+    "Result should include mem1"
+  );
+  Assert.ok(
+    result.some(m => m.id === mem3.id),
+    "Result should include mem3"
+  );
+  Assert.ok(
+    !result.some(m => m.id === mem2.id),
+    "Result should not include mem2"
+  );
+
+  await MemoryStore.hardDeleteMemory(mem1.id);
+  await MemoryStore.hardDeleteMemory(mem2.id);
+  await MemoryStore.hardDeleteMemory(mem3.id);
+});
+
 add_task(async function test_create_memory_id_from_valid_category() {
   const memoryPartial = {
     memory_summary: "Likes coffee",

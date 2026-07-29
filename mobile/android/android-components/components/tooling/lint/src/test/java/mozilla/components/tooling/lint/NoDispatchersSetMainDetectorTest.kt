@@ -73,7 +73,7 @@ class NoDispatchersSetMainDetectorTest : LintDetectorTest() {
             .expectErrorCount(1)
             .expectContains(
                 """
-                Avoid using 'Dispatchers.setMain' directly in tests. Use a TestRule (e.g., MainCoroutineRule or a local rule) for managing dispatchers
+                Avoid using 'Dispatchers.setMain' directly in tests. Inject dispatchers into your components instead to allow testing with a TestDispatcher.
             """.trimIndent(),
             )
     }
@@ -87,7 +87,7 @@ class NoDispatchersSetMainDetectorTest : LintDetectorTest() {
             .expectErrorCount(1)
             .expectContains(
                 """
-                Avoid using 'Dispatchers.resetMain' directly in tests. Use a TestRule (e.g., MainCoroutineRule or a local rule) for managing dispatchers
+                Avoid using 'Dispatchers.resetMain' directly in tests. Inject dispatchers into your components instead to allow testing with a TestDispatcher.
             """.trimIndent(),
             )
     }

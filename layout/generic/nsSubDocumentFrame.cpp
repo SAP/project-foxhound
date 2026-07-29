@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,6 +13,7 @@
 #include "mozilla/ComputedStyleInlines.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ProfilerLabels.h"
+#include "mozilla/ReflowInput.h"
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/dom/BrowserParent.h"
@@ -159,7 +158,7 @@ void nsSubDocumentFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   // NOTE: The frame loader might not yet be initialized yet. If it's not, the
   // call in ShowViewer() should pick things up.
   UpdateEmbeddedBrowsingContextDependentData();
-  nsContentUtils::AddScriptRunner(new AsyncFrameInit(this));
+  nsContentUtils::AddScriptRunner(MakeAndAddRef<AsyncFrameInit>(this));
 }
 
 void nsSubDocumentFrame::UpdateEmbeddedBrowsingContextDependentData() {
@@ -274,7 +273,7 @@ nsRect nsSubDocumentFrame::GetDestRect(const nsRect& aConstraintRect) const {
   // intrinsic size and ratio.
   return nsLayoutUtils::ComputeObjectDestRect(
       aConstraintRect, ComputeIntrinsicSize(/* aIgnoreContainment = */ true),
-      GetIntrinsicRatio(), StylePosition());
+      GetIntrinsicRatio(/* aIgnoreContainment = */ true), StylePosition());
 }
 
 LayoutDeviceIntSize nsSubDocumentFrame::GetInitialSubdocumentSize() const {
@@ -604,10 +603,11 @@ IntrinsicSize nsSubDocumentFrame::ComputeIntrinsicSize(
 }
 
 /* virtual */
-AspectRatio nsSubDocumentFrame::GetIntrinsicRatio() const {
-  // FIXME(emilio): This should probably respect contain: size and return no
-  // ratio in the case subDocRoot is non-null. Otherwise we do it by virtue of
-  // using a zero-size below and reusing GetIntrinsicSize().
+AspectRatio nsSubDocumentFrame::GetIntrinsicRatio(
+    bool aIgnoreContainment) const {
+  if (!aIgnoreContainment && GetContainSizeAxes().IsAny()) {
+    return {};
+  }
   if (nsCOMPtr<nsIObjectLoadingContent> iolc = do_QueryInterface(mContent)) {
     auto olc = static_cast<nsObjectLoadingContent*>(iolc.get());
 
@@ -949,7 +949,7 @@ void nsSubDocumentFrame::Destroy(DestroyContext& aContext) {
 
     // We call nsFrameLoader::HideViewer() in a script runner so that we can
     // safely determine whether the frame is being reframed or destroyed.
-    nsContentUtils::AddScriptRunner(new nsHideViewer(
+    nsContentUtils::AddScriptRunner(MakeAndAddRef<nsHideViewer>(
         mContent, frameloader, PresShell(), (mDidCreateDoc || mCallingShow)));
   }
 
@@ -996,7 +996,7 @@ void nsSubDocumentFrame::ResetFrameLoader(RetainPaintData aRetain) {
   }
   mFrameLoader = nullptr;
   ClearDisplayItems();
-  nsContentUtils::AddScriptRunner(new AsyncFrameInit(this));
+  nsContentUtils::AddScriptRunner(MakeAndAddRef<AsyncFrameInit>(this));
 }
 
 void nsSubDocumentFrame::ClearRetainedPaintData() {

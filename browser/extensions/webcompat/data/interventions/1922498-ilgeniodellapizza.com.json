@@ -1,0 +1,17 @@
+{
+  "label": "ilgeniodellapizza.com",
+  "bugs": {
+    "1922498": {
+      "issue": "broken-scrolling",
+      "matches": ["*://www.ilgeniodellapizza.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "content_scripts": {
+        "js": ["slow_down_wheel_events.js"]
+      }
+    }
+  ]
+}

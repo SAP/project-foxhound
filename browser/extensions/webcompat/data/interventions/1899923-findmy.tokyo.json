@@ -1,0 +1,15 @@
+{
+  "label": "findmy.tokyo",
+  "bugs": {
+    "1899923": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://findmy.tokyo/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

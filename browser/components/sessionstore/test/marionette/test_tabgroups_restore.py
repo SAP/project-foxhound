@@ -46,7 +46,7 @@ class TestAutoRestoreWithTabGroups(SessionStoreTestCase):
             let resolve = arguments[0];
             let group = gBrowser.addTabGroup([gBrowser.tabs[0]], { id: "test-group", label: "test-group" });
             let { TabStateFlusher } = ChromeUtils.importESModule("resource:///modules/sessionstore/TabStateFlusher.sys.mjs");
-            TabStateFlusher.flushWindow(gBrowser.ownerGlobal).then(resolve);
+            TabStateFlusher.flushWindow(gBrowser.documentGlobal).then(resolve);
             """
         )
 
@@ -75,8 +75,8 @@ class TestAutoRestoreWithTabGroups(SessionStoreTestCase):
         self.marionette.execute_script(
             """
             let group = gBrowser.getTabGroupById("test-group");
-            group.ownerGlobal.SessionStore.addSavedTabGroup(group);
-            group.ownerGlobal.gBrowser.removeTabGroup(group, { animate: false });
+            group.documentGlobal.SessionStore.addSavedTabGroup(group);
+            group.documentGlobal.gBrowser.removeTabGroup(group, { animate: false });
             """
         )
 
@@ -122,7 +122,7 @@ class TestAutoRestoreWithTabGroups(SessionStoreTestCase):
             let resolve = arguments[0];
             let group = gBrowser.addTabGroup([gBrowser.tabs[0]], { id: "test-group", label: "test-group" });
             let { TabStateFlusher } = ChromeUtils.importESModule("resource:///modules/sessionstore/TabStateFlusher.sys.mjs");
-            TabStateFlusher.flushWindow(gBrowser.ownerGlobal).then(resolve);
+            TabStateFlusher.flushWindow(gBrowser.documentGlobal).then(resolve);
             """
         )
 
@@ -151,8 +151,8 @@ class TestAutoRestoreWithTabGroups(SessionStoreTestCase):
         self.marionette.execute_script(
             """
             let group = gBrowser.getTabGroupById("test-group");
-            group.ownerGlobal.SessionStore.addSavedTabGroup(group);
-            group.ownerGlobal.gBrowser.removeTabGroup(group, { animate: false });
+            group.documentGlobal.SessionStore.addSavedTabGroup(group);
+            group.documentGlobal.gBrowser.removeTabGroup(group, { animate: false });
             """
         )
 

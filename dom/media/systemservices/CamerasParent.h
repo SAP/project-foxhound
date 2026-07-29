@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +8,7 @@
 #include "api/video/video_sink_interface.h"
 #include "modules/video_capture/video_capture.h"
 #include "modules/video_capture/video_capture_defines.h"
+#include "mozilla/EventTargetCapability.h"
 #include "mozilla/ShmemPool.h"
 #include "mozilla/camera/PCamerasParent.h"
 #include "mozilla/dom/MediaStreamTrackBinding.h"
@@ -20,8 +19,9 @@ class WebrtcLogSinkHandle;
 class nsIThread;
 
 namespace mozilla {
+class DesktopCaptureInterface;
 class VideoCaptureFactory;
-}
+}  // namespace mozilla
 
 namespace mozilla::camera {
 
@@ -67,13 +67,12 @@ class AggregateCapturer final
   };
   RemoveStreamResult RemoveStream(int aStreamId);
   RemoveStreamResult RemoveStreamsFor(CamerasParent* aParent);
-  Maybe<int> CaptureIdFor(int aStreamId);
-  void SetConfigurationFor(int aStreamId,
-                           const webrtc::VideoCaptureCapability& aCapability,
-                           const NormalizedConstraints& aConstraints,
-                           const dom::VideoResizeModeEnum& aResizeMode,
-                           bool aStarted);
-  Maybe<webrtc::VideoCaptureCapability> CombinedCapability();
+  Maybe<int> CaptureIdFor(int aStreamId, CamerasParent* aParent);
+  int32_t StartStream(int aStreamId,
+                      const webrtc::VideoCaptureCapability& aCapability,
+                      const NormalizedConstraints& aConstraints,
+                      const dom::VideoResizeModeEnum& aResizeMode);
+  int32_t StopStream(int aStreamId);
 
   void OnCaptureEnded();
   void OnFrame(const webrtc::VideoFrame& aVideoFrame) override;
@@ -101,7 +100,7 @@ class AggregateCapturer final
     // Whether the stream has been started and not stopped. As opposed to
     // allocated and not deallocated, which controls the presence of this stream
     // altogether.
-    bool mStarted{false};
+    bool mActive{false};
     // The timestamp of the last frame sent to mParent for this stream.
     media::TimeUnit mLastFrameTime{media::TimeUnit::FromNegativeInfinity()};
   };
@@ -118,6 +117,11 @@ class AggregateCapturer final
   // The id that identifies the capturer instance of the associated source
   // device in VideoEngine.
   const int mCaptureId;
+  // The capture module of the associated source.
+  const webrtc::scoped_refptr<webrtc::VideoCaptureModule> mCapturer;
+  // The desktop capture interface should the associated source be a desktop
+  // one.
+  DesktopCaptureInterface* const mDesktopCapturer = nullptr;
   // Tracking ID of the capturer for profiler markers.
   const TrackingId mTrackingId;
   // The (immutable) list of capabilities offered by the associated source
@@ -131,14 +135,21 @@ class AggregateCapturer final
   AggregateCapturer(nsISerialEventTarget* aVideoCaptureThread,
                     CaptureEngine aCapEng, VideoEngine* aEngine,
                     const nsCString& aUniqueId, int aCaptureId,
+                    webrtc::VideoCaptureModule* aCapturer,
+                    DesktopCaptureInterface* aDesktopCapturer,
                     nsTArray<webrtc::VideoCaptureCapability>&& aCapabilities);
+
+  Maybe<webrtc::VideoCaptureCapability> CombinedCapability(
+      const decltype(mStreams)::AutoLock& aStreamsGuard);
+
+  int32_t UpdateDevice(const Maybe<webrtc::VideoCaptureCapability>& aState);
 
   MediaEventListener mCaptureEndedListener;
 };
 
 class DeliverFrameRunnable;
 
-class CamerasParent final : public PCamerasParent {
+class CamerasParent : public PCamerasParent {
  public:
   using ShutdownMozPromise = media::ShutdownBlockingTicket::ShutdownMozPromise;
 
@@ -146,7 +157,7 @@ class CamerasParent final : public PCamerasParent {
                                                 /* IsExclusive = */ false>;
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING_WITH_DELETE_ON_EVENT_TARGET(
-      CamerasParent, mPBackgroundEventTarget)
+      CamerasParent, mPBackgroundEventTarget.GetEventTarget())
 
   class VideoEngineArray;
   friend DeliverFrameRunnable;
@@ -198,79 +209,81 @@ class CamerasParent final : public PCamerasParent {
   mozilla::ipc::IPCResult RecvEnsureInitialized(
       const CaptureEngine& aCapEngine) override;
 
-  bool IsWindowCapturing(uint64_t aWindowId, const nsACString& aUniqueId) const;
+  bool IsWindowCapturing(uint64_t aWindowId, const nsACString& aUniqueId) const
+      MOZ_REQUIRES(mVideoCaptureThread);
   nsIEventTarget* GetBackgroundEventTarget() {
-    return mPBackgroundEventTarget;
-  };
-  bool IsShuttingDown() {
-    // the first 2 are pBackground only, the last is atomic
-    MOZ_ASSERT(mPBackgroundEventTarget->IsOnCurrentThread());
-    return mDestroyed;
+    return mPBackgroundEventTarget.GetEventTarget();
   };
   ShmemBuffer GetBuffer(int aCaptureId, size_t aSize);
 
   // helper to forward to the PBackground thread
-  int DeliverFrameOverIPC(CaptureEngine aCapEngine, int aCaptureId,
-                          const Span<const int>& aStreamId,
-                          const TrackingId& aTrackingId,
-                          Variant<ShmemBuffer, webrtc::VideoFrame>&& aBuffer,
-                          const VideoFrameProperties& aProps);
+  virtual int DeliverFrameOverIPC(
+      CaptureEngine aCapEngine, int aCaptureId,
+      const Span<const int>& aStreamId, const TrackingId& aTrackingId,
+      Variant<ShmemBuffer, webrtc::VideoFrame>&& aBuffer,
+      const VideoFrameProperties& aProps) MOZ_REQUIRES(mPBackgroundEventTarget);
 
   CamerasParent();
 
- private:
+ protected:
   virtual ~CamerasParent();
 
-  struct GetOrCreateCapturerResult {
-    AggregateCapturer* mCapturer{};
+ private:
+  struct GetOrCreateAggregatorResult {
+    AggregateCapturer* mAggregator{};
     int mStreamId{};
   };
-  GetOrCreateCapturerResult GetOrCreateCapturer(
+  GetOrCreateAggregatorResult GetOrCreateAggregator(
       CaptureEngine aEngine, uint64_t aWindowId, const nsCString& aUniqueId,
-      nsTArray<webrtc::VideoCaptureCapability>&& aCapabilities);
-  AggregateCapturer* GetCapturer(CaptureEngine aEngine, int aStreamId);
-  int ReleaseStream(CaptureEngine aEngine, int aStreamId);
+      nsTArray<webrtc::VideoCaptureCapability>&& aCapabilities)
+      MOZ_REQUIRES(mVideoCaptureThread);
+  AggregateCapturer* GetAggregator(CaptureEngine aEngine, int aStreamId)
+      MOZ_REQUIRES(mVideoCaptureThread);
+  int ReleaseStream(CaptureEngine aEngine, int aStreamId)
+      MOZ_REQUIRES(mVideoCaptureThread);
 
   nsTArray<webrtc::VideoCaptureCapability> const* EnsureCapabilitiesPopulated(
-      CaptureEngine aEngine, const nsCString& aUniqueId);
+      CaptureEngine aEngine, const nsCString& aUniqueId)
+      MOZ_REQUIRES(mVideoCaptureThread);
 
   void OnDeviceChange();
 
   // Creates a new DeviceInfo or returns an existing DeviceInfo for given
   // capture engine. Returns a nullptr in case capture engine failed to be
-  // initialized. Video capture thread only.
+  // initialized.
   std::shared_ptr<webrtc::VideoCaptureModule::DeviceInfo> GetDeviceInfo(
-      int aEngine);
-  VideoEngine* EnsureInitialized(int aEngine);
+      CaptureEngine aEngine) MOZ_REQUIRES(mVideoCaptureThread);
+  VideoEngine* EnsureInitialized(CaptureEngine aEngine)
+      MOZ_REQUIRES(mVideoCaptureThread);
 
-  // Stops any ongoing capturing and releases resources. Called on
-  // mVideoCaptureThread. Idempotent.
-  void CloseEngines();
+  // Stops any ongoing capturing and releases resources. Idempotent.
+  void CloseEngines() MOZ_REQUIRES(mVideoCaptureThread);
 
-  void OnShutdown();
+  void OnShutdown() MOZ_REQUIRES(mPBackgroundEventTarget);
 
   // If existent, blocks xpcom shutdown while alive.
   // Note that this makes a reference cycle that gets broken in ActorDestroy().
   const UniquePtr<media::ShutdownBlockingTicket> mShutdownBlocker;
-  // Tracks the mShutdownBlocker shutdown handler. mPBackgroundEventTarget only.
-  MozPromiseRequestHolder<ShutdownMozPromise> mShutdownRequest;
+  // Tracks the mShutdownBlocker shutdown handler.
+  MozPromiseRequestHolder<ShutdownMozPromise> mShutdownRequest
+      MOZ_GUARDED_BY(mPBackgroundEventTarget);
 
   // Local copy of sVideoCaptureThread. Guaranteed alive if non-null.
-  const nsCOMPtr<nsISerialEventTarget> mVideoCaptureThread;
+  const Maybe<EventTargetCapability<nsISerialEventTarget>> mVideoCaptureThread;
 
-  // Reference to same VideoEngineArray as sEngines. Video capture thread only.
-  const RefPtr<VideoEngineArray> mEngines;
+  // Reference to same VideoEngineArray as sEngines.
+  const RefPtr<VideoEngineArray> mEngines MOZ_GUARDED_BY(*mVideoCaptureThread);
 
-  // Reference to same array of AggregateCapturers as sCapturers. There is one
-  // AggregateCapturer per allocated video source. It tracks the mapping from
-  // source to streamIds and CamerasParent instances. Video capture thread only.
+  // Reference to same array of AggregateCapturers as sAggregators. There is one
+  // AggregateCapturer per allocated video capturer. It tracks the mapping from
+  // capturer to streamIds and CamerasParent instances.
   const RefPtr<
       media::Refcountable<nsTArray<std::unique_ptr<AggregateCapturer>>>>
-      mCapturers;
+      mAggregators MOZ_GUARDED_BY(*mVideoCaptureThread);
 
-  // Reference to same VideoCaptureFactory as sVideoCaptureFactory. Video
-  // capture thread only.
-  const RefPtr<VideoCaptureFactory> mVideoCaptureFactory;
+  // Reference to same VideoCaptureFactory as sVideoCaptureFactory.
+  const RefPtr<VideoCaptureFactory> mVideoCaptureFactory
+      MOZ_GUARDED_BY(*mVideoCaptureThread);
 
   // Image buffers. One pool per CamerasParent instance and capture id (i.e.
   // unique source). Multiple CamerasParent instances capturing the same source
@@ -281,22 +294,27 @@ class CamerasParent final : public PCamerasParent {
   DataMutex<std::map<int, ShmemPool>> mShmemPools;
 
   // PBackgroundParent thread
-  const nsCOMPtr<nsISerialEventTarget> mPBackgroundEventTarget;
+  const EventTargetCapability<nsISerialEventTarget> mPBackgroundEventTarget;
 
-  // Set to true in ActorDestroy. PBackground only.
-  bool mDestroyed;
+  // Set to true in ActorDestroy.
+  bool mDestroyed MOZ_GUARDED_BY(mPBackgroundEventTarget);
+
+  // Set to true after one hop to mVideoCaptureThread from ActorDestroy.
+  bool mDestroyedCaptureThread MOZ_GUARDED_BY(*mVideoCaptureThread);
 
   std::map<nsCString, nsTArray<webrtc::VideoCaptureCapability>>
-      mAllCandidateCapabilities;
+      mAllCandidateCapabilities MOZ_GUARDED_BY(*mVideoCaptureThread);
 
-  // Listener for the camera VideoEngine::DeviceChangeEvent(). Video capture
-  // thread only.
-  MediaEventListener mDeviceChangeEventListener;
-  bool mDeviceChangeEventListenerConnected = false;
+  // Listener for the camera VideoEngine::DeviceChangeEvent().
+  MediaEventListener mDeviceChangeEventListener
+      MOZ_GUARDED_BY(*mVideoCaptureThread);
+  bool mDeviceChangeEventListenerConnected
+      MOZ_GUARDED_BY(*mVideoCaptureThread) = false;
 
   // While alive, ensure webrtc logging is hooked up to MOZ_LOG. Main thread
   // only.
-  nsMainThreadPtrHandle<WebrtcLogSinkHandle> mLogHandle;
+  nsMainThreadPtrHandle<WebrtcLogSinkHandle> mLogHandle
+      MOZ_GUARDED_BY(sMainThreadCapability);
 };
 
 }  // namespace mozilla::camera

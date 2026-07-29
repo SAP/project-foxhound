@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +8,7 @@
 #include "mozilla/AttributeStyles.h"
 #include "mozilla/DeclarationBlock.h"
 #include "mozilla/MappedDeclarationsBuilder.h"
+#include "mozilla/dom/ContentList.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLCollectionBinding.h"
 #include "mozilla/dom/HTMLTableElementBinding.h"
@@ -27,13 +26,12 @@ namespace mozilla::dom {
  * This class provides a late-bound collection of rows in a table.
  * mParent is NOT ref-counted to avoid circular references
  */
-class TableRowsCollection final : public nsIHTMLCollection,
-                                  public nsStubMutationObserver,
-                                  public nsWrapperCache {
+class TableRowsCollection final : public HTMLCollection,
+                                  public nsStubMutationObserver {
  public:
   explicit TableRowsCollection(HTMLTableElement* aParent);
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_ISUPPORTS_INHERITED
 
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTAPPENDED
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTINSERTED
@@ -41,7 +39,7 @@ class TableRowsCollection final : public nsIHTMLCollection,
   NS_DECL_NSIMUTATIONOBSERVER_NODEWILLBEDESTROYED
 
   uint32_t Length() override;
-  Element* GetElementAt(uint32_t aIndex) override;
+  Element* Item(uint32_t aIndex) override;
   nsINode* GetParentObject() override { return mParent; }
 
   Element* GetFirstNamedElement(const nsAString& aName, bool& aFound) override;
@@ -49,31 +47,20 @@ class TableRowsCollection final : public nsIHTMLCollection,
 
   NS_IMETHOD ParentDestroyed();
 
-  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS_AMBIGUOUS(TableRowsCollection,
-                                                        nsIHTMLCollection)
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(TableRowsCollection, HTMLCollection)
 
-  // nsWrapperCache
-  using nsWrapperCache::GetWrapperPreserveColor;
-  using nsWrapperCache::PreserveWrapper;
   JSObject* WrapObject(JSContext*, JS::Handle<JSObject*> aGivenProto) override;
 
  protected:
   // Unregister ourselves as a mutation observer, and clear our internal state.
   void CleanUp();
-  void LastRelease() { CleanUp(); }
+  void LastRelease() override { CleanUp(); }
   virtual ~TableRowsCollection() {
     // we do NOT have a ref-counted reference to mParent, so do NOT
     // release it!  this is to avoid circular references.  The
     // instantiator who provided mParent is responsible for managing our
     // reference for us.
     CleanUp();
-  }
-
-  JSObject* GetWrapperPreserveColorInternal() override {
-    return nsWrapperCache::GetWrapperPreserveColor();
-  }
-  void PreserveWrapperInternal(nsISupports* aScriptObjectHolder) override {
-    nsWrapperCache::PreserveWrapper(aScriptObjectHolder);
   }
 
   // Ensure that HTMLTableElement is in a valid state. This must be called
@@ -194,24 +181,21 @@ JSObject* TableRowsCollection::WrapObject(JSContext* aCx,
   return HTMLCollection_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(TableRowsCollection, mRows)
-NS_IMPL_CYCLE_COLLECTING_ADDREF(TableRowsCollection)
-NS_IMPL_CYCLE_COLLECTING_RELEASE_WITH_LAST_RELEASE(TableRowsCollection,
-                                                   LastRelease())
+NS_IMPL_CYCLE_COLLECTION_INHERITED(TableRowsCollection, HTMLCollection, mRows)
 
-NS_INTERFACE_TABLE_HEAD(TableRowsCollection)
-  NS_WRAPPERCACHE_INTERFACE_TABLE_ENTRY
-  NS_INTERFACE_TABLE(TableRowsCollection, nsIHTMLCollection,
-                     nsIMutationObserver)
-  NS_INTERFACE_TABLE_TO_MAP_SEGUE_CYCLE_COLLECTION(TableRowsCollection)
-NS_INTERFACE_MAP_END
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(TableRowsCollection)
+  NS_INTERFACE_MAP_ENTRY(nsIMutationObserver)
+NS_INTERFACE_MAP_END_INHERITING(HTMLCollection)
+
+NS_IMPL_ADDREF_INHERITED(TableRowsCollection, HTMLCollection)
+NS_IMPL_RELEASE_INHERITED(TableRowsCollection, HTMLCollection)
 
 uint32_t TableRowsCollection::Length() {
   EnsureInitialized();
   return mRows.Length();
 }
 
-Element* TableRowsCollection::GetElementAt(uint32_t aIndex) {
+Element* TableRowsCollection::Item(uint32_t aIndex) {
   EnsureInitialized();
   if (aIndex < mRows.Length()) {
     return mRows[aIndex]->AsElement();
@@ -501,7 +485,7 @@ void TableRowsCollection::NodeWillBeDestroyed(nsINode* aNode) {
 /* --------------------------- HTMLTableElement ---------------------------- */
 
 HTMLTableElement::HTMLTableElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : nsGenericHTMLElement(std::move(aNodeInfo)) {
   SetHasWeirdParserInsertionMode();
 }
@@ -543,7 +527,7 @@ NS_IMPL_ELEMENT_CLONE(HTMLTableElement)
 // in fact, they are integers or they are meaningless.  so we store them
 // here as ints.
 
-nsIHTMLCollection* HTMLTableElement::Rows() {
+HTMLCollection* HTMLTableElement::Rows() {
   if (!mRows) {
     mRows = new TableRowsCollection(this);
   }
@@ -551,11 +535,11 @@ nsIHTMLCollection* HTMLTableElement::Rows() {
   return mRows;
 }
 
-nsIHTMLCollection* HTMLTableElement::TBodies() {
+HTMLCollection* HTMLTableElement::TBodies() {
   if (!mTBodies) {
     // Not using NS_GetContentList because this should not be cached
-    mTBodies = new nsContentList(this, kNameSpaceID_XHTML, nsGkAtoms::tbody,
-                                 nsGkAtoms::tbody, false);
+    mTBodies = new ContentList(this, kNameSpaceID_XHTML, nsGkAtoms::tbody,
+                               nsGkAtoms::tbody, false);
   }
 
   return mTBodies;
@@ -688,7 +672,7 @@ already_AddRefed<nsGenericHTMLElement> HTMLTableElement::InsertRow(
     return nullptr;
   }
 
-  nsIHTMLCollection* rows = Rows();
+  HTMLCollection* rows = Rows();
   uint32_t rowCount = rows->Length();
   if ((uint32_t)aIndex > rowCount && aIndex != -1) {
     aError.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
@@ -766,7 +750,7 @@ already_AddRefed<nsGenericHTMLElement> HTMLTableElement::InsertRow(
       if (newRow) {
         HTMLTableSectionElement* section =
             static_cast<HTMLTableSectionElement*>(rowGroup.get());
-        nsIHTMLCollection* rows = section->Rows();
+        HTMLCollection* rows = section->Rows();
         nsCOMPtr<nsINode> refNode = rows->Item(0);
         rowGroup->InsertBefore(*newRow, refNode, aError);
       }
@@ -782,7 +766,7 @@ void HTMLTableElement::DeleteRow(int32_t aIndex, ErrorResult& aError) {
     return;
   }
 
-  nsIHTMLCollection* rows = Rows();
+  HTMLCollection* rows = Rows();
   uint32_t refIndex;
   if (aIndex == -1) {
     refIndex = rows->Length();
@@ -801,7 +785,7 @@ void HTMLTableElement::DeleteRow(int32_t aIndex, ErrorResult& aError) {
     return;
   }
 
-  row->RemoveFromParent();
+  row->Remove();
 }
 
 bool HTMLTableElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,

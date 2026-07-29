@@ -78,14 +78,8 @@
 //! This table was added (by this rust crate) in version 4, and so is not
 //! present in firefox-ios.
 //!
-//! Currently it is used to store two items:
-//!
-//! 1. The last sync timestamp is stored under [LAST_SYNC_META_KEY], a
+//! Currently it is used to store the last sync timestamp, under [LAST_SYNC_META_KEY], a
 //!    `sync15::ServerTimestamp` stored in integer milliseconds.
-//!
-//! 2. The persisted sync state machine information is stored under
-//!    [GLOBAL_STATE_META_KEY]. This is a `sync15::GlobalState` stored as
-//!    JSON.
 //!
 
 use crate::error::*;
@@ -97,7 +91,8 @@ use sql_support::ConnExt;
 /// Version 2: addition of `loginsM.enc_unknown_fields`.
 /// Version 3: addition of `timeOfLastBreach` and `timeLastBreachAlertDismissed`.
 /// Version 4: addition of `breachesL` table
-pub(super) const VERSION: i64 = 4;
+/// Version 5: removal of `timeOfLastBreach`.
+pub(super) const VERSION: i64 = 5;
 
 /// Every column shared by both tables except for `id`
 ///
@@ -128,7 +123,6 @@ pub const COMMON_COLS: &str = "
     timeLastUsed,
     timePasswordChanged,
     timesUsed,
-    timeOfLastBreach,
     timeLastBreachAlertDismissed
 ";
 
@@ -144,7 +138,6 @@ const COMMON_SQL: &str = "
     timeCreated                                 INTEGER NOT NULL,
     timeLastUsed                                INTEGER,
     timePasswordChanged                         INTEGER NOT NULL,
-    timeOfLastBreach                            INTEGER,
     timeLastBreachAlertDismissed                INTEGER,
     secFields                                   TEXT,
     guid                                        TEXT NOT NULL UNIQUE
@@ -216,14 +209,12 @@ const CREATE_LOCAL_BREACHES_TABLE_SQL: &str = "
 ";
 
 pub(crate) static LAST_SYNC_META_KEY: &str = "last_sync_time";
-pub(crate) static GLOBAL_STATE_META_KEY: &str = "global_state_v2";
 pub(crate) static GLOBAL_SYNCID_META_KEY: &str = "global_sync_id";
 pub(crate) static COLLECTION_SYNCID_META_KEY: &str = "passwords_sync_id";
 pub(crate) static CHECKPOINT_KEY: &str = "checkpoint";
 
 pub(crate) fn init(db: &Connection) -> Result<()> {
     let user_version = db.conn_ext_query_one::<i64>("PRAGMA user_version")?;
-    warn!("user_version: {}", user_version);
     if user_version == 0 {
         return create(db);
     }
@@ -277,6 +268,11 @@ fn upgrade_from(db: &Connection, from: i64) -> Result<()> {
 
         3 => Ok(db.execute_batch(CREATE_LOCAL_BREACHES_TABLE_SQL)?),
 
+        4 => Ok(db.execute_batch(
+            "ALTER TABLE loginsL DROP COLUMN timeOfLastBreach;
+        ALTER TABLE loginsM DROP COLUMN timeOfLastBreach;",
+        )?),
+
         // next migration, add here
         _ => Err(Error::IncompatibleVersion(from)),
     }
@@ -302,7 +298,7 @@ mod tests {
     use super::*;
     use crate::encryption::test_utils::TEST_ENCDEC;
     use crate::LoginDb;
-    use nss::ensure_initialized;
+    use nss_as::ensure_initialized;
     use rusqlite::Connection;
 
     // Snapshot of the schema in version 1.  We use this to test that we can migrate from there to the

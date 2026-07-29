@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -703,6 +702,9 @@ static const struct MoveCommand {
      Command::SelectWordNext, &nsISelectionController::WordMove},
     {Command::BeginLine, Command::EndLine, Command::SelectBeginLine,
      Command::SelectEndLine, &nsISelectionController::IntraLineMove},
+    {Command::BeginParagraph, Command::EndParagraph,
+     Command::SelectBeginParagraph, Command::SelectEndParagraph,
+     &nsISelectionController::ParagraphMove},
     {Command::MovePageUp, Command::MovePageDown, Command::SelectPageUp,
      Command::SelectPageDown, &nsISelectionController::PageMove},
     {Command::MoveTop, Command::MoveBottom, Command::SelectTop,
@@ -727,7 +729,11 @@ static const struct PhysicalCommand {
      nsISelectionController::MOVE_RIGHT, 1},
     {Command::MoveUp2, Command::SelectUp2, nsISelectionController::MOVE_UP, 1},
     {Command::MoveDown2, Command::SelectDown2,
-     nsISelectionController::MOVE_DOWN, 1}};
+     nsISelectionController::MOVE_DOWN, 1},
+    {Command::MoveLeft3, Command::SelectLeft3,
+     nsISelectionController::MOVE_LEFT, 2},
+    {Command::MoveRight3, Command::SelectRight3,
+     nsISelectionController::MOVE_RIGHT, 2}};
 
 nsresult SelectionMoveCommands::DoCommand(Command aCommand,
                                           EditorBase& aEditorBase,
@@ -746,8 +752,7 @@ nsresult SelectionMoveCommands::DoCommand(Command aCommand,
   }
 
   // scroll commands
-  for (size_t i = 0; i < std::size(scrollCommands); i++) {
-    const ScrollCommand& cmd = scrollCommands[i];
+  for (const auto& cmd : scrollCommands) {
     if (aCommand == cmd.mReverseScroll) {
       return (selectionController->*(cmd.scroll))(false);
     }
@@ -757,8 +762,7 @@ nsresult SelectionMoveCommands::DoCommand(Command aCommand,
   }
 
   // caret movement/selection commands
-  for (size_t i = 0; i < std::size(moveCommands); i++) {
-    const MoveCommand& cmd = moveCommands[i];
+  for (const auto& cmd : moveCommands) {
     if (aCommand == cmd.mReverseMove) {
       return (selectionController->*(cmd.move))(false, false);
     }
@@ -774,8 +778,7 @@ nsresult SelectionMoveCommands::DoCommand(Command aCommand,
   }
 
   // physical-direction movement/selection
-  for (size_t i = 0; i < std::size(physicalCommands); i++) {
-    const PhysicalCommand& cmd = physicalCommands[i];
+  for (auto cmd : physicalCommands) {
     if (aCommand == cmd.mMove) {
       nsresult rv =
           selectionController->PhysicalMove(cmd.direction, cmd.amount, false);

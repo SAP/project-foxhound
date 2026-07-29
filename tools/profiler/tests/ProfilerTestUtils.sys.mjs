@@ -8,6 +8,12 @@ import { Assert } from "resource://testing-common/Assert.sys.mjs";
  * This module implements useful utilites for interacting with the profiler,
  * as well as querying profiles captured during tests.
  */
+
+// The profiler may already be running via MOZ_PROFILER_STARTUP; auto-stop it
+// only on the first assertProfilerInactive() call so a later active profiler
+// (leaked by an earlier test) still fails the assertion loudly.
+let gMayStopStartupProfiler = Services.env.exists("MOZ_PROFILER_STARTUP");
+
 export var ProfilerTestUtils = {
   // The marker phases.
   markerPhases: {
@@ -19,10 +25,9 @@ export var ProfilerTestUtils = {
 
   async assertProfilerInactive() {
     if (Services.profiler.IsActive()) {
-      if (Services.env.exists("MOZ_PROFILER_STARTUP")) {
-        // If the startup profiling environment variable exists, it is likely
-        // that tests are being profiled.
-        // Stop the profiler before starting profiler tests.
+      if (gMayStopStartupProfiler) {
+        // The profiler was started via MOZ_PROFILER_STARTUP; stop it so the
+        // test can start from a clean state.
         console.log(
           "This test starts and stops the profiler and is not compatible " +
             "with the use of MOZ_PROFILER_STARTUP. " +
@@ -35,6 +40,9 @@ export var ProfilerTestUtils = {
         );
       }
     }
+    // Only the first call may auto-stop the startup profiler; a later active
+    // profiler is a leak from an earlier test and must fail the assertion.
+    gMayStopStartupProfiler = false;
     Assert.ok(!Services.profiler.IsActive(), "The profiler is inactive.");
   },
 

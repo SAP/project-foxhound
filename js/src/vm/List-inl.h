@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -33,6 +31,19 @@ inline bool js::ListObject::append(JSContext* cx, Value value) {
 
   ensureDenseInitializedLength(len, 1);
   setDenseElement(len, value);
+  return true;
+}
+
+inline bool js::ListObject::append(JSContext* cx, Value v1, Value v2) {
+  uint32_t len = length();
+
+  if (!ensureElements(cx, len + 2)) {
+    return false;
+  }
+
+  ensureDenseInitializedLength(len, 2);
+  setDenseElement(len, v1);
+  setDenseElement(len + 1, v2);
   return true;
 }
 

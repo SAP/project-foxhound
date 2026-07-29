@@ -256,6 +256,9 @@ function FindProxyForURL(url, host) {
     if browser_config.get("fission", True):
         talos_results.add_extra_option("fission")
 
+    if browser_config["preferences"].get("browser.nova.enabled", False):
+        talos_results.add_extra_option("nova")
+
     # differentiate webrender from non-webrender results
     if browser_config["preferences"].get("gfx.webrender.software", False):
         talos_results.add_extra_option("webrender-sw")

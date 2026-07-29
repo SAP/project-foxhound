@@ -258,6 +258,7 @@ load 1673123.html
 load 1678947.html
 load 1693032.html
 load 1696505.html
+load 1736243.html
 load 1758029-1.html
 HTTP load 1755770-1.html
 HTTP load 1755770-2.html
@@ -275,4 +276,4 @@ load 1882921-1.html
 asserts(5-20) load 1941838.html
 load 1953296.html
 load 1982067-1.html
-skip-if(isDebugBuild) load 1993379-1.html # bug 1467887
+skip-if(isDebugBuild&&Android) load 1993379-1.html # bug 1467887

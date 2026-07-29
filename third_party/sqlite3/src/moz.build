@@ -139,3 +139,6 @@ if CONFIG["MOZ_THUNDERBIRD"] or CONFIG["MOZ_SUITE"]:
 
 # The carray extension is part of the amalgamation but disabled by default.
 DEFINES['SQLITE_ENABLE_CARRAY'] = 1
+
+# The percentile extension is part of the amalgamation but disabled by default.
+DEFINES['SQLITE_ENABLE_PERCENTILE'] = 1

@@ -2,9 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import json
-
 from marionette_harness import MarionetteTestCase
+from mozfile import json
 
 
 class ContentScriptsAreCorrectlyPersistedTest(MarionetteTestCase):
@@ -92,11 +91,13 @@ class ContentScriptsAreCorrectlyPersistedTest(MarionetteTestCase):
                 """
                     const config = arguments[0];
                     const bgWin = window.wrappedJSObject.browser.extension.getBackgroundPage();
+                    const { matches, excludeMatches } = bgWin.interventions.getBlocksAndMatchesFor(config);
                     const { id } =
-                      bgWin.interventions.buildContentScriptRegistrations(
-                        config.label,
-                        config.interventions[0],
-                        bgWin.interventions.getBlocksAndMatchesFor(config).matches
+                      bgWin.interventions.buildContentScriptsRegistrationsForIntervention(
+                        config,
+                        matches,
+                        excludeMatches,
+                        /* force = */ true,
                       )[0];
                       return id;
               """,

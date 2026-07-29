@@ -200,6 +200,8 @@ support-files = [
   "avc3/segment1.m4s^headers^",
   "tags_before_cluster.webm",
   "tags_before_cluster.webm^header^",
+  "bug1341228_init.webm",
+  "bug1341228_cluster.webm",
   "1516754.webm 1516754.webm^headers^",
   "init-trackid2.mp4",
   "init-trackid3.mp4",
@@ -224,6 +226,8 @@ support-files = [
 ["test_BufferingWait.html"]
 
 ["test_BufferingWait_mp4.html"]
+
+["test_BufferingWait_OffsetTimestamps_mp4.html"]
 
 ["test_ChangeType.html"]
 
@@ -260,6 +264,7 @@ skip-if = [
 ["test_Resolution_change_should_not_cause_video_freeze.html"]
 skip-if = [
   "os == 'win' && os_version == '11.26100' && opt && verify-standalone",
+  "os == 'win' && os_version == '11.26200' && opt && verify-standalone",
 ]
 
 ["test_ResumeAfterClearing_mp4.html"]

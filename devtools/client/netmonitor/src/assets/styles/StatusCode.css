@@ -73,6 +73,11 @@
 
 /* Status codes for the headers side panel */
 
+.headers-overview .summary .status {
+  display: flex;
+  align-items: center;
+}
+
 .headers-overview .summary .status .status-code {
   display: inline;
   background-color: transparent;

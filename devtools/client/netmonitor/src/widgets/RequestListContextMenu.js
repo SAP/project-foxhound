@@ -558,7 +558,7 @@ class RequestListContextMenu {
    */
   openInStyleEditor(url) {
     const toolbox = this.props.connector.getToolbox();
-    toolbox.viewGeneratedSourceInStyleEditor(url);
+    toolbox.viewStyleGeneratedSource(url);
   }
 
   /**
@@ -724,11 +724,6 @@ class RequestListContextMenu {
       ({ name }) => name.toLowerCase() === "referer"
     );
 
-    const referrerPolicy = requestHeaders.headers.find(
-      ({ name }) => name.toLowerCase() === "referrer-policy"
-    );
-
-    const referrer = referrerHeader ? referrerHeader.value : undefined;
     const credentials = requestHeaders.headers.some(
       ({ name }) => credentialHeaders[name.toLowerCase()]
     )
@@ -738,8 +733,7 @@ class RequestListContextMenu {
     const fetchOptions = {
       credentials,
       headers,
-      referrer,
-      referrerPolicy,
+      referrer: referrerHeader?.value,
       body: requestPostData.postData.text,
       method,
       mode: "cors",

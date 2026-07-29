@@ -52,7 +52,6 @@ geckoview:
   page_reload_time:
     type: timing_distribution
     time_unit: millisecond
-    telemetry_mirror: GV_PAGE_RELOAD_MS
     description: >
       Time taken to reload a page.
       This includes all static contents, no dynamic content.
@@ -86,7 +85,6 @@ geckoview:
     bucket_count: 50
     histogram_type: exponential
     unit: number of site_origin
-    telemetry_mirror: FX_NUMBER_OF_UNIQUE_SITE_ORIGINS_ALL_TABS
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1589700
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1877576
@@ -112,7 +110,6 @@ geckoview:
     bucket_count: 50
     histogram_type: exponential
     unit: number of site origins per document
-    telemetry_mirror: FX_NUMBER_OF_UNIQUE_SITE_ORIGINS_PER_DOCUMENT
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1603185
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1877576
@@ -122,3 +119,123 @@ geckoview:
       - beth@mozilla.com
       - perf-telemetry-alerts@mozilla.com
     expires: never
+
+nimbus_qa_prefs:
+  string_default:
+    type: object
+    description: >
+      The value of the "nimbus.qa.string-default" pref.
+    structure: &nimbus_qa_string_pref
+      type: object
+      properties:
+        user_branch_value:
+          type: string
+        default_branch_value:
+          type: string
+    bugs: &nimbus_qa_prefs_bugs
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2030152
+    data_reviews: &nimbus_qa_prefs_data_reviews
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2030152
+    notification_emails: &nimbus_qa_prefs_notification_emails
+      - beth@mozilla.com
+      - project-nimbus@mozilla.com
+    data_sensitivity:
+      - technical
+    expires: 155
+    lifetime: application
+
+  string_user:
+    type: object
+    description: >
+      The value of the "nimbus.qa.string-user" pref.
+    structure: *nimbus_qa_string_pref
+    bugs: *nimbus_qa_prefs_bugs
+    data_reviews: *nimbus_qa_prefs_data_reviews
+    notification_emails: *nimbus_qa_prefs_notification_emails
+    data_sensitivity:
+      - technical
+    expires: 155
+    lifetime: application
+
+  int_default:
+    type: object
+    description: >
+      The value of the "nimbus.qa.int-default" pref.
+    structure: &nimbus_qa_int_pref
+      type: object
+      properties:
+        user_branch_value:
+          type: number
+        default_branch_value:
+          type: number
+    bugs: *nimbus_qa_prefs_bugs
+    data_reviews: *nimbus_qa_prefs_data_reviews
+    notification_emails: *nimbus_qa_prefs_notification_emails
+    data_sensitivity:
+      - technical
+    expires: 155
+    lifetime: application
+
+  int_user:
+    type: object
+    description: >
+      The value of the "nimbus.qa.int-user" pref.
+    structure: *nimbus_qa_int_pref
+    bugs: *nimbus_qa_prefs_bugs
+    data_reviews: *nimbus_qa_prefs_data_reviews
+    notification_emails: *nimbus_qa_prefs_notification_emails
+    data_sensitivity:
+      - technical
+    expires: 155
+    lifetime: application
+
+  bool_default:
+    type: object
+    description: >
+      The value of the "nimbus.qa.bool-default" pref.
+    structure: &nimbus_qa_bool_pref
+      type: object
+      properties:
+        user_branch_value:
+          type: boolean
+        default_branch_value:
+          type: boolean
+    bugs: *nimbus_qa_prefs_bugs
+    data_reviews: *nimbus_qa_prefs_data_reviews
+    notification_emails: *nimbus_qa_prefs_notification_emails
+    data_sensitivity:
+      - technical
+    expires: 155
+    lifetime: application
+
+  bool_user:
+    type: object
+    description: >
+      The value of the "nimbus.qa.bool-user" pref.
+    structure: *nimbus_qa_bool_pref
+    bugs: *nimbus_qa_prefs_bugs
+    data_reviews: *nimbus_qa_prefs_data_reviews
+    notification_emails: *nimbus_qa_prefs_notification_emails
+    data_sensitivity:
+      - technical
+    expires: 155
+    lifetime: application
+
+  pref_type_errors:
+    type: labeled_counter
+    labels:
+      - "nimbus.qa.string-default"
+      - "nimbus.qa.string-user"
+      - "nimbus.qa.int-default"
+      - "nimbus.qa.int-user"
+      - "nimbus.qa.bool-default"
+      - "nimbus.qa.bool-user"
+    description: >
+      Any prefs that we could not get a value -- and thus record a metric value
+      for -- due to type errors.
+    bugs: *nimbus_qa_prefs_bugs
+    data_reviews: *nimbus_qa_prefs_data_reviews
+    notification_emails: *nimbus_qa_prefs_notification_emails
+    data_sensitivity:
+      - technical
+    expires: 155

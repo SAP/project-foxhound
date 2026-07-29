@@ -78,10 +78,10 @@ add_task(async function test_autofill_enters_search_mode_it_en_locales() {
   let [bookmarks, tabs, history, actions] = await getSearchModeKeywords();
 
   const keywordsToToken = new Map([
-    [["@cronologia", history], UrlbarTokenizer.RESTRICT.HISTORY],
-    [["@segnalibri", bookmarks], UrlbarTokenizer.RESTRICT.BOOKMARK],
-    [["@schede", tabs], UrlbarTokenizer.RESTRICT.OPENPAGE],
-    [["@azioni", actions], UrlbarTokenizer.RESTRICT.ACTION],
+    [["@cronologia", history], UrlbarShared.RESTRICT_TOKENS.HISTORY],
+    [["@segnalibri", bookmarks], UrlbarShared.RESTRICT_TOKENS.BOOKMARK],
+    [["@schede", tabs], UrlbarShared.RESTRICT_TOKENS.OPENPAGE],
+    [["@azioni", actions], UrlbarShared.RESTRICT_TOKENS.ACTION],
   ]);
 
   for (const [keywords, token] of keywordsToToken) {

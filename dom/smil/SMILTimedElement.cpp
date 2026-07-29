@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -595,7 +593,8 @@ void SMILTimedElement::DoSampleAt(SMILTime aContainerTime, bool aEndOnly) {
         } else if (mCurrentInterval->Begin()->Time() <= sampleTime) {
           MOZ_ASSERT(!didApplyEarlyEnd, "We got an early end, but didn't end");
           SMILTime beginTime = mCurrentInterval->Begin()->Time().GetMillis();
-          SMILTime activeTime = aContainerTime - beginTime;
+          SMILTime activeTime = std::max<SMILTime>(
+              SaturatingCast<SMILTime>(double(aContainerTime) - beginTime), 0);
 
           // The 'min' attribute can cause the active interval to be longer than
           // the 'repeating interval'.
@@ -1932,8 +1931,8 @@ void SMILTimedElement::AddInstanceTimeFromCurrentTime(SMILTime aCurrentTime,
                                                       bool aIsBegin) {
   double offset = NS_round(aOffsetSeconds * PR_MSEC_PER_SEC);
 
-  SMILTimeValue timeVal(std::clamp<SMILTime>(
-      aCurrentTime + offset, 0, std::numeric_limits<SMILTime>::max()));
+  SMILTimeValue timeVal(
+      std::max<SMILTime>(SaturatingCast<SMILTime>(aCurrentTime + offset), 0));
 
   RefPtr<SMILInstanceTime> instanceTime = new SMILInstanceTime(
       timeVal, SMILInstanceTime::SMILInstanceTimeSource::DOM);

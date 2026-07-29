@@ -4,9 +4,9 @@
 "use strict";
 
 const MASTER_PASSWORD = "omgsecret!";
-const mpToken = Cc["@mozilla.org/security/pk11tokendb;1"]
-  .getService(Ci.nsIPK11TokenDB)
-  .getInternalKeyToken();
+const mpToken = Cc["@mozilla.org/security/internalkeytoken;1"].createInstance(
+  Ci.nsIPKCS11Token
+);
 
 async function checkDeviceManager({ buttonIsDisabled }) {
   let deviceManagerWindow = window.openDialog(
@@ -43,14 +43,29 @@ async function checkDeviceManager({ buttonIsDisabled }) {
   await BrowserTestUtils.closeWindow(deviceManagerWindow);
 }
 
-async function checkAboutPreferences({ checkboxIsDisabled }) {
+async function checkAboutPreferences({
+  checkboxIsDisabled,
+  hasPassword = false,
+}) {
+  let srdEnabled = Services.prefs.getBoolPref(
+    "browser.settings-redesign.enabled",
+    false
+  );
   await BrowserTestUtils.withNewTab(
-    "about:preferences#privacy",
+    srdEnabled
+      ? "about:preferences#passwordsAutofill"
+      : "about:preferences#privacy",
     async browser => {
+      let target;
+      if (srdEnabled) {
+        target = hasPassword ? "changePrimaryPassword" : "addPrimaryPassword";
+      } else {
+        target = "useMasterPassword";
+      }
       is(
-        browser.contentDocument.getElementById("useMasterPassword").disabled,
+        browser.contentDocument.getElementById(target).disabled,
         checkboxIsDisabled,
-        "Master Password checkbox is in the correct state: " +
+        `SRD ${srdEnabled} - Master Password checkbox is in the correct state: ` +
           checkboxIsDisabled
       );
     }
@@ -82,7 +97,7 @@ add_task(async function test_policy_disable_masterpassword() {
   // If a Primary Password is already set, there's no point in disabling
   // the
   await checkDeviceManager({ buttonIsDisabled: false });
-  await checkAboutPreferences({ checkboxIsDisabled: false });
+  await checkAboutPreferences({ checkboxIsDisabled: false, hasPassword: true });
 
   // Clean up
   mpToken.changePassword(MASTER_PASSWORD, "");

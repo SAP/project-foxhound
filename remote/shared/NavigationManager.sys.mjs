@@ -772,8 +772,26 @@ class NavigationRegistry extends EventEmitter {
       lazy.NavigableManager.getIdForBrowsingContext(browsingContext);
     const url = download.source.url;
 
-    const navigation = this.#navigations.get(navigableId);
+    let navigation = this.#navigations.get(navigableId);
     let navigationId = null;
+
+    // If there is no started navigation for the download triggered
+    // by `Content-Disposition` header, it means that the navigation
+    // is happening in the temporary browsing context. To align with other
+    // scenarios generate the navigation in the same context where the download
+    // takes place.
+    if (
+      (!navigation || navigation.state !== NavigationState.Started) &&
+      download.source.triggeredByContentDispositionHeader
+    ) {
+      navigation = notifyNavigationStarted({
+        contextDetails: {
+          context: browsingContext,
+        },
+        url,
+      });
+    }
+
     if (navigation && navigation.state === NavigationState.Started) {
       // navigationId is optional and should only be set if there is an ongoing
       // navigation.

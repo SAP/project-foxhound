@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import mozilla.components.ui.colors.PhotonColors
 import org.mozilla.focus.R
 import org.mozilla.focus.ui.theme.FocusTheme
+import org.mozilla.focus.ui.theme.focusDimensions
 import org.mozilla.focus.ui.theme.focusTypography
 import org.mozilla.focus.ui.theme.gradientBackground
 
@@ -74,7 +75,11 @@ fun OnBoardingSecondScreenCompose(
                 R.string.onboarding_second_screen_title,
                 stringResource(R.string.onboarding_short_app_name),
             ),
-            modifier = Modifier.padding(top = 32.dp, start = 16.dp, end = 16.dp),
+            modifier = Modifier.padding(
+                top = focusDimensions.paddingExtraLarge,
+                start = focusDimensions.paddingDefault,
+                end = focusDimensions.paddingDefault,
+            ),
             textAlign = TextAlign.Center,
             style = focusTypography.onboardingTitle,
         )
@@ -84,7 +89,11 @@ fun OnBoardingSecondScreenCompose(
                 R.string.onboarding_second_screen_subtitle_one,
             ),
             modifier = Modifier
-                .padding(top = 16.dp, start = 16.dp, end = 16.dp),
+                .padding(
+                    top = focusDimensions.paddingDefault,
+                    start = focusDimensions.paddingDefault,
+                    end = focusDimensions.paddingDefault,
+                ),
             textAlign = TextAlign.Center,
             style = focusTypography.onboardingSubtitle,
         )
@@ -95,7 +104,11 @@ fun OnBoardingSecondScreenCompose(
                 stringResource(R.string.onboarding_short_app_name),
             ),
             modifier = Modifier
-                .padding(top = 16.dp, start = 16.dp, end = 16.dp),
+                .padding(
+                    top = focusDimensions.paddingDefault,
+                    start = focusDimensions.paddingDefault,
+                    end = focusDimensions.paddingDefault,
+                ),
             textAlign = TextAlign.Center,
             style = focusTypography.onboardingSubtitle,
         )
@@ -112,7 +125,11 @@ private fun ComponentOnBoardingSecondScreenButtons(
     Button(
         onClick = setAsDefaultBrowser,
         modifier = Modifier
-            .padding(top = 33.dp, start = 16.dp, end = 16.dp)
+            .padding(
+                top = focusDimensions.paddingOnboardingButtonTop,
+                start = focusDimensions.paddingDefault,
+                end = focusDimensions.paddingDefault,
+            )
             .fillMaxWidth(),
         colors = ButtonDefaults.textButtonColors(
             containerColor = colorResource(R.color.onboardingButtonOneColor),
@@ -126,7 +143,12 @@ private fun ComponentOnBoardingSecondScreenButtons(
     Button(
         onClick = skipScreen,
         modifier = Modifier
-            .padding(top = 8.dp, start = 16.dp, end = 16.dp, bottom = 74.dp)
+            .padding(
+                top = focusDimensions.paddingSmall,
+                start = focusDimensions.paddingDefault,
+                end = focusDimensions.paddingDefault,
+                bottom = focusDimensions.paddingOnboardingBottom,
+            )
             .fillMaxWidth(),
         colors = ButtonDefaults.textButtonColors(
             containerColor = colorResource(R.color.onboardingButtonTwoColor),

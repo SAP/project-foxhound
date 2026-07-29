@@ -47,17 +47,11 @@ pub struct RepetitionIterator {
     stride: LayoutSize,
 }
 
-impl RepetitionIterator {
-    pub fn num_repetitions(&self) -> usize {
-        (self.y_count * self.x_count) as usize
-    }
-}
-
 impl Iterator for RepetitionIterator {
     type Item = Repetition;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current_x == self.x_count {
+        if self.current_x >= self.x_count {
             self.current_y += 1;
             if self.current_y >= self.y_count {
                 return None;
@@ -136,21 +130,34 @@ pub fn repetitions(
     let x_most = visible_rect.max.x;
     let y_most = visible_rect.max.y;
 
-    let x_count = f32::ceil((x_most - x0) / stride.width) as i32;
-    let y_count = f32::ceil((y_most - y0) / stride.height) as i32;
+    let mut x_count = f32::ceil((x_most - x0) / stride.width);
+    let mut y_count = f32::ceil((y_most - y0) / stride.height);
+
+    // Sanity-check that we don't have anything that may cause the iterator
+    // to run indefinitely.
+    let valid = x_count.is_finite()
+        & y_count.is_finite()
+        & stride.is_finite();
+
+    if !valid {
+        x_count = 0.0;
+        y_count = 0.0;
+    }
+
 
     let mut row_flags = EdgeMask::TOP;
-    if y_count == 1 {
+    if y_count as i32 == 1 {
         row_flags |= EdgeMask::BOTTOM;
     }
+
 
     RepetitionIterator {
         current_origin: LayoutPoint::new(x0, y0),
         initial_origin: LayoutPoint::new(x0, y0),
         current_x: 0,
         current_y: 0,
-        x_count,
-        y_count,
+        x_count: x_count as i32,
+        y_count: y_count as i32,
         row_flags,
         stride,
     }

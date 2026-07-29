@@ -271,11 +271,7 @@ add_task(async function activate() {
       gBrowser,
       expectedURL
     );
-    await EventUtils.synthesizeMouseAtCenter(
-      items[i],
-      {},
-      items[i].ownerGlobal
-    );
+    EventUtils.synthesizeMouseAtCenter(items[i], {}, items[i].documentGlobal);
     await onLocationChange;
     Assert.ok(true, `Expected URL is loaded [${expectedURL}]`);
 

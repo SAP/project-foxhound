@@ -812,7 +812,7 @@ export class FinderIterator {
     let window = windowOrRange;
     // Ranges may also be passed in, so fetch its window.
     if (ChromeUtils.getClassName(windowOrRange) === "Range") {
-      window = windowOrRange.startContainer.ownerGlobal;
+      window = windowOrRange.startContainer.documentGlobal;
     }
     return window.docShell;
   }

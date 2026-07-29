@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,7 +15,7 @@ class XMLStylesheetProcessingInstruction final : public ProcessingInstruction,
                                                  public LinkStyle {
  public:
   XMLStylesheetProcessingInstruction(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
       const nsAString& aData)
       : ProcessingInstruction(std::move(aNodeInfo), aData) {}
 
@@ -58,13 +56,7 @@ class XMLStylesheetProcessingInstruction final : public ProcessingInstruction,
 
   virtual void SetDataInternal(const nsAString& aData,
                                MutationEffectOnScript aMutationEffectOnScript,
-                               mozilla::ErrorResult& rv) override {
-    CharacterData::SetDataInternal(aData, aMutationEffectOnScript, rv);
-    if (rv.Failed()) {
-      return;
-    }
-    (void)UpdateStyleSheetInternal(nullptr, nullptr, ForceUpdate::Yes);
-  }
+                               mozilla::ErrorResult& rv) override;
 
  protected:
   virtual ~XMLStylesheetProcessingInstruction();

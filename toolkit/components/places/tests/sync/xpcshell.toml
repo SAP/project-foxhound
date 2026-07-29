@@ -29,6 +29,7 @@ support-files = [
 ["test_bookmark_mirror_meta.js"]
 
 ["test_bookmark_mirror_migration.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_bookmark_observer_recorder.js"]
 

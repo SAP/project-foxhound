@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -306,37 +304,28 @@ static already_AddRefed<DataSourceSurface> ScaleDataSourceSurface(
   const int bytesPerPixel = BytesPerPixel(format);
 
   const IntSize srcSize = aSurface->GetSize();
-  int32_t tmp;
-
-  CheckedInt<int32_t> checked;
-  CheckedInt<int32_t> dstWidth(
-      aOptions.mResizeWidth.WasPassed() ? aOptions.mResizeWidth.Value() : 0);
-  CheckedInt<int32_t> dstHeight(
-      aOptions.mResizeHeight.WasPassed() ? aOptions.mResizeHeight.Value() : 0);
-
-  if (!dstWidth.isValid() || !dstHeight.isValid()) {
+  Maybe<int32_t> resizeWidth;
+  Maybe<int32_t> resizeHeight;
+  if (aOptions.mResizeWidth.WasPassed()) {
+    CheckedInt<int32_t> checked(aOptions.mResizeWidth.Value());
+    if (!checked.isValid()) {
+      return nullptr;
+    }
+    resizeWidth.emplace(checked.value());
+  }
+  if (aOptions.mResizeHeight.WasPassed()) {
+    CheckedInt<int32_t> checked(aOptions.mResizeHeight.Value());
+    if (!checked.isValid()) {
+      return nullptr;
+    }
+    resizeHeight.emplace(checked.value());
+  }
+  Maybe<IntSize> maybeDstSize =
+      nsLayoutUtils::ComputeResizedSize(srcSize, resizeWidth, resizeHeight);
+  if (!maybeDstSize) {
     return nullptr;
   }
-
-  if (!dstWidth.value()) {
-    checked = srcSize.width * dstHeight;
-    if (!checked.isValid()) {
-      return nullptr;
-    }
-
-    tmp = ceil(checked.value() / double(srcSize.height));
-    dstWidth = tmp;
-  } else if (!dstHeight.value()) {
-    checked = srcSize.height * dstWidth;
-    if (!checked.isValid()) {
-      return nullptr;
-    }
-
-    tmp = ceil(checked.value() / double(srcSize.width));
-    dstHeight = tmp;
-  }
-
-  const IntSize dstSize(dstWidth.value(), dstHeight.value());
+  const IntSize dstSize = *maybeDstSize;
   const int32_t dstStride = dstSize.width * bytesPerPixel;
 
   // Create a new SourceSurface.
@@ -656,7 +645,7 @@ static already_AddRefed<SourceSurface> GetSurfaceFromElement(
 
   RefPtr<SourceSurface> surface = res.GetSourceSurface();
   if (NS_WARN_IF(!surface)) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+    aRv.ThrowInvalidStateError("The source image could not be decoded");
     return nullptr;
   }
 
@@ -1088,7 +1077,7 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateImageBitmapInternal(
 
     dataSurface = CropAndCopyDataSourceSurface(dataSurface, cropRect);
     if (NS_WARN_IF(!dataSurface)) {
-      aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+      aRv.ThrowInvalidStateError("Failed to crop source image");
       return nullptr;
     }
 
@@ -1166,7 +1155,7 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateInternal(
     ErrorResult& aRv) {
   // Check if the image element is completely available or not.
   if (!aImageEl.Complete()) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+    aRv.ThrowInvalidStateError("Passed-in image has not finished loading");
     return nullptr;
   }
 
@@ -1221,7 +1210,7 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateInternal(
 
   // Check network state.
   if (aVideoEl.NetworkState() == NETWORK_EMPTY) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+    aRv.ThrowInvalidStateError("Passed-in video has not loaded any data");
     return nullptr;
   }
 
@@ -1229,7 +1218,7 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateInternal(
   // Cannot be HTMLMediaElement::HAVE_NOTHING or
   // HTMLMediaElement::HAVE_METADATA.
   if (aVideoEl.ReadyState() <= HAVE_METADATA) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+    aRv.ThrowInvalidStateError("Passed-in video does not have enough data");
     return nullptr;
   }
 
@@ -1266,8 +1255,13 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateInternal(
     nsIGlobalObject* aGlobal, HTMLCanvasElement& aCanvasEl,
     const Maybe<IntRect>& aCropRect, const ImageBitmapOptions& aOptions,
     ErrorResult& aRv) {
-  if (aCanvasEl.Width() == 0 || aCanvasEl.Height() == 0) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+  if (aCanvasEl.Width() == 0) {
+    aRv.ThrowInvalidStateError("Passed-in canvas has width 0");
+    return nullptr;
+  }
+
+  if (aCanvasEl.Height() == 0) {
+    aRv.ThrowInvalidStateError("Passed-in canvas has height 0");
     return nullptr;
   }
 
@@ -1455,7 +1449,7 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateInternal(
 
   const IntSize surfaceSize = surface->GetSize();
   if (surfaceSize.width == 0 || surfaceSize.height == 0) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+    aRv.ThrowInvalidStateError("Passed-in canvas has width 0 or height 0");
     return nullptr;
   }
 
@@ -1472,7 +1466,8 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateInternal(
     const Maybe<IntRect>& aCropRect, const ImageBitmapOptions& aOptions,
     ErrorResult& aRv) {
   if (!aImageBitmap.mData) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+    aRv.ThrowInvalidStateError(
+        "Passed-in ImageBitmap has been closed or transferred");
     return nullptr;
   }
 
@@ -1774,7 +1769,8 @@ static void AsyncCreateImageBitmapFromBlob(Promise* aPromise,
   RefPtr<CreateImageBitmapFromBlob> task = CreateImageBitmapFromBlob::Create(
       aPromise, aGlobal, aBlob, aCropRect, mainThreadEventTarget, aOptions);
   if (NS_WARN_IF(!task)) {
-    aPromise->MaybeReject(NS_ERROR_DOM_INVALID_STATE_ERR);
+    aPromise->MaybeRejectWithInvalidStateError(
+        "Failed to create blob decoding task");
     return;
   }
 
@@ -2350,7 +2346,8 @@ void CreateImageBitmapFromBlob::
   });
 
   if (NS_WARN_IF(NS_FAILED(aStatus))) {
-    mPromise->MaybeReject(NS_ERROR_DOM_INVALID_STATE_ERR);
+    mPromise->MaybeRejectWithInvalidStateError(
+        "The image could not be decoded");
     return;
   }
 

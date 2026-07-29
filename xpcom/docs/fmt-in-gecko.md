@@ -32,7 +32,6 @@ fmt::format_to_n(res, 1024,
                  a, b, literal.get());
 ```
 
-
 # User-defined types
 
 Formatting a [user-defined type](https://fmt.dev/11.0/api/#formatting-user-defined-types) can be done once, and then used with all sorts of formatting function in `{fmt}`. Given an example object:
@@ -83,7 +82,7 @@ ASSERT_STREQ("0x69, 0xd2, 0x3c, 0xa5", bufFmt);
 
 # `MOZ_LOG` integration
 
-`MOZ_LOG_FMT`  is like `MOZ_LOG`, but takes an `{fmt}`-style format string:
+`MOZ_LOG_FMT` is like `MOZ_LOG`, but takes an `{fmt}`-style format string:
 
 ```c++
 MOZ_LOG_FMT(gLogModule, LogLevel::Verbose, "{}x{} = {}", 3, 3, 3*3);

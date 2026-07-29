@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -387,11 +385,6 @@ struct ReflowInput : public SizeComputationInput {
   const nsStyleBorder* mStyleBorder = nullptr;
   const nsStyleMargin* mStyleMargin = nullptr;
 
-  enum class BreakType : uint8_t {
-    Auto,
-    Column,
-    Page,
-  };
   BreakType mBreakType = BreakType::Auto;
 
   // a frame (e.g. nsTableCellFrame) which may need to generate a special
@@ -473,10 +466,11 @@ struct ReflowInput : public SizeComputationInput {
     // We have an ancestor nsColumnSetFrame performing a measuring reflow. The
     // available block-size becomes unconstrained.
     //
-    // Note: only the top-level multicol can initiate a measuring reflow, so
-    // nested multicols will do a measuring reflow only when the top-level one
-    // is doing it. See nsColumnSetFrame::Reflow() for details.
-    bool mIsInColumnMeasuringReflow : 1;
+    // Note: only the top-level fragmentainer (multicol or print page sequence)
+    // can initiate a measuring reflow, so nested fragmentainers will do a
+    // measuring reflow only when the top-level one is doing it. See
+    // nsColumnSetFrame::Reflow() and nsPageSequenceFrame::Reflow() for details.
+    bool mIsInFragmentainerMeasuringReflow : 1;
 
     // True if ColumnSetWrapperFrame has a constrained block-size, and is going
     // to consume all of its block-size in this fragment. This bit is passed to

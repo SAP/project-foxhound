@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -385,16 +383,22 @@ void SimpleAllocator::removeAllocatedRegisterAtIndex(size_t index) {
   }
 }
 
-LAllocation SimpleAllocator::ensureStackLocation(uint32_t vregId) {
+bool SimpleAllocator::ensureStackLocation(uint32_t vregId, LAllocation* alloc) {
   // Allocate a stack slot for this virtual register if needed.
   VirtualRegister& vreg = vregs_[vregId];
   if (vreg.hasStackLocation()) {
-    return vreg.stackLocation();
+    *alloc = vreg.stackLocation();
+    return true;
   }
   LStackSlot::Width width = LStackSlot::width(vreg.def()->type());
-  LStackSlot::SlotAndWidth slot(stackSlotAllocator_.allocateSlot(width), width);
+  uint32_t slotOffset;
+  if (!stackSlotAllocator_.allocateSlot(width, &slotOffset)) {
+    return false;
+  }
+  LStackSlot::SlotAndWidth slot(slotOffset, width);
   vreg.setAllocatedStackSlot(slot);
-  return LStackSlot(slot);
+  *alloc = LStackSlot(slot);
+  return true;
 }
 
 LAllocation SimpleAllocator::registerOrStackLocation(LInstruction* ins,
@@ -420,7 +424,10 @@ bool SimpleAllocator::spillRegister(LInstruction* ins,
   }
   // Allocate a new stack slot and insert a register => stack move.
   LMoveGroup* input = getInputMoveGroup(ins);
-  LAllocation dest = ensureStackLocation(allocated.vregId());
+  LAllocation dest;
+  if (!ensureStackLocation(allocated.vregId(), &dest)) {
+    return false;
+  }
   return input->addAfter(LAllocation(allocated.reg()), dest,
                          vreg.def()->type());
 }
@@ -471,7 +478,10 @@ bool SimpleAllocator::allocateForBlockEnd(LBlock* block, LInstruction* ins) {
 
     LAllocation source =
         registerOrStackLocation(ins, sourceVreg, /* trackRegUse = */ true);
-    LAllocation dest = ensureStackLocation(destVreg);
+    LAllocation dest;
+    if (!ensureStackLocation(destVreg, &dest)) {
+      return false;
+    }
     if (!group->add(source, dest, phi->getDef(0)->type())) {
       return false;
     }
@@ -797,7 +807,9 @@ bool SimpleAllocator::allocateForDefinition(uint32_t blockLastId,
       MOZ_ASSERT(!isTemp);
       if (def->type() == LDefinition::STACKRESULTS) {
         LStackArea alloc(ins->toInstruction());
-        stackSlotAllocator_.allocateStackArea(&alloc);
+        if (!stackSlotAllocator_.allocateStackArea(&alloc)) {
+          return false;
+        }
         def->setOutput(alloc);
       } else {
         // Because the definitions are visited in order, the area has been
@@ -846,7 +858,10 @@ bool SimpleAllocator::allocateForInstruction(VirtualRegBitSet& liveGC,
     LMoveGroup* moves = getInputMoveGroup(ins);
     for (LDefinition* def : eagerSpillOutputs_) {
       MOZ_ASSERT(!vregs_[def->virtualRegister()].hasStackLocation());
-      LAllocation dest = ensureStackLocation(def->virtualRegister());
+      LAllocation dest;
+      if (!ensureStackLocation(def->virtualRegister(), &dest)) {
+        return false;
+      }
       if (!moves->add(*def->output(), dest, def->type())) {
         return false;
       }
@@ -1184,7 +1199,11 @@ bool SimpleAllocator::allocateRegisters() {
       LDefinition* def = phi->getDef(0);
       uint32_t vregId = def->virtualRegister();
       bool isGCType = vregs_[vregId].isGCType();
-      def->setOutput(ensureStackLocation(vregId));
+      LAllocation defAlloc;
+      if (!ensureStackLocation(vregId, &defAlloc)) {
+        return false;
+      }
+      def->setOutput(defAlloc);
       if (isGCType && !liveGC.insert(vregId)) {
         return false;
       }
@@ -1258,10 +1277,10 @@ void SimpleAllocator::assertValidRegisterStateBeforeInstruction() const {
 }
 
 bool SimpleAllocator::go() {
-  JitSpewCont(JitSpew_RegAlloc, "\n");
+  JitSpew(JitSpew_RegAlloc, "\n");
   JitSpew(JitSpew_RegAlloc, "Beginning register allocation");
 
-  JitSpewCont(JitSpew_RegAlloc, "\n");
+  JitSpew(JitSpew_RegAlloc, "\n");
   if (JitSpewEnabled(JitSpew_RegAlloc)) {
     dumpInstructions("(Pre-allocation LIR)");
   }

@@ -67,7 +67,10 @@ add_task(async function mouse_insideTipButNotOnButtons() {
     row._buttons.get("0"),
     "The main button element should be selected initially"
   );
+  // XXX: See bug 2016839
+  AccessibilityUtils.setEnv({ labelRule: false });
   EventUtils.synthesizeMouseAtCenter(row, {});
+  AccessibilityUtils.resetEnv();
   // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
   await new Promise(r => setTimeout(r, 500));
   Assert.ok(gURLBar.view.isOpen, "The view should remain open");

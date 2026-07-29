@@ -1,0 +1,18 @@
+{
+  "label": "snowplowmap.a2gov.org",
+  "bugs": {
+    "2012760": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://snowplowmap.a2gov.org/*"]
+    }
+  },
+  "css": {
+    "fix_ticker_performance": "#ticker-tape { white-space: nowrap; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "css": ["fix_ticker_performance"]
+    }
+  ]
+}

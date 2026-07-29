@@ -17,8 +17,8 @@
 
 #bandwidth-header {
   margin: 0;
-  font-weight: var(--heading-font-weight);
-  font-size: var(--heading-font-size-medium);
+  font-weight: var(--font-weight-heading);
+  font-size: var(--font-size-heading-medium);
 }
 
 #usage-help-text {
@@ -33,13 +33,13 @@
   /* stylelint-disable-next-line stylelint-plugin-mozilla/no-base-design-tokens, stylelint-plugin-mozilla/use-design-tokens */
   background-color: light-dark(var(--color-gray-20), var(--color-gray-80));
 
-  border: var(--progress-border-width) solid var(--border-color-card);
+  border: var(--progress-border-width) solid var(--card-border-color);
   border-radius: var(--border-radius-circle);
 
   &::-moz-progress-bar {
     /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens, stylelint-plugin-mozilla/no-non-semantic-token-usage */
     background-color: var(--progress-color);
-    border: var(--progress-border-width) solid var(--border-color-card);
+    border: var(--progress-border-width) solid var(--card-border-color);
     border-radius: var(--border-radius-circle);
     box-shadow: var(--box-shadow-level-1);
   }
@@ -57,19 +57,39 @@
 
 #progress-container {
   position: relative;
+}
 
-  & > #min-progress {
+#min-progress {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  width: var(--progress-height);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  height: var(--progress-height);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens, stylelint-plugin-mozilla/no-non-semantic-token-usage */
+  background-color: var(--progress-color);
+  border-radius: var(--border-radius-circle);
+  position: absolute;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens, stylelint-plugin-mozilla/use-size-tokens */
+  top: var(--progress-border-width);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens, stylelint-plugin-mozilla/use-size-tokens */
+  inset-inline-start: var(--progress-border-width);
+}
+
+@media (forced-colors) {
+  #progress-bar {
     /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
-    width: var(--progress-height);
+    background-color: SelectedItemText;
+    border-color: var(--border-color);
+
+    &::-moz-progress-bar {
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+      background-color: SelectedItem;
+      border-color: var(--border-color);
+      box-shadow: none;
+    }
+  }
+
+  #min-progress {
     /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
-    height: var(--progress-height);
-    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens, stylelint-plugin-mozilla/no-non-semantic-token-usage */
-    background-color: var(--progress-color);
-    border-radius: var(--border-radius-circle);
-    position: absolute;
-    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens, stylelint-plugin-mozilla/use-size-tokens */
-    top: var(--progress-border-width);
-    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens, stylelint-plugin-mozilla/use-size-tokens */
-    left: var(--progress-border-width);
+    background-color: SelectedItem;
   }
 }

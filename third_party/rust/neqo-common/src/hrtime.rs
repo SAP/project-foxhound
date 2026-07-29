@@ -110,7 +110,7 @@ mod mac {
     }
     type mach_timebase_info_t = *mut mach_timebase_info;
     type mach_timebase_info_data_t = mach_timebase_info;
-    extern "C" {
+    unsafe extern "C" {
         fn mach_timebase_info(info: mach_timebase_info_t) -> kern_return_t;
     }
 
@@ -131,7 +131,7 @@ mod mac {
 
     // These function definitions are taken from a comment in <thread_policy.h>.
     // Why they are inaccessible is unknown, but they work as declared.
-    extern "C" {
+    unsafe extern "C" {
         fn thread_policy_set(
             thread: thread_t,
             flavor: thread_policy_flavor_t,
@@ -151,7 +151,7 @@ mod mac {
     type __darwin_pthread_t = *mut _opaque_pthread_t;
     type pthread_t = __darwin_pthread_t;
 
-    extern "C" {
+    unsafe extern "C" {
         fn pthread_self() -> pthread_t;
         fn pthread_mach_thread_np(thread: pthread_t) -> mach_port_t;
     }
@@ -468,6 +468,10 @@ mod test {
     /// A limit for when high resolution timers are disabled.
     const GENEROUS: Duration = Duration::from_millis(30);
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "This test needs to run in real time"
+    )]
     fn validate_delays(max_lag: Duration) -> Result<(), ()> {
         const DELAYS: &[u64] = &[1, 2, 3, 5, 8, 10, 12, 15, 20, 25, 30];
         let durations = DELAYS.iter().map(|&d| Duration::from_millis(d));

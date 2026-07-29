@@ -35,7 +35,7 @@ namespace vixl {
 
 MacroAssembler::MacroAssembler()
     : js::jit::Assembler(),
-      sp_(x28),
+      sp_(x20),
       tmp_list_(ip0, ip1),
       fptmp_list_(d31)
 {
@@ -1373,7 +1373,7 @@ void MacroAssembler::PushStackPointer() {
 
   // Pushing a stack pointer leads to implementation-defined
   // behavior, which may be surprising. In particular,
-  //   str x28, [x28, #-8]!
+  //   str x20, [x20, #-8]!
   // pre-decrements the stack pointer, storing the decremented value.
   // Additionally, sp is read as xzr in this context, so it cannot be pushed.
   // So we must use a scratch register.

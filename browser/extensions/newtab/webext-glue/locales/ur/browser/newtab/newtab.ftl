@@ -11,6 +11,46 @@ newtab-settings-button =
 newtab-personalize-dialog-label =
     .aria-label = ‏‏تخصیص کریں
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = نئے ٹیبس
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } قطار
+           *[other] { $num } قطاریں
+        }
+home-restore-defaults-srd =
+    .label = طےشدہ بحال کریں
+    .accesskey = R
+home-mode-choice-custom-srd =
+    .label = مخصوص …URLs
+home-mode-choice-blank-srd =
+    .label = خالی صفحہ
+home-prefs-shortcuts-header-srd =
+    .label = تیز راہ
+home-prefs-shortcuts-select =
+    .aria-label = تیز راہ
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = سرپرست شدہ کہاناں
+home-prefs-highlights-option-visited-pages-srd =
+    .label = دورہ کردہ صفحہات
+home-prefs-highlights-options-bookmarks-srd =
+    .label = بک مارک
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = حالیہ ڈاؤن لوڈ شدہ
+home-prefs-recent-activity-header-srd =
+    .label = حالیہ سرگرمی
+home-prefs-recent-activity-select =
+    .aria-label = حالیہ سرگرمی
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -27,7 +67,7 @@ newtab-search-box-input =
     .placeholder = ويب پر تلاش کريں
     .aria-label = ويب پر تلاش کريں
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = تلاش انجن کا اضافہ کریں
 newtab-topsites-add-shortcut-header = نیا شارٹ کٹ
@@ -204,9 +244,21 @@ newtab-error-fallback-refresh-link = دوبارہ کوشش کرنے کے لئے 
 
 newtab-custom-shortcuts-title = تیز راہ
 newtab-custom-shortcuts-subtitle = وہ سائٹس جو آپ محفوظ کرتے ہیں یا ملاحظہ کرتے ہیں۔
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = تیز راہ
     .description = وہ سائٹس جو آپ محفوظ کرتے ہیں یا ملاحظہ کرتے ہیں۔
+newtab-custom-shortcuts-nova =
+    .label = تیز راہ
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+            [one] { $num } قطار
+           *[other] { $num } قطاریں
+        }
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector =

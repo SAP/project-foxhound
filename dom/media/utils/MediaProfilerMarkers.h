@@ -28,7 +28,7 @@ struct TimeUpdateMarker : public BaseMarkerType<TimeUpdateMarker> {
        MS::Format::Integer},  // optional, zero for audio
       {
           "element",
-          MS::InputType::Uint64,
+          MS::InputType::Flow,
           "Element",
           MS::Format::Flow,
       },
@@ -63,7 +63,7 @@ struct BufferedUpdateMarker : public BaseMarkerType<BufferedUpdateMarker> {
        MS::Format::Milliseconds},
       {
           "element",
-          MS::InputType::Uint64,
+          MS::InputType::Flow,
           "Element",
           MS::Format::Flow,
       },
@@ -72,14 +72,6 @@ struct BufferedUpdateMarker : public BaseMarkerType<BufferedUpdateMarker> {
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable};
   static constexpr const char* ChartLabel = "{marker.data.name}";
-  static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
-                                   uint64_t aBufferStart, uint64_t aBufferEnd,
-                                   uint64_t aDuration, Flow aFlow) {
-    aWriter.IntProperty("bufferStartMs", aBufferStart);
-    aWriter.IntProperty("bufferEndMs", aBufferEnd);
-    aWriter.IntProperty("mediaDurationMs", aDuration);
-    aWriter.FlowProperty("element", aFlow);
-  }
 };
 
 struct VideoResizeMarker : public BaseMarkerType<VideoResizeMarker> {
@@ -93,7 +85,7 @@ struct VideoResizeMarker : public BaseMarkerType<VideoResizeMarker> {
       {"height", MS::InputType::Uint64, "Height", MS::Format::Integer},
       {
           "element",
-          MS::InputType::Uint64,
+          MS::InputType::Flow,
           "Element",
           MS::Format::Flow,
       },
@@ -102,13 +94,6 @@ struct VideoResizeMarker : public BaseMarkerType<VideoResizeMarker> {
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable};
   static constexpr const char* ChartLabel = "{marker.data.name}";
-  static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
-                                   uint64_t aWidth, uint64_t aHeight,
-                                   Flow aFlow) {
-    aWriter.IntProperty("width", aWidth);
-    aWriter.IntProperty("height", aHeight);
-    aWriter.FlowProperty("element", aFlow);
-  }
 };
 
 struct MetadataMarker : public BaseMarkerType<MetadataMarker> {
@@ -125,7 +110,7 @@ struct MetadataMarker : public BaseMarkerType<MetadataMarker> {
        MS::Format::String},
       {
           "element",
-          MS::InputType::Uint64,
+          MS::InputType::Flow,
           "Element",
           MS::Format::Flow,
       },
@@ -134,14 +119,6 @@ struct MetadataMarker : public BaseMarkerType<MetadataMarker> {
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable};
   static constexpr const char* ChartLabel = "{marker.data.name}";
-  static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
-                                   const ProfilerString16View& aSrc,
-                                   const ProfilerString8View& aAudioMimeType,
-                                   const ProfilerString8View& aVideoMimeType,
-                                   Flow aFlow) {
-    StreamJSONMarkerDataImpl(aWriter, aSrc, aAudioMimeType, aVideoMimeType,
-                             aFlow);
-  }
 };
 
 struct CDMResolvedMarker : public BaseMarkerType<CDMResolvedMarker> {
@@ -156,7 +133,7 @@ struct CDMResolvedMarker : public BaseMarkerType<CDMResolvedMarker> {
        MS::Format::String},
       {
           "element",
-          MS::InputType::Uint64,
+          MS::InputType::Flow,
           "Element",
           MS::Format::Flow,
       },
@@ -165,12 +142,6 @@ struct CDMResolvedMarker : public BaseMarkerType<CDMResolvedMarker> {
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable};
   static constexpr const char* ChartLabel = "{marker.data.name}";
-  static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
-                                   const ProfilerString16View& aKeySystem,
-                                   const ProfilerString8View& aConfiguration,
-                                   Flow aFlow) {
-    StreamJSONMarkerDataImpl(aWriter, aKeySystem, aConfiguration, aFlow);
-  }
 };
 
 struct LoadErrorMarker : public BaseMarkerType<LoadErrorMarker> {
@@ -184,7 +155,7 @@ struct LoadErrorMarker : public BaseMarkerType<LoadErrorMarker> {
        MS::Format::String},
       {
           "element",
-          MS::InputType::Uint64,
+          MS::InputType::Flow,
           "Element",
           MS::Format::Flow,
       },
@@ -192,11 +163,6 @@ struct LoadErrorMarker : public BaseMarkerType<LoadErrorMarker> {
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable};
   static constexpr const char* ChartLabel = "{marker.data.name}";
-  static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
-                                   const ProfilerString8View& aErrorMsg,
-                                   Flow aFlow) {
-    StreamJSONMarkerDataImpl(aWriter, aErrorMsg, aFlow);
-  }
 };
 
 struct ErrorMarker : public BaseMarkerType<ErrorMarker> {
@@ -210,7 +176,7 @@ struct ErrorMarker : public BaseMarkerType<ErrorMarker> {
        MS::Format::String},
       {
           "element",
-          MS::InputType::Uint64,
+          MS::InputType::Flow,
           "Element",
           MS::Format::Flow,
       },
@@ -218,11 +184,6 @@ struct ErrorMarker : public BaseMarkerType<ErrorMarker> {
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable};
   static constexpr const char* ChartLabel = "{marker.data.name}";
-  static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
-                                   const ProfilerString16View& aErrorMsg,
-                                   Flow aFlow) {
-    StreamJSONMarkerDataImpl(aWriter, aErrorMsg, aFlow);
-  }
 };
 
 struct LoadSourceMarker : public BaseMarkerType<LoadSourceMarker> {
@@ -239,7 +200,7 @@ struct LoadSourceMarker : public BaseMarkerType<LoadSourceMarker> {
       {"media", MS::InputType::String, "Media", MS::Format::String},
       {
           "element",
-          MS::InputType::Uint64,
+          MS::InputType::Flow,
           "Element",
           MS::Format::Flow,
       },
@@ -248,13 +209,6 @@ struct LoadSourceMarker : public BaseMarkerType<LoadSourceMarker> {
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable};
   static constexpr const char* ChartLabel = "{marker.data.name}";
-  static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
-                                   const ProfilerString16View& aSrc,
-                                   const ProfilerString16View& aType,
-                                   const ProfilerString16View& aMedia,
-                                   Flow aFlow) {
-    StreamJSONMarkerDataImpl(aWriter, aSrc, aType, aMedia, aFlow);
-  }
 };
 
 // This marker is for HTMLVideoElement
@@ -269,7 +223,7 @@ struct RenderVideoMarker : public BaseMarkerType<RenderVideoMarker> {
        MS::Format::Integer},
       {
           "element",
-          MS::InputType::Uint64,
+          MS::InputType::Flow,
           "Element",
           MS::Format::Flow,
       },

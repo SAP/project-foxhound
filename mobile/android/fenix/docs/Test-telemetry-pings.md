@@ -46,7 +46,7 @@ Since version 136, telemetry pings can be tested via about:glean.
 Since version 132, telemetry pings can be tested via the Glean Debug Tools feature.
 
 1. Click on the 3 dot menu.
-2. Click on "Settings" / settings icon (if menu redesign is enabled).
+2. Click on "Settings" / settings icon.
 3. Scroll down and click on "About Firefox".
 4. Click on the Firefox logo 5 times to enable debug menu.
 5. Go back to settings.
@@ -63,6 +63,7 @@ and following these instructions:
 Watch a step by step [video](https://user-images.githubusercontent.com/6579541/170517089-7266b93e-7ff8-4ebb-ae01-4f2a7e558c66.mp4).
 
 1. To send data by default. apply this patch:
+
 ``` diff
 
 diff --git a/app/src/main/java/org/mozilla/fenix/FenixApplication.kt b/app/src/main/java/org/mozilla/fenix/FenixApplication.kt
@@ -125,12 +126,14 @@ index c38ebb62d..3ae102d97 100644
 
 2. Trigger your pings.
 3. Sends the pings using this command:
+
 ```
 adb shell am start -n org.mozilla.fenix.debug/mozilla.telemetry.glean.debug.GleanDebugActivity \
  --ez logPings true \
  --es sendPing metrics \
  --es debugViewTag test-metrics-ping
 ```
+
 4. View the pings [here](https://debug-ping-preview.firebaseapp.com/).
 
-The parameter `sendPing` can be  `metrics` or `events` depending on your needs; additionally, `debugViewTag` can be customized to your preferred tag `debugViewTag your-metrics-ping`.
+The parameter `sendPing` can be `metrics` or `events` depending on your needs; additionally, `debugViewTag` can be customized to your preferred tag `debugViewTag your-metrics-ping`.

@@ -16,13 +16,13 @@ add_setup(async function () {
 add_task(async function test_promo_card_only_shows_for_expanded_sidebar() {
   const promoCard = document.getElementById("drag-to-pin-promo-card");
 
-  await SidebarController.initializeUIState({ expanded: false });
+  await SidebarController.updateUIState({ expanded: false });
   ok(
     BrowserTestUtils.isHidden(promoCard),
     "Drag-to-pin promo card is hidden when sidebar is collapsed."
   );
 
-  await SidebarController.initializeUIState({ expanded: true });
+  await SidebarController.updateUIState({ expanded: true });
   ok(
     BrowserTestUtils.isVisible(promoCard),
     "Drag-to-pin promo card is shown when sidebar is expanded."

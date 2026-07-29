@@ -13,11 +13,18 @@ pub(crate) struct EnableExtensions {
     wgpu_mesh_shader: bool,
     wgpu_ray_query: bool,
     wgpu_ray_query_vertex_return: bool,
+    wgpu_ray_tracing_pipelines: bool,
     dual_source_blending: bool,
     /// Whether `enable f16;` was written earlier in the shader module.
     f16: bool,
+    /// Whether `enable wgpu_int16;` was written earlier in the shader module.
+    wgpu_int16: bool,
     clip_distances: bool,
     wgpu_cooperative_matrix: bool,
+    draw_index: bool,
+    primitive_index: bool,
+    per_vertex: bool,
+    wgpu_binding_array: bool,
 }
 
 impl EnableExtensions {
@@ -26,10 +33,16 @@ impl EnableExtensions {
             wgpu_mesh_shader: false,
             wgpu_ray_query: false,
             wgpu_ray_query_vertex_return: false,
+            wgpu_ray_tracing_pipelines: false,
             f16: false,
+            wgpu_int16: false,
             dual_source_blending: false,
             clip_distances: false,
             wgpu_cooperative_matrix: false,
+            draw_index: false,
+            primitive_index: false,
+            per_vertex: false,
+            wgpu_binding_array: false,
         }
     }
 
@@ -41,10 +54,18 @@ impl EnableExtensions {
             ImplementedEnableExtension::WgpuRayQueryVertexReturn => {
                 &mut self.wgpu_ray_query_vertex_return
             }
+            ImplementedEnableExtension::WgpuRayTracingPipeline => {
+                &mut self.wgpu_ray_tracing_pipelines
+            }
             ImplementedEnableExtension::DualSourceBlending => &mut self.dual_source_blending,
             ImplementedEnableExtension::F16 => &mut self.f16,
+            ImplementedEnableExtension::WgpuInt16 => &mut self.wgpu_int16,
             ImplementedEnableExtension::ClipDistances => &mut self.clip_distances,
             ImplementedEnableExtension::WgpuCooperativeMatrix => &mut self.wgpu_cooperative_matrix,
+            ImplementedEnableExtension::DrawIndex => &mut self.draw_index,
+            ImplementedEnableExtension::PrimitiveIndex => &mut self.primitive_index,
+            ImplementedEnableExtension::WgpuPerVertex => &mut self.per_vertex,
+            ImplementedEnableExtension::WgpuBindingArray => &mut self.wgpu_binding_array,
         };
         *field = true;
     }
@@ -57,10 +78,31 @@ impl EnableExtensions {
             ImplementedEnableExtension::WgpuRayQueryVertexReturn => {
                 self.wgpu_ray_query_vertex_return
             }
+            ImplementedEnableExtension::WgpuRayTracingPipeline => self.wgpu_ray_tracing_pipelines,
             ImplementedEnableExtension::DualSourceBlending => self.dual_source_blending,
             ImplementedEnableExtension::F16 => self.f16,
+            ImplementedEnableExtension::WgpuInt16 => self.wgpu_int16,
             ImplementedEnableExtension::ClipDistances => self.clip_distances,
             ImplementedEnableExtension::WgpuCooperativeMatrix => self.wgpu_cooperative_matrix,
+            ImplementedEnableExtension::DrawIndex => self.draw_index,
+            ImplementedEnableExtension::PrimitiveIndex => self.primitive_index,
+            ImplementedEnableExtension::WgpuPerVertex => self.per_vertex,
+            ImplementedEnableExtension::WgpuBindingArray => self.wgpu_binding_array,
+        }
+    }
+
+    pub(crate) fn require(
+        &self,
+        ext: ImplementedEnableExtension,
+        span: Span,
+    ) -> Result<'static, ()> {
+        if !self.contains(ext) {
+            Err(Box::new(Error::EnableExtensionNotEnabled {
+                span,
+                kind: ext.into(),
+            }))
+        } else {
+            Ok(())
         }
     }
 }
@@ -93,9 +135,14 @@ impl EnableExtension {
     const MESH_SHADER: &'static str = "wgpu_mesh_shader";
     const RAY_QUERY: &'static str = "wgpu_ray_query";
     const RAY_QUERY_VERTEX_RETURN: &'static str = "wgpu_ray_query_vertex_return";
+    const RAY_TRACING_PIPELINE: &'static str = "wgpu_ray_tracing_pipeline";
     const COOPERATIVE_MATRIX: &'static str = "wgpu_cooperative_matrix";
     const SUBGROUPS: &'static str = "subgroups";
     const PRIMITIVE_INDEX: &'static str = "primitive_index";
+    const DRAW_INDEX: &'static str = "draw_index";
+    const PER_VERTEX: &'static str = "wgpu_per_vertex";
+    const BINDING_ARRAY: &'static str = "wgpu_binding_array";
+    const INT16: &'static str = "wgpu_int16";
 
     /// Convert from a sentinel word in WGSL into its associated [`EnableExtension`], if possible.
     pub(crate) fn from_ident(word: &str, span: Span) -> Result<'_, Self> {
@@ -110,13 +157,18 @@ impl EnableExtension {
             Self::RAY_QUERY_VERTEX_RETURN => {
                 Self::Implemented(ImplementedEnableExtension::WgpuRayQueryVertexReturn)
             }
+            Self::RAY_TRACING_PIPELINE => {
+                Self::Implemented(ImplementedEnableExtension::WgpuRayTracingPipeline)
+            }
             Self::COOPERATIVE_MATRIX => {
                 Self::Implemented(ImplementedEnableExtension::WgpuCooperativeMatrix)
             }
             Self::SUBGROUPS => Self::Unimplemented(UnimplementedEnableExtension::Subgroups),
-            Self::PRIMITIVE_INDEX => {
-                Self::Unimplemented(UnimplementedEnableExtension::PrimitiveIndex)
-            }
+            Self::DRAW_INDEX => Self::Implemented(ImplementedEnableExtension::DrawIndex),
+            Self::PRIMITIVE_INDEX => Self::Implemented(ImplementedEnableExtension::PrimitiveIndex),
+            Self::PER_VERTEX => Self::Implemented(ImplementedEnableExtension::WgpuPerVertex),
+            Self::BINDING_ARRAY => Self::Implemented(ImplementedEnableExtension::WgpuBindingArray),
+            Self::INT16 => Self::Implemented(ImplementedEnableExtension::WgpuInt16),
             _ => return Err(Box::new(Error::UnknownEnableExtension(span, word))),
         })
     }
@@ -134,10 +186,15 @@ impl EnableExtension {
                 ImplementedEnableExtension::DualSourceBlending => Self::DUAL_SOURCE_BLENDING,
                 ImplementedEnableExtension::F16 => Self::F16,
                 ImplementedEnableExtension::ClipDistances => Self::CLIP_DISTANCES,
+                ImplementedEnableExtension::DrawIndex => Self::DRAW_INDEX,
+                ImplementedEnableExtension::PrimitiveIndex => Self::PRIMITIVE_INDEX,
+                ImplementedEnableExtension::WgpuRayTracingPipeline => Self::RAY_TRACING_PIPELINE,
+                ImplementedEnableExtension::WgpuPerVertex => Self::PER_VERTEX,
+                ImplementedEnableExtension::WgpuBindingArray => Self::BINDING_ARRAY,
+                ImplementedEnableExtension::WgpuInt16 => Self::INT16,
             },
             Self::Unimplemented(kind) => match kind {
                 UnimplementedEnableExtension::Subgroups => Self::SUBGROUPS,
-                UnimplementedEnableExtension::PrimitiveIndex => Self::PRIMITIVE_INDEX,
             },
         }
     }
@@ -145,6 +202,7 @@ impl EnableExtension {
 
 /// A variant of [`EnableExtension::Implemented`].
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
+#[cfg_attr(test, derive(strum::VariantArray))]
 pub enum ImplementedEnableExtension {
     /// Enables `f16`/`half` primitive support in all shader languages.
     ///
@@ -170,8 +228,86 @@ pub enum ImplementedEnableExtension {
     WgpuRayQuery,
     /// Enables the `wgpu_ray_query_vertex_return` extension, native only.
     WgpuRayQueryVertexReturn,
+    /// Enables the `wgpu_ray_tracing_pipeline` extension, native only.
+    WgpuRayTracingPipeline,
     /// Enables the `wgpu_cooperative_matrix` extension, native only.
     WgpuCooperativeMatrix,
+    /// Enables the `draw_index` builtin. Not currently part of the WGSL spec but probably will be at some point.
+    DrawIndex,
+    /// Enables the `@builtin(primitive_index)` attribute in WGSL.
+    ///
+    /// In the WGSL standard, this corresponds to [`enable primitive-index;`].
+    ///
+    /// [`enable primitive-index;`]: https://www.w3.org/TR/WGSL/#extension-primitive_index
+    PrimitiveIndex,
+    /// Enables the `wgpu_per_vertex` extension, allows using `@interpolate(per_vertex)` attribute in WGSL, native only.
+    WgpuPerVertex,
+    /// Enables the `wgpu_binding_array` extension, native only.
+    WgpuBindingArray,
+    /// Enables `i16`/`u16` 16-bit integer support in WGSL, native only.
+    WgpuInt16,
+}
+
+impl ImplementedEnableExtension {
+    /// A slice of all variants of [`ImplementedEnableExtension`].
+    pub const VARIANTS: &'static [Self] = &[
+        Self::F16,
+        Self::DualSourceBlending,
+        Self::ClipDistances,
+        Self::WgpuMeshShader,
+        Self::WgpuRayQuery,
+        Self::WgpuRayQueryVertexReturn,
+        Self::WgpuRayTracingPipeline,
+        Self::WgpuCooperativeMatrix,
+        Self::DrawIndex,
+        Self::PrimitiveIndex,
+        Self::WgpuPerVertex,
+        Self::WgpuBindingArray,
+        Self::WgpuInt16,
+    ];
+
+    /// Returns slice of all variants of [`ImplementedEnableExtension`].
+    pub const fn all() -> &'static [Self] {
+        Self::VARIANTS
+    }
+
+    /// Returns the capability required for this enable extension.
+    pub const fn capability(self) -> crate::valid::Capabilities {
+        use crate::valid::Capabilities as C;
+        match self {
+            Self::F16 => C::SHADER_FLOAT16,
+            Self::DualSourceBlending => C::DUAL_SOURCE_BLENDING,
+            Self::ClipDistances => C::CLIP_DISTANCES,
+            Self::WgpuMeshShader => C::MESH_SHADER,
+            Self::WgpuRayQuery => C::RAY_QUERY,
+            Self::WgpuRayQueryVertexReturn => C::RAY_HIT_VERTEX_POSITION,
+            Self::WgpuCooperativeMatrix => C::COOPERATIVE_MATRIX,
+            Self::WgpuRayTracingPipeline => C::RAY_TRACING_PIPELINE,
+            Self::DrawIndex => C::DRAW_INDEX,
+            Self::PrimitiveIndex => C::PRIMITIVE_INDEX,
+            Self::WgpuPerVertex => C::PER_VERTEX,
+            Self::WgpuBindingArray => C::BUFFER_BINDING_ARRAY
+                .union(C::BUFFER_BINDING_ARRAY_NON_UNIFORM_INDEXING)
+                .union(C::STORAGE_BUFFER_BINDING_ARRAY)
+                .union(C::STORAGE_BUFFER_BINDING_ARRAY_NON_UNIFORM_INDEXING)
+                .union(C::STORAGE_TEXTURE_BINDING_ARRAY)
+                .union(C::STORAGE_TEXTURE_BINDING_ARRAY_NON_UNIFORM_INDEXING)
+                .union(C::TEXTURE_AND_SAMPLER_BINDING_ARRAY)
+                .union(C::TEXTURE_AND_SAMPLER_BINDING_ARRAY_NON_UNIFORM_INDEXING)
+                .union(C::ACCELERATION_STRUCTURE_BINDING_ARRAY),
+            Self::WgpuInt16 => C::SHADER_INT16,
+        }
+    }
+}
+
+#[test]
+/// Asserts that the manual implementation of VARIANTS is the same as the derived strum version would be
+/// while still allowing strum to be a dev-only dependency
+fn test_manual_variants_array_is_correct() {
+    assert_eq!(
+        <ImplementedEnableExtension as strum::VariantArray>::VARIANTS,
+        ImplementedEnableExtension::VARIANTS
+    );
 }
 
 /// A variant of [`EnableExtension::Unimplemented`].
@@ -183,19 +319,12 @@ pub enum UnimplementedEnableExtension {
     ///
     /// [`enable subgroups;`]: https://www.w3.org/TR/WGSL/#extension-subgroups
     Subgroups,
-    /// Enables the `@builtin(primitive_index)` attribute in WGSL.
-    ///
-    /// In the WGSL standard, this corresponds to [`enable primitive-index;`].
-    ///
-    /// [`enable primitive-index;`]: https://www.w3.org/TR/WGSL/#extension-primitive_index
-    PrimitiveIndex,
 }
 
 impl UnimplementedEnableExtension {
     pub(crate) const fn tracking_issue_num(self) -> u16 {
         match self {
             Self::Subgroups => 5555,
-            Self::PrimitiveIndex => 8236,
         }
     }
 }

@@ -6,6 +6,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
+  generateUUID: "chrome://remote/content/shared/UUID.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
   waitForObserverTopic: "chrome://remote/content/marionette/sync.sys.mjs",
 });
@@ -148,7 +149,7 @@ accessibility.getAccessible = async function (element) {
   // doing its regular ticks and force two refresh driver ticks: the first to
   // let layout update and notify a11y, and the second to let a11y process
   // updates.
-  const windowUtils = element.ownerGlobal.windowUtils;
+  const windowUtils = element.documentGlobal.windowUtils;
   windowUtils.advanceTimeAndRefresh(0);
   windowUtils.advanceTimeAndRefresh(0);
   // Go back to normal refresh driver ticks.
@@ -196,6 +197,130 @@ accessibility.getComputedRole = async function (element) {
   }
 
   return accessible.computedARIARole;
+};
+
+// Data structures to map between Accessibles and globally unique ids. These ids
+// are only used by WebDriver.
+const accessibleToId = new WeakMap();
+const idToAccessible = new Map();
+// Clean up the maps when Accessibles die.
+const accFinalizationRegistry = new FinalizationRegistry(id => {
+  idToAccessible.delete(id);
+});
+
+/**
+ * Get the WebDriver id for an Accessible, generating the id if necessary.
+ */
+function getAccessibleId(accessible) {
+  let id = accessibleToId.get(accessible);
+  if (id) {
+    // We generated an id previously.
+    return id;
+  }
+  // We haven't seen this Accessible before. Generate a new id.
+  id = lazy.generateUUID();
+  accessibleToId.set(accessible, id);
+  idToAccessible.set(id, new WeakRef(accessible));
+  accFinalizationRegistry.register(accessible, id);
+  return id;
+}
+
+/**
+ * Convert an Accessible state to "true", "false" or "mixed".
+ */
+function toMixedString(accState, testState) {
+  if (accState & Ci.nsIAccessibleStates.STATE_MIXED) {
+    return "mixed";
+  }
+  return String(!!(accState & testState));
+}
+
+/**
+ * Serialize core properties of an Accessible to a JSON compatible object as
+ * specified by WebDriver.
+ */
+function serializeAccessible(accessible) {
+  const role = accessible.computedARIARole;
+  // Properties that are very easy to retrieve.
+  let result = {
+    description: accessible.description,
+    accessibilityId: getAccessibleId(accessible),
+    label: accessible.name,
+    role,
+  };
+
+  // Accessibility tree structure.
+  const parent = accessible.parent;
+  result.parent = parent ? getAccessibleId(parent) : null;
+  result.children = [];
+  const children = accessible.children;
+  for (let c = 0; c < children.length; ++c) {
+    result.children.push(
+      getAccessibleId(children.queryElementAt(c, Ci.nsIAccessible))
+    );
+  }
+
+  // States.
+  let state = {};
+  accessible.getState(state, {});
+  state = state.value;
+  if (state & Ci.nsIAccessibleStates.STATE_CHECKABLE) {
+    result.checked = toMixedString(state, Ci.nsIAccessibleStates.STATE_CHECKED);
+  }
+  if (role == "button") {
+    if (accessible.role == Ci.nsIAccessibleRole.ROLE_TOGGLE_BUTTON) {
+      result.pressed = toMixedString(
+        state,
+        Ci.nsIAccessibleStates.STATE_PRESSED
+      );
+    } else {
+      result.pressed = "undefined";
+    }
+  }
+  result.required = String(!!(state & Ci.nsIAccessibleStates.STATE_REQUIRED));
+  if (state & Ci.nsIAccessibleStates.STATE_SELECTABLE) {
+    result.selected = String(!!(state & Ci.nsIAccessibleStates.STATE_SELECTED));
+  }
+
+  return result;
+}
+
+/**
+ * Retrieve serialized accessibility properties for the provided element.
+ *
+ * @param {Element} element
+ *     The element for which to retrieve accessibility properties.
+ *
+ * @returns {object | null}
+ *     The accessibility properties or null if the element isn't in the
+ *     accessibility tree.
+ */
+accessibility.getAccessibilityPropertiesForElement = async function (element) {
+  const accessible = await accessibility.getAccessible(element);
+  if (!accessible) {
+    // If it's not in the a11y tree, it's probably presentational.
+    return null;
+  }
+  return serializeAccessible(accessible);
+};
+
+/**
+ * Retrieve serialized properties for the provided accessibility node.
+ *
+ * @param {string} id
+ *     The id of the accessibility node for which to retrieve properties.
+ *
+ * @returns {object | null}
+ *     The accessibility properties or null if the id is invalid.
+ */
+accessibility.getAccessibilityPropertiesForAccessibilityNode = async function (
+  id
+) {
+  const accessible = idToAccessible.get(id);
+  if (!accessible) {
+    return null;
+  }
+  return serializeAccessible(accessible.deref());
 };
 
 /**
@@ -398,7 +523,7 @@ accessibility.Checks = class {
       return;
     }
 
-    let win = element.ownerGlobal;
+    let win = element.documentGlobal;
     let disabledAccessibility = this.matchState(
       accessible,
       accessibility.State.Unavailable

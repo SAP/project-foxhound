@@ -2,10 +2,6 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-const { Preferences } = ChromeUtils.importESModule(
-  "resource://gre/modules/Preferences.sys.mjs"
-);
-
 /**
  * Wait for view source tab after calling given function to open it.
  *
@@ -195,14 +191,4 @@ async function openDocument(aURI) {
 
 function pushPrefs(...aPrefs) {
   return SpecialPowers.pushPrefEnv({ set: aPrefs });
-}
-
-function waitForPrefChange(pref) {
-  let deferred = Promise.withResolvers();
-  let observer = () => {
-    Preferences.ignore(pref, observer);
-    deferred.resolve();
-  };
-  Preferences.observe(pref, observer);
-  return deferred.promise;
 }

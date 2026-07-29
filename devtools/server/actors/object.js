@@ -46,6 +46,12 @@ loader.lazyRequireGetter(
   "resource://devtools/server/actors/utils/custom-formatters.js",
   true
 );
+loader.lazyRequireGetter(
+  this,
+  "makeDebuggeeValue",
+  "resource://devtools/server/actors/object/utils",
+  true
+);
 
 // This is going to be used by findSafeGetters, where we want to avoid calling getters for
 // deprecated properties (otherwise a warning message is displayed in the console).
@@ -603,6 +609,20 @@ class ObjectActor extends Actor {
       objProto = this.obj.proto;
     }
     return { prototype: this.createValueGrip(objProto, 0) };
+  }
+
+  /**
+   * Handle a protocol request to provide the global of the object.
+   */
+  global() {
+    let objGlobal = null;
+    if (Cu && (this.rawObj || DevToolsUtils.isSafeDebuggerObject(this.obj))) {
+      const global = Cu.getGlobalForObject(this.rawObj);
+      if (global) {
+        objGlobal = makeDebuggeeValue(this.targetActor, global);
+      }
+    }
+    return { global: this.createValueGrip(objGlobal, 0) };
   }
 
   /**

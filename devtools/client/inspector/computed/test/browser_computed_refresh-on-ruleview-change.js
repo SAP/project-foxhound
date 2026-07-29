@@ -86,7 +86,7 @@ add_task(async function () {
 });
 
 async function getValueEditor(ruleView) {
-  const ruleEditor = ruleView.element.children[0]._ruleEditor;
+  const ruleEditor = getRuleViewRuleEditorAt(ruleView, 0);
   const propEditor = ruleEditor.rule.textProps[0].editor;
   return focusEditableField(ruleView, propEditor.valueSpan);
 }

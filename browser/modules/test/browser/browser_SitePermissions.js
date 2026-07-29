@@ -31,7 +31,7 @@ add_task(async function testGetAllPermissionDetailsForBrowser() {
     "cookie",
     SitePermissions.ALLOW_COOKIES_FOR_SESSION
   );
-  SitePermissions.setForPrincipal(principal, "popup", SitePermissions.BLOCK);
+  SitePermissions.setForPrincipal(principal, "popup", SitePermissions.ALLOW);
   SitePermissions.setForPrincipal(
     principal,
     "geo",
@@ -41,7 +41,7 @@ add_task(async function testGetAllPermissionDetailsForBrowser() {
 
   SitePermissions.setForPrincipal(
     principal,
-    "localhost",
+    "loopback-network",
     SitePermissions.ALLOW,
     SitePermissions.SCOPE_SESSION
   );
@@ -86,13 +86,55 @@ add_task(async function testGetAllPermissionDetailsForBrowser() {
     scope: SitePermissions.SCOPE_PERSISTENT,
   });
 
+  // The label of the popup permission changes based on the current pref
+  // configuration. In testing, the default configuration is pop-up blocking
+  // disabled by default, and framebusting ("third-party redirect") protection
+  // enabled by default, so this is the first test case.
   let popup = permissions.find(({ id }) => id === "popup");
   Assert.deepEqual(popup, {
     id: "popup",
-    label: "Pop-ups and third-party redirects",
-    state: SitePermissions.BLOCK,
+    label: "Third-party redirects",
+    state: SitePermissions.ALLOW,
     scope: SitePermissions.SCOPE_PERSISTENT,
   });
+
+  // Now enable the pop-up blocker and check the different label
+  Services.prefs.setBoolPref("dom.disable_open_during_load", true);
+  permissions = SitePermissions.getAllPermissionDetailsForBrowser(browser);
+  popup = permissions.find(({ id }) => id === "popup");
+
+  Assert.deepEqual(popup, {
+    id: "popup",
+    label: "Pop-ups and third-party redirects",
+    state: SitePermissions.ALLOW,
+    scope: SitePermissions.SCOPE_PERSISTENT,
+  });
+
+  // Disable framebusting protection
+  Services.prefs.setBoolPref(
+    "dom.security.framebusting_intervention.enabled",
+    false
+  );
+  permissions = SitePermissions.getAllPermissionDetailsForBrowser(browser);
+  popup = permissions.find(({ id }) => id === "popup");
+
+  Assert.deepEqual(popup, {
+    id: "popup",
+    label: "Open pop-up windows",
+    state: SitePermissions.ALLOW,
+    scope: SitePermissions.SCOPE_PERSISTENT,
+  });
+
+  // Disable both pop-up blocker and framebusting protection
+  Services.prefs.setBoolPref("dom.disable_open_during_load", false);
+  permissions = SitePermissions.getAllPermissionDetailsForBrowser(browser);
+  popup = permissions.find(({ id }) => id === "popup");
+
+  Assert.equal(popup, undefined);
+
+  Services.prefs.clearUserPref(
+    "dom.security.framebusting_intervention.enabled"
+  );
 
   let geo = permissions.find(({ id }) => id === "geo");
   Assert.deepEqual(geo, {
@@ -103,9 +145,11 @@ add_task(async function testGetAllPermissionDetailsForBrowser() {
   });
 
   if (LOCAL_NETWORK_ACCESS_ENABLED) {
-    let localhost = permissions.find(({ id }) => id === "localhost");
-    Assert.deepEqual(localhost, {
-      id: "localhost",
+    let loopbackNetwork = permissions.find(
+      ({ id }) => id === "loopback-network"
+    );
+    Assert.deepEqual(loopbackNetwork, {
+      id: "loopback-network",
       label: "Access this device",
       state: SitePermissions.ALLOW,
       scope: SitePermissions.SCOPE_SESSION,
@@ -139,7 +183,7 @@ add_task(async function testGetAllPermissionDetailsForBrowser() {
   SitePermissions.removeFromPrincipal(principal, "cookie");
   SitePermissions.removeFromPrincipal(principal, "popup");
   SitePermissions.removeFromPrincipal(principal, "geo");
-  SitePermissions.removeFromPrincipal(principal, "localhost");
+  SitePermissions.removeFromPrincipal(principal, "loopback-network");
   SitePermissions.removeFromPrincipal(principal, "local-network");
   SitePermissions.removeFromPrincipal(principal, "shortcuts");
 

@@ -1,6 +1,16 @@
 const { NodeHTTP2Server } = ChromeUtils.importESModule(
   "resource://testing-common/NodeServer.sys.mjs"
 );
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
+
+// On Android the test servers run on the host and are reached through the
+// emulator's host-loopback alias (10.0.2.2). Resolving to 127.0.0.1 there would
+// route every request through ADB port forwarding, which can't sustain the ~100
+// concurrent connections this benchmark opens and causes intermittent failures.
+const responseIP =
+  AppConstants.platform == "android" ? "10.0.2.2" : "127.0.0.1";
 
 trr_test_setup();
 registerCleanupFunction(async () => {
@@ -17,9 +27,13 @@ add_setup(async function setup() {
   await trrServer.start();
   dump(`port = ${trrServer.port()}\n`);
 
+  // 10.0.2.2 (used on Android) is in the RFC1918 range, so TRR would reject the
+  // resolved address unless we explicitly allow it.
+  Services.prefs.setBoolPref("network.trr.allow-rfc1918", true);
+
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${trrServer.port()}/doh?responseIP=127.0.0.1`
+    `https://foo.example.com:${trrServer.port()}/doh?responseIP=${responseIP}`
   );
 
   http2Server = new NodeHTTP2Server();

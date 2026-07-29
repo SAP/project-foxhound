@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -174,14 +172,14 @@ const char* nsNameSpaceManager::GetNameSpaceDisplayName(uint32_t aNameSpaceID) {
 }
 
 nsresult NS_NewElement(Element** aResult,
-                       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+                       already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
                        FromParser aFromParser, const nsAString* aIs) {
   RefPtr<nsAtom> isAtom = aIs ? NS_AtomizeMainThread(*aIs) : nullptr;
   return NS_NewElement(aResult, std::move(aNodeInfo), aFromParser, isAtom);
 }
 
 nsresult NS_NewElement(Element** aResult,
-                       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+                       already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
                        FromParser aFromParser, nsAtom* aIsAtom,
                        CustomElementDefinition* aDefinition) {
   RefPtr<mozilla::dom::NodeInfo> ni = aNodeInfo;

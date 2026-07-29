@@ -27,6 +27,7 @@ Otherwise, we manage a pool of `VkFence` objects behind each `hal::Fence`.
 mod adapter;
 mod command;
 pub mod conv;
+mod descriptor;
 mod device;
 mod drm;
 mod instance;
@@ -37,14 +38,7 @@ mod swapchain;
 pub use adapter::PhysicalDeviceFeatures;
 
 use alloc::{boxed::Box, ffi::CString, sync::Arc, vec::Vec};
-use core::{
-    borrow::Borrow,
-    ffi::CStr,
-    fmt,
-    marker::PhantomData,
-    mem::{self, ManuallyDrop},
-    num::NonZeroU32,
-};
+use core::{borrow::Borrow, ffi::CStr, fmt, marker::PhantomData, mem, num::NonZeroU32};
 
 use arrayvec::ArrayVec;
 use ash::{ext, khr, vk};
@@ -191,8 +185,8 @@ pub struct Instance {
 }
 
 pub struct Surface {
-    inner: ManuallyDrop<Box<dyn swapchain::Surface>>,
     swapchain: RwLock<Option<Box<dyn swapchain::Swapchain>>>,
+    inner: Box<dyn swapchain::Surface>,
 }
 
 impl Surface {
@@ -299,6 +293,8 @@ struct DeviceExtensionFunctions {
     timeline_semaphore: Option<ExtensionFn<khr::timeline_semaphore::Device>>,
     ray_tracing: Option<RayTracingDeviceExtensionFunctions>,
     mesh_shading: Option<ext::mesh_shader::Device>,
+    #[cfg_attr(not(unix), allow(dead_code))]
+    external_memory_fd: Option<khr::external_memory_fd::Device>,
 }
 
 struct RayTracingDeviceExtensionFunctions {
@@ -495,6 +491,8 @@ struct DeviceShared {
     /// As above, for texture views.
     texture_view_identity_factory: ResourceIdentityFactory<vk::ImageView>,
 
+    empty_descriptor_set_layout: vk::DescriptorSetLayout,
+
     // The `drop_guard` field must be the last field of this struct so it is dropped last.
     // Do not add new fields after it.
     drop_guard: Option<crate::DropGuard>,
@@ -505,6 +503,10 @@ impl Drop for DeviceShared {
         for &raw in self.render_passes.lock().values() {
             unsafe { self.raw.destroy_render_pass(raw, None) };
         }
+        unsafe {
+            self.raw
+                .destroy_descriptor_set_layout(self.empty_descriptor_set_layout, None)
+        };
         if self.drop_guard.is_none() {
             unsafe { self.raw.destroy_device(None) };
         }
@@ -513,8 +515,7 @@ impl Drop for DeviceShared {
 
 pub struct Device {
     mem_allocator: Mutex<gpu_allocator::vulkan::Allocator>,
-    desc_allocator:
-        Mutex<gpu_descriptor::DescriptorAllocator<vk::DescriptorPool, vk::DescriptorSet>>,
+    desc_allocator: Mutex<descriptor::DescriptorAllocator>,
     valid_ash_memory_types: u32,
     naga_options: naga::back::spv::Options<'static>,
     #[cfg(feature = "renderdoc")]
@@ -526,9 +527,7 @@ pub struct Device {
 }
 
 impl Drop for Device {
-    fn drop(&mut self) {
-        unsafe { self.desc_allocator.lock().cleanup(&*self.shared) };
-    }
+    fn drop(&mut self) {}
 }
 
 /// Semaphores for forcing queue submissions to run in order.
@@ -612,6 +611,7 @@ pub struct Queue {
     family_index: u32,
     relay_semaphores: Mutex<RelaySemaphores>,
     signal_semaphores: Mutex<SemaphoreList>,
+    wait_semaphores: Mutex<SemaphoreList>,
 }
 
 impl Queue {
@@ -654,10 +654,28 @@ impl BufferMemoryBacking {
         }
     }
 }
+/// Describes who owns a [`Buffer`]'s `vk::Buffer` handle and its backing memory,
+/// and therefore what cleanup is required when the buffer is destroyed.
+#[derive(Debug)]
+enum BufferOwnership {
+    /// wgpu-hal owns the `vk::Buffer` and its backing memory. On cleanup the buffer
+    /// handle is destroyed and the memory is released.
+    Managed(Mutex<BufferMemoryBacking>),
+    /// wgpu-hal owns the `vk::Buffer` handle but the backing memory is kept alive
+    /// by the caller. On cleanup only the buffer handle is destroyed.
+    RawHandle,
+    /// Caller owns the `vk::Buffer` and its backing memory. On cleanup the
+    /// [`crate::DropGuard`] runs the caller's cleanup callback and wgpu-hal touches
+    /// neither the handle nor the memory.
+    External(crate::DropGuard),
+}
+
 #[derive(Debug)]
 pub struct Buffer {
     raw: vk::Buffer,
-    allocation: Option<Mutex<BufferMemoryBacking>>,
+
+    // This field must be last, because it may contain a `DropGuard` which needs to be dropped after all other fields.
+    ownership: BufferOwnership,
 }
 impl Buffer {
     /// # Safety
@@ -667,9 +685,25 @@ impl Buffer {
     pub unsafe fn from_raw(vk_buffer: vk::Buffer) -> Self {
         Self {
             raw: vk_buffer,
-            allocation: None,
+            ownership: BufferOwnership::RawHandle,
         }
     }
+
+    /// # Safety
+    /// - `vk_buffer` must outlive the returned `Buffer`.
+    /// - wgpu-hal will NOT call `vkDestroyBuffer`; the caller remains responsible for the buffer handle's destruction.
+    ///   The `drop_callback` runs when the `Buffer` drops and may be used to release caller-side bookkeeping.
+    /// - Externally imported buffers can't be mapped by `wgpu`.
+    pub unsafe fn from_raw_externally_owned(
+        vk_buffer: vk::Buffer,
+        drop_callback: crate::DropCallback,
+    ) -> Self {
+        Self {
+            raw: vk_buffer,
+            ownership: BufferOwnership::External(crate::DropGuard::new(drop_callback)),
+        }
+    }
+
     /// # Safety
     /// - We will use this buffer and the buffer's backing memory range as if we have exclusive ownership over it, until the wgpu resource is dropped and the wgpu-hal object is cleaned up
     /// - Externally imported buffers can't be mapped by `wgpu`
@@ -682,12 +716,18 @@ impl Buffer {
     ) -> Self {
         Self {
             raw: vk_buffer,
-            allocation: Some(Mutex::new(BufferMemoryBacking::VulkanMemory {
+            ownership: BufferOwnership::Managed(Mutex::new(BufferMemoryBacking::VulkanMemory {
                 memory,
                 offset,
                 size,
             })),
         }
+    }
+
+    /// # Safety
+    /// - The buffer handle must not be manually destroyed
+    pub unsafe fn raw_handle(&self) -> vk::Buffer {
+        self.raw
     }
 }
 
@@ -799,7 +839,7 @@ struct BindingInfo {
 #[derive(Debug)]
 pub struct BindGroupLayout {
     raw: vk::DescriptorSetLayout,
-    desc_count: gpu_descriptor::DescriptorTotalCount,
+    desc_count: descriptor::DescriptorCounts,
     /// Sorted list of entries.
     entries: Box<[wgt::BindGroupLayoutEntry]>,
     /// Map of original binding index to remapped binding index and optional
@@ -820,7 +860,7 @@ impl crate::DynPipelineLayout for PipelineLayout {}
 
 #[derive(Debug)]
 pub struct BindGroup {
-    set: gpu_descriptor::DescriptorSet<vk::DescriptorSet>,
+    set: descriptor::DescriptorSet,
 }
 
 impl crate::DynBindGroup for BindGroup {}
@@ -1122,14 +1162,29 @@ pub enum Fence {
     /// for each queue submission we might want to wait for, and remember which
     /// [`FenceValue`] each one represents.
     ///
+    /// One should keep the fence pool read while there are any references to the
+    /// fences inside of them. This ensures there are no race conditions when
+    /// resetting the fences
+    ///
     /// [fence]: https://registry.khronos.org/vulkan/specs/1.3-extensions/html/vkspec.html#synchronization-fences
     /// [`FenceValue`]: crate::FenceValue
-    FencePool {
-        last_completed: crate::FenceValue,
-        /// The pending fence values have to be ascending.
-        active: Vec<(crate::FenceValue, vk::Fence)>,
-        free: Vec<vk::Fence>,
-    },
+    FencePool(RwLock<FencePool>),
+}
+
+/// A shared fence type. The arc is expect to have a ref-count of one once a function has finished being called
+///
+/// A fence should have access synchronised as fence resetting might happen at any point. Resetting checks the ref-count
+/// of the fence, so instead of copying the fence, it should have its `Arc` container cloned which shows not to reset
+/// this fence as it is being used.
+pub(super) type SynchronizedFence = Arc<vk::Fence>;
+
+#[derive(Debug)]
+pub struct FencePool {
+    last_completed: crate::FenceValue,
+    /// The pending fence values have to be ascending.
+    active: Vec<(crate::FenceValue, SynchronizedFence)>,
+    // Don't need extra synchronisation around the fences here, if they are used they should be put into active.
+    free: Vec<vk::Fence>,
 }
 
 impl crate::DynFence for Fence {}
@@ -1146,13 +1201,15 @@ impl Fence {
     fn check_active(
         device: &ash::Device,
         mut last_completed: crate::FenceValue,
-        active: &[(crate::FenceValue, vk::Fence)],
+        active: &[(crate::FenceValue, SynchronizedFence)],
     ) -> Result<crate::FenceValue, crate::DeviceError> {
-        for &(value, raw) in active.iter() {
+        for &(value, ref raw) in active.iter() {
             unsafe {
                 if value > last_completed
                     && device
-                        .get_fence_status(raw)
+                        // Don't need to clone as active should be from a read or
+                        // write lock which means this is already synchronised.
+                        .get_fence_status(**raw)
                         .map_err(map_host_device_oom_and_lost_err)?
                 {
                     last_completed = value;
@@ -1181,11 +1238,14 @@ impl Fence {
                         .map_err(map_host_device_oom_and_lost_err)?,
                 })
             },
-            Self::FencePool {
-                last_completed,
-                ref active,
-                free: _,
-            } => Self::check_active(device, last_completed, active),
+            Self::FencePool(ref pool) => {
+                let FencePool {
+                    last_completed,
+                    ref active,
+                    free: _,
+                } = *pool.read();
+                Self::check_active(device, last_completed, active)
+            }
         }
     }
 
@@ -1201,23 +1261,35 @@ impl Fence {
     ///
     /// [`FencePool`]: Fence::FencePool
     /// [`Queue::submit`]: crate::Queue::submit
-    fn maintain(&mut self, device: &ash::Device) -> Result<(), crate::DeviceError> {
+    fn maintain(&self, device: &ash::Device) -> Result<(), crate::DeviceError> {
         match *self {
             Self::TimelineSemaphore(_) => {}
-            Self::FencePool {
-                ref mut last_completed,
-                ref mut active,
-                ref mut free,
-            } => {
-                let latest = Self::check_active(device, *last_completed, active)?;
+            Self::FencePool(ref pool) => {
+                let FencePool {
+                    ref mut last_completed,
+                    ref mut active,
+                    ref mut free,
+                } = *pool.write();
+
                 let base_free = free.len();
-                for &(value, raw) in active.iter() {
-                    if value <= latest {
-                        free.push(raw);
+                let latest = Self::check_active(device, *last_completed, active)?;
+
+                active.retain_mut(|&mut (value, ref mut fence)| {
+                    if value > latest {
+                        true
+                    } else if let Some(fence) = Arc::get_mut(fence) {
+                        // No other references to these, so we have exclusive access. Add them to free and reset them later,
+                        // but drop them from active immediately
+                        free.push(*fence);
+                        false
+                    } else {
+                        // some other function is using it. Although this shouldn't be to long,
+                        // maintain shouldn't block, and it should be cleared up by the next time it happens
+                        true
                     }
-                }
+                });
+
                 if free.len() != base_free {
-                    active.retain(|&(value, _)| value > latest);
                     unsafe { device.reset_fences(&free[base_free..]) }
                         .map_err(map_device_oom_err)?
                 }
@@ -1235,7 +1307,7 @@ impl crate::Queue for Queue {
         &self,
         command_buffers: &[&CommandBuffer],
         surface_textures: &[&SurfaceTexture],
-        (signal_fence, signal_value): (&mut Fence, crate::FenceValue),
+        (signal_fence, signal_value): (&Fence, crate::FenceValue),
     ) -> Result<(), crate::DeviceError> {
         let mut fence_raw = vk::Fence::null();
 
@@ -1283,6 +1355,11 @@ impl crate::Queue for Queue {
             signal_semaphores.append(&mut guard);
         }
 
+        let mut wait_guard = self.wait_semaphores.lock();
+        if !wait_guard.is_empty() {
+            wait_semaphores.append(&mut wait_guard);
+        }
+
         // In order for submissions to be strictly ordered, we encode a dependency between each submission
         // using a pair of semaphores. This adds a wait if it is needed, and signals the next semaphore.
         let semaphore_state = self.relay_semaphores.lock().advance(&self.device)?;
@@ -1298,25 +1375,33 @@ impl crate::Queue for Queue {
 
         // We need to signal our wgpu::Fence if we have one, this adds it to the signal list.
         signal_fence.maintain(&self.device.raw)?;
+        // Keeping the Arc around is probably unneeded - the fence should never be signaled as it was reset,
+        // and newer submits should not happen until this submit is done. Therefore, it should be too high
+        // to be reset.
+        let shared_fence;
         match *signal_fence {
             Fence::TimelineSemaphore(raw) => {
                 signal_semaphores.push_signal(SemaphoreType::Timeline(raw, signal_value));
             }
-            Fence::FencePool {
-                ref mut active,
-                ref mut free,
-                ..
-            } => {
-                fence_raw = match free.pop() {
-                    Some(raw) => raw,
+            Fence::FencePool(ref pool) => {
+                let FencePool {
+                    ref mut active,
+                    ref mut free,
+                    ..
+                } = *pool.write();
+                shared_fence = match free.pop() {
+                    Some(raw) => Arc::new(raw),
                     None => unsafe {
-                        self.device
+                        let fence = self
+                            .device
                             .raw
                             .create_fence(&vk::FenceCreateInfo::default(), None)
-                            .map_err(map_host_device_oom_err)?
+                            .map_err(map_host_device_oom_err)?;
+                        Arc::new(fence)
                     },
                 };
-                active.push((signal_value, fence_raw));
+                fence_raw = *shared_fence;
+                active.push((signal_value, shared_fence.clone()));
             }
         }
 
@@ -1357,6 +1442,11 @@ impl crate::Queue for Queue {
     unsafe fn get_timestamp_period(&self) -> f32 {
         self.device.timestamp_period
     }
+
+    unsafe fn wait_for_idle(&self) -> Result<(), crate::DeviceError> {
+        unsafe { self.device.raw.queue_wait_idle(self.raw) }
+            .map_err(map_host_device_oom_and_lost_err)
+    }
 }
 
 impl Queue {
@@ -1371,6 +1461,47 @@ impl Queue {
         } else {
             guard.push_signal(SemaphoreType::Binary(semaphore));
         }
+    }
+
+    /// Remove `semaphore` from the pending signal list if it is still present.
+    ///
+    /// Returns `true` if the semaphore was found and removed. If the submit
+    /// already consumed it, this is a harmless no-op that returns `false`.
+    pub fn remove_signal_semaphore(&self, semaphore: vk::Semaphore) -> bool {
+        self.signal_semaphores.lock().remove(semaphore)
+    }
+
+    /// Stage a semaphore wait on the next [`crate::Queue::submit`] call.
+    ///
+    /// `semaphore_value` selects the kind of payload the wait targets:
+    ///
+    /// - `Some(value)` - wait until `semaphore` (a timeline semaphore) has been signalled to at least `value`.
+    /// - `None` - wait on a binary semaphore signal.
+    ///
+    /// `stage` is the pipeline stage at which the wait blocks downstream
+    /// work (e.g. `vk::PipelineStageFlags::TOP_OF_PIPE` to gate the
+    /// entire submission, or a more specific stage when only that stage
+    /// reads the synchronised resource).
+    pub fn add_wait_semaphore(
+        &self,
+        semaphore: vk::Semaphore,
+        semaphore_value: Option<u64>,
+        stage: vk::PipelineStageFlags,
+    ) {
+        let mut guard = self.wait_semaphores.lock();
+        if let Some(value) = semaphore_value {
+            guard.push_wait(SemaphoreType::Timeline(semaphore, value), stage);
+        } else {
+            guard.push_wait(SemaphoreType::Binary(semaphore), stage);
+        }
+    }
+
+    /// Remove `semaphore` from the pending wait list if it is still present.
+    ///
+    /// Returns `true` if the semaphore was found and removed. If the submit
+    /// already consumed it, this is a no-op that returns `false`.
+    pub fn remove_wait_semaphore(&self, semaphore: vk::Semaphore) -> bool {
+        self.wait_semaphores.lock().remove(semaphore)
     }
 }
 
@@ -1395,6 +1526,18 @@ fn map_host_device_oom_err(err: vk::Result) -> crate::DeviceError {
 fn map_host_device_oom_and_lost_err(err: vk::Result) -> crate::DeviceError {
     match err {
         vk::Result::ERROR_DEVICE_LOST => get_lost_err(),
+        other => map_host_device_oom_err(other),
+    }
+}
+
+/// Maps
+///
+/// - VK_ERROR_OUT_OF_HOST_MEMORY
+/// - VK_ERROR_OUT_OF_DEVICE_MEMORY
+/// - VK_ERROR_FRAGMENTATION
+fn map_host_device_oom_and_fragmentation_err(err: vk::Result) -> crate::DeviceError {
+    match err {
+        vk::Result::ERROR_FRAGMENTATION => get_oom_err(err),
         other => map_host_device_oom_err(other),
     }
 }

@@ -6,7 +6,7 @@
   file, You can obtain one at http://mozilla.org/MPL/2.0/.
 -->
 
-<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
+<resources>
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
   <string name="app_name_private_5">Uslig %s</string>
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
@@ -31,10 +31,6 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Aseksel uslig amaynu</string>
   <!-- Content description (not visible, for screen readers etc.): Stop loading current website -->
   <string name="browser_menu_stop">Sbedd</string>
-  <!-- Browser menu button that sends a user to help articles -->
-  <string name="browser_menu_help" tools:ignore="UnusedResources" moz:removedIn="149">Tiwisi</string>
-  <!-- Browser menu button that sends a to a the what's new article -->
-  <string name="browser_menu_whats_new" tools:ignore="UnusedResources" moz:removedIn="149">Amaynu</string>
   <!-- Browser menu button that opens the settings menu -->
   <string name="browser_menu_settings">Tisɣal</string>
   <!-- Browser menu button that opens a user's library -->
@@ -50,16 +46,10 @@
   <string name="browser_menu_open_in_fenix">Rẓem g %1$s</string>
   <!-- Browser menu button to open the current page in an external app -->
   <string name="browser_menu_open_app_link">Rẓem g tsensi</string>
-  <!-- Browser menu label for adding a bookmark -->
-  <string name="browser_menu_add" tools:ignore="UnusedResources" moz:removedIn="149">Rnu</string>
-  <!-- Browser menu label for editing a bookmark -->
-  <string name="browser_menu_edit" tools:ignore="UnusedResources" moz:removedIn="149">Ẓreg</string>
   <!-- Text for default locale item -->
   <string name="default_locale_text">Ḍfer tutlay n wallal</string>
   <!-- Placeholder text shown in the search bar before a user enters text -->
   <string name="locale_search_hint">Tutlayt n urezzu</string>
-  <!-- Button in the search view when shortcuts are displayed that takes a user to the search engine settings -->
-  <string name="search_shortcuts_engine_settings">Tisɣal n unesmassu n urezzu</string>
   <!-- Button in the search suggestions onboarding that allows search suggestions in private sessions -->
   <string name="search_suggestions_onboarding_allow_button">ssureg</string>
   <!-- Button in the search suggestions onboarding that does not allow search suggestions in private sessions -->
@@ -137,8 +127,6 @@
     Option in Library to open Downloads page
   -->
   <string name="library_downloads">Agamen</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">Aseksel amaynu</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Tisɣal</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -181,18 +169,12 @@
   <string name="add_tab">Rnu aseksel</string>
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">Rnu aseksel uslig</string>
-  <!-- Text for the new tab button to indicate adding a new private tab in the tab -->
-  <string name="tab_drawer_fab_content" tools:ignore="UnusedResources" moz:removedIn="149">Uslig</string>
-  <!-- Text shown in the menu for sharing all tabs -->
-  <string name="tab_tray_menu_item_share" tools:ignore="UnusedResources" moz:removedIn="149">Bḍu akkʷ iseksal</string>
   <!-- Text shown in the menu to view account settings -->
   <string name="tab_tray_menu_account_settings">Tisɣal n umiḍan</string>
   <!-- Text shown in the menu to view tab settings -->
   <string name="tab_tray_menu_tab_settings">Tisɣal n useksel</string>
   <!-- Text shown in the menu for closing all tabs -->
   <string name="tab_tray_menu_item_close">Mdel akkʷ iseksal</string>
-  <!-- Text shown in the multiselect menu for closing selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_close" tools:ignore="UnusedResources" moz:removedIn="149">Mḍel</string>
   <!-- Text for button to enter multiselect mode in tabs tray -->
   <string name="tabs_tray_select_tabs">Fren iseksal</string>
   <!-- Content description (not visible, for screen readers etc.): Close tab button. Closes the current session when pressed -->
@@ -237,10 +219,6 @@
   <string name="edit_bookmark_folder_fragment_title">ẓreg asdaw</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">ASDAW</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">ISEM</string>
   <!--
     Site Permissions
 
@@ -298,8 +276,6 @@
   <string name="preferences_delete_browsing_data_browsing_data_subtitle">%d n tansiwin</string>
   <!-- Title for the downloads item in Delete browsing data -->
   <string name="preferences_delete_browsing_data_downloads">Agamen</string>
-  <!-- Action item in menu for the Delete browsing data on quit feature -->
-  <string name="delete_browsing_data_on_quit_action" tools:ignore="UnusedResources" moz:removedIn="149">Ffeɣ</string>
   <!-- Text for the allow button for the data deletion dialog -->
   <string name="delete_browsing_data_prompt_allow">Kkes</string>
   <!-- Header for categories that are being not being blocked by current Enhanced Tracking Protection settings -->
@@ -340,18 +316,12 @@
   <string name="phone_feature_blocked_intro">Ssureg-t:</string>
   <!-- First step for the allowing a permission -->
   <string name="phone_feature_blocked_step_settings">1. Ddu ɣer tisɣal n Android</string>
-  <!-- Login overflow menu delete button -->
-  <string name="login_menu_delete_button" tools:ignore="UnusedResources" moz:removedIn="149">Kkes</string>
-  <!-- Login overflow menu edit button -->
-  <string name="login_menu_edit_button" tools:ignore="UnusedResources" moz:removedIn="149">Ẓreg</string>
   <!-- Positive action of a dialog asking to delete -->
   <string name="dialog_delete_positive">Kkes</string>
   <!-- Voice search prompt description displayed after the user presses the voice search button -->
   <string name="voice_search_explainer">ssiwel dɣi</string>
   <!-- Title text displayed in the rename top site dialog. -->
   <string name="top_sites_rename_dialog_title">Isem</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">Kkes</string>
   <!-- Translations feature -->
 
   <!-- TextField Design System Component -->

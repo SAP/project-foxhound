@@ -68,7 +68,7 @@ add_task(async function test_full_page_e2e_eval() {
 
   Assert.notEqual(sourceText, translatedText, "The text was translated.");
 
-  reportEvalResult({
+  MLTestUtils.reportEvalData({
     type: "translation",
     src: sourceText,
     trg: translatedText,

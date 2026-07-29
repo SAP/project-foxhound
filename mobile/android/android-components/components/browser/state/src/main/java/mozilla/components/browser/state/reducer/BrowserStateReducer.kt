@@ -29,6 +29,7 @@ import mozilla.components.browser.state.action.RestoreCompleteAction
 import mozilla.components.browser.state.action.SearchAction
 import mozilla.components.browser.state.action.ShareResourceAction
 import mozilla.components.browser.state.action.SystemAction
+import mozilla.components.browser.state.action.SystemPermissionRequestAction
 import mozilla.components.browser.state.action.TabGroupAction
 import mozilla.components.browser.state.action.TabListAction
 import mozilla.components.browser.state.action.TrackingProtectionAction
@@ -83,6 +84,7 @@ internal object BrowserStateReducer {
             is AwesomeBarAction -> AwesomeBarStateReducer.reduce(state, action)
             is UpdateDistribution -> state.copy(distributionId = action.distributionId)
             is DefaultDesktopModeAction -> DesktopModeReducer.reduce(state = state, action = action)
+            is SystemPermissionRequestAction -> SystemPermissionReducer.reduce(state, action)
         }
     }
 }

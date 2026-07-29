@@ -129,7 +129,7 @@ RTCRtpSender::RTCRtpSender(nsPIDOMWindowInner* aWindow, PeerConnectionImpl* aPc,
   mPipeline->InitControl(this);
 
   if (aConduit->type() == MediaSessionConduit::AUDIO) {
-    mDtmf = new RTCDTMFSender(aWindow, mTransceiver);
+    mDtmf = MakeRefPtr<RTCDTMFSender>(aWindow, mTransceiver);
   }
   mPipeline->SetTrack(mSenderTrack);
 
@@ -188,14 +188,6 @@ already_AddRefed<Promise> RTCRtpSender::GetStats(ErrorResult& aError) {
   if (aError.Failed()) {
     return nullptr;
   }
-  if (NS_WARN_IF(!mPipeline)) {
-    // TODO(bug 1056433): When we stop nulling this out when the PC is closed
-    // (or when the transceiver is stopped), we can remove this code. We
-    // resolve instead of reject in order to make this eventual change in
-    // behavior a little smaller.
-    promise->MaybeResolve(new RTCStatsReport(mWindow));
-    return promise.forget();
-  }
 
   mTransceiver->ChainToDomPromiseWithCodecStats(GetStatsInternal(), promise);
   return promise.forget();
@@ -215,6 +207,8 @@ nsTArray<RefPtr<dom::RTCStatsPromise>> RTCRtpSender::GetStatsInternal(
   }
 
   std::string mid = mTransceiver->GetMidAscii();
+  nsString transportId =
+      NS_ConvertASCIItoUTF16(GetJsepTransceiver().mTransport.mTransportId);
   std::map<uint32_t, std::string> videoSsrcToRidMap;
   const auto encodings = mVideoCodec.Ref().andThen(
       [](const auto& aCodec) { return SomeRef(aCodec.mEncodings); });
@@ -256,6 +250,7 @@ nsTArray<RefPtr<dom::RTCStatsPromise>> RTCRtpSender::GetStatsInternal(
   promises.AppendElement(InvokeAsync(
       mPipeline->mCallThread, __func__,
       [pipeline = mPipeline, trackName, mid = std::move(mid),
+       transportId = std::move(transportId),
        videoSsrcToRidMap = std::move(videoSsrcToRidMap), isSending,
        audioCodec = mAudioCodec.Ref()] {
         auto report = MakeUnique<dom::RTCStatsCollection>();
@@ -293,6 +288,9 @@ nsTArray<RefPtr<dom::RTCStatsPromise>> RTCRtpSender::GetStatsInternal(
                 aRemote.mMediaType.Construct(
                     kind);  // mediaType is the old name for kind.
                 aRemote.mLocalId.Construct(localId);
+                if (!transportId.IsEmpty()) {
+                  aRemote.mTransportId.Construct(transportId);
+                }
                 if (base_seq) {
                   if (aRtcpData.extended_highest_sequence_number() <
                       *base_seq) {
@@ -334,6 +332,9 @@ nsTArray<RefPtr<dom::RTCStatsPromise>> RTCRtpSender::GetStatsInternal(
                 if (!mid.empty()) {
                   aLocal.mMid.Construct(NS_ConvertUTF8toUTF16(mid).get());
                 }
+                if (!transportId.IsEmpty()) {
+                  aLocal.mTransportId.Construct(transportId);
+                }
               };
 
           auto constructCommonMediaSourceStats =
@@ -366,16 +367,10 @@ nsTArray<RefPtr<dom::RTCStatsPromise>> RTCRtpSender::GetStatsInternal(
             // ReceiverReports have less information than SenderReports, so fill
             // in what we can.
             Maybe<webrtc::ReportBlockData> reportBlockData;
-            {
-              if (const auto remoteSsrc = aConduit->GetRemoteSSRC();
-                  remoteSsrc) {
-                for (auto& data : audioStats->report_block_datas) {
-                  if (data.source_ssrc() == ssrc &&
-                      data.sender_ssrc() == *remoteSsrc) {
-                    reportBlockData.emplace(data);
-                    break;
-                  }
-                }
+            for (auto& data : audioStats->report_block_datas) {
+              if (data.source_ssrc() == ssrc) {
+                reportBlockData.emplace(data);
+                break;
               }
             }
             reportBlockData.apply([&](auto& aReportBlockData) {
@@ -1030,8 +1025,9 @@ struct ParametersAndLevel {
 };
 
 // We can not directly compare H264 or AV1 FMTP parameter sets, since the level
-// and subprofile information must be treated seperately as a hiearchical value.
-//  So we need to seperate the regular parameters from profile-level-id for
+// and subprofile information must be treated separately as a hierarchical
+// value.
+//  So we need to separate the regular parameters from profile-level-id for
 // H264, and levelidx for AV1. This is done by parsing the FMTP line into a set
 // of key-value pairs and a level/subprofile value. If the FMTP line is not in
 // a key-value pair format, then we return an empty parameter set.
@@ -1499,7 +1495,7 @@ void RTCRtpSender::SetStreamsImpl(
     nsString id;
     stream->GetId(id);
     if (!ids.count(id)) {
-      ids.insert(id);
+      ids.insert(std::move(id));
       mStreams.AppendElement(stream);
     }
   }
@@ -1553,9 +1549,9 @@ RefPtr<dom::Promise> ReplaceTrackOperation::CallImpl(ErrorResult& aError) {
     if (aError.Failed()) {
       return nullptr;
     }
-    MOZ_LOG(gSenderLog, LogLevel::Debug,
-            ("%s Cannot call replaceTrack when transceiver is stopping",
-             __FUNCTION__));
+    MOZ_LOG_FMT(gSenderLog, LogLevel::Debug,
+                "{} Cannot call replaceTrack when transceiver is stopping",
+                __FUNCTION__);
     error->MaybeRejectWithInvalidStateError(
         "Cannot call replaceTrack when transceiver is stopping");
     return error;
@@ -1568,8 +1564,8 @@ RefPtr<dom::Promise> ReplaceTrackOperation::CallImpl(ErrorResult& aError) {
   }
 
   if (!sender->SeamlessTrackSwitch(mNewTrack)) {
-    MOZ_LOG(gSenderLog, LogLevel::Info,
-            ("%s Could not seamlessly replace track", __FUNCTION__));
+    MOZ_LOG_FMT(gSenderLog, LogLevel::Info,
+                "{} Could not seamlessly replace track", __FUNCTION__);
     p->MaybeRejectWithInvalidModificationError(
         "Could not seamlessly replace track");
     return p;
@@ -1611,14 +1607,14 @@ already_AddRefed<dom::Promise> RTCRtpSender::ReplaceTrack(
     }
   }
 
-  MOZ_LOG(gSenderLog, LogLevel::Debug,
-          ("%s[%s]: %s (%p to %p)", mPc->GetHandle().c_str(), GetMid().c_str(),
-           __FUNCTION__, mSenderTrack.get(), aWithTrack));
+  MOZ_LOG_FMT(gSenderLog, LogLevel::Debug, "{}[{}]: {} ({} to {})",
+              mPc->GetHandle().c_str(), GetMid().c_str(), __FUNCTION__,
+              fmt::ptr(mSenderTrack.get()), fmt::ptr(aWithTrack));
 
   // Return the result of chaining the following steps to connection's
   // operations chain:
-  RefPtr<PeerConnectionImpl::Operation> op =
-      new ReplaceTrackOperation(mPc, mTransceiver, aWithTrack, aError);
+  RefPtr op =
+      MakeRefPtr<ReplaceTrackOperation>(mPc, mTransceiver, aWithTrack, aError);
   if (aError.Failed()) {
     return nullptr;
   }
@@ -1739,9 +1735,9 @@ void RTCRtpSender::MaybeUpdateConduit() {
   }
 
   if (!mSenderTrack && !wasTransmitting && mTransmitting) {
-    MOZ_LOG(gSenderLog, LogLevel::Debug,
-            ("%s[%s]: %s Starting transmit conduit without send track!",
-             mPc->GetHandle().c_str(), GetMid().c_str(), __FUNCTION__));
+    MOZ_LOG_FMT(gSenderLog, LogLevel::Debug,
+                "{}[{}]: {} Starting transmit conduit without send track!",
+                mPc->GetHandle().c_str(), GetMid().c_str(), __FUNCTION__);
   }
 }
 
@@ -1836,7 +1832,7 @@ void RTCRtpSender::SyncToJsep(JsepTransceiver& aJsepTransceiver) const {
     stream->GetId(wideStreamId);
     std::string streamId = NS_ConvertUTF16toUTF8(wideStreamId).get();
     MOZ_ASSERT(!streamId.empty());
-    streamIds.push_back(streamId);
+    streamIds.push_back(std::move(streamId));
   }
 
   aJsepTransceiver.mSendTrack.UpdateStreamIds(streamIds);
@@ -1964,9 +1960,9 @@ Maybe<RTCRtpSender::VideoConfig> RTCRtpSender::GetNewVideoConfig() {
     // seem like a failure to set an answer, it just means that codec
     // negotiation failed. For now, we're just doing the same thing we do
     // if negotiation as a whole failed.
-    MOZ_LOG(gSenderLog, LogLevel::Error,
-            ("%s[%s]: %s  No video codecs were negotiated (send).",
-             mPc->GetHandle().c_str(), GetMid().c_str(), __FUNCTION__));
+    MOZ_LOG_FMT(gSenderLog, LogLevel::Error,
+                "{}[{}]: {}  No video codecs were negotiated (send).",
+                mPc->GetHandle().c_str(), GetMid().c_str(), __FUNCTION__);
     return Nothing();
   }
 
@@ -2024,9 +2020,9 @@ Maybe<RTCRtpSender::VideoConfig> RTCRtpSender::GetNewVideoConfig() {
   newConfig.mVideoRtpRtcpConfig = Some(details.GetRtpRtcpConfig());
 
   if (newConfig == oldConfig) {
-    MOZ_LOG(gSenderLog, LogLevel::Debug,
-            ("%s[%s]: %s  No change in video config", mPc->GetHandle().c_str(),
-             GetMid().c_str(), __FUNCTION__));
+    MOZ_LOG_FMT(gSenderLog, LogLevel::Debug,
+                "{}[{}]: {}  No change in video config",
+                mPc->GetHandle().c_str(), GetMid().c_str(), __FUNCTION__);
     return Nothing();
   }
 
@@ -2061,9 +2057,9 @@ Maybe<RTCRtpSender::AudioConfig> RTCRtpSender::GetNewAudioConfig() {
       // seem like a failure to set an answer, it just means that codec
       // negotiation failed. For now, we're just doing the same thing we do
       // if negotiation as a whole failed.
-      MOZ_LOG(gSenderLog, LogLevel::Error,
-              ("%s[%s]: %s No audio codecs were negotiated (send)",
-               mPc->GetHandle().c_str(), GetMid().c_str(), __FUNCTION__));
+      MOZ_LOG_FMT(gSenderLog, LogLevel::Error,
+                  "{}[{}]: {} No audio codecs were negotiated (send)",
+                  mPc->GetHandle().c_str(), GetMid().c_str(), __FUNCTION__);
       return Nothing();
     }
 
@@ -2115,9 +2111,9 @@ Maybe<RTCRtpSender::AudioConfig> RTCRtpSender::GetNewAudioConfig() {
   }
 
   if (newConfig == oldConfig) {
-    MOZ_LOG(gSenderLog, LogLevel::Debug,
-            ("%s[%s]: %s  No change in audio config", mPc->GetHandle().c_str(),
-             GetMid().c_str(), __FUNCTION__));
+    MOZ_LOG_FMT(gSenderLog, LogLevel::Debug,
+                "{}[{}]: {}  No change in audio config",
+                mPc->GetHandle().c_str(), GetMid().c_str(), __FUNCTION__);
     return Nothing();
   }
 
@@ -2139,7 +2135,7 @@ void RTCRtpSender::UpdateBaseConfig(BaseConfig* aConfig) {
           [&extmaps](const SdpExtmapAttributeList::Extmap& extmap) {
             extmaps.emplace_back(extmap.extensionname, extmap.entry);
           });
-      aConfig->mLocalRtpExtensions = extmaps;
+      aConfig->mLocalRtpExtensions = std::move(extmaps);
     }
   }
   // RTCRtpTransceiver::IsSending is updated after negotiation completes, in a

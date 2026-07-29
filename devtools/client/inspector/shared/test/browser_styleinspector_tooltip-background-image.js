@@ -5,176 +5,361 @@
 
 // Test that background-image URLs have image preview tooltips in the rule-view
 // and computed-view
-
-const TEST_URI = `
-  <style type="text/css">
-    body {
-      padding: 1em;
-      background-image: url(data:image/png;base64,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);
-      background-repeat: repeat-y;
-      background-position: right top;
-    }
-    .test-element {
-      font-family: verdana;
-      color: #333;
-      background: url(chrome://global/skin/icons/help.svg) no-repeat left center;
-      padding-left: 70px;
-    }
-  </style>
-  <div class="test-element">test element</div>
-`;
+const TEST_URI = TEST_URL_ROOT + "doc_content_background_image.html";
 
 add_task(async function () {
-  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let { inspector, view } = await openRuleView();
+  await addTab(TEST_URI);
+  const { inspector, view } = await openRuleView();
 
-  info("Testing the background-image property on the body rule");
-  await testBodyRuleView(view);
+  await testCase({
+    inspector,
+    view,
+    nodeSelector: "body",
+    propertyName: "background-image",
+    expectedUrl:
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHe",
+  });
 
-  info("Selecting the test div node");
-  await selectNode(".test-element", inspector);
-  info("Testing the the background property on the .test-element rule");
-  await testDivRuleView(view);
+  await testCase({
+    inspector,
+    view,
+    nodeSelector: ".test-element",
+    propertyName: "background",
+    expectedUrl: "chrome://global/skin/icons/help.svg",
+  });
+
+  await testCase({
+    inspector,
+    view,
+    nodeSelector: ".in-stylesheet.relative",
+    propertyName: "background",
+    expectedUrl:
+      "https://example.com/browser/devtools/client/inspector/shared/test/test-image.png",
+    // We're only doing extra assertions here as it can be quite long, and here we can cover
+    // multiple cases (in the declaration value, in declaration expanded computed section,
+    // in the computed panel)
+    computedPropertyName: "background-image",
+    checkUrlClick: true,
+  });
+
+  await testCase({
+    inspector,
+    view,
+    nodeSelector: ".in-stylesheet.absolute",
+    propertyName: "background",
+    expectedUrl:
+      "https://example.com/browser/devtools/client/inspector/shared/test/test-image.png",
+  });
+
+  await testCase({
+    inspector,
+    view,
+    nodeSelector: ".in-style-tag.absolute",
+    propertyName: "background",
+    expectedUrl:
+      "https://example.com/browser/devtools/client/inspector/shared/test/test-image.png",
+  });
+
+  await testCase({
+    inspector,
+    view,
+    nodeSelector: ".in-style-tag.relative",
+    propertyName: "background",
+    expectedUrl:
+      "https://example.com/browser/devtools/client/inspector/shared/test/test-image.png",
+  });
+
+  await testCase({
+    inspector,
+    view,
+    nodeSelector: ".in-constructed.absolute",
+    propertyName: "background",
+    expectedUrl:
+      "https://example.com/browser/devtools/client/inspector/shared/test/test-image.png",
+  });
+
+  await testCase({
+    inspector,
+    view,
+    nodeSelector: ".in-constructed.relative",
+    propertyName: "background",
+    expectedUrl:
+      "https://example.com/browser/devtools/client/inspector/shared/test/test-image.png",
+  });
+
+  await testCase({
+    inspector,
+    view,
+    nodeSelector: ".in-style-attribute.absolute",
+    ruleSelector: "element",
+    propertyName: "background",
+    expectedUrl:
+      "https://example.com/browser/devtools/client/inspector/shared/test/test-image.png",
+  });
+
+  await testCase({
+    inspector,
+    view,
+    nodeSelector: ".in-style-attribute.relative",
+    ruleSelector: "element",
+    propertyName: "background",
+    expectedUrl:
+      "https://example.com/browser/devtools/client/inspector/shared/test/test-image.png",
+  });
 
   info(
     "Testing that image preview tooltips show even when there are " +
       "fields being edited"
   );
+  await selectNode(".test-element", inspector);
   await testTooltipAppearsEvenInEditMode(view);
+});
+
+async function testCase({
+  inspector,
+  view,
+  nodeSelector,
+  ruleSelector = nodeSelector,
+  propertyName,
+  computedPropertyName,
+  expectedUrl,
+  checkUrlClick = false,
+}) {
+  await selectNode(nodeSelector, inspector);
+  const property = await getRuleViewProperty(view, ruleSelector, propertyName, {
+    wait: true,
+  });
+  let uriEl = property.valueSpan.querySelector(".theme-link");
+  await testImagePreviewTooltip(
+    view,
+    uriEl,
+    expectedUrl,
+    `declaration value for "${propertyName}" in "${nodeSelector}"`
+  );
+
+  if (checkUrlClick) {
+    await testOpenLink(
+      uriEl,
+      expectedUrl,
+      `declaration value for "${propertyName}" in "${nodeSelector}"`
+    );
+  }
+
+  if (!computedPropertyName) {
+    return;
+  }
+
+  info(
+    `Check the link in "${computedPropertyName}" in the expandable computed section in "${nodeSelector}"`
+  );
+  const ruleViewPropertyEl = property.valueSpan.closest(".ruleview-property");
+  // Expand the computed section
+  ruleViewPropertyEl.querySelector(".ruleview-expander").click();
+  // Retrieve the actual property we want
+  const computedItemEl = [
+    ...ruleViewPropertyEl.querySelectorAll(".ruleview-computedlist li"),
+  ].find(
+    li =>
+      li.querySelector(".ruleview-propertyname")?.textContent ===
+      computedPropertyName
+  );
+  // And get the link that is displayed in it
+  uriEl = computedItemEl.querySelector(".ruleview-propertyvalue .theme-link");
+  await testImagePreviewTooltip(
+    view,
+    uriEl,
+    expectedUrl,
+    `"${computedPropertyName}" in "${nodeSelector}" computed section`
+  );
+
+  if (checkUrlClick) {
+    await testOpenLink(
+      uriEl,
+      expectedUrl,
+      `"${computedPropertyName}" in "${nodeSelector}" computed section`
+    );
+  }
 
   info("Switching over to the computed-view");
   const onComputedViewReady = inspector.once("computed-view-refreshed");
-  view = await selectComputedView(inspector);
+  const computedView = await selectComputedView(inspector);
   await onComputedViewReady;
 
-  info("Testing that the background-image computed style has a tooltip too");
-  await testComputedView(view);
-});
+  const computedProperty = getComputedViewProperty(
+    computedView,
+    computedPropertyName
+  );
+  uriEl = computedProperty.valueSpan.querySelector(".theme-link");
 
-async function testBodyRuleView(view) {
-  info("Testing tooltips in the rule view");
+  await testImagePreviewTooltip(
+    computedView,
+    uriEl,
+    expectedUrl,
+    `"${computedPropertyName}" computed value for "${nodeSelector}"`
+  );
+  if (checkUrlClick) {
+    await testOpenLink(
+      uriEl,
+      expectedUrl,
+      `"${computedPropertyName}" computed value for "${nodeSelector}"`
+    );
+  }
 
-  // XXX we have an intermittent here (Bug 1743594) where the rule view is still empty
-  // at this point. We're currently investigating what's going on and a proper way to
-  // wait in openRuleView, but for now, let's fix the intermittent by waiting until the
-  // rule view has the expected content.
-  const property = await waitFor(() =>
-    getRuleViewProperty(view, "body", "background-image")
+  const computedPropertyEl = computedProperty.nameSpan.closest(
+    ".computed-property-view"
   );
 
-  // Get the background-image property inside the rule view
-  const { valueSpan } = property;
-  const uriSpan = valueSpan.querySelector(".theme-link");
+  // Expand the matched selectors section
+  AccessibilityUtils.setEnv({
+    // Focus is properly handled by the parent element, which will handle Enter to toggle
+    // the item, so we can disable the accessibility check to avoid the test failure.
+    focusableRule: false,
+  });
+  computedPropertyEl.querySelector(".computed-expandable").click();
+  AccessibilityUtils.resetEnv();
 
-  const previewTooltip = await assertShowPreviewTooltip(view, uriSpan);
+  await waitFor(() => computedPropertyEl.querySelector(".rule-text"));
+  // Retrieve the matched selector we want
+  const computedRuleEl = [
+    ...computedPropertyEl.querySelectorAll(".rule-text"),
+  ].find(
+    el =>
+      el.querySelector(".computed-other-property-selector").textContent ===
+      ruleSelector
+  );
+
+  // And the link inside it
+  uriEl = computedRuleEl.querySelector(
+    ".computed-other-property-value .theme-link"
+  );
+
+  info(
+    `Check the link in "${computedPropertyName}" in the matched selectors section in "${nodeSelector}"`
+  );
+  await testImagePreviewTooltip(
+    computedView,
+    uriEl,
+    expectedUrl,
+    `"${computedPropertyName}" "${nodeSelector}" item in matched selectors section`
+  );
+  if (checkUrlClick) {
+    await testOpenLink(
+      uriEl,
+      expectedUrl,
+      `"${computedPropertyName}" "${nodeSelector}" item in matched selectors section`
+    );
+  }
+
+  info("Switch back to the rule view");
+  selectRuleView(inspector);
+}
+
+async function testImagePreviewTooltip(view, uriEl, expectedUrl, desc) {
+  uriEl.scrollIntoView();
+
+  if (expectedUrl.startsWith("data:")) {
+    ok(
+      uriEl.href.startsWith(expectedUrl),
+      `Link has expected URL "${uriEl.href.substring(0, 100)}…" | ${desc}`
+    );
+  } else {
+    is(uriEl.href, expectedUrl, `Link has expected URL | ${desc}`);
+  }
+  const previewTooltip = await assertShowPreviewTooltip(view, uriEl);
 
   const images = previewTooltip.panel.getElementsByTagName("img");
   is(images.length, 1, "Tooltip contains an image");
   const imgSrc = images[0].getAttribute("src");
+
+  // If we're checking a data URL, only check the beginning of the URL so we don't spam
+  // the output
   ok(
-    imgSrc.includes("iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHe"),
-    "The image URL seems fine"
+    imgSrc.startsWith("data:image"),
+    `Tooltip contains a data-uri image as expected | ${desc}`
   );
 
-  await assertTooltipHiddenOnMouseOut(previewTooltip, uriSpan);
+  await assertTooltipHiddenOnMouseOut(previewTooltip, uriEl);
+}
 
+async function testOpenLink(uriEl, expectedUrl, desc) {
   info(
-    "Check that middle-clicking on the link opens a new tab in the background"
+    `Check that middle-clicking on the link opens a new tab in the background | ${desc}`
   );
   let onTabOpen = BrowserTestUtils.waitForNewTab(
     gBrowser,
-    imgSrc,
+    expectedUrl,
     // waitForLoad
     true
   );
-  uriSpan.scrollIntoView();
-  // uriSpan is an multi-line inline element, and since synthesizeMouse only get the
+  uriEl.scrollIntoView();
+  // uriEl can be a multi-line inline element, and since synthesizeMouse only get the
   // bounding rect, we might not click on the right place.
   // So here, use synthesizeMouseAtPoint and pass it the first quad position
-  const uriSpanQuad = uriSpan.getBoxQuads()[0];
+  const uriElQuad = uriEl.getBoxQuads()[0];
   EventUtils.synthesizeMouseAtPoint(
-    uriSpanQuad.p1.x + 2,
-    uriSpanQuad.p1.y + 2,
+    uriElQuad.p1.x + 2,
+    uriElQuad.p1.y + 2,
     {
       button: 1,
     },
-    uriSpan.ownerGlobal
+    uriEl.documentGlobal
   );
   let tab = await onTabOpen;
   is(
     tab.selected,
     false,
-    "Tab was opened in the background with a middle click"
+    `Tab was opened in the background with a middle click | ${desc}`
   );
   await removeTab(tab);
 
   info(
-    "Check that ctrl/cmd clicking on the link opens a new tab in the background"
+    `Check that ctrl/cmd clicking on the link opens a new tab in the background | ${desc}`
   );
   onTabOpen = BrowserTestUtils.waitForNewTab(
     gBrowser,
-    imgSrc,
+    expectedUrl,
     // waitForLoad
     true
   );
   EventUtils.synthesizeMouseAtPoint(
-    uriSpanQuad.p1.x + 2,
-    uriSpanQuad.p1.y + 2,
+    uriElQuad.p1.x + 2,
+    uriElQuad.p1.y + 2,
     {
       button: 1,
       [Services.appinfo.OS === "Darwin" ? "metaKey" : "ctrlKey"]: true,
     },
-    uriSpan.ownerGlobal
+    uriEl.documentGlobal
   );
   tab = await onTabOpen;
   is(
     tab.selected,
     false,
-    "Tab was opened in the background with ctrl/cmd + click"
+    `Tab was opened in the background with ctrl/cmd + click | ${desc}`
   );
   await removeTab(tab);
 
-  info("Check that clicking on the link opens a new tab in the foreground");
+  info(
+    `Check that clicking on the link opens a new tab in the foreground | ${desc}`
+  );
   onTabOpen = BrowserTestUtils.waitForNewTab(
     gBrowser,
-    imgSrc,
+    expectedUrl,
     // waitForLoad
     true
   );
   EventUtils.synthesizeMouseAtPoint(
-    uriSpanQuad.p1.x + 2,
-    uriSpanQuad.p1.y + 2,
+    uriElQuad.p1.x + 2,
+    uriElQuad.p1.y + 2,
     {},
-    uriSpan.ownerGlobal
+    uriEl.documentGlobal
   );
   tab = await onTabOpen;
   is(
     tab.selected,
     true,
-    "Tab was opened in the foreground when clicking on the link"
+    `Tab was opened in the foreground when clicking on the link | ${desc}`
   );
   await removeTab(tab);
-}
-
-async function testDivRuleView(view) {
-  // Get the background property inside the rule view
-  const { valueSpan } = getRuleViewProperty(
-    view,
-    ".test-element",
-    "background"
-  );
-  const uriSpan = valueSpan.querySelector(".theme-link");
-
-  const previewTooltip = await assertShowPreviewTooltip(view, uriSpan);
-
-  const images = previewTooltip.panel.getElementsByTagName("img");
-  is(images.length, 1, "Tooltip contains an image");
-  ok(
-    images[0].getAttribute("src").startsWith("data:"),
-    "Tooltip contains a data-uri image as expected"
-  );
-
-  await assertTooltipHiddenOnMouseOut(previewTooltip, uriSpan);
 }
 
 async function testTooltipAppearsEvenInEditMode(view) {
@@ -203,24 +388,4 @@ async function testTooltipAppearsEvenInEditMode(view) {
 function turnToEditMode(ruleView) {
   const brace = ruleView.styleDocument.querySelector(".ruleview-ruleclose");
   return focusEditableField(ruleView, brace);
-}
-
-async function testComputedView(view) {
-  const { valueSpan } = getComputedViewProperty(view, "background-image");
-  const uriSpan = valueSpan.querySelector(".theme-link");
-
-  // Scroll to ensure the line is visible as we see the box model by default
-  valueSpan.scrollIntoView();
-
-  const previewTooltip = await assertShowPreviewTooltip(view, uriSpan);
-
-  const images = previewTooltip.panel.getElementsByTagName("img");
-  is(images.length, 1, "Tooltip contains an image");
-
-  ok(
-    images[0].getAttribute("src").startsWith("data:"),
-    "Tooltip contains a data-uri in the computed-view too"
-  );
-
-  await assertTooltipHiddenOnMouseOut(previewTooltip, uriSpan);
 }

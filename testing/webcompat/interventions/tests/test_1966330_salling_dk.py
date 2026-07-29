@@ -19,7 +19,7 @@ async def are_filters_onscreen(client):
     client.hide_elements("#usercentrics-cmp-ui")
     for _ in range(20):
         try:
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.25)
             client.await_css(FILTERS_CSS, is_displayed=True).click()
         except (WebDriverException, ElementClickInterceptedException):
             continue

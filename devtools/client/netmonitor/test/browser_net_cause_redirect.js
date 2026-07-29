@@ -131,7 +131,7 @@ add_task(async function testResponseForRedirects() {
   const emptyNotice = document.querySelector(".empty-notice");
   is(
     emptyNotice.innerText,
-    L10N.getStr("responseEmptyText"),
+    L10N.getStr("responseRedirectEmptyText"),
     "No response content should be displayed for the redirect request"
   );
 

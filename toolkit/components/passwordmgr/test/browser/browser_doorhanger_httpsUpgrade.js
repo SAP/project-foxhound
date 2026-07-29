@@ -131,7 +131,7 @@ add_task(async function test_httpsUpgradeCaptureFields_changePW() {
   Assert.equal(login.password, "pass2", "Check the password changed");
   Assert.equal(login.timesUsed, 2, "Check times used increased");
 
-  Services.logins.removeAllUserFacingLogins();
+  await Services.logins.removeAllUserFacingLoginsAsync();
 });
 
 add_task(

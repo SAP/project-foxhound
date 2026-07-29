@@ -38,6 +38,7 @@ let patterns: string[];
 
 - [`openArticleURL`](#openarticleurl)
 - [`openBookmarkedURL`](#openbookmarkedurl)
+- [`userBookmarkFolderActivity`](#userbookmarkfolderactivity)
 - [`frequentVisits`](#frequentvisits)
 - [`openURL`](#openurl)
 - [`newSavedLogin`](#newsavedlogin)
@@ -65,6 +66,7 @@ let patterns: string[];
 - [`elementClicked`](#elementclicked)
 - [`ipProtectionReady`](#ipprotectionready)
 - [`ipProtectionPanelClosed`](#ipprotectionpanelclosed)
+- [`ipProtectionBandwidthReset`](#ipprotectionbandwidthreset)
 - [`selectableProfilesUpdated`](#selectableprofilesupdated)
 - [`smartWindowNewTab`](#smartwindownewtab)
 
@@ -77,6 +79,12 @@ Happens when the user loads a Reader Mode compatible webpage.
 Happens when the user bookmarks or navigates to a bookmarked URL.
 
 Does not filter by host or patterns.
+
+### `userBookmarkFolderActivity`
+
+Happens when the user either creates a new bookmark folder or saves a bookmark
+into a user-created folder. Does not fire if the active window is a private
+window.
 
 ### `frequentVisits`
 
@@ -149,7 +157,7 @@ Provides a context of the number of pages loaded in the current browsing session
 Does not filter by host or patterns.
 
 The event it reports back is one of two things:
- * A combination of OR-ed [nsIWebProgressListener](https://searchfox.org/mozilla-central/source/uriloader/base/nsIWebProgressListener.idl) `STATE_BLOCKED_*` flags
+ * A combination of OR-ed [nsIWebProgressListener](https://searchfox.org/firefox-main/source/uriloader/base/nsIWebProgressListener.idl) `STATE_BLOCKED_*` flags
  * A string constant, such as [`"ContentBlockingMilestone"`](https://searchfox.org/mozilla-central/rev/8a2d8d26e25ef70c98c6036612aad534b76b9815/toolkit/components/antitracking/TrackingDBService.jsm#327-334)
 
 
@@ -236,6 +244,16 @@ Happens when the user closes n or more tabs in a session
 {
   trigger: { id: "nthTabClosed" },
   targeting: "currentTabsOpen >= 4"
+}
+```
+```js
+// The trigger also includes an optional action context variable
+// when a caller marks the tab.smartWindowActionSource before close.
+// Here, the message triggers when the close was attributed to a specific source
+// (e.g., "close_current_tab" set by a toolcall)
+{
+  trigger: { id: "nthTabClosed" },
+  targeting: "actionSource == 'close_current_tab'"
 }
 ```
 
@@ -376,7 +394,9 @@ Happens when a page action appears in the location bar. The specific page action
 ```js
 {
   trigger: { id: "pageActionInUrlbar" },
-  targeting: "pageAction == 'reader-mode-button'"
+  targeting: "pageAction == 'reader-mode-button'",
+  params: ["example.com"],
+  patterns: ["https://www.example.com/*"]
 }
 ```
 
@@ -453,6 +473,17 @@ The `hasUsedSiteExceptions` boolean context variable is available in targeting, 
 {
   trigger: { id: "ipProtectionPanelClosed" },
   targeting: "!hasUsedSiteExceptions",
+}
+```
+
+### `ipProtectionBandwidthReset`
+
+Fires when the IP protection bandwidth quota resets at the start of a new month.
+
+```js
+{
+  trigger: { id: "ipProtectionBandwidthReset" },
+  targeting: "'browser.ipProtection.userEnableCount' | preferenceValue > 0",
 }
 ```
 

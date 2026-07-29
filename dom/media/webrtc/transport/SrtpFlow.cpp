@@ -56,33 +56,31 @@ RefPtr<SrtpFlow> SrtpFlow::Create(int cipher_suite, bool inbound,
 
   // Note that we set the same cipher suite for RTP and RTCP
   // since any flow can only have one cipher suite with DTLS-SRTP
+  const char* name = TransportLayerDtls::GetSrtpCipherName(cipher_suite);
+  if (!name) {
+    MOZ_MTLOG(ML_ERROR, "Request to set unknown SRTP cipher suite 0x"
+                            << std::hex << cipher_suite);
+    return nullptr;
+  }
+  MOZ_MTLOG(ML_DEBUG, "Setting SRTP cipher suite " << name);
   switch (cipher_suite) {
     case kDtlsSrtpAeadAes256Gcm:
-      MOZ_MTLOG(ML_DEBUG, "Setting SRTP cipher suite SRTP_AEAD_AES_256_GCM");
       srtp_crypto_policy_set_aes_gcm_256_16_auth(&policy.rtp);
       srtp_crypto_policy_set_aes_gcm_256_16_auth(&policy.rtcp);
       break;
     case kDtlsSrtpAeadAes128Gcm:
-      MOZ_MTLOG(ML_DEBUG, "Setting SRTP cipher suite SRTP_AEAD_AES_128_GCM");
       srtp_crypto_policy_set_aes_gcm_128_16_auth(&policy.rtp);
       srtp_crypto_policy_set_aes_gcm_128_16_auth(&policy.rtcp);
       break;
     case kDtlsSrtpAes128CmHmacSha1_80:
-      MOZ_MTLOG(ML_DEBUG,
-                "Setting SRTP cipher suite SRTP_AES128_CM_HMAC_SHA1_80");
       srtp_crypto_policy_set_aes_cm_128_hmac_sha1_80(&policy.rtp);
       srtp_crypto_policy_set_aes_cm_128_hmac_sha1_80(&policy.rtcp);
       break;
     case kDtlsSrtpAes128CmHmacSha1_32:
-      MOZ_MTLOG(ML_DEBUG,
-                "Setting SRTP cipher suite SRTP_AES128_CM_HMAC_SHA1_32");
       srtp_crypto_policy_set_aes_cm_128_hmac_sha1_32(&policy.rtp);
       srtp_crypto_policy_set_aes_cm_128_hmac_sha1_80(
           &policy.rtcp);  // 80-bit per RFC 5764
       break;              // S 4.1.2.
-    default:
-      MOZ_MTLOG(ML_ERROR, "Request to set unknown SRTP cipher suite");
-      return nullptr;
   }
   // This key is copied into the srtp_t object, so we don't
   // need to keep it.

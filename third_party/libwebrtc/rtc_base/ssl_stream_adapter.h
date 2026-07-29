@@ -17,14 +17,19 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include "absl/base/macros.h"
+#include "absl/base/nullability.h"
 #include "absl/functional/any_invocable.h"
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
+#include "api/environment/environment.h"
 #include "api/field_trials_view.h"
 #include "rtc_base/buffer.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/ssl_certificate.h"
 #include "rtc_base/ssl_identity.h"
 #include "rtc_base/stream.h"
@@ -120,13 +125,22 @@ enum class SSLHandshakeError { UNKNOWN, INCOMPATIBLE_CIPHERSUITE, MAX_VALUE };
 
 class SSLStreamAdapter : public StreamInterface {
  public:
-  // Instantiate an SSLStreamAdapter wrapping the given stream,
-  // (using the selected implementation for the platform).
-  // Caller is responsible for freeing the returned object.
+  ABSL_DEPRECATE_AND_INLINE()
   static std::unique_ptr<SSLStreamAdapter> Create(
       std::unique_ptr<StreamInterface> stream,
-      absl::AnyInvocable<void(SSLHandshakeError)> handshake_error = nullptr,
-      const FieldTrialsView* field_trials = nullptr);
+      absl::AnyInvocable<void(SSLHandshakeError)> handshake_error,
+      std::nullptr_t /*field_trials*/) {
+    return Create(std::move(stream), std::move(handshake_error));
+  }
+
+  static absl_nonnull std::unique_ptr<SSLStreamAdapter> Create(
+      std::unique_ptr<StreamInterface> stream,
+      absl::AnyInvocable<void(SSLHandshakeError)> handshake_error = nullptr);
+
+  static absl_nonnull std::unique_ptr<SSLStreamAdapter> Create(
+      const Environment& env,
+      std::unique_ptr<StreamInterface> stream,
+      absl::AnyInvocable<void(SSLHandshakeError)> handshake_error);
 
   SSLStreamAdapter() = default;
   ~SSLStreamAdapter() override = default;
@@ -158,6 +172,7 @@ class SSLStreamAdapter : public StreamInterface {
   // increased.
   // This should only be called before StartSSL().
   virtual void SetInitialRetransmissionTimeout(int timeout_ms) = 0;
+  virtual void UpdateRetransmissionTimeout(int timeout_ms) {}
 
   // Set MTU to be used for next handshake flight.
   virtual void SetMTU(int mtu) = 0;
@@ -189,9 +204,9 @@ class SSLStreamAdapter : public StreamInterface {
   // Returns SSLPeerCertificateDigestError::NONE if successful.
   virtual SSLPeerCertificateDigestError SetPeerCertificateDigest(
       absl::string_view digest_alg,
-      ArrayView<const uint8_t> digest_val) = 0;
+      std::span<const uint8_t> digest_val) = 0;
   [[deprecated(
-      "Use SetPeerCertificateDigest with ArrayView instead")]] virtual bool
+      "Use SetPeerCertificateDigest with std::span instead")]] virtual bool
   SetPeerCertificateDigest(absl::string_view digest_alg,
                            const unsigned char* digest_val,
                            size_t digest_len,
@@ -217,7 +232,18 @@ class SSLStreamAdapter : public StreamInterface {
   virtual bool GetSslVersionBytes(int* version) const = 0;
 
   // Key Exporter interface from RFC 5705
-  virtual bool ExportSrtpKeyingMaterial(
+  // The buffer must be preinitialized with a `size()` that will fit exactly
+  // the keying material.
+  [[deprecated("Use AppendSrtpKeyingMaterial")]] virtual bool
+  ExportSrtpKeyingMaterial(ZeroOnFreeBuffer<uint8_t>& keying_material) {
+    RTC_DCHECK_NOTREACHED() << "Use AppendSrtpKeyingMaterial";
+    return false;
+  }
+
+  // Extract the keys and append them to the buffer. The function will compute
+  // the amount of keying material needed and append this many bytes.
+  // The buffer size will grow by the number of bytes appended.
+  virtual bool AppendSrtpKeyingMaterial(
       ZeroOnFreeBuffer<uint8_t>& keying_material) = 0;
 
   // Returns the signature algorithm or 0 if not applicable.

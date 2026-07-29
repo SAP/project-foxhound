@@ -12,9 +12,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <vector>
 
-#include "api/array_view.h"
 #include "net/dcsctp/common/math.h"
 #include "net/dcsctp/packet/bounded_byte_reader.h"
 #include "rtc_base/logging.h"
@@ -37,26 +37,25 @@ Parameters::Builder& Parameters::Builder::Add(const Parameter& p) {
 }
 
 std::vector<ParameterDescriptor> Parameters::descriptors() const {
-  webrtc::ArrayView<const uint8_t> span(data_);
+  std::span<const uint8_t> span(data_);
   std::vector<ParameterDescriptor> result;
   while (!span.empty()) {
     BoundedByteReader<kParameterHeaderSize> header(span);
     uint16_t type = header.Load16<0>();
     uint16_t length = header.Load16<2>();
-    result.emplace_back(type, span.subview(0, length));
+    result.emplace_back(type, span.subspan(0, length));
     size_t length_with_padding = RoundUpTo4(length);
     if (length_with_padding > span.size()) {
       break;
     }
-    span = span.subview(length_with_padding);
+    span = span.subspan(length_with_padding);
   }
   return result;
 }
 
-std::optional<Parameters> Parameters::Parse(
-    webrtc::ArrayView<const uint8_t> data) {
+std::optional<Parameters> Parameters::Parse(std::span<const uint8_t> data) {
   // Validate the parameter descriptors
-  webrtc::ArrayView<const uint8_t> span(data);
+  std::span<const uint8_t> span(data);
   while (!span.empty()) {
     if (span.size() < kParameterHeaderSize) {
       RTC_DLOG(LS_WARNING) << "Insufficient parameter length";
@@ -72,7 +71,7 @@ std::optional<Parameters> Parameters::Parse(
     if (length_with_padding > span.size()) {
       break;
     }
-    span = span.subview(length_with_padding);
+    span = span.subspan(length_with_padding);
   }
   return Parameters(std::vector<uint8_t>(data.begin(), data.end()));
 }

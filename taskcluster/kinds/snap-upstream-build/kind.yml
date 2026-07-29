@@ -125,7 +125,7 @@ tasks:
             product: firefox
             job-name: snap-amd64-beta-opt
         worker:
-            docker-image: {in-tree: snap-build-core22}
+            docker-image: {in-tree: snap-build-core24}
             max-run-time: 9000
         run:
             using: run-task
@@ -144,7 +144,7 @@ tasks:
             product: firefox
             job-name: snap-amd64-beta-debug
         worker:
-            docker-image: {in-tree: snap-build-core22}
+            docker-image: {in-tree: snap-build-core24}
             max-run-time: 7200
         run:
             using: run-task
@@ -153,44 +153,6 @@ tasks:
         treeherder:
             platform: linux64-snap/debug
             symbol: B-beta(amd64)
-
-    amd64-betacore24/opt:
-        description: Build Firefox Beta (Core24) as a Snap using upstream definition
-        attributes:
-            build_platform: linux64-snap
-            build_type: opt
-        index:
-            product: firefox
-            job-name: snap-amd64-betacore24-opt
-        worker:
-            docker-image: {in-tree: snap-build-core24}
-            max-run-time: 9000
-        run:
-            using: run-task
-            command: >-
-              ./run.sh beta-core24 amd64
-        treeherder:
-            platform: linux64-snap/opt
-            symbol: B-beta24(amd64)
-
-    amd64-betacore24/debug:
-        description: Build Firefox Beta (Core24 debug) as a Snap using upstream definition
-        attributes:
-            build_platform: linux64-snap
-            build_type: debug
-        index:
-            product: firefox
-            job-name: snap-amd64-betacore24-debug
-        worker:
-            docker-image: {in-tree: snap-build-core24}
-            max-run-time: 7200
-        run:
-            using: run-task
-            command: >-
-              ./run.sh beta-core24 amd64 --debug
-        treeherder:
-            platform: linux64-snap/debug
-            symbol: B-beta24(amd64)
 
     amd64-stable/opt:
         description: Build Firefox Stable as a Snap using upstream definition
@@ -201,7 +163,7 @@ tasks:
             product: firefox
             job-name: snap-amd64-stable-opt
         worker:
-            docker-image: {in-tree: snap-build-core22}
+            docker-image: {in-tree: snap-build-core24}
             max-run-time: 9000
         run:
             using: run-task
@@ -220,7 +182,7 @@ tasks:
             product: firefox
             job-name: snap-amd64-stable-debug
         worker:
-            docker-image: {in-tree: snap-build-core22}
+            docker-image: {in-tree: snap-build-core24}
             max-run-time: 7200
         run:
             using: run-task
@@ -229,44 +191,6 @@ tasks:
         treeherder:
             platform: linux64-snap/debug
             symbol: B-stable(amd64)
-
-    amd64-stablecore24/opt:
-        description: Build Firefox Stable (Core24) as a Snap using upstream definition
-        attributes:
-            build_platform: linux64-snap
-            build_type: opt
-        index:
-            product: firefox
-            job-name: snap-amd64-stablecore24-opt
-        worker:
-            docker-image: {in-tree: snap-build-core24}
-            max-run-time: 9000
-        run:
-            using: run-task
-            command: >-
-              ./run.sh stable-core24 amd64
-        treeherder:
-            platform: linux64-snap/opt
-            symbol: B-stable24(amd64)
-
-    amd64-stablecore24/debug:
-        description: Build Firefox Stable (Core24 debug) as a Snap using upstream definition
-        attributes:
-            build_platform: linux64-snap
-            build_type: debug
-        index:
-            product: firefox
-            job-name: snap-amd64-stablecore24-debug
-        worker:
-            docker-image: {in-tree: snap-build-core24}
-            max-run-time: 7200
-        run:
-            using: run-task
-            command: >-
-              ./run.sh stable-core24 amd64 --debug
-        treeherder:
-            platform: linux64-snap/debug
-            symbol: B-stable24(amd64)
 
     amd64-esr/opt:
         description: Build Firefox ESR 128 as a Snap using upstream definition

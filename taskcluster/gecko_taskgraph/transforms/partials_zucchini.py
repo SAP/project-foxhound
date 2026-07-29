@@ -9,6 +9,7 @@ import json
 
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
+from taskgraph.util.schema import resolve_keyed_by
 from taskgraph.util.treeherder import inherit_treeherder_from_dep
 
 from gecko_taskgraph.util.attributes import release_level
@@ -38,11 +39,35 @@ def identify_desired_signing_keys(config):
     return get_signing_type(config=config)
 
 
+def find_enus_partials_zucchini_task(config, build_platform, build_type):
+    """Find the matching enUS partials-zucchini task for an l10n task by
+    iterating kind_dependencies_tasks and filtering on attributes."""
+    matches = [
+        t
+        for t in config.kind_dependencies_tasks.values()
+        if t.kind == "partials-zucchini"
+        and t.attributes.get("build_platform") == build_platform
+        and t.attributes.get("build_type") == build_type
+    ]
+    if not matches:
+        raise Exception(
+            f"No matching partials-zucchini task found for "
+            f"{build_platform}/{build_type}"
+        )
+    if len(matches) > 1:
+        raise Exception(
+            f"Multiple matching partials-zucchini tasks found for "
+            f"{build_platform}/{build_type}: {[t.label for t in matches]}"
+        )
+    return matches[0]
+
+
 @transforms.add
 def make_task_description(config, tasks):
     # If no balrog release history, then don't generate partials
     if not config.params.get("release_history"):
         return
+
     for task in tasks:
         dep_task = get_primary_dependency(config, task)
         assert dep_task
@@ -70,8 +95,6 @@ def make_task_description(config, tasks):
         # Fetches from upstream repackage task
         task["fetches"][dep_task.kind] = [artifact_path]
 
-        cert_type = identify_desired_signing_keys(config).replace("-signing", "")
-
         from_data = []
         update_number = 1
         for build in sorted(builds):
@@ -92,11 +115,33 @@ def make_task_description(config, tasks):
             f"--from-mars-json='{from_mars_json}'",
             f"--mar-channel-id='{mar_channel_id}'",
             f"--branch={config.params['project']}",
-            f"--cert-path=/builds/worker/workspace/keys/{cert_type}.pubkey",
         ]
+
+        resolve_keyed_by(
+            task, "validate-cert", task["name"], project=config.params["project"]
+        )
+        validate_cert = task.pop("validate-cert")
+        cert_type = identify_desired_signing_keys(config).replace("-signing", "")
+        if validate_cert:
+            extra_params.append(
+                f"--cert-path=/builds/worker/workspace/keys/{cert_type}.pubkey"
+            )
 
         if release_level(config.params) == "staging":
             extra_params.append("--allow-staging-urls")
+
+        if config.kind == "partials-zucchini":
+            extra_params.append("--generate-hashes")
+        elif config.kind == "partials-zucchini-l10n":
+            enus_task = find_enus_partials_zucchini_task(
+                config, build_platform, task["attributes"]["build_type"]
+            )
+            task.setdefault("dependencies", {})[enus_task.label] = enus_task.label
+            cache_fetches = [{"artifact": "hashes.json", "extract": False}]
+            for entry in from_data:
+                cache_fetches.append({"artifact": entry["dest_mar"], "extract": False})
+            task["fetches"][enus_task.label] = cache_fetches
+            extra_params.append("--patch-cache-dir=$MOZ_FETCHES_DIR")
 
         for artifact in dep_task.attributes["release_artifacts"]:
             if artifact.endswith(".complete.mar"):
@@ -115,8 +160,6 @@ def make_task_description(config, tasks):
         )
 
         task["treeherder"] = inherit_treeherder_from_dep(task, dep_task)
-        # TODO: Reset this to tier 1 once D272679 is landed
-        task["treeherder"]["tier"] = 3
         task["treeherder"]["symbol"] = f"pz({locale or 'N'})"
 
         yield task

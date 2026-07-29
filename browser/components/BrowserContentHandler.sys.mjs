@@ -8,6 +8,10 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AIWindow:
+    "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
+  AIWindowAccountAuth:
+    "moz-src:///browser/components/aiwindow/ui/modules/AIWindowAccountAuth.sys.mjs",
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
@@ -24,6 +28,29 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource://messaging-system/lib/SpecialMessageActions.sys.mjs",
   UpdatePing: "resource://gre/modules/UpdatePing.sys.mjs",
 });
+
+/**
+ * Whether `openBrowserWindow` should open the window as Smart Window: the
+ * feature is on and set as default, it's not an explicitly private window, and
+ * the user previously signed in (approximated synchronously via the ToS consent
+ * timestamp; the async FxA check happens later in `onFirstWindowReady`, which
+ * prompts sign-in if they've since signed out). It deliberately avoids
+ * `SessionStartup.willRestore()`/`sessionType`: called this early, before the
+ * session file is read, that getter memoizes NO_SESSION and SessionStore then
+ * discards the session it was about to restore. Restore keeps the saved window
+ * type (`restoreWindowFeatures`); Smart-by-default only forces brand-new
+ * windows. See bug 2052953.
+ *
+ * @param {boolean} forcePrivate
+ * @returns {boolean}
+ */
+function canOpenAsSmartWindow(forcePrivate = false) {
+  return (
+    !forcePrivate &&
+    lazy.AIWindow.shouldOpenAsSmartWindow() &&
+    lazy.AIWindowAccountAuth.hasToSConsent
+  );
+}
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
   UpdateManager: ["@mozilla.org/updates/update-manager;1", Ci.nsIUpdateManager],
@@ -271,6 +298,7 @@ function openBrowserWindow(
 ) {
   const isStartup =
     cmdLine && cmdLine.state == Ci.nsICommandLine.STATE_INITIAL_LAUNCH;
+  const openAsSmart = canOpenAsSmartWindow(forcePrivate);
 
   let args;
   if (!urlOrUrlList) {
@@ -335,13 +363,22 @@ function openBrowserWindow(
 
   // We can't provide arguments to openWindow as a JS array.
   if (!urlOrUrlList) {
-    // If we have a single string guaranteed to not contain '|' we can simply
-    // wrap it in an nsISupportsString object.
     let [url] = args;
-    args = Cc["@mozilla.org/supports-string;1"].createInstance(
+    let string = Cc["@mozilla.org/supports-string;1"].createInstance(
       Ci.nsISupportsString
     );
-    args.data = url;
+    string.data = url;
+
+    // Smart Window needs args as an nsIMutableArray so handleAIWindowOptions can append its attributes
+    if (openAsSmart) {
+      let array = Cc["@mozilla.org/array;1"].createInstance(Ci.nsIMutableArray);
+      array.appendElement(string);
+      args = array;
+    } else {
+      // Single string guaranteed to not contain '|' can simply be wrapped
+      // in an nsISupportsString object.
+      args = string;
+    }
   } else {
     // Otherwise, pass an nsIArray.
     if (args.length > 1) {
@@ -362,6 +399,7 @@ function openBrowserWindow(
     args,
     features: gBrowserContentHandler.getFeatures(cmdLine),
     private: forcePrivate,
+    aiWindow: openAsSmart,
   });
 }
 
@@ -725,6 +763,17 @@ nsBrowserContentHandler.prototype = {
       startPage = "";
     }
 
+    // Substitute about:home with the Smart Window URL when the user has
+    // chosen Smart Window as default. Done here (rather than in
+    // getFirstWindowArgs) so that BrowserHandler.defaultArgs — which
+    // browser-init.js compares against to decide session-restore /
+    // crash-recovery overrides — reflects the same URL. A user with
+    // browser.startup.page=0 has explicitly chosen blank startup, which we
+    // respect — they'll get Smart Window chrome with about:blank content.
+    if (startPage === "about:home" && canOpenAsSmartWindow()) {
+      startPage = lazy.AIWindow.initialStartupURL;
+    }
+
     if (!skipStartPage && startPage) {
       if (page) {
         page += "|" + startPage;
@@ -873,13 +922,19 @@ nsBrowserContentHandler.prototype = {
             // greater or equal to minVersion set by the experiment.
             if (nimbusOverrideUrl && versionMatch) {
               try {
-                let uri = Services.io.newURI(nimbusOverrideUrl);
-                // Only allow https://www.mozilla.org and https://www.mozilla.com
+                let uri = Services.io.newURI(
+                  nimbusOverrideUrl.split("|")[0].trim()
+                );
+                // Only allow https://www.mozilla.org, https://www.mozilla.com, and https://www.firefox.com
                 if (
                   uri.scheme === "https" &&
-                  ["www.mozilla.org", "www.mozilla.com"].includes(uri.host)
+                  [
+                    "www.mozilla.org",
+                    "www.mozilla.com",
+                    "www.firefox.com",
+                  ].includes(uri.host)
                 ) {
-                  nimbusWNP = uri.spec;
+                  nimbusWNP = nimbusOverrideUrl;
                 } else {
                   throw new Error("Bad URL");
                 }
@@ -984,9 +1039,10 @@ nsBrowserContentHandler.prototype = {
     if (overridePage == "" && prefb.prefHasUserValue(ONCE_PREF)) {
       try {
         // Show if we haven't passed the expiration or there's no expiration
-        const { expire, url } = JSON.parse(
-          Services.urlFormatter.formatURLPref(ONCE_PREF)
+        let { expire, url, feature_id, slug } = JSON.parse(
+          prefb.getStringPref(ONCE_PREF)
         );
+        url = Services.urlFormatter.formatURL(url);
         if (!(Date.now() > expire)) {
           // Only set allowed urls as override pages
           overridePage = url
@@ -1008,7 +1064,9 @@ nsBrowserContentHandler.prototype = {
                 )
             )
             .join("|");
-
+          if (feature_id && slug) {
+            lazy.NimbusFeatures[feature_id]?.recordExposureEvent({ slug });
+          }
           // Be noisy as properly configured urls should be unchanged
           if (overridePage != url) {
             console.error(`Mismatched once urls: ${url}`);
@@ -1121,17 +1179,15 @@ nsBrowserContentHandler.prototype = {
   /* nsIContentHandler */
 
   handleContent: function bch_handleContent(contentType, context, request) {
-    const NS_ERROR_WONT_HANDLE_CONTENT = 0x805d0001;
-
     try {
       var webNavInfo = Cc["@mozilla.org/webnavigation-info;1"].getService(
         Ci.nsIWebNavigationInfo
       );
       if (!webNavInfo.isTypeSupported(contentType)) {
-        throw NS_ERROR_WONT_HANDLE_CONTENT;
+        throw new Components.Exception("", Cr.NS_ERROR_WONT_HANDLE_CONTENT);
       }
     } catch (e) {
-      throw NS_ERROR_WONT_HANDLE_CONTENT;
+      throw new Components.Exception("", Cr.NS_ERROR_WONT_HANDLE_CONTENT);
     }
 
     request.QueryInterface(Ci.nsIChannel);
@@ -1277,8 +1333,8 @@ function maybeRecordToHandleTelemetry(uri, isLaunch) {
 
   if (uri instanceof Ci.nsIFileURL) {
     let extension = "." + uri.fileExtension.toLowerCase();
-    // Keep synchronized with https://searchfox.org/mozilla-central/source/browser/installer/windows/nsis/shared.nsh
-    // and https://searchfox.org/mozilla-central/source/browser/installer/windows/msix/AppxManifest.xml.in.
+    // Keep synchronized with https://searchfox.org/firefox-main/source/browser/installer/windows/nsis/shared.nsh
+    // and https://searchfox.org/firefox-main/source/browser/installer/windows/msix/AppxManifest.xml.in.
     let registeredExtensions = new Set([
       ".avif",
       ".htm",
@@ -1303,6 +1359,35 @@ function maybeRecordToHandleTelemetry(uri, isLaunch) {
     } else {
       counter["<other protocol>"].add(1);
     }
+  }
+}
+
+/**
+ * Records a count for Bing navigations that match the Windows Search pattern,
+ * using the Bing base domain and `/search` path as heuristic signals. It also
+ * records telemetry for example.com to allow the testing of the filepath.
+ *
+ * @param {nsIURI} uri
+ *        The URI being loaded.
+ * @param {bool} isLaunch
+ *        Indicates whether the browser is starting (true) or already running.
+ */
+function maybeRecordSearchActivationTelemetry(uri, isLaunch) {
+  if (AppConstants.platform != "win") {
+    return;
+  }
+
+  try {
+    if (
+      Services.eTLD.getBaseDomain(uri) == "bing.com" &&
+      uri.filePath == "/search"
+    ) {
+      Glean.browserEngagement.windowsStartSearchActivationCount[
+        isLaunch ? "startup" : "new_tab"
+      ].add(1);
+    }
+  } catch (_) {
+    // Ignore URIs for which no registrable domain can be determined.
   }
 }
 
@@ -1572,6 +1657,7 @@ nsDefaultCommandLineHandler.prototype = {
           const isLaunch =
             cmdLine && cmdLine.state == Ci.nsICommandLine.STATE_INITIAL_LAUNCH;
 
+          maybeRecordSearchActivationTelemetry(uri, isLaunch);
           maybeRecordToHandleTelemetry(uri, isLaunch);
         }
       }

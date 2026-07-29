@@ -22,6 +22,15 @@ class SettingsHomepagePage(composeRule: AndroidComposeTestRule<HomeActivityInten
             to = pageName,
             steps = listOf(NavigationStep.Click(SettingsSelectors.GO_BACK_BUTTON)),
         )
+
+        NavigationRegistry.register(
+            from = pageName,
+            to = "HomePage",
+            steps = listOf(
+                NavigationStep.Click(SettingsSelectors.GO_BACK_BUTTON),
+                NavigationStep.Click(SettingsSelectors.GO_BACK_BUTTON),
+            ),
+        )
     }
 
     override fun mozGetSelectorsByGroup(group: String): List<Selector> {

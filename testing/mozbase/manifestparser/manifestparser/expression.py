@@ -182,9 +182,7 @@ class ParseError(Exception):
     """error parsing conditional expression"""
 
 
-# ignore warnings about using `cache` instead; this code
-# runs on python versions that don't support that
-@functools.lru_cache(maxsize=None)  # noqa: UP033
+@functools.cache
 def scan(text):
     if not ExpressionParser.scanner:
         ExpressionParser.scanner = re.Scanner([
@@ -317,9 +315,7 @@ class ExpressionParser:
     __call__ = parse
 
 
-# ignore warnings about using `cache` instead; this code
-# runs on python versions that don't support that
-@functools.lru_cache(maxsize=None)  # noqa: UP033
+@functools.cache
 def parse(text, strict=False, **values):
     """
     Parse and evaluate a boolean expression.

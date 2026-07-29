@@ -42,10 +42,14 @@ add_setup(async function setup() {
 
   Services.prefs.setBoolPref("network.dns.port_prefixed_qname_https_rr", false);
 
+  // Happy Eyeballs does not support check CNAME for now.
+  Services.prefs.setBoolPref("network.http.happy_eyeballs_enabled", false);
+
   trr_test_setup();
   registerCleanupFunction(async () => {
     trr_clear_prefs();
     Services.prefs.clearUserPref("network.dns.port_prefixed_qname_https_rr");
+    Services.prefs.clearUserPref("network.http.happy_eyeballs_enabled");
   });
 
   h2Port = Services.env.get("MOZHTTP2_PORT");

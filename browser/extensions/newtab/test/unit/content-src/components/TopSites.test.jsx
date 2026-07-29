@@ -37,6 +37,7 @@ const DEFAULT_PROPS = {
     isForStartupCache: false,
   },
   TopSitesRows: TOP_SITES_DEFAULT_ROWS,
+  TopSitesMaxSitesPerRow: TOP_SITES_MAX_SITES_PER_ROW,
   topSiteIconType: () => "no_image",
   dispatch() {},
   perfSvc,
@@ -1959,7 +1960,12 @@ describe("#TopSiteFormInput", () => {
     it("should reset the error state on value change", () => {
       wrapper.find("input").simulate("change", { target: { value: "bar" } });
 
-      assert.isFalse(wrapper.state().validationError);
+      assert.equal(
+        wrapper.findWhere(
+          n => n.prop("data-l10n-id") === "newtab-topsites-url-validation"
+        ).length,
+        0
+      );
     });
   });
 });

@@ -51,3 +51,11 @@ def ftp2shippedLocales(platform):
 
 def ftp2infoFile(platform):
     return info_file_platform_map.get(platform, platform)
+
+
+def updatePlatform2ftp(platform):
+    for ftp_platform, update_platforms in update_platform_map.items():
+        if platform in update_platforms:
+            return ftp_platform
+
+    raise Exception(f"Couldn't find ftp platform for update platform {platform}!")

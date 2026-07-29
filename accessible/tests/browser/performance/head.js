@@ -12,11 +12,11 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-// Load common.js and promisified-events.js from accessible/tests/mochitest/ for
+// Load common.js and events.js from accessible/tests/mochitest/ for
 // all tests.
 loadScripts(
   { name: "common.js", dir: MOCHITESTS_DIR },
-  { name: "promisified-events.js", dir: MOCHITESTS_DIR }
+  { name: "events.js", dir: MOCHITESTS_DIR }
 );
 
 // All the A11Y metrics in tools/performance/PerfStats.h.

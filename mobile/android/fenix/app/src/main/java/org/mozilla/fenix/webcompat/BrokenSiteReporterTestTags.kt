@@ -7,4 +7,7 @@ package org.mozilla.fenix.webcompat
 internal object BrokenSiteReporterTestTags {
     const val BROKEN_SITE_REPORTER_SEND_BUTTON = "send.broken.site.button"
     const val BROKEN_SITE_REPORTER_CHOOSE_REASON_BUTTON = "choose.reason.error.message"
+    const val BROKEN_SITE_REPORTER_EDIT_URL_DIALOG_SAVE_BUTTON = "edit.url.broken.site.save.button"
+    const val BROKEN_SITE_REPORTER_EDIT_URL_DIALOG_DISMISS_BUTTON = "edit.url.broken.site.dismiss.button"
+    const val BROKEN_SITE_REPORTER_DESCRIPTION_INPUT = "broken.site.description.input"
 }

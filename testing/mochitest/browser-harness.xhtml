@@ -162,7 +162,9 @@
                                                 result.status,
                                                 result.expected,
                                                 message,
-                                                result.stack || null);
+                                                result.stack || null,
+                                                null,
+                                                result.time || null);
       },
 
       setDuration: function setDuration(duration) {

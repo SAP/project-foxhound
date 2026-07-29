@@ -12,14 +12,13 @@ async function openPrefsWithSettings({ allEnabled, sectionEnabled }) {
   });
   await openPreferencesViaOpenPreferencesAPI("privacy", { leaveOpen: true });
   let doc = gBrowser.selectedBrowser.contentDocument;
-  let win = doc.ownerGlobal;
+  let win = doc.documentGlobal;
   win.Preferences.addSetting({
     id: "testSetting",
     get: () => true,
   });
   win.SettingGroupManager.registerGroup("mysection", {
     inProgress: true,
-    l10nId: "downloads-header-2",
     headingLevel: 2,
     items: [
       {
@@ -30,22 +29,22 @@ async function openPrefsWithSettings({ allEnabled, sectionEnabled }) {
       },
     ],
   });
-  let zoomGroup = doc.getElementById("zoomGroup");
   let legacyGroup = doc.createXULElement("groupbox");
   legacyGroup.id = "mysectionGroup";
   legacyGroup.setAttribute("data-srd-groupid", "mysection");
-  legacyGroup.setAttribute("data-category", "paneGeneral");
+  legacyGroup.setAttribute("data-category", "paneSync");
   legacyGroup.hidden = true;
   let mysectionGroup = doc.createElement("setting-group");
   mysectionGroup.setAttribute("groupid", "mysection");
-  mysectionGroup.setAttribute("data-category", "paneGeneral");
+  mysectionGroup.setAttribute("data-category", "paneSync");
   mysectionGroup.hidden = true;
-  zoomGroup.parentElement.insertBefore(mysectionGroup, zoomGroup);
-  zoomGroup.parentElement.insertBefore(legacyGroup, zoomGroup);
+  let paneContainer = doc.getElementById("mainPrefPane");
+  paneContainer.appendChild(mysectionGroup);
+  paneContainer.appendChild(legacyGroup);
   win.initSettingGroup("mysection");
-  let paneLoaded = waitForPaneChange("general");
+  let paneLoaded = waitForPaneChange("sync");
   EventUtils.synthesizeMouseAtCenter(
-    doc.getElementById("category-general"),
+    doc.getElementById("category-sync"),
     {},
     win
   );
@@ -64,7 +63,7 @@ add_task(async function test_section_disabled() {
     ok(legacyGroup.checkVisibility(), "The legacy group is visible");
     is(
       legacyGroup.dataset.category,
-      "paneGeneral",
+      "paneSync",
       "The legacy group has a category"
     );
     ok(
@@ -94,7 +93,7 @@ add_task(async function test_section_enabled() {
   ok(redesignGroup.checkVisibility(), "The redesign group is visible");
   is(
     redesignGroup.dataset.category,
-    "paneGeneral",
+    "paneSync",
     "The redesign group has a category"
   );
   gBrowser.removeCurrentTab();
@@ -117,7 +116,7 @@ add_task(async function test_all_enabled() {
   ok(redesignGroup.checkVisibility(), "The redesign group is visible");
   is(
     redesignGroup.dataset.category,
-    "paneGeneral",
+    "paneSync",
     "The redesign group has a category"
   );
   gBrowser.removeCurrentTab();

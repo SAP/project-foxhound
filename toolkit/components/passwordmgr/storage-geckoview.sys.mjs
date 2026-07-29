@@ -216,6 +216,10 @@ export class LoginManagerStorage extends LoginManagerStorage_json {
     throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
   }
 
+  async countLoginsAsync(_origin, _formActionOrigin, _httpRealm) {
+    throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
+  }
+
   get uiBusy() {
     return false;
   }

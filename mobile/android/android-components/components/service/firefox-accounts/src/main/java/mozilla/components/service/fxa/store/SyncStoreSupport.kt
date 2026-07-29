@@ -116,7 +116,7 @@ internal class FxaAccountObserver(
             )
         }
         scope.launch {
-            val syncAccount = account.getProfile()?.toAccount(account) ?: return@launch
+            val syncAccount = account.getProfile()?.toAccount() ?: return@launch
             store.dispatch(SyncAction.UpdateAccount(syncAccount))
             store.dispatch(SyncAction.UpdateAccountState(AccountState.Authenticated))
         }
@@ -161,12 +161,10 @@ internal class ConstellationObserver(private val store: SyncStore) : DeviceConst
 }
 
 // Could be refactored to use a context receiver once 1.6.2 upgrade lands
-private fun Profile.toAccount(oAuthAccount: OAuthAccount): Account =
+private fun Profile.toAccount(): Account =
     Account(
         uid = uid,
         email = email,
         avatar = avatar,
         displayName = displayName,
-        currentDeviceId = oAuthAccount.getCurrentDeviceId(),
-        sessionToken = oAuthAccount.getSessionToken(),
     )

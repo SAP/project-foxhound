@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,6 +17,11 @@ using namespace mozilla::dom;
 /* static */
 bool ServoCSSParser::IsValidCSSColor(const nsACString& aValue) {
   return Servo_IsValidCSSColor(&aValue);
+}
+
+/* static */
+bool ServoCSSParser::IsValidCSSImage(const nsACString& aValue) {
+  return Servo_IsValidCSSImage(&aValue);
 }
 
 /* static */
@@ -76,6 +79,15 @@ already_AddRefed<StyleLockedDeclarationBlock> ServoCSSParser::ParseProperty(
 bool ServoCSSParser::ParseEasing(const nsACString& aValue,
                                  StyleComputedTimingFunction& aResult) {
   return Servo_ParseEasing(&aValue, &aResult);
+}
+
+/* static */
+bool ServoCSSParser::ParseAndComputeViewTimelineInset(
+    const nsACString& aValue, const Element* aSubject,
+    const ComputedStyle* aStyle, const StylePerDocumentStyleData* aRawData,
+    StyleViewTimelineInset& aResult) {
+  return Servo_ParseAndComputeViewTimelineInset(&aValue, aSubject, aStyle,
+                                                aRawData, &aResult);
 }
 
 /* static */

@@ -1,27 +1,20 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AgnosticDecoderModule.h"
 
+#include "AOMDecoder.h"
+#include "DAV1DDecoder.h"
 #include "VPXDecoder.h"
 #include "VideoUtils.h"
 #include "mozilla/Logging.h"
 #include "mozilla/StaticPrefs_media.h"
 
-#ifdef MOZ_AV1
-#  include "AOMDecoder.h"
-#  include "DAV1DDecoder.h"
-#endif
-
 namespace mozilla {
 
 enum class DecoderType {
-#ifdef MOZ_AV1
   AV1,
-#endif
   Opus,
   Vorbis,
   VPX,
@@ -30,10 +23,8 @@ enum class DecoderType {
 
 static bool IsAvailableInDefault(DecoderType type) {
   switch (type) {
-#ifdef MOZ_AV1
     case DecoderType::AV1:
       return StaticPrefs::media_av1_enabled();
-#endif
     case DecoderType::Opus:
     case DecoderType::Vorbis:
     case DecoderType::VPX:
@@ -46,10 +37,8 @@ static bool IsAvailableInDefault(DecoderType type) {
 
 static bool IsAvailableInRdd(DecoderType type) {
   switch (type) {
-#ifdef MOZ_AV1
     case DecoderType::AV1:
       return StaticPrefs::media_av1_enabled();
-#endif
     case DecoderType::Opus:
       return StaticPrefs::media_rdd_opus_enabled();
     case DecoderType::Vorbis:
@@ -114,16 +103,14 @@ media::DecodeSupportSet AgnosticDecoderModule::Supports(
   const nsACString& mimeType = trackInfo.mMimeType;
 
   bool supports =
-#ifdef MOZ_AV1
       // We remove support for decoding AV1 here if RDD is enabled so that
       // decoding on the content process doesn't accidentally happen in case
       // something goes wrong with launching the RDD process.
       (AOMDecoder::IsAV1(mimeType) && IsAvailable(DecoderType::AV1)) ||
-#endif
       (VPXDecoder::IsVPX(mimeType) && IsAvailable(DecoderType::VPX));
-  MOZ_LOG(sPDMLog, LogLevel::Debug,
-          ("Agnostic decoder %s requested type '%s'",
-           supports ? "supports" : "rejects", mimeType.BeginReading()));
+  MOZ_LOG_FMT(
+      sPDMLog, LogLevel::Debug, "Agnostic decoder {} requested type '{}'",
+      supports ? "supports" : "rejects", PromiseFlatCString(mimeType).get());
   if (supports) {
     return media::DecodeSupport::SoftwareDecode;
   }
@@ -141,7 +128,6 @@ already_AddRefed<MediaDataDecoder> AgnosticDecoderModule::CreateVideoDecoder(
   if (VPXDecoder::IsVPX(aParams.mConfig.mMimeType)) {
     m = new VPXDecoder(aParams);
   }
-#ifdef MOZ_AV1
   // We remove support for decoding AV1 here if RDD is enabled so that
   // decoding on the content process doesn't accidentally happen in case
   // something goes wrong with launching the RDD process.
@@ -154,7 +140,6 @@ already_AddRefed<MediaDataDecoder> AgnosticDecoderModule::CreateVideoDecoder(
       m = new AOMDecoder(aParams);
     }
   }
-#endif
 
   return m.forget();
 }

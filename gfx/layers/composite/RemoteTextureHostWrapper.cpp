@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -72,6 +70,14 @@ gfx::ColorRange RemoteTextureHostWrapper::GetColorRange() const {
   return mRemoteTexture->GetColorRange();
 }
 
+gfx::TransferFunction RemoteTextureHostWrapper::GetTransferFunction() const {
+  MOZ_ASSERT(mRemoteTexture, "TextureHost isn't valid yet");
+  if (!mRemoteTexture) {
+    return TextureHost::GetTransferFunction();
+  }
+  return mRemoteTexture->GetTransferFunction();
+}
+
 gfx::IntSize RemoteTextureHostWrapper::GetSize() const {
   MOZ_ASSERT(mRemoteTexture, "TextureHost isn't valid yet");
   if (!mRemoteTexture) {
@@ -103,8 +109,7 @@ void RemoteTextureHostWrapper::MaybeCreateRenderTexture() {
 
   // mRemoteTexture is also used for WebRender rendering.
   auto wrappedId = mRemoteTexture->mExternalImageId.ref();
-  RefPtr<wr::RenderTextureHost> texture =
-      new wr::RenderTextureHostWrapper(wrappedId);
+  RefPtr texture = MakeRefPtr<wr::RenderTextureHostWrapper>(wrappedId);
   wr::RenderThread::Get()->RegisterExternalImage(mExternalImageId.ref(),
                                                  texture.forget());
   mRenderTextureCreated = true;

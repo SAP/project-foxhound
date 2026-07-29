@@ -20,7 +20,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 const kGlobalPrefBranch = "doh-rollout";
 function regionPrefBranch() {
-  let homeRegion = lazy.Preferences.get(`${kGlobalPrefBranch}.home-region`);
+  let homeRegion = Services.prefs.getStringPref(
+    `${kGlobalPrefBranch}.home-region`,
+    undefined
+  );
   if (!homeRegion) {
     return undefined;
   }
@@ -180,22 +183,28 @@ export const DoHConfigController = {
   async loadRegion() {
     await new Promise(resolve => {
       // If the region has changed since it was last set, update the pref.
-      let homeRegionChanged = lazy.Preferences.get(
-        `${kGlobalPrefBranch}.home-region-changed`
+      let homeRegionChanged = Services.prefs.getBoolPref(
+        `${kGlobalPrefBranch}.home-region-changed`,
+        false
       );
       if (homeRegionChanged) {
-        lazy.Preferences.reset(`${kGlobalPrefBranch}.home-region-changed`);
-        lazy.Preferences.reset(`${kGlobalPrefBranch}.home-region`);
+        Services.prefs.clearUserPref(
+          `${kGlobalPrefBranch}.home-region-changed`
+        );
+        Services.prefs.clearUserPref(`${kGlobalPrefBranch}.home-region`);
       }
 
-      let homeRegion = lazy.Preferences.get(`${kGlobalPrefBranch}.home-region`);
+      let homeRegion = Services.prefs.getStringPref(
+        `${kGlobalPrefBranch}.home-region`,
+        undefined
+      );
       if (homeRegion) {
         resolve();
         return;
       }
 
       let updateRegionAndResolve = () => {
-        lazy.Preferences.set(
+        Services.prefs.setStringPref(
           `${kGlobalPrefBranch}.home-region`,
           currentRegion()
         );
@@ -247,10 +256,16 @@ export const DoHConfigController = {
   },
 
   updateRegionIfChanged(trigger) {
-    let oldRegion = lazy.Preferences.get(`${kGlobalPrefBranch}.home-region`);
+    let oldRegion = Services.prefs.getStringPref(
+      `${kGlobalPrefBranch}.home-region`,
+      undefined
+    );
     if (currentRegion() && currentRegion() != oldRegion) {
       let newRegion = currentRegion();
-      lazy.Preferences.set(`${kGlobalPrefBranch}.home-region`, newRegion);
+      Services.prefs.setStringPref(
+        `${kGlobalPrefBranch}.home-region`,
+        newRegion
+      );
       Glean.doh.regionChanged.record({
         old_region: oldRegion || "unknown",
         new_region: newRegion,
@@ -315,7 +330,10 @@ export const DoHConfigController = {
       configByRegion.set(c.id, c);
     });
 
-    let homeRegion = lazy.Preferences.get(`${kGlobalPrefBranch}.home-region`);
+    let homeRegion = Services.prefs.getStringPref(
+      `${kGlobalPrefBranch}.home-region`,
+      undefined
+    );
     let localConfig =
       configByRegion.get(homeRegion?.toLowerCase()) ||
       configByRegion.get("global");

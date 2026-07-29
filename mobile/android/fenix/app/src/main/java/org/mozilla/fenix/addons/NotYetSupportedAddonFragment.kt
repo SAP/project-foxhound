@@ -16,6 +16,7 @@ import mozilla.components.feature.addons.ui.UnsupportedAddonsAdapter
 import mozilla.components.feature.addons.ui.UnsupportedAddonsAdapterDelegate
 import org.mozilla.fenix.R
 import org.mozilla.fenix.databinding.FragmentNotYetSupportedAddonsBinding
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.showToolbar
 import mozilla.components.feature.addons.R as addonsR
@@ -27,7 +28,7 @@ private const val LEARN_MORE_URL =
  * Fragment for displaying and managing add-ons that are not yet supported by the browser.
  */
 class NotYetSupportedAddonFragment :
-    Fragment(R.layout.fragment_not_yet_supported_addons), UnsupportedAddonsAdapterDelegate {
+    Fragment(R.layout.fragment_not_yet_supported_addons), UnsupportedAddonsAdapterDelegate, SystemInsetsPaddedFragment {
 
     private val args by navArgs<NotYetSupportedAddonFragmentArgs>()
     private var unsupportedAddonsAdapter: UnsupportedAddonsAdapter? = null

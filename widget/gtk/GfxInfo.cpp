@@ -1,13 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=8 et :
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GfxInfo.h"
 
-#include <cctype>
 #include <errno.h>
 #include <unistd.h>
 #include <string>
@@ -31,20 +27,28 @@
 #include "nsString.h"
 #include "nsStringFwd.h"
 #include "nsUnicharUtils.h"
+#include "nsCharSeparatedTokenizer.h"
 #include "nsWhitespaceTokenizer.h"
 #include "prenv.h"
 #include "WidgetUtilsGtk.h"
 #include "MediaCodecsSupport.h"
 #include "nsAppRunner.h"
+#include <gbm.h>
+
+#ifndef GBM_FORMAT_P010
+#  define GBM_FORMAT_P010 __gbm_fourcc_code('P', '0', '1', '0')
+#endif
 
 // How long we wait for data from glxtest/vaapi test process in milliseconds.
 #define GFX_TEST_TIMEOUT 4000
 #define VAAPI_TEST_TIMEOUT 2000
 #define V4L2_TEST_TIMEOUT 2000
+#define VULKAN_TEST_TIMEOUT 2000
 
 #define GLX_PROBE_BINARY u"glxtest"_ns
 #define VAAPI_PROBE_BINARY u"vaapitest"_ns
 #define V4L2_PROBE_BINARY u"v4l2test"_ns
+#define VULKAN_PROBE_BINARY u"vulkantest"_ns
 
 namespace mozilla::widget {
 
@@ -78,6 +82,27 @@ nsresult GfxInfo::Init() {
   mHasMultipleGPUs = false;
   mGlxTestError = false;
   return GfxInfoBase::Init();
+}
+
+const nsTArray<uint64_t>& GfxInfo::GetDMABufEGLModifiers(
+    uint32_t aDrmFourcc) const {
+  switch (aDrmFourcc) {
+    case GBM_FORMAT_XRGB8888:
+      return mDMABufEGLModifiersXRGB;
+    case GBM_FORMAT_ARGB8888:
+      return mDMABufEGLModifiersARGB;
+    case GBM_FORMAT_NV12:
+      return mDMABufEGLModifiersNV12;
+    case GBM_FORMAT_P010:
+      return mDMABufEGLModifiersP010;
+    case GBM_FORMAT_YUV420:
+      return mDMABufEGLModifiersYUV420;
+    default: {
+      NS_WARNING("GfxInfo::GetDMABufEGLModifiers(): unsupported format!");
+      static const nsTArray<uint64_t> empty;
+      return empty;
+    }
+  }
 }
 
 void GfxInfo::AddCrashReportAnnotations() {
@@ -257,6 +282,12 @@ void GfxInfo::GetData() {
   AutoTArray<nsCString, 2> pciVendors;
   AutoTArray<nsCString, 2> pciDevices;
 
+  nsCString dmabufModifiersXRGB;
+  nsCString dmabufModifiersARGB;
+  nsCString dmabufModifiersNV12;
+  nsCString dmabufModifiersP010;
+  nsCString dmabufModifiersYUV420;
+
   nsCString* stringToFill = nullptr;
   bool logString = false;
   bool errorLog = false;
@@ -300,6 +331,16 @@ void GfxInfo::GetData() {
       stringToFill = &drmRenderDevice;
     } else if (!strcmp(line, "TEST_TYPE")) {
       stringToFill = &testType;
+    } else if (!strcmp(line, "DMABUF_MODIFIERS_XRGB")) {
+      stringToFill = &dmabufModifiersXRGB;
+    } else if (!strcmp(line, "DMABUF_MODIFIERS_ARGB")) {
+      stringToFill = &dmabufModifiersARGB;
+    } else if (!strcmp(line, "DMABUF_MODIFIERS_NV12")) {
+      stringToFill = &dmabufModifiersNV12;
+    } else if (!strcmp(line, "DMABUF_MODIFIERS_P010")) {
+      stringToFill = &dmabufModifiersP010;
+    } else if (!strcmp(line, "DMABUF_MODIFIERS_YUV420")) {
+      stringToFill = &dmabufModifiersYUV420;
     } else if (!strcmp(line, "WARNING")) {
       logString = true;
     } else if (!strcmp(line, "ERROR")) {
@@ -307,6 +348,26 @@ void GfxInfo::GetData() {
       errorLog = true;
     }
   }
+
+  auto parseModifiers = [](const nsCString& aStr, nsTArray<uint64_t>& aOut) {
+    if (aStr.IsEmpty()) {
+      return;
+    }
+    nsCCharSeparatedTokenizer tokenizer(aStr, ',');
+    while (tokenizer.hasMoreTokens()) {
+      const auto& token = tokenizer.nextToken();
+      nsresult rv;
+      uint64_t val = token.ToUnsignedInteger64(&rv, 16);
+      if (NS_SUCCEEDED(rv)) {
+        aOut.AppendElement(val);
+      }
+    }
+  };
+  parseModifiers(dmabufModifiersXRGB, mDMABufEGLModifiersXRGB);
+  parseModifiers(dmabufModifiersARGB, mDMABufEGLModifiersARGB);
+  parseModifiers(dmabufModifiersNV12, mDMABufEGLModifiersNV12);
+  parseModifiers(dmabufModifiersP010, mDMABufEGLModifiersP010);
+  parseModifiers(dmabufModifiersYUV420, mDMABufEGLModifiersYUV420);
 
   MOZ_ASSERT(pciDevices.Length() == pciVendors.Length(),
              "Missing PCI vendors/devices");
@@ -750,6 +811,81 @@ void GfxInfo::GetDataV4L2() {
 #endif  // MOZ_ENABLE_V4L2
 }
 
+void GfxInfo::GetDataVulkan() {
+  if (mIsVulkanSupported.isSome()) {
+    return;
+  }
+  mIsVulkanSupported = Some(false);
+  mVulkanSupportedCodecs = 0;
+
+#if defined(MOZ_ENABLE_VULKAN_VIDEO)
+  char* vulkanData = nullptr;
+  auto freeVulkan = mozilla::MakeScopeExit([&] { g_free((void*)vulkanData); });
+
+  int vulkanPipe = -1;
+  int vulkanPID = 0;
+  const char* args[3];
+  if (mDrmRenderDevice.IsEmpty()) {
+    args[0] = "-p";
+    args[1] = nullptr;
+  } else {
+    args[0] = "-d";
+    args[1] = mDrmRenderDevice.get();
+    args[2] = nullptr;
+  }
+  vulkanPID = FireTestProcess(VULKAN_PROBE_BINARY, &vulkanPipe, args);
+  if (!vulkanPID) {
+    gfxCriticalNote << "Failed to start vulkantest process\n";
+    return;
+  }
+
+  if (!ManageChildProcess("vulkantest", &vulkanPID, &vulkanPipe,
+                          VULKAN_TEST_TIMEOUT, &vulkanData)) {
+    gfxCriticalNote << "vulkantest: ManageChildProcess failed\n";
+    return;
+  }
+
+  char* bufptr = vulkanData;
+  char* line;
+  while ((line = NS_strtok("\n", &bufptr))) {
+    if (!strcmp(line, "VULKAN_SUPPORTED")) {
+      line = NS_strtok("\n", &bufptr);
+      if (!line) {
+        gfxCriticalNote << "vulkantest: Failed to get Vulkan support\n";
+        return;
+      }
+      mIsVulkanSupported = Some(!strcmp(line, "TRUE"));
+    } else if (!strcmp(line, "VULKAN_HWCODECS")) {
+      line = NS_strtok("\n", &bufptr);
+      if (!line) {
+        gfxCriticalNote << "vulkantest: Failed to get Vulkan codecs\n";
+        return;
+      }
+      std::istringstream(line) >> mVulkanSupportedCodecs;
+
+#  define VULKAN_CODEC_CHECK(name)                          \
+    if (mVulkanSupportedCodecs & CODEC_HW_DEC_##name) {     \
+      media::MCSInfo::AddSupport(                           \
+          media::MediaCodecsSupport::name##HardwareDecode); \
+    }
+      VULKAN_CODEC_CHECK(H264)
+      VULKAN_CODEC_CHECK(VP8)
+      VULKAN_CODEC_CHECK(VP9)
+      VULKAN_CODEC_CHECK(AV1)
+      VULKAN_CODEC_CHECK(HEVC)
+#  undef VULKAN_CODEC_CHECK
+    } else if (!strcmp(line, "WARNING") || !strcmp(line, "ERROR")) {
+      gfxCriticalNote << "vulkantest: " << line;
+      line = NS_strtok("\n", &bufptr);
+      if (line) {
+        gfxCriticalNote << "vulkantest: " << line << "\n";
+      }
+      return;
+    }
+  }
+#endif
+}
+
 // Check the capabilities of a single V4L2 device.  If the device doesn't work
 // or doesn't support any codecs we recognise, then we just ignore it.  If it
 // does support recognised codecs then add these codecs to the supported list
@@ -851,6 +987,11 @@ void GfxInfo::V4L2ProbeDevice(nsCString& dev) {
     mIsV4L2Supported = Some(true);
     media::MCSInfo::AddSupport(media::MediaCodecsSupport::HEVCHardwareDecode);
     mV4L2SupportedCodecs |= CODEC_HW_DEC_HEVC;
+  }
+  if (outFormats.Contains("AV01")) {
+    mIsV4L2Supported = Some(true);
+    media::MCSInfo::AddSupport(media::MediaCodecsSupport::AV1HardwareDecode);
+    mV4L2SupportedCodecs |= CODEC_HW_DEC_AV1;
   }
 }
 
@@ -1018,6 +1159,15 @@ const nsTArray<RefPtr<GfxDriverInfo>>& GfxInfo::GetGfxDriverInfo() {
         nsIGfxInfo::FEATURE_WEBGL_USE_HARDWARE,
         nsIGfxInfo::FEATURE_BLOCKED_DEVICE, DRIVER_COMPARISON_IGNORED,
         V(0, 0, 0, 0), "FEATURE_FAILURE_WEBGL_MESA_VM", "");
+
+    // Disable nvidia 390.157 due to startup crashes (Bug 2028081)
+    APPEND_TO_DRIVER_BLOCKLIST_RANGE_EXT(
+        OperatingSystem::Linux, ScreenSizeStatus::All, BatteryStatus::All,
+        WindowProtocol::All, DriverVendor::NonMesaAll, DeviceFamily::NvidiaAll,
+        nsIGfxInfo::FEATURE_WEBGL_USE_HARDWARE,
+        nsIGfxInfo::FEATURE_BLOCKED_DEVICE, DRIVER_BETWEEN_INCLUSIVE_START,
+        V(390, 157, 0, 0), V(391, 0, 0, 0), "FEATURE_FAILURE_WEBGL_OLD_NVIDIA",
+        "391.0.0");
 
     ////////////////////////////////////
     // FEATURE_WEBRENDER_COMPOSITOR
@@ -1188,6 +1338,9 @@ const nsTArray<RefPtr<GfxDriverInfo>>& GfxInfo::GetGfxDriverInfo() {
         "FEATURE_HARDWARE_VIDEO_ZERO_COPY_LINUX_AMD_DISABLE", "Mesa 24.2.0.0");
 
     ////////////////////////////////////
+    // FEATURE_VIDEO_HDR
+
+    ////////////////////////////////////
     // FEATURE_WEBRENDER_PARTIAL_PRESENT
     APPEND_TO_DRIVER_BLOCKLIST_EXT(
         OperatingSystem::Linux, ScreenSizeStatus::All, BatteryStatus::All,
@@ -1212,13 +1365,6 @@ const nsTArray<RefPtr<GfxDriverInfo>>& GfxInfo::GetGfxDriverInfo() {
         nsIGfxInfo::FEATURE_WEBGPU, nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION,
         DRIVER_LESS_THAN, V(25, 0, 4, 0),
         "FEATURE_FAILURE_WEBGPU_MESA_BUG_1979007", "Mesa 25.0.4");
-
-    APPEND_TO_DRIVER_BLOCKLIST_EXT(
-        OperatingSystem::Linux, ScreenSizeStatus::All, BatteryStatus::All,
-        WindowProtocol::All, DriverVendor::MesaLLVMPipe, DeviceFamily::All,
-        nsIGfxInfo::FEATURE_WEBGPU, nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION,
-        DRIVER_LESS_THAN, V(25, 2, 5, 0),
-        "FEATURE_FAILURE_WEBGPU_MESA_LLVMPipe_BUG_1995054", "Mesa 25.2.5");
 
     ////////////////////////////////////
 
@@ -1399,7 +1545,8 @@ nsresult GfxInfo::GetFeatureStatusImpl(
       continue;
     }
     if ((mVAAPISupportedCodecs & pair.mCodec) ||
-        (mV4L2SupportedCodecs & pair.mCodec)) {
+        (mV4L2SupportedCodecs & pair.mCodec) ||
+        (mVulkanSupportedCodecs & pair.mCodec)) {
       *aStatus = nsIGfxInfo::FEATURE_STATUS_OK;
     } else {
       *aStatus = nsIGfxInfo::FEATURE_BLOCKED_PLATFORM_TEST;
@@ -1411,7 +1558,33 @@ nsresult GfxInfo::GetFeatureStatusImpl(
   auto ret = GfxInfoBase::GetFeatureStatusImpl(
       aFeature, aStatus, aSuggestedDriverVersion, aDriverInfo, aFailureId, &os);
 
-  // Probe VA-API/V4L2 on supported devices only
+  // Probe Vulkan first
+  if (aFeature == nsIGfxInfo::FEATURE_HARDWARE_VIDEO_DECODING_VULKAN) {
+    if (!StaticPrefs::
+            media_hardware_video_decoding_vulkan_enabled_AtStartup()) {
+      *aStatus = nsIGfxInfo::FEATURE_BLOCKED_PLATFORM_TEST;
+      aFailureId = "FEATURE_HARDWARE_VIDEO_DECODING_VULKAN_PREF_DISABLED"_ns;
+      return NS_OK;
+    }
+    if (!StaticPrefs::media_hardware_video_decoding_enabled_AtStartup()) {
+      return ret;
+    }
+    bool probeHWDecode =
+        mIsAccelerated &&
+        (*aStatus == nsIGfxInfo::FEATURE_STATUS_OK ||
+         StaticPrefs::media_hardware_video_decoding_force_enabled_AtStartup());
+    if (probeHWDecode) {
+      GetDataVulkan();
+    } else {
+      mIsVulkanSupported = Some(false);
+    }
+    if (!mIsVulkanSupported.value()) {
+      *aStatus = nsIGfxInfo::FEATURE_BLOCKED_PLATFORM_TEST;
+      aFailureId = "FEATURE_FAILURE_VIDEO_DECODING_VULKAN_TEST_FAILED";
+    }
+  }
+
+  // Probe VA-API/V4L2/Vulkan on supported devices only
   if (aFeature == nsIGfxInfo::FEATURE_HARDWARE_VIDEO_DECODING) {
     if (!StaticPrefs::media_hardware_video_decoding_enabled_AtStartup()) {
       return ret;

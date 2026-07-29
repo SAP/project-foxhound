@@ -131,8 +131,8 @@ add_task(async function testHiddenUnusedVariables() {
   ok(!!showUnusedVariablesButton, "Show unused variables button is displayed");
 
   info("Check that the button doesn't prevent the usual keyboard navigation");
-  const h1RuleEditor = getRuleViewRuleEditor(view, 1);
-  const whereH1RuleEditor = getRuleViewRuleEditor(view, 2);
+  const h1RuleEditor = getRuleViewRuleEditorAt(view, 1);
+  const whereH1RuleEditor = getRuleViewRuleEditorAt(view, 2);
 
   await focusNewRuleViewProperty(h1RuleEditor);
 

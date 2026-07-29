@@ -385,6 +385,12 @@ static int mediacodec_wrap_sw_audio_buffer(AVCodecContext *avctx,
         goto done;
     }
 
+    if (info->size % (sample_size * avctx->ch_layout.nb_channels)) {
+        av_log(avctx, AV_LOG_ERROR, "input is not a multiple of channels * sample_size\n");
+        ret = AVERROR(EINVAL);
+        goto done;
+    }
+
     frame->format = avctx->sample_fmt;
     frame->sample_rate = avctx->sample_rate;
     frame->nb_samples = info->size / (sample_size * avctx->ch_layout.nb_channels);
@@ -537,6 +543,8 @@ static int mediacodec_wrap_sw_buffer(AVCodecContext *avctx,
         av_log(avctx, AV_LOG_ERROR, "Could not get %s from format %s\n", key, format); \
         ret = AVERROR_EXTERNAL;                                                        \
         goto fail;                                                                     \
+    } else {                                                                           \
+        (name) = 0;                                                                    \
     }                                                                                  \
 } while (0)                                                                            \
 
@@ -575,6 +583,8 @@ static int mediacodec_dec_parse_video_format(AVCodecContext *avctx, MediaCodecDe
     } else if (strstr(s->codec_name, "OMX.SEC.avc.dec")) {
         s->slice_height = avctx->height;
         s->stride = avctx->width;
+    } else if (strstr(s->codec_name, "OMX.MTK.VIDEO.DECODER.MPEG2")) {
+        s->slice_height = s->height;
     } else if (s->slice_height == 0) {
         s->slice_height = s->height;
     }

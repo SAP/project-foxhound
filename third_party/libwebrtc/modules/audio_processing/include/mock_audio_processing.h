@@ -16,11 +16,11 @@
 #include <cstdint>
 #include <cstdio>
 #include <memory>
+#include <span>
 #include <string>
 
 #include "absl/base/nullability.h"
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/audio/audio_processing.h"
 #include "api/audio/audio_processing_statistics.h"
 #include "api/audio/echo_control.h"
@@ -35,7 +35,7 @@ namespace webrtc {
 namespace test {
 class MockCustomProcessing : public CustomProcessing {
  public:
-  virtual ~MockCustomProcessing() {}
+  ~MockCustomProcessing() override {}
   MOCK_METHOD(void,
               Initialize,
               (int sample_rate_hz, int num_channels),
@@ -50,7 +50,7 @@ class MockCustomProcessing : public CustomProcessing {
 
 class MockCustomAudioAnalyzer : public CustomAudioAnalyzer {
  public:
-  virtual ~MockCustomAudioAnalyzer() {}
+  ~MockCustomAudioAnalyzer() override {}
   MOCK_METHOD(void,
               Initialize,
               (int sample_rate_hz, int num_channels),
@@ -61,7 +61,7 @@ class MockCustomAudioAnalyzer : public CustomAudioAnalyzer {
 
 class MockEchoControl : public EchoControl {
  public:
-  virtual ~MockEchoControl() {}
+  ~MockEchoControl() override {}
   MOCK_METHOD(void, AnalyzeRender, (AudioBuffer * render), (override));
   MOCK_METHOD(void, AnalyzeCapture, (AudioBuffer * capture), (override));
   MOCK_METHOD(void,
@@ -81,7 +81,7 @@ class MockEchoControl : public EchoControl {
 
 class MockEchoDetector : public EchoDetector {
  public:
-  virtual ~MockEchoDetector() {}
+  ~MockEchoDetector() override {}
   MOCK_METHOD(void,
               Initialize,
               (int capture_sample_rate_hz,
@@ -91,11 +91,11 @@ class MockEchoDetector : public EchoDetector {
               (override));
   MOCK_METHOD(void,
               AnalyzeRenderAudio,
-              (webrtc::ArrayView<const float> render_audio),
+              (std::span<const float> render_audio),
               (override));
   MOCK_METHOD(void,
               AnalyzeCaptureAudio,
-              (webrtc::ArrayView<const float> capture_audio),
+              (std::span<const float> capture_audio),
               (override));
   MOCK_METHOD(Metrics, GetMetrics, (), (const, override));
 };
@@ -104,7 +104,7 @@ class MockAudioProcessing : public AudioProcessing {
  public:
   MockAudioProcessing() {}
 
-  virtual ~MockAudioProcessing() {}
+  ~MockAudioProcessing() override {}
 
   MOCK_METHOD(int, Initialize, (), (override));
   MOCK_METHOD(int,
@@ -155,7 +155,7 @@ class MockAudioProcessing : public AudioProcessing {
               (override));
   MOCK_METHOD(bool,
               GetLinearAecOutput,
-              ((webrtc::ArrayView<std::array<float, 160>> linear_output)),
+              ((std::span<std::array<float, 160>> linear_output)),
               (const, override));
   MOCK_METHOD(int, set_stream_delay_ms, (int delay), (override));
   MOCK_METHOD(int, stream_delay_ms, (), (const, override));

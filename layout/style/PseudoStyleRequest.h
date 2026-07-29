@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,6 +11,8 @@
 #include "nsAtom.h"
 
 namespace mozilla {
+
+struct URLExtraData;
 
 /*
  * The pseudo style request is used to get the pseudo style of an element. This
@@ -62,7 +62,8 @@ struct PseudoStyleRequest {
   // Returns an empty Request for a syntactically invalid pseudo-element, and
   // NotPseudo for the empty / null string.
   static mozilla::Maybe<PseudoStyleRequest> Parse(
-      const nsAString& aPseudoElement, bool aIgnoreEnabledState = false);
+      const nsAString& aPseudoElement, URLExtraData* aURLExtraData,
+      bool aIgnoreEnabledState = false);
 };
 
 class PseudoStyleRequestHashKey : public PLDHashEntryHdr {

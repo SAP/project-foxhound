@@ -44,7 +44,12 @@ interface PocketSettings {
  * @param settings [Settings] used for fetching and storing pocket related settings.
  */
 class SettingsBackedPocketSettings(private val settings: Settings) : PocketSettings {
-    override val showPocketRecommendationsFeature get() = settings.showPocketRecommendationsFeature
+    override val showPocketRecommendationsFeature
+        get() = (
+            settings.showPocketRecommendationsFeature ||
+                settings.privateModeAndStoriesEntryPointEnabled
+            )
+
     override val showPocketSponsoredStories get() = settings.showPocketSponsoredStories
 }
 

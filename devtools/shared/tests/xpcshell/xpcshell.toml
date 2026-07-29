@@ -52,6 +52,8 @@ skip-if = [
 
 ["test_loader.js"]
 
+["test_LocalizationHelper_missing_key.js"]
+
 ["test_natural-sort.js"]
 skip-if = [
   "os == 'android' && os_version == '14' && arch == 'x86_64'",
@@ -82,3 +84,5 @@ skip-if = [
 ["test_sprintfjs.js"]
 
 ["test_stack.js"]
+
+["test_toFixed.js"]

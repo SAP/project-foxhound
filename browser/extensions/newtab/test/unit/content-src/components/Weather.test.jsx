@@ -70,6 +70,23 @@ function WrapWithProvider({ children, state = INITIAL_STATE }) {
   return <Provider store={store}>{children}</Provider>;
 }
 
+const novaWeatherState = {
+  ...mockState,
+  Prefs: {
+    ...mockState.Prefs,
+    values: {
+      ...mockState.Prefs.values,
+      "nova.enabled": true,
+      "widgets.weather.size": "medium",
+      "weather.locationSearchEnabled": true,
+      "system.showWeatherOptIn": false,
+      "weather.temperatureUnits": "f",
+      "weather.display": "simple",
+      "weather.staticData.enabled": false,
+    },
+  },
+};
+
 describe("<Weather>", () => {
   let wrapper;
   let sandbox;
@@ -93,6 +110,202 @@ describe("<Weather>", () => {
     );
     assert.ok(wrapper.exists());
     assert.ok(wrapper.find(".weather").exists());
+  });
+
+  describe("size submenu (nova)", () => {
+    it("does not render size submenu when nova is disabled", () => {
+      wrapper = mount(
+        <WrapWithProvider state={mockState}>
+          <Weather dispatch={dispatch} />
+        </WrapWithProvider>
+      );
+
+      assert.isFalse(
+        wrapper
+          .find("span[data-l10n-id='newtab-widget-menu-change-size']")
+          .exists()
+      );
+    });
+
+    it("renders size submenu when nova is enabled", () => {
+      wrapper = mount(
+        <WrapWithProvider state={novaWeatherState}>
+          <Weather dispatch={dispatch} />
+        </WrapWithProvider>
+      );
+
+      assert.ok(
+        wrapper
+          .find("span[data-l10n-id='newtab-widget-menu-change-size']")
+          .exists()
+      );
+      assert.ok(
+        wrapper
+          .find("panel-item[data-l10n-id='newtab-widget-size-small']")
+          .exists()
+      );
+      assert.ok(
+        wrapper
+          .find("panel-item[data-l10n-id='newtab-widget-size-medium']")
+          .exists()
+      );
+      assert.ok(
+        wrapper
+          .find("panel-item[data-l10n-id='newtab-widget-size-large']")
+          .exists()
+      );
+    });
+
+    it("clicking a size option dispatches SET_PREF and WIDGETS_USER_EVENT", () => {
+      const store = createStore(combineReducers(reducers), novaWeatherState);
+      sinon.spy(store, "dispatch");
+
+      wrapper = mount(
+        <Provider store={store}>
+          <Weather />
+        </Provider>
+      );
+
+      const weatherInstance = wrapper.find("_Weather").instance();
+      weatherInstance.panelElement = {
+        hide: sinon.spy(),
+        addEventListener: sinon.spy(),
+        removeEventListener: sinon.spy(),
+      };
+
+      const submenuNode = wrapper
+        .find("panel-list[id='weather-size-submenu']")
+        .getDOMNode();
+      const mockItem = document.createElement("div");
+      mockItem.dataset.size = "small";
+      const event = new MouseEvent("click", { bubbles: true });
+      Object.defineProperty(event, "composedPath", { value: () => [mockItem] });
+      submenuNode.dispatchEvent(event);
+
+      const dispatchedActions = store.dispatch
+        .getCalls()
+        .map(call => call.args[0]);
+
+      const setPrefAction = dispatchedActions.find(a => a.type === at.SET_PREF);
+      assert.ok(setPrefAction, "Expected SET_PREF to be dispatched");
+      assert.equal(setPrefAction.data.name, "widgets.weather.size");
+      assert.equal(setPrefAction.data.value, "small");
+
+      const telemetryAction = dispatchedActions.find(
+        a => a.type === at.WIDGETS_USER_EVENT
+      );
+      assert.ok(
+        telemetryAction,
+        "Expected WIDGETS_USER_EVENT to be dispatched"
+      );
+      assert.equal(telemetryAction.data.widget_name, "weather");
+      assert.equal(telemetryAction.data.widget_source, "context_menu");
+      assert.equal(telemetryAction.data.user_action, "change_size");
+      assert.equal(telemetryAction.data.action_value, "small");
+      assert.equal(telemetryAction.data.widget_size, "mini");
+    });
+
+    it("hides CHANGE_DISPLAY items when nova is enabled", () => {
+      wrapper = mount(
+        <WrapWithProvider state={novaWeatherState}>
+          <Weather dispatch={dispatch} />
+        </WrapWithProvider>
+      );
+
+      assert.isFalse(wrapper.find("#weather-menu-display-detailed").exists());
+      assert.isFalse(wrapper.find("#weather-menu-display-simple").exists());
+    });
+
+    it("shows CHANGE_DISPLAY items when nova is disabled", () => {
+      const simpleState = {
+        ...mockState,
+        Prefs: {
+          ...mockState.Prefs,
+          values: {
+            ...mockState.Prefs.values,
+            "weather.display": "simple",
+          },
+        },
+      };
+
+      wrapper = mount(
+        <WrapWithProvider state={simpleState}>
+          <Weather dispatch={dispatch} />
+        </WrapWithProvider>
+      );
+
+      assert.ok(wrapper.find("#weather-menu-display-detailed").exists());
+    });
+
+    it("checked state marks the current size", () => {
+      wrapper = mount(
+        <WrapWithProvider state={novaWeatherState}>
+          <Weather dispatch={dispatch} />
+        </WrapWithProvider>
+      );
+
+      const mediumItem = wrapper.find(
+        "panel-item[data-l10n-id='newtab-widget-size-medium']"
+      );
+      const smallItem = wrapper.find(
+        "panel-item[data-l10n-id='newtab-widget-size-small']"
+      );
+      const largeItem = wrapper.find(
+        "panel-item[data-l10n-id='newtab-widget-size-large']"
+      );
+
+      assert.equal(mediumItem.prop("checked"), true);
+      assert.equal(smallItem.prop("checked"), undefined);
+      assert.equal(largeItem.prop("checked"), undefined);
+    });
+  });
+
+  describe("size-driven visibility (nova)", () => {
+    it("renders mini widget when nova=on, size=small, forecastWidget=enabled", () => {
+      const state = {
+        ...mockState,
+        Prefs: {
+          ...mockState.Prefs,
+          values: {
+            ...mockState.Prefs.values,
+            "nova.enabled": true,
+            "widgets.weather.size": "small",
+            "widgets.system.weatherForecast.enabled": true,
+          },
+        },
+      };
+
+      wrapper = mount(
+        <WrapWithProvider state={state}>
+          <Weather dispatch={dispatch} />
+        </WrapWithProvider>
+      );
+
+      assert.ok(wrapper.find(".weather").exists());
+    });
+
+    it("hides mini widget when nova=on, size=medium, forecastWidget=enabled", () => {
+      const state = {
+        ...mockState,
+        Prefs: {
+          ...mockState.Prefs,
+          values: {
+            ...mockState.Prefs.values,
+            "nova.enabled": true,
+            "widgets.weather.size": "medium",
+            "widgets.system.weatherForecast.enabled": true,
+          },
+        },
+      };
+
+      wrapper = mount(
+        <WrapWithProvider state={state}>
+          <Weather dispatch={dispatch} />
+        </WrapWithProvider>
+      );
+
+      assert.isFalse(wrapper.find(".weather").exists());
+    });
   });
 
   describe("Opt-in prompt actions", () => {
@@ -229,7 +442,11 @@ describe("<Weather>", () => {
 
       // Mock the panel element's hide method
       const weatherInstance = wrapper.find("_Weather").instance();
-      weatherInstance.panelElement = { hide: sinon.spy() };
+      weatherInstance.panelElement = {
+        hide: sinon.spy(),
+        addEventListener: sinon.spy(),
+        removeEventListener: sinon.spy(),
+      };
 
       // Find the detect location panel-item
       const detectLocationBtn = wrapper.find("#weather-menu-detect-location");
@@ -285,7 +502,11 @@ describe("<Weather>", () => {
       );
 
       const weatherInstance = wrapper.find("_Weather").instance();
-      weatherInstance.panelElement = { hide: sinon.spy() };
+      weatherInstance.panelElement = {
+        hide: sinon.spy(),
+        addEventListener: sinon.spy(),
+        removeEventListener: sinon.spy(),
+      };
 
       const displayMenuItem = wrapper.find("#weather-menu-display-detailed");
       assert.ok(displayMenuItem.exists(), "Display menu item should exist");
@@ -328,7 +549,11 @@ describe("<Weather>", () => {
       );
 
       const weatherInstance = wrapper.find("_Weather").instance();
-      weatherInstance.panelElement = { hide: sinon.spy() };
+      weatherInstance.panelElement = {
+        hide: sinon.spy(),
+        addEventListener: sinon.spy(),
+        removeEventListener: sinon.spy(),
+      };
 
       const tempMenuItem = wrapper.find("#weather-menu-temp-fahrenheit");
       assert.ok(tempMenuItem.exists(), "Temperature menu item should exist");

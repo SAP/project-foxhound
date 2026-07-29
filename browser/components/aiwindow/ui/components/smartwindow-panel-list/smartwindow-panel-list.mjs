@@ -10,7 +10,7 @@ import {
 } from "chrome://global/content/vendor/lit.all.mjs";
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 // eslint-disable-next-line import/no-unassigned-import
-import "chrome://global/content/elements/panel-list.js";
+import "chrome://global/content/elements/panel-list.mjs";
 
 /**
  * A generic panel list component for displaying grouped items in a popup.
@@ -35,6 +35,7 @@ export class SmartwindowPanelList extends MozLitElement {
     anchor: { type: Object },
     placeholderL10nId: { type: String },
     alwaysOpen: { type: Boolean },
+    sidebarMode: { type: Boolean },
   };
 
   #panelList = null;
@@ -46,13 +47,61 @@ export class SmartwindowPanelList extends MozLitElement {
     this.anchor = null;
     this.placeholderL10nId = "";
     this.alwaysOpen = false;
+    this.sidebarMode = false;
   }
 
   firstUpdated() {
     this.#panelList = this.shadowRoot.querySelector("panel-list");
+    this.#panelList.addEventListener("shown", () => {
+      if (this.sidebarMode) {
+        this.#clampToViewport();
+      }
+    });
     if (this.alwaysOpen) {
       this.show();
     }
+  }
+
+  #clampToViewport() {
+    const panelEl = this.#panelList;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const panelRect = panelEl.getBoundingClientRect();
+    const effectiveWidth = Math.min(panelRect.width, viewportWidth);
+    const effectiveHeight = Math.min(panelRect.height, viewportHeight);
+
+    let x = parseFloat(panelEl.style.left) || 0;
+    let y = parseFloat(panelEl.style.top) || 0;
+    x = Math.max(0, Math.min(x, viewportWidth - effectiveWidth));
+    y = Math.max(0, Math.min(y, viewportHeight - effectiveHeight));
+    panelEl.style.maxWidth = `${viewportWidth}px`;
+    panelEl.style.left = `${x}px`;
+    panelEl.style.top = `${y}px`;
+  }
+
+  #reposition() {
+    requestAnimationFrame(() => {
+      const anchorElement = this.#anchorElement;
+      if (!anchorElement || !this.#panelList?.open) {
+        return;
+      }
+      const panelEl = this.#panelList;
+      const anchorRect = anchorElement.getBoundingClientRect();
+      const panelHeight = panelEl.scrollHeight;
+      const valign = panelEl.getAttribute("valign");
+      const VIEWPORT_PANEL_MIN_MARGIN = 10;
+      let topOffset;
+      if (valign === "top") {
+        topOffset = Math.max(
+          anchorRect.top - panelHeight,
+          VIEWPORT_PANEL_MIN_MARGIN
+        );
+      } else {
+        topOffset = anchorRect.bottom;
+      }
+      panelEl.style.top = `${topOffset + window.scrollY}px`;
+      this.#clampToViewport();
+    });
   }
 
   updated(changedProperties) {
@@ -64,6 +113,12 @@ export class SmartwindowPanelList extends MozLitElement {
         this.anchor instanceof Element
           ? this.anchor
           : this.renderRoot.querySelector(".smartwindow-panel-list-anchor");
+    }
+    if (
+      this.#panelList?.open &&
+      (changedProperties.has("anchor") || changedProperties.has("groups"))
+    ) {
+      this.#reposition();
     }
   }
 

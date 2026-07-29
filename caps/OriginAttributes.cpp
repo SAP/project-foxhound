@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -80,6 +78,16 @@ static void PopulateTopLevelInfoFromURI(const bool aIsTopLevelDocument,
   } while (nestedURI && !scheme.EqualsLiteral("about") &&
            NS_SUCCEEDED(nestedURI->GetInnerURI(getter_AddRefs(uri))));
 
+  // Use the creator origin's URI if we're passed a blob URI.
+  if (scheme.EqualsLiteral("blob")) {
+    nsCOMPtr<nsIPrincipal> blobPrincipal;
+    NS_ENSURE_TRUE_VOID(dom::BlobURLProtocolHandler::GetBlobURLPrincipal(
+        uri, aOriginAttributes, getter_AddRefs(blobPrincipal)));
+    uri = blobPrincipal->GetURI();
+    NS_ENSURE_TRUE_VOID(uri);
+    NS_ENSURE_SUCCESS_VOID(uri->GetScheme(scheme));
+  }
+
   if (scheme.EqualsLiteral("about")) {
     MakeTopLevelInfo(scheme, nsLiteralCString(ABOUT_URI_FIRST_PARTY_DOMAIN),
                      aForeignByAncestorContext, aUseSite, topLevelInfo);
@@ -105,14 +113,6 @@ static void PopulateTopLevelInfoFromURI(const bool aIsTopLevelDocument,
   // attributes in order to guarantee their storage integrity when switching
   // FPI on and off.
   if (scheme.EqualsLiteral("moz-extension")) {
-    return;
-  }
-
-  nsCOMPtr<nsIPrincipal> blobPrincipal;
-  if (dom::BlobURLProtocolHandler::GetBlobURLPrincipal(
-          uri, getter_AddRefs(blobPrincipal))) {
-    MOZ_ASSERT(blobPrincipal);
-    topLevelInfo = blobPrincipal->OriginAttributesRef().*aTarget;
     return;
   }
 
@@ -215,6 +215,7 @@ void OriginAttributes::SetPartitionKey(const nsAString& aOther) {
   mPartitionKey = aOther;
 }
 
+// Keep field order in sync with OriginAttributes::Hash().
 void OriginAttributes::CreateSuffix(nsACString& aStr) const {
   URLParams params;
   nsAutoCString value;
@@ -322,6 +323,11 @@ bool OriginAttributes::PopulateFromSuffix(const nsACString& aStr) {
   return URLParams::Parse(
       Substring(aStr, 1, aStr.Length() - 1), true,
       [this](const nsACString& aName, const nsACString& aValue) {
+        if (aName.EqualsLiteral("disableJit")) {
+          // Ignore the added jit status
+          return true;
+        }
+
         if (aName.EqualsLiteral("inBrowser")) {
           if (!aValue.EqualsLiteral("1")) {
             return false;
@@ -387,7 +393,7 @@ bool OriginAttributes::PopulateFromOrigin(const nsACString& aOrigin,
   int32_t pos = origin.RFindChar('^');
 
   if (pos == kNotFound) {
-    aOriginNoSuffix = origin;
+    aOriginNoSuffix = std::move(origin);
     return true;
   }
 

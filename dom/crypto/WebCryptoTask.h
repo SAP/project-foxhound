@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -62,79 +60,71 @@ class WebCryptoTask : public CancelableRunnable {
   virtual void DispatchWithPromise(Promise* aResultPromise);
 
  protected:
-  static WebCryptoTask* CreateEncryptDecryptTask(
+  static already_AddRefed<WebCryptoTask> CreateEncryptDecryptTask(
       JSContext* aCx, const ObjectOrString& aAlgorithm, CryptoKey& aKey,
       const CryptoOperationData& aData, bool aEncrypt);
 
-  static WebCryptoTask* CreateSignVerifyTask(
+  static already_AddRefed<WebCryptoTask> CreateSignVerifyTask(
       JSContext* aCx, const ObjectOrString& aAlgorithm, CryptoKey& aKey,
       const CryptoOperationData& aSignature, const CryptoOperationData& aData,
       bool aSign);
 
  public:
-  static WebCryptoTask* CreateEncryptTask(JSContext* aCx,
-                                          const ObjectOrString& aAlgorithm,
-                                          CryptoKey& aKey,
-                                          const CryptoOperationData& aData) {
+  static already_AddRefed<WebCryptoTask> CreateEncryptTask(
+      JSContext* aCx, const ObjectOrString& aAlgorithm, CryptoKey& aKey,
+      const CryptoOperationData& aData) {
     return CreateEncryptDecryptTask(aCx, aAlgorithm, aKey, aData, true);
   }
 
-  static WebCryptoTask* CreateDecryptTask(JSContext* aCx,
-                                          const ObjectOrString& aAlgorithm,
-                                          CryptoKey& aKey,
-                                          const CryptoOperationData& aData) {
+  static already_AddRefed<WebCryptoTask> CreateDecryptTask(
+      JSContext* aCx, const ObjectOrString& aAlgorithm, CryptoKey& aKey,
+      const CryptoOperationData& aData) {
     return CreateEncryptDecryptTask(aCx, aAlgorithm, aKey, aData, false);
   }
 
-  static WebCryptoTask* CreateSignTask(JSContext* aCx,
-                                       const ObjectOrString& aAlgorithm,
-                                       CryptoKey& aKey,
-                                       const CryptoOperationData& aData) {
+  static already_AddRefed<WebCryptoTask> CreateSignTask(
+      JSContext* aCx, const ObjectOrString& aAlgorithm, CryptoKey& aKey,
+      const CryptoOperationData& aData) {
     CryptoOperationData dummy;
     (void)dummy.SetAsArrayBuffer(aCx);
     return CreateSignVerifyTask(aCx, aAlgorithm, aKey, dummy, aData, true);
   }
 
-  static WebCryptoTask* CreateVerifyTask(JSContext* aCx,
-                                         const ObjectOrString& aAlgorithm,
-                                         CryptoKey& aKey,
-                                         const CryptoOperationData& aSignature,
-                                         const CryptoOperationData& aData) {
+  static already_AddRefed<WebCryptoTask> CreateVerifyTask(
+      JSContext* aCx, const ObjectOrString& aAlgorithm, CryptoKey& aKey,
+      const CryptoOperationData& aSignature, const CryptoOperationData& aData) {
     return CreateSignVerifyTask(aCx, aAlgorithm, aKey, aSignature, aData,
                                 false);
   }
 
-  static WebCryptoTask* CreateDigestTask(JSContext* aCx,
-                                         const ObjectOrString& aAlgorithm,
-                                         const CryptoOperationData& aData);
+  static already_AddRefed<WebCryptoTask> CreateDigestTask(
+      JSContext* aCx, const ObjectOrString& aAlgorithm,
+      const CryptoOperationData& aData);
 
-  static WebCryptoTask* CreateImportKeyTask(
+  static already_AddRefed<WebCryptoTask> CreateImportKeyTask(
       nsIGlobalObject* aGlobal, JSContext* aCx, const nsAString& aFormat,
       JS::Handle<JSObject*> aKeyData, const ObjectOrString& aAlgorithm,
       bool aExtractable, const Sequence<nsString>& aKeyUsages);
-  static WebCryptoTask* CreateExportKeyTask(const nsAString& aFormat,
-                                            CryptoKey& aKey);
-  static WebCryptoTask* CreateGenerateKeyTask(
+  static already_AddRefed<WebCryptoTask> CreateExportKeyTask(
+      const nsAString& aFormat, CryptoKey& aKey);
+  static already_AddRefed<WebCryptoTask> CreateGenerateKeyTask(
       nsIGlobalObject* aGlobal, JSContext* aCx,
       const ObjectOrString& aAlgorithm, bool aExtractable,
       const Sequence<nsString>& aKeyUsages);
 
-  static WebCryptoTask* CreateDeriveKeyTask(
+  static already_AddRefed<WebCryptoTask> CreateDeriveKeyTask(
       nsIGlobalObject* aGlobal, JSContext* aCx,
       const ObjectOrString& aAlgorithm, CryptoKey& aBaseKey,
       const ObjectOrString& aDerivedKeyType, bool extractable,
       const Sequence<nsString>& aKeyUsages);
-  static WebCryptoTask* CreateDeriveBitsTask(JSContext* aCx,
-                                             const ObjectOrString& aAlgorithm,
-                                             CryptoKey& aKey,
-                                             const Nullable<uint32_t>& aLength);
+  static already_AddRefed<WebCryptoTask> CreateDeriveBitsTask(
+      JSContext* aCx, const ObjectOrString& aAlgorithm, CryptoKey& aKey,
+      const Nullable<uint32_t>& aLength);
 
-  static WebCryptoTask* CreateWrapKeyTask(JSContext* aCx,
-                                          const nsAString& aFormat,
-                                          CryptoKey& aKey,
-                                          CryptoKey& aWrappingKey,
-                                          const ObjectOrString& aWrapAlgorithm);
-  static WebCryptoTask* CreateUnwrapKeyTask(
+  static already_AddRefed<WebCryptoTask> CreateWrapKeyTask(
+      JSContext* aCx, const nsAString& aFormat, CryptoKey& aKey,
+      CryptoKey& aWrappingKey, const ObjectOrString& aWrapAlgorithm);
+  static already_AddRefed<WebCryptoTask> CreateUnwrapKeyTask(
       nsIGlobalObject* aGlobal, JSContext* aCx, const nsAString& aFormat,
       const ArrayBufferViewOrArrayBuffer& aWrappedKey,
       CryptoKey& aUnwrappingKey, const ObjectOrString& aUnwrapAlgorithm,

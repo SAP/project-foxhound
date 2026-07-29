@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -81,14 +79,14 @@ TEST(ThreadManager, SpinEventLoopUntilSuccess)
   nsresult rv;
   mozilla::Atomic<uint32_t> count(0);
 
-  nsCOMPtr<nsINestedEventLoopCondition> condition =
-      new WaitCondition(count, kRunnablesToDispatch);
-  RefPtr<SpinRunnable> spinner = new SpinRunnable(condition);
+  RefPtr condition =
+      mozilla::MakeRefPtr<WaitCondition>(count, kRunnablesToDispatch);
+  RefPtr spinner = mozilla::MakeRefPtr<SpinRunnable>(condition);
   nsCOMPtr<nsIThread> thread;
   rv = NS_NewNamedThread("SpinEventLoop", getter_AddRefs(thread), spinner);
   ASSERT_NS_SUCCEEDED(rv);
 
-  nsCOMPtr<nsIRunnable> counter = new CountRunnable(count);
+  RefPtr counter = mozilla::MakeRefPtr<CountRunnable>(count);
   for (uint32_t i = 0; i < kRunnablesToDispatch; ++i) {
     rv = thread->Dispatch(counter, NS_DISPATCH_NORMAL);
     ASSERT_NS_SUCCEEDED(rv);
@@ -128,14 +126,14 @@ TEST(ThreadManager, SpinEventLoopUntilError)
   nsresult rv;
   mozilla::Atomic<uint32_t> count(0);
 
-  nsCOMPtr<nsINestedEventLoopCondition> condition =
-      new ErrorCondition(count, kRunnablesToDispatch);
-  RefPtr<SpinRunnable> spinner = new SpinRunnable(condition);
+  RefPtr condition =
+      mozilla::MakeRefPtr<ErrorCondition>(count, kRunnablesToDispatch);
+  RefPtr spinner = mozilla::MakeRefPtr<SpinRunnable>(condition);
   nsCOMPtr<nsIThread> thread;
   rv = NS_NewNamedThread("SpinEventLoop", getter_AddRefs(thread), spinner);
   ASSERT_NS_SUCCEEDED(rv);
 
-  nsCOMPtr<nsIRunnable> counter = new CountRunnable(count);
+  RefPtr counter = mozilla::MakeRefPtr<CountRunnable>(count);
   for (uint32_t i = 0; i < kRunnablesToDispatch; ++i) {
     rv = thread->Dispatch(counter, NS_DISPATCH_NORMAL);
     ASSERT_NS_SUCCEEDED(rv);

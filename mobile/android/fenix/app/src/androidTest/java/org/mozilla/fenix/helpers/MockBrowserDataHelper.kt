@@ -8,6 +8,7 @@ import android.content.Context
 import android.util.Log
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
+import mockwebserver3.MockWebServer
 import mozilla.appservices.places.BookmarkRoot
 import mozilla.components.browser.icons.IconRequest
 import mozilla.components.browser.icons.generator.DefaultIconGenerator
@@ -19,7 +20,6 @@ import mozilla.components.concept.storage.PageVisit
 import mozilla.components.concept.storage.VisitType
 import mozilla.components.feature.search.ext.createSearchEngine
 import mozilla.components.feature.tab.collections.TabCollectionStorage
-import okhttp3.mockwebserver.MockWebServer
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.TestHelper.appContext

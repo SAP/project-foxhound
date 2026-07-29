@@ -31,7 +31,7 @@ add_task(async function () {
     requestItem.scrollIntoView();
     EventUtils.sendMouseEvent({ type: "mouseover" }, requestsListStatus);
     await waitUntil(() => requestsListStatus.title);
-    await waitForDOMIfNeeded(requestItem, ".requests-list-timings-total");
+    await waitForDOM(requestItem, ".requests-list-timings-total");
   }
 
   await verifyRequestItemTarget(
@@ -136,7 +136,10 @@ add_task(async function () {
       statusText: "OK",
       type: "plain",
       fullMimeType: "text/plain",
-      transferred: L10N.getFormatStrWithNumbers("networkMenu.sizeB", 324),
+      transferred: L10N.getFormatStrWithNumbers(
+        "networkMenu.sizeB",
+        AppConstants.USE_LIBZ_RS ? 333 : 324
+      ),
       size: L10N.getFormatStrWithNumbers("networkMenu.size.kB", 10.99),
       time: true,
     }
@@ -272,7 +275,8 @@ add_task(async function () {
         checkVisibility("html");
 
         const browser = document.querySelector(".html-preview browser");
-        await BrowserTestUtils.browserLoaded(browser);
+        ok(!!browser.currentURI?.spec);
+        await waitForBrowserLoaded(browser);
 
         const text = browser.currentURI.spec;
         const expectedText =
@@ -299,11 +303,11 @@ add_task(async function () {
           "The image name info isn't correct."
         );
         is(mime.textContent, "image/png", "The image mime info isn't correct.");
-        is(
-          dimensions.textContent,
-          "16" + " \u00D7 " + "16",
+        await waitFor(
+          () => dimensions.textContent === "16" + " \u00D7 " + "16",
           "The image dimensions info isn't correct."
         );
+
         break;
       }
       case "gzip": {
@@ -355,7 +359,10 @@ add_task(async function () {
     const waitDOM = waitForDOM(tabpanel, ".response-image");
     store.dispatch(Actions.selectRequestByIndex(index));
     const [imageNode] = await waitDOM;
-    await once(imageNode, "load");
+    await waitFor(
+      () => imageNode.complete === true && imageNode.naturalWidth > 0,
+      "Wait for the image to load"
+    );
     await onResponseContent;
   }
 });

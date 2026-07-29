@@ -200,7 +200,7 @@ async function verifyRawHeaders(monitor) {
   )) {
     ok(rawToggleInput.checked, "Toggle is checked");
     rawToggleInput.focus();
-    EventUtils.synthesizeKey("VK_SPACE", {}, rawToggleInput.ownerGlobal);
+    EventUtils.synthesizeKey("VK_SPACE", {}, rawToggleInput.documentGlobal);
   }
 
   // Wait till raw headers are not available anymore.

@@ -57,7 +57,9 @@ class CleanSkipfails:
     def full_path(self, filename: str):
         """Returns full path for the relative filename"""
 
-        return os.path.join(self.topsrcdir, os.path.normpath(filename.split(":")[-1]))
+        return os.path.join(
+            self.topsrcdir, os.path.normpath(filename.rsplit(":", 1)[-1])
+        )
 
     def isdir(self, filename: str):
         """Returns True if filename is a directory"""

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -15,6 +13,7 @@
 
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
+#include "util/LanguageId.h"
 
 class JSLinearString;
 
@@ -28,6 +27,7 @@ enum class UnicodeExtensionKey : uint8_t {
   Collation /* co */,
   CollationCaseFirst /* kf */,
   CollationNumeric /* kn */,
+  FirstDayOfWeek /* fw */,
   HourCycle /* hc */,
   NumberingSystem /* nu */,
 };
@@ -54,62 +54,25 @@ using LocalesList = JS::StackGCVector<JSLinearString*>;
 bool CanonicalizeLocaleList(JSContext* cx, JS::Handle<JS::Value> locales,
                             JS::MutableHandle<LocalesList> result);
 
-ArrayObject* LocalesListToArray(JSContext* cx, JS::Handle<LocalesList> locales);
-
 /**
- * Compares a BCP 47 language tag against the locales in availableLocales and
- * returns the best available match -- or |nullptr| if no match was found.
- * Uses the fallback mechanism of RFC 4647, section 3.4.
+ * Canonicalizes a locale list.
  *
- * The set of available locales consulted doesn't necessarily include the
- * default locale or any generalized forms of it (e.g. "de" is a more-general
- * form of "de-CH"). If you want to be sure to consider the default local and
- * its generalized forms (you usually will), pass the default locale as the
- * value of |defaultLocale|; otherwise pass |nullptr|.
- *
- * Spec: ECMAScript Internationalization API Specification, 9.2.2.
- * Spec: RFC 4647, section 3.4.
+ * Spec: ECMAScript Internationalization API Specification, 9.2.1.
  */
-bool BestAvailableLocale(JSContext* cx, AvailableLocaleKind availableLocales,
-                         JS::Handle<JSLinearString*> locale,
-                         JS::Handle<JSLinearString*> defaultLocale,
-                         JS::MutableHandle<JSLinearString*> result);
-
-class LookupMatcherResult final {
-  JSLinearString* locale_ = nullptr;
-  JSLinearString* extension_ = nullptr;
-
- public:
-  LookupMatcherResult() = default;
-  LookupMatcherResult(JSLinearString* locale, JSLinearString* extension)
-      : locale_(locale), extension_(extension) {}
-
-  auto* locale() const { return locale_; }
-  auto* extension() const { return extension_; }
-
-  // Helper methods for WrappedPtrOperations.
-  auto localeDoNotUse() const { return &locale_; }
-  auto extensionDoNotUse() const { return &extension_; }
-
-  // Trace implementation.
-  void trace(JSTracer* trc);
-};
+ArrayObject* CanonicalizeLocaleList(JSContext* cx,
+                                    JS::Handle<JS::Value> locales);
 
 /**
- * Compares a BCP 47 language priority list against the set of locales in
- * availableLocales and determines the best available language to meet the
- * request. Options specified through Unicode extension subsequences are
- * ignored in the lookup, but information about such subsequences is returned
- * separately.
- *
- * This variant is based on the Lookup algorithm of RFC 4647 section 3.4.
- *
- * Spec: ECMAScript Internationalization API Specification, 9.2.3.
- * Spec: RFC 4647, section 3.4.
+ * Parse the BCP-47 locale as a language identifier.
+ */
+mozilla::Maybe<LanguageId> ToLanguageId(JSContext* cx,
+                                        const JSLinearString* locale);
+
+/**
+ * LookupMatchingLocaleByPrefix ( availableLocales, requestedLocales )
  */
 bool LookupMatcher(JSContext* cx, AvailableLocaleKind availableLocales,
-                   JS::Handle<ArrayObject*> locales,
-                   JS::MutableHandle<LookupMatcherResult> result);
+                   LanguageId locale, mozilla::Maybe<LanguageId>* result);
 
 /**
  * Locale data selection for ResolveLocale.
@@ -174,7 +137,7 @@ class LocaleOptions final {
  * Resolved locale returned from the ResolveLocale operation.
  */
 class ResolvedLocale final {
-  JSLinearString* dataLocale_ = nullptr;
+  LanguageId dataLocale_ = LanguageId::und();
   mozilla::EnumeratedArray<UnicodeExtensionKey, JSLinearString*> extensions_{};
   mozilla::EnumSet<UnicodeExtensionKey> keywords_{};
 
@@ -185,7 +148,7 @@ class ResolvedLocale final {
    * Return the resolved data locale. Does not include any Unicode extension
    * sequences.
    */
-  auto* dataLocale() const { return dataLocale_; }
+  auto dataLocale() const { return dataLocale_; }
 
   /**
    * Return the Unicode extension value for the requested key.
@@ -203,7 +166,7 @@ class ResolvedLocale final {
   JSLinearString* toLocale(JSContext* cx) const;
 
   // Setter functions called in ResolveLocale to initialize the resolved locale.
-  void setDataLocale(JSLinearString* dataLocale) { dataLocale_ = dataLocale; }
+  void setDataLocale(LanguageId dataLocale) { dataLocale_ = dataLocale; }
   void setUnicodeExtension(UnicodeExtensionKey key, JSLinearString* extension) {
     extensions_[key] = extension;
   }
@@ -211,8 +174,7 @@ class ResolvedLocale final {
     keywords_ = keywords;
   }
 
-  // Helper methods for WrappedPtrOperations.
-  auto dataLocaleDoNotUse() const { return &dataLocale_; }
+  // Helper method for WrappedPtrOperations.
   auto extensionDoNotUse(UnicodeExtensionKey key) const {
     return &extensions_[key];
   }
@@ -238,6 +200,27 @@ bool ResolveLocale(JSContext* cx, AvailableLocaleKind availableLocales,
                    JS::MutableHandle<ResolvedLocale> result);
 
 /**
+ * Return the default locale.
+ */
+bool DefaultLocale(JSContext* cx, LanguageId* result);
+
+/**
+ * Return the default calendar of a locale.
+ */
+JSLinearString* DefaultCalendar(JSContext* cx, const JSLinearString* locale);
+
+/**
+ * Return the default numbering system of a locale.
+ */
+JSLinearString* DefaultNumberingSystem(JSContext* cx, LanguageId locale);
+
+/**
+ * Return the default numbering system of a locale.
+ */
+JSLinearString* DefaultNumberingSystem(JSContext* cx,
+                                       const JSLinearString* locale);
+
+/**
  * Return the supported locales in |locales| which are supported according to
  * |availableLocales|.
  */
@@ -251,29 +234,11 @@ ArrayObject* SupportedLocalesOf(JSContext* cx,
  * default locale (perhaps via fallback, e.g. supporting "de-CH" through "de"
  * support implied by a "de-DE" locale). Otherwise uses the last-ditch locale.
  */
-JSLinearString* ComputeDefaultLocale(JSContext* cx);
+bool ComputeDefaultLocale(JSContext* cx, LanguageId* result);
 
 }  // namespace js::intl
 
 namespace js {
-
-template <typename Wrapper>
-class WrappedPtrOperations<intl::LookupMatcherResult, Wrapper> {
-  const auto& container() const {
-    return static_cast<const Wrapper*>(this)->get();
-  }
-
- public:
-  JS::Handle<JSLinearString*> locale() const {
-    return JS::Handle<JSLinearString*>::fromMarkedLocation(
-        container().localeDoNotUse());
-  }
-
-  JS::Handle<JSLinearString*> extension() const {
-    return JS::Handle<JSLinearString*>::fromMarkedLocation(
-        container().extensionDoNotUse());
-  }
-};
 
 template <typename Wrapper>
 class WrappedPtrOperations<intl::LocaleOptions, Wrapper> {
@@ -312,10 +277,7 @@ class WrappedPtrOperations<intl::ResolvedLocale, Wrapper> {
   }
 
  public:
-  JS::Handle<JSLinearString*> dataLocale() const {
-    return JS::Handle<JSLinearString*>::fromMarkedLocation(
-        container().dataLocaleDoNotUse());
-  }
+  LanguageId dataLocale() const { return container().dataLocale(); }
   JS::Handle<JSLinearString*> extension(intl::UnicodeExtensionKey key) const {
     return JS::Handle<JSLinearString*>::fromMarkedLocation(
         container().extensionDoNotUse(key));
@@ -334,9 +296,7 @@ class MutableWrappedPtrOperations<intl::ResolvedLocale, Wrapper>
   auto& container() { return static_cast<Wrapper*>(this)->get(); }
 
  public:
-  void setDataLocale(JSLinearString* locale) {
-    container().setDataLocale(locale);
-  }
+  void setDataLocale(LanguageId locale) { container().setDataLocale(locale); }
   void setUnicodeExtension(intl::UnicodeExtensionKey key,
                            JSLinearString* extension) {
     container().setUnicodeExtension(key, extension);

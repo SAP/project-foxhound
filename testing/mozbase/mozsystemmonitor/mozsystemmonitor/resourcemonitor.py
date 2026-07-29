@@ -2,13 +2,128 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import atexit
+import json
 import multiprocessing
 import os
+import posixpath
+import re
 import sys
+import threading
 import time
 import warnings
 from collections import OrderedDict, namedtuple
 from contextlib import contextmanager
+
+# Common prefix in log lines from a Gecko process: "[Child|Parent <pid>: <thread>]"
+# (DocShell-style logging) and "[Child|Parent <pid>, <thread>]" (NS_WARNING/ASSERTION).
+_PROC_PREFIX_COLON = r"\[(?P<proc>Child|Parent) (?P<pid>\d+): (?P<thread>[^\]]+)\]"
+_PROC_PREFIX_COMMA = r"\[(?P<proc>Child|Parent) (?P<pid>\d+), (?P<thread>[^\]]+)\]"
+
+# ++DOCSHELL/--DOCSHELL leak log lines (nsDocShell.cpp), e.g.:
+#   [Child 4208: Main Thread]: I/DocShellAndDOMWindowLeak ++DOCSHELL 2f804b00 == 2 [pid = 4208] [id = 37]
+#   [Child 4208: Main Thread]: I/DocShellAndDOMWindowLeak --DOCSHELL 2f804b00 == 0 [pid = 4208] [id = 37] [url = about:aichatcontent]
+_DOCSHELL_RE = re.compile(
+    _PROC_PREFIX_COLON + r": [A-Z]/DocShellAndDOMWindowLeak (?P<op>\+\+|--)DOCSHELL "
+    r"(?P<ptr>[0-9a-fA-F]+) == \d+ \[pid = \d+\] \[id = (?P<id>\d+)\]"
+    r"(?: \[url = (?P<url>[^\]]*)\])?\s*$"
+)
+
+# ++DOMWINDOW/--DOMWINDOW leak log lines (nsGlobalWindow{Inner,Outer}.cpp), e.g.:
+#   [Child 3444: Main Thread]: I/DocShellAndDOMWindowLeak ++DOMWINDOW == 2 (b3bc400) [pid = 3444] [serial = 2] [outer = 4f60940]
+#   [Child 3444: Main Thread]: I/DocShellAndDOMWindowLeak --DOMWINDOW == 1 (b3bc400) [pid = 3444] [serial = 2] [outer = 4f60940] [url = about:blank]
+_DOMWINDOW_RE = re.compile(
+    _PROC_PREFIX_COLON + r": [A-Z]/DocShellAndDOMWindowLeak (?P<op>\+\+|--)DOMWINDOW "
+    r"== \d+ \((?P<ptr>[0-9a-fA-F]+)\) \[pid = \d+\] "
+    r"\[serial = (?P<serial>\d+)\] \[outer = (?P<outer>[0-9a-fA-F]+)\]"
+    r"(?: \[url = (?P<url>[^\]]*)\])?\s*$"
+)
+
+# "JavaScript error:" / "JavaScript warning:" lines, e.g.:
+#   JavaScript error: chrome://browser/content/places/browserPlacesViews.js, line 118: Error: No DOM node set for aPlacesNode.
+_JS_ERROR_RE = re.compile(
+    r"^JavaScript (?P<level>error|warning): (?P<file>[^,]*), line (?P<line>\d+): "
+    r"(?P<message>.*)$"
+)
+
+# NS_WARNING / ###!!! ASSERTION lines (nsDebugImpl::FormatMsg).
+# The format string is built from three optional pieces:
+#   "<sev>: " [+ "<str>: "] [+ "'<expr>', "] + "file <file>:<line>"
+# so "message" can be "str", "'expr'", or "str: 'expr'" depending on which
+# arguments NS_DebugBreak got. We capture the whole thing as "message" and
+# leave it to the front-end to render verbatim.
+_WARNING_RE = re.compile(
+    _PROC_PREFIX_COMMA
+    + r" WARNING: (?P<message>.*?)(?:, |: )file (?P<file>[^:]+):(?P<line>\d+)\s*$"
+)
+
+_ASSERTION_RE = re.compile(
+    _PROC_PREFIX_COMMA
+    + r" ###!!! ASSERTION: (?P<message>.*?), file (?P<file>[^:]+):(?P<line>\d+)\s*$"
+)
+
+# console.<method>: ... lines, e.g.:
+#   console.error: (new Error("Unable to retrieve the translation models.", "resource://...", 2674))
+#   console.warn: "No view for invalid view, switching to default"
+#   console.log: Downloads: Closing the downloads panel.
+# The single-line shape comes from Console.cpp and from createDumper() in
+# Console.sys.mjs. Console.sys.mjs's createMultiLineDumper() (used for debug,
+# error, dir, dirxml; console.exception is also routed through it but emits
+# with level "error", so it appears as "console.error:" in the output)
+# instead emits a header with no real body followed by indented
+# "Message:"/"Stack:" lines and JS-style frames. Header shapes seen in CI:
+#   console.error:                       (no prefix, no body)
+#   console.error: services.settings:    (prefix "services.settings", no body)
+# The message group is optional and may end with ":" when a prefix is present.
+_CONSOLE_RE = re.compile(r"^console\.(?P<method>[a-zA-Z]+):(?: (?P<message>.*))?$")
+
+# Methods routed through Console.sys.mjs's createMultiLineDumper(): when one
+# of these emits a header with no real body, the following process_output
+# lines are the multi-line body ("  Message:", "  Stack:", and frames).
+_MULTILINE_CONSOLE_METHODS = frozenset({"debug", "error", "dir", "dirxml"})
+
+# Body lines for the multi-line console.* dumper.
+_CONSOLE_MESSAGE_RE = re.compile(r"^  Message: (?P<message>.*)$")
+_CONSOLE_STACK_HEADER_RE = re.compile(r"^  Stack:\s*$")
+# JS stack frame: "<func>@<file>:<line>:<col>". The function name may be empty
+# (top-level/async frames) or contain '/' and '<' (anonymous nested closures).
+# Leading whitespace varies: log() prefixes the first frame with 4 spaces, but
+# subsequent frames embedded in the same Error.stack string come unindented.
+_CONSOLE_JS_FRAME_RE = re.compile(
+    r"^\s*(?P<func>[^@]*)@(?P<file>.+):(?P<line>\d+):(?P<col>\d+)\s*$"
+)
+
+# Stack frames that follow console.trace, formatted by Console.cpp as
+# "<filename> <line> <funcname>" per frame (one process_output line each).
+_CONSOLE_FRAME_RE = re.compile(r"^(?P<file>\S+/\S+) (?P<line>\d+) (?P<func>\S.*)$")
+
+# CI builds embed paths like
+# "/builds/worker/workspace/obj-build/.../checkouts/gecko/<repo-relative>".
+# Strip the build prefix so frames carry the repo-relative path expected by
+# the profiler source view.
+_CHECKOUTS_GECKO = "checkouts/gecko/"
+
+# Matches the sourceURL mozharness writes into the profile metadata, e.g.
+# "https://hg.mozilla.org/try/rev/56b3cc68b5e7557a3e13fca984f0f8aebc60dd22".
+# The non-greedy <repo> group lets us match multi-segment repo paths like
+# "integration/autoland" and "releases/mozilla-beta".
+_HG_SOURCE_URL_RE = re.compile(
+    r"^https?://(?P<host>hg\.mozilla\.org)/(?P<repo>.+?)/rev/(?P<rev>[0-9a-f]+)$"
+)
+
+
+def _parse_hg_source_url(source_url):
+    """Return (prefix, rev) for an hg.mozilla.org sourceURL, or (None, None).
+
+    The returned prefix combines with a repo-relative path and the rev to form
+    the "hg:<host>/<repo>:<path>:<rev>" shape the profiler source view fetches.
+    """
+    if not source_url:
+        return (None, None)
+    m = _HG_SOURCE_URL_RE.match(source_url)
+    if not m:
+        return (None, None)
+    return (f"hg:{m['host']}/{m['repo']}:", m["rev"])
 
 
 class PsutilStub:
@@ -137,7 +252,6 @@ def _collect(pipe, poll_interval):
     data then forwards it on a pipe until told to stop.
     """
 
-    data = []
     processes = []
     sample_processes = "MOZ_PROCESS_SAMPLING" in os.environ
 
@@ -226,7 +340,7 @@ def _collect(pipe, poll_interval):
             swap_entry[sout_index] = swap_mem.sout - swap_last.sout
             swap_last = swap_mem
 
-            data.append((
+            pipe.send((
                 last_time,
                 measured_end_time,
                 io_diff,
@@ -247,9 +361,6 @@ def _collect(pipe, poll_interval):
         warnings.warn("_collect failed: %s" % e)
 
     finally:
-        for entry in data:
-            pipe.send(entry)
-
         for pid, create_time, end_time, cmd, ppid in processes:
             if len(cmd) > 0:
                 cmd[0] = os.path.basename(cmd[0])
@@ -352,6 +463,15 @@ class SystemResourceMonitor:
 
     instance = None
 
+    # Category indices matching the categories array in _build_meta
+    OTHER_CATEGORY = 0
+    PHASE_CATEGORY = 1
+    TASK_CATEGORY = 2
+
+    @staticmethod
+    def _format_percent(value):
+        return str(round(value, 1)) + "%"
+
     def __init__(self, poll_interval=1.0, metadata={}):
         """Instantiate a system resource monitor instance.
 
@@ -364,14 +484,48 @@ class SystemResourceMonitor:
         self.events = []
         self.markers = []
         self.processes = []
+        self.measurements = []
         self.phases = OrderedDict()
 
         self._active_phases = {}
         self._active_markers = {}
 
+        # Counter used to correlate the several markers emitted for one TSan
+        # report (one marker per labeled stack).
+        self._tsan_report_count = 0
+        # ++DOCSHELL/++DOMWINDOW lines awaiting their matching -- line.
+        # Keyed by (kind, pid, ptr, id|serial); value is (kind, start_time, marker_data).
+        self._leaked_instances = {}
+        # console.trace: line waiting for follow-up stack frames; flushed when
+        # a non-frame process_output line arrives or the monitor stops.
+        self._pending_console_trace = None
+        # Multi-line console.<method>: body (Message:/Stack:/frames) waiting
+        # to be assembled into a single marker. Tuple of
+        # (name, timestamp, marker_data, phase, prefix_body) where phase
+        # progresses through "await_message" -> "await_stack" -> "frames",
+        # or starts at "speculative" when the header carried a body that
+        # ended in ":" and could be either a prefix-only multi-line header
+        # ("console.error: services.settings:") or a real single-line message.
+        # prefix_body is the original body text for the speculative case so
+        # we can either stitch the prefix back in front of the Message: text
+        # or fall back to a single-line marker. Flushed when a line breaks
+        # the expected sequence or the monitor stops.
+        self._pending_multiline_console = None
+
         self._running = False
         self._stopped = False
         self._process = None
+        self._stream_file = None
+        self._drain_timer = None
+        self._pipe_lock = threading.Lock()
+
+        self.metadata = metadata
+        # "hg:<host>/<repo>:" prefix and revision parsed once from the profile
+        # metadata's sourceURL, used to wrap repo-relative frame paths into
+        # URLs the profiler source view can fetch.
+        self._frame_file_prefix, self._frame_file_rev = _parse_hg_source_url(
+            metadata.get("sourceURL")
+        )
 
         if psutil is None:
             return
@@ -413,7 +567,6 @@ class SystemResourceMonitor:
             target=_collect, args=(child_pipe, poll_interval)
         )
         self.poll_interval = poll_interval
-        self.metadata = metadata
 
     def __del__(self):
         if self._running:
@@ -449,6 +602,15 @@ class SystemResourceMonitor:
         self._running = True
         self.start_time = time.monotonic()
         SystemResourceMonitor.instance = self
+        self._schedule_drain_timer()
+
+        # Ensure that stop() is called even if the caller does not do so, to
+        # prevent the child from being kept alive forever in that scenario.
+        atexit.register(self._atexit_stop)
+
+    def _atexit_stop(self):
+        if self._running and not self._stopped:
+            self.stop()
 
     def stop(self, upload_dir=None):
         """Stop measuring system-wide CPU resource utilization.
@@ -461,6 +623,7 @@ class SystemResourceMonitor:
         Args:
             upload_dir: Optional path to upload directory for artifact markers.
         """
+        atexit.unregister(self._atexit_stop)
         if not self._process:
             self._stopped = True
             return
@@ -474,79 +637,11 @@ class SystemResourceMonitor:
             pass
         self._stopped = True
 
-        self.measurements = []
+        self._cancel_drain_timer()
 
-        # The child process will send each data sample over the pipe
-        # as a separate data structure. When it has finished sending
-        # samples, it sends a special "done" message to indicate it
-        # is finished.
-
-        while _poll(self._pipe, poll_interval=0.1):
-            try:
-                (
-                    start_time,
-                    end_time,
-                    io_diff,
-                    net_io_diff,
-                    cpu_diff,
-                    cpu_percent,
-                    virt_mem,
-                    swap_mem,
-                ) = self._pipe.recv()
-            except Exception as e:
-                warnings.warn("failed to receive data: %s" % e)
-                # Assume we can't recover
-                break
-
-            if start_time == "process":
-                pid = end_time
-                start = self.convert_to_monotonic_time(io_diff)
-                end = self.convert_to_monotonic_time(net_io_diff)
-                cmd = cpu_diff
-                ppid = cpu_percent
-                self.processes.append((pid, start, end, cmd, ppid))
-                continue
-
-            # There should be nothing after the "done" message so
-            # terminate.
-            if start_time == "done":
-                break
-
-            try:
-                io = self._io_type(*io_diff)
-                net_io = self._net_io_type(*net_io_diff)
-                virt = self._virt_type(*virt_mem)
-                swap = self._swap_type(*swap_mem)
-                cpu_times = [self._cpu_times_type(*v) for v in cpu_diff]
-
-                self.measurements.append(
-                    SystemResourceUsage(
-                        start_time,
-                        end_time,
-                        cpu_times,
-                        cpu_percent,
-                        io,
-                        net_io,
-                        virt,
-                        swap,
-                    )
-                )
-            except Exception:
-                # We also can't recover, but output the data that caused the exception
-                warnings.warn(
-                    "failed to read the received data: %s"
-                    % str((
-                        start_time,
-                        end_time,
-                        io_diff,
-                        cpu_diff,
-                        cpu_percent,
-                        virt_mem,
-                        swap_mem,
-                    ))
-                )
-
-                break
+        # Drain remaining data from the child process, including the
+        # "done" sentinel and any process entries.
+        self._drain_pipe(until_done=True)
 
         # We establish a timeout so we don't hang forever if the child
         # process has crashed.
@@ -557,8 +652,16 @@ class SystemResourceMonitor:
                 self._process.join(10)
 
         self._running = False
-        SystemResourceUsage.instance = None
+        SystemResourceMonitor.instance = None
         self.end_time = time.monotonic()
+
+        self._flush_leak_logs()
+        self._flush_pending_console_trace()
+        self._flush_pending_multiline_console()
+
+        if self._stream_file:
+            self._stream_file.close()
+            self._stream_file = None
 
         # Add event markers for files in upload directory
         if upload_dir is None:
@@ -584,6 +687,153 @@ class SystemResourceMonitor:
                             self._parse_sccache_log(filepath)
             except Exception as e:
                 warnings.warn(f"Failed to scan upload directory: {e}")
+
+    def start_streaming(self, path):
+        """Start streaming profile data to a file as JSON lines.
+
+        The first line contains the meta object, then a thread object,
+        then one line per marker. The file is meant to be replaced with
+        the full serialized profile on normal shutdown.
+        """
+        self._stream_file = open(path, "w", encoding="utf-8", newline="\n")
+        meta = {"type": "meta"}
+        meta.update(self._build_meta())
+        self._stream_file.write(json.dumps(meta, separators=(",", ":")) + "\n")
+        thread = {"type": "thread"}
+        thread.update(self._build_thread())
+        thread["processName"] = meta.get("product", "mach")
+        self._stream_file.write(json.dumps(thread, separators=(",", ":")) + "\n")
+
+        for name, start, end, data, category in self.markers:
+            markerData = (
+                data if isinstance(data, dict) else {"type": "Text", "text": str(data)}
+            )
+            self._stream_marker(name, start, end, markerData, category)
+        for event in self.events:
+            if len(event) == 3:
+                timestamp, name, data = event
+                self._stream_marker(name, timestamp, None, data)
+            else:
+                timestamp, name = event
+                self._stream_marker(
+                    name, timestamp, None, {"type": "Text", "text": name}
+                )
+
+        self._drain_pipe()
+
+    def _drain_pipe(self, until_done=False):
+        """Read available measurement data from the child process pipe.
+
+        If until_done is True, block until the "done" sentinel is received.
+        Otherwise, only read data that is immediately available.
+        """
+        if not self._pipe:
+            return
+
+        with self._pipe_lock:
+            self._drain_pipe_locked(until_done)
+
+    def _drain_pipe_locked(self, until_done):
+        poll_interval = 0.1 if until_done else 0
+        while _poll(self._pipe, poll_interval=poll_interval):
+            try:
+                (
+                    start_time,
+                    end_time,
+                    io_diff,
+                    net_io_diff,
+                    cpu_diff,
+                    cpu_percent,
+                    virt_mem,
+                    swap_mem,
+                ) = self._pipe.recv()
+            except Exception as e:
+                if not self._stopped:
+                    warnings.warn("failed to receive data: %s" % e)
+                break
+
+            if start_time == "process":
+                pid = end_time
+                start = self.convert_to_monotonic_time(io_diff)
+                end = self.convert_to_monotonic_time(net_io_diff)
+                cmd = cpu_diff
+                ppid = cpu_percent
+                self.processes.append((pid, start, end, cmd, ppid))
+                continue
+
+            if start_time == "done":
+                break
+
+            try:
+                io = self._io_type(*io_diff)
+                net_io = self._net_io_type(*net_io_diff)
+                virt = self._virt_type(*virt_mem)
+                swap = self._swap_type(*swap_mem)
+                cpu_times = [self._cpu_times_type(*v) for v in cpu_diff]
+
+                m = SystemResourceUsage(
+                    start_time, end_time, cpu_times, cpu_percent, io, net_io, virt, swap
+                )
+                self.measurements.append(m)
+                self._stream_measurement(m)
+            except Exception:
+                warnings.warn(
+                    "failed to read the received data: %s"
+                    % str((
+                        start_time,
+                        end_time,
+                        io_diff,
+                        cpu_diff,
+                        cpu_percent,
+                        virt_mem,
+                        swap_mem,
+                    ))
+                )
+                break
+
+    def _stream_measurement(self, m):
+        if not self._stream_file:
+            return
+        if m.end - m.start < self.poll_interval / 10:
+            return
+        for name, start, end, data in self._measurement_markers(m):
+            self._stream_marker(name, start, end, data)
+
+    def _schedule_drain_timer(self):
+        if self._running:
+            self._drain_timer = threading.Timer(
+                self.poll_interval * 10, self._on_drain_timer
+            )
+            self._drain_timer.daemon = True
+            self._drain_timer.start()
+
+    def _cancel_drain_timer(self):
+        if self._drain_timer:
+            self._drain_timer.cancel()
+            self._drain_timer = None
+
+    def _on_drain_timer(self):
+        self._drain_pipe()
+        self._schedule_drain_timer()
+
+    def _stream_marker(self, name, start, end, data, category=0):
+        if not self._stream_file:
+            return
+
+        start_ms = round((start - self.start_time) * 1000, 3)
+        end_ms = round((end - self.start_time) * 1000, 3) if end is not None else None
+        obj = {
+            "type": "marker",
+            "name": name,
+            "startTime": start_ms,
+            "endTime": end_ms,
+            "data": data,
+        }
+        if category != 0:
+            obj["category"] = category
+        line = json.dumps(obj, separators=(",", ":"))
+        self._stream_file.write(line + "\n")
+        self._stream_file.flush()
 
     def _parse_sccache_log(self, filepath):
         """Parse sccache.log and add profiler markers for cache hits and misses."""
@@ -686,6 +936,7 @@ class SystemResourceMonitor:
                     data["start_time"],
                     data["end_time"],
                     marker_data,
+                    self.TASK_CATEGORY,
                 ))
 
         except Exception as e:
@@ -704,9 +955,302 @@ class SystemResourceMonitor:
                         "type": "Text",
                         "text": f"Parsed {num_markers} sccache entries from log",
                     },
+                    self.TASK_CATEGORY,
                 ))
 
     # Methods to record events alongside the monitored data.
+
+    def _add_event(self, name, timestamp, data=None):
+        if data:
+            self.events.append((timestamp, name, data))
+            self._stream_marker(name, timestamp, None, data)
+        else:
+            self.events.append((timestamp, name))
+            self._stream_marker(name, timestamp, None, {"type": "Text", "text": name})
+
+    def _add_marker(self, name, start, end, data, category=TASK_CATEGORY):
+        self.markers.append((name, start, end, data, category))
+        markerData = (
+            data if isinstance(data, dict) else {"type": "Text", "text": str(data)}
+        )
+        self._stream_marker(name, start, end, markerData, category)
+
+    def _clean_frame_file(self, path):
+        """Return (display_path, source_view_path).
+
+        display_path is the build-prefix-stripped path for tooltip/marker display.
+        source_view_path is an "hg:<host>/<repo>:<path>:<rev>" URL the profiler
+        source view can fetch when the path was repo-relative (i.e. contained the
+        CI "checkouts/gecko/" marker) and this monitor knows the hg prefix from
+        the profile metadata; otherwise it equals display_path.
+        Sysroot, fetches and rust-stdlib paths fall through unchanged in both
+        fields so the source view doesn't 404 trying to fetch them from hg.
+        """
+        if not path:
+            return (path, path)
+        idx = path.rfind(_CHECKOUTS_GECKO)
+        if idx == -1:
+            return (path, path)
+        # The path has already been narrowed to a CI build path (POSIX) by
+        # the rfind above; use posixpath.normpath rather than os.path.normpath
+        # so we don't produce backslash separators on Windows.
+        cleaned = posixpath.normpath(path[idx + len(_CHECKOUTS_GECKO) :])
+        if not self._frame_file_prefix:
+            return (cleaned, cleaned)
+        return (
+            cleaned,
+            f"{self._frame_file_prefix}{cleaned}:{self._frame_file_rev}",
+        )
+
+    def _parse_process_output(self, line, timestamp, test_name):
+        """Parse a single process_output line and emit a typed marker if it matches a known pattern.
+
+        Returns True if the line produced a specialized marker, False otherwise.
+        """
+        line = line.rstrip("\r\n")
+
+        # If we're collecting frames for a previous console.trace:, attach this
+        # line if it looks like a frame, otherwise flush and fall through.
+        if self._pending_console_trace is not None:
+            if m := _CONSOLE_FRAME_RE.match(line):
+                self._pending_console_trace[2]["stack"].append({
+                    "file": m["file"],
+                    "line": int(m["line"]),
+                    "function": m["func"],
+                    "is_js": True,
+                })
+                return True
+            self._flush_pending_console_trace()
+
+        # If we're assembling a multi-line console.<method>: body, route the
+        # line through the state machine; on a mismatch we flush and fall
+        # through so the line still gets a chance at the regular patterns.
+        if self._pending_multiline_console is not None:
+            if self._handle_multiline_console_line(line):
+                return True
+
+        if m := _DOCSHELL_RE.match(line):
+            return self._handle_leak_log(
+                m,
+                timestamp,
+                test_name,
+                kind="DocShell",
+                key=("docshell", m["pid"], m["ptr"], m["id"]),
+            )
+
+        if m := _DOMWINDOW_RE.match(line):
+            return self._handle_leak_log(
+                m,
+                timestamp,
+                test_name,
+                kind="DOMWindow",
+                key=("domwindow", m["pid"], m["ptr"], m["serial"]),
+            )
+
+        if m := _JS_ERROR_RE.match(line):
+            name = "JavaScript error" if m["level"] == "error" else "JavaScript warning"
+            marker_data = {
+                "type": "jsError",
+                "message": m["message"],
+                "file": m["file"],
+                "line": int(m["line"]),
+                "stack": [{"file": m["file"], "line": int(m["line"]), "is_js": True}],
+            }
+            if test_name:
+                marker_data["test"] = test_name
+            self._add_event(name, timestamp, marker_data)
+            return True
+
+        if m := _WARNING_RE.match(line):
+            display, frame_file = self._clean_frame_file(m["file"])
+            marker_data = {
+                "type": "cppDebug",
+                "message": m["message"],
+                "file": display,
+                "line": int(m["line"]),
+                "process": m["proc"],
+                "pid": int(m["pid"]),
+                "thread": m["thread"],
+                "stack": [{"file": frame_file, "line": int(m["line"])}],
+            }
+            if test_name:
+                marker_data["test"] = test_name
+            self._add_event("C++ warning", timestamp, marker_data)
+            return True
+
+        if m := _ASSERTION_RE.match(line):
+            display, frame_file = self._clean_frame_file(m["file"])
+            marker_data = {
+                "type": "cppDebug",
+                "message": m["message"],
+                "file": display,
+                "line": int(m["line"]),
+                "process": m["proc"],
+                "pid": int(m["pid"]),
+                "thread": m["thread"],
+                "stack": [{"file": frame_file, "line": int(m["line"])}],
+                "color": "red",
+            }
+            if test_name:
+                marker_data["test"] = test_name
+            self._add_event("C++ assertion", timestamp, marker_data)
+            return True
+
+        if m := _CONSOLE_RE.match(line):
+            method = m["method"]
+            message = m["message"] or ""
+            name = "console." + method
+            # createMultiLineDumper() (Console.sys.mjs) emits a header with no
+            # real body. Without a console prefix the body is empty; with a
+            # prefix it's "<prefix>:" (followed by a space the harness may
+            # rstrip away). Defer the marker in either case so we can attach
+            # the follow-up Message:/Stack:/frame lines, and keep enough state
+            # to fall back to a single-line marker when the body turns out to
+            # be a real message that just happens to end with ":".
+            if method in _MULTILINE_CONSOLE_METHODS:
+                if not message:
+                    marker_data = {"type": "console", "message": ""}
+                    if test_name:
+                        marker_data["test"] = test_name
+                    self._pending_multiline_console = (
+                        name,
+                        timestamp,
+                        marker_data,
+                        "await_message",
+                        None,
+                    )
+                    return True
+                if message.endswith(":"):
+                    marker_data = {"type": "console", "message": message}
+                    if test_name:
+                        marker_data["test"] = test_name
+                    self._pending_multiline_console = (
+                        name,
+                        timestamp,
+                        marker_data,
+                        "speculative",
+                        message,
+                    )
+                    return True
+            marker_data = {"type": "console", "message": message}
+            if test_name:
+                marker_data["test"] = test_name
+            if method == "trace":
+                marker_data["stack"] = []
+                self._pending_console_trace = (name, timestamp, marker_data)
+            else:
+                self._add_event(name, timestamp, marker_data)
+            return True
+
+        return False
+
+    def _handle_multiline_console_line(self, line):
+        """Attach a body line to the pending multi-line console.* marker.
+
+        Returns True if the line was consumed; False if it broke the expected
+        sequence (in which case the pending marker is flushed and the caller
+        should continue parsing the line through the regular patterns).
+        """
+        name, timestamp, marker_data, phase, prefix_body = (
+            self._pending_multiline_console
+        )
+        if phase in ("await_message", "speculative"):
+            if m := _CONSOLE_MESSAGE_RE.match(line):
+                # If the header carried a "<prefix>:" body, stitch it back in
+                # front of the Message: text so the marker reads the same as
+                # the single-line "console.<method>: <prefix>: <text>" form.
+                marker_data["message"] = (
+                    f"{prefix_body} {m['message']}" if prefix_body else m["message"]
+                )
+                self._pending_multiline_console = (
+                    name,
+                    timestamp,
+                    marker_data,
+                    "await_stack",
+                    prefix_body,
+                )
+                return True
+        elif phase == "await_stack":
+            if _CONSOLE_STACK_HEADER_RE.match(line):
+                marker_data["stack"] = []
+                self._pending_multiline_console = (
+                    name,
+                    timestamp,
+                    marker_data,
+                    "frames",
+                    prefix_body,
+                )
+                return True
+        elif phase == "frames":
+            if m := _CONSOLE_JS_FRAME_RE.match(line):
+                marker_data["stack"].append({
+                    "file": m["file"],
+                    "line": int(m["line"]),
+                    "column": int(m["col"]),
+                    "function": m["func"],
+                    "is_js": True,
+                })
+                return True
+        self._flush_pending_multiline_console()
+        return False
+
+    def _flush_pending_console_trace(self):
+        """Emit a deferred console.trace marker once its stack is collected."""
+        if self._pending_console_trace is None:
+            return
+        name, timestamp, marker_data = self._pending_console_trace
+        self._pending_console_trace = None
+        self._add_event(name, timestamp, marker_data)
+
+    def _flush_pending_multiline_console(self):
+        """Emit a deferred multi-line console.<method> marker.
+
+        For "speculative" pending markers the body turned out to be a regular
+        single-line message ending in ":" rather than a multi-line header, so
+        marker_data["message"] still holds the original line as captured.
+        """
+        if self._pending_multiline_console is None:
+            return
+        name, timestamp, marker_data, _, _ = self._pending_multiline_console
+        self._pending_multiline_console = None
+        self._add_event(name, timestamp, marker_data)
+
+    def _handle_leak_log(self, m, timestamp, test_name, kind, key):
+        """Emit a duration marker pairing ++DOCSHELL/++DOMWINDOW with its matching --."""
+        groups = m.groupdict()
+        marker_data = {
+            "type": kind,
+            "process": m["proc"],
+            "pid": int(m["pid"]),
+            "thread": m["thread"],
+            "pointer": m["ptr"],
+        }
+        if groups.get("id") is not None:
+            marker_data["id"] = int(m["id"])
+        if groups.get("serial") is not None:
+            marker_data["serial"] = int(m["serial"])
+        if groups.get("outer") is not None:
+            marker_data["outer"] = m["outer"]
+        if test_name:
+            marker_data["test"] = test_name
+
+        if m["op"] == "++":
+            self._leaked_instances[key] = (kind, timestamp, marker_data)
+            return True
+
+        active = self._leaked_instances.pop(key, None)
+        start = active[1] if active else timestamp
+        if m["url"]:
+            marker_data["url"] = m["url"]
+
+        self._add_marker(kind, start, timestamp, marker_data, self.OTHER_CATEGORY)
+        return True
+
+    def _flush_leak_logs(self):
+        """Emit instant markers for leak-log instances created but never destroyed."""
+        for kind, timestamp, marker_data in self._leaked_instances.values():
+            self._add_marker(kind, timestamp, None, marker_data, self.OTHER_CATEGORY)
+        self._leaked_instances.clear()
 
     @staticmethod
     def record_event(name, timestamp=None, data=None):
@@ -723,10 +1267,7 @@ class SystemResourceMonitor:
         if SystemResourceMonitor.instance:
             if timestamp is None:
                 timestamp = time.monotonic()
-            if data:
-                SystemResourceMonitor.instance.events.append((timestamp, name, data))
-            else:
-                SystemResourceMonitor.instance.events.append((timestamp, name))
+            SystemResourceMonitor.instance._add_event(name, timestamp, data)
 
     @staticmethod
     def record_marker(name, start, end, data):
@@ -740,7 +1281,7 @@ class SystemResourceMonitor:
         payload (e.g., {"type": "Text", "text": "description"}) or a string.
         """
         if SystemResourceMonitor.instance:
-            SystemResourceMonitor.instance.markers.append((name, start, end, data))
+            SystemResourceMonitor.instance._add_marker(name, start, end, data)
 
     @staticmethod
     def begin_marker(name, text, disambiguator=None, timestamp=None):
@@ -864,9 +1405,16 @@ class SystemResourceMonitor:
         marker_data = {"type": "TestStatus"}
 
         if data.get("action") == "process_output":
-            # Process output uses "output" as marker name
+            line = data.get("data")
+            test_name = data.get("test")
+            if line and SystemResourceMonitor.instance._parse_process_output(
+                line, timestamp, test_name
+            ):
+                # Line was parsed into a specialized marker; nothing else to do.
+                return
+            # Fallback: keep the raw line as a generic "output" marker.
             marker_name = "output"
-            message = data.get("data")
+            message = line
         else:
             # test_status and log actions
             status = (data.get("status") or data.get("level")).upper()
@@ -908,7 +1456,7 @@ class SystemResourceMonitor:
             # Find the corresponding test marker and mark it as failed due to leak
             # if it hasn't already failed for another reason
             for marker in SystemResourceMonitor.instance.markers:
-                marker_name_type, marker_start, marker_end, marker_data = marker
+                marker_name_type, marker_start, marker_end, marker_data, _ = marker
                 if (
                     marker_name_type == "test"
                     and marker_data.get("test") == test_name
@@ -962,6 +1510,240 @@ class SystemResourceMonitor:
 
         SystemResourceMonitor.record_event("CRASH", timestamp, marker_data)
 
+    @staticmethod
+    def lsan_leak(data):
+        """Record an LSan leak event.
+
+        Args:
+            data: Dictionary containing lsan_leak data including:
+                  - "kind": "Direct" or "Indirect"
+                  - "bytes": bytes leaked at this allocation site
+                  - "objects": number of objects leaked at this allocation site
+                  - "stack": structured stack frames (list of frame dicts), if any
+                  - "scope": optional scope (e.g. test name)
+                  - "allowed_match": frame matching an allow-list entry, if any
+        """
+        if not SystemResourceMonitor.instance:
+            return
+
+        timestamp = SystemResourceMonitor.instance.get_monotonic_time_from_data(data)
+
+        marker_data = {
+            "type": "LSanLeak",
+            "kind": data["kind"],
+            "bytes": data["bytes"],
+            "objects": data["objects"],
+        }
+
+        if stack := data.get("stack"):
+            rewritten = []
+            for frame in stack:
+                if "file" in frame:
+                    rewritten.append({
+                        **frame,
+                        "file": SystemResourceMonitor.instance._clean_frame_file(
+                            frame["file"]
+                        )[1],
+                    })
+                else:
+                    rewritten.append(frame)
+            marker_data["stack"] = rewritten
+        if scope := data.get("scope"):
+            marker_data["scope"] = scope
+        if allowed_match := data.get("allowed_match"):
+            marker_data["allowed_match"] = allowed_match
+            marker_data["color"] = "yellow"
+        else:
+            marker_data["color"] = "orange"
+
+        SystemResourceMonitor.record_event("LSan Leak", timestamp, marker_data)
+
+    @staticmethod
+    def lsan_summary(data):
+        """Record an LSan summary event.
+
+        Args:
+            data: Dictionary containing lsan_summary data including:
+                  - "bytes": total bytes leaked
+                  - "allocations": total allocations leaked
+                  - "allowed": whether the leak is allow-listed
+        """
+        if not SystemResourceMonitor.instance:
+            return
+
+        timestamp = SystemResourceMonitor.instance.get_monotonic_time_from_data(data)
+
+        allowed = data.get("allowed", False)
+        marker_data = {
+            "type": "LSanSummary",
+            "bytes": data["bytes"],
+            "allocations": data["allocations"],
+            "color": "yellow" if allowed else "orange",
+        }
+        if allowed:
+            marker_data["allowed"] = True
+
+        SystemResourceMonitor.record_event("LSan Summary", timestamp, marker_data)
+
+    @staticmethod
+    def tsan_error(data):
+        """Record a ThreadSanitizer report.
+
+        A TSan report can carry several labeled stacks (e.g. the two
+        acquisition sites of a lock-order inversion, or the racing accesses of
+        a data race). A profiler marker holds a single stack, so one marker is
+        emitted per labeled stack; all markers from the same report share a
+        "report_index" so they can be correlated on the timeline.
+
+        Args:
+            data: Dictionary containing tsan_error data including:
+                  - "kind": report kind (e.g. "data race",
+                            "lock-order-inversion (potential deadlock)")
+                  - "signature": SUMMARY location (e.g.
+                                 "Mutex_posix.cpp:91:3 in mutexLock")
+                  - "pid": pid the report is about (optional)
+                  - "description": extra context such as the lock-order cycle
+                                   graph (optional)
+                  - "stacks": list of {"label", "stack"} dicts, one per labeled
+                              stack in the report
+                  - "scope": identifier for the browser session, e.g. a
+                             directory name (optional)
+        """
+        if not SystemResourceMonitor.instance:
+            return
+
+        monitor = SystemResourceMonitor.instance
+        timestamp = monitor.get_monotonic_time_from_data(data)
+
+        report_index = monitor._tsan_report_count
+        monitor._tsan_report_count += 1
+
+        def make_marker_data():
+            marker_data = {
+                "type": "TSanError",
+                "kind": data["kind"],
+                "report_index": report_index,
+                "color": "orange",
+            }
+            if pid := data.get("pid"):
+                marker_data["pid"] = pid
+            if description := data.get("description"):
+                marker_data["description"] = description
+            if scope := data.get("scope"):
+                marker_data["scope"] = scope
+            return marker_data
+
+        stacks = data.get("stacks") or []
+        if not stacks:
+            SystemResourceMonitor.record_event(
+                "TSan Error", timestamp, make_marker_data()
+            )
+            return
+
+        for substack in stacks:
+            marker_data = make_marker_data()
+            marker_data["label"] = substack.get("label", "")
+            rewritten = []
+            for frame in substack.get("stack", []):
+                if "file" in frame:
+                    rewritten.append({
+                        **frame,
+                        "file": monitor._clean_frame_file(frame["file"])[1],
+                    })
+                else:
+                    rewritten.append(frame)
+            marker_data["stack"] = rewritten
+            SystemResourceMonitor.record_event("TSan Error", timestamp, marker_data)
+
+    @staticmethod
+    def mozleak_object(data):
+        """Record a per-process per-class leaked object event.
+
+        Args:
+            data: Dictionary containing mozleak_object data including:
+                  - "process": process name
+                  - "name": leaked object/class name
+                  - "count": leaked instance count
+                  - "bytes_per_inst": per-instance size in bytes
+                  - "bytes_leaked": total bytes leaked for this class
+                  - "total_instances": total instances allocated
+                  - "scope": optional scope
+                  - "allowed": whether the leak is allow-listed
+        """
+        if not SystemResourceMonitor.instance:
+            return
+
+        timestamp = SystemResourceMonitor.instance.get_monotonic_time_from_data(data)
+
+        allowed = data.get("allowed", False)
+        marker_data = {
+            "type": "MozLeakObject",
+            "process": data["process"],
+            "name": data["name"],
+            "count": data["count"],
+            "bytes_per_inst": data["bytes_per_inst"],
+            "bytes_leaked": data["bytes_leaked"],
+            "total_instances": data["total_instances"],
+            "color": "yellow" if allowed else "orange",
+        }
+        if scope := data.get("scope"):
+            marker_data["scope"] = scope
+        if allowed:
+            marker_data["allowed"] = True
+
+        SystemResourceMonitor.record_event("Leaked Object", timestamp, marker_data)
+
+    @staticmethod
+    def mozleak_total(data):
+        """Record a per-process leak total event.
+
+        Clean totals (zero bytes leaked) are not recorded as markers, to keep
+        the timeline focused on actual leaks.
+
+        Args:
+            data: Dictionary containing mozleak_total data including:
+                  - "process": process name
+                  - "bytes": total bytes leaked, or None if no TOTAL line was seen
+                  - "objects": list of leaked object class names
+                  - "scope": optional scope
+                  - "induced_crash": whether the process deliberately crashed
+                  - "ignore_missing": whether a missing total should be ignored
+        """
+        if not SystemResourceMonitor.instance:
+            return
+
+        bytes_leaked = data.get("bytes")
+        if bytes_leaked == 0:
+            return
+
+        timestamp = SystemResourceMonitor.instance.get_monotonic_time_from_data(data)
+
+        marker_data = {
+            "type": "MozLeakTotal",
+            "process": data["process"],
+            "bytes": bytes_leaked,
+            "objects": data.get("objects", []),
+        }
+        if scope := data.get("scope"):
+            marker_data["scope"] = scope
+
+        induced_crash = data.get("induced_crash", False)
+        ignore_missing = data.get("ignore_missing", False)
+        if induced_crash:
+            marker_data["induced_crash"] = True
+        if ignore_missing:
+            marker_data["ignore_missing"] = True
+
+        if bytes_leaked is None:
+            if induced_crash or ignore_missing:
+                marker_data["color"] = "grey"
+            else:
+                marker_data["color"] = "red"
+        else:
+            marker_data["color"] = "orange"
+
+        SystemResourceMonitor.record_event("Leaked Total", timestamp, marker_data)
+
     @contextmanager
     def phase(self, name):
         """Context manager for recording an active phase."""
@@ -990,6 +1772,14 @@ class SystemResourceMonitor:
         phase = (self._active_phases[name], time.monotonic())
         self.phases[name] = phase
         del self._active_phases[name]
+
+        self._stream_marker(
+            "Phase",
+            phase[0],
+            phase[1],
+            {"type": "Phase", "phase": name},
+            self.PHASE_CATEGORY,
+        )
 
         return phase[1] - phase[0]
 
@@ -1173,459 +1963,862 @@ class SystemResourceMonitor:
 
         return max(values)
 
+    def _build_cpu_schema(self):
+        cpu_times = psutil.cpu_times(False)
+        schema = {
+            "name": "CPU",
+            "tooltipLabel": "{marker.name}",
+            "display": [],
+            "data": [
+                {"key": "cpuPercent", "label": "CPU Percent", "format": "string"},
+            ],
+            "graphs": [],
+        }
+        for field, label in {
+            "user": "User %",
+            "iowait": "IO Wait %",
+            "system": "System %",
+            "nice": "Nice %",
+            "idle": "Idle %",
+        }.items():
+            if hasattr(cpu_times, field):
+                schema["data"].append({
+                    "key": field + "_pct",
+                    "label": label,
+                    "format": "string",
+                })
+        for field, color in {
+            "softirq": "orange",
+            "iowait": "red",
+            "system": "grey",
+            "user": "yellow",
+            "nice": "blue",
+        }.items():
+            if hasattr(cpu_times, field):
+                schema["graphs"].append({"key": field, "color": color, "type": "bar"})
+        return schema
+
+    def _build_meta(self):
+        """Build the profile metadata dict."""
+        meta = {
+            "processType": 0,
+            "product": "mach",
+            "stackwalk": 0,
+            "version": 27,
+            "preprocessedProfileVersion": 47,
+            "symbolicationNotSupported": True,
+            "interval": self.poll_interval * 1000,
+            "startTime": self.start_timestamp * 1000,
+            "profilingStartTime": 0,
+            "logicalCPUs": psutil.cpu_count(logical=True),
+            "physicalCPUs": psutil.cpu_count(logical=False),
+            "mainMemory": psutil.virtual_memory()[0],
+            "categories": [
+                {
+                    "name": "Other",
+                    "color": "grey",
+                    "subcategories": ["Other"],
+                },
+                {
+                    "name": "Phases",
+                    "color": "grey",
+                    "subcategories": ["Other"],
+                },
+                {
+                    "name": "Tasks",
+                    "color": "grey",
+                    "subcategories": ["Other"],
+                },
+            ],
+            "markerSchema": [
+                self._build_cpu_schema(),
+                {
+                    "name": "Phase",
+                    "tooltipLabel": "{marker.data.phase}",
+                    "tableLabel": "{marker.name} — {marker.data.phase} — CPU time: {marker.data.cpuTime} ({marker.data.cpuPercent})",
+                    "chartLabel": "{marker.data.phase}",
+                    "display": [
+                        "marker-chart",
+                        "marker-table",
+                        "timeline-overview",
+                    ],
+                    "data": [
+                        {
+                            "key": "cpuTime",
+                            "label": "CPU Time",
+                            "format": "duration",
+                        },
+                        {
+                            "key": "cpuPercent",
+                            "label": "CPU Percent",
+                            "format": "string",
+                        },
+                    ],
+                },
+                {
+                    "name": "Text",
+                    "tooltipLabel": "{marker.name}",
+                    "tableLabel": "{marker.name} — {marker.data.text}",
+                    "chartLabel": "{marker.data.text}",
+                    "display": ["marker-chart", "marker-table"],
+                    "data": [
+                        {
+                            "key": "text",
+                            "label": "Description",
+                            "format": "string",
+                        }
+                    ],
+                },
+                {
+                    "name": "Test",
+                    "tooltipLabel": "{marker.data.name}",
+                    "tableLabel": "{marker.data.status} — {marker.data.test}",
+                    "chartLabel": "{marker.data.name}",
+                    "display": ["marker-chart", "marker-table"],
+                    "colorField": "color",
+                    "data": [
+                        {
+                            "key": "test",
+                            "label": "Test Name",
+                            "format": "string",
+                        },
+                        {
+                            "key": "name",
+                            "label": "Short Name",
+                            "format": "string",
+                            "hidden": True,
+                        },
+                        {
+                            "key": "status",
+                            "label": "Status",
+                            "format": "string",
+                        },
+                        {
+                            "key": "expected",
+                            "label": "Expected",
+                            "format": "string",
+                        },
+                        {
+                            "key": "message",
+                            "label": "Message",
+                            "format": "string",
+                        },
+                        {
+                            "key": "timeoutfactor",
+                            "label": "Timeout Factor",
+                            "format": "integer",
+                        },
+                        {
+                            "key": "color",
+                            "hidden": True,
+                        },
+                    ],
+                },
+                {
+                    "name": "TestStatus",
+                    "tableLabel": "{marker.data.message} — {marker.data.test} {marker.data.subtest}",
+                    "display": ["marker-chart", "marker-table"],
+                    "colorField": "color",
+                    "data": [
+                        {
+                            "key": "message",
+                            "label": "Message",
+                            "format": "string",
+                        },
+                        {
+                            "key": "test",
+                            "label": "Test Name",
+                            "format": "string",
+                        },
+                        {
+                            "key": "subtest",
+                            "label": "Subtest",
+                            "format": "string",
+                        },
+                        {
+                            "key": "color",
+                            "hidden": True,
+                        },
+                    ],
+                },
+                {
+                    "name": "Artifact",
+                    "tableLabel": "{marker.data.filename} — {marker.data.size}",
+                    "display": ["marker-chart", "marker-table"],
+                    "data": [
+                        {
+                            "key": "filename",
+                            "label": "Filename",
+                            "format": "string",
+                        },
+                        {
+                            "key": "size",
+                            "label": "Size",
+                            "format": "bytes",
+                        },
+                    ],
+                },
+                {
+                    "name": "Crash",
+                    "tableLabel": "{marker.data.signature} — {marker.data.test}",
+                    "display": ["marker-chart", "marker-table"],
+                    "colorField": "color",
+                    "data": [
+                        {
+                            "key": "signature",
+                            "label": "Signature",
+                            "format": "string",
+                        },
+                        {
+                            "key": "reason",
+                            "label": "Reason",
+                            "format": "string",
+                        },
+                        {
+                            "key": "test",
+                            "label": "Test Name",
+                            "format": "string",
+                        },
+                        {
+                            "key": "minidump",
+                            "label": "Minidump",
+                            "format": "string",
+                        },
+                        {
+                            "key": "color",
+                            "hidden": True,
+                        },
+                    ],
+                },
+                {
+                    "name": "LSanLeak",
+                    "tooltipLabel": "{marker.data.kind} leak of {marker.data.bytes} in {marker.data.objects} object(s)",
+                    "tableLabel": "{marker.data.kind} leak of {marker.data.bytes} in {marker.data.objects} object(s) — {marker.data.scope}",
+                    "display": ["marker-chart", "marker-table"],
+                    "colorField": "color",
+                    "data": [
+                        {
+                            "key": "kind",
+                            "label": "Kind",
+                            "format": "string",
+                        },
+                        {
+                            "key": "bytes",
+                            "label": "Bytes",
+                            "format": "bytes",
+                        },
+                        {
+                            "key": "objects",
+                            "label": "Objects",
+                            "format": "integer",
+                        },
+                        {
+                            "key": "scope",
+                            "label": "Scope",
+                            "format": "string",
+                        },
+                        {
+                            "key": "allowed_match",
+                            "label": "Allowed Match",
+                            "format": "string",
+                        },
+                        {
+                            "key": "color",
+                            "hidden": True,
+                        },
+                    ],
+                },
+                {
+                    "name": "LSanSummary",
+                    "tooltipLabel": "{marker.data.bytes} in {marker.data.allocations} allocation(s)",
+                    "tableLabel": "{marker.data.bytes} in {marker.data.allocations} allocation(s)",
+                    "display": ["marker-chart", "marker-table"],
+                    "colorField": "color",
+                    "data": [
+                        {
+                            "key": "bytes",
+                            "label": "Bytes",
+                            "format": "bytes",
+                        },
+                        {
+                            "key": "allocations",
+                            "label": "Allocations",
+                            "format": "integer",
+                        },
+                        {
+                            "key": "allowed",
+                            "label": "Allowed",
+                            "format": "string",
+                        },
+                        {
+                            "key": "color",
+                            "hidden": True,
+                        },
+                    ],
+                },
+                {
+                    "name": "TSanError",
+                    "tooltipLabel": "{marker.data.kind} (report {marker.data.report_index}) — {marker.data.label}",
+                    "tableLabel": "{marker.data.kind} (report {marker.data.report_index}) — {marker.data.label}",
+                    "display": ["marker-chart", "marker-table"],
+                    "colorField": "color",
+                    "data": [
+                        {
+                            "key": "kind",
+                            "label": "Kind",
+                            "format": "string",
+                        },
+                        {
+                            "key": "report_index",
+                            "label": "Report",
+                            "format": "integer",
+                        },
+                        {
+                            "key": "pid",
+                            "label": "PID",
+                            "format": "integer",
+                        },
+                        {
+                            "key": "scope",
+                            "label": "Scope",
+                            "format": "string",
+                        },
+                        {
+                            "key": "description",
+                            "label": "Description",
+                            "format": "string",
+                        },
+                        {
+                            "key": "color",
+                            "hidden": True,
+                        },
+                        # Declared last so it renders directly above the stack.
+                        {
+                            "key": "label",
+                            "label": "Stack",
+                            "format": "string",
+                        },
+                    ],
+                },
+                {
+                    "name": "MozLeakObject",
+                    "tooltipLabel": "{marker.data.bytes_leaked} in {marker.data.count} {marker.data.name}",
+                    "tableLabel": "{marker.data.process} leaked {marker.data.bytes_leaked} in {marker.data.count} {marker.data.name}",
+                    "display": ["marker-chart", "marker-table"],
+                    "colorField": "color",
+                    "data": [
+                        {
+                            "key": "name",
+                            "label": "Object",
+                            "format": "string",
+                        },
+                        {
+                            "key": "count",
+                            "label": "Instances Leaked",
+                            "format": "integer",
+                        },
+                        {
+                            "key": "bytes_leaked",
+                            "label": "Bytes Leaked",
+                            "format": "bytes",
+                        },
+                        {
+                            "key": "bytes_per_inst",
+                            "label": "Bytes Per Instance",
+                            "format": "bytes",
+                        },
+                        {
+                            "key": "total_instances",
+                            "label": "Total Instances",
+                            "format": "integer",
+                        },
+                        {
+                            "key": "allowed",
+                            "label": "Allowed",
+                            "format": "string",
+                        },
+                        {
+                            "key": "process",
+                            "label": "Process",
+                            "format": "string",
+                        },
+                        {
+                            "key": "scope",
+                            "label": "Scope",
+                            "format": "string",
+                        },
+                        {
+                            "key": "color",
+                            "hidden": True,
+                        },
+                    ],
+                },
+                {
+                    "name": "MozLeakTotal",
+                    "tableLabel": "{marker.data.process} — {marker.data.bytes} leaked",
+                    "display": ["marker-chart", "marker-table"],
+                    "colorField": "color",
+                    "data": [
+                        {
+                            "key": "process",
+                            "label": "Process",
+                            "format": "string",
+                        },
+                        {
+                            "key": "bytes",
+                            "label": "Bytes",
+                            "format": "bytes",
+                        },
+                        {
+                            "key": "scope",
+                            "label": "Scope",
+                            "format": "string",
+                        },
+                        {
+                            "key": "induced_crash",
+                            "label": "Induced Crash",
+                            "format": "string",
+                        },
+                        {
+                            "key": "ignore_missing",
+                            "label": "Ignore Missing",
+                            "format": "string",
+                        },
+                        {
+                            "key": "objects",
+                            "label": "Leaked Objects",
+                            "format": "list",
+                        },
+                        {
+                            "key": "color",
+                            "hidden": True,
+                        },
+                    ],
+                },
+                {
+                    "name": "Mem",
+                    "tooltipLabel": "{marker.name}",
+                    "display": [],
+                    "data": [
+                        {"key": "used", "label": "Memory Used", "format": "bytes"},
+                        {
+                            "key": "cached",
+                            "label": "Memory cached",
+                            "format": "bytes",
+                        },
+                        {
+                            "key": "buffers",
+                            "label": "Memory buffers",
+                            "format": "bytes",
+                        },
+                    ],
+                    "graphs": [
+                        {"key": "used", "color": "orange", "type": "line-filled"}
+                    ],
+                },
+                {
+                    "name": "IO",
+                    "tooltipLabel": "{marker.name}",
+                    "display": [],
+                    "data": [
+                        {
+                            "key": "write_bytes",
+                            "label": "Written",
+                            "format": "bytes",
+                        },
+                        {
+                            "key": "write_count",
+                            "label": "Write count",
+                            "format": "integer",
+                        },
+                        {"key": "read_bytes", "label": "Read", "format": "bytes"},
+                        {
+                            "key": "read_count",
+                            "label": "Read count",
+                            "format": "integer",
+                        },
+                    ],
+                    "graphs": [
+                        {"key": "read_bytes", "color": "green", "type": "bar"},
+                        {"key": "write_bytes", "color": "red", "type": "bar"},
+                    ],
+                },
+                {
+                    "name": "NetIO",
+                    "tooltipLabel": "{marker.name}",
+                    "display": [],
+                    "data": [
+                        {
+                            "key": "sent_bytes",
+                            "label": "Sent",
+                            "format": "bytes",
+                        },
+                        {
+                            "key": "sent_count",
+                            "label": "Packets sent",
+                            "format": "integer",
+                        },
+                        {
+                            "key": "recv_bytes",
+                            "label": "Received",
+                            "format": "bytes",
+                        },
+                        {
+                            "key": "recv_count",
+                            "label": "Packets received",
+                            "format": "integer",
+                        },
+                    ],
+                    "graphs": [
+                        {"key": "recv_bytes", "color": "blue", "type": "bar"},
+                        {"key": "sent_bytes", "color": "orange", "type": "bar"},
+                    ],
+                },
+                {
+                    "name": "Process",
+                    "chartLabel": "{marker.data.cmd}",
+                    "tooltipLabel": "{marker.name}",
+                    "tableLabel": "{marker.data.cmd}",
+                    "display": ["marker-chart", "marker-table"],
+                    "data": [
+                        {
+                            "key": "cmd",
+                            "label": "Command line",
+                            "format": "string",
+                        },
+                        {
+                            "key": "pid",
+                            "label": "Process ID",
+                            "format": "pid",
+                        },
+                        {
+                            "key": "ppid",
+                            "label": "Parent process ID",
+                            "format": "pid",
+                        },
+                    ],
+                },
+                {
+                    "name": "Interval",
+                    "tooltipLabel": "{marker.name}",
+                    "display": [],
+                    "data": [
+                        {
+                            "key": "interval",
+                            "label": "Interval",
+                            "format": "duration",
+                        }
+                    ],
+                    "graphs": [{"key": "interval", "color": "purple", "type": "line"}],
+                },
+                {
+                    "name": "sccache",
+                    "tooltipLabel": "{marker.data.status}: {marker.data.file}",
+                    "tableLabel": "{marker.data.status}: {marker.data.file}",
+                    "chartLabel": "{marker.data.file}",
+                    "display": ["marker-chart", "marker-table"],
+                    "colorField": "color",
+                    "data": [
+                        {
+                            "key": "file",
+                            "label": "File",
+                            "format": "string",
+                        },
+                        {
+                            "key": "status",
+                            "label": "Status",
+                            "format": "string",
+                        },
+                        {
+                            "key": "hash_time",
+                            "label": "Hash Time",
+                            "format": "duration",
+                        },
+                        {
+                            "key": "lookup_time",
+                            "label": "Lookup Time",
+                            "format": "duration",
+                        },
+                        {
+                            "key": "compile_time",
+                            "label": "Compile Time",
+                            "format": "duration",
+                        },
+                        {
+                            "key": "artifact_time",
+                            "label": "Artifact Creation Time",
+                            "format": "duration",
+                        },
+                        {
+                            "key": "write_time",
+                            "label": "Cache Write Time",
+                            "format": "duration",
+                        },
+                        {
+                            "key": "color",
+                            "hidden": True,
+                        },
+                    ],
+                },
+                {
+                    "name": "DocShell",
+                    "tooltipLabel": "{marker.data.url}",
+                    "tableLabel": "DOCSHELL {marker.data.pointer} [{marker.data.process} {marker.data.pid}: {marker.data.thread}] id = {marker.data.id} {marker.data.url}",
+                    "chartLabel": "{marker.data.url}",
+                    "display": ["marker-chart", "marker-table"],
+                    "data": [
+                        {"key": "url", "label": "URL", "format": "url"},
+                        {"key": "id", "label": "ID", "format": "integer"},
+                        {"key": "pointer", "label": "Address", "format": "string"},
+                        {"key": "process", "label": "Process", "format": "string"},
+                        {"key": "pid", "label": "Process ID", "format": "integer"},
+                        {"key": "thread", "label": "Thread", "format": "string"},
+                        {"key": "test", "label": "Test", "format": "string"},
+                    ],
+                },
+                {
+                    "name": "DOMWindow",
+                    "tooltipLabel": "{marker.data.url}",
+                    "tableLabel": "DOMWINDOW {marker.data.pointer} [{marker.data.process} {marker.data.pid}: {marker.data.thread}] serial = {marker.data.serial} outer = {marker.data.outer} {marker.data.url}",
+                    "chartLabel": "{marker.data.url}",
+                    "display": ["marker-chart", "marker-table"],
+                    "data": [
+                        {"key": "url", "label": "URL", "format": "url"},
+                        {"key": "serial", "label": "Serial", "format": "integer"},
+                        {"key": "pointer", "label": "Address", "format": "string"},
+                        {"key": "outer", "label": "Outer", "format": "string"},
+                        {"key": "process", "label": "Process", "format": "string"},
+                        {"key": "pid", "label": "Process ID", "format": "integer"},
+                        {"key": "thread", "label": "Thread", "format": "string"},
+                        {"key": "test", "label": "Test", "format": "string"},
+                    ],
+                },
+                {
+                    "name": "jsError",
+                    "tooltipLabel": "{marker.data.message}",
+                    "tableLabel": "{marker.data.message} — {marker.data.file}:{marker.data.line}",
+                    "chartLabel": "{marker.data.message}",
+                    "display": ["marker-chart", "marker-table"],
+                    "data": [
+                        {"key": "message", "label": "Message", "format": "string"},
+                        {"key": "file", "format": "string", "hidden": True},
+                        {"key": "line", "format": "integer", "hidden": True},
+                        {"key": "test", "label": "Test", "format": "string"},
+                    ],
+                },
+                {
+                    "name": "cppDebug",
+                    "tooltipLabel": "{marker.data.message}",
+                    "tableLabel": "{marker.data.message} — {marker.data.file}:{marker.data.line}",
+                    "chartLabel": "{marker.data.message}",
+                    "display": ["marker-chart", "marker-table"],
+                    "colorField": "color",
+                    "data": [
+                        {"key": "message", "label": "Message", "format": "string"},
+                        {"key": "file", "format": "string", "hidden": True},
+                        {"key": "line", "format": "integer", "hidden": True},
+                        {"key": "process", "label": "Process", "format": "string"},
+                        {"key": "pid", "label": "Process ID", "format": "integer"},
+                        {"key": "thread", "label": "Thread", "format": "string"},
+                        {"key": "test", "label": "Test", "format": "string"},
+                        {"key": "color", "hidden": True},
+                    ],
+                },
+                {
+                    "name": "console",
+                    "tooltipLabel": "{marker.data.message}",
+                    "tableLabel": "{marker.data.message}",
+                    "chartLabel": "{marker.data.message}",
+                    "display": ["marker-chart", "marker-table"],
+                    "data": [
+                        {"key": "message", "label": "Message", "format": "string"},
+                        {"key": "test", "label": "Test", "format": "string"},
+                    ],
+                },
+            ],
+            "usesOnlyOneStackType": True,
+        }
+        for key in self.metadata:
+            meta[key] = self.metadata[key]
+        return meta
+
+    def _build_thread(self):
+        """Build the base thread dict for the profile."""
+        return {
+            "processType": "default",
+            "processName": "mach",
+            "processStartupTime": 0,
+            "processShutdownTime": None,
+            "registerTime": 0,
+            "unregisterTime": None,
+            "pausedRanges": [],
+            "showMarkersInTimeline": True,
+            "name": "",
+            "isMainThread": False,
+            "pid": "0",
+            "tid": 0,
+            "samples": {
+                "weightType": "samples",
+                "weight": None,
+                "stack": [],
+                "time": [],
+                "length": 0,
+            },
+            "stackTable": {
+                "frame": [0],
+                "prefix": [None],
+                "category": [0],
+                "subcategory": [0],
+                "length": 1,
+            },
+            "frameTable": {
+                "address": [-1],
+                "inlineDepth": [0],
+                "category": [None],
+                "subcategory": [0],
+                "func": [0],
+                "nativeSymbol": [None],
+                "innerWindowID": [0],
+                "implementation": [None],
+                "line": [None],
+                "column": [None],
+                "length": 1,
+            },
+            "funcTable": {
+                "isJS": [False],
+                "relevantForJS": [False],
+                "name": [0],
+                "resource": [-1],
+                "fileName": [None],
+                "lineNumber": [None],
+                "columnNumber": [None],
+                "length": 1,
+            },
+            "resourceTable": {
+                "lib": [],
+                "name": [],
+                "host": [],
+                "type": [],
+                "length": 0,
+            },
+            "nativeSymbols": {
+                "libIndex": [],
+                "address": [],
+                "name": [],
+                "functionSize": [],
+                "length": 0,
+            },
+        }
+
+    def _measurement_markers(self, m):
+        """Yield (name, start, end, data) tuples for a single measurement."""
+        fp = self._format_percent
+
+        # CPU
+        cpu_data = {
+            "type": "CPU",
+            "cpuPercent": fp(sum(list(m.cpu_percent)) / len(m.cpu_percent)),
+        }
+        # Due to inconsistencies in the sampling rate, sometimes the
+        # cpu_times add up to more than 100%, causing annoying
+        # spikes in the CPU use charts. Avoid them by dividing the
+        # values by the total if it is above 1.
+        total = 0
+        for field in ["nice", "user", "system", "iowait", "softirq", "idle"]:
+            if hasattr(m.cpu_times[0], field):
+                total += sum(getattr(core, field) for core in m.cpu_times) / (
+                    m.end - m.start
+                )
+        divisor = total if total > 1 else 1
+        total = 0
+        for field in ["nice", "user", "system", "iowait", "softirq"]:
+            if hasattr(m.cpu_times[0], field):
+                total += (
+                    sum(getattr(core, field) for core in m.cpu_times)
+                    / (m.end - m.start)
+                    / divisor
+                )
+                cpu_data[field] = round(total, 3)
+        for field in ["nice", "user", "system", "iowait", "idle"]:
+            if hasattr(m.cpu_times[0], field):
+                cpu_data[field + "_pct"] = fp(
+                    100
+                    * sum(getattr(core, field) for core in m.cpu_times)
+                    / (m.end - m.start)
+                    / len(m.cpu_times)
+                )
+        yield ("CPU Use", m.start, m.end, cpu_data)
+
+        # Memory
+        mem_data = {"type": "Mem", "used": m.virt.used}
+        if hasattr(m.virt, "cached"):
+            mem_data["cached"] = m.virt.cached
+        if hasattr(m.virt, "buffers"):
+            mem_data["buffers"] = m.virt.buffers
+        yield ("Memory", m.start, m.end, mem_data)
+
+        # IO
+        yield (
+            "IO",
+            m.start,
+            m.end,
+            {
+                "type": "IO",
+                "read_count": m.io.read_count,
+                "read_bytes": m.io.read_bytes,
+                "write_count": m.io.write_count,
+                "write_bytes": m.io.write_bytes,
+            },
+        )
+
+        # Network IO
+        yield (
+            "NetIO",
+            m.start,
+            m.end,
+            {
+                "type": "NetIO",
+                "recv_count": m.net_io.packets_recv,
+                "recv_bytes": m.net_io.bytes_recv,
+                "sent_count": m.net_io.packets_sent,
+                "sent_bytes": m.net_io.bytes_sent,
+            },
+        )
+
+        # Sampling interval
+        yield (
+            "Sampling Interval",
+            m.end,
+            None,
+            {
+                "type": "Interval",
+                "interval": round((m.end - m.start) * 1000),
+            },
+        )
+
     def as_profile(self):
         """Convert the recorded data to an object suitable for import into the firefox profiler"""
         profile_time = time.monotonic()
         start_time = self.start_time
+        firstThread = self._build_thread()
+        firstThread["stringArray"] = ["(root)"]
+        firstThread["markers"] = {
+            "data": [],
+            "name": [],
+            "startTime": [],
+            "endTime": [],
+            "phase": [],
+            "category": [],
+            "stack": [],
+            "length": 0,
+        }
         profile = {
-            "meta": {
-                "processType": 0,
-                "product": "mach",
-                "stackwalk": 0,
-                "version": 27,
-                "preprocessedProfileVersion": 47,
-                "symbolicationNotSupported": True,
-                "interval": self.poll_interval * 1000,
-                "startTime": self.start_timestamp * 1000,
-                "profilingStartTime": 0,
-                "logicalCPUs": psutil.cpu_count(logical=True),
-                "physicalCPUs": psutil.cpu_count(logical=False),
-                "mainMemory": psutil.virtual_memory()[0],
-                "categories": [
-                    {
-                        "name": "Other",
-                        "color": "grey",
-                        "subcategories": ["Other"],
-                    },
-                    {
-                        "name": "Phases",
-                        "color": "grey",
-                        "subcategories": ["Other"],
-                    },
-                    {
-                        "name": "Tasks",
-                        "color": "grey",
-                        "subcategories": ["Other"],
-                    },
-                ],
-                "markerSchema": [
-                    {
-                        "name": "Phase",
-                        "tooltipLabel": "{marker.data.phase}",
-                        "tableLabel": "{marker.name} — {marker.data.phase} — CPU time: {marker.data.cpuTime} ({marker.data.cpuPercent})",
-                        "chartLabel": "{marker.data.phase}",
-                        "display": [
-                            "marker-chart",
-                            "marker-table",
-                            "timeline-overview",
-                        ],
-                        "data": [
-                            {
-                                "key": "cpuTime",
-                                "label": "CPU Time",
-                                "format": "duration",
-                            },
-                            {
-                                "key": "cpuPercent",
-                                "label": "CPU Percent",
-                                "format": "string",
-                            },
-                        ],
-                    },
-                    {
-                        "name": "Text",
-                        "tooltipLabel": "{marker.name}",
-                        "tableLabel": "{marker.name} — {marker.data.text}",
-                        "chartLabel": "{marker.data.text}",
-                        "display": ["marker-chart", "marker-table"],
-                        "data": [
-                            {
-                                "key": "text",
-                                "label": "Description",
-                                "format": "string",
-                            }
-                        ],
-                    },
-                    {
-                        "name": "Test",
-                        "tooltipLabel": "{marker.data.name}",
-                        "tableLabel": "{marker.data.status} — {marker.data.test}",
-                        "chartLabel": "{marker.data.name}",
-                        "display": ["marker-chart", "marker-table"],
-                        "colorField": "color",
-                        "data": [
-                            {
-                                "key": "test",
-                                "label": "Test Name",
-                                "format": "string",
-                            },
-                            {
-                                "key": "name",
-                                "label": "Short Name",
-                                "format": "string",
-                                "hidden": True,
-                            },
-                            {
-                                "key": "status",
-                                "label": "Status",
-                                "format": "string",
-                            },
-                            {
-                                "key": "expected",
-                                "label": "Expected",
-                                "format": "string",
-                            },
-                            {
-                                "key": "message",
-                                "label": "Message",
-                                "format": "string",
-                            },
-                            {
-                                "key": "timeoutfactor",
-                                "label": "Timeout Factor",
-                                "format": "integer",
-                            },
-                            {
-                                "key": "color",
-                                "hidden": True,
-                            },
-                        ],
-                    },
-                    {
-                        "name": "TestStatus",
-                        "tableLabel": "{marker.data.message} — {marker.data.test} {marker.data.subtest}",
-                        "display": ["marker-chart", "marker-table"],
-                        "colorField": "color",
-                        "data": [
-                            {
-                                "key": "message",
-                                "label": "Message",
-                                "format": "string",
-                            },
-                            {
-                                "key": "test",
-                                "label": "Test Name",
-                                "format": "string",
-                            },
-                            {
-                                "key": "subtest",
-                                "label": "Subtest",
-                                "format": "string",
-                            },
-                            {
-                                "key": "color",
-                                "hidden": True,
-                            },
-                        ],
-                    },
-                    {
-                        "name": "Artifact",
-                        "tableLabel": "{marker.data.filename} — {marker.data.size}",
-                        "display": ["marker-chart", "marker-table"],
-                        "data": [
-                            {
-                                "key": "filename",
-                                "label": "Filename",
-                                "format": "string",
-                            },
-                            {
-                                "key": "size",
-                                "label": "Size",
-                                "format": "bytes",
-                            },
-                        ],
-                    },
-                    {
-                        "name": "Crash",
-                        "tableLabel": "{marker.data.signature} — {marker.data.test}",
-                        "display": ["marker-chart", "marker-table"],
-                        "colorField": "color",
-                        "data": [
-                            {
-                                "key": "signature",
-                                "label": "Signature",
-                                "format": "string",
-                            },
-                            {
-                                "key": "reason",
-                                "label": "Reason",
-                                "format": "string",
-                            },
-                            {
-                                "key": "test",
-                                "label": "Test Name",
-                                "format": "string",
-                            },
-                            {
-                                "key": "minidump",
-                                "label": "Minidump",
-                                "format": "string",
-                            },
-                            {
-                                "key": "color",
-                                "hidden": True,
-                            },
-                        ],
-                    },
-                    {
-                        "name": "Mem",
-                        "tooltipLabel": "{marker.name}",
-                        "display": [],
-                        "data": [
-                            {"key": "used", "label": "Memory Used", "format": "bytes"},
-                            {
-                                "key": "cached",
-                                "label": "Memory cached",
-                                "format": "bytes",
-                            },
-                            {
-                                "key": "buffers",
-                                "label": "Memory buffers",
-                                "format": "bytes",
-                            },
-                        ],
-                        "graphs": [
-                            {"key": "used", "color": "orange", "type": "line-filled"}
-                        ],
-                    },
-                    {
-                        "name": "IO",
-                        "tooltipLabel": "{marker.name}",
-                        "display": [],
-                        "data": [
-                            {
-                                "key": "write_bytes",
-                                "label": "Written",
-                                "format": "bytes",
-                            },
-                            {
-                                "key": "write_count",
-                                "label": "Write count",
-                                "format": "integer",
-                            },
-                            {"key": "read_bytes", "label": "Read", "format": "bytes"},
-                            {
-                                "key": "read_count",
-                                "label": "Read count",
-                                "format": "integer",
-                            },
-                        ],
-                        "graphs": [
-                            {"key": "read_bytes", "color": "green", "type": "bar"},
-                            {"key": "write_bytes", "color": "red", "type": "bar"},
-                        ],
-                    },
-                    {
-                        "name": "NetIO",
-                        "tooltipLabel": "{marker.name}",
-                        "display": [],
-                        "data": [
-                            {
-                                "key": "sent_bytes",
-                                "label": "Sent",
-                                "format": "bytes",
-                            },
-                            {
-                                "key": "sent_count",
-                                "label": "Packets sent",
-                                "format": "integer",
-                            },
-                            {
-                                "key": "recv_bytes",
-                                "label": "Received",
-                                "format": "bytes",
-                            },
-                            {
-                                "key": "recv_count",
-                                "label": "Packets received",
-                                "format": "integer",
-                            },
-                        ],
-                        "graphs": [
-                            {"key": "recv_bytes", "color": "blue", "type": "bar"},
-                            {"key": "sent_bytes", "color": "orange", "type": "bar"},
-                        ],
-                    },
-                    {
-                        "name": "Process",
-                        "chartLabel": "{marker.data.cmd}",
-                        "tooltipLabel": "{marker.name}",
-                        "tableLabel": "{marker.data.cmd}",
-                        "display": ["marker-chart", "marker-table"],
-                        "data": [
-                            {
-                                "key": "cmd",
-                                "label": "Command line",
-                                "format": "string",
-                            },
-                            {
-                                "key": "pid",
-                                "label": "Process ID",
-                                "format": "pid",
-                            },
-                            {
-                                "key": "ppid",
-                                "label": "Parent process ID",
-                                "format": "pid",
-                            },
-                        ],
-                    },
-                    {
-                        "name": "Interval",
-                        "tooltipLabel": "{marker.name}",
-                        "display": [],
-                        "data": [
-                            {
-                                "key": "interval",
-                                "label": "Interval",
-                                "format": "duration",
-                            }
-                        ],
-                        "graphs": [
-                            {"key": "interval", "color": "purple", "type": "line"}
-                        ],
-                    },
-                    {
-                        "name": "sccache",
-                        "tooltipLabel": "{marker.data.status}: {marker.data.file}",
-                        "tableLabel": "{marker.data.status}: {marker.data.file}",
-                        "chartLabel": "{marker.data.file}",
-                        "display": ["marker-chart", "marker-table"],
-                        "colorField": "color",
-                        "data": [
-                            {
-                                "key": "file",
-                                "label": "File",
-                                "format": "string",
-                            },
-                            {
-                                "key": "status",
-                                "label": "Status",
-                                "format": "string",
-                            },
-                            {
-                                "key": "hash_time",
-                                "label": "Hash Time",
-                                "format": "duration",
-                            },
-                            {
-                                "key": "lookup_time",
-                                "label": "Lookup Time",
-                                "format": "duration",
-                            },
-                            {
-                                "key": "compile_time",
-                                "label": "Compile Time",
-                                "format": "duration",
-                            },
-                            {
-                                "key": "artifact_time",
-                                "label": "Artifact Creation Time",
-                                "format": "duration",
-                            },
-                            {
-                                "key": "write_time",
-                                "label": "Cache Write Time",
-                                "format": "duration",
-                            },
-                            {
-                                "key": "color",
-                                "hidden": True,
-                            },
-                        ],
-                    },
-                ],
-                "usesOnlyOneStackType": True,
-            },
+            "meta": self._build_meta(),
             "libs": [],
-            "threads": [
-                {
-                    "processType": "default",
-                    "processName": "mach",
-                    "processStartupTime": 0,
-                    "processShutdownTime": None,
-                    "registerTime": 0,
-                    "unregisterTime": None,
-                    "pausedRanges": [],
-                    "showMarkersInTimeline": True,
-                    "name": "",
-                    "isMainThread": False,
-                    "pid": "0",
-                    "tid": 0,
-                    "samples": {
-                        "weightType": "samples",
-                        "weight": None,
-                        "stack": [],
-                        "time": [],
-                        "length": 0,
-                    },
-                    "stringArray": ["(root)"],
-                    "markers": {
-                        "data": [],
-                        "name": [],
-                        "startTime": [],
-                        "endTime": [],
-                        "phase": [],
-                        "category": [],
-                        "stack": [],
-                        "length": 0,
-                    },
-                    "stackTable": {
-                        "frame": [0],
-                        "prefix": [None],
-                        "category": [0],
-                        "subcategory": [0],
-                        "length": 1,
-                    },
-                    "frameTable": {
-                        "address": [-1],
-                        "inlineDepth": [0],
-                        "category": [None],
-                        "subcategory": [0],
-                        "func": [0],
-                        "nativeSymbol": [None],
-                        "innerWindowID": [0],
-                        "implementation": [None],
-                        "line": [None],
-                        "column": [None],
-                        "length": 1,
-                    },
-                    "funcTable": {
-                        "isJS": [False],
-                        "relevantForJS": [False],
-                        "name": [0],
-                        "resource": [-1],
-                        "fileName": [None],
-                        "lineNumber": [None],
-                        "columnNumber": [None],
-                        "length": 1,
-                    },
-                    "resourceTable": {
-                        "lib": [],
-                        "name": [],
-                        "host": [],
-                        "type": [],
-                        "length": 0,
-                    },
-                    "nativeSymbols": {
-                        "libIndex": [],
-                        "address": [],
-                        "name": [],
-                        "functionSize": [],
-                        "length": 0,
-                    },
-                }
-            ],
+            "threads": [firstThread],
             "counters": [],
         }
-        OTHER_CATEGORY = 0
-        PHASE_CATEGORY = 1
-        TASK_CATEGORY = 2
-
-        firstThread = profile["threads"][0]
         markers = firstThread["markers"]
-        for key in self.metadata:
-            profile["meta"][key] = self.metadata[key]
 
         def get_string_index(string):
             stringArray = firstThread["stringArray"]
@@ -1755,9 +2948,14 @@ class SystemResourceMonitor:
                 if not func_name and (offset := module_offset or raw_offset):
                     func_name = hex(offset)
 
-                # Get or create resource for the module or file
+                # Get or create resource for the module or file. Native frames
+                # with a function but no module (e.g. LSan log frames) get an
+                # "unknown" resource so the front-end treats them as resolved.
                 resource_index = -1
-                resource_name = module_name or (file_name if is_js else None)
+                if is_js:
+                    resource_name = file_name
+                else:
+                    resource_name = module_name or "unknown"
                 if resource_name:
                     # Find existing resource
                     for i, name_idx in enumerate(resourceTable["name"]):
@@ -1773,7 +2971,7 @@ class SystemResourceMonitor:
                         # Possible resourceTypes:
                         # 0 = unknown, 1 = library, 2 = addon, 3 = webhost, 4 = otherhost, 5 = url
                         # https://github.com/firefox-devtools/profiler/blob/32cb6672c7ed47311e9d84963023d51f5147042b/src/profile-logic/data-structures.ts#L322
-                        resource_type = 1 if module_name else (5 if is_js else 0)
+                        resource_type = 5 if is_js else 1
                         resourceTable["type"].append(resource_type)
                         resourceTable["length"] += 1
 
@@ -1846,7 +3044,7 @@ class SystemResourceMonitor:
                     frame_index = frameTable["length"]
                     frameTable["address"].append(frame_address)
                     frameTable["inlineDepth"].append(inline_depth)
-                    frameTable["category"].append(OTHER_CATEGORY)
+                    frameTable["category"].append(self.OTHER_CATEGORY)
                     frameTable["subcategory"].append(0)
                     frameTable["func"].append(func_index)
                     frameTable["nativeSymbol"].append(native_symbol_index)
@@ -1868,7 +3066,12 @@ class SystemResourceMonitor:
             return stack_index
 
         def add_marker(
-            name_index, start, end, data, category_index=OTHER_CATEGORY, precision=None
+            name_index,
+            start,
+            end,
+            data,
+            category_index=self.OTHER_CATEGORY,
+            precision=None,
         ):
             # The precision argument allows setting how many digits after the
             # decimal point are desired.
@@ -1911,135 +3114,11 @@ class SystemResourceMonitor:
             markers["stack"].append(stack_index)
             markers["length"] = markers["length"] + 1
 
-        def format_percent(value):
-            return str(round(value, 1)) + "%"
-
-        cpu_string_index = get_string_index("CPU Use")
-        memory_string_index = get_string_index("Memory")
-        io_string_index = get_string_index("IO")
-        network_string_index = get_string_index("NetIO")
-        interval_string_index = get_string_index("Sampling Interval")
-        valid_cpu_fields = set()
         for m in self.measurements:
-            # Ignore samples that are much too short.
             if m.end - m.start < self.poll_interval / 10:
                 continue
-
-            # CPU
-            markerData = {
-                "type": "CPU",
-                "cpuPercent": format_percent(
-                    sum(list(m.cpu_percent)) / len(m.cpu_percent)
-                ),
-            }
-
-            # due to inconsistencies in the sampling rate, sometimes the
-            # cpu_times add up to more than 100%, causing annoying
-            # spikes in the CPU use charts. Avoid them by dividing the
-            # values by the total if it is above 1.
-            total = 0
-            for field in ["nice", "user", "system", "iowait", "softirq", "idle"]:
-                if hasattr(m.cpu_times[0], field):
-                    total += sum(getattr(core, field) for core in m.cpu_times) / (
-                        m.end - m.start
-                    )
-            divisor = total if total > 1 else 1
-
-            total = 0
-            for field in ["nice", "user", "system", "iowait", "softirq"]:
-                if hasattr(m.cpu_times[0], field):
-                    total += (
-                        sum(getattr(core, field) for core in m.cpu_times)
-                        / (m.end - m.start)
-                        / divisor
-                    )
-                    if total > 0:
-                        valid_cpu_fields.add(field)
-                    markerData[field] = round(total, 3)
-            for field in ["nice", "user", "system", "iowait", "idle"]:
-                if hasattr(m.cpu_times[0], field):
-                    markerData[field + "_pct"] = format_percent(
-                        100
-                        * sum(getattr(core, field) for core in m.cpu_times)
-                        / (m.end - m.start)
-                        / len(m.cpu_times)
-                    )
-            add_marker(cpu_string_index, m.start, m.end, markerData)
-
-            # Memory
-            markerData = {"type": "Mem", "used": m.virt.used}
-            if hasattr(m.virt, "cached"):
-                markerData["cached"] = m.virt.cached
-            if hasattr(m.virt, "buffers"):
-                markerData["buffers"] = m.virt.buffers
-            add_marker(memory_string_index, m.start, m.end, markerData)
-
-            # IO
-            markerData = {
-                "type": "IO",
-                "read_count": m.io.read_count,
-                "read_bytes": m.io.read_bytes,
-                "write_count": m.io.write_count,
-                "write_bytes": m.io.write_bytes,
-            }
-            add_marker(io_string_index, m.start, m.end, markerData)
-
-            # Network IO
-            markerData = {
-                "type": "NetIO",
-                "recv_count": m.net_io.packets_recv,
-                "recv_bytes": m.net_io.bytes_recv,
-                "sent_count": m.net_io.packets_sent,
-                "sent_bytes": m.net_io.bytes_sent,
-            }
-            add_marker(network_string_index, m.start, m.end, markerData)
-
-            # Sampling interval marker
-            add_marker(
-                interval_string_index,
-                m.end,
-                None,
-                {
-                    "type": "Interval",
-                    "interval": round((m.end - m.start) * 1000),
-                },
-            )
-
-        # The marker schema for CPU markers should only contain graph
-        # definitions for fields we actually have, or the profiler front-end
-        # will detect missing data and skip drawing the track entirely.
-        cpuSchema = {
-            "name": "CPU",
-            "tooltipLabel": "{marker.name}",
-            "display": [],
-            "data": [{"key": "cpuPercent", "label": "CPU Percent", "format": "string"}],
-            "graphs": [],
-        }
-        cpuData = cpuSchema["data"]
-        for field, label in {
-            "user": "User %",
-            "iowait": "IO Wait %",
-            "system": "System %",
-            "nice": "Nice %",
-            "idle": "Idle %",
-        }.items():
-            if field in valid_cpu_fields or field == "idle":
-                cpuData.append({
-                    "key": field + "_pct",
-                    "label": label,
-                    "format": "string",
-                })
-        cpuGraphs = cpuSchema["graphs"]
-        for field, color in {
-            "softirq": "orange",
-            "iowait": "red",
-            "system": "grey",
-            "user": "yellow",
-            "nice": "blue",
-        }.items():
-            if field in valid_cpu_fields:
-                cpuGraphs.append({"key": field, "color": color, "type": "bar"})
-        profile["meta"]["markerSchema"].insert(0, cpuSchema)
+            for name, start, end, markerData in self._measurement_markers(m):
+                add_marker(get_string_index(name), start, end, markerData)
 
         # Create markers for phases
         phase_string_index = get_string_index("Phase")
@@ -2048,7 +3127,7 @@ class SystemResourceMonitor:
 
             cpu_percent_cores = self.aggregate_cpu_percent(phase=phase)
             if cpu_percent_cores:
-                markerData["cpuPercent"] = format_percent(
+                markerData["cpuPercent"] = self._format_percent(
                     sum(cpu_percent_cores) / len(cpu_percent_cores)
                 )
 
@@ -2060,19 +3139,21 @@ class SystemResourceMonitor:
             if total_cpu_time_ms > 0:
                 markerData["cpuTime"] = total_cpu_time_ms
 
-            add_marker(phase_string_index, v[0], v[1], markerData, PHASE_CATEGORY, 3)
+            add_marker(
+                phase_string_index, v[0], v[1], markerData, self.PHASE_CATEGORY, 3
+            )
 
         process_string_index = get_string_index("process")
         for pid, start, end, cmd, ppid in self.processes:
             markerData = {"type": "Process", "pid": pid, "ppid": ppid, "cmd": cmd}
             add_marker(process_string_index, start, end, markerData)
         # Add generic markers
-        for name, start, end, data in self.markers:
+        for name, start, end, data, category in self.markers:
             # data can be a dictionary containing the marker payload or a plain text value
             markerData = (
                 data if isinstance(data, dict) else {"type": "Text", "text": str(data)}
             )
-            add_marker(get_string_index(name), start, end, markerData, TASK_CATEGORY, 3)
+            add_marker(get_string_index(name), start, end, markerData, category, 3)
         if self.events:
             event_string_index = get_string_index("Event")
             for event in self.events:
@@ -2084,7 +3165,7 @@ class SystemResourceMonitor:
                         event_time,
                         None,
                         data,
-                        OTHER_CATEGORY,
+                        self.OTHER_CATEGORY,
                         3,
                     )
                 elif len(event) == 2:
@@ -2095,7 +3176,7 @@ class SystemResourceMonitor:
                         event_time,
                         None,
                         {"type": "Text", "text": text},
-                        OTHER_CATEGORY,
+                        self.OTHER_CATEGORY,
                         3,
                     )
 
@@ -2115,7 +3196,7 @@ class SystemResourceMonitor:
             "phase": "teardown",
         }
         add_marker(
-            phase_string_index, self.stop_time, now, markerData, PHASE_CATEGORY, 3
+            phase_string_index, self.stop_time, now, markerData, self.PHASE_CATEGORY, 3
         )
         teardown_string_index = get_string_index("resourcemonitor")
         markerData = {
@@ -2127,7 +3208,7 @@ class SystemResourceMonitor:
             self.stop_time,
             self.end_time,
             markerData,
-            TASK_CATEGORY,
+            self.TASK_CATEGORY,
             3,
         )
         markerData = {
@@ -2135,7 +3216,7 @@ class SystemResourceMonitor:
             "text": "as_profile",
         }
         add_marker(
-            teardown_string_index, profile_time, now, markerData, TASK_CATEGORY, 3
+            teardown_string_index, profile_time, now, markerData, self.TASK_CATEGORY, 3
         )
 
         # Unfortunately, whatever the caller does with the profile (e.g. json)

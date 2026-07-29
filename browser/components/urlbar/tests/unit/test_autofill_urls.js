@@ -15,6 +15,25 @@ registerCleanupFunction(async () => {
 });
 Services.prefs.setBoolPref("browser.urlbar.suggest.quickactions", false);
 
+// Variant of `add_task` for tests that rely on the pre-adaptive bookmark-driven
+// autofill path (an unvisited bookmark becoming an autofill candidate). That
+// path is gated on the adaptive autofill pref being off.
+function add_nonadaptive_autofill_task(callback) {
+  add_task(async () => {
+    Services.prefs.setBoolPref(
+      "browser.urlbar.autoFill.adaptiveHistory.enabled",
+      false
+    );
+    try {
+      await callback();
+    } finally {
+      Services.prefs.clearUserPref(
+        "browser.urlbar.autoFill.adaptiveHistory.enabled"
+      );
+    }
+  });
+}
+
 add_task(async function multipleSlashes() {
   await PlacesTestUtils.addVisits([
     {
@@ -175,7 +194,7 @@ add_task(async function caseInsensitiveFromHistory() {
 });
 
 // autofill with case insensitive from bookmark.
-add_task(async function caseInsensitiveFromBookmark() {
+add_nonadaptive_autofill_task(async function caseInsensitiveFromBookmark() {
   Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", true);
   Services.prefs.setBoolPref("browser.urlbar.suggest.history", false);
 
@@ -684,7 +703,7 @@ add_task(async function originLooksLikePrefix2() {
 
 // Checks view-source pages as a prefix
 // Uses bookmark because addVisits does not allow non-http uri's
-add_task(async function viewSourceAsPrefix() {
+add_nonadaptive_autofill_task(async function viewSourceAsPrefix() {
   let address = "view-source:https://www.example.com/";
   let title = "A view source bookmark";
   await PlacesTestUtils.addBookmarkWithDetails({
@@ -737,7 +756,7 @@ add_task(async function viewSourceAsPrefix() {
 
 // Checks data url prefixes
 // Uses bookmark because addVisits does not allow non-http uri's
-add_task(async function dataAsPrefix() {
+add_nonadaptive_autofill_task(async function dataAsPrefix() {
   let address = "data:text/html,%3Ch1%3EHello%2C World!%3C%2Fh1%3E";
   let title = "A data url bookmark";
   await PlacesTestUtils.addBookmarkWithDetails({

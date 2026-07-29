@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -54,7 +53,8 @@ nsresult TextEditor::InsertTextFromTransferable(
       NS_SUCCEEDED(rv),
       "nsITransferable::GetAnyDataTransferData() failed, but ignored");
   if (NS_SUCCEEDED(rv) && (bestFlavor.EqualsLiteral(kTextMime) ||
-                           bestFlavor.EqualsLiteral(kMozTextInternal))) {
+                           bestFlavor.EqualsLiteral(kMozTextInternal) ||
+                           bestFlavor.EqualsLiteral(kURLDataMime))) {
     AutoTransactionsConserveSelection dontChangeMySelection(*this);
 
     nsAutoString stuffToPaste;
@@ -245,7 +245,8 @@ bool TextEditor::CanPaste(nsIClipboard::ClipboardType aClipboardType) const {
   }
 
   // the flavors that we can deal with
-  AutoTArray<nsCString, 1> textEditorFlavors = {nsDependentCString(kTextMime)};
+  AutoTArray<nsCString, 2> textEditorFlavors = {
+      nsDependentCString(kTextMime), nsDependentCString(kURLDataMime)};
 
   bool haveFlavors;
   rv = clipboard->HasDataMatchingFlavors(textEditorFlavors, aClipboardType,
@@ -270,7 +271,17 @@ bool TextEditor::CanPasteTransferable(nsITransferable* aTransferable) {
   nsresult rv = aTransferable->GetTransferData(kTextMime, getter_AddRefs(data));
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "nsITransferable::GetTransferData(kTextMime) failed");
-  return NS_SUCCEEDED(rv) && data;
+  if (NS_SUCCEEDED(rv) && data) {
+    return true;
+  }
+  rv = aTransferable->GetTransferData(kURLDataMime, getter_AddRefs(data));
+  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                       "nsITransferable::GetTransferData(kURLDataMime) "
+                       "failed");
+  if (NS_SUCCEEDED(rv) && data) {
+    return true;
+  }
+  return false;
 }
 
 }  // namespace mozilla

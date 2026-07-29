@@ -6,8 +6,7 @@ package mozilla.components.feature.pwa.feature
 
 import androidx.core.net.toUri
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.MainScope
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -42,6 +41,7 @@ import kotlin.properties.Delegates
  * @param tabId ID of the tab session, or null if the selected session should be used.
  * @param manifest Reference to the cached [WebAppManifest] for the current PWA.
  * Null if this feature is not used in a PWA context.
+ * @param scope Coroutine scope for the feature.
  * @param setToolbarVisibility Callback to show or hide the toolbar.
  */
 class WebAppHideToolbarFeature(
@@ -49,6 +49,7 @@ class WebAppHideToolbarFeature(
     private val customTabsStore: CustomTabsServiceStore,
     private val tabId: String? = null,
     manifest: WebAppManifest? = null,
+    private val scope: CoroutineScope,
     private val setToolbarVisibility: (Boolean) -> Unit,
 ) : LifecycleAwareFeature {
 
@@ -62,7 +63,7 @@ class WebAppHideToolbarFeature(
     val shouldToolbarsBeVisible = _shouldToolbarsBeVisible
 
     private val manifestScope = listOfNotNull(manifest?.getTrustedScope())
-    private var scope: CoroutineScope? = null
+    private var job: Job? = null
 
     init {
         // Hide the toolbar by default to prevent a flash.
@@ -72,30 +73,29 @@ class WebAppHideToolbarFeature(
     }
 
     override fun start() {
-        scope = MainScope().apply {
-            launch {
-                // Since we subscribe to both store and customTabsStore,
-                // we don't extend another non-external-apps feature for hiding the toolbar
-                // as very little code would be shared.
-                val sessionFlow = store.flow()
-                    .map { state -> state.findTabOrCustomTabOrSelectedTab(tabId) }
-                    .distinctUntilChanged()
-                val customTabServiceMapFlow = customTabsStore.flow()
+        job = scope.launch {
+            // Since we subscribe to both store and customTabsStore,
+            // we don't extend another non-external-apps feature for hiding the toolbar
+            // as very little code would be shared.
+            val sessionFlow = store.flow()
+                .map { state -> state.findTabOrCustomTabOrSelectedTab(tabId) }
+                .distinctUntilChanged()
+            val customTabServiceMapFlow = customTabsStore.flow()
 
-                sessionFlow.combine(customTabServiceMapFlow) { tab, customTabServiceState ->
-                    tab to customTabServiceState.getCustomTabStateForTab(tab)
-                }
-                    .map { (tab, customTabState) -> shouldToolbarBeVisible(tab, customTabState) }
-                    .distinctUntilChanged()
-                    .collect { toolbarVisible ->
-                        _shouldToolbarsBeVisible = toolbarVisible
-                    }
+            sessionFlow.combine(customTabServiceMapFlow) { tab, customTabServiceState ->
+                tab to customTabServiceState.getCustomTabStateForTab(tab)
             }
+                .map { (tab, customTabState) -> shouldToolbarBeVisible(tab, customTabState) }
+                .distinctUntilChanged()
+                .collect { toolbarVisible ->
+                    _shouldToolbarsBeVisible = toolbarVisible
+                }
         }
     }
 
     override fun stop() {
-        scope?.cancel()
+        job?.cancel()
+        job = null
     }
 
     /**

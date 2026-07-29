@@ -7,12 +7,15 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   DownloadListener:
     "chrome://remote/content/shared/listeners/DownloadListener.sys.mjs",
-  DownloadPaths: "resource://gre/modules/DownloadPaths.sys.mjs",
-  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+  HelperAppDialogHandler:
+    "chrome://remote/content/webdriver-bidi/HelperAppDialogHandler.sys.mjs",
 });
 
 /**
  * A DownloadBehaviorManager class controls per user context and global download behavior.
+ * Specifically if the downloads are allowed or prohibited. The download folder is controlled
+ * via "downloadFolderOverride" property of a BrowsingContext instance, which is set
+ * via _configuration module, and in HelperAppDialogHandler.
  */
 export class DownloadBehaviorManager {
   #defaultBehavior;
@@ -33,6 +36,8 @@ export class DownloadBehaviorManager {
 
     this.#downloadListener.off("download-started", this.#onDownloadStarted);
     this.#downloadListener.destroy();
+
+    lazy.HelperAppDialogHandler.restoreDialogs(this);
   }
 
   /**
@@ -66,8 +71,10 @@ export class DownloadBehaviorManager {
   #controlDownloadListener() {
     if (this.#defaultBehavior !== null || this.#userContextBehaviors.size) {
       this.#downloadListener.startListening();
+      lazy.HelperAppDialogHandler.interceptDialogs(this);
     } else {
       this.#downloadListener.stopListening();
+      lazy.HelperAppDialogHandler.restoreDialogs(this);
     }
   }
 
@@ -82,33 +89,9 @@ export class DownloadBehaviorManager {
       // Download behavior per user context overrides the global download behavior.
       const downloadBehavior =
         this.#userContextBehaviors.get(userContextId) || this.#defaultBehavior;
-
-      if (downloadBehavior !== null) {
-        if (downloadBehavior.allowed && downloadBehavior.destinationFolder) {
-          // Since the temporary and partial data are already saved,
-          // we have to clean it up before saving the download at the requested location.
-          // This is a workaround until bug 2017252 is implemented.
-
-          // Mark the download as intercepted to avoid sending the event when we pause the download.
-          download.intercepted = true;
-          // Pause the download to clean up any data saved.
-          download.cancel();
-          await download.removePartialData();
-          const targetPath = PathUtils.join(
-            downloadBehavior.destinationFolder,
-            PathUtils.filename(download.target.path)
-          );
-
-          download.target.path = lazy.DownloadPaths.createNiceUniqueFile(
-            new lazy.FileUtils.File(targetPath)
-          ).path;
-
-          // Restart the download.
-          download.intercepted = false;
-          download.start();
-        } else if (!downloadBehavior.allowed) {
-          download.cancel();
-        }
+      if (downloadBehavior !== null && !downloadBehavior.allowed) {
+        // Finalize the download to cancel it and remove the partial data.
+        download.finalize(true);
       }
     }
   };

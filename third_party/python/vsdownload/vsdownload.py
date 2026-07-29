@@ -62,7 +62,7 @@ def getArgsParser():
     parser = argparse.ArgumentParser(description = "Download and install Visual Studio")
     parser.add_argument("--manifest", metavar="manifest", help="A predownloaded manifest file")
     parser.add_argument("--save-manifest", const=True, action="store_const", help="Store the downloaded manifest to a file")
-    parser.add_argument("--major", default=17, type=int, metavar="version", help="The major version to download (defaults to 17)")
+    parser.add_argument("--major", default=18, type=int, metavar="version", help="The major version to download (defaults to 18)")
     parser.add_argument("--preview", const=True, action="store_const", help="Download the preview version instead of the release version")
     parser.add_argument("--cache", metavar="dir", help="Directory to use as a persistent cache for downloaded files")
     parser.add_argument("--dest", metavar="dir", help="Directory to install into")
@@ -91,9 +91,10 @@ def getArgsParser():
     return parser
 
 def setPackageSelectionMSVC16(args, packages, userversion, sdk, toolversion, defaultPackages):
-    if findPackage(packages, "Microsoft.VisualStudio.Component.VC." + toolversion + ".x86.x64", warn=False):
+    ext = ".Tools" if toolversion == "Preview" else ""
+    if findPackage(packages, "Microsoft.VisualStudio.Component.VC." + toolversion + ext + ".x86.x64", warn=False):
         if "x86" in args.architecture or "x64" in args.architecture:
-            args.package.append("Microsoft.VisualStudio.Component.VC." + toolversion + ".x86.x64")
+            args.package.append("Microsoft.VisualStudio.Component.VC." + toolversion + ext + ".x86.x64")
             args.package.append("Microsoft.VC." + toolversion + ".ASAN.X86")
             args.package.append("Microsoft.VisualStudio.Component.VC." + toolversion + ".ATL")
         if "arm" in args.architecture:
@@ -143,7 +144,9 @@ def setPackageSelection(args, packages):
     # Note, that in the manifest for MSVC version X.Y, only version X.Y-1
     # exists with a package name like "Microsoft.VisualStudio.Component.VC."
     # + toolversion + ".x86.x64".
-    if args.msvc_version == "16.0":
+    if args.msvc_version == "preview":
+        setPackageSelectionMSVC16(args, packages, args.msvc_version, None, "Preview", defaultPackages)
+    elif args.msvc_version == "16.0":
         setPackageSelectionMSVC16(args, packages, args.msvc_version, "10.0.17763", "14.20", defaultPackages)
     elif args.msvc_version == "16.1":
         setPackageSelectionMSVC16(args, packages, args.msvc_version, "10.0.18362", "14.21", defaultPackages)
@@ -219,7 +222,28 @@ def setPackageSelection(args, packages):
     if len(args.package) == 0:
         args.package = defaultPackages
 
-    if args.sdk_version != None:
+    if args.msvc_version == "preview" and args.sdk_version is None:
+        # Find which SDK the workload would include, even the whole workload might not be installd.
+        # Temporarily backup and overwrite args variables for a call to getSelectedPackages.
+        package = args.package
+        include_optional = args.include_optional
+        skip_recommended = args.skip_recommended
+
+        args.package = ["Microsoft.VisualStudio.Workload.VCTools"]
+        args.include_optional = False
+        args.skip_recommended = False
+
+        recommended = getSelectedPackages(packages, args)
+
+        args.package = package
+        args.include_optional = include_optional
+        args.skip_recommended = skip_recommended
+
+        for p in recommended:
+            key = p["id"].lower()
+            if key.startswith("win10sdk") or key.startswith("win11sdk"):
+                args.package.append(key)
+    elif args.sdk_version is not None:
         found = False
         versions = []
         for key in packages:
@@ -542,7 +566,7 @@ def printPackageList(l):
         s = p["id"]
         if "type" in p:
             s = s + " (" + p["type"] + ")"
-        for k in ["chip", "machineArch", "productArch"]:
+        for k in ["version", "chip", "machineArch", "productArch"]:
             v = p.get(k)
             if v is not None:
                 s = s + " (" + k + "." + v + ")"
@@ -925,7 +949,7 @@ if __name__ == "__main__":
             moveVCSDK(unpack, dest)
             if not args.keep_unpack:
                 shutil.rmtree(unpack)
-            if not args.skip_patch and args.major == 17: # Only apply patches to latest VS
+            if not args.skip_patch and args.major == 18: # Only apply patches to latest VS
                 patchPackages(dest)
     finally:
         if tempcache != None:

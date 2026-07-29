@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -281,8 +279,8 @@ bool CanUsePartialPresents(ID3D11Device* aDevice) {
 
 already_AddRefed<DataTextureSource> CompositorD3D11::CreateDataTextureSource(
     TextureFlags aFlags) {
-  RefPtr<DataTextureSource> result =
-      new DataTextureSourceD3D11(gfx::SurfaceFormat::UNKNOWN, this, aFlags);
+  RefPtr result = MakeRefPtr<DataTextureSourceD3D11>(
+      gfx::SurfaceFormat::UNKNOWN, this, aFlags);
   return result.forget();
 }
 
@@ -310,8 +308,8 @@ already_AddRefed<CompositingRenderTarget> CompositorD3D11::CreateRenderTarget(
     return nullptr;
   }
 
-  RefPtr<CompositingRenderTargetD3D11> rt =
-      new CompositingRenderTargetD3D11(texture, aRect.TopLeft());
+  RefPtr rt =
+      MakeRefPtr<CompositingRenderTargetD3D11>(texture, aRect.TopLeft());
   rt->SetSize(IntSize(aRect.Width(), aRect.Height()));
 
   if (aInit == INIT_MODE_CLEAR) {

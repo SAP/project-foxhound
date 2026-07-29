@@ -43,6 +43,10 @@
   <string name="mozac_browser_errorpages_net_interrupt_title">اړیکه پرې شوه</string>
   <!-- The document title and heading of the error page shown when a website cannot be loaded because the browser is in offline mode. -->
   <string name="mozac_browser_errorpages_offline_title">آفلاين حالت</string>
+  <!-- The document title and heading of the error page shown when the Internet connection is disrupted while loading a website. -->
+  <string name="mozac_browser_errorpages_net_reset_title">اړيکه بېرته جوړه شوه</string>
+  <!-- The document title and heading of the error page shown when the browser refuses to load a type of file that is considered unsafe. -->
+  <string name="mozac_browser_errorpages_unsafe_content_type_title">د فایل ډول ناخوندي دی</string>
   <!-- The document title and heading of the error page shown when a file cannot be loaded because of a detected data corruption. -->
   <string name="mozac_browser_errorpages_corrupted_content_title">د منځپانګې د خرابوالي تېروتنه</string>
   <!-- The error message shown when shown when a file cannot be loaded because of a detected data corruption. -->

@@ -131,8 +131,8 @@ async function editDeclarationValue({
     await onRuleViewChanged;
   }
 
-  const onRuleViewChanged = ruleView.once("ruleview-changed");
+  const onModifications = ruleView.once("property-value-updated");
   EventUtils.synthesizeKey("VK_RETURN", {}, ruleView.styleWindow);
   ruleView.debounce.flush();
-  await onRuleViewChanged;
+  await onModifications;
 }

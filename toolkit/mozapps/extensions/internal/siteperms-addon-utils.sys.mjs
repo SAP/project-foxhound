@@ -4,7 +4,7 @@
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-export const GATED_PERMISSIONS = ["midi", "midi-sysex"];
+export const GATED_PERMISSIONS = ["midi", "midi-sysex", "serial"];
 export const SITEPERMS_ADDON_PROVIDER_PREF =
   "dom.sitepermsaddon-provider.enabled";
 export const SITEPERMS_ADDON_TYPE = "sitepermission";
@@ -33,6 +33,17 @@ export const GATED_PERMISSIONS_STRING_IDS = {
       description: "webext-site-perms-description-gated-perms-midi",
     },
     shortDescription: "webext-site-perms-midi-sysex",
+  },
+  serial: {
+    installPrompt: {
+      header: "site-permission-install-first-prompt-serial-header",
+      message: "site-permission-install-first-prompt-serial-message",
+    },
+    permissionsPrompt: {
+      header: "webext-site-perms-header-with-gated-perms-serial",
+      description: "webext-site-perms-description-gated-perms-webserial",
+    },
+    shortDescription: "webext-site-perms-serial",
   },
 };
 

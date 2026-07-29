@@ -8,6 +8,7 @@ kind-dependencies:
     - post-beetmover-dummy
 
 transforms:
+    - taskgraph.transforms.task_context
     - gecko_taskgraph.transforms.bouncer_locations:transforms
     - gecko_taskgraph.transforms.release:run_on_releases
     - gecko_taskgraph.transforms.release_deps:transforms
@@ -16,6 +17,13 @@ transforms:
 task-defaults:
     run-on-repo-type: [hg]
     description: nightly bouncer locations job
+    task-context:
+        from-parameters:
+            project: project
+        substitution-fields:
+            - worker-type
+            - scopes
+            - bouncer-products
     attributes:
         shippable: true
     worker-type: bouncer

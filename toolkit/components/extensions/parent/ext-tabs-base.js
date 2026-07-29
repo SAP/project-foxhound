@@ -1,11 +1,10 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
+  ExtensionDocumentId: "resource://gre/modules/ExtensionDocumentId.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
 });
 
@@ -19,6 +18,12 @@ var { DefaultMap, DefaultWeakMap, ExtensionError, parseMatchPatterns } =
   ExtensionUtils;
 
 var { defineLazyGetter } = ExtensionCommon;
+
+const BLACK_1PX_PNG =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAANSURBVBhXY2BgYPgPAAEEAQBwIGULAAAAAElFTkSuQmCC";
+
+const GRAY_1PX_JPEG =
+  "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAALCAABAAEBAREA/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/9oACAEBAAA/ACj/2Q==";
 
 /**
  * The platform-specific type of native tab objects, which are wrapped by
@@ -90,7 +95,7 @@ class TabBase {
    * @returns {Promise<string>}
    */
   async capture(context, zoom, options) {
-    let win = this.browser.ownerGlobal;
+    let win = this.browser.documentGlobal;
     let scale = options?.scale || win.devicePixelRatio;
     let rect = options?.rect && win.DOMRect.fromRect(options.rect);
 
@@ -101,7 +106,27 @@ class TabBase {
       resetScrollPosition = !!options?.resetScrollPosition;
     }
 
+    // Propagate a layout flush to the child, so drawSnapshot()
+    // does not fail with NS_ERROR_LOSS_OF_SIGNIFICANT_DATA.
+    let parentRect = this.browser.getBoundingClientRect();
+
+    // If there are no dimensions, throw a meaningful error instead of letting
+    // drawSnapshot() reject with NS_ERROR_LOSS_OF_SIGNIFICANT_DATA.
+    if (!parentRect.width && !parentRect.height) {
+      throw new ExtensionError("Cannot capture invisible tab");
+    }
+
     let wgp = this.browsingContext.currentWindowGlobal;
+
+    let blur =
+      wgp.documentPrincipal.isSystemPrincipal ||
+      (wgp.documentPrincipal.addonId &&
+        wgp.documentPrincipal.addonId !== this.extension.id);
+
+    if (blur && options?.rect) {
+      return options.format === "jpeg" ? GRAY_1PX_JPEG : BLACK_1PX_PNG;
+    }
+
     let image = await wgp.drawSnapshot(
       rect,
       scale * zoom,
@@ -110,9 +135,29 @@ class TabBase {
     );
 
     let canvas = new OffscreenCanvas(image.width, image.height);
-
     let ctx = canvas.getContext("bitmaprenderer", { alpha: false });
     ctx.transferFromImageBitmap(image);
+
+    if (blur) {
+      // Cap result dimensions at 300px, preserving aspect ratio.
+      let cap = Math.min(300 / canvas.width, 300 / canvas.height);
+      let width = Math.ceil(canvas.width * cap);
+      let height = Math.ceil(canvas.height * cap);
+      let blurred = new win.OffscreenCanvas(width, height);
+
+      ctx = blurred.getContext("2d", { alpha: false });
+      ctx.filter = "blur(5px)";
+      ctx.drawImage(canvas, 0, 0, width, height);
+
+      // Bake in JPEG degradation artifacts.
+      let jpeg = await win.createImageBitmap(
+        await blurred.convertToBlob({ type: "image/jpeg", quality: 0.2 })
+      );
+
+      canvas = new OffscreenCanvas(jpeg.width, jpeg.height);
+      ctx = canvas.getContext("bitmaprenderer", { alpha: false });
+      ctx.transferFromImageBitmap(jpeg);
+    }
 
     let blob = await canvas.convertToBlob({
       type: `image/${options?.format ?? "png"}`,
@@ -722,46 +767,68 @@ class TabBase {
 
   /**
    * Query each content process hosting subframes of the tab, return results.
+   * Targets all frames in a tab by default, unless options.frameIds or
+   * options.documentIds are set. These options are mutually exclusive.
    *
    * @param {string} message
    * @param {object} options
    *        These options are also sent to the message handler in the
    *        `ExtensionContentChild`.
-   * @param {number[]} options.frameIds
-   *        When omitted, all frames will be queried.
+   * @param {number[]} [options.frameIds]
+   *        List of frameId to target instead of all frames.
+   * @param {number[]} [options.documentIds]
+   *        List of documentIds to target instead of all frames.
    * @param {boolean} options.returnResultsWithFrameIds
    * @returns {Promise[]}
    */
-  async queryContent(message, options) {
-    let { frameIds } = options;
+  async queryContent(message, { documentIds, frameIds, ...options }) {
+    if (documentIds && frameIds) {
+      // Verify precondition; if ever triggered this is an internal bug.
+      throw new Error("frameIds and documentIds are mutually exclusive");
+    }
 
     /** @type {Map<nsIDOMProcessParent, innerWindowId[]>} */
     let byProcess = new DefaultMap(() => []);
-    // We use this set to know which frame IDs are potentially invalid (as in
-    // not found when visiting the tab's BC tree below) when frameIds is a
-    // non-empty list of frame IDs.
-    let frameIdsSet = new Set(frameIds);
 
-    // Recursively walk the tab's BC tree, find all frames, group by process.
-    function visit(bc) {
-      let win = bc.currentWindowGlobal;
-      let frameId = bc.parent ? bc.id : 0;
-
-      if (win?.domProcess && (!frameIds || frameIdsSet.has(frameId))) {
+    if (documentIds) {
+      const topBrowsingContext = this.browsingContext;
+      for (const documentId of new Set(documentIds)) {
+        let bc =
+          ExtensionDocumentId.getBrowsingContextForDocumentId(documentId);
+        if (!bc || bc.top !== topBrowsingContext) {
+          throw new ExtensionError(`Invalid documentId: ${documentId}`);
+        }
+        // getBrowsingContextForDocumentId ensures that bc is current global.
+        const win = bc.currentWindowGlobal;
         byProcess.get(win.domProcess).push(win.innerWindowId);
-        frameIdsSet.delete(frameId);
       }
+    } else {
+      // We use this set to know which frame IDs are potentially invalid (as in
+      // not found when visiting the tab's BC tree below) when frameIds is a
+      // non-empty list of frame IDs.
+      let frameIdsSet = new Set(frameIds);
 
-      if (!frameIds || frameIdsSet.size > 0) {
-        bc.children.forEach(visit);
+      // Recursively walk the tab's BC tree, find all frames, group by process.
+      function visit(bc) {
+        let win = bc.currentWindowGlobal;
+        let frameId = bc.parent ? bc.id : 0;
+
+        if (win?.domProcess && (!frameIds || frameIdsSet.has(frameId))) {
+          byProcess.get(win.domProcess).push(win.innerWindowId);
+          frameIdsSet.delete(frameId);
+        }
+
+        if (!frameIds || frameIdsSet.size > 0) {
+          bc.children.forEach(visit);
+        }
       }
-    }
-    visit(this.browsingContext);
+      visit(this.browsingContext);
 
-    if (frameIdsSet.size > 0) {
-      throw new ExtensionError(
-        `Invalid frame IDs: [${Array.from(frameIdsSet).join(", ")}].`
-      );
+      if (frameIdsSet.size > 0) {
+        throw new ExtensionError(
+          `Invalid frame IDs: [${Array.from(frameIdsSet).join(", ")}].`
+        );
+      }
     }
 
     let promises = Array.from(byProcess.entries(), ([proc, windows]) =>
@@ -770,7 +837,8 @@ class TabBase {
 
     let results = await Promise.all(promises).catch(err => {
       if (err.name === "DataCloneError") {
-        let fileName = options.jsPaths.slice(-1)[0] || "<anonymous code>";
+        let fileName =
+          options.jsExecuteScriptSources.at(-1)?.file ?? "<anonymous code>";
         let message = `Script '${fileName}' result is non-structured-clonable data`;
         return Promise.reject({ message, fileName });
       }
@@ -779,6 +847,8 @@ class TabBase {
     results = results.flat();
 
     if (!results.length) {
+      // TODO bug 2047009: This error is misleading when the reason for the
+      // lack of results is navigation/removal of all targets.
       let errorMessage = "Missing host permission for the tab";
       if (!frameIds || frameIds.length > 1 || frameIds[0] !== 0) {
         errorMessage += " or frames";
@@ -815,7 +885,7 @@ class TabBase {
    */
   _execute(context, details, kind, method) {
     let options = {
-      jsPaths: [],
+      jsExecuteScriptSources: [],
       cssPaths: [],
       removeCSS: method == "removeCSS",
       extensionId: context.extension.id,
@@ -840,7 +910,11 @@ class TabBase {
     );
 
     if (details.code !== null) {
-      options[`${kind}Code`] = details.code;
+      if (kind === "js") {
+        options.jsExecuteScriptSources.push({ code: details.code });
+      } else if (kind === "css") {
+        options.cssCode = details.code;
+      }
     }
     if (details.file !== null) {
       let url = context.uri.resolve(details.file);
@@ -849,7 +923,11 @@ class TabBase {
           message: "Files to be injected must be within the extension",
         });
       }
-      options[`${kind}Paths`].push(url);
+      if (kind === "js") {
+        options.jsExecuteScriptSources.push({ file: url });
+      } else if (kind === "css") {
+        options.cssPaths.push(url);
+      }
     }
 
     if (details.allFrames) {
@@ -1003,6 +1081,10 @@ class WindowBase {
     let { chromeFlags } = this.appWindow;
 
     if (chromeFlags & Ci.nsIWebBrowserChrome.CHROME_OPENAS_DIALOG) {
+      return "popup";
+    }
+
+    if (!(chromeFlags & Ci.nsIWebBrowserChrome.CHROME_TOOLBAR)) {
       return "popup";
     }
 
@@ -1361,6 +1443,8 @@ Object.assign(WindowBase, { WINDOW_ID_NONE, WINDOW_ID_CURRENT });
  * - "tab-removed" {@link TabRemovedEvent}
  */
 class TabTrackerBase extends EventEmitter {
+  #tabReadyBlockers = new WeakSet();
+
   on(...args) {
     if (!this.initialized) {
       this.init();
@@ -1413,6 +1497,19 @@ class TabTrackerBase extends EventEmitter {
   }
 
   /**
+   * Returns the native tab associated with the given `<browser>`, if any.
+   *
+   * @param {XULElement} _browser
+   *        A `<browser>` element.
+   *
+   * @returns {NativeTab|null}
+   * @abstract
+   */
+  getTabForBrowser(_browser) {
+    throw new Error("Not implemented");
+  }
+
+  /**
    * Returns basic information about the tab and window that the given browser
    * belongs to.
    *
@@ -1435,6 +1532,124 @@ class TabTrackerBase extends EventEmitter {
    */
   get activeTab() {
     throw new Error("Not implemented");
+  }
+
+  /**
+   * Block awaitTabReady() calls until the pending load completes or aborts.
+   * Should only be called by extension API implementations immediately after
+   * triggering the initial navigation for a new tab, before load completion.
+   * If called too late, future calls to awaitTabReady() will block until the
+   * next navigation completes or is aborted (or when the tab is closed).
+   *
+   * @param {NativeTab} nativeTab
+   */
+  addTabReadyBlocker(nativeTab) {
+    const bc = nativeTab.linkedBrowser.browsingContext;
+    if (!bc) {
+      return; // Tab was discarded, no load to wait for.
+    }
+    const { currentURI } = bc;
+    if (currentURI && currentURI.spec !== "about:blank") {
+      // Already committed any URL, so no need to wait for readiness.
+      // In particular, on desktop, a new tab ("about:newtab") can be preloaded
+      // and is typically ready without further notifications.
+      return;
+    }
+    // bc may change through cross-group navigations, so using webProgress to
+    // identify the navigation instead of bc.
+    const { webProgress } = bc;
+    this.#tabReadyBlockers.add(webProgress);
+    this.#waitUntilBrowsingContextReady(bc, () => {
+      this.#tabReadyBlockers.delete(webProgress);
+    });
+  }
+
+  /**
+   * Returns a promise that resolves when the tab is ready.
+   * Tabs created via the `tabs.create` method are "ready" once the location
+   * changes to the requested URL. Other tabs are assumed to be ready once they
+   * have a window context (implies that an innerWindowID is set).
+   * Also resolves if the load is stopped prematurely.
+   *
+   * @param {NativeTab} nativeTab
+   * @returns {Promise}
+   *        Resolves when the tab is not waiting for the initial navigation to
+   *        complete. If the navigation was successful, the tab has switched to
+   *        the document for the pending load. The method also resolves if the
+   *        load was aborted, HTTP 204 was received, tab was closed/discarded.
+   */
+  async awaitTabReady(nativeTab) {
+    const bc = nativeTab.linkedBrowser.browsingContext;
+    if (!bc) {
+      return; // Tab already discarded.
+    }
+    const wgp = bc.currentWindowGlobal;
+    if (wgp && !this.#tabReadyBlockers.has(bc.webProgress)) {
+      return; // Common case - tab not created by extension API.
+    }
+    return new Promise(resolve => {
+      this.#waitUntilBrowsingContextReady(bc, resolve);
+    });
+  }
+
+  // Implementation for awaitTabReady and addTabReadyBlocker.
+  #waitUntilBrowsingContextReady(bc, callback) {
+    // When a cross-group navigation happens, bc may change but webProgress
+    // is constant (but is moved over to the new BC).
+    const webProgress = bc.webProgress;
+    function cleanup() {
+      Services.obs.removeObserver(onDiscarded, "browsing-context-discarded");
+      webProgress.removeProgressListener(listener);
+      callback();
+    }
+
+    const listener = {
+      QueryInterface: ChromeUtils.generateQI([
+        "nsIWebProgressListener",
+        "nsISupportsWeakReference",
+      ]),
+      onLocationChange(progress, request) {
+        // Note: request null-ness check is necessary to filter out location
+        // changes that are not tied to committed document loads, e.g. when
+        // a tab is duplicated.
+        if (progress.isTopLevel && request) {
+          // Most interesting (desired) case: document load was committed.
+          cleanup();
+        }
+      },
+      onStateChange(progress, request, flags) {
+        if (
+          progress.isTopLevel &&
+          flags & Ci.nsIWebProgressListener.STATE_STOP
+        ) {
+          // Stopped before onLocationChange, e.g. aborted, HTTP 204.
+          cleanup();
+        }
+      },
+    };
+
+    function onDiscarded(subject, topic, why) {
+      // Handle premature tab close, process crash, cross-group navigations.
+      if (subject === bc) {
+        if (why === "replace") {
+          // BC is constant for most loads, except cross-group loads such as
+          // moz-extension:-loads. Look up the BC after replacement:
+          bc = webProgress.browsingContext;
+          if (bc) {
+            // Continue following the new BC after cross-group navigation.
+            return;
+          }
+          // Weird - replaced but no replacement? Fall through to clean up.
+        }
+        cleanup();
+      }
+    }
+
+    webProgress.addProgressListener(
+      listener,
+      Ci.nsIWebProgress.NOTIFY_STATE_NETWORK | Ci.nsIWebProgress.NOTIFY_LOCATION
+    );
+    Services.obs.addObserver(onDiscarded, "browsing-context-discarded");
   }
 }
 

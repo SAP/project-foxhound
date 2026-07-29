@@ -18,12 +18,13 @@ use crate::gpu_types::QuadSegment;
 use crate::internal_types::{FastHashMap, PlaneSplitter, FrameStamp};
 use crate::invalidation::DirtyRegion;
 use crate::tile_cache::{SliceId, TileCacheInstance};
-use crate::picture::PicturePrimitive;
+use crate::picture::PictureInstance;
 use crate::picture::{SurfaceInfo, SurfaceIndex, ResolvedSurfaceTexture};
-use crate::picture::{SubpixelMode, RasterConfig, PictureCompositeMode};
+use crate::picture::{SubpixelMode, RasterConfig, PictureCompositeMode, PictureScratch};
 use crate::prepare::prepare_picture;
 use crate::prim_store::{PictureIndex, PrimitiveScratchBuffer};
 use crate::prim_store::{DeferredResolve, PrimitiveInstance};
+use crate::prim_store::storage;
 use crate::profiler::{self, TransactionProfile};
 use crate::render_backend::{DataStores, ScratchBuffer};
 use crate::renderer::{GpuBufferAddress, GpuBufferBuilder, GpuBufferBuilderF, GpuBufferBuilderI, GpuBufferF, GpuBufferI, GpuBufferDataF};
@@ -71,7 +72,6 @@ pub struct FrameBuilderConfig {
     pub low_quality_pinch_zoom: bool,
     pub max_shared_surface_size: i32,
     pub enable_dithering: bool,
-    pub precise_linear_gradients: bool,
 }
 
 /// A set of default / global resources that are re-built each frame.
@@ -177,7 +177,14 @@ pub struct FrameBuildingState<'a> {
     /// traversed before the image that displays it (in other words, the
     /// picture must appear before the image in the display list).
     pub image_dependencies: FastHashMap<ImageKey, RenderTaskId>,
-    pub visited_pictures: &'a mut [bool],
+    /// Per-picture scratch-index slot used by the prepare pass. `None`
+    /// means "not yet visited this frame"; `Some(handle)` means the
+    /// picture was visited and `handle` indexes into
+    /// `PrimitiveFrameScratch.pictures` (or is `INVALID` if take_context
+    /// failed). Replaces the prepare pass's earlier `visited_pictures`
+    /// bool slice — visibility keeps its own bool slice on
+    /// `FrameVisibilityState`.
+    pub picture_scratch_handles: &'a mut [Option<storage::Index<PictureScratch>>],
 }
 
 impl<'a> FrameBuildingState<'a> {
@@ -343,6 +350,22 @@ impl FrameBuilder {
             false,
         ));
 
+        // Build the per-frame draw header storage with one entry per prim
+        // instance. Identity-indexed by `PrimitiveInstanceIndex.0` for now;
+        // a follow-up will switch this to push-per-draw. The per-prim
+        // `snapped_local_rect` is filled in by the visibility pass.
+        scratch.primitive.frame.draws.clear();
+        scratch.primitive.frame.draws.resize_with(
+            scene.prim_instances.len(),
+            crate::visibility::PrimitiveDrawHeader::new,
+        );
+
+        // Cluster, prim, and clip-leaf rects are snapped to the device pixel
+        // grid as they are produced by the in-frame picture-graph passes:
+        // `propagate_bounding_rects` snaps each cluster bounding rect, and the
+        // visibility pass snaps each prim's `snapped_local_rect` and clip-leaf
+        // rect. Both snap against the consuming surface's raster node, so only
+        // pictures reachable this frame are touched.
         scene.picture_graph.propagate_bounding_rects(
             &mut scene.prim_store.pictures,
             &mut scene.surfaces,
@@ -486,8 +509,10 @@ impl FrameBuilder {
                         // Build the dirty region(s) for this tile cache.
                         tile_cache.post_update(
                             &visibility_context,
+                            &mut visibility_state.prim_instances,
                             &mut visibility_state.composite_state,
                             &mut visibility_state.resource_cache,
+                            &mut visibility_state.scratch.primitive,
                         );
 
                         visibility_state.clip_tree.pop_clip_root();
@@ -512,10 +537,9 @@ impl FrameBuilder {
 
         profile.start_time(profiler::FRAME_PREPARE_TIME);
 
-        // Reset the visited pictures for the prepare pass.
-        visited_pictures.clear();
+        let mut picture_scratch_handles = frame_memory.new_vec_with_capacity(n_pics);
         for _ in 0..n_pics {
-            visited_pictures.push(false);
+            picture_scratch_handles.push(None);
         }
         let mut frame_state = FrameBuildingState {
             rg_builder,
@@ -533,7 +557,7 @@ impl FrameBuilder {
             clip_tree: &mut scene.clip_tree,
             frame_gpu_data,
             image_dependencies: FastHashMap::default(),
-            visited_pictures: &mut visited_pictures,
+            picture_scratch_handles: &mut picture_scratch_handles,
         };
 
 
@@ -841,7 +865,7 @@ impl FrameBuilder {
             has_been_rendered: false,
             has_texture_cache_tasks,
             prim_headers,
-            debug_items: mem::replace(&mut scratch.primitive.debug_items, Vec::new()),
+            debug_items: mem::replace(&mut scratch.primitive.frame.debug_items, Vec::new()),
             composite_state,
             gpu_buffer_f,
             gpu_buffer_i,
@@ -885,7 +909,7 @@ impl FrameBuilder {
 
       // This is the main walk over the spatial tree. For every scroll frame node which
       // has minimap data, compute the rects we want to render for that minimap in world
-      // coordinates and add them to `scratch.debug_items`.
+      // coordinates and add them to `scratch.frame.debug_items`.
       spatial_tree.visit_nodes(|index, node| {
         if let SpatialNodeType::ScrollFrame(ref scroll_frame_info) = node.node_type {
           if let Some(minimap_data) = minimap_data_store.get(&scroll_frame_info.external_id) {
@@ -960,7 +984,7 @@ impl FrameBuilder {
 
               scratch.push_debug_rect_with_stroke_width(world_rect, border, STROKE_WIDTH);
 
-              // Add world coordinate rects to scratch.debug_items
+              // Add world coordinate rects to scratch.frame.debug_items
               if let Some(fill_color) = fill {
                 let interior_world_rect = WorldRect::new(
                     world_rect.min + WorldVector2D::new(STROKE_WIDTH, STROKE_WIDTH),
@@ -994,7 +1018,7 @@ impl FrameBuilder {
     fn skip_occluded_pictures_with_clips(
         &self,
         tile_cache_pictures: &Vec<PictureIndex>,
-        pictures: &mut [PicturePrimitive],
+        pictures: &mut [PictureInstance],
         tile_caches: &mut FastHashMap<SliceId, Box<TileCacheInstance>>,
         frame_context: &FrameBuildingContext,
         composite_state: &mut CompositeState,

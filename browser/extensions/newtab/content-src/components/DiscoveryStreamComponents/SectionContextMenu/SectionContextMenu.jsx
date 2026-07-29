@@ -13,6 +13,7 @@ import { LinkMenu } from "../../LinkMenu/LinkMenu";
  */
 export function SectionContextMenu({
   type = "DISCOVERY_STREAM",
+  buttonType = "icon",
   title,
   source,
   index,
@@ -21,14 +22,16 @@ export function SectionContextMenu({
   following,
   sectionPersonalization,
   sectionPosition,
+  learnMoreUrl,
 }) {
-  // Initial context menu options: block this section only.
-  const SECTIONS_CONTEXT_MENU_OPTIONS = ["SectionBlock"];
-  const [showContextMenu, setShowContextMenu] = useState(false);
-
+  const SECTIONS_CONTEXT_MENU_OPTIONS = [];
   if (following) {
     SECTIONS_CONTEXT_MENU_OPTIONS.push("SectionUnfollow");
   }
+  SECTIONS_CONTEXT_MENU_OPTIONS.push("SectionBlock");
+  SECTIONS_CONTEXT_MENU_OPTIONS.push("Separator");
+  SECTIONS_CONTEXT_MENU_OPTIONS.push("SectionLearnMore");
+  const [showContextMenu, setShowContextMenu] = useState(false);
 
   const onClick = e => {
     e.preventDefault();
@@ -40,12 +43,15 @@ export function SectionContextMenu({
   };
 
   return (
-    <div className="section-context-menu">
+    <div
+      className={`section-context-menu${showContextMenu ? " context-menu-open" : ""}`}
+    >
       <moz-button
-        type="icon"
+        type={buttonType}
         size="default"
         iconsrc="chrome://global/skin/icons/more.svg"
         title={title || source}
+        aria-expanded={showContextMenu}
         onClick={onClick}
       />
       {showContextMenu && (
@@ -61,6 +67,7 @@ export function SectionContextMenu({
             sectionKey,
             sectionPosition,
             title,
+            learnMoreUrl,
           }}
         />
       )}

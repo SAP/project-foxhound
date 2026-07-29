@@ -15,37 +15,37 @@
 namespace mozilla {
 
 class ContentClassifierService;
+struct ContentClassifierFeature;
 
-class ContentClassifierResult {
+// Per-engine outcome from ContentClassifierEngine::CheckNetworkRequest.
+// Carries a reference back to the feature definition whose engine produced
+// it, so consumers can attribute the match.
+class ContentClassifierEngineResult {
+ public:
+  ContentClassifierEngineResult(bool aMatched, bool aException, bool aImportant,
+                                nsresult aEngineResult,
+                                const ContentClassifierFeature& aFeature)
+      : mMatched(aMatched),
+        mException(aException),
+        mImportant(aImportant),
+        mEngineResult(aEngineResult),
+        mFeature(aFeature) {}
+  ContentClassifierEngineResult(nsresult aEngineResult,
+                                const ContentClassifierFeature& aFeature)
+      : mEngineResult(aEngineResult), mFeature(aFeature) {}
+
+  nsresult EngineResult() const { return mEngineResult; }
+  bool Matched() const { return NS_SUCCEEDED(mEngineResult) && mMatched; }
+  bool Exception() const { return NS_SUCCEEDED(mEngineResult) && mException; }
+  bool Important() const { return NS_SUCCEEDED(mEngineResult) && mImportant; }
+  const ContentClassifierFeature& Feature() const { return mFeature; }
+
+ private:
   bool mMatched = false;
   bool mException = false;
   bool mImportant = false;
   nsresult mEngineResult = NS_ERROR_UNEXPECTED;
-
- public:
-  ContentClassifierResult(bool aMatched, bool aException, bool aImportant,
-                          nsresult aEngineResult)
-      : mMatched(aMatched),
-        mException(aException),
-        mImportant(aImportant),
-        mEngineResult(aEngineResult) {}
-  explicit ContentClassifierResult(nsresult aEngineResult)
-      : mMatched(false),
-        mException(false),
-        mImportant(false),
-        mEngineResult(aEngineResult) {}
-
-  nsresult EngineResult() { return mEngineResult; }
-
-  bool Hit() { return NS_SUCCEEDED(mEngineResult) && mMatched && !mException; }
-
-  bool Exception() { return NS_SUCCEEDED(mEngineResult) && mException; }
-
-  bool Important() { return NS_SUCCEEDED(mEngineResult) && mImportant; }
-
-  // Used to combine results from multiple engines. Respects important as a lock
-  // on the result.
-  void Accumulate(const ContentClassifierResult& aOther);
+  const ContentClassifierFeature& mFeature;
 };
 
 class ContentClassifierRequest {
@@ -55,18 +55,23 @@ class ContentClassifierRequest {
   nsCString mSourceSchemelessSite;
   nsCString mRequestType;
   bool mThirdParty = false;
+  bool mPrivateBrowsing = false;
   bool mValid = false;
 
  public:
   bool Valid() const { return mValid; }
   const nsCString& Url() const { return mUrl; }
+  bool PrivateBrowsing() const { return mPrivateBrowsing; }
 
   explicit ContentClassifierRequest(nsIChannel* aChannel);
 };
 
 class ContentClassifierEngine final {
  public:
-  ContentClassifierEngine() : mEngine(nullptr) {
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ContentClassifierEngine)
+
+  explicit ContentClassifierEngine(const ContentClassifierFeature& aFeature)
+      : mFeature(aFeature), mEngine(nullptr) {
     if (!sInitializedETLDService) {
       nsresult rv = content_classifier_initialize_domain_resolver();
       if (NS_SUCCEEDED(rv)) {
@@ -75,6 +80,16 @@ class ContentClassifierEngine final {
     }
   }
 
+  nsresult InitFromRules(const nsTArray<nsCString>& aRules) {
+    return content_classifier_engine_from_rules(&aRules, &mEngine);
+  }
+
+  const ContentClassifierFeature& Feature() const { return mFeature; }
+
+  ContentClassifierEngineResult CheckNetworkRequest(
+      const ContentClassifierRequest& aRequest, bool aPreviouslyMatched);
+
+ private:
   ~ContentClassifierEngine() {
     if (mEngine) {
       content_classifier_engine_destroy(mEngine);
@@ -82,16 +97,9 @@ class ContentClassifierEngine final {
     }
   }
 
-  nsresult InitFromRules(const nsTArray<nsCString>& aRules) {
-    return content_classifier_engine_from_rules(&aRules, &mEngine);
-  }
-
-  ContentClassifierResult CheckNetworkRequest(
-      const ContentClassifierRequest& aRequest);
-
- private:
   static inline bool sInitializedETLDService = false;
 
+  const ContentClassifierFeature& mFeature;
   ContentClassifierFFIEngine* mEngine;
 
   ContentClassifierEngine(const ContentClassifierEngine&) = delete;

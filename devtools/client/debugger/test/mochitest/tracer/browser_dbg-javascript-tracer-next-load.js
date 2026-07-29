@@ -69,6 +69,7 @@ add_task(async function testTracingOnNextLoad() {
 
   info("Wait for tracing to be enabled after page reload");
   await hasConsoleMessage(dbg, "Started tracing to Web Console");
+  traceButton = dbg.toolbox.doc.getElementById("command-button-jstracer");
   is(
     traceButton.getAttribute("aria-pressed"),
     "true",

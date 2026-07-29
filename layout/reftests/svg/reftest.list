@@ -249,7 +249,8 @@ fuzzy-if(Android,0-18,0-600) == foreignObject-fixedpos-01.html foreignObject-dyn
 == foreignObject-dynamic-line-height-01.html foreignObject-dynamic-line-height-01-ref.html
 == foreignObject-vertical-01.svg foreignObject-vertical-01-ref.svg
 
-== fragmentIdentifier-01.xhtml pass.svg
+== fragmentIdentifier-01a.xhtml pass.svg
+== fragmentIdentifier-01b.xhtml pass.svg
 
 == g-transform-01.svg pass.svg
 
@@ -281,7 +282,7 @@ fuzzy(0-1,0-800000) == markers-and-group-opacity-01.svg markers-and-group-opacit
 fuzzy(0-1,0-1) == marker-dynamic-opacity.html marker-dynamic-opacity-ref.html
 == marker-css-transform.html marker-css-transform-ref.html
 == marker-effects-01.svg marker-effects-01-ref.svg
-fuzzy(0-1,0-100) == marker-viewBox-01.svg marker-viewBox-01-ref.svg
+fuzzy(0-9,0-12) == marker-viewBox-01.svg marker-viewBox-01-ref.svg
 fuzzy(0-65,0-570) == marker-orientation-01.svg marker-orientation-01-ref.svg
 fuzzy(0-65,0-570) == marker-orientation-02.svg marker-orientation-02-ref.svg
 == marker-orientation-03.svg pass.svg
@@ -627,6 +628,7 @@ fuzzy(0-1,0-150) == mask-opacity-invalidation-1.html mask-opacity-invalidation-1
 skip-if(Android) skip-if(cocoaWidget) skip-if(winWidget) == transform-animation-on-path.html transform-animation-on-path-ref.html #Bug 1638909
 
 fuzzy(0-20,0-110) == 1792313.svg 1792313-ref.svg
+fuzzy(0-20,0-1000) == 2039658.svg 2039658-ref.png
 pref(svg.use-element.recursive-clone-limit.enabled,1) != about:blank explosive-use.svg
 
 # do not increase fuzz significantly, test was designed to be within 1 color unit
@@ -636,3 +638,4 @@ fuzzy(0-1,0-230400) == 1630900-1.html 1630900-1-ref.html
 fuzzy-if(winWidget||cocoaWidget,0-1,0-6050) == rect-no-backgrounds-print.html rect-no-backgrounds-print-ref.html
 
 == bad-arc.html bad-arc-ref.html
+pref(layout.disable-pixel-alignment,true) == mask-image-at-fractional-position.html mask-image-at-fractional-position-ref.html

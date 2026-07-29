@@ -16,8 +16,7 @@ const mockLocation = {
 async function setupBandwidthPrecisionTest(maxBytes, remaining) {
   let usage = makeUsage(maxBytes, remaining);
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: true,
+    isReady: true,
     canEnroll: true,
     proxyPass: {
       status: 200,
@@ -27,13 +26,9 @@ async function setupBandwidthPrecisionTest(maxBytes, remaining) {
     },
     usageInfo: usage,
   });
-  await IPPEnrollAndEntitleManager.refetchEntitlement();
   await IPPProxyManager.refreshUsage();
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["browser.ipProtection.bandwidth.enabled", true],
-      ["browser.ipProtection.egressLocationEnabled", true],
-    ],
+    set: [["browser.ipProtection.bandwidth.enabled", true]],
   });
 }
 
@@ -142,18 +137,18 @@ add_task(async function test_bandwidth_decimal_precision_at_75_percent() {
   }
 });
 
-add_task(async function test_bandwidth_no_decimal_outside_75_percent() {
+add_task(async function test_bandwidth_decimal_precision_outside_75_percent() {
   const maxBytes = BANDWIDTH.MAX_IN_GB * BANDWIDTH.BYTES_IN_GB;
 
   const testCases = [
     {
-      name: "4.9 GB at 90% bucket rounds up to 5",
+      name: "4.9 GB at 90% bucket rounds to 4.9",
       remaining: Math.floor(4.9 * BANDWIDTH.BYTES_IN_GB),
       expectedPercent: 90,
-      expectedRounded: 5,
+      expectedRounded: 4.9,
     },
     {
-      name: "30 GB below 75% bucket rounds normally",
+      name: "30 GB below 75% bucket rounds to nearest 0.1",
       remaining: Math.floor(30 * BANDWIDTH.BYTES_IN_GB),
       expectedPercent: 40,
       expectedRounded: 30,
@@ -182,7 +177,7 @@ add_task(async function test_bandwidth_no_decimal_outside_75_percent() {
     Assert.equal(
       bandwidthEl.remainingRounded,
       testCase.expectedRounded,
-      `${testCase.name}: remainingRounded should be ${testCase.expectedRounded} (no decimal)`
+      `${testCase.name}: remainingRounded should be ${testCase.expectedRounded}`
     );
 
     await closePanel();
@@ -211,8 +206,8 @@ add_task(async function test_bandwidth_gb_display_with_less_than_1gb_used() {
 
   Assert.equal(
     bandwidthEl.remainingRounded,
-    BANDWIDTH.MAX_IN_GB,
-    "Less than 1 GB used, remainingRounded should round to max GB"
+    parseFloat((remaining / BANDWIDTH.BYTES_IN_GB).toFixed(1)),
+    "Less than 1 GB used, remainingRounded should be GB value rounded to nearest 0.1"
   );
 
   await closePanel();
@@ -242,4 +237,96 @@ add_task(async function test_bandwidth_mb_display_below_1gb() {
 
   await closePanel();
   await cleanupBandwidthPrecisionTest();
+});
+
+add_task(async function test_progress_bar_value_always_in_gb() {
+  const maxBytes = BANDWIDTH.MAX_IN_GB * BANDWIDTH.BYTES_IN_GB;
+
+  const usedBytes = {
+    MINIMAL: Math.floor(0.23 * BANDWIDTH.BYTES_IN_GB),
+    LESS_THAN_1_GB: Math.floor(0.97 * BANDWIDTH.BYTES_IN_GB),
+    USAGE_50_PCT: maxBytes * 0.5,
+    USAGE_75_PCT: maxBytes * 0.75,
+    USAGE_75_PCT_BUCKET: maxBytes * 0.85,
+    USAGE_90_PCT: maxBytes * 0.9,
+    USAGE_90_PCT_BUCKET: maxBytes * 0.95,
+    NEAR_MAX: maxBytes - Math.floor(0.123 * BANDWIDTH.BYTES_IN_GB),
+  };
+
+  const testCases = [
+    {
+      name: "minimal usage (0.23 GB used)",
+      remaining: maxBytes - usedBytes.MINIMAL,
+      expectedValue: 0.2,
+    },
+    {
+      name: "less than 1 GB used (0.97 GB used)",
+      remaining: maxBytes - usedBytes.LESS_THAN_1_GB,
+      expectedValue: 1.0,
+    },
+    {
+      name: "50% usage",
+      remaining: maxBytes - usedBytes.USAGE_50_PCT,
+      expectedValue: 25.0,
+    },
+    {
+      name: "75% usage",
+      remaining: maxBytes - usedBytes.USAGE_75_PCT,
+      expectedValue: 37.5,
+    },
+    {
+      name: "75% usage bucket (7.5 GB remaining)",
+      remaining: maxBytes - usedBytes.USAGE_75_PCT_BUCKET,
+      expectedValue: 42.5,
+    },
+    {
+      name: "90% usage",
+      remaining: maxBytes - usedBytes.USAGE_90_PCT,
+      expectedValue: 45,
+    },
+    {
+      name: "90% usage bucket (2.5 GB remaining)",
+      remaining: maxBytes - usedBytes.USAGE_90_PCT_BUCKET,
+      expectedValue: 47.5,
+    },
+    {
+      name: "approaching max usage (0.123 GB remaining)",
+      remaining: maxBytes - usedBytes.NEAR_MAX,
+      expectedValue: 49.9,
+    },
+  ];
+
+  for (const testCase of testCases) {
+    await setupBandwidthPrecisionTest(
+      String(maxBytes),
+      String(testCase.remaining)
+    );
+
+    let content = await openPanel({
+      location: mockLocation,
+      isProtectionEnabled: true,
+    });
+
+    const bandwidthEl = await getBandwidthEl(content);
+    const usedGB = bandwidthEl.bandwidthUsedGB;
+
+    Assert.greaterOrEqual(
+      usedGB,
+      0,
+      `${testCase.name}: used GB should not be negative`
+    );
+    Assert.lessOrEqual(
+      usedGB,
+      bandwidthEl.maxGB,
+      `${testCase.name}: used GB should not exceed maxGB`
+    );
+    Assert.equal(
+      parseFloat(usedGB.toFixed(1)),
+      testCase.expectedValue,
+      `${testCase.name}: progress bar value should be ${testCase.expectedValue} GB`
+    );
+
+    await closePanel();
+    await cleanupBandwidthPrecisionTest();
+  }
 });

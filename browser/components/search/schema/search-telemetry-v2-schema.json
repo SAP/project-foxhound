@@ -355,6 +355,21 @@
         }
       }
     },
+    "alwaysMatchSERP": {
+      "type": "object",
+      "title": "Always Match SERP",
+      "description": "If set, any URL matching searchPageRegexp is treated as a SERP without requiring a query param in the specified process(es). Used for providers where the search query is in the POST body rather than the URL.",
+      "properties": {
+        "parent": {
+          "type": "boolean",
+          "description": "Whether to skip the query param check in the parent process."
+        },
+        "child": {
+          "type": "boolean",
+          "description": "Whether to skip the query param check in the child process."
+        }
+      }
+    },
     "isSPA": {
       "type": "boolean",
       "title": "Is Single Page App",

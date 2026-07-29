@@ -912,6 +912,10 @@ pwmgr:
         description: >
           Number of logins migrated during this run.
         type: quantity
+      number_of_logins_quarantined:
+        description: >
+          Number of logins quarantined during this run.
+        type: quantity
       duration_ms:
         description: >
           Duration of the migration in milliseconds.
@@ -953,45 +957,17 @@ pwmgr:
         description: >
           The error message or exception string from the failure.
         type: string
-      origin_error:
+      has_origin:
         description: >
-          a string providing more information about an invalid origin, can be "EmptyString", "SurroundingWhitespace", "MissingScheme", "InvalidScheme", "IllegalCharacters", "InvalidPercentEncoding", "InvalidPort" or "UrlParseError"
-        type: string
-      origin_fixable:
-        description: >
-          Whether our logic would be able to fix the origin
+          Whether the login includes an origin
         type: boolean
-      form_action_origin_error:
+      has_form_action_origin:
         description: >
-          a string providing more information about an invalid origin, can be "EmptyString", "SurroundingWhitespace", "MissingScheme", "InvalidScheme", "IllegalCharacters", "InvalidPercentEncoding", "InvalidPort" or "UrlParseError"
-        type: string
-      form_action_origin_fixable:
-        description: >
-          Whether our logic would be able to fix the form action origin
+          Whether the login includes a form action origin
         type: boolean
-      has_punycode_origin:
+      has_http_realm:
         description: >
-          Whether the login to add/modify/remove has a punycode origin
-        type: boolean
-      has_punycode_form_action_origin:
-        description: >
-          Whether the login to add/modify/remove has a punycode form_action_origin
-        type: boolean
-      has_ftp_origin:
-        description: >
-          Whether the login origin string contains indications of an FTP scheme
-        type: boolean
-      has_empty_password:
-        description: >
-          Whether the login to add/modify/remove has an empty password
-        type: boolean
-      has_username_line_break:
-        description: >
-          Whether the login to add/modify/remove has a username containing a line break
-        type: boolean
-      has_username_nul:
-        description: >
-          Whether the login to add/modify/remove has a username containing a Nul char
+          Whether the login includes a http realm
         type: boolean
       is_deleted:
         description: >

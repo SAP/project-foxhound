@@ -600,6 +600,11 @@ addAccessibleTask(
     await focused;
     await caretMoved;
     is(textarea.caretOffset, 0, "textarea caret correct");
+    // May get two caret moved events (one from focusing textarea and one
+    // from setting selection), so wait a bit for the second event to be fired.
+    await new Promise(r =>
+      requestAnimationFrame(() => requestAnimationFrame(r))
+    );
     // Test setting caret to another line.
     info("textarea: Set caret offset to 3");
     caretMoved = waitForEvent(EVENT_TEXT_CARET_MOVED, textarea);

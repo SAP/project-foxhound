@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright 2014 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -518,6 +516,7 @@ struct AutoHandlingTrap {
 };
 
 [[nodiscard]] static bool HandleTrap(CONTEXT* context,
+                                     uint8_t* faultAddr = nullptr,
                                      JSContext* assertCx = nullptr) {
   MOZ_ASSERT(sAlreadyHandlingTrap.get());
 
@@ -544,6 +543,20 @@ struct AutoHandlingTrap {
   MOZ_RELEASE_ASSERT(&instance->code() == codeBlock->code ||
                      trap == Trap::IndirectCallBadSig);
 
+  // For OutOfBounds triggered by a memory fault (faultAddr != nullptr), verify
+  // the address is actually within a wasm memory's mapped region. This catches
+  // bugs where an unrelated fault at an arbitrary address would otherwise be
+  // silently swallowed as an OOB. When faultAddr is null (explicit trap
+  // instruction, e.g. from an inlined bounds check), skip validation.
+  uint32_t faultMemoryIndex = 0;
+  uint64_t faultByteOffset = 0;
+  if (trap == Trap::OutOfBounds && faultAddr) {
+    if (!instance->memoryAccessInMappedRegion(faultAddr, &faultMemoryIndex,
+                                              &faultByteOffset)) {
+      return false;
+    }
+  }
+
   // Ensure the active FP has a valid instance pointer that the trap stub can
   // use.
   ((FrameWithInstances*)frame)->setCalleeInstance(instance);
@@ -557,6 +570,9 @@ struct AutoHandlingTrap {
   // will call finishWasmTrap().
   jit::JitActivation* activation = cx->activation()->asJit();
   activation->startWasmTrap(trap, trapSite, ToRegisterState(context));
+  if (trap == Trap::OutOfBounds && faultAddr) {
+    activation->setWasmTrapFaultInfo(faultMemoryIndex, faultByteOffset);
+  }
   SetContextPC(context, codeBlock->code->trapCode());
   return true;
 }
@@ -588,8 +604,13 @@ static LONG WINAPI WasmTrapHandler(LPEXCEPTION_POINTERS exception) {
     return EXCEPTION_CONTINUE_SEARCH;
   }
 
+  uint8_t* faultAddr = nullptr;
+  if (record->ExceptionCode == EXCEPTION_ACCESS_VIOLATION) {
+    faultAddr = (uint8_t*)record->ExceptionInformation[1];
+  }
+
   JSContext* cx = TlsContext.get();  // Cold signal handling code
-  if (!HandleTrap(exception->ContextRecord, cx)) {
+  if (!HandleTrap(exception->ContextRecord, faultAddr, cx)) {
     return EXCEPTION_CONTINUE_SEARCH;
   }
 
@@ -673,7 +694,11 @@ static bool HandleMachException(const ExceptionRequest& request) {
   {
     AutoNoteSingleThreadedRegion anstr;
     AutoHandlingTrap aht;
-    if (!HandleTrap(&context)) {
+    uint8_t* faultAddr = nullptr;
+    if (request.body.exception == EXC_BAD_ACCESS) {
+      faultAddr = (uint8_t*)request.body.code[1];
+    }
+    if (!HandleTrap(&context, faultAddr)) {
       return false;
     }
   }
@@ -772,8 +797,12 @@ static void WasmTrapHandler(int signum, siginfo_t* info, void* context) {
     AutoHandlingTrap aht;
     MOZ_RELEASE_ASSERT(signum == SIGSEGV || signum == SIGBUS ||
                        signum == kWasmTrapSignal);
+    uint8_t* faultAddr = nullptr;
+    if (signum == SIGSEGV || signum == SIGBUS) {
+      faultAddr = (uint8_t*)info->si_addr;
+    }
     JSContext* cx = TlsContext.get();  // Cold signal handling code
-    if (HandleTrap((CONTEXT*)context, cx)) {
+    if (HandleTrap((CONTEXT*)context, faultAddr, cx)) {
       return;
     }
   }
@@ -1020,11 +1049,17 @@ bool wasm::MemoryAccessTraps(const RegisterState& regs, uint8_t* addr,
       break;
     case Trap::NullPointerDereference:
     case Trap::BadCast:
+      if ((uintptr_t)addr >= NullPtrGuardSize) {
+        return false;
+      }
       break;
 #  ifdef WASM_HAS_HEAPREG
     case Trap::IndirectCallToNull:
-      // We use the null pointer exception from loading the heapreg to
-      // handle indirect calls to null.
+      // Null pointer plus the appropriate offset.
+      if (addr !=
+          reinterpret_cast<uint8_t*>(wasm::Instance::offsetOfMemory0Base())) {
+        return false;
+      }
       break;
 #  endif
     default:
@@ -1041,27 +1076,22 @@ bool wasm::MemoryAccessTraps(const RegisterState& regs, uint8_t* addr,
   // use.
   frame->setCalleeInstance(&instance);
 
+  uint32_t faultMemoryIndex = 0;
+  uint64_t faultByteOffset = 0;
   switch (trap) {
     case Trap::OutOfBounds:
       if (!instance.memoryAccessInGuardRegion((uint8_t*)addr, numBytes)) {
         return false;
       }
+      MOZ_ALWAYS_TRUE(instance.memoryAccessInMappedRegion(
+          (uint8_t*)addr, &faultMemoryIndex, &faultByteOffset));
       break;
     case Trap::NullPointerDereference:
     case Trap::BadCast:
-      if ((uintptr_t)addr >= NullPtrGuardSize) {
-        return false;
-      }
-      break;
 #  ifdef WASM_HAS_HEAPREG
     case Trap::IndirectCallToNull:
-      // Null pointer plus the appropriate offset.
-      if (addr !=
-          reinterpret_cast<uint8_t*>(wasm::Instance::offsetOfMemory0Base())) {
-        return false;
-      }
-      break;
 #  endif
+      break;
     default:
       MOZ_CRASH("Should not happen");
   }
@@ -1069,6 +1099,9 @@ bool wasm::MemoryAccessTraps(const RegisterState& regs, uint8_t* addr,
   JSContext* cx = TlsContext.get();  // Cold simulator helper function
   jit::JitActivation* activation = cx->activation()->asJit();
   activation->startWasmTrap(trap, trapSite, regs);
+  if (trap == Trap::OutOfBounds) {
+    activation->setWasmTrapFaultInfo(faultMemoryIndex, faultByteOffset);
+  }
   *newPC = codeBlock->code->trapCode();
   return true;
 #endif

@@ -6,12 +6,12 @@ import { InputPickerPanelCommon } from "./InputPickerPanelCommon.sys.mjs";
 
 /** @import {OpenPickerInfo} from "./InputPickerPanelCommon.sys.mjs" */
 
-const TIME_PICKER_WIDTH = "13em";
-const TIME_PICKER_HEIGHT = "22em";
+const TIME_PICKER_WIDTH = "12.8em";
+const TIME_PICKER_HEIGHT = "22.8em";
 const DATE_PICKER_WIDTH = "24em";
-const DATE_PICKER_HEIGHT = "27em";
-const DATETIME_PICKER_WIDTH = "40em";
-const DATETIME_PICKER_HEIGHT = "27em";
+const DATE_PICKER_HEIGHT = "26.9em";
+const DATETIME_PICKER_WIDTH = "39.8em";
+const DATETIME_PICKER_HEIGHT = "26.9em";
 
 export class DateTimePickerPanel extends InputPickerPanelCommon {
   constructor(element) {

@@ -1,5 +1,7 @@
 [DEFAULT]
 
+["browser_permmgr_interaction_tracker.js"]
+
 ["browser_permmgr_sync.js"]
 # The browser_permmgr_sync test  runs code
 # paths which would hit the debug only assertion in

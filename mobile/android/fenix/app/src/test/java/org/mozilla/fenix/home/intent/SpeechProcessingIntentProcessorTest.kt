@@ -33,9 +33,7 @@ class SpeechProcessingIntentProcessorTest {
     private val activity: HomeActivity = mockk(relaxed = true)
     private val navController: NavController = mockk(relaxed = true)
     private val out: Intent = mockk(relaxed = true)
-    private val settings: Settings = mockk {
-        every { shouldUseComposableToolbar } returns false
-    }
+    private val settings: Settings = mockk()
 
     private val searchEngine = createSearchEngine(
         name = "Test",
@@ -99,6 +97,7 @@ class SpeechProcessingIntentProcessorTest {
         processor.process(intent, mockk(), mockk(relaxed = true), settings)
 
         verify {
+            @Suppress("DEPRECATION")
             activity.openToBrowserAndLoad(
                 searchTermOrURL = "hello world",
                 newTab = true,

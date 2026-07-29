@@ -28,9 +28,8 @@ dependencies {
     implementation libs.androidx.annotation
     implementation libs.kotlinx.coroutines
 
-    testImplementation libs.androidx.test.junit
-    testImplementation libs.mockwebserver
     testImplementation libs.robolectric
+    testRuntimeOnly libs.okhttp
 }
 
 apply from: '../../../common-config.gradle'

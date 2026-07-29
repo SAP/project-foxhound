@@ -69,6 +69,12 @@
   <string name="mozac_feature_prompts_before_unload_stay">유지</string>
   <!-- Leave button of the dialog shown when a user is leaving a website and there is still data not saved yet, this indicates that the user wants to leave in the website. -->
   <string name="mozac_feature_prompts_before_unload_leave">나가기</string>
+  <!-- Message shown when a site wants to create a passkey for a related domain. %1$s is the requesting site, %2$s is the related domain the passkey is for. -->
+  <string name="webauthn_related_origin_create_message">%1$s 사이트가 %2$s에 대한 패스키를 생성하려고 합니다.</string>
+  <!-- Message shown when a site wants to use a passkey from a related domain. %1$s is the requesting site, %2$s is the related domain the passkey is for. -->
+  <string name="webauthn_related_origin_use_message">%1$s 사이트가 %2$s에 대한 패스키를 사용하려고 합니다.</string>
+  <!-- Continue button label for WebAuthn related origin prompt. -->
+  <string name="webauthn_continue">계속</string>
   <!-- Title of the month chooser dialog. -->
   <string name="mozac_feature_prompts_set_month">월 선택</string>
   <!-- January (short description), used on the month chooser dialog. -->
@@ -166,6 +172,8 @@
   <string name="mozac_feature_prompts_collapse_address_content_description_2">저장된 주소 접기</string>
   <!-- Text for the manage addresses button. -->
   <string name="mozac_feature_prompts_manage_address">주소 관리</string>
+  <!-- Text for the title of a save address dialog. -->
+  <string name="mozac_feature_prompts_save_address_prompt_title">주소를 저장하시겠습니까?</string>
   <!--
     Federated Credential Management prompts
 

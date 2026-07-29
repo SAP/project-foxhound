@@ -1,6 +1,7 @@
 projects:
   app:
     upstream_dependencies:
+    - app:longfox
     - components:browser-domains
     - components:browser-engine-gecko
     - components:browser-errorpages
@@ -18,15 +19,21 @@ projects:
     - components:compose-browser-toolbar
     - components:compose-cfr
     - components:concept-accelerometer
+    - components:concept-ai-controls
     - components:concept-awesomebar
     - components:concept-base
+    - components:concept-bookmarks-file
+    - components:concept-bookmarks-parser
     - components:concept-engine
     - components:concept-fetch
     - components:concept-integrity
     - components:concept-llm
     - components:concept-menu
+    - components:concept-passwords-file
+    - components:concept-passwords-parser
     - components:concept-push
     - components:concept-storage
+    - components:concept-storage-bookmarks
     - components:concept-sync
     - components:concept-tabstray
     - components:concept-toolbar
@@ -41,11 +48,15 @@ projects:
     - components:feature-downloads
     - components:feature-findinpage
     - components:feature-fxsuggest
+    - components:feature-importer
     - components:feature-intent
+    - components:feature-ipprotection
     - components:feature-logins
     - components:feature-media
+    - components:feature-password-importer
     - components:feature-privatemode
     - components:feature-prompts
+    - components:feature-protection-dashboard
     - components:feature-push
     - components:feature-pwa
     - components:feature-qr
@@ -66,11 +77,16 @@ projects:
     - components:feature-webcompat-reporter
     - components:feature-webnotifications
     - components:lib-accelerometer-sensormanager
+    - components:lib-ai-controls
+    - components:lib-bookmark-parser-jsoup
+    - components:lib-bookmarks-file
     - components:lib-crash
     - components:lib-crash-sentry
     - components:lib-dataprotect
     - components:lib-integrity-googleplay
     - components:lib-llm-mlpa
+    - components:lib-password-parser-csv
+    - components:lib-passwords-file
     - components:lib-publicsuffixlist
     - components:lib-push-firebase
     - components:lib-shake
@@ -81,14 +97,17 @@ projects:
     - components:service-glean
     - components:service-location
     - components:service-mars
+    - components:service-merino-manifest
     - components:service-nimbus
     - components:service-pocket
     - components:service-sync-autofill
     - components:service-sync-logins
+    - components:support-android-test
     - components:support-appservices
     - components:support-base
     - components:support-images
     - components:support-ktx
+    - components:support-license
     - components:support-locale
     - components:support-remotesettings
     - components:support-test
@@ -100,6 +119,7 @@ projects:
     - components:ui-autocomplete
     - components:ui-colors
     - components:ui-icons
+    - components:ui-richtext
     - components:ui-tabcounter
     - components:ui-widgets
 variants:

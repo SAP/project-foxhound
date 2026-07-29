@@ -19,6 +19,7 @@ android {
 }
 
 dependencies {
+    implementation project(':components:compose-base')
     implementation project(':components:support-ktx')
     implementation project(':components:ui-icons')
 
@@ -42,6 +43,7 @@ dependencies {
     testImplementation libs.junit4
     testRuntimeOnly libs.junit.platform.launcher
     testRuntimeOnly libs.junit.vintage
+    testImplementation libs.kotlin.test
     testImplementation libs.kotlinx.coroutines.test
     testImplementation libs.robolectric
 }

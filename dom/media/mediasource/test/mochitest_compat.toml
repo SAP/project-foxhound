@@ -220,6 +220,12 @@ support-files = [
   "bug1718709_high_res.mp4",
   "whitenoise-he-aac-5s.mp4",
   "../../test/hevc_white_frame.mp4",
+  "bug2039853_hevc_init.mp4",
+  "bug2039853_hevc_chunk0.m4s",
+  "bug2039853_hevc_chunk1.m4s",
+  "bug2039853_hevc_chunk2.m4s",
+  "bug2039853_hevc_chunk3.m4s",
+  "bug2039853_hevc_chunk4.m4s",
 ]
 
 ["test_AVC3_mp4.html"]
@@ -251,6 +257,7 @@ support-files = [
 ["test_FrameSelection.html"]
 skip-if = [
   "os == 'android'", # bug 1341519, bug 1401090
+  "os == 'win' && wmfme", # bug 1341519 - WMFME intermittently stalls seeks with multi-resolution MSE content
 ]
 
 ["test_HaveMetadataUnbufferedSeek.html"]
@@ -280,9 +287,19 @@ run-if = [
   "mda_gpu",
 ]
 
+["test_MediaSource_hevc_spsless.html"]
+run-if = [
+  "mda_gpu",
+]
+skip-if = [
+  "os == 'mac' && os_version == '10.15'", # HEVC decode unsupported, Bug 1942396
+]
+
 ["test_MediaSource_memory_reporting.html"]
 
 ["test_MediaSource_mp4.html"]
+
+["test_AppendMultipleInitOpusAudio.html"]
 
 ["test_MultipleInitSegments.html"]
 
@@ -293,6 +310,7 @@ run-if = [
 ["test_PlayEventsAutoPlaying.html"]
 skip-if = [
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && ccov",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && ccov",
 ]
 
 ["test_PlayEventsAutoPlaying2.html"]

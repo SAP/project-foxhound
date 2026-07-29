@@ -170,6 +170,11 @@ class MP3TrackDemuxer : public MediaTrackDemuxer,
   // Channel count derived from frame headers or 0 if none available.
   uint32_t mChannels;
 
+  // Bitrate of the first parsed audio frame, captured from the frame parser
+  // before the VBR header frame is consumed. Used to estimate duration when
+  // the VBR header is missing or has placeholder counts.
+  uint32_t mBitrate = 0;
+
   // Audio track config info.
   UniquePtr<AudioInfo> mInfo;
 

@@ -8,6 +8,9 @@ import android.util.Log;
 import org.mozilla.gecko.annotation.WrapForJNI;
 import org.mozilla.gecko.mozglue.JNIObject;
 import org.mozilla.geckoview.BuildConfig;
+import org.mozilla.geckoview.GeckoResult;
+import org.mozilla.geckoview.WebRequest;
+import org.mozilla.geckoview.WebResponse;
 
 public class GeckoHLSResourceWrapper {
   private static final String LOGTAG = "GeckoHLSResourceWrapper";
@@ -30,6 +33,10 @@ public class GeckoHLSResourceWrapper {
     @Override
     @WrapForJNI
     public native void onError(int errorCode);
+
+    @Override
+    @WrapForJNI
+    public native GeckoResult<WebResponse> onOpenChannel(WebRequest request);
 
     @Override // JNIObject
     protected void disposeNative() {

@@ -9,6 +9,38 @@ newtab-page-title = புதிய கீற்று
 newtab-settings-button =
     .title = உங்கள் புதிய கீற்றுப் பக்கத்தை விருப்பமை
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = புதிய கீற்றுகள்
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } வரிசை
+           *[other] { $num } வரிசைகள்
+        }
+home-restore-defaults-srd =
+    .label = முன்னிருப்புக்கு மீட்டமை
+    .accesskey = R
+home-mode-choice-custom-srd =
+    .label = தனிப்பயன் உரலிகள்...
+home-mode-choice-blank-srd =
+    .label = வெற்றுப் பக்கம்
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = விளம்பரக் கதைகள்
+home-prefs-highlights-option-visited-pages-srd =
+    .label = பார்வையிட்டத் தளம்
+home-prefs-highlights-options-bookmarks-srd =
+    .label = புத்தகக்குறிகள்
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = அண்மைய பதிவிறக்கம்
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +48,7 @@ newtab-search-box-search-button =
     .title = தேடு
     .aria-label = தேடு
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = தேடுபொறியைச் சேர்
 newtab-topsites-edit-topsites-header = முக்கிய தளத்தை தொகு

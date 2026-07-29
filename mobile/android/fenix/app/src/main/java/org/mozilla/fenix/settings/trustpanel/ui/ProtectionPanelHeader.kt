@@ -37,7 +37,6 @@ import org.mozilla.fenix.theme.Theme
 
 private val ICON_SIZE = 16.dp
 private val ICON_PADDING = 8.dp
-private val OUTER_ICON_SHAPE = RoundedCornerShape(4.dp)
 private val INNER_ICON_SHAPE = RoundedCornerShape(0.dp)
 
 @Composable
@@ -100,7 +99,7 @@ private fun ProtectionPanelIcon(
             modifier = Modifier
                 .background(
                     color = MaterialTheme.colorScheme.surfaceContainerLowest,
-                    shape = OUTER_ICON_SHAPE,
+                    shape = MaterialTheme.shapes.extraSmall,
                 )
                 .padding(all = ICON_PADDING)
                 .size(ICON_SIZE),
@@ -111,7 +110,7 @@ private fun ProtectionPanelIcon(
             modifier = Modifier
                 .background(
                     color = MaterialTheme.colorScheme.surfaceContainerLowest,
-                    shape = OUTER_ICON_SHAPE,
+                    shape = MaterialTheme.shapes.extraSmall,
                 )
                 .padding(all = ICON_PADDING),
             size = ICON_SIZE,

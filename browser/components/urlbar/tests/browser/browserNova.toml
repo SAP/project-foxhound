@@ -1,0 +1,6 @@
+[DEFAULT]
+dupe-manifest = true
+tags = "urlbar urlbar-nova"
+prefs = ["browser.nova.enabled=true"]
+
+["include:browser.toml"]

@@ -46,7 +46,7 @@
   <!-- The document title and heading of the error page shown when a website takes too long to load. -->
   <string name="mozac_browser_errorpages_net_timeout_title">კავშირის დრო ამოიწურა</string>
   <!-- The error message shown when a website took long to load. -->
-  <string name="mozac_browser_errorpages_net_timeout_message"><![CDATA[<p>საიტი კავშირის მოთხოვნას არ პასუხობს და ბრაუზერმა შეწყვიტა პასუხის ლოდინი.</p>\n<ul>\n<li>შესაძლოა სერვერი გადატვირთული ან დროებით გათიშული იყოს? სცადეთ მოგვიანებით.</li>\n<li>ვერც სხვა საიტებს ხსნით? შეამოწმეთ მოწყობილობის ქსელთან კავშირი.</li>\n<li>თქვენი მოწყობილობა ან ქსელი ფარით ან პროქსითაა დაცული? გაუმართავი პარამეტრები შესაძლოა აფერხებდეს ინტერნეტკავშირს.</li>\n<li>კვლავ ხარვეზებია? მაშინ, დახმარებისთვის მიმართეთ თქვენი ქსელის მმართველს ან ინტერნეტმომსახურების მომწოდებელს.</li>\n</ul>]]></string>
+  <string name="mozac_browser_errorpages_net_timeout_message"><![CDATA[<p>საიტთან კავშირის მოთხოვნისას პასუხი არაა და ბრაუზერმაც შეწყვიტა ლოდინი.</p>\n<ul>\n<li>შესაძლოა სერვერი გადატვირთული ან დროებით გათიშული იყოს? სცადეთ მოგვიანებით.</li>\n<li>ვერც სხვა საიტებს ხსნით? შეამოწმეთ მოწყობილობის ქსელთან კავშირი.</li>\n<li>თქვენი მოწყობილობა ქსელის ფარით ან შუამავლითაა დაცული? უმართებულო პარამეტრები შეიძლება აფერხებდეს ინტერნეტკავშირს.</li>\n<li>მაინც არ მოგვარდა? მაშინ დახმარებისთვის მიმართეთ თქვენი ქსელის ზედამხედველს ან ინტერნეტმომსახურების მომწოდებელს.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website could not be reached. -->
   <string name="mozac_browser_errorpages_connection_failure_title">დაკავშირება ვერ ხერხდება</string>
   <!-- The error message shown when a website could not be reached. -->
@@ -115,10 +115,10 @@
   <string name="mozac_browser_errorpages_file_access_denied_message"><![CDATA[<ul>\n<li>შესაძლოა წაშლილია, გადატანილია ან ფაილთან წვდომის უფლებები შეზღუდულია.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_proxy_connection_refused_title">შუამავალმა სერვერმა კავშირი უარყო</string>
-  <string name="mozac_browser_errorpages_proxy_connection_refused_message"><![CDATA[<p>ბრაუზერი მომართულია იმ შუამავალი სერვერის გამოსაყენებლად, რომელმაც კავშირი უარყო.</p>\n<ul>\n<li>ბრაუზერის პროქსი სწორადაა გამართული? შეამოწმეთ პარამეტრები და სცადეთ ხელახლა.</li>\n<li>იძლევა შუამავალი სერვერი ამ ქსელიდან დაკავშირების უფლებას?</li>\n<li>არ გამოსწორდა ხარვეზები? მაშინ დახმარებისთვის მიმართეთ თქვენი ქსელის ზედამხედველს ან ინტერნეტმომსახურების მომწოდებელს.</li>\n</ul>]]></string>
+  <string name="mozac_browser_errorpages_proxy_connection_refused_message"><![CDATA[<p>ბრაუზერი მომართულია იმ შუამავალი სერვერის გამოსაყენებლად, რომელმაც კავშირი უარყო.</p>\n<ul>\n<li>ბრაუზერის პროქსი სწორადაა გამართული? შეამოწმეთ პარამეტრები და სცადეთ ხელახლა.</li>\n<li>იძლევა შუამავალი სერვერი ამ ქსელიდან დაკავშირების უფლებას?</li>\n<li>მაინც არ მოგვარდა? მაშინ დახმარებისთვის მიმართეთ თქვენი ქსელის ზედამხედველს ან ინტერნეტმომსახურების მომწოდებელს.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_unknown_proxy_host_title">შუამავალი სერვერი ვერ მოიძებნა</string>
-  <string name="mozac_browser_errorpages_unknown_proxy_host_message"><![CDATA[<p>ბრაუზერი მომართულია იმ შუამავალი სერვერის გამოსაყენებლად, რომელიც ვერ მოიძებნა.</p>\n<ul>\n<li>ბრაუზერის პროქსი სწორადაა გამართული? შეამოწმეთ პარამეტრები და სცადეთ ხელახლა.</li>\n<li>მოწყობილობა მოქმედ ქსელთანაა მიერთებული?</li>\n<li>არ გამოსწორდა ხარვეზები? მაშინ, დახმარებისთვის მიმართეთ თქვენი ქსელის ზედამხედველს ან ინტერნეტმომსახურების მომწოდებელს.</li>\n</ul>]]></string>
+  <string name="mozac_browser_errorpages_unknown_proxy_host_message"><![CDATA[<p>ბრაუზერი მომართულია იმ შუამავალი სერვერის გამოსაყენებლად, რომელიც ვერ მოიძებნა.</p>\n<ul>\n<li>ბრაუზერის პროქსი სწორადაა გამართული? შეამოწმეთ პარამეტრები და სცადეთ ხელახლა.</li>\n<li>მოწყობილობა მოქმედ ქსელთანაა მიერთებული?</li>\n<li>მაინც არ მოგვარდა? მაშინ, დახმარებისთვის მიმართეთ თქვენი ქსელის ზედამხედველს ან ინტერნეტმომსახურების მომწოდებელს.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_safe_browsing_malware_uri_title">მავნე საიტი</string>
   <!-- The %1$s will be replaced by the malicious website URL -->

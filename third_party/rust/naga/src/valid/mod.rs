@@ -7,6 +7,7 @@ mod compose;
 mod expression;
 mod function;
 mod handles;
+pub(crate) mod immediates;
 mod interface;
 mod r#type;
 
@@ -27,17 +28,17 @@ use crate::{
 use crate::span::{AddSpan as _, WithSpan};
 pub use analyzer::{ExpressionInfo, FunctionInfo, GlobalUse, Uniformity, UniformityRequirements};
 pub use compose::ComposeError;
-pub use expression::builtin::ZeroValueError;
 pub use expression::{check_literal_value, LiteralError};
 pub use expression::{ConstExpressionError, ExpressionError};
 pub use function::{CallError, FunctionError, LocalVariableError, SubgroupError};
+pub use immediates::ImmediateSlots;
 pub use interface::{EntryPointError, GlobalVariableError, VaryingError};
 pub use r#type::{Disalignment, ImmediateError, TypeError, TypeFlags, WidthError};
 
 use self::handles::InvalidHandleError;
 
 /// Maximum size of a type, in bytes.
-pub const MAX_TYPE_SIZE: u32 = 0x4000_0000; // 1GB
+pub const MAX_TYPE_SIZE: u32 = i32::MAX as u32;
 
 bitflags::bitflags! {
     /// Validation flags.
@@ -103,10 +104,10 @@ bitflags::bitflags! {
         const STORAGE_TEXTURE_BINDING_ARRAY = 1 << 5;
         /// Support for binding arrays of storage buffers.
         const STORAGE_BUFFER_BINDING_ARRAY = 1 << 6;
-        /// Support for [`BuiltIn::ClipDistance`].
+        /// Support for [`BuiltIn::ClipDistances`].
         ///
-        /// [`BuiltIn::ClipDistance`]: crate::BuiltIn::ClipDistance
-        const CLIP_DISTANCE = 1 << 7;
+        /// [`BuiltIn::ClipDistances`]: crate::BuiltIn::ClipDistances
+        const CLIP_DISTANCES = 1 << 7;
         /// Support for [`BuiltIn::CullDistance`].
         ///
         /// [`BuiltIn::CullDistance`]: crate::BuiltIn::CullDistance
@@ -205,6 +206,18 @@ bitflags::bitflags! {
         const COOPERATIVE_MATRIX = 1 << 36;
         /// Support for per-vertex fragment input.
         const PER_VERTEX = 1 << 37;
+        /// Support for ray generation, any hit, closest hit, and miss shaders.
+        const RAY_TRACING_PIPELINE = 1 << 38;
+        /// Support for draw index builtin
+        const DRAW_INDEX = 1 << 39;
+        /// Support for binding arrays of acceleration structures.
+        const ACCELERATION_STRUCTURE_BINDING_ARRAY = 1 << 40;
+        /// Support for the `@coherent` memory decoration on storage buffers.
+        const MEMORY_DECORATION_COHERENT = 1 << 41;
+        /// Support for the `@volatile` memory decoration on storage buffers.
+        const MEMORY_DECORATION_VOLATILE = 1 << 42;
+        /// Support for 16-bit integer types.
+        const SHADER_INT16 = 1 << 43;
     }
 }
 
@@ -220,11 +233,24 @@ impl Capabilities {
             Self::DUAL_SOURCE_BLENDING => Some(Ext::DualSourceBlending),
             // NOTE: `SHADER_FLOAT16_IN_FLOAT32` _does not_ require the `f16` extension
             Self::SHADER_FLOAT16 => Some(Ext::F16),
-            Self::CLIP_DISTANCE => Some(Ext::ClipDistances),
+            Self::SHADER_INT16 => Some(Ext::WgpuInt16),
+            Self::CLIP_DISTANCES => Some(Ext::ClipDistances),
             Self::MESH_SHADER => Some(Ext::WgpuMeshShader),
             Self::RAY_QUERY => Some(Ext::WgpuRayQuery),
             Self::RAY_HIT_VERTEX_POSITION => Some(Ext::WgpuRayQueryVertexReturn),
             Self::COOPERATIVE_MATRIX => Some(Ext::WgpuCooperativeMatrix),
+            Self::RAY_TRACING_PIPELINE => Some(Ext::WgpuRayTracingPipeline),
+            Self::PER_VERTEX => Some(Ext::WgpuPerVertex),
+            Self::BUFFER_BINDING_ARRAY
+            | Self::BUFFER_BINDING_ARRAY_NON_UNIFORM_INDEXING
+            | Self::STORAGE_BUFFER_BINDING_ARRAY
+            | Self::STORAGE_BUFFER_BINDING_ARRAY_NON_UNIFORM_INDEXING
+            | Self::STORAGE_TEXTURE_BINDING_ARRAY
+            | Self::STORAGE_TEXTURE_BINDING_ARRAY_NON_UNIFORM_INDEXING
+            | Self::TEXTURE_AND_SAMPLER_BINDING_ARRAY
+            | Self::TEXTURE_AND_SAMPLER_BINDING_ARRAY_NON_UNIFORM_INDEXING => {
+                Some(Ext::WgpuBindingArray)
+            }
             _ => None,
         }
     }
@@ -297,12 +323,16 @@ bitflags::bitflags! {
     #[cfg_attr(feature = "serialize", derive(serde::Serialize))]
     #[cfg_attr(feature = "deserialize", derive(serde::Deserialize))]
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    pub struct ShaderStages: u8 {
+    pub struct ShaderStages: u16 {
         const VERTEX = 0x1;
         const FRAGMENT = 0x2;
         const COMPUTE = 0x4;
         const MESH = 0x8;
         const TASK = 0x10;
+        const RAY_GENERATION = 0x20;
+        const ANY_HIT = 0x40;
+        const CLOSEST_HIT = 0x80;
+        const MISS = 0x100;
         const COMPUTE_LIKE = Self::COMPUTE.bits() | Self::TASK.bits() | Self::MESH.bits();
     }
 }
@@ -347,7 +377,6 @@ pub struct Validator {
     types: Vec<r#type::TypeInfo>,
     layouter: Layouter,
     location_mask: BitSet,
-    blend_src_mask: BitSet,
     ep_resource_bindings: FastHashSet<crate::ResourceBinding>,
     switch_values: FastHashSet<crate::SwitchValue>,
     valid_expression_list: Vec<Handle<crate::Expression>>,
@@ -377,6 +406,33 @@ pub struct Validator {
     /// [`Expression`]: crate::Expression
     /// [`Statement`]: crate::Statement
     needs_visit: HandleSet<crate::Expression>,
+
+    /// Whether any trace rays call is called, and whether all have vertex return.
+    /// If one call doesn't use vertex ruturn, builtins for triangle vertex positions
+    /// (not yet implemented) are not allowed.
+    trace_rays_vertex_return: TraceRayVertexReturnState,
+
+    /// The type of the ray payload, this must always be the same type in a particular
+    /// entrypoint
+    trace_rays_payload_type: Option<Handle<crate::Type>>,
+}
+
+#[derive(Debug)]
+enum TraceRayVertexReturnState {
+    /// No trace ray calls yet have been found.
+    NoTraceRays,
+    /// Trace ray calls have been found, at least
+    /// one uses an acceleration structure that
+    /// does not have the flag enabling vertex return.
+    #[expect(
+        unused,
+        reason = "Don't yet have vertex return builtins to return this error for."
+    )]
+    NoVertexReturn(crate::Span),
+    /// Trace ray calls have been found, all
+    /// acceleration structures have the flag enabling
+    /// vertex return.
+    VertexReturn,
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -568,7 +624,6 @@ impl Validator {
             types: Vec::new(),
             layouter: Layouter::default(),
             location_mask: BitSet::new(),
-            blend_src_mask: BitSet::new(),
             ep_resource_bindings: FastHashSet::default(),
             switch_values: FastHashSet::default(),
             valid_expression_list: Vec::new(),
@@ -576,6 +631,8 @@ impl Validator {
             override_ids: FastHashSet::default(),
             overrides_resolved: false,
             needs_visit: HandleSet::new(),
+            trace_rays_vertex_return: TraceRayVertexReturnState::NoTraceRays,
+            trace_rays_payload_type: None,
         }
     }
 
@@ -595,8 +652,7 @@ impl Validator {
     pub fn reset(&mut self) {
         self.types.clear();
         self.layouter.clear();
-        self.location_mask.clear();
-        self.blend_src_mask.clear();
+        self.location_mask.make_empty();
         self.ep_resource_bindings.clear();
         self.switch_values.clear();
         self.valid_expression_list.clear();
@@ -651,6 +707,8 @@ impl Validator {
         match gctx.types[o.ty].inner {
             crate::TypeInner::Scalar(
                 crate::Scalar::BOOL
+                | crate::Scalar::I16
+                | crate::Scalar::U16
                 | crate::Scalar::I32
                 | crate::Scalar::U32
                 | crate::Scalar::F16
@@ -734,6 +792,10 @@ impl Validator {
                     }
                     .with_span_handle(handle, &module.types)
                 })?;
+            debug_assert!(
+                ty_info.flags.contains(TypeFlags::CONSTRUCTIBLE)
+                    == module.types[handle].inner.is_constructible(&module.types)
+            );
             mod_info.type_flags.push(ty_info.flags);
             self.types[handle.index()] = ty_info;
         }

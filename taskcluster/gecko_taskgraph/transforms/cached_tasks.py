@@ -100,3 +100,15 @@ def cache_task(config, tasks):
         digests[task["label"]] = format_task_digest(task["attributes"]["cached_task"])
 
         yield task
+
+
+@transforms.add
+def bump_priority(config, tasks):
+    """Bump priority of cached tasks on autoland from low to medium to avoid breakage for developers"""
+    if config.params["project"] != "autoland":
+        yield from tasks
+        return
+
+    for task in tasks:
+        task.setdefault("priority", "medium")
+        yield task

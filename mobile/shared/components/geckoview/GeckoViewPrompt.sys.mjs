@@ -11,6 +11,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   GeckoViewPrompter: "resource://gre/modules/GeckoViewPrompter.sys.mjs",
   GeckoViewClipboardPermission:
     "resource://gre/modules/GeckoViewClipboardPermission.sys.mjs",
+  PromptUtils: "resource://gre/modules/PromptUtils.sys.mjs",
 });
 
 const { debug, warn } = GeckoViewUtils.initLogging("GeckoViewPrompt");
@@ -73,19 +74,15 @@ export class PromptFactory {
 
     const type = target.type;
     if (type === "month" || type === "week") {
-      // If there's a shadow root, the MozOpenDateTimePicker event takes care
-      // of this. Right now for these input types there's never a shadow root.
-      // Once we support UA widgets for month/week inputs (see bug 888320), we
-      // can remove this.
-      if (!target.openOrClosedShadowRoot) {
-        this._handleDateTime(target);
-        aEvent.preventDefault();
-      }
+      // TODO(bug 888320, bug 1283382, bug 1283383): Remove this once we
+      // support UA widgets for month/week inputs.
+      this._handleDateTime(target);
+      aEvent.preventDefault();
     }
   }
 
   _generateSelectItems(aElement) {
-    const win = aElement.ownerGlobal;
+    const win = aElement.documentGlobal;
     let id = 0;
     const map = {};
 
@@ -122,7 +119,7 @@ export class PromptFactory {
   }
 
   _handleSelect(aElement, aIsDropDown) {
-    const win = aElement.ownerGlobal;
+    const win = aElement.documentGlobal;
     const [items] = this._generateSelectItems(aElement);
 
     if (aIsDropDown) {
@@ -157,7 +154,8 @@ export class PromptFactory {
         prompt.dismiss();
       }
     };
-    const chromeEventHandler = aElement.ownerGlobal.docShell.chromeEventHandler;
+    const chromeEventHandler =
+      aElement.documentGlobal.docShell.chromeEventHandler;
     chromeEventHandler.addEventListener("mozhidedropdown", hidedropdown, {
       mozSystemGroup: true,
     });
@@ -231,10 +229,11 @@ export class PromptFactory {
   }
 
   _handleDateTime(aElement) {
-    const win = aElement.ownerGlobal;
+    const win = aElement.documentGlobal;
     const prompt = new lazy.GeckoViewPrompter(win);
 
-    const chromeEventHandler = aElement.ownerGlobal.docShell.chromeEventHandler;
+    const chromeEventHandler =
+      aElement.documentGlobal.docShell.chromeEventHandler;
     const dismissPrompt = () => prompt.dismiss();
     // Some controls don't have UA widget (bug 888320)
     {
@@ -300,10 +299,13 @@ export class PromptFactory {
     // Fire both "input" and "change" events for <select> and <input> for
     // date/time.
     aElement.dispatchEvent(
-      new aElement.ownerGlobal.Event("input", { bubbles: true, composed: true })
+      new aElement.documentGlobal.Event("input", {
+        bubbles: true,
+        composed: true,
+      })
     );
     aElement.dispatchEvent(
-      new aElement.ownerGlobal.Event("change", { bubbles: true })
+      new aElement.documentGlobal.Event("change", { bubbles: true })
     );
   }
 
@@ -343,7 +345,10 @@ export class PromptFactory {
       },
       ({ response }) => {
         if (response && dwi) {
-          dwi.top.location.href = redirectURISpec;
+          const actor = dwi.windowGlobalChild.getActor("GeckoViewPrompt");
+          actor.sendAsyncMessage("GeckoView:UnblockRedirect", {
+            redirectURISpec,
+          });
         }
       }
     );
@@ -762,7 +767,7 @@ class PromptDelegate {
       aAuthInfo.flags & Ci.nsIAuthInformation.CROSS_ORIGIN_SUB_RESOURCE;
 
     const username = aAuthInfo.username;
-    const authTarget = this._getAuthTarget(aChannel, aAuthInfo);
+    const authTarget = lazy.PromptUtils.getAuthTarget(aChannel, aAuthInfo);
     const { displayHost } = authTarget;
     let { realm } = authTarget;
 
@@ -806,46 +811,6 @@ class PromptDelegate {
     }
 
     return text;
-  }
-
-  _getAuthTarget(aChannel, aAuthInfo) {
-    // If our proxy is demanding authentication, don't use the
-    // channel's actual destination.
-    if (aAuthInfo.flags & Ci.nsIAuthInformation.AUTH_PROXY) {
-      if (!(aChannel instanceof Ci.nsIProxiedChannel)) {
-        throw new Error("proxy auth needs nsIProxiedChannel");
-      }
-      const info = aChannel.proxyInfo;
-      if (!info) {
-        throw new Error("proxy auth needs nsIProxyInfo");
-      }
-      // Proxies don't have a scheme, but we'll use "moz-proxy://"
-      // so that it's more obvious what the login is for.
-      const idnService = Cc["@mozilla.org/network/idn-service;1"].getService(
-        Ci.nsIIDNService
-      );
-      const displayHost =
-        "moz-proxy://" +
-        idnService.convertUTF8toACE(info.host) +
-        ":" +
-        info.port;
-      let realm = aAuthInfo.realm;
-      if (!realm) {
-        realm = displayHost;
-      }
-      return { displayHost, realm };
-    }
-
-    const displayHost =
-      aChannel.URI.scheme + "://" + aChannel.URI.displayHostPort;
-    // If a HTTP WWW-Authenticate header specified a realm, that value
-    // will be available here. If it wasn't set or wasn't HTTP, we'll use
-    // the formatted hostname instead.
-    let realm = aAuthInfo.realm;
-    if (!realm) {
-      realm = displayHost;
-    }
-    return { displayHost, realm };
   }
 }
 

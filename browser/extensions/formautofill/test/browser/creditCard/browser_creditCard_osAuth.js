@@ -173,11 +173,7 @@ async function openEditPaymentsList(redesignEnabled, browser) {
     );
     await SpecialPowers.spawn(ccManageDialog, [], async () => {
       let selRecords = content.document.getElementById("credit-cards");
-      await EventUtils.synthesizeMouseAtCenter(
-        selRecords.children[0],
-        [],
-        content
-      );
+      EventUtils.synthesizeMouseAtCenter(selRecords.children[0], [], content);
       content.document.querySelector("#edit").click();
     });
   } else {

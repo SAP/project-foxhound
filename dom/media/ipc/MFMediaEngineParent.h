@@ -5,7 +5,7 @@
 #ifndef DOM_MEDIA_IPC_MFMEDIAENGINEPARENT_H_
 #define DOM_MEDIA_IPC_MFMEDIAENGINEPARENT_H_
 
-#include <Mfidl.h>
+#include <mfidl.h>
 #include <winnt.h>
 #include <wrl.h>
 
@@ -15,6 +15,7 @@
 #include "MFMediaSource.h"
 #include "MediaInfo.h"
 #include "PlatformDecoderModule.h"
+#include "mozilla/MozPromise.h"
 #include "mozilla/PMFMediaEngineParent.h"
 
 namespace mozilla {
@@ -36,7 +37,7 @@ class RemoteMediaManagerParent;
  */
 class MFMediaEngineParent final : public PMFMediaEngineParent {
  public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MFMediaEngineParent);
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MFMediaEngineParent, final);
   MFMediaEngineParent(RemoteMediaManagerParent* aManager,
                       nsISerialEventTarget* aManagerThread);
 
@@ -62,8 +63,6 @@ class MFMediaEngineParent final : public PMFMediaEngineParent {
   mozilla::ipc::IPCResult RecvNotifyEndOfStream(TrackInfo::TrackType aType);
   mozilla::ipc::IPCResult RecvShutdown();
 
-  void Destroy();
-
  private:
   ~MFMediaEngineParent();
 
@@ -78,6 +77,8 @@ class MFMediaEngineParent final : public PMFMediaEngineParent {
   void HandleRequestSample(const SampleRequest& aRequest);
 
   void NotifyError(MF_MEDIA_ENGINE_ERR aError, HRESULT aResult = 0);
+
+  static bool IsHardwareResetHRESULT(HRESULT aResult);
 
   void DestroyEngineIfExists(const Maybe<MediaResult>& aError = Nothing());
 
@@ -101,11 +102,6 @@ class MFMediaEngineParent final : public PMFMediaEngineParent {
 
   const uint64_t mMediaEngineId;
 
-  // The life cycle of this class is determined by the actor in the content
-  // process, we would hold a reference until the content actor asks us to
-  // destroy.
-  RefPtr<MFMediaEngineParent> mIPDLSelfRef;
-
   const RefPtr<RemoteMediaManagerParent> mManager;
   const RefPtr<nsISerialEventTarget> mManagerThread;
 
@@ -116,11 +112,18 @@ class MFMediaEngineParent final : public PMFMediaEngineParent {
   Microsoft::WRL::ComPtr<MFMediaSource> mMediaSource;
 #ifdef MOZ_WMF_CDM
   Microsoft::WRL::ComPtr<MFContentProtectionManager> mContentProtectionManager;
+  Maybe<uint64_t> mProxyId;
 #endif
 
   MediaEventListener mMediaEngineEventListener;
   MediaEventListener mRequestSampleListener;
   bool mIsCreatedMediaEngine = false;
+  // Set to true when EnableWindowlessSwapchainMode succeeds during media source
+  // setup. Guards DComp surface handle creation in EnsureDcompSurfaceHandle:
+  // if false (e.g. when a CDM incompatible with windowless swap chain is
+  // active), DComp setup is skipped and we fall back to frame-server mode.
+  bool mDCompModeEnabled = false;
+  bool mIsFrameServerMode = false;
 
   Microsoft::WRL::ComPtr<IMFDXGIDeviceManager> mDXGIDeviceManager;
 
@@ -129,6 +132,20 @@ class MFMediaEngineParent final : public PMFMediaEngineParent {
   DWORD mDisplayHeight = 0;
 
   float mPlaybackRate = 1.0;
+
+#ifdef MOZ_WMF_CDM
+  // Set while recovering from a GPU/DRM hardware context reset. During
+  // recovery the whole MFMediaEngineParent actor is torn down and a new one
+  // is created; this flag suppresses spurious errors that arrive in the
+  // interim and would otherwise interrupt the reinit sequence. Only
+  // access/modify on the manager thread.
+  bool mHardwareResetInProgress = false;
+  // Pending HDCP readiness check started at hardware reset time. Shared
+  // across engine instances so the new engine created after recovery can
+  // chain SetMediaSourceOnEngine() on the already-running check.
+  static inline RefPtr<GenericPromise> sPendingHDCPCheck;
+  MozPromiseRequestHolder<GenericPromise> mHDCPRequestHolder;
+#endif
 
   // When flush happens inside the media engine, it will reset the statistic
   // data. Therefore, whenever the statistic data gets reset, we will use

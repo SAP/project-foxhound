@@ -32,7 +32,9 @@ from .common import attrib_as_metadata, element_as_metadata, pretty_name, xliff_
 from .parse_xcode import parse_xcode_pattern
 
 
-def parse_trans_unit(unit: etree._Element, is_xcode: bool) -> Entry[Message]:
+def parse_trans_unit(
+    unit: etree._Element, is_xcode: bool, from_source: bool
+) -> Entry[Message]:
     id = unit.attrib.get("id", None)
     if id is None:
         raise ValueError(f'Missing "id" attribute for <trans-unit>: {unit}')
@@ -40,7 +42,8 @@ def parse_trans_unit(unit: etree._Element, is_xcode: bool) -> Entry[Message]:
     if unit.text and not unit.text.isspace():
         raise ValueError(f"Unexpected text in <trans-unit>: {unit.text}")
 
-    target = None
+    msg_name = "target" if not from_source else "source"
+    msg_el = None
     notes: list[str] = []
     seen: dict[str, int] = defaultdict(int)
     for el in unit:
@@ -48,11 +51,13 @@ def parse_trans_unit(unit: etree._Element, is_xcode: bool) -> Entry[Message]:
             meta.append(Metadata("comment()", el.text))
         else:
             name = pretty_name(el, str(el.tag))
-            if name == "target":
-                if target:
-                    raise ValueError(f"Duplicate <target> in <trans-unit> {id}: {unit}")
-                target = el
-                meta += attrib_as_metadata(el, "target")
+            if name == msg_name:
+                if msg_el:
+                    raise ValueError(
+                        f"Duplicate <{msg_name}> in <trans-unit> {id}: {unit}"
+                    )
+                msg_el = el
+                meta += attrib_as_metadata(el, msg_name)
             else:
                 idx = seen[name] + 1
                 base = f"{name}[{idx}]" if idx > 1 else name
@@ -66,7 +71,7 @@ def parse_trans_unit(unit: etree._Element, is_xcode: bool) -> Entry[Message]:
             raise ValueError(f"Unexpected text in <trans-unit>: {el.tail}")
 
     msg = PatternMessage(
-        [] if target is None else list(parse_pattern(target, is_xcode))
+        [] if msg_el is None else list(parse_pattern(msg_el, is_xcode))
     )
     return Entry((id,), msg, comment="\n\n".join(notes), meta=meta)
 

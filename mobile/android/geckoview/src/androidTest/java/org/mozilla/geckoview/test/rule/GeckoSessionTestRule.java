@@ -743,9 +743,25 @@ public class GeckoSessionTestRule implements TestRule {
   }
 
   /* package */ static AssertCalled getAssertCalled(final Method method, final Object callback) {
-    final AssertCalled annotation = method.getAnnotation(AssertCalled.class);
+    AssertCalled annotation = method.getAnnotation(AssertCalled.class);
     if (annotation != null) {
       return annotation;
+    }
+
+    // When a Kotlin override of a Java interface method changes parameter
+    // erasure (e.g. boxed Boolean -> primitive boolean, or List -> MutableList),
+    // kotlinc emits a synthetic bridge method delegating to the real override.
+    // Class.getMethod resolves to the bridge — but the @AssertCalled annotation
+    // may live only on the real (non-bridge) method, depending on the Kotlin
+    // version. Search the callback's declared methods for a non-bridge sibling
+    // with the same name and a matching parameter list (comparing primitives
+    // to their boxed forms, since that is the erasure the bridge papers over),
+    // and use its annotation if one is set.
+    if (method.isBridge()) {
+      annotation = annotationFromNonBridgeSibling(method, callback);
+      if (annotation != null) {
+        return annotation;
+      }
     }
 
     // Some Kotlin lambdas have an invoke method that carries the annotation,
@@ -758,6 +774,49 @@ public class GeckoSessionTestRule implements TestRule {
     } catch (final NoSuchMethodException e) {
       return null;
     }
+  }
+
+  private static AssertCalled annotationFromNonBridgeSibling(
+      final Method bridge, final Object callback) {
+    final Class<?>[] bridgeParams = bridge.getParameterTypes();
+    for (final Method candidate : callback.getClass().getDeclaredMethods()) {
+      if (candidate.isBridge() || !candidate.getName().equals(bridge.getName())) {
+        continue;
+      }
+      final Class<?>[] candidateParams = candidate.getParameterTypes();
+      if (candidateParams.length != bridgeParams.length) {
+        continue;
+      }
+      boolean compatible = true;
+      for (int i = 0; i < candidateParams.length; i++) {
+        if (!boxedEquivalent(candidateParams[i]).equals(boxedEquivalent(bridgeParams[i]))) {
+          compatible = false;
+          break;
+        }
+      }
+      if (compatible) {
+        final AssertCalled ac = candidate.getAnnotation(AssertCalled.class);
+        if (ac != null) {
+          return ac;
+        }
+      }
+    }
+    return null;
+  }
+
+  private static Class<?> boxedEquivalent(final Class<?> type) {
+    if (!type.isPrimitive()) {
+      return type;
+    }
+    if (type == boolean.class) return Boolean.class;
+    if (type == byte.class) return Byte.class;
+    if (type == char.class) return Character.class;
+    if (type == short.class) return Short.class;
+    if (type == int.class) return Integer.class;
+    if (type == long.class) return Long.class;
+    if (type == float.class) return Float.class;
+    if (type == double.class) return Double.class;
+    return type;
   }
 
   private static final Set<Class<?>> DEFAULT_DELEGATES = new HashSet<>();
@@ -2760,6 +2819,25 @@ public class GeckoSessionTestRule implements TestRule {
     webExtensionApiCall("RemoveAllCertOverrides", null);
   }
 
+  /**
+   * Seeds the tracking protection database with the given content blocking log.
+   *
+   * @param logJson JSON-serialized ContentBlockingLog (origin keys mapped to arrays of [state,
+   *     blocked, count] tuples).
+   */
+  public void saveTrackingDBEvents(final @NonNull String logJson) {
+    webExtensionApiCall(
+        "SaveTrackingDBEvents",
+        args -> {
+          args.put("log", logJson);
+        });
+  }
+
+  /** Removes all entries from the tracking protection database. */
+  public void clearTrackingDB() {
+    webExtensionApiCall("ClearTrackingDB", null);
+  }
+
   private interface SetArgs {
     void setArgs(JSONObject object) throws JSONException;
   }
@@ -2819,11 +2897,6 @@ public class GeckoSessionTestRule implements TestRule {
     webExtensionApiCall("ClearHSTSState", null);
   }
 
-  /** Checks if SHIP is running. */
-  public boolean isSessionHistoryInParentRunning() {
-    return (Boolean) webExtensionApiCall("IsSessionHistoryInParentRunning", null);
-  }
-
   /** Checks if fission is running. */
   public boolean isFissionRunning() {
     return (Boolean) webExtensionApiCall("IsFissionRunning", null);
@@ -2832,6 +2905,20 @@ public class GeckoSessionTestRule implements TestRule {
   /** Simulate user gesture activation */
   public void notifyUserGestureActivation(final GeckoSession session) {
     webExtensionApiCall(session, "NotifyUserGestureActivation", null);
+  }
+
+  /** Adds a virtual WebAuthn authenticator. Returns the authenticator ID. */
+  public String addVirtualAuthenticator() {
+    return (String) webExtensionApiCall("AddVirtualAuthenticator", null);
+  }
+
+  /** Removes a virtual WebAuthn authenticator. */
+  public void removeVirtualAuthenticator(final String authenticatorId) {
+    webExtensionApiCall(
+        "RemoveVirtualAuthenticator",
+        args -> {
+          args.put("authenticatorId", authenticatorId);
+        });
   }
 
   /**

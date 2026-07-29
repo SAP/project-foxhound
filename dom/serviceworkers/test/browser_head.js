@@ -7,7 +7,7 @@
  * for similar heuristics for xpcshell.
  *
  * Many of the storage-related helpers in this file come from:
- * https://searchfox.org/mozilla-central/source/dom/localstorage/test/unit/head.js
+ * https://searchfox.org/firefox-main/source/dom/localstorage/test/unit/head.js
  */
 
 // To use this file, explicitly import it via:
@@ -258,9 +258,17 @@ async function consume_storage(origin, storageDesc) {
 }
 
 // Check if the origin is effectively empty, but allowing for the minimum size
-// Cache API database to be present.
+// Cache API database to be present. When SQLite at-rest encryption is on,
+// obfsvfs forces an 8192-byte page size with 32 reserved bytes per page, so the
+// "empty" Cache API databases are larger on disk; allow more headroom then.
 function is_minimum_origin_usage(originUsageBytes) {
-  return originUsageBytes <= kMinimumOriginUsageBytes;
+  const limit = Services.prefs.getBoolPref(
+    "security.storage.encryption.sqlite.enabled",
+    false
+  )
+    ? 2 * kMinimumOriginUsageBytes
+    : kMinimumOriginUsageBytes;
+  return originUsageBytes <= limit;
 }
 
 /**

@@ -5,7 +5,9 @@
 #ifndef DefaultURI_h_
 #define DefaultURI_h_
 
+#include "nsIIPCSerializableURI.h"
 #include "nsIURI.h"
+#include "nsIURIWithSizeOf.h"
 #include "nsISerializable.h"
 #include "nsIURIMutator.h"
 #include "mozilla/net/MozURL.h"
@@ -13,11 +15,16 @@
 namespace mozilla {
 namespace net {
 
-class DefaultURI : public nsIURI, public nsISerializable {
+class DefaultURI : public nsIURI,
+                   public nsISerializable,
+                   public nsIIPCSerializableURI,
+                   public nsIURIWithSizeOf {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIURI
   NS_DECL_NSISERIALIZABLE
+  NS_DECL_NSIIPCSERIALIZABLEURI
+  NS_DECL_NSIURIWITHSIZEOF
 
   class Mutator final : public nsIURIMutator, public nsISerializable {
     NS_DECL_ISUPPORTS

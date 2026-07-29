@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -45,7 +43,7 @@ SVGElement::StringInfo SVGGradientElement::sStringInfo[2] = {
 // Implementation
 
 SVGGradientElement::SVGGradientElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : SVGGradientElementBase(std::move(aNodeInfo)) {}
 
 //----------------------------------------------------------------------
@@ -104,7 +102,7 @@ SVGElement::LengthInfo SVGLinearGradientElement::sLengthInfo[4] = {
 // Implementation
 
 SVGLinearGradientElement::SVGLinearGradientElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : SVGLinearGradientElementBase(std::move(aNodeInfo)) {}
 
 //----------------------------------------------------------------------
@@ -172,7 +170,7 @@ SVGElement::LengthInfo SVGRadialGradientElement::sLengthInfo[6] = {
 // Implementation
 
 SVGRadialGradientElement::SVGRadialGradientElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : SVGRadialGradientElementBase(std::move(aNodeInfo)) {}
 
 //----------------------------------------------------------------------

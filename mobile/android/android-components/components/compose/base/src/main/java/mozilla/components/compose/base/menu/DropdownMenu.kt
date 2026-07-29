@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
@@ -27,12 +29,14 @@ import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -53,6 +57,8 @@ import androidx.compose.material3.DropdownMenuItem as MaterialDropdownMenuItem
 import mozilla.components.ui.icons.R as iconsR
 
 private val MenuItemHeight = 48.dp
+private val MenuMinWidth = 112.dp
+private val MenuMaxWidth = 280.dp
 
 /**
  * A dropdown menu that displays a list of [MenuItem]s. The menu can be expanded or collapsed and
@@ -61,6 +67,7 @@ private val MenuItemHeight = 48.dp
  * @param menuItems the list of [MenuItem]s to display in the menu.
  * @param expanded whether or not the menu is expanded.
  * @param modifier [Modifier] to be applied to the menu.
+ * @param headerText optional [Text] to be displayed as a header at the top of the menu.
  * @param offset [DpOffset] from the original anchor position of the menu.
  * @param scrollState [ScrollState] used by the menu's content for vertical scrolling.
  * @param onDismissRequest Invoked when the user requests to dismiss the menu, such as by tapping
@@ -71,6 +78,7 @@ fun DropdownMenu(
     menuItems: List<MenuItem>,
     expanded: Boolean,
     modifier: Modifier = Modifier,
+    headerText: Text? = null,
     offset: DpOffset = DpOffset(0.dp, 0.dp),
     scrollState: ScrollState = rememberScrollState(),
     onDismissRequest: () -> Unit,
@@ -78,16 +86,24 @@ fun DropdownMenu(
     MaterialDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
-        modifier = modifier,
+        modifier = modifier
+            .widthIn(MenuMinWidth, MenuMaxWidth),
         offset = offset,
         scrollState = scrollState,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+        containerColor = MaterialTheme.colorScheme.surfaceBright,
+        shape = MaterialTheme.shapes.large,
     ) {
+        Spacer(modifier = Modifier.height(height = AcornTheme.layout.space.static100))
+
+        headerText?.let { header ->
+            HeaderMenuItemContent(text = header)
+        }
+
         DropdownMenuContent(
             menuItems = menuItems,
             onDismissRequest = onDismissRequest,
         )
-
+        Spacer(modifier = Modifier.height(height = AcornTheme.layout.space.static100))
         val density = LocalDensity.current
 
         LaunchedEffect(Unit) {
@@ -101,6 +117,39 @@ fun DropdownMenu(
             }
         }
     }
+}
+
+/**
+ * Supporting text should differ from the primary text
+ * only in the case of an enabled, default item.
+ * For 'Disabled' and 'Critical' menu items, the text should match.
+ */
+@Composable
+@ReadOnlyComposable
+private fun MenuItem.FixedItem.supportingTextColor(): Color {
+    return if (this.enabled && this.level == Level.Default) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        Color.Unspecified
+    }
+}
+
+@Composable
+private fun HeaderMenuItemContent(
+    text: Text,
+) {
+    Text(
+        text = text.value,
+        style = AcornTheme.typography.caption,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = AcornTheme.layout.space.static150)
+            .padding(
+                bottom = AcornTheme.layout.space.static100,
+                top = AcornTheme.layout.space.static50,
+            ),
+    )
 }
 
 @Composable
@@ -180,6 +229,7 @@ private fun TextMenuItemContent(
     MenuItemText(
         text = item.text,
         supportingText = item.supportingText,
+        supportingTextColor = item.supportingTextColor(),
     )
 }
 
@@ -199,6 +249,7 @@ private fun CheckableMenuItemContent(
     MenuItemText(
         text = item.text,
         supportingText = item.supportingText,
+        supportingTextColor = item.supportingTextColor(),
     )
 }
 
@@ -214,6 +265,7 @@ private fun IconMenuItemContent(
     MenuItemText(
         text = item.text,
         supportingText = item.supportingText,
+        supportingTextColor = item.supportingTextColor(),
     )
 }
 
@@ -250,7 +302,11 @@ private fun FlexibleDropdownMenuItem(
 }
 
 @Composable
-private fun MenuItemText(text: Text, supportingText: Text? = null) {
+private fun MenuItemText(
+    text: Text,
+    supportingText: Text? = null,
+    supportingTextColor: Color,
+) {
     Column(
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
@@ -262,8 +318,8 @@ private fun MenuItemText(text: Text, supportingText: Text? = null) {
         supportingText?.let {
             Text(
                 text = it.value,
-                style = AcornTheme.typography.body1,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = supportingTextColor,
+                style = AcornTheme.typography.body2,
             )
         }
     }
@@ -272,6 +328,7 @@ private fun MenuItemText(text: Text, supportingText: Text? = null) {
 private data class MenuPreviewParameter(
     val itemType: ItemType,
     val menuItems: List<MenuItem>,
+    val headerText: Text? = null,
 ) {
     enum class ItemType {
         TEXT_ITEMS,
@@ -284,6 +341,7 @@ private val menuPreviewParameters by lazy {
     listOf(
         MenuPreviewParameter(
             itemType = MenuPreviewParameter.ItemType.TEXT_ITEMS,
+            headerText = Text.String("Header Label"),
             menuItems = listOf(
                 MenuItem.TextItem(
                     text = Text.String("Text Item 1"),
@@ -321,6 +379,7 @@ private val menuPreviewParameters by lazy {
                     drawableRes = iconsR.drawable.mozac_ic_delete_24,
                     level = Level.Critical,
                     onClick = {},
+                    supportingText = Text.String("Supporting text"),
                 ),
                 MenuItem.IconItem(
                     text = Text.String("Have a cookie!"),
@@ -381,6 +440,7 @@ private fun DropdownMenuPreview() {
                     DropdownMenu(
                         menuItems = it.menuItems,
                         expanded = expanded,
+                        headerText = it.headerText,
                         onDismissRequest = { expanded = false },
                     )
                 }
@@ -393,13 +453,13 @@ private fun DropdownMenuPreview() {
             )
 
             Column(
-                modifier = Modifier.background(color = MaterialTheme.colorScheme.surfaceContainerLowest),
+                modifier = Modifier.background(color = MaterialTheme.colorScheme.surfaceBright),
             ) {
                 val menuItems: List<MenuItem> by remember {
                     mutableStateOf(menuPreviewParameters.map { it.menuItems.first() })
                 }
 
-                DropdownMenuContent(menuItems) { }
+                DropdownMenuContent(menuItems, onDismissRequest = {})
             }
 
             Text(
@@ -409,7 +469,7 @@ private fun DropdownMenuPreview() {
             )
 
             Column(
-                modifier = Modifier.background(color = MaterialTheme.colorScheme.surfaceContainerLowest),
+                modifier = Modifier.background(color = MaterialTheme.colorScheme.surfaceBright),
             ) {
                 val menuItems: List<MenuItem> = remember {
                     val dividerList = mutableListOf<MenuItem>()
@@ -420,7 +480,7 @@ private fun DropdownMenuPreview() {
                     dividerList
                 }
 
-                DropdownMenuContent(menuItems) { }
+                DropdownMenuContent(menuItems, onDismissRequest = {})
             }
 
             Text(
@@ -430,26 +490,30 @@ private fun DropdownMenuPreview() {
             )
 
             Column(
-                modifier = Modifier.background(color = MaterialTheme.colorScheme.surfaceContainerLowest),
+                modifier = Modifier.background(color = MaterialTheme.colorScheme.surfaceBright),
             ) {
                 val disabledMenuItems: List<MenuItem> = remember {
                     menuPreviewParameters.map { it.menuItems.first() }.map { item ->
                         when (item) {
                             is MenuItem.TextItem ->
                                 item.copy(enabled = false)
+
                             is MenuItem.IconItem ->
                                 item.copy(enabled = false)
+
                             is MenuItem.CheckableItem ->
                                 item.copy(enabled = false)
+
                             is MenuItem.CustomMenuItem ->
                                 item
+
                             is MenuItem.Divider ->
                                 item
                         }
                     }
                 }
 
-                DropdownMenuContent(disabledMenuItems) { }
+                DropdownMenuContent(disabledMenuItems, onDismissRequest = {})
             }
 
             Text(
@@ -459,7 +523,7 @@ private fun DropdownMenuPreview() {
             )
 
             Column(
-                modifier = Modifier.background(color = MaterialTheme.colorScheme.surfaceContainerLowest),
+                modifier = Modifier.background(color = MaterialTheme.colorScheme.surfaceBright),
             ) {
                 var isChecked by remember { mutableStateOf(true) }
 

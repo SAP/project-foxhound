@@ -21,7 +21,7 @@ import mozilla.components.lib.crash.service.GleanCrashReporterService
 import mozilla.components.lib.crash.service.socorro.MozillaSocorroService
 import mozilla.components.lib.crash.store.CrashReportOption
 import mozilla.components.support.ktx.android.content.isMainProcess
-import mozilla.components.support.utils.BrowsersCache
+import mozilla.components.support.utils.Browsers
 import mozilla.components.support.utils.RunWhenReadyQueue
 import mozilla.components.support.utils.ext.packageManagerCompatHelper
 import org.mozilla.fenix.BuildConfig
@@ -31,6 +31,7 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.ReleaseChannel
 import org.mozilla.fenix.components.metrics.AdjustMetricsService
 import org.mozilla.fenix.components.metrics.DefaultMetricsStorage
+import org.mozilla.fenix.components.metrics.FirstSessionMetricsService
 import org.mozilla.fenix.components.metrics.GleanMetricsService
 import org.mozilla.fenix.components.metrics.GleanProfileIdPreferenceStore
 import org.mozilla.fenix.components.metrics.GleanUsageReportingMetricsService
@@ -41,8 +42,8 @@ import org.mozilla.fenix.crashes.CrashFactCollector
 import org.mozilla.fenix.crashes.NimbusExperimentDataProvider
 import org.mozilla.fenix.crashes.ReleaseRuntimeTagProvider
 import org.mozilla.fenix.crashes.crashReportOption
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.perf.lazyMonitored
+import org.mozilla.fenix.utils.Settings
 import org.mozilla.geckoview.BuildConfig.MOZ_APP_BUILDID
 import org.mozilla.geckoview.BuildConfig.MOZ_APP_VENDOR
 import org.mozilla.geckoview.BuildConfig.MOZ_APP_VERSION
@@ -53,6 +54,7 @@ import org.mozilla.geckoview.BuildConfig.MOZ_UPDATE_CHANNEL
  */
 class Analytics(
     private val context: Context,
+    private val settings: Settings,
     private val nimbusComponents: NimbusComponents,
     private val runWhenReadyQueue: RunWhenReadyQueue,
 ) {
@@ -127,6 +129,7 @@ class Analytics(
                     appChannel = MOZ_UPDATE_CHANNEL,
                     appVersion = MOZ_APP_VERSION,
                     appBuildId = MOZ_APP_BUILDID,
+                    isUploadEnabled = settings.isTelemetryEnabled,
                 ),
             ),
             shouldPrompt = CrashReporter.Prompt.ALWAYS,
@@ -137,8 +140,8 @@ class Analytics(
             enabled = true,
             nonFatalCrashIntent = pendingIntent,
             useLegacyReporting =
-                context.settings().crashReportOption() != CrashReportOption.Auto &&
-                !context.settings().useNewCrashReporterFlow,
+                settings.crashReportOption() != CrashReportOption.Auto &&
+                !settings.useNewCrashReporterFlow,
             runtimeTagProviders = listOf(
                 ReleaseRuntimeTagProvider(),
                 BuildRuntimeTagProvider(context.versionInfoProvider),
@@ -159,8 +162,8 @@ class Analytics(
     val metricsStorage: MetricsStorage by lazyMonitored {
         DefaultMetricsStorage(
             context = context,
-            settings = context.settings(),
-            checkDefaultBrowser = { BrowsersCache.all(context).isDefaultBrowser },
+            settings = settings,
+            checkDefaultBrowser = { Browsers.isDefaultBrowser(context) },
         )
     }
 
@@ -173,15 +176,16 @@ class Analytics(
                     storage = metricsStorage,
                     crashReporter = crashReporter,
                 ),
-                InstallReferrerMetricsService(context),
+                FirstSessionMetricsService(context),
+                InstallReferrerMetricsService(context, settings),
                 GleanUsageReportingMetricsService(gleanProfileIdStore = GleanProfileIdPreferenceStore(context)),
             ),
-            isDataTelemetryEnabled = { context.settings().isTelemetryEnabled },
+            isDataTelemetryEnabled = { settings.isTelemetryEnabled },
             isMarketingDataTelemetryEnabled = {
-                context.settings().isMarketingTelemetryEnabled && context.settings().hasMadeMarketingTelemetrySelection
+                settings.isMarketingTelemetryEnabled && settings.hasMadeMarketingTelemetrySelection
             },
-            isUsageTelemetryEnabled = { context.settings().isDailyUsagePingEnabled },
-            context.settings(),
+            isUsageTelemetryEnabled = { settings.isDailyUsagePingEnabled },
+            settings,
         )
     }
 }

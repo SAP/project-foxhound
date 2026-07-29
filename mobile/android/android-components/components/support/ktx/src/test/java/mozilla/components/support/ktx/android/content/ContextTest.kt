@@ -7,11 +7,13 @@ package mozilla.components.support.ktx.android.content
 import android.Manifest.permission.WRITE_EXTERNAL_STORAGE
 import android.app.Activity
 import android.app.ActivityManager
+import android.app.Application
 import android.content.ActivityNotFoundException
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.Intent.ACTION_SEND
+import android.content.Intent.EXTRA_CHOOSER_CUSTOM_ACTIONS
 import android.content.Intent.EXTRA_INTENT
 import android.content.Intent.EXTRA_STREAM
 import android.content.Intent.EXTRA_SUBJECT
@@ -54,7 +56,6 @@ import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
 import org.robolectric.shadows.ShadowApplication
 import org.robolectric.shadows.ShadowCameraCharacteristics
-import org.robolectric.shadows.ShadowProcess
 import java.io.File
 
 @RunWith(AndroidJUnit4::class)
@@ -228,20 +229,20 @@ class ContextTest {
     }
 
     @Test
+    @Config(shadows = [ShadowApplicationProcessName::class])
     fun `isMainProcess must only return true if we are in the main process`() {
-        val myPid = Int.MAX_VALUE
-
+        ShadowApplicationProcessName.processName = testContext.packageName
         assertTrue(testContext.isMainProcess())
 
-        ShadowProcess.setPid(myPid)
+        ShadowApplicationProcessName.processName = "${testContext.packageName}:notmain"
         isMainProcess = null
-
         assertFalse(testContext.isMainProcess())
     }
 
     @Test
+    @Config(shadows = [ShadowApplicationProcessName::class])
     fun `runOnlyInMainProcess must only run if we are in the main process`() {
-        val myPid = Int.MAX_VALUE
+        ShadowApplicationProcessName.processName = testContext.packageName
         var wasExecuted = false
 
         testContext.runOnlyInMainProcess {
@@ -251,8 +252,8 @@ class ContextTest {
         assertTrue(wasExecuted)
 
         wasExecuted = false
-        ShadowProcess.setPid(myPid)
-        isMainProcess = false
+        ShadowApplicationProcessName.processName = "${testContext.packageName}:notmain"
+        isMainProcess = null
 
         testContext.runOnlyInMainProcess {
             wasExecuted = true
@@ -342,4 +343,16 @@ object ShadowFileProvider {
         authority: String?,
         file: File,
     ) = FAKE_URI_RESULT
+}
+
+@Implements(Application::class)
+class ShadowApplicationProcessName : ShadowApplication() {
+    companion object {
+        @JvmField
+        var processName: String = ""
+
+        @JvmStatic
+        @Implementation(minSdk = Build.VERSION_CODES.P)
+        fun getProcessName(): String = processName
+    }
 }

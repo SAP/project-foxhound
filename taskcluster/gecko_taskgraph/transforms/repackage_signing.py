@@ -6,26 +6,27 @@ Transform the repackage signing task into an actual task description.
 """
 
 import os
+from typing import Optional
 
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
-from taskgraph.util.schema import LegacySchema
-from voluptuous import Optional
+from taskgraph.util.schema import Schema
 
-from gecko_taskgraph.transforms.task import task_description_schema
+from gecko_taskgraph.transforms.task import TaskDescriptionSchema
 from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
 from gecko_taskgraph.util.scriptworker import get_signing_type_per_platform
 
-repackage_signing_description_schema = LegacySchema({
-    Optional("label"): str,
-    Optional("attributes"): task_description_schema["attributes"],
-    Optional("dependencies"): task_description_schema["dependencies"],
-    Optional("task-from"): task_description_schema["task-from"],
-    Optional("treeherder"): task_description_schema["treeherder"],
-    Optional("shipping-product"): task_description_schema["shipping-product"],
-    Optional("shipping-phase"): task_description_schema["shipping-phase"],
-    Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
-})
+
+class RepackageSigningDescriptionSchema(Schema, kw_only=True):
+    label: Optional[str] = None
+    attributes: TaskDescriptionSchema.__annotations__["attributes"] = None
+    dependencies: TaskDescriptionSchema.__annotations__["dependencies"] = None
+    task_from: TaskDescriptionSchema.__annotations__["task_from"] = None
+    treeherder: TaskDescriptionSchema.__annotations__["treeherder"] = None
+    shipping_product: TaskDescriptionSchema.__annotations__["shipping_product"] = None
+    shipping_phase: TaskDescriptionSchema.__annotations__["shipping_phase"] = None
+    run_on_repo_type: TaskDescriptionSchema.__annotations__["run_on_repo_type"] = None
+
 
 SIGNING_FORMATS = {
     "target.installer.exe": ["gcp_prod_autograph_authenticode_202412_stub"],
@@ -45,7 +46,7 @@ def remove_name(config, jobs):
         yield job
 
 
-transforms.add_validate(repackage_signing_description_schema)
+transforms.add_validate(RepackageSigningDescriptionSchema)
 
 
 @transforms.add
@@ -120,12 +121,20 @@ def make_repackage_signing_description(config, jobs):
         for artifact in sorted(dep_job.attributes.get("release_artifacts")):
             basename = os.path.basename(artifact)
             if basename in SIGNING_FORMATS:
-                upstream_artifacts.append({
+                artifact_entry = {
                     "taskId": {"task-reference": f"<{dep_kind}>"},
                     "taskType": "repackage",
                     "paths": [artifact],
-                    "formats": SIGNING_FORMATS[os.path.basename(artifact)],
-                })
+                    "formats": SIGNING_FORMATS[basename],
+                }
+                if basename == "target.installer.msi":
+                    msi_display_name = dep_job.attributes.get(
+                        "msi_display_name", "Firefox"
+                    )
+                    artifact_entry["authenticode_comment"] = (
+                        f"{msi_display_name} Installer"
+                    )
+                upstream_artifacts.append(artifact_entry)
 
         task = {
             "label": label,

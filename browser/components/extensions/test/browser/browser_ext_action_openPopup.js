@@ -102,14 +102,6 @@ add_task(async function test_notification_permission() {
       await shownPromise;
 
       await assertCannotOpenPopup();
-
-      // Temporary pref to undo fix, for 149 only.
-      info("Testing extensions.openPopup.undoBug2022281 pref");
-      await SpecialPowers.pushPrefEnv({
-        set: [["extensions.openPopup.undoBug2022281", true]],
-      });
-      await assertCanOpenPopup();
-      await SpecialPowers.popPrefEnv();
     }
   );
   // Sanity check: when the tab closes, so does the permission prompt.

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,18 +5,22 @@
 #ifndef mozilla_a11y_AccTypes_h
 #define mozilla_a11y_AccTypes_h
 
+#include "mozilla/DefineEnum.h"
+#include "mozilla/TypedEnumBits.h"
+
 namespace mozilla {
 namespace a11y {
 
 /**
  * Accessible object types. Each accessible class can have own type.
  */
-enum AccType {
+// clang-format off
+MOZ_DEFINE_ENUM_WITH_BASE(AccType, uint8_t,
   /**
    * This set of types is used for accessible creation, keep them together in
    * alphabetical order since they are used in switch statement.
    */
-  eNoType,
+  (eNoType,
   eHTMLAbbrevType,
   eHTMLBRType,
   eHTMLButtonType,
@@ -61,16 +63,15 @@ enum AccType {
   eXULListItemType,
   eXULTabpanelsType,
   eXULTooltipType,
-  eXULTreeType,
-
-  eLastAccType = eXULTreeType
-};
+  eXULTreeType)
+);
+// clang-format on
 
 /**
  * Generic accessible type, different accessible classes can share the same
  * type, the same accessible class can have several types.
  */
-enum AccGenericType {
+enum AccGenericType : int32_t {
   eAlert = 1 << 0,
   eAutoCompletePopup = 1 << 1,
   eButton = 1 << 2,
@@ -92,6 +93,8 @@ enum AccGenericType {
   eLastAccGenericType = eDPub,
   eAllGenericTypes = (eLastAccGenericType << 1) - 1
 };
+
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(AccGenericType)
 
 }  // namespace a11y
 }  // namespace mozilla

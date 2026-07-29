@@ -80,6 +80,7 @@ let server = http2.createSecureServer(
             values: [
               { key: "alpn", value: [alpn] },
               { key: "port", value: serverPort },
+              { key: "ipv4hint", value: ["127.0.0.1"] },
             ],
           },
         });

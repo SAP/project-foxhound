@@ -237,9 +237,9 @@ class Profile(BaseProfile):
         self.set_preferences(self._preferences)
 
         self.permissions = Permissions(self._locations)
-        prefs_js, user_js = self.permissions.network_prefs(self._proxy)
 
         if self._allowlistpaths:
+            prefs_js = []
             # On macOS we don't want to support a generalized read whitelist,
             # and the macOS sandbox policy language doesn't have support for
             # lists, so we handle these specially.
@@ -259,8 +259,9 @@ class Profile(BaseProfile):
                     "security.sandbox.content.read_path_whitelist",
                     ",".join(self._allowlistpaths),
                 ))
-        self.set_preferences(prefs_js, "prefs.js")
-        self.set_preferences(user_js)
+            self.set_preferences(prefs_js, "prefs.js")
+
+        self.set_proxy(self._proxy)
 
         # handle add-on installation
         self.addons = AddonManager(self.profile, restore=self.restore)
@@ -286,6 +287,12 @@ class Profile(BaseProfile):
             while True:
                 if not self.pop_preferences(filename):
                     break
+
+    def set_proxy(self, proxy):
+        """Write proxy auto-config preferences into the profile."""
+        prefs_js, user_js = self.permissions.network_prefs(proxy)
+        self.set_preferences(prefs_js, "prefs.js")
+        self.set_preferences(user_js)
 
     # methods for preferences
 

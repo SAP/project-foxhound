@@ -406,25 +406,25 @@ void JsepTrack::AddToMsection(const std::vector<std::string>& aRids,
                               SsrcGenerator& ssrcGenerator, bool rtxEnabled,
                               SdpMediaSection* msection) {
   if (aRids.size() > 1) {
-    UniquePtr<SdpSimulcastAttribute> simulcast(new SdpSimulcastAttribute);
-    UniquePtr<SdpRidAttributeList> ridAttrs(new SdpRidAttributeList);
+    auto simulcast = MakeUnique<SdpSimulcastAttribute>();
+    auto ridAttrs = MakeUnique<SdpRidAttributeList>();
     for (const std::string& rid : aRids) {
       SdpRidAttributeList::Rid ridAttr;
       ridAttr.id = rid;
       ridAttr.direction = direction;
-      ridAttrs->mRids.push_back(ridAttr);
+      ridAttrs->mRids.push_back(std::move(ridAttr));
 
       SdpSimulcastAttribute::Version version;
       version.choices.push_back(SdpSimulcastAttribute::Encoding(rid, false));
       if (direction == sdp::kSend) {
-        simulcast->sendVersions.push_back(version);
+        simulcast->sendVersions.push_back(std::move(version));
       } else {
-        simulcast->recvVersions.push_back(version);
+        simulcast->recvVersions.push_back(std::move(version));
       }
     }
 
-    msection->GetAttributeList().SetAttribute(simulcast.release());
-    msection->GetAttributeList().SetAttribute(ridAttrs.release());
+    msection->GetAttributeList().SetAttribute(std::move(simulcast));
+    msection->GetAttributeList().SetAttribute(std::move(ridAttrs));
   }
 
   bool requireRtxSsrcs = rtxEnabled && msection->IsSending();
@@ -440,7 +440,7 @@ void JsepTrack::AddToMsection(const std::vector<std::string>& aRids,
         return;
       }
       std::vector<uint32_t> allSsrcs;
-      UniquePtr<SdpSsrcGroupAttributeList> group(new SdpSsrcGroupAttributeList);
+      auto group = MakeUnique<SdpSsrcGroupAttributeList>();
       for (const auto& ssrc : mSsrcs) {
         const auto rtxSsrc = mSsrcToRtxSsrc[ssrc];
         allSsrcs.push_back(ssrc);
@@ -448,7 +448,7 @@ void JsepTrack::AddToMsection(const std::vector<std::string>& aRids,
         group->PushEntry(SdpSsrcGroupAttributeList::kFid, {ssrc, rtxSsrc});
       }
       msection->SetSsrcs(allSsrcs, mCNAME);
-      msection->GetAttributeList().SetAttribute(group.release());
+      msection->GetAttributeList().SetAttribute(std::move(group));
     } else {
       msection->SetSsrcs(mSsrcs, mCNAME);
     }
@@ -529,7 +529,7 @@ void JsepTrack::CreateEncodings(
   // For each stream make sure we have an encoding, and configure
   // that encoding appropriately.
   for (size_t i = 0; i < numEncodings; ++i) {
-    UniquePtr<JsepTrackEncoding> encoding(new JsepTrackEncoding);
+    auto encoding = MakeUnique<JsepTrackEncoding>();
     if (mRids.size() > i) {
       encoding->mRid = mRids[i];
     }
@@ -542,6 +542,7 @@ void JsepTrack::CreateEncodings(
 
 std::vector<UniquePtr<JsepCodecDescription>> JsepTrack::GetCodecClones() const {
   std::vector<UniquePtr<JsepCodecDescription>> clones;
+  clones.reserve(mPrototypeCodecs.size());
   for (const auto& codec : mPrototypeCodecs) {
     clones.emplace_back(codec->Clone());
   }

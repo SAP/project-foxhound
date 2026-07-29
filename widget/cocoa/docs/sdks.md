@@ -33,14 +33,14 @@ The easy but slightly questionable way to obtain an SDK is to download it from a
 
 Here's another option:
 
- 1. Have your Apple ID login details ready, and bring enough time and patience for a 5GB download.
- 2. Check [these tables in the Xcode wikipedia article](https://en.wikipedia.org/wiki/Xcode#Xcode_7.0_-_10.x_(since_Free_On-Device_Development))
-    and find an Xcode version that contains the SDK you need.
- 3. Look up the Xcode version number on [xcodereleases.com](https://xcodereleases.com/) and click the Download link for it.
- 4. Log in with your Apple ID. Then the download should start.
- 5. Wait for the 5GB Xcode_*.xip download to finish.
- 6. Open the downloaded xip file. This will extract the Xcode.app bundle.
- 7. Inside the app bundle, the SDK is at `Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk`.
+1. Have your Apple ID login details ready, and bring enough time and patience for a 5GB download.
+2. Check [these tables in the Xcode wikipedia article](https://en.wikipedia.org/wiki/Xcode#Xcode_7.0_-_10.x_(since_Free_On-Device_Development))
+   and find an Xcode version that contains the SDK you need.
+3. Look up the Xcode version number on [xcodereleases.com](https://xcodereleases.com/) and click the Download link for it.
+4. Log in with your Apple ID. Then the download should start.
+5. Wait for the 5GB Xcode_*.xip download to finish.
+6. Open the downloaded xip file. This will extract the Xcode.app bundle.
+7. Inside the app bundle, the SDK is at `Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk`.
 
 ## Effects of the SDK version
 
@@ -58,9 +58,9 @@ compiler to accept your code.
 
 The SDK used for building an app determines three things:
 
- 1. Whether your code compiles at all,
- 2. which range of macOS versions your app can run on (available deployment targets), and
- 3. certain aspects of runtime behavior.
+1. Whether your code compiles at all,
+2. which range of macOS versions your app can run on (available deployment targets), and
+3. certain aspects of runtime behavior.
 
 The first is straightforward: An SDK contains header files. If you call an API that's not declared
 anywhere - neither in a header file nor in your own code - then your compiler will emit an error.
@@ -79,10 +79,10 @@ in the next section.
 When a new version of macOS is released, existing APIs can change their behavior.
 These changes are usually described in the AppKit release notes:
 
- - [macOS 10.15 release notes](https://developer.apple.com/documentation/macos_release_notes/macos_catalina_10_15_release_notes?language=objc)
- - [macOS 10.14 AppKit release notes](https://developer.apple.com/documentation/macos_release_notes/macos_mojave_10_14_release_notes/appkit_release_notes_for_macos_10_14?language=objc)
- - [macOS 10.13 AppKit release notes](https://developer.apple.com/library/archive/releasenotes/AppKit/RN-AppKit/)
- - [macOS 10.12 and older AppKit release notes](https://developer.apple.com/library/archive/releasenotes/AppKit/RN-AppKitOlderNotes/)
+- [macOS 10.15 release notes](https://developer.apple.com/documentation/macos_release_notes/macos_catalina_10_15_release_notes?language=objc)
+- [macOS 10.14 AppKit release notes](https://developer.apple.com/documentation/macos_release_notes/macos_mojave_10_14_release_notes/appkit_release_notes_for_macos_10_14?language=objc)
+- [macOS 10.13 AppKit release notes](https://developer.apple.com/library/archive/releasenotes/AppKit/RN-AppKit/)
+- [macOS 10.12 and older AppKit release notes](https://developer.apple.com/library/archive/releasenotes/AppKit/RN-AppKitOlderNotes/)
 
 Sometimes, these differences in behavior have the potential to break existing apps. In those instances,
 Apple often provides the old (compatible) behavior until the app is re-built with the new SDK, expecting
@@ -197,12 +197,12 @@ The SDK check only happens if "NSCollectionViewPrefetchingEnabled" is not set to
 
 More precisely, this example works as follows:
 
- - `-[NSCollectionView prepareContentInRect:]` is the function that supports both the old and the new behavior.
- - It calls `_NSGetBoolAppConfig` for the value "NSCollectionViewPrefetchingEnabled", and also supplies a "default
-   value function".
- - If the user default is not set, the default value function is called. This function has the name
-   `NSCollectionViewPrefetchingEnabledDefaultValueFunction`.
- - `NSCollectionViewPrefetchingEnabledDefaultValueFunction` calls `_CFExecutableLinkedOnOrAfter(13)`.
+- `-[NSCollectionView prepareContentInRect:]` is the function that supports both the old and the new behavior.
+- It calls `_NSGetBoolAppConfig` for the value "NSCollectionViewPrefetchingEnabled", and also supplies a "default
+  value function".
+- If the user default is not set, the default value function is called. This function has the name
+  `NSCollectionViewPrefetchingEnabledDefaultValueFunction`.
+- `NSCollectionViewPrefetchingEnabledDefaultValueFunction` calls `_CFExecutableLinkedOnOrAfter(13)`.
 
 You can find many similar toggles if you list the AppKit symbols that end in `DefaultValueFunction`,
 for example by executing `nm /System/Library/Frameworks/AppKit.framework/AppKit | grep DefaultValueFunction`.

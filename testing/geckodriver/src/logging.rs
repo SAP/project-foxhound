@@ -22,7 +22,7 @@
 //! and `Level::Config` becomes `log::Level::Debug`.
 //!
 //! [`log`]: https://docs.rs/log/newest/log/
-//! [Log.sys.mjs]: https://searchfox.org/mozilla-central/source/toolkit/modules/Log.sys.mjs
+//! [Log.sys.mjs]: https://searchfox.org/firefox-main/source/toolkit/modules/Log.sys.mjs
 //! [`error!`]: https://docs.rs/log/newest/log/macro.error.html
 //! [`warn!`]: https://docs.rs/log/newest/log/macro.warn.html
 //! [`info!`]: https://docs.rs/log/newest/log/macro.info.html
@@ -56,7 +56,7 @@ const LOGGED_TARGETS: &[&str] = &[
 
 /// Logger levels from [Log.sys.mjs].
 ///
-/// [Log.sys.mjs]: https://searchfox.org/mozilla-central/source/toolkit/modules/Log.sys.mjs
+/// [Log.sys.mjs]: https://searchfox.org/firefox-main/source/toolkit/modules/Log.sys.mjs
 #[repr(usize)]
 #[derive(Clone, Copy, Eq, Debug, Hash, PartialEq)]
 pub enum Level {

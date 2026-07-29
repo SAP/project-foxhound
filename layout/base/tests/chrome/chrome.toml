@@ -87,6 +87,9 @@ support-files = [
   "file_bug1018265.xhtml",
   "markA.ttf",
   "markB.ttf",
+  "2in_blue.pdf",
+  "2in_by_3in_blue.pdf",
+  "2in_by_4in_blue.pdf",
 ]
 
 ["test_bug396367-1.html"]

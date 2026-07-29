@@ -7,6 +7,10 @@
  * Test basic SSE connection.
  */
 
+// connection closed messages can take more than 5 seconds to show up,
+// increase the waitFor interval (10 -> 50).
+waitFor.overrideIntervalForTestFile = 50;
+
 function setupTestServer() {
   const httpServer = createTestHTTPServer();
   httpServer.registerContentType("html", "text/html");
@@ -21,22 +25,33 @@ function setupTestServer() {
         <body>
             <h1>SSE Inspection Test Page</h1>
             <script type="text/javascript">
-            /* exported openConnection, closeConnection */
-            "use strict";
+              /* exported openConnection, closeConnection, openAndCloseConnection */
+              "use strict";
 
-            let es;
-            function openConnection(endpoint) {
-              return new Promise(resolve => {
-                es = new EventSource("http://localhost:${httpServer.identity.primaryPort}/" + endpoint);
-                es.onmessage = function () {
-                  resolve();
-                };
-              });
-            }
+              let es;
+              function openConnection(endpoint) {
+                return new Promise(resolve => {
+                  es = new EventSource("http://localhost:${httpServer.identity.primaryPort}/" + endpoint);
+                  es.onmessage = function () {
+                    resolve();
+                  };
+                });
+              }
 
-            function closeConnection() {
-              es.close();
-            }
+              function closeConnection() {
+                es.close();
+              }
+
+              // Opens a connection sends the messages and closes it
+              function openAndCloseConnection(endPoint) {
+                return new Promise(resolve => {
+                  const es = new EventSource("http://localhost:${httpServer.identity.primaryPort}/" + endPoint);
+                  setTimeout(() => {
+                    es.close();
+                    resolve();
+                  }, 500);
+                });
+              }
             </script>
         </body>
       </html>
@@ -60,6 +75,18 @@ function setupTestServer() {
     response.write("data: Why so serious?\n\n");
     sseResponse = response;
   });
+
+  // This sends messages with a single (\n) instead of double (\n\n)
+  httpServer.registerPathHandler(
+    "/bad-format-sse",
+    function (request, response) {
+      response.processAsync();
+      response.setHeader("Content-Type", "text/event-stream");
+      response.write("data: Bad format message\n");
+      response.write("data: Bad format message\n");
+      response.finish();
+    }
+  );
 
   const sendResponseMessages = () => {
     sseResponse.write("data: Another why so serious?\n\n");
@@ -151,7 +178,7 @@ add_task(async function testBasicServerSentEvents() {
     "Data column shows correct payload"
   );
 
-  await waitForDOMIfNeeded(
+  await waitForDOM(
     document,
     "#messages-view .msg-connection-closed-message",
     1
@@ -308,6 +335,52 @@ add_task(async function testServerSentEventsDetails() {
 
   // Wait for the connection closed event to complete
   await waitForTime(1000);
+
+  return teardown(monitor);
+});
+
+// Tests that malformed server sent events messages are still displayed as
+// raw response text in the response panel.
+add_task(async function testBadFormatServerSentEvents() {
+  const { httpServer } = setupTestServer();
+  const port = httpServer.identity.primaryPort;
+
+  const { tab, monitor } = await initNetMonitor(
+    `http://localhost:${port}/index.html`,
+    { requestCount: 1 }
+  );
+  info("Starting test... ");
+
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+
+  store.dispatch(Actions.batchEnable(false));
+
+  const onNetworkEvents = waitForNetworkEvents(monitor, 1);
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async () => {
+    await content.wrappedJSObject.openAndCloseConnection("bad-format-sse");
+  });
+  await onNetworkEvents;
+
+  const requests = document.querySelectorAll(".request-list-item");
+  is(requests.length, 1, "There should be one request");
+
+  // Wait for response content to render in the editor
+  const waitForEditor = waitForDOM(document, "#response-panel .cm-editor", 1);
+
+  // Select the request to open the side panel.
+  EventUtils.sendMouseEvent({ type: "mousedown" }, requests[0]);
+
+  // Click on the "Response" panel
+  clickOnSidebarTab(document, "response");
+  await waitForEditor;
+
+  const editorContent = document.querySelector("#response-panel .cm-content");
+  is(
+    editorContent.innerText,
+    "data: Bad format message\ndata: Bad format message\n\n",
+    "The RAW eventsource content is displayed"
+  );
 
   return teardown(monitor);
 });

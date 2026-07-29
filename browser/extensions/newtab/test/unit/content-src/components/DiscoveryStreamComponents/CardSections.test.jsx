@@ -284,6 +284,7 @@ describe("<CardSections />", () => {
                 receivedRank: 0,
                 sectionKey: "section_key_1",
                 title: "title",
+                followable: true,
                 layout,
               },
               {
@@ -297,6 +298,7 @@ describe("<CardSections />", () => {
                 receivedRank: 0,
                 sectionKey: "section_key_2",
                 title: "title",
+                followable: true,
                 layout,
               },
             ],
@@ -341,10 +343,25 @@ describe("<CardSections />", () => {
       },
     });
 
+    assert.calledWith(dispatch.getCall(2), {
+      type: "SHOW_TOAST_MESSAGE",
+      data: {
+        toastId: "followSectionToast",
+        showNotifications: true,
+        toastData: { l10nId: "newtab-section-toast-follow", topic: "title" },
+      },
+      meta: {
+        from: "ActivityStream:Main",
+        to: "ActivityStream:Content",
+        toTarget: "ActivityStream:Content",
+        skipMain: true,
+      },
+    });
+
     button = wrapper.find(".section-follow.following moz-button");
     button.simulate("click", {});
 
-    assert.calledWith(dispatch.getCall(2), {
+    assert.calledWith(dispatch.getCall(3), {
       type: "SECTION_PERSONALIZATION_SET",
       data: {},
       meta: {
@@ -353,7 +370,7 @@ describe("<CardSections />", () => {
       },
     });
 
-    assert.calledWith(dispatch.getCall(3), {
+    assert.calledWith(dispatch.getCall(4), {
       type: "UNFOLLOW_SECTION",
       data: {
         section: "section_key_2",
@@ -364,6 +381,24 @@ describe("<CardSections />", () => {
         from: "ActivityStream:Content",
         to: "ActivityStream:Main",
         skipLocal: true,
+      },
+    });
+
+    assert.calledWith(dispatch.getCall(5), {
+      type: "SHOW_TOAST_MESSAGE",
+      data: {
+        toastId: "unfollowSectionToast",
+        showNotifications: true,
+        toastData: {
+          l10nId: "newtab-section-toast-unfollow",
+          topic: "title",
+        },
+      },
+      meta: {
+        from: "ActivityStream:Main",
+        to: "ActivityStream:Content",
+        toTarget: "ActivityStream:Content",
+        skipMain: true,
       },
     });
   });
@@ -423,6 +458,7 @@ describe("<CardSections />", () => {
                 receivedRank: 0,
                 sectionKey: "section_key_1",
                 title: "title",
+                followable: true,
                 layout,
               },
               {
@@ -436,6 +472,7 @@ describe("<CardSections />", () => {
                 receivedRank: 0,
                 sectionKey: "section_key_2",
                 title: "title",
+                followable: true,
                 layout,
               },
             ],
@@ -448,6 +485,105 @@ describe("<CardSections />", () => {
     const highlight = wrapper.find(FollowSectionButtonHighlight);
     assert.equal(highlight.length, 1);
     assert.isTrue(wrapper.html().includes("follow-section-button-highlight"));
+  });
+
+  it("should not render follow button when section.followable is false", () => {
+    const state = {
+      ...INITIAL_STATE,
+      Prefs: {
+        ...INITIAL_STATE.Prefs,
+        values: {
+          ...INITIAL_STATE.Prefs.values,
+          [PREF_SECTIONS_PERSONALIZATION_ENABLED]: true,
+        },
+      },
+    };
+
+    wrapper = mount(
+      <WrapWithProvider state={state}>
+        <CardSections
+          dispatch={dispatch}
+          {...DEFAULT_PROPS}
+          data={{
+            ...DEFAULT_PROPS.data,
+            sections: [
+              {
+                ...DEFAULT_PROPS.data.sections[0],
+                followable: false,
+              },
+            ],
+          }}
+        />
+      </WrapWithProvider>
+    );
+
+    assert.equal(wrapper.find(".section-follow moz-button").length, 0);
+  });
+
+  it("should render follow button when section.followable is undefined", () => {
+    const state = {
+      ...INITIAL_STATE,
+      Prefs: {
+        ...INITIAL_STATE.Prefs,
+        values: {
+          ...INITIAL_STATE.Prefs.values,
+          [PREF_SECTIONS_PERSONALIZATION_ENABLED]: true,
+        },
+      },
+    };
+
+    wrapper = mount(
+      <WrapWithProvider state={state}>
+        <CardSections
+          dispatch={dispatch}
+          {...DEFAULT_PROPS}
+          data={{
+            ...DEFAULT_PROPS.data,
+            sections: [
+              {
+                ...DEFAULT_PROPS.data.sections[0],
+                followable: undefined,
+              },
+            ],
+          }}
+        />
+      </WrapWithProvider>
+    );
+
+    assert.equal(wrapper.find(".section-follow moz-button").length, 1);
+  });
+
+  it("should render follow button when section.followable is true", () => {
+    const state = {
+      ...INITIAL_STATE,
+      Prefs: {
+        ...INITIAL_STATE.Prefs,
+        values: {
+          ...INITIAL_STATE.Prefs.values,
+          [PREF_SECTIONS_PERSONALIZATION_ENABLED]: true,
+        },
+      },
+    };
+
+    wrapper = mount(
+      <WrapWithProvider state={state}>
+        <CardSections
+          dispatch={dispatch}
+          {...DEFAULT_PROPS}
+          data={{
+            ...DEFAULT_PROPS.data,
+            sections: [
+              {
+                ...DEFAULT_PROPS.data.sections[0],
+                followable: true,
+              },
+            ],
+          }}
+        />
+      </WrapWithProvider>
+    );
+
+    assert.equal(wrapper.find(".section-follow moz-button").length, 1);
   });
 
   describe("Keyboard navigation", () => {
@@ -470,6 +606,270 @@ describe("<CardSections />", () => {
       assert.equal(thirdCard.prop("tabIndex"), -1);
     });
 
+    it("should assign tabIndex based on layout position, not recommendation index", () => {
+      wrapper = mount(
+        <WrapWithProvider>
+          <CardSections
+            dispatch={dispatch}
+            {...DEFAULT_PROPS}
+            data={{
+              sections: [
+                {
+                  ...DEFAULT_PROPS.data.sections[0],
+                  data: [
+                    {
+                      id: "rec-1",
+                      title: "Card 1",
+                      image_src: "image1.jpg",
+                      url: "http://example.com/1",
+                    },
+                    {
+                      id: "rec-2",
+                      title: "Card 2",
+                      image_src: "image2.jpg",
+                      url: "http://example.com/2",
+                    },
+                  ],
+                  layout: {
+                    title: "layout_name",
+                    responsiveLayouts: [
+                      {
+                        columnCount: 1,
+                        tiles: [
+                          {
+                            size: "medium",
+                            position: 1,
+                            hasAd: false,
+                            hasExcerpt: true,
+                          },
+                          {
+                            size: "small",
+                            position: 0,
+                            hasAd: false,
+                            hasExcerpt: false,
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                },
+              ],
+            }}
+          />
+        </WrapWithProvider>
+      );
+
+      const firstRenderedCard = wrapper.find(DSCard).at(0);
+      const secondRenderedCard = wrapper.find(DSCard).at(1);
+
+      assert.equal(firstRenderedCard.prop("tabIndex"), -1);
+      assert.equal(secondRenderedCard.prop("tabIndex"), 0);
+    });
+
+    it("should update first tab target when the section receives focus after layout changes", () => {
+      Object.defineProperty(window, "innerWidth", {
+        writable: true,
+        configurable: true,
+        value: 500,
+      });
+
+      wrapper = mount(
+        <WrapWithProvider>
+          <CardSections
+            dispatch={dispatch}
+            {...DEFAULT_PROPS}
+            data={{
+              sections: [
+                {
+                  ...DEFAULT_PROPS.data.sections[0],
+                  data: [
+                    {
+                      id: "rec-1",
+                      title: "Card 1",
+                      image_src: "image1.jpg",
+                      url: "http://example.com/1",
+                    },
+                    {
+                      id: "rec-2",
+                      title: "Card 2",
+                      image_src: "image2.jpg",
+                      url: "http://example.com/2",
+                    },
+                  ],
+                  layout: {
+                    title: "layout_name",
+                    responsiveLayouts: [
+                      {
+                        columnCount: 1,
+                        tiles: [
+                          {
+                            size: "medium",
+                            position: 1,
+                            hasAd: false,
+                            hasExcerpt: true,
+                          },
+                          {
+                            size: "small",
+                            position: 0,
+                            hasAd: false,
+                            hasExcerpt: false,
+                          },
+                        ],
+                      },
+                      {
+                        columnCount: 2,
+                        tiles: [
+                          {
+                            size: "small",
+                            position: 0,
+                            hasAd: false,
+                            hasExcerpt: false,
+                          },
+                          {
+                            size: "medium",
+                            position: 1,
+                            hasAd: false,
+                            hasExcerpt: true,
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                },
+              ],
+            }}
+          />
+        </WrapWithProvider>
+      );
+
+      assert.equal(wrapper.find(DSCard).at(0).prop("tabIndex"), -1);
+      assert.equal(wrapper.find(DSCard).at(1).prop("tabIndex"), 0);
+
+      window.innerWidth = 800;
+      wrapper
+        .find(".ds-section-grid.ds-card-grid")
+        .first()
+        .prop("onFocusCapture")({
+        currentTarget: wrapper
+          .find(".ds-section-grid.ds-card-grid")
+          .first()
+          .getDOMNode(),
+      });
+      wrapper.update();
+
+      assert.equal(wrapper.find(DSCard).at(0).prop("tabIndex"), 0);
+      assert.equal(wrapper.find(DSCard).at(1).prop("tabIndex"), -1);
+    });
+
+    it("should preserve focus on the same card after focus-driven layout sync when falling back to card order", () => {
+      Object.defineProperty(window, "innerWidth", {
+        writable: true,
+        configurable: true,
+        value: 500,
+      });
+
+      wrapper = mount(
+        <WrapWithProvider>
+          <CardSections
+            dispatch={dispatch}
+            {...DEFAULT_PROPS}
+            data={{
+              sections: [
+                {
+                  ...DEFAULT_PROPS.data.sections[0],
+                  data: [
+                    {
+                      id: "rec-1",
+                      title: "Card 1",
+                      image_src: "image1.jpg",
+                      url: "http://example.com/1",
+                    },
+                    {
+                      id: "rec-2",
+                      title: "Card 2",
+                      image_src: "image2.jpg",
+                      url: "http://example.com/2",
+                    },
+                    {
+                      id: "rec-3",
+                      title: "Card 3",
+                      image_src: "image3.jpg",
+                      url: "http://example.com/3",
+                    },
+                  ],
+                  layout: {
+                    title: "layout_name",
+                    responsiveLayouts: [
+                      {
+                        columnCount: 1,
+                        tiles: [
+                          {
+                            size: "small",
+                            position: 0,
+                            hasAd: false,
+                            hasExcerpt: false,
+                          },
+                          {
+                            size: "medium",
+                            position: 1,
+                            hasAd: false,
+                            hasExcerpt: true,
+                          },
+                          {
+                            size: "small",
+                            position: 2,
+                            hasAd: false,
+                            hasExcerpt: false,
+                          },
+                        ],
+                      },
+                      {
+                        columnCount: 2,
+                        tiles: [
+                          {
+                            size: "small",
+                            position: 0,
+                            hasAd: false,
+                            hasExcerpt: false,
+                          },
+                          {
+                            size: "medium",
+                            position: 1,
+                            hasAd: false,
+                            hasExcerpt: true,
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                },
+              ],
+            }}
+          />
+        </WrapWithProvider>
+      );
+
+      wrapper.find(DSCard).at(2).prop("onFocus")();
+      wrapper.update();
+      assert.equal(wrapper.find(DSCard).at(2).prop("tabIndex"), 0);
+
+      window.innerWidth = 800;
+      wrapper
+        .find(".ds-section-grid.ds-card-grid")
+        .first()
+        .prop("onFocusCapture")({
+        currentTarget: wrapper
+          .find(".ds-section-grid.ds-card-grid")
+          .first()
+          .getDOMNode(),
+      });
+      wrapper.update();
+
+      assert.equal(wrapper.find(DSCard).at(0).prop("tabIndex"), -1);
+      assert.equal(wrapper.find(DSCard).at(1).prop("tabIndex"), -1);
+      assert.equal(wrapper.find(DSCard).at(2).prop("tabIndex"), 0);
+    });
+
     it("should update focused index when onFocus is called", () => {
       const secondCard = wrapper.find(DSCard).at(1);
       const onFocus = secondCard.prop("onFocus");
@@ -479,6 +879,16 @@ describe("<CardSections />", () => {
 
       assert.equal(wrapper.find(DSCard).at(1).prop("tabIndex"), 0);
       assert.equal(wrapper.find(DSCard).at(0).prop("tabIndex"), -1);
+    });
+
+    it("should preserve focused index when focus leaves section grid", () => {
+      wrapper.find(DSCard).at(1).prop("onFocus")();
+      wrapper.update();
+
+      assert.equal(wrapper.find(DSCard).at(1).prop("tabIndex"), 0);
+
+      assert.equal(wrapper.find(DSCard).at(0).prop("tabIndex"), -1);
+      assert.equal(wrapper.find(DSCard).at(1).prop("tabIndex"), 0);
     });
 
     describe("handleCardKeyDown", () => {

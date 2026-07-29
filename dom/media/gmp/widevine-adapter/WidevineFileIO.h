@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,10 +12,9 @@
 
 namespace mozilla {
 
-class WidevineFileIO : public cdm::FileIO, public GMPRecordClient {
+class WidevineFileIO final : public cdm::FileIO, public GMPRecordClient {
  public:
-  explicit WidevineFileIO(cdm::FileIOClient* aClient)
-      : mClient(aClient), mRecord(nullptr) {}
+  explicit WidevineFileIO(cdm::FileIOClient* aClient) : mClient(aClient) {}
 
   // cdm::FileIO
   void Open(const char* aFilename, uint32_t aFilenameLength) override;
@@ -31,8 +29,10 @@ class WidevineFileIO : public cdm::FileIO, public GMPRecordClient {
   void WriteComplete(GMPErr aStatus) override;
 
  private:
+  void DestroyRecord();
+
   cdm::FileIOClient* mClient;
-  GMPRecord* mRecord;
+  GMPRecord* mRecord = nullptr;
   std::string mName;
 };
 

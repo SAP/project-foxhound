@@ -267,31 +267,48 @@ class AndroidMixin:
             status = func()
         return status
 
+    def _dump_host_perf_linux(self, f):
+        f.write("\n\nHost cpufreq/scaling_governor:\n")
+        cpus = glob.glob("/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor")
+        for cpu in cpus:
+            out = subprocess.check_output(["cat", cpu], universal_newlines=True)
+            f.write(f"{cpu}: {out}")
+
+        f.write("\n\nHost /proc/cpuinfo:\n")
+        out = subprocess.check_output(["cat", "/proc/cpuinfo"], universal_newlines=True)
+        f.write(out)
+
+        f.write("\n\nHost /proc/meminfo:\n")
+        out = subprocess.check_output(["cat", "/proc/meminfo"], universal_newlines=True)
+        f.write(out)
+
+    def _dump_host_perf_darwin(self, f):
+        f.write("\n\nHost CPU info:\n")
+        out = subprocess.check_output(
+            ["sysctl", "-a", "machdep.cpu"], universal_newlines=True
+        )
+        f.write(out)
+
+        f.write("\n\nHost memory info:\n")
+        out = subprocess.check_output(
+            ["sysctl", "-a", "hw.memsize"], universal_newlines=True
+        )
+        f.write(out)
+
     def dump_perf_info(self):
         """
         Dump some host and android device performance-related information
         to an artifact file, to help understand task performance.
         """
+        import sys
+
         dir = self.query_abs_dirs()["abs_blob_upload_dir"]
         perf_path = os.path.join(dir, "android-performance.log")
         with open(perf_path, "w") as f:
-            f.write("\n\nHost cpufreq/scaling_governor:\n")
-            cpus = glob.glob("/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor")
-            for cpu in cpus:
-                out = subprocess.check_output(["cat", cpu], universal_newlines=True)
-                f.write("%s: %s" % (cpu, out))
-
-            f.write("\n\nHost /proc/cpuinfo:\n")
-            out = subprocess.check_output(
-                ["cat", "/proc/cpuinfo"], universal_newlines=True
-            )
-            f.write(out)
-
-            f.write("\n\nHost /proc/meminfo:\n")
-            out = subprocess.check_output(
-                ["cat", "/proc/meminfo"], universal_newlines=True
-            )
-            f.write(out)
+            if sys.platform == "linux":
+                self._dump_host_perf_linux(f)
+            elif sys.platform == "darwin":
+                self._dump_host_perf_darwin(f)
 
             f.write("\n\nHost process list:\n")
             out = subprocess.check_output(["ps", "-ef"], universal_newlines=True)

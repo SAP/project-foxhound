@@ -2579,7 +2579,7 @@ assert_malformed(
 // ./test/core/simd/simd_lane.wast:428
 assert_malformed(
   () => instantiate(`(func (result v128) (f64x2.replace_lane 256 (v128.const f64x2 0 0) (f64.const 1))) `),
-  `i8 constant out of`,
+  `i8 constant out of range`,
 );
 
 // ./test/core/simd/simd_lane.wast:432
@@ -2981,13 +2981,13 @@ assert_malformed(
 // ./test/core/simd/simd_lane.wast:521
 assert_malformed(
   () => instantiate(`(func (result v128) (i8x16.shuffle 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 -1 (v128.const i8x16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0) (v128.const i8x16 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15))) `),
-  `i8 constant out of`,
+  `i8 constant out of range`,
 );
 
 // ./test/core/simd/simd_lane.wast:525
 assert_malformed(
   () => instantiate(`(func (result v128) (i8x16.shuffle 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 256 (v128.const i8x16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0) (v128.const i8x16 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15))) `),
-  `i8 constant out of`,
+  `i8 constant out of range`,
 );
 
 // ./test/core/simd/simd_lane.wast:529
@@ -3212,31 +3212,31 @@ assert_malformed(
 // ./test/core/simd/simd_lane.wast:604
 assert_malformed(
   () => instantiate(`(func (result v128)  (i8x16.shuffle 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15.0  (v128.const i8x16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0)  (v128.const i8x16 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15))) `),
-  `i8 constant out of`,
+  `i8 constant out of range`,
 );
 
 // ./test/core/simd/simd_lane.wast:608
 assert_malformed(
   () => instantiate(`(func (result v128)  (i8x16.shuffle 0.5 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15  (v128.const i8x16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0)  (v128.const i8x16 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15))) `),
-  `i8 constant out of`,
+  `i8 constant out of range`,
 );
 
 // ./test/core/simd/simd_lane.wast:612
 assert_malformed(
   () => instantiate(`(func (result v128)  (i8x16.shuffle -inf 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15  (v128.const i8x16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0)  (v128.const i8x16 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15))) `),
-  `i8 constant out of`,
+  `i8 constant out of range`,
 );
 
 // ./test/core/simd/simd_lane.wast:616
 assert_malformed(
   () => instantiate(`(func (result v128)  (i8x16.shuffle 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 inf  (v128.const i8x16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0)  (v128.const i8x16 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15))) `),
-  `i8 constant out of`,
+  `i8 constant out of range`,
 );
 
 // ./test/core/simd/simd_lane.wast:620
 assert_malformed(
   () => instantiate(`(func (result v128)  (i8x16.shuffle nan 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15  (v128.const i8x16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0)  (v128.const i8x16 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15))) `),
-  `i8 constant out of`,
+  `i8 constant out of range`,
 );
 
 // ./test/core/simd/simd_lane.wast:628

@@ -17,6 +17,7 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.compose.content
 import androidx.navigation.fragment.findNavController
 import org.mozilla.fenix.R
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.showToolbar
 import org.mozilla.fenix.nimbus.ext.fetchPartitionedExperimentListsAsync
@@ -27,7 +28,7 @@ import org.mozilla.fenix.theme.FirefoxTheme
 /**
  * Fragment use for managing Nimbus experiments.
  */
-class NimbusExperimentsFragment : Fragment() {
+class NimbusExperimentsFragment : Fragment(), SystemInsetsPaddedFragment {
 
     override fun onResume() {
         super.onResume()

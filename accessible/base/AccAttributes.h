@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,7 +5,6 @@
 #ifndef AccAttributes_h_
 #define AccAttributes_h_
 
-#include "mozilla/ServoStyleConsts.h"
 #include "mozilla/a11y/AccGroupInfo.h"
 #include "mozilla/Variant.h"
 #include "nsTHashMap.h"
@@ -131,7 +129,8 @@ class AccAttributes {
       static_assert(std::is_rvalue_reference_v<decltype(aAttrValue)>,
                     "Please only move strings into this function. To make a "
                     "copy, use SetAttributeStringCopy.");
-      UniquePtr<nsString> value = MakeUnique<nsString>(std::move(aAttrValue));
+      UniquePtr<nsString> value =
+          MakeUnique<nsString>(std::forward<T>(aAttrValue));
       mData.InsertOrUpdate(aAttrName, AsVariant(std::move(value)));
     } else if constexpr (std::is_same_v<ValType, gfx::Matrix4x4>) {
       UniquePtr<gfx::Matrix4x4> value = MakeUnique<gfx::Matrix4x4>(aAttrValue);

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,14 +9,12 @@
 #include "pk11pub.h"
 #include "runnable_utils.h"
 
-extern "C" {
 // clang-format off
 #include "nr_api.h"
 #include "nr_socket.h"
 #include "transport_addr.h"
 #include "nr_socket_multi_tcp.h"
 // clang-format on
-}
 
 #include "nricectx.h"
 #include "stunserver.h"
@@ -92,12 +88,10 @@ class MultiTcpSocketTest : public MtransportTest {
     int r;
 
     if (!stun_server_addr.empty()) {
-      std::vector<NrIceStunServer> stun_servers;
-      UniquePtr<NrIceStunServer> server(NrIceStunServer::Create(
-          stun_server_addr, stun_server_port, kNrIceTransportTcp));
-      stun_servers.push_back(*server);
-
-      ASSERT_TRUE(NS_SUCCEEDED(ice_ctx_->SetStunServers(stun_servers)));
+      nsTArray<ParsedIceServer> stun_servers;
+      stun_servers.AppendElement(
+          MakeStunEntry(stun_server_addr, stun_server_port, IceTransport::Tcp));
+      ASSERT_TRUE(NS_SUCCEEDED(ice_ctx_->SetIceServers(stun_servers, false)));
     }
 
     r = 1;

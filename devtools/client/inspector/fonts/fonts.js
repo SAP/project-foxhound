@@ -695,7 +695,7 @@ class FontInspector {
     const textProperty = this.getTextProperty(name, value);
     if (textProperty) {
       try {
-        await textProperty.setValue(value, "", true);
+        await textProperty.setValue(value, "");
         this.ruleView.on("property-value-updated", this.onRulePropertyUpdated);
       } catch (error) {
         // Because setValue() does an asynchronous call to the server, there is a chance
@@ -1001,7 +1001,7 @@ class FontInspector {
       previewText,
       previewFillStyle: getCssVariableColor(
         "--theme-body-color",
-        this.document.ownerGlobal
+        this.document.documentGlobal
       ),
     };
 
@@ -1044,7 +1044,7 @@ class FontInspector {
    * Preview a property value (live) then sync the changes (debounced) to the Rule view.
    *
    * NOTE: Until Bug 1462591 is addressed, all changes are written to the element's inline
-   * style attribute. In this current scenario, Rule.previewPropertyValue()
+   * style attribute. In this current scenario, Rule.setPropertyValue()
    * causes the whole inline style representation in the Rule view to update instead of
    * just previewing the change on the element.
    * We keep the debounced call to syncChanges() because it explicitly calls
@@ -1072,7 +1072,7 @@ class FontInspector {
     this.ruleView.off("property-value-updated", this.onRulePropertyUpdated);
     // Live preview font property changes on the page.
     textProperty.rule
-      .previewPropertyValue(textProperty, value, "")
+      .setPropertyValue(textProperty, value, "")
       .catch(console.error);
 
     // Sync Rule view with changes reflected on the page (debounced).

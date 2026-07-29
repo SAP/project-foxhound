@@ -356,6 +356,9 @@ add_task(async function test_test_in_background() {
 });
 
 add_task(async function test_test_in_wpt_mode() {
+  // Only covers the browser.test API bindings (live pref), not the WPTEvents
+  // actor functionality, which is gated once at startup in ExtensionParent.
+  // That part is covered by test_wpt_test_events.js and test_wpt_actor_pref.js.
   let extensionData = {
     background: `(${testScript})()`,
     useServiceWorker: false,

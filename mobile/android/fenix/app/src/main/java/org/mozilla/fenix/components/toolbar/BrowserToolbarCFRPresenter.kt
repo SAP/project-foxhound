@@ -41,10 +41,11 @@ import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.CookieBanners
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.R
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.utils.Settings
 import mozilla.components.browser.toolbar.R as toolbarR
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * Vertical padding needed to improve the visual alignment of the popup and respect the UX design.
@@ -92,7 +93,10 @@ class BrowserToolbarCFRPresenter(
                 flow
                     .distinctUntilChangedBy { it.selectedNormalTab?.id }
                     .collect {
-                        if (settings.shouldShowTabSwipeCFR && !settings.hasShownTabSwipeCFR) {
+                        if (settings.shouldShowTabSwipeCFR &&
+                            !settings.hasShownTabSwipeCFR &&
+                            settings.cfrPopupsEnabled
+                        ) {
                             scope?.cancel()
                             settings.shouldShowTabSwipeCFR = false
                             settings.hasShownTabSwipeCFR = true
@@ -129,7 +133,10 @@ class BrowserToolbarCFRPresenter(
     }
 
     private fun getCFRToShow(): ToolbarCFR = when {
-        isPrivate && settings.shouldShowCookieBannersCFR && settings.shouldUseCookieBannerPrivateMode -> {
+        isPrivate &&
+            settings.shouldShowCookieBannersCFR &&
+            settings.cfrPopupsEnabled &&
+            settings.shouldUseCookieBannerPrivateMode -> {
             ToolbarCFR.COOKIE_BANNERS
         }
 
@@ -174,7 +181,7 @@ class BrowserToolbarCFRPresenter(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(
-                                painter = painterResource(id = R.drawable.ic_cookies_disabled),
+                                painter = painterResource(id = iconsR.drawable.mozac_ic_cookies_slash_24),
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onSurface,
                             )
@@ -219,7 +226,7 @@ class BrowserToolbarCFRPresenter(
                     getColor(context, R.color.fx_mobile_layer_color_gradient_start),
                 ),
                 dismissButtonColor = getColor(context, R.color.fx_mobile_icon_color_oncolor),
-                indicatorDirection = if (context.settings().toolbarPosition == ToolbarPosition.TOP) {
+                indicatorDirection = if (context.components.settings.toolbarPosition == ToolbarPosition.TOP) {
                     CFRPopup.IndicatorDirection.UP
                 } else {
                     CFRPopup.IndicatorDirection.DOWN

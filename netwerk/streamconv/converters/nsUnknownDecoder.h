@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -68,7 +67,7 @@ class nsUnknownDecoder : public nsIStreamConverter, public nsIContentSniffer {
   };
 
  protected:
-  nsCOMPtr<nsIStreamListener> mNextListener;
+  nsCOMPtr<nsIStreamListener> mNextListener MOZ_GUARDED_BY(mMutex);
 
   // Various sniffer functions.  Returning true means that a type
   // was determined; false means no luck.
@@ -120,15 +119,16 @@ class nsUnknownDecoder : public nsIStreamConverter, public nsIContentSniffer {
   mozilla::Atomic<char*> mBuffer;
   mozilla::Atomic<uint32_t> mBufferLen;
 
-  nsCString mContentType;
+  nsCString mContentType MOZ_GUARDED_BY(mMutex);
 
   // This mutex syncs: mContentType, mDecodedData and mNextListener.
-  mutable mozilla::Mutex mMutex MOZ_UNANNOTATED;
+  mutable mozilla::Mutex mMutex;
 
  protected:
   nsresult ConvertEncodedData(nsIRequest* request, const char* data,
                               uint32_t length);
-  nsCString mDecodedData;  // If data are encoded this will be uncompress data.
+  nsCString mDecodedData MOZ_GUARDED_BY(
+      mMutex);  // If data are encoded this will be uncompress data.
 };
 
 #define NS_BINARYDETECTOR_CID                 \

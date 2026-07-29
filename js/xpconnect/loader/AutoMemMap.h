@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,6 +27,9 @@ class AutoMemMap {
   AutoMemMap() = default;
 
   ~AutoMemMap();
+
+  AutoMemMap(const AutoMemMap&) = delete;
+  void operator=(const AutoMemMap&) = delete;
 
   Result<Ok, nsresult> init(nsIFile* file, int flags = PR_RDONLY, int mode = 0,
                             PRFileMapProtect prot = PR_PROT_READONLY);
@@ -73,10 +75,7 @@ class AutoMemMap {
   uint32_t size_ = 0;
   void* addr = nullptr;
 
-  bool persistent_ = 0;
-
-  AutoMemMap(const AutoMemMap&) = delete;
-  void operator=(const AutoMemMap&) = delete;
+  bool persistent_ = false;
 };
 
 }  // namespace loader

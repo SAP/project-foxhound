@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=2 et lcs=trail\:.,tab\:>~ :
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -21,6 +19,7 @@
 #include "prthread.h"
 #include "prmon.h"
 #include "prio.h"
+#include "prenv.h"
 
 #include "nsString.h"
 #include "nsDirectoryServiceUtils.h"
@@ -154,6 +153,59 @@ struct Options {
 };
 
 /**
+ * Save a profile of this process before we crash on a shutdown hang, so a
+ * profiled run keeps the data leading up to the hang. We gather it here on the
+ * watchdog thread rather than dispatching to the (blocked) main thread:
+ * profiler_save_profile_to_file only needs the profiler state lock, and the
+ * sampled main-thread stack it captures shows what is blocking shutdown.
+ */
+void MaybeSaveShutdownHangProfile() {
+  if (!profiler_is_active()) {
+    return;
+  }
+
+  // An explicit --profiler run names a shutdown profile file via
+  // MOZ_PROFILER_SHUTDOWN and expects the profile there; honor it first, as the
+  // test harnesses do, since the normal shutdown-time save never runs once we
+  // crash here. It is emptied in child processes, so only the parent uses it.
+  if (const char* shutdownFile = PR_GetEnv("MOZ_PROFILER_SHUTDOWN");
+      shutdownFile && *shutdownFile) {
+    profiler_save_profile_to_file(shutdownFile);
+    printf_stderr("RunWatchdog: saved a profile of the shutdown hang to %s\n",
+                  shutdownFile);
+    return;
+  }
+
+  // Otherwise, in CI, anything written to MOZ_UPLOAD_DIR is uploaded as an
+  // artifact. Name it after the pid, since the parent and content processes
+  // each run their own terminator. Report it as a TEST-UNEXPECTED-FAIL line so
+  // it surfaces in Treeherder's failure summary (the main thread is blocked, so
+  // we can't route this through the test harness's structured log), naming the
+  // artifact in the "profile uploaded in <file>" form the dashboards recognize.
+  const char* uploadDir = PR_GetEnv("MOZ_UPLOAD_DIR");
+  if (!uploadDir || !*uploadDir) {
+    return;
+  }
+
+#if defined(XP_WIN)
+  uint32_t pid = GetCurrentProcessId();
+#else
+  uint32_t pid = getpid();
+#endif
+  nsAutoCString filename;
+  filename.AppendPrintf("profile_shutdown_hang_%u.json", pid);
+
+  nsAutoCString path(uploadDir);
+  path.AppendLiteral("/");
+  path.Append(filename);
+
+  profiler_save_profile_to_file(path.get());
+  printf_stderr(
+      "TEST-UNEXPECTED-FAIL | shutdown hang | profile uploaded in %s\n",
+      filename.get());
+}
+
+/**
  * Entry point for the watchdog thread
  */
 void RunWatchdog(void* arg) {
@@ -189,6 +241,8 @@ void RunWatchdog(void* arg) {
 
     // Arrived here we know we will crash in a way or another.
     NoteIntentionalCrash(XRE_GetProcessTypeString());
+
+    MaybeSaveShutdownHangProfile();
 
     // Until we have general log output for crash annotations in treeherder
     // (bug 1728721) we manually spit out our nested event loop stack.
@@ -237,7 +291,7 @@ void RunWatchdog(void* arg) {
         mozilla::AppShutdown::GetShutdownPhaseName(lastPhase));
 
     CrashReporter::SetMinidumpAnalysisAllThreads();
-    MOZ_CRASH_UNSAFE(strdup(msg.BeginReading()));
+    MOZ_CRASH_UNSAFE(strdup(msg.get()));
   }
 }
 

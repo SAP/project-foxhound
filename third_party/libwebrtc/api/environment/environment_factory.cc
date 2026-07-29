@@ -103,7 +103,7 @@ Environment EnvironmentFactory::CreateWithDefaults() && {
     Set(std::make_unique<DeprecatedGlobalFieldTrials>());
   }
 #if defined(WEBRTC_MOZILLA_BUILD)
-  // We want to use our clock, not GetRealTimeClockRaw, and we avoid
+  // We want to use our clock, not GetRealTimeClockOnlyUseForRelativeTime, and we avoid
   // building the code under third_party/libwebrtc/task_queue.  To
   // ensure we're setting up things correctly, namely providing an
   // Environment object with a preset task_queue_factory and clock,

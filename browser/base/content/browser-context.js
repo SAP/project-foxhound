@@ -46,8 +46,14 @@ document.addEventListener(
         case "context-openlink":
           gContextMenu.openLink();
           break;
+        case "context-openlinkinsplitview":
+          gContextMenu.openLinkInSplitView(event);
+          break;
         case "context-openlinkprivate":
           gContextMenu.openLinkInPrivateWindow();
+          break;
+        case "context-openlinksmartwindow":
+          gContextMenu.openLinkInSmartWindow();
           break;
         case "context-bookmarklink":
           gContextMenu.bookmarkLink();
@@ -131,7 +137,11 @@ document.addEventListener(
           gContextMenu.saveMedia();
           break;
         case "context-copyimage-contents":
-          goDoCommand("cmd_copyImage");
+          if (gContextMenu.onCanvas) {
+            gContextMenu.copyCanvasImage();
+          } else {
+            goDoCommand("cmd_copyImage");
+          }
           break;
         case "context-copyaudiourl":
         case "context-copyimage":
@@ -170,38 +180,11 @@ document.addEventListener(
         case "manage-saved-logins":
           gContextMenu.openPasswordManager();
           break;
-        case "context-pdfjs-highlight-selection":
-          gContextMenu.pdfJSCmd("highlightSelection");
-          break;
-        case "context-pdfjs-comment-selection":
-          gContextMenu.pdfJSCmd("commentSelection");
-          break;
         case "context-reveal-password":
           gContextMenu.toggleRevealPassword();
           break;
         case "context-print-selection":
           gContextMenu.printSelection();
-          break;
-        case "context-pdfjs-undo":
-          gContextMenu.pdfJSCmd("undo");
-          break;
-        case "context-pdfjs-redo":
-          gContextMenu.pdfJSCmd("redo");
-          break;
-        case "context-pdfjs-cut":
-          gContextMenu.pdfJSCmd("cut");
-          break;
-        case "context-pdfjs-copy":
-          gContextMenu.pdfJSCmd("copy");
-          break;
-        case "context-pdfjs-paste":
-          gContextMenu.pdfJSCmd("paste");
-          break;
-        case "context-pdfjs-delete":
-          gContextMenu.pdfJSCmd("delete");
-          break;
-        case "context-pdfjs-selectall":
-          gContextMenu.pdfJSCmd("selectAll");
           break;
         case "context-take-screenshot":
           gContextMenu.takeScreenshot();
@@ -290,6 +273,9 @@ document.addEventListener(
         case "context-remove-highlight":
           gContextMenu.removeAllTextFragments();
           break;
+      }
+      if (event.target.id.startsWith("context-pdfjs-")) {
+        gContextMenu.pdfjsContextMenu.cmd(event.target.id);
       }
     });
     contextMenuPopup.addEventListener("popupshowing", event => {

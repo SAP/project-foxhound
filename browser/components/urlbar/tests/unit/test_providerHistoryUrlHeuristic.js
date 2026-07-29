@@ -172,6 +172,42 @@ add_task(async function test_basic() {
   await PlacesUtils.history.clear();
 });
 
+add_task(async function test_hash_collision() {
+  // Verify the provider doesn't return a result when the only url_hash match
+  // is a collision (a different URL whose hash happens to equal the typed URL's
+  // hash).
+  const testURL = "https://example.com/";
+  const collidingURL = "https://unrelated.mozilla.org/";
+  await PlacesTestUtils.addVisits([
+    { uri: collidingURL, title: "Colliding Page" },
+  ]);
+
+  // Artificially corrupt url_hash to simulate a real-world hash collision.
+  await PlacesUtils.withConnectionWrapper("test_hash_collision", async db => {
+    await db.execute(
+      `UPDATE moz_places SET url_hash = hash(:testURL) WHERE url = :collidingURL`,
+      { testURL, collidingURL }
+    );
+  });
+
+  const context = createContext(testURL, { isPrivate: false });
+  await check_results({
+    context,
+    matches: [
+      makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        uri: testURL,
+        title: testURL,
+        iconUri: "page-icon:https://example.com/",
+        heuristic: true,
+        providerName: "UrlbarProviderHeuristicFallback",
+      }),
+    ],
+  });
+
+  await PlacesUtils.history.clear();
+});
+
 add_task(async function test_null_title() {
   await PlacesTestUtils.addVisits([{ uri: "https://example.com/", title: "" }]);
 

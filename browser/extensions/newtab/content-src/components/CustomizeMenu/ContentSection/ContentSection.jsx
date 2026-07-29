@@ -7,6 +7,8 @@ import { batch } from "react-redux";
 import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
 import { SectionsMgmtPanel } from "../SectionsMgmtPanel/SectionsMgmtPanel";
 import { WallpaperCategories } from "../../WallpaperCategories/WallpaperCategories";
+// @nova-cleanup(move-directory): Update import path after WidgetsManagementPanel moves to components/CustomizeMenu/
+import { WidgetsManagementPanel } from "content-src/components/Nova/CustomizeMenu/WidgetsManagementPanel/WidgetsManagementPanel";
 
 export class ContentSection extends React.PureComponent {
   constructor(props) {
@@ -16,6 +18,7 @@ export class ContentSection extends React.PureComponent {
     // Refs are necessary for dynamically measuring drawer heights for slide animations
     this.topSitesDrawerRef = React.createRef();
     this.pocketDrawerRef = React.createRef();
+    this.widgetsMgmtDrawerRef = React.createRef();
   }
 
   inputUserEvent(eventSource, eventValue) {
@@ -42,6 +45,9 @@ export class ContentSection extends React.PureComponent {
         case "WIDGET_TIMER":
           widgetName = "focus_timer";
           break;
+        case "WIDGET_CLOCKS":
+          widgetName = "clocks";
+          break;
       }
 
       if (widgetName) {
@@ -55,13 +61,13 @@ export class ContentSection extends React.PureComponent {
             this.props.weatherDisplay === "detailed"
           ) {
             widgetSize =
-              widgetsMayBeMaximized && !widgetsMaximized ? "small" : "medium";
+              widgetsMayBeMaximized && !widgetsMaximized ? "medium" : "large";
           } else {
-            widgetSize = "mini";
+            widgetSize = "small";
           }
         } else {
           widgetSize =
-            widgetsMayBeMaximized && !widgetsMaximized ? "small" : "medium";
+            widgetsMayBeMaximized && !widgetsMaximized ? "medium" : "large";
         }
 
         const data = {
@@ -82,10 +88,10 @@ export class ContentSection extends React.PureComponent {
   }
 
   onPreferenceSelect(e) {
-    // eventSource: WEATHER | TOP_SITES | TOP_STORIES | WIDGET_LISTS | WIDGET_TIMER
+    // eventSource: WALLPAPERS | WEATHER | TOP_SITES | TOP_STORIES | WIDGET_LISTS | WIDGET_TIMER
     const { preference, eventSource } = e.target.dataset;
     let value;
-    if (e.target.nodeName === "SELECT") {
+    if (e.target.nodeName === "MOZ-SELECT") {
       value = parseInt(e.target.value, 10);
     } else if (e.target.nodeName === "INPUT") {
       value = e.target.checked;
@@ -118,27 +124,36 @@ export class ContentSection extends React.PureComponent {
       `TOP_STORIES`,
       this.props.enabledSections.pocketEnabled
     );
+    this.setDrawerMargin(`WIDGETS`, this.props.widgetsEnabled);
   }
 
   setDrawerMargin(drawerID, isOpen) {
     let drawerRef;
 
-    if (drawerID === `TOP_SITES`) {
-      drawerRef = this.topSitesDrawerRef.current;
-    } else if (drawerID === `TOP_STORIES`) {
-      drawerRef = this.pocketDrawerRef.current;
-    } else {
-      return;
+    switch (drawerID) {
+      case `TOP_SITES`:
+        drawerRef = this.topSitesDrawerRef.current;
+        break;
+      case `TOP_STORIES`:
+        drawerRef = this.pocketDrawerRef.current;
+        break;
+      case `WIDGETS`:
+        drawerRef = this.widgetsMgmtDrawerRef.current;
+        break;
+      default:
+        return;
     }
 
     if (drawerRef) {
       // Use measured height if valid, otherwise use a large fallback
       // since overflow:hidden on the parent safely hides the drawer
-      let drawerHeight =
-        parseFloat(window.getComputedStyle(drawerRef)?.height) || 100;
+      let drawerHeight = drawerRef.offsetHeight || 100;
 
       if (isOpen) {
-        drawerRef.style.marginTop = "var(--space-small)";
+        // @nova-cleanup(remove-conditional): Remove novaEnabled check, keep the marginTop assignment
+        drawerRef.style.marginTop = this.props.novaEnabled
+          ? ""
+          : "var(--space-small)";
       } else {
         drawerRef.style.marginTop = `-${drawerHeight + 3}px`;
       }
@@ -155,15 +170,25 @@ export class ContentSection extends React.PureComponent {
       mayHaveWidgets,
       mayHaveTimerWidget,
       mayHaveListsWidget,
+      mayHaveSportsWidget,
+      mayHaveClocksWidget,
+      mayHaveWeatherForecast,
       openPreferences,
-      wallpapersEnabled,
+      wallpapersUserEnabled,
       activeWallpaper,
       setPref,
       mayHaveTopicSections,
+      weatherDisplay,
       exitEventFired,
       onSubpanelToggle,
       toggleSectionsMgmtPanel,
       showSectionsMgmtPanel,
+      // @nova-cleanup(remove-conditional): Remove novaEnabled
+      novaEnabled,
+      wallpapersEnabled,
+      toggleWidgetsManagementPanel,
+      showWidgetsManagementPanel,
+      widgetsEnabled,
     } = this.props;
     const {
       topSitesEnabled,
@@ -172,217 +197,332 @@ export class ContentSection extends React.PureComponent {
       showInferredPersonalizationEnabled,
       topSitesRowsCount,
     } = enabledSections;
-    const { timerEnabled, listsEnabled } = enabledWidgets;
+    const { timerEnabled, listsEnabled, clocksEnabled } = enabledWidgets;
 
+    // @nova-cleanup(remove-conditional): Remove novaEnabled check and newtab-custom-stories-toggle, default to newtab-recommended-stories-toggle
+    let pocketToggleL10nId;
+    if (mayHaveInferredPersonalization) {
+      pocketToggleL10nId = "newtab-custom-stories-personalized-toggle";
+    } else if (novaEnabled) {
+      pocketToggleL10nId = "newtab-recommended-stories-toggle";
+    } else {
+      pocketToggleL10nId = "newtab-custom-stories-toggle";
+    }
+
+    // @nova-cleanup(remove-conditional): This conditional adds the toggle for wallpaper visibility.
     return (
-      <div className="home-section">
-        {wallpapersEnabled && (
-          <>
-            <div className="wallpapers-section">
-              <WallpaperCategories
-                setPref={setPref}
-                activeWallpaper={activeWallpaper}
-                exitEventFired={exitEventFired}
-                onSubpanelToggle={onSubpanelToggle}
-              />
+      <>
+        <div className="home-section">
+          {wallpapersEnabled && (
+            <>
+              <div className="wallpapers-section">
+                {novaEnabled && (
+                  <moz-toggle
+                    id="wallpapers-toggle"
+                    pressed={
+                      (wallpapersUserEnabled && !!activeWallpaper) || null
+                    }
+                    ontoggle={this.onPreferenceSelect}
+                    data-preference="newtabWallpapers.user.enabled"
+                    data-event-source="WALLPAPERS"
+                    data-l10n-id="newtab-wallpaper-toggle-title"
+                  />
+                )}
+                <WallpaperCategories
+                  setPref={setPref}
+                  activeWallpaper={activeWallpaper}
+                  exitEventFired={exitEventFired}
+                  onSubpanelToggle={onSubpanelToggle}
+                />
+              </div>
+            </>
+          )}
+          {mayHaveWidgets && !novaEnabled && (
+            <div className="widgets-section">
+              <div className="category-header">
+                <h2 data-l10n-id="newtab-custom-widget-section-title"></h2>
+              </div>
+              <div className="settings-widgets">
+                {/* Weather */}
+                {mayHaveWeather && (
+                  <div id="weather-section" className="section">
+                    <moz-toggle
+                      id="weather-toggle"
+                      pressed={weatherEnabled || null}
+                      ontoggle={this.onPreferenceSelect}
+                      data-preference="showWeather"
+                      data-event-source="WEATHER"
+                      data-l10n-id="newtab-custom-widget-weather-toggle"
+                    />
+                  </div>
+                )}
+
+                {/* Lists */}
+                {mayHaveListsWidget && (
+                  <div id="lists-widget-section" className="section">
+                    <moz-toggle
+                      id="lists-toggle"
+                      pressed={listsEnabled || null}
+                      ontoggle={this.onPreferenceSelect}
+                      data-preference="widgets.lists.enabled"
+                      data-event-source="WIDGET_LISTS"
+                      data-l10n-id="newtab-custom-widget-lists-toggle"
+                    />
+                  </div>
+                )}
+
+                {/* Timer */}
+                {mayHaveTimerWidget && (
+                  <div id="timer-widget-section" className="section">
+                    <moz-toggle
+                      id="timer-toggle"
+                      pressed={timerEnabled || null}
+                      ontoggle={this.onPreferenceSelect}
+                      data-preference="widgets.focusTimer.enabled"
+                      data-event-source="WIDGET_TIMER"
+                      data-l10n-id="newtab-custom-widget-timer-toggle"
+                    />
+                  </div>
+                )}
+
+                {/* Clocks */}
+                {mayHaveClocksWidget && (
+                  <div id="clocks-widget-section" className="section">
+                    <moz-toggle
+                      id="clocks-toggle"
+                      pressed={!!clocksEnabled}
+                      ontoggle={this.onPreferenceSelect}
+                      data-preference="widgets.clocks.enabled"
+                      data-event-source="WIDGET_CLOCKS"
+                      data-l10n-id="newtab-custom-widget-clock-toggle"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
-            {/* If widgets section is visible, hide this divider */}
-            {!mayHaveWidgets && (
-              <span className="divider" role="separator"></span>
-            )}
-          </>
-        )}
-        {mayHaveWidgets && (
-          <div className="widgets-section">
-            <div className="category-header">
-              <h2 data-l10n-id="newtab-custom-widget-section-title"></h2>
-            </div>
-            <div className="settings-widgets">
-              {/* Weather */}
-              {mayHaveWeather && (
+          )}
+          <div className="settings-toggles">
+            {/* Note: If widgets are enabled, the weather toggle will be moved under Widgets subsection */}
+            {
+              // @nova-cleanup(remove-conditional): Remove novaEnabled conditional on data-preference; replace with data-preference="widgets.weather.enabled"
+              !mayHaveWidgets && mayHaveWeather && (
                 <div id="weather-section" className="section">
                   <moz-toggle
                     id="weather-toggle"
                     pressed={weatherEnabled || null}
-                    onToggle={this.onPreferenceSelect}
-                    data-preference="showWeather"
-                    data-event-source="WEATHER"
-                    data-l10n-id="newtab-custom-widget-weather-toggle"
-                  />
-                </div>
-              )}
-
-              {/* Lists */}
-              {mayHaveListsWidget && (
-                <div id="lists-widget-section" className="section">
-                  <moz-toggle
-                    id="lists-toggle"
-                    pressed={listsEnabled || null}
-                    onToggle={this.onPreferenceSelect}
-                    data-preference="widgets.lists.enabled"
-                    data-event-source="WIDGET_LISTS"
-                    data-l10n-id="newtab-custom-widget-lists-toggle"
-                  />
-                </div>
-              )}
-
-              {/* Timer */}
-              {mayHaveTimerWidget && (
-                <div id="timer-widget-section" className="section">
-                  <moz-toggle
-                    id="timer-toggle"
-                    pressed={timerEnabled || null}
-                    onToggle={this.onPreferenceSelect}
-                    data-preference="widgets.focusTimer.enabled"
-                    data-event-source="WIDGET_TIMER"
-                    data-l10n-id="newtab-custom-widget-timer-toggle"
-                  />
-                </div>
-              )}
-              <span className="divider" role="separator"></span>
-            </div>
-          </div>
-        )}
-        <div className="settings-toggles">
-          {/* Note: If widgets are enabled, the weather toggle will be moved under Widgets subsection */}
-          {!mayHaveWidgets && mayHaveWeather && (
-            <div id="weather-section" className="section">
-              <moz-toggle
-                id="weather-toggle"
-                pressed={weatherEnabled || null}
-                onToggle={this.onPreferenceSelect}
-                data-preference="showWeather"
-                data-event-source="WEATHER"
-                data-l10n-id="newtab-custom-weather-toggle"
-              />
-            </div>
-          )}
-
-          <div id="shortcuts-section" className="section">
-            <moz-toggle
-              id="shortcuts-toggle"
-              pressed={topSitesEnabled || null}
-              onToggle={this.onPreferenceSelect}
-              data-preference="feeds.topsites"
-              data-event-source="TOP_SITES"
-              data-l10n-id="newtab-custom-shortcuts-toggle"
-            >
-              <div slot="nested">
-                <div className="more-info-top-wrapper">
-                  <div
-                    className="more-information"
-                    ref={this.topSitesDrawerRef}
-                  >
-                    <select
-                      id="row-selector"
-                      className="selector"
-                      name="row-count"
-                      data-preference="topSitesRows"
-                      value={topSitesRowsCount}
-                      onChange={this.onPreferenceSelect}
-                      disabled={!topSitesEnabled}
-                      aria-labelledby="custom-shortcuts-title"
-                    >
-                      <option
-                        value="1"
-                        data-l10n-id="newtab-custom-row-selector"
-                        data-l10n-args='{"num": 1}'
-                      />
-                      <option
-                        value="2"
-                        data-l10n-id="newtab-custom-row-selector"
-                        data-l10n-args='{"num": 2}'
-                      />
-                      <option
-                        value="3"
-                        data-l10n-id="newtab-custom-row-selector"
-                        data-l10n-args='{"num": 3}'
-                      />
-                      <option
-                        value="4"
-                        data-l10n-id="newtab-custom-row-selector"
-                        data-l10n-args='{"num": 4}'
-                      />
-                    </select>
-                  </div>
-                </div>
-              </div>
-            </moz-toggle>
-          </div>
-
-          {pocketRegion && (
-            <div id="pocket-section" className="section">
-              <moz-toggle
-                id="pocket-toggle"
-                pressed={pocketEnabled || null}
-                onToggle={this.onPreferenceSelect}
-                aria-describedby="custom-pocket-subtitle"
-                data-preference="feeds.section.topstories"
-                data-event-source="TOP_STORIES"
-                {...(mayHaveInferredPersonalization
-                  ? {
-                      "data-l10n-id":
-                        "newtab-custom-stories-personalized-toggle",
+                    ontoggle={this.onPreferenceSelect}
+                    data-preference={
+                      novaEnabled ? "widgets.weather.enabled" : "showWeather"
                     }
-                  : {
-                      "data-l10n-id": "newtab-custom-stories-toggle",
-                    })}
+                    data-event-source="WEATHER"
+                    data-l10n-id="newtab-custom-weather-toggle"
+                  />
+                </div>
+              )
+            }
+
+            <span className="divider" role="separator"></span>
+
+            <div id="shortcuts-section" className="section">
+              <moz-toggle
+                id="shortcuts-toggle"
+                pressed={topSitesEnabled || null}
+                ontoggle={this.onPreferenceSelect}
+                data-preference="feeds.topsites"
+                data-event-source="TOP_SITES"
+                data-l10n-id={
+                  novaEnabled
+                    ? "newtab-custom-shortcuts-nova"
+                    : "newtab-custom-shortcuts-toggle"
+                }
               >
                 <div slot="nested">
-                  {(mayHaveInferredPersonalization || mayHaveTopicSections) && (
-                    <div className="more-info-pocket-wrapper">
-                      <div
-                        className="more-information"
-                        ref={this.pocketDrawerRef}
+                  <div className="more-info-top-wrapper">
+                    <div
+                      className="more-information"
+                      ref={this.topSitesDrawerRef}
+                    >
+                      <moz-select
+                        id="row-selector"
+                        className="selector"
+                        name="row-count"
+                        data-preference="topSitesRows"
+                        value={topSitesRowsCount}
+                        aria-labelledby="custom-shortcuts-title"
+                        onChange={this.onPreferenceSelect}
+                        // @nova-cleanup(remove-conditional): Remove novaEnabled conditional and spread operator, keep the attributes
+                        {...(novaEnabled && {
+                          "data-l10n-id": "newtab-custom-row-description",
+                          inputLayout: "inline-end",
+                        })}
                       >
-                        {mayHaveInferredPersonalization && (
-                          <div className="check-wrapper" role="presentation">
-                            <input
-                              id="inferred-personalization"
-                              className="customize-menu-checkbox"
-                              disabled={!pocketEnabled}
-                              checked={showInferredPersonalizationEnabled}
-                              type="checkbox"
-                              onChange={this.onPreferenceSelect}
-                              data-preference="discoverystream.sections.personalization.inferred.user.enabled"
-                              data-event-source="INFERRED_PERSONALIZATION"
+                        {[1, 2, 3, 4].map(num =>
+                          // @nova-cleanup(remove-conditional): Remove the conditional and "else" block after Nova lands
+                          novaEnabled ? (
+                            <moz-option
+                              key={num}
+                              value={String(num)}
+                              label={String(num)}
                             />
-                            <label
-                              className="customize-menu-checkbox-label"
-                              htmlFor="inferred-personalization"
-                              data-l10n-id="newtab-custom-stories-personalized-checkbox-label"
+                          ) : (
+                            <moz-option
+                              key={num}
+                              value={String(num)}
+                              data-l10n-id="newtab-custom-row-selector2"
+                              data-l10n-args={`{"num": ${num}}`}
                             />
-                          </div>
+                          )
                         )}
-                        {mayHaveTopicSections && (
-                          <SectionsMgmtPanel
-                            exitEventFired={exitEventFired}
-                            pocketEnabled={pocketEnabled}
-                            onSubpanelToggle={onSubpanelToggle}
-                            togglePanel={toggleSectionsMgmtPanel}
-                            showPanel={showSectionsMgmtPanel}
-                          />
-                        )}
-                      </div>
+                      </moz-select>
                     </div>
-                  )}
+                  </div>
                 </div>
               </moz-toggle>
             </div>
-          )}
+
+            {
+              // @nova-cleanup(remove-conditional): Remove novaEnabled check, keep divider
+              novaEnabled && mayHaveWidgets && (
+                <span className="divider" role="separator"></span>
+              )
+            }
+            {
+              // @nova-cleanup(remove-conditional): Remove novaEnabled check, keep toggle and WidgetsManagementPanel
+              novaEnabled && mayHaveWidgets && (
+                <div id="widgets-section" className="section">
+                  <moz-toggle
+                    id="widgets-system-toggle"
+                    pressed={widgetsEnabled || null}
+                    ontoggle={this.onPreferenceSelect}
+                    data-preference="widgets.enabled"
+                    data-event-source="WIDGETS_SYSTEM"
+                    data-l10n-id="newtab-custom-widget-section-toggle"
+                  >
+                    <div slot="nested">
+                      <div className="more-info-widgets-wrapper">
+                        <div
+                          className="more-information"
+                          ref={this.widgetsMgmtDrawerRef}
+                        >
+                          <WidgetsManagementPanel
+                            enabledSections={enabledSections}
+                            enabledWidgets={enabledWidgets}
+                            mayHaveWeather={mayHaveWeather}
+                            mayHaveTimerWidget={mayHaveTimerWidget}
+                            mayHaveListsWidget={mayHaveListsWidget}
+                            mayHaveSportsWidget={mayHaveSportsWidget}
+                            mayHaveClocksWidget={mayHaveClocksWidget}
+                            mayHaveWeatherForecast={mayHaveWeatherForecast}
+                            weatherDisplay={weatherDisplay}
+                            setPref={setPref}
+                            onSubpanelToggle={onSubpanelToggle}
+                            togglePanel={toggleWidgetsManagementPanel}
+                            showPanel={showWidgetsManagementPanel}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </moz-toggle>
+                </div>
+              )
+            }
+
+            {
+              // @nova-cleanup(remove-conditional): Remove novaEnabled check, keep divider
+              // The pocketRegion check makes sure there is only one divider present if it's false
+              novaEnabled && pocketRegion && (
+                <span className="divider" role="separator"></span>
+              )
+            }
+
+            {pocketRegion && (
+              <div id="pocket-section" className="section">
+                <moz-toggle
+                  id="pocket-toggle"
+                  pressed={pocketEnabled || null}
+                  ontoggle={this.onPreferenceSelect}
+                  data-preference="feeds.section.topstories"
+                  data-event-source="TOP_STORIES"
+                  data-l10n-id={pocketToggleL10nId}
+                >
+                  <div slot="nested">
+                    {(mayHaveInferredPersonalization ||
+                      mayHaveTopicSections) && (
+                      <div className="more-info-pocket-wrapper">
+                        <div
+                          className="more-information"
+                          ref={this.pocketDrawerRef}
+                        >
+                          {mayHaveInferredPersonalization && (
+                            <div className="check-wrapper" role="presentation">
+                              <input
+                                id="inferred-personalization"
+                                className="customize-menu-checkbox"
+                                disabled={!pocketEnabled}
+                                checked={showInferredPersonalizationEnabled}
+                                type="checkbox"
+                                onChange={this.onPreferenceSelect}
+                                data-preference="discoverystream.sections.personalization.inferred.user.enabled"
+                                data-event-source="INFERRED_PERSONALIZATION"
+                              />
+                              <label
+                                className="customize-menu-checkbox-label"
+                                htmlFor="inferred-personalization"
+                                data-l10n-id="newtab-custom-stories-personalized-checkbox-label"
+                              />
+                            </div>
+                          )}
+                          {mayHaveTopicSections && (
+                            <SectionsMgmtPanel
+                              exitEventFired={exitEventFired}
+                              pocketEnabled={pocketEnabled}
+                              onSubpanelToggle={onSubpanelToggle}
+                              togglePanel={toggleSectionsMgmtPanel}
+                              showPanel={showSectionsMgmtPanel}
+                              novaEnabled={novaEnabled}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </moz-toggle>
+              </div>
+            )}
+          </div>
+          {
+            // @nova-cleanup(remove-conditional): Remove this divider once Nova lands
+            !novaEnabled && <span className="divider" role="separator"></span>
+          }
+          {
+            // @nova-cleanup(remove-conditional): Remove this block once Nova ships
+            !novaEnabled && (
+              <div>
+                <button
+                  id="settings-link"
+                  className="external-link"
+                  onClick={openPreferences}
+                  data-l10n-id="newtab-custom-settings"
+                />
+              </div>
+            )
+          }
         </div>
 
-        <span className="divider" role="separator"></span>
-
-        <div>
-          <button
-            id="settings-link"
-            className="external-link"
-            onClick={openPreferences}
-            data-l10n-id="newtab-custom-settings"
-          />
-        </div>
-      </div>
+        {
+          // @nova-cleanup(remove-conditional): Remove novaEnabled check, keep manage-settings-footer
+          novaEnabled && (
+            <div className="manage-settings-footer">
+              <button
+                id="settings-link"
+                className="external-link"
+                onClick={openPreferences}
+                data-l10n-id="newtab-custom-settings"
+              />
+            </div>
+          )
+        }
+      </>
     );
   }
 }

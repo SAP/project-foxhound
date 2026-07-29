@@ -30,14 +30,15 @@ dependencies {
 
     implementation libs.androidx.appcompat
     implementation libs.androidx.constraintlayout
+    implementation libs.androidx.coordinatorlayout
     implementation libs.androidx.core.ktx
-    implementation libs.google.material
     implementation libs.kotlinx.coroutines
 
     testImplementation project(':components:support-test')
 
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
+    testImplementation libs.kotlin.test
     testImplementation libs.kotlinx.coroutines.test
     testImplementation libs.robolectric
 }

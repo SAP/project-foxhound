@@ -1,4 +1,3 @@
-/* -*-  indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -2747,6 +2746,7 @@ function run_PointerType_tests() {
   let typed_array_samples = [
     [new Int8Array(c_arraybuffer), ctypes.int8_t],
     [new Uint8Array(c_arraybuffer), ctypes.uint8_t],
+    [new Uint8ClampedArray(c_arraybuffer), ctypes.uint8_t],
     [new Int16Array(c_arraybuffer), ctypes.int16_t],
     [new Uint16Array(c_arraybuffer), ctypes.uint16_t],
     [new Int32Array(c_arraybuffer), ctypes.int32_t],
@@ -2760,6 +2760,7 @@ function run_PointerType_tests() {
     typed_array_samples.push(
       [new Int8Array(c_shared_arraybuffer), ctypes.int8_t],
       [new Uint8Array(c_shared_arraybuffer), ctypes.uint8_t],
+      [new Uint8ClampedArray(c_shared_arraybuffer), ctypes.uint8_t],
       [new Int16Array(c_shared_arraybuffer), ctypes.int16_t],
       [new Uint16Array(c_shared_arraybuffer), ctypes.uint16_t],
       [new Int32Array(c_shared_arraybuffer), ctypes.int32_t],
@@ -2777,9 +2778,10 @@ function run_PointerType_tests() {
       let number_of_items = c_arraybuffer.byteLength / item_type.size;
       let array_type = item_type.array(number_of_items);
 
-      // Int8Array on unshared memory is interconvertible with Int8Array on
-      // shared memory, etc.
-      if (i % 8 != j % 8) {
+      // Arrays are interconvertible iff they share the same ctypes element type
+      // (e.g. Uint8Array and Uint8ClampedArray both map to uint8_t).
+      // ctypes type objects are singletons so identity comparison is correct.
+      if (typed_array_samples[i][1] !== typed_array_samples[j][1]) {
         info(
           "Checking that typed array " +
             view.constructor.name +
@@ -2834,6 +2836,37 @@ function run_PointerType_tests() {
           Assert.equal(c_array[k - 1], view[k]);
         }
       }
+    }
+  }
+
+  // Typed arrays with no ctypes equivalent are rejected for any ctypes array type.
+  for (const [name, ctor] of [
+    [
+      "BigInt64Array",
+      typeof BigInt64Array !== "undefined" ? BigInt64Array : null,
+    ],
+    [
+      "BigUint64Array",
+      typeof BigUint64Array !== "undefined" ? BigUint64Array : null,
+    ],
+    ["Float16Array", typeof Float16Array !== "undefined" ? Float16Array : null],
+  ]) {
+    if (!ctor) {
+      continue;
+    }
+    let view = new ctor(c_arraybuffer);
+    for (let item_type of [ctypes.uint8_t, ctypes.int32_t, ctypes.float64_t]) {
+      info(
+        "Checking that typed array " +
+          name +
+          " can NOT be converted to " +
+          item_type +
+          " array"
+      );
+      let n = c_arraybuffer.byteLength / item_type.size;
+      do_check_throws(function () {
+        item_type.array(n)(view);
+      }, TypeError);
     }
   }
 
@@ -4001,6 +4034,36 @@ function run_variadic_tests(library) {
   );
 
   Assert.equal(result.value, 3 + 5 + 7 + 11);
+
+  let add_float_double_va = library.declare(
+    "test_add_float_double_va_cdecl",
+    ctypes.default_abi,
+    ctypes.void_t,
+    ctypes.double.ptr,
+    "..."
+  );
+  let dresult = ctypes.double(0.0);
+  add_float_double_va(
+    dresult.address(),
+    ctypes.float32_t(1.5),
+    ctypes.double(2.25)
+  );
+  Assert.equal(dresult.value, 3.75);
+
+  let add_uint8_uint16_va = library.declare(
+    "test_add_uint8_uint16_va_cdecl",
+    ctypes.default_abi,
+    ctypes.void_t,
+    ctypes.uint32_t.ptr,
+    "..."
+  );
+  let uresult = ctypes.uint32_t(0);
+  add_uint8_uint16_va(
+    uresult.address(),
+    ctypes.uint8_t(200),
+    ctypes.uint16_t(1000)
+  );
+  Assert.equal(uresult.value, 1200);
 
   result = ctypes.int32_t.array(3)([1, 1, 1]);
   let v1 = ctypes.int32_t.array(4)([1, 2, 3, 5]);

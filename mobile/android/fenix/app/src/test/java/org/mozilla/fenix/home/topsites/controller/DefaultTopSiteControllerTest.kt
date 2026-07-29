@@ -13,6 +13,7 @@ import io.mockk.mockk
 import io.mockk.spyk
 import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.action.SearchAction
 import mozilla.components.browser.state.search.RegionState
@@ -27,7 +28,6 @@ import mozilla.components.feature.top.sites.TopSitesUseCases
 import mozilla.components.service.mars.MozAdsUseCases
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -49,6 +49,7 @@ import org.mozilla.fenix.home.topsites.ShortcutsFragmentDirections
 import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.utils.Settings
 import java.lang.ref.WeakReference
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class DefaultTopSiteControllerTest {
@@ -737,7 +738,7 @@ class DefaultTopSiteControllerTest {
 
         controller.handleSelectTopSite(topSite, position)
 
-        verify { marsUseCases.recordInteraction(topSite.clickUrl) }
+        coVerify { marsUseCases.recordInteraction(topSite.clickUrl) }
 
         val event = TopSites.contileClick.testGetValue()!!
 
@@ -827,7 +828,7 @@ class DefaultTopSiteControllerTest {
 
         controller.handleTopSiteImpression(topSite, position)
 
-        verify { marsUseCases.recordInteraction(topSite.impressionUrl) }
+        coVerify { marsUseCases.recordInteraction(topSite.impressionUrl) }
 
         val event = TopSites.contileImpression.testGetValue()!!
 
@@ -925,7 +926,7 @@ class DefaultTopSiteControllerTest {
 
         controller.updateTopSite(topSite = topSite, title = title, url = url)
 
-        verify {
+        coVerify {
             topSitesUseCases.addPinnedSites(title = title, url = url)
         }
     }
@@ -945,8 +946,22 @@ class DefaultTopSiteControllerTest {
 
         controller.updateTopSite(topSite = topSite, title = title, url = url)
 
-        verify {
+        coVerify {
             topSitesUseCases.updateTopSites(topSite = topSite, title = title, url = url)
+        }
+    }
+
+    @Test
+    fun `WHEN a new shortcut is saved THEN add the shortcut as a pinned top site`() = runTest {
+        val controller = createController(this)
+        val title = "Firefox"
+        val url = "firefox.com"
+
+        controller.handleSaveShortcut(title = title, url = url)
+        testScheduler.advanceUntilIdle()
+
+        coVerify {
+            topSitesUseCases.addPinnedSites(title = title, url = url)
         }
     }
 

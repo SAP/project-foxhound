@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,7 +12,6 @@
 #include "Units.h"  // for CSSPoint
 #include "mozilla/ServoStyleConsts.h"
 #include "mozilla/gfx/Matrix.h"
-#include "nsSize.h"
 
 class nsIFrame;
 class nsPresContext;
@@ -73,6 +70,11 @@ class MOZ_STACK_CLASS TransformReferenceBox final {
     }
   }
 
+  // We don't really need to prevent copying, but since none of our consumers
+  // currently need to copy, preventing copying may allow us to catch some
+  // cases where we use pass-by-value instead of pass-by-reference.
+  TransformReferenceBox(const TransformReferenceBox&) = delete;
+
   void Init(const nsIFrame* aFrame) {
     MOZ_ASSERT(!mFrame && !mIsCached);
     mFrame = aFrame;
@@ -114,11 +116,6 @@ class MOZ_STACK_CLASS TransformReferenceBox final {
   bool IsEmpty() { return !mFrame; }
 
  private:
-  // We don't really need to prevent copying, but since none of our consumers
-  // currently need to copy, preventing copying may allow us to catch some
-  // cases where we use pass-by-value instead of pass-by-reference.
-  TransformReferenceBox(const TransformReferenceBox&) = delete;
-
   void EnsureDimensionsAreCached();
 
   const nsIFrame* mFrame = nullptr;
@@ -132,11 +129,13 @@ float ProcessTranslatePart(
 
 void ProcessInterpolateMatrix(mozilla::gfx::Matrix4x4& aMatrix,
                               const mozilla::StyleTransformOperation& aOp,
-                              TransformReferenceBox& aBounds);
+                              TransformReferenceBox& aBounds,
+                              mozilla::StyleZoom aEffectiveZoom);
 
 void ProcessAccumulateMatrix(mozilla::gfx::Matrix4x4& aMatrix,
                              const mozilla::StyleTransformOperation& aOp,
-                             TransformReferenceBox& aBounds);
+                             TransformReferenceBox& aBounds,
+                             mozilla::StyleZoom aEffectiveZoom);
 
 /**
  * Given a StyleTransform containing transform functions, returns a matrix
@@ -148,7 +147,8 @@ void ProcessAccumulateMatrix(mozilla::gfx::Matrix4x4& aMatrix,
  */
 mozilla::gfx::Matrix4x4 ReadTransforms(const mozilla::StyleTransform& aList,
                                        TransformReferenceBox& aBounds,
-                                       float aAppUnitsPerMatrixUnit);
+                                       float aAppUnitsPerMatrixUnit,
+                                       mozilla::StyleZoom aEffectiveZoom);
 
 // Generate the gfx::Matrix for CSS Transform Module Level 2.
 // https://drafts.csswg.org/css-transforms-2/#ctm
@@ -156,7 +156,7 @@ mozilla::gfx::Matrix4x4 ReadTransforms(
     const mozilla::StyleTranslate&, const mozilla::StyleRotate&,
     const mozilla::StyleScale&, const mozilla::ResolvedMotionPathData* aMotion,
     const mozilla::StyleTransform&, TransformReferenceBox& aRefBox,
-    float aAppUnitsPerMatrixUnit);
+    float aAppUnitsPerMatrixUnit, mozilla::StyleZoom aEffectiveZoom);
 
 /**
  * Given the x and y values, compute the 2d position with respect to the given

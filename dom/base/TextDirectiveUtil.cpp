@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -146,6 +144,12 @@ Result<nsString, ErrorResult> TextDirectiveUtil::RangeContentAsString(
 /* static */ bool TextDirectiveUtil::NodeHasBlockLevelDisplay(nsINode& aNode) {
   if (!aNode.IsElement()) {
     return false;
+  }
+  // <br> is inline but creates a line break that should act as a block boundary
+  // for text fragment purposes. Without this, text on both sides of a <br> gets
+  // concatenated (e.g. "test<br>test" -> "testtest").
+  if (aNode.IsHTMLElement(nsGkAtoms::br)) {
+    return true;
   }
   const Element* nodeAsElement = Element::FromNode(aNode);
   const RefPtr<const ComputedStyle> computedStyle =

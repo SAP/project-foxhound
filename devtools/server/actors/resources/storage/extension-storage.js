@@ -6,6 +6,7 @@
 
 const {
   BaseStorageActor,
+  SEPARATOR_GUID,
 } = require("resource://devtools/server/actors/resources/storage/index.js");
 const {
   parseItemValue,
@@ -34,6 +35,12 @@ loader.lazyGetter(this, "ExtensionStorageIDB", () => {
     { global: "shared" }
   ).ExtensionStorageIDB;
 });
+loader.lazyGetter(this, "extensionStorageSync", () => {
+  return ChromeUtils.importESModule(
+    "resource://gre/modules/ExtensionStorageSync.sys.mjs",
+    { global: "shared" }
+  ).extensionStorageSync;
+});
 
 /**
  * The Extension Storage actor.
@@ -49,16 +56,20 @@ class ExtensionStorageActor extends BaseStorageActor {
     this.extensionHostURL = this.getExtensionPolicy().getURL().slice(0, -1);
 
     // Map<host, ExtensionStorageIDB db connection>
-    // Bug 1542038, 1542039: Each storage area will need its own
-    // dbConnectionForHost, as they each have different storage backends.
-    // Anywhere dbConnectionForHost is used, we need to know the storage
-    // area to access the correct database.
+    // Bug 1542038: managed storage area will need its own
+    // backend.
     this.dbConnectionForHost = new Map();
 
     this.onExtensionStartup = this.onExtensionStartup.bind(this);
 
-    this.onStorageChange = this.onStorageChange.bind(this);
+    this.onLocalStorageChange = changes =>
+      this.onStorageChange(changes, this.AREA_LOCAL);
+    this.onSyncStorageChange = changes =>
+      this.onStorageChange(changes, this.AREA_SYNC);
   }
+
+  AREA_LOCAL = "local";
+  AREA_SYNC = "sync";
 
   getExtensionPolicy() {
     return WebExtensionPolicy.getByID(this.addonId);
@@ -67,7 +78,11 @@ class ExtensionStorageActor extends BaseStorageActor {
   destroy() {
     ExtensionStorageIDB.removeOnChangedListener(
       this.addonId,
-      this.onStorageChange
+      this.onLocalStorageChange
+    );
+    extensionStorageSync.removeOnChangedListener(
+      { id: this.addonId },
+      this.onSyncStorageChange
     );
     ExtensionParent.apiManager.off("startup", this.onExtensionStartup);
 
@@ -89,7 +104,11 @@ class ExtensionStorageActor extends BaseStorageActor {
     // listener to remove it when the debugger is being disconnected.
     ExtensionStorageIDB.addOnChangedListener(
       this.addonId,
-      this.onStorageChange
+      this.onLocalStorageChange
+    );
+    extensionStorageSync.addOnChangedListener(
+      { id: this.addonId },
+      this.onSyncStorageChange
     );
 
     try {
@@ -158,18 +177,55 @@ class ExtensionStorageActor extends BaseStorageActor {
 
     const db = await ExtensionStorageIDB.open(storagePrincipal);
     this.dbConnectionForHost.set(host, db);
-    const data = await db.get();
+    const localData = await db.get();
 
-    for (const [key, value] of Object.entries(data)) {
-      storeMap.set(key, value);
+    for (const [name, value] of Object.entries(localData)) {
+      const uniqueKey = this.getUniqueKey(this.AREA_LOCAL, name);
+      storeMap.set(uniqueKey, {
+        uniqueKey,
+        name,
+        value,
+        area: this.AREA_LOCAL,
+      });
     }
+
+    const syncData = await extensionStorageSync.get(
+      { id: this.addonId },
+      /* spec */ null
+    );
+
+    for (const [name, value] of Object.entries(syncData)) {
+      const uniqueKey = this.getUniqueKey(this.AREA_SYNC, name);
+      storeMap.set(uniqueKey, {
+        uniqueKey,
+        name,
+        value,
+        area: this.AREA_SYNC,
+      });
+    }
+
+    // Bug 1542038: Populate storage.managed from its backend.
   }
+
+  // Use a compound key like the cookies storage actor.
+  getUniqueKey(area, name) {
+    return name + SEPARATOR_GUID + area;
+  }
+
+  getAreaAndName(uniqueKey) {
+    const separatorIndex = uniqueKey.lastIndexOf(SEPARATOR_GUID);
+    return {
+      area: uniqueKey.slice(separatorIndex + SEPARATOR_GUID.length),
+      name: uniqueKey.slice(0, separatorIndex),
+    };
+  }
+
   /**
    * This fires when the extension changes storage data while the storage
    * inspector is open. Ensures this.hostVsStores stays up-to-date and
    * passes the changes on to update the client.
    */
-  onStorageChange(changes) {
+  onStorageChange(changes, area) {
     const host = this.extensionHostURL;
     const storeMap = this.hostVsStores.get(host);
 
@@ -181,8 +237,8 @@ class ExtensionStorageActor extends BaseStorageActor {
       );
     }
 
-    for (const key in changes) {
-      const storageChange = changes[key];
+    for (const name in changes) {
+      const storageChange = changes[name];
       let { newValue, oldValue } = storageChange;
       if (isStructuredCloneHolder(newValue)) {
         newValue = newValue.deserialize(this, true /* keepData */);
@@ -191,19 +247,20 @@ class ExtensionStorageActor extends BaseStorageActor {
         oldValue = oldValue.deserialize(this, true /* keepData */);
       }
 
+      const uniqueKey = this.getUniqueKey(area, name);
       let action;
       if (typeof newValue === "undefined") {
         action = "deleted";
-        storeMap.delete(key);
+        storeMap.delete(uniqueKey);
       } else if (typeof oldValue === "undefined") {
         action = "added";
-        storeMap.set(key, newValue);
+        storeMap.set(uniqueKey, { uniqueKey, name, value: newValue, area });
       } else {
         action = "changed";
-        storeMap.set(key, newValue);
+        storeMap.set(uniqueKey, { uniqueKey, name, value: newValue, area });
       }
 
-      this.storageActor.update(action, this.typeName, { [host]: [key] });
+      this.storageActor.update(action, this.typeName, { [host]: [uniqueKey] });
     }
   }
 
@@ -221,23 +278,16 @@ class ExtensionStorageActor extends BaseStorageActor {
     return storagePrincipal.deserialize(this, true);
   }
 
-  getValuesForHost(host, name) {
-    const result = [];
-
+  getValuesForHost(host, uniqueKey) {
     if (!this.hostVsStores.has(host)) {
-      return result;
+      return [];
     }
 
-    if (name) {
-      return [{ name, value: this.hostVsStores.get(host).get(name) }];
+    if (uniqueKey) {
+      return [this.hostVsStores.get(host).get(uniqueKey)];
     }
 
-    for (const [key, value] of Array.from(
-      this.hostVsStores.get(host).entries()
-    )) {
-      result.push({ name: key, value });
-    }
-    return result;
+    return Array.from(this.hostVsStores.get(host).values());
   }
 
   /**
@@ -256,7 +306,7 @@ class ExtensionStorageActor extends BaseStorageActor {
       return null;
     }
 
-    let { name, value } = item;
+    let { uniqueKey, name, value, area } = item;
     const isValueEditable = extensionStorageHelpers.isEditable(value);
 
     // `JSON.stringify()` throws for `BigInt`, adds extra quotes to strings and `Date` strings,
@@ -281,15 +331,17 @@ class ExtensionStorageActor extends BaseStorageActor {
     }
 
     return {
+      uniqueKey,
       name,
       value: new LongStringActor(this.conn, value),
-      area: "local", // Bug 1542038, 1542039: set the correct storage area
+      area,
       isValueEditable,
     };
   }
 
   getFields() {
     return [
+      { name: "uniqueKey", editable: false, private: true },
       { name: "name", editable: false },
       { name: "value", editable: true },
       { name: "area", editable: false },
@@ -304,12 +356,8 @@ class ExtensionStorageActor extends BaseStorageActor {
   }
 
   async editItem({ host, items }) {
-    const db = this.dbConnectionForHost.get(host);
-    if (!db) {
-      return;
-    }
-
-    const { name, value } = items;
+    const { area, name } = this.getAreaAndName(items.uniqueKey);
+    const { value } = items;
 
     let parsedValue = parseItemValue(value);
     if (parsedValue === value) {
@@ -321,22 +369,43 @@ class ExtensionStorageActor extends BaseStorageActor {
         }
       }
     }
-    const changes = await db.set({ [name]: parsedValue });
-    this.fireOnChangedExtensionEvent(host, changes);
-
-    this.onItemUpdated("changed", host, [name]);
-  }
-
-  async removeItem(host, name) {
-    const db = this.dbConnectionForHost.get(host);
-    if (!db) {
+    if (area === this.AREA_LOCAL) {
+      const db = this.dbConnectionForHost.get(host);
+      if (!db) {
+        return;
+      }
+      const changes = await db.set({ [name]: parsedValue });
+      this.fireOnChangedExtensionEvent(host, changes);
+    } else if (area === this.AREA_SYNC) {
+      await extensionStorageSync.set(
+        { id: this.addonId },
+        { [name]: parsedValue }
+      );
+    } else {
+      // For now, we only support local and sync
       return;
     }
 
-    const changes = await db.remove(name);
-    this.fireOnChangedExtensionEvent(host, changes);
+    this.onItemUpdated("changed", host, [this.getUniqueKey(area, name)]);
+  }
 
-    this.onItemUpdated("deleted", host, [name]);
+  async removeItem(host, uniqueKey) {
+    const { area, name } = this.getAreaAndName(uniqueKey);
+    if (area === this.AREA_LOCAL) {
+      const db = this.dbConnectionForHost.get(host);
+      if (!db) {
+        return;
+      }
+      const changes = await db.remove(name);
+      this.fireOnChangedExtensionEvent(host, changes);
+    } else if (area === this.AREA_SYNC) {
+      await extensionStorageSync.remove({ id: this.addonId }, name);
+    } else {
+      // For now, we only support local and sync
+      return;
+    }
+
+    this.onItemUpdated("deleted", host, [this.getUniqueKey(area, name)]);
   }
 
   async removeAll(host) {
@@ -348,15 +417,19 @@ class ExtensionStorageActor extends BaseStorageActor {
     const changes = await db.clear();
     this.fireOnChangedExtensionEvent(host, changes);
 
+    await extensionStorageSync.clear({ id: this.addonId });
+
     this.onItemUpdated("cleared", host, []);
   }
 
   /**
    * Let the extension know that storage data has been changed by the user from
    * the storage inspector.
+   * storage.sync does not need this because its backend notifies listeners
+   * directly.
    */
   fireOnChangedExtensionEvent(host, changes) {
-    // Bug 1542038, 1542039: Which message to send depends on the storage area
+    // Bug 1542038: storage.managed may need its own notification path.
     const uuid = new URL(host).host;
     Services.cpmm.sendAsyncMessage(
       `Extension:StorageLocalOnChanged:${uuid}`,

@@ -75,7 +75,7 @@ hazard
 
 Hazard builds are similar to "regular' builds, but use a compiler extension to
 extract a bunch of data from the build and then analyze that data looking for
-hazardous behaviors.
+hazardous behaviors. See https://firefox-source-docs.mozilla.org/js/HazardAnalysis/index.html
 
 l10n
 ----
@@ -452,6 +452,11 @@ Publishes signed langpacks to archive.mozilla.org
 release-update-verify
 ---------------------
 Verifies the contents and package of release update MARs.
+
+test-update-integrity
+---------------------
+Verifies that update MARs match installers. See `tools/update-verify/marannon` for more details.
+
 release-update-verify-next
 --------------------------
 Verifies the contents and package of release and updare MARs from the previous ESR release.
@@ -610,6 +615,22 @@ repackage-rpm-signing
 ---------------------
 Repackage-rpm-signing takes the repackaged RPMs and signs them.
 
+repackage-pkg-signing
+---------------------
+Repackage-pkg-signing takes the repackaged macOS .pkg installers and signs them.
+
+repackage-pkg-notarization
+--------------------------
+Notarization of signed macOS .pkg installers via Apple's notarization service.
+
+repackage-l10n-pkg-signing
+--------------------------
+Repackage-l10n-pkg-signing takes the l10n repackaged macOS .pkg installers and signs them.
+
+repackage-l10n-pkg-notarization
+-------------------------------
+Notarization of signed macOS .pkg installers via Apple's notarization service.
+
 repackage-flatpak
 -----------------
 These repackage tasks take signed Firefox Linux binaries and langpacks, and builds a flatpak.
@@ -691,10 +712,15 @@ in the parameters. See ``mach release-history`` if doing this manually.
 partials-zucchini
 -----------------
 Partials-zucchini takes the complete.mar files produced in previous tasks and generates partial
-updates between previous nightly releases and the new one. Requires a release_history
-in the parameters. See ``mach release-history`` if doing this manually.
+updates between previous nightly releases and the new one for the en-US locale only.
+Requires a release_history in the parameters. See ``mach release-history`` if doing this manually.
 The zucchini tool is compiled via toolchain task. The source code can be found at:
 https://chromium.googlesource.com/chromium/src/components/zucchini/
+
+partials-zucchini-l10n
+----------------------
+Partials-zucchini-l10n is the localized counterpart of partials-zucchini. It produces the same
+partial updates for every shipped locale.
 
 partials-signing
 ----------------
@@ -748,9 +774,17 @@ openh264-plugin
 ---------------
 Tasks used to build the openh264 plugin.
 
+openh264-notarization
+---------------------
+Mac notarization for the openh264 plugin.
+
 openh264-signing
 ----------------
 Signing for the openh264 plugin.
+
+openh264-symbol-upload
+-----------------------
+Upload crash symbols for the openh264 plugin to the symbol server.
 
 webrender
 ---------

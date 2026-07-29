@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -97,6 +95,11 @@ class GPUProcessHost final : public mozilla::ipc::GeckoChildProcessHost {
 
   bool IsConnected() const { return !!mGPUChild; }
 
+  bool IsLaunchOomError() const {
+    MonitorAutoLock lock(mMonitor);
+    return mLaunchOomError;
+  }
+
   // Return the time stamp for when we tried to launch the GPU process. This is
   // currently used for Telemetry so that we can determine how long GPU
   // processes take to spin up. Note this doesn't denote a successful launch,
@@ -136,6 +139,8 @@ class GPUProcessHost final : public mozilla::ipc::GeckoChildProcessHost {
   // tasks which have not yet completed asynchronously.
   bool CompleteInitSynchronously();
 
+  void OnProcessLaunchError(const base::LaunchError aError) override;
+
   // Called on the main thread when the mGPUChild actor is shutting down.
   void OnChannelClosed();
 
@@ -166,6 +171,7 @@ class GPUProcessHost final : public mozilla::ipc::GeckoChildProcessHost {
 
   bool mShutdownRequested;
   bool mChannelClosed;
+  bool mLaunchOomError MOZ_GUARDED_BY(mMonitor) = false;
 
   TimeStamp mLaunchTime;
 

@@ -268,13 +268,13 @@
 }
 
 .table-widget-column-header:not([sorted]):hover {
-  background-image: linear-gradient(rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.1));
+  background-image: image(rgba(0, 0, 0, 0.1));
 }
 
 .table-widget-column-header[sorted] {
   background-color: var(--theme-selection-background);
   color: var(--theme-selection-color);
-  border-image: linear-gradient(var(--theme-splitter-color), var(--theme-splitter-color)) 1 1;
+  border-image: image(var(--theme-splitter-color)) 1 1;
   box-shadow: -0.5px -0.5px 0 0.5px var(--theme-splitter-color);
   background-position: right 6px center;
 }

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -70,7 +68,7 @@ AvailableMemoryChecker::AvailableMemoryChecker() : mResolved(false) {}
 NS_IMPL_ISUPPORTS(AvailableMemoryChecker, nsITimerCallback, nsINamed);
 
 void AvailableMemoryChecker::Init() {
-  mTabUnloader = new MockTabUnloader;
+  mTabUnloader = MakeRefPtr<MockTabUnloader>();
 
   mWatcher = nsAvailableMemoryWatcherBase::GetSingleton();
   mWatcher->RegisterTabUnloader(mTabUnloader);
@@ -128,7 +126,7 @@ class Spinner final : public nsIObserver {
       mObserverSvc->RemoveObserver(this, aTopic);
 
       // Force the loop to move in case there is no event in the queue.
-      nsCOMPtr<nsIRunnable> dummyEvent = new Runnable(__func__);
+      RefPtr dummyEvent = MakeRefPtr<Runnable>(__func__);
       NS_DispatchToMainThread(dummyEvent);
     }
     return NS_OK;
@@ -173,13 +171,13 @@ void StartUserInteraction(const nsCOMPtr<nsIObserverService>& aObserverSvc) {
 TEST(AvailableMemoryWatcher, BasicTest)
 {
   nsCOMPtr<nsIObserverService> observerSvc = services::GetObserverService();
-  RefPtr<Spinner> aSpinner = new Spinner(observerSvc, "memory-pressure");
+  RefPtr aSpinner = MakeRefPtr<Spinner>(observerSvc, "memory-pressure");
   aSpinner->StartListening();
 
   // Start polling for low memory.
   StartUserInteraction(observerSvc);
 
-  RefPtr<AvailableMemoryChecker> checker = new AvailableMemoryChecker();
+  RefPtr checker = MakeRefPtr<AvailableMemoryChecker>();
   checker->Init();
 
   aSpinner->WaitForNotification();
@@ -196,23 +194,22 @@ TEST(AvailableMemoryWatcher, MemoryLowToHigh)
   Preferences::SetUint("browser.low_commit_space_threshold_percent", 100);
 
   nsCOMPtr<nsIObserverService> observerSvc = services::GetObserverService();
-  RefPtr<Spinner> lowMemorySpinner =
-      new Spinner(observerSvc, "memory-pressure");
+  RefPtr lowMemorySpinner = MakeRefPtr<Spinner>(observerSvc, "memory-pressure");
   lowMemorySpinner->StartListening();
 
   StartUserInteraction(observerSvc);
 
   // Start polling for low memory. We should start with low memory when we start
   // the checker.
-  RefPtr<AvailableMemoryChecker> checker = new AvailableMemoryChecker();
+  RefPtr checker = MakeRefPtr<AvailableMemoryChecker>();
   checker->Init();
 
   lowMemorySpinner->WaitForNotification();
 
   EXPECT_TRUE(lowMemorySpinner->TopicObserved());
 
-  RefPtr<Spinner> highMemorySpinner =
-      new Spinner(observerSvc, "memory-pressure-stop");
+  RefPtr highMemorySpinner =
+      MakeRefPtr<Spinner>(observerSvc, "memory-pressure-stop");
   highMemorySpinner->StartListening();
 
   // Now that we are definitely low on memory, let's reset the pref to 0 to

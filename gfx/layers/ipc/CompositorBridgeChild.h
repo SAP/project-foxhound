@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,13 +11,17 @@
 #include "mozilla/layers/PCompositorBridgeChild.h"
 #include "mozilla/layers/TextureForwarder.h"  // for TextureForwarder
 #include "mozilla/webrender/WebRenderTypes.h"
+#include "mozilla/RefPtr.h"
 #include "nsClassHashtable.h"  // for nsClassHashtable
 #include "nsCOMPtr.h"          // for nsCOMPtr
 #include "nsHashKeys.h"        // for nsUint64HashKey
 #include "nsISupportsImpl.h"   // for NS_INLINE_DECL_REFCOUNTING
 #include "nsIWeakReferenceUtils.h"
+#include "nsStringFwd.h"
 
 #include <unordered_map>
+
+class nsIWidget;
 
 namespace mozilla {
 
@@ -62,8 +64,13 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
    */
   void InitForContent(uint32_t aNamespace);
 
-  void InitForWidget(uint64_t aProcessToken,
-                     WebRenderLayerManager* aLayerManager, uint32_t aNamespace);
+  void InitForWidget(uint64_t aProcessToken, uint32_t aNamespace);
+
+  // Creates a layer manager for this compositor bridge. Must only be called
+  // once, and only on widget compositor bridges.
+  RefPtr<WebRenderLayerManager> CreateLayerManager(nsIWidget* aWidget,
+                                                   wr::PipelineId aPipelineId,
+                                                   nsCString& aError);
 
   void Destroy();
 
@@ -83,17 +90,9 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
   mozilla::ipc::IPCResult RecvNotifyJankedAnimations(
       const LayersId& aLayersId, nsTArray<uint64_t>&& aJankedAnimations);
 
-  PTextureChild* AllocPTextureChild(
-      const SurfaceDescriptor& aSharedData, ReadLockDescriptor& aReadLock,
-      const LayersBackend& aLayersBackend, const TextureFlags& aFlags,
-      const LayersId& aId, const uint64_t& aSerial,
-      const wr::MaybeExternalImageId& aExternalImageId);
-
-  bool DeallocPTextureChild(PTextureChild* actor);
-
   mozilla::ipc::IPCResult RecvParentAsyncMessages(
       nsTArray<AsyncParentMessageData>&& aMessages);
-  PTextureChild* CreateTexture(
+  already_AddRefed<PTextureChild> CreateTexture(
       const SurfaceDescriptor& aSharedData, ReadLockDescriptor&& aReadLock,
       LayersBackend aLayersBackend, TextureFlags aFlags,
       const dom::ContentParentId& aContentId, uint64_t aSerial,
@@ -171,16 +170,9 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
   bool AllocShmem(size_t aSize, mozilla::ipc::Shmem* aShmem) override;
   bool DeallocShmem(mozilla::ipc::Shmem& aShmem) override;
 
-  PAPZCTreeManagerChild* AllocPAPZCTreeManagerChild(const LayersId& aLayersId);
-  bool DeallocPAPZCTreeManagerChild(PAPZCTreeManagerChild* aActor);
-
-  PAPZChild* AllocPAPZChild(const LayersId& aLayersId);
-  bool DeallocPAPZChild(PAPZChild* aActor);
-
-  PWebRenderBridgeChild* AllocPWebRenderBridgeChild(
-      const wr::PipelineId& aPipelineId, const LayoutDeviceIntSize&,
-      const WindowKind&);
-  bool DeallocPWebRenderBridgeChild(PWebRenderBridgeChild* aActor);
+  already_AddRefed<PAPZCTreeManagerChild> AllocPAPZCTreeManagerChild(
+      const LayersId& aLayersId);
+  already_AddRefed<PAPZChild> AllocPAPZChild(const LayersId& aLayersId);
 
   wr::MaybeExternalImageId GetNextExternalImageId() override;
 

@@ -192,9 +192,6 @@ support-files = [
 
 ["test_bug1741132.html"]
 support-files = ["file_bug1741132.html"]
-skip-if = [
-  "os == 'android' && !sessionHistoryInParent",
-]
 
 ["test_bug1742865.html"]
 support-files = [

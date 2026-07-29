@@ -75,6 +75,9 @@ def lint(paths, config, log, **lintargs):
     if config.get("exclude"):
         args.append(f"--extend-exclude={','.join(config['exclude'])}")
 
+    if lintargs.get("extra_args"):
+        args.extend(lintargs["extra_args"])
+
     warning_rules = set(config.get("warning-rules", []))
     if lintargs.get("fix"):
         # Do a first pass with --fix-only as the json format doesn't return the

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -111,14 +109,6 @@ class nsMathMLFrame : public nsIMathMLFrame {
   //   operator and zero or more spacelike elements.
   static void GetEmbellishDataFrom(nsIFrame* aFrame,
                                    nsEmbellishData& aEmbellishData);
-
-  // helper to get the presentation data of a frame. If aClimbTree is
-  // set to true and the frame happens to be surrounded by non-MathML
-  // helper frames needed for its support, we walk up the frame hierarchy
-  // until we reach a MathML ancestor or the <root> math element.
-  static void GetPresentationDataFrom(nsIFrame* aFrame,
-                                      nsPresentationData& aPresentationData,
-                                      bool aClimbTree = true);
 
   // utilities to parse and retrieve numeric values in CSS units
   // All values are stored in twips.

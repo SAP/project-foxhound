@@ -9,8 +9,9 @@ DevToolsModules("initializer.js", "panel.js")
 XPCSHELL_TESTS_MANIFESTS += ["test/xpcshell/xpcshell.toml"]
 
 BROWSER_CHROME_MANIFESTS += [
-    "test/browser.toml",
+    "test/browser_al.toml",
     "test/browser_http3.toml",
+    "test/browser_mz.toml",
     "test/filters/browser.toml",
     "test/new-resend-request/browser.toml",
     "test/websockets/browser.toml",

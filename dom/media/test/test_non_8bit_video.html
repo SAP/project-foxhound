@@ -14,16 +14,17 @@ if (SpecialPowers.Services.appinfo.OS != "WINNT") {
   videos.push("vp9-yuv420p12.webm");
 }
 add_task(async function testPlayAll() {
-  await Promise.all(videos.map(
-    (f) => {
-      let v = document.createElement("video");
-      document.body.appendChild(v);
-      v.src = f;
-      return v;
-    }).map(
-      (v) => v.play())).then(
-        () => ok(true, "All video played."),
-        (e) => ok(false, "Play video error: " + e));
+  for (const filename of videos) {
+    let video = document.createElement("video");
+    document.body.appendChild(video);
+    video.src = filename;
+    video.addEventListener("error", () =>
+      info(`${filename}: error event code=${video.error?.code} message=${video.error?.message}`));
+    video.addEventListener("playing", () => info(`${filename}: playing`));
+    await video.play().then(
+      () => ok(true, `${filename} played`),
+      (e) => ok(false, `${filename} play() rejected: ${e}`));
+  }
 });
 
 </script>

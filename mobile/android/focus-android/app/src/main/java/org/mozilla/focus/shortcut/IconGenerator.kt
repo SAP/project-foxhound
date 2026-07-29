@@ -17,6 +17,9 @@ import mozilla.components.support.ktx.kotlin.stripCommonSubdomains
 import org.mozilla.focus.R
 import org.mozilla.focus.shortcut.IconGenerator.generateAdaptiveLauncherIcon
 
+/**
+ * Utility for generating launcher icons for web shortcuts.
+ */
 object IconGenerator {
     private const val TEXT_SIZE_DP = 36f
     private const val DEFAULT_ICON_CHAR = '?'

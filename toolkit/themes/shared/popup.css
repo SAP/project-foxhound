@@ -6,61 +6,65 @@
 
 /* ::::: menupopup ::::: */
 
-menupopup,
-panel {
-  /* We can always render in the preferred color scheme (unless otherwise
-   * overridden). */
-  color-scheme: light dark;
-
-  min-width: 1px;
-  --panel-background: Menu;
-  --panel-color: MenuText;
+:is(menupopup, panel):where(:not([type="arrow"])) {
+  --panel-background-color: Menu;
+  --panel-text-color: MenuText;
   --panel-padding: var(--panel-padding-block) 0;
-  /* This should match GetMenuCornerRadius() on macOS, or be overridden below */
-  --panel-border-radius: 6px;
-  --panel-padding-block: var(--dimension-4);
-
   --panel-border-color: ThreeDShadow;
-  --panel-width: initial;
 
-  --panel-shadow-margin: var(--dimension-4);
-  --panel-shadow: 0 0 var(--panel-shadow-margin) hsla(0, 0%, 0%, 0.2);
-  -moz-window-input-region-margin: var(--panel-shadow-margin);
-  margin: calc(-1 * var(--panel-shadow-margin));
-
-  /* Panel design token theming */
-  --background-color-canvas: var(--panel-background);
+  /* Nova's design tokens already provide a larger --panel-border-radius, so
+     only apply the platform default when Nova is disabled. */
+  @media not -moz-pref("browser.nova.enabled") {
+    /* This should match GetMenuCornerRadius() on macOS, or be overridden below */
+    --panel-border-radius: 6px;
+  }
 
   @media (-moz-platform: linux) {
     @media (prefers-contrast) {
       --panel-border-color: color-mix(in srgb, currentColor 60%, transparent);
     }
-
-    /* On some linux WMs we need to draw square and opaque menus because alpha
-     * is not available */
-    @media not (-moz-gtk-csd-transparency-available) {
-      opacity: 1 !important;
-      --panel-shadow-margin: 0px !important;
-      --panel-border-radius: 0px !important;
-    }
   }
 
   @media (-moz-platform: macos) {
-    appearance: auto;
-    -moz-default-appearance: menupopup;
-    /* We set the default background here, rather than on ::part(content),
-     * because otherwise it'd interfere with the native look. Non-native-looking
-     * popups should get their background via --panel-background */
-    background-color: Menu;
-    --panel-background: none;
+    --panel-background-color: none;
     --panel-border-color: transparent;
-    /* -moz-window-shadow does the trick on macOS */
-    --panel-shadow-margin: 0px;
 
     @media (-moz-mac-tahoe-theme) {
       /* GetMenuCornerRadius() returns a larger value on Tahoe */
       --panel-border-radius: 12px;
     }
+  }
+}
+
+:is(menupopup, panel) {
+  /* We can always render in the preferred color scheme (unless otherwise
+   * overridden). */
+  color-scheme: light dark;
+  min-width: 1px;
+  -moz-window-input-region-margin: var(--panel-box-shadow-margin);
+  margin: calc(-1 * var(--panel-box-shadow-margin));
+
+  /* Panel design token theming */
+  --background-color-canvas: var(--panel-background-color);
+
+  @media (-moz-platform: linux) and (not (-moz-gtk-csd-transparency-available)) {
+    /* On some linux WMs we need to draw square and opaque menus because alpha
+     * is not available. */
+    opacity: 1 !important;
+    --panel-box-shadow-margin: 0px !important;
+    --panel-border-radius: 0px !important;
+  }
+
+  @media (-moz-platform: macos) {
+    /* -moz-window-shadow does the trick on macOS */
+    --panel-box-shadow: none;
+    --panel-box-shadow-margin: 0px;
+    appearance: auto;
+    -moz-default-appearance: menupopup;
+    /* We set the default background here, rather than on ::part(content),
+     * because otherwise it'd interfere with the native look. Non-native-looking
+     * popups should get their background via --panel-background-color */
+    background-color: Menu;
   }
 
   &::part(content) {
@@ -68,21 +72,27 @@ panel {
     box-sizing: border-box;
 
     padding: var(--panel-padding);
-    color: var(--panel-color);
-    background: var(--panel-background);
+    color: var(--panel-text-color);
+    background: var(--panel-background-color);
+    /* The values chosen for the border radius should match OS values, not necessarily
+     * design system values. */
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
     border-radius: var(--panel-border-radius);
     border: 1px solid var(--panel-border-color);
     width: var(--panel-width);
-    box-shadow: var(--panel-shadow);
-    margin: var(--panel-shadow-margin);
+    box-shadow: var(--panel-box-shadow);
+    margin: var(--panel-box-shadow-margin);
 
     min-width: 0;
     min-height: 0;
 
     /* Makes popup constraints work. Round up to avoid subpixel rounding
      * causing overflow, see bug 1846050 */
-    max-height: round(up, 100% - 2 * var(--panel-shadow-margin), 1px);
-    max-width: round(up, 100% - 2 * var(--panel-shadow-margin), 1px);
+    /* Our stylelint rules don't account for the round() function, see bug 2018789 */
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    max-height: round(up, 100% - 2 * var(--panel-box-shadow-margin), 1px);
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    max-width: round(up, 100% - 2 * var(--panel-box-shadow-margin), 1px);
 
     overflow: clip; /* Don't let panel content overflow the border */
   }

@@ -9,6 +9,38 @@ newtab-page-title = بازدەری نوێ
 newtab-settings-button =
     .title = پەڕەی بازدەری نوێ بە دڵی خۆت لێبکە
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = بازدەری نوێ
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } ڕیز
+           *[other] { $num } ڕیز
+        }
+home-restore-defaults-srd =
+    .label = بنەرەتی بهێنەوە
+    .accesskey = R
+home-mode-choice-custom-srd =
+    .label = بەستەری خوازراو...
+home-mode-choice-blank-srd =
+    .label = پەڕەی بۆش
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = چیرۆکی سپۆنسەرکراو
+home-prefs-highlights-option-visited-pages-srd =
+    .label = پەڕەی سەردانکراو
+home-prefs-highlights-options-bookmarks-srd =
+    .label = دڵخوازەکان
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = دوواترین داگرتن
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +48,7 @@ newtab-search-box-search-button =
     .title = گەڕان
     .aria-label = گەڕان
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = بزوێنەری گەڕان زیادبکە
 newtab-topsites-add-shortcut-header = قەدبڕی نوێ

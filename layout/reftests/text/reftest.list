@@ -73,7 +73,6 @@ fuzzy-if(Android,0-231,0-653) == subpixel-lineheight-1a.html subpixel-lineheight
 == white-space-1b.html white-space-1-ref.html
 == white-space-2.html white-space-2-ref.html
 == white-space-3.html white-space-3-ref.html
-pref(intl.icu4x.segmenter.enabled,false) == wordbreak-1.html wordbreak-1-ref.html
 == wordbreak-3.html wordbreak-3-ref.html
 == wordbreak-4b.html wordbreak-4b-ref.html
 == wordbreak-5.html wordbreak-5-ref.html
@@ -148,7 +147,6 @@ fuzzy-if(gtkWidget,0-255,0-912) == arabic-marks-1.html arabic-marks-1-ref.html
 skip-if(!cocoaWidget) != 1349308-1.html 1349308-notref.html # macOS-specific test for -apple-system glyph metrics
 pref(layout.css.letter-spacing.model,0) fuzzy-if(Android,0-128,0-233) == 1463020-letter-spacing-text-transform-1.html 1463020-letter-spacing-text-transform-1-ref.html
 pref(layout.css.letter-spacing.model,0) fails-if(Android) fuzzy-if(gtkWidget,0-255,0-201) == 1463020-letter-spacing-text-transform-2.html 1463020-letter-spacing-text-transform-2-ref.html # missing font coverage on Android
-pref(intl.icu4x.segmenter.enabled,false) == 1507661-spurious-hyphenation-after-explicit.html 1507661-spurious-hyphenation-after-explicit-ref.html
 == 1522857-1.html 1522857-1-ref.html
 != 1637405-pua-shaping-1.html 1637405-pua-shaping-1-notref.html
 == 1655364-1.html 1655364-1-ref.html
@@ -335,8 +333,6 @@ fuzzy-if(cocoaWidget,0-1,0-1421) == color-opacity-rtl-2.html color-opacity-rtl-2
 
 == letter-spacing-nolig-1.html letter-spacing-nolig-1-ref.html
 == letter-spacing-nolig-2.html letter-spacing-nolig-2.html
-
-pref(intl.icu4x.segmenter.enabled,false) == ethiopic-wordspace.html ethiopic-wordspace-ref.html
 
 # sub and sup elements should be influenced by their container's line-height - bug 1524897
 == sub-sup-and-line-height.html sub-sup-and-line-height-ref.html

@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,18 +21,7 @@
 #include "jerror.h"
 
 #include "gfxPlatform.h"
-#include "mozilla/EndianUtils.h"
 #include "mozilla/gfx/Types.h"
-
-extern "C" {
-#include "iccjpeg.h"
-}
-
-#if MOZ_BIG_ENDIAN()
-#  define MOZ_JCS_EXT_NATIVE_ENDIAN_XRGB JCS_EXT_XRGB
-#else
-#  define MOZ_JCS_EXT_NATIVE_ENDIAN_XRGB JCS_EXT_BGRX
-#endif
 
 static void cmyk_convert_bgra(uint32_t* aInput, uint32_t* aOutput,
                               int32_t aWidth, bool aIsInverted);
@@ -53,7 +41,7 @@ static qcms_profile* GetICCProfile(struct jpeg_decompress_struct& info) {
   uint32_t profileLength;
   qcms_profile* profile = nullptr;
 
-  if (read_icc_profile(&info, &profilebuf, &profileLength)) {
+  if (jpeg_read_icc_profile(&info, &profilebuf, &profileLength)) {
     profile = qcms_profile_from_memory(profilebuf, profileLength);
     free(profilebuf);
   }

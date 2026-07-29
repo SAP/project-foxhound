@@ -14,10 +14,8 @@ add_task(async function test_spellcheck_checkbox_toggles_pref() {
     ],
   });
 
-  await openPreferencesViaOpenPreferencesAPI("paneGeneral", {
-    leaveOpen: true,
-  });
-  let win = gBrowser.selectedBrowser.contentWindow;
+  let tab = await openPrefsTab("languages");
+  let win = tab.linkedBrowser.contentWindow;
   let doc = win.document;
 
   let settingGroup = doc.querySelector('setting-group[groupid="spellCheck"]');
@@ -65,5 +63,5 @@ add_task(async function test_spellcheck_checkbox_toggles_pref() {
     "Link href is localized"
   );
 
-  BrowserTestUtils.removeTab(gBrowser.selectedTab);
+  BrowserTestUtils.removeTab(tab);
 });

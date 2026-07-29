@@ -9,7 +9,17 @@
  */
 "use strict";
 
-const UNITS = ["B", "kiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"];
+const UNIT_L10N_IDS = [
+  "perftools-memory-unit-b",
+  "perftools-memory-unit-kib",
+  "perftools-memory-unit-mib",
+  "perftools-memory-unit-gib",
+  "perftools-memory-unit-tib",
+  "perftools-memory-unit-pib",
+  "perftools-memory-unit-eib",
+  "perftools-memory-unit-zib",
+  "perftools-memory-unit-yib",
+];
 
 const AppConstants = ChromeUtils.importESModule(
   "resource://gre/modules/AppConstants.sys.mjs"
@@ -41,34 +51,29 @@ function clamp(val, min, max) {
 }
 
 /**
- * Formats a file size.
+ * Formats a file size, returning the numeric value along with
+ * a respective memory unit localization id.
  *
  * @param {number} num - The number (in bytes) to format.
- * @returns {string} e.g. "10 B", "100 MiB"
+ * @returns {{ size: number, unitL10nId: string }}
  */
 function formatFileSize(num) {
   if (!Number.isFinite(num)) {
     throw new TypeError(`Expected a finite number, got ${typeof num}: ${num}`);
   }
 
-  const neg = num < 0;
-
-  if (neg) {
-    num = -num;
-  }
-
   if (num < 1) {
-    return (neg ? "-" : "") + num + " B";
+    return { size: num, unitL10nId: UNIT_L10N_IDS[0] };
   }
 
   const exponent = Math.min(
     Math.floor(Math.log2(num) / Math.log2(1024)),
-    UNITS.length - 1
+    UNIT_L10N_IDS.length - 1
   );
-  const numStr = Number((num / Math.pow(1024, exponent)).toPrecision(3));
-  const unit = UNITS[exponent];
+  const size = Number((num / Math.pow(1024, exponent)).toPrecision(3));
+  const unitL10nId = UNIT_L10N_IDS[exponent];
 
-  return (neg ? "-" : "") + numStr + " " + unit;
+  return { size, unitL10nId };
 }
 
 /**

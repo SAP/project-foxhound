@@ -140,15 +140,20 @@ def fetch_artifacts(root_gcs_path, device, artifact_pattern):
     gcs_path = f"gs://{root_gcs_path.rstrip('/')}/{device}*/{artifact_pattern}"
 
     try:
-        result = subprocess.check_output(["gsutil", "ls", gcs_path], text=True)
+        result = subprocess.check_output(
+            ["gsutil", "ls", gcs_path], text=True, stderr=subprocess.STDOUT
+        )
         return result.splitlines()
     except subprocess.CalledProcessError as e:
-        if "AccessDeniedException" in e.output:
+        output = e.output or ""
+        if "AccessDeniedException" in output:
             logging.error(f"Permission denied for GCS path: {gcs_path}")
-        elif "network error" in e.output.lower():
+        elif "network error" in output.lower():
             logging.error(f"Network error accessing GCS path: {gcs_path}")
+        elif "CommandException: One or more URLs matched no objects" in output:
+            logging.info(f"No files found in GCS at {gcs_path}")
         else:
-            logging.error(f"Failed to list files: {e.output}")
+            logging.error(f"Failed to list files at {gcs_path}: {output}")
         return []
     except Exception as e:
         logging.error(f"Error executing gsutil: {e}")
@@ -200,7 +205,7 @@ def gsutil_cp(artifact, dest):
             elif "network error" in result.stderr.lower():
                 logging.error(f"Network error accessing GCS path: {artifact}")
             else:
-                logging.error(f"Failed to list files: {result.stderr}")
+                logging.error(f"Failed to copy file {artifact}: {result.stderr}")
     except Exception as e:
         logging.error(f"Error executing gsutil: {e}")
 

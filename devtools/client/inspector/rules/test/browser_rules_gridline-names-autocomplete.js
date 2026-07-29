@@ -23,6 +23,7 @@ const OPEN = 1;
 const SELECTED = 2;
 const CHANGE = 4;
 const SUBMIT_PROPERTY_NAME = 8;
+const UPDATED = 16;
 
 const changeTestData = [
   ["c", {}, "col1-start", OPEN | SELECTED | CHANGE],
@@ -42,10 +43,11 @@ const newAreaTestData = [
   // property value opens (with the grid area names), without auto-selecting an item.
   ["VK_TAB", {}, "", OPEN | SUBMIT_PROPERTY_NAME],
   ["c", {}, "col1-start", OPEN | SELECTED | CHANGE],
-  ["VK_BACK_SPACE", {}, "c", CHANGE],
-  ["VK_BACK_SPACE", {}, "", OPEN | CHANGE],
+  ["VK_BACK_SPACE", {}, "c"],
+  ["VK_BACK_SPACE", {}, "", OPEN],
   ["r", {}, "revert", OPEN | SELECTED | CHANGE],
   ["VK_DOWN", {}, "revert-layer", OPEN | SELECTED | CHANGE],
+  ["VK_DOWN", {}, "revert-rule", OPEN | SELECTED | CHANGE],
   ["VK_DOWN", {}, "row1-start", OPEN | SELECTED | CHANGE],
   ["r", {}, "rr", CHANGE],
   ["VK_BACK_SPACE", {}, "r", CHANGE],
@@ -66,11 +68,12 @@ const newRowTestData = [
   // property value opens (with the grid area names), without auto-selecting an item.
   ["VK_TAB", {}, "", OPEN | SUBMIT_PROPERTY_NAME],
   ["c", {}, "c", CHANGE],
-  ["VK_BACK_SPACE", {}, "", OPEN | CHANGE],
+  ["VK_BACK_SPACE", {}, "", OPEN],
   ["r", {}, "revert", OPEN | SELECTED | CHANGE],
   ["VK_DOWN", {}, "revert-layer", OPEN | SELECTED | CHANGE],
+  ["VK_DOWN", {}, "revert-rule", OPEN | SELECTED | CHANGE],
   ["VK_DOWN", {}, "row1-start", OPEN | SELECTED | CHANGE],
-  ["VK_TAB", {}, "", CHANGE],
+  ["VK_TAB", {}, "", UPDATED],
 ];
 
 const TEST_URL = URL_ROOT + "doc_grid_names.html";
@@ -114,7 +117,7 @@ async function runNewPropertyAutocompletionTest(
   await selectNode("#cell2", inspector);
 
   info("Focusing the css property editable field");
-  const ruleEditor = getRuleViewRuleEditor(view, 0);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 0);
   const editor = await focusNewRuleViewProperty(ruleEditor);
 
   info("Starting to test for css property completion");
@@ -132,7 +135,7 @@ async function runChangePropertyAutocompletionTest(
   info("Selecting the test node");
   await selectNode("#cell3", inspector);
 
-  const ruleEditor = getRuleViewRuleEditor(view, 1).rule;
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1).rule;
   const prop = ruleEditor.textProps[0];
 
   info("Focusing the css property editable value");
@@ -157,10 +160,11 @@ async function testCompletion(
   const open = !!(flags & OPEN);
   const selected = !!(flags & SELECTED);
   const change = !!(flags & CHANGE);
+  const updated = !!(flags & UPDATED);
   const submitPropertyName = !!(flags & SUBMIT_PROPERTY_NAME);
 
   info(
-    `Pressing key "${key}", expecting "${completion}", popup opened: ${open}, item selected: ${selected}`
+    `Pressing key "${key}", expecting "${completion}", popup opened: ${open}, item selected: ${selected} change: ${change}`
   );
 
   const promises = [];
@@ -170,6 +174,10 @@ async function testCompletion(
     // always be the last to be triggered and tells us when the preview has
     // been done.
     promises.push(view.once("ruleview-changed"));
+  } else if (updated) {
+    // When comiting a value via Tab key, the rule view won't be fully updated,
+    // but only the text property will.
+    promises.push(view.once("property-value-updated"));
   } else if (key !== "VK_RIGHT" && key !== "VK_BACK_SPACE") {
     // Otherwise, expect an after-suggest event (except if the autocomplete gets dismissed).
     promises.push(editor.once("after-suggest"));

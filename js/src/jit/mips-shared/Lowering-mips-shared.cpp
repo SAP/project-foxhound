@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -147,7 +145,7 @@ void LIRGeneratorMIPSShared::lowerDivI(MDiv* div) {
     // possible; division by negative powers of two can be optimized in a
     // similar manner as positive powers of two, and division by other
     // constants can be optimized by a reciprocal multiplication technique.
-    int32_t shift = FloorLog2(rhs);
+    int32_t shift = FloorLog2(uint32_t(rhs));
     if (rhs > 0 && 1 << shift == rhs) {
       LDivPowTwoI* lir =
           new (alloc()) LDivPowTwoI(useRegister(div->lhs()), temp(), shift);
@@ -189,7 +187,7 @@ void LIRGeneratorMIPSShared::lowerMulI(MMul* mul, MDefinition* lhs,
 void LIRGeneratorMIPSShared::lowerModI(MMod* mod) {
   if (mod->rhs()->isConstant()) {
     int32_t rhs = mod->rhs()->toConstant()->toInt32();
-    int32_t shift = FloorLog2(rhs);
+    int32_t shift = FloorLog2(uint32_t(rhs));
     if (rhs > 0 && 1 << shift == rhs) {
       LModPowTwoI* lir =
           new (alloc()) LModPowTwoI(useRegister(mod->lhs()), shift);
@@ -585,9 +583,9 @@ void LIRGenerator::visitWasmCompareExchangeHeap(MWasmCompareExchangeHeap* ins) {
   MDefinition* base = ins->base();
   // See comment in visitWasmLoad re the type of 'base'.
   MOZ_ASSERT(base->type() == MIRType::Int32 || base->type() == MIRType::Int64);
-  LAllocation memoryBase =
-      ins->hasMemoryBase() ? LAllocation(useRegisterAtStart(ins->memoryBase()))
-                           : LGeneralReg(HeapReg);
+  LAllocation memoryBase = ins->hasMemoryBase()
+                               ? LAllocation(useRegister(ins->memoryBase()))
+                               : LGeneralReg(HeapReg);
 
   if (ins->access().type() == Scalar::Int64) {
     auto* lir = new (alloc()) LWasmCompareExchangeI64(
@@ -619,9 +617,9 @@ void LIRGenerator::visitWasmAtomicExchangeHeap(MWasmAtomicExchangeHeap* ins) {
   MDefinition* base = ins->base();
   // See comment in visitWasmLoad re the type of 'base'.
   MOZ_ASSERT(base->type() == MIRType::Int32 || base->type() == MIRType::Int64);
-  LAllocation memoryBase =
-      ins->hasMemoryBase() ? LAllocation(useRegisterAtStart(ins->memoryBase()))
-                           : LGeneralReg(HeapReg);
+  LAllocation memoryBase = ins->hasMemoryBase()
+                               ? LAllocation(useRegister(ins->memoryBase()))
+                               : LGeneralReg(HeapReg);
 
   if (ins->access().type() == Scalar::Int64) {
     auto* lir = new (alloc()) LWasmAtomicExchangeI64(
@@ -650,9 +648,9 @@ void LIRGenerator::visitWasmAtomicBinopHeap(MWasmAtomicBinopHeap* ins) {
   MDefinition* base = ins->base();
   // See comment in visitWasmLoad re the type of 'base'.
   MOZ_ASSERT(base->type() == MIRType::Int32 || base->type() == MIRType::Int64);
-  LAllocation memoryBase =
-      ins->hasMemoryBase() ? LAllocation(useRegisterAtStart(ins->memoryBase()))
-                           : LGeneralReg(HeapReg);
+  LAllocation memoryBase = ins->hasMemoryBase()
+                               ? LAllocation(useRegister(ins->memoryBase()))
+                               : LGeneralReg(HeapReg);
 
   if (ins->access().type() == Scalar::Int64) {
     auto* lir = new (alloc())

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -19,7 +17,6 @@
 #include <string.h>
 #ifdef ANDROID
 #  include <android/log.h>
-#  include <fstream>
 #endif  // ANDROID
 #ifdef XP_WIN
 #  include <processthreadsapi.h>
@@ -69,6 +66,7 @@
 #include "vm/ToSource.h"    // js::ValueToSource
 
 #include "vm/Compartment-inl.h"
+#include "vm/JSObject-inl.h"
 #include "vm/Stack-inl.h"
 
 using namespace js;
@@ -331,6 +329,8 @@ static void MaybeReportOverRecursedForDifferentialTesting() {
 }
 
 void JSContext::onOverRecursed() {
+  AutoSuppressAllocationMetadataBuilder suppressMetadata(this);
+
   // Try to construct an over-recursed error and then update the exception
   // status to `OverRecursed`. Creating the error can fail, so check there
   // is a reasonable looking exception pending before updating status.
@@ -517,7 +517,7 @@ static void PrintSingleError(FILE* file, JS::ConstUTF8CharsZ toStringResult,
 
   /* embedded newlines -- argh! */
   const char* ctmp;
-  while ((ctmp = strchr(message, '\n')) != 0) {
+  while ((ctmp = strchr(message, '\n')) != nullptr) {
     ctmp++;
     if (prefix) {
       fputs(prefix.get(), file);
@@ -844,8 +844,10 @@ bool InternalJobQueue::getHostDefinedGlobal(
 }
 
 bool InternalJobQueue::getHostDefinedData(
-    JSContext* cx, JS::MutableHandle<JSObject*> data) const {
-  data.set(nullptr);
+    JSContext* cx, JS::MutableHandle<JSObject*> incumbentGlobal,
+    JS::MutableHandle<JSObject*> optionalHostDefinedData) const {
+  incumbentGlobal.set(nullptr);
+  optionalHostDefinedData.set(nullptr);
   return true;
 }
 
@@ -998,6 +1000,18 @@ JS::GenericMicroTask js::MicroTaskQueueSet::popFront() {
   return JS::NullValue();
 }
 
+JS::GenericMicroTask js::MicroTaskQueueSet::peekFront() {
+  JS_LOG(mtq, Info, "JS Peek Queue");
+  if (!debugMicroTaskQueue.empty()) {
+    return debugMicroTaskQueue.front();
+  }
+  if (!microTaskQueue.empty()) {
+    return microTaskQueue.front();
+  }
+
+  return JS::NullValue();
+}
+
 bool js::MicroTaskQueueSet::enqueueRegularMicroTask(
     JSContext* cx, const JS::GenericMicroTask& entry) {
   JS_LOG(mtq, Verbose, "JS: Enqueue Regular MT");
@@ -1046,6 +1060,10 @@ JS_PUBLIC_API JS::GenericMicroTask JS::DequeueNextMicroTask(JSContext* cx) {
 JS_PUBLIC_API JS::GenericMicroTask JS::DequeueNextDebuggerMicroTask(
     JSContext* cx) {
   return cx->microTaskQueues->popDebugFront();
+}
+
+JS_PUBLIC_API JS::GenericMicroTask JS::PeekNextMicroTask(JSContext* cx) {
+  return cx->microTaskQueues->peekFront();
 }
 
 JS_PUBLIC_API bool JS::HasAnyMicroTasks(JSContext* cx) {
@@ -1187,6 +1205,7 @@ JSContext::JSContext(JSRuntime* runtime, const JS::ContextOptions& options)
       jobQueue(this, nullptr),
       internalJobQueue(this),
       canSkipEnqueuingJobs(this, false),
+      asyncResumeDepth(this, 0),
       promiseRejectionTrackerCallback(this, nullptr),
       promiseRejectionTrackerCallbackData(this, nullptr),
       oomStackTraceBuffer_(this, nullptr),
@@ -1332,7 +1351,7 @@ void JSContext::setPendingException(HandleValue value,
   if (captureStack == ShouldCaptureStack::Always ||
       realm()->shouldCaptureStackForThrow()) {
     RootedObject stack(this);
-    if (!CaptureStack(this, &stack)) {
+    if (!CaptureStack(this, &stack, js::MAX_REPORTED_STACK_DEPTH)) {
       clearPendingException();
     }
     if (stack) {
@@ -1475,9 +1494,6 @@ void JSContext::trace(JSTracer* trc) {
   if (isolate) {
     irregexp::TraceIsolate(trc, isolate.ref());
   }
-#ifdef ENABLE_WASM_JSPI
-  wasm().trace(trc);
-#endif
 }
 
 JS::NativeStackLimit JSContext::stackLimitForJitCode(JS::StackKind kind) {
@@ -1486,6 +1502,10 @@ JS::NativeStackLimit JSContext::stackLimitForJitCode(JS::StackKind kind) {
 #else
   return stackLimit(kind);
 #endif
+}
+
+bool JSContext::stackContainsAddress(uintptr_t address, JS::StackKind kind) {
+  return address <= nativeStackBase() && address > stackLimit(kind);
 }
 
 void JSContext::resetJitStackLimit() {

@@ -122,8 +122,8 @@ add_task(async function test_theme_install() {
     Assert.equal(updates.length, 1, "Got expected number of theme updates");
     let parsed = JSON.parse(updates[0]);
     ok(
-      parsed.theme.headerURL.endsWith("/testImage.png"),
-      "Theme update has the expected headerURL"
+      parsed.theme.headerImage.endsWith("/testImage.png"),
+      "Theme update has the expected headerImage"
     );
     is(
       parsed.theme.id,

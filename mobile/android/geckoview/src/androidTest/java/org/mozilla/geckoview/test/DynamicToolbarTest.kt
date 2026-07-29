@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * Any copyright is dedicated to the Public Domain.
+/* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 package org.mozilla.geckoview.test
@@ -352,7 +351,37 @@ class DynamicToolbarTest : BaseSessionTest() {
         // Set active since setVerticalClipping call affects only for forground tab.
         mainSession.setActive(true)
 
-        mainSession.loadTestPath(SHOW_DYNAMIC_TOOLBAR_HTML_PATH)
+        mainSession.loadTestPath(SHOW_DYNAMIC_TOOLBAR_HTML_PATH + "?target=body")
+        mainSession.waitForPageStop()
+        mainSession.evaluateJS("window.scrollTo(0, " + dynamicToolbarMaxHeight + ")")
+        mainSession.waitUntilCalled(object : ScrollDelegate {
+            @AssertCalled(count = 1)
+            override fun onScrollChanged(session: GeckoSession, scrollX: Int, scrollY: Int) {
+            }
+        })
+
+        // Simulate the dynamic toolbar being hidden by the scroll
+        sessionRule.display?.run { setVerticalClipping(-dynamicToolbarMaxHeight) }
+
+        mainSession.synthesizeTap(5, 25)
+
+        mainSession.waitUntilCalled(object : ContentDelegate {
+            @AssertCalled(count = 1)
+            override fun onShowDynamicToolbar(session: GeckoSession) {
+            }
+        })
+    }
+
+    @WithDisplay(height = SCREEN_HEIGHT, width = SCREEN_WIDTH)
+    @Test
+    fun showDynamicToolbarOnFrameReconstruction() {
+        val dynamicToolbarMaxHeight = SCREEN_HEIGHT / 2
+        sessionRule.display?.run { setDynamicToolbarMaxHeight(dynamicToolbarMaxHeight) }
+
+        // Set active since setVerticalClipping call affects only for forground tab.
+        mainSession.setActive(true)
+
+        mainSession.loadTestPath(SHOW_DYNAMIC_TOOLBAR_HTML_PATH + "?target=html")
         mainSession.waitForPageStop()
         mainSession.evaluateJS("window.scrollTo(0, " + dynamicToolbarMaxHeight + ")")
         mainSession.waitUntilCalled(object : ScrollDelegate {

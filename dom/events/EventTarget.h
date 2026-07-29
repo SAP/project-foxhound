@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -206,7 +204,7 @@ class EventTarget : public nsISupports, public nsWrapperCache {
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void DispatchEvent(Event& aEvent,
                                                  ErrorResult& aRv);
 
-  nsIGlobalObject* GetParentObject() const { return GetOwnerGlobal(); }
+  nsIGlobalObject* GetParentObject() const { return GetRelevantGlobal(); }
 
   // Note, this takes the type in onfoo form!
   EventHandlerNonNull* GetEventHandler(const nsAString& aType) {
@@ -224,16 +222,11 @@ class EventTarget : public nsISupports, public nsWrapperCache {
   // For an event 'foo' aType will be 'onfoo'.
   virtual void EventListenerRemoved(nsAtom* aType) {}
 
-  // Returns an outer window that corresponds to the inner window this event
-  // target is associated with.  Will return null if the inner window is not the
-  // current inner or if there is no window around at all.
-  Nullable<WindowProxyHolder> GetOwnerGlobalForBindings();
-  virtual nsPIDOMWindowOuter* GetOwnerGlobalForBindingsInternal() = 0;
-
   // The global object this event target is associated with, if any.
   // This may be an inner window or some other global object.  This
   // will never be an outer window.
-  virtual nsIGlobalObject* GetOwnerGlobal() const = 0;
+  // https://html.spec.whatwg.org/#relevant
+  virtual nsIGlobalObject* GetRelevantGlobal() const = 0;
 
   /**
    * Get the event listener manager, creating it if it does not already exist.
@@ -306,6 +299,7 @@ class EventTarget : public nsISupports, public nsWrapperCache {
    * chain creation. This is used to handle things that must be executed before
    * dispatching the event to DOM.
    */
+  MOZ_CAN_RUN_SCRIPT
   virtual nsresult PreHandleEvent(EventChainVisitor& aVisitor) { return NS_OK; }
 
   /**

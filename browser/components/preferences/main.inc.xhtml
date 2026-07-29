@@ -28,16 +28,16 @@
 <html:setting-group id="startupGroup" groupid="startup" data-category="paneGeneral" hidden="true"/>
 
 <!-- Data migration -->
-<html:setting-group groupid="importBrowserData" id="dataMigrationGroup" data-category="paneGeneral" hidden="true" />
+<html:setting-group groupid="importBrowserData" id="dataMigrationGroup" data-category="paneGeneral" hidden="true" data-srd-migrated="" />
 
 <!-- Profiles -->
-<html:setting-group id="profilesGroup" groupid="profiles" data-category="paneGeneral" hidden="true" />
+<html:setting-group id="profilesGroup" groupid="profiles" data-category="paneGeneral" hidden="true" data-srd-migrated="" />
 
 <!-- Tab preferences -->
-<html:setting-group data-category="paneGeneral" hidden="true" groupid="tabs" />
+<html:setting-group data-category="paneGeneral" hidden="true" groupid="tabs" data-srd-migrated="" />
 
 <!-- Browser layout -->
-<html:setting-group groupid="browserLayout" data-category="paneGeneral" data-subcategory="layout" hidden="true"></html:setting-group>
+<html:setting-group groupid="browserLayout" data-category="paneGeneral" data-subcategory="layout" data-srd-migrated="" hidden="true"></html:setting-group>
 
 <hbox id="languageAndAppearanceCategory"
       class="subcategory"
@@ -47,20 +47,22 @@
 </hbox>
 
 <!-- Website appearance -->
-<html:setting-group groupid="appearance" data-category="paneGeneral" hidden="true"></html:setting-group>
-
-<!-- Colors -->
-<html:setting-group id="contrastControlGroup" groupid="contrast" data-category="paneGeneral" hidden="true" />
-
-<!-- Fonts -->
-<html:setting-group id="fontsGroup" groupid="fonts" data-category="paneGeneral" hidden="true" />
+<html:setting-group groupid="appearance" data-category="paneGeneral" data-srd-migrated="" hidden="true"></html:setting-group>
 
 <!-- Zoom -->
-<html:setting-group id="zoomGroup" groupid="zoom" data-category="paneGeneral" hidden="true" />
+<html:setting-group id="zoomGroup" groupid="zoom" data-category="paneGeneral" hidden="true" data-srd-migrated="" />
+
+<!-- Fonts -->
+<html:setting-group id="fontsGroup" groupid="fonts" data-category="paneGeneral" hidden="true" data-srd-migrated="" />
+
+<!-- Colors -->
+<html:setting-group id="contrastControlGroup" groupid="contrast" data-category="paneGeneral" hidden="true" data-srd-migrated="" />
+
 
 <!-- Languages -->
-<html:setting-group groupid="websiteLanguage" hidden="true" data-category="paneGeneral"></html:setting-group>
-<groupbox id="languagesGroup" data-category="paneGeneral" hidden="true">
+<html:setting-group groupid="browserLanguage" data-srd-migrated="" hidden="true" data-category="paneGeneral"></html:setting-group>
+<html:setting-group groupid="websiteLanguage" data-srd-migrated="" hidden="true" data-category="paneGeneral"></html:setting-group>
+<groupbox id="languagesGroup" data-category="paneGeneral" hidden="true" data-srd-groupid="browserLanguage">
   <label><html:h2 data-l10n-id="language-header"/></label>
 
   <vbox id="browserLanguagesBox" align="start" hidden="true">
@@ -75,12 +77,12 @@
               data-l10n-id="manage-browser-languages-button"/>
     </hbox>
   </vbox>
-  <hbox id="confirmBrowserLanguage" class="message-bar" align="center" hidden="true">
+  <hbox id="confirmBrowserLanguage" class="message-bar" align="center" hidden="true" data-srd-groupid="browserLanguage">
     <html:img class="message-bar-icon"/>
     <vbox class="message-bar-content-container" align="stretch" flex="1"/>
   </hbox>
 
-  <hbox id="languagesBox" align="center">
+  <hbox id="languagesBox" align="center" data-srd-groupid="websiteLanguage">
     <description flex="1" control="chooseLanguage" data-l10n-id="choose-language-description"/>
     <button id="chooseLanguage"
             is="highlightable-button"
@@ -101,18 +103,6 @@
             data-l10n-id="use-system-locale"
             data-l10n-args='{"localeName": "und"}'
             preference="intl.regional_prefs.use_os_locales"/>
-
-  <!-- This Translations UI manages the prefs for the addon only.
-       We were planning to remove this once ESR 115 went away, but it seems
-       that it may live forever. I think it can be safely removed from a current
-       version of Firefox, though, especially once the Settings Redesign is finalized. -->
-  <hbox id="fxtranslationsBox" hidden="true" data-subcategory="fxtranslations">
-    <description flex="1" control="fxtranslateButton" data-l10n-id="fx-translate-web-pages"/>
-    <button id="fxtranslateButton"
-            is="highlightable-button"
-            class="accessory-button"
-            data-l10n-id="translate-exceptions"/>
-  </hbox>
 
   <!-- This Translations UI is the pre-settings-redesign UI and should be removed
        when getting ready for the settings redesign to fully ship. -->
@@ -142,22 +132,25 @@
 </groupbox>
 
 <!-- This Translations UI is compatible with the settings redesign -->
-<html:setting-group data-category="paneGeneral" groupid="translations" hidden="true"/>
+<html:setting-group data-category="paneGeneral" groupid="translations" data-srd-migrated="" hidden="true"/>
 
-<html:setting-group data-category="paneGeneral" groupid="spellCheck" hidden="true"/>
+<html:setting-group data-category="paneGeneral" groupid="spellCheck" data-srd-migrated="" hidden="true"/>
 
 <!-- Files and Applications -->
 <hbox id="filesAndApplicationsCategory"
       class="subcategory"
       hidden="true"
+      data-srd-groupid="applications"
       data-category="paneGeneral">
   <html:h1 data-l10n-id="files-and-applications-title"/>
 </hbox>
 
-<!--Downloads-->
-<html:setting-group groupid="downloads" data-category="paneGeneral" hidden="true"/>
+<!-- Downloads -->
+<html:setting-group groupid="downloads" data-category="paneGeneral" data-srd-migrated="" hidden="true"/>
 
-<groupbox id="applicationsGroup" data-category="paneGeneral" hidden="true">
+<!-- Applications -->
+<groupbox id="applicationsGroup" data-category="paneGeneral" hidden="true" data-srd-migrated=""
+  data-srd-groupid="applications">
   <label><html:h2 data-l10n-id="applications-header"/></label>
   <description class="description-deemphasized" data-l10n-id="applications-description"/>
   <html:moz-input-search
@@ -189,189 +182,24 @@
   </radiogroup>
 </groupbox>
 
-
 <!-- DRM Content -->
-<html:setting-group groupid="drm" data-category="paneGeneral" data-subcategory="drm" hidden="true" />
-
-<hbox id="updatesCategory"
-      class="subcategory"
-      hidden="true"
-      data-category="paneGeneral">
-  <html:h1 data-l10n-id="update-application-title"/>
-</hbox>
+<html:setting-group groupid="drm" data-category="paneGeneral" data-subcategory="drm" hidden="true" data-srd-migrated="" />
 
 <!-- Update -->
-<groupbox id="updateApp" data-category="paneGeneral" hidden="true">
-  <label class="search-header" hidden="true"><html:h2 data-l10n-id="update-application-title"/></label>
-
-  <description class="description-deemphasized" data-l10n-id="update-application-description"/>
-  <hbox align="center">
-    <vbox flex="1">
-      <html:span id="updateAppInfo">
-        <html:a id="releasenotes" target="_blank" data-l10n-name="learn-more" class="learnMore text-link" hidden="true"/>
-      </html:span>
-      <description id="distribution" class="text-blurb" hidden="true"/>
-      <description id="distributionId" class="text-blurb" hidden="true"/>
-    </vbox>
-#ifdef MOZ_UPDATER
-    <button id="showUpdateHistory"
-            is="highlightable-button"
-            class="accessory-button"
-            data-l10n-id="update-history"
-            preference="app.update.disable_button.showUpdateHistory"
-            search-l10n-ids="
-              history-title,
-              history-intro
-            "/>
-#endif
-  </hbox>
-#ifdef MOZ_UPDATER
-  <vbox id="updateBox">
-    <deck id="updateDeck" orient="vertical">
-      <hbox id="checkForUpdates" align="start">
-        <spacer flex="1"/>
-        <button id="checkForUpdatesButton"
-                is="highlightable-button"
-                data-l10n-id="update-checkForUpdatesButton"/>
-      </hbox>
-      <hbox id="downloadAndInstall" align="start">
-        <spacer flex="1"/>
-        <button id="downloadAndInstallButton"
-                is="highlightable-button"/>
-                <!-- label and accesskey will be filled by JS -->
-      </hbox>
-      <hbox id="apply" align="start">
-        <spacer flex="1"/>
-        <button id="updateButton"
-                is="highlightable-button"
-                data-l10n-id="update-updateButton"/>
-      </hbox>
-      <hbox id="checkingForUpdates" align="start">
-        <html:img class="update-throbber"/>
-        <label data-l10n-id="update-checkingForUpdates"/>
-        <button data-l10n-id="update-checkForUpdatesButton"
-                is="highlightable-button"
-                disabled="true"/>
-      </hbox>
-      <description id="downloading" data-l10n-id="settings-update-downloading" data-l10n-args='{"transfer":""}'>
-        <html:img class="update-throbber" data-l10n-name="icon"/>
-        <label data-l10n-name="download-status"/>
-      </description>
-      <hbox id="applying" align="start">
-        <html:img class="update-throbber"/>
-        <label data-l10n-id="update-applying"/>
-      </hbox>
-      <hbox id="downloadFailed" align="start">
-        <label data-l10n-id="update-failed-main">
-          <html:a id="failedLink" target="_blank" class="learnMore text-link" data-l10n-name="failed-link-main"></html:a>
-        </label>
-        <button id="checkForUpdatesButton2"
-                data-l10n-id="update-checkForUpdatesButton"
-                is="highlightable-button"/>
-      </hbox>
-      <hbox id="policyDisabled" align="start">
-        <label data-l10n-id="update-policy-disabled"/>
-        <button data-l10n-id="update-checkForUpdatesButton"
-                is="highlightable-button"
-                disabled="true"/>
-      </hbox>
-      <hbox id="noUpdatesFound" align="start">
-        <label class="face-smile" data-l10n-id="update-noUpdatesFound"/>
-        <button id="checkForUpdatesButton3"
-                data-l10n-id="update-checkForUpdatesButton"
-                is="highlightable-button"/>
-      </hbox>
-      <hbox id="checkingFailed" align="start">
-        <label class="face-sad" data-l10n-id="aboutdialog-update-checking-failed"/>
-        <button id="checkForUpdatesButton4"
-                data-l10n-id="update-checkForUpdatesButton"
-                is="highlightable-button"/>
-      </hbox>
-      <hbox id="otherInstanceHandlingUpdates" align="start">
-        <label data-l10n-id="update-otherInstanceHandlingUpdates"/>
-        <button data-l10n-id="update-checkForUpdatesButton"
-                is="highlightable-button"
-                disabled="true"/>
-      </hbox>
-      <hbox id="manualUpdate" align="start">
-        <description class="face-sad" data-l10n-id="settings-update-manual-with-link" data-l10n-args='{"displayUrl":""}'>
-          <html:a class="manualLink" data-l10n-name="manual-link" target="_blank"/>
-        </description>
-        <button data-l10n-id="update-checkForUpdatesButton"
-                is="highlightable-button"
-                disabled="true"/>
-      </hbox>
-      <hbox id="unsupportedSystem" align="start">
-        <description flex="1" data-l10n-id="update-unsupported">
-          <label id="unsupportedLink" class="learnMore" data-l10n-name="unsupported-link" is="text-link"></label>
-        </description>
-        <button data-l10n-id="update-checkForUpdatesButton"
-                is="highlightable-button"
-                disabled="true"/>
-      </hbox>
-      <hbox id="restarting" align="start">
-        <html:img class="update-throbber"/>
-        <label data-l10n-id="update-restarting"/>
-        <button data-l10n-id="update-updateButton"
-                is="highlightable-button"
-                disabled="true"/>
-      </hbox>
-      <hbox id="internalError" align="start">
-        <description class="face-sad" flex="1" data-l10n-id="update-internal-error2" data-l10n-args='{"displayUrl":""}'>
-          <label class="manualLink" data-l10n-name="manual-link" is="text-link"/>
-        </description>
-        <button data-l10n-id="update-checkForUpdatesButton"
-                is="highlightable-button"
-                disabled="true"/>
-      </hbox>
-    </deck>
-  </vbox>
-#endif
-
-#ifdef MOZ_UPDATER
-  <label id="updateAllowDescription" data-l10n-id="update-application-allow-description"></label>
-  <vbox id="updateSettingsContainer" class="info-box-container">
-    <radiogroup id="updateRadioGroup">
-      <radio id="autoDesktop"
-             value="true"
-             data-l10n-id="update-application-auto"/>
-#ifdef MOZ_UPDATE_AGENT
-      <checkbox id="backgroundUpdate"
-                class="indent"
-                hidden="true"
-                data-l10n-id="update-application-background-enabled"/>
-#endif
-      <radio id="manualDesktop"
-             value="false"
-             data-l10n-id="update-application-check-choose"/>
-    </radiogroup>
-    <hbox id="updateSettingCrossUserWarningDesc" hidden="true">
-      <hbox class="info-icon-container">
-        <html:img class="info-icon"/>
-      </hbox>
-      <description id="updateSettingCrossUserWarning"
-                   flex="1"
-                   data-l10n-id="update-application-warning-cross-user-setting">
-      </description>
-    </hbox>
-  </vbox>
-#ifdef NIGHTLY_BUILD
-  <checkbox id="showUpdatePrompts"
-            data-l10n-id="update-application-suppress-prompts"
-            preference="app.update.suppressPrompts"/>
-#endif
-#endif
-</groupbox>
-
-<!-- Support -->
-<html:setting-group groupid="support" data-category="paneGeneral" hidden="true" />
+<html:setting-group groupid="updates" data-category="paneGeneral" hidden="true" data-srd-migrated="" />
 
 <!-- Performance -->
-<html:setting-group groupid="performance" data-category="paneGeneral" hidden="true" />
+<html:setting-group groupid="performance" data-category="paneGeneral" hidden="true" data-srd-migrated="" />
 
 <!-- Browsing -->
 <html:setting-group groupid="browsing" data-category="paneGeneral" hidden="true"/>
 
+<!-- Keyboard and Scrolling -->
+<html:setting-group groupid="keyboardAndScrolling" data-category="paneGeneral" hidden="true" data-srd-migrated="" />
+
+<!-- Motion and Link -->
+<html:setting-group groupid="motionAndLink" data-category="paneGeneral" hidden="true" data-srd-migrated="" />
+
 <!-- Network Settings-->
-<html:setting-group groupid="networkProxy" data-category="paneGeneral" data-subcategory="netsettings" hidden="true" />
+<html:setting-group groupid="networkProxy" data-category="paneGeneral" data-subcategory="netsettings" hidden="true" data-srd-migrated="" />
 </html:template>

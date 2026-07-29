@@ -92,7 +92,7 @@ def _generate_compile_commands(work_dir: pathlib.Path) -> None:
     by the include cleaner binary.
 
     Args:
-        work_dir: gn out dir where the compile_commands json file exists
+        work_dir: gn out dir
     """
     compile_commands_path = work_dir / "compile_commands.json"
     print("Generating compile commands file...")
@@ -113,6 +113,13 @@ def _run_clang_tidy(work_dir: pathlib.Path) -> None:
                    text=True,
                    check=False)
 
+
+def _cleanup_unrelated_changes() -> None:
+    print("Cleaning up changes in third_party etcetera")
+    subprocess.run(("gclient", "sync", "-f"),
+                   capture_output=False,
+                   text=True,
+                   check=False)
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -135,6 +142,7 @@ def main() -> None:
     _build_clang_tools(args.work_dir)
     _generate_compile_commands(args.work_dir)
     _run_clang_tidy(args.work_dir)
+    _cleanup_unrelated_changes()
 
 
 if __name__ == "__main__":

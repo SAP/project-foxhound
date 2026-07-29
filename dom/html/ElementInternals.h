@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -45,7 +43,6 @@
     SetAttrElements(nsGkAtoms::attr, aElements);                     \
   }
 
-class nsINodeList;
 class nsGenericHTMLElement;
 
 namespace mozilla::dom {
@@ -54,6 +51,7 @@ class DocGroup;
 class HTMLElement;
 class HTMLFieldSetElement;
 class HTMLFormElement;
+class NodeList;
 class ShadowRoot;
 class ValidityState;
 
@@ -61,7 +59,7 @@ class ElementInternals final : public nsIFormControl,
                                public nsIConstraintValidation,
                                public nsWrapperCache {
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS_AMBIGUOUS(ElementInternals,
                                                         nsIFormControl)
 
@@ -88,7 +86,7 @@ class ElementInternals final : public nsIFormControl,
                             ErrorResult& aRv) const;
   bool CheckValidity(ErrorResult& aRv);
   bool ReportValidity(ErrorResult& aRv);
-  already_AddRefed<nsINodeList> GetLabels(ErrorResult& aRv) const;
+  already_AddRefed<NodeList> GetLabels(ErrorResult& aRv) const;
   nsGenericHTMLElement* GetValidationAnchor(ErrorResult& aRv) const;
   CustomStateSet* States();
 

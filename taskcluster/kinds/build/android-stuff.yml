@@ -18,7 +18,7 @@ android-geckoview-docs/opt:
         platform: android-4-1-armv7/opt
         kind: build
         tier: 2
-        symbol: A(gv-docs)
+        symbol: android(gv-docs)
     run-on-projects: [mozilla-central-only]
     worker-type: b-linux-docker-amd
     worker:

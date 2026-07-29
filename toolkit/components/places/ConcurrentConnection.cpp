@@ -11,9 +11,11 @@
 #include "MainThreadUtils.h"
 #include "mozilla/AppShutdown.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/DataMutex.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Services.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/RemoteType.h"
 #include "mozIStorageBindingParamsArray.h"
 #include "mozIStorageError.h"
 #include "mozIStorageResultSet.h"
@@ -35,6 +37,12 @@
 namespace mozilla::places {
 
 namespace {
+
+// StaticDataMutex makes GetInstance() safe from any thread. StaticRefPtr
+// avoids a static destructor; the reference is released explicitly in
+// Shutdown() rather than requiring ClearOnShutdown().
+constinit StaticDataMutex<StaticRefPtr<ConcurrentConnection>> sCCInstance{
+    "ConcurrentConnection"};
 
 already_AddRefed<nsIFile> GetDatabaseFileInProfile(const nsString& aName) {
   nsCOMPtr<nsIFile> file;
@@ -95,8 +103,11 @@ NS_IMPL_ISUPPORTS(ConcurrentConnection, nsIObserver, nsISupportsWeakReference,
                   mozIStorageStatementCallback)
 
 ConcurrentConnection::ConcurrentConnection() {
-  MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess(),
-                        "Can only instantiate in the parent process");
+  MOZ_DIAGNOSTIC_ASSERT(IsSupportedProcessType(),
+                        "Can only instantiate in supported processes");
+}
+
+void ConcurrentConnection::Init() {
   if (NS_IsMainThread()) {
     InitializeOnMainThread();
   } else {
@@ -134,29 +145,83 @@ void ConcurrentConnection::InitializeOnMainThread() {
     }
   }
 
-  nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
-  if (os) {
-    MOZ_ALWAYS_SUCCEEDS(
-        os->AddObserver(this, TOPIC_PLACES_INIT_COMPLETE, true));
+  // TOPIC_PLACES_INIT_COMPLETE is fired by the parent-process Places service
+  // and will never reach a content process.
+  // Ideally when the content process sends a request, the parent should have
+  // initialized Places already, but if that should become an issue, we may
+  // either retry opening after a while, or find a way to notify the
+  // content processes.
+  if (XRE_IsParentProcess()) {
+    nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
+    if (os) {
+      MOZ_ALWAYS_SUCCEEDS(
+          os->AddObserver(this, TOPIC_PLACES_INIT_COMPLETE, true));
+    }
   }
 
   mState = AWAITING_DATABASE_READY;
   TryToOpenConnection();
 }
 
-Maybe<ConcurrentConnection*> ConcurrentConnection::GetInstance() {
-  static StaticRefPtr<ConcurrentConnection> sInstance;
-  // TODO (Bug 1989632): make this properly thread-safe so it can be initialized
-  // on an helper thread.
-  if (!sInstance && NS_IsMainThread() &&
-      !AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownTeardown)) {
-    sInstance = new ConcurrentConnection();
-    ClearOnShutdown(&sInstance, ShutdownPhase::AppShutdownTeardown);
+void ConcurrentConnection::MaybeInterrupt() {
+  AssertIsOnMainThread();
+  RefPtr<ConcurrentConnection> instance;
+  {
+    auto lock = sCCInstance.Lock();
+    instance = *lock;
   }
-  if (!sInstance) {
+  if (instance) {
+    instance->mConnectionReadyMutex.NoteOnMainThread();
+    if (instance->mConn) {
+      (void)instance->mConn->Interrupt();
+    }
+  }
+}
+
+bool ConcurrentConnection::IsSupportedProcessType() {
+  if (XRE_IsParentProcess()) {
+    return true;
+  }
+  if (!XRE_IsContentProcess()) {
+    return false;
+  }
+  const auto* cc = dom::ContentChild::GetSingleton();
+  if (!cc) {
+    return false;
+  }
+  const nsACString& remoteType = cc->GetRemoteType();
+  return remoteType == PRIVILEGEDABOUT_REMOTE_TYPE ||
+         remoteType == PRIVILEGEDMOZILLA_REMOTE_TYPE;
+}
+
+Maybe<RefPtr<ConcurrentConnection>> ConcurrentConnection::GetInstance() {
+  RefPtr<ConcurrentConnection> newInst;
+  {
+    auto lock = sCCInstance.Lock();
+    if (*lock) {
+      return Some(RefPtr<ConcurrentConnection>(*lock));
+    }
+    // Any instance created after AppShutdownConfirmed would call Shutdown()
+    // immediately from InitializeOnMainThread(), so don't bother creating one.
+    if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
+      return Nothing();
+    }
+    if (!IsSupportedProcessType()) {
+      return Nothing();
+    }
+    *lock = new ConcurrentConnection();
+    newInst = *lock;
+  }
+  // Init() is called after releasing the lock to avoid a potential deadlock:
+  // if called on the main thread, Init() runs InitializeOnMainThread()
+  // synchronously, which may call Shutdown(), which re-acquires sCCInstance.
+  newInst->Init();
+  auto lock = sCCInstance.Lock();
+  if (!*lock) {
+    // Init() triggered an immediate Shutdown() (e.g. asyncShutdownSvc null).
     return Nothing();
   }
-  return Some(sInstance.get());
+  return Some(RefPtr<ConcurrentConnection>(*lock));
 }
 
 // nsIAsyncShutdownBlocker
@@ -231,9 +296,10 @@ ConcurrentConnection::Complete(nsresult aRv, nsISupports* aData) {
     // It's possible in the meanwhile Places was initialized, then we can try
     // again.
     if (mPlacesIsInitialized && mRetryOpening) {
-      // We only retry once.
+      // We only retry once. mIsOpening stays true for the new open.
       mRetryOpening = false;
       TryToOpenConnection();
+      return NS_OK;
     }
     mIsOpening = false;
     return NS_OK;
@@ -303,7 +369,10 @@ NS_IMETHODIMP ConcurrentConnection::HandleCompletion(uint16_t aReason) {
   // This is only invoked for PRAGMA user_version.
   // Note mConn may have been destroyed at this point, for example during
   // shutdown. In that case we just do nothing.
-  if (mConn && aReason == mozIStorageStatementCallback::REASON_FINISHED) {
+  if (!mConn) {
+    return NS_OK;
+  }
+  if (aReason == mozIStorageStatementCallback::REASON_FINISHED) {
     // If the schema version is not up to date we'll just retry later, once
     // Places initialization is complete.
     if (mSchemaVersion == nsINavHistoryService::DATABASE_SCHEMA_VERSION) {
@@ -311,6 +380,10 @@ NS_IMETHODIMP ConcurrentConnection::HandleCompletion(uint16_t aReason) {
     } else {
       CloseConnection();
     }
+  } else if (aReason == mozIStorageStatementCallback::REASON_CANCELED) {
+    // The PRAGMA was interrupted (e.g. via MaybeInterrupt()). Close so the
+    // connection can be reopened once Places is ready.
+    CloseConnection();
   }
   return NS_OK;
 }
@@ -350,6 +423,14 @@ void ConcurrentConnection::CloseConnectionComplete(nsresult rv) {
   AssertIsOnMainThread();
   if (mIsShuttingDown || NS_FAILED(rv)) {
     Shutdown();
+    return;
+  }
+  // If Places is already initialized, retry opening, since the notification
+  // won't fire again. This may happen, for example, if the connection was
+  // interrupted during startup and then TOPIC_PLACES_INIT_COMPLETE fired.
+  if (mPlacesIsInitialized && mRetryOpening) {
+    mRetryOpening = false;
+    TryToOpenConnection();
   }
 }
 
@@ -387,26 +468,23 @@ void ConcurrentConnection::SetupConnection() {
 
 nsresult ConcurrentConnection::AttachDatabase(const nsString& aFileName,
                                               const nsCString& aSchemaName) {
-  // No reason to cache this statement, so not using GetStatement here.
-  nsCOMPtr<mozIStorageAsyncStatement> stmt;
-  nsresult rv = mConn->CreateAsyncStatement(
-      "ATTACH DATABASE :path AS "_ns + DATABASE_FAVICONS_SCHEMANAME,
-      getter_AddRefs(stmt));
-  NS_ENSURE_SUCCESS(rv, rv);
-
   nsCOMPtr<nsIFile> databaseFile =
       GetDatabaseFileInProfile(DATABASE_FAVICONS_FILENAME);
-  NS_ENSURE_SUCCESS(rv, rv);
+
   nsString path;
-  rv = databaseFile->GetPath(path);
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = stmt->BindStringByName("path"_ns, path);
+  nsresult rv = databaseFile->GetPath(path);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<mozIStoragePendingStatement> ps;
   nsCOMPtr<mozIStorageStatementCallback> cb = MakeAndAddRef<CallbackOnError>(
       this, &ConcurrentConnection::CloseConnection);
-  rv = stmt->ExecuteAsync(cb, getter_AddRefs(ps));
+
+  NS_ConvertUTF16toUTF8 utf8Path(path);
+
+  const char* cPath = utf8Path.get();
+  const char* cSchema = DATABASE_FAVICONS_SCHEMANAME.AsString().get();
+
+  rv = mConn->AttachDatabase(cPath, cSchema, cb, getter_AddRefs(ps));
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -426,6 +504,14 @@ ConcurrentConnection::Observe(nsISupports* aSubject, const char* aTopic,
 
 void ConcurrentConnection::Queue(const nsCString& aSQL,
                                  PendingStatementCallback* aCallback) {
+  if (!NS_IsMainThread()) {
+    (void)NS_DispatchToMainThread(NS_NewRunnableFunction(
+        "places::ConcurrentConnection::Queue",
+        [self = RefPtr{this}, sql = nsCString(aSQL), cb = RefPtr{aCallback}]() {
+          self->Queue(sql, cb.get());
+        }));
+    return;
+  }
   AssertIsOnMainThread();
   if (mIsShuttingDown) {
     return;
@@ -435,6 +521,14 @@ void ConcurrentConnection::Queue(const nsCString& aSQL,
 }
 
 void ConcurrentConnection::Queue(Runnable* aRunnable) {
+  if (!NS_IsMainThread()) {
+    (void)NS_DispatchToMainThread(
+        NS_NewRunnableFunction("places::ConcurrentConnection::Queue",
+                               [self = RefPtr{this}, r = RefPtr{aRunnable}]() {
+                                 self->Queue(r.get());
+                               }));
+    return;
+  }
   AssertIsOnMainThread();
   if (mIsShuttingDown) {
     return;
@@ -486,10 +580,12 @@ void ConcurrentConnection::TryToConsumeQueues() {
   }
 
   // Consume Runnables queue.
-  nsCOMPtr<nsIEventTarget> target = do_GetInterface(mConn);
-  while (target && mPendingRunnables.GetSize()) {
-    RefPtr<Runnable> runnable = mPendingRunnables.Pop();
-    MOZ_ALWAYS_SUCCEEDS(target->Dispatch(runnable, NS_DISPATCH_NORMAL));
+  if (mPendingRunnables.GetSize()) {
+    nsCOMPtr<nsIEventTarget> target = do_GetInterface(mConn);
+    while (target && mPendingRunnables.GetSize()) {
+      RefPtr<Runnable> runnable = mPendingRunnables.Pop();
+      MOZ_ALWAYS_SUCCEEDS(target->Dispatch(runnable, NS_DISPATCH_NORMAL));
+    }
   }
 
   // Consume Statements queue.
@@ -550,14 +646,23 @@ void ConcurrentConnection::TryToOpenConnection() {
 }
 
 void ConcurrentConnection::Shutdown() {
-  MOZ_ASSERT(!mConn, "Connection should have been closed");
+  // Keep a strong reference: nulling sCCInstance below drops the singleton's
+  // RefPtr, which could be the last one, destroying us mid-method.
 #ifdef DEBUG
   AssertIsOnMainThread();
   mConnectionReadyMutex.NoteOnMainThread();
+  MOZ_ASSERT(!mConn, "Connection should have been closed");
   if (mIsConnectionReady) {
     MOZ_CRASH("Connection should be closed");
   }
 #endif
+
+  RefPtr<ConcurrentConnection> kungFuDeathGrip = this;
+  {
+    auto lock = sCCInstance.Lock();
+    // From this point GetInstance() returns Nothing().
+    *lock = nullptr;
+  }
 
   mConn = nullptr;
   mIsOpening = false;

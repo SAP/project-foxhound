@@ -8,7 +8,6 @@ import androidx.navigation.NavController
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.Homepage
 import org.mozilla.fenix.R
-import org.mozilla.fenix.browser.BrowserFragmentDirections
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.browser.browsingmode.BrowsingModeManager
 import org.mozilla.fenix.components.usecases.FenixBrowserUseCases
@@ -65,14 +64,6 @@ class DefaultPrivateBrowsingController(
 
         if (newMode == BrowsingMode.Private) {
             settings.incrementNumTimesPrivateModeOpened()
-        }
-
-        if (navController.currentDestination?.id == R.id.searchDialogFragment) {
-            navController.navigate(
-                BrowserFragmentDirections.actionGlobalSearchDialog(
-                    sessionId = null,
-                ),
-            )
         }
     }
 }

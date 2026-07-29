@@ -10,7 +10,6 @@ import mozilla.components.concept.engine.EngineSession.TrackingProtectionPolicy.
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.whenever
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -18,6 +17,8 @@ import org.mockito.Mockito.mock
 import org.mozilla.focus.utils.Settings
 import org.mozilla.geckoview.GeckoRuntime
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 class EngineProviderTest {
@@ -39,7 +40,7 @@ class EngineProviderTest {
     fun `createClient should return a GeckoViewFetchClient`() {
         val client = EngineProvider.createClient(testContext, mock())
         assertNotNull(client)
-        assertTrue(client is GeckoViewFetchClient)
+        assertIs<GeckoViewFetchClient>(client)
     }
 
     @Test

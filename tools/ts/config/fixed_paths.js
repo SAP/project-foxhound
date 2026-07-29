@@ -96,5 +96,5 @@ exports.fixed = {
   "lit/*": ["node_modules/lit/*"],
   "lit-html": ["node_modules/lit-html/lit-html"],
   // Needs to be last, to prefer fixed paths above for autocomplete.
-  "moz-src:///*": ["./*"],
+  "moz-src:///*": ["*"],
 };

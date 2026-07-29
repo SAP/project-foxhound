@@ -10,6 +10,21 @@ var {
 } = require("resource://devtools/shared/protocol/types.js");
 var { Front } = require("resource://devtools/shared/protocol/Front.js");
 
+const logger = console.createInstance({
+  prefix: "devtools_rdp",
+  maxLogLevel: "Warn",
+});
+
+// Hack MOZ_LOG/Console.cpp usage of ToSource logic
+// to be able to write raw strings to stdout.
+// This prevents being wrapped with quotes, and allow to use ANSI color codes.
+const SEND_MOZ_LOG_SYMBOL = {
+  toSource() {
+    return " \x1b[2m->\x1b[0m ";
+  },
+};
+let colorCounter = 0;
+
 /**
  * Generates request methods as described by the given actor specification on
  * the given front prototype. Returns the front prototype.
@@ -43,6 +58,10 @@ var generateRequestMethods = function (actorSpec, frontProto) {
         throw ex;
       }
       if (spec.oneway) {
+        // Log outgoing RDP packet being sent via Protocol.js
+        // (packet sent via DevToolsClient will be logged from DevToolsClient codebase)
+        logger.log(SEND_MOZ_LOG_SYMBOL, packet);
+
         // Fire-and-forget oneway packets.
         this.send(packet);
         return undefined;
@@ -53,6 +72,24 @@ var generateRequestMethods = function (actorSpec, frontProto) {
 
       // If so, pass the last front argument as the bulk initialization callback
       const clientBulkCallback = isSendingBulkData ? args.at(-1) : null;
+
+      // For each incoming request, we will rotate through the first 15 existing ANSI colors
+      // which are all quite visible and different from each others.
+      // Note that colors are specific to each request and not each front.
+      let color;
+      if (logger.shouldLog("Log")) {
+        color = 1 + (colorCounter % 15);
+        colorCounter++;
+        logger.log(
+          {
+            toSource() {
+              return `\x1b[38;5;${color}m->\x1b[0m`;
+            },
+          },
+          // Ensure adding the `to` attribute which will be later set by request method.
+          { ...packet, to: this.actorID }
+        );
+      }
 
       return this.request(packet, {
         bulk: isSendingBulkData,
@@ -65,6 +102,16 @@ var generateRequestMethods = function (actorSpec, frontProto) {
         const isReceivingBulkData = spec.response.template === BULK_RESPONSE;
         if (isReceivingBulkData) {
           return response;
+        }
+        if (logger.shouldLog("Log")) {
+          logger.log(
+            {
+              toSource() {
+                return `\x1b[38;5;${color}m<-\x1b[0m`;
+              },
+            },
+            response
+          );
         }
 
         let ret;

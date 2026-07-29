@@ -64,7 +64,7 @@ internal fun MenuNavigation(
             .fillMaxWidth()
             .background(
                 color = if (isExtensionsExpanded || isMoreMenuExpanded) {
-                    MaterialTheme.colorScheme.surfaceContainerHighest
+                    MaterialTheme.colorScheme.surfaceContainerHigh
                 } else {
                     MaterialTheme.colorScheme.surface
                 },
@@ -107,7 +107,7 @@ internal fun MenuNavigation(
             MenuNavItem(
                 modifier = Modifier.weight(1f),
                 state = state,
-                painter = painterResource(id = iconsR.drawable.mozac_ic_stop),
+                painter = painterResource(id = iconsR.drawable.mozac_ic_cross_24),
                 label = stringResource(id = R.string.browser_menu_stop),
                 onClick = onStopButtonClick,
             )

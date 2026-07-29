@@ -9,6 +9,38 @@ newtab-page-title = Nueva Pestanya
 newtab-settings-button =
     .title = Personaliza la tuya pachina de Nueva Pestanya
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Nuevas pestanyas
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } ringlera
+           *[other] { $num } ringleras
+        }
+home-restore-defaults-srd =
+    .label = Restaurar valors per defecto
+    .accesskey = R
+home-mode-choice-custom-srd =
+    .label = URL personalizadas…
+home-mode-choice-blank-srd =
+    .label = Pachina en blanco
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Articlos esponsorizaus
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Pachinas visitadas
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Marcapachinas
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Descarga mas recient
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +48,7 @@ newtab-search-box-search-button =
     .title = Mirar
     .aria-label = Mirar
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Anyadir motor de busqueda
 newtab-topsites-edit-topsites-header = Editar lo puesto popular

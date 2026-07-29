@@ -1,0 +1,70 @@
+{
+  "background": {
+    "color": {
+      "value": {
+        "light": "#f8f8fa",
+        "dark": "rgb(35, 34, 43)",
+        "forcedColors": "Canvas"
+      }
+    }
+  },
+  "border": {
+    "color": {
+      "value": {
+        "default": "color-mix(in srgb, currentColor 41%, transparent)",
+        "forcedColors": "CanvasText"
+      }
+    }
+  },
+  "header": {
+    "background": {
+      "color": {
+        "value": {
+          "default": "{color.accent.primary.@base}",
+          "forcedColors": "AccentColor"
+        }
+      }
+    },
+    "text": {
+      "color": {
+        "@base": {
+          "value": {
+            "forcedColors": "AccentColorText",
+            "brand": {
+              "light": "{color.white.@base}",
+              "dark": "{color.gray.100}"
+            },
+            "platform": {
+              "default": "AccentColorText"
+            }
+          }
+        }
+      }
+    }
+  },
+  "row": {
+    "background": {
+      "color": {
+        "@base": {
+          "value": {
+            "default": "{background.color.canvas}"
+          }
+        },
+        "alternate": {
+          "comment": "TODO Bug 1821203 - Gray use needs to be consolidated",
+          "value": {
+            "forcedColors": "{background.color.canvas}",
+            "brand": {
+              "light": "#f0f0f4",
+              "dark": "{color.gray.80}"
+            },
+            "platform": {
+              "light": "rgba(0, 0, 0, 0.05)",
+              "dark": "rgba(255, 255, 255, 0.05)"
+            }
+          }
+        }
+      }
+    }
+  }
+}

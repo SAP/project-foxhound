@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,10 +7,12 @@
 
 #include "CacheablePerformanceTimingData.h"
 #include "Performance.h"
+#include "ipc/EnumSerializer.h"
 #include "ipc/IPCMessageUtils.h"
 #include "ipc/IPCMessageUtilsSpecializations.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/dom/PerformanceResourceTimingBinding.h"
 #include "mozilla/dom/PerformanceTimingTypes.h"
 #include "mozilla/net/nsServerTiming.h"
 #include "nsContentUtils.h"
@@ -40,16 +40,16 @@ class PerformanceTimingData final : public CacheablePerformanceTimingData {
  public:
   PerformanceTimingData() = default;  // For deserialization
   // This can return null.
-  static PerformanceTimingData* Create(nsITimedChannel* aChannel,
-                                       nsIHttpChannel* aHttpChannel,
-                                       DOMHighResTimeStamp aZeroTime,
-                                       nsAString& aInitiatorType,
-                                       nsAString& aEntryName);
+  static UniquePtr<PerformanceTimingData> Create(nsITimedChannel* aChannel,
+                                                 nsIHttpChannel* aHttpChannel,
+                                                 DOMHighResTimeStamp aZeroTime,
+                                                 nsAString& aInitiatorType,
+                                                 nsAString& aEntryName);
 
   PerformanceTimingData(nsITimedChannel* aChannel, nsIHttpChannel* aHttpChannel,
                         DOMHighResTimeStamp aZeroTime);
 
-  static PerformanceTimingData* Create(
+  static UniquePtr<PerformanceTimingData> Create(
       const CacheablePerformanceTimingData& aCachedData,
       DOMHighResTimeStamp aZeroTime, TimeStamp aStartTime, TimeStamp aEndTime,
       RenderBlockingStatusType aRenderBlockingStatus);
@@ -151,6 +151,10 @@ class PerformanceTimingData final : public CacheablePerformanceTimingData {
   DOMHighResTimeStamp ConnectEndHighRes(Performance* aPerformance);
   DOMHighResTimeStamp RequestStartHighRes(Performance* aPerformance);
   DOMHighResTimeStamp ResponseStartHighRes(Performance* aPerformance);
+  DOMHighResTimeStamp FirstInterimResponseStartHighRes(
+      Performance* aPerformance);
+  DOMHighResTimeStamp FinalResponseHeadersStartHighRes(
+      Performance* aPerformance);
   DOMHighResTimeStamp ResponseEndHighRes(Performance* aPerformance);
 
   DOMHighResTimeStamp ZeroTime() const { return mZeroTime; }
@@ -180,6 +184,8 @@ class PerformanceTimingData final : public CacheablePerformanceTimingData {
   TimeStamp mConnectEnd;
   TimeStamp mRequestStart;
   TimeStamp mResponseStart;
+  TimeStamp mFirstInterimResponseStart;
+  TimeStamp mFinalResponseHeadersStart;
   TimeStamp mCacheReadStart;
   TimeStamp mResponseEnd;
   TimeStamp mCacheReadEnd;
@@ -199,7 +205,8 @@ class PerformanceTimingData final : public CacheablePerformanceTimingData {
 
   uint64_t mTransferSize = 0;
 
-  RenderBlockingStatusType mRenderBlockingStatus;
+  RenderBlockingStatusType mRenderBlockingStatus =
+      RenderBlockingStatusType::Non_blocking;
 };
 
 // Script "performance.timing" object
@@ -397,6 +404,13 @@ class PerformanceTiming final : public nsWrapperCache {
 namespace IPC {
 
 template <>
+struct ParamTraits<mozilla::dom::RenderBlockingStatusType>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::dom::RenderBlockingStatusType,
+          mozilla::dom::RenderBlockingStatusType::Blocking,
+          mozilla::dom::RenderBlockingStatusType::Non_blocking> {};
+
+template <>
 struct ParamTraits<mozilla::dom::PerformanceTimingData> {
   using paramType = mozilla::dom::PerformanceTimingData;
   static void Write(IPC::MessageWriter* aWriter, const paramType& aParam) {
@@ -412,6 +426,8 @@ struct ParamTraits<mozilla::dom::PerformanceTimingData> {
     WriteParam(aWriter, aParam.mConnectEnd);
     WriteParam(aWriter, aParam.mRequestStart);
     WriteParam(aWriter, aParam.mResponseStart);
+    WriteParam(aWriter, aParam.mFirstInterimResponseStart);
+    WriteParam(aWriter, aParam.mFinalResponseHeadersStart);
     WriteParam(aWriter, aParam.mCacheReadStart);
     WriteParam(aWriter, aParam.mResponseEnd);
     WriteParam(aWriter, aParam.mCacheReadEnd);
@@ -432,6 +448,7 @@ struct ParamTraits<mozilla::dom::PerformanceTimingData> {
     WriteParam(aWriter, aParam.mBodyInfoAccessAllowed);
     WriteParam(aWriter, aParam.mTimingAllowed);
     WriteParam(aWriter, aParam.mInitialized);
+    WriteParam(aWriter, aParam.mRenderBlockingStatus);
   }
 
   static bool Read(IPC::MessageReader* aReader, paramType* aResult) {
@@ -447,6 +464,8 @@ struct ParamTraits<mozilla::dom::PerformanceTimingData> {
            ReadParam(aReader, &aResult->mConnectEnd) &&
            ReadParam(aReader, &aResult->mRequestStart) &&
            ReadParam(aReader, &aResult->mResponseStart) &&
+           ReadParam(aReader, &aResult->mFirstInterimResponseStart) &&
+           ReadParam(aReader, &aResult->mFinalResponseHeadersStart) &&
            ReadParam(aReader, &aResult->mCacheReadStart) &&
            ReadParam(aReader, &aResult->mResponseEnd) &&
            ReadParam(aReader, &aResult->mCacheReadEnd) &&
@@ -466,7 +485,8 @@ struct ParamTraits<mozilla::dom::PerformanceTimingData> {
            ReadParam(aReader, &aResult->mSecureConnection) &&
            ReadParam(aReader, &aResult->mBodyInfoAccessAllowed) &&
            ReadParam(aReader, &aResult->mTimingAllowed) &&
-           ReadParam(aReader, &aResult->mInitialized);
+           ReadParam(aReader, &aResult->mInitialized) &&
+           ReadParam(aReader, &aResult->mRenderBlockingStatus);
   }
 };
 

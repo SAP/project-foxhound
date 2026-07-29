@@ -16,6 +16,9 @@ public:
   void check(const MatchFinder::MatchResult &Result) override;
 
   void emitDiagnostics(SourceLocation Loc, StringRef Name, QualType Type);
+  bool isLanguageVersionSupported(const LangOptions &LangOpts) const override {
+    return LangOpts.CPlusPlus;
+  }
 
 private:
   class ThisVisitor : public RecursiveASTVisitor<ThisVisitor> {

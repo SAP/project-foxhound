@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -84,6 +83,9 @@ WebBrowserPersistLocalDocument::GetIsClosed(bool* aIsClosed) {
   *aIsClosed = false;
   return NS_OK;
 }
+
+NS_IMETHODIMP
+WebBrowserPersistLocalDocument::Close() { return NS_OK; }
 
 NS_IMETHODIMP
 WebBrowserPersistLocalDocument::GetIsPrivate(bool* aIsPrivate) {
@@ -192,29 +194,6 @@ WebBrowserPersistLocalDocument::GetPrincipal(nsIPrincipal** aPrincipal) {
   nsCOMPtr<nsIPrincipal> nodePrincipal = mDocument->NodePrincipal();
   nodePrincipal.forget(aPrincipal);
   return NS_OK;
-}
-
-already_AddRefed<nsISHEntry> WebBrowserPersistLocalDocument::GetHistory() {
-  nsCOMPtr<nsPIDOMWindowOuter> window = mDocument->GetWindow();
-  if (NS_WARN_IF(!window)) {
-    return nullptr;
-  }
-  nsCOMPtr<nsIWebNavigation> webNav = do_GetInterface(window);
-  if (NS_WARN_IF(!webNav)) {
-    return nullptr;
-  }
-  nsCOMPtr<nsIWebPageDescriptor> desc = do_QueryInterface(webNav);
-  if (NS_WARN_IF(!desc)) {
-    return nullptr;
-  }
-  nsCOMPtr<nsISupports> curDesc;
-  nsresult rv = desc->GetCurrentDescriptor(getter_AddRefs(curDesc));
-  // This can fail if, e.g., the document is a Print Preview.
-  if (NS_FAILED(rv) || NS_WARN_IF(!curDesc)) {
-    return nullptr;
-  }
-  nsCOMPtr<nsISHEntry> history = do_QueryInterface(curDesc);
-  return history.forget();
 }
 
 NotNull<const Encoding*> WebBrowserPersistLocalDocument::GetCharacterSet()
@@ -1228,6 +1207,8 @@ static uint32_t ConvertEncoderFlags(uint32_t aEncoderFlags) {
     encoderFlags |= nsIDocumentEncoder::OutputNoScriptContent;
   if (aEncoderFlags & nsIWebBrowserPersist::ENCODE_FLAGS_NOFRAMES_CONTENT)
     encoderFlags |= nsIDocumentEncoder::OutputNoFramesContent;
+  if (aEncoderFlags & nsIWebBrowserPersist::ENCODE_FLAGS_DISALLOW_LINE_BREAKING)
+    encoderFlags |= nsIDocumentEncoder::OutputDisallowLineBreaking;
 
   return encoderFlags;
 }

@@ -37,7 +37,6 @@ head_rev: 940df9f637e9e936b14e2618013bdb60c6698c9c
 head_tag: ''
 hg_branch: default
 level: '3'
-message: ''
 moz_build_date: '20250602230114'
 next_version: null
 optimize_strategies: gecko_taskgraph.optimize:project.autoland
@@ -58,8 +57,6 @@ release_partners: []
 release_product: null
 release_type: ''
 repository_type: hg
-required_signoffs: []
-signoff_urls: {}
 target_tasks_method: android-l10n-import
 tasks_for: cron
 test_manifest_loader: bugbug

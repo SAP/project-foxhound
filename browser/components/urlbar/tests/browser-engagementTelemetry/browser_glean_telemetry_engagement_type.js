@@ -1,0 +1,315 @@
+/* Any copyright is dedicated to the Public Domain.
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
+
+"use strict";
+
+// Test for the following data of engagement telemetry.
+// - engagement_type
+
+// This test has many subtests and can time out in verify mode.
+requestLongerTimeout(5);
+
+add_setup(async function () {
+  await setup();
+});
+
+add_task(async function engagement_type_click() {
+  await doTest(async () => {
+    await openPopup("x");
+    await doClick();
+
+    assertEngagementTelemetry([{ engagement_type: "click" }]);
+  });
+});
+
+add_task(async function engagement_type_enter() {
+  await doTest(async () => {
+    await openPopup("x");
+    await doEnter();
+
+    assertEngagementTelemetry([{ engagement_type: "enter" }]);
+  });
+});
+
+add_task(async function engagement_type_go_button() {
+  await doTest(async () => {
+    await openPopup("x");
+    EventUtils.synthesizeMouseAtCenter(gURLBar.goButton, {});
+
+    assertEngagementTelemetry([{ engagement_type: "go_button" }]);
+  });
+});
+
+add_task(async function engagement_type_drop_go() {
+  await doTest(async () => {
+    await doDropAndGo("example.com");
+
+    assertEngagementTelemetry([{ engagement_type: "drop_go" }]);
+  });
+});
+
+add_task(async function engagement_type_paste_go() {
+  await doTest(async () => {
+    await doPasteAndGo("www.example.com");
+
+    assertEngagementTelemetry([{ engagement_type: "paste_go" }]);
+  });
+});
+
+add_task(async function engagement_type_dismiss() {
+  const cleanupQuickSuggest = await ensureQuickSuggestInit();
+
+  await doTest(async () => {
+    await openPopup("amp");
+
+    const originalResultCount = UrlbarTestUtils.getResultCount(window);
+    await selectRowByURL("https://example.com/amp");
+    UrlbarTestUtils.openResultMenuAndPressAccesskey(window, "D");
+    await BrowserTestUtils.waitForCondition(
+      () => originalResultCount != UrlbarTestUtils.getResultCount(window)
+    );
+
+    assertEngagementTelemetry([{ engagement_type: "dismiss" }]);
+
+    // The view should stay open after dismissing the result. Now pick the
+    // heuristic result. Another "click" engagement event should be recorded.
+    Assert.ok(
+      gURLBar.view.isOpen,
+      "View should remain open after dismissing result"
+    );
+    await doClick();
+    assertEngagementTelemetry([
+      { engagement_type: "dismiss" },
+      { engagement_type: "click", interaction: "typed" },
+    ]);
+  });
+
+  await doTest(async () => {
+    await openPopup("amp");
+
+    const originalResultCount = UrlbarTestUtils.getResultCount(window);
+    await selectRowByURL("https://example.com/amp");
+    EventUtils.synthesizeKey("KEY_Delete", { shiftKey: true });
+    await BrowserTestUtils.waitForCondition(
+      () => originalResultCount != UrlbarTestUtils.getResultCount(window)
+    );
+
+    assertEngagementTelemetry([{ engagement_type: "dismiss" }]);
+  });
+
+  await cleanupQuickSuggest();
+});
+
+add_task(async function engagement_type_dismiss_adaptive_autofill_origin() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.urlbar.autoFill.adaptiveHistory.enabled", true],
+      ["browser.urlbar.autoFill.adaptiveHistory.minCharsThreshold", 0],
+      ["browser.urlbar.autoFill.adaptiveHistory.useCountThreshold", 0],
+    ],
+  });
+
+  await doTest(async () => {
+    await PlacesTestUtils.addVisits({
+      url: "https://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    });
+    await UrlbarUtils.addToInputHistory("https://example.com/", "exa");
+
+    await openPopup("exa");
+
+    let details = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
+    Assert.equal(
+      details.result.autofill?.type,
+      "adaptive_origin",
+      "Should be adaptive origin autofill"
+    );
+
+    await UrlbarTestUtils.openResultMenuAndClickItem(
+      window,
+      "dismiss_autofill",
+      {
+        resultIndex: 0,
+      }
+    );
+    await UrlbarTestUtils.promiseSearchComplete(window);
+
+    assertEngagementTelemetry([{ engagement_type: "dismiss" }]);
+  });
+
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function engagement_type_dismiss_adaptive_autofill_url() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.urlbar.autoFill.adaptiveHistory.enabled", true],
+      ["browser.urlbar.autoFill.adaptiveHistory.minCharsThreshold", 0],
+      ["browser.urlbar.autoFill.adaptiveHistory.useCountThreshold", 0],
+    ],
+  });
+
+  await doTest(async () => {
+    await PlacesTestUtils.addVisits({
+      url: "https://example.com/test",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    });
+    await UrlbarUtils.addToInputHistory("https://example.com/test", "exa");
+
+    await openPopup("exa");
+
+    let details = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
+    Assert.equal(
+      details.result.autofill?.type,
+      "adaptive_url",
+      "Should be adaptive url autofill"
+    );
+
+    await UrlbarTestUtils.openResultMenuAndClickItem(
+      window,
+      "dismiss_autofill",
+      {
+        resultIndex: 0,
+      }
+    );
+    await UrlbarTestUtils.promiseSearchComplete(window);
+
+    assertEngagementTelemetry([{ engagement_type: "dismiss" }]);
+  });
+
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(
+  async function engagement_type_dismiss_adaptive_autofill_url_history() {
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        ["browser.urlbar.autoFill.adaptiveHistory.enabled", true],
+        ["browser.urlbar.autoFill.adaptiveHistory.minCharsThreshold", 0],
+        ["browser.urlbar.autoFill.adaptiveHistory.useCountThreshold", 0],
+      ],
+    });
+
+    await doTest(async () => {
+      await PlacesTestUtils.addVisits({
+        url: "https://example.com/test",
+        transition: PlacesUtils.history.TRANSITION_TYPED,
+      });
+      await UrlbarUtils.addToInputHistory("https://example.com/test", "exa");
+
+      await openPopup("exa");
+
+      let details = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
+      Assert.equal(
+        details.result.autofill?.type,
+        "adaptive_url",
+        "Should be adaptive autofill"
+      );
+
+      await UrlbarTestUtils.openResultMenuAndClickItem(window, "dismiss", {
+        resultIndex: 0,
+      });
+      await UrlbarTestUtils.promiseSearchComplete(window);
+
+      assertEngagementTelemetry([{ engagement_type: "dismiss" }]);
+    });
+
+    await SpecialPowers.popPrefEnv();
+  }
+);
+
+add_task(async function engagement_type_dismiss_origin_autofill() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.autoFill.adaptiveHistory.enabled", true]],
+  });
+
+  await doTest(async () => {
+    await PlacesTestUtils.addVisits({
+      url: "https://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    });
+    await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
+
+    await openPopup("exa");
+
+    let details = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
+    Assert.ok(details.result.autofill, "Should be autofill");
+    Assert.equal(
+      details.result.autofill?.type,
+      "origin",
+      "Should be origin autofill"
+    );
+
+    await UrlbarTestUtils.openResultMenuAndClickItem(
+      window,
+      "dismiss_autofill",
+      {
+        resultIndex: 0,
+      }
+    );
+    await UrlbarTestUtils.promiseSearchComplete(window);
+
+    assertEngagementTelemetry([{ engagement_type: "dismiss" }]);
+  });
+
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function engagement_type_help() {
+  const url = "https://example.com/";
+  const helpUrl = "https://example.com/help";
+  let provider = new UrlbarTestUtils.TestProvider({
+    priority: Infinity,
+    results: [
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.URL,
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        payload: {
+          url,
+          isBlockable: true,
+          helpUrl,
+          helpL10n: {
+            id: "urlbar-result-menu-learn-more",
+          },
+        },
+      }),
+    ],
+  });
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(provider);
+
+  await doTest(async () => {
+    await openPopup("test");
+    await selectRowByURL(url);
+
+    const onTabOpened = BrowserTestUtils.waitForNewTab(gBrowser);
+    UrlbarTestUtils.openResultMenuAndPressAccesskey(window, "L");
+    const tab = await onTabOpened;
+    BrowserTestUtils.removeTab(tab);
+
+    assertEngagementTelemetry([{ engagement_type: "help" }]);
+  });
+
+  providersManager.unregisterProvider(provider);
+});
+
+add_task(async function engagement_type_manage() {
+  const cleanupQuickSuggest = await ensureQuickSuggestInit();
+
+  await doTest(async () => {
+    await openPopup("amp");
+    await selectRowByURL("https://example.com/amp");
+
+    const onManagePageLoaded = BrowserTestUtils.browserLoaded(
+      browser,
+      false,
+      "about:preferences#search"
+    );
+    UrlbarTestUtils.openResultMenuAndPressAccesskey(window, "M");
+    await onManagePageLoaded;
+
+    assertEngagementTelemetry([{ engagement_type: "manage" }]);
+  });
+
+  await cleanupQuickSuggest();
+});

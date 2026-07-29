@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -142,6 +141,10 @@ class EditorCommand : public ControllerCommand {
       case Command::EndLine:
       case Command::SelectBeginLine:
       case Command::SelectEndLine:
+      case Command::BeginParagraph:
+      case Command::EndParagraph:
+      case Command::SelectBeginParagraph:
+      case Command::SelectEndParagraph:
       case Command::WordPrevious:
       case Command::WordNext:
       case Command::SelectWordPrevious:
@@ -162,6 +165,8 @@ class EditorCommand : public ControllerCommand {
       case Command::MoveRight2:
       case Command::MoveUp2:
       case Command::MoveDown2:
+      case Command::MoveLeft3:
+      case Command::MoveRight3:
       case Command::SelectLeft:
       case Command::SelectRight:
       case Command::SelectUp:
@@ -170,6 +175,8 @@ class EditorCommand : public ControllerCommand {
       case Command::SelectRight2:
       case Command::SelectUp2:
       case Command::SelectDown2:
+      case Command::SelectLeft3:
+      case Command::SelectRight3:
         return EditorCommandParamType::None;
       // PasteNoFormattingCommand
       case Command::PasteWithoutFormat:

@@ -67,7 +67,7 @@ def mock_subprocess_run(data, returncode, cmd, stdout=None, **kwargs):
     return result
 
 
-@mock.patch("mozperftest.system.geckoprofiler.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.geckoprofiler.get_adb_device_or_emu", new=FakeDevice)
 def test_geckoprofiler_setup():
     mach_cmd, metadata, env = running_env(
         app="fenix", tests=[str(EXAMPLE_SHELL_TEST)], output=None
@@ -95,7 +95,7 @@ def test_geckoprofiler_setup():
     assert "am clear-debug-app" in profiler.device.commands
 
 
-@mock.patch("mozperftest.system.geckoprofiler.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.geckoprofiler.get_adb_device_or_emu", new=FakeDevice)
 def test_geckoprofiler_run_requires_android_layer():
     """Test to verify that running without the Android layer will throw an error."""
     mach_cmd, metadata, env = running_env(
@@ -110,7 +110,7 @@ def test_geckoprofiler_run_requires_android_layer():
     assert "only supported on Android" in str(excinfo.value)
 
 
-@mock.patch("mozperftest.system.geckoprofiler.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.geckoprofiler.get_adb_device_or_emu", new=FakeDevice)
 def test_geckoprofiler_is_enabled():
     """Test that verifies that profiling is enabled if MOZPERFTEST_GECKOPROFILE is set to 1 ."""
     assert not GeckoProfiler.is_enabled()
@@ -122,7 +122,7 @@ def test_geckoprofiler_is_enabled():
     assert not GeckoProfiler.is_enabled()
 
 
-@mock.patch("mozperftest.system.geckoprofiler.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.geckoprofiler.get_adb_device_or_emu", new=FakeDevice)
 def test_geckoprofiler_cleanup_resets_state():
     """Test to make sure cleanup removes the GECKOPROFILE environment variable and resets package ID in the controller"""
     mach_cmd, metadata, env = running_env(
@@ -140,7 +140,7 @@ def test_geckoprofiler_cleanup_resets_state():
     assert GeckoProfilerController._package_id is None
 
 
-@mock.patch("mozperftest.system.geckoprofiler.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.geckoprofiler.get_adb_device_or_emu", new=FakeDevice)
 @mock.patch("mozperftest.system.geckoprofiler.subprocess.run")
 @mock.patch("tempfile.NamedTemporaryFile")
 def test_controller_start_with_default_options(mock_temp, mock_run):
@@ -172,7 +172,7 @@ def test_controller_start_with_default_options(mock_temp, mock_run):
     os.environ.pop("MOZPERFTEST_GECKOPROFILE", None)
 
 
-@mock.patch("mozperftest.system.geckoprofiler.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.geckoprofiler.get_adb_device_or_emu", new=FakeDevice)
 @mock.patch("mozperftest.system.geckoprofiler.subprocess.run")
 @mock.patch("tempfile.NamedTemporaryFile")
 def test_controller_start_with_custom_options(mock_temp, mock_run):
@@ -206,7 +206,7 @@ def test_controller_start_with_custom_options(mock_temp, mock_run):
     os.environ.pop("MOZPERFTEST_GECKOPROFILE", None)
 
 
-@mock.patch("mozperftest.system.geckoprofiler.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.geckoprofiler.get_adb_device_or_emu", new=FakeDevice)
 def test_controller_start_already_active():
     """Test attempting to start profiling when it's already active raises an error"""
     os.environ["MOZPERFTEST_GECKOPROFILE"] = "1"
@@ -223,7 +223,7 @@ def test_controller_start_already_active():
     os.environ.pop("MOZPERFTEST_GECKOPROFILE", None)
 
 
-@mock.patch("mozperftest.system.geckoprofiler.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.geckoprofiler.get_adb_device_or_emu", new=FakeDevice)
 def test_controller_stop_not_active():
     """Test attempting to stop the profiler with no active session raises an error"""
     os.environ["MOZPERFTEST_GECKOPROFILE"] = "1"
@@ -241,7 +241,7 @@ def test_controller_stop_not_active():
     os.environ.pop("MOZPERFTEST_GECKOPROFILE", None)
 
 
-@mock.patch("mozperftest.system.geckoprofiler.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.geckoprofiler.get_adb_device_or_emu", new=FakeDevice)
 def test_controller_package_id_not_set():
     """Test that trying to resolve a package ID when it is not set raises an erorr"""
     os.environ["MOZPERFTEST_GECKOPROFILE"] = "1"
@@ -257,7 +257,7 @@ def test_controller_package_id_not_set():
     os.environ.pop("MOZPERFTEST_GECKOPROFILE", None)
 
 
-@mock.patch("mozperftest.system.geckoprofiler.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.geckoprofiler.get_adb_device_or_emu", new=FakeDevice)
 @mock.patch("mozperftest.system.geckoprofiler.extract_tgz_and_find_files")
 def test_geckoprofiler_archive_profiles(mock_extract, tmp_path):
     """Test that archived profiles are extracted from .tgz and packaged into a .zip file."""
@@ -292,7 +292,7 @@ def test_geckoprofiler_archive_profiles(mock_extract, tmp_path):
     assert archive_file.exists()
 
 
-@mock.patch("mozperftest.system.geckoprofiler.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.geckoprofiler.get_adb_device_or_emu", new=FakeDevice)
 @mock.patch("mozperftest.system.geckoprofiler.subprocess.run")
 @mock.patch("tempfile.NamedTemporaryFile")
 def test_controller_config_file_naming(mock_temp, mock_run):
@@ -310,7 +310,7 @@ def test_controller_config_file_naming(mock_temp, mock_run):
     os.environ.pop("MOZPERFTEST_GECKOPROFILE", None)
 
 
-@mock.patch("mozperftest.system.geckoprofiler.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.geckoprofiler.get_adb_device_or_emu", new=FakeDevice)
 @mock.patch("mozperftest.system.geckoprofiler.subprocess.run")
 def test_controller_stop_success(mock_run, tmp_path):
     """Test that the controller stop successfully stops profiling and saves profile"""
@@ -339,7 +339,7 @@ def test_controller_stop_success(mock_run, tmp_path):
     os.environ.pop("MOZPERFTEST_GECKOPROFILE", None)
 
 
-@mock.patch("mozperftest.system.geckoprofiler.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.geckoprofiler.get_adb_device_or_emu", new=FakeDevice)
 @mock.patch("mozperftest.system.geckoprofiler.subprocess.run")
 def test_controller_stop_error(mock_run, tmp_path):
     """Test that GeckoProfilerController.stop() handles errors and resets state"""
@@ -367,7 +367,7 @@ def test_controller_stop_error(mock_run, tmp_path):
     os.environ.pop("MOZPERFTEST_GECKOPROFILE", None)
 
 
-@mock.patch("mozperftest.system.geckoprofiler.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.geckoprofiler.get_adb_device_or_emu", new=FakeDevice)
 @mock.patch("mozperftest.system.geckoprofiler.subprocess.run")
 def test_controller_stop_gzipped_profile(mock_run, tmp_path):
     """Test that GeckoProfilerController.stop() decompresses gzipped profiles"""
@@ -396,7 +396,7 @@ def test_controller_stop_gzipped_profile(mock_run, tmp_path):
     os.environ.pop("MOZPERFTEST_GECKOPROFILE", None)
 
 
-@mock.patch("mozperftest.system.geckoprofiler.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.geckoprofiler.get_adb_device_or_emu", new=FakeDevice)
 @mock.patch("mozperftest.system.geckoprofiler.subprocess.run")
 @mock.patch("tempfile.NamedTemporaryFile")
 def test_controller_merges_default_and_custom_options(mock_temp, mock_run):

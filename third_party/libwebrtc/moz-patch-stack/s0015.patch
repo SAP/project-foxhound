@@ -13,7 +13,7 @@ Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/1feec83ee6f92a35d
  2 files changed, 28 insertions(+), 2 deletions(-)
 
 diff --git a/modules/video_capture/windows/device_info_ds.cc b/modules/video_capture/windows/device_info_ds.cc
-index 63f32b0261..662b97133a 100644
+index 29430a8204..288166b328 100644
 --- a/modules/video_capture/windows/device_info_ds.cc
 +++ b/modules/video_capture/windows/device_info_ds.cc
 @@ -20,6 +20,18 @@

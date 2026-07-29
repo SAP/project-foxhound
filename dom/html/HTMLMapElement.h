@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,13 +8,13 @@
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
 
-class nsContentList;
-
 namespace mozilla::dom {
+
+class ContentList;
 
 class HTMLMapElement final : public nsGenericHTMLElement {
  public:
-  explicit HTMLMapElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+  explicit HTMLMapElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
@@ -29,14 +27,14 @@ class HTMLMapElement final : public nsGenericHTMLElement {
   void SetName(const nsAString& aName, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::name, aName, aError);
   }
-  nsIHTMLCollection* Areas();
+  HTMLCollection* Areas();
 
   JSObject* WrapNode(JSContext*, JS::Handle<JSObject*> aGivenProto) override;
 
  protected:
   ~HTMLMapElement() = default;
 
-  RefPtr<nsContentList> mAreas;
+  RefPtr<ContentList> mAreas;
 };
 
 }  // namespace mozilla::dom

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -64,12 +63,13 @@ class nsJSURI final : public mozilla::net::nsSimpleURI {
 
   nsIURI* GetBaseURI() const { return mBaseURI; }
 
+  NS_INLINE_DECL_STATIC_IID(NS_JSURI_CID)
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIURI overrides
   virtual already_AddRefed<mozilla::net::nsSimpleURI> StartClone() override;
   NS_IMETHOD Mutate(nsIURIMutator** _retval) override;
-  NS_IMETHOD_(void) Serialize(mozilla::ipc::URIParams& aParams) override;
+  virtual void Serialize(mozilla::ipc::URIParams& aParams) override;
 
   // nsISerializable overrides
   NS_IMETHOD Read(nsIObjectInputStream* aStream) override;

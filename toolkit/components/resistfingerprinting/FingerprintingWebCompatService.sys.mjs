@@ -1,4 +1,3 @@
-// -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -31,7 +30,7 @@ const SCHEMA = `{
     "overrides": {
       "type": "string",
       "pattern": "^[+-][A-Za-z]+(?:,[+-][A-Za-z]+)*$",
-      "description": "The fingerprinting overrides. See https://searchfox.org/mozilla-central/source/toolkit/components/resistfingerprinting/RFPTargets.inc for details."
+      "description": "The fingerprinting overrides. See https://searchfox.org/firefox-main/source/toolkit/components/resistfingerprinting/RFPTargets.inc for details."
     },
     "firstPartyDomain": {
       "type": "string",
@@ -134,6 +133,7 @@ export class FingerprintingWebCompatService {
     // Register listener to import overrides when the overrides pref changes.
     Services.prefs.addObserver(PREF_GRANULAR_OVERRIDES, this);
     Services.prefs.addObserver(PREF_GRANULAR_OVERRIDES_BASELINE, this);
+    Services.prefs.addObserver(PREF_REMOTE_OVERRIDES_ENABLED, this);
 
     // Register the sync event for the remote settings updates.
     this.#rs.on("sync", async _ => {
@@ -270,8 +270,21 @@ export class FingerprintingWebCompatService {
   observe(subject, topic, prefName) {
     if (
       prefName != PREF_GRANULAR_OVERRIDES &&
-      prefName != PREF_GRANULAR_OVERRIDES_BASELINE
+      prefName != PREF_GRANULAR_OVERRIDES_BASELINE &&
+      prefName != PREF_REMOTE_OVERRIDES_ENABLED
     ) {
+      return;
+    }
+
+    if (prefName === PREF_REMOTE_OVERRIDES_ENABLED) {
+      if (!lazy.remoteOverridesEnabled) {
+        this.#remoteOverrides.clear();
+        this.#populateOverrides();
+      } else {
+        this.#importRemoteSettingsOverrides().then(() =>
+          this.#populateOverrides()
+        );
+      }
       return;
     }
 
@@ -284,5 +297,6 @@ export class FingerprintingWebCompatService {
 
     Services.prefs.removeObserver(PREF_GRANULAR_OVERRIDES, this);
     Services.prefs.removeObserver(PREF_GRANULAR_OVERRIDES_BASELINE, this);
+    Services.prefs.removeObserver(PREF_REMOTE_OVERRIDES_ENABLED, this);
   }
 }

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,7 +23,7 @@
 #  undef DMABUF_LOG
 extern mozilla::LazyLogModule gDmabufLog;
 #  define DMABUF_LOG(str, ...) \
-    MOZ_LOG(gDmabufLog, mozilla::LogLevel::Debug, (str, ##__VA_ARGS__))
+    MOZ_LOG_FMT(gDmabufLog, mozilla::LogLevel::Debug, str, ##__VA_ARGS__)
 #else
 #  define DMABUF_LOG(args)
 #endif /* MOZ_LOGGING */
@@ -56,12 +54,12 @@ VideoFrameSurface<LIBAV_VER>::VideoFrameSurface(DMABufSurface* aSurface,
   MOZ_ASSERT(mSurface);
   MOZ_RELEASE_ASSERT(mSurface->GetAsDMABufSurfaceYUV());
   mSurface->GlobalRefCountCreate();
-  DMABUF_LOG("VideoFrameSurface: creating surface UID %d FFmpeg ID %x",
+  DMABUF_LOG("VideoFrameSurface: creating surface UID {} FFmpeg ID {:x}",
              mSurface->GetUID(), aFFMPEGSurfaceID);
 }
 
 VideoFrameSurface<LIBAV_VER>::~VideoFrameSurface() {
-  DMABUF_LOG("~VideoFrameSurface: deleting dmabuf surface UID %d",
+  DMABUF_LOG("~VideoFrameSurface: deleting dmabuf surface UID {}",
              mSurface->GetUID());
   mSurface->GlobalRefCountDelete();
   // We're about to quit, no need to recycle the frames.
@@ -90,25 +88,28 @@ void VideoFrameSurface<LIBAV_VER>::LockVAAPIData(
     mAVHWFrameContext = aLib->av_buffer_ref(aAVCodecContext->hw_frames_ctx);
     mHWAVBuffer = aLib->av_buffer_ref(aAVFrame->buf[0]);
     DMABUF_LOG(
-        "VideoFrameSurface: VAAPI locking dmabuf surface UID %d FFMPEG ID 0x%x "
-        "mAVHWFrameContext %p mHWAVBuffer %p",
-        mSurface->GetUID(), mFFMPEGSurfaceID, mAVHWFrameContext, mHWAVBuffer);
+        "VideoFrameSurface: VAAPI locking dmabuf surface UID {} FFMPEG ID "
+        "0x{:x} "
+        "mAVHWFrameContext {} mHWAVBuffer {}",
+        mSurface->GetUID(), mFFMPEGSurfaceID, fmt::ptr(mAVHWFrameContext),
+        fmt::ptr(mHWAVBuffer));
   } else {
     mAVHWFrameContext = nullptr;
     mHWAVBuffer = aLib->av_buffer_ref(aAVFrame->buf[0]);
     DMABUF_LOG(
-        "VideoFrameSurface: V4L2 locking dmabuf surface UID %d FFMPEG ID 0x%x "
-        "mHWAVBuffer %p",
-        mSurface->GetUID(), mFFMPEGSurfaceID, mHWAVBuffer);
+        "VideoFrameSurface: V4L2 locking dmabuf surface UID {} FFMPEG ID "
+        "0x{:x} "
+        "mHWAVBuffer {}",
+        mSurface->GetUID(), mFFMPEGSurfaceID, fmt::ptr(mHWAVBuffer));
   }
 }
 
 void VideoFrameSurface<LIBAV_VER>::ReleaseVAAPIData(bool aForFrameRecycle) {
   DMABUF_LOG(
-      "VideoFrameSurface: Releasing dmabuf surface UID %d FFMPEG ID 0x%x "
-      "aForFrameRecycle %d mLib %p mAVHWFrameContext %p mHWAVBuffer %p",
-      mSurface->GetUID(), mFFMPEGSurfaceID, aForFrameRecycle, mLib,
-      mAVHWFrameContext, mHWAVBuffer);
+      "VideoFrameSurface: Releasing dmabuf surface UID {} FFMPEG ID 0x{:x} "
+      "aForFrameRecycle {} mLib {} mAVHWFrameContext {} mHWAVBuffer {}",
+      mSurface->GetUID(), mFFMPEGSurfaceID, aForFrameRecycle, fmt::ptr(mLib),
+      fmt::ptr(mAVHWFrameContext), fmt::ptr(mHWAVBuffer));
   // It's possible to unref GPU data while IsUsedByRenderer() is still set.
   // It can happen when VideoFramePool is deleted while decoder shutdown
   // but related dmabuf surfaces are still used in another process.
@@ -124,6 +125,7 @@ void VideoFrameSurface<LIBAV_VER>::ReleaseVAAPIData(bool aForFrameRecycle) {
   }
 
   mHoldByFFmpeg = false;
+  mVulkanCopySlotIndex = -1;
 
   // Release dmabuf surface now as we're going to replace it.
   if (aForFrameRecycle) {
@@ -138,7 +140,7 @@ void VideoFrameSurface<LIBAV_VER>::ReleaseVAAPIData(bool aForFrameRecycle) {
 VideoFramePool<LIBAV_VER>::VideoFramePool(int aFFMPEGPoolSize)
     : mSurfaceLock("VideoFramePoolSurfaceLock"),
       mMaxFFMPEGPoolSize(aFFMPEGPoolSize) {
-  DMABUF_LOG("VideoFramePool::VideoFramePool() pool size %d",
+  DMABUF_LOG("VideoFramePool::VideoFramePool() pool size {}",
              mMaxFFMPEGPoolSize);
 }
 
@@ -148,11 +150,25 @@ VideoFramePool<LIBAV_VER>::~VideoFramePool() {
   mDMABufSurfaces.Clear();
 }
 
+bool VideoFramePool<LIBAV_VER>::IsVulkanFrameSlotInUseByRenderer(
+    int32_t aSlotIndex) {
+  if (aSlotIndex < 0) {
+    return false;
+  }
+  MutexAutoLock lock(mSurfaceLock);
+  for (const auto& surface : mDMABufSurfaces) {
+    if (surface->mVulkanCopySlotIndex == aSlotIndex) {
+      return surface->IsUsedByRenderer();
+    }
+  }
+  return false;
+}
+
 void VideoFramePool<LIBAV_VER>::ReleaseUnusedVAAPIFrames() {
   MutexAutoLock lock(mSurfaceLock);
   for (const auto& surface : mDMABufSurfaces) {
     if (!surface->mHoldByFFmpeg && surface->IsUsedByRenderer()) {
-      DMABUF_LOG("Copied and used surface UID %d",
+      DMABUF_LOG("Copied and used surface UID {}",
                  surface->GetDMABufSurface()->GetUID());
     }
     if (surface->mHoldByFFmpeg && !surface->IsUsedByRenderer()) {
@@ -183,10 +199,15 @@ VideoFramePool<LIBAV_VER>::GetFFmpegVideoFrameSurfaceLocked(
   // to keep matched surface UID / FFmpeg ID.
   for (auto& surface : mDMABufSurfaces) {
     if (surface->mFFMPEGSurfaceID == aFFMPEGSurfaceID) {
-      // This should not happen as we reference FFmpeg surfaces from
-      // renderer process.
       if (surface->IsUsedByRenderer()) {
-        NS_WARNING("Using live surfaces, visual glitches ahead!");
+        // A re-output frame (e.g. VP9/AV1 show_existing_frame) re-displays an
+        // already-decoded frame from the reference buffer, so it can carry the
+        // same surface id as a frame the renderer is still using. When the
+        // matched surface is still in use, detach it from this FFmpeg id and
+        // let the caller allocate a fresh surface instead (as
+        // GetFreeVideoFrameSurfaceLocked does).
+        surface->mFFMPEGSurfaceID = sInvalidFFMPEGSurfaceID;
+        return nullptr;
       }
       return surface;
     }
@@ -221,13 +242,13 @@ bool VideoFramePool<LIBAV_VER>::ShouldCopySurface() {
     if (surface->IsUsedByRenderer()) {
       surfacesUsed++;
       if (surface->IsFFMPEGSurface()) {
-        DMABUF_LOG("Used HW surface UID %d FFMPEG ID 0x%x\n",
+        DMABUF_LOG("Used HW surface UID {} FFMPEG ID 0x{:x}\n",
                    surface->mSurface->GetUID(), surface->mFFMPEGSurfaceID);
         surfacesUsedFFmpeg++;
       }
     } else {
       if (surface->IsFFMPEGSurface()) {
-        DMABUF_LOG("Free HW surface UID %d FFMPEG ID 0x%x\n",
+        DMABUF_LOG("Free HW surface UID {} FFMPEG ID 0x{:x}\n",
                    surface->mSurface->GetUID(), surface->mFFMPEGSurfaceID);
       }
     }
@@ -240,10 +261,11 @@ bool VideoFramePool<LIBAV_VER>::ShouldCopySurface() {
           ? 1.0f - (surfacesUsedFFmpeg / (float)mMaxFFMPEGPoolSize)
           : 1.0;
   DMABUF_LOG(
-      "Surface pool size %d used copied %d used ffmpeg %d (max %d) free ratio "
-      "%f",
-      (int)mDMABufSurfaces.Length(), surfacesUsed - surfacesUsedFFmpeg,
-      surfacesUsedFFmpeg, mMaxFFMPEGPoolSize, freeRatio);
+      "Surface pool size {} used copied {} used ffmpeg {} (max {}) free ratio "
+      "{}",
+      static_cast<int>(mDMABufSurfaces.Length()),
+      surfacesUsed - surfacesUsedFFmpeg, surfacesUsedFFmpeg, mMaxFFMPEGPoolSize,
+      freeRatio);
   if (!gfx::gfxVars::HwDecodedVideoZeroCopy()) {
     return true;
   }
@@ -277,10 +299,10 @@ VideoFramePool<LIBAV_VER>::GetTargetVideoFrameSurfaceLocked(
     videoSurface = new VideoFrameSurface<LIBAV_VER>(
         surface, aRecycleSurface ? aFFmpegSurfaceID : sInvalidFFMPEGSurfaceID);
     mDMABufSurfaces.AppendElement(videoSurface);
-    DMABUF_LOG("Added new DMABufSurface UID %d", surface->GetUID());
+    DMABUF_LOG("Added new DMABufSurface UID {}", surface->GetUID());
   } else {
     surface = videoSurface->GetDMABufSurface();
-    DMABUF_LOG("Matched DMABufSurface UID %d", surface->GetUID());
+    DMABUF_LOG("Matched DMABufSurface UID {}", surface->GetUID());
   }
 
   return videoSurface;
@@ -293,7 +315,7 @@ VideoFramePool<LIBAV_VER>::GetVideoFrameSurface(
     const FFmpegLibWrapper* aLib) {
   if (aVaDesc.fourcc != VA_FOURCC_NV12 && aVaDesc.fourcc != VA_FOURCC_YV12 &&
       aVaDesc.fourcc != VA_FOURCC_P010 && aVaDesc.fourcc != VA_FOURCC_P016) {
-    DMABUF_LOG("Unsupported VA-API surface format %d", aVaDesc.fourcc);
+    DMABUF_LOG("Unsupported VA-API surface format {}", aVaDesc.fourcc);
     return nullptr;
   }
 
@@ -304,7 +326,7 @@ VideoFramePool<LIBAV_VER>::GetVideoFrameSurface(
   VASurfaceID ffmpegSurfaceID = (uintptr_t)aAVFrame->data[3];
   MOZ_DIAGNOSTIC_ASSERT(ffmpegSurfaceID != sInvalidFFMPEGSurfaceID,
                         "Exported invalid FFmpeg surface ID");
-  DMABUF_LOG("Got VA-API DMABufSurface FFMPEG ID 0x%x", ffmpegSurfaceID);
+  DMABUF_LOG("Got VA-API DMABufSurface FFMPEG ID 0x{:x}", ffmpegSurfaceID);
 
   RefPtr<VideoFrameSurface<LIBAV_VER>> videoSurface =
       GetTargetVideoFrameSurfaceLocked(lock, ffmpegSurfaceID,
@@ -368,7 +390,8 @@ VideoFramePool<LIBAV_VER>::GetVideoFrameSurface(
     const layers::PlanarYCbCrData& aData, AVCodecContext* aAVCodecContext) {
   static gfx::SurfaceFormat format = GetSurfaceFormat(aAVCodecContext->pix_fmt);
   if (format == gfx::SurfaceFormat::UNKNOWN) {
-    DMABUF_LOG("Unsupported FFmpeg DMABuf format %x", aAVCodecContext->pix_fmt);
+    DMABUF_LOG("Unsupported FFmpeg DMABuf format {:x}",
+               static_cast<int>(aAVCodecContext->pix_fmt));
     return nullptr;
   }
 
@@ -379,7 +402,7 @@ VideoFramePool<LIBAV_VER>::GetVideoFrameSurface(
                                        /* aRecycleSurface */ false);
   RefPtr<DMABufSurfaceYUV> surface = videoSurface->GetDMABufSurface();
 
-  DMABUF_LOG("Using SW DMABufSurface UID %d", surface->GetUID());
+  DMABUF_LOG("Using SW DMABufSurface UID {}", surface->GetUID());
 
   if (!surface->UpdateYUVData(aData, format)) {
     DMABUF_LOG("  failed to convert YUV data to DMABuf memory!");
@@ -411,7 +434,15 @@ static Maybe<VADRMPRIMESurfaceDescriptor> FFmpegDescToVA(
   VADRMPRIMESurfaceDescriptor vaDesc{};
 
   if (aAVFrame->format != AV_PIX_FMT_DRM_PRIME) {
-    DMABUF_LOG("Got non-DRM-PRIME frame from FFmpeg V4L2");
+    if (aAVFrame->hw_frames_ctx) {
+      AVHWDeviceType hwdeviceType =
+          ((AVHWDeviceContext*)((AVHWFramesContext*)
+                                    aAVFrame->hw_frames_ctx->data)
+               ->device_ref->data)
+              ->type;
+      DMABUF_LOG("Got non-DRM-PRIME frame from FFmpeg AVHWDeviceType {}",
+                 static_cast<int>(hwdeviceType));
+    }
     return Nothing();
   }
 
@@ -427,6 +458,25 @@ static Maybe<VADRMPRIMESurfaceDescriptor> FFmpegDescToVA(
   // Native width and height before crop is applied
   unsigned int uncrop_width = aDesc.layers[0].planes[0].pitch;
   unsigned int uncrop_height = aAVFrame->height;
+
+  const unsigned int yPitch = uncrop_width;
+  unsigned int uvPitch = yPitch;
+#if defined(MOZ_ENABLE_VULKAN_VIDEO) && LIBAVCODEC_VERSION_MAJOR >= 59
+  // Vulkan can expose a distinct UV row stride (GPU drivers may require the
+  // correct UV pitch for EGL DMA-BUF import); VA-API/V4L2 paths keep both
+  // pitches equal to the historical behavior.
+  if (aAVFrame->hw_frames_ctx) {
+    AVHWDeviceType hwdeviceType =
+        ((AVHWDeviceContext*)((AVHWFramesContext*)aAVFrame->hw_frames_ctx->data)
+             ->device_ref->data)
+            ->type;
+    if ((hwdeviceType == AV_HWDEVICE_TYPE_VULKAN) &&
+        (aDesc.layers[0].nb_planes >= 2) &&
+        (aDesc.layers[0].planes[1].pitch > 0)) {
+      uvPitch = static_cast<unsigned int>(aDesc.layers[0].planes[1].pitch);
+    }
+  }
+#endif
 
   unsigned int offset = aDesc.layers[0].planes[0].offset;
 
@@ -456,12 +506,13 @@ static Maybe<VADRMPRIMESurfaceDescriptor> FFmpegDescToVA(
     vaDesc.layers[1].pitch[0] = uncrop_width / 2;
     vaDesc.layers[2].offset[0] = offset + uncrop_width * uncrop_height * 5 / 4;
     vaDesc.layers[2].pitch[0] = uncrop_width / 2;
-  } else if (aDesc.layers[0].format == DRM_FORMAT_NV12) {
+  } else if (aDesc.layers[0].format == DRM_FORMAT_NV12 &&
+             aDesc.nb_layers == 1) {
     vaDesc.fourcc = VA_FOURCC_NV12;
 
-    // V4L2 expresses NV12 as a single contiguous buffer containing both
-    // planes.  DMABufSurfaceYUV expects the two planes separately, so we have
-    // to split them out
+    // V4L2 and Vulkan express NV12 as a single contiguous buffer containing
+    // both planes.  DMABufSurfaceYUV expects the two planes separately, so we
+    // have to split them out
     MOZ_ASSERT(aDesc.nb_objects == 1);
     MOZ_ASSERT(aDesc.nb_layers == 1);
 
@@ -474,14 +525,75 @@ static Maybe<VADRMPRIMESurfaceDescriptor> FFmpegDescToVA(
     for (int i = 0; i < 2; i++) {
       vaDesc.layers[i].num_planes = 1;
       vaDesc.layers[i].object_index[0] = 0;
-      vaDesc.layers[i].pitch[0] = uncrop_width;
     }
+    vaDesc.layers[0].pitch[0] = yPitch;
+    vaDesc.layers[1].pitch[0] = uvPitch;
     vaDesc.layers[0].drm_format = DRM_FORMAT_R8;  // Y plane
     vaDesc.layers[0].offset[0] = offset;
     vaDesc.layers[1].drm_format = DRM_FORMAT_GR88;  // UV plane
-    vaDesc.layers[1].offset[0] = offset + uncrop_width * uncrop_height;
+    // Use actual UV offset if available (Vulkan), otherwise compute (V4L2)
+    vaDesc.layers[1].offset[0] = aDesc.layers[0].nb_planes >= 2
+                                     ? aDesc.layers[0].planes[1].offset
+                                     : offset + yPitch * uncrop_height;
+  } else if (aDesc.layers[0].format == DRM_FORMAT_P010 &&
+             aDesc.nb_layers == 1) {
+    vaDesc.fourcc = VA_FOURCC_P010;
+
+    MOZ_ASSERT(aDesc.nb_objects == 1);
+    MOZ_ASSERT(aDesc.nb_layers == 1);
+
+    vaDesc.num_objects = 1;
+    vaDesc.objects[0].drm_format_modifier = aDesc.objects[0].format_modifier;
+    vaDesc.objects[0].size = aDesc.objects[0].size;
+    vaDesc.objects[0].fd = aDesc.objects[0].fd;
+
+    vaDesc.num_layers = 2;
+    for (int i = 0; i < 2; i++) {
+      vaDesc.layers[i].num_planes = 1;
+      vaDesc.layers[i].object_index[0] = 0;
+    }
+    vaDesc.layers[0].pitch[0] = yPitch;
+    vaDesc.layers[1].pitch[0] = uvPitch;
+    vaDesc.layers[0].drm_format = DRM_FORMAT_R16;  // Y plane
+    vaDesc.layers[0].offset[0] = offset;
+    vaDesc.layers[1].drm_format = DRM_FORMAT_GR1616;  // UV plane
+    vaDesc.layers[1].offset[0] = aDesc.layers[0].nb_planes >= 2
+                                     ? aDesc.layers[0].planes[1].offset
+                                     : offset + yPitch * uncrop_height;
+  } else if (aDesc.nb_layers == 2 && aDesc.layers[0].format == DRM_FORMAT_R8 &&
+             aDesc.layers[1].format == DRM_FORMAT_GR88 &&
+             aDesc.nb_objects == 1) {
+    vaDesc.fourcc = VA_FOURCC_NV12;
+    vaDesc.num_objects = 1;
+    vaDesc.objects[0].drm_format_modifier = aDesc.objects[0].format_modifier;
+    vaDesc.objects[0].size = aDesc.objects[0].size;
+    vaDesc.objects[0].fd = aDesc.objects[0].fd;
+    vaDesc.num_layers = 2;
+    for (int i = 0; i < 2; i++) {
+      vaDesc.layers[i].num_planes = 1;
+      vaDesc.layers[i].object_index[0] = 0;
+      vaDesc.layers[i].drm_format = aDesc.layers[i].format;
+      vaDesc.layers[i].pitch[0] = aDesc.layers[i].planes[0].pitch;
+      vaDesc.layers[i].offset[0] = aDesc.layers[i].planes[0].offset;
+    }
+  } else if (aDesc.nb_layers == 2 && aDesc.layers[0].format == DRM_FORMAT_R16 &&
+             aDesc.layers[1].format == DRM_FORMAT_GR1616 &&
+             aDesc.nb_objects == 1) {
+    vaDesc.fourcc = VA_FOURCC_P010;
+    vaDesc.num_objects = 1;
+    vaDesc.objects[0].drm_format_modifier = aDesc.objects[0].format_modifier;
+    vaDesc.objects[0].size = aDesc.objects[0].size;
+    vaDesc.objects[0].fd = aDesc.objects[0].fd;
+    vaDesc.num_layers = 2;
+    for (int i = 0; i < 2; i++) {
+      vaDesc.layers[i].num_planes = 1;
+      vaDesc.layers[i].object_index[0] = 0;
+      vaDesc.layers[i].drm_format = aDesc.layers[i].format;
+      vaDesc.layers[i].pitch[0] = aDesc.layers[i].planes[0].pitch;
+      vaDesc.layers[i].offset[0] = aDesc.layers[i].planes[0].offset;
+    }
   } else {
-    DMABUF_LOG("Don't know how to deal with FOURCC 0x%x",
+    DMABUF_LOG("Don't know how to deal with FOURCC 0x{:x}",
                aDesc.layers[0].format);
     return Nothing();
   }
@@ -513,7 +625,15 @@ VideoFramePool<LIBAV_VER>::GetVideoFrameSurface(AVDRMFrameDescriptor& aDesc,
                                        /* aRecycleSurface */ false);
   RefPtr<DMABufSurfaceYUV> surface = videoSurface->GetDMABufSurface();
 
-  DMABUF_LOG("Using V4L2 DMABufSurface UID %d", surface->GetUID());
+  if (aAVFrame->hw_frames_ctx) {
+    AVHWDeviceType hwdeviceType =
+        ((AVHWDeviceContext*)((AVHWFramesContext*)aAVFrame->hw_frames_ctx->data)
+             ->device_ref->data)
+            ->type;
+    DMABUF_LOG("Using {} DMABufSurface UID {}",
+               aLib->av_hwdevice_get_type_name(hwdeviceType),
+               surface->GetUID());
+  }
 
   bool copySurface = mTextureCopyWorks && ShouldCopySurface();
   if (!surface->UpdateYUVData(layerDesc.value(), crop_width, crop_height,

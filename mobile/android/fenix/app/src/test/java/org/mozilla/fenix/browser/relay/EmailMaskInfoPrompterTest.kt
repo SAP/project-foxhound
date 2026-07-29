@@ -15,11 +15,11 @@ import mozilla.components.service.fxrelay.eligibility.RelayEligibilityStore
 import mozilla.components.service.fxrelay.eligibility.RelayState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.snackbar.SnackbarState
+import kotlin.test.assertIs
 
 class EmailMaskInfoPrompterTest {
     private val testDispatcher = StandardTestDispatcher()
@@ -54,8 +54,8 @@ class EmailMaskInfoPrompterTest {
             testDispatcher.scheduler.advanceUntilIdle()
 
             val snackbarState = appStore.state.snackbarState
-            assertTrue(snackbarState is SnackbarState.ShowSnackbar)
-            assertEquals(errorMessages.maxMasksReached, (snackbarState as SnackbarState.ShowSnackbar).title)
+            assertIs<SnackbarState.ShowSnackbar>(snackbarState)
+            assertEquals(errorMessages.maxMasksReached, snackbarState.title)
         }
 
     @Test
@@ -77,7 +77,7 @@ class EmailMaskInfoPrompterTest {
             )
             testDispatcher.scheduler.advanceUntilIdle()
 
-            assertTrue(appStore.state.snackbarState is SnackbarState.None)
+            assertIs<SnackbarState.None>(appStore.state.snackbarState)
         }
 
     @Test
@@ -100,11 +100,8 @@ class EmailMaskInfoPrompterTest {
             testDispatcher.scheduler.advanceUntilIdle()
 
             val snackbarState = appStore.state.snackbarState
-            assertTrue(snackbarState is SnackbarState.ShowSnackbar)
-            assertEquals(
-                errorMessages.errorRetrievingMasks,
-                (snackbarState as SnackbarState.ShowSnackbar).title,
-            )
+            assertIs<SnackbarState.ShowSnackbar>(snackbarState)
+            assertEquals(errorMessages.errorRetrievingMasks, snackbarState.title)
         }
 
     @Test
@@ -126,7 +123,7 @@ class EmailMaskInfoPrompterTest {
             )
             testDispatcher.scheduler.advanceUntilIdle()
 
-            assertTrue(appStore.state.snackbarState is SnackbarState.None)
+            assertIs<SnackbarState.None>(appStore.state.snackbarState)
         }
 
     @Test

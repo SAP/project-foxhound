@@ -42,6 +42,13 @@ if (largeArrayBufferSupported()) {
 }
 var MaxPagesIn32BitMemory = Math.floor(MaxBytesIn32BitMemory / PageSizeInBytes);
 
+function wasmBinaryIsComponent(binary) {
+    const b = binary;
+    return b.length >= 8
+        && b[0] === 0x0 && b[1] === 0x61 && b[2] === 0x73 && b[3] === 0x6d
+        && b[4] === 0x0d && b[5] === 0x00 && b[6] === 0x01 && b[7] === 0x00;
+}
+
 function wasmEvalBinary(binary, imports, compileOptions) {
     let valid = WebAssembly.validate(binary, compileOptions);
 
@@ -64,17 +71,23 @@ function wasmEvalText(str, imports, compileOptions) {
 }
 
 function wasmValidateBinary(binary) {
-    let valid = WebAssembly.validate(binary);
+    const valid = WebAssembly.validate(binary);
+    const isComponent = wasmBinaryIsComponent(binary);
     if (!valid) {
-        new WebAssembly.Module(binary);
-        throw new Error("module failed WebAssembly.validate but compiled successfully");
+        new (isComponent ? WebAssembly.Component : WebAssembly.Module)(binary);
+        throw new Error(`${isComponent ? "component" : "module"} failed WebAssembly.validate but compiled successfully`);
     }
-    assertEq(valid, true, "wasm module was invalid");
+    assertEq(valid, true, `wasm ${isComponent ? "component" : "module"} was invalid`);
 }
 
 function wasmFailValidateBinary(binary, pattern) {
-    assertEq(WebAssembly.validate(binary), false, "module passed WebAssembly.validate when it should not have");
-    assertErrorMessage(() => new WebAssembly.Module(binary), WebAssembly.CompileError, pattern, "module failed WebAssembly.validate but did not fail to compile in the expected way");
+    const isComponent = wasmBinaryIsComponent(binary);
+    assertEq(WebAssembly.validate(binary), false, `${isComponent ? "component" : "module"} passed WebAssembly.validate when it should not have`);
+    assertErrorMessage(
+        () => new (isComponent ? WebAssembly.Component : WebAssembly.Module)(binary),
+        WebAssembly.CompileError, pattern,
+        `${isComponent ? "component" : "module"} failed WebAssembly.validate but did not fail to compile in the expected way`,
+    );
 }
 
 function wasmValidateText(str) {

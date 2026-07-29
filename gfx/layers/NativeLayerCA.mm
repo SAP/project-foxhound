@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -15,10 +14,9 @@
 
 #include <algorithm>
 #include <fstream>
-#include <iostream>
-#include <sstream>
 #include <utility>
 
+#include "gfxPlatform.h"
 #include "gfxUtils.h"
 #include "GLBlitHelper.h"
 #ifdef XP_MACOSX
@@ -118,57 +116,6 @@ static void EmitTelemetryForVideoLowPower(VideoLowPowerType aVideoLowPower) {
       return;
   }
 }
-
-// Utility classes for NativeLayerRootSnapshotter (NLRS) profiler screenshots.
-
-class RenderSourceNLRS : public profiler_screenshots::RenderSource {
- public:
-  explicit RenderSourceNLRS(UniquePtr<gl::MozFramebuffer>&& aFramebuffer)
-      : RenderSource(aFramebuffer->mSize),
-        mFramebuffer(std::move(aFramebuffer)) {}
-  auto& FB() { return *mFramebuffer; }
-
- protected:
-  UniquePtr<gl::MozFramebuffer> mFramebuffer;
-};
-
-class DownscaleTargetNLRS : public profiler_screenshots::DownscaleTarget {
- public:
-  DownscaleTargetNLRS(gl::GLContext* aGL,
-                      UniquePtr<gl::MozFramebuffer>&& aFramebuffer)
-      : profiler_screenshots::DownscaleTarget(aFramebuffer->mSize),
-        mGL(aGL),
-        mRenderSource(new RenderSourceNLRS(std::move(aFramebuffer))) {}
-  already_AddRefed<profiler_screenshots::RenderSource> AsRenderSource()
-      override {
-    return do_AddRef(mRenderSource);
-  };
-  bool DownscaleFrom(profiler_screenshots::RenderSource* aSource,
-                     const IntRect& aSourceRect,
-                     const IntRect& aDestRect) override;
-
- protected:
-  RefPtr<gl::GLContext> mGL;
-  RefPtr<RenderSourceNLRS> mRenderSource;
-};
-
-class AsyncReadbackBufferNLRS
-    : public profiler_screenshots::AsyncReadbackBuffer {
- public:
-  AsyncReadbackBufferNLRS(gl::GLContext* aGL, const IntSize& aSize,
-                          GLuint aBufferHandle)
-      : profiler_screenshots::AsyncReadbackBuffer(aSize),
-        mGL(aGL),
-        mBufferHandle(aBufferHandle) {}
-  void CopyFrom(profiler_screenshots::RenderSource* aSource) override;
-  bool MapAndCopyInto(DataSourceSurface* aSurface,
-                      const IntSize& aReadSize) override;
-
- protected:
-  virtual ~AsyncReadbackBufferNLRS();
-  RefPtr<gl::GLContext> mGL;
-  GLuint mBufferHandle = 0;
-};
 
 // Needs to be on the stack whenever CALayer mutations are performed.
 // (Mutating CALayers outside of a transaction can result in permanently stuck
@@ -824,8 +771,7 @@ NativeLayerRootSnapshotterCA::CreateDownscaleTarget(const IntSize& aSize) {
   if (!fb) {
     return nullptr;
   }
-  RefPtr<profiler_screenshots::DownscaleTarget> dt =
-      new DownscaleTargetNLRS(mGL, std::move(fb));
+  RefPtr dt = MakeRefPtr<DownscaleTargetNLRS>(mGL, std::move(fb));
   return dt.forget();
 }
 
@@ -837,10 +783,10 @@ NativeLayerRootSnapshotterCA::CreateAsyncReadbackBuffer(const IntSize& aSize) {
 
   gl::ScopedPackState scopedPackState(mGL);
   mGL->fBindBuffer(LOCAL_GL_PIXEL_PACK_BUFFER, bufferHandle);
-  mGL->fPixelStorei(LOCAL_GL_PACK_ALIGNMENT, 1);
   mGL->fBufferData(LOCAL_GL_PIXEL_PACK_BUFFER, bufferByteCount, nullptr,
                    LOCAL_GL_STREAM_READ);
-  return MakeAndAddRef<AsyncReadbackBufferNLRS>(mGL, aSize, bufferHandle);
+  return MakeAndAddRef<AsyncReadbackBufferNLRS>(mGL, aSize, bufferHandle,
+                                                /*bool aYFlip*/ true);
 }
 #endif
 
@@ -929,19 +875,8 @@ void NativeLayerCA::AttachExternalImage(wr::RenderTextureHost* aExternalImage) {
   bool changedIsDRM = (mIsDRM != isDRM);
   mIsDRM = isDRM;
 
-  bool isHDR = false;
   MacIOSurface* macIOSurface = texture->GetSurface();
-  if (macIOSurface->GetYUVColorSpace() == gfx::YUVColorSpace::BT2020 &&
-      StaticPrefs::gfx_color_management_hdr_video_assume_rec2020_uses_pq()) {
-    // BT2020 colorSpace is a signifier of HDR.
-    isHDR = true;
-  }
-
-  if (macIOSurface->GetColorDepth() == gfx::ColorDepth::COLOR_10) {
-    // 10-bit color is a signifier of HDR.
-    isHDR = true;
-  }
-  mIsHDR = isHDR && StaticPrefs::gfx_color_management_hdr_video();
+  mIsHDR = macIOSurface->IsHDRSurface() && gfxPlatform::UseHDR();
 
   bool specializeVideo = ShouldSpecializeVideo(lock);
   bool changedSpecializeVideo = (mSpecializeVideo != specializeVideo);
@@ -1274,7 +1209,9 @@ void NativeLayerCA::DumpLayer(std::ostream& aOutputStream) {
   if (surface) {
     // Attempt to render the surface as a PNG. Skia can do this for RGB
     // surfaces.
-    RefPtr<MacIOSurface> surf = new MacIOSurface(surface);
+    RefPtr<MacIOSurface> surf = new MacIOSurface(
+        surface, gfx::YUVColorSpace::Identity, gfx::TransferFunction::SRGB,
+        MacIOSurface::AllowAlpha::Yes);
     if (surf->Lock(true)) {
       SurfaceFormat format = surf->GetFormat();
       if (format == SurfaceFormat::B8G8R8A8 ||
@@ -1342,9 +1279,11 @@ void NativeLayerCA::SetSurfaceToPresent(CFTypeRefPtr<IOSurfaceRef> aSurfaceRef,
   // Figure out if the surface is a video.
   if (mSurfaceToPresent) {
     auto pixelFormat = IOSurfaceGetPixelFormat(mSurfaceToPresent.get());
-    bool hasAlpha = !mIsOpaque;
+    MacIOSurface::AllowAlpha allowAlpha = mIsOpaque
+                                              ? MacIOSurface::AllowAlpha::No
+                                              : MacIOSurface::AllowAlpha::Yes;
     auto surfaceFormat =
-        MacIOSurface::SurfaceFormatForPixelFormat(pixelFormat, hasAlpha);
+        MacIOSurface::SurfaceFormatForPixelFormat(pixelFormat, allowAlpha);
     mTextureHostIsVideo = gfx::Info(surfaceFormat)->isYuv;
   } else {
     mTextureHostIsVideo = false;
@@ -2132,81 +2071,6 @@ NativeLayerCA::UpdateType NativeLayerCARepresentation::HasUpdate(
   }
 
   return UpdateType::None;
-}
-
-bool DownscaleTargetNLRS::DownscaleFrom(
-    profiler_screenshots::RenderSource* aSource, const IntRect& aSourceRect,
-    const IntRect& aDestRect) {
-  mGL->BlitHelper()->BlitFramebufferToFramebuffer(
-      static_cast<RenderSourceNLRS*>(aSource)->FB().mFB,
-      mRenderSource->FB().mFB, aSourceRect, aDestRect, LOCAL_GL_LINEAR);
-
-  return true;
-}
-
-void AsyncReadbackBufferNLRS::CopyFrom(
-    profiler_screenshots::RenderSource* aSource) {
-  IntSize size = aSource->Size();
-  MOZ_RELEASE_ASSERT(Size() == size);
-
-  gl::ScopedPackState scopedPackState(mGL);
-  mGL->fBindBuffer(LOCAL_GL_PIXEL_PACK_BUFFER, mBufferHandle);
-  mGL->fPixelStorei(LOCAL_GL_PACK_ALIGNMENT, 1);
-  const gl::ScopedBindFramebuffer bindFB(
-      mGL, static_cast<RenderSourceNLRS*>(aSource)->FB().mFB);
-  mGL->fReadPixels(0, 0, size.width, size.height, LOCAL_GL_RGBA,
-                   LOCAL_GL_UNSIGNED_BYTE, 0);
-}
-
-bool AsyncReadbackBufferNLRS::MapAndCopyInto(DataSourceSurface* aSurface,
-                                             const IntSize& aReadSize) {
-  MOZ_RELEASE_ASSERT(aReadSize <= aSurface->GetSize());
-
-  if (!mGL || !mGL->MakeCurrent()) {
-    return false;
-  }
-
-  gl::ScopedPackState scopedPackState(mGL);
-  mGL->fBindBuffer(LOCAL_GL_PIXEL_PACK_BUFFER, mBufferHandle);
-  mGL->fPixelStorei(LOCAL_GL_PACK_ALIGNMENT, 1);
-
-  const uint8_t* srcData = nullptr;
-  if (mGL->IsSupported(gl::GLFeature::map_buffer_range)) {
-    srcData = static_cast<uint8_t*>(mGL->fMapBufferRange(
-        LOCAL_GL_PIXEL_PACK_BUFFER, 0, aReadSize.height * aReadSize.width * 4,
-        LOCAL_GL_MAP_READ_BIT));
-  } else {
-    srcData = static_cast<uint8_t*>(
-        mGL->fMapBuffer(LOCAL_GL_PIXEL_PACK_BUFFER, LOCAL_GL_READ_ONLY));
-  }
-
-  if (!srcData) {
-    return false;
-  }
-
-  int32_t srcStride = mSize.width * 4;  // Bind() sets an alignment of 1
-  DataSourceSurface::ScopedMap map(aSurface, DataSourceSurface::WRITE);
-  uint8_t* destData = map.GetData();
-  int32_t destStride = map.GetStride();
-  SurfaceFormat destFormat = aSurface->GetFormat();
-  for (int32_t destRow = 0; destRow < aReadSize.height; destRow++) {
-    // Turn srcData upside down during the copy.
-    int32_t srcRow = aReadSize.height - 1 - destRow;
-    const uint8_t* src = &srcData[srcRow * srcStride];
-    uint8_t* dest = &destData[destRow * destStride];
-    SwizzleData(src, srcStride, SurfaceFormat::R8G8B8A8, dest, destStride,
-                destFormat, IntSize(aReadSize.width, 1));
-  }
-
-  mGL->fUnmapBuffer(LOCAL_GL_PIXEL_PACK_BUFFER);
-
-  return true;
-}
-
-AsyncReadbackBufferNLRS::~AsyncReadbackBufferNLRS() {
-  if (mGL && mGL->MakeCurrent()) {
-    mGL->fDeleteBuffers(1, &mBufferHandle);
-  }
 }
 
 }  // namespace layers

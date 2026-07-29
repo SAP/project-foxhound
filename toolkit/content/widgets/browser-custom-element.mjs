@@ -543,7 +543,7 @@ export class MozBrowser extends MozElements.MozElementMixin(XULFrameElement) {
   }
 
   get isRemoteBrowser() {
-    return this.getAttribute("remote") == "true";
+    return this.hasAttribute("remote");
   }
 
   get remoteType() {
@@ -948,8 +948,8 @@ export class MozBrowser extends MozElements.MozElementMixin(XULFrameElement) {
   }
 
   getTabBrowser() {
-    if (this?.ownerGlobal?.gBrowser?.getTabForBrowser(this)) {
-      return this.ownerGlobal.gBrowser;
+    if (this?.documentGlobal?.gBrowser?.getTabForBrowser(this)) {
+      return this.documentGlobal.gBrowser;
     }
     return null;
   }
@@ -1209,23 +1209,6 @@ export class MozBrowser extends MozElements.MozElementMixin(XULFrameElement) {
     }
   }
 
-  updateWebNavigationForLocationChange(
-    aCanGoBack,
-    aCanGoBackIgnoringUserInteraction,
-    aCanGoForward
-  ) {
-    if (
-      this.isRemoteBrowser &&
-      this.messageManager &&
-      !Services.appinfo.sessionHistoryInParent
-    ) {
-      this._remoteWebNavigation._canGoBack = aCanGoBack;
-      this._remoteWebNavigation._canGoBackIgnoringUserInteraction =
-        aCanGoBackIgnoringUserInteraction;
-      this._remoteWebNavigation._canGoForward = aCanGoForward;
-    }
-  }
-
   updateForLocationChange(
     aLocation,
     aCharset,
@@ -1265,45 +1248,28 @@ export class MozBrowser extends MozElements.MozElementMixin(XULFrameElement) {
   }
 
   purgeSessionHistory() {
-    if (this.isRemoteBrowser && !Services.appinfo.sessionHistoryInParent) {
-      this._remoteWebNavigation._canGoBack = false;
-      this._remoteWebNavigation._canGoBackIgnoringUserInteraction = false;
-      this._remoteWebNavigation._canGoForward = false;
-    }
-
     try {
-      if (Services.appinfo.sessionHistoryInParent) {
-        let sessionHistory = this.browsingContext?.sessionHistory;
-        if (!sessionHistory) {
-          return;
-        }
-
-        // place the entry at current index at the end of the history list, so it won't get removed
-        if (sessionHistory.index < sessionHistory.count - 1) {
-          let indexEntry = sessionHistory.getEntryAtIndex(sessionHistory.index);
-          sessionHistory.addEntry(indexEntry, true);
-        }
-
-        let purge = sessionHistory.count;
-        if (
-          this.browsingContext.currentWindowGlobal.documentURI != "about:blank"
-        ) {
-          --purge; // Don't remove the page the user's staring at from shistory
-        }
-
-        if (purge > 0) {
-          sessionHistory.purgeHistory(purge);
-        }
-
+      let sessionHistory = this.browsingContext?.sessionHistory;
+      if (!sessionHistory) {
         return;
       }
 
-      this.sendMessageToActor(
-        "Browser:PurgeSessionHistory",
-        {},
-        "PurgeSessionHistory",
-        "roots"
-      );
+      // place the entry at current index at the end of the history list, so it won't get removed
+      if (sessionHistory.index < sessionHistory.count - 1) {
+        let indexEntry = sessionHistory.getEntryAtIndex(sessionHistory.index);
+        sessionHistory.addEntry(indexEntry, true);
+      }
+
+      let purge = sessionHistory.count;
+      if (
+        this.browsingContext.currentWindowGlobal.documentURI != "about:blank"
+      ) {
+        --purge; // Don't remove the page the user's staring at from shistory
+      }
+
+      if (purge > 0) {
+        sessionHistory.purgeHistory(purge);
+      }
     } catch (ex) {
       // This can throw if the browser has started to go away.
       if (ex.result != Cr.NS_ERROR_NOT_INITIALIZED) {
@@ -1534,6 +1500,8 @@ export class MozBrowser extends MozElements.MozElementMixin(XULFrameElement) {
       this._autoScrollPresShellId = presShellId;
     }
 
+    // Store the time at which the auto scroll begins.
+    this._autoScrollStartTime = performance.now();
     return { autoscrollEnabled: true, usingApz };
   }
 
@@ -1575,6 +1543,18 @@ export class MozBrowser extends MozElements.MozElementMixin(XULFrameElement) {
           break;
         }
         case "DOMMouseScroll": {
+          // Check if the time elapsed since the auto scroll began is 500ms.
+          // To avoid accidental cancellations of it.
+          const scrollCooldownMs = this.mPrefs.getIntPref(
+            "apz.autoscroll.scroll_wheel_cooldown"
+          );
+          if (
+            performance.now() - this._autoScrollStartTime <
+            scrollCooldownMs
+          ) {
+            aEvent.preventDefault();
+            break;
+          }
           this._autoScrollPopup.hidePopup();
           aEvent.preventDefault();
           break;

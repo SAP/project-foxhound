@@ -30,6 +30,8 @@ const LOG_DISABLED = -1;
 // List of options supported by this target configuration actor.
 /* eslint sort-keys: "error" */
 const SUPPORTED_OPTIONS = {
+  // Set a custom animations playback rate (called from Animations panel)
+  animationsPlayBackRateMultiplier: true,
   // Disable network request caching.
   cacheDisabled: true,
   // Enable color scheme simulation.
@@ -257,6 +259,9 @@ class TargetConfigurationActor extends Actor {
     let shouldReload = false;
     for (const [key, value] of Object.entries(configuration)) {
       switch (key) {
+        case "animationsPlayBackRateMultiplier":
+          this._setAnimationsPlayBackRateMultiplier(value);
+          break;
         case "colorSchemeSimulation":
           this._setColorSchemeSimulation(value);
           break;
@@ -349,6 +354,8 @@ class TargetConfigurationActor extends Actor {
     if (this._initialTouchEventsOverride !== undefined) {
       this._setTouchEventsOverride(this._initialTouchEventsOverride);
     }
+
+    this._setAnimationsPlayBackRateMultiplier(1);
   }
 
   /**
@@ -571,6 +578,21 @@ class TargetConfigurationActor extends Actor {
       LOG_DISABLED
     );
     Services.prefs.setIntPref("logging.PageMessages", LOG_VERBOSE);
+  }
+
+  /**
+   * Sets browsingContext's animationsPlayBackRateMultiplier, that allows to speed up/down
+   * all the animations on the page.
+   *
+   * @param {number} animationsPlayBackRateMultiplier
+   */
+  _setAnimationsPlayBackRateMultiplier(animationsPlayBackRateMultiplier) {
+    // Avoid trying to set the multiplier if the related context is being destroyed
+    if (!this._browsingContext || this._browsingContext.isDiscarded) {
+      return;
+    }
+    this._browsingContext.animationsPlayBackRateMultiplier =
+      animationsPlayBackRateMultiplier;
   }
 }
 

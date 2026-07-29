@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -10,12 +8,19 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/intl/Calendar.h"
+#include "mozilla/intl/Collator.h"
+#include "mozilla/intl/DateTimeFormat.h"
 #include "mozilla/intl/Locale.h"
+#include "mozilla/intl/Region.h"
+#include "mozilla/intl/TimeZone.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Span.h"
 #include "mozilla/TextUtils.h"
+#include "mozilla/UsingEnum.h"
 
 #include <algorithm>
+#include <array>
 #include <string>
 #include <utility>
 
@@ -23,14 +28,15 @@
 #include "builtin/Boolean.h"
 #include "builtin/intl/CommonFunctions.h"
 #include "builtin/intl/FormatBuffer.h"
+#include "builtin/intl/glue/Locale.h"
 #include "builtin/intl/LanguageTag.h"
 #include "builtin/intl/LocaleNegotiation.h"
 #include "builtin/intl/ParameterNegotiation.h"
 #include "builtin/intl/StringAsciiChars.h"
-#include "builtin/intl/UsingEnum.h"
 #include "builtin/String.h"
 #include "js/Conversions.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
+#include "js/Prefs.h"
 #include "js/Printer.h"
 #include "js/TypeDecls.h"
 #include "js/Wrapper.h"
@@ -55,7 +61,12 @@ const JSClass LocaleObject::class_ = {
     &LocaleObject::classSpec_,
 };
 
-const JSClass& LocaleObject::protoClass_ = PlainObject::class_;
+const JSClass LocaleObject::protoClass_ = {
+    "Intl.Locale.prototype",
+    JSCLASS_HAS_CACHED_PROTO(JSProto_Locale),
+    JS_NULL_CLASS_OPS,
+    &LocaleObject::classSpec_,
+};
 
 static inline bool IsLocale(Handle<JS::Value> v) {
   return v.isObject() && v.toObject().is<LocaleObject>();
@@ -79,13 +90,6 @@ static size_t BaseNameLength(const mozilla::intl::Locale& tag) {
 struct IndexAndLength {
   size_t index = 0;
   size_t length = 0;
-
-  IndexAndLength(size_t index, size_t length) : index(index), length(length) {};
-
-  template <typename T>
-  mozilla::Span<const T> spanOf(const T* ptr) const {
-    return {ptr + index, length};
-  }
 };
 
 // Compute the Unicode extension's index and length in the extension subtag.
@@ -116,28 +120,26 @@ static LocaleObject* CreateLocaleObject(JSContext* cx,
     return nullptr;
   }
 
-  Rooted<JSString*> tagStr(cx, buffer.toAsciiString(cx));
+  Rooted<JSLinearString*> tagStr(cx, buffer.toAsciiString(cx));
   if (!tagStr) {
     return nullptr;
   }
 
   size_t baseNameLength = BaseNameLength(tag);
 
-  Rooted<JSString*> baseName(cx,
-                             NewDependentString(cx, tagStr, 0, baseNameLength));
+  Rooted<JSLinearString*> baseName(
+      cx, NewDependentString(cx, tagStr, 0, baseNameLength));
   if (!baseName) {
     return nullptr;
   }
 
-  Rooted<JS::Value> unicodeExtension(cx, JS::UndefinedValue());
+  Rooted<JSLinearString*> unicodeExtension(cx);
   if (auto result = UnicodeExtensionPosition(tag)) {
-    JSString* str = NewDependentString(
+    unicodeExtension = NewDependentString(
         cx, tagStr, baseNameLength + 1 + result->index, result->length);
-    if (!str) {
+    if (!unicodeExtension) {
       return nullptr;
     }
-
-    unicodeExtension.setString(str);
   }
 
   auto* locale = NewObjectWithClassProto<LocaleObject>(cx, prototype);
@@ -145,9 +147,8 @@ static LocaleObject* CreateLocaleObject(JSContext* cx,
     return nullptr;
   }
 
-  locale->initFixedSlot(LocaleObject::LANGUAGE_TAG_SLOT, StringValue(tagStr));
-  locale->initFixedSlot(LocaleObject::BASENAME_SLOT, StringValue(baseName));
-  locale->initFixedSlot(LocaleObject::UNICODE_EXTENSION_SLOT, unicodeExtension);
+  // Initialize all fixed slots.
+  locale->initialize(tagStr, baseName, unicodeExtension);
 
   return locale;
 }
@@ -219,11 +220,7 @@ enum class LocaleHourCycle { H11, H12, H23, H24 };
 
 static constexpr std::string_view LocaleHourCycleToString(
     LocaleHourCycle hourCycle) {
-#ifndef USING_ENUM
-  using enum LocaleHourCycle;
-#else
-  USING_ENUM(LocaleHourCycle, H11, H12, H23, H24);
-#endif
+  MOZ_USING_ENUM(LocaleHourCycle, H11, H12, H23, H24);
   switch (hourCycle) {
     case H11:
       return "h11";
@@ -239,11 +236,7 @@ static constexpr std::string_view LocaleHourCycleToString(
 
 static JSLinearString* ToUnicodeValue(JSContext* cx,
                                       LocaleHourCycle hourCycle) {
-#ifndef USING_ENUM
-  using enum LocaleHourCycle;
-#else
-  USING_ENUM(LocaleHourCycle, H11, H12, H23, H24);
-#endif
+  MOZ_USING_ENUM(LocaleHourCycle, H11, H12, H23, H24);
   switch (hourCycle) {
     case H11:
       return cx->names().h11;
@@ -261,11 +254,7 @@ enum class LocaleCaseFirst { Upper, Lower, False };
 
 static constexpr std::string_view LocaleCaseFirstToString(
     LocaleCaseFirst caseFirst) {
-#ifndef USING_ENUM
-  using enum LocaleCaseFirst;
-#else
-  USING_ENUM(LocaleCaseFirst, False, Lower, Upper);
-#endif
+  MOZ_USING_ENUM(LocaleCaseFirst, False, Lower, Upper);
   switch (caseFirst) {
     case False:
       return "false";
@@ -279,11 +268,7 @@ static constexpr std::string_view LocaleCaseFirstToString(
 
 static JSLinearString* ToUnicodeValue(JSContext* cx,
                                       LocaleCaseFirst caseFirst) {
-#ifndef USING_ENUM
-  using enum LocaleCaseFirst;
-#else
-  USING_ENUM(LocaleCaseFirst, False, Lower, Upper);
-#endif
+  MOZ_USING_ENUM(LocaleCaseFirst, False, Lower, Upper);
   switch (caseFirst) {
     case False:
       return cx->names().false_;
@@ -293,6 +278,24 @@ static JSLinearString* ToUnicodeValue(JSContext* cx,
       return cx->names().upper;
   }
   MOZ_CRASH("invalid locale case first");
+}
+
+/**
+ * WeekdayToUValue ( fw )
+ */
+static JSLinearString* WeekdayToUValue(JSContext* cx, JSLinearString* fw) {
+  static constexpr std::array weekdays = {
+      "sun", "mon", "tue", "wed", "thu", "fri", "sat", "sun",
+  };
+
+  if (fw->length() == 1) {
+    char16_t ch = fw->latin1OrTwoByteChar(0);
+    if ('0' <= ch && ch <= '7') {
+      size_t index = ch - '0';
+      return NewStringCopyN<CanGC>(cx, weekdays[index], 3);
+    }
+  }
+  return fw;
 }
 
 /**
@@ -504,10 +507,10 @@ bool js::intl::ApplyUnicodeExtensionToTag(
   return true;
 }
 
-static JS::Result<JSString*> LanguageTagFromMaybeWrappedLocale(JSContext* cx,
-                                                               JSObject* obj) {
+static JS::Result<JSLinearString*> LanguageTagFromMaybeWrappedLocale(
+    JSContext* cx, JSObject* obj) {
   if (obj->is<LocaleObject>()) {
-    return obj->as<LocaleObject>().languageTag();
+    return obj->as<LocaleObject>().getLanguageTag();
   }
 
   JSObject* unwrapped = CheckedUnwrapStatic(obj);
@@ -520,11 +523,16 @@ static JS::Result<JSString*> LanguageTagFromMaybeWrappedLocale(JSContext* cx,
     return nullptr;
   }
 
-  Rooted<JSString*> tagStr(cx, unwrapped->as<LocaleObject>().languageTag());
+  Rooted<JSString*> tagStr(cx, unwrapped->as<LocaleObject>().getLanguageTag());
   if (!cx->compartment()->wrap(cx, &tagStr)) {
     return cx->alreadyReportedError();
   }
-  return tagStr.get();
+
+  auto* linear = tagStr->ensureLinear(cx);
+  if (!linear) {
+    return cx->alreadyReportedError();
+  }
+  return linear;
 }
 
 /**
@@ -591,7 +599,7 @@ static bool Locale(JSContext* cx, unsigned argc, Value* vp) {
                                  JSUseCounter::LEGACY_LANG_SUBTAG);
   }
 
-  // Step 12. (Optimized to only perform base-name canonicalization.)
+  // Steps 12-13. (Optimized to only perform base-name canonicalization.)
   if (auto result = tag.CanonicalizeBaseName(); result.isErr()) {
     if (result.unwrapErr() ==
         mozilla::intl::Locale::CanonicalizationError::DuplicateVariant) {
@@ -604,15 +612,15 @@ static bool Locale(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   if (options) {
-    // Step 13.
+    // Step 14.
     if (!ApplyOptionsToTag(cx, tag, options)) {
       return false;
     }
 
-    // Step 14.
+    // Step 15.
     JS::RootedVector<UnicodeExtensionKeyword> keywords(cx);
 
-    // Steps 15-17.
+    // Steps 16-18.
     Rooted<JSLinearString*> calendar(cx);
     if (!GetUnicodeExtensionOption(cx, options, UnicodeExtensionKey::Calendar,
                                    &calendar)) {
@@ -624,7 +632,7 @@ static bool Locale(JSContext* cx, unsigned argc, Value* vp) {
       }
     }
 
-    // Steps 18-20.
+    // Steps 19-21.
     Rooted<JSLinearString*> collation(cx);
     if (!GetUnicodeExtensionOption(cx, options, UnicodeExtensionKey::Collation,
                                    &collation)) {
@@ -636,7 +644,38 @@ static bool Locale(JSContext* cx, unsigned argc, Value* vp) {
       }
     }
 
-    // Step 21.
+    if (JS::Prefs::experimental_intl_locale_info()) {
+      Rooted<JSLinearString*> firstDayOfWeek(cx);
+
+      // Step 22.
+      if (!GetStringOption(cx, options, cx->names().firstDayOfWeek,
+                           &firstDayOfWeek)) {
+        return false;
+      }
+
+      // Steps 23-24.
+      if (firstDayOfWeek) {
+        // Step 23.a.
+        firstDayOfWeek = WeekdayToUValue(cx, firstDayOfWeek);
+        if (!firstDayOfWeek) {
+          return false;
+        }
+
+        // Step 23.b.
+        firstDayOfWeek = GetUnicodeExtensionOption(
+            cx, UnicodeExtensionKey::FirstDayOfWeek, firstDayOfWeek);
+        if (!firstDayOfWeek) {
+          return false;
+        }
+
+        // Step 24.
+        if (!keywords.emplaceBack("fw", firstDayOfWeek)) {
+          return false;
+        }
+      }
+    }
+
+    // Step 25.
     static constexpr auto hourCycles = MapOptions<LocaleHourCycleToString>(
         LocaleHourCycle::H11, LocaleHourCycle::H12, LocaleHourCycle::H23,
         LocaleHourCycle::H24);
@@ -646,14 +685,14 @@ static bool Locale(JSContext* cx, unsigned argc, Value* vp) {
       return false;
     }
 
-    // Step 22.
+    // Step 26.
     if (hourCycle) {
       if (!keywords.emplaceBack("hc", ToUnicodeValue(cx, *hourCycle))) {
         return false;
       }
     }
 
-    // Step 23.
+    // Step 27.
     static constexpr auto caseFirsts = MapOptions<LocaleCaseFirstToString>(
         LocaleCaseFirst::Upper, LocaleCaseFirst::Lower, LocaleCaseFirst::False);
     mozilla::Maybe<LocaleCaseFirst> caseFirst{};
@@ -662,27 +701,27 @@ static bool Locale(JSContext* cx, unsigned argc, Value* vp) {
       return false;
     }
 
-    // Step 24.
+    // Step 28.
     if (caseFirst) {
       if (!keywords.emplaceBack("kf", ToUnicodeValue(cx, *caseFirst))) {
         return false;
       }
     }
 
-    // Steps 25-26.
+    // Step 29.
     mozilla::Maybe<bool> numeric{};
     if (!GetBooleanOption(cx, options, cx->names().numeric, &numeric)) {
       return false;
     }
 
-    // Step 27.
+    // Step 30-31.
     if (numeric) {
       if (!keywords.emplaceBack("kn", BooleanToString(cx, *numeric))) {
         return false;
       }
     }
 
-    // Steps 28-30.
+    // Steps 32-34.
     Rooted<JSLinearString*> numberingSystem(cx);
     if (!GetUnicodeExtensionOption(cx, options,
                                    UnicodeExtensionKey::NumberingSystem,
@@ -695,7 +734,7 @@ static bool Locale(JSContext* cx, unsigned argc, Value* vp) {
       }
     }
 
-    // Step 31.
+    // Step 35.
     if (!ApplyUnicodeExtensionToTag(cx, tag, keywords)) {
       return false;
     }
@@ -713,13 +752,13 @@ static bool Locale(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  // Steps 6, 32-38.
+  // Steps 6, 36-43.
   JSObject* obj = CreateLocaleObject(cx, proto, tag);
   if (!obj) {
     return false;
   }
 
-  // Step 39.
+  // Step 44.
   args.rval().setObject(*obj);
   return true;
 }
@@ -790,43 +829,113 @@ static inline auto FindUnicodeExtensionType(
                                         unicodeExtension->length(), key);
 }
 
-// Return the sequence of types for the Unicode extension keyword specified by
-// key or undefined when the keyword isn't present.
+// Return the sequence of `uvalue` subtags for the Unicode extension keyword
+// specified by key or undefined when the keyword isn't present.
 static bool GetUnicodeExtension(JSContext* cx, LocaleObject* locale,
                                 UnicodeKey key,
-                                MutableHandle<JS::Value> value) {
+                                MutableHandle<JS::Value> result) {
   // Return undefined when no Unicode extension subtag is present.
-  const Value& unicodeExtensionValue = locale->unicodeExtension();
-  if (unicodeExtensionValue.isUndefined()) {
-    value.setUndefined();
+  auto* unicodeExtension = locale->getUnicodeExtension();
+  if (!unicodeExtension) {
+    result.setUndefined();
     return true;
   }
 
-  JSLinearString* unicodeExtension =
-      unicodeExtensionValue.toString()->ensureLinear(cx);
-  if (!unicodeExtension) {
-    return false;
-  }
-
-  // Find the type of the requested key in the Unicode extension subtag.
-  auto result = FindUnicodeExtensionType(unicodeExtension, key);
+  // Find the `uvalue of the requested key in the Unicode extension subtag.
+  auto indexAndLength = FindUnicodeExtensionType(unicodeExtension, key);
 
   // Return undefined if the requested key isn't present in the extension.
-  if (!result) {
-    value.setUndefined();
+  if (!indexAndLength) {
+    result.setUndefined();
     return true;
   }
+  auto [index, length] = *indexAndLength;
 
-  size_t index = result->index;
-  size_t length = result->length;
-
-  // Otherwise return the type value of the found keyword.
-  JSString* str = NewDependentString(cx, unicodeExtension, index, length);
+  // Otherwise return the `uvalue` of the found keyword.
+  auto* str = NewDependentString(cx, unicodeExtension, index, length);
   if (!str) {
     return false;
   }
-  value.setString(str);
+  result.setString(str);
   return true;
+}
+
+struct UnicodeValue {
+  // Length of a single `uvalue` subtag.
+  static constexpr size_t UValueLength = 8;
+
+  size_t length_;
+  char value_[UValueLength] = {};
+
+  template <typename CharT>
+  explicit UnicodeValue(mozilla::Span<const CharT> span)
+      : length_(span.size()) {
+    MOZ_RELEASE_ASSERT(span.size() >= 3 && span.size() <= UValueLength);
+    MOZ_ASSERT(std::all_of(span.begin(), span.end(),
+                           mozilla::IsAsciiAlphanumeric<CharT>));
+    std::copy_n(span.data(), span.size(), value_);
+  }
+
+ public:
+  auto asSpan() const { return mozilla::Span<const char>{value_, length_}; }
+
+  template <typename CharT>
+  static mozilla::Maybe<UnicodeValue> from(mozilla::Span<const CharT> uvalue) {
+    // Tell the analysis this function can't GC. (bug 1588528)
+    JS::AutoSuppressGCAnalysis nogc;
+
+    MOZ_ASSERT(mozilla::IsAscii(uvalue));
+
+    size_t length = uvalue.size();
+
+    // Definitely too small or too long for a single `uvalue` subtag.
+    if (length == 0 || length > UValueLength) {
+      return mozilla::Nothing();
+    }
+    MOZ_ASSERT(length >= 3);
+
+    // Search for "-" separator. This case can only happen when `uvalue` has at
+    // least 7 characters, because each `uvalue` subtag has 3-8 characters.
+    //
+    // The "-" separator can only occur at the 4th or 5th position:
+    // 1. uuu-uuu
+    // 2. uuu-uuuu
+    // 3. uuuu-uuu
+    if (length >= 7 && (uvalue[3] == '-' || uvalue[4] == '-')) {
+      return mozilla::Nothing();
+    }
+    return mozilla::Some(UnicodeValue{uvalue});
+  }
+};
+
+// Return the single `uvalue` subtag for the Unicode extension keyword specified
+// by key or undefined when the keyword isn't present or has multiple `uvalue`
+// subtags.
+static mozilla::Maybe<UnicodeValue> GetUnicodeExtension(LocaleObject* locale,
+                                                        UnicodeKey key) {
+  // Return when no Unicode extension subtag is present.
+  const auto* unicodeExtension = locale->getUnicodeExtension();
+  if (!unicodeExtension) {
+    return mozilla::Nothing();
+  }
+
+  // Find the `uvalue` of the requested key in the Unicode extension subtag.
+  auto indexAndLength = FindUnicodeExtensionType(unicodeExtension, key);
+
+  // Return if the requested key isn't present in the extension.
+  if (!indexAndLength) {
+    return mozilla::Nothing();
+  }
+  auto [index, length] = *indexAndLength;
+
+  // Otherwise return the `uvalue` of the found keyword.
+  JS::AutoCheckCannotGC nogc;
+  if (unicodeExtension->hasLatin1Chars()) {
+    auto uext = mozilla::AsChars(unicodeExtension->latin1Range(nogc));
+    return UnicodeValue::from(uext.subspan(index, length));
+  }
+  auto uext = mozilla::Span{unicodeExtension->twoByteRange(nogc)};
+  return UnicodeValue::from(uext.subspan(index, length));
 }
 
 struct BaseNamePartsResult {
@@ -837,64 +946,72 @@ struct BaseNamePartsResult {
 
 // Returns [language-length, script-index, region-index, region-length].
 template <typename CharT>
-static BaseNamePartsResult BaseNameParts(const CharT* baseName, size_t length) {
-  size_t languageLength;
+static BaseNamePartsResult BaseNameParts(mozilla::Span<const CharT> baseName) {
+  size_t languageLength = baseName.size();
   size_t scriptIndex = 0;
   size_t regionIndex = 0;
   size_t regionLength = 0;
 
   // Search the first separator to find the end of the language subtag.
-  if (const CharT* sep = std::char_traits<CharT>::find(baseName, length, '-')) {
-    languageLength = sep - baseName;
-
-    // Add +1 to skip over the separator character.
-    size_t nextSubtag = languageLength + 1;
-
-    // Script subtags are always four characters long, but take care for a four
-    // character long variant subtag. These start with a digit.
-    if ((nextSubtag + ScriptLength == length ||
-         (nextSubtag + ScriptLength < length &&
-          baseName[nextSubtag + ScriptLength] == '-')) &&
-        mozilla::IsAsciiAlpha(baseName[nextSubtag])) {
-      scriptIndex = nextSubtag;
-      nextSubtag = scriptIndex + ScriptLength + 1;
+  if (baseName.size() > 3) {
+    if (baseName[2] == '-' || baseName[3] == '-') [[likely]] {
+      languageLength = baseName[2] == '-' ? 2 : 3;
+    } else {
+      // Language subtag with more than three letters.
+      if (const CharT* sep = std::char_traits<CharT>::find(
+              baseName.data(), baseName.size(), '-')) {
+        languageLength = sep - baseName.data();
+      }
     }
 
-    // Region subtags can be either two or three characters long.
-    if (nextSubtag < length) {
-      for (size_t rlen : {AlphaRegionLength, DigitRegionLength}) {
-        MOZ_ASSERT(nextSubtag + rlen <= length);
-        if (nextSubtag + rlen == length || baseName[nextSubtag + rlen] == '-') {
-          regionIndex = nextSubtag;
-          regionLength = rlen;
-          break;
+    if (languageLength < baseName.size()) {
+      // Add +1 to skip over the separator character.
+      size_t nextSubtag = languageLength + 1;
+
+      // Script subtags are always four characters long, but take care for a
+      // four character long variant subtag. These start with a digit.
+      if ((nextSubtag + ScriptLength == baseName.size() ||
+           (nextSubtag + ScriptLength < baseName.size() &&
+            baseName[nextSubtag + ScriptLength] == '-')) &&
+          mozilla::IsAsciiAlpha(baseName[nextSubtag])) {
+        scriptIndex = nextSubtag;
+        nextSubtag = scriptIndex + ScriptLength + 1;
+      }
+
+      // Region subtags can be either two or three characters long.
+      if (nextSubtag < baseName.size()) {
+        for (size_t rlen : {AlphaRegionLength, DigitRegionLength}) {
+          MOZ_ASSERT(nextSubtag + rlen <= baseName.size());
+          if (nextSubtag + rlen == baseName.size() ||
+              baseName[nextSubtag + rlen] == '-') {
+            regionIndex = nextSubtag;
+            regionLength = rlen;
+            break;
+          }
         }
       }
     }
-  } else {
-    // No separator found, the base-name consists of just a language subtag.
-    languageLength = length;
   }
 
   // Tell the analysis the |IsStructurallyValid*Tag| functions can't GC.
   JS::AutoSuppressGCAnalysis nogc;
 
   IndexAndLength language{0, languageLength};
-  MOZ_ASSERT(
-      mozilla::intl::IsStructurallyValidLanguageTag(language.spanOf(baseName)));
+  MOZ_ASSERT(mozilla::intl::IsStructurallyValidLanguageTag(
+      baseName.subspan(language.index, language.length)));
 
   mozilla::Maybe<IndexAndLength> script{};
   if (scriptIndex) {
     script.emplace(scriptIndex, ScriptLength);
-    MOZ_ASSERT(
-        mozilla::intl::IsStructurallyValidScriptTag(script->spanOf(baseName)));
+    MOZ_ASSERT(mozilla::intl::IsStructurallyValidScriptTag(
+        baseName.subspan(script->index, script->length)));
   }
 
   mozilla::Maybe<IndexAndLength> region{};
   if (regionIndex) {
     region.emplace(regionIndex, regionLength);
-    MOZ_ASSERT(
-        mozilla::intl::IsStructurallyValidRegionTag(region->spanOf(baseName)));
+    MOZ_ASSERT(mozilla::intl::IsStructurallyValidRegionTag(
+        baseName.subspan(region->index, region->length)));
   }
 
   return {language, script, region};
@@ -903,10 +1020,772 @@ static BaseNamePartsResult BaseNameParts(const CharT* baseName, size_t length) {
 static inline auto BaseNameParts(const JSLinearString* baseName) {
   JS::AutoCheckCannotGC nogc;
   return baseName->hasLatin1Chars()
-             ? BaseNameParts(
-                   reinterpret_cast<const char*>(baseName->latin1Chars(nogc)),
-                   baseName->length())
-             : BaseNameParts(baseName->twoByteChars(nogc), baseName->length());
+             ? BaseNameParts(mozilla::AsChars(baseName->latin1Range(nogc)))
+             : BaseNameParts(mozilla::Span{baseName->twoByteRange(nogc)});
+}
+
+/**
+ * GetLocaleLanguage ( locale )
+ */
+static auto GetLocaleLanguage(const LocaleObject* locale) {
+  const auto* baseName = locale->getBaseName();
+
+  auto language = [](auto baseName) {
+    mozilla::intl::LanguageSubtag language{};
+
+    auto parts = BaseNameParts(baseName);
+    language.Set(baseName.subspan(parts.language.index, parts.language.length));
+    return language;
+  };
+
+  JS::AutoCheckCannotGC nogc;
+  return baseName->hasLatin1Chars()
+             ? language(mozilla::AsChars(baseName->latin1Range(nogc)))
+             : language(mozilla::Span{baseName->twoByteRange(nogc)});
+}
+
+/**
+ * GetLocaleScript ( locale )
+ */
+static auto GetLocaleScript(const LocaleObject* locale) {
+  const auto* baseName = locale->getBaseName();
+
+  auto script = [](auto baseName) {
+    mozilla::intl::ScriptSubtag script{};
+
+    auto parts = BaseNameParts(baseName);
+    if (parts.script) {
+      script.Set(baseName.subspan(parts.script->index, parts.script->length));
+    }
+    return script;
+  };
+
+  JS::AutoCheckCannotGC nogc;
+  return baseName->hasLatin1Chars()
+             ? script(mozilla::AsChars(baseName->latin1Range(nogc)))
+             : script(mozilla::Span{baseName->twoByteRange(nogc)});
+}
+
+/**
+ * GetLocaleRegion ( locale )
+ */
+static auto GetLocaleRegion(const LocaleObject* locale) {
+  const auto* baseName = locale->getBaseName();
+
+  auto region = [](auto baseName) {
+    mozilla::intl::RegionSubtag region{};
+
+    auto parts = BaseNameParts(baseName);
+    if (parts.region) {
+      region.Set(baseName.subspan(parts.region->index, parts.region->length));
+    }
+    return region;
+  };
+
+  JS::AutoCheckCannotGC nogc;
+  return baseName->hasLatin1Chars()
+             ? region(mozilla::AsChars(baseName->latin1Range(nogc)))
+             : region(mozilla::Span{baseName->twoByteRange(nogc)});
+}
+
+/**
+ * GetLocaleVariants ( locale )
+ */
+static mozilla::Maybe<IndexAndLength> GetLocaleVariants(
+    const LocaleObject* locale) {
+  const auto* baseName = locale->getBaseName();
+  auto parts = BaseNameParts(baseName);
+
+  // Variants are the trailing subtags in the base-name. Find which subtag
+  // precedes the variants.
+  auto precedingSubtag = parts.region   ? *parts.region
+                         : parts.script ? *parts.script
+                                        : parts.language;
+
+  // Index of the next subtag, including the leading '-' character.
+  size_t index = precedingSubtag.index + precedingSubtag.length;
+
+  if (index == baseName->length()) {
+    return mozilla::Nothing();
+  }
+  MOZ_ASSERT(baseName->latin1OrTwoByteChar(index) == '-',
+             "missing '-' separator after precedingSubtag");
+
+  // Skip over the '-' separator.
+  index += 1;
+
+  // Length of the variant subtags.
+  size_t length = baseName->length() - index;
+
+  return mozilla::Some(IndexAndLength{index, length});
+}
+
+/**
+ * Create an array which holds a single item.
+ */
+static ArrayObject* CreateArrayFromValue(JSContext* cx,
+                                         Handle<JS::Value> item) {
+  auto* array = NewDenseFullyAllocatedArray(cx, 1);
+  if (!array) {
+    return nullptr;
+  }
+  array->setDenseInitializedLength(1);
+  array->initDenseElement(0, item);
+  return array;
+}
+
+/**
+ * CanonicalUnicodeSubdivision ( locale, key )
+ */
+static bool CanonicalUnicodeSubdivision(JSContext* cx,
+                                        Handle<LocaleObject*> locale,
+                                        UnicodeKey key,
+                                        mozilla::intl::RegionSubtag* result) {
+  // FIXME: spec bug - align with UTS 35
+  //
+  // Implementation follows spec PR: https://github.com/tc39/ecma402/pull/1059
+
+  // Step 1.
+  auto subdivision = GetUnicodeExtension(locale, key);
+
+  // Step 2.
+  if (subdivision.isNothing()) {
+    *result = {};
+    return true;
+  }
+
+  // Step 3.
+  //
+  // Try to match the `unicode_subdivision_id` production from UTS 35.
+  //
+  // unicode_subdivision_id = unicode_region_subtag unicode_subdivision_suffix ;
+  // unicode_region_subtag = (alpha{2} | digit{3}) ;
+  // unicode_subdivision_suffix = alphanum{1,4} ;
+  //
+  // See <https://unicode.org/reports/tr35/#Unicode_locale_identifier>.
+
+  auto uvalue = subdivision->asSpan();
+
+  size_t regionLength;
+  if (mozilla::IsAsciiAlpha(uvalue[0]) && mozilla::IsAsciiAlpha(uvalue[1])) {
+    // Two letter region subtag.
+    regionLength = 2;
+  } else if (mozilla::IsAsciiDigit(uvalue[0]) &&
+             mozilla::IsAsciiDigit(uvalue[1]) &&
+             mozilla::IsAsciiDigit(uvalue[2])) {
+    // Three digit region subtag.
+    regionLength = 3;
+  } else {
+    *result = {};
+    return true;
+  }
+
+  size_t suffixLength = uvalue.size() - regionLength;
+  if (suffixLength < 1 || suffixLength > 4) {
+    *result = {};
+    return true;
+  }
+
+  // Step 4.
+  auto region = mozilla::intl::RegionSubtag{uvalue.to(regionLength)};
+
+  // Step 5.
+  region.ToUpperCase();
+
+  // Step 6.
+  auto regionResult = mozilla::intl::Region::From(region);
+  if (regionResult.isErr()) {
+    ReportInternalError(cx, regionResult.unwrapErr());
+    return false;
+  }
+
+  auto regionMaybe = regionResult.unwrap();
+  if (!regionMaybe || !regionMaybe->IsRegular()) {
+    *result = {};
+    return true;
+  }
+
+  // Step 7.
+  *result = region;
+  return true;
+}
+
+struct RegionPref {
+  mozilla::intl::RegionSubtag region;
+
+  enum class RegionOverride : bool { No, Yes };
+  RegionOverride regionOverride = RegionOverride::No;
+};
+
+/**
+ * RegionPreference ( locale )
+ */
+static bool RegionPreference(JSContext* cx, Handle<LocaleObject*> locale,
+                             RegionPref* result) {
+  // FIXME: spec bug - align with UTS 35
+  //
+  // Implementation follows spec PR: https://github.com/tc39/ecma402/pull/1059
+
+  // Step 1.
+  mozilla::intl::RegionSubtag regionOverride;
+  if (!CanonicalUnicodeSubdivision(cx, locale, "rg", &regionOverride)) {
+    return false;
+  }
+
+  // Step 2.
+  if (regionOverride.Present()) {
+    *result = {regionOverride, RegionPref::RegionOverride::Yes};
+    return true;
+  }
+
+  // Step 3.
+  auto region = GetLocaleRegion(locale);
+
+  // Step 4.
+  if (region.Present()) {
+    *result = {region};
+    return true;
+  }
+
+  // Step 5.
+  mozilla::intl::RegionSubtag regionSubdiv;
+  if (!CanonicalUnicodeSubdivision(cx, locale, "sd", &regionSubdiv)) {
+    return false;
+  }
+
+  // Step 6.
+  if (regionSubdiv.Present()) {
+    *result = {regionSubdiv};
+    return true;
+  }
+
+  // Steps 7-8.
+  //
+  // NB: `mozilla::intl::Locale::AddLikelySubtags` canonicalizes its result.
+  mozilla::intl::Locale loc;
+  loc.SetLanguage(GetLocaleLanguage(locale));
+  loc.SetScript(GetLocaleScript(locale));
+
+  if (auto result = loc.AddLikelySubtags(); result.isErr()) {
+    ReportInternalError(cx, result.unwrapErr());
+    return false;
+  }
+
+  // Step 9.
+  auto likelyRegion = loc.Region();
+
+  // Step 10.
+  if (likelyRegion.Present()) {
+    *result = {likelyRegion};
+    return true;
+  }
+
+  // Step 11.
+  *result = {mozilla::intl::RegionSubtag(mozilla::MakeStringSpan("001"))};
+  return true;
+}
+
+/**
+ * CalendarsOfLocale ( loc )
+ *
+ * Return the commonly used calendars of |locale| in preference order.
+ */
+static ArrayObject* CalendarsOfLocale(JSContext* cx,
+                                      Handle<LocaleObject*> locale) {
+  // Step 1.
+  Rooted<JS::Value> preferred(cx);
+  if (!GetUnicodeExtension(cx, locale, "ca", &preferred)) {
+    return nullptr;
+  }
+  MOZ_ASSERT(preferred.isString() || preferred.isUndefined());
+
+  if (preferred.isString()) {
+    return CreateArrayFromValue(cx, preferred);
+  }
+
+  // Steps 2-6.
+  RegionPref preference;
+  if (!RegionPreference(cx, locale, &preference)) {
+    return nullptr;
+  }
+  auto region = preference.region;
+
+  Rooted<ArrayObject*> array(cx, NewDenseEmptyArray(cx));
+  if (!array) {
+    return nullptr;
+  }
+
+  // Steps 7-8.
+  //
+  // Get the calendars that are commonly used in the lookup region.
+  {
+    // Hazard analysis complains that the mozilla::Result destructor calls a GC
+    // function, which is unsound when returning an unrooted value. Work around
+    // this issue by restricting the lifetime of |keywords| to a separate block.
+
+    auto keywords = mozilla::intl::Calendar::GetBcp47KeywordValuesForRegion(
+        region, mozilla::intl::Calendar::CommonlyUsed::Yes);
+    if (keywords.isErr()) {
+      ReportInternalError(cx, keywords.unwrapErr());
+      return nullptr;
+    }
+
+    // Step 9.
+    for (auto keyword : keywords.unwrap()) {
+      if (keyword.isErr()) {
+        ReportInternalError(cx);
+        return nullptr;
+      }
+      auto calendar = keyword.unwrap();
+
+      // Don't return deprecated calendar variants.
+      if (calendar == mozilla::MakeStringSpan("islamic") ||
+          calendar == mozilla::MakeStringSpan("islamic-rgsa")) {
+        continue;
+      }
+
+      auto* string = NewStringCopy<CanGC>(cx, calendar);
+      if (!string) {
+        return nullptr;
+      }
+      if (!NewbornArrayPush(cx, array, JS::StringValue(string))) {
+        return nullptr;
+      }
+    }
+  }
+
+  return array;
+}
+
+/**
+ * CollationsOfLocale ( loc )
+ *
+ * Return the commonly used collations of |locale| in sorted order.
+ */
+static ArrayObject* CollationsOfLocale(JSContext* cx,
+                                       Handle<LocaleObject*> locale) {
+  // Step 1.
+  Rooted<JS::Value> preferred(cx);
+  if (!GetUnicodeExtension(cx, locale, "co", &preferred)) {
+    return nullptr;
+  }
+  MOZ_ASSERT(preferred.isString() || preferred.isUndefined());
+
+  if (preferred.isString()) {
+    return CreateArrayFromValue(cx, preferred);
+  }
+
+  // Steps 2-4.
+  auto langId = LanguageId::und();
+  if (auto parsedLangId = ToLanguageId(cx, locale->getBaseName())) {
+    if (parsedLangId->language() != "und") {
+      mozilla::Maybe<LanguageId> foundLocale;
+      if (!LookupMatcher(cx, AvailableLocaleKind::Collator, *parsedLangId,
+                         &foundLocale)) {
+        return nullptr;
+      }
+
+      if (foundLocale) {
+        langId = *foundLocale;
+      } else {
+        // Fallback to the default locale to match ICU4C:
+        //
+        // See also <https://github.com/tc39/ecma402/issues/1053>.
+        if (!DefaultLocale(cx, &langId)) {
+          return nullptr;
+        }
+      }
+    }
+  } else {
+    MOZ_ASSERT(GetLocaleLanguage(locale).Length() > 3);
+
+    if (!DefaultLocale(cx, &langId)) {
+      return nullptr;
+    }
+  }
+
+  Rooted<StringList> list(cx, StringList(cx));
+
+  auto langIdStr = langId.toString();
+  auto collations = mozilla::intl::Collator::GetBcp47KeywordValues();
+  for (auto collation : collations) {
+    if (mozilla::intl::Collator::IsSupportedCollation(langIdStr, collation)) {
+      auto* string = NewStringCopy<CanGC>(cx, collation);
+      if (!string) {
+        return nullptr;
+      }
+      if (!list.append(string)) {
+        return nullptr;
+      }
+    }
+  }
+
+  // Steps 5-6.
+  return CreateSortedArrayFromList(cx, &list);
+}
+
+/**
+ * HourCyclesOfLocale ( loc )
+ *
+ * Return the commonly used hour-cycles of |locale| in preference order.
+ */
+static ArrayObject* HourCyclesOfLocale(JSContext* cx,
+                                       Handle<LocaleObject*> locale) {
+  // Step 1.
+  Rooted<JS::Value> preferred(cx);
+  if (!GetUnicodeExtension(cx, locale, "hc", &preferred)) {
+    return nullptr;
+  }
+  MOZ_ASSERT(preferred.isString() || preferred.isUndefined());
+
+  if (preferred.isString()) {
+    return CreateArrayFromValue(cx, preferred);
+  }
+
+  // Steps 2-7.
+  //
+  // Include `language` in lookup: <https://github.com/tc39/ecma402/issues/1056>
+  auto language = GetLocaleLanguage(locale);
+
+  RegionPref preference;
+  if (!RegionPreference(cx, locale, &preference)) {
+    return nullptr;
+  }
+  auto region = preference.region;
+
+  auto result =
+      mozilla::intl::DateTimeFormat::GetAllowedHourCycles(language, region);
+  if (result.isErr()) {
+    ReportInternalError(cx, result.unwrapErr());
+    return nullptr;
+  }
+  auto hourCycles = result.unwrap();
+
+  using HourCycle = mozilla::intl::DateTimeFormat::HourCycle;
+
+  // Step 8.
+  if (hourCycles.empty()) {
+    static_assert(decltype(hourCycles)::InlineLength > 0);
+    MOZ_ALWAYS_TRUE(hourCycles.reserve(1));
+
+    hourCycles.infallibleAppend(HourCycle::H23);
+  }
+
+  // Step 9.
+  auto* array = NewDenseFullyAllocatedArray(cx, hourCycles.length());
+  if (!array) {
+    return nullptr;
+  }
+  array->setDenseInitializedLength(hourCycles.length());
+
+  uint32_t index = 0;
+  for (auto hourCycle : hourCycles) {
+    JSString* hcname;
+    switch (hourCycle) {
+      case HourCycle::H11:
+        hcname = cx->names().h11;
+        break;
+      case HourCycle::H12:
+        hcname = cx->names().h12;
+        break;
+      case HourCycle::H23:
+        hcname = cx->names().h23;
+        break;
+      case HourCycle::H24:
+        hcname = cx->names().h24;
+        break;
+    }
+
+    array->initDenseElement(index++, JS::StringValue(hcname));
+  }
+  MOZ_ASSERT(index == hourCycles.length());
+
+  return array;
+}
+
+/**
+ * NumberingSystemsOfLocale ( loc )
+ *
+ * Return the commonly used numbering systems of |locale| in preference order.
+ */
+static ArrayObject* NumberingSystemsOfLocale(JSContext* cx,
+                                             Handle<LocaleObject*> locale) {
+  // Step 1.
+  Rooted<JS::Value> preferred(cx);
+  if (!GetUnicodeExtension(cx, locale, "nu", &preferred)) {
+    return nullptr;
+  }
+  MOZ_ASSERT(preferred.isString() || preferred.isUndefined());
+
+  if (preferred.isString()) {
+    return CreateArrayFromValue(cx, preferred);
+  }
+
+  // Step 2.
+  mozilla::Maybe<LanguageId> foundLocale;
+  if (auto langId = ToLanguageId(cx, locale->getBaseName())) {
+    if (!LookupMatcher(cx, AvailableLocaleKind::NumberFormat, *langId,
+                       &foundLocale)) {
+      return nullptr;
+    }
+  } else {
+    MOZ_ASSERT(GetLocaleLanguage(locale).Length() > 3);
+  }
+
+  // Steps 3-4.
+  JSString* numberingSystem;
+  if (foundLocale) {
+    numberingSystem = DefaultNumberingSystem(cx, *foundLocale);
+  } else {
+    numberingSystem = NewStringCopyZ<CanGC>(cx, "latn");
+  }
+  if (!numberingSystem) {
+    return nullptr;
+  }
+
+  // Step 5.
+  Rooted<JS::Value> value(cx, JS::StringValue(numberingSystem));
+  return CreateArrayFromValue(cx, value);
+}
+
+/**
+ * TextDirectionOfLocale ( loc )
+ *
+ * Return the text direction of |locale|.
+ */
+static JS::Value TextDirectionOfLocale(JSContext* cx, LocaleObject* locale) {
+  auto langId = LanguageId::und();
+  if (auto parsedLangId = ToLanguageId(cx, locale->getBaseName())) {
+    langId = *parsedLangId;
+  } else {
+    // ICU4X doesn't support language subtags with more than three letters.
+    //
+    // If |baseName| contains a script subtag, then replace the language subtag
+    // with "und". Otherwise return `undefined` because the script subtag of
+    // non-registered languages can't be inferred.
+    MOZ_ASSERT(GetLocaleLanguage(locale).Length() > 3);
+
+    auto script = GetLocaleScript(locale);
+    if (script.Missing()) {
+      return JS::UndefinedValue();
+    }
+    auto span = script.Span();
+
+    langId = LanguageId::fromParts("und", {span.data(), span.size()}, "");
+  }
+
+  auto langIdStr = langId.toString();
+  switch (locale_text_direction_of(langIdStr.data(), langIdStr.length())) {
+    case TextDirection::Unknown:
+      return JS::UndefinedValue();
+    case TextDirection::LeftToRight:
+      return JS::StringValue(cx->names().ltr);
+    case TextDirection::RightToLeft:
+      return JS::StringValue(cx->names().rtl);
+  }
+  MOZ_CRASH("invalid text direction");
+}
+
+static bool AddTimeZonesToList(JSContext* cx,
+                               const mozilla::intl::RegionSubtag& region,
+                               MutableHandle<StringList> list) {
+  // Get the time zones that are commonly used in the given region.
+  auto values = mozilla::intl::TimeZone::GetAvailableTimeZones(region);
+  if (values.isErr()) {
+    ReportInternalError(cx, values.unwrapErr());
+    return false;
+  }
+
+  auto& sharedIntlData = cx->runtime()->sharedIntlData.ref();
+
+  Rooted<JSAtom*> availableTimeZone(cx);
+  Rooted<JSAtom*> primaryTimeZone(cx);
+  for (auto value : values.unwrap()) {
+    if (value.isErr()) {
+      ReportInternalError(cx);
+      return false;
+    }
+
+    // Reset
+    availableTimeZone.set(nullptr);
+    primaryTimeZone.set(nullptr);
+
+    // Validate and canonicalize the time zone returned from ICU.
+    if (!sharedIntlData.validateAndCanonicalizeTimeZone(
+            cx, value.unwrap(), &availableTimeZone, &primaryTimeZone)) {
+      return false;
+    }
+
+    // Append to list if successfully validated and canonicalized.
+    if (primaryTimeZone) {
+      if (!list.append(primaryTimeZone)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * TimeZonesOfLocale ( loc )
+ *
+ * Return the commonly used time zones of |region| in sorted order.
+ */
+static bool TimeZonesOfLocale(JSContext* cx, LocaleObject* locale,
+                              JS::MutableHandle<JS::Value> result) {
+  // Step 1.
+  auto region = GetLocaleRegion(locale);
+
+  // Step 2.
+  if (region.Missing()) {
+    result.setUndefined();
+    return true;
+  }
+
+  // Step 3.
+  //
+  // Unsorted list of canonical time zone names, possibly containing duplicates.
+  Rooted<StringList> list(cx, StringList(cx));
+
+  // Reject non-regular regions, like for example "001".
+  auto regionResult = mozilla::intl::Region::From(region);
+  if (regionResult.isErr()) {
+    ReportInternalError(cx, regionResult.unwrapErr());
+    return false;
+  }
+
+  auto regionMaybe = regionResult.unwrap();
+  if (regionMaybe && regionMaybe->IsRegular()) {
+    if (!AddTimeZonesToList(cx, region, &list)) {
+      return false;
+    }
+  }
+
+  // Step 4.
+  auto* array = CreateSortedArrayFromList(cx, &list);
+  if (!array) {
+    return false;
+  }
+
+  result.setObject(*array);
+  return true;
+}
+
+struct WeekInfo {
+  /**
+   * [[FirstDay]]
+   *
+   * Which day of the week is considered “first” for calendar purposes.
+   */
+  mozilla::intl::Weekday firstDay;
+
+  /**
+   * [[Weekend]]
+   *
+   * The list of weekday values indicating which days of the week are considered
+   * as part of the “weekend” for calendar purposes.
+   */
+  mozilla::EnumSet<mozilla::intl::Weekday> weekend;
+};
+
+/**
+ * WeekdayUValueToNumber ( fw )
+ */
+static mozilla::Maybe<mozilla::intl::Weekday> WeekdayUValueToNumber(
+    const UnicodeValue& fw) {
+  using Weekday = mozilla::intl::Weekday;
+
+  static constexpr struct NameToWeekday {
+    std::string_view name;
+    Weekday weekday;
+  } options[] = {
+      // Likely cases first, based on existing supplemental week data.
+      {"mon", Weekday::Monday},
+      {"sun", Weekday::Sunday},
+      {"sat", Weekday::Saturday},
+      {"fri", Weekday::Friday},
+
+      // Unlikely cases last.
+      {"tue", Weekday::Tuesday},
+      {"wed", Weekday::Wednesday},
+      {"thu", Weekday::Thursday},
+  };
+
+  for (const auto& [name, weekday] : options) {
+    if (fw.asSpan() == mozilla::Span{name}) {
+      return mozilla::Some(weekday);
+    }
+  }
+  return mozilla::Nothing();
+}
+
+/**
+ * WeekInfoOfLocale ( loc )
+ *
+ * Return the week info of |locale|.
+ */
+static bool WeekInfoOfLocale(JSContext* cx, Handle<LocaleObject*> locale,
+                             WeekInfo* result) {
+  // Modified to include <https://github.com/tc39/ecma402/pull/1051>.
+
+  // Steps 1-5.
+  RegionPref preference;
+  if (!RegionPreference(cx, locale, &preference)) {
+    return false;
+  }
+  auto [region, regionOverride] = preference;
+
+  // Step 6.
+  auto calendarResult = mozilla::intl::Calendar::TryCreate(region);
+  if (calendarResult.isErr()) {
+    ReportInternalError(cx, calendarResult.unwrapErr());
+    return false;
+  }
+  auto calendar = calendarResult.unwrap();
+
+  auto weekend = calendar->GetWeekend();
+  if (weekend.isErr()) {
+    ReportInternalError(cx, weekend.unwrapErr());
+    return false;
+  }
+
+  auto info = WeekInfo{
+      .firstDay = calendar->GetFirstDayOfWeek(),
+      .weekend = weekend.unwrap(),
+  };
+
+  // Steps 7-9.
+  auto preferred = GetUnicodeExtension(locale, "fw");
+
+  // FIXME: spec bug - [[FirstDayOfWeek]] can be undefined.
+  //
+  // https://github.com/tc39/ecma402/pull/1057
+  mozilla::Maybe<mozilla::intl::Weekday> fw{};
+  if (preferred.isSome()) {
+    // Steps 8-9.
+    fw = WeekdayUValueToNumber(*preferred);
+  }
+
+  // FIXME: spec bug - "ca" Unicode extension should apply.
+  //
+  // https://github.com/tc39/ecma402/issues/1055
+  if (fw.isNothing() && regionOverride == RegionPref::RegionOverride::No) {
+    auto calendar = GetUnicodeExtension(locale, "ca");
+    if (calendar.isSome()) {
+      // "iso8601" is the only calendar which specifies the first day.
+      if (calendar->asSpan() == mozilla::MakeStringSpan("iso8601")) {
+        fw = mozilla::Some(mozilla::intl::Weekday::Monday);
+      }
+    }
+  }
+
+  if (fw.isSome()) {
+    info.firstDay = fw.value();
+  }
+
+  // Step 10.
+  *result = info;
+  return true;
 }
 
 // Intl.Locale.prototype.maximize ()
@@ -915,10 +1794,7 @@ static bool Locale_maximize(JSContext* cx, const CallArgs& args) {
 
   // Step 3.
   auto* locale = &args.thisv().toObject().as<LocaleObject>();
-  Rooted<JSLinearString*> tagStr(cx, locale->languageTag()->ensureLinear(cx));
-  if (!tagStr) {
-    return false;
-  }
+  Rooted<JSLinearString*> tagStr(cx, locale->getLanguageTag());
 
   mozilla::intl::Locale tag;
   if (!ParseLocale(cx, tagStr, tag)) {
@@ -952,10 +1828,7 @@ static bool Locale_minimize(JSContext* cx, const CallArgs& args) {
 
   // Step 3.
   auto* locale = &args.thisv().toObject().as<LocaleObject>();
-  Rooted<JSLinearString*> tagStr(cx, locale->languageTag()->ensureLinear(cx));
-  if (!tagStr) {
-    return false;
-  }
+  Rooted<JSLinearString*> tagStr(cx, locale->getLanguageTag());
 
   mozilla::intl::Locale tag;
   if (!ParseLocale(cx, tagStr, tag)) {
@@ -989,7 +1862,7 @@ static bool Locale_toString(JSContext* cx, const CallArgs& args) {
 
   // Step 3.
   auto* locale = &args.thisv().toObject().as<LocaleObject>();
-  args.rval().setString(locale->languageTag());
+  args.rval().setString(locale->getLanguageTag());
   return true;
 }
 
@@ -1006,7 +1879,7 @@ static bool Locale_baseName(JSContext* cx, const CallArgs& args) {
 
   // Steps 3-4.
   auto* locale = &args.thisv().toObject().as<LocaleObject>();
-  args.rval().setString(locale->baseName());
+  args.rval().setString(locale->getBaseName());
   return true;
 }
 
@@ -1063,6 +1936,22 @@ static bool Locale_collation(JSContext* cx, unsigned argc, Value* vp) {
   // Steps 1-2.
   CallArgs args = CallArgsFromVp(argc, vp);
   return CallNonGenericMethod<IsLocale, Locale_collation>(cx, args);
+}
+
+// get Intl.Locale.prototype.firstDayOfWeek
+static bool Locale_firstDayOfWeek(JSContext* cx, const CallArgs& args) {
+  MOZ_ASSERT(IsLocale(args.thisv()));
+
+  // Step 3.
+  auto* locale = &args.thisv().toObject().as<LocaleObject>();
+  return GetUnicodeExtension(cx, locale, "fw", args.rval());
+}
+
+// get Intl.Locale.prototype.firstDayOfWeek
+static bool Locale_firstDayOfWeek(JSContext* cx, unsigned argc, Value* vp) {
+  // Steps 1-2.
+  CallArgs args = CallArgsFromVp(argc, vp);
+  return CallNonGenericMethod<IsLocale, Locale_firstDayOfWeek>(cx, args);
 }
 
 // get Intl.Locale.prototype.hourCycle
@@ -1132,22 +2021,17 @@ static bool Locale_language(JSContext* cx, const CallArgs& args) {
 
   // Step 3.
   auto* locale = &args.thisv().toObject().as<LocaleObject>();
-  JSLinearString* baseName = locale->baseName()->ensureLinear(cx);
-  if (!baseName) {
-    return false;
-  }
+  auto* baseName = locale->getBaseName();
 
-  // Step 4 (Unnecessary assertion).
-
-  auto language = BaseNameParts(baseName).language;
-
-  size_t index = language.index;
-  size_t length = language.length;
-
-  // Step 5.
-  JSString* str = NewDependentString(cx, baseName, index, length);
-  if (!str) {
-    return false;
+  JSString* str;
+  if (baseName->length() > 3) {
+    str = NewStringCopy<CanGC>(cx, GetLocaleLanguage(locale).Span());
+    if (!str) {
+      return false;
+    }
+  } else {
+    // Optimization for 2-3 letter language subtag-only locales.
+    str = baseName;
   }
 
   args.rval().setString(str);
@@ -1167,26 +2051,15 @@ static bool Locale_script(JSContext* cx, const CallArgs& args) {
 
   // Step 3.
   auto* locale = &args.thisv().toObject().as<LocaleObject>();
-  JSLinearString* baseName = locale->baseName()->ensureLinear(cx);
-  if (!baseName) {
-    return false;
-  }
+  auto script = GetLocaleScript(locale);
 
-  // Step 4 (Unnecessary assertion).
-
-  auto script = BaseNameParts(baseName).script;
-
-  // Step 5.
-  if (!script) {
+  // No script subtag present.
+  if (script.Missing()) {
     args.rval().setUndefined();
     return true;
   }
 
-  size_t index = script->index;
-  size_t length = script->length;
-
-  // Step 6.
-  JSString* str = NewDependentString(cx, baseName, index, length);
+  auto* str = NewStringCopy<CanGC>(cx, script.Span());
   if (!str) {
     return false;
   }
@@ -1208,26 +2081,15 @@ static bool Locale_region(JSContext* cx, const CallArgs& args) {
 
   // Step 3.
   auto* locale = &args.thisv().toObject().as<LocaleObject>();
-  JSLinearString* baseName = locale->baseName()->ensureLinear(cx);
-  if (!baseName) {
-    return false;
-  }
+  auto region = GetLocaleRegion(locale);
 
-  // Step 4 (Unnecessary assertion).
-
-  auto region = BaseNameParts(baseName).region;
-
-  // Step 5.
-  if (!region) {
+  // No region subtag present.
+  if (region.Missing()) {
     args.rval().setUndefined();
     return true;
   }
 
-  size_t index = region->index;
-  size_t length = region->length;
-
-  // Step 6.
-  JSString* str = NewDependentString(cx, baseName, index, length);
+  auto* str = NewStringCopy<CanGC>(cx, region.Span());
   if (!str) {
     return false;
   }
@@ -1249,36 +2111,22 @@ static bool Locale_variants(JSContext* cx, const CallArgs& args) {
 
   // Step 3.
   auto* locale = &args.thisv().toObject().as<LocaleObject>();
-  JSLinearString* baseName = locale->baseName()->ensureLinear(cx);
-  if (!baseName) {
-    return false;
-  }
+  auto variants = GetLocaleVariants(locale);
 
-  auto parts = BaseNameParts(baseName);
-
-  // Variants are the trailing subtags in the base-name. Find which subtag
-  // precedes the variants.
-  auto precedingSubtag = parts.region   ? *parts.region
-                         : parts.script ? *parts.script
-                                        : parts.language;
-
-  // Index of the next subtag, including the leading '-' character.
-  size_t index = precedingSubtag.index + precedingSubtag.length;
-
-  // Length of the variant subtags, including the leading '-' character.
-  size_t length = baseName->length() - index;
-
-  // No variant subtags present when |length| is zero.
-  if (length == 0) {
+  // No variant subtags present.
+  if (!variants) {
     args.rval().setUndefined();
     return true;
   }
-  MOZ_ASSERT(baseName->latin1OrTwoByteChar(index) == '-',
-             "missing '-' separator after precedingSubtag");
-  MOZ_ASSERT(length >= 4 + 1,
-             "variant subtag is at least four characters long");
 
-  JSString* str = NewDependentString(cx, baseName, index + 1, length - 1);
+  auto [index, length] = *variants;
+  MOZ_ASSERT(length >= 4, "variant subtag is at least four characters long");
+
+  auto* baseName = locale->getBaseName();
+  MOZ_ASSERT(index + length == baseName->length(),
+             "unexpected base name subtags after variant subtags");
+
+  auto* str = NewDependentString(cx, baseName, index, length);
   if (!str) {
     return false;
   }
@@ -1300,11 +2148,216 @@ static bool Locale_toSource(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
+// Intl.Locale.prototype.getCalendars ( )
+static bool Locale_getCalendars(JSContext* cx, const CallArgs& args) {
+  MOZ_ASSERT(IsLocale(args.thisv()));
+
+  Rooted<LocaleObject*> locale(cx, &args.thisv().toObject().as<LocaleObject>());
+
+  // Step 3.
+  auto* result = CalendarsOfLocale(cx, locale);
+  if (!result) {
+    return false;
+  }
+
+  args.rval().setObject(*result);
+  return true;
+}
+
+// Intl.Locale.prototype.getCalendars ( )
+static bool Locale_getCalendars(JSContext* cx, unsigned argc, Value* vp) {
+  // Steps 1-2.
+  CallArgs args = CallArgsFromVp(argc, vp);
+  return CallNonGenericMethod<IsLocale, Locale_getCalendars>(cx, args);
+}
+
+// Intl.Locale.prototype.getCollations ( )
+static bool Locale_getCollations(JSContext* cx, const CallArgs& args) {
+  MOZ_ASSERT(IsLocale(args.thisv()));
+
+  Rooted<LocaleObject*> locale(cx, &args.thisv().toObject().as<LocaleObject>());
+
+  // Step 3.
+  auto* result = CollationsOfLocale(cx, locale);
+  if (!result) {
+    return false;
+  }
+
+  args.rval().setObject(*result);
+  return true;
+}
+
+// Intl.Locale.prototype.getCollations ( )
+static bool Locale_getCollations(JSContext* cx, unsigned argc, Value* vp) {
+  // Steps 1-2.
+  CallArgs args = CallArgsFromVp(argc, vp);
+  return CallNonGenericMethod<IsLocale, Locale_getCollations>(cx, args);
+}
+
+// Intl.Locale.prototype.getHourCycles ( )
+static bool Locale_getHourCycles(JSContext* cx, const CallArgs& args) {
+  MOZ_ASSERT(IsLocale(args.thisv()));
+
+  Rooted<LocaleObject*> locale(cx, &args.thisv().toObject().as<LocaleObject>());
+
+  // Step 3.
+  auto* result = HourCyclesOfLocale(cx, locale);
+  if (!result) {
+    return false;
+  }
+
+  args.rval().setObject(*result);
+  return true;
+}
+
+// Intl.Locale.prototype.getHourCycles ( )
+static bool Locale_getHourCycles(JSContext* cx, unsigned argc, Value* vp) {
+  // Steps 1-2.
+  CallArgs args = CallArgsFromVp(argc, vp);
+  return CallNonGenericMethod<IsLocale, Locale_getHourCycles>(cx, args);
+}
+
+// Intl.Locale.prototype.getNumberingSystems ( )
+static bool Locale_getNumberingSystems(JSContext* cx, const CallArgs& args) {
+  MOZ_ASSERT(IsLocale(args.thisv()));
+
+  Rooted<LocaleObject*> locale(cx, &args.thisv().toObject().as<LocaleObject>());
+
+  // Step 3.
+  auto* result = NumberingSystemsOfLocale(cx, locale);
+  if (!result) {
+    return false;
+  }
+
+  args.rval().setObject(*result);
+  return true;
+}
+
+// Intl.Locale.prototype.getNumberingSystems ( )
+static bool Locale_getNumberingSystems(JSContext* cx, unsigned argc,
+                                       Value* vp) {
+  // Steps 1-2.
+  CallArgs args = CallArgsFromVp(argc, vp);
+  return CallNonGenericMethod<IsLocale, Locale_getNumberingSystems>(cx, args);
+}
+
+// Intl.Locale.prototype.getTextInfo ( )
+static bool Locale_getTextInfo(JSContext* cx, const CallArgs& args) {
+  MOZ_ASSERT(IsLocale(args.thisv()));
+
+  auto* locale = &args.thisv().toObject().as<LocaleObject>();
+
+  // Step 3.
+  Rooted<IdValueVector> info(cx, cx);
+
+  // Step 4.
+  auto dir = TextDirectionOfLocale(cx, locale);
+
+  // Step 5.
+  if (!info.emplaceBack(NameToId(cx->names().direction), dir)) {
+    return false;
+  }
+
+  // Step 6.
+  auto* result = NewPlainObjectWithUniqueNames(cx, info);
+  if (!result) {
+    return false;
+  }
+  args.rval().setObject(*result);
+  return true;
+}
+
+// Intl.Locale.prototype.getTextInfo ( )
+static bool Locale_getTextInfo(JSContext* cx, unsigned argc, Value* vp) {
+  // Steps 1-2.
+  CallArgs args = CallArgsFromVp(argc, vp);
+  return CallNonGenericMethod<IsLocale, Locale_getTextInfo>(cx, args);
+}
+
+// Intl.Locale.prototype.getTimeZones ( )
+static bool Locale_getTimeZones(JSContext* cx, const CallArgs& args) {
+  MOZ_ASSERT(IsLocale(args.thisv()));
+
+  auto* locale = &args.thisv().toObject().as<LocaleObject>();
+
+  // Step 3.
+  return TimeZonesOfLocale(cx, locale, args.rval());
+}
+
+// Intl.Locale.prototype.getTimeZones ( )
+static bool Locale_getTimeZones(JSContext* cx, unsigned argc, Value* vp) {
+  // Steps 1-2.
+  CallArgs args = CallArgsFromVp(argc, vp);
+  return CallNonGenericMethod<IsLocale, Locale_getTimeZones>(cx, args);
+}
+
+// Intl.Locale.prototype.getWeekInfo ( )
+static bool Locale_getWeekInfo(JSContext* cx, const CallArgs& args) {
+  MOZ_ASSERT(IsLocale(args.thisv()));
+
+  Rooted<LocaleObject*> locale(cx, &args.thisv().toObject().as<LocaleObject>());
+
+  // Step 3.
+  Rooted<IdValueVector> info(cx, cx);
+
+  // Step 4.
+  WeekInfo wi;
+  if (!WeekInfoOfLocale(cx, locale, &wi)) {
+    return false;
+  }
+
+  // Step 5.
+  if (!info.emplaceBack(NameToId(cx->names().firstDay),
+                        JS::Int32Value(static_cast<int32_t>(wi.firstDay)))) {
+    return false;
+  }
+
+  // Step 6.
+  auto* weekend = NewDenseFullyAllocatedArray(cx, wi.weekend.size());
+  if (!weekend) {
+    return false;
+  }
+  weekend->setDenseInitializedLength(wi.weekend.size());
+
+  size_t index = 0;
+  for (auto day : wi.weekend) {
+    weekend->initDenseElement(index++,
+                              JS::Int32Value(static_cast<int32_t>(day)));
+  }
+  MOZ_ASSERT(index == wi.weekend.size());
+
+  if (!info.emplaceBack(NameToId(cx->names().weekend), ObjectValue(*weekend))) {
+    return false;
+  }
+
+  // Step 7.
+  auto* result = NewPlainObjectWithUniqueNames(cx, info);
+  if (!result) {
+    return false;
+  }
+  args.rval().setObject(*result);
+  return true;
+}
+
+// Intl.Locale.prototype.getWeekInfo ( )
+static bool Locale_getWeekInfo(JSContext* cx, unsigned argc, Value* vp) {
+  // Steps 1-2.
+  CallArgs args = CallArgsFromVp(argc, vp);
+  return CallNonGenericMethod<IsLocale, Locale_getWeekInfo>(cx, args);
+}
+
 static const JSFunctionSpec locale_methods[] = {
     JS_FN("maximize", Locale_maximize, 0, 0),
     JS_FN("minimize", Locale_minimize, 0, 0),
     JS_FN("toString", Locale_toString, 0, 0),
     JS_FN("toSource", Locale_toSource, 0, 0),
+    JS_FN("getCalendars", Locale_getCalendars, 0, 0),
+    JS_FN("getCollations", Locale_getCollations, 0, 0),
+    JS_FN("getHourCycles", Locale_getHourCycles, 0, 0),
+    JS_FN("getNumberingSystems", Locale_getNumberingSystems, 0, 0),
+    JS_FN("getTextInfo", Locale_getTextInfo, 0, 0),
+    JS_FN("getTimeZones", Locale_getTimeZones, 0, 0),
+    JS_FN("getWeekInfo", Locale_getWeekInfo, 0, 0),
     JS_FS_END,
 };
 
@@ -1313,6 +2366,7 @@ static const JSPropertySpec locale_properties[] = {
     JS_PSG("calendar", Locale_calendar, 0),
     JS_PSG("caseFirst", Locale_caseFirst, 0),
     JS_PSG("collation", Locale_collation, 0),
+    JS_PSG("firstDayOfWeek", Locale_firstDayOfWeek, 0),
     JS_PSG("hourCycle", Locale_hourCycle, 0),
     JS_PSG("numeric", Locale_numeric, 0),
     JS_PSG("numberingSystem", Locale_numberingSystem, 0),
@@ -1378,12 +2432,12 @@ static JSLinearString* ValidateAndCanonicalizeLanguageTag(
 static JSLinearString* ValidateAndCanonicalizeLanguageTag(
     JSContext* cx, Handle<Value> tagValue) {
   if (tagValue.isObject()) {
-    JSString* tagStr;
+    JSLinearString* tagStr;
     JS_TRY_VAR_OR_RETURN_NULL(
         cx, tagStr,
         LanguageTagFromMaybeWrappedLocale(cx, &tagValue.toObject()));
     if (tagStr) {
-      return tagStr->ensureLinear(cx);
+      return tagStr;
     }
   }
 
@@ -1428,16 +2482,12 @@ bool js::intl::CanonicalizeLocaleList(JSContext* cx, Handle<Value> locales,
   }
 
   if (locales.isObject()) {
-    JSString* languageTag;
+    JSLinearString* languageTag;
     JS_TRY_VAR_OR_RETURN_FALSE(
         cx, languageTag,
         LanguageTagFromMaybeWrappedLocale(cx, &locales.toObject()));
     if (languageTag) {
-      auto* linear = languageTag->ensureLinear(cx);
-      if (!linear) {
-        return false;
-      }
-      return result.append(linear);
+      return result.append(languageTag);
     }
   }
 

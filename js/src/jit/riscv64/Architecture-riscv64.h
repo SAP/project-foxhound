@@ -1,17 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef jit_riscv64_Architecture_riscv64_h
 #define jit_riscv64_Architecture_riscv64_h
 
-// JitSpewer.h is included through MacroAssembler implementations for other
-// platforms, so include it here to avoid inadvertent build bustage.
-#include "mozilla/MathAlgorithms.h"
+#include "mozilla/EnumSet.h"
 
 #include <algorithm>
+#include <bit>
 
 #include "jit/JitSpewer.h"
 #include "jit/shared/Architecture-shared.h"
@@ -126,15 +123,14 @@ class Registers {
 
   typedef uint32_t SetType;
 
-  static uint32_t SetSize(SetType x) {
-    static_assert(sizeof(SetType) == 4, "SetType must be 32 bits");
-    return mozilla::CountPopulation32(x);
-  }
+  static uint32_t SetSize(SetType x) { return std::popcount(x); }
   static uint32_t FirstBit(SetType x) {
-    return mozilla::CountTrailingZeroes32(x);
+    MOZ_ASSERT(x);
+    return std::countr_zero(x);
   }
   static uint32_t LastBit(SetType x) {
-    return 31 - mozilla::CountLeadingZeroes32(x);
+    MOZ_ASSERT(x);
+    return std::bit_width(x) - 1;
   }
   static const char* GetName(uint32_t code) {
     static const char* const Names[] = {
@@ -350,19 +346,18 @@ struct FloatRegister {
   using SetType = Codes::SetType;
 
   static uint32_t SetSize(SetType x) {
-    static_assert(sizeof(SetType) == 8, "SetType must be 64 bits");
     x |= x >> FloatRegisters::TotalPhys;
     x &= FloatRegisters::AllPhysMask;
-    return mozilla::CountPopulation32(x);
+    return std::popcount(x);
   }
 
   static uint32_t FirstBit(SetType x) {
-    static_assert(sizeof(SetType) == 8, "SetType must be 64 bits");
-    return mozilla::CountTrailingZeroes64(x);
+    MOZ_ASSERT(x);
+    return std::countr_zero(x);
   }
   static uint32_t LastBit(SetType x) {
-    static_assert(sizeof(SetType) == 8, "SetType must be 64 bits");
-    return 63 - mozilla::CountLeadingZeroes64(x);
+    MOZ_ASSERT(x);
+    return std::bit_width(x) - 1;
   }
 
   static FloatRegister FromCode(Code code) {
@@ -517,16 +512,90 @@ inline bool hasMultiAlias() { return false; }
 static constexpr uint32_t ShadowStackSpace = 0;
 static const uint32_t JumpImmediateRange = INT32_MAX;
 
-#ifdef JS_NUNBOX32
-static const int32_t NUNBOX32_TYPE_OFFSET = 4;
-static const int32_t NUNBOX32_PAYLOAD_OFFSET = 0;
-#endif
-
 static const uint32_t SpillSlotSize =
     std::max(sizeof(Registers::RegisterContent),
              sizeof(FloatRegisters::RegisterContent));
 
-inline uint32_t GetRISCV64Flags() { return 0; }
+enum class RVExtension : uint32_t {
+  // Flag when the extensions are initialized, so they can be atomically set.
+  Initialized,
+
+  // Extension for Address Generation
+  Zba,
+
+  // Extension for Basic Bit Manipulation
+  Zbb,
+
+  // Extension for Single-Bit Manipulation
+  Zbs,
+
+  // Extension for Half-Precision Floating-Point Conversions
+  Zfhmin,
+
+  // Extension for Additional Floating-Point Instructions
+  Zfa,
+
+  // Extension for Integer Conditional Operations
+  Zicond,
+};
+
+using RVExtensions = mozilla::EnumSet<RVExtension>;
+
+class RVFlags final {
+  // The override flags parsed from environment variables or from the
+  // --riscv-ext js shell argument. They are stable after startup: there is no
+  // programmatic way of setting these from JS.
+  static inline RVExtensions extensions{};
+
+ public:
+  RVFlags() = delete;
+
+  // RVFlags::Init is called from the JitContext constructor to read the
+  // hardware flags. This method must only be called once.
+  static void Init();
+
+  static bool IsInitialized() {
+    return extensions.contains(RVExtension::Initialized);
+  }
+
+  static uint32_t GetFlags() {
+    MOZ_ASSERT(IsInitialized());
+    return extensions.serialize();
+  }
+
+  static bool HasZbaExtension() {
+    return extensions.contains(RVExtension::Zba);
+  }
+
+  static bool HasZbbExtension() {
+    return extensions.contains(RVExtension::Zbb);
+  }
+
+  static bool HasZbsExtension() {
+    return extensions.contains(RVExtension::Zbs);
+  }
+
+  static bool HasZfhminExtension() {
+    return extensions.contains(RVExtension::Zfhmin);
+  }
+
+  static bool HasZfaExtension() {
+    return extensions.contains(RVExtension::Zfa);
+  }
+
+  static bool HasZicondExtension() {
+    return extensions.contains(RVExtension::Zicond);
+  }
+};
+
+// Register a string denoting RISCV extensions. During engine initialization,
+// these flags will then be used instead of the actual hardware capabilities.
+// This must be called before JS_Init and the passed string's buffer must
+// outlive the JS_Init call.
+void SetRISCV64ExtensionsString(const char* extensions);
+
+// Retrieve the RISCV extensions as a bitmask. They must have been set.
+inline uint32_t GetRISCV64Flags() { return RVFlags::GetFlags(); }
 
 }  // namespace jit
 }  // namespace js

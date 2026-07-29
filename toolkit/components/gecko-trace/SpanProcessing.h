@@ -45,7 +45,7 @@ class ProtobufExporter : public otel::sdk::trace::SpanExporter {
   using IPCExporter = std::function<bool(ipc::ByteBuf&&)>;
 
   explicit ProtobufExporter(IPCExporter&& aIPCExporter)
-      : mIPCExporter(aIPCExporter) {}
+      : mIPCExporter(std::move(aIPCExporter)) {}
 
   std::unique_ptr<otel::sdk::trace::Recordable> MakeRecordable() noexcept
       override {

@@ -164,6 +164,12 @@ ssl_BeginClientHandshake(sslSocket *ss)
             ss->sec.localCert = CERT_DupCertificate(sid->localCert);
         } else {
             ssl_UncacheSessionID(ss);
+            if (ss->sec.ci.sid == sid) {
+                /* sid aliases ss->sec.ci.sid (external cache); clear it so
+                 * the socket cannot hold a dangling pointer if the
+                 * ssl3_NewSessionID allocation below fails. */
+                ss->sec.ci.sid = NULL;
+            }
             ssl_FreeSID(sid);
             sid = NULL;
         }

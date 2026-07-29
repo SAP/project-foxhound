@@ -55,7 +55,7 @@ async function showFeatureCallout(browser, message) {
     resolveClosed = resolve;
   });
   const config = {
-    win: browser.ownerGlobal,
+    win: browser.documentGlobal,
     location: "chrome",
     context: "chrome",
     browser,
@@ -533,4 +533,384 @@ add_task(async function test_shadow_selector() {
   await waitForCalloutRemoved(win.document);
   await BrowserTestUtils.closeWindow(win);
   sandbox.restore();
+});
+
+add_task(async function feature_callout_more_button() {
+  let message = getTestMessage();
+  message.content.screens[0].content.more_button = {
+    submenu: [
+      {
+        type: "action",
+        label: { raw: "Don't show again" },
+        action: {
+          type: "BLOCK_MESSAGE",
+          data: { id: "TEST_PANEL_FEATURE_CALLOUT" },
+          dismiss: true,
+        },
+        id: "dont_show_again",
+      },
+      {
+        type: "action",
+        label: { raw: "Show fewer" },
+        action: {
+          type: "SET_PREF",
+          data: { pref: { name: "test.pref", value: true } },
+          dismiss: true,
+        },
+        id: "show_fewer",
+      },
+      {
+        type: "separator",
+      },
+      {
+        type: "action",
+        label: { raw: "Manage settings" },
+        action: {
+          type: "OPEN_ABOUT_PAGE",
+          data: { args: "preferences", where: "tab" },
+          dismiss: true,
+        },
+        id: "manage_settings",
+      },
+    ],
+  };
+
+  delete message.content.screens[0].content.dismiss_button;
+
+  await testCalloutHiddenIf(
+    async (win, calloutContainer) => {
+      let moreButton = calloutContainer.querySelector(
+        `#${calloutId} .more-button`
+      );
+      let submenu = calloutContainer.querySelector(
+        `#${calloutId} .fxms-multi-stage-submenu`
+      );
+
+      ok(moreButton, "Callout should have a more button");
+      ok(submenu, "Callout should have a submenu");
+      is(moreButton.id, "more_button", "More button should have correct ID");
+      is(
+        moreButton.value,
+        "more_button",
+        "More button should have correct value"
+      );
+      ok(
+        moreButton.classList.contains("more-button"),
+        "More button should have correct class"
+      );
+
+      let opened = BrowserTestUtils.waitForEvent(submenu, "popupshown");
+      moreButton.click();
+      await opened;
+
+      // submenu items are present and correctly configured
+      let menuItems = submenu.querySelectorAll("menuitem");
+      let separator = submenu.querySelector("menuseparator");
+
+      is(menuItems.length, 3, "Should have 3 menu items");
+      ok(separator, "Should have a separator");
+
+      // Test first menu item
+      is(
+        menuItems[0].value,
+        "dont_show_again",
+        "First item should have correct ID"
+      );
+      is(
+        menuItems[0].getAttribute("label"),
+        "Don't show again",
+        "First item should have correct label"
+      );
+
+      // Test second menu item
+      is(
+        menuItems[1].value,
+        "show_fewer",
+        "Second item should have correct ID"
+      );
+      is(
+        menuItems[1].getAttribute("label"),
+        "Show fewer",
+        "Second item should have correct label"
+      );
+
+      // Test third menu item
+      is(
+        menuItems[2].value,
+        "manage_settings",
+        "Third item should have correct ID"
+      );
+      is(
+        menuItems[2].getAttribute("label"),
+        "Manage settings",
+        "Third item should have correct label"
+      );
+
+      // Click the first menu item to dismiss
+      menuItems[0].click();
+    },
+    null,
+    message
+  );
+});
+
+add_task(async function feature_callout_more_button_coexistence() {
+  let message = getTestMessage();
+  message.content.screens[0].content.secondary_button = {
+    label: { raw: "Advance" },
+    action: { navigate: true },
+  };
+  message.content.screens[0].content.submenu_button = {
+    submenu: [
+      {
+        type: "action",
+        label: { raw: "Item 1" },
+        action: { navigate: true },
+        id: "item1",
+      },
+      {
+        type: "action",
+        label: { raw: "Item 2" },
+        action: { navigate: true },
+        id: "item2",
+      },
+      {
+        type: "menu",
+        label: { raw: "Menu 1" },
+        submenu: [
+          {
+            type: "action",
+            label: { raw: "Item 3" },
+            action: { navigate: true },
+            id: "item3",
+          },
+          {
+            type: "action",
+            label: { raw: "Item 4" },
+            action: { navigate: true },
+            id: "item4",
+          },
+        ],
+        id: "menu1",
+      },
+    ],
+    attached_to: "secondary_button",
+  };
+  message.content.screens[0].content.more_button = {
+    submenu: [
+      {
+        type: "action",
+        label: { raw: "More Item 1" },
+        action: { dismiss: true },
+        id: "more_item1",
+      },
+    ],
+  };
+
+  delete message.content.screens[0].content.dismiss_button;
+
+  await testCalloutHiddenIf(
+    async (win, calloutContainer) => {
+      // Both buttons should be present
+      let submenuButton = calloutContainer.querySelector(
+        `#${calloutId} .submenu-button`
+      );
+      let moreButton = calloutContainer.querySelector(
+        `#${calloutId} .more-button`
+      );
+
+      ok(submenuButton, "Should have submenu button");
+      ok(moreButton, "Should have more button");
+
+      // They should have different IDs and classes
+      is(
+        submenuButton.id,
+        "submenu_button",
+        "Submenu button should have correct ID"
+      );
+      is(moreButton.id, "more_button", "More button should have correct ID");
+
+      ok(
+        submenuButton.classList.contains("submenu-button"),
+        "Submenu button should have correct class"
+      );
+      ok(
+        moreButton.classList.contains("more-button"),
+        "More button should have correct class"
+      );
+
+      await BrowserTestUtils.waitForCondition(
+        () => submenuButton.querySelector(".fxms-multi-stage-submenu"),
+        "Wait for submenu button popup to be attached"
+      );
+
+      // Each button should open its own submenu
+      let submenuPopup = submenuButton.querySelector(
+        ".fxms-multi-stage-submenu"
+      );
+      let morePopup = moreButton.querySelector(".fxms-multi-stage-submenu");
+
+      ok(submenuPopup, "Submenu button should have its own popup");
+      ok(morePopup, "More button should have its own popup");
+      Assert.notStrictEqual(
+        submenuPopup,
+        morePopup,
+        "Popups should be different elements"
+      );
+
+      let opened = BrowserTestUtils.waitForEvent(morePopup, "popupshown");
+      moreButton.click();
+      await opened;
+
+      let moreMenuItem = morePopup.querySelector(
+        "menuitem[value='more_item1']"
+      );
+      ok(moreMenuItem, "More popup should have correct menu item");
+      // Click to dismiss
+      moreMenuItem.click();
+    },
+    null,
+    message
+  );
+});
+
+// Test that more_button renders nothing when no submenu items provided
+add_task(async function feature_callout_more_button_empty_submenu() {
+  let message = getTestMessage();
+  message.content.screens[0].content.more_button = {
+    submenu: [],
+  };
+
+  const win = await BrowserTestUtils.openNewBrowserWindow();
+  win.focus();
+  const doc = win.document;
+  const browser = win.gBrowser.selectedBrowser;
+  const { featureCallout, showing, closed } = await showFeatureCallout(
+    browser,
+    message
+  );
+
+  await waitForCalloutScreen(doc, message.content.screens[0].id);
+  let calloutContainer = featureCallout._container;
+  ok(showing && calloutContainer, "Feature callout should be showing");
+
+  // More button should not be rendered when submenu is empty
+  let moreButton = calloutContainer.querySelector(`#${calloutId} .more-button`);
+  ok(!moreButton, "More button should not be rendered when submenu is empty");
+
+  win.document.querySelector(calloutDismissSelector).click();
+  await closed;
+  await waitForCalloutRemoved(doc);
+  await BrowserTestUtils.closeWindow(win);
+});
+
+// Test that the dismiss button takes precedence over the more button
+add_task(async function feature_callout_more_button_with_dismiss() {
+  let message = getTestMessage();
+  message.content.screens[0].content.more_button = {
+    submenu: [
+      {
+        type: "action",
+        label: { raw: "More Item 1" },
+        action: { dismiss: true },
+        id: "more_item1",
+      },
+    ],
+  };
+
+  message.content.screens[0].content.dismiss_button = {
+    action: {
+      dismiss: true,
+    },
+    background: true,
+    size: "small",
+    marginInline: "0 20px",
+    marginBlock: "20px 0",
+  };
+
+  const win = await BrowserTestUtils.openNewBrowserWindow();
+  win.focus();
+  const doc = win.document;
+  const browser = win.gBrowser.selectedBrowser;
+  const { featureCallout, showing, closed } = await showFeatureCallout(
+    browser,
+    message
+  );
+
+  await waitForCalloutScreen(doc, message.content.screens[0].id);
+  let calloutContainer = featureCallout._container;
+  ok(showing && calloutContainer, "Feature callout should be showing");
+
+  // More button should not be rendered when dismiss button is present
+  let moreButton = calloutContainer.querySelector(`#${calloutId} .more-button`);
+  ok(!moreButton, "More button should not be rendered when submenu is empty");
+
+  // Dismiss button should be present
+  ok(
+    win.document.querySelector(calloutDismissSelector),
+    "Dismiss button is present when both more button and dismiss button configurations exist"
+  );
+
+  win.document.querySelector(calloutDismissSelector).click();
+  await closed;
+  await waitForCalloutRemoved(doc);
+  await BrowserTestUtils.closeWindow(win);
+});
+
+add_task(async function test_content_document_selector() {
+  const { AIWindowAccountAuth } = ChromeUtils.importESModule(
+    "moz-src:///browser/components/aiwindow/ui/modules/AIWindowAccountAuth.sys.mjs"
+  );
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.smartwindow.enabled", true],
+      ["browser.smartwindow.firstrun.hasCompleted", true],
+    ],
+  });
+  const stub = sinon
+    .stub(AIWindowAccountAuth, "ensureAIWindowAccess")
+    .resolves(true);
+  const win = await BrowserTestUtils.openNewBrowserWindow({ aiWindow: true });
+  await BrowserTestUtils.waitForMutationCondition(
+    win.document.documentElement,
+    { attributes: true },
+    () => win.document.documentElement.hasAttribute("ai-window")
+  );
+  const browser = win.gBrowser.selectedBrowser;
+  const config = {
+    win,
+    location: "chrome",
+    context: "chrome",
+    browser,
+    theme: { preset: "chrome" },
+  };
+
+  const message = getTestMessage();
+  message.content.screens[0].anchors[0].selector =
+    "hbox.deck-selected browser::%document% body";
+  const sandbox = sinon.createSandbox();
+
+  const doc = win.document;
+  const featureCallout = new FeatureCallout(config);
+  const getAnchorSpy = sandbox.spy(featureCallout, "_getAnchor");
+  featureCallout.showFeatureCallout(message);
+  await waitForCalloutScreen(doc, message.content.screens[0].id);
+  ok(
+    getAnchorSpy.alwaysReturned(
+      sandbox.match(message.content.screens[0].anchors[0])
+    ),
+    "The first anchor is selected and works in a content document"
+  );
+  Assert.notStrictEqual(
+    featureCallout._container.anchorNode.ownerDocument,
+    win.document,
+    "The anchor node is in a content document"
+  );
+
+  win.document.querySelector(calloutDismissSelector).click();
+  await waitForCalloutRemoved(win.document);
+  await BrowserTestUtils.closeWindow(win);
+  await SpecialPowers.popPrefEnv();
+  sandbox.restore();
+  stub.restore();
 });

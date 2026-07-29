@@ -12,5 +12,5 @@
   <!-- Content description (not visible, for screen readers etc.): Description of the refresh button in the Custom Tabs toolbar -->
   <string name="mozac_feature_customtabs_refresh_button">وانۊ کردن</string>
   <!-- Content description (not visible, for screen readers etc.): Description of the menu button in the Custom Tabs toolbar. -->
-  <string name="mozac_feature_customtabs_menu_button">گۊزینه یل بیشتر</string>
+  <string name="mozac_feature_customtabs_menu_button">گۊزینه یل قلوه</string>
 </resources>

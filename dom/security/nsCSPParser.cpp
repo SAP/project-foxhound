@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -39,7 +37,6 @@ static LogModule* GetCspParserLog() {
 static const uint32_t kSubHostPathCharacterCutoff = 512;
 
 static const char* const kHashSourceValidFns[] = {"sha256", "sha384", "sha512"};
-static const uint32_t kHashSourceValidFnsLen = 3;
 
 /* ===== nsCSPParser ==================== */
 
@@ -397,7 +394,7 @@ nsCSPHostSrc* nsCSPParser::host() {
   if (CSP_IsQuotelessKeyword(mCurValue)) {
     nsString keyword = mCurValue;
     ToLowerCase(keyword);
-    AutoTArray<nsString, 2> params = {mCurToken, keyword};
+    AutoTArray<nsString, 2> params = {mCurToken, std::move(keyword)};
     logWarningErrorToConsole(nsIScriptError::warningFlag,
                              "hostNameMightBeKeyword", params);
   }
@@ -604,8 +601,8 @@ nsCSPHashSrc* nsCSPParser::hashSource() {
   nsAutoString hash(
       Substring(expr, dashIndex + 1, expr.Length() - dashIndex + 1));
 
-  for (uint32_t i = 0; i < kHashSourceValidFnsLen; i++) {
-    if (algo.LowerCaseEqualsASCII(kHashSourceValidFns[i])) {
+  for (auto hashSourceValidFn : kHashSourceValidFns) {
+    if (algo.LowerCaseEqualsASCII(hashSourceValidFn)) {
       // cache if encountering hash or nonce to invalidate unsafe-inline
       mHasHashOrNonce = true;
       return new nsCSPHashSrc(algo, hash);
@@ -820,7 +817,7 @@ void nsCSPParser::reportGroup(nsCSPDirective* aDir) {
     if (isGroupDelim(*mCurChar) ||
         nsContentUtils::IsHTMLWhitespace(*mCurChar)) {
       nsString badChar(mozilla::Span(mCurChar, 1));
-      AutoTArray<nsString, 2> params = {mCurToken, badChar};
+      AutoTArray<nsString, 2> params = {mCurToken, std::move(badChar)};
       logWarningErrorToConsole(nsIScriptError::warningFlag,
                                "ignoringInvalidGroupSyntax", params);
       delete aDir;
@@ -1279,7 +1276,7 @@ void nsCSPParser::MaybeWarnAboutIgnoredSources(
           !aSrcs[i]->isKeyword(CSP_WASM_UNSAFE_EVAL) &&
           !aSrcs[i]->isKeyword(CSP_UNSAFE_HASHES) && !aSrcs[i]->isNonce() &&
           !aSrcs[i]->isHash()) {
-        AutoTArray<nsString, 2> params = {srcStr, mCurDir[0]};
+        AutoTArray<nsString, 2> params = {std::move(srcStr), mCurDir[0]};
         logWarningErrorToConsole(nsIScriptError::warningFlag,
                                  "ignoringScriptSrcForStrictDynamic", params);
       }

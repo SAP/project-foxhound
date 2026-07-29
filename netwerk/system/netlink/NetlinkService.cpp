@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set et sw=2 ts=4: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -203,9 +201,8 @@ class NetlinkNeighbor {
     _retval.AppendInt(mNeigh.ndm_ifindex);
     if (mHasMAC) {
       _retval.Append(" mac=");
-      _retval.Append(nsPrintfCString("%02x:%02x:%02x:%02x:%02x:%02x", mMAC[0],
-                                     mMAC[1], mMAC[2], mMAC[3], mMAC[4],
-                                     mMAC[5]));
+      _retval.AppendPrintf("%02x:%02x:%02x:%02x:%02x:%02x", mMAC[0], mMAC[1],
+                           mMAC[2], mMAC[3], mMAC[4], mMAC[5]);
     }
   }
 
@@ -1233,7 +1230,10 @@ NetlinkService::Run() {
 nsresult NetlinkService::Init(NetlinkServiceListener* aListener) {
   nsresult rv;
 
+  // No lock needed: Init() runs before the netlink thread starts.
+  MOZ_PUSH_IGNORE_THREAD_SAFETY
   mListener = aListener;
+  MOZ_POP_THREAD_SAFETY
 
   if (inet_pton(AF_INET, ROUTE_CHECK_IPV4, &mRouteCheckIPv4) != 1) {
     LOG(("Cannot parse address " ROUTE_CHECK_IPV4));

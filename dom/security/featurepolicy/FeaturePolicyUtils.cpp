@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -44,10 +42,14 @@ static FeatureMap sSupportedFeatures[] = {
      FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     {"publickey-credentials-get",
      FeaturePolicyUtils::FeaturePolicyValue::eSelf},
+    {"serial", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     {"speaker-selection", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     {"storage-access", FeaturePolicyUtils::FeaturePolicyValue::eAll},
     {"screen-wake-lock", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
+    {"loopback-network", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
+    {"local-network", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     {"aria-notify", FeaturePolicyUtils::FeaturePolicyValue::eAll},
+    {"picture-in-picture", FeaturePolicyUtils::FeaturePolicyValue::eAll},
 };
 
 /*
@@ -213,14 +215,9 @@ void FeaturePolicyUtils::ReportViolation(Document* aDocument,
     return;
   }
 
-  // Strip the URL of any possible username/password and make it ready to be
-  // presented in the UI.
-  nsCOMPtr<nsIURI> exposableURI = net::nsIOService::CreateExposableURI(uri);
-  nsAutoCString spec;
-  nsresult rv = exposableURI->GetSpec(spec);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return;
-  }
+  nsAutoCString url;
+  ReportingUtils::StripURL(uri, url);
+
   JSContext* cx = nsContentUtils::GetCurrentJSContext();
   if (NS_WARN_IF(!cx)) {
     return;
@@ -228,10 +225,11 @@ void FeaturePolicyUtils::ReportViolation(Document* aDocument,
 
   Nullable<int32_t> lineNumber;
   Nullable<int32_t> columnNumber;
-  auto loc = JSCallingLocation::Get();
-  if (loc) {
+  nsAutoCString sourceFile;
+  if (auto loc = JSCallingLocation::Get()) {
     lineNumber.SetValue(static_cast<int32_t>(loc.mLine));
     columnNumber.SetValue(static_cast<int32_t>(loc.mColumn));
+    ReportingUtils::StripLocationFileName(loc, sourceFile);
   }
 
   nsPIDOMWindowInner* window = aDocument->GetInnerWindow();
@@ -241,11 +239,11 @@ void FeaturePolicyUtils::ReportViolation(Document* aDocument,
 
   RefPtr<FeaturePolicyViolationReportBody> body =
       new FeaturePolicyViolationReportBody(window->AsGlobal(), aFeatureName,
-                                           loc.FileName(), lineNumber,
-                                           columnNumber, u"enforce"_ns);
+                                           sourceFile, lineNumber, columnNumber,
+                                           u"enforce"_ns);
 
   ReportingUtils::Report(window->AsGlobal(), nsGkAtoms::featurePolicyViolation,
-                         u"default"_ns, NS_ConvertUTF8toUTF16(spec), body);
+                         u"default"_ns, NS_ConvertUTF8toUTF16(url), body);
 }
 
 }  // namespace dom

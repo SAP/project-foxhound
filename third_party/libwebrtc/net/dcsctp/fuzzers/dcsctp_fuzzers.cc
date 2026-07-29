@@ -12,11 +12,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "api/array_view.h"
 #include "net/dcsctp/common/internal_types.h"
 #include "net/dcsctp/packet/chunk/abort_chunk.h"
 #include "net/dcsctp/packet/chunk/chunk.h"
@@ -82,7 +82,7 @@ enum class StartingState : int {
 // State about the current fuzzing iteration
 class FuzzState {
  public:
-  explicit FuzzState(webrtc::ArrayView<const uint8_t> data) : data_(data) {}
+  explicit FuzzState(std::span<const uint8_t> data) : data_(data) {}
 
   uint8_t GetByte() {
     uint8_t value = 0;
@@ -101,7 +101,7 @@ class FuzzState {
  private:
   uint32_t tsn_ = kRandomValue;
   uint32_t mid_ = 0;
-  webrtc::ArrayView<const uint8_t> data_;
+  std::span<const uint8_t> data_;
   size_t offset_ = 0;
 };
 
@@ -419,7 +419,7 @@ std::vector<uint8_t> GeneratePacket(FuzzState& state) {
 
 void FuzzSocket(DcSctpSocketInterface& socket,
                 FuzzerCallbacks& cb,
-                webrtc::ArrayView<const uint8_t> data) {
+                std::span<const uint8_t> data) {
   if (data.size() < kMinInputLength || data.size() > kMaxInputLength) {
     return;
   }
@@ -430,7 +430,7 @@ void FuzzSocket(DcSctpSocketInterface& socket,
   // Set the socket in a specified valid starting state
   SetSocketState(socket, cb, static_cast<StartingState>(data[0]));
 
-  FuzzState state(data.subview(1));
+  FuzzState state(data.subspan(1));
 
   while (!state.empty()) {
     switch (state.GetByte()) {

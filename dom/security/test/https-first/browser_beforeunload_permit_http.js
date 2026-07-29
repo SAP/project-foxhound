@@ -163,7 +163,7 @@ async function loadPageAndReload(testCase) {
         }
       );
       is(true, hasInteractedWith, "Simulated successfully user interaction");
-      BrowserCommands.reloadWithFlags(testCase.reloadFlag);
+      gBrowser.reloadWithFlags(testCase.reloadFlag);
       await BrowserTestUtils.browserLoaded(browser);
       is(true, true, `reload with flag ${testCase.name} was successful`);
     }

@@ -4,25 +4,28 @@
 
 package org.mozilla.fenix.ui
 
-import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import mozilla.components.concept.engine.mediasession.MediaSession
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.customannotations.SmokeTest
+import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.helpers.FenixTestRule
 import org.mozilla.fenix.helpers.HomeActivityTestRule
 import org.mozilla.fenix.helpers.MatcherHelper
 import org.mozilla.fenix.helpers.RetryTestRule
+import org.mozilla.fenix.helpers.RetryableComposeTestRule
 import org.mozilla.fenix.helpers.TestAssetHelper.audioPageAsset
 import org.mozilla.fenix.helpers.TestAssetHelper.videoPageAsset
+import org.mozilla.fenix.helpers.TestHelper.appContext
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.verifySnackBarText
-import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
 import org.mozilla.fenix.ui.robots.browserScreen
 import org.mozilla.fenix.ui.robots.clickPageObject
 import org.mozilla.fenix.ui.robots.homeScreen
 import org.mozilla.fenix.ui.robots.navigationToolbar
 import org.mozilla.fenix.ui.robots.notificationShade
+import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidComposeTestRuleV2
 
 /**
  *  Tests for verifying basic functionality of media notifications:
@@ -30,19 +33,27 @@ import org.mozilla.fenix.ui.robots.notificationShade
  *  - a media notification icon is displayed on the homescreen for the tab playing media content
  *  Note: this test only verifies media notifications, not media itself
  */
-class MediaNotificationTest : TestSetup() {
+class MediaNotificationTest {
     @get:Rule(order = 0)
-    val composeTestRule =
-        AndroidComposeTestRule(
-            HomeActivityTestRule.withDefaultSettingsOverrides(),
-        ) { it.activity }
+    val fenixTestRule: FenixTestRule = FenixTestRule()
+
+    private val mockWebServer get() = fenixTestRule.mockWebServer
+    private val browserStore get() = fenixTestRule.browserStore
 
     @get:Rule(order = 1)
-    val memoryLeaksRule = DetectMemoryLeaksRule()
-
-    @Rule(order = 2)
-    @JvmField
     val retryTestRule = RetryTestRule(3)
+
+    @get:Rule(order = 2)
+    val retryableComposeTestRule = RetryableComposeTestRule {
+        AndroidComposeTestRuleV2(
+            HomeActivityTestRule.withDefaultSettingsOverrides(),
+        ) { it.activity }
+    }
+
+    private val composeTestRule get() = retryableComposeTestRule.current
+
+    @get:Rule(order = 3)
+    val memoryLeaksRule = DetectMemoryLeaksRule(composeTestRule = { composeTestRule })
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1347033
     @SmokeTest
@@ -87,7 +98,6 @@ class MediaNotificationTest : TestSetup() {
 
         navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(audioTestPage.url) {
-            mDevice.waitForIdle()
             clickPageObject(composeTestRule, MatcherHelper.itemWithText("Play"))
             assertPlaybackState(browserStore, MediaSession.PlaybackState.PLAYING)
         }.openNotificationShade {
@@ -119,6 +129,12 @@ class MediaNotificationTest : TestSetup() {
     fun mediaSystemNotificationInPrivateModeTest() {
         val audioTestPage = mockWebServer.audioPageAsset
 
+        // RetryTestRule.cleanup() does not clear tabs between retries (its removeTabs
+        // parameter is hardcoded to false at the call site), so tabs from a failed
+        // attempt accumulate and break closeTab()'s single-tab assumption. Clear them
+        // explicitly here so the tab drawer starts with a single tab on every attempt.
+        appContext.components.useCases.tabsUseCases.removeAllTabs()
+
         homeScreen(composeTestRule) {
         }.openTabDrawer {
         }.toggleToPrivateTabs {
@@ -139,7 +155,7 @@ class MediaNotificationTest : TestSetup() {
             assertPlaybackState(browserStore, MediaSession.PlaybackState.PAUSED)
         }.openTabDrawer(composeTestRule) {
             closeTab()
-            verifySnackBarText("Private tab closed")
+            verifySnackBarText(composeTestRule, "Private tab closed")
         }
 
         mDevice.openNotification()

@@ -2,16 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-:host {
-  --page-nav-margin-top: 72px;
-  --page-nav-gap: var(--space-large);
-  --page-nav-button-gap: var(--space-xsmall);
-  --page-nav-border-color: var(--border-color-transparent);
-  --page-nav-focus-outline-inset: var(--focus-outline-inset);
-  --page-nav-heading-logo-size: calc(var(--icon-size) + var(--space-small));
-  --page-nav-hr-color: var(--border-color);
+@import url("chrome://global/content/elements/moz-page-nav.tokens.css");
 
-  margin-inline-start: 42px;
+:host {
+  margin-inline-start: var(--page-nav-margin-inline-start);
   position: sticky;
   top: 0;
   height: 100vh;
@@ -20,14 +14,21 @@
   flex-direction: column;
   gap: var(--page-nav-gap);
 
+  /* (Bug 1610081) Border provides clear differentiation between side
+     navigation and main content area when prefers-reduced-motion is enabled. */
+  padding-inline-end: var(--space-small);
+  border-inline-end: var(--border-width) solid var(--page-nav-border-color);
+
   @media (prefers-reduced-motion) {
-    /* (See Bug 1610081) Setting border-inline-end to add clear differentiation between side navigation and main content area */
-    border-inline-end: 1px solid var(--page-nav-border-color);
-    padding-inline-end: var(--space-small);
+    --page-nav-border-color: var(--border-color);
   }
 
-  @media (max-width: 52rem) {
+  @media (max-width: 950px) {
     grid-template-rows: 1fr auto;
+  }
+
+  @media print {
+    display: none;
   }
 }
 
@@ -44,7 +45,7 @@ nav {
   display: flex;
   align-items: center;
   gap: var(--space-small);
-  margin-block-start: var(--page-nav-margin-top);
+  margin-block-start: var(--page-nav-margin-block-start);
 
   > .logo {
     display: inline-block;
@@ -56,17 +57,17 @@ nav {
     /* heading logo should be centered above button icons */
     margin-inline-start: calc(var(--space-medium) - ((var(--page-nav-heading-logo-size) - var(--icon-size)) / 2));
 
-    @media (max-width: 52rem) {
-      margin-inline-start: 4px;
+    @media (max-width: 950px) {
+      margin-inline-start: var(--space-xsmall);
     }
   }
 
   > .page-nav-heading {
     font-size: var(--font-size-xlarge);
-    font-weight: var(--heading-font-weight);
+    font-weight: var(--font-weight-heading);
     margin-block: 0;
 
-    @media (max-width: 52rem) {
+    @media (max-width: 950px) {
       display: none;
     }
   }
@@ -79,7 +80,7 @@ nav {
   grid-auto-rows: min-content;
   gap: var(--page-nav-button-gap);
 
-  @media (max-width: 52rem) {
+  @media (max-width: 950px) {
     justify-content: center;
   }
 
@@ -93,8 +94,12 @@ hr {
   margin: 0;
   height: 1px;
   border: 0;
-  background-color: var(--page-nav-hr-color);
+  background-color: var(--page-nav-hr-background-color);
   flex-shrink: 0;
+
+  @media (max-width: 52rem) {
+    width: var(--button-size-icon);
+  }
 }
 
 :host([type="mobile"]) {

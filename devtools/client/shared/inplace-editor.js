@@ -36,6 +36,18 @@ loader.lazyRequireGetter(
   true
 );
 
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  getAutocompleteDataForColorFunction:
+    "resource://devtools/client/shared/inplace-editor-utils/autocomplete-color-function.mjs",
+  getAutocompleteDataForAnchorFunction:
+    "resource://devtools/client/shared/inplace-editor-utils/autocomplete-anchor-function.mjs",
+  getAutocompleteDataForAnchorSizeFunction:
+    "resource://devtools/client/shared/inplace-editor-utils/autocomplete-anchor-size-function.mjs",
+  getAutocompleteDataForLinearGradientFunction:
+    "resource://devtools/client/shared/inplace-editor-utils/autocomplete-linear-gradient-function.mjs",
+});
+
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const CONTENT_TYPES = {
   PLAIN_TEXT: 0,
@@ -77,6 +89,47 @@ const GRID_COL_PROPERTY_NAMES = [
   "grid-column-start",
   "grid-column-end",
 ];
+const ACCEPT_ANCHOR_PROPERTY_NAMES = new Set([
+  // position-anchor directly accepts anchor names
+  "position-anchor",
+  // inset properties that accept an anchor()/anchor-size() function as a value
+  "top",
+  "left",
+  "bottom",
+  "right",
+  "inset",
+  "inset-block-start",
+  "inset-block-end",
+  "inset-block",
+  "inset-inline-start",
+  "inset-inline-end",
+  "inset-inline",
+  // sizing properties that accept the use of anchor-size()
+  "width",
+  "height",
+  "min-width",
+  "min-height",
+  "max-width",
+  "max-height",
+  "block-size",
+  "inline-size",
+  "min-block-size",
+  "min-inline-size",
+  "max-block-size",
+  "max-inline-size",
+  // margin properties that accept the use of anchor-size()
+  "margin",
+  "margin-bottom",
+  "margin-left",
+  "margin-right",
+  "margin-top",
+  "margin-block",
+  "margin-block-end",
+  "margin-block-start",
+  "margin-inline",
+  "margin-inline-end",
+  "margin-inline-start",
+]);
 
 /**
  * Helper to check if the provided key matches one of the expected keys.
@@ -411,7 +464,7 @@ class InplaceEditor extends EventEmitter {
       options.start(this, event);
     }
 
-    this.#getGridNamesBeforeCompletion(options.getGridLineNames);
+    this.#populatePropertySpecificDataBeforeCompletion(options);
   }
   static CONTENT_TYPES = CONTENT_TYPES;
 
@@ -1166,19 +1219,31 @@ class InplaceEditor extends EventEmitter {
   };
 
   /**
-   * Before offering autocomplete, set this.gridLineNames as the line names
-   * of the current grid, if they exist.
+   * Before offering autocomplete, set properties that require asynchronous calls.
    *
-   * @param {Function} getGridLineNames
+   * @param {object} options
+   * @param {Function} options.getGridLineNames
    *        A function which gets the line names of the current grid.
+   * @param {Function} options.getCssAnchors
+   *        A function which gets the possible anchors for the selected element.
    */
-  async #getGridNamesBeforeCompletion(getGridLineNames) {
+  async #populatePropertySpecificDataBeforeCompletion({
+    getGridLineNames,
+    getCssAnchors,
+  }) {
     if (
       getGridLineNames &&
       this.property &&
       GRID_PROPERTY_NAMES.includes(this.property.name)
     ) {
       this.gridLineNames = await getGridLineNames();
+    }
+
+    if (
+      getCssAnchors &&
+      ACCEPT_ANCHOR_PROPERTY_NAMES.has(this.property?.name)
+    ) {
+      this.anchorNames = await getCssAnchors();
     }
 
     if (
@@ -1657,6 +1722,21 @@ class InplaceEditor extends EventEmitter {
             }
           }
           if (
+            currentFunction &&
+            currentFunction.tokens.length &&
+            // If we have a whitespace or a comment, we don't want to put them in the
+            // list of tokens, but we can mark the last token as "complete".
+            // This way we can differentiate between an incomplete item that we should
+            // autocomplete (e.g. `color(f`)), and one for which we shouldn't (e.g. `color(from `))
+            (token.tokenType === "WhiteSpace" ||
+              token.tokenType === "Comment" ||
+              // We also want to have comma or delimiter marked as complete
+              token.tokenType === "Comma" ||
+              token.tokenType === "Delim")
+          ) {
+            currentFunction.tokens.at(-1).complete = true;
+          }
+          if (
             token.tokenType === "Function" ||
             token.tokenType === "ParenthesisBlock"
           ) {
@@ -1711,7 +1791,7 @@ class InplaceEditor extends EventEmitter {
           postLabelValues = [];
         } else if (functionValues) {
           list = functionValues.list;
-          postLabelValues = functionValues.postLabelValues;
+          postLabelValues = functionValues.postLabelValues || [];
         } else {
           list = this.#getCSSValuesForPropertyName(this.property.name);
           // Only show !important if:
@@ -1809,13 +1889,17 @@ class InplaceEditor extends EventEmitter {
         }
       }
 
-      // Sort items starting with [a-z0-9] first, to make sure vendor-prefixed
+      // Sort items starting with [a-z0-9] or -- first, to make sure vendor-prefixed
       // values and "!important" are suggested only after standard values.
+      const alphaNumOrDashedRegExp = /^(\w|--)/;
       finalList.sort((item1, item2) => {
         // Get the expected alphabetical comparison between the items.
         let comparison = item1.label.localeCompare(item2.label);
-        if (/^\w/.test(item1.label) != /^\w/.test(item2.label)) {
-          // One starts with [a-z0-9], one does not: flip the comparison.
+        if (
+          alphaNumOrDashedRegExp.test(item1.label) !=
+          alphaNumOrDashedRegExp.test(item2.label)
+        ) {
+          // One starts with [a-z0-9--], one does not: flip the comparison.
           comparison = -1 * comparison;
         }
         return comparison;
@@ -1873,11 +1957,13 @@ class InplaceEditor extends EventEmitter {
    * @param {object} functionStackEntry
    * @param {InspectorCSSToken} functionStackEntry.fnToken: The token for the
    *        function call
+   * @param {Array<InspectorCSSToken>} functionStackEntry.tokens: The tokens representing the
+   *        function parameters (i.e. what's inside the parenthesis)
    * @returns {object | null} Return null if there's nothing specific to display for the function.
    *          Otherwise, return an object of the following shape:
-   *            - {Array<String>} list: The list of autocomplete items
-   *            - {Array<String>} postLabelValue: The list of autocomplete items
-   *              post labels (e.g. for variable names, their values).
+   *            - {Array<string>} list: The list of autocomplete items
+   *            - {Array<string>|undefined} postLabelValue: The list of autocomplete items
+   *              post labels (e.g. for variables, their values).
    */
   #getAutocompleteDataForFunction(functionStackEntry) {
     const functionName = functionStackEntry?.fnToken?.value;
@@ -1885,30 +1971,96 @@ class InplaceEditor extends EventEmitter {
       return null;
     }
 
-    let list = [];
-    let postLabelValues = [];
-
-    if (functionName === "var") {
-      // We only want to return variables for the first parameters of var(), not for its
-      // fallback. If we get more than one tokens, and given we don't get comments or
-      // whitespace, this means we're in the fallback value already.
-      if (functionStackEntry.tokens.length > 1) {
-        // In such case we'll use the default behavior
-        return null;
-      }
-      list = this.#getCSSVariableNames();
-      postLabelValues = list.map(varName => this.#getCSSVariableValue(varName));
-    } else if (functionName.includes("gradient")) {
-      // For gradient functions we want to display named colors and color functions,
-      // but only if the user didn't already entered a color token after the last comma.
-      list = this.#getCSSValuesForPropertyName("color");
+    if (functionName === "anchor") {
+      return lazy.getAutocompleteDataForAnchorFunction({
+        functionTokens: functionStackEntry.tokens,
+        anchorNames: this.anchorNames,
+      });
     }
 
-    // TODO: Handle other functions, e.g. color functions to autocomplete on relative
-    // color format (Bug 1898273), `color()` to suggest color space (Bug 1898277),
-    // `anchor()` to display existing anchor names (Bug 1903278)
+    if (functionName === "anchor-size") {
+      return lazy.getAutocompleteDataForAnchorSizeFunction({
+        functionTokens: functionStackEntry.tokens,
+        anchorNames: this.anchorNames,
+      });
+    }
 
+    if (functionName === "var") {
+      return this.#getAutocompleteDataForVarFunction(functionStackEntry);
+    }
+
+    if (functionName.includes("gradient")) {
+      return this.#getAutocompleteDataForGradientFunction(
+        functionName,
+        functionStackEntry
+      );
+    }
+
+    if (functionName === "color") {
+      return lazy.getAutocompleteDataForColorFunction({
+        functionTokens: functionStackEntry.tokens,
+        getCSSValuesForPropertyName:
+          this.#getCSSValuesForPropertyName.bind(this),
+      });
+    }
+
+    // For unhandled functions, return an empty list
+    return { list: [] };
+  }
+
+  /**
+   * Compute the autocomplete data for the passed var() function.
+   *
+   * @param {object} functionStackEntry
+   * @param {InspectorCSSToken} functionStackEntry.fnToken: The token for the
+   *        function call
+   * @returns {object} Returns an object of the following shape:
+   *            - {Array<string>} list: The list of autocomplete items
+   *            - {Array<string>} postLabelValue: The values of the variables
+   */
+  #getAutocompleteDataForVarFunction(functionStackEntry) {
+    // We only want to return variables for the first parameters of var(), not for its
+    // fallback. If we get more than one tokens, and given we don't get comments or
+    // whitespace, this means we're in the fallback value already.
+    if (functionStackEntry.tokens.length > 1) {
+      // In such case we'll use the default behavior
+      return null;
+    }
+    const list = this.#getCSSVariableNames();
+    const postLabelValues = list.map(varName =>
+      this.#getCSSVariableValue(varName)
+    );
     return { list, postLabelValues };
+  }
+
+  /**
+   * Compute the autocomplete data for the passed gradient function.
+   *
+   * @param {string} functionName: The gradient function we want the autocomplete items for
+   * @param {object} functionStackEntry
+   * @param {InspectorCSSToken} functionStackEntry.fnToken: The token for the function call
+   * @param {Array<InspectorCSSToken>} functionStackEntry.tokens: The tokens representing the
+   *        function parameters (i.e. what's inside the parenthesis)
+   * @returns {object} Returns an object of the following shape:
+   *            - {Array<string>} list: The list of autocomplete items
+   */
+  #getAutocompleteDataForGradientFunction(functionName, functionStackEntry) {
+    const { tokens } = functionStackEntry;
+    if (
+      functionName === "linear-gradient" ||
+      // repeating-linear-gradient() takes the same values as linear-gradient
+      functionName === "repeating-linear-gradient"
+    ) {
+      return lazy.getAutocompleteDataForLinearGradientFunction({
+        functionTokens: tokens,
+        getCSSValuesForPropertyName:
+          this.#getCSSValuesForPropertyName.bind(this),
+      });
+    }
+
+    // For the other gradient function, provide the list of colors
+    // Eventually we should also properly autocomplete them
+    return { list: this.#getCSSValuesForPropertyName("color") };
   }
 
   /**
@@ -2000,18 +2152,22 @@ class InplaceEditor extends EventEmitter {
    * @return {Array} array of CSS property values (Strings)
    */
   #getCSSValuesForPropertyName(propertyName) {
-    const gridLineList = [];
+    const additionalItems = [];
     if (this.gridLineNames) {
       if (GRID_ROW_PROPERTY_NAMES.includes(this.property.name)) {
-        gridLineList.push(...this.gridLineNames.rows);
+        additionalItems.push(...this.gridLineNames.rows);
       }
       if (GRID_COL_PROPERTY_NAMES.includes(this.property.name)) {
-        gridLineList.push(...this.gridLineNames.cols);
+        additionalItems.push(...this.gridLineNames.cols);
       }
     }
+    if (this.property?.name === "position-anchor" && this.anchorNames) {
+      additionalItems.push(...this.anchorNames);
+    }
+
     // Must be alphabetically sorted before comparing the results with
     // the user input, otherwise we will lose some results.
-    return gridLineList
+    return additionalItems
       .concat(this.cssProperties.getValues(propertyName))
       .sort();
   }

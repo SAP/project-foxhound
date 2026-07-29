@@ -1,5 +1,3 @@
-/* -*- tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -67,6 +65,7 @@ include PrefsTypes;
 include NeckoChannelParams;
 include PSMIPCTypes;
 include LookAndFeelTypes;
+include ProfilerTypes;
 
 #if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
 include protocol PSandboxTesting;
@@ -82,6 +81,7 @@ include "mozilla/dom/DocShellMessageUtils.h";
 include "mozilla/dom/FeaturePolicyUtils.h";
 include "mozilla/dom/GeolocationIPCUtils.h";
 include "mozilla/dom/MediaSessionIPCUtils.h";
+include "mozilla/dom/NavigationAPIIPCUtils.h";
 include "mozilla/dom/PageLoadEventUtils.h";
 include "mozilla/dom/ReferrerInfoUtils.h";
 include "mozilla/glean/DomMetrics.h";
@@ -103,9 +103,11 @@ using mozilla::dom::NativeThreadId from "mozilla/dom/NativeThreadId.h";
 using mozilla::hal::ProcessPriority from "mozilla/HalTypes.h";
 using mozilla::gfx::IntSize from "mozilla/gfx/2D.h";
 using mozilla::gfx::SurfaceFormat from "mozilla/gfx/Types.h";
+using mozilla::gfx::CrashGuardType from "DriverCrashGuard.h";
 using gfxPlatform::GlobalReflowFlags from "gfxPlatform.h";
 using mozilla::dom::TabId from "mozilla/dom/ipc/IdType.h";
 using mozilla::dom::ContentParentId from "mozilla/dom/ipc/IdType.h";
+using mozilla::dom::NavigationType from "mozilla/dom/NavigationAPIIPCUtils.h";
 using mozilla::EventMessage from "mozilla/EventForwards.h";
 using mozilla::LayoutDeviceIntPoint from "Units.h";
 using mozilla::ImagePoint from "Units.h";
@@ -127,6 +129,8 @@ using mozilla::Telemetry::ChildEventData from "mozilla/TelemetryComms.h";
 using mozilla::TimeStamp from "mozilla/TimeStamp.h";
 using mozilla::dom::geolocation::SystemGeolocationPermissionBehavior from "mozilla/dom/GeolocationIPCUtils.h";
 using mozilla::dom::geolocation::GeolocationPermissionStatus from "mozilla/dom/GeolocationIPCUtils.h";
+using mozilla::dom::PermissionName from "mozilla/dom/PermissionMessageUtils.h";
+using mozilla::dom::PermissionState from "mozilla/dom/PermissionMessageUtils.h";
 
 #if defined(XP_WIN)
 [MoveOnly] using mozilla::UntrustedModulesData from "mozilla/UntrustedModulesData.h";
@@ -144,11 +148,13 @@ using mozilla::dom::PermitUnloadResult from "nsIDocumentViewer.h";
 using mozilla::dom::MaybeDiscardedWindowContext from "mozilla/dom/WindowContext.h";
 using mozilla::dom::WindowContextTransaction from "mozilla/dom/WindowContext.h";
 [MoveOnly] using mozilla::ipc::ReadOnlySharedMemoryHandle from "mozilla/ipc/SharedMemoryHandle.h";
-using gfxSparseBitSet from "gfxFontUtils.h";
-using FontVisibility from "gfxFontEntry.h";
+using gfxSparseBitSet from "gfxSparseBitSet.h";
+using FontVisibility from "gfxTypes.h";
 using mozilla::dom::MediaControlAction from "mozilla/dom/MediaControlKeySource.h";
 using mozilla::dom::MediaPlaybackState from "mozilla/dom/MediaPlaybackStatus.h";
 using mozilla::dom::MediaAudibleState from "mozilla/dom/MediaPlaybackStatus.h";
+using mozilla::dom::ControlType from "mozilla/dom/MediaPlaybackStatus.h";
+using mozilla::dom::AudioSessionType from "mozilla/dom/AudioSessionBinding.h";
 using mozilla::dom::MediaMetadataBase from "mozilla/dom/MediaMetadata.h";
 using mozilla::dom::MediaSessionAction from "mozilla/dom/MediaSessionBinding.h";
 using mozilla::dom::MediaSessionPlaybackState from "mozilla/dom/MediaSessionBinding.h";
@@ -162,15 +168,15 @@ using mozilla::dom::JSActorMessageMeta from "mozilla/dom/PWindowGlobal.h";
 using mozilla::PermissionDelegateHandler::DelegatedPermissionList from "mozilla/PermissionDelegateHandler.h";
 [RefCounted] using class nsILayoutHistoryState from "nsILayoutHistoryState.h";
 using class mozilla::dom::SessionHistoryInfo from "mozilla/dom/SessionHistoryEntry.h";
-using struct nsPoint from "nsPoint.h";
+using class mozilla::dom::PreviousSessionHistoryInfo from "mozilla/dom/SessionHistoryEntry.h";
 using struct mozilla::dom::LoadingSessionHistoryInfo from "mozilla/dom/SessionHistoryEntry.h";
+using struct nsPoint from "nsPoint.h";
 using mozilla::media::MediaCodecsSupported from "MediaCodecsSupport.h";
 using mozilla::RemoteMediaIn from "mozilla/RemoteMediaManagerChild.h";
 using mozilla::dom::PerformanceTimingData from "mozilla/dom/PerformanceTiming.h";
 using mozilla::dom::MaybeFeaturePolicyInfo from "mozilla/dom/FeaturePolicy.h";
 using mozilla::dom::Wireframe from "mozilla/dom/DocumentBinding.h";
 using mozilla::PerfStats::MetricMask from "mozilla/PerfStats.h";
-[RefCounted] using class nsIX509Cert from "nsIX509Cert.h";
 using nsIDNSService::ResolverMode from "nsIDNSService.h";
 using mozilla::dom::UserActivation::Modifiers from "mozilla/dom/UserActivation.h";
 using mozilla::dom::PrivateAttributionImpressionType from "mozilla/dom/PrivateAttributionIPCUtils.h";
@@ -297,7 +303,6 @@ union GetFilesResponseResult
 struct BlobURLRegistrationData
 {
   nsCString url;
-  IPCBlob blob;
   nsIPrincipal principal;
   nsCString partitionKey;
   bool revoked;
@@ -692,6 +697,10 @@ child:
 
     async InvalidateScriptCache();
 
+parent:
+    async UpdateScriptCacheEverHitTelemetry(uint64_t aChildId, uint32_t aRate);
+
+child:
     async SetOffline(bool offline);
     async SetConnectivity(bool connectivity);
     async SetCaptivePortalState(int32_t aState);
@@ -766,6 +775,15 @@ child:
     // nsIPermissionManager messages
     async AddPermission(Permission permission);
     async RemoveAllPermissions();
+
+    // Browser-scoped (per-tab) permission forwarded from the parent process.
+    async SetBrowserPermission(nsCString origin, nsCString type,
+                               uint32_t action, uint64_t browserId,
+                               bool isRemoval);
+
+    // Clear all browser-scoped permissions for a given browserId, optionally
+    // filtered by action (0 = clear all regardless of action).
+    async ClearBrowserPermissions(uint64_t browserId, uint32_t actionFilter);
 
     // memory-pressure and memory-pressure-stop notifications.
     async MemoryPressure(nsString reason);
@@ -876,21 +894,11 @@ child:
      */
     async NotifyEmptyHTTPCache();
 
-    /**
-     * Send a `push` event without data to a service worker in the child.
-     */
-    async Push(nsCString scope, nullable nsIPrincipal principal, nsString messageId);
-
-    /**
-     * Send a `push` event with data to a service worker in the child.
-     */
-    async PushWithData(nsCString scope, nullable nsIPrincipal principal,
-                       nsString messageId, uint8_t[] data);
-
     async GetFilesResponse(nsID aID, GetFilesResponseResult aResult);
 
-    async BlobURLRegistration(nsCString aURI, IPCBlob aBlob,
-                              nullable nsIPrincipal aPrincipal, nsCString aPartitionKey);
+    async BlobURLRegistration(nsCString aURI,
+                              nullable nsIPrincipal aPrincipal,
+                              nsCString aPartitionKey);
 
     async BlobURLUnregistration(nsCString[] aURIs);
 
@@ -1021,8 +1029,7 @@ child:
     async InitSandboxTesting(Endpoint<PSandboxTestingChild> aEndpoint);
 #endif
 
-    async LoadURI(MaybeDiscardedBrowsingContext aContext, nsDocShellLoadState aLoadState, bool aSetNavigating)
-        returns (bool aSuccess);
+    async LoadURI(MaybeDiscardedBrowsingContext aContext, nsDocShellLoadState aLoadState, bool aSetNavigating);
 
     async InternalLoad(nsDocShellLoadState aLoadState);
 
@@ -1033,6 +1040,12 @@ child:
     async GoToIndex(MaybeDiscardedBrowsingContext aContext, int32_t aIndex, int32_t? aCancelContentJSEpoch, bool aUserActivation);
     async Reload(MaybeDiscardedBrowsingContext aContext, uint32_t aReloadFlags);
     async StopLoad(MaybeDiscardedBrowsingContext aContext, uint32_t aStopFlags);
+
+    async DeactivateDocuments(MaybeDiscardedBrowsingContext aContext);
+    async ReactivateDocuments(MaybeDiscardedBrowsingContext aContext,
+                              SessionHistoryInfo? aReactivatedEntry,
+                              SessionHistoryInfo[] aNewSHEs,
+                              PreviousSessionHistoryInfo? aPreviousEntryForActivation);
 
     async OnAllowAccessFor(MaybeDiscardedBrowsingContext aParentContext,
                            nsCString aTrackingOrigin,
@@ -1051,7 +1064,8 @@ child:
 
     async HistoryCommitIndexAndLength(MaybeDiscardedBrowsingContext aContext,
                                       uint32_t aIndex, uint32_t aLength,
-                                      nsID aChangeID);
+                                      nsID aChangeID,
+                                      NavigationEntriesTruncation[] aTruncations);
 
     async GetLayoutHistoryState(MaybeDiscardedBrowsingContext aContext)
         returns (nullable nsILayoutHistoryState aState, Wireframe? aWireframe);
@@ -1063,11 +1077,11 @@ child:
     // the `PermitUnloadResult` enum. If `aStartingAt` is an in-process, top-level
     // browsing context, then a "navigate" event will also be dispatched.
     // See https://html.spec.whatwg.org/#preventing-navigation:fire-a-traverse-navigate-event
-    async DispatchBeforeUnloadToSubtree(MaybeDiscardedBrowsingContext aStartingAt, SessionHistoryInfo? info)
+    async DispatchBeforeUnloadToSubtree(MaybeDiscardedBrowsingContext aStartingAt, nsDocShellLoadState? info)
         returns (PermitUnloadResult result);
 
     // Only dispatches "navigate" to the traversable. Used in case we don't want to dispatch beforeunload.
-    async DispatchNavigateToTraversable(MaybeDiscardedBrowsingContext aTraversable, SessionHistoryInfo? info)
+    async DispatchNavigateToTraversable(MaybeDiscardedBrowsingContext aTraversable, nsDocShellLoadState info)
         returns (PermitUnloadResult result);
 
     // Update the cached list of codec supported in the given process.
@@ -1168,8 +1182,8 @@ parent:
     async StartVisitedQueries(nullable nsIURI[] uri);
     async SetURITitle(nullable nsIURI uri, nsString title);
 
-    async LoadURIExternal(nullable nsIURI uri,
-                          nullable nsIPrincipal triggeringPrincipal,
+    async LoadURIExternal(nsIURI uri,
+                          nsIPrincipal triggeringPrincipal,
                           nullable nsIPrincipal redirectPrincipal,
                           MaybeDiscardedBrowsingContext browsingContext,
                           bool wasExternallyTriggered,
@@ -1206,7 +1220,6 @@ parent:
                              nsString aContentDispositionFilename,
                              bool aForceSave,
                              int64_t aContentLength,
-                             bool aWasFileChannel,
                              nullable nsIURI aReferrer,
                              MaybeDiscardedBrowsingContext aContext);
 
@@ -1233,6 +1246,16 @@ parent:
     sync GetClipboard(nsCString[] aTypes, ClipboardType aWhichClipboard,
                       MaybeDiscardedWindowContext aRequestingWindowContext)
         returns (IPCTransferableDataOrError transferableDataOrError);
+
+    // Given a list of supported types, returns the clipboard data for the
+    // first type that matches if the data byte size <= aThreshold.
+    // aRequestingWindowContext is the window that is requesting the clipboard,
+    // which is used for content analysis.
+    async GetClipboardDataIfSmallerThan(nsCString[] aTypes,
+                                        uint64_t aThreshold,
+                                        ClipboardType aWhichClipboard,
+                                        MaybeDiscardedWindowContext aRequestingWindowContext)
+        returns (IPCTransferableDataOrError aResult);
 
     // Requests getting data from clipboard.
     async GetClipboardDataSnapshot(nsCString[] aTypes, ClipboardType aWhichClipboard,
@@ -1278,9 +1301,8 @@ parent:
     // Graphics errors
     async GraphicsError(nsCString aError);
 
-    // Driver crash guards. aGuardType must be a member of CrashGuardType.
-    sync BeginDriverCrashGuard(uint32_t aGuardType) returns (bool crashDetected);
-    sync EndDriverCrashGuard(uint32_t aGuardType);
+    sync BeginDriverCrashGuard(CrashGuardType aGuardType) returns (bool crashDetected);
+    sync EndDriverCrashGuard(CrashGuardType aGuardType);
 
     async AddIdleObserver(uint64_t observerId, uint32_t idleTimeInS);
     async RemoveIdleObserver(uint64_t observerId, uint32_t idleTimeInS);
@@ -1323,6 +1345,9 @@ parent:
      *   The principal of the top level page the request comes from.
      * @param tabId
      *   To identify which tab issues this request.
+     * @param aIgnoreAllowSitePermission
+     *   If true, ignore SitePermissions that indicate that this request
+     *   should be permitted.
      *
      * NOTE: The principal is untrusted in the parent process. Only
      *       principals that can live in the content process should
@@ -1333,17 +1358,18 @@ parent:
                                     nullable nsIPrincipal aTopLevelPrincipal,
                                     bool aIsHandlingUserInput,
                                     bool aMaybeUnsafePermissionDelegate,
-                                    TabId tabId);
+                                    TabId tabId,
+                                    bool aIgnoreAllowSitePermission);
 
     /**
      * If the profiler is running when the process shuts down, this sends the
-     * profile data collected so far.
+     * profile data collected so far, along with any additional information
+     * (shared libraries, JS source contents) gathered alongside it.
      *
-     * @param aProfile
-     *   This may contain an empty string (unknown issue), an error message
-     *   starting with '*', or a profile as a stringified JSON object.
+     * The profile string inside may be empty (unknown issue), an error message
+     * starting with '*', or a profile as a stringified JSON object.
      */
-    async ShutdownProfile(nsCString aProfile);
+    async ShutdownProfile(ProfileAndAdditionalInformation aProfileAndAdditionalInformation);
 
     /**
      * This sends any collected perf stats data on shutdown.
@@ -1540,6 +1566,12 @@ parent:
      */
     sync GetHyphDict(nullable nsIURI aURI) returns (ReadOnlySharedMemoryHandle aHandle);
 
+    /**
+     * Clear out the ContentParent's reference to a ParentProcessChannelHandle
+     * which no longer has outstanding references from the content process.
+     */
+    async DropParentProcessChannelHandle(nsID aUuid);
+
     async CreateWindow(PBrowser aThisTab,
                        MaybeDiscardedBrowsingContext aParent,
                        PBrowser aNewTab,
@@ -1559,35 +1591,6 @@ parent:
                        bool aTextDirectiveUserActivation)
         returns (CreatedWindowInfo window);
 
-    async CreateWindowInDifferentProcess(
-      PBrowser aThisTab,
-      MaybeDiscardedBrowsingContext aParent,
-      uint32_t aChromeFlags,
-      bool aCalledFromJS,
-      bool aTopLevelCreatedByContent,
-      nullable nsIURI aURIToLoad,
-      nsCString aFeatures,
-      Modifiers aModifiers,
-      nsString aName,
-      nullable nsIPrincipal aTriggeringPrincipal,
-      nullable nsIPolicyContainer aPolicyContainer,
-      nullable nsIReferrerInfo aReferrerInfo,
-      OriginAttributes aOriginAttributes,
-      bool aUserActivation,
-      bool aTextDirectiveUserActivation);
-
-    /**
-     * Notify `push-message` observers without data in the parent.
-     */
-    async NotifyPushObservers(nsCString scope, nullable nsIPrincipal principal,
-                              nsString messageId);
-
-    /**
-     * Notify `push-message` observers with data in the parent.
-     */
-    async NotifyPushObserversWithData(nsCString scope, nullable nsIPrincipal principal,
-                                      nsString messageId, uint8_t[] data);
-
      async GetFilesRequest(nsID aID, nsString[] aDirectories, bool aRecursiveFlag);
      async DeleteGetFilesRequest(nsID aID);
 
@@ -1599,7 +1602,7 @@ parent:
     /**
      * Messages for communicating child Glean data to the parent process
      */
-    async RecordPageLoadEvent(PageloadEventData event, TimeStamp navigationStartTime, uint64_t aAndroidAppLinkLoadIdentifier);
+    async RecordPageLoadEvent(PageloadEventData event, TimeStamp navigationStartTime, MaybeDiscardedBrowsingContext aBrowsingContext);
 
     /**
      * Messages for communicating child Telemetry to the parent process
@@ -1616,14 +1619,6 @@ parent:
     async BHRThreadHang(HangDetails aHangDetails);
 
     /*
-     * Adds a certificate exception for the given hostname and port.
-     */
-    async AddCertException(nullable nsIX509Cert aCert, nsCString aHostName,
-                           int32_t aPort, OriginAttributes aOriginAttributes,
-                           bool aIsTemporary)
-          returns (nsresult success);
-
-    /*
      * Determines whether storage access can be granted automatically by the
      * storage access API without showing a user prompt.
      */
@@ -1638,10 +1633,10 @@ parent:
                                                   MaybeDiscardedBrowsingContext aParentContext,
                                                   nullable nsIPrincipal aTrackingPrincipal,
                                                   nsCString aTrackingOrigin,
-                                                  int aAllowMode,
+                                                  StorageAccessPromptChoices aAllowMode,
                                                   StorageAccessPermissionGrantedReason? aReason,
                                                   bool aFrameOnly)
-          returns (bool unused);
+          returns (bool granted);
 
     async CompleteAllowAccessFor(MaybeDiscardedBrowsingContext aParentContext,
                                  uint64_t aTopLevelWindowId,
@@ -1669,10 +1664,14 @@ parent:
 
    /**
     * When media became audible or inaudible in content process, we have to
-    * notify chrome process in order to which tab is audible.
+    * notify chrome process in order to which tab is audible. The aType
+    * parameter distinguishes controllable sources (full media-control
+    * lifecycle) from uncontrollable sources that only contribute audibility.
     */
     async NotifyMediaAudibleChanged(MaybeDiscardedBrowsingContext aContext,
-                                    MediaAudibleState aState);
+                                    MediaAudibleState aState,
+                                    ControlType aType,
+                                    AudioSessionType aSessionType);
 
    /**
     * When media enabled or disabled the Picture-in-Picture mode, we have to
@@ -1843,19 +1842,6 @@ both:
     async AsyncMessage(nsString aMessage, StructuredCloneData aData);
 
     /**
-     * Notify `push-subscription-modified` observers in the parent and child.
-     */
-    async NotifyPushSubscriptionModifiedObservers(nsCString scope,
-                                                  nullable nsIPrincipal principal);
-
-    /**
-     * Send a Push error message to all service worker clients in the parent or
-     * child.
-     */
-    async PushError(nsCString scope, nullable nsIPrincipal principal, nsString message,
-                    uint32_t flags);
-
-    /**
      * Creates a new BrowsingContext, initialized with the values provided in
      * `BrowsingContextInitializer`.
      *
@@ -1956,12 +1942,16 @@ child:
     // assembly. Buffer contains bincoded Rust structs.
     async FlushFOGData() returns (ByteBuf buf);
 
+    // Notifies content processes when an OS-level permission changes,
+    // so that PermissionStatus objects can fire onchange events.
+    async SystemPermissionChanged(PermissionName aName, PermissionState aState);
+
 parent:
     async SetContainerFeaturePolicy(MaybeDiscardedBrowsingContext aContainerContext,
                                     MaybeFeaturePolicyInfo aContainerFeaturePolicyInfo);
 
     // Notify parent process that aContext must update its ancestor origins list
-    // This is only used for about:blank, because for normal navigations 
+    // This is only used for about:blank, because for normal navigations
     // the internal ancestor origins list will be created during load.
     async UpdateAncestorOriginsList(MaybeDiscardedBrowsingContext aContext);
 

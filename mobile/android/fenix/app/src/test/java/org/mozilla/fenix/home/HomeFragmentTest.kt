@@ -5,22 +5,22 @@
 package org.mozilla.fenix.home
 
 import android.content.Context
+import android.view.View
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.spyk
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mozilla.fenix.FenixApplication
-import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.components.Core
 import org.mozilla.fenix.ext.application
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.utils.Settings
 import org.mozilla.fenix.wallpapers.Wallpaper
+import kotlin.test.assertNotNull
 
 class HomeFragmentTest {
 
@@ -28,12 +28,14 @@ class HomeFragmentTest {
     private lateinit var context: Context
     private lateinit var core: Core
     private lateinit var homeFragment: HomeFragment
+    private lateinit var view: View
 
     @Before
     fun setup() {
         settings = mockk(relaxed = true)
         context = mockk(relaxed = true)
         core = mockk(relaxed = true)
+        view = mockk(relaxed = true)
 
         val fenixApplication: FenixApplication = mockk(relaxed = true)
 
@@ -43,35 +45,14 @@ class HomeFragmentTest {
         every { homeFragment.context } answers { context }
         every { context.components.settings } answers { settings }
         every { context.components.core } answers { core }
-        every { homeFragment.binding } returns mockk(relaxed = true)
         every { homeFragment.viewLifecycleOwner } returns mockk(relaxed = true)
-    }
-
-    @Test
-    fun `GIVEN the user is in normal mode WHEN checking if should enable wallpaper THEN return true`() {
-        val activity: HomeActivity = mockk {
-            every { themeManager.currentTheme.isPrivate } returns false
-        }
-        every { homeFragment.activity } returns activity
-
-        assertTrue(homeFragment.shouldEnableWallpaper())
-    }
-
-    @Test
-    fun `GIVEN the user is in private mode WHEN checking if should enable wallpaper THEN return false`() {
-        val activity: HomeActivity = mockk {
-            every { themeManager.currentTheme.isPrivate } returns true
-        }
-        every { homeFragment.activity } returns activity
-
-        assertFalse(homeFragment.shouldEnableWallpaper())
     }
 
     @Test
     fun `WHEN isMicrosurveyEnabled is true GIVEN a call to initializeMicrosurveyFeature THEN messagingFeature is initialized`() {
         assertNull(homeFragment.messagingFeatureMicrosurvey.get())
 
-        homeFragment.initializeMicrosurveyFeature(isMicrosurveyEnabled = true)
+        homeFragment.initializeMicrosurveyFeature(isMicrosurveyEnabled = true, view = view)
 
         assertNotNull(homeFragment.messagingFeatureMicrosurvey.get())
     }
@@ -80,57 +61,9 @@ class HomeFragmentTest {
     fun `WHEN isMicrosurveyEnabled is false GIVEN a call to initializeMicrosurveyFeature THEN messagingFeature is not initialized`() {
         assertNull(homeFragment.messagingFeatureMicrosurvey.get())
 
-        homeFragment.initializeMicrosurveyFeature(isMicrosurveyEnabled = false)
+        homeFragment.initializeMicrosurveyFeature(isMicrosurveyEnabled = false, view = view)
 
         assertNull(homeFragment.messagingFeatureMicrosurvey.get())
-    }
-
-    @Test
-    fun `GIVEN canShowCFR and shouldShowCFR are true WHEN maybeShowEncourageSearchCfr is called THEN the cfr is shown and exposure recorded`() {
-        var cfrShown = false
-        var exposureRecorded = false
-
-        homeFragment.maybeShowEncourageSearchCfr(
-            canShowCfr = true,
-            shouldShowCFR = true,
-            showCfr = { cfrShown = true },
-            recordExposure = { exposureRecorded = true },
-        )
-
-        assertTrue(cfrShown)
-        assertTrue(exposureRecorded)
-    }
-
-    @Test
-    fun `GIVEN canShowCFR is false WHEN maybeShowEncourageSearchCfr is called THEN the cfr is not shown and exposure is not recorded`() {
-        var cfrShown = false
-        var exposureRecorded = false
-
-        homeFragment.maybeShowEncourageSearchCfr(
-            canShowCfr = false,
-            shouldShowCFR = true,
-            showCfr = { cfrShown = true },
-            recordExposure = { exposureRecorded = true },
-        )
-
-        assertFalse(cfrShown)
-        assertFalse(exposureRecorded)
-    }
-
-    @Test
-    fun `GIVEN exposureRecorded is false WHEN maybeShowEncourageSearchCfr is called THEN the cfr is not shown and exposure is not recorded`() {
-        var cfrShown = false
-        var exposureRecorded = false
-
-        homeFragment.maybeShowEncourageSearchCfr(
-            canShowCfr = true,
-            shouldShowCFR = false,
-            showCfr = { cfrShown = true },
-            recordExposure = { exposureRecorded = true },
-        )
-
-        assertFalse(cfrShown)
-        assertFalse(exposureRecorded)
     }
 
     @Test
@@ -140,8 +73,23 @@ class HomeFragmentTest {
     }
 
     @Test
-    fun `GIVEN wallpaper is EdgeToEdge WHEN isEdgeToEdgeBackgroundEnabled is called THEN return true`() {
+    fun `GIVEN edgeToEdge is enabled by nimbus and wallpaper is EdgeToEdge WHEN isEdgeToEdgeBackgroundEnabled is called THEN return true`() {
+        every { settings.enableHomepageEdgeToEdgeBackgroundFeature } returns true
         every { settings.currentWallpaperName } returns Wallpaper.EDGE_TO_EDGE
         assertTrue(homeFragment.isEdgeToEdgeBackgroundEnabled())
+    }
+
+    @Test
+    fun `GIVEN edgeToEdge is disabled by nimbus wallpaper is Default WHEN isEdgeToEdgeBackgroundEnabled is called THEN return true`() {
+        every { settings.enableHomepageEdgeToEdgeBackgroundFeature } returns false
+        every { settings.currentWallpaperName } returns Wallpaper.DEFAULT
+        assertFalse(homeFragment.isEdgeToEdgeBackgroundEnabled())
+    }
+
+    @Test
+    fun `GIVEN edgeToEdge is disabled by nimbus wallpaper is EdgeToEdge WHEN isEdgeToEdgeBackgroundEnabled is called THEN return true`() {
+        every { settings.enableHomepageEdgeToEdgeBackgroundFeature } returns false
+        every { settings.currentWallpaperName } returns Wallpaper.EDGE_TO_EDGE
+        assertFalse(homeFragment.isEdgeToEdgeBackgroundEnabled())
     }
 }

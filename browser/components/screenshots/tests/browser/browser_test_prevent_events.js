@@ -20,7 +20,7 @@ add_task(async function test_events_prevented() {
       helper.triggerUIFromToolbar();
       await helper.waitForOverlay();
 
-      let contentBounds = await ContentTask.spawn(browser, null, async () => {
+      let contentBounds = await SpecialPowers.spawn(browser, [], async () => {
         let { ScreenshotsComponentChild } = ChromeUtils.importESModule(
           "resource:///actors/ScreenshotsComponentChild.sys.mjs"
         );
@@ -73,14 +73,14 @@ add_task(async function test_events_prevented() {
       const menu = document.getElementById("contentAreaContextMenu");
 
       let wheelEventPromise = helper.waitForContentEventOnce("wheel");
-      await ContentTask.spawn(browser, null, () => {
-        content.dispatchEvent(new content.WheelEvent("wheel"));
+      await SpecialPowers.spawn(browser, [], () => {
+        content.dispatchEvent(new content.WheelEvent("wheel", { deltaY: 1 }));
       });
       await wheelEventPromise;
 
-      let contentEventsReceived = await ContentTask.spawn(
+      let contentEventsReceived = await SpecialPowers.spawn(
         browser,
-        null,
+        [],
         async () => {
           return content.eventsReceived;
         }

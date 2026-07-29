@@ -195,7 +195,7 @@ export default class PasswordValidationInputs extends MozLitElement {
 
   contentTemplate() {
     return html`
-      <div id="password-inputs-wrapper" aria-live="polite">
+      <div id="password-inputs-wrapper">
         <form id="password-inputs-form">
           <!--TODO: (bug 1909983) change first input field label for the "change-password" dialog-->
           <label id="new-password-label" for="new-password-input">
@@ -210,7 +210,7 @@ export default class PasswordValidationInputs extends MozLitElement {
                 id="new-password-input"
                 minlength="8"
                 required
-                aria-describedby="password-rules-tooltip"
+                aria-describedby="password-rules"
                 @input=${this.handleChangeNewPassword}
                 @blur=${this.handleBlurNewPassword}
                 @mouseenter=${this.handleFocusNewPassword}

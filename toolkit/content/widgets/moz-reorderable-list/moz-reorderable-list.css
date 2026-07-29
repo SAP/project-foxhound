@@ -2,18 +2,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+@import url("chrome://global/content/elements/moz-reorderable-list.tokens.css");
+
 :host {
   position: relative;
   display: block;
-
-  --moz-reorderable-list-indicator-height: 2px;
 }
 
 .indicator {
-  height: var(--moz-reorderable-list-indicator-height);
-  background-color: var(--color-accent-primary);
+  height: var(--reorderable-list-indicator-size);
+  background-color: var(--reorderable-list-indicator-background-color);
   pointer-events: none;
-  margin-block: calc(-1 * var(--moz-reorderable-list-indicator-height));
+  /* The js is dependent this negative margin based on the height of the indicator
+  to ensure the indicator remains visible when moving an item to the top of the
+  container - see Bug 2033867 */
+  margin-block: calc(-1 * var(--reorderable-list-indicator-margin));
   width: 4em;
   position: absolute;
   z-index: 1;

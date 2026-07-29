@@ -10,6 +10,13 @@ const { TabNotes } = ChromeUtils.importESModule(
 
 const TAB_NOTE_PREVIEW_PANEL_ID = "tab-note-preview-panel";
 
+function triggerDblclickOn(target) {
+  let promise = BrowserTestUtils.waitForEvent(target, "dblclick");
+  EventUtils.synthesizeMouseAtCenter(target, { clickCount: 1 });
+  EventUtils.synthesizeMouseAtCenter(target, { clickCount: 2 });
+  return promise;
+}
+
 async function openNotePreview(tab, win = window) {
   const previewShown = BrowserTestUtils.waitForPopupEvent(
     win.document.getElementById(TAB_NOTE_PREVIEW_PANEL_ID),
@@ -255,6 +262,288 @@ add_task(async function tabPreviewOpensWhenReturningFromNoteIcon() {
   );
   tabPreviewPanel.hidePopup();
   await panelHidden;
+
+  BrowserTestUtils.removeTab(tab);
+  await resetState();
+  await TabNotes.reset();
+});
+
+/**
+ * Test that the tab note editor can be opened by double-clicking the note text
+ * or clicking the edit icon in the tab note preview panel.
+ */
+add_task(async function tabNoteEditFromPreview() {
+  const notePreviewPanel = document.getElementById(TAB_NOTE_PREVIEW_PANEL_ID);
+  const tabNotePanel = document.getElementById("tabNotePanel");
+  const noteText = "Test note for edit";
+  const tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "https://example.com/"
+  );
+
+  let tabNoteCreated = BrowserTestUtils.waitForEvent(tab, "TabNote:Created");
+  await TabNotes.set(tab, noteText);
+  await tabNoteCreated;
+
+  info("open edit note panel by double-clicking on note text");
+  await openNotePreview(tab);
+  const noteTextEl = notePreviewPanel.querySelector(".tab-note-preview-text");
+  Assert.ok(noteTextEl.textContent.trim(), "note text is visible");
+
+  let panelShown = BrowserTestUtils.waitForPopupEvent(tabNotePanel, "shown");
+  let previewHidden = BrowserTestUtils.waitForPopupEvent(
+    notePreviewPanel,
+    "hidden"
+  );
+  await triggerDblclickOn(noteTextEl);
+  await Promise.all([panelShown, previewHidden]);
+  Assert.ok(true, "double-click on note text opens edit panel");
+
+  let menuHidden = BrowserTestUtils.waitForPopupEvent(tabNotePanel, "hidden");
+  tabNotePanel.querySelector("#tab-note-editor-button-cancel").click();
+  await menuHidden;
+
+  info("open edit note panel by single-clicking the edit icon");
+  await openNotePreview(tab);
+  const editIcon = notePreviewPanel.querySelector(
+    ".tab-note-preview-edit-icon"
+  );
+
+  panelShown = BrowserTestUtils.waitForPopupEvent(tabNotePanel, "shown");
+  previewHidden = BrowserTestUtils.waitForPopupEvent(
+    notePreviewPanel,
+    "hidden"
+  );
+  editIcon.click();
+  await Promise.all([panelShown, previewHidden]);
+  Assert.ok(true, "click on edit icon opens edit panel");
+
+  menuHidden = BrowserTestUtils.waitForPopupEvent(tabNotePanel, "hidden");
+  tabNotePanel.querySelector("#tab-note-editor-button-cancel").click();
+  await menuHidden;
+
+  BrowserTestUtils.removeTab(tab);
+  await resetState();
+  await TabNotes.reset();
+});
+
+/**
+ * Test that the delete button is hidden when creating a new note (no existing
+ * note) and visible when editing an existing note.
+ */
+add_task(async function tabNoteEditorDeleteButtonVisibility() {
+  const tabNotePanel = document.getElementById("tabNotePanel");
+  const deleteButton = tabNotePanel.querySelector(
+    "#tab-note-editor-button-delete"
+  );
+  const tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "https://example.com/"
+  );
+
+  const headerEl = tabNotePanel.querySelector("#tab-note-editor-header");
+  const separatorEl = tabNotePanel.querySelector("#tab-note-editor-separator");
+
+  info("Open editor with no existing note (create mode)");
+  let panelShown = BrowserTestUtils.waitForPopupEvent(tabNotePanel, "shown");
+  gBrowser.tabNoteMenu.openPanel(tab);
+  await panelShown;
+
+  Assert.ok(
+    deleteButton.hidden,
+    "Delete button is hidden in create mode (no existing note)"
+  );
+  Assert.ok(
+    BrowserTestUtils.isVisible(headerEl),
+    "Header is visible in create mode"
+  );
+  Assert.ok(
+    BrowserTestUtils.isVisible(separatorEl),
+    "Separator is visible in create mode"
+  );
+
+  let panelHidden = BrowserTestUtils.waitForPopupEvent(tabNotePanel, "hidden");
+  tabNotePanel.querySelector("#tab-note-editor-button-cancel").click();
+  await panelHidden;
+
+  info("Create a note and reopen editor (edit mode)");
+  let tabNoteCreated = BrowserTestUtils.waitForEvent(tab, "TabNote:Created");
+  await TabNotes.set(tab, "A note to edit");
+  await tabNoteCreated;
+
+  panelShown = BrowserTestUtils.waitForPopupEvent(tabNotePanel, "shown");
+  gBrowser.tabNoteMenu.openPanel(tab);
+  await panelShown;
+
+  Assert.ok(
+    !deleteButton.hidden,
+    "Delete button is visible in edit mode (existing note)"
+  );
+  Assert.ok(
+    !BrowserTestUtils.isVisible(headerEl),
+    "Header is hidden in edit mode"
+  );
+  Assert.ok(
+    !BrowserTestUtils.isVisible(separatorEl),
+    "Separator is hidden in edit mode"
+  );
+
+  panelHidden = BrowserTestUtils.waitForPopupEvent(tabNotePanel, "hidden");
+  tabNotePanel.querySelector("#tab-note-editor-button-cancel").click();
+  await panelHidden;
+
+  BrowserTestUtils.removeTab(tab);
+  await resetState();
+  await TabNotes.reset();
+});
+
+/**
+ * Test that clicking the delete button removes the note and closes the panel.
+ */
+add_task(async function tabNoteEditorDeleteNote() {
+  const tabNotePanel = document.getElementById("tabNotePanel");
+  const deleteButton = tabNotePanel.querySelector(
+    "#tab-note-editor-button-delete"
+  );
+  const tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "https://example.com/"
+  );
+
+  let tabNoteCreated = BrowserTestUtils.waitForEvent(tab, "TabNote:Created");
+  await TabNotes.set(tab, "Note to delete");
+  await tabNoteCreated;
+
+  Assert.ok(tab.hasAttribute("tab-note"), "Tab has tab-note attribute");
+
+  let panelShown = BrowserTestUtils.waitForPopupEvent(tabNotePanel, "shown");
+  gBrowser.tabNoteMenu.openPanel(tab);
+  await panelShown;
+
+  Assert.ok(!deleteButton.hidden, "Delete button is visible in edit mode");
+
+  let tabNoteRemoved = BrowserTestUtils.waitForEvent(tab, "TabNote:Removed");
+  let panelHidden = BrowserTestUtils.waitForPopupEvent(tabNotePanel, "hidden");
+  deleteButton.click();
+  await Promise.all([tabNoteRemoved, panelHidden]);
+
+  Assert.ok(
+    !tab.hasAttribute("tab-note"),
+    "Tab note attribute removed after deletion"
+  );
+  Assert.equal(
+    await TabNotes.get(tab),
+    undefined,
+    "Note is gone from storage after deletion"
+  );
+
+  BrowserTestUtils.removeTab(tab);
+  await resetState();
+  await TabNotes.reset();
+});
+
+/**
+ * Test that opening the editor from the preview panel sets edit mode, so the
+ * delete button is visible.
+ */
+add_task(async function tabNoteEditorDeleteButtonVisibleFromPreview() {
+  const notePreviewPanel = document.getElementById(TAB_NOTE_PREVIEW_PANEL_ID);
+  const tabNotePanel = document.getElementById("tabNotePanel");
+  const deleteButton = tabNotePanel.querySelector(
+    "#tab-note-editor-button-delete"
+  );
+  const tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "https://example.com/"
+  );
+
+  let tabNoteCreated = BrowserTestUtils.waitForEvent(tab, "TabNote:Created");
+  await TabNotes.set(tab, "Note for preview edit");
+  await tabNoteCreated;
+
+  await openNotePreview(tab);
+
+  const editIcon = notePreviewPanel.querySelector(
+    ".tab-note-preview-edit-icon"
+  );
+  let panelShown = BrowserTestUtils.waitForPopupEvent(tabNotePanel, "shown");
+  let previewHidden = BrowserTestUtils.waitForPopupEvent(
+    notePreviewPanel,
+    "hidden"
+  );
+  editIcon.click();
+  await Promise.all([panelShown, previewHidden]);
+
+  Assert.ok(
+    !deleteButton.hidden,
+    "Delete button is visible when editor is opened from the preview panel"
+  );
+
+  let panelHidden = BrowserTestUtils.waitForPopupEvent(tabNotePanel, "hidden");
+  tabNotePanel.querySelector("#tab-note-editor-button-cancel").click();
+  await panelHidden;
+
+  BrowserTestUtils.removeTab(tab);
+  await resetState();
+  await TabNotes.reset();
+});
+
+/**
+ * Test that editing a note from the preview panel records the correct
+ * telemetry source ("note_preview").
+ */
+add_task(async function tabNotePreviewTelemetrySource() {
+  const notePreviewPanel = document.getElementById(TAB_NOTE_PREVIEW_PANEL_ID);
+  const tabNotePanel = document.getElementById("tabNotePanel");
+  const tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "https://example.com/"
+  );
+
+  let tabNoteCreated = BrowserTestUtils.waitForEvent(tab, "TabNote:Created");
+  await TabNotes.set(tab, "Telemetry test note");
+  await tabNoteCreated;
+
+  // Reset telemetry so the initial set() event doesn't interfere.
+  await Services.fog.testFlushAllChildren();
+  Services.fog.testResetFOG();
+
+  info("Open editor from preview panel via edit icon");
+  await openNotePreview(tab);
+  const editIcon = notePreviewPanel.querySelector(
+    ".tab-note-preview-edit-icon"
+  );
+
+  let panelShown = BrowserTestUtils.waitForPopupEvent(tabNotePanel, "shown");
+  let previewHidden = BrowserTestUtils.waitForPopupEvent(
+    notePreviewPanel,
+    "hidden"
+  );
+  editIcon.click();
+  await Promise.all([panelShown, previewHidden]);
+
+  info("Edit the note text and save");
+  let textarea = tabNotePanel.querySelector("textarea");
+  textarea.value = "";
+  let input = BrowserTestUtils.waitForEvent(textarea, "input");
+  EventUtils.sendString("Updated note from preview", window);
+  await input;
+
+  let tabNoteEdited = BrowserTestUtils.waitForEvent(tab, "TabNote:Edited");
+  let menuHidden = BrowserTestUtils.waitForPopupEvent(tabNotePanel, "hidden");
+  tabNotePanel.querySelector("#tab-note-editor-button-save").click();
+  await Promise.all([tabNoteEdited, menuHidden]);
+
+  await BrowserTestUtils.waitForCondition(
+    () => Glean.tabNotes.edited.testGetValue()?.length,
+    "wait for edited telemetry event"
+  );
+  const [editedEvent] = Glean.tabNotes.edited.testGetValue();
+  Assert.equal(
+    editedEvent.extra.source,
+    "note_preview",
+    "edited event source should be note_preview when opened from preview panel"
+  );
 
   BrowserTestUtils.removeTab(tab);
   await resetState();

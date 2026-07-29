@@ -162,9 +162,9 @@ bitflags! {
     struct DataFlags: u16 {
         const TERMINATED = 1 << 0; // IsTerminated returns true
         const VOIDED = 1 << 1; // IsVoid returns true
-        const REFCOUNTED = 1 << 2; // mData points to a heap-allocated, shareable, refcounted
-                                    // buffer
-        const OWNED = 1 << 3; // mData points to a heap-allocated, raw buffer
+        const STRINGBUFFER = 1 << 2; // mData points to a heap-allocated, shareable StringBuffer
+        const OWNED = 1 << 3; // mData points to a heap-allocated, raw buffer, or a
+                              // StringBuffer, depending on the presence of STRINGBUFFER
         const INLINE = 1 << 4; // mData points to a writable, inline buffer
         const LITERAL = 1 << 5; // mData points to a string literal; TERMINATED will also be set
     }
@@ -1533,7 +1533,7 @@ pub mod test_helpers {
     pub unsafe extern "C" fn Rust_Test_NsStringFlags(
         f_terminated: *mut u16,
         f_voided: *mut u16,
-        f_refcounted: *mut u16,
+        f_stringbuffer: *mut u16,
         f_owned: *mut u16,
         f_inline: *mut u16,
         f_literal: *mut u16,
@@ -1542,7 +1542,7 @@ pub mod test_helpers {
     ) {
         *f_terminated = DataFlags::TERMINATED.bits();
         *f_voided = DataFlags::VOIDED.bits();
-        *f_refcounted = DataFlags::REFCOUNTED.bits();
+        *f_stringbuffer = DataFlags::STRINGBUFFER.bits();
         *f_owned = DataFlags::OWNED.bits();
         *f_inline = DataFlags::INLINE.bits();
         *f_literal = DataFlags::LITERAL.bits();

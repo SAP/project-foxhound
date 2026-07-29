@@ -362,9 +362,14 @@ var browserTests = [
     "<pre>foo<br><br>{}<br></pre>",
     [true],
     {"insertparagraph":[false,false,"",false,false,""]}],
+// The trailing linefeed is invisible so that new empty line should be inserted
+// to the end of the <pre>.
 ["<pre>foo&#10;[]</pre>",
     [["insertparagraph",""]],
-    "<pre>foo\n<br>{}<br></pre>",
+    ["<pre>foo<br>\n</pre>",
+     "<pre>foo\n<br></pre>",
+     "<pre>foo<br><br></pre>",
+    ],
     [true],
     {"insertparagraph":[false,false,"",false,false,""]}],
 ["<pre>foo[]&#10;</pre>",
@@ -2763,4 +2768,13 @@ var browserTests = [
      '<div style="white-space:pre-line">abc&nbsp;&nbsp;</div><div style="white-space:pre-line"><br></div>'],
     [true],
     {}],
+
+// The content of <output> should be editable and the <output> itself should be splittable.
+// This test does check them. So, how to split the <output> is not scope of this test.
+["<output>a[]b</output>",
+  [["defaultparagraphseparator","div"],["insertparagraph",""]],
+  ["<output>a</output><div><output>b</output></div>",
+   "<div><output>a</output></div><div><output>b</output></div>"],
+  [true,true],
+  {}],
 ]

@@ -9,7 +9,7 @@ path = "lib.rs"
 
 [dependencies.getrandom]
 version = "0.3.1"
-no-default-features = true
+default-features = false
 
 [features]
 custom = []

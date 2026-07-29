@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -183,9 +182,11 @@ class ExtensionProtocolHandler final : public nsISubstitutingProtocolHandler,
 
   // On development builds, this points to development repo. Lazily set.
   nsCOMPtr<nsIFile> mDevRepo;
+  // objdir is usually in mDevRepo but can be customized with MOZ_OBJDIR.
+  nsCOMPtr<nsIFile> mDevObjDir;
 
   // Set to true once we've already tried to load the dev repo path,
-  // allowing for lazy initialization of |mDevRepo|.
+  // allowing for lazy initialization of |mDevRepo| and |mDevObjDir|.
   bool mAlreadyCheckedDevRepo{false};
 #endif /* XP_MACOSX */
 

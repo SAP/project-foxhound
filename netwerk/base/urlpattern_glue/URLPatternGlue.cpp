@@ -123,9 +123,10 @@ Maybe<UrlPatternComponentResult> ComponentMatches(
 
     nsTArray<nsCString> groupNames;
     urlpattern_component_get_group_name_list(aComponentPtr, &groupNames);
-    for (size_t i = 0; i < matches.Length(); i++) {
-      // Insert all capture groups, both matched and unmatched
-      // The valid flag will be used later to set undefined vs string value
+    // Iterate over groupNames length rather than matches length because
+    // nested named capture groups (e.g. (?<x>...)) produce extra entries
+    // in the regex exec result that don't correspond to URLPattern groups.
+    for (size_t i = 0; i < groupNames.Length() && i < matches.Length(); i++) {
       res.mGroups.InsertOrUpdate(groupNames[i], std::move(matches[i]));
     }
   }

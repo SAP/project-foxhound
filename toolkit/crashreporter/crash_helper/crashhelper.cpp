@@ -56,10 +56,12 @@ static void free_breakpad_data(BreakpadRawData aData) {
 #define GET_CONNECTOR_ARG(arguments) ((arguments)[4])
 #ifdef XP_WIN
 #  define GET_LISTENER_ARG(arguments) ((arguments)[5])
-#  define ARG_NUM (6)
+#  define GET_CLIENT_HANDLE_ARG(arguments) ((arguments)[6])
+#  define ARG_NUM (7)
 #else
 static char sDummy[1] = "";
 #  define GET_LISTENER_ARG(arguments) (sDummy)
+#  define GET_CLIENT_HANDLE_ARG(arguments) (sDummy)
 #  define ARG_NUM (5)
 #endif  // XP_WIN
 
@@ -75,9 +77,11 @@ int main(int argc, char* argv[]) {
   char* minidump_path = GET_MINIDUMP_PATH_ARG(argv);
   char* connector = GET_CONNECTOR_ARG(argv);
   char* listener = GET_LISTENER_ARG(argv);
+  char* client_handle = GET_CLIENT_HANDLE_ARG(argv);
 
-  int res = crash_generator_logic_desktop(client_pid, breakpad_data,
-                                          minidump_path, listener, connector);
+  int res =
+      crash_generator_logic_desktop(client_pid, client_handle, breakpad_data,
+                                    minidump_path, listener, connector);
   free_breakpad_data(breakpad_data);
   exit(res);
 }

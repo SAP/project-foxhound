@@ -6,11 +6,11 @@
  * Module doing most of the content process work for the password manager.
  */
 
-// Disable use-ownerGlobal since LoginForm doesn't have it.
-/* eslint-disable mozilla/use-ownerGlobal */
+// Disable use-documentGlobal since LoginForm doesn't have it.
+/* eslint-disable mozilla/use-documentGlobal */
 
 const PASSWORD_INPUT_ADDED_COALESCING_THRESHOLD_MS = 1;
-// The amount of time a context menu event supresses showing a
+// The amount of time a context menu event suppresses showing a
 // popup from a focus event in ms. This matches the threshold in
 // toolkit/components/satchel/nsFormFillController.cpp
 const AUTOCOMPLETE_AFTER_RIGHT_CLICK_THRESHOLD_MS = 400;
@@ -731,7 +731,7 @@ export class LoginFormState {
     let acCredentialType = focusedField.getAutocompleteInfo()?.credentialType;
     if (acCredentialType == "webauthn") {
       const actor =
-        focusedField.ownerGlobal.windowGlobalChild.getActor("LoginManager");
+        focusedField.documentGlobal.windowGlobalChild.getActor("LoginManager");
       actor.markAsAutoCompletableField(focusedField);
     }
 
@@ -2836,7 +2836,7 @@ export class LoginManagerChild extends JSWindowActorChild {
 
       if (
         !userTriggered &&
-        !form.rootElement.ownerGlobal.windowGlobalChild.sameOriginWithTop
+        !form.rootElement.documentGlobal.windowGlobalChild.sameOriginWithTop
       ) {
         lazy.log("Not filling form; it is in a cross-origin subframe.");
         autofillResult = AUTOFILL_RESULT.FORM_IN_CROSSORIGIN_SUBFRAME;

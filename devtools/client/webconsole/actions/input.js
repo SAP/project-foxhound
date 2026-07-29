@@ -18,7 +18,7 @@ const {
   getAllPrefs,
 } = require("resource://devtools/client/webconsole/selectors/prefs.js");
 const ResourceCommand = require("resource://devtools/shared/commands/resource/resource-command.js");
-const l10n = require("resource://devtools/client/webconsole/utils/l10n.js");
+const l10n = require("resource://devtools/shared/webconsole/l10n.js");
 
 loader.lazyServiceGetter(
   this,

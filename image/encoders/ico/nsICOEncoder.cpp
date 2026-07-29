@@ -37,6 +37,13 @@ nsICOEncoder::~nsICOEncoder() {
   }
 }
 
+NS_IMETHODIMP
+nsICOEncoder::SetColorSpaceInfo(imgIEncoder::CICPColourPrimaries,
+                                imgIEncoder::CICPTransferCharacteristics,
+                                imgIEncoder::CICPMatrixCoefficients, bool) {
+  return NS_OK;
+}
+
 // nsICOEncoder::InitFromData
 // Two output options are supported: format=<png|bmp>;bpp=<bpp_value>
 // format specifies whether to use png or bitmap format

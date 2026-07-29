@@ -12,6 +12,9 @@ export default {
     pressed: {
       control: { type: "boolean" },
     },
+    show: {
+      control: { type: "boolean" },
+    },
   },
   parameters: {
     fluent: `
@@ -23,16 +26,27 @@ aiwindow-memories-off =
   },
 };
 
-const Template = ({ pressed }) => html`
-  <memories-icon-button ?pressed=${pressed}></memories-icon-button>
+const Template = ({ pressed, show }) => html`
+  <memories-icon-button
+    ?pressed=${pressed}
+    ?show=${show}
+  ></memories-icon-button>
 `;
 
 export const Pressed = Template.bind({});
 Pressed.args = {
   pressed: true,
+  show: true,
 };
 
 export const Unpressed = Template.bind({});
 Unpressed.args = {
   pressed: false,
+  show: true,
+};
+
+export const Hidden = Template.bind({});
+Hidden.args = {
+  pressed: false,
+  show: false,
 };

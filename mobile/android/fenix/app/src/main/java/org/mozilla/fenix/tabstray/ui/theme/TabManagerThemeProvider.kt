@@ -5,7 +5,7 @@
 package org.mozilla.fenix.tabstray.ui.theme
 
 import androidx.compose.runtime.Composable
-import org.mozilla.fenix.tabstray.Page
+import org.mozilla.fenix.tabstray.redux.state.Page
 import org.mozilla.fenix.theme.DefaultThemeProvider
 import org.mozilla.fenix.theme.Theme
 import org.mozilla.fenix.theme.ThemeProvider

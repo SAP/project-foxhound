@@ -11,24 +11,22 @@
 #ifndef PC_JSEP_TRANSPORT_H_
 #define PC_JSEP_TRANSPORT_H_
 
-#include <functional>
 #include <memory>
 #include <optional>
-#include <string>
 #include <vector>
 
+#include "absl/functional/any_invocable.h"
+#include "absl/strings/string_view.h"
 #include "api/ice_transport_interface.h"
 #include "api/jsep.h"
 #include "api/rtc_error.h"
 #include "api/scoped_refptr.h"
 #include "api/sequence_checker.h"
 #include "api/transport/data_channel_transport_interface.h"
-#include "call/payload_type_picker.h"
 #include "media/sctp/sctp_transport_internal.h"
 #include "p2p/base/ice_transport_internal.h"
 #include "p2p/base/transport_description.h"
 #include "p2p/dtls/dtls_transport_internal.h"
-#include "pc/dtls_srtp_transport.h"
 #include "pc/dtls_transport.h"
 #include "pc/rtcp_mux_filter.h"
 #include "pc/rtp_transport.h"
@@ -39,7 +37,7 @@
 #include "rtc_base/rtc_certificate.h"
 #include "rtc_base/ssl_fingerprint.h"
 #include "rtc_base/ssl_stream_adapter.h"
-#include "rtc_base/thread.h"
+#include "rtc_base/system/no_unique_address.h"
 #include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
@@ -50,7 +48,6 @@ struct JsepTransportDescription {
   JsepTransportDescription(
       bool rtcp_mux_enabled,
       const std::vector<int>& encrypted_header_extension_ids,
-      int rtp_abs_sendtime_extn_id,
       const TransportDescription& transport_description);
   JsepTransportDescription(const JsepTransportDescription& from);
   ~JsepTransportDescription();
@@ -59,7 +56,6 @@ struct JsepTransportDescription {
 
   bool rtcp_mux_enabled = true;
   std::vector<int> encrypted_header_extension_ids;
-  int rtp_abs_sendtime_extn_id = -1;
   // TODO(zhihuang): Add the ICE and DTLS related variables and methods from
   // TransportDescription and remove this extra layer of abstraction.
   TransportDescription transport_desc;
@@ -75,40 +71,36 @@ struct JsepTransportDescription {
 // so its methods should only be called on the network thread.
 class JsepTransport {
  public:
-  // `mid` is just used for log statements in order to identify the Transport.
-  // Note that `local_certificate` is allowed to be null since a remote
-  // description may be set before a local certificate is generated.
-  JsepTransport(const std::string& mid,
-                const scoped_refptr<RTCCertificate>& local_certificate,
-                scoped_refptr<IceTransportInterface> ice_transport,
-                scoped_refptr<IceTransportInterface> rtcp_ice_transport,
-                std::unique_ptr<RtpTransport> unencrypted_rtp_transport,
-                std::unique_ptr<DtlsSrtpTransport> dtls_srtp_transport,
-                std::unique_ptr<DtlsTransportInternal> rtp_dtls_transport,
-                std::unique_ptr<DtlsTransportInternal> rtcp_dtls_transport,
+  // `local_certificate` is allowed to be null since a remote description may be
+  // set before a local certificate is generated.
+  JsepTransport(const scoped_refptr<RTCCertificate>& local_certificate,
+                std::unique_ptr<RtpTransport> rtp_transport,
+                scoped_refptr<DtlsTransport> rtp_dtls_transport,
                 std::unique_ptr<SctpTransportInternal> sctp_transport,
-                std::function<void()> rtcp_mux_active_callback,
-                PayloadTypePicker& suggester);
+                absl::AnyInvocable<void()> rtcp_mux_active_callback);
 
   ~JsepTransport();
 
   JsepTransport(const JsepTransport&) = delete;
   JsepTransport& operator=(const JsepTransport&) = delete;
 
-  // Returns the MID of this transport. This is only used for logging.
-  const std::string& mid() const { return mid_; }
+  // Returns the name of this transport. This is used for uniquely identifying
+  // the transport, logging, error reporting and transport stats.
+  absl::string_view name() const {
+    return dtls_transport_internal()->ice_transport()->transport_name();
+  }
 
   // Must be called before applying local session description.
   // Needed in order to verify the local fingerprint.
   void SetLocalCertificate(
       const scoped_refptr<RTCCertificate>& local_certificate) {
-    RTC_DCHECK_RUN_ON(network_thread_);
+    RTC_DCHECK_RUN_ON(&transport_sequence_);
     local_certificate_ = local_certificate;
   }
 
   // Return the local certificate provided by SetLocalCertificate.
   scoped_refptr<RTCCertificate> GetLocalCertificate() const {
-    RTC_DCHECK_RUN_ON(network_thread_);
+    RTC_DCHECK_RUN_ON(&transport_sequence_);
     return local_certificate_;
   }
 
@@ -132,7 +124,7 @@ class JsepTransport {
   // occurred yet for this transport (by applying a local description with
   // changed ufrag/password).
   bool needs_ice_restart() const {
-    RTC_DCHECK_RUN_ON(network_thread_);
+    RTC_DCHECK_RUN_ON(&transport_sequence_);
     return needs_ice_restart_;
   }
 
@@ -143,54 +135,36 @@ class JsepTransport {
   bool GetStats(TransportStats* stats) const;
 
   const JsepTransportDescription* local_description() const {
-    RTC_DCHECK_RUN_ON(network_thread_);
+    RTC_DCHECK_RUN_ON(&transport_sequence_);
     return local_description_.get();
   }
 
   const JsepTransportDescription* remote_description() const {
-    RTC_DCHECK_RUN_ON(network_thread_);
+    RTC_DCHECK_RUN_ON(&transport_sequence_);
     return remote_description_.get();
   }
 
   // Returns the rtp transport, if any.
-  RtpTransportInternal* rtp_transport() const {
-    if (dtls_srtp_transport_) {
-      return dtls_srtp_transport_.get();
-    }
-    if (unencrypted_rtp_transport_) {
-      return unencrypted_rtp_transport_.get();
-    }
-    return nullptr;
-  }
+  RtpTransportInternal* rtp_transport() const { return rtp_transport_.get(); }
 
   const DtlsTransportInternal* rtp_dtls_transport() const {
-    if (rtp_dtls_transport_) {
-      return rtp_dtls_transport_->internal();
-    }
-    return nullptr;
+    return dtls_transport_internal();
   }
 
   DtlsTransportInternal* rtp_dtls_transport() {
-    if (rtp_dtls_transport_) {
-      return rtp_dtls_transport_->internal();
-    }
-    return nullptr;
+    return dtls_transport_internal();
   }
 
-  const DtlsTransportInternal* rtcp_dtls_transport() const {
-    RTC_DCHECK_RUN_ON(network_thread_);
-    if (rtcp_dtls_transport_) {
-      return rtcp_dtls_transport_->internal();
-    }
-    return nullptr;
+  DtlsTransportInternal* rtcp_dtls_transport() const {
+    RTC_DCHECK_RUN_ON(&transport_sequence_);
+    return static_cast<DtlsTransportInternal*>(
+        rtp_transport_->rtcp_packet_transport());
   }
 
   DtlsTransportInternal* rtcp_dtls_transport() {
-    RTC_DCHECK_RUN_ON(network_thread_);
-    if (rtcp_dtls_transport_) {
-      return rtcp_dtls_transport_->internal();
-    }
-    return nullptr;
+    RTC_DCHECK_RUN_ON(&transport_sequence_);
+    return static_cast<DtlsTransportInternal*>(
+        rtp_transport_->rtcp_packet_transport());
   }
 
   scoped_refptr<DtlsTransport> RtpDtlsTransport() {
@@ -217,31 +191,10 @@ class JsepTransport {
       const RTCCertificate* certificate,
       const SSLFingerprint* fingerprint) const;
 
-  void SetActiveResetSrtpParams(bool active_reset_srtp_params);
-
-  // Record the PT mappings from a single media section.
-  // This is used to store info needed when generating subsequent SDP.
-  RTCError RecordPayloadTypes(bool local,
-                              SdpType type,
-                              const ContentInfo& content);
-
-  const PayloadTypeRecorder& remote_payload_types() const {
-    return remote_payload_types_;
-  }
-  const PayloadTypeRecorder& local_payload_types() const {
-    return local_payload_types_;
-  }
-  PayloadTypeRecorder& local_payload_types() { return local_payload_types_; }
-  void CommitPayloadTypes() {
-    RTC_DCHECK_RUN_ON(network_thread_);
-    local_payload_types_.Commit();
-    remote_payload_types_.Commit();
-  }
-
  private:
   bool SetRtcpMux(bool enable, SdpType type, ContentSource source);
 
-  void ActivateRtcpMux() RTC_RUN_ON(network_thread_);
+  void ActivateRtcpMux() RTC_RUN_ON(transport_sequence_);
 
   // Negotiates and sets the DTLS parameters based on the current local and
   // remote transport description, such as the DTLS role to use, and whether
@@ -272,53 +225,41 @@ class JsepTransport {
                          int component,
                          TransportStats* stats) const;
 
-  // Owning thread, for safety checks
-  const Thread* const network_thread_;
-  const std::string mid_;
-  // needs-ice-restart bit as described in JSEP.
-  bool needs_ice_restart_ RTC_GUARDED_BY(network_thread_) = false;
-  scoped_refptr<RTCCertificate> local_certificate_
-      RTC_GUARDED_BY(network_thread_);
-  std::unique_ptr<JsepTransportDescription> local_description_
-      RTC_GUARDED_BY(network_thread_);
-  std::unique_ptr<JsepTransportDescription> remote_description_
-      RTC_GUARDED_BY(network_thread_);
+  DtlsTransportInternal* dtls_transport_internal() const {
+    // This cast is safe because JsepTransportController always creates the
+    // RtpTransport with a DtlsTransportInternal as the packet transport, even
+    // when encryption is disabled.
+    return static_cast<DtlsTransportInternal*>(
+        rtp_transport_->rtp_packet_transport());
+  }
 
-  // Ice transport which may be used by any of upper-layer transports (below).
-  // Owned by JsepTransport and guaranteed to outlive the transports below.
-  const scoped_refptr<IceTransportInterface> ice_transport_;
-  const scoped_refptr<IceTransportInterface> rtcp_ice_transport_;
+  // Owning thread, for safety checks
+  RTC_NO_UNIQUE_ADDRESS SequenceChecker transport_sequence_;
+  // needs-ice-restart bit as described in JSEP.
+  bool needs_ice_restart_ RTC_GUARDED_BY(transport_sequence_) = false;
+  scoped_refptr<RTCCertificate> local_certificate_
+      RTC_GUARDED_BY(transport_sequence_);
+  std::unique_ptr<JsepTransportDescription> local_description_
+      RTC_GUARDED_BY(transport_sequence_);
+  std::unique_ptr<JsepTransportDescription> remote_description_
+      RTC_GUARDED_BY(transport_sequence_);
 
   // To avoid downcasting and make it type safe, keep three unique pointers for
   // different SRTP mode and only one of these is non-nullptr.
-  const std::unique_ptr<RtpTransport> unencrypted_rtp_transport_;
-  const std::unique_ptr<DtlsSrtpTransport> dtls_srtp_transport_;
+  const std::unique_ptr<RtpTransport> rtp_transport_;
 
   const scoped_refptr<DtlsTransport> rtp_dtls_transport_;
   // The RTCP transport is const for all usages, except that it is cleared
   // when RTCP multiplexing is turned on; this happens on the network thread.
-  scoped_refptr<DtlsTransport> rtcp_dtls_transport_
-      RTC_GUARDED_BY(network_thread_);
 
   const scoped_refptr<::webrtc::SctpTransport> sctp_transport_;
 
-  RtcpMuxFilter rtcp_mux_negotiator_ RTC_GUARDED_BY(network_thread_);
-
-  // Cache the encrypted header extension IDs
-  std::optional<std::vector<int>> send_extension_ids_
-      RTC_GUARDED_BY(network_thread_);
-  std::optional<std::vector<int>> recv_extension_ids_
-      RTC_GUARDED_BY(network_thread_);
+  RtcpMuxFilter rtcp_mux_negotiator_ RTC_GUARDED_BY(transport_sequence_);
 
   // This is invoked when RTCP-mux becomes active and
   // `rtcp_dtls_transport_` is destroyed. The JsepTransportController will
   // receive the callback and update the aggregate transport states.
-  std::function<void()> rtcp_mux_active_callback_;
-
-  // Assigned PTs from the remote description, used when sending.
-  PayloadTypeRecorder remote_payload_types_ RTC_GUARDED_BY(network_thread_);
-  // Assigned PTs from the local description, used when receiving.
-  PayloadTypeRecorder local_payload_types_ RTC_GUARDED_BY(network_thread_);
+  absl::AnyInvocable<void()> rtcp_mux_active_callback_;
 };
 
 }  //  namespace webrtc

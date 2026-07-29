@@ -63,7 +63,7 @@ Examples of correct token usage for this rule:
 .. code-block:: css
 
   .error {
-    outline-color: var(--outline-color-error);
+    outline-color: var(--border-color-error);
   }
 
 .. code-block:: css

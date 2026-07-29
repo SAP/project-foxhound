@@ -19,7 +19,7 @@
 }
 
 .og-card-content {
-  background-color: var(--panel-background);
+  background-color: var(--panel-background-color);
   border-bottom: 1px solid var(--panel-border-color);
   color: var(--text-color-deemphasized);
   display: flex;
@@ -29,16 +29,16 @@
 }
 
 .og-card-title {
-  color: var(--panel-color);
+  color: var(--panel-text-color);
   font-size: var(--og-main-font-size);
-  font-weight: var(--heading-font-weight);
+  font-weight: var(--font-weight-heading);
   margin: 0;
   overflow: hidden;
   -webkit-line-clamp: 3;
 }
 
 .og-card-description {
-  color: var(--panel-color);
+  color: var(--panel-text-color);
   font-size: var(--og-main-font-size);
   margin: 0;
   overflow: hidden;
@@ -70,7 +70,7 @@
   .keypoints-header {
     display: flex;
     font-size: var(--og-main-font-size);
-    font-weight: var(--heading-font-weight);
+    font-weight: var(--font-weight-heading);
     gap: var(--space-xs);
     margin: 0;
     user-select: none;
@@ -173,7 +173,7 @@
     }
 
     > hr {
-      border-color: var(--border-color-card);
+      border-color: var(--card-border-color);
       margin-block: var(--space-xlarge);
     }
 

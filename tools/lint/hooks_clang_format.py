@@ -51,7 +51,7 @@ def run_clang_format(hooktype, changedFiles):
         # No files have been touched
         return
 
-    arguments = ["clang-format", "-p"] + path_list
+    arguments = ["format", "-p"] + path_list
     # On windows we need this to call the command in a shell, see Bug 1511594
     if os.name == "nt":
         clang_format_cmd = [sys.executable, "mach"] + arguments

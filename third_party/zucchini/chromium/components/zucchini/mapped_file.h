@@ -32,10 +32,16 @@ class MappedFileReader {
 
   bool HasError() { return !error_.empty() || !buffer_.IsValid(); }
   const std::string& error() { return error_; }
+#if defined(MOZ_ZUCCHINI)
+  bool error_is_oom() const { return error_is_oom_; }
+#endif  // defined(MOZ_ZUCCHINI)
 
  private:
   std::string error_;
   base::MemoryMappedFile buffer_;
+#if defined(MOZ_ZUCCHINI)
+  bool error_is_oom_ = false;
+#endif  // defined(MOZ_ZUCCHINI)
 };
 
 // A file writer wrapper. The target file is deleted on destruction unless
@@ -69,6 +75,9 @@ class MappedFileWriter {
 
   bool HasError() { return !error_.empty() || !buffer_.IsValid(); }
   const std::string& error() { return error_; }
+#if defined(MOZ_ZUCCHINI)
+  bool error_is_oom() const { return error_is_oom_; }
+#endif  // defined(MOZ_ZUCCHINI)
 
   // Indicates that the file should not be deleted on destruction. Returns true
   // iff the operation succeeds.
@@ -92,6 +101,9 @@ class MappedFileWriter {
   base::File file_handle_;
   base::MemoryMappedFile buffer_;
   OnCloseDeleteBehavior delete_behavior_;
+#if defined(MOZ_ZUCCHINI)
+  bool error_is_oom_ = false;
+#endif  // defined(MOZ_ZUCCHINI)
 };
 
 }  // namespace zucchini

@@ -561,4 +561,99 @@ function getArgumentSummaries(valuesBuffer, shapes, valuesBufferIndex) {
   return args;
 }
 
-export const ValueSummaryReader = { getArgumentSummaries };
+/**
+ * Creates a filtered copy of a values buffer containing only entries at the
+ * specified indices. This is useful for extracting a subset of traced function
+ * call arguments from a full profiler trace.
+ *
+ * The source buffer format has a 4-byte version header followed by entries.
+ * Each entry is preceded by a 2-byte (u16) size header indicating the total
+ * byte length of that entry including the header itself.
+ *
+ * @param {ArrayBuffer} srcBuffer - The source values buffer from the profiler.
+ * @param {Array<number|null>} entryIndices - Array of byte offsets into
+ *   srcBuffer pointing to entry data (after the entry's size header). Null or
+ *   negative values are skipped. These typically come from the argumentValues
+ *   slot of samples in a profiler trace.
+ * @returns {{valuesBuffer: ArrayBuffer, entryIndices: Array<number|null>}}
+ *   An object containing:
+ *   - valuesBuffer: A new ArrayBuffer with only the referenced entries
+ *   - entryIndices: Updated indices pointing to the same entries in the new
+ *     buffer. Duplicate source offsets map to the same destination offset.
+ */
+function filterValuesBufferToEntries(srcBuffer, entryIndices) {
+  const theirVersion = bufferVersion(srcBuffer);
+  if (theirVersion != EXPECTED_VALUE_SUMMARIES_VERSION) {
+    throw new Error(
+      `Unexpected tracer arguments buffer format. Expected ${EXPECTED_VALUE_SUMMARIES_VERSION}, received ${theirVersion}.`
+    );
+  }
+
+  const destBuffer = new ArrayBuffer(Math.min(256, srcBuffer.byteLength), {
+    maxByteLength: srcBuffer.byteLength,
+  });
+
+  const srcArray = new Uint8Array(srcBuffer);
+  const destArray = new Uint8Array(destBuffer);
+
+  const seen = new Map();
+  const bufferView = new DataView(srcBuffer);
+  const destEntryIndices = [...entryIndices];
+
+  const versionHeaderSize = 4;
+  let destBufferWriteOffset = 0;
+
+  // Copy the version from the start of the buffer
+  destArray.set(srcArray.subarray(0, versionHeaderSize), destBufferWriteOffset);
+  destBufferWriteOffset += versionHeaderSize;
+
+  for (let i = 0; i < destEntryIndices.length; i++) {
+    if (destEntryIndices[i] === null) {
+      continue;
+    }
+
+    const argumentsOffset = destEntryIndices[i];
+    if (argumentsOffset < 0) {
+      continue;
+    }
+
+    if (seen.has(argumentsOffset)) {
+      destEntryIndices[i] = seen.get(argumentsOffset);
+      continue;
+    }
+
+    // The entry header is a u16 just before the arguments containing the size
+    // of the entry in bytes, including the size of the entry header itself.
+    const entryHeaderSize = 2;
+    const byteLengthOffset = argumentsOffset - entryHeaderSize;
+
+    const byteLength = bufferView.getUint16(byteLengthOffset, true);
+
+    if (destBufferWriteOffset + byteLength > destBuffer.byteLength) {
+      let targetLength = destBuffer.byteLength;
+      while (destBufferWriteOffset + byteLength > targetLength) {
+        targetLength *= 2;
+      }
+      destBuffer.resize(Math.min(srcBuffer.byteLength, targetLength));
+    }
+
+    destEntryIndices[i] = destBufferWriteOffset + entryHeaderSize;
+    destArray.set(
+      srcArray.subarray(byteLengthOffset, byteLengthOffset + byteLength),
+      destBufferWriteOffset
+    );
+    seen.set(argumentsOffset, destEntryIndices[i]);
+
+    destBufferWriteOffset += byteLength;
+  }
+
+  return {
+    valuesBuffer: destBuffer,
+    entryIndices: destEntryIndices,
+  };
+}
+
+export const ValueSummaryReader = {
+  getArgumentSummaries,
+  filterValuesBufferToEntries,
+};

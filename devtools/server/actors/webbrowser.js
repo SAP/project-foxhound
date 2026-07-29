@@ -658,8 +658,7 @@ BrowserTabList.prototype.onCloseWindow = DevToolsUtils.makeInfallible(function (
        * top-level window, and exit them.
        */
       for (const [browser, actor] of this._actorByBrowser) {
-        /* The browser document of a closed window has no default view. */
-        if (!browser.ownerGlobal) {
+        if (!browser.ownerDocument.isActive()) {
           this._handleActorClose(actor, browser);
         }
       }

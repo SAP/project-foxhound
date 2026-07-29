@@ -33,6 +33,7 @@ const position = index + 1;
 requestLongerTimeout(3);
 
 add_setup(async function () {
+  GleanPings.quickSuggest.setEnabled(true); // bug 1957150
   await SpecialPowers.pushPrefEnv({
     set: [["browser.urlbar.suggest.quickactions", false]],
   });

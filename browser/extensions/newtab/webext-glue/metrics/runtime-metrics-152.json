@@ -1,0 +1,17 @@
+{
+  "metrics": {
+    "newtab": {
+      "sections_learn_more": {
+        "description": "Recorded when the \"Learn more\" option in the sections context menu is clicked.\n",
+        "disabled": false,
+        "extraArgs": {
+          "allowed_extra_keys": ["newtab_visit_id"]
+        },
+        "lifetime": "ping",
+        "pings": ["newtab"],
+        "type": "event"
+      }
+    }
+  },
+  "pings": {}
+}

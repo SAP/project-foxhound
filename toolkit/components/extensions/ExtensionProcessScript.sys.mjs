@@ -68,6 +68,11 @@ ExtensionManager = {
     Services.cpmm.addMessageListener("Extension:UpdatePermissions", this);
     Services.cpmm.addMessageListener("Extension:UpdateIgnoreQuarantine", this);
 
+    if (lazy.isContentProcess) {
+      // eslint-disable-next-line mozilla/balanced-listeners
+      Services.cpmm.sharedData.addEventListener("change", this);
+    }
+
     this.updateStubExtensions();
 
     for (let id of sharedData.get("extensions/activeIDs") || []) {
@@ -164,6 +169,10 @@ ExtensionManager = {
         contentScripts: extension.contentScripts,
       });
 
+      if (sharedData.has("extensions/guards")) {
+        lazy.ExtensionCommon.GuardSets.updateFor(policy);
+      }
+
       policy.debugName = `${JSON.stringify(policy.name)} (ID: ${
         policy.id
       }, ${policy.getURL()})`;
@@ -214,10 +223,11 @@ ExtensionManager = {
   handleEvent(event) {
     if (
       event.type === "change" &&
-      event.changedKeys.includes("extensions/pending")
+      event.changedKeys.includes("extensions/guards")
     ) {
-      this.updateStubExtensions();
+      lazy.ExtensionCommon.GuardSets.updateAll();
     }
+    // TODO bug 1642012: previous "extensions/pending" branch was unreachable.
   },
 
   receiveMessage({ name, data }) {

@@ -126,7 +126,7 @@ function createMakeSource() {
     // with resourceType and targetFront additional attributes
     return {
       resourceType: "source",
-      // Mock the targetFront to support makeSourceId function
+      // Mock the targetFront to support makeScriptSourceId function
       targetFront: {
         isDestroyed() {
           return false;

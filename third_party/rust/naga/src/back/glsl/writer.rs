@@ -699,6 +699,18 @@ impl<'a, W: Write> Writer<'a, W> {
 
         if let crate::AddressSpace::Storage { access } = global.space {
             self.write_storage_access(access)?;
+            if global
+                .memory_decorations
+                .contains(crate::MemoryDecorations::COHERENT)
+            {
+                write!(self.out, "coherent ")?;
+            }
+            if global
+                .memory_decorations
+                .contains(crate::MemoryDecorations::VOLATILE)
+            {
+                write!(self.out, "volatile ")?;
+            }
         }
 
         if let Some(storage_qualifier) = glsl_storage_qualifier(global.space) {
@@ -729,6 +741,10 @@ impl<'a, W: Write> Writer<'a, W> {
             crate::AddressSpace::Function => unreachable!(),
             // Textures and samplers are handled directly in `Writer::write`.
             crate::AddressSpace::Handle => unreachable!(),
+            // ray tracing pipelines unsupported
+            crate::AddressSpace::RayPayload | crate::AddressSpace::IncomingRayPayload => {
+                unreachable!()
+            }
         }
 
         Ok(())
@@ -1068,7 +1084,7 @@ impl<'a, W: Write> Writer<'a, W> {
                             }
                         }
                     }
-                    crate::BuiltIn::ClipDistance => {
+                    crate::BuiltIn::ClipDistances => {
                         // Re-declare `gl_ClipDistance` with number of clip planes.
                         let TypeInner::Array { size, .. } = self.module.types[ty].inner else {
                             unreachable!();
@@ -1095,7 +1111,12 @@ impl<'a, W: Write> Writer<'a, W> {
             ShaderStage::Vertex => output,
             ShaderStage::Fragment => !output,
             ShaderStage::Compute => false,
-            ShaderStage::Task | ShaderStage::Mesh => unreachable!(),
+            ShaderStage::Task
+            | ShaderStage::Mesh
+            | ShaderStage::RayGeneration
+            | ShaderStage::AnyHit
+            | ShaderStage::ClosestHit
+            | ShaderStage::Miss => unreachable!(),
         };
 
         // Write the I/O locations, if allowed
@@ -1969,10 +1990,21 @@ impl<'a, W: Write> Writer<'a, W> {
             // Stores in glsl are just variable assignments written as `pointer = value;`
             Statement::Store { pointer, value } => {
                 write!(self.out, "{level}")?;
-                self.write_expr(pointer, ctx)?;
-                write!(self.out, " = ")?;
-                self.write_expr(value, ctx)?;
-                writeln!(self.out, ";")?
+                let is_atomic_pointer = ctx
+                    .resolve_type(pointer, &self.module.types)
+                    .is_atomic_pointer(&self.module.types);
+                if is_atomic_pointer {
+                    write!(self.out, "atomicExchange(")?;
+                    self.write_expr(pointer, ctx)?;
+                    write!(self.out, ", ")?;
+                    self.write_expr(value, ctx)?;
+                    writeln!(self.out, ");")?
+                } else {
+                    self.write_expr(pointer, ctx)?;
+                    write!(self.out, " = ")?;
+                    self.write_expr(value, ctx)?;
+                    writeln!(self.out, ";")?
+                }
             }
             Statement::WorkGroupUniformLoad { pointer, result } => {
                 // GLSL doesn't have pointers, which means that this backend needs to ensure that
@@ -2231,6 +2263,7 @@ impl<'a, W: Write> Writer<'a, W> {
                 writeln!(self.out, ");")?;
             }
             Statement::CooperativeStore { .. } => unimplemented!(),
+            Statement::RayPipelineFunction(_) => unimplemented!(),
         }
 
         Ok(())
@@ -2304,6 +2337,8 @@ impl<'a, W: Write> Writer<'a, W> {
                     //
                     // While `core` doesn't necessarily need it, it's allowed and since `es` needs it we
                     // always write it as the extra branch wouldn't have any benefit in readability
+                    crate::Literal::U16(value) => write!(self.out, "uint16_t({value})")?,
+                    crate::Literal::I16(value) => write!(self.out, "int16_t({value})")?,
                     crate::Literal::U32(value) => write!(self.out, "{value}u")?,
                     crate::Literal::I32(value) => write!(self.out, "{value}")?,
                     crate::Literal::Bool(value) => write!(self.out, "{value}")?,
@@ -2465,7 +2500,27 @@ impl<'a, W: Write> Writer<'a, W> {
                 write!(self.out, "{}", self.names[&ctx.name_key(handle)])?
             }
             // glsl has no pointers so there's no load operation, just write the pointer expression
-            Expression::Load { pointer } => self.write_expr(pointer, ctx)?,
+            Expression::Load { pointer } => {
+                let ty_inner = ctx.resolve_type(pointer, &self.module.types);
+                if ty_inner.is_atomic_pointer(&self.module.types) {
+                    let mut suffix = "";
+                    if let TypeInner::Pointer { base, .. } = *ty_inner {
+                        if let TypeInner::Atomic(scalar) = self.module.types[base].inner {
+                            suffix = match (scalar.kind, scalar.width) {
+                                (crate::ScalarKind::Uint, 8) => "ul",
+                                (crate::ScalarKind::Sint, 8) => "l",
+                                (crate::ScalarKind::Uint, _) => "u",
+                                _ => "",
+                            };
+                        }
+                    }
+                    write!(self.out, "atomicOr(")?;
+                    self.write_expr(pointer, ctx)?;
+                    write!(self.out, ", 0{})", suffix)?
+                } else {
+                    self.write_expr(pointer, ctx)?
+                }
+            }
             // `ImageSample` is a bit complicated compared to the rest of the IR.
             //
             // First there are three variations depending whether the sample level is explicitly set,
@@ -4533,7 +4588,8 @@ impl<'a, W: Write> Writer<'a, W> {
                 items.push(ImmediateItem {
                     access_path: name,
                     offset: *offset,
-                    ty,
+                    ty: self.module.types[ty].inner.clone(),
+                    size_bytes: layout.size,
                 });
                 *offset += layout.size;
             }

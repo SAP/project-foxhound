@@ -24,6 +24,17 @@ fuzzy(0-1,0-500) needs-focus == select.html select-ref.html
 
 pref(layout.forms.reveal-password-button.enabled,true) != suppress-password-button.html suppress-password-button-notref.html
 
+# Type change reftests: verify buttons appear/disappear correctly (Bug 928224)
+# text <-> password (reveal button)
+pref(layout.forms.reveal-password-button.enabled,true) == type-change-text-to-password.html type-change-ref-password.html
+pref(layout.forms.reveal-password-button.enabled,true) == type-change-password-to-text.html type-change-ref-text.html
+# text <-> search (clear button)
+pref(layout.forms.input-type-search.enabled,true) == type-change-text-to-search.html type-change-ref-search.html
+pref(layout.forms.input-type-search.enabled,true) == type-change-search-to-text.html type-change-ref-text.html
+# password <-> search (reveal button removed/added, clear button added/removed)
+pref(layout.forms.reveal-password-button.enabled,true) pref(layout.forms.input-type-search.enabled,true) == type-change-password-to-search.html type-change-ref-search.html
+pref(layout.forms.reveal-password-button.enabled,true) pref(layout.forms.input-type-search.enabled,true) == type-change-search-to-password.html type-change-ref-password.html
+
 needs-focus == focus-on-anchor.html#anchor focus-on-anchor-ref.html
 needs-focus == select-overflow.html select-overflow-ref.html
 

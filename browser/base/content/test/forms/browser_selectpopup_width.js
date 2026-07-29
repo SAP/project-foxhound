@@ -14,7 +14,10 @@ function tick() {
 
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
-    set: [["test.wait300msAfterTabSwitch", true]],
+    set: [
+      ["test.wait300msAfterTabSwitch", true],
+      ["widget.macos.allow-native-select", false],
+    ],
   });
 });
 

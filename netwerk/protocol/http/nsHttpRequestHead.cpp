@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -32,7 +31,7 @@ nsHttpRequestHead::nsHttpRequestHead(const nsHttpRequestHead& aRequestHead) {
   mOrigin = other.mOrigin;
   mParsedMethod = other.mParsedMethod;
   mHTTPS = other.mHTTPS;
-  mInVisitHeaders = false;
+  mInVisitHeaders = 0;
 }
 
 nsHttpRequestHead::nsHttpRequestHead(nsHttpRequestHead&& aRequestHead) {
@@ -48,7 +47,7 @@ nsHttpRequestHead::nsHttpRequestHead(nsHttpRequestHead&& aRequestHead) {
   mOrigin = std::move(other.mOrigin);
   mParsedMethod = std::move(other.mParsedMethod);
   mHTTPS = std::move(other.mHTTPS);
-  mInVisitHeaders = false;
+  mInVisitHeaders = 0;
 }
 
 nsHttpRequestHead::~nsHttpRequestHead() { MOZ_COUNT_DTOR(nsHttpRequestHead); }
@@ -67,7 +66,7 @@ nsHttpRequestHead& nsHttpRequestHead::operator=(
   mOrigin = other.mOrigin;
   mParsedMethod = other.mParsedMethod;
   mHTTPS = other.mHTTPS;
-  mInVisitHeaders = false;
+  mInVisitHeaders = 0;
   return *this;
 }
 
@@ -114,9 +113,9 @@ nsresult nsHttpRequestHead::VisitHeaders(
     nsHttpHeaderArray::VisitorFilter
         filter /* = nsHttpHeaderArray::eFilterAll*/) {
   RecursiveMutexAutoLock mon(mRecursiveMutex);
-  mInVisitHeaders = true;
+  ++mInVisitHeaders;
   nsresult rv = mHeaders.VisitHeaders(visitor, filter);
-  mInVisitHeaders = false;
+  --mInVisitHeaders;
   return rv;
 }
 

@@ -118,7 +118,8 @@ browsertime-tp6m:
             - dailymail
             - [ebay-kleinanzeigen, ebay-k]
             - [ebay-kleinanzeigen-search, ebay-k-s]
-            - [facebook-cristiano, fb-cris]
+            # Bug 1682027 - Disabled due to high failure rate
+            # - [facebook-cristiano, fb-cris]
             - [google-maps, gmaps]
             - [google-search-restaurants, gsearch-r]
             - instagram
@@ -276,7 +277,7 @@ browsertime-youtube-playback-power-mobile:
         by-app:
             fenix:
                 by-test-platform:
-                    android-hw-a55.*shippable.*: [autoland, mozilla-central]
+                    android-hw-a55.*shippable.*: []  # Bug 1934169: disabled, intermittent power measurement failure
                     default: []
             geckoview: []
             default: []
@@ -401,27 +402,26 @@ browsertime-video-playback-latency-mobile:
         by-app:
             fenix: 1
             default: 3
+    fetches:
+        toolchain:
+            - linux64-minidump-stackwalk
+            - linux64-fix-stacks
+            - linux64-samply
+            - profiler-node-tools
 
-browsertime-benchmark-speedometer-mobile:
-    description: Browsertime Speedometer on Android
+browsertime-benchmark-speedometer2-mobile:
+    description: Browsertime Speedometer 2 on Android
     raptor:
         apps: [geckoview, fenix, chrome-m, cstm-car-m]
     tier:
         by-app:
             fenix: 1
             default: 3
-    run-on-projects:
-        by-app:
-            fenix:
-                by-test-platform:
-                    android-hw-a55.*shippable.*: [trunk]
-                    default: []
-            geckoview: []
-            default: []
-    treeherder-symbol: Btime(sp)
+    run-on-projects: []
+    treeherder-symbol: Btime(sp2)
     mozharness:
         extra-options:
-            - --test=speedometer
+            - --test=speedometer2
 
 browsertime-benchmark-speedometer3-mobile:
     description: Browsertime Speedometer 3 on Android
@@ -545,7 +545,7 @@ browsertime-power:
         subtests:
             - idle
             - idle-bg
-            - [speedometer, sp]
+            - [speedometer2, sp2]
     tier:
         by-app:
             fenix: 1
@@ -563,11 +563,9 @@ browsertime-trr-performance-m:
         subtests:
             - dns-multi
             - dns-native
-            - dns-usatdy
             - trr-cloudf
             - trr-multi
             - trr-next
-            - trr-usatdy
             - trr-w-clou
             - trr-w-next
 

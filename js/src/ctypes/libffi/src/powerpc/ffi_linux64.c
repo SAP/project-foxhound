@@ -29,6 +29,8 @@
    ----------------------------------------------------------------------- */
 
 #include "ffi.h"
+#include <tramp.h>
+#include <stdlib.h>
 
 #ifdef POWERPC64
 #include "ffi_common.h"
@@ -194,9 +196,6 @@ homogeneous:
       flags |= FLAG_RETURNS_FP;
       break;
 
-    case FFI_TYPE_UINT128:
-      flags |= FLAG_RETURNS_128BITS;
-      /* Fall through.  */
     case FFI_TYPE_UINT64:
     case FFI_TYPE_SINT64:
     case FFI_TYPE_POINTER:
@@ -547,9 +546,9 @@ ffi_prep_args64 (extended_cif *ecif, unsigned long *const stack)
               if (next_arg.ul == gpr_end.ul)
                 next_arg.ul = rest.ul;
               if (vecarg_count < NUM_VEC_ARG_REGISTERS64 && i < nfixedargs)
-                *vec_base.f128++ = **p_argv.f128;
+		memcpy (vec_base.f128++, *p_argv.f128, sizeof (float128));
               else
-                *next_arg.f128 = **p_argv.f128;
+		memcpy (next_arg.f128, *p_argv.f128, sizeof (float128));
               if (++next_arg.f128 == gpr_end.f128)
                 next_arg.f128 = rest.f128;
               vecarg_count++;
@@ -680,9 +679,9 @@ ffi_prep_args64 (extended_cif *ecif, unsigned long *const stack)
                     {
                       if (vecarg_count < NUM_VEC_ARG_REGISTERS64
                           && i < nfixedargs)
-                        *vec_base.f128++ = *arg.f128++;
+		        memcpy (vec_base.f128++, arg.f128++, sizeof (float128));
                       else
-                        *next_arg.f128 = *arg.f128++;
+		        memcpy (next_arg.f128, arg.f128++, sizeof (float128));
                       if (++next_arg.f128 == gpr_end.f128)
                         next_arg.f128 = rest.f128;
                       vecarg_count++;
@@ -820,32 +819,38 @@ ffi_prep_closure_loc_linux64 (ffi_closure *closure,
 			      void *user_data,
 			      void *codeloc)
 {
-#if _CALL_ELF == 2
-  unsigned int *tramp = (unsigned int *) &closure->tramp[0];
-
   if (cif->abi < FFI_LINUX || cif->abi >= FFI_LAST_ABI)
     return FFI_BAD_ABI;
 
-  tramp[0] = 0xe96c0018;	/* 0:	ld	11,2f-0b(12)	*/
-  tramp[1] = 0xe98c0010;	/*	ld	12,1f-0b(12)	*/
-  tramp[2] = 0x7d8903a6;	/*	mtctr	12		*/
-  tramp[3] = 0x4e800420;	/*	bctr			*/
+#ifdef FFI_EXEC_STATIC_TRAMP
+  if (ffi_tramp_is_present(closure))
+    {
+      /* Initialize the static trampoline's parameters. */
+      void (*dest)(void) = ffi_closure_LINUX64;
+      ffi_tramp_set_parms (closure->ftramp, dest, closure);
+    }
+  else
+#endif
+    {
+#if _CALL_ELF == 2
+      unsigned int *tramp = (unsigned int *) &closure->tramp[0];
+      tramp[0] = 0xe96c0018;	/* 0:	ld	11,2f-0b(12)	*/
+      tramp[1] = 0xe98c0010;	/*	ld	12,1f-0b(12)	*/
+      tramp[2] = 0x7d8903a6;	/*	mtctr	12		*/
+      tramp[3] = 0x4e800420;	/*	bctr			*/
 				/* 1:	.quad	function_addr	*/
 				/* 2:	.quad	context		*/
-  *(void **) &tramp[4] = (void *) ffi_closure_LINUX64;
-  *(void **) &tramp[6] = codeloc;
-  flush_icache ((char *) tramp, (char *) codeloc, 4 * 4);
+      *(void **) &tramp[4] = (void *) ffi_closure_LINUX64;
+      *(void **) &tramp[6] = codeloc;
+      flush_icache ((char *) tramp, (char *) codeloc, 4 * 4);
 #else
-  void **tramp = (void **) &closure->tramp[0];
-
-  if (cif->abi < FFI_LINUX || cif->abi >= FFI_LAST_ABI)
-    return FFI_BAD_ABI;
-
-  /* Copy function address and TOC from ffi_closure_LINUX64 OPD.  */
-  memcpy (&tramp[0], (void **) ffi_closure_LINUX64, sizeof (void *));
-  tramp[1] = codeloc;
-  memcpy (&tramp[2], (void **) ffi_closure_LINUX64 + 1, sizeof (void *));
+      /* Copy function address and TOC from ffi_closure_LINUX64 OPD.  */
+      void **tramp = (void **) &closure->tramp[0];
+      memcpy (&tramp[0], (void **) ffi_closure_LINUX64, sizeof (void *));
+      tramp[1] = codeloc;
+      memcpy (&tramp[2], (void **) ffi_closure_LINUX64 + 1, sizeof (void *));
 #endif
+    }
 
   closure->cif = cif;
   closure->fun = fun;
@@ -986,9 +991,9 @@ ffi_closure_helper_LINUX64 (ffi_cif *cif,
                   do
                     {
                       if (pvec < end_pvec && i < nfixedargs)
-                        *to.f128 = *pvec++;
+		        memcpy (to.f128, pvec++, sizeof (float128));
                       else
-                        *to.f128 = *from.f128;
+		        memcpy (to.f128, from.f128, sizeof (float128));
                       to.f128++;
                       from.f128++;
                     }
@@ -1135,19 +1140,79 @@ ffi_closure_helper_LINUX64 (ffi_cif *cif,
   (*fun) (cif, rvalue, avalue, user_data);
 
   /* Tell ffi_closure_LINUX64 how to perform return type promotions.  */
-  if ((cif->flags & FLAG_RETURNS_SMST) != 0)
+  switch (cif->rtype->type)
     {
-      if ((cif->flags & (FLAG_RETURNS_FP | FLAG_RETURNS_VEC)) == 0)
-	return FFI_V2_TYPE_SMALL_STRUCT + cif->rtype->size - 1;
-      else if ((cif->flags & FLAG_RETURNS_VEC) != 0)
-        return FFI_V2_TYPE_VECTOR_HOMOG;
-      else if ((cif->flags & FLAG_RETURNS_64BITS) != 0)
-	return FFI_V2_TYPE_DOUBLE_HOMOG;
-      else
-	return FFI_V2_TYPE_FLOAT_HOMOG;
+    case FFI_TYPE_VOID:
+      return PPC_LD_NONE;
+    case FFI_TYPE_FLOAT:
+      return PPC_LD_F32;
+    case FFI_TYPE_DOUBLE:
+      return PPC_LD_F64;
+#if FFI_TYPE_DOUBLE != FFI_TYPE_LONGDOUBLE
+    case FFI_TYPE_LONGDOUBLE:
+      if ((cif->flags & FLAG_RETURNS_VEC) != 0)
+	return PPC64_LD_VECTOR;
+      return PPC_LD_F128;
+#endif
+    case FFI_TYPE_UINT8:
+      return PPC_LD_U8;
+    case FFI_TYPE_SINT8:
+      return PPC_LD_S8;
+    case FFI_TYPE_UINT16:
+      return PPC_LD_U16;
+    case FFI_TYPE_SINT16:
+      return PPC_LD_S16;
+    case FFI_TYPE_UINT32:
+      return PPC_LD_U32;
+    case FFI_TYPE_INT:
+    case FFI_TYPE_SINT32:
+      return PPC_LD_S32;
+    case FFI_TYPE_POINTER:
+      return PPC_LD_PTR;
+    case FFI_TYPE_UINT64:
+    case FFI_TYPE_SINT64:
+      return PPC_LD_I64;
+    case FFI_TYPE_STRUCT:
+      if ((cif->flags & FLAG_RETURNS_SMST) != 0)
+	{
+	  if ((cif->flags & (FLAG_RETURNS_FP | FLAG_RETURNS_VEC)) == 0)
+	    {
+	      /* A struct smaller than a dword is returned in the low bits
+		 of r3 right justified.  Larger structs are passed left
+		 justified in r3 and r4.  The return value area on the
+		 stack will have the structs as they are usually stored
+		 in memory. */
+	      switch (cif->rtype->size)
+		{
+		case 0:
+		  return PPC_LD_NONE;
+		case 1:
+		  return PPC_LD_U8;
+		case 2:
+		  return PPC_LD_U16;
+		case 3:
+		  return PPC64_LD_STRUCT_3;
+		case 4:
+		  return PPC_LD_U32;
+		case 5:
+		  return PPC64_LD_STRUCT_5;
+		case 6:
+		  return PPC64_LD_STRUCT_6;
+		case 7:
+		  return PPC64_LD_STRUCT_7;
+		case 8 ... 16:
+		  return PPC_LD_R3R4;
+		}
+	      break;
+	    }
+	  if ((cif->flags & FLAG_RETURNS_VEC) != 0)
+	    return PPC64_LD_VECTOR_HOMOG;
+	  if ((cif->flags & FLAG_RETURNS_64BITS) != 0)
+	    return PPC64_LD_DOUBLE_HOMOG;
+	  return PPC64_LD_FLOAT_HOMOG;
+        }
+      return PPC_LD_NONE;
     }
-  if ((cif->flags & FLAG_RETURNS_VEC) != 0)
-    return FFI_V2_TYPE_VECTOR;
-  return cif->rtype->type;
+  abort();
 }
 #endif

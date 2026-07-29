@@ -93,9 +93,6 @@ add_task(async function test_selector_window() {
     "Description slot should be hidden when checkbox is checked"
   );
 
-  let asyncFlushCalled = false;
-  gProfileService.asyncFlush = () => (asyncFlushCalled = true);
-
   await Services.fog.testFlushAllChildren();
   Services.fog.testResetFOG();
   Services.telemetry.clearEvents();
@@ -105,12 +102,17 @@ add_task(async function test_selector_window() {
     "We have not recorded any Glean data yet"
   );
 
+  let flushResolvers = Promise.withResolvers();
+
+  let asyncFlushCurrentProfile = sinon
+    .stub(gProfileService, "asyncFlushCurrentProfile")
+    .callsFake(() => {
+      flushResolvers.resolve();
+      return Promise.resolve();
+    });
+
   profileSelector.checkbox.click();
-  await BrowserTestUtils.waitForCondition(
-    () => asyncFlushCalled,
-    "Expected asyncFlush to be called"
-  );
-  asyncFlushCalled = false;
+  await flushResolvers.promise;
 
   Assert.ok(
     !profileSelector.checkbox.checked,
@@ -136,12 +138,11 @@ add_task(async function test_selector_window() {
   // Simulate matching state.
   gProfileService.currentProfile.showProfileSelector = true;
 
+  flushResolvers = Promise.withResolvers();
+
   profileSelector.checkbox.click();
-  await BrowserTestUtils.waitForCondition(
-    () => asyncFlushCalled,
-    "Expected asyncFlush to be called"
-  );
-  asyncFlushCalled = false;
+  await flushResolvers.promise;
+  asyncFlushCurrentProfile.restore();
 
   Assert.ok(profileSelector.checkbox.checked, "Checkbox should not be checked");
   Assert.ok(

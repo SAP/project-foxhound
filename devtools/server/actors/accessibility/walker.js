@@ -854,7 +854,17 @@ class AccessibleWalkerActor extends Actor {
 
     const shown = highlighter.show(
       { rawNode },
-      { ...options, ...bounds, name, role, audit, isXUL: this.isXUL }
+      {
+        ...options,
+        ...bounds,
+        name,
+        role:
+          role === "heading"
+            ? `${role} (level ${accessible.attributes.level})`
+            : role,
+        audit,
+        isXUL: this.isXUL,
+      }
     );
     this._highlightingAccessible = null;
 
@@ -1100,7 +1110,7 @@ class AccessibleWalkerActor extends Actor {
    */
   _findAndAttachAccessible(event) {
     const target = event.originalTarget || event.target;
-    const win = target.ownerGlobal;
+    const win = target.documentGlobal;
     // This event might be inside a sub-document, so don't use this.rootDoc.
     const docAcc = this.getRawAccessibleFor(win.document);
     // If the target is inside a pop-up widget, we need to query the pop-up

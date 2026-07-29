@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -73,15 +72,11 @@ nsresult txNodeSorter::addSortElement(Expr* aSelectExpr, Expr* aLangExpr,
     // Text comparator
 
     // Language
-    nsAutoString lang;
+    nsAutoCStringN<6> lang;
     if (aLangExpr) {
-      rv = aLangExpr->evaluateToString(aContext, lang);
+      nsAutoStringN<6> utf16lang;
+      rv = aLangExpr->evaluateToString(aContext, utf16lang);
       NS_ENSURE_SUCCESS(rv, rv);
-    }
-    if (lang.IsEmpty() &&
-        aContext->getContextNode().OwnerDoc()->ShouldResistFingerprinting(
-            RFPTarget::JSLocale)) {
-      CopyUTF8toUTF16(nsRFPService::GetSpoofedJSLocale(), lang);
     }
 
     // Case-order
@@ -102,7 +97,9 @@ nsresult txNodeSorter::addSortElement(Expr* aSelectExpr, Expr* aLangExpr,
 
     UniquePtr<txResultStringComparator> comparator =
         MakeUnique<txResultStringComparator>(ascending, upperFirst);
-    rv = comparator->init(lang);
+    rv = comparator->init(
+        lang, aContext->getContextNode().OwnerDoc()->ShouldResistFingerprinting(
+                  RFPTarget::JSLocale));
     NS_ENSURE_SUCCESS(rv, rv);
 
     key->mComparator = comparator.release();

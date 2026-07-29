@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,14 +34,14 @@
 #include "nsThreadUtils.h"
 
 extern mozilla::LazyLogModule gTextTrackLog;
-#define LOG(msg, ...)                       \
-  MOZ_LOG(gTextTrackLog, LogLevel::Verbose, \
-          ("TextTrackElement=%p, " msg, this, ##__VA_ARGS__))
+#define LOG(msg, ...)                                                        \
+  MOZ_LOG_FMT(gTextTrackLog, LogLevel::Verbose, "TextTrackElement={}, " msg, \
+              fmt::ptr(this), ##__VA_ARGS__)
 
 // Replace the usual NS_IMPL_NS_NEW_HTML_ELEMENT(Track) so
 // we can return an UnknownElement instead when pref'd off.
 nsGenericHTMLElement* NS_NewHTMLTrackElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
     mozilla::dom::FromParser aFromParser) {
   RefPtr<mozilla::dom::NodeInfo> nodeInfo(aNodeInfo);
   auto* nim = nodeInfo->NodeInfoManager();
@@ -117,7 +115,7 @@ NS_IMPL_ISUPPORTS(WindowDestroyObserver, nsIObserver);
 
 /** HTMLTrackElement */
 HTMLTrackElement::HTMLTrackElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : nsGenericHTMLElement(std::move(aNodeInfo)),
       mLoadResourceDispatched(false),
       mWindowDestroyObserver(nullptr) {
@@ -175,7 +173,7 @@ void HTMLTrackElement::CreateTextTrack() {
   if (!parentObject) {
     nsContentUtils::ReportToConsole(
         nsIScriptError::errorFlag, "Media"_ns, OwnerDoc(),
-        nsContentUtils::eDOM_PROPERTIES,
+        PropertiesFile::DOM_PROPERTIES,
         "Using track element in non-window context");
     return;
   }
@@ -214,7 +212,7 @@ bool HTMLTrackElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
 }
 
 void HTMLTrackElement::SetSrc(const nsAString& aSrc, ErrorResult& aError) {
-  LOG("Set src=%s", NS_ConvertUTF16toUTF8(aSrc).get());
+  LOG("Set src={}", NS_ConvertUTF16toUTF8(aSrc).get());
 
   nsAutoString src;
   if (GetAttr(nsGkAtoms::src, src) && src == aSrc) {
@@ -306,7 +304,7 @@ void HTMLTrackElement::LoadResource(RefPtr<WebVTTListener>&& aWebVTTListener) {
   nsCOMPtr<nsIURI> uri;
   nsresult rv = NewURIFromString(src, getter_AddRefs(uri));
   NS_ENSURE_TRUE_VOID(NS_SUCCEEDED(rv));
-  LOG("Trying to load from src=%s", NS_ConvertUTF16toUTF8(src).get());
+  LOG("Trying to load from src={}", NS_ConvertUTF16toUTF8(src).get());
 
   // Prevent canceling the channel and listener if RFP is enabled.
   CancelChannelAndListener(true);
@@ -353,9 +351,9 @@ void HTMLTrackElement::LoadResource(RefPtr<WebVTTListener>&& aWebVTTListener) {
   // 9. End the synchronous section, continuing the remaining steps in parallel.
   nsCOMPtr<nsIRunnable> runnable = NS_NewRunnableFunction(
       "dom::HTMLTrackElement::LoadResource",
-      [self = RefPtr<HTMLTrackElement>(this), this, uri, secFlags]() {
-        if (!mListener) {
-          // Shutdown got called, abort.
+      [self = RefPtr{this}, this, listener = mListener, uri, secFlags]() {
+        if (mListener != listener) {
+          // Shutdown got called or load got canceled, abort.
           return;
         }
         nsCOMPtr<nsIChannel> channel;
@@ -381,7 +379,7 @@ void HTMLTrackElement::LoadResource(RefPtr<WebVTTListener>&& aWebVTTListener) {
           SetReadyState(TextTrackReadyState::FailedToLoad);
           return;
         }
-        mChannel = channel;
+        mChannel = std::move(channel);
       });
   doc->Dispatch(runnable.forget());
 }

@@ -7,6 +7,14 @@ const { HttpServer } = ChromeUtils.importESModule(
   "resource://testing-common/httpd.sys.mjs"
 );
 
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
+
+const { openAIEngine } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/aiwindow/models/Utils.sys.mjs"
+);
+
 /**
  * Start an HTTP server that serves HTML content.
  *
@@ -79,6 +87,11 @@ function readRequestBody(request) {
   });
 }
 
+// eslint-disable-next-line jsdoc/require-param
+/**
+ * @deprecated - Please use MockEngineManager in AIWindowTestUtils.sys.mjs unless
+ * a test is explicitly needing to test the network layer of the OpenAI chat protocol.
+ */
 function startMockOpenAI({
   streamChunks = ["Hello from mock."],
   toolCall = null,
@@ -163,6 +176,7 @@ function startMockOpenAI({
         created: timestamp,
         model: "aiwindow-mock",
         choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
       });
 
       response.write("data: [DONE]\n\n");
@@ -175,7 +189,8 @@ function startMockOpenAI({
 
       const timestamp = Math.floor(Date.now() / 1000);
       followupChunks.forEach((chunk, index) => {
-        sendSSE({
+        const isLast = index === followupChunks.length - 1;
+        const event = {
           id: `chatcmpl-aiwindow-stream-tool-followup-${index}`,
           object: "chat.completion.chunk",
           created: timestamp,
@@ -184,11 +199,18 @@ function startMockOpenAI({
             {
               index: 0,
               delta: { content: chunk },
-              finish_reason:
-                index === followupChunks.length - 1 ? "stop" : null,
+              finish_reason: isLast ? "stop" : null,
             },
           ],
-        });
+        };
+        if (isLast) {
+          event.usage = {
+            prompt_tokens: 10,
+            completion_tokens: 5,
+            total_tokens: 15,
+          };
+        }
+        sendSSE(event);
       });
 
       response.write("data: [DONE]\n\n");
@@ -201,7 +223,8 @@ function startMockOpenAI({
 
       const timestamp = Math.floor(Date.now() / 1000);
       streamChunks.forEach((chunk, index) => {
-        sendSSE({
+        const isLast = index === streamChunks.length - 1;
+        const event = {
           id: `chatcmpl-aiwindow-stream-${index}`,
           object: "chat.completion.chunk",
           created: timestamp,
@@ -210,10 +233,18 @@ function startMockOpenAI({
             {
               index: 0,
               delta: { content: chunk },
-              finish_reason: index === streamChunks.length - 1 ? "stop" : null,
+              finish_reason: isLast ? "stop" : null,
             },
           ],
-        });
+        };
+        if (isLast) {
+          event.usage = {
+            prompt_tokens: 10,
+            completion_tokens: 5,
+            total_tokens: 15,
+          };
+        }
+        sendSSE(event);
       });
 
       response.write("data: [DONE]\n\n");
@@ -263,9 +294,14 @@ async function withServer(serverOptions, task) {
     set: [["browser.smartwindow.endpoint", `http://localhost:${port}/v1`]],
   });
 
+  const getFxAccountTokenStub = sinon
+    .stub(openAIEngine, "getFxAccountToken")
+    .resolves("mock-fxa-token");
+
   try {
     await task({ port });
   } finally {
+    getFxAccountTokenStub.restore();
     await SpecialPowers.popPrefEnv();
     await stopMockOpenAI(server);
   }

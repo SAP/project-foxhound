@@ -19,6 +19,8 @@ prefs = [
 
 ["browser_broadcastchannel.js"]
 
+["browser_container_definitions_in_sync.js"]
+
 ["browser_count_and_remove.js"]
 
 ["browser_eme.js"]
@@ -80,6 +82,8 @@ https_first_disabled = true
 skip-if = [
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1783491
 ]
+
+["browser_urlbarContainerMenu.js"]
 
 ["browser_usercontext.js"]
 

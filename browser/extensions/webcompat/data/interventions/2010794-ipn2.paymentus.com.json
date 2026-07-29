@@ -1,0 +1,19 @@
+{
+  "label": "ipn2.paymentus.com",
+  "bugs": {
+    "2010794": {
+      "issue": "page-fails-to-load",
+      "blocks": [
+        {
+          "url": "*://ipn2.paymentus.com/rotp/vatx",
+          "types": ["image"]
+        }
+      ]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"]
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 [DEFAULT]
-support-files = ["head.js"]
+support-files = ["head.js", "canonical.txt", "redirected.txt"]
 prefs = [
   # Show old design when Network Error Page new design is active
   "security.certerrors.felt-privacy-v1=false"

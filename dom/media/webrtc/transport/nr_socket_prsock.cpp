@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -149,17 +147,15 @@ nrappkit copyright:
 #  endif
 #endif
 
-extern "C" {
 #include "async_wait.h"
 #include "nr_api.h"
 #include "nr_socket.h"
 #include "nr_socket_local.h"
-#include "stun_hint.h"
-}
 #include "nr_socket_proxy_config.h"
 #include "nr_socket_prsock.h"
 #include "nr_socket_tcp.h"
 #include "simpletokenbucket.h"
+#include "stun_hint.h"
 #include "test_nr_socket.h"
 
 // Implement the nsISupports ref counting
@@ -247,7 +243,7 @@ static nsIThread* GetIOThreadAndAddUse_s() {
 #if defined(MOZILLA_INTERNAL_API)
   // We need to safely release this on shutdown to avoid leaks
   if (!sThread) {
-    sThread = new SingletonThreadHolder("mtransport"_ns);
+    sThread = MakeRefPtr<SingletonThreadHolder>("mtransport"_ns);
     NS_DispatchToMainThread(mozilla::WrapRunnableNM(&ClearSingletonOnShutdown));
   }
   // Mark that we're using the shared thread and need it to stick around
@@ -530,7 +526,7 @@ abort:
 int nr_transport_addr_get_addrstring_and_port(const nr_transport_addr* addr,
                                               nsACString* host, int32_t* port) {
   int r, _status;
-  char addr_string[64];
+  char addr_string[256];
 
   // We cannot directly use |nr_transport_addr.as_string| because it contains
   // more than ip address, therefore, we need to explicity convert it
@@ -1060,8 +1056,8 @@ NS_IMETHODIMP NrUdpSocketIpc::CallListenerError(const nsACString& message,
   ASSERT_ON_THREAD(io_thread_);
 
   r_log(LOG_GENERIC, LOG_ERR, "UDP socket error:%s at %s:%d this=%p",
-        message.BeginReading(), filename.BeginReading(), line_number,
-        (void*)this);
+        PromiseFlatCString(message).get(), PromiseFlatCString(filename).get(),
+        line_number, (void*)this);
 
   ReentrantMonitorAutoEnter mon(monitor_);
   err_ = true;
@@ -1081,7 +1077,8 @@ NS_IMETHODIMP NrUdpSocketIpc::CallListenerReceivedData(
   {
     ReentrantMonitorAutoEnter mon(monitor_);
 
-    if (PR_SUCCESS != PR_StringToNetAddr(host.BeginReading(), &addr)) {
+    if (PR_SUCCESS !=
+        PR_StringToNetAddr(PromiseFlatCString(host).get(), &addr)) {
       err_ = true;
       MOZ_ASSERT(false, "Failed to convert remote host to PRNetAddr");
       return NS_OK;
@@ -1098,7 +1095,7 @@ NS_IMETHODIMP NrUdpSocketIpc::CallListenerReceivedData(
 
   auto buf = MakeUnique<MediaPacket>();
   buf->Copy(data.Elements(), data.Length());
-  RefPtr<nr_udp_message> msg(new nr_udp_message(addr, std::move(buf)));
+  RefPtr msg = MakeRefPtr<nr_udp_message>(addr, std::move(buf));
 
   RUN_ON_THREAD(sts_thread_,
                 mozilla::WrapRunnable(RefPtr<NrUdpSocketIpc>(this),
@@ -1119,7 +1116,7 @@ nsresult NrUdpSocketIpc::SetAddress() {
     return NS_OK;
   }
 
-  if (PR_SUCCESS != PR_StringToNetAddr(address.BeginReading(), &praddr)) {
+  if (PR_SUCCESS != PR_StringToNetAddr(address.get(), &praddr)) {
     err_ = true;
     MOZ_ASSERT(false, "Failed to convert local host to PRNetAddr");
     return NS_OK;
@@ -1277,7 +1274,7 @@ int NrUdpSocketIpc::sendto(const void* msg, size_t len, int flags,
     return R_WOULDBLOCK;
   }
 
-  UniquePtr<MediaPacket> buf(new MediaPacket);
+  auto buf = MakeUnique<MediaPacket>();
   buf->Copy(static_cast<const uint8_t*>(msg), len);
 
   RUN_ON_THREAD(
@@ -1419,10 +1416,7 @@ void NrUdpSocketIpc::create_i(const nsACString& host, const uint16_t port) {
   ASSERT_ON_THREAD(io_thread_);
 
   uint32_t minBuffSize = 0;
-  RefPtr<dom::UDPSocketChild> socketChild = new dom::UDPSocketChild();
-
-  // This can spin the event loop; don't do that with the monitor held
-  socketChild->SetBackgroundSpinsEvents();
+  RefPtr socketChild = MakeRefPtr<dom::UDPSocketChild>();
 
   ReentrantMonitorAutoEnter mon(monitor_);
   if (!socket_child_) {
@@ -1433,7 +1427,7 @@ void NrUdpSocketIpc::create_i(const nsACString& host, const uint16_t port) {
     socketChild = nullptr;
   }
 
-  RefPtr<NrUdpSocketIpcProxy> proxy(new NrUdpSocketIpcProxy);
+  RefPtr proxy = MakeRefPtr<NrUdpSocketIpcProxy>();
   nsresult rv = proxy->Init(this);
   if (NS_FAILED(rv)) {
     err_ = true;
@@ -1459,7 +1453,7 @@ void NrUdpSocketIpc::connect_i(const nsACString& host, const uint16_t port) {
   nsresult rv;
   ReentrantMonitorAutoEnter mon(monitor_);
 
-  RefPtr<NrUdpSocketIpcProxy> proxy(new NrUdpSocketIpcProxy);
+  RefPtr proxy = MakeRefPtr<NrUdpSocketIpcProxy>();
   rv = proxy->Init(this);
   if (NS_FAILED(rv)) {
     err_ = true;

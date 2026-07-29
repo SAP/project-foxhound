@@ -22,7 +22,7 @@ add_task(async function () {
   await addTab(TESTCASE_URI);
   const { inspector, view } = await openRuleView();
   await selectNode("#testid", inspector);
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
 
   let editor = await focusEditableField(view, ruleEditor.selectorText);
   editor.input.value = "#testid, span";

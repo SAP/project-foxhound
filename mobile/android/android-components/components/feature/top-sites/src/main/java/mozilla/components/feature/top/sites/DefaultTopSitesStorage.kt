@@ -4,9 +4,6 @@
 
 package mozilla.components.feature.top.sites
 
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import mozilla.components.browser.storage.sync.PlacesHistoryStorage
 import mozilla.components.feature.top.sites.ext.hasHost
 import mozilla.components.feature.top.sites.ext.hasUrl
@@ -15,7 +12,6 @@ import mozilla.components.feature.top.sites.facts.emitTopSitesCountFact
 import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.base.observer.Observable
 import mozilla.components.support.base.observer.ObserverRegistry
-import kotlin.coroutines.CoroutineContext
 
 /**
  * Default implementation of [TopSitesStorage].
@@ -25,69 +21,95 @@ import kotlin.coroutines.CoroutineContext
  * sites from history.
  * @param topSitesProvider An optional instance of [TopSitesProvider], used for retrieving
  * additional top sites from a provider. The returned top sites are added before pinned sites.
- * @param defaultTopSites A list containing a title to url pair of default top sites to be added
- * to the [PinnedSiteStorage].
  */
-class DefaultTopSitesStorage(
+class DefaultTopSitesStorage private constructor(
     private val pinnedSitesStorage: PinnedSiteStorage,
     private val historyStorage: PlacesHistoryStorage,
     private val topSitesProvider: TopSitesProvider? = null,
-    private val defaultTopSites: List<Pair<String, String>> = listOf(),
-    coroutineContext: CoroutineContext = Dispatchers.IO,
 ) : TopSitesStorage, Observable<TopSitesStorage.Observer> by ObserverRegistry() {
 
-    private var scope = CoroutineScope(coroutineContext)
     private val logger = Logger("DefaultTopSitesStorage")
 
     // Cache of the last retrieved top sites
     var cachedTopSites = listOf<TopSite>()
 
-    init {
-        if (defaultTopSites.isNotEmpty()) {
-            scope.launch {
+    companion object {
+        /**
+         * Creates a [DefaultTopSitesStorage] and optionally initializes it with a list of default top sites.
+         *
+         * @param pinnedSitesStorage An instance of [PinnedSiteStorage], used for storing pinned sites.
+         * @param historyStorage An instance of [PlacesHistoryStorage], used for retrieving top frecent
+         * sites from history.
+         * @param topSitesProvider An optional instance of [TopSitesProvider], used for retrieving
+         * additional top sites from a provider.
+         * @param defaultTopSites A list of [Pair]s (title to URL) representing the default top sites
+         * to be added to the storage if they do not already exist.
+         * @return A new instance of [DefaultTopSitesStorage].
+         */
+        suspend operator fun invoke(
+            pinnedSitesStorage: PinnedSiteStorage,
+            historyStorage: PlacesHistoryStorage,
+            topSitesProvider: TopSitesProvider? = null,
+            defaultTopSites: List<Pair<String, String>>,
+        ): DefaultTopSitesStorage {
+            val storage = DefaultTopSitesStorage(
+                pinnedSitesStorage,
+                historyStorage,
+                topSitesProvider,
+            )
+            if (defaultTopSites.isNotEmpty()) {
                 pinnedSitesStorage.addAllPinnedSites(defaultTopSites, isDefault = true)
             }
+            return storage
         }
+
+        /**
+         * Creates a [DefaultTopSitesStorage].
+         *
+         * @param pinnedSitesStorage An instance of [PinnedSiteStorage], used for storing pinned sites.
+         * @param historyStorage An instance of [PlacesHistoryStorage], used for retrieving top frecent
+         * sites from history.
+         * @param topSitesProvider An optional instance of [TopSitesProvider], used for retrieving
+         * additional top sites from a provider.
+         * @return A new instance of [DefaultTopSitesStorage].
+         */
+        operator fun invoke(
+            pinnedSitesStorage: PinnedSiteStorage,
+            historyStorage: PlacesHistoryStorage,
+            topSitesProvider: TopSitesProvider? = null,
+        ) = DefaultTopSitesStorage(pinnedSitesStorage, historyStorage, topSitesProvider)
     }
 
-    override fun addTopSite(title: String, url: String, isDefault: Boolean) {
-        scope.launch {
-            pinnedSitesStorage.addPinnedSite(title, url, isDefault)
-            notifyObservers { onStorageUpdated() }
-        }
+    override suspend fun addTopSite(title: String, url: String, isDefault: Boolean) {
+        pinnedSitesStorage.addPinnedSite(title, url, isDefault)
+        notifyObservers { onStorageUpdated() }
     }
 
-    override fun addTopSites(topSites: List<Pair<String, String>>, isDefault: Boolean) {
-        scope.launch {
-            pinnedSitesStorage.addAllPinnedSites(topSites = topSites, isDefault = isDefault)
-            notifyObservers { onStorageUpdated() }
-        }
+    override suspend fun addTopSites(topSites: List<Pair<String, String>>, isDefault: Boolean) {
+        pinnedSitesStorage.addAllPinnedSites(topSites = topSites, isDefault = isDefault)
+        notifyObservers { onStorageUpdated() }
     }
 
-    override fun removeTopSite(topSite: TopSite) {
-        scope.launch {
-            if (topSite is TopSite.Default || topSite is TopSite.Pinned) {
-                pinnedSitesStorage.removePinnedSite(topSite)
-            }
-
-            // Remove the top site from both history and pinned sites storage to avoid having it
-            // show up as a frecent site if it is a pinned site.
-            if (topSite !is TopSite.Provided) {
-                historyStorage.deleteVisitsFor(topSite.url)
-            }
-
-            notifyObservers { onStorageUpdated() }
+    override suspend fun removeTopSite(topSite: TopSite) {
+        if (topSite is TopSite.Default || topSite is TopSite.Pinned) {
+            pinnedSitesStorage.removePinnedSite(topSite)
         }
+
+        // Remove the top site from both history and pinned sites storage to avoid having it
+        // show up as a frecent site if it is a pinned site.
+        if (topSite !is TopSite.Provided) {
+            historyStorage.deleteVisitsFor(topSite.url)
+        }
+
+        notifyObservers { onStorageUpdated() }
     }
 
-    override fun updateTopSite(topSite: TopSite, title: String, url: String) {
-        scope.launch {
-            if (topSite is TopSite.Default || topSite is TopSite.Pinned) {
-                pinnedSitesStorage.updatePinnedSite(topSite, title, url)
-            }
-
-            notifyObservers { onStorageUpdated() }
+    override suspend fun updateTopSite(topSite: TopSite, title: String, url: String) {
+        if (topSite is TopSite.Default || topSite is TopSite.Pinned) {
+            pinnedSitesStorage.updatePinnedSite(topSite, title, url)
         }
+
+        notifyObservers { onStorageUpdated() }
     }
 
     @Suppress("ComplexCondition", "TooGenericExceptionCaught")

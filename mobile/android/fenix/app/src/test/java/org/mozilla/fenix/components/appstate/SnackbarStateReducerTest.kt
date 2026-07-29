@@ -11,6 +11,7 @@ import org.mozilla.fenix.components.appstate.snackbar.SnackbarState.DeletingBrow
 import org.mozilla.fenix.components.appstate.snackbar.SnackbarState.Dismiss
 import org.mozilla.fenix.components.appstate.snackbar.SnackbarState.None
 import org.mozilla.fenix.components.appstate.snackbar.SnackbarState.ShowSnackbar
+import kotlin.test.assertIs
 
 class SnackbarStateReducerTest {
     private val initialState = AppState(
@@ -21,24 +22,24 @@ class SnackbarStateReducerTest {
     fun `WHEN snackbar dismissed action is dispatched THEN state is updated`() {
         val finalState = AppStoreReducer.reduce(initialState, SnackbarAction.SnackbarDismissed)
 
-        assertTrue(finalState.snackbarState is Dismiss)
-        assertTrue((finalState.snackbarState as Dismiss).previous == DeletingBrowserDataInProgress)
+        assertIs<Dismiss>(finalState.snackbarState)
+        assertTrue(finalState.snackbarState.previous == DeletingBrowserDataInProgress)
     }
 
     @Test
     fun `WHEN snackbar shown action is dispatched THEN state is updated`() {
         val finalState = AppStoreReducer.reduce(initialState, SnackbarAction.SnackbarShown)
 
-        assertTrue(finalState.snackbarState is None)
-        assertTrue((finalState.snackbarState as None).previous == DeletingBrowserDataInProgress)
+        assertIs<None>(finalState.snackbarState)
+        assertTrue(finalState.snackbarState.previous == DeletingBrowserDataInProgress)
     }
 
     @Test
     fun `WHEN reset action is dispatched THEN state is updated`() {
         val finalState = AppStoreReducer.reduce(initialState, SnackbarAction.Reset)
 
-        assertTrue(finalState.snackbarState is None)
-        assertTrue((finalState.snackbarState as None).previous == DeletingBrowserDataInProgress)
+        assertIs<None>(finalState.snackbarState)
+        assertTrue(finalState.snackbarState.previous == DeletingBrowserDataInProgress)
     }
 
     @Test
@@ -46,7 +47,7 @@ class SnackbarStateReducerTest {
         val testTitle = "Test Title"
         val finalState = AppStoreReducer.reduce(initialState, SnackbarAction.ShowSnackbar(testTitle))
 
-        assertTrue(finalState.snackbarState is ShowSnackbar)
-        assertTrue((finalState.snackbarState as ShowSnackbar).title == testTitle)
+        assertIs<ShowSnackbar>(finalState.snackbarState)
+        assertTrue(finalState.snackbarState.title == testTitle)
     }
 }

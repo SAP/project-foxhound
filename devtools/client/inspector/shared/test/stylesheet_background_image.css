@@ -1,0 +1,6 @@
+.in-stylesheet.absolute {
+  background: url(https://example.com/browser/devtools/client/inspector/shared/test/test-image.png) no-repeat;
+}
+.in-stylesheet.relative {
+  background: url(test-image.png) no-repeat;
+}

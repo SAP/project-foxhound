@@ -28,8 +28,7 @@ export const NETWORK_NAMES = {
 // Based on https://en.wikipedia.org/wiki/Payment_card_number
 //
 // Notice:
-//   - CarteBancaire (`4035`, `4360`) is now recognized as Visa.
-//   - UnionPay (`63--`) is now recognized as Discover.
+//   - CarteBancaire (`4035`, `4360`) must precede the generic Visa entry.
 // This means that the order matters.
 // First we'll try to match more specific card,
 // and if that doesn't match we'll test against the more generic range.
@@ -45,17 +44,15 @@ const CREDIT_CARD_IIN = [
   { type: "diners", start: 36, end: 36, len: [14, 19] },
   { type: "diners", start: 38, end: 39, len: [14, 19] },
   { type: "discover", start: 6011, end: 6011, len: [16, 19] },
-  { type: "discover", start: 622126, end: 622925, len: [16, 19] },
-  { type: "discover", start: 624000, end: 626999, len: [16, 19] },
-  { type: "discover", start: 628200, end: 628899, len: [16, 19] },
-  { type: "discover", start: 64, end: 65, len: [16, 19] },
+  { type: "discover", start: 644, end: 649, len: [16, 19] },
+  { type: "discover", start: 65, end: 65, len: [16, 19] },
   { type: "jcb", start: 3528, end: 3589, len: [16, 19] },
   { type: "mastercard", start: 2221, end: 2720, len: 16 },
   { type: "mastercard", start: 51, end: 55, len: 16 },
-  { type: "mir", start: 2200, end: 2204, len: 16 },
+  { type: "mir", start: 2200, end: 2204, len: [16, 19] },
   { type: "unionpay", start: 62, end: 62, len: [16, 19] },
   { type: "unionpay", start: 81, end: 81, len: [16, 19] },
-  { type: "visa", start: 4, end: 4, len: 16 },
+  { type: "visa", start: 4, end: 4, len: [13, 19] },
 ].sort((a, b) => b.start - a.start);
 
 export class CreditCard {
@@ -155,7 +152,7 @@ export class CreditCard {
     if (value) {
       let normalizedNumber = CreditCard.normalizeCardNumber(value);
       // Based on the information on wiki[1], the shortest valid length should be
-      // 12 digits (Maestro).
+      // 12 digits (Diners Club Carte Blanche has 14, but some legacy networks go lower).
       // [1] https://en.wikipedia.org/wiki/Payment_card_number
       normalizedNumber = normalizedNumber.match(/^\d{12,}$/)
         ? normalizedNumber
@@ -455,15 +452,15 @@ export class CreditCard {
   }
 
   static formatMaskedNumber(maskedNumber) {
-    return "*".repeat(4) + maskedNumber.substr(-4);
+    return "•".repeat(4) + maskedNumber.substr(-4);
   }
 
   static getMaskedNumber(number) {
-    return "*".repeat(4) + " " + number.substr(-4);
+    return "•".repeat(4) + " " + number.substr(-4);
   }
 
   static getLongMaskedNumber(number) {
-    return "*".repeat(number.length - 4) + number.substr(-4);
+    return "•".repeat(number.length - 4) + number.substr(-4);
   }
 
   static getCreditCardLogo(network) {

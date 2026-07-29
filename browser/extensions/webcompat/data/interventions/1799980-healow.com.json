@@ -1,0 +1,17 @@
+{
+  "label": "healow.com",
+  "bugs": {
+    "1799980": {
+      "issue": "frozen-tab",
+      "matches": ["*://healow.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "content_scripts": {
+        "js": ["bug1799980-healow.com-infinite-loop-fix.js"]
+      }
+    }
+  ]
+}

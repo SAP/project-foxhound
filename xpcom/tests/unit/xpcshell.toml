@@ -6,6 +6,8 @@ support-files = [
 ]
 generated-files = "xpcomtest.xpt"
 
+["test_KeyedUUIDMapper.js"]
+
 ["test_bug121341.js"]
 
 ["test_bug325418.js"]

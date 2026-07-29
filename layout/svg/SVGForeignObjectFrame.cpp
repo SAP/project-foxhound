@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,6 +11,7 @@
 #include "gfxContext.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ReflowInput.h"
 #include "mozilla/SVGContainerFrame.h"
 #include "mozilla/SVGObserverUtils.h"
 #include "mozilla/SVGUtils.h"
@@ -349,13 +348,13 @@ void SVGForeignObjectFrame::NotifySVGChanged(ChangeFlags aFlags) {
 }
 
 SVGBBox SVGForeignObjectFrame::GetBBoxContribution(
-    const Matrix& aToBBoxUserspace, uint32_t aFlags) {
-  SVGForeignObjectElement* content =
+    const Matrix& aToBBoxUserspace, SVGBBoxFlags aFlags) {
+  SVGForeignObjectElement* element =
       static_cast<SVGForeignObjectElement*>(GetContent());
 
   float x, y, w, h;
   SVGGeometryProperty::ResolveAll<SVGT::X, SVGT::Y, SVGT::Width, SVGT::Height>(
-      content, &x, &y, &w, &h);
+      element, &x, &y, &w, &h);
 
   if (w < 0.0f) {
     w = 0.0f;
@@ -363,12 +362,17 @@ SVGBBox SVGForeignObjectFrame::GetBBoxContribution(
   if (h < 0.0f) {
     h = 0.0f;
   }
+  gfx::Rect rect(0.0f, 0.0f, w, h);
+
+  if (aFlags.contains(SVGBBoxFlag::DisregardCSSZoom)) {
+    rect.Scale(1 / Style()->EffectiveZoom().ToFloat());
+  }
 
   if (aToBBoxUserspace.IsSingular()) {
     // XXX ReportToConsole
     return SVGBBox();
   }
-  return aToBBoxUserspace.TransformBounds(gfx::Rect(0.0, 0.0, w, h));
+  return aToBBoxUserspace.TransformBounds(rect);
 }
 
 //----------------------------------------------------------------------

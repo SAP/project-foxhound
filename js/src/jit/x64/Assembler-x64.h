@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -681,6 +679,13 @@ class Assembler : public AssemblerX86Shared {
       default:
         MOZ_CRASH("unexpected operand kind");
     }
+  }
+
+  void adcq(Register src, Register dest) {
+    masm.adcq_rr(src.encoding(), dest.encoding());
+  }
+  void sbbq(Register src, Register dest) {
+    masm.sbbq_rr(src.encoding(), dest.encoding());
   }
 
   void andq(Register src, Register dest) {

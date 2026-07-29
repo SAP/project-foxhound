@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,8 +25,9 @@ class JSObject;
 enum class AttrModType : uint8_t;  // Defined in nsIMutationObserver.h
 
 namespace mozilla {
+struct CSSPropertyId;
 enum class StyleCssRuleType : uint8_t;
-class DeclarationBlock;
+struct StyleLockedDeclarationBlock;
 struct DeclarationBlockMutationClosure;
 namespace css {
 class Loader;
@@ -53,6 +52,9 @@ struct MutationClosureData {
 
 class nsDOMCSSDeclaration : public nsICSSDeclaration {
  public:
+  using Block = mozilla::StyleLockedDeclarationBlock;
+  static already_AddRefed<Block> EnsureBlockMutable(Block*);
+
   // Only implement QueryInterface; subclasses have the responsibility
   // of implementing AddRef/Release.
   NS_IMETHOD QueryInterface(REFNSIID aIID, void** aInstancePtr) override;
@@ -79,6 +81,17 @@ class nsDOMCSSDeclaration : public nsICSSDeclaration {
                                 const nsACString& aValue,
                                 nsIPrincipal* aSubjectPrincipal,
                                 mozilla::ErrorResult& aRv);
+
+  /**
+   * Method used by Typed OM to set a property from a typed value.
+   *
+   * For now, the value is passed as a string and parsed internally. In the
+   * future, this is expected to take a StylePropertyTypedValueList and avoid
+   * parsing by converting Typed OM values directly.
+   */
+  virtual void SetPropertyTypedValue(const mozilla::CSSPropertyId& aPropId,
+                                     const nsACString& aValue,
+                                     mozilla::ErrorResult& aRv);
 
   // Require subclasses to implement |GetParentRule|.
   // NS_DECL_NSIDOMCSSSTYLEDECLARATION
@@ -135,12 +148,11 @@ class nsDOMCSSDeclaration : public nsICSSDeclaration {
 
   // If aOperation is Modify, aCreated must be non-null and the call may set it
   // to point to the newly created object.
-  virtual mozilla::DeclarationBlock* GetOrCreateCSSDeclaration(
-      Operation aOperation, mozilla::DeclarationBlock** aCreated) = 0;
+  virtual Block* GetOrCreateCSSDeclaration(Operation aOperation,
+                                           Block** aCreated) = 0;
 
   virtual nsresult SetCSSDeclaration(
-      mozilla::DeclarationBlock* aDecl,
-      mozilla::MutationClosureData* aClosureData) = 0;
+      Block* aDecl, mozilla::MutationClosureData* aClosureData) = 0;
   // Document that we must call BeginUpdate/EndUpdate on around the
   // calls to SetCSSDeclaration and the style rule mutation that leads
   // to it.
@@ -170,6 +182,9 @@ class nsDOMCSSDeclaration : public nsICSSDeclaration {
                                     const nsACString& aPropValue,
                                     bool aIsImportant,
                                     nsIPrincipal* aSubjectPrincipal);
+
+  nsresult SetPropertyTypedValue(const mozilla::CSSPropertyId& aPropId,
+                                 const nsACString& aPropValue);
 
   void RemovePropertyInternal(NonCustomCSSPropertyId aPropId,
                               mozilla::ErrorResult& aRv);

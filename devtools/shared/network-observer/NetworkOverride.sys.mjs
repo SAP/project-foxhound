@@ -44,7 +44,8 @@ function readFile(file) {
  */
 function overrideChannelWithFilePath(channel, path) {
   // For JS it isn't important, but for HTML we ought to set the right content type on the data URI.
-  let mimeType = "";
+  // Always consider folders as being html documents.
+  let mimeType = channel.URI.spec.endsWith("/") ? "text/html" : "";
   try {
     // getTypeFromURI will throw if there is no extension at the end of the URI
     mimeType = lazy.mimeService.getTypeFromURI(channel.URI);

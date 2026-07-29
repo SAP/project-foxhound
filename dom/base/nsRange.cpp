@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,6 +26,7 @@
 #include "mozilla/dom/DocumentFragment.h"
 #include "mozilla/dom/DocumentType.h"
 #include "mozilla/dom/InspectorFontFace.h"
+#include "mozilla/dom/NodeList.h"
 #include "mozilla/dom/RangeBinding.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/Text.h"
@@ -42,7 +41,6 @@
 #include "nsFrameSelection.h"
 #include "nsGkAtoms.h"
 #include "nsIContent.h"
-#include "nsINodeList.h"
 #include "nsLayoutUtils.h"
 #include "nsReadableUtils.h"
 #include "nsString.h"
@@ -1557,205 +1555,6 @@ void nsRange::SelectNodeContents(nsINode& aNode, ErrorResult& aRv) {
              RawRangeBoundary::EndOfParent(aNode), newRoot);
 }
 
-// The Subtree Content Iterator only returns subtrees that are
-// completely within a given range. It doesn't return a CharacterData
-// node that contains either the start or end point of the range.,
-// nor does it return element nodes when nothing in the element is selected.
-// We need an iterator that will also include these start/end points
-// so that our methods/algorithms aren't cluttered with special
-// case code that tries to include these points while iterating.
-//
-// The RangeSubtreeIterator class mimics the ContentSubtreeIterator
-// methods we need, so should the Content Iterator support the
-// start/end points in the future, we can switchover relatively
-// easy.
-
-class MOZ_STACK_CLASS RangeSubtreeIterator {
- private:
-  enum RangeSubtreeIterState { eDone = 0, eUseStart, eUseIterator, eUseEnd };
-
-  Maybe<ContentSubtreeIterator> mSubtreeIter;
-  RangeSubtreeIterState mIterState;
-
-  nsCOMPtr<nsINode> mStart;
-  nsCOMPtr<nsINode> mEnd;
-
- public:
-  RangeSubtreeIterator() : mIterState(eDone) {}
-  ~RangeSubtreeIterator() = default;
-
-  nsresult Init(nsRange* aRange, AllowRangeCrossShadowBoundary =
-                                     AllowRangeCrossShadowBoundary::No);
-  already_AddRefed<nsINode> GetCurrentNode();
-  void First();
-  void Last();
-  void Next();
-  void Prev();
-
-  bool IsDone() { return mIterState == eDone; }
-};
-
-nsresult RangeSubtreeIterator::Init(
-    nsRange* aRange, AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary) {
-  mIterState = eDone;
-  if (aRange->AreNormalRangeAndCrossShadowBoundaryRangeCollapsed()) {
-    return NS_OK;
-  }
-
-  // Grab the start point of the range and QI it to
-  // a CharacterData pointer. If it is CharacterData store
-  // a pointer to the node.
-
-  if (!aRange->IsPositioned()) {
-    return NS_ERROR_FAILURE;
-  }
-
-  nsINode* node = aRange->GetMayCrossShadowBoundaryStartContainer();
-  if (NS_WARN_IF(!node)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  if (node->IsCharacterData() ||
-      (node->IsElement() && node->AsElement()->GetChildCount() ==
-                                aRange->MayCrossShadowBoundaryStartOffset())) {
-    mStart = node;
-  }
-
-  // Grab the end point of the range and QI it to
-  // a CharacterData pointer. If it is CharacterData store
-  // a pointer to the node.
-
-  node = aRange->GetMayCrossShadowBoundaryEndContainer();
-  if (NS_WARN_IF(!node)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  if (node->IsCharacterData() ||
-      (node->IsElement() && aRange->MayCrossShadowBoundaryEndOffset() == 0)) {
-    mEnd = node;
-  }
-
-  if (mStart && mStart == mEnd) {
-    // The range starts and stops in the same CharacterData
-    // node. Null out the end pointer so we only visit the
-    // node once!
-
-    mEnd = nullptr;
-  } else {
-    // Now create a Content Subtree Iterator to be used
-    // for the subtrees between the end points!
-
-    mSubtreeIter.emplace();
-
-    nsresult res =
-        aAllowCrossShadowBoundary == AllowRangeCrossShadowBoundary::Yes
-            ? mSubtreeIter->InitWithAllowCrossShadowBoundary(aRange)
-            : mSubtreeIter->Init(aRange);
-    if (NS_FAILED(res)) return res;
-
-    if (mSubtreeIter->IsDone()) {
-      // The subtree iterator thinks there's nothing
-      // to iterate over, so just free it up so we
-      // don't accidentally call into it.
-
-      mSubtreeIter.reset();
-    }
-  }
-
-  // Initialize the iterator by calling First().
-  // Note that we are ignoring the return value on purpose!
-
-  First();
-
-  return NS_OK;
-}
-
-already_AddRefed<nsINode> RangeSubtreeIterator::GetCurrentNode() {
-  nsCOMPtr<nsINode> node;
-
-  if (mIterState == eUseStart && mStart) {
-    node = mStart;
-  } else if (mIterState == eUseEnd && mEnd) {
-    node = mEnd;
-  } else if (mIterState == eUseIterator && mSubtreeIter) {
-    node = mSubtreeIter->GetCurrentNode();
-  }
-
-  return node.forget();
-}
-
-void RangeSubtreeIterator::First() {
-  if (mStart)
-    mIterState = eUseStart;
-  else if (mSubtreeIter) {
-    mSubtreeIter->First();
-
-    mIterState = eUseIterator;
-  } else if (mEnd)
-    mIterState = eUseEnd;
-  else
-    mIterState = eDone;
-}
-
-void RangeSubtreeIterator::Last() {
-  if (mEnd)
-    mIterState = eUseEnd;
-  else if (mSubtreeIter) {
-    mSubtreeIter->Last();
-
-    mIterState = eUseIterator;
-  } else if (mStart)
-    mIterState = eUseStart;
-  else
-    mIterState = eDone;
-}
-
-void RangeSubtreeIterator::Next() {
-  if (mIterState == eUseStart) {
-    if (mSubtreeIter) {
-      mSubtreeIter->First();
-
-      mIterState = eUseIterator;
-    } else if (mEnd)
-      mIterState = eUseEnd;
-    else
-      mIterState = eDone;
-  } else if (mIterState == eUseIterator) {
-    mSubtreeIter->Next();
-
-    if (mSubtreeIter->IsDone()) {
-      if (mEnd)
-        mIterState = eUseEnd;
-      else
-        mIterState = eDone;
-    }
-  } else
-    mIterState = eDone;
-}
-
-void RangeSubtreeIterator::Prev() {
-  if (mIterState == eUseEnd) {
-    if (mSubtreeIter) {
-      mSubtreeIter->Last();
-
-      mIterState = eUseIterator;
-    } else if (mStart)
-      mIterState = eUseStart;
-    else
-      mIterState = eDone;
-  } else if (mIterState == eUseIterator) {
-    mSubtreeIter->Prev();
-
-    if (mSubtreeIter->IsDone()) {
-      if (mStart)
-        mIterState = eUseStart;
-      else
-        mIterState = eDone;
-    }
-  } else
-    mIterState = eDone;
-}
-
 // CollapseRangeAfterDelete() is a utility method that is used by
 // DeleteContents() and ExtractContents() to collapse the range
 // in the correct place, under the range's root container (the
@@ -1999,10 +1798,8 @@ void nsRange::CutContents(DocumentFragment** aFragment,
 
   nsCOMPtr<Document> doc = mStart.GetContainer()->OwnerDoc();
 
-  nsCOMPtr<nsINode> commonAncestor = GetCommonAncestorContainer(
-      aRv, StaticPrefs::dom_shadowdom_selection_across_boundary_enabled()
-               ? AllowRangeCrossShadowBoundary::Yes
-               : AllowRangeCrossShadowBoundary::No);
+  nsCOMPtr<nsINode> commonAncestor =
+      GetCommonAncestorContainer(aRv, AllowRangeCrossShadowBoundary::Yes);
   if (aRv.Failed()) {
     return;
   }
@@ -2057,10 +1854,7 @@ void nsRange::CutContents(DocumentFragment** aFragment,
 
   RangeSubtreeIterator iter;
 
-  aRv = iter.Init(this,
-                  StaticPrefs::dom_shadowdom_selection_across_boundary_enabled()
-                      ? AllowRangeCrossShadowBoundary::Yes
-                      : AllowRangeCrossShadowBoundary::No);
+  aRv = iter.Init(this, AllowRangeCrossShadowBoundary::Yes);
   if (aRv.Failed()) {
     return;
   }
@@ -2653,7 +2447,7 @@ void nsRange::InsertNode(nsINode& aNode, ErrorResult& aRv) {
   nsCOMPtr<nsINode> referenceParentNode = tStartContainer;
 
   RefPtr<Text> startTextNode = tStartContainer->GetAsText();
-  nsCOMPtr<nsINodeList> tChildList;
+  RefPtr<NodeList> tChildList;
   if (startTextNode) {
     referenceParentNode = tStartContainer->GetParentNode();
     if (!referenceParentNode) {
@@ -2774,7 +2568,7 @@ void nsRange::SurroundContents(nsINode& aNewParent, ErrorResult& aRv) {
   // Spec says we need to remove all of aNewParent's
   // children prior to insertion.
 
-  nsCOMPtr<nsINodeList> children = aNewParent.ChildNodes();
+  RefPtr<NodeList> children = aNewParent.ChildNodes();
   if (!children) {
     aRv.Throw(NS_ERROR_FAILURE);
     return;
@@ -2935,356 +2729,6 @@ already_AddRefed<DocumentFragment> nsRange::CreateContextualFragment(
 
   return nsContentUtils::CreateContextualFragment(mStart.GetContainer(),
                                                   *compliantString, false, aRv);
-}
-
-static void ExtractRectFromOffset(nsIFrame* aFrame, const int32_t aOffset,
-                                  nsRect* aR, bool aFlushToOriginEdge,
-                                  bool aClampToEdge) {
-  MOZ_ASSERT(aFrame);
-  MOZ_ASSERT(aR);
-
-  nsPoint point;
-  aFrame->GetPointFromOffset(aOffset, &point);
-
-  // Determine if aFrame has a vertical writing mode, which will change our math
-  // on the output rect.
-  bool isVertical = aFrame->GetWritingMode().IsVertical();
-
-  if (!aClampToEdge && !aR->Contains(point)) {
-    // If point is outside aR, and we aren't clamping, output an empty rect
-    // with origin at the point.
-    if (isVertical) {
-      aR->SetHeight(0);
-      aR->y = point.y;
-    } else {
-      aR->SetWidth(0);
-      aR->x = point.x;
-    }
-    return;
-  }
-
-  if (aClampToEdge) {
-    point = aR->ClampPoint(point);
-  }
-
-  // point is within aR, and now we'll modify aR to output a rect that has point
-  // on one edge. But which edge?
-  if (aFlushToOriginEdge) {
-    // The output rect should be flush to the edge of aR that contains the
-    // origin.
-    if (isVertical) {
-      aR->SetHeight(point.y - aR->y);
-    } else {
-      aR->SetWidth(point.x - aR->x);
-    }
-  } else {
-    // The output rect should be flush to the edge of aR opposite the origin.
-    if (isVertical) {
-      aR->SetHeight(aR->YMost() - point.y);
-      aR->y = point.y;
-    } else {
-      aR->SetWidth(aR->XMost() - point.x);
-      aR->x = point.x;
-    }
-  }
-}
-
-static nsTextFrame* GetTextFrameForContent(nsIContent* aContent,
-                                           bool aFlushLayout) {
-  RefPtr<Document> doc = aContent->OwnerDoc();
-  PresShell* presShell = doc->GetPresShell();
-  if (!presShell) {
-    return nullptr;
-  }
-
-  // Try to un-suppress whitespace if needed, but only if we'll be able to flush
-  // to immediately see the results of the un-suppression. If we can't flush
-  // here, then calling EnsureFrameForTextNodeIsCreatedAfterFlush would be
-  // pointless anyway.
-  if (aFlushLayout) {
-    const bool frameWillBeUnsuppressed =
-        presShell->FrameConstructor()
-            ->EnsureFrameForTextNodeIsCreatedAfterFlush(
-                static_cast<CharacterData*>(aContent));
-    if (frameWillBeUnsuppressed) {
-      doc->FlushPendingNotifications(FlushType::Layout);
-    }
-  }
-
-  nsIFrame* frame = aContent->GetPrimaryFrame();
-  if (!frame || !frame->IsTextFrame()) {
-    return nullptr;
-  }
-  return static_cast<nsTextFrame*>(frame);
-}
-
-static nsresult GetPartialTextRect(RectCallback* aCallback,
-                                   Sequence<nsString>* aTextList,
-                                   nsIContent* aContent, int32_t aStartOffset,
-                                   int32_t aEndOffset, bool aClampToEdge,
-                                   bool aFlushLayout) {
-  nsTextFrame* textFrame = GetTextFrameForContent(aContent, aFlushLayout);
-  if (textFrame) {
-    nsIFrame* relativeTo =
-        nsLayoutUtils::GetContainingBlockForClientRect(textFrame);
-
-    for (nsTextFrame* f = textFrame->FindContinuationForOffset(aStartOffset); f;
-         f = static_cast<nsTextFrame*>(f->GetNextContinuation())) {
-      int32_t fstart = f->GetContentOffset(), fend = f->GetContentEnd();
-      if (fend <= aStartOffset) {
-        continue;
-      }
-      if (fstart >= aEndOffset) {
-        break;
-      }
-
-      // Calculate the text content offsets we'll need if text is requested.
-      int32_t textContentStart = fstart;
-      int32_t textContentEnd = fend;
-
-      // overlapping with the offset we want
-      f->EnsureTextRun(nsTextFrame::eInflated);
-      NS_ENSURE_TRUE(f->GetTextRun(nsTextFrame::eInflated),
-                     NS_ERROR_OUT_OF_MEMORY);
-      bool topLeftToBottomRight =
-          !f->GetTextRun(nsTextFrame::eInflated)->IsInlineReversed();
-      nsRect r = f->GetRectRelativeToSelf();
-      if (fstart < aStartOffset) {
-        // aStartOffset is within this frame
-        ExtractRectFromOffset(f, aStartOffset, &r, !topLeftToBottomRight,
-                              aClampToEdge);
-        textContentStart = aStartOffset;
-      }
-      if (fend > aEndOffset) {
-        // aEndOffset is in the middle of this frame
-        ExtractRectFromOffset(f, aEndOffset, &r, topLeftToBottomRight,
-                              aClampToEdge);
-        textContentEnd = aEndOffset;
-      }
-      r = nsLayoutUtils::TransformFrameRectToAncestor(f, r, relativeTo);
-      aCallback->AddRect(r);
-
-      // Finally capture the text, if requested.
-      if (aTextList) {
-        nsIFrame::RenderedText renderedText =
-            f->GetRenderedText(textContentStart, textContentEnd,
-                               nsIFrame::TextOffsetType::OffsetsInContentText,
-                               nsIFrame::TrailingWhitespace::DontTrim);
-
-        NS_ENSURE_TRUE(aTextList->AppendElement(renderedText.mString, fallible),
-                       NS_ERROR_OUT_OF_MEMORY);
-      }
-    }
-  }
-  return NS_OK;
-}
-
-static void CollectClientRectsForSubtree(
-    nsINode* aNode, RectCallback* aCollector, Sequence<nsString>* aTextList,
-    nsINode* aStartContainer, uint32_t aStartOffset, nsINode* aEndContainer,
-    uint32_t aEndOffset, bool aClampToEdge, bool aFlushLayout, bool aTextOnly) {
-  auto* content = nsIContent::FromNode(aNode);
-  if (!content) {
-    return;
-  }
-
-  const bool isText = content->IsText();
-  if (isText) {
-    if (aNode == aStartContainer) {
-      int32_t offset = aStartContainer == aEndContainer
-                           ? static_cast<int32_t>(aEndOffset)
-                           : content->AsText()->TextDataLength();
-      GetPartialTextRect(aCollector, aTextList, content,
-                         static_cast<int32_t>(aStartOffset), offset,
-                         aClampToEdge, aFlushLayout);
-      return;
-    }
-
-    if (aNode == aEndContainer) {
-      GetPartialTextRect(aCollector, aTextList, content, 0,
-                         static_cast<int32_t>(aEndOffset), aClampToEdge,
-                         aFlushLayout);
-      return;
-    }
-  }
-
-  if (nsIFrame* frame = content->GetPrimaryFrame()) {
-    if (!aTextOnly || isText) {
-      nsLayoutUtils::GetAllInFlowRectsAndTexts(
-          frame, nsLayoutUtils::GetContainingBlockForClientRect(frame),
-          aCollector, aTextList,
-          nsLayoutUtils::GetAllInFlowRectsFlag::AccountForTransforms);
-      if (isText) {
-        return;
-      }
-      aTextOnly = true;
-      // We just get the text when calling GetAllInFlowRectsAndTexts, so we
-      // don't need to call it again when visiting the children.
-      aTextList = nullptr;
-    }
-  } else if (!content->IsElement() ||
-             !content->AsElement()->IsDisplayContents()) {
-    return;
-  }
-
-  FlattenedChildIterator childIter(content);
-  for (nsIContent* child = childIter.GetNextChild(); child;
-       child = childIter.GetNextChild()) {
-    CollectClientRectsForSubtree(child, aCollector, aTextList, aStartContainer,
-                                 aStartOffset, aEndContainer, aEndOffset,
-                                 aClampToEdge, aFlushLayout, aTextOnly);
-  }
-}
-
-/* static */
-void nsRange::CollectClientRectsAndText(
-    RectCallback* aCollector, Sequence<nsString>* aTextList, nsRange* aRange,
-    nsINode* aStartContainer, uint32_t aStartOffset, nsINode* aEndContainer,
-    uint32_t aEndOffset, bool aClampToEdge, bool aFlushLayout) {
-  // Currently, this method is called with start of end offset of nsRange.
-  // So, they must be between 0 - INT32_MAX.
-  MOZ_ASSERT(RangeUtils::IsValidOffset(aStartOffset));
-  MOZ_ASSERT(RangeUtils::IsValidOffset(aEndOffset));
-
-  // Hold strong pointers across the flush
-  nsCOMPtr<nsINode> startContainer = aStartContainer;
-  nsCOMPtr<nsINode> endContainer = aEndContainer;
-
-  // Flush out layout so our frames are up to date.
-  if (!aStartContainer->IsInComposedDoc()) {
-    return;
-  }
-
-  if (aFlushLayout) {
-    if (auto* content = nsIContent::FromNode(aStartContainer)) {
-      content->GetPrimaryFrame(FlushType::Layout);
-    } else {
-      aStartContainer->OwnerDoc()->FlushPendingNotifications(FlushType::Layout);
-    }
-    // Recheck whether we're still in the document
-    if (!aStartContainer->IsInComposedDoc()) {
-      return;
-    }
-  }
-
-  RangeSubtreeIterator iter;
-
-  nsresult rv = iter.Init(aRange);
-  if (NS_FAILED(rv)) return;
-
-  if (iter.IsDone()) {
-    // the range is collapsed, only continue if the cursor is in a text node
-    if (aStartContainer->IsText()) {
-      nsTextFrame* textFrame =
-          GetTextFrameForContent(aStartContainer->AsText(), aFlushLayout);
-      if (textFrame) {
-        int32_t outOffset;
-        nsIFrame* outFrame;
-        textFrame->GetChildFrameContainingOffset(
-            static_cast<int32_t>(aStartOffset), false, &outOffset, &outFrame);
-        if (outFrame) {
-          nsIFrame* relativeTo =
-              nsLayoutUtils::GetContainingBlockForClientRect(outFrame);
-          nsRect r = outFrame->GetRectRelativeToSelf();
-          ExtractRectFromOffset(outFrame, static_cast<int32_t>(aStartOffset),
-                                &r, false, aClampToEdge);
-          r.SetWidth(0);
-          r = nsLayoutUtils::TransformFrameRectToAncestor(outFrame, r,
-                                                          relativeTo);
-          aCollector->AddRect(r);
-        }
-      }
-    }
-    return;
-  }
-
-  do {
-    nsCOMPtr<nsINode> node = iter.GetCurrentNode();
-    iter.Next();
-
-    CollectClientRectsForSubtree(node, aCollector, aTextList, aStartContainer,
-                                 aStartOffset, aEndContainer, aEndOffset,
-                                 aClampToEdge, aFlushLayout, false);
-  } while (!iter.IsDone());
-}
-
-already_AddRefed<DOMRect> nsRange::GetBoundingClientRect(bool aClampToEdge,
-                                                         bool aFlushLayout) {
-  RefPtr<DOMRect> rect = new DOMRect(ToSupports(mOwner));
-  if (!mIsPositioned) {
-    return rect.forget();
-  }
-
-  nsLayoutUtils::RectAccumulator accumulator;
-  CollectClientRectsAndText(
-      &accumulator, nullptr, this, mStart.GetContainer(),
-      *mStart.Offset(RangeBoundary::OffsetFilter::kValidOffsets),
-      mEnd.GetContainer(),
-      *mEnd.Offset(RangeBoundary::OffsetFilter::kValidOffsets), aClampToEdge,
-      aFlushLayout);
-
-  nsRect r = accumulator.mResultRect.IsEmpty() ? accumulator.mFirstRect
-                                               : accumulator.mResultRect;
-  rect->SetLayoutRect(r);
-  return rect.forget();
-}
-
-already_AddRefed<DOMRectList> nsRange::GetClientRects(bool aClampToEdge,
-                                                      bool aFlushLayout) {
-  return GetClientRectsInner(AllowRangeCrossShadowBoundary::No, aClampToEdge,
-                             aFlushLayout);
-}
-
-already_AddRefed<DOMRectList> nsRange::GetAllowCrossShadowBoundaryClientRects(
-    bool aClampToEdge, bool aFlushLayout) {
-  return GetClientRectsInner(AllowRangeCrossShadowBoundary::Yes, aClampToEdge,
-                             aFlushLayout);
-}
-
-already_AddRefed<DOMRectList> nsRange::GetClientRectsInner(
-    AllowRangeCrossShadowBoundary aAllowCrossShadowBoundaryRange,
-    bool aClampToEdge, bool aFlushLayout) {
-  if (!mIsPositioned) {
-    return nullptr;
-  }
-
-  RefPtr<DOMRectList> rectList = new DOMRectList(ToSupports(mOwner));
-
-  nsLayoutUtils::RectListBuilder builder(rectList);
-
-  const auto& startRef =
-      aAllowCrossShadowBoundaryRange == AllowRangeCrossShadowBoundary::Yes
-          ? MayCrossShadowBoundaryStartRef()
-          : mStart;
-  const auto& endRef =
-      aAllowCrossShadowBoundaryRange == AllowRangeCrossShadowBoundary::Yes
-          ? MayCrossShadowBoundaryEndRef()
-          : mEnd;
-
-  CollectClientRectsAndText(
-      &builder, nullptr, this, startRef.GetContainer(),
-      *startRef.Offset(RangeBoundary::OffsetFilter::kValidOffsets),
-      endRef.GetContainer(),
-      *endRef.Offset(RangeBoundary::OffsetFilter::kValidOffsets), aClampToEdge,
-      aFlushLayout);
-  return rectList.forget();
-}
-
-void nsRange::GetClientRectsAndTexts(mozilla::dom::ClientRectsAndTexts& aResult,
-                                     ErrorResult& aErr) {
-  if (!mIsPositioned) {
-    return;
-  }
-
-  aResult.mRectList = new DOMRectList(ToSupports(mOwner));
-
-  nsLayoutUtils::RectListBuilder builder(aResult.mRectList);
-
-  CollectClientRectsAndText(
-      &builder, &aResult.mTextList, this, mStart.GetContainer(),
-      *mStart.Offset(RangeBoundary::OffsetFilter::kValidOffsets),
-      mEnd.GetContainer(),
-      *mEnd.Offset(RangeBoundary::OffsetFilter::kValidOffsets), true, true);
 }
 
 nsresult nsRange::GetUsedFontFaces(nsLayoutUtils::UsedFontFaceList& aResult,
@@ -3548,8 +2992,8 @@ void nsRange::ExcludeNonSelectableNodes(nsTArray<RefPtr<nsRange>>* aOutRanges) {
 }
 
 struct InnerTextAccumulator {
-  explicit InnerTextAccumulator(mozilla::dom::DOMString& aValue)
-      : mString(aValue.AsAString()), mRequiredLineBreakCount(0) {}
+  explicit InnerTextAccumulator(nsAString& aValue)
+      : mString(aValue), mRequiredLineBreakCount(0) {}
   void FlushLineBreaks() {
     while (mRequiredLineBreakCount > 0) {
       // Required line breaks at the start of the text are suppressed.
@@ -3664,7 +3108,8 @@ static bool IsLastNonemptyRowGroupOfTable(nsIFrame* aFrame) {
   for (nsIFrame* c = aFrame; c; c = c->GetNextContinuation()) {
     for (nsIFrame* next = c->GetNextSibling(); next;
          next = next->GetNextSibling()) {
-      if (next->PrincipalChildList().FirstChild()) {
+      if (next->IsTableRowGroupFrame() &&
+          !next->PrincipalChildList().IsEmpty()) {
         return false;
       }
     }
@@ -3672,7 +3117,7 @@ static bool IsLastNonemptyRowGroupOfTable(nsIFrame* aFrame) {
   return true;
 }
 
-void nsRange::GetInnerTextNoFlush(DOMString& aValue, ErrorResult& aError,
+void nsRange::GetInnerTextNoFlush(nsAString& aValue, ErrorResult& aError,
                                   nsIContent* aContainer) {
   InnerTextAccumulator result(aValue);
 
@@ -3770,10 +3215,6 @@ template <typename SPT, typename SRT, typename EPT, typename ERT>
 void nsRange::CreateOrUpdateCrossShadowBoundaryRangeIfNeeded(
     const mozilla::RangeBoundaryBase<SPT, SRT>& aStartBoundary,
     const mozilla::RangeBoundaryBase<EPT, ERT>& aEndBoundary) {
-  if (!StaticPrefs::dom_shadowdom_selection_across_boundary_enabled()) {
-    return;
-  }
-
   MOZ_ASSERT(aStartBoundary.IsSetAndValid() && aEndBoundary.IsSetAndValid());
   MOZ_ASSERT(aStartBoundary.GetTreeKind() == aEndBoundary.GetTreeKind());
   MOZ_ASSERT(aStartBoundary.GetTreeKind() == TreeKind::Flat);

@@ -8,7 +8,6 @@
 
 DIRS += [
     "/third_party/libwebrtc/api/adaptation/resource_adaptation_api_gn",
-    "/third_party/libwebrtc/api/array_view_gn",
     "/third_party/libwebrtc/api/async_dns_resolver_gn",
     "/third_party/libwebrtc/api/audio/aec3_config_gn",
     "/third_party/libwebrtc/api/audio/aec3_factory_gn",
@@ -54,7 +53,6 @@ DIRS += [
     "/third_party/libwebrtc/api/frame_transformer_interface_gn",
     "/third_party/libwebrtc/api/function_view_gn",
     "/third_party/libwebrtc/api/libjingle_logging_api_gn",
-    "/third_party/libwebrtc/api/libjingle_peerconnection_api_gn",
     "/third_party/libwebrtc/api/location_gn",
     "/third_party/libwebrtc/api/make_ref_counted_gn",
     "/third_party/libwebrtc/api/media_stream_interface_gn",
@@ -66,6 +64,7 @@ DIRS += [
     "/third_party/libwebrtc/api/neteq/neteq_controller_api_gn",
     "/third_party/libwebrtc/api/neteq/tick_timer_gn",
     "/third_party/libwebrtc/api/network_state_predictor_api_gn",
+    "/third_party/libwebrtc/api/payload_type_gn",
     "/third_party/libwebrtc/api/priority_gn",
     "/third_party/libwebrtc/api/ref_count_gn",
     "/third_party/libwebrtc/api/refcountedbase_gn",
@@ -101,11 +100,13 @@ DIRS += [
     "/third_party/libwebrtc/api/units/time_delta_gn",
     "/third_party/libwebrtc/api/units/timestamp_gn",
     "/third_party/libwebrtc/api/video/builtin_video_bitrate_allocator_factory_gn",
+    "/third_party/libwebrtc/api/video/corruption_detection/corruption_detection_settings_generator_gn",
     "/third_party/libwebrtc/api/video/corruption_detection/filter_settings_gn",
     "/third_party/libwebrtc/api/video/corruption_detection/frame_instrumentation_data_gn",
     "/third_party/libwebrtc/api/video/corruption_detection/frame_instrumentation_data_reader_gn",
     "/third_party/libwebrtc/api/video/corruption_detection/frame_instrumentation_evaluation_gn",
-    "/third_party/libwebrtc/api/video/corruption_detection/frame_instrumentation_generator_gn",
+    "/third_party/libwebrtc/api/video/corruption_detection/frame_instrumentation_generator_factory_gn",
+    "/third_party/libwebrtc/api/video/corruption_detection/frame_instrumentation_generator_header_gn",
     "/third_party/libwebrtc/api/video/encoded_frame_gn",
     "/third_party/libwebrtc/api/video/encoded_image_gn",
     "/third_party/libwebrtc/api/video/frame_buffer_gn",
@@ -126,6 +127,7 @@ DIRS += [
     "/third_party/libwebrtc/api/video/video_stream_encoder_gn",
     "/third_party/libwebrtc/api/video_codecs/bitstream_parser_api_gn",
     "/third_party/libwebrtc/api/video_codecs/builtin_video_decoder_factory_gn",
+    "/third_party/libwebrtc/api/video_codecs/encoder_speed_controller_factory_gn",
     "/third_party/libwebrtc/api/video_codecs/rtc_software_fallback_wrappers_gn",
     "/third_party/libwebrtc/api/video_codecs/scalability_mode_gn",
     "/third_party/libwebrtc/api/video_codecs/scalability_mode_helper_gn",
@@ -158,8 +160,6 @@ DIRS += [
     "/third_party/libwebrtc/common_audio/common_audio_c_gn",
     "/third_party/libwebrtc/common_audio/common_audio_cc_gn",
     "/third_party/libwebrtc/common_audio/common_audio_gn",
-    "/third_party/libwebrtc/common_audio/fir_filter_factory_gn",
-    "/third_party/libwebrtc/common_audio/fir_filter_gn",
     "/third_party/libwebrtc/common_audio/sinc_resampler_gn",
     "/third_party/libwebrtc/common_audio/third_party/ooura/fft_size_128_gn",
     "/third_party/libwebrtc/common_audio/third_party/ooura/fft_size_256_gn",
@@ -229,6 +229,7 @@ DIRS += [
     "/third_party/libwebrtc/modules/audio_mixer/audio_mixer_impl_gn",
     "/third_party/libwebrtc/modules/audio_processing/aec3/adaptive_fir_filter_erl_gn",
     "/third_party/libwebrtc/modules/audio_processing/aec3/adaptive_fir_filter_gn",
+    "/third_party/libwebrtc/modules/audio_processing/aec3/aec3_block_gn",
     "/third_party/libwebrtc/modules/audio_processing/aec3/aec3_common_gn",
     "/third_party/libwebrtc/modules/audio_processing/aec3/aec3_fft_gn",
     "/third_party/libwebrtc/modules/audio_processing/aec3/aec3_gn",
@@ -239,7 +240,6 @@ DIRS += [
     "/third_party/libwebrtc/modules/audio_processing/aec_dump/aec_dump_gn",
     "/third_party/libwebrtc/modules/audio_processing/aec_dump/null_aec_dump_factory_gn",
     "/third_party/libwebrtc/modules/audio_processing/aec_dump_interface_gn",
-    "/third_party/libwebrtc/modules/audio_processing/aecm/aecm_core_gn",
     "/third_party/libwebrtc/modules/audio_processing/agc/agc_gn",
     "/third_party/libwebrtc/modules/audio_processing/agc/gain_control_interface_gn",
     "/third_party/libwebrtc/modules/audio_processing/agc/legacy_agc_gn",
@@ -275,13 +275,13 @@ DIRS += [
     "/third_party/libwebrtc/modules/audio_processing/audio_frame_view_gn",
     "/third_party/libwebrtc/modules/audio_processing/audio_processing_gn",
     "/third_party/libwebrtc/modules/audio_processing/capture_levels_adjuster/capture_levels_adjuster_gn",
+    "/third_party/libwebrtc/modules/audio_processing/capture_mixer/capture_mixer_gn",
     "/third_party/libwebrtc/modules/audio_processing/gain_controller2_gn",
     "/third_party/libwebrtc/modules/audio_processing/high_pass_filter_gn",
     "/third_party/libwebrtc/modules/audio_processing/ns/ns_gn",
     "/third_party/libwebrtc/modules/audio_processing/post_filter_gn",
     "/third_party/libwebrtc/modules/audio_processing/rms_level_gn",
     "/third_party/libwebrtc/modules/audio_processing/utility/cascaded_biquad_filter_gn",
-    "/third_party/libwebrtc/modules/audio_processing/utility/legacy_delay_estimator_gn",
     "/third_party/libwebrtc/modules/audio_processing/utility/pffft_wrapper_gn",
     "/third_party/libwebrtc/modules/audio_processing/vad/vad_gn",
     "/third_party/libwebrtc/modules/congestion_controller/congestion_controller_gn",
@@ -294,6 +294,7 @@ DIRS += [
     "/third_party/libwebrtc/modules/congestion_controller/goog_cc/probe_controller_gn",
     "/third_party/libwebrtc/modules/congestion_controller/goog_cc/pushback_controller_gn",
     "/third_party/libwebrtc/modules/congestion_controller/goog_cc/send_side_bwe_gn",
+    "/third_party/libwebrtc/modules/congestion_controller/goog_cc_scream_network_controller/goog_cc_scream_network_controller_gn",
     "/third_party/libwebrtc/modules/congestion_controller/rtp/congestion_controller_feedback_stats_gn",
     "/third_party/libwebrtc/modules/congestion_controller/rtp/control_handler_gn",
     "/third_party/libwebrtc/modules/congestion_controller/rtp/transport_feedback_gn",
@@ -326,7 +327,9 @@ DIRS += [
     "/third_party/libwebrtc/modules/video_coding/codecs/av1/av1_svc_config_gn",
     "/third_party/libwebrtc/modules/video_coding/codecs/av1/dav1d_decoder_gn",
     "/third_party/libwebrtc/modules/video_coding/codecs/av1/libaom_av1_encoder_gn",
+    "/third_party/libwebrtc/modules/video_coding/codecs/av1/libaom_speed_config_factory_gn",
     "/third_party/libwebrtc/modules/video_coding/encoded_frame_gn",
+    "/third_party/libwebrtc/modules/video_coding/encoder_speed_controller_impl_gn",
     "/third_party/libwebrtc/modules/video_coding/frame_dependencies_calculator_gn",
     "/third_party/libwebrtc/modules/video_coding/frame_helpers_gn",
     "/third_party/libwebrtc/modules/video_coding/frame_sampler_gn",
@@ -401,6 +404,7 @@ DIRS += [
     "/third_party/libwebrtc/rtc_base/byte_buffer_gn",
     "/third_party/libwebrtc/rtc_base/byte_order_gn",
     "/third_party/libwebrtc/rtc_base/callback_list_gn",
+    "/third_party/libwebrtc/rtc_base/callback_list_with_locks_gn",
     "/third_party/libwebrtc/rtc_base/checks_gn",
     "/third_party/libwebrtc/rtc_base/compile_assert_c_gn",
     "/third_party/libwebrtc/rtc_base/containers/flat_containers_internal_gn",
@@ -415,6 +419,7 @@ DIRS += [
     "/third_party/libwebrtc/rtc_base/event_tracer_gn",
     "/third_party/libwebrtc/rtc_base/experiments/alr_experiment_gn",
     "/third_party/libwebrtc/rtc_base/experiments/balanced_degradation_settings_gn",
+    "/third_party/libwebrtc/rtc_base/experiments/corruption_detection_frame_selector_settings_gn",
     "/third_party/libwebrtc/rtc_base/experiments/encoder_info_settings_gn",
     "/third_party/libwebrtc/rtc_base/experiments/encoder_speed_experiment_gn",
     "/third_party/libwebrtc/rtc_base/experiments/field_trial_parser_gn",
@@ -459,18 +464,17 @@ DIRS += [
     "/third_party/libwebrtc/rtc_base/safe_minmax_gn",
     "/third_party/libwebrtc/rtc_base/sample_counter_gn",
     "/third_party/libwebrtc/rtc_base/sanitizer_gn",
-    "/third_party/libwebrtc/rtc_base/sigslot_trampoline_gn",
     "/third_party/libwebrtc/rtc_base/socket_address_gn",
     "/third_party/libwebrtc/rtc_base/socket_factory_gn",
     "/third_party/libwebrtc/rtc_base/socket_gn",
     "/third_party/libwebrtc/rtc_base/socket_server_gn",
+    "/third_party/libwebrtc/rtc_base/span_helpers_gn",
     "/third_party/libwebrtc/rtc_base/ssl_adapter_gn",
     "/third_party/libwebrtc/rtc_base/stringutils_gn",
     "/third_party/libwebrtc/rtc_base/strong_alias_gn",
     "/third_party/libwebrtc/rtc_base/swap_queue_gn",
     "/third_party/libwebrtc/rtc_base/synchronization/mutex_gn",
     "/third_party/libwebrtc/rtc_base/synchronization/sequence_checker_internal_gn",
-    "/third_party/libwebrtc/rtc_base/synchronization/yield_gn",
     "/third_party/libwebrtc/rtc_base/synchronization/yield_policy_gn",
     "/third_party/libwebrtc/rtc_base/system/arch_gn",
     "/third_party/libwebrtc/rtc_base/system/assume_gn",
@@ -479,10 +483,10 @@ DIRS += [
     "/third_party/libwebrtc/rtc_base/system/inline_gn",
     "/third_party/libwebrtc/rtc_base/system/no_unique_address_gn",
     "/third_party/libwebrtc/rtc_base/system/rtc_export_gn",
+    "/third_party/libwebrtc/rtc_base/system/system_time_gn",
     "/third_party/libwebrtc/rtc_base/system/unused_gn",
     "/third_party/libwebrtc/rtc_base/system/warn_current_thread_is_deadlocked_gn",
     "/third_party/libwebrtc/rtc_base/task_utils/repeating_task_gn",
-    "/third_party/libwebrtc/rtc_base/third_party/sigslot/sigslot_gn",
     "/third_party/libwebrtc/rtc_base/threading_gn",
     "/third_party/libwebrtc/rtc_base/timeutils_gn",
     "/third_party/libwebrtc/rtc_base/type_traits_gn",
@@ -495,10 +499,6 @@ DIRS += [
     "/third_party/libwebrtc/system_wrappers/metrics_gn",
     "/third_party/libwebrtc/system_wrappers/system_wrappers_gn",
     "/third_party/libwebrtc/test/rtp_test_utils_gn",
-    "/third_party/libwebrtc/third_party/crc32c/crc32c_arm64_gn",
-    "/third_party/libwebrtc/third_party/crc32c/crc32c_gn",
-    "/third_party/libwebrtc/third_party/crc32c/crc32c_internal_headers_gn",
-    "/third_party/libwebrtc/third_party/crc32c/crc32c_sse42_gn",
     "/third_party/libwebrtc/third_party/dav1d/dav1d_gn",
     "/third_party/libwebrtc/third_party/libaom/libaom_gn",
     "/third_party/libwebrtc/third_party/libyuv/libyuv_gn",
@@ -509,6 +509,8 @@ DIRS += [
     "/third_party/libwebrtc/video/config/encoder_config_gn",
     "/third_party/libwebrtc/video/config/streams_config_gn",
     "/third_party/libwebrtc/video/corruption_detection/corruption_classifier_gn",
+    "/third_party/libwebrtc/video/corruption_detection/frame_instrumentation_generator_impl_gn",
+    "/third_party/libwebrtc/video/corruption_detection/frame_selector_gn",
     "/third_party/libwebrtc/video/corruption_detection/generic_mapping_functions_gn",
     "/third_party/libwebrtc/video/corruption_detection/halton_frame_sampler_gn",
     "/third_party/libwebrtc/video/corruption_detection/halton_sequence_gn",
@@ -520,6 +522,7 @@ DIRS += [
     "/third_party/libwebrtc/video/frame_decode_timing_gn",
     "/third_party/libwebrtc/video/frame_dumping_decoder_gn",
     "/third_party/libwebrtc/video/frame_dumping_encoder_gn",
+    "/third_party/libwebrtc/video/null_video_decoder_gn",
     "/third_party/libwebrtc/video/render/incoming_video_stream_gn",
     "/third_party/libwebrtc/video/render/video_render_frames_gn",
     "/third_party/libwebrtc/video/task_queue_frame_decode_scheduler_gn",
@@ -535,6 +538,7 @@ DIRS += [
 if CONFIG["OS_TARGET"] == "Android":
 
     DIRS += [
+        "/third_party/libwebrtc/common_audio/fir_filter_gn",
         "/third_party/libwebrtc/rtc_base/ifaddrs_android_gn",
         "/third_party/libwebrtc/third_party/cpu_features/ndk_compat_gn"
     ]
@@ -542,6 +546,7 @@ if CONFIG["OS_TARGET"] == "Android":
 if CONFIG["OS_TARGET"] == "Darwin":
 
     DIRS += [
+        "/third_party/libwebrtc/common_audio/fir_filter_gn",
         "/third_party/libwebrtc/modules/desktop_capture/desktop_capture_gn",
         "/third_party/libwebrtc/modules/desktop_capture/desktop_capture_objc_gn",
         "/third_party/libwebrtc/modules/desktop_capture/primitives_gn",
@@ -563,6 +568,7 @@ if CONFIG["OS_TARGET"] == "OpenBSD":
 if CONFIG["OS_TARGET"] == "WINNT":
 
     DIRS += [
+        "/third_party/libwebrtc/common_audio/fir_filter_gn",
         "/third_party/libwebrtc/modules/desktop_capture/desktop_capture_gn",
         "/third_party/libwebrtc/modules/desktop_capture/primitives_gn",
         "/third_party/libwebrtc/rtc_base/win/create_direct3d_device_gn",
@@ -627,6 +633,7 @@ if CONFIG["OS_TARGET"] == "Linux" and CONFIG["TARGET_CPU"] == "aarch64":
     DIRS += [
         "/third_party/libwebrtc/common_audio/common_audio_neon_c_gn",
         "/third_party/libwebrtc/common_audio/common_audio_neon_gn",
+        "/third_party/libwebrtc/common_audio/fir_filter_gn",
         "/third_party/libwebrtc/modules/desktop_capture/desktop_capture_gn",
         "/third_party/libwebrtc/modules/desktop_capture/primitives_gn",
         "/third_party/libwebrtc/modules/portal/portal_gn",
@@ -638,6 +645,7 @@ if CONFIG["OS_TARGET"] == "Linux" and CONFIG["TARGET_CPU"] == "arm":
     DIRS += [
         "/third_party/libwebrtc/common_audio/common_audio_neon_c_gn",
         "/third_party/libwebrtc/common_audio/common_audio_neon_gn",
+        "/third_party/libwebrtc/common_audio/fir_filter_gn",
         "/third_party/libwebrtc/modules/desktop_capture/desktop_capture_gn",
         "/third_party/libwebrtc/modules/desktop_capture/primitives_gn",
         "/third_party/libwebrtc/modules/portal/portal_gn",
@@ -668,6 +676,7 @@ if CONFIG["OS_TARGET"] == "Linux" and CONFIG["TARGET_CPU"] == "x86":
     DIRS += [
         "/third_party/libwebrtc/common_audio/common_audio_avx2_gn",
         "/third_party/libwebrtc/common_audio/common_audio_sse2_gn",
+        "/third_party/libwebrtc/common_audio/fir_filter_gn",
         "/third_party/libwebrtc/modules/audio_processing/aec3/aec3_avx2_gn",
         "/third_party/libwebrtc/modules/audio_processing/agc2/rnn_vad/vector_math_avx2_gn",
         "/third_party/libwebrtc/modules/desktop_capture/desktop_capture_differ_sse2_gn",
@@ -682,6 +691,7 @@ if CONFIG["OS_TARGET"] == "Linux" and CONFIG["TARGET_CPU"] == "x86_64":
     DIRS += [
         "/third_party/libwebrtc/common_audio/common_audio_avx2_gn",
         "/third_party/libwebrtc/common_audio/common_audio_sse2_gn",
+        "/third_party/libwebrtc/common_audio/fir_filter_gn",
         "/third_party/libwebrtc/modules/audio_processing/aec3/aec3_avx2_gn",
         "/third_party/libwebrtc/modules/audio_processing/agc2/rnn_vad/vector_math_avx2_gn",
         "/third_party/libwebrtc/modules/desktop_capture/desktop_capture_differ_sse2_gn",
@@ -695,7 +705,8 @@ if CONFIG["OS_TARGET"] == "OpenBSD" and CONFIG["TARGET_CPU"] == "aarch64":
 
     DIRS += [
         "/third_party/libwebrtc/common_audio/common_audio_neon_c_gn",
-        "/third_party/libwebrtc/common_audio/common_audio_neon_gn"
+        "/third_party/libwebrtc/common_audio/common_audio_neon_gn",
+        "/third_party/libwebrtc/common_audio/fir_filter_gn"
     ]
 
 if CONFIG["OS_TARGET"] == "OpenBSD" and CONFIG["TARGET_CPU"] == "x86_64":
@@ -703,6 +714,7 @@ if CONFIG["OS_TARGET"] == "OpenBSD" and CONFIG["TARGET_CPU"] == "x86_64":
     DIRS += [
         "/third_party/libwebrtc/common_audio/common_audio_avx2_gn",
         "/third_party/libwebrtc/common_audio/common_audio_sse2_gn",
+        "/third_party/libwebrtc/common_audio/fir_filter_gn",
         "/third_party/libwebrtc/modules/audio_processing/aec3/aec3_avx2_gn",
         "/third_party/libwebrtc/modules/audio_processing/agc2/rnn_vad/vector_math_avx2_gn",
         "/third_party/libwebrtc/modules/desktop_capture/desktop_capture_differ_sse2_gn"

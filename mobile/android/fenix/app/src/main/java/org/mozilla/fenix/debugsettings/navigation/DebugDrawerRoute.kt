@@ -12,7 +12,9 @@ import mozilla.components.concept.integrity.IntegrityClient
 import mozilla.components.concept.storage.CreditCardsAddressesStorage
 import mozilla.components.concept.storage.LoginsStorage
 import org.mozilla.fenix.R
-import org.mozilla.fenix.components.Llm
+import org.mozilla.fenix.components.AppStore
+import org.mozilla.fenix.components.ClientUUID
+import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.debugsettings.addons.ui.AddonsDebugToolsScreen
 import org.mozilla.fenix.debugsettings.addresses.AddressesDebugRegionRepository
 import org.mozilla.fenix.debugsettings.addresses.AddressesTools
@@ -21,14 +23,17 @@ import org.mozilla.fenix.debugsettings.cfrs.CfrToolsState
 import org.mozilla.fenix.debugsettings.cfrs.CfrToolsStore
 import org.mozilla.fenix.debugsettings.crashtools.CrashTools
 import org.mozilla.fenix.debugsettings.creditcards.CreditCardsTools
+import org.mozilla.fenix.debugsettings.distributions.DistributionTools
 import org.mozilla.fenix.debugsettings.gleandebugtools.GleanDebugToolsStore
 import org.mozilla.fenix.debugsettings.gleandebugtools.ui.GleanDebugToolsScreen
 import org.mozilla.fenix.debugsettings.integrity.IntegrityTools
-import org.mozilla.fenix.debugsettings.llm.LlmTools
 import org.mozilla.fenix.debugsettings.logins.LoginsTools
 import org.mozilla.fenix.debugsettings.region.RegionTools
 import org.mozilla.fenix.debugsettings.store.DebugDrawerAction
 import org.mozilla.fenix.debugsettings.store.DebugDrawerStore
+import org.mozilla.fenix.debugsettings.tabprocesstools.TabProcessTools
+import org.mozilla.fenix.debugsettings.tabs.TabGroupTools
+import org.mozilla.fenix.tabgroups.storage.repository.TabGroupRepository
 import org.mozilla.fenix.debugsettings.cfrs.CfrTools as CfrToolsScreen
 import org.mozilla.fenix.debugsettings.tabs.TabTools as TabToolsScreen
 
@@ -90,9 +95,21 @@ enum class DebugDrawerRoute(
         route = "integrity_tools",
         title = R.string.integrity_debug_tools_title,
     ),
-    LlmTools(
-        route = "llm_tools",
-        title = R.string.llm_debug_tools_title,
+    TabGroupTools(
+        route = "tab_group_tools",
+        title = R.string.debug_drawer_tab_group_tools_title,
+    ),
+    TabProcessTools(
+        route = "tab_process_tools",
+        title = R.string.debug_drawer_tab_process_tools_title,
+    ),
+    SportsWidgetTool(
+        route = "sports_widget_tool",
+        title = R.string.debug_drawer_sports_widget_tool_title,
+    ),
+    DistributionTools(
+        route = "distribution_tools",
+        title = R.string.debug_drawer_distribution_tools_title,
     ),
     ;
 
@@ -101,28 +118,32 @@ enum class DebugDrawerRoute(
          * Transforms the values of [DebugDrawerRoute] into a list of [DebugDrawerDestination]s.
          *
          * @param debugDrawerStore [DebugDrawerStore] used to dispatch navigation actions.
+         * @param appStore [AppStore] used to dispatch [AppAction] actions.
          * @param browserStore [BrowserStore] used to access [BrowserState].
          * @param cfrToolsStore [CfrToolsStore] used to access [CfrToolsState].
          * @param gleanDebugToolsStore [GleanDebugToolsStore] used to dispatch glean debug tools actions.
          * @param loginsStorage [LoginsStorage] used to access logins for [LoginsScreen].
          * @param addressesDebugRegionRepository used to control storage for [AddressesTools].
          * @param creditCardsAddressesStorage used to access addresses for [AddressesTools].
+         * @param clientUUID used to test an [IntegrityClient] in [IntegrityTools].
          * @param integrityClient used to test an [IntegrityClient] in [IntegrityTools].
          * @param inactiveTabsEnabled Whether the inactive tabs feature is enabled.
-         * @param llm the component group [Llm].
+         * @param tabGroupRepository [TabGroupRepository] used to access and modify tab groups for [TabGroupTools].
          */
         @Suppress("LongParameterList", "LongMethod")
         fun generateDebugDrawerDestinations(
             debugDrawerStore: DebugDrawerStore,
+            appStore: AppStore,
             browserStore: BrowserStore,
             cfrToolsStore: CfrToolsStore,
             gleanDebugToolsStore: GleanDebugToolsStore,
             loginsStorage: LoginsStorage,
             addressesDebugRegionRepository: AddressesDebugRegionRepository,
             creditCardsAddressesStorage: CreditCardsAddressesStorage,
+            clientUUID: ClientUUID,
             integrityClient: IntegrityClient,
             inactiveTabsEnabled: Boolean,
-            llm: Llm,
+            tabGroupRepository: TabGroupRepository,
         ): List<DebugDrawerDestination> =
             entries.map { debugDrawerRoute ->
                 var isChildDestination: Boolean = false
@@ -240,16 +261,45 @@ enum class DebugDrawerRoute(
                             debugDrawerStore.dispatch(DebugDrawerAction.NavigateTo.IntegrityDebugTools)
                         }
                         content = {
-                            IntegrityTools(integrityClient)
+                            IntegrityTools(clientUUID, integrityClient)
                         }
                     }
 
-                    LlmTools -> {
+                    TabGroupTools -> {
                         onClick = {
-                            debugDrawerStore.dispatch(DebugDrawerAction.NavigateTo.LlmDebugTools)
+                            debugDrawerStore.dispatch(DebugDrawerAction.NavigateTo.TabGroupDebugTools)
                         }
                         content = {
-                            LlmTools(llm)
+                            TabGroupTools(
+                                tabGroupRepository = tabGroupRepository,
+                                browserStore = browserStore,
+                            )
+                        }
+                    }
+
+                    TabProcessTools -> {
+                        onClick = {
+                            debugDrawerStore.dispatch(DebugDrawerAction.NavigateTo.TabProcessTools)
+                        }
+                        content = {
+                            TabProcessTools()
+                        }
+                    }
+
+                    SportsWidgetTool -> {
+                        onClick = {
+                            appStore.dispatch(AppAction.SportsWidgetAction.DebugToolVisibilityChanged(visible = true))
+                            debugDrawerStore.dispatch(DebugDrawerAction.DrawerClosed)
+                        }
+                        content = {}
+                    }
+
+                    DistributionTools -> {
+                        onClick = {
+                            debugDrawerStore.dispatch(DebugDrawerAction.NavigateTo.DistributionTools)
+                        }
+                        content = {
+                            DistributionTools()
                         }
                     }
                 }

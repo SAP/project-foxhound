@@ -28,14 +28,15 @@ javascript.ion:
 
 javascript.gc:
   total_time:
-    type: timing_distribution
+    type: labeled_timing_distribution
     time_unit: millisecond
     description: >
-      The total time taken by a major collection.
+      The total time taken by a major collection, labeled by process type.
       (Migrated from the geckoview metric of the same name.)
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1636419
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1877843
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2032192
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1636419#c8
     notification_emails:
@@ -44,14 +45,15 @@ javascript.gc:
     expires: never
 
   minor_time:
-    type: timing_distribution
+    type: labeled_timing_distribution
     time_unit: microsecond
     description: >
-      The time taked by a minor (nursery) collection.
+      The time taked by a minor (nursery) collection, labeled by process type.
       (Migrated from the geckoview metric of the same name.)
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1636419
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1877843
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035873
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1636419#c17
     notification_emails:
@@ -60,14 +62,15 @@ javascript.gc:
     expires: never
 
   prepare_time:
-    type: timing_distribution
+    type: labeled_timing_distribution
     time_unit: millisecond
     description: >
-      The time spent in the preparation phase.
+      The time spent in the preparation phase, labeled by process type.
       (Migrated from the geckoview metric of the same name.)
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1636419
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1877843
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035873
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1636419#c17
     notification_emails:
@@ -76,14 +79,15 @@ javascript.gc:
     expires: never
 
   mark_roots_time:
-    type: timing_distribution
+    type: labeled_timing_distribution
     time_unit: microsecond
     description: >
-      The time spent marking GC roots.
+      The time spent marking GC roots, labeled by process type.
       (Migrated from the geckoview metric of the same name.)
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1636419
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1877843
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035873
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1636419#c17
     notification_emails:
@@ -92,14 +96,15 @@ javascript.gc:
     expires: never
 
   mark_time:
-    type: timing_distribution
+    type: labeled_timing_distribution
     time_unit: millisecond
     description: >
-      The time spent in the mark phase.
+      The time spent in the mark phase, labeled by process type.
       (Migrated from the geckoview metric of the same name.)
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1636419
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1877843
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035873
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1636419#c17
     notification_emails:
@@ -108,14 +113,15 @@ javascript.gc:
     expires: never
 
   sweep_time:
-    type: timing_distribution
+    type: labeled_timing_distribution
     time_unit: millisecond
     description: >
-      The time spent in the sweep phase.
+      The time spent in the sweep phase, labeled by process type.
       (Migrated from the geckoview metric of the same name.)
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1636419
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1877843
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035873
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1636419#c17
     notification_emails:
@@ -124,14 +130,15 @@ javascript.gc:
     expires: never
 
   compact_time:
-    type: timing_distribution
+    type: labeled_timing_distribution
     time_unit: millisecond
     description: >
-      The time spent in the compact phase.
+      The time spent in the compact phase, labeled by process type.
       (Migrated from the geckoview metric of the same name.)
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1636419
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1877843
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035873
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1636419#c17
     notification_emails:
@@ -140,14 +147,15 @@ javascript.gc:
     expires: never
 
   slice_time:
-    type: timing_distribution
+    type: labeled_timing_distribution
     time_unit: millisecond
     description: >
-      The time spent running a GC slice.
+      The time spent running a GC slice, labeled by process type.
       (Migrated from the geckoview metric of the same name.)
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1636419
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1877843
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035873
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1636419#c17
     notification_emails:
@@ -156,12 +164,13 @@ javascript.gc:
     expires: never
 
   budget:
-    type: timing_distribution
+    type: labeled_timing_distribution
     time_unit: millisecond
     description: >
-      Requested GC slice budget.
+      Requested GC slice budget, labeled by process type.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1932957
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035873
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1932957
     notification_emails:
@@ -170,12 +179,13 @@ javascript.gc:
     expires: never
 
   budget_overrun:
-    type: timing_distribution
+    type: labeled_timing_distribution
     time_unit: microsecond
     description: >
-      How long a GC slice ran over its budget.
+      How long a GC slice ran over its budget, labeled by process type.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1932957
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2032192
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1932957
     notification_emails:
@@ -184,12 +194,13 @@ javascript.gc:
     expires: never
 
   animation:
-    type: timing_distribution
+    type: labeled_timing_distribution
     time_unit: millisecond
     description: >
-      Time spent running JS GC when animating.
+      Time spent running JS GC when animating, labeled by process type.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1932957
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2032192
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1932957
     notification_emails:
@@ -198,12 +209,13 @@ javascript.gc:
     expires: never
 
   max_pause:
-    type: timing_distribution
+    type: labeled_timing_distribution
     time_unit: millisecond
     description: >
-      Longest GC slice in a GC.
+      Longest GC slice in a GC, labeled by process type.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1932957
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2032192
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1932957
     notification_emails:
@@ -212,12 +224,13 @@ javascript.gc:
     expires: never
 
   mark_gray:
-    type: timing_distribution
+    type: labeled_timing_distribution
     time_unit: millisecond
     description: >
-      Time spent marking gray GC objects.
+      Time spent marking gray GC objects, labeled by process type.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1932957
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035873
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1932957
     notification_emails:
@@ -226,12 +239,13 @@ javascript.gc:
     expires: never
 
   mark_weak:
-    type: timing_distribution
+    type: labeled_timing_distribution
     time_unit: millisecond
     description: >
-      Time spent marking GC objects held live through weakmaps.
+      Time spent marking GC objects held live through weakmaps, labeled by process type.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1932957
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035873
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1932957
     notification_emails:
@@ -240,12 +254,13 @@ javascript.gc:
     expires: never
 
   time_between:
-    type: timing_distribution
+    type: labeled_timing_distribution
     time_unit: second
     description: >
-      Time spent in between garbage collections for the main runtime.
+      Time spent in between garbage collections for the main runtime, labeled by process type.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1932957
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035873
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1932957
     notification_emails:
@@ -254,12 +269,13 @@ javascript.gc:
     expires: never
 
   time_between_slices:
-    type: timing_distribution
+    type: labeled_timing_distribution
     time_unit: millisecond
     description: >
-      Time spent in between garbage collections for the main runtime.
+      Time spent in between GC slices for the main runtime, labeled by process type.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1932957
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035873
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1932957
     notification_emails:
@@ -268,12 +284,13 @@ javascript.gc:
     expires: never
 
   time_between_minor:
-    type: timing_distribution
+    type: labeled_timing_distribution
     time_unit: millisecond
     description: >
-      Time between minor garbage collections (nursery collections) for all runtimes.
+      Time between minor garbage collections (nursery collections) for all runtimes, labeled by process type.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1568489
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035873
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1568489
     notification_emails:
@@ -282,12 +299,13 @@ javascript.gc:
     expires: never
 
   task_start_delay:
-    type: timing_distribution
+    type: labeled_timing_distribution
     time_unit: microsecond
     description: >
-      Delay between queuing a GC task and the task starting.
+      Delay between queuing a GC task and the task starting, labeled by process type.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1932957
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035873
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1932957
     notification_emails:
@@ -296,12 +314,13 @@ javascript.gc:
     expires: never
 
   nursery_bytes:
-    type: memory_distribution
+    type: labeled_memory_distribution
     memory_unit: byte
     description: >
-      Size of the GC nursery in bytes.
+      Size of the GC nursery in bytes, labeled by process type.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1932686
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035873
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1932686
     notification_emails:
@@ -879,7 +898,6 @@ slow_script_warning:
         description: >
           The kind of script URL that hung.
         type: string
-    telemetry_mirror: Slow_script_warning_Shown_Browser
 
   shown_content:
     type: event
@@ -916,7 +934,6 @@ slow_script_warning:
         description: >
           How long the notification was up (ms).
         type: string
-    telemetry_mirror: Slow_script_warning_Shown_Content
     no_lint:
       - COMMON_PREFIX
 
@@ -936,7 +953,6 @@ slow_script_warning:
     notification_emails:
       - perf-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: SLOW_SCRIPT_NOTIFY_DELAY
 
 script.preloader:
   mainthread_recompile:

@@ -153,10 +153,11 @@ TEST(IntlTimeZone, GetCanonicalTimeZoneID)
 
 TEST(IntlTimeZone, GetAvailableTimeZones)
 {
+  constexpr auto Germany = RegionSubtag(MakeStringSpan("DE"));
   constexpr auto EuropeBerlin = MakeStringSpan("Europe/Berlin");
   constexpr auto EuropeBusingen = MakeStringSpan("Europe/Busingen");
 
-  auto timeZones = TimeZone::GetAvailableTimeZones("DE").unwrap();
+  auto timeZones = TimeZone::GetAvailableTimeZones(Germany).unwrap();
 
   bool hasEuropeBerlin = false;
   bool hasEuropeBusingen = false;

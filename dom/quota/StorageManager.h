@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,7 +26,7 @@ class Promise;
 struct StorageEstimate;
 
 class StorageManager final : public nsISupports, public nsWrapperCache {
-  nsCOMPtr<nsIGlobalObject> mOwner;
+  nsCOMPtr<nsIGlobalObject> mGlobal;
 
  public:
   explicit StorageManager(nsIGlobalObject* aGlobal);
@@ -41,7 +39,7 @@ class StorageManager final : public nsISupports, public nsWrapperCache {
   already_AddRefed<FileSystemManager> GetFileSystemManager();
 
   // WebIDL Boilerplate
-  nsIGlobalObject* GetParentObject() const { return mOwner; }
+  nsIGlobalObject* GetParentObject() const { return mGlobal; }
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;

@@ -29,6 +29,7 @@ public final class CrashHelper extends Service {
   private static final boolean DEBUG = !BuildConfig.MOZILLA_OFFICIAL;
 
   private static boolean sNativeLibLoaded;
+  private static boolean sDisconnected = false;
 
   private final Binder mBinder = new CrashHelperBinder();
 
@@ -43,6 +44,7 @@ public final class CrashHelper extends Service {
   private static class CrashHelperBinder extends ICrashHelper.Stub {
     @Override
     public boolean start(
+        final int browserPid,
         final ParcelFileDescriptor breakpadFd,
         final String minidumpPath,
         final ParcelFileDescriptor serverFd) {
@@ -55,7 +57,7 @@ public final class CrashHelper extends Service {
       // additional separation within the crash generation code to prevent this
       // from happening even though it's very unlikely.
       CrashHelper.crash_generator(
-          Process.myPid(), breakpadFd.detachFd(), minidumpPath, serverFd.detachFd());
+          browserPid, breakpadFd.detachFd(), minidumpPath, serverFd.detachFd());
 
       return false;
     }
@@ -82,9 +84,16 @@ public final class CrashHelper extends Service {
 
       @Override
       public void onServiceConnected(final ComponentName name, final IBinder service) {
+        if (sDisconnected) {
+          // We do not support restarting the service at the moment as Breakpad
+          // has no mechanism to reconnect the pipes that it uses to talk to
+          // the exception handler.
+          return;
+        }
+
         final ICrashHelper helper = ICrashHelper.Stub.asInterface(service);
         try {
-          helper.start(mBreakpadFd, mMinidumpPath, mServerFd);
+          helper.start(Process.myPid(), mBreakpadFd, mMinidumpPath, mServerFd);
         } catch (final DeadObjectException e) {
           // The crash helper process died before we could start it, presumably
           // because of an out-of-memory condition. We don't attempt to restart
@@ -92,12 +101,23 @@ public final class CrashHelper extends Service {
           Log.e(LOGTAG, "The crash helper process died before we could start the service");
         } catch (final RemoteException e) {
           throw new RuntimeException(e);
+        } finally {
+          // Close the endpoints we passed to the crash helper regardless of
+          // whether it launched or not. If we don't do this then the main
+          // process will not realize when the crash helper has gone down, as
+          // both sides of these pipes will be kept alive.
+          try {
+            mBreakpadFd.close();
+            mServerFd.close();
+          } catch (final IOException e) {
+            Log.e(LOGTAG, "Could not close the crash helper IPC endpoints");
+          }
         }
       }
 
       @Override
       public void onServiceDisconnected(final ComponentName name) {
-        // Nothing to do here
+        sDisconnected = true;
       }
 
       ParcelFileDescriptor mBreakpadFd;
@@ -122,27 +142,18 @@ public final class CrashHelper extends Service {
         throws IOException {
       mBreakpadClient = ParcelFileDescriptor.dup(breakpadClientFd);
       mBreakpadServer = ParcelFileDescriptor.dup(breakpadServerFd);
-      if (!CrashHelper.set_breakpad_opts(mBreakpadServer.getFd())) {
-        throw new IOException("Could not set the proper options on the Breakpad socket");
-      }
       mClient = ParcelFileDescriptor.dup(clientFd);
       mServer = ParcelFileDescriptor.dup(serverFd);
     }
   }
 
-  // This builds five sockets used for communication between Gecko and the
-  // crash helper process. The first two are a socket pair identical to the one
-  // created via a call to
+  // This builds the sockets used for communication between Gecko and the crash
+  // helper process. The first two are consistent with the ones created via
   // google_breakpad::CrashGenerationServer::CreateReportChannel(), so we can
   // use them Breakpad's crash generation server & clients. The rest are
   // specific to the crash helper process.
   public static Pipes createCrashHelperPipes(final Context context) {
     try {
-      // We can't set the required socket options for the Breakpad server socket
-      // so we delegate those parts to native functions in
-      // crashhelper_android.cpp.
-      GeckoLoader.doLoadLibrary(null, "crashhelper");
-
       final FileDescriptor breakpad_client_fd = new FileDescriptor();
       final FileDescriptor breakpad_server_fd = new FileDescriptor();
       Os.socketpair(
@@ -151,6 +162,8 @@ public final class CrashHelper extends Service {
           0,
           breakpad_client_fd,
           breakpad_server_fd);
+      Os.setsockoptInt(breakpad_server_fd, OsConstants.SOL_SOCKET, OsConstants.SO_PASSCRED, 1);
+
       final FileDescriptor client_fd = new FileDescriptor();
       final FileDescriptor server_fd = new FileDescriptor();
       Os.socketpair(OsConstants.AF_UNIX, OsConstants.SOCK_SEQPACKET, 0, client_fd, server_fd);
@@ -178,6 +191,4 @@ public final class CrashHelper extends Service {
 
   protected static native void crash_generator(
       int clientPid, int breakpadFd, String minidumpPath, int serverFd);
-
-  protected static native boolean set_breakpad_opts(int breakpadFd);
 }

@@ -19,9 +19,15 @@ task-defaults:
 linux64-7zz:
     treeherder:
         symbol: TL(7zz)
-    run:
-        arguments: ['x86_64-unknown-linux-gnu']
     fetches:
         toolchain:
             - linux64-clang-toolchain
             - sysroot-x86_64-linux-gnu
+
+win64-7zz:
+    treeherder:
+        symbol: TW64(7zz)
+    worker-type: b-win2022
+    fetches:
+        toolchain:
+            - vs-toolchain

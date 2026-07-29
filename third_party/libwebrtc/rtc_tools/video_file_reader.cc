@@ -16,8 +16,10 @@
 #include <cstring>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include "absl/cleanup/cleanup.h"
 #include "absl/strings/match.h"
 #include "api/make_ref_counted.h"
 #include "api/scoped_refptr.h"
@@ -32,6 +34,11 @@ namespace webrtc {
 namespace test {
 
 namespace {
+
+// A limit to prevent infinite loops or OOM if a Y4M file has a malformed
+// header. 256 bytes is plenty for any valid Y4M header but small enough
+// to be safe.
+constexpr int kMaxHeaderSize = 256;
 
 bool ReadBytes(uint8_t* dst, size_t n, FILE* file) {
   return fread(reinterpret_cast<char*>(dst), /* size= */ 1, n, file) == n;
@@ -128,6 +135,8 @@ scoped_refptr<Video> OpenY4mFile(const std::string& file_name) {
     return nullptr;
   }
 
+  absl::Cleanup file_closer = [file] { fclose(file); };
+
   int parse_file_header_result = -1;
   if (fscanf(file, "YUV4MPEG2 %n", &parse_file_header_result) != 0 ||
       parse_file_header_result == -1) {
@@ -145,6 +154,10 @@ scoped_refptr<Video> OpenY4mFile(const std::string& file_name) {
     }
     if (c == '\n')
       break;
+    if (header_line.size() >= kMaxHeaderSize) {
+      RTC_LOG(LS_ERROR) << "Header line too long, file might be corrupted.";
+      return nullptr;
+    }
     header_line.push_back(static_cast<char>(c));
   }
 
@@ -155,6 +168,9 @@ scoped_refptr<Video> OpenY4mFile(const std::string& file_name) {
   std::vector<std::string> fields;
   tokenize(header_line, ' ', &fields);
   for (const std::string& field : fields) {
+    if (field.empty()) {
+      continue;
+    }
     const char prefix = field.front();
     const std::string suffix = field.substr(1);
     switch (prefix) {
@@ -227,18 +243,23 @@ scoped_refptr<Video> OpenY4mFile(const std::string& file_name) {
     return nullptr;
   }
   RTC_LOG(LS_INFO) << "Video has " << frame_positions.size() << " frames";
-
+  std::move(file_closer).Cancel();
   return make_ref_counted<VideoFile>(*width, *height, frame_positions, file);
 }
 
 scoped_refptr<Video> OpenYuvFile(const std::string& file_name,
                                  int width,
                                  int height) {
+  if (width <= 0 || height <= 0) {
+    RTC_LOG(LS_ERROR) << "Video dimensions must be positive";
+    return nullptr;
+  }
   FILE* file = fopen(file_name.c_str(), "rb");
   if (file == nullptr) {
     RTC_LOG(LS_ERROR) << "Could not open input file for reading: " << file_name;
     return nullptr;
   }
+  absl::Cleanup file_closer = [file] { fclose(file); };
 
   if (width % 2 != 0 || height % 2 != 0) {
     RTC_LOG(LS_ERROR)
@@ -269,6 +290,7 @@ scoped_refptr<Video> OpenYuvFile(const std::string& file_name,
   }
   RTC_LOG(LS_INFO) << "Video has " << frame_positions.size() << " frames";
 
+  std::move(file_closer).Cancel();
   return make_ref_counted<VideoFile>(width, height, frame_positions, file);
 }
 

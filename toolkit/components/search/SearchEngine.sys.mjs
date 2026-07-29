@@ -20,6 +20,10 @@ const lazy = XPCOMUtils.declareLazy({
       prefix: "SearchEngine",
       maxLogLevel: lazy.SearchUtils.loggingEnabled ? "Debug" : "Warn",
     }),
+  settingsRedesignEnabled: {
+    pref: "browser.settings-redesign.enabled",
+    default: false,
+  },
 });
 
 // Supported OpenSearch parameters
@@ -1251,6 +1255,11 @@ export class SearchEngine {
    * @returns {boolean}
    */
   get hideOneOffButton() {
+    if (lazy.settingsRedesignEnabled) {
+      // This setting is no longer supported after the settings redesign, so
+      // always return false.
+      return false;
+    }
     return this.getAttr("hideOneOffButton") || false;
   }
 
@@ -1261,28 +1270,6 @@ export class SearchEngine {
   set hideOneOffButton(val) {
     const value = !!val;
     this.setAttr("hideOneOffButton", value, true);
-  }
-
-  /**
-   * This method should be overridden by app provided config engines.
-   *
-   * @returns {boolean}
-   *   Whether this engine is an app provided config engine, i.e. it comes
-   *   from the search-config-v2 and active in the user's environment.
-   */
-  get isAppProvided() {
-    return false;
-  }
-
-  /**
-   * This method should be overridden by config search engines.
-   *
-   * @returns {boolean}
-   *   Whether this engine is a config search engine, i.e. it comes from
-   *   the search-config-v2.
-   */
-  get isConfigEngine() {
-    return false;
   }
 
   /**

@@ -72,6 +72,8 @@ const runInference2 = async () => {
     prefs: [
       ["browser.ml.modelHubRootUrl", modelHubRootUrl],
       ["javascript.options.wasm_lazy_tiering", true],
+      // Skip IPv6 to avoid IPv6 fallback delay skewing the perf numbers.
+      ["network.dns.disableIPv6", true],
     ],
   });
 

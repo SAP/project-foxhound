@@ -119,7 +119,7 @@ function convertScreenToDoc(popup, doc) {
   const screenX = doc.defaultView.mozInnerScreenX;
   const screenY = doc.defaultView.mozInnerScreenY;
   const scale =
-    popup.ownerGlobal.devicePixelRatio / doc.ownerGlobal.devicePixelRatio;
+    popup.documentGlobal.devicePixelRatio / doc.documentGlobal.devicePixelRatio;
   return new DOMRect(
     rect.x * scale - screenX,
     rect.y * scale - screenY,

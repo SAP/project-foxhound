@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -146,7 +145,12 @@ static constexpr uint32_t kVideoDroppedRatio = 1;
 #  define DESKTOP_DEFAULT(name) RFPTarget::name,
 #endif
 
-constinit const RFPTargetSet kDefaultFingerprintingProtectionsBase = {
+#if defined(MOZ_WIDGET_ANDROID) && !defined(NIGHTLY_BUILD)
+constinit
+#else
+MOZ_RUNINIT
+#endif
+    const RFPTargetSet kDefaultFingerprintingProtectionsBase = {
 #include "RFPTargetsDefaultBaseline.inc"
 };
 
@@ -2895,7 +2899,15 @@ Maybe<RFPTargetSet> nsRFPService::GetOverriddenFingerprintingSettingsForChannel(
     bool unused2;
     if (!OriginAttributes::ParsePartitionKey(partitionKey, scheme, domain,
                                              unused, unused2)) {
-      MOZ_ASSERT(false);
+      // A null-principal (e.g. data: URL) top-level page stores its partition
+      // key as "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.mozilla" (UUID format),
+      // which ParsePartitionKey cannot handle.  Detect this via string matching
+      // and bail out silently; any other unparseable key is unexpected.
+      MOZ_ASSERT(partitionKey.Length() == 44 &&
+                     StringEndsWith(partitionKey, u".mozilla"_ns) &&
+                     partitionKey[8] == u'-' && partitionKey[13] == u'-' &&
+                     partitionKey[18] == u'-' && partitionKey[23] == u'-',
+                 "Failed to parse partitionKey from cookieJarSettings");
       return Nothing();
     }
 
@@ -3022,7 +3034,7 @@ Maybe<RFPTargetSet> nsRFPService::GetOverriddenFingerprintingSettingsForURI(
     addIsBaseline(key, isBaseline);
     fpOverrides = service->mFingerprintingOverrides.MaybeGet(key);
     if (fpOverrides) {
-      result = fpOverrides;
+      result = std::move(fpOverrides);
     }
 
     return result;
@@ -3071,7 +3083,7 @@ Maybe<RFPTargetSet> nsRFPService::GetOverriddenFingerprintingSettingsForURI(
   addIsBaseline(key, isBaseline);
   fpOverrides = service->mFingerprintingOverrides.MaybeGet(key);
   if (fpOverrides) {
-    result = fpOverrides;
+    result = std::move(fpOverrides);
   }
 
   return result;

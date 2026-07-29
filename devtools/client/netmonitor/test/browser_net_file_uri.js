@@ -63,7 +63,10 @@ add_task(async function test_file_uris() {
   store.dispatch(Actions.selectRequestByIndex(1));
   document.querySelector("#response-tab").click();
   const [imageNode] = await waitDOM;
-  await once(imageNode, "load");
+  await waitFor(
+    () => imageNode.complete === true && imageNode.naturalWidth > 0,
+    "Wait for the image to load"
+  );
   await onResponseContent;
 
   info("Verify we only have 2 requests, and the chrome request was not listed");

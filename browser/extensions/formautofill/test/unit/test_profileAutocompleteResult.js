@@ -345,7 +345,7 @@ let creditCardTestCases = [
           comment: makeCreditCardComment({
             primary: "Timothy Berners-Lee",
             secondary: "••••6785",
-            ariaLabel: "Visa Timothy Berners-Lee ****6785",
+            ariaLabel: "Visa Timothy Berners-Lee ••••6785",
             image: "chrome://formautofill/content/third-party/cc-logo-visa.svg",
             profile: matchingProfiles[0],
           }),
@@ -358,7 +358,7 @@ let creditCardTestCases = [
           comment: makeCreditCardComment({
             primary: "John Doe",
             secondary: "••••1234",
-            ariaLabel: "American Express John Doe ****1234",
+            ariaLabel: "American Express John Doe ••••1234",
             image: "chrome://formautofill/content/third-party/cc-logo-amex.png",
             profile: matchingProfiles[1],
           }),

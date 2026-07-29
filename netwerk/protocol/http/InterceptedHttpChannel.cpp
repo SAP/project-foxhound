@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  *  License, v. 2.0. If a copy of the MPL was not distributed with this
  *  file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -356,12 +354,13 @@ nsresult InterceptedHttpChannel::StartPump() {
       nsInputStreamPump::Create(getter_AddRefs(mPump), mBodyReader, 0, 0, true);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = mPump->AsyncRead(this);
+  RefPtr<nsInputStreamPump> pump(mPump);
+  rv = pump->AsyncRead(this);
   NS_ENSURE_SUCCESS(rv, rv);
 
   uint32_t suspendCount = mSuspendCount;
   while (suspendCount--) {
-    mPump->Suspend();
+    pump->Suspend();
   }
 
   MOZ_DIAGNOSTIC_ASSERT(!mCanceled);
@@ -385,10 +384,11 @@ nsresult InterceptedHttpChannel::OpenRedirectChannel() {
 
   // Make sure to do this after we received redirect veto answer,
   // i.e. after all sinks had been notified
-  mRedirectChannel->SetOriginalURI(mOriginalURI);
+  nsCOMPtr<nsIChannel> redirectChannel(mRedirectChannel);
+  redirectChannel->SetOriginalURI(mOriginalURI);
 
   // open new channel
-  rv = mRedirectChannel->AsyncOpen(mListener);
+  rv = redirectChannel->AsyncOpen(mListener);
   NS_ENSURE_SUCCESS(rv, rv);
 
   mStatus = NS_BINDING_REDIRECTED;
@@ -447,9 +447,10 @@ void InterceptedHttpChannel::MaybeCallStatusAndProgress() {
     CopyUTF8toUTF16(host, mStatusHost);
   }
 
-  mProgressSink->OnStatus(this, NS_NET_STATUS_READING, mStatusHost.get());
+  nsCOMPtr<nsIProgressEventSink> progressSink(mProgressSink);
+  progressSink->OnStatus(this, NS_NET_STATUS_READING, mStatusHost.get());
 
-  mProgressSink->OnProgress(this, progress, mSynthesizedStreamLength);
+  progressSink->OnProgress(this, progress, mSynthesizedStreamLength);
 
   mProgressReported = progress;
 }
@@ -555,7 +556,8 @@ InterceptedHttpChannel::Cancel(nsresult aStatus) {
   }
 
   if (mPump) {
-    return mPump->Cancel(mStatus);
+    RefPtr<nsInputStreamPump> pump(mPump);
+    return pump->Cancel(mStatus);
   }
 
   return AsyncAbort(mStatus);
@@ -565,7 +567,8 @@ NS_IMETHODIMP
 InterceptedHttpChannel::Suspend(void) {
   ++mSuspendCount;
   if (mPump) {
-    return mPump->Suspend();
+    RefPtr<nsInputStreamPump> pump(mPump);
+    return pump->Suspend();
   }
   return NS_OK;
 }
@@ -574,7 +577,8 @@ NS_IMETHODIMP
 InterceptedHttpChannel::Resume(void) {
   --mSuspendCount;
   if (mPump) {
-    return mPump->Resume();
+    RefPtr<nsInputStreamPump> pump(mPump);
+    return pump->Resume();
   }
   return NS_OK;
 }
@@ -1146,7 +1150,8 @@ InterceptedHttpChannel::OnStartRequest(nsIRequest* aRequest) {
                         mLoadInfo->GetLoadingPrincipal()->IsSystemPrincipal());
 
   if (mPump && mLoadFlags & LOAD_CALL_CONTENT_SNIFFERS) {
-    mPump->PeekStream(CallTypeSniffers, static_cast<nsIChannel*>(this));
+    RefPtr<nsInputStreamPump> pump(mPump);
+    pump->PeekStream(CallTypeSniffers, static_cast<nsIChannel*>(this));
   }
 
   nsresult rv = ProcessCrossOriginEmbedderPolicyHeader();
@@ -1175,7 +1180,8 @@ InterceptedHttpChannel::OnStartRequest(nsIRequest* aRequest) {
 
   StoreOnStartRequestCalled(true);
   if (mListener) {
-    return mListener->OnStartRequest(this);
+    nsCOMPtr<nsIStreamListener> listener(mListener);
+    return listener->OnStartRequest(this);
   }
   return NS_OK;
 }
@@ -1234,7 +1240,8 @@ InterceptedHttpChannel::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
 
   nsresult rv = NS_OK;
   if (mListener) {
-    rv = mListener->OnStopRequest(this, mStatus);
+    nsCOMPtr<nsIStreamListener> listener(mListener);
+    rv = listener->OnStopRequest(this, mStatus);
   }
 
   gHttpHandler->OnStopRequest(this);
@@ -1264,7 +1271,8 @@ InterceptedHttpChannel::OnDataAvailable(nsIRequest* aRequest,
     }
   }
 
-  return mListener->OnDataAvailable(this, aInputStream, aOffset, aCount);
+  nsCOMPtr<nsIStreamListener> listener(mListener);
+  return listener->OnDataAvailable(this, aInputStream, aOffset, aCount);
 }
 
 NS_IMETHODIMP
@@ -1297,7 +1305,8 @@ InterceptedHttpChannel::RetargetDeliveryTo(nsISerialEventTarget* aNewTarget) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  return mPump->RetargetDeliveryTo(aNewTarget);
+  RefPtr<nsInputStreamPump> pump(mPump);
+  return pump->RetargetDeliveryTo(aNewTarget);
 }
 
 NS_IMETHODIMP
@@ -1305,7 +1314,8 @@ InterceptedHttpChannel::GetDeliveryTarget(nsISerialEventTarget** aEventTarget) {
   if (!mPump) {
     return NS_ERROR_NOT_AVAILABLE;
   }
-  return mPump->GetDeliveryTarget(aEventTarget);
+  RefPtr<nsInputStreamPump> pump(mPump);
+  return pump->GetDeliveryTarget(aEventTarget);
 }
 
 NS_IMETHODIMP
@@ -1341,15 +1351,6 @@ NS_IMETHODIMP
 InterceptedHttpChannel::HasCacheEntry(bool* value) {
   if (mSynthesizedCacheInfo) {
     return mSynthesizedCacheInfo->HasCacheEntry(value);
-  }
-  *value = false;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-InterceptedHttpChannel::IsRacing(bool* value) {
-  if (mSynthesizedCacheInfo) {
-    return mSynthesizedCacheInfo->IsRacing(value);
   }
   *value = false;
   return NS_OK;

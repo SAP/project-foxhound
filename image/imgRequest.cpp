@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -623,6 +622,22 @@ bool imgRequest::HadInsecureRedirect() const {
   return mHadInsecureRedirect;
 }
 
+bool imgRequest::HadCrossOriginRedirects() const {
+  // While the channel is still around (during the load) read the authoritative
+  // value from it; afterwards fall back to the value latched in OnStopRequest.
+  // Ignore internal redirects (e.g. a service worker substituting a same-origin
+  // response for a cross-origin request): those are not cross-origin data flow
+  // and must not taint. Real cross-origin redirects (incl. bounce-backs) count.
+  if (mTimedChannel) {
+    bool allRedirectsSameOrigin = false;
+    return NS_SUCCEEDED(
+               mTimedChannel->GetAllRedirectsSameOriginIgnoringInternal(
+                   &allRedirectsSameOrigin)) &&
+           !allRedirectsSameOrigin;
+  }
+  return mHadCrossOriginRedirects;
+}
+
 /** nsIRequestObserver methods **/
 
 NS_IMETHODIMP
@@ -818,6 +833,18 @@ imgRequest::OnStopRequest(nsIRequest* aRequest, nsresult status) {
     progressTracker->SyncNotifyProgress(progress);
   }
 
+  // Store whether the load involved a cross-origin redirect before we drop the
+  // timed channel. Internal redirects (e.g. a service worker serving a
+  // same-origin response for a cross-origin request) are ignored so we don't
+  // over-taint; real cross-origin redirects (incl. bounce-backs) still count.
+  if (mTimedChannel) {
+    bool allRedirectsSameOrigin = false;
+    mHadCrossOriginRedirects =
+        NS_SUCCEEDED(mTimedChannel->GetAllRedirectsSameOriginIgnoringInternal(
+            &allRedirectsSameOrigin)) &&
+        !allRedirectsSameOrigin;
+  }
+
   mTimedChannel = nullptr;
   return NS_OK;
 }
@@ -851,7 +878,7 @@ struct NewPartResult final {
         mShouldResetCacheEntry(false) {}
 
   nsAutoCString mContentType;
-  int64_t mContentLength;
+  int64_t mContentLength = 0;
   nsAutoCString mContentDisposition;
   RefPtr<image::Image> mImage;
   const bool mIsFirstPart;
@@ -907,7 +934,7 @@ static NewPartResult PrepareForNewPart(nsIRequest* aRequest,
   // Create the new image and give it ownership of our ProgressTracker.
   if (aIsMultipart) {
     // Create the ProgressTracker and image for this part.
-    RefPtr<ProgressTracker> progressTracker = new ProgressTracker();
+    auto progressTracker = MakeRefPtr<ProgressTracker>();
     RefPtr<image::Image> partImage = image::ImageFactory::CreateImage(
         aRequest, progressTracker, result.mContentType, aURI,
         /* aIsMultipart = */ true, aInnerWindowId);
@@ -953,7 +980,7 @@ class FinishPreparingForNewPartRunnable final : public Runnable {
                                     NewPartResult&& aResult)
       : Runnable("FinishPreparingForNewPartRunnable"),
         mImgRequest(aImgRequest),
-        mResult(aResult) {
+        mResult(std::move(aResult)) {
     MOZ_ASSERT(aImgRequest);
   }
 

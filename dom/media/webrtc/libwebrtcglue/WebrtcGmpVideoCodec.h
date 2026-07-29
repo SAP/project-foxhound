@@ -81,6 +81,17 @@ struct nsTArray_RelocationStrategy<mozilla::detail::InputImageData> {
 
 namespace mozilla {
 
+class EncoderConfig;
+class MediaExtendedMIMEType;
+struct SupportDecoderParams;
+
+// Whether the OpenH264 GMP can decode/encode the given H264 configuration.
+// aParams unused but kept to mirror PDM/PEM Supports calls.
+[[nodiscard]] media::DecodeSupportSet WebrtcGmpDecoderSupports(
+    const MediaExtendedMIMEType& aMime, const SupportDecoderParams& aParams);
+[[nodiscard]] media::EncodeSupportSet WebrtcGmpEncoderSupports(
+    const EncoderConfig& aConfig);
+
 static void NotifyGmpInitDone(const std::string& aPCHandle, int32_t aResult,
                               const std::string& aError = "") {
   if (!NS_IsMainThread()) {

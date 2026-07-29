@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -59,7 +58,7 @@ export class EscapablePageParent extends JSWindowActorParent {
 
       // Ideally we use the homepage...
       if (AppConstants.MOZ_BUILD_APP == "browser") {
-        safePage = lazy.HomePage.getForErrorPage(browser.ownerGlobal);
+        safePage = lazy.HomePage.getForErrorPage(browser.documentGlobal);
       }
       browser.fixupAndLoadURIString(safePage, {
         triggeringPrincipal:
@@ -204,7 +203,7 @@ export class NetErrorParent extends EscapablePageParent {
         this.browser.reload();
         break;
       case "Browser:OpenCaptivePortalPage":
-        this.browser.ownerGlobal.CaptivePortalWatcher.ensureCaptivePortalTab();
+        this.browser.documentGlobal.CaptivePortalWatcher.ensureCaptivePortalTab();
         break;
       case "Browser:PrimeMitm":
         this.primeMitm(this.browser);
@@ -246,7 +245,7 @@ export class NetErrorParent extends EscapablePageParent {
             certsStringURL = certsStringURL.join("&");
             let url = `about:certificate?${certsStringURL}`;
 
-            let window = this.browser.ownerGlobal;
+            let window = this.browser.documentGlobal;
             if (AppConstants.MOZ_BUILD_APP === "browser") {
               window.switchToTabHavingURI(url, true, {});
             } else {
@@ -277,7 +276,7 @@ export class NetErrorParent extends EscapablePageParent {
           break;
         }
 
-        let win = browser.ownerGlobal;
+        let win = browser.documentGlobal;
         win.openPreferences("privacy-doh");
         break;
       }

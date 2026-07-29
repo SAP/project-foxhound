@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -51,7 +51,10 @@ fun WallpaperOnboarding(
     onSelectWallpaper: (Wallpaper) -> Unit,
 ) {
     Surface(
-        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+        shape = MaterialTheme.shapes.large.copy(
+            bottomStart = CornerSize(0.dp),
+            bottomEnd = CornerSize(0.dp),
+        ),
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 32.dp, vertical = 16.dp),

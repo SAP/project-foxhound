@@ -1,0 +1,24 @@
+[package]
+name = "happy_eyeballs_glue"
+version = "0.1.0"
+authors = ["The Mozilla Necko Team <necko@mozilla.com>"]
+edition = "2021"
+license = "MPL-2.0"
+description = "FFI glue layer between happy-eyeballs Rust crate and Firefox's C++ networking stack"
+
+[dependencies]
+firefox-on-glean = { path = "../../../../toolkit/components/glean/api" }
+gecko-profiler = { path = "../../../../tools/profiler/rust-api" }
+happy-eyeballs = { tag = "v0.6.0", git = "https://github.com/mozilla/happy-eyeballs" }
+log = "0.4"
+nserror = { path = "../../../../xpcom/rust/nserror" }
+serde = { version = "1.0", features = ["derive"] }
+nsstring = { path = "../../../../xpcom/rust/nsstring" }
+xpcom = { path = "../../../../xpcom/rust/xpcom" }
+thin-vec = { version = "0.2.1", features = ["gecko-ffi"] }
+
+[target.'cfg(not(windows))'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["ws2def"] }

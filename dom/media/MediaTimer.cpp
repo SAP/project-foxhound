@@ -1,12 +1,8 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MediaTimer.h"
-
-#include <math.h>
 
 #include "mozilla/AwakeTimeStamp.h"
 #include "mozilla/DebugOnly.h"
@@ -82,7 +78,7 @@ template <typename T>
 RefPtr<MediaTimerPromise> MediaTimer<T>::WaitUntil(const T& aTimeStamp,
                                                    StaticString aCallSite) {
   MonitorAutoLock mon(mMonitor);
-  TIMER_LOG("MediaTimer::WaitUntil %" PRId64, RelativeMicroseconds(aTimeStamp));
+  TIMER_LOG("MediaTimer::WaitUntil {}", RelativeMicroseconds(aTimeStamp));
   Entry e(aTimeStamp, aCallSite);
   RefPtr<MediaTimerPromise> p = e.mPromise.get();
   mEntries.push(e);
@@ -192,7 +188,7 @@ void MediaTimer<T>::ArmTimer(const T& aTarget, const T& aNow) {
   MOZ_DIAGNOSTIC_ASSERT(aTarget > aNow);
 
   const typename T::DurationType delay = aTarget - aNow;
-  TIMER_LOG("MediaTimer::ArmTimer delay=%.3fms", delay.ToMilliseconds());
+  TIMER_LOG("MediaTimer::ArmTimer delay={:.3f}ms", delay.ToMilliseconds());
   mCurrentTimerTarget.emplace(aTarget);
   TimeDuration duration =
       TimeDuration::FromMicroseconds(delay.ToMicroseconds());

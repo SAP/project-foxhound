@@ -19,7 +19,6 @@ enum class BrowserDirection(
     FromGlobal(0),
     FromHome(R.id.homeFragment),
     FromWallpaper(R.id.wallpaperSettingsFragment),
-    FromSearchDialog(R.id.searchDialogFragment),
     FromSettings(R.id.settingsFragment),
     FromBookmarks(R.id.bookmarkFragment),
     FromHistory(R.id.historyFragment),

@@ -15,6 +15,6 @@ export LLVM_PROFDATA=$MOZ_FETCHES_DIR/clang/bin/llvm-profdata
 set -v
 
 ./mach python python/mozbuild/mozbuild/action/install.py $MOZ_FETCHES_DIR/target.dmg $MOZ_FETCHES_DIR
-./mach python build/pgo/profileserver.py --binary $MOZ_FETCHES_DIR/*.app/Contents/MacOS/firefox
+./mach python build/pgo/profileserver.py --binary $MOZ_FETCHES_DIR/*.app/Contents/MacOS/firefox --extended-corpus $MOZ_FETCHES_DIR/pgo-extended-corpus/
 
 tar -Jcvf $UPLOAD_PATH/profdata.tar.xz merged.profdata en-US.log

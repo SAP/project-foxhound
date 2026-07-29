@@ -49,39 +49,29 @@ bitflags! {
         /// A flag used to mark styles which have contain:style or under one.
         const SELF_OR_ANCESTOR_HAS_CONTAIN_STYLE = 1 << 5;
 
-        /// Whether this style's `display` property depends on our parent style.
+        /// Whether this style's `display` or `content`property depends on our parent style.
         ///
         /// This is important because it may affect our optimizations to avoid
         /// computing the style of pseudo-elements, given whether the
-        /// pseudo-element is generated depends on the `display` value.
-        const DISPLAY_DEPENDS_ON_INHERITED_STYLE = 1 << 6;
-
-        /// Whether this style's `content` depends on our parent style.
-        ///
-        /// Important because of the same reason.
-        const CONTENT_DEPENDS_ON_INHERITED_STYLE = 1 << 7;
+        /// pseudo-element is generated depends on the `display` (or `content`) value.
+        const DISPLAY_OR_CONTENT_DEPEND_ON_INHERITED_STYLE = 1 << 6;
 
         /// Whether the child explicitly inherits any reset property.
-        const INHERITS_RESET_STYLE = 1 << 8;
+        const INHERITS_RESET_STYLE = 1 << 7;
 
         /// Whether any value on our style is font-metric-dependent on our
         /// primary font.
-        const DEPENDS_ON_SELF_FONT_METRICS = 1 << 9;
+        const DEPENDS_ON_SELF_FONT_METRICS = 1 << 8;
 
         /// Whether any value on our style is font-metric-dependent on the
         /// primary font of our parent.
-        const DEPENDS_ON_INHERITED_FONT_METRICS = 1 << 10;
-
-        /// Whether the style or any of the ancestors has a multicol style.
-        ///
-        /// Only used in Servo.
-        const CAN_BE_FRAGMENTED = 1 << 11;
+        const DEPENDS_ON_INHERITED_FONT_METRICS = 1 << 9;
 
         /// Whether this style is the style of the document element.
-        const IS_ROOT_ELEMENT_STYLE = 1 << 12;
+        const IS_ROOT_ELEMENT_STYLE = 1 << 10;
 
         /// Whether this element is inside an `opacity: 0` subtree.
-        const IS_IN_OPACITY_ZERO_SUBTREE = 1 << 13;
+        const IS_IN_OPACITY_ZERO_SUBTREE = 1 << 11;
 
         /// Whether there are author-specified rules for border-* properties
         /// (except border-image-*), background-color, or background-image.
@@ -89,58 +79,63 @@ bitflags! {
         /// TODO(emilio): Maybe do include border-image, see:
         ///
         /// https://github.com/w3c/csswg-drafts/issues/4777#issuecomment-604424845
-        const HAS_AUTHOR_SPECIFIED_BORDER_BACKGROUND = 1 << 14;
-
-        /// Whether there are author-specified rules for `font-family`.
-        const HAS_AUTHOR_SPECIFIED_FONT_FAMILY = 1 << 16;
-
-        /// Whether there are author-specified rules for `font-synthesis-weight`.
-        const HAS_AUTHOR_SPECIFIED_FONT_SYNTHESIS_WEIGHT = 1 << 17;
-
-        /// Whether there are author-specified rules for `font-synthesis-style`.
-        const HAS_AUTHOR_SPECIFIED_FONT_SYNTHESIS_STYLE = 1 << 18;
-
-        // (There's also font-synthesis-small-caps and font-synthesis-position,
-        // but we don't currently need to keep track of those.)
-
-        /// Whether there are author-specified rules for `letter-spacing`.
-        const HAS_AUTHOR_SPECIFIED_LETTER_SPACING = 1 << 19;
-
-        /// Whether there are author-specified rules for `word-spacing`.
-        const HAS_AUTHOR_SPECIFIED_WORD_SPACING = 1 << 20;
+        const HAS_AUTHOR_SPECIFIED_BORDER_BACKGROUND = 1 << 12;
 
         /// Whether the style depends on viewport units.
-        const USES_VIEWPORT_UNITS = 1 << 21;
+        const USES_VIEWPORT_UNITS = 1 << 13;
 
         /// Whether the style depends on viewport units on container queries.
         ///
         /// This needs to be a separate flag from `USES_VIEWPORT_UNITS` because
         /// it causes us to re-match the style (rather than re-cascascading it,
         /// which is enough for other uses of viewport units).
-        const USES_VIEWPORT_UNITS_ON_CONTAINER_QUERIES = 1 << 22;
+        const USES_VIEWPORT_UNITS_ON_CONTAINER_QUERIES = 1 << 14;
 
         /// A flag used to mark styles which have `container-type` of `size` or
         /// `inline-size`, or under one.
-        const SELF_OR_ANCESTOR_HAS_SIZE_CONTAINER_TYPE = 1 << 23;
+        const SELF_OR_ANCESTOR_HAS_SIZE_CONTAINER_TYPE = 1 << 15;
+
         /// Whether the style uses container query units, in which case the style depends on the
         /// container's size and we can't reuse it across cousins (without double-checking the
         /// container at least).
-        const USES_CONTAINER_UNITS = 1 << 24;
+        const USES_CONTAINER_UNITS = 1 << 16;
 
         /// Whether there are author-specific rules for text `color`.
-        const HAS_AUTHOR_SPECIFIED_TEXT_COLOR = 1 << 25;
+        const HAS_AUTHOR_SPECIFIED_TEXT_COLOR = 1 << 17;
 
         /// Whether this style considered a scope style rule.
-        const CONSIDERED_NONTRIVIAL_SCOPED_STYLE = 1 << 26;
+        const CONSIDERED_NONTRIVIAL_SCOPED_STYLE = 1 << 18;
 
         /// Whether this style is that of a `display: contents` element that is either a direct
         /// child of an item container or another `display: contents` element, the style of which
         /// has this flag set, marked in order to cascade beyond them to the descendants of the
         /// the item container that do generate a box.
-        const DISPLAY_CONTENTS_IN_ITEM_CONTAINER = 1 << 27;
+        const DISPLAY_CONTENTS_IN_ITEM_CONTAINER = 1 << 19;
 
         /// Whether there are author-specific rules for `text-shadow`.
-        const HAS_AUTHOR_SPECIFIED_TEXT_SHADOW = 1 << 28;
+        const HAS_AUTHOR_SPECIFIED_TEXT_SHADOW = 1 << 20;
+
+        /// Whether this style depends on container style query.
+        const DEPENDS_ON_CONTAINER_STYLE_QUERY = 1 << 21;
+
+        /// Whether this style is in an appearance: base subtree
+        const IS_IN_APPEARANCE_BASE_SUBTREE = 1 << 22;
+
+        /// Whether grid-auto-flow is author-specified.
+        const HAS_AUTHOR_SPECIFIED_GRID_AUTO_FLOW = 1 << 23;
+
+        /// Whether this style has used font relative units. Note that this is different than the
+        /// FONT_METRICS bits, which don't include rem / em etc.
+        const USES_FONT_RELATIVE_UNITS = 1 << 24;
+
+        /// Whether this style depends on font relative units in container queries.
+        const USES_FONT_RELATIVE_UNITS_ON_CONTAINER_QUERIES = 1 << 25;
+
+        /// Whether this style uses `sibling-count()`.
+        const USES_SIBLING_COUNT = 1 << 26;
+
+        /// Whether this style uses `sibling-index()`.
+        const USES_SIBLING_INDEX = 1 << 27;
     }
 }
 
@@ -156,12 +151,12 @@ impl ComputedValueFlags {
     #[inline]
     fn inherited_flags() -> Self {
         Self::IS_RELEVANT_LINK_VISITED
-            | Self::CAN_BE_FRAGMENTED
             | Self::IS_IN_FIRST_LINE_SUBTREE
             | Self::HAS_TEXT_DECORATION_LINES
             | Self::IS_IN_OPACITY_ZERO_SUBTREE
             | Self::SELF_OR_ANCESTOR_HAS_CONTAIN_STYLE
             | Self::SELF_OR_ANCESTOR_HAS_SIZE_CONTAINER_TYPE
+            | Self::IS_IN_APPEARANCE_BASE_SUBTREE
     }
 
     /// Flags that may be propagated to descendants.
@@ -175,7 +170,16 @@ impl ComputedValueFlags {
     /// Flags that are an input to the cascade.
     #[inline]
     fn cascade_input_flags() -> Self {
-        Self::USES_VIEWPORT_UNITS_ON_CONTAINER_QUERIES | Self::CONSIDERED_NONTRIVIAL_SCOPED_STYLE
+        Self::USES_VIEWPORT_UNITS_ON_CONTAINER_QUERIES
+            | Self::CONSIDERED_NONTRIVIAL_SCOPED_STYLE
+            | Self::DEPENDS_ON_CONTAINER_STYLE_QUERY
+            | Self::USES_FONT_RELATIVE_UNITS_ON_CONTAINER_QUERIES
+    }
+
+    /// Flags corresponding to usage of tree-counting functions.
+    #[inline]
+    pub fn tree_counting_function_flags() -> Self {
+        Self::USES_SIBLING_COUNT | Self::USES_SIBLING_INDEX
     }
 
     /// Returns the flags that are always propagated to descendants.

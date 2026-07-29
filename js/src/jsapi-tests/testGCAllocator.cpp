@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -447,16 +444,7 @@ const JSClass BufferHolderObject::class_ = {"BufferHolderObject",
                                             &BufferHolderObject::classOps_};
 
 const JSClassOps BufferHolderObject::classOps_ = {
-    nullptr,                    // addProperty
-    nullptr,                    // delProperty
-    nullptr,                    // enumerate
-    nullptr,                    // newEnumerate
-    nullptr,                    // resolve
-    nullptr,                    // mayResolve
-    nullptr,                    // finalize
-    nullptr,                    // call
-    nullptr,                    // construct
-    BufferHolderObject::trace,  // trace
+    .trace = BufferHolderObject::trace,
 };
 
 /* static */
@@ -480,7 +468,7 @@ void BufferHolderObject::trace(JSTracer* trc, JSObject* obj) {
   NativeObject* holder = &obj->as<NativeObject>();
   void* buffer = holder->getFixedSlot(0).toPrivate();
   if (buffer) {
-    TraceBufferEdge(trc, obj, &buffer, "BufferHolderObject buffer");
+    TraceBufferEdge(trc, &buffer, "BufferHolderObject buffer");
     if (buffer != holder->getFixedSlot(0).toPrivate()) {
       holder->setFixedSlot(0, JS::PrivateValue(buffer));
     }
@@ -556,6 +544,7 @@ BEGIN_TEST(testBufferAllocator_API) {
 
       CHECK(!IsBufferAllocMarkedBlack(zone, alloc));
 
+      gc::WaitForBackgroundTasks(cx);
       CHECK(cx->runtime()->gc.isPointerWithinBufferAlloc(alloc));
       void* ptr = reinterpret_cast<void*>(uintptr_t(alloc) + 8);
       CHECK(cx->runtime()->gc.isPointerWithinBufferAlloc(ptr));
@@ -587,6 +576,23 @@ BEGIN_TEST(testBufferAllocator_API) {
   return true;
 }
 END_TEST(testBufferAllocator_API)
+
+BEGIN_TEST(testBufferAllocator_largeAllocOverflow) {
+  AutoLeaveZeal leaveZeal(cx);
+
+  JS::NonIncrementalGC(cx, JS::GCOptions::Shrink, JS::GCReason::API);
+
+  Zone* zone = cx->zone();
+  size_t initialGCHeapSize = zone->gcHeapSize.bytes();
+  size_t initialMallocHeapSize = zone->mallocHeapSize.bytes();
+
+  CHECK(AllocBuffer(zone, size_t(-1), false) == nullptr);
+  CHECK(zone->gcHeapSize.bytes() == initialGCHeapSize);
+  CHECK(zone->mallocHeapSize.bytes() == initialMallocHeapSize);
+
+  return true;
+}
+END_TEST(testBufferAllocator_largeAllocOverflow)
 
 BEGIN_TEST(testBufferAllocator_realloc) {
   AutoLeaveZeal leaveZeal(cx);
@@ -927,7 +933,7 @@ static void traceAllocs(JSTracer* trc, void* data) {
   for (size_t i = 0; i < MaxLiveAllocs; i++) {
     void** bufferp = &liveAllocs[i];
     if (*bufferp) {
-      TraceBufferEdge(trc, holder, bufferp, "test buffer");
+      TraceBufferEdge(trc, bufferp, "test buffer");
     }
   }
 }
@@ -985,16 +991,7 @@ class VectorObject : public NativeObject {
   }
 
   static constexpr JSClassOps classOps_ = {
-      nullptr,  // addProperty
-      nullptr,  // delProperty
-      nullptr,  // enumerate
-      nullptr,  // newEnumerate
-      nullptr,  // resolve
-      nullptr,  // mayResolve
-      nullptr,  // finalize
-      nullptr,  // call
-      nullptr,  // construct
-      trace,    // trace
+      .trace = trace,
   };
 
   static constexpr JSClass class_ = {
@@ -1067,6 +1064,7 @@ bool testVector(bool allocInNursery, bool dieInNursery) {
   // Note internal pointers so we can check whether they get freed.
   void* oldVector = obj->getVector();
   void* oldBuffer = obj->getVector()->begin();
+  gc::WaitForBackgroundTasks(cx);
   CHECK(zone->bufferAllocator.isPointerWithinBuffer(oldVector));
   CHECK(zone->bufferAllocator.isPointerWithinBuffer(oldBuffer));
 
@@ -1138,16 +1136,7 @@ class HashSetObject : public NativeObject {
   }
 
   static constexpr JSClassOps classOps_ = {
-      nullptr,  // addProperty
-      nullptr,  // delProperty
-      nullptr,  // enumerate
-      nullptr,  // newEnumerate
-      nullptr,  // resolve
-      nullptr,  // mayResolve
-      nullptr,  // finalize
-      nullptr,  // call
-      nullptr,  // construct
-      trace,    // trace
+      .trace = trace,
   };
 
   static constexpr JSClass class_ = {
@@ -1226,6 +1215,7 @@ bool testSet(bool allocInNursery, bool dieInNursery) {
 
   // Note set pointer so we can check whether it gets freed.
   void* oldSet = obj->getSet();
+  gc::WaitForBackgroundTasks(cx);
   CHECK(zone->bufferAllocator.isPointerWithinBuffer(oldSet));
 
   obj = nullptr;

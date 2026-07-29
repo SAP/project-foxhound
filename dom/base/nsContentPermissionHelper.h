@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -66,7 +64,8 @@ class nsContentPermissionUtils {
       Element* aElement, nsIPrincipal* aPrincipal,
       nsIPrincipal* aTopLevelPrincipal,
       const bool aHasValidTransientUserGestureActivation,
-      const bool aIsRequestDelegatedToUnsafeThirdParty, const TabId& aTabId);
+      const bool aIsRequestDelegatedToUnsafeThirdParty, const TabId& aTabId,
+      const bool aIgnoreAllowSitePermission);
 
   static void InitContentPermissionRequestParent(
       PContentPermissionRequestParent* aActor,
@@ -109,6 +108,9 @@ class ContentPermissionRequestBase : public nsIContentPermissionRequest {
       bool* aHasValidTransientUserGestureActivation) override;
   NS_IMETHOD GetIsRequestDelegatedToUnsafeThirdParty(
       bool* aIsRequestDelegatedToUnsafeThirdParty) override;
+  NS_IMETHOD GetIgnoreAllowSitePermission(
+      bool* aIgnoreAllowSitePermission) override;
+
   NS_IMETHOD NotifyShown(void) override;
   // Overrides for Allow() and Cancel() aren't provided by this class.
   // That is the responsibility of the subclasses.

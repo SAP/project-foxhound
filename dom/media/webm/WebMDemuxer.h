@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,13 +29,13 @@ class MediaRawDataQueue {
 
   void Push(MediaRawData* aItem) { mQueue.push_back(aItem); }
 
-  void Push(already_AddRefed<MediaRawData>&& aItem) {
+  void Push(already_AddRefed<MediaRawData> aItem) {
     mQueue.push_back(std::move(aItem));
   }
 
   void PushFront(MediaRawData* aItem) { mQueue.push_front(aItem); }
 
-  void PushFront(already_AddRefed<MediaRawData>&& aItem) {
+  void PushFront(already_AddRefed<MediaRawData> aItem) {
     mQueue.push_front(std::move(aItem));
   }
 
@@ -153,8 +151,10 @@ class WebMDemuxer : public MediaDataDemuxer,
 
  protected:
   virtual nsresult SetVideoCodecInfo(nestegg* aContext, int aTrackId);
-  virtual nsresult SetAudioCodecInfo(nestegg* aContext, int aTrackId,
-                                     const nestegg_audio_params& aParams);
+  virtual nsresult SetContainerAudioCodecInfo(
+      nestegg* aContext, const nestegg_audio_params& aParams);
+  nsresult SetAudioCodecInfo(nestegg* aContext, int aTrackId,
+                             const nestegg_audio_params& aParams);
   virtual nsresult GetCodecPrivateData(nestegg* aContext, int aTrackId,
                                        nsTArray<const unsigned char*>* aHeaders,
                                        nsTArray<size_t>* aHeaderLens);
@@ -240,9 +240,10 @@ class WebMDemuxer : public MediaDataDemuxer,
   int mAudioCodec;
   // Codec ID of video track
   int mVideoCodec;
-  // Default durations of blocks for each track, in microseconds
-  int64_t mAudioDefaultDuration;
-  int64_t mVideoDefaultDuration;
+  // Default durations of blocks for each track, in microseconds.
+  // -1 indicates the track has no DefaultDuration set.
+  int64_t mAudioDefaultDuration = -1;
+  int64_t mVideoDefaultDuration = -1;
 
   // Booleans to indicate if we have audio and/or video data
   bool mHasVideo;

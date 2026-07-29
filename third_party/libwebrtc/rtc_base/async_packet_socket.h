@@ -14,22 +14,20 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <span>
 #include <utility>
 #include <vector>
 
 #include "absl/functional/any_invocable.h"
 #include "api/sequence_checker.h"
 #include "rtc_base/callback_list.h"
-#include "rtc_base/checks.h"
 #include "rtc_base/dscp.h"
 #include "rtc_base/network/received_packet.h"
 #include "rtc_base/network/sent_packet.h"
-#include "rtc_base/sigslot_trampoline.h"
 #include "rtc_base/socket.h"
 #include "rtc_base/socket_address.h"
 #include "rtc_base/system/no_unique_address.h"
 #include "rtc_base/system/rtc_export.h"
-#include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
@@ -79,7 +77,7 @@ struct RTC_EXPORT AsyncSocketPacketOptions {
 
 // Provides the ability to receive packets asynchronously. Sends are not
 // buffered since it is acceptable to drop packets under high load.
-class RTC_EXPORT AsyncPacketSocket : public sigslot::has_slots<> {
+class RTC_EXPORT AsyncPacketSocket {
  public:
   enum State {
     STATE_CLOSED,
@@ -89,8 +87,8 @@ class RTC_EXPORT AsyncPacketSocket : public sigslot::has_slots<> {
     STATE_CONNECTED
   };
 
-  AsyncPacketSocket() : connect_trampoline_(this) {}
-  ~AsyncPacketSocket() override;
+  AsyncPacketSocket() = default;
+  virtual ~AsyncPacketSocket();
 
   AsyncPacketSocket(const AsyncPacketSocket&) = delete;
   AsyncPacketSocket& operator=(const AsyncPacketSocket&) = delete;
@@ -106,10 +104,19 @@ class RTC_EXPORT AsyncPacketSocket : public sigslot::has_slots<> {
   virtual int Send(const void* pv,
                    size_t cb,
                    const AsyncSocketPacketOptions& options) = 0;
+  int Send(std::span<const uint8_t> data,
+           const AsyncSocketPacketOptions& options) {
+    return Send(data.data(), data.size(), options);
+  }
   virtual int SendTo(const void* pv,
                      size_t cb,
                      const SocketAddress& addr,
                      const AsyncSocketPacketOptions& options) = 0;
+  int SendTo(std::span<const uint8_t> data,
+             const SocketAddress& addr,
+             const AsyncSocketPacketOptions& options) {
+    return SendTo(data.data(), data.size(), addr, options);
+  }
 
   // Close the socket.
   virtual int Close() = 0;
@@ -138,38 +145,67 @@ class RTC_EXPORT AsyncPacketSocket : public sigslot::has_slots<> {
   void DeregisterReceivedPacketCallback();
 
   // Emitted each time a packet is sent.
-  sigslot::signal2<AsyncPacketSocket*, const SentPacketInfo&> SignalSentPacket;
+  void SubscribeSentPacket(
+      void* tag,
+      absl::AnyInvocable<void(AsyncPacketSocket*, const SentPacketInfo&)>
+          callback);
+  void UnsubscribeSentPacket(void* tag) {
+    sent_packet_callbacks_.RemoveReceivers(tag);
+  }
+  void NotifySentPacket(AsyncPacketSocket* socket, const SentPacketInfo& info) {
+    sent_packet_callbacks_.Send(socket, info);
+  }
 
   // Emitted when the socket is currently able to send.
-  sigslot::signal1<AsyncPacketSocket*> SignalReadyToSend;
+  void SubscribeReadyToSend(
+      void* tag,
+      absl::AnyInvocable<void(AsyncPacketSocket*)> callback) {
+    ready_to_send_callbacks_.AddReceiver(tag, std::move(callback));
+  }
+  void UnsubscribeReadyToSend(void* tag) {
+    ready_to_send_callbacks_.RemoveReceivers(tag);
+  }
+  void NotifyReadyToSend(AsyncPacketSocket* socket) {
+    ready_to_send_callbacks_.Send(socket);
+  }
 
   // Emitted after address for the socket is allocated, i.e. binding
   // is finished. State of the socket is changed from BINDING to BOUND
   // (for UDP sockets).
-  sigslot::signal2<AsyncPacketSocket*, const SocketAddress&> SignalAddressReady;
+  void SubscribeAddressReady(
+      void* tag,
+      absl::AnyInvocable<void(AsyncPacketSocket*, const SocketAddress&)>
+          callback) {
+    address_ready_callbacks_.AddReceiver(tag, std::move(callback));
+  }
+  void UnsubscribeAddressReady(void* tag) {
+    address_ready_callbacks_.RemoveReceivers(tag);
+  }
+  void NotifyAddressReady(AsyncPacketSocket* socket,
+                          const SocketAddress& address) {
+    address_ready_callbacks_.Send(socket, address);
+  }
 
   // Emitted for client TCP sockets when state is changed from
   // CONNECTING to CONNECTED.
-  sigslot::signal1<AsyncPacketSocket*> SignalConnect;
-  void NotifyConnect(AsyncPacketSocket* socket) { SignalConnect(socket); }
-  void SubscribeConnect(absl::AnyInvocable<void(AsyncPacketSocket*)> callback) {
-    connect_trampoline_.Subscribe(std::move(callback));
+  void NotifyConnect(AsyncPacketSocket* socket) {
+    connect_callbacks_.Send(socket);
+  }
+  [[deprecated]] void SubscribeConnect(
+      absl::AnyInvocable<void(AsyncPacketSocket*)> callback) {
+    connect_callbacks_.AddReceiver(std::move(callback));
   }
   void SubscribeConnect(void* tag,
                         absl::AnyInvocable<void(AsyncPacketSocket*)> callback) {
-    connect_trampoline_.Subscribe(tag, std::move(callback));
+    connect_callbacks_.AddReceiver(tag, std::move(callback));
   }
-  void UnsubscribeConnect(void* tag) { connect_trampoline_.Unsubscribe(tag); }
+  void UnsubscribeConnect(void* tag) {
+    connect_callbacks_.RemoveReceivers(tag);
+  }
 
   void NotifyClosedForTest(int err) { NotifyClosed(err); }
 
  protected:
-  // TODO(bugs.webrtc.org/11943): Remove after updating downstream code.
-  void SignalClose(AsyncPacketSocket* s, int err) {
-    RTC_DCHECK_EQ(s, this);
-    NotifyClosed(err);
-  }
-
   void NotifyClosed(int err) {
     RTC_DCHECK_RUN_ON(&network_checker_);
     on_close_.Send(this, err);
@@ -185,17 +221,24 @@ class RTC_EXPORT AsyncPacketSocket : public sigslot::has_slots<> {
       RTC_GUARDED_BY(&network_checker_);
   absl::AnyInvocable<void(AsyncPacketSocket*, const ReceivedIpPacket&)>
       received_packet_callback_ RTC_GUARDED_BY(&network_checker_);
-  SignalTrampoline<AsyncPacketSocket, &AsyncPacketSocket::SignalConnect>
-      connect_trampoline_;
+  CallbackList<AsyncPacketSocket*> connect_callbacks_;
+  CallbackList<AsyncPacketSocket*, const SentPacketInfo&>
+      sent_packet_callbacks_;
+  CallbackList<AsyncPacketSocket*> ready_to_send_callbacks_;
+  CallbackList<AsyncPacketSocket*, const SocketAddress&>
+      address_ready_callbacks_;
 };
 
 // Listen socket, producing an AsyncPacketSocket when a peer connects.
-class RTC_EXPORT AsyncListenSocket : public sigslot::has_slots<> {
+class RTC_EXPORT AsyncListenSocket {
  public:
   enum class State {
     kClosed,
     kBound,
   };
+
+  AsyncListenSocket() = default;
+  virtual ~AsyncListenSocket() = default;
 
   // Returns current state of the socket.
   virtual State GetState() const = 0;
@@ -204,7 +247,23 @@ class RTC_EXPORT AsyncListenSocket : public sigslot::has_slots<> {
   // socket is not bound yet (GetState() returns kBinding).
   virtual SocketAddress GetLocalAddress() const = 0;
 
-  sigslot::signal2<AsyncListenSocket*, AsyncPacketSocket*> SignalNewConnection;
+  void SubscribeNewConnection(
+      void* tag,
+      absl::AnyInvocable<void(AsyncListenSocket*, AsyncPacketSocket*)>
+          callback) {
+    new_connection_callbacks_.AddReceiver(tag, std::move(callback));
+  }
+  void UnsubscribeNewConnection(void* tag) {
+    new_connection_callbacks_.RemoveReceivers(tag);
+  }
+  void NotifyNewConnection(AsyncListenSocket* listen_socket,
+                           AsyncPacketSocket* packet_socket) {
+    new_connection_callbacks_.Send(listen_socket, packet_socket);
+  }
+
+ private:
+  CallbackList<AsyncListenSocket*, AsyncPacketSocket*>
+      new_connection_callbacks_;
 };
 
 void CopySocketInformationToPacketInfo(size_t packet_size_bytes,
@@ -212,6 +271,5 @@ void CopySocketInformationToPacketInfo(size_t packet_size_bytes,
                                        PacketInfo* info);
 
 }  //  namespace webrtc
-
 
 #endif  // RTC_BASE_ASYNC_PACKET_SOCKET_H_

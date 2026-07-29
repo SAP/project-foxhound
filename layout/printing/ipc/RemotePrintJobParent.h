@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -34,9 +32,9 @@ class RemotePrintJobParent final : public PRemotePrintJobParent {
 
   void ActorDestroy(ActorDestroyReason aWhy) final;
 
-  mozilla::ipc::IPCResult RecvInitializePrint(const nsAString& aDocumentTitle,
-                                              const int32_t& aStartPage,
-                                              const int32_t& aEndPage) final;
+  mozilla::ipc::IPCResult RecvInitializePrint(
+      const nsAString& aDocumentTitle, const uint64_t& aBrowsingContextId,
+      const int32_t& aStartPage, const int32_t& aEndPage) final;
 
   mozilla::ipc::IPCResult RecvProcessPage(const int32_t& aWidthInPoints,
                                           const int32_t& aHeightInPoints,
@@ -67,7 +65,12 @@ class RemotePrintJobParent final : public PRemotePrintJobParent {
  private:
   ~RemotePrintJobParent() final;
 
+  void InitializePrint(const nsAString& aDocumentTitle,
+                       const uint64_t& aBrowsingContextId,
+                       const int32_t& aStartPage, const int32_t& aEndPage);
+
   nsresult InitializePrintDevice(const nsAString& aDocumentTitle,
+                                 const uint64_t& aBrowsingContextId,
                                  const int32_t& aStartPage,
                                  const int32_t& aEndPage);
 
@@ -91,8 +94,10 @@ class RemotePrintJobParent final : public PRemotePrintJobParent {
   UniquePtr<PrintTranslator> mPrintTranslator;
   nsCOMArray<nsIWebProgressListener> mPrintProgressListeners;
   PRFileDescStream mCurrentPageStream;
-  bool mIsDoingPrinting;
   nsresult mStatus;
+  bool mIsDoingPrinting = false;
+  bool mInitializeReceived =
+      false;  // True after RecvInitializePrint is called.
 };
 
 }  // namespace layout

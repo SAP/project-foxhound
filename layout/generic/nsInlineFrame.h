@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -159,6 +157,12 @@ class nsInlineFrame : public nsContainerFrame {
 
   virtual void PushFrames(nsPresContext* aPresContext, nsIFrame* aFromChild,
                           nsIFrame* aPrevSibling, InlineReflowInput& aState);
+
+  // If this inline frame has abspos children, set
+  // NS_BLOCK_HAS_INLINE_ABSPOS_DESCENDANT on the block ancestor that will
+  // reflow them in nsBlockFrame::ReflowAbsoluteDescendantsInInlineFrame().
+  void MarkBlockAncestorHavingAbsoluteDescendants(
+      const ReflowInput& aReflowInput) const;
 
  private:
   explicit nsInlineFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)

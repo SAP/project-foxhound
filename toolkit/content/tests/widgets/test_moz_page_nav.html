@@ -57,17 +57,17 @@
             <span class="view-name">View 4</span>
           </moz-page-nav-button>
           <moz-page-nav-button
-            view="view-five"
-            iconSrc="chrome://mozapps/skin/extensions/category-extensions.svg"
-          >
-            <span class="view-name">View 5</span>
-          </moz-page-nav-button>
-          <moz-page-nav-button
             view="view-hidden"
             iconSrc="chrome://mozapps/skin/extensions/category-extensions.svg"
             hidden="true"
           >
             <span class="view-name">Hidden View</span>
+          </moz-page-nav-button>
+          <moz-page-nav-button
+            view="view-five"
+            iconSrc="chrome://mozapps/skin/extensions/category-extensions.svg"
+          >
+            <span class="view-name">View 5</span>
           </moz-page-nav-button>
           <moz-page-nav-button
             view="view-display-none"
@@ -119,6 +119,17 @@
 
       const mozPageNav = document.querySelector("moz-page-nav");
 
+      const keyNav = async (key, opts) => {
+        info(`${key}${opts?.shiftKey ? " + Shift" : ""}`);
+        synthesizeKey(key, opts);
+        await new Promise(r => requestAnimationFrame(r));
+      };
+      const tab = shiftKey => keyNav("KEY_Tab", { shiftKey });
+      const arrowDown = () => keyNav("KEY_ArrowDown", {});
+      const arrowUp = () => keyNav("KEY_ArrowUp", {});
+      const arrowLeft = () => keyNav("KEY_ArrowLeft", {});
+      const arrowRight = () => keyNav("KEY_ArrowRight", {});
+
       function isActiveElement(expectedActiveEl) {
         return expectedActiveEl.getRootNode().activeElement == expectedActiveEl;
       }
@@ -128,13 +139,13 @@
        */
       add_task(async function test_first_item_selected_by_default() {
         is(
-          mozPageNav.pageNavButtons.length,
+          mozPageNav.visiblePageNavButtons.length,
           5,
           "Five page nav buttons are in the navigation"
         );
 
         ok(
-          mozPageNav.pageNavButtons[0].view === mozPageNav.currentView,
+          mozPageNav.visiblePageNavButtons[0].view === mozPageNav.currentView,
           "The first page nav button is selected by default"
         );
       });
@@ -229,42 +240,12 @@
        * Tests that categories are keyboard-navigable
        */
       add_task(async function test_keyboard_navigation() {
-        const tab = async shiftKey => {
-          info(`Tab${shiftKey ? " + Shift" : ""}`);
-          synthesizeKey("KEY_Tab", { shiftKey });
-          await mozPageNav.updateComplete;
-        };
-        const arrowDown = async () => {
-          info("Arrow down");
-          synthesizeKey("KEY_ArrowDown", {});
-          await mozPageNav.updateComplete;
-        };
-        const arrowUp = async () => {
-          info("Arrow up");
-          synthesizeKey("KEY_ArrowUp", {});
-          await mozPageNav.updateComplete;
-        };
-        const arrowLeft = async () => {
-          info("Arrow left");
-          synthesizeKey("KEY_ArrowLeft", {});
-          await mozPageNav.updateComplete;
-        };
-        const arrowRight = async () => {
-          info("Arrow right");
-          synthesizeKey("KEY_ArrowRight", {});
-          await mozPageNav.updateComplete;
-        };
-
-        // Setting this pref allows the test to run as expected with a keyboard on MacOS
-        await SpecialPowers.pushPrefEnv({
-          set: [["accessibility.tabfocus", 7]],
-        });
-
         let firstPageNavButton = mozPageNav.pageNavButtons[0];
         let secondPageNavButton = mozPageNav.pageNavButtons[1];
         let thirdPageNavButton = mozPageNav.pageNavButtons[2];
         let fourthPageNavButton = mozPageNav.pageNavButtons[3];
-        let fifthPageNavButton = mozPageNav.pageNavButtons[4];
+        // Hidden button here.
+        let fifthPageNavButton = mozPageNav.pageNavButtons[5];
         let supportLink = mozPageNav.secondaryNavButtons[0];
         let externalLink = mozPageNav.secondaryNavButtons[1];
 
@@ -424,8 +405,62 @@
           mozPageNav.currentView,
           "The first page nav button is still selected"
         );
+      });
 
-        await SpecialPowers.popPrefEnv();
+      add_task(async function test_visibility_change_keyboard_navigation() {
+        const buttonIsSelected = button => {
+          let { view } = button;
+          is(
+            mozPageNav.currentView,
+            view,
+            `The ${view} page nav button is selected`
+          );
+          is(
+            button,
+            document.activeElement,
+            `The ${view} page nav button is focused`
+          );
+        };
+
+        let hiddenButton = mozPageNav.querySelector(
+          "moz-page-nav-button[hidden]"
+        );
+        let beforeButton = hiddenButton.previousElementSibling;
+        ok(!hiddenButton.checkVisibility(), "The button is hidden");
+
+        beforeButton.activate();
+        await mozPageNav.updateComplete;
+        buttonIsSelected(beforeButton);
+        await arrowDown();
+        isnot(
+          beforeButton,
+          document.activeElement,
+          "Focus moved away from beforeButton"
+        );
+        isnot(
+          hiddenButton,
+          document.activeElement,
+          "Focus did not move to hiddenButton"
+        );
+
+        try {
+          hiddenButton.hidden = false;
+          ok(hiddenButton.checkVisibility(), "The button is now shown");
+          await arrowUp();
+          buttonIsSelected(hiddenButton);
+          await arrowUp();
+          buttonIsSelected(beforeButton);
+          await arrowDown();
+          buttonIsSelected(hiddenButton);
+        } finally {
+          hiddenButton.hidden = true;
+          ok(!hiddenButton.checkVisibility(), "The button is now hidden");
+
+          // Visibility change isn't detected, but requestUpdate fixes it.
+          mozPageNav.requestUpdate();
+          await mozPageNav.updatComplete;
+          buttonIsSelected(mozPageNav.pageNavButtons[0]);
+        }
       });
 
       add_task(async function test_supports_subheading_slot() {
@@ -487,6 +522,122 @@
           firstPageNavButton.view,
           "The first page nav button is selected"
         );
+
+        container.remove();
+      });
+
+      /**
+       * Tests that setting the title property maps it to the wrapped element
+       * for all three variants (tab button, support link, external link).
+       */
+      add_task(async function test_title_attribute() {
+        const tabButton = mozPageNav.pageNavButtons[0];
+        const supportLink = mozPageNav.secondaryNavButtons[0];
+        const externalLink = mozPageNav.secondaryNavButtons[1];
+
+        // Tab button — title mapped to the wrapped <button>.
+        const EXPECTED_TAB_BUTTON_TITLE = "Tab button title";
+        tabButton.title = EXPECTED_TAB_BUTTON_TITLE;
+        await tabButton.updateComplete;
+        is(
+          tabButton.buttonEl.getAttribute("title"),
+          EXPECTED_TAB_BUTTON_TITLE,
+          "Tab button wrapped button has the expected title attribute"
+        );
+        tabButton.title = undefined;
+        await tabButton.updateComplete;
+        ok(
+          !tabButton.buttonEl.hasAttribute("title"),
+          "Tab button wrapped button has no title attribute when title is unset"
+        );
+
+        // Support link — title mapped to the wrapped <a>.
+        const EXPECTED_SUPPORT_LINK_TITLE = "Support link title";
+        supportLink.title = EXPECTED_SUPPORT_LINK_TITLE;
+        await supportLink.updateComplete;
+        is(
+          supportLink.linkEl.getAttribute("title"),
+          EXPECTED_SUPPORT_LINK_TITLE,
+          "Support link wrapped link has the expected title attribute"
+        );
+        supportLink.title = undefined;
+        await supportLink.updateComplete;
+        ok(
+          !supportLink.linkEl.hasAttribute("title"),
+          "Support link wrapped link has no title attribute when title is unset"
+        );
+
+        // External link — title mapped to the inner <a>.
+        const EXPECTED_EXTERNAL_LINK_TITLE = "External link title";
+        externalLink.title = EXPECTED_EXTERNAL_LINK_TITLE;
+        await externalLink.updateComplete;
+        is(
+          externalLink.linkEl.getAttribute("title"),
+          EXPECTED_EXTERNAL_LINK_TITLE,
+          "External link wrapped link has the expected title attribute"
+        );
+        externalLink.title = undefined;
+        await externalLink.updateComplete;
+        ok(
+          !externalLink.linkEl.hasAttribute("title"),
+          "External link wrapped link has no title attribute when title is unset"
+        );
+      });
+
+      /**
+       * Tests that allowNoSelection prevents auto-selecting the first button
+       * when currentView doesn't match any button.
+       */
+      add_task(async function test_allow_no_selection() {
+        const container = document.createElement("div");
+        document.body.append(container);
+
+        const nav = document.createElement("moz-page-nav");
+        nav.allowNoSelection = true;
+        container.append(nav);
+
+        const btn1 = document.createElement("moz-page-nav-button");
+        btn1.setAttribute("view", "view-one");
+        const btn2 = document.createElement("moz-page-nav-button");
+        btn2.setAttribute("view", "view-two");
+        nav.append(btn1, btn2);
+        await nav.updateComplete;
+
+        // With allowNoSelection, the first button should still be
+        // auto-selected on initial render (currentView is unset).
+        is(
+          nav.currentView,
+          "view-one",
+          "First button is auto-selected when currentView is initially unset"
+        );
+
+        // Set currentView to a non-matching value — should NOT auto-select.
+        nav.currentView = "non-existent-view";
+        await nav.updateComplete;
+
+        is(
+          nav.currentView,
+          "non-existent-view",
+          "Non-matching currentView persists when allowNoSelection is true"
+        );
+        ok(
+          nav.pageNavButtons.every(b => !b.selected),
+          "No button is selected when currentView doesn't match any view"
+        );
+
+        // Disable allowNoSelection — should auto-select the first button.
+        // Needs two awaits: the first render calls activate() which sets
+        // currentView, scheduling a second render that sets selected.
+        nav.allowNoSelection = false;
+        await nav.updateComplete;
+        await nav.updateComplete;
+
+        is(
+          nav.currentView,
+          "view-one",
+          "First button is auto-selected after allowNoSelection is turned off"
+        );
+        ok(nav.pageNavButtons[0].selected, "First button has selected=true");
 
         container.remove();
       });

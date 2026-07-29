@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -143,10 +142,9 @@ gfxMacFont::~gfxMacFont() {
   }
 }
 
-bool gfxMacFont::ShapeText(DrawTarget* aDrawTarget, const char16_t* aText,
-                           uint32_t aOffset, uint32_t aLength, Script aScript,
-                           nsAtom* aLanguage, bool aVertical,
-                           RoundingFlags aRounding,
+bool gfxMacFont::ShapeText(const char16_t* aText, uint32_t aOffset,
+                           uint32_t aLength, Script aScript, nsAtom* aLanguage,
+                           bool aVertical, RoundingFlags aRounding,
                            gfxShapedText* aShapedText) {
   if (!mIsValid) {
     NS_WARNING("invalid font! expect incorrect text rendering");
@@ -161,11 +159,9 @@ bool gfxMacFont::ShapeText(DrawTarget* aDrawTarget, const char16_t* aText,
     if (!mCoreTextShaper) {
       mCoreTextShaper = MakeUnique<gfxCoreTextShaper>(this);
     }
-    if (mCoreTextShaper->ShapeText(aDrawTarget, aText, aOffset, aLength,
-                                   aScript, aLanguage, aVertical, aRounding,
-                                   aShapedText)) {
-      PostShapingFixup(aDrawTarget, aText, aOffset, aLength, aVertical,
-                       aShapedText);
+    if (mCoreTextShaper->ShapeText(aText, aOffset, aLength, aScript, aLanguage,
+                                   aVertical, aRounding, aShapedText)) {
+      PostShapingFixup(aText, aOffset, aLength, aVertical, aShapedText);
       if (ctFontEntry->HasTrackingTable()) {
         // Convert font size from device pixels back to CSS px
         // to use in selecting tracking value
@@ -184,8 +180,8 @@ bool gfxMacFont::ShapeText(DrawTarget* aDrawTarget, const char16_t* aText,
     }
   }
 
-  return gfxFont::ShapeText(aDrawTarget, aText, aOffset, aLength, aScript,
-                            aLanguage, aVertical, aRounding, aShapedText);
+  return gfxFont::ShapeText(aText, aOffset, aLength, aScript, aLanguage,
+                            aVertical, aRounding, aShapedText);
 }
 
 gfxFont::RunMetrics gfxMacFont::Measure(const gfxTextRun* aTextRun,

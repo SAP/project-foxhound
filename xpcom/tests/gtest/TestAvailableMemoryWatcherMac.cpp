@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,6 +13,7 @@
 #include "nsMemoryPressure.h"
 #include "TelemetryFixture.h"
 #include "TelemetryTestHelpers.h"
+#include "mozilla/glean/XpcomMetrics.h"
 
 using namespace mozilla;
 
@@ -141,37 +140,49 @@ class AvailableMemoryWatcherFixture : public TelemetryTestFixture {
 };
 
 class MemoryWatcherTelemetryEvent {
-  static nsLiteralString sEventCategory;
-  static nsLiteralString sEventMethod;
-  static nsLiteralString sEventObject;
   uint32_t mLastCountOfEvents;
 
- public:
-  explicit MemoryWatcherTelemetryEvent(JSContext* aCx) : mLastCountOfEvents(0) {
-    JS::RootedValue snapshot(aCx);
-    TelemetryTestHelpers::GetEventSnapshot(aCx, &snapshot);
-    nsTArray<nsString> eventValues = TelemetryTestHelpers::EventValuesToArray(
-        aCx, snapshot, sEventCategory, sEventMethod, sEventObject);
-    mLastCountOfEvents = eventValues.Length();
+  static uint32_t CurrentEventCount() {
+    auto optEvents =
+        mozilla::glean::memory_watcher::on_high_memory_stats.TestGetValue()
+            .unwrap();
+    return optEvents.isSome() ? optEvents.ref().Length() : 0;
   }
 
-  void ValidateLastEvent(JSContext* aCx) {
-    JS::RootedValue snapshot(aCx);
-    TelemetryTestHelpers::GetEventSnapshot(aCx, &snapshot);
-    nsTArray<nsString> eventValues = TelemetryTestHelpers::EventValuesToArray(
-        aCx, snapshot, sEventCategory, sEventMethod, sEventObject);
+  static nsCString LastEventValue() {
+    auto optEvents =
+        mozilla::glean::memory_watcher::on_high_memory_stats.TestGetValue()
+            .unwrap();
+    if (optEvents.isNothing() || optEvents.ref().IsEmpty()) {
+      return ""_ns;
+    }
+    for (const auto& extra : optEvents.ref().LastElement().mExtra) {
+      if (std::get<0>(extra) == "value"_ns) {
+        return nsCString(std::get<1>(extra));
+      }
+    }
+    return ""_ns;
+  }
 
+ public:
+  explicit MemoryWatcherTelemetryEvent(JSContext*)
+      : mLastCountOfEvents(CurrentEventCount()) {}
+
+  void ValidateLastEvent(JSContext*) {
+    uint32_t currentCount = CurrentEventCount();
     // A new event was generated.
-    EXPECT_EQ(eventValues.Length(), mLastCountOfEvents + 1);
-    if (eventValues.IsEmpty()) {
+    EXPECT_EQ(currentCount, mLastCountOfEvents + 1);
+    if (currentCount <= mLastCountOfEvents) {
+      // No new event was added; nothing new to validate.
       return;
     }
 
     // Update mLastCountOfEvents for a subsequent call to ValidateLastEvent
     ++mLastCountOfEvents;
 
-    nsTArray<nsString> tokens;
-    for (const nsAString& token : eventValues.LastElement().Split(',')) {
+    nsCString value = LastEventValue();
+    nsTArray<nsCString> tokens;
+    for (const nsACString& token : value.Split(',')) {
       tokens.AppendElement(token);
     }
     EXPECT_EQ(tokens.Length(), 3U);
@@ -182,12 +193,6 @@ class MemoryWatcherTelemetryEvent {
     EXPECT_NS_SUCCEEDED(rv);
   }
 };
-
-nsLiteralString MemoryWatcherTelemetryEvent::sEventCategory =
-    u"memory_watcher"_ns;
-nsLiteralString MemoryWatcherTelemetryEvent::sEventMethod =
-    u"on_high_memory"_ns;
-nsLiteralString MemoryWatcherTelemetryEvent::sEventObject = u"stats"_ns;
 
 /*
  * Test the browser memory pressure reponse by artificially putting the system

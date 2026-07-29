@@ -3,7 +3,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #include <cerrno>
-#include <cinttypes>
 #include <cstdio>
 
 #ifdef XP_WIN
@@ -18,6 +17,8 @@
 #  include <mach/mach_init.h>
 #  include <mach/vm_map.h>
 #endif
+
+#include "mozjemalloc_types.h"
 
 #if defined(XP_WIN)
 #  include "mozmemory_stall.h"
@@ -220,14 +221,14 @@ static void* pages_map(void* aAddr, size_t aSize, ShouldCommit should_commit) {
   }
 }
 
-static void pages_unmap(void* aAddr, size_t aSize) {
+void pages_unmap(void* aAddr, size_t aSize) {
   if (VirtualFree(aAddr, 0, MEM_RELEASE) == 0) {
     _malloc_message(_getprogname(), ": (malloc) Error in VirtualFree()\n");
   }
 }
 #else
 
-static void pages_unmap(void* aAddr, size_t aSize) {
+void pages_unmap(void* aAddr, size_t aSize) {
   if (munmap(aAddr, aSize) == -1) {
     char buf[64];
 
@@ -395,13 +396,10 @@ void pages_decommit(void* aAddr, size_t aSize) {
 
 // Purge and release the pages in the chunk of length `length` at `addr` to
 // the OS.
-// Returns whether the pages are guaranteed to be full of zeroes when the
+// Pages are guaranteed to be full of zeroes when the
 // function returns.
-// The force_zero argument explicitly requests that the memory is guaranteed
-// to be full of zeroes when the function returns.
-static bool pages_purge(void* addr, size_t length, bool force_zero) {
+static void pages_purge(void* addr, size_t length) {
   pages_decommit(addr, length);
-  return true;
 }
 
 // pages_trim, pages_mmap_aligned_slow and pages_mmap_aligned were
@@ -541,29 +539,26 @@ void chunk_assert_zero(void* aPtr, size_t aSize) {
 #endif
 
 static void chunk_record(void* aChunk, size_t aSize, ChunkType aType) {
-  extent_node_t key;
-
   if (aType != ZEROED_CHUNK) {
-    if (pages_purge(aChunk, aSize, aType == HUGE_CHUNK)) {
-      aType = ZEROED_CHUNK;
-    }
+    pages_purge(aChunk, aSize);
+    aType = ZEROED_CHUNK;
   }
 
   // Allocate a node before acquiring chunks_mtx even though it might not
   // be needed, because TypedBaseAlloc::alloc() may cause a new base chunk to
   // be allocated, which could cause deadlock if chunks_mtx were already
   // held.
-  UniqueBaseNode xnode(ExtentAlloc::alloc());
+  UniqueBaseNode xnode(new (fallible) extent_node_t());
   // Use xprev to implement conditional deferred deallocation of prev.
   UniqueBaseNode xprev;
 
   // RAII deallocates xnode and xprev defined above after unlocking
   // in order to avoid potential dead-locks
   MutexAutoLock lock(chunks_mtx);
-  key.mAddr = (void*)((uintptr_t)aChunk + aSize);
-  extent_node_t* node = gChunksByAddress.SearchOrNext(&key);
+  void* addr = (void*)((uintptr_t)aChunk + aSize);
+  extent_node_t* node = gChunksByAddress.SearchOrNext(addr);
   // Try to coalesce forward.
-  if (node && node->mAddr == key.mAddr) {
+  if (node && node->mAddr == addr) {
     // Coalesce chunk with the following address range.  This does
     // not change the position within gChunksByAddress, so only
     // remove/insert from/into gChunksBySize.
@@ -614,13 +609,15 @@ static void chunk_record(void* aChunk, size_t aSize, ChunkType aType) {
   gRecycledSize += aSize;
 }
 
-void chunk_dealloc(void* aChunk, size_t aSize, ChunkType aType) {
+// Deallocate chunks, possibly recording them for future recycling.
+// Used for both base allocator chunks and arena chunks already
+// removed from gChunkRTree.
+void base_chunk_dealloc(void* aChunk, size_t aSize, ChunkType aType) {
   MOZ_ASSERT(aChunk);
   MOZ_ASSERT(GetChunkOffsetForPtr(aChunk) == 0);
   MOZ_ASSERT(aSize != 0);
   MOZ_ASSERT((aSize & kChunkSizeMask) == 0);
-
-  gChunkRTree.Unset(aChunk);
+  MOZ_ASSERT(!gChunkRTree.Get(aChunk));
 
   if (CAN_RECYCLE(aSize)) {
     size_t recycled_so_far = gRecycledSize;
@@ -651,18 +648,27 @@ void chunk_dealloc(void* aChunk, size_t aSize, ChunkType aType) {
   pages_unmap(aChunk, aSize);
 }
 
-static void* chunk_recycle(size_t aSize, size_t aAlignment) {
-  extent_node_t key;
+// Deallocate chunks used for Arena allocations.
+void arena_chunk_dealloc(chunk_allocator_t* aChunkAllocator, void* aChunk,
+                         size_t aSize) {
+  MOZ_ASSERT(aChunk);
+  MOZ_ASSERT(GetChunkOffsetForPtr(aChunk) == 0);
+  MOZ_ASSERT(aSize != 0);
+  MOZ_ASSERT((aSize & kChunkSizeMask) == 0);
 
+  gChunkRTree.Unset(aChunk);
+
+  aChunkAllocator->unmap(aChunk, aSize);
+}
+
+static void* chunk_recycle(size_t aSize, size_t aAlignment) {
   size_t alloc_size = aSize + aAlignment - kChunkSize;
   // Beware size_t wrap-around.
   if (alloc_size < aSize) {
     return nullptr;
   }
-  key.mAddr = nullptr;
-  key.mSize = alloc_size;
   chunks_mtx.Lock();
-  extent_node_t* node = gChunksBySize.SearchOrNext(&key);
+  extent_node_t* node = gChunksBySize.SearchOrNext(alloc_size);
   if (!node) {
     chunks_mtx.Unlock();
     return nullptr;
@@ -690,15 +696,14 @@ static void* chunk_recycle(size_t aSize, size_t aAlignment) {
   if (trailsize != 0) {
     // Insert the trailing space as a smaller chunk.
     if (!node) {
-      // An additional node is required, but
-      // TypedBaseAlloc::alloc() can cause a new base chunk to be
-      // allocated.  Drop chunks_mtx in order to avoid
-      // deadlock, and if node allocation fails, deallocate
-      // the result before returning an error.
+      // An additional node is required, but BaseAlloc::alloc() may cause a
+      // new base chunk to be allocated.  Drop chunks_mtx in order to avoid
+      // deadlock, and if node allocation fails, deallocate the result
+      // before returning an error.
       chunks_mtx.Unlock();
-      node = ExtentAlloc::alloc();
+      node = new (fallible) extent_node_t();
       if (!node) {
-        chunk_dealloc(ret, aSize, ZEROED_CHUNK);
+        base_chunk_dealloc(ret, aSize, ZEROED_CHUNK);
         return nullptr;
       }
       chunks_mtx.Lock();
@@ -716,7 +721,7 @@ static void* chunk_recycle(size_t aSize, size_t aAlignment) {
   chunks_mtx.Unlock();
 
   if (node) {
-    ExtentAlloc::dealloc(node);
+    delete node;
   }
   if (!pages_commit(ret, aSize)) {
     return nullptr;
@@ -725,15 +730,9 @@ static void* chunk_recycle(size_t aSize, size_t aAlignment) {
   return ret;
 }
 
-// Allocates `size` bytes of system memory aligned for `alignment`.
-// `base` indicates whether the memory will be used for the base allocator
-// (e.g. base_alloc).
-// `zeroed` is an outvalue that returns whether the allocated memory is
-// guaranteed to be full of zeroes. It can be omitted when the caller doesn't
-// care about the result.
-void* chunk_alloc(size_t aSize, size_t aAlignment, bool aBase) {
-  void* ret = nullptr;
-
+// Allocates `size` bytes of system memory aligned for `alignment` for the
+// base allocator.
+void* base_chunk_alloc(size_t aSize, size_t aAlignment) {
   MOZ_ASSERT(aSize != 0);
   MOZ_ASSERT((aSize & kChunkSizeMask) == 0);
   MOZ_ASSERT(aAlignment != 0);
@@ -741,15 +740,25 @@ void* chunk_alloc(size_t aSize, size_t aAlignment, bool aBase) {
 
   // Base allocations can't be fulfilled by recycling because of
   // possible deadlock or infinite recursion.
-  if (CAN_RECYCLE(aSize) && !aBase) {
-    ret = chunk_recycle(aSize, aAlignment);
-  }
-  if (!ret) {
-    ret = pages_mmap_aligned(aSize, aAlignment, ReserveAndCommit);
-  }
-  if (ret && !aBase) {
+  void* ret = pages_mmap_aligned(aSize, aAlignment, ReserveAndCommit);
+  MOZ_ASSERT(GetChunkOffsetForPtr(ret) == 0);
+
+  return ret;
+}
+
+// Allocates `size` bytes of system memory aligned for `alignment` for
+// arena allocations.
+void* arena_chunk_alloc(chunk_allocator_t* aChunkAllocator, size_t aSize,
+                        size_t aAlignment) {
+  MOZ_ASSERT(aSize != 0);
+  MOZ_ASSERT((aSize & kChunkSizeMask) == 0);
+  MOZ_ASSERT(aAlignment != 0);
+  MOZ_ASSERT((aAlignment & kChunkSizeMask) == 0);
+
+  void* ret = aChunkAllocator->map(aSize, aAlignment);
+  if (ret) {
     if (!gChunkRTree.Set(ret, ret)) {
-      chunk_dealloc(ret, aSize, UNKNOWN_CHUNK);
+      aChunkAllocator->unmap(ret, aSize);
       return nullptr;
     }
   }
@@ -758,10 +767,29 @@ void* chunk_alloc(size_t aSize, size_t aAlignment, bool aBase) {
   return ret;
 }
 
-// This would be all alone in an Extent.cpp file, instead put it here where
-// it is used.
-template <>
-extent_node_t* ExtentAlloc::sFirstFree = nullptr;
+static void* system_pages_map(size_t aSize, size_t aAlignment) {
+  void* ret = nullptr;
+
+  if (CAN_RECYCLE(aSize)) {
+    ret = chunk_recycle(aSize, aAlignment);
+  }
+  if (!ret) {
+    ret = pages_mmap_aligned(aSize, aAlignment, ReserveAndCommit);
+  }
+
+  return ret;
+}
+
+static void system_pages_unmap(void* aAddr, size_t aSize) {
+  base_chunk_dealloc(aAddr, aSize, ARENA_CHUNK);
+}
+
+chunk_allocator_t gSystemChunkAllocator{
+    .map = system_pages_map,
+    .unmap = system_pages_unmap,
+    .commit = pages_commit,
+    .decommit = pages_decommit,
+};
 
 arena_chunk_t::arena_chunk_t(arena_t* aArena)
     : mArena(aArena), mDirtyRunHint(gChunkHeaderNumPages) {}

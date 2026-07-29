@@ -85,10 +85,11 @@ def _make_artifacts(
     skip_cache=False,
     download_tests=True,
     download_symbols=False,
-    download_maven_zip=False,
+    artifact_filters=None,
     no_process=False,
     unfiltered_project_package=False,
 ):
+    artifact_filters = artifact_filters or []
     state_dir = command_context._mach_context.state_dir
     cache_dir = os.path.join(state_dir, "package-frontend")
 
@@ -107,13 +108,13 @@ def _make_artifacts(
     # If we're building Thunderbird, we should be checking for comm-central artifacts.
     topsrcdir = command_context.substs.get("commtopsrcdir", command_context.topsrcdir)
 
-    if download_maven_zip:
+    if artifact_filters:
         if download_tests:
-            raise ValueError("--maven-zip requires --no-tests")
+            raise ValueError("--artifact-filter requires --no-tests")
         if download_symbols:
-            raise ValueError("--maven-zip requires no --symbols")
+            raise ValueError("--artifact-filter requires no --symbols")
         if not no_process:
-            raise ValueError("--maven-zip requires --no-process")
+            raise ValueError("--artifact-filter requires --no-process")
 
     from mozbuild.artifacts import Artifacts
 
@@ -131,7 +132,7 @@ def _make_artifacts(
         topsrcdir=topsrcdir,
         download_tests=download_tests,
         download_symbols=download_symbols,
-        download_maven_zip=download_maven_zip,
+        artifact_filters=artifact_filters,
         no_process=no_process,
         unfiltered_project_package=unfiltered_project_package,
         mozbuild=command_context,
@@ -174,7 +175,11 @@ def _make_artifacts(
     help="Minimally process (only) main project package artifact, unpacking it to the given `--distdir`.",
 )
 @CommandArgument(
-    "--maven-zip", action="store_true", help="Download Maven zip (Android-only)."
+    "--artifact-filter",
+    dest="artifact_filters",
+    default=None,
+    action="append",
+    help="Filter artifacts by full path (e.g., 'public/build/target.maven.zip'). Can specify multiple times.",
 )
 def artifact_install(
     command_context,
@@ -188,8 +193,9 @@ def artifact_install(
     distdir=None,
     no_process=False,
     unfiltered_project_package=False,
-    maven_zip=False,
+    artifact_filters=None,
 ):
+    artifact_filters = artifact_filters or []
     command_context._set_log_level(verbose)
     artifacts = _make_artifacts(
         command_context,
@@ -198,7 +204,7 @@ def artifact_install(
         skip_cache=skip_cache,
         download_tests=not no_tests,
         download_symbols=symbols,
-        download_maven_zip=maven_zip,
+        artifact_filters=artifact_filters,
         no_process=no_process,
         unfiltered_project_package=unfiltered_project_package,
     )

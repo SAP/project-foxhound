@@ -87,7 +87,7 @@ class CustomTabMenu(
             isInPrimaryState = {
                 selectedSession?.content?.loading == false
             },
-            secondaryImageResource = iconsR.drawable.mozac_ic_stop,
+            secondaryImageResource = iconsR.drawable.mozac_ic_cross_24,
             secondaryContentDescription = context.getString(R.string.content_description_stop),
             secondaryImageTintResource = context.theme.resolveAttribute(R.attr.primaryText),
             disableInSecondaryState = false,

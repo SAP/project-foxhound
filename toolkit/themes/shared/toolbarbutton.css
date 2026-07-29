@@ -6,7 +6,13 @@ toolbarbutton {
   appearance: auto;
   -moz-default-appearance: toolbarbutton;
   margin: 0;
+  /* Prefer pixels over rem spacing in chrome */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   padding: 3px;
+
+  &:where(:focus-visible) {
+    outline: auto;
+  }
 
   @media not (-moz-platform: macos) {
     &:where(:hover) {
@@ -14,9 +20,6 @@ toolbarbutton {
     }
     &:where(:hover:active, [checked], [open]) {
       color: -moz-buttonactivetext;
-    }
-    &:where(:focus-visible) {
-      outline: auto;
     }
   }
 
@@ -38,21 +41,27 @@ toolbarbutton {
   box-sizing: border-box;
   overflow: hidden;
   white-space: nowrap;
-  background-color: #d90000;
-  font-size: 10px;
-  padding: 0 2px 1px;
-  color: #fff;
+  background-color: var(--toolbarbutton-badge-background-color);
+  font-size: var(--toolbarbutton-badge-font-size);
+  padding: 0 var(--toolbarbutton-badge-padding-inline) var(--toolbarbutton-badge-padding-block-end);
+  color: white;
   text-shadow: none;
   border-radius: var(--border-radius-xsmall);
+  /* Inset badge embossing does not map to elevation box-shadow tokens */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   box-shadow:
     0 1px 0 hsla(0, 100%, 100%, 0.2) inset,
     0 -1px 0 hsla(0, 0%, 0%, 0.1) inset,
     0 1px 0 hsla(206, 50%, 10%, 0.2);
+  /* Prefer pixels over rem spacing in chrome */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   margin: -5px 0 0 !important;
+  /* Prefer pixels over rem spacing in chrome */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   margin-inline-end: -4px !important;
-  min-width: 14px;
-  max-width: 20px;
-  line-height: 10px;
+  min-width: var(--toolbarbutton-badge-min-width);
+  max-width: var(--toolbarbutton-badge-max-width);
+  line-height: 1;
   text-align: center;
   align-self: start;
   justify-self: end;
@@ -62,10 +71,15 @@ toolbarbutton {
   }
 
   @media (-moz-platform: macos) {
-    font-size: 9px;
+    --toolbarbutton-badge-font-size: 9px;
+    line-height: 1.11;
+    /* Prefer pixels over rem spacing in chrome */
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
     padding-top: 1px;
 
     toolbar[mode="icons"] > *|* > & {
+      /* Prefer pixels over rem spacing in chrome */
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
       margin-inline-end: -10px !important;
     }
   }

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=4 sw=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -171,10 +169,8 @@ nsresult ErrorAccordingToNSPR(PRErrorCode errorCode) {
       break;
     case PR_CONNECT_ABORTED_ERROR:
     case PR_CONNECT_RESET_ERROR:
+    case PR_END_OF_FILE_ERROR:  // unexpected EOF is treated the same as reset
       rv = NS_ERROR_NET_RESET;
-      break;
-    case PR_END_OF_FILE_ERROR:  // XXX document this correlation
-      rv = NS_ERROR_NET_INTERRUPT;
       break;
     case PR_CONNECT_REFUSED_ERROR:
     // We lump the following NSPR codes in with PR_CONNECT_REFUSED_ERROR. We
@@ -738,9 +734,15 @@ nsresult nsSocketTransport::Init(const nsTArray<nsCString>& types,
   if (dnsRecord) {
     mExternalDNSResolution = true;
     mDNSRecord = do_QueryInterface(dnsRecord);
-    mDNSRecord->IsTRR(&mResolvedByTRR);
-    mDNSRecord->GetEffectiveTRRMode(&mEffectiveTRRMode);
-    mDNSRecord->GetTrrSkipReason(&mTRRSkipReason);
+    bool resolvedByTRR;
+    mDNSRecord->IsTRR(&resolvedByTRR);
+    mResolvedByTRR = resolvedByTRR;
+    nsIRequest::TRRMode effectiveTRRMode;
+    mDNSRecord->GetEffectiveTRRMode(&effectiveTRRMode);
+    mEffectiveTRRMode = effectiveTRRMode;
+    nsITRRSkipReason::value trrSkipReason;
+    mDNSRecord->GetTrrSkipReason(&trrSkipReason);
+    mTRRSkipReason = trrSkipReason;
   }
 
   // init socket type info
@@ -868,9 +870,7 @@ nsresult nsSocketTransport::InitWithConnectedSocket(PRFileDesc* fd,
                                                     const NetAddr* addr) {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
 
-  char buf[kNetAddrMaxCStrBufSize];
-  addr->ToStringBuffer(buf, sizeof(buf));
-  mHost.Assign(buf);
+  addr->ToString(mHost);
 
   uint16_t port;
   if (addr->raw.family == AF_INET) {
@@ -1242,8 +1242,7 @@ nsresult nsSocketTransport::BuildSocket(PRFileDesc*& fd, bool& proxyTransparent,
     SOCKET_LOG(("  error pushing io layer [%u:%s rv=%" PRIx32 "]\n", i,
                 mTypes[i].get(), static_cast<uint32_t>(rv)));
     if (fd) {
-      CloseSocket(
-          fd, mSocketTransportService->IsTelemetryEnabledAndNotSleepPhase());
+      CloseSocket(fd);
     }
   }
   return rv;
@@ -1337,20 +1336,12 @@ nsresult nsSocketTransport::InitiateSocket() {
   // connected - Bug 853423.
   if (mConnectionFlags & nsISocketTransport::DISABLE_RFC1918 &&
       mNetAddr.IsIPAddrLocal()) {
-    if (SOCKET_LOG_ENABLED()) {
-      nsAutoCString netAddrCString;
-      netAddrCString.SetLength(kIPv6CStrBufSize);
-      if (!mNetAddr.ToStringBuffer(netAddrCString.BeginWriting(),
-                                   kIPv6CStrBufSize)) {
-        netAddrCString = "<IP-to-string failed>"_ns;
-      }
-      SOCKET_LOG(
-          ("nsSocketTransport::InitiateSocket skipping "
-           "speculative connection for host [%s:%d] proxy "
-           "[%s:%d] with Local IP address [%s]",
-           mHost.get(), mPort, mProxyHost.get(), mProxyPort,
-           netAddrCString.get()));
-    }
+    SOCKET_LOG(
+        ("nsSocketTransport::InitiateSocket skipping "
+         "speculative connection for host [%s:%d] proxy "
+         "[%s:%d] with Local IP address [%s]",
+         mHost.get(), mPort, mProxyHost.get(), mProxyPort,
+         mNetAddr.ToString().get()));
     mCondition = NS_ERROR_CONNECTION_REFUSED;
     OnSocketDetached(nullptr);
     return mCondition;
@@ -1488,6 +1479,43 @@ nsresult nsSocketTransport::InitiateSocket() {
   PR_SetSocketOption(fd, &opt);
 #endif
 
+#if defined(TCP_USER_TIMEOUT)
+  {
+    int32_t tcpUserTimeoutS = StaticPrefs::network_tcp_user_timeout();
+    if (tcpUserTimeoutS > 0) {
+      PRFileDesc* bottom = PR_GetIdentitiesLayer(fd, PR_NSPR_IO_LAYER);
+      if (bottom) {
+        PROsfd sock = PR_FileDesc2NativeHandle(bottom);
+        if (sock != -1) {
+          int tcpUserTimeoutMs = tcpUserTimeoutS * 1000;
+          if (setsockopt(sock, IPPROTO_TCP, TCP_USER_TIMEOUT, &tcpUserTimeoutMs,
+                         sizeof(tcpUserTimeoutMs)) != 0) {
+            NS_WARNING("nsSocketTransport: Failed setting TCP_USER_TIMEOUT");
+          }
+        }
+      }
+    }
+  }
+#endif
+
+#if defined(TCP_NOTSENT_LOWAT)
+  {
+    int32_t notsentLowat = StaticPrefs::network_tcp_notsent_lowat();
+    if (notsentLowat > 0) {
+      PRFileDesc* bottom = PR_GetIdentitiesLayer(fd, PR_NSPR_IO_LAYER);
+      if (bottom) {
+        PROsfd sock = PR_FileDesc2NativeHandle(bottom);
+        if (sock != -1) {
+          if (setsockopt(sock, IPPROTO_TCP, TCP_NOTSENT_LOWAT, &notsentLowat,
+                         sizeof(notsentLowat)) != 0) {
+            NS_WARNING("nsSocketTransport: Failed setting TCP_NOTSENT_LOWAT");
+          }
+        }
+      }
+    }
+  }
+#endif
+
   // up to here, mFD will only be accessed by us
 
   // assign mFD so that we can properly handle OnSocketDetached before we've
@@ -1497,8 +1525,7 @@ nsresult nsSocketTransport::InitiateSocket() {
     // inform socket transport about this newly created socket...
     rv = mSocketTransportService->AttachSocket(fd, this);
     if (NS_FAILED(rv)) {
-      CloseSocket(
-          fd, mSocketTransportService->IsTelemetryEnabledAndNotSleepPhase());
+      CloseSocket(fd);
       return rv;
     }
     mAttached = true;
@@ -1513,27 +1540,20 @@ nsresult nsSocketTransport::InitiateSocket() {
   mState = STATE_CONNECTING;
   SendStatus(NS_NET_STATUS_CONNECTING_TO);
 
-  if (SOCKET_LOG_ENABLED()) {
-    char buf[kNetAddrMaxCStrBufSize];
-    mNetAddr.ToStringBuffer(buf, sizeof(buf));
-    SOCKET_LOG(("  trying address: %s\n", buf));
-  }
+  SOCKET_LOG(("  trying address: %s\n", mNetAddr.ToString().get()));
 
   //
   // Initiate the connect() to the host...
   //
   PRNetAddr prAddr;
   memset(&prAddr, 0, sizeof(prAddr));
-  {
-    if (mBindAddr) {
-      MutexAutoLock lock(mLock);
-      NetAddrToPRNetAddr(mBindAddr.get(), &prAddr);
-      status = PR_Bind(fd, &prAddr);
-      if (status != PR_SUCCESS) {
-        return NS_ERROR_FAILURE;
-      }
-      mBindAddr = nullptr;
+  if (mBindAddr) {
+    NetAddrToPRNetAddr(mBindAddr.get(), &prAddr);
+    status = PR_Bind(fd, &prAddr);
+    if (status != PR_SUCCESS) {
+      return NS_ERROR_FAILURE;
     }
+    mBindAddr = nullptr;
   }
 
   NetAddrToPRNetAddr(&mNetAddr, &prAddr);
@@ -1553,23 +1573,20 @@ nsresult nsSocketTransport::InitiateSocket() {
 #endif
 
   if (mTLSSocketControl) {
-    if (!mEchConfig.IsEmpty() &&
+    nsCString echConfig;
+    {
+      MutexAutoLock lock(mLock);
+      echConfig = mEchConfig;
+    }
+    if (!echConfig.IsEmpty() &&
         !(mConnectionFlags & (DONT_TRY_ECH | BE_CONSERVATIVE))) {
       SOCKET_LOG(("nsSocketTransport::InitiateSocket set echconfig."));
-      rv = mTLSSocketControl->SetEchConfig(mEchConfig);
+      rv = mTLSSocketControl->SetEchConfig(echConfig);
       if (NS_FAILED(rv)) {
         return rv;
       }
       mEchConfigUsed = true;
     }
-  }
-
-  // We use PRIntervalTime here because we need
-  // nsIOService::LastOfflineStateChange time and
-  // nsIOService::LastConectivityChange time to be atomic.
-  PRIntervalTime connectStarted = 0;
-  if (gSocketTransportService->IsTelemetryEnabledAndNotSleepPhase()) {
-    connectStarted = PR_IntervalNow();
   }
 
   if (Telemetry::CanRecordPrereleaseData() ||
@@ -1591,21 +1608,10 @@ nsresult nsSocketTransport::InitiateSocket() {
     }
   }
 
-  bool connectCalled = true;  // This is only needed for telemetry.
   status = PR_Connect(fd, &prAddr, NS_SOCKET_CONNECT_TIMEOUT);
   PRErrorCode code = PR_GetError();
   if (status == PR_SUCCESS) {
     PR_SetFDInheritable(fd, false);
-  }
-
-  if (gSocketTransportService->IsTelemetryEnabledAndNotSleepPhase() &&
-      connectStarted && connectCalled) {
-    SendPRBlockingTelemetry(
-        connectStarted, glean::networking::prconnect_blocking_time_normal,
-        glean::networking::prconnect_blocking_time_shutdown,
-        glean::networking::prconnect_blocking_time_connectivity_change,
-        glean::networking::prconnect_blocking_time_link_change,
-        glean::networking::prconnect_blocking_time_offline);
   }
 
   if (status == PR_SUCCESS) {
@@ -1660,17 +1666,6 @@ nsresult nsSocketTransport::InitiateSocket() {
     // The connection was refused...
     //
     else {
-      if (gSocketTransportService->IsTelemetryEnabledAndNotSleepPhase() &&
-          connectStarted && connectCalled) {
-        SendPRBlockingTelemetry(
-            connectStarted,
-            glean::networking::prconnect_fail_blocking_time_normal,
-            glean::networking::prconnect_fail_blocking_time_shutdown,
-            glean::networking::prconnect_fail_blocking_time_connectivity_change,
-            glean::networking::prconnect_fail_blocking_time_link_change,
-            glean::networking::prconnect_fail_blocking_time_offline);
-      }
-
       rv = ErrorAccordingToNSPR(code);
       if ((rv == NS_ERROR_CONNECTION_REFUSED) && !mProxyHost.IsEmpty()) {
         rv = NS_ERROR_PROXY_CONNECTION_REFUSED;
@@ -1776,9 +1771,17 @@ bool nsSocketTransport::RecoverFromError() {
   // try next ip address only if past the resolver stage...
   if (mState == STATE_CONNECTING && mDNSRecord) {
     nsresult rv = mDNSRecord->GetNextAddr(SocketPort(), &mNetAddr);
-    mDNSRecord->IsTRR(&mResolvedByTRR);
-    mDNSRecord->GetEffectiveTRRMode(&mEffectiveTRRMode);
-    mDNSRecord->GetTrrSkipReason(&mTRRSkipReason);
+    {
+      bool resolvedByTRR;
+      mDNSRecord->IsTRR(&resolvedByTRR);
+      mResolvedByTRR = resolvedByTRR;
+      nsIRequest::TRRMode effectiveTRRMode;
+      mDNSRecord->GetEffectiveTRRMode(&effectiveTRRMode);
+      mEffectiveTRRMode = effectiveTRRMode;
+      nsITRRSkipReason::value trrSkipReason;
+      mDNSRecord->GetTrrSkipReason(&trrSkipReason);
+      mTRRSkipReason = trrSkipReason;
+    }
     if (NS_SUCCEEDED(rv)) {
       SOCKET_LOG(("  trying again with next ip address\n"));
       tryAgain = true;
@@ -1960,8 +1963,7 @@ class ThunkPRClose : public Runnable {
       : Runnable("net::ThunkPRClose"), mFD(fd) {}
 
   NS_IMETHOD Run() override {
-    nsSocketTransport::CloseSocket(
-        mFD, gSocketTransportService->IsTelemetryEnabledAndNotSleepPhase());
+    nsSocketTransport::CloseSocket(mFD);
     return NS_OK;
   }
 
@@ -2001,8 +2003,7 @@ void nsSocketTransport::ReleaseFD_Locked(PRFileDesc* fd) {
       }
       if (OnSocketThread()) {
         SOCKET_LOG(("nsSocketTransport: calling PR_Close [this=%p]\n", this));
-        CloseSocket(
-            mFD, mSocketTransportService->IsTelemetryEnabledAndNotSleepPhase());
+        CloseSocket(mFD);
       } else {
         // Can't PR_Close() a socket off STS thread. Thunk it to STS to die
         STS_PRCloseOnSocketTransport(mFD, mLingerPolarity, mLingerTimeout);
@@ -2086,9 +2087,15 @@ void nsSocketTransport::OnSocketEvent(uint32_t type, nsresult status,
 
       if (mDNSRecord) {
         mDNSRecord->GetNextAddr(SocketPort(), &mNetAddr);
-        mDNSRecord->IsTRR(&mResolvedByTRR);
-        mDNSRecord->GetEffectiveTRRMode(&mEffectiveTRRMode);
-        mDNSRecord->GetTrrSkipReason(&mTRRSkipReason);
+        bool resolvedByTRR;
+        mDNSRecord->IsTRR(&resolvedByTRR);
+        mResolvedByTRR = resolvedByTRR;
+        nsIRequest::TRRMode effectiveTRRMode;
+        mDNSRecord->GetEffectiveTRRMode(&effectiveTRRMode);
+        mEffectiveTRRMode = effectiveTRRMode;
+        nsITRRSkipReason::value trrSkipReason;
+        mDNSRecord->GetTrrSkipReason(&trrSkipReason);
+        mTRRSkipReason = trrSkipReason;
       }
       // status contains DNS lookup status
       if (NS_FAILED(status)) {
@@ -2199,27 +2206,7 @@ void nsSocketTransport::OnSocketReady(PRFileDesc* fd, int16_t outFlags) {
     // We do not need to do PR_ConnectContinue when we are already
     // shutting down.
 
-    // We use PRIntervalTime here because we need
-    // nsIOService::LastOfflineStateChange time and
-    // nsIOService::LastConectivityChange time to be atomic.
-    PRIntervalTime connectStarted = 0;
-    if (gSocketTransportService->IsTelemetryEnabledAndNotSleepPhase()) {
-      connectStarted = PR_IntervalNow();
-    }
-
     PRStatus status = PR_ConnectContinue(fd, outFlags);
-
-    if (gSocketTransportService->IsTelemetryEnabledAndNotSleepPhase() &&
-        connectStarted) {
-      SendPRBlockingTelemetry(
-          connectStarted,
-          glean::networking::prconnectcontinue_blocking_time_normal,
-          glean::networking::prconnectcontinue_blocking_time_shutdown,
-          glean::networking::
-              prconnectcontinue_blocking_time_connectivity_change,
-          glean::networking::prconnectcontinue_blocking_time_link_change,
-          glean::networking::prconnectcontinue_blocking_time_offline);
-    }
 
     if (status == PR_SUCCESS) {
       //
@@ -2358,6 +2345,10 @@ void nsSocketTransport::OnSocketDetached(PRFileDesc* fd) {
   {
     MutexAutoLock lock(mLock);
     if (mFD.IsInitialized()) {
+      auto callback = std::move(mFDDetachCallback);
+      if (callback) {
+        callback(mFD);
+      }
       ReleaseFD_Locked(mFD);
       // flag mFD as unusable; this prevents other consumers from
       // acquiring a reference to mFD.
@@ -2614,7 +2605,7 @@ nsSocketTransport::SetScriptableOriginAttributes(
     return NS_ERROR_INVALID_ARG;
   }
 
-  mOriginAttributes = attrs;
+  mOriginAttributes = std::move(attrs);
   return NS_OK;
 }
 
@@ -2676,7 +2667,6 @@ NS_IMETHODIMP
 nsSocketTransport::Bind(NetAddr* aLocalAddr) {
   NS_ENSURE_ARG(aLocalAddr);
 
-  MutexAutoLock lock(mLock);
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
   if (mAttached) {
     return NS_ERROR_FAILURE;
@@ -2768,7 +2758,7 @@ nsSocketTransport::SetQoSBits(uint8_t aQoSBits) {
 
 NS_IMETHODIMP
 nsSocketTransport::GetQoSBits(uint8_t* aQoSBits) {
-  *aQoSBits = mQoSBits;
+  *aQoSBits = static_cast<uint8_t>(mQoSBits);
   return NS_OK;
 }
 
@@ -2847,9 +2837,15 @@ nsSocketTransport::OnLookupComplete(nsICancelable* request, nsIDNSRecord* rec,
   }
 
   if (nsCOMPtr<nsIDNSAddrRecord> addrRecord = do_QueryInterface(rec)) {
-    addrRecord->IsTRR(&mResolvedByTRR);
-    addrRecord->GetEffectiveTRRMode(&mEffectiveTRRMode);
-    addrRecord->GetTrrSkipReason(&mTRRSkipReason);
+    bool resolvedByTRR;
+    addrRecord->IsTRR(&resolvedByTRR);
+    mResolvedByTRR = resolvedByTRR;
+    nsIRequest::TRRMode effectiveTRRMode;
+    addrRecord->GetEffectiveTRRMode(&effectiveTRRMode);
+    mEffectiveTRRMode = effectiveTRRMode;
+    nsITRRSkipReason::value trrSkipReason;
+    addrRecord->GetTrrSkipReason(&trrSkipReason);
+    mTRRSkipReason = trrSkipReason;
   }
 
   // flag host lookup complete for the benefit of the ResolveHost method.
@@ -2930,12 +2926,6 @@ nsSocketTransport::SetConnectionFlags(uint32_t value) {
       ("nsSocketTransport::SetConnectionFlags %p flags=%u", this, value));
 
   mConnectionFlags = value;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsSocketTransport::SetIsPrivate(bool aIsPrivate) {
-  mIsPrivate = aIsPrivate;
   return NS_OK;
 }
 
@@ -3219,11 +3209,11 @@ static void LogNSPRError(const char* aPrefix, const void* aObjPtr) {
     errStr.SetLength(errLen);
     PR_GetErrorText(errStr.BeginWriting());
   }
-  NS_WARNING(
-      nsPrintfCString("%s [%p] NSPR error[0x%x] %s.",
-                      aPrefix ? aPrefix : "nsSocketTransport", aObjPtr, errCode,
-                      errLen > 0 ? errStr.BeginReading() : "<no error text>")
-          .get());
+  NS_WARNING(nsPrintfCString("%s [%p] NSPR error[0x%x] %s.",
+                             aPrefix ? aPrefix : "nsSocketTransport", aObjPtr,
+                             errCode,
+                             errLen > 0 ? errStr.get() : "<no error text>")
+                 .get());
 #endif
 }
 
@@ -3379,55 +3369,12 @@ nsresult nsSocketTransport::PRFileDescAutoLock::SetKeepaliveVals(
 #endif
 }
 
-void nsSocketTransport::CloseSocket(PRFileDesc* aFd, bool aTelemetryEnabled) {
+void nsSocketTransport::CloseSocket(PRFileDesc* aFd) {
 #if defined(XP_WIN)
   AttachShutdownLayer(aFd);
 #endif
 
-  // We use PRIntervalTime here because we need
-  // nsIOService::LastOfflineStateChange time and
-  // nsIOService::LastConectivityChange time to be atomic.
-  PRIntervalTime closeStarted;
-  if (aTelemetryEnabled) {
-    closeStarted = PR_IntervalNow();
-  }
-
   PR_Close(aFd);
-
-  if (aTelemetryEnabled) {
-    SendPRBlockingTelemetry(
-        closeStarted, glean::networking::prclose_tcp_blocking_time_normal,
-        glean::networking::prclose_tcp_blocking_time_shutdown,
-        glean::networking::prclose_tcp_blocking_time_connectivity_change,
-        glean::networking::prclose_tcp_blocking_time_link_change,
-        glean::networking::prclose_tcp_blocking_time_offline);
-  }
-}
-
-void nsSocketTransport::SendPRBlockingTelemetry(
-    PRIntervalTime aStart,
-    const glean::impl::TimingDistributionMetric& aMetricNormal,
-    const glean::impl::TimingDistributionMetric& aMetricShutdown,
-    const glean::impl::TimingDistributionMetric& aMetricConnectivityChange,
-    const glean::impl::TimingDistributionMetric& aMetricLinkChange,
-    const glean::impl::TimingDistributionMetric& aMetricOffline) {
-  PRIntervalTime now = PR_IntervalNow();
-  TimeDuration delta =
-      TimeDuration::FromMilliseconds(PR_IntervalToMilliseconds(now - aStart));
-  if (gIOService->IsNetTearingDown()) {
-    aMetricShutdown.AccumulateRawDuration(delta);
-  } else if (PR_IntervalToSeconds(now - gIOService->LastConnectivityChange()) <
-             60) {
-    aMetricConnectivityChange.AccumulateRawDuration(delta);
-  } else if (PR_IntervalToSeconds(now - gIOService->LastNetworkLinkChange()) <
-             60) {
-    aMetricLinkChange.AccumulateRawDuration(delta);
-  } else if (PR_IntervalToSeconds(now - gIOService->LastOfflineStateChange()) <
-             60) {
-    aMetricOffline.AccumulateRawDuration(delta);
-  } else {
-    aMetricNormal.AccumulateRawDuration(delta);
-  }
 }
 
 NS_IMETHODIMP
@@ -3444,6 +3391,7 @@ nsSocketTransport::GetEchConfigUsed(bool* aEchConfigUsed) {
 
 NS_IMETHODIMP
 nsSocketTransport::SetEchConfig(const nsACString& aEchConfig) {
+  MutexAutoLock lock(mLock);
   mEchConfig = aEchConfig;
   return NS_OK;
 }

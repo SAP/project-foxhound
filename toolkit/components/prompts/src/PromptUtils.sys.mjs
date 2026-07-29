@@ -44,6 +44,48 @@ export var PromptUtils = {
       obj[propName] = propBag.getProperty(propName);
     }
   },
+
+  /**
+   * Returns the display host and realm for which authentication is being
+   * requested.
+   */
+  getAuthTarget(aChannel, aAuthInfo) {
+    if (aAuthInfo.flags & Ci.nsIAuthInformation.AUTH_PROXY) {
+      if (!(aChannel instanceof Ci.nsIProxiedChannel)) {
+        throw new Error("proxy auth needs nsIProxiedChannel");
+      }
+      const info = aChannel.proxyInfo;
+      if (!info) {
+        throw new Error("proxy auth needs nsIProxyInfo");
+      }
+      // Proxies don't have a scheme, but we'll use "moz-proxy://"
+      // so that it's more obvious what the login is for.
+      const idnService = Cc["@mozilla.org/network/idn-service;1"].getService(
+        Ci.nsIIDNService
+      );
+      const displayHost =
+        "moz-proxy://" +
+        idnService.domainToDisplay(info.host) +
+        ":" +
+        info.port;
+      let realm = aAuthInfo.realm;
+      if (!realm) {
+        realm = displayHost;
+      }
+      return { displayHost, realm };
+    }
+
+    const displayHostOnly = aChannel.URI.displayHostPort;
+    const displayHost = aChannel.URI.scheme + "://" + displayHostOnly;
+    // If a HTTP WWW-Authenticate header specified a realm, that value
+    // will be available here. If it wasn't set or wasn't HTTP, we'll use
+    // the formatted origin instead.
+    let realm = aAuthInfo.realm;
+    if (!realm) {
+      realm = displayHost;
+    }
+    return { displayHost, displayHostOnly, realm };
+  },
 };
 
 /**

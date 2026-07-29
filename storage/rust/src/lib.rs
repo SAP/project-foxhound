@@ -266,7 +266,7 @@ impl<'c> Statement<'c> {
     /// `value` is any type that can be converted into a `Variant`.
     pub fn bind_by_index<V: VariantType>(&mut self, index: u32, value: V) -> Result<()> {
         let variant = value.into_variant();
-        unsafe { self.handle.BindByIndex(index as u32, variant.coerce()) }
+        unsafe { self.handle.BindByIndex(index, variant.coerce()) }
             .to_result()
             .map_err(|rv| Error::BindByIndex {
                 rv,

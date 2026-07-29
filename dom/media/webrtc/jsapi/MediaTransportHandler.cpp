@@ -14,15 +14,10 @@
 #include "transport/transportlayersrtp.h"
 
 // Config stuff
+#include "mozilla/IceServerParser.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/dom/RTCConfigurationBinding.h"
-
-// Parsing STUN/TURN URIs
-#include "nsIURI.h"
-#include "nsIURLParser.h"
-#include "nsNetUtil.h"
-#include "nsURLHelper.h"
 
 // Logging stuff
 #include "common/browser_logging/CSFLog.h"
@@ -35,25 +30,19 @@
 #include <string>
 #include <vector>
 
+#include "mozilla/ProfilerMarkers.h"
 #include "mozilla/PublicSSL.h"  // For psm::InitializeCipherSuite
 #include "mozilla/dom/RTCStatsReportBinding.h"
 #include "nsDNSService2.h"
+#include "nsFmtString.h"
 #include "nsISocketTransportService.h"
 #include "nss.h"  // For NSS_NoDB_Init
 #include "sdp/SdpAttribute.h"
 #include "transport/runnable_utils.h"
-
-#ifdef MOZ_GECKO_PROFILER
-#  include "mozilla/ProfilerMarkers.h"
-
-#  define MEDIA_TRANSPORT_HANDLER_PACKET_RECEIVED(aPacket) \
-    PROFILER_MARKER_TEXT(                                  \
-        "WebRTC Packet Received", MEDIA_RT, {},            \
-        ProfilerString8View::WrapNullTerminatedString(     \
-            MediaPacket::EnumValueToString((aPacket).type())));
-#else
-#  define MEDIA_TRANSPORT_HANDLER_PACKET_RECEIVED(aPacket)
-#endif
+#define MEDIA_TRANSPORT_HANDLER_PACKET_RECEIVED(aPacket)              \
+  PROFILER_MARKER_TEXT("WebRTC Packet Received", MEDIA_RT, {},        \
+                       ProfilerString8View::WrapNullTerminatedString( \
+                           MediaPacket::EnumValueToString((aPacket).type())));
 
 namespace mozilla {
 
@@ -144,6 +133,7 @@ class MediaTransportHandlerSTS : public MediaTransportHandler,
 
   using MediaTransportHandler::OnAlpnNegotiated;
   using MediaTransportHandler::OnCandidate;
+  using MediaTransportHandler::OnCandidateError;
   using MediaTransportHandler::OnConnectionStateChange;
   using MediaTransportHandler::OnEncryptedSending;
   using MediaTransportHandler::OnGatheringStateChange;
@@ -159,6 +149,9 @@ class MediaTransportHandlerSTS : public MediaTransportHandler,
                         const std::string& aCandidate,
                         const std::string& aUfrag, const std::string& aMDNSAddr,
                         const std::string& aActualAddr);
+  void OnCandidateError(NrIceMediaStream* aStream, const std::string& aAddress,
+                        uint16_t aPort, const std::string& aUrl,
+                        uint16_t aErrorCode, const std::string& aErrorText);
   void OnStateChange(TransportLayer* aLayer, TransportLayer::State);
   void OnRtcpStateChange(TransportLayer* aLayer, TransportLayer::State);
   void PacketReceived(TransportLayer* aLayer, MediaPacket& aPacket);
@@ -166,7 +159,8 @@ class MediaTransportHandlerSTS : public MediaTransportHandler,
   RefPtr<TransportFlow> GetTransportFlow(const std::string& aTransportId,
                                          bool aIsRtcp) const;
   void GetIceStats(const NrIceMediaStream& aStream, DOMHighResTimeStamp aNow,
-                   dom::RTCStatsCollection* aStats) const;
+                   dom::RTCStatsCollection* aStats,
+                   dom::RTCTransportStats& aTransport) const;
 
   virtual ~MediaTransportHandlerSTS() = default;
   nsCOMPtr<nsISerialEventTarget> mStsThread;
@@ -195,9 +189,9 @@ already_AddRefed<MediaTransportHandler> MediaTransportHandler::Create() {
   if (XRE_IsContentProcess() &&
       Preferences::GetBool("media.peerconnection.mtransport_process") &&
       StaticPrefs::network_process_enabled()) {
-    result = new MediaTransportHandlerIPC();
+    result = MakeRefPtr<MediaTransportHandlerIPC>();
   } else {
-    result = new MediaTransportHandlerSTS();
+    result = MakeRefPtr<MediaTransportHandlerSTS>();
   }
   result->Initialize();
   return result.forget();
@@ -210,7 +204,8 @@ class STSShutdownHandler : public nsISTSShutdownObserver {
   // Lazy singleton
   static RefPtr<STSShutdownHandler>& Instance() {
     MOZ_ASSERT(NS_IsMainThread());
-    static RefPtr<STSShutdownHandler> sHandler(new STSShutdownHandler);
+    static RefPtr<STSShutdownHandler> sHandler =
+        MakeRefPtr<STSShutdownHandler>();
     return sHandler;
   }
 
@@ -291,168 +286,6 @@ static NrIceCtx::Policy toNrIcePolicy(dom::RTCIceTransportPolicy aPolicy) {
   return NrIceCtx::ICE_POLICY_ALL;
 }
 
-// list of known acceptable ports for webrtc
-int16_t gGoodWebrtcPortList[] = {
-    53,    // Some deplyoments use DNS port to punch through overzealous NATs
-    3478,  // stun or turn
-    5349,  // stuns or turns
-    0,     // Sentinel value: This MUST be zero
-};
-
-static nsresult addNrIceServer(const nsString& aIceUrl,
-                               const dom::RTCIceServer& aIceServer,
-                               std::vector<NrIceStunServer>* aStunServersOut,
-                               std::vector<NrIceTurnServer>* aTurnServersOut) {
-  // Without STUN/TURN handlers, NS_NewURI returns nsSimpleURI rather than
-  // nsStandardURL. To parse STUN/TURN URI's to spec
-  // http://tools.ietf.org/html/draft-nandakumar-rtcweb-stun-uri-02#section-3
-  // http://tools.ietf.org/html/draft-petithuguenin-behave-turn-uri-03#section-3
-  // we parse out the query-string, and use ParseAuthority() on the rest
-  RefPtr<nsIURI> url;
-  nsresult rv = NS_NewURI(getter_AddRefs(url), aIceUrl);
-  NS_ENSURE_SUCCESS(rv, rv);
-  bool isStun = url->SchemeIs("stun");
-  bool isStuns = url->SchemeIs("stuns");
-  bool isTurn = url->SchemeIs("turn");
-  bool isTurns = url->SchemeIs("turns");
-  if (!(isStun || isStuns || isTurn || isTurns)) {
-    return NS_ERROR_FAILURE;
-  }
-  if (isStuns) {
-    return NS_OK;  // TODO: Support STUNS (Bug 1056934)
-  }
-
-  nsAutoCString spec;
-  rv = url->GetSpec(spec);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // TODO(jib@mozilla.com): Revisit once nsURI supports STUN/TURN (Bug 833509)
-  int32_t port;
-  nsAutoCString host;
-  nsAutoCString transport;
-  {
-    uint32_t hostPos;
-    int32_t hostLen;
-    nsAutoCString path;
-    rv = url->GetPathQueryRef(path);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    // Tolerate query-string + parse 'transport=[udp|tcp]' by hand.
-    int32_t questionmark = path.FindChar('?');
-    if (questionmark >= 0) {
-      const nsCString match = "transport="_ns;
-
-      for (int32_t i = questionmark, endPos; i >= 0; i = endPos) {
-        endPos = path.FindCharInSet("&", i + 1);
-        const nsDependentCSubstring fieldvaluepair =
-            Substring(path, i + 1, endPos);
-        if (StringBeginsWith(fieldvaluepair, match)) {
-          transport = Substring(fieldvaluepair, match.Length());
-          ToLowerCase(transport);
-        }
-      }
-      path.SetLength(questionmark);
-    }
-
-    nsCOMPtr<nsIURLParser> parser = net_GetAuthURLParser();
-    rv = parser->ParseAuthority(path.get(), static_cast<int>(path.Length()),
-                                nullptr, nullptr, nullptr, nullptr, &hostPos,
-                                &hostLen, &port);
-    NS_ENSURE_SUCCESS(rv, rv);
-    if (!hostLen) {
-      return NS_ERROR_FAILURE;
-    }
-    if (hostPos > 1) {
-      /* The username was removed */
-      return NS_ERROR_FAILURE;
-    }
-    path.Mid(host, hostPos, hostLen);
-    // Strip off brackets around IPv6 literals
-    host.Trim("[]");
-  }
-  if (port == -1) port = (isStuns || isTurns) ? 5349 : 3478;
-
-  // First check the known good ports for webrtc
-  bool goodPort = false;
-  for (int i = 0; !goodPort && gGoodWebrtcPortList[i]; i++) {
-    if (port == gGoodWebrtcPortList[i]) {
-      goodPort = true;
-    }
-  }
-
-  // if not in the list of known good ports for webrtc, check
-  // the generic block list using NS_CheckPortSafety.
-  if (!goodPort) {
-    rv = NS_CheckPortSafety(port, nullptr);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
-  if (isStuns || isTurns) {
-    // Should we barf if transport is set to udp or something?
-    transport = kNrIceTransportTls;
-  }
-
-  if (transport.IsEmpty()) {
-    transport = kNrIceTransportUdp;
-  }
-
-  if (isTurn || isTurns) {
-    std::string pwd(
-        NS_ConvertUTF16toUTF8(aIceServer.mCredential.Value()).get());
-    std::string username(
-        NS_ConvertUTF16toUTF8(aIceServer.mUsername.Value()).get());
-
-    std::vector<unsigned char> password(pwd.begin(), pwd.end());
-
-    UniquePtr<NrIceTurnServer> server(NrIceTurnServer::Create(
-        host.get(), port, username, password, transport.get()));
-    if (!server) {
-      return NS_ERROR_FAILURE;
-    }
-    if (server->HasFqdn()) {
-      // Add an IPv4 entry, then an IPv6 entry
-      aTurnServersOut->push_back(*server);
-      server->SetUseIPv6IfFqdn();
-    }
-    aTurnServersOut->emplace_back(std::move(*server));
-  } else {
-    UniquePtr<NrIceStunServer> server(
-        NrIceStunServer::Create(host.get(), port, transport.get()));
-    if (!server) {
-      return NS_ERROR_FAILURE;
-    }
-    if (server->HasFqdn()) {
-      // Add an IPv4 entry, then an IPv6 entry
-      aStunServersOut->push_back(*server);
-      server->SetUseIPv6IfFqdn();
-    }
-    aStunServersOut->emplace_back(std::move(*server));
-  }
-  return NS_OK;
-}
-
-/* static */
-nsresult MediaTransportHandler::ConvertIceServers(
-    const nsTArray<dom::RTCIceServer>& aIceServers,
-    std::vector<NrIceStunServer>* aStunServers,
-    std::vector<NrIceTurnServer>* aTurnServers) {
-  for (const auto& iceServer : aIceServers) {
-    NS_ENSURE_STATE(iceServer.mUrls.WasPassed());
-    NS_ENSURE_STATE(iceServer.mUrls.Value().IsStringSequence());
-    for (const auto& iceUrl : iceServer.mUrls.Value().GetAsStringSequence()) {
-      nsresult rv =
-          addNrIceServer(iceUrl, iceServer, aStunServers, aTurnServers);
-      if (NS_FAILED(rv)) {
-        CSFLogError(LOGTAG, "%s: invalid STUN/TURN server: %s", __FUNCTION__,
-                    NS_ConvertUTF16toUTF8(iceUrl).get());
-        return rv;
-      }
-    }
-  }
-
-  return NS_OK;
-}
-
 static NrIceCtx::GlobalConfig GetGlobalConfig() {
   NrIceCtx::GlobalConfig config;
   config.mTcpEnabled =
@@ -507,21 +340,21 @@ static Maybe<NrIceCtx::NatSimulatorConfig> GetNatConfig() {
     natConfig.mBlockTcp = block_tcp;
     natConfig.mBlockTls = block_tls;
     natConfig.mErrorCodeForDrop = error_code_for_drop;
-    natConfig.mFilteringType = filtering_type;
-    natConfig.mMappingType = mapping_type;
+    natConfig.mFilteringType = std::move(filtering_type);
+    natConfig.mMappingType = std::move(mapping_type);
     natConfig.mNetworkDelayMs = network_delay_ms;
     if (redirect_address.Length()) {
       CSFLogDebug(LOGTAG, "Redirect address: %s", redirect_address.get());
       CSFLogDebug(LOGTAG, "Redirect targets: %s", redirect_targets.get());
-      natConfig.mRedirectAddress = redirect_address;
-      std::stringstream str(redirect_targets.Data());
+      natConfig.mRedirectAddress = std::move(redirect_address);
+      std::stringstream str(redirect_targets.get());
       std::string target;
       while (getline(str, target, ',')) {
         CSFLogDebug(LOGTAG, "Adding target: %s", target.c_str());
-        natConfig.mRedirectTargets.AppendElement(target);
+        natConfig.mRedirectTargets.AppendElement(std::move(target));
       }
     }
-    return Some(natConfig);
+    return Some(std::move(natConfig));
   }
   return Nothing();
 }
@@ -591,7 +424,7 @@ void MediaTransportHandlerSTS::CreateIceCtx(const std::string& aName) {
               mIceCtx->SignalConnectionStateChange.connect(
                   this, &MediaTransportHandlerSTS::OnConnectionStateChange);
 
-              mDNSResolver = new NrIceResolver;
+              mDNSResolver = MakeRefPtr<NrIceResolver>();
               nsresult rv;
               if (NS_FAILED(rv = mDNSResolver->Init())) {
                 CSFLogError(LOGTAG, "%s: Failed to initialize dns resolver",
@@ -613,22 +446,26 @@ void MediaTransportHandlerSTS::CreateIceCtx(const std::string& aName) {
       });
 }
 
+using ParsedIceServer = IceServerParser::ParsedIceServer;
+
 nsresult MediaTransportHandlerSTS::SetIceConfig(
     const nsTArray<dom::RTCIceServer>& aIceServers,
     dom::RTCIceTransportPolicy aIcePolicy) {
-  // We rely on getting an error when this happens, so do it up front.
-  std::vector<NrIceStunServer> stunServers;
-  std::vector<NrIceTurnServer> turnServers;
-  nsresult rv = ConvertIceServers(aIceServers, &stunServers, &turnServers);
-  if (NS_FAILED(rv)) {
-    return rv;
+  auto result = IceServerParser::Parse(aIceServers);
+  if (result.isErr()) {
+    // Discard the detailed ErrorResult; callers at this level use nsresult.
+    result.unwrapErr().SuppressException();
+    return NS_ERROR_FAILURE;
   }
+
+  nsTArray<ParsedIceServer> entries = result.unwrap();
 
   MOZ_RELEASE_ASSERT(mInitPromise);
 
   mInitPromise->Then(
       mStsThread, __func__,
-      [=, this, self = RefPtr<MediaTransportHandlerSTS>(this)]() {
+      [this, aIcePolicy, entries = std::move(entries),
+       self = RefPtr<MediaTransportHandlerSTS>(this)]() {
         if (!mIceCtx) {
           CSFLogError(LOGTAG, "%s: mIceCtx is null", __FUNCTION__);
           return;
@@ -645,18 +482,9 @@ nsresult MediaTransportHandlerSTS::SetIceConfig(
 
         nsresult rv;
 
-        if (NS_FAILED(rv = mIceCtx->SetStunServers(stunServers))) {
-          CSFLogError(LOGTAG, "%s: Failed to set stun servers", __FUNCTION__);
+        if (NS_FAILED(rv = mIceCtx->SetIceServers(entries, mTurnDisabled))) {
+          CSFLogError(LOGTAG, "%s: Failed to set ICE servers", __FUNCTION__);
           return;
-        }
-        if (!mTurnDisabled) {
-          if (NS_FAILED(rv = mIceCtx->SetTurnServers(turnServers))) {
-            CSFLogError(LOGTAG, "%s: Failed to set turn servers", __FUNCTION__);
-            return;
-          }
-        } else if (!turnServers.empty()) {
-          CSFLogError(LOGTAG, "%s: Setting turn servers disabled",
-                      __FUNCTION__);
         }
         if (NS_FAILED(rv = mIceCtx->SetIceConfig(config))) {
           CSFLogError(LOGTAG, "%s: Failed to set config", __FUNCTION__);
@@ -769,6 +597,8 @@ void MediaTransportHandlerSTS::EnsureProvisionalTransport(
 
           stream->SignalCandidate.connect(
               this, &MediaTransportHandlerSTS::OnCandidateFound);
+          stream->SignalCandidateError.connect(
+              this, &MediaTransportHandlerSTS::OnCandidateError);
           stream->SignalGatheringStateChange.connect(
               this, &MediaTransportHandlerSTS::OnGatheringStateChange);
         }
@@ -1041,10 +871,8 @@ void MediaTransportHandlerSTS::RemoveTransportsExcept(
         for (auto it = mTransports.begin(); it != mTransports.end();) {
           const std::string transportId(it->first);
           if (!aTransportIds.count(transportId)) {
-            if (it->second.mFlow) {
-              OnStateChange(transportId, TransportLayer::TS_NONE);
-              OnRtcpStateChange(transportId, TransportLayer::TS_NONE);
-            }
+            OnStateChange(transportId, TransportLayer::TS_CLOSED, {});
+            OnRtcpStateChange(transportId, TransportLayer::TS_CLOSED);
             // Erase the transport before destroying the ice stream so that
             // the close_notify alerts have a chance to be sent as the
             // TransportFlow destructors execute.
@@ -1141,6 +969,11 @@ void MediaTransportHandler::OnCandidate(const std::string& aTransportId,
   mCandidateGathered.Notify(aTransportId, std::move(aCandidateInfo));
 }
 
+void MediaTransportHandler::OnCandidateError(
+    IceCandidateErrorInfo&& aErrorInfo) {
+  mCandidateError.Notify(std::move(aErrorInfo));
+}
+
 void MediaTransportHandler::OnAlpnNegotiated(const std::string& aAlpn) {
   const bool privacyRequested = aAlpn == "c-webrtc";
   mAlpnNegotiated.Notify(aAlpn, privacyRequested);
@@ -1182,30 +1015,36 @@ void MediaTransportHandler::OnEncryptedSending(const std::string& aTransportId,
   mEncryptedSending.Notify(aTransportId, std::move(aPacket));
 }
 
-void MediaTransportHandler::OnStateChange(const std::string& aTransportId,
-                                          TransportLayer::State aState) {
+void MediaTransportHandler::OnStateChange(
+    const std::string& aTransportId, TransportLayer::State aState,
+    nsTArray<nsTArray<uint8_t>>&& aRemoteCerts) {
   {
     MutexAutoLock lock(mStateCacheMutex);
-    if (aState == TransportLayer::TS_NONE) {
-      mStateCache.erase(aTransportId);
-    } else {
-      mStateCache[aTransportId] = aState;
-    }
+    mStateCache[aTransportId] = aState;
   }
-  mStateChange.Notify(aTransportId, aState);
+  mStateChange.Notify(aTransportId, aState, std::move(aRemoteCerts));
 }
 
 void MediaTransportHandler::OnRtcpStateChange(const std::string& aTransportId,
                                               TransportLayer::State aState) {
   {
     MutexAutoLock lock(mStateCacheMutex);
-    if (aState == TransportLayer::TS_NONE) {
-      mRtcpStateCache.erase(aTransportId);
-    } else {
-      mRtcpStateCache[aTransportId] = aState;
-    }
+    mRtcpStateCache[aTransportId] = aState;
   }
   mRtcpStateChange.Notify(aTransportId, aState);
+}
+
+static uint16_t ToDtlsWireVersion(uint16_t aProtocolVersion) {
+  switch (aProtocolVersion) {
+    case SSL_LIBRARY_VERSION_DTLS_1_0:
+      return SSL_LIBRARY_VERSION_DTLS_1_0_WIRE;
+    case SSL_LIBRARY_VERSION_DTLS_1_2:
+      return SSL_LIBRARY_VERSION_DTLS_1_2_WIRE;
+    case SSL_LIBRARY_VERSION_DTLS_1_3:
+      return SSL_LIBRARY_VERSION_DTLS_1_3_WIRE;
+    default:
+      return 0;
+  }
 }
 
 RefPtr<dom::RTCStatsPromise> MediaTransportHandlerSTS::GetIceStats(
@@ -1214,11 +1053,106 @@ RefPtr<dom::RTCStatsPromise> MediaTransportHandlerSTS::GetIceStats(
 
   return mInitPromise->Then(
       mStsThread, __func__, [=, this, self = RefPtr(this)]() {
-        UniquePtr<dom::RTCStatsCollection> stats(new dom::RTCStatsCollection);
+        auto stats = MakeUnique<dom::RTCStatsCollection>();
         if (mIceCtx) {
+          dom::RTCIceRole iceRole =
+              mIceCtx->GetControlling() == NrIceCtx::ICE_CONTROLLING
+                  ? dom::RTCIceRole::Controlling
+                  : dom::RTCIceRole::Controlled;
           for (const auto& stream : mIceCtx->GetStreams()) {
             if (aTransportId.empty() || aTransportId == stream->GetId()) {
-              GetIceStats(*stream, aNow, stats.get());
+              dom::RTCTransportStats transport;
+              transport.mId.Construct(
+                  NS_ConvertASCIItoUTF16(stream->GetId().c_str()));
+              transport.mTimestamp.Construct(aNow);
+              transport.mType.Construct(dom::RTCStatsType::Transport);
+              transport.mIceRole.Construct(iceRole);
+              std::string ufrag = stream->GetUfrag();
+              if (!ufrag.empty()) {
+                transport.mIceLocalUsernameFragment.Construct(
+                    NS_ConvertASCIItoUTF16(ufrag.c_str()));
+              }
+              switch (stream->state()) {
+                case NrIceMediaStream::ICE_CONNECTING:
+                  transport.mIceState.Construct(
+                      dom::RTCIceTransportState::Checking);
+                  break;
+                case NrIceMediaStream::ICE_OPEN:
+                  transport.mIceState.Construct(
+                      dom::RTCIceTransportState::Connected);
+                  break;
+                case NrIceMediaStream::ICE_CLOSED:
+                  transport.mIceState.Construct(
+                      dom::RTCIceTransportState::Closed);
+                  break;
+              }
+              // XXX(Bug 1225723) Determine if dtlsState should be `required`.
+              transport.mDtlsState = dom::RTCDtlsTransportState::New;
+              auto transportIt = mTransports.find(stream->GetId());
+              if (transportIt != mTransports.end() &&
+                  transportIt->second.mFlow) {
+                if (auto* dtlsLayer = static_cast<TransportLayerDtls*>(
+                        transportIt->second.mFlow->GetLayer(
+                            TransportLayerDtls::ID()))) {
+                  transport.mDtlsRole.Construct(
+                      dtlsLayer->role() == TransportLayerDtls::CLIENT
+                          ? dom::RTCDtlsRole::Client
+                          : dom::RTCDtlsRole::Server);
+                  switch (dtlsLayer->state()) {
+                    case TransportLayer::TS_NONE:
+                    case TransportLayer::TS_INIT:
+                      transport.mDtlsState = dom::RTCDtlsTransportState::New;
+                      break;
+                    case TransportLayer::TS_CONNECTING:
+                      transport.mDtlsState =
+                          dom::RTCDtlsTransportState::Connecting;
+                      break;
+                    case TransportLayer::TS_OPEN:
+                      transport.mDtlsState =
+                          dom::RTCDtlsTransportState::Connected;
+                      break;
+                    case TransportLayer::TS_CLOSED:
+                      transport.mDtlsState = dom::RTCDtlsTransportState::Closed;
+                      break;
+                    case TransportLayer::TS_ERROR:
+                      transport.mDtlsState = dom::RTCDtlsTransportState::Failed;
+                      break;
+                  }
+                  uint16_t srtpCipher = 0;
+                  if (NS_SUCCEEDED(dtlsLayer->GetSrtpCipher(&srtpCipher))) {
+                    const char* name =
+                        TransportLayerDtls::GetSrtpCipherName(srtpCipher);
+                    if (name) {
+                      transport.mSrtpCipher.Construct(
+                          NS_ConvertASCIItoUTF16(name));
+                    }
+                  }
+                  SSLChannelInfo channelInfo;
+                  if (NS_SUCCEEDED(dtlsLayer->GetChannelInfo(&channelInfo))) {
+                    if (uint16_t v =
+                            ToDtlsWireVersion(channelInfo.protocolVersion)) {
+                      transport.mTlsVersion.Construct(
+                          nsFmtString(u"{:04X}", v));
+                    }
+                    SSLCipherSuiteInfo info;
+                    if (SSL_GetCipherSuiteInfo(channelInfo.cipherSuite, &info,
+                                               sizeof(info)) == SECSuccess &&
+                        info.cipherSuiteName) {
+                      transport.mDtlsCipher.Construct(
+                          NS_ConvertASCIItoUTF16(info.cipherSuiteName));
+                    }
+                  }
+                }
+              }
+              // XXX(Bug 2037532) Fill missing fields on the transport.
+              GetIceStats(*stream, aNow, stats.get(), transport);
+
+              // XXX(Bug 1632090) Instead of extending the array 1-by-1 (which
+              // might involve multiple reallocations) and potentially crashing
+              // here, SetCapacity could be called outside the loop once.
+              if (!stats->mTransportStats.AppendElement(transport, fallible)) {
+                mozalloc_handle_oom(0);
+              }
             }
           }
         }
@@ -1305,7 +1239,7 @@ static void ToRTCIceCandidateStats(
     dom::RTCIceCandidateStats cand;
     cand.mType.Construct(candidateType);
     NS_ConvertASCIItoUTF16 codeword(candidate.codeword.c_str());
-    cand.mTransportId.Construct(transportId);
+    cand.mTransportId = transportId;
     cand.mId.Construct(codeword);
     cand.mTimestamp.Construct(now);
     cand.mCandidateType.Construct(dom::RTCIceCandidateType(candidate.type));
@@ -1333,6 +1267,18 @@ static void ToRTCIceCandidateStats(
       cand.mRelayProtocol.Construct(
           NS_ConvertASCIItoUTF16(candidate.local_addr.transport.c_str()));
     }
+    cand.mUsernameFragment.Construct(
+        NS_ConvertASCIItoUTF16(candidate.username_fragment.c_str()));
+    // Foundation is not set for peer-reflexive candidates.
+    if (candidate.type != NrIceCandidate::ICE_PEER_REFLEXIVE) {
+      cand.mFoundation.Construct(
+          NS_ConvertASCIItoUTF16(candidate.foundation.c_str()));
+    }
+    if (candidate.tcp_type == NrIceCandidate::ICE_ACTIVE) {
+      cand.mTcpType.Construct(dom::RTCIceTcpCandidateType::Active);
+    } else if (candidate.tcp_type == NrIceCandidate::ICE_PASSIVE) {
+      cand.mTcpType.Construct(dom::RTCIceTcpCandidateType::Passive);
+    }
     cand.mProxied.Construct(NS_ConvertASCIItoUTF16(
         candidate.is_proxied ? "proxied" : "non-proxied"));
     if (!stats->mIceCandidateStats.AppendElement(cand, fallible)) {
@@ -1351,7 +1297,7 @@ static void ToRTCIceCandidateStats(
 
 void MediaTransportHandlerSTS::GetIceStats(
     const NrIceMediaStream& aStream, DOMHighResTimeStamp aNow,
-    dom::RTCStatsCollection* aStats) const {
+    dom::RTCStatsCollection* aStats, dom::RTCTransportStats& aTransport) const {
   MOZ_ASSERT(mStsThread->IsOnCurrentThread());
 
   NS_ConvertASCIItoUTF16 transportId(aStream.GetId().c_str());
@@ -1374,7 +1320,7 @@ void MediaTransportHandlerSTS::GetIceStats(
 
     dom::RTCIceCandidatePairStats s;
     s.mId.Construct(codeword);
-    s.mTransportId.Construct(transportId);
+    s.mTransportId = transportId;
     s.mTimestamp.Construct(aNow);
     s.mType.Construct(dom::RTCStatsType::Candidate_pair);
     s.mLocalCandidateId.Construct(localCodeword);
@@ -1393,6 +1339,9 @@ void MediaTransportHandlerSTS::GetIceStats(
     s.mCurrentRoundTripTime.Construct(candPair.current_rtt_ms / 1000.0);
     s.mTotalRoundTripTime.Construct(candPair.total_rtt_ms / 1000.0);
     s.mComponentId.Construct(candPair.component_id);
+    if (candPair.selected && candPair.component_id == 1) {
+      aTransport.mSelectedCandidatePairId.Construct(codeword);
+    }
     if (!aStats->mIceCandidatePairStats.AppendElement(s, fallible)) {
       // XXX(Bug 1632090) Instead of extending the array 1-by-1 (which might
       // involve multiple reallocations) and potentially crashing here,
@@ -1456,7 +1405,7 @@ RefPtr<TransportFlow> MediaTransportHandlerSTS::CreateTransportFlow(
     const RefPtr<DtlsIdentity>& aDtlsIdentity, bool aDtlsClient,
     const DtlsDigestList& aDigests, bool aPrivacyRequested) {
   nsresult rv;
-  RefPtr<TransportFlow> flow = new TransportFlow(aTransportId);
+  RefPtr flow = MakeRefPtr<TransportFlow>(aTransportId);
 
   // The media streams are made on STS so we need to defer setup.
   auto ice = MakeUnique<TransportLayerIce>();
@@ -1610,17 +1559,35 @@ void MediaTransportHandlerSTS::OnCandidateFound(
   OnCandidate(aStream->GetId(), std::move(info));
 }
 
+void MediaTransportHandlerSTS::OnCandidateError(NrIceMediaStream* aStream,
+                                                const std::string& aAddress,
+                                                uint16_t aPort,
+                                                const std::string& aUrl,
+                                                uint16_t aErrorCode,
+                                                const std::string& aErrorText) {
+  IceCandidateErrorInfo info;
+  info.mAddress = aAddress;
+  info.mPort = aPort;
+  info.mUrl = aUrl;
+  info.mErrorCode = aErrorCode;
+  info.mErrorText = aErrorText;
+  OnCandidateError(std::move(info));
+}
+
 void MediaTransportHandlerSTS::OnStateChange(TransportLayer* aLayer,
                                              TransportLayer::State aState) {
+  nsTArray<nsTArray<uint8_t>> remoteCerts;
   if (aState == TransportLayer::TS_OPEN) {
     MOZ_ASSERT(aLayer->id() == TransportLayerDtls::ID());
     TransportLayerDtls* dtlsLayer = static_cast<TransportLayerDtls*>(aLayer);
     OnAlpnNegotiated(dtlsLayer->GetNegotiatedAlpn());
+    remoteCerts = dtlsLayer->GetPeerCertChainDer();
   }
 
   // DTLS state indicates the readiness of the transport as a whole, because
   // SRTP uses the keys from the DTLS handshake.
-  MediaTransportHandler::OnStateChange(aLayer->flow_id(), aState);
+  MediaTransportHandler::OnStateChange(aLayer->flow_id(), aState,
+                                       std::move(remoteCerts));
 }
 
 void MediaTransportHandlerSTS::OnRtcpStateChange(TransportLayer* aLayer,

@@ -267,6 +267,7 @@ export class TopSiteForm extends React.PureComponent {
         <div className="form-input-container">
           <h3
             className="section-title grey-title"
+            id="top-site-form-title"
             data-l10n-id={
               showAsAdd ? addTopsitesHeaderL10nId : editTopsitesHeaderL10nId
             }

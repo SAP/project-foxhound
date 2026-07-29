@@ -9,6 +9,8 @@ support-files = [
   "VacuumParticipant.sys.mjs",
 ]
 
+["test_attach_database_uri_encoded_path.js"]
+
 ["test_bindArray.js"]
 
 ["test_bug-365166.js"]
@@ -46,6 +48,8 @@ run-if = [
 
 ["test_default_journal_size_limit.js"]
 
+["test_encryption_rejects_plaintext.js"]
+
 ["test_js_helpers.js"]
 
 ["test_levenshtein.js"]
@@ -63,6 +67,10 @@ run-if = [
 ["test_persist_journal.js"]
 
 ["test_readonly-immutable-nolock_vfs.js"]
+# obfsvfs (the SQLite at-rest encryption VFS) replaces the readonly/immutable/
+# nolock VFS this test exercises and forces its own WAL/page layout, so the
+# test's journal expectations do not hold under encryption.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_retry_on_busy.js"]
 
@@ -86,6 +94,8 @@ skip-if = [
 ]
 
 ["test_storage_ext_fts5.js"]
+
+["test_storage_ext_percentile.js"]
 
 ["test_storage_ext_vec.js"]
 run-if = [

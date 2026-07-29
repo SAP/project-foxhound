@@ -14,7 +14,7 @@ add_task(async () => {
   await BrowserTestUtils.withNewTab(
     TEST_TOPLEVEL_URI,
     async function (browser) {
-      await ContentTask.spawn(browser, {}, async function () {
+      await SpecialPowers.spawn(browser, [], async function () {
         let testImg = content.document.getElementById("testimage");
         ok(
           testImg.src.includes("auto_upgrading_identity.png"),
@@ -38,7 +38,7 @@ add_task(async () => {
   await BrowserTestUtils.withNewTab(
     TEST_TOPLEVEL_URI,
     async function (browser) {
-      await ContentTask.spawn(browser, {}, async function () {
+      await SpecialPowers.spawn(browser, [], async function () {
         let testImg = content.document.getElementById("testimage");
         ok(
           testImg.src.includes("auto_upgrading_identity.png"),

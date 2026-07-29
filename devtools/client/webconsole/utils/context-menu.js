@@ -58,7 +58,6 @@ function createContextMenu(event, message, webConsoleWrapper) {
   const clipboardText = getElementText(messageEl);
 
   const linkEl = target.closest("a[href]");
-  const url = linkEl && linkEl.href;
 
   const messageVariable = target.closest(".objectBox");
   // Ensure that console.group and console.groupCollapsed commands are not captured
@@ -95,18 +94,38 @@ function createContextMenu(event, message, webConsoleWrapper) {
 
   const menu = new Menu({ id: "webconsole-menu" });
 
-  // Copy URL for a network request.
+  // Copy URL.
   menu.append(
     new MenuItem({
       id: "console-menu-copy-url",
       label: l10n.getStr("webconsole.menu.copyURL.label"),
       accesskey: l10n.getStr("webconsole.menu.copyURL.accesskey"),
-      visible: source === MESSAGE_SOURCE.NETWORK,
+      visible: source === MESSAGE_SOURCE.NETWORK || linkEl !== null,
       click: () => {
-        if (!request) {
+        if (!request && linkEl == null) {
           return;
         }
-        clipboardHelper.copyString(request.url);
+        const url = request?.url || linkEl?.href;
+        clipboardHelper.copyString(url);
+      },
+    })
+  );
+
+  // Open URL in a new tab.
+  menu.append(
+    new MenuItem({
+      id: "console-menu-open-url",
+      label: l10n.getStr("webconsole.menu.openURL.label"),
+      accesskey: l10n.getStr("webconsole.menu.openURL.accesskey"),
+      visible: source === MESSAGE_SOURCE.NETWORK || linkEl !== null,
+      click: () => {
+        if (!request && linkEl == null) {
+          return;
+        }
+        openContentLink(request?.url || linkEl?.href, {
+          inBackground: true,
+          relatedToCurrent: true,
+        });
       },
     })
   );
@@ -135,22 +154,6 @@ function createContextMenu(event, message, webConsoleWrapper) {
       })
     );
   }
-
-  // Open URL in a new tab for a network request.
-  menu.append(
-    new MenuItem({
-      id: "console-menu-open-url",
-      label: l10n.getStr("webconsole.menu.openURL.label"),
-      accesskey: l10n.getStr("webconsole.menu.openURL.accesskey"),
-      visible: source === MESSAGE_SOURCE.NETWORK,
-      click: () => {
-        if (!request) {
-          return;
-        }
-        openContentLink(request.url);
-      },
-    })
-  );
 
   // Open DOM node in the Inspector panel.
   const contentDomReferenceEl = target.closest(
@@ -265,29 +268,6 @@ function createContextMenu(event, message, webConsoleWrapper) {
         accesskey: l10n.getStr("webconsole.menu.openInSidebar.accesskey"),
         disabled: !rootActorId,
         click: () => dispatch(actions.openSidebar(messageId, rootActorId)),
-      })
-    );
-  }
-
-  if (url) {
-    menu.append(
-      new MenuItem({
-        id: "console-menu-open-url",
-        label: l10n.getStr("webconsole.menu.openURL.label"),
-        accesskey: l10n.getStr("webconsole.menu.openURL.accesskey"),
-        click: () =>
-          openContentLink(url, {
-            inBackground: true,
-            relatedToCurrent: true,
-          }),
-      })
-    );
-    menu.append(
-      new MenuItem({
-        id: "console-menu-copy-url",
-        label: l10n.getStr("webconsole.menu.copyURL.label"),
-        accesskey: l10n.getStr("webconsole.menu.copyURL.accesskey"),
-        click: () => clipboardHelper.copyString(url),
       })
     );
   }

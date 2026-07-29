@@ -1,0 +1,15 @@
+{
+  "label": "admissions.nid.edu",
+  "bugs": {
+    "1899061": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.admissions.nid.edu/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

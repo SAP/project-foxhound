@@ -11,7 +11,7 @@ import androidx.navigation.NavDirections
 import io.mockk.MockKAnnotations
 import io.mockk.coVerify
 import io.mockk.every
-import io.mockk.impl.annotations.MockK
+import io.mockk.impl.annotations.RelaxedMockK
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
@@ -27,26 +27,26 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mozilla.fenix.R
+import org.mozilla.fenix.components.Components
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.ext.settings
 
 class TrackingProtectionPanelInteractorTest {
 
-    private lateinit var context: Context
+    private lateinit var components: Components
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var navController: NavController
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var fragment: Fragment
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var sitePermissions: SitePermissions
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var store: ProtectionsStore
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var cookieBannersStorage: CookieBannersStorage
     private lateinit var interactor: TrackingProtectionPanelInteractor
 
@@ -62,11 +62,11 @@ class TrackingProtectionPanelInteractorTest {
         MockKAnnotations.init(this)
         learnMoreClicked = false
 
-        context = mockk()
+        components = mockk()
         tab = createTab("https://mozilla.org", id = "testID")
 
         interactor = TrackingProtectionPanelInteractor(
-            context = context,
+            components = components,
             fragment = fragment,
             store = store,
             scope = mockk(),
@@ -81,9 +81,9 @@ class TrackingProtectionPanelInteractorTest {
 
         val trackingProtectionUseCases: TrackingProtectionUseCases = mockk(relaxed = true)
 
-        every { fragment.context } returns context
-        every { context.components.useCases.trackingProtectionUseCases } returns trackingProtectionUseCases
-        every { context.components.appStore.state.isPrivateScreenLocked } returns true
+        every { fragment.context?.components } returns components
+        every { components.useCases.trackingProtectionUseCases } returns trackingProtectionUseCases
+        every { components.appStore.state.isPrivateScreenLocked } returns true
     }
 
     @Test
@@ -99,12 +99,12 @@ class TrackingProtectionPanelInteractorTest {
             )
         }
 
-        interactor.openDetails(TrackingProtectionCategory.REDIRECT_TRACKERS, true)
+        interactor.openDetails(TrackingProtectionCategory.CRYPTOMINERS, true)
 
         verify {
             store.dispatch(
                 ProtectionsAction.EnterDetailsMode(
-                    TrackingProtectionCategory.REDIRECT_TRACKERS,
+                    TrackingProtectionCategory.CRYPTOMINERS,
                     true,
                 ),
             )
@@ -127,12 +127,12 @@ class TrackingProtectionPanelInteractorTest {
 
     @Test
     fun `WHEN onBackPressed is called THEN call popBackStack and navigate`() = runTest(testDispatcher) {
-        every { context.settings().shouldUseCookieBannerPrivateMode } returns false
+        every { components.settings.shouldUseCookieBannerPrivateMode } returns false
         val directionsSlot = slot<NavDirections>()
-        every { context.components.publicSuffixList } returns mockk()
+        every { components.publicSuffixList } returns mockk()
 
         val interactor = TrackingProtectionPanelInteractor(
-            context = context,
+            components = components,
             fragment = fragment,
             store = store,
             scope = this,

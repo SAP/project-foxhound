@@ -10,7 +10,7 @@
   --z-index-popup: 10;
 }
 
-@media (max-width: 830px) {
+@media (max-width: 950px) {
   :root {
     --main-margin-start: 16px;
     /* Maintain a main margin so card shadows don't overlap the sidebar. */
@@ -51,77 +51,16 @@ h2 {
   overflow: hidden auto;
 }
 
-@media (prefers-reduced-motion) {
-  /* Setting border-inline-end on #sidebar makes it a focusable element */
-  #sidebar::after {
-    content: "";
-    width: 1px;
-    height: 100%;
-    background-color: var(--border-color);
-    top: 0;
-    inset-inline-end: 0;
-    position: absolute;
-  }
-}
-
-#categories {
-  display: flex;
-  flex-direction: column;
-  padding-inline-end: 4px; /* Leave space for the button focus styles. */
-}
-
-.category {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  margin-block: 0;
-  align-items: center;
-  font-weight: normal;
-}
-
-.category[badge-count]::after {
-  display: inline-block;
-  min-width: 20px;
+.category-badge {
+  min-width: var(--dimension-20);
   background-color: var(--color-accent-primary);
   color: var(--button-text-color-primary);
   font-weight: var(--font-weight-bold);
   /* Use a large border-radius to get semi-circles on the sides. */
   border-radius: var(--border-radius-circle);
-  padding: 2px 6px;
-  content: attr(badge-count);
+  padding: var(--space-xxsmall) var(--space-small);
   text-align: center;
-  margin-inline-start: 8px;
-  grid-column: 2;
-}
-
-.category[name="discover"] {
-  background-image: url("chrome://global/skin/icons/trophy.svg");
-}
-.category[name="locale"] {
-  background-image: url("chrome://mozapps/skin/extensions/category-languages.svg");
-}
-.category[name="extension"] {
-  background-image: url("chrome://mozapps/skin/extensions/category-extensions.svg");
-}
-.category[name="theme"] {
-  background-image: url("chrome://mozapps/skin/extensions/category-themes.svg");
-}
-.category[name="plugin"] {
-  background-image: url("chrome://mozapps/skin/extensions/category-plugins.svg");
-}
-.category[name="dictionary"] {
-  background-image: url("chrome://mozapps/skin/extensions/category-dictionaries.svg");
-}
-.category[name="available-updates"] {
-  background-image: url("chrome://mozapps/skin/extensions/category-available.svg");
-}
-.category[name="recent-updates"] {
-  background-image: url("chrome://mozapps/skin/extensions/category-recent.svg");
-}
-.category[name="sitepermission"] {
-  background-image: url("chrome://mozapps/skin/extensions/category-sitepermission.svg");
-}
-.category[name="mlmodel"] {
-  background-image: url("chrome://global/skin/icons/highlights.svg");
+  margin-inline-start: auto;
 }
 
 .sticky-container {
@@ -139,7 +78,7 @@ h2 {
   align-items: center;
   padding-inline-start: 28px;
   padding-top: 20px;
-  padding-bottom: 30px;
+  padding-bottom: var(--space-small);
   max-width: var(--page-main-content-width);
 }
 
@@ -238,11 +177,11 @@ addon-list:not([type="theme"]) addon-card:not([expanded]):not([panelopen]) > .ad
 }
 
 .addon.card:hover {
-  box-shadow: var(--box-shadow-card);
+  box-shadow: var(--card-box-shadow);
 }
 
 addon-card:not([expanded]) > .addon.card:hover {
-  box-shadow: var(--box-shadow-card-hover);
+  box-shadow: var(--card-box-shadow-hover);
   cursor: pointer;
 
   & .addon-name-link {
@@ -372,7 +311,9 @@ addon-card[expanded] .update-postponed-bar,
 .addon-badge-recommended {
   background-image: url("chrome://global/skin/icons/trophy.svg");
   background-size: 14px;
-  fill: var(--orange-50);
+  /* This color will be removed once the icons are updated for Nova. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/no-base-design-tokens */
+  fill: #ff9400;
 }
 
 .addon-badge-line {
@@ -381,18 +322,13 @@ addon-card[expanded] .update-postponed-bar,
 }
 
 .addon-badge-verified {
-  background-color: var(--green-70);
+  background-color: var(--icon-color-success);
   background-image: url("chrome://global/skin/icons/check.svg");
+  fill: var(--background-color-canvas);
 }
 
 .theme-enable-button {
-  min-width: auto;
-  font-size: var(--font-size-small);
-  min-height: auto;
-  height: 24px;
-  margin: 0;
-  padding: 0 8px;
-  font-weight: normal;
+  padding-inline: var(--space-small);
 }
 
 .addon-description {
@@ -419,12 +355,6 @@ addon-card:not([expanded]) .addon-description {
 
 .page-options-menu {
   align-self: center;
-}
-
-.page-options-menu > .more-options-button {
-  background-image: url("chrome://global/skin/icons/settings.svg");
-  width: 32px;
-  height: 32px;
 }
 
 /* Recommended add-ons on list views */
@@ -605,31 +535,11 @@ button.addon-detail-description-toggle {
   margin-inline-start: 8px;
 }
 
-.more-options-button {
-  min-width: auto;
-  min-height: auto;
-  width: 24px;
-  height: 24px;
-  margin: 0;
-  margin-inline-start: 8px;
-  -moz-context-properties: fill;
-  fill: currentColor;
-  background-image: url("chrome://global/skin/icons/more.svg");
-  background-repeat: no-repeat;
-  background-position: center center;
-  /* Get the -badged ::after element in the right spot. */
-  padding: 1px;
-  display: flex;
-  justify-content: flex-end;
-}
-
-.more-options-button-badged::after {
-  content: "";
-  display: block;
-  width: 5px;
-  height: 5px;
-  border-radius: var(--border-radius-circle);
-  background-color: var(--color-accent-primary);
+addon-card .more-options-button {
+  margin-inline-start: var(--space-small);
+  /* Override the attention badge color to match the one used by the
+   * "Available Updates" badge shown in the sidebar. */
+  --button-attention-dot-color: var(--color-accent-primary);
 }
 
 panel-item[action="remove"]::part(button) {
@@ -799,20 +709,26 @@ section:not(:empty) ~ #empty-addons-message {
   display: none;
 }
 
-@media (max-width: 830px) {
-  .category[badge-count]::after {
+.permission-header > .addon-sitepermissions-host {
+  font-weight: var(--font-weight-bold);
+}
+
+/* Position the badged dot in the top-end (right in ltr, left in rtl)
+ * corner of the badged category icon. */
+@media (max-width: 950px) {
+  moz-page-nav-button {
+    position: relative;
+  }
+
+  moz-page-nav-button[badged-category]::after {
     content: "";
+    position: absolute;
+    top: var(--space-xsmall);
+    inset-inline-end: var(--space-xsmall);
     display: block;
     width: 5px;
     height: 5px;
     border-radius: var(--border-radius-circle);
-    min-width: auto;
-    padding: 0;
-    /* move the badged dot into the top-end (right in ltr, left in rtl) corner. */
-    margin-top: -20px;
+    background-color: var(--color-accent-primary);
   }
-}
-
-.permission-header > .addon-sitepermissions-host {
-  font-weight: var(--font-weight-bold);
 }

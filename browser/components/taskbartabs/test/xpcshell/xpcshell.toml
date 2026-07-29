@@ -3,6 +3,7 @@ firefox-appdir = "browser"
 head = "head.js"
 run-if = [
   "os == 'win'",
+  "os == 'linux'",
 ]
 
 ["test_TaskbarTabsRegistry.js"]
@@ -13,13 +14,22 @@ support-files = [
 
 ["test_taskbarTabs_existingInstalledCountMetric.js"]
 
-["test_taskbarTabs_installedCountMetric.js"]
-
-["test_taskbarTabs_pin.js"]
+["test_taskbarTabs_iconSaving.js"]
 support-files = [
     "../../../places/tests/browser/favicon-normal16.png",
     "../../../../base/content/test/favicons/icon.svg",
 ]
+
+["test_taskbarTabs_installedCountMetric.js"]
+
+["test_taskbarTabs_pinLinux.js"]
+run-if = ["os == 'linux'"]
+
+["test_taskbarTabs_pinMsix.js"]
+run-if = ["os == 'win' && msix"]
+
+["test_taskbarTabs_pinWindows.js"]
+run-if = ["os == 'win' && !msix"]
 
 ["test_taskbarTabs_utils.js"]
 support-files = [

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,7 +27,8 @@ DDMediaLogs::DDMediaLogs(nsCOMPtr<nsIThread>&& aThread)
     : mMediaLogs(1), mMutex("DDMediaLogs"), mThread(std::move(aThread)) {
   mMediaLogs.SetLength(1);
   mMediaLogs[0].mMediaElement = nullptr;
-  DDL_INFO("DDMediaLogs constructed, processing thread: %p", mThread.get());
+  DDL_INFO("DDMediaLogs constructed, processing thread: {}",
+           fmt::ptr(mThread.get()));
 }
 
 DDMediaLogs::~DDMediaLogs() {
@@ -50,7 +49,8 @@ void DDMediaLogs::Shutdown(bool aPanic) {
     return;
   }
 
-  DDL_INFO("DDMediaLogs::Shutdown will shutdown thread: %p", thread.get());
+  DDL_INFO("DDMediaLogs::Shutdown will shutdown thread: {}",
+           fmt::ptr(thread.get()));
   // Will block until pending tasks have completed, and thread is dead.
   thread->Shutdown();
 
@@ -76,15 +76,16 @@ void DDMediaLogs::Shutdown(bool aPanic) {
       if (mediaLog.mMediaElement) {
         DDLE_INFO("---");
       }
-      DDLE_INFO("--- Log for HTMLMediaElement[%p] ---", mediaLog.mMediaElement);
+      DDLE_INFO("--- Log for HTMLMediaElement[{}] ---",
+                fmt::ptr(mediaLog.mMediaElement));
       for (const DDLogMessage& message : mediaLog.mMessages) {
         DDLE_LOG(message.mCategory <= DDLogCategory::_Unlink
                      ? mozilla::LogLevel::Debug
                      : mozilla::LogLevel::Info,
-                 "%s", message.Print(mLifetimes).get());
+                 "{}", message.Print(mLifetimes).get());
       }
-      DDLE_DEBUG("--- End log for HTMLMediaElement[%p] ---",
-                 mediaLog.mMediaElement);
+      DDLE_DEBUG("--- End log for HTMLMediaElement[{}] ---",
+                 fmt::ptr(mediaLog.mMediaElement));
     }
   }
 }
@@ -136,8 +137,8 @@ void DDMediaLogs::SetMediaElement(DDLifetime& aLifetime,
     lifetime.mMediaElement = aMediaElement;
     // Classified lifetime's tag is a positive index from the DDMediaLog.
     lifetime.mTag = ++log.mLifetimeCount;
-    DDL_DEBUG("%s -> HTMLMediaElement[%p]", lifetime.Printf().get(),
-              aMediaElement);
+    DDL_DEBUG("{} -> HTMLMediaElement[{}]", lifetime.Printf().get(),
+              fmt::ptr(aMediaElement));
 
     // Go through the lifetime's existing linked lifetimes, if any is not
     // already linked to aMediaElement, add it to the list so it will get
@@ -203,10 +204,11 @@ DDLifetime& DDMediaLogs::FindOrCreateLifetime(const DDLogObject& aObject,
       const dom::HTMLMediaElement* mediaElement =
           static_cast<const dom::HTMLMediaElement*>(aObject.Pointer());
       SetMediaElement(*lifetime, mediaElement);
-      DDL_DEBUG("%s -> new lifetime: %s with MediaElement %p",
-                aObject.Printf().get(), lifetime->Printf().get(), mediaElement);
+      DDL_DEBUG("{} -> new lifetime: {} with MediaElement {}",
+                aObject.Printf().get(), lifetime->Printf().get(),
+                fmt::ptr(mediaElement));
     } else {
-      DDL_DEBUG("%s -> new lifetime: %s", aObject.Printf().get(),
+      DDL_DEBUG("{} -> new lifetime: {}", aObject.Printf().get(),
                 lifetime->Printf().get());
     }
   }
@@ -284,7 +286,7 @@ void DDMediaLogs::ProcessBuffer() {
   MOZ_ASSERT(!mThread || mThread.get() == NS_GetCurrentThread());
 
   mMessagesQueue.PopAll([this](const DDLogMessage& message) {
-    DDL_DEBUG("Processing: %s", message.Print().Data());
+    DDL_DEBUG("Processing: {}", message.Print().get());
 
     // Either this message will carry a new object for which to create a
     // lifetime, or we'll find an existing one.
@@ -320,7 +322,7 @@ void DDMediaLogs::ProcessBuffer() {
           // we're watching.)
           if (baseLifetime.mDerivedObject.Pointer()) {
             DDL_WARN(
-                "base '%s' was already derived as '%s', now deriving as '%s'",
+                "base '{}' was already derived as '{}', now deriving as '{}'",
                 baseLifetime.Printf().get(),
                 baseLifetime.mDerivedObject.Printf().get(),
                 lifetime2->Printf().get());
@@ -395,8 +397,8 @@ void DDMediaLogs::FulfillPromises() {
     DDMediaLog* log = GetLogFor(mediaElement);
     if (!log) {
       // No such media element -> Reject this promise.
-      DDL_INFO("Rejecting promise for HTMLMediaElement[%p] - Cannot find log",
-               mediaElement);
+      DDL_INFO("Rejecting promise for HTMLMediaElement[{}] - Cannot find log",
+               fmt::ptr(mediaElement));
       promiseHolder.Reject(NS_ERROR_DOM_MEDIA_NOT_ALLOWED_ERR, __func__);
       // Pop this rejected promise, fetch next one.
       MutexAutoLock lock(mMutex);
@@ -479,13 +481,12 @@ void DDMediaLogs::FulfillPromises() {
         log->mMessages.IsEmpty());
     jw.EndObject();
     jw.End();
-    DDL_DEBUG("RetrieveMessages(%p) ->\n%s", mediaElement,
+    DDL_DEBUG("RetrieveMessages({}) ->\n{}", fmt::ptr(mediaElement),
               json.StringCRef().get());
 
     // This log exists (new messages or not) -> Resolve this promise.
-    DDL_INFO("Resolving promise for HTMLMediaElement[%p] with messages %" PRImi
-             "-%" PRImi,
-             mediaElement,
+    DDL_INFO("Resolving promise for HTMLMediaElement[{}] with messages {}-{}",
+             fmt::ptr(mediaElement),
              log->mMessages.IsEmpty() ? 0 : log->mMessages[0].mIndex.Value(),
              log->mMessages.IsEmpty()
                  ? 0
@@ -533,7 +534,8 @@ void DDMediaLogs::CleanUpLogs() {
                        sMaxAgeDeadLog_s;
           });
       if (!used) {
-        DDL_INFO("Removed old log for media element %p", log.mMediaElement);
+        DDL_INFO("Removed old log for media element {}",
+                 fmt::ptr(log.mMediaElement));
         mLifetimes.Visit(log.mMediaElement, [&](const DDLifetime& lifetime) {
           DestroyLifetimeLinks(lifetime);
         });
@@ -606,13 +608,14 @@ void DDMediaLogs::CleanUpLogs() {
           }
         }
       }
-      DDL_INFO("Removed %zu messages (#%" PRImi " %f - #%" PRImi
-               " %f) and %zu lifetimes from log for media element %p",
-               old, log.mMessages[0].mIndex.Value(),
-               ToSeconds(log.mMessages[0].mTimeStamp),
-               log.mMessages[old - 1].mIndex.Value(),
-               ToSeconds(log.mMessages[old - 1].mTimeStamp), removedLifetimes,
-               log.mMediaElement);
+      DDL_INFO(
+          "Removed {} messages (#{} {} - #{} {}) and {} lifetimes from log "
+          "for media element {}",
+          old, log.mMessages[0].mIndex.Value(),
+          ToSeconds(log.mMessages[0].mTimeStamp),
+          log.mMessages[old - 1].mIndex.Value(),
+          ToSeconds(log.mMessages[old - 1].mTimeStamp), removedLifetimes,
+          fmt::ptr(log.mMediaElement));
       log.mMessages.RemoveElementsAt(0, old);
     }
   }
@@ -623,7 +626,7 @@ void DDMediaLogs::ProcessLog() {
   ProcessBuffer();
   FulfillPromises();
   CleanUpLogs();
-  DDL_INFO("ProcessLog() completed - DDMediaLog size: %zu",
+  DDL_INFO("ProcessLog() completed - DDMediaLog size: {}",
            SizeOfIncludingThis(moz_malloc_size_of));
 }
 
@@ -637,7 +640,7 @@ nsresult DDMediaLogs::DispatchProcessLog(const MutexAutoLock& aProofOfLock) {
 }
 
 nsresult DDMediaLogs::DispatchProcessLog() {
-  DDL_INFO("DispatchProcessLog() - Yet-unprocessed message buffers: %d",
+  DDL_INFO("DispatchProcessLog() - Yet-unprocessed message buffers: {}",
            mMessagesQueue.LiveBuffersStats().mCount);
   MutexAutoLock lock(mMutex);
   return DispatchProcessLog(lock);

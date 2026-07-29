@@ -40,6 +40,12 @@ ChromeUtils.defineESModuleGetters(modules.root, {
 });
 
 // eslint-disable-next-line mozilla/lazy-getter-object-name
+ChromeUtils.defineESModuleGetters(modules.root.moz, {
+  debugging:
+    "chrome://remote/content/webdriver-bidi/modules/root/moz/debugging.sys.mjs",
+});
+
+// eslint-disable-next-line mozilla/lazy-getter-object-name
 ChromeUtils.defineESModuleGetters(modules["windowglobal-in-root"], {
   browsingContext:
     "chrome://remote/content/webdriver-bidi/modules/windowglobal-in-root/browsingContext.sys.mjs",
@@ -50,6 +56,12 @@ ChromeUtils.defineESModuleGetters(modules["windowglobal-in-root"], {
     "chrome://remote/content/webdriver-bidi/modules/windowglobal-in-root/network.sys.mjs",
   script:
     "chrome://remote/content/webdriver-bidi/modules/windowglobal-in-root/script.sys.mjs",
+});
+
+// eslint-disable-next-line mozilla/lazy-getter-object-name
+ChromeUtils.defineESModuleGetters(modules["windowglobal-in-root"].moz, {
+  debugging:
+    "chrome://remote/content/webdriver-bidi/modules/windowglobal-in-root/moz/debugging.sys.mjs",
 });
 
 // eslint-disable-next-line mozilla/lazy-getter-object-name
@@ -67,4 +79,10 @@ ChromeUtils.defineESModuleGetters(modules.windowglobal, {
     "chrome://remote/content/webdriver-bidi/modules/windowglobal/network.sys.mjs",
   script:
     "chrome://remote/content/webdriver-bidi/modules/windowglobal/script.sys.mjs",
+});
+
+// eslint-disable-next-line mozilla/lazy-getter-object-name
+ChromeUtils.defineESModuleGetters(modules.windowglobal.moz, {
+  debugging:
+    "chrome://remote/content/webdriver-bidi/modules/windowglobal/moz/debugging.sys.mjs",
 });

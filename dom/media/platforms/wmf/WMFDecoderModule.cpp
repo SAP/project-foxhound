@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +6,7 @@
 
 #include <algorithm>
 
+#include "AOMDecoder.h"
 #include "DriverCrashGuard.h"
 #include "GfxDriverInfo.h"
 #include "MFTDecoder.h"
@@ -32,11 +31,7 @@
 #include "nsWindowsHelpers.h"
 #include "prsystem.h"
 
-#ifdef MOZ_AV1
-#  include "AOMDecoder.h"
-#endif
-
-#define LOG(...) MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
+#define LOG(...) MOZ_LOG_FMT(sPDMLog, mozilla::LogLevel::Debug, __VA_ARGS__)
 
 namespace mozilla {
 
@@ -49,7 +44,7 @@ static void MOZ_FORMAT_PRINTF(2, 3)
   const nsVprintfCString markerString(aFormat, ap);
   va_end(ap);
   PROFILER_MARKER_TEXT(aMarkerTag, MEDIA_PLAYBACK, {}, markerString);
-  LOG("%s", markerString.get());
+  LOG("{}", markerString.get());
 }
 
 static const GUID CLSID_CMSAACDecMFT = {
@@ -139,10 +134,20 @@ void WMFDecoderModule::Init() {
         WmfDecoderModuleMarkerAndLog("WMFInit Decoder Failed",
                                      "%s failed with code 0x%lx",
                                      EnumValueToString(type), hr);
-        if (hr == WINCODEC_ERR_COMPONENTNOTFOUND &&
-            type == WMFStreamType::AV1) {
-          WmfDecoderModuleMarkerAndLog("No AV1 extension",
-                                       "Lacking of AV1 extension");
+        if (hr == WINCODEC_ERR_COMPONENTNOTFOUND) {
+          // Only AV1 and HEVC have a LackOfExtension entry in
+          // MediaCodecsSupport; any other codec hitting this arm has lost
+          // a built-in MFT and is plainly unsupported, and would also
+          // trip the corresponding assertion in
+          // MCSInfo::GetDecodeMediaCodecsSupported.
+          MOZ_ASSERT(type == WMFStreamType::AV1 || type == WMFStreamType::HEVC);
+          if (type == WMFStreamType::AV1) {
+            WmfDecoderModuleMarkerAndLog("No AV1 extension",
+                                         "Lacking of AV1 extension");
+          } else if (type == WMFStreamType::HEVC) {
+            WmfDecoderModuleMarkerAndLog("No HEVC extension",
+                                         "Lacking of HEVC extension");
+          }
           sLackOfExtensionTypes += type;
         }
       }
@@ -232,7 +237,6 @@ HRESULT WMFDecoderModule::CreateMFTDecoder(const WMFStreamType& aType,
         }
         return aDecoder->Create(CLSID_CMSVPXDecMFT);
       }
-#ifdef MOZ_AV1
     case WMFStreamType::AV1:
       // If this process cannot use DXVA, the AV1 decoder will not be used.
       // Also, upon startup, init will be called both before and after
@@ -247,7 +251,6 @@ HRESULT WMFDecoderModule::CreateMFTDecoder(const WMFStreamType& aType,
       // investigating other ways to instantiate the AV1 decoder.
       return aDecoder->Create(MFT_CATEGORY_VIDEO_DECODER, MFVideoFormat_AV1,
                               MFVideoFormat_NV12);
-#endif
     case WMFStreamType::HEVC:
       if (!StaticPrefs::media_hevc_enabled() || !sDXVAEnabled) {
         return E_FAIL;
@@ -284,14 +287,12 @@ bool WMFDecoderModule::CanCreateMFTDecoder(const WMFStreamType& aType) {
         return false;
       }
       break;
-#ifdef MOZ_AV1
     case WMFStreamType::AV1:
       if (!StaticPrefs::media_av1_enabled() ||
           !StaticPrefs::media_wmf_av1_enabled()) {
         return false;
       }
       break;
-#endif
     case WMFStreamType::HEVC:
       if (!StaticPrefs::media_hevc_enabled()) {
         return false;
@@ -480,10 +481,9 @@ media::DecodeSupportSet WMFDecoderModule::SupportsMimeType(
     return media::DecodeSupportSet{};
   }
   auto supports = Supports(SupportDecoderParams(*trackInfo), aDiagnostics);
-  MOZ_LOG(
-      sPDMLog, LogLevel::Debug,
-      ("WMF decoder %s requested type '%s'",
-       !supports.isEmpty() ? "supports" : "rejects", aMimeType.BeginReading()));
+  MOZ_LOG_FMT(sPDMLog, LogLevel::Debug, "WMF decoder {} requested type '{}'",
+              !supports.isEmpty() ? "supports" : "rejects",
+              PromiseFlatCString(aMimeType).get());
   return supports;
 }
 

@@ -10,7 +10,7 @@ the `moz-src://`, `resource://` and `chrome://` uris. When files are added or
 removed, these may need to be updated.
 
 ```shell
-$ ./mach ts paths
+./mach ts paths
 ```
 
 ## Updating Gecko Types
@@ -22,5 +22,5 @@ A full build is required.
 :::
 
 ```shell
-$ ./mach build && ./mach ts build && ./mach ts update
+./mach build && ./mach ts build && ./mach ts update
 ```

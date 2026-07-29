@@ -19,6 +19,8 @@ skip-if = [
 
 ["test_browserGlue_migration_places_xulstore.js"]
 
+["test_browserGlue_migration_removeABAPerms.js"]
+
 ["test_browserGlue_migration_removeContentBlockerPerms.js"]
 
 ["test_browserGlue_migration_remove_pref.js"]
@@ -31,7 +33,13 @@ skip-if = [
 
 ["test_distribution_cachedexistence.js"]
 
+["test_distribution_mozillaonline.js"]
+
+["test_distribution_observer.js"]
+
 ["test_profileDataUpgrade_smartwindow.js"]
+
+["test_profileDataUpgrade_smartwindow_semanticHistory.js"]
 
 ["test_startupTelemetry_aiControlBlocking.js"]
 
@@ -39,3 +47,5 @@ skip-if = [
 run-if = [
   "os == 'win'",
 ]
+
+["test_startupTelemetry_launchOnLoginState.js"]

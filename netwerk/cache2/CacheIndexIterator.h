@@ -5,8 +5,8 @@
 #ifndef CacheIndexIterator_h_
 #define CacheIndexIterator_h_
 
-#include "nsTArray.h"
 #include "nsCOMPtr.h"
+#include "nsTHashSet.h"
 #include "mozilla/SHA1.h"
 #include "mozilla/StaticMutex.h"
 
@@ -52,7 +52,7 @@ class CacheIndexIterator {
 
   nsresult mStatus;
   RefPtr<CacheIndex> mIndex;
-  nsTArray<RefPtr<CacheIndexRecordWrapper>> mRecords;
+  nsTHashSet<RefPtr<CacheIndexRecordWrapper>> mRecords;
   bool mAddNew;
 };
 

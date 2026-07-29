@@ -211,16 +211,6 @@
     "driverVersionMax": " 8.52.322.1200 ",
     "driverVersionComparator": " BETWEEN_INCLUSIVE_START "
   },
-  {
-    "os": "All",
-    "vendor": "0xdcdc",
-    "devices": ["0x2783", "0x1234", "0x2782"],
-    "feature": " WEBGL_MSAA ",
-    "featureStatus": " BLOCKED_DRIVER_VERSION ",
-    "driverVersion": " 8.52.322.1000 ",
-    "driverVersionMax": " 8.52.322.1200 ",
-    "driverVersionComparator": " BETWEEN_INCLUSIVE_START "
-  },
 
   {
     "os": "All",
@@ -328,16 +318,6 @@
     "feature": " WEBRTC_HW_ACCELERATION_ENCODE ",
     "featureStatus": " BLOCKED_DRIVER_VERSION ",
     "driverVersion": " 6 ",
-    "driverVersionMax": " 7 ",
-    "driverVersionComparator": " BETWEEN_INCLUSIVE_START "
-  },
-  {
-    "os": "Android",
-    "vendor": "dcdc",
-    "devices": ["uiop"],
-    "feature": " WEBGL_MSAA ",
-    "featureStatus": " BLOCKED_DRIVER_VERSION ",
-    "driverVersion": " 5 ",
     "driverVersionMax": " 7 ",
     "driverVersionComparator": " BETWEEN_INCLUSIVE_START "
   },

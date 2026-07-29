@@ -482,7 +482,6 @@ class XPCShellTestsTests(unittest.TestCase):
             "selftest%s" % id(self), {}, {"tbpl": self.log}
         )
         self.x = XPCShellTests(logger)
-        self.x.harness_timeout = 30 if not mozinfo.info["ccov"] else 60
 
     def tearDown(self):
         mozfile.remove(self.tempdir)
@@ -549,6 +548,10 @@ prefs = [
         # Don't retry tests that are expected to fail
         if not expected:
             kwargs["retry"] = False
+        # Self-tests run sub-processes that include coverage flushing and other
+        # per-test overhead; use a generous factor so slow workers don't spuriously
+        # timeout, especially on ccov builds where flushing gcda files adds ~20s.
+        kwargs["timeoutFactor"] = 2.0 if mozinfo.info.get("ccov") else 1.5
 
         startup_profiling = os.environ.pop("MOZ_PROFILER_STARTUP", None)
         try:

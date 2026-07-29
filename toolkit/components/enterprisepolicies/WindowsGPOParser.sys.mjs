@@ -29,7 +29,9 @@ export var WindowsGPOParser = {
       policies = {};
     }
     try {
-      policies = registryToObject(childWrk, policies);
+      // Each hive is parsed independently and combined per policy: a later
+      // hive (machine) overrides an earlier one (user) for a given policy.
+      Object.assign(policies, registryToObject(childWrk));
     } catch (e) {
       lazy.log.error(e);
     } finally {
@@ -44,10 +46,14 @@ export var WindowsGPOParser = {
   },
 };
 
-function registryToObject(wrk, policies) {
-  if (!policies) {
-    policies = {};
-  }
+// Policies that may be supplied as either a single value holding JSON (a
+// REG_SZ/REG_MULTI_SZ) or a subkey tree keyed by id. When a registry path has
+// both forms, registryToObject merges them rather than letting one silently
+// drop the other.
+const MERGEABLE_POLICIES = ["ExtensionSettings"];
+
+function registryToObject(wrk) {
+  let policies = {};
   if (wrk.valueCount > 0) {
     if (wrk.getValueName(0) == "1") {
       // If the first item is 1, just assume it is an array
@@ -82,11 +88,33 @@ function registryToObject(wrk, policies) {
     for (let i = 0; i < wrk.childCount; i++) {
       let name = wrk.getChildName(i);
       let childWrk = wrk.openChild(name, wrk.ACCESS_READ);
-      policies[name] = registryToObject(childWrk);
+      let value = registryToObject(childWrk);
+      // For a mergeable policy present both as a value holding JSON and as a
+      // same-named subkey, merge them with the value winning collisions, so a
+      // subkey can't drop the value or override entries like "*". The REG_SZ
+      // JSON is still a string here; if it doesn't parse, keep the subkey.
+      if (MERGEABLE_POLICIES.includes(name) && isObject(value)) {
+        let existing = policies[name];
+        if (typeof existing == "string") {
+          try {
+            existing = JSON.parse(existing);
+          } catch (e) {
+            existing = undefined;
+          }
+        }
+        if (isObject(existing)) {
+          value = { ...value, ...existing };
+        }
+      }
+      policies[name] = value;
       childWrk.close();
     }
   }
   return policies;
+}
+
+function isObject(value) {
+  return typeof value == "object" && value !== null && !Array.isArray(value);
 }
 
 function readRegistryValue(wrk, value) {

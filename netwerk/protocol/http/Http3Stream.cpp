@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -474,7 +472,7 @@ nsresult Http3Stream::Finish0RTT(bool aRestart) {
     mQueued = false;
     mDataReceived = false;
     mResetRecv = false;
-    mFlatResponseHeaders.TruncateLength(0);
+    mFlatResponseHeaders.ClearAndRetainStorage();
     mTotalSent = 0;
     mTotalRead = 0;
     mFin = false;

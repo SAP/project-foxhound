@@ -48,6 +48,13 @@ class MFCDMProxy {
   // because they are in bad state.
   void OnHardwareContextReset();
 
+  // Discard the cached IMFTrustedInput and per-stream ITAs so they are
+  // re-fetched from the CDM on the next GetInputTrustAuthority call. Call this
+  // whenever the CDM proxy is swapped mid-stream (e.g. ClearLead ad-boundary
+  // key rotation), since the old ITAs belong to the previous CDM instance and
+  // will cause MF_E_NOT_FOUND on the new key ID.
+  void ResetTrustedInput();
+
   void Shutdown();
 
   // TODO : set last key id in order to let CDM use the key IDs information to

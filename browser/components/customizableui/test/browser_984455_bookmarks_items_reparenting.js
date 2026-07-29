@@ -130,15 +130,17 @@ function checkBookmarksItemsChevronContextMenu() {
     EventUtils.synthesizeMouseAtCenter(chevron, {});
     info("Waiting for bookmark toolbar item chevron popup to show");
     await shownPromise;
+    let visibleItem;
     await TestUtils.waitForCondition(() => {
       for (let child of chevronPopup.children) {
-        if (child.style.visibility != "hidden") {
+        if (BrowserTestUtils.isVisible(child)) {
+          visibleItem = child;
           return true;
         }
       }
       return false;
     });
-    await checkPlacesContextMenu(chevronPopup);
+    await checkPlacesContextMenu(visibleItem);
     info("Waiting for bookmark toolbar item chevron popup to close");
     await closePopup(chevronPopup);
   })();

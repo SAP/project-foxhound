@@ -29,7 +29,7 @@ add_task(async function () {
 });
 
 async function testOpenExpanderAndAddTextInFilter(inspector, view) {
-  const rule = getRuleViewRuleEditor(view, 1).rule;
+  const rule = getRuleViewRuleEditorAt(view, 1).rule;
   const ruleEditor = getTextProperty(view, 1, { margin: "4px 0px" }).editor;
 
   info("Opening the computed list of margin property");
@@ -38,9 +38,9 @@ async function testOpenExpanderAndAddTextInFilter(inspector, view) {
   await setSearchFilter(view, SEARCH);
 
   info("Check that the correct rules are visible");
-  is(view.element.children.length, 2, "Should have 2 rules.");
+  assertDisplayedRulesCount(view, 2);
   is(
-    getRuleViewRuleEditor(view, 0).rule.selectorText,
+    getRuleViewRuleEditorAt(view, 0).rule.selectorText,
     "element",
     "First rule is inline element."
   );
@@ -96,14 +96,14 @@ async function testClearSearchFilter(inspector, view) {
   await onRuleViewFiltered;
 
   info("Check the search filter is cleared and no rules are highlighted");
-  is(view.element.children.length, 3, "Should have 3 rules.");
+  assertDisplayedRulesCount(view, 3);
   ok(!searchField.value, "Search filter is cleared");
   ok(
     !view.styleDocument.querySelectorAll(".ruleview-highlight").length,
     "No rules are higlighted"
   );
 
-  const ruleEditor = getRuleViewRuleEditor(view, 1).rule.textProps[0].editor;
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1).rule.textProps[0].editor;
   const computed = ruleEditor.computed;
 
   is(

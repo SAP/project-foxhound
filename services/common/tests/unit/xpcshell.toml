@@ -41,9 +41,6 @@ skip-if = [
   "os == 'android' && os_version == '14' && arch == 'x86_64'",
 ]
 
-["test_uptake_telemetry.js"]
-tags = "remote-settings"
-
 ["test_utils_atob.js"]
 
 ["test_utils_convert_string.js"]

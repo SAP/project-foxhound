@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -42,6 +40,7 @@ class CompositorWidget;
 }
 
 namespace wr {
+class WebRenderAPI;
 class WebRenderPipelineInfo;
 struct Epoch;
 struct MemoryReport;
@@ -84,12 +83,16 @@ struct ScopedLayerTreeRegistration {
 };
 
 class CompositorBridgeParentBase : public PCompositorBridgeParent,
+                                   public CompositorController,
                                    public HostIPCAllocator,
                                    public mozilla::ipc::IShmemAllocator {
   friend class PCompositorBridgeParent;
 
  public:
-  explicit CompositorBridgeParentBase(CompositorManagerParent* aManager);
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(CompositorBridgeParentBase, final);
+
+  explicit CompositorBridgeParentBase(CompositorManagerParent* aManager,
+                                      uint32_t aNamespace);
 
   virtual bool SetTestSampleTime(const LayersId& aId, const TimeStamp& aTime) {
     return true;
@@ -131,20 +134,13 @@ class CompositorBridgeParentBase : public PCompositorBridgeParent,
   dom::ContentParentId GetContentId() override;
   void NotifyNotUsed(PTextureParent* aTexture,
                      uint64_t aTransactionId) override;
-  void SendAsyncMessage(
-      const nsTArray<AsyncParentMessageData>& aMessage) override;
+  void SendAsyncMessage(Span<const AsyncParentMessageData>) override;
 
   // IShmemAllocator
   bool AllocShmem(size_t aSize, mozilla::ipc::Shmem* aShmem) override;
   bool AllocUnsafeShmem(size_t aSize, mozilla::ipc::Shmem* aShmem) override;
   bool DeallocShmem(mozilla::ipc::Shmem& aShmem) override;
 
-  NS_IMETHOD_(MozExternalRefCountType) AddRef() override {
-    return HostIPCAllocator::AddRef();
-  }
-  NS_IMETHOD_(MozExternalRefCountType) Release() override {
-    return HostIPCAllocator::Release();
-  }
   virtual bool IsRemote() const { return false; }
 
   virtual void NotifyMemoryPressure() {}
@@ -155,29 +151,34 @@ class CompositorBridgeParentBase : public PCompositorBridgeParent,
   // from the Compositor thread.
   virtual void EnsureWebRenderBridgeParentInitialized() = 0;
 
+  bool OwnsExternalImageId(const wr::ExternalImageId& aId) const;
+
+  CompositorManagerParent* GetCompositorManager() const {
+    return mCompositorManager;
+  }
+
+  uint32_t GetNamespace() const { return mNamespace; }
+
+  void SetNamespace(uint32_t aNamespace) { mNamespace = aNamespace; }
+
  protected:
   virtual ~CompositorBridgeParentBase();
 
-  virtual PAPZParent* AllocPAPZParent(const LayersId& layersId) = 0;
-  virtual bool DeallocPAPZParent(PAPZParent* aActor) = 0;
-
-  virtual PAPZCTreeManagerParent* AllocPAPZCTreeManagerParent(
+  virtual already_AddRefed<PAPZParent> AllocPAPZParent(
       const LayersId& layersId) = 0;
-  virtual bool DeallocPAPZCTreeManagerParent(
-      PAPZCTreeManagerParent* aActor) = 0;
 
-  virtual PTextureParent* AllocPTextureParent(
+  virtual already_AddRefed<PAPZCTreeManagerParent> AllocPAPZCTreeManagerParent(
+      const LayersId& layersId) = 0;
+
+  virtual already_AddRefed<PTextureParent> AllocPTextureParent(
       const SurfaceDescriptor& aSharedData, ReadLockDescriptor& aReadLock,
       const LayersBackend& aBackend, const TextureFlags& aTextureFlags,
-      const LayersId& id, const uint64_t& aSerial,
+      const uint64_t& aSerial,
       const MaybeExternalImageId& aExternalImageId) = 0;
-  virtual bool DeallocPTextureParent(PTextureParent* aActor) = 0;
 
-  virtual PWebRenderBridgeParent* AllocPWebRenderBridgeParent(
+  virtual already_AddRefed<PWebRenderBridgeParent> AllocPWebRenderBridgeParent(
       const PipelineId& pipelineId, const LayoutDeviceIntSize& aSize,
       const WindowKind& aWindowKind) = 0;
-  virtual bool DeallocPWebRenderBridgeParent(
-      PWebRenderBridgeParent* aActor) = 0;
 
   virtual already_AddRefed<PCompositorWidgetParent>
   AllocPCompositorWidgetParent(const CompositorWidgetInitData& aInitData) = 0;
@@ -224,13 +225,13 @@ class CompositorBridgeParentBase : public PCompositorBridgeParent,
 
  protected:
   RefPtr<CompositorManagerParent> mCompositorManager;
+  uint32_t mNamespace;
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(
     CompositorBridgeParentBase::TransformsToSkip)
 
-class CompositorBridgeParent final : public CompositorBridgeParentBase,
-                                     public CompositorController {
+class CompositorBridgeParent final : public CompositorBridgeParentBase {
   friend class CompositorThreadHolder;
   friend class InProcessCompositorSession;
   friend class gfx::GPUProcessManager;
@@ -238,20 +239,11 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
   friend class PCompositorBridgeParent;
 
  public:
-  NS_IMETHOD_(MozExternalRefCountType) AddRef() override {
-    return CompositorBridgeParentBase::AddRef();
-  }
-  NS_IMETHOD_(MozExternalRefCountType) Release() override {
-    return CompositorBridgeParentBase::Release();
-  }
-
-  explicit CompositorBridgeParent(CompositorManagerParent* aManager,
-                                  CSSToLayoutDeviceScale aScale,
-                                  const TimeDuration& aVsyncRate,
-                                  const CompositorOptions& aOptions,
-                                  bool aUseExternalSurfaceSize,
-                                  const gfx::IntSize& aSurfaceSize,
-                                  uint64_t aInnerWindowId);
+  explicit CompositorBridgeParent(
+      CompositorManagerParent* aManager, uint32_t aNamespace,
+      CSSToLayoutDeviceScale aScale, const TimeDuration& aVsyncRate,
+      const CompositorOptions& aOptions, bool aUseExternalSurfaceSize,
+      const gfx::IntSize& aSurfaceSize, uint64_t aInnerWindowId);
 
   void InitSameProcess(widget::CompositorWidget* aWidget,
                        const LayersId& aLayerTreeId);
@@ -340,16 +332,13 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
       const LayersId& aLayersId,
       PWebRenderBridgeParent::EndWheelTransactionResolver&& aResolve) override;
 
-  PTextureParent* AllocPTextureParent(
+  already_AddRefed<PTextureParent> AllocPTextureParent(
       const SurfaceDescriptor& aSharedData, ReadLockDescriptor& aReadLock,
       const LayersBackend& aLayersBackend, const TextureFlags& aFlags,
-      const LayersId& aId, const uint64_t& aSerial,
+      const uint64_t& aSerial,
       const wr::MaybeExternalImageId& aExternalImageId) override;
-  bool DeallocPTextureParent(PTextureParent* actor) override;
 
   bool IsSameProcess() const override;
-
-  void NotifyWebRenderDisableNativeCompositor();
 
   void NotifyDidRender(const VsyncId& aCompositeStartId,
                        TimeStamp& aCompositeStart, TimeStamp& aRenderStart,
@@ -391,6 +380,10 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
   static void ScheduleForcedComposition(const LayersId& aLayersId,
                                         wr::RenderReasons aReasons);
 
+  static void DisconnectWrBridge(WebRenderBridgeParent* aWrBridge);
+
+  static void DisconnectApzcTreeManager(APZCTreeManagerParent* aTreeManager);
+
   /**
    * Returns the unique layer tree identifier that corresponds to the root
    * tree of this compositor.
@@ -420,13 +413,16 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
     LayerTreeState();
     ~LayerTreeState();
     RefPtr<GeckoContentController> mController;
-    APZCTreeManagerParent* mApzcTreeManagerParent;
+    RefPtr<APZCTreeManagerParent> mApzcTreeManagerParent;
     // The mApzInputBridgeParent is only populated for LayerTreeState
     // objects corresponding to root LayerIds (one for each top-level
     // window).
-    APZInputBridgeParent* mApzInputBridgeParent;
+    RefPtr<APZInputBridgeParent> mApzInputBridgeParent;
     RefPtr<CompositorBridgeParent> mParent;
     RefPtr<WebRenderBridgeParent> mWrBridge;
+    // The mWebRenderAPI is only populated for LayerTreeState objects
+    // corresponding to root LayerIds (one for each top-level window).
+    RefPtr<wr::WebRenderAPI> mWebRenderAPI;
     // Pointer to the ContentCompositorBridgeParent. Used by APZCs to share
     // their FrameMetrics with the corresponding child process that holds
     // the PCompositorBridgeChild
@@ -441,20 +437,56 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
    * exists.  Otherwise null is returned.  This must only be called on
    * the compositor thread.
    */
-  static LayerTreeState* GetIndirectShadowTree(LayersId aId);
+  static LayerTreeState* GetLayerTreeState(LayersId aId);
 
   /**
    * If a shadow tree exists for the given id |aId|, return true.  Otherwise
    * return false.
    */
-  static bool HasIndirectShadowTree(LayersId aId);
+  static bool HasLayerTreeState(LayersId aId);
 
   /**
    * Lookup the indirect shadow tree for |aId|, call the function object and
    * return true if found. If not found, return false.
    */
-  static bool CallWithIndirectShadowTree(
+  static bool CallWithLayerTreeState(
       LayersId aId, const std::function<void(LayerTreeState&)>& aFunc);
+
+  // The indirect layer tree map and its lock are private. Code outside of
+  // CompositorBridgeParent must go through the accessors below, which makes the
+  // dangerous std::map::operator[] (which silently resurrects an erased entry
+  // with a null state) unavailable to callers. WithIndirectLayerTreesLock is
+  // the only way to take the lock; it passes a proof token that the *UnderLock
+  // accessors require.
+  template <typename Function>
+  static auto WithIndirectLayerTreesLock(Function&& aFn) {
+    StaticMonitorAutoLock lock(sIndirectLayerTreesLock);
+    return aFn(lock);
+  }
+
+  // Non-inserting lookup; returns nullptr if there is no entry for |aId|.
+  static LayerTreeState* GetLayerTreeStateUnderLock(
+      LayersId aId, const StaticMonitorAutoLock& aProofOfLock);
+
+  // Returns the entry for |aId|, inserting a fresh one if absent. This is the
+  // only way for external callers to add an entry, so insertion is always
+  // explicit at the call site.
+  static LayerTreeState& EnsureLayerTreeStateUnderLock(
+      LayersId aId, const StaticMonitorAutoLock& aProofOfLock);
+
+  // Erases the entry for |aId| if present.
+  static void EraseLayerTreeStateUnderLock(
+      LayersId aId, const StaticMonitorAutoLock& aProofOfLock);
+
+  // Iterates every entry. aFn should take (LayersId, LayerTreeState&).
+  template <typename Function>
+  static void ForEachLayerTreeStateUnderLock(
+      const StaticMonitorAutoLock& aProofOfLock, Function&& aFn) {
+    sIndirectLayerTreesLock.AssertCurrentThreadOwns();
+    for (auto& entry : sIndirectLayerTrees) {
+      aFn(entry.first, entry.second);
+    }
+  }
 
   /**
    * Given the layers id for a content process, get the APZCTreeManagerParent
@@ -465,7 +497,7 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
    * living in the gecko parent process then there is no APZCTreeManagerParent
    * for the parent process.
    */
-  static APZCTreeManagerParent* GetApzcTreeManagerParentForRoot(
+  static RefPtr<APZCTreeManagerParent> GetApzcTreeManagerParentForRoot(
       LayersId aContentLayersId);
   /**
    * Same as the GetApzcTreeManagerParentForRoot function, but returns
@@ -478,7 +510,7 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
    * Same as the GetApzcTreeManagerParentForRoot function, but returns
    * the APZInputBridge for the parent process.
    */
-  static APZInputBridgeParent* GetApzInputBridgeParentForRoot(
+  static RefPtr<APZInputBridgeParent> GetApzInputBridgeParentForRoot(
       LayersId aContentLayersId);
 
   /**
@@ -488,21 +520,21 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
 
   widget::CompositorWidget* GetWidget() { return mWidget; }
 
-  PAPZCTreeManagerParent* AllocPAPZCTreeManagerParent(
+  already_AddRefed<PAPZCTreeManagerParent> AllocPAPZCTreeManagerParent(
       const LayersId& aLayersId) override;
-  bool DeallocPAPZCTreeManagerParent(PAPZCTreeManagerParent* aActor) override;
 
   // Helper method so that we don't have to expose mApzcTreeManager to
   // ContentCompositorBridgeParent.
-  void AllocateAPZCTreeManagerParent(
+  already_AddRefed<APZCTreeManagerParent> AllocateAPZCTreeManagerParent(
       const StaticMonitorAutoLock& aProofOfLayerTreeStateLock,
       const LayersId& aLayersId, LayerTreeState& aLayerTreeStateToUpdate);
 
-  static void SetAPZInputBridgeParent(const LayersId& aLayersId,
-                                      APZInputBridgeParent* aInputBridgeParent);
+  static void SetAPZInputBridgeParent(
+      const LayersId& aLayersId,
+      RefPtr<APZInputBridgeParent>&& aInputBridgeParent);
 
-  PAPZParent* AllocPAPZParent(const LayersId& aLayersId) override;
-  bool DeallocPAPZParent(PAPZParent* aActor) override;
+  already_AddRefed<PAPZParent> AllocPAPZParent(
+      const LayersId& aLayersId) override;
 
   RefPtr<APZSampler> GetAPZSampler() const;
   RefPtr<APZUpdater> GetAPZUpdater() const;
@@ -517,10 +549,9 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
     return mVsyncRate;
   }
 
-  PWebRenderBridgeParent* AllocPWebRenderBridgeParent(
+  already_AddRefed<PWebRenderBridgeParent> AllocPWebRenderBridgeParent(
       const wr::PipelineId& aPipelineId, const LayoutDeviceIntSize& aSize,
       const WindowKind& aWindowKind) override;
-  bool DeallocPWebRenderBridgeParent(PWebRenderBridgeParent* aActor) override;
   void EnsureWebRenderBridgeParentInitialized() override;
   RefPtr<WebRenderBridgeParent> GetWebRenderBridgeParent() const;
   Maybe<TimeStamp> GetTestingTimeStamp() const;
@@ -547,7 +578,7 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
    * Lookup the indirect shadow tree for |aId| and return it if it
    * exists.  Otherwise null is returned.
    */
-  static LayerTreeState* GetIndirectShadowTreeInternal(LayersId aId);
+  static LayerTreeState* GetLayerTreeStateInternal(LayersId aId);
 
   void Initialize();
 
@@ -607,9 +638,20 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
   bool ResumeCompositionAndResize(int x, int y, int width, int height);
   bool IsPaused();
 
-  typedef std::map<LayersId, CompositorBridgeParent::LayerTreeState>
-      LayerTreeMap;
+  // A std::map, but with operator[] deleted. operator[] silently inserts a
+  // default (null) entry on a missing key, and using it to read or mutate an
+  // already-erased layer tree during shutdown resurrects a bogus entry. Callers
+  // must instead go through the accessors below, which make lookup vs insertion
+  // explicit: GetLayerTreeStateUnderLock (non-inserting),
+  // CallWithLayerTreeState (mutate-if-present), EnsureLayerTreeStateUnderLock
+  // (explicit insert) and EraseLayerTreeStateUnderLock.
+  struct LayerTreeMap
+      : public std::map<LayersId, CompositorBridgeParent::LayerTreeState> {
+    mapped_type& operator[](const key_type&) = delete;
+    mapped_type& operator[](key_type&&) = delete;
+  };
 
+ private:
   static StaticMonitor sIndirectLayerTreesLock;
   static LayerTreeMap sIndirectLayerTrees
       MOZ_GUARDED_BY(sIndirectLayerTreesLock);

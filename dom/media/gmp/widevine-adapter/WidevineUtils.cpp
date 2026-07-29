@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WidevineUtils.h"
 
-#include <inttypes.h>
+#include <stdint.h>
 
 #include "GMPLog.h"
 #include "gmp-api/gmp-errors.h"
@@ -13,12 +12,12 @@
 namespace mozilla {
 
 WidevineBuffer::WidevineBuffer(size_t aSize) {
-  GMP_LOG_DEBUG("WidevineBuffer(size=%zu) created", aSize);
+  GMP_LOG_DEBUG("WidevineBuffer(size={}) created", aSize);
   mBuffer.SetLength(aSize);
 }
 
 WidevineBuffer::~WidevineBuffer() {
-  GMP_LOG_DEBUG("WidevineBuffer(size=%" PRIu32 ") destroyed", Size());
+  GMP_LOG_DEBUG("WidevineBuffer(size={}) destroyed", Size());
 }
 
 void WidevineBuffer::Destroy() { delete this; }

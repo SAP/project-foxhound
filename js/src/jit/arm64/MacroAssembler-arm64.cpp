@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -8,6 +6,8 @@
 
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Maybe.h"
+
+#include <bit>
 
 #include "jit/arm64/MoveEmitter-arm64.h"
 #include "jit/arm64/SharedICRegisters-arm64.h"
@@ -68,14 +68,14 @@ static constexpr int32_t PayloadSize(JSValueType type) {
 }
 #endif
 
-static void AssertValidPayload(MacroAssemblerCompat& masm, JSValueType type,
+static void AssertValidPayload(MacroAssembler& masm, JSValueType type,
                                Register payload, Register scratch) {
 #ifdef DEBUG
   // All bits above the payload must be zeroed.
   Label upperBitsZeroed;
   masm.Lsr(ARMRegister(scratch, 64), ARMRegister(payload, 64),
            PayloadSize(type));
-  masm.Cbz(ARMRegister(scratch, 64), &upperBitsZeroed);
+  masm.branchTestPtr(Assembler::Zero, scratch, scratch, &upperBitsZeroed);
   masm.breakpoint();
   masm.bind(&upperBitsZeroed);
 #endif
@@ -90,7 +90,7 @@ void MacroAssemblerCompat::tagValue(JSValueType type, Register payload,
     vixl::UseScratchRegisterScope temps(this);
     Register scratch = temps.AcquireX().asUnsized();
 
-    AssertValidPayload(*this, type, payload, scratch);
+    AssertValidPayload(asMasm(), type, payload, scratch);
   }
 #endif
 
@@ -103,7 +103,7 @@ void MacroAssemblerCompat::boxValue(JSValueType type, Register src,
   MOZ_ASSERT(type != JSVAL_TYPE_UNDEFINED && type != JSVAL_TYPE_NULL);
   MOZ_ASSERT(src != dest);
 
-  AssertValidPayload(*this, type, src, dest);
+  AssertValidPayload(asMasm(), type, src, dest);
 
   Orr(ARMRegister(dest, 64), ARMRegister(src, 64),
       Operand(ImmShiftedTag(type).value));
@@ -167,7 +167,7 @@ void MacroAssemblerCompat::boxValue(Register type, Register src,
     Label upperBitsZeroed;
     Lsr(ARMRegister(scratch, 64), ARMRegister(src, 64),
         ARMRegister(scratch, 64));
-    Cbz(ARMRegister(scratch, 64), &upperBitsZeroed);
+    asMasm().branchTestPtr(Assembler::Zero, scratch, scratch, &upperBitsZeroed);
     breakpoint();
     bind(&upperBitsZeroed);
   }
@@ -256,7 +256,7 @@ BufferOffset MacroAssemblerCompat::movePatchablePtr(ImmPtr ptr, Register dest) {
   // Scratch space for generating the load instruction.
   //
   // allocLiteralLoadEntry() will use InsertIndexIntoTag() to store a temporary
-  // index to the corresponding PoolEntry in the instruction itself.
+  // index to the corresponding pool entry in the instruction itself.
   //
   // That index will be fixed up later when finishPool()
   // walks over all marked loads and calls PatchConstantPoolLoad().
@@ -282,7 +282,7 @@ BufferOffset MacroAssemblerCompat::movePatchablePtr(ImmWord ptr,
   // Scratch space for generating the load instruction.
   //
   // allocLiteralLoadEntry() will use InsertIndexIntoTag() to store a temporary
-  // index to the corresponding PoolEntry in the instruction itself.
+  // index to the corresponding pool entry in the instruction itself.
   //
   // That index will be fixed up later when finishPool()
   // walks over all marked loads and calls PatchConstantPoolLoad().
@@ -503,7 +503,7 @@ void MacroAssemblerCompat::handleFailureWithHandlerTail(
 
   // Found a wasm catch handler, restore state and jump to it.
   bind(&wasmCatch);
-  wasm::GenerateJumpToCatchHandler(asMasm(), PseudoStackPointer, r0, r1);
+  wasm::GenerateJumpToCatchHandler(asMasm(), PseudoStackPointer, r0, r1, r2);
 
   MOZ_ASSERT(GetStackPointer64().Is(PseudoStackPointer64));
 }
@@ -893,7 +893,7 @@ static bool IsLSImmediateOffset(uint64_t address, size_t accessByteSize) {
 
   // The access size is always a power of 2, so computing the log amounts to
   // counting trailing zeroes.
-  unsigned logAccessSize = mozilla::CountTrailingZeroes32(accessByteSize);
+  unsigned logAccessSize = std::countr_zero(accessByteSize);
   return (MacroAssemblerCompat::IsImmLSUnscaled(int64_t(address)) ||
           MacroAssemblerCompat::IsImmLSScaled(int64_t(address), logAccessSize));
 }
@@ -989,7 +989,7 @@ void MacroAssemblerCompat::wasmStoreAbsolute(
     const wasm::MemoryAccessDesc& access, AnyRegister value, Register64 value64,
     Register memoryBase, uint64_t address) {
   // See comments in wasmLoadAbsolute.
-  unsigned logAccessSize = mozilla::CountTrailingZeroes32(access.byteSize());
+  unsigned logAccessSize = std::countr_zero(access.byteSize());
   if (address > INT64_MAX || !(IsImmLSScaled(int64_t(address), logAccessSize) ||
                                IsImmLSUnscaled(int64_t(address)))) {
     vixl::UseScratchRegisterScope temps(this);
@@ -1650,6 +1650,9 @@ CodeOffset MacroAssembler::call(const Address& addr) {
 }
 
 void MacroAssembler::call(JitCode* c) {
+  // CodeFromJump doesn't support nop sequences.
+  AutoForbidNops afn(this);
+
   vixl::UseScratchRegisterScope temps(this);
   const ARMRegister scratch64 = temps.AcquireX();
   // This sync has been observed (and is expected) to be necessary.
@@ -3797,10 +3800,10 @@ void MacroAssembler::shiftIndex32AndAdd(Register indexTemp32, int shift,
 
 void MacroAssembler::wasmMarkCallAsSlow() {
   // Use mov() instead of Mov() to ensure this no-op move isn't elided.
-  vixl::MacroAssembler::mov(x28, x28);
+  vixl::MacroAssembler::mov(x20, x20);
 }
 
-const int32_t SlowCallMarker = 0xaa1c03fc;
+const int32_t SlowCallMarker = 0xaa1403f4;  // mov x20, x20
 
 void MacroAssembler::wasmCheckSlowCallsite(Register ra, Label* notSlow,
                                            Register temp1, Register temp2) {

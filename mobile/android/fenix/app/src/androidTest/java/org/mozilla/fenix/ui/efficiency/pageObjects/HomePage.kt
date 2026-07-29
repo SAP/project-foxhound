@@ -54,7 +54,7 @@ class HomePage(composeRule: AndroidComposeTestRule<HomeActivityIntentTestRule, *
         NavigationRegistry.register(
             from = "MainMenuPage",
             to = "DownloadsPage",
-            steps = listOf(NavigationStep.Click(MainMenuSelectors.DOWLOADS_BUTTON)),
+            steps = listOf(NavigationStep.Click(MainMenuSelectors.DOWNLOADS_BUTTON)),
         )
 
         NavigationRegistry.register(
@@ -68,7 +68,7 @@ class HomePage(composeRule: AndroidComposeTestRule<HomeActivityIntentTestRule, *
         return HomeSelectors.all.filter { it.groups.contains(group) }
     }
 
-    /**
+    /*
      * Temporary stub for the Test Factory demo.
      *
      * This method exists only to illustrate how the `SettingsPrivateBrowsingTest`

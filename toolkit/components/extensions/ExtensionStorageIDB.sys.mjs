@@ -29,14 +29,15 @@ const WEBEXT_STORAGE_USER_CONTEXT_ID = -1 >>> 0;
 const IDB_NAME = "webExtensions-storage-local";
 const IDB_DATA_STORENAME = "storage-local-data";
 const IDB_VERSION = 1;
-const IDB_MIGRATE_RESULT_HISTOGRAM =
-  "WEBEXT_STORAGE_LOCAL_IDB_MIGRATE_RESULT_COUNT";
 
 // Whether or not the installed extensions should be migrated to the storage.local IndexedDB backend.
 const BACKEND_ENABLED_PREF =
   "extensions.webextensions.ExtensionStorageIDB.enabled";
 const IDB_MIGRATED_PREF_BRANCH =
   "extensions.webextensions.ExtensionStorageIDB.migrated";
+
+export const ERROR_OPEN_ON_INACTIVE_POLICY =
+  "Failed to open storage.local backend after the extension was already shutdown";
 
 class DataMigrationAbortedError extends Error {
   get name() {
@@ -169,6 +170,7 @@ var ErrorsTelemetry = {
 };
 
 export class ExtensionStorageLocalIDB extends IndexedDB {
+  #addonId;
   #storagePrincipal;
 
   onupgradeneeded(event) {
@@ -181,16 +183,37 @@ export class ExtensionStorageLocalIDB extends IndexedDB {
     return lazy.disabledAutoResetOnCorrupted;
   }
 
+  static isMissingObjectStore(db) {
+    return (
+      !db.objectStoreNames.contains(IDB_DATA_STORENAME) &&
+      db.version >= IDB_VERSION
+    );
+  }
+
   static async openForPrincipal(storagePrincipal) {
+    const { addonPolicy, addonId } = storagePrincipal;
+
+    const ensureAddonPolicyIsActive = () => {
+      if (addonPolicy?.active) {
+        return;
+      }
+      throw new Error(
+        addonId
+          ? `${ERROR_OPEN_ON_INACTIVE_POLICY} (${addonId})`
+          : ERROR_OPEN_ON_INACTIVE_POLICY
+      );
+    };
+
+    // Don't even try to open the IndexedDB database if the
+    // extension is not active anymore.
+    ensureAddonPolicyIsActive();
+
     // The db is opened using an extension principal isolated in a reserved user context id.
     let result = await super.openForPrincipal(storagePrincipal, IDB_NAME, {
       version: IDB_VERSION,
     });
     result.#storagePrincipal = storagePrincipal;
-
-    const isMissingObjestStore = db =>
-      !db.objectStoreNames.contains(IDB_DATA_STORENAME) &&
-      db.version >= IDB_VERSION;
+    result.#addonId = addonId;
 
     // Delete and recreate the database from scratch if the expected object store
     // isn't found in objectStoreNames DOMStringList.
@@ -199,13 +222,17 @@ export class ExtensionStorageLocalIDB extends IndexedDB {
     // resolves, and so if at this point the expected object store name isn't found, then
     // it means that the database got corrupted (and if the database version is still
     // set then the onupgradeneeded function would never recreate it).
-    if (isMissingObjestStore(result.db)) {
+    if (this.isMissingObjectStore(result.db)) {
       Glean.extensionsData.storageLocalCorruptedReset.record({
-        addon_id: storagePrincipal.addonId,
+        addon_id: addonId,
         reason: "ObjectStoreNotFound",
+        is_addon_active: !!addonPolicy.active,
         after_reset: false,
         reset_disabled: lazy.disabledAutoResetOnCorrupted,
       });
+
+      // Don't reset the database if the addon isn't active anymore.
+      ensureAddonPolicyIsActive();
 
       if (!lazy.disabledAutoResetOnCorrupted) {
         let resetErrorName = null;
@@ -223,10 +250,11 @@ export class ExtensionStorageLocalIDB extends IndexedDB {
         });
         // throw an error more specific than "An unexpected error occurred" if objectStoreNames
         // doesn't still include the expected object store name.
-        if (isMissingObjestStore(result.db)) {
+        if (this.isMissingObjectStore(result.db)) {
           Glean.extensionsData.storageLocalCorruptedReset.record({
             addon_id: storagePrincipal.addonId,
             reason: "ObjectStoreNotFound",
+            is_addon_active: !!addonPolicy.active,
             after_reset: true,
             reset_disabled: lazy.disabledAutoResetOnCorrupted,
             reset_error_name: resetErrorName,
@@ -236,6 +264,11 @@ export class ExtensionStorageLocalIDB extends IndexedDB {
         }
       }
     }
+
+    // Make sure we reject also if the add-on ends up being disabled by the time
+    // the call is ready to resolve successfully.
+    ensureAddonPolicyIsActive();
+
     /** @type {Promise<ExtensionStorageLocalIDB>} */
     return result;
   }
@@ -252,6 +285,10 @@ export class ExtensionStorageLocalIDB extends IndexedDB {
   }
 
   async dropAndReopen() {
+    // Do not reset the database if the addon isn't active anymore.
+    if (!this.#storagePrincipal.addonPolicy?.active) {
+      throw new Error(`${ERROR_OPEN_ON_INACTIVE_POLICY} (${this.#addonId})`);
+    }
     // Forcefully drop the corrupted IndexedDB database.
     await ExtensionStorageLocalIDB.resetForPrincipal(this.#storagePrincipal);
     // Reopen the database after it has been reset and retrive the
@@ -502,8 +539,9 @@ export class ExtensionStorageLocalIDB extends IndexedDB {
         // has hit unexpected rejections.
         Cu.reportError(err);
         Glean.extensionsData.storageLocalCorruptedReset.record({
-          addon_id: this.#storagePrincipal.addonId,
+          addon_id: this.#addonId,
           reason: `RejectedClear:${errorName}`,
+          is_addon_active: !!this.#storagePrincipal.addonPolicy?.active,
         });
         await this.dropAndReopen();
       }
@@ -702,7 +740,6 @@ async function migrateJSONFileData(extension, storagePrincipal) {
 export var ExtensionStorageIDB = {
   BACKEND_ENABLED_PREF,
   IDB_MIGRATED_PREF_BRANCH,
-  IDB_MIGRATE_RESULT_HISTOGRAM,
 
   // Map<extension-id, Set<Function>>
   listeners: new Map(),

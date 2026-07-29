@@ -7,6 +7,9 @@ package org.mozilla.fenix
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.action.ContentAction
@@ -15,14 +18,10 @@ import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.utils.ABOUT_HOME_URL
-import mozilla.components.support.test.mock
-import mozilla.components.support.test.whenever
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mockito.Mockito.never
-import org.mockito.Mockito.verify
 
 @RunWith(AndroidJUnit4::class)
 class AboutHomeBindingTest {
@@ -37,7 +36,7 @@ class AboutHomeBindingTest {
 
     @Before
     fun setUp() {
-        navController = mock()
+        navController = mockk(relaxed = true)
 
         val tab = createTab(url = "https://www.mozilla.org").also {
             tabId = it.id
@@ -71,14 +70,14 @@ class AboutHomeBindingTest {
 
         assertEquals(ABOUT_HOME_URL, tab.content.url)
 
-        verify(navController).navigate(NavGraphDirections.actionGlobalHome())
+        verify { navController.navigate(NavGraphDirections.actionGlobalHome()) }
     }
 
     @Test
     fun `GIVEN homepage is the currently shown WHEN URL is updated to ABOUT_HOME THEN do not navigate to the homepage`() = runTest(testDispatcher) {
-        val mockDestination: NavDestination = mock()
-        whenever(mockDestination.id).thenReturn(R.id.homeFragment)
-        whenever(navController.currentDestination).thenReturn(mockDestination)
+        val mockDestination: NavDestination = mockk()
+        every { mockDestination.id } returns R.id.homeFragment
+        every { navController.currentDestination } returns mockDestination
 
         val binding = AboutHomeBinding(
             browserStore = browserStore,
@@ -99,14 +98,14 @@ class AboutHomeBindingTest {
 
         assertEquals(ABOUT_HOME_URL, tab.content.url)
 
-        verify(navController, never()).navigate(NavGraphDirections.actionGlobalHome())
+        verify(exactly = 0) { navController.navigate(NavGraphDirections.actionGlobalHome()) }
     }
 
     @Test
     fun `GIVEN onboarding is the currently shown WHEN URL is updated to ABOUT_HOME THEN do not navigate to the homepage`() = runTest(testDispatcher) {
-        val mockDestination: NavDestination = mock()
-        whenever(mockDestination.id).thenReturn(R.id.onboardingFragment)
-        whenever(navController.currentDestination).thenReturn(mockDestination)
+        val mockDestination: NavDestination = mockk()
+        every { mockDestination.id } returns R.id.onboardingFragment
+        every { navController.currentDestination } returns mockDestination
 
         val binding = AboutHomeBinding(
             browserStore = browserStore,
@@ -128,7 +127,7 @@ class AboutHomeBindingTest {
 
         assertEquals(ABOUT_HOME_URL, tab.content.url)
 
-        verify(navController, never()).navigate(NavGraphDirections.actionGlobalHome())
+        verify(exactly = 0) { navController.navigate(NavGraphDirections.actionGlobalHome()) }
     }
 
     @Test
@@ -153,6 +152,6 @@ class AboutHomeBindingTest {
 
         assertEquals(newUrl, tab.content.url)
 
-        verify(navController, never()).navigate(NavGraphDirections.actionGlobalHome())
+        verify(exactly = 0) { navController.navigate(NavGraphDirections.actionGlobalHome()) }
     }
 }

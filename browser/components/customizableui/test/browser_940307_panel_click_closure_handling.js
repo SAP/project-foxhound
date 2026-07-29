@@ -27,6 +27,8 @@ add_task(async function plain_button() {
 });
 
 add_task(async function searchbar_in_panel() {
+  // This tests the old search bar. The new searchbar is tested in
+  // browser/components/urlbar/tests/browser/searchbar/browser_searchbarOverflow.js
   SpecialPowers.pushPrefEnv({
     set: [["browser.search.widget.new", false]],
   });

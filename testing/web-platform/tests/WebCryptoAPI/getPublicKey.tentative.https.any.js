@@ -61,6 +61,42 @@ const algorithms = [
         generateKeyParams: { name: "X25519" },
         usages: ["deriveKey", "deriveBits"],
         publicKeyUsages: []
+    },
+    {
+        name: "ML-DSA-44",
+        generateKeyParams: { name: "ML-DSA-44" },
+        usages: ["sign", "verify"],
+        publicKeyUsages: ["verify"]
+    },
+    {
+        name: "ML-DSA-65",
+        generateKeyParams: { name: "ML-DSA-65" },
+        usages: ["sign", "verify"],
+        publicKeyUsages: ["verify"]
+    },
+    {
+        name: "ML-DSA-87",
+        generateKeyParams: { name: "ML-DSA-87" },
+        usages: ["sign", "verify"],
+        publicKeyUsages: ["verify"]
+    },
+    {
+        name: "ML-KEM-512",
+        generateKeyParams: { name: "ML-KEM-512" },
+        usages: ["encapsulateBits", "encapsulateKey", "decapsulateBits", "decapsulateKey"],
+        publicKeyUsages: ["encapsulateBits", "encapsulateKey"]
+    },
+    {
+        name: "ML-KEM-768",
+        generateKeyParams: { name: "ML-KEM-768" },
+        usages: ["encapsulateBits", "encapsulateKey", "decapsulateBits", "decapsulateKey"],
+        publicKeyUsages: ["encapsulateBits", "encapsulateKey"]
+    },
+    {
+        name: "ML-KEM-1024",
+        generateKeyParams: { name: "ML-KEM-1024" },
+        usages: ["encapsulateBits", "encapsulateKey", "decapsulateBits", "decapsulateKey"],
+        publicKeyUsages: ["encapsulateBits", "encapsulateKey"]
     }
 ];
 
@@ -155,18 +191,6 @@ promise_test(async function(t) {
 // Test with empty usages array
 algorithms.forEach(function(algorithm) {
     promise_test(async function(t) {
-        // Skip X25519 if not supported
-        if (algorithm.name === "X25519") {
-            try {
-                await crypto.subtle.generateKey(algorithm.generateKeyParams, false, algorithm.usages);
-            } catch (e) {
-                if (e.name === "NotSupportedError") {
-                    return;
-                }
-                throw e;
-            }
-        }
-
         const keyPair = await crypto.subtle.generateKey(
             algorithm.generateKeyParams,
             false,

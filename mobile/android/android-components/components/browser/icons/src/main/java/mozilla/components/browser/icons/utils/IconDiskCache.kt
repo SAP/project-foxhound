@@ -8,7 +8,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
 import androidx.annotation.VisibleForTesting
-import com.jakewharton.disklrucache.DiskLruCache
 import mozilla.components.browser.icons.Icon
 import mozilla.components.browser.icons.IconRequest
 import mozilla.components.browser.icons.extension.toIconResources
@@ -18,10 +17,11 @@ import mozilla.components.browser.icons.preparer.DiskIconPreparer
 import mozilla.components.browser.icons.processor.DiskIconProcessor
 import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.ktx.kotlin.sha1
+import mozilla.components.support.utils.cache.CacheDirectoryMigration
+import mozilla.components.support.utils.cache.DiskLruCacheStore
 import org.json.JSONArray
 import org.json.JSONException
 import java.io.File
-import java.io.IOException
 
 private const val RESOURCES_DISK_CACHE_VERSION = 1
 private const val ICON_DATA_DISK_CACHE_VERSION = 1
@@ -31,6 +31,10 @@ private const val MAXIMUM_CACHE_ICON_DATA_BYTES: Long = 1024L * 1024L * 100L // 
 
 private const val WEBP_QUALITY = 90
 
+private const val BROWSER_ICONS_DIR_NAME = "mozac_browser_icons"
+private const val ICONS_DIR_NAME = "icons"
+private const val RESOURCES_DIR_NAME = "resources"
+
 /**
  * Caching bitmaps and resource URLs on disk.
  */
@@ -38,29 +42,37 @@ class IconDiskCache :
     DiskIconLoader.LoaderDiskCache,
     DiskIconPreparer.PreparerDiskCache,
     DiskIconProcessor.ProcessorDiskCache {
-    private val logger = Logger("Icons/IconDiskCache")
+    private val logger = Logger("IconDiskCache")
+    private val migration = CacheDirectoryMigration(
+        logger = logger,
+        legacyDirectory = { getParentCacheDirectory(it.cacheDir) },
+        newDirectory = { getParentCacheDirectory(it.noBackupFilesDir) },
+    )
 
     @VisibleForTesting
-    internal var iconResourcesCache: DiskLruCache? = null
+    internal val iconResourcesStore = DiskLruCacheStore(
+        logger = logger,
+        version = RESOURCES_DISK_CACHE_VERSION,
+        maxSizeBytes = MAXIMUM_CACHE_RESOURCES_BYTES,
+        directoryProvider = { context -> getCacheDirectory(context, RESOURCES_DIR_NAME) },
+        migration = migration,
+    )
 
     @VisibleForTesting
-    internal var iconDataCache: DiskLruCache? = null
-    private val iconResourcesCacheWriteLock = Any()
-    private val iconDataCacheWriteLock = Any()
+    internal val iconDataStore = DiskLruCacheStore(
+        logger = logger,
+        version = ICON_DATA_DISK_CACHE_VERSION,
+        maxSizeBytes = MAXIMUM_CACHE_ICON_DATA_BYTES,
+        directoryProvider = { context -> getCacheDirectory(context, ICONS_DIR_NAME) },
+        migration,
+    )
 
     override fun getResources(context: Context, request: IconRequest): List<IconRequest.Resource> {
         val key = createKey(request.url)
-        val snapshot: DiskLruCache.Snapshot = getIconResourcesCache(context)?.get(key)
-            ?: return emptyList()
+        val data = iconResourcesStore.readString(context, key) ?: return emptyList()
 
         try {
-            val data = snapshot.getInputStream(0).use {
-                it.buffered().reader().readText()
-            }
-
             return JSONArray(data).toIconResources()
-        } catch (e: IOException) {
-            logger.info("Failed to load resources from disk", e)
         } catch (e: JSONException) {
             logger.warn("Failed to parse resources from disk", e)
         }
@@ -70,19 +82,12 @@ class IconDiskCache :
 
     override fun putResources(context: Context, request: IconRequest) {
         try {
-            synchronized(iconResourcesCacheWriteLock) {
-                val key = createKey(request.url)
-                val editor = getIconResourcesCache(context)
-                    ?.edit(key) ?: return
-
-                val data = request.resources.toJSON().toString()
-                editor.set(0, data)
-
-                editor.commit()
-            }
-        } catch (e: IOException) {
-            logger.info("Failed to save resources to disk", e)
-        } catch (e: JSONException) {
+            iconResourcesStore.writeString(
+                context = context,
+                key = createKey(request.url),
+                value = request.resources.toJSON().toString(),
+            )
+        } catch (_: JSONException) {
             logger.warn("Failed to serialize resources")
         }
     }
@@ -92,19 +97,7 @@ class IconDiskCache :
     }
 
     override fun getIconData(context: Context, resource: IconRequest.Resource): ByteArray? {
-        val key = createKey(resource.url)
-
-        val snapshot = getIconDataCache(context)?.get(key)
-            ?: return null
-
-        return try {
-            snapshot.getInputStream(0).use {
-                it.buffered().readBytes()
-            }
-        } catch (e: IOException) {
-            logger.info("Failed to read icon bitmap from disk", e)
-            null
-        }
+        return iconDataStore.readBytes(context, createKey(resource.url))
     }
 
     internal fun putIconBitmap(context: Context, resource: IconRequest.Resource, bitmap: Bitmap) {
@@ -114,87 +107,21 @@ class IconDiskCache :
             @Suppress("DEPRECATION")
             Bitmap.CompressFormat.WEBP
         }
-        try {
-            synchronized(iconDataCacheWriteLock) {
-                val editor = getIconDataCache(context)
-                    ?.edit(createKey(resource.url)) ?: return
-
-                editor.newOutputStream(0).use { stream ->
-                    bitmap.compress(compressFormat, WEBP_QUALITY, stream)
-                }
-
-                editor.commit()
-            }
-        } catch (e: IOException) {
-            logger.info("Failed to save icon bitmap to disk", e)
+        iconDataStore.write(context, createKey(resource.url)) { stream ->
+            bitmap.compress(compressFormat, WEBP_QUALITY, stream)
         }
     }
 
     internal fun clear(context: Context) {
-        synchronized(iconResourcesCacheWriteLock) {
-            try {
-                getIconResourcesCache(context)?.delete()
-            } catch (e: IOException) {
-                logger.warn("Icon resource cache could not be cleared. Perhaps there is none?")
-            }
-
-            iconResourcesCache = null
-        }
-
-        synchronized(iconDataCacheWriteLock) {
-            try {
-                getIconDataCache(context)?.delete()
-            } catch (e: IOException) {
-                logger.warn("Icon data cache could not be cleared. Perhaps there is none?")
-            }
-
-            iconDataCache = null
-        }
+        iconResourcesStore.clear(context)
+        iconDataStore.clear(context)
     }
 
-    @Synchronized
-    private fun getIconResourcesCache(context: Context): DiskLruCache? {
-        iconResourcesCache?.let { return it }
+    private fun getCacheDirectory(context: Context, subdirectoryName: String): File =
+        File(getParentCacheDirectory(context.noBackupFilesDir), subdirectoryName)
 
-        return try {
-            DiskLruCache.open(
-                getIconResourcesCacheDirectory(context),
-                RESOURCES_DISK_CACHE_VERSION,
-                1,
-                MAXIMUM_CACHE_RESOURCES_BYTES,
-            ).also { iconResourcesCache = it }
-        } catch (e: IOException) {
-            logger.warn("Icon resources cache could not be created.", e)
-            null
-        }
-    }
-
-    private fun getIconResourcesCacheDirectory(context: Context): File {
-        val cacheDirectory = File(context.cacheDir, "mozac_browser_icons")
-        return File(cacheDirectory, "resources")
-    }
-
-    @Synchronized
-    private fun getIconDataCache(context: Context): DiskLruCache? {
-        iconDataCache?.let { return it }
-
-        return try {
-            DiskLruCache.open(
-                getIconDataCacheDirectory(context),
-                ICON_DATA_DISK_CACHE_VERSION,
-                1,
-                MAXIMUM_CACHE_ICON_DATA_BYTES,
-            ).also { iconDataCache = it }
-        } catch (e: IOException) {
-            logger.warn("Icon data cache could not be created.", e)
-            null
-        }
-    }
-
-    private fun getIconDataCacheDirectory(context: Context): File {
-        val cacheDirectory = File(context.cacheDir, "mozac_browser_icons")
-        return File(cacheDirectory, "icons")
-    }
+    private fun getParentCacheDirectory(parent: File) =
+        File(parent, BROWSER_ICONS_DIR_NAME)
 }
 
 private fun createKey(rawKey: String): String = rawKey.sha1()

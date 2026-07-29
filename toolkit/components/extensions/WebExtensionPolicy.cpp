@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -24,6 +23,7 @@
 #include "nsISubstitutingProtocolHandler.h"
 #include "nsLiteralString.h"
 #include "nsNetUtil.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsPrintfCString.h"
 
 namespace mozilla {
@@ -171,6 +171,23 @@ WebAccessibleResource::WebAccessibleResource(
   }
 }
 
+bool WebAccessibleResource::IsHostMatch(const URLInfo& aURI) {
+  if (!mMatches) {
+    return false;
+  }
+  return mMatches->Matches(aURI) ||
+         // If aURI is not matching schemes of <all_urls>, permit access anyway
+         // if the match pattern includes <all_urls> or *://*/*. This allows
+         // requests from sandboxed documents (moz-nullprincipal) to pass.
+         //
+         // Note: this check means that file:-documents can create a sandboxed
+         // iframe to get access to a resource that is restricted to *://*/*,
+         // despite "*://*/*" supposed to only match http(s). This is acceptable
+         // because a file can already easily bypass the check by embedding a
+         // web page to fetch the resource.
+         (!MatchPattern::MatchesAllURLs(aURI) && mMatches->MatchesAllWebUrls());
+}
+
 bool WebAccessibleResource::IsExtensionMatch(const URLInfo& aURI) {
   if (!mExtensionIDs) {
     return false;
@@ -275,6 +292,17 @@ bool WebExtensionPolicyCore::SourceMayAccessPath(
   return false;
 }
 
+bool WebExtensionPolicyCore::FileSchemeAllowed() const {
+  if (!StaticPrefs::extensions_webextensions_fileSchemeAccess_requireOptIn()) {
+    // Before we required an opt-in to "internal:fileSchemeAccess", file access
+    // was automatically allowed if the host permissions allowed it.
+    return true;
+  }
+  // Only "internal:fileSchemeAccess" is checked here; most callers should also
+  // check for the presence of file: or <all_urls> host permissions as needed.
+  return HasPermission(nsGkAtoms::fileSchemeAllowedPermission);
+}
+
 bool WebExtensionPolicyCore::CanAccessURI(const URLInfo& aURI, bool aExplicit,
                                           bool aCheckRestricted,
                                           bool aAllowFilePermission) const {
@@ -285,6 +313,11 @@ bool WebExtensionPolicyCore::CanAccessURI(const URLInfo& aURI, bool aExplicit,
     return false;
   }
   if (!aAllowFilePermission && aURI.Scheme() == nsGkAtoms::file) {
+    // aAllowFilePermission defaults to false. If you call CanAccessURI with
+    // it set to true, make sure to check FileSchemeAllowed() if needed.
+    return false;
+  }
+  if (CheckGuarded(aURI).isSome()) {
     return false;
   }
 
@@ -302,6 +335,17 @@ bool WebExtensionPolicyCore::QuarantinedFromURI(const URLInfo& aURI) const {
 
 bool WebExtensionPolicyCore::PrivateBrowsingAllowed() const {
   return HasPermission(nsGkAtoms::privateBrowsingAllowedPermission);
+}
+
+Maybe<dom::ExtensionGuardSource> WebExtensionPolicyCore::CheckGuarded(
+    const URLInfo& aURI) const {
+  AutoReadLock lock(mLock);
+  for (const auto& guard : mGuardSets) {
+    if (guard->Denies(aURI)) {
+      return Some(guard->Source());
+    }
+  }
+  return Nothing();
 }
 
 /*****************************************************************************
@@ -514,6 +558,25 @@ void WebExtensionPolicy::SetAllowedOrigins(MatchPatternSet& aAllowedOrigins) {
   mCore->mHostPermissions = aAllowedOrigins.Core();
 }
 
+void WebExtensionPolicy::GetGuardSets(
+    nsTArray<RefPtr<ExtensionGuardSet>>& aResult) const {
+  aResult.Assign(mGuardSets);
+}
+
+void WebExtensionPolicy::SetGuardSets(
+    const nsTArray<OwningNonNull<ExtensionGuardSet>>& aLists) {
+  nsTArray<RefPtr<ExtensionGuardSetCore>> cores(aLists.Length());
+  mGuardSets.ClearAndRetainStorage();
+  mGuardSets.SetCapacity(aLists.Length());
+  for (const auto& guard : aLists) {
+    cores.AppendElement(guard->Core());
+    mGuardSets.AppendElement(&*guard);
+  }
+  AutoWriteLock lock(mCore->mLock);
+  mCore->mGuardSets = std::move(cores);
+  WebExtensionPolicy_Binding::ClearCachedGuardSetsValue(this);
+}
+
 void WebExtensionPolicy::InjectContentScripts(ErrorResult& aRv) {
   EPS().InjectContentScripts(this, aRv);
 }
@@ -664,7 +727,9 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(WebExtensionPolicy)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mBrowsingContextGroup)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mLocalizeCallback)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mHostPermissions)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mGuardSets)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mContentScripts)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mReadyPromise)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
   AssertIsOnMainThread();
   tmp->mCore->ClearPolicyWeakRef();
@@ -674,7 +739,9 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(WebExtensionPolicy)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mBrowsingContextGroup)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mLocalizeCallback)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mHostPermissions)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mGuardSets)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mContentScripts)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mReadyPromise)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(WebExtensionPolicy)
@@ -951,8 +1018,21 @@ bool MozDocumentMatcher::MatchesURI(const URLInfo& aURL,
     return false;
   }
 
-  if (mCheckPermissions && !aIgnorePermissions &&
-      !mExtension->CanAccessURI(aURL, false, false, true)) {
+  if (mCheckPermissions && !aIgnorePermissions) {
+    // CanAccessURI() also calls CheckGuarded() internally.
+    if (!mExtension->CanAccessURI(aURL, false, false, true)) {
+      return false;
+    }
+  } else if (mExtension && !mExtension->CheckGuarded(aURL).IsNull()) {
+    // Guards must be enforced regardless of mCheckPermissions.
+    return false;
+  }
+
+  if (aURL.Scheme() == nsGkAtoms::file && mExtension &&
+      !mExtension->FileSchemeAllowed()) {
+    // Although CanAccessURI above accepts an aAllowFilePermission parameter,
+    // the logic is conditional on mCheckPermissions. We want the file access
+    // to be enforced unconditionally, so check it here instead.
     return false;
   }
 

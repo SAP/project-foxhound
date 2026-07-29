@@ -13,6 +13,7 @@ import androidx.fragment.app.FragmentTransaction
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
+import mozilla.components.ExperimentalAndroidComponentsApi
 import mozilla.components.browser.state.action.BrowserAction
 import mozilla.components.browser.state.action.ContentAction
 import mozilla.components.browser.state.action.ContentAction.UpdatePermissionHighlightsStateAction
@@ -27,6 +28,7 @@ import mozilla.components.browser.state.action.ContentAction.UpdatePermissionHig
 import mozilla.components.browser.state.action.ContentAction.UpdatePermissionHighlightsStateAction.MicrophoneChangedAction
 import mozilla.components.browser.state.action.ContentAction.UpdatePermissionHighlightsStateAction.NotificationChangedAction
 import mozilla.components.browser.state.action.ContentAction.UpdatePermissionHighlightsStateAction.PersistentStorageChangedAction
+import mozilla.components.browser.state.action.SystemPermissionRequestAction
 import mozilla.components.browser.state.engine.EngineMiddleware
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.ContentState
@@ -792,6 +794,55 @@ class SitePermissionsFeatureTest {
         // then
         verify(mockStorage).findSitePermissionsBy(URL, private = selectedTab.content.private)
         verify(sitePermissionFeature).handleRuledFlow(mockPermissionRequest, URL)
+    }
+
+    @OptIn(ExperimentalAndroidComponentsApi::class)
+    @Test
+    fun `GIVEN a prompt is shown WHEN onContentPermissionRequested() THEN notifyShown is called on the permission request`() = runTest {
+        // given
+        val mockPermissionRequest: PermissionRequest = mock {
+            whenever(permissions).thenReturn(listOf(ContentGeoLocation(id = "permission")))
+        }
+        val sitePermissions = SitePermissions(origin = "origin", savedAt = 0)
+        val mockedSitePermissionsDialogFragment = SitePermissionsDialogFragment()
+        doReturn(sitePermissions).`when`(mockStorage).findSitePermissionsBy(URL, private = selectedTab.content.private)
+        doReturn(true).`when`(sitePermissionFeature).shouldApplyRules(any())
+        doReturn(mockedSitePermissionsDialogFragment).`when`(sitePermissionFeature)
+            .handleRuledFlow(mockPermissionRequest, URL)
+
+        // when
+        sitePermissionFeature.onContentPermissionRequested(
+            mockPermissionRequest,
+            URL,
+            this,
+        )
+
+        // then
+        verify(mockPermissionRequest).notifyShown()
+    }
+
+    @OptIn(ExperimentalAndroidComponentsApi::class)
+    @Test
+    fun `GIVEN no prompt is shown WHEN onContentPermissionRequested() THEN notifyShown is not called`() = runTest {
+        // given
+        val mockPermissionRequest: PermissionRequest = mock {
+            whenever(permissions).thenReturn(listOf(ContentGeoLocation(id = "permission")))
+        }
+        val sitePermissions = SitePermissions(origin = "origin", savedAt = 0)
+        doReturn(sitePermissions).`when`(mockStorage).findSitePermissionsBy(URL, private = selectedTab.content.private)
+        doReturn(true).`when`(sitePermissionFeature).shouldApplyRules(any())
+        doReturn(null).`when`(sitePermissionFeature)
+            .handleRuledFlow(mockPermissionRequest, URL)
+
+        // when
+        sitePermissionFeature.onContentPermissionRequested(
+            mockPermissionRequest,
+            URL,
+            this,
+        )
+
+        // then
+        verify(mockPermissionRequest, never()).notifyShown()
     }
 
     @Test
@@ -1730,8 +1781,75 @@ class SitePermissionsFeatureTest {
             assertNull(prompt)
             assertFalse(grantWasCalled)
         }
+    }
 
-        Unit
+    @Test
+    fun `stop will hide site permissions prompt if shouldHide returns true`() {
+        val fragment: SitePermissionsDialogFragment = mock()
+        val transaction: FragmentTransaction = mock()
+
+        doReturn(fragment).`when`(mockFragmentManager).findFragmentByTag(PROMPT_FRAGMENT_TAG)
+        doReturn(transaction).`when`(mockFragmentManager).beginTransaction()
+        doReturn(transaction).`when`(transaction).remove(any())
+
+        val feature = spy(
+            SitePermissionsFeature(
+                context = testContext,
+                onNeedToRequestPermissions = mock(),
+                onShouldShowRequestPermissionRationale = { false },
+                store = browserStore,
+                fragmentManager = mockFragmentManager,
+                shouldHide = { true },
+            ),
+        )
+
+        feature.stop()
+
+        verify(feature).hideSitePermissionsPrompt()
+        verify(transaction).remove(fragment)
+        verify(transaction).commitAllowingStateLoss()
+    }
+
+    @Test
+    fun `stop will not hide site permissions prompt if shouldHide returns false`() {
+        val fragment: SitePermissionsDialogFragment = mock()
+        val transaction: FragmentTransaction = mock()
+
+        doReturn(fragment).`when`(mockFragmentManager).findFragmentByTag(PROMPT_FRAGMENT_TAG)
+        doReturn(transaction).`when`(mockFragmentManager).beginTransaction()
+        doReturn(transaction).`when`(transaction).remove(any())
+
+        val feature = spy(
+            SitePermissionsFeature(
+                context = testContext,
+                onNeedToRequestPermissions = mock(),
+                onShouldShowRequestPermissionRationale = { false },
+                store = browserStore,
+                fragmentManager = mockFragmentManager,
+                shouldHide = { false },
+            ),
+        )
+
+        feature.stop()
+
+        verify(feature, never()).hideSitePermissionsPrompt()
+        verify(mockFragmentManager, never()).beginTransaction()
+        verify(transaction, never()).remove(any())
+    }
+
+    @Test
+    fun `WHEN permission result handled THEN permission request state is reset`() {
+        doReturn(mockAppPermissionRequest).`when`(sitePermissionFeature)
+            .findRequestedAppPermission(any())
+
+        sitePermissionFeature.onPermissionsResult(
+            arrayOf("permission"),
+            arrayOf(PERMISSION_GRANTED).toIntArray(),
+        )
+
+        captureActionsMiddleware.assertLastAction(
+            SystemPermissionRequestAction.SystemPermissionStateRequestNotInProgress::class,
+        )
     }
 
     private fun mockFragmentManager(): FragmentManager {

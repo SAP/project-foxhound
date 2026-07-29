@@ -36,6 +36,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
  * new MLTelemetry({ featureId: "ml-suggest-intent", flowId: "1234-5678" }).sessionStart({ interaction: "keyboard_shortcut"});
  */
 export class MLTelemetry {
+  static #systemMemoryMB = Math.round(
+    Services.sysinfo.getProperty("memsize") / 1024 / 1024
+  );
+
   /** @type {string} */
   #flowId;
   /** @type {string|undefined} */
@@ -384,7 +388,6 @@ export class MLTelemetry {
     const wallMilliseconds = ChromeUtils.now() - beforeRun;
     const cores = lazy.mlUtils.getOptimalCPUConcurrency();
     const memoryBytes = resourcesAfter?.memory ?? null;
-
     if (resourcesAfter?.cpuTime != null && resourcesBefore?.cpuTime != null) {
       cpuMilliseconds = resourcesAfter.cpuTime - resourcesBefore.cpuTime;
       cpuUtilization = (cpuMilliseconds / wallMilliseconds / cores) * 100;
@@ -418,6 +421,7 @@ export class MLTelemetry {
       // the counts. We should count these as null.
       token_count: tokenCount || null,
       character_count: characterCount || null,
+      system_memory_mb: MLTelemetry.#systemMemoryMB,
     };
 
     Glean.firefoxAiRuntime.engineRun.record(payload);

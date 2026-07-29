@@ -60,8 +60,7 @@
 }
 
 button[class*="remove-watchpoint-"] {
-  background: url("chrome://devtools/content/debugger/images/webconsole-logpoint.svg")
-    no-repeat;
+  background: url("chrome://devtools/content/shared/components/images/webconsole-logpoint.svg") no-repeat;
   display: inline-block;
   vertical-align: top;
   height: 13px;

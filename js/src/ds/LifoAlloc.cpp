@@ -1,15 +1,13 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ds/LifoAlloc.h"
 
 #include "mozilla/Likely.h"
-#include "mozilla/MathAlgorithms.h"
 
 #include <algorithm>
+#include <bit>
 
 #ifdef LIFO_CHUNK_PROTECT
 #  include "gc/Memory.h"
@@ -40,7 +38,7 @@ UniquePtr<BumpChunk> BumpChunk::newWithCapacity(size_t size, arena_id_t arena) {
 #ifdef LIFO_CHUNK_PROTECT
 
 static uint8_t* AlignPtrUp(uint8_t* ptr, uintptr_t align) {
-  MOZ_ASSERT(mozilla::IsPowerOfTwo(align));
+  MOZ_ASSERT(std::has_single_bit(align));
   uintptr_t uptr = uintptr_t(ptr);
   uintptr_t diff = uptr & (align - 1);
   diff = (align - diff) & (align - 1);
@@ -49,7 +47,7 @@ static uint8_t* AlignPtrUp(uint8_t* ptr, uintptr_t align) {
 }
 
 static uint8_t* AlignPtrDown(uint8_t* ptr, uintptr_t align) {
-  MOZ_ASSERT(mozilla::IsPowerOfTwo(align));
+  MOZ_ASSERT(std::has_single_bit(align));
   uintptr_t uptr = uintptr_t(ptr);
   uptr = uptr & ~(align - 1);
   return (uint8_t*)uptr;
@@ -93,7 +91,7 @@ void BumpChunk::setReadWrite() {
 }  // namespace js
 
 void LifoAlloc::reset(size_t defaultChunkSize) {
-  MOZ_ASSERT(mozilla::IsPowerOfTwo(defaultChunkSize));
+  MOZ_ASSERT(std::has_single_bit(defaultChunkSize));
 
   while (!chunks_.empty()) {
     chunks_.popFirst();
@@ -315,11 +313,10 @@ void LifoAlloc::release(Mark mark) {
       released = std::move(list);
     } else {
       released = list.splitAfter(m.markedChunk());
-    }
-
-    // Release everything which follows the mark in the last chunk.
-    if (!list.empty()) {
-      list.last()->release(m);
+      // Release everything which follows the mark in the last chunk.
+      if (!list.empty()) {
+        list.last()->release(m);
+      }
     }
   };
 

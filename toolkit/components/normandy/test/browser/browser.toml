@@ -56,8 +56,6 @@ skip-if = [
 
 ["browser_Storage.js"]
 
-["browser_Uptake.js"]
-
 ["browser_about_preferences.js"]
 
 ["browser_about_studies.js"]

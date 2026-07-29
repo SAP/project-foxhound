@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,25 +15,9 @@ function getSiteBlockedErrorDetails(docShell) {
       Ci.nsIClassifiedChannel
     );
     if (classifiedChannel) {
-      let httpChannel = docShell.failedChannel.QueryInterface(
-        Ci.nsIHttpChannel
-      );
-
-      let reportUri = httpChannel.URI;
-
-      // Remove the query to avoid leaking sensitive data
-      if (reportUri instanceof Ci.nsIURL) {
-        reportUri = reportUri.mutate().setQuery("").finalize();
-      }
-
-      let triggeringPrincipal = docShell.failedChannel.loadInfo
-        ? docShell.failedChannel.loadInfo.triggeringPrincipal
-        : null;
       blockedInfo = {
         list: classifiedChannel.matchedList,
-        triggeringPrincipal,
         provider: classifiedChannel.matchedProvider,
-        uri: reportUri.asciiSpec,
       };
     }
   }
@@ -58,12 +41,9 @@ export class BlockedSiteChild extends JSWindowActorChild {
   }
 
   onAboutBlockedLoaded(aEvent) {
-    let content = aEvent.target.ownerGlobal;
-
+    let doc = aEvent.target;
     let blockedInfo = getSiteBlockedErrorDetails(this.docShell);
     let provider = blockedInfo.provider || "";
-
-    let doc = content.document;
 
     /**
      * Set error description link in error details.
@@ -134,9 +114,7 @@ export class BlockedSiteChild extends JSWindowActorChild {
       "browser.xul.error_pages.show_safe_browsing_details_on_load"
     );
     if (showDetails) {
-      let details = content.document.getElementById(
-        "errorDescriptionContainer"
-      );
+      let details = doc.getElementById("errorDescriptionContainer");
       details.removeAttribute("hidden");
     }
 
@@ -145,7 +123,7 @@ export class BlockedSiteChild extends JSWindowActorChild {
       "browser.safebrowsing.provider." + provider + ".advisoryURL",
       ""
     );
-    let advisoryDesc = content.document.getElementById("advisoryDescText");
+    let advisoryDesc = doc.getElementById("advisoryDescText");
     if (!advisoryUrl) {
       advisoryDesc.remove();
       return;
@@ -160,14 +138,10 @@ export class BlockedSiteChild extends JSWindowActorChild {
       return;
     }
 
-    content.document.l10n.setAttributes(
-      advisoryDesc,
-      "safeb-palm-advisory-desc",
-      { advisoryname: advisoryLinkText }
-    );
-    content.document
-      .getElementById("advisory_provider")
-      .setAttribute("href", advisoryUrl);
+    doc.l10n.setAttributes(advisoryDesc, "safeb-palm-advisory-desc", {
+      advisoryname: advisoryLinkText,
+    });
+    doc.getElementById("advisory_provider").setAttribute("href", advisoryUrl);
   }
 
   onClick(event) {

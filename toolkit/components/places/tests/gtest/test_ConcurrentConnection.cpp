@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,6 +12,7 @@
 #include "mozIStorageRow.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsIFile.h"
+#include "nsThreadUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::places;
@@ -140,6 +139,14 @@ TEST(test_ConcurrentConnection, test_setup)
   }
 }
 
+TEST(test_ConcurrentConnection, test_interrupt_no_connection)
+{
+  // Before Places initializes, mConn is null. MaybeInterrupt must be a no-op.
+  auto conn = ConcurrentConnection::GetInstance();
+  MOZ_DIAGNOSTIC_ASSERT(conn.isSome());
+  ConcurrentConnection::MaybeInterrupt();
+}
+
 TEST(test_ConcurrentConnection, test_database_not_present)
 {
   // Initialize ConcurrentConnection.
@@ -167,6 +174,9 @@ TEST(test_ConcurrentConnection, test_database_initialized)
   // Initialize ConcurrentConnection.
   auto conn = ConcurrentConnection::GetInstance();
   MOZ_DIAGNOSTIC_ASSERT(conn.isSome());
+  // GetInstance() must return the same singleton.
+  auto conn2 = ConcurrentConnection::GetInstance();
+  ASSERT_EQ(conn.value().get(), conn2.value().get());
   RefPtr<StatementCallback> cb =
       MakeAndAddRef<StatementCallback>("moz_places"_ns);
   conn.value()->Queue(
@@ -176,6 +186,30 @@ TEST(test_ConcurrentConnection, test_database_initialized)
   ASSERT_EQ(cb->SpinUntilCompleted(),
             mozIStorageStatementCallback::REASON_FINISHED);
   ASSERT_TRUE(cb->mValue.EqualsLiteral("moz_places"));
+}
+
+TEST(test_ConcurrentConnection, test_queue_from_background_thread)
+{
+  // Queue() from a non-main thread must proxy to MT and execute correctly.
+  auto conn = ConcurrentConnection::GetInstance();
+  MOZ_DIAGNOSTIC_ASSERT(conn.isSome());
+
+  RefPtr<StatementCallback> cb =
+      MakeAndAddRef<StatementCallback>("moz_places"_ns);
+  RefPtr<TestRunnable> event = MakeAndAddRef<TestRunnable>();
+
+  MOZ_ALWAYS_SUCCEEDS(NS_DispatchBackgroundTask(NS_NewRunnableFunction(
+      "test_queue_off_thread", [conn = conn.value(), cb, event]() {
+        conn->Queue(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND tbl_name = ?"_ns,
+            cb);
+        conn->Queue(event);
+      })));
+
+  ASSERT_EQ(cb->SpinUntilCompleted(),
+            mozIStorageStatementCallback::REASON_FINISHED);
+  ASSERT_TRUE(cb->mValue.EqualsLiteral("moz_places"));
+  ASSERT_TRUE(event->SpinUntilResult());
 }
 
 TEST(test_ConcurrentConnection, test_shutdown)

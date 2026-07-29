@@ -2,178 +2,162 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-:root:not(.mobile) {
-  & {
-    font-family: sans-serif;
-    margin: 40px auto;
-    min-width: 30em;
-    max-width: 60em;
-  }
+* {
+  margin: 0;
+  padding: 0;
+}
 
-  table {
-    width: 100%;
-    padding-bottom: 2em;
-    border-spacing: 0;
-  }
+:root {
+  --background-color: #fff;
+  --text-color: #0c0c0d;
+  --border-color: #e1e1e2;
+  --button-background-color: #f5f5f5;
+  --selected-tab-text-color: #0061e0;
+}
 
-  td {
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  td:last-child > button {
-    float: inline-end;
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background-color: #292833;
+    --text-color: #f9f9fa;
+    --border-color: rgba(255, 255, 255, 0.15);
+    --button-background-color: rgba(0, 0, 0, 0.15);
+    --selected-tab-text-color: #00ddff;
   }
 }
 
-/* Mobile UI where common.css is not loaded */
+body {
+  background-color: var(--background-color);
+  color: var(--text-color);
+  font: message-box;
+  font-size: 14px;
+  -moz-text-size-adjust: none;
+  display: grid;
+  grid-template-areas: "d d" "a b" "c c";
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: fit-content(100%) 1fr;
+}
 
-:root.mobile {
-  * {
-    margin: 0;
-    padding: 0;
-  }
+h1 {
+  grid-area: d;
+  margin: 0.5em 0.5em 0;
+}
 
-  :root {
-    --background-color: #fff;
-    --text-color: #0c0c0d;
-    --border-color: #e1e1e2;
-    --button-background-color: #f5f5f5;
-    --selected-tab-text-color: #0061e0;
-  }
+.tab[data-l10n-id="label-interventions"] {
+  grid-area: a;
+}
 
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --background-color: #292833;
-      --text-color: #f9f9fa;
-      --border-color: rgba(255, 255, 255, 0.15);
-      --button-background-color: rgba(0, 0, 0, 0.15);
-      --selected-tab-text-color: #00ddff;
-    }
-  }
+.tab[data-l10n-id="label-smartblock"] {
+  grid-area: b;
+}
 
-  body {
-    background-color: var(--background-color);
-    color: var(--text-color);
-    font: message-box;
-    font-size: 14px;
-    -moz-text-size-adjust: none;
-    display: grid;
-    grid-template-areas: "a b" "c c";
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: fit-content(100%) 1fr;
-  }
+section {
+  grid-area: c;
+}
 
-  .tab[data-l10n-id="label-interventions"] {
-    grid-area: a;
-  }
+section,
+article,
+p {
+  display: block;
+}
 
-  .tab[data-l10n-id="label-smartblock"] {
-    grid-area: b;
-  }
+section {
+  border-top: 2px solid var(--border-color);
+  margin-top: -2px;
+  width: 100%;
+  z-index: 1;
+  display: none;
+}
 
-  table {
-    grid-area: c;
-  }
+article {
+  border-block-end: 1px solid var(--border-color);
+  padding: 0;
+}
 
-  table,
-  tr,
-  p {
-    display: block;
-  }
+a {
+  color: inherit;
+  font-size: 94%;
+}
 
-  table {
-    border-top: 2px solid var(--border-color);
-    margin-top: -2px;
-    width: 100%;
-    z-index: 1;
-    display: none;
-  }
+.tab {
+  cursor: pointer;
+  z-index: 2;
+  display: inline-block;
+  text-align: start;
+  border-block: 2px solid transparent;
+  font-size: 1em;
+  font-weight: var(--font-weight-bold);
+  padding: 1em;
+}
 
-  tr {
-    border-bottom: 1px solid var(--border-color);
-    padding: 0;
-  }
+.tab.active {
+  color: var(--selected-tab-text-color);
+  border-block-end-color: currentColor;
+  margin-block-end: 0;
+  padding-block-end: calc(1em + 2px);
+}
 
-  a {
-    color: inherit;
-    font-size: 94%;
-  }
+.tab.active + section {
+  display: block;
+}
 
-  .tab {
-    cursor: pointer;
-    z-index: 2;
-    display: inline-block;
-    text-align: left;
-    border-block: 2px solid transparent;
-    font-size: 1em;
-    font-weight: var(--font-weight-bold);
-    padding: 1em;
-  }
+article > span {
+  grid-area: b;
+  align-self: center;
+}
 
-  .tab.active {
-    color: var(--selected-tab-text-color);
-    border-bottom-color: currentColor;
-    margin-bottom: 0;
-    padding-bottom: calc(1em + 2px);
-  }
+article > span:first-child {
+  grid-area: a;
+  padding-inline-start: 1em;
+}
 
-  .tab.active + table {
-    display: block;
-  }
+article > span:last-child {
+  grid-area: c;
+  padding-block-end: 1em;
+}
 
-  td {
-    grid-area: b;
-    padding-left: 1em;
-  }
+article {
+  display: grid;
+  grid-template-areas: "a b c" "a b c";
+  grid-template-columns: 1fr 1fr 6.5em;
+  column-gap: 1em;
+  padding-block: 0.4em;
+}
 
-  td:first-child {
-    grid-area: a;
-    padding-top: 1em;
-  }
+article > span:nth-child(1) {
+  font-weight: var(--font-weight-bold);
+}
 
-  td:last-child {
-    grid-area: c;
-    padding-bottom: 1em;
-  }
+article > span:nth-child(3) {
+  display: flex;
+  padding: 0;
+  height: 100%;
+}
 
-  tr {
-    display: grid;
-    grid-template-areas: "a c" "b c";
+button {
+  align-self: center;
+  margin: 0.5em 0;
+  height: 90%;
+}
+
+@media only screen and (max-width: 500px) {
+  article {
+    grid-template-areas: "d d" "a c" "b c";
     grid-template-columns: 1fr 6.5em;
   }
 
-  td[colspan="4"] {
-    padding: 1em;
-    font-style: italic;
-    text-align: center;
+  article > span {
+    padding-inline-start: 1em;
   }
 
-  td:not([colspan]):nth-child(1) {
-    font-weight: var(--font-weight-bold);
-    padding-bottom: 0.25em;
+  article > span:first-child {
+    padding-block-start: 1em;
   }
 
-  td:nth-child(2) {
-    padding-bottom: 1em;
+  article > span:nth-child(1) {
+    padding-block-end: 0.25em;
   }
 
-  td:nth-child(3) {
-    display: flex;
-    padding: 0;
-  }
-
-  button {
-    cursor: pointer;
-    width: 100%;
-    height: 100%;
-    background: var(--button-background-color);
-    color: inherit;
-    inset-inline-end: 0;
-    margin: 0;
-    padding: 0;
-    border: 0;
-    border-inline-start: 1px solid var(--border-color);
-    font-weight: var(--font-weight-semibold);
-    appearance: none;
+  article > span:nth-child(2) {
+    padding-block-end: 1em;
   }
 }

@@ -7,6 +7,7 @@ import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
+  AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
   AppUpdater: "resource://gre/modules/AppUpdater.sys.mjs",
 });
 
@@ -38,6 +39,10 @@ export default class SecurityPrivacyCard extends MozLitElement {
    * @returns {boolean} should we NOT warn the user about their app update status
    */
   #okUpdateStatus() {
+    if (!lazy.AppConstants.MOZ_UPDATER) {
+      return true;
+    }
+
     const okStatuses = [
       lazy.AppUpdater.STATUS.NO_UPDATES_FOUND,
       lazy.AppUpdater.STATUS.CHECKING,
@@ -87,34 +92,15 @@ export default class SecurityPrivacyCard extends MozLitElement {
 
   /**
    * Scrolling to an element in about:preferences is non-trivial because the fragment is controlled
-   * by the panel manager. So we need this logic.
+   * by the panel manager. This is just a clean abstraction to hand a callback off to another site.
    *
    * @param {string} panelHash - the ID of the panel the element we want to scroll to lives on
-   * @param {string} targetId - the ID of the element to scroll to
+   * @param {string} subcategory - the ID of the subcategory to scroll to and highliht
    * @returns {Function} a callback that will perform the scroll
    */
-  #scrollToTargetOnPanel(panelHash, targetId) {
+  #spotlightSubcategoryOnPane(panelHash, subcategory) {
     return function () {
-      // This actually scrolls to the target ID, if it exists.
-      // It looks in the document first, then the shadowRoot for that ID.
-      const scrollIntoView = () => {
-        let target = document.getElementById(targetId);
-        if (!target) {
-          target = this.shadowRoot.getElementById(targetId);
-        }
-        if (target) {
-          target.scrollIntoView({ behavior: "smooth" });
-        }
-      };
-      if (panelHash !== undefined && document.location.hash != panelHash) {
-        // If we are given a panel to go to, and we aren't already there,
-        // switch to that panel and when it is shown, scrollIntoView.
-        document.addEventListener("paneshown", scrollIntoView, { once: true });
-        document.location.hash = panelHash;
-      } else {
-        // Here we are already on the panel, so we can just scroll straight to it.
-        scrollIntoView();
-      }
+      document.location.hash = panelHash + "-" + subcategory;
     };
   }
 
@@ -124,7 +110,7 @@ export default class SecurityPrivacyCard extends MozLitElement {
       return;
     }
     accordion.expanded = true;
-    this.#scrollToTargetOnPanel("#privacy", "warningCard")();
+    this.#spotlightSubcategoryOnPane("#privacy", "security-warning-card")();
   }
 
   getStatusImage() {
@@ -196,7 +182,10 @@ export default class SecurityPrivacyCard extends MozLitElement {
             <small
               data-l10n-id=${L10N_IDS.strictEnabledLabel}
               id="strictEnabled"
-              @click=${this.#scrollToTargetOnPanel("#privacy", "etpStatusCard")}
+              @click=${this.#spotlightSubcategoryOnPane(
+                "#etp",
+                "etp-strict-control"
+              )}
             >
               <a data-l10n-name="strict-tracking-protection" href=""></a
             ></small>
@@ -211,7 +200,10 @@ export default class SecurityPrivacyCard extends MozLitElement {
             <small
               data-l10n-id=${L10N_IDS.customEnabledLabel}
               id="customEnabled"
-              @click=${this.#scrollToTargetOnPanel("#privacy", "etpStatusCard")}
+              @click=${this.#spotlightSubcategoryOnPane(
+                "#etp",
+                "etp-custom-control"
+              )}
             >
               <a data-l10n-name="custom-tracking-protection" href=""></a
             ></small>
@@ -229,6 +221,10 @@ export default class SecurityPrivacyCard extends MozLitElement {
    * @returns {TemplateResult} the HTML for the "update" bullet of the custom element
    */
   buildUpdateElement() {
+    if (!lazy.AppConstants.MOZ_UPDATER) {
+      return html``;
+    }
+
     switch (this.appUpdateStatus) {
       case lazy.AppUpdater.STATUS.NO_UPDATES_FOUND:
         return html`<li class="status-ok">
@@ -248,7 +244,11 @@ export default class SecurityPrivacyCard extends MozLitElement {
               ></small>
             </p>
             <moz-box-link
-              @click=${this.#scrollToTargetOnPanel("#general", "updateApp")}
+              href=""
+              @click=${this.#spotlightSubcategoryOnPane(
+                "#about",
+                "update-state"
+              )}
               data-l10n-id=${L10N_IDS.updateButtonLabel}
             ></moz-box-link>
           </div>
@@ -267,8 +267,11 @@ export default class SecurityPrivacyCard extends MozLitElement {
               ></small>
             </p>
             <moz-box-link
-              href="javascript:void(0)"
-              @click=${this.#scrollToTargetOnPanel("#general", "updateApp")}
+              href=""
+              @click=${this.#spotlightSubcategoryOnPane(
+                "#about",
+                "update-state"
+              )}
               data-l10n-id=${L10N_IDS.updateButtonLabel}
             ></moz-box-link>
           </div>
@@ -308,10 +311,18 @@ export default class SecurityPrivacyCard extends MozLitElement {
         rel="stylesheet"
         href="chrome://browser/content/preferences/widgets/security-privacy-card.css"
       />
+      <link
+        rel="stylesheet"
+        href="chrome://global/skin/design-system/text-and-typography.css"
+      />
       <moz-card aria-labelledby="heading">
         <div class="card-contents">
           <div class="status-text-container">
-            <h3 id="heading" data-l10n-id=${headerL10nId}></h3>
+            <h3
+              id="heading"
+              class="text-box-trim-start"
+              data-l10n-id=${headerL10nId}
+            ></h3>
             <ul>
               ${this.buildIssuesElement()} ${this.buildTrackersElement()}
               ${this.buildUpdateElement()}

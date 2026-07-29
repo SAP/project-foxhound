@@ -2,18 +2,39 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+preferences-ai-controls-block-confirmation-smart-window = Smart Window
+smart-window-block-title = Block Smart Window?
+smart-window-block-description-both = This will delete your Smart Window chats and memories.
+smart-window-block-description-chats = This will delete your Smart Window chats.
+smart-window-block-description-memories = This will delete your Smart Window memories.
+
 ai-window-features-group =
     .label = Smart Window
-    .description = Ask questions, compare pages, and more in a separate window with a built-in assistant. Smart Window can learn as you browse, for a more personalized experience.
+    .description = Ask questions, compare pages, and get personalized suggestions with a built-in assistant.
+
+smart-window-select-label =
+    .label = Smart Window
 
 ai-window-activate-link =
     .label = Get started
 
 ai-window-personalize-button =
-    .label = Personalize Smart Window
+    .label = Smart Window settings
 
 ai-window-personalize-header =
     .heading = Smart Window
+
+ai-window-default-section =
+    .label = Default settings
+ai-window-is-default-window =
+    .label = Use Smart Window by default
+    .description = Open Smart Window when {-brand-short-name} starts, restarts, or opens links from other apps.
+ai-window-open-sidebar =
+    .label = Open assistant automatically
+    .description = Show the assistant sidebar on each new tab. Close it anytime.
+ai-window-smart-cursor-in-smart-window =
+    .label = Show shortcuts when selecting text
+    .description = Get quick access to summarize, explain, and more.
 
 smart-window-model-section =
     .label = Assistant model
@@ -21,17 +42,18 @@ smart-window-model-section =
 smart-window-model-learn-link = Learn about models
 
 ## Variables:
-##   $modelName (String) - The name of the AI model
+##   $model (string) - The name of the AI model
+##   $ownerName (String) - The name of owner of the AI model
 
 smart-window-model-fast =
     .label = Fast: Answers quickly
-    .description = { $modelName }
+    .description = Model { $model } by { $ownerName }
 smart-window-model-flexible =
     .label = Flexible: Solid fit for most needs
-    .description = { $modelName }
+    .description = Model { $model } by { $ownerName }
 smart-window-model-personal =
     .label = Personal: Most tailored answers
-    .description = { $modelName }
+    .description = Model { $model } by { $ownerName }
 smart-window-model-custom =
     .label = Custom: Use your own LLM
 smart-window-model-custom-name =
@@ -39,29 +61,32 @@ smart-window-model-custom-name =
     .placeholder = Example: glm4
 smart-window-model-custom-url =
     .label = Model endpoint
-    .placeholder = Example: http://localhost:11434/v1/chat/completions
+    .placeholder = Example: http://localhost:11434/v1
 smart-window-model-custom-token =
     .label = API key or auth token, if required
-smart-window-model-custom-help =
-    .message = Heads up! When you use a custom model, Smart Window may not work as expected.
+smart-window-model-custom-info =
+    .message = When you use a custom model, Smart Window may not work as expected.
 smart-window-model-custom-more-link = More about custom models
 smart-window-model-custom-save =
     .label = Save
+smart-window-model-custom-save-confirmation = Model details saved. Start a new chat to test.
 
 ai-window-memories-section =
     .label = Memories
-    .description = Manage what Smart Window learns from your activity.
+    .description = { -brand-short-name } can learn from your activity to create memories. They’re used to help personalize responses and are stored locally on this device.
 
-ai-window-learn-from-activity =
-    .label = Learn from your activity
-    .description = Smart Window can use your browsing and chat activity to create memories and personalize responses.
+ai-window-learn-from-chat-activity =
+    .label = Learn from chats in Smart Window
+
+ai-window-learn-from-browsing-activity =
+    .label = Learn from browsing in Classic and Smart Windows
 
 ai-window-manage-memories-button =
     .label = Manage memories
 
 ai-window-manage-memories-header =
     .heading = Manage memories
-    .description = Memories are what Smart Window learns from your activity.
+    .description = Memories are stored locally on this device to help protect your privacy. They refresh a few times a day while you use Smart Window, so recent activity may take time to be reflected.
 
 ai-window-no-memories =
     .label = No memories yet
@@ -75,7 +100,7 @@ ai-window-delete-all-memories-button =
     .label = Delete all
 
 ai-window-delete-all-memories-title = Delete all memories?
-ai-window-delete-all-memories-message = This also prevents Smart Window from creating similar memories later. If you don’t want Smart Window to learn from your activity anymore, you can turn this off in settings.
+ai-window-delete-all-memories-message = Existing memories will be deleted. If you don’t want any new memories created, uncheck the options to “Learn from…” in Smart Window settings.
 ai-window-delete-all-memories-confirm = Delete
 ai-window-delete-all-memories-cancel = Cancel
 

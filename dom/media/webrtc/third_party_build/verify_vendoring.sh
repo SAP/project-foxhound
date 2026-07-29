@@ -47,11 +47,11 @@ echo "LAST_PATCHSTACK_UPDATE_COMMIT_SHA: $LAST_PATCHSTACK_UPDATE_COMMIT_SHA"
 
 # grab the oldest, non "Vendor from libwebrtc" line
 if [ "x$MOZ_REPO" == "xgit" ]; then
-CANDIDATE_COMMITS=`git log --reverse --format='%h' --invert-grep \
+CANDIDATE_COMMITS=`git log --no-merges --reverse --format='%h' --invert-grep \
     --grep="Vendor libwebrtc" $LAST_PATCHSTACK_UPDATE_COMMIT_SHA..HEAD -- third_party/libwebrtc \
     | awk 'BEGIN { ORS=" " }; { print $1; }'`
 else
-CANDIDATE_COMMITS=`hg log --template "{node|short} {desc|firstline}\n" \
+CANDIDATE_COMMITS=`hg log --no-merges --template "{node|short} {desc|firstline}\n" \
     -r "children($LAST_PATCHSTACK_UPDATE_COMMIT_SHA)::. - desc('re:(Vendor libwebrtc)')" \
     --include "third_party/libwebrtc/" | awk 'BEGIN { ORS=" " }; { print $1; }'`
 fi

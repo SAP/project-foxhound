@@ -2,14 +2,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use crash_helper_common::{
-    messages::{self, Header, Message},
-    AncillaryData, IPCConnector, IPCConnectorKey, IPCEvent, IPCListener, IPCQueue, Pid,
+    messages::{self, Header, Message, ProcessRendezVous},
+    AncillaryData, GeckoChildId, IPCConnector, IPCConnectorKey, IPCEvent, IPCListener, IPCQueue,
+    Pid, ProcessHandle,
 };
-use std::{collections::HashMap, process, rc::Rc};
+use std::{collections::HashMap, ffi::OsString, mem, rc::Rc, sync::Mutex};
 
-use crate::crash_generation::CrashGenerator;
+use crate::{
+    breakpad_crash_generator::BreakpadCrashGenerator, crash_generation::CrashGenerator,
+    finalize_breakpad_minidump, platform, BreakpadData,
+};
 
 #[derive(PartialEq)]
 pub enum IPCServerState {
@@ -28,15 +32,33 @@ enum IPCEndpoint {
     External,
 }
 
+struct ProcessId {
+    /// The pid of a process.
+    pid: Pid,
+    #[allow(unused)]
+    /// A handle natively representing a process.
+    handle: ProcessHandle,
+}
+
+impl ProcessId {
+    fn new(pid: Pid, handle: ProcessHandle) -> ProcessId {
+        ProcessId { pid, handle }
+    }
+}
+
 struct IPCConnection {
     /// The platform-specific connector used for this connection
     connector: Rc<IPCConnector>,
     /// The type of process on the other side of this connection
     endpoint: IPCEndpoint,
-    #[allow(dead_code)]
-    /// The pid of the Firefox process this is connected to. This is `None`
-    /// when this is a connection to an external process.
-    pid: Option<Pid>,
+    /// The Gecko-assigned id of this process. This has a 0 value for the main
+    /// process and `None`` for external connections.
+    id: Option<GeckoChildId>,
+    /// The native identifiers of a process, this is the pid plus a
+    /// platform-dependent type. It is `None` upon child process registration
+    /// then gets populated by a `ProcessRendezVous` message. It remains as
+    /// `None` for external processes.
+    process: Option<ProcessId>,
 }
 
 pub(crate) struct IPCServer {
@@ -45,14 +67,49 @@ pub(crate) struct IPCServer {
     /// the structure so that it's dropped first.
     queue: IPCQueue,
     connections: HashMap<IPCConnectorKey, IPCConnection>,
+    /// The Breakpad server will contain a reference to the crash generator,
+    /// hence it must be dropped first.
+    breakpad_server: BreakpadCrashGenerator,
+    generator: Box<Mutex<CrashGenerator>>,
 }
 
 impl IPCServer {
     pub(crate) fn new(
         client_pid: Pid,
+        client_handle: Option<ProcessHandle>,
         listener: IPCListener,
         connector: IPCConnector,
+        breakpad_data: BreakpadData,
+        minidump_path: OsString,
     ) -> Result<IPCServer> {
+        // If the client process handle was not provided at launch then it will
+        // be sent by the client using a regular `ProcessRendezVous` message.
+        let client_handle = match client_handle {
+            Some(handle) => handle,
+            None => connector
+                .recv_reply::<ProcessRendezVous>()
+                .context("Client failed to rendez-vous")?
+                .get_process_handle(),
+        };
+
+        let crash_generator = Box::new(Mutex::new(CrashGenerator::new(minidump_path.clone())));
+
+        // SAFETY: We widen the lifetime of this crash generator reference
+        // as we guarantee that the underlying object will outlive the Breakpad
+        // server which will be holding this reference.
+        let crash_generator_ref = unsafe {
+            mem::transmute::<&Mutex<CrashGenerator>, &'static Mutex<CrashGenerator>>(
+                crash_generator.as_ref(),
+            )
+        };
+
+        let breakpad_server = BreakpadCrashGenerator::new(
+            breakpad_data,
+            minidump_path,
+            crash_generator_ref,
+            finalize_breakpad_minidump,
+        )?;
+
         let connector = Rc::new(connector);
         let mut queue = IPCQueue::new(listener)?;
         queue.add_connector(&connector)?;
@@ -63,14 +120,23 @@ impl IPCServer {
             IPCConnection {
                 connector,
                 endpoint: IPCEndpoint::Parent,
-                pid: Some(client_pid),
+                id: Some(0),
+                process: Some(ProcessId {
+                    pid: client_pid,
+                    handle: client_handle,
+                }),
             },
         );
 
-        Ok(IPCServer { queue, connections })
+        Ok(IPCServer {
+            queue,
+            connections,
+            breakpad_server,
+            generator: crash_generator,
+        })
     }
 
-    pub(crate) fn run(&mut self, generator: &mut CrashGenerator) -> Result<IPCServerState> {
+    pub(crate) fn run(&mut self) -> Result<IPCServerState> {
         let events = self.queue.wait_for_events()?;
 
         for event in events.into_iter() {
@@ -81,14 +147,13 @@ impl IPCServer {
                         IPCConnection {
                             connector,
                             endpoint: IPCEndpoint::External,
-                            pid: None,
+                            id: None,
+                            process: None,
                         },
                     );
                 }
                 IPCEvent::Message(key, header, payload, ancillary_data) => {
-                    if let Err(error) =
-                        self.handle_message(key, &header, payload, ancillary_data, generator)
-                    {
+                    if let Err(error) = self.handle_message(key, &header, payload, ancillary_data) {
                         log::error!(
                             "Error {error:#} when handling a message of kind {:?}",
                             header.kind
@@ -100,6 +165,14 @@ impl IPCServer {
                         .connections
                         .remove(&key)
                         .expect("Disconnection event but no corresponding connection");
+
+                    if let Some(process) = connection.process {
+                        // `connection.id` always contains a value if `process` did.
+                        self.generator
+                            .lock()
+                            .unwrap()
+                            .move_report_to_id(process.pid, connection.id.unwrap());
+                    }
 
                     if connection.endpoint == IPCEndpoint::Parent {
                         // The main process disconnected, leave
@@ -118,7 +191,6 @@ impl IPCServer {
         header: &Header,
         data: Vec<u8>,
         ancillary_data: Vec<AncillaryData>,
-        generator: &mut CrashGenerator,
     ) -> Result<()> {
         let connection = self
             .connections
@@ -129,48 +201,67 @@ impl IPCServer {
         match connection.endpoint {
             IPCEndpoint::Parent => match header.kind {
                 messages::Kind::SetCrashReportPath => {
-                    let message = messages::SetCrashReportPath::decode(&data, ancillary_data)?;
-                    generator.set_path(message.path);
+                    let message = messages::SetCrashReportPath::decode(data, ancillary_data)?;
+                    self.generator
+                        .lock()
+                        .unwrap()
+                        .set_path(message.path.clone());
+                    self.breakpad_server.set_path(message.path);
                 }
                 messages::Kind::TransferMinidump => {
-                    let message = messages::TransferMinidump::decode(&data, ancillary_data)?;
-                    connector.send_message(generator.retrieve_minidump(message.pid))?;
+                    let message = messages::TransferMinidump::decode(data, ancillary_data)?;
+                    let mut generator_lock = self.generator.lock().unwrap();
+                    let crash_report = {
+                        if let Some(crash_report) =
+                            generator_lock.retrieve_minidump_by_id(message.id)
+                        {
+                            Some(crash_report)
+                        } else if let Some(pid) = self.find_pid(message.id) {
+                            generator_lock.retrieve_minidump_by_pid(pid)
+                        } else {
+                            None
+                        }
+                    };
+
+                    let reply = crash_report.map_or(
+                        messages::TransferMinidumpReply::new(OsString::new(), None),
+                        |cr| messages::TransferMinidumpReply::new(cr.path, cr.error),
+                    );
+
+                    connector.send_message(reply)?;
                 }
                 messages::Kind::GenerateMinidump => {
                     todo!("Implement all messages");
                 }
                 messages::Kind::RegisterChildProcess => {
-                    let message = messages::RegisterChildProcess::decode(&data, ancillary_data)?;
-                    let connector = IPCConnector::from_ancillary(message.ancillary_data)?;
-                    connector.send_message(messages::ChildProcessRendezVous::new(
-                        process::id() as Pid
-                    ))?;
-                    let reply = connector.recv_reply::<messages::ChildProcessRendezVousReply>()?;
-
-                    if !reply.dumpable {
-                        bail!("Child process {} is not dumpable", reply.child_pid);
-                    }
-
-                    let connector = Rc::new(connector);
-                    self.queue.add_connector(&connector)?;
-                    self.connections.insert(
-                        connector.key(),
-                        IPCConnection {
-                            connector,
-                            endpoint: IPCEndpoint::Child,
-                            pid: Some(reply.child_pid),
-                        },
-                    );
+                    let message = messages::RegisterChildProcess::decode(data, ancillary_data)?;
+                    self.register_child_process(message)?;
                 }
                 #[cfg(any(target_os = "android", target_os = "linux"))]
                 messages::Kind::RegisterAuxvInfo => {
-                    let message = messages::RegisterAuxvInfo::decode(&data, ancillary_data)?;
-                    generator.register_auxv_info(message)?;
+                    let message = messages::RegisterAuxvInfo::decode(data, ancillary_data)?;
+                    self.generator.lock().unwrap().register_auxv_info(message)?;
                 }
                 #[cfg(any(target_os = "android", target_os = "linux"))]
                 messages::Kind::UnregisterAuxvInfo => {
-                    let message = messages::UnregisterAuxvInfo::decode(&data, ancillary_data)?;
-                    generator.unregister_auxv_info(message)?;
+                    let message = messages::UnregisterAuxvInfo::decode(data, ancillary_data)?;
+                    self.generator
+                        .lock()
+                        .unwrap()
+                        .unregister_auxv_info(message)?;
+                }
+                #[cfg(target_os = "windows")]
+                messages::Kind::ProcessRendezVous => {
+                    let message = messages::ProcessRendezVous::decode(data, ancillary_data)?;
+                    for connection in self.connections.values_mut() {
+                        if connection.id.is_some_and(|value| value == message.id) {
+                            connection.process = Some(ProcessId {
+                                pid: message.child_pid,
+                                handle: message.get_process_handle(),
+                            });
+                            break;
+                        }
+                    }
                 }
                 kind => {
                     bail!("Unexpected message {kind:?} from parent process");
@@ -183,8 +274,12 @@ impl IPCServer {
                 #[cfg(target_os = "windows")]
                 messages::Kind::WindowsErrorReporting => {
                     let message =
-                        messages::WindowsErrorReportingMinidump::decode(&data, ancillary_data)?;
-                    let res = generator.generate_wer_minidump(message);
+                        messages::WindowsErrorReportingMinidump::decode(data, ancillary_data)?;
+                    let res = self
+                        .generator
+                        .lock()
+                        .unwrap()
+                        .generate_wer_minidump(message);
                     match res {
                         Ok(_) => {}
                         Err(error) => log::error!(
@@ -200,5 +295,53 @@ impl IPCServer {
         };
 
         Ok(())
+    }
+
+    fn register_child_process(&mut self, message: messages::RegisterChildProcess) -> Result<()> {
+        let connector = IPCConnector::from_ancillary(message.ancillary_data)?;
+
+        let process = if platform::PROXY_RENDEZ_VOUS {
+            None
+        } else {
+            let reply = connector.recv_reply::<messages::ProcessRendezVous>()?;
+
+            if !reply.dumpable {
+                bail!("Child process {} is not dumpable", reply.id);
+            }
+
+            if reply.id != message.id {
+                bail!(
+                    "Child process id {} does not match the one sent from the parent {}",
+                    reply.id,
+                    message.id
+                );
+            }
+
+            Some(ProcessId::new(reply.child_pid, reply.get_process_handle()))
+        };
+
+        let connector = Rc::new(connector);
+        self.queue.add_connector(&connector)?;
+        self.connections.insert(
+            connector.key(),
+            IPCConnection {
+                connector,
+                endpoint: IPCEndpoint::Child,
+                id: Some(message.id),
+                process,
+            },
+        );
+
+        Ok(())
+    }
+
+    fn find_pid(&self, id: GeckoChildId) -> Option<Pid> {
+        for connection in self.connections.values() {
+            if connection.id.is_some_and(|value| value == id) {
+                return connection.process.as_ref().map(|p| p.pid);
+            }
+        }
+
+        None
     }
 }

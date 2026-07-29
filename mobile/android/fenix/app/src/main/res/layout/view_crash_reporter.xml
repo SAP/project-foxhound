@@ -29,7 +29,7 @@
         android:layout_marginTop="6dp"
         android:lineSpacingExtra="8sp"
         android:singleLine="false"
-        android:textColor="?attr/textPrimary"
+        android:textColor="?attr/colorOnSurface"
         android:textSize="24sp"
         android:textStyle="bold"
         app:layout_constraintEnd_toEndOf="parent"
@@ -44,17 +44,16 @@
         android:paddingTop="6dp"
         android:paddingBottom="6dp"
         android:layout_marginBottom="8dp"
-        android:buttonTint="?accentHighContrast"
         android:checked="true"
         android:text="@string/tab_crash_send_report"
-        android:textColor="?attr/textPrimary"
+        android:textColor="?attr/colorOnSurface"
         android:textSize="15sp"
         app:layout_constraintBottom_toTopOf="@id/closeTabButton"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintWidth_percent="0.9" />
 
-    <Button
+    <com.google.android.material.button.MaterialButton
         style="@style/PositiveButton"
         android:id="@+id/restoreTabButton"
         android:layout_width="0dp"
@@ -62,18 +61,12 @@
         android:layout_marginStart="@dimen/crash_reporter_close_tab_button_horizontal_margin"
         android:layout_marginEnd="@dimen/crash_reporter_close_tab_button_horizontal_margin"
         android:layout_marginBottom="@dimen/crash_reporter_close_tab_button_bottom_margin"
-        android:background="@drawable/crash_reporter_button"
-        android:backgroundTint="?accentHighContrast"
-        android:fontFamily="Sharp Sans"
         android:text="@string/tab_crash_restore"
-        android:textAllCaps="false"
-        android:textSize="14sp"
-        android:textStyle="bold"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintWidth_percent="0.4" />
 
-    <Button
+    <com.google.android.material.button.MaterialButton
         style="@style/NeutralButton"
         android:id="@+id/closeTabButton"
         android:layout_width="0dp"
@@ -81,13 +74,7 @@
         android:layout_marginStart="@dimen/crash_reporter_close_tab_button_horizontal_margin"
         android:layout_marginEnd="@dimen/crash_reporter_close_tab_button_horizontal_margin"
         android:layout_marginBottom="@dimen/crash_reporter_close_tab_button_bottom_margin"
-        android:background="@drawable/crash_reporter_button"
-        android:backgroundTint="?neutral"
-        android:fontFamily="Sharp Sans"
         android:text="@string/tab_crash_close"
-        android:textAllCaps="false"
-        android:textSize="14sp"
-        android:textStyle="bold"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintWidth_percent="0.4" />

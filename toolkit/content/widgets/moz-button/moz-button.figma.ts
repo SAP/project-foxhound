@@ -1,14 +1,131 @@
 import figma, { html } from "@figma/code-connect/html";
 
-const example = props => html`
-  <moz-button
-    type=${props.type}
-    disabled=${props.disabled}
-    size=${props.size}
-    iconsrc=${props.iconSrc}
-    >${props.label}</moz-button
-  >
-`;
+// Nova Components - Button
+figma.connect(
+  "https://www.figma.com/design/PqfaOcMGbX5liEXTTUzeYX/Nova-Components--Experimental-?node-id=8849-25406",
+  {
+    props: {
+      label: figma.string("Label"),
+      iconSrc: figma.boolean("Show icon", {
+        true: "chrome://example.svg",
+        false: undefined,
+      }),
+      iconPosition: figma.boolean("Show icon end", {
+        true: "end",
+        false: undefined,
+      }),
+      type: figma.enum("Type", {
+        Default: undefined,
+        Primary: "primary",
+        Destructive: "destructive",
+        Ghost: "ghost",
+        Neutral: "neutral",
+      }),
+      disabled: figma.enum("State", {
+        Disabled: true,
+      }),
+      size: figma.enum("Size", {
+        Small: "small",
+        Large: "large",
+      }),
+      attention: figma.boolean("Show attention dot"),
+    },
+    example: props => html`
+      <moz-button
+        type=${props.type}
+        disabled=${props.disabled}
+        size=${props.size}
+        iconsrc=${props.iconSrc}
+        iconposition=${props.iconPosition}
+        attention=${props.attention}
+        >${props.label}</moz-button
+      >
+    `,
+  }
+);
+
+// Nova Components - Icon button
+figma.connect(
+  "https://www.figma.com/design/PqfaOcMGbX5liEXTTUzeYX/Nova-Components--Experimental-?node-id=9401-35716",
+  {
+    props: {
+      type: figma.enum("Type", {
+        Default: "icon",
+        Ghost: "icon ghost",
+        Neutral: "icon neutral",
+        Primary: "icon primary",
+      }),
+      disabled: figma.enum("State", {
+        Disabled: true,
+      }),
+      size: figma.enum("Size", {
+        Small: "small",
+        Large: "large",
+      }),
+      attention: figma.boolean("Show attention dot"),
+    },
+    example: props => html`
+      <moz-button
+        type=${props.type}
+        disabled=${props.disabled}
+        size=${props.size}
+        iconsrc="chrome://example.svg"
+        title="the hidden label"
+        attention=${props.attention}
+      ></moz-button>
+    `,
+  }
+);
+
+// Nova Components - Split button
+figma.connect(
+  "https://www.figma.com/design/PqfaOcMGbX5liEXTTUzeYX/Nova-Components--Experimental-?node-id=3368-23162",
+  {
+    props: {
+      size: figma.enum("Size", {
+        Small: "small",
+        Large: "large",
+      }),
+    },
+    example: props => html`
+      <moz-button type="split" size=${props.size} menuid="panel-list">
+        Button Label
+      </moz-button>
+      <panel-list id="panel-list">
+        <panel-item>Option One</panel-item>
+        <panel-item>Option Two</panel-item>
+      </panel-list>
+    `,
+  }
+);
+
+// Nova Components - Toolbar button
+figma.connect(
+  "https://www.figma.com/design/PqfaOcMGbX5liEXTTUzeYX/Nova-Components--Experimental-?node-id=1-589",
+  {
+    props: {
+      iconSrc: "chrome://example.svg",
+      type: "ghost",
+      attention: figma.boolean("Show attention dot"),
+      disabled: figma.enum("State", {
+        Disabled: true,
+      }),
+      size: figma.enum("Size", {
+        Small: "small",
+      }),
+    },
+    example: props => html`
+      <moz-button
+        type=${props.type}
+        disabled=${props.disabled}
+        size=${props.size}
+        iconsrc=${props.iconSrc}
+        title="the hidden label"
+        attention=${props.attention}
+      ></moz-button>
+    `,
+  }
+);
 
 // Desktop V3 (newest)
 figma.connect(
@@ -32,7 +149,15 @@ figma.connect(
         Small: "small",
       }),
     },
-    example,
+    example: props => html`
+      <moz-button
+        type=${props.type}
+        disabled=${props.disabled}
+        size=${props.size}
+        iconsrc=${props.iconSrc}
+        >${props.label}</moz-button
+      >
+    `,
   }
 );
 
@@ -64,55 +189,5 @@ figma.connect(
         attention=${props.attention}
       ></moz-button>
     `,
-  }
-);
-
-// Desktop Components text only (deprecated)
-figma.connect(
-  "https://www.figma.com/design/2ruSnPauajQGprFy6K333u/Desktop-Components?node-id=800-5099",
-  {
-    props: {
-      type: figma.enum("Type", {
-        Primary: "primary",
-        Destructive: "destructive",
-      }),
-      size: figma.enum("Size", {
-        Small: "small",
-      }),
-      disabled: figma.boolean("Disabled"),
-      label: "Label",
-      // This is a horrible hack to share the template...
-      iconSrc: figma.boolean("Disabled", {
-        true: undefined,
-        false: undefined,
-      }),
-    },
-    example,
-  }
-);
-
-// Desktop Components icon only (deprecated)
-figma.connect(
-  "https://www.figma.com/design/2ruSnPauajQGprFy6K333u/Desktop-Components?node-id=1103-14274&m=dev",
-  {
-    props: {
-      disabled: figma.enum("State", {
-        Disabled: true,
-      }),
-      size: figma.enum("Size", {
-        Small: "small",
-      }),
-      type: figma.boolean("Background", {
-        true: "icon",
-        false: "ghost icon",
-      }),
-      iconSrc: "chrome://example.svg",
-      // This is a horrible hack to share the template...
-      label: figma.boolean("Background", {
-        true: undefined,
-        false: undefined,
-      }),
-    },
-    example,
   }
 );

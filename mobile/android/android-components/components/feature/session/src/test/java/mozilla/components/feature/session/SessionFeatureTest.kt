@@ -423,6 +423,82 @@ class SessionFeatureTest {
         verify(view).render(engineSession)
     }
 
+    @Test
+    fun `lastVisibleAt is stamped when stop is called`() = runTest(testDispatcher) {
+        val store = prepareStore(scope = this)
+
+        val actualView: View = mock()
+        val view: EngineView = mock()
+        doReturn(actualView).`when`(view).asView()
+
+        val engineSession: EngineSession = mock()
+        store.dispatch(EngineAction.LinkEngineSessionAction("B", engineSession))
+
+        val feature = SessionFeature(store, mock(), mock(), view, mainDispatcher = testDispatcher)
+        feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(0L, store.state.findTab("B")?.lastVisibleAt)
+
+        feature.stop()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertNotEquals(0L, store.state.findTab("B")?.lastVisibleAt)
+    }
+
+    @Test
+    fun `lastVisibleAt is stamped on the outgoing tab when switching tabs`() = runTest(testDispatcher) {
+        val store = prepareStore(scope = this)
+
+        val actualView: View = mock()
+        val view: EngineView = mock()
+        doReturn(actualView).`when`(view).asView()
+
+        val engineSessionA: EngineSession = mock()
+        val engineSessionB: EngineSession = mock()
+        store.dispatch(EngineAction.LinkEngineSessionAction("A", engineSessionA))
+        store.dispatch(EngineAction.LinkEngineSessionAction("B", engineSessionB))
+
+        val feature = SessionFeature(store, mock(), mock(), view, mainDispatcher = testDispatcher)
+        feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(0L, store.state.findTab("B")?.lastVisibleAt)
+
+        store.dispatch(TabListAction.SelectTabAction("A"))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertNotEquals(0L, store.state.findTab("B")?.lastVisibleAt)
+        assertEquals(0L, store.state.findTab("A")?.lastVisibleAt)
+    }
+
+    @Test
+    fun `lastVisibleAt is stamped when last tab is removed`() = runTest(testDispatcher) {
+        val captureActionsMiddleware = CaptureActionsMiddleware<BrowserState, BrowserAction>()
+        val store = prepareStore(captureActionsMiddleware, this)
+
+        val actualView: View = mock()
+        val view: EngineView = mock()
+        doReturn(actualView).`when`(view).asView()
+
+        val engineSession: EngineSession = mock()
+        store.dispatch(EngineAction.LinkEngineSessionAction("B", engineSession))
+
+        val feature = SessionFeature(store, mock(), mock(), view, mainDispatcher = testDispatcher)
+        feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        store.dispatch(TabListAction.RemoveAllTabsAction())
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        captureActionsMiddleware.assertFirstAction(
+            mozilla.components.browser.state.action.LastAccessAction.UpdateLastVisibleAtAction::class,
+        ) { action ->
+            assertEquals("B", action.tabId)
+            assertNotEquals(0L, action.lastVisibleAt)
+        }
+    }
+
     private fun prepareStore(
         middleware: CaptureActionsMiddleware<BrowserState, BrowserAction>? = null,
         scope: CoroutineScope,

@@ -10,8 +10,8 @@ origin:
 
   url: https://github.com/google/brotli
 
-  release: 028fb5a23661f123017c060daa546b55cf4bde29 (2025-10-27T13:07:48Z).
-  revision: 028fb5a23661f123017c060daa546b55cf4bde29
+  release: 4792c8e4c4235f6b501f13dbd07a8b4b253eee21 (2026-04-08T19:24:31Z).
+  revision: 4792c8e4c4235f6b501f13dbd07a8b4b253eee21
 
   license: MIT
 
@@ -27,6 +27,7 @@ vendoring:
     - go
     - python
     - scripts
+    - java
     - tests
     - c/tools
 

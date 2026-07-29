@@ -6,12 +6,14 @@ package org.mozilla.fenix.ext
 
 import mozilla.components.browser.state.selector.normalTabs
 import mozilla.components.browser.state.selector.selectedNormalTab
+import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.concept.engine.utils.ABOUT_HOME_URL
 import org.mozilla.fenix.home.recenttabs.RecentTab
 import org.mozilla.fenix.tabstray.ext.isNormalTabInactive
 import org.mozilla.fenix.utils.Settings
+import org.mozilla.fenix.utils.Stories.hasUrlOfInternallyOpenedStory
 import java.util.concurrent.TimeUnit
 
 /**
@@ -61,3 +63,11 @@ fun BrowserState.actualInactiveTabs(settings: Settings): List<TabSessionState> {
         emptyList()
     }
 }
+
+/**
+ * Get if there's a browser history item to get back to or
+ * if the current URL is of a story from application's homescreen that we should get back to.
+ */
+fun BrowserState.canGoBackInHistoryOrToStories() = selectedTab?.let {
+    it.content.canGoBack || it.hasUrlOfInternallyOpenedStory()
+} ?: false

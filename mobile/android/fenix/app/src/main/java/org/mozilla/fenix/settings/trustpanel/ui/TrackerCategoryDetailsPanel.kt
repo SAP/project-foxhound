@@ -61,7 +61,7 @@ internal fun TrackerCategoryDetailsPanel(
 
             Text(
                 text = trackerCategoryTitle,
-                color = MaterialTheme.colorScheme.tertiary,
+                color = MaterialTheme.colorScheme.onSurface,
                 style = FirefoxTheme.typography.headline8,
             )
 

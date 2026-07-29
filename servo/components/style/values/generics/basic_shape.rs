@@ -10,18 +10,12 @@ use crate::values::animated::{lists, Animate, Procedure, ToAnimatedZero};
 use crate::values::computed::Percentage;
 use crate::values::distance::{ComputeSquaredDistance, SquaredDistance};
 use crate::values::generics::{
-    border::GenericBorderRadius,
-    position::{GenericPosition, GenericPositionOrAuto},
-    rect::Rect,
-    NonNegative, Optional,
+    border::GenericBorderRadius, position::GenericPositionOrAuto, rect::Rect, NonNegative, Optional,
 };
 use crate::values::specified::svg_path::{PathCommand, SVGPathData};
 use crate::Zero;
 use std::fmt::{self, Write};
 use style_traits::{CssWriter, ToCss};
-
-/// A generic value for `<position>` in circle(), ellipse(), and shape().
-pub type ShapePosition<LengthPercentage> = GenericPosition<LengthPercentage, LengthPercentage>;
 
 /// <https://drafts.fxtf.org/css-masking-1/#typedef-geometry-box>
 #[allow(missing_docs)]
@@ -43,7 +37,6 @@ pub type ShapePosition<LengthPercentage> = GenericPosition<LengthPercentage, Len
     ToTyped,
 )]
 #[repr(u8)]
-#[typed_value(derive_fields)]
 pub enum ShapeGeometryBox {
     /// Depending on which kind of element this style value applied on, the
     /// default value of the reference-box can be different.  For an HTML
@@ -128,7 +121,6 @@ impl Default for ShapeBox {
 )]
 #[animation(no_bound(U))]
 #[repr(u8)]
-#[typed_value(derive_fields)]
 pub enum GenericClipPath<BasicShape, U> {
     #[animation(error)]
     None,
@@ -136,9 +128,9 @@ pub enum GenericClipPath<BasicShape, U> {
     // XXX This will likely change to skip since it seems Typed OM Level 1
     // won't be updated to cover this case even though there's some preparation
     // in WPT tests for this.
-    #[typed_value(todo)]
+    #[typed(todo)]
     Url(U),
-    #[typed_value(skip)]
+    #[typed(skip)]
     Shape(
         #[animation(field_bound)] Box<BasicShape>,
         #[css(skip_if = "is_default_box_for_clip_path")] ShapeGeometryBox,
@@ -173,6 +165,7 @@ pub enum GenericShapeOutside<BasicShape, I> {
     None,
     #[animation(error)]
     Image(I),
+    #[typed(skip)]
     Shape(Box<BasicShape>, #[css(skip_if = "is_default")] ShapeBox),
     #[animation(error)]
     Box(ShapeBox),
@@ -208,14 +201,14 @@ pub enum GenericBasicShape<Angle, Position, LengthPercentage, BasicShapeRect> {
         #[animation(field_bound)]
         #[css(field_bound)]
         #[shmem(field_bound)]
-        Circle<LengthPercentage>,
+        Circle<Position, LengthPercentage>,
     ),
     /// Defines an ellipse with a center and x-axis/y-axis radii.
     Ellipse(
         #[animation(field_bound)]
         #[css(field_bound)]
         #[shmem(field_bound)]
-        Ellipse<LengthPercentage>,
+        Ellipse<Position, LengthPercentage>,
     ),
     /// Defines a polygon with pair arguments.
     Polygon(GenericPolygon<LengthPercentage>),
@@ -278,8 +271,8 @@ pub use self::GenericInsetRect as InsetRect;
 )]
 #[css(function)]
 #[repr(C)]
-pub struct Circle<LengthPercentage> {
-    pub position: GenericPositionOrAuto<ShapePosition<LengthPercentage>>,
+pub struct Circle<Position, LengthPercentage> {
+    pub position: GenericPositionOrAuto<Position>,
     #[animation(field_bound)]
     pub radius: GenericShapeRadius<LengthPercentage>,
 }
@@ -304,8 +297,8 @@ pub struct Circle<LengthPercentage> {
 )]
 #[css(function)]
 #[repr(C)]
-pub struct Ellipse<LengthPercentage> {
-    pub position: GenericPositionOrAuto<ShapePosition<LengthPercentage>>,
+pub struct Ellipse<Position, LengthPercentage> {
+    pub position: GenericPositionOrAuto<Position>,
     #[animation(field_bound)]
     pub semiaxis_x: GenericShapeRadius<LengthPercentage>,
     #[animation(field_bound)]
@@ -343,6 +336,10 @@ pub enum GenericShapeRadius<LengthPercentage> {
     ClosestSide,
     #[animation(error)]
     FarthestSide,
+    #[animation(error)]
+    FarthestCorner,
+    #[animation(error)]
+    ClosestCorner,
 }
 
 pub use self::GenericShapeRadius as ShapeRadius;
@@ -523,10 +520,10 @@ where
     }
 }
 
-impl<LengthPercentage> ToCss for Circle<LengthPercentage>
+impl<Position, LengthPercentage> ToCss for Circle<Position, LengthPercentage>
 where
     LengthPercentage: ToCss + PartialEq,
-    ShapePosition<LengthPercentage>: ToCss,
+    Position: ToCss,
 {
     fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
     where
@@ -552,10 +549,10 @@ where
     }
 }
 
-impl<LengthPercentage> ToCss for Ellipse<LengthPercentage>
+impl<Position, LengthPercentage> ToCss for Ellipse<Position, LengthPercentage>
 where
     LengthPercentage: ToCss + PartialEq,
-    ShapePosition<LengthPercentage>: ToCss,
+    Position: ToCss,
 {
     fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
     where

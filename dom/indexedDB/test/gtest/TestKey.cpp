@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -428,4 +426,66 @@ TEST(DOM_IndexedDB_Key, ToLocaleAwareKey_Bug_1641598)
   EXPECT_TRUE(res.isOk());
 
   EXPECT_EQ(input, res.inspect());
+}
+
+template <typename T, size_t N>
+constexpr const T* ArrayEnd(const T (&a)[N]) {
+  return a + N;
+}
+
+using EncodedDataType = unsigned char;
+
+// See #define ONE_BYTE_LIMIT 0x7E:
+// https://searchfox.org/firefox-main/rev/871325b8460362073cb2069874bef7dde3170cb2/dom/indexedDB/Key.cpp#537
+// Values starting with 0x7F are encoded into 2 bytes
+
+TEST(DOM_IndexedDB_LengthOfEncodedBinary, TerminatedThenMore)
+{
+  constexpr EncodedDataType bytes[] = {
+      // 0x80 means, we expecting a second byte, LengthOfEncodedBinary MUST NOT
+      // treat that 0x00 as terminator.
+      Key::eBinary, 0x01, 0x80, 0x00, Key::eTerminator, Key::eString, 'a', 'b'};
+
+  ASSERT_EQ(3u, Key::LengthOfEncodedBinary(bytes, ArrayEnd(bytes)));
+}
+
+TEST(DOM_IndexedDB_LengthOfEncodedBinary, TwoBytesWithoutTerminator)
+{
+  constexpr EncodedDataType bytes[] = {
+      // 0x80 means, we expecting a second byte, LengthOfEncodedBinary MUST NOT
+      // treat that 0x00 as terminator.
+      Key::eBinary, 0x80, 0x00};
+
+  ASSERT_EQ(2u, Key::LengthOfEncodedBinary(bytes, ArrayEnd(bytes)));
+}
+
+TEST(DOM_IndexedDB_LengthOfEncodedBinary, OneByteWithTerminator)
+{
+  constexpr EncodedDataType bytes[] = {
+      // 0x03 means, we are NOT expecting a second byte, LengthOfEncodedBinary
+      // MUST treat that 0x00 as terminator.
+      Key::eBinary, 0x03, 0x00};
+
+  ASSERT_EQ(1u, Key::LengthOfEncodedBinary(bytes, ArrayEnd(bytes)));
+}
+
+TEST(DOM_IndexedDB_LengthOfEncodedBinary, OneByteWithoutTerminator)
+{
+  constexpr EncodedDataType bytes[] = {Key::eBinary, 0x03};
+
+  ASSERT_EQ(1u, Key::LengthOfEncodedBinary(bytes, ArrayEnd(bytes)));
+}
+
+TEST(DOM_IndexedDB_LengthOfEncodedBinary, OneTerminator)
+{
+  constexpr EncodedDataType bytes[] = {Key::eBinary, 0x00};
+
+  ASSERT_EQ(0u, Key::LengthOfEncodedBinary(bytes, ArrayEnd(bytes)));
+}
+
+TEST(DOM_IndexedDB_LengthOfEncodedBinary, EmptyArray)
+{
+  constexpr EncodedDataType bytes[] = {Key::eBinary};
+
+  ASSERT_EQ(0u, Key::LengthOfEncodedBinary(bytes, ArrayEnd(bytes)));
 }

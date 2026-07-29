@@ -15,6 +15,7 @@ ALLOWED_HOSTS = [
     "model-hub.mozilla.org",
     # The MLPA server is the front for the mozilla-managed LLM service.
     "mlpa-prod-prod-mozilla.global.ssl.fastly.net",
+    "mlpa-nonprod-stage-mozilla.global.ssl.fastly.net",
 ]
 
 PREFS = {

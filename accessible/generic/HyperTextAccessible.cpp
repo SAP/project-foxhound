@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sw=2 et tw=78: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -281,7 +279,7 @@ DOMPoint HyperTextAccessible::OffsetToDOMPoint(int32_t aOffset) const {
 }
 
 already_AddRefed<AccAttributes> HyperTextAccessible::DefaultTextAttributes() {
-  RefPtr<AccAttributes> attributes = new AccAttributes();
+  auto attributes = MakeRefPtr<AccAttributes>();
 
   TextAttrsMgr textAttrsMgr(this);
   textAttrsMgr.GetAttributes(attributes);
@@ -602,7 +600,7 @@ int32_t HyperTextAccessible::CaretOffset() const {
 }
 
 std::pair<LayoutDeviceIntRect, nsIWidget*> HyperTextAccessible::GetCaretRect() {
-  RefPtr<nsCaret> caret = mDoc->PresShellPtr()->GetCaret();
+  RefPtr<nsCaret> caret = mDoc->PresShellPtr()->GetOriginalCaret();
   NS_ENSURE_TRUE(caret, {});
 
   bool isVisible = caret->IsVisible();
@@ -727,8 +725,8 @@ void HyperTextAccessible::ScrollSubstringToPoint(int32_t aStartOffset,
 
         nsresult rv = nsCoreUtils::ScrollSubstringTo(
             frame, domRange,
-            ScrollAxis(WhereToScroll(vPercent), WhenToScroll::Always),
-            ScrollAxis(WhereToScroll(hPercent), WhenToScroll::Always));
+            AxisScrollParams(WhereToScroll(vPercent), WhenToScroll::Always),
+            AxisScrollParams(WhereToScroll(hPercent), WhenToScroll::Always));
         if (NS_FAILED(rv)) return;
 
         initialScrolled = true;
@@ -773,16 +771,15 @@ void HyperTextAccessible::ReplaceText(const nsAString& aText) {
     return;
   }
 
+  RefPtr<EditorBase> editorBase = GetEditor();
+
   SetSelectionBoundsAt(TextLeafRange::kRemoveAllExistingSelectedRanges, 0,
                        CharacterCount());
 
-  RefPtr<EditorBase> editorBase = GetEditor();
-  if (!editorBase) {
-    return;
+  if (editorBase) {
+    DebugOnly<nsresult> rv = editorBase->InsertTextAsAction(aText);
+    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Failed to insert the new text");
   }
-
-  DebugOnly<nsresult> rv = editorBase->InsertTextAsAction(aText);
-  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Failed to insert the new text");
 }
 
 void HyperTextAccessible::InsertText(const nsAString& aText,

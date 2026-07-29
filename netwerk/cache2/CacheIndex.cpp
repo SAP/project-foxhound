@@ -4,6 +4,7 @@
 
 #include "CacheIndex.h"
 
+#include "CacheCrypto.h"
 #include "CacheLog.h"
 #include "CacheFileIOManager.h"
 #include "CacheFileMetadata.h"
@@ -19,14 +20,12 @@
 #include "nsNetUtil.h"
 #include "mozilla/AutoRestore.h"
 #include <algorithm>
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/glean/NetwerkCache2Metrics.h"
 
-#define kMinUnwrittenChanges 300
-#define kMinDumpInterval 20000  // in milliseconds
 #define kMaxBufSize 16384
-#define kIndexVersion 0x0000000A
-#define kUpdateIndexStartDelay 50000  // in milliseconds
+#define kIndexVersion 0x0000000C
 #define kTelemetryReportBytesLimit (2U * 1024U * 1024U * 1024U)  // 2GB
 
 #define INDEX_NAME "index"
@@ -853,14 +852,14 @@ nsresult CacheIndex::RemoveEntry(const SHA1Sum::Hash* aHash,
   // error out - async since removal happens on MainThread.
 
   // TODO XXX There may be a hole here where a dictionary entry can get
-  // referenced for a request before RemoveDictionaryFor can run, but after
+  // referenced for a request before RemoveDictionaryOMT can run, but after
   // the entry is removed here.
 
   // Note: we don't want to (re)clear dictionaries when the
   // CacheFileContextEvictor purges entries; they've already been cleared
   // via CacheIndex::EvictByContext synchronously
   if (aClearDictionary) {
-    DictionaryCache::RemoveDictionaryFor(aKey);
+    DictionaryCache::RemoveDictionaryOMT(aKey);
   }
 
   StaticMutexAutoLock lock(sLock);
@@ -1363,6 +1362,21 @@ nsresult CacheIndex::GetEntryForEviction(EvictionSortedSnapshot& aSnapshot,
       continue;
     }
 
+    // Skip entries with active (non-doomed) file handles. These are
+    // currently being read from or written to. Evicting them would doom
+    // the in-progress I/O — in particular, a newly-created entry being
+    // written always has the lowest frecency and would otherwise be
+    // selected as the first eviction candidate, preventing it from ever
+    // being stored. See bug 2031577.
+    {
+      RefPtr<CacheFileHandle> handle;
+      if (CacheFileIOManager::gInstance &&
+          NS_SUCCEEDED(CacheFileIOManager::gInstance->mHandles.GetHandle(
+              &hash, getter_AddRefs(handle)))) {
+        continue;
+      }
+    }
+
     if (CacheIndexEntry::IsPinned(rec)) {
       continue;
     }
@@ -1728,11 +1742,12 @@ bool CacheIndex::WriteIndexToDiskIfNeeded(
 
   if (!mLastDumpTime.IsNull() &&
       (TimeStamp::NowLoRes() - mLastDumpTime).ToMilliseconds() <
-          kMinDumpInterval) {
+          StaticPrefs::browser_cache_disk_index_min_dump_interval_ms()) {
     return false;
   }
 
-  if (mIndexStats.Dirty() < kMinUnwrittenChanges) {
+  if (mIndexStats.Dirty() <
+      StaticPrefs::browser_cache_disk_index_min_unwritten_changes()) {
     return false;
   }
 
@@ -1788,6 +1803,13 @@ void CacheIndex::WriteIndexToDisk(const StaticMutexAutoLock& aProofOfLock) {
   // amount of data written to the cache
   NetworkEndian::writeUint32(mRWBuf + mRWBufPos,
                              static_cast<uint32_t>(mTotalBytesWritten >> 10));
+  mRWBufPos += sizeof(uint32_t);
+  // Whether the entries on disk are encrypted at rest. This reflects the
+  // session's actual encryption state (fixed at startup when CacheCrypto is
+  // initialized), not the live pref, so that a mid-session pref flip -- which
+  // only takes effect on the next restart -- is not masked here.
+  NetworkEndian::writeUint32(mRWBuf + mRWBufPos,
+                             CacheCrypto::IsActive() ? 1 : 0);
   mRWBufPos += sizeof(uint32_t);
 
   mSkipEntries = 0;
@@ -2267,6 +2289,24 @@ void CacheIndex::ParseRecords(const StaticMutexAutoLock& aProofOfLock) {
     pos += sizeof(uint32_t);
     dataWritten <<= 10;
     mTotalBytesWritten += dataWritten;
+
+    bool wasEncrypted = !!NetworkEndian::readUint32(mRWBuf + pos);
+    pos += sizeof(uint32_t);
+    bool nowEncrypted = CacheCrypto::IsActive();
+    if (wasEncrypted != nowEncrypted) {
+      // The at-rest encryption setting changed since the cache was written, so
+      // the entries on disk no longer match the current setting. Purge the
+      // whole cache rather than keep a mix of encrypted and plaintext entries.
+      // EvictAll() dooms open handles, trashes the entries directory and drives
+      // the index back to a clean (empty) state via RemoveAll(), so we just
+      // hand off and return.
+      LOG(
+          ("CacheIndex::ParseRecords() - Encryption setting changed "
+           "[wasEncrypted=%d, nowEncrypted=%d], purging cache",
+           wasEncrypted, nowEncrypted));
+      CacheFileIOManager::EvictAll();
+      return;
+    }
   }
 
   uint32_t hashOffset = pos;
@@ -2981,12 +3021,14 @@ void CacheIndex::StartUpdatingIndex(bool aRebuild,
   }
 
   uint32_t elapsed = (TimeStamp::NowLoRes() - mStartTime).ToMilliseconds();
-  if (elapsed < kUpdateIndexStartDelay) {
+  uint32_t startDelay =
+      StaticPrefs::browser_cache_disk_index_update_start_delay_ms();
+  if (elapsed < startDelay) {
     LOG(
         ("CacheIndex::StartUpdatingIndex() - %u ms elapsed since startup, "
          "scheduling timer to fire in %u ms.",
-         elapsed, kUpdateIndexStartDelay - elapsed));
-    rv = ScheduleUpdateTimer(kUpdateIndexStartDelay - elapsed);
+         elapsed, startDelay - elapsed));
+    rv = ScheduleUpdateTimer(startDelay - elapsed);
     if (NS_SUCCEEDED(rv)) {
       return;
     }

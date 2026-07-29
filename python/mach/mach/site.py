@@ -21,14 +21,23 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Optional
 
-from filelock import FileLock, Timeout
 from mozfile import json
 from packaging.specifiers import SpecifierSet
 
+from mach.filelock import FileLock, Timeout
 from mach.requirements import (
     MachEnvRequirements,
     UnexpectedFlexibleRequirementException,
 )
+
+
+class SiteLockTimeout(Exception):
+    def __init__(self, lock_file, site_name, timeout):
+        self.lock_file = lock_file
+        super().__init__(
+            f"Could not acquire the lock at {lock_file} for the {site_name} site after {timeout} seconds"
+        )
+
 
 PTH_FILENAME = "mach.pth"
 METADATA_FILENAME = "moz_virtualenv_metadata.json"
@@ -414,9 +423,7 @@ class MachSiteManager:
                 with FileLock(lock_file, timeout=timeout):
                     self._ensure(force=force)
             except Timeout:
-                self._log(
-                    f"Could not acquire the lock at {lock_file} for the mach site after {timeout} seconds."
-                )
+                raise SiteLockTimeout(lock_file, "mach", timeout)
         else:
             self._ensure(force=force)
 
@@ -434,7 +441,7 @@ class MachSiteManager:
 
     def attempt_populate_optional_packages(self):
         if self._site_packages_source != SitePackagesSource.VENV:
-            pass
+            return
 
         self._virtualenv().install_optional_packages(
             self._requirements.pypi_optional_requirements
@@ -683,9 +690,7 @@ class CommandSiteManager:
                         self._metadata,
                     )
         except Timeout:
-            self._log(
-                f"Could not acquire the lock at {lock_file} for the {self._site_name} site after {timeout} seconds."
-            )
+            raise SiteLockTimeout(lock_file, self._site_name, timeout)
 
     def activate(self):
         """Activate this site in the current Python context.

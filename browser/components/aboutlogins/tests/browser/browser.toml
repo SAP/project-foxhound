@@ -80,12 +80,14 @@ skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1581889
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && socketprocess_networking", # Bug 1775756
   "os == 'win' && os_version == '11.26100' && opt && msix", # Bug 1775756
+  "os == 'win' && os_version == '11.26200' && opt && msix", # Bug 1775756
 ]
 
 ["browser_osAuthDialog.js"]
 skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1527745
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && asan", # Bug 1836545
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && asan", # Bug 1836545
 ]
 
 ["browser_primaryPassword.js"]

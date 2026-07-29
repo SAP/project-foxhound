@@ -80,7 +80,12 @@ var gAllowsExtraUnusual = {
                  "ease-in-out": true, "2s ease-in": true,
                  "ease-out 2s": true, "1s bounce, 2s": true,
                  "1s bounce, 2s none": true },
-  "font-family": { "inherit": true, "initial": true, "unset": true }
+  "font-family": { "inherit": true, "initial": true, "unset": true },
+  "content": { "attr(title)": true, "attr(\\32)": true, "attr(\\2)": true,
+               "attr(-\\2)": true, "attr(-\\32)": true,
+               'attr(title, "fallback")': true, 'attr(\\32, "fallback")': true,
+               'attr(-\\32, "fallback")': true,
+               "close-quote attr(title) counters(foo, '.', upper-alpha)": true },
 };
 
 if (IsCSSPropertyPrefEnabled("layout.css.prefixes.transitions")) {

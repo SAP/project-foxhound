@@ -319,6 +319,7 @@ skip-if = [
 ["test_installation_simple.html"]
 skip-if = [
   "os == 'android' && os_version == '14' && arch == 'x86_64'", # Bug 1816639
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug", # Bug 1816639
 ]
 
 

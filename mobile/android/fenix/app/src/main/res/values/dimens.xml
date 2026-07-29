@@ -21,7 +21,6 @@
     <dimen name="preference_icon_drawable_size">24dp</dimen>
     <dimen name="search_bar_search_engine_icon_padding">12dp</dimen>
     <dimen name="search_engine_engine_icon_margin">12dp</dimen>
-    <dimen name="search_engine_engine_icon_top_margin">14dp</dimen>
     <dimen name="search_engine_radio_button_height">48dp</dimen>
     <dimen name="search_engine_engine_icon_height">24dp</dimen>
     <dimen name="radio_button_padding_horizontal">16dp</dimen>
@@ -71,15 +70,10 @@
     <dimen name="tab_strip_height">56dp</dimen>
     <dimen name="browser_microsurvey_height">131dp</dimen>
 
-    <!-- Bookmark Edit Fragment  -->
-    <dimen name="bookmark_edit_text_height">48dp</dimen>
-
     <!-- Home Fragment -->
-    <dimen name="home_fragment_top_toolbar_header_margin">60dp</dimen>
     <dimen name="home_item_horizontal_margin">16dp</dimen>
     <dimen name="home_item_vertical_margin">8dp</dimen>
     <dimen name="wordmark_text_height">18dp</dimen>
-    <dimen name="wordmark_text_margin_top">10dp</dimen>
 
     <!-- Browser Fragment -->
     <!--The size of the gap between the tab preview and content layout.-->
@@ -92,13 +86,6 @@
     <!-- The size of padding for the display toolbar. -->
     <dimen name="browser_fragment_display_toolbar_padding" tools:ignore="UnusedResources">16dp</dimen>
     <dimen name="mozac_browser_toolbar_button_width" tools:ignore="UnusedResources">48dp</dimen>
-
-    <!-- Search Fragment -->
-    <dimen name="search_fragment_clipboard_item_height">56dp</dimen>
-    <dimen name="search_fragment_clipboard_item_horizontal_margin">8dp</dimen>
-    <dimen name="search_fragment_clipboard_item_title_margin_start">8dp</dimen>
-
-    <dimen name="search_fragment_clipboard_title_text_size">15sp</dimen>
 
     <!-- About Fragment -->
     <dimen name="about_list_item_height">56dp</dimen>
@@ -142,7 +129,9 @@
     <dimen name="tab_tray_new_collection_padding_start">24dp</dimen>
     <dimen name="tab_tray_new_collection_drawable_padding">28dp</dimen>
     <!--  Keeps FAB and snackbar from covering last item in list -->
-    <dimen name="tab_tray_list_bottom_padding">190dp</dimen>
+    <dimen name="tab_tray_list_bottom_padding">140dp</dimen>
+    <dimen name="tab_tray_grid_bottom_padding">40dp</dimen>
+
 
     <!-- Account Settings Fragment  -->
     <dimen name="account_settings_device_name_min_height">48dp</dimen>

@@ -19,6 +19,7 @@ import "chrome://browser/content/firefoxview/fxview-tab-list.mjs";
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
+  AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
 });
 
 const SS_NOTIFY_CLOSED_OBJECTS_CHANGED = "sessionstore-closed-objects-changed";
@@ -66,7 +67,7 @@ class RecentlyClosedTabsInView extends ViewPage {
     if (
       topic == SS_NOTIFY_CLOSED_OBJECTS_CHANGED ||
       (topic == SS_NOTIFY_BROWSER_SHUTDOWN_FLUSH &&
-        subject.ownerGlobal == getWindow())
+        subject.documentGlobal == getWindow())
     ) {
       this.updateRecentlyClosedTabs();
     }
@@ -202,14 +203,33 @@ class RecentlyClosedTabsInView extends ViewPage {
   onReopenTab(e) {
     const closedId = parseInt(e.originalTarget.closedId, 10);
     const sourceClosedId = parseInt(e.originalTarget.sourceClosedId, 10);
+
+    const originalEvent = e.detail.originalEvent;
+    const isModifierClick =
+      lazy.AppConstants.platform == "macosx"
+        ? originalEvent.metaKey
+        : originalEvent.ctrlKey;
+
+    const win = getWindow();
+    const activeTabBeforeRestore = isModifierClick
+      ? win.gBrowser?.selectedTab
+      : null;
+
     if (isNaN(sourceClosedId)) {
-      lazy.SessionStore.undoCloseById(closedId, getWindow());
+      lazy.SessionStore.undoCloseById(closedId, win);
     } else {
       lazy.SessionStore.undoClosedTabFromClosedWindow(
         { sourceClosedId },
         closedId,
-        getWindow()
+        win
       );
+    }
+
+    if (
+      activeTabBeforeRestore &&
+      win.gBrowser?.selectedTab !== activeTabBeforeRestore
+    ) {
+      win.gBrowser.selectedTab = activeTabBeforeRestore;
     }
 
     // Record telemetry

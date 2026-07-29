@@ -8,10 +8,14 @@
       "type": "stdio",
       "command": "./mach",
       "args": [
-        "npx",
-        "@padenot/firefox-devtools-mcp",
+        "--quiet",
+        "devtools-mcp",
         "--pref",
-        "browser.ml.enable=true"
+        "remote.prefs.recommended=false",
+        "--pref",
+        "browser.smartwindow.enabled=true",
+        "--enable-privileged-context",
+        "--enable-script"
       ]
     }
   }

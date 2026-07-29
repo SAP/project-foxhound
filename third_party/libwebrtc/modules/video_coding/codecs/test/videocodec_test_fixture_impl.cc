@@ -24,7 +24,6 @@
 #include "absl/strings/match.h"
 #include "absl/strings/str_replace.h"
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/environment/environment_factory.h"
 #include "api/field_trials_view.h"
 #include "api/make_ref_counted.h"
@@ -37,7 +36,6 @@
 #include "api/video/resolution.h"
 #include "api/video/video_codec_constants.h"
 #include "api/video/video_codec_type.h"
-#include "api/video/video_frame_type.h"
 #include "api/video_codecs/h264_profile_level_id.h"
 #include "api/video_codecs/sdp_video_format.h"
 #include "api/video_codecs/simulcast_stream.h"
@@ -68,7 +66,6 @@
 #include "rtc_base/cpu_time.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/strings/string_builder.h"
-#include "rtc_base/system/file_wrapper.h"
 #include "rtc_base/system_time.h"
 #include "rtc_base/task_queue_for_test.h"
 #include "rtc_base/thread.h"
@@ -78,6 +75,7 @@
 #include "test/testsupport/file_utils.h"
 #include "test/testsupport/frame_reader.h"
 #include "test/testsupport/frame_writer.h"
+#include "test/testsupport/ivf_frame_reader.h"
 #include "test/video_codec_settings.h"
 #include "video/config/encoder_stream_factory.h"
 #include "video/config/video_encoder_config.h"
@@ -118,15 +116,14 @@ void ConfigureSimulcast(const FieldTrialsView& trials,
   }
 }
 
-void ConfigureSvc(VideoCodec* codec_settings) {
-  RTC_CHECK_EQ(kVideoCodecVP9, codec_settings->codecType);
-
+void ConfigureSvc(VideoCodec* codec_settings,
+                  size_t num_spatial_layers,
+                  size_t num_temporal_layers) {
   const std::vector<SpatialLayer> layers = GetSvcConfig(
       codec_settings->width, codec_settings->height, kDefaultMaxFramerateFps,
-      /*first_active_layer=*/0, codec_settings->VP9()->numberOfSpatialLayers,
-      codec_settings->VP9()->numberOfTemporalLayers,
-      /* is_screen_sharing = */ false);
-  ASSERT_EQ(codec_settings->VP9()->numberOfSpatialLayers, layers.size())
+      /*first_active_layer=*/0, num_spatial_layers, num_temporal_layers,
+      codec_settings->mode == VideoCodecMode::kScreensharing);
+  ASSERT_EQ(num_spatial_layers, layers.size())
       << "GetSvcConfig returned fewer spatial layers than configured.";
 
   for (size_t i = 0; i < layers.size(); ++i) {
@@ -135,8 +132,7 @@ void ConfigureSvc(VideoCodec* codec_settings) {
 }
 
 std::string CodecSpecificToString(const VideoCodec& codec) {
-  char buf[1024];
-  SimpleStringBuilder ss(buf);
+  StringBuilder ss;
   switch (codec.codecType) {
     case kVideoCodecVP8:
       ss << "\nnum_temporal_layers: "
@@ -167,7 +163,7 @@ std::string CodecSpecificToString(const VideoCodec& codec) {
     default:
       break;
   }
-  return ss.str();
+  return ss.Release();
 }
 
 bool RunEncodeInRealTime(const VideoCodecTestFixtureImpl::Config& config) {
@@ -290,9 +286,8 @@ void VideoCodecTestFixtureImpl::Config::SetCodecSettings(
 
   if (codec_settings.numberOfSimulcastStreams > 1) {
     ConfigureSimulcast(field_trials, &codec_settings);
-  } else if (codec_settings.codecType == kVideoCodecVP9 &&
-             codec_settings.VP9()->numberOfSpatialLayers > 1) {
-    ConfigureSvc(&codec_settings);
+  } else if (num_spatial_layers > 1 || num_temporal_layers > 1) {
+    ConfigureSvc(&codec_settings, num_spatial_layers, num_temporal_layers);
   }
 }
 
@@ -410,11 +405,11 @@ void VideoCodecTestFixtureImpl::H264KeyframeChecker::CheckEncodedFrame(
       contains_idr = true;
     }
   }
-  if (encoded_frame._frameType == VideoFrameType::kVideoFrameKey) {
+  if (encoded_frame.IsKey()) {
     EXPECT_TRUE(contains_sps) << "Keyframe should contain SPS.";
     EXPECT_TRUE(contains_pps) << "Keyframe should contain PPS.";
     EXPECT_TRUE(contains_idr) << "Keyframe should contain IDR.";
-  } else if (encoded_frame._frameType == VideoFrameType::kVideoFrameDelta) {
+  } else if (encoded_frame.IsDelta()) {
     EXPECT_FALSE(contains_sps) << "Delta frame should not contain SPS.";
     EXPECT_FALSE(contains_pps) << "Delta frame should not contain PPS.";
     EXPECT_FALSE(contains_idr) << "Delta frame should not contain IDR.";
@@ -581,8 +576,7 @@ void VideoCodecTestFixtureImpl::AnalyzeAllFrames(
       RTC_LOG(LS_INFO) << layer_stat.ToString("recv_") << "\n";
 
       // For perf dashboard.
-      char modifier_buf[256];
-      SimpleStringBuilder modifier(modifier_buf);
+      StringBuilder modifier;
       modifier << "_r" << rate_profile_idx << "_sl" << layer_stat.spatial_idx;
 
       auto PrintResultHelper = [&modifier, this](
@@ -777,10 +771,18 @@ bool VideoCodecTestFixtureImpl::SetUpAndInitObjects(
   int clip_height = config_.clip_height.value_or(config_.codec_settings.height);
 
   // Create file objects for quality analysis.
-  source_frame_reader_ = CreateYuvFrameReader(
-      config_.filepath,
-      Resolution({.width = clip_width, .height = clip_height}),
-      YuvFrameReaderImpl::RepeatMode::kPingPong);
+  if (config_.filepath.ends_with(".yuv")) {
+    source_frame_reader_ = CreateYuvFrameReader(
+        config_.filepath,
+        Resolution({.width = clip_width, .height = clip_height}),
+        YuvFrameReaderImpl::RepeatMode::kPingPong);
+  } else if (config_.filepath.ends_with(".y4m")) {
+    source_frame_reader_ = CreateY4mFrameReader(
+        config_.filepath, YuvFrameReaderImpl::RepeatMode::kPingPong);
+  } else if (config_.filepath.ends_with(".ivf")) {
+    source_frame_reader_ = std::make_unique<IvfFrameReader>(
+        env_, config_.filepath, /*repeat=*/true);
+  }
 
   RTC_DCHECK(encoded_frame_writers_.empty());
   RTC_DCHECK(decoded_frame_writers_.empty());
@@ -820,12 +822,10 @@ bool VideoCodecTestFixtureImpl::SetUpAndInitObjects(
           const std::string output_file_path = output_filename_base + "tl" +
                                                std::to_string(temporal_idx) +
                                                ".ivf";
-          FileWrapper ivf_file = FileWrapper::OpenWriteOnly(output_file_path);
-
           const VideoProcessor::LayerKey layer_key(simulcast_svc_idx,
                                                    temporal_idx);
           encoded_frame_writers_[layer_key] =
-              IvfFileWriter::Wrap(std::move(ivf_file), /*byte_limit=*/0);
+              IvfFileWriter::Wrap(output_file_path, /*byte_limit=*/0);
         }
       }
 

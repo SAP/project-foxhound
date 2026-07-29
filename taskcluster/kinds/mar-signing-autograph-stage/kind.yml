@@ -28,8 +28,6 @@ tasks:
         treeherder:
             tier: 3
         description-suffix: 'autograph-stage mar signing test'
-        required_signoffs:
-            - mar-signing
         run-on-projects: []
         shippable: false
         attributes:

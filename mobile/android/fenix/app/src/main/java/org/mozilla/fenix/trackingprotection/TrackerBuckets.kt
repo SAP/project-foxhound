@@ -57,27 +57,28 @@ class TrackerBuckets {
 
     companion object {
 
-        private fun putTrackersInBuckets(
-            list: List<TrackerLog>,
-        ): BucketedTrackerLog {
+        private fun putTrackersInBuckets(list: List<TrackerLog>): BucketedTrackerLog {
             val blockedMap = createMap()
             val loadedMap = createMap()
             for (item in list) {
-                if (item.cookiesHasBeenBlocked) {
-                    blockedMap.addTrackerHost(CROSS_SITE_TRACKING_COOKIES, item)
+                primaryBlockedBucket(item)?.let { bucket ->
+                    blockedMap.addTrackerHost(bucket, item)
                 }
-
-                // Blocked categories
-                for (category in item.blockedCategories) {
-                    blockedMap.addTrackerHost(category, item)
-                }
-
-                // Loaded categories
                 for (category in item.loadedCategories) {
                     loadedMap.addTrackerHost(category, item)
                 }
             }
             return BucketedTrackerLog(blockedMap, loadedMap)
+        }
+
+        private fun primaryBlockedBucket(item: TrackerLog): TrackingProtectionCategory? = when {
+            TrackingCategory.FINGERPRINTING in item.blockedCategories -> FINGERPRINTERS
+            TrackingCategory.CRYPTOMINING in item.blockedCategories -> CRYPTOMINERS
+            TrackingCategory.MOZILLA_SOCIAL in item.blockedCategories -> SOCIAL_MEDIA_TRACKERS
+            TrackingCategory.SCRIPTS_AND_SUB_RESOURCES in item.blockedCategories -> TRACKING_CONTENT
+            TrackingCategory.EMAIL in item.blockedCategories -> TRACKING_CONTENT
+            item.cookiesHasBeenBlocked -> CROSS_SITE_TRACKING_COOKIES
+            else -> null
         }
 
         /**
@@ -100,6 +101,7 @@ class TrackerBuckets {
                 TrackingCategory.FINGERPRINTING -> FINGERPRINTERS
                 TrackingCategory.MOZILLA_SOCIAL -> SOCIAL_MEDIA_TRACKERS
                 TrackingCategory.SCRIPTS_AND_SUB_RESOURCES -> TRACKING_CONTENT
+                TrackingCategory.EMAIL -> TRACKING_CONTENT
                 else -> return
             }
             addTrackerHost(key, tracker)

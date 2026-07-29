@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<body>
+<script>
+async function run() {
+  if (typeof VideoEncoder === "undefined") {
+    return;
+  }
+  const encoder = new VideoEncoder({ output: () => {}, error: () => {} });
+  encoder.configure({
+    codec: "avc1.42001E",
+    width: 640,
+    height: 480,
+    avc: {},
+    bitrate: 1000000
+  });
+  encoder.configure({
+    codec: "avc1.42001E",
+    width: 320,
+    height: 240,
+    avc: {}
+  });
+  await encoder.flush().catch(() => {});
+}
+
+run().finally(() => {
+  document.documentElement.className = "";
+});
+</script>
+</body>
+</html>

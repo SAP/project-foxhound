@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +6,7 @@
 #define LAYOUT_STYLE_TYPEDOM_CSSKEYWORDVALUE_H_
 
 #include "js/TypeDecls.h"
+#include "mozilla/dom/CSSKeywordValueBindingFwd.h"
 #include "mozilla/dom/CSSStyleValue.h"
 #include "nsString.h"
 
@@ -21,6 +20,7 @@ namespace mozilla {
 
 struct CSSPropertyId;
 class ErrorResult;
+struct StyleKeywordValue;
 
 namespace dom {
 
@@ -29,6 +29,16 @@ class GlobalObject;
 class CSSKeywordValue final : public CSSStyleValue {
  public:
   CSSKeywordValue(nsCOMPtr<nsISupports> aParent, const nsACString& aValue);
+
+  static RefPtr<CSSKeywordValue> Create(nsCOMPtr<nsISupports> aParent,
+                                        const nsACString& aValue);
+
+  // https://drafts.css-houdini.org/css-typed-om-1/#rectify-a-keywordish-value
+  static RefPtr<CSSKeywordValue> Create(nsCOMPtr<nsISupports> aParent,
+                                        const CSSKeywordish& aKeywordish);
+
+  static RefPtr<CSSKeywordValue> Create(nsCOMPtr<nsISupports> aParent,
+                                        const StyleKeywordValue& aKeywordValue);
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;

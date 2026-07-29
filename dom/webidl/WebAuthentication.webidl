@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -12,9 +11,9 @@
 [SecureContext, Pref="security.webauth.webauthn",
  Exposed=Window]
 interface PublicKeyCredential : Credential {
-    [SameObject, Throws] readonly attribute ArrayBuffer      rawId;
-    [SameObject] readonly attribute AuthenticatorResponse    response;
-    readonly attribute DOMString?                            authenticatorAttachment;
+    [SameObject, Throws, Cached] readonly attribute ArrayBuffer rawId;
+    [SameObject] readonly attribute AuthenticatorResponse       response;
+    readonly attribute DOMString?                               authenticatorAttachment;
     AuthenticationExtensionsClientOutputs getClientExtensionResults();
     [NewObject] static Promise<boolean> isConditionalMediationAvailable();
     [Throws, Pref="security.webauthn.enable_json_serialization_methods"] object toJSON();
@@ -137,25 +136,25 @@ dictionary PublicKeyCredentialRequestOptionsJSON {
 [SecureContext, Pref="security.webauth.webauthn",
  Exposed=Window]
 interface AuthenticatorResponse {
-    [SameObject, Throws] readonly attribute ArrayBuffer clientDataJSON;
+    [SameObject, Throws, Cached] readonly attribute ArrayBuffer clientDataJSON;
 };
 
 [SecureContext, Pref="security.webauth.webauthn",
  Exposed=Window]
 interface AuthenticatorAttestationResponse : AuthenticatorResponse {
-    [SameObject, Throws] readonly attribute ArrayBuffer attestationObject;
-    sequence<DOMString>                                 getTransports();
-    [Throws] ArrayBuffer                                getAuthenticatorData();
-    [Throws] ArrayBuffer?                               getPublicKey();
-    [Throws] COSEAlgorithmIdentifier                    getPublicKeyAlgorithm();
+    [SameObject, Throws, Cached] readonly attribute ArrayBuffer attestationObject;
+    sequence<DOMString>                                         getTransports();
+    [Throws] ArrayBuffer                                        getAuthenticatorData();
+    [Throws] ArrayBuffer?                                       getPublicKey();
+    [Throws] COSEAlgorithmIdentifier                            getPublicKeyAlgorithm();
 };
 
 [SecureContext, Pref="security.webauth.webauthn",
  Exposed=Window]
 interface AuthenticatorAssertionResponse : AuthenticatorResponse {
-    [SameObject, Throws] readonly attribute ArrayBuffer      authenticatorData;
-    [SameObject, Throws] readonly attribute ArrayBuffer      signature;
-    [SameObject, Throws] readonly attribute ArrayBuffer?     userHandle;
+    [SameObject, Throws, Cached] readonly attribute ArrayBuffer  authenticatorData;
+    [SameObject, Throws, Cached] readonly attribute ArrayBuffer  signature;
+    [SameObject, Throws, Cached] readonly attribute ArrayBuffer? userHandle;
 };
 
 dictionary PublicKeyCredentialParameters {

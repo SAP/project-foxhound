@@ -1,4 +1,4 @@
-.. _localization:
+.. _localized-builds:
 
 ================
 Localized Builds

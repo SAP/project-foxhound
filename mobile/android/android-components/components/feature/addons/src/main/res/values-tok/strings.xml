@@ -6,13 +6,11 @@
   You can obtain one at http://mozilla.org/MPL/2.0/.
 -->
 
-<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!-- Description for giving an add-on access to users's data on one site. %1$s  will be replaced by the DNS host name for which a web extension is requesting access (e.g., www.mozilla.org). -->
   <string name="mozac_feature_addons_permissions_one_site_description">ona li ken lukin e sona sina lon lipu %1$s</string>
   <!-- Description for giving an add-on access to users's data in multiple sites in the domain %1$s. %1$s will be replaced by the DNS domain for which a web extension is requesting access (e.g., mozilla.org). -->
   <string name="mozac_feature_addons_permissions_sites_in_domain_description">ona li ken lukin e sona sina lon kulupu lipu %1$s</string>
-  <!-- When an add-on requires access to domains, this entry is used to describe the total number of domains. Underneath it will be the list of all the domains. %1$d is the number of all the domains that will be shown to the user as required. -->
-  <string name="mozac_feature_addons_permissions_all_domain_count_description" moz:removedIn="148" tools:ignore="PluralsCandidate">ona li ken jo e sona sina lon lipu %1$d</string>
   <!-- Description for the "privacy" WebExtensions API permission. -->
   <string name="mozac_feature_addons_permissions_privacy_description">ona li ken lukin e nasin ilo len li ken ante e ona</string>
   <!-- Description for the "<all_urls>" WebExtensions API permission. -->
@@ -161,8 +159,6 @@
   <string name="mozac_feature_addons_supported_checker_notification_content_two">o pana e ilo %1$s e ilo %2$s tawa ilo %3$s</string>
   <!-- The content of the notification, this will be shown to the user when more than two newly supported add-ons are available. %1$s is the app name (in most cases Firefox). -->
   <string name="mozac_feature_addons_supported_checker_notification_content_more_than_two">o pana e ona tawa ilo %1$s</string>
-  <!-- Error shown when something unexpected happened while trying to get the extension list from the server -->
-  <string name="mozac_feature_addons_failed_to_query_extensions">pakala la mi ken ala sona e ilo namako.</string>
   <!-- Text shown after failing to install an add-on (when add-on type isn't supported or an unknown has errored). %1$s is the add-on name. -->
   <string name="mozac_feature_addons_failed_to_install">pakala la mi ken ala pana e ilo %1$s tawa sina</string>
   <!-- Text shown after failing to install an extension for which we don't have its name (when add-on type isn't supported or an unknown has errored). -->
@@ -170,7 +166,7 @@
   <!-- Text shown when installing an add-on has failed. -->
   <string name="mozac_feature_addons_cant_install_extension">pakala la mi ken ala pana e ilo namako tawa sina</string>
   <!-- Text shown when attempting to install a (hard) blocked add-on. %1$s is the add-on name. %2$s is the app name. -->
-  <string name="mozac_feature_addons_blocklisted_2">ilo %1$s li ike tawa lawa pi kulupu Mozilla. mi ken ala pana e ona tawa ilo %2$s.</string>
+  <string name="mozac_feature_addons_blocklisted_2" tools:ignore="BrandUsage">ilo %1$s li ike tawa lawa pi kulupu Mozilla. mi ken ala pana e ona tawa ilo %2$s.</string>
   <!-- Text shown after failed to enable an add-on. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_failed_to_enable">pakala la mi open ala e ilo %1$s</string>
   <!-- Text shown after failed to disable an add-on. %1$s is the add-on name. -->
@@ -204,7 +200,7 @@
   <!-- "See details" link displayed below an add-on status message. -->
   <string name="mozac_feature_addons_status_see_details">o sona namako</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been blocklisted. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_status_blocklisted_1">ilo ni li ike tawa lawa pi kulupu Mozilla. kulupu ni li weka e ona.</string>
+  <string name="mozac_feature_addons_status_blocklisted_1" tools:ignore="BrandUsage">ilo ni li ike tawa lawa pi kulupu Mozilla. kulupu ni li weka e ona.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on hasn't been signed correctly. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_status_unsigned">kulupu lawa li pini e ilo %1$s tan ni: ilo li ken pakala e sina.</string>
 </resources>

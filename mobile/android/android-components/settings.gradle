@@ -36,11 +36,10 @@ dependencyResolutionManagement {
 ext.topsrcdir = rootProject.projectDir.absolutePath.minus("mobile/android/android-components")
 
 if (gradle.ext.mozconfig.substs.MOZ_APPSERVICES_IN_TREE) {
-    apply from: file("${topsrcdir}/services/app-services/settings.gradle")
+    apply from: file("${topsrcdir}/third_party/application-services/settings.gradle")
 }
 
 apply from: file('../shared-settings.gradle')
-apply from: file('../autopublish-settings.gradle')
 
 buildCache {
     local {

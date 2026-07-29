@@ -1,14 +1,10 @@
-//* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <jni.h>
 
-#ifdef MOZ_AV1
-#  include "AOMDecoder.h"
-#endif
+#include "AOMDecoder.h"
 #include "MediaInfo.h"
 #include "RemoteDataDecoder.h"
 #include "VPXDecoder.h"
@@ -23,13 +19,13 @@
 #include "prlog.h"
 
 #undef LOG
-#define LOG(arg, ...)                                     \
-  MOZ_LOG(                                                \
-      sAndroidDecoderModuleLog, mozilla::LogLevel::Debug, \
-      ("AndroidDecoderModule(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
-#define SLOG(arg, ...)                                        \
-  MOZ_LOG(sAndroidDecoderModuleLog, mozilla::LogLevel::Debug, \
-          ("%s: " arg, __func__, ##__VA_ARGS__))
+#define LOG(arg, ...)                                                         \
+  MOZ_LOG_FMT(sAndroidDecoderModuleLog, mozilla::LogLevel::Debug,             \
+              "AndroidDecoderModule({})::{}: " arg, fmt::ptr(this), __func__, \
+              ##__VA_ARGS__)
+#define SLOG(arg, ...)                                                        \
+  MOZ_LOG_FMT(sAndroidDecoderModuleLog, mozilla::LogLevel::Debug, "{}: " arg, \
+              __func__, ##__VA_ARGS__)
 
 using namespace mozilla;
 using media::DecodeSupport;
@@ -119,7 +115,7 @@ DecodeSupportSet AndroidDecoderModule::SupportsMimeType(
     case MediaCodec::Wave:
       [[fallthrough]];
     case MediaCodec::FLAC:
-      SLOG("Rejecting audio of type %s", aMimeType.Data());
+      SLOG("Rejecting audio of type {}", PromiseFlatCString(aMimeType).get());
       return media::DecodeSupportSet{};
 
     // H264 always reports software decode
@@ -140,7 +136,8 @@ DecodeSupportSet AndroidDecoderModule::SupportsMimeType(
     case MediaCodec::SENTINEL:
       [[fallthrough]];
     default:
-      SLOG("Support check using default logic for %s", aMimeType.Data());
+      SLOG("Support check using default logic for {}",
+           PromiseFlatCString(aMimeType).get());
       break;
   }
 
@@ -236,12 +233,12 @@ void AndroidDecoderModule::SetSupportedMimeTypes(
   for (const auto& s : aSupportedTypes) {
     // Verify MIME type string present
     if (s.Length() < 4) {
-      SLOG("No SW/HW support prefix found in codec string %s", s.Data());
+      SLOG("No SW/HW support prefix found in codec string {}", s.get());
       continue;
     }
     const auto mimeType = Substring(s, 3);
     if (mimeType.Length() == 0) {
-      SLOG("No MIME type information found in codec string %s", s.Data());
+      SLOG("No MIME type information found in codec string {}", s.get());
       continue;
     }
 
@@ -255,13 +252,12 @@ void AndroidDecoderModule::SetSupportedMimeTypes(
       sSupportedHwMimeTypes->AppendElement(mimeType);
       support = DecodeSupport::HardwareDecode;
     } else {
-      SLOG("Error parsing acceleration info from JNI codec string %s",
-           s.Data());
+      SLOG("Error parsing acceleration info from JNI codec string {}", s.get());
       continue;
     }
     const MediaCodec codec = MCSInfo::GetMediaCodecFromMimeType(mimeType);
     if (codec == MediaCodec::SENTINEL) {
-      SLOG("Did not parse string %s to specific codec", s.Data());
+      SLOG("Did not parse string {} to specific codec", s.get());
       continue;
     }
     *sSupportedCodecs += MCSInfo::GetMediaCodecsSupportEnum(codec, support);
@@ -294,14 +290,12 @@ media::DecodeSupportSet AndroidDecoderModule::Supports(
     return support;
   }
 
-#ifdef MOZ_AV1
   // For AV1, only allow HW decoder.
   if (AOMDecoder::IsAV1(aParams.MimeType()) &&
       (!StaticPrefs::media_av1_enabled() ||
        !support.contains(media::DecodeSupport::HardwareDecode))) {
     return media::DecodeSupportSet{};
   }
-#endif
 
   // Check 10-bit video.
   const TrackInfo& trackInfo = aParams.mConfig;
@@ -360,8 +354,8 @@ bool AndroidDecoderModule::IsJavaDecoderModuleAllowed() {
 already_AddRefed<MediaDataDecoder> AndroidDecoderModule::CreateAudioDecoder(
     const CreateDecoderParams& aParams) {
   const AudioInfo& config = aParams.AudioConfig();
-  LOG("CreateAudioFormat with mimeType=%s, mRate=%d, channels=%d",
-      config.mMimeType.Data(), config.mRate, config.mChannels);
+  LOG("CreateAudioFormat with mimeType={}, mRate={}, channels={}",
+      config.mMimeType.get(), config.mRate, config.mChannels);
 
   nsString drmStubId;
   if (mProxy) {

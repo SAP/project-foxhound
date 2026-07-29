@@ -1,4 +1,3 @@
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -40,7 +39,7 @@ class InputStreamReader final : public nsIInputStreamCallback {
   nsresult Read(char* aBuffer, uint32_t aSize, uint32_t* aRead) {
     uint32_t done = 0;
     do {
-      uint32_t read;
+      uint32_t read = 0;
       nsresult rv = SyncRead(aBuffer + done, aSize - done, &read);
       if (NS_SUCCEEDED(rv) && read == 0) {
         break;
@@ -72,15 +71,19 @@ class InputStreamReader final : public nsIInputStreamCallback {
   ~InputStreamReader() = default;
 
   nsresult SyncRead(char* aBuffer, uint32_t aSize, uint32_t* aRead) {
-    while (1) {
+    while (true) {
       nsresult rv = mStream->Read(aBuffer, aSize, aRead);
       // All good.
-      if (rv == NS_BASE_STREAM_CLOSED || NS_SUCCEEDED(rv)) {
+      if (NS_SUCCEEDED(rv)) {
         return NS_OK;
       }
 
       // An error.
       if (NS_FAILED(rv) && rv != NS_BASE_STREAM_WOULD_BLOCK) {
+        if (rv == NS_BASE_STREAM_CLOSED) {
+          *aRead = 0;
+          return NS_OK;
+        }
         return rv;
       }
 
@@ -178,7 +181,7 @@ bool CloneableWithRangeMediaResource::HadCrossOriginRedirects() {
   }
 
   bool allRedirectsSameOrigin = false;
-  return NS_SUCCEEDED(timedChannel->GetAllRedirectsSameOrigin(
+  return NS_SUCCEEDED(timedChannel->GetAllRedirectsSameOriginIgnoringInternal(
              &allRedirectsSameOrigin)) &&
          !allRedirectsSameOrigin;
 }

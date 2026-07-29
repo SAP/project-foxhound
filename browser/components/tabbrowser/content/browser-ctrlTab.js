@@ -553,6 +553,14 @@ var ctrlTab = {
       return;
     }
 
+    // keyboard lock may have default prevented
+    if (
+      event.defaultPrevented ||
+      this.KeyboardLockUtils.mustWaitForKeyboardLockRequestedReply(event)
+    ) {
+      return;
+    }
+
     event.preventDefault();
     event.stopPropagation();
 
@@ -793,3 +801,7 @@ var ctrlTab = {
       [toggleEventListener]("popupshowing", this);
   },
 };
+
+ChromeUtils.defineESModuleGetters(ctrlTab, {
+  KeyboardLockUtils: "resource://gre/modules/KeyboardLockUtils.sys.mjs",
+});

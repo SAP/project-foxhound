@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -219,8 +218,8 @@ static nsresult GetCommandFromCommandline(
     nsACString const& aCommandWithArguments, nsACString& aCommand) {
   GUniquePtr<GError> error;
   gchar** argv = nullptr;
-  if (!g_shell_parse_argv(aCommandWithArguments.BeginReading(), nullptr, &argv,
-                          getter_Transfers(error)) ||
+  if (!g_shell_parse_argv(PromiseFlatCString(aCommandWithArguments).get(),
+                          nullptr, &argv, getter_Transfers(error)) ||
       !argv[0]) {
     g_warning("Cannot parse command with arguments: %s", error->message);
     g_strfreev(argv);
@@ -1280,7 +1279,7 @@ nsGIOService::CreateAppFromCommand(nsACString const& cmd,
 
   GUniquePtr<GError> error;
   RefPtr<GAppInfo> app_info = dont_AddRef(g_app_info_create_from_commandline(
-      commandWithoutArgs.BeginReading(), PromiseFlatCString(appName).get(),
+      commandWithoutArgs.get(), PromiseFlatCString(appName).get(),
       G_APP_INFO_CREATE_SUPPORTS_URIS, getter_Transfers(error)));
   if (!app_info) {
     g_warning("Cannot create application info from command: %s",
@@ -1290,7 +1289,7 @@ nsGIOService::CreateAppFromCommand(nsACString const& cmd,
 
   // Check if executable exist in path
   GUniquePtr<gchar> executableWithFullPath(
-      g_find_program_in_path(commandWithoutArgs.BeginReading()));
+      g_find_program_in_path(commandWithoutArgs.get()));
   if (!executableWithFullPath) {
     LOG("  quit, program not found in path");
     return NS_ERROR_FILE_NOT_FOUND;

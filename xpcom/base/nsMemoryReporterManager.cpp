@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,9 +18,7 @@
 #include "nsIOService.h"
 #include "nsIGlobalObject.h"
 #include "nsIXPConnect.h"
-#ifdef MOZ_GECKO_PROFILER
-#  include "GeckoProfilerReporter.h"
-#endif
+#include "GeckoProfilerReporter.h"
 #if defined(XP_UNIX) || defined(MOZ_DMD)
 #  include "nsMemoryInfoDumper.h"
 #endif
@@ -31,6 +27,7 @@
 #include "VRProcessManager.h"
 #include "mozilla/MemoryReportingProcess.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_memory.h"
 #include "mozilla/RDDProcessManager.h"
 #include "mozilla/Services.h"
 #include "mozilla/glean/XpcomMetrics.h"
@@ -473,7 +470,7 @@ static bool InSharedRegion(mach_vm_address_t aAddr, cpu_type_t aType) {
 
   cpu_type_t cpu_type;
   size_t len = sizeof(cpu_type);
-  if (sysctlbyname("sysctl.proc_cputype", &cpu_type, &len, NULL, 0) != 0) {
+  if (sysctlbyname("sysctl.proc_cputype", &cpu_type, &len, nullptr, 0) != 0) {
     return NS_ERROR_FAILURE;
   }
 
@@ -1758,11 +1755,9 @@ nsMemoryReporterManager::Init() {
     mStrongEternalReporters->AppendElement(new DeadlockDetectorReporter());
 #endif
 
-#ifdef MOZ_GECKO_PROFILER
     // We have to register this here rather than in profiler_init() because
     // profiler_init() runs prior to nsMemoryReporterManager's creation.
     mStrongEternalReporters->AppendElement(new GeckoProfilerReporter());
-#endif
 
 #ifdef MOZ_DMD
     mStrongEternalReporters->AppendElement(new mozilla::dmd::DMDReporter());
@@ -1971,8 +1966,8 @@ nsresult nsMemoryReporterManager::StartGettingReports() {
   if (!s->mChildrenPending.IsEmpty()) {
     nsCOMPtr<nsITimer> timer;
     rv = NS_NewTimerWithFuncCallback(
-        getter_AddRefs(timer), TimeoutCallback, this, kTimeoutLengthMS,
-        nsITimer::TYPE_ONE_SHOT,
+        getter_AddRefs(timer), TimeoutCallback, this,
+        StaticPrefs::memory_reporter_timeout(), nsITimer::TYPE_ONE_SHOT,
         "nsMemoryReporterManager::StartGettingReports"_ns);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       FinishReporting();
@@ -2803,8 +2798,7 @@ class MinimizeMemoryUsageRunnable : public Runnable {
 
 NS_IMETHODIMP
 nsMemoryReporterManager::MinimizeMemoryUsage(nsIRunnable* aCallback) {
-  RefPtr<MinimizeMemoryUsageRunnable> runnable =
-      new MinimizeMemoryUsageRunnable(aCallback);
+  RefPtr runnable = MakeRefPtr<MinimizeMemoryUsageRunnable>(aCallback);
 
   return NS_DispatchToMainThread(runnable);
 }
@@ -2874,17 +2868,15 @@ namespace mozilla {
     return NS_ERROR_FAILURE;                  \
   }
 
-nsresult RegisterStrongMemoryReporter(nsIMemoryReporter* aReporter) {
-  // Hold a strong reference to the argument to make sure it gets released if
-  // we return early below.
+nsresult RegisterStrongMemoryReporter(
+    already_AddRefed<nsIMemoryReporter> aReporter) {
   nsCOMPtr<nsIMemoryReporter> reporter = aReporter;
   GET_MEMORY_REPORTER_MANAGER(mgr)
   return mgr->RegisterStrongReporter(reporter);
 }
 
-nsresult RegisterStrongAsyncMemoryReporter(nsIMemoryReporter* aReporter) {
-  // Hold a strong reference to the argument to make sure it gets released if
-  // we return early below.
+nsresult RegisterStrongAsyncMemoryReporter(
+    already_AddRefed<nsIMemoryReporter> aReporter) {
   nsCOMPtr<nsIMemoryReporter> reporter = aReporter;
   GET_MEMORY_REPORTER_MANAGER(mgr)
   return mgr->RegisterStrongAsyncReporter(reporter);

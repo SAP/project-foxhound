@@ -25,5 +25,14 @@ made in the `reps` folder.
 
 And then run:
 ```
-$ npm publish devtools-reps
+$ npm publish
+```
+
+# Registering an access token to publish without 2FA
+
+NPM now requires to have 2FA setup with physical key.
+In case you don't have one, you may fallback on using access token.
+You have to run the following command, which isn't documented much on npm docs:
+```
+npm config set //registry.npmjs.org/:_authToken ${TOKEN}
 ```

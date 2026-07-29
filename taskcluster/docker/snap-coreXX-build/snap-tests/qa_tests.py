@@ -349,10 +349,12 @@ class QATests(SnapTestsBase):
         )
 
         self._wait.until(
-            lambda d: d.execute_script(
-                'return window.getComputedStyle(document.querySelector(".loadingInput.start"), "::after").getPropertyValue("visibility");'
+            lambda d: (
+                d.execute_script(
+                    'return window.getComputedStyle(document.querySelector(".loadingInput.start"), "::after").getPropertyValue("visibility");'
+                )
+                != "visible"
             )
-            != "visible"
         )
         # PDF.js can take time to settle and we don't have a nice way to wait
         # for an event on it
@@ -652,11 +654,13 @@ class QATests(SnapTestsBase):
         if context_change:
             self._driver.set_context("chrome")
         self._wait.until(
-            lambda d: self._driver.execute_script(
-                "return Services.clipboard.hasDataMatchingFlavors([arguments[0]], Ci.nsIClipboard.kGlobalClipboard);",
-                mime_type,
+            lambda d: (
+                self._driver.execute_script(
+                    "return Services.clipboard.hasDataMatchingFlavors([arguments[0]], Ci.nsIClipboard.kGlobalClipboard);",
+                    mime_type,
+                )
+                is True
             )
-            is True
         )
         if context_change:
             self._driver.set_context("content")
@@ -890,7 +894,8 @@ class QATests(SnapTestsBase):
                 EC.presence_of_element_located((By.ID, "downloadFolder"))
             )
         previous_folder = (
-            download_folder.get_property("value")
+            download_folder
+            .get_property("value")
             .replace("\u2066", "")
             .replace("\u2069", "")
         )

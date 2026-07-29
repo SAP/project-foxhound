@@ -291,7 +291,7 @@ async function toggleEventListenerCheckbox(tooltip, headerEl) {
   EventUtils.synthesizeMouseAtCenter(
     getHeaderCheckbox(headerEl),
     {},
-    headerEl.ownerGlobal
+    headerEl.documentGlobal
   );
   await onEventToggled;
   is(checkbox.checked, !previousValue, "The checkbox was toggled");

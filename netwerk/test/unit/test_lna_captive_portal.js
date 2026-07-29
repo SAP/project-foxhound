@@ -94,7 +94,7 @@ add_setup(async function () {
 
   // Configure LNA blocking
   Services.prefs.setBoolPref("network.lna.blocking", true);
-  Services.prefs.setBoolPref("network.localhost.prompt.testing", true);
+  Services.prefs.setBoolPref("network.loopback-network.prompt.testing", true);
   Services.prefs.setBoolPref("network.localnetwork.prompt.testing", true);
 
   registerCleanupFunction(async () => {
@@ -105,9 +105,11 @@ add_setup(async function () {
     Services.prefs.clearUserPref(PREF_CAPTIVE_MAXTIME);
     Services.prefs.clearUserPref(PREF_DNS_NATIVE_IS_LOCALHOST);
     Services.prefs.clearUserPref("network.lna.blocking");
-    Services.prefs.clearUserPref("network.localhost.prompt.testing");
+    Services.prefs.clearUserPref("network.loopback-network.prompt.testing");
     Services.prefs.clearUserPref("network.localnetwork.prompt.testing");
-    Services.prefs.clearUserPref("network.localhost.prompt.testing.allow");
+    Services.prefs.clearUserPref(
+      "network.loopback-network.prompt.testing.allow"
+    );
     Services.prefs.clearUserPref("network.localnetwork.prompt.testing.allow");
     Services.prefs.clearUserPref("network.lna.address_space.private.override");
 
@@ -241,7 +243,10 @@ add_task(async function test_localhost_blocked_during_captive_portal() {
   );
 
   // Set prompt to deny localhost access
-  Services.prefs.setBoolPref("network.localhost.prompt.testing.allow", false);
+  Services.prefs.setBoolPref(
+    "network.loopback-network.prompt.testing.allow",
+    false
+  );
 
   // Create a separate localhost server (without private override)
   // This will be treated as Local address space, not Private

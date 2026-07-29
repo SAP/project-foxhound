@@ -11,7 +11,6 @@ treeherder:
         'js-bench-v8': 'JavaScript shell benchmarks with Google V8'
         'node': 'Node tests'
         'py3': 'Python 3 unit tests'
-        'A': 'Android Gradle tests'
         'Bpgo': 'Profile-guided optimization builds'
         'Btime': 'Browsertime performance tests on Firefox'
         'Btime-cache': 'Browsertime performance tests on Firefox with populated bytecode cache.'
@@ -67,6 +66,8 @@ treeherder:
         'M': 'Mochitests'
         'M-f': 'Mochitest failures'
         'M-ioi': 'Mochitests tagged with inc-origin-init'
+        'M-sa': 'Mochitest with a browser restart between every test'
+        'M-sa-cf': 'Mochitest with a browser restart between every test for confirm failure'
         'M-ioi-cf': 'Mochitests tagged with inc-origin-init for confirm failure'
         'Mn': 'Marionette tests'
         'Mn-ioi': 'Marionette tests tagged with inc-origin-init'
@@ -76,6 +77,7 @@ treeherder:
         'MSIXs': 'Signing of Repack into MSIX package'
         'nt-trainhop': 'Desktop newtab trainhop tests'
         'nt-trainhop-cf': 'Desktop newtab trainhop tests for confirm failure'
+        'OpenH264': 'OpenH264 plugin'
         'Pup': "Puppeteer tests"
         'R': 'Reftests'
         'R-ioi': 'Reftests with incremental origin initialization enabled'
@@ -102,6 +104,7 @@ treeherder:
         'L10n': 'Localised Repacks'
         'L10n-Rpk': 'Localized Repackaged Repacks'
         'deb-L10n': 'Localized Debian Repacks'
+        'pkg-Rpk': 'MacOS pkg repackage'
         'BM': 'Beetmover'
         'BMR': 'Beetmover repackages'
         'BM-apt': 'Beetmover .deb packages'
@@ -162,6 +165,7 @@ treeherder:
         'Flatpak': 'Flatpak image generation'
         'langpack': 'Langpack sigatures and uploads'
         'TPS': 'Sync tests'
+        'UpInt': 'MAR integrity tests'
         'UV': 'Update verify'
         'UVnext': 'Update verify for esr-next'
         'pydep': 'python dependency update'
@@ -175,6 +179,8 @@ treeherder:
         'py': 'Python checks'
         'java': 'Java checks'
         'rust': 'Rust checks'
+        'tests': 'Test verification'
+        'android': 'Android checks'
         'Static-Analysis': 'Full tree static-analysis'
         'SS': 'Shadow scheduler'
         'Sentry': 'Sentry synchronization'
@@ -234,17 +240,23 @@ treeherder:
         'compose-engine': 'compose-engine'
         'compose-tabstray': 'compose-tabstray'
         'concept-accelerometer': 'concept-accelerometer'
+        'concept-ai-controls': 'concept-ai-controls'
         'concept-integrity': 'concept-integrity'
         'concept-awesomebar': 'concept-awesomebar'
         'concept-base': 'concept-base'
+        'concept-bookmarks-file': 'concept-bookmarks-file'
         'compose-base': 'compose-base'
+        'concept-bookmarks-parser': 'concept-bookmarks-parser'
         'compose-cfr': 'compose-cfr'
         'concept-engine': 'concept-engine'
         'concept-fetch': 'concept-fetch'
         'concept-llm': 'concept-llm'
         'concept-menu': 'concept-menu'
+        'concept-passwords-file': 'concept-passwords-file'
+        'concept-passwords-parser': 'concept-passwords-parser'
         'concept-push': 'concept-push'
         'concept-storage': 'concept-storage'
+        'concept-storage-bookmarks': 'concept-storage-bookmarks'
         'concept-sync': 'concept-sync'
         'concept-tabstray': 'concept-tabstray'
         'concept-toolbar': 'concept-toolbar'
@@ -258,9 +270,13 @@ treeherder:
         'feature-contextmenu': 'feature-contextmenu'
         'feature-customtabs': 'feature-customtabs'
         'feature-downloads': 'feature-downloads'
+        'feature-example': 'feature-example'
         'feature-findinpage': 'feature-findinpage'
         'feature-fxsuggest': 'feature-fxsuggest'
+        'feature-importer': 'feature-importer'
+        'feature-password-importer': 'feature-password-importer'
         'feature-intent': 'feature-intent'
+        'feature-ipprotection': 'feature-ipprotection'
         'feature-logins': 'feature-logins'
         'feature-media': 'feature-media'
         'feature-privatemode': 'feature-privatemode'
@@ -285,8 +301,11 @@ treeherder:
         'feature-webauthn': 'feature-webauthn'
         'feature-webcompat': 'feature-webcompat'
         'feature-webnotifications': 'feature-webnotifications'
+        'lib-ai-controls': 'lib-ai-controls'
         'lib-crash': 'lib-crash'
         'lib-auth': 'lib-auth'
+        'lib-bookmarks-file': 'lib-bookmarks-file'
+        'lib-bookmark-parser-jsoup': 'lib-bookmark-parser-jsoup'
         'lib-crash-sentry': 'lib-crash-sentry'
         'lib-crash-sentry-legacy': 'lib-crash-sentry-legacy'
         'lib-dataprotect': 'lib-dataprotect'
@@ -295,10 +314,13 @@ treeherder:
         'lib-llm-gemininano': 'lib-llm-gemininano'
         'lib-llm-mlpa': 'lib-llm-mlpa'
         'lib-integrity-googleplay': 'lib-integrity-googleplay'
+        'lib-passwords-file': 'lib-passwords-file'
+        'lib-password-parser-csv': 'lib-password-parser-csv'
         'lib-shake': 'lib-shake'
         'lib-publicsuffixlist': 'lib-publicsuffixlist'
         'lib-push-firebase': 'lib-push-firebase'
         'lib-state': 'lib-state'
+        'samples-acorn-components': 'samples-acorn-components'
         'samples-compose-browser': 'samples-compose-browser'
         'samples-crash': 'samples-crash'
         'samples-dataprotect': 'samples-dataprotect'
@@ -317,6 +339,7 @@ treeherder:
         'service-glean': 'service-glean'
         'service-location': 'service-location'
         'service-mars': 'service-mars'
+        'service-merino-manifest': 'service-merino-manifest'
         'service-nimbus': 'service-nimbus'
         'service-pocket': 'service-pocket'
         'service-sync-autofill': 'service-sync-autofill'
@@ -530,6 +553,7 @@ taskgraph:
     repositories:
         gecko:
             name: 'Mozilla Firefox'
+    decision-parameters: 'gecko_taskgraph.parameters:get_decision_parameters'
 
 workers:
     aliases:
@@ -558,6 +582,11 @@ workers:
             implementation: generic-worker
             os: windows
             worker-type: 'win11-a64-24h2-builder'
+        b-win-aarch64-25h2:
+            provisioner: '{trust-domain}-{level}'
+            implementation: generic-worker
+            os: windows
+            worker-type: 'win11-a64-25h2-builder'
         images.*:
             provisioner: '{trust-domain}-{level}'
             implementation: docker-worker
@@ -727,17 +756,7 @@ workers:
             implementation: docker-worker
             os: linux
             worker-type: 't-linux-docker-kvm'
-        t-linux-talos:
-            provisioner: releng-hardware
-            implementation: generic-worker
-            os: linux
-            worker-type: 'gecko-{alias}'
-        t-linux-netperf-1804:
-            provisioner: releng-hardware
-            implementation: generic-worker
-            os: linux
-            worker-type: 'gecko-{alias}'
-        t-linux-talos-1804:
+        t-linux-(talos|netperf)(-1804|-2404)?:
             provisioner: releng-hardware
             implementation: generic-worker
             os: linux
@@ -778,6 +797,11 @@ workers:
             os: macosx
             worker-type: 'gecko-{alias}'
         t-osx-1500-m4:
+            provisioner: releng-hardware
+            implementation: generic-worker
+            os: macosx
+            worker-type: 'gecko-{alias}'
+        t-osx-1500-m-vms:
             provisioner: releng-hardware
             implementation: generic-worker
             os: macosx
@@ -823,12 +847,22 @@ workers:
             implementation: generic-worker
             os: windows
             worker-type: '{alias}'
-        win11-64-24h2(|-gpu|-source|-large|-webgpu):
+        win11-64-24h2(|-gpu|-source|-large|-webgpu|-privileged):
+            provisioner: 'gecko-t'
+            implementation: generic-worker
+            os: windows
+            worker-type: '{alias}'
+        win11-64-25h2(|-gpu|-source|-large|-webgpu|-privileged):
             provisioner: 'gecko-t'
             implementation: generic-worker
             os: windows
             worker-type: '{alias}'
         win11-a64-24h2:
+            provisioner: 'gecko-t'
+            implementation: generic-worker
+            os: windows
+            worker-type: '{alias}'
+        win11-a64-25h2:
             provisioner: 'gecko-t'
             implementation: generic-worker
             os: windows

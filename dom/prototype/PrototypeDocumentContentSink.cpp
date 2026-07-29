@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -337,7 +335,7 @@ nsresult PrototypeDocumentContentSink::PrepareToWalk() {
   mDocument->UpdateDocumentStates(DocumentState::RTL_LOCALE, true);
 
   nsContentUtils::AddScriptRunner(
-      new nsDocElementCreatedNotificationRunner(mDocument));
+      MakeAndAddRef<nsDocElementCreatedNotificationRunner>(mDocument));
 
   // There'd better not be anything on the context stack at this
   // point! This is the basis case for our "induction" in
@@ -603,7 +601,7 @@ nsresult PrototypeDocumentContentSink::ResumeWalkInternal() {
 
             nsContentUtils::ReportToConsole(
                 nsIScriptError::warningFlag, "XUL Document"_ns, nullptr,
-                nsContentUtils::eXUL_PROPERTIES, "PINotInProlog2", params,
+                PropertiesFile::XUL_PROPERTIES, "PINotInProlog2", params,
                 SourceLocation(docURI.get()));
           }
 

@@ -126,8 +126,9 @@ function* testRichListbox(id)
     };
 
     listbox.ensureElementIsVisible(listbox.getItemAtIndex(aStart),true);
+    const firstVisibleIndex = listbox.getIndexOfFirstVisibleRow();
     yield sendWheelAndWait(listbox, 10, 10, event, ()=>{ return true; });
-    is(listbox.getIndexOfFirstVisibleRow(), aStart,
+    is(listbox.getIndexOfFirstVisibleRow(), firstVisibleIndex,
        "testRichListbox(" + id +  "): horizontal, starting " + aStart +
          " delta " + aDelta + " lineOrPageDeltaX " + aIntDelta +
          " aDeltaMode " + aDeltaMode);

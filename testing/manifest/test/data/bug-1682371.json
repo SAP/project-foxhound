@@ -27,7 +27,7 @@
         "text": "Created attachment 9366143\nBug 1682371 - mach skipfails part 2: enable ci r=jmaher"
       },
       {
-        "text": "Added new paths to https://searchfox.org/mozilla-central/source/js/src/make-source-package.py#190"
+        "text": "Added new paths to https://searchfox.org/firefox-main/source/js/src/make-source-package.py#190"
       },
       {
         "text": "https://hg.mozilla.org/mozilla-central/rev/812440d20ef2"

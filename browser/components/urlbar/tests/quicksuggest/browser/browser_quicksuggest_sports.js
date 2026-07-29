@@ -3,152 +3,55 @@
 
 // Tests sports suggestions.
 
-ChromeUtils.defineESModuleGetters(this, {
-  SportsSuggestions:
-    "moz-src:///browser/components/urlbar/private/SportsSuggestions.sys.mjs",
-});
-
 // Trying to avoid timeouts in TV mode, especially on debug Mac.
 requestLongerTimeout(3);
 
-// 2025-10-30 - game status is "past", without icon
-const SUGGESTION_VALUE_PAST = {
-  sport: "Sport 1",
-  query: "query 1",
-  date: "2025-10-30T17:00:00Z",
-  home_team: {
-    name: "Team 1 Home",
-    score: 5,
+const TEST_ICON_URL_HOME = TEST_BASE_URL + "moz.png";
+const TEST_ICON_URL_AWAY = TEST_BASE_URL + "moz-flipped.png";
+
+// Known sports, i.e., sports that have have fallback icons
+const KNOWN_SPORTS = [
+  {
+    sportCategory: "baseball",
+    fallbackIconName: "baseball",
+    sport: "MLB",
   },
-  away_team: {
-    name: "Team 1 Away",
-    score: 4,
+  {
+    sportCategory: "basketball",
+    fallbackIconName: "basketball",
+    sport: "NBA",
   },
-  status_type: "past",
-};
-
-// 2025-10-30 - game status is "past", with icon
-const SUGGESTION_VALUE_PAST_ICON = {
-  ...SUGGESTION_VALUE_PAST,
-  icon: "https://example.com/sports-icon",
-};
-
-// 2025-10-30 - game status is "past", without scores
-const SUGGESTION_VALUE_PAST_NO_SCORES = {
-  ...SUGGESTION_VALUE_PAST,
-  home_team: {
-    name: "Team 1 Home",
+  {
+    sportCategory: "cricket",
+    fallbackIconName: "cricket",
+    sport: "IPL",
   },
-  away_team: {
-    name: "Team 1 Away",
+  {
+    sportCategory: "football",
+    fallbackIconName: "american-football",
+    sport: "NFL",
   },
-};
-
-// 2025-10-31 - game status is "live", without icon
-const SUGGESTION_VALUE_LIVE = {
-  sport: "Sport 2",
-  query: "query 2",
-  date: "2025-10-31T17:00:00Z",
-  home_team: {
-    name: "Team 2 Home",
-    score: 1,
+  {
+    sportCategory: "golf",
+    fallbackIconName: "golf",
+    sport: "PGA",
   },
-  away_team: {
-    name: "Team 2 Away",
-    score: 0,
+  {
+    sportCategory: "hockey",
+    fallbackIconName: "hockey",
+    sport: "NHL",
   },
-  status_type: "live",
-};
-
-// 2025-10-31 - game status is "live", with icon
-const SUGGESTION_VALUE_LIVE_ICON = {
-  ...SUGGESTION_VALUE_LIVE,
-  icon: "https://example.com/sports-icon",
-};
-
-// 2025-10-31 - game status is "live", without scores
-const SUGGESTION_VALUE_LIVE_NO_SCORES = {
-  ...SUGGESTION_VALUE_LIVE,
-  home_team: {
-    name: "Team 2 Home",
+  {
+    sportCategory: "racing",
+    fallbackIconName: "racing",
+    sport: "F1",
   },
-  away_team: {
-    name: "Team 2 Away",
+  {
+    sportCategory: "soccer",
+    fallbackIconName: "soccer",
+    sport: "FIFA",
   },
-};
-
-// 2025-11-01 - game status is "scheduled", without icon
-const SUGGESTION_VALUE_SCHEDULED = {
-  sport: "Sport 3",
-  query: "query 3",
-  date: "2025-11-01T17:00:00Z",
-  home_team: {
-    name: "Team 3 Home",
-    score: null,
-  },
-  away_team: {
-    name: "Team 3 Away",
-    score: null,
-  },
-  status_type: "scheduled",
-};
-
-// 2025-11-01 - game status is "scheduled", with icon
-const SUGGESTION_VALUE_SCHEDULED_ICON = {
-  ...SUGGESTION_VALUE_SCHEDULED,
-  icon: "https://example.com/sports-icon",
-};
-
-// 2025-11-01 - game status is "scheduled", with icons in the team objects
-const SUGGESTION_VALUE_SCHEDULED_ICONS_IN_TEAMS = {
-  ...SUGGESTION_VALUE_SCHEDULED,
-  home_team: {
-    name: "Team 3 Home",
-    score: null,
-    icon: "https://example.com/sports-icon-home",
-  },
-  away_team: {
-    name: "Team 3 Away",
-    score: null,
-    icon: "https://example.com/sports-icon-away",
-  },
-};
-
-// NBA game (basketball), live
-const SUGGESTION_VALUE_NBA_LIVE = {
-  ...SUGGESTION_VALUE_LIVE,
-  sport: "NBA",
-};
-
-// NBA game (basketball), scheduled
-const SUGGESTION_VALUE_NBA_SCHEDULED = {
-  ...SUGGESTION_VALUE_SCHEDULED,
-  sport: "NBA",
-};
-
-// NFL game (American football), live
-const SUGGESTION_VALUE_NFL_LIVE = {
-  ...SUGGESTION_VALUE_LIVE,
-  sport: "NFL",
-};
-
-// NFL game (American football), scheduled
-const SUGGESTION_VALUE_NFL_SCHEDULED = {
-  ...SUGGESTION_VALUE_SCHEDULED,
-  sport: "NFL",
-};
-
-// NHL game (hockey), live
-const SUGGESTION_VALUE_NHL_LIVE = {
-  ...SUGGESTION_VALUE_LIVE,
-  sport: "NHL",
-};
-
-// NHL game (hockey), scheduled
-const SUGGESTION_VALUE_NHL_SCHEDULED = {
-  ...SUGGESTION_VALUE_SCHEDULED,
-  sport: "NHL",
-};
+];
 
 add_setup(async function () {
   await SearchTestUtils.installSearchExtension({}, { setAsDefault: true });
@@ -157,7 +60,7 @@ add_setup(async function () {
   });
 
   await QuickSuggestTestUtils.ensureQuickSuggestInit({
-    merinoSuggestions: merinoSuggestions([SUGGESTION_VALUE_PAST]),
+    merinoSuggestions: makeMerinoSuggestions([]),
     prefs: [
       ["sports.featureGate", true],
       ["suggest.sports", true],
@@ -166,1960 +69,585 @@ add_setup(async function () {
   });
 
   registerCleanupFunction(() => {
-    setNow(null);
+    UrlbarTestUtils.stubNowZonedDateTime(null);
   });
 });
 
-add_task(async function manyItems() {
-  await doTest({
-    now: "2025-10-31T14:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([
-      // games with unknown sports -- should use date chiclet
-      SUGGESTION_VALUE_PAST,
-      SUGGESTION_VALUE_LIVE,
-      SUGGESTION_VALUE_SCHEDULED,
-      // live games with known sports -- should use generic sports icons
-      SUGGESTION_VALUE_NBA_LIVE,
-      SUGGESTION_VALUE_NFL_LIVE,
-      SUGGESTION_VALUE_NHL_LIVE,
-      // scheduled games with known sports -- should use date chiclet
-      SUGGESTION_VALUE_NBA_SCHEDULED,
-      SUGGESTION_VALUE_NFL_SCHEDULED,
-      SUGGESTION_VALUE_NHL_SCHEDULED,
-    ]),
-    expectedItems: [
-      // games with unknown sports -- should use date chiclet
-      {
-        item: {
-          attributes: {
-            sport: "Sport 1",
-            status: "past",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-        },
-        "scheduled-date-chiclet-day": "30",
-        "scheduled-date-chiclet-month": "Oct",
-        "sport-name": "Sport 1",
-        "home-team-name": "Team 1 Home",
-        "home-team-score": "5",
-        "away-team-name": "Team 1 Away",
-        "away-team-score": "4",
-        date: "Yesterday",
-        status: "",
-      },
-      {
-        item: {
-          attributes: {
-            sport: "Sport 2",
-            status: "live",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-        },
-        "scheduled-date-chiclet-day": "31",
-        "scheduled-date-chiclet-month": "Oct",
-        "sport-name": "Sport 2",
-        "home-team-name": "Team 2 Home",
-        "home-team-score": "1",
-        "away-team-name": "Team 2 Away",
-        "away-team-score": "0",
-        date: "Today",
-        status: {
-          l10n: {
-            id: "urlbar-result-sports-status-live",
-          },
-        },
-      },
-      {
-        item: {
-          attributes: {
-            sport: "Sport 3",
-            status: "scheduled",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-        },
-        "scheduled-date-chiclet-day": "1",
-        "scheduled-date-chiclet-month": "Nov",
-        "sport-name": "Sport 3",
-        "team-names": {
-          l10n: {
-            id: "urlbar-result-sports-team-names",
-            args: {
-              homeTeam: "Team 3 Home",
-              awayTeam: "Team 3 Away",
-            },
-          },
-        },
-        date: {
-          l10n: {
-            id: "urlbar-result-sports-game-date-with-time",
-            args: {
-              date: "Tomorrow",
-              time: "1:00 PM GMT-4",
-            },
-          },
-        },
-        status: "",
-      },
-
-      // live games with known sports -- should use generic sports icons
-      {
-        item: {
-          attributes: {
-            sport: "NBA",
-            status: "live",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-          backgroundImage:
-            'url("chrome://browser/skin/urlbar/sports-basketball.svg")',
-        },
-        "scheduled-date-chiclet-day": {
-          isHidden: true,
-        },
-        "scheduled-date-chiclet-month": {
-          isHidden: true,
-        },
-        "sport-name": "NBA",
-        "home-team-name": "Team 2 Home",
-        "home-team-score": "1",
-        "away-team-name": "Team 2 Away",
-        "away-team-score": "0",
-        date: "Today",
-        status: {
-          l10n: {
-            id: "urlbar-result-sports-status-live",
-          },
-        },
-      },
-      {
-        item: {
-          attributes: {
-            sport: "NFL",
-            status: "live",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-          backgroundImage:
-            'url("chrome://browser/skin/urlbar/sports-american-football.svg")',
-        },
-        "scheduled-date-chiclet-day": {
-          isHidden: true,
-        },
-        "scheduled-date-chiclet-month": {
-          isHidden: true,
-        },
-        "sport-name": "NFL",
-        "home-team-name": "Team 2 Home",
-        "home-team-score": "1",
-        "away-team-name": "Team 2 Away",
-        "away-team-score": "0",
-        date: "Today",
-        status: {
-          l10n: {
-            id: "urlbar-result-sports-status-live",
-          },
-        },
-      },
-      {
-        item: {
-          attributes: {
-            sport: "NHL",
-            status: "live",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-          backgroundImage:
-            'url("chrome://browser/skin/urlbar/sports-hockey.svg")',
-        },
-        "scheduled-date-chiclet-day": {
-          isHidden: true,
-        },
-        "scheduled-date-chiclet-month": {
-          isHidden: true,
-        },
-        "sport-name": "NHL",
-        "home-team-name": "Team 2 Home",
-        "home-team-score": "1",
-        "away-team-name": "Team 2 Away",
-        "away-team-score": "0",
-        date: "Today",
-        status: {
-          l10n: {
-            id: "urlbar-result-sports-status-live",
-          },
-        },
-      },
-
-      // scheduled games with known sports -- should use date chiclet
-      {
-        item: {
-          attributes: {
-            sport: "NBA",
-            status: "scheduled",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-        },
-        "scheduled-date-chiclet-day": "1",
-        "scheduled-date-chiclet-month": "Nov",
-        "sport-name": "NBA",
-        "team-names": {
-          l10n: {
-            id: "urlbar-result-sports-team-names",
-            args: {
-              homeTeam: "Team 3 Home",
-              awayTeam: "Team 3 Away",
-            },
-          },
-        },
-        date: {
-          l10n: {
-            id: "urlbar-result-sports-game-date-with-time",
-            args: {
-              date: "Tomorrow",
-              time: "1:00 PM GMT-4",
-            },
-          },
-        },
-        status: "",
-      },
-      {
-        item: {
-          attributes: {
-            sport: "NFL",
-            status: "scheduled",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-        },
-        "scheduled-date-chiclet-day": "1",
-        "scheduled-date-chiclet-month": "Nov",
-        "sport-name": "NFL",
-        "team-names": {
-          l10n: {
-            id: "urlbar-result-sports-team-names",
-            args: {
-              homeTeam: "Team 3 Home",
-              awayTeam: "Team 3 Away",
-            },
-          },
-        },
-        date: {
-          l10n: {
-            id: "urlbar-result-sports-game-date-with-time",
-            args: {
-              date: "Tomorrow",
-              time: "1:00 PM GMT-4",
-            },
-          },
-        },
-        status: "",
-      },
-      {
-        item: {
-          attributes: {
-            sport: "NHL",
-            status: "scheduled",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-        },
-        "scheduled-date-chiclet-day": "1",
-        "scheduled-date-chiclet-month": "Nov",
-        "sport-name": "NHL",
-        "team-names": {
-          l10n: {
-            id: "urlbar-result-sports-team-names",
-            args: {
-              homeTeam: "Team 3 Home",
-              awayTeam: "Team 3 Away",
-            },
-          },
-        },
-        date: {
-          l10n: {
-            id: "urlbar-result-sports-game-date-with-time",
-            args: {
-              date: "Tomorrow",
-              time: "1:00 PM GMT-4",
-            },
-          },
-        },
-        status: "",
-      },
-    ],
-  });
-});
-
-add_task(async function past_noScores() {
-  await doTest({
-    now: "2025-10-31T14:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_PAST_NO_SCORES]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 1",
-            status: "past",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-        },
-        "scheduled-date-chiclet-day": "30",
-        "scheduled-date-chiclet-month": "Oct",
-        "sport-name": "Sport 1",
-        // should use "team-names" UI, not scores
-        "team-names": {
-          l10n: {
-            id: "urlbar-result-sports-team-names",
-            args: {
-              homeTeam: "Team 1 Home",
-              awayTeam: "Team 1 Away",
-            },
-          },
-        },
-        date: "Yesterday",
-        status: "",
-      },
-    ],
-  });
-});
-
-add_task(async function live_noScores() {
-  await doTest({
-    now: "2025-10-31T14:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_LIVE_NO_SCORES]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 2",
-            status: "live",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-        },
-        "scheduled-date-chiclet-day": "31",
-        "scheduled-date-chiclet-month": "Oct",
-        "sport-name": "Sport 2",
-        // should use "team-names" UI, not scores
-        "team-names": {
-          l10n: {
-            id: "urlbar-result-sports-team-names",
-            args: {
-              homeTeam: "Team 2 Home",
-              awayTeam: "Team 2 Away",
-            },
-          },
-        },
-        date: "Today",
-        status: {
-          l10n: {
-            id: "urlbar-result-sports-status-live",
-          },
-        },
-      },
-    ],
-  });
-});
-
-add_task(async function scheduled_iconsInTeams() {
-  await doTest({
-    now: "2025-10-31T14:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_SCHEDULED_ICONS_IN_TEAMS]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 3",
-            status: "scheduled",
-          },
-        },
-        image_container: {
-          attributes: {
-            "is-fallback": null,
-          },
-        },
-        "scheduled-date-chiclet-day": null,
-        "scheduled-date-chiclet-month": null,
-        // home team icon should be used
-        image: {
-          attributes: {
-            src: "https://example.com/sports-icon-home",
-          },
-        },
-        "sport-name": "Sport 3",
-        "team-names": {
-          l10n: {
-            id: "urlbar-result-sports-team-names",
-            args: {
-              homeTeam: "Team 3 Home",
-              awayTeam: "Team 3 Away",
-            },
-          },
-        },
-        date: {
-          l10n: {
-            id: "urlbar-result-sports-game-date-with-time",
-            args: {
-              date: "Tomorrow",
-              time: "1:00 PM GMT-4",
-            },
-          },
-        },
-        status: "",
-      },
-    ],
-  });
-});
-
-///////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
 //
-// Games with "past" status
+// Known sports tasks
 
-add_task(async function past_lastYear_noIcon() {
-  await doTest({
-    now: "2026-12-01T14:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_PAST]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 1",
-            status: "past",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-        },
-        "scheduled-date-chiclet-day": "30",
-        "scheduled-date-chiclet-month": "Oct",
-        "sport-name": "Sport 1",
-        "home-team-name": "Team 1 Home",
-        "home-team-score": "5",
-        "away-team-name": "Team 1 Away",
-        "away-team-score": "4",
-        date: "Oct 30, 2025",
-        status: "",
-      },
-    ],
-  });
-});
-
-add_task(async function past_lastYear_icon() {
-  await doTest({
-    now: "2026-12-01T14:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_PAST_ICON]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 1",
-            status: "past",
-          },
-        },
-        image_container: {
-          attributes: {
-            "is-fallback": null,
-          },
-        },
-        "scheduled-date-chiclet-day": null,
-        "scheduled-date-chiclet-month": null,
-        image: {
-          attributes: {
-            src: "https://example.com/sports-icon",
-          },
-        },
-        "sport-name": "Sport 1",
-        "home-team-name": "Team 1 Home",
-        "home-team-score": "5",
-        "away-team-name": "Team 1 Away",
-        "away-team-score": "4",
-        date: "Oct 30, 2025",
-        status: "",
-      },
-    ],
-  });
-});
-
-add_task(async function past_beforeYesterday_noIcon() {
-  await doTest({
-    now: "2025-12-01T14:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_PAST]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 1",
-            status: "past",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-        },
-        "scheduled-date-chiclet-day": "30",
-        "scheduled-date-chiclet-month": "Oct",
-        "sport-name": "Sport 1",
-        "home-team-name": "Team 1 Home",
-        "home-team-score": "5",
-        "away-team-name": "Team 1 Away",
-        "away-team-score": "4",
-        date: "Oct 30",
-        status: "",
-      },
-    ],
-  });
-});
-
-add_task(async function past_beforeYesterday_icon() {
-  await doTest({
-    now: "2025-12-01T14:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_PAST_ICON]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 1",
-            status: "past",
-          },
-        },
-        image_container: {
-          attributes: {
-            "is-fallback": null,
-          },
-        },
-        "scheduled-date-chiclet-day": null,
-        "scheduled-date-chiclet-month": null,
-        image: {
-          attributes: {
-            src: "https://example.com/sports-icon",
-          },
-        },
-        "sport-name": "Sport 1",
-        "home-team-name": "Team 1 Home",
-        "home-team-score": "5",
-        "away-team-name": "Team 1 Away",
-        "away-team-score": "4",
-        date: "Oct 30",
-        status: "",
-      },
-    ],
-  });
-});
-
-add_task(async function past_yesterday_noIcon() {
-  await doTest({
-    now: "2025-10-31T14:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_PAST]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 1",
-            status: "past",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-        },
-        "scheduled-date-chiclet-day": "30",
-        "scheduled-date-chiclet-month": "Oct",
-        "sport-name": "Sport 1",
-        "home-team-name": "Team 1 Home",
-        "home-team-score": "5",
-        "away-team-name": "Team 1 Away",
-        "away-team-score": "4",
-        date: "Yesterday",
-        status: "",
-      },
-    ],
-  });
-});
-
-add_task(async function past_yesterday_icon() {
-  await doTest({
-    now: "2025-10-31T14:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_PAST_ICON]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 1",
-            status: "past",
-          },
-        },
-        image_container: {
-          attributes: {
-            "is-fallback": null,
-          },
-        },
-        "scheduled-date-chiclet-day": null,
-        "scheduled-date-chiclet-month": null,
-        image: {
-          attributes: {
-            src: "https://example.com/sports-icon",
-          },
-        },
-        "sport-name": "Sport 1",
-        "home-team-name": "Team 1 Home",
-        "home-team-score": "5",
-        "away-team-name": "Team 1 Away",
-        "away-team-score": "4",
-        date: "Yesterday",
-        status: "",
-      },
-    ],
-  });
-});
-
-add_task(async function past_todayPast_noIcon() {
-  await doTest({
-    now: "2025-10-30T22:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_PAST]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 1",
-            status: "past",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-        },
-        "scheduled-date-chiclet-day": "30",
-        "scheduled-date-chiclet-month": "Oct",
-        "sport-name": "Sport 1",
-        "home-team-name": "Team 1 Home",
-        "home-team-score": "5",
-        "away-team-name": "Team 1 Away",
-        "away-team-score": "4",
-        date: "Today",
-        status: {
-          l10n: {
-            id: "urlbar-result-sports-status-final",
-          },
-        },
-      },
-    ],
-  });
-});
-
-add_task(async function past_todayPast_icon() {
-  await doTest({
-    now: "2025-10-30T22:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_PAST_ICON]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 1",
-            status: "past",
-          },
-        },
-        image_container: {
-          attributes: {
-            "is-fallback": null,
-          },
-        },
-        "scheduled-date-chiclet-day": null,
-        "scheduled-date-chiclet-month": null,
-        image: {
-          attributes: {
-            src: "https://example.com/sports-icon",
-          },
-        },
-        "sport-name": "Sport 1",
-        "home-team-name": "Team 1 Home",
-        "home-team-score": "5",
-        "away-team-name": "Team 1 Away",
-        "away-team-score": "4",
-        date: "Today",
-        status: {
-          l10n: {
-            id: "urlbar-result-sports-status-final",
-          },
-        },
-      },
-    ],
-  });
-});
-
-// This shouldn't normally happen but technically it could.
-add_task(async function past_todayFuture_noIcon() {
-  await doTest({
-    now: "2025-10-30T09:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_PAST]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 1",
-            status: "past",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-        },
-        "scheduled-date-chiclet-day": "30",
-        "scheduled-date-chiclet-month": "Oct",
-        "sport-name": "Sport 1",
-        "home-team-name": "Team 1 Home",
-        "home-team-score": "5",
-        "away-team-name": "Team 1 Away",
-        "away-team-score": "4",
-        date: "Today",
-        status: {
-          l10n: {
-            id: "urlbar-result-sports-status-final",
-          },
-        },
-      },
-    ],
-  });
-});
-
-// This shouldn't normally happen but technically it could.
-add_task(async function past_todayFuture_icon() {
-  await doTest({
-    now: "2025-10-30T09:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_PAST_ICON]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 1",
-            status: "past",
-          },
-        },
-        image_container: {
-          attributes: {
-            "is-fallback": null,
-          },
-        },
-        "scheduled-date-chiclet-day": null,
-        "scheduled-date-chiclet-month": null,
-        image: {
-          attributes: {
-            src: "https://example.com/sports-icon",
-          },
-        },
-        "sport-name": "Sport 1",
-        "home-team-name": "Team 1 Home",
-        "home-team-score": "5",
-        "away-team-name": "Team 1 Away",
-        "away-team-score": "4",
-        date: "Today",
-        status: {
-          l10n: {
-            id: "urlbar-result-sports-status-final",
-          },
-        },
-      },
-    ],
-  });
-});
-
-///////////////////////////////////////////////////////////////////////////////
+// * Known sports
+// * In each suggestion value, both teams have icons
+// * Game statuses: past
 //
-// Games with "live" status
-
-// This probably shouldn't happen but it could, especially if the game is in a
-// different time zone from the user and/or happening around the new year.
-add_task(async function live_lastYear_noIcon() {
-  await doTest({
-    now: "2026-12-01T14:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_LIVE]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 2",
-            status: "live",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-        },
-        "scheduled-date-chiclet-day": "31",
-        "scheduled-date-chiclet-month": "Oct",
-        "sport-name": "Sport 2",
-        "home-team-name": "Team 2 Home",
-        "home-team-score": "1",
-        "away-team-name": "Team 2 Away",
-        "away-team-score": "0",
-        date: "Oct 31, 2025",
-        status: {
-          l10n: {
-            id: "urlbar-result-sports-status-live",
-          },
-        },
-      },
-    ],
-  });
-});
-
-// This probably shouldn't happen but it could, especially if the game is in a
-// different time zone from the user and/or happening around the new year.
-add_task(async function live_lastYear_icon() {
-  await doTest({
-    now: "2026-12-01T14:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_LIVE_ICON]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 2",
-            status: "live",
-          },
-        },
-        image_container: {
-          attributes: {
-            "is-fallback": null,
-          },
-        },
-        "scheduled-date-chiclet-day": null,
-        "scheduled-date-chiclet-month": null,
-        image: {
-          attributes: {
-            src: "https://example.com/sports-icon",
-          },
-        },
-        "sport-name": "Sport 2",
-        "home-team-name": "Team 2 Home",
-        "home-team-score": "1",
-        "away-team-name": "Team 2 Away",
-        "away-team-score": "0",
-        date: "Oct 31, 2025",
-        status: {
-          l10n: {
-            id: "urlbar-result-sports-status-live",
-          },
-        },
-      },
-    ],
-  });
-});
-
-// This probably shouldn't happen but technically it could.
-add_task(async function live_beforeYesterday_noIcon() {
-  await doTest({
-    now: "2025-12-01T14:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_LIVE]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 2",
-            status: "live",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-        },
-        "scheduled-date-chiclet-day": "31",
-        "scheduled-date-chiclet-month": "Oct",
-        "sport-name": "Sport 2",
-        "home-team-name": "Team 2 Home",
-        "home-team-score": "1",
-        "away-team-name": "Team 2 Away",
-        "away-team-score": "0",
-        date: "Oct 31",
-        status: {
-          l10n: {
-            id: "urlbar-result-sports-status-live",
-          },
-        },
-      },
-    ],
-  });
-});
-
-// This probably shouldn't happen but technically it could.
-add_task(async function live_beforeYesterday_icon() {
-  await doTest({
-    now: "2025-12-01T14:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_LIVE_ICON]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 2",
-            status: "live",
-          },
-        },
-        image_container: {
-          attributes: {
-            "is-fallback": null,
-          },
-        },
-        "scheduled-date-chiclet-day": null,
-        "scheduled-date-chiclet-month": null,
-        image: {
-          attributes: {
-            src: "https://example.com/sports-icon",
-          },
-        },
-        "sport-name": "Sport 2",
-        "home-team-name": "Team 2 Home",
-        "home-team-score": "1",
-        "away-team-name": "Team 2 Away",
-        "away-team-score": "0",
-        date: "Oct 31",
-        status: {
-          l10n: {
-            id: "urlbar-result-sports-status-live",
-          },
-        },
-      },
-    ],
-  });
-});
-
-// This probably shouldn't happen but it could, especially if the game is in a
-// different time zone from the user.
-add_task(async function live_yesterday_noIcon() {
-  await doTest({
-    now: "2025-11-01T14:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_LIVE]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 2",
-            status: "live",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-        },
-        "scheduled-date-chiclet-day": "31",
-        "scheduled-date-chiclet-month": "Oct",
-        "sport-name": "Sport 2",
-        "home-team-name": "Team 2 Home",
-        "home-team-score": "1",
-        "away-team-name": "Team 2 Away",
-        "away-team-score": "0",
-        date: "Yesterday",
-        status: {
-          l10n: {
-            id: "urlbar-result-sports-status-live",
-          },
-        },
-      },
-    ],
-  });
-});
-
-// This probably shouldn't happen but it could, especially if the game is in a
-// different time zone from the user.
-add_task(async function live_yesterday_icon() {
-  await doTest({
-    now: "2025-11-01T14:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_LIVE_ICON]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 2",
-            status: "live",
-          },
-        },
-        image_container: {
-          attributes: {
-            "is-fallback": null,
-          },
-        },
-        "scheduled-date-chiclet-day": null,
-        "scheduled-date-chiclet-month": null,
-        image: {
-          attributes: {
-            src: "https://example.com/sports-icon",
-          },
-        },
-        "sport-name": "Sport 2",
-        "home-team-name": "Team 2 Home",
-        "home-team-score": "1",
-        "away-team-name": "Team 2 Away",
-        "away-team-score": "0",
-        date: "Yesterday",
-        status: {
-          l10n: {
-            id: "urlbar-result-sports-status-live",
-          },
-        },
-      },
-    ],
-  });
-});
-
-add_task(async function live_todayPast_noIcon() {
+// => Each item should show both teams' icons
+add_task(async function knownSports_bothIcons_past() {
   await doTest({
     now: "2025-10-31T14:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_LIVE]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 2",
-            status: "live",
-          },
+    data: KNOWN_SPORTS.map(data =>
+      makeValueAndExpectedItem({
+        ...data,
+        date: "2025-10-30T17:00:00Z",
+        statusType: "past",
+        homeTeam: {
+          icon: TEST_ICON_URL_HOME,
+          score: 1,
         },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
+        awayTeam: {
+          icon: TEST_ICON_URL_AWAY,
+          score: 0,
         },
-        "scheduled-date-chiclet-day": "31",
-        "scheduled-date-chiclet-month": "Oct",
-        "sport-name": "Sport 2",
-        "home-team-name": "Team 2 Home",
-        "home-team-score": "1",
-        "away-team-name": "Team 2 Away",
-        "away-team-score": "0",
-        date: "Today",
-        status: {
-          l10n: {
-            id: "urlbar-result-sports-status-live",
-          },
+        expected: {
+          isAwayTeamImageHidden: false,
         },
-      },
-    ],
+      })
+    ),
   });
 });
 
-add_task(async function live_todayPast_icon() {
+// * Known sports
+// * In each suggestion value, both teams have icons
+// * Game statuses: live
+//
+// => Each item should show both teams' icons
+add_task(async function knownSports_bothIcons_live() {
   await doTest({
     now: "2025-10-31T14:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_LIVE_ICON]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 2",
-            status: "live",
-          },
+    data: KNOWN_SPORTS.map(data =>
+      makeValueAndExpectedItem({
+        ...data,
+        date: "2025-10-31T17:00:00Z",
+        statusType: "live",
+        homeTeam: {
+          icon: TEST_ICON_URL_HOME,
+          score: 1,
         },
-        image_container: {
-          attributes: {
-            "is-fallback": null,
-          },
+        awayTeam: {
+          icon: TEST_ICON_URL_AWAY,
+          score: 0,
         },
-        "scheduled-date-chiclet-day": null,
-        "scheduled-date-chiclet-month": null,
-        image: {
-          attributes: {
-            src: "https://example.com/sports-icon",
-          },
+        expected: {
+          isAwayTeamImageHidden: false,
         },
-        "sport-name": "Sport 2",
-        "home-team-name": "Team 2 Home",
-        "home-team-score": "1",
-        "away-team-name": "Team 2 Away",
-        "away-team-score": "0",
-        date: "Today",
-        status: {
-          l10n: {
-            id: "urlbar-result-sports-status-live",
-          },
-        },
-      },
-    ],
+      })
+    ),
   });
 });
 
-// This shouldn't normally happen but technically it could.
-add_task(async function live_todayFuture_noIcon() {
-  await doTest({
-    now: "2025-10-31T09:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_LIVE]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 2",
-            status: "live",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-        },
-        "scheduled-date-chiclet-day": "31",
-        "scheduled-date-chiclet-month": "Oct",
-        "sport-name": "Sport 2",
-        "home-team-name": "Team 2 Home",
-        "home-team-score": "1",
-        "away-team-name": "Team 2 Away",
-        "away-team-score": "0",
-        date: "Today",
-        status: {
-          l10n: {
-            id: "urlbar-result-sports-status-live",
-          },
-        },
-      },
-    ],
-  });
-});
-
-// This shouldn't normally happen but technically it could.
-add_task(async function live_todayFuture_icon() {
-  await doTest({
-    now: "2025-10-31T09:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_LIVE_ICON]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 2",
-            status: "live",
-          },
-        },
-        image_container: {
-          attributes: {
-            "is-fallback": null,
-          },
-        },
-        "scheduled-date-chiclet-day": null,
-        "scheduled-date-chiclet-month": null,
-        image: {
-          attributes: {
-            src: "https://example.com/sports-icon",
-          },
-        },
-        "sport-name": "Sport 2",
-        "home-team-name": "Team 2 Home",
-        "home-team-score": "1",
-        "away-team-name": "Team 2 Away",
-        "away-team-score": "0",
-        date: "Today",
-        status: {
-          l10n: {
-            id: "urlbar-result-sports-status-live",
-          },
-        },
-      },
-    ],
-  });
-});
-
-// This shouldn't normally happen but technically it could.
-add_task(async function live_tomorrow_noIcon() {
-  await doTest({
-    now: "2025-10-30T09:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_LIVE]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 2",
-            status: "live",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-        },
-        "scheduled-date-chiclet-day": "31",
-        "scheduled-date-chiclet-month": "Oct",
-        "sport-name": "Sport 2",
-        "home-team-name": "Team 2 Home",
-        "home-team-score": "1",
-        "away-team-name": "Team 2 Away",
-        "away-team-score": "0",
-        date: "Tomorrow",
-        status: {
-          l10n: {
-            id: "urlbar-result-sports-status-live",
-          },
-        },
-      },
-    ],
-  });
-});
-
-// This shouldn't normally happen but technically it could.
-add_task(async function live_tomorrow_icon() {
-  await doTest({
-    now: "2025-10-30T09:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_LIVE_ICON]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 2",
-            status: "live",
-          },
-        },
-        image_container: {
-          attributes: {
-            "is-fallback": null,
-          },
-        },
-        "scheduled-date-chiclet-day": null,
-        "scheduled-date-chiclet-month": null,
-        image: {
-          attributes: {
-            src: "https://example.com/sports-icon",
-          },
-        },
-        "sport-name": "Sport 2",
-        "home-team-name": "Team 2 Home",
-        "home-team-score": "1",
-        "away-team-name": "Team 2 Away",
-        "away-team-score": "0",
-        date: "Tomorrow",
-        status: {
-          l10n: {
-            id: "urlbar-result-sports-status-live",
-          },
-        },
-      },
-    ],
-  });
-});
-
-///////////////////////////////
-
-// Games with "scheduled" status
-
-// This shouldn't normally happen but technically it could.
-add_task(async function scheduled_lastYear_noIcon() {
-  await doTest({
-    now: "2026-12-01T12:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_SCHEDULED]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 3",
-            status: "scheduled",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-        },
-        "scheduled-date-chiclet-day": "1",
-        "scheduled-date-chiclet-month": "Nov",
-        "sport-name": "Sport 3",
-        "team-names": {
-          l10n: {
-            id: "urlbar-result-sports-team-names",
-            args: {
-              homeTeam: "Team 3 Home",
-              awayTeam: "Team 3 Away",
-            },
-          },
-        },
-        date: "Nov 1, 2025",
-        status: "",
-      },
-    ],
-  });
-});
-
-// This shouldn't normally happen but technically it could.
-add_task(async function scheduled_lastYear_icon() {
-  await doTest({
-    now: "2026-12-01T12:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_SCHEDULED_ICON]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 3",
-            status: "scheduled",
-          },
-        },
-        image_container: {
-          attributes: {
-            "is-fallback": null,
-          },
-        },
-        "scheduled-date-chiclet-day": null,
-        "scheduled-date-chiclet-month": null,
-        image: {
-          attributes: {
-            src: "https://example.com/sports-icon",
-          },
-        },
-        "sport-name": "Sport 3",
-        "team-names": {
-          l10n: {
-            id: "urlbar-result-sports-team-names",
-            args: {
-              homeTeam: "Team 3 Home",
-              awayTeam: "Team 3 Away",
-            },
-          },
-        },
-        date: "Nov 1, 2025",
-        status: "",
-      },
-    ],
-  });
-});
-
-// This shouldn't normally happen but technically it could.
-add_task(async function scheduled_beforeYesterday_noIcon() {
-  await doTest({
-    now: "2025-12-01T12:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_SCHEDULED]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 3",
-            status: "scheduled",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-        },
-        "scheduled-date-chiclet-day": "1",
-        "scheduled-date-chiclet-month": "Nov",
-        "sport-name": "Sport 3",
-        "team-names": {
-          l10n: {
-            id: "urlbar-result-sports-team-names",
-            args: {
-              homeTeam: "Team 3 Home",
-              awayTeam: "Team 3 Away",
-            },
-          },
-        },
-        date: "Nov 1",
-        status: "",
-      },
-    ],
-  });
-});
-
-// This shouldn't normally happen but technically it could.
-add_task(async function scheduled_beforeYesterday_icon() {
-  await doTest({
-    now: "2025-12-01T12:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_SCHEDULED_ICON]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 3",
-            status: "scheduled",
-          },
-        },
-        image_container: {
-          attributes: {
-            "is-fallback": null,
-          },
-        },
-        "scheduled-date-chiclet-day": null,
-        "scheduled-date-chiclet-month": null,
-        image: {
-          attributes: {
-            src: "https://example.com/sports-icon",
-          },
-        },
-        "sport-name": "Sport 3",
-        "team-names": {
-          l10n: {
-            id: "urlbar-result-sports-team-names",
-            args: {
-              homeTeam: "Team 3 Home",
-              awayTeam: "Team 3 Away",
-            },
-          },
-        },
-        date: "Nov 1",
-        status: "",
-      },
-    ],
-  });
-});
-
-// This shouldn't normally happen but technically it could.
-add_task(async function scheduled_yesterday_noIcon() {
-  await doTest({
-    now: "2025-11-02T12:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_SCHEDULED]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 3",
-            status: "scheduled",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-        },
-        "scheduled-date-chiclet-day": "1",
-        "scheduled-date-chiclet-month": "Nov",
-        "sport-name": "Sport 3",
-        "team-names": {
-          l10n: {
-            id: "urlbar-result-sports-team-names",
-            args: {
-              homeTeam: "Team 3 Home",
-              awayTeam: "Team 3 Away",
-            },
-          },
-        },
-        date: "Yesterday",
-        status: "",
-      },
-    ],
-  });
-});
-
-// This shouldn't normally happen but technically it could.
-add_task(async function scheduled_yesterday_icon() {
-  await doTest({
-    now: "2025-11-02T12:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_SCHEDULED_ICON]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 3",
-            status: "scheduled",
-          },
-        },
-        image_container: {
-          attributes: {
-            "is-fallback": null,
-          },
-        },
-        "scheduled-date-chiclet-day": null,
-        "scheduled-date-chiclet-month": null,
-        image: {
-          attributes: {
-            src: "https://example.com/sports-icon",
-          },
-        },
-        "sport-name": "Sport 3",
-        "team-names": {
-          l10n: {
-            id: "urlbar-result-sports-team-names",
-            args: {
-              homeTeam: "Team 3 Home",
-              awayTeam: "Team 3 Away",
-            },
-          },
-        },
-        date: "Yesterday",
-        status: "",
-      },
-    ],
-  });
-});
-
-// This shouldn't normally happen but technically it could.
-add_task(async function scheduled_todayPast_noIcon() {
-  await doTest({
-    now: "2025-11-01T22:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_SCHEDULED]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 3",
-            status: "scheduled",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-        },
-        "scheduled-date-chiclet-day": "1",
-        "scheduled-date-chiclet-month": "Nov",
-        "sport-name": "Sport 3",
-        "team-names": {
-          l10n: {
-            id: "urlbar-result-sports-team-names",
-            args: {
-              homeTeam: "Team 3 Home",
-              awayTeam: "Team 3 Away",
-            },
-          },
-        },
-        date: {
-          l10n: {
-            id: "urlbar-result-sports-game-date-with-time",
-            args: {
-              date: "Today",
-              time: "1:00 PM GMT-4",
-            },
-          },
-        },
-        status: "",
-      },
-    ],
-  });
-});
-
-// This shouldn't normally happen but technically it could.
-add_task(async function scheduled_todayPast_icon() {
-  await doTest({
-    now: "2025-11-01T22:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_SCHEDULED_ICON]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 3",
-            status: "scheduled",
-          },
-        },
-        image_container: {
-          attributes: {
-            "is-fallback": null,
-          },
-        },
-        "scheduled-date-chiclet-day": null,
-        "scheduled-date-chiclet-month": null,
-        image: {
-          attributes: {
-            src: "https://example.com/sports-icon",
-          },
-        },
-        "sport-name": "Sport 3",
-        "team-names": {
-          l10n: {
-            id: "urlbar-result-sports-team-names",
-            args: {
-              homeTeam: "Team 3 Home",
-              awayTeam: "Team 3 Away",
-            },
-          },
-        },
-        date: {
-          l10n: {
-            id: "urlbar-result-sports-game-date-with-time",
-            args: {
-              date: "Today",
-              time: "1:00 PM GMT-4",
-            },
-          },
-        },
-        status: "",
-      },
-    ],
-  });
-});
-
-add_task(async function scheduled_todayFuture_noIcon() {
-  await doTest({
-    now: "2025-11-01T09:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_SCHEDULED]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 3",
-            status: "scheduled",
-          },
-        },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
-        },
-        "scheduled-date-chiclet-day": "1",
-        "scheduled-date-chiclet-month": "Nov",
-        "sport-name": "Sport 3",
-        "team-names": {
-          l10n: {
-            id: "urlbar-result-sports-team-names",
-            args: {
-              homeTeam: "Team 3 Home",
-              awayTeam: "Team 3 Away",
-            },
-          },
-        },
-        date: {
-          l10n: {
-            id: "urlbar-result-sports-game-date-with-time",
-            args: {
-              date: "Today",
-              time: "1:00 PM GMT-4",
-            },
-          },
-        },
-        status: "",
-      },
-    ],
-  });
-});
-
-add_task(async function scheduled_todayFuture_icon() {
-  await doTest({
-    now: "2025-11-01T09:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_SCHEDULED_ICON]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 3",
-            status: "scheduled",
-          },
-        },
-        image_container: {
-          attributes: {
-            "is-fallback": null,
-          },
-        },
-        "scheduled-date-chiclet-day": null,
-        "scheduled-date-chiclet-month": null,
-        image: {
-          attributes: {
-            src: "https://example.com/sports-icon",
-          },
-        },
-        "sport-name": "Sport 3",
-        "team-names": {
-          l10n: {
-            id: "urlbar-result-sports-team-names",
-            args: {
-              homeTeam: "Team 3 Home",
-              awayTeam: "Team 3 Away",
-            },
-          },
-        },
-        date: {
-          l10n: {
-            id: "urlbar-result-sports-game-date-with-time",
-            args: {
-              date: "Today",
-              time: "1:00 PM GMT-4",
-            },
-          },
-        },
-        status: "",
-      },
-    ],
-  });
-});
-
-add_task(async function scheduled_tomorrow_noIcon() {
+// * Known sports
+// * In each suggestion value, both teams have icons
+// * Game statuses: scheduled
+//
+// => Each item should show both teams' icons
+add_task(async function knownSports_bothIcons_scheduled() {
   await doTest({
     now: "2025-10-31T14:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_SCHEDULED]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 3",
-            status: "scheduled",
-          },
+    data: KNOWN_SPORTS.map(data =>
+      makeValueAndExpectedItem({
+        ...data,
+        date: "2025-11-01T17:00:00Z",
+        statusType: "scheduled",
+        homeTeam: {
+          icon: TEST_ICON_URL_HOME,
         },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
+        awayTeam: {
+          icon: TEST_ICON_URL_AWAY,
         },
-        "scheduled-date-chiclet-day": "1",
-        "scheduled-date-chiclet-month": "Nov",
-        "sport-name": "Sport 3",
-        "team-names": {
-          l10n: {
-            id: "urlbar-result-sports-team-names",
-            args: {
-              homeTeam: "Team 3 Home",
-              awayTeam: "Team 3 Away",
-            },
-          },
+        expected: {
+          isAwayTeamImageHidden: false,
         },
-        date: {
-          l10n: {
-            id: "urlbar-result-sports-game-date-with-time",
-            args: {
-              date: "Tomorrow",
-              time: "1:00 PM GMT-4",
-            },
-          },
-        },
-        status: "",
-      },
-    ],
+      })
+    ),
   });
 });
 
-add_task(async function scheduled_tomorrow_icon() {
+// * Known sports
+// * In each suggestion value, neither team has an icon
+// * Game statuses: past
+//
+// => Each item should show a single fallback icon
+add_task(async function knownSports_noIcons_past() {
   await doTest({
     now: "2025-10-31T14:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_SCHEDULED_ICON]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 3",
-            status: "scheduled",
-          },
+    data: KNOWN_SPORTS.map(data =>
+      makeValueAndExpectedItem({
+        ...data,
+        date: "2025-10-30T17:00:00Z",
+        statusType: "past",
+        homeTeam: {
+          score: 1,
         },
-        image_container: {
-          attributes: {
-            "is-fallback": null,
-          },
+        awayTeam: {
+          score: 0,
         },
-        "scheduled-date-chiclet-day": null,
-        "scheduled-date-chiclet-month": null,
-        image: {
-          attributes: {
-            src: "https://example.com/sports-icon",
-          },
+        expected: {
+          isAwayTeamImageHidden: true,
         },
-        "sport-name": "Sport 3",
-        "team-names": {
-          l10n: {
-            id: "urlbar-result-sports-team-names",
-            args: {
-              homeTeam: "Team 3 Home",
-              awayTeam: "Team 3 Away",
-            },
-          },
-        },
-        date: {
-          l10n: {
-            id: "urlbar-result-sports-game-date-with-time",
-            args: {
-              date: "Tomorrow",
-              time: "1:00 PM GMT-4",
-            },
-          },
-        },
-        status: "",
-      },
-    ],
+      })
+    ),
   });
 });
 
-add_task(async function scheduled_afterTomorrow_noIcon() {
+// * Known sports
+// * In each suggestion value, neither team has an icon
+// * Game statuses: live
+//
+// => Each item should show a single fallback icon
+add_task(async function knownSports_noIcons_live() {
   await doTest({
-    now: [
-      // date is same year
-      "2025-10-01T14:00:00-04:00[-04:00]",
-      // date is next year, UI should be the same
-      "2024-10-01T14:00:00-04:00[-04:00]",
-    ],
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_SCHEDULED]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 3",
-            status: "scheduled",
-          },
+    now: "2025-10-31T14:00:00-04:00[-04:00]",
+    data: KNOWN_SPORTS.map(data =>
+      makeValueAndExpectedItem({
+        ...data,
+        date: "2025-10-31T17:00:00Z",
+        statusType: "live",
+        homeTeam: {
+          score: 1,
         },
-        image: null,
-        image_container: {
-          attributes: {
-            "is-fallback": "",
-          },
+        awayTeam: {
+          score: 0,
         },
-        "scheduled-date-chiclet-day": "1",
-        "scheduled-date-chiclet-month": "Nov",
-        "sport-name": "Sport 3",
-        "team-names": {
-          l10n: {
-            id: "urlbar-result-sports-team-names",
-            args: {
-              homeTeam: "Team 3 Home",
-              awayTeam: "Team 3 Away",
-            },
-          },
+        expected: {
+          isAwayTeamImageHidden: true,
         },
-        date: "Sat at 1:00 PM GMT-4",
-        status: "",
-      },
-    ],
+      })
+    ),
   });
 });
 
-add_task(async function scheduled_afterTomorrow_icon_thisYear() {
+// * Known sports
+// * In each suggestion value, neither team has an icon
+// * Game statuses: scheduled
+//
+// => Each item should show a single fallback icon
+add_task(async function knownSports_noIcons_scheduled() {
   await doTest({
-    // date and `now` are the same year
-    now: "2025-10-01T14:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_SCHEDULED_ICON]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 3",
-            status: "scheduled",
-          },
+    now: "2025-10-31T14:00:00-04:00[-04:00]",
+    data: KNOWN_SPORTS.map(data =>
+      makeValueAndExpectedItem({
+        ...data,
+        date: "2025-11-01T17:00:00Z",
+        statusType: "scheduled",
+        homeTeam: {},
+        awayTeam: {},
+        expected: {
+          isAwayTeamImageHidden: true,
         },
-        image_container: {
-          attributes: {
-            "is-fallback": null,
-          },
-        },
-        "scheduled-date-chiclet-day": null,
-        "scheduled-date-chiclet-month": null,
-        image: {
-          attributes: {
-            src: "https://example.com/sports-icon",
-          },
-        },
-        "sport-name": "Sport 3",
-        "team-names": {
-          l10n: {
-            id: "urlbar-result-sports-team-names",
-            args: {
-              homeTeam: "Team 3 Home",
-              awayTeam: "Team 3 Away",
-            },
-          },
-        },
-        // should not include year
-        date: "Sat, Nov 1 at 1:00 PM GMT-4",
-        status: "",
-      },
-    ],
+      })
+    ),
   });
 });
 
-add_task(async function scheduled_afterTomorrow_icon_nextYear() {
+// * Known sports
+// * In each suggestion value, only the home team has an icon
+// * Game statuses: doesn't matter, covered by other tasks
+//
+// => Each item should show the home team icon and a fallback for away
+add_task(async function knownSports_homeTeamIcon() {
   await doTest({
-    // date is the year after `now`
-    now: "2024-10-01T14:00:00-04:00[-04:00]",
-    suggestions: merinoSuggestions([SUGGESTION_VALUE_SCHEDULED_ICON]),
-    expectedItems: [
-      {
-        item: {
-          attributes: {
-            sport: "Sport 3",
-            status: "scheduled",
-          },
+    now: "2025-10-31T14:00:00-04:00[-04:00]",
+    data: KNOWN_SPORTS.map(data =>
+      makeValueAndExpectedItem({
+        ...data,
+        date: "2025-10-31T17:00:00Z",
+        statusType: "live",
+        homeTeam: {
+          icon: TEST_ICON_URL_HOME,
+          score: 1,
         },
-        image_container: {
-          attributes: {
-            "is-fallback": null,
-          },
+        awayTeam: {
+          score: 0,
         },
-        "scheduled-date-chiclet-day": null,
-        "scheduled-date-chiclet-month": null,
-        image: {
-          attributes: {
-            src: "https://example.com/sports-icon",
-          },
+        expected: {
+          isAwayTeamImageHidden: false,
         },
-        "sport-name": "Sport 3",
-        "team-names": {
-          l10n: {
-            id: "urlbar-result-sports-team-names",
-            args: {
-              homeTeam: "Team 3 Home",
-              awayTeam: "Team 3 Away",
-            },
-          },
+      })
+    ),
+  });
+});
+
+// * Known sports
+// * In each suggestion value, only the away team has an icon
+// * Game statuses: doesn't matter, covered by other tasks
+//
+// => Each item should show the away team icon and a fallback for home
+add_task(async function knownSports_awayTeamIcon() {
+  await doTest({
+    now: "2025-10-31T14:00:00-04:00[-04:00]",
+    data: KNOWN_SPORTS.map(data =>
+      makeValueAndExpectedItem({
+        ...data,
+        date: "2025-10-31T17:00:00Z",
+        statusType: "live",
+        homeTeam: {
+          score: 1,
         },
-        // should include year
-        date: "Sat, Nov 1, 2025 at 1:00 PM GMT-4",
-        status: "",
-      },
+        awayTeam: {
+          icon: TEST_ICON_URL_AWAY,
+          score: 0,
+        },
+        expected: {
+          isAwayTeamImageHidden: false,
+        },
+      })
+    ),
+  });
+});
+
+//////////////////////////////////////////////////////////////////////////////
+//
+// Unknown sports tasks
+
+// * Unknown sport
+// * In each suggestion value, both teams have icons
+// * Game statuses: past
+//
+// => Each item should show both teams' icons
+add_task(async function unknownSports_bothIcons_past() {
+  await doTest({
+    now: "2025-10-31T14:00:00-04:00[-04:00]",
+    data: [
+      makeValueAndExpectedItem({
+        sportCategory: "Unknown sport_category",
+        sport: "Unknown sport",
+        date: "2025-10-30T17:00:00Z",
+        statusType: "past",
+        homeTeam: {
+          icon: TEST_ICON_URL_HOME,
+          score: 1,
+        },
+        awayTeam: {
+          icon: TEST_ICON_URL_AWAY,
+          score: 0,
+        },
+        expected: {
+          isAwayTeamImageHidden: false,
+        },
+      }),
     ],
   });
 });
 
-async function doTest({ now, suggestions, expectedItems }) {
+// * Unknown sports
+// * In each suggestion value, both teams have icons
+// * Game statuses: live
+//
+// => Each item should show both teams' icons
+add_task(async function unknownSports_bothIcons_live() {
+  await doTest({
+    now: "2025-10-31T14:00:00-04:00[-04:00]",
+    data: [
+      makeValueAndExpectedItem({
+        sportCategory: "Unknown sport_category",
+        sport: "Unknown sport",
+        date: "2025-10-31T17:00:00Z",
+        statusType: "live",
+        homeTeam: {
+          icon: TEST_ICON_URL_HOME,
+          score: 1,
+        },
+        awayTeam: {
+          icon: TEST_ICON_URL_AWAY,
+          score: 0,
+        },
+        expected: {
+          isAwayTeamImageHidden: false,
+        },
+      }),
+    ],
+  });
+});
+
+// * Unknown sports
+// * In each suggestion value, both teams have icons
+// * Game statuses: scheduled
+//
+// => Each item should show both teams' icons
+add_task(async function unknownSports_bothIcons_scheduled() {
+  await doTest({
+    now: "2025-10-31T14:00:00-04:00[-04:00]",
+    data: [
+      makeValueAndExpectedItem({
+        sportCategory: "Unknown sport_category",
+        sport: "Unknown sport",
+        date: "2025-11-01T17:00:00Z",
+        statusType: "scheduled",
+        homeTeam: {
+          icon: TEST_ICON_URL_HOME,
+        },
+        awayTeam: {
+          icon: TEST_ICON_URL_AWAY,
+        },
+        expected: {
+          isAwayTeamImageHidden: false,
+        },
+      }),
+    ],
+  });
+});
+
+// * Unknown sports
+// * In each suggestion value, neither team has an icon
+// * Game statuses: past
+//
+// => Each item should show a single date chiclet
+add_task(async function unknownSports_noIcons_past() {
+  await doTest({
+    now: "2025-10-31T14:00:00-04:00[-04:00]",
+    data: [
+      makeValueAndExpectedItem({
+        sportCategory: "Unknown sport_category",
+        sport: "Unknown sport",
+        date: "2025-10-30T17:00:00Z",
+        statusType: "past",
+        homeTeam: {
+          score: 1,
+        },
+        awayTeam: {
+          score: 0,
+        },
+        expected: {
+          isAwayTeamImageHidden: true,
+        },
+      }),
+    ],
+  });
+});
+
+// * Unknown sports
+// * In each suggestion value, neither team has an icon
+// * Game statuses: live
+//
+// => Each item should show a single date chiclet
+add_task(async function unknownSports_noIcons_live() {
+  await doTest({
+    now: "2025-10-31T14:00:00-04:00[-04:00]",
+    data: [
+      makeValueAndExpectedItem({
+        sportCategory: "Unknown sport_category",
+        sport: "Unknown sport",
+        date: "2025-10-31T17:00:00Z",
+        statusType: "live",
+        homeTeam: {
+          score: 1,
+        },
+        awayTeam: {
+          score: 0,
+        },
+        expected: {
+          isAwayTeamImageHidden: true,
+        },
+      }),
+    ],
+  });
+});
+
+// * Unknown sports
+// * In each suggestion value, neither team has an icon
+// * Game statuses: scheduled
+//
+// => Each item should show a single date chiclet
+add_task(async function unknownSports_noIcons_scheduled() {
+  await doTest({
+    now: "2025-10-31T14:00:00-04:00[-04:00]",
+    data: [
+      makeValueAndExpectedItem({
+        sportCategory: "Unknown sport_category",
+        sport: "Unknown sport",
+        date: "2025-11-01T17:00:00Z",
+        statusType: "scheduled",
+        homeTeam: {},
+        awayTeam: {},
+        expected: {
+          isAwayTeamImageHidden: true,
+        },
+      }),
+    ],
+  });
+});
+
+// * Unknown sports
+// * In each suggestion value, only the home team has an icon
+// * Game statuses: doesn't matter, covered by other tasks
+//
+// => Each item should show the home team icon and a date chiclet for away
+add_task(async function unknownSports_homeTeamIcon() {
+  await doTest({
+    now: "2025-10-31T14:00:00-04:00[-04:00]",
+    data: [
+      makeValueAndExpectedItem({
+        sportCategory: "Unknown sport_category",
+        sport: "Unknown sport",
+        date: "2025-10-31T17:00:00Z",
+        statusType: "live",
+        homeTeam: {
+          icon: TEST_ICON_URL_HOME,
+          score: 1,
+        },
+        awayTeam: {
+          score: 0,
+        },
+        expected: {
+          isAwayTeamImageHidden: false,
+        },
+      }),
+    ],
+  });
+});
+
+// * Unknown sports
+// * In each suggestion value, only the away team has an icon
+// * Game statuses: doesn't matter, covered by other tasks
+//
+// => Each item should show the away team icon and a date chiclet for home
+add_task(async function unknownSports_awayTeamIcon() {
+  await doTest({
+    now: "2025-10-31T14:00:00-04:00[-04:00]",
+    data: [
+      makeValueAndExpectedItem({
+        sportCategory: "Unknown sport_category",
+        sport: "Unknown sport",
+        date: "2025-10-31T17:00:00Z",
+        statusType: "live",
+        homeTeam: {
+          score: 1,
+        },
+        awayTeam: {
+          icon: TEST_ICON_URL_AWAY,
+          score: 0,
+        },
+        expected: {
+          isAwayTeamImageHidden: false,
+        },
+      }),
+    ],
+  });
+});
+
+//////////////////////////////////////////////////////////////////////////////
+//
+// Unusual status and score combinations
+
+// Past without scores
+//
+// => Show the no-score UI: "Home Team vs Away Team"
+add_task(async function pastWithoutScores() {
+  await doTest({
+    now: "2025-10-31T14:00:00-04:00[-04:00]",
+    data: [
+      makeValueAndExpectedItem({
+        sportCategory: "Unknown sport_category",
+        sport: "Unknown sport",
+        date: "2025-10-30T17:00:00Z",
+        statusType: "past",
+        homeTeam: {
+          icon: TEST_ICON_URL_HOME,
+        },
+        awayTeam: {
+          icon: TEST_ICON_URL_AWAY,
+        },
+        expected: {
+          isAwayTeamImageHidden: false,
+        },
+      }),
+    ],
+  });
+});
+
+// Live without scores
+//
+// => Show the no-score UI: "Home Team vs Away Team"
+add_task(async function liveWithoutScores() {
+  await doTest({
+    now: "2025-10-31T14:00:00-04:00[-04:00]",
+    data: [
+      makeValueAndExpectedItem({
+        sportCategory: "Unknown sport_category",
+        sport: "Unknown sport",
+        date: "2025-10-31T17:00:00Z",
+        statusType: "live",
+        homeTeam: {
+          icon: TEST_ICON_URL_HOME,
+        },
+        awayTeam: {
+          icon: TEST_ICON_URL_AWAY,
+        },
+        expected: {
+          isAwayTeamImageHidden: false,
+        },
+      }),
+    ],
+  });
+});
+
+// Scheduled with scores
+//
+// => Show the score UI: "Home Team 1, Away Team 0"
+add_task(async function scheduledWithScores() {
+  await doTest({
+    now: "2025-10-31T14:00:00-04:00[-04:00]",
+    data: [
+      makeValueAndExpectedItem({
+        sportCategory: "Unknown sport_category",
+        sport: "Unknown sport",
+        date: "2025-11-01T17:00:00Z",
+        statusType: "scheduled",
+        homeTeam: {
+          icon: TEST_ICON_URL_HOME,
+          score: 1,
+        },
+        awayTeam: {
+          icon: TEST_ICON_URL_AWAY,
+          score: 0,
+        },
+        expected: {
+          isAwayTeamImageHidden: false,
+        },
+      }),
+    ],
+  });
+});
+
+// Score in one team but not the other
+//
+// => Show the no-score UI: "Home Team vs Away Team"
+add_task(async function scoreInOneTeam() {
+  await doTest({
+    now: "2025-10-31T14:00:00-04:00[-04:00]",
+    data: [
+      makeValueAndExpectedItem({
+        sportCategory: "Unknown sport_category",
+        sport: "Unknown sport",
+        date: "2025-10-31T17:00:00Z",
+        statusType: "live",
+        homeTeam: {
+          icon: TEST_ICON_URL_HOME,
+          score: 1,
+        },
+        awayTeam: {
+          icon: TEST_ICON_URL_AWAY,
+        },
+        expected: {
+          isAwayTeamImageHidden: false,
+        },
+      }),
+    ],
+  });
+});
+
+async function doTest({ now, data }) {
   let nows = Array.isArray(now) ? now : [now];
 
-  MerinoTestUtils.server.response.body.suggestions = suggestions;
+  MerinoTestUtils.server.response.body.suggestions = makeMerinoSuggestions(
+    data.map(d => d.value)
+  );
+
+  let expectedItems = data.map(d => d.expectedItem);
 
   for (let n of nows) {
     info("Testing with `now`: " + n);
-    setNow(n);
+    UrlbarTestUtils.stubNowZonedDateTime(n);
     await doOneTest({ expectedItems });
   }
 }
@@ -2173,9 +701,7 @@ async function doOneTest({ expectedItems }) {
 
     // Check each expected child element in the item.
     for (let [childNamePrefix, expectedValue] of Object.entries(expectedItem)) {
-      let sep = ["item", "image", "image_container"].includes(childNamePrefix)
-        ? "_"
-        : "-";
+      let sep = childNamePrefix == "item" ? "_" : "-";
       let childName = `${childNamePrefix}${sep}${i}`;
       let child = row.querySelector(`[name=${childName}]`);
 
@@ -2239,6 +765,12 @@ async function doOneTest({ expectedItems }) {
           expectedValue,
           "Child element should have expected textContent: " + childName
         );
+      } else if (typeof expectedValue.textContent == "string") {
+        Assert.equal(
+          child.textContent,
+          expectedValue.textContent,
+          "Child element should have expected textContent: " + childName
+        );
       } else if (expectedValue.l10n) {
         Assert.equal(
           child.dataset.l10nId,
@@ -2265,24 +797,200 @@ async function doOneTest({ expectedItems }) {
   gURLBar.handleRevert();
 }
 
-let gSandbox;
-let gDateStub;
+/**
+ * Returns an object `{ value, expectedItem }`.
+ *
+ * `value` is a value object that can be included in a sports suggestion.
+ *
+ * `expectedItem` is a description of the expected item DOM in the suggestion's
+ * row that corresponds to `value`. It can be passed to `doTest()` and
+ * `doOneTest()`.
+ *
+ * @param {object} options
+ * @param {string} options.sport
+ *   The `sport` in the suggestion value.
+ * @param {string} options.sportCategory
+ *   The `sport_category` in the suggestion value.
+ * @param {string} options.fallbackIconName
+ *   The basename without file extension of the expected fallback icon for the
+ *   sport.
+ * @param {string} options.date
+ *   The `date` in the suggestion value.
+ * @param {string} options.statusType
+ *   The `status_type` in the suggestion value.
+ * @param {{ icon: ?string, score: ?number }} options.homeTeam
+ *   Partial `home_team` in the suggestion value.
+ * @param {{ icon: ?string, score: ?number }} options.awayTeam
+ *   Partial `away_team` in the suggestion value.
+ * @param {{ isAwayTeamImageHidden: bool }} options.expected
+ * @param {bool} options.expected.isAwayTeamImageHidden
+ *   Whether the away team image container is expected to be hidden (because
+ *   it's the same as the home team image container).
+ *
+ * @returns {{ value: any, expectedItem: any }}
+ */
+function makeValueAndExpectedItem({
+  sport,
+  sportCategory,
+  fallbackIconName,
+  date,
+  statusType,
+  homeTeam = {},
+  awayTeam = {},
+  expected: { isAwayTeamImageHidden },
+}) {
+  let expectedItem = {
+    sport,
 
-function setNow(dateStr) {
-  if (!dateStr) {
-    gSandbox?.restore();
-    return;
+    item: {
+      attributes: {
+        "sport-category": sportCategory,
+        status: statusType,
+      },
+    },
+
+    "home-team-image-container": {
+      attributes: {
+        "has-team-icon": homeTeam.icon ? "" : null,
+      },
+      backgroundImage:
+        homeTeam.icon || !fallbackIconName
+          ? null
+          : `url("chrome://browser/skin/urlbar/sports-${fallbackIconName}.svg")`,
+    },
+    "home-team-image": {
+      attributes: {
+        src: homeTeam.icon ?? null,
+      },
+    },
+
+    "away-team-image-container": {
+      attributes: {
+        "has-team-icon": awayTeam.icon ? "" : null,
+      },
+      backgroundImage:
+        awayTeam.icon || !fallbackIconName
+          ? null
+          : `url("chrome://browser/skin/urlbar/sports-${fallbackIconName}.svg")`,
+      isHidden: isAwayTeamImageHidden,
+    },
+    "away-team-image": {
+      attributes: {
+        src: awayTeam.icon ?? null,
+      },
+      isHidden: isAwayTeamImageHidden,
+    },
+  };
+
+  if (homeTeam.hasOwnProperty("score") && awayTeam.hasOwnProperty("score")) {
+    expectedItem = {
+      ...expectedItem,
+      "home-team-name": "Home Team",
+      "home-team-score": homeTeam.score,
+      "away-team-name": "Away Team",
+      "away-team-score": awayTeam.score,
+    };
+  } else {
+    expectedItem = {
+      ...expectedItem,
+      "team-names": {
+        l10n: {
+          id: "urlbar-result-sports-team-names",
+          args: {
+            homeTeam: "Home Team",
+            awayTeam: "Away Team",
+          },
+        },
+      },
+    };
   }
 
-  let global = Cu.getGlobalForObject(SportsSuggestions);
-  if (!gSandbox) {
-    gSandbox = sinon.createSandbox();
-    gDateStub = gSandbox.stub(SportsSuggestions, "_zonedDateTimeISO");
+  let chicletDay;
+  let chicletMonth;
+
+  switch (statusType) {
+    case "past":
+      expectedItem = {
+        ...expectedItem,
+        date: "Yesterday",
+        status: "",
+      };
+      chicletDay = "30";
+      chicletMonth = "Oct";
+      break;
+    case "live":
+      expectedItem = {
+        ...expectedItem,
+        date: "Today",
+        status: {
+          l10n: {
+            id: "urlbar-result-sports-status-live",
+          },
+        },
+      };
+      chicletDay = "31";
+      chicletMonth = "Oct";
+      break;
+    case "scheduled":
+      expectedItem = {
+        ...expectedItem,
+        date: {
+          l10n: {
+            id: "urlbar-result-sports-game-date-with-time",
+            args: {
+              date: "Tomorrow",
+              time: "1:00 PM GMT-4",
+            },
+          },
+        },
+        status: "",
+      };
+      chicletDay = "1";
+      chicletMonth = "Nov";
+      break;
   }
-  gDateStub.returns(global.Temporal.ZonedDateTime.from(dateStr));
+
+  expectedItem = {
+    ...expectedItem,
+    "home-team-date-chiclet-day": {
+      textContent: chicletDay,
+      isHidden: !!homeTeam.icon || !!fallbackIconName,
+    },
+    "home-team-date-chiclet-month": {
+      textContent: chicletMonth,
+      isHidden: !!homeTeam.icon || !!fallbackIconName,
+    },
+    "away-team-date-chiclet-day": {
+      textContent: chicletDay,
+      isHidden: !!awayTeam.icon || !!fallbackIconName || isAwayTeamImageHidden,
+    },
+    "away-team-date-chiclet-month": {
+      textContent: chicletMonth,
+      isHidden: !!awayTeam.icon || !!fallbackIconName || isAwayTeamImageHidden,
+    },
+  };
+
+  return {
+    expectedItem,
+    value: {
+      date,
+      sport,
+      sport_category: sportCategory,
+      query: "query 1",
+      home_team: {
+        name: "Home Team",
+        ...homeTeam,
+      },
+      away_team: {
+        name: "Away Team",
+        ...awayTeam,
+      },
+      status_type: statusType,
+    },
+  };
 }
 
-function merinoSuggestions(values) {
+function makeMerinoSuggestions(values) {
   return [
     {
       provider: "sports",

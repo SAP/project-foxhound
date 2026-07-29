@@ -40,7 +40,7 @@ interface RemoteSettingsSyncScheduler {
 @SuppressWarnings("MagicNumber")
 class DefaultRemoteSettingsSyncScheduler(
     private val context: Context,
-    private val frequency: Frequency = Frequency(24, TimeUnit.HOURS),
+    private val frequency: Frequency = Frequency(2, TimeUnit.HOURS),
 ) : RemoteSettingsSyncScheduler {
     private val logger = Logger("DefaultRemoteSettingsChecker")
 

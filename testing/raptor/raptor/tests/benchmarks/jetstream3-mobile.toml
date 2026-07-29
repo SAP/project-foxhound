@@ -21,7 +21,9 @@ type = "benchmark"
 unit = "score"
 support_class = "jetstream3.py"
 repository = "https://github.com/webkit/jetstream"
-repository_revision = "a3f5c45465f5271bed385321a0587bd4202682d6"
+# Keep this in sync with the version used in PGO instrumentation by updating
+# `taskcluster/kinds/fetch/benchmarks.yml`.
+repository_revision = "3967678fa8ab98d847ab33cf3728dba726fa854b"
 test_script = "jetstream3.js"
 
 ["jetstream3"]

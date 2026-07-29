@@ -27,6 +27,7 @@ dependencies {
 
     testImplementation libs.androidx.browser
     testImplementation libs.androidx.test.junit
+    testImplementation libs.kotlin.test
     testImplementation libs.kotlinx.coroutines
     testImplementation libs.kotlinx.coroutines.test
     testImplementation libs.robolectric

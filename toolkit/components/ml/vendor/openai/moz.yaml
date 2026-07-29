@@ -2,7 +2,7 @@ schema: 1
 
 bugzilla:
   product: Core
-  component: Machine Learning
+  component: "Machine Learning: Server"
 
 origin:
   name: openai-node

@@ -11,6 +11,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "moz-src:///browser/components/aiwindow/models/memories/MemoriesHistoryScheduler.sys.mjs",
   MemoriesConversationScheduler:
     "moz-src:///browser/components/aiwindow/models/memories/MemoriesConversationScheduler.sys.mjs",
+  HISTORY:
+    "moz-src:///browser/components/aiwindow/models/memories/MemoriesConstants.sys.mjs",
+  CONVERSATION:
+    "moz-src:///browser/components/aiwindow/models/memories/MemoriesConstants.sys.mjs",
 });
 
 /**
@@ -23,7 +27,12 @@ export class MemoriesSchedulers {
    * Usage: MemoriesSchedulers.maybeRunAndSchedule()
    */
   static maybeRunAndSchedule() {
-    if (!lazy.MemoriesManager.shouldEnableMemoriesSchedulers()) {
+    if (
+      !lazy.MemoriesManager.shouldEnableMemoriesFromSchedulers(lazy.HISTORY) &&
+      !lazy.MemoriesManager.shouldEnableMemoriesFromSchedulers(
+        lazy.CONVERSATION
+      )
+    ) {
       return null;
     }
 

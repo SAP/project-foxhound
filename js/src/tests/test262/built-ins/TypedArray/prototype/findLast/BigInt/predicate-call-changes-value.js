@@ -13,16 +13,16 @@ info: |
     ...
     c. Let testResult be ! ToBoolean(? Call(predicate, thisArg, « kValue, 𝔽(k), O »)).
   ...
-includes: [compareArray.js, testBigIntTypedArray.js]
+includes: [compareArray.js, testTypedArray.js]
 features: [BigInt, TypedArray, array-find-from-last]
 ---*/
 
-testWithBigIntTypedArrayConstructors(function(TA) {
+testWithBigIntTypedArrayConstructors(function(TA, makeCtorArg) {
   var arr = [1n, 2n, 3n];
   var sample;
   var result;
 
-  sample = new TA(3);
+  sample = new TA(makeCtorArg(3));
   sample.findLast(function(val, i) {
     sample[i] = arr[i];
 
@@ -63,6 +63,6 @@ testWithBigIntTypedArrayConstructors(function(TA) {
     return true;
   });
   assert.sameValue(result, 3n, "findLast() returns previous found value");
-});
+}, null, null, ["immutable"]);
 
 reportCompare(0, 0);

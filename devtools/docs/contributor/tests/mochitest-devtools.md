@@ -5,6 +5,7 @@ To run the whole suite of browser mochitests for DevTools (sit back and relax):
 ```bash
 ./mach mochitest --subsuite devtools --tag devtools
 ```
+
 To run a specific tool's suite of browser mochitests:
 
 ```bash
@@ -16,11 +17,13 @@ For example, run all of the debugger browser mochitests:
 ```bash
 ./mach mochitest devtools/client/debugger
 ```
+
 To run a specific DevTools mochitest:
 
 ```bash
 ./mach mochitest devtools/client/path/to/the/test_you_want_to_run.js
 ```
+
 Note that the mochitests *must* have focus while running. The tests run in the browser which looks like someone is magically testing your code by hand. If the browser loses focus, the tests will stop and fail after some time. (Again, sit back and relax)
 
 In case you'd like to run the mochitests without having to care about focus and be able to touch your computer while running:
@@ -39,24 +42,31 @@ You can also run just a single test:
 
 You can log all lines being executed in the mochitest script by using DEBUG_STEP env variable.
 This will help you:
- * if the test is stuck on some asynchronous waiting code, on which line it is waiting,
- * visualize the test script execution compared to various logs and assertion logs.
+
+* if the test is stuck on some asynchronous waiting code, on which line it is waiting,
+* visualize the test script execution compared to various logs and assertion logs.
 
 Note that it will only work with Mochitests importing `devtools/client/shared/test/shared-head.js` module,
 which is used by most DevTools browser mochitests.
 
 This way:
+
 ```bash
 DEBUG_STEP=true ./mach mochitest browser_devtools_test.js
 ```
+
 or that other way:
+
 ```bash
 ./mach mochitest browser_devtools_test.js --setenv DEBUG_STEP=true
 ```
+
 This will log the following lines:
+
 ```
 [STEP] browser_target_command_detach.js @ 19:15   ::   const tab = ↦ await addTab(TEST_URL);
 ```
+
 which tells that test script at line 19 and column 15 is about to be executed.
 The '↦' highlights the precise execution's column.
 
@@ -67,9 +77,11 @@ This will cause the test to run in a unreal way that wouldn't happen otherwise.
 ```bash
 DEBUG_STEP=250 ./mach mochitest browser_devtools_test.js
 ```
+
 Each line of the mochitest script will pause for 1/4 of seconds.
 
 Last, but not least, this feature can be used on try via:
+
 ```bash
 ./mach mochitest try fuzzy devtools/test/folder/ --env DEBUG_STEP=true
 ```
@@ -81,7 +93,9 @@ It expect a line number of the mochitest file running and it will trace all Java
 ```bash
 DEBUG_TRACE_LINE=42 ./mach mochitest browser_devtools_test.js
 ```
+
 This will log something like this:
+
 ```
  0:17.14 GECKO(94170)  [STEP] chrome://mochitests/content/browser/devtools/client/webconsole/test/browser/head.js
  0:17.14 GECKO(94170)  [STEP] ───────────────────────────────────────────────────────────────────────────────────
@@ -95,10 +109,12 @@ This will log something like this:
  0:17.15 GECKO(94170)  [STEP] 531:22  | async function addTab↦ (url, options = {}) {
  0:17.15 GECKO(94170)  [STEP] 532:3   |   ↦ info("Adding a new tab with URL: " + url);
 ```
+
 where you can see the execution flow between function to functions being called, but also the progress within a function call.
 Similarly to DEBUG_STEP, '↦' symbols highlights the precise execution location.
 
 If this helper isn't enough. You can also spawn the tracer from any place manually from any privileged codebase, by using the following snippet:
+
 ```js
 const { JSTracer } = ChromeUtils.importESModule(
   "resource://devtools/server/tracer/tracer.sys.mjs",

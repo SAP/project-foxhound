@@ -1,6 +1,7 @@
 package mozilla.components.browser.engine.gecko.preferences
 
 import mozilla.components.concept.engine.Engine
+import mozilla.components.concept.engine.preferences.BrowserPrefType
 import mozilla.components.concept.engine.preferences.BrowserPreference
 import mozilla.components.support.test.any
 import mozilla.components.support.test.mock
@@ -100,7 +101,7 @@ class BrowserPrefObserverIntegrationTest {
     }
 
     @Test
-    fun `WHEN onOfferTranslate is called THEN notify onTranslateOffer`() {
+    fun `WHEN onPreferenceChange is called THEN notify observer`() {
         var onPreferenceChangeWasCalled = false
         val engine = mock<Engine>()
         val feature = BrowserPrefObserverIntegration(engine)
@@ -120,6 +121,7 @@ class BrowserPrefObserverIntegrationTest {
             defaultValue = false,
             userValue = true,
             hasUserChangedValue = true,
+            prefType = BrowserPrefType.STRING,
         )
         feature.onPreferenceChange(pref)
         assert(onPreferenceChangeWasCalled)

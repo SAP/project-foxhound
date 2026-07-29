@@ -7,12 +7,12 @@ support-files = [
   "html_har_multipage_iframe.html",
   "html_har_multipage_page.html",
   "html_har_post-data-test-page.html",
+  "html_har_images-and-text.html",
   "sjs_cache-test-server.sjs",
   "sjs_cookies-test-server.sjs",
   "!/devtools/client/netmonitor/test/head.js",
   "!/devtools/client/netmonitor/test/html_simple-test-page.html",
   "!/devtools/client/shared/test/shared-head.js",
-  "!/devtools/client/shared/test/telemetry-test-helpers.js",
 ]
 
 ["browser_net_har_copy_all_as_har.js"]
@@ -24,6 +24,8 @@ skip-if = [
 skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298
 ]
+
+["browser_net_har_image_priority.js"]
 
 ["browser_net_har_import.js"]
 skip-if = [

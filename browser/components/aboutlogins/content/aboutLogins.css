@@ -3,8 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 :root {
-  --logins-dialog-shadow: var(--box-shadow-popup);
-  --logins-dialog-border: 1px solid var(--border-color-card);
+  --logins-dialog-shadow: var(--popup-box-shadow);
+  --logins-dialog-border: 1px solid var(--card-border-color);
   --logins-dialog-border-radius: var(--border-radius-medium);
 }
 
@@ -72,7 +72,7 @@ login-item[data-editing="true"] + login-intro,
   display: flex;
   justify-content: center;
   width: var(--sidebar-width);
-  font-weight: var(--heading-font-weight);
+  font-weight: var(--font-weight-heading);
 }
 
 :root:not(.primary-password-auth-required) #primary-password-required-overlay {

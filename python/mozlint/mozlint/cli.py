@@ -92,7 +92,7 @@ class MozlintParser(ArgumentParser):
         [
             ["--include-third-party"],
             {
-                "dest": "include_third-party",
+                "dest": "include_third_party",
                 "default": False,
                 "action": "store_true",
                 "help": "Also run the linter(s) on third-party code",
@@ -417,7 +417,7 @@ def run(
             mode="wb",
             delete=False,
             dir=os.path.dirname(fpath),
-            suffix=os.path.splitext(fpath)[1],
+            suffix="".join(Path(fpath).suffixes),
         )
 
         # Read directly from stdins byte buffer so that we treat the bytes

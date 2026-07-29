@@ -269,7 +269,7 @@ impl TimingDistribution for LabeledTimingDistributionMetric {
                         self.id.into(),
                         Some(self.label.clone()),
                         None,
-                        Some(TDMPayload::Sample(sample.clone())),
+                        Some(TDMPayload::Sample(sample)),
                     ),
                 );
             }
@@ -359,7 +359,7 @@ impl TimingDistribution for LabeledTimingDistributionMetric {
                         self.id.into(),
                         Some(self.label.clone()),
                         None,
-                        Some(TDMPayload::Duration(duration.clone())),
+                        Some(TDMPayload::Duration(duration)),
                     ),
                 );
             }

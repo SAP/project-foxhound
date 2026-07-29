@@ -18,7 +18,7 @@ const FRAMEBUSTING_PARENT_URL =
 const FRAMEBUSTING_FRAME_URL =
   EXAMPLE_FRAME_ROOT + "framebusting_intervention_frame.html";
 
-async function triggerFramebustingIntervention(tab) {
+async function triggerFramebusting(tab, attrs = {}, params = {}) {
   info("Loading framebusting parent page...");
   BrowserTestUtils.startLoadingURIString(
     tab.linkedBrowser,
@@ -30,13 +30,20 @@ async function triggerFramebustingIntervention(tab) {
     FRAMEBUSTING_PARENT_URL
   );
 
+  const url = new URL(FRAMEBUSTING_FRAME_URL);
+  for (const name in params) {
+    url.searchParams.append(name, params[name]);
+  }
+
   info("Loading framebusting frame page...");
   await SpecialPowers.spawn(
     tab.linkedBrowser,
-    [FRAMEBUSTING_FRAME_URL],
-    src => {
+    [url.href, attrs],
+    (src, attributes) => {
       const iframe = content.document.createElement("iframe");
-      iframe.id = "framebustingframe";
+      for (const name in attributes) {
+        iframe.setAttribute(name, attributes[name]);
+      }
       iframe.src = src;
       content.document.body.appendChild(iframe);
     }

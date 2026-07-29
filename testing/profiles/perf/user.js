@@ -60,6 +60,7 @@ user_pref("media.libavcodec.allow-obsolete", true);
 user_pref("media.navigator.enabled", true);
 user_pref("media.navigator.permission.disabled", true);
 user_pref("media.peerconnection.enabled", true);
+user_pref("network.captive-portal-service.enabled", true);
 // Set places maintenance far in the future (the maximum time possible in an
 // int32_t) to avoid it kicking in during tests. The maintenance can take a
 // relatively long time which may cause unnecessary intermittents and slow down
@@ -98,3 +99,8 @@ user_pref("browser.tabs.remote.systemTriggeredAboutBlankAnywhere", true);
 user_pref("media.webspeech.synth.dont_notify_on_error", true);
 // Turn off update
 user_pref("app.update.disabledForTesting", true);
+
+// Turn off remote settings improvements and nimbus
+user_pref("nimbus.rollouts.enabled", false);
+user_pref("app.shield.optoutstudies.enabled", false);
+user_pref("services.sync.prefs.sync.app.shield.optoutstudies.enabled", false);

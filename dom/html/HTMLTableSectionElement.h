@@ -1,12 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #ifndef mozilla_dom_HTMLTableSectionElement_h
 #define mozilla_dom_HTMLTableSectionElement_h
 
-#include "nsContentList.h"  // For ctor.
+#include "mozilla/dom/ContentList.h"  // For ctor.
 #include "nsGenericHTMLElement.h"
 
 namespace mozilla::dom {
@@ -14,7 +12,7 @@ namespace mozilla::dom {
 class HTMLTableSectionElement final : public nsGenericHTMLElement {
  public:
   explicit HTMLTableSectionElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
       : nsGenericHTMLElement(std::move(aNodeInfo)) {
     SetHasWeirdParserInsertionMode();
   }
@@ -22,7 +20,7 @@ class HTMLTableSectionElement final : public nsGenericHTMLElement {
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
 
-  nsIHTMLCollection* Rows();
+  HTMLCollection* Rows();
   already_AddRefed<nsGenericHTMLElement> InsertRow(int32_t aIndex,
                                                    ErrorResult& aError);
   void DeleteRow(int32_t aValue, ErrorResult& aError);
@@ -53,17 +51,17 @@ class HTMLTableSectionElement final : public nsGenericHTMLElement {
   nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 
-  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(HTMLTableSectionElement,
                                            nsGenericHTMLElement)
  protected:
   virtual ~HTMLTableSectionElement();
 
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext* aCx,
+                     JS::Handle<JSObject*> aGivenProto) override;
 
-  RefPtr<nsContentList> mRows;
+  RefPtr<ContentList> mRows;
 
  private:
   static void MapAttributesIntoRule(MappedDeclarationsBuilder&);

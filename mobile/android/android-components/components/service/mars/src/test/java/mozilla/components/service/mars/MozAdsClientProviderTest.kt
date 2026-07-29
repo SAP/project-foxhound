@@ -7,11 +7,11 @@ package mozilla.components.service.mars
 import mozilla.appservices.adsclient.MozAdsClient
 import mozilla.components.support.test.mock
 import org.junit.After
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 class MozAdsClientProviderTest {

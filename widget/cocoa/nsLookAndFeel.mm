@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -65,22 +64,22 @@ void nsLookAndFeel::RefreshImpl() {
 }
 
 static nscolor GetColorFromNSColor(NSColor* aColor) {
-  NSColor* deviceColor =
-      [aColor colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace];
-  return NS_RGBA((unsigned int)(deviceColor.redComponent * 255.0),
-                 (unsigned int)(deviceColor.greenComponent * 255.0),
-                 (unsigned int)(deviceColor.blueComponent * 255.0),
-                 (unsigned int)(deviceColor.alphaComponent * 255.0));
+  NSColor* srgbColor =
+      [aColor colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+  return NS_RGBA((unsigned int)round(srgbColor.redComponent * 255.0),
+                 (unsigned int)round(srgbColor.greenComponent * 255.0),
+                 (unsigned int)round(srgbColor.blueComponent * 255.0),
+                 (unsigned int)round(srgbColor.alphaComponent * 255.0));
 }
 
 static nscolor GetColorFromNSColorWithCustomAlpha(NSColor* aColor,
                                                   float alpha) {
-  NSColor* deviceColor =
-      [aColor colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]];
-  return NS_RGBA((unsigned int)(deviceColor.redComponent * 255.0),
-                 (unsigned int)(deviceColor.greenComponent * 255.0),
-                 (unsigned int)(deviceColor.blueComponent * 255.0),
-                 (unsigned int)(alpha * 255.0));
+  NSColor* srgbColor =
+      [aColor colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+  return NS_RGBA((unsigned int)round(srgbColor.redComponent * 255.0),
+                 (unsigned int)round(srgbColor.greenComponent * 255.0),
+                 (unsigned int)round(srgbColor.blueComponent * 255.0),
+                 (unsigned int)round(alpha * 255.0));
 }
 
 // Turns an opaque selection color into a partially transparent selection color,

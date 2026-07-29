@@ -98,7 +98,7 @@ add_task(async function test_smartblock_embed_replaced() {
   );
 
   // Click to toggle to unblock embed and wait for script to finish
-  await EventUtils.synthesizeMouseAtCenter(blockedEmbedToggle.buttonEl, {});
+  EventUtils.synthesizeMouseAtCenter(blockedEmbedToggle.buttonEl, {});
 
   await embedScriptFinished;
 
@@ -201,7 +201,7 @@ add_task(async function test_smartblock_embed_replaced() {
 
   // click toggle to reblock (this will trigger a reload)
   // Note: clickjacking delay should not happen because panel not opened via embed button
-  await EventUtils.synthesizeMouseAtCenter(blockedEmbedToggle.buttonEl, {});
+  EventUtils.synthesizeMouseAtCenter(blockedEmbedToggle.buttonEl, {});
 
   // Wait for smartblock embed script to finish
   await smartblockScriptFinished;

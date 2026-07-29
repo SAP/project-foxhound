@@ -1,0 +1,43 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+/**
+ * Interface for the content classifier service. Used by the JS
+ * RemoteSettings client to notify the C++ service of filter list
+ * additions, updates, and removals. The service pulls the actual
+ * bytes back from the client on demand via getListBytes().
+ */
+[scriptable, uuid(1AFC121B-6849-4BA4-A515-C7E91F20D0DC)]
+interface nsIContentClassifierService : nsISupports {
+    /**
+     * Notify the service of a batch of list changes. `aUpdated` lists
+     * are (re)built by pulling fresh bytes from the RemoteSettings
+     * client; `aRemoved` lists are dropped and any feature engine
+     * referencing them is rebuilt without that list (or dropped
+     * entirely if it has no remaining lists). The service kicks off a
+     * single async rebuild for the union of affected features and
+     * fires NS_CONTENT_CLASSIFIER_FILTER_LISTS_LOADED_TOPIC once the
+     * rebuild has settled. Safe to call with empty arrays (the topic
+     * still fires).
+     */
+    void onListsChanged(in Array<ACString> aUpdated,
+                        in Array<ACString> aRemoved);
+
+    /**
+     * Return the names of the content classifier features defined in
+     * the static feature table. Each name identifies a feature whose
+     * filter list IDs are grouped into a single classification engine.
+     */
+    Array<ACString> getFeatureNames();
+};
+
+%{C++
+// Fired after filter list engines have been rebuilt, when the testing
+// pref (privacy.trackingprotection.content.testing) is set. Not fired
+// in production.
+#define NS_CONTENT_CLASSIFIER_FILTER_LISTS_LOADED_TOPIC \
+  "test-content-classifier-filter-lists-loaded"
+%}

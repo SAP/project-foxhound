@@ -47,9 +47,8 @@ promise_test(async (t) => {
                 'getAnimations() should include scroll animations');
   assert_equals(animations[0].animationName, "animWidth",
                 'getAmimations() should return scroll animations');
-  // FIXME: Bug 1676794. Support ScrollTimeline interface.
-  assert_equals(animations[0].timeline, null,
-                'scroll animation should not return scroll timeline');
+  assert_true(animations[0].timeline instanceof ScrollTimeline,
+              'scroll animation should return scroll timeline');
 }, 'Element.getAnimation() should include scroll animations');
 
 promise_test(async (t) => {
@@ -75,9 +74,8 @@ promise_test(async (t) => {
                 'getAnimations() should include scroll animations');
   assert_equals(animations[0].animationName, "animWidth",
                 'getAmimations() should return scroll animations');
-  // FIXME: Bug 1676794. Support ScrollTimeline interface.
-  assert_equals(animations[0].timeline, null,
-                'scroll animation should not return scroll timeline');
+  assert_true(animations[0].timeline instanceof ScrollTimeline,
+              'scroll animation should not return scroll timeline');
 }, 'Document.getAnimation() should include scroll animations');
 
 </script>

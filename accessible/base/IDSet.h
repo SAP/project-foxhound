@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +9,8 @@
 #ifndef MOZILLA_A11Y_IDSet_h_
 #define MOZILLA_A11Y_IDSet_h_
 
-#include "mozilla/MathAlgorithms.h"
+#include <bit>
+
 #include "mozilla/SplayTree.h"
 
 namespace mozilla {
@@ -47,7 +46,7 @@ class IDSet {
     while (true) {
       BitSetElt* elt = mBitSet.findOrInsert(BitSetElt(idx));
       if (elt->mBitvec[0] != UINT64_MAX) {
-        uint32_t i = CountTrailingZeroes64(~elt->mBitvec[0]);
+        uint32_t i = std::countr_one(elt->mBitvec[0]);
 
         elt->mBitvec[0] |= (1ull << i);
         mIdx = idx;
@@ -55,7 +54,7 @@ class IDSet {
       }
 
       if (elt->mBitvec[1] != UINT64_MAX) {
-        uint32_t i = CountTrailingZeroes64(~elt->mBitvec[1]);
+        uint32_t i = std::countr_one(elt->mBitvec[1]);
 
         elt->mBitvec[1] |= (1ull << i);
         mIdx = idx;

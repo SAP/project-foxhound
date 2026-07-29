@@ -1439,7 +1439,7 @@ int opus_dred_decoder_ctl(OpusDREDDecoder *dred_dec, int request, ...)
       {
          goto bad_arg;
       }
-      return dred_decoder_load_model(dred_dec, data, len);
+      ret = dred_decoder_load_model(dred_dec, data, len);
    }
    break;
 # endif

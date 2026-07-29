@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -406,11 +404,10 @@ ThirdPartyUtil::GetTopWindowForChannel(nsIChannel* aChannel,
 // "bbc.co.uk". Only properly-formed URI's are tolerated, though a trailing
 // dot may be present. If aHostURI is an IP address, an alias such as
 // 'localhost', an eTLD such as 'co.uk', or the empty string, aBaseDomain will
-// be the exact host. Blob URIs will incur a lookup for their blob URL entry,
-// and will perform the same construction from their principal's base domain.
-// The result of this function should only be used in exact
-// string comparisons, since substring comparisons will not be valid for the
-// special cases elided above.
+// be the exact host. Blob URIs will perform the same construction from their
+// principal's base domain. The result of this function should only be used in
+// exact string comparisons, since substring comparisons will not be valid for
+// the special cases listed above.
 NS_IMETHODIMP
 ThirdPartyUtil::GetBaseDomain(nsIURI* aHostURI, nsACString& aBaseDomain) {
   if (!aHostURI) {
@@ -421,14 +418,15 @@ ThirdPartyUtil::GetBaseDomain(nsIURI* aHostURI, nsACString& aBaseDomain) {
   // direct. For blob URLs we get this from the blob url's entry in the blob url
   // store.
   nsresult rv;
-  nsCOMPtr<nsIPrincipal> blobPrincipal;
   if (aHostURI->SchemeIs("blob")) {
+    // NOTE: OriginAttributes will be discarded by GetBaseDomain, so it's OK to
+    // pass in a default-constructed value here.
+    nsCOMPtr<nsIPrincipal> blobPrincipal;
     if (BlobURLProtocolHandler::GetBlobURLPrincipal(
-            aHostURI, getter_AddRefs(blobPrincipal))) {
-      // If the blob URL is expired, this will be the uuid of a NullPrincipal
+            aHostURI, OriginAttributes(), getter_AddRefs(blobPrincipal))) {
       rv = blobPrincipal->GetBaseDomain(aBaseDomain);
     } else {
-      // If the blob is expired and no longer has a map entry, we fail
+      // If the blob URI isn't the correct form, we fail.
       rv = nsresult::NS_ERROR_DOM_BAD_URI;
     }
   } else {

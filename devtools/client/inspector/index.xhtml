@@ -61,9 +61,14 @@
       rel="stylesheet"
       href="chrome://devtools/content/shared/components/tree/TreeView.css"
     />
+    <link
+      rel="stylesheet"
+      href="chrome://devtools/content/shared/components/AppErrorBoundary.css"
+    />
 
     <script src="chrome://devtools/content/shared/theme-switching.js"></script>
     <script src="chrome://devtools/content/inspector/index.js"></script>
+    <link rel="localization" href="devtools/client/inspector.ftl" />
   </head>
   <body class="theme-body" role="application">
     <div
@@ -216,9 +221,19 @@
             <div
               id="pseudo-class-panel"
               class="theme-toolbar ruleview-reveal-panel"
+              inert=""
               hidden=""
             >
-              <!-- Populated with checkbox inputs once the Rules view is instantiated -->
+              <div id="pseudo-classes-standard" class="pseudo-classes"></div>
+              <h3
+                id="pseudo-classes-element-specific-heading"
+                class="pseudo-classes-element-specific"
+                data-l10n-id="inspector-element-specific-pseudo-classes-heading"
+              ></h3>
+              <div
+                id="pseudo-classes-element-specific"
+                class="pseudo-classes"
+              ></div>
             </div>
             <div
               id="ruleview-class-panel"

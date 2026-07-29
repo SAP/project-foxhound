@@ -733,6 +733,8 @@ add_task(async function test_null_principal() {
     await testOpenProto(browser, scheme, {
       triggerLoad: () => {
         let uri = `${scheme}://test`;
+        // TODO: Switch to SpecialPowers.spawn
+        // eslint-disable-next-line mozilla/reject-contenttask-spawn
         ContentTask.spawn(browser, { uri }, args => {
           let frame = content.document.createElement("iframe");
           frame.src = `data:text/html,<script>location.href="${args.uri}"</script>`;
@@ -1357,6 +1359,8 @@ add_task(async function test_redirect_principal_links() {
           ROOT_PATH +
           "redirect_helper.sjs?" +
           params.toString();
+        // TODO: Switch to SpecialPowers.spawn
+        // eslint-disable-next-line mozilla/reject-contenttask-spawn
         await ContentTask.spawn(browser, { uri }, args => {
           let textLink = content.document.createElement("a");
           textLink.href = args.uri;
@@ -1381,6 +1385,8 @@ add_task(async function test_unloaded_iframe() {
     await testOpenProto(browser, scheme, {
       triggerLoad() {
         let uri = `${scheme}://test`;
+        // TODO: Switch to SpecialPowers.spawn
+        // eslint-disable-next-line mozilla/reject-contenttask-spawn
         return ContentTask.spawn(browser, { uri }, args => {
           let frame = content.document.createElement("iframe");
           frame.setAttribute("loading", "lazy");
@@ -1428,6 +1434,8 @@ add_task(async function test_prompt_warning_for_wallet_scheme() {
     await testOpenProto(browser, WALLET_PROTO, {
       triggerLoad: () => {
         let uri = `${WALLET_PROTO}://test`;
+        // TODO: Switch to SpecialPowers.spawn
+        // eslint-disable-next-line mozilla/reject-contenttask-spawn
         ContentTask.spawn(browser, { uri }, args => {
           let frame = content.document.createElement("iframe");
           frame.src = `data:text/html,<script>location.href="${args.uri}"</script>`;

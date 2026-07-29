@@ -11,12 +11,12 @@ import mozilla.components.browser.icons.IconRequest
 import mozilla.components.support.test.any
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.mockito.Mockito.anyInt
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.spy
+import kotlin.test.assertNotNull
 
 class ColorProcessorTest {
 

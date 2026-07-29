@@ -95,11 +95,11 @@ test_scroll(no_overflow2, "scrollTop", "scrollTopMax", /* is_overflow */ false);
 
 var overflow = document.getElementById("overflow");
 test_scroll(overflow, "scrollLeft", "scrollLeftMax", /* is_overflow */ true);
-test_scroll(overflow, "scrollTop", "scrollTopMax", /* is_overflow */ true);
+test_scroll(overflow, "scrollTop", "scrollTopMax", /* is_overflow */ false);
 
 var overflow2 = document.getElementById("overflow2");
 test_scroll(overflow2, "scrollLeft", "scrollLeftMax", /* is_overflow */ true);
-test_scroll(overflow2, "scrollTop", "scrollTopMax", /* is_overflow */ true);
+test_scroll(overflow2, "scrollTop", "scrollTopMax", /* is_overflow */ false);
 
 </script>
 </pre>

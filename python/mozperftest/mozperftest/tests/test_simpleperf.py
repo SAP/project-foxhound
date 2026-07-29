@@ -82,7 +82,7 @@ class FakeDevice:
         self.pulled_files[destination] = source
 
 
-@mock.patch("mozperftest.system.simpleperf.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.simpleperf.get_adb_device_or_emu", new=FakeDevice)
 def test_simpleperf_setup():
     mach_cmd, metadata, env = running_env(
         app="fenix", tests=[str(EXAMPLE_SHELL_TEST)], output=None
@@ -125,7 +125,7 @@ def test_simpleperf_setup():
     assert "MOZPERFTEST_SIMPLEPERF" not in os.environ
 
 
-@mock.patch("mozperftest.system.simpleperf.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.simpleperf.get_adb_device_or_emu", new=FakeDevice)
 @mock.patch("os.path.exists", return_value=True)
 def test_simpleperf_setup_with_path(mock_exists):
     """Test setup_simpleperf_path when path is provided."""
@@ -145,7 +145,7 @@ def test_simpleperf_setup_with_path(mock_exists):
     )
 
 
-@mock.patch("mozperftest.system.simpleperf.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.simpleperf.get_adb_device_or_emu", new=FakeDevice)
 @mock.patch("os.path.exists", return_value=True)
 def test_simpleperf_setup_without_path(mock_exists):
     """Test setup_simpleperf_path when no path is provided and NDK needs to be installed."""
@@ -186,7 +186,7 @@ def test_simpleperf_setup_without_path(mock_exists):
     )
 
 
-@mock.patch("mozperftest.system.simpleperf.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.simpleperf.get_adb_device_or_emu", new=FakeDevice)
 @mock.patch("os.path.exists", return_value=False)
 def test_simpleperf_setup_missing_binary(mock_exists):
     """Test setup_simpleperf_path when the binary doesn't exist."""
@@ -220,7 +220,7 @@ class MockProcess:
         return b"stdout data", b"stderr data"
 
 
-@mock.patch("mozperftest.system.simpleperf.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.simpleperf.get_adb_device_or_emu", new=FakeDevice)
 @mock.patch("mozperftest.system.simpleperf.subprocess.Popen")
 @mock.patch(
     "mozperftest.system.simpleperf.SimpleperfProfiler.is_enabled", return_value=True
@@ -253,7 +253,7 @@ def test_simpleperf_controller_start_default_options(mock_is_enabled, mock_popen
     assert controller.profiler_process == mock_process
 
 
-@mock.patch("mozperftest.system.simpleperf.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.simpleperf.get_adb_device_or_emu", new=FakeDevice)
 @mock.patch("mozperftest.system.simpleperf.subprocess.Popen")
 @mock.patch(
     "mozperftest.system.simpleperf.SimpleperfProfiler.is_enabled", return_value=True
@@ -284,7 +284,7 @@ def test_simpleperf_controller_start_custom_options(mock_is_enabled, mock_popen)
     assert controller.profiler_process == mock_process
 
 
-@mock.patch("mozperftest.system.simpleperf.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.simpleperf.get_adb_device_or_emu", new=FakeDevice)
 @mock.patch("mozperftest.system.simpleperf.Path")
 @mock.patch(
     "mozperftest.system.simpleperf.SimpleperfProfiler.is_enabled", return_value=True
@@ -316,7 +316,7 @@ def test_simpleperf_controller_stop(mock_is_enabled, mock_path):
     assert controller.profiler_process is None
 
 
-@mock.patch("mozperftest.system.simpleperf.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.simpleperf.get_adb_device_or_emu", new=FakeDevice)
 @mock.patch(
     "mozperftest.system.simpleperf.SimpleperfProfiler.is_enabled", return_value=True
 )
@@ -331,7 +331,7 @@ def test_simpleperf_controller_start_already_running(mock_is_enabled):
     assert "simpleperf already running" in str(excinfo.value)
 
 
-@mock.patch("mozperftest.system.simpleperf.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.simpleperf.get_adb_device_or_emu", new=FakeDevice)
 @mock.patch(
     "mozperftest.system.simpleperf.SimpleperfProfiler.is_enabled", return_value=True
 )
@@ -348,7 +348,7 @@ def test_simpleperf_controller_stop_not_running(mock_is_enabled):
     assert "no profiler process found" in str(excinfo.value)
 
 
-@mock.patch("mozperftest.system.simpleperf.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.simpleperf.get_adb_device_or_emu", new=FakeDevice)
 @mock.patch("mozperftest.system.simpleperf.subprocess.Popen")
 @mock.patch(
     "mozperftest.system.simpleperf.SimpleperfProfiler.is_enabled", return_value=True
@@ -373,7 +373,7 @@ def test_simpleperf_controller_stop_error(mock_is_enabled, mock_popen):
 # Tests for Simpleperf Symbolication
 
 
-@mock.patch("mozperftest.system.simpleperf.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.simpleperf.get_adb_device_or_emu", new=FakeDevice)
 def test_simpleperf_invalid_symbolicate_arguments():
     """Test simpleperf symbolication when empty or invalid arguments are passed"""
     mach_cmd, metadata, env = running_env(
@@ -404,12 +404,12 @@ def test_simpleperf_invalid_symbolicate_arguments():
         mock_cleanup.assert_called_once()
 
     # Check if exception was thrown and handled by verifying that
-    # breakpad_symbol_dir and symbolicator_dir do not exist
+    # breakpad_symbol_dir and profiler_edit_dir do not exist
     assert not hasattr(profiler, "breakpad_symbol_dir")
-    assert not hasattr(profiler, "symbolicator_dir")
+    assert not hasattr(profiler, "profiler_node_tools_dir")
 
     profiler.set_arg("symbol-path", "/fake/symbol/path")
-    profiler.set_arg("symbolicator-path", "/fake/symbolicator/path")
+    profiler.set_arg("profiler-node-tools-path", "/fake/profiler-edit/path")
 
     # Verify local symbolication is skipped if args are invalid
     with mock.patch.object(profiler, "_cleanup") as mock_cleanup, mock.patch(
@@ -419,10 +419,10 @@ def test_simpleperf_invalid_symbolicate_arguments():
         mock_cleanup.assert_called_once()
 
     assert not hasattr(profiler, "breakpad_symbol_dir")
-    assert not hasattr(profiler, "symbolicator_dir")
+    assert not hasattr(profiler, "profiler_node_tools_dir")
 
 
-@mock.patch("mozperftest.system.simpleperf.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.simpleperf.get_adb_device_or_emu", new=FakeDevice)
 @mock.patch("mozperftest.system.simpleperf.SYMBOL_SERVER_TIMEOUT", 0.1)
 def test_local_simpleperf_symbolicate(tmp_path):
 
@@ -433,7 +433,7 @@ def test_local_simpleperf_symbolicate(tmp_path):
     profiler = SimpleperfProfiler(env, mach_cmd)
 
     # Mock directories
-    mock_work_dir_path, symbolicator_dir, symbol_dir, output_dir = (
+    mock_work_dir_path, profiler_node_tools_dir, symbol_dir, output_dir = (
         create_mock_symbolication_directories(tmp_path, CI=False)
     )
 
@@ -450,7 +450,7 @@ def test_local_simpleperf_symbolicate(tmp_path):
 
     # Mock args
     profiler.set_arg("symbol-path", symbol_dir)
-    profiler.set_arg("symbolicator-path", symbolicator_dir)
+    profiler.set_arg("profiler-node-tools-path", profiler_node_tools_dir)
     profiler.env.set_arg("output", output_dir)
     profiler.test_name = "unit_test"
 
@@ -472,9 +472,9 @@ def test_local_simpleperf_symbolicate(tmp_path):
             "",
         ]
 
-        symbolicator_process = make_mock_process(context=True)
+        profiler_edit_process = make_mock_process(context=True)
 
-        mock_popen.side_effect = [import_process, load_process, symbolicator_process]
+        mock_popen.side_effect = [import_process, load_process, profiler_edit_process]
 
         # Test _symbolicate() via teardown()
         profiler.teardown()
@@ -514,15 +514,15 @@ def test_local_simpleperf_symbolicate(tmp_path):
             text=True,
         )
 
-        expected_symbolicator = call(
+        expected_profiler_edit = call(
             [
                 str(node_path),
-                str(symbolicator_dir / "symbolicator-cli.js"),
-                "--input",
+                str(profiler_node_tools_dir / "profiler-edit.js"),
+                "-i",
                 str(output_dir / "simpleperf" / "profile-0-unsymbolicated.json"),
-                "--output",
+                "-o",
                 str(output_dir / "simpleperf" / "profile-0.json"),
-                "--server",
+                "--symbolicate-with-server",
                 "http://127.0.0.1:3000",
             ],
             stdout=subprocess.PIPE,
@@ -534,13 +534,13 @@ def test_local_simpleperf_symbolicate(tmp_path):
         calls = mock_popen.call_args_list
         assert expected_import in calls
         assert expected_load in calls
-        assert expected_symbolicator in calls
+        assert expected_profiler_edit in calls
 
-        # Expected call order: samply import -> samply load -> symbolicator-cli
+        # Expected call order: samply import -> samply load -> profiler-edit
         assert (
             calls.index(expected_import)
             < calls.index(expected_load)
-            < calls.index(expected_symbolicator)
+            < calls.index(expected_profiler_edit)
         )
 
         # Verify exported symbolicated profiles
@@ -548,7 +548,7 @@ def test_local_simpleperf_symbolicate(tmp_path):
         assert output_zip.exists()
 
 
-@mock.patch("mozperftest.system.simpleperf.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.simpleperf.get_adb_device_or_emu", new=FakeDevice)
 @mock.patch("mozperftest.system.simpleperf.SYMBOL_SERVER_TIMEOUT", 0.1)
 def test_local_simpleperf_symbolicate_timeout(tmp_path):
 
@@ -559,7 +559,7 @@ def test_local_simpleperf_symbolicate_timeout(tmp_path):
     profiler = SimpleperfProfiler(env, mach_cmd)
 
     # Mock directories
-    mock_work_dir_path, symbolicator_dir, symbol_dir, output_dir = (
+    mock_work_dir_path, profiler_node_tools_dir, symbol_dir, output_dir = (
         create_mock_symbolication_directories(tmp_path, CI=False)
     )
 
@@ -572,7 +572,7 @@ def test_local_simpleperf_symbolicate_timeout(tmp_path):
 
     # Mock args
     profiler.set_arg("symbol-path", symbol_dir)
-    profiler.set_arg("symbolicator-path", symbolicator_dir)
+    profiler.set_arg("profiler-node-tools-path", profiler_node_tools_dir)
     profiler.env.set_arg("output", output_dir)
     profiler.test_name = "unit_test"
 
@@ -597,15 +597,15 @@ def test_local_simpleperf_symbolicate_timeout(tmp_path):
         # Test symbolication timeout
         profiler.teardown()
 
-        expected_symbolicator = call(
+        expected_profiler_edit = call(
             [
                 str(node_path),
-                str(symbolicator_dir / "symbolicator-cli.js"),
-                "--input",
+                str(profiler_node_tools_dir / "profiler-edit.js"),
+                "-i",
                 str(output_dir / "simpleperf" / "profile-0-unsymbolicated.json"),
-                "--output",
+                "-o",
                 str(output_dir / "simpleperf" / "profile-0.json"),
-                "--server",
+                "--symbolicate-with-server",
                 "http://127.0.0.1:3000",
             ],
             stdout=subprocess.PIPE,
@@ -615,15 +615,15 @@ def test_local_simpleperf_symbolicate_timeout(tmp_path):
         )
 
         # Check if timeout error has been thrown and caught by checking if
-        # subsequent symbolicator call has not occured.
-        assert expected_symbolicator not in mock_popen.call_args_list
+        # subsequent profiler-edit call has not occured.
+        assert expected_profiler_edit not in mock_popen.call_args_list
 
         # Check for clean exit
         mock_rmtree.assert_not_called()
         mock_cleanup.assert_called_once()
 
 
-@mock.patch("mozperftest.system.simpleperf.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.simpleperf.get_adb_device_or_emu", new=FakeDevice)
 @mock.patch("mozperftest.system.simpleperf.SYMBOL_SERVER_TIMEOUT", 0.1)
 def test_ci_simpleperf_symbolicate(tmp_path):
 
@@ -659,9 +659,9 @@ def test_ci_simpleperf_symbolicate(tmp_path):
         parents=True, exist_ok=True
     )
     (
-        symbolicator_path := mock_fetch_path
-        / "symbolicator-cli"
-        / "symbolicator-cli.js"
+        profiler_edit_path := mock_fetch_path
+        / "profiler-node-tools"
+        / "profiler-edit.js"
     ).parent.mkdir(parents=True, exist_ok=True)
 
     # Mock .zip file with a symbol file
@@ -702,9 +702,9 @@ def test_ci_simpleperf_symbolicate(tmp_path):
             "",
         ]
 
-        symbolicator_process = make_mock_process(context=True)
+        profiler_edit_process = make_mock_process(context=True)
 
-        mock_popen.side_effect = [import_process, load_process, symbolicator_process]
+        mock_popen.side_effect = [import_process, load_process, profiler_edit_process]
 
         # Test _symbolicate() via teardown()
         profiler.teardown()
@@ -759,17 +759,17 @@ def test_ci_simpleperf_symbolicate(tmp_path):
             text=True,
         )
 
-        expected_symbolicator = call(
+        expected_profiler_edit = call(
             [
                 str(node_path),
-                str(symbolicator_path),
-                "--input",
+                str(profiler_edit_path),
+                "-i",
                 str(
                     mock_work_dir_path / "simpleperf" / "profile-0-unsymbolicated.json"
                 ),
-                "--output",
+                "-o",
                 str(mock_work_dir_path / "simpleperf" / "profile-0.json"),
-                "--server",
+                "--symbolicate-with-server",
                 "http://127.0.0.1:3000",
             ],
             stdout=subprocess.PIPE,
@@ -782,13 +782,13 @@ def test_ci_simpleperf_symbolicate(tmp_path):
         print(calls)
         assert expected_import in mock_popen.call_args_list
         assert expected_load in mock_popen.call_args_list
-        assert expected_symbolicator in mock_popen.call_args_list
+        assert expected_profiler_edit in mock_popen.call_args_list
 
-        # Expected call order: samply import -> samply load -> symbolicator-cli
+        # Expected call order: samply import -> samply load -> profiler-edit
         assert (
             calls.index(expected_import)
             < calls.index(expected_load)
-            < calls.index(expected_symbolicator)
+            < calls.index(expected_profiler_edit)
         )
 
         # Verify exported symbolicated profiles
@@ -796,7 +796,7 @@ def test_ci_simpleperf_symbolicate(tmp_path):
         assert output_zip.exists()
 
 
-@mock.patch("mozperftest.system.simpleperf.ADBDevice", new=FakeDevice)
+@mock.patch("mozperftest.system.simpleperf.get_adb_device_or_emu", new=FakeDevice)
 @mock.patch("mozperftest.system.simpleperf.SYMBOL_SERVER_TIMEOUT", 0.1)
 def test_ci_simpleperf_symbolicate_timeout(tmp_path):
 
@@ -815,9 +815,9 @@ def test_ci_simpleperf_symbolicate_timeout(tmp_path):
         parents=True, exist_ok=True
     )
     (
-        symbolicator_path := mock_fetch_path
-        / "symbolicator-cli"
-        / "symbolicator-cli.js"
+        profiler_edit_path := mock_fetch_path
+        / "profiler-node-tools"
+        / "profiler-edit.js"
     ).parent.mkdir(parents=True, exist_ok=True)
 
     # Mock .zip file with a symbol file
@@ -865,17 +865,17 @@ def test_ci_simpleperf_symbolicate_timeout(tmp_path):
         # Test symbolication timeout
         profiler.teardown()
 
-        expected_symbolicator = call(
+        expected_profiler_edit = call(
             [
                 str(node_path),
-                str(symbolicator_path),
-                "--input",
+                str(profiler_edit_path),
+                "-i",
                 str(
                     mock_work_dir_path / "simpleperf" / "profile-0-unsymbolicated.json"
                 ),
-                "--output",
+                "-o",
                 str(mock_work_dir_path / "simpleperf" / "profile-0.json"),
-                "--server",
+                "--symbolicate-with-server",
                 "http://127.0.0.1:3000",
             ],
             stdout=subprocess.PIPE,
@@ -885,8 +885,8 @@ def test_ci_simpleperf_symbolicate_timeout(tmp_path):
         )
 
         # Check if timeout error has been thrown and caught by checking if
-        # subsequent symbolicator call has not occured.
-        assert expected_symbolicator not in mock_popen.call_args_list
+        # subsequent profiler-edit call has not occured.
+        assert expected_profiler_edit not in mock_popen.call_args_list
 
         # Check for clean exit
         mock_rmtree.assert_called_once()

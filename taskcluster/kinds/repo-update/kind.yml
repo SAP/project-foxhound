@@ -5,7 +5,9 @@
 loader: taskgraph.loader.transform:loader
 
 transforms:
+    - taskgraph.transforms.task_context
     - gecko_taskgraph.transforms.repo_update:transforms
+    - gecko_taskgraph.transforms.job:transforms
     - gecko_taskgraph.transforms.task:transforms
 
 
@@ -13,15 +15,17 @@ task-defaults:
     run-on-repo-type: [hg]
     run-on-projects: []  # Only run via cron
     worker-type: b-linux-xlarge
+    run:
+        using: run-task
+        checkout: true
+        sparse-profile: periodic-updates
+        command: /runme.sh
     worker:
-        implementation: docker-worker
         os: linux
         docker-image: {in-tree: periodic-updates}
         env:
             PRODUCT: firefox
             REVIEWERS: "#release-managers"
-        command:
-            - /runme.sh
         taskcluster-proxy: true
     treeherder:
         kind: build
@@ -34,6 +38,13 @@ task-defaults:
 tasks:
     pinning-update:
         description: HSTS and HPKP pinning update
+        task-context:
+            from-parameters:
+                project: project
+            substitution-fields:
+                - worker.env.DO_HSTS
+                - worker.env.DO_HPKP
+                - worker.env.USE_MOZILLA_CENTRAL
         treeherder:
             symbol: hfu
         worker:
@@ -60,8 +71,17 @@ tasks:
                   type: file
 
     periodic-file-update:
-        description: Remote settings, suffix list, mobile experiments, and CT log update
+        description: Remote settings, suffix list, mobile experiments, mobile merino manifest, and CT log update
         worker-type: b-linux
+        task-context:
+            from-parameters:
+                project: project
+            substitution-fields:
+                - worker.env.DO_REMOTE_SETTINGS
+                - worker.env.DO_SUFFIX_LIST
+                - worker.env.DO_MOBILE_EXPERIMENTS
+                - worker.env.DO_MOBILE_MERINO_MANIFEST
+                - worker.env.DO_CT_LOGS
         treeherder:
             symbol: pfu
         worker:
@@ -79,6 +99,10 @@ tasks:
                     by-project:
                         mozilla-(central|beta|release): "1"
                         default: ""
+                DO_MOBILE_MERINO_MANIFEST:
+                    by-project:
+                        mozilla-(central|beta|release): "1"
+                        default: ""
                 DO_CT_LOGS:
                     by-project:
                         mozilla-(central|beta|esr.*): "1"
@@ -92,4 +116,7 @@ tasks:
                   type: file
                 - name: 'public/build/initial_experiments.diff'
                   path: '/home/worker/artifacts/initial_experiments.diff'
+                  type: file
+                - name: 'public/build/merino_manifest.diff'
+                  path: '/home/worker/artifacts/merino_manifest.diff'
                   type: file

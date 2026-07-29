@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -65,6 +63,9 @@ struct WhereToScroll {
   // The percentage of the scroll axis that we're scrolling to.
   // Nothing() represents "scroll to nearest".
   Maybe<int16_t> mPercentage;
+  // True if the caller requested "auto", meaning snap alignment should be used
+  // if the target has one, with a direction-dependent fallback otherwise.
+  bool mIsAuto = false;
 
   // Default is nearest.
   constexpr WhereToScroll() = default;
@@ -80,16 +81,18 @@ struct WhereToScroll {
   MOZ_IMPLICIT constexpr WhereToScroll(decltype(Center)) : WhereToScroll(50) {}
   enum { End };
   MOZ_IMPLICIT constexpr WhereToScroll(decltype(End)) : WhereToScroll(100) {}
+  enum { Auto };
+  MOZ_IMPLICIT constexpr WhereToScroll(decltype(Auto)) : mIsAuto(true) {}
 };
 
-// See the comment for constructor of ScrollAxis for the detail.
+// See the comment for constructor of AxisScrollParams for the detail.
 enum class WhenToScroll : uint8_t {
   Always,
   IfNotVisible,
   IfNotFullyVisible,
 };
 
-struct ScrollAxis final {
+struct AxisScrollParams final {
   /**
    * aWhere:
    *   Either a percentage or a special value. PresShell defines:
@@ -105,7 +108,7 @@ struct ScrollAxis final {
    *   * kScrollToRight = 100: The frame's right edge is aligned* with the right
    *     edge of the visible area.
    *   * kScrollToCenter = 50: The frame is centered along the axis the
-   *     ScrollAxis is used for.
+   *     AxisScrollParams is used for.
    *
    *   Other values are treated as a percentage, and the point*"percent"
    *   down the frame is placed at the point "percent" down the visible area.
@@ -120,8 +123,9 @@ struct ScrollAxis final {
    *   * WhenToScroll::Always: Move the frame regardless of its current
    *     visibility.
    */
-  explicit ScrollAxis(WhereToScroll aWhere = WhereToScroll::Nearest,
-                      WhenToScroll aWhen = WhenToScroll::IfNotFullyVisible)
+  explicit AxisScrollParams(
+      WhereToScroll aWhere = WhereToScroll::Nearest,
+      WhenToScroll aWhen = WhenToScroll::IfNotFullyVisible)
       : mWhereToScroll(aWhere), mWhenToScroll(aWhen) {}
 
   WhereToScroll mWhereToScroll;
@@ -159,6 +163,7 @@ enum class RenderDocumentFlags {
   DrawWindowNotFlushing = 1 << 6,
   UseHighQualityScaling = 1 << 7,
   ResetViewportScrolling = 1 << 8,
+  ForPrinting = 1 << 9,
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(RenderDocumentFlags)

@@ -25,7 +25,7 @@ safety, and maintaining the correct sequence of operations in complex
 applications, in contrast to the usual pattern seen in the Gecko code base,
 which is dispatching ``Runnable`` manually.
 
-Another option for syncing state across threads is to use `State Mirroring <https://searchfox.org/mozilla-central/source/xpcom/threads/StateMirroring.h>`_.
+Another option for syncing state across threads is to use :searchfox:`State Mirroring <xpcom/threads/StateMirroring.h>`.
 
 ``MozPromise`` aren't really related to the DOM ``Promise`` class, but can be often used in
 conjunction. This is done manually by for example calling
@@ -315,7 +315,7 @@ Disconnecting a request **must** happen on the target thread of the resolve/reje
 handler it is tracking. This handler is released when ``Disconnect()`` is called.
 
 When dealing with ``MozPromise`` close to the WebIDL binding layer,
-another option is `DOMMozPromiseRequestHolder <https://searchfox.org/mozilla-central/source/dom/base/DOMMozPromiseRequestHolder.h>`_,
+another option is :searchfox:`DOMMozPromiseRequestHolder <dom/base/DOMMozPromiseRequestHolder.h>`,
 that will disconnect promises appropriately when the global goes away.
 It works in the same way otherwise.
 
@@ -413,7 +413,7 @@ Advanced features
 Direct Task Dispatch
 --------------------
 
-`Direct task dispatch <https://searchfox.org/mozilla-central/source/xpcom/threads/nsIDirectTaskDispatcher.idl>`_
+:searchfox:`Direct task dispatch <xpcom/threads/nsIDirectTaskDispatcher.idl>`
 is a feature in ``MozPromise`` that allows the resolve or
 reject callbacks to be executed on the direct task queue instead of the normal
 event loop. This is particularly useful for scenarios where multiple
@@ -433,7 +433,7 @@ To enable direct task dispatch, the ``UseDirectTaskDispatch`` method is called
 on the ``MozPromiseHolder`` instance. This method sets the promise to use the
 direct event queue for dispatching the resolve or reject callbacks.
 
-A related concept is `"tail dispatching" <https://searchfox.org/mozilla-central/rev/9fa446ad77af13847a7da250135fc58b1a1bd5b9/xpcom/threads/AbstractThread.h#72-76>`_
+A related concept is :searchfox:`"tail dispatching" <mozilla-central/rev/9fa446ad77af13847a7da250135fc58b1a1bd5b9:xpcom/threads/AbstractThread.h#72-76>`
 of ``Runnable``.
 
 Synchronous Dispatch

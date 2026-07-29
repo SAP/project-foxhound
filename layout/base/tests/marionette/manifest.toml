@@ -3,6 +3,8 @@ prefs = ["gfx.font_loader.delay=0"]
 run-if = [
   "buildapp == 'browser'",
 ]
+subsuite = "integration"
+tags = "os_integration"
 
 ["test_accessiblecaret_cursor_mode.py"]
 skip-if = [

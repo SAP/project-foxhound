@@ -394,9 +394,7 @@ try_builder("mac_compile_dbg")
 ci_builder("Mac64 Release", "Mac|x64|rel")
 try_builder("mac_rel")
 try_builder("mac_compile_rel", cq = None)
-ci_builder("Mac64 Builder", ci_cat = None, perf_cat = "Mac|x64|Builder|")
 ci_builder("MacArm64 Builder", ci_cat = None, perf_cat = "Mac|arm64|Builder|")
-perf_builder("Perf Mac 11", "Mac|x64|Tester|11", triggered_by = ["Mac64 Builder"])
 perf_builder("Perf Mac M1 Arm64 12", "Mac|arm64|Tester|12", triggered_by = ["MacArm64 Builder"])
 ci_builder("Mac Asan", "Mac|x64|asan")
 try_builder("mac_asan")
@@ -482,7 +480,7 @@ lkgr_config = {
                 "WebRTC Chromium FYI Mac Tester",
                 "WebRTC Chromium FYI Win Builder (dbg)",
                 "WebRTC Chromium FYI Win Builder",
-                "WebRTC Chromium FYI Win10 Tester",
+                "WebRTC Chromium FYI Win Tester",
                 # TODO: b/441273941 - Re-enable once the ios infra issue is resolved
                 #"WebRTC Chromium FYI ios-device",
                 #"WebRTC Chromium FYI ios-simulator",

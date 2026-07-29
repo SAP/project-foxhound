@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -591,7 +589,7 @@ bool nsSplitterFrameInner::CollectChildInfos() {
 
         // We need to check for hidden attribute too, since treecols with
         // the hidden attribute are not really hidden, just collapsed
-        if (element->GetXULBoolAttr(nsGkAtoms::fixed) ||
+        if (element->GetBoolAttr(nsGkAtoms::fixed) ||
             element->GetBoolAttr(nsGkAtoms::hidden)) {
           return false;
         }
@@ -963,14 +961,14 @@ void nsSplitterFrameInner::UpdateState() {
           // CollapsedBefore -> Dragging
           // CollapsedAfter -> Open
           // CollapsedAfter -> Dragging
-          nsContentUtils::AddScriptRunner(new nsUnsetAttrRunnable(
+          nsContentUtils::AddScriptRunner(MakeAndAddRef<nsUnsetAttrRunnable>(
               sibling->AsElement(), nsGkAtoms::collapsed));
         } else if ((mState == State::Open || mState == State::Dragging) &&
                    (newState == State::CollapsedBefore ||
                     newState == State::CollapsedAfter)) {
           // Open -> CollapsedBefore / CollapsedAfter
           // Dragging -> CollapsedBefore / CollapsedAfter
-          nsContentUtils::AddScriptRunner(new nsSetAttrRunnable(
+          nsContentUtils::AddScriptRunner(MakeAndAddRef<nsSetAttrRunnable>(
               sibling->AsElement(), nsGkAtoms::collapsed, u"true"_ns));
         }
       }

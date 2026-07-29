@@ -7,6 +7,12 @@ add_setup(async function () {
 });
 
 add_task(async function () {
+  if (SRD_PREF_VALUE) {
+    Assert.ok(true, "New settings redesign UI is enabled.");
+    // Bail early, as this test doesn't apply to the redesigned settings.
+    return;
+  }
+
   waitForExplicitFinish();
 
   const tabURL =

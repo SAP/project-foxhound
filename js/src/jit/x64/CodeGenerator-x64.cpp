@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -8,6 +6,8 @@
 
 #include "mozilla/CheckedInt.h"
 #include "mozilla/FloatingPoint.h"
+
+#include <bit>
 
 #include "jit/CodeGenerator.h"
 #include "jit/MIR-wasm.h"
@@ -182,7 +182,7 @@ void CodeGenerator::visitMulI64(LMulI64* lir) {
         break;
       default: {
         // Use shift if constant is power of 2.
-        int32_t shift = mozilla::FloorLog2(constant);
+        int32_t shift = mozilla::FloorLog2(uint64_t(constant));
         if (constant > 0 && (1 << shift) == constant) {
           if (lhs != out) {
             masm.movq(lhs, out);
@@ -444,7 +444,7 @@ static void Divide64WithConstant(MacroAssembler& masm, LDivOrMod* ins) {
 
   // The absolute value of the denominator isn't a power of 2 (see LDivPowTwoI64
   // and LModPowTwoI64).
-  MOZ_ASSERT(!mozilla::IsPowerOfTwo(mozilla::Abs(d)));
+  MOZ_ASSERT(!std::has_single_bit(mozilla::Abs(d)));
 
   auto* mir = ins->mir();
 
@@ -486,7 +486,7 @@ static void Divide64WithConstant(MacroAssembler& masm, LDivOrMod* ins) {
 }
 
 void CodeGenerator::visitDivConstantI64(LDivConstantI64* ins) {
-  int32_t d = ins->denominator();
+  int64_t d = ins->denominator();
 
   // This emits the division answer into rdx.
   MOZ_ASSERT(ToRegister(ins->output()) == rdx);
@@ -535,7 +535,7 @@ static void UnsignedDivide64WithConstant(MacroAssembler& masm,
   MOZ_ASSERT((output == rax && temp == rdx) || (output == rdx && temp == rax));
 
   // The denominator isn't a power of 2 (see LDivPowTwoI and LModPowTwoI).
-  MOZ_ASSERT(!mozilla::IsPowerOfTwo(d));
+  MOZ_ASSERT(!std::has_single_bit(d));
 
   auto rmc = ReciprocalMulConstants::computeUnsignedDivisionConstants(d);
 
@@ -1501,8 +1501,8 @@ void CodeGenerator::visitMulIntPtr(LMulIntPtr* ins) {
     }
 
     // Use shift if constant is a power of 2.
-    if (constant > 0 && mozilla::IsPowerOfTwo(uintptr_t(constant))) {
-      uint32_t shift = mozilla::FloorLog2(constant);
+    if (constant > 0 && std::has_single_bit(uintptr_t(constant))) {
+      uint32_t shift = mozilla::FloorLog2(uintptr_t(constant));
       masm.lshiftPtr(Imm32(shift), lhs);
       return;
     }
@@ -1511,4 +1511,16 @@ void CodeGenerator::visitMulIntPtr(LMulIntPtr* ins) {
   } else {
     masm.imulq(ToOperand(rhs), lhs);
   }
+}
+
+void CodeGenerator::visitWasmMulI64WideHI64(LWasmMulI64WideHI64* lir) {
+  Register lhs = ToRegister(lir->lhs());
+  Register rhs = ToRegister(lir->rhs());
+  Register temp0 = ToRegister(lir->temp0());
+  Register temp1 = ToRegister(lir->temp1());
+  Register output = ToRegister(lir->output());
+  // This holds because both operands are non-AtStart variants.
+  MOZ_ASSERT(output != lhs && output != rhs);
+  MOZ_ASSERT(output != temp0 && output != temp1);
+  masm.wasmMulI64WideHI64(lhs, rhs, temp0, temp1, output, lir->isSigned());
 }

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -14,6 +12,7 @@
 #include "mozilla/intl/NumberFormat.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Span.h"
+#include "mozilla/UsingEnum.h"
 
 #include <array>
 #include <charconv>
@@ -30,7 +29,6 @@
 #include "builtin/intl/NumberFormat.h"
 #include "builtin/intl/Packed.h"
 #include "builtin/intl/ParameterNegotiation.h"
-#include "builtin/intl/UsingEnum.h"
 #include "builtin/temporal/Duration.h"
 #include "gc/AllocKind.h"
 #include "gc/GCContext.h"
@@ -111,16 +109,7 @@ static const JSPropertySpec durationFormat_properties[] = {
 static bool DurationFormat(JSContext* cx, unsigned argc, Value* vp);
 
 const JSClassOps DurationFormatObject::classOps_ = {
-    nullptr,                         // addProperty
-    nullptr,                         // delProperty
-    nullptr,                         // enumerate
-    nullptr,                         // newEnumerate
-    nullptr,                         // resolve
-    nullptr,                         // mayResolve
-    DurationFormatObject::finalize,  // finalize
-    nullptr,                         // call
-    nullptr,                         // construct
-    nullptr,                         // trace
+    .finalize = DurationFormatObject::finalize,
 };
 
 const ClassSpec DurationFormatObject::classSpec_ = {
@@ -271,11 +260,7 @@ void js::intl::DurationFormatObject::finalize(JS::GCContext* gcx,
 }
 
 static constexpr std::string_view DisplayToString(DurationDisplay display) {
-#ifndef USING_ENUM
-  using enum DurationDisplay;
-#else
-  USING_ENUM(DurationDisplay, Auto, Always);
-#endif
+  MOZ_USING_ENUM(DurationDisplay, Auto, Always);
   switch (display) {
     case Auto:
       return "auto";
@@ -286,11 +271,7 @@ static constexpr std::string_view DisplayToString(DurationDisplay display) {
 }
 
 static constexpr std::string_view DurationStyleToString(DurationStyle style) {
-#ifndef USING_ENUM
-  using enum DurationStyle;
-#else
-  USING_ENUM(DurationStyle, Long, Short, Narrow, Numeric, TwoDigit);
-#endif
+  MOZ_USING_ENUM(DurationStyle, Long, Short, Narrow, Numeric, TwoDigit);
   switch (style) {
     case Long:
       return "long";
@@ -307,11 +288,7 @@ static constexpr std::string_view DurationStyleToString(DurationStyle style) {
 }
 
 static constexpr std::string_view BaseStyleToString(DurationBaseStyle style) {
-#ifndef USING_ENUM
-  using enum DurationBaseStyle;
-#else
-  USING_ENUM(DurationBaseStyle, Long, Short, Narrow, Digital);
-#endif
+  MOZ_USING_ENUM(DurationBaseStyle, Long, Short, Narrow, Digital);
   switch (style) {
     case Long:
       return "long";
@@ -582,17 +559,11 @@ static bool InitializeDurationFormat(
   // Step 3. (Inlined ResolveOptions)
 
   // ResolveOptions, step 1.
-  Rooted<LocalesList> requestedLocales(cx, cx);
-  if (!CanonicalizeLocaleList(cx, args.get(0), &requestedLocales)) {
+  auto* requestedLocales = CanonicalizeLocaleList(cx, args.get(0));
+  if (!requestedLocales) {
     return false;
   }
-
-  Rooted<ArrayObject*> requestedLocalesArray(
-      cx, LocalesListToArray(cx, requestedLocales));
-  if (!requestedLocalesArray) {
-    return false;
-  }
-  durationFormat->setRequestedLocales(requestedLocalesArray);
+  durationFormat->setRequestedLocales(requestedLocales);
 
   DurationFormatOptions dfOptions{};
 
@@ -833,13 +804,30 @@ static bool ResolveLocale(JSContext* cx,
   }
   durationFormat->setLocale(locale);
 
-  auto nu = resolved.extension(UnicodeExtensionKey::NumberingSystem);
-  MOZ_ASSERT(nu, "resolved numbering system is non-null");
-  durationFormat->setNumberingSystem(nu);
+  if (auto nu = resolved.extension(UnicodeExtensionKey::NumberingSystem)) {
+    durationFormat->setNumberingSystem(nu);
+  } else {
+    durationFormat->setNumberingSystem(cx->names().default_);
+  }
 
   MOZ_ASSERT(durationFormat->isLocaleResolved(),
              "locale successfully resolved");
   return true;
+}
+
+static JSLinearString* ResolveNumberingSystem(
+    JSContext* cx, Handle<DurationFormatObject*> durationFormat) {
+  MOZ_ASSERT(durationFormat->isLocaleResolved());
+
+  auto* numberingSystem = durationFormat->getNumberingSystem();
+  if (numberingSystem == cx->names().default_) {
+    numberingSystem = DefaultNumberingSystem(cx, durationFormat->getLocale());
+    if (!numberingSystem) {
+      return nullptr;
+    }
+    durationFormat->setNumberingSystem(numberingSystem);
+  }
+  return numberingSystem;
 }
 
 /**
@@ -860,15 +848,20 @@ static JSString* GetTimeSeparator(
     return nullptr;
   }
 
-  auto numberingSystem = EncodeAscii(cx, durationFormat->getNumberingSystem());
+  auto* numberingSystem = ResolveNumberingSystem(cx, durationFormat);
   if (!numberingSystem) {
+    return nullptr;
+  }
+
+  auto numberingSystemChars = EncodeAscii(cx, numberingSystem);
+  if (!numberingSystemChars) {
     return nullptr;
   }
 
   FormatBuffer<char16_t, INITIAL_CHAR_BUFFER_SIZE> separator(cx);
   auto result = mozilla::intl::DateTimeFormat::GetTimeSeparator(
       mozilla::MakeStringSpan(locale.get()),
-      mozilla::MakeStringSpan(numberingSystem.get()), separator);
+      mozilla::MakeStringSpan(numberingSystemChars.get()), separator);
   if (result.isErr()) {
     ReportInternalError(cx, result.unwrapErr());
     return nullptr;
@@ -1002,12 +995,19 @@ static mozilla::intl::NumberFormat* NewDurationNumberFormat(
   }
 
   // ICU expects numberingSystem as a Unicode locale extensions on locale.
+  //
+  // We don't add any Unicode extension keywords when the default values can be
+  // used, because ICU optimizes for this case.
 
   Rooted<JSLinearString*> localeStr(cx, durationFormat->getLocale());
 
   JS::RootedVector<UnicodeExtensionKeyword> keywords(cx);
-  if (!keywords.emplaceBack("nu", durationFormat->getNumberingSystem())) {
-    return nullptr;
+
+  auto* numberingSystem = durationFormat->getNumberingSystem();
+  if (numberingSystem != cx->names().default_) {
+    if (!keywords.emplaceBack("nu", numberingSystem)) {
+      return nullptr;
+    }
   }
 
   auto locale = FormatLocale(cx, localeStr, keywords);
@@ -1158,30 +1158,55 @@ static auto ComputeFractionalDigits(const temporal::Duration& duration,
     timeDuration = timeDuration.abs();
   }
 
-  // Next the string representation of the seconds value.
-  auto res =
-      std::to_chars(chars, std::end(result.decimal), timeDuration.seconds);
-  MOZ_ASSERT(res.ec == std::errc());
+  // Start of the integer part, without leading sign character.
+  [[maybe_unused]] const char* integer = chars;
 
-  // Set |chars| to one past the last character written by `std::to_chars`.
-  chars = res.ptr;
+  // Avoid writing leading zeros.
+  bool isZero = timeDuration.seconds == 0;
+
+  // Next the string representation of the seconds value.
+  if (!isZero) {
+    auto res =
+        std::to_chars(chars, std::end(result.decimal), timeDuration.seconds);
+    MOZ_ASSERT(res.ec == std::errc());
+
+    // Set |chars| to one past the last character written by `std::to_chars`.
+    chars = res.ptr;
+  }
 
   // Finish with string representation of the nanoseconds value, without any
   // trailing zeros.
   int32_t nanos = timeDuration.nanoseconds;
-  for (int32_t k = 100'000'000; k != 0 && nanos != 0; k /= 10) {
-    // Add decimal separator add the correct position based on |exponent|.
+  [[maybe_unused]] bool hasFractional = false;
+  for (int32_t k = 100'000'000; k != 0 && (k > exponent || nanos != 0);
+       k /= 10) {
+    // Add decimal separator at the correct position based on |exponent|.
     if (k == exponent) {
+      // Add leading zero if necessary.
+      if (isZero) {
+        isZero = false;
+        *chars++ = '0';
+      }
+      hasFractional = true;
       *chars++ = '.';
     }
 
-    *chars++ = char('0' + (nanos / k));
+    int32_t digit = (nanos / k);
     nanos %= k;
+
+    isZero = isZero && digit == 0;
+    if (!isZero) {
+      *chars++ = char('0' + digit);
+    }
   }
 
   MOZ_ASSERT((chars - result.decimal) <=
                  ptrdiff_t(DurationValue::MaximumDecimalStringLength),
              "unexpected decimal string length");
+  MOZ_ASSERT(chars > integer, "unexpected empty decimal string");
+  MOZ_ASSERT(!isZero, "unexpected all zero decimal string");
+  MOZ_ASSERT(integer[0] != '0' || integer[1] == '.', "unexpected leading zero");
+  MOZ_ASSERT(!hasFractional || chars[-1] != '0', "unexpected trailing zero");
 
   return result;
 }
@@ -1305,7 +1330,9 @@ static mozilla::intl::NumberFormat* NewNumberFormat(
     JSContext* cx, Handle<DurationFormatObject*> durationFormat,
     TemporalUnit unit, DurationStyle style) {
   // Step 4.h.i.
-  mozilla::intl::NumberFormatOptions options{};
+  mozilla::intl::NumberFormatOptions options = {
+      .mStyle = mozilla::intl::NumberFormatOptions::Style::Unit,
+  };
 
   // Step 4.h.ii.
   if (NextUnitFractional(durationFormat, unit)) {
@@ -1498,6 +1525,7 @@ static bool FormatNumericUnits(JSContext* cx,
 
   // Return early when no units are displayed.
   if (!hoursFormatted && !minutesFormatted && !secondsFormatted) {
+    result.setUndefined();
     return true;
   }
 
@@ -1650,11 +1678,7 @@ static bool FormatNumericUnits(JSContext* cx,
 }
 
 static auto ToListFormatStyle(DurationBaseStyle style) {
-#ifndef USING_ENUM
-  using enum mozilla::intl::ListFormat::Style;
-#else
-  USING_ENUM(mozilla::intl::ListFormat::Style, Long, Short, Narrow);
-#endif
+  MOZ_USING_ENUM(mozilla::intl::ListFormat::Style, Long, Short, Narrow);
   switch (style) {
     case DurationBaseStyle::Long:
       return Long;
@@ -2106,8 +2130,12 @@ static bool durationFormat_resolvedOptions(JSContext* cx,
     return false;
   }
 
+  auto* numberingSystem = ResolveNumberingSystem(cx, durationFormat);
+  if (!numberingSystem) {
+    return false;
+  }
   if (!options.emplaceBack(NameToId(cx->names().numberingSystem),
-                           StringValue(durationFormat->getNumberingSystem()))) {
+                           StringValue(numberingSystem))) {
     return false;
   }
 

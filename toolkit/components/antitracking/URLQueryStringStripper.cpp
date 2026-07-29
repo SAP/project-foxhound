@@ -1,4 +1,3 @@
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -405,12 +404,9 @@ bool URLQueryStringStripper::ShouldStripParam(const nsACString& aHost,
   nsAutoCString lowerCaseName;
   ToLowerCase(aName, lowerCaseName);
 
-  // There should always be a global rule.
-  MOZ_ASSERT(mStripOnShareGlobal.isSome());
-  const dom::StripRule& globalRule = mStripOnShareGlobal.ref();
-
   // Look through the global rules.
   if (mStripOnShareGlobal.isSome()) {
+    const dom::StripRule& globalRule = mStripOnShareGlobal.ref();
     for (const auto& param : globalRule.mQueryParams) {
       if (param == lowerCaseName) {
         return true;

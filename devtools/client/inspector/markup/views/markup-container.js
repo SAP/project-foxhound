@@ -536,7 +536,7 @@ class MarkupContainer {
     const isMetaClick = isLeftClick && (metaKey || ctrlKey);
 
     // The "show more nodes" button already has its onclick, so early return.
-    if (target.nodeName === "button") {
+    if (target.nodeName.toLowerCase() === "button") {
       return;
     }
 
@@ -587,7 +587,7 @@ class MarkupContainer {
 
   _onClick(event) {
     const { target } = event;
-    if (target.nodeName !== "button") {
+    if (target.nodeName.toLowerCase() !== "button") {
       return;
     }
 

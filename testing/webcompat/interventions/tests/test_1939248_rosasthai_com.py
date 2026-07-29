@@ -9,9 +9,26 @@ FIRST_CARD_CSS = "#location-results [id^=card-]"
 
 
 async def does_clicking_work(client):
+    await client.make_preload_script("""
+        const { prototype } = window.EventTarget;
+        const { addEventListener } = prototype;
+        // ensure the site's window.addEventListener("load") call is consistently delayed
+        // until after the actual load, to make the intermittent issue consistent for tests.
+        prototype.addEventListener = function (type, b, c, d) {
+            if (
+                this !== window ||
+                type?.toLowerCase() !== "load" ||
+                document.readyState === "complete"
+            ) {
+                return addEventListener.call(this, type, b, c, d);
+            }
+            addEventListener("load", () => {
+              window.addEventListener.call(this, type, b, c, d);
+            }, { once: true });
+        };
+    """)
     await client.navigate(URL, wait="none")
-    client.await_css(COOKIES_CSS, is_displayed=True)
-    client.hide_elements(COOKIES_CSS)
+    client.remove_element(client.await_css(COOKIES_CSS, is_displayed=True))
     # on failure, the location cards don't load. we also confirm that the
     # cards change after clicking "view all", just in case.
     try:

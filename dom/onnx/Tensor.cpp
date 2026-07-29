@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with
  * fmt::ptr(this\) file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -56,7 +54,7 @@ Tensor::Tensor(const GlobalObject& aGlobal, const nsACString& aType,
     : mType(aType) {
   LOGD("{} type: {} len: {}", __PRETTY_FUNCTION__, aType, aData.Length());
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
-  mGlobal = global;
+  mGlobal = std::move(global);
   // Cast to uint8_t. Type is held in mType
   mData.AppendElements(aData);
   mDims.AppendElements(aDims);
@@ -68,83 +66,69 @@ Tensor::Tensor(const GlobalObject& aGlobal, ONNXTensorElementDataType aType,
   LOGD("Output tensor: {} type: {} len: {}", __PRETTY_FUNCTION__,
        ONNXTypeToString(aType), aData.Length());
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
-  mGlobal = global;
+  mGlobal = std::move(global);
   mData = std::move(aData);
   mDims.AppendElements(aDims);
 }
+
+static double ToDouble(const JS::Value& aValue) { return aValue.toDouble(); }
+
+static int64_t ToBigInt64(const JS::Value& aValue) {
+  return JS::ToBigInt64(aValue.toBigInt());
+}
+
+static uint64_t ToBigUint64(const JS::Value& aValue) {
+  return JS::ToBigUint64(aValue.toBigInt());
+}
+
+static uint8_t ToBoolean(const JS::Value& aValue) { return aValue.toBoolean(); }
 
 already_AddRefed<Tensor> Tensor::Constructor(
     const GlobalObject& global, const nsACString& type,
     const ArrayBufferViewOrAnySequence& data, const Sequence<int32_t>& dims,
     ErrorResult& aRv) {
   if (data.IsAnySequence()) {
-#define CASE_BIGINT(onnx_type, c_type, conversionfn)           \
-  case onnx_type: {                                            \
-    nsTArray<c_type> values;                                   \
-    for (const JS::Value& element : data.GetAsAnySequence()) { \
-      JS::BigInt* bigint = element.toBigInt();                 \
-      if (bigint) {                                            \
-        values.AppendElement(conversionfn(bigint));            \
-      } else {                                                 \
-        aRv.ThrowTypeError("Inconsistent value in arg 2");     \
-        return nullptr;                                        \
-      }                                                        \
-    }                                                          \
-    valuesAsBytes.AppendElements(                              \
-        reinterpret_cast<uint8_t*>(values.Elements()),         \
-        values.Length() * sizeof(c_type));                     \
-    break;                                                     \
-  }
-
-#define CASE(onnx_type, c_type, checkfn, conversionfn)                      \
-  case onnx_type: {                                                         \
-    nsTArray<c_type> values;                                                \
-    for (const auto& element : data.GetAsAnySequence()) {                   \
-      if (!element.checkfn()) {                                             \
-        aRv.ThrowTypeError(                                                 \
-            "Inconsistency between type and value in second argument");     \
-        return nullptr;                                                     \
-      }                                                                     \
-      if (std::numeric_limits<c_type>::lowest() > element.conversionfn() || \
-          std::numeric_limits<c_type>::max() < element.conversionfn()) {    \
-        aRv.ThrowTypeError("Value out of range in arg 2");                  \
-        return nullptr;                                                     \
-      }                                                                     \
-      values.AppendElement(element.conversionfn());                         \
-    }                                                                       \
-    valuesAsBytes.AppendElements(                                           \
-        reinterpret_cast<uint8_t*>(values.Elements()),                      \
-        values.Length() * sizeof(c_type));                                  \
-    break;                                                                  \
-  }
-
+    const auto& sequence = data.GetAsAnySequence();
     nsTArray<uint8_t> valuesAsBytes;
+#define CASE(onnx_type, c_type, checkfn, conversionfn)                  \
+  case onnx_type: {                                                     \
+    valuesAsBytes.SetCapacity(sequence.Length() * sizeof(c_type));      \
+    for (const auto& element : sequence) {                              \
+      if (!element.checkfn()) {                                         \
+        aRv.ThrowTypeError(                                             \
+            "Inconsistency between type and value in second argument"); \
+        return nullptr;                                                 \
+      }                                                                 \
+      auto value = conversionfn(element);                               \
+      if (std::numeric_limits<c_type>::lowest() > value ||              \
+          std::numeric_limits<c_type>::max() < value) {                 \
+        aRv.ThrowTypeError("Value out of range in arg 2");              \
+        return nullptr;                                                 \
+      }                                                                 \
+      auto v = c_type(value);                                           \
+      valuesAsBytes.AppendElements(reinterpret_cast<uint8_t*>(&v),      \
+                                   sizeof(c_type));                     \
+    }                                                                   \
+    break;                                                              \
+  }
+
     // Assume constant type, lock on the type of the first element.
     switch (StringToONNXDataType(type)) {
-      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED, uint8_t, isNumber, toDouble)
-      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, float, isNumber, toDouble)
-      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8, uint8_t, isNumber, toDouble)
-      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8, int8_t, isNumber, toDouble)
-      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16, uint16_t, isNumber, toDouble)
-      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16, int16_t, isNumber, toDouble)
-      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32, int32_t, isNumber, toDouble)
-      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING, int8_t, isNumber, toDouble)
-      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16, int16_t, isNumber, toDouble);
-      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE, double, isNumber, toDouble);
-      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32, uint32_t, isNumber, toDouble);
-      CASE_BIGINT(ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64, int64_t, ToBigInt64);
-      CASE_BIGINT(ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64, uint64_t, ToBigUint64);
-      case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL: {
-        for (const auto& element : data.GetAsAnySequence()) {
-          if (!element.isBoolean()) {
-            aRv.ThrowTypeError(
-                "Inconsistency between type and value in second argument");
-            return nullptr;
-          }
-          valuesAsBytes.AppendElement(element.toBoolean() ? 1 : 0);
-        }
-        break;
-      }
+      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED, uint8_t, isNumber, ToDouble)
+      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, float, isNumber, ToDouble)
+      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8, uint8_t, isNumber, ToDouble)
+      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8, int8_t, isNumber, ToDouble)
+      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16, uint16_t, isNumber, ToDouble)
+      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16, int16_t, isNumber, ToDouble)
+      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32, int32_t, isNumber, ToDouble)
+      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING, int8_t, isNumber, ToDouble)
+      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16, int16_t, isNumber, ToDouble);
+      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE, double, isNumber, ToDouble);
+      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32, uint32_t, isNumber, ToDouble);
+      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64, int64_t, isBigInt, ToBigInt64);
+      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64, uint64_t, isBigInt,
+           ToBigUint64);
+      CASE(ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL, uint8_t, isBoolean, ToBoolean);
       case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64:
       case ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128:
       case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:

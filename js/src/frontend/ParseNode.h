@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /*
@@ -145,7 +143,7 @@ class FunctionBox;
   F(LexicalScope, LexicalScopeNode)                                       \
   F(LetDecl, DeclarationListNode)                                         \
   F(ImportDecl, BinaryNode)                                               \
-  IF_SOURCE_PHASE_IMPORTS(F(ImportSourceDecl, BinaryNode))                \
+  F(ImportSourceDecl, BinaryNode)                                         \
   F(ImportSpecList, ListNode)                                             \
   F(ImportSpec, BinaryNode)                                               \
   F(ImportNamespaceSpec, UnaryNode)                                       \
@@ -180,7 +178,7 @@ class FunctionBox;
   F(SetThis, BinaryNode)                                                  \
   F(ImportMetaExpr, BinaryNode)                                           \
   F(CallImportExpr, BinaryNode)                                           \
-  IF_SOURCE_PHASE_IMPORTS(F(CallImportSourceExpr, BinaryNode))            \
+  F(CallImportSourceExpr, BinaryNode)                                     \
   F(CallImportSpec, BinaryNode)                                           \
   F(InitExpr, BinaryNode)                                                 \
                                                                           \
@@ -732,9 +730,6 @@ class ParseNode {
   // name guessing.
   bool pn_synthetic_computed : 1;
 
-  ParseNode(const ParseNode& other) = delete;
-  void operator=(const ParseNode& other) = delete;
-
  public:
   explicit ParseNode(ParseNodeKind kind)
       : pn_type(kind),
@@ -746,6 +741,8 @@ class ParseNode {
     JS_PARSE_NODE_ASSERT(ParseNodeKind::Start <= kind);
     JS_PARSE_NODE_ASSERT(kind < ParseNodeKind::Limit);
   }
+  ParseNode(const ParseNode& other) = delete;
+  void operator=(const ParseNode& other) = delete;
 
   ParseNode(ParseNodeKind kind, const TokenPos& pos)
       : pn_type(kind),
@@ -1341,6 +1338,7 @@ class ListNode : public ParseNode {
 
   void replaceLast(ParseNode* node) {
     MOZ_ASSERT(!empty());
+    MOZ_ASSERT(!node->pn_next);
     pn_pos.end = node->pn_pos.end;
 
     ParseNode* item = head();

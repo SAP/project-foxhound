@@ -37,7 +37,7 @@ let $1 = instantiate(`(module
   (import "a" "ef4" (func (result i32)))    ;; index 4
   (table \$t0 30 30 funcref)
   (table \$t1 30 30 funcref)
-  
+
   (elem (table \$t0) (i32.const 2) func 3 1 4 1)
   (elem funcref
     (ref.func 2) (ref.func 7) (ref.func 1) (ref.func 8))
@@ -158,7 +158,7 @@ let $2 = instantiate(`(module
   (import "a" "ef4" (func (result i32)))    ;; index 4
   (table \$t0 30 30 funcref)
   (table \$t1 30 30 funcref)
-  
+
   (elem (table \$t0) (i32.const 2) func 3 1 4 1)
   (elem funcref
     (ref.func 2) (ref.func 7) (ref.func 1) (ref.func 8))
@@ -279,7 +279,7 @@ let $3 = instantiate(`(module
   (import "a" "ef4" (func (result i32)))    ;; index 4
   (table \$t0 30 30 funcref)
   (table \$t1 30 30 funcref)
-  
+
   (elem (table \$t0) (i32.const 2) func 3 1 4 1)
   (elem funcref
     (ref.func 2) (ref.func 7) (ref.func 1) (ref.func 8))
@@ -408,7 +408,7 @@ let $4 = instantiate(`(module
   (import "a" "ef4" (func (result i32)))    ;; index 4
   (table \$t0 30 30 funcref)
   (table \$t1 30 30 funcref)
-  
+
   (elem (table \$t1) (i32.const 2) func 3 1 4 1)
   (elem funcref
     (ref.func 2) (ref.func 7) (ref.func 1) (ref.func 8))
@@ -529,7 +529,7 @@ let $5 = instantiate(`(module
   (import "a" "ef4" (func (result i32)))    ;; index 4
   (table \$t0 30 30 funcref)
   (table \$t1 30 30 funcref)
-  
+
   (elem (table \$t1) (i32.const 2) func 3 1 4 1)
   (elem funcref
     (ref.func 2) (ref.func 7) (ref.func 1) (ref.func 8))
@@ -650,7 +650,7 @@ let $6 = instantiate(`(module
   (import "a" "ef4" (func (result i32)))    ;; index 4
   (table \$t0 30 30 funcref)
   (table \$t1 30 30 funcref)
-  
+
   (elem (table \$t1) (i32.const 2) func 3 1 4 1)
   (elem funcref
     (ref.func 2) (ref.func 7) (ref.func 1) (ref.func 8))
@@ -3678,3 +3678,21 @@ let $34 = instantiate(`(module
   (elem funcref) (elem funcref) (elem funcref) (elem funcref)
   (elem funcref)
   (func (table.init 64 (i32.const 0) (i32.const 0) (i32.const 0))))`);
+
+// ./test/core/bulk-memory/table_init.wast:2152
+let $35 = instantiate(`(module
+  (type \$arr (array (mut arrayref)))
+
+  (table \$table 2 arrayref)
+  (elem \$elem arrayref (item (array.new_default \$arr (i32.const 0))))
+
+  (func (export "run") (result i32)
+    (table.init \$table \$elem (i32.const 0) (i32.const 0) (i32.const 1))
+    (table.init \$table \$elem (i32.const 1) (i32.const 0) (i32.const 1))
+    (ref.eq (table.get \$table (i32.const 0))
+            (table.get \$table (i32.const 1)))
+  )
+)`);
+
+// ./test/core/bulk-memory/table_init.wast:2166
+assert_return(() => invoke($35, `run`, []), [value("i32", 1)]);

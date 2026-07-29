@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,8 +19,7 @@ using namespace mozilla;
 using namespace mozilla::dom;
 using namespace mozilla::hal;
 
-namespace mozilla {
-namespace hal_sandbox {
+namespace mozilla::hal_sandbox {
 
 static bool sHalChildDestroyed = false;
 
@@ -134,10 +131,6 @@ void SetProcessPriority(int aPid, ProcessPriority aPriority) {
   MOZ_CRASH("Only the main process may set processes' priorities.");
 }
 
-void PerformHapticFeedback(int32_t aType) {
-  Hal()->SendPerformHapticFeedback(aType);
-}
-
 class HalParent : public PHalParent,
                   public BatteryObserver,
                   public NetworkObserver,
@@ -232,17 +225,17 @@ class HalParent : public PHalParent,
     // fullscreen.  We don't have that information currently.
 
     hal::LockScreenOrientation(aOrientation)
-        ->Then(
-            GetMainThreadSerialEventTarget(), __func__,
-            [aResolve](const GenericNonExclusivePromise::ResolveOrRejectValue&
-                           aValue) {
-              if (aValue.IsResolve()) {
-                MOZ_ASSERT(aValue.ResolveValue());
-                aResolve(NS_OK);
-                return;
-              }
-              aResolve(aValue.RejectValue());
-            });
+        ->Then(GetMainThreadSerialEventTarget(), __func__,
+               [aResolve = std::move(aResolve)](
+                   const GenericNonExclusivePromise::ResolveOrRejectValue&
+                       aValue) {
+                 if (aValue.IsResolve()) {
+                   MOZ_ASSERT(aValue.ResolveValue());
+                   aResolve(NS_OK);
+                   return;
+                 }
+                 aResolve(aValue.RejectValue());
+               });
     return IPC_OK();
   }
 
@@ -298,12 +291,6 @@ class HalParent : public PHalParent,
   void Notify(const WakeLockInformation& aWakeLockInfo) override {
     (void)SendNotifyWakeLockChange(aWakeLockInfo);
   }
-
-  virtual mozilla::ipc::IPCResult RecvPerformHapticFeedback(
-      const int32_t& aType) override {
-    hal::PerformHapticFeedback(aType);
-    return IPC_OK();
-  }
 };
 
 class HalChild : public PHalChild {
@@ -345,5 +332,4 @@ PHalChild* CreateHalChild() { return new HalChild(); }
 
 PHalParent* CreateHalParent() { return new HalParent(); }
 
-}  // namespace hal_sandbox
-}  // namespace mozilla
+}  // namespace mozilla::hal_sandbox

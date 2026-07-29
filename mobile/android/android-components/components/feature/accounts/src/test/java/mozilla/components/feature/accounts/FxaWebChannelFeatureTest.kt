@@ -19,7 +19,6 @@ import mozilla.components.concept.engine.webextension.WebExtension
 import mozilla.components.concept.sync.AuthType
 import mozilla.components.concept.sync.OAuthAccount
 import mozilla.components.concept.sync.Profile
-import mozilla.components.concept.sync.UserData
 import mozilla.components.service.fxa.FxaAuthData
 import mozilla.components.service.fxa.ServerConfig
 import mozilla.components.service.fxa.SyncEngine
@@ -342,7 +341,9 @@ class FxaWebChannelFeatureTest {
 
         val account: OAuthAccount = mock()
         val profile = Profile(uid = "testUID", email = "test@example.com", avatar = null, displayName = null)
-        whenever(account.getSessionToken()).thenReturn("testToken")
+        whenever(account.getSignedInUserForWebChannel()).thenReturn(
+            """{"sessionToken":"testToken","email":"test@example.com","uid":"testUID","verified":true}""",
+        )
         whenever(accountManager.accountProfile()).thenReturn(profile)
         whenever(accountManager.authenticatedAccount()).thenReturn(account)
         whenever(accountManager.supportedSyncEngines()).thenReturn(expectedEngines)
@@ -398,7 +399,9 @@ class FxaWebChannelFeatureTest {
         val responseToTheWebChannel = argumentCaptor<JSONObject>()
 
         val account: OAuthAccount = mock()
-        whenever(account.getSessionToken()).thenReturn("testToken")
+        whenever(account.getSignedInUserForWebChannel()).thenReturn(
+            """{"sessionToken":"testToken","email":null,"uid":null,"verified":true}""",
+        )
         whenever(accountManager.accountProfile()).thenReturn(null)
         whenever(accountManager.authenticatedAccount()).thenReturn(account)
         whenever(accountManager.supportedSyncEngines()).thenReturn(expectedEngines)
@@ -1012,15 +1015,15 @@ class FxaWebChannelFeatureTest {
         whenever(port.senderUrl()).thenReturn("https://foo.bar/email")
         messageHandler.onPortMessage(jsonToWebChannel, port)
 
-        val expectedUserData = UserData(
-            sessionToken = sessionToken,
-            email = email,
-            uid = uid,
-            verified = verified,
-        )
         shadowOf(getMainLooper()).idle()
 
-        verify(accountManager).setUserData(expectedUserData)
+        val loginDataCaptor = argumentCaptor<String>()
+        verify(accountManager).handleWebChannelLogin(loginDataCaptor.capture())
+        val loginData = JSONObject(loginDataCaptor.value)
+        assertEquals(sessionToken, loginData.getString("sessionToken"))
+        assertEquals(email, loginData.getString("email"))
+        assertEquals(uid, loginData.getString("uid"))
+        assertEquals(verified, loginData.getBoolean("verified"))
     }
 
     private fun jsonLogin(sessionToken: String, email: String, uid: String, verified: Boolean): JSONObject {

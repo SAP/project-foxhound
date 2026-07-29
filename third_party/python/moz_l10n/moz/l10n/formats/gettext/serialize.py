@@ -14,9 +14,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from re import match
-from typing import Sequence, cast
+from typing import cast
 
 from polib import POEntry, POFile
 

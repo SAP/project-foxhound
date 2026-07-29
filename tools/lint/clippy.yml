@@ -2,6 +2,7 @@
 clippy:
     description: Lint rust
     include:
+        - browser/components/shell/rust/shell_windows/
         - build/workspace-hack/
         - browser/app/nmhproxy/
         - dom/base/fragmentdirectives/
@@ -13,11 +14,14 @@ clippy:
         - dom/origin-trials/ffi/
         - dom/webauthn/authrs_bridge/
         - dom/webauthn/libudev-sys/
+        - gfx/harfbuzz_glue/
         - gfx/webrender_bindings/
         - gfx/wr/peek-poke/
         - gfx/wr/peek-poke/peek-poke-derive/
         - gfx/wr/webrender_build/
         - gfx/wr/wr_malloc_size_of/
+        - image/rust/jxl/
+        - intl/app_collator_glue/
         # - intl/bidi/rust/unicode-bidi-ffi/
         - intl/l10n/rust/fluent-ffi/
         - intl/l10n/rust/l10nregistry-ffi/
@@ -25,6 +29,7 @@ clippy:
         - intl/l10n/rust/localization-ffi/
         - intl/locale/rust/oxilangtag-ffi/
         - ipc/rust/ipdl_utils/
+        - js/src/rust/
         - js/src/rust/shared/
         - modules/libpref/init/static_prefs/
         - mozglue/static/rust/
@@ -32,8 +37,10 @@ clippy:
         - netwerk/base/idna_glue/
         - netwerk/base/mozurl/
         - netwerk/base/rust-helper/
+        - netwerk/base/ssl_tokens_cache/
         - netwerk/base/urlpattern_glue/
         - netwerk/base/uritemplate_glue/
+        - netwerk/protocol/http/happy_eyeballs_glue/
         - netwerk/protocol/http/binary_http/
         - netwerk/protocol/http/oblivious_http/
         - netwerk/socket/neqo_glue/
@@ -49,6 +56,8 @@ clippy:
         - security/manager/ssl/rsclientcerts-util/
         - security/manager/ssl/trust_anchors/
         - security/manager/ssl/trust-anchor-build-util/
+        - security/lockstore/lockstore_ffi/
+        - security/lockstore/lockstore_rs/
         - security/mls/mls_gk/
         - servo/components/malloc_size_of/
         - servo/components/selectors/
@@ -71,6 +80,7 @@ clippy:
         - third_party/rust/mp4parse/
         - third_party/rust/mp4parse_capi/
         - toolkit/components/cascade_bloom_filter/
+        - toolkit/components/content-classifier/content_classifier_engine/
         # - toolkit/components/dap/ffi/
         - toolkit/components/gecko-trace/
         - toolkit/components/glean/
@@ -94,6 +104,8 @@ clippy:
         - toolkit/library/rust/
         - toolkit/xre/detect_win32k_conflicts/
         - tools/fuzzing/rust/
+        - tools/lint/mozcheck/
+        - widget/windows/rust/
         # - tools/profiler/rust-api/
         # - xpcom/rust/gecko_logger/
         - xpcom/rust/gecko_tracing/
@@ -151,6 +163,8 @@ clippy:
         - toolkit/components/bitsdownload/bits_client/bits/
         # mac and windows only
         - security/manager/ssl/osclientcerts/
+    warn:
+        - needless_return
     extensions:
         - rs
     support-files:

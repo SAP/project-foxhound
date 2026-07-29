@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,6 +24,7 @@
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/ToString.h"
 #include "mozilla/ViewportUtils.h"
+#include "jsapi.h"
 #include "nsContainerFrame.h"
 #include "nsContentUtils.h"
 #include "nsIContent.h"
@@ -212,7 +211,7 @@ static DisplayPortMargins ScrollFrame(nsIContent* aContent,
     // We need to force a display port adjustment in the following paint to
     // account for a difference between the requested and actual scroll
     // offsets in repaints requested by
-    // AsyncPanZoomController::NotifyLayersUpdated.
+    // AsyncPanZoomController::NotifyMainThreadTransaction.
     displayPortMargins = DisplayPortMargins::FromAPZ(
         aRequest.GetDisplayPortMargins(), apzScrollOffset, actualScrollOffset);
   } else {
@@ -987,7 +986,7 @@ void APZCCallbackHelper::NotifyScaleGestureComplete(
     return;
   }
   JSContext* cx = jsapi.cx();
-  JS::Rooted<JS::Value> detail(cx, JS::Float32Value(aScale));
+  JS::Rooted<JS::Value> detail(cx, JS_NumberValue(aScale));
   RefPtr<dom::CustomEvent> event = NS_NewDOMCustomEvent(doc, nullptr, nullptr);
   event->InitCustomEvent(cx, u"MozScaleGestureComplete"_ns,
                          /* CanBubble */ true,

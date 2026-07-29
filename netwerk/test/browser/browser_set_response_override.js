@@ -47,7 +47,7 @@ add_task(async function test_set_response_override() {
       waitForLoad: true,
     },
     async function (browser) {
-      await ContentTask.spawn(browser, [], async function () {
+      await SpecialPowers.spawn(browser, [], async function () {
         Assert.ok(
           !!content.document.getElementById("from-response-override"),
           "Page was loaded using the response override"
@@ -120,7 +120,7 @@ add_task(async function test_set_response_override_redirects() {
       waitForLoad: true,
     },
     async function (browser) {
-      await ContentTask.spawn(browser, [], async function () {
+      await SpecialPowers.spawn(browser, [], async function () {
         Assert.equal(
           content.location.href,
           "https://example.com/browser/netwerk/test/browser/dummy.html?redirected=true",
@@ -170,7 +170,7 @@ add_task(async function test_set_response_override_cors_preflight() {
       waitForLoad: true,
     },
     async function (browser) {
-      await ContentTask.spawn(browser, [], async function () {
+      await SpecialPowers.spawn(browser, [], async function () {
         const response = await content.fetch("https://example.org/cors", {
           // extra header to force a CORS preflight request.
           headers: { "X-PINGOTHER": "pingpong" },

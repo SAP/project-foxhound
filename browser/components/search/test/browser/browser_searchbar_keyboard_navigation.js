@@ -577,9 +577,10 @@ add_task(async function test_open_search() {
   );
 
   let promise = promiseEvent(searchPopup, "popupshown");
+  let builtPromise = promiseEvent(searchPopup.oneOffButtons, "rebuild");
   info("Opening search panel");
   searchbar.focus();
-  await promise;
+  await Promise.all([promise, builtPromise]);
 
   let engines = searchPopup.querySelectorAll(
     ".searchbar-engine-one-off-add-engine"

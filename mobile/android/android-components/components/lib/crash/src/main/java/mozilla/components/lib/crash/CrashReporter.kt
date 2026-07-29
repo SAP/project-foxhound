@@ -300,6 +300,13 @@ class CrashReporter internal constructor(
     }
 
     /**
+     * Set whether telemetry has been enabled.
+     */
+    fun setTelemetryEnabled(enabled: Boolean) {
+        telemetryServices.forEach { it.setTelemetryEnabled(enabled) }
+    }
+
+    /**
      * Called when a crash occurs. The crash information will be persisted locally along with
      * relevant runtime tags, and this function will decide whether to send a report automatically,
      * prompt the user to send a report, or do nothing.

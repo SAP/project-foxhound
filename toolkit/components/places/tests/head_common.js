@@ -1,5 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -46,12 +45,8 @@ ChromeUtils.defineESModuleGetters(this, {
   TestUtils: "resource://testing-common/TestUtils.sys.mjs",
 });
 
-/**
- * @import {OpenedConnection} from "resource://gre/modules/Sqlite.sys.mjs"
- */
-
 ChromeUtils.defineLazyGetter(this, "SMALLPNG_DATA_URI", function () {
-  return NetUtil.newURI(
+  return Services.io.newURI(
     "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAA" +
       "AAAA6fptVAAAACklEQVQI12NgAAAAAgAB4iG8MwAAAABJRU5ErkJggg=="
   );
@@ -59,7 +54,7 @@ ChromeUtils.defineLazyGetter(this, "SMALLPNG_DATA_URI", function () {
 const SMALLPNG_DATA_LEN = 67;
 
 ChromeUtils.defineLazyGetter(this, "SMALLSVG_DATA_URI", function () {
-  return NetUtil.newURI(
+  return Services.io.newURI(
     "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy5" +
       "3My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIiBmaWxs" +
       "PSIjNDI0ZTVhIj4NCiAgPGNpcmNsZSBjeD0iNTAiIGN5PSI1MCIgcj0iN" +
@@ -87,46 +82,11 @@ clearDB();
 /**
  * Shortcut to create a nsIURI.
  *
- * @param {nsIFile|string} aSpec
+ * @param {string} aSpec
  *   URLString of the uri.
  */
 function uri(aSpec) {
-  return NetUtil.newURI(aSpec);
-}
-
-/**
- * Gets the database connection.  If the Places connection is invalid it will
- * try to create a new connection.
- *
- * @param [optional] aForceNewConnection
- *        Forces creation of a new connection to the database.  When a
- *        connection is asyncClosed it cannot anymore schedule async statements,
- *        though connectionReady will keep returning true (Bug 726990).
- *
- * @returns The database connection or null if unable to get one.
- */
-var gDBConn;
-function DBConn(aForceNewConnection) {
-  if (!aForceNewConnection) {
-    let db = PlacesUtils.history.DBConnection;
-    if (db.connectionReady) {
-      return db;
-    }
-  }
-
-  // If the Places database connection has been closed, create a new connection.
-  if (!gDBConn || aForceNewConnection) {
-    let file = Services.dirsvc.get("ProfD", Ci.nsIFile);
-    file.append("places.sqlite");
-    let dbConn = (gDBConn = Services.storage.openDatabase(file));
-
-    // Be sure to cleanly close this connection.
-    promiseTopicObserved("profile-before-change").then(() =>
-      dbConn.asyncClose()
-    );
-  }
-
-  return gDBConn.connectionReady ? gDBConn : null;
+  return Services.io.newURI(aSpec);
 }
 
 /**
@@ -278,58 +238,6 @@ function clearDB() {
 }
 
 /**
- * Dumps the rows of a table out to the console.
- *
- * @param {string} aName
- *   The name of the table or view to output.
- * @param {OpenedConnection} dbConn
- */
-function dump_table(aName, dbConn) {
-  if (!dbConn) {
-    dbConn = DBConn();
-  }
-  let stmt = dbConn.createStatement("SELECT * FROM " + aName);
-
-  print("\n*** Printing data from " + aName);
-  let count = 0;
-  while (stmt.executeStep()) {
-    let columns = stmt.numEntries;
-
-    if (count == 0) {
-      // Print the column names.
-      for (let i = 0; i < columns; i++) {
-        dump(stmt.getColumnName(i) + "\t");
-      }
-      dump("\n");
-    }
-
-    // Print the rows.
-    for (let i = 0; i < columns; i++) {
-      switch (stmt.getTypeOfIndex(i)) {
-        case Ci.mozIStorageValueArray.VALUE_TYPE_NULL:
-          dump("NULL\t");
-          break;
-        case Ci.mozIStorageValueArray.VALUE_TYPE_INTEGER:
-          dump(stmt.getInt64(i) + "\t");
-          break;
-        case Ci.mozIStorageValueArray.VALUE_TYPE_FLOAT:
-          dump(stmt.getDouble(i) + "\t");
-          break;
-        case Ci.mozIStorageValueArray.VALUE_TYPE_TEXT:
-          dump(stmt.getString(i) + "\t");
-          break;
-      }
-    }
-    dump("\n");
-
-    count++;
-  }
-  print("*** There were a total of " + count + " rows of data.\n");
-
-  stmt.finalize();
-}
-
-/**
  * Checks if an address is found in the database.
  *
  * @param {nsIURI|string} aURI
@@ -337,20 +245,17 @@ function dump_table(aName, dbConn) {
  * @returns {number}
  *   The place id of the page or 0 if not found.
  */
-function page_in_database(aURI) {
+async function page_in_database(aURI) {
   let url = aURI instanceof Ci.nsIURI ? aURI.spec : aURI;
-  let stmt = DBConn().createStatement(
-    "SELECT id FROM moz_places WHERE url_hash = hash(:url) AND url = :url"
+  let db = await PlacesUtils.promiseDBConnection();
+  let rows = await db.execute(
+    "SELECT id FROM moz_places WHERE url_hash = hash(:url) AND url = :url",
+    { url }
   );
-  stmt.params.url = url;
-  try {
-    if (!stmt.executeStep()) {
-      return 0;
-    }
-    return stmt.getInt64(0);
-  } finally {
-    stmt.finalize();
+  if (!rows?.length) {
+    return 0;
   }
+  return rows[0].getResultByName("id");
 }
 
 /**
@@ -361,22 +266,19 @@ function page_in_database(aURI) {
  * @returns {number}
  *   The number of visits found.
  */
-function visits_in_database(aURI) {
+async function visits_in_database(aURI) {
   let url = aURI instanceof Ci.nsIURI ? aURI.spec : aURI;
-  let stmt = DBConn().createStatement(
-    `SELECT count(*) FROM moz_historyvisits v
+  let db = await PlacesUtils.promiseDBConnection();
+  let rows = await db.execute(
+    `SELECT count(*) AS cnt FROM moz_historyvisits v
      JOIN moz_places h ON h.id = v.place_id
-     WHERE url_hash = hash(:url) AND url = :url`
+     WHERE url_hash = hash(:url) AND url = :url`,
+    { url }
   );
-  stmt.params.url = url;
-  try {
-    if (!stmt.executeStep()) {
-      return 0;
-    }
-    return stmt.getInt64(0);
-  } finally {
-    stmt.finalize();
+  if (!rows?.length) {
+    return 0;
   }
+  return rows[0].getResultByName("cnt");
 }
 
 /**
@@ -546,29 +448,6 @@ function check_JSON_backup(aIsAutomaticBackup) {
   }
   Assert.ok(profileBookmarksJSONFile.exists());
   return profileBookmarksJSONFile;
-}
-
-/**
- * Returns the hidden status of a url.
- *
- * @param {nsIURI|string} aURI
- *   The URI or spec to get hidden for.
- * @returns {boolean}
- *   True if the url is hidden, false otherwise.
- */
-function isUrlHidden(aURI) {
-  let url = aURI instanceof Ci.nsIURI ? aURI.spec : aURI;
-  let stmt = DBConn().createStatement(
-    "SELECT hidden FROM moz_places WHERE url_hash = hash(?1) AND url = ?1"
-  );
-  stmt.bindByIndex(0, url);
-  if (!stmt.executeStep()) {
-    throw new Error("No result for hidden.");
-  }
-  let hidden = stmt.getInt32(0);
-  stmt.finalize();
-
-  return !!hidden;
 }
 
 /**

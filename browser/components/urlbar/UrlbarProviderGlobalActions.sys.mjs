@@ -33,7 +33,7 @@ const TIMES_SHOWN_PREF = "quickactions.timesShownOnboardingLabel";
 
 ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
 });
 
 import { ActionsProviderQuickActions } from "moz-src:///browser/components/urlbar/ActionsProviderQuickActions.sys.mjs";
@@ -129,19 +129,13 @@ export class UrlbarProviderGlobalActions extends UrlbarProvider {
     addCallback(this, result);
   }
 
-  onSelection(result, element) {
-    let key = element.dataset.action;
-    let action = result.payload.actionsResults.find(a => a.key == key);
-    action.onSelection?.(result, element);
-  }
-
-  onEngagement(queryContext, controller, details) {
+  async onEngagement(queryContext, controller, details) {
     let key = details.element.dataset.action;
     let action = details.result.payload.actionsResults.find(a => a.key == key);
-    let options = action.onPick(queryContext, controller);
-    if (options?.focusContent) {
-      details.element.ownerGlobal.gBrowser.selectedBrowser.focus();
-    }
+    let provider = globalActionsProviders.find(
+      p => p.name == action.providerName
+    );
+    provider.onPick(queryContext, controller, action);
     controller.view.close();
   }
 
@@ -197,6 +191,10 @@ export class UrlbarProviderGlobalActions extends UrlbarProvider {
       if (action.dataset?.providesSearchMode) {
         btn.attributes["data-provides-searchmode"] = "true";
         btn.attributes["data-engine"] = action.engine;
+      }
+
+      if (action.dataset?.immediateSearch) {
+        btn.attributes["data-immediate-search"] = "true";
       }
 
       return btn;

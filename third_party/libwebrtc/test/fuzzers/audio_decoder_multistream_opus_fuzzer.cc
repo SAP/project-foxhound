@@ -13,7 +13,6 @@
 #include <memory>
 #include <vector>
 
-#include "api/array_view.h"
 #include "api/audio_codecs/opus/audio_decoder_multi_channel_opus.h"
 #include "api/audio_codecs/opus/audio_decoder_multi_channel_opus_config.h"
 #include "rtc_base/checks.h"
@@ -21,8 +20,6 @@
 #include "test/fuzzers/fuzz_data_helper.h"
 
 namespace webrtc {
-
-using test::FuzzDataHelper;
 
 AudioDecoderMultiChannelOpusConfig MakeDecoderConfig(
     int num_channels,
@@ -37,7 +34,7 @@ AudioDecoderMultiChannelOpusConfig MakeDecoderConfig(
   return config;
 }
 
-void FuzzOneInput(const uint8_t* data, size_t size) {
+void FuzzOneInput(FuzzDataHelper fuzz_data) {
   const AudioDecoderMultiChannelOpusConfig kSurroundConfigs[] = {
       MakeDecoderConfig(1, 1, 0, {0}),  // Mono
 
@@ -54,12 +51,11 @@ void FuzzOneInput(const uint8_t* data, size_t size) {
       MakeDecoderConfig(8, 5, 3, {0, 6, 1, 2, 3, 4, 5, 7})  // 7.1
   };
 
-  FuzzDataHelper helper(MakeArrayView(data, size));
+  const auto config = fuzz_data.SelectOneOf(kSurroundConfigs);
 
-  const auto config = helper.SelectOneOf(kSurroundConfigs);
   RTC_CHECK(config.IsOk());
   std::unique_ptr<AudioDecoder> dec =
-      AudioDecoderMultiChannelOpus::MakeAudioDecoder(config);
+      AudioDecoderMultiChannelOpus::MakeAudioDecoder(std::move(config));
   RTC_CHECK(dec);
   const int kSampleRateHz = 48000;
   const size_t kAllocatedOuputSizeSamples =
@@ -67,7 +63,7 @@ void FuzzOneInput(const uint8_t* data, size_t size) {
                                // for the stereo Opus codec. It should be enough
                                // for 8 channels.
   int16_t output[kAllocatedOuputSizeSamples];
-  FuzzAudioDecoder(DecoderFunctionType::kNormalDecode, data, size, dec.get(),
+  FuzzAudioDecoder(DecoderFunctionType::kNormalDecode, fuzz_data, dec.get(),
                    kSampleRateHz, sizeof(output), output);
 }
 }  // namespace webrtc

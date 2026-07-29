@@ -377,17 +377,16 @@ function parseContent(window, input, mode) {
 
     // Named character references
     s = s.replace(/&\w[\w\d]*;?/g, candidate => {
-      // The list of entities is huge, so we use innerHTML instead.
-      // We should probably use setHTML instead once that is available (bug 1650370).
+      // The list of entities is huge, so we use setHTML instead.
       // Ideally we would be able to use a faster/simpler variant of setHTML (bug 1731215).
-      unescapeHelper.innerHTML = candidate;
+      unescapeHelper.setHTML(candidate);
       const unescaped = unescapeHelper.innerText;
       if (unescaped == candidate) { // not a valid entity
         return candidate;
       }
       return unescaped;
     });
-    unescapeHelper.innerHTML = "";
+    unescapeHelper.setHTML("");
 
     return s;
   }

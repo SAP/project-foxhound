@@ -137,8 +137,8 @@ in `toolkit/components/glean/tests/gtest/`.
 You can write the actual test code in Rust.
 It needs to be accompanied by a C++ GTest that calls a C FFI-exported Rust function.
 See [Testing & Debugging Rust Code](/testing-rust-code/index.md) for more.
-See [`toolkit/components/glean/tests/gtest/TestFog.cpp`](https://searchfox.org/mozilla-central/source/toolkit/components/glean/tests/gtest/TestFog.cpp)
-and [`toolkit/components/glean/tests/gtest/test.rs`](https://searchfox.org/mozilla-central/source/toolkit/components/glean/tests/gtest/test.rs)
+See [`toolkit/components/glean/tests/gtest/TestFog.cpp`](https://searchfox.org/firefox-main/source/toolkit/components/glean/tests/gtest/TestFog.cpp)
+and [`toolkit/components/glean/tests/gtest/test.rs`](https://searchfox.org/firefox-main/source/toolkit/components/glean/tests/gtest/test.rs)
 for an example.
 
 By necessity these can only be integration tests against the compiled crate.

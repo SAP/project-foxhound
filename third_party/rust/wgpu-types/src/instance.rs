@@ -19,11 +19,11 @@ impl<T: raw_window_handle::HasDisplayHandle + core::fmt::Debug + Send + Sync + '
 
 /// Options for creating an instance.
 ///
-/// If you want to allow control of instance settings via environment variables, call either
-/// [`InstanceDescriptor::from_env_or_default()`] or [`InstanceDescriptor::with_env()`]. Each type
-/// within this descriptor has its own equivalent methods, so you can select which options you want
-/// to expose to influence from the environment.
-#[derive(Debug, Default)]
+/// If you want to allow control of instance settings via environment variables, call any of the
+/// `*from_env()` functions or [`InstanceDescriptor::with_env()`]. Each type within this descriptor
+/// has its own equivalent methods, so you can select which options you want to expose to influence
+/// from the environment.
+#[derive(Debug)]
 pub struct InstanceDescriptor {
     /// Which [`Backends`] to enable.
     ///
@@ -45,7 +45,7 @@ pub struct InstanceDescriptor {
     pub flags: InstanceFlags,
     /// Memory budget thresholds used by some backends.
     pub memory_budget_thresholds: MemoryBudgetThresholds,
-    /// Options the control the behavior of specific backends.
+    /// Options for configuring the behavior of specific backends.
     pub backend_options: crate::BackendOptions,
     /// System platform or compositor connection to connect this `Instance` to.
     ///
@@ -58,19 +58,45 @@ pub struct InstanceDescriptor {
     /// the `EventLoop`) here.
     ///
     /// [`OwnedDisplayHandle`]: https://docs.rs/winit/latest/winit/event_loop/struct.OwnedDisplayHandle.html
-    // FUTURE: The RawDisplayHandle trait can/should be removed entirely from create_display()? At
-    // least `trait WindowHandle: HasWindowHandle + HasDisplayHandle` should really be removed as
-    // it's impractical and not implementable everywhere.
     pub display: Option<alloc::boxed::Box<dyn WgpuHasDisplayHandle>>,
 }
 
 impl InstanceDescriptor {
+    /// The default instance options, without display handle.
+    #[must_use]
+    pub fn new_without_display_handle() -> Self {
+        Self {
+            backends: Default::default(),
+            flags: Default::default(),
+            memory_budget_thresholds: Default::default(),
+            backend_options: Default::default(),
+            display: None,
+        }
+    }
+
+    /// The default instance options, with display handle.
+    #[must_use]
+    pub fn new_with_display_handle(display: alloc::boxed::Box<dyn WgpuHasDisplayHandle>) -> Self {
+        Self::new_without_display_handle().with_display_handle(display)
+    }
+
     /// Choose instance options entirely from environment variables.
     ///
     /// This is equivalent to calling `from_env` on every field.
     #[must_use]
-    pub fn from_env_or_default() -> Self {
-        Self::default().with_env()
+    pub fn new_without_display_handle_from_env() -> Self {
+        Self::new_without_display_handle().with_env()
+    }
+
+    /// Choose instance options entirely from environment variables, while including a display handle.
+    ///
+    /// This is equivalent to calling `from_env` on every field.
+    #[must_use]
+    pub fn new_with_display_handle_from_env(
+        display: alloc::boxed::Box<dyn WgpuHasDisplayHandle>,
+    ) -> Self {
+        // Self::new_without_display_handle_from_env().with_display_handle(display)
+        Self::new_with_display_handle(display).with_env()
     }
 
     /// Takes the given options, modifies them based on the environment variables, and returns the result.
@@ -86,7 +112,7 @@ impl InstanceDescriptor {
             flags,
             memory_budget_thresholds: MemoryBudgetThresholds::default(),
             backend_options,
-            display: None,
+            display: self.display,
         }
     }
 
@@ -151,6 +177,11 @@ bitflags::bitflags! {
         /// This mainly applies to a Vulkan driver's compliance version. If the major compliance version
         /// is `0`, then the driver is ignored. This flag allows that driver to be enabled for testing.
         ///
+        /// This flag controls whether adapters that don't meet the *native*
+        /// API's own compliance requirements are returned, while
+        /// [`Self::STRICT_WEBGPU_COMPLIANCE`] controls whether adapters that
+        /// can't fully satisfy the *WebGPU v1* spec are excluded.
+        ///
         /// When `Self::from_env()` is used takes value from `WGPU_ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER` environment variable.
         const ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER = 1 << 3;
         /// Enable GPU-based validation. Implies [`Self::VALIDATION`]. Currently, this only changes
@@ -202,6 +233,11 @@ bitflags::bitflags! {
         ///
         #[doc = link_to_wgpu_docs!(["rqs"]: "struct.CommandEncoder.html#method.resolve_query_set")]
         const AUTOMATIC_TIMESTAMP_NORMALIZATION = 1 << 6;
+
+        /// Restrict the available feature set to the one defined by the WebGPU specification.
+        ///
+        /// When `Self::from_env()` is used takes value from `WGPU_STRICT_WEBGPU_COMPLIANCE` environment variable.
+        const STRICT_WEBGPU_COMPLIANCE = 1 << 7;
     }
 }
 
@@ -259,6 +295,7 @@ impl InstanceFlags {
     /// - `WGPU_ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER`
     /// - `WGPU_GPU_BASED_VALIDATION`
     /// - `WGPU_VALIDATION_INDIRECT_CALL`
+    /// - `WGPU_STRICT_WEBGPU_COMPLIANCE`
     #[must_use]
     pub fn with_env(mut self) -> Self {
         fn env(key: &str) -> Option<bool> {
@@ -286,6 +323,9 @@ impl InstanceFlags {
         }
         if let Some(bit) = env("WGPU_VALIDATION_INDIRECT_CALL") {
             self.set(Self::VALIDATION_INDIRECT_CALL, bit);
+        }
+        if let Some(bit) = env("WGPU_STRICT_WEBGPU_COMPLIANCE") {
+            self.set(Self::STRICT_WEBGPU_COMPLIANCE, bit);
         }
 
         self

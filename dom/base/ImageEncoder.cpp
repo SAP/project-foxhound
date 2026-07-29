@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -344,15 +342,14 @@ nsresult ImageEncoder::ExtractDataInternal(
     if (!emptyCanvas->Map(DataSourceSurface::MapType::WRITE, &map)) {
       return NS_ERROR_INVALID_ARG;
     }
+    auto size = map.mStride * aSize.height;
     if (usePlaceholder) {
-      auto size = 4 * aSize.width * aSize.height;
       auto* data = map.mData;
       GeneratePlaceholderCanvasData(size, data);
     }
-    rv = aEncoder->InitFromData(map.mData, aSize.width * aSize.height * 4,
-                                aSize.width, aSize.height, aSize.width * 4,
-                                imgIEncoder::INPUT_FORMAT_HOSTARGB, aOptions,
-                                VoidCString());
+    rv = aEncoder->InitFromData(map.mData, size, aSize.width, aSize.height,
+                                map.mStride, imgIEncoder::INPUT_FORMAT_HOSTARGB,
+                                aOptions, VoidCString());
     emptyCanvas->Unmap();
     if (NS_SUCCEEDED(rv)) {
       imgStream = aEncoder;
@@ -371,7 +368,6 @@ nsresult ImageEncoder::ExtractDataInternal(
                                   aExtractionBehavior, aRandomizationKey,
                                   getter_AddRefs(imgStream));
   } else if (aOffscreenDisplay) {
-    const NS_ConvertUTF16toUTF8 encoderType(aType);
     if (BufferSizeFromDimensions(aSize.width, aSize.height, 4) == 0) {
       return NS_ERROR_INVALID_ARG;
     }
@@ -387,20 +383,35 @@ nsresult ImageEncoder::ExtractDataInternal(
       return NS_ERROR_OUT_OF_MEMORY;
     }
 
-    {
+    auto size = data->GetSize();
+    if (BufferSizeFromDimensions(size.width, size.height, 4) == 0) {
+      return NS_ERROR_INVALID_ARG;
+    }
+
+    if (aExtractionBehavior == CanvasUtils::ImageExtraction::Randomize) {
+      UniquePtr<uint8_t[]> imageBuffer = gfx::SurfaceToPackedBGRA(data);
+      if (!imageBuffer) {
+        return NS_ERROR_OUT_OF_MEMORY;
+      }
+      aOffscreenDisplay->MaybeRandomizePixels(aExtractionBehavior,
+                                              imageBuffer.get(), size);
+      rv = ImageEncoder::GetInputStream(
+          size.width, size.height, imageBuffer.get(),
+          imgIEncoder::INPUT_FORMAT_HOSTARGB, aEncoder, aOptions,
+          aRandomizationKey, getter_AddRefs(imgStream));
+    } else {
       DataSourceSurface::MappedSurface map;
       if (!data->Map(gfx::DataSourceSurface::MapType::READ, &map)) {
         return NS_ERROR_INVALID_ARG;
       }
-      auto size = data->GetSize();
-      rv = aEncoder->InitFromData(map.mData, size.width * size.height * 4,
-                                  size.width, size.height, size.width * 4,
+      rv = aEncoder->InitFromData(map.mData, map.mStride * size.height,
+                                  size.width, size.height, map.mStride,
                                   imgIEncoder::INPUT_FORMAT_HOSTARGB, aOptions,
-                                  VoidCString());
+                                  aRandomizationKey);
       data->Unmap();
-    }
-    if (NS_SUCCEEDED(rv)) {
-      imgStream = aEncoder;
+      if (NS_SUCCEEDED(rv)) {
+        imgStream = aEncoder;
+      }
     }
   } else if (aImage) {
     // It is safe to convert PlanarYCbCr format from YUV to RGB off-main-thread.
@@ -412,24 +423,28 @@ nsresult ImageEncoder::ExtractDataInternal(
       layers::PlanarYCbCrImage* ycbcrImage =
           static_cast<layers::PlanarYCbCrImage*>(aImage);
       gfxImageFormat format = SurfaceFormat::A8R8G8B8_UINT32;
-      int32_t stride = GetAlignedStride<16>(aSize.width, 4);
-      size_t length = BufferSizeFromStrideAndHeight(stride, aSize.height);
+      auto stride = GetAlignedStride<16>(aSize.width, 4);
+      if (stride.isNothing()) {
+        return NS_ERROR_INVALID_ARG;
+      }
+      size_t length =
+          BufferSizeFromStrideAndHeight(stride.value(), aSize.height);
       if (length == 0) {
         return NS_ERROR_INVALID_ARG;
       }
       data.SetCapacity(length);
 
       rv = ConvertYCbCrToRGB(*ycbcrImage->GetData(), format,
-                             aSize.ToUnknownSize(), data.Elements(), stride);
+                             aSize.ToUnknownSize(), data.Elements(),
+                             stride.value());
       if (NS_FAILED(rv)) {
         MOZ_ASSERT_UNREACHABLE("Failed to convert YUV into RGB data");
         return rv;
       }
 
       rv = aEncoder->InitFromData(
-          data.Elements(), aSize.width * aSize.height * 4, aSize.width,
-          aSize.height, aSize.width * 4, imgIEncoder::INPUT_FORMAT_HOSTARGB,
-          aOptions, VoidCString());
+          data.Elements(), length, aSize.width, aSize.height, stride.value(),
+          imgIEncoder::INPUT_FORMAT_HOSTARGB, aOptions, VoidCString());
     } else {
       if (BufferSizeFromDimensions(aSize.width, aSize.height, 4) == 0) {
         return NS_ERROR_INVALID_ARG;
@@ -444,8 +459,8 @@ nsresult ImageEncoder::ExtractDataInternal(
         return NS_ERROR_INVALID_ARG;
       }
       auto size = dataSurface->GetSize();
-      rv = aEncoder->InitFromData(map.mData, size.width * size.height * 4,
-                                  size.width, size.height, size.width * 4,
+      rv = aEncoder->InitFromData(map.mData, map.mStride * size.height,
+                                  size.width, size.height, map.mStride,
                                   imgIEncoder::INPUT_FORMAT_HOSTARGB, aOptions,
                                   VoidCString());
       dataSurface->Unmap();

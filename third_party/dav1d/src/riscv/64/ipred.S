@@ -32,7 +32,6 @@
 //                       const int width, const int height, const int a,
 //                       const int max_width, const int max_height)
 function ipred_v_8bpc_rvv, export=1, ext="v,zba"
-    csrw vxrm, zero
     addi a2, a2, 1
     vsetvli t0, a3, e8, m1, ta, ma
     bne t0, a3, 3f  // Go to slow path - whole row doesn't fit in regsiter
@@ -73,6 +72,90 @@ function ipred_v_8bpc_rvv, export=1, ext="v,zba"
     ret
 endfunc
 
+function ipred_h_8bpc_rvv, export=1, ext="v,zba"
+
+    lw a7, -4(a2)
+    vsetvli a6, a3, e8, m1, ta, ma
+    li a5, 4
+    beq a5, a4, 4f
+    bgt a3, a6, 2f
+1:
+    srli a6, a7, 8
+    vmv.v.x v4, a7
+    lw a7, -8(a2)
+    sub a4, a2, a4
+    vmv.v.x v8, a6
+    srli a5, a6, 8
+    add t1, a1, a0
+    srli a6, a7, 8
+    vmv.v.x v12, a5
+    srli a3, a5, 8
+    sh1add t2, a1, a0
+    srli a5, a7, 16
+    vmv.v.x v16, a3
+    sh1add t3, a1, t1
+    addi a4, a4, 8
+    srli a3, a7, 24
+
+3:
+    vse8.v v4, (t3)
+    vmv.v.x v4, a7
+
+    lw a7, -12(a2)
+    addi a2, a2, -4
+    sh2add t3, a1, t3
+
+    vse8.v v8, (t2)
+    vmv.v.x v8, a6
+    srli a6, a7, 8
+    sh2add t2, a1, t2
+
+    vse8.v v12, (t1)
+    vmv.v.x v12, a5
+    srli a5, a7, 16
+    sh2add t1, a1, t1
+
+    vse8.v v16, (a0)
+    vmv.v.x v16, a3
+    srli a3, a7, 24
+    sh2add a0, a1, a0
+
+    bge a2, a4, 3b
+
+    vse8.v v4, (t3)
+    vse8.v v8, (t2)
+    vse8.v v12, (t1)
+    vse8.v v16, (a0)
+
+    ret
+
+4:
+    srli a6, a7, 8
+
+    vmv.v.x v4, a7
+    add t1, a1, a0
+    srli a5, a7, 16
+    sh1add t3, a1, t1
+    vmv.v.x v8, a6
+    srli a3, a7, 24
+    sh1add t2, a1, a0
+    vse8.v v4, (t3)
+    vmv.v.x v12, a5
+    vse8.v v8, (t2)
+    vmv.v.x v16, a3
+
+    vse8.v v12, (t1)
+    vse8.v v16, (a0)
+
+    ret
+2:
+    vsetvli a6, a3, e8, m2, ta, ma
+    ble a3, a6, 1b
+
+    vsetvli a6, a3, e8, m4, ta, ma
+    j 1b
+
+endfunc
 
 function dc_gen_8bpc_rvv, export=1, ext="v,zbb"
     .variant_cc dav1d_dc_gen_8bpc_rvv

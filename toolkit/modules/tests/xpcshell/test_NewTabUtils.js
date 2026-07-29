@@ -142,6 +142,27 @@ add_task(async function validCacheMidPopulation() {
   NewTabUtils.links.removeProvider(provider);
 });
 
+add_task(async function onLinkChangedMidPopulation() {
+  let expectedLinks = makeLinks(0, 3, 1);
+
+  let provider = new TestProvider(done => done(expectedLinks));
+  provider.maxNumLinks = expectedLinks.length;
+
+  NewTabUtils.initWithoutProviders();
+  NewTabUtils.links.addProvider(provider);
+  let promise = new Promise(resolve =>
+    NewTabUtils.links.populateCache(resolve)
+  );
+
+  // onLinkChanged() may fire while the cache is being populated, before
+  // linkMap and friends exist. It should silently ignore the change rather
+  // than throwing.
+  provider.notifyLinkChanged({ url: expectedLinks[0].url, title: "changed" });
+
+  await promise;
+  NewTabUtils.links.removeProvider(provider);
+});
+
 add_task(async function notifyLinkDelete() {
   let expectedLinks = makeLinks(0, 3, 1);
 

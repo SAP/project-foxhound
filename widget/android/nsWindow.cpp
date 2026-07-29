@@ -1,6 +1,4 @@
-/* -*- Mode: c++; c-basic-offset: 2; tab-width: 4; indent-tabs-mode: nil; -*-
- * vim: set sw=2 ts=4 expandtab:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -37,6 +35,7 @@
 #include "ScreenHelperAndroid.h"
 #include "TouchResampler.h"
 #include "WidgetUtils.h"
+#include "WindowEvent.h"
 #include "WindowRenderer.h"
 
 #include "mozilla/EventForwards.h"
@@ -44,7 +43,6 @@
 #include "nsContentUtils.h"
 #include "nsDragService.h"
 #include "nsFocusManager.h"
-#include "nsGkAtoms.h"
 #include "nsGfxCIID.h"
 #include "nsIDocShellTreeOwner.h"
 #include "nsLayoutUtils.h"
@@ -1171,6 +1169,11 @@ class LayerViewSupport final
   using Base::AttachNative;
   using Base::DisposeNative;
 
+  template <typename Functor>
+  static void OnNativeCall(Functor&& aCall) {
+    NS_DispatchToMainThread(new WindowEvent<Functor>(std::move(aCall)));
+  }
+
   void OnWeakNonIntrusiveDetach(already_AddRefed<Runnable> aDisposer) {
     RefPtr<Runnable> disposer = aDisposer;
     if (RefPtr<nsThread> uiThread = GetAndroidUiThread()) {
@@ -1873,7 +1876,7 @@ void GeckoViewSupport::Open(
   }
 
   // Prepare an nsIGeckoViewView to pass as argument to the window.
-  RefPtr<AndroidView> androidView = new AndroidView();
+  auto androidView = MakeRefPtr<AndroidView>();
   androidView->mEventDispatcher->Attach(
       java::EventDispatcher::Ref::From(aDispatcher));
   androidView->mInitData = java::GeckoBundle::Ref::From(aInitData);
@@ -2126,8 +2129,7 @@ void GeckoViewSupport::CreatePdf(
   MOZ_ASSERT(NS_IsMainThread());
   const auto pdfErrorMsg = "Could not save this page as PDF.";
   auto stream = java::GeckoInputStream::New(nullptr);
-  RefPtr<GeckoViewOutputStream> streamListener =
-      new GeckoViewOutputStream(stream);
+  auto streamListener = MakeRefPtr<GeckoViewOutputStream>(stream);
 
   nsCOMPtr<nsIPrintSettingsService> printSettingsService =
       do_GetService("@mozilla.org/gfx/printsettings-service;1");
@@ -2210,6 +2212,15 @@ void GeckoViewSupport::PrintToPdf(
   }
   CreatePdf(geckoResult, cbc);
 }
+
+void GeckoViewSupport::PerformHapticFeedback(int32_t aEffect) {
+  GeckoSession::Window::LocalRef window(mGeckoViewWindow);
+  if (!window) {
+    return;
+  }
+  window->PerformHapticFeedback(aEffect);
+}
+
 }  // namespace widget
 }  // namespace mozilla
 
@@ -2565,6 +2576,19 @@ void nsWindow::DoResize(double aX, double aY, double aWidth, double aHeight,
 
   // Should we skip honoring aRepaint here?
   if (aRepaint && FindTopLevel() == nsWindow::TopWindow()) RedrawAll();
+}
+
+void nsWindow::PerformHapticFeedback(HapticFeedbackType aType) {
+  if (Destroyed()) {
+    return;
+  }
+
+  auto acc(mGeckoViewSupport.Access());
+  if (!acc) {
+    return;
+  }
+
+  acc->PerformHapticFeedback(static_cast<int32_t>(aType));
 }
 
 void nsWindow::SetSizeMode(nsSizeMode aMode) {
@@ -3153,7 +3177,7 @@ nsresult nsWindow::SynthesizeNativeTouchPoint(
 
 nsresult nsWindow::SynthesizeNativeMouseEvent(
     LayoutDeviceIntPoint aPoint, NativeMouseMessage aNativeMessage,
-    MouseButton aButton, nsIWidget::Modifiers aModifierFlags,
+    MouseButton aButton, nsIWidget::NativeModifiers aModifierFlags,
     nsISynthesizedEventCallback* aCallback) {
   mozilla::widget::AutoSynthesizedEventCallbackNotifier notifier(aCallback);
 
@@ -3222,7 +3246,7 @@ nsresult nsWindow::SynthesizeNativeMouseMove(
     LayoutDeviceIntPoint aPoint, nsISynthesizedEventCallback* aCallback) {
   return SynthesizeNativeMouseEvent(
       aPoint, NativeMouseMessage::Move, MouseButton::eNotPressed,
-      nsIWidget::Modifiers::NO_MODIFIERS, aCallback);
+      nsIWidget::NativeModifiers::NO_MODIFIERS, aCallback);
 }
 
 void nsWindow::SetCompositorWidgetDelegate(CompositorWidgetDelegate* delegate) {
@@ -3262,8 +3286,8 @@ void nsWindow::ConfigureAPZControllerThread() {
 
 already_AddRefed<GeckoContentController>
 nsWindow::CreateRootContentController() {
-  RefPtr<GeckoContentController> controller =
-      new AndroidContentController(this, mAPZEventState, mAPZC);
+  auto controller =
+      MakeRefPtr<AndroidContentController>(this, mAPZEventState, mAPZC);
   return controller.forget();
 }
 

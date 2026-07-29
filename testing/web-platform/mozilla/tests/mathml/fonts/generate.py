@@ -1,5 +1,4 @@
 #!/usr/bin/python
-# vim: set shiftwidth=4 tabstop=8 autoindent expandtab:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -46,10 +45,10 @@ def newMathFont(aName):
 
 def saveMathFont(aFont):
     aFont.em = em
-    aFont.ascent = aFont.descent = em / 2
-    aFont.hhea_ascent = aFont.os2_typoascent = aFont.os2_winascent = em / 2
-    aFont.descent = aFont.hhea_descent = em / 2
-    aFont.os2_typodescent = aFont.os2_windescent = em / 2
+    aFont.ascent = aFont.descent = int(em / 2)
+    aFont.hhea_ascent = aFont.os2_typoascent = aFont.os2_winascent = int(em / 2)
+    aFont.descent = aFont.hhea_descent = int(em / 2)
+    aFont.os2_typodescent = aFont.os2_windescent = int(em / 2)
     aFont.hhea_ascent_add = aFont.hhea_descent_add = 0
     aFont.os2_typoascent_add = aFont.os2_typodescent_add = 0
     aFont.os2_winascent_add = aFont.os2_windescent_add = 0
@@ -200,7 +199,7 @@ vstretchy = [
     0x21A8,  # up down arrow with base
 ]
 for i in range(0, 1 + nvariants + 1):
-    s = (i + 1) * em / 10
+    s = (i + 1) * int(em / 10)
 
     g = f.createChar(hstretchy[i])
     p = g.glyphPen()
@@ -218,7 +217,7 @@ for i in range(0, 1 + nvariants + 1):
     p.lineTo(2 * em / 10, s)
     p.lineTo(2 * em / 10, 0)
     p.closePath()
-    g.width = 2 * em / 10
+    g.width = 2 * int(em / 10)
 
 # hstretchy[0] and vstretchy[0] have all the variants and the components. The others only have one of them.
 s = em * nvariants
@@ -317,4 +316,14 @@ glyph2 = f[0x1D51F]
 glyph2.glyphname = "urtriangle"
 glyph3 = f[0x1D51E]
 glyph3.addPosSub("gsub_n", "urtriangle")
+saveMathFont(f)
+
+################################################################################
+# Testing mirroring without rtlm
+f = newMathFont("no-rtlm-mirror")
+createLLTriangleGlyph(f, 0x2231)  # clockwise integral.
+createLLTriangleGlyph(f, 0x2232)  # clockwise contour integral.
+createLLTriangleGlyph(f, 0x2233)  # anticlockwise contour integral.
+createLLTriangleGlyph(f, 0x2A11)  # anticlockwise integration.
+createLLTriangleGlyph(f, 0x2A17)  # integral with leftwards arrow with hook.
 saveMathFont(f)

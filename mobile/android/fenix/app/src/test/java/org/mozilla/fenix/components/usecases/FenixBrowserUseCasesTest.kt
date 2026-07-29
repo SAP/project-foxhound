@@ -10,6 +10,7 @@ import io.mockk.mockk
 import io.mockk.spyk
 import io.mockk.verify
 import io.mockk.verifyOrder
+import kotlinx.coroutines.test.TestScope
 import mozilla.components.browser.state.engine.EngineMiddleware
 import mozilla.components.browser.state.search.SearchEngine
 import mozilla.components.browser.state.state.BrowserState
@@ -26,9 +27,7 @@ import mozilla.components.feature.search.ext.createSearchEngine
 import mozilla.components.feature.session.SessionUseCases
 import mozilla.components.feature.tabs.TabsUseCases
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.R
@@ -49,9 +48,6 @@ class FenixBrowserUseCasesTest {
     private lateinit var useCases: FenixBrowserUseCases
     private lateinit var homepageTitle: String
     private lateinit var appStore: AppStore
-
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
 
     @Before
     fun setup() {
@@ -81,7 +77,7 @@ class FenixBrowserUseCasesTest {
             ),
             middleware = EngineMiddleware.create(
                 mockk<Engine>(),
-                coroutinesTestRule.scope,
+                TestScope(),
             ),
         )
         defaultSearchUseCase = spyk(

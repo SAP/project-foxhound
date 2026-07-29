@@ -12,7 +12,7 @@ use serde_json;
 use sha2::{Digest, Sha256};
 use std::io;
 
-use sql_support::{open_database::open_database_with_flags, ConnExt};
+use sql_support::{open_database::open_database_with_flags, run_maintenance, ConnExt};
 
 /// Internal storage type
 ///
@@ -135,25 +135,39 @@ impl Storage {
         collection_url: &str,
     ) -> Result<Option<CollectionMetadata>> {
         let tx = self.transaction()?;
+        // signatures is a JSON array of objects with "signature" and "x5u" fields,
+        // so we need to iterate through the rows and construct the list of signatures.
+        // we use LEFT JOIN to return a row even if list of signatures is empty.
         let mut stmt_metadata = tx.prepare(
-            "SELECT bucket, signature, x5u FROM collection_metadata WHERE collection_url = ?",
+            "
+            SELECT
+                cm.bucket,
+                json_extract(sig.value, '$.x5u') AS x5u,
+                json_extract(sig.value, '$.signature') AS signature
+            FROM collection_metadata AS cm
+            LEFT JOIN json_each(cm.signatures) AS sig ON true
+            WHERE cm.collection_url = ?
+            ",
         )?;
 
-        if let Some(metadata) = stmt_metadata
-            .query_row(params![collection_url], |row| {
-                Ok(CollectionMetadata {
-                    bucket: row.get(0).unwrap_or_default(),
-                    signature: CollectionSignature {
-                        signature: row.get(1).unwrap_or_default(),
-                        x5u: row.get(2).unwrap_or_default(),
-                    },
-                })
-            })
-            .optional()?
-        {
-            Ok(Some(metadata))
-        } else {
-            Ok(None)
+        let mut rows = stmt_metadata.query(params![collection_url])?;
+        let mut bucket: Option<String> = None;
+        let mut signatures = Vec::new();
+
+        while let Some(row) = rows.next()? {
+            // bucket should be the same for every row, so just set it once
+            if bucket.is_none() {
+                bucket = Some(row.get(0)?);
+            }
+            let x5u: Option<String> = row.get(1)?;
+            let signature: Option<String> = row.get(2)?;
+            if let (Some(x5u), Some(signature)) = (x5u, signature) {
+                signatures.push(CollectionSignature { signature, x5u });
+            }
+        }
+        match bucket {
+            Some(bucket) => Ok(Some(CollectionMetadata { bucket, signatures })),
+            None => Ok(None),
         }
     }
 
@@ -217,6 +231,7 @@ impl Storage {
 
         Self::update_record_rows(&tx, collection_url, records)?;
         Self::update_collection_metadata(&tx, collection_url, last_modified, metadata)?;
+        Self::cleanup_orphaned_attachments(&tx, collection_url)?;
         tx.commit()?;
         Ok(())
     }
@@ -256,19 +271,21 @@ impl Storage {
         last_modified: u64,
         metadata: CollectionMetadata,
     ) -> Result<()> {
-        // Update the metadata
-        tx.execute(
-            "INSERT OR REPLACE INTO collection_metadata \
-            (collection_url, last_modified, bucket, signature, x5u) \
-            VALUES (?, ?, ?, ?, ?)",
-            (
-                collection_url,
-                last_modified,
-                metadata.bucket,
-                metadata.signature.signature,
-                metadata.signature.x5u,
-            ),
+        let signatures_json = serde_json::to_string(&metadata.signatures)
+            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+
+        let mut stmt = tx.prepare(
+            "INSERT OR REPLACE INTO collection_metadata
+            (collection_url, last_modified, bucket, signatures)
+            VALUES (?, ?, ?, ?)",
         )?;
+
+        stmt.execute((
+            collection_url,
+            last_modified,
+            &metadata.bucket,
+            &signatures_json,
+        ))?;
         Ok(())
     }
 
@@ -308,6 +325,31 @@ impl Storage {
         tx.execute("DELETE FROM attachments", [])?;
         tx.execute("DELETE FROM collection_metadata", [])?;
         tx.commit()?;
+        Ok(())
+    }
+
+    /// Remove attachments that are no longer referenced by any current record.
+    /// When the server updates an attachment, the record gets a new UUID/hash in its location
+    /// field. Without this cleanup, the old attachment blob persists forever, causing unbounded
+    /// database growth (1+ GB observed in production for `quicksuggest-amp.sql`).
+    fn cleanup_orphaned_attachments(tx: &Transaction<'_>, collection_url: &str) -> Result<()> {
+        tx.execute(
+            "DELETE FROM attachments
+             WHERE collection_url = ?1
+             AND NOT EXISTS (
+                 SELECT 1 FROM records WHERE collection_url = ?1
+                 AND json_extract(data, '$.attachment.location') = attachments.id
+             )",
+            params![collection_url],
+        )?;
+        Ok(())
+    }
+
+    pub fn run_maintenance(&mut self) -> Result<()> {
+        if let ConnectionCell::Initialized(conn) = &self.conn {
+            run_maintenance(conn)?;
+        }
+
         Ok(())
     }
 }
@@ -544,6 +586,184 @@ mod tests {
         assert!(fetched_attachment_2.is_some());
         let fetched_attachment_2 = fetched_attachment_2.unwrap();
         assert_eq!(fetched_attachment_2, attachment_2);
+
+        Ok(())
+    }
+
+    /// Test that orphaned attachments are cleaned up when a record's attachment location changes.
+    /// This reproduces the 1.1GB bloat observed in production. The `quicksuggest-amp` collection
+    /// has records like:
+    /// {
+    ///   "type": "amp",
+    ///   "country": "US",
+    ///   "form_factor": "phone",
+    ///   "filter_expression": "env.country == 'US' && env.formFactor == 'phone'",
+    ///   "id": "sponsored-suggestions-us-phone",
+    ///   "attachment": { "hash": "992ed42aa...", "size": 9795975, "filename": "sponsored-suggestions-us-phone.json", ... }
+    /// }
+    /// When the data refreshes (schema timestamp changes), the record keeps its ID but gets
+    /// a new attachment with a different hash/location. The old cached blob was never cleaned up.
+    #[test]
+    fn test_storage_orphaned_attachments_cleaned_up_on_update() -> Result<()> {
+        let mut storage = Storage::new(":memory:".into());
+        let collection_url = "https://example.com/api";
+
+        let attachment_v1 = b"version 1 data";
+        let attachment_v2 = b"version 2 data";
+
+        let attachment_meta_v1 = Attachment {
+            filename: "sponsored-suggestions-us-phone.json".to_string(),
+            mimetype: "application/json".to_string(),
+            location: "main-workspace/quicksuggest-amp/attachment-v1.json".to_string(),
+            hash: format!("{:x}", Sha256::digest(attachment_v1)),
+            size: attachment_v1.len() as u64,
+        };
+
+        let attachment_meta_v2 = Attachment {
+            filename: "sponsored-suggestions-us-phone.json".to_string(),
+            mimetype: "application/json".to_string(),
+            location: "main-workspace/quicksuggest-amp/attachment-v2.json".to_string(),
+            hash: format!("{:x}", Sha256::digest(attachment_v2)),
+            size: attachment_v2.len() as u64,
+        };
+
+        // Initially record points to attachment_v1
+        let records_v1 = vec![RemoteSettingsRecord {
+            id: "sponsored-suggestions-us-phone".to_string(),
+            last_modified: 100,
+            deleted: false,
+            attachment: Some(attachment_meta_v1.clone()),
+            fields: serde_json::json!({"type": "amp"})
+                .as_object()
+                .unwrap()
+                .clone(),
+        }];
+
+        storage.insert_collection_content(
+            collection_url,
+            &records_v1,
+            100,
+            CollectionMetadata::default(),
+        )?;
+        storage.set_attachment(collection_url, &attachment_meta_v1.location, attachment_v1)?;
+
+        let fetched = storage.get_attachment(collection_url, attachment_meta_v1.clone())?;
+        assert!(fetched.is_some(), "v1 attachment should be stored");
+
+        // Simulate a server data refresh while keeping the same record ID
+        // but a new attachment location
+        let records_v2 = vec![RemoteSettingsRecord {
+            id: "sponsored-suggestions-us-phone".to_string(),
+            last_modified: 200,
+            deleted: false,
+            attachment: Some(attachment_meta_v2.clone()),
+            fields: serde_json::json!({"type": "amp"})
+                .as_object()
+                .unwrap()
+                .clone(),
+        }];
+
+        storage.insert_collection_content(
+            collection_url,
+            &records_v2,
+            200,
+            CollectionMetadata::default(),
+        )?;
+        storage.set_attachment(collection_url, &attachment_meta_v2.location, attachment_v2)?;
+
+        let fetched_v2 = storage.get_attachment(collection_url, attachment_meta_v2)?;
+        assert!(fetched_v2.is_some(), "v2 attachment should be stored");
+
+        let fetched_v1 = storage.get_attachment(collection_url, attachment_meta_v1)?;
+        assert!(
+            fetched_v1.is_none(),
+            "v1 attachment should be cleaned up after record points to v2"
+        );
+
+        Ok(())
+    }
+
+    /// Test that orphaned attachments are cleaned up when a record is deleted via tombstone.
+    /// The `quicksuggest-amp` changeset uses filter_expression to target specific countries
+    /// and form factors. If the server removes a record (e.g. drops a country), a tombstone
+    /// is sent:
+    /// {
+    ///   "id": "sponsored-suggestions-gb-phone",
+    ///   "last_modified": 1774549156905,
+    ///   "deleted": true
+    /// }
+    /// The record row gets deleted, but the cached attachment blob was never cleaned up.
+    #[test]
+    fn test_storage_orphaned_attachments_cleaned_up_on_delete() -> Result<()> {
+        let mut storage = Storage::new(":memory:".into());
+        let collection_url = "https://example.com/api";
+
+        let attachment_data = b"sponsored suggestions for GB phone";
+
+        let attachment_meta = Attachment {
+            filename: "sponsored-suggestions-gb-phone.json".to_string(),
+            mimetype: "application/json".to_string(),
+            location: "main-workspace/quicksuggest-amp/attachment-gb.json".to_string(),
+            hash: format!("{:x}", Sha256::digest(attachment_data)),
+            size: attachment_data.len() as u64,
+        };
+
+        // Initially we have two records, one with an attachment
+        let initial_records = vec![
+            RemoteSettingsRecord {
+                id: "sponsored-suggestions-gb-phone".to_string(),
+                last_modified: 100,
+                deleted: false,
+                attachment: Some(attachment_meta.clone()),
+                fields: serde_json::json!({"type": "amp"})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            },
+            RemoteSettingsRecord {
+                id: "sponsored-suggestions-us-phone".to_string(),
+                last_modified: 100,
+                deleted: false,
+                attachment: None,
+                fields: serde_json::json!({"type": "amp"})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            },
+        ];
+
+        storage.insert_collection_content(
+            collection_url,
+            &initial_records,
+            100,
+            CollectionMetadata::default(),
+        )?;
+        storage.set_attachment(collection_url, &attachment_meta.location, attachment_data)?;
+
+        let fetched = storage.get_attachment(collection_url, attachment_meta.clone())?;
+        assert!(fetched.is_some(), "GB attachment should be stored");
+
+        // Simulate server sending a tombstone, GB record is deleted
+        let updated_records = vec![RemoteSettingsRecord {
+            id: "sponsored-suggestions-gb-phone".to_string(),
+            last_modified: 200,
+            deleted: true,
+            attachment: None,
+            fields: RsJsonObject::new(),
+        }];
+
+        storage.insert_collection_content(
+            collection_url,
+            &updated_records,
+            200,
+            CollectionMetadata::default(),
+        )?;
+
+        let fetched = storage.get_attachment(collection_url, attachment_meta)?;
+        assert!(
+            fetched.is_none(),
+            "GB attachment should be cleaned up after record is deleted via tombstone"
+        );
 
         Ok(())
     }
@@ -899,17 +1119,25 @@ mod tests {
             1337,
             CollectionMetadata {
                 bucket: "main".into(),
-                signature: CollectionSignature {
-                    signature: "b64encodedsig".into(),
-                    x5u: "http://15u/".into(),
-                },
+                signatures: vec![
+                    CollectionSignature {
+                        signature: "b64encodedsig".into(),
+                        x5u: "http://15u/".into(),
+                    },
+                    CollectionSignature {
+                        signature: "b64encodedsig2".into(),
+                        x5u: "http://15u2/".into(),
+                    },
+                ],
             },
         )?;
 
         let metadata = storage.get_collection_metadata(collection_url)?.unwrap();
 
-        assert_eq!(metadata.signature.signature, "b64encodedsig");
-        assert_eq!(metadata.signature.x5u, "http://15u/");
+        assert_eq!(metadata.signatures[0].signature, "b64encodedsig");
+        assert_eq!(metadata.signatures[0].x5u, "http://15u/");
+        assert_eq!(metadata.signatures[1].signature, "b64encodedsig2");
+        assert_eq!(metadata.signatures[1].x5u, "http://15u2/");
 
         Ok(())
     }

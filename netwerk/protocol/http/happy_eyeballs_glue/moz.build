@@ -1,0 +1,22 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+EXPORTS.mozilla.net += [
+    "HappyEyeballs.h",
+]
+
+UNIFIED_SOURCES += [
+    "HappyEyeballs.cpp",
+]
+
+FINAL_LIBRARY = "xul"
+
+if CONFIG["COMPILE_ENVIRONMENT"]:
+    CbindgenHeader(
+        "happy_eyeballs_glue.h", inputs=["/netwerk/protocol/http/happy_eyeballs_glue"]
+    )
+
+    EXPORTS.mozilla.net += [
+        "!happy_eyeballs_glue.h",
+    ]

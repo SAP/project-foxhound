@@ -89,6 +89,7 @@ VideoCaptureImpl::VideoCaptureImpl(Clock* clock)
       _requestedCapability(),
       _lastProcessTimeNanos(clock->TimeInMicroseconds() * 1000),
       _lastFrameRateCallbackTimeNanos(clock->TimeInMicroseconds() * 1000),
+      _dataCallBack(nullptr),
       _rawDataCallBack(nullptr),
       _lastProcessFrameTimeNanos(clock->TimeInMicroseconds() * 1000),
       _rotateFrame(kVideoRotation_0),
@@ -111,35 +112,20 @@ void VideoCaptureImpl::RegisterCaptureDataCallback(
     VideoSinkInterface<VideoFrame>* dataCallBack) {
   MutexLock lock(&api_lock_);
   RTC_DCHECK(!_rawDataCallBack);
-  _dataCallBacks.insert(dataCallBack);
+  _dataCallBack = dataCallBack;
 }
 
 void VideoCaptureImpl::RegisterCaptureDataCallback(
     RawVideoSinkInterface* dataCallBack) {
   MutexLock lock(&api_lock_);
-  RTC_DCHECK(_dataCallBacks.empty());
+  RTC_DCHECK(!_dataCallBack);
   _rawDataCallBack = dataCallBack;
 }
 
-void VideoCaptureImpl::DeRegisterCaptureDataCallback(
-    webrtc::VideoSinkInterface<VideoFrame>* dataCallBack) {
+void VideoCaptureImpl::DeRegisterCaptureDataCallback() {
   MutexLock lock(&api_lock_);
-  auto it = _dataCallBacks.find(dataCallBack);
-  if (it != _dataCallBacks.end()) {
-    _dataCallBacks.erase(it);
-  }
+  _dataCallBack = nullptr;
   _rawDataCallBack = nullptr;
-}
-
-int32_t VideoCaptureImpl::StopCaptureIfAllClientsClose() {
-  RTC_DCHECK_RUN_ON(&api_checker_);
-  {
-    MutexLock lock(&api_lock_);
-    if (!_dataCallBacks.empty()) {
-      return 0;
-    }
-  }
-  return StopCapture();
 }
 
 int32_t VideoCaptureImpl::DeliverCapturedFrame(VideoFrame& captureFrame) {
@@ -147,8 +133,8 @@ int32_t VideoCaptureImpl::DeliverCapturedFrame(VideoFrame& captureFrame) {
 
   UpdateFrameCount();  // frame count used for local frame rate callback.
 
-  for (auto* dataCallBack : _dataCallBacks) {
-    dataCallBack->OnFrame(captureFrame);
+  if (_dataCallBack) {
+    _dataCallBack->OnFrame(captureFrame);
   }
 
   return 0;

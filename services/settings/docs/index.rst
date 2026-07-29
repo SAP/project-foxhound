@@ -312,9 +312,10 @@ From the client API standpoint, this is completely transparent: the ``.get()`` m
 Uptake Telemetry
 ================
 
-Some :ref:`uptake telemetry <telemetry/collection/uptake>` is collected in order to monitor how remote settings are propagated.
+Telemetry events are sent during synchronization (``uptake.remotecontent.result`` category with name ``uptake_remotesettings``).
 
-It is submitted to a single :ref:`keyed histogram <histogram-type-keyed>` whose id is ``UPTAKE_REMOTE_CONTENT_RESULT_1`` and the keys are prefixed with ``main/`` (eg. ``main/a-key`` in the above example).
+Refer to the `Glean Dictionary page <https://dictionary.telemetry.mozilla.org/apps/firefox_desktop/metrics/uptake_remotecontent_result_uptake_remotesettings>`_
+for more details.
 
 
 Create new remote settings

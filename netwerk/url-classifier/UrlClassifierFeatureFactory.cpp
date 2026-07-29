@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -24,7 +22,6 @@
 #include "UrlClassifierFeatureTrackingAnnotation.h"
 #include "UrlClassifierFeatureCustomTables.h"
 
-#include "nsIWebProgressListener.h"
 #include "nsAppRunner.h"
 
 namespace mozilla {
@@ -58,6 +55,16 @@ void UrlClassifierFeatureFactory::Shutdown() {
 void UrlClassifierFeatureFactory::GetFeaturesFromChannel(
     nsIChannel* aChannel,
     nsTArray<nsCOMPtr<nsIUrlClassifierFeature>>& aFeatures) {
+  UrlClassifierFeatureFactory::GetCancelingFeaturesFromChannel(aChannel,
+                                                               aFeatures);
+  UrlClassifierFeatureFactory::GetNonCancelingFeaturesFromChannel(aChannel,
+                                                                  aFeatures);
+}
+
+/* static */
+void UrlClassifierFeatureFactory::GetCancelingFeaturesFromChannel(
+    nsIChannel* aChannel,
+    nsTArray<nsCOMPtr<nsIUrlClassifierFeature>>& aFeatures) {
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(aChannel);
 
@@ -67,6 +74,10 @@ void UrlClassifierFeatureFactory::GetFeaturesFromChannel(
   // 1 feature classifies the channel, we call ::ProcessChannel() following this
   // feature order, and this could produce different results with a different
   // feature ordering.
+
+  // The first three features here do not actually perform the blocking
+  // themselves, but they either must be run before any blocking features or
+  // affect the outcome of other blocking features.
 
   // Email Tracking Data Collection
   // This needs to be run before other features so that other blocking features
@@ -129,6 +140,15 @@ void UrlClassifierFeatureFactory::GetFeaturesFromChannel(
   if (feature) {
     aFeatures.AppendElement(feature);
   }
+}
+
+/* static */
+void UrlClassifierFeatureFactory::GetNonCancelingFeaturesFromChannel(
+    nsIChannel* aChannel,
+    nsTArray<nsCOMPtr<nsIUrlClassifierFeature>>& aFeatures) {
+  MOZ_ASSERT(XRE_IsParentProcess());
+  MOZ_ASSERT(aChannel);
+  nsCOMPtr<nsIUrlClassifierFeature> feature;
 
   // Cryptomining Annotation
   feature = UrlClassifierFeatureCryptominingAnnotation::MaybeCreate(aChannel);
@@ -390,84 +410,6 @@ UrlClassifierFeatureFactory::CreateFeatureWithTables(
       new UrlClassifierFeatureCustomTables(aName, aBlocklistTables,
                                            aEntitylistTables);
   return feature.forget();
-}
-
-namespace {
-
-struct BlockingErrorCode {
-  nsresult mErrorCode;
-  uint32_t mBlockingEventCode;
-  const char* mConsoleMessage;
-  nsLiteralCString mConsoleCategory;
-};
-
-static constexpr BlockingErrorCode sBlockingErrorCodes[] = {
-    {NS_ERROR_TRACKING_URI,
-     nsIWebProgressListener::STATE_BLOCKED_TRACKING_CONTENT,
-     "TrackerUriBlockedByETP", "Tracking Protection"_ns},
-    {NS_ERROR_FINGERPRINTING_URI,
-     nsIWebProgressListener::STATE_BLOCKED_FINGERPRINTING_CONTENT,
-     "TrackerUriBlockedByETP", "Tracking Protection"_ns},
-    {NS_ERROR_CRYPTOMINING_URI,
-     nsIWebProgressListener::STATE_BLOCKED_CRYPTOMINING_CONTENT,
-     "TrackerUriBlockedByETP", "Tracking Protection"_ns},
-    {NS_ERROR_SOCIALTRACKING_URI,
-     nsIWebProgressListener::STATE_BLOCKED_SOCIALTRACKING_CONTENT,
-     "TrackerUriBlockedByETP", "Tracking Protection"_ns},
-    {NS_ERROR_EMAILTRACKING_URI,
-     nsIWebProgressListener::STATE_BLOCKED_EMAILTRACKING_CONTENT,
-     "TrackerUriBlockedByETP", "Tracking Protection"_ns},
-};
-
-}  // namespace
-
-/* static */
-bool UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(
-    nsresult aError) {
-  // In theory we can iterate through the features, but at the moment, we can
-  // just have a simple check here.
-  for (const auto& blockingErrorCode : sBlockingErrorCodes) {
-    if (aError == blockingErrorCode.mErrorCode) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-/* static */
-bool UrlClassifierFeatureFactory::IsClassifierBlockingEventCode(
-    uint32_t aEventCode) {
-  for (const auto& blockingErrorCode : sBlockingErrorCodes) {
-    if (aEventCode == blockingErrorCode.mBlockingEventCode) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/* static */
-uint32_t UrlClassifierFeatureFactory::GetClassifierBlockingEventCode(
-    nsresult aErrorCode) {
-  for (const auto& blockingErrorCode : sBlockingErrorCodes) {
-    if (aErrorCode == blockingErrorCode.mErrorCode) {
-      return blockingErrorCode.mBlockingEventCode;
-    }
-  }
-  return 0;
-}
-
-/* static */ const char*
-UrlClassifierFeatureFactory::ClassifierBlockingErrorCodeToConsoleMessage(
-    nsresult aError, nsACString& aCategory) {
-  for (const auto& blockingErrorCode : sBlockingErrorCodes) {
-    if (aError == blockingErrorCode.mErrorCode) {
-      aCategory = blockingErrorCode.mConsoleCategory;
-      return blockingErrorCode.mConsoleMessage;
-    }
-  }
-
-  return nullptr;
 }
 
 }  // namespace net

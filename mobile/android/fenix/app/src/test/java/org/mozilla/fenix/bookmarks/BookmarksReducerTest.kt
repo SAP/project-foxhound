@@ -40,10 +40,10 @@ class BookmarksReducerTest {
     }
 
     @Test
-    fun `WHEN store initializes THEN no changes to state`() {
+    fun `WHEN view appeared action dispatches THEN no changes to state`() {
         val state = BookmarksState.default
 
-        assertEquals(state, bookmarksReducer(state, Init))
+        assertEquals(state, bookmarksReducer(state, ViewAppeared()))
     }
 
     @Test
@@ -1036,53 +1036,6 @@ class BookmarksReducerTest {
     }
 
     @Test
-    fun `GIVEN a undo snackbar is displayed WHEN the snackbar is dismissed THEN remove the snackbar and any bookmark items that were deleted`() {
-        val state = BookmarksState.default.copy(
-            bookmarkItems = listOf(BookmarkItem.Folder("Bookmark Folder", "guid0", null)),
-            bookmarksSnackbarState = BookmarksSnackbarState.UndoDeletion(listOf("guid0")),
-        )
-
-        val result = bookmarksReducer(state, SnackbarAction.Dismissed)
-        assertEquals(BookmarksSnackbarState.None, result.bookmarksSnackbarState)
-        assertEquals(listOf<BookmarkItem>(), result.bookmarkItems)
-    }
-
-    @Test
-    fun `GIVEN a undo snackbar is displayed WHEN undo is tapped THEN remove the snackbar`() {
-        val state = BookmarksState.default.copy(
-            bookmarkItems = listOf(BookmarkItem.Folder("Bookmark Folder", "guid0", null)),
-            bookmarksSnackbarState = BookmarksSnackbarState.UndoDeletion(listOf("guid0")),
-        )
-
-        val result = bookmarksReducer(state, SnackbarAction.Undo)
-        assertEquals(BookmarksSnackbarState.None, result.bookmarksSnackbarState)
-        assertEquals(1, result.bookmarkItems.size)
-    }
-
-    @Test
-    fun `GIVEN a undo snackbar is displayed WHEN another item is deleted THEN append the item to be deleted`() {
-        val state = BookmarksState.default.copy(
-            bookmarkItems = listOf(BookmarkItem.Folder("Bookmark Folder", "guid0", null)),
-            bookmarksSnackbarState = BookmarksSnackbarState.UndoDeletion(listOf("guid0")),
-        )
-
-        val bookmarkToDelete = BookmarkItem.Bookmark(
-            guid = "guid1",
-            title = "title",
-            url = "url",
-            previewImageUrl = "previewImage",
-            position = null,
-        )
-
-        val result = bookmarksReducer(
-            state,
-            BookmarksListMenuAction.Bookmark.DeleteClicked(bookmarkToDelete),
-        )
-        val expected = BookmarksSnackbarState.UndoDeletion(guidsToDelete = listOf("guid0", "guid1"))
-        assertEquals(expected, result.bookmarksSnackbarState)
-    }
-
-    @Test
     fun `GIVEN a list of a bookmarks WHEN a folder is deleted THEN load the number of nested bookmarks`() {
         val folder = BookmarkItem.Folder("Bookmark Folder", "guid0", null)
         val state = BookmarksState.default.copy(
@@ -1157,18 +1110,6 @@ class BookmarksReducerTest {
     }
 
     @Test
-    fun `GIVEN a single bookmark selected WHEN tapping delete in the multi select menu THEN present the undo snackbar`() {
-        val item = BookmarkItem.Bookmark("ur", "title", "url", "guid", null)
-        val state = BookmarksState.default.copy(
-            bookmarkItems = listOf(item),
-            selectedItems = listOf(item),
-        )
-
-        val result = bookmarksReducer(state, BookmarksListMenuAction.MultiSelect.DeleteClicked)
-        assertEquals(BookmarksSnackbarState.UndoDeletion(listOf("guid")), result.bookmarksSnackbarState)
-    }
-
-    @Test
     fun `GIVEN a single folder selected WHEN tapping delete in the multi select menu THEN present the deletion dialog`() {
         val item = BookmarkItem.Folder("title", "guid", null)
         val state = BookmarksState.default.copy(
@@ -1204,24 +1145,6 @@ class BookmarksReducerTest {
 
         val result = bookmarksReducer(state, RecursiveSelectionCountLoaded(19))
         assertEquals(state.copy(recursiveSelectedCount = 19), result)
-    }
-
-    @Test
-    fun `GIVEN an edit bookmark screen WHEN deleting the bookmark THEN present the undo snackbar`() {
-        val item = BookmarkItem.Bookmark("ur", "title", "url", "guid", null)
-        val state = BookmarksState.default.copy(
-            bookmarksEditBookmarkState = BookmarksEditBookmarkState(
-                folder = BookmarkItem.Folder("Bookmarks", BookmarkRoot.Mobile.id, null),
-                bookmark = item,
-            ),
-        )
-
-        val result = bookmarksReducer(state, EditBookmarkAction.DeleteClicked)
-        val expected = state.copy(
-            bookmarksEditBookmarkState = null,
-            bookmarksSnackbarState = BookmarksSnackbarState.UndoDeletion(listOf(item.guid)),
-        )
-        assertEquals(expected, result)
     }
 
     @Test
@@ -1268,7 +1191,7 @@ class BookmarksReducerTest {
         val bookmark = BookmarkItem.Bookmark("ur", "title", "url", "guid", null)
         val parent = BookmarkItem.Folder("title", "guid", null)
 
-        val result = bookmarksReducer(state, InitEditLoaded(bookmark = bookmark, folder = parent))
+        val result = bookmarksReducer(state, BookmarkToEditLoaded(bookmark = bookmark, folder = parent))
         val expected = state.copy(
             currentFolder = parent,
             bookmarksEditBookmarkState = BookmarksEditBookmarkState(
@@ -1348,6 +1271,62 @@ class BookmarksReducerTest {
         val result = bookmarksReducer(state, BookmarksListMenuAction.Bookmark.SelectClicked(items[0]))
 
         assertTrue(result.selectedItems.isEmpty())
+    }
+
+    @Test
+    fun `GIVEN a bookmark WHEN move is clicked THEN move state is set and selection is cleared`() {
+        val items = listOf(generateBookmark())
+        val currentFolder = BookmarkItem.Folder("Bookmarks", "parent", null)
+        val state = BookmarksState.default.copy(
+            bookmarkItems = items,
+            currentFolder = currentFolder,
+        )
+
+        val result = bookmarksReducer(state, BookmarksListMenuAction.Bookmark.MoveClicked(items[0]))
+
+        assertTrue(result.selectedItems.isEmpty())
+        assertEquals(listOf(items[0].guid), result.bookmarksMultiselectMoveState?.guidsToMove)
+        assertEquals(currentFolder.guid, result.bookmarksMultiselectMoveState?.destination)
+        assertEquals(currentFolder.guid, result.bookmarksSelectFolderState?.outerSelectionGuid)
+    }
+
+    @Test
+    fun `GIVEN a folder WHEN move is clicked THEN move state is set and selection is cleared`() {
+        val items = listOf(generateFolder())
+        val currentFolder = BookmarkItem.Folder("Bookmarks", "parent", null)
+        val state = BookmarksState.default.copy(
+            bookmarkItems = items,
+            currentFolder = currentFolder,
+        )
+
+        val result = bookmarksReducer(state, BookmarksListMenuAction.Folder.MoveClicked(items[0]))
+
+        assertTrue(result.selectedItems.isEmpty())
+        assertEquals(listOf(items[0].guid), result.bookmarksMultiselectMoveState?.guidsToMove)
+        assertEquals(currentFolder.guid, result.bookmarksMultiselectMoveState?.destination)
+        assertEquals(currentFolder.guid, result.bookmarksSelectFolderState?.outerSelectionGuid)
+    }
+
+    @Test
+    fun `WHEN RootOverflowMenuClicked THEN rootMenuShown is true`() {
+        val state = BookmarksState.default
+        assertFalse(state.rootMenuShown)
+        val result = bookmarksReducer(state, RootOverflowMenuClicked)
+        assertTrue(result.rootMenuShown)
+    }
+
+    @Test
+    fun `WHEN RootOverflowMenuDismissed THEN rootMenuShown is false`() {
+        val state = BookmarksState.default.copy(rootMenuShown = true)
+        val result = bookmarksReducer(state, RootOverflowMenuDismissed)
+        assertFalse(result.rootMenuShown)
+    }
+
+    @Test
+    fun `WHEN ImportFileClicked from menu THEN rootMenuShown is false and launchFilePicker is true`() {
+        val state = BookmarksState.default.copy(rootMenuShown = true)
+        val result = bookmarksReducer(state, ImportAction.ImportFileClicked.FromMenu)
+        assertFalse(result.rootMenuShown)
     }
 
     private fun generateBookmark(

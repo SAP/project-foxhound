@@ -40,7 +40,7 @@
   <!-- Text for confirmation "snackbar" shown after copying a link text to the clipboard. -->
   <string name="mozac_feature_contextmenu_snackbar_link_text_copied">Hivatkozás szövege vágólapra másolva</string>
   <!-- Action shown in a "snacbkar" after opening a new/private tab. Clicking this action will switch to the newly opened tab. -->
-  <string name="mozac_feature_contextmenu_snackbar_action_switch">Kapcsolja át</string>
+  <string name="mozac_feature_contextmenu_snackbar_action_switch">Átváltás</string>
   <!-- Text for context menu item to open the link in an external app. -->
   <string name="mozac_feature_contextmenu_open_link_in_external_app">A hivatkozás megnyitása egy külső alkalmazásban</string>
   <!-- Text for context menu item to share the email with another app. -->

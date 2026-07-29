@@ -122,7 +122,7 @@ class SVCBRecord : public nsISVCBRecord {
   NS_DECL_NSISVCBRECORD
  public:
   explicit SVCBRecord(const SVCB& data)
-      : mData(data), mPort(Nothing()), mAlpn(Nothing()) {}
+      : mData(data), mPort(data.GetPort()), mAlpn(Nothing()) {}
   explicit SVCBRecord(const SVCB& data,
                       Maybe<std::tuple<nsCString, SupportedAlpnRank>> aAlpn);
 

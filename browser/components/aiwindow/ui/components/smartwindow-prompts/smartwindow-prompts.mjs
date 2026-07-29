@@ -34,6 +34,10 @@ export class SmartWindowPrompts extends MozLitElement {
     this.dispatchEvent(event);
   }
 
+  #hasInteracted(e) {
+    e.currentTarget.classList.add("has-interacted");
+  }
+
   render() {
     if (!this.prompts.length) {
       return html``;
@@ -51,6 +55,8 @@ export class SmartWindowPrompts extends MozLitElement {
             <moz-button
               class="sw-prompt-button"
               @click=${() => this.#promptSelected(swPrompt)}
+              @mouseenter=${this.#hasInteracted}
+              @focusin=${this.#hasInteracted}
               aria-label=${swPrompt.text}
             >
               ${swPrompt.text}

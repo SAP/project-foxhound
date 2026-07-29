@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,7 +20,7 @@ namespace ImageDataSerializer {
 
 using namespace gfx;
 
-int32_t ComputeRGBStride(SurfaceFormat aFormat, int32_t aWidth) {
+Maybe<int32_t> ComputeRGBStride(SurfaceFormat aFormat, int32_t aWidth) {
 #ifdef XP_MACOSX
   // Some drivers require an alignment of 32 bytes for efficient texture upload.
   return GetAlignedStride<32>(aWidth, BytesPerPixel(aFormat));
@@ -31,31 +29,34 @@ int32_t ComputeRGBStride(SurfaceFormat aFormat, int32_t aWidth) {
 #endif
 }
 
-int32_t GetRGBStride(const RGBDescriptor& aDescriptor) {
+Maybe<int32_t> GetRGBStride(const RGBDescriptor& aDescriptor) {
   return ComputeRGBStride(aDescriptor.format(), aDescriptor.size().width);
 }
 
-uint32_t ComputeRGBBufferSize(IntSize aSize, SurfaceFormat aFormat) {
+Maybe<uint32_t> ComputeRGBBufferSize(IntSize aSize, SurfaceFormat aFormat) {
   MOZ_ASSERT(aSize.height >= 0 && aSize.width >= 0);
 
   // This takes care of checking whether there could be overflow
   // with enough margin for the metadata.
   if (!gfx::Factory::AllowedSurfaceSize(aSize)) {
-    return 0;
+    return Nothing();
+  }
+
+  auto stride = ComputeRGBStride(aFormat, aSize.width);
+  if (stride.isNothing()) {
+    return Nothing();
   }
 
   // Note we're passing height instad of the bpp parameter, but the end
   // result is the same - and the bpp was already taken care of in the
   // ComputeRGBStride function.
-  int32_t bufsize = GetAlignedStride<16>(ComputeRGBStride(aFormat, aSize.width),
-                                         aSize.height);
-
-  if (bufsize < 0) {
-    // This should not be possible thanks to Factory::AllowedSurfaceSize
-    return 0;
+  Maybe<int32_t> bufsize = GetAlignedStride<16>(stride.value(), aSize.height);
+  if (bufsize.isNothing()) {
+    return Nothing();
   }
 
-  return bufsize;
+  MOZ_ASSERT(bufsize.value() >= 0);
+  return Some(uint32_t(bufsize.value()));
 }
 
 static bool CheckYCbCrStride(const gfx::IntSize& aSize, int32_t aStride,
@@ -67,11 +68,10 @@ static bool CheckYCbCrStride(const gfx::IntSize& aSize, int32_t aStride,
 }
 
 // Minimum required shmem size in bytes
-uint32_t ComputeYCbCrBufferSize(const gfx::IntRect& aDisplay,
-                                const gfx::IntSize& aYSize, int32_t aYStride,
-                                const gfx::IntSize& aCbCrSize,
-                                int32_t aCbCrStride, gfx::ColorDepth aDepth,
-                                const ChromaSubsampling aSubsampling) {
+Maybe<uint32_t> ComputeYCbCrBufferSize(
+    const gfx::IntRect& aDisplay, const gfx::IntSize& aYSize, int32_t aYStride,
+    const gfx::IntSize& aCbCrSize, int32_t aCbCrStride, gfx::ColorDepth aDepth,
+    const ChromaSubsampling aSubsampling) {
   MOZ_ASSERT(aYSize.height >= 0 && aYSize.width >= 0);
 
   if (aDisplay.IsEmpty() || aDisplay.x < 0 || aDisplay.y < 0 ||
@@ -84,65 +84,64 @@ uint32_t ComputeYCbCrBufferSize(const gfx::IntRect& aDisplay,
       !CheckYCbCrStride(aYSize, aYStride, aDepth) ||
       !CheckYCbCrStride(aCbCrSize, aCbCrStride, aDepth) ||
       !(ChromaSize(aYSize, aSubsampling) <= aCbCrSize)) {
-    return 0;
+    return Nothing();
   }
 
   // Overflow checks are performed only individually in AllowedSurfaceSize
-  auto bufLen =
-      CheckedInt<uint32_t>(GetAlignedStride<4>(aYSize.height, aYStride)) +
-      CheckedInt<uint32_t>(GetAlignedStride<4>(aCbCrSize.height, aCbCrStride)) *
-          2;
-  if (!bufLen.isValid()) {
-    return 0;
+  auto ySize = GetAlignedStride<4>(aYSize.height, aYStride);
+  auto cbcrSize = GetAlignedStride<4>(aCbCrSize.height, aCbCrStride);
+  if (ySize.isNothing() || cbcrSize.isNothing()) {
+    return Nothing();
   }
-  return bufLen.value();
+  auto bufLen = CheckedInt<uint32_t>(ySize.value()) +
+                CheckedInt<uint32_t>(cbcrSize.value()) * 2;
+  if (!bufLen.isValid() || bufLen.value() <= 0) {
+    return Nothing();
+  }
+  return Some(bufLen.value());
 }
 
-uint32_t ComputeYCbCrBufferSize(const gfx::IntRect& aDisplay,
-                                const gfx::IntSize& aYSize, int32_t aYStride,
-                                const gfx::IntSize& aCbCrSize,
-                                int32_t aCbCrStride, uint32_t aYOffset,
-                                uint32_t aCbOffset, uint32_t aCrOffset,
-                                gfx::ColorDepth aDepth,
-                                const ChromaSubsampling aSubsampling) {
-  uint32_t minBufLen = ComputeYCbCrBufferSize(
+Maybe<uint32_t> ComputeYCbCrBufferSize(
+    const gfx::IntRect& aDisplay, const gfx::IntSize& aYSize, int32_t aYStride,
+    const gfx::IntSize& aCbCrSize, int32_t aCbCrStride, uint32_t aYOffset,
+    uint32_t aCbOffset, uint32_t aCrOffset, gfx::ColorDepth aDepth,
+    const ChromaSubsampling aSubsampling) {
+  Maybe<uint32_t> minBufLen = ComputeYCbCrBufferSize(
       aDisplay, aYSize, aYStride, aCbCrSize, aCbCrStride, aDepth, aSubsampling);
-  if (minBufLen == 0) {
-    return 0;
+  if (minBufLen.isNothing()) {
+    return Nothing();
   }
 
-  uint32_t yLength = GetAlignedStride<4>(aYStride, aYSize.height);
-  uint32_t cbCrLength = GetAlignedStride<4>(aCbCrStride, aCbCrSize.height);
-  if (yLength == 0 || cbCrLength == 0) {
-    return 0;
+  auto yLength = GetAlignedStride<4>(aYStride, aYSize.height);
+  auto cbCrLength = GetAlignedStride<4>(aCbCrStride, aCbCrSize.height);
+  if (yLength.isNothing() || cbCrLength.isNothing()) {
+    return Nothing();
   }
 
   CheckedInt<uint32_t> yEnd = aYOffset;
-  yEnd += yLength;
+  yEnd += yLength.value();
   CheckedInt<uint32_t> cbEnd = aCbOffset;
-  cbEnd += cbCrLength;
+  cbEnd += cbCrLength.value();
   CheckedInt<uint32_t> crEnd = aCrOffset;
-  crEnd += cbCrLength;
+  crEnd += cbCrLength.value();
 
   if (!yEnd.isValid() || !cbEnd.isValid() || !crEnd.isValid() ||
       yEnd.value() > aCbOffset || cbEnd.value() > aCrOffset ||
-      crEnd.value() < minBufLen) {
-    return 0;
+      crEnd.value() < minBufLen.value()) {
+    return Nothing();
   }
 
-  return crEnd.value();
-}
-
-uint32_t ComputeYCbCrBufferSize(uint32_t aBufferSize) {
-  return GetAlignedStride<4>(aBufferSize, 1);
+  MOZ_ASSERT(crEnd.value() > 0);
+  return Some(crEnd.value());
 }
 
 void ComputeYCbCrOffsets(int32_t yStride, int32_t yHeight, int32_t cbCrStride,
                          int32_t cbCrHeight, uint32_t& outYOffset,
                          uint32_t& outCbOffset, uint32_t& outCrOffset) {
   outYOffset = 0;
-  outCbOffset = outYOffset + GetAlignedStride<4>(yStride, yHeight);
-  outCrOffset = outCbOffset + GetAlignedStride<4>(cbCrStride, cbCrHeight);
+  outCbOffset = outYOffset + GetAlignedStride<4>(yStride, yHeight).valueOr(0);
+  outCrOffset =
+      outCbOffset + GetAlignedStride<4>(cbCrStride, cbCrHeight).valueOr(0);
 }
 
 gfx::SurfaceFormat FormatFromBufferDescriptor(
@@ -230,6 +229,18 @@ Maybe<int32_t> CbCrStrideFromBufferDescriptor(
   }
 }
 
+Maybe<gfx::ColorSpace2> ColorSpace2FromBufferDescriptor(
+    const BufferDescriptor& aDescriptor) {
+  switch (aDescriptor.type()) {
+    case BufferDescriptor::TRGBDescriptor:
+      return Some(aDescriptor.get_RGBDescriptor().colorSpace());
+    case BufferDescriptor::TYCbCrDescriptor:
+      return Nothing();
+    default:
+      MOZ_CRASH("GFX:  ColorSpace2FromBufferDescriptor");
+  }
+}
+
 Maybe<gfx::YUVColorSpace> YUVColorSpaceFromBufferDescriptor(
     const BufferDescriptor& aDescriptor) {
   switch (aDescriptor.type()) {
@@ -290,6 +301,18 @@ Maybe<gfx::ChromaSubsampling> ChromaSubsamplingFromBufferDescriptor(
   }
 }
 
+Maybe<gfx::TransferFunction> TransferFunctionFromBufferDescriptor(
+    const BufferDescriptor& aDescriptor) {
+  switch (aDescriptor.type()) {
+    case BufferDescriptor::TRGBDescriptor:
+      return Some(aDescriptor.get_RGBDescriptor().transferFunction());
+    case BufferDescriptor::TYCbCrDescriptor:
+      return Some(aDescriptor.get_YCbCrDescriptor().transferFunction());
+    default:
+      MOZ_CRASH("GFX: TransferFunctionFromBufferDescriptor");
+  }
+}
+
 uint8_t* GetYChannel(uint8_t* aBuffer, const YCbCrDescriptor& aDescriptor) {
   return aBuffer + aDescriptor.yOffset();
 }
@@ -300,6 +323,18 @@ uint8_t* GetCbChannel(uint8_t* aBuffer, const YCbCrDescriptor& aDescriptor) {
 
 uint8_t* GetCrChannel(uint8_t* aBuffer, const YCbCrDescriptor& aDescriptor) {
   return aBuffer + aDescriptor.crOffset();
+}
+
+uint16_t* GetYChannel(uint16_t* aBuffer, const YCbCrDescriptor& aDescriptor) {
+  return aBuffer + aDescriptor.yOffset() / 2;
+}
+
+uint16_t* GetCbChannel(uint16_t* aBuffer, const YCbCrDescriptor& aDescriptor) {
+  return aBuffer + aDescriptor.cbOffset() / 2;
+}
+
+uint16_t* GetCrChannel(uint16_t* aBuffer, const YCbCrDescriptor& aDescriptor) {
+  return aBuffer + aDescriptor.crOffset() / 2;
 }
 
 already_AddRefed<DataSourceSurface> DataSourceSurfaceFromYCbCrDescriptor(
@@ -327,6 +362,10 @@ already_AddRefed<DataSourceSurface> DataSourceSurfaceFromYCbCrDescriptor(
 
   DataSourceSurface::MappedSurface map;
   if (NS_WARN_IF(!result->Map(DataSourceSurface::MapType::WRITE, &map))) {
+    return nullptr;
+  }
+
+  if (!aBuffer) {
     return nullptr;
   }
 
@@ -359,6 +398,8 @@ void ConvertAndScaleFromYCbCrDescriptor(uint8_t* aBuffer,
                                         unsigned char* aDestBuffer,
                                         int32_t aStride) {
   MOZ_ASSERT(aBuffer);
+  MOZ_ASSERT(gfx::IntRect(gfx::IntPoint(), aDescriptor.ySize())
+                 .Contains(aDescriptor.display()));
 
   layers::PlanarYCbCrData ycbcrData;
   ycbcrData.mYChannel = GetYChannel(aBuffer, aDescriptor);

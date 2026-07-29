@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -70,20 +68,17 @@ void CSSCounterStyleRule::SetName(const nsAString& aName) {
   });
 }
 
-#define CSS_COUNTER_DESC(name_, method_)                             \
-  void CSSCounterStyleRule::Get##method_(nsACString& aValue) {       \
-    MOZ_ASSERT(aValue.IsEmpty());                                    \
-    Servo_CounterStyleRule_GetDescriptorCssText(                     \
-        mRawRule, eCSSCounterDesc_##method_, &aValue);               \
-  }                                                                  \
-  void CSSCounterStyleRule::Set##method_(const nsACString& aValue) { \
-    ModifyRule([&] {                                                 \
-      return Servo_CounterStyleRule_SetDescriptor(                   \
-          mRawRule, eCSSCounterDesc_##method_, &aValue);             \
-    });                                                              \
-  }
-#include "nsCSSCounterDescList.inc"
-#undef CSS_COUNTER_DESC
+void CSSCounterStyleRule::GetDescriptor(CounterStyleDescriptorId aDesc,
+                                        nsACString& aResult) {
+  Servo_CounterStyleRule_GetDescriptorCssText(mRawRule, aDesc, &aResult);
+}
+
+void CSSCounterStyleRule::SetDescriptor(CounterStyleDescriptorId aDesc,
+                                        const nsACString& aValue) {
+  ModifyRule([&] {
+    return Servo_CounterStyleRule_SetDescriptor(mRawRule, aDesc, &aValue);
+  });
+}
 
 /* virtual */
 size_t CSSCounterStyleRule::SizeOfIncludingThis(

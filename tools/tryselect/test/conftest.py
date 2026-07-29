@@ -3,7 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import os
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import mach_initialize
 import pytest
@@ -47,6 +47,18 @@ def patch_resolver(monkeypatch):
         monkeypatch.setattr(TestResolver, "resolve_metadata", fake_test_metadata)
 
     return inner
+
+
+@pytest.fixture()
+def mock_push_to_lando_try():
+    return patch(
+        "tryselect.push.push_to_lando_try",
+        return_value={
+            "lando_instance": "lando-test",
+            "lando_job_id": 42,
+            "duration": 1.5,
+        },
+    )
 
 
 @pytest.fixture(autouse=True)

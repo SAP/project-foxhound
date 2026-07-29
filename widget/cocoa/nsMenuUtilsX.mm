@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -35,24 +34,22 @@ void nsMenuUtilsX::DispatchCommandTo(nsIContent* aTargetContent,
   MOZ_ASSERT(aTargetContent, "null ptr");
 
   dom::Document* doc = aTargetContent->OwnerDoc();
-  if (doc) {
-    RefPtr<dom::XULCommandEvent> event =
-        new dom::XULCommandEvent(doc, doc->GetPresContext(), nullptr);
+  auto event =
+      MakeRefPtr<dom::XULCommandEvent>(doc, doc->GetPresContext(), nullptr);
 
-    bool ctrlKey = aModifierFlags & NSEventModifierFlagControl;
-    bool altKey = aModifierFlags & NSEventModifierFlagOption;
-    bool shiftKey = aModifierFlags & NSEventModifierFlagShift;
-    bool cmdKey = aModifierFlags & NSEventModifierFlagCommand;
+  bool ctrlKey = aModifierFlags & NSEventModifierFlagControl;
+  bool altKey = aModifierFlags & NSEventModifierFlagOption;
+  bool shiftKey = aModifierFlags & NSEventModifierFlagShift;
+  bool cmdKey = aModifierFlags & NSEventModifierFlagCommand;
 
-    IgnoredErrorResult rv;
-    event->InitCommandEvent(u"command"_ns, true, true,
-                            nsGlobalWindowInner::Cast(doc->GetInnerWindow()), 0,
-                            ctrlKey, altKey, shiftKey, cmdKey, aButton, nullptr,
-                            0, rv);
-    if (!rv.Failed()) {
-      event->SetTrusted(true);
-      aTargetContent->DispatchEvent(*event);
-    }
+  IgnoredErrorResult rv;
+  event->InitCommandEvent(u"command"_ns, true, true,
+                          nsGlobalWindowInner::Cast(doc->GetInnerWindow()), 0,
+                          ctrlKey, altKey, shiftKey, cmdKey, aButton, nullptr,
+                          0, rv);
+  if (!rv.Failed()) {
+    event->SetTrusted(true);
+    aTargetContent->DispatchEvent(*event);
   }
 }
 
@@ -86,7 +83,7 @@ uint8_t nsMenuUtilsX::GeckoModifiersForNodeAttribute(
     } else if ((strcmp(token, "accel") == 0) || (strcmp(token, "meta") == 0)) {
       modifiers |= knsMenuItemCommandModifier;
     }
-    token = strtok_r(newStr, ", \t", &newStr);
+    token = strtok_r(nullptr, ", \t", &newStr);
   }
   free(str);
 
@@ -125,83 +122,6 @@ nsMenuBarX* nsMenuUtilsX::GetHiddenWindowMenuBar() {
   return nullptr;
 }
 
-// It would be nice if we could localize these edit menu names.
-NSMenuItem* nsMenuUtilsX::GetStandardEditMenuItem() {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
-
-  // In principle we should be able to allocate this once and then always
-  // return the same object.  But weird interactions happen between native
-  // app-modal dialogs and Gecko-modal dialogs that open above them.  So what
-  // we return here isn't always released before it needs to be added to
-  // another menu.  See bmo bug 468393.
-  NSMenuItem* standardEditMenuItem =
-      [[[GeckoNSMenuItem alloc] initWithTitle:@"Edit"
-                                       action:nil
-                                keyEquivalent:@""] autorelease];
-  NSMenu* standardEditMenu = [[GeckoNSMenu alloc] initWithTitle:@"Edit"];
-  standardEditMenuItem.submenu = standardEditMenu;
-  [standardEditMenu release];
-
-  // Add Undo
-  NSMenuItem* undoItem = [[GeckoNSMenuItem alloc] initWithTitle:@"Undo"
-                                                         action:@selector(undo:)
-                                                  keyEquivalent:@"z"];
-  [standardEditMenu addItem:undoItem];
-  [undoItem release];
-
-  // Add Redo
-  NSMenuItem* redoItem = [[GeckoNSMenuItem alloc] initWithTitle:@"Redo"
-                                                         action:@selector(redo:)
-                                                  keyEquivalent:@"Z"];
-  [standardEditMenu addItem:redoItem];
-  [redoItem release];
-
-  // Add separator
-  [standardEditMenu addItem:[NSMenuItem separatorItem]];
-
-  // Add Cut
-  NSMenuItem* cutItem = [[GeckoNSMenuItem alloc] initWithTitle:@"Cut"
-                                                        action:@selector(cut:)
-                                                 keyEquivalent:@"x"];
-  [standardEditMenu addItem:cutItem];
-  [cutItem release];
-
-  // Add Copy
-  NSMenuItem* copyItem = [[GeckoNSMenuItem alloc] initWithTitle:@"Copy"
-                                                         action:@selector(copy:)
-                                                  keyEquivalent:@"c"];
-  [standardEditMenu addItem:copyItem];
-  [copyItem release];
-
-  // Add Paste
-  NSMenuItem* pasteItem =
-      [[GeckoNSMenuItem alloc] initWithTitle:@"Paste"
-                                      action:@selector(paste:)
-                               keyEquivalent:@"v"];
-  [standardEditMenu addItem:pasteItem];
-  [pasteItem release];
-
-  // Add Delete
-  NSMenuItem* deleteItem =
-      [[GeckoNSMenuItem alloc] initWithTitle:@"Delete"
-                                      action:@selector(delete:)
-                               keyEquivalent:@""];
-  [standardEditMenu addItem:deleteItem];
-  [deleteItem release];
-
-  // Add Select All
-  NSMenuItem* selectAllItem =
-      [[GeckoNSMenuItem alloc] initWithTitle:@"Select All"
-                                      action:@selector(selectAll:)
-                               keyEquivalent:@"a"];
-  [standardEditMenu addItem:selectAllItem];
-  [selectAllItem release];
-
-  return standardEditMenuItem;
-
-  NS_OBJC_END_TRY_ABORT_BLOCK;
-}
-
 bool nsMenuUtilsX::NodeIsHiddenOrCollapsed(nsIContent* aContent) {
   return aContent->IsElement() &&
          (aContent->AsElement()->GetBoolAttr(nsGkAtoms::hidden) ||
@@ -227,7 +147,7 @@ NSMenuItem* nsMenuUtilsX::NativeMenuItemWithLocation(NSMenu* aRootMenu,
       targetIndex++;
     }
     int itemCount = currentSubmenu.numberOfItems;
-    if (targetIndex >= itemCount) {
+    if (targetIndex < 0 || targetIndex >= itemCount) {
       return nil;
     }
     NSMenuItem* menuItem = [currentSubmenu itemAtIndex:targetIndex];
@@ -251,6 +171,10 @@ NSAttributedString* nsMenuUtilsX::AttributedStringForContent(
   // Get the computed font size for the menu item and apply it to
   // NSAttributedString.
 
+  if (!aContent->IsElement()) {
+    return nil;
+  }
+
   RefPtr<const ComputedStyle> style =
       nsComputedDOMStyle::GetComputedStyleNoFlush(aContent->AsElement());
 
@@ -259,6 +183,11 @@ NSAttributedString* nsMenuUtilsX::AttributedStringForContent(
   }
 
   float fontSize = style->StyleFont()->mSize.ToCSSPixels();
+  float zoom = 1.0;
+
+  if (nsIFrame* frame = aContent->AsElement()->GetPrimaryFrame()) {
+    zoom = frame->PresContext()->GetFullZoom();
+  }
 
   if (fontSize == 0.f) {
     // Cocoa uses the default font size when 0 is passed, so let's approximate
@@ -266,7 +195,7 @@ NSAttributedString* nsMenuUtilsX::AttributedStringForContent(
     fontSize = 0.01f;
   }
 
-  NSFont* font = [NSFont menuFontOfSize:fontSize];
+  NSFont* font = [NSFont menuFontOfSize:zoom * fontSize];
   NSDictionary* attrs = @{NSFontAttributeName : font};
 
   return [[[NSAttributedString alloc] initWithString:aLabel

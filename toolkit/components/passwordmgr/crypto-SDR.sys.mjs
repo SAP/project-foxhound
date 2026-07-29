@@ -9,7 +9,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 export function LoginManagerCrypto_SDR() {
-  this.init();
+  // Ensure NSS is initialized.
+  Cc["@mozilla.org/psm;1"].getService(Ci.nsISupports);
 }
 
 LoginManagerCrypto_SDR.prototype = {
@@ -42,20 +43,6 @@ LoginManagerCrypto_SDR.prototype = {
   },
 
   _uiBusy: false,
-
-  init() {
-    // Check to see if the internal PKCS#11 token has been initialized.
-    // If not, set a blank password.
-    let tokenDB = Cc["@mozilla.org/security/pk11tokendb;1"].getService(
-      Ci.nsIPK11TokenDB
-    );
-
-    let token = tokenDB.getInternalKeyToken();
-    if (token.needsUserInit) {
-      this.log("Initializing key3.db with default blank password.");
-      token.initPassword("");
-    }
-  },
 
   /*
    * encrypt
@@ -279,11 +266,10 @@ LoginManagerCrypto_SDR.prototype = {
    * isLoggedIn
    */
   get isLoggedIn() {
-    let tokenDB = Cc["@mozilla.org/security/pk11tokendb;1"].getService(
-      Ci.nsIPK11TokenDB
+    let token = Cc["@mozilla.org/security/internalkeytoken;1"].createInstance(
+      Ci.nsIPKCS11Token
     );
-    let token = tokenDB.getInternalKeyToken();
-    return !token.hasPassword || token.isLoggedIn();
+    return !token.hasPassword || token.isLoggedIn;
   },
 
   /*

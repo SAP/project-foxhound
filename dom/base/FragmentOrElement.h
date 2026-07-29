@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,13 +19,10 @@
 #include "nsAtomHashKeys.h"
 #include "nsCycleCollectionParticipant.h"  // NS_DECL_CYCLE_*
 #include "nsIContent.h"                    // base class
-#include "nsIHTMLCollection.h"
 #include "nsIWeakReferenceUtils.h"
 #include "nsTHashSet.h"
 
 class ContentUnbinder;
-class nsContentList;
-class nsLabelsNodeList;
 class nsDOMAttributeMap;
 class nsDOMTokenList;
 class nsIControllers;
@@ -37,16 +32,19 @@ class nsDOMStringMap;
 class nsIURI;
 
 namespace mozilla {
-class DeclarationBlock;
+struct StyleLockedDeclarationBlock;
 enum class ContentRelevancyReason;
 using ContentRelevancy = EnumSet<ContentRelevancyReason, uint8_t>;
 class ElementAnimationData;
 namespace dom {
-struct CustomElementData;
+class ContentList;
 class Element;
+class HTMLCollection;
+class LabelsNodeList;
 class PopoverData;
 class StylePropertyMap;
 class StylePropertyMapReadOnly;
+struct CustomElementData;
 }  // namespace dom
 }  // namespace mozilla
 
@@ -85,7 +83,7 @@ class FragmentOrElement : public nsIContent {
   explicit FragmentOrElement(
       already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
   explicit FragmentOrElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
   // We want to avoid the overhead of extra function calls for
   // refcounting when we're not doing refcount logging, so we can't
@@ -112,13 +110,8 @@ class FragmentOrElement : public nsIContent {
   void DestroyContent() override;
   void SaveSubtreeState() override;
 
-  nsIHTMLCollection* Children();
-  uint32_t ChildElementCount() {
-    if (!HasChildren()) {
-      return 0;
-    }
-    return Children()->Length();
-  }
+  HTMLCollection* Children();
+  uint32_t ChildElementCount();
 
   RadioGroupContainer& OwnedRadioGroupContainer() {
     auto* slots = ExtendedDOMSlots();
@@ -183,7 +176,7 @@ class FragmentOrElement : public nsIContent {
     /**
      * Holds any SMIL override style declaration for this element.
      */
-    RefPtr<DeclarationBlock> mSMILOverrideStyleDeclaration;
+    RefPtr<mozilla::StyleLockedDeclarationBlock> mSMILOverrideStyleDeclaration;
 
     /**
      * The controllers of the XUL Element.
@@ -193,7 +186,7 @@ class FragmentOrElement : public nsIContent {
     /**
      * An object implementing the .labels property for this element.
      */
-    RefPtr<nsLabelsNodeList> mLabelsList;
+    RefPtr<mozilla::dom::LabelsNodeList> mLabelsList;
 
     /**
      * ShadowRoot bound to the element.
@@ -376,7 +369,7 @@ class FragmentOrElement : public nsIContent {
     /**
      * An object implementing the .children property for this element.
      */
-    RefPtr<nsContentList> mChildrenList;
+    RefPtr<ContentList> mChildrenList;
 
     /**
      * An object implementing the .classList property for this element.

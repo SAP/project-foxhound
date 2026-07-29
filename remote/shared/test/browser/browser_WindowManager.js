@@ -14,124 +14,390 @@ const { AppInfo } = ChromeUtils.importESModule(
   "chrome://remote/content/shared/AppInfo.sys.mjs"
 );
 
+const isWayland = AppInfo.isWayland;
+
+// Bug 2037084: Apple Virtualization Framework VMs (macosx1500-aarch64-vms) have
+// no display attached, so window operations that depend on a real desktop don't
+// behave the same as on bare-metal hardware.
+const isMacosVm = (() => {
+  try {
+    const modelId = Services.sysinfo.getProperty("appleModelId");
+    return !!modelId && modelId.startsWith("VirtualMac");
+  } catch (e) {
+    return false;
+  }
+})();
+
+async function setInitialWindowRect(win) {
+  const rect = await windowManager.adjustWindowGeometry(
+    win,
+    200,
+    100,
+    800,
+    600
+  );
+
+  is(
+    WindowState.from(win.windowState),
+    WindowState.Normal,
+    "Window is initially in normal state"
+  );
+
+  is(rect.width, 800, "Window width is set to initial value");
+  is(rect.height, 600, "Window height is set to initial value");
+  if (!isWayland) {
+    is(rect.x, 200, "Window x position is set to initial value");
+    is(rect.y, 100, "Window y position is set to initial value");
+  }
+
+  return rect;
+}
+
 add_task(async function test_adjustWindowGeometry() {
   const testWin = await BrowserTestUtils.openNewBrowserWindow();
-  const isWayland = AppInfo.isWayland;
 
   try {
-    await windowManager.adjustWindowGeometry(testWin, 100, 100, 800, 600);
-    is(testWin.outerWidth, 800, "Window width is set to initial value");
-    is(testWin.outerHeight, 600, "Window height is set to initial value");
+    const originalRect = await setInitialWindowRect(testWin);
+
+    // Resize the window only.
+    const resizedRect = await windowManager.adjustWindowGeometry(
+      testWin,
+      null,
+      null,
+      640,
+      480
+    );
 
     if (!isWayland) {
-      is(testWin.screenX, 100, "Window x position is set to initial value");
-      is(testWin.screenY, 100, "Window y position is set to initial value");
+      is(resizedRect.x, originalRect.x, "Window x position is not updated");
+      is(resizedRect.y, originalRect.y, "Window y position is not updated");
     }
+    is(resizedRect.width, 640, "Window width is updated");
+    is(resizedRect.height, 480, "Window height is updated");
 
-    await windowManager.adjustWindowGeometry(testWin, null, null, 640, 480);
-    is(testWin.outerWidth, 640, "Window width is updated");
-    is(testWin.outerHeight, 480, "Window height is updated");
+    // Re-positioning the window only.
+    let movedRect = await windowManager.adjustWindowGeometry(
+      testWin,
+      300,
+      150,
+      null,
+      null
+    );
 
     if (!isWayland) {
-      is(testWin.screenX, 100, "Window x position stays at initial value");
-      is(testWin.screenY, 100, "Window y position stays at initial value");
+      is(movedRect.x, 300, "Window x position is updated");
+      is(movedRect.y, 150, "Window y position is updated");
     }
+    is(
+      movedRect.width,
+      resizedRect.width,
+      "Window width stays at previous value"
+    );
+    is(
+      movedRect.height,
+      resizedRect.height,
+      "Window height stays at previous value"
+    );
 
-    await windowManager.adjustWindowGeometry(testWin, 200, 200, null, null);
-    if (!isWayland) {
-      is(testWin.screenX, 200, "Window x position is updated");
-      is(testWin.screenY, 200, "Window y position is updated");
-    }
-    is(testWin.outerWidth, 640, "Window width stays at previous value");
-    is(testWin.outerHeight, 480, "Window height stays at previous value");
+    // Re-positioning and resizing the window.
+    const resizedAndMovedRect = await windowManager.adjustWindowGeometry(
+      testWin,
+      150,
+      120,
+      560,
+      450
+    );
 
-    await windowManager.adjustWindowGeometry(testWin, 200, 200, 560, 450);
-    is(testWin.outerWidth, 560, "Window width is updated");
-    is(testWin.outerHeight, 450, "Window height is updated");
     if (!isWayland) {
-      is(testWin.screenX, 200, "Window x position is updated");
-      is(testWin.screenY, 200, "Window y position is updated");
+      is(resizedAndMovedRect.x, 150, "Window x position is updated");
+      is(resizedAndMovedRect.y, 120, "Window y position is updated");
     }
+    is(resizedAndMovedRect.width, 560, "Window width is updated");
+    is(resizedAndMovedRect.height, 450, "Window height is updated");
   } finally {
     await BrowserTestUtils.closeWindow(testWin);
   }
 });
 
-add_task(async function test_adjustWindowGeometry_invalid_values() {
+add_task(async function test_adjustWindowGeometry_minimumDimensions() {
   const testWin = await BrowserTestUtils.openNewBrowserWindow();
-  const isWayland = AppInfo.isWayland;
-
-  const originalWidth = testWin.outerWidth;
-  const originalHeight = testWin.outerHeight;
-  const originalX = testWin.screenX;
-  const originalY = testWin.screenY; // codespell:ignore
-
-  let minWidth, minHeight;
 
   try {
-    await windowManager.adjustWindowGeometry(testWin, 100, 100, 50, 50);
-    minWidth = testWin.outerWidth;
-    minHeight = testWin.outerHeight;
+    const originalRect = await windowManager.getWindowRect(testWin);
 
+    // Determine the minimal dimensions of the window.
+    const minimalRect = await windowManager.adjustWindowGeometry(
+      testWin,
+      null,
+      null,
+      50,
+      50
+    );
+
+    // Restore original window size.
     await windowManager.adjustWindowGeometry(
       testWin,
-      originalWidth,
-      originalHeight,
-      originalX,
-      originalY // codespell:ignore
+      null,
+      null,
+      originalRect.width,
+      originalRect.height
     );
 
-    await windowManager.adjustWindowGeometry(testWin, 100, 100, 100, 100);
-    is(testWin.outerWidth, minWidth, "Width is set to minimum allowed width");
+    // Resize exactly to the minimum dimension.
+    const resizedRect = await windowManager.adjustWindowGeometry(
+      testWin,
+      null,
+      null,
+      minimalRect.width,
+      minimalRect.height
+    );
+
     is(
-      testWin.outerHeight,
-      minHeight,
+      resizedRect.width,
+      minimalRect.width,
+      "Width is set to minimum allowed width"
+    );
+    is(
+      resizedRect.height,
+      minimalRect.height,
       "Height is set to minimum allowed height"
     );
-    if (!isWayland) {
-      is(testWin.screenX, 100, "Window x-coordinate is adjusted");
-      is(testWin.screenY, 100, "Window y-coordinate is adjusted");
-    }
-
-    await windowManager.adjustWindowGeometry(testWin, 100, 100, 600.5, 300.7);
-    is(testWin.outerWidth, 600, "Decimal width is floored");
-    is(testWin.outerHeight, 300, "Decimal height is floored");
-    if (!isWayland) {
-      is(testWin.screenX, 100, "Window x-coordinate is adjusted");
-      is(testWin.screenY, 100, "Window y-coordinate is adjusted");
-    }
   } finally {
     await BrowserTestUtils.closeWindow(testWin);
   }
 });
 
-add_task(async function test_minimizeWindow() {
+add_task(async function test_adjustWindowGeometry_floatValues() {
   const testWin = await BrowserTestUtils.openNewBrowserWindow();
 
   try {
-    await windowManager.adjustWindowGeometry(testWin, 100, 100, 800, 600);
-    is(testWin.outerWidth, 800, "Window width is set to initial value");
-    is(testWin.outerHeight, 600, "Window height is set to initial value");
+    const resizedRect = await windowManager.adjustWindowGeometry(
+      testWin,
+      200.3,
+      100.6,
+      850.5,
+      650.7
+    );
 
+    if (!isWayland) {
+      is(resizedRect.x, 200, "Decimal x is floored");
+      is(resizedRect.y, 100, "Decimal y is floored");
+    }
+    is(resizedRect.width, 850, "Decimal width is floored");
+    is(resizedRect.height, 650, "Decimal height is floored");
+  } finally {
+    await BrowserTestUtils.closeWindow(testWin);
+  }
+});
+
+add_task({ skip_if: () => isMacosVm }, async function test_fullscreenWindow() {
+  const testWin = await BrowserTestUtils.openNewBrowserWindow();
+
+  try {
+    const originalRect = await setInitialWindowRect(testWin);
+
+    const fullscreenRect = await windowManager.fullscreenWindow(testWin);
+    is(
+      WindowState.from(testWin.windowState),
+      WindowState.Fullscreen,
+      "Window entered fullscreen mode"
+    );
+    Assert.less(
+      fullscreenRect.x,
+      originalRect.x,
+      "Window was moved left on the screen"
+    );
+    Assert.less(
+      fullscreenRect.y,
+      originalRect.y,
+      "Window was moved up on the screen"
+    );
+    Assert.greater(
+      fullscreenRect.width,
+      originalRect.width,
+      "Window width has increased"
+    );
+    Assert.greater(
+      fullscreenRect.height,
+      originalRect.height,
+      "Window height has increased"
+    );
+
+    const fullscreenNoOpRect = await windowManager.fullscreenWindow(testWin);
+    is(
+      WindowState.from(testWin.windowState),
+      WindowState.Fullscreen,
+      "State doesn't change when fullscreen the window twice"
+    );
+    is(
+      fullscreenNoOpRect.x,
+      fullscreenRect.x,
+      "Window was not moved horizontally"
+    );
+    is(
+      fullscreenNoOpRect.y,
+      fullscreenRect.y,
+      "Window was not moved vertically"
+    );
+    is(
+      fullscreenNoOpRect.width,
+      fullscreenRect.width,
+      "Window width has not changed"
+    );
+    is(
+      fullscreenNoOpRect.height,
+      fullscreenRect.height,
+      "Window height has not changed"
+    );
+
+    const restoredRect = await windowManager.restoreWindow(testWin);
     is(
       WindowState.from(testWin.windowState),
       WindowState.Normal,
-      "Window is initially in normal state"
+      "Window is set to normal state"
+    );
+    is(restoredRect.x, originalRect.x, "Original x position was restored");
+    is(restoredRect.y, originalRect.y, "Original y position was restored");
+    is(restoredRect.width, originalRect.width, "Original width was restored");
+    is(
+      restoredRect.height,
+      originalRect.height,
+      "Original height was restored"
+    );
+  } finally {
+    await BrowserTestUtils.closeWindow(testWin);
+  }
+});
+
+add_task(async function test_getWindowRect() {
+  const testWin = await BrowserTestUtils.openNewBrowserWindow();
+
+  try {
+    const rect = windowManager.getWindowRect(testWin);
+
+    ok(rect, "getWindowRect returns a rect object");
+    ok("x" in rect, "Rect has x property");
+    ok("y" in rect, "Rect has y property");
+    ok("width" in rect, "Rect has width property");
+    ok("height" in rect, "Rect has height property");
+
+    is(rect.x, testWin.screenX, "Rect x matches window screenX");
+    is(rect.y, testWin.screenY, "Rect y matches window screenY");
+    is(rect.width, testWin.outerWidth, "Rect width matches window outerWidth");
+    is(
+      rect.height,
+      testWin.outerHeight,
+      "Rect height matches window outerHeight"
+    );
+  } finally {
+    await BrowserTestUtils.closeWindow(testWin);
+  }
+});
+
+add_task(async function test_getWindowRect_afterMove() {
+  const testWin = await BrowserTestUtils.openNewBrowserWindow();
+
+  try {
+    const initialRect = await setInitialWindowRect(testWin);
+
+    await windowManager.adjustWindowGeometry(testWin, 300, 150, null, null);
+
+    const movedRect = windowManager.getWindowRect(testWin);
+
+    if (!isWayland) {
+      is(movedRect.x, 300, "Position x updated after move");
+      is(movedRect.y, 150, "Position y updated after move");
+    }
+    is(movedRect.width, initialRect.width, "Width unchanged after move only");
+    is(
+      movedRect.height,
+      initialRect.height,
+      "Height unchanged after move only"
+    );
+  } finally {
+    await BrowserTestUtils.closeWindow(testWin);
+  }
+});
+
+add_task(async function test_getWindowRect_afterResize() {
+  const testWin = await BrowserTestUtils.openNewBrowserWindow();
+
+  try {
+    const initialRect = await setInitialWindowRect(testWin);
+
+    await windowManager.adjustWindowGeometry(testWin, null, null, 640, 480);
+
+    const resizedRect = windowManager.getWindowRect(testWin);
+
+    is(resizedRect.width, 640, "Width updated after resize");
+    is(resizedRect.height, 480, "Height updated after resize");
+
+    if (!isWayland) {
+      is(
+        resizedRect.x,
+        initialRect.x,
+        "Position x unchanged after resize only"
+      );
+      is(
+        resizedRect.y,
+        initialRect.y,
+        "Position y unchanged after resize only"
+      );
+    }
+  } finally {
+    await BrowserTestUtils.closeWindow(testWin);
+  }
+});
+
+add_task(async function test_getWindowRect_differentStates() {
+  const testWin = await BrowserTestUtils.openNewBrowserWindow();
+
+  try {
+    const originalRect = await setInitialWindowRect(testWin);
+
+    const maximizedRect = await windowManager.maximizeWindow(testWin);
+    const maximizedGetRect = windowManager.getWindowRect(testWin);
+
+    is(maximizedGetRect.x, maximizedRect.x, "Maximized x matches");
+    is(maximizedGetRect.y, maximizedRect.y, "Maximized y matches");
+    is(maximizedGetRect.width, maximizedRect.width, "Maximized width matches");
+    is(
+      maximizedGetRect.height,
+      maximizedRect.height,
+      "Maximized height matches"
     );
 
-    await windowManager.minimizeWindow(testWin);
+    await windowManager.restoreWindow(testWin);
 
+    const minimizedRect = await windowManager.minimizeWindow(testWin);
+    const minimizedGetRect = windowManager.getWindowRect(testWin);
+
+    is(minimizedGetRect.x, minimizedRect.x, "Minimized x matches");
+    is(minimizedGetRect.y, minimizedRect.y, "Minimized y matches");
+    is(minimizedGetRect.width, minimizedRect.width, "Minimized width matches");
     is(
-      WindowState.from(testWin.windowState),
-      WindowState.Minimized,
-      "Window is minimized"
+      minimizedGetRect.height,
+      minimizedRect.height,
+      "Minimized height matches"
     );
 
-    await windowManager.minimizeWindow(testWin);
+    await windowManager.restoreWindow(testWin);
+
+    const restoredRect = windowManager.getWindowRect(testWin);
+
+    if (!isWayland) {
+      is(restoredRect.x, originalRect.x, "Restored x matches original");
+      is(restoredRect.y, originalRect.y, "Restored y matches original");
+    }
     is(
-      WindowState.from(testWin.windowState),
-      WindowState.Minimized,
-      "Minimizing an already minimized window has no effect"
+      restoredRect.width,
+      originalRect.width,
+      "Restored width matches original"
+    );
+    is(
+      restoredRect.height,
+      originalRect.height,
+      "Restored height matches original"
     );
   } finally {
     await BrowserTestUtils.closeWindow(testWin);
@@ -142,28 +408,163 @@ add_task(async function test_maximizeWindow() {
   const testWin = await BrowserTestUtils.openNewBrowserWindow();
 
   try {
-    await windowManager.adjustWindowGeometry(testWin, 100, 100, 800, 600);
-    is(testWin.outerWidth, 800, "Window width is set to initial value");
-    is(testWin.outerHeight, 600, "Window height is set to initial value");
+    const originalRect = await setInitialWindowRect(testWin);
 
+    const maximizedRect = await windowManager.maximizeWindow(testWin);
+    is(
+      WindowState.from(testWin.windowState),
+      WindowState.Maximized,
+      "Window entered maximized mode"
+    );
+    Assert.less(
+      maximizedRect.x,
+      originalRect.x,
+      "Window was moved left on the screen"
+    );
+    Assert.less(
+      maximizedRect.y,
+      originalRect.y,
+      "Window was moved up on the screen"
+    );
+    Assert.greater(
+      maximizedRect.width,
+      originalRect.width,
+      "Window width has increased"
+    );
+    Assert.greater(
+      maximizedRect.height,
+      originalRect.height,
+      "Window height has increased"
+    );
+
+    const maximizedNoOpRect = await windowManager.maximizeWindow(testWin);
+    is(
+      WindowState.from(testWin.windowState),
+      WindowState.Maximized,
+      "State doesn't change when maximizing the window twice"
+    );
+    is(
+      maximizedNoOpRect.x,
+      maximizedRect.x,
+      "Window was not moved horizontally"
+    );
+    is(maximizedNoOpRect.y, maximizedRect.y, "Window was not moved vertically");
+    is(
+      maximizedNoOpRect.width,
+      maximizedRect.width,
+      "Window width has not changed"
+    );
+    is(
+      maximizedNoOpRect.height,
+      maximizedRect.height,
+      "Window height has not changed"
+    );
+
+    const restoredRect = await windowManager.restoreWindow(testWin);
     is(
       WindowState.from(testWin.windowState),
       WindowState.Normal,
-      "Window is initially in normal state"
+      "Window is set to normal state"
     );
+    is(restoredRect.x, originalRect.x, "Original x position was restored");
+    is(restoredRect.y, originalRect.y, "Original y position was restored");
+    is(restoredRect.width, originalRect.width, "Original width was restored");
+    is(
+      restoredRect.height,
+      originalRect.height,
+      "Original height was restored"
+    );
+  } finally {
+    await BrowserTestUtils.closeWindow(testWin);
+  }
+});
 
-    await windowManager.maximizeWindow(testWin);
+add_task(async function test_minimizeWindow() {
+  const testWin = await BrowserTestUtils.openNewBrowserWindow();
+
+  try {
+    const originalRect = await setInitialWindowRect(testWin);
+
+    const minimizedRect = await windowManager.minimizeWindow(testWin);
     is(
       WindowState.from(testWin.windowState),
-      WindowState.Maximized,
-      "Window is maximized"
+      WindowState.Minimized,
+      "Window entered minimized mode"
     );
+    if (AppConstants.platform == "win") {
+      // On Windows-only the position is moved outside of the screen and
+      // its size shrinks to the dimension of taskbar icons.
+      Assert.less(
+        minimizedRect.x,
+        originalRect.x,
+        "Window x position is outside of the screen"
+      );
+      Assert.less(
+        minimizedRect.y,
+        originalRect.y,
+        "Window y position is outside of the screen"
+      );
+      Assert.less(
+        minimizedRect.width,
+        originalRect.width,
+        "Window width has been decreased"
+      );
+      Assert.less(
+        minimizedRect.height,
+        originalRect.height,
+        "Window height has been decreased"
+      );
+    } else {
+      is(minimizedRect.x, originalRect.x, "Window x position has not changed");
+      is(minimizedRect.y, originalRect.y, "Window y position has not changed");
+      is(
+        minimizedRect.width,
+        originalRect.width,
+        "Window width has not changed"
+      );
+      is(
+        minimizedRect.height,
+        originalRect.height,
+        "Window height has not changed"
+      );
+    }
 
-    await windowManager.maximizeWindow(testWin);
+    const minimizedNoOpRect = await windowManager.minimizeWindow(testWin);
     is(
       WindowState.from(testWin.windowState),
-      WindowState.Maximized,
-      "Maximizing an already maximized window has no effect"
+      WindowState.Minimized,
+      "State doesn't change when minimizing the window twice"
+    );
+    is(
+      minimizedNoOpRect.x,
+      minimizedRect.x,
+      "Window was not moved horizontally"
+    );
+    is(minimizedNoOpRect.y, minimizedRect.y, "Window was not moved vertically");
+    is(
+      minimizedNoOpRect.width,
+      minimizedRect.width,
+      "Window width has not changed"
+    );
+    is(
+      minimizedNoOpRect.height,
+      minimizedRect.height,
+      "Window height has not changed"
+    );
+
+    const restoredRect = await windowManager.restoreWindow(testWin);
+    is(
+      WindowState.from(testWin.windowState),
+      WindowState.Normal,
+      "Window is set to normal state"
+    );
+    is(restoredRect.x, originalRect.x, "Original x position was restored");
+    is(restoredRect.y, originalRect.y, "Original y position was restored");
+    is(restoredRect.width, originalRect.width, "Original width was restored");
+    is(
+      restoredRect.height,
+      originalRect.height,
+      "Original height was restored"
     );
   } finally {
     await BrowserTestUtils.closeWindow(testWin);
@@ -174,70 +575,73 @@ add_task(async function test_restoreWindow() {
   const testWin = await BrowserTestUtils.openNewBrowserWindow();
 
   try {
-    await windowManager.maximizeWindow(testWin);
+    const originalRect = await setInitialWindowRect(testWin);
+
+    const maximizedRect = await windowManager.maximizeWindow(testWin);
     is(
       WindowState.from(testWin.windowState),
       WindowState.Maximized,
-      "Window is maximized"
+      "Window entered maximized mode"
+    );
+    if (!isWayland) {
+      Assert.less(
+        maximizedRect.x,
+        originalRect.x,
+        "Window was moved left on the screen"
+      );
+      Assert.less(
+        maximizedRect.y,
+        originalRect.y,
+        "Window was moved up on the screen"
+      );
+    }
+    Assert.greater(
+      maximizedRect.width,
+      originalRect.width,
+      "Window width has increased"
+    );
+    Assert.greater(
+      maximizedRect.height,
+      originalRect.height,
+      "Window height has increased"
     );
 
-    await windowManager.restoreWindow(testWin);
+    const restoredRect = await windowManager.restoreWindow(testWin);
     is(
       WindowState.from(testWin.windowState),
       WindowState.Normal,
-      "Window is restored to normal state"
+      "Window is set to normal state"
     );
+    if (!isWayland) {
+      is(restoredRect.x, originalRect.x, "Window x position was restored");
+      is(restoredRect.y, originalRect.y, "Window y position was restored");
+    }
+    is(restoredRect.width, originalRect.width, "Window width was restored");
+    is(restoredRect.height, originalRect.height, "Window height was restored");
 
-    await windowManager.restoreWindow(testWin);
+    const restoredNoOpRect = await windowManager.restoreWindow(testWin);
     is(
       WindowState.from(testWin.windowState),
       WindowState.Normal,
-      "Restoring an already normal window has no effect"
+      "State doesn't change when restoring the window twice"
     );
-  } finally {
-    await BrowserTestUtils.closeWindow(testWin);
-  }
-});
-
-add_task(async function test_setFullscreen() {
-  const testWin = await BrowserTestUtils.openNewBrowserWindow();
-
-  try {
-    await windowManager.adjustWindowGeometry(testWin, 100, 100, 800, 600);
-    is(testWin.outerWidth, 800, "Window width is set to initial value");
-    is(testWin.outerHeight, 600, "Window height is set to initial value");
+    if (!isWayland) {
+      is(
+        restoredNoOpRect.x,
+        restoredRect.x,
+        "Window was not moved horizontally"
+      );
+      is(restoredNoOpRect.y, restoredRect.y, "Window was not moved vertically");
+    }
     is(
-      WindowState.from(testWin.windowState),
-      WindowState.Normal,
-      "Window is initially in normal state"
+      restoredNoOpRect.width,
+      restoredRect.width,
+      "Window width has not changed"
     );
-
-    await windowManager.setFullscreen(testWin, true);
     is(
-      WindowState.from(testWin.windowState),
-      WindowState.Fullscreen,
-      "Window entered fullscreen mode"
-    );
-
-    await windowManager.setFullscreen(testWin, true);
-    is(
-      WindowState.from(testWin.windowState),
-      WindowState.Fullscreen,
-      "Setting fullscreen when already in fullscreen mode has no effect"
-    );
-
-    await windowManager.setFullscreen(testWin, false);
-    is(
-      WindowState.from(testWin.windowState),
-      WindowState.Normal,
-      "Window exited fullscreen mode and returned to normal state"
-    );
-
-    await windowManager.setFullscreen(testWin, false);
-    is(
-      WindowState.from(testWin.windowState),
-      WindowState.Normal,
-      "Exiting fullscreen when already in normal state has no effect"
+      restoredNoOpRect.height,
+      restoredRect.height,
+      "Window height has not changed"
     );
   } finally {
     await BrowserTestUtils.closeWindow(testWin);
@@ -249,7 +653,7 @@ add_task(async function test_windows() {
   const win2 = await BrowserTestUtils.openNewBrowserWindow();
   const win3 = await BrowserTestUtils.openNewBrowserWindow();
 
-  const expectedWindows = [gBrowser.ownerGlobal, win1, win2, win3];
+  const expectedWindows = [gBrowser.documentGlobal, win1, win2, win3];
 
   try {
     is(
@@ -392,7 +796,7 @@ add_task(async function test_waitForChromeWindowLoaded_alreadyLoadedWindow() {
 add_task(
   async function test_waitForChromeWindowLoaded_nonBrowserChromeWindow() {
     const win = Services.ww.openWindow(
-      gBrowser.ownerGlobal,
+      gBrowser.documentGlobal,
       "chrome://browser/content/pageinfo/pageInfo.xhtml",
       "_blank",
       "chrome,dialog=no,all",

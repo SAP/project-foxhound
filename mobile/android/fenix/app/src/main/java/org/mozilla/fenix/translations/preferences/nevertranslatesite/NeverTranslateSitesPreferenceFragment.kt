@@ -14,6 +14,7 @@ import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.translate.TranslationError
 import mozilla.components.lib.state.ext.observeAsComposableState
 import org.mozilla.fenix.R
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.showToolbar
 import org.mozilla.fenix.theme.FirefoxTheme
@@ -21,7 +22,7 @@ import org.mozilla.fenix.theme.FirefoxTheme
 /**
  * A fragment displaying never translate site items list.
  */
-class NeverTranslateSitesPreferenceFragment : Fragment() {
+class NeverTranslateSitesPreferenceFragment : Fragment(), SystemInsetsPaddedFragment {
 
     private val browserStore: BrowserStore by lazy { requireComponents.core.store }
 

@@ -34,9 +34,9 @@ const mochitestTestPaths = [
 ];
 
 const xpcshellTestPaths = [
-  "**/test*/unit*/**/",
+  "**/test*/unit*/",
   "**/test*/*/unit*/",
-  "**/test*/xpcshell/**/",
+  "**/test*/xpcshell/",
 ];
 
 // DO NOT add more items to this list. Please see the note at the top
@@ -94,6 +94,7 @@ const extraBrowserTestPaths = [
   "browser/base/content/test/linkHandling/",
   "browser/base/content/test/menubar/",
   "browser/base/content/test/metaTags/",
+  "browser/base/content/test/mousepostracker/",
   "browser/base/content/test/notificationbox/",
   "browser/base/content/test/outOfProcess/",
   "browser/base/content/test/pageActions/",

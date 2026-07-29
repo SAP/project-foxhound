@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s 讓您可自行控制線上生活。</p>\n<p>可當作隱私瀏覽器使用：\n<ul>\n<li>直接在程式中搜尋、瀏覽</li>\n<li>封鎖追蹤器（也可調整設定，允許追蹤器）</li>\n<li>清除 Cookie、搜尋紀錄、上網紀錄</li>\n</ul> </p>\n<p>%1$s 是由 Mozilla 所打造，我們的使命是培養一個健康、開放的網際網路環境。<br/>\n<a href=\"%2$s\">了解更多</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s 讓您可自行控制線上生活。</p>\n<p>可當作隱私瀏覽器使用：\n<ul>\n<li>直接在程式中搜尋、瀏覽</li>\n<li>封鎖追蹤器（也可調整設定，允許追蹤器）</li>\n<li>清除 Cookie、搜尋紀錄、上網紀錄</li>\n</ul> </p>\n<p>%1$s 是由 Mozilla 所打造，我們的使命是培養一個健康、開放的網際網路環境。<br/>\n<a href=\"%2$s\">了解更多</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">更多資訊</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">貼上或輸入網址</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">例如: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">例如: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">舉例: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">將 %1$s 設為預設瀏覽器</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">傳送使用資料</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">了解更多</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla 致力於只收集用來為眾人改善 %1$s 所需的必要資料。</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla 致力於只收集用來為眾人改善 %1$s 所需的必要資料。</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">每日使用情況回報</string>
-  <string name="preference_daily_usage_ping_description">此資訊可幫助 Mozilla 估算活躍使用者數。</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">此資訊可幫助 Mozilla 估算活躍使用者數。</string>
   <string name="preference_daily_usage_ping_learn_more">更多資訊</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">隱私權公告</string>
@@ -584,6 +584,21 @@
   <string name="security_popup_security_verified">驗證機構: %1$s</string>
   <!-- Content Description of Security Icon in toolbar -->
   <string name="site_security_icon_content_description">網站安全性</string>
+  <!--
+    %1$s will be replaced with the organization for which the certificate
+    used by the site was issued. For example, the certificate in use by
+    the site https://eidas.ec.europa.eu/ was issued to "The European
+    Commission".
+  -->
+  <string name="qualified_identity">憑證簽發給 %1$s</string>
+  <!--
+    The European Union eIDAS Regulation specifies a type of certificate
+    called a "qualified website authentication certificate" (QWAC) and
+    requires that browsers identify and indicate such certificates. This
+    text was paraphrased from ETSI TS 119 411-5 V2.1.1 section 6.3 and
+    indicates that the website uses a QWAC.
+  -->
+  <string name="qualified_text">符合歐盟（EU）2024/1183 法規規範。</string>
   <string name="preference_autocomplete_duplicate_url_error">網址已經存在</string>
   <!-- Label for the Find in page button -->
   <string name="find_in_page">在頁面中搜尋</string>
@@ -814,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">關閉分頁</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">傳送錯誤報告給 Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">傳送錯誤報告給 Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

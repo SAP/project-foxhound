@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,13 +20,15 @@ NS_IMPL_ISUPPORTS_CI(Permission, nsIPermission)
 
 Permission::Permission(nsIPrincipal* aPrincipal, const nsACString& aType,
                        uint32_t aCapability, uint32_t aExpireType,
-                       int64_t aExpireTime, int64_t aModificationTime)
+                       int64_t aExpireTime, int64_t aModificationTime,
+                       uint64_t aBrowserId)
     : mPrincipal(aPrincipal),
       mType(aType),
       mCapability(aCapability),
       mExpireType(aExpireType),
       mExpireTime(aExpireTime),
-      mModificationTime(aModificationTime) {}
+      mModificationTime(aModificationTime),
+      mBrowserId(aBrowserId) {}
 
 already_AddRefed<nsIPrincipal> Permission::ClonePrincipalForPermission(
     nsIPrincipal* aPrincipal) {
@@ -49,7 +50,8 @@ already_AddRefed<nsIPrincipal> Permission::ClonePrincipalForPermission(
 
 already_AddRefed<Permission> Permission::Create(
     nsIPrincipal* aPrincipal, const nsACString& aType, uint32_t aCapability,
-    uint32_t aExpireType, int64_t aExpireTime, int64_t aModificationTime) {
+    uint32_t aExpireType, int64_t aExpireTime, int64_t aModificationTime,
+    uint64_t aBrowserId) {
   NS_ENSURE_TRUE(aPrincipal, nullptr);
 
   nsCOMPtr<nsIPrincipal> principal =
@@ -58,7 +60,7 @@ already_AddRefed<Permission> Permission::Create(
 
   RefPtr<Permission> permission =
       new Permission(principal, aType, aCapability, aExpireType, aExpireTime,
-                     aModificationTime);
+                     aModificationTime, aBrowserId);
   return permission.forget();
 }
 
@@ -96,6 +98,12 @@ Permission::GetExpireTime(int64_t* aExpireTime) {
 NS_IMETHODIMP
 Permission::GetModificationTime(int64_t* aModificationTime) {
   *aModificationTime = mModificationTime;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+Permission::GetBrowserId(uint64_t* aBrowserId) {
+  *aBrowserId = mBrowserId;
   return NS_OK;
 }
 

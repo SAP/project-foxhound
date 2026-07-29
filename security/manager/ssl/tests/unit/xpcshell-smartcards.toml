@@ -27,10 +27,17 @@ prefs = [
   "security.pki.certificate_transparency.mode=1",
 ]
 
+["test_pkcs11_remote_process.js"]
+run-if = [
+  "nightly_build",
+]
+prefs = [
+  "security.utility_pkcs11_module_process.enabled=true",
+]
+
 ["test_pkcs11_safe_mode.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_pkcs11_slot.js"]
 
 ["test_pkcs11_token.js"]
-
-["test_pkcs11_tokenDB.js"]

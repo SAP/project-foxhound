@@ -32,211 +32,211 @@
 - id: Microsoft.VisualCpp.ASAN.X86
   payloads:
   - fileName: Microsoft.VisualCpp.ASAN.X86.vsix
-    sha256: 89388c88fc8230d676a4af559fe6ef15cca110f6318008d83cc43d72e3e4103c
-    size: 1079
-    url: https://download.visualstudio.microsoft.com/download/pr/a424e95b-20f6-4af6-844f-9d9a806080a7/89388c88fc8230d676a4af559fe6ef15cca110f6318008d83cc43d72e3e4103c/Microsoft.VisualCpp.ASAN.X86.vsix
+    sha256: f605f60e5e2cf2e9d19e9e46f0ef3f265f116d13c457307c0e19a1bf2feeec45
+    size: 1080
+    url: https://download.visualstudio.microsoft.com/download/pr/4cb7a450-4979-4d07-89e7-6613722fc25e/f605f60e5e2cf2e9d19e9e46f0ef3f265f116d13c457307c0e19a1bf2feeec45/Microsoft.VisualCpp.ASAN.X86.vsix
   type: Vsix
-  version: 14.50.35719
+  version: 14.50.35729
 - id: Microsoft.VC.14.50.18.0.ASAN.X86.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.ASAN.X86.base.vsix
-    sha256: a0fafa2a9d5662eb7ef6f906f881411ebf71fd209bf806cd4dd7bd32a620dbad
-    size: 59154657
-    url: https://download.visualstudio.microsoft.com/download/pr/a424e95b-20f6-4af6-844f-9d9a806080a7/a0fafa2a9d5662eb7ef6f906f881411ebf71fd209bf806cd4dd7bd32a620dbad/Microsoft.VC.14.50.18.0.ASAN.X86.base.vsix
+    sha256: 02673cda797dabef507f3ef823d83fd70b51f957f196d181733a648f9262094f
+    size: 59347750
+    url: https://download.visualstudio.microsoft.com/download/pr/4cb7a450-4979-4d07-89e7-6613722fc25e/02673cda797dabef507f3ef823d83fd70b51f957f196d181733a648f9262094f/Microsoft.VC.14.50.18.0.ASAN.X86.base.vsix
   type: Vsix
-  version: 14.50.35719
+  version: 14.50.35729
 - id: Microsoft.VC.14.50.18.0.ASAN.Headers.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.ASAN.Headers.base.vsix
-    sha256: 8516840a364044bfbe838680590f6208bf615fde03bd70a638d39e9b100cc4bb
-    size: 94009
-    url: https://download.visualstudio.microsoft.com/download/pr/a424e95b-20f6-4af6-844f-9d9a806080a7/8516840a364044bfbe838680590f6208bf615fde03bd70a638d39e9b100cc4bb/Microsoft.VC.14.50.18.0.ASAN.Headers.base.vsix
+    sha256: a91528156a5b55a79e210271a34603b3cdce038b28668a95834c66ebc3e94ddb
+    size: 94005
+    url: https://download.visualstudio.microsoft.com/download/pr/4cb7a450-4979-4d07-89e7-6613722fc25e/a91528156a5b55a79e210271a34603b3cdce038b28668a95834c66ebc3e94ddb/Microsoft.VC.14.50.18.0.ASAN.Headers.base.vsix
   type: Vsix
-  version: 14.50.35719
+  version: 14.50.35729
 - id: Microsoft.VC.14.50.18.0.ASAN.X64.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.ASAN.X64.base.vsix
-    sha256: 9ffdee1e682c736fe9b169d3e020503368f207bee122b9c366e684077aff45cd
-    size: 65016389
-    url: https://download.visualstudio.microsoft.com/download/pr/a424e95b-20f6-4af6-844f-9d9a806080a7/9ffdee1e682c736fe9b169d3e020503368f207bee122b9c366e684077aff45cd/Microsoft.VC.14.50.18.0.ASAN.X64.base.vsix
+    sha256: 5d3329f258805b86bca195a2d46642c94b6ab0178c30c99ea3f30e717d99c891
+    size: 64829431
+    url: https://download.visualstudio.microsoft.com/download/pr/4cb7a450-4979-4d07-89e7-6613722fc25e/5d3329f258805b86bca195a2d46642c94b6ab0178c30c99ea3f30e717d99c891/Microsoft.VC.14.50.18.0.ASAN.X64.base.vsix
   type: Vsix
-  version: 14.50.35719
+  version: 14.50.35729
 - id: Microsoft.VC.14.50.18.0.Tools.HostX86.TargetX64.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.Tools.HostX86.TargetX64.base.vsix
-    sha256: e95b1f3f877a2fe3a50ea84e8128705288ed91d66b85bf8129ebad8a6ba4eed5
-    size: 24924899
-    url: https://download.visualstudio.microsoft.com/download/pr/1fda1d66-2309-40bc-bedc-968c528a746d/e95b1f3f877a2fe3a50ea84e8128705288ed91d66b85bf8129ebad8a6ba4eed5/Microsoft.VC.14.50.18.0.Tools.HostX86.TargetX64.base.vsix
+    sha256: 39a3c8206977f2602aad9441fa26149b17d6853df5d025ed2fe6b56e3665a44f
+    size: 24936383
+    url: https://download.visualstudio.microsoft.com/download/pr/bd628824-aeab-40f8-b8de-365eaa9716bf/39a3c8206977f2602aad9441fa26149b17d6853df5d025ed2fe6b56e3665a44f/Microsoft.VC.14.50.18.0.Tools.HostX86.TargetX64.base.vsix
   type: Vsix
-  version: 14.50.35722
+  version: 14.50.35730
 - id: Microsoft.VC.14.50.18.0.Tools.Hostx86.Targetx64.Res.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.Tools.Hostx86.Targetx64.Res.base.enu.vsix
-    sha256: 8f025bead9579b6488fc99b9ee842e0cd322612fdd52190627a7e660228d8380
+    sha256: c0dfea3c877d6950ed12a476fd12fec6c36ddd876efc09765909d7b035f70a15
     size: 232879
-    url: https://download.visualstudio.microsoft.com/download/pr/1fda1d66-2309-40bc-bedc-968c528a746d/8f025bead9579b6488fc99b9ee842e0cd322612fdd52190627a7e660228d8380/Microsoft.VC.14.50.18.0.Tools.Hostx86.Targetx64.Res.base.enu.vsix
+    url: https://download.visualstudio.microsoft.com/download/pr/bd628824-aeab-40f8-b8de-365eaa9716bf/c0dfea3c877d6950ed12a476fd12fec6c36ddd876efc09765909d7b035f70a15/Microsoft.VC.14.50.18.0.Tools.Hostx86.Targetx64.Res.base.enu.vsix
   type: Vsix
-  version: 14.50.35722
+  version: 14.50.35730
 - id: Microsoft.VC.14.50.18.0.Props.x64
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.Props.x64.vsix
-    sha256: e0d0b75d5d7995e4ffa8bb5897e3e391f5e08a6aabec22dddf754eb496e80c29
-    size: 2226
-    url: https://download.visualstudio.microsoft.com/download/pr/1fda1d66-2309-40bc-bedc-968c528a746d/e0d0b75d5d7995e4ffa8bb5897e3e391f5e08a6aabec22dddf754eb496e80c29/Microsoft.VC.14.50.18.0.Props.x64.vsix
+    sha256: 48328630be98a669dd19a818252a489c58c180758405dc6660937ff4cc229f50
+    size: 2225
+    url: https://download.visualstudio.microsoft.com/download/pr/bd628824-aeab-40f8-b8de-365eaa9716bf/48328630be98a669dd19a818252a489c58c180758405dc6660937ff4cc229f50/Microsoft.VC.14.50.18.0.Props.x64.vsix
   type: Vsix
-  version: 14.50.35722
+  version: 14.50.35730
 - id: Microsoft.VC.14.50.18.0.Props
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.Props.vsix
-    sha256: 2b8a202f65a6d036bdb45a69cdcda212d960f648a6d6b7d738cb18a44f8b743e
-    size: 4053
-    url: https://download.visualstudio.microsoft.com/download/pr/1fda1d66-2309-40bc-bedc-968c528a746d/2b8a202f65a6d036bdb45a69cdcda212d960f648a6d6b7d738cb18a44f8b743e/Microsoft.VC.14.50.18.0.Props.vsix
+    sha256: 3bf6a540e26f5fdc249fce6cf909d9f614831466e150d2ce49bb2b78e540049a
+    size: 4055
+    url: https://download.visualstudio.microsoft.com/download/pr/bd628824-aeab-40f8-b8de-365eaa9716bf/3bf6a540e26f5fdc249fce6cf909d9f614831466e150d2ce49bb2b78e540049a/Microsoft.VC.14.50.18.0.Props.vsix
   type: Vsix
-  version: 14.50.35722
+  version: 14.50.35730
 - id: Microsoft.VC.14.50.18.0.Servicing.Compilers
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.Servicing.Compilers.vsix
-    sha256: dc95c712b3024dad14b0d454fda9c06f82bf65748498715ac16f14df928d4936
+    sha256: 678032c743fb644baa9df6358d29c32cb294bee2cfa75b733869318b592130e8
     size: 2005
-    url: https://download.visualstudio.microsoft.com/download/pr/1fda1d66-2309-40bc-bedc-968c528a746d/dc95c712b3024dad14b0d454fda9c06f82bf65748498715ac16f14df928d4936/Microsoft.VC.14.50.18.0.Servicing.Compilers.vsix
+    url: https://download.visualstudio.microsoft.com/download/pr/bd628824-aeab-40f8-b8de-365eaa9716bf/678032c743fb644baa9df6358d29c32cb294bee2cfa75b733869318b592130e8/Microsoft.VC.14.50.18.0.Servicing.Compilers.vsix
   type: Vsix
-  version: 14.50.35722
+  version: 14.50.35730
 - id: Microsoft.VC.14.50.18.0.Servicing
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.Servicing.vsix
-    sha256: 315e806678ee4d40262d7bed21af534c41e143b800043d04a8a80b0329f2b325
-    size: 2215
-    url: https://download.visualstudio.microsoft.com/download/pr/1fda1d66-2309-40bc-bedc-968c528a746d/315e806678ee4d40262d7bed21af534c41e143b800043d04a8a80b0329f2b325/Microsoft.VC.14.50.18.0.Servicing.vsix
+    sha256: 2d9739767e67a138c55abdeaed32c6fbecd7ccc8b67d1814baff819b47e3c5ef
+    size: 2214
+    url: https://download.visualstudio.microsoft.com/download/pr/bd628824-aeab-40f8-b8de-365eaa9716bf/2d9739767e67a138c55abdeaed32c6fbecd7ccc8b67d1814baff819b47e3c5ef/Microsoft.VC.14.50.18.0.Servicing.vsix
   type: Vsix
-  version: 14.50.35722
+  version: 14.50.35730
 - id: Microsoft.VC.14.50.18.0.Tools.HostX64.TargetX64.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.Tools.HostX64.TargetX64.base.vsix
-    sha256: 80400d4947a0bff5a9842c8ced9d77c9803de6f5c20cf966d02384a4a38a721a
-    size: 28502602
-    url: https://download.visualstudio.microsoft.com/download/pr/1fda1d66-2309-40bc-bedc-968c528a746d/80400d4947a0bff5a9842c8ced9d77c9803de6f5c20cf966d02384a4a38a721a/Microsoft.VC.14.50.18.0.Tools.HostX64.TargetX64.base.vsix
+    sha256: fa02faf7d1daef5a83d8e658b62855551a9ede20d25ae2f5a6ab01d52f0376dd
+    size: 28517453
+    url: https://download.visualstudio.microsoft.com/download/pr/bd628824-aeab-40f8-b8de-365eaa9716bf/fa02faf7d1daef5a83d8e658b62855551a9ede20d25ae2f5a6ab01d52f0376dd/Microsoft.VC.14.50.18.0.Tools.HostX64.TargetX64.base.vsix
   type: Vsix
-  version: 14.50.35722
+  version: 14.50.35730
 - id: Microsoft.VC.14.50.18.0.Tools.HostX64.TargetX64.Res.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.Tools.HostX64.TargetX64.Res.base.enu.vsix
-    sha256: f71d00b8907d83e684aece255e00c9de844459d41ed00fdbd456c448c440c7f6
-    size: 232900
-    url: https://download.visualstudio.microsoft.com/download/pr/1fda1d66-2309-40bc-bedc-968c528a746d/f71d00b8907d83e684aece255e00c9de844459d41ed00fdbd456c448c440c7f6/Microsoft.VC.14.50.18.0.Tools.HostX64.TargetX64.Res.base.enu.vsix
+    sha256: 15721e108dfc85873f7e15478d7c5581ee24397d8e20c42222da6c81428c10b2
+    size: 232918
+    url: https://download.visualstudio.microsoft.com/download/pr/bd628824-aeab-40f8-b8de-365eaa9716bf/15721e108dfc85873f7e15478d7c5581ee24397d8e20c42222da6c81428c10b2/Microsoft.VC.14.50.18.0.Tools.HostX64.TargetX64.Res.base.enu.vsix
   type: Vsix
-  version: 14.50.35722
+  version: 14.50.35730
 - id: Microsoft.VC.14.50.18.0.ASAN.ARM64.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.ASAN.ARM64.base.vsix
-    sha256: 4d0adc36e749d21b459392cd96ea519d95d8b911703e7776383cf5c2e62d86ae
-    size: 55185202
-    url: https://download.visualstudio.microsoft.com/download/pr/a424e95b-20f6-4af6-844f-9d9a806080a7/4d0adc36e749d21b459392cd96ea519d95d8b911703e7776383cf5c2e62d86ae/Microsoft.VC.14.50.18.0.ASAN.ARM64.base.vsix
+    sha256: 4fba41f0f0c272595a54ba0836d3d8491ab7faaa89ad795c56d316ff46e107c4
+    size: 55073724
+    url: https://download.visualstudio.microsoft.com/download/pr/4cb7a450-4979-4d07-89e7-6613722fc25e/4fba41f0f0c272595a54ba0836d3d8491ab7faaa89ad795c56d316ff46e107c4/Microsoft.VC.14.50.18.0.ASAN.ARM64.base.vsix
   type: Vsix
-  version: 14.50.35719
+  version: 14.50.35729
 - id: Microsoft.VC.14.50.18.0.Props.ARM64
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.Props.ARM64.vsix
-    sha256: 8d1cbb3f493313c9aaa9ee5edf5cd91d96b4903eff3183cb5cbbba6ced556ad6
-    size: 2239
-    url: https://download.visualstudio.microsoft.com/download/pr/1fda1d66-2309-40bc-bedc-968c528a746d/8d1cbb3f493313c9aaa9ee5edf5cd91d96b4903eff3183cb5cbbba6ced556ad6/Microsoft.VC.14.50.18.0.Props.ARM64.vsix
+    sha256: b4e292302b24430ccf8742d14dc6600cebd0c69e0cb39d637b39bdaf5bef45a5
+    size: 2238
+    url: https://download.visualstudio.microsoft.com/download/pr/bd628824-aeab-40f8-b8de-365eaa9716bf/b4e292302b24430ccf8742d14dc6600cebd0c69e0cb39d637b39bdaf5bef45a5/Microsoft.VC.14.50.18.0.Props.ARM64.vsix
   type: Vsix
-  version: 14.50.35722
+  version: 14.50.35730
 - id: Microsoft.VC.14.50.18.0.Tools.HostX86.TargetX86.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.Tools.HostX86.TargetX86.base.vsix
-    sha256: 2d3e92ae8be3fb6d9a446f9b00eaa034b75ec384d771aa9d99f82309bea538ee
-    size: 22600325
-    url: https://download.visualstudio.microsoft.com/download/pr/1fda1d66-2309-40bc-bedc-968c528a746d/2d3e92ae8be3fb6d9a446f9b00eaa034b75ec384d771aa9d99f82309bea538ee/Microsoft.VC.14.50.18.0.Tools.HostX86.TargetX86.base.vsix
+    sha256: 5ae6c6f00e647ff81481730b1fdad5dacc986cf00bc0e972074c969eefa533ff
+    size: 22531633
+    url: https://download.visualstudio.microsoft.com/download/pr/bd628824-aeab-40f8-b8de-365eaa9716bf/5ae6c6f00e647ff81481730b1fdad5dacc986cf00bc0e972074c969eefa533ff/Microsoft.VC.14.50.18.0.Tools.HostX86.TargetX86.base.vsix
   type: Vsix
-  version: 14.50.35722
+  version: 14.50.35730
 - id: Microsoft.VC.14.50.18.0.Tools.HostX86.TargetX86.Res.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.Tools.HostX86.TargetX86.Res.base.enu.vsix
-    sha256: 536980f89a76239ebb9c4b35677c662b4aa7aa3da0497618b5c296ee1f8aa667
-    size: 232856
-    url: https://download.visualstudio.microsoft.com/download/pr/1fda1d66-2309-40bc-bedc-968c528a746d/536980f89a76239ebb9c4b35677c662b4aa7aa3da0497618b5c296ee1f8aa667/Microsoft.VC.14.50.18.0.Tools.HostX86.TargetX86.Res.base.enu.vsix
+    sha256: b4bcf99c26d3652ceb6b2f1e4aaacd99f43a7ec2e9a6396c1722919acc2f3f8b
+    size: 232854
+    url: https://download.visualstudio.microsoft.com/download/pr/bd628824-aeab-40f8-b8de-365eaa9716bf/b4bcf99c26d3652ceb6b2f1e4aaacd99f43a7ec2e9a6396c1722919acc2f3f8b/Microsoft.VC.14.50.18.0.Tools.HostX86.TargetX86.Res.base.enu.vsix
   type: Vsix
-  version: 14.50.35722
+  version: 14.50.35730
 - id: Microsoft.VC.14.50.18.0.Props.x86
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.Props.x86.vsix
-    sha256: 8b4b2baadfe8c318aadeffd042fd09f4c884160da730e8a115e161f725ad06ad
-    size: 2225
-    url: https://download.visualstudio.microsoft.com/download/pr/1fda1d66-2309-40bc-bedc-968c528a746d/8b4b2baadfe8c318aadeffd042fd09f4c884160da730e8a115e161f725ad06ad/Microsoft.VC.14.50.18.0.Props.x86.vsix
+    sha256: 5f66f5b7d06302f62d02f945054e4f5473bbbfa740e80913a63b016823fadc2b
+    size: 2224
+    url: https://download.visualstudio.microsoft.com/download/pr/bd628824-aeab-40f8-b8de-365eaa9716bf/5f66f5b7d06302f62d02f945054e4f5473bbbfa740e80913a63b016823fadc2b/Microsoft.VC.14.50.18.0.Props.x86.vsix
   type: Vsix
-  version: 14.50.35722
+  version: 14.50.35730
 - id: Microsoft.VC.14.50.18.0.Tools.HostX64.TargetX86.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.Tools.HostX64.TargetX86.base.vsix
-    sha256: aea6f24dd4f5b3f96b0da7c7b5631c193ba2562183ba793a84b0d73defce7084
-    size: 24775647
-    url: https://download.visualstudio.microsoft.com/download/pr/1fda1d66-2309-40bc-bedc-968c528a746d/aea6f24dd4f5b3f96b0da7c7b5631c193ba2562183ba793a84b0d73defce7084/Microsoft.VC.14.50.18.0.Tools.HostX64.TargetX86.base.vsix
+    sha256: c986219e114034834c3405a638b6e7c0bf00bd5d9c57eaefdb8bd763b2bf53b1
+    size: 24700065
+    url: https://download.visualstudio.microsoft.com/download/pr/bd628824-aeab-40f8-b8de-365eaa9716bf/c986219e114034834c3405a638b6e7c0bf00bd5d9c57eaefdb8bd763b2bf53b1/Microsoft.VC.14.50.18.0.Tools.HostX64.TargetX86.base.vsix
   type: Vsix
-  version: 14.50.35722
+  version: 14.50.35730
 - id: Microsoft.VC.14.50.18.0.Tools.HostX64.TargetX86.Res.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.Tools.HostX64.TargetX86.Res.base.enu.vsix
-    sha256: 02f488cb949bcc3e9ab2be1b7263c96327434b37a0edb885a5e028758ac1352c
-    size: 232896
-    url: https://download.visualstudio.microsoft.com/download/pr/1fda1d66-2309-40bc-bedc-968c528a746d/02f488cb949bcc3e9ab2be1b7263c96327434b37a0edb885a5e028758ac1352c/Microsoft.VC.14.50.18.0.Tools.HostX64.TargetX86.Res.base.enu.vsix
+    sha256: a78b7198c6582959f82a77a60c7d41282410f6667fe94082d5ea1fb9741b30e5
+    size: 232935
+    url: https://download.visualstudio.microsoft.com/download/pr/bd628824-aeab-40f8-b8de-365eaa9716bf/a78b7198c6582959f82a77a60c7d41282410f6667fe94082d5ea1fb9741b30e5/Microsoft.VC.14.50.18.0.Tools.HostX64.TargetX86.Res.base.enu.vsix
   type: Vsix
-  version: 14.50.35722
+  version: 14.50.35730
 - id: Microsoft.VisualCpp.ASAN.X86.OneCore
   payloads:
   - fileName: Microsoft.VisualCpp.ASAN.X86.OneCore.vsix
-    sha256: 8075d282cc481948988e7074ee4db36d0c4cb7ec2d4cfb0453b0dd239a324228
-    size: 1075
-    url: https://download.visualstudio.microsoft.com/download/pr/a424e95b-20f6-4af6-844f-9d9a806080a7/8075d282cc481948988e7074ee4db36d0c4cb7ec2d4cfb0453b0dd239a324228/Microsoft.VisualCpp.ASAN.X86.OneCore.vsix
+    sha256: 37ec64aca95586bb1957e898715fcdd1ab8ec11c96ba6b10a0a39424e1165c78
+    size: 1076
+    url: https://download.visualstudio.microsoft.com/download/pr/4cb7a450-4979-4d07-89e7-6613722fc25e/37ec64aca95586bb1957e898715fcdd1ab8ec11c96ba6b10a0a39424e1165c78/Microsoft.VisualCpp.ASAN.X86.OneCore.vsix
   type: Vsix
-  version: 14.50.35719
+  version: 14.50.35729
 - id: Microsoft.VC.14.50.18.0.ASAN.X86.OneCore.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.ASAN.X86.OneCore.base.vsix
-    sha256: d34dcf365c3b27d667a5efc54908b729f080a907054e97e40b86308a22faa69c
-    size: 45269306
-    url: https://download.visualstudio.microsoft.com/download/pr/a424e95b-20f6-4af6-844f-9d9a806080a7/d34dcf365c3b27d667a5efc54908b729f080a907054e97e40b86308a22faa69c/Microsoft.VC.14.50.18.0.ASAN.X86.OneCore.base.vsix
+    sha256: 9e70fb39b21b633ceaaa734fd00ddd0255c5ce0899f6441d17e29eccd1cce6e6
+    size: 45270828
+    url: https://download.visualstudio.microsoft.com/download/pr/4cb7a450-4979-4d07-89e7-6613722fc25e/9e70fb39b21b633ceaaa734fd00ddd0255c5ce0899f6441d17e29eccd1cce6e6/Microsoft.VC.14.50.18.0.ASAN.X86.OneCore.base.vsix
   type: Vsix
-  version: 14.50.35719
+  version: 14.50.35729
 - id: Microsoft.VisualCpp.CRT.ARM64.Desktop
   payloads:
   - fileName: Microsoft.VisualCpp.CRT.ARM64.Desktop.vsix
-    sha256: 8fa9dad15bc12c8f71c0bdd0e7fafa099932032598f4d9aed895386dad179568
+    sha256: 9f815b38bfd26a5e6b3ca667fd94d64fe12d73dece8ae16cfb50ba68c75aa20c
     size: 1076
-    url: https://download.visualstudio.microsoft.com/download/pr/439f6ef1-972b-4d0d-8989-f4db143181cd/8fa9dad15bc12c8f71c0bdd0e7fafa099932032598f4d9aed895386dad179568/Microsoft.VisualCpp.CRT.ARM64.Desktop.vsix
+    url: https://download.visualstudio.microsoft.com/download/pr/4cb7a450-4979-4d07-89e7-6613722fc25e/9f815b38bfd26a5e6b3ca667fd94d64fe12d73dece8ae16cfb50ba68c75aa20c/Microsoft.VisualCpp.CRT.ARM64.Desktop.vsix
   type: Vsix
-  version: 14.50.35721
+  version: 14.50.35729
 - id: Microsoft.VC.14.50.18.0.CRT.ARM64.Desktop.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.CRT.ARM64.Desktop.base.vsix
-    sha256: b286a8912017b67b05b4a5e5bebaf0f323dc6b75d914e70513472aa0a895010f
-    size: 95895152
-    url: https://download.visualstudio.microsoft.com/download/pr/439f6ef1-972b-4d0d-8989-f4db143181cd/b286a8912017b67b05b4a5e5bebaf0f323dc6b75d914e70513472aa0a895010f/Microsoft.VC.14.50.18.0.CRT.ARM64.Desktop.base.vsix
+    sha256: 1868ade580da9a5b7764818d076fa8bec5e24a501a3dc5ebc75516c8b2888243
+    size: 95897328
+    url: https://download.visualstudio.microsoft.com/download/pr/4cb7a450-4979-4d07-89e7-6613722fc25e/1868ade580da9a5b7764818d076fa8bec5e24a501a3dc5ebc75516c8b2888243/Microsoft.VC.14.50.18.0.CRT.ARM64.Desktop.base.vsix
   type: Vsix
-  version: 14.50.35721
+  version: 14.50.35729
 - id: Microsoft.VC.14.50.18.0.CRT.ARM64.Desktop.debug.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.CRT.ARM64.Desktop.debug.base.vsix
-    sha256: 842c36a533d12e7f8f6c1af707e1e78ccb3198fd36e2c7a9c12439c8ee1d1828
-    size: 51958292
-    url: https://download.visualstudio.microsoft.com/download/pr/439f6ef1-972b-4d0d-8989-f4db143181cd/842c36a533d12e7f8f6c1af707e1e78ccb3198fd36e2c7a9c12439c8ee1d1828/Microsoft.VC.14.50.18.0.CRT.ARM64.Desktop.debug.base.vsix
+    sha256: c77f1cc6bd3b9e997122d418305604b33024ec611366c3eec8a608cc8cd13a99
+    size: 51948672
+    url: https://download.visualstudio.microsoft.com/download/pr/4cb7a450-4979-4d07-89e7-6613722fc25e/c77f1cc6bd3b9e997122d418305604b33024ec611366c3eec8a608cc8cd13a99/Microsoft.VC.14.50.18.0.CRT.ARM64.Desktop.debug.base.vsix
   type: Vsix
-  version: 14.50.35721
+  version: 14.50.35729
 - id: Microsoft.VisualCpp.CRT.ARM64.Store
   payloads:
   - fileName: Microsoft.VisualCpp.CRT.ARM64.Store.vsix
-    sha256: e671306b96e1c3c3c644dfbfe49bac3bcff6a1f6843bf318a3c3bcf1387703e4
-    size: 1073
-    url: https://download.visualstudio.microsoft.com/download/pr/439f6ef1-972b-4d0d-8989-f4db143181cd/e671306b96e1c3c3c644dfbfe49bac3bcff6a1f6843bf318a3c3bcf1387703e4/Microsoft.VisualCpp.CRT.ARM64.Store.vsix
+    sha256: 787ad8f65f558bdb250308da39a774acb3a91d0f5662b3b2ba6e39dfa4998f59
+    size: 1074
+    url: https://download.visualstudio.microsoft.com/download/pr/4cb7a450-4979-4d07-89e7-6613722fc25e/787ad8f65f558bdb250308da39a774acb3a91d0f5662b3b2ba6e39dfa4998f59/Microsoft.VisualCpp.CRT.ARM64.Store.vsix
   type: Vsix
-  version: 14.50.35721
+  version: 14.50.35729
 - id: Microsoft.VC.14.50.18.0.CRT.ARM64.Store.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.CRT.ARM64.Store.base.vsix
-    sha256: c114b9e8a9a8496ae0cee02d71d242b6a9d3d268b55772febb201ba6dd0716c4
-    size: 61402038
-    url: https://download.visualstudio.microsoft.com/download/pr/439f6ef1-972b-4d0d-8989-f4db143181cd/c114b9e8a9a8496ae0cee02d71d242b6a9d3d268b55772febb201ba6dd0716c4/Microsoft.VC.14.50.18.0.CRT.ARM64.Store.base.vsix
+    sha256: 1cd21030d58959c6214efa6dd20b3458ff932c33f98a0ffc0e603b2f5742c1f2
+    size: 61402037
+    url: https://download.visualstudio.microsoft.com/download/pr/4cb7a450-4979-4d07-89e7-6613722fc25e/1cd21030d58959c6214efa6dd20b3458ff932c33f98a0ffc0e603b2f5742c1f2/Microsoft.VC.14.50.18.0.CRT.ARM64.Store.base.vsix
   type: Vsix
-  version: 14.50.35721
+  version: 14.50.35729
 - id: Microsoft.VisualCpp.CRT.Headers
   payloads:
   - fileName: Microsoft.VisualCpp.CRT.Headers.vsix
@@ -336,107 +336,107 @@
 - id: Microsoft.VisualCpp.CRT.x64.Desktop
   payloads:
   - fileName: Microsoft.VisualCpp.CRT.x64.Desktop.vsix
-    sha256: de4a275b35cb45b6b5161b09cf2114cbfea5a52c35edad5fbdd8e46c6b0fb0ad
-    size: 1072
-    url: https://download.visualstudio.microsoft.com/download/pr/439f6ef1-972b-4d0d-8989-f4db143181cd/de4a275b35cb45b6b5161b09cf2114cbfea5a52c35edad5fbdd8e46c6b0fb0ad/Microsoft.VisualCpp.CRT.x64.Desktop.vsix
+    sha256: 49b96da41446de8e0e68d716c5281e5cb000a83b155ed1eece99790ae2bc43a3
+    size: 1073
+    url: https://download.visualstudio.microsoft.com/download/pr/4cb7a450-4979-4d07-89e7-6613722fc25e/49b96da41446de8e0e68d716c5281e5cb000a83b155ed1eece99790ae2bc43a3/Microsoft.VisualCpp.CRT.x64.Desktop.vsix
   type: Vsix
-  version: 14.50.35721
+  version: 14.50.35729
 - id: Microsoft.VC.14.50.18.0.CRT.x64.Desktop.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.CRT.x64.Desktop.base.vsix
-    sha256: 5072bd8183709b8cd05b8406beed28698426ec98ee11037afbf771151e1c41ff
-    size: 52491234
-    url: https://download.visualstudio.microsoft.com/download/pr/439f6ef1-972b-4d0d-8989-f4db143181cd/5072bd8183709b8cd05b8406beed28698426ec98ee11037afbf771151e1c41ff/Microsoft.VC.14.50.18.0.CRT.x64.Desktop.base.vsix
+    sha256: f538fed4fbf0fff460fa0a35f179319586d24c61804ab5d9780707cfd6353556
+    size: 52472383
+    url: https://download.visualstudio.microsoft.com/download/pr/4cb7a450-4979-4d07-89e7-6613722fc25e/f538fed4fbf0fff460fa0a35f179319586d24c61804ab5d9780707cfd6353556/Microsoft.VC.14.50.18.0.CRT.x64.Desktop.base.vsix
   type: Vsix
-  version: 14.50.35721
+  version: 14.50.35729
 - id: Microsoft.VisualCpp.CRT.x64.Store
   payloads:
   - fileName: Microsoft.VisualCpp.CRT.x64.Store.vsix
-    sha256: a7195d22849667ea09f87d690ae42c81fb9871346d20019603d79c218920190d
-    size: 1071
-    url: https://download.visualstudio.microsoft.com/download/pr/439f6ef1-972b-4d0d-8989-f4db143181cd/a7195d22849667ea09f87d690ae42c81fb9871346d20019603d79c218920190d/Microsoft.VisualCpp.CRT.x64.Store.vsix
+    sha256: da312fdf848f76e5adeb300a0258af84579acd3add96914c4b2a4212eb44a940
+    size: 1072
+    url: https://download.visualstudio.microsoft.com/download/pr/4cb7a450-4979-4d07-89e7-6613722fc25e/da312fdf848f76e5adeb300a0258af84579acd3add96914c4b2a4212eb44a940/Microsoft.VisualCpp.CRT.x64.Store.vsix
   type: Vsix
-  version: 14.50.35721
+  version: 14.50.35729
 - id: Microsoft.VC.14.50.18.0.CRT.x64.Store.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.CRT.x64.Store.base.vsix
-    sha256: 6b2c1616e86c36304c0e141f51fbd9b9438d0f3e7cca37a3a42bc8dfa4f09854
-    size: 29081087
-    url: https://download.visualstudio.microsoft.com/download/pr/439f6ef1-972b-4d0d-8989-f4db143181cd/6b2c1616e86c36304c0e141f51fbd9b9438d0f3e7cca37a3a42bc8dfa4f09854/Microsoft.VC.14.50.18.0.CRT.x64.Store.base.vsix
+    sha256: ba895895ded7143f953a4ca0d6f0505df1844fdd138f9a18b61c395322ad11b3
+    size: 29081062
+    url: https://download.visualstudio.microsoft.com/download/pr/4cb7a450-4979-4d07-89e7-6613722fc25e/ba895895ded7143f953a4ca0d6f0505df1844fdd138f9a18b61c395322ad11b3/Microsoft.VC.14.50.18.0.CRT.x64.Store.base.vsix
   type: Vsix
-  version: 14.50.35721
+  version: 14.50.35729
 - id: Microsoft.VisualCpp.CRT.x86.Desktop
   payloads:
   - fileName: Microsoft.VisualCpp.CRT.x86.Desktop.vsix
-    sha256: c6c144f8d9a2a5bd4412c605035d3e62d823acf1ded42aa951771b7104d88a77
-    size: 1072
-    url: https://download.visualstudio.microsoft.com/download/pr/439f6ef1-972b-4d0d-8989-f4db143181cd/c6c144f8d9a2a5bd4412c605035d3e62d823acf1ded42aa951771b7104d88a77/Microsoft.VisualCpp.CRT.x86.Desktop.vsix
+    sha256: 3e947bea0063a9ee6b621638a4b80492d2b6658ba4c5c05084d8d0b67f438302
+    size: 1073
+    url: https://download.visualstudio.microsoft.com/download/pr/4cb7a450-4979-4d07-89e7-6613722fc25e/3e947bea0063a9ee6b621638a4b80492d2b6658ba4c5c05084d8d0b67f438302/Microsoft.VisualCpp.CRT.x86.Desktop.vsix
   type: Vsix
-  version: 14.50.35721
+  version: 14.50.35729
 - id: Microsoft.VC.14.50.18.0.CRT.x86.Desktop.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.CRT.x86.Desktop.base.vsix
-    sha256: fd3266ece49465dd8f373a099b49047a26af6f6a1ef8a69222f06d784b4ae727
-    size: 89939310
-    url: https://download.visualstudio.microsoft.com/download/pr/439f6ef1-972b-4d0d-8989-f4db143181cd/fd3266ece49465dd8f373a099b49047a26af6f6a1ef8a69222f06d784b4ae727/Microsoft.VC.14.50.18.0.CRT.x86.Desktop.base.vsix
+    sha256: 53d532f365a64744aa6438ebfa93ce5c3b49b15b5496609c0a405f60e5249e99
+    size: 89934639
+    url: https://download.visualstudio.microsoft.com/download/pr/4cb7a450-4979-4d07-89e7-6613722fc25e/53d532f365a64744aa6438ebfa93ce5c3b49b15b5496609c0a405f60e5249e99/Microsoft.VC.14.50.18.0.CRT.x86.Desktop.base.vsix
   type: Vsix
-  version: 14.50.35721
+  version: 14.50.35729
 - id: Microsoft.VisualCpp.CRT.x86.Store
   payloads:
   - fileName: Microsoft.VisualCpp.CRT.x86.Store.vsix
-    sha256: d20c7e2410a3aca934d9919424bbce0e9b24517a6f5005e74f2e8edc0d35302d
+    sha256: a4b335ea94bb8f76e0919190fe8a303ec09fda1a2189a633243230bc1aa8d21d
     size: 1071
-    url: https://download.visualstudio.microsoft.com/download/pr/439f6ef1-972b-4d0d-8989-f4db143181cd/d20c7e2410a3aca934d9919424bbce0e9b24517a6f5005e74f2e8edc0d35302d/Microsoft.VisualCpp.CRT.x86.Store.vsix
+    url: https://download.visualstudio.microsoft.com/download/pr/4cb7a450-4979-4d07-89e7-6613722fc25e/a4b335ea94bb8f76e0919190fe8a303ec09fda1a2189a633243230bc1aa8d21d/Microsoft.VisualCpp.CRT.x86.Store.vsix
   type: Vsix
-  version: 14.50.35721
+  version: 14.50.35729
 - id: Microsoft.VC.14.50.18.0.CRT.x86.Store.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.CRT.x86.Store.base.vsix
-    sha256: 322394d020df9ac25b648349094c7dc0013dd7a430b5d12a6e9333255ec40a13
-    size: 28452191
-    url: https://download.visualstudio.microsoft.com/download/pr/439f6ef1-972b-4d0d-8989-f4db143181cd/322394d020df9ac25b648349094c7dc0013dd7a430b5d12a6e9333255ec40a13/Microsoft.VC.14.50.18.0.CRT.x86.Store.base.vsix
+    sha256: cc8ea38e55df311c3f0fada43d24195026c4df06076d0fc57efee6087872f097
+    size: 28452223
+    url: https://download.visualstudio.microsoft.com/download/pr/4cb7a450-4979-4d07-89e7-6613722fc25e/cc8ea38e55df311c3f0fada43d24195026c4df06076d0fc57efee6087872f097/Microsoft.VC.14.50.18.0.CRT.x86.Store.base.vsix
   type: Vsix
-  version: 14.50.35721
+  version: 14.50.35729
 - id: Microsoft.VisualCpp.DIA.SDK
   payloads:
   - fileName: Microsoft.VisualCpp.DIA.SDK.vsix
-    sha256: 02707ea05ecfbc5ee83e677b903dcec7ec1359d6a8159d3933b0e8b3abbde624
-    size: 6847553
-    url: https://download.visualstudio.microsoft.com/download/pr/a424e95b-20f6-4af6-844f-9d9a806080a7/02707ea05ecfbc5ee83e677b903dcec7ec1359d6a8159d3933b0e8b3abbde624/Microsoft.VisualCpp.DIA.SDK.vsix
+    sha256: 795964264cae1180146529a7520b50d920f070ce3d6d77c295a73a90d857b21d
+    size: 6846779
+    url: https://download.visualstudio.microsoft.com/download/pr/86c5eaf6-8fd6-43ce-b7d1-89137b2c3ec7/795964264cae1180146529a7520b50d920f070ce3d6d77c295a73a90d857b21d/Microsoft.VisualCpp.DIA.SDK.vsix
   type: Vsix
-  version: 14.50.35719
+  version: 14.50.35726
 - id: Microsoft.VisualCpp.Servicing.DIASDK
   payloads:
   - fileName: Microsoft.VisualCpp.Servicing.DIASDK.vsix
-    sha256: 99fbdeb130f09147521e49416bb47bf0909783650f918ee46264a2687d31c3b2
-    size: 2002
-    url: https://download.visualstudio.microsoft.com/download/pr/a424e95b-20f6-4af6-844f-9d9a806080a7/99fbdeb130f09147521e49416bb47bf0909783650f918ee46264a2687d31c3b2/Microsoft.VisualCpp.Servicing.DIASDK.vsix
+    sha256: 252a06bec47c5d46cd9eb96cfbbf0b4ec1fa53d276d92ef32d0d841a2a46ce3b
+    size: 2003
+    url: https://download.visualstudio.microsoft.com/download/pr/86c5eaf6-8fd6-43ce-b7d1-89137b2c3ec7/252a06bec47c5d46cd9eb96cfbbf0b4ec1fa53d276d92ef32d0d841a2a46ce3b/Microsoft.VisualCpp.Servicing.DIASDK.vsix
   type: Vsix
-  version: 14.50.35719
+  version: 14.50.35726
 - id: Microsoft.VisualCpp.Tools.HostARM64.TargetARM64
   payloads:
   - fileName: Microsoft.VisualCpp.Tools.HostARM64.TargetARM64.vsix
-    sha256: 076b6595bfe8c4a9cd062ee39ea5a9f2f5221e4c1c2a420bf3237286e48663a6
-    size: 2281
-    url: https://download.visualstudio.microsoft.com/download/pr/1fda1d66-2309-40bc-bedc-968c528a746d/076b6595bfe8c4a9cd062ee39ea5a9f2f5221e4c1c2a420bf3237286e48663a6/Microsoft.VisualCpp.Tools.HostARM64.TargetARM64.vsix
+    sha256: ed3d5338e4e7a14b804d2412bf6087cb4bffd44826907fe05be7f3892f014e5f
+    size: 2280
+    url: https://download.visualstudio.microsoft.com/download/pr/bd628824-aeab-40f8-b8de-365eaa9716bf/ed3d5338e4e7a14b804d2412bf6087cb4bffd44826907fe05be7f3892f014e5f/Microsoft.VisualCpp.Tools.HostARM64.TargetARM64.vsix
   type: Vsix
-  version: 14.50.35722
+  version: 14.50.35730
 - id: Microsoft.VC.14.50.18.0.Tools.HostARM64.TargetARM64.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.Tools.HostARM64.TargetARM64.base.vsix
-    sha256: 5888e79ee81c17cac3560c4f2ed293a1f15ad1127804524f183c0a70e8d176da
-    size: 24836923
-    url: https://download.visualstudio.microsoft.com/download/pr/1fda1d66-2309-40bc-bedc-968c528a746d/5888e79ee81c17cac3560c4f2ed293a1f15ad1127804524f183c0a70e8d176da/Microsoft.VC.14.50.18.0.Tools.HostARM64.TargetARM64.base.vsix
+    sha256: d72ad21a80609af60ec7cc024ac78a0ef554547c4b07effdf213ba27871ee997
+    size: 24833955
+    url: https://download.visualstudio.microsoft.com/download/pr/bd628824-aeab-40f8-b8de-365eaa9716bf/d72ad21a80609af60ec7cc024ac78a0ef554547c4b07effdf213ba27871ee997/Microsoft.VC.14.50.18.0.Tools.HostARM64.TargetARM64.base.vsix
   type: Vsix
-  version: 14.50.35722
+  version: 14.50.35730
 - id: Microsoft.VC.14.50.18.0.Tools.HostARM64.TargetARM64.Res.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.Tools.HostARM64.TargetARM64.Res.base.enu.vsix
-    sha256: f0b3bef12945da52e310cbdbcee0bea70564bece423a9934cef4304e037f74de
-    size: 273598
-    url: https://download.visualstudio.microsoft.com/download/pr/1fda1d66-2309-40bc-bedc-968c528a746d/f0b3bef12945da52e310cbdbcee0bea70564bece423a9934cef4304e037f74de/Microsoft.VC.14.50.18.0.Tools.HostARM64.TargetARM64.Res.base.enu.vsix
+    sha256: 009c488927b2787d8c48d54863e03b76d8e160c055132f6449b064f7b4ad552b
+    size: 272071
+    url: https://download.visualstudio.microsoft.com/download/pr/bd628824-aeab-40f8-b8de-365eaa9716bf/009c488927b2787d8c48d54863e03b76d8e160c055132f6449b064f7b4ad552b/Microsoft.VC.14.50.18.0.Tools.HostARM64.TargetARM64.Res.base.enu.vsix
   type: Vsix
-  version: 14.50.35722
+  version: 14.50.35730
 - id: Microsoft.VisualCpp.Servicing.Redist
   payloads:
   - fileName: Microsoft.VisualCpp.Servicing.Redist.vsix
@@ -448,51 +448,51 @@
 - id: Microsoft.VisualCpp.Tools.HostARM64.TargetX64
   payloads:
   - fileName: Microsoft.VisualCpp.Tools.HostARM64.TargetX64.vsix
-    sha256: 0d5ff9c07f879fdc38f3d2919fcfbc6a36e52665e7a51ce69b2e3c18485a2437
-    size: 2300
-    url: https://download.visualstudio.microsoft.com/download/pr/1fda1d66-2309-40bc-bedc-968c528a746d/0d5ff9c07f879fdc38f3d2919fcfbc6a36e52665e7a51ce69b2e3c18485a2437/Microsoft.VisualCpp.Tools.HostARM64.TargetX64.vsix
+    sha256: f8e26cc8498c5e68fb33189171524a7591702b5aecd1f7cbb639243beffc8ecc
+    size: 2298
+    url: https://download.visualstudio.microsoft.com/download/pr/bd628824-aeab-40f8-b8de-365eaa9716bf/f8e26cc8498c5e68fb33189171524a7591702b5aecd1f7cbb639243beffc8ecc/Microsoft.VisualCpp.Tools.HostARM64.TargetX64.vsix
   type: Vsix
-  version: 14.50.35722
+  version: 14.50.35730
 - id: Microsoft.VC.14.50.18.0.Tools.HostARM64.TargetX64.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.Tools.HostARM64.TargetX64.base.vsix
-    sha256: 448cac45dc50228cbefadf971588b9e0083c183103b97f7fe4e1d932cbddf090
-    size: 29657969
-    url: https://download.visualstudio.microsoft.com/download/pr/1fda1d66-2309-40bc-bedc-968c528a746d/448cac45dc50228cbefadf971588b9e0083c183103b97f7fe4e1d932cbddf090/Microsoft.VC.14.50.18.0.Tools.HostARM64.TargetX64.base.vsix
+    sha256: a7fbea9f30b0b7ab24c5d4301c999c4da9acad8ede252845572581a6f5121403
+    size: 29654952
+    url: https://download.visualstudio.microsoft.com/download/pr/bd628824-aeab-40f8-b8de-365eaa9716bf/a7fbea9f30b0b7ab24c5d4301c999c4da9acad8ede252845572581a6f5121403/Microsoft.VC.14.50.18.0.Tools.HostARM64.TargetX64.base.vsix
   type: Vsix
-  version: 14.50.35722
+  version: 14.50.35730
 - id: Microsoft.VC.14.50.18.0.Tools.HostARM64.Targetx64.Res.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.Tools.HostARM64.Targetx64.Res.base.enu.vsix
-    sha256: effcfd818fc99a55c0be43432dfd809c3993f143d0943a5cf244b9d221dfe0bf
-    size: 273575
-    url: https://download.visualstudio.microsoft.com/download/pr/1fda1d66-2309-40bc-bedc-968c528a746d/effcfd818fc99a55c0be43432dfd809c3993f143d0943a5cf244b9d221dfe0bf/Microsoft.VC.14.50.18.0.Tools.HostARM64.Targetx64.Res.base.enu.vsix
+    sha256: 69680b1c595ff22708d05f0728012810ddbf7875549a38202305880a83f96c35
+    size: 273502
+    url: https://download.visualstudio.microsoft.com/download/pr/bd628824-aeab-40f8-b8de-365eaa9716bf/69680b1c595ff22708d05f0728012810ddbf7875549a38202305880a83f96c35/Microsoft.VC.14.50.18.0.Tools.HostARM64.Targetx64.Res.base.enu.vsix
   type: Vsix
-  version: 14.50.35722
+  version: 14.50.35730
 - id: Microsoft.VisualCpp.Tools.HostARM64.TargetX86
   payloads:
   - fileName: Microsoft.VisualCpp.Tools.HostARM64.TargetX86.vsix
-    sha256: 0adac794d1a9d0bc7d84e9b8507ff840fd7a307f5a09d2d11838018fe58e94c5
-    size: 2294
-    url: https://download.visualstudio.microsoft.com/download/pr/1fda1d66-2309-40bc-bedc-968c528a746d/0adac794d1a9d0bc7d84e9b8507ff840fd7a307f5a09d2d11838018fe58e94c5/Microsoft.VisualCpp.Tools.HostARM64.TargetX86.vsix
+    sha256: b0b5bc41a38250afbca04d22aac7501a7df501815e2bfd604db9c80f696940a7
+    size: 2293
+    url: https://download.visualstudio.microsoft.com/download/pr/bd628824-aeab-40f8-b8de-365eaa9716bf/b0b5bc41a38250afbca04d22aac7501a7df501815e2bfd604db9c80f696940a7/Microsoft.VisualCpp.Tools.HostARM64.TargetX86.vsix
   type: Vsix
-  version: 14.50.35722
+  version: 14.50.35730
 - id: Microsoft.VC.14.50.18.0.Tools.HostARM64.TargetX86.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.Tools.HostARM64.TargetX86.base.vsix
-    sha256: 2601975f833e0c0f1377cc98b72cc026e05a779c4b11aab71daef3a94ff1cdf1
-    size: 26269234
-    url: https://download.visualstudio.microsoft.com/download/pr/1fda1d66-2309-40bc-bedc-968c528a746d/2601975f833e0c0f1377cc98b72cc026e05a779c4b11aab71daef3a94ff1cdf1/Microsoft.VC.14.50.18.0.Tools.HostARM64.TargetX86.base.vsix
+    sha256: 8b50c199842a2dd3848cd96ec6ab99a991270b8ec27bf015e13207539756f2f0
+    size: 26187900
+    url: https://download.visualstudio.microsoft.com/download/pr/bd628824-aeab-40f8-b8de-365eaa9716bf/8b50c199842a2dd3848cd96ec6ab99a991270b8ec27bf015e13207539756f2f0/Microsoft.VC.14.50.18.0.Tools.HostARM64.TargetX86.base.vsix
   type: Vsix
-  version: 14.50.35722
+  version: 14.50.35730
 - id: Microsoft.VC.14.50.18.0.Tools.HostARM64.TargetX86.Res.base
   payloads:
   - fileName: Microsoft.VC.14.50.18.0.Tools.HostARM64.TargetX86.Res.base.enu.vsix
-    sha256: 94006f6836f5eb5116756d08311074b523acba0f1201bc20b2b582039b1c5026
-    size: 273575
-    url: https://download.visualstudio.microsoft.com/download/pr/1fda1d66-2309-40bc-bedc-968c528a746d/94006f6836f5eb5116756d08311074b523acba0f1201bc20b2b582039b1c5026/Microsoft.VC.14.50.18.0.Tools.HostARM64.TargetX86.Res.base.enu.vsix
+    sha256: 2fa1355852c84290635081d79154e6278ea696ff23931377d9c7c780ce9bbb76
+    size: 273477
+    url: https://download.visualstudio.microsoft.com/download/pr/bd628824-aeab-40f8-b8de-365eaa9716bf/2fa1355852c84290635081d79154e6278ea696ff23931377d9c7c780ce9bbb76/Microsoft.VC.14.50.18.0.Tools.HostARM64.TargetX86.Res.base.enu.vsix
   type: Vsix
-  version: 14.50.35722
+  version: 14.50.35730
 - id: Microsoft.VisualCpp.ATL.ARM64
   payloads:
   - fileName: Microsoft.VisualCpp.ATL.ARM64.vsix
@@ -560,19 +560,19 @@
 - id: Microsoft.VisualStudio.VC.Ide.ATL
   payloads:
   - fileName: payload.vsix
-    sha256: d0296cfe5fca66db555e6aa41c357c238d5615d06defd568a4bcd7c8a34057f0
-    size: 12125
-    url: https://download.visualstudio.microsoft.com/download/pr/698b0d55-c6e6-4f8e-a3aa-984fbd3adfd2/d0296cfe5fca66db555e6aa41c357c238d5615d06defd568a4bcd7c8a34057f0/payload.vsix
+    sha256: eb3c14b20578e8d379e5b6a5836c5d87269908bd5bbe63a46eb8c4307c47e709
+    size: 12131
+    url: https://download.visualstudio.microsoft.com/download/pr/7b660e19-415f-4c6c-bc8a-6a0b524cc688/eb3c14b20578e8d379e5b6a5836c5d87269908bd5bbe63a46eb8c4307c47e709/payload.vsix
   type: Vsix
-  version: 18.0.11104.47
+  version: 18.5.11709.235
 - id: Microsoft.VisualStudio.VC.Ide.ATL.Resources
   payloads:
   - fileName: payload.vsix
-    sha256: c0e1d857829ced4b44004560f2dd197d5f332dd51a5e563b605a14cfddd19d90
-    size: 45611
-    url: https://download.visualstudio.microsoft.com/download/pr/01909487-b166-46ce-9a7f-c30f9cfe8059/c0e1d857829ced4b44004560f2dd197d5f332dd51a5e563b605a14cfddd19d90/payload.vsix
+    sha256: 5f201b107d3ca28eb7a4b6e962884fb8384546606630869add9d060e84ddd903
+    size: 45608
+    url: https://download.visualstudio.microsoft.com/download/pr/aace5516-ab2e-4f26-b78e-e9743dbc3dbb/5f201b107d3ca28eb7a4b6e962884fb8384546606630869add9d060e84ddd903/payload.vsix
   type: Vsix
-  version: 18.0.11101.78
+  version: 18.5.11709.182
 - id: Microsoft.VisualCpp.ATL.X64
   payloads:
   - fileName: Microsoft.VisualCpp.ATL.X64.vsix
@@ -776,19 +776,19 @@
 - id: Microsoft.VisualStudio.VC.Ide.MFC
   payloads:
   - fileName: payload.vsix
-    sha256: 8870fef23aeba32a83225702ee1a841d66c12c3dd05d8fc6046c0de9dab1fe5f
-    size: 15267
-    url: https://download.visualstudio.microsoft.com/download/pr/698b0d55-c6e6-4f8e-a3aa-984fbd3adfd2/8870fef23aeba32a83225702ee1a841d66c12c3dd05d8fc6046c0de9dab1fe5f/payload.vsix
+    sha256: e6c371150f413b25b6fb4c8ec4d34754e0e19060d274edd66bbd1788961fa26c
+    size: 15271
+    url: https://download.visualstudio.microsoft.com/download/pr/7b660e19-415f-4c6c-bc8a-6a0b524cc688/e6c371150f413b25b6fb4c8ec4d34754e0e19060d274edd66bbd1788961fa26c/payload.vsix
   type: Vsix
-  version: 18.0.11104.47
+  version: 18.5.11709.235
 - id: Microsoft.VisualStudio.VC.Ide.MFC.Resources
   payloads:
   - fileName: payload.vsix
-    sha256: f6ffc10574d190f05746375f8e019ef73d6e6643daef3309caf3cc848caf3cb3
-    size: 343553
-    url: https://download.visualstudio.microsoft.com/download/pr/01909487-b166-46ce-9a7f-c30f9cfe8059/f6ffc10574d190f05746375f8e019ef73d6e6643daef3309caf3cc848caf3cb3/payload.vsix
+    sha256: 86d5cecc836b02151def169d9be471923d52e57bceb11a67424feecedd0146a3
+    size: 343548
+    url: https://download.visualstudio.microsoft.com/download/pr/aace5516-ab2e-4f26-b78e-e9743dbc3dbb/86d5cecc836b02151def169d9be471923d52e57bceb11a67424feecedd0146a3/payload.vsix
   type: Vsix
-  version: 18.0.11101.79
+  version: 18.5.11709.182
 - id: Microsoft.VisualCpp.MFC.ARM64
   payloads:
   - fileName: Microsoft.VisualCpp.MFC.ARM64.vsix
@@ -856,849 +856,849 @@
 - id: Win11SDK_10.0.26100
   payloads:
   - fileName: Installers\03fbc2dfe9d3e7bb2389c7ed18c6ad3e.cab
-    sha256: 1B16D4D3BA917C656CE6AFA694D96B1DF2C5D207DAB05090631516386FB2F84C
-    size: 750432
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/0351672462ae87dbccb0195b97e6581b/03fbc2dfe9d3e7bb2389c7ed18c6ad3e.cab
+    sha256: CD8A8515EDFDD27D8807CCEB466CC4C57C46F0E40523AB3B5D19BB816DEBF09D
+    size: 750427
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/dc3145d76d16e49f51025ebe149e31b0/03fbc2dfe9d3e7bb2389c7ed18c6ad3e.cab
   - fileName: Installers\05047a45609f311645eebcac2739fc4c.cab
-    sha256: B7E35F174C27EBEDB4666D5B55590D86C4C9C3D5270DB77678F018BD15305B1B
-    size: 230154
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/325a7defd08009f127e744b77811038a/05047a45609f311645eebcac2739fc4c.cab
+    sha256: 902003E4976C7BC4BCDA9F31F1D835B8072235532412770F66B0BC9F0882CB7E
+    size: 230296
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/67a9b258981565b78c46484efbed6945/05047a45609f311645eebcac2739fc4c.cab
   - fileName: Installers\05254f60ea43b4e3959b17cdb03268c0.cab
-    sha256: 8B978E3DDD5EB441ACCA2EFDD73AB244CC1B7091CAB3B06E4B59CAECBDE30235
-    size: 666792
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/8a661813b993cf6fe27d1bde9619d215/05254f60ea43b4e3959b17cdb03268c0.cab
+    sha256: CFC5FBA20300CC814E537381313ACC616F2F9B6F3843BC330697E2A5E5A4DC72
+    size: 666782
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/9a7d9a4b99e16e9fc62e870586938c7d/05254f60ea43b4e3959b17cdb03268c0.cab
   - fileName: Installers\07a57cdb41ba28cced14005f087267be.cab
-    sha256: 96F01B4CF8A64C0A8B429FA9AEADC3FFFC7E0C8E328CE236F4ED1260B90AF7AF
-    size: 103671
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/5332f98401f68a3c8ecfc019c673766f/07a57cdb41ba28cced14005f087267be.cab
+    sha256: 1F350449F6F598A4D9B316E69AD9B845DB8E8D919B8B34F5C07B32598F6DE319
+    size: 103680
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/2487cb3527b23ee3c6f081e01c2a1bc0/07a57cdb41ba28cced14005f087267be.cab
   - fileName: Installers\08e9468089f54c8455f59fd9bb48fcec.cab
-    sha256: A0FE8FEE678F6DD5CE946504D770ACD235FEA5F5119F1654A206E3025F8FE030
-    size: 76024
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/3e8dd12a6619f4b7e96855f1afd54937/08e9468089f54c8455f59fd9bb48fcec.cab
+    sha256: AE5B02B0AA46399B0BE359DB7B85AEFC7A699AB1D8A3EC16AE91EF4E0BCFEFE2
+    size: 74917
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/274dafdcb005561fddfc98939996cba6/08e9468089f54c8455f59fd9bb48fcec.cab
   - fileName: Installers\126c039acc6f1c0a9426a128efb713e7.cab
-    sha256: 2E82C99F1381F9AE82DFA0108BBF15B341FCE4A516F6D6F674F9D72F34B12834
-    size: 1562760
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/771d479c6d9039f31a49bacade67666f/126c039acc6f1c0a9426a128efb713e7.cab
+    sha256: 5A7BC7BA00D6EDC4291B106A904B8DF200201EE53BB4B075AA8BC04E09CCC2FB
+    size: 1562758
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/517cb596d23320929e3a86cc85b8ed13/126c039acc6f1c0a9426a128efb713e7.cab
   - fileName: Installers\12a529d45b148a2d28290a8a7535b37b.cab
-    sha256: 188771F1AB070BEBC8EB5F63AA178E113203BDD447FD215DD2E06A6BF05E8E53
-    size: 1053428
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/70bc4e1b1fe7f6ec12a1b9c0ae91e23d/12a529d45b148a2d28290a8a7535b37b.cab
+    sha256: B23757EAD1DCA04C9E38BAE815C58B3E79A5F6BBECA3E1F0F44C50963200CCEB
+    size: 1053435
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/42eb47265f49caa964de7f413ca79450/12a529d45b148a2d28290a8a7535b37b.cab
   - fileName: Installers\13bf5f9b75a9d1c9f44ba5d34a14227f.cab
-    sha256: 39A790744BCD93953505D1D79163C74928B5796200008FB47BF775C06F4C14DC
-    size: 95400
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/97c264939d7cd59720f490af3bedc315/13bf5f9b75a9d1c9f44ba5d34a14227f.cab
+    sha256: 52A9AB35D8014F2107997F9F1E4E6D0B615C2DB4C7698F8DA6CC00C3D239FF7B
+    size: 95422
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/fdb77bc83cf66edbbafa184172d5b826/13bf5f9b75a9d1c9f44ba5d34a14227f.cab
   - fileName: Installers\13d68b8a7b6678a368e2d13ff4027521.cab
-    sha256: A5F5C256E375924011030FEDA7B5B8C926F2326E3469FBCA8A4459383868FC41
-    size: 390028
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/3c345a98f51a2ba0a3b339dc875bdd55/13d68b8a7b6678a368e2d13ff4027521.cab
+    sha256: 0B26EDE2D22EA531D921269DFFFCD14CC71D6932CAC0F2720FCEC37079286643
+    size: 390500
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/2160d8b73fe2e4fea3e2097084a081cd/13d68b8a7b6678a368e2d13ff4027521.cab
   - fileName: Installers\15369c02f0856bfd3d570cd8a8107b55.cab
-    sha256: 4E8B989481A3729A398E77DCE9557EFE695925AC25E36E62D463B8C3785E3901
-    size: 911433
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/ada3c5b05d873d325d256b527ec72e62/15369c02f0856bfd3d570cd8a8107b55.cab
+    sha256: 353FA8450C1EDB5470B0986370E5DF7541D59A2F6508AA0EE5131C6C2376FC87
+    size: 911490
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/4a1e0172d3c2b48ee4d9319631113a87/15369c02f0856bfd3d570cd8a8107b55.cab
   - fileName: Installers\1623efce9d1a46396798f44a7bc769e9.cab
-    sha256: 2469DE3F4180033D2BD3CDC4A6D54485B7150B851890B7BB0C9E970CC629F9EA
-    size: 456944
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/bb4f36c1edee0e614be4b72164a8bec8/1623efce9d1a46396798f44a7bc769e9.cab
+    sha256: 33CE42EEC8982A8C1C33A3C695045E595B0DF09DCAEB766B30CA5FAADD93DC1E
+    size: 456911
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/760b322e7bdf4980840556f1daa149b6/1623efce9d1a46396798f44a7bc769e9.cab
   - fileName: Installers\16ab2ea2187acffa6435e334796c8c89.cab
-    sha256: BCA91D517D56993B72A55C456411A178C3446844085BBC0AA9154D8355D34906
-    size: 666824
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/58c4e40c82e3ad7938a1916047900077/16ab2ea2187acffa6435e334796c8c89.cab
+    sha256: D29E10BB5CE2E28957B5635B6EEB6A491FDB311C925B398443451F953F399BC2
+    size: 666803
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/d56a87b40b1de33c2c39a1a3d009e148/16ab2ea2187acffa6435e334796c8c89.cab
   - fileName: Installers\19248fabbb2098a7b88c4a2786066bcc.cab
-    sha256: 00772C510BFCD0B3B906EA1C363344ADE63A00E35885CF134EE9F03D6C0B50C7
-    size: 782646
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/b4e1f8750c8db014fdd342975883acc0/19248fabbb2098a7b88c4a2786066bcc.cab
+    sha256: 6CCBD0B699534B8CC24784E9FBBF242196332053313075C334C126E90C8A21E7
+    size: 782585
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/2e009aabfde2988589258b1c79f89411/19248fabbb2098a7b88c4a2786066bcc.cab
   - fileName: Installers\1de82860db02f762c5f65a73daa31f3e.cab
-    sha256: B397CFD24191662FEC589C39FE1CAAD1AF6CD4E7733CB7260826AAABF5DE3AB2
-    size: 14272415
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/b702fbb0544de373970c1cca19225cad/1de82860db02f762c5f65a73daa31f3e.cab
+    sha256: 317270932AB9F5F30817BDAF788791CE071439BD8FAB8960AD180C2BD9EDF34C
+    size: 14700335
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/da1f3b8b16c2110601ac7359f653873d/1de82860db02f762c5f65a73daa31f3e.cab
   - fileName: Installers\1f32e9acf0bb1e6a5f485cd8670cd8e1.cab
-    sha256: 0C4D136E9A78417F38E402625A53781C849CC66DBAC4EAA80805C2BBC3AD0D29
-    size: 22076
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/6c92bbeff929414eb130f0db4d1656ee/1f32e9acf0bb1e6a5f485cd8670cd8e1.cab
+    sha256: BFD13FA127622764EEAA3DE5572F6C850A735896CF515E4575359915EA868A3E
+    size: 22175
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/6012a993d8839e256725bded1e0c3fa3/1f32e9acf0bb1e6a5f485cd8670cd8e1.cab
   - fileName: Installers\20e79882c0bf37840a94a4ce06bc571e.cab
-    sha256: 929DC2C1B5C6EA1B850FA51F710A6EA6C98A97C659778F7AB2355D033B394C44
-    size: 2020102
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/60f3a09c35888c41683b6995a5a73a8b/20e79882c0bf37840a94a4ce06bc571e.cab
+    sha256: 115EF4C40F07C8694A1E747423F505F7C10B59E7A8872BE2572918E426FD4B52
+    size: 2020557
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/c769769bb83c2e2e0b9815c51dc88887/20e79882c0bf37840a94a4ce06bc571e.cab
   - fileName: Installers\220daf459e79c5d26366654b1b482e87.cab
-    sha256: 70F73A7F6E7697D2D1EAD70A03A16DE4EE627F8EC4EC667F215B39FBA175ECAD
-    size: 97416
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/0587aa3f911eaa4da3e4211af4457931/220daf459e79c5d26366654b1b482e87.cab
+    sha256: 2CBF336CB3B14F59D9259BF2D3786BD3FF48FEFDF041F8BC29AAA62CCD65BC8D
+    size: 97459
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/b597af63e6bf3632c6bfb280004546c6/220daf459e79c5d26366654b1b482e87.cab
   - fileName: Installers\262fa3187c00a1f695e0c3eeb7ecf423.cab
-    sha256: 3FCA53E9E281087ABDD6C1CFB142010B456F5BEDCA951B677C3B514B662FEB88
-    size: 1606338
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/eaac881422f98b351338677817eaef52/262fa3187c00a1f695e0c3eeb7ecf423.cab
+    sha256: 678CD941CF0E11C860514E4E7C042CBFFCBA58AEC6ED4156163E90C735AB3B6A
+    size: 1606317
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/a52d8cbded8afa8246e7ea93295722eb/262fa3187c00a1f695e0c3eeb7ecf423.cab
   - fileName: Installers\2630bae9681db6a9f6722366f47d055c.cab
-    sha256: 1AB1CBF13126668C293D3FF04912445E654DEF3E5FDE388BFE0000C398CC4466
-    size: 7616225
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/d74b283a693ba2fdffbd0374564c079c/2630bae9681db6a9f6722366f47d055c.cab
+    sha256: 8AF58A5DDEB256460C1563040C2EB6FBABA98CD9256C43B7ADA85ED691B482D5
+    size: 7616218
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/3ae346135327a40e607f140ce3622d2f/2630bae9681db6a9f6722366f47d055c.cab
   - fileName: Installers\263104e5ce3a72f68151a93d88a3f22f.cab
-    sha256: AAC788C9FC4895BF76718DE20CA9DEC6E450BE6EEFCD9179FA51DBEB86AA6A52
-    size: 19254
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/5a142a7354d2615bb2abdce774cb22d8/263104e5ce3a72f68151a93d88a3f22f.cab
-  - fileName: Installers\26ea25236f12b23db661acf268a70cfa.cab
-    sha256: AB5A9357AF4CE36A9544437058BF84C13AF1171CAD9D8E005EEF07303CA831EB
-    size: 93991
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/a15375db41cc4dc3cc199e598732f099/26ea25236f12b23db661acf268a70cfa.cab
-  - fileName: Installers\2a30b5d1115d515c6ddd8cd6b5173835.cab
-    sha256: DCB366792EFD60CFBE677F5C557747BB9B5BC805BB728DD4BAB54BD0944771D5
-    size: 94035
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/ac4265dd9d3fb90fb04fc4dc705aac14/2a30b5d1115d515c6ddd8cd6b5173835.cab
-  - fileName: Installers\2dd914bb5abd9365f932d15eede09c52.cab
-    sha256: 1A2F69870584018A39E60B5E18A2C6C9C1302AB6899AE2FDD115D329F4ADD95D
-    size: 1369391
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/4d003231fbef5a1f3b85e22b065bbf6e/2dd914bb5abd9365f932d15eede09c52.cab
-  - fileName: Installers\2e876dd22fa5e6785f137e3422dd50ec.cab
-    sha256: AA116CA4586D9E9B8E29168D118C558D86AE1ABE8E3CD6338CDACEEEAC525393
-    size: 9240183
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/b3223440c1017148747929ae0855c689/2e876dd22fa5e6785f137e3422dd50ec.cab
-  - fileName: Installers\306e26e920fd32cb02bf538b4e799a0d.cab
-    sha256: 8CB11551978A712476C2792E3D4ECBD31C89F02265ABF944322EC3D2B891906E
-    size: 169262
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/27bfac957d9fecad0563a9a0c65ea7cd/306e26e920fd32cb02bf538b4e799a0d.cab
-  - fileName: Installers\3e2f7be479e3679d700ce0782e4cc318.cab
-    sha256: EE7D961DEBC4B7FBAAF2E56EDB732D81DB5ED6C6852983123E023FEA85130FFD
-    size: 32873230
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/b5ea2c6cbb20236e60e59b5fb99287f1/3e2f7be479e3679d700ce0782e4cc318.cab
-  - fileName: Installers\4035a83dc8e73244d15d1196d55059c3.cab
-    sha256: 59B90696115A3978373DE1EA0F5CD8A1715085EBBC45FC501B4607CFD62E802D
-    size: 19408
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/6e78b9982b2503619da3e096bc1b765b/4035a83dc8e73244d15d1196d55059c3.cab
-  - fileName: Installers\40d92f424eff54b03db4c51669f9a8d6.cab
-    sha256: 21D8BEC6652E21791041C25A64BFDCE0EDFFC8BBEF3A8CA670E5FF3AB38BE038
-    size: 194266
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/526e7231a98c76652c728563252df845/40d92f424eff54b03db4c51669f9a8d6.cab
-  - fileName: Installers\43d52fdb99b86048e15fbd34f5b99cb5.cab
-    sha256: EB85DE9DB45D8F78F3D4CF1D46B78D01DB68839BE4EEC748FDF46FE78335A0CB
-    size: 253091
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/23517c55cb910f00c93b4da0193322c8/43d52fdb99b86048e15fbd34f5b99cb5.cab
-  - fileName: Installers\43fd989a0684600a8c4dda7a6373eb59.cab
-    sha256: 2169BD653967A85C6DAC3A4514E6728CE8136E5D033A7165F7A7616853412888
-    size: 47681
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/cb507b5b9cec9a4d69fed45c9f94cde0/43fd989a0684600a8c4dda7a6373eb59.cab
-  - fileName: Installers\44472e2321abba45e828de25827264a3.cab
-    sha256: 767A037609B6E8574A250278CBFBC842836EEF70CE757EBCFD62E0043FFC01AD
-    size: 23263
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/ea274097dc298674d45878b9f9a258c6/44472e2321abba45e828de25827264a3.cab
-  - fileName: Installers\463ad1b0783ebda908fd6c16a4abfe93.cab
-    sha256: 9A14E4F5576E8B4C26B8F3423E7793BBD7232D43D6C22C78E0543646E7767312
-    size: 217774
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/f4adab1afa7aee28472218799d747691/463ad1b0783ebda908fd6c16a4abfe93.cab
-  - fileName: Installers\47133212c2f5ccf49392d7762293a075.cab
-    sha256: 0AA278E9D16D3AA3F091607583669F0DF70475B11CD23813774E6A127420C6DF
-    size: 1632453
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/ece865bd24a761f8e7a95b104be292db/47133212c2f5ccf49392d7762293a075.cab
-  - fileName: Installers\4a4c678668584fc994ead5b99ccf7f03.cab
-    sha256: 3ED6BEED89976BECA204FB9BAB907AF497C6104957584B156B6E1F8D3EFF0B45
-    size: 437895
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/4fe58bf86d637fa761479f9cc52593f3/4a4c678668584fc994ead5b99ccf7f03.cab
-  - fileName: Installers\4ad4df991deb0eaa1f79f896b959d580.cab
-    sha256: F3BEF542246F87B09CFB85246DE41FF7371D9F206B2BEE7840E207F95A0573A5
-    size: 1546944
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/3c73d6fc71f32a6c7aca41424fdc0fd9/4ad4df991deb0eaa1f79f896b959d580.cab
-  - fileName: Installers\4c59234340aaf3a96ec480c1aad8d179.cab
-    sha256: 11DEC68793EAEE301EBE90F1CEF0AF44E69A7060E026D8625CC470CE0990ABED
-    size: 609557
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/4e36fcec876a141ed52dc4b9ede5cb0f/4c59234340aaf3a96ec480c1aad8d179.cab
-  - fileName: Installers\4dc69cc131b3f4fdde53e76d759509dc.cab
-    sha256: 219A2D2D06F3C2AD0B455D78A0BF445F7BF5CB26BAEA96A8ACC68CB7825C82E4
-    size: 464642
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/a2c7381894aacb5a90647117a38931df/4dc69cc131b3f4fdde53e76d759509dc.cab
-  - fileName: Installers\4e2dea081242e821596b58b31bc22cca.cab
-    sha256: 03F8E52DB7C2AB3555735D94907E4AF7CBB2A412FE7C90F5FCF4E0271F482655
-    size: 18666
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/da2185c96b636011e6723236d05d94ca/4e2dea081242e821596b58b31bc22cca.cab
-  - fileName: Installers\4ec14c5368b7642563c070cd168960a8.cab
-    sha256: 9B513780E631553801ADBEDE1284B170268C2920BEB68175E6C149AA7E3D134B
-    size: 1883818
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/1b28d2bca1f3968e7e8277fddb36f446/4ec14c5368b7642563c070cd168960a8.cab
-  - fileName: Installers\4fe4c8b88812f5339018c0eef95acdb9.cab
-    sha256: F212733C37578A22A627EEBA596C41DA3F10D1577E29307C4D072898D3A17A4E
-    size: 26607
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/3a329ae6e3b538e4db9cd64cef03c3af/4fe4c8b88812f5339018c0eef95acdb9.cab
-  - fileName: Installers\50ce7925226cb6ab8e0fe9ad9fd58433.cab
-    sha256: FC2785B67C8DE6F18DC536F13196A8FD8ED91471038E5EDA9DFF65AEC9F34F65
-    size: 7429173
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/3762381001e2a54a5a5716b27d2b105d/50ce7925226cb6ab8e0fe9ad9fd58433.cab
-  - fileName: Installers\53174a8154da07099db041b9caffeaee.cab
-    sha256: 26A7F855FB98B23FC70DE4CFD99623103392EAABA815AB18DBBD78BDB8FAA988
-    size: 15722093
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/2651de004689fce1ec19e32a7e9d1b98/53174a8154da07099db041b9caffeaee.cab
-  - fileName: Installers\5509e4710313421be8d5e7cfbfde4d30.cab
-    sha256: CA9EB6754BEE2D0B22DE9E307810ABAC82A04CC408280942F28EBDC8DE6CEB2F
-    size: 1045628
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/29b31409fa08a3f6beedd398e4bf55f5/5509e4710313421be8d5e7cfbfde4d30.cab
-  - fileName: Installers\559dbc3a49a69c6adf60b1c87b4df71b.cab
-    sha256: E36443223C188A96F0850C84550B5A2526681C9CE1E0AF6EA696C34CE48ED15E
-    size: 18582
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/1d679a8d210f0d74ac4bce4cac7517ed/559dbc3a49a69c6adf60b1c87b4df71b.cab
-  - fileName: Installers\563138901adf40a699df4654138ac397.cab
-    sha256: 739A6978D3AEB801493F3384AB9065CF13DB450983792C97D0FD3C617716ADC5
-    size: 1434555
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/ecc0d787216272ad8791a0a12b498d05/563138901adf40a699df4654138ac397.cab
-  - fileName: Installers\56a114848fda9a7e47bad4b3fc4be9a6.cab
-    sha256: AAACB398CD964F7C5E122FD11E5E307773FAB7E056408E562EF4A0C362FE95E1
-    size: 7786657
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/6de6e33d1174a6ddb52bb92f4a4e8c66/56a114848fda9a7e47bad4b3fc4be9a6.cab
-  - fileName: Installers\576cff9c50e8085ab8d9c28ee12bac3e.cab
-    sha256: 121D13E0EF2C5E01D831CD69A42B31D240E1221C9ABA5D97500D3455D4E30501
-    size: 666785
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/569f2129e683aa7bacc7d1e2f561792c/576cff9c50e8085ab8d9c28ee12bac3e.cab
-  - fileName: Installers\58314d0646d7e1a25e97c902166c3155.cab
-    sha256: 0F52A8B02348AF47F08A7442BEECD8E55B0C58FBF55A930855EA0D653B8D686A
-    size: 16641361
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/4a7fd7d75fe74586abf16d54df28222a/58314d0646d7e1a25e97c902166c3155.cab
-  - fileName: Installers\590d28783ff280b8b0016c3492433241.cab
-    sha256: CC54DF23DF1BEECE75CCFA8823F27D5F7DAE74D59359DE77787895E744E51153
-    size: 9020636
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/19e604c4dec954fafca107942abfc484/590d28783ff280b8b0016c3492433241.cab
-  - fileName: Installers\598442d9f84639d200d4f3af477da95c.cab
-    sha256: E8993086254D084DEA6222CC21B735E390A0410A549FC43B07E9D3B0D9C5C783
-    size: 59271
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/6ee3f8e44cb5468b568f52da03a31dd1/598442d9f84639d200d4f3af477da95c.cab
-  - fileName: Installers\5a22e5cde814b041749fb271547f4dd5.cab
-    sha256: 5D79FC417E1B741010C2E61C037FFDD85058709A6BABD3DF250255B017C19F87
-    size: 15555092
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/97e69c700020a3dcd3bb38eec4f1a849/5a22e5cde814b041749fb271547f4dd5.cab
-  - fileName: Installers\5c9ecffb06ed5f4fe5fb7db86bf7328b.cab
-    sha256: 553B402A8072F5DB4D79367B13877764539265ECDB9A4EE79ED502D7ADFE33AB
-    size: 368421
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/9183f639765838513ba5de62edb79fc1/5c9ecffb06ed5f4fe5fb7db86bf7328b.cab
-  - fileName: Installers\5cf1d61a223a02ff2f52fe05f058d52e.cab
-    sha256: 3325C946F38CA5ACA3C4050C74FEDB6419AB0B8BCD87FBD67F7F43AD5CCA9815
-    size: 1242819
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/1ac555124fb958c1a358b74492d00ec7/5cf1d61a223a02ff2f52fe05f058d52e.cab
-  - fileName: Installers\5f6cfec263cd265cf3b0d97fd78ddf05.cab
-    sha256: 210D307723D3E7650914F5591EEFA8A516972BA2906514C36571401D0F947BB6
-    size: 3100156
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/6fb94e805b7c0c03de79525968e949c4/5f6cfec263cd265cf3b0d97fd78ddf05.cab
-  - fileName: Installers\61d57a7a82309cd161a854a6f4619e52.cab
-    sha256: 9C3D6AFC6819AB4A517696749D01207EDD01AC856FAF81628AA3A895B42DB246
-    size: 9506610
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/ff415200eab419bd9e14e73750f83bb6/61d57a7a82309cd161a854a6f4619e52.cab
-  - fileName: Installers\66c7c64126fbf84f47ccec556d149b12.cab
-    sha256: E24291BE40685AF074D2405E88C42FAECCC922085A88FF005E138886524D45D5
-    size: 18997
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/9488dfdecd003a275e522c2089701185/66c7c64126fbf84f47ccec556d149b12.cab
-  - fileName: Installers\67c9fd1fab36154e6e7e429610cd67c8.cab
-    sha256: CB48511DD7CF833D6DEC6EBB0FC39DF548F198E69EFF9F803A1A2F9BACEE642B
-    size: 771061
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/273dd093456c75efc4b49fd252cd58ea/67c9fd1fab36154e6e7e429610cd67c8.cab
-  - fileName: Installers\67fb2af3d2219b403e419535a547c019.cab
-    sha256: 1ACE18C1178942BC4904283D3FBC758EA887AD0F048A6C9475ED257FD2742082
-    size: 99402
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/37a467133679909a116b8d4615b0b433/67fb2af3d2219b403e419535a547c019.cab
-  - fileName: Installers\685f3d4691f444bc382762d603a99afc.cab
-    sha256: 5BA4A2C34253C0DFE2C5A4E49CDE6AF4800B0CD7326F75F118E7AF905B85CC76
-    size: 1153453
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/f861cb1ba1a6924c5fedbe0d3fdc7b7d/685f3d4691f444bc382762d603a99afc.cab
-  - fileName: Installers\68a5a2b14625f935761325cddfadca11.cab
-    sha256: BAC830C76CBE24847DD7C9732919988EB190D8F442A96D7293588D0D2A0C642F
-    size: 2434986
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/e6c5bf3bd3e86ca45205bd9f8df8e2e8/68a5a2b14625f935761325cddfadca11.cab
-  - fileName: Installers\68de71e3e2fb9941ee5b7c77500c0508.cab
-    sha256: 42C23478CD0EE52DDCBC76FADF1F679479BB506AF6C972B2AFFB015702611378
-    size: 18797515
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/78ff4c18657ed648a48038907775421c/68de71e3e2fb9941ee5b7c77500c0508.cab
-  - fileName: Installers\69661e20556b3ca9456b946c2c881ddd.cab
-    sha256: 631D45C77AEB9CC147C537C3232ED984D5ACB065B2E94567E50BB93D6B9187D1
-    size: 18726042
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/253d8581e7444fa786c8d70fb7943bd1/69661e20556b3ca9456b946c2c881ddd.cab
-  - fileName: Installers\6b12414fdb1b4978419abcd383206c09.cab
-    sha256: 16EF3A2C64F80D93499011208735EE8C83900A7AAF812E4BEA13168079819B91
-    size: 18581
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/ac6d4d160fb1d4756832e7abdcc5dd00/6b12414fdb1b4978419abcd383206c09.cab
-  - fileName: Installers\6b5a91701fdb98ac8bc4af6e238e0390.cab
-    sha256: 95892A4FC5C5EB1824AFD9685BE572B3EE040287FE8E29953EF45BECF61B28A4
-    size: 2004720
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/5368265ffbf25f822170cd62d153b5b7/6b5a91701fdb98ac8bc4af6e238e0390.cab
-  - fileName: Installers\6e86d5003787b5a44d77f0142b20f2ff.cab
-    sha256: 29896D0527BD5BA747715312C1B441A46D48AE1B90B96E056F34C95EBB96B5F2
-    size: 104294
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/37dfdf8ecfd513e430825f138c5c7693/6e86d5003787b5a44d77f0142b20f2ff.cab
-  - fileName: Installers\6ee7bbee8435130a869cf971694fd9e2.cab
-    sha256: FFDE53B5617E55E490C0B8415E46BCDCAA8CD35B8A6D251579EF1AA5A00D28A3
-    size: 26230219
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/9e71823e3166e26d14254fd65581f4cf/6ee7bbee8435130a869cf971694fd9e2.cab
-  - fileName: Installers\703316c9de0a32acf316d03b1cffc559.cab
-    sha256: EC16DA5411CD81CEF3064D9EE331AF997354B5B093A1FBF5ABB6F626A46F700D
-    size: 9450791
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/6dae9c0d04e19c1d00b638d9705dcaba/703316c9de0a32acf316d03b1cffc559.cab
-  - fileName: Installers\73b80f421d7f3df5a71bd772f56bf3ae.cab
-    sha256: 3D24E7B2490E2E132D9AEB7E830622F7C51C87C311E57213E5C1D53B9964B41E
-    size: 98197
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/80f641f67b68a7a7833f88c7728aee7e/73b80f421d7f3df5a71bd772f56bf3ae.cab
-  - fileName: Installers\766c0ffd568bbb31bf7fb6793383e24a.cab
-    sha256: B5674B29D0F3F0553325A71F8F2EE9A138F46B1DD75D20A4D153B75800BAAF7E
-    size: 8159318
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/0789d33d4e00c349862492302b710528/766c0ffd568bbb31bf7fb6793383e24a.cab
-  - fileName: Installers\78fa3c824c2c48bd4a49ab5969adaaf7.cab
-    sha256: FD7C242959E2677D5A89BDA30FF5F201D33E32981ED43C8F9B5626C010EB6606
-    size: 55088983
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/aa7ef73fcbedd277b5fdc38d8fc4b710/78fa3c824c2c48bd4a49ab5969adaaf7.cab
-  - fileName: Installers\7afc7b670accd8e3cc94cfffd516f5cb.cab
-    sha256: D3584F5065A5FEF7EF89FEA891B207E66D88A373B1AD649C64CD32A51B2BD6AB
-    size: 1053461
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/a55b729226592319d9121455dfdcf18e/7afc7b670accd8e3cc94cfffd516f5cb.cab
-  - fileName: Installers\7c3667a45d36470bf3cb648878a6ac2e.cab
-    sha256: 12F34DAFCC48A3A0E121DC12E3C9C91040F40B4360C517881F4C88CDBCE3AB44
-    size: 778261
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/932a4597cf2c43eabd97609233dfa877/7c3667a45d36470bf3cb648878a6ac2e.cab
-  - fileName: Installers\8016f7584c8fbeff0b032c65f4173e78.cab
-    sha256: BEE928085CC3196942D68DB9736AD89858450EDB34BDDE8946263236DBA0CCB7
-    size: 41215
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/ec6d022f5eb96703a56b11741be9ea4b/8016f7584c8fbeff0b032c65f4173e78.cab
-  - fileName: Installers\8038f3cc95dc4b7d0346cb2ab7e044ff.cab
-    sha256: 704E2AACCC2639593D891DFDDF6F19410C7D8D6E5A1C68E124B1A8040A794744
-    size: 1053632
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/998467f6f5921a74cc2dfe0459d0b9ef/8038f3cc95dc4b7d0346cb2ab7e044ff.cab
-  - fileName: Installers\8125ee239710f33ea485965f76fae646.cab
-    sha256: 86474514BD28E6FFEAA7D0FAB9830AC6C2A9C7FB24CF8544B91525CCB5500F0D
-    size: 5762915
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/9e76a12f04d4cf98b80c1ad02e2c1efc/8125ee239710f33ea485965f76fae646.cab
-  - fileName: Installers\818d2d3634f0efb6e64d7e7c8ca5f98b.cab
-    sha256: 3AFCDBF9C91483584FF9687DC0C71C0C9DC21252CA4D96AE5BBF339C08654C97
-    size: 113833
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/a811792d58f871ded095cac79e9c4f91/818d2d3634f0efb6e64d7e7c8ca5f98b.cab
-  - fileName: Installers\838060235bcd28bf40ef7532c50ee032.cab
-    sha256: A1A61A00398B5039F96E0348131D10307DF05A475637602D487398A616C4CA33
-    size: 19201
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/629bd97a9445c017990e458940949814/838060235bcd28bf40ef7532c50ee032.cab
-  - fileName: Installers\89d9bbd87f7a5560bafa520a4ebfdf17.cab
-    sha256: 82F734143AA1182FD5080D5CEB8220A9EEB8C0C06D5FC06363AE91B0D12B4CAD
-    size: 91566
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/309bc32c42945844e9347500b3ea2edb/89d9bbd87f7a5560bafa520a4ebfdf17.cab
-  - fileName: Installers\8ce0662e0e014576121e526f53d8f6b5.cab
-    sha256: 09A79F1541357567A9B5EF66B5916AF6C3B48E170336764DAE3B91DD17538DC8
-    size: 446204
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/7ab642534b0696bcfd9811738f6e117d/8ce0662e0e014576121e526f53d8f6b5.cab
-  - fileName: Installers\8da73ae89e24f0b5cdf1787799c2a65f.cab
-    sha256: 91DAB0215AEC0D4BD2BC391BFF0712B7FEA36BF53CDE066D464DD6D1EF988BE9
-    size: 1503710
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/34e5644d32c57a242e478a279704e091/8da73ae89e24f0b5cdf1787799c2a65f.cab
-  - fileName: Installers\8daf1f236e631041cdaa802ddb9ccc3d.cab
-    sha256: 18F30536407FA34C31EC5D3242C27D84D03BA7730EE5D4AFC079B4E3801E25DF
-    size: 112384
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/17500de33a08d7c437f87d9bd1908b7f/8daf1f236e631041cdaa802ddb9ccc3d.cab
-  - fileName: Installers\8e4755178e6b5bcba8d3538c3630b7a5.cab
-    sha256: F88AD9110F59B2C5167519D754A563FD72A4FAA224109802BC8D30977DAB279E
-    size: 1143254
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/4d6234c3af65b18fb45bd801e41301f7/8e4755178e6b5bcba8d3538c3630b7a5.cab
-  - fileName: Installers\8fe3c1ca244ece932599eb0b61855d8f.cab
-    sha256: FEA3B9CB08B3EE4E2200C78DE38D9E68EBD9AB2314F94632FBE653885CC0C4F7
-    size: 95293
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/ac43dac7b7cf9091eda954a763566901/8fe3c1ca244ece932599eb0b61855d8f.cab
-  - fileName: Installers\90e1202895672ce81992e71be30528cc.cab
-    sha256: 78D5B2CD2D0FE88D1466359D1EE3D000D435AF70972092E3D172424C59C9CB6A
-    size: 357397
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/e296bbb96e3e3993099850885c56d54c/90e1202895672ce81992e71be30528cc.cab
-  - fileName: Installers\931721e121ef91707ddcb6cac354d95c.cab
-    sha256: 3286AB185550B5683AD2D6BF0749EF018F8DBBE3C227FD7D6CD99ED3B2B58D25
-    size: 18702
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/2289f7c3649f963bee4128b15837ed7b/931721e121ef91707ddcb6cac354d95c.cab
-  - fileName: Installers\93a74a1d34a22ae9d2e1ccc5208ad21a.cab
-    sha256: 11500847BDD5CB076BC6D71A3709952C12550AB6FF90B82E919076203BADC76F
-    size: 482713
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/559c0006d2e0d22ed5f5c8b681a9dc07/93a74a1d34a22ae9d2e1ccc5208ad21a.cab
-  - fileName: Installers\94521fd1a9c57258998d60ce60dc43c3.cab
-    sha256: 6D55921313A1EFA414B8533F81BF1A304822B7C76B8B099C8FEE93A25ADD0633
-    size: 1905810
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/682bdeda853456c26f65b68dab00cca5/94521fd1a9c57258998d60ce60dc43c3.cab
-  - fileName: Installers\948a611cd2aca64b1e5113ffb7b95d5f.cab
-    sha256: 6F108AD98E781F5B6EB3BEDB4BA63517E4A3D747FFCB10B9997EB0AC5BB15B60
-    size: 880906
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/692ce61af877b932fc703da21bdd577c/948a611cd2aca64b1e5113ffb7b95d5f.cab
-  - fileName: Installers\96076045170fe5db6d5dcf14b6f6688e.cab
-    sha256: 99AE707D0186836E4790AD92A456DDD791A7959BCCC16C5000FED764390E3A0C
-    size: 678659
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/fe760f295195d1ac060d231bc46983ce/96076045170fe5db6d5dcf14b6f6688e.cab
-  - fileName: Installers\9a7145bc3b132e5da6d44c0ab4a1af70.cab
-    sha256: BB83469F37B00136EA9FEE6A9A11719CDD271757D749E080B06B3457E9D4D509
-    size: 7914071
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/1f647053f614d516269212e269d3e2ba/9a7145bc3b132e5da6d44c0ab4a1af70.cab
-  - fileName: Installers\9ba47e440ec2fbe9a3d32a53bf0f68dc.cab
-    sha256: 00E8371EF0536EDB83B098CE9D02D218961A4DC6B055255DBFF124DAB479CC41
-    size: 469933
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/e56573b1eb8263539e6b56fe1d1af45f/9ba47e440ec2fbe9a3d32a53bf0f68dc.cab
-  - fileName: Installers\a17683486ace64c3f9a1cacb81ee0260.cab
-    sha256: 32847728C52D5522E770CC2C2830D9FFFD01C9B327903196D16E9417A5A63A2F
-    size: 101687
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/2e7e435dbb8f9ad9cd0552b94d240cbd/a17683486ace64c3f9a1cacb81ee0260.cab
-  - fileName: Installers\a1e2a83aa8a71c48c742eeaff6e71928.cab
-    sha256: 127A0C186EE26235B1458558345A0339490EBE19AF7134FFF36CB40C1E9EF3FA
-    size: 27867333
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/deacaedea952c11a1cc5fa75e8911f30/a1e2a83aa8a71c48c742eeaff6e71928.cab
-  - fileName: Installers\a330840cf08ad4d210703c9acd1bf2b8.cab
-    sha256: C2EE2E87493E8849E8ED33911DC470120384C4D474F4D7C5580554B7D1110B15
-    size: 1078438
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/100d68d7eb8bed2b020251f78dd66f59/a330840cf08ad4d210703c9acd1bf2b8.cab
-  - fileName: Installers\a35cd6c9233b6ba3da66eecaa9190436.cab
-    sha256: C162897ED655F94A59CBFCA35075F68E74161921B768039F99BD6832A82CCC25
-    size: 1919755
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/79438111b04047c233d602a21cafb534/a35cd6c9233b6ba3da66eecaa9190436.cab
-  - fileName: Installers\a68c0988d16ee124783efd98074dcbf9.cab
-    sha256: C50B5B46A792A9A37E38CF4BD5DA5E6BF6FAD242F62F09912F1725E5F44FF1B7
-    size: 19254
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/3c90e0ff83bf111d0ed3c91889a658fa/a68c0988d16ee124783efd98074dcbf9.cab
-  - fileName: Installers\a76e4219ecb0f1c0006a6fe080c54ad9.cab
-    sha256: C70E89A4E21BFCDD5C5A58AE8D6B8EB9A74C374F580B94B8B7B952E30FA8E51D
-    size: 8317310
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/bb0feb7867038738c5ef365c2181b63b/a76e4219ecb0f1c0006a6fe080c54ad9.cab
-  - fileName: Installers\aa9c58552bdb82dae4ed48ece081cfe3.cab
-    sha256: FB392A7B69C97B780015B5AA6C20D8CA20036D18B2357FEC0FB88896F9004BF6
-    size: 1575753
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/5f623a33d5074185817e3269f8be0c75/aa9c58552bdb82dae4ed48ece081cfe3.cab
-  - fileName: Installers\ac4ddfcf1101c483559a5f6e36f1ef2d.cab
-    sha256: 76897747671F39089F475E87496A30E1159DC82BF88C9BF00806D5244DC7E2A4
-    size: 20872
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/ffe31b2a06fd6ee151ab3bc6f6acca02/ac4ddfcf1101c483559a5f6e36f1ef2d.cab
-  - fileName: Installers\Application Verifier arm64 External Package (DesktopEditions)-arm64_en-us.msi
-    sha256: 376A844D0C9A3C44C2582E0D06B77F302CCF79C9AB9F2187D338AF602E30B83B
-    size: 593920
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/197ae68a108a2198e043a486d683045d/application%20verifier%20arm64%20external%20package%20%28desktopeditions%29-arm64_en-us.msi
-  - fileName: Installers\Application Verifier arm64 External Package (OnecoreUAP)-arm64_en-us.msi
-    sha256: 7A35ACC6C24482823D0425393D9BCE66EED8BFA2D2F590B0BE5DC1DE750A3C28
-    size: 1626112
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/c3f9b02f30362abe3ca45962517e7baa/application%20verifier%20arm64%20external%20package%20%28onecoreuap%29-arm64_en-us.msi
-  - fileName: Installers\Application Verifier x64 External Package (DesktopEditions)-x64_en-us.msi
-    sha256: D01BB8DE83BCA3DE0210C9320AFCD5765F2EC3D6853614EC73A3465AAA873853
-    size: 688128
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/5ab10c8d09de9719fb6df58c90b8fc08/application%20verifier%20x64%20external%20package%20%28desktopeditions%29-x64_en-us.msi
-  - fileName: Installers\Application Verifier x64 External Package (OnecoreUAP)-x64_en-us.msi
-    sha256: 73FC224101C92BF78A5C30C365FF6A2D5D4FE346591337649C2E72A38E935BE7
-    size: 2424832
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/aecb5c217d971220063c438db117e0f5/application%20verifier%20x64%20external%20package%20%28onecoreuap%29-x64_en-us.msi
-  - fileName: Installers\Application Verifier x86 External Package (DesktopEditions)-x86_en-us.msi
-    sha256: 4071DE13BC767A348BE457D8548A89C644E1367E0E40F83F96D2EF9E86A9D273
-    size: 565248
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/974d524f5b9323ac00c6846eb0d923ba/application%20verifier%20x86%20external%20package%20%28desktopeditions%29-x86_en-us.msi
-  - fileName: Installers\Application Verifier x86 External Package (OnecoreUAP)-x86_en-us.msi
-    sha256: 34ED72604EBE9AFE46FCC3BBEB4CC11274D24E9888BBE98C9B7561CC4EB582D2
-    size: 1335296
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/6bf2e72ed2ba277dcbbeabc1e99404f8/application%20verifier%20x86%20external%20package%20%28onecoreuap%29-x86_en-us.msi
-  - fileName: Installers\b0656253ef2f688d2982eafa2e73f621.cab
-    sha256: B867802578C05A0DFDC7397741A54B6F7FB3E80F0887592427A1A5B6F580588C
-    size: 32696
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/d3cb67f021550942db6a182ff3e05ccc/b0656253ef2f688d2982eafa2e73f621.cab
-  - fileName: Installers\b1a824e2952532fe8fd0145f5d148d25.cab
-    sha256: 08970C68256F5C86ED8759C8B0C7305765BBA551336D60A8359A0973E6854874
-    size: 410126
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/eeeda71bbd76046d828064d7a034ad6d/b1a824e2952532fe8fd0145f5d148d25.cab
-  - fileName: Installers\b1a8ecf890b4ffddd05e8c9422f55db7.cab
-    sha256: 30E53CDEDD019E9AA2C11130EB3CF60D6AAF1E414AA23CE60676AD1EE2261EFF
-    size: 159459
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/15aa99e1d99995dd3d9b1b4a02d7d0cb/b1a8ecf890b4ffddd05e8c9422f55db7.cab
-  - fileName: Installers\b2f03f34ff83ec013b9e45c7cd8e8a73.cab
-    sha256: E1049610C899389461BC754CFB916CF6B1D7FD92196382A2748CAD609097D2D2
-    size: 156943
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/988106c73fec6d66e0db762737ba0b4b/b2f03f34ff83ec013b9e45c7cd8e8a73.cab
-  - fileName: Installers\b4eea6c909a31ab051e6f9b6218beec8.cab
-    sha256: 4FED133B43C4750E995ABA028CD3EA0218C7838E425274A044A4B0EB84AD8E17
-    size: 378986
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/18ee979d7eaba1e49a4931b12cdcab92/b4eea6c909a31ab051e6f9b6218beec8.cab
-  - fileName: Installers\b5f177b84c0ec473cbd69557634b27cd.cab
-    sha256: B7AF995CD9EBD020B500CE15021CCDE4A536B2D8044A01790683B5DC49EFE261
-    size: 18736
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/cf790101bbcdd115aebc63f7f1fd5fef/b5f177b84c0ec473cbd69557634b27cd.cab
-  - fileName: Installers\b80b7321357f7c9f281536f9440dfe68.cab
-    sha256: CB124A9B9BB1FC687F067510967FC8D8B5A5BF8AC83B6DD3E658C2E25384EAA7
-    size: 18953
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/eda9c609b3219e5f0aa6f866e04a1219/b80b7321357f7c9f281536f9440dfe68.cab
-  - fileName: Installers\b82881a61b7477bd4eb5de2cd5037fe2.cab
-    sha256: A6748F83AE1203F222DF6B503355F39D6269A7C6C4B335553203A8BAC8F56470
-    size: 27880685
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/70bf624f267445a7171c69eb33ea6436/b82881a61b7477bd4eb5de2cd5037fe2.cab
-  - fileName: Installers\b913ca15956d14df2d4b1f11ae07885b.cab
-    sha256: 216EF2B5314FC3C6FCB14C1B0FE51B806BC3441D92D712D34140A63B948DA4D9
-    size: 226754
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/82599132d21bbabc7a676fc9937b9bd9/b913ca15956d14df2d4b1f11ae07885b.cab
-  - fileName: Installers\be06eca425b0c3c2f4de61cbfe9bc7a7.cab
-    sha256: 1E0BB50C8581F8BE4262906754FC25D2B545B2BADF0F2819BDF27E4443A7D42E
-    size: 226698
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/34260234c87e568139da6d8d59a3d38e/be06eca425b0c3c2f4de61cbfe9bc7a7.cab
-  - fileName: Installers\beb5360d2daaa3167dea7ad16c28f996.cab
-    sha256: EB07EBB74C83D73760C4D58C5D616B6A7F239060D819A5EC282E33D87C995FAF
-    size: 609250
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/45d73cfda970de088bae470269042d66/beb5360d2daaa3167dea7ad16c28f996.cab
-  - fileName: Installers\c0aa6d435b0851bf34365aadabd0c20f.cab
-    sha256: E4AD9081C32DC4B6386570CCCF83EB53FD9A7A5F7903CABE2A97BE8851A5715A
-    size: 4940303
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/0d006eaa80700db6b601f319a6fb285e/c0aa6d435b0851bf34365aadabd0c20f.cab
-  - fileName: Installers\c1be9e93e88be3f6207f5cc074775d81.cab
-    sha256: 751288ADD89DA53F27A83E4D7C04C1D8A55F213ACAAC655ED6B7FF3215E96A73
-    size: 97664
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/8269ee8171ac1053ce9e16498db54d6f/c1be9e93e88be3f6207f5cc074775d81.cab
-  - fileName: Installers\c2aabf6ea5c1d348ec22f3aeb92f8656.cab
-    sha256: ACB099D078C80D37B2EB3AFCB6EDE17194F57509085656E0E12EB10E3F964C51
-    size: 18911
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/13bedfa6df562004c1e0ba0126d6ee89/c2aabf6ea5c1d348ec22f3aeb92f8656.cab
-  - fileName: Installers\c4d38a2c963178a1a3469ca3d913768e.cab
-    sha256: 521CE14B2E07DB059BC24209A730151C1263E3F857E600F85405219440D681C0
-    size: 21211
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/f27355002b6d973f35396397fb1074d3/c4d38a2c963178a1a3469ca3d913768e.cab
-  - fileName: Installers\cd9128b760c06a010e1621af6528432e.cab
-    sha256: B7D52EA647941FAED95017E0A5AE1AE2FB1EB3C9DB4EBE2CA7C17AE9A0258D1D
-    size: 65480
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/7582d4c8f361dd120128d8f52021ce66/cd9128b760c06a010e1621af6528432e.cab
-  - fileName: Installers\cdea5502a35d09ddfbcda12e3a391dc0.cab
-    sha256: 5F4BA3B831BA43EEC759B7A172D88F8C2F6890B7A76E5D11CC021482C8275EDE
-    size: 7560261
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/e6547ae45a254a52478120d1712dd1ce/cdea5502a35d09ddfbcda12e3a391dc0.cab
-  - fileName: Installers\d117bb4bc77abadc7c603552e122e513.cab
-    sha256: E8649FB2D8F403B744DB37E5A772A85367BD459D2FE4A7CB88611DFFAD246AAA
-    size: 583221
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/b8bb3a849a6998ffc88fe9ce86e58f0c/d117bb4bc77abadc7c603552e122e513.cab
-  - fileName: Installers\d1de88680a8e53fe75e01e94dc0ed767.cab
-    sha256: 7333E502A963326786FBCD0E04B98B8DBC9FFB1361CC6DB710919273ED49D150
-    size: 22007
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/3ddcb71a8d9fcd404582809bafa9d032/d1de88680a8e53fe75e01e94dc0ed767.cab
-  - fileName: Installers\d3e405ab232f8aca8c5b6a48a913d6b0.cab
-    sha256: 982BF21CD0FCE20651B4D507D1ECFD090CAB04E3AC471DDC60F1F3C7D515CC4A
-    size: 934378
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/6ed28570990d6df7d071a80e364e2a86/d3e405ab232f8aca8c5b6a48a913d6b0.cab
-  - fileName: Installers\d67259e233ce975d91c3b02d483becad.cab
-    sha256: E5DDA71201624768967E12C046D41DDBAA37859E794106507B82AF271389E15B
-    size: 13783404
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/8893fd0fef4656d62b6e20c4330cfd97/d67259e233ce975d91c3b02d483becad.cab
-  - fileName: Installers\d95da93904819b1f7e68adb98b49a9c7.cab
-    sha256: 4CD959582A239CC4B1A5E21B7CED478C450D07A771DF21403ADF8AA41B970516
-    size: 42015
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/b57888bac20c9553f3dfb0f56dcbbbc2/d95da93904819b1f7e68adb98b49a9c7.cab
-  - fileName: Installers\dcfb1aa345e349091a44e86ce1766566.cab
-    sha256: 227B6212096CCC9855EEA3A81F63E9194DDCB4058E36A5DAB6DEB066FA49E94D
-    size: 94012
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/fa578cbe2c6d896473710e1be759ccf2/dcfb1aa345e349091a44e86ce1766566.cab
-  - fileName: Installers\de111c3d435b0785b31b28c386ee691f.cab
-    sha256: 08D38CE8D28016E2ED37AB9F9CA5F7B6EA8A24BDC9EC31C1A3EE6A8879AFA16B
-    size: 18982
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/25f5cf440629b68f6dbe4e4a39c947c2/de111c3d435b0785b31b28c386ee691f.cab
-  - fileName: Installers\e10768bb6e9d0ea730280336b697da66.cab
-    sha256: 51B36A3CF1A6B1D84660FE6D53DBAE17C86A7722162171CBC384C1EAF84C2F68
-    size: 7340929
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/dda55399afef17eb9987e1a6460663b7/e10768bb6e9d0ea730280336b697da66.cab
-  - fileName: Installers\e10f8811d44b50885777f56f8272f66b.cab
-    sha256: 9B89E3D425363C1F50331372895E57C09AC6D8C2BB6A4FB812E82FDE09E37E76
-    size: 609213
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/23f667337f64079648a7360dfea8e899/e10f8811d44b50885777f56f8272f66b.cab
-  - fileName: Installers\e24dd258b3bbfa69c0842948fe0dd670.cab
-    sha256: A3EB86ACB7ED657E10D38D422709E9DB28734013CFB1B08924CDC203126606B1
-    size: 166860
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/88e3fe1e7ab720ceb62cc34c815bedae/e24dd258b3bbfa69c0842948fe0dd670.cab
-  - fileName: Installers\e3bfdbe21d5f48f62e6347294e6e8492.cab
-    sha256: 90DEF6991B49C160A420680880B5D455B348754F734F9CED69D537A2C3B2EBBC
-    size: 107245
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/4a8608b4bc3a15aaec125c8bfc8d593b/e3bfdbe21d5f48f62e6347294e6e8492.cab
-  - fileName: Installers\e3d1b35aecfccda1b4af6fe5988ac4be.cab
-    sha256: E23A14C753D368369EFD145115D8ACBD78697488768518221D5C6FB03CE49E4D
-    size: 15449514
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/390794b62a958f3d504ca642656fe005/e3d1b35aecfccda1b4af6fe5988ac4be.cab
-  - fileName: Installers\e59830bab4961666e8d8c2af1e5fa771.cab
-    sha256: 751BC63CFE8374D776C09612D3FFC17D56DA4FD45B78FFCAE9D1186365C822DF
-    size: 203814
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/95e3dd4138a01796393ebacaca2af3d0/e59830bab4961666e8d8c2af1e5fa771.cab
-  - fileName: Installers\e5c4b31ff9997ac5603f4f28cd7df602.cab
-    sha256: 4E54471BC777CBA860FC6A33F3947D88266F6B69B3DD1AB74A1DDFE5227A6B56
-    size: 1931113
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/07f06952edf9f9e1e6b574fa7b027350/e5c4b31ff9997ac5603f4f28cd7df602.cab
-  - fileName: Installers\e87de81a902e0c8cde9e1355c3ff5f3f.cab
-    sha256: F0E8086F969781D4DB7A1DD371F143EF4527F07085212A73E13864DB16BA4AB8
-    size: 1708928
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/0acdf043f73d610879bfc44ad4c45ae3/e87de81a902e0c8cde9e1355c3ff5f3f.cab
-  - fileName: Installers\e89e3dcbb016928c7e426238337d69eb.cab
-    sha256: 7E3A380BFAD2F46CB67C5A468B9A3B551FCDCDCCF872025AB082B04BFB16CE6C
-    size: 920436
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/0c375ffd4e97cfc17fd4c2ddf17e6930/e89e3dcbb016928c7e426238337d69eb.cab
-  - fileName: Installers\e98fa5eb5fee6ce17a7a69d585870b7c.cab
-    sha256: 5D731C7655E984610F43476C6FC87A72BE2682877BD35632DA5B1E97FF7DF427
-    size: 1433533
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/7014c3dba529a250e38b0ea9fc6650be/e98fa5eb5fee6ce17a7a69d585870b7c.cab
-  - fileName: Installers\ec0637c03f99046936d32d51e13a392a.cab
-    sha256: 00E93884BBD82A7F40E6779D1078CAC1BF4A39DA32B266B7CCB5479B86ED05BF
-    size: 18531
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/5daccb28a8c64adf1dd092dafc66c09f/ec0637c03f99046936d32d51e13a392a.cab
-  - fileName: Installers\ec9ab4bbb809719605d27da343b909e8.cab
-    sha256: C8B540F3B76705DFDCDA27AE64559231FF569E25EADDFA1037C7EEA744ED46B6
-    size: 107191
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/b5e42a5b6c1b87637ec3154540a2a049/ec9ab4bbb809719605d27da343b909e8.cab
-  - fileName: Installers\ec9d39539c27e8cf5ad39bffce00c34e.cab
-    sha256: 17A66663934644F3C5F5EFFA2ADF4931B3E9398FF105720FCA88A4539F076000
-    size: 234234
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/ec4438f32e8514ae24bbe27576cb2ad4/ec9d39539c27e8cf5ad39bffce00c34e.cab
-  - fileName: Installers\eca0aa33de85194cd50ed6e0aae0156f.cab
-    sha256: 3F3B246024E19ED8B275711941468BAAA6A5F5FCCB2787F661FA2F849563666C
-    size: 42208
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/eeab55532fdbec60dc27601525f7f9f0/eca0aa33de85194cd50ed6e0aae0156f.cab
-  - fileName: Installers\ed4d1c6b9811d81e3cebc553ae604f0d.cab
-    sha256: B51B9A3896C9E0758DA9108B62ECFB9166360FD69E5F8C51511CF1B2C94310CC
-    size: 18721
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/b016582755ac4b5ed712825597a923c9/ed4d1c6b9811d81e3cebc553ae604f0d.cab
-  - fileName: Installers\ed5aa2f399092df3084cce671f072cac.cab
-    sha256: C6C6FCCC5105D6477140F0121C2A7CE56DFFA8CFEDC2DA0529A8B3BCE4BB13AF
-    size: 1518540
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/29619b6c3af1e802489d81ce3fee3561/ed5aa2f399092df3084cce671f072cac.cab
-  - fileName: Installers\ef4472fd7552490fd759075186ed2ec8.cab
-    sha256: D2305DEC5AEB74B900FD206D2B545EEB814529A2B76B4D7C2E3B7A5B3767003A
-    size: 264109
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/e585f2c56f72307d83910dcd718df0e3/ef4472fd7552490fd759075186ed2ec8.cab
-  - fileName: Installers\f105a73f98cfc88c7b64d8f7b39a474c.cab
-    sha256: C14724709B790547022982A07928CB159BD39C52C8E3B14928E0748D0928A308
-    size: 59281
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/d1ea250987f6464f25d8e93c4bba03d5/f105a73f98cfc88c7b64d8f7b39a474c.cab
-  - fileName: Installers\f2e05dfd38ed343d3de77209cf3ecdae.cab
-    sha256: 3E4F20BE476B7A6AD320872D830FE093C0E266EE14320795EE0546F45CFB5989
-    size: 1240491
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/63adad4959dbec20ae00144e0d0b2520/f2e05dfd38ed343d3de77209cf3ecdae.cab
-  - fileName: Installers\f4661eda3692e166927c14c96164150a.cab
-    sha256: 17E0E6ABF874B95927B82B8B0B156D6FA9B5C06B45E06B5153D4A326753CD039
-    size: 1009428
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/28aec2cbe20a3a150565b98901d18ebf/f4661eda3692e166927c14c96164150a.cab
-  - fileName: Installers\f7b25543b47329ef932ad391c72c4ab7.cab
-    sha256: 04ECC96BBCDACB6B6A18CED2F6ADBAC38CAF785A4DE82F878BF54C3360120EE7
-    size: 89550
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/11027d7c6049152f5d22a0f606d15ad4/f7b25543b47329ef932ad391c72c4ab7.cab
-  - fileName: Installers\f9b24c8280986c0683fbceca5326d806.cab
-    sha256: 8AEC2BA4D89199CCABA1A98802989C4C4CEA3024B373B957E904B40826E91BA0
-    size: 7256303
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/bb2becba196f75525a8419d3d3e3168a/f9b24c8280986c0683fbceca5326d806.cab
-  - fileName: Installers\f9ff50431335056fb4fbac05b8268204.cab
-    sha256: 04D93FFB913C8346820CD41B0AF0F29DCB4A20DDCD5D3007134F4A1E44CCD03F
-    size: 19140
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/1a20bafd26e043bc6ff4d473fda11049/f9ff50431335056fb4fbac05b8268204.cab
-  - fileName: Installers\fe38b2fd0d440e3c6740b626f51a22fc.cab
-    sha256: 936AC61D441BAB9B87E9C95E3BFE183E59A3ED5F21DE67276467D39766AC6DDA
+    sha256: 281B6C3AB8248B9B1B00659F7A48207A5CFDDAD58D8EC4C670292839F73A5D97
     size: 19219
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/ed73bd4f81432460adfe8e83c6c10025/fe38b2fd0d440e3c6740b626f51a22fc.cab
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/c7e5cac24110bc6d2592b50f3649d0ba/263104e5ce3a72f68151a93d88a3f22f.cab
+  - fileName: Installers\26ea25236f12b23db661acf268a70cfa.cab
+    sha256: A6D81007E50B1881D58E802EF4402FF16C62FF4960B41C4263057E3173981919
+    size: 93999
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/2e095f72f39ad2f54b930abcfb65eefe/26ea25236f12b23db661acf268a70cfa.cab
+  - fileName: Installers\2a30b5d1115d515c6ddd8cd6b5173835.cab
+    sha256: B0F56FE41409081C910495B0798885996EB2AFF8E030217B515856157B815EFD
+    size: 94038
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/af7fe3431b7d0f55bff2e05f936ed6cb/2a30b5d1115d515c6ddd8cd6b5173835.cab
+  - fileName: Installers\2dd914bb5abd9365f932d15eede09c52.cab
+    sha256: A9C6EE80FD44BF9CDCABCB6AF826E0722D4C8E483DDE70A981CA057711001E65
+    size: 1369389
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/e0cbc8a5bccf7059ad5bff84a27efff9/2dd914bb5abd9365f932d15eede09c52.cab
+  - fileName: Installers\2e876dd22fa5e6785f137e3422dd50ec.cab
+    sha256: BD490C2DA3B5837261D43791A02EA3BB6AEF1DE787F52BEC5E7DD638BFB77F51
+    size: 9216010
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/2f5955d08b28c63142f927aa3696c15a/2e876dd22fa5e6785f137e3422dd50ec.cab
+  - fileName: Installers\306e26e920fd32cb02bf538b4e799a0d.cab
+    sha256: 4E2BDB867BC7C56E5944D82BB8CC8E686DDA698A3D64245A045C3EF37FDC8DAF
+    size: 169220
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/680ae23ab3e739b371b9f9802da94569/306e26e920fd32cb02bf538b4e799a0d.cab
+  - fileName: Installers\3e2f7be479e3679d700ce0782e4cc318.cab
+    sha256: 0AE0EA0D8C43D3ECF0CFE69B31CB19F6EA1F8323F3BEF2521EF9A8E4ED08D343
+    size: 32793626
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/c7916cbab0e9d67679392b61ae8b5ec2/3e2f7be479e3679d700ce0782e4cc318.cab
+  - fileName: Installers\4035a83dc8e73244d15d1196d55059c3.cab
+    sha256: 577063EBB8A8E9E04D4D44F3CB7FD63FD5C4499742FD54C111A74247F2D1B6E5
+    size: 19408
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/f75b4fd859e50eb5ff223216a2adb159/4035a83dc8e73244d15d1196d55059c3.cab
+  - fileName: Installers\40d92f424eff54b03db4c51669f9a8d6.cab
+    sha256: 69C225DC80675088E8D19451E3AB352427A00379A3154A83B0974A1808CEAA4C
+    size: 194277
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/859fa7408c06d01043b3f5df308dfc92/40d92f424eff54b03db4c51669f9a8d6.cab
+  - fileName: Installers\43d52fdb99b86048e15fbd34f5b99cb5.cab
+    sha256: 1AD0113AB87D5107E2B35F73D8342802D816C32757302BF9891EB941B25949E3
+    size: 253065
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/ba6184a0b776134f20fb541b68bb4d6d/43d52fdb99b86048e15fbd34f5b99cb5.cab
+  - fileName: Installers\43fd989a0684600a8c4dda7a6373eb59.cab
+    sha256: 0DB68CED7048A12B8890F2ABD79523B34B29484B110FF59755663118F1070019
+    size: 47677
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/73b686165664fc0e9aa7bb209aace91d/43fd989a0684600a8c4dda7a6373eb59.cab
+  - fileName: Installers\44472e2321abba45e828de25827264a3.cab
+    sha256: BF9A4EE11D41FE1C0433B02BA27A8542A544F7B8C9313E7ABA1B0084058FBAB9
+    size: 23283
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/31d599b45829ece93795037f2f9da232/44472e2321abba45e828de25827264a3.cab
+  - fileName: Installers\463ad1b0783ebda908fd6c16a4abfe93.cab
+    sha256: 43C40559098A2C1EFBEF6AF16F97A44FD80B3BB9FE8AE117C4E6F9F3F852B8E8
+    size: 218021
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/637a623c788980d4a7edf6d84e34ed70/463ad1b0783ebda908fd6c16a4abfe93.cab
+  - fileName: Installers\47133212c2f5ccf49392d7762293a075.cab
+    sha256: F6E618F6A344A0E6556F4AABE31B736FCDB7FA6B537CB8AAE4650D5396C672FD
+    size: 1632448
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/1441cfd03074617e45c23f76f2467f7f/47133212c2f5ccf49392d7762293a075.cab
+  - fileName: Installers\4a4c678668584fc994ead5b99ccf7f03.cab
+    sha256: FFCAA1A818539E71CFBB12E9FA2A87CEF30F33089B0D20BC1E6C6FD24ABF2014
+    size: 437868
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/a629a4c46dcf16eea949fbd0f710dba8/4a4c678668584fc994ead5b99ccf7f03.cab
+  - fileName: Installers\4ad4df991deb0eaa1f79f896b959d580.cab
+    sha256: A20463EF1D2AB312D5A9784D46CD37020E1932EE741A9F679C4DDC216FA65CD6
+    size: 1546948
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/360f1df444ae7fc96bd3469323d6d35d/4ad4df991deb0eaa1f79f896b959d580.cab
+  - fileName: Installers\4c59234340aaf3a96ec480c1aad8d179.cab
+    sha256: CA23424A57895BDAFA3FF190DA678530F5DA4AF7912688A5FC2AE589EEF0086A
+    size: 609561
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/5be20ac4f70b0e2f4d968a6a11283c1c/4c59234340aaf3a96ec480c1aad8d179.cab
+  - fileName: Installers\4dc69cc131b3f4fdde53e76d759509dc.cab
+    sha256: EF149ADB54C96575B249DF9547B50CB272374BC5D261E2F62EF31FC7DF9142B4
+    size: 462379
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/f7b951a8c080cc77f772a312e6ff751b/4dc69cc131b3f4fdde53e76d759509dc.cab
+  - fileName: Installers\4e2dea081242e821596b58b31bc22cca.cab
+    sha256: 778434BAEEB33A0ED08E668882954B2CDA37B04AF44F573CDCF6047EC0109F11
+    size: 18680
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/b7ce232be3f34a8c000f05295cfbf90d/4e2dea081242e821596b58b31bc22cca.cab
+  - fileName: Installers\4ec14c5368b7642563c070cd168960a8.cab
+    sha256: 59823100DDFE9030851AC765E90DE0E1875E908737F426ECE8C3A00DE6E15CDA
+    size: 1885152
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/85cc7f3e9603153cc10ecd7e341724c4/4ec14c5368b7642563c070cd168960a8.cab
+  - fileName: Installers\4fe4c8b88812f5339018c0eef95acdb9.cab
+    sha256: CADD61CAAB00B5AD3EF449EFB54F8A7B1A43A7CFB85F321B544CA578B14E179B
+    size: 26653
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/9992f4e9621a59b8bd9a57cd62e0d567/4fe4c8b88812f5339018c0eef95acdb9.cab
+  - fileName: Installers\50ce7925226cb6ab8e0fe9ad9fd58433.cab
+    sha256: 27F65257E3EFD66116C9FD5339A387AB6501BC260FB8FEF2BD10E16899B9DE05
+    size: 7471051
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/44eafe4091d53b0437661642021fa0b8/50ce7925226cb6ab8e0fe9ad9fd58433.cab
+  - fileName: Installers\53174a8154da07099db041b9caffeaee.cab
+    sha256: 32ED51DA59F3252BA263A0134C131A8A31297FD14136A7F94CECB0B810E6D207
+    size: 15676146
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/6e18e5ea54a755917bc5e3fd1cbd7551/53174a8154da07099db041b9caffeaee.cab
+  - fileName: Installers\5509e4710313421be8d5e7cfbfde4d30.cab
+    sha256: D749EEDAE9BB6FD52DB819B2285A676FB6AB5F8B227A5A14A00044BF55F43D1A
+    size: 1045394
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/695110ee6d3a4671df2a1ac15eacfffc/5509e4710313421be8d5e7cfbfde4d30.cab
+  - fileName: Installers\559dbc3a49a69c6adf60b1c87b4df71b.cab
+    sha256: 9F44A2D144213E7A7FC76A4C6F60BF620ED167E5FAB6F2E031DA370D0FB598D4
+    size: 18564
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/6541b1cf955d1cea070c87f5e18f42ca/559dbc3a49a69c6adf60b1c87b4df71b.cab
+  - fileName: Installers\563138901adf40a699df4654138ac397.cab
+    sha256: 6CE22E9456AB2F5E7C898819178F73E41900F748E9E103A45DDCB0C00ACFD035
+    size: 1434591
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/8f2dcd9c2f219d60bc1c7ab0adb94b45/563138901adf40a699df4654138ac397.cab
+  - fileName: Installers\56a114848fda9a7e47bad4b3fc4be9a6.cab
+    sha256: 5698388EAEC1F948C13563A02D3D78622200C45188B4F955DD07F601BA0EA73F
+    size: 7809397
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/b08e51769aaecb665ce39138a83647e0/56a114848fda9a7e47bad4b3fc4be9a6.cab
+  - fileName: Installers\576cff9c50e8085ab8d9c28ee12bac3e.cab
+    sha256: 68C498F6706A0B4DEDD57C0D6E351F65344D4613071031F92DB7FC6D2CCF9B04
+    size: 666796
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/13a825096903781fdd317460038b3dce/576cff9c50e8085ab8d9c28ee12bac3e.cab
+  - fileName: Installers\58314d0646d7e1a25e97c902166c3155.cab
+    sha256: EC209A224C9B2D31F3409208D30F5A6335C55217AD384D6212C833AC83360EBA
+    size: 16603242
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/cb954f8bc3015e25cfd985a5fff3452a/58314d0646d7e1a25e97c902166c3155.cab
+  - fileName: Installers\590d28783ff280b8b0016c3492433241.cab
+    sha256: 16B45C0B457995A56DEF95406557A4FE3FA57C7A1DCB0736FE6EB162C42F7F88
+    size: 9020389
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/d85fb3791150a62a29395bef4512125f/590d28783ff280b8b0016c3492433241.cab
+  - fileName: Installers\598442d9f84639d200d4f3af477da95c.cab
+    sha256: 670383674E304CE1C736576937BBE890AFD4BE43F44C17DBE1605BB0CBF06174
+    size: 59227
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/6b2630c96c8b87f5702a01c8170dbb4e/598442d9f84639d200d4f3af477da95c.cab
+  - fileName: Installers\5a22e5cde814b041749fb271547f4dd5.cab
+    sha256: 57E7E309413D05B781AE76D1B5C54DC7AFF350B6A460920F1F358E8003AABDFB
+    size: 15542250
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/03cfd7ea3b3116d5d32d11df101dea24/5a22e5cde814b041749fb271547f4dd5.cab
+  - fileName: Installers\5c9ecffb06ed5f4fe5fb7db86bf7328b.cab
+    sha256: 232EE7D3BFC312C683E0C8407DF10FA138879B2996BEE333EBD61705965D0E63
+    size: 368350
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/63010079f348bf1e7eb6f941b4782496/5c9ecffb06ed5f4fe5fb7db86bf7328b.cab
+  - fileName: Installers\5cf1d61a223a02ff2f52fe05f058d52e.cab
+    sha256: 174D26BA1979FA2B8980165E361E7FC4E1822B6D0B4FC6B35C3F0B5CB2C4F6BD
+    size: 1242793
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/cd9d77a3f038e2ab70cbd8751f5e0d40/5cf1d61a223a02ff2f52fe05f058d52e.cab
+  - fileName: Installers\5f6cfec263cd265cf3b0d97fd78ddf05.cab
+    sha256: 27F207FEEADA5B360860C3908F5CCA45FB6B6A43958FA6D2C785199187DA5EF2
+    size: 3100184
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/a948af3572507fba3b2ae3a10eac3add/5f6cfec263cd265cf3b0d97fd78ddf05.cab
+  - fileName: Installers\61d57a7a82309cd161a854a6f4619e52.cab
+    sha256: A29F471C9A242AAB488F9AFA067D45F7A462F1C12FC892D66652BE7F37A619D1
+    size: 9506654
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/ce88775024f6b22848b03dad4af285a9/61d57a7a82309cd161a854a6f4619e52.cab
+  - fileName: Installers\66c7c64126fbf84f47ccec556d149b12.cab
+    sha256: F65349CC0422451D1AD1E6BEF4771D86605E7E13284F45C2BAB2D5D604CD4A67
+    size: 19033
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/85ce3fe90c8178dd2e94c01f448a2e24/66c7c64126fbf84f47ccec556d149b12.cab
+  - fileName: Installers\67c9fd1fab36154e6e7e429610cd67c8.cab
+    sha256: 453AEC009DB83BECCE61FA1AF16C9890D1C87D92106A3D4E85F3CA3A97E8005F
+    size: 770995
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/71f66a0a97b6734d613804ceb08328ae/67c9fd1fab36154e6e7e429610cd67c8.cab
+  - fileName: Installers\67fb2af3d2219b403e419535a547c019.cab
+    sha256: CB662C96FDCEC9671900FB188851B326C5F2E53BFF387ABB9AED81305ED39F89
+    size: 99414
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/58b95de0137ca25ec0a774036132c713/67fb2af3d2219b403e419535a547c019.cab
+  - fileName: Installers\685f3d4691f444bc382762d603a99afc.cab
+    sha256: 3268CF2E5BACFB75CCAA8FE4FECEBA6D85836D3874566C79DC2F9E09B0424EFD
+    size: 1155835
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/77402beb0a8905cb9a7df34f8cd01873/685f3d4691f444bc382762d603a99afc.cab
+  - fileName: Installers\68a5a2b14625f935761325cddfadca11.cab
+    sha256: DBD5206688AF73581DEF06C8BF2DCDE88CF4340C2F37B5A6F7C4E9D98B1BAC0D
+    size: 2435734
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/2c205f0ced1f17f3cb47409b018c54ba/68a5a2b14625f935761325cddfadca11.cab
+  - fileName: Installers\68de71e3e2fb9941ee5b7c77500c0508.cab
+    sha256: A5DF26654D49533E70596F234EEFBFC57B60DE73339A15DE121A425FE31BDB5B
+    size: 18797577
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/74df559a22a30545b599371ae69022c1/68de71e3e2fb9941ee5b7c77500c0508.cab
+  - fileName: Installers\69661e20556b3ca9456b946c2c881ddd.cab
+    sha256: BEF5B038FCE288FA1DB234BD61C3E450ABECC02F5A386248625073A83010F61E
+    size: 18745734
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/944d105a33e16da614cbf2a17da22954/69661e20556b3ca9456b946c2c881ddd.cab
+  - fileName: Installers\6b12414fdb1b4978419abcd383206c09.cab
+    sha256: 721C477111F4B20EB0AA12E5849740E834C8CE0939800EAD3F8616C6DB7CF321
+    size: 18538
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/c4b25b33e32a004e4641366de527a820/6b12414fdb1b4978419abcd383206c09.cab
+  - fileName: Installers\6b5a91701fdb98ac8bc4af6e238e0390.cab
+    sha256: F933F8CF6D37AE46D060C8A732D0F8E041D6D7AEEDE666C336A9646741D939E9
+    size: 2007811
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/298428e62d083b9f261928a313f30e05/6b5a91701fdb98ac8bc4af6e238e0390.cab
+  - fileName: Installers\6e86d5003787b5a44d77f0142b20f2ff.cab
+    sha256: 507F6AA6A8380CF9DCEE7C4450AAB7B4E18D1FC11B77C64509494C64120D287E
+    size: 104255
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/6738dd01eac784c2229b680c2cb8276f/6e86d5003787b5a44d77f0142b20f2ff.cab
+  - fileName: Installers\6ee7bbee8435130a869cf971694fd9e2.cab
+    sha256: 04728E326214D8960A188614995B65A3E9E33F93EAF13DD3CA16FE513CDFF0DE
+    size: 26146004
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/9a7bacb65de148f099902218ada3394b/6ee7bbee8435130a869cf971694fd9e2.cab
+  - fileName: Installers\703316c9de0a32acf316d03b1cffc559.cab
+    sha256: BD827C04ACB7976C9E1997676255277A1F41DA46739F9ECEBAE5C3698E12234B
+    size: 9449625
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/94f38047f8d83044b4ea1922718a6688/703316c9de0a32acf316d03b1cffc559.cab
+  - fileName: Installers\73b80f421d7f3df5a71bd772f56bf3ae.cab
+    sha256: 952C359C276D4F3DAF7B59A72CE5A27E4094C1293A8769906E3C5F32DF6401E5
+    size: 98153
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/c14bbd300eb8d18cc5092cd6fb305ded/73b80f421d7f3df5a71bd772f56bf3ae.cab
+  - fileName: Installers\766c0ffd568bbb31bf7fb6793383e24a.cab
+    sha256: C590F816F3BB15A79A0BF815CA942AEEC4A36C08FD66FA35A243C86B4F8BAC7D
+    size: 8176880
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/b4a6e43a0c35ad8d4e8957eb581443ec/766c0ffd568bbb31bf7fb6793383e24a.cab
+  - fileName: Installers\78fa3c824c2c48bd4a49ab5969adaaf7.cab
+    sha256: 6F9096BC7C182383C22A947D1B2C994D78D1742CA25163FAD8FD8C2C848419C5
+    size: 54881173
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/721e7f21ddaab126788f6f8b5c3725b4/78fa3c824c2c48bd4a49ab5969adaaf7.cab
+  - fileName: Installers\7afc7b670accd8e3cc94cfffd516f5cb.cab
+    sha256: 1D99DC10063C05E8B34B82AF18DB61C080809456D471674D0272F071526DF0AB
+    size: 1053493
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/fdde52f2c4a6db47e015e514a79c3454/7afc7b670accd8e3cc94cfffd516f5cb.cab
+  - fileName: Installers\7c3667a45d36470bf3cb648878a6ac2e.cab
+    sha256: 86140957571B82E3957BC899DA8D8F6A6FF177CA828F7FDAF097114EAA142205
+    size: 778294
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/c52d0c0ca9705ce9548a20d767c352fc/7c3667a45d36470bf3cb648878a6ac2e.cab
+  - fileName: Installers\8016f7584c8fbeff0b032c65f4173e78.cab
+    sha256: 79A0989449DAC1B180EECBB7AB59256F27025034D8CB75412793A74F7A2BAE3D
+    size: 41245
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/d56d5999f7d2aacc0339550c995a0a69/8016f7584c8fbeff0b032c65f4173e78.cab
+  - fileName: Installers\8038f3cc95dc4b7d0346cb2ab7e044ff.cab
+    sha256: CFC4A1F9F6423C2DE002D1659409E51BFFC005ED1401987E6000B137A7F36054
+    size: 1053623
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/6bcfcc2f0aceaccfc1adca4797ad080b/8038f3cc95dc4b7d0346cb2ab7e044ff.cab
+  - fileName: Installers\8125ee239710f33ea485965f76fae646.cab
+    sha256: AFCA62A1E32F28FAD347F7610C6EF663506A798DB78AC4E4CF545AEAA4C5D1D3
+    size: 5779649
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/e97c5af6189039047f84fbb140167fc6/8125ee239710f33ea485965f76fae646.cab
+  - fileName: Installers\818d2d3634f0efb6e64d7e7c8ca5f98b.cab
+    sha256: 285D740DC8D842CBCF08EB15DF2CCCC0756AEF8865EFC27BA3B290363DEBF556
+    size: 113861
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/fd8b3d21212d7433876048066242ef39/818d2d3634f0efb6e64d7e7c8ca5f98b.cab
+  - fileName: Installers\838060235bcd28bf40ef7532c50ee032.cab
+    sha256: BC3D7F43E248D0C040980608BC6CAFE827137242D29BBDA7832108C64987F69B
+    size: 19198
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/f8189451b307136e422f3e5ca5dcd8c9/838060235bcd28bf40ef7532c50ee032.cab
+  - fileName: Installers\89d9bbd87f7a5560bafa520a4ebfdf17.cab
+    sha256: 532F98E57D8FEFD945864A56957B2B713F7D2BA2C844D2BCA83B6103C9E56042
+    size: 91569
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/3d83099c2634ce3dc003ca2e269f159a/89d9bbd87f7a5560bafa520a4ebfdf17.cab
+  - fileName: Installers\8ce0662e0e014576121e526f53d8f6b5.cab
+    sha256: A3E22CACB553A1590C08DFA1AFB7BC8EACAB8EF237F35A10277AC9B051E41F45
+    size: 446208
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/5870f84e918d63ec4a1b36a1b7ebdc81/8ce0662e0e014576121e526f53d8f6b5.cab
+  - fileName: Installers\8da73ae89e24f0b5cdf1787799c2a65f.cab
+    sha256: E24039473BCC57D456EA2EAF4B5B8A58B6873604615746D7DF9BED460A68B38F
+    size: 1503744
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/03f472e438ad0287f7f890192d3f5499/8da73ae89e24f0b5cdf1787799c2a65f.cab
+  - fileName: Installers\8daf1f236e631041cdaa802ddb9ccc3d.cab
+    sha256: 1935F24D6F0FE19F1A1720B40D7834F44053A3E57C71FE79F351854D810F6DAF
+    size: 111097
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/c7f09ff8426f47eef5d33c31a37900ed/8daf1f236e631041cdaa802ddb9ccc3d.cab
+  - fileName: Installers\8e4755178e6b5bcba8d3538c3630b7a5.cab
+    sha256: 296670D9FED15C149CFB5655CD9E86EE9D91A1662A243632F572311B68C5501A
+    size: 1143297
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/13b9b5f3d776a95e256e64184a7d5f82/8e4755178e6b5bcba8d3538c3630b7a5.cab
+  - fileName: Installers\8fe3c1ca244ece932599eb0b61855d8f.cab
+    sha256: 2B018DCEE73AD70A2E4AC35B9ECA42B3B92F68E384A7823039D5A19B0EC2F451
+    size: 95297
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/c79e37df62e244c9e8385c9b32052627/8fe3c1ca244ece932599eb0b61855d8f.cab
+  - fileName: Installers\90e1202895672ce81992e71be30528cc.cab
+    sha256: 154E409539008C04691F399FF2C2F22F3F77C84C659EABD1FD2C5CED07225B17
+    size: 357394
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/d26a0810252437d367e60f8b208f3fdc/90e1202895672ce81992e71be30528cc.cab
+  - fileName: Installers\931721e121ef91707ddcb6cac354d95c.cab
+    sha256: 2CFB9FDEDFBE917EC475360600AB476561E4000B55A7C3B59385E2F1ABB378E9
+    size: 18701
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/a7cf8448cfd6622fa6c0a7eaa6dc33b7/931721e121ef91707ddcb6cac354d95c.cab
+  - fileName: Installers\93a74a1d34a22ae9d2e1ccc5208ad21a.cab
+    sha256: 1D1480714C75790621D86D243F597F1D3322B3DC90A19D83B5A229A0D35B15FD
+    size: 482753
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/5f6b694b92165b2ee8aeeff21bf597f4/93a74a1d34a22ae9d2e1ccc5208ad21a.cab
+  - fileName: Installers\94521fd1a9c57258998d60ce60dc43c3.cab
+    sha256: 7B6375CB60A2EC5B5B79F98375CE478E6CE13ACA7D0E047B52548B0C8B03EB77
+    size: 1905800
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/674b35011f141b519c8455629ba0855b/94521fd1a9c57258998d60ce60dc43c3.cab
+  - fileName: Installers\948a611cd2aca64b1e5113ffb7b95d5f.cab
+    sha256: B6A9ED3B431D2AA75F6608A5B6547B4E45BD6394D89D2011938EECB1C3EEA6CD
+    size: 884976
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/4bae0c8d5c81ee73e2f0effe77d954ac/948a611cd2aca64b1e5113ffb7b95d5f.cab
+  - fileName: Installers\96076045170fe5db6d5dcf14b6f6688e.cab
+    sha256: 82D970F5B628250EF72467D0826260C6A9F32252F42DAA3C31FED2A23170170E
+    size: 678655
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/510c03213f78beff83c9149c96da2ab6/96076045170fe5db6d5dcf14b6f6688e.cab
+  - fileName: Installers\9a7145bc3b132e5da6d44c0ab4a1af70.cab
+    sha256: 27DB9C6DF30EAB8F2EB4CFECD366D698FF47609A2E4EBB5647957FFF5F3B6207
+    size: 7914269
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/6bf376f97c56ec712cc2dc3b5e1eb643/9a7145bc3b132e5da6d44c0ab4a1af70.cab
+  - fileName: Installers\9ba47e440ec2fbe9a3d32a53bf0f68dc.cab
+    sha256: 95A0ECF0933A3AE122D5CE9CDD689D3937D06C59117A1F10DD7FC8A7D6C7EB95
+    size: 469924
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/a2a66abf414f741477cff8220015a21e/9ba47e440ec2fbe9a3d32a53bf0f68dc.cab
+  - fileName: Installers\a17683486ace64c3f9a1cacb81ee0260.cab
+    sha256: 3D523267E4CD49FCBDD1C23F30E375059DCC425CF7A31155BF372C9F08FDAAC0
+    size: 101654
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/ba290b8442019d6a206f22fa9e8cb77b/a17683486ace64c3f9a1cacb81ee0260.cab
+  - fileName: Installers\a1e2a83aa8a71c48c742eeaff6e71928.cab
+    sha256: 29F8ED0537B49087321DFB7CCE60AAD7252900ECFBD81D6336FDB67056778A5D
+    size: 27764279
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/87fede232add653343acc94dbdac4118/a1e2a83aa8a71c48c742eeaff6e71928.cab
+  - fileName: Installers\a330840cf08ad4d210703c9acd1bf2b8.cab
+    sha256: 3C5E06113C26F836ABF4E950B94EAD51BA11247AD3D8FAA0B8211D7F68987F77
+    size: 1078523
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/8851c2ea587838bd4623295bf01ae58f/a330840cf08ad4d210703c9acd1bf2b8.cab
+  - fileName: Installers\a35cd6c9233b6ba3da66eecaa9190436.cab
+    sha256: 6628F837DE3195849B6E67195FEF616140836336EE347C03BF9ADD3105D27ACC
+    size: 1919726
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/5ee94d74c862c49835bb989a5be1989c/a35cd6c9233b6ba3da66eecaa9190436.cab
+  - fileName: Installers\a68c0988d16ee124783efd98074dcbf9.cab
+    sha256: D2BFB6DDC31C6A48744B4004F124722EBF606B7CD305391BC34B0857238CF2E3
+    size: 19223
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/80c2a91a0f0ea850f4891d1db71f09b9/a68c0988d16ee124783efd98074dcbf9.cab
+  - fileName: Installers\a76e4219ecb0f1c0006a6fe080c54ad9.cab
+    sha256: 03D0921968C85CE2D95DBA402626549BCA3CBA6ABEB48087A256BB9C3164199B
+    size: 8312768
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/b9f8e75c81f5e5546d02e3e0cf3e7e6b/a76e4219ecb0f1c0006a6fe080c54ad9.cab
+  - fileName: Installers\aa9c58552bdb82dae4ed48ece081cfe3.cab
+    sha256: 03E7A479EC18C20CFBF1C860AE4A98BB791B320E6137F2EB15F7E1D43ADAE835
+    size: 1575770
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/7f4e2059f2d0e4eadcca304dd9dd7412/aa9c58552bdb82dae4ed48ece081cfe3.cab
+  - fileName: Installers\ac4ddfcf1101c483559a5f6e36f1ef2d.cab
+    sha256: 08FF2379EEF3A6775D2E670C862567F3495343E5D30DC5389990E18D6A90CAB0
+    size: 20937
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/0fb20cb96b8f55628a95ae944bff46a9/ac4ddfcf1101c483559a5f6e36f1ef2d.cab
+  - fileName: Installers\Application Verifier arm64 External Package (DesktopEditions)-arm64_en-us.msi
+    sha256: 8C831D6C579E63BD1D9101F297192455171A5000469383CD71D88E04857EB108
+    size: 593920
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/6cdf69e2a4b8e44550c944107fe3f615/application%20verifier%20arm64%20external%20package%20%28desktopeditions%29-arm64_en-us.msi
+  - fileName: Installers\Application Verifier arm64 External Package (OnecoreUAP)-arm64_en-us.msi
+    sha256: B6F578226B37CF74E001F8B172F53324866F003D1E0647E58A29CBC2AE2E4192
+    size: 1626112
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/0f0ade444c757896544d1fc29b7b2886/application%20verifier%20arm64%20external%20package%20%28onecoreuap%29-arm64_en-us.msi
+  - fileName: Installers\Application Verifier x64 External Package (DesktopEditions)-x64_en-us.msi
+    sha256: 973A7383011604AE9DBFDC6316E9F59771D75FFCE3DD419D899BEED9D77B70DB
+    size: 688128
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/7935b5aee41d4e4fbae913fe3a0fe6d5/application%20verifier%20x64%20external%20package%20%28desktopeditions%29-x64_en-us.msi
+  - fileName: Installers\Application Verifier x64 External Package (OnecoreUAP)-x64_en-us.msi
+    sha256: 95DC3678CBF2495E2E2AB3ADC3DC6C40CEA36266BBF2E3D565DC7D8E5B1F431A
+    size: 2428928
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/d3f5efc1099950d7a1ac847b4b88e63b/application%20verifier%20x64%20external%20package%20%28onecoreuap%29-x64_en-us.msi
+  - fileName: Installers\Application Verifier x86 External Package (DesktopEditions)-x86_en-us.msi
+    sha256: 9C7385BE9ACED7785332FF09BE4BF18B070D09895B975E3A297715B38EBC63F4
+    size: 565248
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/29dc6ea93968d2a26dac65302415d748/application%20verifier%20x86%20external%20package%20%28desktopeditions%29-x86_en-us.msi
+  - fileName: Installers\Application Verifier x86 External Package (OnecoreUAP)-x86_en-us.msi
+    sha256: B48EE9771AB259C9FB5BF91D8DDD91604FEA43B8291C81E989C6589BCD9DD33D
+    size: 1339392
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/72720fddb4bafffac837dd1406cf8ad9/application%20verifier%20x86%20external%20package%20%28onecoreuap%29-x86_en-us.msi
+  - fileName: Installers\b0656253ef2f688d2982eafa2e73f621.cab
+    sha256: DE70F656DE01FD2F2E17539B4A50DDD66E2B0AC4486DFBF870CF4DC499DB24C7
+    size: 32762
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/07311fb08fb7f55dc89e36c4a69b32e5/b0656253ef2f688d2982eafa2e73f621.cab
+  - fileName: Installers\b1a824e2952532fe8fd0145f5d148d25.cab
+    sha256: 68914155C673BF5F38FBEF8502F142A194A46C0ABE4C5B62944DC0B755BCB0C2
+    size: 408125
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/303734b2966fbb47611bf30a56f1696d/b1a824e2952532fe8fd0145f5d148d25.cab
+  - fileName: Installers\b1a8ecf890b4ffddd05e8c9422f55db7.cab
+    sha256: 33A044C36AF28BA67FEB277CC12F96EE4EEFA85F7B8720CE5B3A649D64883584
+    size: 159495
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/05d18f9d6ddbf2066c787fa4dd9117f7/b1a8ecf890b4ffddd05e8c9422f55db7.cab
+  - fileName: Installers\b2f03f34ff83ec013b9e45c7cd8e8a73.cab
+    sha256: A17B9674B79AC4C8D9C4516C41D6F32FCDE041BDB07EC7F0758C16EE8A62ECAC
+    size: 156894
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/be7bcaf329bbeef873a874aee49456b7/b2f03f34ff83ec013b9e45c7cd8e8a73.cab
+  - fileName: Installers\b4eea6c909a31ab051e6f9b6218beec8.cab
+    sha256: 39C6BAB7981AAD85629D5A8B54FD3831D04B5DE5099ACF006EDD5B3BDC58A358
+    size: 379000
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/b1b12526de0bd88b4d7d65b289819274/b4eea6c909a31ab051e6f9b6218beec8.cab
+  - fileName: Installers\b5f177b84c0ec473cbd69557634b27cd.cab
+    sha256: 90A10D7B9C4333B87F2ABB3D575BDFD9A7A02417613C98DD1E65358038DE922D
+    size: 18691
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/85c779385bf7829f3f988cafdd9a9cc6/b5f177b84c0ec473cbd69557634b27cd.cab
+  - fileName: Installers\b80b7321357f7c9f281536f9440dfe68.cab
+    sha256: F4417618F207A6AF7971F1266E86E175807B1BE07FB5DF727A56EAAC9678DBC7
+    size: 18901
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/6e38671936c5e8ebfc3ba4283795c3e3/b80b7321357f7c9f281536f9440dfe68.cab
+  - fileName: Installers\b82881a61b7477bd4eb5de2cd5037fe2.cab
+    sha256: 7DF7D66A1C1D9F4F64B5D071DC706A6E2FDE59CBD4C2B7CC6EAC02CF0582BD22
+    size: 27927506
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/b763bd4d7efe740fed4f47584af65d00/b82881a61b7477bd4eb5de2cd5037fe2.cab
+  - fileName: Installers\b913ca15956d14df2d4b1f11ae07885b.cab
+    sha256: E334EF611A5E5C73316468565F208AE35FD358A58315B567FB4F59C842441888
+    size: 226747
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/0ff516e9a87e686c2b1ee345ff69a44d/b913ca15956d14df2d4b1f11ae07885b.cab
+  - fileName: Installers\be06eca425b0c3c2f4de61cbfe9bc7a7.cab
+    sha256: 77C2F54DC82CB93C4C2C5608BDCC25FCBC1C3864CAE28B85B29257E6DF33D407
+    size: 226699
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/cd671dd41220c313b4e091789c834c8d/be06eca425b0c3c2f4de61cbfe9bc7a7.cab
+  - fileName: Installers\beb5360d2daaa3167dea7ad16c28f996.cab
+    sha256: 6FEAABF4B1B09B4E3210ADDDB12C8C8D6702D731DA033784EF0330488F5BEF51
+    size: 609253
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/b0082c046bf17896e9730ca9f40200ac/beb5360d2daaa3167dea7ad16c28f996.cab
+  - fileName: Installers\c0aa6d435b0851bf34365aadabd0c20f.cab
+    sha256: B9E05D77C4E719D4F394B5A66328CFB2DF2A80914785545EEB049A69FCB11D3C
+    size: 4951894
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/6699951ca96b8696e87c51e6b45d524a/c0aa6d435b0851bf34365aadabd0c20f.cab
+  - fileName: Installers\c1be9e93e88be3f6207f5cc074775d81.cab
+    sha256: 44C6935D42E9AE35798E0AB2D56B4DE458E41C863F6D22BBC03490FD454B85B7
+    size: 97667
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/f9eecf729bb87bc3396a58539cbcfa49/c1be9e93e88be3f6207f5cc074775d81.cab
+  - fileName: Installers\c2aabf6ea5c1d348ec22f3aeb92f8656.cab
+    sha256: F6479BC17C44CCEB20DE4E752FE29260B10BE12DE0A09CA0E664C5F132C18D9D
+    size: 18885
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/a0b6b23790ffcae0d8b830456eeda3de/c2aabf6ea5c1d348ec22f3aeb92f8656.cab
+  - fileName: Installers\c4d38a2c963178a1a3469ca3d913768e.cab
+    sha256: 23E917DA442368FD73A007D211314BBDDBE310464F1B6906FE7CA23614C4AA33
+    size: 21175
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/5922e25c084f0151532597508035ec3c/c4d38a2c963178a1a3469ca3d913768e.cab
+  - fileName: Installers\cd9128b760c06a010e1621af6528432e.cab
+    sha256: C1845644795DC43CB25DA0BAA1D1A3F13A4F3616649E7D7ABDFF7A006600F5DA
+    size: 65469
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/c48d5532a63b108d0842ac248058fe4c/cd9128b760c06a010e1621af6528432e.cab
+  - fileName: Installers\cdea5502a35d09ddfbcda12e3a391dc0.cab
+    sha256: 76A16062CC9764CCEB9F0A4E1F43FDEA97AFFA70752C83542562FC1F30FB9E60
+    size: 7596870
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/b2d1f784d9f524b43e107fcb420e7cad/cdea5502a35d09ddfbcda12e3a391dc0.cab
+  - fileName: Installers\d117bb4bc77abadc7c603552e122e513.cab
+    sha256: 225B9F2F52626455941298901C07CD1B4BE5FC66E08FAF5D47850812781872C6
+    size: 583244
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/d725535d14f6351e15a6d62cc90a0bfa/d117bb4bc77abadc7c603552e122e513.cab
+  - fileName: Installers\d1de88680a8e53fe75e01e94dc0ed767.cab
+    sha256: 9D88FA269DC02FD3FDE50A056C04D6DFCC5B8A15739AE0F3E7AC51CC1C88F5B8
+    size: 46971
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/f5ae8b50cc21a7ed5bcace1a38fe8fa3/d1de88680a8e53fe75e01e94dc0ed767.cab
+  - fileName: Installers\d3e405ab232f8aca8c5b6a48a913d6b0.cab
+    sha256: 977AE9374C9F06CA2C32D1792C16EB5C7D871185C50A89C8EA51C1CF4CAB1946
+    size: 935416
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/fbeab12e1c070a983ca2819ccf65b64c/d3e405ab232f8aca8c5b6a48a913d6b0.cab
+  - fileName: Installers\d67259e233ce975d91c3b02d483becad.cab
+    sha256: 3C3EA42BDA9A6257924F9B02B7F2D0245BEA1FC1835A191E99D6DDAA54725C10
+    size: 14165340
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/7ac71ee323f92242a3bd58466e62c1bb/d67259e233ce975d91c3b02d483becad.cab
+  - fileName: Installers\d95da93904819b1f7e68adb98b49a9c7.cab
+    sha256: BC3BEABEBC0A9F161BBBE69DBCE0075019CA6E40F5DF5A8B2342A8A2AB25B22A
+    size: 42017
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/8528492e1ce2a653db74d3988d9ee96b/d95da93904819b1f7e68adb98b49a9c7.cab
+  - fileName: Installers\dcfb1aa345e349091a44e86ce1766566.cab
+    sha256: D512A8751E0A338028E1AC168D80B5A7722C2830677A6CD617CF5E4BE87BE353
+    size: 93964
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/50bfa8338d9ce2920b2d7ee499a9b4d4/dcfb1aa345e349091a44e86ce1766566.cab
+  - fileName: Installers\de111c3d435b0785b31b28c386ee691f.cab
+    sha256: D993E77090A87D9120965278DDB6F95841C0A3E8BFC88647E985F02298369480
+    size: 18989
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/1372878d21c87ccd9f558d8df64eb80d/de111c3d435b0785b31b28c386ee691f.cab
+  - fileName: Installers\e10768bb6e9d0ea730280336b697da66.cab
+    sha256: 46E21578A4CFCE3BD6E4EACC10B92121A825CE443CC2F6CCE84B07E37B9D21BC
+    size: 7328808
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/b2915dcb648d1087f4a5ef20f17c9825/e10768bb6e9d0ea730280336b697da66.cab
+  - fileName: Installers\e10f8811d44b50885777f56f8272f66b.cab
+    sha256: 26132FE0B658E0D5D002503DB9DB56FE3F556AC49E01AA5F6FFF9AE21E882309
+    size: 609219
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/decccfacd1cd1a6c373d8e99d59c1765/e10f8811d44b50885777f56f8272f66b.cab
+  - fileName: Installers\e24dd258b3bbfa69c0842948fe0dd670.cab
+    sha256: 38F15A60B6DAC64A7EBA63C9684274C99908817E7F041CFD34B849475E6D3BB3
+    size: 166844
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/37b6f2be981f052bb72f975d819bb698/e24dd258b3bbfa69c0842948fe0dd670.cab
+  - fileName: Installers\e3bfdbe21d5f48f62e6347294e6e8492.cab
+    sha256: 581D89C4572D247BEC2A6DF4DD5565ECFED64342B356FB6715D3D13B78F59960
+    size: 107469
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/a775ecbfd07575cb0018be16f4a5c632/e3bfdbe21d5f48f62e6347294e6e8492.cab
+  - fileName: Installers\e3d1b35aecfccda1b4af6fe5988ac4be.cab
+    sha256: B62DCA92FA3A59A6A811D181ADFB3C033C44B44B4D99892662294E3E4C34E2BA
+    size: 15463439
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/47a79691f3a507955a38814a04cf616e/e3d1b35aecfccda1b4af6fe5988ac4be.cab
+  - fileName: Installers\e59830bab4961666e8d8c2af1e5fa771.cab
+    sha256: C7789AD04B9B0F6FB31C3139BB18A847E9F754BCFF5F956AE7D1738047098CFF
+    size: 207581
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/4b82d4c0829aa41dd55ecd3f27b75c34/e59830bab4961666e8d8c2af1e5fa771.cab
+  - fileName: Installers\e5c4b31ff9997ac5603f4f28cd7df602.cab
+    sha256: 18B92105B56F44043E7DE7286DAE9E1ACD8E7BECCD0CCF40F85CB56CF00662B9
+    size: 1932592
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/2defba1d2b5b18909e533c61160aee93/e5c4b31ff9997ac5603f4f28cd7df602.cab
+  - fileName: Installers\e87de81a902e0c8cde9e1355c3ff5f3f.cab
+    sha256: B93046F97BFBE8652A13BF5CFB0CCDCCF71637C4294B0A0856A27C687C76460D
+    size: 1708890
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/b86e4b16fb786ce9a6125c6bfcab46ec/e87de81a902e0c8cde9e1355c3ff5f3f.cab
+  - fileName: Installers\e89e3dcbb016928c7e426238337d69eb.cab
+    sha256: 4E5F0346D59FAAE3742C79D48DF74F221B202DA347F5751CC3E53156941368F1
+    size: 920606
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/e37c4e19cf7a02f7b6f243de3316c9ea/e89e3dcbb016928c7e426238337d69eb.cab
+  - fileName: Installers\e98fa5eb5fee6ce17a7a69d585870b7c.cab
+    sha256: AFBE085B2DABA00895E10E9C5BE3DCC9D3ECDFC4665A5E631050373FC99B3E06
+    size: 1436297
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/14a676ba58e225c69d0f70b19ff0b1f5/e98fa5eb5fee6ce17a7a69d585870b7c.cab
+  - fileName: Installers\ec0637c03f99046936d32d51e13a392a.cab
+    sha256: D6881B03E4FD187112D66D447E83360BBCD68CB69364C2D800293571A4068C6C
+    size: 18556
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/55fb777f9601389e8c3d5c6c117a3127/ec0637c03f99046936d32d51e13a392a.cab
+  - fileName: Installers\ec9ab4bbb809719605d27da343b909e8.cab
+    sha256: AB511B28C1AF3F681A59D91DF216D6618170BCA9D3926138BEFFC7CC13C96C0D
+    size: 107442
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/c4b1b22215b696ddc610dd86dcc5070a/ec9ab4bbb809719605d27da343b909e8.cab
+  - fileName: Installers\ec9d39539c27e8cf5ad39bffce00c34e.cab
+    sha256: 9FBA6392246A7E9CA8B98581247BA0699C11ABB2002927A41A3A4A124F5F2212
+    size: 234328
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/e9ce89024b30285633d8613e6b602a22/ec9d39539c27e8cf5ad39bffce00c34e.cab
+  - fileName: Installers\eca0aa33de85194cd50ed6e0aae0156f.cab
+    sha256: C0C6CC329D2BE2DDBA902649C46EFB9064186C2185445451602C90D9C7EB3DD8
+    size: 42174
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/827f1b56c1f9090dca62cf5bef23d094/eca0aa33de85194cd50ed6e0aae0156f.cab
+  - fileName: Installers\ed4d1c6b9811d81e3cebc553ae604f0d.cab
+    sha256: FDD06CDA47472586752E719DC67C7A145B6FEF32EACB6E293DCB2525D4E12FB5
+    size: 18680
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/95d1db5aaeedff59ee646ddf221abbc6/ed4d1c6b9811d81e3cebc553ae604f0d.cab
+  - fileName: Installers\ed5aa2f399092df3084cce671f072cac.cab
+    sha256: 6AC51FEEAEB81AC3A1F00F40E263DEAD13F932D2BC11C8FD286FB49B14A3E501
+    size: 1518547
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/65b5de707ce050b13f2df9cfcd477a8a/ed5aa2f399092df3084cce671f072cac.cab
+  - fileName: Installers\ef4472fd7552490fd759075186ed2ec8.cab
+    sha256: 44FA2F089FF4D7865C791708C5978DD1E8163647D9FAAF6BA7E0B2E52317EBA8
+    size: 264143
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/09823ce9df65871be53ebe3c34701113/ef4472fd7552490fd759075186ed2ec8.cab
+  - fileName: Installers\f105a73f98cfc88c7b64d8f7b39a474c.cab
+    sha256: 78A042E663567E2AB2488AA81C8B12954B72A32C7BB90DBBA7C3AAB7FACB7517
+    size: 59269
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/81c32bdeb8461c05aea7386044b0862b/f105a73f98cfc88c7b64d8f7b39a474c.cab
+  - fileName: Installers\f2e05dfd38ed343d3de77209cf3ecdae.cab
+    sha256: C536E6742D56A05C47310C23E09A9E5A5552D914F5752FF9050EEE88E009BCF9
+    size: 1240695
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/107cd9d9170325d1ded9e4cc47a9c4cc/f2e05dfd38ed343d3de77209cf3ecdae.cab
+  - fileName: Installers\f4661eda3692e166927c14c96164150a.cab
+    sha256: C1CC9E73ACF7E2F6EF4C24F0753197200328621CFD70467C11CBBB0774400087
+    size: 1010038
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/e5a8ca8b40ba461a111dea5cc5871370/f4661eda3692e166927c14c96164150a.cab
+  - fileName: Installers\f7b25543b47329ef932ad391c72c4ab7.cab
+    sha256: D963B573A47AF04623A73F4CE24E6C16EE57C946CE7D3729832939D5A1FF2184
+    size: 89488
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/9de9b47708c7b2b2354331669a7f89e0/f7b25543b47329ef932ad391c72c4ab7.cab
+  - fileName: Installers\f9b24c8280986c0683fbceca5326d806.cab
+    sha256: 154F4A24EC22EA0C932709F0E1A2C443946B42C14291A49A280AB4EA0EAA504D
+    size: 7245228
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/66f36d1686d2dde0cfa99a5160a9571d/f9b24c8280986c0683fbceca5326d806.cab
+  - fileName: Installers\f9ff50431335056fb4fbac05b8268204.cab
+    sha256: 355CC1E65B9E5F02A0B3A4F32D02F9241B97030D3527166EFF6A372D5D0E1BAC
+    size: 19158
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/8383be7caac218b9afd6a3564dbb0984/f9ff50431335056fb4fbac05b8268204.cab
+  - fileName: Installers\fe38b2fd0d440e3c6740b626f51a22fc.cab
+    sha256: AFCBE5F2696BDACF801C3C2C758659A5E2861551FB9E78B4DD04A835A0ECDF80
+    size: 19199
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/b9cf12a0a3769ec70d9a059ae2776cb0/fe38b2fd0d440e3c6740b626f51a22fc.cab
   - fileName: Installers\fef2cfedd6135e0ed85290b83f3682c3.cab
-    sha256: 2FC73A7F62924827DE8A99DBF1E56B833A06862427DD1C6727FF1E959C39BD4C
-    size: 754648
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/6d638fa2a03a8860236273937a260c34/fef2cfedd6135e0ed85290b83f3682c3.cab
+    sha256: 01F034BD5F84A5E4BD7F75EF1B2BECF7D75B87749794D8D9659DBDF7672A5050
+    size: 761906
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/7cb08267a7d1a4d91bb5cf20878231ea/fef2cfedd6135e0ed85290b83f3682c3.cab
   - fileName: Installers\ff8dd5a961e46b5d05906ac4b7a5ba37.cab
-    sha256: 5C79A7C95B48C7FB6A8C85916DAC8A021806EADCAB80D7B2E6D40CF66B426AD8
-    size: 18563
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/9c3450eb8d8cdcb52aa5bae63ddd70c9/ff8dd5a961e46b5d05906ac4b7a5ba37.cab
+    sha256: 56CB5452FBB1D6106FF9E271D5CEE6CFBBEC6BFAAD24B82580A7C5B38E434734
+    size: 18527
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/b38ef9283d3aeb4e667e00f4fe726f32/ff8dd5a961e46b5d05906ac4b7a5ba37.cab
   - fileName: Installers\Kits Configuration Installer-x86_en-us.msi
-    sha256: 62B4EDE368FC3049E38994A7DE1D74B5083BDC3CE16D24C971CA11C5B4DF30FC
+    sha256: FC2EBDCD005EB65A703518E0B8B53CC6B3712FCF5D0E341E9751BB9A1ACC7695
     size: 446464
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/1349720da452dfef5673c437cd89ee20/kits%20configuration%20installer-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/42d9dd7fd2232170a52d5a96c87ebbce/kits%20configuration%20installer-x86_en-us.msi
   - fileName: Installers\MSI Development Tools-x86_en-us.msi
-    sha256: 4C9DD9E03B8076209E6ADD405175EC89E91043EBAA09E9C544417E6BD944426B
+    sha256: 8F515E4065AC0966A1CC49C8CFC7871F5F7EAFC80E90E8253DD8942764EE2561
     size: 450560
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/e49397f7ace5f3c7a60d84170c1c80a0/msi%20development%20tools-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/b409aad0a6b284c970ff2baf3bfecdcb/msi%20development%20tools-x86_en-us.msi
   - fileName: Installers\MsiVal2-x86_en-us.msi
-    sha256: 0BC3B5FFF2982B04FDBBBDDE62B4E641AC4DA9B0F2328863C97BAADBCF311521
+    sha256: AF8FB98D0614670971A3D848CF048DE9910752FF21AE834B9D038C514BAC676B
     size: 655360
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/8766e126bd7ee07be54b1e2e64b2fdad/msival2-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/e2f5cb10a6e3ee359422c3ebbc98aa1d/msival2-x86_en-us.msi
   - fileName: Installers\Orca-x86_en-us.msi
-    sha256: 13F259DC3ADF470CAB6109816A54F8CA48C02A5D144523219BF1D287B78636E8
+    sha256: 0DEE79142E048F8332BA930BCA0671EA55DB7121F8044691768E7407D6F94756
     size: 655360
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/def731ddabb5922ff3368fc942789228/orca-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/7af70f7385a69a684b39e91c06c8df35/orca-x86_en-us.msi
   - fileName: Installers\SDK ARM64 Additions-x86_en-us.msi
-    sha256: D62ECF71CCBB67C3ECD4D81B9BBCA7B77FC281DAC3432FA9D84EE2C40AB449BB
+    sha256: 84A6077B8906E77A636A6DA15F13289743E6B1353F6ECBFD5FA1852F34FA8DB1
     size: 446464
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/489591c14f1889a5a5fa19de34a83493/sdk%20arm64%20additions-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/007b8e94cc29e605e6ac7c73867d38c0/sdk%20arm64%20additions-x86_en-us.msi
   - fileName: Installers\SDK ARM64 Redistributables-x86_en-us.msi
-    sha256: 789238A5B1590BCF14507937A1A93A72F050F4F68E58D61DCEC844DC025C2968
+    sha256: FB3ED13D936C7479E70500BCE47D4FC3032C054053EFF59FE640D5CD4D359FBF
     size: 446464
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/cd49d0d6f945382494ba7ba863c9f77d/sdk%20arm64%20redistributables-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/7267f17ed6330d77166f5351210cf655/sdk%20arm64%20redistributables-x86_en-us.msi
   - fileName: Installers\Universal CRT Extension SDK-x86_en-us.msi
-    sha256: 3026912C69E0909C740D19643B2796953FDEF55869B342D3F5BDBB1B8B5ABAD6
+    sha256: 399DB8BC2817AE3757A4B95A1319C5C8EFB33948DA4DB90E8A582A56494D51E4
     size: 450560
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/117422a259c666b949ac367d6be5b952/universal%20crt%20extension%20sdk-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/cc66582414e557c464338350177cd9f4/universal%20crt%20extension%20sdk-x86_en-us.msi
   - fileName: Installers\Universal CRT Headers Libraries and Sources-x86_en-us.msi
-    sha256: D5BAA603E2677393416905F69EAF08277376984F9BCA2F06A51B6EB99E4143A5
+    sha256: F611CE8A9E576E3383917B04B6FBE5EE6BED8363C1A2A8E9D6F8335CBB422675
     size: 589824
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/10eb12a847d3599e56df8d07e9f1d37e/universal%20crt%20headers%20libraries%20and%20sources-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/d10da41a6ad6809f823ef4a92d4f6c56/universal%20crt%20headers%20libraries%20and%20sources-x86_en-us.msi
   - fileName: Installers\Universal CRT Redistributable-x86_en-us.msi
-    sha256: C8FF9056286402C85E9E307C571133961CF93F622AB90FAFE50CCF0F0D150EB7
+    sha256: 85BF16E75F66DC4C54C2FA828F10FC5DC36596A2025B68A424D1753A5D9F8792
     size: 475136
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/a83dfcfd5d065028c8ac86949ddb44a8/universal%20crt%20redistributable-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/8ea251b962f2cc3df9332925f81eab4d/universal%20crt%20redistributable-x86_en-us.msi
   - fileName: Installers\Universal CRT Tools arm64-arm64_en-us.msi
-    sha256: 96BFD241904561C4DF45887D8C8232ECA11ADDA4F2C3C82BA14DA50DA1E7D1E7
+    sha256: 3E419ACB7B170AC7658119A7A7F15427FF1DE199FDAFEA16111F7E87A7113F07
     size: 471040
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/548e9b92cbbdc7bca59184031d07b63f/universal%20crt%20tools%20arm64-arm64_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/f858187c0f2e404d49031c165ea93ded/universal%20crt%20tools%20arm64-arm64_en-us.msi
   - fileName: Installers\Universal CRT Tools x64-x64_en-us.msi
-    sha256: 39F890B6921339E8E443A31826AB62B9DEE5CE877BABD170A35F5C62B04EFD35
+    sha256: E9611A0BFB0B23AC559197048A2ADA651B715F42AB004F8E9D9E94D962C83170
     size: 450560
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/6922fbf1614c9a8dbe13e6279b0cb792/universal%20crt%20tools%20x64-x64_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/100bc38a721547b50fce08cc064116c0/universal%20crt%20tools%20x64-x64_en-us.msi
   - fileName: Installers\Universal CRT Tools x86-x86_en-us.msi
-    sha256: 8C31FF97074EB1DB98ECF1E7CC60E14433D075A905D22A87040E3C761F889AB9
+    sha256: DC928D2756F61F4EFCB9597FB4310ECCB0BF738F61A21DC4BF7E23DF5FAEF111
     size: 450560
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/1cd541a8b94d78e7cb9b674502a99aee/universal%20crt%20tools%20x86-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/807bab7d2ae69bcaa650847a377618ea/universal%20crt%20tools%20x86-x86_en-us.msi
   - fileName: Installers\Universal General MIDI DLS Extension SDK-x86_en-us.msi
-    sha256: 54FC0AE795502E10D4F46731D1263C588BEC758EC0DA407D6047140231F199D2
+    sha256: 8E4495A4EB1810B4FCADFDA78C655BEB3949C2AF08DA6032E4F4EE07D251E206
     size: 450560
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/5545d9c4f67a1e14c32dba7c0140daba/universal%20general%20midi%20dls%20extension%20sdk-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/47a34348480df4596c1d6f37387b58f1/universal%20general%20midi%20dls%20extension%20sdk-x86_en-us.msi
   - fileName: Installers\WinAppDeploy-x86_en-us.msi
-    sha256: 78F246955EDC54FF899C889965D57A025B85BCA17FE379192072DC0372F785F3
+    sha256: 05C3052CC37F4DB17671F82571F2E31DC59892F91F0969962FB141BB0C767C2C
     size: 1814528
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/724285b1d09a37d6b34043a57ae751bb/winappdeploy-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/c661edaaaf63159d924504f5ca5fa707/winappdeploy-x86_en-us.msi
   - fileName: Installers\Windows App Certification Kit SupportedApiList x86-x86_en-us.msi
-    sha256: 00357A35F0B55BE7EEB3D1BD6DFB6EA4BD180A50DE151C339D26303AE3C6280D
+    sha256: 0270EB856D891E79D9DB166525522AA629E69AD5A84DC043810EA1F6CA08F567
     size: 450560
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/7bdb723afa51fa8d0c1a84921508e9c1/windows%20app%20certification%20kit%20supportedapilist%20x86-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/d10075d63e3c99ea028b3703cf29bb68/windows%20app%20certification%20kit%20supportedapilist%20x86-x86_en-us.msi
   - fileName: Installers\Windows App Certification Kit x64 (OnecoreUAP)-x86_en-us.msi
-    sha256: 0A7F555D8620A7CF87799C5A488D1F80BD98F386AAB7747BF69D31C9E0E178F6
+    sha256: 570B76B34BA562EEBCFA815A378113BF08F9C76A8A6B267C62C13307E9A03A23
     size: 462848
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/dd0abc4fbcc43959dded9690bff9c7b6/windows%20app%20certification%20kit%20x64%20%28onecoreuap%29-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/25b6fb66c3d5938a797419c176334715/windows%20app%20certification%20kit%20x64%20%28onecoreuap%29-x86_en-us.msi
   - fileName: Installers\Windows App Certification Kit x64-x86_en-us.msi
-    sha256: C3EB3159FA2656ADCD0506F62A49CC150E9D36ED23FE8519B154394FFE3668E5
+    sha256: 46A684F570D8D23657366A85B32C2F3F2D6EA9C359533089B72613AB67970336
     size: 581632
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/2d68ea3a8b7705b6f3e95b6b65d68a35/windows%20app%20certification%20kit%20x64-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/a80212938095396d236830e91dd5c1ec/windows%20app%20certification%20kit%20x64-x86_en-us.msi
   - fileName: Installers\Windows App Certification Kit x86 (OnecoreUAP)-x86_en-us.msi
-    sha256: 107A4AB6D62A91561000CBDC0F774DA3AF458A92A386AB2ACCF329340A586064
+    sha256: 53122870736ACA0E7C5862681C06CF6558D2791F13F2ED52B7CC6A62DC198634
     size: 462848
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/a1cfddef6ae576c677c97edfce1e0dd6/windows%20app%20certification%20kit%20x86%20%28onecoreuap%29-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/bf0b6240c6daa6b178889093f62f8ee2/windows%20app%20certification%20kit%20x86%20%28onecoreuap%29-x86_en-us.msi
   - fileName: Installers\Windows App Certification Kit x86-x86_en-us.msi
-    sha256: 54F4B652673CA6D7E7FB9502A0288EABFE9FE39541B3568F94C62D93D761BD11
+    sha256: 52D109C2C8B5F22008266FE6CB222BD59911FA0AA25BB5A12913160E4AD51F1D
     size: 581632
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/157ebb2b89c14b26663f9600db475d87/windows%20app%20certification%20kit%20x86-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/b176696cd394e70861b653992e3a638c/windows%20app%20certification%20kit%20x86-x86_en-us.msi
   - fileName: Installers\Windows Desktop Extension SDK-x86_en-us.msi
-    sha256: 0AEF9017D720A789E08BC97568510583E3FDF755B5B07723DE33B9332106E8FF
+    sha256: 7D6EB4D916C82673C1040DF4EB1DA2AC167B05DC8F39369F46134E185990B0C9
     size: 450560
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/60f38607db37ff4f96b8d15608e21dca/windows%20desktop%20extension%20sdk-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/a019bbc18136acabbc40df5f6db50457/windows%20desktop%20extension%20sdk-x86_en-us.msi
   - fileName: Installers\Windows IoT Extension SDK-x86_en-us.msi
-    sha256: BA1DD610CBF220134B495B525F6D31BDAB2E14999ABBE84A247D477A6C87E0F3
+    sha256: 4E187568F1CFC94D192F30339759F03E36E294BC07F9ED56E7AE7FB2E8727477
     size: 446464
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/d4fd2ba568b5ec157ecccf619ea2db98/windows%20iot%20extension%20sdk-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/d4a1b4c723464f10f1d394e874336da4/windows%20iot%20extension%20sdk-x86_en-us.msi
   - fileName: Installers\Windows Mobile Extension SDK-x86_en-us.msi
-    sha256: A54E95D37C15EEDD85688D24171CB4FE1E00C28439B564FF758739B37596EBF0
+    sha256: AF86DD3526170A39EB7B3ED6EC274FEABCE655E94B403B6C0A6DD9E467C6CAAC
     size: 446464
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/3ef62252636f52571f04dd3ee5f6846c/windows%20mobile%20extension%20sdk-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/58a60811083386f36636ea4e73a823ec/windows%20mobile%20extension%20sdk-x86_en-us.msi
   - fileName: Installers\Windows SDK ARM64 Desktop Tools-x86_en-us.msi
-    sha256: F1699159E12EFB8039B8442EE88045181A852AED23F6EC0D545D6047E89E54F4
+    sha256: 95EB9DC8ABAF8CE4C9C4E443862708EC8B6F2092B9A78A28928107F1B1073B36
     size: 450560
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/6c280f77de5da97806b85eb463f950c2/windows%20sdk%20arm64%20desktop%20tools-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/96e5c4ee1927ae57c2a5e319b6b1ec7e/windows%20sdk%20arm64%20desktop%20tools-x86_en-us.msi
   - fileName: Installers\Windows SDK Desktop Headers arm64-x86_en-us.msi
-    sha256: F9A1B80EA6C7E4B97D36724AB9E06DB5E74AF3EAB6EA7992E21E8F7692CA439F
+    sha256: BD2C39E59C62E9F81382F843F7DF2D47A6F2CC865EE612F7ED42D27086895552
     size: 446464
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/290ce5de550c3c46053f353b6680337b/windows%20sdk%20desktop%20headers%20arm64-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/df535cbd9800eb2e513f3f8763990a50/windows%20sdk%20desktop%20headers%20arm64-x86_en-us.msi
   - fileName: Installers\Windows SDK Desktop Headers x64-x86_en-us.msi
-    sha256: 2A3A8B297E5C9595E65E58F36A7B73E563148A4DBAF308E2ADC017918C23BBDE
+    sha256: D189CA50E5632B546795922E2262794C068D6FF301860FEB4522B8B93CBB3BA8
     size: 450560
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/f68c9eb8d016804f1e2e119a9312515f/windows%20sdk%20desktop%20headers%20x64-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/ed222baa6d1d1dc09fb45a1827e7892a/windows%20sdk%20desktop%20headers%20x64-x86_en-us.msi
   - fileName: Installers\Windows SDK Desktop Headers x86-x86_en-us.msi
-    sha256: 69B715D5CE6A914729E960BF81FF8EE36176C24C3D927FDF03FE5C3B7372EEF7
-    size: 794624
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/c2a7b596ae61b7c8cbce22612b482fd2/windows%20sdk%20desktop%20headers%20x86-x86_en-us.msi
+    sha256: F1E5159FEB948CE90A81DCC6A427DDE844610230CB6ED787E35D422DE527A5F8
+    size: 790528
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/7fad2c686fb58ea9e6dc0308a2df142f/windows%20sdk%20desktop%20headers%20x86-x86_en-us.msi
   - fileName: Installers\Windows SDK Desktop Libs arm64-x86_en-us.msi
-    sha256: 42B5B7C8090B3797F436E123C3CAB5C2442C54F2F695A9C948D6945D4F1D0C4A
+    sha256: 21F16DD88E22467AC0663520426F972F2BD1D9925AE7D8C2BAF9E5288BF9EC6C
     size: 528384
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/2ee860067f3b560269f0498013e5b790/windows%20sdk%20desktop%20libs%20arm64-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/9dc0c0f35bfcc3c7ee96d61ecc818b08/windows%20sdk%20desktop%20libs%20arm64-x86_en-us.msi
   - fileName: Installers\Windows SDK Desktop Libs x64-x86_en-us.msi
-    sha256: C0AB0FB806427F21B980CB309575175B971380E6D599E133D400B150674DD5FF
+    sha256: 2E956CA1CF17800B0F9811A6249B945F045ADDF18EE85FFE7AEA99EC6C27243A
     size: 528384
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/bb31d9db6ba871889a2c5654d6bf4a59/windows%20sdk%20desktop%20libs%20x64-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/a7dce16da158fe456395566e2dafd23d/windows%20sdk%20desktop%20libs%20x64-x86_en-us.msi
   - fileName: Installers\Windows SDK Desktop Libs x86-x86_en-us.msi
-    sha256: 7E002E319F5B57C74D8FBD0D30C90855074BFE2FAF13BDBE9D694F12770DF35B
+    sha256: 4A5DBBC358DBE9DC54D4DB02912CBE0E26F3215DE928283AFD328511BB842EFA
     size: 528384
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/a75e465983dbf26afb223eb549b1dcfa/windows%20sdk%20desktop%20libs%20x86-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/605a5ca9a333a8d931a5f83b32268e62/windows%20sdk%20desktop%20libs%20x86-x86_en-us.msi
   - fileName: Installers\Windows SDK Desktop Tools arm64-x86_en-us.msi
-    sha256: 0CD3C88A67A7BDCA975CFAD2B9269F19392ACE93E2E27F54A4AA2B931D4088EB
+    sha256: B5C27991AB2677C39780581DDF48DE2E577E9D3687568FE35761BA20CC4F3A64
     size: 471040
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/5601c88b7ac79c3e6a1e5a7475ddbd99/windows%20sdk%20desktop%20tools%20arm64-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/100da91cd2b863ec5428a45773cfa226/windows%20sdk%20desktop%20tools%20arm64-x86_en-us.msi
   - fileName: Installers\Windows SDK Desktop Tools x64-x86_en-us.msi
-    sha256: D75CBACAFC348CF1D0FFFF4576D728217F0F90F698979668DBC9984DBE51D696
+    sha256: 5AF8B39E5B8E40C7235B447E7D18CE4607209734F3C506006FADCDEB8931C136
     size: 475136
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/85eadceec4f85fb7e8c6e772ee72f8ff/windows%20sdk%20desktop%20tools%20x64-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/2509ce9c6746f0629e5a4905b022be80/windows%20sdk%20desktop%20tools%20x64-x86_en-us.msi
   - fileName: Installers\Windows SDK Desktop Tools x86-x86_en-us.msi
-    sha256: 6ECBF2077CE0631FF76CCF986BA78A6D1F12622CCC1CF8BF35A071D791DA943B
+    sha256: C7E457D32CEDCF8281CDD70C138D0B10F4E15E22CA818F41A54785352CB0B3E8
     size: 475136
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/3cf186c098a60e79615c60f0f6dafc20/windows%20sdk%20desktop%20tools%20x86-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/b2a2f30790e51bb2085cabf686061288/windows%20sdk%20desktop%20tools%20x86-x86_en-us.msi
   - fileName: Installers\Windows SDK DirectX x64 Remote-x64_en-us.msi
-    sha256: D91A5066B4504616CF16123C943B5D1BC5BC7CDEAEF42FFF7308C6C54B7CADE5
+    sha256: C629E346A0E3860E5EA8EDEC307303EB9D0EEE44F99A939F6236E162C4A838F7
     size: 450560
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/a7cb15c9ba7dc43724e6659a1043fcbe/windows%20sdk%20directx%20x64%20remote-x64_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/fa4d202425e222fd703eb06ba54bd955/windows%20sdk%20directx%20x64%20remote-x64_en-us.msi
   - fileName: Installers\Windows SDK DirectX x86 Remote-x86_en-us.msi
-    sha256: 2A50044DACC43BCD1FB74DEBEBDE8B73265F867D6A7B25DF10F991C0D11554FE
+    sha256: 7E18EA4A23B6AF36EAE98277CA3C565646795E109A6721CE52195D16F89016F6
     size: 450560
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/c76b69f3edc25596d0d47a9968b39f84/windows%20sdk%20directx%20x86%20remote-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/e1dac1ba355d11a36af9133080bdcf15/windows%20sdk%20directx%20x86%20remote-x86_en-us.msi
   - fileName: Installers\Windows SDK EULA-x86_en-us.msi
-    sha256: 349A72234D1435D7836A455E045F4FBFA4BCE5350A2AB50D800C17E10E95914A
+    sha256: F3958C26326C6AEB29CB91A62E8E7F2F4347B8847313D6A8041567B12D493BB6
     size: 450560
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/5e8c49d781122a56650da9bb7a350711/windows%20sdk%20eula-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/4adaf0e5ffed56dbbdd2e1a7928a69c9/windows%20sdk%20eula-x86_en-us.msi
   - fileName: Installers\Windows SDK Facade Windows WinMD Versioned-x86_en-us.msi
-    sha256: D9650556D9C1D0B1718208286F03458648A66C899A8297D54B7124AA07AAC1A6
+    sha256: 14449208E10BA8F496F9E8C5478D0E2D1BA294E3C21BEF800E87BB2B516F62FA
     size: 450560
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/6650cef612850a22d72bcc84979e56eb/windows%20sdk%20facade%20windows%20winmd%20versioned-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/c63481b61fbbd9e8508eb82724d07e2a/windows%20sdk%20facade%20windows%20winmd%20versioned-x86_en-us.msi
   - fileName: Installers\Windows SDK for Windows Store Apps DirectX x64 Remote-x64_en-us.msi
-    sha256: 4C573878E423372153EF7BAB0C689040D66E77624AA6265132D56607445F01A5
+    sha256: 39517CDE1A01DFDD85B22E054094106078F6C1BD7ABAE54755F09BBF5B86B4AD
     size: 454656
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/44a0c6016a0ddc4c2798666baa994b2f/windows%20sdk%20for%20windows%20store%20apps%20directx%20x64%20remote-x64_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/f268c51e49e1a3ecc7f8f7174426e800/windows%20sdk%20for%20windows%20store%20apps%20directx%20x64%20remote-x64_en-us.msi
   - fileName: Installers\Windows SDK for Windows Store Apps DirectX x86 Remote-x86_en-us.msi
-    sha256: 5B3FEC2E23FD0FC8287728274F575BD7B3D70F9435963E9C749573B22C526FDB
+    sha256: B57FA511B00E0186342FA0FD1E6C060495CD3368ECFE055A05297372B0AAA415
     size: 454656
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/ae9bef1476eb011f588b457ba90bb7c1/windows%20sdk%20for%20windows%20store%20apps%20directx%20x86%20remote-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/51ba952a1356b9ec74ece77852438445/windows%20sdk%20for%20windows%20store%20apps%20directx%20x86%20remote-x86_en-us.msi
   - fileName: Installers\Windows SDK for Windows Store Apps Headers OnecoreUap-x86_en-us.msi
-    sha256: 09E56F308379A3406D7F23C40E3D86F828550B0C60868AB5C993A4538A9D9DE6
+    sha256: BE5EE13CCC98B87211B4F3686972B00FA16F20F266FE9DC5572D62F001E0547C
     size: 471040
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/4cf3fb4014ac82048a9ddb5e9cea1f12/windows%20sdk%20for%20windows%20store%20apps%20headers%20onecoreuap-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/95de969f19c09fe411b779c2e2f06f0d/windows%20sdk%20for%20windows%20store%20apps%20headers%20onecoreuap-x86_en-us.msi
   - fileName: Installers\Windows SDK for Windows Store Apps Headers-x86_en-us.msi
-    sha256: F7B24ECB9EE0F4E62B4247F09715E7336511922D22B2EBACF88ADD1F3660F1F7
-    size: 1052672
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/d9b278c884b8be2a7f7abd3b1dfc5a9f/windows%20sdk%20for%20windows%20store%20apps%20headers-x86_en-us.msi
+    sha256: C9F78AE3E730EA1789A37001E204A970099D2ACC555CC537FB45EA0BB23B347C
+    size: 1060864
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/06062c286c5533d4d2c47e613ae44793/windows%20sdk%20for%20windows%20store%20apps%20headers-x86_en-us.msi
   - fileName: Installers\Windows SDK for Windows Store Apps Legacy Tools-x86_en-us.msi
-    sha256: BD51EAF7F2391170553261E45F6476F3F2F2C4951F83F3033BF6E77E0E6425C7
+    sha256: 089BCA68C4E6961DCF7A8688695B1F209C57C81B00D3017BC4030F0459E65DD1
     size: 454656
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/24d695f8445afa98a09b915c827dc467/windows%20sdk%20for%20windows%20store%20apps%20legacy%20tools-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/0816d20020d8d88741be47edb4629431/windows%20sdk%20for%20windows%20store%20apps%20legacy%20tools-x86_en-us.msi
   - fileName: Installers\Windows SDK for Windows Store Apps Libs-x86_en-us.msi
-    sha256: 9F4F04A1A703112DF58B4FC73ABE8831D9B46BB036CC9FA0F599566AADE22F6A
+    sha256: 1381535D2F6B1894A092DA67F8A8FB048A4DFE8060CE75B3275AFFA81B02586E
     size: 528384
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/4fac7e6615e446580897adfd713922c7/windows%20sdk%20for%20windows%20store%20apps%20libs-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/079ca63878193e064d8aa000670f0db3/windows%20sdk%20for%20windows%20store%20apps%20libs-x86_en-us.msi
   - fileName: Installers\Windows SDK for Windows Store Apps Metadata-x86_en-us.msi
-    sha256: DBC8A63E2084AF98B2F203106CFDDE18A928BF472F85B4A052467B73ED4B3F16
+    sha256: 79E98CED41F73362DF5152A737FB0CB12CFE6835A12044B2822503F6C2973BA2
     size: 454656
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/0e9c296f66a7d436ee67c69684173418/windows%20sdk%20for%20windows%20store%20apps%20metadata-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/cb562d9cd0a6e082ca6f5ada49ec8c0c/windows%20sdk%20for%20windows%20store%20apps%20metadata-x86_en-us.msi
   - fileName: Installers\Windows SDK for Windows Store Apps Tools-x86_en-us.msi
-    sha256: 5CA589AF212ACDDC55147058170E722A5BB226AEE343D88C9B38AF693C79A5E2
+    sha256: 8FB00DF405939D60E50A2F1F5D068284153AB3520B6B3657C9CE3796E4A60469
     size: 516096
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/e355b98f6a8b9b0b24fcf78e49ac2f12/windows%20sdk%20for%20windows%20store%20apps%20tools-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/286d62d852247d09756ce4e5612fbe3e/windows%20sdk%20for%20windows%20store%20apps%20tools-x86_en-us.msi
   - fileName: Installers\Windows SDK for Windows Store Apps-x86_en-us.msi
-    sha256: 4545B8872ADB0BB76DD71266CBE2B857F781D0565B864B14FF376B8BC563A306
+    sha256: 5603DB7A320D34B4F08774D5735960551777DAD8026848054BF349DCFAC17348
     size: 462848
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/13efed30788b8be0d30b4fff61e2fe80/windows%20sdk%20for%20windows%20store%20apps-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/f69271860a7f11ef50ec22c2f8925e29/windows%20sdk%20for%20windows%20store%20apps-x86_en-us.msi
   - fileName: Installers\Windows SDK for Windows Store Managed Apps Libs-x86_en-us.msi
-    sha256: 936E5289A329B974F27C6B60F1BED9C0F307574095DCB4AF4A181365CD3DB4A7
+    sha256: 461FC771D203D3F7EEE204A9A6093196BFA4021E53B6E0D4444DFEDFE40858C6
     size: 450560
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/49c2cd5c5bd0b3cfa6aa3a7a010a3397/windows%20sdk%20for%20windows%20store%20managed%20apps%20libs-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/0e98d36e8daf6ba224f56189baa2f5ad/windows%20sdk%20for%20windows%20store%20managed%20apps%20libs-x86_en-us.msi
   - fileName: Installers\Windows SDK Modern Non-Versioned Developer Tools-x86_en-us.msi
-    sha256: 1B33821A256F6AC9D2E7D2DA1707404662423CF167DB49A1552780FE791B2B73
+    sha256: 82ABFE7E3F7A14A288C8FEFF3152E14D8A05E280F72CFE1F97D542B8C5EF73B2
     size: 458752
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/369069322f39c828f28fd57c7cccb27c/windows%20sdk%20modern%20non-versioned%20developer%20tools-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/efde6057daf2466860be03c97f9846a3/windows%20sdk%20modern%20non-versioned%20developer%20tools-x86_en-us.msi
   - fileName: Installers\Windows SDK Modern Versioned Developer Tools-x86_en-us.msi
-    sha256: F75C3CBD6535AE05EEEEB74C06247A29A955B9CD1E2118BAD00D62BE801BB9FF
+    sha256: 45B528B739011F89E7E96045885AAE29E68A29667980F8EEFACFAE6ACF44D597
     size: 458752
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/2aa0dbf41e0e8b6cf3b9bb9179d7c456/windows%20sdk%20modern%20versioned%20developer%20tools-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/2926f303f5cdc5acbf8592eac1caed40/windows%20sdk%20modern%20versioned%20developer%20tools-x86_en-us.msi
   - fileName: Installers\Windows SDK OnecoreUap Headers arm64-x86_en-us.msi
-    sha256: 7A45E99569DC5624C244BA172BDE86198F6642F16267126B0770AF58BD3ABD13
+    sha256: 3A6B88F58773193D318C84976A0C487D6FAC2046391539E78005F85A71E315D9
     size: 450560
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/e7d49b3def826360af91aff3955afc5c/windows%20sdk%20onecoreuap%20headers%20arm64-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/37c03876b4aabf100541e432958a0e4d/windows%20sdk%20onecoreuap%20headers%20arm64-x86_en-us.msi
   - fileName: Installers\Windows SDK OnecoreUap Headers x64-x86_en-us.msi
-    sha256: 7122E0A2219C0116D3F7196168CE750ABB1B0F8A720939A3CDD66942F8901111
+    sha256: 14667A930569186A25E75EB35614CE43549B7406705E098DB71FFE9B31C60FAA
     size: 450560
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/377dc18910a423877f75ca8dc460d3fd/windows%20sdk%20onecoreuap%20headers%20x64-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/e97ca2e01a3fd50e3270b20acf1971ad/windows%20sdk%20onecoreuap%20headers%20x64-x86_en-us.msi
   - fileName: Installers\Windows SDK OnecoreUap Headers x86-x86_en-us.msi
-    sha256: E5EDC91FEA962FDE1EC1B54C962477A4A3DFE19DBF4D7947734D3FE95911E46F
+    sha256: 09725127B70E645FD0C86F004A1B0204AE72D685D70B2E3856EFC00533AAEEC3
     size: 495616
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/320778fb4de6c783bd50f0ac949a30f5/windows%20sdk%20onecoreuap%20headers%20x86-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/bf4c8a484028b6e592a6a9d818c21777/windows%20sdk%20onecoreuap%20headers%20x86-x86_en-us.msi
   - fileName: Installers\Windows SDK Redistributables-x86_en-us.msi
-    sha256: 7075BAED6297E61086EF47A8C86F8E2A9C5ED41D01AA799BFF79F562E0928A8A
+    sha256: 4F6C4DA1905281E82785C4411A57711B8AAEA54E2417742CFA17473678208B66
     size: 450560
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/2f4de98264deec552dbd0ee6bc0abdfb/windows%20sdk%20redistributables-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/375c764093a07ab889b8fca5085bd391/windows%20sdk%20redistributables-x86_en-us.msi
   - fileName: Installers\Windows SDK Signing Tools-x86_en-us.msi
-    sha256: AAD82D4F5EE8C113C6C7C78611CD13034157841A784FCBA55BD87C61D810DAA6
+    sha256: 99505122E69835942B7B9E3F49D91B4AF7BFB0438E898898AA2CCE3333F70714
     size: 462848
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/5bc19e88c423819209e790a9021f8313/windows%20sdk%20signing%20tools-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/5b2637e552ad29728a1b101c7b12d161/windows%20sdk%20signing%20tools-x86_en-us.msi
   - fileName: Installers\Windows SDK-x86_en-us.msi
-    sha256: D056625749ECA5CB6D4D58BBF21B9F22DD10AD8D1D7D0E404A1BC841E1D279B4
+    sha256: 88B217903D9C56416566512D6CF8F29EA9A10BBC50CDDF02556DDA70DFC6D570
     size: 462848
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/4e6c6f2277a87b8e405cffcecfaecd1f/windows%20sdk-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/1c739a7b00b84560ed509d271144f223/windows%20sdk-x86_en-us.msi
   - fileName: Installers\Windows Team Extension SDK-x86_en-us.msi
-    sha256: 2839D002A00C882DC738643DA12F7F23E99F7FD4CF405C568A1E220804CCF317
+    sha256: 7BA32F63F2668D921952DC31335745014B16D59E9E66E20F07AEB24651F29AF2
     size: 446464
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/2b4ff28c8fd6ad4ed8d12381352858d9/windows%20team%20extension%20sdk-x86_en-us.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/5b53f56569cb11ac9139a0339e0df668/windows%20team%20extension%20sdk-x86_en-us.msi
   - fileName: Redistributable\10.1.0.0\UAPSDKAddOn-x86.msi
-    sha256: F67C3417A7EFF0D6313A10A045ECC0928F06AB06B35F8F9519E1432FC0FF3603
+    sha256: 5CD04713AF745840B1DAB8DA280B97B774ECF08065987EAE0A9B95EE8EA838D8
     size: 237568
-    url: https://download.visualstudio.microsoft.com/download/pr/3afa4e72-d57a-4ebb-93c5-e7962e7b633b/1d69ce30cb83d3071d1352a4351cb5b4/uapsdkaddon-x86.msi
+    url: https://download.visualstudio.microsoft.com/download/pr/6452c1f1-dc1e-413c-8b19-991b61870a8b/4a30409fbb82bcea98b4aaa30e781dcd/uapsdkaddon-x86.msi
   - fileName: Installers\e680f23450a21a27b2077dbdc08ca430.cab
     sha256: C0D52C77E727442CF613E2B93E210FE71C4B4BB8F78560CAFBC555884F86398F
     size: 5016970
@@ -1932,4 +1932,4 @@
     size: 32108544
     url: https://download.visualstudio.microsoft.com/download/pr/5eeaf3c7-015f-442c-8d63-aea17e5e6aef/683c3ee73ff9a0e0f4299856e007d278/x64%20debuggers%20and%20tools-x64_en-us.msi
   type: Exe
-  version: 10.0.26100.14
+  version: 10.0.26100.15

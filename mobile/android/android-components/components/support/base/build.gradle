@@ -9,8 +9,6 @@ plugins {
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
-def generatedSrcDir = new File(layout.buildDirectory.get().asFile, "generated/components/src/main/java")
-
 android {
     defaultConfig {
         def appServicesVersion = ApplicationServicesConfig.version
@@ -20,19 +18,13 @@ android {
 
         buildConfigField("String", "LIBRARY_VERSION", "\"" + config.componentsVersion + "\"")
         buildConfigField("String", "APPLICATION_SERVICES_VERSION", "\"" + appServicesVersion + "\"")
-        buildConfigField("String", "GLEAN_SDK_VERSION", "\"" + project.ext.gleanVersion + "\"")
+        // This uses the version catalog entry, which could differ from the version
+        // Gradle actually resolves if a range or `+` were used in the catalog.
+        buildConfigField("String", "GLEAN_SDK_VERSION", "\"" + libs.versions.glean.get() + "\"")
         if (gradle.mozconfig.substs.MOZ_INCLUDE_SOURCE_INFO) {
             buildConfigField("String", "VCS_HASH", "\"" + gradle.mozconfig.source_repo.MOZ_SOURCE_STAMP + "\"")
         } else {
             buildConfigField("String", "VCS_HASH", "\"\"")
-        }
-    }
-
-    sourceSets {
-        main {
-            java {
-                srcDirs += generatedSrcDir
-            }
         }
     }
 
@@ -62,28 +54,25 @@ dependencies {
 
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
+    testImplementation libs.kotlin.test
     testImplementation libs.kotlinx.coroutines.test
     testImplementation libs.robolectric
 }
 
 /**
- * Generates a "Components" enum listing all published components.
+ * Generates a "Component" enum listing all published components.
  */
-tasks.register("generateComponentEnum") {
-    def buildConfigCache = buildConfig
-    def publishedProjects = buildConfigCache.projects.findAll { project ->
-        project.value.publish
-    }
-    def file = new File(generatedSrcDir, "Component.kt")
+abstract class GenerateComponentEnum extends DefaultTask {
+    @Input
+    abstract ListProperty<String> getComponents()
 
-    inputs.property("publishedProjects", publishedProjects.collect { project ->
-        project.key + ":" + project.value.publish
-    }.sort())
+    @OutputDirectory
+    abstract DirectoryProperty getOutputDir()
 
-    outputs.file(file)
-    
-    doLast {
-        generatedSrcDir.mkdirs()
+    @TaskAction
+    void generate() {
+        def dir = outputDir.get().asFile
+        dir.mkdirs()
 
         def content = new StringBuilder()
         content << "/* This Source Code Form is subject to the terms of the Mozilla Public\n" +
@@ -96,26 +85,41 @@ tasks.register("generateComponentEnum") {
         content << "\n"
         content << "enum class Component {" << "\n"
 
-        content << publishedProjects.collect { project ->
-            "    " + project.key.replaceFirst(/^components:/, "").replace("-", "_").toUpperCase(Locale.US)
+        content << components.get().collect { name ->
+            "    " + name
         }.join(", \n")
 
         content << "\n"
         content << "}\n"
         content << "\n"
 
-        file.text = content.toString()
+        new File(dir, "Component.kt").text = content.toString()
     }
 }
 
-afterEvaluate {
-    tasks.matching {
-        (it.name.startsWith("compile") && it.name.endsWith("Kotlin")) ||
-        it.name.startsWith("explodeCodeSource") ||
-        it.name in ["sourceReleaseJar", "sourcesJar"]
-    }.configureEach {
-        dependsOn("generateComponentEnum")
+def publishedComponents = buildConfig.projects.findAll { project ->
+    project.value.publish
+}.collect { project ->
+    project.key.replaceFirst(/^components:/, "").replace("-", "_").toUpperCase(Locale.US)
+}
+
+def generateComponentEnum = tasks.register("generateComponentEnum", GenerateComponentEnum) {
+    components.set(publishedComponents)
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        variant.sources.java.addGeneratedSourceDirectory(generateComponentEnum) { it.outputDir }
     }
+}
+
+// The variant Sources API wires compilation automatically, but DAGP's source
+// exploder and the publishing sources jars consume the sources separately.
+tasks.matching {
+    it.name.startsWith("explodeCodeSource") ||
+    it.name in ["sourceReleaseJar", "sourcesJar"]
+}.configureEach {
+    dependsOn(generateComponentEnum)
 }
 
 apply from: '../../../common-config.gradle'

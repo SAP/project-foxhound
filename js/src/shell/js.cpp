@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /*
@@ -31,7 +29,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <chrono>
 #ifdef XP_WIN
 #  include <direct.h>
 #  include <process.h>
@@ -96,18 +93,6 @@
 #  include "irregexp/RegExpAPI.h"
 #endif
 
-#ifdef JS_SIMULATOR_ARM
-#  include "jit/arm/Simulator-arm.h"
-#endif
-#ifdef JS_SIMULATOR_MIPS64
-#  include "jit/mips64/Simulator-mips64.h"
-#endif
-#ifdef JS_SIMULATOR_LOONG64
-#  include "jit/loong64/Simulator-loong64.h"
-#endif
-#ifdef JS_SIMULATOR_RISCV64
-#  include "jit/riscv64/Simulator-riscv64.h"
-#endif
 #include "jit/BaselineCompileQueue.h"
 #include "jit/CacheIRHealth.h"
 #include "jit/InlinableNatives.h"
@@ -115,6 +100,7 @@
 #include "jit/JitcodeMap.h"
 #include "jit/JitZone.h"
 #include "jit/shared/CodeGenerator-shared.h"
+#include "jit/Simulator.h"
 #ifdef JS_CODEGEN_ARM64
 #  include "jit/arm64/vixl/Cpu-Features-vixl.h"
 #endif
@@ -253,6 +239,7 @@ bool SetContextOptions(JSContext* cx, const OptionParser& op);
 bool SetContextWasmOptions(JSContext* cx, const OptionParser& op);
 bool SetContextJITOptions(JSContext* cx, const OptionParser& op);
 bool SetContextGCOptions(JSContext* cx, const OptionParser& op);
+bool ApplyBenchmarkMode(JSContext* cx, const OptionParser& op);
 bool InitModuleLoader(JSContext* cx, const OptionParser& op);
 
 #ifdef FUZZING_JS_FUZZILLI
@@ -424,6 +411,24 @@ static void ParseLoggerOptions(mozilla::Range<const char> mixedCaseOpts) {
 
   ToLower(mixedCaseOpts.begin().get(), logOpts.get(), len);
   logOpts.get()[len] = '\0';
+
+  // "help" lists every JS_LOG module and exits.
+  if (strstr(logOpts.get(), "help")) {
+    fputs(
+        "JS_LOG modules.\n"
+        "\n"
+        "Set via MOZ_LOG=<name>:<level>,<name>:<level>,... where level is\n"
+        "1..5 (1=Error, 2=Warning, 3=Info, 4=Debug, 5=Verbose). The level may\n"
+        "be omitted, in which case Debug is used.\n"
+        "\n"
+        "Example: MOZ_LOG=IonScripts:5,LICM:5\n"
+        "\n",
+        stderr);
+#define EMIT(X, HELP) fprintf(stderr, "  %-28s %s\n", #X, HELP);
+    FOR_EACH_JS_LOG_MODULE(EMIT)
+#undef EMIT
+    exit(0);
+  }
 
   // This is a really permissive parser, but will suffice!
   for (auto& logger : logModules) {
@@ -863,6 +868,9 @@ struct MOZ_STACK_CLASS EnvironmentPreparer
 
 const char* shell::selfHostedXDRPath = nullptr;
 bool shell::encodeSelfHostedCode = false;
+enum class BenchmarkMode { Off, Enable, Strict };
+static BenchmarkMode sBenchmarkMode = BenchmarkMode::Off;
+
 bool shell::enableCodeCoverage = false;
 bool shell::enableDisassemblyDumps = false;
 bool shell::offthreadBaselineCompilation = false;
@@ -896,7 +904,7 @@ bool shell::dumpEntrainedVariables = false;
 bool shell::OOM_printAllocationCount = false;
 #endif
 
-MOZ_RUNINIT UniqueChars shell::processWideModuleLoadPath;
+constinit UniqueChars shell::processWideModuleLoadPath;
 
 static bool SetTimeoutValue(JSContext* cx, double t);
 
@@ -911,18 +919,25 @@ enum class ShellGlobalKind {
   WindowProxy,
 };
 
-static void SetStandardRealmOptions(JS::RealmOptions& options);
-static JSObject* NewGlobalObject(JSContext* cx, JS::RealmOptions& options,
-                                 JSPrincipals* principals, ShellGlobalKind kind,
-                                 bool immutablePrototype);
+static void SetStandardRealmOptions(JSContext* cx, JS::RealmOptions& options);
+static JSObject* NewStringInterruptCallbackGlobal(JSContext* cx);
+static JSObject* NewGlobalObject(
+    JSContext* cx, JS::RealmOptions& options, JSPrincipals* principals,
+    ShellGlobalKind kind, bool immutablePrototype,
+    JS::HandleObject existingWindowProxy = nullptr);
 
 /*
  * A toy WindowProxy class for the shell. This is intended for testing code
  * where global |this| is a WindowProxy. All requests are forwarded to the
- * underlying global and no navigation is supported.
+ * underlying global.
+ *
+ * The newGlobal testing function has a transplantWindowProxy option that can be
+ * used to transplant/change a WindowProxy for a new global, similar to what
+ * happens in the browser on navigation.
  */
 const JSClass ShellWindowProxyClass =
-    PROXY_CLASS_DEF("ShellWindowProxy", JSCLASS_HAS_RESERVED_SLOTS(1));
+    PROXY_CLASS_DEF("ShellWindowProxy",
+                    JSCLASS_HAS_RESERVED_SLOTS(SwappableProxyReservedSlots));
 
 JSObject* NewShellWindowProxy(JSContext* cx, JS::HandleObject global) {
   MOZ_ASSERT(global->is<GlobalObject>());
@@ -1062,7 +1077,7 @@ static void TraceRootArrays(JSTracer* trc, gc::MarkColor color) {
 
       GCPtr<ArrayObject*>& array =
           (color == gc::MarkColor::Black) ? priv->blackRoot : priv->grayRoot;
-      TraceNullableEdge(trc, &array, "shell root array");
+      TraceEdge(trc, &array, "shell root array");
 
       if (array) {
         // Trace the array elements as part of root marking.
@@ -1200,6 +1215,20 @@ static bool ShellInterruptCallback(JSContext* cx) {
       result = JS_CallFunctionValue(cx, nullptr, sc->interruptFunc,
                                     JS::HandleValueArray::empty(), &rval);
     } else {
+      // A recurring problem when fuzzing the shell is that setInterruptCallback
+      // gives power that our actual interrupt handlers in the browser don't
+      // use. In particular, we insert interrupt checks in potentially
+      // long-running code (eg ArrayJoinKernel) with the expectation that the
+      // interrupt handler will not reach into the interrupted realm and modify
+      // the contents of the array. As a compromise, when fuzzing, we instead
+      // require a string argument, and evaluate that string in a fresh global
+      // with a reduced set of shell functions. This prevents the interrupt
+      // handler from directly mutating the interrupted code, but still allows
+      // it to do interesting things (get a backtrace, trigger a GC, etc).
+      // Clever ways of circumventing this sandbox are only interesting to the
+      // extent that they correspond with things that happen in real interrupt
+      // handlers in the browser.
+
       RootedString str(cx, sc->interruptFunc.toString());
 
       Maybe<AutoReportException> are;
@@ -1207,11 +1236,7 @@ static bool ShellInterruptCallback(JSContext* cx) {
         are.emplace(cx);
       }
 
-      JS::RealmOptions options;
-      SetStandardRealmOptions(options);
-      RootedObject glob(cx, NewGlobalObject(cx, options, nullptr,
-                                            ShellGlobalKind::WindowProxy,
-                                            /* immutablePrototype = */ true));
+      RootedObject glob(cx, NewStringInterruptCallbackGlobal(cx));
       if (!glob) {
         return false;
       }
@@ -1724,12 +1749,14 @@ class MOZ_RAII AutoLockTelemetry : public LockGuard<Mutex> {
   AutoLockTelemetry() : Base(getMutex()) {}
 };
 
-using TelemetrySamples = mozilla::Vector<uint32_t, 0, js::SystemAllocPolicy>;
+using TelemetrySamples =
+    mozilla::Vector<JSTelemetryData, 0, js::SystemAllocPolicy>;
 constinit static mozilla::Array<UniquePtr<TelemetrySamples>,
                                 size_t(JSMetric::Count)>
     recordedTelemetrySamples;
 
-static void AccumulateTelemetryDataCallback(JSMetric id, uint32_t sample) {
+static void AccumulateTelemetryDataCallback(JSMetric id,
+                                            const JSTelemetryData& sample) {
   AutoLockTelemetry alt;
   TelemetrySamples* samples = recordedTelemetrySamples[size_t(id)].get();
   if (!samples) {
@@ -1846,8 +1873,16 @@ static bool GetTelemetrySamples(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  for (uint32_t sample : *samples) {
-    if (!NewbornArrayPush(cx, array, NumberValue(sample))) {
+  for (const JSTelemetryData& sample : *samples) {
+    Value value;
+    if (sample.is<bool>()) {
+      value = BooleanValue(sample.as<bool>());
+    } else if (sample.is<size_t>()) {
+      value = NumberValue(sample.as<size_t>());
+    } else {
+      value = NumberValue(sample.as<mozilla::TimeDuration>().ToMilliseconds());
+    }
+    if (!NewbornArrayPush(cx, array, value)) {
       return false;
     }
   }
@@ -2405,6 +2440,7 @@ static bool CreateMappedArrayBuffer(JSContext* cx, unsigned argc, Value* vp) {
   RootedObject obj(cx,
                    JS::NewMappedArrayBufferWithContents(cx, size, contents));
   if (!obj) {
+    JS::ReleaseMappedArrayBufferContents(contents, size);
     return false;
   }
 
@@ -2444,16 +2480,7 @@ class UserBufferObject : public NativeObject {
 };
 
 const JSClassOps UserBufferObject::classOps_ = {
-    nullptr,                     // addProperty
-    nullptr,                     // delProperty
-    nullptr,                     // enumerate
-    nullptr,                     // newEnumerate
-    nullptr,                     // resolve
-    nullptr,                     // mayResolve
-    UserBufferObject::finalize,  // finalize
-    nullptr,                     // call
-    nullptr,                     // construct
-    nullptr,                     // trace
+    .finalize = UserBufferObject::finalize,
 };
 
 const JSClass UserBufferObject::class_ = {
@@ -3210,12 +3237,12 @@ static bool EvaluateInner(JSContext* cx, HandleString code,
     }
 
     if (saveBytecodeWithDelazifications) {
-      bool alreadyStarted;
-      if (!JS::StartCollectingDelazifications(cx, script, stencil,
-                                              alreadyStarted)) {
+      JS::CollectDelazificationsResult result;
+      if (!JS::StartCollectingDelazifications(cx, script, stencil, result)) {
         return false;
       }
-      MOZ_ASSERT(!alreadyStarted);
+      MOZ_ASSERT(result == JS::CollectDelazificationsResult::NewlyStarted ||
+                 result == JS::CollectDelazificationsResult::NotSupported);
     }
 
     if (execute) {
@@ -4152,7 +4179,8 @@ static bool DummyPreserveWrapperCallback(JSContext* cx, HandleObject obj) {
   return true;
 }
 
-static bool DummyHasReleasedWrapperCallback(HandleObject obj) { return true; }
+/* Wrappers stay preserved for dummy DOM objects. */
+static bool DummyHasReleasedWrapperCallback(HandleObject obj) { return false; }
 
 #ifdef FUZZING_JS_FUZZILLI
 static bool fuzzilli_hash(JSContext* cx, unsigned argc, Value* vp) {
@@ -4515,16 +4543,9 @@ static bool sandbox_resolve(JSContext* cx, HandleObject obj, HandleId id,
 }
 
 static const JSClassOps sandbox_classOps = {
-    nullptr,                   // addProperty
-    nullptr,                   // delProperty
-    nullptr,                   // enumerate
-    sandbox_enumerate,         // newEnumerate
-    sandbox_resolve,           // resolve
-    nullptr,                   // mayResolve
-    nullptr,                   // finalize
-    nullptr,                   // call
-    nullptr,                   // construct
-    JS_GlobalObjectTraceHook,  // trace
+    .newEnumerate = sandbox_enumerate,
+    .resolve = sandbox_resolve,
+    .trace = JS_GlobalObjectTraceHook,
 };
 
 static const JSClass sandbox_class = {
@@ -4533,7 +4554,7 @@ static const JSClass sandbox_class = {
     &sandbox_classOps,
 };
 
-static void SetStandardRealmOptions(JS::RealmOptions& options) {
+static void SetStandardRealmOptions(JSContext* cx, JS::RealmOptions& options) {
   options.creationOptions()
       .setSharedMemoryAndAtomicsEnabled(enableSharedMemory)
       .setCoopAndCoepEnabled(false)
@@ -4575,7 +4596,7 @@ static void SetStandardRealmOptions(JS::RealmOptions& options) {
 
 static JSObject* NewSandbox(JSContext* cx, bool lazy) {
   JS::RealmOptions options;
-  SetStandardRealmOptions(options);
+  SetStandardRealmOptions(cx, options);
 
   if (defaultToSameCompartment) {
     options.creationOptions().setExistingCompartment(cx->global());
@@ -4760,7 +4781,7 @@ static void WorkerMain(UniquePtr<WorkerInput> input) {
 
   do {
     JS::RealmOptions realmOptions;
-    SetStandardRealmOptions(realmOptions);
+    SetStandardRealmOptions(cx, realmOptions);
 
     RootedObject global(cx, NewGlobalObject(cx, realmOptions, nullptr,
                                             ShellGlobalKind::WindowProxy,
@@ -5279,23 +5300,6 @@ static bool CheckRegExpSyntax(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-static bool IsPrefAvailable(const char* pref) {
-  if (!fuzzingSafe) {
-    // All prefs in fuzzing unsafe mode are enabled.
-    return true;
-  }
-#define WASM_FEATURE(NAME, LOWER_NAME, COMPILE_PRED, COMPILER_PRED, FLAG_PRED, \
-                     FLAG_FORCE_ON, FLAG_FUZZ_ON, PREF)                        \
-  if constexpr (!FLAG_FUZZ_ON) {                                               \
-    if (strcmp("wasm_" #PREF, pref) == 0) {                                    \
-      return false;                                                            \
-    }                                                                          \
-  }
-  JS_FOR_WASM_FEATURES(WASM_FEATURE)
-#undef WASM_FEATURE
-  return true;
-}
-
 template <typename T>
 static bool ParsePrefValue(const char* name, const char* val, T* result) {
   if constexpr (std::is_same_v<T, bool>) {
@@ -5325,7 +5329,8 @@ static bool ParsePrefValue(const char* name, const char* val, T* result) {
 static bool SetPrefToTrueForBool(const char* name) {
   // Search for a matching pref and try to set it to a default value for the
   // type.
-#define CHECK_PREF(NAME, CPP_NAME, TYPE, SETTER, IS_STARTUP_PREF)      \
+#define CHECK_PREF(NAME, CPP_NAME, TYPE, SETTER, IS_STARTUP_PREF,      \
+                   FUZZING_SAFE)                                       \
   if (strcmp(name, NAME) == 0) {                                       \
     if constexpr (std::is_same_v<TYPE, bool>) {                        \
       JS::Prefs::SETTER(true);                                         \
@@ -5379,8 +5384,9 @@ static bool SetPrefValue(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Search for a matching pref and try to set it to the provided value.
-#define CHECK_PREF(NAME, CPP_NAME, TYPE, SETTER, IS_STARTUP_PREF)             \
-  if (IsPrefAvailable(NAME) && StringEqualsLiteral(name, NAME)) {             \
+#define CHECK_PREF(NAME, CPP_NAME, TYPE, SETTER, IS_STARTUP_PREF,             \
+                   FUZZING_SAFE)                                              \
+  if (StringEqualsLiteral(name, NAME)) {                                      \
     if (IS_STARTUP_PREF) {                                                    \
       JS_ReportErrorASCII(cx, "%s is a startup pref and can't be set", NAME); \
       return false;                                                           \
@@ -5408,7 +5414,8 @@ static bool SetPrefValue(JSContext* cx, unsigned argc, Value* vp) {
 static bool SetPrefToValue(const char* name, size_t nameLen,
                            const char* value) {
   // Search for a matching pref and try to set it to the provided value.
-#define CHECK_PREF(NAME, CPP_NAME, TYPE, SETTER, IS_STARTUP_PREF)         \
+#define CHECK_PREF(NAME, CPP_NAME, TYPE, SETTER, IS_STARTUP_PREF,         \
+                   FUZZING_SAFE)                                          \
   if (nameLen == strlen(NAME) && memcmp(name, NAME, strlen(NAME)) == 0) { \
     TYPE v;                                                               \
     if (!ParsePrefValue<TYPE>(NAME, value, &v)) {                         \
@@ -5434,7 +5441,7 @@ static bool SetPrefToValue(const char* name, size_t nameLen,
 static bool SetPref(const char* pref) {
   const char* assign = strchr(pref, '=');
   if (!assign) {
-    if (IsPrefAvailable(pref) && !SetPrefToTrueForBool(pref)) {
+    if (!SetPrefToTrueForBool(pref)) {
       return false;
     }
     return true;
@@ -5443,30 +5450,29 @@ static bool SetPref(const char* pref) {
   size_t nameLen = assign - pref;
   const char* valStart = assign + 1;  // Skip '='.
 
-  if (IsPrefAvailable(pref) && !SetPrefToValue(pref, nameLen, valStart)) {
+  if (!SetPrefToValue(pref, nameLen, valStart)) {
     return false;
   }
   return true;
 }
 
 static void ListPrefs() {
-  auto printPref = [](const char* name, auto defaultVal) {
-    if (!IsPrefAvailable(name)) {
-      return;
-    }
+  auto printPref = [](const char* name, auto defaultVal, bool fuzzingSafe) {
+    const char* suffix = fuzzingSafe ? "" : "  [not fuzzing-safe]";
     using T = decltype(defaultVal);
     if constexpr (std::is_same_v<T, bool>) {
-      fprintf(stderr, "%s=%s\n", name, defaultVal ? "true" : "false");
+      fprintf(stderr, "%s=%s%s\n", name, defaultVal ? "true" : "false", suffix);
     } else if constexpr (std::is_same_v<T, int32_t>) {
-      fprintf(stderr, "%s=%d\n", name, defaultVal);
+      fprintf(stderr, "%s=%d%s\n", name, defaultVal, suffix);
     } else {
       static_assert(std::is_same_v<T, uint32_t>);
-      fprintf(stderr, "%s=%u\n", name, defaultVal);
+      fprintf(stderr, "%s=%u%s\n", name, defaultVal, suffix);
     }
   };
 
-#define PRINT_PREF(NAME, CPP_NAME, TYPE, SETTER, IS_STARTUP_PREF) \
-  printPref(NAME, JS::Prefs::CPP_NAME());
+#define PRINT_PREF(NAME, CPP_NAME, TYPE, SETTER, IS_STARTUP_PREF, \
+                   FUZZING_SAFE)                                  \
+  printPref(NAME, JS::Prefs::CPP_NAME(), FUZZING_SAFE);
   FOR_EACH_JS_PREF(PRINT_PREF)
 #undef PRINT_PREF
 }
@@ -5762,9 +5768,12 @@ static bool ParseModule(JSContext* cx, unsigned argc, Value* vp) {
         moduleType = JS::ModuleType::JSON;
       } else if (JS_LinearStringEqualsLiteral(linearStr, "bytes")) {
         moduleType = JS::ModuleType::Bytes;
+      } else if (JS_LinearStringEqualsLiteral(linearStr, "text")) {
+        moduleType = JS::ModuleType::Text;
       } else if (!JS_LinearStringEqualsLiteral(linearStr, "js")) {
         JS_ReportErrorASCII(
-            cx, "moduleType string ('js' or 'json' or 'bytes') expected");
+            cx,
+            "moduleType string ('js' or 'json' or 'bytes' or 'text') expected");
         return false;
       }
     }
@@ -5805,19 +5814,27 @@ static bool ParseModule(JSContext* cx, unsigned argc, Value* vp) {
     }
 
     case JS::ModuleType::Bytes: {
-      if (!args[0].isObject() ||
-          !JS::IsArrayBufferObject(&args[0].toObject())) {
+      JSObject* obj = args[0].isObject() ? &args[0].toObject() : nullptr;
+      auto typedArray = JS::TypedArray<JS::Scalar::Uint8>::unwrap(obj);
+      if (!typedArray || !typedArray.isImmutable()) {
         const char* typeName = InformalValueTypeName(args[0]);
-        JS_ReportErrorASCII(cx, "expected ArrayBuffer for bytes module, got %s",
-                            typeName);
+        JS_ReportErrorASCII(
+            cx, "expected immutable Uint8Array for bytes module, got %s",
+            typeName);
         return false;
       }
 
-      /*
-       * NOTE: The spec requires checking that the ArrayBuffer is immutable.
-       * Immutable ArrayBuffers (see bug 1952253) are still only a Stage 2.7
-       * proposal. This check will be added in a future update.
-       */
+      module = JS::CreateDefaultExportSyntheticModule(cx, args[0]);
+      break;
+    }
+
+    case JS::ModuleType::Text: {
+      if (!args[0].isString()) {
+        const char* typeName = InformalValueTypeName(args[0]);
+        JS_ReportErrorASCII(cx, "expected text string, got %s", typeName);
+        return false;
+      }
+
       module = JS::CreateDefaultExportSyntheticModule(cx, args[0]);
       break;
     }
@@ -5870,16 +5887,7 @@ class XDRBufferObject : public NativeObject {
 };
 
 /*static */ const JSClassOps XDRBufferObject::classOps_ = {
-    nullptr,                    // addProperty
-    nullptr,                    // delProperty
-    nullptr,                    // enumerate
-    nullptr,                    // newEnumerate
-    nullptr,                    // resolve
-    nullptr,                    // mayResolve
-    XDRBufferObject::finalize,  // finalize
-    nullptr,                    // call
-    nullptr,                    // construct
-    nullptr,                    // trace
+    .finalize = XDRBufferObject::finalize,
 };
 
 /*static */ const JSClass XDRBufferObject::class_ = {
@@ -7407,7 +7415,7 @@ static bool NewGlobal(JSContext* cx, unsigned argc, Value* vp) {
   ShellGlobalKind kind = ShellGlobalKind::WindowProxy;
   bool immutablePrototype = true;
 
-  SetStandardRealmOptions(options);
+  SetStandardRealmOptions(cx, options);
 
   // Default to creating the global in the current compartment unless
   // --more-compartments is used.
@@ -7420,6 +7428,10 @@ static bool NewGlobal(JSContext* cx, unsigned argc, Value* vp) {
   // Ensure the target compartment/zone is kept alive when sameCompartmentAs or
   // sameZoneAs is used.
   Rooted<JSObject*> compartmentRoot(cx);
+
+  // If transplantWindowProxy is given, the unwrapped existing WindowProxy that
+  // will be transplanted.
+  Rooted<JSObject*> existingWindowProxy(cx);
 
   JS::AutoHoldPrincipals principals(cx);
 
@@ -7474,6 +7486,20 @@ static bool NewGlobal(JSContext* cx, unsigned argc, Value* vp) {
     if (v.isBoolean()) {
       kind = v.toBoolean() ? ShellGlobalKind::WindowProxy
                            : ShellGlobalKind::GlobalObject;
+    }
+
+    if (!JS_GetProperty(cx, opts, "transplantWindowProxy", &v)) {
+      return false;
+    }
+    if (v.isObject()) {
+      existingWindowProxy =
+          js::CheckedUnwrapDynamic(&v.toObject(), cx,
+                                   /* stopAtWindowProxy = */ true);
+      if (!existingWindowProxy) {
+        ReportAccessDenied(cx);
+        return false;
+      }
+      kind = ShellGlobalKind::WindowProxy;
     }
 
     if (!JS_GetProperty(cx, opts, "immutablePrototype", &v)) {
@@ -7563,12 +7589,21 @@ static bool NewGlobal(JSContext* cx, unsigned argc, Value* vp) {
     }
   }
 
+  // Ensure existingWindowProxy is a WindowProxy. This must be checked after
+  // operations that can run JS and transplant the WindowProxy.
+  if (existingWindowProxy && !js::IsWindowProxy(existingWindowProxy)) {
+    JS_ReportErrorASCII(cx,
+                        "transplantWindowProxy: argument is not a WindowProxy");
+    return false;
+  }
+
   if (!CheckRealmOptions(cx, options, principals.get())) {
     return false;
   }
 
-  RootedObject global(cx, NewGlobalObject(cx, options, principals.get(), kind,
-                                          immutablePrototype));
+  RootedObject global(cx,
+                      NewGlobalObject(cx, options, principals.get(), kind,
+                                      immutablePrototype, existingWindowProxy));
   if (!global) {
     return false;
   }
@@ -7641,9 +7676,10 @@ static bool DumpObjectWrappers(JSContext* cx, unsigned argc, Value* vp) {
     bool printedZoneInfo = false;
     for (CompartmentsInZoneIter comp(zone); !comp.done(); comp.next()) {
       bool printedCompartmentInfo = false;
-      for (Compartment::ObjectWrapperEnum e(comp); !e.empty(); e.popFront()) {
-        JSObject* wrapper = e.front().value().unbarrieredGet();
-        JSObject* wrapped = e.front().key();
+      for (auto iter = comp->objectWrapperMappings(); !iter.done();
+           iter.next()) {
+        JSObject* wrapper = iter.get().value().unbarrieredGet();
+        JSObject* wrapped = iter.get().key();
         if (!printedHeader) {
           fprintf(stderr, "Cross-compartment object wrappers:\n");
           printedHeader = true;
@@ -7677,6 +7713,21 @@ static bool GetMaxArgs(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
+static bool GetAbstractModuleSource(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  if (JS::Prefs::experimental_source_phase_imports()) {
+    JSObject* obj =
+        GlobalObject::getOrCreateConstructor(cx, JSProto_AbstractModuleSource);
+    if (!obj) {
+      return false;
+    }
+    args.rval().setObject(*obj);
+  } else {
+    args.rval().setUndefined();
+  }
+  return true;
+}
+
 static bool IsHTMLDDA_Call(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -7697,16 +7748,7 @@ static bool CreateIsHTMLDDA(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   static const JSClassOps classOps = {
-      nullptr,         // addProperty
-      nullptr,         // delProperty
-      nullptr,         // enumerate
-      nullptr,         // newEnumerate
-      nullptr,         // resolve
-      nullptr,         // mayResolve
-      nullptr,         // finalize
-      IsHTMLDDA_Call,  // call
-      nullptr,         // construct
-      nullptr,         // trace
+      .call = IsHTMLDDA_Call,
   };
 
   static const JSClass cls = {
@@ -7923,7 +7965,7 @@ static void SingleStepCallback(void* arg, jit::Simulator* sim, void* pc) {
     MOZ_ASSERT(i.stackAddress() != nullptr);
 #  ifndef ENABLE_WASM_JSPI
     // The stack addresses are monotonically increasing, except when
-    // suspendable stacks are present (e.g. when JS PI is enabled).
+    // cont stacks are present (e.g. when JS PI is enabled).
     MOZ_ASSERT(lastStackAddress <= i.stackAddress());
 #  endif
     lastStackAddress = i.stackAddress();
@@ -8505,16 +8547,7 @@ class StreamCacheEntryObject : public NativeObject {
 };
 
 const JSClassOps StreamCacheEntryObject::classOps_ = {
-    nullptr,                           // addProperty
-    nullptr,                           // delProperty
-    nullptr,                           // enumerate
-    nullptr,                           // newEnumerate
-    nullptr,                           // resolve
-    nullptr,                           // mayResolve
-    StreamCacheEntryObject::finalize,  // finalize
-    nullptr,                           // call
-    nullptr,                           // construct
-    nullptr,                           // trace
+    .finalize = StreamCacheEntryObject::finalize,
 };
 
 const JSClass StreamCacheEntryObject::class_ = {
@@ -9078,86 +9111,117 @@ static constexpr uint32_t DOM_OBJECT_SLOT2 = 1;
 
 static const JSClass* GetDomClass();
 
-static JSObject* GetDOMPrototype(JSContext* cx, JSObject* global);
+static const JSClass TransplantableProxyObjectClass =
+    PROXY_CLASS_DEF("TransplantableProxyObject",
+                    JSCLASS_HAS_RESERVED_SLOTS(SwappableProxyReservedSlots));
 
-static void TransplantableDOMObject_finalize(JS::GCContext* gcx,
-                                             JSObject* obj) {
-  // Dummy finalize method so we can swap with background finalized object.
-}
-
-static const JSClassOps TransplantableDOMObjectClassOps = {
-    nullptr,  // addProperty
-    nullptr,  // delProperty
-    nullptr,  // enumerate
-    nullptr,  // newEnumerate
-    nullptr,  // resolve
-    nullptr,  // mayResolve
-    TransplantableDOMObject_finalize,
-    nullptr,  // call
-    nullptr,  // construct
-    nullptr,
-};
-
-static const JSClass TransplantableDOMObjectClass = {
-    "TransplantableDOMObject",
-    JSCLASS_IS_DOMJSCLASS | JSCLASS_HAS_RESERVED_SLOTS(1) |
-        JSCLASS_BACKGROUND_FINALIZE,
-    &TransplantableDOMObjectClassOps};
-
-static const JSClass TransplantableDOMProxyObjectClass =
-    PROXY_CLASS_DEF("TransplantableDOMProxyObject",
-                    JSCLASS_IS_DOMJSCLASS | JSCLASS_HAS_RESERVED_SLOTS(1));
-
-class TransplantableDOMProxyHandler final : public ForwardingProxyHandler {
+// A non-Wrapper proxy that can be transplanted. We want to have shell coverage
+// of this to match the non-wrapper RemoteObjectProxy{Base} proxies in the
+// browser.
+class TransplantableProxyHandler final : public ForwardingProxyHandler {
  public:
-  static const TransplantableDOMProxyHandler singleton;
+  static const TransplantableProxyHandler singleton;
   static const char family;
 
-  constexpr TransplantableDOMProxyHandler() : ForwardingProxyHandler(&family) {}
+  constexpr TransplantableProxyHandler() : ForwardingProxyHandler(&family) {}
 
   // These two proxy traps are called in |js::DeadProxyTargetValue|, which in
   // turn is called when nuking proxies. Because this proxy can temporarily be
-  // without an object in its private slot, see |EnsureExpandoObject|, the
+  // without an object in its private slot, see |GetAndClearExpandoObject|, the
   // default implementation inherited from ForwardingProxyHandler can't be used,
   // since it tries to derive the callable/constructible value from the target.
   bool isCallable(JSObject* obj) const override { return false; }
   bool isConstructor(JSObject* obj) const override { return false; }
 
-  // Simplified implementation of |DOMProxyHandler::GetAndClearExpandoObject|.
-  static JSObject* GetAndClearExpandoObject(JSObject* obj) {
-    const Value& v = GetProxyPrivate(obj);
-    if (v.isUndefined()) {
-      return nullptr;
-    }
-
-    JSObject* expandoObject = &v.toObject();
-    SetProxyPrivate(obj, UndefinedValue());
-    return expandoObject;
+  static bool is(JSObject* obj) {
+    return IsProxy(obj) && GetProxyHandler(obj) == &singleton;
   }
 
-  // Simplified implementation of |DOMProxyHandler::EnsureExpandoObject|.
-  static JSObject* EnsureExpandoObject(JSContext* cx, JS::HandleObject obj) {
-    const Value& v = GetProxyPrivate(obj);
-    if (v.isObject()) {
-      return &v.toObject();
-    }
-    MOZ_ASSERT(v.isUndefined());
+  bool mayBeSwapped() const override { return true; }
 
-    JSObject* expando = JS_NewObjectWithGivenProto(cx, nullptr, nullptr);
-    if (!expando) {
-      return nullptr;
-    }
-    SetProxyPrivate(obj, ObjectValue(*expando));
-    return expando;
+  // For testing purposes allow these to be allocated in the nursery. This
+  // doesn't (currently) happen in the browser.
+  bool canNurseryAllocate() const override { return true; }
+
+  static JSObject* GetAndClearExpandoObject(
+      JSObject* obj, JS::MutableHandle<JS::Value> restoreToken) {
+    MOZ_ASSERT(TransplantableProxyHandler::is(obj));
+    Value v = GetProxyPrivate(obj);
+    MOZ_ASSERT(v.isObject());
+    restoreToken.set(v);
+    SetProxyPrivate(obj, UndefinedValue());
+    return &v.toObject();
+  }
+
+  static void RestoreExpando(JSObject* obj, const JS::Value& restoreToken) {
+    MOZ_ASSERT(TransplantableProxyHandler::is(obj));
+    SetProxyPrivate(obj, restoreToken);
   }
 };
 
-const TransplantableDOMProxyHandler TransplantableDOMProxyHandler::singleton;
-const char TransplantableDOMProxyHandler::family = 0;
+const TransplantableProxyHandler TransplantableProxyHandler::singleton;
+const char TransplantableProxyHandler::family = 0;
 
 enum TransplantObjectSlots {
   TransplantSourceObject = 0,
 };
+
+static JSObject* NewTransplantableProxy(JSContext* cx) {
+  JSObject* expando = JS_NewPlainObject(cx);
+  if (!expando) {
+    return nullptr;
+  }
+  RootedValue expandoVal(cx, ObjectValue(*expando));
+
+  ProxyOptions options;
+  options.setClass(&TransplantableProxyObjectClass);
+  options.setLazyProto(true);
+
+  return NewProxyObject(cx, &TransplantableProxyHandler::singleton, expandoVal,
+                        nullptr, options);
+}
+
+// Copy own properties (including private fields) from |obj| to |target|.
+// |obj| and |target| may be in different compartments.
+static bool CopyExpandoProperties(JSContext* cx, HandleObject target,
+                                  HandleObject obj) {
+  // |obj| and |target| must not be CCWs because we need to enter their realms
+  // below and CCWs are not associated with a single realm.
+  MOZ_ASSERT(!IsCrossCompartmentWrapper(obj));
+  MOZ_ASSERT(!IsCrossCompartmentWrapper(target));
+
+  JSAutoRealm ar(cx, obj);
+
+  RootedIdVector props(cx);
+  if (!GetPropertyKeys(
+          cx, obj,
+          JSITER_PRIVATE | JSITER_OWNONLY | JSITER_HIDDEN | JSITER_SYMBOLS,
+          &props)) {
+    return false;
+  }
+
+  for (size_t i = 0; i < props.length(); ++i) {
+    RootedId id(cx, props[i]);
+    Rooted<mozilla::Maybe<PropertyDescriptor>> desc(cx);
+    if (!GetOwnPropertyDescriptor(cx, obj, id, &desc)) {
+      return false;
+    }
+    MOZ_ASSERT(desc.isSome());
+
+    JSAutoRealm dstRealm(cx, target);
+    cx->markId(id);
+    RootedId wrappedId(cx, id);
+    if (!cx->compartment()->wrap(cx, &desc)) {
+      return false;
+    }
+    Rooted<PropertyDescriptor> desc_(cx, *desc);
+    if (!DefineProperty(cx, target, wrappedId, desc_)) {
+      return false;
+    }
+  }
+
+  return true;
+}
 
 static bool TransplantObject(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -9194,48 +9258,27 @@ static bool TransplantObject(JSContext* cx, unsigned argc, Value* vp) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_DEAD_OBJECT);
     return false;
   }
-  MOZ_ASSERT(source->getClass()->isDOMClass());
 
-  // The following steps aim to replicate the behavior of UpdateReflectorGlobal
-  // in dom/bindings/BindingUtils.cpp. In detail:
-  // 1. Check the recursion depth using checkConservative.
-  // 2. Enter the target compartment.
-  // 3. Clone the source object using JS_CloneObject.
-  // 4. Check if new wrappers can be created if source and target are in
-  //    different compartments.
-  // 5. Copy all properties from source to a temporary holder object.
-  // 6. Actually transplant the object.
-  // 7. And finally copy the properties back to the source object.
-  //
-  // As an extension to the algorithm in UpdateReflectorGlobal, we also allow
-  // to transplant an object into the same compartment as the source object to
-  // cover all operations supported by JS_TransplantObject.
+  MOZ_ASSERT(TransplantableProxyHandler::is(source));
 
   AutoCheckRecursionLimit recursion(cx);
   if (!recursion.checkConservative(cx)) {
     return false;
   }
 
-  bool isProxy = IsProxy(source);
-  RootedObject expandoObject(cx);
-  if (isProxy) {
-    expandoObject =
-        TransplantableDOMProxyHandler::GetAndClearExpandoObject(source);
-  }
+  Rooted<Value> expandoRollbackToken(cx);
+  Rooted<JSObject*> expandoObject(
+      cx, TransplantableProxyHandler::GetAndClearExpandoObject(
+              source, &expandoRollbackToken));
+  auto resetExpando = MakeScopeExit([&]() {
+    // First clear the expando object from `source`. On an error, it needs to be
+    // restored.
+    TransplantableProxyHandler::RestoreExpando(source, expandoRollbackToken);
+  });
 
   JSAutoRealm ar(cx, newGlobal);
 
-  RootedObject proto(cx);
-  if (JS::GetClass(source) == GetDomClass()) {
-    proto = GetDOMPrototype(cx, newGlobal);
-  } else {
-    proto = JS::GetRealmObjectPrototype(cx);
-  }
-  if (!proto) {
-    return false;
-  }
-
-  RootedObject target(cx, JS_CloneObject(cx, source, proto));
+  RootedObject target(cx, NewTransplantableProxy(cx));
   if (!target) {
     return false;
   }
@@ -9246,42 +9289,28 @@ static bool TransplantObject(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  RootedObject copyFrom(cx, isProxy ? expandoObject : source);
   RootedObject propertyHolder(cx,
                               JS_NewObjectWithGivenProto(cx, nullptr, nullptr));
   if (!propertyHolder) {
     return false;
   }
 
-  if (!JS_CopyOwnPropertiesAndPrivateFields(cx, propertyHolder, copyFrom)) {
+  if (!CopyExpandoProperties(cx, propertyHolder, expandoObject)) {
     return false;
   }
 
-  JS::SetReservedSlot(target, DOM_OBJECT_SLOT,
-                      JS::GetReservedSlot(source, DOM_OBJECT_SLOT));
-  JS::SetReservedSlot(source, DOM_OBJECT_SLOT, JS::PrivateValue(nullptr));
-  if (JS::GetClass(source) == GetDomClass()) {
-    JS::SetReservedSlot(target, DOM_OBJECT_SLOT2,
-                        JS::GetReservedSlot(source, DOM_OBJECT_SLOT2));
-    JS::SetReservedSlot(source, DOM_OBJECT_SLOT2, UndefinedValue());
-  }
+  // We've made it far enough to be able to mutate the source. Cleared slots
+  // will not be observed even if a failure occurs after this point.
+  resetExpando.release();
 
   source = JS_TransplantObject(cx, source, target);
-  if (!source) {
-    return false;
-  }
+  MOZ_RELEASE_ASSERT(source, "JS_TransplantObject is infallible");
 
-  RootedObject copyTo(cx);
-  if (isProxy) {
-    copyTo = TransplantableDOMProxyHandler::EnsureExpandoObject(cx, source);
-    if (!copyTo) {
-      return false;
-    }
-  } else {
-    copyTo = source;
-  }
-  if (!JS_CopyOwnPropertiesAndPrivateFields(cx, copyTo, propertyHolder)) {
-    return false;
+  AutoEnterOOMUnsafeRegion oomUnsafe;
+
+  RootedObject copyTo(cx, &GetProxyPrivate(source).toObject());
+  if (!CopyExpandoProperties(cx, copyTo, propertyHolder)) {
+    oomUnsafe.crash("source of transplant is corrupted");
   }
 
   args.rval().setUndefined();
@@ -9292,81 +9321,14 @@ static bool TransplantableObject(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   RootedObject callee(cx, &args.callee());
 
-  if (args.length() > 1) {
+  if (args.length() != 0) {
     ReportUsageErrorASCII(cx, callee, "Wrong number of arguments");
     return false;
   }
 
-  bool createProxy = false;
-  RootedObject source(cx);
-  if (args.length() == 1 && !args[0].isUndefined()) {
-    if (!args[0].isObject()) {
-      ReportUsageErrorASCII(cx, callee, "Argument must be an object");
-      return false;
-    }
-
-    RootedObject options(cx, &args[0].toObject());
-    RootedValue value(cx);
-
-    if (!JS_GetProperty(cx, options, "proxy", &value)) {
-      return false;
-    }
-    createProxy = JS::ToBoolean(value);
-
-    if (!JS_GetProperty(cx, options, "object", &value)) {
-      return false;
-    }
-    if (!value.isUndefined()) {
-      if (!value.isObject()) {
-        ReportUsageErrorASCII(cx, callee, "'object' option must be an object");
-        return false;
-      }
-
-      source = &value.toObject();
-      if (JS::GetClass(source) != GetDomClass()) {
-        ReportUsageErrorASCII(cx, callee, "Object not a FakeDOMObject");
-        return false;
-      }
-
-      // |source| must be a tenured object to be transplantable.
-      if (gc::IsInsideNursery(source)) {
-        JS_GC(cx);
-
-        MOZ_ASSERT(!gc::IsInsideNursery(source),
-                   "Live objects should be tenured after one GC, because "
-                   "the nursery has only a single generation");
-      }
-    }
-  }
-
+  RootedObject source(cx, NewTransplantableProxy(cx));
   if (!source) {
-    if (!createProxy) {
-      source = NewBuiltinClassInstance(cx, &TransplantableDOMObjectClass,
-                                       TenuredObject);
-      if (!source) {
-        return false;
-      }
-
-      JS::SetReservedSlot(source, DOM_OBJECT_SLOT, JS::PrivateValue(nullptr));
-    } else {
-      JSObject* expando = JS_NewPlainObject(cx);
-      if (!expando) {
-        return false;
-      }
-      RootedValue expandoVal(cx, ObjectValue(*expando));
-
-      ProxyOptions options;
-      options.setClass(&TransplantableDOMProxyObjectClass);
-      options.setLazyProto(true);
-
-      source = NewProxyObject(cx, &TransplantableDOMProxyHandler::singleton,
-                              expandoVal, nullptr, options);
-      if (!source) {
-        return false;
-      }
-
-      SetProxyReservedSlot(source, DOM_OBJECT_SLOT, JS::PrivateValue(nullptr));
-    }
+    return false;
   }
 
   jsid emptyId = NameToId(cx->names().empty_);
@@ -9632,16 +9594,8 @@ static bool SideEffectfulResolveObject_resolve(JSContext* cx, HandleObject obj,
 }
 
 static const JSClassOps SideEffectfulResolveObject_classOps = {
-    nullptr,                               // addProperty
-    nullptr,                               // delProperty
-    nullptr,                               // enumerate
-    SideEffectfulResolveObject_enumerate,  // newEnumerate
-    SideEffectfulResolveObject_resolve,    // resolve
-    nullptr,                               // mayResolve
-    nullptr,                               // finalize
-    nullptr,                               // call
-    nullptr,                               // construct
-    nullptr,
+    .newEnumerate = SideEffectfulResolveObject_enumerate,
+    .resolve = SideEffectfulResolveObject_resolve,
 };
 
 static const JSClass SideEffectfulResolveObject_class = {
@@ -10259,9 +10213,10 @@ static const JSFunctionSpecWithHelp shell_functions[] = {
 "  Sleep for dt seconds."),
 
     JS_FN_HELP("parseModule", ParseModule, 3, 0,
-"parseModule(code, 'filename', 'js' | 'json' | 'bytes')",
-"  Parses source text as a JS module ('js', this is the default) or a JSON"
-" module ('json') or bytes module ('bytes') and returns a ModuleObject wrapper object."),
+"parseModule(code, 'filename', 'js' | 'json' | 'bytes' | 'text')",
+"  Parses source text as a JS module ('js', this is the default),\n"
+"  a JSON module ('json'), a bytes module ('bytes'), or a text module ('text'),\n"
+"  and returns a ModuleObject wrapper object."),
 
     JS_FN_HELP("instantiateModuleStencil", InstantiateModuleStencil, 1, 0,
 "instantiateModuleStencil(stencil, [options])",
@@ -10458,6 +10413,9 @@ static const JSFunctionSpecWithHelp shell_functions[] = {
 "         (default false).\n"
 "      useWindowProxy: the global will be created with a WindowProxy attached. In this\n"
 "          case, the WindowProxy will be returned.\n"
+"      transplantWindowProxy: If an object, this must be an existing WindowProxy\n"
+"          that will be reused. Used to test JS_TransplantObject code used in\n"
+"          the browser.\n"
 "      freezeBuiltins: certain builtin constructors will be frozen when created and\n"
 "          their prototypes will be sealed. These constructors will be defined on the\n"
 "          global as non-configurable and non-writable.\n"
@@ -10516,6 +10474,10 @@ JS_FN_HELP("createUserArrayBuffer", CreateUserArrayBuffer, 1, 0,
     JS_FN_HELP("getMaxArgs", GetMaxArgs, 0, 0,
 "getMaxArgs()",
 "  Return the maximum number of supported args for a call."),
+
+    JS_FN_HELP("getAbstractModuleSource", GetAbstractModuleSource, 0, 0,
+"getAbstractModuleSource()",
+"  Return the %AbstractModuleSource% intrinsic constructor."),
 
     JS_FN_HELP("createIsHTMLDDA", CreateIsHTMLDDA, 0, 0,
 "createIsHTMLDDA()",
@@ -10676,17 +10638,11 @@ JS_FN_HELP("createUserArrayBuffer", CreateUserArrayBuffer, 1, 0,
 #endif // __wasi__
 
     JS_FN_HELP("transplantableObject", TransplantableObject, 0, 0,
-"transplantableObject([options])",
-"  Returns the pair {object, transplant}. |object| is an object which can be\n"
-"  transplanted into a new object when the |transplant| function, which must\n"
-"  be invoked with a global object, is called.\n"
-"  |object| is swapped with a cross-compartment wrapper if the global object\n"
-"  is in a different compartment.\n"
-"\n"
-"  If options is given, it may have any of the following properties:\n"
-"    proxy: Create a DOM Proxy object instead of a plain DOM object.\n"
-"    object: Don't create a new DOM object, but instead use the supplied\n"
-"            FakeDOMObject."),
+"transplantableObject()",
+"  Returns the pair {object, transplant}. |object| is a non-wrapper proxy\n"
+"  that can be transplanted into a fresh proxy in another compartment by\n"
+"  calling |transplant| with a global object. |object| is swapped with a\n"
+"  cross-compartment wrapper if the global is in a different compartment."),
 
     JS_FN_HELP("cpuNow", CpuNow, /* nargs= */ 0, /* flags = */ 0,
 "cpuNow()",
@@ -11389,16 +11345,10 @@ static bool global_mayResolve(const JSAtomState& names, jsid id,
 }
 
 static const JSClassOps global_classOps = {
-    nullptr,                   // addProperty
-    nullptr,                   // delProperty
-    nullptr,                   // enumerate
-    global_enumerate,          // newEnumerate
-    global_resolve,            // resolve
-    global_mayResolve,         // mayResolve
-    nullptr,                   // finalize
-    nullptr,                   // call
-    nullptr,                   // construct
-    JS_GlobalObjectTraceHook,  // trace
+    .newEnumerate = global_enumerate,
+    .resolve = global_resolve,
+    .mayResolve = global_mayResolve,
+    .trace = JS_GlobalObjectTraceHook,
 };
 
 static constexpr uint32_t DOM_PROTOTYPE_SLOT = JSCLASS_GLOBAL_SLOT_COUNT;
@@ -11650,16 +11600,7 @@ static void FakeDOMObject_finalize(JS::GCContext* gcx, JSObject* obj) {
 }
 
 static const JSClassOps FakeDOMObjectClassOps = {
-    nullptr,  // addProperty
-    nullptr,  // delProperty
-    nullptr,  // enumerate
-    nullptr,  // newEnumerate
-    nullptr,  // resolve
-    nullptr,  // mayResolve
-    FakeDOMObject_finalize,
-    nullptr,  // call
-    nullptr,  // construct
-    nullptr,
+    .finalize = FakeDOMObject_finalize,
 };
 
 static const JSClass dom_class = {
@@ -11746,18 +11687,6 @@ static void InitDOMObject(HandleObject obj) {
   JS::SetReservedSlot(obj, DOM_OBJECT_SLOT2, Int32Value(42));
 }
 
-static JSObject* GetDOMPrototype(JSContext* cx, JSObject* global) {
-  MOZ_ASSERT(JS_IsGlobalObject(global));
-  if (JS::GetClass(global) != &global_class) {
-    JS_ReportErrorASCII(cx, "Can't get FakeDOMObject prototype in sandbox");
-    return nullptr;
-  }
-
-  const JS::Value& slot = JS::GetReservedSlot(global, DOM_PROTOTYPE_SLOT);
-  MOZ_ASSERT(slot.isObject());
-  return &slot.toObject();
-}
-
 static bool dom_constructor(JSContext* cx, unsigned argc, JS::Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -11826,13 +11755,115 @@ static const JSPropertySpec TestingProperties[] = {
     JS_PS_END,
 };
 
+static bool DefineStringInterruptCallbackGlobalFunctions(JSContext* cx,
+                                                         HandleObject global) {
+  RootedObject scratch(cx, JS_NewPlainObject(cx));
+  if (!scratch) {
+    return false;
+  }
+  if (!JS_DefineFunctionsWithHelp(cx, scratch, shell_functions) ||
+      !js::DefineTestingFunctions(cx, scratch, fuzzingSafe,
+                                  disableOOMFunctions)) {
+    return false;
+  }
+
+  static const char* const allowedProperties[] = {
+      "print",
+      "printErr",
+      "interruptIf",
+      "gc",
+      "minorgc",
+      "maybegc",
+      "gcparam",
+      "finishBackgroundFree",
+      "relazifyFunctions",
+      "gczeal",
+      "unsetgczeal",
+      "schedulegc",
+      "selectforgc",
+      "gcstate",
+      "schedulezone",
+      "startgc",
+      "finishgc",
+      "gcslice",
+      "abortgc",
+      "backtrace",
+      "enableGeckoProfiling",
+      "enableGeckoProfilingWithSlowAssertions",
+      "disableGeckoProfiling",
+      "readGeckoProfilingStack",
+      "readGeckoInterpProfilingStack",
+  };
+
+  RootedValue value(cx);
+  for (const char* name : allowedProperties) {
+    bool found;
+    if (!JS_HasProperty(cx, scratch, name, &found)) {
+      return false;
+    }
+    if (!found) {
+      continue;
+    }
+    if (!JS_GetProperty(cx, scratch, name, &value)) {
+      return false;
+    }
+    if (!JS_DefineProperty(cx, global, name, value, 0)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+static JSObject* NewStringInterruptCallbackGlobal(JSContext* cx) {
+  JS::RealmOptions options;
+  SetStandardRealmOptions(cx, options);
+  options.creationOptions().setInvisibleToDebugger(true);
+
+  RootedObject glob(cx,
+                    JS_NewGlobalObject(cx, &global_class, nullptr,
+                                       JS::DontFireOnNewGlobalHook, options));
+  if (!glob) {
+    return nullptr;
+  }
+
+  JSAutoRealm ar(cx, glob);
+  RootedObject proxy(cx, NewShellWindowProxy(cx, glob));
+  if (!proxy) {
+    return nullptr;
+  }
+  js::SetWindowProxy(cx, glob, proxy);
+#ifndef LAZY_STANDARD_CLASSES
+  if (!JS::InitRealmStandardClasses(cx)) {
+    return nullptr;
+  }
+#endif
+  bool succeeded;
+  if (!JS_SetImmutablePrototype(cx, glob, &succeeded)) {
+    return nullptr;
+  }
+  MOZ_ASSERT(succeeded);
+  if (!DefineStringInterruptCallbackGlobalFunctions(cx, glob)) {
+    return nullptr;
+  }
+  return glob;
+}
+
 static JSObject* NewGlobalObject(JSContext* cx, JS::RealmOptions& options,
                                  JSPrincipals* principals, ShellGlobalKind kind,
-                                 bool immutablePrototype) {
+                                 bool immutablePrototype,
+                                 JS::HandleObject existingWindowProxy) {
   RootedObject glob(cx,
                     JS_NewGlobalObject(cx, &global_class, principals,
                                        JS::DontFireOnNewGlobalHook, options));
   if (!glob) {
+    return nullptr;
+  }
+
+  if (existingWindowProxy &&
+      JS::GetCompartment(existingWindowProxy) != JS::GetCompartment(glob) &&
+      !AllowNewWrapper(JS::GetCompartment(existingWindowProxy), glob)) {
+    JS_ReportErrorASCII(cx, "Cannot transplant into nuked compartment");
     return nullptr;
   }
 
@@ -11844,7 +11875,20 @@ static JSObject* NewGlobalObject(JSContext* cx, JS::RealmOptions& options,
       if (!proxy) {
         return nullptr;
       }
+      if (existingWindowProxy) {
+        // Use JS_TransplantObject to reuse the existing WindowProxy for the new
+        // global. This matches nsGlobalWindowOuter::SetNewDocument.
+        //
+        // If the globals are in different compartments, `existingWindowProxy`
+        // becomes a CCW for the new WindowProxy. If the globals are in the same
+        // compartment, `existingWindowProxy` will be overwritten with the
+        // contents of the new WindowProxy.
+        proxy = JS_TransplantObject(cx, existingWindowProxy, proxy);
+        MOZ_RELEASE_ASSERT(proxy, "JS_TransplantObject is infallible");
+      }
       js::SetWindowProxy(cx, glob, proxy);
+    } else {
+      MOZ_ASSERT(!existingWindowProxy);
     }
 
 #ifndef LAZY_STANDARD_CLASSES
@@ -12397,7 +12441,7 @@ static int Shell(JSContext* cx, OptionParser* op) {
   int result = EXIT_SUCCESS;
   do {
     JS::RealmOptions options;
-    SetStandardRealmOptions(options);
+    SetStandardRealmOptions(cx, options);
     RootedObject glob(
         cx, NewGlobalObject(cx, options, nullptr, ShellGlobalKind::WindowProxy,
                             /* immutablePrototype = */ true));
@@ -12756,6 +12800,10 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  if (!ApplyBenchmarkMode(cx, op)) {
+    return 1;
+  }
+
   JS_SetTrustedPrincipals(cx, &ShellPrincipals::fullyTrusted);
   JS_SetSecurityCallbacks(cx, &ShellPrincipals::securityCallbacks);
 
@@ -12938,6 +12986,10 @@ bool InitOptionParser(OptionParser& op) {
       !op.addBoolOption('\0', "trace-regexp-parser", "Trace regexp parsing") ||
       !op.addBoolOption('\0', "trace-regexp-assembler",
                         "Trace regexp assembler") ||
+      !op.addBoolOption('\0', "trace-regexp-compiler",
+                        "Trace regexp compiler") ||
+      !op.addBoolOption('\0', "trace-regexp-graph-building",
+                        "Trace regexp graph building") ||
       !op.addBoolOption('\0', "trace-regexp-interpreter",
                         "Trace regexp interpreter") ||
       !op.addBoolOption('\0', "trace-regexp-peephole",
@@ -13004,8 +13056,6 @@ bool InitOptionParser(OptionParser& op) {
                           "Branch pruning (default: on, off to disable)") ||
       !op.addStringOption('\0', "ion-range-analysis", "on/off",
                           "Range analysis (default: on, off to disable)") ||
-      !op.addStringOption('\0', "ion-sink", "on/off",
-                          "Sink code motion (default: off, on to enable)") ||
       !op.addStringOption(
           '\0', "ion-instruction-reordering", "on/off",
           "Instruction reordering (default: off, on to enable)") ||
@@ -13166,6 +13216,13 @@ bool InitOptionParser(OptionParser& op) {
       !op.addBoolOption('\0', "more-compartments",
                         "Make newGlobal default to creating a new "
                         "compartment.") ||
+      !op.addBoolOption('\0', "benchmark-mode",
+                        "Configure the shell for realistic benchmarking. "
+                        "Prints warnings for detected issues.") ||
+      !op.addBoolOption('\0', "strict-benchmark-mode",
+                        "Like --benchmark-mode but refuses to run if the "
+                        "build config is wrong or conflicting settings "
+                        "exist.") ||
       !op.addBoolOption('\0', "fuzzing-safe",
                         "Don't expose functions that aren't safe for "
                         "fuzzers to call") ||
@@ -13243,6 +13300,11 @@ bool InitOptionParser(OptionParser& op) {
 #ifdef JS_CODEGEN_RISCV64
       !op.addBoolOption('\0', "riscv-debug",
                         "Print riscv debugging messages.") ||
+      !op.addStringOption(
+          '\0', "riscv-ext", "[features]",
+          "Specify RISCV code generation features. Starts with ISA (\"rv64g\") "
+          "or profile (\"rva20u64\", \"rva22u64\", \"rva23u64\"), followed by "
+          "extensions separated with '_'.") ||
 #endif
 #ifdef JS_SIMULATOR_RISCV64
       !op.addBoolOption('\0', "riscv-sim-trace",
@@ -13321,6 +13383,8 @@ bool InitOptionParser(OptionParser& op) {
       !op.addBoolOption('\0', "enable-iterator-sequencing",
                         "Enable Iterator Sequencing") ||
       !op.addBoolOption('\0', "enable-error-iserror", "Enable Error.isError") ||
+      !op.addBoolOption('\0', "enable-error-stack-trace-limit",
+                        "Enable Error.stackTraceLimit") ||
       !op.addBoolOption('\0', "enable-iterator-range",
                         "Enable Iterator.range") ||
       !op.addBoolOption('\0', "enable-joint-iteration",
@@ -13332,6 +13396,7 @@ bool InitOptionParser(OptionParser& op) {
                         "Disable Explicit Resource Management") ||
       !op.addBoolOption('\0', "enable-temporal", "Enable Temporal") ||
       !op.addBoolOption('\0', "enable-import-bytes", "Enable import bytes") ||
+      !op.addBoolOption('\0', "enable-import-text", "Enable import text") ||
       !op.addBoolOption('\0', "enable-promise-allkeyed",
                         "Enable Promise.allKeyed") ||
       !op.addBoolOption('\0', "enable-arraybuffer-immutable",
@@ -13339,10 +13404,19 @@ bool InitOptionParser(OptionParser& op) {
       !op.addBoolOption('\0', "enable-iterator-chunking",
                         "Enable Iterator Chunking") ||
       !op.addBoolOption('\0', "enable-iterator-join", "Enable Iterator.join") ||
+      !op.addBoolOption('\0', "enable-iterator-includes",
+                        "Enable Iterator.prototype.includes") ||
+      !op.addBoolOption('\0', "enable-intl-locale-info",
+                        "Enable Intl Locale Info") ||
       !op.addBoolOption('\0', "enable-source-phase-imports",
                         "Enable source phase imports") ||
+      !op.addBoolOption(
+          '\0', "enable-source-phase-imports-test262-module-source",
+          "Support <module source> specifier for test262 tests") ||
       !op.addBoolOption('\0', "enable-legacy-regexp",
-                        "Enable Legacy RegExp features")) {
+                        "Enable Legacy RegExp features") ||
+      !op.addBoolOption('\0', "enable-wasm-esm-integration",
+                        "Enable wasm/esm integration")) {
     return false;
   }
 
@@ -13363,6 +13437,14 @@ bool SetGlobalOptionsPreJSInit(const OptionParser& op) {
     fuzzingSafe =
         (getenv("MOZ_FUZZING_SAFE") && getenv("MOZ_FUZZING_SAFE")[0] != '0');
   }
+  JS::Prefs::setFuzzingSafe(fuzzingSafe);
+  JS::Prefs::setReportIgnoredFuzzingUnsafePrefs(true);
+
+  if (op.getBoolOption("strict-benchmark-mode")) {
+    sBenchmarkMode = BenchmarkMode::Strict;
+  } else if (op.getBoolOption("benchmark-mode")) {
+    sBenchmarkMode = BenchmarkMode::Enable;
+  }
 
   for (MultiStringRange args = op.getMultiStringOption("setpref");
        !args.empty(); args.popFront()) {
@@ -13370,6 +13452,12 @@ bool SetGlobalOptionsPreJSInit(const OptionParser& op) {
       return false;
     }
   }
+
+#if defined(DEBUG) || defined(NIGHTLY_BUILD) || defined(JS_GC_ZEAL)
+  if (sBenchmarkMode != BenchmarkMode::Off) {
+    JS::Prefs::setAtStartup_extra_gc_poisoning(false);
+  }
+#endif
 
   // Override pref values for prefs that have a custom shell flag.
   // If you're adding a new feature, consider using --setpref instead.
@@ -13396,6 +13484,12 @@ bool SetGlobalOptionsPreJSInit(const OptionParser& op) {
   if (op.getBoolOption("enable-legacy-regexp")) {
     JS::Prefs::set_experimental_legacy_regexp(true);
   }
+  if (op.getBoolOption("enable-import-text")) {
+    JS::Prefs::set_experimental_import_text(true);
+  }
+  if (op.getBoolOption("enable-intl-locale-info")) {
+    JS::Prefs::setAtStartup_experimental_intl_locale_info(true);
+  }
 #ifdef NIGHTLY_BUILD
   if (op.getBoolOption("enable-async-iterator-helpers")) {
     JS::Prefs::setAtStartup_experimental_async_iterator_helpers(true);
@@ -13421,12 +13515,24 @@ bool SetGlobalOptionsPreJSInit(const OptionParser& op) {
   if (op.getBoolOption("enable-iterator-join")) {
     JS::Prefs::setAtStartup_experimental_iterator_join(true);
   }
-#endif
-#ifdef ENABLE_SOURCE_PHASE_IMPORTS
-  if (op.getBoolOption("enable-source-phase-imports")) {
-    JS::Prefs::setAtStartup_experimental_source_phase_imports(true);
+  if (op.getBoolOption("enable-iterator-includes")) {
+    JS::Prefs::setAtStartup_experimental_iterator_includes(true);
+  }
+  if (op.getBoolOption("enable-error-stack-trace-limit")) {
+    JS::Prefs::setAtStartup_experimental_error_stack_trace_limit(true);
+  }
+  if (op.getBoolOption("enable-wasm-esm-integration")) {
+    JS::Prefs::set_experimental_wasm_esm_integration(true);
   }
 #endif
+  if (op.getBoolOption("enable-source-phase-imports")) {
+    JS::Prefs::set_experimental_source_phase_imports(true);
+  }
+  if (op.getBoolOption("enable-source-phase-imports-test262-module-source")) {
+    JS::Prefs::
+        setAtStartup_experimental_source_phase_imports_test262_module_source(
+            true);
+  }
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
   if (op.getBoolOption("enable-explicit-resource-management")) {
     JS::Prefs::set_experimental_explicit_resource_management(true);
@@ -13567,6 +13673,11 @@ bool SetGlobalOptionsPreJSInit(const OptionParser& op) {
     jit::ARM64Flags::DisableCPUFeatures(cssc);
   }
 #endif
+#if defined(JS_CODEGEN_RISCV64)
+  if (const char* str = op.getStringOption("riscv-ext")) {
+    jit::SetRISCV64ExtensionsString(str);
+  }
+#endif
 #ifndef __wasi__
   if (op.getBoolOption("disable-wasm-huge-memory")) {
     JS::Prefs::setAtStartup_wasm_disable_huge_memory(true);
@@ -13623,19 +13734,29 @@ bool SetGlobalOptionsPostJSInit(const OptionParser& op) {
   }
 
   if (const char* xdr = op.getStringOption("selfhosted-xdr-path")) {
-    shell::selfHostedXDRPath = xdr;
+    if (fuzzingSafe) {
+      fprintf(stderr,
+              "Warning: ignoring --selfhosted-xdr-path with --fuzzing-safe\n");
+    } else {
+      shell::selfHostedXDRPath = xdr;
+    }
   }
   if (const char* opt = op.getStringOption("selfhosted-xdr-mode")) {
-    if (strcmp(opt, "encode") == 0) {
-      shell::encodeSelfHostedCode = true;
-    } else if (strcmp(opt, "decode") == 0) {
-      shell::encodeSelfHostedCode = false;
-    } else if (strcmp(opt, "off") == 0) {
-      shell::selfHostedXDRPath = nullptr;
+    if (fuzzingSafe) {
+      fprintf(stderr,
+              "Warning: ignoring --selfhosted-xdr-mode with --fuzzing-safe\n");
     } else {
-      MOZ_CRASH(
-          "invalid option value for --selfhosted-xdr-mode, must be "
-          "encode/decode");
+      if (strcmp(opt, "encode") == 0) {
+        shell::encodeSelfHostedCode = true;
+      } else if (strcmp(opt, "decode") == 0) {
+        shell::encodeSelfHostedCode = false;
+      } else if (strcmp(opt, "off") == 0) {
+        shell::selfHostedXDRPath = nullptr;
+      } else {
+        MOZ_CRASH(
+            "invalid option value for --selfhosted-xdr-mode, must be "
+            "encode/decode");
+      }
     }
   }
 
@@ -13968,16 +14089,6 @@ bool SetContextJITOptions(JSContext* cx, const OptionParser& op) {
     }
   }
 
-  if (const char* str = op.getStringOption("ion-sink")) {
-    if (strcmp(str, "on") == 0) {
-      jit::JitOptions.disableSink = false;
-    } else if (strcmp(str, "off") == 0) {
-      jit::JitOptions.disableSink = true;
-    } else {
-      return OptionFailure("ion-sink", str);
-    }
-  }
-
   if (const char* str = op.getStringOption("ion-optimize-shapeguards")) {
     if (strcmp(str, "on") == 0) {
       jit::JitOptions.disableRedundantShapeGuards = false;
@@ -14176,6 +14287,12 @@ bool SetContextJITOptions(JSContext* cx, const OptionParser& op) {
   }
   if (op.getBoolOption("trace-regexp-assembler")) {
     jit::JitOptions.trace_regexp_assembler = true;
+  }
+  if (op.getBoolOption("trace-regexp-compiler")) {
+    jit::JitOptions.trace_regexp_compiler = true;
+  }
+  if (op.getBoolOption("trace-regexp-graph-building")) {
+    jit::JitOptions.trace_regexp_graph_building = true;
   }
   if (op.getBoolOption("trace-regexp-interpreter")) {
     jit::JitOptions.trace_regexp_bytecodes = true;
@@ -14429,6 +14546,147 @@ bool SetContextGCOptions(JSContext* cx, const OptionParser& op) {
     cx->runtime()->gc.getZealBits(&gZealBits, &gZealFrequency, &nextScheduled);
   }
 #endif
+
+  return true;
+}
+
+bool ApplyBenchmarkMode(JSContext* cx, const OptionParser& op) {
+  if (sBenchmarkMode == BenchmarkMode::Off) {
+    return true;
+  }
+
+  bool isStrict = (sBenchmarkMode == BenchmarkMode::Strict);
+  bool hasErrors = false;
+
+  auto warn = [](const char* msg) {
+    fprintf(stderr, "--benchmark-mode: WARNING: %s\n", msg);
+  };
+
+  auto issue = [&](const char* msg) {
+    hasErrors = true;
+    if (isStrict) {
+      fprintf(stderr, "--benchmark-mode: ERROR: %s\n", msg);
+    } else {
+      warn(msg);
+    }
+  };
+
+  // Build configuration checks.
+#ifdef JS_DEBUG
+  issue("This is a DEBUG build. Use an optimized, non-debug build.");
+#endif
+#ifdef MOZ_ASAN
+  issue("This is an AddressSanitizer (ASan) build.");
+#endif
+#ifdef MOZ_TSAN
+  issue("This is a ThreadSanitizer (TSan) build.");
+#endif
+#ifdef MOZ_MSAN
+  issue("This is a MemorySanitizer (MSan) build.");
+#endif
+#if defined(JS_SIMULATOR)
+  issue("Running on a CPU simulator.");
+#endif
+#ifdef FUZZING
+  issue("This is a fuzzing build.");
+#endif
+#ifdef JS_GC_ZEAL
+  warn(
+      "Build has GC zeal support (JS_GC_ZEAL). "
+      "This may indicate a non-optimized build.");
+#endif
+
+  // Runtime option checks.
+#ifdef JS_GC_ZEAL
+  if (op.getStringOption("gc-zeal") != nullptr) {
+    issue("--gc-zeal is active.");
+  }
+#endif
+
+  if (op.getBoolOption("code-coverage")) {
+    issue("--code-coverage adds instrumentation overhead.");
+  }
+
+  if (op.getBoolOption("ion-check-range-analysis")) {
+    issue("--ion-check-range-analysis adds runtime checks.");
+  }
+
+  if (op.getBoolOption("ion-extra-checks")) {
+    issue("--ion-extra-checks adds runtime checks.");
+  }
+
+  if (op.getBoolOption("emit-interpreter-entry")) {
+    issue("--emit-interpreter-entry adds overhead.");
+  }
+
+  if (op.getBoolOption("enable-ic-frame-pointers")) {
+    issue("--enable-ic-frame-pointers adds overhead to IC stubs.");
+  }
+
+  if (op.getBoolOption("no-ion")) {
+    issue("IonMonkey JIT is disabled (--no-ion).");
+  }
+
+  if (op.getBoolOption("no-baseline")) {
+    issue("Baseline compiler is disabled (--no-baseline).");
+  }
+
+  if (op.getBoolOption("no-threads")) {
+    issue("Helper threads are disabled (--no-threads).");
+  }
+
+  if (op.getBoolOption("fuzzing-safe")) {
+    issue("--fuzzing-safe is set.");
+  }
+
+#ifdef WASM_SUPPORTS_HUGE_MEMORY
+  // Wasm checks
+  if (JS::Prefs::wasm_disable_huge_memory()) {
+    issue("huge memory disabled");
+  }
+#endif
+
+  if (!JS::ContextOptionsRef(cx).wasmIon() ||
+      !JS::ContextOptionsRef(cx).wasmBaseline()) {
+    issue("missing wasm compiler");
+  }
+  if (JS::Prefs::wasm_test_serialization()) {
+    issue("testing serialization");
+  }
+  if (JS::Prefs::wasm_lazy_tiering_synchronous()) {
+    issue("tiering test configuration");
+  }
+
+  if (jit::JitOptions.spectreIndexMasking ||
+      jit::JitOptions.spectreObjectMitigations ||
+      jit::JitOptions.spectreStringMitigations ||
+      jit::JitOptions.spectreValueMasking ||
+      jit::JitOptions.spectreJitToCxxCalls) {
+    issue("Spectre mitigations are enabled.");
+  }
+
+  // Apply benchmark-mode overrides.
+  jit::JitOptions.spectreIndexMasking = false;
+  jit::JitOptions.spectreObjectMitigations = false;
+  jit::JitOptions.spectreStringMitigations = false;
+  jit::JitOptions.spectreValueMasking = false;
+  jit::JitOptions.spectreJitToCxxCalls = false;
+
+  // See the default set for
+  // javascript.options.content_process_write_protect_code
+#if !defined(XP_OPENBSD)
+  jit::JitOptions.maybeSetWriteProtectCode(false);
+#endif
+
+  JS::ContextOptionsRef(cx).setAsyncStack(false);
+
+  jit::JitOptions.fullDebugChecks = false;
+
+  if (isStrict && hasErrors) {
+    fprintf(stderr,
+            "--benchmark-mode: Refusing to run due to errors listed above.\n");
+    return false;
+  }
 
   return true;
 }

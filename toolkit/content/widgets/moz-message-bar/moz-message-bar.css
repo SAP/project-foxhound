@@ -2,37 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+@import url("chrome://global/content/elements/moz-message-bar.tokens.css");
+
 :host {
-  /* Icon */
-  --message-bar-icon-color: var(--icon-color-information);
-  --message-bar-icon-size: var(--size-item-small);
   --message-bar-icon-close-url: url("chrome://global/skin/icons/close.svg");
-
-  /* Container */
-  --message-bar-container-min-height: var(--size-item-large);
-
-  /* Border */
-  --message-bar-border-color: oklch(from var(--message-bar-icon-color) l c h / 20%);
-  --message-bar-border-radius: var(--border-radius-small);
-  --message-bar-border-width: var(--border-width);
-
-  /* Text */
-  --message-bar-text-color: var(--text-color);
-
-  /* Background */
-  --message-bar-background-color: var(--background-color-information);
 
   background-color: var(--message-bar-background-color);
   border: var(--message-bar-border-width) solid var(--message-bar-border-color);
   border-radius: var(--message-bar-border-radius);
   color: var(--message-bar-text-color);
   text-align: start;
-}
-
-@media (prefers-contrast) {
-  :host {
-    --message-bar-border-color: var(--border-color);
-  }
 }
 
 /* Make the host to behave as a block by default, but allow hidden to hide it. */
@@ -44,10 +23,10 @@
 
 .container {
   display: flex;
-  gap: var(--space-small);
+  gap: var(--message-bar-container-gap);
   min-height: var(--message-bar-container-min-height);
-  padding-inline: var(--space-medium) var(--space-small);
-  padding-block: var(--space-small);
+  padding-inline: var(--message-bar-container-padding-inline);
+  padding-block: var(--message-bar-container-padding-block);
 }
 
 .content {
@@ -55,31 +34,35 @@
   flex-grow: 1;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-small) var(--space-medium);
-  margin-inline-start: var(--message-bar-icon-size);
+  gap: var(--message-bar-content-gap);
 }
 
 .text-container {
   display: flex;
-  gap: var(--space-xsmall) var(--space-small);
-  padding-block: calc((var(--message-bar-container-min-height) - 1lh) / 2);
+  gap: var(--message-bar-text-container-gap);
+  padding-block: var(--message-bar-text-container-padding-block);
 }
 
 .text-content {
   display: inline-flex;
-  gap: var(--space-xsmall) var(--space-small);
+  gap: var(--message-bar-text-content-gap);
   flex-wrap: wrap;
   word-break: break-word;
+  padding-block: var(--message-bar-icon-container-padding);
 }
 
 /* MozMessageBar icon style */
 
 .icon-container {
-  height: 1lh;
+  height: var(--message-bar-icon-container-height);
   display: flex;
   justify-content: center;
   align-items: center;
-  margin-inline-start: calc(-1 * var(--message-bar-icon-size));
+  border: var(--message-bar-icon-container-border);
+  border-radius: var(--message-bar-icon-container-border-radius);
+  background-color: var(--message-bar-icon-background-color);
+  padding: calc(var(--message-bar-icon-container-padding));
+  margin-block-start: var(--message-bar-icon-container-margin-block-start);
 }
 
 .icon {
@@ -96,13 +79,13 @@
 /* MozMessageBar heading style */
 
 .heading {
-  font-weight: var(--heading-font-weight);
+  font-weight: var(--font-weight-heading);
 }
 
 /* MozMessageBar message style */
 
 .message.has-link-after {
-  margin-inline-end: var(--space-xsmall);
+  margin-inline-end: var(--message-bar-message-margin-inline-end);
 }
 
 /* MozMessageBar link style */
@@ -112,7 +95,7 @@
 }
 
 .link ::slotted(a) {
-  margin-inline-end: var(--space-xsmall);
+  margin-inline-end: var(--message-bar-message-margin-inline-end);
 }
 
 /* MozMessageBar actions style */
@@ -123,7 +106,7 @@
 
 .actions.active {
   display: inline-flex;
-  gap: var(--space-small);
+  gap: var(--message-bar-actions-gap);
 }
 
 .actions ::slotted(button) {
@@ -131,7 +114,7 @@
   min-width: fit-content !important;
 
   margin: 0 !important;
-  padding: var(--space-xsmall) var(--space-large) !important;
+  padding: var(--message-bar-actions-button-padding) !important;
 }
 
 /* Close icon styles */
@@ -143,18 +126,21 @@ moz-button::part(button) {
 @media not (prefers-contrast) {
   /* MozMessageBar colors by message type */
   :host([type="warning"]) {
-    --message-bar-background-color: var(--background-color-warning);
+    --message-bar-background-color: var(--message-bar-background-color-warning);
+    --message-bar-icon-background-color: var(--message-bar-icon-background-color-warning);
     --message-bar-icon-color: var(--icon-color-warning);
   }
 
   :host([type="success"]) {
-    --message-bar-background-color: var(--background-color-success);
+    --message-bar-background-color: var(--message-bar-background-color-success);
+    --message-bar-icon-background-color: var(--message-bar-icon-background-color-success);
     --message-bar-icon-color: var(--icon-color-success);
   }
 
   :host([type="error"]),
   :host([type="critical"]) {
-    --message-bar-background-color: var(--background-color-critical);
+    --message-bar-background-color: var(--message-bar-background-color-critical);
+    --message-bar-icon-background-color: var(--message-bar-icon-background-color-critical);
     --message-bar-icon-color: var(--icon-color-critical);
   }
 }

@@ -23,7 +23,7 @@ class FenixEmailMaskPrompt<V>(
     private val viewProvider: () -> V,
     private val toolbarPositionProvider: () -> ToolbarPosition,
     private val onShow: () -> Unit,
-    private val onHide: () -> Unit,
+    private val onHide: () -> Unit = {},
 ) : EmailMaskPromptView where V : View, V : EmailMaskPromptView {
 
     private val view: V by lazy { viewProvider() }

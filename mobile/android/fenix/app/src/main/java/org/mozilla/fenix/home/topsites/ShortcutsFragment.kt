@@ -8,23 +8,22 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.fragment.app.Fragment
 import androidx.fragment.compose.content
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
-import kotlinx.coroutines.flow.map
 import mozilla.components.feature.top.sites.presenter.DefaultTopSitesPresenter
+import mozilla.components.lib.state.helpers.StoreProvider.Companion.fragmentStore
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
-import org.mozilla.fenix.components.components
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.home.topsites.controller.DefaultTopSiteController
 import org.mozilla.fenix.home.topsites.controller.TopSiteController
 import org.mozilla.fenix.home.topsites.interactor.DefaultTopSiteInteractor
 import org.mozilla.fenix.home.topsites.interactor.TopSiteInteractor
+import org.mozilla.fenix.home.topsites.middleware.ShortcutsMiddleware
 import org.mozilla.fenix.home.topsites.store.ShortcutsState
+import org.mozilla.fenix.home.topsites.store.ShortcutsStore
 import org.mozilla.fenix.home.topsites.ui.ShortcutsScreen
 import org.mozilla.fenix.theme.FirefoxTheme
 import java.lang.ref.WeakReference
@@ -32,12 +31,29 @@ import java.lang.ref.WeakReference
 /**
  * A [Fragment] displaying the shortcuts screen.
  */
-class ShortcutsFragment : Fragment() {
+class ShortcutsFragment : Fragment(), SystemInsetsPaddedFragment {
 
     private val topSitesBinding = ViewBoundFeatureWrapper<TopSitesBinding>()
 
     private lateinit var interactor: TopSiteInteractor
     private lateinit var controller: TopSiteController
+
+    private val shortcutsStore by fragmentStore(
+        initialState = ShortcutsState.INITIAL,
+    ) {
+        ShortcutsStore(
+            initialState = it,
+            middleware = listOf(
+                ShortcutsMiddleware(
+                    appStore = requireComponents.appStore,
+                    topSitesUseCases = requireComponents.useCases.topSitesUseCase,
+                    merinoManifestProvider = requireComponents.core.merinoManifestProvider,
+                    settings = requireComponents.settings,
+                    scope = viewLifecycleOwner.lifecycleScope,
+                ),
+            ),
+        )
+    }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -86,12 +102,8 @@ class ShortcutsFragment : Fragment() {
         savedInstanceState: Bundle?,
     ): View = content {
         FirefoxTheme {
-            val appStore = components.appStore
-            val topSites by remember { appStore.stateFlow.map { state -> state.topSites } }
-                .collectAsState(initial = emptyList())
-
             ShortcutsScreen(
-                state = ShortcutsState(topSites = topSites),
+                store = shortcutsStore,
                 interactor = interactor,
                 onNavigationIconClick = {
                     this@ShortcutsFragment.findNavController().popBackStack()

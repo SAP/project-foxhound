@@ -260,7 +260,7 @@ add_task(async function testUnusedVariablesAndAddingDeclarations() {
   info(
     "Check that adding multiple declarations at once properly detects all the new used variables"
   );
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
   const onRuleViewChanged = view.once("ruleview-changed");
   await createNewRuleViewProperty(
     ruleEditor,

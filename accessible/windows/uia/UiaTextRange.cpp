@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -318,7 +316,7 @@ UiaTextRange::Clone(__RPC__deref_out_opt ITextRangeProvider** aRetVal) {
   if (!range) {
     return CO_E_OBJNOTCONNECTED;
   }
-  RefPtr uiaRange = new UiaTextRange(range);
+  auto uiaRange = MakeRefPtr<UiaTextRange>(range);
   uiaRange.forget(aRetVal);
   return S_OK;
 }
@@ -418,7 +416,7 @@ UiaTextRange::FindAttribute(TEXTATTRIBUTEID aAttributeId, VARIANT aVal,
       } else if (matchingRangeStart) {
         // We fell out of a matching range. We're moving forward, so the
         // matching range is [matchingRangeStart, startPoint).
-        RefPtr uiaRange = new UiaTextRange(
+        auto uiaRange = MakeRefPtr<UiaTextRange>(
             TextLeafRange{matchingRangeStart.value(), startPoint});
         uiaRange.forget(aRetVal);
         return S_OK;
@@ -432,7 +430,7 @@ UiaTextRange::FindAttribute(TEXTATTRIBUTEID aAttributeId, VARIANT aVal,
     if (matchingRangeStart) {
       // We found a start point and reached the end of the range. The result is
       // [matchingRangeStart, stopPoint].
-      RefPtr uiaRange = new UiaTextRange(
+      auto uiaRange = MakeRefPtr<UiaTextRange>(
           TextLeafRange{matchingRangeStart.value(), range.End()});
       uiaRange.forget(aRetVal);
       return S_OK;
@@ -451,8 +449,8 @@ UiaTextRange::FindAttribute(TEXTATTRIBUTEID aAttributeId, VARIANT aVal,
       } else if (matchingRangeEnd) {
         // We fell out of a matching range. We're moving backward, so the
         // matching range is [endPoint, matchingRangeEnd).
-        RefPtr uiaRange =
-            new UiaTextRange(TextLeafRange{endPoint, matchingRangeEnd.value()});
+        auto uiaRange = MakeRefPtr<UiaTextRange>(
+            TextLeafRange{endPoint, matchingRangeEnd.value()});
         uiaRange.forget(aRetVal);
         return S_OK;
       }
@@ -465,7 +463,7 @@ UiaTextRange::FindAttribute(TEXTATTRIBUTEID aAttributeId, VARIANT aVal,
     if (matchingRangeEnd) {
       // We found an end point and reached the start of the range. The result is
       // [range.Start(), matchingRangeEnd).
-      RefPtr uiaRange = new UiaTextRange(
+      auto uiaRange = MakeRefPtr<UiaTextRange>(
           TextLeafRange{range.Start(), matchingRangeEnd.value()});
       uiaRange.forget(aRetVal);
       return S_OK;
@@ -566,7 +564,7 @@ UiaTextRange::FindText(__RPC__in BSTR aText, BOOL aBackward, BOOL aIgnoreCase,
   const TextLeafPoint rangeEnd{foundTextEnd, offsetFromEndAccStart};
 
   TextLeafRange resultRange{rangeStart, rangeEnd};
-  RefPtr uiaRange = new UiaTextRange(resultRange);
+  auto uiaRange = MakeRefPtr<UiaTextRange>(resultRange);
   uiaRange.forget(aRetVal);
   return S_OK;
 }

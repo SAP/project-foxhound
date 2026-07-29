@@ -8,9 +8,12 @@ import android.Manifest.permission.ACCESS_COARSE_LOCATION
 import android.Manifest.permission.ACCESS_FINE_LOCATION
 import android.Manifest.permission.CAMERA
 import android.Manifest.permission.RECORD_AUDIO
+import androidx.annotation.OptIn
 import androidx.annotation.VisibleForTesting
+import mozilla.components.ExperimentalAndroidComponentsApi
 import mozilla.components.concept.engine.permission.Permission
 import mozilla.components.concept.engine.permission.PermissionRequest
+import org.mozilla.geckoview.ExperimentalGeckoViewApi
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.ContentPermission.VALUE_ALLOW
@@ -104,6 +107,12 @@ sealed class GeckoPermissionRequest constructor(
                     it.geckoResults.clear()
                 }
             }
+        }
+
+        @OptIn(ExperimentalGeckoViewApi::class)
+        @kotlin.OptIn(ExperimentalAndroidComponentsApi::class)
+        override fun notifyShown() {
+            geckoPermission.notifyShown()
         }
 
         override fun equals(other: Any?): Boolean {

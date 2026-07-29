@@ -99,27 +99,19 @@ bool ContentSessionStore::GetPrivateModeEnabled() {
   return mIsPrivate;
 }
 
-void ContentSessionStore::SetSHistoryChanged() {
-  mSHistoryChanged = mozilla::SessionHistoryInParent();
-}
+void ContentSessionStore::SetSHistoryChanged() { mSHistoryChanged = true; }
 
 void ContentSessionStore::OnDocumentStart() {
   nsCString caps = CollectDocShellCapabilities();
   if (!mDocCaps.Equals(caps)) {
-    mDocCaps = caps;
+    mDocCaps = std::move(caps);
     mDocCapChanged = true;
   }
 
-  if (mozilla::SessionHistoryInParent()) {
-    mSHistoryChanged = true;
-  }
+  mSHistoryChanged = true;
 }
 
-void ContentSessionStore::OnDocumentEnd() {
-  if (mozilla::SessionHistoryInParent()) {
-    mSHistoryChanged = true;
-  }
-}
+void ContentSessionStore::OnDocumentEnd() { mSHistoryChanged = true; }
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(TabListener)
   NS_INTERFACE_MAP_ENTRY_CONCRETE(TabListener)
@@ -188,9 +180,7 @@ nsresult TabListener::Init() {
 
 void TabListener::AddEventListeners() {
   if (nsCOMPtr<EventTarget> eventTarget = GetEventTarget()) {
-    if (mozilla::SessionHistoryInParent()) {
-      eventTarget->AddSystemEventListener(u"DOMTitleChanged"_ns, this, false);
-    }
+    eventTarget->AddSystemEventListener(u"DOMTitleChanged"_ns, this, false);
     mEventListenerRegistered = true;
   }
 }
@@ -198,10 +188,8 @@ void TabListener::AddEventListeners() {
 void TabListener::RemoveEventListeners() {
   if (nsCOMPtr<EventTarget> eventTarget = GetEventTarget()) {
     if (mEventListenerRegistered) {
-      if (mozilla::SessionHistoryInParent()) {
-        eventTarget->RemoveSystemEventListener(u"DOMTitleChanged"_ns, this,
-                                               false);
-      }
+      eventTarget->RemoveSystemEventListener(u"DOMTitleChanged"_ns, this,
+                                             false);
       mEventListenerRegistered = false;
     }
   }
@@ -294,17 +282,16 @@ NS_IMETHODIMP TabListener::OnStateChange(nsIWebProgress* aWebProgress,
 
 NS_IMETHODIMP
 TabListener::HandleEvent(Event* aEvent) {
-  EventTarget* target = aEvent->GetTarget();
-  if (!target) {
+  nsINode* node = nsINode::FromEventTargetOrNull(aEvent->GetTarget());
+  if (!node) {
     return NS_OK;
   }
 
-  nsPIDOMWindowOuter* outer = target->GetOwnerGlobalForBindingsInternal();
-  if (!outer || !outer->GetDocShell()) {
+  if (!node->OwnerDoc()->GetDocShell()) {
     return NS_OK;
   }
 
-  RefPtr<BrowsingContext> context = outer->GetBrowsingContext();
+  RefPtr<BrowsingContext> context = node->OwnerDoc()->GetBrowsingContext();
   if (!context || context->CreatedDynamically()) {
     return NS_OK;
   }

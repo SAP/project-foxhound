@@ -244,8 +244,28 @@ function toU8(array) {
     return Uint8Array.from(array);
 }
 
+function toResizableU8(array) {
+    let sab = new ArrayBuffer(array.length, { maxByteLength: array.length });
+    let view = new Uint8Array(sab);
+    for (const [i, b] of array.entries()) {
+        assertEq(b < 256, true, `expected byte at index ${i} but got ${b}`);
+        view[i] = b;
+    }
+    return view;
+}
+
 function toSharedU8(array) {
     let sab = new SharedArrayBuffer(array.length);
+    let view = new Uint8Array(sab);
+    for (const [i, b] of array.entries()) {
+        assertEq(b < 256, true, `expected byte at index ${i} but got ${b}`);
+        view[i] = b;
+    }
+    return view;
+}
+
+function toGrowableSharedU8(array) {
+    let sab = new SharedArrayBuffer(array.length, { maxByteLength: array.length });
     let view = new Uint8Array(sab);
     for (const [i, b] of array.entries()) {
         assertEq(b < 256, true, `expected byte at index ${i} but got ${b}`);
@@ -316,7 +336,7 @@ function encodedString(name, len) {
     return varU32(len === undefined ? nameBytes.length : len).concat(nameBytes);
 }
 
-function moduleWithSections(sections) {
+function moduleWithSections(sections, toBuffer=toU8) {
     const bytes = moduleHeaderThen();
     for (const section of sections) {
         bytes.push(section.name);
@@ -325,7 +345,7 @@ function moduleWithSections(sections) {
             bytes.push(byte);
         }
     }
-    return toU8(bytes);
+    return toBuffer(bytes);
 }
 
 /**

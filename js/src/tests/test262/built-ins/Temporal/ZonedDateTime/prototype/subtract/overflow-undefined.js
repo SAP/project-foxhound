@@ -26,5 +26,7 @@ const explicit = datetime.subtract(duration, { overflow: undefined });
 assert.sameValue(explicit.epochNanoseconds, -2678400_000_000_001n, "default overflow is constrain");
 const implicit = datetime.subtract(duration, {});
 assert.sameValue(implicit.epochNanoseconds, -2678400_000_000_001n, "default overflow is constrain");
+const lambda = datetime.subtract(duration, () => {});
+assert.sameValue(lambda.epochNanoseconds, -2678400_000_000_001n, "default overflow is constrain");
 
 reportCompare(0, 0);

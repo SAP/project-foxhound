@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2008 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -9,8 +7,6 @@
 
 #include "chrome/common/ipc_channel.h"
 #include "chrome/common/ipc_message.h"
-
-#include <atomic>
 
 #include "base/message_loop.h"
 #include "base/process.h"
@@ -42,6 +38,8 @@ class ChannelWin : public Channel, public MessageLoopForIO::IOHandler {
   const ChannelKind* GetKind() const override { return &sKind; }
 
   static const ChannelKind sKind;
+
+  static bool IsAllowedHandleType(HANDLE handle);
 
  private:
   ~ChannelWin() {

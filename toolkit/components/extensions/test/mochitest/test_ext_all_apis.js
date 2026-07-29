@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 // Tests whether not too many APIs are visible by default.
@@ -33,6 +31,7 @@ let expectedCommonApis = [
   "runtime.RequestUpdateCheckStatus",
   "runtime.getManifest",
   "runtime.connect",
+  "runtime.getDocumentId",
   "runtime.getFrameId",
   "runtime.getURL",
   "runtime.id",

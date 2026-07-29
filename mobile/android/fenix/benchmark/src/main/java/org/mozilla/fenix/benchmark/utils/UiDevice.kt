@@ -42,25 +42,49 @@ fun UiDevice.dismissCFR() {
 }
 
 fun UiDevice.completeOnboarding() {
-    val dismissSetAsDefault = findObject(UiSelector().resourceId("android:id/button2"))
-    dismissSetAsDefault.waitForExists(WAITING_TIME_MS)
-    dismissSetAsDefault.click()
+    // Step 1: Terms of use
+    clickIfExistsWithText("Continue")
 
-    val dismissFirefoxSearchWidget = findObject(UiSelector().text("Not now"))
-    dismissFirefoxSearchWidget.waitForExists(WAITING_TIME_MS)
-    dismissFirefoxSearchWidget.click()
+    // Step 2: Set as default browser
+    clickIfExistsWithResourceId("android:id/button2")
 
-    val dismissSignInOnboarding = findObject(UiSelector().text("Not now"))
-    dismissSignInOnboarding.waitForExists(WAITING_TIME_MS)
-    dismissSignInOnboarding.click()
+    // Step3: Add Firefox Widget
+    clickIfExistsWithText("Not now")
 
-    val enableNotificationOnboarding = findObject(UiSelector().text("Turn on notifications"))
-    enableNotificationOnboarding.waitForExists(WAITING_TIME_MS)
-    enableNotificationOnboarding.click()
+    // Step 4: Sync
+    clickIfExistsWithText("Not now")
 
-    val systemAllow = findObject(UiSelector().text("Allow"))
-    systemAllow.waitForExists(WAITING_TIME_MS)
-    systemAllow.click()
+    // Step 5: Notifications
+    clickIfExistsWithText("Not now")
+
+    // Step 6: Notifications
+    clickIfExistsWithText("Turn on notifications")
+    clickIfExistsWithText("Allow")
+
+    // Stp 7: Address bar position
+    clickIfExistsWithText("Continue")
+}
+
+fun UiDevice.waitForHomepage() {
+    findObject(UiSelector().resourceId("$TARGET_PACKAGE:id/toolbar_text")).run {
+        waitForExists(WAITING_TIME_MS)
+    }
+}
+
+fun UiDevice.clickIfExistsWithText(text: String) {
+    findObject(UiSelector().text(text)).run {
+        if (waitForExists(WAITING_TIME_MS)) {
+            click()
+        }
+    }
+}
+
+fun UiDevice.clickIfExistsWithResourceId(resourceId: String) {
+    findObject(UiSelector().resourceId(resourceId)).run {
+        if (waitForExists(WAITING_TIME_MS)) {
+            click()
+        }
+    }
 }
 
 fun UiDevice.waitUntilPageLoaded() {
@@ -71,9 +95,9 @@ fun UiDevice.waitUntilPageLoaded() {
     refresh.waitForExists(WAITING_TIME_MS)
 }
 
-fun UiDevice.openTabsTray(useNewToolbar: Boolean) {
+fun UiDevice.openTabsTray() {
     val tabsTrayButton = findObject(
-        UiSelector().resourceId(getTabCounterId(useNewToolbar))
+        UiSelector().resourceId("TabCounterTestTags.tabCounter")
     )
     tabsTrayButton.waitForExists(WAITING_TIME_MS)
     tabsTrayButton.click()
@@ -160,17 +184,17 @@ fun UiDevice.closeAllTabs() {
     closeAllTabsButton.click()
 }
 
-fun UiDevice.enterSearchMode(useNewToolbar: Boolean) {
+fun UiDevice.enterSearchMode() {
     val urlBar = findObject(
-        UiSelector().resourceId(getUrlBarId(useNewToolbar))
+        UiSelector().resourceId("ADDRESSBAR_URL_BOX")
     )
     urlBar.waitForExists(WAITING_TIME_MS)
     urlBar.click()
 }
 
-fun UiDevice.loadSite(url: String, useNewToolbar: Boolean) {
+fun UiDevice.loadSite(url: String) {
     val urlBarEditField = findObject(
-        UiSelector().resourceId(getUrlBarEditField(useNewToolbar))
+        UiSelector().resourceId("ADDRESSBAR_SEARCH_BOX")
     )
     urlBarEditField.setText(url)
     pressEnter()
@@ -190,19 +214,4 @@ fun UiDevice.flingToBeginning(scrollableId: String, maxSwipes: Int) {
     val scrollable = UiScrollable(UiSelector().resourceId(scrollableId))
     scrollable.waitForExists(WAITING_TIME_MS)
     scrollable.flingToBeginning(maxSwipes)
-}
-
-private fun getUrlBarId(useNewToolbar: Boolean) = when (useNewToolbar) {
-    true -> "ADDRESSBAR_URL_BOX"
-    false -> "$TARGET_PACKAGE:id/toolbar"
-}
-
-private fun getUrlBarEditField(useNewToolbar: Boolean) = when (useNewToolbar) {
-    true -> "ADDRESSBAR_SEARCH_BOX"
-    false -> "$TARGET_PACKAGE:id/mozac_browser_toolbar_edit_url_view"
-}
-
-private fun getTabCounterId(useNewToolbar: Boolean) = when (useNewToolbar) {
-    true -> "TabCounterTestTags.tabCounter"
-    false -> "$TARGET_PACKAGE:id/counter_box"
 }

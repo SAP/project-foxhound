@@ -81,6 +81,7 @@ tasks:
                 win64\b.*: [mar, installer]
         fetches:
             toolchain:
+                - linux64-7zz
                 - linux64-mar-tools
                 - linux64-zucchini-bin
                 - linux64-upx

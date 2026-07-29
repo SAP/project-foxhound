@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -13,11 +13,17 @@
 #include "include/core/SkTypes.h"
 
 #include <cstdint>
+#include <optional>
 
 /** Represents a set of actual arguments for a font. */
 struct SkFontArguments {
     struct VariationPosition {
         struct Coordinate {
+            static constexpr SkFourByteTag wght = SkSetFourByteTag('w', 'g', 'h', 't');
+            static constexpr SkFourByteTag wdth = SkSetFourByteTag('w', 'd', 't', 'h');
+            static constexpr SkFourByteTag slnt = SkSetFourByteTag('s', 'l', 'n', 't');
+            static constexpr SkFourByteTag ital = SkSetFourByteTag('i', 't', 'a', 'l');
+            static constexpr SkFourByteTag opsz = SkSetFourByteTag('o', 'p', 's', 'z');
             SkFourByteTag axis;
             float value;
         };
@@ -87,10 +93,24 @@ struct SkFontArguments {
 
     Palette getPalette() const { return fPalette; }
 
+    SkFontArguments& setSyntheticBold(std::optional<bool> bold) {
+        fSyntheticBold = bold;
+        return *this;
+    }
+    std::optional<bool> getSyntheticBold() const { return fSyntheticBold; }
+
+    SkFontArguments& setSyntheticOblique(std::optional<bool> oblique) {
+        fSyntheticOblique = oblique;
+        return *this;
+    }
+    std::optional<bool> getSyntheticOblique() const { return fSyntheticOblique; }
+
 private:
     int fCollectionIndex;
     VariationPosition fVariationDesignPosition;
     Palette fPalette;
+    std::optional<bool> fSyntheticBold;
+    std::optional<bool> fSyntheticOblique;
 };
 
 #endif

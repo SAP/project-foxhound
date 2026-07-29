@@ -38,7 +38,7 @@ addRDMTask(
 
     const tab = await addTab(DUMMY_URL);
     const browser = tab.linkedBrowser;
-    const win = browser.ownerGlobal;
+    const win = browser.documentGlobal;
 
     let waitPromptPromise = waitForGeolocationPrompt(win, browser);
 

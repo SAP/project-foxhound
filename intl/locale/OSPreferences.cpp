@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -516,7 +515,7 @@ OSPreferences::GetDateTimePattern(int32_t aDateFormatStyle,
 
   nsCString pattern;
   if (mPatternCache.Get(key, &pattern)) {
-    aRetVal = pattern;
+    aRetVal = std::move(pattern);
     return NS_OK;
   }
 
@@ -537,7 +536,7 @@ OSPreferences::GetDateTimePattern(int32_t aDateFormatStyle,
   }
   mPatternCache.InsertOrUpdate(key, pattern);
 
-  aRetVal = pattern;
+  aRetVal = std::move(pattern);
   return NS_OK;
 }
 

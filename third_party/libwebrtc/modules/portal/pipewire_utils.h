@@ -17,6 +17,8 @@
 
 #include <cerrno>
 #include <cstdint>
+#include <string>
+#include <string_view>
 
 // static
 struct dma_buf_sync {
@@ -34,6 +36,20 @@ namespace webrtc {
 
 constexpr int kInvalidPipeWireFd = -1;
 
+struct PipeWireVersion {
+  static PipeWireVersion Parse(const std::string_view& version);
+
+  // Returns whether current version is newer or same as required version
+  bool operator>=(const PipeWireVersion& other);
+
+  std::string_view ToStringView() const;
+
+  int major = 0;
+  int minor = 0;
+  int micro = 0;
+  std::string full_version;
+};
+
 // Prepare PipeWire so that it is ready to be used. If it needs to be dlopen'd
 // this will do so. Note that this does not guarantee a PipeWire server is
 // running nor does it establish a connection to one.
@@ -47,6 +63,17 @@ class PipeWireThreadLoopLock {
 
  private:
   pw_thread_loop* const loop_;
+};
+
+// RAII wrapper for PipeWire initialization/deinitialization
+class PipeWireInitializer {
+ public:
+  PipeWireInitializer();
+  ~PipeWireInitializer();
+
+  // Non-copyable
+  PipeWireInitializer(const PipeWireInitializer&) = delete;
+  PipeWireInitializer& operator=(const PipeWireInitializer&) = delete;
 };
 
 // We should synchronize DMA Buffer object access from CPU to avoid potential

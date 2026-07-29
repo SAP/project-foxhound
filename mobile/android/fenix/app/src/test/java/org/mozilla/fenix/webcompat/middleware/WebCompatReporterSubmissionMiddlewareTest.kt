@@ -20,7 +20,6 @@ import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.support.test.middleware.CaptureActionsMiddleware
-import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.telemetry.glean.private.NoReasonCodes
 import mozilla.telemetry.glean.private.PingType
@@ -28,7 +27,6 @@ import mozilla.telemetry.glean.testing.GleanTestRule
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -53,6 +51,7 @@ import org.mozilla.fenix.webcompat.fake.FakeWebCompatReporterMoreInfoSender
 import org.mozilla.fenix.webcompat.store.WebCompatReporterAction
 import org.mozilla.fenix.webcompat.store.WebCompatReporterState
 import org.mozilla.fenix.webcompat.store.WebCompatReporterStore
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class) // for GleanTestRule
 class WebCompatReporterSubmissionMiddlewareTest {
@@ -599,7 +598,7 @@ class WebCompatReporterSubmissionMiddlewareTest {
         val tab = createTab(
             url = "https://www.mozilla.org",
             id = "test-tab",
-            engineSession = mock(),
+            engineSession = mockk(),
         )
         val browserStore = BrowserStore(
             initialState = BrowserState(
@@ -687,7 +686,7 @@ class WebCompatReporterSubmissionMiddlewareTest {
         nimbusExperimentsProvider: NimbusExperimentsProvider = FakeNimbusExperimentsProvider(),
         scope: CoroutineScope,
     ): WebCompatReporterStore {
-        val engineSession: EngineSession = mock()
+        val engineSession: EngineSession = mockk()
         val tab = createTab(
             url = "",
             id = "test-tab",

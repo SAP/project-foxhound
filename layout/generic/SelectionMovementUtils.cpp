@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -704,9 +702,7 @@ static void AdjustCaretFrameForLineEnd(nsIFrame** aFrame, uint32_t* aOffset,
   if (!line) {
     return;
   }
-  uint32_t count = line->GetChildCount();
-  for (nsIFrame* f = line->mFirstChild; count > 0;
-       --count, f = f->GetNextSibling()) {
+  for (nsIFrame* f : line->ChildFrames()) {
     nsIFrame* r = CheckForTrailingTextFrameRecursive(f, *aFrame);
     if (r == *aFrame) {
       return;

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -89,7 +87,7 @@ void a11y::PlatformInit() {
   }
 
   gAtkTableCellGetTypeFunc =
-      (GType(*)())PR_FindFunctionSymbol(sATKLib, "atk_table_cell_get_type");
+      (GType (*)())PR_FindFunctionSymbol(sATKLib, "atk_table_cell_get_type");
 
   const char* (*atkGetVersion)() =
       (const char* (*)())PR_FindFunctionSymbol(sATKLib, "atk_get_version");
@@ -264,4 +262,8 @@ bool a11y::ShouldA11yBeEnabled() {
 
 uint64_t a11y::GetCacheDomainsForKnownClients(uint64_t aCacheDomains) {
   return aCacheDomains;
+}
+
+void a11y::GetHumanReadableInstantiatorStr(nsAString& aResult) {
+  aResult.Truncate();
 }

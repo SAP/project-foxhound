@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* Copyright (c) 2014, Mozilla Corporation
  * All rights reserved.
  *
@@ -57,10 +56,6 @@ class GMPVideoEncodedFrameImpl : public GMPVideoEncodedFrame {
                            GMPVideoHostImpl* aHost);
   virtual ~GMPVideoEncodedFrameImpl();
 
-  // This is called during a normal destroy sequence, which is
-  // when a consumer is finished or during XPCOM shutdown.
-  void DoneWithAPI();
-
   static bool CheckFrameData(const GMPVideoEncodedFrameData& aFrameData,
                              size_t aBufferSize);
 
@@ -116,7 +111,7 @@ class GMPVideoEncodedFrameImpl : public GMPVideoEncodedFrame {
   uint32_t mSize;
   int32_t mTemporalLayerId = -1;
   bool mCompleteFrame;
-  GMPVideoHostImpl* mHost;
+  RefPtr<GMPVideoHostImpl> mHost;
   nsTArray<uint8_t> mArrayBuffer;
   ipc::Shmem mShmemBuffer;
   GMPBufferType mBufferType;

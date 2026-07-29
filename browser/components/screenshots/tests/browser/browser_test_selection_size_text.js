@@ -10,7 +10,7 @@ add_task(async function test_selectionSizeTest() {
       url: TEST_PAGE,
     },
     async browser => {
-      const dpr = browser.ownerGlobal.devicePixelRatio;
+      const dpr = browser.documentGlobal.devicePixelRatio;
       let helper = new ScreenshotsHelper(browser);
 
       helper.triggerUIFromToolbar();
@@ -37,7 +37,7 @@ add_task(async function test_selectionSizeTestAt1Point5Zoom() {
     },
     async browser => {
       const zoom = 1.5;
-      const dpr = browser.ownerGlobal.devicePixelRatio;
+      const dpr = browser.documentGlobal.devicePixelRatio;
       let helper = new ScreenshotsHelper(browser);
       helper.zoomBrowser(zoom);
 
@@ -65,7 +65,7 @@ add_task(async function test_selectionSizeTestAtPoint5Zoom() {
     },
     async browser => {
       const zoom = 0.5;
-      const dpr = browser.ownerGlobal.devicePixelRatio;
+      const dpr = browser.documentGlobal.devicePixelRatio;
       let helper = new ScreenshotsHelper(browser);
       helper.zoomBrowser(zoom);
 

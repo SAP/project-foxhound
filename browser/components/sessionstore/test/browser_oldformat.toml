@@ -36,8 +36,6 @@ support-files = [
   "browser_662743_sample.html",
   "browser_739531_sample.html",
   "browser_739531_frame.html",
-  "browser_911547_sample.html",
-  "browser_911547_sample.html^headers^",
   "coopHeaderCommon.sjs",
   "restore_redirect_http.html",
   "restore_redirect_http.html^headers^",
@@ -91,6 +89,9 @@ skip-if = [
 ["browser_350525.js"]
 
 ["browser_354894_perwindowpb.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
 
 ["browser_367052.js"]
 
@@ -298,5 +299,3 @@ skip-if = [
 
 ["browser_906076_lazy_tabs.js"]
 https_first_disabled = true
-
-["browser_911547.js"]

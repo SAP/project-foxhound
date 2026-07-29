@@ -181,8 +181,8 @@ is remote/components/Marionette.sys.mjs, which does require
 a re-build.
 
 [strict mode]: https://developer.mozilla.org/docs/Web/JavaScript/Reference/Strict_mode
-[Mozilla eslint rules]: https://searchfox.org/mozilla-central/source/.eslintrc.js
-[our own specialisations]: https://searchfox.org/mozilla-central/source/remote/marionette/.eslintrc.js
+[Mozilla eslint rules]: https://searchfox.org/firefox-main/source/.eslintrc.js
+[our own specialisations]: https://searchfox.org/firefox-main/source/remote/marionette/.eslintrc.js
 [linter]: #linting
 [copying header]: https://www.mozilla.org/en-US/MPL/headers/
 [public domain]: https://creativecommons.org/publicdomain/zero/1.0/
@@ -212,8 +212,8 @@ These include public functions—or command implementations—on
 the `GeckoDriver` class, as well as all exported symbols from
 other modules.  Documentation for non-exported symbols is not required.
 
-[remote/doc/marionette]: https://searchfox.org/mozilla-central/source/remote/marionette/doc
-[testing/geckodriver/doc]: https://searchfox.org/mozilla-central/source/testing/geckodriver/doc
+[remote/doc/marionette]: https://searchfox.org/firefox-main/source/remote/marionette/doc
+[testing/geckodriver/doc]: https://searchfox.org/firefox-main/source/testing/geckodriver/doc
 
 ## Linting
 

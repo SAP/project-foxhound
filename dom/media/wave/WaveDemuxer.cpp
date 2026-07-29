@@ -1,12 +1,8 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WaveDemuxer.h"
-
-#include <inttypes.h>
 
 #include <algorithm>
 
@@ -23,8 +19,9 @@ using mozilla::media::TimeUnit;
 
 namespace mozilla {
 
-#define LOG(msg, ...) \
-  MOZ_LOG(gMediaDemuxerLog, LogLevel::Debug, msg, ##__VA_ARGS__)
+#define LOG(msg, ...)                                                     \
+  MOZ_LOG_FMT(gMediaDemuxerLog, LogLevel::Debug, MOZ_LOG_EXPAND_ARGS msg, \
+              ##__VA_ARGS__)
 
 WAVDemuxer::WAVDemuxer(MediaResource* aSource) : mSource(aSource) {
   DDLINKCHILD("source", aSource);
@@ -173,8 +170,9 @@ bool WAVTrackDemuxer::Init() {
       mInfo->mChannels) {
     AudioConfig::ChannelLayout::ChannelMap defaultForChannelCount =
         AudioConfig::ChannelLayout(mInfo->mChannels).Map();
-    LOG(("Channel count of %" PRIu32
-         " and channel layout disagree, overriding channel map from %s to %s",
+    LOG(
+        ("Channel count of {} and channel layout disagree, overriding channel "
+         "map from {} to {}",
          mInfo->mChannels,
          AudioConfig::ChannelLayout::ChannelMapToString(mInfo->mChannelMap)
              .get(),
@@ -182,7 +180,7 @@ bool WAVTrackDemuxer::Init() {
              .get()));
     mInfo->mChannelMap = defaultForChannelCount;
   }
-  LOG(("WavDemuxer initialized: %s", mInfo->ToString().get()));
+  LOG(("WavDemuxer initialized: {}", mInfo->ToString().get()));
 
   return mInfo->mDuration.IsPositive();
 }
@@ -287,7 +285,7 @@ bool WAVTrackDemuxer::ListChunkParserInit(uint32_t aChunkSize) {
         mInfo->mTags.AppendElement(MetadataTag("name"_ns, val));
         break;
       default:
-        LOG(("Metadata key %08x not handled", id));
+        LOG(("Metadata key {:08x} not handled", id));
     }
 
     mHeaderParser.Reset();

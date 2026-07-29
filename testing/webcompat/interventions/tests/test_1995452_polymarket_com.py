@@ -1,33 +1,38 @@
 import pytest
 
 URL = "https://polymarket.com/sports/live"
+SCROLLBARS_CSS = ".scrollbar-none, .scrollbar-hide"
 
-CONTAINER_CSS = "#scoreboard-scroll-container"
 
-
-async def is_scrollbar_visible(client):
+async def are_scrollbars_visible(client):
     await client.navigate(URL)
-    container = client.await_css(CONTAINER_CSS)
     return client.execute_script(
         """
-      const container = arguments[0];
-      return Math.round(container.getBoundingClientRect().height) != container.clientHeight;
+      const shouldHaveNoBars = document.querySelectorAll(arguments[0]);
+      for (const container of shouldHaveNoBars) {
+          if (Math.round(container.getBoundingClientRect().width) != container.clientWidth) {
+              return true;
+          }
+      }
+      return false;
     """,
-        container,
+        SCROLLBARS_CSS,
     )
 
 
+@pytest.mark.enable_webkit_scrollbar
 @pytest.mark.skip_platforms("android")
 @pytest.mark.need_visible_scrollbars
 @pytest.mark.asyncio
 @pytest.mark.with_interventions
 async def test_enabled(client):
-    assert not await is_scrollbar_visible(client)
+    assert not await are_scrollbars_visible(client)
 
 
+@pytest.mark.disable_webkit_scrollbar
 @pytest.mark.skip_platforms("android")
 @pytest.mark.need_visible_scrollbars
 @pytest.mark.asyncio
 @pytest.mark.without_interventions
 async def test_disabled(client):
-    assert await is_scrollbar_visible(client)
+    assert await are_scrollbars_visible(client)

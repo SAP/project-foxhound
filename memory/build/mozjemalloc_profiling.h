@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,7 +21,8 @@ struct PurgeStats {
   // The number of previously-dirty pages that are now clean.
   size_t pages_dirty = 0;
 
-  // The total number of pages that were cleaned (includes previously an pages).
+  // The total number of pages that were cleaned (includes already clean
+  // pages).
   size_t pages_total = 0;
 
   // The number of pages that can't be purged because of alignment because

@@ -18,14 +18,13 @@
 #include "api/environment/environment_factory.h"
 #include "api/transport/enums.h"
 #include "p2p/base/port.h"
-#include "p2p/base/port_interface.h"
 #include "p2p/test/fake_port_allocator.h"
 #include "rtc_base/ip_address.h"
+#include "rtc_base/net_helper.h"
 #include "rtc_base/socket_address.h"
-#include "rtc_base/third_party/sigslot/sigslot.h"
-#include "rtc_base/thread.h"
 #include "rtc_base/virtual_socket_server.h"
 #include "test/gtest.h"
+#include "test/run_loop.h"
 
 using ::webrtc::CreateEnvironment;
 using ::webrtc::IceCandidateType;
@@ -44,7 +43,7 @@ constexpr char kIpv4Address[] = "12.34.56.78";
 constexpr char kIpv4AddressWithPort[] = "12.34.56.78:443";
 }  // namespace
 
-class PortAllocatorTest : public ::testing::Test, public sigslot::has_slots<> {
+class PortAllocatorTest : public ::testing::Test {
  public:
   PortAllocatorTest()
       : vss_(std::make_unique<webrtc::VirtualSocketServer>()),
@@ -99,7 +98,7 @@ class PortAllocatorTest : public ::testing::Test, public sigslot::has_slots<> {
   }
 
   std::unique_ptr<webrtc::VirtualSocketServer> vss_;
-  webrtc::AutoSocketServerThread main_;
+  webrtc::test::RunLoop main_;
   std::unique_ptr<webrtc::FakePortAllocator> allocator_;
   webrtc::SocketAddress stun_server_1{"11.11.11.11", 3478};
   webrtc::SocketAddress stun_server_2{"22.22.22.22", 3478};

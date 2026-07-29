@@ -4,7 +4,6 @@
 package org.mozilla.focus.privacy
 
 import androidx.test.internal.runner.junit4.AndroidJUnit4ClassRunner
-import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -12,10 +11,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.focus.activity.robots.searchScreen
 import org.mozilla.focus.helpers.FeatureSettingsHelper
+import org.mozilla.focus.helpers.FocusTestRule
 import org.mozilla.focus.helpers.MainActivityFirstrunTestRule
-import org.mozilla.focus.helpers.MockWebServerHelper
 import org.mozilla.focus.helpers.TestAssetHelper.getStorageTestAsset
-import org.mozilla.focus.helpers.TestSetup
 import org.mozilla.focus.testAnnotations.SmokeTest
 import java.io.IOException
 
@@ -23,8 +21,7 @@ import java.io.IOException
  * Make sure that session storage values are kept and written but removed at the end of a session.
  */
 @RunWith(AndroidJUnit4ClassRunner::class)
-class LocalSessionStorageTest : TestSetup() {
-    private lateinit var webServer: MockWebServer
+class LocalSessionStorageTest {
 
     private val featureSettingsHelper = FeatureSettingsHelper()
 
@@ -33,16 +30,16 @@ class LocalSessionStorageTest : TestSetup() {
         const val LOCAL_STORAGE_MISS = "Local storage empty"
     }
 
+    @get:Rule(order = 0)
+    val focusTestRule: FocusTestRule = FocusTestRule()
+
+    private val webServerRule get() = focusTestRule.mockWebServerRule
+
     @get:Rule
     val mActivityTestRule = MainActivityFirstrunTestRule(showFirstRun = false)
 
     @Before
-    override fun setUp() {
-        super.setUp()
-        webServer = MockWebServer().apply {
-            dispatcher = MockWebServerHelper.AndroidAssetDispatcher()
-            start()
-        }
+    fun setUp() {
         featureSettingsHelper.setCfrForTrackingProtectionEnabled(false)
         featureSettingsHelper.setSearchWidgetDialogEnabled(false)
     }
@@ -50,8 +47,7 @@ class LocalSessionStorageTest : TestSetup() {
     @After
     fun tearDown() {
         try {
-            webServer.shutdown()
-        } catch (e: IOException) {
+            } catch (e: IOException) {
             throw AssertionError("Could not stop web server", e)
         }
     }
@@ -59,8 +55,8 @@ class LocalSessionStorageTest : TestSetup() {
     @SmokeTest
     @Test
     fun testLocalAndSessionStorageIsWrittenAndRemoved() {
-        val storageStartUrl = webServer.getStorageTestAsset("storage_start.html").url
-        val storageCheckUrl = webServer.getStorageTestAsset("storage_check.html").url
+        val storageStartUrl = webServerRule.server.getStorageTestAsset("storage_start.html").url
+        val storageCheckUrl = webServerRule.server.getStorageTestAsset("storage_check.html").url
 
         searchScreen {
         }.loadPage(storageStartUrl) {
@@ -82,7 +78,7 @@ class LocalSessionStorageTest : TestSetup() {
     @SmokeTest
     @Test
     fun eraseCookiesTest() {
-        val storageStartUrl = webServer.getStorageTestAsset("storage_start.html").url
+        val storageStartUrl = webServerRule.server.getStorageTestAsset("storage_start.html").url
 
         searchScreen {
         }.loadPage(storageStartUrl) {

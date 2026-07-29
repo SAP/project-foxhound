@@ -515,8 +515,8 @@ add_task(async function test_event_order() {
 
         let eventsPromise = SpecialPowers.spawn(
           browser,
-          [[mode, expected]],
-          async function ([contentMode, contentExpected]) {
+          [mode, expected],
+          async function (contentMode, contentExpected) {
             return new Promise(resolve => {
               function onEvent(event) {
                 select.removeEventListener(event.type, onEvent);

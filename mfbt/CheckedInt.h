@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,6 +14,7 @@
 #include <cstdint>
 #include <limits>
 #include <type_traits>
+#include <utility>
 
 namespace mozilla {
 
@@ -86,11 +85,6 @@ struct IsSupported<uint64_t> {
 };
 
 template <>
-struct IsSupportedPass2<char> {
-  static const bool value = true;
-};
-
-template <>
 struct IsSupportedPass2<signed char> {
   static const bool value = true;
 };
@@ -146,71 +140,6 @@ struct IsSupportedPass2<unsigned long long> {
  * Ideas taken from IntegerLib, code different.
  */
 
-template <typename T, typename U, bool IsTSigned = std::is_signed_v<T>,
-          bool IsUSigned = std::is_signed_v<U>>
-struct DoesRangeContainRange {};
-
-template <typename T, typename U, bool Signedness>
-struct DoesRangeContainRange<T, U, Signedness, Signedness> {
-  static const bool value = sizeof(T) >= sizeof(U);
-};
-
-template <typename T, typename U>
-struct DoesRangeContainRange<T, U, true, false> {
-  static const bool value = sizeof(T) > sizeof(U);
-};
-
-template <typename T, typename U>
-struct DoesRangeContainRange<T, U, false, true> {
-  static const bool value = false;
-};
-
-template <typename T, typename U, bool IsTSigned = std::is_signed_v<T>,
-          bool IsUSigned = std::is_signed_v<U>,
-          bool DoesTRangeContainURange = DoesRangeContainRange<T, U>::value>
-struct IsInRangeImpl {};
-
-template <typename T, typename U, bool IsTSigned, bool IsUSigned>
-struct IsInRangeImpl<T, U, IsTSigned, IsUSigned, true> {
-  static constexpr bool run(U) { return true; }
-};
-
-template <typename T, typename U>
-struct IsInRangeImpl<T, U, true, true, false> {
-  static constexpr bool run(U aX) {
-    return aX <= std::numeric_limits<T>::max() &&
-           aX >= std::numeric_limits<T>::min();
-  }
-};
-
-template <typename T, typename U>
-struct IsInRangeImpl<T, U, false, false, false> {
-  static constexpr bool run(U aX) {
-    return aX <= std::numeric_limits<T>::max();
-  }
-};
-
-template <typename T, typename U>
-struct IsInRangeImpl<T, U, true, false, false> {
-  static constexpr bool run(U aX) {
-    return sizeof(T) > sizeof(U) || aX <= U(std::numeric_limits<T>::max());
-  }
-};
-
-template <typename T, typename U>
-struct IsInRangeImpl<T, U, false, true, false> {
-  static constexpr bool run(U aX) {
-    return sizeof(T) >= sizeof(U)
-               ? aX >= 0
-               : aX >= 0 && aX <= U(std::numeric_limits<T>::max());
-  }
-};
-
-template <typename T, typename U>
-constexpr bool IsInRange(U aX) {
-  return IsInRangeImpl<T, U>::run(aX);
-}
-
 template <typename T>
 constexpr bool IsDivValid(T aX, T aY) {
   // Keep in mind that in the signed case, min/-1 is invalid because
@@ -219,39 +148,11 @@ constexpr bool IsDivValid(T aX, T aY) {
                       aX == std::numeric_limits<T>::min() && aY == T(-1));
 }
 
-template <typename T, bool IsTSigned = std::is_signed_v<T>>
-struct IsModValidImpl;
-
 template <typename T>
 constexpr bool IsModValid(T aX, T aY) {
-  return IsModValidImpl<T>::run(aX, aY);
+  // Mod is valid iff Div is valid (since C++11).
+  return IsDivValid(aX, aY);
 }
-
-/*
- * Mod is pretty simple.
- * For now, let's just use the ANSI C definition:
- * If aX or aY are negative, the results are implementation defined.
- *   Consider these invalid.
- * Undefined for aY=0.
- * The result will never exceed either aX or aY.
- *
- * Checking that aX>=0 is a warning when T is unsigned.
- */
-
-template <typename T>
-struct IsModValidImpl<T, false> {
-  static constexpr bool run(T aX, T aY) { return aY >= 1; }
-};
-
-template <typename T>
-struct IsModValidImpl<T, true> {
-  static constexpr bool run(T aX, T aY) {
-    if (aX < 0) {
-      return false;
-    }
-    return aY >= 1;
-  }
-};
 
 template <typename T, bool IsSigned = std::is_signed_v<T>>
 struct NegateImpl;
@@ -261,7 +162,7 @@ struct NegateImpl<T, false> {
   static constexpr CheckedInt<T> negate(const CheckedInt<T>& aVal) {
     // Handle negation separately for signed/unsigned, for simpler code and to
     // avoid an MSVC warning negating an unsigned value.
-    static_assert(detail::IsInRange<T>(0), "Integer type can't represent 0");
+    static_assert(std::in_range<T>(0), "Integer type can't represent 0");
     return CheckedInt<T>(T(0), aVal.isValid() && aVal.mValue == 0);
   }
 };
@@ -275,8 +176,8 @@ struct NegateImpl<T, true> {
       return CheckedInt<T>(aVal.mValue, false);
     }
     /* For some T, arithmetic ops automatically promote to a wider type, so
-     * explitly do the narrowing cast here.  The narrowing cast is valid because
-     * we did the check for min value above. */
+     * explicitly do the narrowing cast here.  The narrowing cast is valid
+     * because we did the check for min value above. */
     return CheckedInt<T>(T(-aVal.mValue), true);
   }
 };
@@ -383,13 +284,23 @@ class CheckedInt {
    * documentation for class CheckedInt, this constructor checks that its
    * argument is valid.
    */
-  template <typename U>
+  template <
+      typename U,
+      std::enable_if_t<!std::is_enum_v<U> && !std::is_same_v<U, bool>, int> = 0>
   MOZ_IMPLICIT MOZ_NO_ARITHMETIC_EXPR_IN_ARGUMENT constexpr CheckedInt(U aValue)
-      : mValue(T(aValue)), mIsValid(detail::IsInRange<T>(aValue)) {
+      : mValue(T(aValue)), mIsValid(std::in_range<T>(aValue)) {
     static_assert(
         detail::IsSupported<T>::value && detail::IsSupported<U>::value,
         "This type is not supported by CheckedInt");
   }
+
+  template <typename U, std::enable_if_t<std::is_enum_v<U>, int> = 0>
+  MOZ_IMPLICIT constexpr CheckedInt(U aValue)
+      : CheckedInt(static_cast<std::underlying_type_t<U>>(aValue)) {}
+
+  template <typename U, std::enable_if_t<std::is_same_v<U, bool>, int> = 0>
+  MOZ_IMPLICIT constexpr CheckedInt(U aValue)
+      : CheckedInt(static_cast<uint8_t>(aValue)) {}
 
   template <typename U>
   friend class CheckedInt;
@@ -405,12 +316,12 @@ class CheckedInt {
   constexpr CheckedInt() : mValue(T(0)), mIsValid(true) {
     static_assert(detail::IsSupported<T>::value,
                   "This type is not supported by CheckedInt");
-    static_assert(detail::IsInRange<T>(0), "Integer type can't represent 0");
+    static_assert(std::in_range<T>(0), "Integer type can't represent 0");
   }
 
   /** @returns the actual value */
   constexpr T value() const {
-    MOZ_DIAGNOSTIC_ASSERT(
+    MOZ_RELEASE_ASSERT(
         mIsValid,
         "Invalid checked integer (division by zero or integer overflow)");
     return mValue;
@@ -532,8 +443,7 @@ class CheckedInt {
   constexpr CheckedInt<T> operator OP(const CheckedInt<T>& aLhs,            \
                                       const CheckedInt<T>& aRhs) {          \
     if (!detail::Is##NAME##Valid(aLhs.mValue, aRhs.mValue)) {               \
-      static_assert(detail::IsInRange<T>(0),                                \
-                    "Integer type can't represent 0");                      \
+      static_assert(std::in_range<T>(0), "Integer type can't represent 0"); \
       return CheckedInt<T>(T(0), false);                                    \
     }                                                                       \
     /* For some T, arithmetic ops automatically promote to a wider type, so \
@@ -543,17 +453,16 @@ class CheckedInt {
                          aLhs.mIsValid && aRhs.mIsValid);                   \
   }
 
-#define MOZ_CHECKEDINT_BASIC_BINARY_OPERATOR2(NAME, OP, FUN)       \
-  template <typename T>                                            \
-  constexpr CheckedInt<T> operator OP(const CheckedInt<T>& aLhs,   \
-                                      const CheckedInt<T>& aRhs) { \
-    auto result = T{};                                             \
-    if (MOZ_UNLIKELY(!FUN(aLhs.mValue, aRhs.mValue, &result))) {   \
-      static_assert(detail::IsInRange<T>(0),                       \
-                    "Integer type can't represent 0");             \
-      return CheckedInt<T>(T(0), false);                           \
-    }                                                              \
-    return CheckedInt<T>(result, aLhs.mIsValid && aRhs.mIsValid);  \
+#define MOZ_CHECKEDINT_BASIC_BINARY_OPERATOR2(NAME, OP, FUN)                \
+  template <typename T>                                                     \
+  constexpr CheckedInt<T> operator OP(const CheckedInt<T>& aLhs,            \
+                                      const CheckedInt<T>& aRhs) {          \
+    auto result = T{};                                                      \
+    if (MOZ_UNLIKELY(!FUN(aLhs.mValue, aRhs.mValue, &result))) {            \
+      static_assert(std::in_range<T>(0), "Integer type can't represent 0"); \
+      return CheckedInt<T>(T(0), false);                                    \
+    }                                                                       \
+    return CheckedInt<T>(result, aLhs.mIsValid && aRhs.mIsValid);           \
   }
 MOZ_CHECKEDINT_BASIC_BINARY_OPERATOR2(Add, +, SafeAdd)
 MOZ_CHECKEDINT_BASIC_BINARY_OPERATOR2(Sub, -, SafeSub)

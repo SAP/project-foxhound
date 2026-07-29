@@ -45,7 +45,6 @@ import org.mozilla.fenix.home.HomeFragmentDirections
 import org.mozilla.fenix.library.history.HistoryFragmentDirections
 import org.mozilla.fenix.library.historymetadata.HistoryMetadataGroupFragmentDirections
 import org.mozilla.fenix.library.recentlyclosed.RecentlyClosedFragmentDirections
-import org.mozilla.fenix.search.SearchDialogFragmentDirections
 import org.mozilla.fenix.settings.HttpsOnlyFragmentDirections
 import org.mozilla.fenix.settings.SettingsFragmentDirections
 import org.mozilla.fenix.settings.SupportUtils
@@ -288,8 +287,6 @@ private fun getHomeNavDirections(
     BrowserDirection.FromHome -> HomeFragmentDirections.actionGlobalBrowser()
 
     BrowserDirection.FromWallpaper -> WallpaperSettingsFragmentDirections.actionGlobalBrowser()
-
-    BrowserDirection.FromSearchDialog -> SearchDialogFragmentDirections.actionGlobalBrowser()
 
     BrowserDirection.FromSettings -> SettingsFragmentDirections.actionGlobalBrowser()
 

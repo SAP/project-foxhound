@@ -1,14 +1,14 @@
 #!/usr/bin/env python
 
+import functools
 import os
-import sys
 import platform
 import subprocess
+import sys
 from pathlib import Path
 
 import buildconfig
 from mach.util import get_state_dir
-from mozbuild.util import memoize
 from mozbuild.vendor.moz_yaml import load_moz_yaml
 
 
@@ -30,7 +30,7 @@ def protoc_binary(revision: None | str = None) -> Path:
     )
 
 
-@memoize
+@functools.cache
 def _get_protobuf_revision_from_moz_yaml():
     return load_moz_yaml(COMPONENT_DIR / "moz.yaml", verify=False, require_license_file=False)[
         "origin"

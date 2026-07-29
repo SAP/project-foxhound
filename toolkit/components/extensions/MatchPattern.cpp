@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -90,7 +89,7 @@ DEFINE_STATIC_ATOM_SET(HostLocatorSchemes, nsGkAtoms::http, nsGkAtoms::https,
                        nsGkAtoms::ws, nsGkAtoms::wss, nsGkAtoms::file,
                        nsGkAtoms::ftp, nsGkAtoms::moz_extension,
                        nsGkAtoms::chrome, nsGkAtoms::resource, nsGkAtoms::moz,
-                       nsGkAtoms::moz_icon, nsGkAtoms::moz_gio);
+                       nsGkAtoms::moz_icon);
 
 DEFINE_STATIC_ATOM_SET(WildcardSchemes, nsGkAtoms::http, nsGkAtoms::https,
                        nsGkAtoms::ws, nsGkAtoms::wss);
@@ -366,6 +365,10 @@ bool MatchPatternCore::MatchesAllUrlsWithScheme(const nsAtom* scheme) const {
           (!mPath || mPath->IsWildcard()));
 }
 
+bool MatchPatternCore::ContainsScheme(const nsAtom* scheme) const {
+  return mSchemes->Contains(scheme);
+}
+
 bool MatchPatternCore::MatchesDomain(const nsACString& aDomain) const {
   if (DomainIsWildcard() || mDomain == aDomain) {
     return true;
@@ -622,7 +625,7 @@ already_AddRefed<MatchPatternSet> MatchPatternSet::Constructor(
     dom::GlobalObject& aGlobal,
     const nsTArray<dom::OwningStringOrMatchPattern>& aPatterns,
     const MatchPatternOptions& aOptions, ErrorResult& aRv) {
-  MatchPatternSetCore::ArrayType patterns;
+  MatchPatternSetCore::ArrayType patterns(aPatterns.Length());
 
   for (auto& elem : aPatterns) {
     if (elem.IsMatchPattern()) {
@@ -669,6 +672,73 @@ NS_INTERFACE_MAP_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(MatchPatternSet)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(MatchPatternSet)
+
+/*****************************************************************************
+ * ExtensionGuardSet
+ *****************************************************************************/
+
+static already_AddRefed<MatchPatternSetCore> PatternCoreFromStrings(
+    const nsTArray<nsString>& aStrings, ErrorResult& aRv) {
+  MatchPatternSetCore::ArrayType patterns(aStrings.Length());
+  for (const auto& str : aStrings) {
+    RefPtr<MatchPatternCore> pat = new MatchPatternCore(str, true, true, aRv);
+    if (aRv.Failed()) {
+      return nullptr;
+    }
+    patterns.AppendElement(std::move(pat));
+  }
+  return MakeAndAddRef<MatchPatternSetCore>(std::move(patterns));
+}
+
+/* static */
+already_AddRefed<ExtensionGuardSet> ExtensionGuardSet::Constructor(
+    dom::GlobalObject& aGlobal, const dom::ExtensionGuardSetInit& aInit,
+    ErrorResult& aRv) {
+  RefPtr<MatchPatternSetCore> denyCore =
+      PatternCoreFromStrings(aInit.mDeny, aRv);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+
+  RefPtr<MatchPatternSetCore> exceptCore;
+  if (aInit.mExcept.WasPassed() && !aInit.mExcept.Value().IsEmpty()) {
+    exceptCore = PatternCoreFromStrings(aInit.mExcept.Value(), aRv);
+    if (aRv.Failed()) {
+      return nullptr;
+    }
+  }
+
+  RefPtr<ExtensionGuardSetCore> guardCore = new ExtensionGuardSetCore(
+      std::move(denyCore), std::move(exceptCore), aInit.mSource);
+  RefPtr<ExtensionGuardSet> guardSet =
+      new ExtensionGuardSet(aGlobal.GetAsSupports(), guardCore.forget());
+  return guardSet.forget();
+}
+
+ExtensionGuardSet::ExtensionGuardSet(
+    nsISupports* aParent, already_AddRefed<ExtensionGuardSetCore> aCore)
+    : mParent(aParent), mCore(std::move(aCore)) {
+  mDeny = new MatchPatternSet(mParent, do_AddRef(mCore->DenyCore()));
+  if (MatchPatternSetCore* exceptCore = mCore->GetExceptCore()) {
+    mExcept = new MatchPatternSet(mParent, do_AddRef(exceptCore));
+  }
+}
+
+JSObject* ExtensionGuardSet::WrapObject(JSContext* aCx,
+                                        JS::Handle<JSObject*> aGivenProto) {
+  return ExtensionGuardSet_Binding::Wrap(aCx, this, aGivenProto);
+}
+
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(ExtensionGuardSet, mDeny, mExcept,
+                                      mParent)
+
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ExtensionGuardSet)
+  NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
+  NS_INTERFACE_MAP_ENTRY(nsISupports)
+NS_INTERFACE_MAP_END
+
+NS_IMPL_CYCLE_COLLECTING_ADDREF(ExtensionGuardSet)
+NS_IMPL_CYCLE_COLLECTING_RELEASE(ExtensionGuardSet)
 
 /*****************************************************************************
  * MatchGlobCore

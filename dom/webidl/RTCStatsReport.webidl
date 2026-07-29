@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -175,8 +174,6 @@ dictionary RTCDataChannelStats : RTCStats {
   DOMString           label;
   DOMString           protocol;
   long                dataChannelIdentifier;
-  // RTCTransportId is not yet implemented - Bug 1225723
-  // DOMString transportId;
   RTCDataChannelState state;
   unsigned long       messagesSent;
   unsigned long long  bytesSent;
@@ -194,7 +191,7 @@ enum RTCStatsIceCandidatePairState {
 };
 
 dictionary RTCIceCandidatePairStats : RTCStats {
-  DOMString transportId;
+  required DOMString transportId;
   DOMString localCandidateId;
   DOMString remoteCandidateId;
   RTCStatsIceCandidatePairState state;
@@ -215,18 +212,36 @@ dictionary RTCIceCandidatePairStats : RTCStats {
 };
 
 dictionary RTCIceCandidateStats : RTCStats {
+  required DOMString transportId;
   DOMString address;
   long port;
   DOMString protocol;
   RTCIceCandidateType candidateType;
   long priority;
   DOMString relayProtocol;
-  // Because we use this internally but don't support RTCIceCandidateStats,
-  // we need to keep the field as ChromeOnly. Bug 1225723
-  [ChromeOnly]
-  DOMString transportId;
+  DOMString foundation;
+  DOMString usernameFragment;
+  RTCIceTcpCandidateType tcpType;
   [ChromeOnly]
   DOMString proxied;
+};
+
+enum RTCDtlsRole {
+  "client",
+  "server",
+  "unknown"
+};
+
+dictionary RTCTransportStats : RTCStats {
+  RTCIceRole iceRole;
+  DOMString iceLocalUsernameFragment;
+  required RTCDtlsTransportState dtlsState;
+  RTCIceTransportState iceState;
+  DOMString selectedCandidatePairId;
+  DOMString tlsVersion;
+  DOMString dtlsCipher;
+  RTCDtlsRole dtlsRole;
+  DOMString srtpCipher;
 };
 
 // This is for tracking the frame rate in about:webrtc
@@ -289,6 +304,7 @@ dictionary RTCStatsCollection {
   sequence<RTCIceCandidateStats>            trickledIceCandidateStats = [];
   sequence<RTCDataChannelStats>             dataChannelStats = [];
   sequence<RTCCodecStats>                   codecStats = [];
+  sequence<RTCTransportStats>               transportStats = [];
 
   // For internal use only
   sequence<DOMString>                       rawLocalCandidates = [];

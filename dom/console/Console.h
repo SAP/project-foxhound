@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -34,7 +32,7 @@ class MainThreadConsoleData;
 
 class Console final : public nsIObserver, public nsSupportsWeakReference {
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(Console, nsIObserver)
   NS_DECL_NSIOBSERVER
 
@@ -451,6 +449,9 @@ class Console final : public nsIObserver, public nsSupportsWeakReference {
   // This is used when Console is created and it's used only for JSM custom
   // console instance.
   mozilla::TimeStamp mCreationTimeStamp;
+
+  // Touch on the owning thread only.
+  bool mIsRetrievingConsoleEvent = false;
 
   friend class ConsoleCallData;
   friend class ConsoleCallDataWorkletRunnable;

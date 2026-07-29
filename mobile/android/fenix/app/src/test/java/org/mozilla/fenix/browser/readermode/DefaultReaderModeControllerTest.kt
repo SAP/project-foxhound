@@ -9,7 +9,9 @@ import android.view.View
 import android.widget.Button
 import android.widget.RadioButton
 import io.mockk.Called
+import io.mockk.Runs
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.spyk
 import io.mockk.verify
@@ -20,6 +22,7 @@ import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.feature.readerview.ReaderViewFeature
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 import mozilla.components.support.test.robolectric.testContext
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -33,7 +36,8 @@ class DefaultReaderModeControllerTest {
     private lateinit var readerViewFeature: ReaderViewFeature
     private lateinit var featureWrapper: ViewBoundFeatureWrapper<ReaderViewFeature>
     private lateinit var readerViewControlsBar: View
-    private lateinit var onReaderModeChanged: () -> Unit
+    private var onReaderModeChangedCount = 0
+    private val onReaderModeChanged: () -> Unit = { onReaderModeChangedCount++ }
 
     @Before
     fun setup() {
@@ -52,12 +56,11 @@ class DefaultReaderModeControllerTest {
             view = mockk(relaxed = true),
         )
         readerViewControlsBar = mockk(relaxed = true)
-        onReaderModeChanged = mockk(relaxed = true)
 
-        every { readerViewFeature.hideReaderView() } returns Unit
-        every { readerViewFeature.showReaderView() } returns Unit
-        every { readerViewFeature.showControls() } returns Unit
-        every { readerViewFeature.hideControls() } returns Unit
+        every { readerViewFeature.hideReaderView() } just Runs
+        every { readerViewFeature.showReaderView() } just Runs
+        every { readerViewFeature.showControls() } just Runs
+        every { readerViewFeature.hideControls() } just Runs
     }
 
     @Test
@@ -70,7 +73,7 @@ class DefaultReaderModeControllerTest {
         controller.hideReaderView()
         verify { readerViewFeature.hideReaderView() }
         verify { readerViewFeature.hideControls() }
-        verify { onReaderModeChanged.invoke() }
+        assertEquals(1, onReaderModeChangedCount)
     }
 
     @Test
@@ -82,7 +85,7 @@ class DefaultReaderModeControllerTest {
         )
         controller.showReaderView()
         verify { readerViewFeature.showReaderView() }
-        verify { onReaderModeChanged.invoke() }
+        assertEquals(1, onReaderModeChangedCount)
     }
 
     @Test

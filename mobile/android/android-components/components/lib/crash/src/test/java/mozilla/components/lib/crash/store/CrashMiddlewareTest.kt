@@ -23,6 +23,7 @@ import org.mockito.Mockito.spy
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
+import kotlin.test.assertIs
 
 @RunWith(AndroidJUnit4::class)
 class CrashMiddlewareTest {
@@ -345,7 +346,7 @@ class CrashMiddlewareTest {
         middleware.invoke(middlewareContext, mock(), CrashAction.CheckDeferred(listOf("1")))
         testScheduler.advanceUntilIdle()
 
-        assertTrue(capture is CrashAction.RestoreDeferred)
+        assertIs<CrashAction.RestoreDeferred>(capture)
         assertEquals(999L, (capture as CrashAction.RestoreDeferred).until)
     }
 
@@ -362,7 +363,7 @@ class CrashMiddlewareTest {
         middleware.invoke(middlewareContext, mock(), CrashAction.CheckDeferred(listOf("1")))
         testScheduler.advanceUntilIdle()
 
-        assertTrue(capture is CrashAction.RestoreDeferred)
+        assertIs<CrashAction.RestoreDeferred>(capture)
         assertEquals(999L, (capture as CrashAction.RestoreDeferred).until)
     }
 
@@ -379,7 +380,7 @@ class CrashMiddlewareTest {
         middleware.invoke(middlewareContext, mock(), CrashAction.CheckDeferred(listOf("1")))
         testScheduler.advanceUntilIdle()
 
-        assertTrue(capture is CrashAction.CheckForCrashes)
+        assertIs<CrashAction.CheckForCrashes>(capture)
     }
 
     @Test

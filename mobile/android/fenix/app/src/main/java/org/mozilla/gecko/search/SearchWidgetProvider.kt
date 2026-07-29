@@ -22,7 +22,7 @@ import org.mozilla.fenix.GleanMetrics.Metrics
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.IntentReceiverActivity
 import org.mozilla.fenix.R
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.home.intent.StartSearchIntentProcessor
 import org.mozilla.fenix.iconpicker.DefaultAppIconRepository
 import org.mozilla.fenix.iconpicker.DefaultPackageManagerWrapper
@@ -38,16 +38,16 @@ class SearchWidgetProvider : AppWidgetProvider() {
     // The existing name replicates the name and package we used in Fennec.
 
     override fun onEnabled(context: Context) {
-        recordWidgetIsInstalled(context.settings())
+        recordWidgetIsInstalled(context.components.settings)
     }
 
     override fun onDisabled(context: Context) {
-        context.settings().searchWidgetInstalled = false
+        context.components.settings.searchWidgetInstalled = false
         Metrics.searchWidgetInstalled.set(false)
     }
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        recordWidgetIsInstalled(context.settings())
+        recordWidgetIsInstalled(context.components.settings)
 
         val textSearchIntent = createTextSearchIntent(context)
         val voiceSearchIntent = createVoiceSearchIntent(context)
@@ -116,7 +116,7 @@ class SearchWidgetProvider : AppWidgetProvider() {
      */
     @VisibleForTesting
     internal fun createVoiceSearchIntent(context: Context): PendingIntent? {
-        if (!context.settings().shouldShowVoiceSearch) {
+        if (!context.components.settings.shouldShowVoiceSearch) {
             return null
         }
 

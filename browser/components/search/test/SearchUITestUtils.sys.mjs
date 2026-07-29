@@ -30,6 +30,9 @@ export const SearchUITestUtils = new (class {
    */
   init(testScope) {
     this.#testScope = testScope;
+    testScope.registerCleanupFunction(() => {
+      this.#testScope = null;
+    });
   }
 
   /**

@@ -905,9 +905,9 @@ const AVAILABLE_SHIMS = [
     ],
   },
   {
-    id: "TiktokEmbed",
+    id: "TikTokEmbed",
     platform: "desktop",
-    name: "Tiktok embed placeholder",
+    name: "TikTok embed placeholder",
     bug: "1892172",
     runFirst: "tiktok-embed.js",
     // Blank stub file just so we run the script above when the matched script
@@ -946,7 +946,7 @@ const AVAILABLE_SHIMS = [
     ],
     isSmartblockEmbedShim: true,
     onlyIfBlockedByETP: true,
-    unblocksOnOptIn: ["*://*.disqus.com/*", "*://c.disquscdn.com/*"],
+    unblocksOnOptIn: ["*://*.disqus.com/*", "*://*.disquscdn.com/*"],
   },
   {
     id: "FingerpringJSBotd",

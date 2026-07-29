@@ -27,7 +27,7 @@ function test_sendMouseEventDefaults() {
     is(evt.getModifierState("Shift"), true, "check modifiers");
 
     // Default value for optionals
-    is(evt.mozPressure, 0, "check pressure");
+    is(evt.mozPressure, 0.5, "check pressure");
     is(evt.mozInputSource, MouseEvent.MOZ_SOURCE_MOUSE, "check input source");
     is(evt.isSynthesized, undefined, "check isSynthesized is undefined in content");
     is(SpecialPowers.wrap(evt).isSynthesized, true, "check isSynthesized is true from chrome");

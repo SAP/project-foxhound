@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -111,10 +109,10 @@ class MOZ_RAII AutoChangeViewBoxNotifier {
 
 void SVGAnimatedViewBox::Init() {
   mHasBaseVal = false;
-  // We shouldn't use mBaseVal for rendering (its usages should be guarded with
-  // "mHasBaseVal" checks), but just in case we do by accident, this will
-  // ensure that we treat it as "none" and ignore its numeric values:
-  mBaseVal.none = true;
+  // Default-construct to {0, 0, 0, 0, none=true} so that x/y/width/height
+  // read back as 0 via SVGAnimatedRect when the viewBox attribute is unset
+  // (matching the behavior other UAs expose to script).
+  mBaseVal = SVGViewBox();
 
   mAnimVal = nullptr;
 }
@@ -154,11 +152,15 @@ void SVGAnimatedViewBox::SetBaseField(float aValue, SVGElement* aSVGElement,
     aField = aValue;
     return;
   }
-  if (aField == aValue) {
+  // If the current base value is "none", writing any field transitions the
+  // viewBox to a numerical rect, so we must notify (and clear |none|) even
+  // when this field's value happens to be unchanged.
+  if (!mBaseVal.none && aField == aValue) {
     return;
   }
   AutoChangeViewBoxNotifier notifier(this, aSVGElement);
   aField = aValue;
+  mBaseVal.none = false;
 }
 
 void SVGAnimatedViewBox::SetBaseValue(const SVGViewBox& aRect,
@@ -210,19 +212,15 @@ already_AddRefed<SVGAnimatedRect> SVGAnimatedViewBox::ToSVGAnimatedRect(
   return domAnimatedRect.forget();
 }
 
-already_AddRefed<SVGRect> SVGAnimatedViewBox::ToDOMBaseVal(
+MovingNotNull<RefPtr<SVGRect>> SVGAnimatedViewBox::ToDOMBaseVal(
     SVGElement* aSVGElement) {
-  if (!mHasBaseVal || mBaseVal.none) {
-    return nullptr;
-  }
-
   RefPtr<SVGRect> domBaseVal = sBaseSVGViewBoxTearoffTable.GetTearoff(this);
   if (!domBaseVal) {
     domBaseVal = new SVGRect(this, aSVGElement, SVGRect::RectType::BaseValue);
     sBaseSVGViewBoxTearoffTable.AddTearoff(this, domBaseVal);
   }
 
-  return domBaseVal.forget();
+  return WrapMovingNotNull(std::move(domBaseVal));
 }
 
 SVGRect::~SVGRect() {
@@ -238,20 +236,15 @@ SVGRect::~SVGRect() {
   }
 }
 
-already_AddRefed<SVGRect> SVGAnimatedViewBox::ToDOMAnimVal(
+MovingNotNull<RefPtr<SVGRect>> SVGAnimatedViewBox::ToDOMAnimVal(
     SVGElement* aSVGElement) {
-  if ((mAnimVal && mAnimVal->none) ||
-      (!mAnimVal && (!mHasBaseVal || mBaseVal.none))) {
-    return nullptr;
-  }
-
   RefPtr<SVGRect> domAnimVal = sAnimSVGViewBoxTearoffTable.GetTearoff(this);
   if (!domAnimVal) {
     domAnimVal = new SVGRect(this, aSVGElement, SVGRect::RectType::AnimValue);
     sAnimSVGViewBoxTearoffTable.AddTearoff(this, domAnimVal);
   }
 
-  return domAnimVal.forget();
+  return WrapMovingNotNull(std::move(domAnimVal));
 }
 
 std::unique_ptr<SMILAttr> SVGAnimatedViewBox::ToSMILAttr(

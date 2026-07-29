@@ -116,11 +116,8 @@ impl TraceCollector {
     ) -> nsresult {
         let topic = unsafe { CStr::from_ptr(raw_topic) };
 
-        match topic.to_str() {
-            Ok("xpcom-will-shutdown") => {
-                self.shutdown(/* report */ true);
-            }
-            _ => {}
+        if let Ok("xpcom-will-shutdown") = topic.to_str() {
+            self.shutdown(/* report */ true);
         }
 
         nserror::NS_OK

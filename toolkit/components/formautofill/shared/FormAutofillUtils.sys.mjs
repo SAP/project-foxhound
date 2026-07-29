@@ -212,15 +212,8 @@ FormAutofillUtils = {
   },
 
   isValidSection(fieldDetails) {
-    // If one of the fields has the autocomplete reason, the section is valid,
-    // except for email fields since those are often login forms.
-    // Bug 2008553 - should find a way to display an email dropdown if this
-    // isn't a login form.
-    if (
-      fieldDetails.some(
-        f => f.reason == "autocomplete" && f.fieldName != "email"
-      )
-    ) {
+    // If one of the fields has the autocomplete reason, the section is valid.
+    if (fieldDetails.some(f => f.reason == "autocomplete")) {
       return true;
     }
 
@@ -234,6 +227,12 @@ FormAutofillUtils = {
       ? [...ELIGIBLE_ELEMENT_TYPES, "iframe"]
       : ELIGIBLE_ELEMENT_TYPES;
     return Array.from(element.querySelectorAll(types.join(",")));
+  },
+
+  get useMLInference() {
+    return (
+      AppConstants.platform !== "android" && FormAutofillUtils.enableMLAutofill
+    );
   },
 
   /**
@@ -696,16 +695,17 @@ FormAutofillUtils = {
       names = subNames || subLnames;
     }
 
-    // Overwrite subKeys with subIsoids, when available
+    // Build the keys array using a copy to avoid mutating the cached sub_keys data
+    const keys = [...subKeys];
     if (subIsoids && subIsoids.length && subIsoids.length == subKeys.length) {
       for (let i = 0; i < subIsoids.length; i++) {
         if (subIsoids[i]) {
-          subKeys[i] = subIsoids[i];
+          keys[i] = subIsoids[i];
         }
       }
     }
 
-    return new Map(subKeys.map((key, index) => [key, names[index]]));
+    return new Map(keys.map((key, index) => [key, names[index]]));
   },
 
   /**
@@ -1556,5 +1556,12 @@ XPCOMUtils.defineLazyPreferenceGetter(
   FormAutofillUtils,
   "ignoreVisibilityCheck",
   "extensions.formautofill.test.ignoreVisibilityCheck",
+  false
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  FormAutofillUtils,
+  "enableMLAutofill",
+  "extensions.formautofill.useml",
   false
 );

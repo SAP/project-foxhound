@@ -45,7 +45,7 @@ add_setup(async () => {
 });
 
 add_task(async function test_update_individual_static_rules() {
-  resetTelemetryData();
+  Services.fog.testResetFOG();
 
   const ruleset1 = [
     getDNRRule({

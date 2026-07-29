@@ -39,9 +39,19 @@ support-files = ["topstories.json"]
 
 ["test_PlacesFeed.js"]
 
+["test_RemoteRenderer.js"]
+prefs = [
+  "browser.newtabpage.activity-stream.remote-renderer.log=true"
+]
+
+["test_SectionsLayoutFeed.js"]
+tags = "remote-settings"
+
 ["test_ShortcutRanker.js"]
 
 ["test_SmartShortcutsFeed.js"]
+
+["test_SportsFeed.js"]
 
 ["test_StartupCacheInit.js"]
 

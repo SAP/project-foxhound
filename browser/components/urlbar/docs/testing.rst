@@ -38,11 +38,9 @@ connect it to other components in another language, such as JavaScript.
 Each XPCShell test is executed in a new shell instance, therefore you will
 see several Firefox icons pop up and close when XPCShell tests are executing.
 These are two examples of XPCShell tests for the address bar
-`test_providerHeuristicFallback <https://searchfox.org/mozilla-central/source
-/browser/components/urlbar/tests/unit/test_providerHeuristicFallback.js>`_
+:searchfox:`test_providerHeuristicFallback <browser/components/urlbar/tests/unit/test_providerHeuristicFallback.js>`
 and
-`test_providerTabToSearch <https://searchfox.org/mozilla-central/source/browser
-/components/urlbar/tests/unit/test_providerTabToSearch.js>`_.
+:searchfox:`test_providerTabToSearch <browser/components/urlbar/tests/unit/test_providerTabToSearch.js>`.
 
 When To Write a XPCShell or Mochitest?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -54,11 +52,9 @@ testing a specific component in the UI.
 If you are writing a test for a urlbarProvider, you can test the Provider
 through a XPCShell test. Providers do not modify the UI, instead what they do is
 receive a url string query, search for the string and bring back the result. An
-example is the `ProviderPlaces <https://searchfox.org/mozilla-central/sou
-rce/browser/components/urlbar/UrlbarProviderPlaces.sys.mjs>`_, which fetches
+example is the :searchfox:`ProviderPlaces <browser/components/urlbar/UrlbarProviderPlaces.sys.mjs>`, which fetches
 results from the Places database. Another component that’s good for writing
-XPCShell test is the `urlbarMuxer <https://searchfox.org/mozilla-central/
-source/browser/components/urlbar/UrlbarMuxerStandard.sys.mjs>`_.
+XPCShell test is the :searchfox:`urlbarMuxer <browser/components/urlbar/UrlbarMuxerStandard.sys.mjs>`.
 
 There may be times where writing both an XPCShell test and browser test is
 necessary. In these situations, you could be testing the result from a Provider
@@ -107,8 +103,7 @@ manifest in alphabetical order.
 
 Start in the manifest file and add your test name in alphabetical
 order. The manifest file we should add our test in is
-`browser.toml <https://searchfox.org/mozilla-central/source/browser/components/
-urlbar/tests/browser/browser.toml>`_. The ``urlbar/test/browser/`` directory
+:searchfox:`browser.toml <browser/components/urlbar/tests/browser/browser.toml>`. The ``urlbar/test/browser/`` directory
 is the main browser test directory for address bar, and the manifest file
 linked above is the main browser test manifest.
 
@@ -134,7 +129,7 @@ find helpful testing methods.
 
 Many test utils modules end with ``TestUtils.sys.mjs``. However not every testing
 function will end with ``TestUtils.sys.mjs``. For example, `PlacesUtils <https://
-searchfox.org/mozilla-central/source/toolkit/components/places/PlacesUtils.
+searchfox.org/firefox-main/source/toolkit/components/places/PlacesUtils.
 sys.mjs>`_ does not have “Test” within its name.
 
 A critical function to remember is the ``registerCleanupFunction`` within
@@ -145,8 +140,7 @@ ensures what is done within one test will not affect subsequent tests.
 
 head.js and common-head.js
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
-The `head.js <https://searchfox.org/mozilla-central/source/browser/components
-/urlbar/tests/browser/head.js>`_ file is executed at the beginning before each
+The :searchfox:`head.js <browser/components/urlbar/tests/browser/head.js>` file is executed at the beginning before each
 test and contains imports to modules which are useful for each test.
 Any tasks ``head.js`` adds (via add_task) will run first for each test, and
 any variables and functions it defines will be available in the scope of
@@ -158,7 +152,7 @@ modules names to where they can be found, their paths. ``Lazy`` means the files
 are only imported if or when it is used. Any tests in this directory can use
 these modules without importing it themselves in their own file.
 The ``head.js`` provides a convenience for this purpose. The ``head.js`` file
-imports `common-head.js <https://searchfox.org/mozilla-central/source/browser/components/urlbar/tests/browser/head-common.js>`_
+imports :searchfox:`common-head.js <browser/components/urlbar/tests/browser/head-common.js>`
 making everything within ``head-common.js`` available in ``head.js`` as well.
 
 The ``registerCleanupFunction`` is an important function in browser mochi tests
@@ -176,7 +170,7 @@ test.
 
 UrlbarTestUtils
 ~~~~~~~~~~~~~~~
-`UrlbarTestUtils.sys.mjs <https://searchfox.org/mozilla-central/source/browser/components/urlbar/tests/UrlbarTestUtils.sys.mjs>`_ is useful for url bar testing. This
+:searchfox:`UrlbarTestUtils.sys.mjs <browser/components/urlbar/tests/UrlbarTestUtils.sys.mjs>` is useful for url bar testing. This
 file contains methods that can help with starting a new search in the url bar,
 waiting for a new search to complete, returning the results in
 the view, and etc.
@@ -202,8 +196,7 @@ bookmarks, waiting for notification of visited pages, and etc.
 
 EventUtils
 ~~~~~~~~~~
-`EventUtils.js <https://searchfox.org/mozilla-central/source/testing/mochitest
-/tests/SimpleTest/EventUtils.js>`_ is an older test file and does not
+:searchfox:`EventUtils.js <testing/mochitest/tests/SimpleTest/EventUtils.js>` is an older test file and does not
 need to be imported because it is not a ``.sys.mjs`` file. ``EventUtils`` is only
 used for browser tests, unlike the other TestUtils listed above which are
 used for browser tests, XPCShell tests and other tests.

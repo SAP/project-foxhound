@@ -16,8 +16,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1118689
   function test() {
     // check that load event doesn't keep up being dispatched if
     // window has been closed.
-    var win = window.open('data:text/html,<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP" onload="this.src = this.src">',
-                          "", "height=100,width=100");
+    var win = window.open("about:blank", "", "height=100,width=100");
+    win.document.open();
+    win.document.write('<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP" onload="this.src = this.src">');
+    win.document.close();
     setTimeout(function() {
         win.close();
         SimpleTest.finish();

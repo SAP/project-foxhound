@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,11 +5,10 @@
 #ifndef mozilla_dom_HTMLFormControlsCollection_h
 #define mozilla_dom_HTMLFormControlsCollection_h
 
+#include "mozilla/dom/ContentList.h"
 #include "mozilla/dom/TreeOrderedArray.h"
-#include "nsIHTMLCollection.h"
 #include "nsInterfaceHashtable.h"
 #include "nsTArray.h"
-#include "nsWrapperCache.h"
 
 class nsGenericHTMLFormElement;
 class nsIContent;
@@ -27,22 +24,21 @@ class OwningRadioNodeListOrElement;
 template <typename>
 struct Nullable;
 
-class HTMLFormControlsCollection final : public nsIHTMLCollection,
-                                         public nsWrapperCache {
+class HTMLFormControlsCollection final : public HTMLCollection {
  public:
   explicit HTMLFormControlsCollection(HTMLFormElement* aForm);
 
   void DropFormReference();
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_ISUPPORTS_INHERITED
 
-  virtual uint32_t Length() override;
-  virtual Element* GetElementAt(uint32_t index) override;
-  virtual nsINode* GetParentObject() override;
+  uint32_t Length() override;
+  Element* Item(uint32_t aIndex) override;
+  nsINode* GetParentObject() override;
 
-  virtual Element* GetFirstNamedElement(const nsAString& aName,
-                                        bool& aFound) override;
+  Element* GetFirstNamedElement(const nsAString& aName, bool& aFound) override;
 
+  using HTMLCollection::NamedItem;
   void NamedGetter(const nsAString& aName, bool& aFound,
                    Nullable<OwningRadioNodeListOrElement>& aResult);
   void NamedItem(const nsAString& aName,
@@ -50,7 +46,7 @@ class HTMLFormControlsCollection final : public nsIHTMLCollection,
     bool dummy;
     NamedGetter(aName, dummy, aResult);
   }
-  virtual void GetSupportedNames(nsTArray<nsString>& aNames) override;
+  void GetSupportedNames(nsTArray<nsString>& aNames) override;
 
   nsresult AddElementToTable(nsGenericHTMLFormElement* aChild,
                              const nsAString& aName);
@@ -74,22 +70,11 @@ class HTMLFormControlsCollection final : public nsIHTMLCollection,
   nsresult GetSortedControls(
       nsTArray<RefPtr<nsGenericHTMLFormElement>>& aControls) const;
 
-  // nsWrapperCache
-  using nsWrapperCache::GetWrapper;
-  using nsWrapperCache::GetWrapperPreserveColor;
-  using nsWrapperCache::PreserveWrapper;
-  virtual JSObject* WrapObject(JSContext* aCx,
-                               JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
  protected:
   virtual ~HTMLFormControlsCollection();
-  virtual JSObject* GetWrapperPreserveColorInternal() override {
-    return nsWrapperCache::GetWrapperPreserveColor();
-  }
-  virtual void PreserveWrapperInternal(
-      nsISupports* aScriptObjectHolder) override {
-    nsWrapperCache::PreserveWrapper(aScriptObjectHolder);
-  }
 
  public:
   static bool ShouldBeInElements(const nsIFormControl* aFormControl);
@@ -109,7 +94,8 @@ class HTMLFormControlsCollection final : public nsIHTMLCollection,
   TreeOrderedArray<nsGenericHTMLFormElement*, TreeKind::ShadowIncludingDOM>
       mNotInElements;
 
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(HTMLFormControlsCollection)
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(
+      HTMLFormControlsCollection, HTMLCollection)
 
  protected:
   // Drop all our references to the form elements

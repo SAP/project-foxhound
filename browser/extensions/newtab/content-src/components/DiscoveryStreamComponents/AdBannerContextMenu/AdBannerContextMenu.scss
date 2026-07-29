@@ -39,3 +39,16 @@
   }
 }
 
+// @nova-cleanup(remove-conditional): Remove .nova-enabled selector, make default behavior
+.nova-enabled {
+  .ads-context-menu {
+    inset-inline-end: var(--space-xlarge);
+  }
+
+  .context-menu-open {
+    > moz-button::part(button) {
+      background-color: var(--button-background-color-ghost-hover);
+    }
+  }
+}
+

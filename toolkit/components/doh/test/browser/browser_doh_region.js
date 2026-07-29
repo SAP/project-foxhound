@@ -27,7 +27,7 @@ add_task(async function testPrefFirstRollout() {
   await ensureTRRMode(2);
 
   is(
-    Preferences.get("doh-rollout.home-region"),
+    Services.prefs.getStringPref("doh-rollout.home-region"),
     "DE",
     "Initial region should be DE"
   );
@@ -39,7 +39,7 @@ add_task(async function testPrefFirstRollout() {
   // The idle-daily event will cause the new region to take effect.
   Services.obs.notifyObservers(null, "idle-daily");
 
-  is(Preferences.get("doh-rollout.home-region"), "UK");
+  is(Services.prefs.getStringPref("doh-rollout.home-region"), "UK");
 
   RegionTestUtils.setNetworkRegion("FR");
 
@@ -55,7 +55,7 @@ add_task(async function testPrefFirstRollout() {
   Services.obs.notifyObservers(null, "default-timezone-changed");
 
   await promise;
-  is(Preferences.get("doh-rollout.home-region"), "FR");
+  is(Services.prefs.getStringPref("doh-rollout.home-region"), "FR");
 
   is(
     DoHConfigController.currentConfig.enabled,
@@ -67,8 +67,8 @@ add_task(async function testPrefFirstRollout() {
   // Reset state to initial values.
   await setupRegion();
   defaults.deleteBranch(`doh-rollout.de`);
-  Preferences.reset("doh-rollout.home-region-changed");
-  Preferences.reset("doh-rollout.home-region");
+  Services.prefs.clearUserPref("doh-rollout.home-region-changed");
+  Services.prefs.clearUserPref("doh-rollout.home-region");
 });
 
 add_task(async function testRegionChangeTelemetry() {
@@ -97,7 +97,7 @@ add_task(async function testRegionChangeTelemetry() {
   await ensureTRRMode(2);
 
   is(
-    Preferences.get("doh-rollout.home-region"),
+    Services.prefs.getStringPref("doh-rollout.home-region"),
     "DE",
     "Initial region should be DE"
   );
@@ -108,7 +108,7 @@ add_task(async function testRegionChangeTelemetry() {
 
   Services.obs.notifyObservers(null, "idle-daily");
 
-  is(Preferences.get("doh-rollout.home-region"), "UK");
+  is(Services.prefs.getStringPref("doh-rollout.home-region"), "UK");
 
   let events = await Glean.doh.regionChanged.testGetValue();
   is(events.length, 1, "Should have one region change event");
@@ -130,7 +130,7 @@ add_task(async function testRegionChangeTelemetry() {
   Services.obs.notifyObservers(null, "default-timezone-changed");
 
   await promise;
-  is(Preferences.get("doh-rollout.home-region"), "FR");
+  is(Services.prefs.getStringPref("doh-rollout.home-region"), "FR");
 
   events = await Glean.doh.regionChanged.testGetValue();
   is(events.length, 1, "Should have one region change event");
@@ -144,6 +144,6 @@ add_task(async function testRegionChangeTelemetry() {
 
   await setupRegion();
   defaults.deleteBranch(`doh-rollout.de`);
-  Preferences.reset("doh-rollout.home-region-changed");
-  Preferences.reset("doh-rollout.home-region");
+  Services.prefs.clearUserPref("doh-rollout.home-region-changed");
+  Services.prefs.clearUserPref("doh-rollout.home-region");
 });

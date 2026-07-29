@@ -58,6 +58,7 @@ async function editAndCheck(view) {
   await onRefreshAfterPreview;
 
   const onBlur = once(editor.input, "blur");
+  const onModifications = view.once("property-value-updated");
 
   info("Entering the commit key and finishing edit");
   EventUtils.synthesizeKey("KEY_Enter");
@@ -66,7 +67,7 @@ async function editAndCheck(view) {
   await onBlur;
 
   info("Waiting for the style changes to be applied");
-  await once(view, "ruleview-changed");
+  await onModifications;
 
   const computed = prop.computed;
   const propNames = [

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +8,7 @@
 #include "js/RootingAPI.h"
 #include "js/Value.h"
 #include "mozilla/dom/IndexedDatabaseManager.h"
+#include "mozilla/dom/indexedDB/IDBResult.h"
 #include "mozilla/dom/indexedDB/Key.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
@@ -24,6 +23,7 @@ class ErrorResult;
 namespace dom {
 
 class GlobalObject;
+class IDBTransaction;
 
 namespace indexedDB {
 class SerializedKeyRange;
@@ -49,7 +49,17 @@ class IDBKeyRange {
 
   // aCx is allowed to be null, but only if aVal.isUndefined().
   static void FromJSVal(JSContext* aCx, JS::Handle<JS::Value> aVal,
-                        RefPtr<IDBKeyRange>* aKeyRange, ErrorResult& aRv);
+                        RefPtr<IDBKeyRange>* aKeyRange, ErrorResult& aRv,
+                        IDBTransaction* aTransaction = nullptr);
+  // Like above, but returns an IDBResult so that callers can distinguish
+  // InvalidType from InvalidValue, unless of knowing only about
+  // NS_ERROR_DOM_INDEXEDDB_DATA_ERR
+  static indexedDB::IDBResult<mozilla::Ok,
+                              indexedDB::IDBSpecialValue::InvalidType,
+                              indexedDB::IDBSpecialValue::InvalidValue>
+  FromJSVal(JSContext* aCx, JS::Handle<JS::Value> aVal,
+            RefPtr<IDBKeyRange>* aKeyRange,
+            IDBTransaction* aTransaction = nullptr);
 
   [[nodiscard]] static RefPtr<IDBKeyRange> FromSerialized(
       const indexedDB::SerializedKeyRange& aKeyRange);

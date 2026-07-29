@@ -256,29 +256,51 @@ impl<'source> super::ExpressionContext<'source, '_, '_> {
     /// If `expr` is already concrete, return it unchanged.
     pub fn concretize(
         &mut self,
-        mut expr: Handle<crate::Expression>,
+        expr: Handle<crate::Expression>,
     ) -> Result<'source, Handle<crate::Expression>> {
         let inner = super::resolve_inner!(self, expr);
         if let Some(scalar) = inner.automatically_convertible_scalar(&self.module.types) {
-            let concretized = scalar.concretize();
-            if concretized != scalar {
-                assert!(scalar.is_abstract());
-                let expr_span = self.get_expression_span(expr);
-                expr = self
+            use crate::ScalarKind as Sk;
+            let concretization_preferences = match scalar.kind {
+                // already concrete
+                Sk::Sint | Sk::Uint | Sk::Float | Sk::Bool => return Ok(expr),
+                Sk::AbstractInt => {
+                    [crate::Scalar::I32, crate::Scalar::U32, crate::Scalar::F32].as_slice()
+                }
+                Sk::AbstractFloat => [crate::Scalar::F32].as_slice(),
+            };
+            let expr_span = self.get_expression_span(expr);
+            let mut errors = Vec::new();
+            for concrete_scalar in concretization_preferences {
+                match self
                     .as_const_evaluator()
-                    .cast_array(expr, concretized, expr_span)
-                    .map_err(|err| {
-                        // A `TypeResolution` includes the type's full name, if
-                        // it has one. Also, avoid holding the borrow of `inner`
-                        // across the call to `cast_array`.
-                        let expr_type = &self.typifier()[expr];
-                        super::Error::ConcretizationFailed(Box::new(ConcretizationFailedError {
-                            expr_span,
-                            expr_type: self.type_resolution_to_string(expr_type),
-                            scalar: concretized.to_wgsl_for_diagnostics(),
-                            inner: err,
-                        }))
-                    })?;
+                    .cast_array(expr, *concrete_scalar, expr_span)
+                {
+                    Ok(expr) => return Ok(expr),
+                    Err(crate::proc::ConstantEvaluatorError::TypeTooLarge(ty)) => {
+                        // Special case where the error is not actually related to the
+                        // particular scalar we tried to concretize.
+                        return Err(Box::new(super::Error::TypeTooLarge {
+                            span: self.module.types.get_span(ty),
+                        }));
+                    }
+                    Err(err) => {
+                        errors.push((concrete_scalar.to_wgsl_for_diagnostics(), err));
+                    }
+                }
+            }
+            if !errors.is_empty() {
+                // A `TypeResolution` includes the type's full name, if
+                // it has one. Also, avoid holding the borrow of `inner`
+                // across the call to `cast_array`.
+                let expr_type = &self.typifier()[expr];
+                return Err(Box::new(super::Error::ConcretizationFailed(Box::new(
+                    ConcretizationFailedError {
+                        expr_span,
+                        expr_type: self.type_resolution_to_string(expr_type),
+                        concretization_preferences: errors,
+                    },
+                ))));
             }
         }
 
@@ -298,12 +320,17 @@ impl<'source> super::ExpressionContext<'source, '_, '_> {
     /// constructors, return `Err(i)`, where `i` is the index in
     /// `components` of some problematic argument.
     ///
+    /// If `base` is `Some(scalar)`, the consensus scalar must also be
+    /// compatible with that `scalar`. This is used to restrict matrix
+    /// initializers to floating-point types.
+    ///
     /// This function doesn't fully type-check the arguments - it only
     /// considers their leaf scalar types. This means it may return `Ok`
     /// even when the Naga validator will reject the resulting
     /// construction expression later.
     pub fn automatic_conversion_consensus<'handle, I>(
         &self,
+        base: Option<crate::Scalar>,
         components: I,
     ) -> core::result::Result<crate::Scalar, usize>
     where
@@ -323,18 +350,17 @@ impl<'source> super::ExpressionContext<'source, '_, '_> {
                 .collect::<Vec<String>>()
                 .join(", ")
         );
-        let mut inners = components_iter.map(|&c| self.typifier()[c].inner_with(types));
-        let mut best = inners.next().unwrap().scalar().ok_or(0_usize)?;
-        for (inner, i) in inners.zip(1..) {
-            let scalar = inner.scalar().ok_or(i)?;
-            match best.automatic_conversion_combine(scalar) {
-                Some(new_best) => {
-                    best = new_best;
-                }
-                None => return Err(i),
-            }
-        }
-
+        let mut components_iter = components_iter
+            .map(|&c| self.typifier()[c].inner_with(types).scalar())
+            .enumerate();
+        let base = base
+            .or_else(|| components_iter.next().unwrap().1)
+            .ok_or(0usize)?;
+        let best = components_iter.try_fold(base, |best, (i, scalar)| {
+            scalar
+                .and_then(|scalar| best.automatic_conversion_combine(scalar))
+                .ok_or(i)
+        })?;
         log::debug!("    consensus: {}", best.to_wgsl_for_diagnostics());
         Ok(best)
     }

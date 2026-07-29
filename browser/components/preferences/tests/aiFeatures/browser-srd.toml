@@ -1,0 +1,38 @@
+[DEFAULT]
+dupe-manifest=true
+prefs = [
+  "browser.settings-redesign.enabled=true",
+  "extensions.getAddons.langpacks.url=https://mochi.test:8000/langpacks",
+]
+support-files = [
+  "head.js",
+  "../head.js",
+  "head_smart_window.js",
+]
+tags = "os_integration"
+
+["browser_aiFeatures.js"]
+
+["browser_aiFeatures_block_dialog.js"]
+
+["browser_aiFeatures_chatbot.js"]
+
+["browser_aiFeatures_smart_window.js"]
+
+["browser_aiFeatures_smart_window_block_dialog.js"]
+
+["browser_aiFeatures_smart_window_default_settings.js"]
+
+["browser_aiFeatures_smart_window_memories.js"]
+
+["browser_aiFeatures_smart_window_model_selection.js"]
+
+["browser_aiFeatures_smart_window_model_selection_custom.js"]
+
+["browser_aiFeatures_smart_window_model_settings_custom.js"]
+
+["browser_aiFeatures_smart_window_telemetry.js"]
+
+["browser_aiFeatures_telemetry.js"]
+
+["browser_aiFeatures_visibility.js"]

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -30,13 +28,13 @@ SipccSdpMediaSection::SipccSdpMediaSection(
       mPortCount(aOrig.mPortCount),
       mProtocol(aOrig.mProtocol),
       mFormats(aOrig.mFormats),
-      mConnection(new SdpConnection(*aOrig.mConnection)),
+      mConnection(MakeUnique<SdpConnection>(*aOrig.mConnection)),
       mBandwidths(aOrig.mBandwidths),
       mAttributeList(aOrig.mAttributeList, sessionLevel) {}
 
 unsigned int SipccSdpMediaSection::GetPort() const { return mPort; }
 
-void SipccSdpMediaSection::SetPort(unsigned int port) { mPort = port; }
+void SipccSdpMediaSection::SetPort(const unsigned int port) { mPort = port; }
 
 unsigned int SipccSdpMediaSection::GetPortCount() const { return mPortCount; }
 
@@ -74,7 +72,7 @@ SdpDirectionAttribute SipccSdpMediaSection::GetDirectionAttribute() const {
   return SdpDirectionAttribute(mAttributeList.GetDirection());
 }
 
-bool SipccSdpMediaSection::Load(sdp_t* sdp, uint16_t level,
+bool SipccSdpMediaSection::Load(sdp_t* sdp, const uint16_t level,
                                 InternalResults& results) {
   switch (sdp_get_media_type(sdp, level)) {
     case SDP_MEDIA_AUDIO:
@@ -132,7 +130,7 @@ bool SipccSdpMediaSection::Load(sdp_t* sdp, uint16_t level,
   return LoadConnection(sdp, level, results);
 }
 
-bool SipccSdpMediaSection::LoadProtocol(sdp_t* sdp, uint16_t level,
+bool SipccSdpMediaSection::LoadProtocol(sdp_t* sdp, const uint16_t level,
                                         InternalResults& results) {
   switch (sdp_get_media_transport(sdp, level)) {
     case SDP_TRANSPORT_RTPAVP:
@@ -177,7 +175,7 @@ bool SipccSdpMediaSection::LoadProtocol(sdp_t* sdp, uint16_t level,
   return true;
 }
 
-bool SipccSdpMediaSection::LoadFormats(sdp_t* sdp, uint16_t level,
+bool SipccSdpMediaSection::LoadFormats(sdp_t* sdp, const uint16_t level,
                                        InternalResults& results) {
   sdp_media_e mtype = sdp_get_media_type(sdp, level);
 
@@ -222,7 +220,7 @@ bool SipccSdpMediaSection::LoadFormats(sdp_t* sdp, uint16_t level,
   return true;
 }
 
-bool SipccSdpMediaSection::ValidateSimulcast(sdp_t* sdp, uint16_t level,
+bool SipccSdpMediaSection::ValidateSimulcast(sdp_t* sdp, const uint16_t level,
                                              InternalResults& results) const {
   if (!GetAttributeList().HasAttribute(SdpAttribute::kSimulcastAttribute)) {
     return true;
@@ -241,8 +239,9 @@ bool SipccSdpMediaSection::ValidateSimulcast(sdp_t* sdp, uint16_t level,
 }
 
 bool SipccSdpMediaSection::ValidateSimulcastVersions(
-    sdp_t* sdp, uint16_t level, const SdpSimulcastAttribute::Versions& versions,
-    sdp::Direction direction, InternalResults& results) const {
+    sdp_t* sdp, const uint16_t level,
+    const SdpSimulcastAttribute::Versions& versions,
+    const sdp::Direction direction, InternalResults& results) const {
   for (const SdpSimulcastAttribute::Version& version : versions) {
     for (const SdpSimulcastAttribute::Encoding& encoding : version.choices) {
       const SdpRidAttributeList::Rid* ridAttr = FindRid(encoding.rid);
@@ -305,11 +304,12 @@ bool SipccSdpMediaSection::LoadConnection(sdp_t* sdp, uint16_t level,
 }
 
 void SipccSdpMediaSection::AddCodec(const std::string& pt,
-                                    const std::string& name, uint32_t clockrate,
-                                    uint16_t channels) {
+                                    const std::string& name,
+                                    const uint32_t clockrate,
+                                    const uint16_t channels) {
   mFormats.push_back(pt);
 
-  SdpRtpmapAttributeList* rtpmap = new SdpRtpmapAttributeList();
+  auto rtpmap = MakeUnique<SdpRtpmapAttributeList>();
   if (mAttributeList.HasAttribute(SdpAttribute::kRtpmapAttribute)) {
     const SdpRtpmapAttributeList& old = mAttributeList.GetRtpmap();
     for (auto it = old.mRtpmaps.begin(); it != old.mRtpmaps.end(); ++it) {
@@ -334,7 +334,7 @@ void SipccSdpMediaSection::AddCodec(const std::string& pt,
   }
 
   rtpmap->PushEntry(pt, codec, name, clockrate, channels);
-  mAttributeList.SetAttribute(rtpmap);
+  mAttributeList.SetAttribute(std::move(rtpmap));
 }
 
 void SipccSdpMediaSection::ClearCodecs() {
@@ -346,8 +346,9 @@ void SipccSdpMediaSection::ClearCodecs() {
 }
 
 void SipccSdpMediaSection::AddDataChannel(const std::string& name,
-                                          uint16_t port, uint16_t streams,
-                                          uint32_t message_size) {
+                                          const uint16_t port,
+                                          const uint16_t streams,
+                                          const uint32_t message_size) {
   // Only one allowed, for now. This may change as the specs (and deployments)
   // evolve.
   mFormats.clear();
@@ -355,21 +356,21 @@ void SipccSdpMediaSection::AddDataChannel(const std::string& name,
     // new data channel format according to draft 21
     mFormats.push_back(name);
     mAttributeList.SetAttribute(
-        new SdpNumberAttribute(SdpAttribute::kSctpPortAttribute, port));
+        MakeUnique<SdpNumberAttribute>(SdpAttribute::kSctpPortAttribute, port));
     if (message_size) {
-      mAttributeList.SetAttribute(new SdpNumberAttribute(
+      mAttributeList.SetAttribute(MakeUnique<SdpNumberAttribute>(
           SdpAttribute::kMaxMessageSizeAttribute, message_size));
     }
   } else {
     // old data channels format according to draft 05
     std::string port_str = std::to_string(port);
     mFormats.push_back(port_str);
-    SdpSctpmapAttributeList* sctpmap = new SdpSctpmapAttributeList();
+    auto sctpmap = MakeUnique<SdpSctpmapAttributeList>();
     sctpmap->PushEntry(port_str, name, streams);
-    mAttributeList.SetAttribute(sctpmap);
+    mAttributeList.SetAttribute(std::move(sctpmap));
     if (message_size) {
       // This is a workaround to allow detecting Firefox's w/o EOR support
-      mAttributeList.SetAttribute(new SdpNumberAttribute(
+      mAttributeList.SetAttribute(MakeUnique<SdpNumberAttribute>(
           SdpAttribute::kMaxMessageSizeAttribute, message_size));
     }
   }
@@ -386,7 +387,7 @@ void SipccSdpMediaSection::Serialize(std::ostream& os) const {
   }
   os << CRLF;
 
-  // We dont do i=
+  // We don't do i=
 
   if (mConnection) {
     os << *mConnection;
@@ -394,7 +395,7 @@ void SipccSdpMediaSection::Serialize(std::ostream& os) const {
 
   mBandwidths.Serialize(os);
 
-  // We dont do k= because they're evil
+  // We don't do k= because they're evil
 
   os << mAttributeList;
 }

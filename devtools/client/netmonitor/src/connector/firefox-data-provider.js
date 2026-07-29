@@ -27,6 +27,9 @@ const {
  * or not.
  */
 class FirefoxDataProvider {
+  #lastRequestDataClearId;
+  #requestDataEnabled;
+
   /**
    * Constructor for data provider
    *
@@ -43,22 +46,31 @@ class FirefoxDataProvider {
     // Allow requesting of on-demand network data, this would be `false` when requests
     // are cleared (as we clear also on the backend), and will be flipped back
     // to true on the next `onNetworkResourceAvailable` call.
-    this._requestDataEnabled = true;
+    this.#requestDataEnabled = true;
 
-    // `_requestDataEnabled` can only be used to prevent new calls to
+    // `#requestDataEnabled` can only be used to prevent new calls to
     // requestData. For pending/already started calls, we need to check if
     // clear() was called during the call, which is the purpose of this counter.
-    this._lastRequestDataClearId = 0;
+    this.#lastRequestDataClearId = 0;
 
     this.owner = owner;
 
-    // This holds stacktraces infomation temporarily. Stacktrace resources
+    // This holds stacktraces information temporarily. Stacktrace resources
     // can come before or after (out of order) their related network events.
     // This will hold stacktrace related info from the NETWORK_EVENT_STACKTRACE resource
     // for the NETWORK_EVENT resource and vice versa.
     this.stackTraces = new Map();
     // Map of the stacktrace information keyed by the actor id's
     this.stackTraceRequestInfoByActorID = new Map();
+
+    // Map from resourceId (channel id) to network event actor id, used to
+    // correlate NETWORK_EVENT_DECODED_BODY_SIZE resources with their network event.
+    this.resourceIdToActorId = new Map();
+
+    // Map of decoded body size resource id (which is a channel id as for other
+    // network event resources), to the decoded body size. Holds temporarily the
+    // information so that we can drop it from the full response if not required.
+    this.decodedBodySizes = new Map();
 
     // For tracking unfinished requests
     this.pendingRequests = new Set();
@@ -95,8 +107,10 @@ class FirefoxDataProvider {
     this.pendingRequests.clear();
     this.lazyRequestData.clear();
     this.stackTraceRequestInfoByActorID.clear();
-    this._requestDataEnabled = false;
-    this._lastRequestDataClearId++;
+    this.decodedBodySizes.clear();
+    this.resourceIdToActorId.clear();
+    this.#requestDataEnabled = false;
+    this.#lastRequestDataClearId++;
   }
 
   destroy() {
@@ -357,7 +371,7 @@ class FirefoxDataProvider {
    *        - {String} resourceId: the resource id for the network request".
    * @return {object}
    */
-  async _getStackTraceFromWatcher(actor) {
+  async #getStackTraceFromWatcher(actor) {
     // If we request the stack trace for the navigation request,
     // t was coming from previous page content process, which may no longer be around.
     // In any case, the previous target is destroyed and we can't fetch the stack anymore.
@@ -406,6 +420,26 @@ class FirefoxDataProvider {
   }
 
   /**
+   * The handler for when a decoded body size resource is available from the
+   * content process. Updates the contentSize and headersSize of the network event.
+   *
+   * @param {object} resource The network event decoded body size resource
+   */
+  async onDecodedBodySizeAvailable(resource) {
+    const actor = this.resourceIdToActorId.get(resource.resourceId);
+    this.decodedBodySizes.set(resource.resourceId, resource.decodedBodySize);
+    if (actor && this.actionsEnabled && this.actions.updateRequest) {
+      await this.actions.updateRequest(
+        actor,
+        {
+          contentSize: resource.decodedBodySize,
+        },
+        true
+      );
+    }
+  }
+
+  /**
    * The handler for when the network event resource is available.
    *
    * @param {object} resource The network event resource
@@ -413,8 +447,14 @@ class FirefoxDataProvider {
   async onNetworkResourceAvailable(resource) {
     const { actor, stacktraceResourceId, cause } = resource;
 
-    if (!this._requestDataEnabled) {
-      this._requestDataEnabled = true;
+    // We still don't show any request done by DevTools,
+    // but bug 2038986 intent to revise that.
+    if (cause.type == "devtools") {
+      return;
+    }
+
+    if (!this.#requestDataEnabled) {
+      this.#requestDataEnabled = true;
     }
 
     // Check if a stacktrace resource already exists for this network resource.
@@ -422,8 +462,8 @@ class FirefoxDataProvider {
       const { stacktraceAvailable, lastFrame, targetFront } =
         this.stackTraces.get(stacktraceResourceId);
 
-      resource.cause.stacktraceAvailable = stacktraceAvailable;
-      resource.cause.lastFrame = lastFrame;
+      cause.stacktraceAvailable = stacktraceAvailable;
+      cause.lastFrame = lastFrame;
 
       this.stackTraces.delete(stacktraceResourceId);
       // We retrieve preliminary information about the stacktrace from the
@@ -435,13 +475,14 @@ class FirefoxDataProvider {
         targetFront,
         stacktraceResourceId,
       });
-    } else if (cause) {
+    } else {
       // If the stacktrace for this request is not available, and we
       // expect that this request should have a stacktrace, lets store
       // some useful info for when the NETWORK_EVENT_STACKTRACE resource
       // finally comes.
       this.stackTraces.set(stacktraceResourceId, { actor, cause });
     }
+    this.resourceIdToActorId.set(resource.resourceId, actor);
     await this.addRequest(actor, resource);
     this.emitForTests(TEST_EVENTS.NETWORK_EVENT, resource);
   }
@@ -456,6 +497,14 @@ class FirefoxDataProvider {
     // Identify the channel as SSE if mimeType is event-stream.
     if (resource?.mimeType?.includes("text/event-stream")) {
       await this.setEventStreamFlag(resource.actor);
+    }
+
+    // If we already received the decoded body size from the content process,
+    // override the encoded body size received from the parent.
+    // We still include it in the base network event update as a fallback for
+    // requests which fail to be mapped with the correct target actor.
+    if (this.decodedBodySizes.has(resource.resourceId)) {
+      resource.contentSize = this.decodedBodySizes.get(resource.resourceId);
     }
 
     if (this.actionsEnabled && this.actions.updateRequest) {
@@ -544,7 +593,7 @@ class FirefoxDataProvider {
   requestData(actor, method) {
     // if this is `false`, do not try to request data as requests on the backend
     // might no longer exist (usually `false` after requests are cleared).
-    if (!this._requestDataEnabled) {
+    if (!this.#requestDataEnabled) {
       return Promise.resolve();
     }
     // Key string used in `lazyRequestData`. We use this Map to prevent requesting
@@ -556,7 +605,7 @@ class FirefoxDataProvider {
       return promise;
     }
     // Fetch the data
-    promise = this._requestData(actor, method).then(async payload => {
+    promise = this.#requestData(actor, method).then(async payload => {
       // Remove the request from the cache, any new call to requestData will fetch the
       // data again.
       this.lazyRequestData.delete(key);
@@ -595,9 +644,9 @@ class FirefoxDataProvider {
    *
    * @return {Promise} return a promise resolved when data is received.
    */
-  async _requestData(actor, method) {
+  async #requestData(actor, method) {
     // Backup the lastRequestDataClearId before doing any async processing.
-    const lastRequestDataClearId = this._lastRequestDataClearId;
+    const lastRequestDataClearId = this.#lastRequestDataClearId;
 
     // Calculate real name of the client getter.
     const clientMethodName = `get${method
@@ -628,9 +677,14 @@ class FirefoxDataProvider {
         this.commands.resourceCommand.TYPES.NETWORK_EVENT_STACKTRACE
       )
     ) {
-      const requestInfo = this.stackTraceRequestInfoByActorID.get(actorID);
-      const { stacktrace } = await this._getStackTraceFromWatcher(requestInfo);
-      this.stackTraceRequestInfoByActorID.delete(actorID);
+      let stacktrace = [];
+      const requestActorInfo = this.stackTraceRequestInfoByActorID.get(actorID);
+      if (requestActorInfo) {
+        const traceData =
+          await this.#getStackTraceFromWatcher(requestActorInfo);
+        stacktrace = traceData.stacktrace;
+        this.stackTraceRequestInfoByActorID.delete(actorID);
+      }
       response = { from: actor, stacktrace };
     } else {
       // We don't create fronts for NetworkEvent actors,
@@ -642,7 +696,7 @@ class FirefoxDataProvider {
         };
         response = await this.commands.client.request(packet);
       } catch (e) {
-        if (this._lastRequestDataClearId !== lastRequestDataClearId) {
+        if (this.#lastRequestDataClearId !== lastRequestDataClearId) {
           // If lastRequestDataClearId was updated, FirefoxDataProvider:clear()
           // was called and all network event actors have been destroyed.
           // Swallow errors to avoid unhandled promise rejections in tests.
@@ -786,7 +840,7 @@ class FirefoxDataProvider {
       // We have to ensure passing mimeType as fetchResponseContent needs it from
       // updateRequest. It will convert the LongString in `response.content.text` to a
       // string.
-      mimeType: response.content.mimeType,
+      mimeType: response.content?.mimeType || "text/plain",
       responseContent: response,
     });
     this.emitForTests(TEST_EVENTS.RECEIVED_RESPONSE_CONTENT, response);

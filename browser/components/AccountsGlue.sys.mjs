@@ -267,8 +267,8 @@ export const AccountsGlue = {
         if (obsTopic == "alertclickcallback") {
           // We might have opened a tab in a private window, which isn't the focused
           // window - we should focus it before selecting the tab.
-          firstTab.ownerGlobal.window.focus();
-          firstTab.ownerGlobal.gBrowser.selectedTab = firstTab;
+          firstTab.documentGlobal.window.focus();
+          firstTab.documentGlobal.gBrowser.selectedTab = firstTab;
         }
       };
 

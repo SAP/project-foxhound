@@ -15,12 +15,13 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/rtc_event_log/rtc_event.h"
 #include "logging/rtc_event_log/events/logged_rtp_rtcp.h"
 #include "logging/rtc_event_log/events/rtc_event_log_parse_status.h"
@@ -34,7 +35,9 @@ class RtcEventRtpPacketIncoming final : public RtcEvent {
  public:
   static constexpr Type kType = Type::RtpPacketIncoming;
 
-  explicit RtcEventRtpPacketIncoming(const RtpPacketReceived& packet);
+  RtcEventRtpPacketIncoming(
+      const RtpPacketReceived& packet,
+      std::optional<uint16_t> rtx_original_sequence_number = std::nullopt);
   ~RtcEventRtpPacketIncoming() override;
 
   Type GetType() const override { return kType; }
@@ -44,8 +47,8 @@ class RtcEventRtpPacketIncoming final : public RtcEvent {
 
   size_t packet_length() const { return packet_.size(); }
 
-  ArrayView<const uint8_t> RawHeader() const {
-    return MakeArrayView(packet_.data(), header_length());
+  std::span<const uint8_t> RawHeader() const {
+    return std::span(packet_.data(), header_length());
   }
   uint32_t Ssrc() const { return packet_.Ssrc(); }
   uint32_t Timestamp() const { return packet_.Timestamp(); }
@@ -57,7 +60,7 @@ class RtcEventRtpPacketIncoming final : public RtcEvent {
     return packet_.GetExtension<ExtensionTrait>(std::forward<Args>(args)...);
   }
   template <typename ExtensionTrait>
-  ArrayView<const uint8_t> GetRawExtension() const {
+  std::span<const uint8_t> GetRawExtension() const {
     return packet_.GetRawExtension<ExtensionTrait>();
   }
   template <typename ExtensionTrait>
@@ -68,8 +71,11 @@ class RtcEventRtpPacketIncoming final : public RtcEvent {
   size_t payload_length() const { return packet_.payload_size(); }
   size_t header_length() const { return packet_.headers_size(); }
   size_t padding_length() const { return packet_.padding_size(); }
+  std::optional<uint16_t> rtx_original_sequence_number() const {
+    return rtx_original_sequence_number_;
+  }
 
-  static std::string Encode(ArrayView<const RtcEvent*> /* batch */) {
+  static std::string Encode(std::span<const RtcEvent*> /* batch */) {
     // TODO(terelius): Implement
     return "";
   }
@@ -86,6 +92,7 @@ class RtcEventRtpPacketIncoming final : public RtcEvent {
   RtcEventRtpPacketIncoming(const RtcEventRtpPacketIncoming&) = default;
 
   const RtpPacket packet_;
+  const std::optional<uint16_t> rtx_original_sequence_number_;
 };
 
 }  // namespace webrtc

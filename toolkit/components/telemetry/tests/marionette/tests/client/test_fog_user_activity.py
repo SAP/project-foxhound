@@ -49,8 +49,10 @@ class TestClientActivity(FOGTestCase):
 
         [ping0, ping1] = self.wait_for_pings(
             self.restart_browser,
-            lambda ping: is_startup_baseline_ping(ping)
-            or ping["request_url"]["doc_type"] == "usage-reporting",
+            lambda ping: (
+                is_startup_baseline_ping(ping)
+                or ping["request_url"]["doc_type"] == "usage-reporting"
+            ),
             2,
             ping_server=self.fog_ping_server,
         )

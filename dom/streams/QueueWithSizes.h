@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,8 +7,7 @@
 
 #include <cmath>
 
-#include "js/TypeDecls.h"
-#include "js/Value.h"
+#include "jsapi.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/UniquePtr.h"
 #include "nsTArray.h"
@@ -84,8 +81,9 @@ inline void EnqueueValueWithSize(QueueContainingClass aContainer,
 
 // https://streams.spec.whatwg.org/#dequeue-value
 template <class QueueContainingClass>
-inline void DequeueValue(QueueContainingClass aContainer,
-                         JS::MutableHandle<JS::Value> aResultValue) {
+inline void DequeueValue(JSContext* aCx, QueueContainingClass aContainer,
+                         JS::MutableHandle<JS::Value> aResultValue,
+                         ErrorResult& aRv) {
   // Step 1. Implicit via template instantiation.
   // Step 2.
   MOZ_ASSERT(!aContainer->Queue().isEmpty());
@@ -105,12 +103,17 @@ inline void DequeueValue(QueueContainingClass aContainer,
 
   // Step 7.
   aResultValue.set(valueWithSize->mValue);
+  if (!JS_WrapValue(aCx, aResultValue)) {
+    aResultValue.setUndefined();
+    aRv.StealExceptionFromJSContext(aCx);
+  }
 }
 
 // https://streams.spec.whatwg.org/#peek-queue-value
 template <class QueueContainingClass>
-inline void PeekQueueValue(QueueContainingClass aContainer,
-                           JS::MutableHandle<JS::Value> aResultValue) {
+inline void PeekQueueValue(JSContext* aCx, QueueContainingClass aContainer,
+                           JS::MutableHandle<JS::Value> aResultValue,
+                           ErrorResult& aRv) {
   // Step 1. Assert: container has [[queue]] and [[queueTotalSize]] internal
   // slots.
   // Step 2. Assert: container.[[queue]] is not empty.
@@ -121,6 +124,10 @@ inline void PeekQueueValue(QueueContainingClass aContainer,
 
   // Step 4. Return valueWithSize’s value.
   aResultValue.set(valueWithSize->mValue);
+  if (!JS_WrapValue(aCx, aResultValue)) {
+    aResultValue.setUndefined();
+    aRv.StealExceptionFromJSContext(aCx);
+  }
 }
 
 // https://streams.spec.whatwg.org/#reset-queue

@@ -36,6 +36,10 @@ th,
   padding-block: 10px;
 }
 
+#unsubmitted tr.ignored {
+  font-weight: lighter;
+}
+
 .submit-button,
 .crash-link {
   float: inline-end;

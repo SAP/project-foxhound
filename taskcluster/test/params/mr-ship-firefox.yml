@@ -2457,7 +2457,6 @@ existing_tasks:
   geckoview-beetmover-geckoview-android-geckoview-fat-aar-shippable/opt: I6wtmlq6R-OvIYXwWjMp6A
   geckoview-beetmover-geckoview-android-x86_64-shippable-lite/opt: aSa4B5KmTeG-Ix-jq0V3IA
   geckoview-beetmover-geckoview-android-x86_64-shippable/opt: MaElkJl3RfuV37WxJRWDFQ
-  geckoview-exoplayer2-beetmover-geckoview-android-geckoview-fat-aar-shippable-lite/opt: Dgi9bXKwTamjDx1XyDFC3Q
   generate-profile-android-x86_64-shippable/opt: F9FaseXiSTa7bqO5J9pZhw
   generate-profile-linux-shippable/opt: FAivkNdxToGD8pS1DCk0gA
   generate-profile-linux64-shippable/opt: ViYWvMiVTwWWdc0zYSu1Gg
@@ -10542,7 +10541,6 @@ head_rev: 5ae4969c2b0450edbe68bd94b613f1f30f8a3fcb
 head_tag: ''
 hg_branch: default
 level: '3'
-message: ''
 moz_build_date: '20231116134553'
 next_version: 120.0.1
 optimize_strategies: null
@@ -11183,8 +11181,6 @@ release_partners: null
 release_product: firefox
 release_type: release
 repository_type: hg
-required_signoffs: []
-signoff_urls: {}
 target_tasks_method: ship_desktop
 tasks_for: hg-push
 test_manifest_loader: default

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,11 +27,18 @@ class BackgroundChannelRegistrar final : public nsIBackgroundChannelRegistrar {
 
   explicit BackgroundChannelRegistrar();
 
-  // Singleton accessor
-  static already_AddRefed<nsIBackgroundChannelRegistrar> GetOrCreate();
+  // Singleton accessors
+  static already_AddRefed<BackgroundChannelRegistrar> GetOrCreate();
 
  private:
   virtual ~BackgroundChannelRegistrar();
+
+  // Like DeleteChannel, but only removes the mChannels entry if it matches
+  // aExpected. Use this in preference to DeleteChannel when the caller knows
+  // which HttpChannelParent it registered, to avoid accidentally removing an
+  // entry belonging to a different object that shares the same channel Id.
+  void DeleteChannelIfMatches(uint64_t aKey, HttpChannelParent* aExpected);
+  friend class HttpChannelParent;
 
   // A helper function for BackgroundChannelRegistrar itself to callback
   // HttpChannelParent and HttpBackgroundChannelParent when both objects are

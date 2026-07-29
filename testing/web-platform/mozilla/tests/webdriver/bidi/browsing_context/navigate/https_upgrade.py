@@ -1,7 +1,7 @@
 from urllib.parse import urlunsplit
 
 import pytest
-from tests.bidi.browsing_context.navigate import navigate_and_assert
+from tests.bidi.browsing_context import navigate_and_assert
 
 pytestmark = pytest.mark.asyncio
 

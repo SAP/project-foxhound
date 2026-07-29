@@ -151,7 +151,7 @@ def raptor_test_finder(task_cmd, task_label, test):
     return modified_task_label
 
 
-@functools.lru_cache(maxsize=10)
+@functools.cache
 def get_talos_json():
     with pathlib.Path(build.topsrcdir, "testing", "talos", "talos.json").open() as f:
         talos_json = json.load(f)
@@ -493,6 +493,17 @@ class ClassificationProvider:
                 "description": "A group of Speedometer3 tests on various platforms and architectures, speedometer3 is "
                 "currently the best benchmark we have for a baseline on real-world web performance",
             },
+            "JetStream 3": {
+                "query": {
+                    Suites.RAPTOR.value: ["'browsertime 'jetstream3"],
+                },
+                "variant-restrictions": {Suites.RAPTOR.value: [Variants.FISSION.value]},
+                "suites": [Suites.RAPTOR.value],
+                "app-restrictions": {},
+                "tasks": [],
+                "description": "JetStream3 tests on various platforms and architectures, "
+                "JetStream3 is our best JavaScript and WebAssembly-focused benchmark",
+            },
             "Responsiveness": {
                 "query": {
                     Suites.RAPTOR.value: ["'browsertime 'responsive"],
@@ -738,8 +749,28 @@ class ClassificationProvider:
                     ],
                 },
                 "tasks": [],
+                "try-config-defaults": {"per-task-rebuild": {"speedometer3": 10}},
                 "description": (
                     "Our most important set of tests for android performance."
+                ),
+            },
+            "Critical Desktop Performance": {
+                "query": {
+                    Suites.RAPTOR.value: ["'browsertime 'speedometer3"],
+                },
+                "variant-restrictions": {Suites.RAPTOR.value: [Variants.FISSION.value]},
+                "suites": [Suites.RAPTOR.value],
+                "platform-restrictions": [
+                    Platforms.DESKTOP.value,
+                    Platforms.LINUX.value,
+                    Platforms.MACOSX.value,
+                    Platforms.WINDOWS.value,
+                ],
+                "app-restrictions": {},
+                "tasks": [],
+                "try-config-defaults": {"per-task-rebuild": {"speedometer3": 20}},
+                "description": (
+                    "Our most important set of tests for desktop performance."
                 ),
             },
         }

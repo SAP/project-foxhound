@@ -21,8 +21,7 @@ add_setup(async function () {
  * Tests that onboarding message flags are set for VPN start, autostart, and site exceptions
  */
 add_task(async function test_IPPOnboardingMessage() {
-  let sandbox = sinon.createSandbox();
-  setupStubs(sandbox);
+  setupStubs();
 
   let readyEventPromise = waitForEvent(
     IPProtectionService,
@@ -30,6 +29,7 @@ add_task(async function test_IPPOnboardingMessage() {
     () => IPProtectionService.state === IPProtectionStates.READY
   );
 
+  IPPOnboardingMessage.init();
   IPProtectionService.init();
 
   await readyEventPromise;
@@ -95,5 +95,4 @@ add_task(async function test_IPPOnboardingMessage() {
   Services.perms.removeByType(PERM_NAME);
   IPProtectionService.uninit();
   IPPOnboardingMessage.uninit();
-  sandbox.restore();
 });

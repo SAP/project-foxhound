@@ -1071,7 +1071,7 @@ export class MozIntl {
         constructor(locales, options, ...args) {
           let resolvedLocales = DateTimeFormat.supportedLocalesOf(locales);
           if (options) {
-            if (options.dateStyle || options.timeStyle) {
+            if (!locales && (options.dateStyle || options.timeStyle)) {
               options.pattern = osPrefs.getDateTimePattern(
                 getDateTimePatternStyle(options.dateStyle),
                 getDateTimePatternStyle(options.timeStyle),

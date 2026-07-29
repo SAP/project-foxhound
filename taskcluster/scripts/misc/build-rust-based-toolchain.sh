@@ -42,7 +42,7 @@ aarch64-unknown-linux-gnu)
     else
         export MACOSX_DEPLOYMENT_TARGET=10.15
     fi
-    MACOS_SYSROOT=$MOZ_FETCHES_DIR/MacOSX26.2.sdk
+    MACOS_SYSROOT=$MOZ_FETCHES_DIR/MacOSX26.5.sdk
     export RUSTFLAGS="-Clinker=$MOZ_FETCHES_DIR/clang/bin/clang++ -C link-arg=-isysroot -C link-arg=$MACOS_SYSROOT -C link-arg=-fuse-ld=lld -C link-arg=--target=$TARGET $rust_lto_flags"
     export CC="$MOZ_FETCHES_DIR/clang/bin/clang"
     export CXX="$MOZ_FETCHES_DIR/clang/bin/clang++"
@@ -82,6 +82,17 @@ if test ! -f $WORKSPACE_ROOT/Cargo.lock; then
     echo "Missing Cargo.lock for the crate. Please provide one in $CARGO_LOCK" >&2
     exit 1
   fi
+fi
+
+if [[ -v RUN_TESTS ]]; then
+  pushd $CRATE_PATH
+  cargo test \
+    --locked \
+    --verbose \
+    --target-dir $workspace/obj \
+    --target "$TARGET" \
+    ${FEATURES:+--features "$FEATURES"}
+  popd
 fi
 
 cargo install \

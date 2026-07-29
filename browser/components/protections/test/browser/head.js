@@ -46,9 +46,9 @@ const mockGetLoginDataWithSyncedDevices = (
   potentiallyBreachedLogins = 0
 ) => {
   return {
-    getLoginData: () => {
+    getLoginData: async () => {
       return {
-        numLogins: Services.logins.countLogins("", "", ""),
+        numLogins: await Services.logins.countLoginsAsync("", "", ""),
         potentiallyBreachedLogins,
         mobileDeviceConnected,
       };

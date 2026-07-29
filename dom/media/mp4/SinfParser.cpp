@@ -7,6 +7,8 @@
 #include "AtomType.h"
 #include "Box.h"
 #include "ByteStream.h"
+#include "MediaDataDemuxer.h"
+#include "mozilla/Logging.h"
 #include "mozilla/Try.h"
 
 namespace mozilla {
@@ -73,7 +75,14 @@ Result<Ok, nsresult> SinfParser::ParseTenc(const Box& aBox) {
   }
 
   uint8_t isEncrypted = MOZ_TRY(reader->ReadU8());
-  mSinf.mDefaultIVSize = MOZ_TRY(reader->ReadU8());
+  uint8_t defaultIVSize = MOZ_TRY(reader->ReadU8());
+  if (defaultIVSize != 0 && defaultIVSize != 8 && defaultIVSize != 16) {
+    MOZ_LOG(gMediaDemuxerLog, LogLevel::Warning,
+            ("SinfParser: unexpected default per-sample IV size %u",
+             static_cast<unsigned>(defaultIVSize)));
+    return Err(NS_ERROR_FAILURE);
+  }
+  mSinf.mDefaultIVSize = defaultIVSize;
   memcpy(mSinf.mDefaultKeyID, reader->Read(16), 16);
 
   if (isEncrypted && mSinf.mDefaultIVSize == 0) {

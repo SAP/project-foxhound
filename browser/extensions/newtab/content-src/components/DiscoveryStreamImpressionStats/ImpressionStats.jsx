@@ -3,7 +3,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
-import { getActiveCardSize } from "../../lib/utils";
+import { getActiveCardSize, getNovaColumnLayout } from "../../lib/utils";
 import { TOP_SITES_SOURCE } from "../TopSites/TopSitesConstants";
 import React from "react";
 
@@ -34,6 +34,11 @@ export const INTERSECTION_RATIO = 0.5;
  *     impression pings separately
  */
 export class ImpressionStats extends React.PureComponent {
+  constructor(props) {
+    super(props);
+    this.impressionRef = React.createRef();
+  }
+
   // This checks if the given cards are the same as those in the last impression ping.
   // If so, it should not send the same impression ping again.
   _needsImpressionStats(cards) {
@@ -98,7 +103,6 @@ export class ImpressionStats extends React.PureComponent {
           type: props.flightId ? "spoc" : "organic",
           ...(link.shim ? { shim: link.shim } : {}),
           recommendation_id: link.recommendation_id,
-          fetchTimestamp: link.fetchTimestamp,
           corpus_item_id: link.corpus_item_id,
           scheduled_corpus_item_id: link.scheduled_corpus_item_id,
           recommended_at: link.recommended_at,
@@ -113,7 +117,8 @@ export class ImpressionStats extends React.PureComponent {
                   window.innerWidth,
                   link.class_names,
                   link.section,
-                  link.flightId
+                  link.flightId,
+                  getNovaColumnLayout(this.impressionRef.current)
                 ),
               }),
           ...(link.section
@@ -125,7 +130,6 @@ export class ImpressionStats extends React.PureComponent {
               }
             : {}),
         })),
-        firstVisibleTimestamp: props.firstVisibleTimestamp,
       };
 
       props.dispatch(ac.DiscoveryStreamImpressionStats(impressionData));
@@ -230,7 +234,7 @@ export class ImpressionStats extends React.PureComponent {
         )
       ) {
         this._dispatchImpressionStats();
-        this.impressionObserver.unobserve(this.refs.impression);
+        this.impressionObserver.unobserve(this.impressionRef.current);
       }
     };
 
@@ -239,7 +243,7 @@ export class ImpressionStats extends React.PureComponent {
       this._handleIntersect,
       options
     );
-    this.impressionObserver.observe(this.refs.impression);
+    this.impressionObserver.observe(this.impressionRef.current);
   }
 
   componentDidMount() {
@@ -250,7 +254,7 @@ export class ImpressionStats extends React.PureComponent {
 
   componentWillUnmount() {
     if (this._handleIntersect && this.impressionObserver) {
-      this.impressionObserver.unobserve(this.refs.impression);
+      this.impressionObserver.unobserve(this.impressionRef.current);
     }
     if (this._onVisibilityChange) {
       this.props.document.removeEventListener(
@@ -262,7 +266,7 @@ export class ImpressionStats extends React.PureComponent {
 
   render() {
     return (
-      <div ref={"impression"} className="impression-observer">
+      <div ref={this.impressionRef} className="impression-observer">
         {this.props.children}
       </div>
     );

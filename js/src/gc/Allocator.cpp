@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -13,6 +11,7 @@
 #include "gc/GCLock.h"
 #include "gc/GCProbes.h"
 #include "gc/Nursery.h"
+#include "gc/PublicIterators.h"
 #include "threading/CpuCount.h"
 #include "util/Poison.h"
 #include "vm/BigIntType.h"
@@ -398,23 +397,23 @@ retry_loop:
   }
 
   // Use the current chunk if set.
-  ArenaChunk* chunk = gc->currentChunk_;
-  MOZ_ASSERT_IF(chunk, gc->isCurrentChunk(chunk));
+  ArenaChunk* chunk = zone_->currentChunk_;
+  MOZ_ASSERT_IF(chunk, chunk->info.isCurrentChunk);
 
   if (!chunk) {
     // The chunk lists can be accessed by background sweeping and background
     // chunk allocation. Take the GC lock to synchronize access.
     AutoLockGCBgAlloc lock(gc);
 
-    chunk = gc->pickChunk(stallAndRetry, lock);
+    chunk = gc->pickChunk(zone_, stallAndRetry, lock);
     if (!chunk) {
       return nullptr;
     }
 
-    gc->setCurrentChunk(chunk, lock);
+    gc->setCurrentChunk(zone_, chunk, lock);
   }
 
-  MOZ_ASSERT(gc->isCurrentChunk(chunk));
+  MOZ_ASSERT(chunk->info.isCurrentChunk);
 
   // Although our chunk should definitely have enough space for another arena,
   // there are other valid reasons why ArenaChunk::allocateArena() may fail.
@@ -423,7 +422,7 @@ retry_loop:
     return nullptr;
   }
 
-  arena->init(gc, zone_, thingKind);
+  arena->init(gc, thingKind);
 
   ArenaList& al = arenaList(thingKind);
   MOZ_ASSERT(!al.hasNonFullArenas());
@@ -472,9 +471,12 @@ bool GCRuntime::wantBackgroundAllocation(const AutoLockGC& lock) const {
   // To minimize memory waste, we do not want to run the background chunk
   // allocation if we already have some empty chunks or when the runtime has
   // a small heap size (and therefore likely has a small growth rate).
-  return allocTask.enabled() &&
-         emptyChunks(lock).count() < minEmptyChunkCount(lock) &&
-         (fullChunks(lock).count() + availableChunks(lock).count()) >= 4;
+  if (!allocTask.enabled() ||
+      emptyChunks(lock).count() >= minEmptyChunkCount(lock)) {
+    return false;
+  }
+
+  return heapSize.bytes() >= ChunkSize * 4;
 }
 
 // Allocate a new arena but don't initialize it.
@@ -558,6 +560,15 @@ Arena* ArenaChunk::fetchNextFreeArena(GCRuntime* gc) {
 
 // ///////////  System -> ArenaChunk Allocator  ////////////////////////////////
 
+ArenaChunk* GCRuntime::getOrAllocChunk(Zone* zone, StallAndRetry stallAndRetry,
+                                       AutoLockGCBgAlloc& lock) {
+  ArenaChunk* chunk = getOrAllocChunk(stallAndRetry, lock);
+  if (chunk) {
+    chunk->info.zone = zone;
+  }
+  return chunk;
+}
+
 ArenaChunk* GCRuntime::getOrAllocChunk(StallAndRetry stallAndRetry,
                                        AutoLockGCBgAlloc& lock) {
   ArenaChunk* chunk;
@@ -590,6 +601,7 @@ void GCRuntime::recycleChunk(ArenaChunk* chunk, const AutoLockGC& lock) {
 #ifdef DEBUG
   MOZ_ASSERT(chunk->isEmpty());
   MOZ_ASSERT(!chunk->info.isCurrentChunk);
+  MOZ_ASSERT(!chunk->info.zone);
   chunk->verify();
 #endif
 
@@ -600,15 +612,15 @@ void GCRuntime::recycleChunk(ArenaChunk* chunk, const AutoLockGC& lock) {
   emptyChunks(lock).push(chunk);
 }
 
-ArenaChunk* GCRuntime::pickChunk(StallAndRetry stallAndRetry,
+ArenaChunk* GCRuntime::pickChunk(Zone* zone, StallAndRetry stallAndRetry,
                                  AutoLockGCBgAlloc& lock) {
-  if (availableChunks(lock).count()) {
-    ArenaChunk* chunk = availableChunks(lock).head();
-    availableChunks(lock).remove(chunk);
+  if (zone->availableChunks(lock).count()) {
+    ArenaChunk* chunk = zone->availableChunks(lock).head();
+    zone->availableChunks(lock).remove(chunk);
     return chunk;
   }
 
-  ArenaChunk* chunk = getOrAllocChunk(stallAndRetry, lock);
+  ArenaChunk* chunk = getOrAllocChunk(zone, stallAndRetry, lock);
   if (!chunk) {
     return nullptr;
   }

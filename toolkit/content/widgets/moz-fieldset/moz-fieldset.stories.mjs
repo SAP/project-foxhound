@@ -6,6 +6,8 @@ import { html, ifDefined } from "../vendor/lit.all.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "./moz-fieldset.mjs";
 // eslint-disable-next-line import/no-unassigned-import
+import "../moz-badge/moz-badge.mjs";
+// eslint-disable-next-line import/no-unassigned-import
 import "../moz-toggle/moz-toggle.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "../moz-button/moz-button.mjs";
@@ -35,6 +37,10 @@ export default {
       ],
       control: { type: "select" },
     },
+    badge: {
+      options: ["", "beta", "new"],
+      control: { type: "select" },
+    },
   },
   parameters: {
     status: "in-development",
@@ -44,6 +50,8 @@ moz-fieldset-label =
 moz-fieldset-description =
   .label = Some Settings
   .description = Perhaps you want to have a longer description of what these settings do. Width is set explicitly for emphasis.
+moz-badge-beta = Beta
+moz-badge-new = New
   `,
   },
 };
@@ -57,6 +65,7 @@ const Template = ({
   headingLevel,
   disabled,
   iconSrc,
+  badge,
 }) => html`
   <moz-fieldset
     data-l10n-id=${l10nId}
@@ -67,6 +76,7 @@ const Template = ({
     support-page=${supportPage}
     style="width: 400px;"
     iconsrc=${ifDefined(iconSrc)}
+    badge=${ifDefined(badge || undefined)}
   >
     <moz-toggle
       pressed
@@ -104,6 +114,7 @@ Default.args = {
   hasSlottedSupportLinks: false,
   disabled: false,
   iconSrc: "",
+  badge: "",
 };
 
 export const WithDescription = Template.bind({});
@@ -152,4 +163,10 @@ export const WithIcon = Template.bind({});
 WithIcon.args = {
   ...WithSupportLink.args,
   iconSrc: "chrome://global/skin/icons/info.svg",
+};
+
+export const WithBadge = Template.bind({});
+WithBadge.args = {
+  ...Default.args,
+  badge: "new",
 };

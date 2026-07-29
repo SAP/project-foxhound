@@ -17,12 +17,12 @@
 #include <cstdio>
 #include <memory>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
 #include "absl/base/nullability.h"
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/audio/audio_processing.h"
 #include "api/audio/audio_processing_statistics.h"
 #include "api/audio/echo_canceller3_config.h"
@@ -35,7 +35,6 @@
 #include "modules/audio_processing/agc2/input_volume_stats_reporter.h"
 #include "modules/audio_processing/audio_buffer.h"
 #include "modules/audio_processing/capture_levels_adjuster/capture_levels_adjuster.h"
-#include "modules/audio_processing/echo_control_mobile_impl.h"
 #include "modules/audio_processing/gain_control_impl.h"
 #include "modules/audio_processing/gain_controller2.h"
 #include "modules/audio_processing/high_pass_filter.h"
@@ -105,7 +104,7 @@ class AudioProcessingImpl : public AudioProcessing {
                     const StreamConfig& output_config,
                     float* const* dest) override;
   bool GetLinearAecOutput(
-      ArrayView<std::array<float, 160>> linear_output) const override;
+      std::span<std::array<float, 160>> linear_output) const override;
   void set_output_will_be_muted(bool muted) override;
   void HandleCaptureOutputUsedSetting(bool capture_output_used)
       RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_capture_);
@@ -205,7 +204,6 @@ class AudioProcessingImpl : public AudioProcessing {
                     bool capture_analyzer_enabled);
     // Updates the submodule state and returns true if it has changed.
     bool Update(bool high_pass_filter_enabled,
-                bool mobile_echo_controller_enabled,
                 bool noise_suppressor_enabled,
                 bool adaptive_gain_controller_enabled,
                 bool gain_controller2_enabled,
@@ -397,7 +395,6 @@ class AudioProcessingImpl : public AudioProcessing {
     std::unique_ptr<GainController2> gain_controller2;
     std::unique_ptr<HighPassFilter> high_pass_filter;
     std::unique_ptr<EchoControl> echo_controller;
-    std::unique_ptr<EchoControlMobileImpl> echo_control_mobile;
     std::unique_ptr<NoiseSuppressor> noise_suppressor;
     std::unique_ptr<PostFilter> post_filter;
     std::unique_ptr<CaptureLevelsAdjuster> capture_levels_adjuster;
@@ -508,10 +505,6 @@ class AudioProcessingImpl : public AudioProcessing {
     SwapQueue<AudioProcessingStats> stats_message_queue_;
   } stats_reporter_;
 
-  std::vector<int16_t> aecm_render_queue_buffer_ RTC_GUARDED_BY(mutex_render_);
-  std::vector<int16_t> aecm_capture_queue_buffer_
-      RTC_GUARDED_BY(mutex_capture_);
-
   size_t agc_render_queue_element_max_size_ RTC_GUARDED_BY(mutex_render_)
       RTC_GUARDED_BY(mutex_capture_) = 0;
   std::vector<int16_t> agc_render_queue_buffer_ RTC_GUARDED_BY(mutex_render_);
@@ -532,9 +525,6 @@ class AudioProcessingImpl : public AudioProcessing {
       RTC_GUARDED_BY(mutex_capture_);
 
   // Lock protection not needed.
-  std::unique_ptr<
-      SwapQueue<std::vector<int16_t>, RenderQueueItemVerifier<int16_t>>>
-      aecm_render_signal_queue_;
   std::unique_ptr<
       SwapQueue<std::vector<int16_t>, RenderQueueItemVerifier<int16_t>>>
       agc_render_signal_queue_;

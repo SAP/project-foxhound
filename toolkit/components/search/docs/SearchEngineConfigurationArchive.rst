@@ -27,7 +27,7 @@ Configuration Schema
 ====================
 
 The configuration format is defined via a `JSON schema`_. The search engine
-configuration schema is `stored in mozilla-central`_ and is uploaded to the
+configuration schema is :searchfox:`stored in mozilla-central <toolkit/components/search/schema/>` and is uploaded to the
 Remote Settings server at convenient times after it changes.
 
 An outline of the schema may be found on the `Search Configuration Schema`_ page.
@@ -66,7 +66,6 @@ related. As a result several situations may occur:
 
 .. _the remote settings: /services/settings/index.html
 .. _JSON schema: https://json-schema.org/
-.. _stored in mozilla-central: https://searchfox.org/mozilla-central/source/toolkit/components/search/schema/
 .. _Search Configuration Schema: SearchConfigurationSchema.html
 .. _viewed live: https://firefox.settings.services.mozilla.com/v1/buckets/main/collections/search-config/records
 .. _Normandy: /toolkit/components/normandy/normandy/services.html

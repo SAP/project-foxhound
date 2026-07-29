@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -368,7 +366,7 @@ void nsMathMLmpaddedFrame::Place(DrawTarget* aDrawTarget,
   // there are attributes, tweak our metrics and move children to achieve the
   // desired visual effects.
 
-  const bool isRTL = StyleVisibility()->mDirection == StyleDirection::Rtl;
+  const bool isRTL = GetWritingMode().IsBidiRTL();
   if (isRTL ? mWidth.IsValid() : mLeadingSpace.IsValid()) {
     // there was padding on the left. dismiss the left italic correction now
     // (so that our parent won't correct us)

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -89,7 +88,7 @@ void WebGLShader::CompileShader() {
   gl::GLContext* gl = mContext->gl;
 
   static const bool kDumpShaders = PR_GetEnv("MOZ_WEBGL_DUMP_SHADERS");
-  if (MOZ_UNLIKELY(kDumpShaders)) {
+  if (kDumpShaders) [[unlikely]] {
     printf_stderr("==== begin MOZ_WEBGL_DUMP_SHADERS ====\n");
     PrintLongString(mSource.c_str(), mSource.size());
   }
@@ -101,10 +100,10 @@ void WebGLShader::CompileShader() {
     mCompileResults = validator->ValidateAndTranslate(mSource.c_str());
   }
 
-  mCompilationLog = mCompileResults->mInfoLog.c_str();
+  mCompilationLog = mCompileResults->mInfoLog;
   const auto& success = mCompileResults->mValid;
 
-  if (MOZ_UNLIKELY(kDumpShaders)) {
+  if (kDumpShaders) [[unlikely]] {
     printf_stderr("\n==== \\/ \\/ \\/ ====\n");
     if (success) {
       const auto& translated = mCompileResults->mObjectCode;

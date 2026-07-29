@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -127,7 +125,7 @@ static constexpr ARMRegister ZeroRegister32{Registers::sp, 32};
 // of how the address is formed.
 //
 // In order to allow word-wise pushes and pops, some of our ARM64 jits
-// (JS-Baseline, JS-Ion, and Wasm-Ion, but not Wasm-Baseline) dedicate x28 to
+// (JS-Baseline, JS-Ion, and Wasm-Ion, but not Wasm-Baseline) dedicate x20 to
 // be used as a PseudoStackPointer (PSP).
 //
 // Initially the PSP will have the same value as the SP.  Code can, if it
@@ -159,7 +157,7 @@ static constexpr ARMRegister ZeroRegister32{Registers::sp, 32};
 //     clear and merits further investigation.  The following points are
 //     believed to be relevant:
 //
-//     - For calls to functions observing the system AArch64 ABI, PSP (x28) is
+//     - For calls to functions observing the system AArch64 ABI, PSP (x20) is
 //       callee-saved.  That, combined with (3) above, implies SP == PSP
 //       immediately after the call returns.
 //
@@ -231,7 +229,7 @@ static constexpr ARMRegister ZeroRegister32{Registers::sp, 32};
 //   the same as the entry SP by the JIT ABI.
 //
 // * Call-outs to non-JIT C++ code do not need to set up the PSP (it won't be
-//   used), and will not need to restore the PSP on return because x28 is
+//   used), and will not need to restore the PSP on return because x20 is
 //   non-volatile in the ARM64 ABI.
 //
 //                               ================
@@ -267,7 +265,7 @@ static constexpr ARMRegister ZeroRegister32{Registers::sp, 32};
 //
 // * It would give us a simple story about calls and returns:
 //   - for calls to non-JIT generated code (viz, C++ etc), we need no extra
-//     copies, because PSP (x28) is callee-saved
+//     copies, because PSP (x20) is callee-saved
 //   - for calls to JIT-generated code, we need no extra copies, because of (2)
 //     above
 //
@@ -278,8 +276,8 @@ static constexpr ARMRegister ZeroRegister32{Registers::sp, 32};
 //   path-dependent reasoning (for paths in the generated code, not in the
 //   compiler) when reading/understanding the code.
 //
-// * x28 would become free for use by stubs and the baseline compiler without
-//   having to worry about interoperating with code that expects x28 to hold a
+// * x20 would become free for use by stubs and the baseline compiler without
+//   having to worry about interoperating with code that expects x20 to hold a
 //   valid PSP.
 //
 // One might ask what mechanical checks we can add to ensure correctness, rather
@@ -291,7 +289,7 @@ static constexpr ARMRegister ZeroRegister32{Registers::sp, 32};
 //
 // * In debug builds, scanning sections of generated code to ensure no
 //   SP-relative stack accesses have been created -- for some sections, at
-//   least every assignment to SP is immediately followed by a copy to x28.
+//   least every assignment to SP is immediately followed by a copy to x20.
 //   This would also facilitate detection of duplicate syncs.
 //
 //                               ================
@@ -346,9 +344,9 @@ static constexpr ARMRegister ZeroRegister32{Registers::sp, 32};
 // sp as a base register is only valid if sp % 16 == 0.
 static constexpr Register RealStackPointer{Registers::sp};
 
-static constexpr Register PseudoStackPointer{Registers::x28};
-static constexpr ARMRegister PseudoStackPointer64 = {Registers::x28, 64};
-static constexpr ARMRegister PseudoStackPointer32 = {Registers::x28, 32};
+static constexpr Register PseudoStackPointer{Registers::x20};
+static constexpr ARMRegister PseudoStackPointer64 = {Registers::x20, 64};
+static constexpr ARMRegister PseudoStackPointer32 = {Registers::x20, 32};
 
 static constexpr Register IntArgReg0{Registers::x0};
 static constexpr Register IntArgReg1{Registers::x1};
@@ -458,10 +456,8 @@ class Assembler : public vixl::Assembler {
   void executableCopy(uint8_t* buffer);
 
   BufferOffset immPool(ARMRegister dest, uint8_t* value, vixl::LoadLiteralOp op,
-                       const LiteralDoc& doc,
-                       ARMBuffer::PoolEntry* pe = nullptr);
-  BufferOffset immPool64(ARMRegister dest, uint64_t value,
-                         ARMBuffer::PoolEntry* pe = nullptr);
+                       const LiteralDoc& doc);
+  BufferOffset immPool64(ARMRegister dest, uint64_t value);
   BufferOffset fImmPool(ARMFPRegister dest, uint8_t* value,
                         vixl::LoadLiteralOp op, const LiteralDoc& doc);
   BufferOffset fImmPool64(ARMFPRegister dest, double value);
@@ -768,24 +764,31 @@ static inline bool GetTempRegForIntArg(uint32_t usedIntArgs,
 // Forbids nop filling for testing purposes.  Nestable, but nested calls have
 // no effect on the no-nops status; it is only the top level one that counts.
 class AutoForbidNops {
- protected:
-  Assembler* asm_;
+  vixl::MozBaseAssembler* asm_;
 
  public:
-  explicit AutoForbidNops(Assembler* asm_) : asm_(asm_) { asm_->enterNoNops(); }
+  explicit AutoForbidNops(vixl::MozBaseAssembler* asm_) : asm_(asm_) {
+    asm_->enterNoNops();
+  }
   ~AutoForbidNops() { asm_->leaveNoNops(); }
 };
 
 // Forbids pool generation during a specified interval.  Nestable, but nested
 // calls must imply a no-pool area of the assembler buffer that is completely
 // contained within the area implied by the outermost level call.
-class AutoForbidPoolsAndNops : public AutoForbidNops {
+class AutoForbidPoolsAndNops {
+  vixl::MozBaseAssembler* asm_;
+
  public:
-  AutoForbidPoolsAndNops(Assembler* asm_, size_t maxInst)
-      : AutoForbidNops(asm_) {
+  AutoForbidPoolsAndNops(vixl::MozBaseAssembler* asm_, size_t maxInst)
+      : asm_(asm_) {
     asm_->enterNoPool(maxInst);
+    asm_->enterNoNops();
   }
-  ~AutoForbidPoolsAndNops() { asm_->leaveNoPool(); }
+  ~AutoForbidPoolsAndNops() {
+    asm_->leaveNoNops();
+    asm_->leaveNoPool();
+  }
 };
 
 }  // namespace jit

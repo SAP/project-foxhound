@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,7 +23,7 @@ class AuthenticatorAssertionResponse final : public AuthenticatorResponse {
   explicit AuthenticatorAssertionResponse(nsPIDOMWindowInner* aParent);
 
  protected:
-  ~AuthenticatorAssertionResponse() override;
+  ~AuthenticatorAssertionResponse() override = default;
 
  public:
   virtual JSObject* WrapObject(JSContext* aCx,
@@ -50,11 +48,8 @@ class AuthenticatorAssertionResponse final : public AuthenticatorResponse {
 
  private:
   nsTArray<uint8_t> mAuthenticatorData;
-  JS::Heap<JSObject*> mAuthenticatorDataCachedObj;
   nsTArray<uint8_t> mSignature;
-  JS::Heap<JSObject*> mSignatureCachedObj;
   nsTArray<uint8_t> mUserHandle;
-  JS::Heap<JSObject*> mUserHandleCachedObj;
 };
 
 }  // namespace mozilla::dom

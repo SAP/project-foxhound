@@ -326,7 +326,7 @@ class AutoRefreshHighlighter extends EventEmitter {
   }
 
   _startRefreshLoop() {
-    const win = this.currentNode.ownerGlobal;
+    const win = this.currentNode.documentGlobal;
     this.rafID = win.requestAnimationFrame(this._startRefreshLoop.bind(this));
     this.rafWin = win;
     this.update();

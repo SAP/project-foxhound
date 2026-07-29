@@ -21,7 +21,7 @@ add_task(async function () {
   await selectNode("#testid", inspector);
 
   info("Focus the new property name field");
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
   let editor = await focusNewRuleViewProperty(ruleEditor);
   const input = editor.input;
 
@@ -69,7 +69,7 @@ add_task(async function () {
   );
 
   info("Entering the property value");
-  let onValueAdded = view.once("ruleview-changed");
+  const onValueAdded = view.once("ruleview-changed");
   editor.input.value = "purple";
   EventUtils.synthesizeKey("VK_RETURN", {}, view.styleWindow);
   await onValueAdded;
@@ -86,11 +86,11 @@ add_task(async function () {
   await onNameAdded;
 
   info("Entering the empty property value");
-  onValueAdded = view.once("ruleview-changed");
+  const onModifications = view.once("property-value-updated");
   // the input value should already be empty, but let's make it explicit
   inplaceEditor(view.styleDocument.activeElement).input.value = "";
   EventUtils.synthesizeKey("VK_RETURN", {}, view.styleWindow);
-  await onValueAdded;
+  await onModifications;
 
   is(
     ruleEditor.rule.textProps.length,
@@ -153,7 +153,7 @@ add_task(async function addDeclarationInRuleWithNestedRule() {
   await selectNode("h1", inspector);
 
   info("Focus the new property name field in h1 rule");
-  const ruleEditor = getRuleViewRuleEditor(view, 2);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 2);
   let editor = await focusNewRuleViewProperty(ruleEditor);
 
   is(

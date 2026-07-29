@@ -278,13 +278,13 @@ class PictureInPictureFeatureTest {
             tabId = "tab-id",
         )
 
-        pipFeature.onPictureInPictureModeChanged(true)
+        pipFeature.onPictureInPictureModeChanged(isInPipMode = true)
         captureActionsMiddleware.assertFirstAction(ContentAction.PictureInPictureChangedAction::class) { action ->
             assertEquals("tab-id", action.sessionId)
             assertTrue(action.pipEnabled)
         }
 
-        pipFeature.onPictureInPictureModeChanged(false)
+        pipFeature.onPictureInPictureModeChanged(isInPipMode = false)
         captureActionsMiddleware.assertLastAction(ContentAction.PictureInPictureChangedAction::class) { action ->
             assertEquals("tab-id", action.sessionId)
             assertFalse(action.pipEnabled)

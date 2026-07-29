@@ -8,7 +8,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.service.pocket.PocketStory
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -21,6 +20,7 @@ import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction.ContentRecommendationsAction
 import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.mozilla.fenix.home.pocket.PocketImpression
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class HomeTelemetryMiddlewareTest {

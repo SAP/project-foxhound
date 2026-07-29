@@ -388,7 +388,7 @@ update:
       Whether or not the Update Service can usually download and install
       updates.
       See `canUsuallyApplyUpdates` in
-      https://searchfox.org/mozilla-central/source/toolkit/mozapps/update/nsIUpdateService.idl.
+      https://searchfox.org/firefox-main/source/toolkit/mozapps/update/nsIUpdateService.idl.
     lifetime: application
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1703318
@@ -407,7 +407,7 @@ update:
     description: >
       Whether or not the Update Service can usually check for updates.
       See `canUsuallyCheckForUpdates` in
-      https://searchfox.org/mozilla-central/source/toolkit/mozapps/update/nsIUpdateService.idl.
+      https://searchfox.org/firefox-main/source/toolkit/mozapps/update/nsIUpdateService.idl.
     lifetime: application
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1703318
@@ -426,7 +426,7 @@ update:
     description: >
       Whether the Update Service is usually able to stage updates.
       See `canUsuallyStageUpdates` in
-      https://searchfox.org/mozilla-central/source/toolkit/mozapps/update/nsIUpdateService.idl.
+      https://searchfox.org/firefox-main/source/toolkit/mozapps/update/nsIUpdateService.idl.
     lifetime: application
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1703318
@@ -445,7 +445,7 @@ update:
     description: >
       On Windows, whether the Update Service can usually use BITS.
       See `canUsuallyUseBits` in
-      https://searchfox.org/mozilla-central/source/toolkit/mozapps/update/nsIUpdateService.idl.
+      https://searchfox.org/firefox-main/source/toolkit/mozapps/update/nsIUpdateService.idl.
     lifetime: application
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1703318

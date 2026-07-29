@@ -5,27 +5,16 @@ package org.mozilla.fenix.tabstray.ui
 
 import androidx.compose.ui.test.DarkMode
 import androidx.compose.ui.test.DeviceConfigurationOverride
-import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import mozilla.components.browser.state.state.createTab
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mozilla.fenix.tabstray.Page
-import org.mozilla.fenix.tabstray.TabsTrayState
-import org.mozilla.fenix.tabstray.TabsTrayStore
-import org.mozilla.fenix.tabstray.TabsTrayTestTag
-import org.mozilla.fenix.tabstray.redux.middleware.TabSearchNavigationMiddleware
-import org.mozilla.fenix.tabstray.redux.state.TabSearchState
-import org.mozilla.fenix.tabstray.ui.tabsearch.TabSearchScreen
+import org.mozilla.fenix.tabstray.redux.state.Page
 import org.mozilla.fenix.tabstray.ui.theme.TabManagerThemeProvider
 import org.mozilla.fenix.theme.DefaultThemeProvider
 import org.mozilla.fenix.theme.Theme
-import org.mozilla.fenix.theme.getThemeProvider
 
 @RunWith(AndroidJUnit4::class)
 class TabManagerThemeProviderTest {

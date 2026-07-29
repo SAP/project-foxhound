@@ -11,13 +11,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import org.mozilla.focus.R
 import org.mozilla.focus.state.Screen
+import org.mozilla.focus.ui.theme.focusDimensions
 import org.mozilla.focus.ui.theme.focusTypography
 
 /**
@@ -30,7 +32,11 @@ import org.mozilla.focus.ui.theme.focusTypography
  */
 @Composable
 fun SettingsScreen(onSettingClick: (Screen.Settings.Page) -> Unit) {
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+    ) {
         SettingItem(
             title = R.string.preference_category_general,
             summary = stringResource(id = R.string.preference_general_summary2),
@@ -73,7 +79,7 @@ private fun SettingItem(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(16.dp),
+            .padding(focusDimensions.paddingDefault),
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(

@@ -7,14 +7,14 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   FXA_PWDMGR_HOST: "resource://gre/modules/FxAccountsCommon.sys.mjs",
   FXA_PWDMGR_REALM: "resource://gre/modules/FxAccountsCommon.sys.mjs",
   LoginBreaches: "resource:///modules/LoginBreaches.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
+  PrivacyMetricsService:
+    "moz-src:///browser/components/protections/PrivacyMetricsService.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
-  Region: "resource://gre/modules/Region.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "fxAccounts", () => {
@@ -44,8 +44,6 @@ let idToTextMap = new Map([
 const MONITOR_API_ENDPOINT = Services.urlFormatter.formatURLPref(
   "browser.contentblocking.report.endpoint_url"
 );
-
-const SECURE_PROXY_ADDON_ID = "secure-proxy@mozilla.com";
 
 const SCOPE_MONITOR = [
   "profile:uid",
@@ -177,12 +175,12 @@ export class AboutProtectionsParent extends JSWindowActorParent {
     }
 
     const userFacingLogins =
-      Services.logins.countLogins("", "", "") -
-      Services.logins.countLogins(
+      (await Services.logins.countLoginsAsync("", "", "")) -
+      (await Services.logins.countLoginsAsync(
         lazy.FXA_PWDMGR_HOST,
         null,
         lazy.FXA_PWDMGR_REALM
-      );
+      ));
 
     let potentiallyBreachedLogins = null;
     // Get the stats for number of potentially breached Lockwise passwords
@@ -297,24 +295,6 @@ export class AboutProtectionsParent extends JSWindowActorParent {
     return token;
   }
 
-  /**
-   * The proxy card will only show if the user is in the US, has the browser language in "en-US",
-   * and does not yet have Proxy installed.
-   */
-  async shouldShowProxyCard() {
-    const region = lazy.Region.home || "";
-    const languages = Services.locale.acceptLanguages;
-    const alreadyInstalled = await lazy.AddonManager.getAddonByID(
-      SECURE_PROXY_ADDON_ID
-    );
-
-    return (
-      region.toLowerCase() === "us" &&
-      !alreadyInstalled &&
-      languages.toLowerCase().includes("en-us")
-    );
-  }
-
   async VPNSubStatus() {
     // For testing, set vpn sub status manually
     if (gTestOverride && "vpnOverrides" in gTestOverride) {
@@ -350,7 +330,7 @@ export class AboutProtectionsParent extends JSWindowActorParent {
   }
 
   async receiveMessage(aMessage) {
-    let win = this.browsingContext.top.embedderElement.ownerGlobal;
+    let win = this.browsingContext.top.embedderElement.documentGlobal;
     switch (aMessage.name) {
       case "OpenAboutLogins":
         lazy.LoginHelper.openPasswordManager(win, {
@@ -423,9 +403,6 @@ export class AboutProtectionsParent extends JSWindowActorParent {
         monitorResponse = null;
         break;
 
-      case "GetShowProxyCard":
-        return await this.shouldShowProxyCard();
-
       case "RecordEntryPoint":
         entrypoint = aMessage.data.entrypoint;
         break;
@@ -438,6 +415,12 @@ export class AboutProtectionsParent extends JSWindowActorParent {
 
       case "FetchShowVPNCard":
         return lazy.BrowserUtils.shouldShowVPNPromo();
+
+      case "FetchPrivacyMetrics":
+        if (lazy.PrivateBrowsingUtils.isWindowPrivate(win)) {
+          return { isPrivate: true };
+        }
+        return lazy.PrivacyMetricsService.getWeeklyStats();
     }
 
     return undefined;

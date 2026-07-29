@@ -29,7 +29,7 @@ function completeTest(aBox) {
 }
 
 function fireEvent(target, event) {
-  var win = target.ownerGlobal;
+  var win = target.documentGlobal;
   var utils = win.windowUtils;
   utils.dispatchDOMEventViaPresShellForTesting(target, event);
 }
@@ -59,7 +59,7 @@ function RunTest() {
   synthesizeMouse(image, 20, 20, { type: "mouseup" });
 
   var event = document.createEvent("DragEvent");
-  event.initDragEvent("dragover", true, true, iBox.ownerGlobal, 0, 0, 0, 0, 0, false, false, false, false, 0, iBox, dataTransfer);
+  event.initDragEvent("dragover", true, true, iBox.documentGlobal, 0, 0, 0, 0, 0, false, false, false, false, 0, iBox, dataTransfer);
   fireEvent(iBox, event);
   synthesizeMouse(image, 3, 3, { type: "mousedown" });
   synthesizeMouse(image, 23, 23, { type: "mousemove" });

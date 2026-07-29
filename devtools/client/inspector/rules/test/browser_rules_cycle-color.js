@@ -179,7 +179,7 @@ async function checkColorCyclingWithColorPicker(inspector, view) {
   const cPicker = view.tooltips.getTooltip("colorPicker");
   const { spectrum } = cPicker;
   const onHidden = cPicker.tooltip.once("hidden");
-  const onModifications = view.once("ruleview-changed");
+  const onModifications = view.once("property-value-updated");
   EventUtils.sendKey("ESCAPE", spectrum.element.ownerDocument.defaultView);
   await onHidden;
   await onModifications;

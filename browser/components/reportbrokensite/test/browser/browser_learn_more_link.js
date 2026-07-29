@@ -19,14 +19,14 @@ async function ensureLearnMoreLinkWorks(menu) {
     BrowserTestUtils.waitForEvent(mainView, "ViewHiding"),
     BrowserTestUtils.waitForNewTab(win.gBrowser, LEARN_MORE_TEST_URL),
   ];
-  EventUtils.synthesizeMouseAtCenter(learnMoreLink, {}, win);
+  rbs.click(learnMoreLink);
   const results = await Promise.all(promises);
   gBrowser.removeTab(results[1]);
 }
 
 add_task(async function testLearnMoreLink() {
   ensureReportBrokenSitePreffedOn();
-  await BrowserTestUtils.withNewTab(REPORTABLE_PAGE_URL, async function () {
+  await withNewTab(REPORTABLE_PAGE_URL, async () => {
     await ensureLearnMoreLinkWorks(AppMenu());
     await ensureLearnMoreLinkWorks(HelpMenu());
     await ensureLearnMoreLinkWorks(ProtectionsPanel());

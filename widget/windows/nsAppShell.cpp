@@ -1,4 +1,3 @@
-/* -*- Mode: c++; tab-width: 2; indent-tabs-mode: nil; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -56,57 +55,61 @@ class WinWakeLockListener final : public nsIDOMMozWakeLockListener {
 
  private:
   ~WinWakeLockListener() {
-    ReleaseWakelockIfNeeded(PowerRequestDisplayRequired);
-    ReleaseWakelockIfNeeded(PowerRequestExecutionRequired);
-  }
-
-  void SetHandle(HANDLE aHandle, POWER_REQUEST_TYPE aType) {
-    switch (aType) {
-      case PowerRequestDisplayRequired: {
-        if (!aHandle && mDisplayHandle) {
-          CloseHandle(mDisplayHandle);
-        }
-        mDisplayHandle = aHandle;
-        return;
-      }
-      case PowerRequestExecutionRequired: {
-        if (!aHandle && mNonDisplayHandle) {
-          CloseHandle(mNonDisplayHandle);
-        }
-        mNonDisplayHandle = aHandle;
-        return;
-      }
-      default:
-        MOZ_ASSERT_UNREACHABLE("Invalid request type");
-        return;
+    for (const auto& topicLock : kTopics) {
+      ReleaseWakelockIfNeeded(topicLock);
     }
   }
 
-  HANDLE GetHandle(POWER_REQUEST_TYPE aType) const {
-    switch (aType) {
-      case PowerRequestDisplayRequired:
-        return mDisplayHandle;
-      case PowerRequestExecutionRequired:
-        return mNonDisplayHandle;
-      default:
-        MOZ_ASSERT_UNREACHABLE("Invalid request type");
-        return nullptr;
+  // Handle would only exist when we request wakelock successfully.
+  HANDLE mScreenHandle = nullptr;
+  HANDLE mVideoHandle = nullptr;
+  HANDLE mAudioHandle = nullptr;
+  HANDLE mDownloadsHandle = nullptr;
+
+  struct TopicSleepRequest {
+    const char* topic;
+    POWER_REQUEST_TYPE type;
+    HANDLE WinWakeLockListener::* handle;
+  };
+
+  static constexpr TopicSleepRequest kTopics[] = {
+      {"screen", PowerRequestDisplayRequired,
+       &WinWakeLockListener::mScreenHandle},
+      {"video-playing", PowerRequestDisplayRequired,
+       &WinWakeLockListener::mVideoHandle},
+      {"audio-playing", PowerRequestExecutionRequired,
+       &WinWakeLockListener::mAudioHandle},
+      {"download-in-progress", PowerRequestExecutionRequired,
+       &WinWakeLockListener::mDownloadsHandle},
+  };
+
+  void SetHandle(HANDLE aHandle, const TopicSleepRequest& aTopicLock) {
+    HANDLE& slot = this->*(aTopicLock.handle);
+    if (slot) {
+      MOZ_ASSERT(!aHandle);
+      CloseHandle(slot);
     }
+    slot = aHandle;
   }
 
-  HANDLE CreateHandle(POWER_REQUEST_TYPE aType) {
-    MOZ_ASSERT(!GetHandle(aType));
+  HANDLE& GetHandle(const TopicSleepRequest& aTopicLock) {
+    return this->*(aTopicLock.handle);
+  }
+
+  HANDLE CreateHandle(const TopicSleepRequest& aTopicLock) {
+    MOZ_ASSERT(!GetHandle(aTopicLock));
     REASON_CONTEXT context = {0};
     context.Version = POWER_REQUEST_CONTEXT_VERSION;
     context.Flags = POWER_REQUEST_CONTEXT_SIMPLE_STRING;
-    context.Reason.SimpleReasonString = RequestTypeLPWSTR(aType);
+    context.Reason.SimpleReasonString = RequestTypeLPWSTR(aTopicLock.type);
     HANDLE handle = PowerCreateRequest(&context);
     if (!handle) {
-      WAKE_LOCK_LOG("Failed to create handle for %s, error=%lu",
-                    RequestTypeStr(aType), GetLastError());
+      WAKE_LOCK_LOG(
+          "Failed to create handle of type %s, for topic %s, error=%lu",
+          RequestTypeStr(aTopicLock.type), aTopicLock.topic, GetLastError());
       return nullptr;
     }
-    SetHandle(handle, aType);
+    SetHandle(handle, aTopicLock);
     return handle;
   }
 
@@ -135,54 +138,72 @@ class WinWakeLockListener final : public nsIDOMMozWakeLockListener {
     }
   }
 
-  void RequestWakelockIfNeeded(POWER_REQUEST_TYPE aType) {
-    if (GetHandle(aType)) {
-      WAKE_LOCK_LOG("Already requested lock for %s", RequestTypeStr(aType));
+  void RequestWakelockIfNeeded(const TopicSleepRequest& aTopicLock) {
+    if (GetHandle(aTopicLock)) {
+      WAKE_LOCK_LOG("Already requested lock for %s, of type %s",
+                    aTopicLock.topic, RequestTypeStr(aTopicLock.type));
       return;
     }
 
-    WAKE_LOCK_LOG("Prepare a wakelock for %s", RequestTypeStr(aType));
-    HANDLE handle = CreateHandle(aType);
+    WAKE_LOCK_LOG("Prepare a wakelock for %s, of type %s", aTopicLock.topic,
+                  RequestTypeStr(aTopicLock.type));
+    HANDLE handle = CreateHandle(aTopicLock);
     if (!handle) {
-      WAKE_LOCK_LOG("Failed due to no handle for %s", RequestTypeStr(aType));
+      WAKE_LOCK_LOG("Failed due to no handle for %s, of type %s",
+                    aTopicLock.topic, RequestTypeStr(aTopicLock.type));
       return;
     }
 
-    if (PowerSetRequest(handle, aType)) {
-      WAKE_LOCK_LOG("Requested %s lock", RequestTypeStr(aType));
+    if (PowerSetRequest(handle, aTopicLock.type)) {
+      WAKE_LOCK_LOG("Requested %s lock for topic %s", aTopicLock.topic,
+                    RequestTypeStr(aTopicLock.type));
     } else {
-      WAKE_LOCK_LOG("Failed to request %s lock, error=%lu",
-                    RequestTypeStr(aType), GetLastError());
-      SetHandle(nullptr, aType);
+      WAKE_LOCK_LOG("Failed to request %s lock for topic %s, error=%lu",
+                    RequestTypeStr(aTopicLock.type), aTopicLock.topic,
+                    GetLastError());
+      SetHandle(nullptr, aTopicLock);
     }
   }
 
-  void ReleaseWakelockIfNeeded(POWER_REQUEST_TYPE aType) {
-    if (!GetHandle(aType)) {
-      WAKE_LOCK_LOG("Already released lock for %s", RequestTypeStr(aType));
+  void ReleaseWakelockIfNeeded(const TopicSleepRequest& aTopicLock) {
+    if (!GetHandle(aTopicLock)) {
+      WAKE_LOCK_LOG("Already released lock for topic %s of type %s",
+                    aTopicLock.topic, RequestTypeStr(aTopicLock.type));
       return;
     }
 
-    WAKE_LOCK_LOG("Prepare to release wakelock for %s", RequestTypeStr(aType));
-    if (!PowerClearRequest(GetHandle(aType), aType)) {
-      WAKE_LOCK_LOG("Failed to release %s lock, error=%lu",
-                    RequestTypeStr(aType), GetLastError());
+    WAKE_LOCK_LOG("Prepare to release wakelock for topic %s of type %s",
+                  aTopicLock.topic, RequestTypeStr(aTopicLock.type));
+    if (!PowerClearRequest(GetHandle(aTopicLock), aTopicLock.type)) {
+      WAKE_LOCK_LOG("Failed to release %s lock for topic %s, error=%lu",
+                    RequestTypeStr(aTopicLock.type), aTopicLock.topic,
+                    GetLastError());
       return;
     }
-    SetHandle(nullptr, aType);
-    WAKE_LOCK_LOG("Released wakelock for %s", RequestTypeStr(aType));
+    SetHandle(nullptr, aTopicLock);
+    WAKE_LOCK_LOG("Released wakelock for topic %s of type %s", aTopicLock.topic,
+                  RequestTypeStr(aTopicLock.type));
   }
 
   NS_IMETHOD Callback(const nsAString& aTopic,
                       const nsAString& aState) override {
-    WAKE_LOCK_LOG("topic=%s, state=%s", NS_ConvertUTF16toUTF8(aTopic).get(),
+    nsCString topicStr = NS_ConvertUTF16toUTF8(aTopic);
+    WAKE_LOCK_LOG("topic=%s, state=%s", topicStr.get(),
                   NS_ConvertUTF16toUTF8(aState).get());
-    if (!aTopic.EqualsASCII("screen") && !aTopic.EqualsASCII("audio-playing") &&
-        !aTopic.EqualsASCII("video-playing")) {
+    const TopicSleepRequest* topicLock = nullptr;
+    for (const auto& t : kTopics) {
+      if (strcmp(t.topic, topicStr.get()) == 0) {
+        topicLock = &t;
+        break;
+      }
+    }
+    if (!topicLock) {
       return NS_OK;
     }
 
-    const bool isNonDisplayLock = aTopic.EqualsASCII("audio-playing");
+    const bool isNonDisplayLock =
+        topicLock->type == PowerRequestExecutionRequired;
+
     bool requestLock = false;
     if (isNonDisplayLock) {
       requestLock = aState.EqualsASCII("locked-foreground") ||
@@ -191,25 +212,13 @@ class WinWakeLockListener final : public nsIDOMMozWakeLockListener {
       requestLock = aState.EqualsASCII("locked-foreground");
     }
 
-    if (isNonDisplayLock) {
-      if (requestLock) {
-        RequestWakelockIfNeeded(PowerRequestExecutionRequired);
-      } else {
-        ReleaseWakelockIfNeeded(PowerRequestExecutionRequired);
-      }
+    if (requestLock) {
+      RequestWakelockIfNeeded(*topicLock);
     } else {
-      if (requestLock) {
-        RequestWakelockIfNeeded(PowerRequestDisplayRequired);
-      } else {
-        ReleaseWakelockIfNeeded(PowerRequestDisplayRequired);
-      }
+      ReleaseWakelockIfNeeded(*topicLock);
     }
     return NS_OK;
   }
-
-  // Handle would only exist when we request wakelock successfully.
-  HANDLE mDisplayHandle = nullptr;
-  HANDLE mNonDisplayHandle = nullptr;
 };
 NS_IMPL_ISUPPORTS(WinWakeLockListener, nsIDOMMozWakeLockListener)
 StaticRefPtr<nsIDOMMozWakeLockListener> sWakeLockListener;

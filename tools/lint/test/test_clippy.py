@@ -1,3 +1,5 @@
+from unittest import mock
+
 import mozunit
 
 LINTER = "clippy"
@@ -100,6 +102,61 @@ def test_fix_non_gkrust(lint, paths, create_temp_file):
     # Check that the fixed counter is properly tracked
     # The counter should be >= what it was before (may increment if fixes applied)
     assert fixed >= fixed_before
+
+
+def test_gkrust_invocation_keeps_going_and_demotes_dwarnings(tmpdir):
+    """The gkrust path inherits MOZ_RUST_DEFAULT_FLAGS and therefore
+    `-Dwarnings`, which would promote any clippy warning to a hard error and
+    stop cargo at the first offending crate. Make sure mozlint demotes that
+    back to warn level via extra_rustflags and asks cargo to --keep-going so
+    a single failing crate cannot hide warnings in everything downstream.
+    """
+    import clippy
+
+    captured = {}
+
+    def fake_run(args, **kwargs):
+        captured["args"] = args
+        captured["env"] = kwargs.get("env") or {}
+        return mock.Mock(returncode=0, stdout="", stderr="")
+
+    config = {"warn": ["needless_return", "items_after_statements"], "deny": []}
+    pg = clippy.PathGroup("gkrust", str(tmpdir))
+
+    with mock.patch.object(
+        clippy.subprocess, "run", side_effect=fake_run
+    ), mock.patch.object(clippy, "expand_exclusions", return_value=[]):
+        clippy.lint_gkrust(
+            pg,
+            config,
+            mock.MagicMock(),
+            False,
+            str(tmpdir),
+            {"results": [], "fixed": 0},
+        )
+
+    assert "--keep-going" in captured["args"], (
+        "expected cargo to run with --keep-going so one failing crate doesn't "
+        "skip lint coverage of the rest of the workspace; got args={!r}".format(
+            captured["args"]
+        )
+    )
+
+    rustflags = captured["env"].get("extra_rustflags", "")
+    tokens = rustflags.split()
+    # `-W warnings` must appear, and must come before any clippy-specific -W
+    # so that the last `-W/-D` for a clippy lint group still wins. The intent
+    # is to override a leading `-Dwarnings` from MOZ_RUST_DEFAULT_FLAGS only.
+    assert "warnings" in tokens, (
+        f"expected -W warnings in extra_rustflags, got: {rustflags!r}"
+    )
+    w_warnings_idx = tokens.index("warnings")
+    assert tokens[w_warnings_idx - 1] == "-W", (
+        f"expected `-W warnings` (got token before 'warnings' = {tokens[w_warnings_idx - 1]!r})"
+    )
+    # The lints from clippy.yml must still be passed through.
+    assert "clippy::needless_return" in tokens
+    assert "clippy::items_after_statements" in tokens
 
 
 if __name__ == "__main__":

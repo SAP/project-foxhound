@@ -7,14 +7,12 @@ import { WindowGlobalBiDiModule } from "chrome://remote/content/webdriver-bidi/m
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  LayoutUtils: "resource://gre/modules/LayoutUtils.sys.mjs",
-
-  AnimationFramePromise: "chrome://remote/content/shared/Sync.sys.mjs",
   assertTargetInViewPort:
     "chrome://remote/content/shared/webdriver/Actions.sys.mjs",
   dom: "chrome://remote/content/shared/DOM.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
   event: "chrome://remote/content/shared/webdriver/Event.sys.mjs",
+  executeSoon: "chrome://remote/content/shared/Sync.sys.mjs",
   FilePickerListener:
     "chrome://remote/content/shared/listeners/FilePickerListener.sys.mjs",
   OwnershipModel: "chrome://remote/content/webdriver-bidi/RemoteValue.sys.mjs",
@@ -128,7 +126,7 @@ class InputModule extends WindowGlobalBiDiModule {
 
   #onFilePickerOpening = (eventName, data) => {
     const { element } = data;
-    if (element.ownerGlobal.browsingContext != this.messageHandler.context) {
+    if (element.documentGlobal.browsingContext != this.messageHandler.context) {
       return;
     }
 
@@ -274,13 +272,17 @@ class InputModule extends WindowGlobalBiDiModule {
   }
 
   async _finalizeAction() {
+    if (!this.messageHandler.window) {
+      return;
+    }
+
     // Terminate the current wheel transaction if there is one. Wheel
     // transactions should not live longer than a single action chain.
     await ChromeUtils.endWheelTransaction(this.messageHandler.window);
 
-    // Wait for the next animation frame to make sure the page's content
-    // was updated.
-    await lazy.AnimationFramePromise(this.messageHandler.window);
+    // Wait until the main thread has processed all already queued-up
+    // runnables to ensure that dispatched input events have been handled.
+    await new Promise(resolve => lazy.executeSoon(resolve));
   }
 
   async _getClientRects(options) {
@@ -319,12 +321,12 @@ class InputModule extends WindowGlobalBiDiModule {
     const { position } = options;
     const window = this.messageHandler.window;
 
-    return lazy.LayoutUtils.rectToTopLevelWidgetRect(window, {
-      left: position[0],
-      top: position[1],
-      height: 0,
-      width: 0,
-    });
+    return window.windowUtils.toTopLevelWidgetRect(
+      position[0],
+      position[1],
+      0,
+      0
+    );
   }
 }
 

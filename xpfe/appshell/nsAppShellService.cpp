@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -41,7 +40,6 @@
 #include "nsEmbedCID.h"
 #include "nsIWebBrowser.h"
 #include "nsIDocShell.h"
-#include "gfxPlatform.h"
 
 #include "nsWebBrowser.h"
 #include "nsDocShell.h"
@@ -66,7 +64,7 @@ nsAppShellService::nsAppShellService()
   }
 }
 
-nsAppShellService::~nsAppShellService() {}
+nsAppShellService::~nsAppShellService() = default;
 
 /*
  * Implement the nsISupports methods...
@@ -287,7 +285,7 @@ class BrowserDestroyer final : public Runnable {
   }
 
  protected:
-  virtual ~BrowserDestroyer() {}
+  virtual ~BrowserDestroyer() = default;
 
  private:
   nsCOMPtr<nsIWebBrowser> mBrowser;
@@ -394,15 +392,10 @@ nsAppShellService::CreateWindowlessBrowser(bool aIsChrome, uint32_t aChromeMask,
 
   /* A windowless web browser doesn't have an associated OS level window. To
    * accomplish this, we initialize the window associated with our instance of
-   * nsWebBrowser with an instance of HeadlessWidget/PuppetWidget, which provide
-   * a stub implementation of nsIWidget.
+   * nsWebBrowser with an instance of PuppetWidget, which provides a stub
+   * implementation of nsIWidget.
    */
-  nsCOMPtr<nsIWidget> widget;
-  if (gfxPlatform::IsHeadless()) {
-    widget = nsIWidget::CreateHeadlessWidget();
-  } else {
-    widget = nsIWidget::CreatePuppetWidget(nullptr);
-  }
+  nsCOMPtr<nsIWidget> widget = nsIWidget::CreatePuppetWidget(nullptr);
   if (!widget) {
     NS_ERROR("Couldn't create instance of stub widget");
     return NS_ERROR_FAILURE;

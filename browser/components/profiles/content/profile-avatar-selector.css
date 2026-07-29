@@ -75,7 +75,7 @@
   align-items: center;
   padding-bottom: var(--space-large);
   border-bottom: var(--card-border);
-  font-weight: var(--heading-font-weight);
+  font-weight: var(--font-weight-heading);
 
   #back-button {
     margin-inline-end: auto;

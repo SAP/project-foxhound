@@ -418,10 +418,7 @@ export class RTCPeerConnection {
         rtcConfig.iceServers = [];
       }
       try {
-        this._validateIceServers(
-          rtcConfig.iceServers,
-          "Ignoring invalid media.peerconnection.default_iceservers in about:config"
-        );
+        this._reviewIceServers(rtcConfig.iceServers);
       } catch (e) {
         this.logWarning(e.message);
         rtcConfig.iceServers = [];
@@ -479,17 +476,20 @@ export class RTCPeerConnection {
         );
       }
 
-      // TODO (bug 1339203): rtcpMuxPolicy must match
       // TODO (bug 1529398): iceCandidatePoolSize must match if sLD has ever
       // been called.
     }
 
+    if (rtcConfig.rtcpMuxPolicy == "negotiate") {
+      this.logWarning(
+        `{rtcpMuxPolicy: "negotiate"} is deprecated and will be removed ` +
+          `in a future release. Please use {rtcpMuxPolicy: "require"} instead.`
+      );
+    }
+
     // This gets executed in the typical case when iceServers
     // are passed in through the web page.
-    this._validateIceServers(
-      rtcConfig.iceServers,
-      "RTCPeerConnection constructor passed invalid RTCConfiguration"
-    );
+    this._reviewIceServers(rtcConfig.iceServers);
   }
 
   _checkIfIceRestartRequired(rtcConfig) {
@@ -550,6 +550,7 @@ export class RTCPeerConnection {
       "Use peerConnection.ontrack instead."
     );
     this.makeGetterSetterEH("onicecandidate");
+    this.makeGetterSetterEH("onicecandidateerror");
     this.makeGetterSetterEH("onnegotiationneeded");
     this.makeGetterSetterEH("onsignalingstatechange");
     this.makeGetterSetterEH("ondatachannel");
@@ -593,7 +594,11 @@ export class RTCPeerConnection {
     // of that from JS.
     const configWithPrefTweaks = Object.assign({}, rtcConfig);
     this._applyPrefsToConfig(configWithPrefTweaks);
-    this._pc.setConfiguration(configWithPrefTweaks);
+    try {
+      this._pc.setConfiguration(configWithPrefTweaks);
+    } catch (e) {
+      throw this._cloneExceptionInto(e, this._win);
+    }
 
     this._config = Object.assign({}, rtcConfig);
   }
@@ -714,11 +719,11 @@ export class RTCPeerConnection {
    *                   { urls: ["turn:turn1.x.org", "turn:turn2.x.org"],
    *                     username:"jib", credential:"mypass"} ] }
    *
-   * This function normalizes the structure of the input for rtcConfig.iceServers for us,
-   * so we test well-formed stun/turn urls before passing along to C++.
-   *   msg - Error message to detail which array-entry failed, if any.
+   * This function normalizes the structure of the input for rtcConfig.iceServers,
+   * sets internal flags, and logs warnings. URI syntax validation and credential
+   * checks are handled in C++ (PeerConnectionImpl::ParseIceServers).
    */
-  _validateIceServers(iceServers, msg) {
+  _reviewIceServers(iceServers) {
     // Normalize iceServers input
     iceServers.forEach(server => {
       if (typeof server.urls === "string") {
@@ -730,90 +735,49 @@ export class RTCPeerConnection {
       }
     });
 
-    let nicerNewURI = uriStr => {
-      try {
-        return Services.io.newURI(uriStr);
-      } catch (e) {
-        if (e.result == Cr.NS_ERROR_MALFORMED_URI) {
-          throw new this._win.DOMException(
-            `${msg} - malformed URI: ${uriStr}`,
-            "SyntaxError"
-          );
-        }
-        throw e;
-      }
-    };
-
     let stunServers = 0;
 
-    iceServers.forEach(({ urls, username, credential, credentialType }) => {
+    iceServers.forEach(({ urls, credentialType }) => {
       if (!urls) {
         // TODO: Remove once url is deprecated (Bug 1369563)
         throw new this._win.TypeError(
           "Missing required 'urls' member of RTCIceServer"
         );
       }
-      if (!urls.length) {
-        throw new this._win.DOMException(
-          `${msg} - urls is empty`,
-          "SyntaxError"
-        );
-      }
-      urls
-        .map(url => nicerNewURI(url))
-        .forEach(({ scheme, spec, query }) => {
-          if (scheme in { turn: 1, turns: 1 }) {
-            if (username == undefined) {
-              throw new this._win.DOMException(
-                `${msg} - missing username: ${spec}`,
-                "InvalidAccessError"
-              );
-            }
-            if (username.length > 512) {
-              throw new this._win.DOMException(
-                `${msg} - username longer then 512 bytes: ${username}`,
-                "InvalidAccessError"
-              );
-            }
-            if (credential == undefined) {
-              throw new this._win.DOMException(
-                `${msg} - missing credential: ${spec}`,
-                "InvalidAccessError"
-              );
-            }
-            if (credentialType != "password") {
-              this.logWarning(
-                `RTCConfiguration TURN credentialType \"${credentialType}\"` +
-                  " is not yet implemented. Treating as password." +
-                  " https://bugzil.la/1247616"
-              );
-            }
-            this._hasTurnServer = true;
-            // If this is not a TURN TCP/TLS server, it is also a STUN server
-            const parameters = query.split("&");
-            if (!parameters.includes("transport=tcp")) {
-              this._hasStunServer = true;
-            }
-            stunServers += 1;
-          } else if (scheme in { stun: 1, stuns: 1 }) {
+      urls.forEach(url => {
+        const colonIdx = url.indexOf(":");
+        if (colonIdx < 0) {
+          return;
+        }
+        const scheme = url.substring(0, colonIdx).toLowerCase();
+
+        if (scheme === "turn" || scheme === "turns") {
+          if (credentialType != "password") {
+            this.logWarning(
+              `RTCConfiguration TURN credentialType \"${credentialType}\"` +
+                " is not yet implemented. Treating as password." +
+                " https://bugzil.la/1247616"
+            );
+          }
+          this._hasTurnServer = true;
+          const qIdx = url.indexOf("?");
+          if (qIdx < 0 || !url.substring(qIdx).includes("transport=tcp")) {
+            // The piggyback srflx candidate
             this._hasStunServer = true;
-            stunServers += 1;
-          } else {
-            throw new this._win.DOMException(
-              `${msg} - improper scheme: ${scheme}`,
-              "SyntaxError"
-            );
           }
-          if (scheme in { stuns: 1 }) {
-            this.logWarning(scheme.toUpperCase() + " is not yet supported.");
-          }
-          if (stunServers >= 5) {
-            this.logError(
-              "Using five or more STUN/TURN servers slows down discovery"
-            );
-          }
-        });
+          stunServers += 1;
+        } else if (scheme === "stun") {
+          this._hasStunServer = true;
+          stunServers += 1;
+        }
+      });
     });
+
+    if (stunServers >= 5) {
+      this.logError(
+        "Using five or more STUN/TURN servers slows down discovery"
+      );
+    }
   }
 
   // Ideally, this should be of the form _checkState(state),
@@ -827,6 +791,15 @@ export class RTCPeerConnection {
         "InvalidStateError"
       );
     }
+  }
+
+  // Exceptions thrown by C++ do not propagate across the JSImpl privilege
+  // boundary as proper DOMExceptions. Use StructuredCloneHolder to clone
+  // into the web content's realm. Promise-based calls use Cu.cloneInto, but
+  // cloneInto does not work with exceptions.
+  _cloneExceptionInto(e, win) {
+    const holder = new StructuredCloneHolder("", "", new ClonedErrorHolder(e));
+    return holder.deserialize(win);
   }
 
   dispatchEvent(event) {
@@ -1493,15 +1466,7 @@ export class RTCPeerConnection {
     try {
       return this._pc.addTransceiver(init, kind, sendTrack, addTrackMagic);
     } catch (e) {
-      // Exceptions thrown by c++ code do not propagate. In most cases, that's
-      // fine because we're using Promises, which can be copied. But this is
-      // not promise-based, so we have to do this sketchy stuff.
-      const holder = new StructuredCloneHolder(
-        "",
-        "",
-        new ClonedErrorHolder(e)
-      );
-      throw holder.deserialize(this._win);
+      throw this._cloneExceptionInto(e, this._win);
     }
   }
 
@@ -1837,7 +1802,13 @@ export class PeerConnectionObserver {
     this._dompc = dompc._innerObject;
   }
 
-  newError({ message, name }) {
+  newError({ message, name, errorDetail, sdpLineNumber }) {
+    if (errorDetail !== undefined) {
+      return new this._dompc._win.RTCError(
+        { errorDetail, sdpLineNumber },
+        message
+      );
+    }
     return new this._dompc._win.DOMException(message, name);
   }
 
@@ -1892,6 +1863,19 @@ export class PeerConnectionObserver {
     }
     this.dispatchEvent(
       new win.RTCPeerConnectionIceEvent("icecandidate", { candidate })
+    );
+  }
+
+  onIceCandidateError(address, port, url, errorCode, errorText) {
+    let win = this._dompc._win;
+    this.dispatchEvent(
+      new win.RTCPeerConnectionIceErrorEvent("icecandidateerror", {
+        address: address !== "" ? address : null,
+        port: port !== 0 ? port : null,
+        url,
+        errorCode,
+        errorText,
+      })
     );
   }
 

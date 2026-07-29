@@ -17,10 +17,7 @@ const { ValueSummaryReader } = ChromeUtils.importESModule(
  * JSObjectsTestUtils.
  */
 add_task(async function test_profile_feature_jstracing_objtestutils() {
-  Assert.ok(
-    !Services.profiler.IsActive(),
-    "The profiler is not currently active"
-  );
+  await ProfilerTestUtils.assertProfilerInactive();
 
   const { CONTEXTS, AllObjects } = ChromeUtils.importESModule(
     "resource://testing-common/AllJavascriptTypes.mjs"
@@ -71,21 +68,24 @@ add_task(async function test_profile_feature_jstracing_objtestutils() {
       const shapes = contentThread.tracedObjectShapes;
 
       // First lookup for all our expected symbols in the string table
-      const functionDummyStringIndex = contentThread.stringTable.findIndex(s =>
-        s.startsWith("dummy")
-      );
+      const functionDummyStringIndexes = [];
+      contentThread.stringTable.forEach((s, idx) => {
+        if (s.startsWith("dummy")) {
+          functionDummyStringIndexes.push(idx);
+        }
+      });
       Assert.greater(
-        functionDummyStringIndex,
+        functionDummyStringIndexes.length,
         0,
         "Found string for 'dummy' function call"
       );
 
-      // Then lookup for the matching frame, based on the string index
+      // Then lookup for the matching frames, based on the string indices
       const { frameTable } = contentThread;
       const FRAME_LOCATION_SLOT = frameTable.schema.location;
       const functionDummyFrameIndexes = [];
       frameTable.data.forEach((frame, idx) => {
-        if (frame[FRAME_LOCATION_SLOT] === functionDummyStringIndex) {
+        if (functionDummyStringIndexes.includes(frame[FRAME_LOCATION_SLOT])) {
           functionDummyFrameIndexes.push(idx);
         }
       });

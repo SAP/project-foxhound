@@ -6,6 +6,21 @@
 // state of an origin. Regardless of the order of origins, we should always pick
 // the correct bookmarked status.
 
+add_setup(async function () {
+  // This file tests the pre-adaptive bookmark-driven autofill path, where
+  // an unvisited bookmark can become an autofill candidate. Adaptive autofill
+  // disables that path.
+  Services.prefs.setBoolPref(
+    "browser.urlbar.autoFill.adaptiveHistory.enabled",
+    false
+  );
+  registerCleanupFunction(() => {
+    Services.prefs.clearUserPref(
+      "browser.urlbar.autoFill.adaptiveHistory.enabled"
+    );
+  });
+});
+
 add_task(async function () {
   registerCleanupFunction(async () => {
     Services.prefs.clearUserPref("browser.urlbar.suggest.searches");

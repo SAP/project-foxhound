@@ -26,7 +26,6 @@ add_setup(async function () {
       ["network.websocket.max-connections", 1000],
       ["network.lna.block_trackers", true],
       ["network.lna.blocking", true],
-      ["network.http.rcwn.enabled", false],
       ["network.lna.websocket.enabled", true],
       ["network.lna.local-network-to-localhost.skip-checks", false],
     ],
@@ -54,10 +53,10 @@ function clickDoorhangerButton(buttonIndex, browser, notificationID) {
 
   if (buttonIndex === PROMPT_ALLOW_BUTTON) {
     ok(true, "Triggering main action (allow)");
-    notification.button.doCommand();
+    notification.button.click();
   } else {
     ok(true, "Triggering secondary action (deny)");
-    notification.secondaryButton.doCommand();
+    notification.secondaryButton.click();
   }
 }
 
@@ -269,10 +268,9 @@ add_task(async function test_lna_prompt_behavior() {
 add_task(async function test_lna_cancellation_during_prompt() {
   info("Testing LNA cancellation during permission prompt");
 
-  // Disable RCWN but enable caching for this test
+  // Enable caching for this test
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["network.http.rcwn.enabled", false],
       ["browser.cache.disk.enable", true],
       ["browser.cache.memory.enable", true],
       ["network.lna.address_space.public.override", "127.0.0.1:4443"],

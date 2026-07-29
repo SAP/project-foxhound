@@ -8,9 +8,9 @@
  */
 
 /**
- * @import { UrlbarProvider } from "UrlbarUtils.sys.mjs"
- * @import { UrlbarMuxer } from "UrlbarUtils.sys.mjs"
- * @import { UrlbarSearchStringTokenData } from "UrlbarTokenizer.sys.mjs"
+ * @import { UrlbarProvider } from "./UrlbarUtils.sys.mjs"
+ * @import { UrlbarMuxer } from "./UrlbarUtils.sys.mjs"
+ * @import { UrlbarSearchStringTokenData } from "./UrlbarTokenizer.sys.mjs"
  */
 
 const lazy = {};
@@ -25,6 +25,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarProvider: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
   UrlbarSearchUtils:
     "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
   UrlbarTokenizer:
     "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
   UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
@@ -190,7 +191,7 @@ var localProviderModules = [
     name: "UrlbarProviderTabToSearch",
     module:
       "moz-src:///browser/components/urlbar/UrlbarProviderTabToSearch.sys.mjs",
-    supportedSAPs: ["smartbar", "urlbar"],
+    supportedSAPs: ["urlbar"],
   },
   {
     name: "UrlbarProviderTokenAliasEngines",
@@ -476,7 +477,7 @@ export class ProvidersManager {
       queryContext.restrictToken = restrictToken;
       // If the restriction token has an equivalent source, then set it as
       // restrictSource.
-      if (lazy.UrlbarTokenizer.SEARCH_MODE_RESTRICT.has(restrictToken.value)) {
+      if (lazy.UrlbarShared.SEARCH_MODE_RESTRICT.has(restrictToken.value)) {
         queryContext.restrictSource = queryContext.sources[0];
       }
     }
@@ -801,7 +802,8 @@ export class Query {
         (innerProvider, result) => {
           addedResult = true;
           this.add(innerProvider, result);
-        }
+        },
+        this.controller
       );
       if (!addedResult) {
         this.context.deferUserSelectionProviders.delete(provider.name);
@@ -1034,22 +1036,22 @@ function updateSourcesIfEmpty(context) {
       ? undefined
       : context.tokens.find(t =>
           [
-            lazy.UrlbarTokenizer.TYPE.RESTRICT_HISTORY,
-            lazy.UrlbarTokenizer.TYPE.RESTRICT_BOOKMARK,
-            lazy.UrlbarTokenizer.TYPE.RESTRICT_TAG,
-            lazy.UrlbarTokenizer.TYPE.RESTRICT_OPENPAGE,
-            lazy.UrlbarTokenizer.TYPE.RESTRICT_SEARCH,
-            lazy.UrlbarTokenizer.TYPE.RESTRICT_TITLE,
-            lazy.UrlbarTokenizer.TYPE.RESTRICT_URL,
-            lazy.UrlbarTokenizer.TYPE.RESTRICT_ACTION,
+            lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_HISTORY,
+            lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_BOOKMARK,
+            lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_TAG,
+            lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_OPENPAGE,
+            lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_SEARCH,
+            lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_TITLE,
+            lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_URL,
+            lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_ACTION,
           ].includes(t.type)
         );
 
   // RESTRICT_TITLE and RESTRICT_URL do not affect query sources.
   let restrictTokenType =
     restrictToken &&
-    restrictToken.type != lazy.UrlbarTokenizer.TYPE.RESTRICT_TITLE &&
-    restrictToken.type != lazy.UrlbarTokenizer.TYPE.RESTRICT_URL
+    restrictToken.type != lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_TITLE &&
+    restrictToken.type != lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_URL
       ? restrictToken.type
       : undefined;
 
@@ -1058,8 +1060,9 @@ function updateSourcesIfEmpty(context) {
     switch (source) {
       case lazy.UrlbarUtils.RESULT_SOURCE.BOOKMARKS:
         if (
-          restrictTokenType === lazy.UrlbarTokenizer.TYPE.RESTRICT_BOOKMARK ||
-          restrictTokenType === lazy.UrlbarTokenizer.TYPE.RESTRICT_TAG ||
+          restrictTokenType ===
+            lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_BOOKMARK ||
+          restrictTokenType === lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_TAG ||
           (!restrictTokenType && lazy.UrlbarPrefs.get("suggest.bookmark"))
         ) {
           acceptedSources.push(source);
@@ -1067,7 +1070,7 @@ function updateSourcesIfEmpty(context) {
         break;
       case lazy.UrlbarUtils.RESULT_SOURCE.HISTORY:
         if (
-          restrictTokenType === lazy.UrlbarTokenizer.TYPE.RESTRICT_HISTORY ||
+          restrictTokenType === lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_HISTORY ||
           (!restrictTokenType && lazy.UrlbarPrefs.get("suggest.history"))
         ) {
           acceptedSources.push(source);
@@ -1075,7 +1078,7 @@ function updateSourcesIfEmpty(context) {
         break;
       case lazy.UrlbarUtils.RESULT_SOURCE.SEARCH:
         if (
-          restrictTokenType === lazy.UrlbarTokenizer.TYPE.RESTRICT_SEARCH ||
+          restrictTokenType === lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_SEARCH ||
           !restrictTokenType
         ) {
           // We didn't check browser.urlbar.suggest.searches here, because it
@@ -1088,7 +1091,8 @@ function updateSourcesIfEmpty(context) {
         break;
       case lazy.UrlbarUtils.RESULT_SOURCE.TABS:
         if (
-          restrictTokenType === lazy.UrlbarTokenizer.TYPE.RESTRICT_OPENPAGE ||
+          restrictTokenType ===
+            lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_OPENPAGE ||
           (!restrictTokenType && lazy.UrlbarPrefs.get("suggest.openpage"))
         ) {
           acceptedSources.push(source);

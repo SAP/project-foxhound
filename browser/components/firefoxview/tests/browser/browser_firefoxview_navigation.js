@@ -21,7 +21,7 @@ add_task(async function test_side_component_navigation_by_click() {
     await SimpleTest.promiseFocus(browser);
 
     const { document } = browser.contentWindow;
-    let win = browser.ownerGlobal;
+    let win = browser.documentGlobal;
     const pageNavButtons = document.querySelectorAll("moz-page-nav-button");
 
     for (let element of pageNavButtons) {
@@ -52,7 +52,7 @@ add_task(async function test_side_component_navigation_by_keyboard() {
     await SimpleTest.promiseFocus(browser);
 
     const { document } = browser.contentWindow;
-    let win = browser.ownerGlobal;
+    let win = browser.documentGlobal;
     const pageNavButtons = document.querySelectorAll("moz-page-nav-button");
     const firstButton = pageNavButtons[0].buttonEl;
 

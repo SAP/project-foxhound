@@ -1,31 +1,30 @@
-From: Andreas Pehrson <apehrson@mozilla.com>
-Date: Mon, 6 May 2024 07:28:00 +0000
-Subject: Bug 1892329 - Fix threading issues in VideoCaptureModuleV4L2 once and
- for all. r=webrtc-reviewers,mjf
+From: Byron Campen <docfaraday@gmail.com>
+Date: Thu, 25 Jul 2024 10:07:00 -0500
+Subject: Bug 1909234 - (fix-4fec6f9c67dc) Hollow out the new ssl_adapter lib.
+ r?mjf
 
-Differential Revision: https://phabricator.services.mozilla.com/D208187
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/65e120a9c1dcb9c8f1c8930e808b03aa149eaf40
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/ee2f06666bcc6d22c4d7c93b78fb52d28452d055
 ---
- modules/video_capture/linux/video_capture_v4l2.cc | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
+ rtc_base/BUILD.gn | 2 ++
+ 1 file changed, 2 insertions(+)
 
-diff --git a/modules/video_capture/linux/video_capture_v4l2.cc b/modules/video_capture/linux/video_capture_v4l2.cc
-index 7e4901b566..0a44e1ff73 100644
---- a/modules/video_capture/linux/video_capture_v4l2.cc
-+++ b/modules/video_capture/linux/video_capture_v4l2.cc
-@@ -303,7 +303,6 @@ int32_t VideoCaptureModuleV4L2::StartCapture(
-   _requestedCapability = capability;
-   _captureStarted = true;
-   _streaming = true;
--  }
+diff --git a/rtc_base/BUILD.gn b/rtc_base/BUILD.gn
+index 1cf2a945e9..7ae96d65f4 100644
+--- a/rtc_base/BUILD.gn
++++ b/rtc_base/BUILD.gn
+@@ -1699,6 +1699,7 @@ if (!build_with_mozilla) {
+ }
  
-   // start capture thread;
-   if (!_captureThread.empty()) {
-@@ -311,6 +310,7 @@ int32_t VideoCaptureModuleV4L2::StartCapture(
+ rtc_library("ssl_adapter") {
++if (!build_with_mozilla) {
+   visibility = [ "*" ]
+   sources = [
+     "openssl_adapter.cc",
+@@ -1755,6 +1756,7 @@ rtc_library("ssl_adapter") {
+     configs += [ "..:external_ssl_library" ]
    }
+ }
++}
  
-   quit_ = false;
-+  }
- 
-   _captureThread = PlatformThread::SpawnJoinable(
-       [self = scoped_refptr(this)] {
+ rtc_source_set("gtest_prod") {
+   sources = [ "gtest_prod_util.h" ]

@@ -53,6 +53,7 @@ def get_parser_fetch_logs() -> argparse.Namespace:
     group.add_argument(
         "commits",
         nargs="*",
+        default=[],
         help="repo:commit e.g. mozilla-central:fae24810aef1 for the runs to include",
     )
     group.add_argument(

@@ -41,6 +41,7 @@ dependencies {
 
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
+    testImplementation libs.kotlin.test
     testImplementation libs.kotlinx.coroutines.test
     testImplementation libs.robolectric
 
@@ -54,8 +55,13 @@ dependencies {
     androidTestImplementation libs.androidx.test.rules
     androidTestImplementation libs.androidx.test.runner
     androidTestImplementation libs.androidx.test.uiautomator
+    androidTestImplementation libs.kotlin.test
     androidTestImplementation libs.leakcanary.instrumentation
-    androidTestImplementation libs.mockwebserver
+    androidTestImplementation libs.okhttp
+    constraints {
+        // Various AndroidX dependencies pull in 1.1.1 transitively; OkHttp 5 requires 1.2.0.
+        implementation(libs.androidx.startup.runtime)
+    }
 }
 
 apply from: '../../../common-config.gradle'

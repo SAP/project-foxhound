@@ -10,10 +10,10 @@ import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class SessionAutocompleteProviderTest {
@@ -34,19 +34,19 @@ class SessionAutocompleteProviderTest {
 
         suggestion = provider.getAutocompleteSuggestion("all")
         assertNotNull(suggestion)
-        assertEquals("all", suggestion?.input)
-        assertEquals("allizom.org", suggestion?.text)
-        assertEquals("https://allizom.org", suggestion?.url)
-        assertEquals(LOCAL_TABS_AUTOCOMPLETE_SOURCE_NAME, suggestion?.source)
-        assertEquals(1, suggestion?.totalItems)
+        assertEquals("all", suggestion.input)
+        assertEquals("allizom.org", suggestion.text)
+        assertEquals("https://allizom.org", suggestion.url)
+        assertEquals(LOCAL_TABS_AUTOCOMPLETE_SOURCE_NAME, suggestion.source)
+        assertEquals(1, suggestion.totalItems)
 
         suggestion = provider.getAutocompleteSuggestion("www")
         assertNotNull(suggestion)
-        assertEquals("www", suggestion?.input)
-        assertEquals("www.firefox.com", suggestion?.text)
-        assertEquals("https://www.firefox.com", suggestion?.url)
-        assertEquals(LOCAL_TABS_AUTOCOMPLETE_SOURCE_NAME, suggestion?.source)
-        assertEquals(1, suggestion?.totalItems)
+        assertEquals("www", suggestion.input)
+        assertEquals("www.firefox.com", suggestion.text)
+        assertEquals("https://www.firefox.com", suggestion.url)
+        assertEquals(LOCAL_TABS_AUTOCOMPLETE_SOURCE_NAME, suggestion.source)
+        assertEquals(1, suggestion.totalItems)
     }
 
     @Test

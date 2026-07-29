@@ -257,6 +257,20 @@ class ObjectFront extends FrontClassWithSpec(objectSpec) {
 
     return result;
   }
+  /**
+   * Request the global of the object.
+   */
+  async getGlobal() {
+    const result = await super.global();
+
+    if (!result.global) {
+      return result;
+    }
+
+    result.global = getAdHocFrontOrPrimitiveGrip(result.global, this);
+
+    return result;
+  }
 
   /**
    * Request the state of a promise.

@@ -224,6 +224,11 @@ void JapaneseCalendar::handleComputeFields(int32_t julianDay, UErrorCode& status
     int32_t year = internalGet(UCAL_EXTENDED_YEAR); // Gregorian year
     int32_t eraCode = gJapaneseEraRules->getEraCode(year, internalGetMonth(status) + 1, internalGet(UCAL_DAY_OF_MONTH), status);
 
+    // No adjustment necessary for BC and AD eras.
+    if (eraCode == EEras::BC || eraCode == EEras::AD) {
+        return;
+    }
+
     int32_t startYear = gJapaneseEraRules->getStartYear(eraCode, status) - 1;
     if (U_FAILURE(status)) {
         return;

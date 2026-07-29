@@ -62,6 +62,7 @@
   <string name="menu_settings">ترتیباں</string>
   <string name="menu_about">تعارف</string>
   <string name="menu_help">مدد</string>
+  <string name="menu_terms_of_use">ورتݨ شرطاں</string>
   <!--
     Menu item: This is the label for a menu entry that shows how many trackers have been blocked
     for the currently loaded website. The number of blocked trackers is shown below this label.
@@ -155,7 +156,9 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s تہاکوں کنٹرول ݙیندی ہے </p>\n<p> ایں کوں نجی براؤزر وانگوں ورتو:\n<ul>\n<li> ایپ وچ لبھو تے براؤز کرو </li>\n<li>ٹریکراں کوں بلاک کرو (یا ترتیباں دی تازہ کاری کر تے ٹریکراں کوں اجازت ݙیوو)۔ </li>\n<li> کوکیاں دے نال نال ڳولݨ تے براؤزنگ تاریخ کوں وی مٹاؤ </li>\n</ul> </p>\n<p>%1$s موزلّا دی پیداوار ہے۔ ساݙی مہم ہک صحت مند کھلے انٹرنیٹ کوں فروعٰ ݙیوݨ ہے۔ <br/>\n<a href=\"%2$s\"> ٻیا سِکھو </a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s تہاکوں کنٹرول ݙیندی ہے </p>\n<p> ایں کوں نجی براؤزر وانگوں ورتو:\n<ul>\n<li> ایپ وچ لبھو تے براؤز کرو </li>\n<li>ٹریکراں کوں بلاک کرو (یا ترتیباں دی تازہ کاری کر تے ٹریکراں کوں اجازت ݙیوو)۔ </li>\n<li> کوکیاں دے نال نال ڳولݨ تے براؤزنگ تاریخ کوں وی مٹاؤ </li>\n</ul> </p>\n<p>%1$s موزلّا دی پیداوار ہے۔ ساݙی مہم ہک صحت مند کھلے انٹرنیٹ کوں فروعٰ ݙیوݨ ہے۔ <br/>\n<a href=\"%2$s\"> ٻیا سِکھو </a></p>]]></string>
+  <!-- A link to SUMO at the bottom of About Focus screen. -->
+  <string name="about_screen_learn_more">ٻیا سِکھو</string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">رازداری تے سلامتی</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -248,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">یوآرایل پیسٹ یا درج کرو</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">مثال دے طور تے: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">مثال دے طور تے: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">مثال: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -320,18 +323,21 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">%1$s کوں پہلوں مقرر براؤز بݨاؤ</string>
-  <string name="preference_category_mozilla">موزلّا</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">موزلّا</string>
   <string name="preference_mozilla_telemetry2">ورتیل ڈیٹا پٹھو</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">ٻیا سِکھو</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">موزلّا صرف ایں کوں وٹلا کرݨ دی کوشش کریندےجہڑا ساکوں ہر کہیں کیتے %1$s فراہم کرݨ تے چنڳا بݨاوݨ دی لوڑ ہے۔</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">موزلّا صرف ایں کوں وٹلا کرݨ دی کوشش کریندےجہڑا ساکوں ہر کہیں کیتے %1$s فراہم کرݨ تے چنڳا بݨاوݨ دی لوڑ ہے۔</string>
+  <string name="preference_daily_usage_ping_learn_more">ٻیا سِکھو</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">رازداری نوٹس</string>
   <!-- In-app link (in settings) to Focus licensing information. -->
   <string name="preference_licensing_info">لائسنس ڄاݨکاری</string>
   <!-- Link to Focus licensing information from other libraries that we use. -->
   <string name="preference_libraries_we_use">لائبریریاں جہڑیاں اساں ورتیندوں</string>
+  <!-- Link to Focus Crash reports list. -->
+  <string name="preference_crashes">کریش</string>
   <!-- Open Source Licenses page title. %s is the name of the app (for example "Firefox Focus" or "Firefox Klar"). -->
   <string name="open_source_licenses_title">OSS | %s لائبریریاں</string>
   <!-- Item in Preferences that shows the about page. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar"). -->
@@ -457,6 +463,12 @@
   <string name="onboarding_first_screen_title">%1$s وچ ست بسم اللہ</string>
   <!-- New Onboarding flow first screen subtitle the one that appears under title -->
   <string name="onboarding_first_screen_subtitle">تکھا۔ نجی۔ کوئی پریشانی کائنی۔</string>
+  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
+  <string name="onboarding_first_screen_privacy_notice_link_2">رازداری نوٹس</string>
+  <!-- New Onboarding flow first screen button label -->
+  <string name="onboarding_first_screen_button_agree_and_continue_2">جاری</string>
+  <!-- In the first screen of new onboarding flow, additional accessibility description for content that contain urls. -->
+  <string name="a11y_link_available">دستیاب لنک</string>
   <!--
     Onboarding second screen: Title
 
@@ -779,7 +791,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">ٹیب بند کرو</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">موزلّا کوں کریش رپوٹ بھیڄو</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">موزلّا کوں کریش رپوٹ بھیڄو</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

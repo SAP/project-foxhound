@@ -18,8 +18,10 @@ well as discuss some tips to make your React application faster.
 ## How React renders normal components
 
 ### What's a normal component?
+
 As a start let's discuss about how React renders normal plain components, that
 don't use `shouldComponentUpdate`. What we call plain components here are either:
+
 * classes that extend [`Component`](https://reactjs.org/docs/react-component.html)
 
 ```jsx
@@ -40,12 +42,14 @@ don't use `shouldComponentUpdate`. What we call plain components here are either
     return <div>{props.content}</div>;
   }
 ```
+
   These functions are equivalent to classes extending `Component`. In
   the rest of the article we'll especially focus on the latter. Unless otherwise
   stated everything about classes extending `Component` is also true for
   Stateless/Functional Components.
 
 #### Notes on the use of JSX
+
 Because we don't use a build step in mozilla-central yet, some of our
 tools don't use JSX and use [factories](https://reactjs.org/docs/react-api.html#createfactory)
 instead:
@@ -62,6 +66,7 @@ We'll use JSX in this documentation for more clarity but this is strictly
 equivalent. You can read more on [React documentation](https://reactjs.org/docs/react-without-jsx.html).
 
 ### The first render
+
 There's only one way to start a React application and trigger a first render:
 calling `ReactDOM.render`:
 
@@ -79,6 +84,7 @@ DOM tree. It will then render actual DOM elements to the specified container.
 ### Subsequent rerenders
 
 There are several ways to trigger a rerender:
+
 1. We call `ReactDOM.render` again with the same component.
 
 ```javascript
@@ -110,6 +116,7 @@ application.
 
 From this explanation we can gather that the main performance issues can
 come from:
+
 1. triggering the render process **too frequently**,
 2. **expensive** render methods,
 3. the reconciliation algorithm itself. The algorithm is O(n) according to React
@@ -222,7 +229,7 @@ class ComplexPanel extends React.Component {
 }
 ```
 
-__This is a very efficient way to improve your application speed__, because this
+**This is a very efficient way to improve your application speed**, because this
 avoids everything: both calling render methods for this component _and_ the
 whole subtree, and the reconciliation phase for this subtree.
 
@@ -264,10 +271,12 @@ PureComponent's inherited `shouldComponentUpdate` will yield wrong results and w
 skip renders where it shouldn't.
 
 So you're left with one of these two options:
+
 * either implement your own `shouldComponentUpdate` in a `Component`
-* or (__preferred__) decide to make all your data structure immutable.
+* or (**preferred**) decide to make all your data structure immutable.
 
 The latter is recommended because:
+
 * It's much simpler to think about.
 * It's much faster to check for equality in `shouldComponentUpdate` and in other
   places (like Redux' selectors).
@@ -277,11 +286,14 @@ Note you could technically implement your own `shouldComponentUpdate` in a
 more than `Component` with a default implementation for `shouldComponentUpdate`.
 
 ### About immutability
+
 #### What it doesn't mean
+
 It doesn't mean you need to enforce the immutability using a library like
 [Immutable](https://github.com/facebook/immutable-js).
 
 #### What it means
+
 It means that once a structure exists, you don't mutate it.
 
 **Every time some data changes, the object reference must change as well**. This
@@ -373,6 +385,7 @@ The returned object is always merged into the current state, and React creates
 a new component's state object at each update cycle.
 
 #### How to update an array
+
 Updating an array is easy too.
 
 You must avoid methods that mutate the array like push/splice/pop/shift and you
@@ -418,6 +431,7 @@ this.setState(({ stateArray }) => {
 ```
 
 #### How to update Maps and Sets
+
 The process is very similar for Maps and Sets. Here is a quick example:
 
 ```javascript

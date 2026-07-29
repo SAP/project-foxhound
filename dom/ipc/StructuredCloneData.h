@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -45,8 +43,6 @@ class StructuredCloneData : public StructuredCloneHolder {
   // nsStructuredClone doing a base64 decode.  Don't use this.
   bool CopyExternalData(const char* aData, size_t aDataLength,
                         uint32_t aVersion = JS_STRUCTURED_CLONE_VERSION);
-
-  bool SupportsTransferring() { return mSupportsTransferring; }
 
   // For IPC serialization
   void WriteIPCParams(IPC::MessageWriter* aWriter);

@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -113,6 +112,9 @@ interface Node : EventTarget {
   readonly attribute Node? flattenedTreeParentNode;
   [ChromeOnly, Pure, BinaryName="isInNativeAnonymousSubtree"]
   readonly attribute boolean isNativeAnonymous;
+  // Returns the global of the document the node currently lives in.
+  [ChromeOnly, Pure, BinaryName="documentGlobalForBindings"]
+  readonly attribute WindowProxy? documentGlobal;
 
   // Maybe this would be useful to authors? https://github.com/whatwg/dom/issues/826
   [Func="IsChromeOrUAWidget", Pure, BinaryName="containingShadow"]

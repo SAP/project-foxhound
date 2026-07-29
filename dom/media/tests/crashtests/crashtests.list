@@ -23,7 +23,7 @@ asserts-if(Android,0-1) pref(browser.link.open_newwindow,2) load 1429507_2.html 
 load 1443212.html
 asserts-if(Android,0-2) load 1453030.html
 load 1468451.html
-skip-if(wayland) skip-if(cocoaWidget&&/^15\.30$/.test(os_version)) skip-if(Android) load 1490700.html # wayland: bug 1856368, macOS bug 1984994, No screenshare on Android
+skip-if(wayland) skip-if(Android) load 1490700.html # wayland: bug 1856368, No screenshare on Android
 load 1505957.html
 load 1509442.html
 load 1511130.html
@@ -40,4 +40,4 @@ load 1764940.html
 skip-if(cocoaWidget&&/^15\.30$/.test(os_version)) load 1766668.html # macOS bug 1992504 and bug 1993405
 skip-if(!cocoaWidget||!/^15\.30$/.test(os_version)) pref(media.getusermedia.microphone.prefer_voice_stream_with_processing.enabled,false) load 1766668.html # pref to work around bug 1992504 and bug 1993405
 load 1783765.html
-skip-if(Android) skip-if(cocoaWidget&&/^15\.30$/.test(os_version)) load 1920264.html # No screenshare on Android, macOS: bug 1984994
+skip-if(Android||macosVm) load 1920264.html # No screenshare on Android; Bug 2037084 hangs on no-display macOS VMs

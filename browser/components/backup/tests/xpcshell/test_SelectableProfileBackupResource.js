@@ -25,7 +25,13 @@ add_setup(async function () {
  * Tests backup and recover of profile metadata with a default avatar.
  */
 add_task(async function test_backup_and_recover_with_default_avatar() {
+  let sandbox = sinon.createSandbox();
+
   const SelectableProfileService = getSelectableProfileService();
+  sandbox
+    .stub(SelectableProfileService, "getAllProfiles")
+    .returns([{ id: 202, name: "Profile 1" }]);
+
   let originalProfile = SelectableProfileService.currentProfile;
 
   // Set up the original profile with test data
@@ -99,15 +105,27 @@ add_task(async function test_backup_and_recover_with_default_avatar() {
     originalProfile.avatar,
     "Recovered profile avatar should match original"
   );
+  Assert.deepEqual(
+    targetProfile.theme,
+    originalProfile.theme,
+    "Recovered profile theme should match original"
+  );
 
   await maybeRemovePath(stagingPath);
+  sandbox.restore();
 });
 
 /**
  * Tests backup and recover of profile metadata with a custom avatar.
  */
 add_task(async function test_backup_and_recover_with_custom_avatar() {
+  let sandbox = sinon.createSandbox();
+
   const SelectableProfileService = getSelectableProfileService();
+  sandbox
+    .stub(SelectableProfileService, "getAllProfiles")
+    .returns([{ id: 202, name: "Profile 1" }]);
+
   let originalProfile = SelectableProfileService.currentProfile;
 
   // Set up the original profile with a custom avatar
@@ -205,6 +223,11 @@ add_task(async function test_backup_and_recover_with_custom_avatar() {
     targetProfile.hasCustomAvatar,
     "Recovered profile avatar should have a new uuid (and should be custom)"
   );
+  Assert.deepEqual(
+    targetProfile.theme,
+    originalProfile.theme,
+    "Recovered profile theme should match original"
+  );
 
   // Verify the custom avatar file was copied to the avatar directory
   let avatarDir = PathUtils.join(
@@ -218,4 +241,90 @@ add_task(async function test_backup_and_recover_with_custom_avatar() {
   );
 
   await maybeRemovePath(stagingPath);
+  sandbox.restore();
+});
+
+/**
+ * Tests that postRecovery calls enableTheme when a themeId is provided.
+ */
+add_task(async function test_postRecovery_calls_enableTheme() {
+  let sandbox = sinon.createSandbox();
+
+  const SelectableProfileService = getSelectableProfileService();
+  let enableThemeStub = sandbox
+    .stub(SelectableProfileService, "enableTheme")
+    .resolves();
+
+  let resource = new SelectableProfileBackupResource();
+  await resource.postRecovery({ themeId: "test-theme-id" });
+
+  Assert.ok(enableThemeStub.calledOnce, "enableTheme should be called once");
+  Assert.equal(
+    enableThemeStub.firstCall.args[0],
+    "test-theme-id",
+    "enableTheme should be called with the provided themeId"
+  );
+
+  sandbox.restore();
+});
+
+/**
+ * Tests that postRecovery does not call enableTheme when no themeId is provided.
+ */
+add_task(async function test_postRecovery_noop_without_themeId() {
+  let sandbox = sinon.createSandbox();
+
+  const SelectableProfileService = getSelectableProfileService();
+  let enableThemeStub = sandbox
+    .stub(SelectableProfileService, "enableTheme")
+    .resolves();
+
+  let resource = new SelectableProfileBackupResource();
+
+  await resource.postRecovery({});
+  Assert.ok(
+    enableThemeStub.notCalled,
+    "enableTheme should not be called with empty object"
+  );
+
+  await resource.postRecovery(null);
+  Assert.ok(
+    enableThemeStub.notCalled,
+    "enableTheme should not be called with null"
+  );
+
+  sandbox.restore();
+});
+
+/**
+ * Tests that postRecovery falls back to the default theme when enableTheme
+ * fails for the requested theme (e.g. no network connectivity).
+ */
+add_task(async function test_postRecovery_falls_back_to_default_theme() {
+  let sandbox = sinon.createSandbox();
+
+  const SelectableProfileService = getSelectableProfileService();
+  let enableThemeStub = sandbox
+    .stub(SelectableProfileService, "enableTheme")
+    .onFirstCall()
+    .rejects(new Error("Download failed"))
+    .onSecondCall()
+    .resolves();
+
+  let resource = new SelectableProfileBackupResource();
+  await resource.postRecovery({ themeId: "some-custom-theme-id" });
+
+  Assert.ok(enableThemeStub.calledTwice, "enableTheme should be called twice");
+  Assert.equal(
+    enableThemeStub.firstCall.args[0],
+    "some-custom-theme-id",
+    "First call should try the original theme"
+  );
+  Assert.equal(
+    enableThemeStub.secondCall.args[0],
+    "default-theme@mozilla.org",
+    "Second call should fall back to the default theme"
+  );
+
+  sandbox.restore();
 });

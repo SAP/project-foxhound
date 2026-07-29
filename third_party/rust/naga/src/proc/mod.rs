@@ -90,6 +90,8 @@ pub enum HashableLiteral {
     F64(u64),
     F32(u32),
     F16(u16),
+    U16(u16),
+    I16(i16),
     U32(u32),
     I32(i32),
     U64(u64),
@@ -105,6 +107,8 @@ impl From<crate::Literal> for HashableLiteral {
             crate::Literal::F64(v) => Self::F64(v.to_bits()),
             crate::Literal::F32(v) => Self::F32(v.to_bits()),
             crate::Literal::F16(v) => Self::F16(v.to_bits()),
+            crate::Literal::U16(v) => Self::U16(v),
+            crate::Literal::I16(v) => Self::I16(v),
             crate::Literal::U32(v) => Self::U32(v),
             crate::Literal::I32(v) => Self::I32(v),
             crate::Literal::U64(v) => Self::U64(v),
@@ -124,6 +128,8 @@ impl crate::Literal {
             (value, crate::ScalarKind::Float, 2) => {
                 Some(Self::F16(half::f16::from_f32_const(value as _)))
             }
+            (value, crate::ScalarKind::Uint, 2) => Some(Self::U16(value as _)),
+            (value, crate::ScalarKind::Sint, 2) => Some(Self::I16(value as _)),
             (value, crate::ScalarKind::Uint, 4) => Some(Self::U32(value as _)),
             (value, crate::ScalarKind::Sint, 4) => Some(Self::I32(value as _)),
             (value, crate::ScalarKind::Uint, 8) => Some(Self::U64(value as _)),
@@ -144,11 +150,24 @@ impl crate::Literal {
         Self::new(1, scalar)
     }
 
+    pub const fn minus_one(scalar: crate::Scalar) -> Option<Self> {
+        match (scalar.kind, scalar.width) {
+            (crate::ScalarKind::Float, 8) => Some(Self::F64(-1.0)),
+            (crate::ScalarKind::Float, 4) => Some(Self::F32(-1.0)),
+            (crate::ScalarKind::Float, 2) => Some(Self::F16(half::f16::from_f32_const(-1.0))),
+            (crate::ScalarKind::Sint, 8) => Some(Self::I64(-1)),
+            (crate::ScalarKind::Sint, 4) => Some(Self::I32(-1)),
+            (crate::ScalarKind::Sint, 2) => Some(Self::I16(-1)),
+            (crate::ScalarKind::AbstractInt, 8) => Some(Self::AbstractInt(-1)),
+            _ => None,
+        }
+    }
+
     pub const fn width(&self) -> crate::Bytes {
         match *self {
             Self::F64(_) | Self::I64(_) | Self::U64(_) => 8,
             Self::F32(_) | Self::U32(_) | Self::I32(_) => 4,
-            Self::F16(_) => 2,
+            Self::F16(_) | Self::U16(_) | Self::I16(_) => 2,
             Self::Bool(_) => crate::BOOL_WIDTH,
             Self::AbstractInt(_) | Self::AbstractFloat(_) => crate::ABSTRACT_WIDTH,
         }
@@ -158,6 +177,8 @@ impl crate::Literal {
             Self::F64(_) => crate::Scalar::F64,
             Self::F32(_) => crate::Scalar::F32,
             Self::F16(_) => crate::Scalar::F16,
+            Self::U16(_) => crate::Scalar::U16,
+            Self::I16(_) => crate::Scalar::I16,
             Self::U32(_) => crate::Scalar::U32,
             Self::I32(_) => crate::Scalar::I32,
             Self::U64(_) => crate::Scalar::U64,
@@ -180,6 +201,8 @@ impl TryFrom<crate::Literal> for u32 {
 
     fn try_from(value: crate::Literal) -> Result<Self, Self::Error> {
         match value {
+            crate::Literal::U16(value) => Ok(value as u32),
+            crate::Literal::I16(value) => value.try_into().map_err(|_| ConstValueError::Negative),
             crate::Literal::U32(value) => Ok(value),
             crate::Literal::I32(value) => value.try_into().map_err(|_| ConstValueError::Negative),
             _ => Err(ConstValueError::InvalidType),
@@ -212,6 +235,9 @@ impl super::AddressSpace {
             // TaskPayload isn't always writable, but this is checked for elsewhere,
             // when not using multiple payloads and matching the entry payload is checked.
             crate::AddressSpace::TaskPayload => Sa::LOAD | Sa::STORE,
+            crate::AddressSpace::RayPayload | crate::AddressSpace::IncomingRayPayload => {
+                Sa::LOAD | Sa::STORE
+            }
         }
     }
 }
@@ -472,7 +498,12 @@ pub struct GlobalCtx<'a> {
 }
 
 impl GlobalCtx<'_> {
-    /// Try to evaluate the expression in `self.global_expressions` using its `handle` and return it as a `u32`.
+    /// Try to evaluate the expression in `self.global_expressions` using its `handle`
+    /// and return it as a `T: TryFrom<ir::Literal>`.
+    ///
+    /// This currently only evaluates scalar expressions. If adding support for vectors,
+    /// consider changing `valid::expression::validate_constant_shift_amounts` to use that
+    /// support.
     #[cfg_attr(
         not(any(
             feature = "glsl-in",
@@ -662,6 +693,15 @@ impl super::ShaderStage {
         match self {
             Self::Vertex | Self::Fragment => false,
             Self::Compute | Self::Task | Self::Mesh => true,
+            Self::RayGeneration | Self::AnyHit | Self::ClosestHit | Self::Miss => false,
+        }
+    }
+
+    /// Mesh or task shader
+    pub const fn mesh_like(self) -> bool {
+        match self {
+            Self::Task | Self::Mesh => true,
+            _ => false,
         }
     }
 }
@@ -852,5 +892,136 @@ impl crate::Module {
                 .inner
                 .map(|a| a.with_span_handle(self.global_variables[gv].ty, &self.types)),
         )
+    }
+
+    pub fn uses_mesh_shaders(&self) -> bool {
+        let binding_uses_mesh = |b: &crate::Binding| {
+            matches!(
+                b,
+                crate::Binding::BuiltIn(
+                    crate::BuiltIn::MeshTaskSize
+                        | crate::BuiltIn::CullPrimitive
+                        | crate::BuiltIn::PointIndex
+                        | crate::BuiltIn::LineIndices
+                        | crate::BuiltIn::TriangleIndices
+                        | crate::BuiltIn::VertexCount
+                        | crate::BuiltIn::Vertices
+                        | crate::BuiltIn::PrimitiveCount
+                        | crate::BuiltIn::Primitives,
+                ) | crate::Binding::Location {
+                    per_primitive: true,
+                    ..
+                }
+            )
+        };
+        for (_, ty) in self.types.iter() {
+            match ty.inner {
+                crate::TypeInner::Struct { ref members, .. } => {
+                    for binding in members.iter().filter_map(|m| m.binding.as_ref()) {
+                        if binding_uses_mesh(binding) {
+                            return true;
+                        }
+                    }
+                }
+                _ => (),
+            }
+        }
+        for ep in &self.entry_points {
+            if matches!(
+                ep.stage,
+                crate::ShaderStage::Mesh | crate::ShaderStage::Task
+            ) {
+                return true;
+            }
+            for binding in ep
+                .function
+                .arguments
+                .iter()
+                .filter_map(|arg| arg.binding.as_ref())
+                .chain(
+                    ep.function
+                        .result
+                        .iter()
+                        .filter_map(|res| res.binding.as_ref()),
+                )
+            {
+                if binding_uses_mesh(binding) {
+                    return true;
+                }
+            }
+        }
+        if self
+            .global_variables
+            .iter()
+            .any(|gv| gv.1.space == crate::AddressSpace::TaskPayload)
+        {
+            return true;
+        }
+        false
+    }
+
+    pub fn uses_ray_tracing(&self, ep_index: Option<usize>) -> RayTracingUses {
+        let mut uses = RayTracingUses::default();
+        // Whether this uses ray tracing (unknown whether the usage is pipelines or ray queries).
+        let mut uses_ray_tracing = self.special_types.ray_desc.is_some();
+
+        uses.queries |= self.special_types.ray_intersection.is_some();
+
+        for (_, &crate::Type { ref inner, .. }) in self.types.iter() {
+            // Backends do not know whether these have vertex return - that is done by us
+            match *inner {
+                crate::TypeInner::AccelerationStructure { .. } => {
+                    uses_ray_tracing = true;
+                }
+                crate::TypeInner::RayQuery { .. } => uses.queries = true,
+                _ => {}
+            }
+        }
+
+        for (index, ep) in self.entry_points.iter().enumerate() {
+            if ep_index.is_some() && ep_index != Some(index) {
+                continue;
+            }
+
+            // if we have a ray tracing pipeline shader we are definitely using
+            // pipelines, otherwise, if we have a ray tracing type, we might
+            // be using it in the shader (which would require ray queries),
+            // so we should use queries.
+            if matches!(
+                ep.stage,
+                crate::ShaderStage::RayGeneration
+                    | crate::ShaderStage::AnyHit
+                    | crate::ShaderStage::ClosestHit
+                    | crate::ShaderStage::Miss
+            ) {
+                uses.pipelines = true;
+            } else {
+                uses.queries |= uses_ray_tracing;
+            }
+        }
+
+        uses
+    }
+}
+
+#[derive(Default, Copy, Clone)]
+pub struct RayTracingUses {
+    pub pipelines: bool,
+    pub queries: bool,
+}
+
+impl crate::MeshOutputTopology {
+    pub const fn to_builtin(self) -> crate::BuiltIn {
+        match self {
+            Self::Points => crate::BuiltIn::PointIndex,
+            Self::Lines => crate::BuiltIn::LineIndices,
+            Self::Triangles => crate::BuiltIn::TriangleIndices,
+        }
+    }
+}
+
+impl crate::AddressSpace {
+    pub const fn is_workgroup_like(self) -> bool {
+        matches!(self, Self::WorkGroup | Self::TaskPayload)
     }
 }

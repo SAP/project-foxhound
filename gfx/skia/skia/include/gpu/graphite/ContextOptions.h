@@ -11,10 +11,12 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkSpan.h"
+#include "include/gpu/graphite/GraphiteTypes.h"
 #include "include/private/base/SkAPI.h"
 #include "include/private/base/SkMath.h"
 
 #include <optional>
+#include <string>
 
 class SkData;
 class SkExecutor;
@@ -24,6 +26,7 @@ namespace skgpu { class ShaderErrorHandler; }
 namespace skgpu::graphite {
 
 struct ContextOptionsPriv;
+class PersistentPipelineStorage;
 
 struct SK_API ContextOptions {
     ContextOptions() {}
@@ -43,11 +46,12 @@ struct SK_API ContextOptions {
 
     /**
      * Specifies the number of samples Graphite should use when performing internal draws with MSAA
-     * (hardware capabilities permitting).
+     * (hardware capabilities permitting). This represents the maximum that will be used; if a
+     * a specific format supports only lower values, those may be used instead.
      *
      * If <= 1, Graphite will disable internal code paths that use multisampling.
      */
-    uint8_t fInternalMultisampleCount = 4;
+    SampleCount fInternalMultisampleCount = SampleCount::k4;
 
     /**
      * If set, this specifies the max width/height of MSAA textures that Graphite should use for
@@ -65,13 +69,6 @@ struct SK_API ContextOptions {
      * overhead.
      */
     float fMinimumPathSizeForMSAA = 0;
-
-    /**
-     * Will the client make sure to only ever be executing one thread that uses the Context and all
-     * derived classes (e.g. Recorders, Recordings, etc.) at a time. If so we can possibly make some
-     * objects (e.g. VulkanMemoryAllocator) not thread safe to improve single thread performance.
-     */
-    bool fClientWillExternallySynchronizeAllThreads = false;
 
     /**
      * The maximum size of cache textures used for Skia's Glyph cache.
@@ -139,30 +136,51 @@ struct SK_API ContextOptions {
 #endif
 
     /**
-     * If Skia is creating a default VMA allocator for the Vulkan backend this value will be used
-     * for the preferredLargeHeapBlockSize. If the value is not set, then Skia will use an
-     * inernally defined default size.
-     *
-     * However, it is highly discouraged to have Skia make a default allocator (and support for
-     * doing so will be removed soon,  b/321962001). Instead clients should create their own
-     * allocator to pass into Skia where they can fine tune this value themeselves.
+     * Client-provided context that is passed to the client-provided PipelineCachingCallback
+     * and the (deprecated) PipelineCallback.
      */
-    std::optional<uint64_t> fVulkanVMALargeHeapBlockSize;
-
-    /** Client-provided context that is passed to client-provided PipelineCallback. */
     using PipelineCallbackContext = void*;
-    /**  Client-provided callback that is called whenever Graphite encounters a new Pipeline. */
-    using PipelineCallback = void (*)(PipelineCallbackContext context, sk_sp<SkData> pipelineData);
+
+    PipelineCallbackContext fPipelineCallbackContext = nullptr;
+
+    enum class PipelineCacheOp {
+        kAddingPipeline,
+        kPipelineFound,
+    };
+
+    using PipelineCachingCallback = void (*)(PipelineCallbackContext context,
+                                             PipelineCacheOp op,
+                                             const std::string& label,
+                                             uint32_t uniqueKeyHash,
+                                             bool fromPrecompile,
+                                             sk_sp<SkData> pipelineData);
 
     /**
-     *  These two members allow a client to register a callback that will be invoked
-     *  whenever Graphite encounters a new Pipeline. The callback will be passed an
-     *  sk_sp<SkData> that a client can take ownership of and serialize. The SkData
-     *  contains all the information Graphite requires to recreate the Pipeline at
-     *  a later date. The SkData is versioned however, so must be regenerated and
-     *  re-serialized when it becomes out of date.
+     * This member variable allows a client to register a callback that will be invoked
+     * whenever Graphite either adds a Pipeline to its cache (kAddingPipeline op) or finds an
+     * existing Pipeline in its cache (kPipelineFound op). Together this allows clients
+     * to determine the frequency of a given Pipeline's use and which precompiled Pipelines
+     * are unused. The callback is also passed:
+     *    a human-readable label that describes the Pipeline
+     *    a 32-bit hash code that can be used rather than rehashing the provided data
+     *    a Boolean indicating if the Pipeline had been generated via Precompilation
+     * Additionally, for kAddingPipeline ops:
+     *    an SkData version of the Pipeline that a client can take ownership of and serialize.
+     *    Not all Pipelines can be serialized, however, and nullptr will be passed in such cases.
+     *
+     * When provided, the SkData contains all the information Graphite requires to recreate
+     * the Pipeline at a later date, but it is versioned so recreation can fail if it's
+     * incompatible with a newer version of Skia.
      */
-    PipelineCallbackContext fPipelineCallbackContext = nullptr;
+    PipelineCachingCallback fPipelineCachingCallback = nullptr;
+
+    /**
+     * Deprecated version of the Pipeline callback. This callback is only invoked for
+     * PipelineCacheOp::kAddingPipeline ops and when the key is serializable. It is ignored
+     * if fPipelineCachingCallback is set.
+     */
+    using PipelineCallback = void (*)(PipelineCallbackContext context, sk_sp<SkData> pipelineData);
+
     PipelineCallback fPipelineCallback = nullptr;
 
     /**
@@ -188,6 +206,13 @@ struct SK_API ContextOptions {
      * the lifetime of the Context.
      */
     SkExecutor* fExecutor = nullptr;
+
+    /**
+     * Allows Graphite to store Pipeline data across Context lifetimes. It is up to the
+     * client to ensure the PersistentPipelineStorage object remains valid throughout the lifetime
+     * of the Context(s).
+     */
+    PersistentPipelineStorage* fPersistentPipelineStorage = nullptr;
 
     /**
      * An experimental flag in development. Behavior and performance is subject to change.

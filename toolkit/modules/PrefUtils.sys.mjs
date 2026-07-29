@@ -56,6 +56,28 @@ export var PrefUtils = {
   },
 
   /**
+   * Get the value of the pref on the given branch.
+   *
+   * This function will always return null for an unset user branch value
+   * instead of falling back to the default branch value (which is the default
+   * behaviour of `Services.prefs.get{Bool,Int,String}Pref` and
+   * `PrefUtils.getPref`).
+   *
+   * @param {string} pref The pref.
+   * @param {"default" | "user"} branch The branch.
+   *
+   * @returns {PrefValue} The value of the pref, or null if it is not set on
+   * that branch
+   */
+  getPrefStrict(pref, branch) {
+    if (branch === "user" && !Services.prefs.prefHasUserValue(pref)) {
+      return null;
+    }
+
+    return this.getPref(pref, { branch });
+  },
+
+  /**
    * Set a preference on the named branch
    *
    * @param {string} pref

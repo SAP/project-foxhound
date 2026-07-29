@@ -21,8 +21,8 @@ add_setup(async function () {
   // We need the extension installed for this test, but we do not want to
   // trigger the functions that happen on installation, so stub that out.
   // The manifest already has details of this engine.
-  let oldFunc = SearchService.addEnginesFromExtension;
-  SearchService.addEnginesFromExtension = () => {};
+  let oldFunc = SearchService.addEngineFromExtension;
+  SearchService.addEngineFromExtension = () => {};
 
   // Add the add-on so add-on manager has a valid item.
   await SearchTestUtils.installSearchExtension({
@@ -31,7 +31,7 @@ add_setup(async function () {
     search_url: "https://example.com/",
   });
 
-  SearchService.addEnginesFromExtension = oldFunc;
+  SearchService.addEngineFromExtension = oldFunc;
 });
 
 add_task(async function test_migrateLegacyEngineDifferentName() {

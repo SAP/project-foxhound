@@ -50,8 +50,22 @@ const USE_LEXICAL_SHORTLIST_PREF = "browser.translations.useLexicalShortlist";
  */
 
 /**
- * @import {DetectionResult} from "../translations.d.ts"
  * @import {TranslationsFeature} from "chrome://global/content/translations/TranslationsFeature.sys.mjs"
+ * @import {
+ *   DetectionResult,
+ *   LangTags,
+ *   LanguagePair,
+ *   LanguageTranslationModelFiles,
+ *   NonPivotLanguagePair,
+ *   RemoteSettingsClient,
+ *   SupportedLanguages,
+ *   TranslationErrors,
+ *   TranslationModelPayload,
+ *   TranslationModelRecord,
+ *   TranslationsEnginePayload,
+ *   TranslationsRecord,
+ *   WasmRecord,
+ * } from "../translations"
  */
 
 /** @type {Lazy} */
@@ -221,19 +235,8 @@ XPCOMUtils.defineLazyPreferenceGetter(
 const VERIFY_SIGNATURES_FROM_FS = false;
 
 /**
- * @typedef {import("../translations").TranslationModelRecord} TranslationModelRecord
- * @typedef {import("../translations").RemoteSettingsClient} RemoteSettingsClient
- * @typedef {import("../translations").TranslationModelPayload} TranslationModelPayload
- * @typedef {import("../translations").TranslationsEnginePayload} TranslationsEnginePayload
- * @typedef {import("../translations").LanguageTranslationModelFiles} LanguageTranslationModelFiles
- * @typedef {import("../translations").WasmRecord} WasmRecord
- * @typedef {import("../translations").LangTags} LangTags
- * @typedef {import("../translations").LanguagePair} LanguagePair
- * @typedef {import("../translations").ModelLanguages} ModelLanguages
- * @typedef {import("../translations").SupportedLanguages} SupportedLanguages
- * @typedef {import("../translations").TranslationErrors} TranslationErrors
+ * Implementation exists at toolkit/content/widgets/findbar.js
  *
- * // Implementation exists at toolkit/content/widgets/findbar.js
  * @typedef {any} MozFindbar
  */
 
@@ -627,7 +630,7 @@ export class TranslationsParent extends JSWindowActorParent {
     // at a time, so treat Android as always having the selected tab.
     const isSelectedTab =
       AppConstants.platform === "android" ||
-      browser === browser.ownerGlobal?.gBrowser?.selectedBrowser;
+      browser === browser.documentGlobal?.gBrowser?.selectedBrowser;
 
     if (tabState.needsReloadBeforeTranslation && isSelectedTab) {
       tabState.needsReloadBeforeTranslation = false;
@@ -738,7 +741,7 @@ export class TranslationsParent extends JSWindowActorParent {
   static #isTranslationsEngineMocked = false;
 
   /**
-   * @type {null | Promise<boolean>}
+   * @type {null | boolean}
    */
   static #isTranslationsEngineSupported = null;
 
@@ -1172,8 +1175,7 @@ export class TranslationsParent extends JSWindowActorParent {
       );
 
       /* eslint-disable-next-line no-shadow */
-      // @ts-ignore
-      const { CustomEvent } = browser.ownerGlobal;
+      const { CustomEvent } = browser.documentGlobal;
       browser.dispatchEvent(
         new CustomEvent("TranslationsParent:OfferTranslation", {
           bubbles: true,
@@ -1228,7 +1230,7 @@ export class TranslationsParent extends JSWindowActorParent {
    * use the feature. This function also respects mocks and simulating unsupported
    * engines.
    *
-   * @type {boolean}
+   * @returns {boolean}
    */
   static getIsTranslationsEngineSupported() {
     if (lazy.simulateUnsupportedEnginePref) {
@@ -2288,7 +2290,7 @@ export class TranslationsParent extends JSWindowActorParent {
    *
    * @param {RemoteSettingsClient} client
    *  - The Remote Settings client for which to handle deleted records.
-   * @param {TranslationModelRecord[]} deletedRecords
+   * @param {TranslationsRecord[]} deletedRecords
    *  - The list of records that were deleted from the client's database.
    */
   static async #handleDeletedRecords(client, deletedRecords) {
@@ -2327,7 +2329,7 @@ export class TranslationsParent extends JSWindowActorParent {
    *
    * @param {RemoteSettingsClient} client
    *  - The Remote Settings client for which to handle updated records.
-   * @param {{old: TranslationModelRecord, new: TranslationModelRecord}[]} updatedRecords
+   * @param {{old: TranslationsRecord, new: TranslationsRecord}[]} updatedRecords
    *  - The list of records that were updated in the client's database.
    */
   static async #handleUpdatedRecords(client, updatedRecords) {
@@ -2449,11 +2451,11 @@ export class TranslationsParent extends JSWindowActorParent {
    *
    * @param {object} event - The sync event.
    * @param {object} event.data - The data associated with the sync event.
-   * @param {TranslationModelRecord[]} event.data.created
+   * @param {WasmRecord[]} event.data.created
    *  - The list of Remote Settings records that were created in the sync event.
-   * @param {{old: TranslationModelRecord, new: TranslationModelRecord}[]} event.data.updated
+   * @param {{old: WasmRecord, new: WasmRecord}[]} event.data.updated
    *  - The list of Remote Settings records that were updated in the sync event.
-   * @param {TranslationModelRecord[]} event.data.deleted
+   * @param {WasmRecord[]} event.data.deleted
    *  - The list of Remote Settings records that were deleted in the sync event.
    */
   static async #handleTranslationsWasmSync({
@@ -2474,7 +2476,7 @@ export class TranslationsParent extends JSWindowActorParent {
     });
 
     // Invalidate cached data.
-    TranslationsParent.#bergamotWasmRecord = null;
+    TranslationsParent.#bergamotWasmRecordPromise = null;
 
     if (deleted.length) {
       await TranslationsParent.#handleDeletedRecords(client, deleted);
@@ -2529,7 +2531,7 @@ export class TranslationsParent extends JSWindowActorParent {
    *     This function should take a record as input and return a string that represents the lookup key for the record.
    *     For most record types, the name (default) is sufficient, however if a collection contains records with
    *     non-unique name values, it may be necessary to provide an alternative function here.
-   * @returns {Array<TranslationModelRecord | WasmRecord>}
+   * @returns {Promise<Array<TranslationsRecord>>}
    */
   static async getMaxSupportedVersionRecords(
     remoteSettingsClient,
@@ -2869,7 +2871,7 @@ export class TranslationsParent extends JSWindowActorParent {
   }
 
   /** @type {Promise<WasmRecord> | null} */
-  static #bergamotWasmRecord = null;
+  static #bergamotWasmRecordPromise = null;
 
   /** @type {boolean} */
   static #lookForLocalWasmBuild = true;
@@ -2906,6 +2908,73 @@ export class TranslationsParent extends JSWindowActorParent {
     return null;
   }
 
+  static async #getBergamotWasmRecord() {
+    if (this.#bergamotWasmRecordPromise) {
+      return this.#bergamotWasmRecordPromise;
+    }
+
+    const fetchWasmRecord = async () => {
+      lazy.console.log(`Getting remote bergamot-translator wasm records.`);
+
+      const getWasmRecords = () =>
+        TranslationsParent.getMaxSupportedVersionRecords(
+          TranslationsParent.#getTranslationsWasmRemoteClient(),
+          {
+            filters: { name: "bergamot-translator" },
+            minSupportedMajorVersion: TranslationsParent.BERGAMOT_MAJOR_VERSION,
+            maxSupportedMajorVersion: TranslationsParent.BERGAMOT_MAJOR_VERSION,
+          }
+        );
+
+      /** @type {WasmRecord[]} */
+      let wasmRecords = await getWasmRecords();
+
+      if (wasmRecords.length === 0) {
+        lazy.console.log(
+          "No wasm records found, syncing the wasm and models clients."
+        );
+        const wasmClient =
+          TranslationsParent.#getTranslationsWasmRemoteClient();
+        const modelsClient =
+          TranslationsParent.#getTranslationModelsRemoteClient();
+        await Promise.all([wasmClient.sync(), modelsClient.sync()]);
+
+        wasmRecords = await getWasmRecords();
+
+        if (wasmRecords.length === 0) {
+          throw new Error(
+            "No bergamot-translators were found that matched the major version: " +
+              TranslationsParent.BERGAMOT_MAJOR_VERSION
+          );
+        }
+      }
+
+      if (wasmRecords.length > 1) {
+        TranslationsParent.reportError(
+          new Error("Expected the bergamot-translator to only have 1 record."),
+          wasmRecords
+        );
+      }
+
+      const [record] = wasmRecords;
+      lazy.console.log(
+        `Using ${record.name}@${record.release} release version ${record.version}`,
+        record
+      );
+      return record;
+    };
+
+    const guardedPromise = fetchWasmRecord().catch(error => {
+      if (this.#bergamotWasmRecordPromise === guardedPromise) {
+        this.#bergamotWasmRecordPromise = null;
+      }
+      throw error;
+    });
+
+    this.#bergamotWasmRecordPromise = guardedPromise;
+    return guardedPromise;
+  }
+
   /**
    * Bergamot is the translation engine that has been compiled to wasm. It is shipped
    * to the user via Remote Settings.
@@ -2925,86 +2994,30 @@ export class TranslationsParent extends JSWindowActorParent {
       return localCopy;
     }
 
-    if (!TranslationsParent.#bergamotWasmRecord) {
-      // Place the records into a promise to prevent any races.
-      TranslationsParent.#bergamotWasmRecord = (async () => {
-        // Load the wasm binary from remote settings, if it hasn't been already.
-        lazy.console.log(`Getting remote bergamot-translator wasm records.`);
-
-        const getWasmRecords = () =>
-          TranslationsParent.getMaxSupportedVersionRecords(client, {
-            filters: { name: "bergamot-translator" },
-            minSupportedMajorVersion: TranslationsParent.BERGAMOT_MAJOR_VERSION,
-            maxSupportedMajorVersion: TranslationsParent.BERGAMOT_MAJOR_VERSION,
-          });
-
-        /** @type {WasmRecord[]} */
-        let wasmRecords = await getWasmRecords();
-
-        if (wasmRecords.length === 0) {
-          // No matching client was found, we need to sync to get the latest one.
-          lazy.console.log("No wasm records found, syncing the wasm client.");
-          const wasmClient =
-            await TranslationsParent.#getTranslationsWasmRemoteClient();
-          await wasmClient.sync();
-
-          lazy.console.log("Syncing the models as well.");
-          const modelsClient =
-            await TranslationsParent.#getTranslationModelsRemoteClient();
-          await modelsClient.sync();
-
-          wasmRecords = await getWasmRecords();
-
-          if (wasmRecords.length === 0) {
-            // The remote settings client provides an empty list of records when there is
-            // an error.
-            throw new Error(
-              "No bergamot-translators were found that matched the major version: " +
-                TranslationsParent.BERGAMOT_MAJOR_VERSION
-            );
-          }
-        }
-
-        if (wasmRecords.length > 1) {
-          TranslationsParent.reportError(
-            new Error(
-              "Expected the bergamot-translator to only have 1 record."
-            ),
-            wasmRecords
-          );
-        }
-        const [record] = wasmRecords;
-        lazy.console.log(
-          `Using ${record.name}@${record.release} release version ${record.version} first released on Fx${record.fx_release}`,
-          record
-        );
-        return record;
-      })();
-    }
     // Unlike the models, greedily download the wasm. It will pull it from a locale
     // cache on disk if it's already been downloaded. Do not retain a copy, as
     // this will be running in the parent process. It's not worth holding onto
     // this much memory, so reload it every time it is needed.
 
+    await chaosModeError(1 / 3);
+
+    const record = await this.#getBergamotWasmRecord();
+    let payload;
     try {
-      await chaosModeError(1 / 3);
-
-      const payload = await client.attachments.download(
-        await TranslationsParent.#bergamotWasmRecord
-      );
-
-      const blob = payload.blob ?? new Blob([payload.buffer]);
-
-      const duration = Date.now() - start;
-      lazy.console.log(
-        `"bergamot-translator" wasm binary loaded in ${duration / 1000} seconds`
-      );
-
-      return blob;
+      payload = await client.attachments.download(record);
     } catch (error) {
-      TranslationsParent.#bergamotWasmRecord = null;
+      this.#bergamotWasmRecordPromise = null;
       throw error;
     }
+
+    const blob = payload.blob ?? new Blob([payload.buffer]);
+
+    const duration = Date.now() - start;
+    lazy.console.log(
+      `"bergamot-translator" wasm binary loaded in ${duration / 1000} seconds`
+    );
+
+    return blob;
   }
 
   /**
@@ -3180,14 +3193,7 @@ export class TranslationsParent extends JSWindowActorParent {
       languageB,
       /* includePivotRecords */ true
     )) {
-      let isDownloaded = false;
-      if (TranslationsParent.isInAutomation()) {
-        isDownloaded = record.attachment.isDownloaded;
-      } else {
-        isDownloaded = await client.attachments.isDownloaded(record);
-      }
-
-      if (isDownloaded) {
+      if (await client.attachments.isDownloaded(record)) {
         downloadedPairs.add(
           TranslationsParent.nonPivotKey(
             record.sourceLanguage,
@@ -3594,7 +3600,7 @@ export class TranslationsParent extends JSWindowActorParent {
    */
   static clearCache() {
     // Records.
-    TranslationsParent.#bergamotWasmRecord = null;
+    TranslationsParent.#bergamotWasmRecordPromise = null;
     TranslationsParent.#invalidateTranslationModelRecords();
 
     // Clients.
@@ -3733,17 +3739,10 @@ export class TranslationsParent extends JSWindowActorParent {
 
     this.languageState.requestedLanguagePair = languagePair;
 
-    const preferredLanguages = TranslationsParent.getPreferredLanguages();
-    const topPreferredLanguage =
-      preferredLanguages && preferredLanguages.length
-        ? preferredLanguages[0]
-        : null;
-
     TranslationsParent.telemetry().onTranslate({
       docLangTag,
       sourceLanguage,
       targetLanguage,
-      topPreferredLanguage,
       autoTranslate: reportAsAutoTranslate,
       requestTarget: "full_page",
     });
@@ -3815,12 +3814,15 @@ export class TranslationsParent extends JSWindowActorParent {
   /**
    * Called when the browser's location changes. This is only invoked for location
    * changes in the currently selected browser, not for background tabs.
-   *
-   * @param {object} browser
    */
-  static onLocationChange(browser) {
+  static onLocationChange(_window, _locationURI, webProgress, _flags) {
     if (!TranslationsParent.AIFeature.isEnabled) {
       // The pref isn't enabled, so don't attempt to get the actor.
+      return;
+    }
+
+    const browser = webProgress.browsingContext.embedderElement;
+    if (!browser) {
       return;
     }
 
@@ -3912,9 +3914,6 @@ export class TranslationsParent extends JSWindowActorParent {
     if (pageText.length < TranslationsParent.#DOC_CONFIDENCE_THRESHOLD) {
       result.confident = false;
     }
-
-    // Some language tags are not supported by CLD2
-    result.language = this.maybeRefineMacroLanguageTag(result.language);
 
     const htmlLangAttribute =
       this.languageState?.detectedLanguages?.htmlLangAttribute ?? null;
@@ -4105,26 +4104,52 @@ export class TranslationsParent extends JSWindowActorParent {
   }
 
   /**
-   * Attempts to make the language tag more specific if it is a supported macro language tag.
-   * If no special cases apply, the provided language tag is returned as-is.
+   * Opens the about:translations page with the provided hash parameters.
    *
-   * @param {string} langTag - A BCP-47 language tag to evaluate and possibly refine.
-   * @returns {string} - The refined language tag, or null if processing was interrupted.
+   * @param {object} options
+   * @param {ChromeWindow} options.browserWindow
+   * @param {string} [options.sourceLanguage="detect"]
+   *   The pre-populated source language.
+   * @param {string} [options.targetLanguage=""]
+   *   The pre-populated target language. Callers may pass "derive" to populate this value with the user's
+   *   top preferred supported target language {@link TranslationsParent.getTopPreferredSupportedToLang}.
+   * @param {string} [options.text=""]
+   *   The pre-populated text to translate.
    */
-  maybeRefineMacroLanguageTag(langTag) {
-    if (langTag === "no") {
-      // Choose "Norwegian Bokmål" over "Norwegian Nynorsk" as it is more widely used.
-      //
-      // https://en.wikipedia.org/wiki/Norwegian_language#Bokm%C3%A5l_and_Nynorsk
-      //
-      //   > A 2005 poll indicates that 86.3% use primarily Bokmål as their daily
-      //   > written language, 5.5% use both Bokmål and Nynorsk, and 7.5% use
-      //   > primarily Nynorsk.
-      return "nb";
+  static async openAboutTranslationsPage({
+    browserWindow,
+    sourceLanguage = "detect",
+    targetLanguage = "",
+    text = "",
+  }) {
+    const url = new URL("about:translations");
+    const searchParameters = new URLSearchParams();
+
+    searchParameters.set("src", sourceLanguage);
+    searchParameters.set("text", text);
+
+    if (targetLanguage === "derive") {
+      try {
+        const derivedTargetLanguage =
+          await TranslationsParent.getTopPreferredSupportedToLang({
+            excludeLangTags: [sourceLanguage],
+          });
+        searchParameters.set("trg", derivedTargetLanguage);
+      } catch (error) {
+        lazy.console.error(error);
+      }
+    } else {
+      searchParameters.set("trg", targetLanguage);
     }
 
-    // No special cases were handled above, so pass the langTag through.
-    return langTag;
+    url.hash = searchParameters.toString();
+    browserWindow.switchToTabHavingURI(
+      Services.io.newURI(url.href),
+      /* aOpenNew */ true,
+      {
+        ignoreFragment: "whenComparing",
+      }
+    );
   }
 
   /**
@@ -4145,7 +4170,8 @@ export class TranslationsParent extends JSWindowActorParent {
     }
 
     if (htmlLangAttribute) {
-      htmlLangAttribute = this.maybeRefineMacroLanguageTag(htmlLangAttribute);
+      htmlLangAttribute =
+        lazy.LanguageDetector.maybeRefineMacroLanguageTag(htmlLangAttribute);
     }
 
     let languagePairs = await TranslationsParent.getNonPivotLanguagePairs();
@@ -4800,7 +4826,7 @@ class TranslationsLanguageState {
       }
 
       /* eslint-disable-next-line no-shadow */
-      const { CustomEvent } = browser.ownerGlobal;
+      const { CustomEvent } = browser.documentGlobal;
       browser.dispatchEvent(
         new CustomEvent("TranslationsParent:LanguageState", {
           bubbles: true,

@@ -8,10 +8,27 @@ prefs = [
 
 ["browser_adopt_sidebar_from_opener.js"]
 
+["browser_bookmarks_keyboard_navigation.js"]
+
+["browser_bookmarks_multiselect.js"]
+
+["browser_bookmarks_show_in_folder_from_menu.js"]
+
+["browser_bookmarks_sidebar.js"]
+
+["browser_bookmarks_sidebar_auxclick.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks", # Bug 2041753
+]
+
+["browser_bookmarks_sidebar_glean.js"]
+
 ["browser_customize_sidebar.js"]
 skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1968564
 ]
+
+["browser_delete_sidebar_history.js"]
 
 ["browser_domfullscreen_sidebar.js"]
 
@@ -26,10 +43,25 @@ skip-if = [
 ]
 
 ["browser_hide_sidebar_on_popup.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
 
 ["browser_history_keyboard_navigation.js"]
 
+["browser_history_multiselect.js"]
+
 ["browser_history_sidebar.js"]
+
+["browser_history_sidebar_glean.js"]
+
+["browser_launcher_hidden_restore.js"]
+tags = "vertical-tabs"
+
+["browser_launcher_splitter_visibility.js"]
+tags = "vertical-tabs"
+
+["browser_opentabs_sidebar.js"]
 
 ["browser_resize_sidebar.js"]
 skip-if = [
@@ -39,6 +71,8 @@ skip-if = [
 ["browser_sidebar_collapsed_close_tab_button.js"]
 
 ["browser_sidebar_context_menu.js"]
+
+["browser_sidebar_escape_collapse.js"]
 
 ["browser_sidebar_expand_on_hover.js"]
 
@@ -66,7 +100,11 @@ skip-if = [
 
 ["browser_sidebar_prefs.js"]
 
+["browser_sidebar_splitter_keyboard.js"]
+
 ["browser_syncedtabs_sidebar.js"]
+
+["browser_syncedtabs_sidebar_glean.js"]
 
 ["browser_toolbar_sidebar_button.js"]
 skip-if = [
@@ -78,6 +116,7 @@ skip-if = [
 ["browser_tools_overflow.js"]
 skip-if = [
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1971922
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && opt", # Bug 1971922
 ]
 
 ["browser_verticalTabs_widget_placements.js"]
@@ -86,6 +125,7 @@ skip-if = [
 skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1968564
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1922718
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && opt", # Bug 1922718
 ]
 
 ["browser_vertical_tabs_cui_reset.js"]

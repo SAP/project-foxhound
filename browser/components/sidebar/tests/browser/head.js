@@ -4,6 +4,13 @@
 const { sinon } = ChromeUtils.importESModule(
   "resource://testing-common/Sinon.sys.mjs"
 );
+ChromeUtils.defineLazyGetter(this, "SidebarTestUtils", () => {
+  const { SidebarTestUtils: utils } = ChromeUtils.importESModule(
+    "resource://testing-common/SidebarTestUtils.sys.mjs"
+  );
+  utils.init(this);
+  return utils;
+});
 
 const imageBuffer = imageBufferFromDataURI(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQImWNgYGBgAAAABQABh6FO1AAAAABJRU5ErkJggg=="
@@ -109,15 +116,9 @@ const extData = {
 };
 
 // Ensure each test leaves the sidebar in its initial state when it completes
-const initialSidebarState = { ...SidebarController.getUIState(), command: "" };
-async function resetSidebarToInitialState() {
-  info(
-    `Restoring sidebar state from: ${JSON.stringify(SidebarController.getUIState())}, back to: ${JSON.stringify(initialSidebarState)}`
-  );
-  await SidebarController.initializeUIState(initialSidebarState);
-}
+SidebarTestUtils.restoreStateAtCleanup(window);
+
 registerCleanupFunction(async () => {
-  await resetSidebarToInitialState();
   // Reset the Glean events after each test.
   Services.fog.testResetFOG();
   clearModifiedPrefs();
@@ -142,7 +143,7 @@ async function openAndWaitForContextMenu(popup, button, onShown) {
   EventUtils.synthesizeMouseAtCenter(
     button,
     eventDetails,
-    // eslint-disable-next-line mozilla/use-ownerGlobal
+    // eslint-disable-next-line mozilla/use-documentGlobal
     button.ownerDocument.defaultView
   );
   await menuShownPromise;
@@ -152,58 +153,42 @@ async function openAndWaitForContextMenu(popup, button, onShown) {
   return popup;
 }
 
+/**
+ * Right-click a sidebar element to open the current sidebar context menu, then
+ * activate a menu item (or run a custom callback). Resolves once the command
+ * has fired and the menu has fully closed.
+ *
+ * @param {Element} triggerEl
+ *   The element to right-click.
+ * @param {string} menuItemId
+ *   The id of the `<menuitem>` to activate. Ignored if `callback` is provided.
+ * @param {(contextMenu: Element) => any} [callback]
+ *   Custom handler invoked to dispatch a command once the context menu is
+ *   shown. Receives the context menu popup element.
+ */
+async function activateContextMenuItem(triggerEl, menuItemId, callback) {
+  const contextMenu = SidebarController.currentContextMenu;
+  const promiseHidden = BrowserTestUtils.waitForPopupEvent(
+    contextMenu,
+    "hidden"
+  );
+  await openAndWaitForContextMenu(contextMenu, triggerEl, async () => {
+    const promiseCommand = BrowserTestUtils.waitForEvent(
+      contextMenu,
+      "command"
+    );
+    if (callback) {
+      await callback(contextMenu);
+    } else {
+      contextMenu.activateItem(document.getElementById(menuItemId));
+    }
+    await promiseCommand;
+  });
+  await promiseHidden;
+}
+
 function isActiveElement(el) {
   return el.getRootNode().activeElement == el;
-}
-
-async function toggleSidebarPanel(win, commandID) {
-  const promiseFocused = BrowserTestUtils.waitForEvent(win, "SidebarFocused");
-  win.SidebarController.toggle(commandID);
-  await promiseFocused;
-}
-
-async function ensureSidebarLauncherIsVisible(win = window) {
-  const {
-    promiseInitialized,
-    toolbarButton,
-    sidebarMain: sidebarLauncher,
-    sidebarContainer,
-  } = win.SidebarController;
-  await promiseInitialized;
-  // Show the sidebar launcher if the container is hidden
-  if (sidebarContainer.hidden) {
-    toolbarButton.doCommand();
-    await sidebarLauncher.updateComplete;
-    await BrowserTestUtils.waitForMutationCondition(
-      sidebarContainer,
-      { attributes: true, attributeFilter: ["hidden"] },
-      () => !sidebarContainer.hidden
-    );
-  }
-  Assert.ok(
-    BrowserTestUtils.isVisible(sidebarLauncher),
-    "Sidebar launcher is visible"
-  );
-}
-
-async function waitForTabstripOrientation(
-  toOrientation = "vertical",
-  win = window
-) {
-  await win.SidebarController.promiseInitialized;
-  // We use the orient attribute on the tabstrip element as a reliable signal that
-  // tabstrip orientation has changed/is settled into the given orientation
-  info(
-    `waitForTabstripOrientation: waiting for orient attribute to be "${toOrientation}"`
-  );
-  await BrowserTestUtils.waitForMutationCondition(
-    win.gBrowser.tabContainer,
-    { attributes: true, attributeFilter: ["orient"] },
-    () => win.gBrowser.tabContainer.getAttribute("orient") == toOrientation
-  );
-  // This change is followed by a update/render step for the lit elements.
-  // We need to wait for that too
-  await win.SidebarController.sidebarMain?.updateComplete;
 }
 
 /**
@@ -229,7 +214,7 @@ function cleanUpExtraTabs() {
 
 async function showHistorySidebar({ waitForPendingHistory = true } = {}) {
   if (SidebarController.currentID !== "viewHistorySidebar") {
-    await SidebarController.show("viewHistorySidebar");
+    await SidebarTestUtils.showPanel(window, "viewHistorySidebar");
   }
   const { contentDocument, contentWindow } = SidebarController.browser;
   const component = contentDocument.querySelector("sidebar-history");
@@ -278,6 +263,37 @@ async function populateHistory() {
   return { URLs, dates };
 }
 
+async function showBookmarksSidebar() {
+  if (SidebarController.currentID !== "viewBookmarksSidebar") {
+    await SidebarTestUtils.showPanel(window, "viewBookmarksSidebar");
+  }
+  const { contentDocument, contentWindow } = SidebarController.browser;
+  const component = contentDocument.querySelector("sidebar-bookmarks");
+  await component.updateComplete;
+  return { component, contentWindow };
+}
+
+async function expandToolbarFolder(tabList) {
+  await BrowserTestUtils.waitForMutationCondition(
+    tabList.shadowRoot,
+    { childList: true, subtree: true },
+    () => tabList.folderEls[0]
+  );
+  const toolbarFolder = [...tabList.folderEls].find(
+    ({ guid }) => guid === PlacesUtils.bookmarks.toolbarGuid
+  );
+  Assert.ok(toolbarFolder, "Toolbar folder is rendered.");
+  if (!toolbarFolder.open) {
+    toolbarFolder.querySelector("summary").click();
+    await BrowserTestUtils.waitForMutationCondition(
+      toolbarFolder,
+      { attributes: true },
+      () => toolbarFolder.open
+    );
+  }
+  return toolbarFolder.querySelector("sidebar-bookmark-list");
+}
+
 /**
  * Synthesize a key press and wait for an element to be focused.
  *
@@ -294,6 +310,16 @@ async function focusWithKeyboard(element, keyCode, contentWindow) {
   );
   EventUtils.synthesizeKey(keyCode, {}, contentWindow);
   await focused;
+}
+
+async function waitForElementHidden(elem, hidden = true) {
+  info(`waitForElementHidden, expected: ${hidden}, current: ${elem.hidden}`);
+  await BrowserTestUtils.waitForMutationCondition(
+    elem,
+    { attributes: true, attributeFilter: ["hidden"] },
+    () => elem.hidden === hidden,
+    `Element hidden should be ${hidden}`
+  );
 }
 
 /**

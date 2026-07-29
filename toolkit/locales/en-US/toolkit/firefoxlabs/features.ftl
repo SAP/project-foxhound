@@ -26,6 +26,8 @@ experimental-features-group-customize-browsing =
   .label = Customize your browsing
 experimental-features-group-productivity =
   .label = Productivity
+experimental-features-group-newtab-widgets =
+  .label = Widgets on { -firefox-home-brand-name }
 
 # New Tab Custom Wallpapers
 experimental-features-custom-wallpaper =
@@ -65,17 +67,36 @@ experimental-features-fx-web-apps-description = Open sites you frequently visit 
 # Lists Widget
 experimental-features-newtab-widget-lists =
     .label = Lists on { -firefox-home-brand-name }
+experimental-features-newtab-widget-lists-new =
+    .label = Lists
 experimental-features-newtab-widget-lists-description = Keep your to-do list top-of-mind when you open a new tab. From packing lists to shopping lists, make your plans in { -brand-product-name }. <a data-l10n-name="connect">Share feedback</a>
 
 # Timer Widget
 experimental-features-newtab-widget-timer =
     .label = Timer on { -firefox-home-brand-name }
+experimental-features-newtab-widget-timer-new =
+    .label = Timer
 experimental-features-newtab-widget-timer-description = Set a timer to keep you focused, nudge you to stay on track, or remind you to recharge. <a data-l10n-name="connect">Share feedback</a>
 
 # Lists and Timer Widget (Combined)
 experimental-features-newtab-widget-lists-and-timer =
     .label = Lists and timer on { -firefox-home-brand-name }
 experimental-features-newtab-widget-lists-and-timer-description = Keep your to-do list top-of-mind when you open a new tab. From packing lists to shopping lists, make your plans in { -brand-product-name }. Set a timer to keep you focused, nudge you to stay on track, or remind you to recharge. <a data-l10n-name="connect">Share feedback</a>
+
+# Weather Widget
+experimental-features-newtab-widget-weather =
+    .label = Weather forecasts
+experimental-features-newtab-widget-weather-description = Get a clear view of today’s weather with hourly forecasts. <a data-l10n-name="connect">Share feedback</a>
+
+# Picture of the Day Widget
+experimental-features-newtab-widget-picture-of-the-day =
+    .label = Picture of the day
+experimental-features-newtab-widget-picture-of-the-day-description = Add a little daily wonder to your day. Get a new picture, learn something interesting, and set a fresh wallpaper in a snap. <a data-l10n-name="connect">Share feedback</a>
+
+# Clocks Widget
+experimental-features-newtab-widget-clocks =
+    .label = Clocks
+experimental-features-newtab-widget-clocks-description = Add up to four clocks with custom nicknames to keep time across places that matter to you. <a data-l10n-name="connect">Share feedback</a>
 
 # Semantic History Search
 experimental-features-semantic-history-search =

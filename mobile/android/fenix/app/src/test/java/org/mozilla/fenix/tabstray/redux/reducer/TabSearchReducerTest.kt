@@ -4,19 +4,22 @@
 
 package org.mozilla.fenix.tabstray.redux.reducer
 
-import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.createTab
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import org.mozilla.fenix.tabstray.TabSearchAction
-import org.mozilla.fenix.tabstray.TabsTrayState
+import org.mozilla.fenix.tabstray.data.TabsTrayItem
+import org.mozilla.fenix.tabstray.redux.action.TabSearchAction
 import org.mozilla.fenix.tabstray.redux.state.TabSearchState
+import org.mozilla.fenix.tabstray.redux.state.TabsTrayState
 
 class TabSearchReducerTest {
 
     @Test
     fun `WHEN SearchQueryChanged THEN tab search query is updated`() {
-        val tabs = listOf(createTab("https://example.com"), createTab("https://mozilla.org"))
+        val tabs = listOf(
+            TabsTrayItem.Tab(tab = createTab("https://example.com")),
+            TabsTrayItem.Tab(tab = createTab("https://mozilla.org")),
+        )
 
         val initialState = TabsTrayState(
             tabSearchState = TabSearchState(
@@ -49,8 +52,8 @@ class TabSearchReducerTest {
             ),
         )
 
-        val firstTab = createTab("https://mozilla.org")
-        val secondTab = createTab("https://developer.mozilla.org")
+        val firstTab = TabsTrayItem.Tab(tab = createTab("https://mozilla.org"))
+        val secondTab = TabsTrayItem.Tab(tab = createTab("https://developer.mozilla.org"))
         val results = listOf(firstTab, secondTab)
 
         val resultState = TabSearchActionReducer.reduce(
@@ -69,8 +72,8 @@ class TabSearchReducerTest {
 
     @Test
     fun `WHEN search results are updated with empty list THEN the state reflects an empty results list`() {
-        val firstTab = createTab("https://mozilla.org")
-        val secondTab = createTab("https://developer.mozilla.org")
+        val firstTab = TabsTrayItem.Tab(tab = createTab("https://mozilla.org"))
+        val secondTab = TabsTrayItem.Tab(tab = createTab("https://developer.mozilla.org"))
         val results = listOf(firstTab, secondTab)
 
         val initialState = TabsTrayState(
@@ -80,7 +83,7 @@ class TabSearchReducerTest {
             ),
         )
 
-        val emptyResults = emptyList<TabSessionState>()
+        val emptyResults = emptyList<TabsTrayItem>()
 
         val actualResults = TabSearchActionReducer.reduce(
             state = initialState,
@@ -92,7 +95,7 @@ class TabSearchReducerTest {
 
     @Test
     fun `WHEN SearchResultClicked THEN state is unchanged`() {
-        val tab = createTab("https://mozilla.org")
+        val tab = TabsTrayItem.Tab(tab = createTab("https://mozilla.org"))
         val initialState = TabsTrayState(
             tabSearchState = TabSearchState(
                 query = "mozilla",

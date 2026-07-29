@@ -40,7 +40,7 @@ add_task(async function () {
     menuitemAddRule.click();
     await onNewRuleAdded;
 
-    const ruleEditor = getRuleViewRuleEditor(view, 4);
+    const ruleEditor = getRuleViewRuleEditorAt(view, 2);
     const editor = ruleEditor.selectorText.ownerDocument.activeElement;
     is(editor.value, "#testid", "Selector editor value is as expected");
 
@@ -68,7 +68,7 @@ add_task(async function () {
     menuitemAddRule.click();
     await onNewRuleAdded;
 
-    const ruleEditor = getRuleViewRuleEditor(view, 0);
+    const ruleEditor = getRuleViewRuleEditorAt(view, 0);
     const editor = ruleEditor.selectorText.ownerDocument.activeElement;
     is(editor.value, "#testid::before", "Selector editor value is as expected");
 

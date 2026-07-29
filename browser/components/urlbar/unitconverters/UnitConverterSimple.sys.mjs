@@ -4,6 +4,11 @@
 
 import { UrlbarUtils } from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
+// Some constants to be used in the unit table below
+const G = 9.80665; // standard gravity (m/s²)
+const LB_TO_KG = 0.45359237; // 1 lb = 0.45359237 kg (exact)
+const M_TO_IN = 100 / 2.54; // 1 inch is defined as 2.54 cm
+
 // NOTE: This units table need to be localized upon supporting multi locales
 //       since it supports en-US only.
 //       e.g. Should support plugada or funty as well for pound.
@@ -16,6 +21,7 @@ const UNITS_GROUPS = [
     degree: 1,
     deg: "degree",
     d: "degree",
+    "°": "degree",
     radian: Math.PI / 180.0,
     rad: "radian",
     r: "radian",
@@ -43,11 +49,11 @@ const UNITS_GROUPS = [
     n: "newton",
     kilonewton: 0.001,
     kn: "kilonewton",
-    "gram-force": 101.9716213,
+    "gram-force": 1000 / G,
     gf: "gram-force",
-    "kilogram-force": 0.1019716213,
+    "kilogram-force": 1 / G,
     kgf: "kilogram-force",
-    "ton-force": 0.0001019716213,
+    "ton-force": 1 / G / 1000,
     tf: "ton-force",
     exanewton: 1.0e-18,
     en: "exanewton",
@@ -71,15 +77,15 @@ const UNITS_GROUPS = [
     cn: "centinewton",
     millinewton: 1000,
     mn: "millinewton",
-    micronewton: 1000000,
+    micronewton: 1e6,
     µn: "micronewton",
-    nanonewton: 1000000000,
+    nanonewton: 1e9,
     nn: "nanonewton",
-    piconewton: 1000000000000,
+    piconewton: 1e12,
     pn: "piconewton",
-    femtonewton: 1000000000000000,
+    femtonewton: 1e15,
     fn: "femtonewton",
-    attonewton: 1000000000000000000,
+    attonewton: 1e18,
     an: "attonewton",
     dyne: 100000,
     dyn: "dyne",
@@ -87,45 +93,62 @@ const UNITS_GROUPS = [
     "j/m": "joule/meter",
     "joule/centimeter": 100,
     "j/cm": "joule/centimeter",
-    "ton-force-short": 0.0001124045,
+    "ton-force-short": 1 / (2000 * LB_TO_KG * G),
     short: "ton-force-short",
-    "ton-force-long": 0.0001003611,
+    "ton-force-long": 1 / (2240 * LB_TO_KG * G),
     tonf: "ton-force-long",
-    "kip-force": 0.0002248089,
+    "kip-force": 1 / (1000 * LB_TO_KG * G),
     kipf: "kip-force",
-    "pound-force": 0.2248089431,
+    "pound-force": 1 / (LB_TO_KG * G),
     lbf: "pound-force",
-    "ounce-force": 3.5969430896,
+    "ounce-force": 16 / (LB_TO_KG * G),
     ozf: "ounce-force",
-    poundal: 7.2330138512,
+    poundal: 1 / (LB_TO_KG * 0.3048),
     pdl: "poundal",
-    pond: 101.9716213,
+    pond: 1000 / G,
     p: "pond",
-    kilopond: 0.1019716213,
+    kilopond: 1 / G,
     kp: "kilopond",
   },
   {
     // Length
     meter: 1,
     m: "meter",
-    nanometer: 1000000000,
-    micrometer: 1000000,
+    femtometer: 1e15,
+    fermi: "femtometer",
+    fm: "femtometer",
+    picometer: 1e12,
+    pm: "picometer",
+    angstrom: 1e10,
+    nanometer: 1e9,
+    nm: "nanometer",
+    micrometer: 1e6,
+    μm: "micrometer",
     millimeter: 1000,
     mm: "millimeter",
     centimeter: 100,
     cm: "centimeter",
     kilometer: 0.001,
     km: "kilometer",
-    mile: 0.0006213689,
+    mile: M_TO_IN / 63360,
     mi: "mile",
-    yard: 1.0936132983,
+    yard: M_TO_IN / 36,
     yd: "yard",
-    foot: 3.280839895,
+    foot: M_TO_IN / 12,
     feet: "foot",
     ft: "foot",
-    inch: 39.37007874,
+    inch: M_TO_IN,
     inches: "inch",
     in: "inch",
+    "nautical mile": 1 / 1852,
+    nmi: "nautical mile",
+    NM: "nautical mile",
+    "light-year": 1 / 9460730472580800,
+    "light year": "light-year",
+    lyr: "light-year",
+    ly: "light-year",
+    "astronomical unit": 1 / 149597870700,
+    au: "astronomical unit",
   },
   {
     // Mass
@@ -137,29 +160,46 @@ const UNITS_GROUPS = [
     mg: "milligram",
     ton: 0.001,
     t: "ton",
-    longton: 0.0009842073,
-    "l.t.": "longton",
-    "l/t": "longton",
-    shortton: 0.0011023122,
-    "s.t.": "shortton",
-    "s/t": "shortton",
-    pound: 2.2046244202,
+    "long ton": 1 / LB_TO_KG / 2240,
+    longton: "long ton",
+    "l.t.": "long ton",
+    "l/t": "long ton",
+    "short ton": 1 / LB_TO_KG / 2000,
+    shortton: "short ton",
+    "s.t.": "short ton",
+    "s/t": "short ton",
+    pound: 1 / LB_TO_KG,
     lbs: "pound",
     lb: "pound",
-    ounce: 35.273990723,
+    ounce: 16 / LB_TO_KG,
     oz: "ounce",
     carat: 5000,
     ffd: 5000,
+  },
+  {
+    // Speed
+    "m/s": 1,
+    "km/h": 3600 / 1000,
+    "km/hr": "km/h",
+    kph: "km/h",
+    "ft/s": M_TO_IN / 12,
+    fps: "ft/s",
+    mph: (3600 * M_TO_IN) / 63360,
+    "mi/hr": "mph",
+    "mi/h": "mph",
+    knot: 3600 / 1852,
+    kn: "knot",
+    kt: "knot",
   },
 ];
 
 // There are some units that will be same in lower case in same unit group.
 // e.g. Mn: meganewton and mn: millinewton on force group.
 // Handle them as case-sensitive.
-const CASE_SENSITIVE_UNITS = ["PN", "Pn", "MN", "Mn"];
+const CASE_SENSITIVE_UNITS = ["PN", "Pn", "MN", "Mn", "NM"];
 
 const NUMBER_REGEX = "-?\\d+(?:\\.\\d+)?\\s*";
-const UNIT_REGEX = "[A-Za-zµ0-9_./-]+";
+const UNIT_REGEX = "[A-Za-zµ°_./-]+ ?[A-Za-z]*";
 
 // NOTE: This regex need to be localized upon supporting multi locales
 //       since it supports en-US input format only.
@@ -185,7 +225,7 @@ export class UnitConverterSimple {
       return null;
     }
 
-    const target = findUnitGroup(regexResult[2], regexResult[3]);
+    const target = findUnitGroup(regexResult[2].trim(), regexResult[3].trim());
 
     if (!target) {
       return null;

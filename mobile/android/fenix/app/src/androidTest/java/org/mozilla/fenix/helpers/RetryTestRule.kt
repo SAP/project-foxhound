@@ -5,6 +5,7 @@
 package org.mozilla.fenix.helpers
 
 import android.util.Log
+import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.test.espresso.IdlingResourceTimeoutException
 import androidx.test.espresso.NoMatchingViewException
 import androidx.test.uiautomator.UiObjectNotFoundException
@@ -14,7 +15,7 @@ import org.junit.rules.TestRule
 import org.junit.runner.Description
 import org.junit.runners.model.Statement
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.helpers.IdlingResourceHelper.unregisterAllIdlingResources
+import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.TestHelper.appContext
 import org.mozilla.fenix.helpers.TestHelper.exitMenu
 
@@ -24,41 +25,60 @@ import org.mozilla.fenix.helpers.TestHelper.exitMenu
  *  The @Before and @After methods are not called between retries.
  *
  */
-class RetryTestRule(private val retryCount: Int = 5) : TestRule {
+class RetryTestRule(private val retryCount: Int = 3) : TestRule {
 
     override fun apply(base: Statement, description: Description): Statement {
-        return statement {
-            repeat(retryCount) { attempt ->
-                try {
-                    Log.i(TAG, "RetryTestRule: Started try #${attempt + 1}.")
-                    base.evaluate()
-                    return@statement // success, exit early
-                } catch (t: NoLeakAssertionFailedError) {
-                    Log.i(TAG, "RetryTestRule: NoLeakAssertionFailedError caught, not retrying")
-                    cleanup(true)
-                    throw t
-                } catch (t: Throwable) {
-                    if (t.isRetryable()) {
-                        Log.i(TAG, "RetryTestRule: ${t::class.simpleName} caught, retrying the UI test")
-                        cleanup()
-                        if (attempt == retryCount - 1) {
-                            Log.i(TAG, "RetryTestRule: Max number of retries reached.")
+        return object : Statement() {
+            override fun evaluate() {
+                var lastThrowable: Throwable? = null
+
+                for (attempt in 0 until retryCount) {
+                    try {
+                        Log.i(TAG, "RetryTestRule: Started try #${attempt + 1}/$retryCount for ${description.className}.${description.methodName}.")
+                        base.evaluate()
+                        Log.i(TAG, "RetryTestRule: Success on try ${attempt + 1}")
+                        return
+                    } catch (t: NoLeakAssertionFailedError) {
+                        Log.i(TAG, "RetryTestRule: Memory leak detected, skipping retries.")
+                        // We do NOT cleanup here because we want the heap dump to stay intact
+                        throw t
+                    } catch (t: Throwable) {
+                        lastThrowable = t
+
+                        if (t.isRetryable() && attempt < retryCount - 1) {
+                            Log.i(TAG, "RetryTestRule: ${t::class.simpleName} caught.")
+                            Log.i(TAG, "Cleaning up before next try.")
+                            // Important: Perform cleanup BEFORE the next loop starts
+                            cleanup(removeTabs = false)
+                            Log.i(TAG, "RetryTestRule: Cleanup done.")
+
+                            // Give the system a tiny breath between retries
+                            Log.i(TAG, "RetryTestRule: Sleeping 500ms before retry.")
+                            Thread.sleep(500)
+                        } else {
+                            Log.i(TAG, "RetryTestRule: Non-retryable error or max attempts reached.")
                             throw t
                         }
-                    } else {
-                        throw t
                     }
                 }
+                Log.i(TAG, "RetryTestRule: All retries exhausted. Throwing last error.")
+                throw lastThrowable!!
             }
         }
     }
 
     private fun cleanup(removeTabs: Boolean = false) {
-        unregisterAllIdlingResources()
-        if (removeTabs) {
-            appContext.components.useCases.tabsUseCases.removeAllTabs()
+        // Only perform UI-level cleanup.
+        // Don't unregister IdlingResources here;
+        // let the ComposeRule handle its own lifecycle.
+        try {
+            exitMenu()
+            if (removeTabs) {
+                appContext.components.useCases.tabsUseCases.removeAllTabs()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "RetryTestRule: Cleanup failed", e)
         }
-        exitMenu()
     }
 
     private fun Throwable.isRetryable(): Boolean = when (this) {
@@ -69,12 +89,10 @@ class RetryTestRule(private val retryCount: Int = 5) : TestRule {
         is IdlingResourceTimeoutException,
         is RuntimeException,
         is NullPointerException,
-        -> true
+        is ComposeTimeoutException,
+        is IllegalStateException,
+             -> true // Added for Coroutine/Compose flakiness
         else -> false
-    }
-
-    companion object {
-        private const val TAG = "RetryTestRule"
     }
 }
 

@@ -1,0 +1,15 @@
+{
+  "label": "showroom-live.com",
+  "bugs": {
+    "2019543": {
+      "issue": "page-fails-to-load",
+      "matches": ["*://www.showroom-live.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

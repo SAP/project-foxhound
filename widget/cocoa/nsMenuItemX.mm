@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,6 +25,31 @@ using namespace mozilla;
 
 using mozilla::dom::CallerType;
 using mozilla::dom::Event;
+
+// Standard text-editing menu items that route through the macOS responder
+// chain via NSResponder-default selectors (cut:, copy:, paste:, undo:, etc.)
+// rather than through Gecko's command system. See the action-setup block in
+// the constructor.
+static bool IsStandardEditMenuItem(nsIContent* aContent) {
+  if (!aContent || !aContent->IsElement()) {
+    return false;
+  }
+  dom::Element* element = aContent->AsElement();
+  return element->AttrValueIs(kNameSpaceID_None, nsGkAtoms::id, u"menu_undo"_ns,
+                              eCaseMatters) ||
+         element->AttrValueIs(kNameSpaceID_None, nsGkAtoms::id, u"menu_redo"_ns,
+                              eCaseMatters) ||
+         element->AttrValueIs(kNameSpaceID_None, nsGkAtoms::id, u"menu_cut"_ns,
+                              eCaseMatters) ||
+         element->AttrValueIs(kNameSpaceID_None, nsGkAtoms::id, u"menu_copy"_ns,
+                              eCaseMatters) ||
+         element->AttrValueIs(kNameSpaceID_None, nsGkAtoms::id,
+                              u"menu_paste"_ns, eCaseMatters) ||
+         element->AttrValueIs(kNameSpaceID_None, nsGkAtoms::id,
+                              u"menu_delete"_ns, eCaseMatters) ||
+         element->AttrValueIs(kNameSpaceID_None, nsGkAtoms::id,
+                              u"menu_selectAll"_ns, eCaseMatters);
+}
 
 nsMenuItemX::nsMenuItemX(nsMenuX* aParent, const nsString& aLabel,
                          EMenuItemType aItemType,
@@ -90,24 +114,70 @@ nsMenuItemX::nsMenuItemX(nsMenuX* aParent, const nsString& aLabel,
 
   mIsVisible = !nsMenuUtilsX::NodeIsHiddenOrCollapsed(mContent);
 
-  // All menu items other than the "Copy" menu item share the same target and
-  // action, and are differentiated be a unique (representedObject, tag) pair.
-  // The "Copy" menu item is a special case that requires a macOS-default
-  // action of `copy:` and a default target in order for the "Edit" menu to be
-  // populated with OS-provided menu items such as the Emoji picker,
-  // especially in multi-language environments (see bug 1478347). Our
-  // application delegate implements `copy:` by simply forwarding it to
-  // [nsMenuBarX::sNativeEventTarget menuItemHit:].
-  if (mContent->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::id,
-                                         u"menu_copy"_ns, eCaseMatters)) {
-    mNativeMenuItem.action = @selector(copy:);
-  } else {
-    mNativeMenuItem.action = @selector(menuItemHit:);
-    mNativeMenuItem.target = nsMenuBarX::sNativeEventTarget;
-  }
+  // Separators don't need actions, targets, or command registration.
+  if (mType != eSeparatorMenuItemType) {
+    // Most menu items share a single (action, target) pair and are
+    // differentiated by a unique (representedObject, tag) pair, but the
+    // standard Edit menu items use macOS-default selectors with no fixed
+    // target so they propagate via the responder chain. This lets native
+    // text fields (e.g. an NSSavePanel sheet's filename field, bug
+    // 2036608) handle Cmd+C/V/X/Z/A natively, and ensures that the macOS
+    // "Copy" menu item gets the Emoji picker / writing-tools sub-items
+    // populated in multi-language environments (bug 1478347). It also
+    // lets macOS 26+ auto-inject SF Symbol icons next to the Edit menu
+    // items, matching what Safari and other native apps display. When no
+    // responder in the chain handles them, our application delegate
+    // forwards each selector to
+    // [nsMenuBarX::sNativeEventTarget menuItemHit:].
+    //
+    // undo: and redo: need an extra hop: NSResponder ships with default
+    // implementations of those two that look up the responder's
+    // undoManager and silently no-op when it is nil, which it always is
+    // in Gecko (we use our own TransactionManager). To prevent that
+    // default from swallowing the action before the AppDelegate forwarder
+    // is reached, ChildView in nsCocoaWindow.mm overrides undo: and redo:
+    // to forward to [sNativeEventTarget menuItemHit:] explicitly
+    // (bug 2040844).
+    SEL standardEditSelector = nil;
+    if (mContent->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::id,
+                                           u"menu_undo"_ns, eCaseMatters)) {
+      standardEditSelector = @selector(undo:);
+    } else if (mContent->AsElement()->AttrValueIs(
+                   kNameSpaceID_None, nsGkAtoms::id, u"menu_redo"_ns,
+                   eCaseMatters)) {
+      standardEditSelector = @selector(redo:);
+    } else if (mContent->AsElement()->AttrValueIs(kNameSpaceID_None,
+                                                  nsGkAtoms::id, u"menu_cut"_ns,
+                                                  eCaseMatters)) {
+      standardEditSelector = @selector(cut:);
+    } else if (mContent->AsElement()->AttrValueIs(
+                   kNameSpaceID_None, nsGkAtoms::id, u"menu_copy"_ns,
+                   eCaseMatters)) {
+      standardEditSelector = @selector(copy:);
+    } else if (mContent->AsElement()->AttrValueIs(
+                   kNameSpaceID_None, nsGkAtoms::id, u"menu_paste"_ns,
+                   eCaseMatters)) {
+      standardEditSelector = @selector(paste:);
+    } else if (mContent->AsElement()->AttrValueIs(
+                   kNameSpaceID_None, nsGkAtoms::id, u"menu_delete"_ns,
+                   eCaseMatters)) {
+      standardEditSelector = @selector(delete:);
+    } else if (mContent->AsElement()->AttrValueIs(
+                   kNameSpaceID_None, nsGkAtoms::id, u"menu_selectAll"_ns,
+                   eCaseMatters)) {
+      standardEditSelector = @selector(selectAll:);
+    }
 
-  mNativeMenuItem.representedObject = mMenuGroupOwner->GetRepresentedObject();
-  mNativeMenuItem.tag = mMenuGroupOwner->RegisterForCommand(this);
+    if (standardEditSelector) {
+      mNativeMenuItem.action = standardEditSelector;
+    } else {
+      mNativeMenuItem.action = @selector(menuItemHit:);
+      mNativeMenuItem.target = nsMenuBarX::sNativeEventTarget;
+    }
+
+    mNativeMenuItem.representedObject = mMenuGroupOwner->GetRepresentedObject();
+    mNativeMenuItem.tag = mMenuGroupOwner->RegisterForCommand(this);
+  }
 
   if (mIsVisible) {
     SetupIcon();
@@ -149,8 +219,6 @@ void nsMenuItemX::DetachFromGroupOwner() {
 }
 
 nsresult nsMenuItemX::ModifyChecked(bool aIsChecked) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
-
   // update the content model. This will also handle unchecking our siblings
   // if we are a radiomenu
   mContent->AsElement()->SetBoolAttr(nsGkAtoms::checked, aIsChecked);
@@ -159,8 +227,6 @@ nsresult nsMenuItemX::ModifyChecked(bool aIsChecked) {
   SetChecked();
 
   return NS_OK;
-
-  NS_OBJC_END_TRY_ABORT_BLOCK;
 }
 
 EMenuItemType nsMenuItemX::GetMenuItemType() { return mType; }
@@ -302,14 +368,14 @@ void nsMenuItemX::SetBadge() {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
 
   if (@available(macOS 14.0, *)) {
-    // Set key shortcut and modifiers
     nsAutoString badgeValue;
     if (!mContent->AsElement()->GetAttr(nsGkAtoms::badge, badgeValue)) {
       mNativeMenuItem.badge = nullptr;
       return;
     }
-    mNativeMenuItem.badge = [[NSMenuItemBadge alloc]
-        initWithString:nsMenuUtilsX::GetTruncatedCocoaLabel(badgeValue)];
+    mNativeMenuItem.badge = [[[NSMenuItemBadge alloc]
+        initWithString:nsMenuUtilsX::GetTruncatedCocoaLabel(badgeValue)]
+        autorelease];
   }
 
   NS_OBJC_END_TRY_ABORT_BLOCK;
@@ -361,10 +427,18 @@ void nsMenuItemX::SetChecked() {
 void nsMenuItemX::SetEnabled() {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
 
-  // decide enabled state based on command content if it exists, otherwise do it
-  // based on our own content
   bool isEnabled;
-  if (mCommandElement) {
+  if (IsStandardEditMenuItem(mContent)) {
+    // Standard Edit menu items dispatch via the macOS responder chain, so let
+    // AppKit's automatic validateUserInterfaceItem: walk decide the real
+    // enable/disable state. Mirroring the XUL command's `disabled` attribute
+    // here would suppress that walk -- AppKit's performKeyEquivalent: also
+    // *consumes* the keystroke for a disabled matching menu item without
+    // firing the action, so a stale XUL-disabled state would silently kill
+    // shortcuts like Cmd+Shift+Z inside a native sheet, not just grey the
+    // menu out (bug 2040851).
+    isEnabled = true;
+  } else if (mCommandElement) {
     isEnabled = !mCommandElement->GetBoolAttr(nsGkAtoms::disabled);
   } else if (mContent->IsXULElement(nsGkAtoms::menucaption)) {
     isEnabled = false;
@@ -504,6 +578,7 @@ void nsMenuItemX::ObserveContentRemoved(dom::Document* aDocument,
   if (aChild == mImageElement) {
     mMenuGroupOwner->UnregisterForContentChanges(mImageElement);
     mImageElement = nullptr;
+    SetupIcon();
   }
   if (IsMenuStructureElement(aChild)) {
     mMenuParent->SetRebuild(true);
@@ -513,6 +588,7 @@ void nsMenuItemX::ObserveContentRemoved(dom::Document* aDocument,
 void nsMenuItemX::ObserveContentInserted(dom::Document* aDocument,
                                          nsIContent* aContainer,
                                          nsIContent* aChild) {
+  MOZ_RELEASE_ASSERT(mMenuGroupOwner);
   MOZ_RELEASE_ASSERT(mMenuParent);
 
   // The child node could come from the custom element that is for display, so

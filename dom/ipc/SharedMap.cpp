@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +7,7 @@
 #include "MemMapSnapshot.h"
 #include "ScriptPreloader-inl.h"
 #include "SharedMapChangeEvent.h"
+#include "mozilla/CheckedInt.h"
 #include "mozilla/IOBuffers.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/ScriptPreloader.h"
@@ -159,9 +158,13 @@ bool SharedMap::GetValueAtIndex(JSContext* aCx, uint32_t aIndex,
 void SharedMap::Entry::SetData(StructuredCloneData* aHolder) {
   MOZ_ASSERT(!aHolder->SupportsTransferring());
 
+  CheckedInt<uint32_t> size = aHolder->BufferData().Size();
+  MOZ_RELEASE_ASSERT(size.isValid(),
+                     "SharedMap entry size exceeds max allowed size");
+
   mData = AsVariant(RefPtr{aHolder});
 
-  mSize = Holder()->BufferData().Size();
+  mSize = size.value();
   mBlobCount = Holder()->BlobImpls().Length();
 }
 
@@ -391,6 +394,12 @@ void WritableSharedMap::Set(JSContext* aCx, const nsACString& aName,
 
   holder->Write(aCx, aValue, aRv);
   if (aRv.Failed()) {
+    return;
+  }
+
+  // Cap the maximum size of a value that can be stored inside SharedMap.
+  if (!CheckedInt<uint32_t>(holder->BufferData().Size()).isValid()) {
+    aRv.ThrowRangeError("SharedMap value too large");
     return;
   }
 

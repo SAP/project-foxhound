@@ -17,7 +17,7 @@ add_setup(async () => {
       ],
     ],
   });
-  await ensureSidebarLauncherIsVisible();
+  await SidebarTestUtils.ensureLauncherVisible(window);
 });
 
 add_task(async function test_duplicate_tool() {
@@ -56,7 +56,7 @@ add_task(async function test_one_time_tool_migration() {
     "Three default tools are visible in the launcher"
   );
 
-  await toggleSidebarPanel(window, "viewCustomizeSidebar");
+  await SidebarTestUtils.showPanel(window, "viewCustomizeSidebar");
   let customizeDocument = SidebarController.browser.contentDocument;
   const customizeComponent =
     customizeDocument.querySelector("sidebar-customize");

@@ -63,6 +63,34 @@ class UserProperties {
   }
 
   /**
+   * Clear a named property for a given CSSStyleDeclaration.
+   *
+   * @param {CSSStyleDeclaration} style
+   *        The CSSStyleDeclaration against which the property is to be mapped.
+   * @param {string} name
+   *        The name of the property to be cleared
+   */
+  clearProperty(style, name) {
+    const key = this.getKey(style, name);
+    const entry = this.map.get(key, null);
+
+    if (entry) {
+      delete entry[name];
+    }
+
+    let anotherRuleHasProperty = false;
+    for (const ent of this.map.values()) {
+      if (ent[name]) {
+        anotherRuleHasProperty = true;
+        break;
+      }
+    }
+    if (!anotherRuleHasProperty) {
+      this.#propertyNames.delete(name);
+    }
+  }
+
+  /**
    * Check whether a named property for a given CSSStyleDeclaration is stored.
    *
    * @param {CSSStyleDeclaration} style

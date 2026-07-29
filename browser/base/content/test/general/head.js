@@ -177,7 +177,7 @@ async function whenNewTabLoaded(aWindow, aCallback) {
 }
 
 function is_hidden(element) {
-  var style = element.ownerGlobal.getComputedStyle(element);
+  var style = element.documentGlobal.getComputedStyle(element);
   if (style.display == "none") {
     return true;
   }
@@ -215,7 +215,7 @@ function promisePopupHidden(popup) {
 }
 
 function promiseNotificationShown(notification) {
-  let win = notification.browser.ownerGlobal;
+  let win = notification.browser.documentGlobal;
   if (win.PopupNotifications.panel.state == "open") {
     return Promise.resolve();
   }

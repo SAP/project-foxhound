@@ -205,7 +205,7 @@ Then the AVD can be created with:
 
 The name passed in argument can be whatever you want and the package is one of
 the installed list.  It is then required to modify entries within
-`android_device.py <https://searchfox.org/mozilla-central/rev/d56687458d4e6e8882c4b740e78413a0f0a69d59/testing/mozbase/mozrunner/mozrunner/devices/android_device.py#101-175>`_ to be able to make use of ``mach android-emulator``,
+:searchfox:`android_device.py <mozilla-central/rev/d56687458d4e6e8882c4b740e78413a0f0a69d59:testing/mozbase/mozrunner/mozrunner/devices/android_device.py#101-175>` to be able to make use of ``mach android-emulator``,
 changing the definition to match the name of the AVD created above. Example below:
 
 .. code:: diff

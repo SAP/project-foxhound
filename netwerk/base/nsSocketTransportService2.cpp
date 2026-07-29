@@ -1,4 +1,3 @@
-// vim:set sw=2 sts=2 et cin:
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -712,18 +711,15 @@ int32_t nsSocketTransportService::Poll(PRIntervalTime ts) {
 
   int32_t n;
   {
-#ifdef MOZ_GECKO_PROFILER
     TimeStamp startTime = TimeStamp::Now();
     if (pollTimeout != PR_INTERVAL_NO_WAIT) {
       // There will be an actual non-zero wait, let the profiler know about it
       // by marking thread as sleeping around the polling call.
       profiler_thread_sleep();
     }
-#endif
 
     n = PR_Poll(firstPollEntry, pollCount, pollTimeout);
 
-#ifdef MOZ_GECKO_PROFILER
     if (pollTimeout != PR_INTERVAL_NO_WAIT) {
       profiler_thread_wake();
     }
@@ -740,7 +736,6 @@ int32_t nsSocketTransportService::Poll(PRIntervalTime ts) {
               : nsPrintfCString("Poll count: %u, Poll timeout: %ums", pollCount,
                                 PR_IntervalToMilliseconds(pollTimeout)));
     }
-#endif
   }
 
   SOCKET_LOG(("    ...returned after %i milliseconds\n",
@@ -758,7 +753,7 @@ NS_IMPL_ISUPPORTS(nsSocketTransportService, nsISocketTransportService,
                   nsPISocketTransportService, nsIObserver, nsINamed,
                   nsIDirectTaskDispatcher)
 
-static const char* gCallbackPrefs[] = {
+static const char* gCallbackUpdatePrefs[] = {
     SEND_BUFFER_PREF,
     KEEPALIVE_ENABLED_PREF,
     KEEPALIVE_IDLE_TIME_PREF,
@@ -843,7 +838,7 @@ nsSocketTransportService::Init() {
         "Underlying thread must support direct task dispatching");
   }
 
-  Preferences::RegisterCallbacks(UpdatePrefs, gCallbackPrefs, this);
+  Preferences::RegisterCallbacks(UpdatePrefs, gCallbackUpdatePrefs, this);
   UpdatePrefs();
 
   nsCOMPtr<nsIObserverService> obsSvc = services::GetObserverService();
@@ -927,7 +922,7 @@ nsresult nsSocketTransportService::ShutdownThread() {
     mDirectTaskDispatcher = nullptr;
   }
 
-  Preferences::UnregisterCallbacks(UpdatePrefs, gCallbackPrefs, this);
+  Preferences::UnregisterCallbacks(UpdatePrefs, gCallbackUpdatePrefs, this);
 
   nsCOMPtr<nsIObserverService> obsSvc = services::GetObserverService();
   if (obsSvc) {
@@ -1082,25 +1077,15 @@ nsSocketTransportService::CreateUnixDomainAbstractAddressTransport(
 
 NS_IMETHODIMP
 nsSocketTransportService::OnDispatchedEvent() {
-#ifndef XP_WIN
-  // On windows poll can hang and this became worse when we introduced the
-  // patch for bug 698882 (see also bug 1292181), therefore we reverted the
-  // behavior on windows to be as before bug 698882, e.g. write to the socket
-  // also if an event dispatch is on the socket thread and writing to the
-  // socket for each event.
+  // This check is redundant to one done inside ::Signal(), but we can do it
+  // here and skip obtaining the lock - given that this is a relatively common
+  // occurrence its worth the redundant code.
   if (OnSocketThread()) {
-    // this check is redundant to one done inside ::Signal(), but
-    // we can do it here and skip obtaining the lock - given that
-    // this is a relatively common occurance its worth the
-    // redundant code
     SOCKET_LOG(("OnDispatchedEvent Same Thread Skip Signal\n"));
     return NS_OK;
   }
-#else
+#ifdef XP_WIN
   if (gIOService->IsNetTearingDown()) {
-    // Poll can hang sometimes. If we are in shutdown, we are going to
-    // start a watchdog. If we do not exit poll within
-    // REPAIR_POLLABLE_EVENT_TIME signal a pollable event again.
     StartPollWatchdog();
   }
 #endif
@@ -1440,13 +1425,12 @@ nsresult nsSocketTransportService::DoPollIteration() {
   }
 
   now = PR_IntervalNow();
-#ifdef MOZ_GECKO_PROFILER
+
   TimeStamp startTime;
   bool profiling = profiler_thread_is_being_profiled_for_markers();
   if (profiling) {
     startTime = TimeStamp::Now();
   }
-#endif
 
   if (n < 0) {
     SOCKET_LOG(("  PR_Poll error [%d] os error [%d]\n", PR_GetError(),
@@ -1503,7 +1487,7 @@ nsresult nsSocketTransportService::DoPollIteration() {
       }
     }
   }
-#ifdef MOZ_GECKO_PROFILER
+
   if (profiling) {
     TimeStamp endTime = TimeStamp::Now();
     if ((endTime - startTime).ToMilliseconds() >= SOCKET_THREAD_LONGTASK_MS) {
@@ -1529,8 +1513,6 @@ nsresult nsSocketTransportService::DoPollIteration() {
                           LongTaskMarker{});
     }
   }
-
-#endif
 
   return NS_OK;
 }
@@ -1722,12 +1704,12 @@ void nsSocketTransportService::ClosePrivateConnections() {
   MOZ_ASSERT(IsOnCurrentThread(), "Must be called on the socket thread");
 
   for (int32_t i = mActiveList.Length() - 1; i >= 0; --i) {
-    if (mActiveList[i].mHandler->mIsPrivate) {
+    if (mActiveList[i].mHandler->mOriginAttributes.IsPrivateBrowsing()) {
       DetachSocket(mActiveList, &mActiveList[i]);
     }
   }
   for (int32_t i = mIdleList.Length() - 1; i >= 0; --i) {
-    if (mIdleList[i].mHandler->mIsPrivate) {
+    if (mIdleList[i].mHandler->mOriginAttributes.IsPrivateBrowsing()) {
       DetachSocket(mIdleList, &mIdleList[i]);
     }
   }
@@ -1799,9 +1781,6 @@ PRStatus nsSocketTransportService::DiscoverMaxCount() {
 void nsSocketTransportService::AnalyzeConnection(nsTArray<SocketInfo>* data,
                                                  SocketContext* context,
                                                  bool aActive) {
-  if (context->mHandler->mIsPrivate) {
-    return;
-  }
   PRFileDesc* aFD = context->mFD;
 
   PRFileDesc* idLayer = PR_GetIdentitiesLayer(aFD, PR_NSPR_IO_LAYER);
@@ -1854,8 +1833,15 @@ void nsSocketTransportService::AnalyzeConnection(nsTArray<SocketInfo>* data,
 
   uint64_t sent = context->mHandler->ByteCountSent();
   uint64_t received = context->mHandler->ByteCountReceived();
-  SocketInfo info = {nsCString(host),     sent, received, port, aActive,
-                     nsCString(type_desc)};
+  nsCString originAttributesSuffix;
+  context->mHandler->mOriginAttributes.CreateSuffix(originAttributesSuffix);
+  SocketInfo info = {nsCString(host),
+                     sent,
+                     received,
+                     port,
+                     aActive,
+                     nsCString(type_desc),
+                     originAttributesSuffix};
 
   data->AppendElement(info);
 }
@@ -1899,7 +1885,7 @@ void nsSocketTransportService::StartPollWatchdog() {
 void nsSocketTransportService::DoPollRepair() {
   MutexAutoLock lock(mLock);
   if (mPolling && mPollableEvent) {
-    mPollableEvent->Signal();
+    mPollableEvent->Signal(/* aForce = */ true);
   } else if (mPollRepairTimer) {
     mPollRepairTimer->Cancel();
   }

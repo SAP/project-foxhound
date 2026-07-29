@@ -166,4 +166,26 @@ sealed class Action {
         val onClick: BrowserToolbarEvent,
         val onLongClick: BrowserToolbarInteraction? = null,
     ) : Action()
+
+    /**
+     * A transient pill-shaped action that shows an [iconResId] with a [textResId] label, then animates
+     * away into regular action button. Optionally displays an [overlayResId] icon at the bottom-end.
+     *
+     * @property iconResId The resource ID of the main icon to display.
+     * @property overlayResId The resource ID of a smaller optional icon overlaid at the bottom-end of [iconResId].
+     * @property textResId The resource ID of the label shown briefly beside the icon before it fades.
+     * @property contentDescriptionResId The resource ID of the accessibility description for the button.
+     * @property animated Whether to animate the collapsing transition or present in 'post-animation' state.
+     * @property highlighted Whether to highlight this button.
+     * @property onClick [BrowserToolbarInteraction] dispatched when the button is tapped.
+     */
+    data class AnimatedPillActionRes(
+        @param:DrawableRes val iconResId: Int,
+        @param:DrawableRes val overlayResId: Int,
+        @param:StringRes val textResId: Int,
+        @param:StringRes val contentDescriptionResId: Int,
+        val animated: Boolean = true,
+        val highlighted: Boolean = false,
+        val onClick: BrowserToolbarInteraction,
+    ) : Action()
 }

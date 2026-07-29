@@ -16,5 +16,7 @@ const explicit = later.since(earlier, { smallestUnit: undefined });
 TemporalHelpers.assertDuration(explicit, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, "default smallestUnit is month");
 const implicit = later.since(earlier, {});
 TemporalHelpers.assertDuration(implicit, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, "default smallestUnit is month");
+const lambda = later.since(earlier, () => {});
+TemporalHelpers.assertDuration(lambda, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, "default smallestUnit is month");
 
 reportCompare(0, 0);

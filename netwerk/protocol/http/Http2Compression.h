@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -54,11 +53,11 @@ class nvFIFO {
   nsDeque<nvPair> mTable;
 
   // This mutex is held when adding or removing elements in the table
-  // and when accessing the table from the main thread (in SizeOfDynamicTable)
-  // Since the operator[] and other const methods are always called
-  // on the socket thread, they don't need to lock the mutex.
-  // Mutable so it can be locked in SizeOfDynamicTable which is const
-  mutable Mutex mMutex MOZ_UNANNOTATED{"nvFIFO"};
+  // and when accessing the table from the main thread (in SizeOfDynamicTable).
+  // The operator[] and other methods called on the socket thread do not lock
+  // because the socket thread is the sole modifier of mTable and mByteCount.
+  // Mutable so it can be locked in SizeOfDynamicTable which is const.
+  mutable Mutex mMutex MOZ_ANNOTATED{"nvFIFO"};
 };
 
 class HpackDynamicTableReporter;

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +7,7 @@
 #include "mozilla/dom/AnonymousContentBinding.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/ElementBinding.h"
 #include "mozilla/dom/ShadowRoot.h"
 #include "nsCycleCollectionParticipant.h"
 
@@ -25,8 +24,9 @@ already_AddRefed<AnonymousContent> AnonymousContent::Create(Document& aDoc) {
   host->SetAttr(kNameSpaceID_None, nsGkAtoms::role, u"presentation"_ns, false);
   host->SetAttr(kNameSpaceID_None, nsGkAtoms::_class,
                 u"anonymous-content-host"_ns, false);
-  RefPtr<ShadowRoot> root = host->AttachShadowWithoutNameChecks(
-      ShadowRootMode::Closed, Element::DelegatesFocus::No);
+  ShadowRootInit init;
+  init.mMode = ShadowRootMode::Closed;
+  RefPtr<ShadowRoot> root = host->AttachShadowWithoutNameChecks(init);
   root->SetIsUAWidget();
   return do_AddRef(new AnonymousContent(host.forget(), root.forget()));
 }

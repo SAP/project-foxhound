@@ -257,15 +257,17 @@ tasks:
                 mozconfig_platform: win64
         fetches:
             toolchain:
+                - linux64-7zz
+                - linux64-cbindgen
                 - linux64-clang
-                - linux64-rust-cross
-                - linux64-rust-size
+                - linux64-dump_syms
                 - linux64-nasm
                 - linux64-node
-                - linux64-cbindgen
-                - linux64-dump_syms
-                - linux64-wine
+                - linux64-rust-cross
+                - linux64-rust-size
+                - linux64-upx
                 - linux64-winchecksec
+                - linux64-wine
                 - nsis
                 - sysroot-x86_64-linux-gnu
                 - sysroot-wasm32-wasi
@@ -274,7 +276,6 @@ tasks:
                 - dxc-x86_64-pc-windows-msvc
                 - winappsdk-x86_64-pc-windows-msvc
             fetch:
-                - upx-3.95-win
                 - windows-rs
 
     win64-searchfox/debug:
@@ -298,15 +299,17 @@ tasks:
                 mozconfig_platform: win64
         fetches:
             toolchain:
+                - linux64-7zz
+                - linux64-cbindgen
                 - linux64-clang
-                - linux64-rust-cross
-                - linux64-rust-size
+                - linux64-dump_syms
                 - linux64-nasm
                 - linux64-node
-                - linux64-cbindgen
-                - linux64-dump_syms
-                - linux64-wine
+                - linux64-rust-cross
+                - linux64-rust-size
+                - linux64-upx
                 - linux64-winchecksec
+                - linux64-wine
                 - nsis
                 - sysroot-x86_64-linux-gnu
                 - sysroot-wasm32-wasi
@@ -314,7 +317,6 @@ tasks:
                 - dxc-x86_64-pc-windows-msvc
                 - winappsdk-x86_64-pc-windows-msvc
             fetch:
-                - upx-3.95-win
                 - windows-rs
 
     android-aarch64-searchfox/debug:

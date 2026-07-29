@@ -952,7 +952,9 @@ public class ApiDoclet implements Doclet {
         return "";
       }
 
-      final String relativePath = position.fileName.replace(mRootDir, "");
+      final String normalizedFileName = position.fileName.replace('\\', '/');
+      final String normalizedRootDir = mRootDir.replace('\\', '/');
+      final String relativePath = normalizedFileName.replace(normalizedRootDir, "");
       return relativePath + ":" + position.line + ":" + position.column;
     }
 

@@ -15,7 +15,7 @@
   :root {
     /* In high-contrast mode on Windows, ThreeDLightShadow provides more
        contrast than ThreeDShadow. See bug 1022564. */
-    --arrowpanel-border-color: ThreeDLightShadow;
+    --panel-border-color: ThreeDLightShadow;
   }
 }
 

@@ -1,0 +1,15 @@
+{
+  "label": "otr.oregon.gov",
+  "bugs": {
+    "2009174": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://otr.oregon.gov/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

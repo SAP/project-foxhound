@@ -14,8 +14,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from re import Match, compile
-from typing import Any, Callable, Iterator, Literal
+from typing import Any, Callable, Literal
 
 from ...model import Entry, Message, PatternMessage, Resource
 

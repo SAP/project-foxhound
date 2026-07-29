@@ -29,5 +29,5 @@ This linter provides a ``--fix`` option for the ``generated-metrics.yaml`` file.
 Sources
 -------
 
-* `Configuration (YAML) <https://searchfox.org/mozilla-central/source/tools/lint/gecko-trace.yml>`_
-* `Source <https://searchfox.org/mozilla-central/source/tools/lint/gecko-trace/__init__.py>`_
+* :searchfox:`Configuration (YAML) <tools/lint/gecko-trace.yml>`
+* :searchfox:`Source <tools/lint/gecko-trace/__init__.py>`

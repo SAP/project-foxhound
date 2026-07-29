@@ -1,4 +1,3 @@
-/* -*- Mode: c++; tab-width: 2; indent-tabs-mode: nil; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -383,8 +382,7 @@ NativeMenuGtk::~NativeMenuGtk() {
 RefPtr<dom::Element> NativeMenuGtk::Element() { return mMenuModel->Element(); }
 
 void NativeMenuGtk::ShowMenuAnchored(nsIFrame* aClickedFrame,
-                                     const CSSIntRect& aRect,
-                                     const nsAString& aPosition) {
+                                     const nsMenuPopupFrame* aPopupFrame) {
   MOZ_ASSERT_UNREACHABLE("GTK native anchored menus are not implemented");
 }
 

@@ -6,19 +6,22 @@
  * Wrappers used to call into Breakpad code                                   *
  ******************************************************************************/
 
+use crate::crash_generation::CrashGenerator;
+
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use super::crash_generation::get_auxv_info;
 
 use anyhow::{bail, Result};
 use cfg_if::cfg_if;
-use crash_helper_common::{BreakpadChar, BreakpadData, BreakpadString, Pid};
+use crash_helper_common::{BreakpadChar, BreakpadData, BreakpadString, ExtraCrashData, Pid};
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use minidump_writer::minidump_writer::DirectAuxvDumpInfo;
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use std::os::fd::{FromRawFd, OwnedFd};
 use std::{
-    ffi::{c_char, c_void, OsString},
+    ffi::{c_void, OsString},
     ptr::NonNull,
+    sync::Mutex,
 };
 
 #[cfg(target_os = "windows")]
@@ -27,7 +30,7 @@ type BreakpadInitType = *const u16;
 type NativeProcessId = windows_sys::Win32::Foundation::HANDLE;
 
 #[cfg(target_os = "macos")]
-type BreakpadInitType = *const c_char;
+type BreakpadInitType = *const crate::c_char;
 #[cfg(target_os = "macos")]
 type NativeProcessId = u32;
 
@@ -59,11 +62,28 @@ impl BreakpadProcessId {
     }
 }
 
+// Note that the `generator` field and function parameter should be of type
+// `*const Mutex<CrashGenerator>` but that doesn't work because `Mutex<>` is
+// not FFI-safe. We don't care about that because the C code only ever sees the
+// pointer and all the manipulation is done in Rust, so we just morph the type
+// when we need it to avoid the warning.
+#[repr(C)]
+pub struct BreakpadContext {
+    callback: unsafe extern "C" fn(
+        *const c_void,
+        BreakpadProcessId,
+        Option<&ExtraCrashData>,
+        *const BreakpadChar,
+    ),
+    generator: *const Mutex<CrashGenerator>,
+}
+
 extern "C" {
+    #[allow(improper_ctypes)]
     fn CrashGenerationServer_init(
         breakpad_data: BreakpadInitType,
         minidump_path: *const BreakpadChar,
-        cb: extern "C" fn(BreakpadProcessId, *const c_char, *const BreakpadChar),
+        context: *mut BreakpadContext,
         #[cfg(any(target_os = "android", target_os = "linux"))] auxv_cb: extern "C" fn(
             crash_helper_common::Pid,
             *mut DirectAuxvDumpInfo,
@@ -78,7 +98,12 @@ pub(crate) struct BreakpadCrashGenerator {
     ptr: NonNull<c_void>,
     path: NonNull<BreakpadChar>,
     #[allow(
-        dead_code,
+        unused,
+        reason = "The context is used by Breakpad so we need to keep it alive"
+    )]
+    context: Box<BreakpadContext>,
+    #[allow(
+        unused,
         reason = "This socket is used by Breakpad so it must be closed on Drop() as we own it"
     )]
     #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -98,17 +123,27 @@ impl BreakpadCrashGenerator {
     pub(crate) fn new(
         breakpad_data: BreakpadData,
         path: OsString,
-        finalize_callback: extern "C" fn(BreakpadProcessId, *const c_char, *const BreakpadChar),
+        generator: &'static Mutex<CrashGenerator>,
+        finalize_callback: unsafe extern "C" fn(
+            *const c_void,
+            BreakpadProcessId,
+            Option<&ExtraCrashData>,
+            *const BreakpadChar,
+        ),
     ) -> Result<BreakpadCrashGenerator> {
         let breakpad_raw_data = breakpad_data.into_raw();
         let path_ptr = path.into_raw();
+        let mut context = Box::new(BreakpadContext {
+            callback: finalize_callback,
+            generator: generator as *const Mutex<CrashGenerator>,
+        });
 
         // SAFETY: Calling into breakpad code with parameters that have been previously validated.
         let breakpad_server = unsafe {
             CrashGenerationServer_init(
                 breakpad_raw_data,
                 path_ptr,
-                finalize_callback,
+                &mut *context,
                 #[cfg(any(target_os = "android", target_os = "linux"))]
                 get_auxv_info,
             )
@@ -135,6 +170,7 @@ impl BreakpadCrashGenerator {
             BreakpadCrashGenerator {
                 ptr: NonNull::new(breakpad_server).unwrap_unchecked(),
                 path: NonNull::new(path_ptr).unwrap_unchecked(),
+                context,
                 #[cfg(any(target_os = "linux", target_os = "android"))]
                 breakpad_socket: OwnedFd::from_raw_fd(breakpad_raw_data),
             }

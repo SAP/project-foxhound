@@ -33,6 +33,9 @@ tags = "fullscreen"
 ["test_display_mode_reflow.html"]
 support-files = ["display_mode_reflow.html"]
 tags = "fullscreen"
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2034604
+]
 
 ["test_hover.html"]
 skip-if = [

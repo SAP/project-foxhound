@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -14,8 +13,6 @@
 [Exposed=(Window, Worker), Pref="layout.css.typed-om.enabled"]
 interface CSSSkew : CSSTransformComponent {
   [Throws] constructor(CSSNumericValue ax, CSSNumericValue ay);
-  // TODO: Change to [SetterThrows] once the ax attribute is fully implemented
-  [Throws] attribute CSSNumericValue ax;
-  // TODO: Change to [SetterThrows] once the ay attribute is fully implemented
-  [Throws] attribute CSSNumericValue ay;
+  [SetterThrows] attribute CSSNumericValue ax;
+  [SetterThrows] attribute CSSNumericValue ay;
 };

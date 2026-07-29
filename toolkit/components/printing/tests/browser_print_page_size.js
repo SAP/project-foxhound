@@ -6,16 +6,29 @@
 const pdfPrinterName = "Mozilla Save to PDF";
 const someOtherPrinter = "Other Printer";
 
-async function changeDestination(helper, dir) {
+async function changeDestination(helper, index) {
   let picker = helper.get("printer-picker");
   let changed = BrowserTestUtils.waitForEvent(picker, "change");
 
   let pickerOpened = BrowserTestUtils.waitForSelectPopupShown(window);
   picker.focus();
   EventUtils.sendKey("space", helper.win);
-  await pickerOpened;
-  EventUtils.sendKey(dir, window);
-  EventUtils.sendKey("return", window);
+  const selectPopup = await pickerOpened;
+  if (selectPopup.isNativeMenu) {
+    selectPopup.activateItem(selectPopup.childNodes[index]);
+  } else {
+    let selectedIndex = picker.selectedIndex;
+    while (selectedIndex != index) {
+      if (index > selectedIndex) {
+        EventUtils.sendKey("down", window);
+        selectedIndex++;
+      } else {
+        EventUtils.sendKey("up", window);
+        selectedIndex--;
+      }
+    }
+    EventUtils.sendKey("return", window);
+  }
   await changed;
 }
 
@@ -42,7 +55,7 @@ add_task(async function testShowAndHidePaperSizeSectionWithPageSize() {
     ok(BrowserTestUtils.isHidden(paperSize), "Paper size section is hidden");
 
     await helper.waitForSettingsEvent(async () => {
-      await changeDestination(helper, "down");
+      await changeDestination(helper, 1);
     });
     await helper.awaitAnimationFrame();
 
@@ -80,7 +93,7 @@ add_task(async function testShowPaperSizeSectionWithoutPageSize() {
     ok(BrowserTestUtils.isVisible(paperSize), "Paper size section is shown");
 
     await helper.waitForSettingsEvent(async () => {
-      await changeDestination(helper, "down");
+      await changeDestination(helper, 1);
     });
     await helper.awaitAnimationFrame();
 

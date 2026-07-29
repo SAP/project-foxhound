@@ -14,7 +14,8 @@
 
 from __future__ import annotations
 
-from typing import Callable, Sequence, cast
+from collections.abc import Sequence
+from typing import Callable, cast
 
 from ..formats import Format, UnsupportedFormat, detect_format
 from ..formats.dtd.parse import dtd_parse
@@ -28,7 +29,7 @@ from ..formats.webext.parse import webext_parse
 from ..model import Message, Resource
 
 android_parse: Callable[..., Resource[Message]] | None
-xliff_parse: Callable[[str | bytes], Resource[Message]] | None
+xliff_parse: Callable[..., Resource[Message]] | None
 try:
     from ..formats.android.parse import android_parse
     from ..formats.xliff.parse import xliff_parse
@@ -45,6 +46,8 @@ def parse_resource(
     android_literal_quotes: bool = False,
     gettext_plurals: Sequence[str] | None = None,
     gettext_skip_obsolete: bool = False,
+    properties_printf_placeholders: bool = False,
+    xliff_source_entries: bool = False,
 ) -> Resource[Message]:
     """
     Parse a Resource from its string representation.
@@ -56,7 +59,7 @@ def parse_resource(
 
     If the first argument is a string path,
     the `source` argument is optional,
-    as the file will be opened and read.
+    as the file will be opened and read if `source` is not set.
     """
     input_is_file = False
     if source is None:
@@ -84,7 +87,9 @@ def parse_resource(
     elif format == Format.plain_json:
         return plain_json_parse(source)
     elif format == Format.properties:
-        return properties_parse(source)
+        return properties_parse(
+            source, printf_placeholders=properties_printf_placeholders
+        )
     elif format == Format.webext:
         return webext_parse(source)
     elif format == Format.android and android_parse is not None:
@@ -94,6 +99,17 @@ def parse_resource(
             literal_quotes=android_literal_quotes,
         )
     elif format == Format.xliff and xliff_parse is not None:
-        return xliff_parse(source)
+        return xliff_parse(source, source_entries=xliff_source_entries)
     else:
-        raise UnsupportedFormat(f"Unsupported resource format: {input}")
+        msg = (
+            "Resource format detection failed"
+            if format is None
+            else f"Unsupported resource format: {format.name}"
+        )
+        if xliff_parse is None and (
+            (input_is_file and cast(str, input).endswith((".xlf", ".xliff", ".xml")))
+            or (isinstance(source, str) and source.startswith("<"))
+            or (isinstance(source, bytes) and source.startswith(b"<"))
+        ):
+            msg += ". For XML support `lxml` is required."
+        raise UnsupportedFormat(msg)

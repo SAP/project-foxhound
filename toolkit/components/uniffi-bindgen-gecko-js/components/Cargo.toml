@@ -26,8 +26,9 @@ relevancy = "0.1"
 webext-storage = "0.1"
 error-support = { version = "0.1" }
 tracing-support = "0.1"
-logins = { version = "0.1", features = ["keydb"] }
+logins = { version = "0.1", features = ["keydb", "allow_empty_passwords", "ignore_form_action_origin_validation_errors", "perform_additional_origin_fixups"] }
 init_rust_components = { version = "0.1", features = ["keydb"] }
+breach-alerts = { version = "0.1" }
 
 [features]
 # Should we depend on xpcom crates?

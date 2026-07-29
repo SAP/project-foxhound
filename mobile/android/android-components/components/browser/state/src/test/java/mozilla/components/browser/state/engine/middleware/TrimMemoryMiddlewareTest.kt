@@ -18,12 +18,12 @@ import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.engine.EngineSessionState
 import mozilla.components.support.test.mock
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
+import kotlin.test.assertNotNull
 
 class TrimMemoryMiddlewareTest {
     private val dispatcher = StandardTestDispatcher()

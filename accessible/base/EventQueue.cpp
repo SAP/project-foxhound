@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -85,7 +84,7 @@ bool EventQueue::PushNameOrDescriptionChangeToRelations(
                            : nsIAccessibleEvent::EVENT_DESCRIPTION_CHANGE;
   Relation rel = aAccessible->RelationByType(aType);
   while (LocalAccessible* relTarget = rel.LocalNext()) {
-    RefPtr<AccEvent> nameChangeEvent = new AccEvent(eventType, relTarget);
+    auto nameChangeEvent = MakeRefPtr<AccEvent>(eventType, relTarget);
     pushed |= PushEvent(nameChangeEvent);
   }
 
@@ -156,8 +155,8 @@ bool EventQueue::PushNameOrDescriptionChange(AccEvent* aOrigEvent) {
         }
 
         if (fireNameChange) {
-          RefPtr<AccEvent> nameChangeEvent =
-              new AccEvent(nsIAccessibleEvent::EVENT_NAME_CHANGE, parent);
+          auto nameChangeEvent = MakeRefPtr<AccEvent>(
+              nsIAccessibleEvent::EVENT_NAME_CHANGE, parent);
           pushed |= PushEvent(nameChangeEvent);
         }
         nameCheckAncestor = false;

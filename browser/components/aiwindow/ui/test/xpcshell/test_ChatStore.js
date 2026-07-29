@@ -12,6 +12,9 @@ ChromeUtils.defineESModuleGetters(lazy, {
 const { ChatStore, ChatConversation, ChatMessage } = ChromeUtils.importESModule(
   "moz-src:///browser/components/aiwindow/ui/modules/ChatStore.sys.mjs"
 );
+const { UserRoleOpts } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/aiwindow/ui/modules/ChatMessage.sys.mjs"
+);
 
 async function addBasicConvoTestData(date, title, updated = null) {
   const link = "https://www.firefox.com";
@@ -201,6 +204,21 @@ add_atomic_task(async function test_ChatStorage_findConversationsByDate() {
     soft.equal(conversations[0].title, "conversation 3", errorMessage);
     soft.equal(conversations[1].title, "conversation 2", errorMessage);
   });
+});
+
+add_atomic_task(async function test_ChatStorage_getMostRecentMessages() {
+  await addTestDataForFindMessageByDate();
+
+  const role = -1;
+  const limit = 2;
+  const messages = await gChatStore.getMostRecentMessages(role, limit);
+
+  Assert.equal(messages.length, 2, "Should have retrieved 2 messages");
+  Assert.equal(
+    messages[0].content.content,
+    "a message in august",
+    "First message should be the latest"
+  );
 });
 
 add_atomic_task(async function test_ChatStorage_findConversationsByURL() {
@@ -493,6 +511,75 @@ add_atomic_task(async function test_ChatStorage_search() {
   });
 });
 
+add_atomic_task(async function test_ChatStorage_search_matchingSnippet() {
+  // Title-only match: matchingSnippet should be null
+  await addConvoWithSpecificTestData(
+    new Date("1/2/2025"),
+    new URL("https://www.firefox.com"),
+    new URL("https://www.mozilla.org"),
+    "Conversation with xyzSnippetToken in title",
+    "unrelated message body"
+  );
+
+  // Body match: matchingSnippet should be populated
+  await addConvoWithSpecificTestData(
+    new Date("1/2/2025"),
+    new URL("https://www.firefox.com"),
+    new URL("https://www.mozilla.org"),
+    "Unrelated title",
+    "message body containing xyzSnippetToken"
+  );
+
+  const conversations = await gChatStore.search("xyzSnippetToken");
+
+  Assert.withSoftAssertions(function (soft) {
+    soft.equal(conversations.length, 2, "Both conversations match");
+
+    const titleMatch = conversations.find(c =>
+      c.title.includes("xyzSnippetToken")
+    );
+    const bodyMatch = conversations.find(
+      c => !c.title.includes("xyzSnippetToken")
+    );
+
+    soft.equal(
+      titleMatch.matchingSnippet,
+      null,
+      "Title-only match has no snippet"
+    );
+    soft.ok(
+      bodyMatch.matchingSnippet?.includes("xyzSnippetToken"),
+      "Body match snippet includes the search term"
+    );
+  });
+});
+
+add_atomic_task(
+  async function test_ChatStorage_search_excludes_system_messages() {
+    const conversation = new ChatConversation({
+      createdDate: new Date("1/2/2025").getTime(),
+      updatedDate: new Date("1/2/2025").getTime(),
+    });
+    conversation.title = "Unrelated title";
+    // role 2 = SYSTEM
+    conversation.addMessage(
+      2,
+      { body: "system prompt xyzSystemToken99" },
+      null,
+      0
+    );
+    conversation.addUserMessage("unrelated user message");
+    await gChatStore.updateConversation(conversation);
+
+    const conversations = await gChatStore.search("xyzSystemToken99");
+    Assert.equal(
+      conversations.length,
+      0,
+      "System message content excluded from search"
+    );
+  }
+);
+
 add_atomic_task(async function test_ChatStorage_deleteConversationById() {
   await addBasicConvoTestData("1/1/2025", "a conversation");
 
@@ -765,3 +852,946 @@ add_atomic_task(
     Assert.equal(null, updatedConversation);
   }
 );
+
+async function addTestMessagesForUrlDeleteTests() {
+  const conv0 = await addConvoWithSpecificTestData(
+    new Date("1/4/2025"),
+    new URL("https://www.mozilla.com"),
+    new URL("https://www.mozilla.com"),
+    "Mozilla.org conversation 1",
+    "some other message"
+  );
+  const conv1 = await addConvoWithSpecificTestData(
+    new Date("1/4/2025"),
+    new URL("https://www.firefox.com/en-US/features/private-browsing/"),
+    new URL("https://www.firefox.com/en-US/features/private-browsing/"),
+    "Mozilla.org conversation 2",
+    "some other message"
+  );
+  const conv2 = await addConvoWithSpecificTestData(
+    new Date("1/4/2025"),
+    new URL("https://www.firefox.com"),
+    new URL("https://www.firefox.com"),
+    "Mozilla.org conversation 3",
+    "some other message"
+  );
+
+  return { conv0, conv1, conv2 };
+}
+
+add_atomic_task(async function test_ChatStorage_deleteAllUrlsFromMessages() {
+  const { conv0, conv1, conv2 } = await addTestMessagesForUrlDeleteTests();
+
+  await gChatStore.deleteAllUrlsFromMessages();
+
+  const updatedConv0 = await gChatStore.findConversationById(conv0.id);
+  const updatedConv1 = await gChatStore.findConversationById(conv1.id);
+  const updatedConv2 = await gChatStore.findConversationById(conv2.id);
+
+  Assert.withSoftAssertions(function (soft) {
+    soft.equal(
+      updatedConv0.messages[0].pageUrl,
+      null,
+      `Conversation 0 was not updated correctly: ${JSON.stringify(updatedConv0.messages)}`
+    );
+    soft.equal(
+      updatedConv0.messages[0].pageHistoryDeleted,
+      true,
+      `Conversation 0 pageHistoryDeleted was not set to true`
+    );
+
+    soft.equal(
+      updatedConv1.messages[0].pageUrl,
+      null,
+      `Conversation 1 was not updated correctly: ${JSON.stringify(updatedConv1.messages)}`
+    );
+    soft.equal(
+      updatedConv1.messages[0].pageHistoryDeleted,
+      true,
+      `Conversation 1 pageHistoryDeleted was not set to true`
+    );
+
+    soft.equal(
+      updatedConv2.messages[0].pageUrl,
+      null,
+      `Conversation 2 was not updated correctly: ${JSON.stringify(updatedConv2.messages)}`
+    );
+    soft.equal(
+      updatedConv2.messages[0].pageHistoryDeleted,
+      true,
+      `Conversation 2 pageHistoryDeleted was not set to true`
+    );
+  });
+});
+
+add_atomic_task(async function test_ChatStorage_deleteUrlFromMessages() {
+  const { conv1 } = await addTestMessagesForUrlDeleteTests();
+
+  await gChatStore.deleteUrlFromMessages(
+    "https://www.firefox.com/en-US/features/private-browsing/"
+  );
+
+  const updatedConv = await gChatStore.findConversationById(conv1.id);
+
+  Assert.withSoftAssertions(function (soft) {
+    soft.equal(
+      updatedConv.messages[0].pageUrl,
+      null,
+      `Conversation 1 was not updated correctly: ${JSON.stringify(updatedConv.messages)}`
+    );
+    soft.equal(
+      updatedConv.messages[0].pageHistoryDeleted,
+      true,
+      `Conversation 1 pageHistoryDeleted was not set to true`
+    );
+  });
+});
+
+add_atomic_task(
+  async function test_ChatStorage_deleteUrlFromMessages_marksContextMentionHistoryDeleted() {
+    const targetUrl = "https://www.example.com/page";
+    const otherUrl = "https://www.other.com/";
+
+    const conversation = new ChatConversation({
+      createdDate: new Date("1/4/2025").getTime(),
+      updatedDate: new Date("1/4/2025").getTime(),
+    });
+    conversation.title = "test";
+    conversation.addUserMessage(
+      "test message",
+      new URL(targetUrl),
+      new UserRoleOpts({
+        contextMentions: [
+          { url: targetUrl, label: "Example", iconSrc: "", type: "tab" },
+          { url: otherUrl, label: "Other", iconSrc: "", type: "tab" },
+        ],
+      })
+    );
+    await gChatStore.updateConversation(conversation);
+
+    await gChatStore.deleteUrlFromMessages(targetUrl);
+
+    const updated = await gChatStore.findConversationById(conversation.id);
+    const mentions = updated.messages[0].content.contextMentions;
+
+    Assert.withSoftAssertions(function (soft) {
+      soft.equal(
+        mentions[0].historyDeleted,
+        true,
+        "Matching context mention should be marked historyDeleted"
+      );
+      soft.equal(
+        mentions[1].historyDeleted,
+        undefined,
+        "Non-matching context mention should not be marked historyDeleted"
+      );
+    });
+  }
+);
+
+add_atomic_task(async function test_securityProperties_roundTrip_mixedFlags() {
+  const conversation = new ChatConversation({
+    securityProperties: { privateData: false, untrustedInput: true },
+  });
+  conversation.title = "partially tainted conversation";
+
+  // Provide at least one message so the insert has valid data
+  // to bind in `updateConversation()`. Empty array causes constraint error.
+  conversation.addUserMessage("test content", "https://www.firefox.com");
+  await gChatStore.updateConversation(conversation);
+
+  const restored = await gChatStore.findConversationById(conversation.id);
+
+  Assert.ok(restored, "conversation should restore from DB");
+  Assert.withSoftAssertions(function (soft) {
+    soft.ok(
+      restored.securityProperties.untrustedInput,
+      "untrustedInput should be true after restore"
+    );
+    soft.ok(
+      !restored.securityProperties.privateData,
+      "privateData should be false after restore"
+    );
+  });
+});
+
+add_atomic_task(
+  async function test_ChatStorage_deleteAllUrlsFromMessages_marksAllContextMentionsHistoryDeleted() {
+    const conversation = new ChatConversation({
+      createdDate: new Date("1/4/2025").getTime(),
+      updatedDate: new Date("1/4/2025").getTime(),
+    });
+    conversation.title = "test";
+    conversation.addUserMessage(
+      "test message",
+      new URL("https://www.example.com/"),
+      new UserRoleOpts({
+        contextMentions: [
+          {
+            url: "https://www.example.com/",
+            label: "Example",
+            iconSrc: "",
+            type: "tab",
+          },
+          {
+            url: "https://www.other.com/",
+            label: "Other",
+            iconSrc: "",
+            type: "tab",
+          },
+        ],
+      })
+    );
+    await gChatStore.updateConversation(conversation);
+
+    await gChatStore.deleteAllUrlsFromMessages();
+
+    const updated = await gChatStore.findConversationById(conversation.id);
+    const mentions = updated.messages[0].content.contextMentions;
+
+    Assert.withSoftAssertions(function (soft) {
+      soft.equal(
+        mentions[0].historyDeleted,
+        true,
+        "First context mention should be marked historyDeleted"
+      );
+      soft.equal(
+        mentions[1].historyDeleted,
+        true,
+        "Second context mention should be marked historyDeleted"
+      );
+    });
+  }
+);
+
+add_atomic_task(
+  async function test_ChatStorage_deleteConversationsByDateRange() {
+    await addBasicConvoTestData("1/1/2025", "conversation 1");
+    await addBasicConvoTestData("6/1/2025", "conversation 2");
+    await addBasicConvoTestData("12/1/2025", "conversation 3");
+
+    let startDate = new Date("5/1/2025");
+    let endDate = new Date("1/1/2026");
+    await gChatStore.deleteConversationsByDateRange(startDate, endDate);
+
+    let remaining = await gChatStore.findRecentConversations(10);
+    Assert.equal(remaining.length, 1, "only one conversation should remain");
+    Assert.equal(
+      remaining[0].title,
+      "conversation 1",
+      "the conversation outside the range should remain"
+    );
+  }
+);
+
+add_atomic_task(
+  async function test_ChatStorage_deleteConversationsByDateRange_messages_cascade() {
+    let conv = await addBasicConvoTestData("6/1/2025", "to delete");
+
+    let startDate = new Date("5/1/2025");
+    let endDate = new Date("7/1/2025");
+    await gChatStore.deleteConversationsByDateRange(startDate, endDate);
+
+    let remaining = await gChatStore.findRecentConversations(10);
+    Assert.equal(remaining.length, 0, "conversation should be deleted");
+
+    let found = await gChatStore.findConversationById(conv.id);
+    Assert.equal(
+      found,
+      null,
+      "messages should be cascade-deleted with conversation"
+    );
+  }
+);
+
+add_atomic_task(async function test_ChatStorage_deleteAllConversations() {
+  await addBasicConvoTestData("1/1/2025", "conversation 1");
+  await addBasicConvoTestData("6/1/2025", "conversation 2");
+  await addBasicConvoTestData("12/1/2025", "conversation 3");
+
+  let before = await gChatStore.findRecentConversations(10);
+  Assert.equal(before.length, 3, "should start with 3 conversations");
+
+  await gChatStore.deleteAllConversations();
+
+  let after = await gChatStore.findRecentConversations(10);
+  Assert.equal(after.length, 0, "all conversations should be deleted");
+});
+
+add_atomic_task(
+  async function test_ChatStorage_deleteAllConversations_empty_db() {
+    let conversations = await gChatStore.findRecentConversations(10);
+    Assert.equal(conversations.length, 0, "should start empty");
+
+    await gChatStore.deleteAllConversations();
+
+    conversations = await gChatStore.findRecentConversations(10);
+    Assert.equal(conversations.length, 0, "should still be empty after delete");
+  }
+);
+
+add_atomic_task(async function test_seenUrls_roundTrip() {
+  const conversation = new ChatConversation({});
+  conversation.title = "conversation with seen urls";
+  conversation.addUserMessage("test content", "https://www.firefox.com");
+  conversation.addSeenUrls([
+    "https://example.com/page1",
+    "https://example.com/page2",
+  ]);
+  await gChatStore.updateConversation(conversation);
+
+  const restored = await gChatStore.findConversationById(conversation.id);
+
+  Assert.ok(restored, "conversation should restore from DB");
+  Assert.ok(
+    restored.seenUrls.has("https://example.com/page1"),
+    "page1 should be in seenUrls after restore"
+  );
+  Assert.ok(
+    restored.seenUrls.has("https://example.com/page2"),
+    "page2 should be in seenUrls after restore"
+  );
+  Assert.equal(
+    restored.seenUrls.size,
+    2,
+    "seenUrls should have exactly 2 entries"
+  );
+});
+
+add_atomic_task(async function test_serpUrlsForAnonymousFetch_roundTrip() {
+  const conversation = new ChatConversation({});
+  conversation.title = "conversation with search result url ledger";
+  conversation.addUserMessage("test content", "https://www.firefox.com");
+  conversation.addSerpUrlsForAnonymousFetch([
+    "https://search-result.example.com/a",
+    "https://search-result.example.com/b",
+  ]);
+  await gChatStore.updateConversation(conversation);
+
+  const restored = await gChatStore.findConversationById(conversation.id);
+
+  Assert.ok(restored, "conversation should restore from DB");
+  Assert.ok(
+    restored.serpUrlsForAnonymousFetch.has(
+      "https://search-result.example.com/a"
+    ),
+    "first ledger URL should be restored"
+  );
+  Assert.ok(
+    restored.serpUrlsForAnonymousFetch.has(
+      "https://search-result.example.com/b"
+    ),
+    "second ledger URL should be restored"
+  );
+  Assert.equal(
+    restored.serpUrlsForAnonymousFetch.size,
+    2,
+    "serpUrlsForAnonymousFetch should have exactly 2 entries"
+  );
+});
+
+add_atomic_task(async function test_securityProperties_upsert_updatesFlags() {
+  const conversation = new ChatConversation({});
+  conversation.title = "conversation that becomes tainted";
+
+  // Provide at least one message so the insert has valid data
+  // to bind in `updateConversation()`. Empty array causes constraint error.
+  conversation.addUserMessage("test content", "https://www.firefox.com");
+  await gChatStore.updateConversation(conversation);
+
+  // Simulate flags being set during conversation lifetime
+  conversation.securityProperties.setUntrustedInput();
+  conversation.securityProperties.setPrivateData();
+  conversation.securityProperties.commit();
+  await gChatStore.updateConversation(conversation);
+
+  const restored = await gChatStore.findConversationById(conversation.id);
+
+  Assert.ok(restored, "conversation should restore from DB");
+  Assert.withSoftAssertions(function (soft) {
+    soft.ok(
+      restored.securityProperties.untrustedInput,
+      "untrustedInput should be true after upsert"
+    );
+    soft.ok(
+      restored.securityProperties.privateData,
+      "privateData should be true after upsert"
+    );
+  });
+});
+
+add_atomic_task(async function test_memoriesToggled_roundTrip() {
+  // Test null value (default)
+  const conversation1 = new ChatConversation({});
+  conversation1.title = "conversation with null memoriesToggled";
+  conversation1.addUserMessage("test content", "https://www.firefox.com");
+  await gChatStore.updateConversation(conversation1);
+
+  const restored1 = await gChatStore.findConversationById(conversation1.id);
+  Assert.ok(restored1, "conversation should restore from DB");
+  Assert.equal(
+    restored1.memoriesToggled,
+    null,
+    "memoriesToggled should be null after restore"
+  );
+
+  // Test true value
+  const conversation2 = new ChatConversation({ memoriesToggled: true });
+  conversation2.title = "conversation with memoriesToggled true";
+  conversation2.addUserMessage("test content", "https://www.firefox.com");
+  await gChatStore.updateConversation(conversation2);
+
+  const restored2 = await gChatStore.findConversationById(conversation2.id);
+  Assert.ok(restored2, "conversation should restore from DB");
+  Assert.equal(
+    restored2.memoriesToggled,
+    true,
+    "memoriesToggled should be true after restore"
+  );
+
+  // Test false value
+  const conversation3 = new ChatConversation({ memoriesToggled: false });
+  conversation3.title = "conversation with memoriesToggled false";
+  conversation3.addUserMessage("test content", "https://www.firefox.com");
+  await gChatStore.updateConversation(conversation3);
+
+  const restored3 = await gChatStore.findConversationById(conversation3.id);
+  Assert.ok(restored3, "conversation should restore from DB");
+  Assert.equal(
+    restored3.memoriesToggled,
+    false,
+    "memoriesToggled should be false after restore"
+  );
+});
+
+add_atomic_task(async function test_memoriesToggled_upsert_updatesValue() {
+  const conversation = new ChatConversation({});
+  conversation.title = "conversation with changing memoriesToggled";
+  conversation.addUserMessage("test content", "https://www.firefox.com");
+  await gChatStore.updateConversation(conversation);
+
+  // Simulate memories toggle being set during conversation lifetime
+  conversation.memoriesToggled = true;
+  await gChatStore.updateConversation(conversation);
+
+  let restored = await gChatStore.findConversationById(conversation.id);
+  Assert.ok(restored, "conversation should restore from DB");
+  Assert.equal(
+    restored.memoriesToggled,
+    true,
+    "memoriesToggled should be true after upsert"
+  );
+
+  // Toggle to false
+  conversation.memoriesToggled = false;
+  await gChatStore.updateConversation(conversation);
+
+  restored = await gChatStore.findConversationById(conversation.id);
+  Assert.ok(restored, "conversation should restore from DB");
+  Assert.equal(
+    restored.memoriesToggled,
+    false,
+    "memoriesToggled should be false after second upsert"
+  );
+});
+
+function makeToolUIData({
+  toolCallId = "tool-call-1",
+  uiType = "website-confirmation",
+  tabs = [{ tabId: "tab-1", label: "Example", href: "https://example.com/" }],
+} = {}) {
+  return {
+    toolCallId,
+    timestamp: "2026-05-13T00:00:00.000Z",
+    updateCount: 0,
+    uiType,
+    title: "Close these tabs?",
+    description: "Select tabs to close",
+    properties: { tabs },
+  };
+}
+
+add_atomic_task(async function test_toolUIData_insert_round_trip() {
+  const conversation = new ChatConversation({});
+  conversation.title = "toolUIData INSERT";
+  conversation.addUserMessage("Close my tabs", "https://example.com/", 0);
+  conversation.addAssistantMessage("text", "Here are the tabs I can close:");
+
+  const assistant = conversation.messages.at(-1);
+  const original = makeToolUIData({
+    tabs: [
+      { tabId: "tab-1", label: "Page 1", href: "https://example.com/1" },
+      { tabId: "tab-2", label: "Page 2", href: "https://example.com/2" },
+    ],
+  });
+  assistant.toolUIData = original;
+
+  await gChatStore.updateConversation(conversation);
+  const reloaded = await gChatStore.findConversationById(conversation.id);
+  const reloadedAssistant = reloaded.messages.find(m => m.id === assistant.id);
+
+  Assert.ok(
+    reloadedAssistant,
+    "Reloaded conversation contains the assistant message"
+  );
+  Assert.deepEqual(
+    reloadedAssistant.toolUIData,
+    original,
+    "toolUIData roundTrips through the INSERT path"
+  );
+});
+
+add_atomic_task(async function test_toolUIData_update_roundTrip() {
+  const conversation = new ChatConversation({});
+  conversation.addUserMessage("Close my tabs", "https://example.com/", 0);
+  conversation.addAssistantMessage("text", "Pending confirmation");
+
+  const assistant = conversation.messages.at(-1);
+  assistant.toolUIData = makeToolUIData({ uiType: "website-confirmation" });
+  await gChatStore.updateConversation(conversation);
+
+  // Simulate ToolUI.handleUpdate mutating the in-memory object after a click
+  assistant.toolUIData = {
+    ...assistant.toolUIData,
+    uiType: "ai-action-result",
+    updateCount: 1,
+    properties: {
+      ...assistant.toolUIData.properties,
+      confirmedData: ["tab-1"],
+    },
+  };
+  await gChatStore.updateConversation(conversation);
+
+  const reloaded = await gChatStore.findConversationById(conversation.id);
+  const reloadedAssistant = reloaded.messages.find(m => m.id === assistant.id);
+
+  Assert.withSoftAssertions(soft => {
+    soft.equal(
+      reloadedAssistant.toolUIData.uiType,
+      "ai-action-result",
+      "uiType reflects the post-confirm mutation"
+    );
+    soft.equal(
+      reloadedAssistant.toolUIData.updateCount,
+      1,
+      "updateCount reflects the post-confirm mutation"
+    );
+    soft.deepEqual(
+      reloadedAssistant.toolUIData.properties.confirmedData,
+      ["tab-1"],
+      "confirmedData persisted through the ON CONFLICT UPDATE branch"
+    );
+  });
+});
+
+add_atomic_task(async function test_toolUIData_null_roundTrip() {
+  const conversation = new ChatConversation({});
+  conversation.addUserMessage("Just a message", "https://example.com/", 0);
+  conversation.addAssistantMessage("text", "Just a reply");
+
+  const assistant = conversation.messages.at(-1);
+  // toolUIData intentionally not set
+  await gChatStore.updateConversation(conversation);
+  const reloaded = await gChatStore.findConversationById(conversation.id);
+  const reloadedAssistant = reloaded.messages.find(m => m.id === assistant.id);
+
+  Assert.strictEqual(
+    reloadedAssistant.toolUIData,
+    null,
+    "Messages without toolUIData reload as null"
+  );
+});
+
+add_atomic_task(async function test_toolUIData_undoDismissed_roundTrip() {
+  const conversation = new ChatConversation({});
+  conversation.addUserMessage("Close my tabs", "https://example.com/", 0);
+  conversation.addAssistantMessage("text", "Closed");
+
+  const assistant = conversation.messages.at(-1);
+  const base = makeToolUIData({ uiType: "ai-action-result" });
+  assistant.toolUIData = {
+    ...base,
+    properties: { ...base.properties, undoDismissed: true },
+  };
+
+  await gChatStore.updateConversation(conversation);
+  const reloaded = await gChatStore.findConversationById(conversation.id);
+  const reloadedAssistant = reloaded.messages.find(m => m.id === assistant.id);
+
+  Assert.strictEqual(
+    reloadedAssistant.toolUIData.properties.undoDismissed,
+    true,
+    "undoDismissed:true survives the ChatStore roundTrip"
+  );
+});
+add_atomic_task(
+  async function test_updateLLMTelemetryRecord_creates_unprocessed_row() {
+    const conversation = new ChatConversation({});
+    conversation.title = "conversation with llm telemetry";
+    conversation.addUserMessage("test content", "https://www.firefox.com");
+    await gChatStore.updateConversation(conversation);
+
+    await gChatStore.updateLLMTelemetryRecord(conversation.id);
+
+    const telemetry = await gChatStore.findLLMTelemetryByConversationId(
+      conversation.id
+    );
+
+    Assert.ok(telemetry, "LLM telemetry row should exist");
+    Assert.withSoftAssertions(function (soft) {
+      soft.equal(telemetry.convId, conversation.id);
+      soft.equal(telemetry.processed, 0);
+      soft.deepEqual(telemetry.telemetryPrompts, {});
+      soft.deepEqual(telemetry.telemetryProbabilities, {});
+      soft.ok(telemetry.processedTime, "processedTime should be set");
+    });
+  }
+);
+
+add_atomic_task(
+  async function test_updateLLMTelemetryRecord_creates_processed_row() {
+    const conversation = new ChatConversation({});
+    conversation.title = "processed llm telemetry conversation";
+    conversation.addUserMessage("test content", "https://www.firefox.com");
+    await gChatStore.updateConversation(conversation);
+
+    await gChatStore.updateLLMTelemetryRecord(
+      conversation.id,
+      {
+        "wasSuccessful-v1": 2,
+        "isLongConvo-v1": 2,
+      },
+      {
+        "wasSuccessful-v1": 0.9,
+        "isLongConvo-v1": 0.84,
+      },
+      0,
+      1
+    );
+
+    const telemetry = await gChatStore.findLLMTelemetryByConversationId(
+      conversation.id
+    );
+
+    Assert.ok(telemetry, "LLM telemetry row should exist");
+    Assert.withSoftAssertions(function (soft) {
+      soft.equal(telemetry.convId, conversation.id);
+      soft.equal(telemetry.processed, 1);
+      soft.deepEqual(telemetry.telemetryPrompts, {
+        "wasSuccessful-v1": 2,
+        "isLongConvo-v1": 2,
+      });
+      soft.deepEqual(telemetry.telemetryProbabilities, {
+        "wasSuccessful-v1": 0.9,
+        "isLongConvo-v1": 0.84,
+      });
+      soft.ok(telemetry.processedTime, "processedTime should be set");
+    });
+  }
+);
+
+add_atomic_task(
+  async function test_updateLLMTelemetryRecord_merges_prompts_and_probabilities() {
+    const conversation = new ChatConversation({});
+    conversation.title = "merged llm telemetry conversation";
+    conversation.addUserMessage("test content", "https://www.firefox.com");
+    await gChatStore.updateConversation(conversation);
+
+    await gChatStore.updateLLMTelemetryRecord(
+      conversation.id,
+      {
+        "wasSuccessful-v1": 2,
+        "isLongConvo-v1": 2,
+      },
+      {
+        "wasSuccessful-v1": 0.9,
+        "isLongConvo-v1": 0.84,
+      },
+      0,
+      0
+    );
+
+    await gChatStore.updateLLMTelemetryRecord(
+      conversation.id,
+      {
+        "isLongConvo-v1": 8,
+      },
+      {
+        "isLongConvo-v1": 0.95,
+      },
+      0,
+      1
+    );
+
+    const telemetry = await gChatStore.findLLMTelemetryByConversationId(
+      conversation.id
+    );
+
+    Assert.ok(telemetry, "LLM telemetry row should exist");
+    Assert.withSoftAssertions(function (soft) {
+      soft.equal(telemetry.convId, conversation.id);
+      soft.equal(telemetry.processed, 1);
+      soft.deepEqual(telemetry.telemetryPrompts, {
+        "wasSuccessful-v1": 2,
+        "isLongConvo-v1": 8,
+      });
+      soft.deepEqual(telemetry.telemetryProbabilities, {
+        "wasSuccessful-v1": 0.9,
+        "isLongConvo-v1": 0.84,
+      });
+      soft.ok(telemetry.processedTime, "processedTime should be set");
+    });
+  }
+);
+
+add_atomic_task(
+  async function test_updateLLMTelemetryRecord_preserves_existing_data_when_marking_unprocessed() {
+    const conversation = new ChatConversation({});
+    conversation.title = "unprocessed preserves telemetry";
+    conversation.addUserMessage("test content", "https://www.firefox.com");
+    await gChatStore.updateConversation(conversation);
+
+    await gChatStore.updateLLMTelemetryRecord(
+      conversation.id,
+      {
+        "wasSuccessful-v1": 2,
+        "isLongConvo-v1": 8,
+      },
+      {
+        "wasSuccessful-v1": 0.9,
+        "isLongConvo-v1": 0.95,
+      },
+      0,
+      1
+    );
+
+    await gChatStore.updateLLMTelemetryRecord(conversation.id, {}, {}, 0);
+
+    const telemetry = await gChatStore.findLLMTelemetryByConversationId(
+      conversation.id
+    );
+
+    Assert.ok(telemetry, "LLM telemetry row should exist");
+    Assert.withSoftAssertions(function (soft) {
+      soft.equal(telemetry.convId, conversation.id);
+      soft.equal(telemetry.processed, 0);
+      soft.deepEqual(telemetry.telemetryPrompts, {
+        "wasSuccessful-v1": 2,
+        "isLongConvo-v1": 8,
+      });
+      soft.deepEqual(telemetry.telemetryProbabilities, {
+        "wasSuccessful-v1": 0.9,
+        "isLongConvo-v1": 0.95,
+      });
+      soft.ok(telemetry.processedTime, "processedTime should be set");
+    });
+  }
+);
+
+add_atomic_task(
+  async function test_findLLMTelemetryByConversationId_returns_null_for_missing_row() {
+    const telemetry =
+      await gChatStore.findLLMTelemetryByConversationId("missing-conv-id");
+
+    Assert.equal(
+      telemetry,
+      null,
+      "Should return null when no LLM telemetry row exists"
+    );
+  }
+);
+
+add_atomic_task(
+  async function test_updateLLMTelemetryRecord_sets_uniform_sampling_probability() {
+    const conversation = new ChatConversation({});
+    conversation.title = "uniform sampling probability conversation";
+    conversation.addUserMessage("test content", "https://www.firefox.com");
+    await gChatStore.updateConversation(conversation);
+
+    await gChatStore.updateLLMTelemetryRecord(conversation.id, {}, {}, 750, 0);
+
+    const telemetry = await gChatStore.findLLMTelemetryByConversationId(
+      conversation.id
+    );
+
+    Assert.ok(telemetry, "LLM telemetry row should exist");
+    Assert.equal(telemetry.uniformSamplingProbability, 750);
+  }
+);
+
+add_atomic_task(
+  async function test_updateLLMTelemetryRecord_preserves_uniform_sampling_probability() {
+    const conversation = new ChatConversation({});
+    conversation.title = "uniform sampling probability preserved conversation";
+    conversation.addUserMessage("test content", "https://www.firefox.com");
+    await gChatStore.updateConversation(conversation);
+
+    await gChatStore.updateLLMTelemetryRecord(conversation.id, {}, {}, 750, 0);
+
+    await gChatStore.updateLLMTelemetryRecord(conversation.id, {}, {}, 999, 1);
+
+    const telemetry = await gChatStore.findLLMTelemetryByConversationId(
+      conversation.id
+    );
+
+    Assert.ok(telemetry, "LLM telemetry row should exist");
+    Assert.equal(
+      telemetry.uniformSamplingProbability,
+      750,
+      "uniform_sampling_probability should not be overwritten on update"
+    );
+  }
+);
+
+add_atomic_task(
+  async function test_findConversationById_hydratesUniformSamplingState() {
+    const conversation = new ChatConversation({});
+    conversation.title = "hydration conversation";
+    conversation.addUserMessage("test content", "https://www.firefox.com");
+    await gChatStore.updateConversation(conversation);
+    await gChatStore.updateLLMTelemetryRecord(conversation.id, {}, {}, 0.25, 0);
+
+    const reloaded = await gChatStore.findConversationById(conversation.id);
+
+    Assert.equal(
+      reloaded._telemetryUniformSample,
+      true,
+      "_telemetryUniformSample is rehydrated from llm_telemetry on reload"
+    );
+    Assert.equal(
+      reloaded._telemetryUniformProbability,
+      0.25,
+      "_telemetryUniformProbability is rehydrated from llm_telemetry on reload"
+    );
+  }
+);
+
+add_atomic_task(
+  async function test_findConversationById_skipsHydrationWhenNotSampled() {
+    const conversation = new ChatConversation({});
+    conversation.title = "no-hydration conversation";
+    conversation.addUserMessage("test content", "https://www.firefox.com");
+    await gChatStore.updateConversation(conversation);
+    await gChatStore.updateLLMTelemetryRecord(conversation.id, {}, {}, 0, 0);
+
+    const reloaded = await gChatStore.findConversationById(conversation.id);
+
+    Assert.notStrictEqual(
+      reloaded._telemetryUniformSample,
+      true,
+      "_telemetryUniformSample stays unset when uniform_sampling_probability is 0"
+    );
+  }
+);
+
+add_atomic_task(
+  async function test_findConversationById_skipsHydrationWhenNoTelemetryRow() {
+    const conversation = new ChatConversation({});
+    conversation.title = "no-telemetry-row conversation";
+    conversation.addUserMessage("test content", "https://www.firefox.com");
+    await gChatStore.updateConversation(conversation);
+
+    const reloaded = await gChatStore.findConversationById(conversation.id);
+
+    Assert.notStrictEqual(
+      reloaded._telemetryUniformSample,
+      true,
+      "_telemetryUniformSample stays unset when no llm_telemetry row exists"
+    );
+  }
+);
+
+/**
+ * Test that messages with website-confirmation toolUIData get isRestored flag
+ * when loaded from the database
+ */
+add_atomic_task(async function test_website_confirmation_isRestored_flag() {
+  const conversation = new ChatConversation({});
+  conversation.title = "Test isRestored flag";
+  conversation.addUserMessage("Close some tabs", "https://example.com/", 0);
+  conversation.addAssistantMessage("text", "I'll help close those tabs");
+
+  const assistant = conversation.messages.at(-1);
+
+  // Add website-confirmation toolUIData
+  const toolUIData = makeToolUIData({
+    uiType: "website-confirmation",
+    tabs: [
+      { id: "tab-1", url: "https://example.com", title: "Example" },
+      { id: "tab-2", url: "https://test.com", title: "Test" },
+    ],
+  });
+
+  // Add originalUserPrompt to properties
+  toolUIData.properties.originalUserPrompt = "Close some tabs";
+  assistant.toolUIData = toolUIData;
+
+  // Save the conversation
+  await gChatStore.updateConversation(conversation);
+
+  // Load it back from the database
+  const reloaded = await gChatStore.findConversationById(conversation.id);
+  const reloadedAssistant = reloaded.messages.find(m => m.id === assistant.id);
+
+  // Verify the isRestored flag was set
+  Assert.ok(
+    reloadedAssistant.isRestored,
+    "Messages with website-confirmation toolUIData should have isRestored flag set when loaded from DB"
+  );
+
+  // Verify the toolUIData is preserved
+  Assert.equal(
+    reloadedAssistant.toolUIData.uiType,
+    "website-confirmation",
+    "uiType should be preserved"
+  );
+
+  Assert.equal(
+    reloadedAssistant.toolUIData.properties.originalUserPrompt,
+    "Close some tabs",
+    "originalUserPrompt should be preserved"
+  );
+
+  Assert.equal(
+    reloadedAssistant.toolUIData.properties.tabs.length,
+    2,
+    "tabs array should be preserved"
+  );
+});
+
+/**
+ * Test that messages with other UI types don't get isRestored flag
+ */
+add_atomic_task(async function test_other_ui_types_no_isRestored_flag() {
+  const conversation = new ChatConversation({});
+  conversation.title = "Test no isRestored flag";
+  conversation.addUserMessage("Do something", "https://example.com/", 0);
+  conversation.addAssistantMessage("text", "Task completed");
+
+  const assistant = conversation.messages.at(-1);
+
+  // Add ai-action-result toolUIData (not website-confirmation)
+  assistant.toolUIData = makeToolUIData({
+    uiType: "ai-action-result",
+  });
+
+  // Save the conversation
+  await gChatStore.updateConversation(conversation);
+
+  // Load it back from the database
+  const reloaded = await gChatStore.findConversationById(conversation.id);
+  const reloadedAssistant = reloaded.messages.find(m => m.id === assistant.id);
+
+  // Verify the isRestored flag was NOT set
+  Assert.ok(
+    !reloadedAssistant.isRestored,
+    "Messages with non-website-confirmation toolUIData should NOT have isRestored flag"
+  );
+
+  // Verify the toolUIData is still preserved
+  Assert.equal(
+    reloadedAssistant.toolUIData.uiType,
+    "ai-action-result",
+    "uiType should be preserved"
+  );
+});

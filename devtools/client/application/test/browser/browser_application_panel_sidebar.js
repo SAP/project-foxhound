@@ -35,7 +35,7 @@ add_task(async function () {
   const doc = panel.panelWin.document;
 
   info("Select service worker page");
-  selectPage(panel, "service-workers");
+  await selectPage(panel, "service-workers");
   await waitUntil(() => doc.querySelector(".js-service-workers-page") !== null);
   await unregisterAllWorkers(commands.client, doc);
 
@@ -74,7 +74,7 @@ add_task(async function () {
   const { panel, tab, commands } = await openNewTabAndApplicationPanel(url);
   const doc = panel.panelWin.document;
 
-  selectPage(panel, "manifest");
+  await selectPage(panel, "manifest");
 
   info("Waiting for the manifest to load");
   await waitUntil(() => doc.querySelector(".js-manifest-page") !== null);

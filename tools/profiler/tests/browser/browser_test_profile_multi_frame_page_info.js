@@ -12,7 +12,7 @@ if (SpecialPowers.useRemoteSubframes) {
 add_task(async function test_profile_multi_frame_page_info() {
   // Requesting the complete log to be able to debug Bug 1586105.
   SimpleTest.requestCompleteLog();
-  Assert.ok(!Services.profiler.IsActive());
+  await ProfilerTestUtils.assertProfilerInactive();
   info("Clear the previous pages just in case we still have some open tabs.");
   await Services.profiler.ClearAllPages();
 

@@ -1,5 +1,4 @@
 /* clang-format off */
-/* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -62,6 +61,19 @@ NSDictionary* StringAttributesFromAccAttributes(AccAttributes* aAttributes,
  * in the presence of multiple monitors.
  */
 NSScreen* GetNSScreenForAcc(mozAccessible* aAcc);
+
+/**
+ * Returns an NSRect containing screen coordinates for the given accessible.
+ * The accessible's size is also scaled by the display's scale factor.
+ * When `aShouldUseCocoaCoords` is true, the coordinates returned are relative
+ * to the bottom left of the main display.
+ * When false, the coordinates are relative to the upper left of the main
+ * display.
+ * `aRect` is assumed to relate to the given `aAcc` and should be given in gecko
+ * screen coordinates.
+ */
+NSRect GetCocoaScreenRectForAcc(mozAccessible* aAcc, LayoutDeviceIntRect& aRect,
+                                bool aShouldUseCocoaCoords);
 }  // namespace utils
 }  // namespace a11y
 }  // namespace mozilla

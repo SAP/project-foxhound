@@ -84,17 +84,9 @@ p {
 
 .search-inner-wrapper {
   display: flex;
-  height: var(--size-item-xlarge);
-  padding: 0 22px;
+  height: 52px;
+  padding: 0;
   min-width: 70vw;
-}
-
-/* stylelint-disable-next-line media-query-no-invalid */
-@media -moz-pref("browser.privatebrowsing.felt-privacy-v1") {
-  .search-inner-wrapper {
-    height: 52px;
-    padding: 0;
-  }
 }
 
 .promo-image-large {
@@ -161,26 +153,16 @@ p {
 }
 
 content-search-handoff-ui {
-  --content-search-handoff-ui-background-color: white;
-  --content-search-handoff-ui-color: rgb(12, 12, 13);
-  --content-search-handoff-ui-fill: rgba(12, 12, 13, 0.4);
-  --content-search-handoff-ui-caret-color: rgb(12, 12, 13);
+  --content-search-handoff-ui-background-color: #321c64;
+  --content-search-handoff-ui-color: #fbfbfe;
+  --content-search-handoff-ui-fill: rgb(251, 251, 254);
+  --content-search-handoff-ui-caret-color: #fbfbfe;
+  --content-search-handoff-ui-border-width: 3px;
+  --content-search-handoff-ui-unfocused-border-color: rgb(149, 43, 185);
   --content-search-handoff-ui-fakefocus-border-color: #0060df;
   --content-search-handoff-ui-fakefocus-box-shadow-inner: #0060df;
   --content-search-handoff-ui-fakefocus-box-shadow-outer: rgba(0, 96, 223, 0.3);
-
-  /* stylelint-disable-next-line media-query-no-invalid */
-  @media -moz-pref("browser.privatebrowsing.felt-privacy-v1") {
-    --content-search-handoff-ui-background-color: #321c64;
-    --content-search-handoff-ui-color: #fbfbfe;
-    --content-search-handoff-ui-fill: rgb(251, 251, 254);
-    --content-search-handoff-ui-caret-color: #fbfbfe;
-    --content-search-handoff-ui-border-width: 3px;
-    --content-search-handoff-ui-unfocused-border-color: rgb(149, 43, 185);
-    --content-search-handoff-ui-fakefocus-border-color: #0060df;
-    --content-search-handoff-ui-fakefocus-box-shadow-inner: #0060df;
-    --content-search-handoff-ui-fakefocus-box-shadow-outer: rgba(0, 96, 223, 0.3);
-  }
+  --content-search-handoff-ui-engine-icon: url(chrome://global/skin/icons/search-glass.svg);
 
   @media (forced-colors) {
     --content-search-handoff-ui-background-color: ButtonFace;
@@ -227,25 +209,6 @@ content-search-handoff-ui {
   margin: 4px 0;
 }
 
-.info {
-  margin-top: 64px;
-  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
-  background-color: var(--color-black-alpha-20);
-  background-image: url("chrome://global/skin/icons/indicator-private-browsing.svg");
-  background-position: left 32px top 20px;
-  background-repeat: no-repeat;
-  background-size: 32px;
-  border: 1px solid transparent;
-  border-radius: var(--border-radius-small);
-  letter-spacing: -0.2px;
-  padding: 20px;
-  padding-inline-start: 76px;
-}
-
-.info:dir(rtl) {
-  background-position-x: right 32px;
-}
-
 .info h1,
 .promo h1 {
   font-size: 18px;
@@ -258,45 +221,42 @@ content-search-handoff-ui {
   line-height: 1.67;
 }
 
-.info #info-title:not([hidden]) + p {
-  margin-top: 15px;
+.info-border {
+  border-radius: var(--border-radius-medium);
+  margin-top: 64px;
+  padding: 17px;
+
+  @media not (prefers-contrast) {
+    box-shadow: 0 2px 6px 0 rgba(58, 57, 68, 0.2);
+    background: rgba(149, 43, 185, 0.5);
+  }
 }
 
-/* stylelint-disable-next-line media-query-no-invalid */
-@media -moz-pref("browser.privatebrowsing.felt-privacy-v1") {
-  .info-border {
-    border-radius: var(--border-radius-medium);
-    margin-top: 64px;
-    padding: 17px;
+.info {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  background-color: var(--color-black-alpha-20);
+  background-image: none;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-small);
+  font-size: 0.93em;
+  letter-spacing: -0.2px;
+  margin: 0;
+  padding: 20px;
+  padding-block-end: 25px;
 
-    @media not (prefers-contrast) {
-      box-shadow: 0 2px 6px 0 rgba(58, 57, 68, 0.2);
-      background: rgba(149, 43, 185, 0.5);
-    }
+  @media not (prefers-contrast) {
+    background-color: #321c64;
+    box-shadow: 0 2px 6px 0 rgba(58, 57, 68, 0.2);
   }
+}
 
-  .info {
-    background-image: none;
-    border-radius: var(--border-radius-small);
-    font-size: 0.93em;
-    margin: 0;
-    padding-inline-start: 20px;
-    padding-block-end: 25px;
+#info-title:not([hidden]) + #info-body {
+  margin-block: 0;
+}
 
-    @media not (prefers-contrast) {
-      background-color: #321c64;
-      box-shadow: 0 2px 6px 0 rgba(58, 57, 68, 0.2);
-    }
-  }
-
-  #info-title:not([hidden]) + #info-body {
-    margin-block: 0;
-  }
-
-  #info-title {
-    font-size: 1em;
-    margin-block: 0;
-  }
+#info-title {
+  font-size: 1em;
+  margin-block: 0;
 }
 
 .search-banner-close-button {
@@ -484,19 +444,153 @@ content-search-handoff-ui {
   margin: 0;
 }
 
-/* stylelint-disable-next-line media-query-no-invalid */
-@media -moz-pref("browser.privatebrowsing.felt-privacy-v1") {
-  .promo.below-search.promo-visible {
-    margin-block: 0 25px;
+.promo.below-search.promo-visible {
+  margin-block: 0 25px;
 
-    @media not (prefers-contrast) {
-      background-color: #321c64;
+  @media not (prefers-contrast) {
+    background-color: #321c64;
+  }
+}
+
+@media not (prefers-contrast) {
+  html.private {
+    background: linear-gradient(45deg, #722291 0%, #45278d 50%, #393473 100%);
+  }
+}
+
+.nova-tagline {
+  display: none;
+}
+
+/* stylelint-disable-next-line media-query-no-invalid */
+@media -moz-pref("browser.nova.enabled") {
+  @media not (prefers-contrast) {
+    html.private {
+      /* Re-assert the token default to override the legacy
+         `--background-color-canvas: #25003e` set on `html.private` above. */
+      --background-color-canvas: light-dark(var(--color-gray-0), var(--color-gray-90));
+      background: var(--background-color-canvas);
+      color: var(--color-white);
+      /* Reset the legacy `--link-color: white` set on `html.private` above
+         back to the Nova design-system link tokens (accent primary). */
+      --link-color: var(--color-accent-primary);
+      --link-color-hover: var(--color-accent-primary-hover);
+      --link-color-active: var(--color-accent-primary-active);
+    }
+
+    html.private body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background: url("chrome://browser/skin/privatebrowsing/fox-tail.svg") no-repeat bottom right / cover;
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    /* The fox-tail is a directional decoration; mirror it in RTL so the
+       sweep points toward the inline-start corner. */
+    html.private:dir(rtl) body::before {
+      transform: scaleX(-1);
     }
   }
 
-  @media not (prefers-contrast) {
-    html.private {
-      background: linear-gradient(45deg, #722291 0%, #45278d 50%, #393473 100%);
+  html.private .container {
+    /* Fill body height so the info section can be pinned to the bottom of
+       the viewport via `margin-block-start: auto`. */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+    width: 100%;
+  }
+
+  .logo-and-wordmark {
+    margin-block: clamp(32px, 10vh, 120px) var(--space-medium);
+  }
+
+  .logo-and-wordmark .wordmark {
+    display: none;
+  }
+
+  .logo {
+    background: url("chrome://browser/skin/privatebrowsing/pbm-logo.svg") no-repeat center center;
+    background-size: var(--size-item-xlarge);
+    height: var(--size-item-xlarge);
+    width: var(--size-item-xlarge);
+  }
+
+  .nova-tagline {
+    display: block;
+    text-align: center;
+    margin-block: 0 var(--space-xxlarge);
+  }
+
+  content-search-handoff-ui {
+    /* Reset the legacy glass icon back to the component default, which shows
+       the current search engine's icon. */
+    --content-search-handoff-ui-engine-icon: var(--newtab-search-icon);
+
+    @media not (prefers-contrast) {
+      --content-search-handoff-ui-background-color: var(--color-violet-desaturated-70);
+      /* Reset the legacy 3px PBM border back to the standard field border */
+      --content-search-handoff-ui-border-width: var(--border-width);
+      --content-search-handoff-ui-unfocused-border-color: var(--color-violet-desaturated-50);
+      --content-search-handoff-ui-fakefocus-border-color: var(--color-accent-primary);
+      --content-search-handoff-ui-fakefocus-box-shadow-inner: var(--color-accent-primary);
+      --content-search-handoff-ui-fakefocus-box-shadow-outer: color-mix(in srgb, var(--color-accent-primary) 30%, transparent);
+    }
+  }
+
+  html.private .info-border {
+    margin-block-start: auto;
+    margin-block-end: 0;
+    padding-block: var(--space-xxlarge) 0;
+    padding-inline: 0;
+
+    @media not (prefers-contrast) {
+      background: transparent;
+      box-shadow: none;
+    }
+  }
+
+  html.private .info {
+    background: none;
+    border: none;
+    padding: 0;
+    text-align: center;
+
+    @media not (prefers-contrast) {
+      background-color: transparent;
+      box-shadow: none;
+      color: var(--text-color-deemphasized);
+    }
+
+    /* Drop the body's default block margin so the 12px gap to the link is
+       owned solely by the link's `margin-block-start` below. The link is
+       `inline-block`, so its margin would not otherwise collapse with the
+       body's. */
+    #info-body {
+      margin-block-end: 0;
+    }
+
+    #private-browsing-myths {
+      display: inline-block;
+      margin-block-start: var(--space-medium);
+    }
+  }
+
+  /* `:link` to outweigh the base `a:link { color: inherit }` rule. */
+  #private-browsing-myths:link {
+    @media not (prefers-contrast) {
+      color: var(--link-color);
+
+      &:hover {
+        color: var(--link-color-hover);
+      }
+
+      &:active {
+        color: var(--link-color-active);
+      }
     }
   }
 }

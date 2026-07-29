@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * Any copyright is dedicated to the Public Domain.
+/* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 @file:Suppress("ktlint:standard:no-wildcard-imports")
@@ -389,12 +388,6 @@ class ContentDelegateChildTest : BaseSessionTest() {
                         element.linkUri,
                         endsWith("hello.html"),
                     )
-                    @Suppress("DEPRECATION") // remove when textContent is removed
-                    assertThat(
-                        "The element link text content should be the text content of the anchor.",
-                        element.textContent,
-                        equalTo("Hello World"),
-                    )
                     assertThat(
                         "The element link text should be the link text of the anchor.",
                         element.linkText,
@@ -429,12 +422,6 @@ class ContentDelegateChildTest : BaseSessionTest() {
                     assertThat(
                         "The element link alternative text should not exceed a maximum of 4096 chars.",
                         element.altText?.length,
-                        equalTo(4096),
-                    )
-                    @Suppress("DEPRECATION") // remove when textContent is removed
-                    assertThat(
-                        "The element link text content should not exceed a maximum of 4096 chars.",
-                        element.textContent?.length,
                         equalTo(4096),
                     )
                     assertThat(
@@ -477,13 +464,6 @@ class ContentDelegateChildTest : BaseSessionTest() {
                         "The element link URI should be the href of the anchor.",
                         element.linkUri,
                         endsWith("hello.html"),
-                    )
-                    @Suppress("DEPRECATION") // remove when textContent is removed
-                    assertThat(
-                        "The element link text content should be the text content of the " +
-                                "anchor including white spaces.",
-                        element.textContent,
-                        equalTo("\n      Lorem ipsum dolor sit amet cillum amet minim."),
                     )
                     assertThat(
                         "The element link text should be the link text of the " +
@@ -578,12 +558,6 @@ class ContentDelegateChildTest : BaseSessionTest() {
                         element.linkUri,
                         endsWith("hello.html"),
                     )
-                    @Suppress("DEPRECATION") // remove when textContent is removed
-                    assertThat(
-                        "The element link text content should be the text content of the anchor.",
-                        element.textContent,
-                        equalTo("Hello World"),
-                    )
                     assertThat(
                         "The element link text should be the link text of the anchor.",
                         element.linkText,
@@ -630,12 +604,6 @@ class ContentDelegateChildTest : BaseSessionTest() {
                         "The element link URI should be the href of the anchor.",
                         element.linkUri,
                         endsWith("hello.html"),
-                    )
-                    @Suppress("DEPRECATION") // remove when textContent is removed
-                    assertThat(
-                        "The element link text content should be the text content of the anchor.",
-                        element.textContent,
-                        equalTo("Hello World"),
                     )
                     assertThat(
                         "The element link text should be the link text of the anchor.",

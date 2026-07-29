@@ -13,13 +13,15 @@
 const DEFAULT_URL_SCHEME = "http://";
 
 add_setup(async function () {
-  let bm = await PlacesUtils.bookmarks.insert({
-    parentGuid: PlacesUtils.bookmarks.unfiledGuid,
-    url: DEFAULT_URL_SCHEME + "/example.com/?q=%s",
-    title: "test",
-  });
+  // Add visits so that it can be autofilled.
+  await PlacesTestUtils.addVisits([
+    {
+      uri: DEFAULT_URL_SCHEME + "/example.com/?q=%s",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+  ]);
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
   registerCleanupFunction(async function () {
-    await PlacesUtils.bookmarks.remove(bm);
     await PlacesUtils.history.clear();
   });
   await SpecialPowers.pushPrefEnv({

@@ -382,7 +382,7 @@ function removeSourcesAndActors(state, action) {
   }
 
   for (const removedActor of action.actors) {
-    const sourceId = removedActor.source;
+    const sourceId = removedActor.sourceObject.id;
     const actorsForSource = mutableSourceActors.get(sourceId);
     // actors may have already been cleared by the previous for..loop
     if (!actorsForSource) {
@@ -419,7 +419,7 @@ function insertSourceActors(state, action) {
   // The `sourceActor` objects are defined from `newGeneratedSources` action:
   // https://searchfox.org/mozilla-central/rev/4646b826a25d3825cf209db890862b45fa09ffc3/devtools/client/debugger/src/actions/sources/newSources.js#300-314
   for (const sourceActor of sourceActors) {
-    const sourceId = sourceActor.source;
+    const sourceId = sourceActor.sourceObject.id;
     // We always clone the array of source actors as we return it from selectors.
     // So the map is mutable, but its values are considered immutable and will change
     // anytime there is a new actor added per source ID.
@@ -437,8 +437,8 @@ function insertSourceActors(state, action) {
   if (scriptActors.length) {
     // If new HTML sources are being added, we need to clear the breakpoint
     // positions since the new source is a <script> with new breakpoints.
-    for (const { source } of scriptActors) {
-      state.mutableBreakpointPositions.delete(source);
+    for (const { sourceObject } of scriptActors) {
+      state.mutableBreakpointPositions.delete(sourceObject.id);
     }
   }
 

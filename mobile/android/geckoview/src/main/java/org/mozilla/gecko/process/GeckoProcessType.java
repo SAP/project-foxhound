@@ -23,7 +23,7 @@ public enum GeckoProcessType {
   FORKSERVER("forkserver"),
   UTILITY("utility"),
   CONTENT_ISOLATED("isolatedTab"),
-  CONTENT_ISOLATED_WITH_ZYGOTE("isolatedTabWithZygote");
+  CONTENT_ISOLATED_WITH_ZYGOTE("zygoteTab");
 
   private final String mGeckoName;
 

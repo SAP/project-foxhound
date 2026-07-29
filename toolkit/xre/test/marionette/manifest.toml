@@ -1,8 +1,18 @@
 [DEFAULT]
+subsuite = "integration"
+tags = "os_integration"
 
 ["include:xdg_config/manifest.toml"]
 
 ["test_exitcode.py"]
+
+["test_external_a11y_after_launch.py"]
+run-if = [
+  "os == 'mac'",
+]
+support-files = [
+  "external_a11y_helper.py",
+]
 
 ["test_fission_autostart.py"]
 

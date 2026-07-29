@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "CacheCrypto.h"
 #include "CacheFileChunk.h"
 #include "CacheFileInputStream.h"
 #include "CacheFileOutputStream.h"
@@ -560,6 +561,10 @@ nsresult CacheFile::OnFileOpened(CacheFileHandle* aHandle, nsresult aResult) {
         // The entry was initialized as createNew, don't try to read metadata.
         mMetadata->SetHandle(mHandle);
 
+        // Set up encryption before any cached chunk is flushed below, so the
+        // chunks are written with the entry's salt.
+        SetupEncryption();
+
         // Write all cached chunks, otherwise they may stay unwritten.
         for (auto iter = mCachedChunks.Iter(); !iter.Done(); iter.Next()) {
           uint32_t idx = iter.Key();
@@ -648,6 +653,12 @@ nsresult CacheFile::OnMetadataRead(nsresult aResult) {
         } else {
           PreloadChunks(0);
         }
+      }
+
+      if (isNew) {
+        // A brand-new disk entry: enable encryption (and generate its salt)
+        // when the feature is on, before any data is written.
+        SetupEncryption();
       }
 
       InitIndexEntry();
@@ -1069,7 +1080,7 @@ nsresult CacheFile::DoomLocked(CacheFileListener* aCallback) {
   if (mHandle) {
     rv = CacheFileIOManager::DoomFile(mHandle, listener);
   } else if (mOpeningFile) {
-    mDoomAfterOpenListener = listener;
+    mDoomAfterOpenListener = std::move(listener);
   }
 
   return rv;
@@ -1498,6 +1509,9 @@ nsresult CacheFile::GetChunkLocked(uint32_t aIndex, ECallerType aCaller,
          chunk.get(), this));
 
     // Read the chunk from the disk
+    if (mMetadata->IsEncrypted()) {
+      chunk->SetEncrypted();
+    }
     rv = chunk->Read(mHandle,
                      std::min(static_cast<uint32_t>(mDataSize - off),
                               static_cast<uint32_t>(kChunkSize)),
@@ -1773,6 +1787,9 @@ nsresult CacheFile::DeactivateChunk(CacheFileChunk* aChunk) {
 
       mDataIsDirty = true;
 
+      if (mMetadata->IsEncrypted()) {
+        chunk->SetEncrypted();
+      }
       rv = chunk->Write(mHandle, this);
       if (NS_FAILED(rv)) {
         LOG(
@@ -2508,6 +2525,36 @@ void CacheFile::SetError(nsresult aStatus) {
       CacheFileIOManager::DoomFile(mHandle, nullptr);
     }
   }
+}
+
+void CacheFile::SetupEncryption() {
+  AssertOwnsLock();
+
+  // Only brand-new, disk-backed entries with no data yet are marked: this fixes
+  // an entry's encryption state at creation and never flips an existing
+  // plaintext entry. Existing entries read from disk carry their flag in the
+  // metadata header. The cipher uses a per-block random nonce and a per-block
+  // derived key, so no per-entry key material needs to be generated here.
+  if (mMemoryOnly || !mMetadata || mMetadata->IsEncrypted() || mDataSize != 0) {
+    return;
+  }
+
+  if (!CacheCrypto::IsActive()) {
+    if (CacheCrypto::IsEnabled()) {
+      // Fail closed: encryption is enabled but no usable cipher is available
+      // (e.g. NSS or key load failed). Never write the entry as plaintext --
+      // mark it errored so it is doomed instead of persisted or served.
+      LOG(
+          ("CacheFile::SetupEncryption() - encryption enabled but no cipher "
+           "available, failing entry [this=%p]",
+           this));
+      SetError(NS_ERROR_NOT_AVAILABLE);
+    }
+    // Otherwise encryption is off and a plaintext entry is intended.
+    return;
+  }
+
+  mMetadata->SetEncrypted();
 }
 
 nsresult CacheFile::InitIndexEntry() {

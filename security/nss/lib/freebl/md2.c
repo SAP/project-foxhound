@@ -196,6 +196,13 @@ MD2_Update(MD2Context *cx, const unsigned char *input, unsigned int inputLen)
 {
     PRUint32 bytesToConsume;
 
+    /* Reject corrupt deserialized state: unusedBuffer must never exceed
+     * MD2_BUFSIZE, otherwise the index computation below underflows. */
+    if (cx->unusedBuffer > MD2_BUFSIZE) {
+        PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
+        return;
+    }
+
     /* Fill the remaining input buffer. */
     if (cx->unusedBuffer != MD2_BUFSIZE) {
         bytesToConsume = PR_MIN(inputLen, cx->unusedBuffer);
@@ -228,6 +235,12 @@ MD2_End(MD2Context *cx, unsigned char *digest,
     PRUint8 padStart;
     if (maxDigestLen < MD2_BUFSIZE) {
         PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        return;
+    }
+    /* Reject corrupt deserialized state: unusedBuffer must never exceed
+     * MD2_BUFSIZE, otherwise padStart wraps and the memset below overflows. */
+    if (cx->unusedBuffer > MD2_BUFSIZE) {
+        PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
         return;
     }
     padStart = MD2_BUFSIZE - cx->unusedBuffer;

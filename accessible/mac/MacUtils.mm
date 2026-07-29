@@ -1,5 +1,4 @@
 /* clang-format off */
-/* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -185,6 +184,31 @@ NSScreen* GetNSScreenForAcc(mozAccessible* aAcc) {
   }
 
   return screen;
+}
+
+NSRect GetCocoaScreenRectForAcc(mozAccessible* aAcc, LayoutDeviceIntRect& aRect,
+                                bool aShouldUseCocoaCoords) {
+  if (!aAcc) {
+    return NSMakeRect(aRect.x, aRect.y, aRect.width, aRect.height);
+  }
+
+  NSScreen* screen = GetNSScreenForAcc(aAcc);
+  CGFloat scaleFactor = nsCocoaUtils::GetBackingScaleFactor(screen);
+
+  // Regardless of screen selected above, VO is only happy if we use the
+  // main screen height for Y coordinate conversion. This is consistent with
+  // moxHitTest and GeckoTextMarkerRange::Bounds().
+  NSScreen* mainScreen = [[NSScreen screens] objectAtIndex:0];
+  CGFloat mainScreenHeight = [mainScreen frame].size.height;
+
+  return NSMakeRect(
+      static_cast<CGFloat>(aRect.x) / scaleFactor,
+      aShouldUseCocoaCoords
+          ? mainScreenHeight -
+                static_cast<CGFloat>(aRect.y + aRect.height) / scaleFactor
+          : static_cast<CGFloat>(aRect.y) / scaleFactor,
+      static_cast<CGFloat>(aRect.width) / scaleFactor,
+      static_cast<CGFloat>(aRect.height) / scaleFactor);
 }
 }  // namespace utils
 }  // namespace a11y

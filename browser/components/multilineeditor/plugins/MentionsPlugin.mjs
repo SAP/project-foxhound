@@ -32,7 +32,11 @@ class Mentions {
   }
 
   /**
-   * Insert a mention.
+   * Insert a mention by replacing the given range with the chip and appending
+   * a trailing space. Used by the @-typing flow where `from..to` covers the
+   * `@…` trigger; the trailing space and view focus are UX niceties for that
+   * flow. For programmatic insertions that don't replace existing text (e.g.
+   * restoring saved input state), use {@link Mentions#insertNode} instead.
    *
    * @param {MentionData} mention - Mention data
    * @param {number} from - Start position
@@ -40,22 +44,63 @@ class Mentions {
    */
   insert(mention, from, to) {
     const view = this.#editor.view;
-    const { state } = view;
-    const mentionNode = state.schema.nodes.mention.create({
-      type: mention.type,
-      id: mention.id,
-      label: mention.label,
-    });
-
     try {
-      const tr = state.tr;
-      tr.replaceRangeWith(from, to, mentionNode);
+      const tr = this.#buildInsertNodeTransaction(mention, from, to);
       tr.insertText(" ");
       view.dispatch(tr);
       view.focus();
     } catch (e) {
       console.error("Failed to insert mention:", e);
     }
+  }
+
+  /**
+   * Insert a mention chip at a single position without altering surrounding
+   * text or moving focus. Suitable for programmatic insertions that should
+   * not perturb the document beyond adding the chip.
+   *
+   * @param {MentionData} mention - Mention data
+   * @param {number} pos - Document position to insert at
+   */
+  insertNode(mention, pos) {
+    const view = this.#editor.view;
+    try {
+      const tr = this.#buildInsertNodeTransaction(mention, pos, pos);
+      view.dispatch(tr);
+    } catch (e) {
+      console.error("Failed to insert mention:", e);
+    }
+  }
+
+  #buildInsertNodeTransaction(mention, from, to) {
+    const { state } = this.#editor.view;
+    const mentionNode = state.schema.nodes.mention.create({
+      type: mention.type,
+      id: mention.id,
+      label: mention.label,
+    });
+    return state.tr.replaceRangeWith(from, to, mentionNode);
+  }
+
+  /**
+   * Returns true after finding the first mention node.
+   *
+   * @returns {boolean} Whether mentions exist.
+   */
+  hasMention() {
+    const { state } = this.#editor.view;
+    const { doc, schema } = state;
+
+    let foundMention = false;
+    doc.nodesBetween(0, doc.content.size, node => {
+      if (node.type === schema.nodes.mention) {
+        foundMention = true;
+        return false;
+      }
+      return true;
+    });
+
+    return foundMention;
   }
 
   /**

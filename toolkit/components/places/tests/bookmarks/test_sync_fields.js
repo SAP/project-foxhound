@@ -104,7 +104,7 @@ class TestCases {
   }
 
   async testChanges() {
-    let testUri = NetUtil.newURI("http://test.mozilla.org");
+    let testUri = Services.io.newURI("http://test.mozilla.org");
 
     let guid = await this.insertBookmark(
       PlacesUtils.bookmarks.unfiledGuid,
@@ -158,7 +158,7 @@ class TestCases {
     let insertSyncedBookmark = uri => {
       return this.insertBookmark(
         PlacesUtils.bookmarks.unfiledGuid,
-        NetUtil.newURI(uri),
+        Services.io.newURI(uri),
         PlacesUtils.bookmarks.DEFAULT_INDEX,
         "A bookmark name"
       );
@@ -195,7 +195,7 @@ class TestCases {
     await counterTracker.track(folder1, "folder 1");
 
     // Put a new bookmark in the folder.
-    let testUri = NetUtil.newURI("http://test2.mozilla.org");
+    let testUri = Services.io.newURI("http://test2.mozilla.org");
     let child1 = await this.insertBookmark(
       folder1,
       testUri,

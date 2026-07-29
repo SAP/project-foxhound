@@ -5,13 +5,12 @@
 "use strict";
 
 const { IPProtectionServerlist } = ChromeUtils.importESModule(
-  "moz-src:///browser/components/ipprotection/IPProtectionServerlist.sys.mjs"
+  "moz-src:///toolkit/components/ipprotection/IPProtectionServerlist.sys.mjs"
 );
 
 add_task(async function test_IPPProxyManager_handleProxyErrorEvent() {
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: true,
+    isReady: true,
   });
 
   IPProtectionService.updateState();
@@ -122,7 +121,7 @@ add_task(async function test_IPPProxyManager_handleProxyErrorEvent() {
  */
 add_task(async function test_IPPProxyManager_bug_1999946() {
   const { IPPChannelFilter } = ChromeUtils.importESModule(
-    "moz-src:///browser/components/ipprotection/IPPChannelFilter.sys.mjs"
+    "moz-src:///toolkit/components/ipprotection/IPPChannelFilter.sys.mjs"
   );
 
   Services.prefs.clearUserPref("browser.ipProtection.enabled");
@@ -137,11 +136,10 @@ add_task(async function test_IPPProxyManager_bug_1999946() {
     return channelFilterRef;
   });
 
-  STUBS.fetchProxyPass.rejects(new Error("Simulate a Fail"));
+  IPPDummyAuthProvider.setProxyPassError(new Error("Simulate a Fail"));
 
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: true,
+    isReady: true,
   });
 
   await SpecialPowers.pushPrefEnv({
@@ -168,13 +166,11 @@ add_task(async function test_IPPProxyManager_bug_1999946() {
  * Tests that opening the panel when the IPPProxyManager state is PAUSED shows the paused view.
  */
 add_task(async function test_IPPProxyManager_paused_shown() {
-  const sandbox = sinon.createSandbox();
   IPPProxyManager.reset();
 
   const usage = makeUsage("5368709120", "0", "2027-01-01T00:00:00.000Z");
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: true,
+    isReady: true,
     usageInfo: usage,
   });
   IPProtectionService.updateState();
@@ -192,8 +188,16 @@ add_task(async function test_IPPProxyManager_paused_shown() {
 
   Assert.ok(content.upgradeEl, "Paused upgrade content should be shown");
 
+  let pausedIcon = content.statusBoxEl?.querySelector('img[slot="image"]');
+  Assert.ok(pausedIcon, "Paused icon should show in the panel");
+
+  let button = document.getElementById(IPProtectionWidget.WIDGET_ID);
+  Assert.ok(
+    button.classList.contains("ipprotection-paused"),
+    "Toolbar icon should show paused status"
+  );
+
   await closePanel();
-  sandbox.restore();
   cleanupService();
 });
 
@@ -201,11 +205,9 @@ add_task(async function test_IPPProxyManager_paused_shown() {
  * Tests that setting usage with remaining > 0 unpauses the IPPProxyManager and shows the main view.
  */
 add_task(async function test_IPPProxyManager_unpause_on_available() {
-  const sandbox = sinon.createSandbox();
   IPPProxyManager.reset();
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: true,
+    isReady: true,
   });
 
   IPProtectionService.updateState();
@@ -264,7 +266,6 @@ add_task(async function test_IPPProxyManager_unpause_on_available() {
   Assert.ok(turnOnButton, "Turn on button should be shown when un-paused");
 
   await closePanel();
-  sandbox.restore();
   cleanupService();
 });
 
@@ -273,11 +274,9 @@ add_task(async function test_IPPProxyManager_unpause_on_available() {
  * when bandwidth quota is exceeded.
  */
 add_task(async function test_IPPProxyManager_update_usage_on_stop() {
-  const sandbox = sinon.createSandbox();
   IPPProxyManager.reset();
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: true,
+    isReady: true,
   });
 
   IPProtectionService.updateState();
@@ -352,7 +351,6 @@ add_task(async function test_IPPProxyManager_update_usage_on_stop() {
   );
 
   await closePanel();
-  sandbox.restore();
   cleanupService();
 });
 
@@ -360,13 +358,11 @@ add_task(async function test_IPPProxyManager_update_usage_on_stop() {
  * Tests that re-opening the panel when the IPPProxyManager state is ACTIVE does not reset the state (Bug 2021236).
  */
 add_task(async function test_IPPProxyManager_active_shown() {
-  const sandbox = sinon.createSandbox();
   IPPProxyManager.reset();
 
   const usage = makeUsage();
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: true,
+    isReady: true,
     usageInfo: usage,
   });
   IPProtectionService.updateState();
@@ -405,7 +401,6 @@ add_task(async function test_IPPProxyManager_active_shown() {
   );
 
   await closePanel();
-  sandbox.restore();
   cleanupService();
 });
 
@@ -416,8 +411,7 @@ add_task(async function test_IPPProxyManager_paused_on_activation() {
   IPPProxyManager.reset();
 
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: true,
+    isReady: true,
   });
   IPProtectionService.updateState();
 
@@ -462,8 +456,7 @@ add_task(async function test_IPPProxyManager_rotateProxyPass_when_paused() {
   IPPProxyManager.reset();
 
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: true,
+    isReady: true,
   });
   IPProtectionService.updateState();
 

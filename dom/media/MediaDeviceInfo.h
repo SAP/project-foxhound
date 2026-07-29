@@ -23,7 +23,7 @@ class MediaDeviceInfo final : public nsISupports, public nsWrapperCache {
   explicit MediaDeviceInfo(const nsAString& aDeviceId, MediaDeviceKind aKind,
                            const nsAString& aLabel, const nsAString& aGroupId);
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(MediaDeviceInfo)
   NS_INLINE_DECL_STATIC_IID(MOZILLA_DOM_MEDIADEVICEINFO_IMPLEMENTATION_IID)
 

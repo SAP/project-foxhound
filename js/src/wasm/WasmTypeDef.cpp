@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright 2015 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,8 +15,6 @@
  */
 
 #include "wasm/WasmTypeDef.h"
-
-#include "mozilla/MathAlgorithms.h"
 
 #include "jit/JitOptions.h"
 #include "js/friend/ErrorMessages.h"  // JSMSG_*
@@ -40,7 +36,6 @@ using namespace js::wasm;
 
 using mozilla::CheckedInt32;
 using mozilla::CheckedUint32;
-using mozilla::IsPowerOfTwo;
 using mozilla::MallocSizeOf;
 
 // [SMDOC] Immediate type signature encoding
@@ -371,6 +366,14 @@ size_t ArrayType::sizeOfExcludingThis(MallocSizeOf mallocSizeOf) const {
   return 0;
 }
 
+#ifdef ENABLE_WASM_JSPI
+const FuncType& ContType::funcType() const { return funcTypeDef_->funcType(); }
+
+size_t ContType::sizeOfExcludingThis(MallocSizeOf mallocSizeOf) const {
+  return 0;
+}
+#endif  // ENABLE_WASM_JSPI
+
 size_t TypeDef::sizeOfExcludingThis(MallocSizeOf mallocSizeOf) const {
   switch (kind_) {
     case TypeDefKind::Struct: {
@@ -382,6 +385,11 @@ size_t TypeDef::sizeOfExcludingThis(MallocSizeOf mallocSizeOf) const {
     case TypeDefKind::Array: {
       return arrayType_.sizeOfExcludingThis(mallocSizeOf);
     }
+#ifdef ENABLE_WASM_JSPI
+    case TypeDefKind::Cont: {
+      return contType_.sizeOfExcludingThis(mallocSizeOf);
+    }
+#endif
     case TypeDefKind::None: {
       return 0;
     }

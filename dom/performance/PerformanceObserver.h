@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,7 +29,7 @@ class WorkerPrivate;
 
 class PerformanceObserver final : public nsISupports, public nsWrapperCache {
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(PerformanceObserver)
 
   static already_AddRefed<PerformanceObserver> Constructor(
@@ -47,7 +45,7 @@ class PerformanceObserver final : public nsISupports, public nsWrapperCache {
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
 
-  nsISupports* GetParentObject() const { return mOwner; }
+  nsISupports* GetParentObject() const { return mGlobal; }
 
   void Observe(const PerformanceObserverInit& aOptions, ErrorResult& aRv);
   static void GetSupportedEntryTypes(const GlobalObject& aGlobal,
@@ -65,7 +63,7 @@ class PerformanceObserver final : public nsISupports, public nsWrapperCache {
  private:
   ~PerformanceObserver();
 
-  nsCOMPtr<nsIGlobalObject> mOwner;
+  nsCOMPtr<nsIGlobalObject> mGlobal;
   RefPtr<PerformanceObserverCallback> mCallback;
   RefPtr<Performance> mPerformance;
   nsTArray<nsString> mEntryTypes;

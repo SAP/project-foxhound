@@ -36,6 +36,7 @@ TEST_HARNESS_BINS = [
     "GenerateOCSPResponse",
     "OCSPStaplingServer",
     "SanctionsTestServer",
+    "ZeroRttAcceptServer",
     "SmokeDMD",
     "certutil",
     "crashinject",

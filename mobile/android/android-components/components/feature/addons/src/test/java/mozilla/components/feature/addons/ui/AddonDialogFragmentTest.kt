@@ -16,7 +16,6 @@ import mozilla.components.support.test.any
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.whenever
 import mozilla.components.support.utils.ext.getParcelableCompat
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -24,6 +23,7 @@ import org.mockito.Mockito
 import org.mockito.Mockito.doNothing
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class AddonDialogFragmentTest {

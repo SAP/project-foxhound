@@ -17,7 +17,10 @@ run-if = [
 reason = "Windows-specific crash annotation"
 skip-if = [
   "os == 'win' && os_version == '11.26100'", # Bug 1936467
+  "os == 'win' && os_version == '11.26200'", # Bug 1936467
 ]
+
+["browser_required_annotations.js"]
 
 ["browser_sandbox_crash.js"]
 run-if = [

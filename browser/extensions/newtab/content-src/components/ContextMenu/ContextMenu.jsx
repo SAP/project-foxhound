@@ -161,9 +161,7 @@ export class _ContextMenuItem extends React.PureComponent {
           onKeyDown={this.onKeyDown}
           onKeyUp={this.onKeyUp}
           ref={option.first ? this.focusFirst : null}
-          aria-haspopup={
-            option.id === "newtab-menu-edit-topsites" ? "dialog" : null
-          }
+          aria-haspopup={option.ariaHasPopup || null}
         >
           <span data-l10n-id={option.string_id || option.id} />
         </button>

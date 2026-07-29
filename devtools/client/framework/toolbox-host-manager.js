@@ -84,8 +84,6 @@ class ToolboxHostManager {
     // List of event which are collected when a new host is created for a popup
     // from `switchHostToTab` method.
     this.collectPendingMessages = null;
-    this.setMinWidthWithZoom = this.setMinWidthWithZoom.bind(this);
-    this._onMessage = this._onMessage.bind(this);
     Services.prefs.addObserver(ZOOM_VALUE_PREF, this.setMinWidthWithZoom);
   }
   /**
@@ -106,7 +104,7 @@ class ToolboxHostManager {
     this.host.frame.setAttribute("aria-label", L10N.getStr("toolbox.label"));
     this.host.frame.ownerDocument.defaultView.addEventListener(
       "message",
-      this._onMessage,
+      this.#onMessage,
       { signal: this.eventController.signal }
     );
 
@@ -118,7 +116,7 @@ class ToolboxHostManager {
       contentWindow: this.host.frame.contentWindow,
       frameId: this.frameId,
     });
-    toolbox.once("destroyed", this._onToolboxDestroyed.bind(this));
+    toolbox.once("destroyed", this.#onToolboxDestroyed);
 
     // Prevent reloading the toolbox when loading the tools in a tab
     // (e.g. from about:debugging)
@@ -131,7 +129,7 @@ class ToolboxHostManager {
     return toolbox;
   }
 
-  setMinWidthWithZoom() {
+  setMinWidthWithZoom = () => {
     const zoomValue = parseFloat(Services.prefs.getCharPref(ZOOM_VALUE_PREF));
 
     if (isNaN(zoomValue)) {
@@ -152,18 +150,18 @@ class ToolboxHostManager {
       this.host.frame.style.minWidth =
         WIDTH_CHEVRON_AND_MEATBALL * zoomValue + "px";
     }
-  }
+  };
 
-  _onToolboxDestroyed() {
+  #onToolboxDestroyed = () => {
     // Delay self-destruction to let the debugger complete async destruction.
     // Otherwise it throws when running browser_dbg-breakpoints-in-evaled-sources.js
     // because the promise middleware delay each promise action using setTimeout...
     DevToolsUtils.executeSoon(() => {
       this.destroy();
     });
-  }
+  };
 
-  _onMessage(event) {
+  #onMessage = event => {
     if (!event.data) {
       return;
     }
@@ -194,7 +192,7 @@ class ToolboxHostManager {
         this.host.setTitle(msg.title);
         break;
     }
-  }
+  };
 
   postMessage(data) {
     const window = this.host.frame.contentWindow;
@@ -307,7 +305,7 @@ class ToolboxHostManager {
     this.host.setTitle(this.host.frame.contentWindow.document.title);
     this.host.frame.ownerDocument.defaultView.addEventListener(
       "message",
-      this._onMessage,
+      this.#onMessage,
       { signal: this.eventController.signal }
     );
 
@@ -357,7 +355,7 @@ class ToolboxHostManager {
         await this.switchHost(this.hostType, false);
         this.collectPendingMessages = null;
         for (const message of pendingMessages) {
-          this._onMessage(message);
+          this.#onMessage(message);
         }
       }
       previousTab.addEventListener(

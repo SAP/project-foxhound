@@ -55,7 +55,7 @@ add_task(async function afterMousedown_topSites() {
     async () => {
       Assert.ok(
         !win.gURLBar.hasAttribute("suppress-focus-border"),
-        "Sanity check: the Urlbar does not have the supress-focus-border attribute."
+        "Sanity check: the Urlbar does not have the suppress-focus-border attribute."
       );
 
       await UrlbarTestUtils.promisePopupOpen(win, () => {
@@ -74,7 +74,7 @@ add_task(async function afterMousedown_topSites() {
       await UrlbarTestUtils.promisePopupClose(win);
       Assert.ok(
         !gURLBar.hasAttribute("suppress-focus-border"),
-        "The Urlbar no longer has the supress-focus-border attribute after close."
+        "The Urlbar no longer has the suppress-focus-border attribute after close."
       );
     }
   );
@@ -91,7 +91,7 @@ add_task(async function openLocation_topSites() {
     async () => {
       Assert.ok(
         !win.gURLBar.hasAttribute("suppress-focus-border"),
-        "Sanity check: the Urlbar does not have the supress-focus-border attribute."
+        "Sanity check: the Urlbar does not have the suppress-focus-border attribute."
       );
 
       await UrlbarTestUtils.promisePopupOpen(win, () => {
@@ -107,7 +107,7 @@ add_task(async function openLocation_topSites() {
       await UrlbarTestUtils.promisePopupClose(win);
       Assert.ok(
         !win.gURLBar.hasAttribute("suppress-focus-border"),
-        "The Urlbar no longer has the supress-focus-border attribute after close."
+        "The Urlbar no longer has the suppress-focus-border attribute after close."
       );
     }
   );
@@ -128,7 +128,7 @@ add_task(async function afterMousedown_noTopSites() {
     async () => {
       Assert.ok(
         !win.gURLBar.hasAttribute("suppress-focus-border"),
-        "Sanity check: the Urlbar does not have the supress-focus-border attribute."
+        "Sanity check: the Urlbar does not have the suppress-focus-border attribute."
       );
 
       EventUtils.synthesizeMouseAtCenter(win.gURLBar.inputField, {}, win);
@@ -139,7 +139,7 @@ add_task(async function afterMousedown_noTopSites() {
 
       Assert.ok(
         !win.gURLBar.hasAttribute("suppress-focus-border"),
-        "The Urlbar no longer has the supress-focus-border attribute."
+        "The Urlbar no longer has the suppress-focus-border attribute."
       );
     }
   );
@@ -209,7 +209,18 @@ add_task(async function searchTip() {
   });
 
   info("Open new tab.");
-  const tab = await openAboutNewTab(win);
+  // Prevent the panel from closing on blur during page load: the search tip
+  // fires after a 200ms delay, and focus interference while the page loads
+  // could blur the urlbar and close the popup before we can interact.
+  await SpecialPowers.pushPrefEnv({
+    set: [["ui.popup.disable_autohide", true]],
+  });
+  let tab;
+  try {
+    tab = await openAboutNewTab(win);
+  } finally {
+    await SpecialPowers.popPrefEnv();
+  }
 
   info("Click the tip button.");
   const result = await UrlbarTestUtils.getDetailsOfResultAt(win, 0);
@@ -255,6 +266,63 @@ add_task(async function interactionOnNewTabInPrivateWindow() {
   await SimpleTest.promiseFocus(window);
 });
 
+// Tests that blurring the urlbar while the handoff UI
+// has fake focus removes fake focus (bug 2025906).
+add_task(async function fakeFocusRemovedOnBlur() {
+  const win = await BrowserTestUtils.openNewBrowserWindow();
+
+  info("Open about:newtab in new tab");
+  const tab = await openAboutNewTab(win);
+  await BrowserTestUtils.waitForCondition(
+    () => win.gBrowser.selectedTab === tab
+  );
+
+  await clickHandoff(win.gBrowser.selectedBrowser);
+
+  await BrowserTestUtils.waitForCondition(
+    async () => await handoffHasFakeFocus(win.gBrowser.selectedBrowser),
+    "Wait until hasFakeFocus is true"
+  );
+  Assert.ok(true, "Handoff UI has fake focus");
+
+  info("Click on content to blur the urlbar");
+  EventUtils.synthesizeMouse(win.gBrowser.selectedBrowser, -1000, 0, {}, win);
+  await BrowserTestUtils.waitForCondition(
+    async () => !(await handoffHasFakeFocus(win.gBrowser.selectedBrowser)),
+    "Wait until hasFakeFocus is False"
+  );
+  Assert.ok(true, "Handoff UI lost fake focus");
+
+  BrowserTestUtils.removeTab(tab);
+  await BrowserTestUtils.closeWindow(win);
+});
+
+add_task(async function fakeFocusRemovedOnBlurPBM() {
+  const win = await BrowserTestUtils.openNewBrowserWindow({
+    private: true,
+    waitForTabURL: "about:privatebrowsing",
+  });
+
+  await clickHandoff(win.gBrowser.selectedBrowser);
+
+  await BrowserTestUtils.waitForCondition(
+    async () => await handoffHasFakeFocus(win.gBrowser.selectedBrowser),
+    "Wait until hasFakeFocus is true"
+  );
+  Assert.ok(true, "Handoff UI has fake focus");
+
+  info("Click on content to blur the urlbar");
+  EventUtils.synthesizeMouse(win.gBrowser.selectedBrowser, -1000, 0, {}, win);
+
+  await BrowserTestUtils.waitForCondition(
+    async () => !(await handoffHasFakeFocus(win.gBrowser.selectedBrowser)),
+    "Wait until hasFakeFocus is False"
+  );
+  Assert.ok(true, "Handoff UI lost fake focus");
+
+  await BrowserTestUtils.closeWindow(win);
+});
+
 add_task(async function clickOnEdgeOfURLBar() {
   const win = await BrowserTestUtils.openNewBrowserWindow();
   win.gURLBar.blur();
@@ -269,7 +337,7 @@ add_task(async function clickOnEdgeOfURLBar() {
   );
 
   const container = win.gURLBar.querySelector(".urlbar-input-container");
-  container.click();
+  EventUtils.synthesizeMouseAtCenter(container, {}, win);
 
   await onHiddenFocusRemoved;
   Assert.ok(
@@ -316,15 +384,7 @@ async function testInteractionFeature(interaction, win) {
     "URLBar does not have suppress-focus-border attribute"
   );
 
-  info("Click on search-handoff-button in newtab page");
-  await ContentTask.spawn(win.gBrowser.selectedBrowser, null, async () => {
-    await ContentTaskUtils.waitForCondition(() => {
-      return content.document.querySelector("content-search-handoff-ui");
-    }, "Handoff UI has loaded");
-    let handoffUI = content.document.querySelector("content-search-handoff-ui");
-    await handoffUI.updateComplete;
-    handoffUI.shadowRoot.querySelector(".search-handoff-button").click();
-  });
+  await clickHandoff(win.gBrowser.selectedBrowser);
 
   await BrowserTestUtils.waitForCondition(
     () => win.gURLBar._hideFocus,
@@ -346,6 +406,35 @@ async function testInteractionFeature(interaction, win) {
   const result = await UrlbarTestUtils.waitForAutocompleteResultAt(win, 0);
   Assert.ok(result, "The provider returned a result");
   await UrlbarTestUtils.promisePopupClose(win);
+}
+
+async function clickHandoff(browser) {
+  let sandbox = sinon.createSandbox();
+  let spy = sandbox.spy(
+    browser.documentGlobal.gURLBar.inputField,
+    "addEventListener"
+  );
+  info("Click on search-handoff-button in newtab page");
+  await SpecialPowers.spawn(browser, [], async () => {
+    await ContentTaskUtils.waitForCondition(() => {
+      return content.document.querySelector("content-search-handoff-ui");
+    }, "Handoff UI has loaded");
+    let handoffUI = content.document.querySelector("content-search-handoff-ui");
+    await handoffUI.updateComplete;
+    handoffUI.shadowRoot.querySelector(".search-handoff-button").click();
+  });
+  await BrowserTestUtils.waitForCondition(
+    () => spy.calledWith("blur"),
+    "Wait for blur listener to be added"
+  );
+  sandbox.restore();
+}
+
+async function handoffHasFakeFocus(browser) {
+  return SpecialPowers.spawn(browser, [], async () => {
+    let handoffUI = content.document.querySelector("content-search-handoff-ui");
+    return handoffUI.hasAttribute("fakefocus");
+  });
 }
 
 function getSuppressFocusPromise(win = window) {
@@ -391,6 +480,10 @@ async function openAboutNewTab(win = window) {
     "Waiting for background about:newtab to open."
   );
   let tab = win.gBrowser.tabs[win.gBrowser.tabs.length - 1];
-  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+  // about:newtab may be preloaded, in which case the load event already fired
+  // before this listener is set up. Skip browserLoaded in that case.
+  if (tab.linkedBrowser.currentURI?.spec != "about:newtab") {
+    await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+  }
   return tab;
 }

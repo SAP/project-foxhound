@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -16,6 +14,7 @@ namespace js {
 
 class ArrayObject;
 class GlobalObject;
+class LanguageId;
 
 /* Initialize the String class, returning its prototype object. */
 extern JSObject* InitStringClass(JSContext* cx, Handle<GlobalObject*> global);
@@ -88,7 +87,7 @@ extern JSLinearString* StringFromCharCode(JSContext* cx, int32_t charCode);
 extern JSLinearString* StringFromCodePoint(JSContext* cx, char32_t codePoint);
 
 #if JS_HAS_INTL_API
-bool LocaleHasDefaultCaseMapping(const char* locale);
+bool LocaleHasDefaultCaseMapping(LanguageId locale);
 #endif
 
 } /* namespace js */

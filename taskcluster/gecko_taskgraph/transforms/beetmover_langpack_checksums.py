@@ -5,14 +5,15 @@
 Transform release-beetmover-langpack-checksums into an actual task description.
 """
 
+from typing import Optional
+
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
-from taskgraph.util.schema import LegacySchema
+from taskgraph.util.schema import Schema
 from taskgraph.util.treeherder import inherit_treeherder_from_dep
-from voluptuous import Optional, Required
 
 from gecko_taskgraph.transforms.beetmover import craft_release_properties
-from gecko_taskgraph.transforms.task import task_description_schema
+from gecko_taskgraph.transforms.task import TaskDescriptionSchema
 from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
 from gecko_taskgraph.util.scriptworker import (
     generate_beetmover_artifact_map,
@@ -21,17 +22,18 @@ from gecko_taskgraph.util.scriptworker import (
     get_beetmover_bucket_scope,
 )
 
-beetmover_checksums_description_schema = LegacySchema({
-    Required("attributes"): {str: object},
-    Optional("label"): str,
-    Optional("treeherder"): task_description_schema["treeherder"],
-    Optional("locale"): str,
-    Optional("dependencies"): task_description_schema["dependencies"],
-    Optional("task-from"): task_description_schema["task-from"],
-    Optional("shipping-phase"): task_description_schema["shipping-phase"],
-    Optional("shipping-product"): task_description_schema["shipping-product"],
-    Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
-})
+
+class BeetmoverChecksumsDescriptionSchema(Schema, kw_only=True):
+    attributes: TaskDescriptionSchema.__annotations__["attributes"]  # noqa: F821
+    label: Optional[str] = None
+    treeherder: TaskDescriptionSchema.__annotations__["treeherder"] = None
+    locale: Optional[str] = None
+    dependencies: TaskDescriptionSchema.__annotations__["dependencies"] = None
+    task_from: TaskDescriptionSchema.__annotations__["task_from"] = None
+    shipping_phase: TaskDescriptionSchema.__annotations__["shipping_phase"] = None
+    shipping_product: TaskDescriptionSchema.__annotations__["shipping_product"] = None
+    run_on_repo_type: TaskDescriptionSchema.__annotations__["run_on_repo_type"] = None
+
 
 transforms = TransformSequence()
 
@@ -44,7 +46,7 @@ def remove_name(config, jobs):
         yield job
 
 
-transforms.add_validate(beetmover_checksums_description_schema)
+transforms.add_validate(BeetmoverChecksumsDescriptionSchema)
 
 
 @transforms.add

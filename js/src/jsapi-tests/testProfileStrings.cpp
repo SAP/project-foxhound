@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Tests the stack-based instrumentation profiler on a JSRuntime
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -14,7 +12,7 @@
 #include "jsapi-tests/tests.h"
 #include "vm/JSContext.h"
 
-MOZ_RUNINIT static ProfilingStack profilingStack;
+static ProfilingStack profilingStack;
 static uint32_t peakStackPointer = 0;
 
 static void reset(JSContext* cx) {

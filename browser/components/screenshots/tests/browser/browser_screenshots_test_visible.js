@@ -76,36 +76,18 @@ add_task(async function test_visibleScreenshot() {
       Assert.equal(result.width, expectedWidth, "Widths should be equal");
       Assert.equal(result.height, expectedHeight, "Heights should be equal");
 
-      // Due to https://bugzil.la/1396587, the pasted image colors differ from
-      // the original image on macOS. Once that bug is fixed, we can remove the
-      // special check for macOS.
-      if (AppConstants.platform === "macosx") {
-        assertPixel(result.color.topLeft, [130, 130, 130], "Top left pixel");
-        assertPixel(result.color.topRight, [130, 130, 130], "Top right pixel");
-        assertPixel(
-          result.color.bottomLeft,
-          [130, 130, 130],
-          "Bottom left pixel"
-        );
-        assertPixel(
-          result.color.bottomRight,
-          [130, 130, 130],
-          "Bottom right pixel"
-        );
-      } else {
-        assertPixel(result.color.topLeft, [111, 111, 111], "Top left pixel");
-        assertPixel(result.color.topRight, [111, 111, 111], "Top right pixel");
-        assertPixel(
-          result.color.bottomLeft,
-          [111, 111, 111],
-          "Bottom left pixel"
-        );
-        assertPixel(
-          result.color.bottomRight,
-          [111, 111, 111],
-          "Bottom right pixel"
-        );
-      }
+      assertPixel(result.color.topLeft, [111, 111, 111], "Top left pixel");
+      assertPixel(result.color.topRight, [111, 111, 111], "Top right pixel");
+      assertPixel(
+        result.color.bottomLeft,
+        [111, 111, 111],
+        "Bottom left pixel"
+      );
+      assertPixel(
+        result.color.bottomRight,
+        [111, 111, 111],
+        "Bottom right pixel"
+      );
     }
   );
 });
@@ -173,36 +155,14 @@ add_task(async function test_visibleScreenshotScrolledY() {
       Assert.equal(result.width, expectedWidth, "Widths should be equal");
       Assert.equal(result.height, expectedHeight, "Heights should be equal");
 
-      // Due to https://bugzil.la/1396587, the pasted image colors differ from
-      // the original image on macOS. Once that bug is fixed, we can remove the
-      // special check for macOS.
-      if (AppConstants.platform === "macosx") {
-        assertPixel(result.color.topLeft, [125, 75, 125], "Top left pixel");
-        assertPixel(result.color.topRight, [125, 75, 125], "Top right pixel");
-        assertPixel(
-          result.color.bottomLeft,
-          [125, 75, 125],
-          "Bottom left pixel"
-        );
-        assertPixel(
-          result.color.bottomRight,
-          [125, 75, 125],
-          "Bottom right pixel"
-        );
-      } else {
-        assertPixel(result.color.topLeft, [105, 55, 105], "Top left pixel");
-        assertPixel(result.color.topRight, [105, 55, 105], "Top right pixel");
-        assertPixel(
-          result.color.bottomLeft,
-          [105, 55, 105],
-          "Bottom left pixel"
-        );
-        assertPixel(
-          result.color.bottomRight,
-          [105, 55, 105],
-          "Bottom right pixel"
-        );
-      }
+      assertPixel(result.color.topLeft, [105, 55, 105], "Top left pixel");
+      assertPixel(result.color.topRight, [105, 55, 105], "Top right pixel");
+      assertPixel(result.color.bottomLeft, [105, 55, 105], "Bottom left pixel");
+      assertPixel(
+        result.color.bottomRight,
+        [105, 55, 105],
+        "Bottom right pixel"
+      );
     }
   );
 });
@@ -270,36 +230,14 @@ add_task(async function test_visibleScreenshotScrolledX() {
       Assert.equal(result.width, expectedWidth, "Widths should be equal");
       Assert.equal(result.height, expectedHeight, "Heights should be equal");
 
-      // Due to https://bugzil.la/1396587, the pasted image colors differ from
-      // the original image on macOS. Once that bug is fixed, we can remove the
-      // special check for macOS.
-      if (AppConstants.platform === "macosx") {
-        assertPixel(result.color.topLeft, [66, 170, 171], "Top left pixel");
-        assertPixel(result.color.topRight, [66, 170, 171], "Top right pixel");
-        assertPixel(
-          result.color.bottomLeft,
-          [66, 170, 171],
-          "Bottom left pixel"
-        );
-        assertPixel(
-          result.color.bottomRight,
-          [66, 170, 171],
-          "Bottom right pixel"
-        );
-      } else {
-        assertPixel(result.color.topLeft, [55, 155, 155], "Top left pixel");
-        assertPixel(result.color.topRight, [55, 155, 155], "Top right pixel");
-        assertPixel(
-          result.color.bottomLeft,
-          [55, 155, 155],
-          "Bottom left pixel"
-        );
-        assertPixel(
-          result.color.bottomRight,
-          [55, 155, 155],
-          "Bottom right pixel"
-        );
-      }
+      assertPixel(result.color.topLeft, [55, 155, 155], "Top left pixel");
+      assertPixel(result.color.topRight, [55, 155, 155], "Top right pixel");
+      assertPixel(result.color.bottomLeft, [55, 155, 155], "Bottom left pixel");
+      assertPixel(
+        result.color.bottomRight,
+        [55, 155, 155],
+        "Bottom right pixel"
+      );
     }
   );
 });
@@ -367,36 +305,14 @@ add_task(async function test_visibleScreenshotScrolledXAndY() {
       Assert.equal(result.width, expectedWidth, "Widths should be equal");
       Assert.equal(result.height, expectedHeight, "Heights should be equal");
 
-      // Due to https://bugzil.la/1396587, the pasted image colors differ from
-      // the original image on macOS. Once that bug is fixed, we can remove the
-      // special check for macOS.
-      if (AppConstants.platform === "macosx") {
-        assertPixel(result.color.topLeft, [64, 145, 169], "Top left pixel");
-        assertPixel(result.color.topRight, [64, 145, 169], "Top right pixel");
-        assertPixel(
-          result.color.bottomLeft,
-          [64, 145, 169],
-          "Bottom left pixel"
-        );
-        assertPixel(
-          result.color.bottomRight,
-          [64, 145, 169],
-          "Bottom right pixel"
-        );
-      } else {
-        assertPixel(result.color.topLeft, [52, 127, 152], "Top left pixel");
-        assertPixel(result.color.topRight, [52, 127, 152], "Top right pixel");
-        assertPixel(
-          result.color.bottomLeft,
-          [52, 127, 152],
-          "Bottom left pixel"
-        );
-        assertPixel(
-          result.color.bottomRight,
-          [52, 127, 152],
-          "Bottom right pixel"
-        );
-      }
+      assertPixel(result.color.topLeft, [52, 127, 152], "Top left pixel");
+      assertPixel(result.color.topRight, [52, 127, 152], "Top right pixel");
+      assertPixel(result.color.bottomLeft, [52, 127, 152], "Bottom left pixel");
+      assertPixel(
+        result.color.bottomRight,
+        [52, 127, 152],
+        "Bottom right pixel"
+      );
     }
   );
 });

@@ -244,8 +244,12 @@ add_task(async function test_get_records_with_multiple_versions() {
 
   TranslationsParent.applyTestingMocks({
     translationModelsRemoteClient: client,
-    translationsWasmRemoteClient: (await createTranslationsWasmRemoteClient())
-      .client,
+    translationsWasmRemoteClient: (
+      await createTranslationsWasmRemoteClient({
+        collectionName: "test-translation-wasm",
+        uniquePerTestRun: true,
+      })
+    ).client,
   });
 
   const retrievedRecords =

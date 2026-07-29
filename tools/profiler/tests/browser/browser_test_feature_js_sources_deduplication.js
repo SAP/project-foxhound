@@ -8,10 +8,7 @@
  * enabling deduplication when the same source is loaded multiple times.
  */
 add_task(async function test_js_sources_deduplication() {
-  Assert.ok(
-    !Services.profiler.IsActive(),
-    "The profiler is not currently active"
-  );
+  await ProfilerTestUtils.assertProfilerInactive();
 
   const url = BASE_URL + "simple.html";
   await BrowserTestUtils.withNewTab(url, async contentBrowser => {

@@ -10,7 +10,6 @@ import("../../../webrtc.gni")
 
 rtc_source_set("types") {
   deps = [
-    "../../../api:array_view",
     "../../../api/units:time_delta",
     "../../../rtc_base:strong_alias",
   ]
@@ -24,10 +23,8 @@ rtc_source_set("types") {
 rtc_library("socket") {
   deps = [
     ":types",
-    "../../../api:array_view",
     "../../../api/task_queue",
     "../../../api/units:timestamp",
-    "../../../rtc_base:checks",
     "../../../rtc_base:strong_alias",
     "//third_party/abseil-cpp/absl/base:core_headers",
     "//third_party/abseil-cpp/absl/strings:string_view",
@@ -64,7 +61,6 @@ rtc_source_set("mocks") {
     ":factory",
     ":socket",
     ":types",
-    "../../../api:array_view",
     "../../../test:test_support",
     "//third_party/abseil-cpp/absl/strings:string_view",
   ]
@@ -74,10 +70,9 @@ rtc_library("utils") {
   deps = [
     ":socket",
     ":types",
-    "../../../api:array_view",
     "../../../rtc_base:logging",
     "../../../rtc_base:stringutils",
-    "../socket:dcsctp_socket",
+    "../../../rtc_base:text2pcap",
     "//third_party/abseil-cpp/absl/strings:string_view",
   ]
   sources = [
@@ -93,8 +88,6 @@ if (rtc_include_tests) {
     deps = [
       ":mocks",
       ":types",
-      "../../../rtc_base:checks",
-      "../../../rtc_base:gunit_helpers",
       "../../../test:test_support",
     ]
     sources = [

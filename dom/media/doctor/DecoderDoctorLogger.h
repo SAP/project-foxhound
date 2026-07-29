@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -146,8 +144,8 @@ class DecoderDoctorLogger {
     Log(aSubjectTypeName, aSubjectPointer, CategoryForMozLogLevel(aLogLevel),
         aLogModule->Name(),  // LogModule name as label.
         DDLogValue{nsCString{aString}});
-    MOZ_LOG(aLogModule, aLogLevel,
-            ("%s[%p] %s", aSubjectTypeName, aSubjectPointer, aString));
+    MOZ_LOG_FMT(aLogModule, aLogLevel, "{}[{}] {}", aSubjectTypeName,
+                fmt::ptr(aSubjectPointer), aString);
   }
 
   template <typename... Args>
@@ -159,8 +157,8 @@ class DecoderDoctorLogger {
     Log(aSubjectTypeName, aSubjectPointer, CategoryForMozLogLevel(aLogLevel),
         aLogModule->Name(),  // LogModule name as label.
         DDLogValue{printed});
-    MOZ_LOG(aLogModule, aLogLevel,
-            ("%s[%p] %s", aSubjectTypeName, aSubjectPointer, printed.get()));
+    MOZ_LOG_FMT(aLogModule, aLogLevel, "{}[{}] {}", aSubjectTypeName,
+                fmt::ptr(aSubjectPointer), printed.get());
   }
 
   template <typename Subject>

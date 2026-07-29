@@ -19,6 +19,7 @@ const CHAT_MAP_L10N_IDS = {
 };
 
 const DAYS_IN_MILLIS = 86400000;
+const SEARCH_RESULTS_LIMIT = 300;
 
 /**
  * A list of chat items displayed on a card.
@@ -41,9 +42,8 @@ export class ChatsController {
   /** @type {object} The host element this controller is attached to */
   host;
 
-  // TODO Bug 2009070 - Implement Search
   /** @type {string} Current search query string */
-  // searchQuery;
+  searchQuery;
 
   /** @type {Date} Today's date at midnight */
   #todaysDate;
@@ -55,22 +55,17 @@ export class ChatsController {
    * Creates a ChatsController instance.
    *
    * @param {object} host - The host element that this controller manages
-   * @param {object} [_options] - Configuration options (unused until Bug 2009070)
-   * @param {number} [_options.searchResultsLimit=300] - Maximum number of search results to return
-   *
-   * TODO: The _options parameter is prefixed with underscore because it's currently unused
-   * while search functionality is disabled. When implementing Bug 2009070 (search), rename
-   * this back to 'options' and uncomment the search-related code below.
+   * @param {object} options - Configuration options
+   * @param {number} [options.searchResultsLimit=300] - Maximum number of search results to return
    */
-  constructor(host, _options) {
+  constructor(host, options) {
     this.chatStore = lazy.AIWindow.chatStore;
-    // TODO Bug 2009070 - Implement Search
-    // this.searchQuery = "";
-    // this.searchResultsLimit = options?.searchResultsLimit || 300;
+    this.searchQuery = "";
+    this.searchResultsLimit =
+      options?.searchResultsLimit || SEARCH_RESULTS_LIMIT;
     this.cache = {
       entries: null,
-      // TODO Bug 2009070 - Implement Search
-      // searchQuery: null,
+      searchQuery: null,
     };
     this.host = host;
 
@@ -85,7 +80,6 @@ export class ChatsController {
     }
   }
 
-  // TODO Bug 2009070 - Implement Search
   /**
    * Handles search query events and updates the chat cache.
    *
@@ -93,10 +87,10 @@ export class ChatsController {
    * @param {object} e.detail - Event details
    * @param {string} e.detail.query - The search query string
    */
-  // onSearchQuery(e) {
-  //   this.searchQuery = e.detail.query;
-  //   this.updateCache();
-  // }
+  onSearchQuery(e) {
+    this.searchQuery = e.detail.query;
+    this.updateCache();
+  }
 
   /**
    * Gets all chat entries from the cache.
@@ -107,18 +101,17 @@ export class ChatsController {
     return this.cache.entries || [];
   }
 
-  // TODO Bug 2009070 - Implement Search
   /**
    * Gets the current search results.
    *
    * @returns {Array} Array of search result items, or empty array if no search is active
    */
-  // get searchResults() {
-  //   if (this.cache.searchQuery && this.cache.entries?.length) {
-  //     return this.cache.entries[0].items;
-  //   }
-  //   return [];
-  // }
+  get searchResults() {
+    if (this.cache.searchQuery && this.cache.entries?.length) {
+      return this.cache.entries[0].items;
+    }
+    return [];
+  }
 
   /**
    * Gets the total number of chat items across all entries.
@@ -147,19 +140,13 @@ export class ChatsController {
    * Normalizes chat items and triggers host UI update.
    */
   async updateCache() {
-    // TODO Bug 2009070 - Implement Search
-    // const { searchQuery } = this;
-    // const entries = searchQuery
-    //   ? await this.#getChatsForSearchQuery(searchQuery)
-    //   : await this.#getAllChatsGroupedByDate();
-    const entries = await this.#getAllChatsGroupedByDate();
+    // Captured before the await to detect mid-flight query changes below.
+    const searchQuery = this.searchQuery;
+    const entries = searchQuery
+      ? await this.#getChatsForSearchQuery(searchQuery)
+      : await this.#getAllChatsGroupedByDate();
 
-    // TODO Bug 2009070 - Implement Search
-    // if (this.searchQuery !== searchQuery || !entries) {
-    //   // This query is stale, discard results and do not update the cache / UI.
-    //   return;
-    // }
-    if (!entries) {
+    if (this.searchQuery !== searchQuery || !entries) {
       return;
     }
 
@@ -170,9 +157,7 @@ export class ChatsController {
       }
     }
 
-    // TODO Bug 2009070 - Implement Search
-    // this.cache = { entries, searchQuery };
-    this.cache = { entries };
+    this.cache = { entries, searchQuery };
     this.host.requestUpdate();
   }
 
@@ -210,32 +195,32 @@ export class ChatsController {
     });
   }
 
-  // TODO Bug 2009070 - Implement Search
   /**
    * Fetches and formats chats matching a search query.
    *
    * @param {string} searchQuery - The search query string
    * @returns {Promise<CardEntry[]>} Array with single entry containing search results
    */
-  // async #getChatsForSearchQuery(searchQuery) {
-  //   try {
-  //     const conversations = await this.chatStore.search(searchQuery, false);
+  async #getChatsForSearchQuery(searchQuery) {
+    try {
+      const conversations = await this.chatStore.search(searchQuery, false);
+      // Add aliases to conversation objects for display compatibility
+      conversations.forEach(conv => {
+        conv.convId = conv.id;
+        conv.urls = conv.pageMeta?.urls || [];
+      });
 
-  //     // Add aliases to conversation objects for display compatibility
-  //     conversations.forEach(conv => {
-  //       conv.convId = conv.id;
-  //       conv.urls = conv.pageMeta?.urls || [];
-  //     });
-
-  //     return [{ items: conversations }];
-  //   } catch (e) {
-  //     getLogger("ChatsController").warn(
-  //       "There is a new search query in progress, cancelling this one.",
-  //       e
-  //     );
-  //     return [{ items: [] }];
-  //   }
-  // }
+      return [{ items: conversations }];
+    } catch (e) {
+      getLogger("ChatsController").error(
+        "Search failed for query:",
+        searchQuery,
+        e.message,
+        e.stack
+      );
+      return [{ items: [] }];
+    }
+  }
 
   /**
    * Fetches all chats and groups them by date categories.

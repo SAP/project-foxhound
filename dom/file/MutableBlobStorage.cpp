@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -127,7 +125,7 @@ class WriteRunnable final : public Runnable {
       return NS_OK;
     }
 
-    int32_t written = PR_Write(fd, mData, mLength);
+    int32_t written = mLength <= INT32_MAX ? PR_Write(fd, mData, mLength) : -1;
     if (NS_WARN_IF(written < 0 || uint32_t(written) != mLength)) {
       mBlobStorage->CloseFD();
       return mBlobStorage->EventTarget()->Dispatch(
@@ -513,13 +511,25 @@ void MutableBlobStorage::MaybeCreateTemporaryFileOnMainThread(
     return;
   }
 
-  mActor = new TemporaryIPCBlobChild(this);
-  actorChild->SendPTemporaryIPCBlobConstructor(mActor);
+  auto actor = MakeRefPtr<TemporaryIPCBlobChild>(this);
 
-  // We need manually to increase the reference for this actor because the
+  // We need to manually increase the reference for this actor because the
   // IPC allocator method is not triggered. The Release() is called by IPDL
-  // when the actor is deleted.
-  mActor.get()->AddRef();
+  // in DeallocPTemporaryIPCBlobChild on both normal teardown and synchronous
+  // constructor failure, so this must happen BEFORE Send.
+  // Here, actor.get() makes the programmer intention to manually increase the
+  // reference count explicit, and also avoids a trap which blocks adding such
+  // code accidentally.
+  actor.get()->AddRef();
+
+  if (!actorChild->SendPTemporaryIPCBlobConstructor(actor)) {
+    // Constructor failed synchronously (e.g. PBackground link already dead).
+    // IPDL has already called DeallocPTemporaryIPCBlobChild and released the
+    // manual ref; our local RefPtr holds the last reference and will clean up.
+    return;
+  }
+
+  mActor = std::move(actor);
 
   // The actor will call us when the FileDescriptor is received.
 }

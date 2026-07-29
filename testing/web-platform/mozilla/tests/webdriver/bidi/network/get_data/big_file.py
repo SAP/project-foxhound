@@ -4,19 +4,23 @@ from tests.support.asserts import assert_png
 pytestmark = pytest.mark.asyncio
 
 
-PAGE_BIG_IMAGE = "_mozilla/webdriver/bidi/network/get_data/support/big.png"
+PAGE_BIG_IMAGE = "_mozilla/webdriver/support/assets/big.png"
+# Test image is ~1MB, make sure to support at least 1MB as max total data size.
+TWO_MB = 2_000_000
 
 
 async def test_data_type_response_big_file(
     bidi_session,
     url,
     setup_collected_data,
+    use_pref,
 ):
+    await use_pref("remote.network.maxTotalDataSize", TWO_MB)
     # There is no strict requirement from the spec to support payloads bigger
     # than 1MB, so this test remains mozilla-specific. It currently times out on
     # chrome.
     [request, _] = await setup_collected_data(
-        fetch_url=url(PAGE_BIG_IMAGE), max_encoded_data_size=2000000
+        fetch_url=url(PAGE_BIG_IMAGE), max_encoded_data_size=TWO_MB
     )
     data = await bidi_session.network.get_data(request=request, data_type="response")
 

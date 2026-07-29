@@ -24,6 +24,18 @@ const { EmbeddingsGenerator } = ChromeUtils.importESModule(
   "chrome://global/content/ml/EmbeddingsGenerator.sys.mjs"
 );
 
+const { sanitizeUntrustedContent } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/aiwindow/models/ChatUtils.sys.mjs"
+);
+const { AIWindow } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs"
+);
+const { AIWindowAccountAuth } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/aiwindow/ui/modules/AIWindowAccountAuth.sys.mjs"
+);
+const { EveryWindow } = ChromeUtils.importESModule(
+  "resource:///modules/EveryWindow.sys.mjs"
+);
 /**
  * Constants for test memories
  */
@@ -131,6 +143,9 @@ add_task(async function test_getAggregatedBrowserHistory() {
   ];
   await PlacesUtils.history.clear();
   await PlacesUtils.history.insertMany(seeded);
+  for (const { url, visits } of [seeded[1], seeded[2]]) {
+    await insertPlacesMetadata(url, visits[0].date.getTime());
+  }
 
   // Check that all 3 outputs are arrays
   const [domainItems, titleItems, searchItems] =
@@ -152,12 +167,21 @@ add_task(async function test_getAggregatedBrowserHistory() {
   );
   Assert.deepEqual(
     titleItems[0],
-    ["Internet for people, not profit — Mozilla | mozilla.org", 100],
+    [
+      sanitizeUntrustedContent(
+        "Internet for people, not profit — Mozilla | mozilla.org",
+        true
+      ),
+      100,
+    ],
     "Top title should be 'Internet for people, not profit — Mozilla' with score 100"
   );
   Assert.equal(
     searchItems[0].q[0],
-    "Google Search: firefox history | www.google.com",
+    sanitizeUntrustedContent(
+      "Google Search: firefox history | www.google.com",
+      true
+    ),
     "Top search item query should be 'Google Search: firefox history'"
   );
   Assert.equal(searchItems[0].r, 1, "Top search item rank should be 1");
@@ -205,10 +229,9 @@ add_task(async function test_getMemoriesByID() {
   const firstMemoryToRetrieve = memories[0];
   const secontMemoryToRetreive = memories[2];
 
-  const memoryRetrievedById = await MemoriesManager.getMemoriesByID([
-    firstMemoryToRetrieve.id,
-    secontMemoryToRetreive.id,
-  ]);
+  const memoryRetrievedById = await MemoriesManager.getMemoriesByID(
+    new Set([firstMemoryToRetrieve.id, secontMemoryToRetreive.id])
+  );
   const retrievedMemorySummaries = memoryRetrievedById.map(
     mem => mem.memory_summary
   );
@@ -405,9 +428,6 @@ add_task(async function test_memoryClassifyMessage_happy_path() {
   const sb = sinon.createSandbox();
   try {
     const fakeEngine = {
-      loadPrompt() {
-        return "fake prompt";
-      },
       run() {
         return {
           finalOutput: `{
@@ -462,9 +482,6 @@ add_task(async function test_memoryClassifyMessage_sad_path_empty_output() {
   const sb = sinon.createSandbox();
   try {
     const fakeEngine = {
-      loadPrompt() {
-        return "fake prompt";
-      },
       run() {
         return {
           finalOutput: ``,
@@ -516,9 +533,6 @@ add_task(async function test_memoryClassifyMessage_sad_path_bad_schema() {
   const sb = sinon.createSandbox();
   try {
     const fakeEngine = {
-      loadPrompt() {
-        return "fake prompt";
-      },
       run() {
         return {
           finalOutput: `{
@@ -1305,5 +1319,47 @@ add_task(async function test_conversationGeneration_skips_when_chats_empty() {
     );
   } finally {
     sb.restore();
+  }
+});
+
+/**
+ * Tests that shouldEnableMemoriesFromSchedulers returns false when the
+ * browser.smartwindow.firstrun.hasCompleted pref is false, even if every
+ * other gate (AI Window enabled, source pref, ToS consent, active window)
+ * is satisfied.
+ */
+add_task(async function test_shouldEnableMemoriesFromSchedulers_firstrunGate() {
+  const PREF_GENERATE_MEMORIES_FROM_HISTORY =
+    "browser.smartwindow.memories.generateFromHistory";
+  const PREF_FIRSTRUN_HAS_COMPLETED =
+    "browser.smartwindow.firstrun.hasCompleted";
+
+  const sb = sinon.createSandbox();
+
+  try {
+    sb.stub(AIWindow, "isAIWindowEnabled").returns(true);
+    sb.stub(AIWindow, "isAIWindowActive").returns(true);
+    sb.stub(AIWindowAccountAuth, "hasToSConsent").get(() => true);
+    sb.stub(EveryWindow, "readyWindows").get(() => [{}]);
+
+    Services.prefs.setBoolPref(PREF_GENERATE_MEMORIES_FROM_HISTORY, true);
+
+    Services.prefs.setBoolPref(PREF_FIRSTRUN_HAS_COMPLETED, false);
+    Assert.equal(
+      MemoriesManager.shouldEnableMemoriesFromSchedulers(SOURCE_HISTORY),
+      false,
+      "Should be false when firstrun has not completed"
+    );
+
+    Services.prefs.setBoolPref(PREF_FIRSTRUN_HAS_COMPLETED, true);
+    Assert.equal(
+      MemoriesManager.shouldEnableMemoriesFromSchedulers(SOURCE_HISTORY),
+      true,
+      "Should be true when all gates pass (including firstrun completed)"
+    );
+  } finally {
+    sb.restore();
+    Services.prefs.clearUserPref(PREF_GENERATE_MEMORIES_FROM_HISTORY);
+    Services.prefs.clearUserPref(PREF_FIRSTRUN_HAS_COMPLETED);
   }
 });

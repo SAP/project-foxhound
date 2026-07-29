@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "InternetCiter.h"
 
-#include "mozilla/Casting.h"
+#include "mozilla/IntegerRange.h"
 #include "mozilla/intl/Segmenter.h"
 #include "HTMLEditUtils.h"
 #include "nsAString.h"
@@ -17,6 +16,8 @@
 #include "nsServiceManagerUtils.h"
 #include "nsString.h"
 #include "nsStringIterator.h"
+
+#include <algorithm>
 
 namespace mozilla {
 
@@ -39,12 +40,11 @@ void InternetCiter::GetCiteString(const nsAString& aInString,
     --endIter;
   }
 
-  // Loop over the string:
   while (beginIter != endIter) {
     if (uch == HTMLEditUtils::kNewLine) {
       aOutString.Append(HTMLEditUtils::kGreaterThan);
-      // No space between >: this is ">>> " style quoting, for
-      // compatibility with RFC 2646 and format=flowed.
+      // Do not insert a space between adjacent > quote markers.  This keeps
+      // ">>> " style quoting for RFC 2646 format=flowed compatibility.
       if (*beginIter != HTMLEditUtils::kGreaterThan) {
         aOutString.Append(HTMLEditUtils::kSpace);
       }
@@ -61,36 +61,299 @@ void InternetCiter::GetCiteString(const nsAString& aInString,
   }
 }
 
-static void AddCite(nsAString& aOutString, int32_t citeLevel) {
-  for (int32_t i = 0; i < citeLevel; ++i) {
+uint32_t InternetCiter::QuotePrefixLength(uint32_t aQuoteLevel) {
+  return aQuoteLevel ? aQuoteLevel + 1 : 0;
+}
+
+void InternetCiter::AppendQuoteMarkers(nsAString& aOutString,
+                                       uint32_t aQuoteLevel) {
+  DebugOnly<uint32_t> oldLength = aOutString.Length();
+  for ([[maybe_unused]] uint32_t i : IntegerRange(aQuoteLevel)) {
     aOutString.Append(HTMLEditUtils::kGreaterThan);
   }
-  if (citeLevel > 0) {
+  if (aQuoteLevel > 0) {
     aOutString.Append(HTMLEditUtils::kSpace);
   }
+  MOZ_ASSERT(aOutString.Length() - oldLength == QuotePrefixLength(aQuoteLevel));
 }
 
-static inline void BreakLine(nsAString& aOutString, uint32_t& outStringCol,
-                             uint32_t citeLevel) {
-  aOutString.Append(HTMLEditUtils::kNewLine);
-  if (citeLevel > 0) {
-    AddCite(aOutString, citeLevel);
-    outStringCol = citeLevel + 1;
-  } else {
-    outStringCol = 0;
+bool InternetCiter::IsSpace(char16_t aChar) {
+  return nsCRT::IsAsciiSpace(aChar) || aChar == HTMLEditUtils::kNBSP;
+}
+
+bool InternetCiter::IsBodyBoundarySpace(char16_t aChar) {
+  return nsCRT::IsAsciiSpace(aChar) && aChar != HTMLEditUtils::kNewLine &&
+         aChar != HTMLEditUtils::kCarriageReturn;
+}
+
+struct InternetCiter::BodyRange {
+  uint32_t mStart = 0;
+  uint32_t mEnd = 0;
+
+  bool IsEmpty() const { return mStart == mEnd; }
+  uint32_t Length() const { return mEnd - mStart; }
+};
+
+struct InternetCiter::PhysicalLine {
+  uint32_t mQuoteLevel = 0;
+  uint32_t mBodyStart = 0;
+  uint32_t mBodyEnd = 0;
+  bool mEndedWithNewLine = false;
+
+  bool IsQuoted() const { return mQuoteLevel > 0; }
+  uint32_t NextLineStart() const {
+    return mBodyEnd + (mEndedWithNewLine ? 1 : 0);
+  }
+  BodyRange GetTrimmedBody(const nsPromiseFlatString& aString) const;
+
+  static PhysicalLine FromString(const nsPromiseFlatString& aString,
+                                 uint32_t aLineStart);
+};
+
+InternetCiter::PhysicalLine InternetCiter::PhysicalLine::FromString(
+    const nsPromiseFlatString& aString, uint32_t aLineStart) {
+  const uint32_t length = aString.Length();
+  PhysicalLine line;
+  uint32_t offset = aLineStart;
+
+  while (offset < length && aString[offset] == HTMLEditUtils::kGreaterThan) {
+    ++line.mQuoteLevel;
+    ++offset;
+    while (offset < length && aString[offset] == HTMLEditUtils::kSpace) {
+      ++offset;
+    }
+  }
+
+  line.mBodyStart = offset;
+  while (offset < length && aString[offset] != HTMLEditUtils::kNewLine) {
+    ++offset;
+  }
+  line.mBodyEnd = offset;
+  line.mEndedWithNewLine = offset < length;
+  return line;
+}
+
+InternetCiter::BodyRange InternetCiter::PhysicalLine::GetTrimmedBody(
+    const nsPromiseFlatString& aString) const {
+  BodyRange range{mBodyStart, mBodyEnd};
+  while (range.mStart < range.mEnd &&
+         InternetCiter::IsBodyBoundarySpace(aString[range.mStart])) {
+    ++range.mStart;
+  }
+  while (range.mEnd > range.mStart &&
+         InternetCiter::IsBodyBoundarySpace(aString[range.mEnd - 1])) {
+    --range.mEnd;
+  }
+  return range;
+}
+
+void InternetCiter::EnsureEndsWithLineBreak(nsAString& aOutString) {
+  if (!aOutString.IsEmpty() && aOutString.Last() != HTMLEditUtils::kNewLine) {
+    aOutString.Append(HTMLEditUtils::kNewLine);
   }
 }
 
-static inline bool IsSpace(char16_t c) {
-  return (nsCRT::IsAsciiSpace(c) || (c == HTMLEditUtils::kNewLine) ||
-          (c == HTMLEditUtils::kCarriageReturn) || (c == HTMLEditUtils::kNBSP));
+void InternetCiter::StartOutputLine(nsAString& aOutString,
+                                    uint32_t aQuoteLevel) {
+  EnsureEndsWithLineBreak(aOutString);
+  AppendQuoteMarkers(aOutString, aQuoteLevel);
+}
+
+struct InternetCiter::QuotedParagraph {
+  uint32_t mQuoteLevel = 0;
+  uint32_t mBodyColumn = 0;
+  bool mHasOpenLine = false;
+
+  void StartLine(nsAString& aOutString, uint32_t aQuoteLevel);
+  void FinishLine(nsAString& aOutString);
+  void Reset();
+  void AppendBodySeparator(nsAString& aOutString, uint32_t aBodyWrapColumn);
+  void AppendBodyRange(nsAString& aOutString,
+                       const nsPromiseFlatString& aString, uint32_t aQuoteLevel,
+                       const BodyRange& aRange, uint32_t aWrapCol);
+};
+
+void InternetCiter::QuotedParagraph::StartLine(nsAString& aOutString,
+                                               uint32_t aQuoteLevel) {
+  if (mHasOpenLine && mQuoteLevel == aQuoteLevel) {
+    return;
+  }
+  InternetCiter::StartOutputLine(aOutString, aQuoteLevel);
+  mQuoteLevel = aQuoteLevel;
+  mBodyColumn = 0;
+  mHasOpenLine = true;
+}
+
+void InternetCiter::QuotedParagraph::FinishLine(nsAString& aOutString) {
+  if (mHasOpenLine) {
+    InternetCiter::EnsureEndsWithLineBreak(aOutString);
+    mBodyColumn = 0;
+    mHasOpenLine = false;
+  }
+}
+
+void InternetCiter::QuotedParagraph::Reset() {
+  mQuoteLevel = 0;
+  mBodyColumn = 0;
+  mHasOpenLine = false;
+}
+
+uint32_t InternetCiter::ShortestUsefulQuotedBodyColumn(uint32_t aWrapCol) {
+  // Require each quoted line to carry at least this many body columns.  With
+  // the default 72-column wrap, that minimum is 24 columns.
+  constexpr uint32_t kShortestUsefulQuotedBodyColumn = 16;
+  constexpr uint32_t kShortestUsefulBodyFractionDenominator = 3;
+  return std::max(kShortestUsefulQuotedBodyColumn,
+                  aWrapCol / kShortestUsefulBodyFractionDenominator);
+}
+
+uint32_t InternetCiter::BodyWrapColumn(uint32_t aQuoteLevel,
+                                       uint32_t aWrapCol) {
+  const uint32_t quotePrefixLength = QuotePrefixLength(aQuoteLevel);
+  const uint32_t bodyColumnsWithinWrapColumn =
+      quotePrefixLength < aWrapCol ? aWrapCol - quotePrefixLength : 0;
+  // Do not wrap quoted bodies narrower than the minimum useful body column.
+  return std::max(bodyColumnsWithinWrapColumn,
+                  ShortestUsefulQuotedBodyColumn(aWrapCol));
+}
+
+uint32_t InternetCiter::FindBodyLineBreak(const nsPromiseFlatString& aString,
+                                          const BodyRange& aRange,
+                                          uint32_t aBodyWrapColumn) {
+  MOZ_ASSERT(!aRange.IsEmpty());
+  MOZ_ASSERT(aBodyWrapColumn);
+
+  uint32_t breakLength = 0;
+  Maybe<uint32_t> nextBreakLength;
+  intl::LineBreakIteratorUtf16 lineBreakIter(
+      Span<const char16_t>(aString.get() + aRange.mStart, aRange.Length()));
+  while (true) {
+    nextBreakLength = lineBreakIter.Next();
+    if (!nextBreakLength || *nextBreakLength > aBodyWrapColumn) {
+      break;
+    }
+    breakLength = *nextBreakLength;
+  }
+
+  if (breakLength) {
+    return breakLength;
+  }
+
+  if (nextBreakLength && *nextBreakLength) {
+    return *nextBreakLength;
+  }
+
+  // Fallback to always return a positive length.
+  return std::min(aRange.Length(), std::max(1u, aBodyWrapColumn));
+}
+
+uint32_t InternetCiter::AppendBodySlice(nsAString& aOutString,
+                                        const nsPromiseFlatString& aString,
+                                        uint32_t aBodyStart, uint32_t aLength) {
+  while (aLength && IsSpace(aString[aBodyStart + aLength - 1])) {
+    --aLength;
+  }
+  aOutString.Append(Substring(aString, aBodyStart, aLength));
+  return aLength;
+}
+
+void InternetCiter::QuotedParagraph::AppendBodySeparator(
+    nsAString& aOutString, uint32_t aBodyWrapColumn) {
+  if (!mHasOpenLine || !mBodyColumn) {
+    return;
+  }
+
+  if (mBodyColumn + 1 > aBodyWrapColumn) {
+    FinishLine(aOutString);
+    return;
+  }
+
+  aOutString.Append(HTMLEditUtils::kSpace);
+  ++mBodyColumn;
+}
+
+void InternetCiter::QuotedParagraph::AppendBodyRange(
+    nsAString& aOutString, const nsPromiseFlatString& aString,
+    uint32_t aQuoteLevel, const BodyRange& aRange, uint32_t aWrapCol) {
+  if (aRange.IsEmpty()) {
+    return;
+  }
+  BodyRange range = aRange;
+
+  const uint32_t bodyWrapColumn =
+      InternetCiter::BodyWrapColumn(aQuoteLevel, aWrapCol);
+  AppendBodySeparator(aOutString, bodyWrapColumn);
+
+  while (!range.IsEmpty()) {
+    StartLine(aOutString, aQuoteLevel);
+
+    const uint32_t availableBodyColumns =
+        bodyWrapColumn > mBodyColumn ? bodyWrapColumn - mBodyColumn : 0;
+    if (!availableBodyColumns) {
+      FinishLine(aOutString);
+      continue;
+    }
+
+    if (range.Length() <= availableBodyColumns) {
+      aOutString.Append(Substring(aString, range.mStart, range.Length()));
+      mBodyColumn += range.Length();
+      return;
+    }
+
+    const uint32_t breakLength =
+        InternetCiter::FindBodyLineBreak(aString, range, availableBodyColumns);
+    constexpr uint32_t kLongWordOverflowTolerance = 6;
+    // Allow words to slightly exceed the break limit to keep lines readable.
+    if (breakLength > availableBodyColumns && mBodyColumn &&
+        breakLength - availableBodyColumns > kLongWordOverflowTolerance) {
+      // Do not split URLs at the beginning of lines, so they remain clickable.
+      FinishLine(aOutString);
+      continue;
+    }
+
+    mBodyColumn += InternetCiter::AppendBodySlice(aOutString, aString,
+                                                  range.mStart, breakLength);
+    range.mStart += breakLength;
+    while (range.mStart < range.mEnd &&
+           InternetCiter::IsSpace(aString[range.mStart])) {
+      ++range.mStart;
+    }
+    if (!range.IsEmpty()) {
+      FinishLine(aOutString);
+    }
+  }
+}
+
+void InternetCiter::EmitBlankQuotedLine(nsAString& aOutString,
+                                        uint32_t aQuoteLevel,
+                                        bool aEndedWithNewLine,
+                                        QuotedParagraph& aParagraph) {
+  aParagraph.FinishLine(aOutString);
+  StartOutputLine(aOutString, aQuoteLevel);
+  if (aEndedWithNewLine) {
+    aOutString.Append(HTMLEditUtils::kNewLine);
+  }
+  aParagraph.Reset();
+}
+
+void InternetCiter::EmitUnquotedLine(nsAString& aOutString,
+                                     const nsPromiseFlatString& aString,
+                                     const PhysicalLine& aLine,
+                                     QuotedParagraph& aParagraph) {
+  aParagraph.FinishLine(aOutString);
+  aParagraph.Reset();
+  StartOutputLine(aOutString, 0);
+  aOutString.Append(
+      Substring(aString, aLine.mBodyStart, aLine.mBodyEnd - aLine.mBodyStart));
+  if (aLine.mEndedWithNewLine) {
+    aOutString.Append(HTMLEditUtils::kNewLine);
+  }
 }
 
 void InternetCiter::Rewrap(const nsAString& aInString, uint32_t aWrapCol,
                            uint32_t aFirstLineOffset, bool aRespectNewlines,
                            nsAString& aOutString) {
-  // There shouldn't be returns in this string, only dom newlines.
-  // Check to make sure:
+  // Rewrap operates on DOM newlines.
 #ifdef DEBUG
   int32_t crPosition = aInString.FindChar(HTMLEditUtils::kCarriageReturn);
   NS_ASSERTION(crPosition < 0, "Rewrap: CR in string gotten from DOM!\n");
@@ -98,196 +361,38 @@ void InternetCiter::Rewrap(const nsAString& aInString, uint32_t aWrapCol,
 
   aOutString.Truncate();
 
-  // Loop over lines in the input string, rewrapping each one.
-  uint32_t posInString = 0;
-  uint32_t outStringCol = 0;
-  uint32_t citeLevel = 0;
   const nsPromiseFlatString& tString = PromiseFlatString(aInString);
   const uint32_t length = tString.Length();
-  while (posInString < length) {
-    // Get the new cite level here since we're at the beginning of a line
-    uint32_t newCiteLevel = 0;
-    while (posInString < length &&
-           tString[posInString] == HTMLEditUtils::kGreaterThan) {
-      ++newCiteLevel;
-      ++posInString;
-      while (posInString < length &&
-             tString[posInString] == HTMLEditUtils::kSpace) {
-        ++posInString;
-      }
-    }
-    if (posInString >= length) {
-      break;
-    }
+  QuotedParagraph quotedParagraph;
 
-    // Special case: if this is a blank line, maintain a blank line
-    // (retain the original paragraph breaks)
-    if (tString[posInString] == HTMLEditUtils::kNewLine &&
-        !aOutString.IsEmpty()) {
-      if (aOutString.Last() != HTMLEditUtils::kNewLine) {
-        aOutString.Append(HTMLEditUtils::kNewLine);
-      }
-      AddCite(aOutString, newCiteLevel);
-      aOutString.Append(HTMLEditUtils::kNewLine);
+  // Rewrap quoted mail as a sequence of physical lines:
+  //   1. Parse the quote prefix and body range.
+  //   2. Join adjacent quoted body lines with the same quote level.
+  //   3. Wrap only body text, then re-emit the quote prefix.
+  for (uint32_t nextLineStart = 0; nextLineStart < length;) {
+    const PhysicalLine line = PhysicalLine::FromString(tString, nextLineStart);
+    nextLineStart = line.NextLineStart();
 
-      ++posInString;
-      outStringCol = 0;
+    if (!line.IsQuoted()) {
+      EmitUnquotedLine(aOutString, tString, line, quotedParagraph);
       continue;
     }
 
-    // If the cite level has changed, then start a new line with the
-    // new cite level (but if we're at the beginning of the string,
-    // don't bother).
-    if (newCiteLevel != citeLevel && posInString > newCiteLevel + 1 &&
-        outStringCol) {
-      BreakLine(aOutString, outStringCol, 0);
-    }
-    citeLevel = newCiteLevel;
-
-    // Prepend the quote level to the out string if appropriate
-    if (!outStringCol) {
-      AddCite(aOutString, citeLevel);
-      outStringCol = citeLevel + (citeLevel ? 1 : 0);
-    }
-    // If it's not a cite, and we're not at the beginning of a line in
-    // the output string, add a space to separate new text from the
-    // previous text.
-    else if (outStringCol > citeLevel) {
-      aOutString.Append(HTMLEditUtils::kSpace);
-      ++outStringCol;
+    if (quotedParagraph.mHasOpenLine &&
+        quotedParagraph.mQuoteLevel != line.mQuoteLevel) {
+      quotedParagraph.FinishLine(aOutString);
     }
 
-    // find the next newline -- don't want to go farther than that
-    int32_t nextNewline =
-        tString.FindChar(HTMLEditUtils::kNewLine, posInString);
-    if (nextNewline < 0) {
-      nextNewline = length;
-    }
-
-    // For now, don't wrap unquoted lines at all.
-    // This is because the plaintext edit window has already wrapped them
-    // by the time we get them for rewrap, yet when we call the line
-    // breaker, it will refuse to break backwards, and we'll end up
-    // with a line that's too long and gets displayed as a lone word
-    // on a line by itself.  Need special logic to detect this case
-    // and break it ourselves without resorting to the line breaker.
-    if (!citeLevel) {
-      aOutString.Append(
-          Substring(tString, posInString, nextNewline - posInString));
-      outStringCol += nextNewline - posInString;
-      if (nextNewline != (int32_t)length) {
-        aOutString.Append(HTMLEditUtils::kNewLine);
-        outStringCol = 0;
-      }
-      posInString = nextNewline + 1;
+    const BodyRange body = line.GetTrimmedBody(tString);
+    if (body.IsEmpty()) {
+      EmitBlankQuotedLine(aOutString, line.mQuoteLevel, line.mEndedWithNewLine,
+                          quotedParagraph);
       continue;
     }
 
-    // Otherwise we have to use the line breaker and loop
-    // over this line of the input string to get all of it:
-    while ((int32_t)posInString < nextNewline) {
-      // Skip over initial spaces:
-      while ((int32_t)posInString < nextNewline &&
-             nsCRT::IsAsciiSpace(tString[posInString])) {
-        ++posInString;
-      }
-
-      // If this is a short line, just append it and continue:
-      if (outStringCol + nextNewline - posInString <=
-          aWrapCol - citeLevel - 1) {
-        // If this short line is the final one in the in string,
-        // then we need to include the final newline, if any:
-        if (nextNewline + 1 == (int32_t)length &&
-            tString[nextNewline - 1] == HTMLEditUtils::kNewLine) {
-          ++nextNewline;
-        }
-        // Trim trailing spaces:
-        int32_t lastRealChar = nextNewline;
-        while ((uint32_t)lastRealChar > posInString &&
-               nsCRT::IsAsciiSpace(tString[lastRealChar - 1])) {
-          --lastRealChar;
-        }
-
-        aOutString +=
-            Substring(tString, posInString, lastRealChar - posInString);
-        outStringCol += lastRealChar - posInString;
-        posInString = nextNewline + 1;
-        continue;
-      }
-
-      int32_t eol = posInString + aWrapCol - citeLevel - outStringCol;
-      // eol is the prospective end of line.
-      // If it's already less than our current position,
-      // then our line is already too long, so break now.
-      if (eol <= (int32_t)posInString) {
-        BreakLine(aOutString, outStringCol, citeLevel);
-        continue;  // continue inner loop, with outStringCol now at bol
-      }
-
-      MOZ_ASSERT(eol >= 0 && eol - posInString > 0);
-
-      uint32_t breakPt = 0;
-      Maybe<uint32_t> nextBreakPt;
-      intl::LineBreakIteratorUtf16 lineBreakIter(Span<const char16_t>(
-          tString.get() + posInString, length - posInString));
-      while (true) {
-        nextBreakPt = lineBreakIter.Next();
-        if (!nextBreakPt ||
-            *nextBreakPt > AssertedCast<uint32_t>(eol) - posInString) {
-          break;
-        }
-        breakPt = *nextBreakPt;
-      }
-
-      if (breakPt == 0) {
-        // If we couldn't find a breakpoint within the eol upper bound, and
-        // we're not starting a new line, then end this line and loop around
-        // again:
-        if (outStringCol > citeLevel + 1) {
-          BreakLine(aOutString, outStringCol, citeLevel);
-          continue;  // continue inner loop, with outStringCol now at bol
-        }
-
-        MOZ_ASSERT(nextBreakPt.isSome(),
-                   "Next() always treats end-of-text as a break");
-        breakPt = *nextBreakPt;
-      }
-
-      // Special case: maybe we should have wrapped last time.
-      // If the first breakpoint here makes the current line too long,
-      // then if we already have text on the current line,
-      // break and loop around again.
-      // If we're at the beginning of the current line, though,
-      // don't force a break since the long word might be a url
-      // and breaking it would make it unclickable on the other end.
-      const int SLOP = 6;
-      if (outStringCol + breakPt > aWrapCol + SLOP &&
-          outStringCol > citeLevel + 1) {
-        BreakLine(aOutString, outStringCol, citeLevel);
-        continue;
-      }
-
-      nsAutoString sub(Substring(tString, posInString, breakPt));
-      // skip newlines or white-space at the end of the string
-      int32_t subend = sub.Length();
-      while (subend > 0 && IsSpace(sub[subend - 1])) {
-        --subend;
-      }
-      sub.Left(sub, subend);
-      aOutString += sub;
-      outStringCol += sub.Length();
-      // Advance past the white-space which caused the wrap:
-      posInString += breakPt;
-      while (posInString < length && IsSpace(tString[posInString])) {
-        ++posInString;
-      }
-
-      // Add a newline and the quote level to the out string
-      if (posInString < length) {  // not for the last line, though
-        BreakLine(aOutString, outStringCol, citeLevel);
-      }
-    }  // end inner loop within one line of aInString
-  }  // end outer loop over lines of aInString
+    quotedParagraph.AppendBodyRange(aOutString, tString, line.mQuoteLevel, body,
+                                    aWrapCol);
+  }
 }
 
 }  // namespace mozilla

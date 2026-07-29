@@ -39,6 +39,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource://gre/modules/shared/FormAutofillSection.sys.mjs",
   FormAutofillCreditCardSection:
     "resource://gre/modules/shared/FormAutofillSection.sys.mjs",
+  FormAutofillML: "resource://gre/modules/shared/FormAutofillML.sys.mjs",
   FormAutofillHeuristics:
     "resource://gre/modules/shared/FormAutofillHeuristics.sys.mjs",
   FormAutofillSection:
@@ -49,7 +50,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   FirefoxRelay: "resource://gre/modules/FirefoxRelay.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
-  OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "log", () =>
@@ -63,6 +63,16 @@ const { ADDRESSES_COLLECTION_NAME, CREDITCARDS_COLLECTION_NAME, FIELD_STATES } =
   FormAutofillUtils;
 
 let gMessageObservers = new Set();
+
+const FORM_AUTOFILL_MESSAGES = new Set([
+  "FormAutofill:InitStorage",
+  "FormAutofill:OnFormSubmit",
+  "FormAutofill:FieldsIdentified",
+  "FormAutofill:OnFieldsDetected",
+  "FormAutofill:OnFieldsUpdated",
+  "FormAutofill:FieldFilledModified",
+  "FormAutofill:FieldsUpdatedDuringAutofill",
+]);
 
 export let FormAutofillStatus = {
   _initialized: false,
@@ -81,6 +91,7 @@ export let FormAutofillStatus = {
     }
     this._initialized = true;
 
+    Services.obs.addObserver(this, "passwordsAutofill-pane-loaded");
     Services.obs.addObserver(this, "privacy-pane-loaded");
 
     // Observing the pref and storage changes
@@ -109,6 +120,7 @@ export let FormAutofillStatus = {
     this._active = null;
 
     Services.obs.removeObserver(this, "privacy-pane-loaded");
+    Services.obs.removeObserver(this, "passwordsAutofill-pane-loaded");
     Services.prefs.removeObserver(ENABLED_AUTOFILL_ADDRESSES_PREF, this);
     Services.obs.removeObserver(this, "formautofill-storage-changed");
     Services.wm.removeListener(this);
@@ -201,9 +213,22 @@ export let FormAutofillStatus = {
 
     switch (topic) {
       case "privacy-pane-loaded": {
+        if (
+          !Services.prefs.getBoolPref(
+            "browser.settings-redesign.enabled",
+            false
+          )
+        ) {
+          let formAutofillPreferences = new lazy.FormAutofillPreferences();
+          let document = subject.document;
+          formAutofillPreferences.init(document);
+        }
+        break;
+      }
+
+      case "passwordsAutofill-pane-loaded": {
         let formAutofillPreferences = new lazy.FormAutofillPreferences();
-        let document = subject.document;
-        formAutofillPreferences.init(document);
+        formAutofillPreferences.init(subject.document);
         break;
       }
 
@@ -249,6 +274,8 @@ ChromeUtils.defineLazyGetter(lazy, "gFormAutofillStorage", () => {
 });
 
 export class FormAutofillParent extends JSWindowActorParent {
+  static #mlFeature;
+
   constructor() {
     super();
     FormAutofillStatus.init();
@@ -297,6 +324,10 @@ export class FormAutofillParent extends JSWindowActorParent {
       !FormAutofill.isAutofillCreditCardsAvailable &&
       !FormAutofill.isAutofillAddressesAvailable
     ) {
+      return undefined;
+    }
+
+    if (!FORM_AUTOFILL_MESSAGES.has(name) && !Cu.isInAutomation) {
       return undefined;
     }
 
@@ -358,12 +389,6 @@ export class FormAutofillParent extends JSWindowActorParent {
         break;
       }
       case "FormAutofill:SaveCreditCard": {
-        // Setting the first parameter of OSKeyStore.ensurLoggedIn as false
-        // since this case only called in tests. Also the reason why we're not calling FormAutofill.verifyUserOSAuth.
-        if (!(await lazy.OSKeyStore.ensureLoggedIn(false)).authenticated) {
-          lazy.log.warn("User canceled encryption login");
-          return undefined;
-        }
         await lazy.gFormAutofillStorage.creditCards.add(data.creditcard);
         break;
       }
@@ -494,6 +519,28 @@ export class FormAutofillParent extends JSWindowActorParent {
   }
 
   /**
+   * When ML inference is enabled, we skip the regular expression-based heuristics
+   * in the child process, so some field names may be missing by the time the
+   * fields reach the parent process. This function runs ML inference to fill in
+   * those missing field names.
+   *
+   * @param {Array<FieldDetail>} fieldDetails
+   *        An array of the identified fields.
+   */
+  async runMLInference(fieldDetails) {
+    if (!FormAutofillUtils.useMLInference) {
+      return;
+    }
+
+    if (!fieldDetails.some(fd => !fd.fieldName && fd.mlData)) {
+      return;
+    }
+
+    FormAutofillParent.#mlFeature ??= new lazy.FormAutofillML();
+    await FormAutofillParent.#mlFeature.detectFields(fieldDetails);
+  }
+
+  /**
    * When a field is detected, identify fields in other frames, if they exist.
    * To ensure that the identified fields across frames still follow the document
    * order, we traverse from the top-level window and recursively identify fields
@@ -526,6 +573,8 @@ export class FormAutofillParent extends JSWindowActorParent {
       focusedBCId,
       fieldsIncludeIframe
     );
+
+    await this.runMLInference(fieldDetails);
 
     // Now we have collected all the fields for the form, run parsing heuristics
     // to update the field name based on surrounding fields.
@@ -1415,6 +1464,8 @@ export class FormAutofillParent extends JSWindowActorParent {
         formFields,
         msg
       );
+
+      await this.runMLInference(fieldDetails);
 
       fieldDetails.forEach(field => {
         const overwriteField = overwriteFieldDetails.find(

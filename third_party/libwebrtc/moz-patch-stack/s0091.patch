@@ -1,31 +1,25 @@
-From: Nico Grunbaum <na-g@nostrum.com>
-Date: Thu, 23 May 2024 17:28:00 +0000
-Subject: Bug 1897459 - P0 - for BSD do not build physical_socket_server in
- libwebrtc;r=mjf,webrtc-reviewers
+From: Dan Baker <dbaker@mozilla.com>
+Date: Tue, 27 Aug 2024 14:09:00 -0600
+Subject: Bug 1912989 - (fix-2360208f7d) Removed build command causing failure.
+ - moz.build file updates
 
-libwebrtc added the use of several non-portable socket options in this code.
-Firefox does not use any of the code in this file, but there is a header dependency chain leading from code that is used.
-
-Differential Revision: https://phabricator.services.mozilla.com/D210858
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/4e7b3c485e549e7e35b227b517acadbbad957004
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/fd4bc7427678a45283f0f56418ee2c70fac711e6
 ---
- rtc_base/BUILD.gn | 6 ++++++
- 1 file changed, 6 insertions(+)
+ .gn | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
 
-diff --git a/rtc_base/BUILD.gn b/rtc_base/BUILD.gn
-index d4da935af5..4c327da7f3 100644
---- a/rtc_base/BUILD.gn
-+++ b/rtc_base/BUILD.gn
-@@ -998,6 +998,12 @@ rtc_library("threading") {
-     "thread.cc",
-     "thread.h",
-   ]
-+  if (is_bsd && build_with_mozilla) {
-+    sources -= [
-+      "physical_socket_server.cc",
-+      "physical_socket_server.h",
-+    ]
-+  }
-   deps = [
-     ":async_dns_resolver",
-     ":byte_order",
+diff --git a/.gn b/.gn
+index 675807743a..82164c084e 100644
+--- a/.gn
++++ b/.gn
+@@ -38,7 +38,9 @@ no_check_targets = [
+ exec_script_allowlist = build_dotfile_settings.exec_script_allowlist +
+                         [ "//build_overrides/build.gni" ]
+ 
+-export_compile_commands = [ "*" ]
++# Normally, we'd use 'if (!build_with_mozilla)', but that flag isn't
++# available yet.
++#export_compile_commands = [ "*" ]
+ 
+ default_args = {
+   # Webrtc does not support component builds because we are not using the

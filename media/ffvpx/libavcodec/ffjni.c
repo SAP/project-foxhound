@@ -31,6 +31,7 @@
 
 #include "config.h"
 #include "fffjni.h"
+#include "jni.h"
 #include "ffjni.h"
 
 static JavaVM *java_vm;

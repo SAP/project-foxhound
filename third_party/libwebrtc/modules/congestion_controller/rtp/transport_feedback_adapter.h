@@ -20,7 +20,6 @@
 
 #include "api/transport/network_types.h"
 #include "api/units/data_size.h"
-#include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/congestion_control_feedback.h"
@@ -43,6 +42,8 @@ struct PacketFeedback {
   uint32_t ssrc = 0;
   uint16_t rtp_sequence_number = 0;
   bool is_retransmission = false;
+  bool sent_with_ect1 = false;
+  bool previously_reported_lost = false;
 };
 
 class InFlightBytesTracker {
@@ -122,12 +123,10 @@ class TransportFeedbackAdapter {
   InFlightBytesTracker in_flight_;
   NetworkRoute network_route_;
 
-  TimeDelta smoothed_rtt_ = TimeDelta::PlusInfinity();
-
   Timestamp current_offset_ = Timestamp::MinusInfinity();
 
   // `last_transport_feedback_base_time` is only used for transport feedback to
-  // track base time.
+
   Timestamp last_transport_feedback_base_time_ = Timestamp::MinusInfinity();
   // Used by RFC 8888 congestion control feedback to track base time.
   std::optional<uint32_t> last_feedback_compact_ntp_time_;

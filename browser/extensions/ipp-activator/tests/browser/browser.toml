@@ -1,4 +1,21 @@
 [DEFAULT]
 tags = "ipp-activator"
+support-files = ["head.js"]
 
 ["browser_breakages_l10n.js"]
+
+["browser_conditions_combinators.js"]
+
+["browser_conditions_cookie.js"]
+
+["browser_conditions_date.js"]
+
+["browser_conditions_region.js"]
+
+["browser_conditions_url.js"]
+
+["browser_conditions_vpn.js"]
+
+["browser_flow.js"]
+
+["browser_telemetry.js"]

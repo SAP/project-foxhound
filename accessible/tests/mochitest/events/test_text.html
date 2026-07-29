@@ -16,249 +16,203 @@
 
   <script type="application/javascript">
     // //////////////////////////////////////////////////////////////////////////
-    // Invokers
-
-    /**
-     * Base text remove invoker and checker.
-     */
-    function textRemoveInvoker(aID, aStart, aEnd, aText) {
-      this.DOMNode = getNode(aID);
-
-      this.eventSeq = [
-        new textChangeChecker(aID, aStart, aEnd, aText, false),
-      ];
-    }
-
-    function textInsertInvoker(aID, aStart, aEnd, aText) {
-      this.DOMNode = getNode(aID);
-
-      this.eventSeq = [
-        new textChangeChecker(aID, aStart, aEnd, aText, true),
-      ];
-    }
-
-    /**
-     * Remove inaccessible child node containing accessibles.
-     */
-    function removeChildSpan(aID) {
-      this.__proto__ = new textRemoveInvoker(aID, 0, 5, "33322");
-
-      this.invoke = function removeChildSpan_invoke() {
-        // remove HTML span, a first child of the node
-        this.DOMNode.firstChild.remove();
-      };
-
-      this.getID = function removeChildSpan_getID() {
-        return "Remove inaccessible span containing accessible nodes" + prettyName(aID);
-      };
-    }
-
-    /**
-     * Insert inaccessible child node containing accessibles.
-     */
-    function insertChildSpan(aID, aInsertAllTogether) {
-      this.__proto__ = new textInsertInvoker(aID, 0, 5, "33322");
-
-      this.invoke = function insertChildSpan_invoke() {
-        // <span><span>333</span><span>22</span></span>
-        if (aInsertAllTogether) {
-          let topSpan = document.createElement("span");
-          let fSpan = document.createElement("span");
-          fSpan.textContent = "333";
-          topSpan.appendChild(fSpan);
-          let sSpan = document.createElement("span");
-          sSpan.textContent = "22";
-          topSpan.appendChild(sSpan);
-
-          this.DOMNode.insertBefore(topSpan, this.DOMNode.childNodes[0]);
-        } else {
-          let topSpan = document.createElement("span");
-          this.DOMNode.insertBefore(topSpan, this.DOMNode.childNodes[0]);
-
-          let fSpan = document.createElement("span");
-          fSpan.textContent = "333";
-          topSpan.appendChild(fSpan);
-
-          let sSpan = document.createElement("span");
-          sSpan.textContent = "22";
-          topSpan.appendChild(sSpan);
-        }
-      };
-
-      this.getID = function insertChildSpan_getID() {
-       return "Insert inaccessible span containing accessibles" +
-          prettyName(aID);
-      };
-    }
-
-    /**
-     * Remove child embedded accessible.
-     */
-    function removeChildDiv(aID) {
-      this.__proto__ = new textRemoveInvoker(aID, 5, 6, kEmbedChar);
-
-      this.invoke = function removeChildDiv_invoke() {
-        var childDiv = this.DOMNode.childNodes[1];
-
-        // Ensure accessible is created to get text remove event when it's
-        // removed.
-        getAccessible(childDiv);
-
-        this.DOMNode.removeChild(childDiv);
-      };
-
-      this.getID = function removeChildDiv_getID() {
-        return "Remove accessible div from the middle of text accessible " +
-          prettyName(aID);
-      };
-    }
-
-    /**
-     * Insert child embedded accessible.
-     */
-    function insertChildDiv(aID) {
-      this.__proto__ = new textInsertInvoker(aID, 5, 6, kEmbedChar);
-
-      this.invoke = function insertChildDiv_invoke() {
-        var childDiv = document.createElement("div");
-        // Note after bug 646216, a sole div without text won't be accessible
-        // and would not result in an embedded character.
-        // Therefore, add some text.
-        childDiv.textContent = "hello";
-        this.DOMNode.insertBefore(childDiv, this.DOMNode.childNodes[1]);
-      };
-
-      this.getID = function insertChildDiv_getID() {
-        return "Insert accessible div into the middle of text accessible " +
-          prettyName(aID);
-      };
-    }
-
-    /**
-     * Remove children from text container from first to last child or vice
-     * versa.
-     */
-    function removeChildren(aID, aLastToFirst, aStart, aEnd, aText) {
-      this.__proto__ = new textRemoveInvoker(aID, aStart, aEnd, aText);
-
-      this.invoke = function removeChildren_invoke() {
-        if (aLastToFirst) {
-          while (this.DOMNode.firstChild)
-            this.DOMNode.removeChild(this.DOMNode.lastChild);
-        } else {
-          while (this.DOMNode.firstChild)
-            this.DOMNode.firstChild.remove();
-        }
-      };
-
-      this.getID = function removeChildren_getID() {
-        return "remove children of " + prettyName(aID) +
-          (aLastToFirst ? " from last to first" : " from first to last");
-      };
-    }
-
-    /**
-     * Remove text from HTML input.
-     */
-    function removeTextFromInput(aID, aStart, aEnd, aText) {
-      this.__proto__ = new textRemoveInvoker(aID, aStart, aEnd, aText);
-
-      this.eventSeq.push(new invokerChecker(EVENT_TEXT_VALUE_CHANGE,
-                                            this.DOMNode));
-
-      this.invoke = function removeTextFromInput_invoke() {
-        this.DOMNode.focus();
-        this.DOMNode.setSelectionRange(aStart, aEnd);
-
-        synthesizeKey("KEY_Delete");
-      };
-
-      this.getID = function removeTextFromInput_getID() {
-        return "Remove text from " + aStart + " to " + aEnd + " for " +
-          prettyName(aID);
-      };
-    }
-
-    /**
-     * Add text into HTML input.
-     */
-    function insertTextIntoInput(aID, aStart, aEnd, aText) {
-      this.__proto__ = new textInsertInvoker(aID, aStart, aEnd, aText);
-
-      this.eventSeq.push(new invokerChecker(EVENT_TEXT_VALUE_CHANGE,
-                                            this.DOMNode));
-
-      this.invoke = function insertTextIntoInput_invoke() {
-        this.DOMNode.focus();
-        sendString("a");
-      };
-
-      this.getID = function insertTextIntoInput_getID() {
-        return "Insert text to " + aStart + " for " + prettyName(aID);
-      };
-    }
-
-    /**
-     * Remove text data from text node of editable area.
-     */
-    function removeTextFromEditable(aID, aStart, aEnd, aText, aTextNode) {
-      this.__proto__ = new textRemoveInvoker(aID, aStart, aEnd, aText);
-
-      this.invoke = function removeTextFromEditable_invoke() {
-        this.DOMNode.focus();
-
-        var selection = window.getSelection();
-        var range = document.createRange();
-        range.setStart(this.textNode, aStart);
-        range.setEnd(this.textNode, aEnd);
-        selection.addRange(range);
-
-        synthesizeKey("KEY_Delete");
-      };
-
-      this.getID = function removeTextFromEditable_getID() {
-        return "Remove text from " + aStart + " to " + aEnd + " for " +
-          prettyName(aID);
-      };
-
-      this.textNode = getNode(aTextNode);
-    }
-
-    // //////////////////////////////////////////////////////////////////////////
     // Do tests
-    gA11yEventDumpToConsole = true; // debugging
 
-    var gQueue = null;
-    function doTests() {
-      gQueue = new eventQueue();
-
+    async function doTests() {
       // Text remove event on inaccessible child HTML span removal containing
       // accessible text nodes.
-      gQueue.push(new removeChildSpan("p"));
-      gQueue.push(new insertChildSpan("p"), true);
-      gQueue.push(new insertChildSpan("p"), false);
+      let pNode = getNode("p");
+
+      {
+        let p = waitForEvent(EVENT_TEXT_REMOVED, pNode);
+        pNode.firstChild.remove();
+        let evt = await p;
+        evt.QueryInterface(nsIAccessibleTextChangeEvent);
+        is(evt.start, 0, "Wrong start offset for " + prettyName(pNode));
+        is(evt.length, 5, "Wrong length for " + prettyName(pNode));
+        is(evt.isInserted, false, "Wrong isInserted for " + prettyName(pNode));
+        is(evt.modifiedText, "33322", "Wrong text for " + prettyName(pNode));
+      }
+
+      // insertChildSpan all together
+      {
+        let p = waitForEvent(EVENT_TEXT_INSERTED, pNode);
+        let topSpan = document.createElement("span");
+        let fSpan = document.createElement("span");
+        fSpan.textContent = "333";
+        topSpan.appendChild(fSpan);
+        let sSpan = document.createElement("span");
+        sSpan.textContent = "22";
+        topSpan.appendChild(sSpan);
+        pNode.insertBefore(topSpan, pNode.childNodes[0]);
+        let evt = await p;
+        evt.QueryInterface(nsIAccessibleTextChangeEvent);
+        is(evt.start, 0, "Wrong start offset for " + prettyName(pNode));
+        is(evt.length, 5, "Wrong length for " + prettyName(pNode));
+        is(evt.isInserted, true, "Wrong isInserted for " + prettyName(pNode));
+        is(evt.modifiedText, "33322", "Wrong text for " + prettyName(pNode));
+      }
+
+      // insertChildSpan not all together
+      {
+        let p = waitForEvent(EVENT_TEXT_REMOVED, pNode);
+        pNode.firstChild.remove();
+        await p;
+      }
+      {
+        let p = waitForEvent(EVENT_TEXT_INSERTED, pNode);
+        let topSpan = document.createElement("span");
+        pNode.insertBefore(topSpan, pNode.childNodes[0]);
+        let fSpan = document.createElement("span");
+        fSpan.textContent = "333";
+        topSpan.appendChild(fSpan);
+        let sSpan = document.createElement("span");
+        sSpan.textContent = "22";
+        topSpan.appendChild(sSpan);
+        let evt = await p;
+        evt.QueryInterface(nsIAccessibleTextChangeEvent);
+        is(evt.start, 0, "Wrong start offset for " + prettyName(pNode));
+        is(evt.length, 5, "Wrong length for " + prettyName(pNode));
+        is(evt.isInserted, true, "Wrong isInserted for " + prettyName(pNode));
+        is(evt.modifiedText, "33322", "Wrong text for " + prettyName(pNode));
+      }
 
       // Remove embedded character.
-      gQueue.push(new removeChildDiv("div"));
-      gQueue.push(new insertChildDiv("div"));
+      let divNode = getNode("div");
+      {
+        let p = waitForEvent(EVENT_TEXT_REMOVED, divNode);
+        let childDiv = divNode.childNodes[1];
+        getAccessible(childDiv);
+        divNode.removeChild(childDiv);
+        let evt = await p;
+        evt.QueryInterface(nsIAccessibleTextChangeEvent);
+        is(evt.start, 5, "Wrong start offset for " + prettyName(divNode));
+        is(evt.length, 1, "Wrong length for " + prettyName(divNode));
+        is(
+          evt.isInserted,
+          false,
+          "Wrong isInserted for " + prettyName(divNode)
+        );
+        is(
+          evt.modifiedText,
+          kEmbedChar,
+          "Wrong text for " + prettyName(divNode)
+        );
+      }
 
-      // Remove all children.
-      var text = kEmbedChar + "txt" + kEmbedChar;
-      gQueue.push(new removeChildren("div2", true, 0, 5, text));
-      gQueue.push(new removeChildren("div3", false, 0, 5, text));
+      {
+        let p = waitForEvent(EVENT_TEXT_INSERTED, divNode);
+        let childDiv = document.createElement("div");
+        childDiv.textContent = "hello";
+        divNode.insertBefore(childDiv, divNode.childNodes[1]);
+        let evt = await p;
+        evt.QueryInterface(nsIAccessibleTextChangeEvent);
+        is(evt.start, 5, "Wrong start offset for " + prettyName(divNode));
+        is(evt.length, 1, "Wrong length for " + prettyName(divNode));
+        is(evt.isInserted, true, "Wrong isInserted for " + prettyName(divNode));
+        is(
+          evt.modifiedText,
+          kEmbedChar,
+          "Wrong text for " + prettyName(divNode)
+        );
+      }
+
+      // Remove all children (last to first).
+      let div2Node = getNode("div2");
+      let text = kEmbedChar + "txt" + kEmbedChar;
+      {
+        let p = waitForEvent(EVENT_TEXT_REMOVED, div2Node);
+        while (div2Node.firstChild) {
+          div2Node.removeChild(div2Node.lastChild);
+        }
+        let evt = await p;
+        evt.QueryInterface(nsIAccessibleTextChangeEvent);
+        is(evt.start, 0, "Wrong start offset for " + prettyName(div2Node));
+        is(evt.length, 5, "Wrong length for " + prettyName(div2Node));
+        is(
+          evt.isInserted,
+          false,
+          "Wrong isInserted for " + prettyName(div2Node)
+        );
+        is(evt.modifiedText, text, "Wrong text for " + prettyName(div2Node));
+      }
+
+      // Remove all children (first to last).
+      let div3Node = getNode("div3");
+      {
+        let p = waitForEvent(EVENT_TEXT_REMOVED, div3Node);
+        while (div3Node.firstChild) {
+          div3Node.firstChild.remove();
+        }
+        let evt = await p;
+        evt.QueryInterface(nsIAccessibleTextChangeEvent);
+        is(evt.start, 0, "Wrong start offset for " + prettyName(div3Node));
+        is(evt.length, 5, "Wrong length for " + prettyName(div3Node));
+        is(
+          evt.isInserted,
+          false,
+          "Wrong isInserted for " + prettyName(div3Node)
+        );
+        is(evt.modifiedText, text, "Wrong text for " + prettyName(div3Node));
+      }
 
       // Text remove from text node within hypertext accessible.
-      gQueue.push(new removeTextFromInput("input", 1, 3, "al"));
-      gQueue.push(new insertTextIntoInput("input", 1, 2, "a"));
+      let inputNode = getNode("input");
+      {
+        let p = waitForEvents([
+          [EVENT_TEXT_REMOVED, inputNode],
+          [EVENT_TEXT_VALUE_CHANGE, inputNode],
+        ]);
+        inputNode.focus();
+        inputNode.setSelectionRange(1, 3);
+        synthesizeKey("KEY_Delete");
+        let [textEvt] = await p;
+        textEvt.QueryInterface(nsIAccessibleTextChangeEvent);
+        is(textEvt.start, 1, "Wrong start offset for " + prettyName(inputNode));
+        is(textEvt.length, 2, "Wrong length for " + prettyName(inputNode));
+        is(
+          textEvt.isInserted,
+          false,
+          "Wrong isInserted for " + prettyName(inputNode)
+        );
+        is(
+          textEvt.modifiedText,
+          "al",
+          "Wrong text for " + prettyName(inputNode)
+        );
+      }
+
+      {
+        let p = waitForEvents([
+          [EVENT_TEXT_INSERTED, inputNode],
+          [EVENT_TEXT_VALUE_CHANGE, inputNode],
+        ]);
+        inputNode.focus();
+        sendString("a");
+        let [textEvt] = await p;
+        textEvt.QueryInterface(nsIAccessibleTextChangeEvent);
+        is(textEvt.start, 1, "Wrong start offset for " + prettyName(inputNode));
+        is(textEvt.length, 1, "Wrong length for " + prettyName(inputNode));
+        is(
+          textEvt.isInserted,
+          true,
+          "Wrong isInserted for " + prettyName(inputNode)
+        );
+        is(
+          textEvt.modifiedText,
+          "a",
+          "Wrong text for " + prettyName(inputNode)
+        );
+      }
 
       // bug 570691
       todo(false, "Fix text change events from editable area, see bug 570691");
       // var textNode = getNode("editable").firstChild;
-      // gQueue.push(new removeTextFromEditable("editable", 1, 3, "al", textNode));
+      // removeTextFromEditable("editable", 1, 3, "al", textNode);
       // textNode = getNode("editable2").firstChild.firstChild;
-      // gQueue.push(new removeTextFromEditable("editable2", 1, 3, "al", textNode));
+      // removeTextFromEditable("editable2", 1, 3, "al", textNode);
 
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

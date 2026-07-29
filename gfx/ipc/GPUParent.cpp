@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -455,8 +453,8 @@ mozilla::ipc::IPCResult GPUParent::RecvInitVsyncBridge(
 }
 
 mozilla::ipc::IPCResult GPUParent::RecvInitImageBridge(
-    Endpoint<PImageBridgeParent>&& aEndpoint) {
-  ImageBridgeParent::CreateForGPUProcess(std::move(aEndpoint));
+    Endpoint<PImageBridgeParent>&& aEndpoint, uint32_t aNamespace) {
+  ImageBridgeParent::CreateForGPUProcess(std::move(aEndpoint), aNamespace);
   return IPC_OK();
 }
 
@@ -472,8 +470,8 @@ mozilla::ipc::IPCResult GPUParent::RecvInitVideoBridge(
 }
 
 mozilla::ipc::IPCResult GPUParent::RecvInitVRManager(
-    Endpoint<PVRManagerParent>&& aEndpoint) {
-  VRManagerParent::CreateForGPUProcess(std::move(aEndpoint));
+    Endpoint<PVRManagerParent>&& aEndpoint, uint32_t aNamespace) {
+  VRManagerParent::CreateForGPUProcess(std::move(aEndpoint), aNamespace);
   return IPC_OK();
 }
 
@@ -604,16 +602,20 @@ mozilla::ipc::IPCResult GPUParent::RecvNewContentCompositorManager(
 }
 
 mozilla::ipc::IPCResult GPUParent::RecvNewContentImageBridge(
-    Endpoint<PImageBridgeParent>&& aEndpoint, const ContentParentId& aChildId) {
-  if (!ImageBridgeParent::CreateForContent(std::move(aEndpoint), aChildId)) {
+    Endpoint<PImageBridgeParent>&& aEndpoint, const ContentParentId& aChildId,
+    uint32_t aNamespace) {
+  if (!ImageBridgeParent::CreateForContent(std::move(aEndpoint), aChildId,
+                                           aNamespace)) {
     return IPC_FAIL_NO_REASON(this);
   }
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult GPUParent::RecvNewContentVRManager(
-    Endpoint<PVRManagerParent>&& aEndpoint, const ContentParentId& aChildId) {
-  if (!VRManagerParent::CreateForContent(std::move(aEndpoint), aChildId)) {
+    Endpoint<PVRManagerParent>&& aEndpoint, const ContentParentId& aChildId,
+    uint32_t aNamespace) {
+  if (!VRManagerParent::CreateForContent(std::move(aEndpoint), aChildId,
+                                         aNamespace)) {
     return IPC_FAIL_NO_REASON(this);
   }
   return IPC_OK();
@@ -642,12 +644,11 @@ mozilla::ipc::IPCResult GPUParent::RecvRemoveLayerTreeIdMapping(
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult GPUParent::RecvNotifyGpuObservers(
-    const nsCString& aTopic) {
+mozilla::ipc::IPCResult GPUParent::RecvFlushActiveCheckerboardReports() {
   nsCOMPtr<nsIObserverService> obsSvc = mozilla::services::GetObserverService();
   MOZ_ASSERT(obsSvc);
   if (obsSvc) {
-    obsSvc->NotifyObservers(nullptr, aTopic.get(), nullptr);
+    obsSvc->NotifyObservers(nullptr, "APZ:FlushActiveCheckerboard", nullptr);
   }
   return IPC_OK();
 }
@@ -684,7 +685,8 @@ mozilla::ipc::IPCResult GPUParent::RecvRequestMemoryReport(
 }
 
 mozilla::ipc::IPCResult GPUParent::RecvShutdownVR() {
-  if (StaticPrefs::dom_vr_process_enabled_AtStartup()) {
+  if (StaticPrefs::dom_vr_process_enabled_AtStartup() &&
+      StaticPrefs::dom_vr_enabled()) {
     VRGPUChild::Shutdown();
   }
   return IPC_OK();

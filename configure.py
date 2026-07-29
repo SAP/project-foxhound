@@ -3,6 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import itertools
+import json
 import logging
 import os
 import pprint
@@ -19,15 +20,11 @@ sys.path.insert(0, os.path.join(base_dir, "testing", "mozbase", "mozfile"))
 sys.path.insert(0, os.path.join(base_dir, "testing", "mozbase", "mozshellutil"))
 sys.path.insert(0, os.path.join(base_dir, "third_party", "python", "six"))
 sys.path.insert(0, os.path.join(base_dir, "third_party", "python", "looseversion"))
-sys.path.insert(0, os.path.join(base_dir, "third_party", "python", "filelock"))
 import mozpack.path as mozpath
-from mach.requirements import MachEnvRequirements
 from mach.site import (
     CommandSiteManager,
-    ExternalPythonSite,
     MachSiteManager,
     MozSiteMetadata,
-    SitePackagesSource,
 )
 from mozbuild.backend.configenvironment import PartialConfigEnvironment
 from mozbuild.configure import TRACE, ConfigureSandbox
@@ -102,6 +99,45 @@ def main(argv):
                 file=sys.stderr,
             )
             return 1
+
+        if sys.platform == "win32":
+            # Long paths cause two kinds of build failures on Windows:
+            # 1. Tools like midl.exe do not support paths exceeding MAX_PATH
+            #    (260 characters), even with the LongPathsEnabled registry setting.
+            # 2. Long source paths repeated across many -I flags can exceed
+            #    the CreateProcessW command line limit of 32,767 characters.
+            WIN32_MAX_PATH = 260
+            LONGEST_KNOWN_OBJDIR_RELATIVE_PATH = 170
+            DEFAULT_OBJDIR_NAME_LEN = 28  # /obj-x86_64-pc-windows-msvc/
+            max_objdir_len = WIN32_MAX_PATH - LONGEST_KNOWN_OBJDIR_RELATIVE_PATH
+            # Account for the default objdir name in the srcdir limit so that
+            # a user doesn't fix a srcdir error only to immediately hit the
+            # objdir error with the default configuration.
+            max_srcdir_len = max_objdir_len - DEFAULT_OBJDIR_NAME_LEN
+            if len(topsrcdir) > max_srcdir_len:
+                print(
+                    f"Source directory path ({topsrcdir}) is "
+                    f"{len(topsrcdir)} characters, which exceeds the "
+                    f"Windows limit of {max_srcdir_len}.\n"
+                    f"Move your source directory to a shorter path "
+                    f"(e.g. D:\\mozilla-source\\firefox).",
+                    file=sys.stderr,
+                )
+                return 1
+            if len(topobjdir) > max_objdir_len:
+                print(
+                    f"Object directory path ({topobjdir}) is "
+                    f"{len(topobjdir)} characters, which exceeds the "
+                    f"Windows limit of {max_objdir_len}.\n"
+                    + (
+                        "Move your source directory to a shorter path or set "
+                        "MOZ_OBJDIR to a shorter absolute path in your mozconfig."
+                        if topobjdir.startswith(topsrcdir)
+                        else "Set MOZ_OBJDIR to a shorter absolute path in your mozconfig."
+                    ),
+                    file=sys.stderr,
+                )
+                return 1
 
         # Do not allow topobjdir == topsrcdir
         if os.path.samefile(topsrcdir, topobjdir):
@@ -259,6 +295,16 @@ def config_status(config, execute=True):
     partial_config = PartialConfigEnvironment(config["TOPOBJDIR"])
     partial_config.write_vars(sanitized_config)
 
+    mach_env = {
+        "topobjdir": sanitized_config["topobjdir"],
+        "topsrcdir": sanitized_config["topsrcdir"],
+        "defines": dict(sanitized_config["defines"]),
+        "substs": dict(sanitized_config["substs"]),
+    }
+    # Write config.status.json for fast Gradle configuration.
+    with FileAvoidWrite("config.status.json") as fh:
+        fh.write(json.dumps(mach_env, indent=2, sort_keys=True))
+
     # Write out a file so the build backend knows to re-run configure when
     # relevant Python changes. Use FileAvoidWrite to only write if the
     # deps_content has changed to avoid invalidating Gradle's configuration cache
@@ -305,20 +351,18 @@ def _activate_build_virtualenv():
 
     topsrcdir = os.path.realpath(os.path.dirname(__file__))
 
-    mach_site = MachSiteManager(
-        topsrcdir,
-        None,
-        MachEnvRequirements(),
-        ExternalPythonSite(sys.executable),
-        SitePackagesSource.NONE,
-    )
-    mach_site.activate()
-
+    from mach.util import get_state_dir as _get_state_dir
     from mach.util import get_virtualenv_base_dir
+
+    def get_state_dir():
+        return _get_state_dir(specific_to_topsrcdir=True, topsrcdir=topsrcdir)
+
+    mach_site = MachSiteManager.from_environment(topsrcdir, get_state_dir)
+    mach_site.activate()
 
     build_site = CommandSiteManager.from_environment(
         topsrcdir,
-        None,
+        get_state_dir,
         "build",
         get_virtualenv_base_dir(topsrcdir),
     )

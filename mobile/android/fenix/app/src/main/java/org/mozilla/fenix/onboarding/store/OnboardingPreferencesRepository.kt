@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import org.mozilla.fenix.R
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.settings.registerOnSharedPreferenceChangeListener
 
 /**
@@ -30,9 +30,6 @@ interface OnboardingPreferencesRepository {
     enum class OnboardingPreference(
         @param:StringRes val preferenceKey: Int,
     ) {
-        DeviceTheme(preferenceKey = R.string.pref_key_follow_device_theme),
-        LightTheme(preferenceKey = R.string.pref_key_light_theme),
-        DarkTheme(preferenceKey = R.string.pref_key_dark_theme),
         TopToolbar(preferenceKey = R.string.pref_key_toolbar_top),
         BottomToolbar(preferenceKey = R.string.pref_key_toolbar_bottom),
     }
@@ -73,7 +70,7 @@ class DefaultOnboardingPreferencesRepository(
     private val lifecycleOwner: LifecycleOwner,
     private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.Main),
 ) : OnboardingPreferencesRepository {
-    private val settings = context.settings()
+    private val settings = context.components.settings
     private val _onboardingPreferenceUpdates =
         MutableSharedFlow<OnboardingPreferencesRepository.OnboardingPreferenceUpdate>()
 
@@ -87,15 +84,6 @@ class DefaultOnboardingPreferencesRepository(
     override fun init() {
         OnboardingPreferencesRepository.OnboardingPreference.entries.forEach { preference ->
             val initialPreferences = when (preference) {
-                OnboardingPreferencesRepository.OnboardingPreference.DeviceTheme ->
-                    settings.shouldFollowDeviceTheme
-
-                OnboardingPreferencesRepository.OnboardingPreference.LightTheme ->
-                    settings.shouldUseLightTheme
-
-                OnboardingPreferencesRepository.OnboardingPreference.DarkTheme ->
-                    settings.shouldUseDarkTheme
-
                 OnboardingPreferencesRepository.OnboardingPreference.TopToolbar ->
                     !settings.shouldUseBottomToolbar
 
@@ -146,40 +134,11 @@ class DefaultOnboardingPreferencesRepository(
         preferenceUpdate: OnboardingPreferencesRepository.OnboardingPreferenceUpdate,
     ) = with(preferenceUpdate) {
         when (preferenceType) {
-            OnboardingPreferencesRepository.OnboardingPreference.DeviceTheme ->
-                updateSettingsToFollowSystemTheme()
-
-            OnboardingPreferencesRepository.OnboardingPreference.LightTheme ->
-                updateSettingsToLightTheme()
-
-            OnboardingPreferencesRepository.OnboardingPreference.DarkTheme ->
-                updateSettingsToDarkTheme()
-
             OnboardingPreferencesRepository.OnboardingPreference.TopToolbar ->
                 settings.shouldUseBottomToolbar = false
 
             OnboardingPreferencesRepository.OnboardingPreference.BottomToolbar ->
                 settings.shouldUseBottomToolbar = true
         }
-    }
-
-    @VisibleForTesting
-    internal fun updateSettingsToFollowSystemTheme() =
-        updateAllThemeOptions(followSystemTheme = true)
-
-    @VisibleForTesting
-    internal fun updateSettingsToLightTheme() = updateAllThemeOptions(useLightTheme = true)
-
-    @VisibleForTesting
-    internal fun updateSettingsToDarkTheme() = updateAllThemeOptions(useDarkTheme = true)
-
-    private fun updateAllThemeOptions(
-        followSystemTheme: Boolean = false,
-        useLightTheme: Boolean = false,
-        useDarkTheme: Boolean = false,
-    ) {
-        settings.shouldFollowDeviceTheme = followSystemTheme
-        settings.shouldUseLightTheme = useLightTheme
-        settings.shouldUseDarkTheme = useDarkTheme
     }
 }

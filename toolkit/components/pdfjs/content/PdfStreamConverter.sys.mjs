@@ -394,6 +394,11 @@ class ChromeActions {
   }
 
   download(data) {
+    if (!this.supportsDownloading()) {
+      console.warn("PdfStreamConverter: blocked a download request.");
+      return;
+    }
+
     const { originalUrl } = data;
     const blobUrl = data.blobUrl || originalUrl;
     let { filename } = data;
@@ -424,6 +429,22 @@ class ChromeActions {
     return this.domWindow.windowGlobalChild.browsingContext.parent === null;
   }
 
+  supportsDownloading() {
+    const context = this.domWindow.windowGlobalChild.browsingContext;
+    // A top-level document may always trigger downloads. The sandboxed-downloads
+    // flag is meant to let an embedder gate downloads from embedded content; at
+    // top level there is no embedder, and since the PDF response's CSP sandbox
+    // is already ignored for http(s) URLs, enforcing it only for the blob: edge
+    // case would be inconsistent and needlessly stop users saving a PDF they
+    // view.
+    if (context.parent === null) {
+      return true;
+    }
+    // Copied from nsSandboxFlags.h
+    const SANDBOXED_DOWNLOADS = 0x10000;
+    return (context.sandboxFlags & SANDBOXED_DOWNLOADS) === 0;
+  }
+
   async getBrowserPrefs() {
     const isMobile = this.isMobile();
     const nimbusDataStr = isMobile
@@ -441,6 +462,7 @@ class ChromeActions {
         !!Services.prefs.getIntPref("browser.display.use_document_fonts") &&
         Services.prefs.getBoolPref("gfx.downloadable_fonts.enabled"),
       supportsIntegratedFind: this.supportsIntegratedFind(),
+      supportsDownloading: this.supportsDownloading(),
       supportsMouseWheelZoomCtrlKey:
         Services.prefs.getIntPref("mousewheel.with_control.action") === 3,
       supportsMouseWheelZoomMetaKey:
@@ -621,20 +643,19 @@ class ChromeActions {
    */
   updateEditorStates({ details }) {
     const doc = this.domWindow.document;
-    if (!doc.editorStates) {
-      doc.editorStates = {
-        isEditing: false,
-        isEmpty: true,
-        hasSomethingToUndo: false,
-        hasSomethingToRedo: false,
-        hasSelectedEditor: false,
-        hasSelectedText: false,
-      };
-    }
-    const { editorStates } = doc;
+    doc.pdfStates ||= {
+      isEditing: false,
+      isEmpty: true,
+      hasSomethingToUndo: false,
+      hasSomethingToRedo: false,
+      hasSelectedEditor: false,
+      hasSelectedText: false,
+      hasSelectedPages: false,
+    };
+    const { pdfStates } = doc;
     for (const [key, value] of Object.entries(details)) {
-      if (typeof value === "boolean" && key in editorStates) {
-        editorStates[key] = value;
+      if (typeof value === "boolean" && key in pdfStates) {
+        pdfStates[key] = value;
       }
     }
   }

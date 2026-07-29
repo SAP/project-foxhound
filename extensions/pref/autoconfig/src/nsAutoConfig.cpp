@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -40,7 +39,7 @@ NS_IMPL_ISUPPORTS(nsAutoConfig, nsITimerCallback, nsIStreamListener,
                   nsIObserver, nsIRequestObserver, nsISupportsWeakReference,
                   nsINamed)
 
-nsAutoConfig::nsAutoConfig() {}
+nsAutoConfig::nsAutoConfig() = default;
 
 nsresult nsAutoConfig::Init() {
   // member initializers and constructor code
@@ -58,7 +57,7 @@ nsresult nsAutoConfig::Init() {
   return rv;
 }
 
-nsAutoConfig::~nsAutoConfig() {}
+nsAutoConfig::~nsAutoConfig() = default;
 
 void nsAutoConfig::SetConfigURL(const char* aConfigURL) {
   mConfigURL.Assign(aConfigURL);
@@ -415,7 +414,7 @@ nsresult nsAutoConfig::getEmailAddr(nsACString& emailAddr) {
                                   prefValue);
     if (NS_FAILED(rv) || prefValue.IsEmpty())
       return PromptForEMailAddress(emailAddr);
-    emailAddr = prefValue;
+    emailAddr = std::move(prefValue);
   } else {
     // look for 4.x pref in case we just migrated.
     rv = mPrefBranch->GetCharPref("mail.identity.useremail", prefValue);

@@ -12,11 +12,11 @@ import kotlinx.coroutines.flow.flowOf
 import mozilla.components.concept.engine.selection.SelectionActionDelegate
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
+import kotlin.test.assertIs
 
 @RunWith(AndroidJUnit4::class)
 class EngineViewTest {
@@ -27,7 +27,7 @@ class EngineViewTest {
 
         val view = engineView.asView()
 
-        assertTrue(view is FrameLayout)
+        assertIs<FrameLayout>(view)
     }
 
     @Test(expected = ClassCastException::class)

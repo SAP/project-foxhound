@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,6 +26,7 @@
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
 #include "nsIMutationObserver.h"
+#include "nsIURIWithSizeOf.h"
 #include "nsImageFrame.h"
 #include "nsNodeInfoManager.h"
 #include "nsPresContext.h"
@@ -75,7 +74,7 @@ static bool IsPreviousSibling(const nsINode* aSubject, const nsINode* aNode) {
 namespace mozilla::dom {
 
 HTMLImageElement::HTMLImageElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : nsGenericHTMLElement(std::move(aNodeInfo)) {
   // We start out broken
   AddStatesSilently(ElementState::BROKEN);
@@ -133,8 +132,19 @@ bool HTMLImageElement::Complete() {
     return true;
   }
 
-  if (!mCurrentRequest || mPendingRequest || mPendingImageLoadTask) {
+  if (mPendingRequest || mPendingImageLoadTask) {
     return false;
+  }
+
+  if (!mCurrentRequest) {
+    // mCurrentRequest can be null in the following two cases:
+    //   * This image has loading="lazy" attribute and the request hasn't yet
+    //     started
+    //   * The image fails to start loading, due to the URL being invalid or
+    //     the load getting blocked
+    // The former case should return complete==false, and the latter case
+    // should return complete==true.
+    return !mLazyLoading;
   }
 
   uint32_t status;
@@ -302,6 +312,7 @@ void HTMLImageElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                Loading(aOldValue->GetEnumValue()) == Loading::Lazy) {
       StopLazyLoading(StartLoad(aNotify));
     }
+    UpdateAutoSizeObserver();
   } else if (aName == nsGkAtoms::src && !aValue) {
     // AfterMaybeChangeAttr handles setting src since it needs to catch
     // img.src = img.src, so we only need to handle the unset case
@@ -336,6 +347,7 @@ void HTMLImageElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
     // initiated by a user interaction.
     mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
+    UpdateAutoSizeObserver();
     PictureSourceSizesChanged(this, attrVal.String(), aNotify);
   } else if (aName == nsGkAtoms::decoding) {
     // Request sync or async image decoding.
@@ -446,6 +458,7 @@ nsresult HTMLImageElement::BindToTree(BindContext& aContext, nsINode& aParent) {
 
   UpdateFormOwner();
 
+  UpdateAutoSizeObserver();
   // Mark channel as urgent-start before load image if the image load is
   // initiated by a user interaction.
   if (IsInPicture()) {
@@ -480,6 +493,8 @@ void HTMLImageElement::UnbindFromTree(UnbindContext& aContext) {
 
   nsImageLoadingContent::UnbindFromTree();
   nsGenericHTMLElement::UnbindFromTree(aContext);
+
+  UpdateAutoSizeObserver();
 
   if (wasInPicture != IsInPicture()) {
     MOZ_ASSERT(wasInPicture);
@@ -607,14 +622,10 @@ JSObject* HTMLImageElement::WrapNode(JSContext* aCx,
   return HTMLImageElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-#ifdef DEBUG
-HTMLFormElement* HTMLImageElement::GetFormInternal() const { return mForm; }
-#endif
-
 void HTMLImageElement::SetForm(HTMLFormElement* aForm) {
   MOZ_ASSERT(aForm, "Don't pass null here");
-  NS_ASSERTION(!mForm,
-               "We don't support switching from one non-null form to another.");
+  MOZ_ASSERT(!mForm && !HasFlag(ADDED_TO_FORM),
+             "We don't support switching from one non-null form to another.");
 
   mForm = aForm;
 }
@@ -681,6 +692,55 @@ bool HTMLImageElement::SelectedSourceMatchesLast(nsIURI* aSelectedSource) {
   bool equal = false;
   return NS_SUCCEEDED(mLastSelectedSource->Equals(aSelectedSource, &equal)) &&
          equal;
+}
+
+bool HTMLImageElement::AllowsAutoSizes() const {
+  if (!OwnerDoc()->AutoSizesEnabled()) {
+    return false;
+  }
+  const nsAttrValue* val = GetParsedAttr(nsGkAtoms::loading);
+  if (!val || Element::Loading(val->GetEnumValue()) != Element::Loading::Lazy) {
+    return false;
+  }
+
+  nsAutoString sizes;
+  GetAttr(nsGkAtoms::sizes, sizes);
+  ToLowerCase(sizes);
+  return StringBeginsWith(sizes, u"auto"_ns) &&
+         (sizes.Length() == 4 || sizes[4] == ',');
+}
+
+void HTMLImageElement::MaybeRecomputeAutoSizes(bool aQueueImageTask) {
+  MOZ_ASSERT(AllowsAutoSizes(), "Should only be called if allows auto sizing");
+  nsImageFrame* frame = do_QueryFrame(GetPrimaryFrame());
+  if (!frame || !mResponsiveSelector) {
+    return;
+  }
+  bool widthChanged =
+      mResponsiveSelector->SetAutoWidth(Some(frame->GetComputedSize().width));
+  if (widthChanged && aQueueImageTask) {
+    UpdateSourceSyncAndQueueImageTask(true, true);
+  }
+}
+
+void HTMLImageElement::UpdateAutoSizeObserver() {
+  bool shouldObserve = IsInComposedDoc() && AllowsAutoSizes();
+  if (shouldObserve == mObservingResize) {
+    return;
+  }
+  if (shouldObserve) {
+    OwnerDoc()->ObserveAutoSizesImage(*this);
+    mObservingResize = true;
+    // Ensure mAutoWidth is up-to-date
+    MaybeRecomputeAutoSizes(false);
+  } else {
+    OwnerDoc()->UnobserveAutoSizesImage(*this);
+    if (mResponsiveSelector) {
+      // Clear mAutoWidth now that we are no longer auto-sizing.
+      mResponsiveSelector->SetAutoWidth(Nothing());
+    }
+    mObservingResize = false;
+  }
 }
 
 void HTMLImageElement::LoadSelectedImage(bool aAlwaysLoad,
@@ -755,7 +815,7 @@ void HTMLImageElement::LoadSelectedImage(bool aAlwaysLoad,
                    triggeringPrincipal);
   }
 
-  mLastSelectedSource = selectedSource;
+  mLastSelectedSource = std::move(selectedSource);
   mCurrentDensity = currentDensity;
 
   if (NS_FAILED(rv)) {
@@ -1037,6 +1097,7 @@ bool HTMLImageElement::SelectSourceForTagWithAttrs(
 
   sel->SetCandidatesFromSourceSet(aSrcsetAttr);
   if (!aSizesAttr.IsEmpty()) {
+    // Note: Can't use sizes=auto during parsing
     sel->SetSizesFromDescriptor(aSizesAttr);
   }
   if (!aIsSourceTag) {
@@ -1138,6 +1199,11 @@ void HTMLImageElement::SetResponsiveSelector(
 
   mResponsiveSelector = std::move(aSource);
 
+  if (mObservingResize) {
+    // Ensure new responsive selector has up-to-date mAutoWidth
+    MaybeRecomputeAutoSizes(false);
+  }
+
   // Invalidate the style if needed.
   InvalidateAttributeMapping();
 
@@ -1171,9 +1237,10 @@ void HTMLImageElement::AddSizeOfExcludingThis(nsWindowSizes& aSizes,
   // It is okay to include the size of mSrcURI here even though it might have
   // strong references from elsewhere because the URI was created for this
   // object, in nsImageLoadingContent::StringToURI(). Only objects that created
-  // their own URI will call nsIURI::SizeOfIncludingThis().
+  // their own URI will call nsIURIWithSizeOf::SizeOfIncludingThis().
   if (mSrcURI) {
-    *aNodeSize += mSrcURI->SizeOfIncludingThis(aSizes.mState.mMallocSizeOf);
+    *aNodeSize += SizeOfIncludingThisIfURIWithSizeOf(
+        mSrcURI, aSizes.mState.mMallocSizeOf);
   }
 }
 

@@ -25,9 +25,6 @@ const { CleanupManager } = ChromeUtils.importESModule(
 const { ActionsManager } = ChromeUtils.importESModule(
   "resource://normandy/lib/ActionsManager.sys.mjs"
 );
-const { Uptake } = ChromeUtils.importESModule(
-  "resource://normandy/lib/Uptake.sys.mjs"
-);
 
 const { RemoteSettings } = ChromeUtils.importESModule(
   "resource://services-settings/remote-settings.sys.mjs"
@@ -133,12 +130,8 @@ decorate_task(
 
 decorate_task(
   withStub(FilterExpressions, "eval"),
-  withStub(Uptake, "reportRecipe"),
   withStub(NormandyApi, "verifyObjectSignature"),
-  async function test_getRecipeSuitability_canHandleExceptions({
-    evalStub,
-    reportRecipeStub,
-  }) {
+  async function test_getRecipeSuitability_canHandleExceptions({ evalStub }) {
     evalStub.throws("this filter was broken somehow");
     const someRecipe = {
       id: "1",
@@ -152,9 +145,6 @@ decorate_task(
       BaseAction.suitability.FILTER_ERROR,
       "broken filters are reported"
     );
-    Assert.deepEqual(reportRecipeStub.args, [
-      [someRecipe, Uptake.RECIPE_FILTER_BROKEN],
-    ]);
   }
 );
 
@@ -258,7 +248,6 @@ decorate_task(
 );
 
 decorate_task(
-  withStub(Uptake, "reportRunner"),
   withStub(ActionsManager.prototype, "finalize"),
   NormandyTestUtils.withMockRecipeCollection([]),
   async function testRunEvents() {
@@ -289,11 +278,9 @@ decorate_task(
   withStub(NormandyApi, "verifyObjectSignature"),
   withStub(ActionsManager.prototype, "processRecipe"),
   withStub(ActionsManager.prototype, "finalize"),
-  withStub(Uptake, "reportRecipe"),
   async function testReadFromRemoteSettings({
     verifyObjectSignatureStub,
     processRecipeStub,
-    reportRecipeStub,
   }) {
     const matchRecipe = {
       id: 1,
@@ -361,11 +348,6 @@ decorate_task(
       ],
       "Recipes should be reported with the correct suitabilities"
     );
-    Assert.deepEqual(
-      reportRecipeStub.args,
-      [[noMatchRecipe, Uptake.RECIPE_DIDNT_MATCH_FILTER]],
-      "Filtered-out recipes should be reported"
-    );
   }
 );
 
@@ -427,12 +409,10 @@ decorate_task(
 decorate_task(
   withStub(ActionsManager.prototype, "processRecipe"),
   withStub(NormandyApi, "verifyObjectSignature"),
-  withStub(Uptake, "reportRecipe"),
   NormandyTestUtils.withMockRecipeCollection(),
   async function testBadSignatureFromRemoteSettings({
     processRecipeStub,
     verifyObjectSignatureStub,
-    reportRecipeStub,
     mockRecipeCollection,
   }) {
     verifyObjectSignatureStub.throws(new Error("fake signature error"));
@@ -449,11 +429,6 @@ decorate_task(
     Assert.deepEqual(processRecipeStub.args, [
       [badSigRecipe, BaseAction.suitability.SIGNATURE_ERROR],
     ]);
-    Assert.deepEqual(
-      reportRecipeStub.args,
-      [[badSigRecipe, Uptake.RECIPE_INVALID_SIGNATURE]],
-      "The recipe should have its uptake status recorded"
-    );
   }
 );
 
@@ -461,7 +436,6 @@ decorate_task(
 decorate_task(
   withPrefEnv({
     set: [
-      ["datareporting.healthreport.uploadEnabled", true], // telemetry enabled
       ["app.normandy.dev_mode", false],
       ["app.normandy.first_run", false],
     ],
@@ -481,10 +455,7 @@ decorate_task(
 // test init() in dev mode
 decorate_task(
   withPrefEnv({
-    set: [
-      ["datareporting.healthreport.uploadEnabled", true], // telemetry enabled
-      ["app.normandy.dev_mode", true],
-    ],
+    set: [["app.normandy.dev_mode", true]],
   }),
   withStub(RecipeRunner, "run"),
   withStub(RecipeRunner, "registerTimer"),
@@ -508,7 +479,6 @@ decorate_task(
 decorate_task(
   withPrefEnv({
     set: [
-      ["datareporting.healthreport.uploadEnabled", true], // telemetry enabled
       ["app.normandy.dev_mode", false],
       ["app.normandy.first_run", true],
     ],
@@ -713,7 +683,6 @@ decorate_task(
   }),
   withSpy(RecipeRunner, "run"),
   withStub(ActionsManager.prototype, "finalize"),
-  withStub(Uptake, "reportRunner"),
   async function testSyncDelaysTimer({ runSpy }) {
     // Mark any existing timer as having run just now.
     for (const { value } of Services.catMan.enumerateCategory("update-timer")) {
@@ -809,7 +778,6 @@ decorate_task(async function testAutomaticCapabilities() {
 
 // Test that recipe runner won't run if Normandy hasn't been initialized.
 decorate_task(
-  withStub(Uptake, "reportRunner"),
   withStub(ActionsManager.prototype, "finalize"),
   NormandyTestUtils.withMockRecipeCollection([]),
   async function testRunEvents() {

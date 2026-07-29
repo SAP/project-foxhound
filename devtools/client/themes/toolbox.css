@@ -50,6 +50,7 @@
   background-color: var(--theme-toolbar-hover);
   box-shadow: var(--toolbox-button-box-shadow-focus);
 }
+
 :root {
   --toolbox-button-box-shadow-focus: 0 0 0 1px #0a84ff inset, 0 0 0 1px #0a84ff, 0 0 0 4px rgba(10, 132, 255, 0.3);
 }
@@ -68,6 +69,7 @@
     from {
       background-color: var(--theme-toolbar-background-highlighted);
     }
+
     to {
       background-color: transparent;
     }
@@ -548,7 +550,7 @@
   padding: 0;
 
   &::before {
-    background-image: url("chrome://devtools/content/debugger/images/trace.svg");
+    background-image: url("chrome://devtools/content/shared/components/images/trace.svg");
   }
 
   &.pending::after {
@@ -629,7 +631,8 @@
 }
 
 :is(#toolbox-panel-webconsole, #toolbox-deck)[hidden] {
-  display: flex; /* Override xul.css */
+  display: flex;
+  /* Override xul.css */
   visibility: hidden;
 }
 

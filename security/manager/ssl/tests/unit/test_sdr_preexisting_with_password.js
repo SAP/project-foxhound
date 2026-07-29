@@ -1,4 +1,3 @@
-// -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -131,5 +130,25 @@ function run_test() {
     gMockPrompter.numPrompts,
     1,
     "Should have been prompted for a password once"
+  );
+
+  gMockPrompter.numPrompts = 0;
+  sdr.logout();
+  ok(
+    !sdr.login("wrong password"),
+    "login should return false for incorrect password"
+  );
+  ok(sdr.login("password"), "login should return true for correct password");
+  equal(
+    sdr.decryptString(
+      "MDIEEPgAAAAAAAAAAAAAAAAAAAEwFAYIKoZIhvcNAwcECCAzLDVmYG2/BAh3IoIsMmT8dQ=="
+    ),
+    "a",
+    "should be able to decrypt string after logging out and in again"
+  );
+  equal(
+    gMockPrompter.numPrompts,
+    0,
+    "should not have been prompted for a password again"
   );
 }

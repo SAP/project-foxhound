@@ -86,6 +86,8 @@ export class UrlbarValueFormatter {
    */
   #urlbarInput;
 
+  #hostRange = null;
+
   get #document() {
     return this.#urlbarInput.document;
   }
@@ -102,6 +104,25 @@ export class UrlbarValueFormatter {
     return /** @type {HTMLInputElement} */ (
       this.#urlbarInput.querySelector("#urlbar-scheme")
     );
+  }
+
+  #scrollHostIntoView(isRTL) {
+    if (this.#hostRange) {
+      const hostRect = this.#hostRange.getBoundingClientRect();
+      const urlbarRect = this.#inputField.getBoundingClientRect();
+
+      const scrollDelta = isRTL
+        ? hostRect.left - urlbarRect.left
+        : hostRect.right - urlbarRect.right;
+
+      const scrollTarget = this.#inputField.scrollLeft + scrollDelta;
+
+      this.#inputField.scrollLeft = isRTL
+        ? Math.min(this.#inputField.scrollLeftMax, scrollTarget)
+        : Math.max(0, scrollTarget);
+    } else {
+      this.#inputField.scrollLeft = isRTL ? this.#inputField.scrollLeftMax : 0;
+    }
   }
 
   #ensureFormattedHostVisible(urlMetaData) {
@@ -124,10 +145,10 @@ export class UrlbarValueFormatter {
       url[preDomain.length + domain.length] != "\u200E"
     ) {
       this.#urlbarInput.setAttribute("domaindir", "rtl");
-      this.#inputField.scrollLeft = this.#inputField.scrollLeftMax;
+      this.#scrollHostIntoView(true);
     } else {
       this.#urlbarInput.setAttribute("domaindir", "ltr");
-      this.#inputField.scrollLeft = 0;
+      this.#scrollHostIntoView(false);
     }
     this.#urlbarInput.updateTextOverflow();
   }
@@ -163,30 +184,41 @@ export class UrlbarValueFormatter {
       data: null,
     };
 
-    // Get the URL from the fixup service:
-    let flags =
-      Services.uriFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS |
-      Services.uriFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP;
-    if (lazy.PrivateBrowsingUtils.isWindowPrivate(this.#window)) {
-      flags |= Services.uriFixup.FIXUP_FLAG_PRIVATE_CONTEXT;
-    }
-
+    // For already-schemed http(s) URLs we can parse directly, avoiding the
+    // cost of getFixupURIInfo. For schemeless input, scheme typos, and
+    // potential search queries, we need the fixup service.
+    const untrimmedValue = this.#urlbarInput.untrimmedValue;
+    let uri;
     let uriInfo;
-    try {
-      uriInfo = Services.uriFixup.getFixupURIInfo(
-        this.#urlbarInput.untrimmedValue,
-        flags
-      );
-    } catch (ex) {}
-    // Ignore if we couldn't make a URI out of this, the URI resulted in a search,
-    // or the URI has a non-http(s) protocol.
     if (
-      !uriInfo ||
-      !uriInfo.fixedURI ||
-      uriInfo.keywordProviderName ||
-      !["http", "https"].includes(uriInfo.fixedURI.scheme)
+      untrimmedValue.startsWith("http://") ||
+      untrimmedValue.startsWith("https://")
     ) {
-      return null;
+      try {
+        uri = Services.io.newURI(untrimmedValue);
+      } catch (e) {}
+    }
+    if (!uri) {
+      let flags =
+        Services.uriFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS |
+        Services.uriFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP;
+      if (lazy.PrivateBrowsingUtils.isWindowPrivate(this.#window)) {
+        flags |= Services.uriFixup.FIXUP_FLAG_PRIVATE_CONTEXT;
+      }
+      try {
+        uriInfo = Services.uriFixup.getFixupURIInfo(untrimmedValue, flags);
+      } catch (ex) {}
+      // Ignore if we couldn't make a URI out of this, the URI resulted in a
+      // search, or the URI has a non-http(s) protocol.
+      if (
+        !uriInfo ||
+        !uriInfo.fixedURI ||
+        uriInfo.keywordProviderId ||
+        !["http", "https"].includes(uriInfo.fixedURI.scheme)
+      ) {
+        return null;
+      }
+      uri = uriInfo.fixedURI;
     }
 
     // We must ensure the protocol is present in the parsed string, so we don't
@@ -198,19 +230,19 @@ export class UrlbarValueFormatter {
     let trimmedLength = 0;
     let trimmedProtocol = lazy.BrowserUIUtils.trimURLProtocol;
     if (
-      this.#urlbarInput.untrimmedValue.startsWith(trimmedProtocol) &&
+      untrimmedValue.startsWith(trimmedProtocol) &&
       !inputValue.startsWith(trimmedProtocol)
     ) {
       // The protocol has been trimmed, so we add it back.
       url = trimmedProtocol + inputValue;
       trimmedLength = trimmedProtocol.length;
     } else if (
-      uriInfo.schemelessInput == Ci.nsILoadInfo.SchemelessInputTypeSchemeless
+      uriInfo?.schemelessInput == Ci.nsILoadInfo.SchemelessInputTypeSchemeless
     ) {
       // The original string didn't have a protocol, but it was identified as
       // a URL. It's not important which scheme we use for parsing, so we'll
       // just copy URIFixup.
-      let scheme = uriInfo.fixedURI.scheme + "://";
+      let scheme = uri.scheme + "://";
       url = scheme + url;
       trimmedLength = scheme.length;
     }
@@ -226,14 +258,13 @@ export class UrlbarValueFormatter {
     }
     let [, preDomain, schemeWSlashes, domain] = matchedURL;
 
-    // If the found host differs from the fixed URI one, we can't properly
-    // highlight it. To stay on the safe side, we clobber user's input with
-    // the fixed URI and apply highlight to that one instead.
+    // If the host extracted by the regex differs from the actual host of the
+    // URL, we can't safely highlight it; then we clobber the input with the
+    // fixed URI, and apply highlight to that one instead.
     let replaceUrl = false;
     try {
       replaceUrl =
-        Services.io.newURI("http://" + domain).displayHost !=
-        uriInfo.fixedURI.displayHost;
+        Services.io.newURI("http://" + domain).displayHost != uri.displayHost;
     } catch (ex) {
       return null;
     }
@@ -245,7 +276,7 @@ export class UrlbarValueFormatter {
       try {
         this.#inGetUrlMetaData = true;
         this.#window.gBrowser.userTypedValue = null;
-        this.#urlbarInput.setURI({ uri: uriInfo.fixedURI });
+        this.#urlbarInput.setURI({ uri });
         return this.#getUrlMetaData();
       } finally {
         this.#inGetUrlMetaData = false;
@@ -254,7 +285,7 @@ export class UrlbarValueFormatter {
 
     return (browserState.urlMetaData.data = {
       domain,
-      origin: uriInfo.fixedURI.host,
+      origin: uri.host,
       preDomain,
       schemeWSlashes,
       trimmedLength,
@@ -263,6 +294,7 @@ export class UrlbarValueFormatter {
   }
 
   #removeURLFormat() {
+    this.#hostRange = null;
     if (!this.#formattingApplied) {
       return;
     }
@@ -408,18 +440,29 @@ export class UrlbarValueFormatter {
       );
     }
 
+    let editor = this.#urlbarInput.editor;
+    let textNode = editor.rootElement.firstChild;
+
+    const hostStart = preDomain.length - trimmedLength;
+    const hostEnd = hostStart + domain.length;
+
+    if (hostStart < hostEnd) {
+      this.#hostRange = this.#document.createRange();
+      this.#hostRange.setStart(textNode, hostStart);
+      this.#hostRange.setEnd(textNode, hostEnd);
+    } else {
+      this.#hostRange = null;
+    }
+
     this.#ensureFormattedHostVisible(urlMetaData);
 
     if (!this.formattingEnabled) {
       return false;
     }
 
-    let editor = this.#urlbarInput.editor;
     let controller = editor.selectionController;
 
     this.#formatScheme(controller.SELECTION_URLSECONDARY);
-
-    let textNode = editor.rootElement.firstChild;
 
     // Strike out the "https" part if mixed active content status should be
     // shown.
@@ -439,13 +482,13 @@ export class UrlbarValueFormatter {
     try {
       baseDomain = Services.eTLD.getBaseDomainFromHost(origin);
       if (!domain.endsWith(baseDomain)) {
-        // getBaseDomainFromHost converts its resultant to ACE.
+        // The domain may be displayed in a different encoding (e.g., mixed
+        // punycode/unicode) than the ACE baseDomain from origin. Get the
+        // baseDomain in the same encoding as the displayed domain.
         let IDNService = Cc["@mozilla.org/network/idn-service;1"].getService(
           Ci.nsIIDNService
         );
-        // XXX This should probably convert to display IDN instead.
-        // https://bugzilla.mozilla.org/show_bug.cgi?id=1906048
-        baseDomain = IDNService.convertACEtoUTF8(baseDomain);
+        baseDomain = IDNService.domainToDisplay(baseDomain);
       }
     } catch (e) {}
     if (baseDomain != domain) {
@@ -639,7 +682,16 @@ export class UrlbarValueFormatter {
       let instance = (this.#resizeInstance = {});
       this.#window.requestAnimationFrame(() => {
         if (instance == this.#resizeInstance) {
-          this.#ensureFormattedHostVisible();
+          if (
+            this.#hostRange &&
+            !this.#hostRange.commonAncestorContainer.isConnected
+          ) {
+            // The host range is no longer valid.
+            this.#removeURLFormat();
+            this.#formatURL();
+          } else {
+            this.#ensureFormattedHostVisible();
+          }
         }
       });
     }, 100);

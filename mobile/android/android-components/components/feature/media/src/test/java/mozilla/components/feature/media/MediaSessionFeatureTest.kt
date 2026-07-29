@@ -25,7 +25,6 @@ import mozilla.components.support.test.argumentCaptor
 import mozilla.components.support.test.eq
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -33,6 +32,7 @@ import org.mockito.Mockito.anyInt
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.verify
 import kotlin.coroutines.ContinuationInterceptor
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class MediaSessionFeatureTest {

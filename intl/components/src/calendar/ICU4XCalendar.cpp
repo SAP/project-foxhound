@@ -8,7 +8,6 @@
 #include "mozilla/TextUtils.h"
 
 #include <cstring>
-#include <mutex>
 #include <stdint.h>
 #include <type_traits>
 

@@ -7,7 +7,7 @@ pytestmark = pytest.mark.asyncio
 @pytest.mark.parametrize("full_zoom", [0.5, 1.0, 2.0])
 @pytest.mark.parametrize("devPixelsPerPx", [1.0, 2.0])
 async def test_position_with_different_scaling(
-    session, http_new_tab, inline, set_full_zoom, use_pref, devPixelsPerPx, full_zoom
+    session, new_tab_classic, inline, set_full_zoom, use_pref, devPixelsPerPx, full_zoom
 ):
     use_pref("layout.css.devPixelsPerPx", str(devPixelsPerPx))
     device_pixel_ratio = set_full_zoom(full_zoom)

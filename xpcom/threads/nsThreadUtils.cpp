@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,6 +26,13 @@
 #  include <windows.h>
 #elif defined(XP_MACOSX)
 #  include <sys/resource.h>
+#elif defined(XP_LINUX) && !defined(ANDROID)
+#  include <sys/syscall.h>
+// <linux/ioprio.h> has no glibc wrapper and is absent from some sysroots, so
+// define the constants directly from the stable kernel ABI.
+#  define IOPRIO_WHO_THREAD 1
+#  define IOPRIO_CLASS_BE 2
+#  define IOPRIO_PRIO_VALUE(class, data) (((class) << 13) | (data))
 #endif
 
 #if defined(ANDROID)
@@ -111,7 +116,7 @@ NS_IMPL_ISUPPORTS_INHERITED(PrioritizableRunnable, Runnable,
                             nsIRunnablePriority)
 
 PrioritizableRunnable::PrioritizableRunnable(
-    already_AddRefed<nsIRunnable>&& aRunnable, uint32_t aPriority)
+    already_AddRefed<nsIRunnable> aRunnable, uint32_t aPriority)
     // Real runnable name is managed by overridding the GetName function.
     : Runnable("PrioritizableRunnable"),
       mRunnable(std::move(aRunnable)),
@@ -147,7 +152,7 @@ PrioritizableRunnable::GetPriority(uint32_t* aPriority) {
 }
 
 already_AddRefed<nsIRunnable> mozilla::CreateRenderBlockingRunnable(
-    already_AddRefed<nsIRunnable>&& aRunnable) {
+    already_AddRefed<nsIRunnable> aRunnable) {
   nsCOMPtr<nsIRunnable> runnable = new PrioritizableRunnable(
       std::move(aRunnable), nsIRunnablePriority::PRIORITY_RENDER_BLOCKING);
   return runnable.forget();
@@ -204,7 +209,7 @@ nsresult NS_GetMainThread(nsIThread** aResult) {
   return nsThreadManager::get().nsThreadManager::GetMainThread(aResult);
 }
 
-nsresult NS_DispatchToCurrentThread(already_AddRefed<nsIRunnable>&& aEvent) {
+nsresult NS_DispatchToCurrentThread(already_AddRefed<nsIRunnable> aEvent) {
   nsCOMPtr<nsIRunnable> event(aEvent);
   // XXX: Consider using GetCurrentSerialEventTarget() to support TaskQueues.
   nsISerialEventTarget* thread = NS_GetCurrentThread();
@@ -224,7 +229,7 @@ nsresult NS_DispatchToCurrentThread(nsIRunnable* aEvent) {
   return NS_DispatchToCurrentThread(do_AddRef(aEvent));
 }
 
-nsresult NS_DispatchToMainThread(already_AddRefed<nsIRunnable>&& aEvent,
+nsresult NS_DispatchToMainThread(already_AddRefed<nsIRunnable> aEvent,
                                  nsIEventTarget::DispatchFlags aDispatchFlags) {
   MaybeLeakRefPtr<nsIRunnable> event(std::move(aEvent),
                                      aDispatchFlags & NS_DISPATCH_FALLIBLE);
@@ -247,8 +252,8 @@ nsresult NS_DispatchToMainThread(nsIRunnable* aEvent,
   return NS_DispatchToMainThread(do_AddRef(aEvent), aDispatchFlags);
 }
 
-nsresult NS_DelayedDispatchToCurrentThread(
-    already_AddRefed<nsIRunnable>&& aEvent, uint32_t aDelayMs) {
+nsresult NS_DelayedDispatchToCurrentThread(already_AddRefed<nsIRunnable> aEvent,
+                                           uint32_t aDelayMs) {
   nsCOMPtr<nsIRunnable> event(aEvent);
 
   // XXX: Consider using GetCurrentSerialEventTarget() to support TaskQueues.
@@ -260,7 +265,7 @@ nsresult NS_DelayedDispatchToCurrentThread(
   return thread->DelayedDispatch(event.forget(), aDelayMs);
 }
 
-nsresult NS_DispatchToThreadQueue(already_AddRefed<nsIRunnable>&& aEvent,
+nsresult NS_DispatchToThreadQueue(already_AddRefed<nsIRunnable> aEvent,
                                   nsIThread* aThread,
                                   EventQueuePriority aQueue) {
   nsCOMPtr<nsIRunnable> event(aEvent);
@@ -274,14 +279,14 @@ nsresult NS_DispatchToThreadQueue(already_AddRefed<nsIRunnable>&& aEvent,
   return aThread->DispatchToQueue(event.forget(), aQueue);
 }
 
-nsresult NS_DispatchToCurrentThreadQueue(already_AddRefed<nsIRunnable>&& aEvent,
+nsresult NS_DispatchToCurrentThreadQueue(already_AddRefed<nsIRunnable> aEvent,
                                          EventQueuePriority aQueue) {
   return NS_DispatchToThreadQueue(std::move(aEvent), NS_GetCurrentThread(),
                                   aQueue);
 }
 
 extern nsresult NS_DispatchToMainThreadQueue(
-    already_AddRefed<nsIRunnable>&& aEvent, EventQueuePriority aQueue) {
+    already_AddRefed<nsIRunnable> aEvent, EventQueuePriority aQueue) {
   nsCOMPtr<nsIRunnable> event(std::move(aEvent));
   nsCOMPtr<nsIThread> mainThread;
   nsresult rv = NS_GetMainThread(getter_AddRefs(mainThread));
@@ -295,7 +300,7 @@ class IdleRunnableWrapper final : public Runnable,
                                   public nsIDiscardableRunnable,
                                   public nsIIdleRunnable {
  public:
-  explicit IdleRunnableWrapper(already_AddRefed<nsIRunnable>&& aEvent)
+  explicit IdleRunnableWrapper(already_AddRefed<nsIRunnable> aEvent)
       : Runnable("IdleRunnableWrapper"),
         mRunnable(std::move(aEvent)),
         mDiscardable(do_QueryInterface(mRunnable)) {}
@@ -377,7 +382,7 @@ NS_INTERFACE_MAP_BEGIN(IdleRunnableWrapper)
   NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIDiscardableRunnable, mDiscardable)
 NS_INTERFACE_MAP_END_INHERITING(Runnable)
 
-extern nsresult NS_DispatchToThreadQueue(already_AddRefed<nsIRunnable>&& aEvent,
+extern nsresult NS_DispatchToThreadQueue(already_AddRefed<nsIRunnable> aEvent,
                                          uint32_t aTimeout, nsIThread* aThread,
                                          EventQueuePriority aQueue) {
   nsCOMPtr<nsIRunnable> event(std::move(aEvent));
@@ -409,7 +414,7 @@ extern nsresult NS_DispatchToThreadQueue(already_AddRefed<nsIRunnable>&& aEvent,
 }
 
 extern nsresult NS_DispatchToCurrentThreadQueue(
-    already_AddRefed<nsIRunnable>&& aEvent, uint32_t aTimeout,
+    already_AddRefed<nsIRunnable> aEvent, uint32_t aTimeout,
     EventQueuePriority aQueue) {
   return NS_DispatchToThreadQueue(std::move(aEvent), aTimeout,
                                   NS_GetCurrentThread(), aQueue);
@@ -518,6 +523,14 @@ nsAutoLowPriorityIO::nsAutoLowPriorityIO() {
   lowIOPrioritySet =
       oldPriority != -1 &&
       setiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD, IOPOL_THROTTLE) != -1;
+#elif defined(XP_LINUX) && !defined(ANDROID)
+  // IOPRIO_CLASS_BE with priority 7 is the lowest best-effort I/O class,
+  // matching the throttled (not starved) semantics of macOS and Windows.
+  oldPriority =
+      static_cast<int>(syscall(__NR_ioprio_get, IOPRIO_WHO_THREAD, 0));
+  lowIOPrioritySet =
+      oldPriority >= 0 && syscall(__NR_ioprio_set, IOPRIO_WHO_THREAD, 0,
+                                  IOPRIO_PRIO_VALUE(IOPRIO_CLASS_BE, 7)) == 0;
 #else
   lowIOPrioritySet = false;
 #endif
@@ -532,6 +545,10 @@ nsAutoLowPriorityIO::~nsAutoLowPriorityIO() {
 #elif defined(XP_MACOSX)
   if (MOZ_LIKELY(lowIOPrioritySet)) {
     setiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD, oldPriority);
+  }
+#elif defined(XP_LINUX) && !defined(ANDROID)
+  if (MOZ_LIKELY(lowIOPrioritySet)) {
+    syscall(__NR_ioprio_set, IOPRIO_WHO_THREAD, 0, oldPriority);
   }
 #endif
 }
@@ -617,7 +634,7 @@ LogTaskBase<nsIRunnable>::Run::Run(nsIRunnable* aEvent, bool aWillRunAgain)
 
   nsAutoCString name;
   named->GetName(name);
-  LOG1(("EXEC %p %p [%s]", aEvent, this, name.BeginReading()));
+  LOG1(("EXEC %p %p [%s]", aEvent, this, name.get()));
 }
 
 template <>
@@ -633,7 +650,7 @@ LogTaskBase<Task>::Run::Run(Task* aTask, bool aWillRunAgain)
     return;
   }
 
-  LOG1(("EXEC %p %p [%s]", aTask, this, name.BeginReading()));
+  LOG1(("EXEC %p %p [%s]", aTask, this, name.get()));
 }
 
 template <>
@@ -746,8 +763,8 @@ nsresult NS_DispatchAndSpinEventLoopUntilComplete(
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  RefPtr<nsThreadSyncDispatch> wrapper =
-      new nsThreadSyncDispatch(current.forget(), std::move(aEvent));
+  RefPtr wrapper =
+      MakeRefPtr<nsThreadSyncDispatch>(current.forget(), std::move(aEvent));
 
   // NOTE: We use NS_DISPATCH_FALLIBLE here to avoid leaking the wrapper object.
   // As nsThreadSyncDispatch internally holds aEvent with a MaybeLeakRefPtr, we

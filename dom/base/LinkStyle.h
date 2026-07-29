@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,16 +6,21 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/Result.h"
-#include "mozilla/StyleSheet.h"
 #include "nsINode.h"
 #include "nsTArray.h"
 
 class nsIContent;
 class nsICSSLoaderObserver;
 class nsIPrincipal;
+class nsIReferrerInfo;
 class nsIURI;
 
-namespace mozilla::dom {
+namespace mozilla {
+
+enum CORSMode : uint8_t;
+class StyleSheet;
+
+namespace dom {
 
 class Document;
 enum class FetchPriority : uint8_t;
@@ -305,6 +308,7 @@ class LinkStyle {
   uint32_t mColumnNumber = 1;
 };
 
-}  // namespace mozilla::dom
+}  // namespace dom
+}  // namespace mozilla
 
 #endif  // mozilla_dom_LinkStyle_h

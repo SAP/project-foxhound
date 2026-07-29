@@ -11,6 +11,25 @@ import {
 
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
+
+const lazy = XPCOMUtils.declareLazy({
+  srdEnabled: { pref: "browser.settings-redesign.enabled" },
+});
+
+/**
+ * Convert "friendly" pane names to internal names (home -> paneHome).
+ *
+ * @param {string} category
+ */
+function expandPaneName(category) {
+  return category
+    ? `pane${category[0].toUpperCase()}${category.slice(1)}`
+    : undefined;
+}
+
 /** @import { AttributePart } from "chrome://global/content/vendor/lit.all.mjs" */
 
 /**
@@ -23,6 +42,9 @@ import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
  * @property {string} [slot] - The named slot for the control
  * @property {string} [supportPage] - The SUMO support page slug for the setting
  * @property {string} [subcategory] - The sub-category slug used for direct linking to a setting from SUMO
+ * @property {string} [loadPane]
+ *   Friendly pane name loaded by this element, searches matching that pane will
+ *   highlight this element.
  */
 
 /**
@@ -109,6 +131,35 @@ class SpreadDirective extends Directive {
 
 export const spread = directive(SpreadDirective);
 
+/**
+ * controlAttrs keys that carry a heading level destined for moz-fieldset
+ * (or another widget that exposes a `headingLevel` Lit property). Both
+ * the lowercase HTML attribute form and the Lit property-binding form
+ * are recognized; setAttribute folds case so `headingLevel` works too.
+ */
+const HEADING_LEVEL_KEYS = ["headinglevel", "headingLevel", ".headingLevel"];
+
+/**
+ * Translate a config-supplied heading level into the level we should
+ * actually render at. With SRD on, the pane title (moz-page-header)
+ * sits at h2 instead of legacy XUL's h1, so headings nested inside the
+ * pane shift one level deeper. Top-level section headings (h1) jump
+ * to h3 so they sit immediately below the new pane title rather than
+ * colliding with it.
+ *
+ * @param {number | undefined} level
+ * @param {boolean} srdEnabled
+ * @returns {number | undefined}
+ */
+export function bumpHeadingLevelForSrd(level, srdEnabled) {
+  if (!srdEnabled || typeof level !== "number") {
+    return level;
+  }
+  // Floor at 3 so legacy `headinglevel: 1` (the pre-SRD "section heading"
+  // tier) doesn't become h2 and collide with the moz-page-header pane title.
+  return Math.max(level + 1, 3);
+}
+
 export class SettingElement extends MozLitElement {
   /**
    * The default properties that the setting element accepts.
@@ -116,6 +167,17 @@ export class SettingElement extends MozLitElement {
    * @param {SettingElementConfig} config
    */
   getCommonPropertyMapping(config) {
+    let controlAttrs = { ...(config.controlAttrs ?? {}) };
+    if (lazy.srdEnabled) {
+      for (let key of HEADING_LEVEL_KEYS) {
+        if (typeof controlAttrs[key] === "number") {
+          controlAttrs[key] = bumpHeadingLevelForSrd(
+            controlAttrs[key],
+            lazy.srdEnabled
+          );
+        }
+      }
+    }
     return {
       id: config.id,
       "data-l10n-id": config.l10nId ? config.l10nId : undefined,
@@ -123,11 +185,11 @@ export class SettingElement extends MozLitElement {
         ? JSON.stringify(config.l10nArgs)
         : undefined,
       ".iconSrc": config.iconSrc,
-      "data-subcategory": config.subcategory,
+      "data-load-pane": expandPaneName(config.loadPane),
       ".supportPage":
         config.supportPage != undefined ? config.supportPage : undefined,
       slot: config.slot,
-      ...config.controlAttrs,
+      ...controlAttrs,
     };
   }
 }

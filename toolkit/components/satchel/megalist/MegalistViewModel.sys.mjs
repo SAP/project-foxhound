@@ -222,12 +222,10 @@ export class MegalistViewModel {
       ReauthPrimaryPassword: "reauth_cpm",
     };
     const reason = reasonMap[command.id];
-    const osAuthForPw = lazy.LoginHelper.getOSAuthEnabled();
     const { isAuthorized } = await lazy.LoginHelper.requestReauth(
       lazy.BrowserWindowTracker.getTopWindow({
         allowFromInactiveWorkspace: true,
       }).gBrowser,
-      osAuthForPw,
       this.#authExpirationTime,
       command.OSAuthPromptMessage,
       command.OSAuthCaptionMessage,

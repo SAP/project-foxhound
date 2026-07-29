@@ -12,7 +12,7 @@
 function initialSourceActorsState() {
   return {
     // Map(Source Actor ID: string => SourceActor: object)
-    // See create.js: `createSourceActor` for the shape of the source actor objects.
+    // See create.js: `createScriptSourceActor` for the shape of the source actor objects.
     mutableSourceActors: new Map(),
 
     // Map(Source Actor ID: string => Breakable lines: Promise or Array<Number>)

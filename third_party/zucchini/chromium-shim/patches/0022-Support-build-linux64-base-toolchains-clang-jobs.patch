@@ -291,10 +291,10 @@ index be05f6bde69e..56f071d5b62f 100644
  
  }  // namespace
 diff --git a/base/location.cc b/base/location.cc
-index 552e774edc7b..ecc194c10b94 100644
+index 44e3334dd02c..75020f1e2b1a 100644
 --- a/base/location.cc
 +++ b/base/location.cc
-@@ -133,6 +133,7 @@ void Location::WriteIntoTrace(perfetto::TracedValue context) const {
+@@ -124,6 +124,7 @@ void Location::WriteIntoTrace(perfetto::TracedValue context) const {
  #define RETURN_ADDRESS() nullptr
  #endif
  
@@ -302,7 +302,7 @@ index 552e774edc7b..ecc194c10b94 100644
  // static
  NOINLINE Location Location::Current(const char* function_name,
                                      const char* file_name,
-@@ -140,6 +141,12 @@ NOINLINE Location Location::Current(const char* function_name,
+@@ -131,6 +132,12 @@ NOINLINE Location Location::Current(const char* function_name,
    return Location(function_name, file_name + kStrippedPrefixLength, line_number,
                    RETURN_ADDRESS());
  }
@@ -725,5 +725,5 @@ index efd5fb2821e2..57775b047ea1 100644
  TEST(SuffixSortTest, NaiveSuffixSort) {
    for (const std::string& test_str : test_strs) {
 -- 
-2.42.0.windows.2
+2.49.0.windows.1
 

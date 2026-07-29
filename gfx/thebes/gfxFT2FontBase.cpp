@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -353,6 +352,12 @@ void gfxFT2FontBase::InitMetrics() {
   mMetrics.maxDescent = -FLOAT_FROM_26_6(ftMetrics.descender);
   mMetrics.maxAdvance = FLOAT_FROM_26_6(ftMetrics.max_advance);
   gfxFloat lineHeight = FLOAT_FROM_26_6(ftMetrics.height);
+
+  // Negative maxDescent here almost certainly indicates a font with a sign
+  // error in the descent field of the 'hhea' table; invert it.
+  if (mMetrics.maxDescent < 0.0) {
+    mMetrics.maxDescent = -mMetrics.maxDescent;
+  }
 
   gfxFloat emHeight;
   // Scale for vertical design metric conversion: pixels per design unit.
@@ -772,7 +777,7 @@ bool gfxFT2FontBase::GetFTGlyphExtents(uint16_t aGID, int32_t* aAdvance,
  * Get the cached glyph metrics for the glyph id if available. Otherwise, query
  * FreeType for the glyph extents and initialize the glyph metrics.
  */
-const gfxFT2FontBase::GlyphMetrics& gfxFT2FontBase::GetCachedGlyphMetrics(
+gfxFT2FontBase::GlyphMetrics gfxFT2FontBase::GetCachedGlyphMetrics(
     uint16_t aGID, IntRect* aBounds) {
   {
     // Try to read cached metrics without exclusive locking.
@@ -807,7 +812,7 @@ const gfxFT2FontBase::GlyphMetrics& gfxFT2FontBase::GetCachedGlyphMetrics(
 bool gfxFT2FontBase::GetGlyphBounds(uint16_t aGID, gfxRect* aBounds,
                                     bool aTight) {
   IntRect bounds;
-  const GlyphMetrics& metrics = GetCachedGlyphMetrics(aGID, &bounds);
+  const GlyphMetrics metrics = GetCachedGlyphMetrics(aGID, &bounds);
   if (!metrics.HasValidBounds()) {
     return false;
   }

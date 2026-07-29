@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright 2016 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -253,6 +251,8 @@ static inline RegPtr RegIntptrToRegPtr(RegI32 r) { return RegPtr(Register(r)); }
 #endif
 
 void BaseCompiler::pushHeapBase(uint32_t memoryIndex) {
+  MOZ_ASSERT(memoryIndex < codeMeta_.memories.length());
+
   RegPtr heapBase = need<RegPtr>();
 
 #ifdef WASM_HAS_HEAPREG
@@ -641,9 +641,9 @@ void BaseCompiler::executeLoad(MemoryAccessDesc* access, AccessCheck* check,
 #elif defined(JS_CODEGEN_RISCV64)
   MOZ_ASSERT(temp.isInvalid());
   if (dest.tag == AnyReg::I64) {
-    masm.wasmLoadI64(*access, memoryBase, ptr, ptr, dest.i64());
+    masm.wasmLoadI64(*access, memoryBase, ptr, dest.i64());
   } else {
-    masm.wasmLoad(*access, memoryBase, ptr, ptr, dest.any());
+    masm.wasmLoad(*access, memoryBase, ptr, dest.any());
   }
 #else
   MOZ_CRASH("BaseCompiler platform hook: load");
@@ -784,9 +784,9 @@ void BaseCompiler::executeStore(MemoryAccessDesc* access, AccessCheck* check,
 #elif defined(JS_CODEGEN_RISCV64)
   MOZ_ASSERT(temp.isInvalid());
   if (access->type() == Scalar::Int64) {
-    masm.wasmStoreI64(*access, src.i64(), memoryBase, ptr, ptr);
+    masm.wasmStoreI64(*access, src.i64(), memoryBase, ptr);
   } else {
-    masm.wasmStore(*access, src.any(), memoryBase, ptr, ptr);
+    masm.wasmStore(*access, src.any(), memoryBase, ptr);
   }
 #else
   MOZ_CRASH("BaseCompiler platform hook: store");

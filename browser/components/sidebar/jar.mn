@@ -4,6 +4,10 @@
 
 browser.jar:
     content/browser/sidebar/browser-sidebar.js
+    content/browser/sidebar/sidebar-bookmark-list.css
+    content/browser/sidebar/sidebar-bookmark-list.mjs
+    content/browser/sidebar/sidebar-bookmarks.html
+    content/browser/sidebar/sidebar-bookmarks.mjs
     content/browser/sidebar/sidebar-customize.css
     content/browser/sidebar/sidebar-customize.html
     content/browser/sidebar/sidebar-customize.mjs
@@ -12,6 +16,9 @@ browser.jar:
     content/browser/sidebar/sidebar-history.css
     content/browser/sidebar/sidebar-history.html
     content/browser/sidebar/sidebar-history.mjs
+    content/browser/sidebar/sidebar-opentabs.css
+    content/browser/sidebar/sidebar-opentabs.html
+    content/browser/sidebar/sidebar-opentabs.mjs
     content/browser/sidebar/sidebar-page.mjs
     content/browser/sidebar/sidebar-panel-header.css
     content/browser/sidebar/sidebar-panel-header.mjs

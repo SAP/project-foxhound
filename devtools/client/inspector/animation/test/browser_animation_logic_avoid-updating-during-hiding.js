@@ -80,7 +80,7 @@ async function assertCurrentTimeUpdated(
 
   animationInspector.addAnimationsCurrentTimeListener(listener);
   await new Promise(resolve =>
-    panel.ownerGlobal.requestAnimationFrame(resolve)
+    panel.documentGlobal.requestAnimationFrame(resolve)
   );
   animationInspector.removeAnimationsCurrentTimeListener(listener);
 

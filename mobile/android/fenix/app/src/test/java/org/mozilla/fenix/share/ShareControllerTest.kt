@@ -32,7 +32,6 @@ import mozilla.components.feature.session.SessionUseCases
 import mozilla.components.feature.share.RecentAppsStorage
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -47,6 +46,7 @@ import org.mozilla.fenix.components.appstate.AppAction.ShareAction
 import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.mozilla.fenix.share.listadapters.AppShareOption
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 class ShareControllerTest {
@@ -72,7 +72,8 @@ class ShareControllerTest {
         every { currentDestination?.id } returns R.id.shareFragment
     }
 
-    private val dismiss = mockk<(ShareController.Result) -> Unit>(relaxed = true)
+    private val dismissSink: DismissSink = mockk(relaxed = true)
+    private val dismiss: (ShareController.Result) -> Unit = { dismissSink.onDismiss(it) }
     private val recentAppStorage = mockk<RecentAppsStorage>(relaxed = true)
 
     @get:Rule
@@ -104,7 +105,7 @@ class ShareControllerTest {
 
             controller.handleShareClosed()
 
-            verify { dismiss(ShareController.Result.DISMISSED) }
+            verify { dismissSink.onDismiss(ShareController.Result.DISMISSED) }
         }
 
     @Test
@@ -173,7 +174,7 @@ class ShareControllerTest {
             verify { recentAppStorage.updateRecentApp(appShareOption.activityName) }
             verifyOrder {
                 activityContext.startActivity(shareIntent.captured)
-                dismiss(ShareController.Result.SUCCESS)
+                dismissSink.onDismiss(ShareController.Result.SUCCESS)
             }
         }
 
@@ -310,7 +311,7 @@ class ShareControllerTest {
             verifyOrder {
                 activityContext.startActivity(shareIntent.captured)
                 appStore.dispatch(ShareAction.ShareToAppFailed)
-                dismiss(ShareController.Result.SHARE_ERROR)
+                dismissSink.onDismiss(ShareController.Result.SHARE_ERROR)
             }
         }
 
@@ -350,7 +351,7 @@ class ShareControllerTest {
             verifyOrder {
                 activityContext.startActivity(shareIntent.captured)
                 appStore.dispatch(ShareAction.ShareToAppFailed)
-                dismiss(ShareController.Result.SHARE_ERROR)
+                dismissSink.onDismiss(ShareController.Result.SHARE_ERROR)
             }
         }
 
@@ -378,7 +379,7 @@ class ShareControllerTest {
 
             verify {
                 saveToPdfUseCase.invoke("tabID")
-                dismiss(ShareController.Result.DISMISSED)
+                dismissSink.onDismiss(ShareController.Result.DISMISSED)
             }
         }
 
@@ -406,7 +407,7 @@ class ShareControllerTest {
 
             verify {
                 printUseCase.invoke("tabID")
-                dismiss(ShareController.Result.DISMISSED)
+                dismissSink.onDismiss(ShareController.Result.DISMISSED)
             }
 
             assertNotNull(Events.shareMenuAction.testGetValue())
@@ -599,7 +600,7 @@ class ShareControllerTest {
 
             verifyOrder {
                 sendTabUseCases.sendToDeviceAsync(capture(deviceId), capture(tabsShared))
-                dismiss(ShareController.Result.SUCCESS)
+                dismissSink.onDismiss(ShareController.Result.SUCCESS)
             }
 
             assertTrue(deviceId.isCaptured)
@@ -664,7 +665,7 @@ class ShareControllerTest {
 
             verifyOrder {
                 sendTabUseCases.sendToAllAsync(capture(tabsShared))
-                dismiss(ShareController.Result.SUCCESS)
+                dismissSink.onDismiss(ShareController.Result.SUCCESS)
             }
 
             // SendTabUseCases should send a the `shareTabs` mapped to tabData
@@ -707,7 +708,7 @@ class ShareControllerTest {
                     ),
                     null,
                 )
-                dismiss(ShareController.Result.DISMISSED)
+                dismissSink.onDismiss(ShareController.Result.DISMISSED)
             }
         }
 
@@ -742,7 +743,7 @@ class ShareControllerTest {
                     ),
                     null,
                 )
-                dismiss(ShareController.Result.DISMISSED)
+                dismissSink.onDismiss(ShareController.Result.DISMISSED)
             }
         }
 
@@ -1018,5 +1019,12 @@ class ShareControllerTest {
             }
             assertEquals(expected, tabData)
         }
+    }
+
+    // SAM routed through mockk so verifyOrder can still span dismiss calls and other mocked
+    // interactions. A user-defined interface keeps ByteBuddy out of the kotlin.jvm.functions
+    // TypeCache bucket that Robolectric's shared classloader can race on.
+    private fun interface DismissSink {
+        fun onDismiss(result: ShareController.Result)
     }
 }

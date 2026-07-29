@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,101 +18,9 @@
 
 #include "mozilla/glean/XpcomMetrics.h"
 
-#include <math.h>
+#include <bit>
 
 using namespace mozilla;
-
-#ifdef XP_WIN
-// Include Windows header required for enabling high-precision timers.
-#  include <windows.h>
-#  include <mmsystem.h>
-
-// WindowsTimerFrequencyManager manages adjusting the Windows timer resolution
-// based on whether we're on battery power and the current process priority.
-class WindowsTimerFrequencyManager {
- public:
-  explicit WindowsTimerFrequencyManager(
-      const hal::ProcessPriority processPriority)
-      : mTimerPeriodEvalInterval(
-            TimeDuration::FromSeconds(kTimerPeriodEvalIntervalSec)),
-        mNextTimerPeriodEval(TimeStamp::Now() + mTimerPeriodEvalInterval),
-        mLastTimePeriodSet(ComputeDesiredTimerPeriod(processPriority)),
-        mAdjustTimerPeriod(
-            StaticPrefs::timer_auto_increase_timer_resolution()) {
-    if (mAdjustTimerPeriod) {
-      timeBeginPeriod(mLastTimePeriodSet);
-    }
-  }
-
-  ~WindowsTimerFrequencyManager() {
-    // About to shut down - let's finish off the last time period that we set.
-    if (mAdjustTimerPeriod) {
-      timeEndPeriod(mLastTimePeriodSet);
-    }
-  }
-
-  void Update(const TimeStamp now, const hal::ProcessPriority processPriority) {
-    if (now >= mNextTimerPeriodEval) {
-      const UINT newTimePeriod = ComputeDesiredTimerPeriod(processPriority);
-      if (newTimePeriod != mLastTimePeriodSet) {
-        if (mAdjustTimerPeriod) {
-          timeEndPeriod(mLastTimePeriodSet);
-          timeBeginPeriod(newTimePeriod);
-        }
-        mLastTimePeriodSet = newTimePeriod;
-      }
-      mNextTimerPeriodEval = now + mTimerPeriodEvalInterval;
-    }
-  }
-
- private:
-  const TimeDuration mTimerPeriodEvalInterval;
-  TimeStamp mNextTimerPeriodEval;
-  UINT mLastTimePeriodSet;
-
-  // If this is false, we will perform all of the logic but will stop short of
-  // actually changing the timer period.
-  const bool mAdjustTimerPeriod;
-
-  // kTimerPeriodEvalIntervalSec is the minimum amount of time that must pass
-  // before we will consider changing the timer period again.
-  static constexpr float kTimerPeriodEvalIntervalSec = 2.0f;
-
-  static constexpr UINT kTimerPeriodHiRes = 1;
-  static constexpr UINT kTimerPeriodLowRes = 16;
-
-  // Helper functions to determine what Windows timer resolution to target.
-  static constexpr UINT GetDesiredTimerPeriod(const bool aOnBatteryPower,
-                                              const bool aLowProcessPriority) {
-    const bool useLowResTimer = aOnBatteryPower || aLowProcessPriority;
-    return useLowResTimer ? kTimerPeriodLowRes : kTimerPeriodHiRes;
-  }
-
-  static constexpr void StaticUnitTests() {
-    static_assert(GetDesiredTimerPeriod(true, false) == kTimerPeriodLowRes);
-    static_assert(GetDesiredTimerPeriod(false, true) == kTimerPeriodLowRes);
-    static_assert(GetDesiredTimerPeriod(true, true) == kTimerPeriodLowRes);
-    static_assert(GetDesiredTimerPeriod(false, false) == kTimerPeriodHiRes);
-  }
-
-  static UINT ComputeDesiredTimerPeriod(
-      const hal::ProcessPriority processPriority) {
-    const bool lowPriorityProcess =
-        processPriority < hal::PROCESS_PRIORITY_FOREGROUND;
-
-    // NOTE: Using short-circuiting here to avoid call to GetSystemPowerStatus()
-    // when we know that that result will not affect the final result. (As
-    // confirmed by the static_assert's above, onBatteryPower does not affect
-    // the result when the lowPriorityProcess is true.)
-    SYSTEM_POWER_STATUS status;
-    const bool onBatteryPower = !lowPriorityProcess &&
-                                GetSystemPowerStatus(&status) &&
-                                (status.ACLineStatus == 0);
-
-    return GetDesiredTimerPeriod(onBatteryPower, lowPriorityProcess);
-  }
-};
-#endif
 
 // Uncomment the following line to enable runtime stats during development.
 // #define TIMERS_RUNTIME_STATS
@@ -237,7 +143,7 @@ TimerThread::~TimerThread() {
 
 #if TIMER_THREAD_STATISTICS
   {
-    MonitorAutoLock lock(mMonitor);
+    TimerThreadMonitorAutoLock lock(mMonitor);
     PrintStatistics();
   }
 #endif
@@ -266,8 +172,6 @@ TimerObserverRunnable::Run() {
     observerService->AddObserver(mObserver, "suspend_process_notification",
                                  false);
     observerService->AddObserver(mObserver, "resume_process_notification",
-                                 false);
-    observerService->AddObserver(mObserver, "ipc:process-priority-changed",
                                  false);
   }
   return NS_OK;
@@ -359,11 +263,11 @@ class nsTimerEvent final : public CancelableRunnable {
 
   already_AddRefed<nsTimerImpl> ForgetTimer() { return mTimer.forget(); }
 
- private:
   nsTimerEvent(const nsTimerEvent&) = delete;
   nsTimerEvent& operator=(const nsTimerEvent&) = delete;
   nsTimerEvent& operator=(const nsTimerEvent&&) = delete;
 
+ private:
   ~nsTimerEvent() = default;
 
   static void AddAllocatorRef() { ++sAllocatorRefs; }
@@ -416,14 +320,58 @@ void TimerEventAllocator::Free(void* aPtr) {
 
 }  // namespace
 
-struct TimerMarker {
-  static constexpr Span<const char> MarkerTypeName() {
-    return MakeStringSpan("Timer");
+struct TimerMarker : public BaseMarkerType<TimerMarker> {
+  static constexpr const char* Name = "Timer";
+  using MS = MarkerSchema;
+  static constexpr MS::PayloadField PayloadFields[] = {
+      {"delay", MS::InputType::TimeDuration, "Delay", MS::Format::Milliseconds},
+      {"ttype", MS::InputType::CString, "Timer Type", MS::Format::UniqueString},
+      {"canceled", MS::InputType::Boolean, "Canceled"},
+      {"threadId", MS::InputType::Int64, nullptr, MS::Format::String,
+       MS::PayloadFlags::Hidden},
+  };
+  static constexpr MS::Location Locations[] = {
+      MS::Location::MarkerChart,
+      MS::Location::MarkerTable,
+  };
+  static constexpr const char* ChartLabel =
+      "{marker.data.canceled ? '❌ ' : ''}{marker.data.delay}";
+  static constexpr const char* TableLabel = ChartLabel;
+  // The string property for the timer type is not written when the type is
+  // one shot, as that's the type used almost all the time, and that would
+  // consume space in the profiler buffer and then in the profile JSON,
+  // getting in the way of capturing long power profiles.
+  // Bug 1815677 might make this cheap to capture.
+  static const char* TimerTypeString(uint8_t aType) {
+    switch (aType) {
+      case nsITimer::TYPE_REPEATING_SLACK:
+        return "repeating slack";
+      case nsITimer::TYPE_REPEATING_PRECISE:
+        return "repeating precise";
+      case nsITimer::TYPE_REPEATING_PRECISE_CAN_SKIP:
+        return "repeating precise can skip";
+      case nsITimer::TYPE_REPEATING_SLACK_LOW_PRIORITY:
+        return "repeating slack low priority";
+      case nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY:
+        return "low priority";
+      default:
+        return "";
+    }
   }
   static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
-                                   uint32_t aDelay, uint8_t aType,
+                                   TimeDuration aDelay, uint8_t aType,
                                    MarkerThreadId aThreadId, bool aCanceled) {
-    aWriter.IntProperty("delay", aDelay);
+    StreamJSONMarkerDataImpl(aWriter, aDelay);
+
+    const auto ttype = MakeStringSpan(TimerTypeString(aType));
+    if (ttype.Length()) {
+      aWriter.UniqueStringProperty("ttype", ttype);
+    }
+
+    if (aCanceled) {
+      aWriter.BoolProperty("canceled", true);
+    }
+
     if (!aThreadId.IsUnspecified()) {
       // Tech note: If `ToNumber()` returns a uint64_t, the conversion to
       // int64_t is "implementation-defined" before C++20. This is
@@ -433,53 +381,47 @@ struct TimerMarker {
       aWriter.IntProperty(
           "threadId", static_cast<int64_t>(aThreadId.ThreadId().ToNumber()));
     }
-    if (aCanceled) {
-      aWriter.BoolProperty("canceled", true);
-      // Show a red 'X' as a prefix on the marker chart for canceled timers.
-      aWriter.StringProperty("prefix", "❌");
-    }
-
-    // The string property for the timer type is not written when the type is
-    // one shot, as that's the type used almost all the time, and that would
-    // consume space in the profiler buffer and then in the profile JSON,
-    // getting in the way of capturing long power profiles.
-    // Bug 1815677 might make this cheap to capture.
-    if (aType != nsITimer::TYPE_ONE_SHOT) {
-      if (aType == nsITimer::TYPE_REPEATING_SLACK) {
-        aWriter.StringProperty("ttype", "repeating slack");
-      } else if (aType == nsITimer::TYPE_REPEATING_PRECISE) {
-        aWriter.StringProperty("ttype", "repeating precise");
-      } else if (aType == nsITimer::TYPE_REPEATING_PRECISE_CAN_SKIP) {
-        aWriter.StringProperty("ttype", "repeating precise can skip");
-      } else if (aType == nsITimer::TYPE_REPEATING_SLACK_LOW_PRIORITY) {
-        aWriter.StringProperty("ttype", "repeating slack low priority");
-      } else if (aType == nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY) {
-        aWriter.StringProperty("ttype", "low priority");
-      }
-    }
   }
-  static MarkerSchema MarkerTypeDisplay() {
-    using MS = MarkerSchema;
-    MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
-    schema.AddKeyLabelFormat("delay", "Delay", MS::Format::Milliseconds);
-    schema.AddKeyLabelFormat("ttype", "Timer Type", MS::Format::String);
-    schema.AddKeyLabelFormat("canceled", "Canceled", MS::Format::String);
-    schema.AddKeyFormat("prefix", MS::Format::String, MS::PayloadFlags::Hidden);
-    schema.SetChartLabel("{marker.data.prefix} {marker.data.delay}");
-    schema.SetTableLabel("{marker.data.prefix} {marker.data.delay}");
-    return schema;
+  static void TranslateMarkerInputToSchema(void* aContext, TimeDuration aDelay,
+                                           uint8_t aType,
+                                           MarkerThreadId aThreadId,
+                                           bool aCanceled) {
+    ETW::OutputMarkerSchema(
+        aContext, TimerMarker{}, aDelay,
+        mozilla::ProfilerString8View::WrapNullTerminatedString(
+            TimerTypeString(aType)),
+        aCanceled, static_cast<int64_t>(aThreadId.ThreadId().ToNumber()));
   }
 };
 
-struct AddRemoveTimerMarker {
-  static constexpr Span<const char> MarkerTypeName() {
-    return MakeStringSpan("AddRemoveTimer");
+struct AddRemoveTimerMarker : public BaseMarkerType<AddRemoveTimerMarker> {
+  static constexpr const char* Name = "AddRemoveTimer";
+  using MS = MarkerSchema;
+  static constexpr MS::PayloadField PayloadFields[] = {
+      {"name", MS::InputType::CString, "Name", MS::Format::String},
+      {"delay", MS::InputType::TimeDuration, "Delay", MS::Format::Milliseconds},
+      {"threadId", MS::InputType::Int64, nullptr, MS::Format::String,
+       MS::PayloadFlags::Hidden},
+  };
+  static constexpr MS::Location Locations[] = {
+      MS::Location::MarkerChart,
+      MS::Location::MarkerTable,
+  };
+  static constexpr const char* TableLabel =
+      "{marker.data.name} - {marker.data.delay}";
+
+  static void TranslateMarkerInputToSchema(
+      void* aContext, const ProfilerString8View& aTimerName,
+      TimeDuration aDelay, MarkerThreadId aThreadId) {
+    ETW::OutputMarkerSchema(
+        aContext, AddRemoveTimerMarker{}, aTimerName, aDelay,
+        static_cast<int64_t>(aThreadId.ThreadId().ToNumber()));
   }
   static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
                                    const ProfilerString8View& aTimerName,
-                                   uint32_t aDelay, MarkerThreadId aThreadId) {
-    aWriter.StringProperty("name", aTimerName);
-    aWriter.IntProperty("delay", aDelay);
+                                   TimeDuration aDelay,
+                                   MarkerThreadId aThreadId) {
+    StreamJSONMarkerDataImpl(aWriter, aTimerName, aDelay);
     if (!aThreadId.IsUnspecified()) {
       // Tech note: If `ToNumber()` returns a uint64_t, the conversion to
       // int64_t is "implementation-defined" before C++20. This is
@@ -489,14 +431,6 @@ struct AddRemoveTimerMarker {
       aWriter.IntProperty(
           "threadId", static_cast<int64_t>(aThreadId.ThreadId().ToNumber()));
     }
-  }
-  static MarkerSchema MarkerTypeDisplay() {
-    using MS = MarkerSchema;
-    MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
-    schema.AddKeyLabelFormat("name", "Name", MS::Format::String);
-    schema.AddKeyLabelFormat("delay", "Delay", MS::Format::Milliseconds);
-    schema.SetTableLabel("{marker.data.name} - {marker.data.delay}");
-    return schema;
   }
 };
 
@@ -544,7 +478,7 @@ nsTimerEvent::Run() {
                           : MarkerTiming::IntervalUntilNowFrom(
                                 mTimer->mTimeout - mTimer->mDelay),
                       MarkerThreadId(mTimerThreadId)),
-        TimerMarker{}, mTimer->mDelay.ToMilliseconds(), mTimer->mType,
+        TimerMarker{}, mTimer->mDelay, mTimer->mType,
         MarkerThreadId::CurrentThread(), false);
     // This marker is meant to help understand the behavior of the timer thread.
     profiler_add_marker(
@@ -553,7 +487,7 @@ nsTimerEvent::Run() {
                           ? MarkerTiming::IntervalUntilNowFrom(mInitTime)
                           : MarkerTiming::InstantNow(),
                       MarkerThreadId(mTimerThreadId)),
-        AddRemoveTimerMarker{}, mTimer->mName, mTimer->mDelay.ToMilliseconds(),
+        AddRemoveTimerMarker{}, mTimer->mName, mTimer->mDelay,
         MarkerThreadId::CurrentThread());
   }
 
@@ -578,7 +512,7 @@ nsresult TimerThread::Init() {
     if (NS_FAILED(rv)) {
       mThread = nullptr;
     } else {
-      RefPtr<TimerObserverRunnable> r = new TimerObserverRunnable(this);
+      RefPtr r = MakeRefPtr<TimerObserverRunnable>(this);
       if (NS_IsMainThread()) {
         r->Run();
       } else {
@@ -606,7 +540,7 @@ nsresult TimerThread::Shutdown() {
   nsTArray<Entry> timers;
   {
     // lock scope
-    MonitorAutoLock lock(mMonitor);
+    TimerThreadMonitorAutoLock lock(mMonitor);
 
     mShutdown = true;
 
@@ -665,11 +599,11 @@ struct IntervalComparator {
 
 }  // namespace
 
-TimeStamp TimerThread::ComputeWakeupTimeFromTimers() const {
+TimerThread::WakeupTime TimerThread::ComputeWakeupTimeFromTimers() const {
   mMonitor.AssertCurrentThreadOwns();
 
   if (mTimers.IsEmpty()) {
-    return TimeStamp{};
+    return {{}, {}};
   }
 
   // The first timer should be non-canceled and we rely on that here.
@@ -679,18 +613,19 @@ TimeStamp TimerThread::ComputeWakeupTimeFromTimers() const {
   // the same wake-up with mTimers[0] and use its timeout as our target wake-up
   // time.
 
+  const TimeDuration minTimerDelay = TimeDuration::FromMilliseconds(
+      StaticPrefs::timer_minimum_firing_delay_tolerance_ms());
+  const TimeDuration maxTimerDelay = TimeDuration::FromMilliseconds(
+      StaticPrefs::timer_maximum_firing_delay_tolerance_ms());
+
   // bundleWakeup is when we should wake up in order to be able to fire all of
   // the timers in our selected bundle. It will always be the timeout of the
   // last timer in the bundle.
   TimeStamp bundleWakeup = mTimers[0].mTimeout;
 
   // cutoffTime is the latest that we can wake up for the timers currently
-  // accepted into the bundle. These needs to be updated as we go through the
+  // accepted into the bundle. This needs to be updated as we go through the
   // list because later timers may have more strict delay tolerances.
-  const TimeDuration minTimerDelay = TimeDuration::FromMilliseconds(
-      StaticPrefs::timer_minimum_firing_delay_tolerance_ms());
-  const TimeDuration maxTimerDelay = TimeDuration::FromMilliseconds(
-      StaticPrefs::timer_maximum_firing_delay_tolerance_ms());
   TimeStamp cutoffTime =
       bundleWakeup + ComputeAcceptableFiringDelay(mTimers[0].mDelay,
                                                   minTimerDelay, maxTimerDelay);
@@ -713,10 +648,9 @@ TimeStamp TimerThread::ComputeWakeupTimeFromTimers() const {
     // This timer can be included in the bundle. Update bundleWakeup and
     // cutoffTime.
     bundleWakeup = curTimerDue;
-    cutoffTime = std::min(
-        curTimerDue + ComputeAcceptableFiringDelay(
-                          curEntry.mDelay, minTimerDelay, maxTimerDelay),
-        cutoffTime);
+    const TimeDuration timerDelay = ComputeAcceptableFiringDelay(
+        curEntry.mDelay, minTimerDelay, maxTimerDelay);
+    cutoffTime = std::min(curTimerDue + timerDelay, cutoffTime);
     MOZ_ASSERT(bundleWakeup <= cutoffTime);
   }
 
@@ -724,7 +658,7 @@ TimeStamp TimerThread::ComputeWakeupTimeFromTimers() const {
              ComputeAcceptableFiringDelay(mTimers[0].mDelay, minTimerDelay,
                                           maxTimerDelay));
 
-  return bundleWakeup;
+  return {bundleWakeup, cutoffTime - bundleWakeup};
 }
 
 TimeDuration TimerThread::ComputeAcceptableFiringDelay(
@@ -734,7 +668,8 @@ TimeDuration TimerThread::ComputeAcceptableFiringDelay(
   // firing delay a timer can accept. 8 was chosen specifically because it is a
   // power of two which means that this division turns nicely into a shift.
   constexpr int64_t timerDurationDivider = 8;
-  static_assert(IsPowerOfTwo(static_cast<uint64_t>(timerDurationDivider)));
+  static_assert(
+      std::has_single_bit(static_cast<uint64_t>(timerDurationDivider)));
   const TimeDuration tmp = timerDuration / timerDurationDivider;
   return std::clamp(tmp, minDelay, maxDelay);
 }
@@ -825,19 +760,24 @@ class TelemetryQueue {
   size_t mQueuedTimersFiredCount = 0;
 };
 
-void TimerThread::Wait(TimeDuration aWaitFor) MOZ_REQUIRES(mMonitor) {
+void TimerThread::Wait(TimeDuration aWaitFor, TimeDuration aTolerance)
+    MOZ_REQUIRES(mMonitor) {
   mWaiting = true;
   mNotified = false;
   {
     AUTO_PROFILER_MARKER("TimerThread::Wait", OTHER);
+#if defined(XP_WIN)
+    mMonitor.Wait(aWaitFor, aTolerance);
+#else
     mMonitor.Wait(aWaitFor);
+#endif
   }
   mWaiting = false;
 }
 
 NS_IMETHODIMP
 TimerThread::Run() {
-  MonitorAutoLock lock(mMonitor);
+  TimerThreadMonitorAutoLock lock(mMonitor);
 
   mProfilerThreadId = profiler_current_thread_id();
 
@@ -849,16 +789,11 @@ TimerThread::Run() {
 
   TelemetryQueue telemetryQueue;
 
-#ifdef XP_WIN
-  WindowsTimerFrequencyManager wTFM{
-      mCachedPriority.load(std::memory_order_relaxed)};
-#endif
-
   while (!mShutdown) {
     const bool chaosModeActive =
         ChaosMode::isActive(ChaosFeature::TimerScheduling);
 
-    TimeDuration waitFor;
+    TimeDuration waitFor, waitTolerance;
     if (!mSleeping) {
       // Determine how early we are going to allow timers to fire. In chaos mode
       // we mess with this a little bit.
@@ -884,8 +819,9 @@ TimerThread::Run() {
       }
 
       // Determine when we should wake up.
-      const TimeStamp wakeupTime = ComputeWakeupTimeFromTimers();
+      const auto [wakeupTime, wakeupTolerance] = ComputeWakeupTimeFromTimers();
       mIntendedWakeupTime = wakeupTime;
+      waitTolerance = wakeupTolerance;
 
       // About to sleep - let's make note of how many timers we processed and
       // see if we should send out a new batch of telemetry.
@@ -910,21 +846,24 @@ TimerThread::Run() {
           MOZ_LOG(GetTimerLog(), LogLevel::Debug,
                   ("waiting for %f\n", waitFor.ToMilliseconds()));
       }
-
-#ifdef XP_WIN
-      wTFM.Update(now, mCachedPriority.load(std::memory_order_relaxed));
-#endif
     } else {
       mIntendedWakeupTime = TimeStamp{};
       // Sleep for 0.1 seconds while not firing timers.
+      // NOTE: Re-evaluate this behavior. Why do we wake up ten times a second
+      // to do nothing?
       uint32_t milliseconds = 100;
       if (chaosModeActive) {
         milliseconds = ChaosMode::randomUint32LessThan(200);
       }
       waitFor = TimeDuration::FromMilliseconds(milliseconds);
+
+      // Don't need to wake up precisely when "sleeping"
+      static constexpr double sWaitToleranceWhenSleeping_ms = 32.0;
+      waitTolerance =
+          TimeDuration::FromMilliseconds(sWaitToleranceWhenSleeping_ms);
     }
 
-    Wait(waitFor);
+    Wait(waitFor, waitTolerance);
 
 #if TIMER_THREAD_STATISTICS
     CollectWakeupStatistics();
@@ -936,7 +875,7 @@ TimerThread::Run() {
 
 nsresult TimerThread::AddTimer(nsTimerImpl* aTimer,
                                const MutexAutoLock& aProofOfLock) {
-  MonitorAutoLock lock(mMonitor);
+  TimerThreadMonitorAutoLock lock(mMonitor);
   AUTO_TIMERS_STATS(TimerThread_AddTimer);
 
   if (mShutdown) {
@@ -1000,7 +939,7 @@ nsresult TimerThread::AddTimer(nsTimerImpl* aTimer,
             MarkerStack::MaybeCapture(
                 aTimer->mName.Equals("nonfunction:JS") ||
                 StringHead(aTimer->mName, prefix.Length()) == prefix)),
-        AddRemoveTimerMarker{}, aTimer->mName, aTimer->mDelay.ToMilliseconds(),
+        AddRemoveTimerMarker{}, aTimer->mName, aTimer->mDelay,
         MarkerThreadId::CurrentThread());
   }
 
@@ -1009,7 +948,7 @@ nsresult TimerThread::AddTimer(nsTimerImpl* aTimer,
 
 nsresult TimerThread::RemoveTimer(nsTimerImpl* aTimer,
                                   const MutexAutoLock& aProofOfLock) {
-  MonitorAutoLock lock(mMonitor);
+  TimerThreadMonitorAutoLock lock(mMonitor);
   AUTO_TIMERS_STATS(TimerThread_RemoveTimer);
 
   // Remove the timer from our array.  Tell callers that aTimer was not found
@@ -1044,7 +983,7 @@ nsresult TimerThread::RemoveTimer(nsTimerImpl* aTimer,
             MarkerStack::MaybeCapture(
                 aTimer->mName.Equals("nonfunction:JS") ||
                 StringHead(aTimer->mName, prefix.Length()) == prefix)),
-        AddRemoveTimerMarker{}, aTimer->mName, aTimer->mDelay.ToMilliseconds(),
+        AddRemoveTimerMarker{}, aTimer->mName, aTimer->mDelay,
         MarkerThreadId::CurrentThread());
     // This adds a marker with the timer name as the marker name, to make it
     // obvious which timers are being used. This marker will be useful to
@@ -1053,8 +992,8 @@ nsresult TimerThread::RemoveTimer(nsTimerImpl* aTimer,
                         MarkerOptions(MarkerTiming::IntervalUntilNowFrom(
                                           aTimer->mTimeout - aTimer->mDelay),
                                       MarkerThreadId(mProfilerThreadId)),
-                        TimerMarker{}, aTimer->mDelay.ToMilliseconds(),
-                        aTimer->mType, MarkerThreadId::CurrentThread(), true);
+                        TimerMarker{}, aTimer->mDelay, aTimer->mType,
+                        MarkerThreadId::CurrentThread(), true);
   }
 
   return NS_OK;
@@ -1062,7 +1001,7 @@ nsresult TimerThread::RemoveTimer(nsTimerImpl* aTimer,
 
 TimeStamp TimerThread::FindNextFireTimeForCurrentThread(TimeStamp aDefault,
                                                         uint32_t aSearchBound) {
-  MonitorAutoLock lock(mMonitor);
+  TimerThreadMonitorAutoLock lock(mMonitor);
   AUTO_TIMERS_STATS(TimerThread_FindNextFireTimeForCurrentThread);
 
   for (const Entry& entry : mTimers) {
@@ -1238,7 +1177,7 @@ void TimerThread::PostTimerEvent(Entry& aPostMe) {
   RefPtr<nsTimerEvent> lockedEventPtr = ::new (KnownNotNull, p)
       nsTimerEvent(timer.forget(), aPostMe.mTimerSeq, mProfilerThreadId);
   {
-    MonitorAutoUnlock unlock(mMonitor);
+    TimerThreadMonitorAutoUnlock unlock(mMonitor);
     // Ensure references are released while we're unlocked.
     nsCOMPtr<nsIEventTarget> target = lockedTargetPtr.forget();
     RefPtr<nsTimerEvent> event = lockedEventPtr.forget();
@@ -1250,14 +1189,14 @@ void TimerThread::PostTimerEvent(Entry& aPostMe) {
 
 void TimerThread::DoBeforeSleep() {
   // Mainthread
-  MonitorAutoLock lock(mMonitor);
+  TimerThreadMonitorAutoLock lock(mMonitor);
   mSleeping = true;
 }
 
 // Note: wake may be notified without preceding sleep notification
 void TimerThread::DoAfterSleep() {
   // Mainthread
-  MonitorAutoLock lock(mMonitor);
+  TimerThreadMonitorAutoLock lock(mMonitor);
   mSleeping = false;
 
   // Wake up the timer thread to re-process the array to ensure the sleep delay
@@ -1269,18 +1208,8 @@ void TimerThread::DoAfterSleep() {
 }
 
 NS_IMETHODIMP
-TimerThread::Observe(nsISupports* aSubject, const char* aTopic,
-                     const char16_t* aData) {
-  if (strcmp(aTopic, "ipc:process-priority-changed") == 0) {
-    nsCOMPtr<nsIPropertyBag2> props = do_QueryInterface(aSubject);
-    MOZ_ASSERT(props != nullptr);
-
-    int32_t priority = static_cast<int32_t>(hal::PROCESS_PRIORITY_UNKNOWN);
-    props->GetPropertyAsInt32(u"priority"_ns, &priority);
-    mCachedPriority.store(static_cast<hal::ProcessPriority>(priority),
-                          std::memory_order_relaxed);
-  }
-
+TimerThread::Observe(nsISupports* /*aSubject*/, const char* aTopic,
+                     const char16_t* /*aData*/) {
   if (StaticPrefs::timer_ignore_sleep_wake_notifications()) {
     return NS_OK;
   }
@@ -1297,7 +1226,7 @@ TimerThread::Observe(nsISupports* aSubject, const char* aTopic,
 }
 
 uint32_t TimerThread::AllowedEarlyFiringMicroseconds() {
-  MonitorAutoLock lock(mMonitor);
+  TimerThreadMonitorAutoLock lock(mMonitor);
   return mAllowedEarlyFiringMicroseconds;
 }
 
@@ -1477,7 +1406,7 @@ NS_IMPL_ISUPPORTS(nsReadOnlyTimer, nsITimer)
 nsresult TimerThread::GetTimers(nsTArray<RefPtr<nsITimer>>& aRetVal) {
   nsTArray<RefPtr<nsTimerImpl>> timers;
   {
-    MonitorAutoLock lock(mMonitor);
+    TimerThreadMonitorAutoLock lock(mMonitor);
     for (const auto& entry : mTimers) {
       nsTimerImpl* timer = entry.mTimerImpl;
       if (!timer) {

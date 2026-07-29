@@ -9,8 +9,33 @@
 
 // skcms_public.h contains the entire public API for skcms.
 
-#ifndef SKCMS_API
-    #define SKCMS_API
+// Modeled after the FOX example in https://gcc.gnu.org/wiki/Visibility
+#if !defined(SKCMS_API)
+    // Client has opted in to building skcms as part of a DLL/shared object file.
+    #if defined(SKCMS_DLL)
+        // If on Windows (MSVC or Clang pretending to be MSVC)
+        #if defined(_MSC_VER)
+            // Client needs to set this when compiling the skcms files (but *not* when compiling
+            // other files which use the headers). In GN, this is handled with non-public configs.
+            // With Bazel, this can be implemented with local_defines.
+            #if defined(SKCMS_IMPLEMENTATION)
+                // If SKCMS is being built as a standalone DLL, it must be explicitly exported
+                // https://learn.microsoft.com/en-us/cpp/cpp/dllexport-dllimport?view=msvc-170
+                #define SKCMS_API __declspec(dllexport)
+            #else
+                // If a client is compiling and using the skcms header, this is an optimization
+                // to skip some indirection when resolving the function call.
+                // https://learn.microsoft.com/en-us/previous-versions/visualstudio/visual-studio-6.0/aa271769(v=vs.60)
+                #define SKCMS_API __declspec(dllimport)
+            #endif
+        #else
+            // On non-Windows platforms, we make sure the symbols are visible outside the
+            // shared object file.
+            #define SKCMS_API __attribute__((visibility("default")))
+        #endif
+    #else
+        #define SKCMS_API
+    #endif
 #endif
 
 #include <stdbool.h>
@@ -271,6 +296,8 @@ SKCMS_API bool skcms_TRCs_AreApproximateInverse(const skcms_ICCProfile* profile,
 // Parse an ICC profile and return true if possible, otherwise return false.
 // Selects an A2B profile (if present) according to priority list (each entry 0-2).
 // The buffer is not copied; it must remain valid as long as the skcms_ICCProfile will be used.
+// The parse will fail if there is not enough padding (typically 1-2 bytes) past the end of the
+// profile for internally optimized read calls.
 SKCMS_API bool skcms_ParseWithA2BPriority(const void*, size_t,
                                           const int priority[], int priorities,
                                           skcms_ICCProfile*);
@@ -298,7 +325,7 @@ SKCMS_API bool skcms_GetWTPT(const skcms_ICCProfile*, float xyz[3]);
 SKCMS_API int skcms_GetInputChannelCount(const skcms_ICCProfile*);
 
 // These are common ICC signature values
-enum {
+typedef enum skcms_Signature {
     // common data_color_space values
     skcms_Signature_CMYK = 0x434D594B,
     skcms_Signature_Gray = 0x47524159,
@@ -329,7 +356,7 @@ enum {
     skcms_Signature_13CLR  = 0x44434C52,
     skcms_Signature_14CLR  = 0x45434C52,
     skcms_Signature_15CLR  = 0x46434C52,
-};
+} skcms_Signature;
 
 typedef enum skcms_PixelFormat {
     skcms_PixelFormat_A_8,

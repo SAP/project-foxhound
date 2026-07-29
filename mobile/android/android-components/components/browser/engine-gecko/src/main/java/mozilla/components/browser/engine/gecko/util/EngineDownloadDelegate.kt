@@ -13,12 +13,12 @@ import mozilla.components.support.utils.DefaultDownloadFileUtils
  */
 class EngineDownloadDelegate(
     context: Context,
-    downloadLocationGetter: () -> String,
+    downloadLocation: () -> String,
 ) : DownloadDelegate {
 
     val downloadFileUtils = DefaultDownloadFileUtils(
         context = context,
-        downloadLocation = downloadLocationGetter,
+        downloadLocation = downloadLocation,
     )
 
     /**

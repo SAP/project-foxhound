@@ -4,9 +4,6 @@
 const browserContainersGroupDisabled = !SpecialPowers.getBoolPref(
   "privacy.userContext.ui.enabled"
 );
-const cookieBannerHandlingDisabled = !SpecialPowers.getBoolPref(
-  "cookiebanners.ui.desktop.enabled"
-);
 const backupSectionDisabled = !(
   SpecialPowers.getBoolPref("browser.backup.archive.enabled") ||
   SpecialPowers.getBoolPref("browser.backup.restore.enabled")
@@ -44,18 +41,6 @@ function checkElements(expectedPane) {
       is_element_hidden(
         element,
         "Disabled browserContainersGroup should be hidden"
-      );
-      continue;
-    }
-
-    // Cookie Banner Handling is currently disabled by default (bug 1800679)
-    if (
-      element.id == "cookieBannerHandlingGroup" &&
-      cookieBannerHandlingDisabled
-    ) {
-      is_element_hidden(
-        element,
-        "Disabled cookieBannerHandlingGroup should be hidden"
       );
       continue;
     }

@@ -20,16 +20,11 @@ add_task(async function () {
   await testIframeNavigations(false);
   await testTopLevelNavigationsOnDocumentWithIframe(false);
 
-  // bfcacheInParent only works if sessionHistoryInParent is enable
-  // so only test it if both settings are enabled.
-  // (it looks like sessionHistoryInParent is enabled by default when fission is enabled)
-  if (Services.appinfo.sessionHistoryInParent) {
-    info("## Test with bfcache in parent ENABLED");
-    await pushPref("fission.bfcacheInParent", true);
-    await testTopLevelNavigations(true);
-    await testIframeNavigations(true);
-    await testTopLevelNavigationsOnDocumentWithIframe(true);
-  }
+  info("## Test with bfcache in parent ENABLED");
+  await pushPref("fission.bfcacheInParent", true);
+  await testTopLevelNavigations(true);
+  await testIframeNavigations(true);
+  await testTopLevelNavigationsOnDocumentWithIframe(true);
 });
 
 async function testTopLevelNavigations(bfcacheInParent) {

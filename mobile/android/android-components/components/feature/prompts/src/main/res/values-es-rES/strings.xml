@@ -69,6 +69,12 @@
   <string name="mozac_feature_prompts_before_unload_stay">Permanecer</string>
   <!-- Leave button of the dialog shown when a user is leaving a website and there is still data not saved yet, this indicates that the user wants to leave in the website. -->
   <string name="mozac_feature_prompts_before_unload_leave">Salir</string>
+  <!-- Message shown when a site wants to create a passkey for a related domain. %1$s is the requesting site, %2$s is the related domain the passkey is for. -->
+  <string name="webauthn_related_origin_create_message">%1$s quiere crear una clave de acceso para %2$s.</string>
+  <!-- Message shown when a site wants to use a passkey from a related domain. %1$s is the requesting site, %2$s is the related domain the passkey is for. -->
+  <string name="webauthn_related_origin_use_message">%1$s quiere usar una clave de acceso para %2$s.</string>
+  <!-- Continue button label for WebAuthn related origin prompt. -->
+  <string name="webauthn_continue">Continuar</string>
   <!-- Title of the month chooser dialog. -->
   <string name="mozac_feature_prompts_set_month">Elige un mes</string>
   <!-- January (short description), used on the month chooser dialog. -->
@@ -166,6 +172,8 @@
   <string name="mozac_feature_prompts_collapse_address_content_description_2">Contraer direcciones guardadas</string>
   <!-- Text for the manage addresses button. -->
   <string name="mozac_feature_prompts_manage_address">Administrar direcciones</string>
+  <!-- Text for the title of a save address dialog. -->
+  <string name="mozac_feature_prompts_save_address_prompt_title">¿Guardar dirección?</string>
   <!--
     Federated Credential Management prompts
 

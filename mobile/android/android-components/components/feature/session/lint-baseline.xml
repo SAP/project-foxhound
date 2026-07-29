@@ -1,4 +1,45 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <issues format="6" by="lint 8.13.2" type="baseline" client="gradle" dependencies="false" name="AGP (8.13.2)" variant="all" version="8.13.2">
 
+    <issue
+        id="NoSystemCurrentTimeMillis"
+        message="`System.currentTimeMillis()` must be injectable. Only permitted as a default value of a parameter on a top-level function or on a class."
+        errorLine1="            store.dispatch(LastAccessAction.UpdateLastAccessAction(tab.id, System.currentTimeMillis()))"
+        errorLine2="                                                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mozilla/components/feature/session/engine/EngineViewPresenter.kt"
+            line="99"
+            column="76"/>
+    </issue>
+    <issue
+        id="NoSystemCurrentTimeMillis"
+        message="`System.currentTimeMillis()` must be injectable. Only permitted as a default value of a parameter on a top-level function or on a class."
+        errorLine1="            store.dispatch(LastAccessAction.UpdateLastVisibleAtAction(it, System.currentTimeMillis()))"
+        errorLine2="                                                                          ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mozilla/components/feature/session/engine/EngineViewPresenter.kt"
+            line="107"
+            column="75"/>
+    </issue>
+    <issue
+        id="NoSystemCurrentTimeMillis"
+        message="`System.currentTimeMillis()` must be injectable. Only permitted as a default value of a parameter on a top-level function or on a class."
+        errorLine1="        dispatch(LastAccessAction.UpdateLastAccessAction(id, System.currentTimeMillis()))"
+        errorLine2="                                                             ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mozilla/components/feature/session/middleware/LastAccessMiddleware.kt"
+            line="76"
+            column="62"/>
+    </issue>
+    <issue
+        id="NoSystemCurrentTimeMillis"
+        message="`System.currentTimeMillis()` must be injectable. Only permitted as a default value of a parameter on a top-level function or on a class."
+        errorLine1="            lastAccess: Long = System.currentTimeMillis(),"
+        errorLine2="                               ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/mozilla/components/feature/session/SessionUseCases.kt"
+            line="395"
+            column="32"/>
+    </issue>
+
 </issues>

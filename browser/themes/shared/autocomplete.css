@@ -20,10 +20,27 @@
   min-width: 22em;
 }
 
+#PopupAutoComplete:is(
+    [resultstyles~="autofill"],
+    [resultstyles~="loginsFooter"],
+    [resultstyles~="insecureWarning"],
+    [resultstyles~="importableLogins"],
+    [resultstyles~="generatedPassword"]
+  )::part(content) {
+  min-width: 250px;
+}
+
 #PopupAutoComplete > richlistbox > richlistitem {
   min-height: var(--size-item-medium);
   border: 0;
   border-radius: var(--border-radius-small);
+  padding: var(--space-small);
+  gap: var(--space-small);
+
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media -moz-pref("browser.nova.enabled") {
+    border-radius: var(--border-radius-large);
+  }
 
   --status-text-color: currentColor;
   --status-background-color: rgba(248, 232, 28, 0.2);
@@ -33,7 +50,9 @@
   }
 
   > .ac-site-icon {
-    margin-inline: 4px 0;
+    max-height: var(--icon-size-large);
+    min-width: var(--icon-size-large);
+    margin-inline: 0;
   }
 
   > .ac-login-item {
@@ -74,9 +93,12 @@
     color: currentColor;
     position: relative;
 
-    &:hover,
-    &[selected] {
-      background-color: hsla(0, 0%, 80%, 0.5); /* match arrowpanel-dimmed-further */
+    &:is(:hover, [selected]) {
+      background-color: var(--button-background-color-hover);
+    }
+
+    &[selected]:active {
+      background-color: var(--button-background-color-active);
     }
   }
 
@@ -117,7 +139,7 @@
   &[originaltype="possible-username"] > .ac-site-icon,
   > .two-line-wrapper > .ac-site-icon {
     display: block;
-    margin-inline: 4px;
+    margin-inline: 0;
   }
 
   &[originaltype="possible-username"] > .ac-site-icon {
@@ -131,9 +153,14 @@
     display: flex;
     align-items: center;
     flex-direction: row;
-    gap: 8px;
+    gap: var(--space-small);
     margin: 0;
     min-width: 0;
+
+    > .ac-site-icon {
+      max-height: var(--icon-size-large);
+      min-width: var(--icon-size-large);
+    }
 
     > .ac-site-icon[src=""] {
       display: none;
@@ -177,17 +204,13 @@
     list-style-image: url(chrome://browser/skin/import.svg);
   }
 
-  &[originaltype="generatedPassword"][selected] > .two-line-wrapper > .ac-site-icon,
-  &[originaltype="importableLogins"][selected] > .two-line-wrapper > .ac-site-icon,
-  &[originaltype="loginWithOrigin"][selected] > .two-line-wrapper > .ac-site-icon,
-  &[originaltype="login"] > .ac-site-icon[selected] {
-    fill: SelectedItemText;
-  }
-
-  /* Login form autocompletion */
-  > .two-line-wrapper {
-    padding: var(--space-xsmall);
-    padding-inline-start: 6px;
+  @media (forced-colors) {
+    &[originaltype="generatedPassword"][selected] > .two-line-wrapper > .ac-site-icon,
+    &[originaltype="importableLogins"][selected] > .two-line-wrapper > .ac-site-icon,
+    &[originaltype="loginWithOrigin"][selected] > .two-line-wrapper > .ac-site-icon,
+    &[originaltype="login"] > .ac-site-icon[selected] {
+      fill: SelectedItemText;
+    }
   }
 
   &[originaltype="action"] > .two-line-wrapper {
@@ -230,6 +253,12 @@
     text-align: center;
   }
 
+  /* The "Manage addresses"/"Manage payment methods" footer is always the last
+     action row; align it to the start rather than centering it. */
+  &[originaltype="action"]:last-child {
+    text-align: start;
+  }
+
   /* status items */
   > .ac-status {
     padding: var(--space-xsmall) var(--space-small);
@@ -247,25 +276,24 @@
 
   &[originaltype="autofill"][ac-image]:not([ac-image=""]) > .two-line-wrapper {
     display: grid;
-    grid-template-columns: 32px 1fr;
+    grid-template-columns: var(--icon-size-large) 1fr;
 
     > .ac-site-icon {
       width: auto;
-      height: 16px;
-      max-width: 32px;
-      max-height: 16px;
+      max-height: var(--icon-size-large);
+      min-width: var(--icon-size-large);
     }
   }
 
   /* Insecure field warning */
   &[originaltype="insecureWarning"] {
-    background-color: var(--arrowpanel-dimmed);
+    background-color: var(--button-background-color-hover);
     color: inherit;
     border-bottom: 1px solid var(--panel-separator-color);
-    padding-block: 4px;
+    padding-block: var(--space-xsmall);
 
-    &[selected] {
-      background-color: var(--arrowpanel-dimmed-further);
+    &[selected]:active {
+      background-color: var(--button-background-color-active);
       color: inherit;
     }
 
@@ -274,7 +302,7 @@
     }
 
     > .ac-title .ac-emphasize-text-title {
-      font-weight: var(--heading-font-weight);
+      font-weight: var(--font-weight-heading);
     }
 
     > .ac-site-icon {
@@ -285,23 +313,21 @@
 
 /* Popup states */
 .autocomplete-richlistitem {
-  &:not([disabled]):not([selected]):hover {
-    background-color: var(--arrowpanel-dimmed);
-    @media (forced-colors) {
-      background-color: ButtonText;
-      color: ButtonFace;
-    }
+  &:not([disabled]):is(:hover, [selected]) {
+    background-color: var(--button-background-color-hover);
+    color: var(--button-text-color-hover);
   }
 
-  &[selected] {
-    background-color: SelectedItem;
-    color: SelectedItemText;
-    @media (forced-colors) {
-      &:not(:active) {
-        box-shadow: inset 0 0 0 3px CanvasText;
-        color: ButtonText;
-        background-color: ButtonFace;
-      }
+  &[selected]:active {
+    background-color: var(--button-background-color-active);
+    color: var(--button-text-color-active);
+  }
+
+  @media (forced-colors) {
+    &[selected]:not(:active) {
+      box-shadow: inset 0 0 0 3px CanvasText;
+      color: ButtonText;
+      background-color: ButtonFace;
     }
   }
 }

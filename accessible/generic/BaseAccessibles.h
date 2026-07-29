@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -39,7 +38,7 @@ class LeafAccessible : public AccessibleWrap {
   virtual bool IsAcceptableChild(nsIContent* aEl) const override;
 
  protected:
-  virtual ~LeafAccessible() {}
+  virtual ~LeafAccessible() = default;
 };
 
 /**
@@ -68,7 +67,7 @@ class LinkableAccessible : public AccessibleWrap {
                                     bool* aIsOnclick = nullptr) const;
 
  protected:
-  virtual ~LinkableAccessible() {}
+  virtual ~LinkableAccessible() = default;
 };
 
 /**
@@ -88,7 +87,7 @@ class EnumRoleAccessible : public AccessibleWrap {
   virtual a11y::role NativeRole() const override { return R; }
 
  protected:
-  virtual ~EnumRoleAccessible() {}
+  virtual ~EnumRoleAccessible() = default;
 };
 
 /**
@@ -104,7 +103,7 @@ class EnumRoleHyperTextAccessible : public HyperTextAccessible {
   virtual a11y::role NativeRole() const override { return R; }
 
  protected:
-  virtual ~EnumRoleHyperTextAccessible() {}
+  virtual ~EnumRoleHyperTextAccessible() = default;
 };
 
 /**
@@ -127,7 +126,7 @@ class DummyAccessible : public AccessibleWrap {
   void ApplyARIAState(uint64_t* aState) const final;
 
  protected:
-  virtual ~DummyAccessible() {}
+  virtual ~DummyAccessible() = default;
 };
 
 }  // namespace a11y

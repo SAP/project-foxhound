@@ -1,0 +1,55 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* Only Nova uses custom checkbox styles. Previously, accent-color was the only customization. */
+@media -moz-pref("browser.nova.enabled") {
+  input[type="checkbox"] {
+    appearance: none;
+    border: var(--border-width) solid var(--checkbox-border-color);
+    border-radius: var(--checkbox-border-radius);
+    background-color: var(--checkbox-background-color);
+    min-width: var(--checkbox-size);
+
+    &:active {
+      background-color: var(--checkbox-background-color-active);
+    }
+
+    &[disabled] {
+      background-color: var(--checkbox-background-color-disabled);
+      opacity: var(--checkbox-opacity-disabled);
+    }
+
+    &:focus-visible {
+      outline: var(--focus-outline);
+      outline-offset: var(--focus-outline-offset);
+    }
+
+    &:checked {
+      background: url("chrome://global/content/elements/moz-checkbox-icon.svg") no-repeat center center / var(--icon-size-xsmall) var(--icon-size-xsmall);
+      background-color: var(--checkbox-background-color-checked);
+      -moz-context-properties: stroke;
+      stroke: light-dark(white, black);
+      border-color: var(--checkbox-border-color-checked);
+
+      &:active {
+        background-color: var(--checkbox-background-color-checked-active);
+        border-color: var(--checkbox-border-color-checked-active);
+      }
+
+      &[disabled] {
+        background-color: var(--checkbox-background-color-checked-disabled);
+        border-color: var(--checkbox-border-color-checked-disabled);
+      }
+    }
+
+    label:hover &:not(:active, [disabled]) {
+      background-color: var(--checkbox-background-color-hover);
+
+      &:checked {
+        background-color: var(--checkbox-background-color-checked-hover);
+        border-color: var(--checkbox-border-color-checked-hover);
+      }
+    }
+  }
+}

@@ -202,7 +202,6 @@ const UPDATE_PROPS = [
   "status",
   "statusText",
   "httpVersion",
-  "isRacing",
   "securityState",
   "securityInfo",
   "securityInfoAvailable",

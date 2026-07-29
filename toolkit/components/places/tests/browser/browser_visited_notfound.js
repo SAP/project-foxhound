@@ -22,7 +22,7 @@ add_task(async function test() {
   Assert.greater(frecency, 0, "Check initial frecency");
 
   // Used to verify errors are not marked as typed.
-  PlacesUtils.history.markPageAsTyped(NetUtil.newURI(url));
+  PlacesUtils.history.markPageAsTyped(Services.io.newURI(url));
 
   await BrowserTestUtils.withNewTab(
     {

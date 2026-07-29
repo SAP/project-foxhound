@@ -17,9 +17,7 @@ async def visit_site(client, expected):
         is_displayed=True,
     )
     if vpn:
-        pytest.skip(
-            "Region-locked, cannot test. Try using a VPN set to Canada or the USA."
-        )
+        pytest.skip("Region-locked, cannot test. Try using a VPN set to Mexico.")
 
 
 @pytest.mark.asyncio

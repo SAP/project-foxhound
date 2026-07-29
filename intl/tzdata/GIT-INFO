@@ -1,9 +1,5 @@
-commit ea346ffcbdc4cde776147d9456fd71121005e52f
-Author: Robin Leroy <egg.robin.leroy@gmail.com>
-Date:   Thu Dec 18 17:47:46 2025 +0100
+commit 1e485258faadaa2fd7b0e85434e18ffb17fd3d28
+Author: Robert Bastian <4706271+robertbastian@users.noreply.github.com>
+Date:   Thu Apr 23 21:13:59 2026 +0200
 
-    ICU-23296 Update tzdata to 2025c (#46)
-    
-    * ICU-23296 Pick up CLDR changes since 2025b
-    
-    * ICU-23296 Add 2025c data
+    ICU-23384 Manual patch

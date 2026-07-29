@@ -14,9 +14,9 @@ import mozilla.components.support.ktx.kotlin.tryGetHostFromUrl
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.whenever
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Test
+import kotlin.test.assertNotNull
 
 class SyncedTabsStorageSuggestionProviderTest {
     private lateinit var syncedTabs: SyncedTabsStorage

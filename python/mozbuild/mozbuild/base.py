@@ -3,6 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import errno
+import functools
 import io
 import json
 import logging
@@ -35,8 +36,6 @@ from .util import (
     construct_log_filename,
     cpu_count,
     is_running_under_coding_agent,
-    memoize,
-    memoized_property,
 )
 
 try:
@@ -301,7 +300,7 @@ class MozbuildObject(ProcessExecutionMixin):
         self._virtualenv_manager = command_site_manager
 
     @staticmethod
-    @memoize
+    @functools.cache
     def get_base_mozconfig_info(topsrcdir, path, env_mozconfig):
         # env_mozconfig is only useful for unittests, which change the value of
         # the environment variable, which has an impact on autodetection (when
@@ -445,7 +444,7 @@ class MozbuildObject(ProcessExecutionMixin):
 
         return platform_name, bits + "bit"
 
-    @memoized_property
+    @functools.cached_property
     def repository(self):
         """Get a `mozversioncontrol.Repository` object for the
         top source directory."""
@@ -855,7 +854,7 @@ class MozbuildObject(ProcessExecutionMixin):
         if keep_going:
             args.append("-k")
 
-        if isinstance(target, list):
+        if isinstance(target, (tuple, list)):
             args.extend(target)
         elif target:
             args.append(target)
@@ -938,7 +937,9 @@ class MachCommandBase(MozbuildObject):
     without having to change everything that inherits from it.
     """
 
-    def __init__(self, context, virtualenv_name=None, metrics=None, no_auto_log=False):
+    def __init__(
+        self, context, virtualenv_name=None, metrics_path=None, no_auto_log=False
+    ):
         # Attempt to discover topobjdir through environment detection, as it is
         # more reliable than mozconfig when cwd is inside an objdir.
         topsrcdir = context.topdir
@@ -991,7 +992,8 @@ class MachCommandBase(MozbuildObject):
         )
 
         self._mach_context = context
-        self.metrics = metrics
+        self._metrics_path = metrics_path
+        self._metrics = None
 
         # Incur mozconfig processing so we have unified error handling for
         # errors. Otherwise, the exceptions could bubble back to mach's error
@@ -1042,6 +1044,14 @@ class MachCommandBase(MozbuildObject):
                     "Log will not be kept for this command: {error}.",
                 )
                 self.logfile = None
+
+    @property
+    def metrics(self):
+        if self._metrics is None and self._metrics_path:
+            if self._mach_context._telemetry_init_done is not None:
+                self._mach_context._telemetry_init_done.wait()
+            self._metrics = self._mach_context.telemetry.metrics(self._metrics_path)
+        return self._metrics
 
     def _sub_mach(self, argv):
         return subprocess.call(

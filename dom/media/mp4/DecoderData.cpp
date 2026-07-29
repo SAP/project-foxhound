@@ -9,13 +9,14 @@
 #include "BufferReader.h"
 #include "MP4Metadata.h"
 #include "VideoUtils.h"
+#include "gfxUtils.h"
 #include "mozilla/EndianUtils.h"
 #include "mozilla/Logging.h"
 #include "mozilla/glean/DomMediaMp4Metrics.h"
 #include "mp4parse.h"
 
 #define LOG(...) \
-  MOZ_LOG(gMP4MetadataLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
+  MOZ_LOG_FMT(gMP4MetadataLog, mozilla::LogLevel::Debug, __VA_ARGS__)
 
 using mozilla::media::TimeUnit;
 
@@ -90,11 +91,17 @@ static MediaResult VerifyAudioOrVideoInfoAndRecordTelemetry(
   glean::media_mp4_parse::num_sample_description_entries.AccumulateSingleSample(
       audioOrVideoInfo->sample_info_count);
 
+  if (audioOrVideoInfo->sample_info_count == 0) {
+    return MediaResult(
+        NS_ERROR_DOM_MEDIA_METADATA_ERR,
+        RESULT_DETAIL("Got 0 sample info while verifying track."));
+  }
+
   bool hasMultipleCodecs = false;
   uint32_t cryptoCount = 0;
   Mp4parseCodec codecType = audioOrVideoInfo->sample_info[0].codec_type;
   for (uint32_t i = 0; i < audioOrVideoInfo->sample_info_count; i++) {
-    if (audioOrVideoInfo->sample_info[0].codec_type != codecType) {
+    if (audioOrVideoInfo->sample_info[i].codec_type != codecType) {
       hasMultipleCodecs = true;
     }
 
@@ -118,12 +125,6 @@ static MediaResult VerifyAudioOrVideoInfoAndRecordTelemetry(
                                SampleDescriptionEntriesHaveMultipleCryptoLabel>(
           cryptoCount >= 2))
       .Add();
-
-  if (audioOrVideoInfo->sample_info_count == 0) {
-    return MediaResult(
-        NS_ERROR_DOM_MEDIA_METADATA_ERR,
-        RESULT_DETAIL("Got 0 sample info while verifying track."));
-  }
 
   if (hasMultipleCodecs) {
     // Different codecs in a single track. We don't handle this.
@@ -171,8 +172,8 @@ MediaResult MP4AudioInfo::Update(const Mp4parseTrackInfo* aTrack,
       uint16_t preskip = mozilla::LittleEndian::readUint16(
           mp4ParseSampleCodecSpecific.data + 10);
       opusCodecSpecificData.mContainerCodecDelayFrames = preskip;
-      LOG("Opus stream in MP4 container, %" PRId64
-          " microseconds of encoder delay (%" PRIu16 ").",
+      LOG("Opus stream in MP4 container, {} microseconds of encoder delay "
+          "({}).",
           opusCodecSpecificData.mContainerCodecDelayFrames, preskip);
     } else {
       // This file will error later as it will be rejected by the opus decoder.
@@ -185,16 +186,13 @@ MediaResult MP4AudioInfo::Update(const Mp4parseTrackInfo* aTrack,
   } else if (codecType == MP4PARSE_CODEC_AAC ||
              codecType == MP4PARSE_CODEC_XHEAAC) {
     mMimeType = "audio/mp4a-latm"_ns;
-    int64_t codecDelayUS = aTrack->media_time;
-    double USECS_PER_S = 1e6;
-    // We can't use mozilla::UsecsToFrames here because we need to round, and it
-    // floors.
+    int64_t codecDelayTicks = aTrack->media_time;
     uint32_t encoderDelayFrameCount = 0;
-    if (codecDelayUS > 0) {
+    if (codecDelayTicks > 0) {
       encoderDelayFrameCount = static_cast<uint32_t>(
-          std::lround(static_cast<double>(codecDelayUS) *
-                      aAudio->sample_info->sample_rate / USECS_PER_S));
-      LOG("AAC stream in MP4 container, %" PRIu32 " frames of encoder delay.",
+          std::lround(static_cast<double>(codecDelayTicks) *
+                      aAudio->sample_info->sample_rate / aTrack->time_scale));
+      LOG("AAC stream in MP4 container, {} frames of encoder delay.",
           encoderDelayFrameCount);
     }
 
@@ -217,8 +215,7 @@ MediaResult MP4AudioInfo::Update(const Mp4parseTrackInfo* aTrack,
         // can be done properly.
         mediaFrameCount =
             lastIndice.end_composition - firstIndice.start_composition;
-        LOG("AAC stream in MP4 container, total media duration is %" PRIu64
-            " frames",
+        LOG("AAC stream in MP4 container, total media duration is {} frames",
             mediaFrameCount);
       } else {
         LOG("AAC stream in MP4 container, couldn't determine total media time");
@@ -259,8 +256,10 @@ MediaResult MP4AudioInfo::Update(const Mp4parseTrackInfo* aTrack,
   mRate = aAudio->sample_info[0].sample_rate;
   mChannels = aAudio->sample_info[0].channels;
   mBitDepth = aAudio->sample_info[0].bit_depth;
-  mExtendedProfile =
-      AssertedCast<int8_t>(aAudio->sample_info[0].extended_profile);
+  if (aAudio->sample_info[0].extended_profile <= INT8_MAX) {
+    mExtendedProfile =
+        AssertedCast<int8_t>(aAudio->sample_info[0].extended_profile);
+  }
   if (aTrack->duration > TimeUnit::MaxTicks()) {
     mDuration = TimeUnit::FromInfinity();
   } else {
@@ -344,6 +343,47 @@ MediaResult MP4VideoInfo::Update(const Mp4parseTrackInfo* track,
   Mp4parseByteData extraData = video->sample_info[0].extra_data;
   // If length is 0 we append nothing
   mExtraData->AppendElements(extraData.data, extraData.length);
+  const auto& si = video->sample_info[0];
+  if (si.has_colour_info) {
+    mTransferFunction = gfxUtils::CicpToTransferFunction(
+        static_cast<gfx::CICP::TransferCharacteristics>(
+            si.transfer_characteristics));
+    mColorPrimaries = gfxUtils::CicpToColorPrimaries(
+        static_cast<gfx::CICP::ColourPrimaries>(si.colour_primaries),
+        gMP4MetadataLog);
+    mColorSpace = gfxUtils::CicpToColorSpace(
+        static_cast<gfx::CICP::MatrixCoefficients>(si.matrix_coefficients),
+        static_cast<gfx::CICP::ColourPrimaries>(si.colour_primaries),
+        gMP4MetadataLog);
+    mColorRange =
+        si.full_range_flag ? gfx::ColorRange::FULL : gfx::ColorRange::LIMITED;
+  }
+  if (si.has_mastering_display || si.has_content_light_level) {
+    gfx::HDRMetadata hdr;
+    if (si.has_mastering_display) {
+      const auto& md = si.mastering_display;
+      gfx::Smpte2086Metadata smpte;
+      // display_primaries_x/y are remapped by mp4parse from G/B/R wire order
+      // to R[0], G[1], B[2].
+      smpte.displayPrimaryRed = {md.display_primaries_x[0] / 50000.0f,
+                                 md.display_primaries_y[0] / 50000.0f};
+      smpte.displayPrimaryGreen = {md.display_primaries_x[1] / 50000.0f,
+                                   md.display_primaries_y[1] / 50000.0f};
+      smpte.displayPrimaryBlue = {md.display_primaries_x[2] / 50000.0f,
+                                  md.display_primaries_y[2] / 50000.0f};
+      smpte.whitePoint = {md.white_point_x / 50000.0f,
+                          md.white_point_y / 50000.0f};
+      smpte.maxLuminance = md.max_display_mastering_luminance / 10000.0f;
+      smpte.minLuminance = md.min_display_mastering_luminance / 10000.0f;
+      hdr.mSmpte2086 = Some(smpte);
+    }
+    if (si.has_content_light_level) {
+      const auto& cll = si.content_light_level;
+      hdr.mContentLightLevel = Some(gfx::ContentLightLevel{
+          cll.max_content_light_level, cll.max_pic_average_light_level});
+    }
+    mHDRMetadata = Some(hdr);
+  }
   return NS_OK;
 }
 

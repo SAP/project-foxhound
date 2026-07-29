@@ -68,6 +68,13 @@ add_setup(async function setup() {
 });
 
 add_task(async function testHTTPSSVC() {
+  // Initialize FOG before the DNS lookup so that server knobs (which enable
+  // metrics disabled by default in non-Firefox builds) are applied before the
+  // metric recording runs.
+  if (!inChildProcess()) {
+    Services.fog.initializeFOG();
+  }
+
   // use the h2 server as DOH provider
   await setTRRURI("https://foo.example.com:" + h2Port + "/doh?httpssvc=1");
 
@@ -152,7 +159,7 @@ add_task(async function testHTTPSSVC() {
   Assert.equal(
     answer[1].values[3].QueryInterface(Ci.nsISVCParamIPv6Hint).ipv6Hint[1]
       .address,
-    "fe80::794f:6d2c:3d5e:7836",
+    "2001:db8::1",
     "got correct answer"
   );
   Assert.equal(
@@ -163,6 +170,13 @@ add_task(async function testHTTPSSVC() {
   Assert.equal(answer[2].priority, 3);
   Assert.equal(answer[2].name, "hello");
   Assert.equal(answer[2].values.length, 0);
+
+  // The HTTPS RR was resolved over DoH/TRR, so https_rr_lookup_time should
+  // have a sample under the "doh" key.
+  if (!inChildProcess()) {
+    let doh = Glean.dns.httpsRrLookupTime.doh.testGetValue();
+    Assert.ok(doh, "https_rr_lookup_time(doh) was recorded");
+  }
 });
 
 add_task(async function test_aliasform() {

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -103,9 +101,22 @@ TRRServiceParent::Observe(nsISupports* aSubject, const char* aTopic,
 mozilla::ipc::IPCResult
 TRRServiceParent::RecvNotifyNetworkConnectivityServiceObservers(
     const nsCString& aTopic) {
+  // Must match TRRServiceChild::Observe()
+  const char* topic = nullptr;
+  if (!strcmp(aTopic.get(),
+              "network:connectivity-service:ip-checks-complete-from-socket-"
+              "process")) {
+    topic = "network:connectivity-service:ip-checks-complete";
+  } else if (!strcmp(aTopic.get(),
+                     "network:connectivity-service:dns-checks-complete-from-"
+                     "socket-process")) {
+    topic = "network:connectivity-service:dns-checks-complete";
+  } else {
+    return IPC_FAIL(this, "Unexpected notification");
+  }
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
   if (obs) {
-    obs->NotifyObservers(nullptr, aTopic.get(), nullptr);
+    obs->NotifyObservers(nullptr, topic, nullptr);
   }
   return IPC_OK();
 }

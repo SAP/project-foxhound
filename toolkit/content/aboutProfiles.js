@@ -224,7 +224,8 @@ function createProfileWizard() {
     "",
     "centerscreen,chrome,modal,titlebar",
     ProfileService,
-    { CreateProfile }
+    { CreateProfile },
+    "aboutprofiles"
   );
 }
 

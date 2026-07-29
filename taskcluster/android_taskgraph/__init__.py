@@ -22,7 +22,6 @@ def register(graph_config):
     """
     _import_modules([
         "job",
-        "parameters",
         "target_tasks",
         "util.group_by",
         "worker_types",

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -52,8 +50,7 @@ class RemoteBrowser : public nsISupports {
   virtual TabId GetTabId() const = 0;
   virtual LayersId GetLayersId() const = 0;
   virtual BrowsingContext* GetBrowsingContext() const = 0;
-  virtual nsILoadContext* GetLoadContext() const = 0;
-  virtual bool CanRecv() const = 0;
+  virtual bool CanSend() const = 0;
 
   virtual void LoadURL(nsDocShellLoadState* aLoadState) = 0;
   virtual void ResumeLoad(uint64_t aPendingSwitchId) = 0;

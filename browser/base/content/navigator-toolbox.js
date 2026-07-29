@@ -1,5 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -309,7 +308,9 @@ document.addEventListener(
     }
     navigatorToolbox.addEventListener("click", onClick);
     widgetOverflow.addEventListener("click", onClick);
-    document.getElementById("sidebar-main").addEventListener("click", onClick);
+    document
+      .getElementById("sidebar-container")
+      .addEventListener("click", onClick);
 
     function onKeyPress(event) {
       const isLikeLeftClick = event.key === "Enter" || event.key === " ";
@@ -331,6 +332,7 @@ document.addEventListener(
         #fxa-toolbar-menu-button,
         #unified-extensions-button,
         #library-button,
+        #ipprotection-button,
         #split-view-button,
         #smartwindow-ask-button
       `);
@@ -416,6 +418,10 @@ document.addEventListener(
 
         case "library-button":
           PanelUI.showSubView("appMenu-libraryView", element, event);
+          break;
+
+        case "ipprotection-button":
+          PanelUI.showSubView("PanelUI-ipprotection", element, event);
           break;
 
         case "split-view-button":

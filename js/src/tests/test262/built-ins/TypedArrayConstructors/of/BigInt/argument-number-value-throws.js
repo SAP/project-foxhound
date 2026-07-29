@@ -12,7 +12,7 @@ info: |
     ...
     c. Perform ? Set(newObj, Pk, kValue, true).
   ...
-includes: [testBigIntTypedArray.js]
+includes: [testTypedArray.js]
 features: [BigInt, TypedArray]
 ---*/
 
@@ -37,7 +37,7 @@ testWithBigIntTypedArrayConstructors(function(TA) {
   });
 
   assert.sameValue(lastValue, "obj2");
-});
+}, null, ["passthrough"]);
 
 
 reportCompare(0, 0);

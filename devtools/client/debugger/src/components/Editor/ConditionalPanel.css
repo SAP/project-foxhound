@@ -30,7 +30,7 @@
 
 .conditional-breakpoint-panel .prompt {
   font-size: 1.8em;
-  color: var(--theme-graphs-orange);
+  color: var(--theme-breakpoint-conditional-border-color);
   padding-left: 3px;
   padding-right: 3px;
   padding-bottom: 3px;

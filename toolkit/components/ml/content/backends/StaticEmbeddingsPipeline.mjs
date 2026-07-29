@@ -85,11 +85,31 @@ export class StaticEmbeddingsPipeline {
   #initializeStart;
 
   /**
+   * Snapshots captured during initialization, prepended onto the per-run
+   * runTimestamps timeline when a request completes.
+   *
+   * @type {Array<{name: string, when: number}>}
+   */
+  #metrics = [];
+
+  /**
    * Get a native JS double out of the backing data array.
    *
    * @type {(index: number) => number}
    */
   #getFloat;
+
+  /**
+   * @param {object} entry
+   * @param {string} entry.name
+   * @param {{when?: number}} [entry.snapshot]
+   */
+  #metricsSnapShot({ name, snapshot = {} }) {
+    if (!("when" in snapshot)) {
+      snapshot.when = ChromeUtils.now();
+    }
+    this.#metrics.push({ name, ...snapshot });
+  }
 
   /**
    * @type {TypedArray}
@@ -255,13 +275,19 @@ export class StaticEmbeddingsPipeline {
       "Tokenizer load"
     );
 
-    return new StaticEmbeddingsPipeline(
+    const pipeline = new StaticEmbeddingsPipeline(
       tokenizer,
       npyData,
       dtype,
       dimensions,
       initializeStart
     );
+    pipeline.#metricsSnapShot({
+      name: "initializationStart",
+      snapshot: { when: initializeStart },
+    });
+    pipeline.#metricsSnapShot({ name: "initializationEnd" });
+    return pipeline;
   }
 
   /**
@@ -353,61 +379,70 @@ export class StaticEmbeddingsPipeline {
     }
 
     let tokenCount = 0;
+    let charCount = 0;
     const sequenceCount = request.args.length;
 
-    let beforeResponse = ChromeUtils.now();
-    const response = {
-      metrics: [],
-      output: request.args.map(text => {
-        // Always do the vector math in f32 space, even if the underlying precision
-        // is lower.
-        const embedding = new Float32Array(this.#dimensions);
-
-        let tokenizeStart = ChromeUtils.now();
-        /** @type {number[]} */
-        const tokenIds = this.#tokenizer.encode(text);
-        ChromeUtils.addProfilerMarker(
-          "MLEngine:StaticEmbeddings",
-          { startTime: tokenizeStart },
-          `Tokenized text: ${tokenIds.length} tokens`
-        );
-        tokenCount += tokenIds.length;
-
-        // Sum up the embeddings.
-        for (const tokenId of tokenIds) {
-          for (let i = 0; i < this.#dimensions; i++) {
-            // Inflate the double into a JavaScript double, then add it.
-            embedding[i] += this.#getFloat(tokenId * this.#dimensions + i);
-          }
-        }
-
-        if (request.options.normalize) {
-          // Compute the average by dividing by the tokens provided.
-          // Also compute the sum of the squares while we're here.
-          let sumSquares = 0;
-          for (let i = 0; i < this.#dimensions; i++) {
-            const n = embedding[i] / tokenIds.length;
-            embedding[i] = n;
-            sumSquares += n * n;
-          }
-
-          // Apply the normalization.
-          const magnitude = Math.sqrt(sumSquares);
-          if (magnitude != 0) {
-            for (let i = 0; i < this.#dimensions; i++) {
-              embedding[i] = embedding[i] / magnitude;
-            }
-          }
-        } else {
-          // Only compute the average by dividing by the tokens provided.
-          for (let i = 0; i < this.#dimensions; i++) {
-            embedding[i] = embedding[i] / tokenIds.length;
-          }
-        }
-
-        return embedding;
-      }),
+    const metrics = { runTimestamps: [] };
+    const snapshot = (name, when = ChromeUtils.now()) => {
+      metrics.runTimestamps.push({ name, when });
     };
+
+    let beforeResponse = ChromeUtils.now();
+    snapshot("runStart", beforeResponse);
+    const output = request.args.map(text => {
+      // Always do the vector math in f32 space, even if the underlying precision
+      // is lower.
+      const embedding = new Float32Array(this.#dimensions);
+      charCount += text.length;
+
+      let tokenizeStart = ChromeUtils.now();
+      /** @type {number[]} */
+      const tokenIds = this.#tokenizer.encode(text);
+      ChromeUtils.addProfilerMarker(
+        "MLEngine:StaticEmbeddings",
+        { startTime: tokenizeStart },
+        `Tokenized text: ${tokenIds.length} tokens`
+      );
+      tokenCount += tokenIds.length;
+
+      // Sum up the embeddings.
+      for (const tokenId of tokenIds) {
+        for (let i = 0; i < this.#dimensions; i++) {
+          // Inflate the double into a JavaScript double, then add it.
+          embedding[i] += this.#getFloat(tokenId * this.#dimensions + i);
+        }
+      }
+
+      if (request.options.normalize) {
+        // Compute the average by dividing by the tokens provided.
+        // Also compute the sum of the squares while we're here.
+        let sumSquares = 0;
+        for (let i = 0; i < this.#dimensions; i++) {
+          const n = embedding[i] / tokenIds.length;
+          embedding[i] = n;
+          sumSquares += n * n;
+        }
+
+        // Apply the normalization.
+        const magnitude = Math.sqrt(sumSquares);
+        if (magnitude != 0) {
+          for (let i = 0; i < this.#dimensions; i++) {
+            embedding[i] = embedding[i] / magnitude;
+          }
+        }
+      } else {
+        // Only compute the average by dividing by the tokens provided.
+        for (let i = 0; i < this.#dimensions; i++) {
+          embedding[i] = embedding[i] / tokenIds.length;
+        }
+      }
+
+      return embedding;
+    });
+
+    const endTime = ChromeUtils.now();
+    snapshot("runEnd", endTime);
+    const inferenceTime = endTime - beforeResponse;
 
     ChromeUtils.addProfilerMarker(
       "MLEngine:StaticEmbeddings",
@@ -424,6 +459,22 @@ export class StaticEmbeddingsPipeline {
       this.#initializeStart = null;
     }
 
-    return response;
+    return {
+      output,
+      metrics: {
+        runTimestamps: [...this.#metrics, ...metrics.runTimestamps],
+        inputChars: charCount,
+        inputTokens: tokenCount,
+        inferenceTime,
+        tokensPerSecond:
+          inferenceTime > 0 && tokenCount > 0
+            ? tokenCount / (inferenceTime / 1000)
+            : undefined,
+        charsPerSecond:
+          inferenceTime > 0 && charCount > 0
+            ? charCount / (inferenceTime / 1000)
+            : undefined,
+      },
+    };
   }
 }

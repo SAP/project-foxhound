@@ -12,6 +12,7 @@ import mozunit
 import pytest
 from taskgraph.util import json
 
+from gecko_taskgraph.test.conftest import FakeParameters
 from gecko_taskgraph.transforms import test as test_transforms
 
 
@@ -162,14 +163,14 @@ def test_split_variants(monkeypatch, run_full_config_transform, make_test_task):
         pytest.param(
             {
                 "attributes": {"unittest_variant": "webrender-sw+1proc"},
-                "test-platform": "linux1804-64-clang-trunk-qr/opt",
+                "test-platform": "linux2404-64-clang-trunk/opt",
             },
             {
                 "platform": {
                     "arch": "64",
                     "os": {
                         "name": "linux",
-                        "version": "1804",
+                        "version": "2404",
                     },
                 },
                 "build": {
@@ -319,6 +320,123 @@ def test_ensure_spi_disabled_on_all_but_spi(
     )[0]
     pprint(task)
     callback(task)
+
+
+def test_resolve_dynamic_chunks_uses_variant_suffix(
+    monkeypatch, run_transform, make_test_task
+):
+    """resolve_dynamic_chunks should include variant-suffix in the suite name
+    passed to get_runtimes."""
+    calls = []
+
+    def fake_get_runtimes(platform, suite_name):
+        calls.append((platform, suite_name))
+        if suite_name == "task-swr":
+            return {"manifest.toml": 600}
+        return {}
+
+    monkeypatch.setattr(
+        "gecko_taskgraph.transforms.test.chunk.get_runtimes", fake_get_runtimes
+    )
+    monkeypatch.setattr(
+        "gecko_taskgraph.transforms.test.chunk.resolve_manifest_runtimes",
+        lambda runtimes, manifests: {
+            m: runtimes[m] for m in manifests if m in runtimes
+        },
+    )
+
+    task = make_test_task(**{
+        "chunks": "dynamic",
+        "default-chunks": 10,
+        "variant-suffix": "-swr",
+        "test-manifests": {"active": ["manifest.toml"], "skipped": []},
+    })
+    tasks = list(run_transform(test_transforms.chunk.resolve_dynamic_chunks, task))
+    assert len(tasks) == 1
+    assert ("linux64", "task-swr") in calls
+    assert tasks[0]["chunks"] == 1
+
+
+def test_resolve_dynamic_chunks_falls_back_without_runtimes(
+    monkeypatch, run_transform, make_test_task
+):
+    """resolve_dynamic_chunks should fall back to default-chunks when
+    get_runtimes returns no data."""
+    monkeypatch.setattr(
+        "gecko_taskgraph.transforms.test.chunk.get_runtimes", lambda p, s: {}
+    )
+
+    task = make_test_task(**{
+        "chunks": "dynamic",
+        "default-chunks": 10,
+        "variant-suffix": "-swr",
+        "test-manifests": {"active": ["manifest.toml"], "skipped": []},
+    })
+    tasks = list(run_transform(test_transforms.chunk.resolve_dynamic_chunks, task))
+    assert tasks[0]["chunks"] == 10
+
+
+def test_split_chunks_uses_variant_suffix(monkeypatch, run_transform, make_test_task):
+    """split_chunks should pass the variant-suffixed suite name to
+    chunk_manifests so manifests are distributed using variant-specific
+    runtime data."""
+    calls = []
+
+    def fake_chunk_manifests(suite, platform, chunks, manifests):
+        calls.append(suite)
+        return [manifests]
+
+    monkeypatch.setattr(
+        "gecko_taskgraph.transforms.test.chunk.chunk_manifests",
+        fake_chunk_manifests,
+    )
+
+    task = make_test_task(**{
+        "chunks": 1,
+        "variant-suffix": "-swr",
+        "treeherder-symbol": "M-swr(bc)",
+        "test-manifests": {"active": ["manifest.toml"], "skipped": []},
+    })
+    tasks = list(
+        run_transform(
+            test_transforms.chunk.split_chunks,
+            task,
+            params=FakeParameters({"backstop": False, "try_task_config": {}}),
+        )
+    )
+    assert len(tasks) == 1
+    assert "task-swr" in calls
+
+
+def test_split_chunks_base_task_no_variant_suffix(
+    monkeypatch, run_transform, make_test_task
+):
+    """split_chunks should pass the plain test-name when there is no variant."""
+    calls = []
+
+    def fake_chunk_manifests(suite, platform, chunks, manifests):
+        calls.append(suite)
+        return [manifests]
+
+    monkeypatch.setattr(
+        "gecko_taskgraph.transforms.test.chunk.chunk_manifests",
+        fake_chunk_manifests,
+    )
+
+    task = make_test_task(**{
+        "chunks": 1,
+        "treeherder-symbol": "M(bc)",
+        "test-manifests": {"active": ["manifest.toml"], "skipped": []},
+    })
+    tasks = list(
+        run_transform(
+            test_transforms.chunk.split_chunks,
+            task,
+            params=FakeParameters({"backstop": False, "try_task_config": {}}),
+        )
+    )
+    assert len(tasks) == 1
+    assert "task" in calls
 
 
 if __name__ == "__main__":

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -122,7 +120,8 @@ bool RemoteWorkerManager::MatchRemoteType(const nsACString& processRemoteType,
 
 // static
 Result<nsCString, nsresult> RemoteWorkerManager::GetRemoteType(
-    const nsCOMPtr<nsIPrincipal>& aPrincipal, WorkerKind aWorkerKind) {
+    const nsCOMPtr<nsIPrincipal>& aPrincipal, WorkerKind aWorkerKind,
+    const nsACString& aCurrentRemoteType) {
   AssertIsOnMainThread();
 
   MOZ_ASSERT_IF(aWorkerKind == WorkerKind::WorkerKindService,
@@ -135,19 +134,8 @@ Result<nsCString, nsresult> RemoteWorkerManager::GetRemoteType(
     return NOT_REMOTE_TYPE;
   }
 
-  nsCString preferredRemoteType = DEFAULT_REMOTE_TYPE;
-  if (aWorkerKind == WorkerKind::WorkerKindShared) {
-    if (auto* contentChild = ContentChild::GetSingleton()) {
-      // For a shared worker set the preferred remote type to the content
-      // child process remote type.
-      preferredRemoteType = contentChild->GetRemoteType();
-    } else if (aPrincipal->IsSystemPrincipal()) {
-      preferredRemoteType = NOT_REMOTE_TYPE;
-    }
-  }
-
   auto result = IsolationOptionsForWorker(
-      aPrincipal, aWorkerKind, preferredRemoteType, FissionAutostart());
+      aPrincipal, aWorkerKind, aCurrentRemoteType, FissionAutostart());
   if (NS_WARN_IF(result.isErr())) {
     LOG(("GetRemoteType Abort: IsolationOptionsForWorker failed"));
     return Err(NS_ERROR_DOM_ABORT_ERR);
@@ -162,7 +150,7 @@ Result<nsCString, nsresult> RemoteWorkerManager::GetRemoteType(
         ("GetRemoteType workerType=%s, principal=%s, "
          "preferredRemoteType=%s, selectedRemoteType=%s",
          aWorkerKind == WorkerKind::WorkerKindService ? "service" : "shared",
-         principalOrigin.get(), preferredRemoteType.get(),
+         principalOrigin.get(), PromiseFlatCString(aCurrentRemoteType).get(),
          options.mRemoteType.get()));
   }
 

@@ -18,7 +18,6 @@ import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.isTallWindow
 import org.mozilla.fenix.ext.isWideWindow
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.home.toolbar.BrowserToolbarMiddleware
 import org.mozilla.fenix.home.toolbar.BrowserToolbarTelemetryMiddleware
 import org.mozilla.fenix.search.BrowserToolbarSearchMiddleware
@@ -64,7 +63,7 @@ object HomeToolbarStoreBuilder {
                     useCases = context.components.useCases,
                     navController = navController,
                     browsingModeManager = browsingModeManager,
-                    settings = context.settings(),
+                    settings = context.components.settings,
                     isWideScreen = { fragment.isWideWindow() },
                     isTallScreen = { fragment.isTallWindow() },
                     scope = lifecycleScope,

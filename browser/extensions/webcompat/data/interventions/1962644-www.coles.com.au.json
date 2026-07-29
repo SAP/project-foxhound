@@ -1,0 +1,15 @@
+{
+  "label": "www.coles.com.au",
+  "bugs": {
+    "1962644": {
+      "issue": "broken-layout",
+      "matches": ["*://www.coles.com.au/catalogues/view*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome", "add_Firefox_as_Gecko"]
+    }
+  ]
+}

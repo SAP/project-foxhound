@@ -243,6 +243,16 @@ public final class MediaDrmProxy {
     }
   }
 
+  @WrapForJNI
+  public void setOriginID(final String originID) {
+    if (DEBUG) Log.d(LOGTAG, "setOriginID");
+    try {
+      mImpl.setOriginID(originID);
+    } catch (final RuntimeException e) {
+      Log.w(LOGTAG, "setOriginID failed", e);
+    }
+  }
+
   // Get corresponding MediaCrypto object by a generated UUID for MediaCodec.
   // Will be called on MediaFormatReader's TaskQueue.
   @WrapForJNI

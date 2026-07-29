@@ -906,19 +906,39 @@ var vectors = [
   },
   {
     data: "<svg><use href='http://example.com/test.svg'></svg>",
-    flags: 1, // ParserUtils.SanitizerAllowStyle
+    flags: 0,
     sanitized: "<html><head></head><body><svg><use></use></svg></body></html>",
   },
   {
     // fragments that reference the same document are allowed.
     data: "<svg><use href='#x'></svg>",
-    flags: 1, // ParserUtils.SanitizerAllowStyle
+    flags: 0,
     sanitized:
       '<html><head></head><body><svg><use href="#x"></use></svg></body></html>',
   },
   {
     data: '<svg><use xlink:href="http://example/#baz"/></svg>',
-    flags: 1, // ParserUtils.SanitizerAllowStyl,
+    flags: 0,
     sanitized: "<html><head></head><body><svg><use></use></svg></body></html>",
+  },
+  {
+    // xlink:arcrole is not in the sanitizer's allowed xlink attribute list,
+    // so it must be removed.
+    data: '<svg><a xlink:arcrole="foo">bar</a></svg>',
+    flags: 0,
+    sanitized: "<html><head></head><body><svg><a>bar</a></svg></body></html>",
+  },
+  {
+    // xlink:role is also not in the allowed list and must be removed.
+    data: '<svg><a xlink:role="foo">bar</a></svg>',
+    flags: 0,
+    sanitized: "<html><head></head><body><svg><a>bar</a></svg></body></html>",
+  },
+  {
+    // Allowed xlink attribute (xlink:title) should be preserved.
+    data: '<svg><a xlink:title="foo">bar</a></svg>',
+    flags: 0,
+    sanitized:
+      '<html><head></head><body><svg><a xlink:title="foo">bar</a></svg></body></html>',
   },
 ];

@@ -10,7 +10,7 @@
 add_task(async function test_prefs_bindings_initted() {
   await openPreferencesViaOpenPreferencesAPI("general", { leaveOpen: true });
   let doc = gBrowser.selectedBrowser.contentDocument;
-  let prefReader = doc.ownerGlobal.Preferences;
+  let prefReader = doc.documentGlobal.Preferences;
   let prefBasedCheckboxes = Array.from(
     doc.querySelectorAll("checkbox[preference]")
   );

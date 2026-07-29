@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -365,9 +363,9 @@ constexpr Maybe<U> Some(T&& aValue);
  *     functions |Some()| and |Nothing()|.
  */
 template <class T>
-class MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS MOZ_GSL_OWNER Maybe
-    : private detail::MaybeStorage<T>,
-      public detail::Maybe_CopyMove_Enabler<T> {
+class MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS MOZ_GSL_OWNER
+    MOZ_EMPTY_BASES Maybe : private detail::MaybeStorage<T>,
+                            public detail::Maybe_CopyMove_Enabler<T> {
   template <typename, bool, bool, bool>
   friend class detail::Maybe_CopyMove_Enabler;
 
@@ -535,14 +533,14 @@ class MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS MOZ_GSL_OWNER Maybe
 
   /* Returns the contents of this Maybe<T> by pointer. Unsafe unless |isSome()|.
    */
-  T* ptr();
+  constexpr T* ptr();
   constexpr const T* ptr() const;
 
   /*
    * Returns the contents of this Maybe<T> by pointer. If |isNothing()|,
    * returns the default value provided.
    */
-  T* ptrOr(T* aDefault) {
+  constexpr T* ptrOr(T* aDefault) {
     if (isSome()) {
       return ptr();
     }
@@ -561,7 +559,7 @@ class MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS MOZ_GSL_OWNER Maybe
    * returns the value returned from the function or functor provided.
    */
   template <typename F>
-  T* ptrOrFrom(F&& aFunc) {
+  constexpr T* ptrOrFrom(F&& aFunc) {
     if (isSome()) {
       return ptr();
     }
@@ -569,7 +567,7 @@ class MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS MOZ_GSL_OWNER Maybe
   }
 
   template <typename F>
-  const T* ptrOrFrom(F&& aFunc) const {
+  constexpr const T* ptrOrFrom(F&& aFunc) const {
     if (isSome()) {
       return ptr();
     }
@@ -992,7 +990,7 @@ constexpr T Maybe<T>::value() const&& {
 }
 
 template <typename T>
-T* Maybe<T>::ptr() {
+constexpr T* Maybe<T>::ptr() {
   MOZ_RELEASE_ASSERT(isSome());
   return &ref();
 }

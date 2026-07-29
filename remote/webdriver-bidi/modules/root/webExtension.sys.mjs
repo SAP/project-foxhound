@@ -8,6 +8,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   Addon: "chrome://remote/content/shared/Addon.sys.mjs",
+  AppInfo: "chrome://remote/content/shared/AppInfo.sys.mjs",
   assert: "chrome://remote/content/shared/webdriver/Assert.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
   pprint: "chrome://remote/content/shared/Format.sys.mjs",
@@ -74,7 +75,9 @@ class WebExtensionModule extends RootBiDiModule {
     super(messageHandler);
   }
 
-  destroy() {}
+  destroy() {
+    lazy.Addon.cleanupTemporaryAddonFiles();
+  }
 
   /**
    * Installs a WebExtension.
@@ -84,6 +87,8 @@ class WebExtensionModule extends RootBiDiModule {
    * @param {object=} options
    * @param {ExtensionArchivePath|ExtensionPath|ExtensionBase64} options.extensionData
    *     The WebExtension to be installed.
+   * @param {boolean=} options.moz_allow_private_browsing (moz:allowPrivateBrowsing)
+   *     If true, install the web extension in private browsing mode. Defaults to `false`.
    * @param {boolean=} options.moz_permanent (moz:permanent)
    *     If true, install the web extension permanently. Defaults to `false`.
    *
@@ -96,7 +101,11 @@ class WebExtensionModule extends RootBiDiModule {
    *     Tried to install an invalid WebExtension.
    */
   async install(options = {}) {
-    const { extensionData, "moz:permanent": permanent = false } = options;
+    const {
+      extensionData,
+      "moz:allowPrivateBrowsing": allowPrivateBrowsing = false,
+      "moz:permanent": permanent = false,
+    } = options;
 
     lazy.assert.object(
       extensionData,
@@ -114,9 +123,22 @@ class WebExtensionModule extends RootBiDiModule {
     )(type);
 
     lazy.assert.boolean(
+      allowPrivateBrowsing,
+      lazy.pprint`Expected "moz:allowPrivateBrowsing" to be a boolean, got ${allowPrivateBrowsing}`
+    );
+
+    lazy.assert.boolean(
       permanent,
       lazy.pprint`Expected "moz:permanent" to be a boolean, got ${permanent}`
     );
+
+    if (lazy.AppInfo.isAndroid && allowPrivateBrowsing && !permanent) {
+      // Bug 2030934: Temporary WebExtension installation does not work
+      // for private browsing mode on Android.
+      throw new lazy.error.UnsupportedOperationError(
+        `On ${lazy.AppInfo.name}, "moz:allowPrivateBrowsing" requires "moz:permanent: true" to be set.`
+      );
+    }
 
     let extensionId;
 
@@ -130,7 +152,7 @@ class WebExtensionModule extends RootBiDiModule {
         extensionId = await lazy.Addon.installWithBase64(
           value,
           !permanent,
-          false
+          allowPrivateBrowsing
         );
         break;
       case ExtensionDataType.ArchivePath:
@@ -146,7 +168,11 @@ class WebExtensionModule extends RootBiDiModule {
           );
         }
 
-        extensionId = await lazy.Addon.installWithPath(path, !permanent, false);
+        extensionId = await lazy.Addon.installWithPath(
+          path,
+          !permanent,
+          allowPrivateBrowsing
+        );
     }
 
     return {

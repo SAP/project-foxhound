@@ -1,5 +1,13 @@
 // This file contains overrides for config.h, that can be platform-specific.
 
+// CBS is required for VP9 and AV1 decoding.
+#if !defined(MOZ_FFVPX_AUDIOONLY)
+#undef CONFIG_CBS
+#define CONFIG_CBS 1
+#undef CONFIG_CBS_VP9
+#define CONFIG_CBS_VP9 1
+#endif
+
 #undef CONFIG_FFT
 #undef CONFIG_RDFT
 #define CONFIG_FFT 1

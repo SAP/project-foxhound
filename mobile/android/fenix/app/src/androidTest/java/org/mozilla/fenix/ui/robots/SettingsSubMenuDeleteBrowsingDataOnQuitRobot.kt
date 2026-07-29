@@ -58,7 +58,7 @@ class SettingsSubMenuDeleteBrowsingDataOnQuitRobot {
 
     fun clickDeleteBrowsingOnQuitButtonSwitch() {
         Log.i(TAG, "clickDeleteBrowsingOnQuitButtonSwitch: Trying to click the \"Delete browsing data on quit\" toggle")
-        onView(withResourceName("switch_widget")).click()
+        onView(withResourceName("switchWidget")).click()
         Log.i(TAG, "clickDeleteBrowsingOnQuitButtonSwitch: Clicked the \"Delete browsing data on quit\" toggle")
     }
 
@@ -129,7 +129,7 @@ class SettingsSubMenuDeleteBrowsingDataOnQuitRobot {
 private fun goBackButton() = onView(withContentDescription("Navigate up"))
 
 private fun deleteBrowsingOnQuitButton() =
-    onView(withClassName(containsString("android.widget.Switch")))
+    onView(withClassName(containsString("com.google.android.material.materialswitch.MaterialSwitch")))
 
 private fun openTabsCheckbox() =
     onView(withText(R.string.preferences_delete_browsing_data_tabs_title_2))

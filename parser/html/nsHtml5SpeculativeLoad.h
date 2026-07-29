@@ -43,6 +43,9 @@ class nsHtml5SpeculativeLoad {
   nsHtml5SpeculativeLoad();
   ~nsHtml5SpeculativeLoad();
 
+  nsHtml5SpeculativeLoad(const nsHtml5SpeculativeLoad&) = delete;
+  nsHtml5SpeculativeLoad& operator=(const nsHtml5SpeculativeLoad&) = delete;
+
   inline void InitBase(nsHtml5String aUrl) {
     MOZ_ASSERT(mOpCode == eSpeculativeLoadUninitialized,
                "Trying to reinitialize a speculative load!");
@@ -322,9 +325,6 @@ class nsHtml5SpeculativeLoad {
   void Perform(nsHtml5TreeOpExecutor* aExecutor);
 
  private:
-  nsHtml5SpeculativeLoad(const nsHtml5SpeculativeLoad&) = delete;
-  nsHtml5SpeculativeLoad& operator=(const nsHtml5SpeculativeLoad&) = delete;
-
   eHtml5SpeculativeLoad mOpCode;
 
   /**

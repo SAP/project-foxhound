@@ -34,6 +34,8 @@ import java.io.IOException
 import java.io.InputStream
 import java.util.Date
 import java.util.concurrent.TimeUnit
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class AMOAddonsProviderTest {
@@ -154,8 +156,6 @@ class AMOAddonsProviderTest {
                 conservative = true,
             ),
         )
-
-        Unit
     }
 
     @Test
@@ -172,7 +172,6 @@ class AMOAddonsProviderTest {
                 conservative = true,
             ),
         )
-        Unit
     }
 
     @Test(expected = IOException::class)
@@ -180,7 +179,6 @@ class AMOAddonsProviderTest {
         val mockedClient = prepareClient(status = 500)
         val provider = AMOAddonsProvider(testContext, client = mockedClient, ioDispatcher = dispatcher)
         provider.getFeaturedAddons()
-        Unit
     }
 
     @Test
@@ -198,7 +196,6 @@ class AMOAddonsProviderTest {
         whenever(provider.cacheExpired(testContext, null, useFallbackFile = false)).thenReturn(false)
         provider.getFeaturedAddons(true)
         verify(provider).readFromDiskCache(null, useFallbackFile = false)
-        Unit
     }
 
     @Test
@@ -380,7 +377,7 @@ class AMOAddonsProviderTest {
         val provider = AMOAddonsProvider(testContext, client = mockedClient, ioDispatcher = dispatcher)
 
         val bitmap = provider.loadIconAsync("id", "https://example.com/image.png").await()
-        assertTrue(bitmap is Bitmap)
+        assertIs<Bitmap>(bitmap)
     }
 
     @Test
@@ -396,7 +393,7 @@ class AMOAddonsProviderTest {
 
         verify(mockedClient, times(0)).fetch(any())
         assertEquals(expectedIcon, bitmap)
-        assertTrue(bitmap is Bitmap)
+        assertIs<Bitmap>(bitmap)
     }
 
     @Test
@@ -551,8 +548,6 @@ class AMOAddonsProviderTest {
                 conservative = true,
             ),
         )
-
-        Unit
     }
 
     @Test
@@ -678,6 +673,73 @@ class AMOAddonsProviderTest {
         assertEquals(
             "https://addons.mozilla.org/en-US/firefox/addon/ublock-origin/",
             addon.detailUrl,
+        )
+    }
+
+    @Test
+    fun `GIVEN an addon's GUID WHEN its configuration was successfully downloaded THEN return the addon`() = runTest(dispatcher) {
+        val mockedClient = prepareClient(loadResourceAsString("/amo_search_single_result.json"))
+        val provider = AMOAddonsProvider(testContext, client = mockedClient, ioDispatcher = dispatcher)
+
+        val addon = provider.getAddonByID("{58c32ac4-0d6c-4d6f-ae2c-96aaf8ffcb66}")
+
+        assertNotNull(addon)
+        assertEquals("uBlock0@raymondhill.net", addon.id)
+        assertEquals(
+            "https://addons.mozilla.org/firefox/downloads/file/4141256/ublock_origin-1.51.0.xpi",
+            addon.downloadUrl,
+        )
+    }
+
+    @Test
+    fun `GIVEN a bare addon UUID WHEN its configuration was successfully downloaded THEN return the addon`() = runTest(dispatcher) {
+        val mockedClient = prepareClient(loadResourceAsString("/amo_search_single_result.json"))
+        val provider = AMOAddonsProvider(testContext, client = mockedClient, ioDispatcher = dispatcher)
+
+        val addon = provider.getAddonByID("58c32ac4-0d6c-4d6f-ae2c-96aaf8ffcb66")
+
+        assertNotNull(addon)
+        assertEquals("uBlock0@raymondhill.net", addon.id)
+    }
+
+    @Test
+    fun `GIVEN an addon's GUID WHEN its configuration could not be downloaded THEN return null`() = runTest(dispatcher) {
+        val mockedClient = prepareClient(status = 500)
+        val provider = AMOAddonsProvider(testContext, client = mockedClient, ioDispatcher = dispatcher)
+
+        assertNull(provider.getAddonByID("{58c32ac4-0d6c-4d6f-ae2c-96aaf8ffcb66}"))
+    }
+
+    @Test
+    fun `GIVEN an addon's GUID WHEN its downloaded configuration is invalid THEN return null`() = runTest(dispatcher) {
+        val mockedClient = prepareClient(jsonResponse = "{invalid json")
+        val provider = AMOAddonsProvider(testContext, client = mockedClient, ioDispatcher = dispatcher)
+
+        assertNull(provider.getAddonByID("{58c32ac4-0d6c-4d6f-ae2c-96aaf8ffcb66}"))
+    }
+
+    @Test
+    fun `GIVEN an addon's GUID WHEN its downloaded configuration is empty THEN return`() = runTest(dispatcher) {
+        val emptyResults = """{"page_size":25,"page_count":1,"count":0,"results":[]}"""
+        val mockedClient = prepareClient(jsonResponse = emptyResults)
+        val provider = AMOAddonsProvider(testContext, client = mockedClient, ioDispatcher = dispatcher)
+
+        assertNull(provider.getAddonByID("{58c32ac4-0d6c-4d6f-ae2c-96aaf8ffcb66}"))
+    }
+
+    @Test
+    fun `GIVEN an addon's GUID and a language parameter WHEN downloading addon's configuration THEN the language is included in the request`() = runTest(dispatcher) {
+        val mockedClient = prepareClient(loadResourceAsString("/amo_search_single_result.json"))
+        val provider = AMOAddonsProvider(testContext, client = mockedClient, ioDispatcher = dispatcher)
+
+        provider.getAddonByID("{58c32ac4-0d6c-4d6f-ae2c-96aaf8ffcb66}", language = "en")
+
+        verify(mockedClient).fetch(
+            Request(
+                url = "$DEFAULT_SERVER_URL/$API_VERSION/addons/search/" +
+                    "?guid={58c32ac4-0d6c-4d6f-ae2c-96aaf8ffcb66}&lang=en",
+                readTimeout = Pair(DEFAULT_READ_TIMEOUT_IN_SECONDS, TimeUnit.SECONDS),
+            ),
         )
     }
 

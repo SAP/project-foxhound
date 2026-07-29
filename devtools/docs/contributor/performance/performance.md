@@ -8,12 +8,13 @@ If the tools are slowing down Firefox significantly, it will make these measurem
 
 To be efficient while working on performance, you should always focus on one precise user scenario.
 It could be:
+
 * a bug report where someone reports a precise interaction being slow,
 * or you could be trying to improve overall tools performance by looking at the most common usages.
 The important point here is to have some steps to reproduce, that you can redo manually in order to record a profile.
 And also, it is even better if you can replay via a test script. Test script that you can save as a new performance test.
 
-## Don't guess — profile.
+## Don't guess — profile
 
 The very first thing to do is to record a profile while reproducing the scenario.
 
@@ -51,16 +52,16 @@ In the call tree, it is easier to filter by `JS`, via this menu list:
 
 But note that you may have to switch back to `Combined` in order to understand why some particular Javascript method is slow.
 
-### Handy filter strings for DevTools:
+### Handy filter strings for DevTools
 
-  * `require`
-    Helps highlighting the cost of module loading
-     ![modules](images/profiler-filter-require.png)
-  * DevTools uses two kind of URLs:
-    * `chrome://devtools/` for all panel documents. Filter with this to see the cost of all panel documents:
-      ![panels documents](images/profiler-chrome-url.png)
-    * `resource://devtools/` for all javascript modules. Filter with this to see the cost of all modules:
-      ![modules](images/profiler-resource-url.png)
+* `require`
+  Helps highlighting the cost of module loading
+  ![modules](images/profiler-filter-require.png)
+* DevTools uses two kind of URLs:
+  * `chrome://devtools/` for all panel documents. Filter with this to see the cost of all panel documents:
+    ![panels documents](images/profiler-chrome-url.png)
+  * `resource://devtools/` for all javascript modules. Filter with this to see the cost of all modules:
+    ![modules](images/profiler-resource-url.png)
 
 ### Record durations manually
 
@@ -71,6 +72,7 @@ It saves your from having to: record the profile, wait for the profiler to displ
 #### Print durations in your Terminal and in the Browser Console
 
 You can use the [`Performance`](https://developer.mozilla.org/docs/Web/API/Performance) API, like this:
+
 ```
 let start = window.performance.now();
 
@@ -83,6 +85,7 @@ console.log("my function took", window.performance.now() - start, "ms");
 #### Use markers
 
 The Performance API also allows recording markers, like this:
+
 ```
 window.performance.mark("my-function-start");
 
@@ -105,7 +108,7 @@ and uncomment them one by one until you identify the culprit. And then focus on 
 
 There are few things worse than spending a long time refactoring the piece of code that was not slow to begin with!
 
-## Assess your improvement.
+## Assess your improvement
 
 Once you have a patch that you think improves the performance, you have to assess whether it actually improves it.
 
@@ -113,6 +116,7 @@ Once you have a patch that you think improves the performance, you have to asses
 
 Compare the two profiles, without and with your patch.
 Then see if the call tree reports a significant difference:
+
 * A function call completely disappears in the new profile, with your fix.
   For example you were loading a big module, and you got a frame for `require("my/big/module")` call, and no longer see it.
 * The same function call takes xxx ms less with your patch.
@@ -125,8 +129,9 @@ With the patch, App.js loads in 47ms and only loads MonitorPanel.js:
   ![netmonitor with patch](images/profiler-netmon-open-fixed.png)
 
 It highlights that:
- * we no longer load StatisticsPanel,
- * App is faster to load.
+
+* we no longer load StatisticsPanel,
+* App is faster to load.
 
 ### Run performance tests
 
@@ -135,9 +140,11 @@ For example, if the test is 50% faster, maybe you broke the performance test.
 This might happen if the test no longer waits for all the operations to finish executing before completing.
 
 To push your current patch to try, execute:
+
 ```bash
 ./mach try fuzzy --query "'linux 'damp" --rebuild 5
 ```
+
 It will print in your Terminal a link to perfherder like this one:
 [https://treeherder.mozilla.org/perf.html#/comparechooser?newProject=try&newRevision=9bef6cb13c43bbce21d40ffaea595e082a4c28db](https://treeherder.mozilla.org/perf.html#/comparechooser?newProject=try&newRevision=9bef6cb13c43bbce21d40ffaea595e082a4c28db)
 Running performance tests takes time, so you should open it 30 minutes up to 2 hours later to see your results.

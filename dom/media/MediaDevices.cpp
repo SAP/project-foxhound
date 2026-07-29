@@ -26,6 +26,7 @@
 #include "nsINamed.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsPIDOMWindow.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsQueryObject.h"
 
 namespace mozilla::dom {

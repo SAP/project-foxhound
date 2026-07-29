@@ -21,7 +21,7 @@ info: |
     5. Return n.
 
 flags: [noStrict]
-includes: [testBigIntTypedArray.js, detachArrayBuffer.js]
+includes: [testTypedArray.js, detachArrayBuffer.js]
 features: [align-detached-buffer-semantics-with-web-reality, BigInt, TypedArray]
 ---*/
 testWithBigIntTypedArrayConstructors(function(TA) {
@@ -43,6 +43,6 @@ testWithBigIntTypedArrayConstructors(function(TA) {
     Infinity;
     assert.sameValue(counter, 1, 'The value of `counter` is 1');
   }
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

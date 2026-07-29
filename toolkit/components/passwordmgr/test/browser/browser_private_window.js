@@ -81,7 +81,7 @@ async function loadAccessRestrictedURL(browser, url, username, password) {
     { buttonNumClick: 0, loginInput: username, passwordInput: password }
   );
 
-  await SimpleTest.promiseFocus(browser.ownerGlobal);
+  await SimpleTest.promiseFocus(browser.documentGlobal);
   await browserLoaded;
 }
 
@@ -628,7 +628,7 @@ add_task(async function test_normal_autofilled_7() {
     async function (browser) {
       // Add the observer before loading the form page
       let formFilled = listenForTestNotification("FormProcessed");
-      await SimpleTest.promiseFocus(browser.ownerGlobal);
+      await SimpleTest.promiseFocus(browser.documentGlobal);
       BrowserTestUtils.startLoadingURIString(browser, form1Url);
       await formFilled;
 
@@ -699,13 +699,13 @@ add_task(async function test_private_not_autofilled_8() {
 //     let promiseShown = BrowserTestUtils.waitForEvent(popup, "popupshown");
 
 //     // focus the user field. This should trigger the autocomplete menu
-//     await ContentTask.spawn(browser, null, async function() {
+//     await SpecialPowers.spawn(browser, [], async function() {
 //       content.document.getElementById("user").focus();
 //     });
 //     await promiseShown;
 //     Assert.ok(promiseShown, "autocomplete shown");
 
-//     let promiseFormInput = ContentTask.spawn(browser, null, async function() {
+//     let promiseFormInput = SpecialPowers.spawn(browser, [], async function() {
 //       let doc = content.document;
 //       await new Promise(resolve => {
 //         doc.getElementById("form").addEventListener("input", resolve, { once: true });
@@ -784,7 +784,7 @@ add_task(async function test_normal_http_basic_auth() {
       // verify result in the response document
       let fieldValues = await SpecialPowers.spawn(
         browser,
-        [[]],
+        [],
         async function () {
           let username = content.document.getElementById("user").textContent;
           let password = content.document.getElementById("pass").textContent;

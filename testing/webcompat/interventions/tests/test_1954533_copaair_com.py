@@ -118,6 +118,7 @@ async def get_accept_button(client, in_headless_mode):
     )
 
 
+@pytest.mark.only_firefox_versions(min=141)
 @pytest.mark.asyncio
 @pytest.mark.with_interventions
 async def test_with_interventions(client, in_headless_mode):
@@ -125,6 +126,7 @@ async def test_with_interventions(client, in_headless_mode):
     assert client.await_css(OOPS_CSS, is_displayed=True)
 
 
+@pytest.mark.only_firefox_versions(min=141)
 @pytest.mark.asyncio
 @pytest.mark.without_interventions
 async def test_disabled(client, in_headless_mode):

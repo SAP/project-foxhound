@@ -316,8 +316,13 @@ load 1616407.html
 load 1639533.html
 pref(layout.accessiblecaret.enabled,true) load 1640040.html
 load 1806189-1.html
+# TODO(dshin, bug 2027832): Move scroll-driven animation crashtests to WPT
 pref(layout.css.scroll-driven-animations.enabled,true) load 1821416.html
 load 1872309.html
 pref(layout.css.scroll-driven-animations.enabled,true) load 1944977.html
 pref(dom.viewTransitions.enabled,true) load 1966679.html
 load 1987809.html
+pref(layout.css.scroll-driven-animations.enabled,true) load 2022727.html
+pref(layout.css.scroll-driven-animations.enabled,true) load 2024744.html
+pref(layout.css.scroll-driven-animations.enabled,true) load 2024017.html
+pref(layout.css.scroll-driven-animations.enabled,true) load 2024336.html

@@ -73,16 +73,15 @@ async function llama_crash() {
 
       info(`ipc:content-shutdown: data=${data} subject=${subject}`);
 
-      let dumpID = null;
-
-      try {
-        dumpID = subject.getPropertyAsAString("dumpID");
-        ok(dumpID, "There should be a dumpID");
-      } catch (err) {
-        info("No dumpID");
+      const dumpID = subject.get("dumpID");
+      if (AppConstants.MOZ_CRASHREPORTER && dumpID === null) {
+        // This test does not appear to generate minidumps, it is unclear why.
+        // We should turn this into an `ok()` call once we fix the underlying
+        // issue in bug 2003271.
+        dump("There should be a dumpID");
       }
 
-      if (dumpID !== null) {
+      if (AppConstants.MOZ_CRASHREPORTER && dumpID !== null) {
         await crashMan.ensureCrashIsPresent(dumpID);
         let minidumpDirectory = Services.dirsvc.get("ProfD", Ci.nsIFile);
         minidumpDirectory.append("minidumps");
@@ -108,7 +107,16 @@ async function llama_crash() {
   }
 }
 
-async function llama_works() {
+async function llama_works({
+  prompt = [
+    { role: "system", content: "blah" },
+    {
+      role: "user",
+      content: "This is a test that works",
+    },
+  ],
+  expectMultiChunkPrefill = false,
+} = {}) {
   const { cleanup } = await setup();
   try {
     info("Create the engine for a normal run");
@@ -121,14 +129,6 @@ async function llama_works() {
       backend: "llama.cpp",
       logLevel: "Debug",
     });
-
-    const prompt = [
-      { role: "system", content: "blah" },
-      {
-        role: "user",
-        content: "This is a test that works",
-      },
-    ];
 
     const samplers = [
       {
@@ -151,16 +151,66 @@ async function llama_works() {
     ];
 
     info("Calling runWithGenerator for normal run");
-    for await (const val of engine.runWithGenerator({
+    const generator = engine.runWithGenerator({
       prompt,
       samplers,
-    })) {
-      info(val.text);
-    }
+    });
+    let result;
+    do {
+      result = await generator.next();
+      if (!result.done) {
+        info(result.value.text);
+      }
+    } while (!result.done);
 
     info("Normal run worked");
-    // TODO add an assertion
-    Assert.equal(1, 1);
+
+    const { metrics } = result.value;
+    Assert.ok(metrics, "metrics should be present on the run result");
+    Assert.ok(
+      Array.isArray(metrics.runTimestamps),
+      "metrics.runTimestamps should be an array"
+    );
+    const timestampNames = metrics.runTimestamps.map(t => t.name);
+    for (const name of [
+      "initializationStart",
+      "initializationEnd",
+      "runStart",
+      "runEnd",
+    ]) {
+      Assert.ok(
+        timestampNames.includes(name),
+        `metrics.runTimestamps should include ${name}`
+      );
+    }
+    Assert.greater(metrics.inputTokens, 0, "inputTokens should be > 0");
+    Assert.greater(metrics.outputTokens, 0, "outputTokens should be > 0");
+    Assert.greaterOrEqual(
+      metrics.inferenceTime,
+      0,
+      "inferenceTime should be >= 0"
+    );
+    Assert.greaterOrEqual(
+      metrics.decodingTime,
+      0,
+      "decodingTime should be >= 0"
+    );
+    Assert.greaterOrEqual(
+      metrics.timeToFirstToken,
+      0,
+      "timeToFirstToken should be >= 0"
+    );
+
+    if (expectMultiChunkPrefill) {
+      // Default minOutputBufferSize is 20: a prompt above that exercises
+      // the multi-chunk prefill path where the runner flushes prompt chunks
+      // before isPhaseCompleted=true.
+      Assert.greater(
+        metrics.inputTokens,
+        20,
+        "inputTokens should exceed the default minOutputBufferSize"
+      );
+    }
   } finally {
     info("Destroy the engine");
     await EngineProcess.destroyMLEngine();
@@ -241,6 +291,76 @@ add_task(async function test_ml_smoke_test_llama_fails() {
   await llama_fails_with_wrong_samplers();
 });
 
+add_task(async function test_ml_smoke_test_llama_sequential_runs() {
+  const { cleanup } = await setup();
+  try {
+    const engine = await createEngine({
+      taskName: "text-generation",
+      modelId: "Mozilla/test-llama",
+      modelFile: "TinyStories-656K.Q8_0.gguf",
+      kvCacheDtype: "q8_0",
+      modelRevision: "main",
+      backend: "llama.cpp",
+      numContext: 128,
+    });
+
+    const request = {
+      prompt: [
+        { role: "system", content: "blah" },
+        { role: "user", content: "Once upon a time there was" },
+      ],
+      nPredict: 16,
+    };
+
+    await engine.run(request);
+    await engine.run(request);
+    Assert.ok(true, "Two sequential run() calls completed without rejection");
+  } finally {
+    await EngineProcess.destroyMLEngine();
+    await cleanup();
+  }
+});
+
+add_task(async function test_ml_smoke_test_llama_overlap_guard() {
+  const { cleanup } = await setup();
+  try {
+    const engine = await createEngine({
+      taskName: "text-generation",
+      modelId: "Mozilla/test-llama",
+      modelFile: "TinyStories-656K.Q8_0.gguf",
+      kvCacheDtype: "q8_0",
+      modelRevision: "main",
+      backend: "llama.cpp",
+      numContext: 128,
+    });
+
+    const request = {
+      prompt: [
+        { role: "system", content: "blah" },
+        { role: "user", content: "Once upon a time there was" },
+      ],
+      nPredict: 128,
+    };
+
+    const results = await Promise.allSettled([
+      engine.run(request),
+      engine.run(request),
+    ]);
+
+    const rejections = results
+      .filter(r => r.status === "rejected")
+      .map(r => String(r.reason?.message ?? r.reason));
+
+    Assert.ok(
+      rejections.some(m => m.includes("A generation is already in progress")),
+      `Expected a rejection from the LlamaRunner guard, got: ${JSON.stringify(rejections)}`
+    );
+  } finally {
+    await EngineProcess.destroyMLEngine();
+    await cleanup();
+  }
+});
+
 /**
  * Runs a full end-to-end test on the llama.cpp backend with a model that loads in llama but crashes during inference.
  */
@@ -251,4 +371,26 @@ add_task(async function test_ml_smoke_test_llama_crash() {
     "Doing a normal call after the crash to verify it's up and running again"
   );
   await llama_works();
+});
+
+/**
+ * Verifies metrics are correct when the prompt exceeds the runner's
+ * default minOutputBufferSize (20), forcing the prefill phase to be
+ * split across multiple chunks before isPhaseCompleted is set.
+ */
+add_task(async function test_ml_smoke_test_llama_long_prompt_metrics() {
+  await llama_works({
+    prompt: [
+      { role: "system", content: "You are a friendly storyteller." },
+      {
+        role: "user",
+        content:
+          "Tell me a short story about a brave little mouse who travels " +
+          "across a great forest, meets many friends along the way, and " +
+          "finally finds a tiny treasure chest hidden behind a waterfall " +
+          "at the top of the tallest hill in the whole valley.",
+      },
+    ],
+    expectMultiChunkPrefill: true,
+  });
 });

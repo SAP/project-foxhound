@@ -29,6 +29,15 @@ class SettingsDeleteBrowsingDataOnQuitPage(composeRule: AndroidComposeTestRule<H
                 NavigationStep.Click(SettingsSelectors.DELETE_BROWSING_DATA_ON_QUIT_BUTTON),
             ),
         )
+
+        NavigationRegistry.register(
+            from = pageName,
+            to = "HomePage",
+            steps = listOf(
+                NavigationStep.PressBack,
+                NavigationStep.PressBack,
+            ),
+        )
     }
 
     override fun mozGetSelectorsByGroup(group: String): List<Selector> {

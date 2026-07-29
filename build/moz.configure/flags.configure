@@ -1,5 +1,3 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -60,7 +58,7 @@ def link_libstdcxx_statically(
                     #include <iostream>
                     int main() { std::cout << 1;}
                 """,
-                ["-o", bin_path] + (extra_toolchain_flags or []),
+                ["-o", bin_path] + extra_toolchain_flags,
                 wrapper=cxx_compiler.wrapper,
                 onerror=lambda: None,
             )
@@ -110,6 +108,11 @@ add_addrsig_flag = depends(c_compiler, when=target_is_android)(
     lambda c: c.type == "clang"
 )
 
+# Make sure that path separators are consistent in cross builds.
+check_and_add_flag("-ffile-reproducible", when=target_is_windows)
+
+# Use absolute paths for diagnostics if supported.
+check_and_add_flag("-fdiagnostics-absolute-paths")
 
 @depends(
     c_compiler,
@@ -137,7 +140,7 @@ def linker_supports_icf(
                                  """,
                 ["-o", bin_path, "-Wl,--icf=safe", "-ffunction-sections"]
                 + (["-faddrsig"] if add_addrsig_flag else [])
-                + (extra_toolchain_flags or []),
+                + extra_toolchain_flags,
                 wrapper=c_compiler.wrapper,
                 onerror=lambda: None,
             )
@@ -243,6 +246,22 @@ def pass_manager(enabled, compiler, host, target, pgo, enable_fuzzing, ubsan):
 
 
 set_config("MOZ_PASS_MANAGER_FLAGS", pass_manager.flags)
+
+# Tracing option
+##
+
+option(
+    "--trace-compiler",
+    help="Generate compiler usage report for each C/C++ compilation unit",
+)
+with only_when("--trace-compiler"):
+
+    @depends(c_compiler.type)
+    def check_trace_compiler_validity(ct):
+        if ct not in ("clang", "clang-cl"):
+            die("--trace-compiler not supported for current target compiler")
+
+    check_and_add_flag("-ftime-trace")
 
 # Debugging options
 ##
@@ -490,7 +509,7 @@ def expand_libs_list_style(c_compiler, link, linker_flags, extra_flags):
         ):
             die("couldn't compile a simple C file")
 
-        ldflags = linker_flags + (extra_flags or [])
+        ldflags = linker_flags + extra_flags
 
         if c_compiler.type == "clang-cl":
             base_linker_cmd = [link] + ldflags + [f"-OUT:{outname}"]

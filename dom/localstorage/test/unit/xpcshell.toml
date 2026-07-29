@@ -33,36 +33,42 @@ run-if = [
 ["test_clientValidation.js"]
 
 ["test_corruptedDatabase.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_databaseShadowing1.js"]
-prefs = ["dom.storage.shadow_writes=true"]
+prefs = ["dom.storage.shadow_writes=true", "security.storage.encryption.sqlite.enabled=false"]
 run-sequentially = ["true"] # test_databaseShadowing2.js depends on a file produced by this test
 
 ["test_databaseShadowing2.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 run-sequentially = ["true"] # this test depends on a file produced by test_databaseShadowing1.js
 
 ["test_databaseShadowing_clearOrigin1.js"]
-prefs = ["dom.storage.shadow_writes=true"]
+prefs = ["dom.storage.shadow_writes=true", "security.storage.encryption.sqlite.enabled=false"]
 run-sequentially = ["true"] # test_databaseShadowing_clearOrigin2.js depends on a file produced by this test
 
 ["test_databaseShadowing_clearOrigin2.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 run-sequentially = ["true"] # this test depends on a file produced by test_databaseShadowing_clearOrigin1.js
 
 ["test_databaseShadowing_clearOriginsByPattern1.js"]
-prefs = ["dom.storage.shadow_writes=true"]
+prefs = ["dom.storage.shadow_writes=true", "security.storage.encryption.sqlite.enabled=false"]
 run-sequentially = ["true"] # test_databaseShadowing_clearOriginsByPattern2.js depends on a file produced by this test
 
 ["test_databaseShadowing_clearOriginsByPattern2.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 run-sequentially = ["true"] # this test depends on a file produced by test_databaseShadowing_clearOriginsByPattern1.js
 
 ["test_databaseShadowing_clearOriginsByPrefix1.js"]
-prefs = ["dom.storage.shadow_writes=true"]
+prefs = ["dom.storage.shadow_writes=true", "security.storage.encryption.sqlite.enabled=false"]
 run-sequentially = ["true"] # test_databaseShadowing_clearOriginsByPrefix2.js depends on a file produced by this test
 
 ["test_databaseShadowing_clearOriginsByPrefix2.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 run-sequentially = ["true"] # this test depends on a file produced by test_databaseShadowing_clearOriginsByPrefix1.js
 
 ["test_databaseWorkStarted.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_eviction.js"]
 
@@ -77,10 +83,16 @@ run-sequentially = ["true"] # this test depends on a file produced by test_datab
 ["test_lsng_enabled.js"]
 
 ["test_migration.js"]
-prefs = ["dom.storage.enable_migration_from_unsupported_legacy_implementation=true"]
+prefs = [
+  "dom.storage.enable_migration_from_unsupported_legacy_implementation=true",
+  "security.storage.encryption.sqlite.enabled=false",
+]
 
 ["test_migration_emptyValue.js"]
-prefs = ["dom.storage.enable_migration_from_unsupported_legacy_implementation=true"]
+prefs = [
+  "dom.storage.enable_migration_from_unsupported_legacy_implementation=true",
+  "security.storage.encryption.sqlite.enabled=false",
+]
 support-files = ["migration_emptyValue_profile.zip",]
 
 ["test_old_lsng_pref.js"]
@@ -94,16 +106,22 @@ support-files = ["migration_emptyValue_profile.zip",]
 ["test_preloading.js"]
 
 ["test_requestFinalizationStarted.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_schema3upgrade.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_schema4upgrade.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_shutdownDuringRequestFinalization.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_slowDatabaseInitialization.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_slowRequestFinalization.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_slowStorageInitialization.js"]
 
@@ -111,10 +129,16 @@ support-files = ["migration_emptyValue_profile.zip",]
 requesttimeoutfactor = 2  # Slow on debug
 
 ["test_stringLength.js"]
-prefs = ["dom.storage.enable_migration_from_unsupported_legacy_implementation=true"]
+prefs = [
+  "dom.storage.enable_migration_from_unsupported_legacy_implementation=true",
+  "security.storage.encryption.sqlite.enabled=false",
+]
 
 ["test_stringLength2.js"]
-prefs = ["dom.storage.enable_migration_from_unsupported_legacy_implementation=true"]
+prefs = [
+  "dom.storage.enable_migration_from_unsupported_legacy_implementation=true",
+  "security.storage.encryption.sqlite.enabled=false",
+]
 
 ["test_unicodeCharacters.js"]
 
@@ -123,4 +147,7 @@ prefs = ["dom.storage.enable_migration_from_unsupported_legacy_implementation=tr
 ["test_usage.js"]
 
 ["test_usageAfterMigration.js"]
-prefs = ["dom.storage.enable_migration_from_unsupported_legacy_implementation=true"]
+prefs = [
+  "dom.storage.enable_migration_from_unsupported_legacy_implementation=true",
+  "security.storage.encryption.sqlite.enabled=false",
+]

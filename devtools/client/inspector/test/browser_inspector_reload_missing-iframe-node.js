@@ -14,7 +14,7 @@ add_task(async function () {
   const { inspector } = await openInspectorForURL(TEST_URI);
 
   info("Create new iframe and add it to the page.");
-  await ContentTask.spawn(gBrowser.selectedBrowser, null, async function () {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {
     await new Promise(resolve => {
       const iframe = content.document.createElement("iframe");
 

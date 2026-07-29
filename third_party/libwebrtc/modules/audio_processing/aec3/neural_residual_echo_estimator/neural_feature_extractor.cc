@@ -15,10 +15,11 @@
 #include <cmath>
 #include <cstring>
 #include <memory>
+#include <span>
 #include <vector>
 
-#include "api/array_view.h"
 #include "common_audio/window_generator.h"
+#include "modules/audio_processing/aec3/aec3_common.h"
 #include "rtc_base/checks.h"
 #include "third_party/pffft/src/pffft.h"
 
@@ -32,7 +33,7 @@ constexpr float kScale = 1.0f / 32768;
 // Exponent used to compress the power spectra.
 constexpr float kSpectrumCompressionExponent = 0.15f;
 
-const std::array<FeatureExtractor::ModelInputEnum, 2> kExpectedInputs = {
+const std::array<FeatureExtractor::ModelInputEnum, 2> kRequiredModelInputs = {
     FeatureExtractor::ModelInputEnum::kLinearAecOutput,
     FeatureExtractor::ModelInputEnum::kAecRef};
 
@@ -43,18 +44,80 @@ std::vector<float> GetSqrtHanningWindow(int frame_size, float scale) {
                  [scale](float x) { return scale * std::sqrt(x); });
   return window;
 }
+
+std::array<float, kBlockSize> AverageAllChannels(
+    std::span<const std::span<const float, kBlockSize>> all_channels) {
+  std::array<float, kBlockSize> summed_block;
+  summed_block.fill(0.0f);
+  const float scale = kScale * 1.0f / all_channels.size();
+  for (auto& channel : all_channels) {
+    for (size_t i = 0; i < kBlockSize; ++i) {
+      summed_block[i] += scale * channel[i];
+    }
+  }
+  return summed_block;
+}
+
+bool RequiredInput(FeatureExtractor::ModelInputEnum input_type) {
+  for (const auto model_input_enum : kRequiredModelInputs) {
+    if (model_input_enum == input_type) {
+      return true;
+    }
+  }
+  return false;
+}
+
 }  // namespace
 
-void TimeDomainFeatureExtractor::PushFeaturesToModelInput(
-    std::vector<float>& frame,
-    ArrayView<float> model_input,
-    FeatureExtractor::ModelInputEnum input_enum) {
-  // Shift down overlap from previous frames.
-  std::copy(model_input.begin() + frame.size(), model_input.end(),
+TimeDomainFeatureExtractor::TimeDomainFeatureExtractor(int step_size)
+    : step_size_(step_size),
+      input_buffer_(static_cast<size_t>(ModelInputEnum::kNumInputs)) {}
+
+TimeDomainFeatureExtractor::~TimeDomainFeatureExtractor() = default;
+
+void TimeDomainFeatureExtractor::Reset() {
+  for (auto& buffer : input_buffer_) {
+    buffer.clear();
+  }
+}
+
+bool TimeDomainFeatureExtractor::ReadyForInference() const {
+  for (const auto model_input_enum : kRequiredModelInputs) {
+    const std::vector<float>& input_buffer =
+        input_buffer_[static_cast<size_t>(model_input_enum)];
+    if (input_buffer.size() < step_size_) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void TimeDomainFeatureExtractor::UpdateBuffers(
+    std::span<const std::span<const float, kBlockSize>> all_channels,
+    ModelInputEnum input_type) {
+  if (!RequiredInput(input_type)) {
+    return;
+  }
+  std::vector<float>& input_buffer =
+      input_buffer_[static_cast<size_t>(input_type)];
+  std::array<float, kBlockSize> summed_block = AverageAllChannels(all_channels);
+  input_buffer.insert(input_buffer.end(), summed_block.begin(),
+                      summed_block.end());
+}
+
+void TimeDomainFeatureExtractor::PrepareModelInput(std::span<float> model_input,
+                                                   ModelInputEnum input_type) {
+  if (!RequiredInput(input_type)) {
+    return;
+  }
+  std::vector<float>& input_buffer =
+      input_buffer_[static_cast<size_t>(input_type)];
+  RTC_CHECK_EQ(input_buffer.size(), step_size_);
+  std::copy(model_input.begin() + step_size_, model_input.end(),
             model_input.begin());
-  std::transform(frame.begin(), frame.end(), model_input.end() - frame.size(),
-                 [](float x) { return x * kScale; });
-  frame.clear();
+  std::copy(input_buffer.begin(), input_buffer.end(),
+            model_input.end() - step_size_);
+  input_buffer.clear();
 }
 
 FrequencyDomainFeatureExtractor::FrequencyDomainFeatureExtractor(int step_size)
@@ -67,11 +130,29 @@ FrequencyDomainFeatureExtractor::FrequencyDomainFeatureExtractor(int step_size)
           pffft_aligned_malloc(frame_size_ * sizeof(float)))),
       pffft_setup_(pffft_new_setup(frame_size_, PFFFT_REAL)),
       pffft_states_(
+          static_cast<size_t>(FeatureExtractor::ModelInputEnum::kNumInputs)),
+      input_buffer_(
           static_cast<size_t>(FeatureExtractor::ModelInputEnum::kNumInputs)) {
   std::memset(spectrum_, 0, sizeof(float) * frame_size_);
-  for (const auto model_input_enum : kExpectedInputs) {
-    pffft_states_[static_cast<size_t>(model_input_enum)] =
-        std::make_unique<PffftState>(frame_size_);
+  for (const auto model_input_enum : kRequiredModelInputs) {
+    pffft_states_[static_cast<size_t>(model_input_enum)].emplace_back(
+        std::make_unique<PffftState>(frame_size_));
+  }
+}
+
+void FrequencyDomainFeatureExtractor::Reset() {
+  std::memset(spectrum_, 0, sizeof(float) * frame_size_);
+  for (auto& buffers : input_buffer_) {
+    for (auto& buffer : buffers) {
+      buffer.clear();
+    }
+  }
+  for (auto& states : pffft_states_) {
+    for (auto& state : states) {
+      if (state) {
+        std::memset(state->data(), 0, sizeof(float) * frame_size_);
+      }
+    }
   }
 }
 
@@ -81,36 +162,84 @@ FrequencyDomainFeatureExtractor::~FrequencyDomainFeatureExtractor() {
   pffft_aligned_free(spectrum_);
 }
 
-void FrequencyDomainFeatureExtractor::PushFeaturesToModelInput(
-    std::vector<float>& frame,
-    ArrayView<float> model_input,
-    FeatureExtractor::ModelInputEnum input_enum) {
-  std::unique_ptr<PffftState>& pffft_state =
-      pffft_states_[static_cast<size_t>(input_enum)];
-  if (pffft_state == nullptr) {
-    frame.clear();
-    return;
+bool FrequencyDomainFeatureExtractor::ReadyForInference() const {
+  for (const auto model_input_enum : kRequiredModelInputs) {
+    const std::vector<std::vector<float>>& input_buffer =
+        input_buffer_[static_cast<size_t>(model_input_enum)];
+    if (input_buffer.empty() || input_buffer[0].size() < step_size_) {
+      return false;
+    }
   }
+  return true;
+}
+
+void FrequencyDomainFeatureExtractor::ComputeAndAddPowerSpectra(
+    std::span<const float> frame,
+    std::unique_ptr<PffftState>& pffft_state,
+    int number_channels,
+    std::span<float> power_spectra) {
+  const float kAverageScale = 1.0f / number_channels;
+  if (pffft_state == nullptr) {
+    pffft_state = std::make_unique<PffftState>(frame_size_);
+  }
+  RTC_CHECK(pffft_state);
   float* data = pffft_state->data();
   std::memcpy(data + step_size_, frame.data(), sizeof(float) * step_size_);
   for (int k = 0; k < frame_size_; ++k) {
     data[k] *= sqrt_hanning_[k];
   }
   pffft_transform_ordered(pffft_setup_, data, spectrum_, work_, PFFFT_FORWARD);
-  RTC_CHECK_EQ(model_input.size(), step_size_ + 1);
-  model_input[0] = spectrum_[0] * spectrum_[0];
-  model_input[step_size_] = spectrum_[1] * spectrum_[1];
-  for (int k = 1; k < step_size_; k++) {
-    model_input[k] = spectrum_[2 * k] * spectrum_[2 * k] +
-                     spectrum_[2 * k + 1] * spectrum_[2 * k + 1];
+  RTC_CHECK_EQ(power_spectra.size(), step_size_ + 1);
+  power_spectra[0] += kAverageScale * (spectrum_[0] * spectrum_[0]);
+  power_spectra[step_size_] += kAverageScale * spectrum_[1] * spectrum_[1];
+  for (size_t k = 1; k < step_size_; k++) {
+    power_spectra[k] +=
+        kAverageScale * (spectrum_[2 * k] * spectrum_[2 * k] +
+                         spectrum_[2 * k + 1] * spectrum_[2 * k + 1]);
   }
+  // Saving the current frame as it is used when computing the next FFT.
+  std::memcpy(data, frame.data(), sizeof(float) * step_size_);
+}
+
+void FrequencyDomainFeatureExtractor::UpdateBuffers(
+    std::span<const std::span<const float, kBlockSize>> all_channels,
+    ModelInputEnum input_type) {
+  if (!RequiredInput(input_type)) {
+    return;
+  }
+  std::vector<std::vector<float>>& input_buffer =
+      input_buffer_[static_cast<size_t>(input_type)];
+  input_buffer.resize(all_channels.size());
+  for (size_t ch = 0; ch < all_channels.size(); ++ch) {
+    const std::span<const float, kBlockSize>& frame_in = all_channels[ch];
+    std::vector<float>& input_buffer_ch = input_buffer[ch];
+    input_buffer_ch.insert(input_buffer_ch.end(), frame_in.begin(),
+                           frame_in.end());
+  }
+}
+void FrequencyDomainFeatureExtractor::PrepareModelInput(
+    std::span<float> model_input,
+    ModelInputEnum input_type) {
+  if (!RequiredInput(input_type)) {
+    return;
+  }
+  std::vector<std::vector<float>>& input_buffer =
+      input_buffer_[static_cast<size_t>(input_type)];
+  RTC_CHECK_EQ(input_buffer[0].size(), step_size_);
+  std::memset(model_input.data(), 0, sizeof(float) * model_input.size());
+  std::vector<std::unique_ptr<PffftState>>& pffft_states_channels =
+      pffft_states_[static_cast<size_t>(input_type)];
+  pffft_states_channels.resize(input_buffer.size());
+  for (size_t ch = 0; ch < input_buffer.size(); ++ch) {
+    ComputeAndAddPowerSpectra(input_buffer[ch], pffft_states_channels[ch],
+                              static_cast<int>(input_buffer.size()),
+                              model_input);
+    input_buffer[ch].clear();
+  }
+
   // Compress the power spectra.
   std::transform(
       model_input.begin(), model_input.end(), model_input.begin(),
       [](float a) { return std::pow(a, kSpectrumCompressionExponent); });
-  // Saving the current frame as it is used when computing the next FFT.
-  std::memcpy(data, frame.data(), sizeof(float) * step_size_);
-  frame.clear();
 }
-
 }  // namespace webrtc

@@ -10,15 +10,12 @@ import androidx.annotation.RequiresApi
 import androidx.benchmark.macro.junit4.BaselineProfileRule
 import org.junit.Rule
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.junit.runners.Parameterized
-import org.mozilla.fenix.benchmark.utils.EXTRA_COMPOSABLE_TOOLBAR
 import org.mozilla.fenix.benchmark.utils.FENIX_HOME_DEEP_LINK
 import org.mozilla.fenix.benchmark.utils.HtmlAsset
 import org.mozilla.fenix.benchmark.utils.MockWebServerRule
-import org.mozilla.fenix.benchmark.utils.ParameterizedToolbarsTest
 import org.mozilla.fenix.benchmark.utils.TARGET_PACKAGE
 import org.mozilla.fenix.benchmark.utils.closeTab
+import org.mozilla.fenix.benchmark.utils.completeOnboarding
 import org.mozilla.fenix.benchmark.utils.dismissWallpaperOnboarding
 import org.mozilla.fenix.benchmark.utils.isWallpaperOnboardingShown
 import org.mozilla.fenix.benchmark.utils.loadSite
@@ -50,11 +47,8 @@ import org.mozilla.fenix.benchmark.utils.url
  * When using this class to generate a baseline profile, only API 33+ or rooted API 28+ are supported.
  */
 @RequiresApi(Build.VERSION_CODES.P)
-@RunWith(Parameterized::class)
 @BaselineProfileGenerator
-class PrivateBrowsingBaselineProfileGenerator(
-    private val useComposableToolbar: Boolean,
-): ParameterizedToolbarsTest() {
+class PrivateBrowsingBaselineProfileGenerator {
 
     @get:Rule
     val rule = BaselineProfileRule()
@@ -68,20 +62,20 @@ class PrivateBrowsingBaselineProfileGenerator(
             packageName = TARGET_PACKAGE,
         ) {
             val intent = Intent(Intent.ACTION_VIEW, FENIX_HOME_DEEP_LINK)
-                .putExtra(EXTRA_COMPOSABLE_TOOLBAR, useComposableToolbar)
 
             startActivityAndWait(intent = intent)
+            device.completeOnboarding()
 
             if (device.isWallpaperOnboardingShown()) {
                 device.dismissWallpaperOnboarding()
             }
 
-            device.openTabsTray(useComposableToolbar)
+            device.openTabsTray()
             device.openNewPrivateTabOnTabsTray()
             val url = mockRule.url(HtmlAsset.SIMPLE)
-            device.loadSite(url = url, useComposableToolbar)
+            device.loadSite(url = url)
 
-            device.openTabsTray(useComposableToolbar)
+            device.openTabsTray()
             device.closeTab(siteName = HtmlAsset.SIMPLE.title, siteUrl = url)
         }
     }

@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 add_task(async function test_actions_context_menu() {
@@ -29,6 +27,7 @@ add_task(async function test_actions_context_menu() {
   }
 
   function testScript() {
+    browser.test.log(`testScript executing on ${window.location.href}\n`);
     window.onload = () => {
       browser.test.sendMessage("test-opened", true);
     };
@@ -40,17 +39,18 @@ add_task(async function test_actions_context_menu() {
       permissions: ["contextMenus", "activeTab", "tabs"],
       browser_action: {
         default_title: "Test BrowserAction",
-        default_popup: "test.html",
+        default_popup: "test.html?type=browserAction",
         browser_style: true,
       },
       page_action: {
         default_title: "Test PageAction",
-        default_popup: "test.html",
+        default_popup: "test.html?type=pageAction",
         browser_style: true,
       },
       sidebar_action: {
         default_title: "Test Sidebar",
-        default_panel: "test.html",
+        default_panel: "test.html?type=sidebarAction",
+        open_at_install: false,
       },
     },
     background,
@@ -64,7 +64,9 @@ add_task(async function test_actions_context_menu() {
     const menu = await openExtensionContextMenu();
     const items = menu.getElementsByAttribute("label", id);
     is(items.length, 1, `exactly one menu item found`);
+    info(`await on closeExtensionContextMenu for ${id}`);
     await closeExtensionContextMenu(items[0]);
+    info(`await on test-opened test message for ${id}`);
     return extension.awaitMessage("test-opened");
   }
 

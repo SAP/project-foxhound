@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,6 +15,7 @@
 
 class nsDocShell;
 class nsIURI;
+class SharedLcpMarkerState;
 
 using DOMTimeMilliSec = unsigned long long;
 using DOMHighResTimeStamp = double;
@@ -40,6 +39,7 @@ class nsDOMNavigationTiming final : public mozilla::RelativeTimeline {
   };
 
   explicit nsDOMNavigationTiming(nsDocShell* aDocShell);
+  nsDOMNavigationTiming(const nsDOMNavigationTiming&) = delete;
 
   NS_INLINE_DECL_REFCOUNTING(nsDOMNavigationTiming)
 
@@ -179,7 +179,7 @@ class nsDOMNavigationTiming final : public mozilla::RelativeTimeline {
       const nsACString& aImageURL);
   void NotifyDocShellStateChanged(DocShellState aDocShellState);
 
-  void MaybeAddLCPProfilerMarker(mozilla::MarkerInnerWindowId aInnerWindowID);
+  RefPtr<SharedLcpMarkerState> GetSharedLcpMarkerState() const;
 
   DOMTimeMilliSec TimeStampToDOM(mozilla::TimeStamp aStamp) const;
 
@@ -213,7 +213,6 @@ class nsDOMNavigationTiming final : public mozilla::RelativeTimeline {
  private:
   friend class nsDocShell;
   nsDOMNavigationTiming(nsDocShell* aDocShell, nsDOMNavigationTiming* aOther);
-  nsDOMNavigationTiming(const nsDOMNavigationTiming&) = delete;
   ~nsDOMNavigationTiming();
 
   void Clear();
@@ -237,8 +236,7 @@ class nsDOMNavigationTiming final : public mozilla::RelativeTimeline {
   mozilla::TimeStamp mNonBlankPaint;
   mozilla::TimeStamp mContentfulComposite;
   mozilla::TimeStamp mLargestContentfulRender;
-  nsString mLCPElement;
-  nsCString mLCPImageURL;
+  RefPtr<SharedLcpMarkerState> mSharedLcpMarkerState;
 
   mozilla::TimeStamp mBeforeUnloadStart;
   mozilla::TimeStamp mUnloadStart;

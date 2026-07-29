@@ -145,8 +145,28 @@ echo_log "Commits remaining: $COMMITS_REMAINING"
 
 echo "Before revert detection, SKIP_NEXT_REVERT_CHK: '$SKIP_NEXT_REVERT_CHK'" 2>&1| tee -a $LOOP_OUTPUT_LOG
 echo "Before revert detection, RESUME: '$RESUME'" 2>&1| tee -a $LOOP_OUTPUT_LOG
+if [ "x$MOZ_REPO" == "xgit" ]; then
+  CLEANUP_CMDS="git restore --staged third_party/libwebrtc && git restore third_party/libwebrtc && git clean -f third_party/libwebrtc"
+else
+  CLEANUP_CMDS="hg revert third_party/libwebrtc && hg purge third_party/libwebrtc"
+fi
 ERROR_HELP=$"Some portion of the detection and/or fixing of upstream revert commits
-has failed.  Please fix the state of the git hub repo at: $MOZ_LIBWEBRTC_SRC.
+has failed.  This is usually a result of too many changes in the same file
+between the original commit and the upstream revert commit.  There are two
+common ways forward:
+  1: Fix the state of the libwebrtc repo so that it matches the expected
+     patch stack.  For more information what to expect for the patch stack,
+     please see https://searchfox.org/firefox-main/rev/9233846aa396b6974783199e1bfe3a38473fc518/dom/media/webrtc/third_party_build/make_upstream_revert_noop.sh#3-21
+     The libwebrtc repo is here: $MOZ_LIBWEBRTC_SRC
+  2: Run the following commands to revert the state of the libwebrtc repo
+     and temporarily disable the upstream revert commit processing:
+     $CLEANUP_CMDS ; \\
+     (source dom/media/webrtc/third_party_build/use_config_env.sh ; \\
+      rm \$STATE_DIR/*.resume ; \\
+      ./mach python \$SCRIPT_DIR/restore_patch_stack.py \\
+                    --repo-path \$MOZ_LIBWEBRTC_SRC && \\
+      MOZ_ADVANCE_ONE_COMMIT=1 SKIP_NEXT_REVERT_CHK=1 bash \$SCRIPT_DIR/loop-ff.sh \\
+     )
 When fixed, please resume this script with the following command:
     bash $SCRIPT_DIR/loop-ff.sh
 "

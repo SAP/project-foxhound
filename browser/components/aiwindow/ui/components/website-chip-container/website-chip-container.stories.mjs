@@ -47,5 +47,6 @@ export const Default = () => html`
   <website-chip-container
     .chipType=${"context-chip"}
     .websites=${websites}
+    .removable=${true}
   ></website-chip-container>
 `;

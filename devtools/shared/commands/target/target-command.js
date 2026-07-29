@@ -735,6 +735,9 @@ class TargetCommand extends EventEmitter {
         if (resource.url !== undefined && targetFront?.setUrl) {
           targetFront.setUrl(resource.url);
         }
+        if (resource.name == "dom-loading" && targetFront?.setIsErrorPage) {
+          targetFront.setIsErrorPage(!!resource.isErrorPage);
+        }
         if (
           !resource.isFrameSwitching &&
           // `url` is set on the targetFront when we receive dom-loading, and `title` when
@@ -745,6 +748,9 @@ class TargetCommand extends EventEmitter {
           // We just updated the targetFront title and url, force a refresh
           // so that the EvaluationContext selector update them.
           this.store.dispatch(refreshTargets());
+
+          // Emit an helpful event to keep track of all target's url/title changes
+          this.emit("target-location-updated", targetFront);
         }
       }
     }

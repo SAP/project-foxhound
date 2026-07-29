@@ -125,6 +125,11 @@ class MochiRemote(MochitestDesktop):
         self.localProfile = None
 
     def dumpScreen(self, utilityPath):
+        if self.message_logger.retry_mode:
+            self.log.info(
+                "Not taking screenshot here: screenshot will be taken on retry if the test still fails"
+            )
+            return
         if self.haveDumpedScreen:
             self.log.info(
                 "Not taking screenshot here: see the one that was previously logged"
@@ -210,8 +215,9 @@ class MochiRemote(MochitestDesktop):
     def startServers(self, options, debuggerInfo, public=None):
         """Create the servers on the host and start them up"""
         restoreRemotePaths = self.switchToLocalPaths(options)
-        MochitestDesktop.startServers(self, options, debuggerInfo, public=True)
+        result = MochitestDesktop.startServers(self, options, debuggerInfo, public=True)
         restoreRemotePaths()
+        return result
 
     def buildProfile(self, options):
         restoreRemotePaths = self.switchToLocalPaths(options)

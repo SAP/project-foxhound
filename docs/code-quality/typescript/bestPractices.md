@@ -9,6 +9,7 @@
 * [XPCOMUtils.declareLazy / defineLazy](#xpcomutilsdeclarelazy--definelazy)
 
 ## Enable JSDoc Linting
+
 ESLint supports linting of JSDoc comments. Enabling the rules on your component
 will help to ensure that you avoid missing or incorrect type definitions for function parameters.
 
@@ -20,6 +21,7 @@ file in the top level of `firefox-main`.
 ## Documenting Types
 
 ### Avoid Missing Type Annotations
+
 By default, if no type annotation is given and it cannot be inferred, then
 TypeScript will assign that variable the `any` type. This is a special type that
 skips type checking, and therefore may cause hidden failures.
@@ -42,7 +44,7 @@ class Foo {
    *
    * @param {string} searchString
    *   Param documentation.
-   * @param {object} previousResult
+   * @param {string[]} previousResult
    *   Param documentation.
    * @param {nsIAutoCompleteObserver} listener
    *   Param documentation.
@@ -52,6 +54,7 @@ class Foo {
 ```
 
 ### Variables
+
 Variable types will be inferred from the item that they are initially assigned
 to. However, sometimes you may need to define the type appropriately, especially
 for sets and maps.
@@ -67,6 +70,7 @@ baz.set("star", 1701);
 ```
 
 ### Avoid object types
+
 `object` types are treated much the same as `any` - there is no type checking
 performed on them.
 

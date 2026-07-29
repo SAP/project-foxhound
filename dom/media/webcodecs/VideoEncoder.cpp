@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -35,7 +33,7 @@ namespace mozilla::dom {
 #  undef LOG_INTERNAL
 #endif  // LOG_INTERNAL
 #define LOG_INTERNAL(level, msg, ...) \
-  MOZ_LOG(gWebCodecsLog, LogLevel::level, (msg, ##__VA_ARGS__))
+  MOZ_LOG_FMT(gWebCodecsLog, LogLevel::level, msg, ##__VA_ARGS__)
 
 #ifdef LOG
 #  undef LOG
@@ -356,7 +354,7 @@ static bool CanEncode(const RefPtr<VideoEncoderConfigInternal>& aConfig,
     // Check if ScalabilityMode string is valid.
     if (!aConfig->mScalabilityMode->EqualsLiteral("L1T2") &&
         !aConfig->mScalabilityMode->EqualsLiteral("L1T3")) {
-      LOGE("Scalability mode %s not supported for codec: %s",
+      LOGE("Scalability mode {} not supported for codec: {}",
            NS_ConvertUTF16toUTF8(aConfig->mScalabilityMode.value()).get(),
            NS_ConvertUTF16toUTF8(aConfig->mCodec).get());
       return false;
@@ -423,7 +421,7 @@ bool VideoEncoderTraits::Validate(const VideoEncoderConfig& aConfig,
   if (!codec || codec->IsEmpty()) {
     aErrorMessage.AssignLiteral(
         "Invalid VideoEncoderConfig: invalid codec string");
-    LOGE("%s", aErrorMessage.get());
+    LOGE("{}", aErrorMessage.get());
     return false;
   }
 
@@ -431,7 +429,7 @@ bool VideoEncoderTraits::Validate(const VideoEncoderConfig& aConfig,
   if (aConfig.mWidth == 0 || aConfig.mHeight == 0) {
     aErrorMessage.AppendPrintf("Invalid VideoEncoderConfig: %s equal to 0",
                                aConfig.mWidth == 0 ? "width" : "height");
-    LOGE("%s", aErrorMessage.get());
+    LOGE("{}", aErrorMessage.get());
     return false;
   }
 
@@ -439,14 +437,14 @@ bool VideoEncoderTraits::Validate(const VideoEncoderConfig& aConfig,
   if (aConfig.mDisplayWidth.WasPassed() && aConfig.mDisplayWidth.Value() == 0) {
     aErrorMessage.AssignLiteral(
         "Invalid VideoEncoderConfig: displayWidth equal to 0");
-    LOGE("%s", aErrorMessage.get());
+    LOGE("{}", aErrorMessage.get());
     return false;
   }
   if (aConfig.mDisplayHeight.WasPassed() &&
       aConfig.mDisplayHeight.Value() == 0) {
     aErrorMessage.AssignLiteral(
         "Invalid VideoEncoderConfig: displayHeight equal to 0");
-    LOGE("%s", aErrorMessage.get());
+    LOGE("{}", aErrorMessage.get());
     return false;
   }
 
@@ -454,7 +452,7 @@ bool VideoEncoderTraits::Validate(const VideoEncoderConfig& aConfig,
   if ((aConfig.mBitrate.WasPassed() && aConfig.mBitrate.Value() == 0)) {
     aErrorMessage.AssignLiteral(
         "Invalid VideoEncoderConfig: bitrate equal to 0");
-    LOGE("%s", aErrorMessage.get());
+    LOGE("{}", aErrorMessage.get());
     return false;
   }
 
@@ -494,11 +492,11 @@ VideoEncoder::VideoEncoder(
                       std::move(aOutputCallback)) {
   MOZ_ASSERT(mErrorCallback);
   MOZ_ASSERT(mOutputCallback);
-  LOG("VideoEncoder %p ctor", this);
+  LOG("VideoEncoder {} ctor", fmt::ptr(this));
 }
 
 VideoEncoder::~VideoEncoder() {
-  LOG("VideoEncoder %p dtor", this);
+  LOG("VideoEncoder {} dtor", fmt::ptr(this));
   (void)ResetInternal(NS_ERROR_DOM_ABORT_ERR);
 }
 
@@ -530,7 +528,7 @@ already_AddRefed<VideoEncoder> VideoEncoder::Constructor(
 already_AddRefed<Promise> VideoEncoder::IsConfigSupported(
     const GlobalObject& aGlobal, const VideoEncoderConfig& aConfig,
     ErrorResult& aRv) {
-  LOG("VideoEncoder::IsConfigSupported, config: %s",
+  LOG("VideoEncoder::IsConfigSupported, config: {}",
       NS_ConvertUTF16toUTF8(aConfig.mCodec).get());
 
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
@@ -558,7 +556,7 @@ already_AddRefed<Promise> VideoEncoder::IsConfigSupported(
   auto r = CloneConfiguration(config, aGlobal.Context(), aConfig);
   if (r.isErr()) {
     nsresult e = r.unwrapErr();
-    LOGE("Failed to clone VideoEncoderConfig. Error: 0x%08" PRIx32,
+    LOGE("Failed to clone VideoEncoderConfig. Error: 0x{:08x}",
          static_cast<uint32_t>(e));
     p->MaybeRejectWithTypeError("Failed to clone VideoEncoderConfig");
     aRv.Throw(e);

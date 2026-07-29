@@ -24,10 +24,7 @@
     SpecialPowers.pushPrefEnv({
       set: [["network.xhr.block_sync_system_requests", false]]
     });
-
-    // gA11yEventDumpID = "eventdump";
     // gDumpToConsole = true;
-    // gA11yEventDumpToConsole = true;
 
     SimpleTest.waitForExplicitFinish();
     addA11yLoadEvent(testNames);

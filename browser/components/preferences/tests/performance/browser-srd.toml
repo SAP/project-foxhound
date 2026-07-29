@@ -1,0 +1,15 @@
+[DEFAULT]
+dupe-manifest=true
+prefs = [
+  "browser.settings-redesign.enabled=true",
+]
+support-files = [
+  "head.js",
+]
+tags = "os_integration"
+
+["browser_layersacceleration.js"]
+
+["browser_performance.js"]
+
+["browser_performance_e10srollout.js"]

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -50,17 +49,15 @@ LockedOutstandingContexts::~LockedOutstandingContexts() {
 
 /*static*/
 std::unique_ptr<HostWebGLContext> HostWebGLContext::Create(
-    const OwnerData& ownerData, const webgl::InitContextDesc& desc,
+    dom::WebGLParent* owner, const webgl::InitContextDesc& desc,
     webgl::InitContextResult* const out) {
-  auto host =
-      std::unique_ptr<HostWebGLContext>(new HostWebGLContext(ownerData));
+  auto host = std::unique_ptr<HostWebGLContext>(new HostWebGLContext(owner));
   auto webgl = WebGLContext::Create(host.get(), desc, out);
   if (!webgl) return nullptr;
   return host;
 }
 
-HostWebGLContext::HostWebGLContext(const OwnerData& ownerData)
-    : mOwnerData(ownerData) {
+HostWebGLContext::HostWebGLContext(dom::WebGLParent* owner) : mOwner(owner) {
   StaticMutexAutoLock lock(sContextSetLock);
   auto& contexts = DeferredStaticContextSet();
   (void)contexts.insert(this);
@@ -75,19 +72,11 @@ HostWebGLContext::~HostWebGLContext() {
 // -
 
 void HostWebGLContext::OnContextLoss(const webgl::ContextLossReason reason) {
-  if (mOwnerData.inProcess) {
-    mOwnerData.inProcess->OnContextLoss(reason);
-  } else {
-    (void)mOwnerData.outOfProcess->SendOnContextLoss(reason);
-  }
+  (void)mOwner->SendOnContextLoss(reason);
 }
 
 void HostWebGLContext::JsWarning(const std::string& text) const {
-  if (mOwnerData.inProcess) {
-    mOwnerData.inProcess->JsWarning(text);
-    return;
-  }
-  (void)mOwnerData.outOfProcess->SendJsWarning(text);
+  (void)mOwner->SendJsWarning(text);
 }
 
 Maybe<layers::SurfaceDescriptor> HostWebGLContext::GetFrontBuffer(
@@ -184,11 +173,7 @@ void HostWebGLContext::CreateSync(const ObjectId id) {
 
   slot->OnCompleteTaskAdd([host = WeakPtr{this}, id]() {
     if (!host) return;
-    if (host->mOwnerData.inProcess) {
-      host->mOwnerData.inProcess->OnSyncComplete(id);
-    } else if (host->mOwnerData.outOfProcess) {
-      (void)host->mOwnerData.outOfProcess->SendOnSyncComplete(id);
-    }
+    (void)host->mOwner->SendOnSyncComplete(id);
   });
 }
 

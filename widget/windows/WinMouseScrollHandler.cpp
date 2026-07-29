@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -300,8 +298,8 @@ bool MouseScrollHandler::ProcessMessage(nsWindow* aWidget, UINT msg,
 /* static */
 nsresult MouseScrollHandler::SynthesizeNativeMouseScrollEvent(
     nsWindow* aWidget, const LayoutDeviceIntPoint& aPoint,
-    uint32_t aNativeMessage, int32_t aDelta, uint32_t aModifierFlags,
-    uint32_t aAdditionalFlags) {
+    uint32_t aNativeMessage, int32_t aDelta,
+    nsIWidget::NativeModifiers aModifierFlags, uint32_t aAdditionalFlags) {
   const bool useFocusedWindow = !(
       aAdditionalFlags & nsIDOMWindowUtils::MOUSESCROLL_PREFER_WIDGET_AT_POINT);
 
@@ -322,10 +320,12 @@ nsresult MouseScrollHandler::SynthesizeNativeMouseScrollEvent(
     case WM_MOUSEHWHEEL: {
       lParam = MAKELPARAM(pt.x, pt.y);
       WORD mod = 0;
-      if (aModifierFlags & (nsIWidget::CTRL_L | nsIWidget::CTRL_R)) {
+      if (aModifierFlags & (nsIWidget::NativeModifiers::CTRL_L |
+                            nsIWidget::NativeModifiers::CTRL_R)) {
         mod |= MK_CONTROL;
       }
-      if (aModifierFlags & (nsIWidget::SHIFT_L | nsIWidget::SHIFT_R)) {
+      if (aModifierFlags & (nsIWidget::NativeModifiers::SHIFT_L |
+                            nsIWidget::NativeModifiers::SHIFT_R)) {
         mod |= MK_SHIFT;
       }
       wParam = MAKEWPARAM(mod, aDelta);

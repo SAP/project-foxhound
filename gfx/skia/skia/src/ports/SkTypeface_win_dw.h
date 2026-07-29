@@ -37,14 +37,15 @@ struct SkScalerContextRec;
    behind the NTDDI_VERSION are forward (backward?) declared here in case dwrite_3.h did not declare
    them. */
 interface IDWriteFontFace4;
+interface IDWriteFontFace5;
 interface IDWriteFontFace7;
 
 class DWriteFontTypeface : public SkTypeface {
 public:
     struct Loaders : public SkNVRefCnt<Loaders> {
         Loaders(IDWriteFactory* factory,
-                  IDWriteFontFileLoader* fontFileLoader,
-                  IDWriteFontCollectionLoader* fontCollectionLoader)
+                IDWriteFontFileLoader* fontFileLoader,
+                IDWriteFontCollectionLoader* fontCollectionLoader)
             : fFactory(SkRefComPtr(factory))
             , fDWriteFontFileLoader(SkRefComPtr(fontFileLoader))
             , fDWriteFontCollectionLoader(SkRefComPtr(fontCollectionLoader))
@@ -83,7 +84,9 @@ public:
     SkTScopedComPtr<IDWriteFontFace> fDWriteFontFace;
     SkTScopedComPtr<IDWriteFontFace1> fDWriteFontFace1;
     SkTScopedComPtr<IDWriteFontFace2> fDWriteFontFace2;
+    SkTScopedComPtr<IDWriteFontFace3> fDWriteFontFace3; // With this family and font are not needed
     SkTScopedComPtr<IDWriteFontFace4> fDWriteFontFace4;
+    SkTScopedComPtr<IDWriteFontFace5> fDWriteFontFace5;
 #if !SK_DISABLE_DIRECTWRITE_COLRv1 && (DWRITE_CORE || (defined(NTDDI_WIN11_ZN) && NTDDI_VERSION >= NTDDI_WIN11_ZN))
     // Once WDK 10.0.25357.0 or newer is required to build, fDWriteFontFace7 can be a smart pointer.
     // If a smart pointer is used then ~DWriteFontTypeface must call the smart pointer's destructor,
@@ -91,7 +94,7 @@ public:
     // other than the forward declaration. Skia should never declare an IDWriteFontFace7 (other than
     // copying the entire interface) for ODR reasons. This header cannot detect if there will be a
     // full declaration of IDWriteFontFace7 at the ~DWriteFontTypeface implementation because of
-    // NTDDI_VERSION shenanigains, otherwise this defintition could just be ifdef'ed.
+    // NTDDI_VERSION shenanigains, otherwise this definition could just be ifdef'ed.
     //SkTScopedComPtr<IDWriteFontFace7> fDWriteFontFace7;
     IDWriteFontFace7* fDWriteFontFace7 = nullptr;
 #endif  // !SK_DISABLE_DIRECTWRITE_COLRv1 && (DWRITE_CORE || (defined(NTDDI_WIN11_ZN) && NTDDI_VERSION >= NTDDI_WIN11_ZN))
@@ -166,6 +169,8 @@ protected:
     int onGetVariationDesignPosition(
                              SkSpan<SkFontArguments::VariationPosition::Coordinate>) const override;
     int onGetVariationDesignParameters(SkSpan<SkFontParameters::Variation::Axis>) const override;
+    bool onIsSyntheticBold() const override;
+    bool onIsSyntheticOblique() const override;
     int onGetTableTags(SkSpan<SkFontTableTag>) const override;
     size_t onGetTableData(SkFontTableTag, size_t offset, size_t length, void* data) const override;
     sk_sp<SkData> onCopyTableData(SkFontTableTag) const override;

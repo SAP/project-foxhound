@@ -25,4 +25,35 @@ function run_test() {
   );
   Assert.equal(imgData.width, 58);
   Assert.equal(imgData.height, 58);
+  Assert.equal(imgData.matrix, undefined, "matrix omitted by default");
+  Assert.equal(imgData.dotCount, undefined, "dotCount omitted by default");
+
+  const justMatrix = QR.encodeToMatrix("HELLO", "L");
+  Assert.equal(
+    justMatrix.dotCount,
+    21,
+    "HELLO at L correction is version 1 (21 dots)"
+  );
+  Assert.equal(justMatrix.src, undefined, "matrix encoding omits image data");
+  Assert.equal(justMatrix.width, undefined, "matrix encoding omits width");
+  Assert.equal(justMatrix.height, undefined, "matrix encoding omits height");
+  Assert.equal(
+    justMatrix.matrix.length,
+    justMatrix.dotCount,
+    "matrix has correct number of rows"
+  );
+  Assert.equal(
+    justMatrix.matrix[0].length,
+    justMatrix.dotCount,
+    "matrix rows have correct number of columns"
+  );
+  Assert.strictEqual(
+    typeof justMatrix.matrix[0][0],
+    "boolean",
+    "matrix entries are booleans"
+  );
+  Assert.ok(
+    justMatrix.matrix[0][0],
+    "top-left corner of finder pattern is dark"
+  );
 }

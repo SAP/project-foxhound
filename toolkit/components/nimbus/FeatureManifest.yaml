@@ -79,29 +79,6 @@ prefFlips:
     uri: resource://nimbus/schemas/PrefFlipsFeature.schema.json
     path: toolkit/components/nimbus/schemas/PrefFlipsFeature.schema.json
 
-# TODO(bug 1972426): Remove this feature.
-nimbusStore:
-  description: Configuration for the Nimbus ExperimentStore.
-  owner: beth@mozilla.com
-  hasExposure: false
-  variables:
-    dbEnabled:
-      type: boolean
-      description: >
-        If enabled, the NimbusEnrollments database table will be used as the
-        primary enrollment store.
-      setPref:
-        branch: user
-        pref: nimbus.profilesdatastoreservice.read.enabled
-    dbSyncEnabled:
-      type: boolean
-      description: >
-        If enabled, the RemoteSettingsExperimentLoader will trigger
-        unenrollments for experiments that are unenrolled in other profiles.
-      setPref:
-        branch: user
-        pref: nimbus.profilesdatastoreservice.sync.enabled
-
 search:
   description: Search service related features.
   owner: search-and-suggest-program@mozilla.com
@@ -262,15 +239,40 @@ urlbar:
         in the Rust component coerced to a 1-based integer value).
     autoFillAdaptiveHistoryEnabled:
       type: boolean
-      fallbackPref: browser.urlbar.autoFill.adaptiveHistory.enabled
+      setPref:
+        pref: browser.urlbar.autoFill.adaptiveHistory.enabled
+        branch: user
       description: Whether enabling adaptive history autofill.
     autoFillAdaptiveHistoryMinCharsThreshold:
       type: int
-      fallbackPref: browser.urlbar.autoFill.adaptiveHistory.minCharsThreshold
+      setPref:
+        pref: browser.urlbar.autoFill.adaptiveHistory.minCharsThreshold
+        branch: user
       description: Minimum char length of the user's search string to trigger adaptive history autofill.
     autoFillAdaptiveHistoryUseCountThreshold:
       type: string
       description: This value assumes float expression like "0.47". Threshold for use count of input history that we handle as adaptive history autofill. If the use count is this value or more, it will be a candidate.
+    autoFillBackspaceBlockDurationMs:
+      type: int
+      setPref:
+        pref: browser.urlbar.autoFill.backspaceBlockDurationMs
+        branch: user
+      description: Duration in ms to temporarily block autofill after backspace penalty.
+    autoFillBackspaceThreshold:
+      type: int
+      setPref:
+        pref: browser.urlbar.autoFill.backspaceThreshold
+        branch: user
+      description: >-
+        How many times the user must consecutively backspace away an autofill
+        suggestion before we penalize and temporarily suppress it from
+        autofilling. The result may still appear as a regular history result.
+    autoFillDismissalBlockDurationMs:
+      type: int
+      setPref:
+        pref: browser.urlbar.autoFill.dismissalBlockDurationMs
+        branch: user
+      description: Duration in ms to block an origin or URL after user dismissal.
     deduplicationEnabled:
       type: boolean
       setPref:
@@ -384,13 +386,14 @@ urlbar:
       fallbackPref: browser.urlbar.quicksuggest.ampTopPickCharThreshold
       description: >-
         Character-count threshold (inclusive) for showing AMP suggestions as top
-        picks. If an AMP suggestion is triggered by a keyword at least this many
-        characters long, it will be shown as a top pick. When this variable is
-        set, full keywords will also show AMP suggestions as top picks even if
-        they have fewer characters than this threshold.
+        picks. If the user's query matches an AMP suggestion and the query is at
+        least this many characters long, the suggestion will be shown as a top
+        pick. Set to zero to disable.
     quickSuggestAmpTopPickUseNovaIconSize:
       type: boolean
-      fallbackPref: browser.urlbar.quicksuggest.ampTopPickUseNovaIconSize
+      setPref:
+        branch: default
+        pref: browser.urlbar.quicksuggest.ampTopPickUseNovaIconSize
       description: >-
         Whether or not use the Nova icon size for AMP suggestion.
         Otherwise, use standard rich-suggestion size.
@@ -574,20 +577,18 @@ urlbar:
         branch: default
         pref: browser.urlbar.recentsearches.maxResults
       description: The maximum number of recent searches to show.
+    resultExplanationsFeatureGate:
+      type: boolean
+      fallbackPref: browser.urlbar.resultExplanations.featureGate
+      description: >-
+        When selecting and hovering over certain types of urlbar results,
+        replace their URLs with strings that explain why they're shown.
     semanticHistoryEnable:
       type: boolean
       setPref:
         branch: user
         pref: places.semanticHistory.featureGate
       description: use semanticHistory Search feature.
-    semanticHistoryCompletionThreshold:
-      type: string
-      setPref:
-        branch: user
-        pref: places.semanticHistory.completionThreshold
-      description: >-
-        Fraction (0.0 – 1.0) of top Places rows that must have embeddings
-        before semantic-history search is enabled. 0.5 = 50 %.
     semanticHistoryDefaultBatchChunksize:
       type: int
       setPref:
@@ -596,6 +597,35 @@ urlbar:
       description: >-
         The batch chunk size for updates for vectorDB
         defaulted at 25.
+    semanticHistoryMaxChunkTimeMs:
+      type: int
+      setPref:
+        branch: user
+        pref: places.semanticHistory.maxChunkTimeMs
+      description: >-
+        Soft per-chunk time threshold (ms) for background indexing. If the
+        median of the last 9 chunk durations exceeds this and the database
+        already holds more than `semanticHistoryMinEntriesBeforeThrottle`
+        embeddings, indexing stops advancing until next places event.
+    semanticHistoryMaxChunkTimeMsFailsafe:
+      type: int
+      setPref:
+        branch: user
+        pref: places.semanticHistory.maxChunkTimeMsFailsafe
+      description: >-
+        Failsafe per-chunk time threshold (ms) for background indexing. If half
+        or more of the last 9 chunk durations exceed this, indexing stops
+        advancing, regardless of how many embeddings exist, until restart.
+    semanticHistoryMinEntriesBeforeThrottle:
+      type: int
+      setPref:
+        branch: user
+        pref: places.semanticHistory.minEntriesBeforeThrottle
+      description: >-
+        Minimum number of embeddings that must exist before the soft
+        `semanticHistoryMaxChunkTimeMs` threshold can stop indexing. Below this
+        count indexing keeps going even when slow, so the feature reaches a
+        usable state. Defaulted at 1000.
     semanticHistoryDistanceThreshold:
       type: string
       setPref:
@@ -617,6 +647,27 @@ urlbar:
         The format is like: '[["AU",["en-*"]],["CA",["en-*"]], …]' where `-*`
         can be used as a wildcard to match any locale that starts with the given
         prefix.
+    semanticHistoryEmbeddingType:
+      type: string
+      setPref:
+        branch: user
+        pref: places.semanticHistory.embeddingType
+      description: >-
+        Embedding family used by Places semantic history: "static" (default,
+        lightweight) or "contextual" (transformer-based, larger). Changing
+        this on a live profile drops the embedding tables and rebuilds them
+        on next startup. Contextual model details (dimension, modelId,
+        wasm fallback) are controlled by the browser.ml.embedGen.* prefs and
+        are intentionally not exposed via Nimbus.
+    semanticHistoryInSeparateGroup:
+      type: boolean
+      setPref:
+        branch: user
+        pref: browser.urlbar.suggest.semanticHistory.separateGroup
+      description: >-
+        Whether semantic history results are placed in their own result group
+        that fills only the space left after the other result groups, so
+        semantic results never evict non-semantic results. Off by default.
     showDebuggingIcons:
       type: boolean
       setPref:
@@ -989,6 +1040,27 @@ abouthomecache:
       setPref:
         branch: user
         pref: browser.startup.homepage.abouthome_cache.enabled
+
+diskCache:
+  description: "The HTTP disk cache."
+  owner: vgosu@mozilla.com
+  hasExposure: false
+  variables:
+    diskCacheEnabled:
+      type: boolean
+      description: >-
+        Whether the HTTP disk cache is enabled.
+      setPref:
+        branch: user
+        pref: browser.cache.disk.enable
+    diskCacheEncryptionEnabled:
+      type: boolean
+      description: >-
+        Whether HTTP disk cache data is encrypted at rest with an in-memory key.
+        Takes effect on restart.
+      setPref:
+        branch: user
+        pref: browser.cache.disk.encryption.enabled
 
 newtab:
   description: "The about:newtab page"
@@ -1737,6 +1809,14 @@ newtabWidgets:
       type: boolean
       description: >-
         Enable Focus Timer widget
+    clocksEnabled:
+      type: boolean
+      description: >-
+        Enable Clocks widget
+    sportsWidgetEnabled:
+      type: boolean
+      description: >-
+        Enable Sports widget
     listsBadgeEnabled:
       type: boolean
       description: >-
@@ -1893,12 +1973,6 @@ pocketNewtab:
         pref: browser.newtabpage.activity-stream.weather.locationSearchEnabled
       description: >-
         Turns on and off location search for newtab weather widget
-    discoveryStreamConfig:
-      description: A JSON blob of discovery stream configuration.
-      type: string
-      setPref:
-        branch: user
-        pref: "browser.newtabpage.activity-stream.discoverystream.config"
     spocsEndpoint:
       description: The URL for the spocs endpoint.
       type: string
@@ -2003,6 +2077,27 @@ sessionRestore:
         2 = open last visited page in a tab,
         3 = re-open previous windows and tabs (session restore enabled)
 
+sessionRestoreNewTab:
+  description: Open a new tab after session restore on startup
+  owner: hsohaney@mozilla.com
+  hasExposure: true
+  exposureDescription: >
+    Recorded when a setting-based session restore occurs at startup,
+    regardless of whether the new tab feature is enabled.
+  variables:
+    enabled:
+      type: boolean
+      setPref:
+        branch: default
+        pref: browser.sessionstore.newTabOnRestore
+      description: Whether to open a new tab after session restore on startup.
+    showSetting:
+      type: boolean
+      setPref:
+        branch: default
+        pref: browser.sessionstore.newTabOnRestore.showSetting
+      description: Whether to show the new-tab-on-restore checkbox in about:preferences.
+
 screenshots:
   description: The built-in Screenshots feature
   owner: sfoster@mozilla.com
@@ -2021,24 +2116,6 @@ password-autocomplete:
       type: boolean
       description: Enable direct migration?
 
-# Experiment for different Relay UI treatments. Variations at:
-# https://www.figma.com/design/gnyElr1Wtce3RdQT54y8kS/Relay-%26-Firefox-Integration?node-id=316-2024&node-type=canvas&t=A3iAuevSTtwXeFxb-0
-email-autocomplete-relay:
-  description: Relay UI for email fields.
-  exposureDescription: Exposure is sent each time a user sees the Relay autocomplete dropdown item
-  hasExposure: true
-  owner: lcrouch@mozilla.com
-  variables:
-    firstOfferVersion:
-      type: string
-      description: Which Relay UI treatment to show
-      fallbackPref: signon.firefoxRelay.firstOfferVersionFallback
-    showToAllBrowsers:
-      type: boolean
-      setPref:
-        branch: user
-        pref: signon.firefoxRelay.showToAllBrowsers
-      description: Whether to show Relay to Firefox users who are NOT signed into FXA.
 
 # This feature flag mirrors the one used for ios
 # https://github.com/mozilla-mobile/firefox-ios/blob/main/nimbus-features/addressAutofillFeature.yaml
@@ -2108,6 +2185,12 @@ shellService:
       type: boolean
       fallbackPref: browser.shell.setDefaultGuidanceNotifications
       description: Whether or not the user should see the guidance notifications when setting Firefox as their default browser.
+    focusSetDefaultBrowserButton:
+      description: Focus the set default browser button in Windows Settings.
+      setPref:
+        branch: user
+        pref: browser.shell.focusSetDefaultBrowserButton
+      type: boolean
 upgradeDialog:
   description: The dialog shown for major upgrades
   owner: omc-core@mozilla.com
@@ -2252,6 +2335,18 @@ selectTranslation:
         branch: user
         pref: browser.translations.select.enable
 
+translationsQuickAction:
+  description: This feature enables the translations quick action in the URL bar.
+  owner: enordin@mozilla.com
+  hasExposure: false
+  variables:
+    enabled:
+      description: Set to true to enable the translations quick action feature.
+      type: boolean
+      setPref:
+        branch: user
+        pref: browser.translations.quickAction.enabled
+
 pdfjs:
   description: The Firefox pdf reader.
   owner: pdfjs-team@mozilla.com
@@ -2283,6 +2378,18 @@ pdfjs:
       setPref:
         branch: default
         pref: pdfjs.enableSignatureEditor
+
+fxms-message:
+  description: A messaging channel that supports multiple simultaneous enrollments
+  owner: omc@mozilla.com
+  allowCoenrollment: true
+  hasExposure: true
+  exposureDescription: >-
+    "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
+  schema:
+    uri: "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/asrouter/content-src/schemas/MessagingExperiment.schema.json"
+  variables: {}
 
 # fxms-message-* placeholder feature ids
 #
@@ -2957,6 +3064,24 @@ networking:
       setPref:
         branch: default
         pref: "network.http.http3.cc_algorithm"
+    http3SlowStartAlgorithm:
+      description: The slow start algorithm with which to configure neqo. Use 0 for Classic, 1 for HyStart++, 2 for SEARCH.
+      type: int
+      setPref:
+        branch: default
+        pref: "network.http.http3.slow_start_algorithm"
+    http3HyStartAlternativeCssBaseline:
+      description: Whether the HyStart++ alternative CSS baseline value should be used. Has no effect if HyStart++ is not used.
+      type: boolean
+      setPref:
+        branch: default
+        pref: "network.http.http3.hystart_alternative_css_baseline"
+    http3SpuriousRecovery:
+      description: Whether Spurious Congestion Event Recovery is turned on.
+      type: boolean
+      setPref:
+        branch: default
+        pref: "network.http.http3.spurious_recovery"
     enableOffMainThreadStreamDecompression:
       description: Whether to enable decompression of network streams off-main-thread
       type: boolean
@@ -3059,6 +3184,24 @@ networkingConnections:
       setPref:
         branch: default
         pref: "network.http.speculative-parallel-limit"
+    happyEyeballsEnabled:
+      description: Whether to enable the Happy Eyeballs v3 algorithm for connection establishment
+      type: boolean
+      setPref:
+        branch: default
+        pref: "network.http.happy_eyeballs_enabled"
+    happyEyeballsResolutionDelay:
+      description: Time in ms to wait after the first DNS response before starting connections
+      type: int
+      setPref:
+        branch: default
+        pref: "network.http.happy_eyeballs_resolution_delay"
+    happyEyeballsConnectionAttemptDelay:
+      description: Time in ms between successive connection attempts
+      type: int
+      setPref:
+        branch: default
+        pref: "network.http.happy_eyeballs_connection_attempt_delay"
 
 
 networkingSendOnDataFinished:
@@ -3651,18 +3794,6 @@ thirdPartyCookieBlocking:
         branch: default
         pref: "network.cookie.cookieBehavior.optInPartitioning.pbmode"
 
-thirdPartyTrackerCookieBlocking:
-  description: Prefs to control third-party tracker cookie blocking
-  owner: tihuang@mozilla.com
-  hasExposure: false
-  variables:
-    enabled:
-      description: Whether to enable third-party tracker cookie blocking.
-      type: boolean
-      setPref:
-        branch: default
-        pref: "network.cookie.cookieBehavior.trackerCookieBlocking"
-
 googleSafeBrowsingV5:
   description: Control Google Safe Browsing V5 protocol
   owner: tihuang@mozilla.com
@@ -3712,6 +3843,23 @@ safeBrowsingRealTime:
       setPref:
         branch: default
         pref: "browser.safebrowsing.realTime.simulation.hitProbability"
+    simulationNegativeCacheEnabled:
+      description: >
+        Whether to enable the negative cache for the real-time request
+        simulator. When enabled, prefixes with no hits are cached to skip
+        subsequent requests.
+      type: boolean
+      setPref:
+        branch: default
+        pref: "browser.safebrowsing.realTime.simulation.negativeCacheEnabled"
+    simulationNegativeCacheTTLSec:
+      description: >
+        TTL in seconds for negative cache entries in the real-time request
+        simulator.
+      type: int
+      setPref:
+        branch: default
+        pref: "browser.safebrowsing.realTime.simulation.negativeCacheTTLSec"
 
 fxaButtonVisibility:
   description: Prefs to control the visibility of the Firefox Accounts toolbar button when not signed in.
@@ -3929,6 +4077,45 @@ userCharacteristics:
         pref: toolkit.telemetry.user_characteristics_ping.current_version
       description: The current collection version of the user characteristics.
 
+mediaCapabilities:
+  description: Media Capabilities API features.
+  owner: media-alerts@mozilla.com, apehrson@mozilla.com, azebrowski@mozilla.com
+  hasExposure: false
+  variables:
+    webrtcEnabled:
+      description: >-
+        Whether or not to enable the WebRTC parts of the MediaCapabilities API.
+      type: boolean
+      setPref:
+        branch: default
+        pref: media.mediacapabilities.webrtc.enabled
+    webrtcAllowlist:
+      description: >-
+        Whether or not to enable the WebRTC parts of the MediaCapabilities API
+        only on specific domains.
+      type: string
+      setPref:
+        branch: default
+        pref: media.mediacapabilities.webrtc.enabled.allowlist
+    legacyEnabled:
+      description: >-
+        Enables legacy mode, which bypasses colorGamut, transferFunction,
+        and scalabilityMode validation, in the MediaCapabilities API,
+        for improved web compatibility.
+      type: boolean
+      setPref:
+        branch: default
+        pref: media.mediacapabilities.legacy.enabled
+    legacyAllowlist:
+      description: >-
+        Enables legacy mode, which bypasses colorGamut, transferFunction,
+        and scalabilityMode validation, in the MediaCapabilities API,
+        for improved web compatibility only on specific domains.
+      type: string
+      setPref:
+        branch: default
+        pref: media.mediacapabilities.legacy.allowlist
+
 migrationWizard:
   description: Prefs to control the Migration Wizard UI.
   owner: mconley@mozilla.com
@@ -4002,18 +4189,6 @@ mixedContentUpgrading:
       setPref:
         branch: default
         pref: security.mixed_content.upgrade_display_content
-
-unexpectedScriptLoadNotificationBar:
-  description: Pref to control whether we show the Unexpected Script Load Notification Bar
-  owner: tritter@mozilla.com
-  hasExposure: false
-  variables:
-    enabled:
-      description: True if we want to disable the notification bar
-      type: boolean
-      setPref:
-        branch: default
-        pref: security.hide_parent_unrestricted_js_loads_warning.temporary
 
 gc:
   description: Prefs that control gc heuristics.
@@ -4343,18 +4518,6 @@ scriptloader:
         branch: user
         pref: "dom.script_loader.experimental.navigation_cache"
 
-raceCacheWithNetwork:
-  description: Prefs to toggle the race cache with network.
-  owner: dpalmeiro@mozilla.com, acreskey@mozilla.com
-  hasExposure: false
-  variables:
-    enabled:
-      description: True to enable the rcwn feature.
-      type: boolean
-      setPref:
-        branch: default
-        pref: "network.http.rcwn.enabled"
-
 opaqueResponseBlocking:
   description: Prefs to enable Opaque Response Blocking
   owner: farre@mozilla.com
@@ -4527,12 +4690,6 @@ cookieBannerHandling:
         When set to true, cookie banners are detected and detection events are
         dispatched, but they will not be handled.
         This pref applies to both normal and private browsing windows.
-    enableFirefoxDesktopUI:
-      type: boolean
-      setPref:
-        branch: default
-        pref: cookiebanners.ui.desktop.enabled
-      description: Enables the cookie banner desktop UI.
     enablePromo:
       type: boolean
       setPref:
@@ -4596,28 +4753,6 @@ reportBrokenSite:
         0 = do not show the "reason" dropdown
         1 = show an optional "reason" dropdown
         2 = show a required "reason" dropdown
-
-feltPrivacy:
-  description: Prefs for Felt Privacy v1 experiments
-  owner: cmeador@mozilla.com
-  hasExposure: true
-  exposureDescription: Exposure when user opens a private browsing window.
-  variables:
-    feltPrivacy:
-      type: boolean
-      setPref:
-        branch: default
-        pref: browser.privatebrowsing.felt-privacy-v1
-      description: >-
-        When true, new styles and copy enabled on about:privatebrowsing. When true,
-        a toggle for showing or hiding quick suggestions appears in about:preferences.
-    resetPBMAction:
-      type: boolean
-      setPref:
-        branch: default
-        pref: browser.privatebrowsing.resetPBM.enabled
-      description: >-
-        Enables the reset PBM feature button and confirmation panel.
 
 phc:
   description: Prefs to control the Probabalistic Heap Checker (PHC)
@@ -4725,7 +4860,7 @@ nimbusIsReady:
 
 nimbusTelemetry:
   description: A feature that enables or disables Nimbus telemetry.
-  owner: nimbus-team@mozilla.com
+  owner: project-nimbus@mozilla.com
   hasExposure: false
   applications:
     - firefox-desktop
@@ -5085,12 +5220,6 @@ sidebar:
   owner: elee@mozilla.com
   hasExposure: false
   variables:
-    defaultLauncherVisible:
-      type: boolean
-      setPref:
-        branch: user
-        pref: sidebar.revamp.defaultLauncherVisible
-      description: Change the initial visibleness of the sidebar launcher with horizontal tabs; true to make the launcher visible by default
     minVersion:
       type: string
       description: Minimum Firefox version to apply prefs
@@ -5354,6 +5483,78 @@ partitioned-cookie-attribute:
       setPref:
         branch: default
         pref: "network.cookie.chips.partitionLimitByteCapacity"
+    chipsAffectsTCP:
+      description: Whether CHIPS cookies also appear as TCP cookies when both jars are queried
+      type: boolean
+      setPref:
+        branch: default
+        pref: "network.cookie.CHIPS.affectsTCP"
+
+trackingProtectionExperimentation:
+  description: Experimental controls for tracking protection behavior
+  owner: bvandersloot@mozilla.com
+  hasExposure: false
+  variables:
+    deferAnnotationEnabled:
+      description: Whether to defer tracking protection classification annotation
+      type: boolean
+      setPref:
+        branch: default
+        pref: "privacy.trackingprotection.defer_annotation.enabled"
+
+contentClassifier:
+  description: Controls the content classifier service used by tracking protection.
+  owner: bvandersloot@mozilla.com
+  hasExposure: false
+  variables:
+    protectionEnabled:
+      description: Whether the content classifier service blocks requests.
+      type: boolean
+      setPref:
+        branch: default
+        pref: "privacy.trackingprotection.content.protection.enabled"
+    protectionEngines:
+      description: >-
+        Comma-separated content classifier feature names whose engines are
+        used for blocking in non-private browsing contexts. Defined feature
+        names are in ContentClassifierService.cpp, kFeatures.
+      type: string
+      setPref:
+        branch: default
+        pref: "privacy.trackingprotection.content.protection.engines"
+    protectionEnginesPbmode:
+      description: >-
+        Comma-separated content classifier feature names whose engines are
+        used for blocking in private browsing contexts. Defined feature
+        names are in ContentClassifierService.cpp, kFeatures.
+      type: string
+      setPref:
+        branch: default
+        pref: "privacy.trackingprotection.content.protection.engines.pbmode"
+    annotationEnabled:
+      description: Whether the content classifier service annotates requests.
+      type: boolean
+      setPref:
+        branch: default
+        pref: "privacy.trackingprotection.content.annotation.enabled"
+    annotationEngines:
+      description: >-
+        Comma-separated content classifier feature names whose engines are
+        used for annotation in non-private browsing contexts. Defined
+        feature names are in ContentClassifierService.cpp, kFeatures.
+      type: string
+      setPref:
+        branch: default
+        pref: "privacy.trackingprotection.content.annotation.engines"
+    annotationEnginesPbmode:
+      description: >-
+        Comma-separated content classifier feature names whose engines are
+        used for annotation in private browsing contexts. Defined feature
+        names are in ContentClassifierService.cpp, kFeatures.
+      type: string
+      setPref:
+        branch: default
+        pref: "privacy.trackingprotection.content.annotation.engines.pbmode"
 
 auto-pip:
   description: "Automatic Picture-in-Picture"
@@ -5495,6 +5696,20 @@ ipProtection:
         pref: browser.ipProtection.enabled
       description: >-
         Enables the IP Protection feature.
+    bandwidthMax:
+      type: int
+      setPref:
+        branch: default
+        pref: browser.ipProtection.bandwidth.maxInGb
+      description: >-
+        Maximum bandwidth allowance in GB for messaging.
+    upgradeNotAvailable:
+      type: boolean
+      setPref:
+        branch: default
+        pref: browser.ipProtection.upgradeNotAvailable
+      description: >-
+        Hides Mozilla VPN promotions for users in regions where it is unavailable
 
 webApps:
   description: Enables or disables web apps.
@@ -5508,6 +5723,21 @@ webApps:
         pref: browser.taskbarTabs.enabled
       description: >-
         Controls whether web apps can be installed and accessed.
+
+defaultWindowsLaunchOnLogin:
+  description: >-
+    Controls whether or not new Windows users get defaulted to launch on login
+  owner: drubino@mozilla.com
+  hasExposure: false
+  variables:
+    enabled:
+      type: boolean
+      setPref:
+        branch: default
+        pref: browser.startup.windowsLaunchOnLogin.defaultEnabled
+      description: >-
+        If true, and allowed by Windows policy, a new user will be defaulted
+        to have Firefox launched when they log on.
 
 passwordManager:
   description: Password manager related prefs
@@ -5739,3 +5969,105 @@ walletCustomSchemes:
         pref: privacy.wallet_schemes
       description: >-
         Comma separated lists of schemes
+
+macAppMenuSetAsDefault:
+  description: >-
+    Controls whether or not a Set as Default Browser menu item is added to macOS app menu
+  owner: rfambro@mozilla.com
+  hasExposure: false
+  variables:
+    shown:
+      type: boolean
+      setPref:
+        branch: user
+        pref: browser.macAppMenu.setAsDefaultShown
+      description: >-
+        Whether or not the macOS app menu contains "Set as Default Browser" item
+
+smartWindow:
+  description: >-
+    Controls whether Smart Window can become the default browser window on
+    startup. Existing Smart Window eligibility checks still apply.
+  owner: echa@mozilla.com
+  hasExposure: false
+  variables:
+    enabled:
+      type: boolean
+      description: Enables the Smart Window feature when true. Turning off this variable will not disable the feature.
+    isDefault:
+      type: boolean
+      setPref:
+        branch: user
+        pref: browser.smartwindow.isDefaultWindow
+      description: >-
+        If true, Firefox opens as a Smart Window by default on startup for
+        eligible users. Set to false (or unenroll) to disable the rollout.
+
+contentSharing:
+  description: Controls the content sharing feature, which allows users to share browser content.
+  owner: nbarrett@mozilla.com
+  hasExposure: false
+  variables:
+    enabled:
+      type: boolean
+      setPref:
+        branch: default
+        pref: browser.contentsharing.enabled
+      description: Whether the content sharing feature is enabled.
+    serverUrl:
+      type: string
+      setPref:
+        branch: default
+        pref: browser.contentsharing.server.url
+      description: The URL of the content sharing server.
+
+webNotificationsPermissionUi:
+  description: >-
+    Overrides the copy and optional logo of the native Web Notifications
+    permission prompt. Not a separate messaging surface.
+  owner: omc-core@mozilla.com
+  hasExposure: true
+  exposureDescription: >-
+    Recorded when the permission prompt is rendered with at least one
+    treatment variable applied and the activationTargeting expression
+    (if set) evaluated truthy.
+  variables:
+    headline:
+      type: string
+      description: >-
+        Overrides the prompt headline. Must contain "<>" for site-name
+        substitution. Falls back to the default copy when unset.
+    body:
+      type: string
+      description: >-
+        Optional secondary text shown below the headline as the popup's
+        hint text.
+    primaryCtaLabel:
+      type: string
+      description: Overrides the Allow button label.
+    primaryCtaAccessKey:
+      type: string
+      description: Optional access key paired with primaryCtaLabel.
+    secondaryCtaLabel:
+      type: string
+      description: >-
+        Overrides the (Always) Block button label. Applied uniformly across
+        normal and private browsing modes; the underlying BLOCK action and
+        scope are unchanged.
+    secondaryCtaAccessKey:
+      type: string
+      description: Optional access key paired with secondaryCtaLabel.
+    logoUrl:
+      type: string
+      description: >-
+        Optional logo URL used as the prompt's icon. Must be a chrome://,
+        resource:// or https:// URL; any other scheme is rejected and the
+        default icon is shown.
+    activationTargeting:
+      type: string
+      description: >-
+        JEXL expression evaluated at prompt-shown time with the per-call
+        webNotificationSiteCategory targeting attribute available. When
+        unset or empty the treatment applies to every prompt the enrolled
+        user sees; when set and falsy the prompt falls back to the default
+        copy and no exposure event is recorded.

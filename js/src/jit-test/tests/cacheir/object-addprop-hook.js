@@ -19,3 +19,21 @@ function test() {
     }
 }
 test();
+
+function testNotCalledOnRedefine() {
+    for (var i = 0; i < 100; i++) {
+        var obj = newObjectWithAddPropertyHook();
+        assertEq(obj._propertiesAdded, 0);
+        obj.x = 1;
+        obj.y = 2;
+        obj[0] = 1;
+        obj[1] = 2;
+        Object.defineProperty(obj, "z", {get: () => 1, configurable: true});
+        assertEq(obj._propertiesAdded, 5);
+        Object.defineProperty(obj, "x", {writable: false, configurable: true});
+        Object.defineProperty(obj, 0, {writable: false, configurable: true});
+        Object.defineProperty(obj, "z", {configurable: false});
+        assertEq(obj._propertiesAdded, 5);
+    }
+}
+testNotCalledOnRedefine();

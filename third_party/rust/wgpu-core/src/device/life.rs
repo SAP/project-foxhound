@@ -219,8 +219,11 @@ impl LifetimeTracker {
         });
     }
 
+    /// Schedule a buffer for mapping.
+    ///
+    /// The buffer will be added either to a pending submission, or to `self.ready_to_map`.
+    /// If it is added to a pending submission, returns the index of that submission.
     pub(crate) fn map(&mut self, buffer: &Arc<Buffer>) -> Option<SubmissionIndex> {
-        // Determine which buffers are ready to map, and which must wait for the GPU.
         let submission = self
             .active
             .iter_mut()
@@ -301,8 +304,7 @@ impl LifetimeTracker {
     ) -> SmallVec<[SubmittedWorkDoneClosure; 1]> {
         profiling::scope!("triage_submissions");
 
-        //TODO: enable when `is_sorted_by_key` is stable
-        //debug_assert!(self.active.is_sorted_by_key(|a| a.index));
+        debug_assert!(self.active.is_sorted_by_key(|a| a.index));
         let done_count = self
             .active
             .iter()

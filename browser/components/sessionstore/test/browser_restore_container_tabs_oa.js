@@ -31,7 +31,7 @@ function handleEventLocal(aEvent) {
     return;
   }
   // Ignore <browser> element in about:preferences and any other special pages
-  if ("gBrowser" in aEvent.target.ownerGlobal) {
+  if ("gBrowser" in aEvent.target.documentGlobal) {
     xulFrameLoaderCreatedCounter.numCalledSoFar++;
   }
 }
@@ -52,11 +52,11 @@ add_setup(async function () {
     ],
   });
 
-  requestLongerTimeout(7);
+  requestLongerTimeout(14);
 });
 
-function setupRemoteTypes() {
-  if (gFissionBrowser) {
+function setupRemoteTypes(isolateEverything) {
+  if (isolateEverything) {
     remoteTypes = [
       "webIsolated=https://example.com",
       "webIsolated=https://example.com^userContextId=1",
@@ -68,15 +68,23 @@ function setupRemoteTypes() {
       "webIsolated=https://example.org^userContextId=3",
     ];
   } else {
-    remoteTypes = Array(
-      NUM_DIFF_TAB_MODES * 2 /** 2 is the number of non parent uris */
-    ).fill("web");
+    remoteTypes = [
+      "web",
+      "web=^userContextId=1",
+      "web=^userContextId=2",
+      "web=^userContextId=3",
+      "web",
+      "web=^userContextId=1",
+      "web=^userContextId=2",
+      "web=^userContextId=3",
+    ];
   }
   remoteTypes.push(...Array(NUM_DIFF_TAB_MODES * 2).fill(null)); // remote types for about: pages
 
   forgetClosedWindows();
   is(SessionStore.getClosedWindowCount(), 0, "starting with no closed windows");
 }
+
 /*
  * 1. Open several tabs in different containers and in regular tabs
  [page1, page2, page3] [ [(page1 - work) (page1 - home)] [(page2 - work) (page2 - home)] ]
@@ -85,8 +93,12 @@ function setupRemoteTypes() {
  * [initial blank page, page1, page1-work, page1-home, page2, page2-work, page2-home] 
  * 4. Verify correct remote types and that XULFrameLoaderCreated gets fired correct number of times
  */
-add_task(async function testRestore() {
-  setupRemoteTypes();
+async function testRestoreCommon(isolateEverything) {
+  await SpecialPowers.pushPrefEnv({
+    set: [["fission.webContentIsolationStrategy", isolateEverything ? 1 : 0]],
+  });
+  setupRemoteTypes(isolateEverything);
+
   let newWin = await promiseNewWindowLoaded();
   var regularPages = [];
   var containerPages = {};
@@ -195,7 +207,7 @@ add_task(async function testRestore() {
       let container_tab = newWin.gBrowser.tabs[container_tab_idx];
 
       initXulFrameLoaderCreatedCounter(xulFrameLoaderCreatedCounter);
-      container_tab.ownerGlobal.gBrowser.addEventListener(
+      container_tab.documentGlobal.gBrowser.addEventListener(
         "XULFrameLoaderCreated",
         handleEventLocal
       );
@@ -217,7 +229,7 @@ add_task(async function testRestore() {
         1,
         `XULFrameLoaderCreated was fired once, when restoring ${uri} in container ${userContextId} `
       );
-      container_tab.ownerGlobal.gBrowser.removeEventListener(
+      container_tab.documentGlobal.gBrowser.removeEventListener(
         "XULFrameLoaderCreated",
         handleEventLocal
       );
@@ -246,4 +258,15 @@ add_task(async function testRestore() {
       .length,
     "No registered open pages should be left"
   );
+}
+
+if (gFissionBrowser) {
+  // This will have no impact if fission is disabled, so we skip this test.
+  add_task(async function testRestoreIsolateEverything() {
+    await testRestoreCommon(/* isolateEverything */ true);
+  });
+}
+
+add_task(async function testRestoreIsolateNothing() {
+  await testRestoreCommon(/* isolateEverything */ false);
 });

@@ -7,6 +7,7 @@ MSGBAR_CSS = ".rcw-sender"
 async def is_msgbar_offscreen(client):
     await client.navigate(URL, wait="none")
     msgbar = client.await_css(MSGBAR_CSS, is_displayed=True)
+    await client.stall(1)
     return client.execute_script(
         """
         const msgbar = arguments[0];

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -78,13 +76,14 @@
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsPrintfCString.h"
 #include "nsRFPService.h"
 
 extern mozilla::LazyLogModule gAutoplayPermissionLog;
 
 #define AUTOPLAY_LOG(msg, ...) \
-  MOZ_LOG(gAutoplayPermissionLog, LogLevel::Debug, (msg, ##__VA_ARGS__))
+  MOZ_LOG_FMT(gAutoplayPermissionLog, LogLevel::Debug, msg, ##__VA_ARGS__)
 
 namespace mozilla::dom {
 
@@ -187,7 +186,7 @@ AudioContext::AudioContext(nsPIDOMWindowInner* aWindow, bool aIsOffline,
   // AudioContext.resume() or AudioScheduledSourceNode.start().
   if (!allowedToStart) {
     MOZ_ASSERT(!mIsOffline);
-    AUTOPLAY_LOG("AudioContext %p is not allowed to start", this);
+    AUTOPLAY_LOG("AudioContext {} is not allowed to start", fmt::ptr(this));
     ReportBlocked();
   } else if (!mIsOffline) {
     ResumeInternal();
@@ -209,8 +208,8 @@ void AudioContext::StartBlockedAudioContextIfAllowed() {
   }
 
   const bool isAllowedToPlay = media::AutoplayPolicy::IsAllowedToPlay(*this);
-  AUTOPLAY_LOG("Trying to start AudioContext %p, IsAllowedToPlay=%d", this,
-               isAllowedToPlay);
+  AUTOPLAY_LOG("Trying to start AudioContext {}, IsAllowedToPlay={}",
+               fmt::ptr(this), isAllowedToPlay);
 
   // Only start the AudioContext if this resume() call was initiated by content,
   // not if it was a result of the AudioContext starting after having been
@@ -759,7 +758,7 @@ double AudioContext::CurrentTime() {
 }
 
 nsISerialEventTarget* AudioContext::GetMainThread() const {
-  if (nsIGlobalObject* global = GetOwnerGlobal()) {
+  if (nsIGlobalObject* global = GetRelevantGlobal()) {
     return global->SerialEventTarget();
   }
   return GetCurrentSerialEventTarget();
@@ -838,7 +837,7 @@ class OnStateChangeTask final : public Runnable {
   RefPtr<AudioContext> mAudioContext;
 };
 
-void AudioContext::Dispatch(already_AddRefed<nsIRunnable>&& aRunnable) {
+void AudioContext::Dispatch(already_AddRefed<nsIRunnable> aRunnable) {
   MOZ_ASSERT(NS_IsMainThread());
   // It can happen that this runnable took a long time to reach the main thread,
   // and the global is not valid anymore.
@@ -1003,6 +1002,18 @@ void AudioContext::SuspendFromChrome() {
                                : AudioContextOperationFlags::None);
 }
 
+void AudioContext::SuspendByMediaControl() {
+  // Offline contexts never register a media-control listener, so this should
+  // not be reachable for them.
+  MOZ_DIAGNOSTIC_ASSERT(!mIsOffline);
+  if (mIsShutDown || mCloseCalled) {
+    return;
+  }
+  // Tag the suspend as "by content" so that the page can resume.
+  mSuspendedByContent = true;
+  SuspendInternal(nullptr, AudioContextOperationFlags::SendStateChange);
+}
+
 void AudioContext::SuspendInternal(void* aPromise,
                                    AudioContextOperationFlags aFlags) {
   MOZ_ASSERT(NS_IsMainThread());
@@ -1066,8 +1077,8 @@ already_AddRefed<Promise> AudioContext::Resume(ErrorResult& aRv) {
   mPendingResumePromises.AppendElement(promise);
 
   const bool isAllowedToPlay = media::AutoplayPolicy::IsAllowedToPlay(*this);
-  AUTOPLAY_LOG("Trying to resume AudioContext %p, IsAllowedToPlay=%d", this,
-               isAllowedToPlay);
+  AUTOPLAY_LOG("Trying to resume AudioContext {}, IsAllowedToPlay={}",
+               fmt::ptr(this), isAllowedToPlay);
   if (isAllowedToPlay) {
     ResumeInternal();
   } else {
@@ -1079,7 +1090,7 @@ already_AddRefed<Promise> AudioContext::Resume(ErrorResult& aRv) {
 
 void AudioContext::ResumeInternal() {
   MOZ_ASSERT(!mIsOffline);
-  AUTOPLAY_LOG("Allow to resume AudioContext %p", this);
+  AUTOPLAY_LOG("Allow to resume AudioContext {}", fmt::ptr(this));
   mWasAllowedToStart = true;
 
   if (mSuspendedByChrome || mSuspendedByContent || mCloseCalled) {
@@ -1132,8 +1143,8 @@ void AudioContext::ReportBlocked() {
           return;
         }
 
-        AUTOPLAY_LOG("Dispatch `blocked` event for AudioContext %p",
-                     self.get());
+        AUTOPLAY_LOG("Dispatch `blocked` event for AudioContext {}",
+                     fmt::ptr(self.get()));
         nsContentUtils::DispatchTrustedEvent(doc, self, u"blocked"_ns,
                                              CanBubble::eNo, Cancelable::eNo);
       });
@@ -1313,7 +1324,7 @@ void AudioContext::ReportToConsole(uint32_t aErrorFlags,
   MOZ_ASSERT(aMsg);
   Document* doc = GetOwnerWindow() ? GetOwnerWindow()->GetExtantDoc() : nullptr;
   nsContentUtils::ReportToConsole(aErrorFlags, "Media"_ns, doc,
-                                  nsContentUtils::eDOM_PROPERTIES, aMsg);
+                                  PropertiesFile::DOM_PROPERTIES, aMsg);
 }
 
 BasicWaveFormCache::BasicWaveFormCache(uint32_t aSampleRate)

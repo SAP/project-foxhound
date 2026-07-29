@@ -152,6 +152,7 @@ function Sandbox(options) {
 
     sandboxName: options.name,
     sandboxPrototype: "prototype" in options ? options.prototype : {},
+    freezeBuiltins: false,
     freshCompartment: options.freshCompartment || false,
   };
 

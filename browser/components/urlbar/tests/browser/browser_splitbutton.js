@@ -29,7 +29,7 @@ const TEST_RESULTS = [
             {
               name: "menu-command-1-1",
               l10n: {
-                id: "firefox-suggest-command-not-relevant",
+                id: "urlbar-result-menu-dismiss-suggestion",
               },
             },
           ],
@@ -41,13 +41,13 @@ const TEST_RESULTS = [
             {
               name: "menu-command-2-1",
               l10n: {
-                id: "firefox-suggest-command-not-relevant",
+                id: "urlbar-result-menu-dismiss-suggestion",
               },
             },
             {
               name: "menu-command-2-2",
               l10n: {
-                id: "firefox-suggest-command-not-relevant",
+                id: "urlbar-result-menu-dismiss-suggestion",
               },
             },
           ],
@@ -63,19 +63,19 @@ const TEST_RESULTS = [
             {
               name: "menu-command-3-1",
               l10n: {
-                id: "firefox-suggest-command-not-relevant",
+                id: "urlbar-result-menu-dismiss-suggestion",
               },
             },
             {
               name: "menu-command-3-2",
               l10n: {
-                id: "firefox-suggest-command-not-relevant",
+                id: "urlbar-result-menu-dismiss-suggestion",
               },
             },
             {
               name: "menu-command-3-3",
               l10n: {
-                id: "firefox-suggest-command-not-relevant",
+                id: "urlbar-result-menu-dismiss-suggestion",
               },
             },
           ],

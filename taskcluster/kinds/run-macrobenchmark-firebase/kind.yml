@@ -17,24 +17,17 @@ kind-dependencies:
 
 task-defaults:
     run-on-repo-type: [hg]
+    run-on-projects: []
     attributes:
         build_platform: android
         build-type: debug
         retrigger: true
-    fetches:
-        toolchain:
-            - android-sdk-linux
-            - linux64-embedded-uniffi-bindgen
-            - linux64-nimbus-fml
-    optimization:
-        skip-unless-backstop: null
     worker-type: b-linux-medium
     worker:
         docker-image: {in-tree: android-ui-tests}
         max-run-time: 7200
         env:
             GOOGLE_APPLICATION_CREDENTIALS: '.firebase_token.json'
-            ANDROID_SDK_ROOT: /builds/worker/fetches/android-sdk-linux
             MOZ_PERFHERDER_UPLOAD: /builds/worker/build/perfherder-data-macrobenchmark.json
         artifacts:
             - name: public

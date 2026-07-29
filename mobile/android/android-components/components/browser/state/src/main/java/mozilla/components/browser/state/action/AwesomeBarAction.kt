@@ -18,7 +18,7 @@ sealed class AwesomeBarAction : BrowserAction() {
     /**
      * Indicates that the user clicked a [suggestion] in the [AwesomeBar].
      */
-    data class SuggestionClicked(val suggestion: AwesomeBar.Suggestion) : AwesomeBarAction()
+    data class SuggestionClicked(val suggestion: AwesomeBar.SuggestionItem) : AwesomeBarAction()
 
     /**
      * Indicates that the user has finished engaging with the [AwesomeBar].

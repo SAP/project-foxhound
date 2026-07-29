@@ -27,7 +27,6 @@ mozilla::Atomic<size_t, mozilla::ReleaseAcquire> gPageSize;
 #if defined(ANDROID)
 #  include <sys/syscall.h>
 #  include <sys/system_properties.h>
-#  include <math.h>
 
 #  include <android/api-level.h>
 

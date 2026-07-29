@@ -199,7 +199,7 @@ add_task(async function test_menu_items_labeled() {
   const allButtons = sidebar.allButtons;
   const dynamicTooltips = Object.keys(SidebarController.sidebarMain.tooltips);
 
-  await SidebarController.initializeUIState({ launcherExpanded: false });
+  await SidebarController.updateUIState({ launcherExpanded: false });
   await sidebar.updateComplete;
   for (const button of allButtons) {
     const view = button.getAttribute("view");
@@ -223,7 +223,7 @@ add_task(async function test_genai_chat_sidebar_tooltip() {
     .querySelector("sidebar-main")
     .shadowRoot.querySelector("[view=viewGenaiChatSidebar]");
 
-  await SidebarController.initializeUIState({ launcherExpanded: false });
+  await SidebarController.updateUIState({ launcherExpanded: false });
 
   const view = chatbotButton.getAttribute("view");
   ok(
@@ -254,7 +254,7 @@ add_task(async function test_keyboard_navigation_vertical_tabs() {
   SpecialPowers.pushPrefEnv({
     set: [[VERTICAL_TABS_PREF, true]],
   });
-  await waitForTabstripOrientation("vertical");
+  await SidebarTestUtils.waitForTabstripOrientation(window, "vertical");
   const sidebar = document.querySelector("sidebar-main");
   info("Waiting for tool buttons to be present");
   await BrowserTestUtils.waitForMutationCondition(

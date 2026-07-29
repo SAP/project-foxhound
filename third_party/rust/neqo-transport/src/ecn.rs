@@ -7,9 +7,9 @@
 use std::ops::{AddAssign, Deref, DerefMut, Sub};
 
 use enum_map::{Enum, EnumMap};
-use neqo_common::{qdebug, qinfo, Ecn};
+use neqo_common::{Ecn, qdebug, qinfo};
 
-use crate::{packet, recovery::sent, Stats};
+use crate::{Stats, packet, recovery::sent};
 
 /// The number of packets to use for testing a path for ECN capability.
 pub(crate) const TEST_COUNT: usize = 10;
@@ -358,7 +358,40 @@ impl Info {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    use super::Count;
+    use super::{Count, ValidationError, ValidationOutcome, ValidationState};
+    use crate::stats::Stats;
+
+    fn make_unknown() -> (ValidationState, Stats) {
+        (ValidationState::Unknown, Stats::default())
+    }
+
+    #[test]
+    fn validation_state_capable_decrements_on_leave() {
+        let (mut vs, mut stats) = make_unknown();
+        vs.set(ValidationState::Capable, &mut stats);
+        assert_eq!(stats.ecn_path_validation[ValidationOutcome::Capable], 1);
+
+        vs.set(ValidationState::Unknown, &mut stats);
+        assert_eq!(
+            stats.ecn_path_validation[ValidationOutcome::Capable],
+            0,
+            "leaving Capable must decrement the Capable counter"
+        );
+    }
+
+    #[test]
+    fn validation_state_failed_increments_not_capable() {
+        let (mut vs, mut stats) = make_unknown();
+        vs.set(
+            ValidationState::Failed(ValidationError::BlackHole),
+            &mut stats,
+        );
+        assert_eq!(
+            stats.ecn_path_validation[ValidationOutcome::NotCapable(ValidationError::BlackHole)],
+            1,
+            "transitioning to Failed must increment the NotCapable counter"
+        );
+    }
 
     #[test]
     fn count_predicates() {

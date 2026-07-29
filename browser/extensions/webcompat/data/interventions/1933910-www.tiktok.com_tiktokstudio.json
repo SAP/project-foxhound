@@ -1,0 +1,15 @@
+{
+  "label": "www.tiktok.com/tiktokstudio",
+  "bugs": {
+    "1933910": {
+      "issue": "unsupported-warning",
+      "matches": ["*://www.tiktok.com/tiktokstudio*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

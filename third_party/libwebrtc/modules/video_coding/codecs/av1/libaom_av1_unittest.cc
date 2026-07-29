@@ -21,13 +21,19 @@
 
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
+#include "api/field_trials.h"
+#include "api/make_ref_counted.h"
+#include "api/scoped_refptr.h"
+#include "api/test/mock_video_encoder.h"
 #include "api/transport/rtp/dependency_descriptor.h"
 #include "api/units/data_rate.h"
 #include "api/units/data_size.h"
 #include "api/units/time_delta.h"
 #include "api/video/encoded_image.h"
+#include "api/video/i420_buffer.h"
 #include "api/video/video_bitrate_allocation.h"
 #include "api/video/video_frame.h"
+#include "api/video/video_frame_buffer.h"
 #include "api/video_codecs/scalability_mode.h"
 #include "api/video_codecs/video_codec.h"
 #include "api/video_codecs/video_decoder.h"
@@ -40,6 +46,7 @@
 #include "modules/video_coding/svc/create_scalability_structure.h"
 #include "modules/video_coding/svc/scalability_mode_util.h"
 #include "modules/video_coding/svc/scalable_video_controller.h"
+#include "modules/video_coding/svc/svc_rate_allocator.h"
 #include "rtc_base/checks.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
@@ -169,6 +176,141 @@ TEST(LibaomAv1Test, EncodeDecode) {
   EXPECT_THAT(decoder.decoded_frame_ids(), SizeIs(encoded_frames.size()));
   // Check each of them produced an output frame.
   EXPECT_EQ(decoder.num_output_frames(), decoder.decoded_frame_ids().size());
+}
+
+TEST(LibaomAv1Test, EncodeDecodeWithSpeedController) {
+  EnvironmentFactory factory;
+  factory.Set(std::make_unique<FieldTrials>(
+      "WebRTC-EncoderSpeed/"
+      "dynamic_speed:true,av1_camera:high,av1_screenshare:low/"));
+  const Environment env = factory.Create();
+
+  TestAv1Decoder decoder(env, /*decoder_id=*/0);
+  std::unique_ptr<VideoEncoder> encoder = CreateLibaomAv1Encoder(env);
+  VideoCodec codec_settings = DefaultCodecSettings();
+  ASSERT_EQ(encoder->InitEncode(&codec_settings, DefaultEncoderSettings()),
+            WEBRTC_VIDEO_CODEC_OK);
+
+  VideoBitrateAllocation allocation;
+  allocation.SetBitrate(0, 0, 300000);
+  encoder->SetRates(VideoEncoder::RateControlParameters(
+      allocation, codec_settings.maxFramerate));
+
+  std::vector<EncodedVideoFrameProducer::EncodedFrame> encoded_frames =
+      EncodedVideoFrameProducer(*encoder).SetNumInputFrames(4).Encode();
+  for (size_t frame_id = 0; frame_id < encoded_frames.size(); ++frame_id) {
+    decoder.Decode(static_cast<int64_t>(frame_id),
+                   encoded_frames[frame_id].encoded_image);
+  }
+
+  // Check encoder produced some frames for decoder to decode.
+  ASSERT_THAT(encoded_frames, Not(IsEmpty()));
+  // Check decoder found all of them valid.
+  EXPECT_THAT(decoder.decoded_frame_ids(), SizeIs(encoded_frames.size()));
+  // Check each of them produced an output frame.
+  EXPECT_EQ(decoder.num_output_frames(), decoder.decoded_frame_ids().size());
+}
+
+TEST(LibaomAv1Test, InitReleaseRepeatedly) {
+  EnvironmentFactory factory;
+  factory.Set(FieldTrials::Create(
+      "WebRTC-EncoderSpeed/"
+      "dynamic_speed:true,av1_camera:high,av1_screenshare:low/"));
+  const Environment env = factory.Create();
+
+  std::unique_ptr<VideoEncoder> encoder = CreateLibaomAv1Encoder(env);
+  VideoCodec codec_settings = DefaultCodecSettings();
+  codec_settings.SetScalabilityMode(ScalabilityMode::kL3T3_KEY);
+
+  SvcRateAllocator rate_allocator(codec_settings, env.field_trials());
+
+  VideoBitrateAllocation allocation =
+      rate_allocator.GetAllocation(3'000'000, 30);
+
+  for (int i = 0; i < 10; ++i) {
+    ASSERT_EQ(encoder->InitEncode(&codec_settings, DefaultEncoderSettings()),
+              WEBRTC_VIDEO_CODEC_OK);
+    encoder->SetRates(VideoEncoder::RateControlParameters(
+        allocation, codec_settings.maxFramerate));
+    EXPECT_THAT(
+        EncodedVideoFrameProducer(*encoder).SetNumInputFrames(1).Encode(),
+        Not(IsEmpty()));
+    EXPECT_EQ(encoder->Release(), WEBRTC_VIDEO_CODEC_OK);
+  }
+}
+
+TEST(LibaomAv1Test, RejectsNativeFramesWithUnequalChromaStrides) {
+  const Environment env = CreateEnvironment();
+  std::unique_ptr<VideoEncoder> encoder = CreateLibaomAv1Encoder(env);
+  VideoCodec codec_settings = DefaultCodecSettings();
+  ASSERT_EQ(encoder->InitEncode(&codec_settings, DefaultEncoderSettings()),
+            WEBRTC_VIDEO_CODEC_OK);
+
+  VideoBitrateAllocation allocation;
+  allocation.SetBitrate(0, 0, 300000);
+  encoder->SetRates(VideoEncoder::RateControlParameters(
+      allocation, codec_settings.maxFramerate));
+
+  MockEncodedImageCallback callback;
+  encoder->RegisterEncodeCompleteCallback(&callback);
+
+  class FakeNativeBuffer : public VideoFrameBuffer {
+   public:
+    FakeNativeBuffer(int width, int height) : width_(width), height_(height) {}
+    Type type() const override { return Type::kNative; }
+    int width() const override { return width_; }
+    int height() const override { return height_; }
+    scoped_refptr<I420BufferInterface> ToI420() override {
+      return I420Buffer::Create(width_, height_, width_, (width_ + 1) / 2,
+                                (width_ + 1) / 2 + 1);
+    }
+
+   private:
+    int width_;
+    int height_;
+  };
+
+  auto buffer = make_ref_counted<FakeNativeBuffer>(codec_settings.width,
+                                                   codec_settings.height);
+
+  VideoFrame frame = VideoFrame::Builder()
+                         .set_video_frame_buffer(buffer)
+                         .set_rtp_timestamp(0)
+                         .build();
+
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_ENCODER_FAILURE,
+            encoder->Encode(frame, nullptr));
+}
+
+TEST(LibaomAv1Test, RejectsI420FramesWithUnequalChromaStrides) {
+  const Environment env = CreateEnvironment();
+  std::unique_ptr<VideoEncoder> encoder = CreateLibaomAv1Encoder(env);
+  VideoCodec codec_settings = DefaultCodecSettings();
+  ASSERT_EQ(encoder->InitEncode(&codec_settings, DefaultEncoderSettings()),
+            WEBRTC_VIDEO_CODEC_OK);
+
+  VideoBitrateAllocation allocation;
+  allocation.SetBitrate(0, 0, 300000);
+  encoder->SetRates(VideoEncoder::RateControlParameters(
+      allocation, codec_settings.maxFramerate));
+
+  MockEncodedImageCallback callback;
+  encoder->RegisterEncodeCompleteCallback(&callback);
+
+  auto buffer = I420Buffer::Create(
+      /*width=*/codec_settings.width,
+      /*height=*/codec_settings.height,
+      /*stride_y=*/codec_settings.width,
+      /*stride_u=*/(codec_settings.width + 1) / 2,
+      /*stride_v=*/(codec_settings.width + 1) / 2 + 1);
+
+  VideoFrame frame = VideoFrame::Builder()
+                         .set_video_frame_buffer(buffer)
+                         .set_rtp_timestamp(0)
+                         .build();
+
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_ENCODER_FAILURE,
+            encoder->Encode(frame, nullptr));
 }
 
 struct LayerId {

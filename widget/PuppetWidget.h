@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=8 et :
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -77,6 +74,10 @@ class PuppetWidget final : public nsIWidget,
                         const widget::InitData&);
 
   void InitIMEState();
+
+  void InitSupportsUnadjustedMovement(bool aSupportsUnadjustedMovement) {
+    mSupportsUnadjustedMovement = aSupportsUnadjustedMovement;
+  }
 
   void Destroy() override;
 
@@ -198,10 +199,16 @@ class PuppetWidget final : public nsIWidget,
   BrowserChild* GetOwningBrowserChild() override { return mBrowserChild; }
   LayersId GetLayersId() const override;
 
-  void UpdateBackingScaleCache(float aDpi, int32_t aRounding, double aScale) {
+  void UpdateBackingScaleCache(float aDpi, int32_t aRounding, double aScale,
+                               double aDesktopToDeviceScale) {
     mDPI = aDpi;
     mRounding = aRounding;
     mDefaultScale = aScale;
+    mDesktopToDeviceScale = aDesktopToDeviceScale;
+  }
+
+  mozilla::DesktopToLayoutDeviceScale GetDesktopToDeviceScale() const override {
+    return mozilla::DesktopToLayoutDeviceScale(mDesktopToDeviceScale);
   }
 
   // safe area insets support
@@ -223,19 +230,19 @@ class PuppetWidget final : public nsIWidget,
 
   nsresult SynthesizeNativeKeyEvent(
       int32_t aNativeKeyboardLayout, int32_t aNativeKeyCode,
-      uint32_t aModifierFlags, const nsAString& aCharacters,
+      nsIWidget::NativeModifiers aModifierFlags, const nsAString& aCharacters,
       const nsAString& aUnmodifiedCharacters,
       nsISynthesizedEventCallback* aCallback) override;
   nsresult SynthesizeNativeMouseEvent(
       LayoutDeviceIntPoint aPoint, NativeMouseMessage aNativeMessage,
-      MouseButton aButton, nsIWidget::Modifiers aModifierFlags,
+      MouseButton aButton, nsIWidget::NativeModifiers aModifierFlags,
       nsISynthesizedEventCallback* aCallback) override;
   nsresult SynthesizeNativeMouseMove(
       LayoutDeviceIntPoint aPoint,
       nsISynthesizedEventCallback* aCallback) override;
   nsresult SynthesizeNativeMouseScrollEvent(
       LayoutDeviceIntPoint aPoint, uint32_t aNativeMessage, double aDeltaX,
-      double aDeltaY, double aDeltaZ, uint32_t aModifierFlags,
+      double aDeltaY, double aDeltaZ, nsIWidget::NativeModifiers aModifierFlags,
       uint32_t aAdditionalFlags,
       nsISynthesizedEventCallback* aCallback) override;
   nsresult SynthesizeNativeTouchPoint(
@@ -265,8 +272,13 @@ class PuppetWidget final : public nsIWidget,
       double aDeltaX, double aDeltaY, int32_t aModifierFlags,
       nsISynthesizedEventCallback* aCallback) override;
 
-  void LockNativePointer() override;
+  void LockNativePointer(NativePointerLockMode aNativePointerLockMode) override;
   void UnlockNativePointer() override;
+  void SetNativePointerLockMode(
+      NativePointerLockMode aNativePointerLockMode) override;
+  bool SupportsUnadjustedMovement() override {
+    return mSupportsUnadjustedMovement;
+  }
 
   void StartAsyncScrollbarDrag(const AsyncDragMetrics& aDragMetrics) override;
 
@@ -297,6 +309,8 @@ class PuppetWidget final : public nsIWidget,
                             uint32_t aIndexOfKeypress, void* aData) override;
 
   void OnMemoryPressure(layers::MemoryPressureReason aWhy) override;
+
+  void PerformHapticFeedback(mozilla::HapticFeedbackType aType) override;
 
  private:
   void Paint();
@@ -358,6 +372,7 @@ class PuppetWidget final : public nsIWidget,
   float mDPI = GetFallbackDPI();
   int32_t mRounding = 1;
   double mDefaultScale = GetFallbackDefaultScale().scale;
+  double mDesktopToDeviceScale = 1.0;
 
   LayoutDeviceIntMargin mSafeAreaInsets;
   RefPtr<TextEventDispatcherListener> mNativeTextEventDispatcherListener;
@@ -380,6 +395,7 @@ class PuppetWidget final : public nsIWidget,
   // destroyed. So, until this meets new eCompositionStart, following
   // composition events should be ignored if this is set to true.
   bool mIgnoreCompositionEvents;
+  bool mSupportsUnadjustedMovement = false;
 };
 
 }  // namespace widget

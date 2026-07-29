@@ -5,9 +5,8 @@
 "use strict";
 
 const { GuardianClient } = ChromeUtils.importESModule(
-  "moz-src:///browser/components/ipprotection/GuardianClient.sys.mjs"
+  "moz-src:///toolkit/components/ipprotection/fxa/GuardianClient.sys.mjs"
 );
-
 function makeGuardianServer(
   arg = {
     enroll: (_request, _response) => {},
@@ -22,17 +21,6 @@ function makeGuardianServer(
   server.start(-1);
   return server;
 }
-
-const testGuardianConfig = server => ({
-  getToken: async () => {
-    return {
-      token: "test-token",
-      [Symbol.dispose]: () => {},
-    };
-  },
-  guardianEndpoint: `http://localhost:${server.identity.primaryPort}`,
-  fxaOrigin: `http://localhost:${server.identity.primaryPort}`,
-});
 
 const testcases = [
   {
@@ -71,7 +59,6 @@ testcases
       requestLongerTimeout(2); // Increase timeout for this test case
       info(`Running test case: ${name}`);
 
-      // Create a Guardian server with custom enroll handler that redirects to our test URL
       const server = makeGuardianServer({
         enroll: (request, response) => {
           info(`Handling enroll request, redirecting to ${responseURL}`);
@@ -100,14 +87,19 @@ testcases
         },
       });
 
-      // Create a client with our test server
-      const client = new GuardianClient(testGuardianConfig(server));
+      const serverOrigin = `http://localhost:${server.identity.primaryPort}`;
+      await SpecialPowers.pushPrefEnv({
+        set: [
+          ["browser.ipProtection.guardian.endpoint", serverOrigin],
+          ["identity.fxaccounts.remote.root", serverOrigin],
+        ],
+      });
+
+      const client = new GuardianClient();
 
       try {
-        // Call the actual enroll method - no mocking!
-        const result = await client.enroll(experimentType);
+        const result = await client.enrollWithFxa(experimentType);
 
-        // Check the results
         Assert.equal(
           result.ok,
           expects.ok,
@@ -128,6 +120,7 @@ testcases
           );
         }
       } finally {
+        await SpecialPowers.popPrefEnv();
         server.stop();
       }
     };

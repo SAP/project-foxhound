@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright 2015 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +16,8 @@
 
 #include "wasm/WasmModuleTypes.h"
 
+#include <bit>
+
 #include "vm/JSAtomUtils.h"  // AtomizeUTF8Chars
 #include "vm/MallocProvider.h"
 #include "wasm/WasmUtility.h"
@@ -34,7 +34,7 @@ using mozilla::MallocSizeOf;
 // TagLayout
 
 static CheckedInt32 RoundUpToAlignment(CheckedInt32 address, uint32_t align) {
-  MOZ_ASSERT(mozilla::IsPowerOfTwo(align));
+  MOZ_ASSERT(std::has_single_bit(align));
 
   // Note: Be careful to order operators such that we first make the
   // value smaller and then larger, so that we don't get false
@@ -109,6 +109,17 @@ bool CacheableName::fromUTF8Chars(const char* utf8Chars, CacheableName* name) {
     return false;
   }
   memcpy(bytes.begin(), utf8Chars, utf8CharsLen);
+  *name = CacheableName(std::move(bytes));
+  return true;
+}
+
+/* static */
+bool CacheableName::fromUTF8Bytes(mozilla::Span<const char> utf8Bytes,
+                                  CacheableName* name) {
+  UTF8Bytes bytes;
+  if (!bytes.append(utf8Bytes.data(), utf8Bytes.Length())) {
+    return false;
+  }
   *name = CacheableName(std::move(bytes));
   return true;
 }
@@ -195,7 +206,7 @@ bool TagType::initialize(const SharedTypeDef& funcType) {
 
   const ValTypeVector& args = argTypes();
   // Compute the byte offsets for arguments when we layout an exception.
-  if (!argOffsets_.resize(args.length())) {
+  if (!exceptionArgOffsets_.resize(args.length())) {
     return false;
   }
 
@@ -205,7 +216,7 @@ bool TagType::initialize(const SharedTypeDef& funcType) {
     if (!offset.isValid()) {
       return false;
     }
-    argOffsets_[i] = offset.value();
+    exceptionArgOffsets_[i] = offset.value();
   }
 
   // Find the total size of all the arguments.
@@ -219,7 +230,7 @@ bool TagType::initialize(const SharedTypeDef& funcType) {
 }
 
 size_t TagType::sizeOfExcludingThis(MallocSizeOf mallocSizeOf) const {
-  return argOffsets_.sizeOfExcludingThis(mallocSizeOf);
+  return exceptionArgOffsets_.sizeOfExcludingThis(mallocSizeOf);
 }
 
 size_t TagDesc::sizeOfExcludingThis(MallocSizeOf mallocSizeOf) const {

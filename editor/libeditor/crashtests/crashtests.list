@@ -57,11 +57,11 @@ load 1393171.html
 load 1402469.html
 load 1408170.html
 skip-if(ThreadSanitizer) needs-focus load 1424450.html # bug 1718775, permafail on tsan
-needs-focus load 1429523.html
-needs-focus load 1429523.xhtml
+skip-if(macosVm) needs-focus load 1429523.html # Bug 2037084 hangs on no-display macOS VMs
+skip-if(macosVm) needs-focus load 1429523.xhtml # Bug 2037084 hangs on no-display macOS VMs
 load 1441619.html
 load 1443664.html
-skip-if(Android) needs-focus load 1444630.html
+skip-if(Android||macosVm) needs-focus load 1444630.html # Bug 2037084 hangs on no-display macOS VMs
 load 1446451.html
 pref(layout.accessiblecaret.enabled,true) load 1470926.html
 load 1517028.html

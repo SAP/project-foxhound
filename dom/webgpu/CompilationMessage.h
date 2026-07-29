@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,7 +22,7 @@ class CompilationMessage final : public nsWrapperCache, public ChildOf<Device> {
   uint64_t mLinePos = 0;
   uint64_t mOffset = 0;
   uint64_t mLength = 0;
-  nsString mMessage;
+  const nsString mMessage;
 
  public:
   GPU_DECL_CYCLE_COLLECTION(CompilationMessage)
@@ -36,7 +35,7 @@ class CompilationMessage final : public nsWrapperCache, public ChildOf<Device> {
                               nsString&& aMessage);
 
   void GetMessage(dom::DOMString& aMessage) {
-    aMessage.AsAString().Assign(mMessage);
+    aMessage.SetKnownLiveString(mMessage);
   }
   dom::GPUCompilationMessageType Type() const { return mType; }
   uint64_t LineNum() const { return mLineNum; }

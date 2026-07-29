@@ -32,7 +32,7 @@ async function getPageActionButtonId(window, extensionId) {
   // tests.
   window.gURLBar.setPageProxyState("valid");
 
-  let { gIdentityHandler } = window.gBrowser.ownerGlobal;
+  let { gIdentityHandler } = window.gBrowser.documentGlobal;
   // If the current tab is blank and the previously selected tab was an internal
   // page, the urlbar will now be showing the internal identity box due to the
   // setPageProxyState call above.  The page action button is hidden in that
@@ -124,7 +124,7 @@ async function promisePopupShown(popup) {
 
 function awaitBrowserLoaded(browser) {
   if (
-    browser.ownerGlobal.document.readyState === "complete" &&
+    browser.documentGlobal.document.readyState === "complete" &&
     browser.currentURI.spec !== "about:blank"
   ) {
     return Promise.resolve();

@@ -103,7 +103,7 @@ add_task(async function test_empty_search() {
   });
 
   info("Match only history");
-  context = createContext(`foo ${UrlbarTokenizer.RESTRICT.HISTORY}`, {
+  context = createContext(`foo ${UrlbarShared.RESTRICT_TOKENS.HISTORY}`, {
     isPrivate: false,
   });
   await check_results({

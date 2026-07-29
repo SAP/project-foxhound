@@ -9,6 +9,38 @@ newtab-page-title = नवीन टॅब
 newtab-settings-button =
     .title = आपले नवीन टॅब पृष्ठ सानुकूलित करा
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = नवीन टॅब
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } ओळ
+           *[other] { $num } ओळी
+        }
+home-restore-defaults-srd =
+    .label = पूर्वनिर्धारित स्थितित आणा
+    .accesskey = R
+home-mode-choice-custom-srd =
+    .label = सानुकूलीत URLs...
+home-mode-choice-blank-srd =
+    .label = रिक्त पृष्ठ
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = प्रायोजित कथा
+home-prefs-highlights-option-visited-pages-srd =
+    .label = भेट दिलेली पृष्ठे
+home-prefs-highlights-options-bookmarks-srd =
+    .label = वाचनखुणा
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = अलीकडचे डाउनलोड
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +48,7 @@ newtab-search-box-search-button =
     .title = शोधा
     .aria-label = शोधा
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = शोध इंजीन जोडा
 newtab-topsites-edit-topsites-header = खास साईट संपादित करा

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright 2021 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -111,16 +109,16 @@ class FuncType {
   FuncType() = default;
   FuncType(ValTypeVector&& args, ValTypeVector&& results)
       : args_(std::move(args)), results_(std::move(results)) {
-    MOZ_ASSERT(args_.length() <= MaxParams);
-    MOZ_ASSERT(results_.length() <= MaxResults);
+    MOZ_RELEASE_ASSERT(args_.length() <= MaxParams);
+    MOZ_RELEASE_ASSERT(results_.length() <= MaxResults);
   }
 
   FuncType(FuncType&&) = default;
   FuncType& operator=(FuncType&&) = default;
 
   [[nodiscard]] bool clone(const FuncType& src) {
-    MOZ_ASSERT(args_.empty());
-    MOZ_ASSERT(results_.empty());
+    MOZ_RELEASE_ASSERT(args_.empty());
+    MOZ_RELEASE_ASSERT(results_.empty());
     immediateTypeId_ = src.immediateTypeId_;
     return args_.appendAll(src.args_) && results_.appendAll(src.results_);
   }
@@ -243,6 +241,11 @@ class FuncType {
     return false;
   }
 
+  bool isValidComponentDestructor() const {
+    return args().length() == 1 && results().length() == 0 &&
+           args()[0].valType() == ValType::i32();
+  }
+
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
   WASM_DECLARE_FRIEND_SERIALIZE(FuncType);
 };
@@ -356,7 +359,7 @@ class StructType {
         payloadOffsetIL_(0),
         allocKind_(gc::AllocKind::INVALID),
         isDefaultable_(false) {
-    MOZ_ASSERT(fields_.length() <= MaxStructFields);
+    MOZ_RELEASE_ASSERT(fields_.length() <= MaxStructFields);
   }
 
   StructType(StructType&&) = default;
@@ -464,9 +467,53 @@ class ArrayType {
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 };
 
-WASM_DECLARE_CACHEABLE_POD(ArrayType);
-
 using ArrayTypeVector = Vector<ArrayType, 0, SystemAllocPolicy>;
+
+#ifdef ENABLE_WASM_JSPI
+
+//=========================================================================
+// Continuation types
+
+class ContType {
+ public:
+  // The type signature for the continuation.
+  const TypeDef* funcTypeDef_ = nullptr;
+
+ public:
+  ContType() = default;
+  explicit ContType(const TypeDef* funcTypeDef) : funcTypeDef_(funcTypeDef) {
+    // We can't assert this is a function type yet. Validation can only check
+    // this after we've decoded the whole rec group.
+  }
+
+  ContType(const ContType&) = default;
+  ContType& operator=(const ContType&) = default;
+
+  ContType(ContType&&) = default;
+  ContType& operator=(ContType&&) = default;
+
+  const TypeDef& funcTypeDef() const { return *funcTypeDef_; }
+  const FuncType& funcType() const;
+  const ValTypeVector& args() const { return funcType().args(); }
+  const ValTypeVector& results() const { return funcType().results(); }
+
+  HashNumber hash(const RecGroup* recGroup) const;
+
+  // Compares two cont types for isorecursive equality. See
+  // "Comparing type definitions" in WasmValType.h for more background.
+  static bool isoEquals(const RecGroup* lhsRecGroup, const ContType& lhs,
+                        const RecGroup* rhsRecGroup, const ContType& rhs);
+
+  // Checks if two cont types are compatible in a given subtyping relationship.
+  static bool canBeSubTypeOf(const ContType& subType,
+                             const ContType& superType);
+
+  size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
+};
+
+using ContTypeVector = Vector<ContType, 0, SystemAllocPolicy>;
+
+#endif  // ENABLE_WASM_JSPI
 
 //=========================================================================
 // SuperTypeVector
@@ -559,7 +606,7 @@ class SuperTypeVector {
   uint32_t length() const { return length_; }
 
   const SuperTypeVector* type(size_t index) const {
-    MOZ_ASSERT(index < length_);
+    MOZ_RELEASE_ASSERT(index < length_);
     return types_[index];
   }
 
@@ -593,6 +640,9 @@ enum class TypeDefKind : uint8_t {
   Func,
   Struct,
   Array,
+#ifdef ENABLE_WASM_JSPI
+  Cont,
+#endif
 };
 
 class TypeDef {
@@ -610,13 +660,16 @@ class TypeDef {
     FuncType funcType_;
     StructType structType_;
     ArrayType arrayType_;
+#ifdef ENABLE_WASM_JSPI
+    ContType contType_;
+#endif
   };
 
   void setRecGroup(RecGroup* recGroup) {
     uintptr_t recGroupAddr = (uintptr_t)recGroup;
     uintptr_t typeDefAddr = (uintptr_t)this;
-    MOZ_ASSERT(typeDefAddr > recGroupAddr);
-    MOZ_ASSERT(typeDefAddr - recGroupAddr <= UINT32_MAX);
+    MOZ_RELEASE_ASSERT(typeDefAddr > recGroupAddr);
+    MOZ_RELEASE_ASSERT(typeDefAddr - recGroupAddr <= UINT32_MAX);
     offsetToRecGroup_ = typeDefAddr - recGroupAddr;
   }
 
@@ -642,31 +695,45 @@ class TypeDef {
       case TypeDefKind::Array:
         arrayType_.~ArrayType();
         break;
+#ifdef ENABLE_WASM_JSPI
+      case TypeDefKind::Cont:
+        contType_.~ContType();
+        break;
+#endif
       case TypeDefKind::None:
         break;
     }
   }
 
   TypeDef& operator=(FuncType&& that) noexcept {
-    MOZ_ASSERT(isNone());
+    MOZ_RELEASE_ASSERT(isNone());
     kind_ = TypeDefKind::Func;
     new (&funcType_) FuncType(std::move(that));
     return *this;
   }
 
   TypeDef& operator=(StructType&& that) noexcept {
-    MOZ_ASSERT(isNone());
+    MOZ_RELEASE_ASSERT(isNone());
     kind_ = TypeDefKind::Struct;
     new (&structType_) StructType(std::move(that));
     return *this;
   }
 
   TypeDef& operator=(ArrayType&& that) noexcept {
-    MOZ_ASSERT(isNone());
+    MOZ_RELEASE_ASSERT(isNone());
     kind_ = TypeDefKind::Array;
     new (&arrayType_) ArrayType(std::move(that));
     return *this;
   }
+
+#ifdef ENABLE_WASM_JSPI
+  TypeDef& operator=(ContType&& that) noexcept {
+    MOZ_RELEASE_ASSERT(isNone());
+    kind_ = TypeDefKind::Cont;
+    new (&contType_) ContType(std::move(that));
+    return *this;
+  }
+#endif
 
   const SuperTypeVector* superTypeVector() const { return superTypeVector_; }
 
@@ -706,35 +773,51 @@ class TypeDef {
 
   bool isArrayType() const { return kind_ == TypeDefKind::Array; }
 
+#ifdef ENABLE_WASM_JSPI
+  bool isContType() const { return kind_ == TypeDefKind::Cont; }
+#endif
+
   const FuncType& funcType() const {
-    MOZ_ASSERT(isFuncType());
+    MOZ_RELEASE_ASSERT(isFuncType());
     return funcType_;
   }
 
   FuncType& funcType() {
-    MOZ_ASSERT(isFuncType());
+    MOZ_RELEASE_ASSERT(isFuncType());
     return funcType_;
   }
 
   const StructType& structType() const {
-    MOZ_ASSERT(isStructType());
+    MOZ_RELEASE_ASSERT(isStructType());
     return structType_;
   }
 
   StructType& structType() {
-    MOZ_ASSERT(isStructType());
+    MOZ_RELEASE_ASSERT(isStructType());
     return structType_;
   }
 
   const ArrayType& arrayType() const {
-    MOZ_ASSERT(isArrayType());
+    MOZ_RELEASE_ASSERT(isArrayType());
     return arrayType_;
   }
 
   ArrayType& arrayType() {
-    MOZ_ASSERT(isArrayType());
+    MOZ_RELEASE_ASSERT(isArrayType());
     return arrayType_;
   }
+
+#ifdef ENABLE_WASM_JSPI
+  const ContType& contType() const {
+    MOZ_RELEASE_ASSERT(isContType());
+    return contType_;
+  }
+
+  ContType& contType() {
+    MOZ_RELEASE_ASSERT(isContType());
+    return contType_;
+  }
+#endif
 
   // Get a value that can be used for comparing type definitions across
   // different recursion groups.
@@ -756,6 +839,11 @@ class TypeDef {
       case TypeDefKind::Array:
         hn = mozilla::AddToHash(hn, arrayType_.hash(&recGroup()));
         break;
+#ifdef ENABLE_WASM_JSPI
+      case TypeDefKind::Cont:
+        hn = mozilla::AddToHash(hn, contType_.hash(&recGroup()));
+        break;
+#endif
       case TypeDefKind::None:
         break;
     }
@@ -785,6 +873,11 @@ class TypeDef {
       case TypeDefKind::Array:
         return ArrayType::isoEquals(&lhs.recGroup(), lhs.arrayType_,
                                     &rhs.recGroup(), rhs.arrayType_);
+#ifdef ENABLE_WASM_JSPI
+      case TypeDefKind::Cont:
+        return ContType::isoEquals(&lhs.recGroup(), lhs.contType_,
+                                   &rhs.recGroup(), rhs.contType_);
+#endif
       case TypeDefKind::None:
         MOZ_CRASH("can't match TypeDefKind::None");
     }
@@ -813,6 +906,11 @@ class TypeDef {
       case TypeDefKind::Array:
         return ArrayType::canBeSubTypeOf(subType->arrayType_,
                                          superType->arrayType_);
+#ifdef ENABLE_WASM_JSPI
+      case TypeDefKind::Cont:
+        return ContType::canBeSubTypeOf(subType->contType_,
+                                        superType->contType_);
+#endif
       case TypeDefKind::None:
         MOZ_CRASH();
     }
@@ -851,10 +949,8 @@ class TypeDef {
 
     // The supertype vectors do exist. Check that they point to the right
     // places.
-    MOZ_ASSERT(subSTV);
-    MOZ_ASSERT(superSTV);
-    MOZ_ASSERT(subSTV->typeDef() == subTypeDef);
-    MOZ_ASSERT(superSTV->typeDef() == superTypeDef);
+    MOZ_RELEASE_ASSERT(subSTV && superSTV && subSTV->typeDef() == subTypeDef &&
+                       superSTV->typeDef() == superTypeDef);
 
     // We need to check if `superTypeDef` is one of `subTypeDef`s super types
     // by checking in `subTypeDef`s super type vector. We can use the static
@@ -1017,6 +1113,15 @@ class RecGroup : public AtomicRefCounted<RecGroup> {
           visitStorageType(arrayType.elementType());
           break;
         }
+#ifdef ENABLE_WASM_JSPI
+        case TypeDefKind::Cont: {
+          const ContType& contType = typeDef.contType();
+          if (&contType.funcTypeDef().recGroup() != this) {
+            visitor(&contType.funcTypeDef().recGroup());
+          }
+          break;
+        }
+#endif
         case TypeDefKind::None: {
           MOZ_CRASH();
         }
@@ -1064,9 +1169,9 @@ class RecGroup : public AtomicRefCounted<RecGroup> {
 
   // Get the index of a type definition that's in this recursion group.
   uint32_t indexOf(const TypeDef* typeDef) const {
-    MOZ_ASSERT(typeDef >= types_);
+    MOZ_RELEASE_ASSERT(typeDef >= types_);
     size_t groupTypeIndex = (size_t)(typeDef - types_);
-    MOZ_ASSERT(groupTypeIndex < numTypes());
+    MOZ_RELEASE_ASSERT(groupTypeIndex < numTypes());
     return (uint32_t)groupTypeIndex;
   }
 
@@ -1232,13 +1337,23 @@ class TypeContext : public AtomicRefCounted<TypeContext> {
     return true;
   }
 
+  // Copy all recursion groups from another TypeContext into this one.
+  [[nodiscard]] bool clone(const TypeContext& other) {
+    for (const SharedRecGroup& rg : other.groups()) {
+      if (!addRecGroup(rg)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   template <typename T>
   [[nodiscard]] const TypeDef* addType(T&& type) {
     MutableRecGroup recGroup = startRecGroup(1);
     if (!recGroup) {
       return nullptr;
     }
-    recGroup->type(0) = std::move(type);
+    recGroup->type(0) = std::forward<T>(type);
     if (!endRecGroup()) {
       return nullptr;
     }
@@ -1267,6 +1382,32 @@ using MutableTypeContext = RefPtr<TypeContext>;
 
 //=========================================================================
 // misc
+
+#ifdef ENABLE_WASM_JSPI
+
+inline HashNumber ContType::hash(const RecGroup* recGroup) const {
+  // Don't assume this is a function type. We don't validate it's a function
+  // type until after the rec group is constructed. If that validation fails,
+  // we may still use this hash method when checking if we need to clean up
+  // the canonical type set.
+  return funcTypeDef_->hash();
+}
+
+inline bool ContType::isoEquals(const RecGroup* lhsRecGroup,
+                                const ContType& lhs,
+                                const RecGroup* rhsRecGroup,
+                                const ContType& rhs) {
+  return TypeDef::forIsoEquals(lhs.funcTypeDef_, lhsRecGroup) ==
+         TypeDef::forIsoEquals(rhs.funcTypeDef_, rhsRecGroup);
+}
+
+// Checks if two cont types are compatible in a given subtyping relationship.
+inline bool ContType::canBeSubTypeOf(const ContType& subType,
+                                     const ContType& superType) {
+  return TypeDef::isSubTypeOf(subType.funcTypeDef_, superType.funcTypeDef_);
+}
+
+#endif  // ENABLE_WASM_JSPI
 
 /* static */
 inline uintptr_t TypeDef::forIsoEquals(const TypeDef* typeDef,
@@ -1340,6 +1481,11 @@ inline RefTypeHierarchy RefType::hierarchy() const {
     case RefType::Exn:
     case RefType::NoExn:
       return RefTypeHierarchy::Exn;
+#ifdef ENABLE_WASM_JSPI
+    case RefType::Cont:
+    case RefType::NoCont:
+      return RefTypeHierarchy::Cont;
+#endif
     case RefType::Any:
     case RefType::None:
     case RefType::I31:
@@ -1354,6 +1500,10 @@ inline RefTypeHierarchy RefType::hierarchy() const {
           return RefTypeHierarchy::Any;
         case TypeDefKind::Func:
           return RefTypeHierarchy::Func;
+#ifdef ENABLE_WASM_JSPI
+        case TypeDefKind::Cont:
+          return RefTypeHierarchy::Cont;
+#endif
         case TypeDefKind::None:
           MOZ_CRASH();
       }
@@ -1366,6 +1516,9 @@ inline TableRepr RefType::tableRepr() const {
     case RefTypeHierarchy::Any:
     case RefTypeHierarchy::Extern:
     case RefTypeHierarchy::Exn:
+#ifdef ENABLE_WASM_JSPI
+    case RefTypeHierarchy::Cont:
+#endif
       return TableRepr::Ref;
     case RefTypeHierarchy::Func:
       return TableRepr::Func;
@@ -1384,6 +1537,14 @@ inline bool RefType::isAnyHierarchy() const {
 }
 inline bool RefType::isExnHierarchy() const {
   return hierarchy() == RefTypeHierarchy::Exn;
+}
+#ifdef ENABLE_WASM_JSPI
+inline bool RefType::isContHierarchy() const {
+  return hierarchy() == RefTypeHierarchy::Cont;
+}
+#endif
+inline bool RefType::isInhabitable() const {
+  return !(isRefBottom() && !isNullable());
 }
 
 /* static */
@@ -1439,6 +1600,14 @@ inline bool RefType::isSubTypeOf(RefType subType, RefType superType) {
     return true;
   }
 
+#ifdef ENABLE_WASM_JSPI
+  // Concrete cont types are subtypes of contref
+  if (subType.isTypeRef() && subType.typeDef()->isContType() &&
+      superType.isCont()) {
+    return true;
+  }
+#endif
+
   // Type references can be subtypes
   if (subType.isTypeRef() && superType.isTypeRef()) {
     return TypeDef::isSubTypeOf(subType.typeDef(), superType.typeDef());
@@ -1464,6 +1633,13 @@ inline bool RefType::isSubTypeOf(RefType subType, RefType superType) {
   if (subType.isNoExn() && superType.hierarchy() == RefTypeHierarchy::Exn) {
     return true;
   }
+
+#ifdef ENABLE_WASM_JSPI
+  // nocont is the bottom type of the cont hierarchy
+  if (subType.isNoCont() && superType.hierarchy() == RefTypeHierarchy::Cont) {
+    return true;
+  }
+#endif
 
   return false;
 }

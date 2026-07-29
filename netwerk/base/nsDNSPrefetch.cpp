@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -50,6 +49,7 @@ nsDNSPrefetch::nsDNSPrefetch(nsIURI* aURI,
       mTRRMode(aTRRMode),
       mListener(nullptr) {
   aURI->GetAsciiHost(mHostname);
+  aURI->GetPort(&mPort);
 }
 
 nsresult nsDNSPrefetch::Prefetch(nsIDNSService::DNSFlags flags) {
@@ -59,7 +59,10 @@ nsresult nsDNSPrefetch::Prefetch(nsIDNSService::DNSFlags flags) {
 
   nsCOMPtr<nsICancelable> tmpOutstanding;
 
-  if (mStoreTiming) mStartTimestamp = mozilla::TimeStamp::Now();
+  // Called twice in per-family mode; keep the earliest start time.
+  if (mStoreTiming && mStartTimestamp.IsNull()) {
+    mStartTimestamp = mozilla::TimeStamp::Now();
+  }
   // If AsyncResolve fails, for example because prefetching is disabled,
   // then our timing will be useless. However, in such a case,
   // mEndTimestamp will be a null timestamp and callers should check
@@ -84,6 +87,22 @@ nsresult nsDNSPrefetch::PrefetchMedium(nsIDNSService::DNSFlags aFlags) {
 
 nsresult nsDNSPrefetch::PrefetchHigh(nsIDNSService::DNSFlags aFlags) {
   return Prefetch(aFlags);
+}
+
+nsresult nsDNSPrefetch::PrefetchHighPerFamily(nsIDNSService::DNSFlags aFlags,
+                                              bool aSkipIPv4, bool aSkipIPv6) {
+  // RESOLVE_DISABLE_IPV6 -> A only; RESOLVE_DISABLE_IPV4 -> AAAA only.
+  nsresult rv = NS_OK;
+  if (!aSkipIPv4) {
+    rv = Prefetch(aFlags | nsIDNSService::RESOLVE_DISABLE_IPV6);
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+  }
+  if (!aSkipIPv6) {
+    rv = Prefetch(aFlags | nsIDNSService::RESOLVE_DISABLE_IPV4);
+  }
+  return rv;
 }
 
 namespace {
@@ -151,6 +170,12 @@ NS_IMPL_ISUPPORTS(nsDNSPrefetch, nsIDNSListener)
 NS_IMETHODIMP
 nsDNSPrefetch::OnLookupComplete(nsICancelable* request, nsIDNSRecord* rec,
                                 nsresult status) {
+  // Per-family prefetch produces two completions; only forward the first.
+  if (mLookupCompleted) {
+    return NS_OK;
+  }
+  mLookupCompleted = true;
+
   if (mStoreTiming) {
     mEndTimestamp = mozilla::TimeStamp::Now();
   }

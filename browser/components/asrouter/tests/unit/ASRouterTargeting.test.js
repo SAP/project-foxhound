@@ -572,3 +572,45 @@ describe("getSortedMessages", () => {
     );
   });
 });
+
+describe("#experimentsLoaded", () => {
+  let sandbox;
+  let globals;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    globals = new GlobalOverrider();
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+    globals.restore();
+  });
+
+  it("returns true when ExperimentAPI._rsLoader._hasUpdatedOnce is true", () => {
+    globals.set("ExperimentAPI", {
+      enabled: true,
+      _rsLoader: { _hasUpdatedOnce: true },
+    });
+
+    const result = ASRouterTargeting.Environment.experimentsLoaded;
+    assert.isTrue(result);
+  });
+
+  it("returns false when ExperimentAPI._rsLoader._hasUpdatedOnce is false", () => {
+    globals.set("ExperimentAPI", {
+      enabled: true,
+      _rsLoader: { _hasUpdatedOnce: false },
+    });
+
+    const result = ASRouterTargeting.Environment.experimentsLoaded;
+    assert.isFalse(result);
+  });
+
+  it("returns true when ExperimentAPI is not enabled", () => {
+    globals.set("ExperimentAPI", { enabled: false });
+
+    const result = ASRouterTargeting.Environment.experimentsLoaded;
+    assert.isTrue(result);
+  });
+});

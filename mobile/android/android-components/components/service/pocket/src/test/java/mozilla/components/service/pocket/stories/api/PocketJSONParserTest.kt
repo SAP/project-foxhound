@@ -10,12 +10,12 @@ import mozilla.components.service.pocket.helpers.assertClassVisibility
 import mozilla.components.service.pocket.stories.api.PocketJSONParser.Companion.KEY_ARRAY_ITEMS
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.reflect.KVisibility
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class PocketJSONParserTest {
@@ -39,7 +39,7 @@ class PocketJSONParserTest {
         val actualStories = parser.jsonToPocketApiStories(pocketJSON)
 
         assertNotNull(actualStories)
-        assertEquals(5, actualStories!!.size)
+        assertEquals(5, actualStories.size)
         assertEquals(expectedStories, actualStories)
     }
 

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -56,7 +55,7 @@ class nsNestedAboutURI final : public nsSimpleNestedURI {
  private:
   nsNestedAboutURI(nsIURI* aInnerURI, nsIURI* aBaseURI)
       : nsSimpleNestedURI(aInnerURI), mBaseURI(aBaseURI) {}
-  nsNestedAboutURI() {}
+  nsNestedAboutURI() = default;
   virtual ~nsNestedAboutURI() = default;
 
  public:
@@ -66,7 +65,7 @@ class nsNestedAboutURI final : public nsSimpleNestedURI {
   // Override StartClone(), the nsISerializable methods, and
   virtual already_AddRefed<nsSimpleURI> StartClone() override;
   NS_IMETHOD Mutate(nsIURIMutator** _retval) override;
-  NS_IMETHOD_(void) Serialize(ipc::URIParams& aParams) override;
+  virtual void Serialize(ipc::URIParams& aParams) override;
 
   // nsISerializable
   NS_IMETHOD Read(nsIObjectInputStream* aStream) override;

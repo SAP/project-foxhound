@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -46,17 +44,10 @@ UNIFIED_SOURCES += [
     'hb-blob.cc',
     'hb-buffer.cc',
     'hb-common.cc',
-    'hb-coretext-font.cc',
-    'hb-coretext-shape.cc',
-    'hb-coretext.cc',
-    'hb-directwrite-font.cc',
-    'hb-directwrite-shape.cc',
     'hb-draw.cc',
     'hb-face-builder.cc',
     'hb-face.cc',
     'hb-font.cc',
-    'hb-harfrust.cc',
-    'hb-kbts.cc',
     'hb-map.cc',
     'hb-number.cc',
     'hb-ot-cff1-table.cc',
@@ -87,9 +78,6 @@ UNIFIED_SOURCES += [
     'hb-ot-tag.cc',
     'hb-ot-var.cc',
     'hb-outline.cc',
-    'hb-paint-bounded.cc',
-    'hb-paint-extents.cc',
-    'hb-paint.cc',
     'hb-set.cc',
     'hb-shape-plan.cc',
     'hb-shape.cc',
@@ -98,6 +86,7 @@ UNIFIED_SOURCES += [
     'hb-style.cc',
     'hb-subset-cff-common.cc',
     'hb-subset-cff1.cc',
+    'hb-subset-cff2-to-cff1.cc',
     'hb-subset-cff2.cc',
     'hb-subset-input.cc',
     'hb-subset-instancer-iup.cc',
@@ -113,6 +102,7 @@ UNIFIED_SOURCES += [
     'hb-subset-table-var.cc',
     'hb-subset.cc',
     'hb-unicode.cc',
+    'hb-zlib.cc',
 ]
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk':
@@ -135,16 +125,18 @@ DEFINES['HAVE_OT'] = 1
 DEFINES['HAVE_ROUND'] = 1
 DEFINES['HB_NO_BUFFER_VERIFY'] = True
 DEFINES['HB_NO_FALLBACK_SHAPE'] = True
+DEFINES['HB_NO_PAINT'] = True
 DEFINES['HB_NO_UCD'] = True
 DEFINES['HB_NO_UNICODE_FUNCS'] = True
 DEFINES['HB_NO_VAR_COMPOSITES'] = True
 
-# On Android, we want to use harfbuzz's mmap support for file access,
+# We want to use harfbuzz's mmap support for file access,
 # so we need to set the appropriate configuration flags as we're not
 # running harfbuzz's own configure script.
-if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
+if CONFIG['MOZ_WIDGET_TOOLKIT'] != 'windows':
     DEFINES['HAVE_MMAP'] = 1
     DEFINES['HAVE_SYS_MMAN_H'] = 1
+    DEFINES['HAVE_UNISTD_H'] = 1
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
     DEFINES['UNICODE'] = True

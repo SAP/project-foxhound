@@ -1,0 +1,103 @@
+[DEFAULT]
+tags = "urlbar"
+support-files = [
+  "../browser/head-common.js",
+  "head.js",
+]
+
+["browser_a11y.js"]
+
+["browser_breakout_state.js"]
+
+["browser_formatValue.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1968567
+]
+
+["browser_formatValue_detachedTab.js"]
+
+["browser_formatValue_strikeout.js"]
+support-files = ["mixed_active.html"]
+
+["browser_hiddenFocus.js"]
+
+["browser_overflow.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1968567
+]
+
+["browser_overflow_resize.js"]
+
+["browser_privateFeature.js"]
+
+["browser_registrableDomainInView.js"]
+
+["browser_searchTerms.js"]
+tags = "persisted-search"
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1968567
+]
+
+["browser_searchTerms_autofill.js"]
+tags = "persisted-search"
+
+["browser_searchTerms_backgroundTabs.js"]
+tags = "persisted-search"
+
+["browser_searchTerms_modifiedUrl.js"]
+tags = "persisted-search"
+
+["browser_searchTerms_moveTab.js"]
+tags = "persisted-search"
+
+["browser_searchTerms_popup.js"]
+tags = "persisted-search"
+
+["browser_searchTerms_remote_settings_sync.js"]
+
+["browser_searchTerms_revert.js"]
+tags = "persisted-search"
+
+["browser_searchTerms_revert_keyboard.js"]
+tags = "persisted-search"
+
+["browser_searchTerms_searchBar.js"]
+tags = "persisted-search"
+
+["browser_searchTerms_searchMode.js"]
+tags = "persisted-search"
+
+["browser_searchTerms_searchModeSwitcher.js"]
+tags = "persisted-search"
+
+["browser_searchTerms_strings.js"]
+tags = "persisted-search"
+
+["browser_searchTerms_stringsUnsafe.js"]
+tags = "persisted-search"
+
+["browser_searchTerms_switch_tab.js"]
+tags = "persisted-search"
+
+["browser_searchTerms_telemetry.js"]
+tags = "persisted-search"
+
+["browser_searchTerms_uri_mismatch.js"]
+tags = "persisted-search"
+
+["browser_setURI.js"]
+https_first_disabled = true
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1773790
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug", #  Bug 1773790
+]
+
+["browser_tooltip.js"]
+
+["browser_trimURLs.js"]
+https_first_disabled = true
+support-files = [
+  "slow_loading_page.sjs"
+]
+
+["browser_untrimOnUserInteraction.js"]

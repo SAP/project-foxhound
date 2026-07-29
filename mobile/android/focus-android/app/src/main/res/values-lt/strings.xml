@@ -125,7 +125,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>„%1$s“ suteikia jums kontrolę.</p>\n<p>Naudokite ją kaip privačią naršyklę:\n<ul>\n<li>Ieškokite ir naršykite pačioje programoje</li>\n<li>Blokuokite stebėjimo elementus (arba pakeiskite nustatymus, jeigu norite juos leisti)</li>\n<li>Išvalykite, norėdami pašalinti slapukus, paieškos ir naršymo žurnalus</li>\n</ul> </p>\n<p>„%1$s“ yra „Mozillos“ kūrinys. Mūsų misija yra skatinti sveiką, atvirą internetą.<br/>\n<a href=\"%2$s\">Sužinoti daugiau</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>„%1$s“ suteikia jums kontrolę.</p>\n<p>Naudokite ją kaip privačią naršyklę:\n<ul>\n<li>Ieškokite ir naršykite pačioje programoje</li>\n<li>Blokuokite stebėjimo elementus (arba pakeiskite nustatymus, jeigu norite juos leisti)</li>\n<li>Išvalykite, norėdami pašalinti slapukus, paieškos ir naršymo žurnalus</li>\n</ul> </p>\n<p>„%1$s“ yra „Mozillos“ kūrinys. Mūsų misija yra skatinti sveiką, atvirą internetą.<br/>\n<a href=\"%2$s\">Sužinoti daugiau</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Privatumas ir saugumas</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -218,7 +218,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Įdėkite arba įveskite URL adresą</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Pavyzdys: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Pavyzdys: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Pavyzdys: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -283,12 +283,12 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Paskirti „%1$s“ numatytąja naršykle</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Siųsti naudojimo duomenis</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Sužinoti daugiau</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">„Mozilla“ siekia rinkti tik tai, ko reikia norint pagerinti „%1$s“ visiems.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">„Mozilla“ siekia rinkti tik tai, ko reikia norint pagerinti „%1$s“ visiems.</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Privatumo pranešimas</string>
   <!-- Item in Preferences that shows the about page. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar"). -->
@@ -622,7 +622,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Užverti kortelę</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Pranešti apie strigtį „Mozillai“</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Pranešti apie strigtį „Mozillai“</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

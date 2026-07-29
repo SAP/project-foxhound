@@ -2,10 +2,7 @@
 
 This directory contains files used in gecko builds from FFmpeg
 (http://ffmpeg.org). The current files are from FFmpeg as of
-revision
-252fc2e047297697dea78e63aa908377b47c2136
-git clone https://git.ffmpeg.org/ffmpeg.git ffmpeg
-git checkout 252fc2e047297697dea78e63aa908377b47c2136
+revision 9917308cc209a885c6870f0345905104c6ea8799
 
 All source files match their path from the library's source archive.
 
@@ -128,7 +125,7 @@ might need to be reapplied or extended to other files including `time.h`. The
 issue being that it's included instead of the system header, causing all sorts
 of issues.
 
-Additionally, `jni.h` and `jni.c` in ffmpeg sources need to be renamed to 
+Additionally, `jni.h` and `jni.c` in ffmpeg sources need to be renamed to
 `fffjni.h` and `fffjni.c`, and `#include` to those files need to be updated.
 This is because there are header collisions with the JDK.
 
@@ -152,3 +149,7 @@ Finally, apply the patches:
   encoding via the frame pict_type on Android.
 - mediacodec_h264.patch to remove the H264 extradata parsing that brings in
   encumbered code on Android.
+- bug1603271-videodsp-pointer-overflow.patch to avoid a UBSan pointer-overflow
+  by combining a two-step pointer adjustment into a single positive-offset step.
+- vp9-get-format-rollback.patch to fix a VP9 decoder error handling issue.
+- flac-alloc-failure.patch fix leak in flac decoder in case of alloc failure

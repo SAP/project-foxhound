@@ -20,12 +20,12 @@ import org.mozilla.fenix.GlobalDirections
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.NavGraphDirections
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
+import org.mozilla.fenix.components.share.ShareSource
+import org.mozilla.fenix.components.usecases.ShareUseCases
 import org.mozilla.fenix.ext.alreadyOnDestination
 import org.mozilla.fenix.ext.openSetDefaultBrowserOption
 import org.mozilla.fenix.utils.maybeShowAddSearchWidgetPrompt
 import org.mozilla.fenix.utils.Settings as AppSettings
-
-private const val EXTRA_COMPOSABLE_TOOLBAR = "EXTRA_COMPOSABLE_TOOLBAR"
 
 // Intent extra to enable or disable TabTray animation setting for testing
 private const val EXTRA_TAB_TRAY_ANIMATION = "EXTRA_TAB_TRAY_ANIMATION"
@@ -35,6 +35,7 @@ private const val EXTRA_TAB_TRAY_ANIMATION = "EXTRA_TAB_TRAY_ANIMATION"
  */
 class HomeDeepLinkIntentProcessor(
     private val activity: HomeActivity,
+    private val shareUseCases: ShareUseCases,
     private val showAddSearchWidgetPrompt: (Activity) -> Unit = ::maybeShowAddSearchWidgetPrompt,
 ) : HomeIntentProcessor {
     private val logger = Logger("DeepLinkIntentProcessor")
@@ -78,6 +79,7 @@ class HomeDeepLinkIntentProcessor(
             "home_collections" -> GlobalDirections.Home
             "settings_private_browsing" -> GlobalDirections.SettingsPrivateBrowsing
             "settings_app_icon" -> GlobalDirections.SettingsAppIcon
+            "settings_ai_controls" -> GlobalDirections.SettingsAIControls
 
             else -> return
         }
@@ -98,13 +100,6 @@ class HomeDeepLinkIntentProcessor(
     ) {
         when (deepLink.host) {
             "home" -> {
-                if (extras?.containsKey(EXTRA_COMPOSABLE_TOOLBAR) == true) {
-                    val composableToolbarPreference = extras.getBoolean(
-                        EXTRA_COMPOSABLE_TOOLBAR,
-                        settings.shouldUseComposableToolbar,
-                    )
-                    settings.shouldUseComposableToolbar = composableToolbarPreference
-                }
                 if (extras?.containsKey(EXTRA_TAB_TRAY_ANIMATION) == true) {
                     val tabTrayAnimationPreference = extras.getBoolean(
                         EXTRA_TAB_TRAY_ANIMATION,
@@ -129,6 +124,7 @@ class HomeDeepLinkIntentProcessor(
                     return
                 }
 
+                @Suppress("DEPRECATION")
                 activity.openToBrowserAndLoad(
                     url,
                     newTab = true,
@@ -162,17 +158,27 @@ class HomeDeepLinkIntentProcessor(
         val title = deepLink.getQueryParameter("title").orEmpty()
         val text = deepLink.getQueryParameter("text").orEmpty()
         val subject = deepLink.getQueryParameter("subject").orEmpty()
-        if (!url.isNullOrEmpty() && url.startsWith("https://")) {
-            val shareData = arrayOf(ShareData(url = url, title = title, text = text))
-            val direction = NavGraphDirections.actionGlobalShareFragment(
-                data = shareData,
-                shareSubject = subject,
-                showPage = false,
-                sessionId = null,
-            )
-            navController.navigate(direction)
-        } else {
+
+        if (url.isNullOrEmpty() || !url.startsWith("https://")) {
             logger.error("Invalid or missing URL for share_sheet deep link")
+            return
         }
+
+        shareUseCases.shareUrl(
+            id = null,
+            url = url,
+            title = title,
+            source = ShareSource.DEEP_LINK,
+            navigateToShareFragment = {
+                navController.navigate(
+                    NavGraphDirections.actionGlobalShareFragment(
+                        data = arrayOf(ShareData(url = url, title = title, text = text)),
+                        shareSubject = subject,
+                        showPage = false,
+                        sessionId = null,
+                    ),
+                )
+            },
+        )
     }
 }

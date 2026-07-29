@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +7,7 @@
 
 #include "MediaResult.h"
 #include "gmp-errors.h"
+#include "gmp-video-codec.h"
 #include "mozilla/AbstractThread.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
@@ -81,6 +81,9 @@ already_AddRefed<nsISerialEventTarget> GetGMPThread();
 // Returns the number of bytes required to store an aWidth x aHeight image in
 // I420 format, padded so that the width and height are multiples of 16.
 size_t I420FrameBufferSizePadded(int32_t aWidth, int32_t aHeight);
+
+bool AdjustOpenH264NALUSequence(uint8_t* aBuffer, uint32_t aSize,
+                                GMPBufferType aType);
 
 bool AdjustOpenH264NALUSequence(GMPVideoEncodedFrame* aEncodedFrame);
 

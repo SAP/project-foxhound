@@ -175,6 +175,12 @@ class CallbackList {
   CallbackList(CallbackList&&) = delete;
   CallbackList& operator=(CallbackList&&) = delete;
 
+  // Adds a new receiver with removal tag in constructor.
+  template <typename F>
+  CallbackList(const void* removal_tag, F&& f) {
+    AddReceiver(removal_tag, std::forward<F>(f));
+  }
+
   // Adds a new receiver. The receiver (a callable object or a function pointer)
   // must be movable, but need not be copyable. Its call signature should be
   // `void(ArgT...)`. The removal tag is a pointer to an arbitrary object that
@@ -190,7 +196,7 @@ class CallbackList {
 
   // Adds a new receiver with no removal tag.
   template <typename F>
-  void AddReceiver(F&& f) {
+  [[deprecated]] void AddReceiver(F&& f) {
     receivers_.AddReceiver(
         UntypedFunction::PrepareArgs<void(ArgT...)>(std::forward<F>(f)));
   }

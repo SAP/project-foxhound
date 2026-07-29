@@ -5,15 +5,16 @@
 package org.mozilla.fenix.ui
 
 import android.Manifest
-import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.core.net.toUri
 import androidx.test.espresso.Espresso.pressBack
 import androidx.test.rule.GrantPermissionRule
 import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
+import org.mozilla.fenix.customannotations.Converted
 import org.mozilla.fenix.customannotations.SmokeTest
 import org.mozilla.fenix.helpers.AppAndSystemHelper.setNetworkEnabled
+import org.mozilla.fenix.helpers.FenixTestRule
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MatcherHelper
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithText
@@ -23,33 +24,36 @@ import org.mozilla.fenix.helpers.TestAssetHelper.storageWritePageAsset
 import org.mozilla.fenix.helpers.TestHelper.exitMenu
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.restartApp
-import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
 import org.mozilla.fenix.ui.robots.browserScreen
 import org.mozilla.fenix.ui.robots.clickPageObject
 import org.mozilla.fenix.ui.robots.downloadRobot
 import org.mozilla.fenix.ui.robots.homeScreen
 import org.mozilla.fenix.ui.robots.navigationToolbar
+import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidComposeTestRuleV2
 
 /**
  *  Tests for verifying the Settings for:
  *  Delete Browsing Data on quit
  *
  */
-class SettingsDeleteBrowsingDataOnQuitTest : TestSetup() {
+class SettingsDeleteBrowsingDataOnQuitTest {
     @get:Rule(order = 0)
-    val composeTestRule =
-        AndroidComposeTestRule(
-            HomeActivityIntentTestRule.withDefaultSettingsOverrides(
-                skipOnboarding = true,
-            ),
-        ) { it.activity }
+    val fenixTestRule: FenixTestRule = FenixTestRule()
+
+    private val mockWebServer get() = fenixTestRule.mockWebServer
 
     @get:Rule(order = 1)
-    val memoryLeaksRule = DetectMemoryLeaksRule()
+    val composeTestRule =
+        AndroidComposeTestRuleV2(
+            HomeActivityIntentTestRule.withDefaultSettingsOverrides(),
+        ) { it.activity }
+
+    @get:Rule(order = 2)
+    val memoryLeaksRule = DetectMemoryLeaksRule(composeTestRule = { composeTestRule })
 
     // Automatically allows app permissions, avoiding a system dialog showing up.
-    @get:Rule(order = 2)
+    @get:Rule
     val grantPermissionRule: GrantPermissionRule = GrantPermissionRule.grant(
         Manifest.permission.RECORD_AUDIO,
     )
@@ -171,6 +175,11 @@ class SettingsDeleteBrowsingDataOnQuitTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1243096
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.SettingsDeleteBrowsingDataOnQuitTest#deleteDownloadsOnQuitTest"],
+        bug = 2040277,
+        since = "2026-05",
+    )
     @SmokeTest
     @Test
     fun deleteDownloadsOnQuitTest() {
@@ -202,6 +211,11 @@ class SettingsDeleteBrowsingDataOnQuitTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/416053
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.SettingsDeleteBrowsingDataOnQuitTest#deleteSitePermissionsOnQuitTest"],
+        bug = 2040277,
+        since = "2026-05",
+    )
     @SmokeTest
     @Test
     fun deleteSitePermissionsOnQuitTest() {

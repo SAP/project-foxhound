@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,7 +20,7 @@ class TransformerAlgorithmsBase;
 class TransformStreamDefaultController final : public nsISupports,
                                                public nsWrapperCache {
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(TransformStreamDefaultController)
 
   MOZ_KNOWN_LIVE TransformStream* Stream();
@@ -55,17 +53,6 @@ class TransformStreamDefaultController final : public nsISupports,
   RefPtr<TransformStream> mStream;
   RefPtr<TransformerAlgorithmsBase> mTransformerAlgorithms;
 };
-
-namespace streams_abstract {
-void SetUpTransformStreamDefaultController(
-    JSContext* aCx, TransformStream& aStream,
-    TransformStreamDefaultController& aController,
-    TransformerAlgorithmsBase& aTransformerAlgorithms);
-
-void SetUpTransformStreamDefaultControllerFromTransformer(
-    JSContext* aCx, TransformStream& aStream,
-    JS::Handle<JSObject*> aTransformer, Transformer& aTransformerDict);
-}  // namespace streams_abstract
 
 }  // namespace mozilla::dom
 

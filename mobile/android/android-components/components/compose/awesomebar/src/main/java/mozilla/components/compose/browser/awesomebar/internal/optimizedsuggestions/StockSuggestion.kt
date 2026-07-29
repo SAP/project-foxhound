@@ -9,7 +9,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,9 +24,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
@@ -38,8 +38,10 @@ import mozilla.components.compose.base.theme.AcornTheme
 import mozilla.components.compose.base.theme.acornPrivateColorScheme
 import mozilla.components.compose.base.theme.privateColorPalette
 import mozilla.components.compose.base.theme.success
+import mozilla.components.compose.browser.awesomebar.R
 import mozilla.components.compose.browser.awesomebar.internal.utils.StockSuggestionDataProvider
 import mozilla.components.compose.browser.awesomebar.internal.utils.StockSuggestionPreviewModel
+import mozilla.components.concept.awesomebar.AwesomeBar.ChangePercent
 import mozilla.components.ui.icons.R as iconsR
 
 @Composable
@@ -54,7 +56,6 @@ internal fun StockSuggestion(
 ) {
     Column(
         modifier = modifier
-            .fillMaxWidth()
             .background(color = MaterialTheme.colorScheme.surface)
             .clickable(enabled = true, onClick = onClick),
     ) {
@@ -65,11 +66,9 @@ internal fun StockSuggestion(
             ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val changePercentColor = when (changePercent) {
-                is ChangePercent.Positive -> MaterialTheme.colorScheme.success
-                is ChangePercent.Negative -> MaterialTheme.colorScheme.error
-                is ChangePercent.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
-            }
+            val changePercentColor = getChangePercentColor(changePercent)
+            val changeDescription = getChangeDescription(changePercent)
+            val changePercentText = "${changePercent.value}%"
 
             StocksSuggestionIcon(
                 changePercent = changePercent,
@@ -78,15 +77,17 @@ internal fun StockSuggestion(
 
             Column(
                 modifier = Modifier
-                    .padding(start = 8.dp, end = 16.dp)
-                    .weight(1f),
+                    .padding(start = 8.dp)
+                    .clearAndSetSemantics {
+                        this.contentDescription = "$ticker. $changeDescription. $name. $index. $lastPrice"
+                    },
             ) {
                 Row {
                     Text(
                         text = buildAnnotatedString {
                             val baseStyle = AcornTheme.typography.headline7.toSpanStyle()
                             withStyle(baseStyle.copy(color = MaterialTheme.colorScheme.onSurface)) {
-                                append("$ticker . ")
+                                append("$ticker · ")
                             }
 
                             withStyle(baseStyle.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)) {
@@ -95,33 +96,38 @@ internal fun StockSuggestion(
                         },
                         overflow = TextOverflow.Ellipsis,
                         maxLines = 1,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 16.dp),
+                    )
+
+                    Text(
+                        text = lastPrice,
+                        style = AcornTheme.typography.headline7,
+                        maxLines = 1,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                 }
 
-                Text(
-                    text = index,
-                    style = AcornTheme.typography.body2,
-                    overflow = TextOverflow.Ellipsis,
-                    maxLines = 1,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+                Row {
+                    Text(
+                        text = index,
+                        style = AcornTheme.typography.body2,
+                        overflow = TextOverflow.Ellipsis,
+                        maxLines = 1,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 16.dp),
+                    )
 
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = lastPrice,
-                    style = AcornTheme.typography.headline7,
-                    maxLines = 1,
-                    textAlign = TextAlign.End,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = "${changePercent.value}%",
-                    style = AcornTheme.typography.headline7,
-                    maxLines = 1,
-                    textAlign = TextAlign.End,
-                    color = changePercentColor,
-                )
+                    Text(
+                        text = changePercentText,
+                        style = AcornTheme.typography.headline7,
+                        maxLines = 1,
+                        color = changePercentColor,
+                    )
+                }
             }
         }
 
@@ -139,8 +145,7 @@ private fun StocksSuggestionIcon(
         modifier = modifier
             .size(32.dp)
             .clip(CircleShape)
-            .background(color = changePercentColor)
-            .clearAndSetSemantics {},
+            .background(color = changePercentColor),
         contentAlignment = Alignment.Center,
     ) {
         if (changePercent != ChangePercent.Neutral) {
@@ -160,6 +165,28 @@ private fun StocksSuggestionIcon(
             )
         }
     }
+}
+
+@Composable
+private fun getChangePercentColor(changePercent: ChangePercent): Color = when (changePercent) {
+    is ChangePercent.Positive -> MaterialTheme.colorScheme.success
+    is ChangePercent.Negative -> MaterialTheme.colorScheme.error
+    is ChangePercent.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+@Composable
+private fun getChangeDescription(changePercent: ChangePercent): String = when (changePercent) {
+    is ChangePercent.Positive -> stringResource(
+        R.string.mozac_browser_awesomebar_stock_suggestion_increase,
+        changePercent.value.drop(1),
+    )
+
+    is ChangePercent.Negative -> stringResource(
+        R.string.mozac_browser_awesomebar_stock_suggestion_decrease,
+        changePercent.value.drop(1),
+    )
+
+    is ChangePercent.Neutral -> stringResource(R.string.mozac_browser_awesomebar_stock_suggestion_no_change)
 }
 
 @PreviewLightDark

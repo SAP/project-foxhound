@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -869,7 +868,7 @@ bool FormAutofillImpl::IsSelectWithCreditCardOptions(Element& aElement) {
     return false;
   }
 
-  nsCOMPtr<nsIHTMLCollection> options = select->Options();
+  RefPtr<HTMLCollection> options = select->Options();
   for (uint32_t i = 0; i < options->Length(); ++i) {
     auto* item = options->Item(i);
     auto* option = HTMLOptionElement::FromNode(item);
@@ -973,8 +972,7 @@ static bool MatchOptionContiguousInteger(HTMLOptionsCollection* aOptions,
   for (uint32_t i = 0; i <= aOptions->Length() - aNumContiguous; i++) {
     bool match = true;
     for (uint32_t j = 0; j < aNumContiguous; j++) {
-      if (!TestOptionElementForInteger(aOptions->GetElementAt(i + j),
-                                       aInteger + j)) {
+      if (!TestOptionElementForInteger(aOptions->Item(i + j), aInteger + j)) {
         match = false;
         break;
       }
@@ -1139,7 +1137,7 @@ void FormAutofillImpl::GetFormAutofillConfidences(
   }
 #endif
 
-  RefPtr<nsContentList> labels = document->GetElementsByTagName(u"label"_ns);
+  RefPtr<ContentList> labels = document->GetElementsByTagName(u"label"_ns);
   nsTHashMap<void*, nsTArray<nsCString>> elementsToLabelStrings;
   nsTHashMap<nsAtom*, nsTArray<nsCString>> elementsIdToLabelStrings;
   if (labels) {

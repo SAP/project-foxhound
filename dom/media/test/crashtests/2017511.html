@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const audioContext = new AudioContext();
+  new DelayNode(audioContext, {delayTime: 1e308});
+  document.documentElement.classList.remove("reftest-wait");
+});
+</script>
+</html>

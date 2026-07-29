@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -40,6 +38,7 @@
 #include "nsDirectoryServiceDefs.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsPIDOMWindow.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsIDocShell.h"
 #include "nsIConsoleService.h"
 #include "nsIOService.h"
@@ -219,13 +218,6 @@ bool nsScriptSecurityManager::SecurityCompareURIs(nsIURI* aSourceURI,
                                                   nsIURI* aTargetURI) {
   return NS_SecurityCompareURIs(aSourceURI, aTargetURI,
                                 sStrictFileOriginPolicy);
-}
-
-// SecurityHashURI is consistent with SecurityCompareURIs because
-// NS_SecurityHashURI is consistent with NS_SecurityCompareURIs.  See
-// nsNetUtil.h.
-uint32_t nsScriptSecurityManager::SecurityHashURI(nsIURI* aURI) {
-  return NS_SecurityHashURI(aURI);
 }
 
 bool nsScriptSecurityManager::IsHttpOrHttpsAndCrossOrigin(nsIURI* aUriA,
@@ -1074,7 +1066,8 @@ nsresult nsScriptSecurityManager::CheckLoadURIFlags(
         }
       } else if (targetScheme.EqualsLiteral("moz-page-thumb") ||
                  targetScheme.EqualsLiteral("page-icon") ||
-                 targetScheme.EqualsLiteral("moz-newtab-wallpaper")) {
+                 targetScheme.EqualsLiteral("moz-newtab-wallpaper") ||
+                 targetScheme.EqualsLiteral("moz-newtab-remote-renderer")) {
         if (XRE_IsParentProcess()) {
           return NS_OK;
         }
@@ -1234,8 +1227,7 @@ nsScriptSecurityManager::CheckLoadURIStrWithPrincipal(
   // available.
   uint32_t flags[] = {nsIURIFixup::FIXUP_FLAG_NONE,
                       nsIURIFixup::FIXUP_FLAG_FIX_SCHEME_TYPOS};
-  for (uint32_t i = 0; i < std::size(flags); ++i) {
-    uint32_t fixupFlags = flags[i];
+  for (unsigned int fixupFlags : flags) {
     if (aPrincipal->OriginAttributesRef().IsPrivateBrowsing()) {
       fixupFlags |= nsIURIFixup::FIXUP_FLAG_PRIVATE_CONTEXT;
     }
@@ -1492,11 +1484,12 @@ nsScriptSecurityManager::CanCreateWrapper(JSContext* cx, const nsIID& aIID,
   nsresult rv;
   nsAutoString errorMsg;
   if (originUTF16.IsEmpty()) {
-    AutoTArray<nsString, 1> formatStrings = {classInfoUTF16};
+    AutoTArray<nsString, 1> formatStrings = {std::move(classInfoUTF16)};
     rv = bundle->FormatStringFromName("CreateWrapperDenied", formatStrings,
                                       errorMsg);
   } else {
-    AutoTArray<nsString, 2> formatStrings = {classInfoUTF16, originUTF16};
+    AutoTArray<nsString, 2> formatStrings = {std::move(classInfoUTF16),
+                                             std::move(originUTF16)};
     rv = bundle->FormatStringFromName("CreateWrapperDeniedForOrigin",
                                       formatStrings, errorMsg);
   }
@@ -1858,12 +1851,4 @@ nsScriptSecurityManager::EnsureFileURIAllowlist() {
   }
 
   return mFileURIAllowlist.ref();
-}
-
-NS_IMETHODIMP
-nsScriptSecurityManager::GetFirstUnexpectedJavaScriptLoad(
-    nsACString& aScriptFilename) {
-  aScriptFilename.Truncate();
-  return nsContentSecurityUtils::GetVeryFirstUnexpectedScriptFilename(
-      aScriptFilename);
 }

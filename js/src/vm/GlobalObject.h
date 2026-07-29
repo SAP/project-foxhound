@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -105,13 +103,13 @@ static PlainObjectSlotsKind PlainObjectSlotsKindFromAllocKind(
 class GlobalObjectData {
   friend class js::GlobalObject;
 
-  GlobalObjectData(const GlobalObjectData&) = delete;
-  void operator=(const GlobalObjectData&) = delete;
-
  public:
   explicit GlobalObjectData(Zone* zone);
 
   ~GlobalObjectData();
+
+  GlobalObjectData(const GlobalObjectData&) = delete;
+  void operator=(const GlobalObjectData&) = delete;
 
   // The original values for built-in constructors (with their prototype
   // objects) based on JSProtoKey.
@@ -463,9 +461,6 @@ class GlobalObject : public NativeObject {
     return inited;
   }
 
-  // Disallow use of unqualified JSObject::create in GlobalObject.
-  static GlobalObject* create(...) = delete;
-
   friend struct ::JSRuntime;
   static GlobalObject* createInternal(JSContext* cx, const JSClass* clasp);
 
@@ -474,6 +469,9 @@ class GlobalObject : public NativeObject {
                             JSPrincipals* principals,
                             JS::OnNewGlobalHookOption hookOption,
                             const JS::RealmOptions& options);
+
+  // Disallow use of unqualified JSObject::create in GlobalObject.
+  static GlobalObject* create(...) = delete;
 
   /*
    * Create a constructor function with the specified name and length using

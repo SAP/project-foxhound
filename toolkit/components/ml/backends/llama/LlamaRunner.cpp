@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -68,7 +66,8 @@ NS_IMPL_RELEASE_INHERITED(LlamaStreamSource, UnderlyingSourceAlgorithmsWrapper)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(LlamaStreamSource)
 NS_INTERFACE_MAP_END_INHERITING(UnderlyingSourceAlgorithmsWrapper)
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(LlamaRunner, mStreamSource, mGlobal)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_WEAK_PTR(LlamaRunner, mStreamSource,
+                                               mGlobal, mInitPromise)
 NS_IMPL_CYCLE_COLLECTING_ADDREF(LlamaRunner)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(LlamaRunner)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(LlamaRunner)
@@ -120,7 +119,7 @@ nsresult LlamaGenerateTask::Run() {
                          __PRETTY_FUNCTION__);
         LOGE_RUNNER("{}", msg);
         // graceful termination
-        return mozilla::Err(Error{msg});
+        return mozilla::Err(Error{std::move(msg)});
       }
     }
 
@@ -131,7 +130,7 @@ nsresult LlamaGenerateTask::Run() {
       auto msg = nsFmtCString("{}: Unable to append message to the response",
                               __PRETTY_FUNCTION__);
       LOGE_RUNNER("{}", msg);
-      return mozilla::Err(Error{msg});
+      return mozilla::Err(Error{std::move(msg)});
     }
 
     response.mPhase = chunk.mPhase;
@@ -181,7 +180,7 @@ nsresult LlamaGenerateTask::Run() {
         __PRETTY_FUNCTION__);
     LOGE_RUNNER("{}", msg);
 
-    mErrorMessage = msg;
+    mErrorMessage = std::move(msg);
     mState = TaskState::CompletedFailure;
   }
 
@@ -305,6 +304,10 @@ RefPtr<LlamaGenerateTaskPromise> LlamaGenerateTask::GetMessage() {
   return promise.forget();
 }
 
+bool LlamaGenerateTask::IsActive() const {
+  return mState == TaskState::Idle || mState == TaskState::Running;
+}
+
 }  // namespace mozilla::llama
 
 namespace mozilla::dom {
@@ -322,6 +325,10 @@ void LlamaStreamSource::DisconnectFromOwner() {
   LOGD_RUNNER("DisconnectFromOwner called - worker is shutting down");
   ShutdownWorkerThread();
   GlobalTeardownObserver::DisconnectFromOwner();
+}
+
+bool LlamaStreamSource::IsActive() const {
+  return mTask != nullptr && mTask->IsActive();
 }
 
 void LlamaStreamSource::ShutdownWorkerThread() {
@@ -574,6 +581,18 @@ LlamaRunner::LlamaRunner(const GlobalObject& aGlobal)
 already_AddRefed<ReadableStream> LlamaRunner::CreateGenerationStream(
     const LlamaChatOptions& aOptions, ErrorResult& aRv) {
   LOGD_RUNNER("Entered {}", __PRETTY_FUNCTION__);
+
+  // Guard against concurrent use: LLamaBackend is not thread-safe.
+  if (mStreamSource && mStreamSource->IsActive()) {
+    auto msg = nsFmtCString(
+        "{} Unable to create a new generation stream: "
+        "A generation is already in progress on this LlamaRunner.",
+        __PRETTY_FUNCTION__);
+    LOGE_RUNNER("{}", msg);
+    aRv.ThrowInvalidStateError(msg);
+    return nullptr;
+  }
+
   RefPtr<LlamaStreamSource> source =
       new LlamaStreamSource(mGlobal, mBackend, aOptions);
 
@@ -616,10 +635,20 @@ class MetadataCallback final : public nsIFileMetadataCallback {
   NS_DECL_THREADSAFE_ISUPPORTS
   explicit MetadataCallback(LlamaRunner* aRunner) : mRunner(aRunner) {}
   NS_IMETHOD OnFileMetadataReady(nsIAsyncFileMetadata* aObject) override {
-    mRunner->OnMetadataReceived();
+    // Promoting to a RefPtr here guarantees the runner stays
+    // alive for the duration of OnMetadataReceived.
+    if (RefPtr<LlamaRunner> runner = mRunner.get()) {
+      runner->OnMetadataReceived();
+    }
     return NS_OK;
   }
-  LlamaRunner* mRunner = nullptr;
+  // LlamaRunner is referenced weakly so that this callback does not keep it
+  // alive: if the runner dies before the metadata wait completes, the call
+  // becomes a no-op.
+  // Note: WeakPtr is not thread-safe. This is safe because MetadataCallback is
+  // constructed, dispatched to, and destroyed on the same serial event target
+  // that owns LlamaRunner (see Initialize: GetCurrentSerialEventTarget()).
+  WeakPtr<LlamaRunner> mRunner;
 
  private:
   virtual ~MetadataCallback() = default;

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,8 +6,6 @@
 
 #ifndef nsStyleConsts_h_
 #define nsStyleConsts_h_
-
-#include <inttypes.h>
 
 #include "X11UndefineNone.h"
 #include "gfxFontConstants.h"
@@ -78,22 +74,20 @@ enum class StyleGeometryBox : uint8_t {
   ContentBox,  // Used by everything, except transform-box.
   PaddingBox,  // Used by everything, except transform-box.
   BorderBox,
-  MarginBox,  // XXX Bug 1260094 comment 9.
-              // Although margin-box is required by mask-origin and mask-clip,
-              // we do not implement that due to lack of support in other
-              // browsers. clip-path reference-box only.
-  FillBox,    // Used by everything, except shape-box.
-  StrokeBox,  // mask-clip, mask-origin and clip-path reference-box only.
-  ViewBox,    // Used by everything, except shape-box.
-  NoClip,     // mask-clip only.
-  Text,       // background-clip only.
-  NoBox,      // Depending on which kind of element this style value applied on,
-              // the default value of a reference-box can be different.
-              // For an HTML element, the default value of reference-box is
-              // border-box; for an SVG element, the default value is fill-box.
-              // Since we can not determine the default value at parsing time,
-              // set it as NoBox so that we make a decision later.
-              // clip-path reference-box only.
+  MarginBox,   // clip-path reference-box only.
+  FillBox,     // Used by everything, except shape-box.
+  StrokeBox,   // mask-clip, mask-origin and clip-path reference-box only.
+  ViewBox,     // Used by everything, except shape-box.
+  NoClip,      // mask-clip only.
+  Text,        // background-clip only.
+  BorderArea,  // The area painted by the border. background-clip only.
+  NoBox,  // Depending on which kind of element this style value applied on,
+          // the default value of a reference-box can be different.
+          // For an HTML element, the default value of reference-box is
+          // border-box; for an SVG element, the default value is fill-box.
+          // Since we can not determine the default value at parsing time,
+          // set it as NoBox so that we make a decision later.
+          // clip-path reference-box only.
   MozAlmostPadding = 127  // A magic value that we use for our "pretend that
                           // background-clip is 'padding' when we have a solid
                           // border" optimization.  This isn't actually equal

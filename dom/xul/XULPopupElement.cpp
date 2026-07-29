@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,7 +16,6 @@
 #include "mozilla/dom/XULPopupElementBinding.h"
 #include "nsCOMPtr.h"
 #include "nsDOMCSSDeclaration.h"
-#include "nsGkAtoms.h"
 #include "nsIContent.h"
 #include "nsMenuPopupFrame.h"
 #include "nsNameSpaceManager.h"
@@ -30,7 +27,7 @@
 namespace mozilla::dom {
 
 nsXULElement* NS_NewXULPopupElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo) {
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo) {
   RefPtr<mozilla::dom::NodeInfo> nodeInfo(aNodeInfo);
   auto* nim = nodeInfo->NodeInfoManager();
   return new (nim) XULPopupElement(nodeInfo.forget());
@@ -85,6 +82,11 @@ void XULPopupElement::OpenPopup(Element* aAnchorElement,
 void XULPopupElement::OpenPopupAtScreen(int32_t aXPos, int32_t aYPos,
                                         bool aIsContextMenu,
                                         Event* aTriggerEvent) {
+  if (NodeInfo()->NameAtom() == nsGkAtoms::panel) {
+    // TODO(bug 2038354): Remove this and make the front-end set the attribute
+    // explicitly.
+    SetAttr(kNameSpaceID_None, nsGkAtoms::nonnative, u"true"_ns, true);
+  }
   nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
   if (pm) {
     pm->ShowPopupAtScreen(this, aXPos, aYPos, aIsContextMenu, aTriggerEvent);
@@ -98,6 +100,11 @@ void XULPopupElement::OpenPopupAtScreenRect(const nsAString& aPosition,
                                             bool aAttributesOverride,
                                             Event* aTriggerEvent) {
   nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
+  if (NodeInfo()->NameAtom() == nsGkAtoms::panel) {
+    // TODO(bug 2038354): Remove this and make the front-end set the attribute
+    // explicitly.
+    SetAttr(kNameSpaceID_None, nsGkAtoms::nonnative, u"true"_ns, true);
+  }
   if (pm) {
     pm->ShowPopupAtScreenRect(
         this, aPosition, nsIntRect(aXPos, aYPos, aWidth, aHeight),
@@ -330,6 +337,13 @@ bool XULPopupElement::IsWaylandPopup() const {
 #else
   return false;
 #endif
+}
+
+bool XULPopupElement::IsNativeMenu() const {
+  if (nsMenuPopupFrame* menuPopupFrame = do_QueryFrame(GetPrimaryFrame())) {
+    return menuPopupFrame->IsNativeMenu();
+  }
+  return false;
 }
 
 }  // namespace mozilla::dom

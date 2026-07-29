@@ -16,7 +16,6 @@ async function testCommonSettingControlPropertiesSet(renderTemplateFunction) {
   const l10nArgs = { foo: "bar" };
   const iconSrc = "anicon.png";
   const supportPage = "https://support.page";
-  const subcategory = "the sub category";
   const label = "foo-bar";
   const slot = "foo";
 
@@ -25,7 +24,6 @@ async function testCommonSettingControlPropertiesSet(renderTemplateFunction) {
     l10nArgs,
     iconSrc,
     supportPage,
-    subcategory: "the sub category",
     slot,
     controlAttrs: {
       label,
@@ -43,8 +41,6 @@ async function testCommonSettingControlPropertiesSet(renderTemplateFunction) {
     JSON.stringify(l10nArgs),
     "converts data-l10n-args to stringified JSON object"
   );
-
-  is(element.dataset.subcategory, subcategory, "sets subcategory");
 
   is(element.getAttribute("label"), label, "sets controlAttrs.label");
 

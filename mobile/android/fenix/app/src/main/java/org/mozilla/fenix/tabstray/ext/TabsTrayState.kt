@@ -4,7 +4,7 @@
 
 package org.mozilla.fenix.tabstray.ext
 
-import org.mozilla.fenix.tabstray.TabsTrayState.Mode
+import org.mozilla.fenix.tabstray.redux.state.TabsTrayState.Mode
 
 /**
  * A helper to check if we're in [Mode.Select] mode.

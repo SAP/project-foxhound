@@ -18,6 +18,7 @@ reftest.jar:
   content/invalidation (../../reftests/invalidation/*)
   content/native-theme (../../reftests/native-theme/*)
   content/reftest-sanity (../../reftests/reftest-sanity/*)
+  content/selection (../../reftests/selection/*)
   content/text-overflow (../../reftests/text-overflow/*)
   content/text-shadow (../../reftests/text-shadow/*)
   content/writing-mode (../../reftests/writing-mode/*)

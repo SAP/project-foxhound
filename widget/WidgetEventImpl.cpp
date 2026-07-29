@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,6 +19,8 @@
 #include "mozilla/StaticPrefs_mousewheel.h"
 #include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/WritingModes.h"
+#include "mozilla/dom/CSSAnimation.h"
+#include "mozilla/dom/CSSTransition.h"
 #include "mozilla/dom/KeyboardEventBinding.h"
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/dom/WheelEventBinding.h"
@@ -121,7 +122,6 @@ bool IsForbiddenDispatchingToNonElementContent(EventMessage aMessage) {
     case ePointerOut:
     case ePointerEnter:
     case ePointerLeave:
-    case ePointerRawUpdate:
     case ePointerCancel:
     case ePointerGotCapture:
     case ePointerLostCapture:
@@ -173,12 +173,85 @@ bool IsForbiddenDispatchingToNonElementContent(EventMessage aMessage) {
     case eTouchPointerCancel:
       return true;
 
+    case ePointerRawUpdate:
+    // eMouseRawUpdate and eTouchRawUpdate are internal event messages to
+    // dispatch ePointerRawUpdate. However, somebody may use this method to
+    // consider the event target before converting the event to
+    // ePointerRawUpdate. Therefore, we need to return the same value as
+    // ePointerRawUpdate for them.
     case eMouseRawUpdate:
     case eTouchRawUpdate:
-      MOZ_ASSERT_UNREACHABLE(
-          "Internal raw update events shouldn't be dispatched to the DOM");
       return true;
 
+    default:
+      return false;
+  }
+}
+
+bool IsValidMessageForIPC(EventMessage aMessage, EventClassID aClassID) {
+  switch (aMessage) {
+    case eKeyDown:
+    case eKeyUp:
+    case eKeyPress:
+      return aClassID == eKeyboardEventClass;
+    case eMouseMove:
+    case eMouseUp:
+    case eMouseDown:
+    case eMouseEnterIntoWidget:
+    case eMouseExitFromWidget:
+    case eMouseDoubleClick:
+    case eMouseActivate:
+    case eMouseOver:
+    case eMouseOut:
+    case eMouseHitTest:
+    case eMouseEnter:
+    case eMouseLeave:
+    case eMouseTouchDrag:
+    case eMouseLongTap:
+    case eMouseExploreByTouch:
+      return aClassID == eMouseEventClass;
+    case eWheel:
+    case eWheelOperationStart:
+    case eWheelOperationEnd:
+      return aClassID == eWheelEventClass;
+    case eDragEnter:
+    case eDragOver:
+    case eDragExit:
+    case eDrag:
+    case eDragEnd:
+    case eDragStart:
+    case eDrop:
+    case eDragLeave:
+      return aClassID == eDragEventClass;
+    case ePointerMove:
+    case ePointerUp:
+    case ePointerDown:
+    case ePointerOver:
+    case ePointerOut:
+    case ePointerEnter:
+    case ePointerLeave:
+    case ePointerCancel:
+    case ePointerRawUpdate:
+    case ePointerGotCapture:
+    case ePointerLostCapture:
+    case ePointerClick:
+    case ePointerAuxClick:
+    case eContextMenu:
+      return aClassID == ePointerEventClass;
+    case eTouchStart:
+    case eTouchMove:
+    case eTouchEnd:
+    case eTouchCancel:
+    case eTouchPointerCancel:
+      return aClassID == eTouchEventClass;
+    case eCompositionStart:
+    case eCompositionEnd:
+    case eCompositionChange:
+    case eCompositionCommitAsIs:
+    case eCompositionCommit:
+      return aClassID == eCompositionEventClass;
+    case eSetSelection:
+      return aClassID == eSelectionEventClass;
     default:
       return false;
   }
@@ -198,6 +271,8 @@ const char* ToChar(EventClassID aEventClassID) {
 
 #undef NS_EVENT_CLASS
 #undef NS_ROOT_EVENT_CLASS
+    case eEventClassUninitialized:
+      return "eEventClassUninitialized";
     default:
       return "illegal event class ID";
   }
@@ -767,31 +842,21 @@ int32_t WidgetPointerHelper::GetValidTiltValue(int32_t aTilt) {
 
 // static
 double WidgetPointerHelper::GetValidAltitudeAngle(double aAltitudeAngle) {
-  if (MOZ_LIKELY(aAltitudeAngle >= 0.0 && aAltitudeAngle <= kHalfPi)) {
-    return aAltitudeAngle;
+  if (!std::isfinite(aAltitudeAngle)) {
+    return 0.0;
   }
-  while (aAltitudeAngle > kHalfPi) {
-    aAltitudeAngle -= kHalfPi;
-  }
-  while (aAltitudeAngle < 0.0) {
-    aAltitudeAngle += kHalfPi;
-  }
-  MOZ_ASSERT(aAltitudeAngle >= 0.0 && aAltitudeAngle <= kHalfPi);
-  return aAltitudeAngle;
+  return std::clamp(aAltitudeAngle, 0.0, kHalfPi);
 }
 
 // static
 double WidgetPointerHelper::GetValidAzimuthAngle(double aAzimuthAngle) {
-  if (MOZ_LIKELY(aAzimuthAngle >= 0.0 && aAzimuthAngle <= kDoublePi)) {
-    return aAzimuthAngle;
+  if (!std::isfinite(aAzimuthAngle)) {
+    return 0.0;
   }
-  while (aAzimuthAngle > kDoublePi) {
-    aAzimuthAngle -= kDoublePi;
-  }
-  while (aAzimuthAngle < 0.0) {
+  aAzimuthAngle = std::fmod(aAzimuthAngle, kDoublePi);
+  if (aAzimuthAngle < 0.0) {
     aAzimuthAngle += kDoublePi;
   }
-  MOZ_ASSERT(aAzimuthAngle >= 0.0 && aAzimuthAngle <= kDoublePi);
   return aAzimuthAngle;
 }
 
@@ -1478,19 +1543,19 @@ void WidgetKeyboardEvent::GetAccessKeyCandidates(
     }
     aCandidates.AppendElement(ch);
   }
-  for (uint32_t i = 0; i < mAlternativeCharCodes.Length(); ++i) {
-    uint32_t ch[2] = {mAlternativeCharCodes[i].mUnshiftedCharCode,
-                      mAlternativeCharCodes[i].mShiftedCharCode};
-    for (uint32_t j = 0; j < 2; ++j) {
-      if (!ch[j]) {
+  for (const auto& alternativeCharCode : mAlternativeCharCodes) {
+    uint32_t ch[2] = {alternativeCharCode.mUnshiftedCharCode,
+                      alternativeCharCode.mShiftedCharCode};
+    for (unsigned int& c : ch) {
+      if (!c) {
         continue;
       }
-      if (IS_IN_BMP(ch[j])) {
-        ch[j] = ToLowerCase(static_cast<char16_t>(ch[j]));
+      if (IS_IN_BMP(c)) {
+        c = ToLowerCase(static_cast<char16_t>(c));
       }
       // Don't append the charcode that was already appended.
-      if (aCandidates.IndexOf(ch[j]) == aCandidates.NoIndex) {
-        aCandidates.AppendElement(ch[j]);
+      if (aCandidates.IndexOf(c) == aCandidates.NoIndex) {
+        aCandidates.AppendElement(c);
       }
     }
   }
@@ -2348,6 +2413,82 @@ EditorInputType InternalEditorInputEvent::GetEditorInputType(
   }
   return sInputTypeHashtable->MaybeGet(aInputType)
       .valueOr(EditorInputType::eUnknown);
+}
+
+/******************************************************************************
+ * mozilla::InternalTransitionEvent (ContentEvents.h)
+ ******************************************************************************/
+
+InternalTransitionEvent::InternalTransitionEvent(bool aIsTrusted,
+                                                 EventMessage aMessage,
+                                                 const WidgetEventTime* aTime)
+    : WidgetEvent(aIsTrusted, aMessage, eTransitionEventClass, aTime),
+      mElapsedTime(0.0) {}
+
+InternalTransitionEvent::InternalTransitionEvent(InternalTransitionEvent&&) =
+    default;
+InternalTransitionEvent& InternalTransitionEvent::operator=(
+    InternalTransitionEvent&&) = default;
+
+InternalTransitionEvent::~InternalTransitionEvent() {
+  NS_ASSERT_EVENT_CLASS_ID(eTransitionEventClass, eBasicEventClass);
+}
+
+WidgetEvent* InternalTransitionEvent::Duplicate() const {
+  MOZ_ASSERT(mClass == eTransitionEventClass,
+             "Duplicate() must be overridden by sub class");
+  InternalTransitionEvent* result =
+      new InternalTransitionEvent(false, mMessage, this);
+  result->AssignTransitionEventData(*this, true);
+  result->mFlags = mFlags;
+  return result;
+}
+
+void InternalTransitionEvent::AssignTransitionEventData(
+    const InternalTransitionEvent& aEvent, bool aCopyTargets) {
+  AssignEventData(aEvent, aCopyTargets);
+  mPropertyName = aEvent.mPropertyName;
+  mElapsedTime = aEvent.mElapsedTime;
+  mPseudoElement = aEvent.mPseudoElement;
+  mAnimation = aEvent.mAnimation;
+}
+
+/******************************************************************************
+ * mozilla::InternalAnimationEvent (ContentEvents.h)
+ ******************************************************************************/
+
+InternalAnimationEvent::InternalAnimationEvent(bool aIsTrusted,
+                                               EventMessage aMessage,
+                                               const WidgetEventTime* aTime)
+    : WidgetEvent(aIsTrusted, aMessage, eAnimationEventClass, aTime),
+      mElapsedTime(0.0) {}
+
+InternalAnimationEvent::~InternalAnimationEvent() {
+  NS_ASSERT_EVENT_CLASS_ID(eAnimationEventClass, eBasicEventClass);
+}
+
+InternalAnimationEvent::InternalAnimationEvent(InternalAnimationEvent&&) =
+    default;
+InternalAnimationEvent& InternalAnimationEvent::operator=(
+    InternalAnimationEvent&&) = default;
+
+WidgetEvent* InternalAnimationEvent::Duplicate() const {
+  MOZ_ASSERT(mClass == eAnimationEventClass,
+             "Duplicate() must be overridden by sub class");
+  InternalAnimationEvent* result =
+      new InternalAnimationEvent(false, mMessage, this);
+  result->AssignAnimationEventData(*this, true);
+  result->mFlags = mFlags;
+  return result;
+}
+
+void InternalAnimationEvent::AssignAnimationEventData(
+    const InternalAnimationEvent& aEvent, bool aCopyTargets) {
+  AssignEventData(aEvent, aCopyTargets);
+  mAnimationName = aEvent.mAnimationName;
+  mElapsedTime = aEvent.mElapsedTime;
+  mPseudoElement = aEvent.mPseudoElement;
+  mAnimation = aEvent.mAnimation;
 }
 
 }  // namespace mozilla

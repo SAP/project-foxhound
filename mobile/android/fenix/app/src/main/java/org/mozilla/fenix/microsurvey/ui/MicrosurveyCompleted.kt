@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentHeight
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -33,8 +32,6 @@ import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.PreviewThemeProvider
 import org.mozilla.fenix.theme.Theme
 
-private val shape = RoundedCornerShape(8.dp)
-
 /**
  * The microsurvey view to show the survey was submitted.
  *
@@ -46,7 +43,7 @@ fun MicrosurveyCompleted(
 ) {
     Card(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shape = shape,
+        shape = MaterialTheme.shapes.small,
         colors = CardDefaults.cardColors(containerColor = backgroundColor),
         modifier = Modifier
             .wrapContentHeight()

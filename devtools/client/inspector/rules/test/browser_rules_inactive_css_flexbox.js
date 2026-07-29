@@ -47,6 +47,7 @@ const BEFORE = [
           "align-self": "stretch",
         },
         ruleIndex: 1,
+        msgId: "inactive-css-not-grid-or-flex-or-absolutely-positioned-item",
       },
     ],
   },
@@ -74,6 +75,7 @@ const BEFORE = [
           "flex-direction": "row",
         },
         ruleIndex: 1,
+        msgId: "inactive-css-not-flex-container",
       },
     ],
   },
@@ -102,6 +104,7 @@ const BEFORE = [
           order: "1",
         },
         ruleIndex: 1,
+        msgId: "inactive-css-not-grid-or-flex-item",
       },
     ],
   },
@@ -116,30 +119,35 @@ const AFTER = [
           order: "2",
         },
         ruleIndex: 0,
+        msgId: "inactive-css-not-grid-or-flex-item",
       },
       {
         declaration: {
           "flex-basis": "auto",
         },
         ruleIndex: 1,
+        msgId: "inactive-css-not-flex-item",
       },
       {
         declaration: {
           "flex-grow": "1",
         },
         ruleIndex: 1,
+        msgId: "inactive-css-not-flex-item",
       },
       {
         declaration: {
           "flex-shrink": "1",
         },
         ruleIndex: 1,
+        msgId: "inactive-css-not-flex-item",
       },
       {
         declaration: {
           "flex-direction": "row",
         },
         ruleIndex: 1,
+        msgId: "inactive-css-not-flex-container",
       },
     ],
   },

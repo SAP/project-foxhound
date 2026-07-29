@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,7 +34,7 @@ class nsSimpleArrayEnumerator final : public nsSimpleEnumerator {
 
 NS_IMETHODIMP
 nsSimpleArrayEnumerator::HasMoreElements(bool* aResult) {
-  MOZ_ASSERT(aResult != 0, "null ptr");
+  MOZ_ASSERT(aResult != nullptr, "null ptr");
   if (!aResult) {
     return NS_ERROR_NULL_POINTER;
   }
@@ -57,7 +55,7 @@ nsSimpleArrayEnumerator::HasMoreElements(bool* aResult) {
 
 NS_IMETHODIMP
 nsSimpleArrayEnumerator::GetNext(nsISupports** aResult) {
-  MOZ_ASSERT(aResult != 0, "null ptr");
+  MOZ_ASSERT(aResult != nullptr, "null ptr");
   if (!aResult) {
     return NS_ERROR_NULL_POINTER;
   }
@@ -82,8 +80,8 @@ nsSimpleArrayEnumerator::GetNext(nsISupports** aResult) {
 
 nsresult NS_NewArrayEnumerator(nsISimpleEnumerator** aResult, nsIArray* aArray,
                                const nsID& aEntryIID) {
-  RefPtr<nsSimpleArrayEnumerator> enumer =
-      new nsSimpleArrayEnumerator(aArray, aEntryIID);
+  RefPtr enumer =
+      mozilla::MakeRefPtr<nsSimpleArrayEnumerator>(aArray, aEntryIID);
   enumer.forget(aResult);
   return NS_OK;
 }
@@ -136,7 +134,7 @@ nsCOMArrayEnumerator::~nsCOMArrayEnumerator() {
 
 NS_IMETHODIMP
 nsCOMArrayEnumerator::HasMoreElements(bool* aResult) {
-  MOZ_ASSERT(aResult != 0, "null ptr");
+  MOZ_ASSERT(aResult != nullptr, "null ptr");
   if (!aResult) {
     return NS_ERROR_NULL_POINTER;
   }
@@ -147,7 +145,7 @@ nsCOMArrayEnumerator::HasMoreElements(bool* aResult) {
 
 NS_IMETHODIMP
 nsCOMArrayEnumerator::GetNext(nsISupports** aResult) {
-  MOZ_ASSERT(aResult != 0, "null ptr");
+  MOZ_ASSERT(aResult != nullptr, "null ptr");
   if (!aResult) {
     return NS_ERROR_NULL_POINTER;
   }

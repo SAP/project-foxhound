@@ -282,7 +282,7 @@ SimpleTest.waitForFocus(function () {
     finish();
   }
 
-  SpecialPowers.pushPrefEnv({"set": [["dom.shadowdom.selection_across_boundary.enabled", true]]}, runTest);
+  runTest();
 });
 </script>
 </head>

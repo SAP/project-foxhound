@@ -51,7 +51,7 @@ sealed interface TabCounterMenuItem {
             override val onClick: () -> Unit,
         ) : IconItem(
             textResource = R.string.add_private_tab,
-            drawableRes = iconsR.drawable.mozac_ic_private_mode_24,
+            drawableRes = iconsR.drawable.mozac_ic_private_mode_fill_24,
             onClick = onClick,
         )
 

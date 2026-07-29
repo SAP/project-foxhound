@@ -23,6 +23,8 @@ FINAL_TARGET_FILES.actors += [
     "GeckoViewPromptChild.sys.mjs",
     "GeckoViewPrompterChild.sys.mjs",
     "GeckoViewPrompterParent.sys.mjs",
+    "GeckoViewPromptParent.sys.mjs",
+    "GeckoViewPushParent.sys.mjs",
     "GeckoViewSettingsChild.sys.mjs",
     "LoadURIDelegateChild.sys.mjs",
     "LoadURIDelegateParent.sys.mjs",

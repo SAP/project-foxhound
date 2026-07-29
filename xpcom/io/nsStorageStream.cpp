@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -132,8 +130,8 @@ nsStorageStream::Close() {
     mSegmentedBuffer->ReallocLastSegment(segmentOffset);
   }
 
-  mWriteCursor = 0;
-  mSegmentEnd = 0;
+  mWriteCursor = nullptr;
+  mSegmentEnd = nullptr;
 
   LOG(("nsStorageStream [%p] Close mWriteCursor=%p mSegmentEnd=%p\n", this,
        mWriteCursor, mSegmentEnd));
@@ -201,7 +199,7 @@ nsStorageStream::Write(const char* aBuffer, uint32_t aCount,
     if (!availableInSegment) {
       mWriteCursor = mSegmentedBuffer->AppendNewSegment();
       if (!mWriteCursor) {
-        mSegmentEnd = 0;
+        mSegmentEnd = nullptr;
         return NS_ERROR_OUT_OF_MEMORY;
       }
       mLastSegmentNum++;
@@ -328,8 +326,8 @@ nsresult nsStorageStream::Seek(int32_t aPosition) {
 
   // Special handling for seek to start-of-buffer
   if (aPosition == 0) {
-    mWriteCursor = 0;
-    mSegmentEnd = 0;
+    mWriteCursor = nullptr;
+    mSegmentEnd = nullptr;
     LOG(("nsStorageStream [%p] Seek mWriteCursor=%p mSegmentEnd=%p\n", this,
          mWriteCursor, mSegmentEnd));
     return NS_OK;
@@ -416,8 +414,8 @@ nsStorageStream::NewInputStream(int32_t aStartingOffset,
     return NS_ERROR_NOT_INITIALIZED;
   }
 
-  RefPtr<nsStorageInputStream> inputStream =
-      new nsStorageInputStream(this, mSegmentSize);
+  RefPtr inputStream =
+      mozilla::MakeRefPtr<nsStorageInputStream>(this, mSegmentSize);
 
   inputStream->mStorageStream->mMutex.AssertCurrentThreadOwns();
   nsresult rv = inputStream->Seek(aStartingOffset);
@@ -651,8 +649,8 @@ void nsStorageInputStream::Serialize(InputStreamParams& aParams,
   MOZ_ASSERT(NS_SUCCEEDED(rv));
 
   StringInputStreamParams params;
-  params.data() = combined;
-  aParams = params;
+  params.data() = std::move(combined);
+  aParams = std::move(params);
 }
 
 bool nsStorageInputStream::Deserialize(const InputStreamParams& aParams) {
@@ -675,7 +673,7 @@ nsStorageInputStream::Clone(nsIInputStream** aCloneOut) {
 
 nsresult NS_NewStorageStream(uint32_t aSegmentSize, uint32_t aMaxSize,
                              nsIStorageStream** aResult) {
-  RefPtr<nsStorageStream> storageStream = new nsStorageStream();
+  RefPtr storageStream = mozilla::MakeRefPtr<nsStorageStream>();
   nsresult rv = storageStream->Init(aSegmentSize, aMaxSize);
   if (NS_FAILED(rv)) {
     return rv;

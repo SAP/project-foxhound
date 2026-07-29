@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode:nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -182,40 +181,6 @@ class LocaleService final : public mozILocaleService,
                              const nsACString& aAvailable);
 
   bool IsServer();
-
-  /**
-   * Create a component from intl/components with the current app's locale. This
-   * is a convenience method for efficient string management with the app
-   * locale.
-   */
-  template <typename T, typename... Args>
-  static Result<UniquePtr<T>, ICUError> TryCreateComponent(Args... args) {
-    // 32 is somewhat arbitrary for the length, but it should fit common
-    // locales, but locales such as the following will be heap allocated:
-    //
-    //  "de-u-ca-gregory-fw-mon-hc-h23-co-phonebk-ka-noignore-kb-false-kc-
-    //    false-kf-false-kh-false-kk-false-kn-false-kr-space-ks-level1-kv-space-cf-
-    //    standard-cu-eur-ms-metric-nu-latn-lb-strict-lw-normal-ss-none-tz-atvie-em-
-    //    default-rg-atzzzz-sd-atat1-va-posix"
-    nsAutoCStringN<32> appLocale;
-    mozilla::intl::LocaleService::GetInstance()->GetAppLocaleAsBCP47(appLocale);
-
-    return T::TryCreate(appLocale.get(), args...);
-  }
-
-  /**
-   * Create a component from intl/components with a given locale, but fallback
-   * to the app locale if it doesn't work.
-   */
-  template <typename T, typename... Args>
-  static Result<UniquePtr<T>, ICUError> TryCreateComponentWithLocale(
-      const char* aLocale, Args... args) {
-    auto result = T::TryCreate(aLocale, args...);
-    if (result.isOk()) {
-      return result;
-    }
-    return TryCreateComponent<T>(args...);
-  }
 
  private:
   void NegotiateAppLocales(nsTArray<nsCString>& aRetVal);

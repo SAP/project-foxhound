@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/HTMLDialogElement.h"
 
+#include "mozilla/dom/AncestorIterator.h"
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/CloseWatcher.h"
 #include "mozilla/dom/CloseWatcherManager.h"
@@ -171,6 +170,7 @@ void HTMLDialogElement::Close(Element* aSource,
   // 6. If is modal of subject is true, then request an element to be removed
   // from the top layer given subject.
   // 7. Let wasModal be the value of subject's is modal flag.
+  bool wasModal = IsInTopLayer();
   // 8. Set is modal of subject to false.
   RemoveFromTopLayerIfNeeded();
 
@@ -202,10 +202,29 @@ void HTMLDialogElement::Close(Element* aSource,
     // anchor is a shadow-including inclusive descendant of subject, or wasModal
     // is true, then run the focusing steps for element; the viewport should not
     // be scrolled by doing this step.
-    FocusOptions options;
-    options.mPreventScroll = true;
-    previouslyFocusedElement->Focus(options, CallerType::NonSystem,
-                                    IgnoredErrorResult());
+    bool resetFocus = true;
+    if (!wasModal) {
+      resetFocus = false;
+      if (auto* focusedContent = OwnerDoc()->GetUnretargetedFocusedContent()) {
+        // Actually use flat tree instead of shadow-including traversal to be
+        // consistent with Chrome:
+        // https://github.com/web-platform-tests/wpt/pull/39579#issuecomment-2666758496
+        for (auto* dialog :
+             focusedContent
+                 ->InclusiveFlatTreeAncestorsOfType<HTMLDialogElement>()) {
+          if (dialog == this) {
+            resetFocus = true;
+            break;
+          }
+        }
+      }
+    }
+    if (resetFocus) {
+      FocusOptions options;
+      options.mPreventScroll = true;
+      previouslyFocusedElement->Focus(options, CallerType::NonSystem,
+                                      IgnoredErrorResult());
+    }
   }
 
   // 13. Queue an element task on the user interaction task source given the
@@ -313,27 +332,13 @@ void HTMLDialogElement::Show(ErrorResult& aError) {
   // 8. Let document be this's node document.
 
   // 9. Let hideUntil be the result of running topmost popover ancestor given
-  // this, document's showing hint popover list, null, and false.
-  RefPtr<nsINode> hideUntil =
-      GetTopmostPopoverAncestor(PopoverAttributeState::Hint, nullptr, false);
+  // this, null, and false.
+  RefPtr<Element> hideUntil = GetTopmostPopoverAncestor(nullptr, false);
 
-  // 10. If hideUntil is null, then set hideUntil to the result of running
-  // topmost popover ancestor given this, document's showing auto popover list,
-  // null, and false.
-  if (!hideUntil) {
-    hideUntil =
-        GetTopmostPopoverAncestor(PopoverAttributeState::Auto, nullptr, false);
-  }
+  // 10. Run hide popovers until given document, hideUntil, false, and true.
+  OwnerDoc()->HidePopoversUntil(hideUntil, false, true);
 
-  // 11. If hideUntil is null, then set hideUntil to document.
-  if (!hideUntil) {
-    hideUntil = OwnerDoc();
-  }
-
-  // 12. Run hide all popovers until given hideUntil, false, and true.
-  OwnerDoc()->HideAllPopoversUntil(*hideUntil, false, true);
-
-  // 13. Run the dialog focusing steps given this.
+  // 11. Run the dialog focusing steps given this.
   FocusDialog();
 }
 
@@ -495,27 +500,13 @@ void HTMLDialogElement::ShowModal(Element* aSource, ErrorResult& aError) {
   // 17. Let document be subject's node document.
 
   // 18. Let hideUntil be the result of running topmost popover ancestor given
-  // subject, document's showing hint popover list, null, and false.
-  RefPtr<nsINode> hideUntil =
-      GetTopmostPopoverAncestor(PopoverAttributeState::Hint, nullptr, false);
+  // subject, null, and false.
+  RefPtr<Element> hideUntil = GetTopmostPopoverAncestor(nullptr, false);
 
-  // 19. If hideUntil is null, then set hideUntil to the result of running
-  // topmost popover ancestor given subject, document's showing auto popover
-  // list, null, and false.
-  if (!hideUntil) {
-    hideUntil =
-        GetTopmostPopoverAncestor(PopoverAttributeState::Auto, nullptr, false);
-  }
+  // 19. Run hide popovers until given document, hideUntil, false, and true.
+  OwnerDoc()->HidePopoversUntil(hideUntil, false, true);
 
-  // 20. If hideUntil is null, then set hideUntil to document.
-  if (!hideUntil) {
-    hideUntil = OwnerDoc();
-  }
-
-  // 21. Run hide all popovers until given hideUntil, false, and true.
-  OwnerDoc()->HideAllPopoversUntil(*hideUntil, false, true);
-
-  // 22. Run the dialog focusing steps given subject.
+  // 20. Run the dialog focusing steps given subject.
   FocusDialog();
 
   aError.SuppressException();

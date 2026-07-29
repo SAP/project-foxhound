@@ -41,23 +41,7 @@ add_task(async function test_measure() {
 
   let placesMeasurement = Glean.browserBackup.placesSize.testGetValue();
   let faviconsMeasurement = Glean.browserBackup.faviconsSize.testGetValue();
-  let scalars = TelemetryTestUtils.getProcessScalars("parent", false, false);
 
-  // Compare glean vs telemetry measurements
-  TelemetryTestUtils.assertScalar(
-    scalars,
-    "browser.backup.places_size",
-    placesMeasurement,
-    "Glean and telemetry measurements for places.sqlite should be equal"
-  );
-  TelemetryTestUtils.assertScalar(
-    scalars,
-    "browser.backup.favicons_size",
-    faviconsMeasurement,
-    "Glean and telemetry measurements for favicons.sqlite should be equal"
-  );
-
-  // Compare glean measurements vs actual file sizes
   Assert.equal(
     placesMeasurement,
     EXPECTED_PLACES_DB_SIZE,
@@ -79,12 +63,6 @@ add_task(async function test_measure() {
  */
 add_task(async function test_backup() {
   Services.fog.testResetFOG();
-  const placesTimeHistogram = TelemetryTestUtils.getAndClearHistogram(
-    "BROWSER_BACKUP_PLACES_TIME_MS"
-  );
-  const faviconsTimeHistogram = TelemetryTestUtils.getAndClearHistogram(
-    "BROWSER_BACKUP_FAVICONS_TIME_MS"
-  );
   let sandbox = sinon.createSandbox();
 
   let placesBackupResource = new PlacesBackupResource();
@@ -144,8 +122,6 @@ add_task(async function test_backup() {
   // Validate timing metrics
   assertSingleTimeMeasurement(Glean.browserBackup.placesTime.testGetValue());
   assertSingleTimeMeasurement(Glean.browserBackup.faviconsTime.testGetValue());
-  assertHistogramMeasurementQuantity(placesTimeHistogram, 1);
-  assertHistogramMeasurementQuantity(faviconsTimeHistogram, 1);
 
   await maybeRemovePath(stagingPath);
   await maybeRemovePath(sourcePath);
@@ -159,12 +135,6 @@ add_task(async function test_backup() {
  */
 add_task(async function test_backup_no_saved_history() {
   Services.fog.testResetFOG();
-  const placesTimeHistogram = TelemetryTestUtils.getAndClearHistogram(
-    "BROWSER_BACKUP_PLACES_TIME_MS"
-  );
-  const faviconsTimeHistogram = TelemetryTestUtils.getAndClearHistogram(
-    "BROWSER_BACKUP_FAVICONS_TIME_MS"
-  );
   let sandbox = sinon.createSandbox();
 
   let sourcePath = await IOUtils.createUniqueDirectory(
@@ -207,8 +177,6 @@ add_task(async function test_backup_no_saved_history() {
     null,
     "Should not have timed favicons backup when it did not occur"
   );
-  assertHistogramMeasurementQuantity(placesTimeHistogram, 0);
-  assertHistogramMeasurementQuantity(faviconsTimeHistogram, 0);
 
   /**
    * Now verify that the sanitize shutdown pref also prevents backup of places.
@@ -235,8 +203,6 @@ add_task(async function test_backup_no_saved_history() {
     null,
     "Should not have timed favicons backup when it did not occur"
   );
-  assertHistogramMeasurementQuantity(placesTimeHistogram, 0);
-  assertHistogramMeasurementQuantity(faviconsTimeHistogram, 0);
 
   await maybeRemovePath(stagingPath);
   await maybeRemovePath(sourcePath);
@@ -252,12 +218,6 @@ add_task(async function test_backup_no_saved_history() {
  */
 add_task(async function test_backup_private_browsing() {
   Services.fog.testResetFOG();
-  const placesTimeHistogram = TelemetryTestUtils.getAndClearHistogram(
-    "BROWSER_BACKUP_PLACES_TIME_MS"
-  );
-  const faviconsTimeHistogram = TelemetryTestUtils.getAndClearHistogram(
-    "BROWSER_BACKUP_FAVICONS_TIME_MS"
-  );
   let sandbox = sinon.createSandbox();
 
   let sourcePath = await IOUtils.createUniqueDirectory(
@@ -294,8 +254,6 @@ add_task(async function test_backup_private_browsing() {
     null,
     "Should not have timed favicons backup when it did not occur"
   );
-  assertHistogramMeasurementQuantity(placesTimeHistogram, 0);
-  assertHistogramMeasurementQuantity(faviconsTimeHistogram, 0);
 
   await maybeRemovePath(stagingPath);
   await maybeRemovePath(sourcePath);

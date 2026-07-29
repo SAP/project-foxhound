@@ -71,6 +71,9 @@
 ["include:tests/custom/browsertime-speculative.toml"]
 # Custom speculative connection test
 
+["include:tests/custom/browsertime-speculation-rules.toml"]
+# Speculation Rules API prefetch test against a local server
+
 ["include:tests/custom/browsertime-throttled-pageload.toml"]
 # Custom throttled network pageload test
 

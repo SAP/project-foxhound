@@ -1,0 +1,93 @@
+[DEFAULT]
+tags = "urlbar"
+support-files = [
+  "../browser/head-common.js",
+  "head.js",
+]
+prefs = [
+  "browser.bookmarks.testing.skipDefaultBookmarksImport=true",
+  "browser.urlbar.trending.featureGate=false",
+]
+
+["browser_alias_replacement.js"]
+support-files = [
+  "../browser/searchSuggestionEngine.xml",
+  "../browser/searchSuggestionEngine.sjs",
+]
+
+["browser_autofill.js"]
+
+["browser_clickLink.js"]
+https_first_disabled = true
+support-files = ["../browser/dummy_page.html"]
+
+["browser_engineRemoval.js"]
+
+["browser_excludeResults.js"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # Bug 1938142
+]
+
+["browser_heuristic.js"]
+https_first_disabled = true
+
+["browser_indicator.js"]
+https_first_disabled = true
+support-files = [
+  "../browser/searchSuggestionEngine.xml",
+  "../browser/searchSuggestionEngine.sjs",
+]
+
+["browser_indicator_clickthrough.js"]
+
+["browser_localOneOffs_actionText.js"]
+support-files = [
+  "../browser/searchSuggestionEngine.xml",
+  "../browser/searchSuggestionEngine.sjs",
+]
+
+["browser_newWindow.js"]
+
+["browser_no_results.js"]
+
+["browser_omnibox.js"]
+
+["browser_oneOffButton.js"]
+
+["browser_pickResult.js"]
+https_first_disabled = true
+
+["browser_preview.js"]
+
+["browser_searchModeSwitcher_appProvidedEngines.js"]
+tags = "persisted-search"
+
+["browser_searchModeSwitcher_basic.js"]
+
+["browser_searchModeSwitcher_dynamicUnifiedSearchButton.js"]
+support-files = ["has-a-link.html"]
+
+["browser_searchModeSwitcher_emptyInput.js"]
+
+["browser_searchModeSwitcher_keyNavigation.js"]
+
+["browser_searchModeSwitcher_opensearchInstall.js"]
+
+["browser_searchModeSwitcher_searchMode.js"]
+
+["browser_searchModeSwitcher_telemetry.js"]
+
+["browser_sessionStore.js"]
+https_first_disabled = true
+
+["browser_setURI.js"]
+https_first_disabled = true
+
+["browser_suggestions.js"]
+support-files = [
+  "../browser/searchSuggestionEngine.xml",
+  "../browser/searchSuggestionEngine.sjs",
+  "../browser/searchSuggestionEngineMany.xml",
+]
+
+["browser_switchTabs.js"]

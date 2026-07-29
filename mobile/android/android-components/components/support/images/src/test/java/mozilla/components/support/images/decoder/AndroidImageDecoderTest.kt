@@ -6,12 +6,10 @@ package mozilla.components.support.images.decoder
 
 import android.graphics.Bitmap
 import android.util.Size
-import androidx.core.graphics.scale
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.support.images.DesiredSize
 import mozilla.components.support.test.any
 import mozilla.components.support.test.mock
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -19,6 +17,7 @@ import org.mockito.Mockito.anyInt
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.spy
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class AndroidImageDecoderTest {
@@ -37,7 +36,7 @@ class AndroidImageDecoderTest {
             ),
         )
 
-        assertNotNull(bitmap!!)
+        assertNotNull(bitmap)
     }
 
     @Test

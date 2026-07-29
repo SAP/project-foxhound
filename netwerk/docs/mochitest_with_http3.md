@@ -1,6 +1,6 @@
 # Introduction to Mochitest framework with HTTP/2 and HTTP/3 Support
 
-The Mochitest framework currently utilizes [httpd.js](https://searchfox.org/mozilla-central/source/netwerk/test/httpserver/httpd.js) as its primary HTTP server, which only provides support for HTTP/1.1. To boost our testing capacity for HTTP/2 and HTTP/3 within necko, we improved the Mochitest framework to enable Firefox to connect to the test server using HTTP/2 or HTTP/3 while running Mochitest files.
+The Mochitest framework currently utilizes [httpd.js](https://searchfox.org/firefox-main/source/netwerk/test/httpserver/httpd.js) as its primary HTTP server, which only provides support for HTTP/1.1. To boost our testing capacity for HTTP/2 and HTTP/3 within necko, we improved the Mochitest framework to enable Firefox to connect to the test server using HTTP/2 or HTTP/3 while running Mochitest files.
 
 ## Mochitest Framework Server Setup for HTTP/1.1
 As the diagram below, there is a back-end HTTP server running at `http://127.0.0.1:8888`. To ensure that Firefox can access multiple origins using a single HTTP server, the Mochitest framework employs proxy autoconfig (PAC). This [PAC script](https://searchfox.org/mozilla-central/rev/986024d59bff59819a3ed2f7c1d0f5254cdc3f3d/testing/mozbase/mozprofile/mozprofile/permissions.py#282-326) ensures that all plain HTTP connections are proxied to `127.0.0.1:8888`.

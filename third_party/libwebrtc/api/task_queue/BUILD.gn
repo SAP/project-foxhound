@@ -18,7 +18,6 @@ rtc_library("task_queue") {
 
   deps = [
     "..:location",
-    "../../rtc_base:checks",
     "../../rtc_base:macromagic",
     "../../rtc_base/system:rtc_export",
     "../units:time_delta",
@@ -76,6 +75,7 @@ rtc_library("task_queue_test") {
       "../../rtc_base:timeutils",
       "../../test:test_support",
       "//third_party/abseil-cpp/absl/cleanup",
+      "//third_party/abseil-cpp/absl/functional:any_invocable",
       "//third_party/abseil-cpp/absl/strings",
     ]
   }
@@ -121,9 +121,9 @@ rtc_library("pending_task_safety_flag") {
   ]
   deps = [
     ":task_queue",
-    "../../api:refcountedbase",
-    "../../api:scoped_refptr",
-    "../../api:sequence_checker",
+    "..:refcountedbase",
+    "..:scoped_refptr",
+    "..:sequence_checker",
     "../../rtc_base:checks",
     "../../rtc_base/system:no_unique_address",
     "../../rtc_base/system:rtc_export",
@@ -151,7 +151,6 @@ if (rtc_include_tests) {
       ":task_queue",
       "..:scoped_refptr",
       "../../rtc_base:checks",
-      "../../rtc_base:logging",
       "../../rtc_base:rtc_event",
       "../../rtc_base:task_queue_for_test",
       "../../test:test_support",

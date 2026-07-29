@@ -12,7 +12,7 @@ Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/7bf7263db30b79413
  1 file changed, 3 insertions(+), 25 deletions(-)
 
 diff --git a/modules/video_capture/linux/device_info_v4l2.cc b/modules/video_capture/linux/device_info_v4l2.cc
-index 9f7f3ea508..fa930d8020 100644
+index 2c4a9a365a..a836c701d0 100644
 --- a/modules/video_capture/linux/device_info_v4l2.cc
 +++ b/modules/video_capture/linux/device_info_v4l2.cc
 @@ -62,7 +62,7 @@ namespace videocapturemodule {

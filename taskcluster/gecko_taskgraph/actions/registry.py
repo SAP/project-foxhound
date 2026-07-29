@@ -2,10 +2,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import functools
 from collections import namedtuple
 from types import FunctionType
 
-from mozbuild.util import memoize
 from taskgraph import create
 from taskgraph.config import load_graph_config
 from taskgraph.parameters import Parameters
@@ -29,13 +29,13 @@ def is_json(data):
     return True
 
 
-@memoize
+@functools.cache
 def read_taskcluster_yml(filename):
     """Load and parse .taskcluster.yml, memoized to save some time"""
     return yaml.load_yaml(filename)
 
 
-@memoize
+@functools.cache
 def hash_taskcluster_yml(filename):
     """
     Generate a hash of the given .taskcluster.yml.  This is the first 10 digits

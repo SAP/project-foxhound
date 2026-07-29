@@ -25,10 +25,38 @@
     <!-- Secret Settings Strings -->
     <!-- Label for the secret settings preference -->
     <string name="preferences_debug_settings">Secret Settings</string>
-    <!-- Label for the secret settings preference -->
-    <string name="preferences_debug_info" translatable="false">Secret Debug Info</string>
-    <!-- Label for using remote settings server url -->
-    <string name="preferences_debug_settings_remote_settings_server" translatable="false">Use Remote Settings Production server \n(Staging will be used when disabled) \n(requires restart)</string>
+
+    <!-- Labels for secret settings preference categories -->
+    <string name="secret_settings_category_homepage_title" translatable="false">Homepage</string>
+    <string name="secret_settings_category_toolbar_title" translatable="false">Toolbar</string>
+    <string name="secret_settings_category_search_title" translatable="false">Search</string>
+    <string name="secret_settings_category_tabs_title" translatable="false">Tabs</string>
+    <string name="secret_settings_category_network_title" translatable="false">Network</string>
+    <string name="secret_settings_category_performance_title" translatable="false">Performance</string>
+    <string name="secret_settings_category_terms_of_service_title" translatable="false">Terms of Service</string>
+    <string name="secret_settings_category_features_title" translatable="false">Features</string>
+    <string name="secret_settings_category_debug_title" translatable="false">Debug</string>
+
+    <!-- Label for remote settings server preference -->
+    <string name="preferences_debug_settings_remote_settings_server_label" translatable="false">Remote Settings Server (requires restart)</string>
+    <!-- Label for Production server option -->
+    <string name="preferences_remote_settings_server_prod_label" translatable="false">Production</string>
+    <!-- Label for Staging server option -->
+    <string name="preferences_remote_settings_server_stage_label" translatable="false">Staging</string>
+    <!-- Label for Development server option -->
+    <string name="preferences_remote_settings_server_dev_label" translatable="false">Development</string>
+    <!-- Label for Production server with v2 route option -->
+    <string name="preferences_remote_settings_server_prod_label_v2" translatable="false">Production V2</string>
+    <!-- Label for Staging server with v2 route option -->
+    <string name="preferences_remote_settings_server_stage_label_v2" translatable="false">Staging V2</string>
+    <!-- Label for Development server with v2 route option -->
+    <string name="preferences_remote_settings_server_dev_label_v2" translatable="false">Development V2</string>
+    <!-- Toast message shown when starting to sync remote settings -->
+    <string name="preferences_remote_settings_syncing" translatable="false">Syncing remote settings…</string>
+    <!-- Toast message shown when remote settings sync completes successfully -->
+    <string name="preferences_remote_settings_synced" translatable="false">Remote settings synced successfully</string>
+    <!-- Toast message shown when remote settings sync fails. %s is replaced with the error message -->
+    <string name="preferences_remote_settings_sync_failed" translatable="false">Failed to sync remote settings: %s</string>
     <!-- Label for allowing third party root certificates from the Android OS CA store preference -->
     <string name="preferences_debug_settings_allow_third_party_root_certs">Use third party CA certificates</string>
     <!-- Label for a longer description of allowing third party root certificates from the Android OS CA store preference -->
@@ -61,40 +89,36 @@
     <string name="preferences_sync_debug_temporary_auth_error_button_title">Simulate temporary account auth error</string>
     <!-- Button title for simulating an FxA permanent auth error inside the Sync Debug menu -->
     <string name="preferences_sync_debug_permanent_auth_error_button_title">Simulate permanent account auth error</string>
-    <!-- Label for enabling the Homepage Search Bar -->
-    <string name="preferences_debug_settings_homepage_searchbar" translatable="false">Enable Homepage Search Bar</string>
-  <!-- Label for enabling Homepage as a New Tab -->
+    <string name="preferences_sync_debug_scope_authorization_category">OAuth Scope Authorization</string>
+    <string name="preferences_sync_debug_scope_authorization_scopes_title">Scopes (space-separated)</string>
+    <string name="preferences_sync_debug_scope_authorization_entrypoint_title">Entrypoint</string>
+    <string name="preferences_sync_debug_scope_authorization_start_title">Start OAuth flow</string>
+    <string name="preferences_sync_debug_oauth_token_category">OAuth Access Token Fetch</string>
+    <string name="preferences_sync_debug_oauth_token_scopes_title">Scopes (space-separated)</string>
+    <string name="preferences_sync_debug_oauth_token_fetch_title">Fetch Token</string>
+    <string name="preferences_sync_debug_oauth_token_result_title">Result</string>
+    <!-- Label for enabling Homepage as a New Tab -->
     <string name="preferences_debug_settings_homepage_as_new_tab" translatable="false">Enable Homepage as a New Tab</string>
     <!-- Label for enabling Firefox Labs -->
     <string name="preferences_debug_settings_firefox_labs" translatable="false">Enable Firefox Labs</string>
-    <!-- Label for enabling Browser Mode Toggle -->
-    <string name="preferences_debug_settings_browser_mode_toggle" translatable="false">Enable Browser Mode Toggle</string>
+    <!-- Label for enabling top sites pager layout -->
+    <string name="preferences_debug_settings_top_sites_pager" translatable="false">Enable Top Sites Pager</string>
+    <!-- Label for enabling Add Shortcuts improvement -->
+    <string name="preferences_debug_settings_add_shortcuts_improvement" translatable="false">Enable Add Shortcuts Improvement</string>
     <!-- Label for enabling Merino Client -->
     <string name="preferences_debug_settings_merino_client" translatable="false">Enable Merino Client</string>
+    <!-- Label for enabling Merino Manifest -->
+    <string name="preferences_debug_settings_merino_manifest" translatable="false">Enable Merino Manifest</string>
     <!-- Label for enabling Mozilla Ads Client -->
     <string name="preferences_debug_settings_mozilla_ads_client" translatable="false">Enable Mozilla Ads Client</string>
-    <!-- Label for enabling Discover more stories -->
-    <string name="preferences_debug_settings_discover_more_stories" translatable="false">Enable Discover More Stories</string>
     <!-- Label for enabling the custom tab extension -->
     <string name="preferences_debug_settings_custom_tab_extensions" translatable="false">Enable Custom Tab Extension List</string>
-    <!-- Label for a longer description of the custom tab extensions depending on the menu redesign or composable toolbar feature -->
-    <string name="preferences_debug_settings_custom_tab_extensions_summary" translatable="false">This needs the Menu Redesign or Composable Toolbar feature enabled</string>
     <!-- Label for enabling Firefox Suggest -->
     <string name="preferences_debug_settings_fxsuggest" translatable="false">Enable Firefox Suggest</string>
-    <!-- Label for enabling the composable toolbar -->
-    <string name="preferences_debug_settings_composable_toolbar" translatable="false">Enable Composable Toolbar</string>
-    <!-- Label for enabling the redesigned toolbar options -->
-    <string name="preferences_debug_settings_toolbar_redesign" translatable="false">Enable Redesigned Toolbar Options</string>
-    <!-- Label for enabling the redesigned toolbar -->
-    <string name="preferences_debug_settings_toolbar_customization">Enable Toolbar Customization</string>
-    <!-- Label for a longer description of the redesigned toolbar depending on the composable toolbar feature -->
-    <string name="preferences_debug_settings_toolbar_redesign_summary" translatable="false">This needs the Composable Toolbar feature enabled</string>
     <!-- Label for the option of using a minimal bottom tolbar while entering text in a website -->
     <string name="preferences_debug_settings_use_minimal_bottom_toolbar_while_entering_text" translatable="false">Use a minimal bottom toolbar while entering text in a website</string>
     <!-- Label for the option of using new scroll data for animating the dynamic toolbar -->
     <string name="preferences_debug_settings_use_scroll_data_for_dynamic_toolbar" translatable="false">Animate dynamic toolbars based on website scroll data</string>
-    <!-- Label for a longer description of the redesigned toolbar depending on the redesigned toolbar options feature -->
-    <string name="preferences_debug_settings_toolbar_customization_summary" translatable="false">This needs the Redesigned Toolbar Options feature enabled</string>
     <!-- Label for toggling Remote Crash Pull -->
     <string name="preferences_crash_pull_never_show_again" translatable="false">Never show Crash Pull</string>
     <!-- Label for enabling the Debug Drawer -->
@@ -104,30 +128,48 @@
     <!-- Label for enabling the microsurvey feature -->
     <string name="preferences_debug_settings_microsurvey_feature" translatable="false">Enable Microsurvey Feature</string>
     <!-- Label for enabling shake to summarize -->
-    <string name="preferences_key_enable_shake_to_summarize" translatable="false">Enable Shake to Summarize Feature</string>
+    <string name="preferences_key_enable_shake_to_summarize" translatable="false">Enable Shake to Summarize Feature Flag</string>
     <!-- Label for enabling Unified Trust Panel -->
     <string name="preferences_debug_settings_unified_trust_panel" translatable="false">Enable Unified Trust Panel</string>
     <!-- Label for enabling remote search configuration -->
     <string name="preferences_debug_settings_remote_search_configuration" translatable="false">Enable Remote Search Configuration (requires restart)</string>
     <!-- Label for enabling Address Sync -->
     <string name="preferences_debug_settings_address_sync" translatable="false">Enable Address Sync for supported regions</string>
-    <!-- Label for enabling Settings Search-->
-    <string name="preferences_debug_settings_settings_search" translatable="false">Enable Settings Search</string>
     <!-- Label for enabling the DNS over HTTPS settings -->
     <string name="preferences_debug_settings_enable_doh_settings" translatable="false">Enable DNS over HTTPS settings</string>
     <!-- Label for enabling the persistent onboarding -->
     <string name="preferences_debug_settings_enable_persistent_onboarding" translatable="false">Show onboarding on each app cold open</string>
+    <!-- Label for enabling Homepage Sports Widget -->
+    <string name="preferences_debug_settings_homepage_sports_widget" translatable="false">Enable Homepage Sports Widget</string>
 
     <!-- Search Optimization Secret Settings -->
+    <string name="preferences_debug_settings_search_optimization" translatable="false">Search Optimization Feature</string>
     <string name="preferences_debug_settings_enable_search_optimization" translatable="false">Enable Search Optimization Feature</string>
     <string name="preferences_debug_settings_enable_search_optimization_stock" translatable="false">Show Search Optimization Stock cards</string>
-    <string name="preferences_debug_settings_search_optimization_stock_summary" translatable="false">This needs the Search Optimization Feature enabled</string>
+    <string name="preferences_debug_settings_enable_search_optimization_sport" translatable="false">Show Search Optimization Sport cards</string>
+    <string name="preferences_debug_settings_enable_search_optimization_flight" translatable="false">Show Search Optimization Flight cards</string>
+    <string name="preferences_debug_settings_search_optimization_card_summary" translatable="false">This needs the Search Optimization Feature enabled</string>
+
+    <!-- Label for enabling Private Mode and Stories Entry Point -->
+    <string name="preferences_debug_settings_private_mode_and_stories_entry_point" translatable="false">Enable Private Mode and Stories Entry Point</string>
+
+    <!-- longfox secret setting -->
+    <string name="preferences_debug_settings_enable_longfox" translatable="false">Enable Longfox</string>
+
+    <!-- Search suggestions title for Firefox Suggest Online -->
+    <string name="firefox_suggest_online_header" translatable="false" tools:ignore="BrandUsage">Firefox Suggest Online</string>
 
     <!-- Label for toggling the native android share sheet feature -->
     <string name="preferences_debug_settings_native_android_share_sheet" translatable="false">Enable Native Android Share Sheet</string>
 
-    <!-- Label for toggling the Tab Search feature -->
-    <string name="preferences_tab_search_feature" translatable="false">Enable Tab Search</string>
+    <!--  Voice Search in Display Mode toolbar strings  -->
+    <!-- Label for toggling voice search visibility in the display-mode toolbar -->
+    <string name="preferences_debug_settings_show_voice_search_in_display_toolbar" translatable="false">Show Voice Search in Display Toolbar</string>
+
+    <!-- Label for toggling the Tab Groups feature -->
+    <string name="preferences_tab_groups_feature" translatable="false">Enable Tab Groups</string>
+    <string name="preferences_tab_groups_drag_and_drop" translatable="false">Enable Tab Groups Drag and Drop</string>
+    <string name="preferences_tab_groups_onboarding" translatable="false">Enable Tab Groups Onboarding</string>
 
     <!-- Label for toggling the Tab Manager opening animation -->
     <string name="preferences_tab_manager_opening_animation" translatable="false">Enable Tab Manager opening animation</string>
@@ -135,6 +177,9 @@
     <string name="preferences_terms_of_use_accepted" translatable="false">Terms of Use accepted</string>
     <string name="preferences_terms_of_use_debug_timer" translatable="false">30s ToU timer enabled</string>
     <string name="preferences_terms_of_use_latest_update_date" translatable="false">Set latest ToU update date to now</string>
+
+  <!-- Label for enabling IPProtection through secret settings -->
+    <string name="preferences_debug_settings_ip_protection" translatable="false">Enable IP Protection UI</string>
 
     <!-- Label for enabling LNA blocking -->
     <string name="preferences_debug_settings_enable_lna_blocking" translatable="false">Enable LNA request blocking</string>
@@ -145,18 +190,17 @@
     <string name="preferences_debug_settings_isolated_process" translatable="false">Enable Isolated Content Process (requires restart)</string>
     <string name="preferences_debug_settings_app_zygote" translatable="false">Enable Isolated Processes with Zygote Preloading (requires restart)</string>
 
+    <!-- Label for the defaults section and reset action in secret settings. -->
+    <string name="preferences_debug_settings_reset_defaults" translatable="false">Reset switches to defaults</string>
+    <string name="preferences_debug_settings_reset_defaults_message" translatable="false">This will reset all toggle switches to their defaults. Custom Glean Server and Remote Settings Server are not affected.</string>
+    <string name="preferences_debug_settings_reset_defaults_confirm" translatable="false">Reset</string>
+    <string name="preferences_debug_settings_reset_defaults_cancel" translatable="false">Cancel</string>
+
     <!-- A secret menu option in the tabs tray for making a tab inactive for testing. -->
     <string name="inactive_tabs_menu_item_2">Make tabs inactive</string>
 
     <!-- Content description (not visible, for screen readers etc.) used to announce [LinkTextView]. -->
     <string name="link_text_view_type_announcement" translatable="false">link</string>
-
-    <!-- Secret debug info strings -->
-    <string name="debug_info_region_home" translatable="false">Home region</string>
-    <string name="debug_info_region_current" translatable="false">Current region</string>
-    <string name="debug_info_distribution_id" translatable="false">Distribution ID</string>
-    <string name="debug_info_play_referrer" translatable="false">Play install referrer</string>
-    <string name="debug_info_run_query_provider_test" translatable="false">Run query provider test</string>
 
     <!-- Profiler settings -->
     <string name="preferences_start_profiler">Start Profiler</string>
@@ -193,23 +237,32 @@
     <string name="profiler_service_notification_channel_name" translatable="false">App Profiling Status</string>
     <string name="profiler_service_description" translatable="false">App Profiling Status</string>
 
+    <!-- Debug drawer Homepage Sports Widget tool -->
+    <string name="debug_drawer_sports_widget_tool_title">Homepage Sports Widget Tool</string>
+    <string name="debug_drawer_sports_widget_tool_world_cup_started">World Cup has started</string>
+    <string name="debug_drawer_sports_widget_tool_one_week_to_world_cup">One week to World Cup</string>
+    <string name="debug_drawer_sports_widget_tool_skipped_follow_team">Skip follow your team</string>
+    <string name="debug_drawer_sports_widget_tool_use_mock_server">Use mock World Cup server</string>
+    <string name="debug_drawer_sports_widget_tool_mock_server_session">Mock server session</string>
+    <string name="debug_drawer_sports_widget_tool_apply_session">Apply</string>
+
+    <!-- Debug drawer Distribution tools -->
+    <string name="debug_drawer_distribution_tools_title">Distribution Tools</string>
+    <string name="debug_drawer_distribution_id" translatable="false">Distribution ID</string>
+    <string name="debug_drawer_play_referrer" translatable="false">Play install referrer</string>
+    <string name="debug_drawer_run_query_provider_test" translatable="false">Run query provider test</string>
+
     <!-- Debug drawer "contextual feature recommendation" (CFR) tools -->
     <!-- The description of the reset CFR section in CFR Tools -->
     <string name="debug_drawer_cfr_tools_reset_cfr_description">Toggle off a CFR to reset it. Toggle on a CFR to mark it as shown.</string>
     <!-- The text of the reset CFR timestamp button in CFR Tools -->
     <string name="debug_drawer_cfr_tools_reset_cfr_timestamp">Reset last CFR shown timestamp</string>
-    <!-- The title of the homepage CFRs section in CFR Tools -->
-    <string name="debug_drawer_cfr_tools_homepage_cfr_title">Homepage CFRs</string>
     <!-- The title of the tabs tray CFRs section in CFR Tools -->
     <string name="debug_drawer_cfr_tools_tabs_tray_cfr_title">Tabs Tray CFRs</string>
     <!-- The title of the toolbar CFRs section in CFR Tools -->
     <string name="debug_drawer_cfr_tools_toolbar_cfr_title">Toolbar CFRs</string>
     <!-- The title of the other CFRs section in CFR Tools -->
     <string name="debug_drawer_cfr_tools_other_cfr_title">Other CFRs</string>
-    <!-- The homepage search bar CFR title in CFR Tools -->
-    <string name="debug_drawer_cfr_tools_homepage_searchbar_title">Homepage Searchbar</string>
-    <!-- The homepage searchbar CFR description in CFR Tools -->
-    <string name="debug_drawer_cfr_tools_homepage_searchbar_description">Displayed when a new user sees the homepage for the first time.</string>
     <!-- The inactive tabs CFR title in CFR Tools -->
     <string name="debug_drawer_cfr_tools_inactive_tabs_title">Inactive Tabs</string>
     <!-- The inactive tabs CFR description in CFR Tools -->
@@ -254,12 +307,6 @@
     <string name="crash_debug_tools_title">Crash Debug Tools</string>
     <!-- The title of the debug drawer tab to help debug google play integrity-->
     <string name="integrity_debug_tools_title">Play Integrity Tools</string>
-    <!-- The title of the debug drawer tab to help debug MLPA-->
-    <string name="llm_debug_tools_title">LLM Tools</string>
-    <!-- The title of the button to prepare an LLM in the debug menu-->
-    <string name="llm_debug_tools_prepare_button">Prepare</string>
-    <!-- The title of the button to prepare an LLM in the debug menu-->
-    <string name="llm_debug_tools_prompt_button">Test Prompt</string>
     <!-- Button text to trigger a app parent process crash -->
     <string name="crash_debug_generic_crash_trigger">Trigger Crash Report</string>
     <!-- Button text to reset crash deferral period (the deferral period is set after clicking close on the dialog to 5 days in the settings) from it's future value to 0 -->
@@ -276,37 +323,62 @@
     <!-- Subtitle warning text for crash button -->
     <string name="crash_debug_startup_crash_warning">This will start the startup crash activity in a new process and terminate the current process.</string>
 
-    <!-- Label for enabling Email Masks -->
-    <string name="preferences_enable_email_masks">Enable Email Masks</string>
-
     <!-- Firefox Labs -->
-    <!-- Firefox Labs is the name of a screen in Settings to allow users to learn about
-        experimental and in-development features, and turn those features on and off.
-        The "Labs" portion can be localized, "Firefox" must be treated as a brand and kept
-        in English. -->
-    <string name="firefox_labs_title" tools:ignore="BrandUsage">Firefox Labs</string>
-    <!-- Description text displayed in the Firefox Labs screen. %s is the name of the app (for example "Firefox"). -->
-    <string name="firefox_labs_experimental_description">Give our experimental features a try! They’re in development and evolving, which could impact how %s works.</string>
-    <!-- Button text for restoring the default settings by turning off any experimental features in the Firefox Labs screen. -->
-    <string name="firefox_labs_restore_default_button_text">Restore Defaults</string>
-    <!-- Text displayed when no experimental features are available in the Firefox Labs screen. -->
-    <string name="firefox_labs_no_labs_available_description">No experimental features available</string>
     <!-- The name of an experimental feature displayed in theFirefox Labs screen. This features allows the user to open the homepage as a new tab. -->
     <string name="firefox_labs_homepage_as_a_new_tab">Homepage as a New Tab</string>
     <!-- The description of the "Homepage as a New Tab" feature in the Firefox Labs screen. -->
     <string name="firefox_labs_homepage_as_a_new_tab_description">With this feature enabled, Homepage will behave as a tab.</string>
-    <!-- The title used in a confirmation dialog when toggling on an experimental feature. -->
-    <string name="firefox_labs_enable_feature_dialog_title">Enable experimental feature?</string>
-    <!-- The title used in a confirmation dialog when toggling off an experimental feature. -->
-    <string name="firefox_labs_disable_feature_dialog_title">Disable experimental feature?</string>
-    <!-- The description that is displayed in the confirmation dialog for toggling on and off experimental features. -->
-    <string name="firefox_labs_enable_feature_dialog_message">Toggling this feature will restart %s.</string>
-    <!-- The text for the positive button in the dialog for toggling on and off experimental features. This prompts the user to confirm that they want to restart the app. -->
-    <string name="firefox_labs_dialog_restart_button">Restart</string>
-    <!-- The text for the negative button in the dialog for toggling on and off experimental features. -->
-    <string name="firefox_labs_dialog_cancel_button">Cancel</string>
-    <!-- The title used in a confirmation dialog when restoring the application to its defaults by turning off any experimental features. -->
-    <string name="firefox_labs_restore_defaults_dialog_title">Restore defaults?</string>
-    <!-- The description used in a confirmation dialog when restoring the application to its defaults by turning off any experimental features. -->
-    <string name="firefox_labs_restore_defaults_dialog_message">Resetting experimental features will restart %s.</string>
+
+    <!-- Debug drawer tab group tools -->
+    <!-- The title of the debug drawer tab to help populate tab groups-->
+    <string name="debug_drawer_tab_group_tools_title">Tab Group Tools</string>
+    <!-- The title of the tab group count section in Tab Group Tools. -->
+    <string name="debug_drawer_tab_group_tools_count_title">Tab Group Counts</string>
+    <!-- The label of the open tab group count category of the tab group count section in Tab Group Tools. -->
+    <string name="debug_drawer_tab_group_tools_count_open">Open Groups</string>
+    <!-- The label of the closed tab group count category of the tab group count section in Tab Group Tools. -->
+    <string name="debug_drawer_tab_group_tools_count_closed">Closed Groups</string>
+    <!-- The label of the total tab group count category of the tab group count section in Tab Group Tools. -->
+    <string name="debug_drawer_tab_group_tools_count_total">Total Groups</string>
+    <!-- The title for adding tab groups in the tab group creation tool. -->
+    <string name="debug_drawer_tab_group_tools_creation_tool_title">Add Tab Groups</string>
+    <!-- The label for specifying the quantity of tab groups to add in the tab group creation tool. -->
+    <string name="debug_drawer_tab_group_tools_creation_quantity_label">Number of Groups to add</string>
+    <!-- The label for specifying the number of tabs to add per tab group in the tab group creation tool. -->
+    <string name="debug_drawer_tab_group_tools_creation_tabs_label">Tabs per Group</string>
+    <!-- The error message of the text field in the tab group creation tool when the text field is empty. -->
+    <string name="debug_drawer_tab_group_tools_quantity_empty_error">Text field is empty</string>
+    <!-- The error message of the text field in the tab group creation tool when the text field has negative integers. -->
+    <string name="debug_drawer_tab_group_tools_quantity_non_digits_error">Please enter positive numbers only</string>
+    <!-- The error message of the text field in the tab group creation tool when the text field is 0. -->
+    <string name="debug_drawer_tab_group_tools_quantity_non_zero_error">Please enter a number greater than zero</string>
+    <!-- The error message of the text field in the tab group creation tool when the text field is a quantity greater
+    than the max tab groups. %1$s is the maximum number of tabs that can be generated in one operation. -->
+    <string name="debug_drawer_tab_group_tools_quantity_exceed_max_error">Exceeded the maximum number of tab groups (%1$s) that can be generated in one operation</string>
+    <!--  The button text to add an open tab group in the tab group creation tool. -->
+    <string name="debug_drawer_tab_group_tools_creation_button_open">Add open group</string>
+    <!--  The button text to add an closed tab group in the tab group creation tool. -->
+    <string name="debug_drawer_tab_group_tools_creation_button_closed">Add closed group</string>
+    <!--  The button text to generate example tab groups in the tab group creation tool. -->
+    <string name="debug_drawer_tab_group_tools_creation_button_auto_populate">Auto-populate tab groups</string>
+    <!--  The button text to close all tab groups in the tab group creation tool. -->
+    <string name="debug_drawer_tab_group_tools_creation_button_remove_all">Remove all tab groups</string>
+
+    <!-- Debug drawer tab process tools -->
+    <!-- The title of the Tab Process Exits feature in the Debug Drawer. -->
+    <string name="debug_drawer_tab_process_tools_title">Tab Process Exits</string>
+    <!-- Shown when the device does not support the ApplicationExitInfo API (requires Android 11+). -->
+    <string name="debug_drawer_tab_process_tools_unsupported">Process exit info requires Android 11 or later.</string>
+    <!-- Shown when no process exits have been recorded. -->
+    <string name="debug_drawer_tab_process_tools_empty">No process exits recorded.</string>
+
+    <!-- Import Bookmarks pref title -->
+    <string name="preferences_import_bookmarks">Import Bookmarks</string>
+    <!-- Label for the secret settings preference to enable Import Bookmarks -->
+    <string name="preferences_debug_settings_import_bookmarks">Enable Import Bookmarks</string>
+
+    <!-- Label for the secret settings preference to enable Import Passwords -->
+    <string name="preferences_debug_settings_import_passwords">Enable Import Passwords</string>
+    <!--  Firefox brand name  -->
+    <string name="app_name_firefox" tools:ignore="BrandUsage">Firefox</string>
 </resources>

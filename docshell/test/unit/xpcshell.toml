@@ -14,7 +14,7 @@ support-files = [
 # Disabled for 1563343 -- URI fixup should be done at the app level in GV.
 
 ["test_URIFixup_info.js"]
-requesttimeoutfactor = 2  # Slow on Windows
+requesttimeoutfactor = 3  # Slow on Windows
 skip-if = [
   "os == 'android' && os_version == '14' && arch == 'x86_64'",
 ]

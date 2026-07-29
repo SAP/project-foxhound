@@ -31,37 +31,50 @@ class DebugDrawerNavigationMiddleware(
         next(action)
         scope.launch {
             when (action) {
-                is DebugDrawerAction.NavigateTo.Home -> navController.popBackStack(
-                    route = DEBUG_DRAWER_HOME_ROUTE,
-                    inclusive = false,
-                )
-                is DebugDrawerAction.NavigateTo.TabTools ->
-                    navController.navigate(route = DebugDrawerRoute.TabTools.route)
-                is DebugDrawerAction.NavigateTo.Logins ->
-                    navController.navigate(route = DebugDrawerRoute.Logins.route)
-                is DebugDrawerAction.NavigateTo.Addresses ->
-                    navController.navigate(route = DebugDrawerRoute.Addresses.route)
-                is DebugDrawerAction.NavigateTo.CreditCards ->
-                    navController.navigate(route = DebugDrawerRoute.CreditCards.route)
-                is DebugDrawerAction.NavigateTo.Autofill ->
-                    navController.navigate(route = DebugDrawerRoute.Autofill.route)
-                is DebugDrawerAction.NavigateTo.CfrTools ->
-                    navController.navigate(route = DebugDrawerRoute.CfrTools.route)
-                is DebugDrawerAction.NavigateTo.GleanDebugTools ->
-                    navController.navigate(route = DebugDrawerRoute.GleanDebugTools.route)
-                is DebugDrawerAction.NavigateTo.RegionDebugTools ->
-                    navController.navigate(route = DebugDrawerRoute.RegionDebugTools.route)
-                is DebugDrawerAction.NavigateTo.AddonsDebugTools ->
-                    navController.navigate(route = DebugDrawerRoute.AddonsDebugTools.route)
-                is DebugDrawerAction.NavigateTo.CrashDebugTools ->
-                    navController.navigate(route = DebugDrawerRoute.CrashDebugTools.route)
-                is DebugDrawerAction.NavigateTo.IntegrityDebugTools ->
-                    navController.navigate(route = DebugDrawerRoute.IntegrityTools.route)
-                is DebugDrawerAction.NavigateTo.LlmDebugTools ->
-                    navController.navigate(route = DebugDrawerRoute.LlmTools.route)
+                is DebugDrawerAction.NavigateTo -> navigateTo(action)
                 is DebugDrawerAction.OnBackPressed -> navController.popBackStack()
-                is DebugDrawerAction.DrawerOpened, DebugDrawerAction.DrawerClosed -> Unit // no-op
+                is DebugDrawerAction.DrawerOpened,
+                DebugDrawerAction.DrawerClosed,
+                DebugDrawerAction.ViewAppeared,
+                -> Unit // no-op
             }
+        }
+    }
+
+    private fun navigateTo(action: DebugDrawerAction.NavigateTo) {
+        when (action) {
+            is DebugDrawerAction.NavigateTo.Home -> navController.popBackStack(
+                route = DEBUG_DRAWER_HOME_ROUTE,
+                inclusive = false,
+            )
+            is DebugDrawerAction.NavigateTo.TabTools ->
+                navController.navigate(route = DebugDrawerRoute.TabTools.route)
+            is DebugDrawerAction.NavigateTo.Logins ->
+                navController.navigate(route = DebugDrawerRoute.Logins.route)
+            is DebugDrawerAction.NavigateTo.Addresses ->
+                navController.navigate(route = DebugDrawerRoute.Addresses.route)
+            is DebugDrawerAction.NavigateTo.CreditCards ->
+                navController.navigate(route = DebugDrawerRoute.CreditCards.route)
+            is DebugDrawerAction.NavigateTo.Autofill ->
+                navController.navigate(route = DebugDrawerRoute.Autofill.route)
+            is DebugDrawerAction.NavigateTo.CfrTools ->
+                navController.navigate(route = DebugDrawerRoute.CfrTools.route)
+            is DebugDrawerAction.NavigateTo.GleanDebugTools ->
+                navController.navigate(route = DebugDrawerRoute.GleanDebugTools.route)
+            is DebugDrawerAction.NavigateTo.RegionDebugTools ->
+                navController.navigate(route = DebugDrawerRoute.RegionDebugTools.route)
+            is DebugDrawerAction.NavigateTo.AddonsDebugTools ->
+                navController.navigate(route = DebugDrawerRoute.AddonsDebugTools.route)
+            is DebugDrawerAction.NavigateTo.CrashDebugTools ->
+                navController.navigate(route = DebugDrawerRoute.CrashDebugTools.route)
+            is DebugDrawerAction.NavigateTo.IntegrityDebugTools ->
+                navController.navigate(route = DebugDrawerRoute.IntegrityTools.route)
+            is DebugDrawerAction.NavigateTo.TabGroupDebugTools ->
+                navController.navigate(route = DebugDrawerRoute.TabGroupTools.route)
+            is DebugDrawerAction.NavigateTo.TabProcessTools ->
+                navController.navigate(route = DebugDrawerRoute.TabProcessTools.route)
+            is DebugDrawerAction.NavigateTo.DistributionTools ->
+                navController.navigate(route = DebugDrawerRoute.DistributionTools.route)
         }
     }
 }

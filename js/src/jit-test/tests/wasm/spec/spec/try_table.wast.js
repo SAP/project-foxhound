@@ -271,126 +271,156 @@ let $1 = instantiate(`(module
   (func (export "try-with-param")
     (i32.const 0) (try_table (param i32) (drop))
   )
+
+  (func (export "duplicated-catches") (result i32)
+    (block
+      (block
+        (try_table (catch \$e0 0) (catch \$e0 1)
+          (throw \$e0)
+        )
+      )
+      (return (i32.const 2))
+    )
+    (return (i32.const 3))
+  )
+
+  (func (export "catch-all-before-catch") (result i32)
+    (block
+      (block
+        (try_table (catch_all 0) (catch \$e0 1)
+          (throw \$e0)
+        )
+      )
+      (return (i32.const 2))
+    )
+    (return (i32.const 3))
+  )
 )`);
 
-// ./test/core/exceptions/try_table.wast:258
+// ./test/core/exceptions/try_table.wast:282
 assert_return(() => invoke($1, `simple-throw-catch`, [0]), [value("i32", 23)]);
 
-// ./test/core/exceptions/try_table.wast:259
+// ./test/core/exceptions/try_table.wast:283
 assert_return(() => invoke($1, `simple-throw-catch`, [1]), [value("i32", 42)]);
 
-// ./test/core/exceptions/try_table.wast:261
+// ./test/core/exceptions/try_table.wast:285
 assert_trap(() => invoke($1, `unreachable-not-caught`, []), `unreachable`);
 
-// ./test/core/exceptions/try_table.wast:263
+// ./test/core/exceptions/try_table.wast:287
 assert_return(() => invoke($1, `trap-in-callee`, [7, 2]), [value("i32", 3)]);
 
-// ./test/core/exceptions/try_table.wast:264
+// ./test/core/exceptions/try_table.wast:288
 assert_trap(() => invoke($1, `trap-in-callee`, [1, 0]), `integer divide by zero`);
 
-// ./test/core/exceptions/try_table.wast:266
+// ./test/core/exceptions/try_table.wast:290
 assert_return(() => invoke($1, `catch-complex-1`, [0]), [value("i32", 3)]);
 
-// ./test/core/exceptions/try_table.wast:267
+// ./test/core/exceptions/try_table.wast:291
 assert_return(() => invoke($1, `catch-complex-1`, [1]), [value("i32", 4)]);
 
-// ./test/core/exceptions/try_table.wast:268
+// ./test/core/exceptions/try_table.wast:292
 assert_exception(() => invoke($1, `catch-complex-1`, [2]));
 
-// ./test/core/exceptions/try_table.wast:270
+// ./test/core/exceptions/try_table.wast:294
 assert_return(() => invoke($1, `catch-complex-2`, [0]), [value("i32", 3)]);
 
-// ./test/core/exceptions/try_table.wast:271
+// ./test/core/exceptions/try_table.wast:295
 assert_return(() => invoke($1, `catch-complex-2`, [1]), [value("i32", 4)]);
 
-// ./test/core/exceptions/try_table.wast:272
+// ./test/core/exceptions/try_table.wast:296
 assert_exception(() => invoke($1, `catch-complex-2`, [2]));
 
-// ./test/core/exceptions/try_table.wast:274
+// ./test/core/exceptions/try_table.wast:298
 assert_return(() => invoke($1, `throw-catch-param-i32`, [0]), [value("i32", 0)]);
 
-// ./test/core/exceptions/try_table.wast:275
+// ./test/core/exceptions/try_table.wast:299
 assert_return(() => invoke($1, `throw-catch-param-i32`, [1]), [value("i32", 1)]);
 
-// ./test/core/exceptions/try_table.wast:276
+// ./test/core/exceptions/try_table.wast:300
 assert_return(() => invoke($1, `throw-catch-param-i32`, [10]), [value("i32", 10)]);
 
-// ./test/core/exceptions/try_table.wast:278
+// ./test/core/exceptions/try_table.wast:302
 assert_return(() => invoke($1, `throw-catch-param-f32`, [value("f32", 5)]), [value("f32", 5)]);
 
-// ./test/core/exceptions/try_table.wast:279
+// ./test/core/exceptions/try_table.wast:303
 assert_return(() => invoke($1, `throw-catch-param-f32`, [value("f32", 10.5)]), [value("f32", 10.5)]);
 
-// ./test/core/exceptions/try_table.wast:281
+// ./test/core/exceptions/try_table.wast:305
 assert_return(() => invoke($1, `throw-catch-param-i64`, [5n]), [value("i64", 5n)]);
 
-// ./test/core/exceptions/try_table.wast:282
+// ./test/core/exceptions/try_table.wast:306
 assert_return(() => invoke($1, `throw-catch-param-i64`, [0n]), [value("i64", 0n)]);
 
-// ./test/core/exceptions/try_table.wast:283
+// ./test/core/exceptions/try_table.wast:307
 assert_return(() => invoke($1, `throw-catch-param-i64`, [-1n]), [value("i64", -1n)]);
 
-// ./test/core/exceptions/try_table.wast:285
+// ./test/core/exceptions/try_table.wast:309
 assert_return(() => invoke($1, `throw-catch-param-f64`, [value("f64", 5)]), [value("f64", 5)]);
 
-// ./test/core/exceptions/try_table.wast:286
+// ./test/core/exceptions/try_table.wast:310
 assert_return(() => invoke($1, `throw-catch-param-f64`, [value("f64", 10.5)]), [value("f64", 10.5)]);
 
-// ./test/core/exceptions/try_table.wast:288
+// ./test/core/exceptions/try_table.wast:312
 assert_return(() => invoke($1, `throw-catch_ref-param-i32`, [0]), [value("i32", 0)]);
 
-// ./test/core/exceptions/try_table.wast:289
+// ./test/core/exceptions/try_table.wast:313
 assert_return(() => invoke($1, `throw-catch_ref-param-i32`, [1]), [value("i32", 1)]);
 
-// ./test/core/exceptions/try_table.wast:290
+// ./test/core/exceptions/try_table.wast:314
 assert_return(() => invoke($1, `throw-catch_ref-param-i32`, [10]), [value("i32", 10)]);
 
-// ./test/core/exceptions/try_table.wast:292
+// ./test/core/exceptions/try_table.wast:316
 assert_return(() => invoke($1, `throw-catch_ref-param-f32`, [value("f32", 5)]), [value("f32", 5)]);
 
-// ./test/core/exceptions/try_table.wast:293
+// ./test/core/exceptions/try_table.wast:317
 assert_return(() => invoke($1, `throw-catch_ref-param-f32`, [value("f32", 10.5)]), [value("f32", 10.5)]);
 
-// ./test/core/exceptions/try_table.wast:295
+// ./test/core/exceptions/try_table.wast:319
 assert_return(() => invoke($1, `throw-catch_ref-param-i64`, [5n]), [value("i64", 5n)]);
 
-// ./test/core/exceptions/try_table.wast:296
+// ./test/core/exceptions/try_table.wast:320
 assert_return(() => invoke($1, `throw-catch_ref-param-i64`, [0n]), [value("i64", 0n)]);
 
-// ./test/core/exceptions/try_table.wast:297
+// ./test/core/exceptions/try_table.wast:321
 assert_return(() => invoke($1, `throw-catch_ref-param-i64`, [-1n]), [value("i64", -1n)]);
 
-// ./test/core/exceptions/try_table.wast:299
+// ./test/core/exceptions/try_table.wast:323
 assert_return(() => invoke($1, `throw-catch_ref-param-f64`, [value("f64", 5)]), [value("f64", 5)]);
 
-// ./test/core/exceptions/try_table.wast:300
+// ./test/core/exceptions/try_table.wast:324
 assert_return(() => invoke($1, `throw-catch_ref-param-f64`, [value("f64", 10.5)]), [value("f64", 10.5)]);
 
-// ./test/core/exceptions/try_table.wast:302
+// ./test/core/exceptions/try_table.wast:326
 assert_return(() => invoke($1, `catch-param-i32`, [5]), [value("i32", 5)]);
 
-// ./test/core/exceptions/try_table.wast:304
+// ./test/core/exceptions/try_table.wast:328
 assert_return(() => invoke($1, `catch-imported`, []), [value("i32", 2)]);
 
-// ./test/core/exceptions/try_table.wast:305
+// ./test/core/exceptions/try_table.wast:329
 assert_return(() => invoke($1, `catch-imported-alias`, []), [value("i32", 2)]);
 
-// ./test/core/exceptions/try_table.wast:307
+// ./test/core/exceptions/try_table.wast:331
 assert_return(() => invoke($1, `catchless-try`, [0]), [value("i32", 0)]);
 
-// ./test/core/exceptions/try_table.wast:308
+// ./test/core/exceptions/try_table.wast:332
 assert_return(() => invoke($1, `catchless-try`, [1]), [value("i32", 1)]);
 
-// ./test/core/exceptions/try_table.wast:310
+// ./test/core/exceptions/try_table.wast:334
 assert_exception(() => invoke($1, `return-call-in-try-catch`, []));
 
-// ./test/core/exceptions/try_table.wast:311
+// ./test/core/exceptions/try_table.wast:335
 assert_exception(() => invoke($1, `return-call-indirect-in-try-catch`, []));
 
-// ./test/core/exceptions/try_table.wast:313
+// ./test/core/exceptions/try_table.wast:337
 assert_return(() => invoke($1, `try-with-param`, []), []);
 
-// ./test/core/exceptions/try_table.wast:315
+// ./test/core/exceptions/try_table.wast:339
+assert_return(() => invoke($1, `duplicated-catches`, []), [value("i32", 2)]);
+
+// ./test/core/exceptions/try_table.wast:340
+assert_return(() => invoke($1, `catch-all-before-catch`, []), [value("i32", 2)]);
+
+// ./test/core/exceptions/try_table.wast:342
 let $2 = instantiate(`(module
   (func \$imported-throw (import "test" "throw"))
   (tag \$e0)
@@ -413,19 +443,19 @@ let $2 = instantiate(`(module
   )
 )`);
 
-// ./test/core/exceptions/try_table.wast:337
+// ./test/core/exceptions/try_table.wast:364
 assert_return(() => invoke($2, `imported-mismatch`, []), [value("i32", 3)]);
 
-// ./test/core/exceptions/try_table.wast:339
+// ./test/core/exceptions/try_table.wast:366
 assert_malformed(() => instantiate(`(module (func (catch_all))) `), `unexpected token`);
 
-// ./test/core/exceptions/try_table.wast:344
+// ./test/core/exceptions/try_table.wast:371
 assert_malformed(
   () => instantiate(`(module (tag \$e) (func (catch \$e))) `),
   `unexpected token`,
 );
 
-// ./test/core/exceptions/try_table.wast:349
+// ./test/core/exceptions/try_table.wast:376
 let $3 = instantiate(`(module
   (tag \$e)
   (func (try_table (catch \$e 0) (catch \$e 0)))
@@ -436,43 +466,43 @@ let $3 = instantiate(`(module
   (func (result exnref) (try_table (catch_all_ref 0) (catch_all_ref 0)) (unreachable))
 )`);
 
-// ./test/core/exceptions/try_table.wast:359
+// ./test/core/exceptions/try_table.wast:386
 assert_invalid(
   () => instantiate(`(module (func (result i32) (try_table (result i32))))`),
   `type mismatch`,
 );
 
-// ./test/core/exceptions/try_table.wast:363
+// ./test/core/exceptions/try_table.wast:390
 assert_invalid(
   () => instantiate(`(module (func (result i32) (try_table (result i32) (i64.const 42))))`),
   `type mismatch`,
 );
 
-// ./test/core/exceptions/try_table.wast:368
+// ./test/core/exceptions/try_table.wast:395
 assert_invalid(
   () => instantiate(`(module (tag) (func (try_table (catch_ref 0 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/exceptions/try_table.wast:372
+// ./test/core/exceptions/try_table.wast:399
 assert_invalid(
   () => instantiate(`(module (tag) (func (result exnref) (try_table (catch 0 0)) (unreachable)))`),
   `type mismatch`,
 );
 
-// ./test/core/exceptions/try_table.wast:376
+// ./test/core/exceptions/try_table.wast:403
 assert_invalid(
   () => instantiate(`(module (func (try_table (catch_all_ref 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/exceptions/try_table.wast:380
+// ./test/core/exceptions/try_table.wast:407
 assert_invalid(
   () => instantiate(`(module (func (result exnref) (try_table (catch_all 0)) (unreachable)))`),
   `type mismatch`,
 );
 
-// ./test/core/exceptions/try_table.wast:384
+// ./test/core/exceptions/try_table.wast:411
 assert_invalid(
   () => instantiate(`(module
     (tag (param i64))
@@ -481,7 +511,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/exceptions/try_table.wast:393
+// ./test/core/exceptions/try_table.wast:420
 let $4 = instantiate(`(module
   (type \$t (func))
   (func \$dummy)
@@ -526,22 +556,22 @@ let $4 = instantiate(`(module
   )
 )`);
 
-// ./test/core/exceptions/try_table.wast:437
+// ./test/core/exceptions/try_table.wast:464
 assert_return(() => invoke($4, `catch`, []), [new RefWithType('funcref')]);
 
-// ./test/core/exceptions/try_table.wast:438
+// ./test/core/exceptions/try_table.wast:465
 assert_return(() => invoke($4, `catch_ref1`, []), [new RefWithType('funcref')]);
 
-// ./test/core/exceptions/try_table.wast:439
+// ./test/core/exceptions/try_table.wast:466
 assert_return(() => invoke($4, `catch_ref2`, []), [new RefWithType('funcref')]);
 
-// ./test/core/exceptions/try_table.wast:440
+// ./test/core/exceptions/try_table.wast:467
 assert_return(() => invoke($4, `catch_all_ref1`, []), []);
 
-// ./test/core/exceptions/try_table.wast:441
+// ./test/core/exceptions/try_table.wast:468
 assert_return(() => invoke($4, `catch_all_ref2`, []), []);
 
-// ./test/core/exceptions/try_table.wast:443
+// ./test/core/exceptions/try_table.wast:470
 assert_invalid(
   () => instantiate(`(module
     (type \$t (func))
@@ -556,7 +586,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/exceptions/try_table.wast:456
+// ./test/core/exceptions/try_table.wast:483
 assert_invalid(
   () => instantiate(`(module
     (type \$t (func))
@@ -570,3 +600,33 @@ assert_invalid(
   )`),
   `type mismatch`,
 );
+
+// ./test/core/exceptions/try_table.wast:499
+let $5 = instantiate(`(module
+  (func (export "as-br-target") (result i32)
+    (block
+      (try_table
+        (br 0)
+        (unreachable)
+      )
+      (return (i32.const 111))
+    )
+    (i32.const 222)
+  )
+
+  (func (export "as-value-provider") (result i32)
+    (block
+      (try_table (result i32)
+        (br 0 (i32.const 333))
+      )
+      (return)
+    )
+    (unreachable)
+  )
+)`);
+
+// ./test/core/exceptions/try_table.wast:522
+assert_return(() => invoke($5, `as-br-target`, []), [value("i32", 111)]);
+
+// ./test/core/exceptions/try_table.wast:523
+assert_return(() => invoke($5, `as-value-provider`, []), [value("i32", 333)]);

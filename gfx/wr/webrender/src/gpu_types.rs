@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{AlphaType, ExtendMode, PremultipliedColorF, YuvFormat, YuvRangedColorSpace};
+use api::{AlphaType, PremultipliedColorF, YuvFormat, YuvRangedColorSpace};
 use api::units::*;
 use euclid::HomogeneousVector;
 use crate::composite::{CompositeFeatures, CompositorClip};
@@ -89,15 +89,6 @@ pub struct CopyInstance {
 pub enum RasterizationSpace {
     Local = 0,
     Screen = 1,
-}
-
-#[derive(Debug, Copy, Clone, MallocSizeOf)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-#[repr(C)]
-pub enum BoxShadowStretchMode {
-    Stretch = 0,
-    Simple = 1,
 }
 
 #[repr(i32)]
@@ -239,28 +230,6 @@ pub struct ClipMaskInstanceRect {
     pub common: ClipMaskInstanceCommon,
     pub local_pos: LayoutPoint,
     pub clip_data: ClipData,
-}
-
-#[derive(Clone, Debug)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-#[repr(C)]
-pub struct BoxShadowData {
-    pub src_rect_size: LayoutSize,
-    pub clip_mode: i32,
-    pub stretch_mode_x: i32,
-    pub stretch_mode_y: i32,
-    pub dest_rect: LayoutRect,
-}
-
-#[derive(Clone, Debug)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-#[repr(C)]
-pub struct ClipMaskInstanceBoxShadow {
-    pub common: ClipMaskInstanceCommon,
-    pub resource_address: i32,
-    pub shadow_data: BoxShadowData,
 }
 
 // 16 bytes per instance should be enough for anyone!
@@ -716,31 +685,6 @@ impl GpuBufferDataF for QuadSegment {
     }
 }
 
-/// Matches LinearGradientBrushData in brush_linear_gradient.glsl
-pub struct LinearGradientBrushData {
-    pub start: LayoutPoint,
-    pub end: LayoutPoint,
-    pub extend_mode: ExtendMode,
-    pub stretch_size: LayoutSize,
-}
-
-impl GpuBufferDataF for LinearGradientBrushData {
-    const NUM_BLOCKS: usize = 2;
-    fn write(&self, writer: &mut GpuBufferWriterF) {
-        writer.push_one([
-            self.start.x,
-            self.start.y,
-            self.end.x,
-            self.end.y,
-        ]);
-        writer.push_one([
-            pack_as_float(self.extend_mode as u32),
-            self.stretch_size.width,
-            self.stretch_size.height,
-            0.0,
-        ]);
-    }
-}
 
 /// The cooridnate space that the clip geometry (the quad rect) is relative to.
 ///

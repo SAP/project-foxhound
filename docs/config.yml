@@ -153,7 +153,7 @@ allowed_warnings:
     - "testing/automated-testing/manifest-sandbox\\.rst:.*: WARNING: download file not readable"
     - "UITour-lib.Mozilla.UITour.* WARNING: duplicate class description of Mozilla.UITour"
     - "mobile/android/shared/android/device_testing\\.md:.*: WARNING: Pygments lexer name"
-    - "widget/windows/windows-pointing-device/index.rst:229: WARNING: image file not readable"
+    - "widget/windows/windows-pointing-device/index.md:.*: WARNING: image file not readable"
     # Unknown document warnings
     - "devtools-user/3d_view/index\\.rst:.*: WARNING: unknown document"
     - "devtools-user/debugger-api/index\\.rst:.*: WARNING: unknown document"
@@ -200,6 +200,10 @@ allowed_warnings:
     # mozbuild.sphinx extension warnings.
     - "WARNING: the mozbuild.sphinx extension does not declare"
     - "WARNING: doing serial read"
+
+# Paths to exclude from documentation staging to avoid duplicate builds
+exclude_patterns:
+    - js/src/doc/Debugger
 
 # JSDoc must run successfully for dirs specified, so running
 # tree-wide (the default) will not work currently.

@@ -16,13 +16,14 @@ add_task(async function () {
 
   info("Set the popupNode to the node that contains the uri");
   let { editor } = await getContainerForSelector("video", inspector);
-  openContextMenuAndGetAllItems(inspector, {
-    target: editor.attrElements.get("poster").querySelector(".link"),
-  });
+  let contextMenuItem = openContextMenuAndGetLinkFollowItem(
+    inspector,
+    editor.attrElements.get("poster").querySelector(".link")
+  );
 
   info("Follow the link and wait for the new tab to open");
   const onTabOpened = once(gBrowser.tabContainer, "TabOpen");
-  inspector.markup.contextMenu._onFollowLink();
+  contextMenuItem.click();
   const { target: tab } = await onTabOpened;
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
@@ -39,13 +40,14 @@ add_task(async function () {
 
   info("Set the popupNode to the node that contains the ref");
   ({ editor } = await getContainerForSelector("label", inspector));
-  openContextMenuAndGetAllItems(inspector, {
-    target: editor.attrElements.get("for").querySelector(".link"),
-  });
+  contextMenuItem = openContextMenuAndGetLinkFollowItem(
+    inspector,
+    editor.attrElements.get("for").querySelector(".link")
+  );
 
   info("Follow the link and wait for the new node to be selected");
   const onSelection = inspector.selection.once("new-node-front");
-  inspector.markup.contextMenu._onFollowLink();
+  contextMenuItem.click();
   await onSelection;
 
   ok(true, "A new node was selected");
@@ -56,13 +58,14 @@ add_task(async function () {
 
   info("Set the popupNode to the node that contains the ref");
   ({ editor } = await getContainerForSelector("output", inspector));
-  openContextMenuAndGetAllItems(inspector, {
-    target: editor.attrElements.get("for").querySelectorAll(".link")[2],
-  });
+  contextMenuItem = openContextMenuAndGetLinkFollowItem(
+    inspector,
+    editor.attrElements.get("for").querySelectorAll(".link")[2]
+  );
 
   info("Try to follow the link and check that no new node were selected");
   const onFailed = inspector.markup.once("idref-attribute-link-failed");
-  inspector.markup.contextMenu._onFollowLink();
+  contextMenuItem.click();
   await onFailed;
 
   ok(true, "The node selection failed");
@@ -72,3 +75,10 @@ add_task(async function () {
     "The <output> node is still selected"
   );
 });
+
+function openContextMenuAndGetLinkFollowItem(inspector, target) {
+  const items = openContextMenuAndGetAllItems(inspector, {
+    target,
+  });
+  return items.find(({ id }) => id == "node-menu-link-follow");
+}

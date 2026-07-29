@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,7 +34,7 @@ SVGElement::LengthInfo SVGLineElement::sLengthInfo[4] = {
 // Implementation
 
 SVGLineElement::SVGLineElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : SVGLineElementBase(std::move(aNodeInfo)) {}
 
 void SVGLineElement::MaybeAdjustForZeroLength(float aX1, float aY1, float& aX2,
@@ -96,8 +94,9 @@ void SVGLineElement::GetMarkPoints(nsTArray<SVGMark>* aMarks) {
 
   float angle = std::atan2(y2 - y1, x2 - x1);
 
-  aMarks->AppendElement(SVGMark(x1, y1, angle, SVGMark::Type::Start));
-  aMarks->AppendElement(SVGMark(x2, y2, angle, SVGMark::Type::End));
+  aMarks->AppendElement(
+      SVGMark(gfx::Point(x1, y1), angle, SVGMark::Type::Start));
+  aMarks->AppendElement(SVGMark(gfx::Point(x2, y2), angle, SVGMark::Type::End));
 }
 
 void SVGLineElement::GetAsSimplePath(SimplePath* aSimplePath) {

@@ -14,18 +14,11 @@ using namespace mozilla;
 using webrtc::trace_event_internal::TraceValueUnion;
 
 void uprofiler_register_thread(const char* name, void* stacktop) {
-#ifdef MOZ_GECKO_PROFILER
   profiler_register_thread(name, stacktop);
-#endif  // MOZ_GECKO_PROFILER
 }
 
-void uprofiler_unregister_thread() {
-#ifdef MOZ_GECKO_PROFILER
-  profiler_unregister_thread();
-#endif  // MOZ_GECKO_PROFILER
-}
+void uprofiler_unregister_thread() { profiler_unregister_thread(); }
 
-#ifdef MOZ_GECKO_PROFILER
 namespace {
 Maybe<MarkerTiming> ToTiming(char phase) {
   switch (phase) {
@@ -169,14 +162,12 @@ struct ProfileBufferEntryReader::Deserializer<TraceOption> {
   }
 };
 }  // namespace mozilla
-#endif  // MOZ_GECKO_PROFILER
 
 void uprofiler_simple_event_marker_internal(
     const char* name, const char category, char phase, int num_args,
     const char** arg_names, const unsigned char* arg_types,
     const unsigned long long* arg_values, bool capture_stack = false,
     void* provided_stack = nullptr) {
-#ifdef MOZ_GECKO_PROFILER
   if (!profiler_thread_is_being_profiled_for_markers()) {
     return;
   }
@@ -252,7 +243,6 @@ void uprofiler_simple_event_marker_internal(
                             provided_stack)))
                   : MarkerStack::Capture(StackCaptureOptions::NoStack))},
       TraceMarker{}, tuple);
-#endif  // MOZ_GECKO_PROFILER
 }
 
 void uprofiler_simple_event_marker_capture_stack(
@@ -283,18 +273,12 @@ void uprofiler_simple_event_marker(const char* name, const char category,
 }
 
 bool uprofiler_backtrace_into_buffer(NativeStack* aNativeStack, void* aBuffer) {
-#if defined(MOZ_GECKO_PROFILER)
   return profiler_backtrace_into_buffer(
       *(static_cast<mozilla::ProfileChunkedBuffer*>(aBuffer)), *aNativeStack);
-#else
-  return false;
-#endif
 }
 
 void uprofiler_native_backtrace(const void* top, NativeStack* nativeStack) {
-#if defined(MOZ_GECKO_PROFILER)
   DoNativeBacktraceDirect(top, *nativeStack, nullptr);
-#endif
 }
 
 bool uprofiler_is_active() { return profiler_is_active(); }

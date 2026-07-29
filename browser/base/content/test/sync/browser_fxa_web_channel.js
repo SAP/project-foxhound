@@ -227,11 +227,11 @@ var gTests = [
         let openFirefoxView = browser => {
           wasCalled = true;
           Assert.ok(
-            !!browser.ownerGlobal,
+            !!browser.documentGlobal,
             "openFirefoxView called with a browser argument"
           );
           Assert.equal(
-            typeof browser.ownerGlobal.FirefoxViewHandler.openTab,
+            typeof browser.documentGlobal.FirefoxViewHandler.openTab,
             "function",
             "We can reach the openTab method"
           );

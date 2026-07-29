@@ -30,7 +30,6 @@ devtools.accessibility:
       - devtools-telemetry-alerts@mozilla.com
       - accessibility@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_ACCESSIBILITY_NODE_INSPECTED_COUNT
 
   select_accessible_for_node:
     type: labeled_counter
@@ -53,7 +52,6 @@ devtools.accessibility:
       - devtools-telemetry-alerts@mozilla.com
       - accessibility@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_ACCESSIBILITY_SELECT_ACCESSIBLE_FOR_NODE
 
   accessible_context_menu_opened:
     type: counter
@@ -72,7 +70,6 @@ devtools.accessibility:
       - devtools-telemetry-alerts@mozilla.com
       - accessibility@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_ACCESSIBILITY_ACCESSIBLE_CONTEXT_MENU_OPENED
 
   accessible_context_menu_item_activated:
     type: labeled_counter
@@ -93,7 +90,6 @@ devtools.accessibility:
       - devtools-telemetry-alerts@mozilla.com
       - accessibility@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_ACCESSIBILITY_ACCESSIBLE_CONTEXT_MENU_ITEM_ACTIVATED
 
   audit_activated:
     type: labeled_counter
@@ -113,7 +109,6 @@ devtools.accessibility:
       - devtools-telemetry-alerts@mozilla.com
       - accessibility@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_ACCESSIBILITY_AUDIT_ACTIVATED
 
   simulation_activated:
     type: labeled_counter
@@ -133,4 +128,3 @@ devtools.accessibility:
       - devtools-telemetry-alerts@mozilla.com
       - accessibility@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_ACCESSIBILITY_SIMULATION_ACTIVATED

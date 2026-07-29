@@ -207,10 +207,10 @@ class MachLogger:
         self._logger(logging.ERROR, name, kwargs, msg)
 
     def group_start(self, msg=None, name="mozperftest", **kwargs):
-        self._logger(logging.INFO, name, kwargs, msg)
+        self._logger(logging.INFO, name, kwargs, msg or "")
 
     def group_end(self, msg=None, name="mozperftest", **kwargs):
-        self._logger(logging.INFO, name, kwargs, msg)
+        self._logger(logging.INFO, name, kwargs, msg or "")
 
 
 def install_package(virtualenv_manager, package, ignore_failure=False):
@@ -468,7 +468,7 @@ def strtobool(val):
     elif val in ("n", "no", "f", "false", "off", "0"):
         return 0
     else:
-        raise ValueError("invalid truth value %r" % (val,))
+        raise ValueError(f"invalid truth value {val!r}")
 
 
 @contextlib.contextmanager
@@ -612,7 +612,7 @@ _WPT_URL = "{0}/secrets/v1/secret/project/perftest/gecko/level-{1}/perftest-logi
 _DEFAULT_SERVER = "https://firefox-ci-tc.services.mozilla.com"
 
 
-@functools.lru_cache
+@functools.cache
 def get_tc_secret(wpt=False):
     """Returns the Taskcluster secret.
 
@@ -752,3 +752,39 @@ def extract_tgz_and_find_files(output_dir, tgz_name, patterns):
     valid_files = [f for f in found_files if f.is_file()]
 
     return (valid_files, search_dir, work_dir)
+
+
+def get_adb_device_or_emu(verbose=False):
+    from mozdevice import ADBDeviceFactory, ADBError
+
+    try:
+        return ADBDeviceFactory(verbose=verbose)
+    except Exception as e:
+        if "No ready devices found." not in str(e):
+            raise e
+        from mozbuild.base import MozbuildObject
+        from mozrunner.devices.android_device import AndroidEmulator
+
+        try:
+            build_obj = MozbuildObject.from_environment()
+            substs = build_obj.substs
+        except Exception:
+            substs = None
+        emulator = AndroidEmulator("*", substs=substs, verbose=True)
+        if emulator.is_available():
+            try:
+                response = input(
+                    "No Android devices connected. Start an emulator? (Y/n) "
+                ).strip()
+            except EOFError:
+                raise EOFError("Could not get input on non-interective output")
+            if response.lower().startswith("y") or response == "":
+                if not emulator.check_avd():
+                    print("Android AVD not found, please run |mach bootstrap|")
+                    raise ADBError("No ready devices found.")
+                print(f"Starting emulator running {emulator.get_avd_description()}...")
+                emulator.start()
+                emulator.wait_for_start()
+                return ADBDeviceFactory(verbose=True)
+            else:
+                raise ADBError("No emulator started and android device not found")

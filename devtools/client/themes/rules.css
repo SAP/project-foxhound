@@ -82,6 +82,10 @@
   user-select: none;
   display: flex;
   align-items: center;
+
+  &:has(input:disabled) {
+    color: var(--theme-text-color-inactive);
+  }
 }
 
 #pseudo-class-panel,
@@ -91,12 +95,25 @@
 
 /* Pseudo Class toggle panel */
 
-#pseudo-class-panel {
+#pseudo-class-panel:not([hidden]) {
+  display: grid;
+}
+
+.pseudo-classes {
+  display: grid;
   grid-template-columns: repeat(auto-fit, minmax(100px, max-content));
 }
 
-#pseudo-class-panel:not([hidden]) {
-  display: grid;
+#pseudo-classes-element-specific-heading {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: normal;
+  margin-block: 8px 0;
+  user-select: none;
+}
+
+#pseudo-classes-element-specific label:has(input:disabled) {
+  display: none;
 }
 
 /* Class toggle panel */
@@ -198,6 +215,7 @@
 
 .ruleview-computedlist,
 [hidden]:is(
+  .ruleview-header,
   .ruleview-expandable-container,
   .ruleview-overridden-items,
   .ruleview-overridden-rule-filter,
@@ -768,7 +786,7 @@
   max-width: max-content;
 }
 
-.ruleview-rule-ancestor-data [role="listitem"].has-tooltip:hover .container-query-declaration {
+.ruleview-rule-ancestor-data [role="listitem"] .container-condition:is(:hover, .tooltip-anchor) {
   text-decoration: underline;
   text-decoration-color: var(--theme-highlight-blue);
   text-decoration-style: dotted;
@@ -795,6 +813,7 @@
 
 .ruleview-rule:is(.unmatched, [unmatched="true"]) .ruleview-selector,
 .ruleview-selector.unmatched,
+.container-condition.unmatched,
 /* prettier-ignore */
 .ruleview-property:is(
   .inactive-css,
@@ -811,9 +830,11 @@
   .inspector-unmatched,
   .ruleview-invalid-at-computed-value-time,
   .ruleview-rule:is(.unmatched, [unmatched=true]) .ruleview-selector,
+  .container-condition.unmatched,
 ):not(
   /* don't show the strike through when the element is hovered so it's more legible */
-  :hover
+  :hover,
+  .tooltip-anchor
 ) {
   text-decoration: line-through solid currentColor;
 }
@@ -947,7 +968,7 @@
   white-space: break-spaces;
 }
 
-.ruleview-propertyvalue .inspector-attribute:not(.inspector-unmatched) {
+.ruleview-propertyvalue .inspector-attr-param:not(.inspector-unmatched) .inspector-attr-name {
   color: var(--theme-highlight-blue);
 }
 
@@ -960,4 +981,22 @@
     var(--rule-enableproperty-margin-inline-start) +
     var(--rule-enableproperty-margin-inline-end)
   );
+}
+
+[data-function-expression] .css-explainers-function-name {
+  text-decoration: 1px solid underline;
+  text-underline-offset: 2px;
+}
+
+[data-function-expression].tooltip-anchor {
+  text-decoration: underline;
+  text-decoration-color: var(--theme-highlight-blue);
+  text-decoration-style: dotted;
+  text-decoration-skip-ink: none;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 2px;
+
+  .css-explainers-function-name {
+    text-decoration: none;
+  }
 }

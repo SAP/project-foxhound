@@ -4,10 +4,10 @@
 
 use api::{BorderRadius, ClipId, ClipMode, ColorF, DebugFlags, PrimitiveFlags, QualitySettings, RasterSpace};
 use api::units::*;
-use crate::clip::{ClipItemKeyKind, ClipNodeId, ClipTreeBuilder};
+use crate::clip::{clamped_radius, ClipItemKeyKind, ClipNodeId, ClipTreeBuilder, intersect_rounded_rects};
 use crate::frame_builder::FrameBuilderConfig;
 use crate::internal_types::FastHashMap;
-use crate::picture::{PrimitiveList, PictureCompositeMode, PicturePrimitive, Picture3DContext, PictureFlags};
+use crate::picture::{PrimitiveList, PictureCompositeMode, PictureInstance, Picture3DContext, PictureFlags};
 use crate::tile_cache::{SliceId, TileCacheParams};
 use crate::prim_store::{PrimitiveInstance, PrimitiveStore, PictureIndex};
 use crate::scene_building::SliceFlags;
@@ -275,7 +275,6 @@ impl TileCacheBuilder {
         spatial_node_index: SpatialNodeIndex,
         prim_flags: PrimitiveFlags,
         spatial_tree: &SceneSpatialTree,
-        interners: &Interners,
         quality_settings: &QualitySettings,
         prim_instances: &mut Vec<PrimitiveInstance>,
         clip_tree_builder: &ClipTreeBuilder,
@@ -343,10 +342,8 @@ impl TileCacheBuilder {
                                 while current_node_id != ClipNodeId::NONE {
                                     let node = clip_tree_builder.get_node(current_node_id);
 
-                                    let clip_node_data = &interners.clip[node.handle];
-
                                     let spatial_root = find_scroll_root(
-                                        clip_node_data.key.spatial_node_index,
+                                        node.spatial_node_index,
                                         &mut self.prev_scroll_root_cache,
                                         spatial_tree,
                                         true,
@@ -543,43 +540,56 @@ fn create_tile_cache(
     //         that we can't handle during compositing, such as:
     //         (a) Non axis-aligned clips
     //         (b) Box-shadow or image-mask clips
-    //         (c) Rounded rect clips.
-    //
-    //         A follow up patch to this series will relax the condition on (c) to
-    //         allow tile caches to apply a single rounded-rect clip during compositing.
+    //         (c) More than one rounded-rect clip (unless they can be intersected
+    //             into a single rounded-rect clip).
     let mut shared_clip_node_id = shared_clip_node_id.unwrap_or(ClipNodeId::NONE);
     let mut current_node_id = shared_clip_node_id;
     let mut rounded_rect_count = 0;
 
+    // Track accumulated rounded rect info so we can attempt to combine
+    // multiple rounded rects into a single compositing clip.
+    let mut accumulated_rounded_rect: Option<(LayoutRect, BorderRadius)> = None;
+
+    // SNAPTODO: Scene-build slice partitioning reads `node.unsnapped_clip_rect`
+    // (and feeds it through `clamped_radius` / `intersect_rounded_rects` /
+    // `accumulated_rounded_rect`) to decide whether clips can be promoted
+    // into a shared compositing clip. Snapping isn't available at scene-build
+    // time, so audit whether pixel-aligned vs. sub-pixel clip rects can flip
+    // the can_use_fast_path / intersect decisions once per-frame snapping
+    // is real.
     // Walk up the hierarchy to the root of the clip-tree
     while current_node_id != ClipNodeId::NONE {
         let node = clip_tree_builder.get_node(current_node_id);
         let clip_node_data = &interners.clip[node.handle];
 
         // Check if this clip is in the root coord system (i.e. is axis-aligned with tile-cache)
-        let is_rcs = spatial_tree.is_root_coord_system(clip_node_data.key.spatial_node_index);
+        let is_rcs = spatial_tree.is_root_coord_system(node.spatial_node_index);
 
         let node_valid = if is_rcs {
             match clip_node_data.key.kind {
-                ClipItemKeyKind::BoxShadow(..) |
                 ClipItemKeyKind::ImageMask(..) |
-                ClipItemKeyKind::Rectangle(_, ClipMode::ClipOut) |
-                ClipItemKeyKind::RoundedRectangle(_, _, ClipMode::ClipOut) => {
-                    // Has a box-shadow / image-mask, we can't handle this as a shared clip
+                ClipItemKeyKind::Rectangle(ClipMode::ClipOut) |
+                ClipItemKeyKind::RoundedRectangle(_, ClipMode::ClipOut) => {
+                    // Has an image-mask or clip-out clip, we can't handle this as a shared clip
                     false
                 }
-                ClipItemKeyKind::RoundedRectangle(rect, radius, ClipMode::Clip) => {
+                ClipItemKeyKind::RoundedRectangle(radius, ClipMode::Clip) => {
                     // The shader and CoreAnimation rely on certain constraints such
                     // as uniform radii to be able to apply the clip during compositing.
-                    if BorderRadius::from(radius).can_use_fast_path_in(&rect.into()) {
+                    let br = clamped_radius(&BorderRadius::from(radius), node.unsnapped_clip_rect.size());
+                    if br.can_use_fast_path_in(&node.unsnapped_clip_rect) {
                         rounded_rect_count += 1;
+
+                        if accumulated_rounded_rect.is_none() {
+                            accumulated_rounded_rect = Some((node.unsnapped_clip_rect, br));
+                        }
 
                         true
                     } else {
                         false
                     }
                 }
-                ClipItemKeyKind::Rectangle(_, ClipMode::Clip) => {
+                ClipItemKeyKind::Rectangle(ClipMode::Clip) => {
                     // We can apply multiple (via combining) axis-aligned rectangle
                     // clips to the shared compositing clip.
                     true
@@ -593,11 +603,40 @@ fn create_tile_cache(
         if node_valid {
             // This node was found to be one we can apply during compositing.
             if rounded_rect_count > 1 {
-                // However, we plan to only support one rounded-rect clip. If
-                // we have found > 1 rounded rect, drop children from the shared
-                // clip, and continue looking up the chain.
-                shared_clip_node_id = current_node_id;
-                rounded_rect_count = 1;
+                // Check if the two rounded rects can be combined. Both clips are in
+                // the root coordinate system (is_rcs). The actual intersection with
+                // correct spatial transforms is performed in pre_update; here we just
+                // verify the clips are geometrically compatible in their local spaces
+                // to decide whether to keep both in the shared clip chain.
+                let can_combine = match (accumulated_rounded_rect, clip_node_data.key.kind) {
+                    (
+                        Some((acc_rect, acc_radius)),
+                        ClipItemKeyKind::RoundedRectangle(radius, ClipMode::Clip),
+                    ) => {
+                        let radius = clamped_radius(&BorderRadius::from(radius), node.unsnapped_clip_rect.size());
+                        intersect_rounded_rects(
+                            acc_rect, acc_radius,
+                            node.unsnapped_clip_rect, radius,
+                        )
+                    }
+                    _ => None,
+                };
+
+                if let Some((combined_rect, combined_radius)) = can_combine {
+                    // Successfully combined — keep both clips in the shared
+                    // set and update the accumulated state for potential
+                    // further combinations.
+                    rounded_rect_count = 1;
+                    accumulated_rounded_rect = Some((combined_rect, combined_radius));
+                } else {
+                    // Can't combine, drop children and keep only this clip.
+                    shared_clip_node_id = current_node_id;
+                    rounded_rect_count = 1;
+                    if let ClipItemKeyKind::RoundedRectangle(radius, ClipMode::Clip) = clip_node_data.key.kind {
+                        let radius = clamped_radius(&BorderRadius::from(radius), node.unsnapped_clip_rect.size());
+                        accumulated_rounded_rect = Some((node.unsnapped_clip_rect, radius));
+                    }
+                }
             }
         } else {
             // Node was invalid, due to transform / clip type. Drop this clip
@@ -605,6 +644,7 @@ fn create_tile_cache(
             // from here too.
             shared_clip_node_id = node.parent;
             rounded_rect_count = 0;
+            accumulated_rounded_rect = None;
         }
 
         current_node_id = node.parent;
@@ -648,7 +688,7 @@ fn create_tile_cache(
         yuv_image_surface_count: prim_list.yuv_image_surface_count,
     });
 
-    let pic_index = prim_store.pictures.alloc().init(PicturePrimitive::new_image(
+    let pic_index = prim_store.pictures.alloc().init(PictureInstance::new_image(
         Some(PictureCompositeMode::TileCache { slice_id }),
         Picture3DContext::Out,
         PrimitiveFlags::IS_BACKFACE_VISIBLE,
@@ -690,18 +730,29 @@ impl Default for PictureCacheDebugInfo {
     }
 }
 
+/// Debug information about the compositor clip applied to a picture cache slice
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+pub struct CompositorClipDebugInfo {
+    pub rect: DeviceRect,
+    pub radius: BorderRadius,
+}
+
 /// Debug information about a set of picture cache tiles, exposed via RenderResults
 #[derive(Debug)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct SliceDebugInfo {
     pub tiles: FastHashMap<TileOffset, TileDebugInfo>,
+    pub compositor_clip: Option<CompositorClipDebugInfo>,
 }
 
 impl SliceDebugInfo {
     pub fn new() -> Self {
         SliceDebugInfo {
             tiles: FastHashMap::default(),
+            compositor_clip: None,
         }
     }
 

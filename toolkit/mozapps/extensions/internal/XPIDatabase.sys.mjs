@@ -850,7 +850,10 @@ export class AddonInternal {
       if (!Services.policies.isAllowed(`disable-extension:${this.id}`)) {
         permissions &= ~lazy.AddonManager.PERM_CAN_DISABLE;
       }
-      if (Services.policies.getExtensionSettings(this.id)?.updates_disabled) {
+      const updatesDisabled = Services.policies.getExtensionSettings(
+        this.id
+      )?.updates_disabled;
+      if (updatesDisabled === true) {
         permissions &= ~lazy.AddonManager.PERM_CAN_UPGRADE;
       }
     }
@@ -1094,10 +1097,27 @@ export class AddonWrapper {
     );
   }
 
+  get isApplyBackgroundUpdatesControlledByPolicies() {
+    const { updates_disabled } =
+      Services.policies?.getExtensionSettings(this.id) ?? {};
+    return typeof updates_disabled === "boolean";
+  }
+
   get applyBackgroundUpdates() {
+    if (this.isApplyBackgroundUpdatesControlledByPolicies) {
+      const { updates_disabled } = Services.policies.getExtensionSettings(
+        this.id
+      );
+      return updates_disabled
+        ? lazy.AddonManager.AUTOUPDATE_DISABLE
+        : lazy.AddonManager.AUTOUPDATE_ENABLE;
+    }
     return addonFor(this).applyBackgroundUpdates;
   }
   set applyBackgroundUpdates(val) {
+    if (this.isApplyBackgroundUpdatesControlledByPolicies) {
+      return;
+    }
     let addon = addonFor(this);
     if (
       val != lazy.AddonManager.AUTOUPDATE_DEFAULT &&
@@ -1365,23 +1385,6 @@ export class AddonWrapper {
   get isSyncable() {
     let addon = addonFor(this);
     return addon.location.name == KEY_APP_PROFILE;
-  }
-
-  /**
-   * Returns true if the addon is configured to be installed
-   * by enterprise policy.
-   *
-   * Should be kept in sync with Extension.sys.mjs
-   */
-  get isInstalledByEnterprisePolicy() {
-    const policySettings = Services.policies?.getExtensionSettings(this.id);
-    const legacyLockedSettings =
-      Services.policies?.getActivePolicies()?.Extensions?.Locked ?? [];
-    return (
-      ["force_installed", "normal_installed"].includes(
-        policySettings?.installation_mode
-      ) || legacyLockedSettings.includes(this.id)
-    );
   }
 
   /**
@@ -1986,6 +1989,11 @@ export const XPIDatabase = {
             );
           }
         }
+
+        // The `location` property in the XPIStates entry data is set to the
+        // string representing the location name, and we are converting it
+        // to the corresponding XPIStateLocation class instance (as expected
+        // by the AddonInternal constructor).
         loadedAddon.location = XPIExports.XPIInternal.XPIStates.getLocation(
           loadedAddon.location
         );
@@ -2686,7 +2694,7 @@ export const XPIDatabase = {
     if (
       this.mustSign(aAddon.type) &&
       aAddon.adminInstallOnly &&
-      !aAddon.wrapper.isInstalledByEnterprisePolicy
+      !Services.policies?.isAddonRequiredByPolicy(aAddon.id)
     ) {
       logger.warn(
         `Add-on ${aAddon.id} is installable only from policies, but no policy extension settings have been found.`

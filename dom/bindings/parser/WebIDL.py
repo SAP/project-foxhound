@@ -2612,6 +2612,7 @@ class IDLType(IDLObject):
         "_clamp",
         "_enforceRange",
         "_allowShared",
+        "_allowLarge",
         "_extendedAttrDict",
     )
 
@@ -2623,6 +2624,7 @@ class IDLType(IDLObject):
         self._clamp = False
         self._enforceRange = False
         self._allowShared = False
+        self._allowLarge = False
         self._extendedAttrDict = {}
 
     def __hash__(self):
@@ -2633,6 +2635,7 @@ class IDLType(IDLObject):
             + hash(self._enforceRange)
             + hash(self.legacyNullToEmptyString)
             + hash(self._allowShared)
+            + hash(self._allowLarge)
         )
 
     def __eq__(self, other):
@@ -2644,6 +2647,7 @@ class IDLType(IDLObject):
             and self._enforceRange == other.hasEnforceRange()
             and self.legacyNullToEmptyString == other.legacyNullToEmptyString
             and self._allowShared == other.hasAllowShared()
+            and self._allowLarge == other.hasAllowLarge()
         )
 
     def __ne__(self, other):
@@ -2774,6 +2778,9 @@ class IDLType(IDLObject):
 
     def hasAllowShared(self):
         return self._allowShared
+
+    def hasAllowLarge(self):
+        return self._allowLarge
 
     def tag(self):
         assert False  # Override me!
@@ -3001,6 +3008,9 @@ class IDLNullableType(IDLParametrizedType):
 
     def hasAllowShared(self):
         return self.inner.hasAllowShared()
+
+    def hasAllowLarge(self):
+        return self.inner.hasAllowLarge()
 
     def isComplete(self):
         return self.name is not None
@@ -3326,9 +3336,13 @@ class IDLUnionType(IDLType):
                 return typeName(type._identifier.object())
             if isinstance(type, IDLObjectWithIdentifier):
                 return typeName(type.identifier)
-            if isinstance(type, IDLBuiltinType) and type.hasAllowShared():
-                assert type.isBufferSource()
-                return "MaybeShared" + type.name
+            if isinstance(type, IDLBuiltinType) and type.isBufferSource():
+                name = type.name
+                if type.hasAllowShared():
+                    name = "MaybeShared" + name
+                if type.hasAllowLarge():
+                    name = "AllowLarge" + name
+                return name
             return type.name
 
         for i, type in enumerate(self.memberTypes):
@@ -3948,6 +3962,7 @@ class IDLBuiltinType(IDLType):
         "_rangeEnforced",
         "_withLegacyNullToEmptyString",
         "_withAllowShared",
+        "_withAllowLarge",
     )
 
     def __init__(
@@ -3959,12 +3974,15 @@ class IDLBuiltinType(IDLType):
         enforceRange=False,
         legacyNullToEmptyString=False,
         allowShared=False,
+        allowLarge=False,
         attrLocation=[],
     ):
         """
-        The mutually exclusive clamp/enforceRange/legacyNullToEmptyString/allowShared arguments
-        are used to create instances of this type with the appropriate attributes attached. Use
-        .clamped(), .rangeEnforced(), .withLegacyNullToEmptyString() and .withAllowShared().
+        The mutually exclusive
+        clamp/enforceRange/legacyNullToEmptyString/(allowShared|allowLarge)
+        arguments are used to create instances of this type with the
+        appropriate attributes attached. Use .clamped(), .rangeEnforced(),
+        .withLegacyNullToEmptyString(), .withAllowShared(), .withAllowLarge().
 
         attrLocation is an array of source locations of these attributes for error reporting.
         """
@@ -3975,6 +3993,7 @@ class IDLBuiltinType(IDLType):
         self._rangeEnforced = None
         self._withLegacyNullToEmptyString = None
         self._withAllowShared = None
+        self._withAllowLarge = None
         if self.isInteger():
             if clamp:
                 self._clamp = True
@@ -4001,17 +4020,30 @@ class IDLBuiltinType(IDLType):
             if allowShared:
                 self._allowShared = True
                 self._extendedAttrDict["AllowShared"] = True
-        elif allowShared:
-            raise WebIDLError(
-                "Types that are not buffer source types cannot be [AllowShared]",
-                attrLocation,
-            )
+            if allowLarge:
+                self._allowLarge = True
+                self._extendedAttrDict["AllowLarge"] = True
+        else:
+            if allowShared:
+                raise WebIDLError(
+                    "Types that are not buffer source types cannot be [AllowShared]",
+                    attrLocation,
+                )
+            if allowLarge:
+                raise WebIDLError(
+                    "Types that are not buffer source types cannot be [AllowLarge]",
+                    attrLocation,
+                )
 
     def __str__(self):
+        name = str(self.name)
         if self._allowShared:
             assert self.isBufferSource()
-            return "MaybeShared" + str(self.name)
-        return str(self.name)
+            name = "MaybeShared" + name
+        if self._allowLarge:
+            assert self.isBufferSource()
+            name = "AllowLarge" + name
+        return name
 
     def prettyName(self):
         return IDLBuiltinType.PrettyNames[self._typeTag]
@@ -4056,9 +4088,22 @@ class IDLBuiltinType(IDLType):
                 self.name,
                 self._typeTag,
                 allowShared=True,
+                allowLarge=self._allowLarge,
                 attrLocation=attrLocation,
             )
         return self._withAllowShared
+
+    def withAllowLarge(self, attrLocation):
+        if not self._withAllowLarge:
+            self._withAllowLarge = IDLBuiltinType(
+                self.location,
+                self.name,
+                self._typeTag,
+                allowShared=self._allowShared,
+                allowLarge=True,
+                attrLocation=attrLocation,
+            )
+        return self._withAllowLarge
 
     def isPrimitive(self):
         return self._typeTag <= IDLBuiltinType.Types.double
@@ -4284,7 +4329,18 @@ class IDLBuiltinType(IDLType):
                         "[AllowShared] only allowed on buffer source types",
                         [self.location, attribute.location],
                     )
-                ret = self.withAllowShared([self.location, attribute.location])
+                ret = ret.withAllowShared([self.location, attribute.location])
+            elif identifier == "AllowLarge":
+                if not attribute.noArguments():
+                    raise WebIDLError(
+                        "[AllowLarge] must take no arguments", [attribute.location]
+                    )
+                if not self.isBufferSource():
+                    raise WebIDLError(
+                        "[AllowLarge] only allowed on buffer source types",
+                        [self.location, attribute.location],
+                    )
+                ret = ret.withAllowLarge([self.location, attribute.location])
 
             else:
                 raise WebIDLError(
@@ -5561,10 +5617,11 @@ class IDLAttribute(IDLInterfaceMember):
             self.type.hasClamp()
             or self.type.hasEnforceRange()
             or self.type.hasAllowShared()
+            or self.type.hasAllowLarge()
             or self.type.legacyNullToEmptyString
         ):
             raise WebIDLError(
-                "A readonly attribute cannot be [Clamp] or [EnforceRange] or [AllowShared]",
+                "A readonly attribute cannot be [Clamp] or [EnforceRange] or [AllowShared] or [AllowLarge]",
                 [self.location],
             )
         if self.type.isDictionary() and not self.getExtendedAttribute("Cached"):
@@ -6176,6 +6233,7 @@ class IDLArgument(IDLObjectWithIdentifier):
                 or identifier == "Clamp"
                 or identifier == "LegacyNullToEmptyString"
                 or identifier == "AllowShared"
+                or identifier == "AllowLarge"
             ):
                 self.type = self.type.withExtendedAttributes([attribute])
             elif identifier == "TreatNonCallableAsNull":

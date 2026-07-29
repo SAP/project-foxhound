@@ -256,7 +256,7 @@ impl BinaryHttp {
 }
 
 #[no_mangle]
-pub extern "C" fn binary_http_constructor(
+pub unsafe extern "C" fn binary_http_constructor(
     iid: *const xpcom::nsIID,
     result: *mut *mut xpcom::reexports::libc::c_void,
 ) -> nsresult {

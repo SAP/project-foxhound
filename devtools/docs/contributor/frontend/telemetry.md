@@ -154,6 +154,7 @@ Create a telemetry instance on the tool constructor:
 ```js
 this._telemetry = new Telemetry({ useSessionId: true });
 ```
+
 `useSessionId` allows to aggregate all records behind a randomly unique "session_id"
 extra attribute. For example, this helps aggregate all data recorded for one precise
 toolbox instance.

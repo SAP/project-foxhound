@@ -38,7 +38,7 @@ Dynamic Result Types
 
 **Dynamic result types** are an alternative way of implementing new result
 types. Instead of adding a new built-in type along with all that entails, you
-add a new provider subclass and register a template that describes how the view
+add a new provider subclass that provides a template describing how the view
 should draw your result type and indicates which elements are selectable. The
 address bar takes care of everything else.
 
@@ -62,36 +62,7 @@ Implementation Steps
 
 This section describes how to add a new dynamic result type.
 
-1. Register the dynamic result type
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-First, register the new dynamic result type:
-
-.. code-block:: javascript
-
-    UrlbarResult.addDynamicResultType(name);
-
-``name`` is a string identifier for the new type. It must be unique; that is, it
-must be different from all other dynamic result type names. It will also be used
-in DOM IDs, DOM class names, and CSS selectors, so it should not contain any
-spaces or other characters that are invalid in CSS.
-
-2. Register the view template
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Next, add the view template for the new type:
-
-.. code-block:: javascript
-
-    UrlbarView.addDynamicViewTemplate(name, viewTemplate);
-
-``name`` is the new type's name as described in step 1.
-
-``viewTemplate`` is an object called a view template. It describes in a
-declarative manner the DOM that should be created in the view for all results of
-the new type.
-
-3. Add the provider
+1. Add the provider
 ~~~~~~~~~~~~~~~~~~~
 
 As with any type of result, results for dynamic result types must be created by
@@ -108,8 +79,9 @@ The ``startQuery`` method should create ``UrlbarResult`` objects with the
 following two requirements:
 
 * Result types must be ``UrlbarUtils.RESULT_TYPE.DYNAMIC``.
-* Result payloads must have a ``dynamicType`` property whose value is the name
-  of the dynamic result type used in step 1.
+* Result payloads must have a ``dynamicType`` property. It will be used in DOM
+  IDs, DOM class names, and CSS selectors, so it should not contain any spaces
+  or other characters that are invalid in CSS.
 
 The results' sources, other payload properties, and other result properties
 aren't relevant to dynamic result types, and you should choose values
@@ -128,7 +100,36 @@ instance.
 
 __ https://firefox-source-docs.mozilla.org/browser/urlbar/overview.html#urlbarprovider
 
-4. Implement the provider's getViewUpdate method
+2. Implement the provider's getViewTemplate method
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``getViewTemplate`` is a provider method particular to dynamic result type
+providers. It is called by the view for each result the provider produces and
+returns a **view template**: a plain object that declaratively describes the
+DOM subtree to build for the result. See `View Templates`_ for the shape of
+this object.
+
+Add the ``getViewTemplate`` method to the provider:
+
+.. code-block:: javascript
+
+    /**
+     * @param {UrlbarResult} result
+     *   The result whose view will be created.
+     * @returns {ViewTemplate}
+     *   The view template describing the DOM to build for the result.
+     */
+    getViewTemplate(result) {
+      return {
+        children: // ...
+      };
+    }
+
+Because ``getViewTemplate`` is called per result, a provider can return
+different templates for different results if needed. In practice most
+providers return the same static template regardless of the result.
+
+3. Implement the provider's getViewUpdate method
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ``getViewUpdate`` is a provider method particular to dynamic result type
@@ -136,10 +137,9 @@ providers. Its job is to update the view DOM for a specific result. It's called
 by the view for each result in the view that was created by the provider. It
 returns an object called a view update object.
 
-Recall that the view template was added earlier, in step 2. The view template
-describes how to build the DOM structure for all results of the dynamic result
-type. The view update object, in this step, describes how to fill in that
-structure for a specific result.
+The view template from step 2 describes how to build the DOM structure for all
+results of the dynamic result type. The view update object, in this step,
+describes how to fill in that structure for a specific result.
 
 Add the ``getViewUpdate`` method to the provider:
 
@@ -174,13 +174,11 @@ The return value is a view update object. It describes in a declarative manner
 the updates that should be performed on the view DOM. See `View Update Objects`_
 for a description of this object.
 
-5. Style the results
+4. Style the results
 ~~~~~~~~~~~~~~~~~~~~
 
 If you are creating the provider in the internal address bar implementation in
-mozilla-central, then add styling `urlbar-dynamic-results.css`_.
-
-.. _urlbar-dynamic-results.css: https://searchfox.org/mozilla-central/source/browser/themes/shared/urlbar-dynamic-results.css
+mozilla-central, then add styling to :searchfox:`dynamic-results.css <browser/themes/shared/urlbar/dynamic-results.css>`.
 
 The rest of this section will discuss the CSS rules you need to use to style
 your results.
@@ -194,7 +192,7 @@ dynamicType Row Attribute
 
 The topmost element in the view corresponding to a result is called a
 **row**. Rows have a class of ``urlbarView-row``, and rows corresponding to
-results of a dynamic result type have an attributed called ``dynamicType``. The
+results of a dynamic result type have an attribute called ``dynamicType``. The
 value of this attribute is the name of the dynamic result type that was chosen
 in step 1 earlier.
 
@@ -297,7 +295,6 @@ like this:
 .. code-block:: javascript
 
     {
-      stylesheet: "style.css",
       children: [
         {
           name: "cityLabel",
@@ -373,13 +370,13 @@ build a general DOM structure appropriate for all results of a particular
 dynamic result type. View update objects are used to fill in that structure for
 a specific result.
 
-When a result is shown in the view, first the view looks up the view template of
-the result's dynamic result type. It uses the view template to build a DOM
-subtree. Next, the view requests a view update object for the result from its
-provider. The view update object tells the view which result-specific attributes
-to set on which elements, result-specific text content to set on elements, and
-so on. View update objects cannot create new elements or otherwise modify the
-structure of the result's DOM subtree.
+When a result is shown in the view, first the view asks the result's provider
+for a view template by calling ``getViewTemplate``. It uses the view template
+to build a DOM subtree. Next, the view requests a view update object for the
+result from its provider. The view update object tells the view which
+result-specific attributes to set on which elements, result-specific text
+content to set on elements, and so on. View update objects cannot create new
+elements or otherwise modify the structure of the result's DOM subtree.
 
 Typically the view update object is based on the result's payload.
 
@@ -525,7 +522,6 @@ property to the top-level object, like this:
 .. code-block:: javascript
 
     {
-      stylesheet: "style.css",
       name: "root",
       attributes: {
         role: "group",
@@ -630,7 +626,5 @@ Appendix A: Examples
 This section lists some example and real-world consumers of dynamic result
 types.
 
-`Tab-to-Search Provider`__
+:searchfox:`Tab-to-Search Provider <browser/components/urlbar/UrlbarProviderTabToSearch.sys.mjs>`
   This is a built-in provider in mozilla-central that uses dynamic result types.
-
-__ https://searchfox.org/mozilla-central/source/browser/components/urlbar/UrlbarProviderTabToSearch.sys.mjs

@@ -5,6 +5,7 @@
 #include "CacheLog.h"
 #include "CacheFileChunk.h"
 
+#include "CacheCrypto.h"
 #include "CacheFile.h"
 #include "nsThreadUtils.h"
 
@@ -330,6 +331,11 @@ void CacheFileChunk::InitNew() {
   mState = READY;
 }
 
+void CacheFileChunk::SetEncrypted() {
+  AssertOwnsLock();
+  mEncrypted = true;
+}
+
 nsresult CacheFileChunk::Read(CacheFileHandle* aHandle, uint32_t aLen,
                               CacheHash::Hash16_t aHash,
                               CacheFileChunkListener* aCallback) {
@@ -357,9 +363,23 @@ nsresult CacheFileChunk::Read(CacheFileHandle* aHandle, uint32_t aLen,
   }
   tmpBuf->SetDataSize(aLen);
 
-  rv = CacheFileIOManager::Read(aHandle, mIndex * kChunkSize, tmpBuf->Buf(),
-                                aLen, this);
+  char* readBuf = tmpBuf->Buf();
+  int64_t readOffset = static_cast<int64_t>(mIndex) * kChunkSize;
+  uint32_t readLen = aLen;
+  if (mEncrypted) {
+    // Read the on-disk block ([ciphertext][tag][nonce]) into a temporary buffer
+    // that is decrypted into tmpBuf in OnDataRead(). Encrypted chunks live at a
+    // physical offset that accounts for the per-chunk overhead.
+    readOffset = static_cast<int64_t>(mIndex) *
+                 (kChunkSize + CacheCrypto::kBlockOverhead);
+    readLen = aLen + CacheCrypto::kBlockOverhead;
+    mEncryptedReadBuf = MakeUnique<uint8_t[]>(readLen);
+    readBuf = reinterpret_cast<char*>(mEncryptedReadBuf.get());
+  }
+
+  rv = CacheFileIOManager::Read(aHandle, readOffset, readBuf, readLen, this);
   if (NS_WARN_IF(NS_FAILED(rv))) {
+    mEncryptedReadBuf = nullptr;
     rv = mIndex ? NS_ERROR_FILE_CORRUPTED : NS_ERROR_FILE_NOT_FOUND;
     SetError(rv);
   } else {
@@ -396,11 +416,44 @@ nsresult CacheFileChunk::Write(CacheFileHandle* aHandle,
   mState = WRITING;
   mWritingStateHandle = MakeUnique<CacheFileChunkReadHandle>(mBuf);
 
-  rv = CacheFileIOManager::Write(
-      aHandle, mIndex * kChunkSize, mWritingStateHandle->Buf(),
-      mWritingStateHandle->DataSize(), false, false, this);
+  const char* writeBuf = mWritingStateHandle->Buf();
+  uint32_t writeLen = mWritingStateHandle->DataSize();
+  int64_t writeOffset = static_cast<int64_t>(mIndex) * kChunkSize;
+
+  if (mEncrypted) {
+    // Encrypt into a separate buffer; the chunk's own buffer must keep the
+    // plaintext (other readers and the chunk hash rely on it). The on-disk
+    // block is [ciphertext][tag][nonce] at a physical offset that accounts for
+    // the per-chunk overhead. The buffer must outlive the async write, so it is
+    // held until OnDataWritten().
+    RefPtr<CacheCrypto> crypto = CacheCrypto::GetInstanceOrNull();
+    if (!crypto) {
+      mWritingStateHandle = nullptr;
+      SetError(NS_ERROR_NOT_AVAILABLE);
+      return mStatus;
+    }
+    uint32_t blockLen = writeLen + CacheCrypto::kBlockOverhead;
+    mEncryptedWriteBuf = MakeUnique<uint8_t[]>(blockLen);
+    rv =
+        crypto->EncryptBlock(mIndex, reinterpret_cast<const uint8_t*>(writeBuf),
+                             writeLen, mEncryptedWriteBuf.get());
+    if (NS_FAILED(rv)) {
+      mWritingStateHandle = nullptr;
+      mEncryptedWriteBuf = nullptr;
+      SetError(rv);
+      return mStatus;
+    }
+    writeBuf = reinterpret_cast<const char*>(mEncryptedWriteBuf.get());
+    writeLen = blockLen;
+    writeOffset = static_cast<int64_t>(mIndex) *
+                  (kChunkSize + CacheCrypto::kBlockOverhead);
+  }
+
+  rv = CacheFileIOManager::Write(aHandle, writeOffset, writeBuf, writeLen,
+                                 false, false, this);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     mWritingStateHandle = nullptr;
+    mEncryptedWriteBuf = nullptr;
     SetError(rv);
   } else {
     mListener = aCallback;
@@ -581,6 +634,7 @@ nsresult CacheFileChunk::OnDataWritten(CacheFileHandle* aHandle,
     MOZ_ASSERT(mListener);
 
     mWritingStateHandle = nullptr;
+    mEncryptedWriteBuf = nullptr;
 
     if (NS_WARN_IF(NS_FAILED(aResult))) {
       SetError(aResult);
@@ -614,6 +668,22 @@ nsresult CacheFileChunk::OnDataRead(CacheFileHandle* aHandle, char* aBuf,
 
     RefPtr<CacheFileChunkBuffer> tmpBuf;
     tmpBuf.swap(mReadingStateBuf);
+
+    if (NS_SUCCEEDED(aResult) && mEncrypted) {
+      // Decrypt the on-disk block (held in mEncryptedReadBuf) into tmpBuf
+      // before the hash check and validity merge, which both operate on
+      // plaintext. The AEAD tag is verified here, so a tampered or wrong-key
+      // block fails.
+      RefPtr<CacheCrypto> crypto = CacheCrypto::GetInstanceOrNull();
+      if (!crypto || !mEncryptedReadBuf) {
+        aResult = NS_ERROR_NOT_AVAILABLE;
+      } else {
+        aResult = crypto->DecryptBlock(
+            mIndex, mEncryptedReadBuf.get(), tmpBuf->DataSize(),
+            reinterpret_cast<uint8_t*>(tmpBuf->Buf()));
+      }
+      mEncryptedReadBuf = nullptr;
+    }
 
     if (NS_SUCCEEDED(aResult)) {
       CacheHash::Hash16_t hash =

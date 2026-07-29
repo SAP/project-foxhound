@@ -13,7 +13,7 @@
   content: /* test comment */ "👨‍👩‍👧‍👦🦄";
   outline: 2px solid salmon;
 }
-#test-empty {} /* 🛠️⚒️🛠️ */ #test-same-line { font-size: 3em; }
+#test-empty {} /* 🛠️⚒️🛠️ */ [id="test-same-line"]{ font-size: 3em; }
 #test-nested-parent {
   color: tomato;
   #test-nested-child {
@@ -36,7 +36,7 @@
   outline: 2px solid salmon;
 }`,
 `#test-empty {}`,
-`#test-same-line { font-size: 3em; }`,
+`[id="test-same-line"]{ font-size: 3em; }`,
 `#test-nested-parent {
   color: tomato;
   #test-nested-child {
@@ -105,9 +105,9 @@
       replaceBlockRuleBodyTextInStylesheet(stylesheet.cssRules[3], newBodyText),
       authoredStyleSheetText.replace(
         existingRulesAuthoredText[3],
-        `#test-same-line {${newBodyText}}`,
+        `[id="test-same-line"]{${newBodyText}}`,
       ),
-      "Got the expected result for #test-same-line"
+      `Got the expected result for [id="test-same-line"]`
     );
 
     info("Check that it can handle a rule with a child rule");

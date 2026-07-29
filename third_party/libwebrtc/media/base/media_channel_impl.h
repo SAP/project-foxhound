@@ -14,7 +14,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "api/array_view.h"
+#include <span>
+
 #include "api/call/transport.h"
 #include "api/scoped_refptr.h"
 #include "api/sequence_checker.h"
@@ -86,12 +87,12 @@ class MediaChannelUtil {
    public:
     TransportForMediaChannels(TaskQueueBase* network_thread, bool enable_dscp);
 
-    virtual ~TransportForMediaChannels();
+    ~TransportForMediaChannels() override;
 
     // Implementation of Transport
-    bool SendRtp(ArrayView<const uint8_t> packet,
+    bool SendRtp(std::span<const uint8_t> packet,
                  const PacketOptions& options) override;
-    bool SendRtcp(ArrayView<const uint8_t> packet,
+    bool SendRtcp(std::span<const uint8_t> packet,
                   const PacketOptions& options) override;
 
     // Not implementation of Transport

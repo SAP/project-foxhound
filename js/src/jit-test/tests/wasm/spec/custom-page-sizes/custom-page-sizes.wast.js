@@ -174,7 +174,7 @@ let $9 = instantiate(`(module
 
 // ./test/core/custom-page-sizes/custom-page-sizes.wast:113
 assert_malformed(
-  () => instantiate(`(memory (pagesize 0) (data)) `),
+  () => instantiate(`(module (memory (pagesize 0) (data))) `),
   `invalid custom page size`,
 );
 

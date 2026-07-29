@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright 2016 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,6 +19,8 @@
 
 #ifndef wasm_wasm_baseline_stk_mgmt_inl_h
 #define wasm_wasm_baseline_stk_mgmt_inl_h
+
+#include <bit>
 
 namespace js {
 namespace wasm {
@@ -1149,10 +1149,10 @@ bool BaseCompiler::popConstPositivePowerOfTwo(int32_t* c, uint_fast8_t* power,
     return false;
   }
   *c = v.i32val();
-  if (*c <= cutoff || !mozilla::IsPowerOfTwo(static_cast<uint32_t>(*c))) {
+  if (*c <= cutoff || !std::has_single_bit(static_cast<uint32_t>(*c))) {
     return false;
   }
-  *power = mozilla::FloorLog2(*c);
+  *power = mozilla::FloorLog2(uint32_t(*c));
   stk_.popBack();
   return true;
 }
@@ -1164,10 +1164,10 @@ bool BaseCompiler::popConstPositivePowerOfTwo(int64_t* c, uint_fast8_t* power,
     return false;
   }
   *c = v.i64val();
-  if (*c <= cutoff || !mozilla::IsPowerOfTwo(static_cast<uint64_t>(*c))) {
+  if (*c <= cutoff || !std::has_single_bit(static_cast<uint64_t>(*c))) {
     return false;
   }
-  *power = mozilla::FloorLog2(*c);
+  *power = mozilla::FloorLog2(uint64_t(*c));
   stk_.popBack();
   return true;
 }

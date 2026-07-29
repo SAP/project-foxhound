@@ -10,6 +10,9 @@ const {
 const {
   getUrlDetails,
 } = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
+const {
+  getRequestPriorityAsNumber,
+} = require("resource://devtools/client/netmonitor/src/utils/format-utils.js");
 
 var guid = 0;
 
@@ -60,6 +63,7 @@ class HarImporter {
           },
           fromCache: false,
           fromServiceWorker: false,
+          priority: getRequestPriorityAsNumber(entry._priority),
         },
         false
       );

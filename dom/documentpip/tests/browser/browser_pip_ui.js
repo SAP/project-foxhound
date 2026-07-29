@@ -81,3 +81,64 @@ add_task(async function pip_ui_buttons() {
 
   Assert.deepEqual(expectedButtons, [], "Expected buttons to be visible");
 });
+
+add_task(async function pip_reload_disabled() {
+  const reloadCommand = chromePiP.document.getElementById("Browser:Reload");
+  ok(reloadCommand.hasAttribute("disabled"), "Reload command is disabled");
+
+  // F5 should be a no-op rather than auto-closing the PiP due to navigation
+  EventUtils.synthesizeKey("VK_F5", {}, chromePiP);
+
+  const pipClosed = await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
+    return content.documentPictureInPicture.window?.closed;
+  });
+  ok(!pipClosed, "F5 should not close the PiP");
+});
+
+add_task(async function pip_bookmark_disabled() {
+  const bookmarkCommand = chromePiP.document.getElementById(
+    "Browser:AddBookmarkAs"
+  );
+  ok(bookmarkCommand.hasAttribute("disabled"), "Bookmark command is disabled");
+});
+
+async function withContextMenu(browser, fn) {
+  const win = browser.documentGlobal;
+  const contextMenu = win.document.getElementById("contentAreaContextMenu");
+  const popupShown = BrowserTestUtils.waitForEvent(contextMenu, "popupshown");
+  BrowserTestUtils.synthesizeMouse(
+    null,
+    0,
+    0,
+    { type: "contextmenu" },
+    browser
+  );
+  await popupShown;
+  await fn(win.document);
+  const popupHidden = BrowserTestUtils.waitForEvent(contextMenu, "popuphidden");
+  contextMenu.hidePopup();
+  await popupHidden;
+}
+
+add_task(async function pip_context_menu_items_hidden() {
+  const ids = [
+    "context-back",
+    "context-forward",
+    "context-reload",
+    "context-bookmarkpage",
+    "context-viewsource",
+    "context-ask-chat",
+  ];
+
+  await withContextMenu(tab.linkedBrowser, doc => {
+    for (const id of ids) {
+      ok(isVisible(doc.getElementById(id)), `Sanity: ${id} is visible in tab`);
+    }
+  });
+
+  await withContextMenu(chromePiP.gBrowser.selectedBrowser, doc => {
+    for (const id of ids) {
+      ok(!isVisible(doc.getElementById(id)), `${id} is not visible in PiP`);
+    }
+  });
+});

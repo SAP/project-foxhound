@@ -7,12 +7,18 @@ package org.mozilla.focus.cookiebanner
 import mozilla.components.concept.engine.EngineSession
 import org.mozilla.focus.R
 
+/**
+ * Represents the available options for cookie banner handling.
+ */
 sealed class CookieBannerOption(
     open val prefKeyId: Int,
     open val mode: EngineSession.CookieBannerHandlingMode,
     open val metricTag: String,
 ) {
 
+    /**
+     * Option to reject all cookies in banners.
+     */
     data class CookieBannerRejectAll(
         override val prefKeyId: Int = R.string.pref_key_cookie_banner_reject_all,
         override val mode: EngineSession.CookieBannerHandlingMode =
@@ -20,6 +26,9 @@ sealed class CookieBannerOption(
         override val metricTag: String = "reject_all",
     ) : CookieBannerOption(prefKeyId = prefKeyId, mode = mode, metricTag = metricTag)
 
+    /**
+     * Option to disable cookie banner handling.
+     */
     data class CookieBannerDisabled(
         override val prefKeyId: Int = R.string.pref_key_cookie_banner_disabled,
         override val mode: EngineSession.CookieBannerHandlingMode =

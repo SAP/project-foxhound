@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -329,6 +327,57 @@ class MP3DemuxerTest : public ::testing::Test {
       // No content length can be estimated for CBR stream resources.
       MP3Resource streamRes = res;
       streamRes.mFileSize = -1;
+
+      res.mResource = new MockMP3MediaResource(res.mFilePath);
+      res.mDemuxer = new MP3TrackDemuxer(res.mResource);
+      mTargets.push_back(res);
+
+      streamRes.mResource = new MockMP3StreamMediaResource(streamRes.mFilePath);
+      streamRes.mDemuxer = new MP3TrackDemuxer(streamRes.mResource);
+      mTargets.push_back(streamRes);
+    }
+
+    {
+      // Bug 1975822: ffmpeg killed mid-encode leaves a Xing/LAME header at the
+      // start of the file with placeholder NumFrames=0 and NumBytes=0. The
+      // demuxer should fall back to a bitrate estimate instead of using the
+      // single-frame AverageFrameLength, which would otherwise nearly double
+      // the reported duration.
+      MP3Resource res;
+      res.mFilePath = "truncated-xing-placeholder.mp3";
+      // The actual audio is CBR at 128 kbps, but the leading Xing frame has
+      // a different (minimum) bitrate, so flag as VBR for the per-frame
+      // bitrate consistency check.
+      res.mIsVBR = true;
+      res.mHeaderType = MP3Resource::HeaderType::XING;
+      res.mFileSize = 110061;
+      res.mMPEGLayer = 3;
+      res.mMPEGVersion = 1;
+      res.mID3MajorVersion = 4;
+      res.mID3MinorVersion = 0;
+      res.mID3Flags = 0;
+      res.mID3Size = 35;
+      // True duration is 286 * 1152 / 48000 = 6.864 s. Without complete Xing
+      // counts the demuxer estimates from the bitrate over the audio data
+      // (110016 bytes after the ID3 tag), giving 110016 * 8 / 128000 = 6.876 s.
+      // The 12 ms overestimate is because the silent Xing frame is included
+      // in the byte total.
+      res.mDuration = Some(MP3Resource::Duration{6876000, 0.f});
+      res.mSeekError = 0.02f;
+      res.mSampleRate = 48000;
+      res.mSamplesPerFrame = 1152;
+      res.mNumSamples = 329472;
+      res.mPadding = 0;
+      res.mEncoderDelay = 1681;
+      res.mBitrate = 128000;
+      res.mSlotSize = 1;
+      res.mPrivate = 0;
+      const int syncs[] = {45, 237, 621, 1005, 1389, 1773};
+      res.mSyncOffsets.insert(res.mSyncOffsets.begin(), syncs, syncs + 6);
+
+      MP3Resource streamRes = res;
+      streamRes.mFileSize = -1;
+      streamRes.mDuration = Nothing();
 
       res.mResource = new MockMP3MediaResource(res.mFilePath);
       res.mDemuxer = new MP3TrackDemuxer(res.mResource);

@@ -53,3 +53,22 @@ addAccessibleTask(
   runTests,
   { iframe: true, remoteIframe: true }
 );
+
+/**
+ * Test that a fieldset with display:contents reports non-zero bounds.
+ */
+addAccessibleTask(
+  `<fieldset style="display:contents" id="fieldset">
+     <legend>hello world</legend>
+     <label><input type="radio" name="grp">I am a radio button</label>
+     <label><input type="radio" name="grp" checked>I am a radio too</label>
+   </fieldset>`,
+  async function (browser, accDoc) {
+    const fieldset = findAccessibleChildByID(accDoc, "fieldset");
+    const contentDPR = await getContentDPR(browser);
+    const [, , width, height] = getBounds(fieldset, contentDPR);
+    Assert.greater(width, 0, "display:contents fieldset has positive width");
+    Assert.greater(height, 0, "display:contents fieldset has positive height");
+  },
+  { chrome: true, topLevel: true, iframe: true, remoteIframe: true }
+);

@@ -31,10 +31,12 @@ android {
 }
 
 dependencies {
+    implementation platform(libs.androidx.compose.bom)
     implementation ComponentsDependencies.mozilla_appservices_fxrelay
     implementation project(':components:compose-base')
     implementation project(":components:ui-icons")
     implementation project(':components:support-ktx')
+    implementation project(':components:support-utils')
     implementation project(":components:lib-state")
     implementation project(':components:service-firefox-accounts')
 

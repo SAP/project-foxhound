@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -45,11 +43,27 @@ RefMessageBodyService::RefMessageBodyService(
   MOZ_DIAGNOSTIC_ASSERT(sService == nullptr);
 }
 
-RefMessageBodyService::~RefMessageBodyService() {
+MozExternalRefCountType RefMessageBodyService::AddRef() {
+  MOZ_ASSERT(int32_t(mRefCnt) >= 0, "illegal refcnt");
+  nsrefcnt cnt = ++mRefCnt;
+  NS_LOG_ADDREF(this, cnt, "RefMessageBodyService", sizeof(*this));
+  return cnt;
+}
+
+MozExternalRefCountType RefMessageBodyService::Release() {
   StaticMutexAutoLock lock(sRefMessageBodyServiceMutex);
+  nsrefcnt cnt = --mRefCnt;
+  NS_LOG_RELEASE(this, cnt, "RefMessageBodyService");
+  if (cnt > 0) {
+    return cnt;
+  }
   MOZ_DIAGNOSTIC_ASSERT(sService == this);
   sService = nullptr;
+  delete this;
+  return 0;
 }
+
+RefMessageBodyService::~RefMessageBodyService() = default;
 
 const nsID RefMessageBodyService::Register(
     already_AddRefed<RefMessageBody> aBody, ErrorResult& aRv) {

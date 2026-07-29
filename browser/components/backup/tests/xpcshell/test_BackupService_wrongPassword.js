@@ -61,7 +61,7 @@ async function testWrongPassword(passwordToUse) {
     await IOUtils.remove(recoveredProfilePath, { recursive: true });
   });
 
-  await bs.getBackupFileInfo(testBackupPath);
+  await bs.loadBackupFileInfo(testBackupPath);
   const restoreID = bs.state.restoreID;
 
   await Assert.rejects(
@@ -82,10 +82,15 @@ async function testWrongPassword(passwordToUse) {
     1,
     "Should be a single restore started event after we start restoring a profile"
   );
-  Assert.deepEqual(
-    events[0].extra,
-    { restore_id: restoreID, replace: "true" },
-    "Restore event should have the right data"
+  Assert.equal(
+    events[0].extra.restore_id,
+    restoreID,
+    "Restore started event should have the right restore_id"
+  );
+  Assert.equal(
+    events[0].extra.replace,
+    "true",
+    "Restore started event should have replace=true"
   );
 
   events = Glean.browserBackup.restoreFailed.testGetValue();
@@ -94,10 +99,25 @@ async function testWrongPassword(passwordToUse) {
     1,
     "Should be a single restore failed event after we fail to restore a profile"
   );
-  Assert.deepEqual(
-    events[0].extra,
-    { restore_id: restoreID, error_type: "UNAUTHORIZED" },
-    "Restore failure event should have the right data"
+  Assert.equal(
+    events[0].extra.restore_id,
+    restoreID,
+    "Restore failure event should have the right restore_id"
+  );
+  Assert.equal(
+    events[0].extra.error_type,
+    "UNAUTHORIZED",
+    "Restore failure event should have UNAUTHORIZED error_type"
+  );
+  Assert.equal(
+    events[0].extra.error_detail,
+    "",
+    "Restore failure event should have empty error_detail"
+  );
+  Assert.equal(
+    events[0].extra.restore_step,
+    "EXTRACT_SNAPSHOT",
+    "Restore failure event should have EXTRACT_SNAPSHOT restore_step"
   );
 }
 

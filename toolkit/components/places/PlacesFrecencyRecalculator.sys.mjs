@@ -1,6 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * vim: sw=2 ts=2 sts=2 expandtab
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -114,6 +112,10 @@ export class PlacesFrecencyRecalculator {
    */
   #finalized = false;
 
+  // When true, recalculation tasks will not run. Used by tests to check the
+  // recalc flags are set before a recalculation happens.
+  #pausedForTesting = false;
+
   /**
    * This is useful for testing.
    */
@@ -187,7 +189,7 @@ export class PlacesFrecencyRecalculator {
   }
 
   async #taskFn() {
-    if (this.#task.isFinalized) {
+    if (this.#task.isFinalized || this.#pausedForTesting) {
       return;
     }
     let timerId = Glean.places.frecencyRecalcChunkTime.start();
@@ -266,20 +268,18 @@ export class PlacesFrecencyRecalculator {
     let affectedCount = 0;
     let hasRecalculatedAnything = false;
     let db = await lazy.PlacesUtils.promiseUnsafeWritableDBConnection();
-    await db.executeTransaction(async function () {
-      let affected = await db.executeCached(
-        `UPDATE moz_places
-        SET frecency = CALCULATE_FRECENCY(id)
-        WHERE id IN (
-          SELECT id FROM moz_places
-          WHERE recalc_frecency = 1
-          ORDER BY frecency DESC, visit_count DESC
-          LIMIT ${chunkSize}
-        )
-        RETURNING id`
-      );
-      affectedCount += affected.length;
-    });
+    let affected = await db.executeCached(
+      `UPDATE moz_places
+      SET frecency = CALCULATE_FRECENCY(id)
+      WHERE id IN (
+        SELECT id FROM moz_places
+        WHERE recalc_frecency = 1
+        ORDER BY frecency DESC, visit_count DESC
+        LIMIT ${chunkSize}
+      )
+      RETURNING id`
+    );
+    affectedCount += affected.length;
     let shouldRestartRecalculation = affectedCount >= chunkSize;
     hasRecalculatedAnything = affectedCount > 0;
     if (hasRecalculatedAnything) {
@@ -316,82 +316,85 @@ export class PlacesFrecencyRecalculator {
 
   async #recalculateSomeOriginsFrecencies({ chunkSize }) {
     lazy.logger.trace(`Recalculate ${chunkSize} origins frecency values`);
+
+    // There are two database writes here, but we intentionally avoid a
+    // transaction: only the first write can be large, while writing to
+    // moz_meta is quick and not worth extending the writer lock.
+
     let affectedCount = 0;
     let db = await lazy.PlacesUtils.promiseUnsafeWritableDBConnection();
-    await db.executeTransaction(async () => {
-      // Recalculate frecency for origins marked with recalc_frecency = 1.
-      //
-      // Origin frecency =
-      //  AVG(page frecency) * COUNT(distinct days with typed visits)
-      //
-      // The average is weighted by typed visits: pages with more typed visits
-      // within the window contribute proportionally more to the average.
-      // We only consider typed visits within the last
-      // `originsFrecencyCutOffDays` days. We use distinct days as the
-      // multiplier rather than the total typed visit count to avoid
-      // over-weighting origins visited repeatedly in a short period.
-      //
-      // Origins with no typed visits within the period get a frecency of 1.0,
-      // not NULL or 0, since 0 has a special meaning for pages and the table
-      // doesn't support NULL). Highest-frecency origins are processed first.
-      let affected = await db.executeCached(
-        `
-        UPDATE moz_origins
-        SET frecency = IFNULL((
-          SELECT CAST(
-            AVG(h.frecency) * COUNT(
-              DISTINCT date(v.visit_date / 1000000, 'unixepoch')
-            ) AS INTEGER
-          )
-          FROM moz_places h
-          JOIN moz_historyvisits v ON v.place_id = h.id
-          WHERE h.origin_id = moz_origins.id
-            AND v.visit_type = ${lazy.PlacesUtils.history.TRANSITION_TYPED}
-            AND v.visit_date >
-              strftime('%s','now','localtime','start of day',
-                       '-${lazy.originsFrecencyCutOffDays} day','utc') * 1000000
-        ), 1.0),
-        recalc_frecency = 0
-        WHERE id IN (
-          SELECT id FROM moz_origins
-          WHERE recalc_frecency = 1
-          ORDER BY frecency DESC
-          LIMIT ${chunkSize}
+    // Recalculate frecency for origins marked with recalc_frecency = 1.
+    //
+    // Origin frecency =
+    //  AVG(page frecency) * COUNT(distinct days with typed visits)
+    //
+    // The average is weighted by typed visits: pages with more typed visits
+    // within the window contribute proportionally more to the average.
+    // We only consider typed visits within the last
+    // `originsFrecencyCutOffDays` days. We use distinct days as the
+    // multiplier rather than the total typed visit count to avoid
+    // over-weighting origins visited repeatedly in a short period.
+    //
+    // Origins with no typed visits within the period get a frecency of 1.0,
+    // not NULL or 0, since 0 has a special meaning for pages and the table
+    // doesn't support NULL). Highest-frecency origins are processed first.
+    let affected = await db.executeCached(
+      `
+      UPDATE moz_origins
+      SET frecency = IFNULL((
+        SELECT CAST(
+          AVG(h.frecency) * COUNT(
+            DISTINCT date(v.visit_date / 1000000, 'unixepoch')
+          ) AS INTEGER
         )
-        RETURNING id`
-      );
-      affectedCount += affected.length;
+        FROM moz_places h
+        JOIN moz_historyvisits v ON v.place_id = h.id
+        WHERE h.origin_id = moz_origins.id
+          AND v.visit_type = ${lazy.PlacesUtils.history.TRANSITION_TYPED}
+          AND v.visit_date >
+            strftime('%s','now','localtime','start of day',
+                     '-${lazy.originsFrecencyCutOffDays} day','utc') * 1000000
+      ), 1.0),
+      recalc_frecency = 0
+      WHERE id IN (
+        SELECT id FROM moz_origins
+        WHERE recalc_frecency = 1
+        ORDER BY frecency DESC
+        LIMIT ${chunkSize}
+      )
+      RETURNING id`
+    );
+    affectedCount += affected.length;
 
-      // Calculate and store the frecency threshold. Origins whose frecency is
-      // above this value will be considered meaningful and autofilled.
-      // While it may be tempting to do this only when some frecency was
-      // updated, that won't catch the edge case of the moz_origins table being
-      // emptied.
-      // In case of NULL, the default threshold is 2, that is higher than the
-      // default frecency set above.
-      // Bug 2002569: We should modify the query to use percentiles.
-      let threshold = (
-        await db.executeCached(
-          `
-        	WITH ntiled AS (
-            SELECT
-              host,
-              frecency,
-              NTILE(:buckets) OVER (ORDER BY frecency ASC) AS ntile
-	          FROM moz_origins
-	          WHERE frecency > 1)
-          SELECT MAX(frecency)
-          FROM ntiled
-          WHERE ntile = 1
-        `,
-          { buckets: BUCKETS }
-        )
-      )[0].getResultByIndex(0);
-      await lazy.PlacesUtils.metadata.set(
-        "origin_frecency_threshold",
-        threshold ?? 2
-      );
-    });
+    // Calculate and store the frecency threshold. Origins whose frecency is
+    // above this value will be considered meaningful and autofilled.
+    // While it may be tempting to do this only when some frecency was
+    // updated, that won't catch the edge case of the moz_origins table being
+    // emptied.
+    // In case of NULL, the default threshold is 2, that is higher than the
+    // default frecency set above.
+    // Bug 2002569: We should modify the query to use percentiles.
+    let threshold = (
+      await db.executeCached(
+        `
+        WITH ntiled AS (
+          SELECT
+            host,
+            frecency,
+            NTILE(:buckets) OVER (ORDER BY frecency ASC) AS ntile
+            FROM moz_origins
+            WHERE frecency > 1)
+        SELECT MAX(frecency)
+        FROM ntiled
+        WHERE ntile = 1
+      `,
+        { buckets: BUCKETS }
+      )
+    )[0].getResultByIndex(0);
+    await lazy.PlacesUtils.metadata.set(
+      "origin_frecency_threshold",
+      threshold ?? 2
+    );
 
     return affectedCount;
   }
@@ -436,26 +439,24 @@ export class PlacesFrecencyRecalculator {
     let timerId = Glean.places.idleFrecencyDecayTime.start();
     try {
       let db = await lazy.PlacesUtils.promiseUnsafeWritableDBConnection();
-      await db.executeTransaction(async function () {
-        // Decay potentially unused adaptive entries (e.g. those that are at 1)
-        // to allow better chances for new entries that will start at 1.
-        await db.executeCached(
-          `UPDATE moz_inputhistory SET use_count = use_count * :decay_rate`,
-          { decay_rate: lazy.frecencyDecayRate }
-        );
-        // Delete any adaptive entries that won't help in ordering anymore.
-        await db.executeCached(
-          `DELETE FROM moz_inputhistory WHERE use_count < :use_count`,
-          {
-            use_count: Math.pow(
-              lazy.frecencyDecayRate,
-              lazy.adaptiveHistoryExpireDays
-            ),
-          }
-        );
+      // Decay potentially unused adaptive entries (e.g. those that are at 1)
+      // to allow better chances for new entries that will start at 1.
+      await db.executeCached(
+        `UPDATE moz_inputhistory SET use_count = use_count * :decay_rate`,
+        { decay_rate: lazy.frecencyDecayRate }
+      );
+      // Delete any adaptive entries that won't help in ordering anymore.
+      await db.executeCached(
+        `DELETE FROM moz_inputhistory WHERE use_count < :use_count`,
+        {
+          use_count: Math.pow(
+            lazy.frecencyDecayRate,
+            lazy.adaptiveHistoryExpireDays
+          ),
+        }
+      );
 
-        Glean.places.idleFrecencyDecayTime.stopAndAccumulate(timerId);
-      });
+      Glean.places.idleFrecencyDecayTime.stopAndAccumulate(timerId);
     } catch (ex) {
       Glean.places.idleFrecencyDecayTime.cancel(timerId);
       console.error(ex);
@@ -545,6 +546,12 @@ export class PlacesFrecencyRecalculator {
         return;
       case "test-execute-taskFn":
         subject.promise = this.#taskFn();
+        return;
+      case "test-pause-frecency-recalculation":
+        this.#pausedForTesting = true;
+        return;
+      case "test-resume-frecency-recalculation":
+        this.#pausedForTesting = false;
         return;
       case "test-alternative-frecency-init":
         this.#alternativeFrecencyHelper = new AlternativeFrecencyHelper(this);
@@ -659,14 +666,14 @@ class AlternativeFrecencyHelper {
         await lazy.PlacesUtils.withConnectionWrapper(
           `PlacesFrecencyRecalculator :: ${type} alternative frecency set recalc`,
           async db => {
-            // We must avoid NULL values as SQL expressions like `frecency <> 0`
-            // will evaluate to NULL, instead of TRUE. To ensure entires are
-            // properly filtered in queries, we set alt_frecency = -1 that is
-            // a valid altough very low ranking score.
-            // We aonly updated entries with a NULL alt_frecency, since new
-            // visits may have already triggers recalculation for some entries.
-            // This works as fare as alt_frecency values are cleared to NULL
-            // when alternative frecency is disabled.
+            // We must avoid NULL values because SQL expressions like
+            // `frecency <> 0` evaluate to NULL instead of TRUE. To ensure
+            // entries are properly filtered in queries, we set
+            // `alt_frecency = -1`, which is a valid (though very low) score.
+            // We only update entries with a NULL alt_frecency, since new
+            // visits may already have triggered recalculation for some
+            // entries. This works as long as alt_frecency values are reset to
+            // NULL when alternative frecency is disabled.
             await db.execute(
               `UPDATE ${set.table}
                SET alt_frecency = CASE WHEN frecency = 0 THEN 0 ELSE -1 END,
@@ -756,42 +763,45 @@ class AlternativeFrecencyHelper {
     lazy.logger.trace(
       `Recalculate ${chunkSize} alternative origins frecency values`
     );
+
+    // There are two database writes here, but we intentionally avoid a
+    // transaction: only the first write can be large, while writing to
+    // moz_meta is quick and not worth extending the writer lock.
+
     let affectedCount = 0;
     let db = await lazy.PlacesUtils.promiseUnsafeWritableDBConnection();
-    await db.executeTransaction(async () => {
-      let affected = await db.executeCached(
-        `
-        UPDATE moz_origins
-        SET alt_frecency = (
-          SELECT sum(frecency)
-          FROM moz_places h
-          WHERE origin_id = moz_origins.id
-          AND last_visit_date >
-            strftime('%s','now','localtime','start of day',
-                     '-${variables.daysCutOff} day','utc') * 1000000
-        ), recalc_alt_frecency = 0
-        WHERE id IN (
-          SELECT id FROM moz_origins
-          WHERE recalc_alt_frecency = 1
-          ORDER BY frecency DESC
-          LIMIT ${chunkSize}
-        )
-        RETURNING id`
-      );
-      affectedCount += affected.length;
+    let affected = await db.executeCached(
+      `
+      UPDATE moz_origins
+      SET alt_frecency = (
+        SELECT sum(frecency)
+        FROM moz_places h
+        WHERE origin_id = moz_origins.id
+        AND last_visit_date >
+          strftime('%s','now','localtime','start of day',
+                   '-${variables.daysCutOff} day','utc') * 1000000
+      ), recalc_alt_frecency = 0
+      WHERE id IN (
+        SELECT id FROM moz_origins
+        WHERE recalc_alt_frecency = 1
+        ORDER BY frecency DESC
+        LIMIT ${chunkSize}
+      )
+      RETURNING id`
+    );
+    affectedCount += affected.length;
 
-      // Calculate and store the alternative frecency threshold. Origins above
-      // this threshold will be considered meaningful and autofilled.
-      if (affected.length) {
-        let threshold = (
-          await db.executeCached(`SELECT avg(alt_frecency) FROM moz_origins`)
-        )[0].getResultByIndex(0);
-        await lazy.PlacesUtils.metadata.set(
-          "origin_alt_frecency_threshold",
-          threshold
-        );
-      }
-    });
+    // Calculate and store the alternative frecency threshold. Origins above
+    // this threshold will be considered meaningful and autofilled.
+    if (affected.length) {
+      let threshold = (
+        await db.executeCached(`SELECT avg(alt_frecency) FROM moz_origins`)
+      )[0].getResultByIndex(0);
+      await lazy.PlacesUtils.metadata.set(
+        "origin_alt_frecency_threshold",
+        threshold
+      );
+    }
 
     return affectedCount;
   }

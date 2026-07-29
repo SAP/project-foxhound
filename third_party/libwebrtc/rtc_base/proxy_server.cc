@@ -38,7 +38,8 @@ ProxyServer::ProxyServer(SocketFactory* int_factory,
   RTC_DCHECK(int_addr.family() == AF_INET || int_addr.family() == AF_INET6);
   server_socket_->Bind(int_addr);
   server_socket_->Listen(5);
-  server_socket_->SignalReadEvent.connect(this, &ProxyServer::OnAcceptEvent);
+  server_socket_->SubscribeReadEvent(
+      this, [this](Socket* socket) { OnAcceptEvent(socket); });
 }
 
 ProxyServer::~ProxyServer() = default;
@@ -71,22 +72,27 @@ ProxyBinding::ProxyBinding(AsyncProxyServerSocket* int_socket,
       ext_socket_(ext_socket),
       connected_(false),
       out_buffer_(kBufferSize),
-      in_buffer_(kBufferSize),
-      destroyed_trampoline_(this) {
+      in_buffer_(kBufferSize) {
   int_socket_->SubscribeConnectRequest(
-      [this](AsyncProxyServerSocket* socket, const SocketAddress& addr) {
+      this, [this](AsyncProxyServerSocket* socket, const SocketAddress& addr) {
         OnConnectRequest(socket, addr);
       });
-  int_socket_->SignalReadEvent.connect(this, &ProxyBinding::OnInternalRead);
-  int_socket_->SignalWriteEvent.connect(this, &ProxyBinding::OnInternalWrite);
-  int_socket_->SubscribeCloseEvent(
-      [this](Socket* socket, int error) { OnInternalClose(socket, error); });
+  int_socket_->SubscribeReadEvent(
+      this, [this](Socket* socket) { OnInternalRead(socket); });
+  int_socket_->SubscribeWriteEvent(
+      this, [this](Socket* socket) { OnInternalWrite(socket); });
+  int_socket_->SubscribeCloseEvent(this, [this](Socket* socket, int error) {
+    OnInternalClose(socket, error);
+  });
   ext_socket_->SubscribeConnectEvent(
-      [this](Socket* socket) { OnExternalConnect(socket); });
-  ext_socket_->SignalReadEvent.connect(this, &ProxyBinding::OnExternalRead);
-  ext_socket_->SignalWriteEvent.connect(this, &ProxyBinding::OnExternalWrite);
-  ext_socket_->SubscribeCloseEvent(
-      [this](Socket* socket, int error) { OnExternalClose(socket, error); });
+      this, [this](Socket* socket) { OnExternalConnect(socket); });
+  ext_socket_->SubscribeReadEvent(
+      this, [this](Socket* socket) { OnExternalRead(socket); });
+  ext_socket_->SubscribeWriteEvent(
+      this, [this](Socket* socket) { OnExternalWrite(socket); });
+  ext_socket_->SubscribeCloseEvent(this, [this](Socket* socket, int error) {
+    OnExternalClose(socket, error);
+  });
 }
 
 ProxyBinding::~ProxyBinding() = default;

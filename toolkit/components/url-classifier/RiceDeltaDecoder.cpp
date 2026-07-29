@@ -141,7 +141,17 @@ RiceDeltaDecoder::RiceDeltaDecoder(uint8_t* aEncodedData,
     : mEncodedData(aEncodedData), mEncodedDataSize(aEncodedDataSize) {}
 
 bool RiceDeltaDecoder::Decode(uint32_t aRiceParameter, uint32_t aFirstValue,
-                              uint32_t aNumEntries, uint32_t* aDecodedData) {
+                              uint32_t aNumEntries, uint32_t* aDecodedData,
+                              bool aIsV5) {
+  // V4: rice_parameter in [2, 28]; V5: rice_parameter in [3, 30].
+  const uint32_t kMin = aIsV5 ? 3 : 2;
+  const uint32_t kMax = aIsV5 ? 30 : 28;
+  if (aNumEntries > 0 && (aRiceParameter < kMin || aRiceParameter > kMax)) {
+    LOG(("Decode32: rice_parameter %u out of range [%u,%u]", aRiceParameter,
+         kMin, kMax));
+    return false;
+  }
+
   // Reverse each byte before reading bits from the byte buffer.
   for (size_t i = 0; i < mEncodedDataSize; i++) {
     ReverseByte(mEncodedData[i]);
@@ -186,6 +196,12 @@ bool RiceDeltaDecoder::Decode(uint32_t aRiceParameter, uint32_t aFirstValue,
 
 bool RiceDeltaDecoder::Decode64(uint32_t aRiceParameter, uint64_t aFirstValue,
                                 uint32_t aNumEntries, uint64_t* aDecodedData) {
+  // Safe Browsing V5 spec: rice_parameter for 64-bit hashes is in [35, 62].
+  if (aNumEntries > 0 && (aRiceParameter < 35 || aRiceParameter > 62)) {
+    LOG(("Decode64: rice_parameter %u out of range [35,62]", aRiceParameter));
+    return false;
+  }
+
   // Reverse each byte before reading bits from the byte buffer.
   for (size_t i = 0; i < mEncodedDataSize; i++) {
     ReverseByte(mEncodedData[i]);
@@ -232,6 +248,14 @@ bool RiceDeltaDecoder::Decode128(uint32_t aRiceParameter,
                                  uint64_t aFirstValueHigh,
                                  uint64_t aFirstValueLow, uint32_t aNumEntries,
                                  nsACString& aDecodedData) {
+  // Safe Browsing V5 spec: rice_parameter for 128-bit hashes is in [99, 126].
+  // Enforce this to prevent OOB stack write in the remainder loop below
+  // and undefined shift in (k - 64).
+  if (aNumEntries > 0 && (aRiceParameter < 99 || aRiceParameter > 126)) {
+    LOG(("Decode128: rice_parameter %u out of range [99,126]", aRiceParameter));
+    return false;
+  }
+
   // Reverse each byte before reading bits from the byte buffer.
   for (size_t i = 0; i < mEncodedDataSize; i++) {
     ReverseByte(mEncodedData[i]);
@@ -292,6 +316,13 @@ bool RiceDeltaDecoder::Decode256(uint32_t aRiceParameter,
                                  uint64_t aFirstValueThree,
                                  uint64_t aFirstValueFour, uint32_t aNumEntries,
                                  nsACString& aDecodedData) {
+  // Safe Browsing V5 spec: rice_parameter for 256-bit hashes is in [227, 254].
+  if (aNumEntries > 0 && (aRiceParameter < 227 || aRiceParameter > 254)) {
+    LOG(("Decode256: rice_parameter %u out of range [227,254]",
+         aRiceParameter));
+    return false;
+  }
+
   // Reverse each byte before reading bits from the byte buffer.
   for (size_t i = 0; i < mEncodedDataSize; i++) {
     ReverseByte(mEncodedData[i]);

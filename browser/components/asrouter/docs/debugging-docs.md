@@ -76,22 +76,26 @@ reset these impressions.
 
   - Message impressions are stored as an object where each key is a message ID,
     and each value is an array of timestamps. These impressions are cleaned up
-    when a message with that ID is no longer available in ASrouter (such as when an
-    experiment ends).
+    when they are at least 6 months old and a message with that ID is no longer
+    available in ASRouter (such as when an experiment ends).
   - You can edit the JSON message impressions directly in the text area. After editing the JSON, click the "Save" button to apply the changes.
   - If you want to reset the message impressions to their default state, click the "Reset" button.
 
 2. Group Impressions
 
- - Group impressions are stored as an object where each key is a group ID, and each value is an array of timestamps. Unlike message impressions, group impressions are not cleaned up.
- - You can edit the JSON for group impressions in the text area. Click the
-   "Save" button to save your changes.
+  - Group impressions are stored as an object where each key is a group ID, and
+    each value is an array of timestamps.
+  - You can edit the JSON for group impressions in the text area. Click the
+    "Save" button to save your changes.
   - To reset the group impressions to their default state, click the "Reset" button.
 
 3. Screen Impressions
 
- - Screen impressions are stored in an object where each key is a screen ID, and the corresponding value is the most recent timestamp that the screen was shown. These impressions are also not cleaned up.
- - You can modify the screen impressions by editing the JSON directly. Click the
+  - Screen impressions are stored in an object where each key is a screen ID,
+    and the corresponding value is the most recent timestamp that the screen was
+    shown. Unlike message and group impressions, screen impressions are stored
+    permanently and not cleaned up.
+  - You can modify the screen impressions by editing the JSON directly. Click the
    "Save" button to save your changes.
  - If needed, you can click the "Reset" button to restore the original screen impressions data.
 

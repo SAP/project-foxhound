@@ -750,7 +750,8 @@ async function promiseFormsProcessed(expectedCount = 1) {
 
 async function loadFormIntoWindow(origin, html, win, expectedCount = 1, task) {
   const token = `channel${Math.random().toString().slice(2)}`;
-  const bc = new BroadcastChannel(token);
+  const bc =
+    SpecialPowers.wrap(BroadcastChannel).unpartitionedTestingChannel(token);
   const loadedPromise = new Promise(resolve => (bc.onmessage = resolve));
 
   let processedPromise = promiseFormsProcessed(expectedCount);
@@ -839,8 +840,8 @@ function runInParent(aFunctionOrURL) {
 function manageLoginsInParent() {
   return runInParent(function addLoginsInParentInner() {
     /* eslint-env mozilla/chrome-script */
-    addMessageListener("removeAllUserFacingLogins", () => {
-      Services.logins.removeAllUserFacingLogins();
+    addMessageListener("removeAllUserFacingLogins", async () => {
+      await Services.logins.removeAllUserFacingLoginsAsync();
     });
 
     addMessageListener("getLogins", async () => {

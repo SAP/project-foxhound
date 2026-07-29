@@ -8,7 +8,7 @@ export class TalosTabSwitchParent extends JSWindowActorParent {
   receiveMessage(message) {
     if (message.name == "tabswitch-do-test") {
       let browser = this.browsingContext.top.embedderElement;
-      return this.test(browser.ownerGlobal);
+      return this.test(browser.documentGlobal);
     }
 
     return undefined;
@@ -93,7 +93,7 @@ export class TalosTabSwitchParent extends JSWindowActorParent {
    */
   async switchToTab(tab) {
     let browser = tab.linkedBrowser;
-    let gBrowser = tab.ownerGlobal.gBrowser;
+    let gBrowser = tab.documentGlobal.gBrowser;
 
     let start = ChromeUtils.now();
 
@@ -125,7 +125,7 @@ export class TalosTabSwitchParent extends JSWindowActorParent {
    */
   waitForTabSwitchDone(browser) {
     return new Promise(resolve => {
-      let gBrowser = browser.ownerGlobal.gBrowser;
+      let gBrowser = browser.documentGlobal.gBrowser;
       gBrowser.addEventListener(
         "TabSwitchDone",
         function onTabSwitchDone() {

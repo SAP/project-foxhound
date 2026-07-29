@@ -9,15 +9,29 @@ extern crate webrender;
 extern crate winit;
 
 use gleam::gl;
-use glutin::NotCurrent;
+use glutin::config::{ConfigTemplateBuilder, GlConfig};
+use glutin::context::{
+    ContextApi, ContextAttributesBuilder, NotCurrentGlContext,
+    PossiblyCurrentContext, Version,
+};
+use glutin::display::{GetGlDisplay, GlDisplay};
+use glutin::surface::{GlSurface, Surface, SurfaceAttributesBuilder, WindowSurface};
+use glutin_winit::DisplayBuilder;
+use std::ffi::CString;
 use std::fs::File;
 use std::io::Read;
+use std::num::NonZeroU32;
+use std::rc::Rc;
 use webrender::api::*;
 use webrender::api::units::*;
 use webrender::render_api::*;
 use webrender::DebugFlags;
+use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
-use winit::platform::run_return::EventLoopExtRunReturn;
+use winit::event::{ElementState, KeyEvent, WindowEvent};
+use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::keyboard::{Key, NamedKey};
+use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 struct Notifier {
     events_proxy: winit::event_loop::EventLoopProxy<()>,
@@ -50,8 +64,9 @@ impl RenderNotifier for Notifier {
 }
 
 struct Window {
-    events_loop: winit::event_loop::EventLoop<()>, //TODO: share events loop?
-    context: Option<glutin::WindowedContext<NotCurrent>>,
+    window: winit::window::Window,
+    gl_surface: Surface<WindowSurface>,
+    gl_context: PossiblyCurrentContext,
     renderer: webrender::Renderer,
     name: &'static str,
     pipeline_id: PipelineId,
@@ -61,31 +76,88 @@ struct Window {
     font_instance_key: FontInstanceKey,
 }
 
-impl Window {
-    fn new(name: &'static str, clear_color: ColorF) -> Self {
-        let events_loop = winit::event_loop::EventLoop::new();
-        let window_builder = winit::window::WindowBuilder::new()
-            .with_title(name)
-            .with_inner_size(LogicalSize::new(800. as f64, 600. as f64));
-        let context = glutin::ContextBuilder::new()
-            .with_gl(glutin::GlRequest::GlThenGles {
-                opengl_version: (3, 2),
-                opengles_version: (3, 0),
+fn load_gl_fns(is_gles: bool, gl_display: &impl GlDisplay) -> Rc<dyn gl::Gl> {
+    if is_gles {
+        unsafe {
+            gl::GlesFns::load_with(|symbol| {
+                gl_display.get_proc_address(&CString::new(symbol).unwrap()) as *const _
             })
-            .build_windowed(window_builder, &events_loop)
-            .unwrap();
+        }
+    } else {
+        unsafe {
+            gl::GlFns::load_with(|symbol| {
+                gl_display.get_proc_address(&CString::new(symbol).unwrap()) as *const _
+            })
+        }
+    }
+}
 
-        let context = unsafe { context.make_current().unwrap() };
+impl Window {
+    fn new(
+        name: &'static str,
+        clear_color: ColorF,
+        event_loop: &ActiveEventLoop,
+        proxy: &winit::event_loop::EventLoopProxy<()>,
+    ) -> Self {
+        let window_attrs = winit::window::Window::default_attributes()
+            .with_title(name)
+            .with_inner_size(LogicalSize::new(800.0_f64, 600.0_f64));
 
-        let gl = match context.get_api() {
-            glutin::Api::OpenGl => unsafe {
-                gl::GlFns::load_with(|symbol| context.get_proc_address(symbol) as *const _)
-            },
-            glutin::Api::OpenGlEs => unsafe {
-                gl::GlesFns::load_with(|symbol| context.get_proc_address(symbol) as *const _)
-            },
-            glutin::Api::WebGl => unimplemented!(),
+        let template = ConfigTemplateBuilder::new().with_depth_size(24);
+
+        let (window, gl_config) = DisplayBuilder::new()
+            .with_window_attributes(Some(window_attrs))
+            .build(event_loop, template, |configs| {
+                configs.reduce(|acc, config| {
+                    if config.num_samples() > acc.num_samples() { config } else { acc }
+                }).unwrap()
+            })
+            .expect("failed to create GL display and window");
+
+        let window = window.unwrap();
+        let gl_display = gl_config.display();
+
+        let raw_window_handle: RawWindowHandle = window
+            .window_handle()
+            .expect("failed to get window handle")
+            .as_raw();
+
+        let (not_current_ctx, is_gles) = {
+            let gl_attrs = ContextAttributesBuilder::new()
+                .with_context_api(ContextApi::OpenGl(Some(Version::new(3, 2))))
+                .build(Some(raw_window_handle));
+            match unsafe { gl_display.create_context(&gl_config, &gl_attrs) } {
+                Ok(ctx) => (ctx, false),
+                Err(_) => {
+                    let gles_attrs = ContextAttributesBuilder::new()
+                        .with_context_api(ContextApi::Gles(Some(Version::new(3, 0))))
+                        .build(Some(raw_window_handle));
+                    let ctx = unsafe { gl_display.create_context(&gl_config, &gles_attrs) }
+                        .expect("failed to create GLES context");
+                    (ctx, true)
+                }
+            }
         };
+
+        let physical_size = window.inner_size();
+        let surface_attrs = SurfaceAttributesBuilder::<WindowSurface>::new()
+            .build(
+                raw_window_handle,
+                NonZeroU32::new(physical_size.width.max(1)).unwrap(),
+                NonZeroU32::new(physical_size.height.max(1)).unwrap(),
+            );
+
+        let gl_surface = unsafe {
+            gl_display
+                .create_window_surface(&gl_config, &surface_attrs)
+                .expect("failed to create GL surface")
+        };
+
+        let gl_context = not_current_ctx
+            .make_current(&gl_surface)
+            .expect("failed to make GL context current");
+
+        let gl = load_gl_fns(is_gles, &gl_display);
 
         let opts = webrender::WebRenderOptions {
             clear_color,
@@ -93,12 +165,10 @@ impl Window {
         };
 
         let device_size = {
-            let size = context
-                .window()
-                .inner_size();
+            let size = window.inner_size();
             DeviceIntSize::new(size.width as i32, size.height as i32)
         };
-        let notifier = Box::new(Notifier::new(events_loop.create_proxy()));
+        let notifier = Box::new(Notifier::new(proxy.clone()));
         let (renderer, sender) = webrender::create_webrender_instance(gl.clone(), notifier, opts, None).unwrap();
         let mut api = sender.create_api();
         let document_id = api.add_document(device_size);
@@ -117,8 +187,9 @@ impl Window {
         api.send_transaction(document_id, txn);
 
         Window {
-            events_loop,
-            context: Some(unsafe { context.make_not_current().unwrap() }),
+            window,
+            gl_surface,
+            gl_context,
             renderer,
             name,
             epoch,
@@ -130,62 +201,16 @@ impl Window {
     }
 
     fn tick(&mut self) -> bool {
-        let mut do_exit = false;
-        let my_name = &self.name;
-        let renderer = &mut self.renderer;
-        let api = &mut self.api;
-
-        self.events_loop.run_return(|global_event, _elwt, control_flow| {
-            *control_flow = winit::event_loop::ControlFlow::Exit;
-            match global_event {
-                winit::event::Event::WindowEvent { event, .. } => match event {
-                    winit::event::WindowEvent::CloseRequested |
-                    winit::event::WindowEvent::KeyboardInput {
-                        input: winit::event::KeyboardInput {
-                            virtual_keycode: Some(winit::event::VirtualKeyCode::Escape),
-                            ..
-                        },
-                        ..
-                    } => {
-                        do_exit = true
-                    }
-                    winit::event::WindowEvent::KeyboardInput {
-                        input: winit::event::KeyboardInput {
-                            state: winit::event::ElementState::Pressed,
-                            virtual_keycode: Some(winit::event::VirtualKeyCode::P),
-                            ..
-                        },
-                        ..
-                    } => {
-                        println!("set flags {}", my_name);
-                        api.send_debug_cmd(DebugCommand::SetFlags(DebugFlags::PROFILER_DBG))
-                    }
-                    _ => {}
-                }
-                _ => {}
-            }
-        });
-        if do_exit {
-            return true
-        }
-
-        let context = unsafe { self.context.take().unwrap().make_current().unwrap() };
-        let device_pixel_ratio = context.window().scale_factor() as f32;
         let device_size = {
-            let size = context
-                .window()
-                .inner_size();
+            let size = self.window.inner_size();
             DeviceIntSize::new(size.width as i32, size.height as i32)
         };
-        let layout_size = device_size.to_f32() / euclid::Scale::new(device_pixel_ratio);
         let mut txn = Transaction::new();
         let mut builder = DisplayListBuilder::new(self.pipeline_id);
         let space_and_clip = SpaceAndClipInfo::root_scroll(self.pipeline_id);
         builder.begin();
 
-        let bounds = LayoutRect::from_size(layout_size);
         builder.push_simple_stacking_context(
-            bounds.min,
             space_and_clip.spatial_id,
             PrimitiveFlags::IS_BACKFACE_VISIBLE,
         );
@@ -279,14 +304,37 @@ impl Window {
         );
         txn.set_root_pipeline(self.pipeline_id);
         txn.generate_frame(0, true, false, RenderReasons::empty());
-        api.send_transaction(self.document_id, txn);
+        self.api.send_transaction(self.document_id, txn);
 
-        renderer.update();
-        renderer.render(device_size, 0).unwrap();
-        context.swap_buffers().ok();
+        self.renderer.update();
+        self.renderer.render(device_size, 0).unwrap();
+        self.gl_surface.swap_buffers(&self.gl_context).ok();
 
-        self.context = Some(unsafe { context.make_not_current().unwrap() });
+        false
+    }
 
+    fn handle_event(&mut self, event: WindowEvent) -> bool {
+        match event {
+            WindowEvent::CloseRequested => return true,
+            WindowEvent::KeyboardInput {
+                event: KeyEvent {
+                    state: ElementState::Pressed,
+                    ref logical_key,
+                    ..
+                },
+                ..
+            } => {
+                match logical_key.as_ref() {
+                    Key::Named(NamedKey::Escape) => return true,
+                    Key::Character("p") | Key::Character("P") => {
+                        println!("set flags {}", self.name);
+                        self.api.send_debug_cmd(DebugCommand::SetFlags(DebugFlags::PROFILER_DBG));
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
         false
     }
 
@@ -295,21 +343,64 @@ impl Window {
     }
 }
 
-fn main() {
-    let mut win1 = Window::new("window1", ColorF::new(0.3, 0.0, 0.0, 1.0));
-    let mut win2 = Window::new("window2", ColorF::new(0.0, 0.3, 0.0, 1.0));
+struct MultiWindowApp {
+    proxy: winit::event_loop::EventLoopProxy<()>,
+    win1: Option<Window>,
+    win2: Option<Window>,
+}
 
-    loop {
-        if win1.tick() {
-            break;
+impl ApplicationHandler for MultiWindowApp {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.win1.is_some() {
+            return;
         }
-        if win2.tick() {
-            break;
+        self.win1 = Some(Window::new("window1", ColorF::new(0.3, 0.0, 0.0, 1.0), event_loop, &self.proxy));
+        self.win2 = Some(Window::new("window2", ColorF::new(0.0, 0.3, 0.0, 1.0), event_loop, &self.proxy));
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        window_id: winit::window::WindowId,
+        event: WindowEvent,
+    ) {
+        let win = if self.win1.as_ref().map_or(false, |w| w.window.id() == window_id) {
+            self.win1.as_mut()
+        } else if self.win2.as_ref().map_or(false, |w| w.window.id() == window_id) {
+            self.win2.as_mut()
+        } else {
+            None
+        };
+
+        if let Some(win) = win {
+            if win.handle_event(event) {
+                if let Some(w) = self.win1.take() { w.deinit(); }
+                if let Some(w) = self.win2.take() { w.deinit(); }
+                event_loop.exit();
+            }
         }
     }
 
-    win1.deinit();
-    win2.deinit();
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, _event: ()) {
+        if let Some(ref mut win) = self.win1 { win.tick(); }
+        if let Some(ref mut win) = self.win2 { win.tick(); }
+    }
+}
+
+fn main() {
+    let event_loop = EventLoop::with_user_event()
+        .build()
+        .expect("failed to create event loop");
+
+    let proxy = event_loop.create_proxy();
+
+    let mut app = MultiWindowApp {
+        proxy,
+        win1: None,
+        win2: None,
+    };
+
+    event_loop.run_app(&mut app).expect("event loop error");
 }
 
 fn load_file(name: &str) -> Vec<u8> {

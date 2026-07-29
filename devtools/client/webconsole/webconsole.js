@@ -170,14 +170,14 @@ class WebConsole extends EventEmitter {
 
   inputHasSelection() {
     const { editor } = this.jsterm || {};
-    return editor && !!editor.getSelection();
+    return editor && !!editor.getSelectedText();
   }
 
   getInputSelection() {
     if (!this.jsterm || !this.jsterm.editor) {
       return null;
     }
-    return this.jsterm.editor.getSelection();
+    return this.jsterm.editor.getSelectedText();
   }
 
   /**
@@ -378,7 +378,7 @@ class WebConsole extends EventEmitter {
     if (!this.toolbox) {
       return;
     }
-    await this.toolbox.viewSourceInStyleEditorByURL(url, line, column);
+    await this.toolbox.viewStyleSourceByURL(url, line, column);
     this.recordEvent("jump_to_source");
   }
 

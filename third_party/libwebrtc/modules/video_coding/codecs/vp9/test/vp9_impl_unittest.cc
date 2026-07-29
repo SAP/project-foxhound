@@ -14,15 +14,16 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <tuple>
 #include <vector>
 
 #include "absl/container/inlined_vector.h"
 #include "absl/memory/memory.h"
-#include "api/array_view.h"
 #include "api/environment/environment_factory.h"
 #include "api/field_trials.h"
+#include "api/make_ref_counted.h"
 #include "api/scoped_refptr.h"
 #include "api/test/create_frame_generator.h"
 #include "api/test/frame_generator_interface.h"
@@ -31,6 +32,7 @@
 #include "api/units/timestamp.h"
 #include "api/video/color_space.h"
 #include "api/video/encoded_image.h"
+#include "api/video/i420_buffer.h"
 #include "api/video/video_bitrate_allocation.h"
 #include "api/video/video_codec_constants.h"
 #include "api/video/video_codec_type.h"
@@ -62,6 +64,8 @@
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/mappable_native_buffer.h"
+#include "test/testsupport/file_utils.h"
+#include "test/testsupport/frame_reader.h"
 #include "test/video_codec_settings.h"
 #include "third_party/libvpx/source/libvpx/vpx/vp8cx.h"
 #include "third_party/libvpx/source/libvpx/vpx/vpx_codec.h"
@@ -77,12 +81,14 @@ using ::testing::AllOf;
 using ::testing::An;
 using ::testing::AnyNumber;
 using ::testing::ByRef;
+using ::testing::Combine;
 using ::testing::DoAll;
 using ::testing::Each;
 using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
 using ::testing::Field;
 using ::testing::IsEmpty;
+using ::testing::Matcher;
 using ::testing::Mock;
 using ::testing::NiceMock;
 using ::testing::Return;
@@ -92,6 +98,7 @@ using ::testing::SetArgPointee;
 using ::testing::SizeIs;
 using ::testing::TypedEq;
 using ::testing::UnorderedElementsAreArray;
+using ::testing::Values;
 using ::testing::WithArg;
 using EncoderInfo = VideoEncoder::EncoderInfo;
 using FramerateFractions = absl::InlinedVector<uint8_t, kMaxTemporalStreams>;
@@ -175,7 +182,7 @@ TEST_P(TestVp9ImplForPixelFormat, EncodeDecode) {
   CodecSpecificInfo codec_specific_info;
   ASSERT_TRUE(WaitForEncodedFrame(&encoded_frame, &codec_specific_info));
   // First frame should be a key frame.
-  encoded_frame._frameType = VideoFrameType::kVideoFrameKey;
+  encoded_frame.set_frame_type(VideoFrameType::kVideoFrameKey);
   EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK, decoder_->Decode(encoded_frame, 0));
   std::unique_ptr<VideoFrame> decoded_frame;
   std::optional<uint8_t> decoded_qp;
@@ -243,7 +250,7 @@ TEST_P(TestVp9ImplForPixelFormat, DecodedQpEqualsEncodedQp) {
   CodecSpecificInfo codec_specific_info;
   ASSERT_TRUE(WaitForEncodedFrame(&encoded_frame, &codec_specific_info));
   // First frame should be a key frame.
-  encoded_frame._frameType = VideoFrameType::kVideoFrameKey;
+  encoded_frame.set_frame_type(VideoFrameType::kVideoFrameKey);
   EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK, decoder_->Decode(encoded_frame, 0));
   std::unique_ptr<VideoFrame> decoded_frame;
   std::optional<uint8_t> decoded_qp;
@@ -266,6 +273,55 @@ TEST_P(TestVp9ImplForPixelFormat, CheckPresentationTimestamp) {
             encoded_frame.PresentationTimestamp()->us());
 }
 
+TEST_F(TestVp9Impl, RejectsI420FramesWithUnequalChromaStrides) {
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
+            encoder_->InitEncode(&codec_settings_, kSettings));
+
+  auto buffer = I420Buffer::Create(
+      /*width=*/kWidth,
+      /*height=*/kHeight,
+      /*stride_y=*/kWidth,
+      /*stride_u=*/(kWidth + 1) / 2,
+      /*stride_v=*/(kWidth + 1) / 2 + 1);
+
+  VideoFrame frame = VideoFrame::Builder()
+                         .set_video_frame_buffer(buffer)
+                         .set_rtp_timestamp(0)
+                         .build();
+
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_ERROR, encoder_->Encode(frame, nullptr));
+}
+
+TEST_F(TestVp9Impl, RejectsNativeFramesWithUnequalChromaStrides) {
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
+            encoder_->InitEncode(&codec_settings_, kSettings));
+
+  class FakeNativeBuffer : public VideoFrameBuffer {
+   public:
+    FakeNativeBuffer(int width, int height) : width_(width), height_(height) {}
+    Type type() const override { return Type::kNative; }
+    int width() const override { return width_; }
+    int height() const override { return height_; }
+    scoped_refptr<I420BufferInterface> ToI420() override {
+      return I420Buffer::Create(width_, height_, width_, (width_ + 1) / 2,
+                                (width_ + 1) / 2 + 1);
+    }
+
+   private:
+    int width_;
+    int height_;
+  };
+
+  auto buffer = make_ref_counted<FakeNativeBuffer>(kWidth, kHeight);
+
+  VideoFrame frame = VideoFrame::Builder()
+                         .set_video_frame_buffer(buffer)
+                         .set_rtp_timestamp(0)
+                         .build();
+
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_ERROR, encoder_->Encode(frame, nullptr));
+}
+
 TEST_F(TestVp9Impl, SwitchInputPixelFormatsWithoutReconfigure) {
   EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK, encoder_->Encode(NextInputFrame(), nullptr));
   EncodedImage encoded_frame;
@@ -285,6 +341,52 @@ TEST_F(TestVp9Impl, SwitchInputPixelFormatsWithoutReconfigure) {
       std::optional<int>());
   EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK, encoder_->Encode(NextInputFrame(), nullptr));
   ASSERT_TRUE(WaitForEncodedFrame(&encoded_frame, &codec_specific_info));
+}
+
+TEST_F(TestVp9Impl, PostEncodeFrameDrop) {
+  // To trigger post-encode frame drop, encode a frame of a high complexity
+  // using a medium bitrate, then reduce the bitrate and encode the same frame
+  // again.
+  // Using a medium bitrate for the first frame prevents quality and QP
+  // saturation. Encoding the same content twice prevents scene change
+  // detection. The second frame overshoots RC buffer and provokes post-encode
+  // drop.
+  VideoFrame input_frame =
+      VideoFrame::Builder()
+          .set_video_frame_buffer(
+              test::CreateYuvFrameReader(
+                  test::ResourcePath("photo_1850_1110", "yuv"),
+                  {.width = 1850, .height = 1110})
+                  ->PullFrame())
+          .build();
+
+  VideoBitrateAllocation allocation;
+  allocation.SetBitrate(0, 0, 10000000);
+
+  codec_settings_.width = input_frame.width();
+  codec_settings_.height = input_frame.height();
+  codec_settings_.startBitrate = allocation.get_sum_kbps();
+  codec_settings_.SetFrameDropEnabled(true);
+  ConfigureSvc(codec_settings_, 1, 1);
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
+            encoder_->InitEncode(&codec_settings_, kSettings));
+
+  encoder_->SetRates(VideoEncoder::RateControlParameters(
+      allocation, codec_settings_.maxFramerate));
+
+  input_frame.set_rtp_timestamp(1 * kVideoPayloadTypeFrequency /
+                                codec_settings_.maxFramerate);
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK, encoder_->Encode(input_frame, nullptr));
+  EXPECT_EQ(GetNumEncodedFrames(), 1u);
+
+  allocation.SetBitrate(0, 0, 1000);
+  encoder_->SetRates(VideoEncoder::RateControlParameters(
+      allocation, codec_settings_.maxFramerate));
+
+  input_frame.set_rtp_timestamp(2 * kVideoPayloadTypeFrequency /
+                                codec_settings_.maxFramerate);
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK, encoder_->Encode(input_frame, nullptr));
+  EXPECT_EQ(GetNumEncodedFrames(), 1u);
 }
 
 TEST(Vp9ImplTest, ParserQpEqualsEncodedQp) {
@@ -833,7 +935,8 @@ TEST_F(TestVp9Impl, DisableEnableBaseLayerTriggersKeyFrame) {
           codec_specific_info[0].codecSpecific.VP9.ss_data_available;
     }
     // No key-frames generated for disabling layers.
-    EXPECT_EQ(encoded_frame[0]._frameType, VideoFrameType::kVideoFrameDelta);
+    EXPECT_TRUE(encoded_frame[0].IsDelta());
+
     EXPECT_EQ(encoded_frame[0].SpatialIndex().value_or(-1), 2);
   }
   EXPECT_TRUE(seen_ss_data);
@@ -848,7 +951,8 @@ TEST_F(TestVp9Impl, DisableEnableBaseLayerTriggersKeyFrame) {
     std::vector<CodecSpecificInfo> codec_specific_info;
     ASSERT_TRUE(WaitForEncodedFrames(&encoded_frame, &codec_specific_info));
     // Key-frame should be produced.
-    EXPECT_EQ(encoded_frame[0]._frameType, VideoFrameType::kVideoFrameKey);
+    EXPECT_TRUE(encoded_frame[0].IsKey());
+
     EXPECT_EQ(encoded_frame[0].SpatialIndex().value_or(-1), 2);
   }
 
@@ -860,7 +964,8 @@ TEST_F(TestVp9Impl, DisableEnableBaseLayerTriggersKeyFrame) {
     std::vector<EncodedImage> encoded_frame;
     std::vector<CodecSpecificInfo> codec_specific_info;
     ASSERT_TRUE(WaitForEncodedFrames(&encoded_frame, &codec_specific_info));
-    EXPECT_EQ(encoded_frame[0]._frameType, VideoFrameType::kVideoFrameDelta);
+    EXPECT_TRUE(encoded_frame[0].IsDelta());
+
     EXPECT_EQ(encoded_frame[0].SpatialIndex().value_or(-1), 2);
   }
 
@@ -888,7 +993,7 @@ TEST_F(TestVp9Impl, DisableEnableBaseLayerTriggersKeyFrame) {
     const VideoFrameType expected_type = frame_num == 0
                                              ? VideoFrameType::kVideoFrameKey
                                              : VideoFrameType::kVideoFrameDelta;
-    EXPECT_EQ(encoded_frame[0]._frameType, expected_type);
+    EXPECT_EQ(encoded_frame[0].frame_type(), expected_type);
     EXPECT_EQ(encoded_frame[0].SpatialIndex().value_or(-1), 1);
     EXPECT_EQ(encoded_frame[1].SpatialIndex().value_or(-1), 2);
   }
@@ -917,7 +1022,7 @@ TEST_F(TestVp9Impl, DisableEnableBaseLayerTriggersKeyFrame) {
     const VideoFrameType expected_type = frame_num == 0
                                              ? VideoFrameType::kVideoFrameKey
                                              : VideoFrameType::kVideoFrameDelta;
-    EXPECT_EQ(encoded_frame[0]._frameType, expected_type);
+    EXPECT_EQ(encoded_frame[0].frame_type(), expected_type);
   }
 }
 
@@ -980,7 +1085,8 @@ TEST(Vp9ImplTest, DisableEnableBaseLayerWithSvcControllerTriggersKeyFrame) {
   frames = producer.ForceKeyFrame().SetNumInputFrames(1).Encode();
   ASSERT_THAT(frames, SizeIs(1));
   // Key-frame should be produced.
-  EXPECT_EQ(frames[0].encoded_image._frameType, VideoFrameType::kVideoFrameKey);
+  EXPECT_EQ(frames[0].encoded_image.frame_type(),
+            VideoFrameType::kVideoFrameKey);
   ASSERT_TRUE(frames[0].codec_specific_info.template_structure);
   ASSERT_TRUE(frames[0].codec_specific_info.generic_frame_info);
   EXPECT_EQ(frames[0].codec_specific_info.generic_frame_info->spatial_id, 2);
@@ -988,7 +1094,8 @@ TEST(Vp9ImplTest, DisableEnableBaseLayerWithSvcControllerTriggersKeyFrame) {
   frames = producer.SetNumInputFrames(num_frames_to_encode).Encode();
   ASSERT_THAT(frames, SizeIs(num_frames_to_encode));
   for (const auto& frame : frames) {
-    EXPECT_EQ(frame.encoded_image._frameType, VideoFrameType::kVideoFrameDelta);
+    EXPECT_TRUE(frame.encoded_image.IsDelta());
+
     EXPECT_FALSE(frame.codec_specific_info.template_structure);
     ASSERT_TRUE(frame.codec_specific_info.generic_frame_info);
     EXPECT_EQ(frame.codec_specific_info.generic_frame_info->spatial_id, 2);
@@ -1005,12 +1112,13 @@ TEST(Vp9ImplTest, DisableEnableBaseLayerWithSvcControllerTriggersKeyFrame) {
 
   frames = producer.SetNumInputFrames(num_frames_to_encode).Encode();
   ASSERT_THAT(frames, SizeIs(num_frames_to_encode * 2));
-  EXPECT_EQ(frames[0].encoded_image._frameType, VideoFrameType::kVideoFrameKey);
+  EXPECT_EQ(frames[0].encoded_image.frame_type(),
+            VideoFrameType::kVideoFrameKey);
   EXPECT_TRUE(frames[0].codec_specific_info.template_structure);
   ASSERT_TRUE(frames[0].codec_specific_info.generic_frame_info);
   EXPECT_EQ(frames[0].codec_specific_info.generic_frame_info->spatial_id, 1);
   for (size_t i = 1; i < frames.size(); ++i) {
-    EXPECT_EQ(frames[i].encoded_image._frameType,
+    EXPECT_EQ(frames[i].encoded_image.frame_type(),
               VideoFrameType::kVideoFrameDelta);
     EXPECT_FALSE(frames[i].codec_specific_info.template_structure);
     ASSERT_TRUE(frames[i].codec_specific_info.generic_frame_info);
@@ -1094,7 +1202,8 @@ TEST_F(TestVp9Impl, DisableEnableBaseLayerTriggersKeyFrameForScreenshare) {
     EXPECT_EQ(codec_specific_info[0].codecSpecific.VP9.ss_data_available,
               frame_num == 0);
     // No key-frames generated for disabling layers.
-    EXPECT_EQ(encoded_frame[0]._frameType, VideoFrameType::kVideoFrameDelta);
+    EXPECT_TRUE(encoded_frame[0].IsDelta());
+
     EXPECT_EQ(encoded_frame[0].SpatialIndex().value_or(-1), 2);
   }
 
@@ -1108,7 +1217,7 @@ TEST_F(TestVp9Impl, DisableEnableBaseLayerTriggersKeyFrameForScreenshare) {
     std::vector<CodecSpecificInfo> codec_specific_info;
     ASSERT_TRUE(WaitForEncodedFrames(&encoded_frame, &codec_specific_info));
     // Key-frame should be produced.
-    EXPECT_EQ(encoded_frame[0]._frameType, VideoFrameType::kVideoFrameKey);
+    EXPECT_TRUE(encoded_frame[0].IsKey());
 
     // Enable the second layer back.
     // Allocate high bit rate to avoid frame dropping due to rate control.
@@ -1133,7 +1242,7 @@ TEST_F(TestVp9Impl, DisableEnableBaseLayerTriggersKeyFrameForScreenshare) {
     const VideoFrameType expected_type = frame_num == 0
                                              ? VideoFrameType::kVideoFrameKey
                                              : VideoFrameType::kVideoFrameDelta;
-    EXPECT_EQ(encoded_frame[0]._frameType, expected_type);
+    EXPECT_EQ(encoded_frame[0].frame_type(), expected_type);
     EXPECT_EQ(encoded_frame[0].SpatialIndex().value_or(-1), 1);
     EXPECT_EQ(encoded_frame[1].SpatialIndex().value_or(-1), 2);
   }
@@ -1160,7 +1269,7 @@ TEST_F(TestVp9Impl, DisableEnableBaseLayerTriggersKeyFrameForScreenshare) {
     const VideoFrameType expected_type = frame_num == 0
                                              ? VideoFrameType::kVideoFrameKey
                                              : VideoFrameType::kVideoFrameDelta;
-    EXPECT_EQ(encoded_frame[0]._frameType, expected_type);
+    EXPECT_EQ(encoded_frame[0].frame_type(), expected_type);
   }
 }
 
@@ -1314,19 +1423,17 @@ TEST_F(TestVp9Impl,
         const bool is_first_upper_layer_frame = (sl_idx > 0 && frame_num == 0);
         if (is_first_upper_layer_frame) {
           if (inter_layer_pred == InterLayerPredMode::kOn) {
-            EXPECT_EQ(encoded_frame[0]._frameType,
-                      VideoFrameType::kVideoFrameDelta);
+            EXPECT_TRUE(encoded_frame[0].IsDelta());
           } else {
-            EXPECT_EQ(encoded_frame[0]._frameType,
-                      VideoFrameType::kVideoFrameKey);
+            EXPECT_TRUE(encoded_frame[0].IsKey());
           }
+
         } else if (sl_idx == 0 && frame_num == 0) {
-          EXPECT_EQ(encoded_frame[0]._frameType,
-                    VideoFrameType::kVideoFrameKey);
+          EXPECT_TRUE(encoded_frame[0].IsKey());
+
         } else {
           for (size_t i = 0; i <= sl_idx; ++i) {
-            EXPECT_EQ(encoded_frame[i]._frameType,
-                      VideoFrameType::kVideoFrameDelta);
+            EXPECT_TRUE(encoded_frame[i].IsDelta());
           }
         }
       }
@@ -1372,8 +1479,7 @@ TEST_F(TestVp9Impl,
         ASSERT_EQ(codec_specific_info.size(), sl_idx + 1);
 
         for (size_t i = 0; i <= sl_idx; ++i) {
-          const bool is_keyframe =
-              encoded_frame[0]._frameType == VideoFrameType::kVideoFrameKey;
+          const bool is_keyframe = encoded_frame[0].IsKey();
           const bool is_first_upper_layer_frame =
               (i == sl_idx && frame_num == 0);
           // Interframe references are there, unless it's a keyframe,
@@ -1439,7 +1545,8 @@ TEST_F(TestVp9Impl, EnablingDisablingUpperLayerInTheSameGof) {
   EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK, encoder_->Encode(NextInputFrame(), nullptr));
   ASSERT_TRUE(WaitForEncodedFrames(&encoded_frame, &codec_specific_info));
   ASSERT_EQ(codec_specific_info.size(), 1u);
-  EXPECT_EQ(encoded_frame[0]._frameType, VideoFrameType::kVideoFrameDelta);
+  EXPECT_TRUE(encoded_frame[0].IsDelta());
+
   EXPECT_EQ(codec_specific_info[0].codecSpecific.VP9.temporal_idx, 1);
   EXPECT_EQ(codec_specific_info[0].codecSpecific.VP9.inter_pic_predicted, true);
 
@@ -1456,7 +1563,8 @@ TEST_F(TestVp9Impl, EnablingDisablingUpperLayerInTheSameGof) {
   EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK, encoder_->Encode(NextInputFrame(), nullptr));
   ASSERT_TRUE(WaitForEncodedFrames(&encoded_frame, &codec_specific_info));
   ASSERT_EQ(codec_specific_info.size(), 2u);
-  EXPECT_EQ(encoded_frame[0]._frameType, VideoFrameType::kVideoFrameDelta);
+  EXPECT_TRUE(encoded_frame[0].IsDelta());
+
   EXPECT_EQ(codec_specific_info[0].codecSpecific.VP9.temporal_idx, 0);
   EXPECT_EQ(codec_specific_info[0].codecSpecific.VP9.inter_pic_predicted, true);
   EXPECT_EQ(codec_specific_info[1].codecSpecific.VP9.inter_pic_predicted, true);
@@ -1513,7 +1621,8 @@ TEST_F(TestVp9Impl, EnablingDisablingUpperLayerAccrossGof) {
               encoder_->Encode(NextInputFrame(), nullptr));
     ASSERT_TRUE(WaitForEncodedFrames(&encoded_frame, &codec_specific_info));
     ASSERT_EQ(codec_specific_info.size(), 1u);
-    EXPECT_EQ(encoded_frame[0]._frameType, VideoFrameType::kVideoFrameDelta);
+    EXPECT_TRUE(encoded_frame[0].IsDelta());
+
     EXPECT_EQ(codec_specific_info[0].codecSpecific.VP9.temporal_idx, 1 - i % 2);
     EXPECT_EQ(codec_specific_info[0].codecSpecific.VP9.inter_pic_predicted,
               true);
@@ -1532,7 +1641,8 @@ TEST_F(TestVp9Impl, EnablingDisablingUpperLayerAccrossGof) {
   EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK, encoder_->Encode(NextInputFrame(), nullptr));
   ASSERT_TRUE(WaitForEncodedFrames(&encoded_frame, &codec_specific_info));
   ASSERT_EQ(codec_specific_info.size(), 2u);
-  EXPECT_EQ(encoded_frame[0]._frameType, VideoFrameType::kVideoFrameDelta);
+  EXPECT_TRUE(encoded_frame[0].IsDelta());
+
   EXPECT_EQ(codec_specific_info[0].codecSpecific.VP9.temporal_idx, 0);
   EXPECT_EQ(codec_specific_info[0].codecSpecific.VP9.inter_pic_predicted, true);
   EXPECT_EQ(codec_specific_info[1].codecSpecific.VP9.inter_pic_predicted,
@@ -1896,7 +2006,7 @@ TEST_F(TestVp9Impl, EncoderInfoWithBitrateLimitsFromFieldTrial) {
 
   EXPECT_THAT(
       encoder_->GetEncoderInfo().resolution_bitrate_limits,
-      ::testing::ElementsAre(
+      ElementsAre(
           VideoEncoder::ResolutionBitrateLimits{123, 11000, 44000, 77000},
           VideoEncoder::ResolutionBitrateLimits{456, 22000, 55000, 88000},
           VideoEncoder::ResolutionBitrateLimits{789, 33000, 66000, 99000}));
@@ -1976,18 +2086,18 @@ TEST_F(TestVp9Impl, EncoderInfoFpsAllocationFlexibleMode) {
   expected_fps_allocation[1].push_back(EncoderInfo::kMaxFramerateFraction / 2);
   expected_fps_allocation[2].push_back(EncoderInfo::kMaxFramerateFraction);
   EXPECT_THAT(encoder_->GetEncoderInfo().fps_allocation,
-              ::testing::ElementsAreArray(expected_fps_allocation));
+              ElementsAreArray(expected_fps_allocation));
 
   // SetRates with current fps does not alter outcome.
   encoder_->SetRates(rate_params);
   EXPECT_THAT(encoder_->GetEncoderInfo().fps_allocation,
-              ::testing::ElementsAreArray(expected_fps_allocation));
+              ElementsAreArray(expected_fps_allocation));
 
   // Higher fps than the codec wants, should still not affect outcome.
   rate_params.framerate_fps *= 2;
   encoder_->SetRates(rate_params);
   EXPECT_THAT(encoder_->GetEncoderInfo().fps_allocation,
-              ::testing::ElementsAreArray(expected_fps_allocation));
+              ElementsAreArray(expected_fps_allocation));
 }
 
 class Vp9ImplWithLayeringTest
@@ -2054,7 +2164,7 @@ TEST_P(Vp9ImplWithLayeringTest, FlexibleMode) {
     if (picture_idx == 0) {
       EXPECT_EQ(vp9.num_ref_pics, 0) << "Frame " << i;
     } else {
-      EXPECT_THAT(MakeArrayView(vp9.p_diff, vp9.num_ref_pics),
+      EXPECT_THAT(std::span(vp9.p_diff, vp9.num_ref_pics),
                   UnorderedElementsAreArray(gof.pid_diff[gof_idx],
                                             gof.num_ref_pics[gof_idx]))
           << "Frame " << i;
@@ -2064,8 +2174,7 @@ TEST_P(Vp9ImplWithLayeringTest, FlexibleMode) {
 
 INSTANTIATE_TEST_SUITE_P(All,
                          Vp9ImplWithLayeringTest,
-                         ::testing::Combine(::testing::Values(1, 2, 3),
-                                            ::testing::Values(1, 2, 3)));
+                         Combine(Values(1, 2, 3), Values(1, 2, 3)));
 
 class TestVp9ImplFrameDropping : public TestVp9Impl {
  protected:
@@ -2211,7 +2320,7 @@ TEST_F(TestVp9ImplProfile2, EncodeDecode) {
   CodecSpecificInfo codec_specific_info;
   ASSERT_TRUE(WaitForEncodedFrame(&encoded_frame, &codec_specific_info));
   // First frame should be a key frame.
-  encoded_frame._frameType = VideoFrameType::kVideoFrameKey;
+  encoded_frame.set_frame_type(VideoFrameType::kVideoFrameKey);
   EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK, decoder_->Decode(encoded_frame, 0));
   std::unique_ptr<VideoFrame> decoded_frame;
   std::optional<uint8_t> decoded_qp;
@@ -2304,7 +2413,7 @@ TEST_F(TestVp9Impl, ReenablingUpperLayerAfterKFWithInterlayerPredIsEnabled) {
             encoder_->Encode(NextInputFrame(), &frame_types));
   ASSERT_TRUE(WaitForEncodedFrames(&encoded_frames, &codec_specific));
   EXPECT_EQ(encoded_frames.size(), num_spatial_layers - 1);
-  ASSERT_EQ(encoded_frames[0]._frameType, VideoFrameType::kVideoFrameKey);
+  ASSERT_TRUE(encoded_frames[0].IsKey());
 
   // Re-enable the last layer.
   bitrate_allocation.SetBitrate(
@@ -2318,7 +2427,7 @@ TEST_F(TestVp9Impl, ReenablingUpperLayerAfterKFWithInterlayerPredIsEnabled) {
   EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK, encoder_->Encode(NextInputFrame(), nullptr));
   ASSERT_TRUE(WaitForEncodedFrames(&encoded_frames, &codec_specific));
   EXPECT_EQ(encoded_frames.size(), num_spatial_layers);
-  EXPECT_EQ(encoded_frames[0]._frameType, VideoFrameType::kVideoFrameDelta);
+  EXPECT_TRUE(encoded_frames[0].IsDelta());
 }
 
 TEST_F(TestVp9Impl, HandlesEmptyDecoderConfigure) {
@@ -2331,8 +2440,8 @@ TEST_F(TestVp9Impl, HandlesEmptyDecoderConfigure) {
 INSTANTIATE_TEST_SUITE_P(
     TestVp9ImplForPixelFormat,
     TestVp9ImplForPixelFormat,
-    ::testing::Values(test::FrameGeneratorInterface::OutputType::kI420,
-                      test::FrameGeneratorInterface::OutputType::kNV12),
+    Values(test::FrameGeneratorInterface::OutputType::kI420,
+           test::FrameGeneratorInterface::OutputType::kNV12),
     [](const auto& info) {
       return test::FrameGeneratorInterface::OutputTypeToString(info.param);
     });
@@ -2453,6 +2562,235 @@ TEST_F(TestVp9Impl, ScalesInputToActiveResolution) {
 
   encoder.SetRates(VideoEncoder::RateControlParameters(bitrate_allocation,
                                                        settings.maxFramerate));
+}
+
+TEST_F(TestVp9Impl, ReportFrameDroppedOnZeroSizePacket) {
+  // Keep a raw pointer for EXPECT calls and the like. Ownership is otherwise
+  // passed on to LibvpxVp9Encoder.
+  auto* const vpx = new NiceMock<MockLibvpxInterface>();
+  LibvpxVp9Encoder encoder(CreateEnvironment(), {},
+                           absl::WrapUnique<LibvpxInterface>(vpx));
+
+  VideoCodec settings = DefaultCodecSettings();
+  constexpr int kNumSpatialLayers = 1;
+  constexpr int kNumTemporalLayers = 1;
+  ConfigureSvc(settings, kNumSpatialLayers, kNumTemporalLayers);
+
+  // Set up the vpx to return a packet with size 0 (dropped frame).
+  vpx_image_t img;
+  ON_CALL(*vpx, img_wrap).WillByDefault(GetWrapImageFunction(&img));
+  ON_CALL(*vpx, codec_enc_init).WillByDefault(Return(VPX_CODEC_OK));
+  ON_CALL(*vpx, codec_enc_config_default).WillByDefault(Return(VPX_CODEC_OK));
+  // Capture the callback and handle Layer ID query.
+  vpx_codec_priv_output_cx_pkt_cb_pair_t callback_pointer = {};
+  EXPECT_CALL(*vpx, codec_control(_, _, Matcher<void*>(_)))
+      .WillRepeatedly([&](vpx_codec_ctx_t*, vp8e_enc_control_id id,
+                          void* param) {
+        if (id == VP9E_GET_SVC_LAYER_ID) {
+          vpx_svc_layer_id_t* layer_id =
+              static_cast<vpx_svc_layer_id_t*>(param);
+          layer_id->spatial_layer_id = 0;
+          return VPX_CODEC_OK;
+        }
+        if (id == VP9E_REGISTER_CX_CALLBACK) {
+          callback_pointer =
+              *reinterpret_cast<vpx_codec_priv_output_cx_pkt_cb_pair_t*>(param);
+          return VPX_CODEC_OK;
+        }
+        return VPX_CODEC_OK;
+      });
+
+  // Frame 1: Valid Keyframe.
+  // Frame 2: Dropped Frame (sz=0).
+  EXPECT_CALL(*vpx, codec_encode)
+      .Times(2)
+      .WillOnce([&](vpx_codec_ctx_t*, const vpx_image_t*, vpx_codec_pts_t,
+                    uint64_t, vpx_enc_frame_flags_t, uint64_t) {
+        if (callback_pointer.output_cx_pkt) {
+          vpx_codec_cx_pkt pkt;
+          memset(&pkt, 0, sizeof(pkt));
+          pkt.kind = VPX_CODEC_CX_FRAME_PKT;
+          std::vector<uint8_t> data(1000);  // Dummy data
+          pkt.data.frame.buf = data.data();
+          pkt.data.frame.sz = data.size();
+          pkt.data.frame.flags = VPX_FRAME_IS_KEY;
+          pkt.data.frame.width[0] = 1280;
+          pkt.data.frame.height[0] = 720;
+          callback_pointer.output_cx_pkt(&pkt, callback_pointer.user_priv);
+        }
+        return VPX_CODEC_OK;
+      })
+      .WillOnce([&](vpx_codec_ctx_t*, const vpx_image_t*, vpx_codec_pts_t,
+                    uint64_t, vpx_enc_frame_flags_t, uint64_t) {
+        if (callback_pointer.output_cx_pkt) {
+          vpx_codec_cx_pkt pkt;
+          memset(&pkt, 0, sizeof(pkt));
+          pkt.kind = VPX_CODEC_CX_FRAME_PKT;
+          pkt.data.frame.sz = 0;  // Size 0 implies drop.
+          callback_pointer.output_cx_pkt(&pkt, callback_pointer.user_priv);
+        }
+        return VPX_CODEC_OK;
+      });
+
+  MockEncodedImageCallback callback;
+  encoder.RegisterEncodeCompleteCallback(&callback);
+  ASSERT_EQ(WEBRTC_VIDEO_CODEC_OK, encoder.InitEncode(&settings, kSettings));
+  EXPECT_NE(callback_pointer.output_cx_pkt, nullptr);
+
+  // Expectation for valid frame.
+  EXPECT_CALL(callback, OnEncodedImage)
+      .WillOnce([&](const EncodedImage& encoded_image,
+                    const CodecSpecificInfo* codec_specific_info) {
+        EXPECT_TRUE(codec_specific_info->end_of_picture);
+        return EncodedImageCallback::Result(EncodedImageCallback::Result::OK);
+      });
+
+  // Expectation for dropped frame.
+  // end_of_picture should be true because it's the only layer.
+  EXPECT_CALL(callback, OnFrameDropped(_, 0, /*is_end_of_temporal_unit=*/true));
+
+  // Encode Frame 1.
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK, encoder.Encode(NextInputFrame(), nullptr));
+  // Encode Frame 2.
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK, encoder.Encode(NextInputFrame(), nullptr));
+}
+
+TEST_F(TestVp9Impl, ReportFrameDroppedOnLayerDrop) {
+  // Keep a raw pointer for EXPECT calls and the like. Ownership is otherwise
+  // passed on to LibvpxVp9Encoder.
+  auto* const vpx = new NiceMock<MockLibvpxInterface>();
+  LibvpxVp9Encoder encoder(CreateEnvironment(), {},
+                           absl::WrapUnique<LibvpxInterface>(vpx));
+
+  VideoCodec settings = DefaultCodecSettings();
+  constexpr int kNumSpatialLayers = 2;
+  constexpr int kNumTemporalLayers = 1;
+  ConfigureSvc(settings, kNumSpatialLayers, kNumTemporalLayers);
+
+  // Set up the vpx to return a packet with size 0 (dropped frame).
+  vpx_image_t img;
+  ON_CALL(*vpx, img_wrap).WillByDefault(GetWrapImageFunction(&img));
+  ON_CALL(*vpx, codec_enc_init).WillByDefault(Return(VPX_CODEC_OK));
+  ON_CALL(*vpx, codec_enc_config_default).WillByDefault(Return(VPX_CODEC_OK));
+  // Capture the callback and handle Layer ID query.
+  vpx_codec_priv_output_cx_pkt_cb_pair_t callback_pointer = {};
+  // Shared state to synchronize layer ID between codec_encode and
+  // codec_control.
+  int current_adj_layer_id = 0;
+
+  // Expectation for VP9E_GET_SVC_LAYER_ID (vpx_svc_layer_id_t* overload).
+  EXPECT_CALL(*vpx, codec_control(_, _, A<vpx_svc_layer_id_t*>()))
+      .WillRepeatedly([&](vpx_codec_ctx_t*, vp8e_enc_control_id,
+                          vpx_svc_layer_id_t* layer_id) {
+        layer_id->spatial_layer_id = current_adj_layer_id;
+        return VPX_CODEC_OK;
+      });
+
+  // Expectation for VP9E_REGISTER_CX_CALLBACK (void* overload).
+  EXPECT_CALL(*vpx,
+              codec_control(_, VP9E_REGISTER_CX_CALLBACK, Matcher<void*>(_)))
+      .WillRepeatedly([&](vpx_codec_ctx_t*, vp8e_enc_control_id, void* param) {
+        callback_pointer =
+            *reinterpret_cast<vpx_codec_priv_output_cx_pkt_cb_pair_t*>(param);
+        return VPX_CODEC_OK;
+      });
+
+  // Frame 1: SL0 dropped, SL1 encoded.
+  // Frame 2: SL0 encoded, SL1 dropped.
+  EXPECT_CALL(*vpx, codec_encode)
+      .Times(2)  // 2 frames
+      .WillRepeatedly([&](vpx_codec_ctx_t*, const vpx_image_t*, vpx_codec_pts_t,
+                          uint64_t, vpx_enc_frame_flags_t, uint64_t) {
+        static int frame_count = 0;
+        int frame_idx = frame_count++;
+
+        if (callback_pointer.output_cx_pkt) {
+          // Layer 0
+          {
+            current_adj_layer_id = 0;
+            vpx_codec_cx_pkt pkt;
+            memset(&pkt, 0, sizeof(pkt));
+            pkt.kind = VPX_CODEC_CX_FRAME_PKT;
+            std::vector<uint8_t> data(1000);  // Shared dummy data
+
+            if (frame_idx == 0) {  // Frame 1, SL0: dropped.
+              pkt.data.frame.sz = 0;
+            } else {  // Frame 2, SL0: encoded.
+              pkt.data.frame.buf = data.data();
+              pkt.data.frame.sz = data.size();
+              pkt.data.frame.flags = VPX_FRAME_IS_KEY;
+              pkt.data.frame.width[0] = 1280;
+              pkt.data.frame.height[0] = 720;
+            }
+            callback_pointer.output_cx_pkt(&pkt, callback_pointer.user_priv);
+          }
+          // Layer 1
+          {
+            current_adj_layer_id = 1;
+            vpx_codec_cx_pkt pkt;
+            memset(&pkt, 0, sizeof(pkt));
+            pkt.kind = VPX_CODEC_CX_FRAME_PKT;
+            std::vector<uint8_t> data(1000);
+
+            if (frame_idx == 0) {  // Frame 1, SL1: encoded.
+              pkt.data.frame.buf = data.data();
+              pkt.data.frame.sz = data.size();
+              pkt.data.frame.flags = VPX_FRAME_IS_KEY;
+              pkt.data.frame.width[0] = 1280;
+              pkt.data.frame.height[0] = 720;
+            } else {  // Frame 2, SL1: dropped.
+              pkt.data.frame.sz = 0;
+            }
+            callback_pointer.output_cx_pkt(&pkt, callback_pointer.user_priv);
+          }
+        }
+        return VPX_CODEC_OK;
+      });
+
+  MockEncodedImageCallback callback;
+  encoder.RegisterEncodeCompleteCallback(&callback);
+  ASSERT_EQ(WEBRTC_VIDEO_CODEC_OK, encoder.InitEncode(&settings, kSettings));
+  EXPECT_NE(callback_pointer.output_cx_pkt, nullptr);
+
+  // Expectations.
+  // Sequence of events:
+  // 1. Frame 1 SL0: dropped.
+  // 2. Frame 1 SL1: encoded.
+  // 3. Frame 2 SL0: encoded.
+  // 4. Frame 2 SL1: dropped.
+
+  EXPECT_CALL(callback, OnFrameDropped)
+      .Times(2)
+      .WillOnce([&](uint32_t, int spatial_idx, bool is_end_of_temporal_unit) {
+        EXPECT_EQ(spatial_idx, 0);
+        EXPECT_FALSE(is_end_of_temporal_unit);
+      })
+      .WillOnce([&](uint32_t, int spatial_idx, bool is_end_of_temporal_unit) {
+        EXPECT_EQ(spatial_idx, 1);
+        EXPECT_TRUE(is_end_of_temporal_unit);
+      });
+
+  EXPECT_CALL(callback, OnEncodedImage)
+      .Times(2)
+      .WillOnce([&](const EncodedImage& encoded_image,
+                    const CodecSpecificInfo* codec_specific_info) {
+        // Frame 1 SL1
+        EXPECT_EQ(encoded_image.SpatialIndex(), 1);
+        EXPECT_TRUE(codec_specific_info->end_of_picture);
+        return EncodedImageCallback::Result(EncodedImageCallback::Result::OK);
+      })
+      .WillOnce([&](const EncodedImage& encoded_image,
+                    const CodecSpecificInfo* codec_specific_info) {
+        // Frame 2 SL0
+        EXPECT_EQ(encoded_image.SpatialIndex(), 0);
+        EXPECT_FALSE(codec_specific_info->end_of_picture);
+        return EncodedImageCallback::Result(EncodedImageCallback::Result::OK);
+      });
+
+  // Encode Frame 1.
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK, encoder.Encode(NextInputFrame(), nullptr));
+  // Encode Frame 2.
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK, encoder.Encode(NextInputFrame(), nullptr));
 }
 
 TEST(Vp9SpeedSettingsTrialsTest, NoSvcUsesGlobalSpeedFromTl0InLayerConfig) {
@@ -2754,7 +3092,7 @@ TEST_P(TestVp9ImplSvcFrameDropConfig, SvcFrameDropConfig) {
 INSTANTIATE_TEST_SUITE_P(
     All,
     TestVp9ImplSvcFrameDropConfig,
-    ::testing::Values(
+    Values(
         // Flexible mode is disabled, KSVC. Layer drop is not allowed.
         SvcFrameDropConfigTestParameters{
             .flexible_mode = false,

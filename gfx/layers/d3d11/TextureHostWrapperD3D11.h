@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +7,7 @@
 
 #include <deque>
 #include <unordered_map>
+#include <dxgiformat.h>
 
 #include "mozilla/layers/LayersTypes.h"
 #include "mozilla/layers/TextureHost.h"
@@ -34,9 +33,9 @@ class TextureWrapperD3D11Allocator {
   RefPtr<ID3D11Texture2D> CreateOrRecycle(gfx::SurfaceFormat aSurfaceFormat,
                                           gfx::IntSize aSize);
 
-  void EnsureStagingTextureNV12(RefPtr<ID3D11Device> aDevice);
+  void EnsureStagingTexture(RefPtr<ID3D11Device> aDevice);
 
-  RefPtr<ID3D11Texture2D> GetStagingTextureNV12();
+  RefPtr<ID3D11Texture2D> GetStagingTexture();
 
   RefPtr<ID3D11Device> GetDevice();
 
@@ -73,6 +72,7 @@ class TextureWrapperD3D11Allocator {
 
   RefPtr<ID3D11Device> mDevice;
   gfx::IntSize mSize;
+  DXGI_FORMAT mDXGIFormat = DXGI_FORMAT_NV12;
   std::deque<RefPtr<ID3D11Texture2D>> mRecycledTextures;
 };
 

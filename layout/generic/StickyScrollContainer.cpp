@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -56,6 +54,15 @@ static nscoord ComputeStickySideOffset(Side aSide,
                                                 side->AsLengthPercentage());
 }
 
+static nsSize GetScrollContainerSize(
+    const ScrollContainerFrame* aScrollContainer) {
+  if (aScrollContainer->IsRootScrollFrameOfDocument() &&
+      aScrollContainer->PresContext()->IsRootContentDocumentCrossProcess()) {
+    return aScrollContainer->PresShell()->GetFixedViewportSize();
+  }
+  return aScrollContainer->GetScrolledFrameSize();
+}
+
 // static
 void StickyScrollContainer::ComputeStickyOffsets(nsIFrame* aFrame) {
   ScrollContainerFrame* scrollContainerFrame =
@@ -68,9 +75,7 @@ void StickyScrollContainer::ComputeStickyOffsets(nsIFrame* aFrame) {
     return;
   }
 
-  nsSize scrollContainerSize =
-      scrollContainerFrame->GetScrolledFrameSizeAccountingForDynamicToolbar();
-
+  nsSize scrollContainerSize = GetScrollContainerSize(scrollContainerFrame);
   nsMargin computedOffsets;
   const nsStylePosition* position = aFrame->StylePosition();
 
@@ -171,8 +176,7 @@ void StickyScrollContainer::ComputeStickyLimits(nsIFrame* aFrame,
 
   nsMargin sfPadding = scrolledFrame->GetUsedPadding();
   nsPoint sfOffset = aFrame->GetParent()->GetOffsetTo(scrolledFrame);
-  nsSize sfSize =
-      mScrollContainerFrame->GetScrolledFrameSizeAccountingForDynamicToolbar();
+  nsSize sfSize = GetScrollContainerSize(mScrollContainerFrame);
   StyleDirection direction = cbFrame->StyleVisibility()->mDirection;
   nsMargin effectiveOffsets = *computedOffsets;
 

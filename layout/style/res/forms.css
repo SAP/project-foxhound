@@ -94,13 +94,13 @@ input {
   font: -moz-field;
   text-rendering: optimizeLegibility;
   cursor: text;
+  resize: none !important;
 }
 
 textarea {
   display: inline-block;
   appearance: auto;
   -moz-default-appearance: textarea;
-  margin-block: 1px;
   border: 2px inset ButtonBorder;
   padding: 2px;
   background-color: Field;
@@ -132,27 +132,22 @@ button,
 ::placeholder,
 ::-moz-text-control-editing-root,
 ::-moz-text-control-preview {
-  overflow: auto;
-  border: 0;
-  padding: inherit;
-  margin: 0;
-  text-decoration: inherit;
   display: inline-block;
+  text-decoration: inherit;
   ime-mode: inherit;
-  resize: inherit;
-  scrollbar-width: inherit;
+  inline-size: 100%;
   -moz-control-character-visibility: visible;
+  /* We want to align the first baselines of the elements,
+   * if they are multiline */
+  baseline-source: first;
+}
+
+:-moz-autofill-preview::-moz-text-control-editing-root {
   visibility: hidden;
 }
 
 ::placeholder,
 ::-moz-text-control-preview {
-  /*
-   * Changing resize would display a broken behaviour and will assert.
-   */
-  resize: none;
-  overflow: hidden;
-
   /*
    * The placeholder or preview should be ignored by pointer / selection / etc.
    * Otherwise, we might have some unexpected behavior like the resize handle
@@ -160,6 +155,14 @@ button,
    */
   pointer-events: none;
   user-select: none;
+  display: none;
+  /* Make sure we overlap the text control editor */
+  margin-inline-start: -100%;
+}
+
+input::placeholder,
+input::-moz-text-control-preview {
+  overflow-inline: clip;
 }
 
 ::-moz-text-control-preview {
@@ -171,22 +174,17 @@ button,
   color: color-mix(in srgb, currentColor 54%, transparent);
 }
 
-:not(:-moz-autofill-preview)::-moz-text-control-editing-root,
-:placeholder-shown:not(:autofill)::placeholder,
-:autofill::-moz-text-control-preview {
-  visibility: inherit;
+:placeholder-shown:not(:-moz-autofill-preview)::placeholder,
+:-moz-autofill-preview::-moz-text-control-preview {
+  display: inline-block;
 }
 
 input::placeholder,
 input::-moz-text-control-editing-root,
 input::-moz-text-control-preview {
-  scrollbar-width: none;
-  resize: none;
   word-wrap: normal;
   white-space: pre;
   hyphens: none;
-  /* Make the line-height equal to the available height */
-  line-height: -moz-block-height !important;
 }
 
 input[type="password"] {
@@ -202,13 +200,6 @@ input[type="password"]::-moz-text-control-preview {
    * text is unmasked.
    */
   unicode-bidi: bidi-override;
-}
-
-textarea::-moz-text-control-editing-root {
-  scroll-behavior: inherit;
-  overscroll-behavior: inherit;
-  /* StyleAdjuster makes sure that the overflow value ends up being scrollable */
-  overflow: inherit;
 }
 
 select {
@@ -248,10 +239,12 @@ select::-moz-select-content {
   user-select: none;
 }
 
-select::-moz-select-picker-icon {
+/* stylelint-disable-next-line selector-pseudo-element-no-unknown */
+select::picker-icon {
   display: inline-block;
   appearance: auto;
   -moz-default-appearance: -moz-menulist-arrow-button;
+  content: "\feff";
   pointer-events: none;
   -webkit-text-security: none;
   max-block-size: 100%;
@@ -260,6 +253,11 @@ select::-moz-select-picker-icon {
    * baseline of the combobox to match the baseline of the label, so the
    * dropmarker is what gets the vertical-align. */
   vertical-align: top;
+}
+
+/* stylelint-disable-next-line selector-pseudo-element-no-unknown */
+select:-moz-select-list-box::picker-icon {
+  display: none;
 }
 
 select:-moz-select-list-box {
@@ -275,6 +273,22 @@ select:-moz-select-list-box {
   @media (-moz-platform: macos) {
     scrollbar-width: thin;
   }
+}
+
+/* stylelint-disable-next-line selector-pseudo-element-no-unknown */
+select::picker(select) {
+  /* TODO(custom-select): Remove when making the picker a proper popover */
+  display: none;
+}
+
+/* stylelint-disable-next-line selector-pseudo-element-no-unknown */
+select:-moz-select-list-box::picker(select) {
+  display: contents !important;
+}
+
+select > button:first-child {
+  all: unset;
+  display: contents;
 }
 
 option[label]::before {
@@ -388,7 +402,7 @@ input[type="hidden"] {
 }
 
 /* image buttons */
-input[type="image"] {
+input:where([type="image"]) {
   appearance: none;
   -moz-default-appearance: none;
   padding: unset;
@@ -399,7 +413,7 @@ input[type="image"] {
   cursor: pointer;
 }
 
-input[type="image"]:disabled {
+input:where([type="image"]):disabled {
   cursor: unset;
 }
 
@@ -437,8 +451,7 @@ input[type="checkbox"] {
 
 /* Common features of radio buttons and check boxes */
 
-input[type="radio"],
-input[type="checkbox"] {
+input:where([type="radio"], [type="checkbox"]) {
   box-sizing: border-box;
   cursor: default;
   /* unset some values from the general 'input' rule above: */
@@ -448,7 +461,7 @@ input[type="checkbox"] {
   color: unset;
 }
 
-input:is([type="radio"], [type="checkbox"]):is(:disabled, :disabled:active, :disabled:hover:active) {
+input:where([type="radio"], [type="checkbox"]):is(:disabled, :disabled:active, :disabled:hover:active) {
   cursor: unset;
 }
 
@@ -465,7 +478,7 @@ input[type="search"] {
    input[type=color] */
 button,
 ::file-selector-button,
-input:is([type="color"], [type="reset"], [type="button"], [type="submit"]) {
+input:where([type="color"], [type="reset"], [type="button"], [type="submit"]) {
   appearance: auto;
   -moz-default-appearance: button;
   /* The sum of border and padding on block-start and block-end
@@ -484,7 +497,7 @@ input:is([type="color"], [type="reset"], [type="button"], [type="submit"]) {
    input[type=color] */
 button,
 ::file-selector-button,
-input:is([type="reset"], [type="button"], [type="submit"]) {
+input:where([type="reset"], [type="button"], [type="submit"]) {
   color: ButtonText;
   font: -moz-button;
   white-space: pre;
@@ -499,9 +512,13 @@ input[type="color"] {
 }
 
 /* https://github.com/whatwg/html/issues/9976 */
-input:not([type="image" i], [type="range" i], [type="checkbox" i], [type="radio" i]) {
+input:not([type="range" i], [type="checkbox" i], [type="radio" i]) {
   overflow: clip !important;
   overflow-clip-margin: 0 !important;
+}
+
+input[type="image" i] {
+  overflow-clip-margin: content-box !important;
 }
 
 button,
@@ -514,7 +531,7 @@ button,
 
 ::file-selector-button:hover,
 button:hover,
-input:is([type="reset"], [type="button"], [type="submit"], [type="color"]):hover {
+input:where([type="reset"], [type="button"], [type="submit"], [type="color"]):hover {
   color: -moz-buttonhovertext;
   border-color: -moz-buttonhoverborder;
   background-color: -moz-buttonhoverface;
@@ -522,7 +539,7 @@ input:is([type="reset"], [type="button"], [type="submit"], [type="color"]):hover
 
 ::file-selector-button:active:hover,
 button:active:hover,
-input:is([type="reset"], [type="button"], [type="submit"], [type="color"]):active:hover {
+input:where([type="reset"], [type="button"], [type="submit"], [type="color"]):active:hover {
   border-style: inset;
   border-color: -moz-buttonactiveborder;
   color: -moz-buttonactivetext;
@@ -531,16 +548,14 @@ input:is([type="reset"], [type="button"], [type="submit"], [type="color"]):activ
 
 :is(:disabled, :disabled:active)::file-selector-button,
 button:is(:disabled, :disabled:active),
-input:is([type="reset"], [type="button"], [type="submit"], [type="color"]):is(:disabled, :disabled:active),
-select:is(:disabled, :disabled:active) > button {
+input:where([type="reset"], [type="button"], [type="submit"], [type="color"]):is(:disabled, :disabled:active) {
   border-style: outset;
   cursor: unset;
 }
 
 :is(:disabled, :disabled:active)::file-selector-button,
 button:is(:disabled, :disabled:active),
-input:is([type="reset"], [type="button"], [type="submit"]):is(:disabled, :disabled:active),
-select:is(:disabled, :disabled:active) > button {
+input:where([type="reset"], [type="button"], [type="submit"]):is(:disabled, :disabled:active) {
   color: GrayText;
   background-color: -moz-ButtonDisabledFace;
 }
@@ -762,21 +777,25 @@ input[type="number"] {
   -moz-default-appearance: number-input;
 }
 
-input[type="number"]::-moz-number-spin-box {
-  writing-mode: horizontal-tb;
-  display: flex;
-  flex-direction: column;
-  width: max-content;
-  align-self: center;
-  justify-content: center;
-  /* Don't allow the spin buttons to create overflow */
-  max-height: 100%;
-  max-width: 100%;
-  overflow: clip;
+input::-moz-number-spin-box,
+input::-moz-search-clear-button,
+input::-moz-reveal {
+  display: block;
+  cursor: default;
+  -moz-user-focus: none;
+  user-select: none;
 }
 
-input[type="number"]::-moz-number-spin-up,
-input[type="number"]::-moz-number-spin-down {
+input::-moz-number-spin-box {
+  writing-mode: horizontal-tb;
+  cursor: default;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+input::-moz-number-spin-up,
+input::-moz-number-spin-down {
   writing-mode: horizontal-tb;
   appearance: auto;
   -moz-default-appearance: spinner-upbutton;
@@ -785,15 +804,12 @@ input[type="number"]::-moz-number-spin-down {
   cursor: default;
 }
 
-input[type="number"]::-moz-number-spin-down {
+input::-moz-number-spin-down {
   -moz-default-appearance: spinner-downbutton;
 }
 
 input::-moz-search-clear-button,
 input::-moz-reveal {
-  display: block;
-  cursor: default;
-  -moz-user-focus: none;
   width: 1em;
   height: 1em;
   margin-inline: 1px;
@@ -872,4 +888,115 @@ textarea:autofill {
   background-color: -moz-autofill-background !important;
   background-image: none !important;
   color: FieldText !important;
+}
+
+@media -moz-pref("layout.css.appearance-base.enabled") {
+  /* https://drafts.csswg.org/css-forms/#basic-appearance-stylesheet */
+  /* See https://github.com/w3c/csswg-drafts/pull/13658 for divergences.
+ * Other divergences are due to us not supporting calc-size(). */
+  /* stylelint-disable-next-line at-rule-no-unknown */
+  @appearance-base {
+    input,
+    textarea,
+    button,
+    ::file-selector-button,
+    select,
+    meter,
+    progress {
+      color: inherit;
+      font: inherit;
+      /* XXX: Redundant at least for <select> */
+      box-sizing: border-box;
+      background-color: transparent;
+    }
+
+    input:not([type="file"], [type="range"], [type="checkbox"][switch]),
+    textarea,
+    button,
+    ::file-selector-button,
+    ::slider-track,
+    select {
+      border: 1px solid currentColor;
+      background-color: transparent;
+    }
+    button,
+    ::file-selector-button,
+    select,
+    input:is([type="color"], [type="button"], [type="reset"], [type="submit"]) {
+      border: 1px solid currentColor;
+      background-color: transparent;
+      color: inherit;
+      /* Padding prevents the text from sticking to the borders.
+     * optically centered to account for half leading */
+      padding-block: 0.25em;
+      padding-inline: 0.5em;
+
+      /* <select>s and <button>s should have border-radius to be
+     * distinct from <input>s: https://github.com/w3c/csswg-drafts/issues/10857#issuecomment-2520875011*/
+      border-radius: 0.5em;
+
+      /* These min-size rules ensure accessibility by following WCAG rules:
+     * https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html
+     * The 1lh is there to make sure that options without text don't change
+     * the block size of the button.
+     * TODO: Needs calc-size():
+    min-block-size: calc-size(auto, max(size, 24px, 1lh));
+    min-inline-size: calc-size(auto, max(size, 24px)); */
+
+      /* box-sizing comes from existing UA styles which happen to
+     * already be interoperable. */
+      /* box-sizing: border-box; */
+
+      /* Push picker icon to the right of the box and have some space
+     * in between it and the text. */
+      display: inline-flex;
+      gap: 0.5em;
+
+      user-select: none;
+
+      text-transform: initial;
+      text-align: initial;
+      text-indent: initial;
+    }
+
+    button:enabled:hover,
+    select:enabled:hover,
+    input:is([type="color"], [type="button"], [type="reset"], [type="submit"]):enabled:hover,
+    input[type="file"]:enabled::file-selector-button:hover {
+      background-color: color-mix(currentColor 10%, transparent);
+    }
+
+    button:enabled:active,
+    select:enabled:active,
+    input:is([type="color"], [type="button"], [type="reset"], [type="submit"]):enabled:active,
+    input[type="file"]:enabled::file-selector-button:active {
+      background-color: color-mix(currentColor 20%, transparent);
+    }
+
+    button:disabled,
+    select:disabled,
+    input:is([type="color"], [type="button"], [type="reset"], [type="submit"]):disabled,
+    input[type="file"]:disabled::file-selector-button {
+      color: color-mix(currentColor 50%, transparent);
+    }
+
+    /* stylelint-disable-next-line selector-pseudo-element-no-unknown */
+    select option::checkmark {
+      content: "\2713" / "";
+      pointer-events: none;
+    }
+
+    /* stylelint-disable-next-line selector-pseudo-element-no-unknown */
+    select option:not(:checked)::checkmark {
+      visibility: hidden;
+    }
+
+    /* stylelint-disable-next-line selector-pseudo-element-no-unknown */
+    select::picker-icon {
+      -moz-default-appearance: none;
+      content: counter(fake-counter-name, disclosure-open) / "";
+      display: block;
+      margin-inline-start: auto;
+    }
+  }
 }

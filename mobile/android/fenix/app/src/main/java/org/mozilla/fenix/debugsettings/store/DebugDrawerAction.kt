@@ -10,6 +10,7 @@ import org.mozilla.fenix.debugsettings.gleandebugtools.ui.GleanDebugToolsScreen
 import org.mozilla.fenix.debugsettings.ui.DebugDrawerHome
 import org.mozilla.fenix.debugsettings.addresses.AddressesTools as AddressesScreen
 import org.mozilla.fenix.debugsettings.cfrs.CfrTools as CfrToolsScreen
+import org.mozilla.fenix.debugsettings.distributions.DistributionTools as DistributionScreen
 import org.mozilla.fenix.debugsettings.logins.LoginsTools as LoginsScreen
 import org.mozilla.fenix.debugsettings.region.RegionTools as RegionScreen
 import org.mozilla.fenix.debugsettings.tabs.TabTools as TabToolsScreen
@@ -18,6 +19,11 @@ import org.mozilla.fenix.debugsettings.tabs.TabTools as TabToolsScreen
  * [Action] implementation related to [DebugDrawerStore].
  */
 sealed class DebugDrawerAction : Action {
+
+    /**
+     * [DebugDrawerAction] fired when the overlay is displayed.
+     */
+    object ViewAppeared : DebugDrawerAction()
 
     /**
      * [DebugDrawerAction] fired when the user opens the drawer.
@@ -95,9 +101,19 @@ sealed class DebugDrawerAction : Action {
         object IntegrityDebugTools : NavigateTo()
 
         /**
-         * [NavigateTo] action fired when the debug drawer needs to navigate to [LlmTools].
+         * [NavigateTo] action fired when the debug drawer needs to navigate to [TabGroupTools].
          */
-        object LlmDebugTools : NavigateTo()
+        object TabGroupDebugTools : NavigateTo()
+
+        /**
+         * [NavigateTo] action fired when the debug drawer needs to navigate to [TabProcessTools].
+         */
+        object TabProcessTools : NavigateTo()
+
+        /**
+         * [NavigateTo] action fired when the debug drawer needs to navigate to [DistributionScreen].
+         */
+        object DistributionTools : NavigateTo()
     }
 
     /**

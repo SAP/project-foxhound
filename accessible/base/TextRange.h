@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,8 +29,7 @@ class LocalAccessible;
 struct TextPoint final {
   TextPoint(Accessible* aContainer, int32_t aOffset)
       : mContainer(aContainer), mOffset(aOffset) {}
-  TextPoint(const TextPoint& aPoint)
-      : mContainer(aPoint.mContainer), mOffset(aPoint.mOffset) {}
+  TextPoint(const TextPoint& aPoint) = default;
 
   Accessible* mContainer;
   int32_t mOffset;
@@ -84,6 +81,9 @@ class TextRange final {
     mEndOffset = aRange.mEndOffset;
     return *this;
   }
+
+  TextRange(const TextRange& aRange) = delete;
+  TextRange& operator=(const TextRange& aRange) = delete;
 
   Accessible* Root() { return mRoot; }
   Accessible* StartContainer() const { return mStartContainer; }
@@ -147,9 +147,6 @@ class TextRange final {
                                       nsTArray<TextRange>* aRanges);
 
  private:
-  TextRange(const TextRange& aRange) = delete;
-  TextRange& operator=(const TextRange& aRange) = delete;
-
   friend class HyperTextAccessible;
   friend class xpcAccessibleTextRange;
 

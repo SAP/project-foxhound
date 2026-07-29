@@ -10,11 +10,11 @@ import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.concept.awesomebar.AwesomeBar
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import kotlin.test.assertNotNull
 
 class AwesomeBarActionTest {
     private lateinit var state: BrowserState

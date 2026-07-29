@@ -45,7 +45,7 @@ list of acceptable features is given below:
      -
    * - Current minimal requirement
      - 10.1
-     - 17.0
+     - 19.0
      -
    * - Feature
      - GCC
@@ -59,14 +59,10 @@ list of acceptable features is given below:
      - 4.8.1
      - 2.9
      - Yes
-   * - default member-initializers (except for bit-fields)
-     - 4.7
-     - 3.0
-     - Yes
-   * - default member-initializers (for bit-fields)
+   * - default member-initializers (including bit-fields)
      - 8
      - 6
-     - **No**
+     - Yes
    * - variadic templates
      - 4.3
      - 2.9
@@ -122,7 +118,7 @@ list of acceptable features is given below:
    * - ``[[attributes]]``
      - 4.8
      - 3.3
-     - **No** (see notes)
+     - Yes (see notes)
    * - ``constexpr``
      - 4.6
      - 3.1
@@ -243,10 +239,10 @@ list of acceptable features is given below:
      - 5.0
      - 3.4
      - **No** (see notes)
-   * - Concepts (Concepts TS)
-     - 6.0
-     - —
-     - **No**
+   * - Concepts (C++20)
+     - 10.0
+     - 10.0
+     - Yes
    * - Inline variables (C++17)
      - 7.0
      - 3.9
@@ -256,9 +252,9 @@ list of acceptable features is given below:
      - 3.9
      - Yes
    * - constexpr lambdas (C++17)
-     - —
-     - —
-     - **No**
+     - 7.0
+     - 5.0
+     - Yes
    * - Structured bindings (C++17)
      - 7.0
      - 4.0
@@ -291,6 +287,19 @@ list of acceptable features is given below:
      - 8.0
      - —
      - **No**
+   * - ``std::format`` (C++20)
+     - 13.0
+     - 17.0
+     - **No** (see notes)
+   * - Coroutines (C++20)
+     - 11.0
+     - 14.0
+     - **No** (see notes)
+   * - ``using enum`` (C++20)
+     - 11.0
+     - 13.0
+     - **No** (see notes)
+
 
 Sources
 ~~~~~~~
@@ -306,12 +315,11 @@ rvalue references
 
 Attributes
   Several common attributes are defined in
-  `mozilla/Attributes.h <https://searchfox.org/mozilla-central/source/mfbt/Attributes.h>`__
+  :searchfox:`mozilla/Attributes.h <mfbt/Attributes.h>`
   or nscore.h.
 
 Alignment
-  Some alignment utilities are defined in `mozilla/Alignment.h
-  <https://searchfox.org/mozilla-central/source/mfbt/Alignment.h>`__.
+  Some alignment utilities are defined in :searchfox:`mozilla/Alignment.h <mfbt/Alignment.h>`.
 
 ``[[deprecated]]``
   If we have deprecated code, we should be removing it rather than marking it as
@@ -329,7 +337,7 @@ Aligned allocation/deallocation
   Our custom memory allocator doesn't have support for these functions.
 
 Thread locals
-  ``thread_local`` is not supported on Android.
+  ``thread_local`` is not natively supported until Android 10.
 
 Designated initializers
   Despite their late addition to C++ (and lack of *official* support by
@@ -339,6 +347,18 @@ Designated initializers
   <https://gcc.gnu.org/onlinedocs/gcc/Designated-Inits.html>`__ -- and this
   subset has been accepted without comment in C++ code since at least GCC 4.7
   and Clang 3.0.
+
+``std::format``
+  C++20's ``std::format`` is not fully supported in GCC libstdc++ until GCC 13.
+  Use the ``fmt/format.h`` library instead, which has also been patched to match
+  Gecko's floating point formatting (bug 1717448).
+
+Coroutines
+  Clang's implementation of coroutines is `"out of maintenance" on Windows <https://reviews.llvm.org/D146187?id=506821>`__ due to `ABI and stability issues on 32-bit Windows <https://github.com/llvm/llvm-project/issues/59382>`__.
+
+``using enum``
+  Not supported until GCC 11 and we still support GCC 10. In the meantime, use
+  ``mozilla/UsingEnum.h``'s ``MOZ_USING_ENUM`` macro.
 
 
 C++ and Mozilla standard libraries
@@ -364,7 +384,7 @@ memory size tracking) or have more controllable performance
 characteristics.
 
 A list of approved standard library headers is maintained in
-`config/stl-headers.mozbuild <https://searchfox.org/mozilla-central/source/config/stl-headers.mozbuild>`__.
+:searchfox:`config/stl-headers.mozbuild`.
 
 
 Data structures
@@ -415,7 +435,7 @@ Data structures
      -
      - Like ``std::set``, but for enum classes.
    * - ``mozilla::Hash{Map,Set}``
-     - `mozilla/HashTable.h <https://searchfox.org/mozilla-central/source/mfbt/HashTable.h>`__
+     - :searchfox:`mozilla/HashTable.h <mfbt/HashTable.h>`
      - ``std::unordered_{map,set}``
      - A general purpose hash map and hash set.
    * - ``nsInterfaceHashtable``
@@ -546,15 +566,18 @@ Algorithms
 
 .. list-table::
    :widths: 25 25
+   :header-rows: 1
 
+   * - Name
+     - Header
    * - ``mozilla::BinarySearch``
      - ``mfbt/BinarySearch.h``
-   * - ``mozilla::BitwiseCast``
-     - ``mfbt/Casting.h`` (strict aliasing-safe cast)
-   * - ``mozilla/MathAlgorithms.h``
-     - (rotate, ctlz, popcount, gcd, abs, lcm)
+   * - ``mozilla::BitwiseCast`` (strict aliasing-safe cast)
+     - ``mfbt/Casting.h``
+   * - ``rotate``, ``ctlz``, ``popcount``, ``gcd``, ``abs``, ``lcm``, etc
+     - ``mozilla/MathAlgorithms.h``
    * - ``mozilla::RollingMean``
-     - ``mfbt/RollingMean.h`` ()
+     - ``mfbt/RollingMean.h``
 
 
 Concurrency

@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import org.mozilla.focus.R
 import org.mozilla.focus.ui.theme.FocusTheme
 import org.mozilla.focus.ui.theme.focusColors
+import org.mozilla.focus.ui.theme.focusDimensions
 
 @Composable
 @Preview
@@ -88,7 +89,7 @@ fun LanguagesList(
     FocusTheme {
         LazyColumn(
             state = listState,
-            contentPadding = PaddingValues(horizontal = 12.dp),
+            contentPadding = PaddingValues(horizontal = focusDimensions.paddingListHorizontal),
         ) {
             items(languages, key = { it.tag }) { language ->
                 // By performing this logic here, inside the `items` block, we ensure
@@ -167,7 +168,7 @@ private fun LanguageDisplayName(language: Language, onClick: (Language) -> Unit)
         text = AnnotatedString(language.displayName!!),
         style = MaterialTheme.typography.bodyLarge,
         modifier = Modifier
-            .padding(10.dp)
+            .padding(focusDimensions.paddingText)
             .clickable { onClick(language) },
     )
 }

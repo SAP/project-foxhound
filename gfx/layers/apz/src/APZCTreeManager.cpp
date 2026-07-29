@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -62,6 +60,11 @@
 #include "UnitTransforms.h"        // for ViewAs
 
 mozilla::LazyLogModule mozilla::layers::APZCTreeManager::sLog("apz.manager");
+
+// Shared with the content-side EventListenerManager.cpp.
+// Enable with MOZ_LOG=apz.fastpath:5 to trace the content -> APZ fast-path
+// notification for non-passive APZ-aware listener registration (bug 2031963).
+static mozilla::LazyLogModule sApzFastPathLog("apz.fastpath");
 #define APZCTM_LOG(...) \
   MOZ_LOG(APZCTreeManager::sLog, LogLevel::Debug, (__VA_ARGS__))
 #define APZCTM_LOGV(...) \
@@ -90,7 +93,7 @@ struct APZCTreeManager::TreeBuildingState {
                     bool aIsTestLoggingEnabled)
       : mOriginatingLayersId(aOriginatingLayersId),
         mPaintLogger(aTestData, aPaintSequence, aIsTestLoggingEnabled) {
-    CompositorBridgeParent::CallWithIndirectShadowTree(
+    CompositorBridgeParent::CallWithLayerTreeState(
         aRootLayersId, [this](LayerTreeState& aState) -> void {
           mCompositorController = aState.GetCompositorController();
         });
@@ -217,8 +220,7 @@ APZCTreeManager::CheckerboardFlushObserver::Observe(nsISupports* aSubject,
   }
   if (XRE_IsGPUProcess()) {
     if (gfx::GPUParent* gpu = gfx::GPUParent::GetSingleton()) {
-      nsCString topic("APZ:FlushActiveCheckerboard:Done");
-      (void)gpu->SendNotifyUiObservers(topic);
+      (void)gpu->SendFlushActiveCheckerboardReportsDone();
     }
   } else {
     MOZ_ASSERT(XRE_IsParentProcess());
@@ -370,6 +372,26 @@ void APZCTreeManager::NotifyLayerTreeRemoved(LayersId aLayersId) {
   {  // scope lock
     MutexAutoLock lock(mTestDataLock);
     mTestData.erase(aLayersId);
+  }
+
+  {  // scope lock
+    MutexAutoLock lock(mMapLock);
+    size_t removed = 0;
+    for (auto it = mFastPathApzAwareGuids.begin();
+         it != mFastPathApzAwareGuids.end();) {
+      if (it->mLayersId == aLayersId) {
+        it = mFastPathApzAwareGuids.erase(it);
+        ++removed;
+      } else {
+        ++it;
+      }
+    }
+    if (removed > 0) {
+      MOZ_LOG(sApzFastPathLog, LogLevel::Debug,
+              ("APZCTreeManager: NotifyLayerTreeRemoved layersId=%" PRIu64
+               " cleared %zu fast-path entries",
+               uint64_t(aLayersId), removed));
+    }
   }
 }
 
@@ -790,7 +812,7 @@ void APZCTreeManager::SampleForWebRender(const Maybe<VsyncId>& aVsyncId,
 
   RefPtr<WebRenderBridgeParent> wrBridgeParent;
   RefPtr<CompositorController> controller;
-  CompositorBridgeParent::CallWithIndirectShadowTree(
+  CompositorBridgeParent::CallWithLayerTreeState(
       mRootLayersId, [&](LayerTreeState& aState) -> void {
         controller = aState.GetCompositorController();
         wrBridgeParent = aState.mWrBridge;
@@ -1101,8 +1123,7 @@ already_AddRefed<HitTestingTreeNode> APZCTreeManager::RecycleOrCreateNode(
       return node.forget();
     }
   }
-  RefPtr<HitTestingTreeNode> node =
-      new HitTestingTreeNode(aApzc, false, aLayersId);
+  RefPtr node = MakeRefPtr<HitTestingTreeNode>(aApzc, false, aLayersId);
   return node.forget();
 }
 
@@ -1199,6 +1220,26 @@ HitTestingTreeNode* APZCTreeManager::PrepareNodeForLayer(
     const AncestorTransform& aAncestorTransform, HitTestingTreeNode* aParent,
     HitTestingTreeNode* aNextSibling, TreeBuildingState& aState) {
   mTreeLock.AssertCurrentThreadIn();  // for static analysis
+
+  // A paint reaching this scroll target means the display list rebuild has
+  // had the opportunity to set eApzAwareListeners through the regular path,
+  // so in principle we could retire any fast-path entry recorded for it
+  // here (see bug 2031963). But this clear races against a paint that was
+  // already in flight when the listener was registered: that paint's
+  // display list doesn't carry the new flag, yet clearing the fast-path
+  // entry here would leave APZ blind to the listener until a subsequent
+  // paint lands. For now keep the fast-path entry until the layer tree
+  // goes away (NotifyLayerTreeRemoved), trading a small amount of stale
+  // state for never-missed signals. A paint-sequence-number compare would
+  // close the race; revisit if/when needed.
+  // {
+  //   MutexAutoLock lock(mMapLock);
+  //   if (!mFastPathApzAwareGuids.empty()) {
+  //     mFastPathApzAwareGuids.erase(
+  //         ScrollableLayerGuid(aLayersId, 0, aMetrics.GetScrollId()));
+  //   }
+  // }
+
   bool needsApzc = true;
   if (!aMetrics.IsScrollable()) {
     needsApzc = false;
@@ -1208,7 +1249,7 @@ HitTestingTreeNode* APZCTreeManager::PrepareNodeForLayer(
   // TreeBuildingState, and update them as we change layers id during the
   // traversal
   RefPtr<GeckoContentController> geckoContentController;
-  CompositorBridgeParent::CallWithIndirectShadowTree(
+  CompositorBridgeParent::CallWithLayerTreeState(
       aLayersId, [&](LayerTreeState& lts) -> void {
         geckoContentController = lts.mController;
       });
@@ -1340,7 +1381,7 @@ HitTestingTreeNode* APZCTreeManager::PrepareNodeForLayer(
                apzc.get(), aLayer.GetLayer(), uint64_t(aLayersId),
                aMetrics.GetScrollId());
 
-    apzc->NotifyLayersUpdated(
+    apzc->NotifyMainThreadTransaction(
         aLayer.Metadata(), AsyncPanZoomController::LayersUpdateFlags{
                                .mIsFirstPaint = aLayer.IsFirstPaint(),
                                .mThisLayerTreeUpdated =
@@ -2091,6 +2132,9 @@ void APZCTreeManager::ProcessTouchInput(InputHandlingState& aState,
   aInput.mHandledByAPZ = true;
   nsTArray<TouchBehaviorFlags> touchBehaviors;
   HitTestingTreeNodeAutoLock hitScrollbarNode;
+  InitialTouchMove initialTouchMove = InitialTouchMove::No;
+  FastPathApzAwareListener fastPathApzAwareListener =
+      FastPathApzAwareListener::No;
   if (aInput.mType == MultiTouchInput::MULTITOUCH_START) {
     // If we are panned into overscroll and a second finger goes down,
     // ignore that second touch point completely. The touch-start for it is
@@ -2142,6 +2186,16 @@ void APZCTreeManager::ProcessTouchInput(InputHandlingState& aState,
     APZCTM_LOG("Re-using APZC %p as continuation of event block\n",
                mTouchBlockHitResult.mTargetApzc.get());
     RecursiveMutexAutoLock lock(mTreeLock);
+    if (aInput.mType == MultiTouchInput::MULTITOUCH_MOVE &&
+        !mTouchCounter.HasSeenFirstMove()) {
+      initialTouchMove = InitialTouchMove::Yes;
+      if (ChainHasFastPathApzAwareListener(
+              mTouchBlockHitResult.mTargetApzc->GetGuid())) {
+        mTouchBlockHitResult.mHitResult +=
+            CompositorHitTestFlags::eApzAwareListeners;
+        fastPathApzAwareListener = FastPathApzAwareListener::Yes;
+      }
+    }
     aState.mHit = mHitTester->CloneHitTestResult(lock, mTouchBlockHitResult);
   }
 
@@ -2182,9 +2236,12 @@ void APZCTreeManager::ProcessTouchInput(InputHandlingState& aState,
 
       aState.mResult = mInputQueue->ReceiveInputEvent(
           mTouchBlockHitResult.mTargetApzc,
-          TargetConfirmationFlags{mTouchBlockHitResult.mHitResult}, aInput,
+          TargetConfirmationFlags{mTouchBlockHitResult.mHitResult,
+                                  fastPathApzAwareListener},
+          aInput,
           touchBehaviors.IsEmpty() ? Nothing()
-                                   : Some(std::move(touchBehaviors)));
+                                   : Some(std::move(touchBehaviors)),
+          initialTouchMove);
 
       // For computing the event to pass back to Gecko, use up-to-date
       // transforms (i.e. not anything cached in an input block). This ensures
@@ -2434,14 +2491,13 @@ void APZCTreeManager::MaybeOverrideLayersIdForWheelEvent(InputData& aEvent) {
     txn = mInputQueue->GetCurrentPanGestureBlock();
   }
 
-  APZCTM_LOG("Maybe override txn (0x%p) wheel transactions enabled=%d", txn,
-             StaticPrefs::dom_event_wheel_event_groups_enabled());
+  APZCTM_LOG("Maybe override txn (0x%p)", txn);
 
   // If we're in a wheel transaction, subsequent events in the transaction
   // should be sent to the same content process as the first event, even
   // if content rendered by a different process has scrolled under the
   // cursor.
-  if (!txn || !StaticPrefs::dom_event_wheel_event_groups_enabled()) {
+  if (!txn) {
     return;
   }
 
@@ -3162,6 +3218,48 @@ void APZCTreeManager::SetLongTapEnabled(bool aLongTapEnabled) {
   GestureEventListener::SetLongTapEnabled(aLongTapEnabled);
 }
 
+void APZCTreeManager::NotifyApzAwareListenerAdded(
+    const ScrollableLayerGuid& aGuid) {
+  MutexAutoLock lock(mMapLock);
+  auto result = mFastPathApzAwareGuids.insert(aGuid);
+  MOZ_LOG(sApzFastPathLog, LogLevel::Debug,
+          ("APZCTreeManager: %s fast-path entry for layersId=%" PRIu64
+           " scrollId=%" PRIu64 " (set size=%zu)",
+           result.second ? "added" : "already had", uint64_t(aGuid.mLayersId),
+           aGuid.mScrollId, mFastPathApzAwareGuids.size()));
+}
+
+bool APZCTreeManager::ChainHasFastPathApzAwareListener(
+    const ScrollableLayerGuid& aHitGuid) {
+  MutexAutoLock lock(mMapLock);
+  if (mFastPathApzAwareGuids.empty()) {
+    return false;
+  }
+  ScrollableLayerGuid current = aHitGuid;
+  while (true) {
+    if (mFastPathApzAwareGuids.find(current) != mFastPathApzAwareGuids.end()) {
+      MOZ_LOG(sApzFastPathLog, LogLevel::Debug,
+              ("APZCTreeManager: hit-test matched fast-path entry "
+               "layersId=%" PRIu64 " scrollId=%" PRIu64
+               " (hit was layersId=%" PRIu64 " scrollId=%" PRIu64 ")",
+               uint64_t(current.mLayersId), current.mScrollId,
+               uint64_t(aHitGuid.mLayersId), aHitGuid.mScrollId));
+      return true;
+    }
+    auto it = mApzcMap.find(current);
+    if (it == mApzcMap.end() || it->second.parent.isNothing()) {
+      return false;
+    }
+    const ScrollableLayerGuid& parent = *it->second.parent;
+    if (parent.mLayersId != aHitGuid.mLayersId) {
+      // Don't cross layers-id (process) boundaries: a listener registered in
+      // child content can't apply to events in the parent's layers id.
+      return false;
+    }
+    current = parent;
+  }
+}
+
 void APZCTreeManager::AddInputBlockCallback(uint64_t aInputBlockId,
                                             InputBlockCallback&& aCallback) {
   APZThreadUtils::AssertOnControllerThread();
@@ -3723,12 +3821,9 @@ LayerToParentLayerMatrix4x4 APZCTreeManager::ComputeTransformForScrollThumbNode(
 
 already_AddRefed<wr::WebRenderAPI> APZCTreeManager::GetWebRenderAPI() const {
   RefPtr<wr::WebRenderAPI> api;
-  CompositorBridgeParent::CallWithIndirectShadowTree(
-      mRootLayersId, [&](LayerTreeState& aState) -> void {
-        if (aState.mWrBridge) {
-          api = aState.mWrBridge->GetWebRenderAPI();
-        }
-      });
+  CompositorBridgeParent::CallWithLayerTreeState(
+      mRootLayersId,
+      [&](LayerTreeState& aState) -> void { api = aState.mWebRenderAPI; });
   return api.forget();
 }
 
@@ -3736,7 +3831,7 @@ already_AddRefed<wr::WebRenderAPI> APZCTreeManager::GetWebRenderAPI() const {
 already_AddRefed<GeckoContentController> APZCTreeManager::GetContentController(
     LayersId aLayersId) {
   RefPtr<GeckoContentController> controller;
-  CompositorBridgeParent::CallWithIndirectShadowTree(
+  CompositorBridgeParent::CallWithLayerTreeState(
       aLayersId,
       [&](LayerTreeState& aState) -> void { controller = aState.mController; });
   return controller.forget();

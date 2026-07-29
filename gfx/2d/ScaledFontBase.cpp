@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,7 +14,6 @@
 #endif
 
 #include <vector>
-#include <cmath>
 
 namespace mozilla {
 namespace gfx {
@@ -99,7 +96,7 @@ SkPath ScaledFontBase::GetSkiaPathForGlyphs(const GlyphBuffer& aBuffer) {
 
   struct Context {
     const Glyph* mGlyph;
-    SkPath mPath;
+    SkPathBuilder mPathBuilder;
   } ctx = {aBuffer.mGlyphs};
 
   font.getPaths(
@@ -110,13 +107,13 @@ SkPath ScaledFontBase::GetSkiaPathForGlyphs(const GlyphBuffer& aBuffer) {
           SkMatrix transMatrix(scaleMatrix);
           transMatrix.postTranslate(SkFloatToScalar(ctx.mGlyph->mPosition.x),
                                     SkFloatToScalar(ctx.mGlyph->mPosition.y));
-          ctx.mPath.addPath(*glyphPath, transMatrix);
+          ctx.mPathBuilder.addPath(*glyphPath, transMatrix);
         }
         ++ctx.mGlyph;
       },
       &ctx);
 
-  return ctx.mPath;
+  return ctx.mPathBuilder.detach();
 }
 
 already_AddRefed<Path> ScaledFontBase::GetPathForGlyphs(
@@ -159,7 +156,7 @@ already_AddRefed<Path> ScaledFontBase::GetPathForGlyphs(
 
     cairo_glyph_path(ctx, &glyphs[0], aBuffer.mNumGlyphs);
 
-    RefPtr<PathCairo> newPath = new PathCairo(ctx);
+    RefPtr newPath = MakeRefPtr<PathCairo>(ctx);
     if (isNewContext) {
       cairo_destroy(ctx);
     }
@@ -211,7 +208,7 @@ void ScaledFontBase::CopyGlyphsToBuilder(const GlyphBuffer& aBuffer,
     cairo_set_scaled_font(ctx, cairoScaledFont);
     cairo_glyph_path(ctx, &glyphs[0], aBuffer.mNumGlyphs);
 
-    RefPtr<PathCairo> cairoPath = new PathCairo(ctx);
+    RefPtr cairoPath = MakeRefPtr<PathCairo>(ctx);
     cairo_destroy(ctx);
 
     cairoPath->AppendPathToBuilder(builder);

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,7 +10,6 @@
 #include "mozilla/StaticPrefs_browser.h"
 #include "nsIXULRuntime.h"
 #include "nsComponentManagerUtils.h"
-#include "nsSHEntry.h"
 #include "nsSHistory.h"
 #include "nsDocShell.h"
 #include "nsXULAppAPI.h"
@@ -74,50 +71,19 @@ void ChildSHistory::SetBrowsingContext(BrowsingContext* aBrowsingContext) {
   mBrowsingContext = aBrowsingContext;
 }
 
-void ChildSHistory::SetIsInProcess(bool aIsInProcess) {
-  if (!aIsInProcess) {
-    MOZ_ASSERT_IF(mozilla::SessionHistoryInParent(), !mHistory);
-    if (!mozilla::SessionHistoryInParent()) {
-      RemovePendingHistoryNavigations();
-      if (mHistory) {
-        static_cast<nsSHistory*>(mHistory.get())->SetBrowsingContext(nullptr);
-        mHistory = nullptr;
-      }
-    }
-
-    return;
-  }
-
-  if (mHistory || mozilla::SessionHistoryInParent()) {
-    return;
-  }
-
-  mHistory = new nsSHistory(mBrowsingContext);
-}
-
 int32_t ChildSHistory::Count() {
-  if (mozilla::SessionHistoryInParent()) {
-    uint32_t length = mLength;
-    for (uint32_t i = 0; i < mPendingSHistoryChanges.Length(); ++i) {
-      length += mPendingSHistoryChanges[i].mLengthDelta;
-    }
-
-    return length;
+  int32_t length = mLength;
+  for (const auto& change : mPendingSHistoryChanges) {
+    length += change.mLengthDelta;
   }
-  return mHistory->GetCount();
+  return length;
 }
 
 int32_t ChildSHistory::Index() {
-  if (mozilla::SessionHistoryInParent()) {
-    uint32_t index = mIndex;
-    for (uint32_t i = 0; i < mPendingSHistoryChanges.Length(); ++i) {
-      index += mPendingSHistoryChanges[i].mIndexDelta;
-    }
-
-    return index;
+  int32_t index = mIndex;
+  for (const auto& change : mPendingSHistoryChanges) {
+    index += change.mIndexDelta;
   }
-  int32_t index;
-  mHistory->GetIndex(&index);
   return index;
 }
 
@@ -146,22 +112,16 @@ void ChildSHistory::SetIndexAndLength(uint32_t aIndex, uint32_t aLength,
 }
 
 void ChildSHistory::Reload(uint32_t aReloadFlags, ErrorResult& aRv) {
-  if (mozilla::SessionHistoryInParent()) {
-    if (XRE_IsParentProcess()) {
-      nsCOMPtr<nsISHistory> shistory =
-          mBrowsingContext->Canonical()->GetSessionHistory();
-      if (shistory) {
-        aRv = shistory->Reload(aReloadFlags);
-      }
-    } else {
-      ContentChild::GetSingleton()->SendHistoryReload(mBrowsingContext,
-                                                      aReloadFlags);
+  if (XRE_IsParentProcess()) {
+    nsCOMPtr<nsISHistory> shistory =
+        mBrowsingContext->Canonical()->GetSessionHistory();
+    if (shistory) {
+      aRv = shistory->Reload(aReloadFlags);
     }
-
-    return;
+  } else {
+    ContentChild::GetSingleton()->SendHistoryReload(mBrowsingContext,
+                                                    aReloadFlags);
   }
-  nsCOMPtr<nsISHistory> shistory = mHistory;
-  aRv = shistory->Reload(aReloadFlags);
 }
 
 bool ChildSHistory::CanGo(int32_t aOffset, bool aRequireUserInteraction) {
@@ -228,9 +188,8 @@ void ChildSHistory::AsyncGo(int32_t aOffset, bool aRequireUserInteraction,
           ("ChildSHistory::AsyncGo(%d), current index = %d", aOffset,
            index.value()));
 
-  RefPtr<PendingAsyncHistoryNavigation> asyncNav =
-      new PendingAsyncHistoryNavigation(this, aOffset, aRequireUserInteraction,
-                                        aUserActivation);
+  RefPtr asyncNav = MakeRefPtr<PendingAsyncHistoryNavigation>(
+      this, aOffset, aRequireUserInteraction, aUserActivation);
   mPendingNavigations.insertBack(asyncNav);
   NS_DispatchToCurrentThread(asyncNav.forget());
 }
@@ -244,10 +203,9 @@ void ChildSHistory::AsyncGo(const nsID& aKey, BrowsingContext* aNavigable,
               "ChildSHistory::AsyncGo({}), current index = {}",
               aKey.ToString().get(), index.value());
 
-  RefPtr<PendingAsyncHistoryNavigation> asyncNav =
-      new PendingAsyncHistoryNavigation(
-          this, aKey, aNavigable, aRequireUserInteraction, aUserActivation,
-          aCheckForCancelation, std::move(aResolver));
+  RefPtr asyncNav = MakeRefPtr<PendingAsyncHistoryNavigation>(
+      this, aKey, aNavigable, aRequireUserInteraction, aUserActivation,
+      aCheckForCancelation, std::move(aResolver));
   mPendingNavigations.insertBack(asyncNav);
   NS_DispatchToCurrentThread(asyncNav.forget());
 }
@@ -258,31 +216,26 @@ void ChildSHistory::GotoIndex(int32_t aIndex, int32_t aOffset,
   MOZ_LOG(gSHLog, LogLevel::Debug,
           ("ChildSHistory::GotoIndex(%d, %d), epoch %" PRIu64, aIndex, aOffset,
            mHistoryEpoch));
-  if (mozilla::SessionHistoryInParent()) {
-    if (!mPendingEpoch) {
-      mPendingEpoch = true;
-      RefPtr<ChildSHistory> self(this);
-      NS_DispatchToCurrentThread(
-          NS_NewRunnableFunction("UpdateEpochRunnable", [self] {
-            self->mHistoryEpoch++;
-            self->mPendingEpoch = false;
-          }));
-    }
-
-    nsCOMPtr<nsISHistory> shistory = mHistory;
-    RefPtr<BrowsingContext> bc = mBrowsingContext;
-    bc->HistoryGo(
-        aOffset, mHistoryEpoch, aRequireUserInteraction, aUserActivation,
-        [shistory](Maybe<int32_t>&& aRequestedIndex) {
-          // FIXME Should probably only do this for non-fission.
-          if (aRequestedIndex.isSome() && shistory) {
-            shistory->InternalSetRequestedIndex(aRequestedIndex.value());
-          }
-        });
-  } else {
-    nsCOMPtr<nsISHistory> shistory = mHistory;
-    aRv = shistory->GotoIndex(aIndex, aUserActivation);
+  if (!mPendingEpoch) {
+    mPendingEpoch = true;
+    RefPtr<ChildSHistory> self(this);
+    NS_DispatchToCurrentThread(
+        NS_NewRunnableFunction("UpdateEpochRunnable", [self] {
+          self->mHistoryEpoch++;
+          self->mPendingEpoch = false;
+        }));
   }
+
+  nsCOMPtr<nsISHistory> shistory = mHistory;
+  RefPtr<BrowsingContext> bc = mBrowsingContext;
+  bc->HistoryGo(
+      aOffset, mHistoryEpoch, aRequireUserInteraction, aUserActivation,
+      [shistory](Maybe<int32_t>&& aRequestedIndex) {
+        // FIXME Should probably only do this for non-fission.
+        if (aRequestedIndex.isSome() && shistory) {
+          shistory->InternalSetRequestedIndex(aRequestedIndex.value());
+        }
+      });
 }
 
 void ChildSHistory::GotoKey(const nsID& aKey, BrowsingContext* aNavigable,
@@ -290,8 +243,6 @@ void ChildSHistory::GotoKey(const nsID& aKey, BrowsingContext* aNavigable,
                             bool aCheckForCancelation,
                             const std::function<void(nsresult)>& aResolver,
                             ErrorResult& aRv) {
-  MOZ_DIAGNOSTIC_ASSERT(mozilla::SessionHistoryInParent());
-
   if (!mPendingEpoch) {
     mPendingEpoch = true;
     RefPtr<ChildSHistory> self(this);
@@ -319,30 +270,6 @@ void ChildSHistory::RemovePendingHistoryNavigations() {
           ("ChildSHistory::RemovePendingHistoryNavigations: %zu",
            mPendingNavigations.length()));
   mPendingNavigations.clear();
-}
-
-void ChildSHistory::EvictLocalDocumentViewers() {
-  if (!mozilla::SessionHistoryInParent()) {
-    mHistory->EvictAllDocumentViewers();
-  }
-}
-
-nsISHistory* ChildSHistory::GetLegacySHistory(ErrorResult& aError) {
-  if (mozilla::SessionHistoryInParent()) {
-    aError.ThrowTypeError(
-        "legacySHistory is not available with session history in the parent.");
-    return nullptr;
-  }
-
-  MOZ_RELEASE_ASSERT(mHistory);
-  return mHistory;
-}
-
-nsISHistory* ChildSHistory::LegacySHistory() {
-  IgnoredErrorResult ignore;
-  nsISHistory* shistory = GetLegacySHistory(ignore);
-  MOZ_RELEASE_ASSERT(shistory);
-  return shistory;
 }
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ChildSHistory)

@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 const tests = [
   // Special values: Zeros and non-finite values.
   {

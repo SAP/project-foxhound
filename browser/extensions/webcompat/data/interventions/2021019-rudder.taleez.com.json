@@ -1,0 +1,21 @@
+{
+  "label": "rudder.taleez.com",
+  "bugs": {
+    "2021019": {
+      "issue": "broken-layout",
+      "matches": ["*://rudder.taleez.com/*"]
+    }
+  },
+  "css": {
+    "fix_overlapping_content": "html { height: initial; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "pref_check": {
+        "layout.css.webkit-fill-available.enabled": true
+      },
+      "css": ["fix_overlapping_content"]
+    }
+  ]
+}

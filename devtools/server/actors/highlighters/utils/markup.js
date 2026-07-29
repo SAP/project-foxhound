@@ -158,7 +158,9 @@ class CanvasFrameAnonymousContentHelper {
   destroy() {
     this.#remove();
 
-    this.#highlighterEnv.off("window-ready", this.#onWindowReady);
+    if (this.#highlighterEnv) {
+      this.#highlighterEnv.off("window-ready", this.#onWindowReady);
+    }
     this.#highlighterEnv = this.#nodeBuilder = this.#content = null;
     this.anonymousContentDocument = null;
     this.anonymousContentWindow = null;
@@ -582,7 +584,7 @@ function waitForContentLoaded(iframeOrWindow) {
   // highlighter that is not browser toolbox, we must wait for IFRAME's "load".
   if (
     iframeOrWindow.contentWindow &&
-    iframeOrWindow.ownerGlobal !==
+    iframeOrWindow.documentGlobal !==
       iframeOrWindow.contentWindow.browsingContext.topChromeWindow
   ) {
     loadEvent = "load";

@@ -11,6 +11,7 @@ import React, { useState } from "react";
 const USER_ACTION_TYPES = {
   CHANGE_DISPLAY: "change_weather_display",
   CHANGE_LOCATION: "change_location",
+  CHANGE_SIZE: "change_size",
   CHANGE_TEMP_UNIT: "change_temperature_units",
   DETECT_LOCATION: "detect_location",
   LEARN_MORE: "learn_more",
@@ -21,6 +22,8 @@ const USER_ACTION_TYPES = {
 const VISIBLE = "visible";
 const VISIBILITY_CHANGE_EVENT = "visibilitychange";
 const PREF_SYSTEM_SHOW_WEATHER = "system.showWeather";
+const PREF_NOVA_ENABLED = "nova.enabled";
+const PREF_WEATHER_SIZE = "widgets.weather.size";
 
 function WeatherPlaceholder() {
   const [isSeen, setIsSeen] = useState(false);
@@ -56,6 +59,7 @@ export class _Weather extends React.PureComponent {
       url: "https://example.com",
       impressionSeen: false,
       errorSeen: false,
+      isMenuEnabled: false,
     };
     this.setImpressionRef = element => {
       this.impressionElement = element;
@@ -64,11 +68,42 @@ export class _Weather extends React.PureComponent {
       this.errorElement = element;
     };
     this.setPanelRef = element => {
+      if (this.panelElement) {
+        this.panelElement.removeEventListener("toggle", this.handlePanelToggle);
+      }
       this.panelElement = element;
+      if (element) {
+        element.addEventListener("toggle", this.handlePanelToggle);
+      }
     };
+    this.setSizeSubmenuRef = element => {
+      if (this.sizeSubmenuElement) {
+        this.sizeSubmenuElement.removeEventListener(
+          "click",
+          this.onSizeSubmenuClick
+        );
+      }
+      this.sizeSubmenuElement = element;
+      if (element) {
+        element.addEventListener("click", this.onSizeSubmenuClick);
+      }
+    };
+    this.onSizeSubmenuClick = this.onSizeSubmenuClick.bind(this);
     this.onProviderClick = this.onProviderClick.bind(this);
     this.onMenuButtonClick = this.onMenuButtonClick.bind(this);
     this.onMenuButtonKeyDown = this.onMenuButtonKeyDown.bind(this);
+    this.handlePanelToggle = this.handlePanelToggle.bind(this);
+  }
+
+  onSizeSubmenuClick(e) {
+    // The size submenu panel-list is moved into the panel-item's shadow DOM by
+    // the panel-list custom element, so React's synthetic onClick doesn't reach
+    // inner items. We use composedPath() to find the clicked item across the
+    // shadow boundary via its data-size attribute.
+    const item = e.composedPath().find(node => node.dataset?.size);
+    if (item) {
+      this.handleChangeSize(item.dataset.size);
+    }
   }
 
   componentDidMount() {
@@ -240,6 +275,7 @@ export class _Weather extends React.PureComponent {
   handleChangeLocation = () => {
     if (this.panelElement) {
       this.panelElement.hide();
+      this.setState({ isMenuEnabled: false });
     }
     batch(() => {
       this.props.dispatch(
@@ -314,6 +350,32 @@ export class _Weather extends React.PureComponent {
             user_action: USER_ACTION_TYPES.CHANGE_TEMP_UNIT,
             widget_size: "mini",
             action_value: value,
+          },
+        })
+      );
+    });
+  };
+
+  handleChangeSize = size => {
+    if (this.panelElement) {
+      this.panelElement.hide();
+    }
+    batch(() => {
+      this.props.dispatch(
+        ac.OnlyToMain({
+          type: at.SET_PREF,
+          data: { name: PREF_WEATHER_SIZE, value: size },
+        })
+      );
+      this.props.dispatch(
+        ac.OnlyToMain({
+          type: at.WIDGETS_USER_EVENT,
+          data: {
+            widget_name: "weather",
+            widget_source: "context_menu",
+            user_action: USER_ACTION_TYPES.CHANGE_SIZE,
+            action_value: size,
+            widget_size: "mini",
           },
         })
       );
@@ -501,6 +563,11 @@ export class _Weather extends React.PureComponent {
     return systemValue || experimentValue;
   }
 
+  handlePanelToggle(e) {
+    const isOpen = e.newState === "open";
+    this.setState({ isMenuEnabled: isOpen });
+  }
+
   render() {
     // Check if weather should be rendered
     if (!this.isEnabled()) {
@@ -520,10 +587,10 @@ export class _Weather extends React.PureComponent {
 
     const WEATHER_SUGGESTION = Weather.suggestions?.[0];
 
-    const nimbusWeatherDisplay = Prefs.values.trainhopConfig?.weather?.display;
-    const showDetailedView =
-      nimbusWeatherDisplay === "detailed" ||
-      Prefs.values["weather.display"] === "detailed";
+    const showDetailedView = Prefs.values["weather.display"] === "detailed";
+    // @nova-cleanup(remove-pref): Remove this line and PREF_NOVA_ENABLED constant
+    const novaEnabled = Prefs.values[PREF_NOVA_ENABLED];
+    const currentWeatherSize = Prefs.values[PREF_WEATHER_SIZE] || "large";
 
     const nimbusWeatherForecastTrainhopEnabled =
       Prefs.values.trainhopConfig?.widgets?.weatherForecastEnabled;
@@ -532,7 +599,13 @@ export class _Weather extends React.PureComponent {
       nimbusWeatherForecastTrainhopEnabled ||
       Prefs.values["widgets.system.weatherForecast.enabled"];
 
-    if (showDetailedView && weatherForecastWidgetEnabled) {
+    // @nova-cleanup(remove-conditional): After Nova ships the mini weather widget is only
+    // shown when size is "small"; replace this condition with
+    // `currentWeatherSize !== "small" && weatherForecastWidgetEnabled`
+    if (
+      (novaEnabled ? currentWeatherSize !== "small" : showDetailedView) &&
+      weatherForecastWidgetEnabled
+    ) {
       return null;
     }
 
@@ -572,19 +645,19 @@ export class _Weather extends React.PureComponent {
     // - weather opt-in pref is enabled
     // - static weather data is enabled
     const showStaticData = isOptInEnabled && staticWeather;
-    const showFullMenu = !showStaticData;
     const isLocationSearchEnabled =
       Prefs.values["weather.locationSearchEnabled"];
     const isFahrenheit = Prefs.values["weather.temperatureUnits"] === "f";
     const isSimpleDisplay = Prefs.values["weather.display"] === "simple";
 
-    const contextMenu = (showFullContextMenu = true) => (
+    const contextMenu = () => (
       <div className="weatherButtonContextMenuWrapper">
         {/* Bug 2013136 - Using a custom button instead of moz-button due to styling constraints.
             The moz-button component cannot be styled to match the existing design,
             so we use a standard button element that can be fully controlled with CSS. */}
         <button
           aria-haspopup="true"
+          aria-expanded={this.state.isMenuEnabled}
           onKeyDown={this.onMenuButtonKeyDown}
           onClick={this.onMenuButtonClick}
           data-l10n-id="newtab-menu-section-tooltip"
@@ -605,37 +678,64 @@ export class _Weather extends React.PureComponent {
               onClick={this.handleDetectLocation}
             />
           )}
-          {showFullContextMenu &&
-            (isFahrenheit ? (
-              <panel-item
-                id="weather-menu-temp-celsius"
-                data-l10n-id="newtab-weather-menu-change-temperature-units-celsius"
-                onClick={() => this.handleChangeTempUnit("c")}
-              />
-            ) : (
-              <panel-item
-                id="weather-menu-temp-fahrenheit"
-                data-l10n-id="newtab-weather-menu-change-temperature-units-fahrenheit"
-                onClick={() => this.handleChangeTempUnit("f")}
-              />
-            ))}
-          {showFullContextMenu &&
-            (isSimpleDisplay ? (
-              <panel-item
-                id="weather-menu-display-detailed"
-                data-l10n-id="newtab-weather-menu-change-weather-display-detailed"
-                onClick={() => this.handleChangeDisplay("detailed")}
-              />
-            ) : (
-              <panel-item
-                id="weather-menu-display-simple"
-                data-l10n-id="newtab-weather-menu-change-weather-display-simple"
-                onClick={() => this.handleChangeDisplay("simple")}
-              />
-            ))}
+          {isFahrenheit ? (
+            <panel-item
+              id="weather-menu-temp-celsius"
+              data-l10n-id="newtab-weather-menu-change-temperature-units-celsius"
+              onClick={() => this.handleChangeTempUnit("c")}
+            />
+          ) : (
+            <panel-item
+              id="weather-menu-temp-fahrenheit"
+              data-l10n-id="newtab-weather-menu-change-temperature-units-fahrenheit"
+              onClick={() => this.handleChangeTempUnit("f")}
+            />
+          )}
+          {
+            // @nova-cleanup(remove-conditional): Remove this block; the simple/detailed
+            // display toggle is replaced by the size submenu after Nova ships
+            !novaEnabled &&
+              (isSimpleDisplay ? (
+                <panel-item
+                  id="weather-menu-display-detailed"
+                  data-l10n-id="newtab-weather-menu-change-weather-display-detailed"
+                  onClick={() => this.handleChangeDisplay("detailed")}
+                />
+              ) : (
+                <panel-item
+                  id="weather-menu-display-simple"
+                  data-l10n-id="newtab-weather-menu-change-weather-display-simple"
+                  onClick={() => this.handleChangeDisplay("simple")}
+                />
+              ))
+          }
+          {
+            // @nova-cleanup(remove-conditional): Remove the novaEnabled check
+            // Always render the size submenu
+            novaEnabled && (
+              <panel-item submenu="weather-size-submenu">
+                <span data-l10n-id="newtab-widget-menu-change-size"></span>
+                <panel-list
+                  ref={this.setSizeSubmenuRef}
+                  slot="submenu"
+                  id="weather-size-submenu"
+                >
+                  {["small", "medium", "large"].map(size => (
+                    <panel-item
+                      key={size}
+                      type="checkbox"
+                      checked={currentWeatherSize === size || undefined}
+                      data-size={size}
+                      data-l10n-id={`newtab-widget-size-${size}`}
+                    />
+                  ))}
+                </panel-list>
+              </panel-item>
+            )
+          }
           <panel-item
             id="weather-menu-hide"
-            data-l10n-id="newtab-weather-menu-hide-weather-v2"
+            data-l10n-id="newtab-widget-menu-hide"
             onClick={this.handleHideWeather}
           />
           <panel-item
@@ -734,7 +834,7 @@ export class _Weather extends React.PureComponent {
               </a>
             )}
 
-            {contextMenu(showFullMenu)}
+            {contextMenu()}
           </div>
           <span className="weatherSponsorText" aria-hidden="true">
             <span
@@ -780,8 +880,7 @@ export class _Weather extends React.PureComponent {
         <div className="weatherNotAvailable">
           <span className="icon icon-info-warning" />{" "}
           <p data-l10n-id="newtab-weather-error-not-available"></p>
-          {/* We're passing false to only render applicable menu items during an error */}
-          {contextMenu(false)}
+          {contextMenu()}
         </div>
       </div>
     );

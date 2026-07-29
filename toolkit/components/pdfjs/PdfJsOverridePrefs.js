@@ -34,4 +34,10 @@
 
   pref("pdfjs.enableHWA", true);
 
+  pref("pdfjs.enableSplitMerge", true);
+  pref("pdfjs.enableMerge", true);
+
 #endif
+
+pref("pdfjs.enableOptimizedPartialRendering", true);
+pref("pdfjs.enableSelectionRendering", false);

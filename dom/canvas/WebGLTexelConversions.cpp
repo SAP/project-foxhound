@@ -193,9 +193,13 @@ class WebGLImageConverter {
 
     static auto inColorSpace2 = gfx::ToColorSpace2(SrcColorSpace);
     static auto outColorSpace2 = gfx::ToColorSpace2(DstColorSpace);
+    static auto inTransferFunction = gfx::TransferFunction::SRGB;
+    static auto outTransferFunction = gfx::TransferFunction::SRGB;
 
-    auto inColorProfile = gl::GLBlitHelper::ToColorProfileDesc(inColorSpace2);
-    auto outColorProfile = gl::GLBlitHelper::ToColorProfileDesc(outColorSpace2);
+    auto inColorProfile =
+        gl::GLBlitHelper::ToColorProfileDesc(inColorSpace2, inTransferFunction);
+    auto outColorProfile = gl::GLBlitHelper::ToColorProfileDesc(
+        outColorSpace2, outTransferFunction);
 
     const auto conversion = color::ColorProfileConversionDesc::From({
         .src = *inColorProfile,

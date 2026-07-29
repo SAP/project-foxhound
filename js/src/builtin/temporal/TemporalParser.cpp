@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -3206,10 +3204,10 @@ bool js::temporal::ParseTemporalRelativeToString(
 }
 
 void js::temporal::ParsedTimeZone::trace(JSTracer* trc) {
-  TraceNullableRoot(trc, &name, "ParsedTimeZone::name");
+  TraceRoot(trc, &name, "ParsedTimeZone::name");
 }
 
 void js::temporal::ParsedZonedDateTime::trace(JSTracer* trc) {
-  TraceNullableRoot(trc, &calendar, "ParsedZonedDateTime::calendar");
+  TraceRoot(trc, &calendar, "ParsedZonedDateTime::calendar");
   timeZoneAnnotation.trace(trc);
 }

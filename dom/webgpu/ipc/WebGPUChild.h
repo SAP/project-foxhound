@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -172,7 +171,8 @@ class WebGPUChild final : public PWebGPUChild {
   ipc::IPCResult RecvUncapturedError(RawId aDeviceId,
                                      const dom::GPUErrorFilter aType,
                                      const nsACString& aMessage);
-  ipc::IPCResult RecvDeviceLost(RawId aDeviceId, uint8_t aReason,
+  ipc::IPCResult RecvDeviceLost(RawId aDeviceId,
+                                const dom::GPUDeviceLostReason aReason,
                                 const nsACString& aMessage);
 
   size_t QueueDataBuffer(ipc::ByteBuf&& bb);

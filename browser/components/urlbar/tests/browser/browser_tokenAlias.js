@@ -7,6 +7,8 @@
 
 const TEST_ALIAS_ENGINE_NAME = "Test";
 const ALIAS = "@test";
+const TEST_ALIAS2_ENGINE_NAME = "Other";
+const ALIAS2 = "@other";
 const TEST_ENGINE_BASENAME = "searchSuggestionEngine.xml";
 
 // We make sure that aliases and search terms are correctly recognized when they
@@ -24,15 +26,23 @@ if (AppConstants.platform == "macosx") {
 add_setup(async function () {
   // Add a default engine with suggestions, to avoid hitting the network when
   // fetching them.
-  let defaultEngine = await SearchTestUtils.installOpenSearchEngine({
-    url: getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME,
-    setAsDefault: true,
-  });
-  defaultEngine.alias = "@default";
-  await SearchTestUtils.installSearchExtension({
-    name: TEST_ALIAS_ENGINE_NAME,
-    keyword: ALIAS,
-  });
+
+  await SearchTestUtils.updateRemoteSettingsConfig([
+    {
+      identifier: "default",
+      base: { aliases: ["default"] },
+    },
+    {
+      identifier: TEST_ALIAS_ENGINE_NAME,
+      // Config provided engines automatically have the `@` added to the alias.
+      base: { aliases: [ALIAS.substring(1)] },
+    },
+    {
+      identifier: TEST_ALIAS2_ENGINE_NAME,
+      // Config provided engines automatically have the `@` added to the alias.
+      base: { aliases: [ALIAS2.substring(1)] },
+    },
+  ]);
 
   // Search results aren't shown in quantumbar unless search suggestions are
   // enabled.
@@ -40,6 +50,8 @@ add_setup(async function () {
     set: [
       ["browser.urlbar.suggest.searches", true],
       ["browser.urlbar.scotchBonnet.enableOverride", false],
+      ["browser.search.separatePrivateDefault.ui.enabled", true],
+      ["browser.search.separatePrivateDefault", true],
     ],
   });
 
@@ -115,6 +127,7 @@ async function doSimpleTest(revertBetweenSteps) {
     await UrlbarTestUtils.assertSearchMode(window, {
       engineName: TEST_ALIAS_ENGINE_NAME,
       entry: "typed",
+      source: UrlbarUtils.RESULT_SOURCE.SEARCH,
     });
     Assert.equal(gURLBar.value, "", "value should be empty");
     await UrlbarTestUtils.exitSearchMode(window);
@@ -138,6 +151,7 @@ async function doSimpleTest(revertBetweenSteps) {
     await UrlbarTestUtils.assertSearchMode(window, {
       engineName: TEST_ALIAS_ENGINE_NAME,
       entry: "typed",
+      source: UrlbarUtils.RESULT_SOURCE.SEARCH,
     });
     Assert.equal(gURLBar.value, "foo", "value should be query");
     await UrlbarTestUtils.exitSearchMode(window);
@@ -161,6 +175,7 @@ async function doSimpleTest(revertBetweenSteps) {
     await UrlbarTestUtils.assertSearchMode(window, {
       engineName: TEST_ALIAS_ENGINE_NAME,
       entry: "typed",
+      source: UrlbarUtils.RESULT_SOURCE.SEARCH,
     });
     Assert.equal(gURLBar.value, "", "value should be empty");
     await UrlbarTestUtils.exitSearchMode(window);
@@ -218,6 +233,7 @@ add_task(async function spacesBeforeAlias() {
     await UrlbarTestUtils.assertSearchMode(window, {
       engineName: TEST_ALIAS_ENGINE_NAME,
       entry: "typed",
+      source: UrlbarUtils.RESULT_SOURCE.SEARCH,
     });
     Assert.equal(gURLBar.value, "", "value should be empty");
     await UrlbarTestUtils.exitSearchMode(window);
@@ -241,16 +257,17 @@ add_task(async function charsBeforeAlias() {
     "value should be unchanged"
   );
 
-  await UrlbarTestUtils.promisePopupClose(window, () =>
-    EventUtils.synthesizeKey("KEY_Escape")
-  );
+  await UrlbarTestUtils.promisePopupClose(window, () => {
+    EventUtils.synthesizeKey("KEY_Escape");
+    EventUtils.synthesizeKey("KEY_Escape");
+  });
 });
 
 // While already in search mode, an alias should not be recognized.
 add_task(async function alreadyInSearchMode() {
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
-    value: "",
+    value: "t",
   });
   await UrlbarTestUtils.enterSearchMode(window, {
     source: UrlbarUtils.RESULT_SOURCE.BOOKMARKS,
@@ -322,6 +339,7 @@ add_task(async function aliasCase() {
   await UrlbarTestUtils.assertSearchMode(window, {
     engineName: TEST_ALIAS_ENGINE_NAME,
     entry: "typed",
+    source: UrlbarUtils.RESULT_SOURCE.SEARCH,
   });
   Assert.equal(gURLBar.value, "", "value should be empty");
   await UrlbarTestUtils.exitSearchMode(window);
@@ -341,6 +359,7 @@ add_task(async function aliasCase_query() {
   await UrlbarTestUtils.assertSearchMode(window, {
     engineName: TEST_ALIAS_ENGINE_NAME,
     entry: "typed",
+    source: UrlbarUtils.RESULT_SOURCE.SEARCH,
   });
   Assert.equal(gURLBar.value, "query", "value should be query");
   await UrlbarTestUtils.exitSearchMode(window);
@@ -465,6 +484,7 @@ add_task(async function clickAndFillAlias() {
   await UrlbarTestUtils.assertSearchMode(window, {
     engineName: testEngineItem.result.payload.engine,
     entry: "keywordoffer",
+    source: UrlbarUtils.RESULT_SOURCE.SEARCH,
   });
 
   await UrlbarTestUtils.exitSearchMode(window);
@@ -503,6 +523,7 @@ add_task(async function enterAndFillAlias() {
   await UrlbarTestUtils.assertSearchMode(window, {
     engineName: details.searchParams.engine,
     entry: "keywordoffer",
+    source: UrlbarUtils.RESULT_SOURCE.SEARCH,
   });
 
   await UrlbarTestUtils.exitSearchMode(window);
@@ -529,6 +550,7 @@ add_task(async function enterAutofillsAlias() {
     await UrlbarTestUtils.assertSearchMode(window, {
       engineName: TEST_ALIAS_ENGINE_NAME,
       entry: "keywordoffer",
+      source: UrlbarUtils.RESULT_SOURCE.SEARCH,
     });
 
     await UrlbarTestUtils.exitSearchMode(window);
@@ -555,6 +577,7 @@ add_task(async function rightEntersSearchMode() {
     await UrlbarTestUtils.assertSearchMode(window, {
       engineName: TEST_ALIAS_ENGINE_NAME,
       entry: "typed",
+      source: UrlbarUtils.RESULT_SOURCE.SEARCH,
     });
     Assert.equal(gURLBar.value, "", "value should be empty");
     await UrlbarTestUtils.exitSearchMode(window);
@@ -592,6 +615,7 @@ add_task(async function rightEntersSearchMode() {
       engineName: TEST_ALIAS_ENGINE_NAME,
       entry: "keywordoffer",
       isPreview: true,
+      source: UrlbarUtils.RESULT_SOURCE.SEARCH,
     });
     Assert.equal(gURLBar.value, "", "value should be empty");
 
@@ -603,6 +627,7 @@ add_task(async function rightEntersSearchMode() {
       engineName: TEST_ALIAS_ENGINE_NAME,
       entry: "keywordoffer",
       isPreview: false,
+      source: UrlbarUtils.RESULT_SOURCE.SEARCH,
     });
     await UrlbarTestUtils.exitSearchMode(window);
   }
@@ -841,6 +866,7 @@ add_task(async function doNotShowInSearchMode() {
   await UrlbarTestUtils.assertSearchMode(window, {
     engineName: testEngineItem.result.payload.engine,
     entry: "keywordoffer",
+    source: UrlbarUtils.RESULT_SOURCE.SEARCH,
   });
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
@@ -857,6 +883,249 @@ add_task(async function doNotShowInSearchMode() {
       `Result at index ${i} is not a keywordoffer.`
     );
   }
+
+  gURLBar.value = "";
+  await UrlbarTestUtils.exitSearchMode(window);
+  await UrlbarTestUtils.promisePopupClose(window, () =>
+    EventUtils.synthesizeKey("KEY_Escape")
+  );
+});
+
+/**
+ * Installs an add-on engine that has the same alias as a config engine.
+ * The caller is responsible for unloading the add-on via the returned
+ * `extension`.
+ *
+ * @param {string} extensionName
+ *   The name of the add-on engine to install.
+ * @param {string} engineAlias
+ *   The alias to assign to the add-on engine, e.g. "@test".
+ * @param {string} configEngineId
+ *   The identifier of the config engine with the same alias.
+ */
+async function createDuplicateAliasEngines(
+  extensionName,
+  engineAlias,
+  configEngineId
+) {
+  let extension = await SearchTestUtils.installSearchExtension(
+    {
+      name: extensionName,
+      keyword: engineAlias,
+    },
+    { skipUnload: true }
+  );
+
+  let testConfigEngine = SearchService.getEngineById(configEngineId);
+  let addonEngine = SearchService.getEngineByName(extensionName);
+
+  return { testConfigEngine, addonEngine, extension };
+}
+
+// Tests that we select the right engine when entering a duplicate alias.
+add_task(async function duplicateAliases() {
+  let { testConfigEngine, addonEngine, extension } =
+    await createDuplicateAliasEngines("TestFoo", ALIAS, TEST_ALIAS_ENGINE_NAME);
+
+  // Set the add-on engine as default, so the alias should use this engine.
+  await SearchService.setDefault(
+    addonEngine,
+    SearchService.CHANGE_REASON.UNKNOWN
+  );
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: `${ALIAS} `,
+    fireInputEvent: true,
+  });
+  await UrlbarTestUtils.assertSearchMode(window, {
+    engineName: "TestFoo",
+    entry: "typed",
+  });
+
+  await UrlbarTestUtils.exitSearchMode(window);
+
+  // Now do the same, but with the main test engine as default.
+  await SearchService.setDefault(
+    testConfigEngine,
+    SearchService.CHANGE_REASON.UNKNOWN
+  );
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: `${ALIAS} `,
+    fireInputEvent: true,
+  });
+  await UrlbarTestUtils.assertSearchMode(window, {
+    engineName: TEST_ALIAS_ENGINE_NAME,
+    entry: "typed",
+    source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+  });
+
+  await UrlbarTestUtils.exitSearchMode(window);
+
+  // Now try it with neither as default - should still use the engine from the
+  // configuration.
+  await SearchService.setDefault(
+    SearchService.getEngineById("default"),
+    SearchService.CHANGE_REASON.UNKNOWN
+  );
+
+  // Move the add-on search engine first in the list, so that we have it in
+  // a predictable place.
+  await SearchService.moveEngine(addonEngine, 0);
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: `${ALIAS} `,
+    fireInputEvent: true,
+  });
+  await UrlbarTestUtils.assertSearchMode(window, {
+    engineName: TEST_ALIAS_ENGINE_NAME,
+    entry: "typed",
+    source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+  });
+
+  await UrlbarTestUtils.exitSearchMode(window);
+
+  // Lastly, change the order so the config engine is before the add-on engine,
+  // to make sure we still use the config engine.
+  await SearchService.moveEngine(testConfigEngine, 0);
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: `${ALIAS} `,
+    fireInputEvent: true,
+  });
+  await UrlbarTestUtils.assertSearchMode(window, {
+    engineName: TEST_ALIAS_ENGINE_NAME,
+    entry: "typed",
+    source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+  });
+
+  await UrlbarTestUtils.exitSearchMode(window);
+
+  await extension.unload();
+
+  await SearchService.moveEngine(SearchService.getEngineById("default"), 0);
+});
+
+// A cut down version of the previous test that checks we use the correct alias
+// when the default engine is set for private browsing mode.
+add_task(async function duplicateAliases_private() {
+  let { testConfigEngine, addonEngine, extension } =
+    await createDuplicateAliasEngines(
+      "OtherFoo",
+      ALIAS2,
+      TEST_ALIAS2_ENGINE_NAME
+    );
+
+  // Set the add-on engine as default, so the alias should use this engine.
+  await SearchService.setDefaultPrivate(
+    addonEngine,
+    SearchService.CHANGE_REASON.UNKNOWN
+  );
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: `${ALIAS2} `,
+    fireInputEvent: true,
+  });
+  await UrlbarTestUtils.assertSearchMode(window, {
+    engineName: "OtherFoo",
+    entry: "typed",
+  });
+
+  await UrlbarTestUtils.exitSearchMode(window);
+
+  // Now do the same, but with the main test engine as default.
+  await SearchService.setDefaultPrivate(
+    testConfigEngine,
+    SearchService.CHANGE_REASON.UNKNOWN
+  );
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: `${ALIAS2} `,
+    fireInputEvent: true,
+  });
+  await UrlbarTestUtils.assertSearchMode(window, {
+    engineName: TEST_ALIAS2_ENGINE_NAME,
+    entry: "typed",
+    source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+  });
+
+  await UrlbarTestUtils.exitSearchMode(window);
+
+  await extension.unload();
+});
+
+add_task(async function duplicateAliases_results_order() {
+  let {
+    testConfigEngine,
+    addonEngine: addonEngine1,
+    extension: extension1,
+  } = await createDuplicateAliasEngines(
+    "TestDefault",
+    ALIAS,
+    TEST_ALIAS_ENGINE_NAME
+  );
+
+  let { addonEngine: addonEngine2, extension: extension2 } =
+    await createDuplicateAliasEngines(
+      "TestPrivateDefault",
+      ALIAS,
+      TEST_ALIAS_ENGINE_NAME
+    );
+
+  let { addonEngine: addonEngine3, extension: extension3 } =
+    await createDuplicateAliasEngines(
+      "TestOther",
+      ALIAS,
+      TEST_ALIAS_ENGINE_NAME
+    );
+
+  await SearchService.setDefault(
+    addonEngine1,
+    SearchService.CHANGE_REASON.UNKNOWN
+  );
+  await SearchService.setDefaultPrivate(
+    addonEngine2,
+    SearchService.CHANGE_REASON.UNKNOWN
+  );
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "@tes",
+  });
+
+  let expectedOrder = [
+    addonEngine1.name, // 1. default
+    addonEngine2.name, // 2. private default
+    testConfigEngine.name, // 3. config engine
+    addonEngine3.name, // 4. add-on
+  ];
+
+  let actualOrder = [];
+  let resultCount = UrlbarTestUtils.getResultCount(window);
+  for (let i = 0; i < resultCount; i++) {
+    let details = await UrlbarTestUtils.getDetailsOfResultAt(window, i);
+    if (details.result.providerName == "UrlbarProviderTokenAliasEngines") {
+      actualOrder.push(details.searchParams.engine);
+    }
+  }
+
+  Assert.deepEqual(
+    actualOrder,
+    expectedOrder,
+    "Duplicate alias engines appear in correct default, private default, app-provided, add-on order."
+  );
+
+  await extension1.unload();
+  await extension2.unload();
+  await extension3.unload();
+
+  await SearchService.moveEngine(SearchService.getEngineById("default"), 0);
 });
 
 async function assertFirstResultIsAlias(isAlias, expectedAlias) {

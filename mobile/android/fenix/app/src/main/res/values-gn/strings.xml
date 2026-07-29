@@ -6,7 +6,7 @@
   file, You can obtain one at http://mozilla.org/MPL/2.0/.
 -->
 
-<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
   <string name="app_name_private_5">Ñemigua %s</string>
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
@@ -19,8 +19,12 @@
   <string name="content_description_menu">Jeporavorãve</string>
   <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
   <string name="content_description_private_browsing">Ñeikundaha ñemi</string>
+  <!-- Content description (not visible, for screen readers etc.): "Normal Browsing" menu button. -->
+  <string name="content_description_normal_browsing">Ñeikundaha porã</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">Eheka térã ehai kundaharape</string>
+  <!-- Shorter placeholder text shown in the search bar when an additional action (voice search) is rendered alongside the hint. -->
+  <string name="search_hint_short">Eheka</string>
   <!-- Placeholder text shown in the search bar before a user enters text for a general engine -->
   <string name="search_hint_general_engine">Eheka ñandutípe</string>
   <!-- Placeholder text shown in search bar when using history search -->
@@ -31,10 +35,6 @@
   <string name="tab_search_hint">Eheka tendayke</string>
   <!-- Placeholder text shown in the search bar when using application search engines -->
   <string name="application_search_hint">Emoinge ñe’ẽ ehekaséva</string>
-  <!-- No Open Tabs Message Description -->
-  <string name="no_open_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">Umi tendayke ijurujáva ojehecháta ápe.</string>
-  <!-- No Private Tabs Message Description -->
-  <string name="no_private_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">Ne rendaykekuéra ñemiguáva ojehecháta ápe.</string>
   <!-- The header text displayed on the private tabs page when no private tabs are open -->
   <string name="tab_manager_empty_private_tabs_page_header">Ñeikundaha ñemi</string>
   <!-- The supplementary text displayed on the private tabs page when no private tabs are open. %1$s is the name of the app (for example "Firefox") -->
@@ -53,8 +53,6 @@
   <string name="tab_tray_select_collection">Eiporavo ñembyatyha</string>
   <!-- Content description for close button while in multiselect mode in tab tray -->
   <string name="tab_tray_close_multiselect_content_description">Esẽ poravoha hekoetáva ayvúgui</string>
-  <!-- Content description for save to collection button while in multiselect mode in tab tray -->
-  <string name="tab_tray_collection_button_multiselect_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Eñongatu tendayke poravopyre mbyatyhápe</string>
   <!-- The header text displayed on the synced tabs page when the user is not logged into an account. -->
   <string name="tab_manager_empty_synced_tabs_page_header">Ejapyhy tendayke oimeha mba’e’okágui</string>
   <!-- The supplementary text displayed on the synced tabs page when the user is not logged into an account. -->
@@ -74,7 +72,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">Mboguete</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s ojapókuri Mozilla.</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s ojapókuri Mozilla.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Mombe’ugua’u kundahára ñemi rehegua</string>
   <!-- Text to be announced by the accessibility service to inform the user that the private browsing mode is currently active. -->
@@ -151,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Tendayke pyahu ñemigua</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Ñe’ẽñemi</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">Eipe’aite, ¿mba’ére?</string>
   <!--
     Recent Tabs
 
@@ -200,8 +200,6 @@
   <string name="browser_menu_stop">Pyta</string>
   <!-- Browser menu button that opens the extensions manager -->
   <string name="browser_menu_extensions">Jepysokue</string>
-  <!-- Browser menu banner header text for extensions onboarding when all installed extensions have been disabled. -->
-  <string name="browser_menu_disabled_extensions_banner_onboarding_header" tools:ignore="UnusedResources" moz:removedIn="149">Ereko jepysokue mohendapyre, hákatu ndaijurujái</string>
   <!-- Browser menu button that opens the extensions manager -->
   <string name="browser_menu_manage_extensions">Eñangareko jepysokuére</string>
   <!-- Browser menu group that contains additional settings in collapsed state -->
@@ -221,18 +219,12 @@
   <string name="browser_menu_try_a_recommended_extension_description">Eiporu jepysokue je’epyre</string>
   <!-- Browser menu button that opens account settings -->
   <string name="browser_menu_account_settings">Mba’ete marandu</string>
-  <!-- Browser menu button that sends a user to help articles -->
-  <string name="browser_menu_help" tools:ignore="UnusedResources" moz:removedIn="149">Pytyvõ</string>
-  <!-- Browser menu button that sends a to a the what's new article -->
-  <string name="browser_menu_whats_new" tools:ignore="UnusedResources" moz:removedIn="149">Mba’epyahu</string>
   <!-- Browser menu button that opens the settings menu -->
   <string name="browser_menu_settings">Ñemboheko</string>
   <!-- Browser menu button that opens a user's library -->
   <string name="browser_menu_library">Arandukarenda</string>
   <!-- Browser menu toggle that requests a desktop site -->
   <string name="browser_menu_desktop_site">Tenda mesa arigua</string>
-  <!-- Browser menu button that reopens a private tab as a regular tab -->
-  <string name="browser_menu_open_in_regular_tab" tools:ignore="UnusedResources" moz:removedIn="149">Embojuruja tendayke</string>
   <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
   <string name="browser_menu_add_to_homescreen">Embojuaju mba’erechaha ñepyrũgua</string>
   <!-- Browser menu toggle that adds a PWA of the site on the device home screen. -->
@@ -260,11 +252,6 @@
     Browser menu text shown in custom tabs to indicate this is a Fenix tab
     %1$s is the name of the app (for example "Firefox").
   -->
-  <string name="browser_menu_powered_by" tools:ignore="UnusedResources" moz:removedIn="149">OHEPYME’ẼVA %1$s</string>
-  <!--
-    Browser menu text shown in custom tabs to indicate this is a Fenix tab
-    %1$s is the name of the app (for example "Firefox").
-  -->
   <string name="browser_menu_powered_by2">Omboguatáva %1$s</string>
   <!-- Browser menu button to put the current page in reader mode -->
   <string name="browser_menu_read">Moñe’ẽrã rechaha</string>
@@ -273,15 +260,7 @@
   <!-- Browser menu button to open the current page in an external app -->
   <string name="browser_menu_open_app_link">Embojuruja tembiporu’i</string>
   <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
-  <string name="browser_menu_customize_reader_view" tools:ignore="UnusedResources" moz:removedIn="149">Emboava moñe’ẽhára rechaha</string>
-  <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
   <string name="browser_menu_customize_reader_view_2">Emboava moñe’ẽrã jehechaha</string>
-  <!-- Browser menu label for adding a bookmark -->
-  <string name="browser_menu_add" tools:ignore="UnusedResources" moz:removedIn="149">Mbojuaju</string>
-  <!-- Browser menu label for editing a bookmark -->
-  <string name="browser_menu_edit" tools:ignore="UnusedResources" moz:removedIn="149">Mbosako’i</string>
-  <!-- Button shown on the home page that opens the Customize home settings -->
-  <string name="browser_menu_customize_home_1" tools:ignore="UnusedResources" moz:removedIn="149">Emboava kuatiarogue ñepyrũgua</string>
   <!-- Browser menu label to sign in to sync on the device using Mozilla accounts -->
   <string name="browser_menu_sign_in">Eñepyrũ tembiapo</string>
   <!-- Browser menu caption label for the "Sign in" browser menu item described in `browser_menu_sign_in` -->
@@ -300,12 +279,6 @@
   <string name="browser_close_main_menu_handlebar_content_description">Emboty poravorã</string>
   <!-- Content description (not visible, for screen readers etc.) for main menu navigation header. -->
   <string name="browser_main_menu_content_description_navigation_header">Ñeikundaha</string>
-  <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar extensions menu. -->
-  <string name="browser_extensions_menu_handlebar_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Emboty jepysokue poravorã kuatiarogue</string>
-  <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar save menu. -->
-  <string name="browser_save_menu_handlebar_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Emboty poravorã nongatuha kuatiarogue</string>
-  <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar tools menu. -->
-  <string name="browser_tools_menu_handlebar_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Emboty tembiporu poravorã kuatiarogue</string>
   <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar custom tab menu. -->
   <string name="browser_custom_tab_menu_handlebar_content_description">Emboty tendayke poravorã mba’eteéva</string>
   <!-- Browser menu label that bookmarks the currently visited page -->
@@ -314,14 +287,14 @@
   <string name="browser_menu_edit_bookmark">Embosako’i techaukaha</string>
   <!-- Browser menu label that the saves the currently visited page as a PDF -->
   <string name="browser_menu_save_as_pdf_2">Eñongatu PDF ramo</string>
+  <!-- Browser menu label for moving the current private tab to a non-private tab -->
+  <string name="browser_menu_move_to_non_private_tab">Emongu’e tendayke hekoñemi’ỹvape</string>
   <!-- Browser menu label for navigating to the translation feature, which provides language translation options the current visited page -->
   <string name="browser_menu_translate_page_2">Emoñe’ẽasa kuatiarogue</string>
   <!-- Browser menu label for navigating to the summarization feature, which provides site summarization for the current visited page -->
   <string name="browser_menu_summarize_page">Emombyky kuatiarogue</string>
   <!-- Browser menu badge text for summarization feature -->
   <string name="browser_menu_summarize_page_badge">Pyahu</string>
-  <!-- Browser menu label for navigating to the Web Compat Reporter feature, which provides users the ability to send bug reports for broken sites. -->
-  <string name="browser_menu_webcompat_reporter" tools:ignore="UnusedResources" moz:removedIn="149">Emombe’u tenda ivaíva…</string>
   <!-- Browser menu label for navigating to the Web Compat Reporter feature, which provides users the ability to send bug reports for broken sites. -->
   <string name="browser_menu_webcompat_reporter_2">Emombe’u tenda vai</string>
   <!-- Browser menu label that is displayed when the current page has been translated by the translation feature. -->
@@ -361,17 +334,9 @@
   <!--
     Browser Toolbar
 
-    Content description for the Home screen button on the browser toolbar
+    Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
-  <string name="browser_toolbar_home">Mba’erechaha ñepyrũgua</string>
-  <!-- Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred. -->
   <string name="browser_toolbar_translate">Emoñe’ẽasa kuatiarogue</string>
-  <!--
-    Content description (not visible, for screen readers etc.) for the translate page toolbar button that opens the translations dialog when the page is translated successfully.
-    %1$s is the name of the language that is displayed in the original page. (For example: English)
-    %2$s is the name of the language which the page was translated to. (For example: French)
-  -->
-  <string name="browser_toolbar_translated_successfully">Kuatiarogue moñe’ẽasapyre %1$s-gui %2$s-pe.</string>
   <!-- CFR description for the browser toolbar describing the "Shake to summarize feature" -->
   <string name="browser_toolbar_summarize_cfr_description">Emongu’e ne mba’e’oka emombyky hag̃ua ko kuatiarogue sapy’aitépe. ⚡️</string>
   <!--
@@ -387,6 +352,56 @@
   <!-- Content description for the translate toolbar action that closes the translations toolbar. -->
   <string name="translation_toolbar_close_action">Emboyke ñe’ẽmondo</string>
   <!--
+    Page summaries
+
+    Toolbar title for the Page summaries settings fragment
+  -->
+  <string name="preferences_page_summaries">Kuatiarogueita mombyky</string>
+  <!--
+    AI Controls settings
+
+    Title for the AI controls settings screen
+  -->
+  <string name="preferences_ai_controls">IA moambueha</string>
+  <!-- Headline text for the AI controls banner. %s is the name of the app (for example "Firefox"). -->
+  <string name="ai_controls_banner_headline">Eguereko meme jeporavorã %s-pe</string>
+  <!-- Supporting text for the AI controls banner. %s is a learn more link using ai_controls_learn_more as text. -->
+  <string name="ai_controls_banner_supporting_text_2">Upéva ogueroike eiporútarõ tembiapoite iporãva IA ndive. %s</string>
+  <!-- Link text for learning more about AI controls -->
+  <string name="ai_controls_learn_more">Eikuaave</string>
+  <!-- Title for the block AI enhancements toggle -->
+  <string name="ai_controls_block_ai_title">Ejoko IA porãverã rehegua</string>
+  <!-- Description for the block AI enhancements toggle. %s is the name of the app (for example "Firefox"). -->
+  <string name="ai_controls_block_ai_description">Jejoko he’ise nderehechamo’ãiha IA iporãvéva térã ag̃agua %s-pe, ni ovetã apysẽ hi’arikuéra.</string>
+  <!-- Link text to see what AI enhancements are and aren’t included -->
+  <string name="ai_controls_see_whats_included">Ehecha mba’épa oike térã ndoikéi</string>
+  <!-- Banner text shown when AI enhancements are blocked -->
+  <string name="ai_controls_blocked_info_banner">IA porãverã taipyahu térã oĩva ojejoko ijypykue rupi. Embojuruja tembiapoite eku’ejeývo.</string>
+  <!-- Section header for the AI-powered features list -->
+  <string name="ai_controls_ai_powered_features">Tembiapoite IA omongu’éva</string>
+  <!-- Title for the translations AI feature toggle -->
+  <string name="ai_controls_translations_title">Ñemoñe’ẽasa</string>
+  <!-- Description for the translations AI feature toggle -->
+  <string name="ai_controls_translations_description">Opaite ñe’ẽasa opyta ñemíme ne mba’e’okápe.</string>
+  <!-- Link text to navigate to more translations settings -->
+  <string name="ai_controls_more_translations_settings">Oĩ poravoverã ñe’ẽasarãme</string>
+  <!-- Link text to navigate to more page summary settings -->
+  <string name="ai_controls_more_page_summary_settings">Oĩ poravoverã kuatiarogue mombykýpe</string>
+  <!-- Title for the voice search AI feature toggle -->
+  <string name="ai_controls_voice_search_title">Ñe’ẽ jeheka</string>
+  <!-- Description for the voice search AI feature toggle -->
+  <string name="ai_controls_voice_search_description">Mba’epúgui oiko moñe’ẽrã Google Voice Services rupive.</string>
+  <!-- Title for the block AI enhancements confirmation dialog -->
+  <string name="ai_controls_block_dialog_title">¿Ejoko IA porãverã?</string>
+  <!-- Body text for the block AI enhancements confirmation dialog. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="ai_controls_block_dialog_body">Ndojehechamo’ãi pe IA pyahu iporãvéva térã ag̃agua %1$s-pe, avei ovetã apysẽ hi’ári. Uperire, ikatu embohekojera opaite mba’e eiporuséva.\n\nPe jejoko avei ombyaikuaa jepysokue oiporúva IA ome’ẽva %1$s.</string>
+  <!-- Label shown above the list of features that will be blocked in the block AI dialog -->
+  <string name="ai_controls_block_dialog_what_will_be_blocked">Mba’épa ojejokóta:</string>
+  <!-- Cancel button text in the block AI enhancements confirmation dialog -->
+  <string name="ai_controls_block_dialog_cancel">Heja</string>
+  <!-- Block button text in the block AI enhancements confirmation dialog -->
+  <string name="ai_controls_block_dialog_block">Joko</string>
+  <!--
     Locale Settings Fragment
 
     Content description for tick mark on selected language
@@ -399,12 +414,8 @@
   <!--
     Search Fragment
 
-    Button in the search view that lets a user search by scanning a QR code
+    Button in the search view that lets a user navigate to the site in their clipboard
   -->
-  <string name="search_scan_button_2">Emoha’ãnga QR ayvu</string>
-  <!-- Button in the search view when shortcuts are displayed that takes a user to the search engine settings -->
-  <string name="search_shortcuts_engine_settings">Hekaha ñemboheko</string>
-  <!-- Button in the search view that lets a user navigate to the site in their clipboard -->
   <string name="awesomebar_clipboard_title">Emoĩmba juajuha kuatiajokoha guive</string>
   <!-- Button in the search suggestions onboarding that allows search suggestions in private sessions -->
   <string name="search_suggestions_onboarding_allow_button">Moneĩ</string>
@@ -437,68 +448,14 @@
   <string name="search_suggestions_delete_history_item_snackbar">Emboguete %1$s tembiasakuégui</string>
   <!-- Content description (not visible, for screen readers etc.): Button shown near a history search result allowing to delete it from browsing history. -->
   <string name="mozac_browser_awesomebar_remove_suggestion" tools:ignore="UnusedResources">Embogue ko jeikeha tembiasakuégui</string>
+  <!-- Button in the app links prompt that keeps the user in the browser instead of opening the external app. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="applinks_prompt_negative_button">Epyta %1$s-pe</string>
   <!--
     Home onboarding
 
     Content description (not visible, for screen readers etc.): Close button for the home onboarding dialog
   -->
   <string name="onboarding_home_content_description_close_button">Mboty</string>
-  <!--
-    Juno first user onboarding flow experiment, strings are marked unused as they are only referenced by Nimbus experiments.
-
-    Description for learning more about our privacy notice.
-  -->
-  <string name="juno_onboarding_privacy_notice_text" tools:ignore="BrandUsage">Firefox marandu’i ñemigua</string>
-  <!-- Title for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_title_nimbus_2">Rovy’ã eimére tekorosãme</string>
-  <!-- Description for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_description_nimbus_3">Ore kundahára oykeko atyguasu viru’ỹgua oipytyvõ omboykévo umi mba’apohaguasu ani nde rapykueho ñanduti rupive.</string>
-  <!-- Text for the button to set firefox as default browser on the device -->
-  <string name="juno_onboarding_default_browser_positive_button" tools:ignore="UnusedResources">Ejapo kundahára ijypyguávarõ</string>
-  <!-- Text for the button dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_default_browser_negative_button" tools:ignore="UnusedResources">Ani ko’ág̃a</string>
-  <!-- Title for sign in to sync screen. -->
-  <string name="juno_onboarding_sign_in_title_2">Eime papapýpe ehasávo ambue mba’e’okápe</string>
-  <!--
-    Description for sign in to sync screen. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_sign_in_description_3" tools:ignore="BrandUsage">Firefox ombopapapapy ñe’ẽñemi, techaukaaha ha hetave oñembojuehéramo.</string>
-  <!-- Text for the button to sign in to sync on the device -->
-  <string name="juno_onboarding_sign_in_positive_button" tools:ignore="UnusedResources">Eñemboheraguapy</string>
-  <!-- Text for the button dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_sign_in_negative_button" tools:ignore="UnusedResources">Ani ko’ág̃a</string>
-  <!--
-    Title for enable notification permission screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_enable_notifications_title_nimbus_2" tools:ignore="BrandUsage">Umi marandu ne pytyvõta eime hag̃ua tekorosãme Firefox ndive</string>
-  <!--
-    Description for enable notification permission screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_enable_notifications_description_nimbus_2" tools:ignore="BrandUsage">Emondo tendayke mba’e’oka pa’ũme tekorosãme ha ehecha ambue Firefox rembiapoite ñemiguáva.</string>
-  <!-- Text for the button to request notification permission on the device -->
-  <string name="juno_onboarding_enable_notifications_positive_button" tools:ignore="UnusedResources">Emyandy marandu’i</string>
-  <!-- Text for the button dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_enable_notifications_negative_button" tools:ignore="UnusedResources">Ani ko’ág̃a</string>
-  <!--
-    Title for add search widget screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_add_search_widget_title" tools:ignore="BrandUsage,UnusedResources">Eiporu Firefox widget jehekaha</string>
-  <!--
-    Description for add search widget screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_add_search_widget_description" tools:ignore="BrandUsage,UnusedResources">Firefox ndive ne mba’erechaha ñepyrũguápe, eikéta pya’e kundahárape omomba’éva tekoñemi ha ojoko umi tenda rapykuehoha.</string>
-  <!--
-    Text for the button to add search widget on the device used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_add_search_widget_positive_button" tools:ignore="BrandUsage,UnusedResources">Embjuaju Firefox widget</string>
-  <!-- Text for the button to dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_add_search_widget_negative_button" tools:ignore="UnusedResources">Ani ko’ág̃a</string>
   <!-- Title for the privacy preferences dialog shown during onboarding. Note: The word "Firefox" should NOT be translated. -->
   <string name="onboarding_preferences_dialog_title" tools:ignore="BrandUsage">Ore pytyvõ Firefox porãverã</string>
   <!-- Title for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
@@ -518,17 +475,13 @@
   <!-- Button text to reopen firefox after the crash is processed %s is the name of the app (for example "Firefox") -->
   <string name="startup_crash_restart">Embojurujajey %s</string>
   <!-- Title for the usage data option in the privacy preferences dialog shown during onboarding. Note: The word "Mozilla" should NOT be translated. -->
-  <string name="onboarding_preferences_dialog_usage_data_title">Emondo mba’ekuaarã aporekogua ha ñomongeta Mozilla-pe</string>
+  <string name="onboarding_preferences_dialog_usage_data_title" tools:ignore="BrandUsage">Emondo mba’ekuaarã aporekogua ha ñomongeta Mozilla-pe</string>
   <string name="onboarding_preferences_dialog_usage_data_description_2" tools:ignore="BrandUsage">Umi mba’ekuaarã mba’e’oka rehegua, hardware ñemboheko ha Firefox jeporu oipytyvõ tembiapoite porãverã, ijeporureko ha hekopyta opaite poruhárape g̃uarã.</string>
   <string name="onboarding_preferences_dialog_usage_data_learn_more_2">Kuaave</string>
   <!-- Positive button label for the privacy preferences dialog shown during onboarding. -->
   <string name="onboarding_preferences_dialog_positive_button">Apopyre</string>
   <!-- Terms of service onboarding title card label. 'Firefox' intentionally hardcoded here -->
   <string name="onboarding_welcome_to_firefox" tools:ignore="BrandUsage">Eg̃uahẽporãite Firefox-pe</string>
-  <!-- Terms of service sub header label. -->
-  <string name="onboarding_terms_of_service_sub_header_2">Ñeikundaha pya’e ha hekorosãva</string>
-  <!-- Terms of service onboarding page continue button label. -->
-  <string name="onboarding_term_of_service_agree_and_continue_button_label_2">Ku’ejey</string>
   <!-- Line one of the terms of service onboarding page. %1$s is replaced by an active link, using onboarding_term_of_service_line_one_link_text_2 as text (“Firefox Terms of Use”). -->
   <string name="onboarding_term_of_service_line_one_2">Eku’ejeývo, emoneĩmbáma umi %1$s.</string>
   <!-- Used as text for the link in onboarding_term_of_service_line_one_2. -->
@@ -577,7 +530,7 @@
   <!-- Onboarding label for 'Continue' button. -->
   <string name="onboarding_redesign_continue_button" tools:ignore="UnusedResources">Eku’ejey</string>
   <!-- Marketing onboarding page title. 'Firefox' is intentionally hardcoded. -->
-  <string name="onboarding_marketing_redesign_title" tools:ignore="BrandUsage,UnusedResources">Orepytyvõ Firefox oiko porãve hag̃ua</string>
+  <string name="onboarding_marketing_redesign_title" tools:ignore="BrandUsage">Orepytyvõ Firefox oiko porãve hag̃ua</string>
   <!-- Marketing onboarding page opt-out checkbox. Unchecking the box does not increase data collection. Our data practices remain the same. 'Mozilla' is intentionally hardcoded. -->
   <string name="onboarding_marketing_redesign_opt_out_checkbox" tools:ignore="BrandUsage,UnusedResources">Emombe’u marketing Mozilla-guápe mba’éichapa eikuaáraka’e Firefox ha ijeporu. Ko’ã mba’ekuaarã araka’eve noñevendéi.</string>
   <!-- Marketing onboarding page clickable link text to "learn more" on how data is used. -->
@@ -596,16 +549,6 @@
   <string name="onboarding_redesign_sync_positive_button" tools:ignore="UnusedResources">Eñepyrũ embojuehe</string>
   <!-- Sync onboarding redesign negative button text. -->
   <string name="onboarding_redesign_sync_negative_button" tools:ignore="UnusedResources">Ani ko’ág̃a</string>
-  <!-- Marketing onboarding page title. 'Firefox' is intentionally hardcoded. -->
-  <string name="onboarding_marketing_title" tools:ignore="BrandUsage,UnusedResources">Orepytyvõ Firefox oiko porãve hag̃ua</string>
-  <!-- Marketing onboarding page body. 'Firefox' is intentionally hardcoded. -->
-  <string name="onboarding_marketing_body" tools:ignore="BrandUsage,UnusedResources">Eikuaaukávo mba’éichapa eikuaára’e Firefox ha ijeporu, orepytyvõ emoherakuã hag̃ua ore kundahára hetave tapichápe.</string>
-  <!-- Marketing onboarding page opt-out checkbox. Unchecking the box does not increase data collection. Our data practices remain the same. 'Mozilla' is intentionally hardcoded. -->
-  <string name="onboarding_marketing_opt_out_checkbox">Emoherakuã mba’ekuaarã Mozilla-pegua marketing ndive. Ko’ã mba’ekuaarã noñevendéi ha ndoikomo’ãi ñemurãrõ.</string>
-  <!-- Marketing onboarding page clickable link text to "learn more" on how data is used. -->
-  <string name="onboarding_marketing_learn_more" tools:ignore="UnusedResources">Mba’éichapa jaiporu umi mba’ekuaarã</string>
-  <!-- Marketing onboarding page button label. Button to confirm choice and start browsing. -->
-  <string name="onboarding_marketing_positive_button" tools:ignore="UnusedResources">Emoneĩ ha eikundaháma</string>
   <!-- Marketing onboarding page title variant. “One last thing” refers to the final step or action in the onboarding process that we’re asking users to take before they can start using the browser. -->
   <string name="onboarding_marketing_title_1" tools:ignore="UnusedResources">Peteĩ mba’eve</string>
   <!-- Marketing onboarding page body variant. 'Firefox' is intentionally hardcoded. -->
@@ -616,8 +559,12 @@
 
   <!-- "Continue" onboarding button. -->
   <string name="nova_onboarding_continue_button">Eku’ejey</string>
+  <!-- "Continue browsing" onboarding button. -->
+  <string name="nova_onboarding_continue_browsing_button" tools:ignore="UnusedResources">Eikundaha gueteri</string>
   <!-- "Not now" onboarding button. -->
   <string name="nova_onboarding_negative_button">Ani ko’ág̃a</string>
+  <!-- "Skip" onboarding button. -->
+  <string name="nova_onboarding_skip_button" tools:ignore="UnusedResources">Ehejarei</string>
   <!-- Terms of use (ToU) onboarding title. -->
   <string name="nova_onboarding_tou_title" tools:ignore="UnusedResources">Eime eñani hag̃uáicha</string>
   <!-- Terms of use (ToU) onboarding subtitle. -->
@@ -677,9 +624,54 @@
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text as text (“How we use the data”).
   -->
-  <string name="nova_onboarding_marketing_body" tools:ignore="BrandUsage">Emombe’u marketing Mozilla-guápe mba’éichapa eikuaáraka’e Firefox ha ijeporu. Ko’ã mba’ekuaarã noñevendemo’ãi. %1$s</string>
+  <string name="nova_onboarding_marketing_body" tools:ignore="BrandUsage,UnusedResources">Emombe’u marketing Mozilla-guápe mba’éichapa eikuaáraka’e Firefox ha ijeporu. Ko’ã mba’ekuaarã noñevendemo’ãi. %1$s</string>
+  <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_2" tools:ignore="BrandUsage">Emoherakuã marketing Mozilla-guápe mba’éicha eikuaáraka’e Firefox ha ijeporu. Ko’ã mba’ekuaarã araka’eve noñevendéi.</string>
+  <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage,UnusedResources">Ore pytyvõkuaa rog̃uahẽ hag̃ua tapichaitápe rohejávo Mozilla oikuaauka moõ rupi romoherakuãta Firefox nde ha’ére Firefox poruhára.</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+  -->
+  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage,UnusedResources">Ore pytyvõ roguahẽ hag̃ua hetave tapichápe ehejávo Mozilla toikuaauka pyendavusu eikehague guive eiporúvo Firefox.</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+  -->
+  <string name="nova_onboarding_marketing_body_5" tools:ignore="BrandUsage,UnusedResources">Ore pytyvõ roguahẽ hag̃ua hetave tapichápe ehejávo Mozilla toikuaauka pyendavusu eiporuha ára guive Firefox.</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+    %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text as text (“How we use the data”).
+  -->
+  <string name="nova_onboarding_marketing_body_6" tools:ignore="BrandUsage,UnusedResources">Ore pytyvõ roguahẽ hag̃ua hetave tapichápe: eheja Mozilla toikuaauka pyendavusu ypykuéva eipuruha Firefox. %1$s</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+    %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text_1 as text (“Learn More”).
+  -->
+  <string name="nova_onboarding_marketing_body_7" tools:ignore="BrandUsage">Ore pytyvõ roguahẽ hag̃ua hetave tapichápe ehejávo Mozilla toikuaauka pyendavusu eikehague guive eiporúvo Firefox. %1$s</string>
+  <!-- Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_line_two" tools:ignore="BrandUsage">Firefox ojerovu ijehegui rupi omba’apo omoakãrapu’ã hag̃ua ñanduti hekosãsóva umi ojagarrapaséva renondépe.</string>
+  <!--
+    Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded.
+    “Allowing” refers to the main button “Allow and Continue”; the ask for the user is to allow communicating back to the platform.
+  -->
+  <string name="nova_onboarding_marketing_body_line_three" tools:ignore="BrandUsage">Ekatúpa emoneĩ roipytyvõvo Firefox-pe ogana hag̃ua.</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">Mba’éichapa jaiporu mba’ekuaarãita</string>
+  <!-- Marketing onboarding body link text. -->
+  <string name="nova_onboarding_marketing_body_link_text_1">Eikuaave</string>
+  <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Eipytyvõ Firefox-pe</string>
+  <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_3">Héẽ</string>
+  <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_2">Emoneĩ ha Eku’ejey</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">Nahániri, aguyje</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text_2">Nahániri</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Umi marandu ne pytyvõta eime hag̃ua tekorosãme Firefox ndive</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
@@ -692,43 +684,27 @@
   <string name="nova_onboarding_add_search_widget_subtitle" tools:ignore="BrandUsage">Eñepyrũ peteĩteĩva jeheka ne pumbyry mba’erechaha guive ha péicha eikuaáta Firefox ñemo’ã eguerekoha.</string>
   <!-- "Add search widget" onboarding button. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_add_search_widget_button" tools:ignore="BrandUsage">Embjuaju Firefox widget</string>
+  <!-- Customize prompt onboarding title. -->
+  <string name="nova_onboarding_customize_prompt_title" tools:ignore="UnusedResources">Ndahasýi iñemboava ha hekoñemive peteĩteĩva jekutúpe</string>
+  <plurals name="nova_onboarding_customize_prompt_body" tools:ignore="UnusedResources">
+    <!--
+      Customize prompt onboarding body.
+      %1$s is replaced by the product name (for example "Firefox"),
+      %2$,d is replaced by the number of trackers blocked. The comma represents the thousand
+      separator (e.g. 1,000 in English), and it will automatically use the correct character
+      for your locale (don't change or remove it).
+    -->
+    <item quantity="one">%1$s ojoko %2$,d tapykuehoha eikundahávo ñandutípe.</item>
+    <item quantity="other">%1$s ojoko %2$,d tapykuehohaita eikundahávo ñandutípe.</item>
+  </plurals>
+  <!-- Customize prompt onboarding positive button. -->
+  <string name="nova_onboarding_customize_prompt_positive_button" tools:ignore="UnusedResources">Eñepyrũ emboava</string>
+  <!-- App icon onboarding title. -->
+  <string name="nova_onboarding_app_icon_prompt_title" tools:ignore="UnusedResources">Eiporavo tembiporu’i ra’ãnga’i mboavapyre</string>
+  <!-- App icon onboarding body. -->
+  <string name="nova_onboarding_app_icon_prompt_body" tools:ignore="UnusedResources">Eme’ẽ ne mba’erechaha ñepyrũhápe eipotáva.</string>
   <!-- ==== End of Project "Nova" onboarding strings ==== -->
 
-  <!-- Onboarding header for the toolbar selection card, used by Nimbus experiments. -->
-  <string name="onboarding_customize_toolbar_title" tools:ignore="UnusedResources">Eiporavo tembiporu rupa rendag̃ua</string>
-  <!-- Onboarding sub header for toolbar selection card, used by Nimbus experiments. -->
-  <string name="onboarding_customize_toolbar_description" tools:ignore="UnusedResources">Ereko jehekaha nde yketére.</string>
-  <!-- Onboarding label for 'Save and continue' button, used by Nimbus experiments. -->
-  <string name="onboarding_save_and_continue_button">Eñongatu ha eku’ejey</string>
-  <!-- Onboarding toolbar selection card label for 'top' option, used by Nimbus experiments. -->
-  <string name="onboarding_customize_toolbar_top_option">Yvategua</string>
-  <!-- Onboarding toolbar selection card label for 'bottom' option, used by Nimbus experiments. -->
-  <string name="onboarding_customize_toolbar_bottom_option">Michĩvéva</string>
-  <!-- Onboarding toolbar selection card content description for the main image. -->
-  <string name="onboarding_customize_toolbar_main_image_content_description">Myakãha ra’ãnga tuicháva poravoha rechaha tembiporu rupagua ohechaukáva tembiporu rupa ha’ãngáva.</string>
-  <!-- Onboarding toolbar selection card content description for the toolbar placement image. -->
-  <string name="onboarding_customize_toolbar_placement_bottom_content_description">Ta’ãnga rembiporu rupa michĩvéva</string>
-  <string name="onboarding_customize_toolbar_placement_top_content_description">Ta’ãnga rembiporu rupa tuichavéva</string>
-  <!-- Action label for toolbar options that can be selected. Talkback will append this to say "Double tap to select". -->
-  <string name="onboarding_customize_toolbar_a11y_action_label_select">eiporavo</string>
-  <!-- Onboarding header for the theme selection card, used by Nimbus experiments. -->
-  <string name="onboarding_customize_theme_title" tools:ignore="UnusedResources">Eiporavo peteĩ téma</string>
-  <!-- Onboarding sub header for theme selection card, used by Nimbus experiments. -->
-  <string name="onboarding_customize_theme_description" tools:ignore="UnusedResources">Ehacha ñanduti iporãveháicha.</string>
-  <!-- Onboarding label for 'Save and start browsing' button, used by Nimbus experiments. -->
-  <string name="onboarding_save_and_start_button">Eñongatu ha eikundaháma</string>
-  <!-- Onboarding theme selection card label for 'dark' option, used by Nimbus experiments. -->
-  <string name="onboarding_customize_theme_dark_option">Ypytũ</string>
-  <!-- Onboarding theme selection card label for 'light' option, used by Nimbus experiments. -->
-  <string name="onboarding_customize_theme_light_option">Tesakã</string>
-  <!-- Onboarding theme selection card label for 'System auto' option, used by Nimbus experiments. -->
-  <string name="onboarding_customize_theme_system_option">Ijeheguíva apopyvusu rehegua</string>
-  <!-- Onboarding theme selection card content description for the main image. -->
-  <string name="onboarding_customize_theme_main_image_content_description">Myakãha ra’ãnga tuicháva tembiporu poravoha rechaha ohechaukáva artista ha tembiporu rupa ha’ãngáva.</string>
-  <!-- Onboarding theme selection card content description for the theme selection image. %1$s is placeholder for either 'system', 'light' or 'dark'. -->
-  <string name="onboarding_customize_theme_content_description">Téma ra’ãnga %1$s</string>
-  <!-- Action label for options that can be selected. Talkback will append this to say "Double tap to select". -->
-  <string name="onboarding_customize_theme_a11y_action_label_select">eiporavo</string>
   <!--
     Widget Picker
 
@@ -758,7 +734,11 @@
   <!-- Preference category for all links about Fenix -->
   <string name="preferences_category_about">Péva rehegua</string>
   <!-- Preference category for settings related to changing the default search engine -->
-  <string name="preferences_category_select_default_search_engine">Eiporavo peteĩ</string>
+  <string name="preferences_category_select_default_search_engine_2">Jehekaha mongu’eha ypygua kundahárape g̃uarã</string>
+  <!-- Preference category for settings related to changing the private browsing search engine -->
+  <string name="preferences_category_select_private_search_engine">Jehekaha ypyguáva kundahára ñemiguáva</string>
+  <!-- Option to set the private browsing mode to use the normal default search engine -->
+  <string name="search_engine_use_default">Eiporu peteĩ jehekaka ñeikundaha ñemi rehegua</string>
   <!-- Preference for settings related to managing search shortcuts for the quick search menu -->
   <string name="preferences_manage_search_shortcuts_2">Eñangareko jehekaha ykepeguávare</string>
   <!-- Summary for preference for settings related to managing search shortcuts for the quick search menu -->
@@ -869,7 +849,7 @@
   <!-- Preference for accessibility -->
   <string name="preferences_accessibility">Jeikekuaaha</string>
   <!-- Preference to override the Mozilla account server -->
-  <string name="preferences_override_account_server">Mohendahavusu Mozilla mba’ete mboavapyréva</string>
+  <string name="preferences_override_account_server" tools:ignore="BrandUsage">Mohendahavusu Mozilla mba’ete mboavapyréva</string>
   <!-- Preference to override the Sync token server -->
   <string name="preferences_override_sync_tokenserver">Mohendahavusu Sync momba’etepyre</string>
   <!-- Preference category for account information -->
@@ -897,7 +877,7 @@
   <!-- Preference description shown in the banner prompting the user to sign in for sync features -->
   <string name="preferences_sign_in_description">Embojuehe tendayke, techaukaha, ñe’ẽñemi, ha hetave.</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
-  <string name="preferences_account_default_name_2">Mozilla mba’ete</string>
+  <string name="preferences_account_default_name_2" tools:ignore="BrandUsage">Mozilla mba’ete</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
   <string name="preferences_account_sync_error">Eikejey eñepyrũjey hag̃ua ñembojuehe</string>
   <!-- Preference for language -->
@@ -945,7 +925,7 @@
   <!-- Summary for preference to show Firefox Suggest search suggestions for web content -->
   <string name="preferences_show_nonsponsored_suggestions_summary">Emog̃uahẽ ñemoñe’ẽ ñandutígui jeheka rehegua</string>
   <!-- Preference title for switch preference to show search optimization cards -->
-  <string name="preferences_show_search_optimization_cards">Eguerekokuaa Mozilla oikuave’ẽva ehai aja</string>
+  <string name="preferences_show_search_optimization_cards" tools:ignore="BrandUsage">Eguerekokuaa Mozilla oikuave’ẽva ehai aja</string>
   <!-- Preference for link sharing -->
   <string name="preferences_link_sharing">Emoherakuã juajuha</string>
   <!-- Title for the link sharing toggle. %1$s is replaced by the brand name (e.g. Firefox). -->
@@ -975,12 +955,15 @@
   <string name="preference_downloads_folder_permission_lost" tools:ignore="UnusedResources">Noñemoneĩri ndéve eiporu hag̃ua ko marandurenda. Eiporavokuaa ambuéva.</string>
   <!-- Preference title for choosing an app to handle downloads -->
   <string name="preferences_choose_app_for_downloads">Eñangareko ñemboguejýre ambue tembiporu’i ndive</string>
-  <!-- Title for the setting to automatically clean up downloaded files. %s is the name of the app (for example "Firefox"). -->
-  <string name="preferences_downloads_settings_clean_up_files_title">Embogue %s ha mba’e’okágui</string>
-  <!-- Summary for the setting to automatically clean up downloaded files -->
-  <string name="preferences_downloads_settings_clean_up_files_summary">Emboguévo marandurenda ñangarekoha mboguejyhágui embogue avei mba’e’okágui</string>
+  <!-- Preference category for deleting or removing downloads -->
+  <string name="preferences_category_delete_or_remove_downloads">Embogue térã emboguete mboguejy</string>
+  <string name="preferences_downloads_delete_from_device">Embogue mba’e’okágui</string>
+  <string name="preferences_downloads_delete_from_device_description">Marandurenda ogue mba’e’okágui ha oguete mboguejy rembiasakuégui</string>
+  <string name="preferences_downloads_remove_from_download_history">Embogue mboguejy rembiasakuégui</string>
+  <string name="preferences_downloads_remove_from_download_history_description">Marandurenda oguete mboguejy rembiasakuégui, hákatu oĩ gueteri mba’e’okápe</string>
+  <string name="preferences_downloads_ask_when_to_delete_files">Eporandu emboguévo marandurenda</string>
   <!-- Preference for downloads -->
-  <string name="preferences_downloads">Ñemboguejy</string>
+  <string name="preferences_downloads_2">Mboguejy ñemboheko</string>
   <!-- Preference for enabling gecko engine logs -->
   <string name="preferences_enable_gecko_logs">Embojuruja Gecko jehaikue</string>
   <!-- Message to indicate users that we are quitting the application to apply the changes -->
@@ -1054,8 +1037,12 @@
   <string name="customize_toggle_pocket_sponsored">Tembiasakue jehepyme’ẽguáva</string>
   <!-- Title for the opening wallpaper settings screen -->
   <string name="customize_wallpapers">Mba’erechaha rugua</string>
+  <!-- Label for the menu item that opens the wallpaper settings screen. -->
+  <string name="browser_menu_change_wallpaper">Emoambue mba’erechaha rugua</string>
   <!-- Title for the customize home screen section with sponsored shortcuts. -->
   <string name="customize_toggle_contile">Jeike pya’eha jehepyme’ẽpyre</string>
+  <!-- Title for the customize home screen section that toggles the Homepage sports widget. -->
+  <string name="customize_toggle_world_cup">Copa del Mundo</string>
   <!--
     Wallpapers
 
@@ -1268,7 +1255,7 @@
   <string name="preferences_usage_data_description_1" tools:ignore="BrandUsage">Umi mba’ekuaarã mba’e’oka rehegua, hardware ñemboheko ha Firefox jeporu oipytyvõ tembiapoite porãverã, ijeporureko ha hekopyta.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preferences_daily_usage_ping_title">Ping eiporumeméva</string>
-  <string name="preferences_daily_usage_ping_description">Kóva oipytyvõta Mozilla-pe oikuaa hag̃ua poruharakuérape.</string>
+  <string name="preferences_daily_usage_ping_description" tools:ignore="BrandUsage">Kóva oipytyvõta Mozilla-pe oikuaa hag̃ua poruharakuérape.</string>
   <string name="preferences_daily_usage_ping_learn_more">Eikuaave ñe’ẽñemi eiporuvéva rehegua</string>
   <!-- Title for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
   <string name="crash_reporting_snack_bar_message">Marandu’i mondopyre</string>
@@ -1294,7 +1281,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">Ñembokatupyry</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">Emoneĩ Mozilla-pe omohenda ha omongu’évo ñembokatupyry</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">Emoneĩ Mozilla-pe omohenda ha omongu’évo ñembokatupyry</string>
   <!--
     Turn On Sync Preferences
 
@@ -1337,6 +1324,8 @@
   <string name="toolbar_customize_shortcut_homepage">Kuatiarogue mba’eguasuvéva</string>
   <!-- Back shortcut in toolbar customization -->
   <string name="toolbar_customize_shortcut_back">Tapykue</string>
+  <!-- Label for choosing in toolbar customization settings to not use any custom shortcut button. -->
+  <string name="toolbar_customize_shortcut_none">Avave</string>
   <!--
     App icon Preferences
 
@@ -1370,9 +1359,11 @@
   <!-- Preference for using the dynamic toolbar -->
   <string name="preference_gestures_dynamic_toolbar">Emongu’e emoñemi hag̃ua mba’erenda</string>
   <!-- Preference for showing the opened tabs by swiping up on the toolbar -->
-  <string name="preference_gestures_swipe_toolbar_show_tabs">Eraha mba’erenda yvate gotyo embojuruja hag̃ua tendayke</string>
+  <string name="preference_gestures_swipe_toolbar_show_tabs_2">Erova tembiporu rupa ehecha hag̃ua tendayke ijurujáva</string>
   <!-- Preference for switching tabs by swiping horizontally on the addressbar -->
   <string name="preference_gestures_swipe_toolbar_switch_tabs_2">Eraha mba’erenda yke gotyo emoambue hag̃ua tendayke</string>
+  <!-- Preference for switching for the shake to summarize toggle in page summaries and customize settings -->
+  <string name="preferences_shake_to_summarize">Emongu’e emombyky hag̃ua</string>
   <!--
     Library
 
@@ -1391,8 +1382,6 @@
   <string name="library_desktop_bookmarks_unfiled">Ambue techaukahakuéra</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Tembiasakue</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">Tendayke pyahu</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Jeporavorã</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -1505,12 +1494,8 @@
   <string name="studies_remove">Mboguete</string>
   <!-- Title of the active section on the studies list -->
   <string name="studies_active">Myandy</string>
-  <!-- Description for studies -->
-  <string name="studies_description_3" moz:removedIn="148" tools:ignore="UnusedResources">Eiporu tembiapoite ha temimo’ã opavavete oiporukuaa mboyve.</string>
   <!-- Description for studies. Note: The word "Firefox" should NOT be translated -->
   <string name="studies_description_4" tools:ignore="BrandUsage">Firefox oiporavo péichante oha’ã hag̃ua tembiapoite, opavavete oiporu porãve hag̃ua.</string>
-  <!-- Title of the Studies data preference -->
-  <string name="studies_title" moz:removedIn="148" tools:ignore="UnusedResources">Emohenda ha emongu’e mba’ekuaarã</string>
   <!-- Title of the Studies data preference -->
   <string name="studies_title_2">Emoneĩ tembiapoite ñembokatupyry</string>
   <!-- Learn more link for studies, links to an article for more information about studies. -->
@@ -1539,39 +1524,29 @@
     The %1$s will be replaced by the number of opened private tabs
   -->
   <string name="tabs_header_private_tabs_counter_title">Tendayke ñemi ijurujáva: %1$s. Eikutu emoambue hag̃ua tendayke.</string>
+  <plurals name="tabs_header_tab_group_counter_title">
+    <!--
+      Title for the list of tab groups used by a11y services
+      The %1$d will be replaced by the number of opened tab groups
+    -->
+    <item quantity="one">%1$d tendayke aty ijurujáva. Eikutu emoambue hag̃ua tendayke.</item>
+    <item quantity="other">%1$d tendayke aty ijurujáva. Eikutu emoambue hag̃ua tendayke.</item>
+  </plurals>
   <!--
     Title for the list of tabs in the synced tabs used by a11y services
     The %1$s will be replaced by the number of opened synced tabs
   -->
   <string name="tabs_header_synced_tabs_counter_title">Tendayke mbojuehepyre ijurujáva: %1$s. Eikutu emoambue hag̃ua tendayke.</string>
-  <!-- Text for the tabs header private tabs -->
-  <string name="tabs_header_private_tabs_title">Ñemigua</string>
-  <!-- Text for the tabs header normal tabs -->
-  <string name="tabs_header_normal_tabs_title">Tendayke</string>
-  <!-- Text for the tabs header synced tabs -->
-  <string name="tabs_header_synced_tabs_title">Mbojuehe</string>
-  <!-- Text for the new tab button in the Tab Manager to indicate opening a new normal tab -->
-  <string name="tab_manager_floating_action_button_new_normal_tab">Tendayke pyahu</string>
-  <!-- Text for the new tab button in the Tab Manager to indicate opening a new private tab -->
-  <string name="tab_manager_floating_action_button_new_private_tab">Tendayke pyahu ñemigua</string>
-  <!-- Text for floating action button in the Tab Manager used to initiate a re-sync of synced tabs -->
-  <string name="tab_manager_floating_action_button_sync_tabs">Embojuehe tendayke</string>
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_tab">Embojuaju tendayke</string>
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">Embojuaju tendayke ñemigua</string>
-  <!-- Text for the new tab button to indicate adding a new private tab in the tab -->
-  <string name="tab_drawer_fab_content" tools:ignore="UnusedResources" moz:removedIn="149">Ñemigua</string>
-  <!-- Text for the new tab button to indicate syncing command on the synced tabs page -->
-  <string name="tab_drawer_fab_sync" tools:ignore="UnusedResources" moz:removedIn="149">Mbojuehe</string>
   <!-- Text for the tab search bar placeholder -->
   <string name="tab_manager_search_bar_placeholder">Eheka ne rendaykeita</string>
-  <!-- Text shown in the menu for sharing all tabs -->
-  <string name="tab_tray_menu_item_share" tools:ignore="UnusedResources" moz:removedIn="149">Emoherakuã opaite tendayke</string>
   <!-- Text shown in the menu to view recently closed tabs -->
   <string name="tab_tray_menu_recently_closed">Tendayke oñemboty ramóva</string>
-  <!-- Text shown in the tabs tray inactive tabs section -->
-  <string name="tab_tray_inactive_recently_closed" tools:ignore="UnusedResources" moz:removedIn="149">Oñembotyramovéva</string>
+  <!-- Text shown in the menu to select all tabs. -->
+  <string name="tab_tray_menu_select_all_tabs">Mbosa’ypa</string>
   <!-- Text shown in the menu to view account settings -->
   <string name="tab_tray_menu_account_settings">Mba’ete ñemboheko</string>
   <!-- Text shown in the menu to view tab settings -->
@@ -1586,12 +1561,8 @@
   <string name="tab_manager_close_all_tabs_dialog_confirm">Emboty tendayke</string>
   <!-- Text shown on the cancel button in the Close all tabs confirmation dialog -->
   <string name="tab_manager_close_all_tabs_dialog_cancel">Heja</string>
-  <!-- Text shown in the multiselect menu for bookmarking selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_bookmark" tools:ignore="UnusedResources" moz:removedIn="149">Techaukaha</string>
   <!-- Content description (not visible, for screen readers etc.): Bookmarks selected tabs. -->
   <string name="tab_manager_multiselect_menu_item_bookmark_content_description">Emongurusu tendayke poravopyre</string>
-  <!-- Text shown in the multiselect menu for closing selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_close" tools:ignore="UnusedResources" moz:removedIn="149">Mboty</string>
   <!-- Content description (not visible, for screen readers etc.): Closes selected tabs. -->
   <string name="tab_manager_multiselect_menu_item_close_content_description">Emboty tendayke poravopyre</string>
   <!-- Text shown in the multiselect menu for sharing selected tabs. -->
@@ -1600,8 +1571,6 @@
   <string name="tab_manager_multiselect_menu_item_add_to_collection">Embojuaju ñembyatyhápe</string>
   <!-- Text shown in the multiselect menu for adding selected tabs to a tab group. -->
   <string name="tab_manager_multiselect_menu_item_add_to_tab_group">Embojuaju atýre</string>
-  <!-- Content description for tabs tray multiselect share button -->
-  <string name="tab_tray_multiselect_share_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Emoherakuã tendayke mbosa’ypyre</string>
   <!-- Content description for tabs tray multiselect menu -->
   <string name="tab_tray_multiselect_menu_content_description">Tendayke poravorã mbosa’ypyre</string>
   <!-- Title text displayed for a homepage tab in the tabs tray. -->
@@ -1640,6 +1609,18 @@
   <string name="pwa_site_controls_title_private">%1$s (Ayvu Ñemigua)</string>
   <!-- Content description (not visible, for screen readers etc.) for the button to open the Tab Search feature to search through tabs. -->
   <string name="tab_manager_open_tab_search">Embojuruja jehekaha tendayképe</string>
+  <!-- Title for introducing tab groups via an onboarding card shown in the tab manager. -->
+  <string name="tab_group_onboarding_item_title">Emoheñói tendayke aty</string>
+  <!-- Description for tab groups onboarding shown in the tab manager when in grid view. -->
+  <string name="tab_group_onboarding_grid_item_description">Embosyryry tendayke ambue ári embyaty hag̃ua.</string>
+  <!-- Description for tab groups onboarding shown in the tab manager when in list view. -->
+  <string name="tab_group_onboarding_list_item_description">Embosa’y heta tendayke emoheñói hag̃ua aty.</string>
+  <!-- Content description (accessibility label) for button to dismiss the tab group onboarding item. -->
+  <string name="tab_group_onboarding_item_dismiss_content_description">Emboyke tendayke aty ñemoinge</string>
+  <!-- The header text displayed on the tab groups page when no tab groups are open -->
+  <string name="tab_manager_empty_tab_groups_page_header">Eiporu tendayke aty eku’e’ive ha ejapove hag̃ua</string>
+  <!-- The description displayed on the tab groups page when no tab groups are open -->
+  <string name="tab_manager_empty_tab_groups_page_description">Eiporavo tendayke emoheñói hag̃ua aty. Oñeñongatu ko’ápe, eikotevẽrõ g̃uarã.</string>
   <!--
     Tab Group
 
@@ -1649,18 +1630,98 @@
   <!-- Title for the edit tab group bottom sheet -->
   <string name="edit_tab_group_title">Embosako’i aty</string>
   <string name="create_tab_group_save_button">Ñongatu</string>
-  <string name="edit_tab_group_bottom_sheet_close_content_description">Emboty tendayke aty ñembosako’i</string>
-  <!-- Default tab group name when creating a tab group -->
-  <string name="create_tab_group_default_name" tools:ignore="UnusedResources" moz:removedIn="150">Aty</string>
+  <!-- Description for the handle at the top of a bottom sheet, used to drag the sheet up or down. -->
+  <string name="edit_tab_group_bottom_sheet_grabber_content_description">Aty pyahu, sã mbosyryryha ikangýva</string>
   <!--
     Default tab group name when creating a tab group
     %d is the number of existing tab groups + 1.
   -->
   <string name="create_tab_group_form_default_name">Aty %d</string>
-  <!-- Label for the tab group name field in the bottom sheet to create a new tab group. -->
-  <string name="create_tab_group_name_label" tools:ignore="UnusedResources" moz:removedIn="150">Téra</string>
   <!-- Label for the tab group name field in the bottom sheet to create or edit a tab group. -->
-  <string name="tab_group_name_label">Téra</string>
+  <string name="create_tab_group_name_label">Téra</string>
+  <!-- Title for adding more tabs to a tab group. -->
+  <string name="add_to_tab_group_title">Embojuaju</string>
+  <!-- Content Description for closing the "Add to Tab Group" panel. -->
+  <string name="add_to_tab_group_bottom_sheet_grabber_content_description">Embojuaju tendayke aty, sã mbosyryryha ikangýva</string>
+  <!-- Content Description for "New tab group" panel. -->
+  <string name="add_to_new_tab_group_content_description">Embojuaju tendayke aty pyahu</string>
+  <!-- Label for adding to a new tab group. -->
+  <string name="add_to_new_tab_group_title">Tendayke aty pyahu</string>
+  <plurals name="tab_group_tabs_count_subtitle">
+    <!--
+      Subtitle for the number of tabs in a tab group.
+      %1$d is the number of tabs in a tab group.
+    -->
+    <item quantity="one">%1$d tendayke</item>
+    <item quantity="other">%1$d tendaykeita</item>
+  </plurals>
+  <plurals name="add_to_exiting_tab_group_content_description">
+    <!--
+      Accessibility description for add to existing tab group.
+      %1$s is the group name, %2$d is the number of tabs, %3$s is the color name.
+    -->
+    <item quantity="one">Embojuaju tendayke atýpe %1$s, tendayke %2$d, sa’y %3$s</item>
+    <item quantity="other">Embojuaju tendayke atýpe %1$s, tendaykeita %2$d, sa’y %3$s</item>
+  </plurals>
+  <plurals name="share_tab_group_button_content_description">
+    <!--
+      Content Description for share tab group button.
+      %1$s is the name of the tab group.
+      %2$d is the number of tabs in a tab group.
+    -->
+    <item quantity="one">Emoherakuã tendayke aty %1$s %2$d tendayke ndive.</item>
+    <item quantity="other">Emoherakuã tendayke aty %1$s %2$d tendaykeita ndive.</item>
+  </plurals>
+  <!-- Content description for the grabber/handle of the tab group bottom sheet. -->
+  <string name="tab_group_sheet_dismiss_description">Ehecha tendayke aty, sã mbosyryryha ikangýva</string>
+  <plurals name="expanded_tab_group_header_description">
+    <!--
+      Accessibility description for the header of an expanded tab group.
+      %1$s is the group name, %2$d is the number of tabs, %3$s is the color name.
+    -->
+    <item quantity="one">%1$s tendayke aty %2$d tendayke ndive, sa’y %3$s</item>
+    <item quantity="other">%1$s tendayke aty %2$d tendaykeita ndive, sa’y %3$s</item>
+  </plurals>
+  <!-- Title for the Delete tab group confirmation dialog. -->
+  <string name="delete_tab_group_confirmation_dialog_title">¿Embogue tendayke aty?</string>
+  <!-- Text shown in the body of the Delete tab group confirmation dialog. -->
+  <string name="delete_tab_group_confirmation_dialog_body">Emboguete aty opaite árape g̃uarã.</string>
+  <!-- Text shown on the confirm button in the Delete tab group confirmation dialog. -->
+  <string name="delete_tab_group_confirmation_dialog_confirm">Emboguete aty</string>
+  <!-- Text shown on the cancel button in the Delete tab group confirmation dialog. -->
+  <string name="delete_tab_group_confirmation_dialog_cancel">Eheja</string>
+  <!-- Title for the Close last tab and delete tab group confirmation dialog. -->
+  <string name="close_tab_and_delete_group_confirmation_dialog_title">¿Emboty tendayke ha embogue aty?</string>
+  <!-- Text shown in the body of the Close last tab and delete tab group confirmation dialog. -->
+  <string name="close_tab_and_delete_group_confirmation_dialog_body">Kóva omboguete aty opaite árape g̃uarã.</string>
+  <!-- Text shown on the confirm button in the Close last tab and delete tab group confirmation dialog. -->
+  <string name="close_tab_and_delete_group_confirmation_dialog_confirm">Emboguete aty</string>
+  <!-- Text shown on the cancel button in the Close last tab and delete tab group confirmation dialog. -->
+  <string name="close_tab_and_delete_group_confirmation_dialog_cancel">Eheja</string>
+  <!--
+    Color labels for tab groups, used for accessibility and selection UI.
+
+    Tab group color: Yellow
+  -->
+  <string name="tab_group_color_yellow">Sa’yju</string>
+  <!-- Tab group color: Orange -->
+  <string name="tab_group_color_orange">Naraha</string>
+  <!-- Tab group color: Red -->
+  <string name="tab_group_color_red">Ñanduti</string>
+  <!-- Tab group color: Pink -->
+  <string name="tab_group_color_pink">Pytãngy</string>
+  <!-- Tab group color: Purple -->
+  <string name="tab_group_color_purple">Pytãũ</string>
+  <!-- Tab group color: Violet -->
+  <string name="tab_group_color_violet">Líla</string>
+  <!-- Tab group color: Blue -->
+  <string name="tab_group_color_blue">Hovy</string>
+  <!-- Tab group color: Cyan -->
+  <string name="tab_group_color_cyan">Hovyũ</string>
+  <!-- Tab group color: Green -->
+  <string name="tab_group_color_green">Hovyũ</string>
+  <!-- Tab group color: Grey -->
+  <string name="tab_group_color_grey">Hũngy</string>
   <!--
     History
 
@@ -1739,6 +1800,11 @@
     This button will dismiss the dialog.
   -->
   <string name="download_file_has_not_enough_storage_dialog_cancel_button_text">Heja</string>
+  <plurals name="downloads_delete_dialog_title">
+    <!-- Title for the download deletion confirmation dialog. The message changes depending on how many files are selected. %d is the number of files to be deleted. -->
+    <item quantity="one">¿Embogue marandurenda?</item>
+    <item quantity="other">¿Embogue %d marandurenda?</item>
+  </plurals>
   <!-- Text for the button to delete a single downloaded file item -->
   <string name="download_delete_item">Mboguete</string>
   <!-- Content description for the toolbar "Navigate back" button -->
@@ -1770,6 +1836,14 @@
   <string name="download_delete_multi_select_dialog_confirm">Mboguete</string>
   <!-- Alert dialog confirmation before deleting multiple download items, this is the negative action. -->
   <string name="download_delete_multi_select_dialog_cancel">Heja</string>
+  <!-- Alert dialog confirmation before deleting a single download item or many download items, this is one of the radio buttons within the dialog box for the user to select. -->
+  <string name="download_delete_dialog_from_device">Embogue mba’e’okágui</string>
+  <!-- Alert dialog confirmation before deleting a single download item or many download items, this is one of the radio buttons within the dialog box for the user to select. -->
+  <string name="download_delete_dialog_from_history">Embogue mboguejy rembiasakuégui año</string>
+  <!-- Alert dialog confirmation before deleting a single download item or many download items, this is the negative action. -->
+  <string name="download_delete_dialog_cancel">Eheja</string>
+  <!-- Alert dialog confirmation before deleting a single download item or many download items, this is the positive action. -->
+  <string name="download_delete_dialog_confirm">Emoneĩ</string>
   <!-- Title for the alert dialog confirmation before renaming a download item. -->
   <string name="download_rename_dialog_title">Emboherajey marandurenda</string>
   <!-- Label for the name field in the alert dialog confirmation before renaming a download item. -->
@@ -1783,6 +1857,8 @@
   <string name="download_rename_error_exists_error">Oĩma marandurenda hérava “%s” ko tendaitépe</string>
   <!-- Error message when renaming with an invalid file name. -->
   <string name="download_rename_error_invalid_name_error">Marandurenda réra ndoiporukuaái “/”</string>
+  <!-- Error message shown when a user tries to rename a downloaded file but only changes the casing (e.g., "file.txt" to "File.txt"). -->
+  <string name="download_rename_error_case_only_error">Téra ojehaiva omoambue tai tuicháva térã michĩva. Eiporu peteĩ marandurenda réra iñambuéva.</string>
   <!-- Title for the alert dialog when the file cannot be renamed. -->
   <string name="download_rename_error_cannot_rename_title">Nadaikatúi emboherajey marandurenda</string>
   <!-- Description message for the alert dialog when the file cannot be renamed. -->
@@ -1868,6 +1944,16 @@
   <!-- Text for the filter button to show all other file types in the downloads list -->
   <string name="download_content_type_filter_other_1">Ambue</string>
   <!--
+    Title for the alert dialog to rename a file and/or change its download location before downloading it.
+    %s is the formatted size of the file (e.g., "12.5 MB").
+  -->
+  <string name="download_rename_and_change_location_dialog_title">¿Emboguejy marandurenda?\n(%s)</string>
+  <!--
+    Title for the alert dialog to rename a file and/or change its download location
+    when the file size is not available before downloading it.
+  -->
+  <string name="download_rename_and_change_location_dialog_title_with_unknown_size">¿Emboguejy marandurenda?</string>
+  <!--
     WebCompat Reporter
 
     The title of the Web Compat Reporter feature. This is displayed in the top app bar.
@@ -1882,11 +1968,21 @@
   <!-- The error message of the URL text field when an invalid URL has been entered. -->
   <string name="webcompat_reporter_url_error_invalid">Emoinge peteĩ URL oikóva</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
+  <string name="webcompat_reporter_label_whats_broken_3">¿Mba’e upe ndoikóiva?</string>
+  <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
+  <string name="webcompat_reporter_clear_reason_content_description">Embogue mba’érepa eiporavo</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">Orekova’erã michĩveramo 10 tai</string>
+  <!-- The label/title of a mandatory field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_mandatory_description">Ehaipaite apañuái rehegua ore pytyvõkuaa hag̃ua rohapykuehóvo</string>
+  <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">¿Mba’épa apañuái?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_2">Eiporavo mba’érepa</string>
   <!-- The error message of the dropdown, prompting the user to select a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_error">Ikatúpa, eremi mba’érepa</string>
+  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_description_2">Ehaipaite apañuái rehegua ore pytyvõkuaa hag̃ua rohapykuehóvo (ejaposérõ)</string>
   <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
   <string name="webcompat_reporter_label_description">Emoha’ãnga apañuái (eipotárõ)</string>
   <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
@@ -1894,11 +1990,17 @@
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">Heja</string>
   <!-- The button text for the send button to submit the provided form data. -->
+  <string name="webcompat_reporter_send_report">Emondo marandu’i</string>
+  <!-- The button text for the send button to submit the provided form data. -->
   <string name="webcompat_reporter_send">Mondo</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
   <string name="webcompat_reporter_success_snackbar_text_2">Marandu’i mondopyre</string>
   <!-- Placeholder text for the description field to prompt the user on what they should type. -->
+  <string name="webcompat_reporter_problem_description_placeholder_text_2">¿Mba’épa oiko? ¿ Mba’e upe eha’ãrõvara’e? Ikatúpa eme’ẽ tekotevẽva ojekuaa hag̃ua apañuái.</string>
+  <!-- Placeholder text for the description field to prompt the user on what they should type. -->
   <string name="webcompat_reporter_problem_description_placeholder_text">¿Mba’e ojehu? ¿Mbaʼe oikovaʼerãmoʼã?</string>
+  <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
+  <string name="webcompat_reporter_etp_checkbox_text_2">Emondo pe tysýi ojokóva tapykueho ñemo’ã rupive</string>
   <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
   <string name="webcompat_reporter_etp_checkbox_text">Emondo URL jokopyre tapykueho ñemo’ãha</string>
   <!-- Description text for the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. It informs the user when checked, the report will include the list of URLs that were blocked by Enhanced Tracking Protection on the current page. -->
@@ -1909,6 +2011,12 @@
   <string name="webcompat_reporter_preview_bottom_sheet_header">Mbohovái jehecha ypy</string>
   <!-- Label for the “Send” button shown in the WebCompat Report preview panel, which the user taps to submit the report. -->
   <string name="webcompat_reporter_preview_bottom_sheet_send">Mondo</string>
+  <!-- Title for the Edit URL confirmation dialog in the WebCompatReporter -->
+  <string name="webcompat_reporter_edit_url_dialog_title">Embosako’i URL ñanduti roguepegua</string>
+  <!-- Text shown on the save button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_save">Ñongatu</string>
+  <!-- Text shown on the dismiss button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_dismiss">Emboyke</string>
   <!--
     These reason strings are dropdown options on a WebCompat reporter form, indicating what is broken on the site.
 
@@ -1928,6 +2036,10 @@
   <!-- Broken site reason text for site asked to turn off ad blocker -->
   <string name="webcompat_reporter_reason_turn_off_adblocker">Tenda ojerure emboguévo pe ñemurã jokoha</string>
   <!-- Broken site reason text for browser isn’t supported or blocked -->
+  <string name="webcompat_reporter_reason_notsupported_2">Kundahára nodjokupytýi térã ojejokóma</string>
+  <!-- Broken site reason text for the site being deceptive -->
+  <string name="webcompat_reporter_reason_site_is_deceptive">Ko tenda ivaikuaa</string>
+  <!-- Broken site reason text for browser isn’t supported or blocked -->
   <string name="webcompat_reporter_reason_notsupported">Kundahára nodjokupytýi térã ojejokóma</string>
   <!-- Broken site reason text for something else -->
   <string name="webcompat_reporter_reason_other">Ambue mba’e</string>
@@ -1938,7 +2050,7 @@
   -->
   <string name="tab_crash_title_2">Rombyasy. %1$s nomyanyhẽkuaái pe kuatiarogue.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">Emomarandu Mozilla-pe jejavy rehegua</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">Emomarandu Mozilla-pe jejavy rehegua</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">Emboty tendayke</string>
   <!-- Restore tab button text on the tab crash page -->
@@ -1994,8 +2106,6 @@
   <string name="bookmark_menu_move_button">Mongu’e</string>
   <!-- Bookmark overflow menu edit button -->
   <string name="bookmark_menu_edit_button">Mbosako’i</string>
-  <!-- Bookmark overflow menu copy button -->
-  <string name="bookmark_menu_copy_button" tools:ignore="UnusedResources" moz:removedIn="150">Monguatia</string>
   <!-- Bookmark overflow menu share button -->
   <string name="bookmark_menu_share_button">Moherakuã</string>
   <!-- Bookmark overflow menu select all bookmarks -->
@@ -2022,6 +2132,12 @@
   <string name="bookmark_sort_menu_a_to_z">Emoĩ A guive Z peve</string>
   <!-- Label for button to sort bookmarks in reverse alphabetical order in the bookmark sorting overflow menu. -->
   <string name="bookmark_sort_menu_z_to_a">Emoĩ Z guive A peve</string>
+  <!-- Label for button to import bookmarks from file. -->
+  <string name="bookmark_import_menu_button">Marandurendágui jegueru</string>
+  <!-- Snackbar message shown when a bookmark import attempt fails. -->
+  <string name="bookmark_import_failure_snackbar">Ndaikatúi egueru techaukahaita. Eha’ã jey.</string>
+  <!-- Default name for the folder created when importing bookmarks from a file. -->
+  <string name="bookmark_import_destination_default_name">Techaukaha jegueru</string>
   <!--
     Bookmark multi select title in app bar
     %1$d is the number of bookmarks selected
@@ -2033,12 +2149,8 @@
   <string name="edit_bookmark_folder_fragment_title">Embosako’i ñongatuha</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">ÑONGATUHA</string>
   <!-- Text indicating which folder a bookmark or folder will be saved in -->
   <string name="bookmark_save_in_label">Eñongatu amo</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">TÉRA</string>
   <!-- Label for a text input field for a bookmark or folder name -->
   <string name="bookmark_name_label_normal_case">Téra</string>
   <!-- Bookmark select folder screen title -->
@@ -2050,13 +2162,11 @@
     %1$s is the host part of the URL of the bookmark deleted, if any
   -->
   <string name="bookmark_deletion_snackbar_message">Emboguete %1$s</string>
-  <!-- Bookmark undo button for deletion snackbar action -->
-  <string name="bookmark_undo_deletion" tools:ignore="UnusedResources" moz:removedIn="150">MBOGUEVI</string>
-  <!-- Bookmark snackbar message for deleting a single item. %s is the title of the item being deleted -->
-  <string name="bookmark_delete_single_item" tools:ignore="UnusedResources" moz:removedIn="150">Mboguete %s</string>
-  <!-- Bookmark snackbar message for deleting multiple items. %s is the number of items being deleted -->
-  <string name="bookmark_delete_multiple_items" tools:ignore="UnusedResources" moz:removedIn="150">Mba’eporu mboguepyre: %s</string>
-  <!-- Content description for the bookmark navigation bar back button -->
+  <!--
+    Bookmark undo button for deletion snackbar action
+
+    Content description for the bookmark navigation bar back button
+  -->
   <string name="bookmark_navigate_back_button_content_description">Eikundaha tapykuévo</string>
   <!-- Content description for the bookmark list new folder navigation bar button -->
   <string name="bookmark_add_new_folder_button_content_description">Embojuaju ñongatuha pyahu</string>
@@ -2076,16 +2186,16 @@
   <string name="bookmark_select_folder_close_folder_content_description">Emboty ñongatuha: %s</string>
   <!-- Content description for the "close" button in bookmarks screen. -->
   <string name="bookmark_close_button_content_description">Emboty techaukaha</string>
+  <!-- Content description for the Import bookmarks button in bookmarks screen. -->
+  <string name="bookmark_import_bookmarks_button_content_description">Marandurendágui jegueru</string>
   <!-- Title for the bookmark list empty state -->
   <string name="bookmark_empty_list_title">Ndaipóri gueteri techaukaha</string>
+  <!-- Title for the bookmark list empty state at the root level. -->
+  <string name="bookmark_empty_list_root_title">Erekopaite techaukahaita erohoryvéva oñondive</string>
   <!-- Bookmark screen folder description. %s is the count of bookmark folder children -->
   <string name="bookmarks_folder_description">Marandurendápe techaukaha: %s</string>
-  <!-- Description for the bookmark list empty state when you're not signed into sync. -->
-  <string name="bookmark_empty_list_guest_description">Eñongatu tenda eikundakuévo. Eñepyrũ tembiapo ereko hag̃ua techaukaha umi ambue mba’e’oka ojuehepyrévagui.</string>
   <!-- Text for the button to navigate to sync authentication -->
   <string name="bookmark_empty_list_guest_cta">Eike embojuehe hag̃ua</string>
-  <!-- Description for the bookmark list empty state when you're signed into sync. -->
-  <string name="bookmark_empty_list_authenticated_description">Eñongatu tenda eikundakuévo. Rorekóta avei techaukahakuéra umi ambue mba’e’oka ojuehepyrévagui.</string>
   <!-- Description for the bookmark list empty state when you're in an empty folder. -->
   <string name="bookmark_empty_list_folder_description">Embojuaju techaukaha eikundaha aja ejuju hag̃ua erohoryvéva tenda ag̃ave.</string>
   <!-- Description for the add new folder button when selecting a folder. -->
@@ -2200,8 +2310,6 @@
   <string name="collections_header">Ñembyatyha</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">Ñembyatyha poravorã</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">Embyaty umi mba’e ehayhuvéva.\nEmboaty umi jeheka, tenda ha tendayke ojueheguáva eike hag̃ua pype pya’e.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">Eiporavo tendayke</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -2265,6 +2373,24 @@
   <string name="menu_print">Mbokuatia</string>
   <!-- Sub-header in the dialog to share a link to another sync device -->
   <string name="share_device_subheader">Emondo mba’e’okápe</string>
+  <!-- Content description for the drag handle that dismisses the Send to Device bottom sheet -->
+  <string name="send_to_devices_bottom_sheet_close_content_description">Emboty Mba’e’okápe Ñemondo</string>
+  <!-- Text for the QR code action in the native share sheet -->
+  <string name="share_qr_code">QR ayvu</string>
+  <!-- Title shown in the QR code display screen -->
+  <string name="qr_code_display_title">QR ayvu</string>
+  <!-- Content description for the close button in the QR code display screen -->
+  <string name="qr_code_display_close">Mboty</string>
+  <!-- Heading on the QR code display screen -->
+  <string name="qr_code_display_share_nearby">Emoherakuã juajuha ag̃uíva</string>
+  <!-- Body text on the QR code display screen instructing the user to have others scan the code -->
+  <string name="qr_code_display_instructions">Emoherakuã hag̃ua ko juajuha tapicha ag̃uívandi, ejerure tomoha’ãnga QR ayvu.</string>
+  <!-- Label for the download button on the QR code display screen -->
+  <string name="qr_code_display_download">Emboguejy</string>
+  <!-- Toast shown when the QR code is successfully saved to Downloads -->
+  <string name="qr_code_download_success">QR ayvu Mboguejýpe ñongatupyre</string>
+  <!-- Toast shown when saving the QR code to Downloads fails -->
+  <string name="qr_code_download_failure">Ojavy eñongatúvo QR ayvu</string>
   <!-- Sub-header in the dialog to share a link to an app from the full list -->
   <string name="share_link_all_apps_subheader">Opaite tembiaporã</string>
   <!-- Sub-header in the dialog to share a link to an app from the most-recent sorted list -->
@@ -2275,8 +2401,6 @@
   <string name="toast_copy_link_to_clipboard">Emondo kuatiajohápe</string>
   <!-- An option from the share dialog to sign into sync -->
   <string name="sync_sign_in">Eñepyrũ tembiapo Sync-pe</string>
-  <!-- An option from the three dot menu to sign in -->
-  <string name="sync_menu_sign_in" tools:ignore="UnusedResources" moz:removedIn="149">Eñemboheraguapy</string>
   <!-- An option from the share dialog to send link to all other sync devices -->
   <string name="sync_send_to_all">Emondo opaite mba’e’okápe</string>
   <!-- An option from the share dialog to reconnect to sync -->
@@ -2324,24 +2448,6 @@
     The app name is in the text, due to limitations with localizing Nimbus experiments
   -->
   <string name="nimbus_notification_default_browser_text" tools:ignore="BrandUsage,UnusedResources">Ejapo Firefox-gui kundahára ypyguáva</string>
-  <!-- Title shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_title" tools:ignore="UnusedResources" moz:removedIn="150">Kundaha ñemi jeporu</string>
-  <!--
-    Text shown in the notification that pops up to re-engage the user.
-    %1$s is a placeholder that will be replaced by the app name.
-  -->
-  <string name="notification_re_engagement_text" tools:ignore="UnusedResources" moz:removedIn="150">Eikundaha kookie ha tembiasakue ñongatu’ỹre %1$s-pe</string>
-  <!-- Title A shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_A_title" tools:ignore="UnusedResources" moz:removedIn="150">Eikundaha jehekaha’ỹre</string>
-  <!--
-    Text A shown in the notification that pops up to re-engage the user.
-    %1$s is a placeholder that will be replaced by the app name.
-  -->
-  <string name="notification_re_engagement_A_text" tools:ignore="UnusedResources" moz:removedIn="150">Ñeikundaha ñemi %1$s ndive noñongatúi ne marandu.</string>
-  <!-- Title B shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_B_title" tools:ignore="UnusedResources" moz:removedIn="150">Eheka ñepyrũ</string>
-  <!-- Text B shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_B_text" tools:ignore="UnusedResources" moz:removedIn="150">Ejuhuta ag̃uite. Térã ehecháta mba’e ijukýva.</string>
   <!--
     Survey
 
@@ -2353,14 +2459,14 @@
   <string name="preferences_take_survey">Ejapo encuesta</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">Nahániri, aguyje</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">Ndaikatúi embojuruja ovetã ñemohendape’aha apopyvusu. Eipuru pe apopyvusu ñemohendape’aha.</string>
   <!--
     Snackbar
 
     Text shown in snackbar when user closes a tab
   -->
   <string name="snackbar_tab_closed">Tendayke mbotypyre</string>
-  <!-- Text shown in snackbar when user closes all tabs -->
-  <string name="snackbar_tabs_closed">Tendayke mbotypyre</string>
   <!-- Text shown in snackbar when user closes multiple inactive tabs. %1$s will be replaced with the number of tabs closed. -->
   <string name="snackbar_num_tabs_closed">Tendayke mbotypyre: %1$s</string>
   <!-- Text shown in snackbar when user bookmarks a list of tabs. %s is the name of the folder the bookmark was saved into. -->
@@ -2369,8 +2475,6 @@
   <string name="snackbar_added_to_shortcuts">¡Ojuajúva mbopya’eháre!</string>
   <!-- Text shown in snackbar when user closes a private tab -->
   <string name="snackbar_private_tab_closed">Tendayke ñemigua mbotypyre</string>
-  <!-- Text shown in snackbar when user erases their private browsing data -->
-  <string name="snackbar_private_data_deleted">Oñemboguéma kundahára mba’ekuaarã</string>
   <!-- Text shown in snackbar to undo deleting a tab, top site or collection -->
   <string name="snackbar_deleted_undo">MBOGUEVI</string>
   <!--
@@ -2394,8 +2498,6 @@
   <string name="preference_accessibility_text_size_summary">Embotuicha térã emomichĩ mone’ẽrã ñanduti rendápe</string>
   <!-- Title for Accessibility Text Size Scaling Preference -->
   <string name="preference_accessibility_font_size_title">Taireñoiha tuichakue</string>
-  <!-- %d is the percentage of the slide bar for setting the text font size and %% will be announced as "percent". -->
-  <string name="a11y_preference_accessibility_font_size_percentage" tools:ignore="UnusedResources" moz:removedIn="148">%d %%.</string>
   <!-- Title for Accessibility Text Automatic Size Scaling Preference -->
   <string name="preference_accessibility_auto_size_2">Tai tuichakue ijeheguíva</string>
   <!-- Summary for Accessibility Text Automatic Size Scaling Preference -->
@@ -2435,8 +2537,6 @@
   <string name="preferences_delete_browsing_data_on_quit">Emboguete kundahára mba’ekuaarã esẽvo</string>
   <!-- Summary for the Delete browsing data on quit preference. "Quit" translation should match delete_browsing_data_on_quit_action translation. -->
   <string name="preference_summary_delete_browsing_data_on_quit_2">Embogue ijehegui kundahára mba’ekuaarã eiporavóvo \"Ñesẽ\" pe jeporavorã guasúpe</string>
-  <!-- Action item in menu for the Delete browsing data on quit feature -->
-  <string name="delete_browsing_data_on_quit_action" tools:ignore="UnusedResources" moz:removedIn="149">Ñesẽ</string>
   <!-- Title text of a delete browsing data dialog. -->
   <string name="delete_history_prompt_title">Pa’ũ embogue hag̃ua</string>
   <!-- Body text of a delete browsing data dialog. -->
@@ -2509,7 +2609,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Ñemboheko ñemo’ãgua</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Tapykueho mo’ãha iporãvéva</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Ko’ág̃a Total Cookie Protection ñemo’ã ndive, ore mba’ejokoha imbaretevéva jehapykueho tenda juasapyréva rovake.</string>
@@ -2517,6 +2621,15 @@
   <string name="preference_enhanced_tracking_protection_explanation_2">%s nemo’ãta heta tapykuehohágui ohecháva mba’etépa ejapohína ñandutípe.</string>
   <!-- Text displayed that links to website about enhanced tracking protection -->
   <string name="preference_enhanced_tracking_protection_explanation_learn_more">Kuaave</string>
+  <plurals name="trackers_blocked_count_2">
+    <!--
+      Trackers blocked card on homepage
+
+      Text shown on the trackers blocked card. %d is the number of trackers blocked.
+    -->
+    <item quantity="one">%d tapykuehoha jokopyre</item>
+    <item quantity="other">%d tapykuehohaita jokopyre</item>
+  </plurals>
   <plurals name="trackers_blocked_count">
     <!--
       Trackers blocked card on homepage
@@ -2528,6 +2641,8 @@
   </plurals>
   <!-- Text shown on the trackers blocked card when no trackers have been blocked yet -->
   <string name="trackers_blocked_empty">Eime ñemo’ãme</string>
+  <!-- Text shown below the trackers blocked card with typing animation -->
+  <string name="help_catch_trackers">Eipytyvõ ejagarávo tappykuehohápe</string>
   <!-- Preference for enhanced tracking protection for the standard protection settings -->
   <string name="preference_enhanced_tracking_protection_standard_default_1">Ypyguaite (ijypygua)</string>
   <!-- Preference description for enhanced tracking protection for the standard protection settings -->
@@ -2538,10 +2653,6 @@
   <string name="preference_enhanced_tracking_protection_strict">Mbaretépe</string>
   <!-- Preference description for enhanced tracking protection for the strict protection settings -->
   <string name="preference_enhanced_tracking_protection_strict_description_4">Tapykuehoha iporãvéva ñemo’ã rovake ha apopykuaave, hákatu ikatu heta tenda nomba’poporãi.</string>
-  <!-- Preference description for the checkbox setting for "baseline" exceptions (a set of content blocking exceptions applied to fix major website breakage). %1$s is the name of the application (e.g. Fenix). -->
-  <string name="preference_enhanced_tracking_protection_allow_list_baseline" tools:ignore="UnusedResources" moz:removedIn="144">Emoneĩ %1$s toku’e ijehegui tekotevẽva emboykekuaa hag̃ua ñanduti rogue jejavy guasu.</string>
-  <!-- Preference description for the checkbox setting for "convenience" exceptions (a set of content blocking exceptions applied to fix convenience site features). -->
-  <string name="preference_enhanced_tracking_protection_allow_list_convenience" tools:ignore="UnusedResources" moz:removedIn="144">Avei toku’e ijeheguiete umi oĩ’ỹva tekotevẽtéva apañuái’i ñemyatyrõrã ha toiko upe tembiapoitégui mba’e ojeporukuaáva.</string>
   <!-- Preference label for the enhanced tracking protection option to fix major site issues caused by tracker blocking -->
   <string name="preference_enhanced_tracking_protection_allow_list_baseline_2">Emyatyrõ apañuái tendagua (ñemoñe’ẽmbyre)</string>
   <!-- Preference label for the enhanced tracking protection option to fix minor site issues caused by tracker blocking -->
@@ -2910,6 +3021,8 @@
   <string name="saved_logins_sort_strategy_last_used">Jejuru paha</string>
   <!-- Content description (not visible, for screen readers etc.) -->
   <string name="saved_logins_menu_dropdown_chevron_icon_content_description_2">Emoĩporã ñe’ẽñemi poravorã</string>
+  <!-- Label for button to import passwords from file. -->
+  <string name="passwords_import_menu_button">Egueru marandurendágui</string>
   <!--
     Email Masks
 
@@ -2928,6 +3041,106 @@
   <string name="email_masks_max_free_tier_reached">Eiporu 5 ñanduti veve rovamo’ãha reigua, upévare roiporavo eiporukuaajeýva.</string>
   <!-- The message displayed when there was an error with the email mask or Firefox Account services. -->
   <string name="email_masks_error_retrieving_masks">Ñanduti veve rovamo’ãha ndojeporukuaái ko’ág̃aite. Eha’ã jey ag̃ave.</string>
+  <!--
+    Firefox browser VPN (a browser-only proxy, distinct from the Mozilla VPN service)
+
+    Title for the browser VPN entry in the settings list
+  -->
+  <string name="preferences_ip_protection_title_2">VPN juajupyre</string>
+  <!-- Label for the BETA badge for the browser VPN entry in the settings list -->
+  <string name="preferences_ip_protection_beta_badge_label">BETA</string>
+  <!-- Title for the browser VPN settings screen (displayed in the app bar) -->
+  <string name="ip_protection_title">VPN</string>
+  <!-- Label for the browser VPN toggle on the settings screen -->
+  <string name="ip_protection_toggle_label">VPN</string>
+  <!-- Content description for the browser VPN settings screen top bar back button -->
+  <string name="ip_protection_navigate_back_button_content_description">Eho kuatiarogue mboyveguápe</string>
+  <!-- Headline for the browser VPN promo card. %s is the name of the app (for example "Firefox"). -->
+  <string name="ip_protection_promo_headline">VPN juajupyre %s rehegua</string>
+  <!-- Body text for the browser VPN promo card . %s is a learn more link using ip_protection_learn_more as text. -->
+  <string name="ip_protection_promo_body_2">Eikundaha ñemo’ãve ndive eñomívo ne rendaite, taha’e Wi-Fi ojeporukuaávape. %s</string>
+  <!-- Link text that opens additional information about the browser VPN -->
+  <string name="ip_protection_learn_more">Eikuaave</string>
+  <!-- Label for the monthly data allowance section on the browser VPN settings screen -->
+  <string name="ip_protection_data_limit_label">Mba’ekuaarã jasygua ru’ã</string>
+  <!--
+    Data usage shown on the browser VPN settings screen.
+    %1$.1f is the data remaining in GB (for example "8.3").
+    %2$.1f is the total monthly allowance in GB (for example "50.0").
+  -->
+  <string name="ip_protection_data_limit_value">%1$.1f GB %2$.1f GB mba’e hembýva</string>
+  <!--
+    Text shown below the data usage bar describing when the monthly allowance resets.
+    %1$.0f is the total monthly data allowance in GB (for example "50").
+  -->
+  <string name="ip_protection_data_reset_info">Oiko jey %1$.0f-pe GB oñepyrũvo ára jasygua.</string>
+  <!-- Header for the browser VPN `location` section -->
+  <string name="ip_protection_location_section">Tendaite</string>
+  <!-- Label for the recommended automatic location option on the browser VPN settings screen -->
+  <string name="ip_protection_location_recommended_label">Jeroviaha</string>
+  <!-- Description for the recommended automatic location option on the browser VPN settings screen -->
+  <string name="ip_protection_location_recommended_description">Oiporavo VPN rendaite ipya’evéva ndéve g̃uarã.</string>
+  <!-- Badge label shown in the menu item when the browser VPN is active -->
+  <string name="preferences_ip_protection_on">Hendypyre</string>
+  <!-- Badge label shown in the menu item when the browser VPN is off -->
+  <string name="preferences_ip_protection_off">Mboguepyre</string>
+  <!-- Badge label shown in the menu item while the browser VPN is connecting -->
+  <string name="ip_protection_menu_connecting">Oñembojoajuhína…</string>
+  <!-- Badge label shown in the menu item when the browser VPN is paused -->
+  <string name="ip_protection_menu_paused">Mombytapyre</string>
+  <!-- Badge label shown in the menu item when the browser VPN has an error -->
+  <string name="ip_protection_menu_error">Javy</string>
+  <!-- Badge label shown in the menu item when the user is eligible to use the browser VPN but should authenticate or authorize it first. -->
+  <string name="ip_protection_menu_auth_required">Eha’ã jey</string>
+  <!-- Content description for the chevron button that opens the browser VPN settings screen -->
+  <string name="ip_protection_navigate_settings">Open VPN ñemboheko</string>
+  <!--
+    Subtitle shown below the VPN label in menus when the monthly data allowance is exhausted.
+    %1$d is the total monthly allowance in GB (for example "50").
+  -->
+  <string name="ip_protection_menu_limit_reached">Hu’ã %1$d GB hupytypyre</string>
+  <!--
+    Error message shown on the browser VPN settings screen when the monthly data allowance is exhausted.
+    %1$d is the total monthly allowance in GB (for example "50").
+  -->
+  <string name="ip_protection_data_limit_reached_description">Ojeporu %1$d GB mba’ekuaarã nde VPN rehegua. Jeike oikojeýta ambue jasýpe.</string>
+  <!-- Label shown next to the browser protection icon in the address bar when the browser VPN is active -->
+  <string name="ip_protection_toolbar_pill_label">VPN hendy</string>
+  <!-- Accessibility description for the browser VPN pill in the address bar when the VPN has been activated -->
+  <string name="ip_protection_toolbar_pill_description">VPN hendyhína.</string>
+  <!-- Label for the button that starts the browser VPN authentication or authorization flow on the settings screen -->
+  <string name="ip_protection_get_started">Eñepyrũ</string>
+  <!-- Label for the "connecting" state of the button that starts the browser VPN authentication or authorization flow on the settings screen -->
+  <string name="ip_protection_connecting">Ojoajuhína…</string>
+  <!-- Headline for the browser VPN onboarding card. %s is the name of the app (for example "Firefox"). -->
+  <string name="ip_protection_onboarding_card_headline">Eiporu VPN juajupyre %s rehegua</string>
+  <!--
+    The body of the VPN onboarding card.
+    %1$s is a link using ip_protection_onboarding_body_link (“Browse with extra protection”) as text. It links to a support article about VPN on Firefox.
+    %2$d is the total monthly allowance in GB (for example "50").
+  -->
+  <string name="ip_protection_onboarding_body">%1$s oñomi ne rendaite, taha’e Wi-Fi jepera’e. Eiporu %2$d GB reiete jasy pukukue.</string>
+  <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
+  <string name="ip_protection_onboarding_body_link">Eikundaha ñemo’ã jo’a reheve</string>
+  <!--
+    The body of the VPN onboarding card for a promotion that provides unlimited data bandwidth for a certain time.
+    %1$s is a localized date (for example "Jun 9") indicating the end of the promotional period.
+    %2$s is a link using ip_protection_onboarding_body_link_promo (“Learn more”) as text. It links to a support article about VPN on Firefox.
+  -->
+  <string name="ip_protection_onboarding_body_promo">Emyandy ne ñeikundaha hekoñemi ha hasyve hag̃ua ijehapykueko. Eiporu ko’ág̃a ancho de banda opa’ỹva %1$s. %2$s rupive</string>
+  <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
+  <string name="ip_protection_onboarding_body_link_promo">Eikuaave</string>
+  <!-- Label for the dismiss button on the onboarding bottom sheet. -->
+  <string name="ip_protection_onboarding_not_now_button">Ani ko’ág̃a</string>
+  <!-- Snackbar (in-app pop-up notification) text to signal the browser VPN connection error -->
+  <string name="ip_protection_connection_error_snackbar">Ndaikatúi oike VPN-pe. Eha’ã jey agamieve.</string>
+  <!--
+    Snackbar (in-app pop-up notification) text to signal the browser VPN has reached the monthly data limit.
+    %1$d is the total monthly allowance in GB (for example "50").
+  -->
+  <string name="ip_protection_data_limit_reached_snackbar">Ojeporu %1$d GB mba’ekuaarã VPN-pe. Eikekuaáta ambue jasýpe.</string>
+  <!-- Snackbar (in-app pop-up notification) action button text that takes the user to the VPN settings screen. -->
+  <string name="ip_protection_data_limit_reached_snackbar_action">Ñemboheko</string>
   <!--
     Autofill
 
@@ -3163,26 +3376,12 @@
     the certificate authority that verified the ticket
   -->
   <string name="certificate_info_verified_by">Ohechapyréma: %1$s</string>
-  <!-- Login overflow menu delete button -->
-  <string name="login_menu_delete_button" tools:ignore="UnusedResources" moz:removedIn="149">Mboguete</string>
-  <!-- Login overflow menu edit button -->
-  <string name="login_menu_edit_button" tools:ignore="UnusedResources" moz:removedIn="149">Mbosako’i</string>
   <!-- Message in delete confirmation dialog for password -->
   <string name="login_deletion_confirmation_2">Emboguesetépa añetehápe ko ñe’ẽñemi</string>
   <!-- Positive action of a dialog asking to delete -->
   <string name="dialog_delete_positive">Mboguete</string>
   <!-- Negative action of a dialog asking to delete login -->
   <string name="dialog_delete_negative">Heja</string>
-  <!-- The saved password options menu description. -->
-  <string name="login_options_menu_2" tools:ignore="UnusedResources" moz:removedIn="149">Ñe’ẽñemi jeporavorã</string>
-  <!-- The editable text field for a website address. -->
-  <string name="saved_login_hostname_description_3" tools:ignore="UnusedResources" moz:removedIn="149">Moñe’ẽrã kora ehaikuaáva kundaharape ñanduti rendápe g̃uarã.</string>
-  <!-- The editable text field for a username. -->
-  <string name="saved_login_username_description_3" tools:ignore="UnusedResources" moz:removedIn="149">Moñe’ẽrã kora ehaikuaáva poruhára rérape g̃uarã.</string>
-  <!-- The editable text field for a login's password. -->
-  <string name="saved_login_password_description_2" tools:ignore="UnusedResources" moz:removedIn="149">Moñe’ẽrã kora ehaikuaáva ñe’ẽñemíme g̃uarã.</string>
-  <!-- The button description to save changes to an edited password. -->
-  <string name="save_changes_to_login_2" tools:ignore="UnusedResources" moz:removedIn="149">Moambue ñongatu.</string>
   <!-- The page title for editing a saved password. -->
   <string name="edit_2">Embosako’i ñe’ẽñemi</string>
   <!-- The page title for adding new password. -->
@@ -3240,6 +3439,16 @@
     which navigates the user to a screen displaying all the shortcuts.
   -->
   <string name="homepage_shortcuts_show_all_content_description">Ehechaukapa tairenda mbopya’eha</string>
+  <!-- Label for the "Add shortcut" button displayed as a tile. -->
+  <string name="homepage_shortcuts_add_shortcut">Embojuaju jeike pya’eha</string>
+  <!-- Title for the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_add_to_homepage">Embojuaju kuatiarogue ñepyrũha</string>
+  <!-- Label for the "Add website" button in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_add_website">Embojuaju ñanduti rogue</string>
+  <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
+  <string name="homepage_shortcuts_add_website_title">Ehai URL ñanduti rogue rehegua</string>
+  <!-- Title for the "Popular sites" section in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_popular_sites">Tenda ojekuaavéva</string>
   <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
   <string name="shortcut_max_limit_title">Emohu’ãma mbopya’ehápe g̃uarã</string>
   <!-- Content description text displayed in the dialog when shortcut limit is reached. -->
@@ -3326,8 +3535,6 @@
   <string name="default_browser_experiment_card_title">Emoambue ne kundahára ypyguáva</string>
   <!-- Default browser card text -->
   <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">Emboheko ñanduti renda juajuha, ñanduti veve ha ñe’ẽmondo ijuruja hag̃ua ijehegui Firefox-pe.</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">Mboguete</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">Eikutu ápe eikuaave hag̃ua</string>
   <!-- Content description for the action bar "up" button -->
@@ -3338,6 +3545,8 @@
     Header text for a section on the home screen.
   -->
   <string name="pocket_stories_header_2">Tembiasakue</string>
+  <!-- Header text for the Stories screen. -->
+  <string name="stories_screen_text_news">Marandu</string>
   <!--
     Context description text for the "Discover more" button in the stories home screen section
     which navigates the user to a screen displaying more stories.
@@ -3352,35 +3561,15 @@
   <!-- Snackbar button text to navigate to telemetry settings. -->
   <string name="experiments_snackbar_button">Eho ñembohekópe</string>
   <!--
-    Review quality check feature
-
-    Paragraph explaining the grading system we use to classify the reliability of a product's reviews.
-  -->
-  <string name="review_quality_check_info_review_grade_header" moz:removedIn="136" tools:ignore="UnusedResources"><![CDATA[Rome’ẽ marandu’i peteĩteĩva apopyrépe <b>papapy tai ndive</b> A guive F peve.]]></string>
-  <!-- Paragraph explaining how a product's adjusted grading is calculated. -->
-  <string name="review_quality_check_explanation_body_adjusted_grading" moz:removedIn="136" tools:ignore="UnusedResources"><![CDATA[<b>ñeha’ã oikóva</b> oma’ẽ marandu’i rohecháva ojegueroviaha añoite.]]></string>
-  <!-- Paragraph explaining product review highlights. %s is the name of the retailer (e.g. Amazon). -->
-  <string name="review_quality_check_explanation_body_highlights" moz:removedIn="136" tools:ignore="UnusedResources"><![CDATA[Umi <b>kyta mba’eguasúva</b> ou marandu’i %s 80 ára ohasaramóvagui ikatuha ejerovia.]]></string>
-  <!--
     Accessibility services actions labels. These will be appended to accessibility actions like "Double tap to.." but not by or applications but by services like Talkback.
 
     Action label for elements that can be collapsed if interacting with them. Talkback will append this to say "Double tap to collapse".
   -->
   <string name="a11y_action_label_collapse">pa’ãmba</string>
-  <!-- Current state for elements that can be collapsed if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_collapsed">momichĩmbyre</string>
   <!-- Action label for elements that can be expanded if interacting with them. Talkback will append this to say "Double tap to expand". -->
   <string name="a11y_action_label_expand">moasãi</string>
-  <!-- Current state for elements that can be expanded if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_expanded">moasãimbyre</string>
   <!-- Action label for links to a website containing documentation about a wallpaper collection. Talkback will append this to say "Double tap to open link to learn more about this collection". -->
   <string name="a11y_action_label_wallpaper_collection_learn_more">embojuruja juajuha eikuaave hag̃ua ko ñembyaty</string>
-  <!-- Content description for headings announced by accessibility service. %s is the text of the heading. Talkback will announce the text and then speak the word "Heading" indicating to the user that this text is a heading for a section. -->
-  <string name="a11y_heading">%s, Moakãha</string>
-  <!-- Title for dialog displayed when trying to access links present in a text. -->
-  <string name="a11y_links_title">Joajuhakuéra</string>
-  <!-- Additional content description for text bodies that contain urls. -->
-  <string name="a11y_links_available">Juajuhakuéra eiporukuaáva</string>
   <!-- Translations feature -->
 
   <!--
@@ -3429,8 +3618,8 @@
   <string name="translation_error_could_not_translate_warning_text">Iñapañuái emoñe’ẽasakuévo. Eha’ã jey ag̃amieve.</string>
   <!-- The title of the warning card informs the user that the list of languages cannot be loaded. -->
   <string name="translation_error_could_not_load_languages_warning_text">Nahenyhẽkuaái ñe’ẽnguéra. Ehechajey oikópa ne ñanduti ha eha’ã jey ag̃ave.</string>
-  <!-- The title of the warning card informs the user that a language is not supported. %1$s is the name of the language that is not supported. -->
-  <string name="translation_error_language_not_supported_warning_text">Rombyasy, noroykekói gueteri %1$s.</string>
+  <!-- The title of the warning card informs the user that translations from a language are not supported yet. %1$s is the name of the source language. -->
+  <string name="translation_error_language_not_supported_warning_text_2">Rombyasy, noromoneĩri gueteri ko %1$s moñe’ẽasa.</string>
   <!-- Snackbar title shown if the user closes the Translation Request dialogue and a translation is in progress. -->
   <string name="translation_in_progress_snackbar">Ñemoñe’ẽasa…</string>
   <!--
@@ -3484,6 +3673,12 @@
   <string name="translation_settings_automatic_never_translate_sites">Aníke emoñe’ẽasa ko’ã tenda</string>
   <!-- Button text for the button that will take the user to the download languages dialog. On the download languages dialog, the user can manage which languages they would like to download for translations. -->
   <string name="translation_settings_download_language">Emboguejy ñe’ẽita</string>
+  <!-- Toggle switch title and description for the translation settings control. -->
+  <string name="translation_settings_control_title">Ñemoñe’ẽasa</string>
+  <!-- Description for the translation settings toggle switch. -->
+  <string name="translation_settings_control_description">Opaite ñe’ẽasa opyta ñemíme ne mba’e’okápe.</string>
+  <!-- Clickable text for the translations settings item that links to a website. -->
+  <string name="translation_settings_control_learn_more">Eikuaave</string>
   <!--
     Automatic translation preference screen
 
@@ -3641,6 +3836,19 @@
     %s is the name of the app (for example "Firefox").
   -->
   <string name="protection_panel_banner_protected_title">%s oĩ ñema’ẽme</string>
+  <plurals name="protection_panel_banner_protected_blocked_trackers_description">
+    <!--
+      Description text for the protection panel banner when privacy dashboard is enabled.
+      %1$d is the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d rapykuehoha jokopyre ko tendápe.</item>
+    <item quantity="other">%1$d rapykuehohaita jokopyre ko tendápe.</item>
+  </plurals>
+  <!--
+    Description text for the protection panel banner when privacy dashboard is enabled.
+    and there are no trackers blocked.
+  -->
+  <string name="protection_panel_banner_protected_no_blocked_trackers_description">Eime ñemo’ãme.</string>
   <!-- Description text for the protection panel banner when tracking protection is enabled. -->
   <string name="protection_panel_banner_protected_description">Eñemo’ãma. Rohecháramo peteĩ mba’e, romombe’úta ndéve.</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
@@ -3666,6 +3874,62 @@
   <string name="protection_panel_privacy_and_security_settings_2">Ñemigua ñemboheko</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">Ñemoneĩ</string>
+  <plurals name="trackers_blocked_panel_total_num_trackers_blocked_2">
+    <!--
+      Text for displaying the total number of trackers blocked in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d rapykuehoha jokopyre ko tendápe</item>
+    <item quantity="other">%1$d rapykuehohaita jokopyre ko tendápe</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_social_media_trackers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked social media trackers.
+      %1$d is a placeholder for the number of social media trackers blocked.
+    -->
+    <item quantity="one">%1$d ava ñandutieta rapykuehoha</item>
+    <item quantity="other">%1$d ava ñandutieta rapykuehoha</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cross_site_cookies">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cross-site tracking cookies.
+      %1$d is a placeholder for the number of cross-site tracking cookies blocked.
+    -->
+    <item quantity="one">%1$d kookie rapykuehoha tenda pa’ũme</item>
+    <item quantity="other">%1$d kookieita rapykuehoha tenda pa’ũme</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cryptominers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cryptomining scripts.
+      %1$d is a placeholder for the number of cryptominers blocked.
+    -->
+    <item quantity="one">%1$d criptominero</item>
+    <item quantity="other">%1$d criptominero</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_fingerprinters">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked fingerprinter scripts.
+      %1$d is a placeholder for the number of fingerprinters blocked.
+    -->
+    <item quantity="one">%1$d kuã hũ moheñoiha</item>
+    <item quantity="other">%1$d kuã hũita moheñoiha</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_2">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked generic tracking scripts.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d rapykuehoha retepy</item>
+    <item quantity="other">%1$d rapykuehoha retepy</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_blocked_this_week_2">
+    <!--
+      Text for displaying the number of trackers blocked this week in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked this week.
+    -->
+    <item quantity="one">%1$d tapykuehoha jokopyre ko arapokõindýpe</item>
+    <item quantity="other">%1$d tapykuehohaita jokopyre ko arapokõindýpe</item>
+  </plurals>
   <!--
     Text for displaying the total number of trackers blocked in the trackers blocked panel.
     %d is a placeholder for the number of trackers blocked.
@@ -3697,6 +3961,8 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">Ohechapyréva %s</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">Emboty mba’erupa</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -3820,6 +4086,26 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">¿Mba’eichaitépa reñeñandu Firefox ñembojuehe ndive?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Ore pytyvõ iporãve hag̃ua Firefox. ¿Mba’épa iporãvéva ne rembiasakuépe?</string>
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">Ne remiandu iporã oréve. ¿Mba’ére reipe’ahína?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1_v2">Imbegue térã naiporãi</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2_v2">Ñanduti rogueita ndoikoporãmbái</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3_v2">Noĩmbái tembiapoite aikotevẽva</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4_v2">Ta’ãngamýi, ñemboguejy ha mba’éichapa ndoikói</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5_v2">Hasyeterei ijeporu térã ojejapovai</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6_v2">Apañuái tekoñemi térã tekorosãgua</string>
+  <!-- Button label shown at the bottom of the uninstall survey -->
+  <string name="uninstall_survey_button_label">Emondo temiandu ha eipe’aite</string>
   <!--
     Accessibility
 
@@ -4170,6 +4456,221 @@
   <string name="terms_of_use_prompt_body_line_two_alternative" tools:ignore="UnusedResources">Eikuaavekuaa %1$s.</string>
   <!-- Link text for terms_of_use_prompt_body_line_two_alternative that links to a site with more information about the Terms of Use -->
   <string name="terms_of_use_prompt_body_line_two_alternative_link" tools:ignore="UnusedResources">ko’ápe</string>
+  <!--
+    Sports widget
+
+    Title text shown at the top of the sports widget country selector, encouraging the user to pick a national team to follow.
+  -->
+  <string name="sports_widget_country_selector_title">Eho nde atygua ndive</string>
+  <!-- Section header for the North America region in the sports widget country selector. -->
+  <string name="sports_widget_confederation_north_america">América del Norte</string>
+  <!-- Section header for the Africa confederation group in the sports widget country selector. -->
+  <string name="sports_widget_confederation_africa">África</string>
+  <!-- Section header for the Asia confederation group in the sports widget country selector. -->
+  <string name="sports_widget_confederation_asia">Asia</string>
+  <!-- Section header for the CONCACAF confederation group in the sports widget country selector. "CONCACAF" is the abbreviation for "Confederation of North, Central America and Caribbean Association Football". -->
+  <string name="sports_widget_confederation_concacaf">CONCACAF</string>
+  <!-- Section header for the Europe confederation group in the sports widget country selector. -->
+  <string name="sports_widget_confederation_europe">Europa</string>
+  <!-- Section header for the Oceania confederation group in the sports widget country selector. -->
+  <string name="sports_widget_confederation_oceania">Oceanía</string>
+  <!-- Section header for the South America confederation group in the sports widget country selector. -->
+  <string name="sports_widget_confederation_south_america">América del Sur</string>
+  <!-- Country name for England in the sports widget. England cannot be resolved with the Android Intl APIs so it needs an explicit string. -->
+  <string name="sports_widget_country_england">Inglaterra</string>
+  <!-- Country name for Scotland in the sports widget. Scotland cannot be resolved with the Android Intl APIs so it needs an explicit string. -->
+  <string name="sports_widget_country_scotland">Escocia</string>
+  <!-- Label shown on the sports widget scoreboard when a match is currently being played live. -->
+  <string name="sports_widget_match_live">HECHAPY</string>
+  <!-- Title shown on the sports widget champion scoreboard row celebrating the soccer tournament winner. -->
+  <string name="sports_widget_champions_title">Copa del Mundo 2026 oganáva</string>
+  <!-- Title shown on the sports widget champion scoreboard celebrating the soccer tournament runners-up. Runners-up means second place. -->
+  <string name="sports_widget_runner_up_title" tools:ignore="UnusedResources">Osẽva mokõihápe</string>
+  <!-- Title shown on the sports widget champion scoreboard celebrating the soccer tournament third place winners. -->
+  <string name="sports_widget_third_place_title">Osẽva mbohapyhápe</string>
+  <!-- Round name shown on the sports widget for the Round of 32 stage in the soccer tournament. -->
+  <string name="sports_widget_round_of_32">32hápe oĩva</string>
+  <!-- Round name shown on the sports widget for the Round of 16 stage in the soccer tournament. -->
+  <string name="sports_widget_round_of_16">16hápe oĩva</string>
+  <!-- Round name shown on the sports widget for the quarter-finals stage in the soccer tournament. -->
+  <string name="sports_widget_quarter_final">8 atýpe oĩva</string>
+  <!-- Round name shown on the sports widget for the semi-finals stage in the soccer tournament. -->
+  <string name="sports_widget_semi_final">4 atýpe oĩva</string>
+  <!-- Round name shown on the sports widget for the final stage in the soccer tournament. -->
+  <string name="sports_widget_final">Paha</string>
+  <!-- Round name shown on the sports widget for the bronze final stage in the soccer tournament. -->
+  <string name="sports_widget_bronze_final">Mbohapyhapegua</string>
+  <!-- Sports widget error card message shown when match data fails to load. -->
+  <string name="sports_widget_error_load_failed" tools:ignore="UnusedResources">Pe marandu partído rehegua ndaipóri ko’ag̃aite. Eha’ã jey ag̃amieve.</string>
+  <!-- Sports widget error card message shown when the network connection is interrupted and live updates pause. -->
+  <string name="sports_widget_error_connection_interrupted" tools:ignore="UnusedResources">Jeikerã oñekytĩva — mbohekopyahu mombytapyre.</string>
+  <!-- Sports widget action label to refresh match data after an error. -->
+  <string name="sports_widget_error_refresh">Mbopiro’y</string>
+  <!-- Sports widget group stage label for group A in the soccer tournament. -->
+  <string name="sports_widget_group_a">Aty A</string>
+  <!-- Sports widget group stage label for group B in the soccer tournament. -->
+  <string name="sports_widget_group_b">Aty B</string>
+  <!-- Sports widget group stage label for group C in the soccer tournament. -->
+  <string name="sports_widget_group_c">Aty C</string>
+  <!-- Sports widget group stage label for group D in the soccer tournament. -->
+  <string name="sports_widget_group_d">Aty D</string>
+  <!-- Sports widget group stage label for group E in the soccer tournament. -->
+  <string name="sports_widget_group_e">Aty E</string>
+  <!-- Sports widget group stage label for group F in the soccer tournament. -->
+  <string name="sports_widget_group_f">Aty F</string>
+  <!-- Sports widget group stage label for group G in the soccer tournament. -->
+  <string name="sports_widget_group_g">Aty G</string>
+  <!-- Sports widget group stage label for group H in the soccer tournament. -->
+  <string name="sports_widget_group_h">Aty H</string>
+  <!-- Sports widget group stage label for group I in the soccer tournament. -->
+  <string name="sports_widget_group_i">Aty I</string>
+  <!-- Sports widget group stage label for group J in the soccer tournament. -->
+  <string name="sports_widget_group_j">Aty J</string>
+  <!-- Sports widget group stage label for group K in the soccer tournament. -->
+  <string name="sports_widget_group_k">Aty K</string>
+  <!-- Sports widget group stage label for group L in the soccer tournament. -->
+  <string name="sports_widget_group_l">Aty L</string>
+  <!-- Sports widget button label to see match results. -->
+  <string name="sports_widget_see_results" tools:ignore="UnusedResources">Ehecha mba’éicha osẽ</string>
+  <!-- Sports widget button label to view details of a soccer match results. -->
+  <string name="sports_widget_view_match_details" tools:ignore="UnusedResources">Ehecha partído rehegua</string>
+  <!-- Sports widget section header for related soccer matches in the same group. -->
+  <string name="sports_widget_related_matches" tools:ignore="UnusedResources">Partidoita ojuehegua</string>
+  <!-- Sports widget section header for a list of upcoming soccer matches that have not yet started. -->
+  <string name="sports_widget_upcoming" tools:ignore="UnusedResources">Oupotáva</string>
+  <!-- Sports widget match status suffix appended to match scores (e.g., "3 - 2 (Full time)") to indicate the match has been completed. -->
+  <string name="sports_widget_match_full_time_suffix">(Ára pukukue)</string>
+  <!-- Sports widget match status to indicate the match has been completed. -->
+  <string name="sports_widget_match_full_time_2">Ára pukukue</string>
+  <!--
+    Sports widget card title encouraging the user to follow the soccer tournament. “Keep tabs on” is an informal expression
+    meaning to stay updated on or regularly follow something (in this case, World Cup matches and updates).
+    It’s playfully related to Firefox in that “tabs” are a browser feature.
+    It suggests ongoing awareness rather than active monitoring or control. Not to be translated literally as physical “tabs”
+    or tracking in a technical sense; the meaning is about staying informed.
+  -->
+  <string name="sports_widget_card_title">Eñemomarandu Copa del Mundo rehe</string>
+  <!-- Sports widget card description shown below the title on the homepage entry point. -->
+  <string name="sports_widget_card_description">Erekóta mbohekopyahu partído rehegua oiko jave ha hetave.</string>
+  <!-- Sports widget menu item to change the selected team. -->
+  <string name="sports_widget_change_team">Aty moambue</string>
+  <!-- Sports widget menu item to get a custom wallpaper for the widget. -->
+  <string name="sports_widget_get_custom_wallpaper">Eipotápa mba’erechaha rugua mboavapyréva</string>
+  <!-- Sports widget menu item to remove the widget from the homepage. -->
+  <string name="sports_widget_remove">Mboguete</string>
+  <!-- Sports widget card title shown after a team is eliminated, asking if the user still wants to continue following the soccer tournament. -->
+  <string name="sports_widget_still_want_to_follow">¿Nde ehapykuehose gueteri?</string>
+  <!-- Sports widget card description shown after a team is eliminated, suggesting to choose another team. -->
+  <string name="sports_widget_choose_another_team">Eiporavo ambue aty eikuaa hag̃ua Copa del Mundo rehegua.</string>
+  <!-- Sports widget button label to follow another team after the current team is eliminated. -->
+  <string name="sports_widget_follow_another_team">Ehapykueho ambue atýpe</string>
+  <!-- Sports widget card title shown before the soccer tournament begins on top of a timer that is counting down. -->
+  <string name="sports_widget_countdown_to_world_cup">Copa del Mundo ñeg̃uahẽ jepapa</string>
+  <!-- Sports widget button label that navigates the user to the full soccer tournament match schedule. -->
+  <string name="sports_widget_view_schedule">Ehecha nde aravorã</string>
+  <!-- Sports widget button label that dismisses the step of choosing a team to follow. -->
+  <string name="sports_widget_skip">Jepo</string>
+  <!-- Sports widget match status label shown during halftime of a match. -->
+  <string name="sports_widget_halftime" tools:ignore="UnusedResources">Jepytu’u</string>
+  <!-- Sports widget match status label shown during extra time of a match. -->
+  <string name="sports_widget_extra_time">Aravo’i juapyvegua</string>
+  <!-- Sports widget match status label shown during penalties of a match. -->
+  <string name="sports_widget_penalties">Penal-kuéra</string>
+  <!--
+    Sports widget countdown label for days. D is short for Day. The layout only allows for 1–2 characters:
+    if there is an equivalent single character for your language, use that (e.g. T for German).
+    Your translation will be automatically truncated at 2 characters to avoid layout issues.
+  -->
+  <string name="sports_widget_countdown_days">D</string>
+  <!--
+    Sports widget countdown pill abbreviated label for hours. H is short for Hour. The layout only allows for 1–2 characters:
+    if there is an equivalent single character for your language, use that (e.g. S for German).
+    Your translation will be automatically truncated at 2 characters to avoid layout issues.
+  -->
+  <string name="sports_widget_countdown_hours">H</string>
+  <!--
+    Sports widget countdown pill abbreviated label for minutes. M is short for Minute. The layout only allows for 1–2 characters:
+    if there is an equivalent single character for your language, use that.
+    Your translation will be automatically truncated at 2 characters to avoid layout issues
+  -->
+  <string name="sports_widget_countdown_minutes">M</string>
+  <!-- Content description (for accessibility, not displayed) for the close button on the sports widget team / country selector. -->
+  <string name="sports_widget_close_team_selection_sheet_content_description">Kuatia poravorã aty ñembotygua</string>
+  <!-- Content description (for accessibility, not displayed) for the close button on the sports widget card. -->
+  <string name="sports_widget_close_content_description">Emboty</string>
+  <!-- Content description (for accessibility, not displayed) for the overflow (more options) menu button on the sports widget card. -->
+  <string name="sports_widget_more_options_content_description">Jeporavorãve</string>
+  <!--
+    Content description (for accessibility, not displayed) announcing the time remaining until the soccer tournament kickoff.
+    %1$d is the number of days, %2$d is the number of hours, and %3$d is the number of minutes.
+  -->
+  <string name="sports_widget_countdown_remaining_content_description">Aravo hembýva. Ára: %1$d. Aravo: %2$d. Aravo’i: %3$d.</string>
+  <!-- Content description (for accessibility, not displayed)  for the action that navigates to the World Cup website. -->
+  <string name="sports_widget_go_to_world_cup_site_content_description" tools:ignore="UnusedResources">Eike Mundial ñanduti roguápe</string>
+  <!--
+    Content description (for accessibility, not displayed)  announcing an upcoming soccer match.
+    %1$s is the home team name, %2$s is the away team name, %3$s is the match date, %4$s is the kickoff time.
+  -->
+  <string name="sports_widget_upcoming_match_content_description">Tenondeve: %1$s %2$srovái, %3$s %4$s-pe</string>
+  <!--
+    Content description (for accessibility, not displayed) announcing a soccer match.
+    %1$s is the home team name, %2$s is the away team name, %3$s is trailing context
+    (e.g. formatted score "1 - 2 (Full time)", upcoming match info "Jun 19 5:00 PM",
+    or a match status like "Full time").
+  -->
+  <string name="sports_widget_match_content_description">%1$s versus %2$s, %3$s</string>
+  <!--
+    Content description (for accessibility, not displayed)  used for the sports widget card header announcing a live match for a group or stage.
+    %s is the soccer tournament group name or stage (e.g. Group A represented by sports_widget_group_a, Round of 32 represented by sports_widget_round_of_32,
+    or Final represented by sports_widget_final).
+  -->
+  <string name="sports_widget_live_game_content_description">%s, jehuga ñandutípe</string>
+  <!--
+    Content description (for accessibility, not displayed) announcing a live score.
+    %1$s is the home team name, %2$d is the home team score, %3$s is the away team name, %4$d is the away team score,
+    and %5$s is the match elapsed time (e.g. 72 minutes).
+  -->
+  <string name="sports_widget_live_score_content_description">%1$s %2$d, %3$s %4$d, %5$s, ñandutípe</string>
+  <!--
+    Content description (for accessibility, not displayed) announcing the elapsed minutes of a live match.
+    %1$s is the clock value, which may be a plain number (e.g. "72") or include extra time (e.g. "90+3").
+  -->
+  <string name="sports_widget_match_elapsed_minutes">Pa’ũ ohasáva aravo’ípe: %1$s</string>
+  <!--
+    Content description (for accessibility, not displayed) for a paginated item.
+    %1$s is the soccer tournament group name or stage (e.g. Group A represented by sports_widget_group_a, Round of 32 represented by sports_widget_round_of_32),
+    %2$d is the current page number, and %3$d is the total number of pages.
+  -->
+  <string name="sports_widget_page_position_content_description">%1$s, kuatiarogue %2$d %3$d rehegua</string>
+  <!--
+    Content description (for accessibility, not displayed) for a page within the World Cup final results carousel.
+    %1$d is the current page number, and %2$d is the total number of pages.
+  -->
+  <string name="sports_widget_final_results_page_content_description" tools:ignore="UnusedResources">Mba’éicha osẽ Copa del Mundo rehegua, kuatiarogue %1$d %2$d rehegua</string>
+  <!-- Content description (for accessibility, not displayed) for the World Cup final results page. -->
+  <string name="sports_widget_final_results_content_description">Mba’éicha opa partidokuéra Mundial-pe</string>
+  <!-- Content description (for accessibility, not displayed) for the remove button that removes the sports widget from the homepage. -->
+  <string name="sports_widget_remove_content_description" tools:ignore="UnusedResources">Eipe’a Copa del Mundo nde rógagui</string>
+  <!-- Title shown on the sports widget immediately after the user has followed a team. %s is the selected team (e.g., "USA"). -->
+  <string name="sports_widget_team_followed_title">Upeigua: \n%s</string>
+  <!-- Description shown on the sports widget immediately after the user has followed a team -->
+  <string name="sports_widget_team_followed_description">Eporandu ko kuatiarogue ereko hag̃ua marandu partído og̃uahẽtavo torneo.</string>
+  <!-- Sports widget match status label shown during first half of a match. -->
+  <string name="sports_widget_first_half" tools:ignore="UnusedResources">Tiempo peteĩha</string>
+  <!-- Sports widget match status label shown during second half of a match. -->
+  <string name="sports_widget_second_half" tools:ignore="UnusedResources">Tiempo mokõiha</string>
+  <!-- Sports widget error card title shown when the user is offline. -->
+  <string name="sports_widget_error_connection_offline_title">Ha’ete ndaipóriva ñanduti.</string>
+  <!-- Sports widget error card description shown when the user is offline. -->
+  <string name="sports_widget_error_connection_offline_description">Ehechajey ne ñanduti reko ha eha’ã jey ag̃ave.</string>
+  <!-- Sports widget general group stage label in the soccer tournament. -->
+  <string name="sports_widget_group_stage">Atygua jehuga</string>
+  <!-- Sports widget error card title shown when match data fails to load. -->
+  <string name="sports_widget_error_load_failed_title">Marandu partído rehegua ndaipóri ko’ag̃aite.</string>
+  <!-- Sports widget error card description shown when match data fails to load. -->
+  <string name="sports_widget_error_load_failed_description">Embohekopyahukuaa ag̃amieve.</string>
+  <!-- Content description (for accessibility, not displayed) for teams which have not yet been determined in the match schedule. -->
+  <string name="sports_widget_team_to_be_determined">Aty oikotavahína</string>
   <!-- ==== End of Terms of use popup prompt. ==== -->
 
   <!--
@@ -4184,4 +4685,82 @@
   <string name="privacy_notice_updated_homepage_message_privacy_notice" tools:ignore="UnusedResources">Marandu’i ñemiguáva</string>
   <!-- The second active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">Eikuaave</string>
+  <!-- Google Lens prototype related strings -->
+  <string name="preferences_debug_settings_google_lens_integration">Embojuruja juaju Google Lens ndive</string>
+  <!-- Lens image search button content description -->
+  <string name="lens_search_content_description">Eheka ta’ãnga ndive</string>
+  <!-- Content description for the gallery picker button in the Lens camera screen -->
+  <string name="content_description_gallery">Eiporavo galeriágui emondo hag̃ua Google Lens-pe</string>
+  <!-- Content description for the shutter button in the Lens camera screen -->
+  <string name="content_description_take_photo">Enohẽ ne ra’ãnga ha emondo Google Lens-pe</string>
+  <!-- Image context menu entry that sends the long-pressed image to Google Lens -->
+  <string name="context_menu_open_image_with_google_lens">Eheka Google Lens ndive</string>
+  <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
+  <string name="lens_camera_permission_denied">Ñemoneĩ mbotovepyre</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the photo they capture will be sent to Google Lens for a visual search.
+  -->
+  <string name="lens_camera_title_lens">Google Lens</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the camera is being used to scan a QR code.
+  -->
+  <string name="lens_camera_title_qr">QR ayvu</string>
+  <!-- Title for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_title">Embojuruja Google Lens rekaha</string>
+  <!-- Description for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_description">Emondo ta’ãngaita Google-pe hekapy ojehecha hag̃ua.</string>
+  <!-- Caption shown under the Google Lens toggle clarifying when the feature is available -->
+  <string name="preferences_google_lens_availability_caption">Eiporukuaa Google ijuruja aja yvate gotyo oĩvape añoite ha upe jehekaha ijurujáva eikundaha aja.</string>
+  <!-- Title for the Google Lens AI feature toggle -->
+  <string name="ai_controls_google_lens_title">Google Lens</string>
+  <!-- Description for the Google Lens AI feature toggle -->
+  <string name="ai_controls_google_lens_description">Emondo ta’ãngaita Google-pe ojehechakuaa hag̃ua.</string>
+  <!-- Content description for the Google Lens half of the camera mode toggle -->
+  <string name="lens_camera_mode_lens">Google Lens</string>
+  <!-- Content description for the QR scanner half of the camera mode toggle -->
+  <string name="lens_camera_mode_qr">QR moha’ãngaha</string>
+  <!-- Toast shown when the user picks an image from the gallery in QR mode but no QR code is found in it -->
+  <string name="lens_camera_qr_no_code_found">Ndojejuhúi QR ayvu ta’ãngapegua</string>
+  <!--
+    Firefox Labs
+
+    Firefox Labs is the name of a screen in Settings to allow users to learn about
+    experimental and in-development features, and turn those features on and off.
+    The "Labs" portion can be localized, "Firefox" must be treated as a brand and kept
+    in English.
+  -->
+  <string name="firefox_labs_title" tools:ignore="BrandUsage">Firefox Labs</string>
+  <!-- Banner title text on the Firefox Labs screen. -->
+  <string name="firefox_labs_banner_title_2">¡Eiporu ore rembiapoite pyahu!</string>
+  <!--
+    Banner description text on the Firefox Labs screen. Provides information on what Firefox Labs does. %s is the name of the app (for example "Firefox Nightly").
+    Text will appear under the Firefox Labs banner title.
+  -->
+  <string name="firefox_labs_experimental_description">Okakuaa ha tuichave, ikatúva omyangekói mba’éichapa omba’apo %s.</string>
+  <!-- The link text shown when a feedback URL for a Firefox Labs feature is available. The feedback URL page will allow users to provide opinions and suggestions. -->
+  <string name="firefox_labs_share_feedback">Emoherakuã ne remiandu</string>
+  <!-- Content description for the share feedback link on a Firefox Labs feature. This text will be used by screen readers to provide more context on the feedback link. %s is the name of the Firefox Labs feature. -->
+  <string name="firefox_labs_share_feedback_content_description">Emoherakuã ne remiandu %s rehegua.</string>
+  <!-- Button text on the Firefox Labs screen for restoring all toggles back to the default settings. The button will turn off any experimental features. -->
+  <string name="firefox_labs_restore_default_button_text">Ijypykue mbojevy</string>
+  <!-- The title used in a confirmation dialog on the Firefox Labs screen when toggling "on" or "off" an experimental feature that requires a restart. -->
+  <string name="firefox_labs_feature_dialog_title">Tekotevẽ emoñepyrũjey</string>
+  <!-- The text on the dialog on the Firefox Labs screen for the positive button when toggling "on" and "off" experimental features. This prompts the user to confirm that they want to restart the app. -->
+  <string name="firefox_labs_dialog_restart_button">Moñepyrũjey</string>
+  <!-- The text on the dialog on the Firefox Labs screen for the negative button when toggling "on" and "off" experimental features. This is used to cancel the action and return to the previous screen. -->
+  <string name="firefox_labs_dialog_cancel_button">Eheja</string>
+  <!-- The title used in a confirmation dialog on the Firefox Labs screen when restoring the application to its defaults by turning "off" any experimental features. -->
+  <string name="firefox_labs_restore_defaults_dialog_title">Tekotevẽ emoñepyrũjey</string>
+  <!-- The description used in a confirmation dialog on the Firefox Labs screen when restoring the application to its defaults by turning "off" any experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+  <string name="firefox_labs_restore_defaults_dialog_message">Emoĩporãjey ñemboheko ypygua, emoñepyrũjey %s.</string>
+  <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "on" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+  <string name="firefox_labs_feature_enable_dialog_message">Emyandy hag̃ua ko tembiapoite, emoñepyrũ %s.</string>
+  <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+  <string name="firefox_labs_feature_disable_dialog_message">Emboguejy hag̃ua ko tembiapoite, emoñepyrũ %s.</string>
+  <!-- Helper text shown beneath a Firefox Labs item when it is blocked from being turned on. -->
+  <string name="firefox_labs_feature_conflict">Tembiapoite ndoikói eiporu hag̃ua.</string>
+  <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
+  <string name="firefox_labs_no_labs_available_description">Ndaipóri tembiapoite ikatúva eiporu ko’aĝa</string>
 </resources>

@@ -3,63 +3,12 @@
 
 "use strict";
 const URL = "data:text/html;charset=utf8,browser_telemetry_activate_rdm.js";
-const ALL_CHANNELS = Ci.nsITelemetry.DATASET_ALL_CHANNELS;
-const DATA = [
-  {
-    timestamp: null,
-    category: "devtools.main",
-    method: "activate",
-    object: "responsive_design",
-    value: null,
-    extra: {
-      host: "none",
-      width: "1300",
-    },
-  },
-  {
-    timestamp: null,
-    category: "devtools.main",
-    method: "deactivate",
-    object: "responsive_design",
-    value: null,
-    extra: {
-      host: "none",
-      width: "1300",
-    },
-  },
-  {
-    timestamp: null,
-    category: "devtools.main",
-    method: "activate",
-    object: "responsive_design",
-    value: null,
-    extra: {
-      host: "bottom",
-      width: "1300",
-    },
-  },
-  {
-    timestamp: null,
-    category: "devtools.main",
-    method: "deactivate",
-    object: "responsive_design",
-    value: null,
-    extra: {
-      host: "bottom",
-      width: "1300",
-    },
-  },
-];
 
 addRDMTask(
   null,
   async function () {
     // Let's reset the counts.
-    Services.telemetry.clearEvents();
-
-    // Ensure no events have been logged
-    const snapshot = Services.telemetry.snapshotEvents(ALL_CHANNELS, true);
-    ok(!snapshot.parent, "No events have been logged for the main process");
+    Services.fog.testResetFOG();
 
     const tab = await addTab(URL);
 
@@ -90,27 +39,16 @@ async function openCloseRDM(tab) {
 }
 
 async function checkResults() {
-  const snapshot = Services.telemetry.snapshotEvents(ALL_CHANNELS, true);
-  const events = snapshot.parent.filter(
-    event =>
-      event[1] === "devtools.main" &&
-      (event[2] === "activate" || event[2] === "deactivate")
-  );
-
-  for (const i in events) {
-    const [timestamp, category, method, object, value, extra] = events[i];
-
-    const expected = DATA[i];
-
-    // ignore timestamp
-    Assert.greater(timestamp, 0, "timestamp is greater than 0");
-    is(category, expected.category, "category is correct");
-    is(method, expected.method, "method is correct");
-    is(object, expected.object, "object is correct");
-    is(value, expected.value, "value is correct");
-
-    // extras
-    is(extra.host, expected.extra.host, "host is correct");
-    Assert.greater(Number(extra.width), 0, "width is greater than 0");
-  }
+  const actives = Glean.devtoolsMain.activateResponsiveDesign.testGetValue();
+  is(2, actives.length);
+  is("none", actives[0].extra.host);
+  is("bottom", actives[1].extra.host);
+  const deactives =
+    Glean.devtoolsMain.deactivateResponsiveDesign.testGetValue();
+  is(2, deactives.length);
+  is("none", deactives[0].extra.host);
+  is("bottom", deactives[1].extra.host);
+  [actives, deactives]
+    .flat()
+    .forEach(ev => Assert.greater(Number(ev.extra.width), 0));
 }

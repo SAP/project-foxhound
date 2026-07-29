@@ -41,7 +41,6 @@
 #include "test/encoder_settings.h"
 #include "test/frame_generator_capturer.h"
 #include "test/network/simulated_network.h"
-#include "test/video_test_constants.h"
 #include "video/config/video_encoder_config.h"
 
 namespace webrtc {
@@ -61,7 +60,7 @@ void MultiStreamTester::RunTest() {
   // at correct time. Those test tasks should be prefered over code under test
   // to make test more stable.
   auto task_queue = env.task_queue_factory().CreateTaskQueue(
-      "TaskQueue", TaskQueueFactory::Priority::HIGH);
+      "TaskQueue", TaskQueueFactory::Priority::kHigh);
   CallConfig sender_config(env);
   CallConfig receiver_config(env);
   std::unique_ptr<Call> sender_call;
@@ -83,9 +82,10 @@ void MultiStreamTester::RunTest() {
   SendTask(task_queue.get(), [&]() {
     sender_call = Call::Create(std::move(sender_config));
     receiver_call = Call::Create(std::move(receiver_config));
-    sender_transport = CreateSendTransport(task_queue.get(), sender_call.get());
+    sender_transport =
+        CreateSendTransport(env, task_queue.get(), sender_call.get());
     receiver_transport =
-        CreateReceiveTransport(task_queue.get(), receiver_call.get());
+        CreateReceiveTransport(env, task_queue.get(), receiver_call.get());
     sender_transport->SetReceiver(receiver_call->Receiver());
     receiver_transport->SetReceiver(sender_call->Receiver());
 
@@ -114,8 +114,6 @@ void MultiStreamTester::RunTest() {
       VideoReceiveStreamInterface::Config receive_config(
           receiver_transport.get());
       receive_config.rtp.remote_ssrc = ssrc;
-      receive_config.rtp.local_ssrc =
-          test::VideoTestConstants::kReceiverLocalVideoSsrc;
       receive_config.decoder_factory = &decoder_factory;
       VideoReceiveStreamInterface::Decoder decoder =
           test::CreateMatchingDecoder(send_config);
@@ -169,25 +167,27 @@ void MultiStreamTester::UpdateReceiveConfig(
     VideoReceiveStreamInterface::Config* receive_config) {}
 
 std::unique_ptr<test::DirectTransport> MultiStreamTester::CreateSendTransport(
+    const Environment& env,
     TaskQueueBase* task_queue,
     Call* sender_call) {
   std::vector<RtpExtension> extensions = {};
   return std::make_unique<test::DirectTransport>(
-      task_queue,
+      env, task_queue,
       std::make_unique<FakeNetworkPipe>(
-          Clock::GetRealTimeClock(),
+          &env.clock(),
           std::make_unique<SimulatedNetwork>(BuiltInNetworkBehaviorConfig())),
       sender_call, payload_type_map_, extensions, extensions);
 }
 
 std::unique_ptr<test::DirectTransport>
-MultiStreamTester::CreateReceiveTransport(TaskQueueBase* task_queue,
+MultiStreamTester::CreateReceiveTransport(const Environment& env,
+                                          TaskQueueBase* task_queue,
                                           Call* receiver_call) {
   std::vector<RtpExtension> extensions = {};
   return std::make_unique<test::DirectTransport>(
-      task_queue,
+      env, task_queue,
       std::make_unique<FakeNetworkPipe>(
-          Clock::GetRealTimeClock(),
+          &env.clock(),
           std::make_unique<SimulatedNetwork>(BuiltInNetworkBehaviorConfig())),
       receiver_call, payload_type_map_, extensions, extensions);
 }

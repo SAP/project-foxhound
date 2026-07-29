@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -170,6 +169,8 @@ class MatchPatternCore final {
   // Helper for MatchPatternSetCore::MatchesAllWebUrls:
   bool MatchesAllUrlsWithScheme(const nsAtom* aScheme) const;
 
+  bool ContainsScheme(const nsAtom* aScheme) const;
+
   bool MatchesCookie(const CookieInfo& aCookie) const;
 
   bool MatchesDomain(const nsACString& aDomain) const;
@@ -183,6 +184,8 @@ class MatchPatternCore final {
   bool DomainIsWildcard() const { return mMatchSubdomain && mDomain.IsEmpty(); }
 
   void GetPattern(nsAString& aPattern) const { aPattern = mPattern; }
+
+  void GetDomain(nsACString& aDomain) const { aDomain = mDomain; }
 
  private:
   ~MatchPatternCore() = default;
@@ -392,6 +395,8 @@ class MatchPatternSet final : public nsISupports, public nsWrapperCache {
   virtual ~MatchPatternSet() = default;
 
  private:
+  friend class ExtensionGuardSet;
+
   explicit MatchPatternSet(nsISupports* aParent,
                            already_AddRefed<MatchPatternSetCore> aCore)
       : mParent(aParent), mCore(std::move(aCore)) {}
@@ -401,6 +406,72 @@ class MatchPatternSet final : public nsISupports, public nsWrapperCache {
   RefPtr<MatchPatternSetCore> mCore;
 
   mozilla::Maybe<ArrayType> mPatternsCache;
+};
+
+class ExtensionGuardSetCore final {
+ public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ExtensionGuardSetCore)
+
+  ExtensionGuardSetCore(RefPtr<MatchPatternSetCore> aDeny,
+                        RefPtr<MatchPatternSetCore> aExcept,
+                        dom::ExtensionGuardSource aSource)
+      : mDeny(std::move(aDeny)),
+        mExcept(std::move(aExcept)),
+        mSource(aSource) {}
+
+  bool Denies(const URLInfo& aURI) const {
+    if (!mDeny->Matches(aURI)) {
+      return false;
+    }
+    return !mExcept || !mExcept->Matches(aURI);
+  }
+
+  dom::ExtensionGuardSource Source() const { return mSource; }
+  MatchPatternSetCore* DenyCore() const { return mDeny; }
+  MatchPatternSetCore* GetExceptCore() const { return mExcept; }
+
+ private:
+  ~ExtensionGuardSetCore() = default;
+
+  RefPtr<MatchPatternSetCore> mDeny;
+  RefPtr<MatchPatternSetCore> mExcept;  // may be null
+  dom::ExtensionGuardSource mSource;
+};
+
+class ExtensionGuardSet final : public nsISupports, public nsWrapperCache {
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(ExtensionGuardSet)
+
+  static already_AddRefed<ExtensionGuardSet> Constructor(
+      dom::GlobalObject& aGlobal, const dom::ExtensionGuardSetInit& aInit,
+      ErrorResult& aRv);
+
+  MatchPatternSet* Deny() const { return mDeny; }
+  MatchPatternSet* GetExcept() const { return mExcept; }
+  dom::ExtensionGuardSource Source() const { return mCore->Source(); }
+
+  bool Denies(const URLInfo& aURI) const { return mCore->Denies(aURI); }
+
+  ExtensionGuardSetCore* Core() const { return mCore; }
+
+  nsISupports* GetParentObject() const { return mParent; }
+
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
+
+ protected:
+  virtual ~ExtensionGuardSet() = default;
+
+ private:
+  friend class WebExtensionPolicy;
+
+  explicit ExtensionGuardSet(nsISupports* aParent,
+                             already_AddRefed<ExtensionGuardSetCore> aCore);
+
+  nsCOMPtr<nsISupports> mParent;
+  RefPtr<ExtensionGuardSetCore> mCore;
+  RefPtr<MatchPatternSet> mDeny;
+  RefPtr<MatchPatternSet> mExcept;  // may be null
 };
 
 }  // namespace extensions

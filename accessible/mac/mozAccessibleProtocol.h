@@ -1,5 +1,4 @@
 /* clang-format off */
-/* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -15,8 +14,8 @@
 /* This protocol's primary use is so widget/cocoa can talk back to us
    properly.
 
-   ChildView owns the topmost mozRootAccessible, and needs to take care of
-   setting up that parent/child relationship.
+   ChildView owns the topmost mozAccessible, and needs to take care of
+   setting up that represented/delegate relationship.
 
    This protocol is thus used to make sure it knows it's talking to us, and not
    just some random |id|.
@@ -36,6 +35,9 @@
 // we return some random object.
 - (BOOL)hasRepresentedView;
 - (id)representedView;
+
+// The object has an associated gecko accessible.
+- (BOOL)hasMozAccessible;
 
 /*** general ***/
 

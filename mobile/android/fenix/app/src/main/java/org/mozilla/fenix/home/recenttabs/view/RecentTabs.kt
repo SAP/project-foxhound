@@ -55,6 +55,7 @@ import mozilla.components.ui.colors.PhotonColors
 import org.mozilla.fenix.components.components
 import org.mozilla.fenix.compose.Image
 import org.mozilla.fenix.compose.TabThumbnail
+import org.mozilla.fenix.compose.thumbnailImageData
 import org.mozilla.fenix.home.fake.FakeHomepagePreview
 import org.mozilla.fenix.home.recenttabs.RecentTab
 import org.mozilla.fenix.home.topsites.ui.HomepageCard
@@ -75,7 +76,7 @@ private const val THUMBNAIL_SIZE = 108
 fun RecentTabs(
     recentTabs: List<RecentTab>,
     menuItems: List<RecentTabMenuItem>,
-    backgroundColor: Color = MaterialTheme.colorScheme.surfaceContainerLowest,
+    backgroundColor: Color = MaterialTheme.colorScheme.surfaceBright,
     onRecentTabClick: (String) -> Unit = {},
 ) {
     Column(
@@ -230,7 +231,7 @@ fun RecentTabImage(
                 contentScale = ContentScale.Crop,
                 fallback = {
                     TabThumbnail(
-                        tab = tab.state,
+                        tabThumbnailImageData = tab.state.thumbnailImageData(),
                         thumbnailSizePx = LocalDensity.current.run { THUMBNAIL_SIZE.dp.toPx().toInt() },
                         modifier = modifier,
                     )
@@ -238,7 +239,7 @@ fun RecentTabImage(
             )
         }
         else -> TabThumbnail(
-            tab = tab.state,
+            tabThumbnailImageData = tab.state.thumbnailImageData(),
             thumbnailSizePx = LocalDensity.current.run { THUMBNAIL_SIZE.dp.toPx().toInt() },
             modifier = modifier,
         )

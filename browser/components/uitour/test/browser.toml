@@ -24,6 +24,8 @@ fail-if = [
 
 ["browser_UITour5.js"]
 
+["browser_UITour_aiControls.js"]
+
 ["browser_UITour_aiwindow.js"]
 
 ["browser_UITour_annotation_size_attributes.js"]
@@ -48,6 +50,8 @@ tags = "os_integration"
 skip-if = [
   "true", # Bug 1026310
 ]
+
+["browser_UITour_pinToTaskbar.js"]
 
 ["browser_UITour_pocket.js"]
 skip-if = [

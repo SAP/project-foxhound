@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +6,6 @@
 
 #include "AuthrsBridge_ffi.h"
 #include "mozilla/Base64.h"
-#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/WebAuthenticationBinding.h"
 
 namespace mozilla::dom {
@@ -16,13 +13,11 @@ namespace mozilla::dom {
 NS_IMPL_CYCLE_COLLECTION_CLASS(AuthenticatorAttestationResponse)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(
     AuthenticatorAttestationResponse, AuthenticatorResponse)
-  tmp->mAttestationObjectCachedObj = nullptr;
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(AuthenticatorAttestationResponse,
                                                AuthenticatorResponse)
   NS_IMPL_CYCLE_COLLECTION_TRACE_PRESERVED_WRAPPER
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mAttestationObjectCachedObj)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(
@@ -39,13 +34,7 @@ NS_INTERFACE_MAP_END_INHERITING(AuthenticatorResponse)
 
 AuthenticatorAttestationResponse::AuthenticatorAttestationResponse(
     nsPIDOMWindowInner* aParent)
-    : AuthenticatorResponse(aParent), mAttestationObjectCachedObj(nullptr) {
-  mozilla::HoldJSObjects(this);
-}
-
-AuthenticatorAttestationResponse::~AuthenticatorAttestationResponse() {
-  mozilla::DropJSObjects(this);
-}
+    : AuthenticatorResponse(aParent) {}
 
 JSObject* AuthenticatorAttestationResponse::WrapObject(
     JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
@@ -54,14 +43,7 @@ JSObject* AuthenticatorAttestationResponse::WrapObject(
 
 void AuthenticatorAttestationResponse::GetAttestationObject(
     JSContext* aCx, JS::MutableHandle<JSObject*> aValue, ErrorResult& aRv) {
-  if (!mAttestationObjectCachedObj) {
-    mAttestationObjectCachedObj =
-        ArrayBuffer::Create(aCx, mAttestationObject, aRv);
-    if (aRv.Failed()) {
-      return;
-    }
-  }
-  aValue.set(mAttestationObjectCachedObj);
+  aValue.set(ArrayBuffer::Create(aCx, mAttestationObject, aRv));
 }
 
 void AuthenticatorAttestationResponse::SetAttestationObject(

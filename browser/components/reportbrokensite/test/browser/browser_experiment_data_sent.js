@@ -57,28 +57,23 @@ add_setup(async function () {
 
 add_task(async function testSendButton() {
   ensureReportBrokenSitePreffedOn();
-  ensureReasonOptional();
 
-  const tab = await openTab(REPORTABLE_PAGE_URL);
-
-  await testSend(tab, AppMenu(), {
-    experiments: EXPECTED_EXPERIMENTS_IN_REPORT,
+  await withNewTab(REPORTABLE_PAGE_URL, async (_, tab) => {
+    await testSend(tab, AppMenu(), {
+      experiments: EXPECTED_EXPERIMENTS_IN_REPORT,
+    });
   });
-
-  closeTab(tab);
 });
 
 add_task(async function testSendingMoreInfo() {
   ensureReportBrokenSitePreffedOn();
-  ensureSendMoreInfoEnabled();
+  enableSendMoreInfo();
 
-  const tab = await openTab(REPORTABLE_PAGE_URL);
-
-  await testSendMoreInfo(tab, AppMenu(), {
-    experiments: EXPECTED_EXPERIMENTS_IN_REPORT,
+  await withNewTab(REPORTABLE_PAGE_URL, async (_, tab) => {
+    await testSendMoreInfo(tab, AppMenu(), {
+      experiments: EXPECTED_EXPERIMENTS_IN_REPORT,
+    });
   });
-
-  closeTab(tab);
 });
 
 add_task(async function teardown() {

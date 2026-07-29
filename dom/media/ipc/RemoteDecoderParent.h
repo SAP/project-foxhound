@@ -1,11 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #ifndef include_dom_media_ipc_RemoteDecoderParent_h
 #define include_dom_media_ipc_RemoteDecoderParent_h
 
+#include "mozilla/Maybe.h"
+#include "mozilla/MozPromise.h"
 #include "mozilla/PRemoteDecoderParent.h"
 #include "mozilla/ShmemRecycleAllocator.h"
 
@@ -22,7 +22,7 @@ class RemoteDecoderParent : public ShmemRecycleAllocator<RemoteDecoderParent>,
  public:
   // We refcount this class since the task queue can have runnables
   // that reference us.
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(RemoteDecoderParent)
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(RemoteDecoderParent, final)
 
   RemoteDecoderParent(RemoteMediaManagerParent* aParent,
                       const CreateDecoderParams::OptionSet& aOptions,
@@ -30,8 +30,6 @@ class RemoteDecoderParent : public ShmemRecycleAllocator<RemoteDecoderParent>,
                       TaskQueue* aDecodeTaskQueue,
                       const Maybe<uint64_t>& aMediaEngineId,
                       Maybe<TrackingId> aTrackingId, RemoteCDMParent* aCDM);
-
-  void Destroy();
 
   // PRemoteDecoderParent
   virtual IPCResult RecvConstruct(ConstructResolver&& aResolver) = 0;
@@ -50,6 +48,12 @@ class RemoteDecoderParent : public ShmemRecycleAllocator<RemoteDecoderParent>,
 
   bool OnManagerThread();
 
+  // Rejects any in-flight IPC resolvers with NS_ERROR_DOM_MEDIA_CANCELED and
+  // disconnects the matching MozPromiseRequestHolders so that their ThenValues
+  // cannot trip AssertIsDead if the underlying decoder's promise chain is torn
+  // down before the callback fires. Must be called on the manager thread.
+  void AbortPendingRequests();
+
   virtual MediaResult ProcessDecodedData(MediaDataDecoder::DecodedData&& aData,
                                          DecodedOutputIPDL& aDecodedData) = 0;
 
@@ -63,11 +67,23 @@ class RemoteDecoderParent : public ShmemRecycleAllocator<RemoteDecoderParent>,
   // Only be used on Windows when the media engine playback is enabled.
   const Maybe<uint64_t> mMediaEngineId;
 
+  bool mShutdown = false;
+
+  // Pending IPC resolvers and matching request holders for the in-flight
+  // decoder promise. Accessed only on the manager thread.
+  Maybe<InitResolver> mPendingInitResolver;
+  Maybe<DecodeResolver> mPendingDecodeResolver;
+  Maybe<FlushResolver> mPendingFlushResolver;
+  Maybe<DrainResolver> mPendingDrainResolver;
+
+  MozPromiseRequestHolder<MediaDataDecoder::InitPromise> mInitRequest;
+  MozPromiseRequestHolder<MediaDataDecoder::DecodePromise> mDecodeRequest;
+  MozPromiseRequestHolder<MediaDataDecoder::FlushPromise> mFlushRequest;
+  MozPromiseRequestHolder<MediaDataDecoder::DecodePromise> mDrainRequest;
+
  private:
   void DecodeNextSample(const RefPtr<ArrayOfRemoteMediaRawData>& aData,
-                        size_t aIndex, MediaDataDecoder::DecodedData&& aOutput,
-                        DecodeResolver&& aResolver);
-  RefPtr<RemoteDecoderParent> mIPDLSelfRef;
+                        size_t aIndex, MediaDataDecoder::DecodedData&& aOutput);
   const RefPtr<nsISerialEventTarget> mManagerThread;
 };
 

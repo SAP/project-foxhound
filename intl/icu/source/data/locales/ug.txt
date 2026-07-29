@@ -425,6 +425,7 @@ ug{
             }
             eras{
                 abbreviated{
+                    0{"BCE"}
                     1{"مىلادىيە"}
                 }
                 wide{

@@ -12,9 +12,9 @@ import androidx.fragment.compose.content
 import androidx.navigation.fragment.findNavController
 import mozilla.components.lib.state.helpers.StoreProvider.Companion.fragmentStore
 import org.mozilla.fenix.R
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.openToBrowser
 import org.mozilla.fenix.ext.requireComponents
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.showToolbar
 import org.mozilla.fenix.settings.emailmasks.middleware.EmailMasksNavigationMiddleware
 import org.mozilla.fenix.settings.emailmasks.middleware.EmailMasksPreferencesMiddleware
@@ -24,7 +24,8 @@ import org.mozilla.fenix.theme.FirefoxTheme
 /**
  * Fragment host for the Email Masks settings screen.
  */
-class EmailMasksSettingsFragment : Fragment() {
+class EmailMasksSettingsFragment : Fragment(), SystemInsetsPaddedFragment {
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -33,7 +34,7 @@ class EmailMasksSettingsFragment : Fragment() {
         FirefoxTheme {
             val store by fragmentStore(
                 initialState = EmailMasksState(
-                    isSuggestMasksEnabled = requireContext().settings().isEmailMaskSuggestionEnabled,
+                    isSuggestMasksEnabled = requireComponents.emailMasksRepository.isSuggestionEnabled(),
                 ),
             ) { state -> createEmailMasksStore(state) }
 
@@ -60,11 +61,7 @@ class EmailMasksSettingsFragment : Fragment() {
                     }
                 },
             ),
-            EmailMasksPreferencesMiddleware(
-                persistSuggestToggle = { enabled ->
-                    requireContext().settings().isEmailMaskSuggestionEnabled = enabled
-                },
-            ),
+            EmailMasksPreferencesMiddleware(requireComponents.emailMasksRepository),
             EmailMasksTelemetryMiddleware(),
         ),
     )

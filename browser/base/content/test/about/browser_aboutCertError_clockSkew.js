@@ -180,51 +180,46 @@ add_task(async function checkWrongSystemTimeWarning_feltPrivacyToTrue() {
         content.document.querySelector("net-error-card").wrappedJSObject;
       await netErrorCard.getUpdateComplete();
 
-      Assert.ok(
-        netErrorCard.certErrorBodyTitle,
-        "The error page title should exist."
-      );
-
-      const shortDesc = netErrorCard.certErrorIntro;
-      const advancedButton = netErrorCard.advancedButton;
-      Assert.ok(advancedButton, "The advanced button should exist.");
-
+      const title = netErrorCard.errorTitle;
+      Assert.ok(title, "The error page title should exist.");
       Assert.equal(
-        advancedButton.dataset.l10nId,
-        "fp-certerror-advanced-button",
-        "Button should have the 'advanced' l10n ID."
+        title.dataset.l10nId,
+        "clockSkewError-title",
+        "Should show the clock skew error title"
       );
 
-      // Perform user button click interaction
-      EventUtils.synthesizeMouseAtCenter(advancedButton, {}, content);
-
-      // Wait for the exception button to be enabled
-      // This ensures that the advanced section is fully loaded
-      await ContentTaskUtils.waitForCondition(
-        () =>
-          netErrorCard.exceptionButton &&
-          !netErrorCard.exceptionButton.disabled,
-        "Wait for the exception button to be created."
+      const introEl = netErrorCard.errorIntro;
+      Assert.equal(
+        introEl.dataset.l10nId,
+        "fp-certerror-clock-skew-intro",
+        "Should show the clock skew intro text"
       );
+
+      const tryAgainButton = netErrorCard.tryAgainButton;
+      Assert.ok(tryAgainButton, "Try Again button should be present");
+
+      const advancedButton = netErrorCard.advancedButton;
+      Assert.ok(!advancedButton, "Advanced button should not be present");
+
+      const learnMoreLink = netErrorCard.learnMoreLink;
 
       const whatCanYouDo = netErrorCard.whatCanYouDo;
+      Assert.ok(whatCanYouDo, "What can you do section should be present");
       Assert.equal(
         whatCanYouDo.dataset.l10nId,
-        "fp-certerror-expired-what-can-you-do-body",
-        "What can you do section should have fp-certerror-expired-what-can-you-do-body l10n ID."
+        "fp-certerror-clock-skew-what-can-you-do-body",
+        "What can you do section should have clock skew l10n ID"
       );
-
       const whatCanYouDoArgs = JSON.parse(whatCanYouDo.dataset.l10nArgs);
       Assert.ok(
-        whatCanYouDoArgs.date,
-        "What can you do section should have timestamp."
+        whatCanYouDoArgs.now,
+        "What can you do section should have a 'now' timestamp"
       );
 
       return {
-        divDisplay: content.getComputedStyle(shortDesc).display,
-        text: shortDesc.textContent,
-        learnMoreLink: netErrorCard.learnMoreLink.href,
-        whatCanYouDoText: whatCanYouDo.textContent,
+        introDisplay: content.getComputedStyle(introEl).display,
+        introText: introEl.textContent,
+        learnMoreHref: learnMoreLink.href,
       };
     });
   }
@@ -254,31 +249,30 @@ add_task(async function checkWrongSystemTimeWarning_feltPrivacyToTrue() {
   });
 
   let localDateFmt = new Intl.DateTimeFormat("en-US", {
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
+    dateStyle: "medium",
   }).format(localDate);
 
   info("Loading a bad cert page with a skewed clock");
   let contentData = await setUpPage();
 
   Assert.notEqual(
-    contentData.divDisplay,
+    contentData.introDisplay,
     "none",
-    "Wrong time message information is visible"
+    "Clock skew intro should be visible"
   );
 
   Assert.ok(
-    contentData.text.includes("expired.example.com"),
-    "URL found in error message"
+    contentData.introText.includes("expired.example.com"),
+    "URL found in clock skew intro"
   );
 
   Assert.ok(
-    contentData.whatCanYouDoText.includes(localDateFmt),
-    "Correct local date displayed"
+    contentData.introText.includes(localDateFmt),
+    "Correct local date displayed in clock skew intro"
   );
+
   Assert.ok(
-    contentData.learnMoreLink.includes("time-errors"),
+    contentData.learnMoreHref.includes("time-errors"),
     "time-errors in the Learn More URL"
   );
 
@@ -355,4 +349,106 @@ add_task(async function checkCertError_feltPrivacyToTrue() {
   Assert.ok(message.includes(localDateFmt), "Message has local date displayed");
 
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
+});
+
+// Load expired.example.com with the given prefs set, wait for the error page,
+// and return whether the page rendered a clock skew error.
+async function loadExpiredAndCheckClockSkew(prefs) {
+  await SpecialPowers.pushPrefEnv({ set: prefs });
+
+  let browser;
+  let certErrorLoaded;
+  await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    () => {
+      gBrowser.selectedTab = BrowserTestUtils.addTab(
+        gBrowser,
+        "https://expired.example.com/"
+      );
+      browser = gBrowser.selectedBrowser;
+      certErrorLoaded = BrowserTestUtils.waitForErrorPage(browser);
+    },
+    false
+  );
+  await certErrorLoaded;
+
+  const hasClockSkew = await SpecialPowers.spawn(
+    browser,
+    [],
+    async function () {
+      const div = content.document.getElementById("errorShortDesc");
+      await ContentTaskUtils.waitForCondition(
+        () => div.textContent.length,
+        "Error page rendered"
+      );
+      return content.document.body.classList.contains("clockSkewError");
+    }
+  );
+
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
+  return hasClockSkew;
+}
+
+add_task(async function test_detectClockSkew() {
+  await setSecurityCertErrorsFeltPrivacyToFalse();
+
+  // expired.example.com has a cert valid only Jan 5-6, 2010. Compute a skew
+  // that places (Date.now() - skew) inside that validity window.
+  const certMidpointMs = new Date("2010-01-05T12:00:00Z").getTime();
+  const skewSeconds = Math.floor((Date.now() - certMidpointMs) / 1000);
+  const nowSec = Math.floor(Date.now() / 1000);
+
+  for (const { prefs, expectSkew, description } of [
+    {
+      prefs: [
+        [PREF_SERVICES_SETTINGS_CLOCK_SKEW_SECONDS, skewSeconds],
+        [PREF_SERVICES_SETTINGS_LAST_FETCHED, nowSec - 60],
+      ],
+      expectSkew: true,
+      description:
+        "Should detect clock skew via remote-settings when skew > 24h, " +
+        "recent fetch, and adjusted date falls within cert validity",
+    },
+    {
+      prefs: [
+        [PREF_SERVICES_SETTINGS_CLOCK_SKEW_SECONDS, skewSeconds],
+        [PREF_SERVICES_SETTINGS_LAST_FETCHED, nowSec - 7 * 86400],
+      ],
+      expectSkew: false,
+      description:
+        "Should not detect clock skew via remote-settings when fetch is stale",
+    },
+    {
+      prefs: [
+        [PREF_SERVICES_SETTINGS_CLOCK_SKEW_SECONDS, 3600],
+        [PREF_SERVICES_SETTINGS_LAST_FETCHED, nowSec - 60],
+      ],
+      expectSkew: false,
+      description:
+        "Should not detect clock skew when difference is under 24 hours",
+    },
+    {
+      prefs: [
+        [PREF_SERVICES_SETTINGS_CLOCK_SKEW_SECONDS, 0],
+        [PREF_SERVICES_SETTINGS_LAST_FETCHED, 0],
+      ],
+      expectSkew: false,
+      description:
+        "Should not detect clock skew when system clock is after the build date",
+    },
+    {
+      prefs: [
+        [PREF_SERVICES_SETTINGS_CLOCK_SKEW_SECONDS, 0],
+        [PREF_SERVICES_SETTINGS_LAST_FETCHED, nowSec - 60],
+      ],
+      expectSkew: false,
+      description: "Should not detect clock skew under normal conditions",
+    },
+  ]) {
+    Assert.equal(
+      await loadExpiredAndCheckClockSkew(prefs),
+      expectSkew,
+      description
+    );
+  }
 });

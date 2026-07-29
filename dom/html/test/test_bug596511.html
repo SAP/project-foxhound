@@ -132,7 +132,8 @@ function checkInvalidWhenValueMissing(element)
   element.required = true;
   select.options[0].textContent = "foo";
   // TODO: having that working would require us to add a mutation observer on
-  // the select element.
+  // the select element. TODO(emilio): We do now, we should probably
+  // make that work.
   checkNotSufferingFromBeingMissing(select, true);
 
   select.remove(0);

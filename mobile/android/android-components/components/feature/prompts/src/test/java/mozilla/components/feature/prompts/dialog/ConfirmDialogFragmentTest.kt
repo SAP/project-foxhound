@@ -12,7 +12,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.feature.prompts.R
 import mozilla.components.support.test.ext.appCompatContext
 import mozilla.components.support.test.robolectric.testContext
-import org.junit.Assert
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
@@ -24,6 +23,7 @@ import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
 import org.mockito.MockitoAnnotations.openMocks
 import org.robolectric.Shadows.shadowOf
+import kotlin.test.assertNotNull
 import androidx.appcompat.R as appcompatR
 
 @RunWith(AndroidJUnit4::class)
@@ -117,7 +117,7 @@ class ConfirmDialogFragmentTest {
 
         Mockito.doNothing().`when`(fragment).dismiss()
 
-        Assert.assertNotNull(dialog)
+        assertNotNull(dialog)
 
         dialog.show()
 

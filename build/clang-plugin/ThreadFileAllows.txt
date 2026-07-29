@@ -30,6 +30,7 @@ xpcom/tests/gtest/TestTaskQueue.cpp
 
 # Tests which use dynamic thread names.
 xpcom/tests/gtest/TestHandleWatcher.cpp
+xpcom/tests/gtest/TestThreadPoolIdleTimeout.cpp
 
 ######
 # Unsorted release files

@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -74,8 +71,7 @@ ParentProcessDocumentChannel::RedirectToRealChannel(
   }
   mStreamFilterEndpoints = std::move(aStreamFilterEndpoints);
 
-  if (mDocumentLoadListener->IsDocumentLoad() &&
-      mozilla::SessionHistoryInParent() && GetDocShell() &&
+  if (mDocumentLoadListener->IsDocumentLoad() && GetDocShell() &&
       mDocumentLoadListener->GetLoadingSessionHistoryInfo()) {
     GetDocShell()->SetLoadingSessionHistoryInfo(
         *mDocumentLoadListener->GetLoadingSessionHistoryInfo());
@@ -130,7 +126,9 @@ ParentProcessDocumentChannel::OnRedirectVerifyCallback(nsresult aResult) {
       RefPtr<ParentChannelWrapper> wrapper =
           new ParentChannelWrapper(channel, mListener);
 
-      wrapper->Register(mDocumentLoadListener->GetRedirectChannelId());
+      // This is a parent-process document load, so the redirect is owned by
+      // the parent process (ContentParentId 0).
+      wrapper->Register(mDocumentLoadListener->GetRedirectChannelId(), 0);
     }
   }
 

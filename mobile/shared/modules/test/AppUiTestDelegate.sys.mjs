@@ -31,18 +31,18 @@ class Delegate {
     //
     // The message is ultimately received and handled by TestRunnerApiEngine at
     // mobile/android/test_runner/src/main/java/org/mozilla/geckoview/test_runner/TestRunnerApiEngine.java
-    const message = {
-      type: "GeckoView:WebExtension:Message",
-      sender: {
-        envType: "addon_child",
-        url: "test-runner-support:///",
-      },
-      data,
-      extensionId: TEST_SUPPORT_EXTENSION_ID,
-      nativeApp: "test-runner-support",
-    };
-
-    return lazy.EventDispatcher.instance.sendRequestForResult(message);
+    return lazy.EventDispatcher.instance.sendRequestForResult(
+      "GeckoView:WebExtension:Message",
+      {
+        sender: {
+          envType: "addon_child",
+          url: "test-runner-support:///",
+        },
+        data,
+        extensionId: TEST_SUPPORT_EXTENSION_ID,
+        nativeApp: "test-runner-support",
+      }
+    );
   }
 
   clickPageAction(window, extensionId) {
@@ -66,7 +66,7 @@ class Delegate {
   }
 
   async removeTab(tab) {
-    const window = tab.browser.ownerGlobal;
+    const window = tab.browser.documentGlobal;
     await lazy.GeckoViewTabBridge.closeTab({
       window,
       extensionId: TEST_SUPPORT_EXTENSION_ID,
@@ -74,6 +74,7 @@ class Delegate {
   }
 
   async openNewForegroundTab(window, url, waitForLoad = true) {
+    const uri = Services.io.newURI(url);
     const tab = await lazy.GeckoViewTabBridge.createNewTab({
       extensionId: TEST_SUPPORT_EXTENSION_ID,
       createProperties: {
@@ -83,18 +84,24 @@ class Delegate {
     });
 
     const { browser } = tab;
-    const triggeringPrincipal =
-      Services.scriptSecurityManager.createContentPrincipal(
-        Services.io.newURI(url),
-        {}
-      );
+    // On desktop, the openNewForegroundTab implementation uses the system
+    // principal to trigger navigations. Here we historically used content
+    // principals, and following the principle of least privilege, we only
+    // use system principals when needed.
+    // There is also an argument to be made to unconditionally use the system
+    // principal, but for now, we do not.
+    // Web pages cannot open top-level data:-URLs, but users are allowed to
+    // navigate to data:-URLs, which use the system principal.
+    const triggeringPrincipal = uri.schemeIs("data")
+      ? Services.scriptSecurityManager.getSystemPrincipal()
+      : Services.scriptSecurityManager.createContentPrincipal(uri, {});
 
     browser.fixupAndLoadURIString(url, {
       loadFlags: Ci.nsIWebNavigation.LOAD_FLAGS_NONE,
       triggeringPrincipal,
     });
 
-    const newWindow = browser.ownerGlobal;
+    const newWindow = browser.documentGlobal;
     lazy.mobileWindowTracker.setTabActive(newWindow, true);
 
     if (!waitForLoad) {

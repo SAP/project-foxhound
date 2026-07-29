@@ -39,8 +39,8 @@ A newly designed widget may need to work in the parent process, the content proc
 You will likely be using your widget in a privileged process (such as the parent or privileged content) with access to `Services`, `XPCOMUtils`, and other globals.
 Storybook and other web content do not have access to these privileged globals, so you will need to write workarounds for `Services`, `XPCOMUtils`, chrome URIs for CSS files and assets, etc.
 [Check out moz-support-link.mjs and moz-support-link.stories.mjs for an example of a widget being used in the parent/chrome and needing to handle `XPCOMUtils` in Storybook](https://searchfox.org/mozilla-central/search?q=moz-support-link&path=&case=false&regexp=false).
-[See moz-toggle.mjs for handling chrome URIs for CSS in Storybook](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/moz-toggle/moz-toggle.mjs).
-[See moz-label.mjs for an example of handling `Services` in Storybook](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/moz-label/moz-label.mjs).
+[See moz-toggle.mjs for handling chrome URIs for CSS in Storybook](https://searchfox.org/firefox-main/source/toolkit/content/widgets/moz-toggle/moz-toggle.mjs).
+[See moz-label.mjs for an example of handling `Services` in Storybook](https://searchfox.org/firefox-main/source/toolkit/content/widgets/moz-label/moz-label.mjs).
 
 ### Autonomous or Customized built-in Custom Elements
 
@@ -104,7 +104,7 @@ start altering the generated files and see your changes reflected in Storybook.
 ### Known `browser_all_files_referenced.js` issue
 
 Unfortunately for now [the
-browser_all_files_referenced.js test](https://searchfox.org/mozilla-central/source/browser/base/content/test/static/browser_all_files_referenced.js)
+browser_all_files_referenced.js test](https://searchfox.org/firefox-main/source/browser/base/content/test/static/browser_all_files_referenced.js)
 will fail unless your new component is immediately used somewhere outside
 of Storybook. We have plans to fix this issue, [see Bug 1806002 for more details](https://bugzilla.mozilla.org/show_bug.cgi?id=1806002), but for now you can get around it
 by updating [this array](https://searchfox.org/mozilla-central/rev/5c922d8b93b43c18bf65539bfc72a30f84989003/browser/base/content/test/static/browser_all_files_referenced.js#113) to include your new chrome filepath.
@@ -156,4 +156,4 @@ page it may be due to one of the following issues:
   ```
 
   you will need to make a vanilla custom element, you cannot use Lit.
-  [For an example of extending an HTML element, see `moz-support-link`](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/moz-support-link/moz-support-link.mjs).
+  [For an example of extending an HTML element, see `moz-support-link`](https://searchfox.org/firefox-main/source/toolkit/content/widgets/moz-support-link/moz-support-link.mjs).

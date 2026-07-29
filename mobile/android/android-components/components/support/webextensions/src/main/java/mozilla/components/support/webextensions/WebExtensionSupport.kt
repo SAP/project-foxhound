@@ -42,6 +42,7 @@ import mozilla.components.support.ktx.kotlin.isExtensionUrl
 import mozilla.components.support.ktx.kotlinx.coroutines.flow.filterChanged
 import mozilla.components.support.webextensions.WebExtensionSupport.initialize
 import mozilla.components.support.webextensions.facts.emitWebExtensionsInitializedFact
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -153,8 +154,8 @@ object WebExtensionSupport {
      * be triggered when web extensions open a new tab e.g. when dispatching
      * to the store isn't sufficient while migrating from browser-session
      * to browser-state. This is a lambda accepting the [WebExtension], the
-     * [EngineSession] to use, as well as the URL to load, return the ID of
-     * the created session.
+     * [EngineSession] to use, the URL to load, and whether the new tab
+     * should be selected/active, returning the ID of the created session.
      * @param onCloseTabOverride (optional) override of behaviour that should
      * be triggered when web extensions close tabs e.g. when dispatching
      * to the store isn't sufficient while migrating from browser-session
@@ -177,7 +178,7 @@ object WebExtensionSupport {
         store: BrowserStore,
         openPopupInTab: Boolean = false,
         mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
-        onNewTabOverride: ((WebExtension?, EngineSession, String) -> String)? = null,
+        onNewTabOverride: ((WebExtension?, EngineSession, String, Boolean) -> String)? = null,
         onCloseTabOverride: ((WebExtension?, String) -> Unit)? = null,
         onSelectTabOverride: ((WebExtension?, String) -> Unit)? = null,
         onUpdatePermissionRequest: onUpdatePermissionRequest? = { _, _, _, _, _ -> },
@@ -211,6 +212,25 @@ object WebExtensionSupport {
 
                 override fun onPageActionDefined(extension: WebExtension, action: Action) {
                     store.dispatch(WebExtensionAction.UpdatePageAction(extension.id, action))
+                }
+
+                override fun onOpenOptionsPage(
+                    extension: WebExtension,
+                ) {
+                    val metaData = extension.getMetadata() ?: return
+                    if (metaData.openOptionsPageInTab) {
+                        logger.error("The case where |open_in_tab| is true should be handled in the API script.")
+                    } else {
+                        val optionsPageUrl = metaData.optionsPageUrl ?: return
+                        store.dispatch(
+                            WebExtensionAction.UpdateOptionsPageSessionAction(
+                                extensionId = extension.id,
+                                optionsPageInstanceId = UUID.randomUUID().toString(),
+                                optionsPageUrl = optionsPageUrl,
+                                extensionTranslatedName = metaData.name ?: "",
+                            ),
+                        )
+                    }
                 }
 
                 override fun onToggleActionPopup(
@@ -520,7 +540,7 @@ object WebExtensionSupport {
 
     private fun openTab(
         store: BrowserStore,
-        onNewTabOverride: ((WebExtension?, EngineSession, String) -> String)? = null,
+        onNewTabOverride: ((WebExtension?, EngineSession, String, Boolean) -> String)? = null,
         onSelectTabOverride: ((WebExtension?, String) -> Unit)? = null,
         webExtension: WebExtension?,
         engineSession: EngineSession,
@@ -528,7 +548,7 @@ object WebExtensionSupport {
         selected: Boolean = true,
     ): String {
         return if (onNewTabOverride != null) {
-            val sessionId = onNewTabOverride.invoke(webExtension, engineSession, url)
+            val sessionId = onNewTabOverride.invoke(webExtension, engineSession, url, selected)
             if (selected) {
                 onSelectTabOverride?.invoke(webExtension, sessionId)
             }

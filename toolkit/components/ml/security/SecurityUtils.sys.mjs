@@ -16,7 +16,9 @@
  * Security Model:
  * ---------------
  * - Each tab maintains its own ledger of trusted URLs
- * - Request-scoped context merges current tab + @mentioned tabs
+ * - Conversation-level URLs (from @mentions) are stored in the SessionLedger
+ *   and included in merges for both tool execution and link validation
+ * - Request-scoped context merges current tab + @mentioned tabs + conversation URLs
  * - URLs are normalized before storage and comparison
  * - Same eTLD+1 validation prevents injection via canonical/og:url
  */
@@ -61,10 +63,8 @@ export function normalizeUrl(urlString, baseUrl = null) {
   }
 
   try {
-    let url;
-    try {
-      url = baseUrl ? new URL(urlString, baseUrl) : new URL(urlString);
-    } catch (parseError) {
+    const url = baseUrl ? URL.parse(urlString, baseUrl) : URL.parse(urlString);
+    if (!url) {
       return {
         success: false,
         error: "Invalid URL format",
@@ -291,21 +291,58 @@ export class TabLedger {
  * SessionLedger manages the lifecycle of individual TabLedgers and provides
  * methods to build request-scoped contexts by merging tab ledgers.
  *
+ * Conversation-level URLs (from @mentions) are stored separately and are
+ * included in all merge operations, as they represent explicit user consent
+ * that applies across the entire conversation.
+ *
+ * Extends EventTarget to notify listeners of ledger changes. Dispatches
+ * a "change" event when conversation-level URLs are added.
+ *
  * Lifetime: SessionLedger is ephemeral and in-memory only. It is scoped to
  * the current browser session and cleared on restart. Ledgers are not
  * persisted to disk or restored via session restore.
  */
-export class SessionLedger {
+export class SessionLedger extends EventTarget {
+  /** @type {Set<string>} Conversation-level trusted URLs (from @mentions) */
+  #conversationUrls = new Set();
+
   /**
    * Creates a new session ledger.
    *
    * @param {string} sessionId - The Smart Window session identifier
    */
   constructor(sessionId) {
+    super();
     this.sessionId = sessionId;
 
     /** @type {Map<string, TabLedger>} Map of tab ID --> TabLedger */
     this.tabs = new Map();
+  }
+
+  /**
+   * Seeds URLs at the conversation level (e.g., from @mentions).
+   * These URLs are trusted for the entire conversation, independent of tabs.
+   *
+   * Conversation URLs do not have TTL - they remain trusted for the lifetime
+   * of the conversation. This is appropriate because @mention is explicit
+   * user consent.
+   *
+   * Dispatches a "change" event when the ledger state changes.
+   *
+   * @param {string[]} urls - URLs to seed
+   */
+  seedConversation(urls) {
+    let changed = false;
+    for (const url of urls) {
+      const normalized = normalizeUrl(url);
+      if (normalized.success && !this.#conversationUrls.has(normalized.url)) {
+        this.#conversationUrls.add(normalized.url);
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.dispatchEvent(new Event("change"));
+    }
   }
 
   /**
@@ -327,15 +364,19 @@ export class SessionLedger {
    * This is used to build context for requests with @mentions, where the user
    * explicitly authorizes access to multiple tabs.
    *
+   * Conversation-level URLs are always included in the merged result, as they
+   * represent explicit user consent that applies across all tabs.
+   *
    * IMPORTANT: The returned merged ledger is a temporary view. It should be
    * used for a single request and then discarded. It does NOT support add()
    * operations (read-only for policy evaluation).
    *
    * @param {string[]} tabIds - Tab IDs to merge (typically current + @mentioned)
-   * @returns {object} Merged ledger with has() and size() methods
+   * @returns {object} Merged ledger with has(), size(), and getAllUrls() methods
    */
   merge(tabIds) {
-    const mergedUrls = new Set();
+    // Always include conversation-level URLs
+    const mergedUrls = new Set(this.#conversationUrls);
 
     for (const tabId of tabIds) {
       const ledger = this.forTab(tabId);
@@ -378,7 +419,34 @@ export class SessionLedger {
       size() {
         return mergedUrls.size;
       },
+
+      /**
+       * Returns all URLs in the merged ledger.
+       * URLs are already normalized.
+       *
+       * @returns {string[]} Array of normalized URLs
+       */
+      getAllUrls() {
+        return Array.from(mergedUrls);
+      },
     };
+  }
+
+  /**
+   * Merges all tab ledgers into a single view of trusted URLs.
+   *
+   * Used for rendering-layer validation where the parent actor pushes
+   * the full set of trusted URLs to the child for synchronous link
+   * validation. Includes conversation-level URLs (from @mentions) as
+   * they are trusted across the entire session.
+   *
+   * NOTE: More permissive than tab-scoped merging (used in tool.execution).
+   *
+   * @returns {object} Merged ledger view for URL lookups
+   */
+  mergeAll() {
+    const allTabIds = Array.from(this.tabs.keys());
+    return this.merge(allTabIds);
   }
 
   /**
@@ -391,12 +459,13 @@ export class SessionLedger {
     this.tabs.delete(tabId);
   }
 
-  /** Clears all tab ledgers. */
+  /** Clears all tab ledgers and conversation URLs. */
   clearAll() {
     for (const ledger of this.tabs.values()) {
       ledger.clear();
     }
     this.tabs.clear();
+    this.#conversationUrls.clear();
   }
 
   /** @returns {number} Number of tabs */

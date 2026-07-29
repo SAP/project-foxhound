@@ -25,7 +25,7 @@ const documentRowOOP = {
 };
 const subtree = [
   {
-    role: "heading",
+    role: "heading (level 1)",
     name: `"Top level header"`,
   },
   {
@@ -47,7 +47,7 @@ const frameSubtree = [
 const subtreeOOP = [...frameSubtree, ...subtree];
 const renamed = [
   {
-    role: "heading",
+    role: "heading (level 1)",
     name: `"New Header"`,
   },
   {

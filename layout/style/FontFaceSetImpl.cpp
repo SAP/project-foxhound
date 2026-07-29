@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -93,10 +91,12 @@ void FontFaceSetImpl::DestroyLoaders() {
     return;
   }
   if (NS_IsMainThread()) {
-    for (const auto& key : mLoaders.Keys()) {
+    // Move mLoaders to a local, because Cancel() calls RemoveLoader() which
+    // would otherwise mutate the table during the iteration.
+    auto loaders = std::move(mLoaders);
+    for (const auto& key : loaders.Keys()) {
       key->Cancel();
     }
-    mLoaders.Clear();
     return;
   }
 
@@ -365,21 +365,24 @@ void FontFaceSetImpl::UpdateUserFontEntry(gfxUserFontEntry* aEntry,
                                           gfxUserFontAttributes&& aAttr) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  bool resetFamilyName = !aEntry->mFamilyName.IsEmpty() &&
-                         aEntry->mFamilyName != aAttr.mFamilyName;
-  // aFontFace already has a user font entry, so we update its attributes
-  // rather than creating a new one.
-  aEntry->UpdateAttributes(std::move(aAttr));
-  // If the family name has changed, remove the entry from its current family
-  // and clear the mFamilyName field so it can be reset when added to a new
-  // family.
+  nsCString familyName = aEntry->FamilyName();
+  bool resetFamilyName =
+      !familyName.IsEmpty() && familyName != aAttr.mFamilyName;
   if (resetFamilyName) {
-    RefPtr<gfxUserFontFamily> family = LookupFamily(aEntry->mFamilyName);
+    // If the family name has changed, remove the entry from its current family
+    // and clear the mFamilyName field so it can be reset when added to a new
+    // family.
+    AutoWriteLock lock(aEntry->mLock);
+    RefPtr<gfxUserFontFamily> family = LookupFamily(familyName);
     if (family) {
       family->RemoveFontEntry(aEntry);
     }
     aEntry->mFamilyName.Truncate(0);
   }
+
+  // aFontFace already has a user font entry, so we update its attributes
+  // rather than creating a new one.
+  aEntry->UpdateAttributes(std::move(aAttr));
 }
 
 class FontFaceSetImpl::UpdateUserFontEntryRunnable final
@@ -458,7 +461,7 @@ FontFaceSetImpl::FindOrCreateUserFontEntryFromFontFace(
           face->mSourceType = gfxFontFaceSrc::eSourceType_URL;
           const StyleCssUrl* url = component.AsUrl();
           nsIURI* uri = url->GetURI();
-          face->mURI = uri ? new gfxFontSrcURI(uri) : nullptr;
+          face->mURI = uri ? MakeRefPtr<gfxFontSrcURI>(uri) : nullptr;
           const URLExtraData& extraData = url->ExtraData();
           face->mReferrerInfo = extraData.ReferrerInfo();
 
@@ -469,7 +472,7 @@ FontFaceSetImpl::FindOrCreateUserFontEntryFromFontFace(
           if (aOrigin == StyleOrigin::User ||
               aOrigin == StyleOrigin::UserAgent) {
             face->mUseOriginPrincipal = true;
-            face->mOriginPrincipal = new gfxFontSrcPrincipal(
+            face->mOriginPrincipal = MakeRefPtr<gfxFontSrcPrincipal>(
                 extraData.Principal(), extraData.Principal());
           }
 
@@ -747,21 +750,6 @@ void FontFaceSetImpl::OnFontFaceStatusChanged(FontFaceImpl* aFontFace) {
 }
 
 void FontFaceSetImpl::DispatchCheckLoadingFinishedAfterDelay() {
-  gfxFontUtils::AssertSafeThreadOrServoFontMetricsLocked();
-
-  if (ServoStyleSet* set = gfxFontUtils::CurrentServoStyleSet()) {
-    // See comments in Gecko_GetFontMetrics.
-    //
-    // We can't just dispatch the runnable below if we're not on the main
-    // thread, since it needs to take a strong reference to the FontFaceSet,
-    // and being a DOM object, FontFaceSet doesn't support thread-safe
-    // refcounting.
-    set->AppendTask(
-        PostTraversalTask::DispatchFontFaceSetCheckLoadingFinishedAfterDelay(
-            this));
-    return;
-  }
-
   DispatchToOwningThread(
       "FontFaceSetImpl::DispatchCheckLoadingFinishedAfterDelay",
       [self = RefPtr{this}]() { self->CheckLoadingFinishedAfterDelay(); });
@@ -798,7 +786,7 @@ void FontFaceSetImpl::CheckLoadingStarted() {
                          [self = RefPtr{this}]() { self->OnLoadingStarted(); });
 }
 
-void FontFaceSetImpl::OnLoadingStarted() {
+void FontFaceSetImpl::DispatchLoadingEventAndReplaceReadyPromise() {
   RecursiveMutexAutoLock lock(mMutex);
   if (mOwner) {
     mOwner->DispatchLoadingEventAndReplaceReadyPromise();
@@ -901,9 +889,8 @@ void FontFaceSetImpl::DoRebuildUserFontSet() { MarkUserFontSetDirty(); }
 already_AddRefed<gfxUserFontEntry> FontFaceSetImpl::CreateUserFontEntry(
     nsTArray<gfxFontFaceSrc>&& aFontFaceSrcList,
     gfxUserFontAttributes&& aAttr) {
-  RefPtr<gfxUserFontEntry> entry = new FontFaceImpl::Entry(
-      this, std::move(aFontFaceSrcList), std::move(aAttr));
-  return entry.forget();
+  return MakeAndAddRef<FontFaceImpl::Entry>(this, std::move(aFontFaceSrcList),
+                                            std::move(aAttr));
 }
 
 void FontFaceSetImpl::ForgetLocalFaces() {

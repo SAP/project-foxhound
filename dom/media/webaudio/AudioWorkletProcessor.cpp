@@ -1,43 +1,42 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #include "AudioWorkletProcessor.h"
 
-#include "mozilla/dom/AudioWorkletGlobalScope.h"
 #include "mozilla/dom/AudioWorkletNodeBinding.h"
 #include "mozilla/dom/AudioWorkletProcessorBinding.h"
 #include "mozilla/dom/MessagePort.h"
 #include "mozilla/dom/WorkletGlobalScope.h"
 #include "nsIGlobalObject.h"
+#include "nsQueryObject.h"
 
 namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(AudioWorkletProcessor, mParent, mPort)
 
-AudioWorkletProcessor::AudioWorkletProcessor(nsIGlobalObject* aParent,
-                                             MessagePort* aPort)
-    : mParent(aParent), mPort(aPort) {}
+AudioWorkletProcessor::AudioWorkletProcessor(
+    RefPtr<AudioWorkletGlobalScope>&& aParent, RefPtr<MessagePort>&& aPort)
+    : mParent(std::move(aParent)), mPort(std::move(aPort)) {}
 
 AudioWorkletProcessor::~AudioWorkletProcessor() = default;
 
 /* static */
 already_AddRefed<AudioWorkletProcessor> AudioWorkletProcessor::Constructor(
     const GlobalObject& aGlobal, ErrorResult& aRv) {
-  nsCOMPtr<WorkletGlobalScope> global =
-      do_QueryInterface(aGlobal.GetAsSupports());
-  MOZ_ASSERT(global);
-  RefPtr<MessagePort> port = static_cast<AudioWorkletGlobalScope*>(global.get())
-                                 ->TakePortForProcessorCtor();
+  RefPtr<AudioWorkletGlobalScope> global =
+      do_QueryObject(aGlobal.GetAsSupports());
+  if (!global) {
+    aRv.ThrowTypeError<MSG_ILLEGAL_CONSTRUCTOR>();
+    return nullptr;
+  }
+  RefPtr<MessagePort> port = global->TakePortForProcessorCtor();
   if (!port) {
     aRv.ThrowTypeError<MSG_ILLEGAL_CONSTRUCTOR>();
     return nullptr;
   }
   RefPtr<AudioWorkletProcessor> audioWorkletProcessor =
-      new AudioWorkletProcessor(global, port);
-
+      new AudioWorkletProcessor(std::move(global), std::move(port));
   return audioWorkletProcessor.forget();
 }
 

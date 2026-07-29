@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -100,6 +98,7 @@ static const char* const sExtensionNames[] = {
     "GL_ARB_color_buffer_float",
     "GL_ARB_compatibility",
     "GL_ARB_copy_buffer",
+    "GL_ARB_copy_image",
     "GL_ARB_depth_clamp",
     "GL_ARB_depth_texture",
     "GL_ARB_draw_buffers",
@@ -355,7 +354,7 @@ static bool LoadSymbolsWithDesc(const SymbolLoader& loader,
 
   if (desc) {
     const nsPrintfCString err("Failed to load symbols for %s.", desc);
-    NS_ERROR(err.BeginReading());
+    NS_ERROR(err.get());
   }
   return false;
 }
@@ -525,35 +524,6 @@ bool GLContext::InitImpl() {
 
   if (!fnLoadSymbols(coreSymbols, "GL")) return false;
 
-  {
-    const SymLoadStruct symbols[] = {
-        {(PRFuncPtr*)&mSymbols.fGetGraphicsResetStatus,
-         {{"glGetGraphicsResetStatus", "glGetGraphicsResetStatusARB",
-           "glGetGraphicsResetStatusKHR", "glGetGraphicsResetStatusEXT"}}},
-        END_SYMBOLS};
-    (void)fnLoadSymbols(symbols, nullptr);
-
-    // We need to call the fGetError symbol directly here because if there is an
-    // unflushed reset status, we don't want to mark the context as lost. That
-    // would prevent us from recovering.
-    auto err = mSymbols.fGetError();
-    if (err == LOCAL_GL_CONTEXT_LOST) {
-      MOZ_ASSERT(mSymbols.fGetGraphicsResetStatus);
-      const auto status = fGetGraphicsResetStatus();
-      if (status) {
-        printf_stderr("Unflushed glGetGraphicsResetStatus: 0x%04x\n", status);
-      }
-      err = fGetError();
-      MOZ_ASSERT(!err);
-    }
-    if (err) {
-      MOZ_ASSERT(false);
-      return false;
-    }
-  }
-
-  ////////////////
-
   const auto* const versionRawStr = (const char*)fGetString(LOCAL_GL_VERSION);
   if (!versionRawStr || !*versionRawStr) {
     // This can happen with Pernosco.
@@ -575,6 +545,47 @@ bool GLContext::InitImpl() {
   MOZ_ASSERT(minorVer < 10);
   mVersion = majorVer * 100 + minorVer * 10;
   if (mVersion < 200) return false;
+
+  {
+    const SymLoadStruct allSymbols[] = {
+        {(PRFuncPtr*)&mSymbols.fGetGraphicsResetStatus,
+         {{"glGetGraphicsResetStatus", "glGetGraphicsResetStatusARB",
+           "glGetGraphicsResetStatusKHR", "glGetGraphicsResetStatusEXT"}}},
+        END_SYMBOLS};
+    const SymLoadStruct extensionSymbols[] = {
+        {(PRFuncPtr*)&mSymbols.fGetGraphicsResetStatus,
+         {{"glGetGraphicsResetStatusKHR", "glGetGraphicsResetStatusARB",
+           "glGetGraphicsResetStatusEXT"}}},
+        END_SYMBOLS};
+
+    // Some drivers (e.g. ANGLE) will allow loading the core symbol when using a
+    // context version that does not support it, but will subsequently raise an
+    // error when it is called. We therefore avoid attempting to load the core
+    // symbol on unsupported context versions.
+    const bool useExtensionSymbols = (mProfile == ContextProfile::OpenGLES)
+                                         ? (mVersion < 320)
+                                         : (mVersion < 450);
+    (void)fnLoadSymbols(useExtensionSymbols ? extensionSymbols : allSymbols,
+                        nullptr);
+
+    // We need to call the fGetError symbol directly here because if there is an
+    // unflushed reset status, we don't want to mark the context as lost. That
+    // would prevent us from recovering.
+    auto err = mSymbols.fGetError();
+    if (err == LOCAL_GL_CONTEXT_LOST) {
+      MOZ_ASSERT(mSymbols.fGetGraphicsResetStatus);
+      const auto status = fGetGraphicsResetStatus();
+      if (status) {
+        printf_stderr("Unflushed glGetGraphicsResetStatus: 0x%04x\n", status);
+      }
+      err = fGetError();
+      MOZ_ASSERT(!err);
+    }
+    if (err) {
+      MOZ_ASSERT(false);
+      return false;
+    }
+  }
 
   ////
 
@@ -753,7 +764,7 @@ bool GLContext::InitImpl() {
 
     if (Renderer() == GLRenderer::AndroidEmulator) {
       // Bug 1665300
-      mSymbols.fGetGraphicsResetStatus = 0;
+      mSymbols.fGetGraphicsResetStatus = nullptr;
     }
 
     if (Vendor() == GLVendor::Vivante) {
@@ -1100,6 +1111,13 @@ void GLContext::LoadMoreSymbols(const SymbolLoader& loader) {
             END_SYMBOLS
         };
         fnLoadFeatureByCore(coreSymbols, extSymbols, GLFeature::texture_storage);
+    }
+
+    if (IsSupported(GLFeature::copy_image)) {
+        const SymLoadStruct symbols[] = {
+            {(PRFuncPtr*)&mSymbols.fCopyImageSubData, {{"glCopyImageSubData"}}},
+            END_SYMBOLS};
+        fnLoadForFeature(symbols, GLFeature::copy_image);
     }
 
     if (IsSupported(GLFeature::sampler_objects)) {
@@ -1453,22 +1471,36 @@ void GLContext::LoadMoreSymbols(const SymbolLoader& loader) {
         fnLoadForFeature(symbols, GLFeature::prim_restart);
     }
 
-    if (IsExtensionSupported(KHR_debug)) {
-        const SymLoadStruct symbols[] = {
-            { (PRFuncPtr*) &mSymbols.fDebugMessageControl,  {{ "glDebugMessageControl",  "glDebugMessageControlKHR", }} },
-            { (PRFuncPtr*) &mSymbols.fDebugMessageInsert,   {{ "glDebugMessageInsert",   "glDebugMessageInsertKHR",  }} },
-            { (PRFuncPtr*) &mSymbols.fDebugMessageCallback, {{ "glDebugMessageCallback", "glDebugMessageCallbackKHR" }} },
-            { (PRFuncPtr*) &mSymbols.fGetDebugMessageLog,   {{ "glGetDebugMessageLog",   "glGetDebugMessageLogKHR",  }} },
-            { (PRFuncPtr*) &mSymbols.fGetPointerv,          {{ "glGetPointerv",          "glGetPointervKHR",         }} },
-            { (PRFuncPtr*) &mSymbols.fPushDebugGroup,       {{ "glPushDebugGroup",       "glPushDebugGroupKHR",      }} },
-            { (PRFuncPtr*) &mSymbols.fPopDebugGroup,        {{ "glPopDebugGroup",        "glPopDebugGroupKHR",       }} },
-            { (PRFuncPtr*) &mSymbols.fObjectLabel,          {{ "glObjectLabel",          "glObjectLabelKHR",         }} },
-            { (PRFuncPtr*) &mSymbols.fGetObjectLabel,       {{ "glGetObjectLabel",       "glGetObjectLabelKHR",      }} },
-            { (PRFuncPtr*) &mSymbols.fObjectPtrLabel,       {{ "glObjectPtrLabel",       "glObjectPtrLabelKHR",      }} },
-            { (PRFuncPtr*) &mSymbols.fGetObjectPtrLabel,    {{ "glGetObjectPtrLabel",    "glGetObjectPtrLabelKHR",   }} },
+    if (IsSupported(GLFeature::debug)) {
+        const SymLoadStruct coreSymbols[] = {
+            { (PRFuncPtr*) &mSymbols.fDebugMessageControl,  {{ "glDebugMessageControl" }} },
+            { (PRFuncPtr*) &mSymbols.fDebugMessageInsert,   {{ "glDebugMessageInsert" }} },
+            { (PRFuncPtr*) &mSymbols.fDebugMessageCallback, {{ "glDebugMessageCallback" }} },
+            { (PRFuncPtr*) &mSymbols.fGetDebugMessageLog,   {{ "glGetDebugMessageLog" }} },
+            { (PRFuncPtr*) &mSymbols.fGetPointerv,          {{ "glGetPointerv" }} },
+            { (PRFuncPtr*) &mSymbols.fPushDebugGroup,       {{ "glPushDebugGroup" }} },
+            { (PRFuncPtr*) &mSymbols.fPopDebugGroup,        {{ "glPopDebugGroup" }} },
+            { (PRFuncPtr*) &mSymbols.fObjectLabel,          {{ "glObjectLabel" }} },
+            { (PRFuncPtr*) &mSymbols.fGetObjectLabel,       {{ "glGetObjectLabel" }} },
+            { (PRFuncPtr*) &mSymbols.fObjectPtrLabel,       {{ "glObjectPtrLabel" }} },
+            { (PRFuncPtr*) &mSymbols.fGetObjectPtrLabel,    {{ "glGetObjectPtrLabel" }} },
             END_SYMBOLS
         };
-        fnLoadForExt(symbols, KHR_debug);
+        const SymLoadStruct extSymbols[] = {
+            { (PRFuncPtr*) &mSymbols.fDebugMessageControl,  {{ "glDebugMessageControlKHR" }} },
+            { (PRFuncPtr*) &mSymbols.fDebugMessageInsert,   {{ "glDebugMessageInsertKHR" }} },
+            { (PRFuncPtr*) &mSymbols.fDebugMessageCallback, {{ "glDebugMessageCallbackKHR" }} },
+            { (PRFuncPtr*) &mSymbols.fGetDebugMessageLog,   {{ "glGetDebugMessageLogKHR" }} },
+            { (PRFuncPtr*) &mSymbols.fGetPointerv,          {{ "glGetPointervKHR" }} },
+            { (PRFuncPtr*) &mSymbols.fPushDebugGroup,       {{ "glPushDebugGroupKHR" }} },
+            { (PRFuncPtr*) &mSymbols.fPopDebugGroup,        {{ "glPopDebugGroupKHR" }} },
+            { (PRFuncPtr*) &mSymbols.fObjectLabel,          {{ "glObjectLabelKHR" }} },
+            { (PRFuncPtr*) &mSymbols.fGetObjectLabel,       {{ "glGetObjectLabelKHR" }} },
+            { (PRFuncPtr*) &mSymbols.fObjectPtrLabel,       {{ "glObjectPtrLabelKHR" }} },
+            { (PRFuncPtr*) &mSymbols.fGetObjectPtrLabel,    {{ "glGetObjectPtrLabelKHR" }} },
+            END_SYMBOLS
+        };
+        fnLoadFeatureByCore(coreSymbols, extSymbols, GLFeature::debug);
     }
 
     if (IsExtensionSupported(NV_fence)) {
@@ -1674,8 +1706,8 @@ void GLContext::DebugCallback(GLenum source, GLenum type, GLuint id,
   }
 
   printf_stderr("[KHR_debug: 0x%" PRIxPTR "] ID %u: %s, %s, %s:\n    %s\n",
-                (uintptr_t)this, id, sourceStr.BeginReading(),
-                typeStr.BeginReading(), sevStr.BeginReading(), message);
+                (uintptr_t)this, id, sourceStr.get(), typeStr.get(),
+                sevStr.get(), message);
 }
 
 void GLContext::InitExtensions() {
@@ -1703,7 +1735,7 @@ void GLContext::InitExtensions() {
     const char* rawExts =
         reinterpret_cast<const char*>(fGetString(LOCAL_GL_EXTENSIONS));
     if (rawExts) {
-      for (auto extension : nsDependentCString(rawExts).Split(' ')) {
+      for (const auto& extension : nsDependentCString(rawExts).Split(' ')) {
         if (!extension.IsEmpty()) {
           mExtensionStrings.AppendElement(extension);
         }
@@ -1788,7 +1820,7 @@ void GLContext::InitExtensions() {
 }
 
 void GLContext::PlatformStartup() {
-  RegisterStrongMemoryReporter(new GfxTexturesReporter());
+  RegisterStrongMemoryReporter(MakeAndAddRef<GfxTexturesReporter>());
 }
 
 // Common code for checking for both GL extensions and GLX extensions.
@@ -2143,7 +2175,7 @@ static void ReportArrayContents(
   for (uint32_t i = 0; i < copy.Length(); ++i) {
     if (lastContext != copy[i].origin) {
       if (lastContext) {
-        printf_stderr("%s\n", line.BeginReading());
+        printf_stderr("%s\n", line.get());
         line.Assign("");
       }
       line.Append(nsPrintfCString("  [%p - %s] ", copy[i].origin,
@@ -2153,7 +2185,7 @@ static void ReportArrayContents(
     line.AppendInt(copy[i].name);
     line.Append(' ');
   }
-  printf_stderr("%s\n", line.BeginReading());
+  printf_stderr("%s\n", line.get());
 }
 
 void GLContext::ReportOutstandingNames() {
@@ -2650,7 +2682,7 @@ void GLContext::OnContextLostError() const {
   }
 
   const nsPrintfCString hex("<enum 0x%04x>", err);
-  return hex.BeginReading();
+  return std::string(hex.View());
 }
 
 // --
@@ -2689,11 +2721,11 @@ void GLContext::AfterGLCall_Debug(const char* const funcName) const {
     const auto errStr = GLErrorToString(err);
     const auto text = nsPrintfCString("%s: Generated unexpected %s error",
                                       funcName, errStr.c_str());
-    printf_stderr("[gl:%p] %s.\n", this, text.BeginReading());
+    printf_stderr("[gl:%p] %s.\n", this, text.get());
 
     const bool abortOnError = mDebugFlags & DebugFlagAbortOnError;
     if (abortOnError && err != LOCAL_GL_CONTEXT_LOST) {
-      gfxCriticalErrorOnce() << text.BeginReading();
+      gfxCriticalErrorOnce() << text.get();
       MOZ_CRASH(
           "Aborting... (Run with MOZ_GL_DEBUG_ABORT_ON_ERROR=0 to disable)");
     }

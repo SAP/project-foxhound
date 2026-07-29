@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,7 +26,7 @@ class nsMimeType;
 class nsPluginArray final : public nsSupportsWeakReference,
                             public nsWrapperCache {
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(nsPluginArray)
 
   explicit nsPluginArray(nsPIDOMWindowInner* aWindow);
@@ -60,7 +58,7 @@ class nsPluginArray final : public nsSupportsWeakReference,
   void Refresh() {}
 
  private:
-  virtual ~nsPluginArray();
+  ~nsPluginArray();
 
   bool ForceNoPlugins();
 
@@ -75,7 +73,7 @@ class nsPluginArray final : public nsSupportsWeakReference,
  */
 class nsPluginElement final : public nsISupports, public nsWrapperCache {
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(nsPluginElement)
 
   explicit nsPluginElement(nsPluginArray* aPluginArray,
@@ -83,8 +81,8 @@ class nsPluginElement final : public nsISupports, public nsWrapperCache {
 
   nsPluginArray* GetParentObject() const;
 
-  virtual JSObject* WrapObject(JSContext* aCx,
-                               JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
   // Plugin WebIDL methods
   void GetDescription(nsString& retval) const { retval = kDescription; }
@@ -113,7 +111,7 @@ class nsPluginElement final : public nsISupports, public nsWrapperCache {
   void GetSupportedNames(nsTArray<nsString>& retval);
 
  protected:
-  virtual ~nsPluginElement() = default;
+  ~nsPluginElement() = default;
 
   nsMimeTypeArray* MimeTypeArray() { return mPluginArray->MimeTypeArray(); }
 

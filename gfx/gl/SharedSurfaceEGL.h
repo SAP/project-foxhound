@@ -1,4 +1,3 @@
-/* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 4; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,7 +26,7 @@ class GLLibraryEGL;
 
 class SharedSurface_EGLImage final : public SharedSurface {
   mutable Mutex mMutex MOZ_UNANNOTATED;
-  EGLSync mSync = 0;
+  EGLSync mSync = nullptr;
   const std::weak_ptr<EglDisplay> mEglDisplay;
 
  public:

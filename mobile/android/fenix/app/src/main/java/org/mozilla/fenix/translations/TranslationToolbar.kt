@@ -8,9 +8,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -18,19 +17,26 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
+import mozilla.components.compose.base.button.IconButton
 import org.mozilla.fenix.R
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.PreviewThemeProvider
 import org.mozilla.fenix.theme.Theme
 import mozilla.components.ui.icons.R as iconsR
 
-private val ROUNDED_CORNER_SHAPE = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp)
+private val ROUNDED_CORNER_SHAPE: Shape
+    @Composable
+    get() = MaterialTheme.shapes.extraSmall.copy(
+        bottomStart = CornerSize(0.dp),
+        bottomEnd = CornerSize(0.dp),
+    )
 
 /**
  * A translation toolbar for browsers.
@@ -76,17 +82,23 @@ fun TranslationToolbar(
                 style = FirefoxTheme.typography.body2,
             )
 
-            IconButton(onClick = onExpand) {
+            IconButton(
+                onClick = onExpand,
+                contentDescription = stringResource(R.string.translation_toolbar_expand_action),
+            ) {
                 Icon(
                     painter = painterResource(iconsR.drawable.mozac_ic_chevron_up_24),
-                    contentDescription = stringResource(R.string.translation_toolbar_expand_action),
+                    contentDescription = null,
                 )
             }
 
-            IconButton(onClick = onClose) {
+            IconButton(
+                onClick = onClose,
+                contentDescription = stringResource(R.string.translation_toolbar_close_action),
+            ) {
                 Icon(
                     painter = painterResource(iconsR.drawable.mozac_ic_cross_20),
-                    contentDescription = stringResource(R.string.translation_toolbar_close_action),
+                    contentDescription = null,
                 )
             }
         }

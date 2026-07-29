@@ -33,6 +33,8 @@
   background-image: url("chrome://branding/content/about-wordmark.svg");
   background-repeat: no-repeat;
   background-size: 288px auto;
+  -moz-context-properties: fill;
+  fill: currentColor;
   /* move wordmark down a bit so it doesnt bump up too closely to top of dialog */
   margin-top: 20px;
   /* We don't want this box to contribute arbitrarily to the intrinsic size of
@@ -54,6 +56,10 @@
 #bottomBox {
   padding: 15px 10px 0;
   min-height: 52px;
+
+  @media (prefers-contrast) {
+    border-top: 1px solid;
+  }
 }
 
 #release {
@@ -110,8 +116,9 @@
 }
 
 .text-link {
-  color: inherit !important;
-  text-decoration: underline;
+  @media not (prefers-contrast) {
+    color: inherit !important;
+  }
 
   description > & {
     margin: 0;
@@ -155,7 +162,10 @@
   &.noUpdatesFound {
     display: block;
     content: url("chrome://global/skin/icons/check.svg");
-    fill: #30e60b;
+
+    @media not ((prefers-contrast) and (prefers-color-scheme: light)) {
+      fill: #30e60b;
+    }
   }
 
   &.apply {

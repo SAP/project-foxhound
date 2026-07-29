@@ -381,14 +381,9 @@ class BoxModelMain extends PureComponent {
   onLevelClick(event) {
     const { target } = event;
     const displayPosition = this.getDisplayPosition();
-    const isContentBox = this.getContextBox();
-
     // Avoid switching the active descendant to the position or content layout
     // if those are not editable.
-    if (
-      (!displayPosition && target == this.positionLayout) ||
-      (!isContentBox && target == this.contentLayout)
-    ) {
+    if (!displayPosition && target == this.positionLayout) {
       return;
     }
 
@@ -436,43 +431,31 @@ class BoxModelMain extends PureComponent {
     height = this.getHeightValue(height);
     width = this.getWidthValue(width);
 
-    const contentBox =
-      layout["box-sizing"] == "content-box"
-        ? dom.div(
-            { className: "boxmodel-size" },
-            BoxModelEditable({
-              box: "content",
-              focusable,
-              level,
-              property: "width",
-              ref: editable => {
-                this.contentEditable = editable;
-              },
-              textContent: width,
-              onShowBoxModelEditor,
-              onShowRulePreviewTooltip,
-            }),
-            dom.span({}, "\u00D7"),
-            BoxModelEditable({
-              box: "content",
-              focusable,
-              level,
-              property: "height",
-              textContent: height,
-              onShowBoxModelEditor,
-              onShowRulePreviewTooltip,
-            })
-          )
-        : dom.p(
-            {
-              className: "boxmodel-size",
-              id: "boxmodel-size-id",
-            },
-            dom.span(
-              { title: "content" },
-              SHARED_L10N.getFormatStr("dimensions", width, height)
-            )
-          );
+    const contentBox = dom.div(
+      { className: "boxmodel-size" },
+      BoxModelEditable({
+        box: "content",
+        focusable,
+        level,
+        property: "width",
+        ref: editable => {
+          this.contentEditable = editable;
+        },
+        textContent: width,
+        onShowBoxModelEditor,
+        onShowRulePreviewTooltip,
+      }),
+      dom.span({}, "\u00D7"),
+      BoxModelEditable({
+        box: "content",
+        focusable,
+        level,
+        property: "height",
+        textContent: height,
+        onShowBoxModelEditor,
+        onShowRulePreviewTooltip,
+      })
+    );
 
     return dom.div(
       {

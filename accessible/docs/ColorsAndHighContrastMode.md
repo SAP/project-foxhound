@@ -1,21 +1,27 @@
 # Colors and High Contrast Mode
+
 Firefox offers several customisations to improve the accessibility of colors used to render web content and Firefox chrome. This document describes the customisation options available and their behaviour across platforms. It also describes how these options interact with one another. It is intended for developer reference :)
 
 ## The Contrast Control Settings
+
 In `about:preferences > Language and Appearance`, you'll find a subsection labeled "Contrast Control". The radio group in this section determines if high contrast mode (HCM) will be used. HCM can either be enabled on the platform level (OS HCM), or forced on in the browser (FF HCM)
 
 The radio buttons alter `browser.display.document_color_use`. HCM can be enabled automatically with OS settings (OS HCM, `document_color_use=0`), it can be forced off (`document_color_use=1`), or forced on (FF HCM, `document_color_use=2`). When HCM is enabled, either automatically or explicitly, web content is rendered with a predetermined palette to give the user full control of the content's color contrast.
 > Note: FF HCM only affects web content, so changing the option in this select will only alter color usage for web pages. It will not change FF chrome. Current behaviour on chrome pages (ie. `about:` pages) is undefined.
 
 ### User-customisable Colors Dialog
+
 If the user has chosen to explicitly turn on Firefox HCM (`document_color_use=2`), they may customize the palette in a modal dialog. Users can choose to override background color, foreground color, visited link color, and/or unvisited link color by selecting a new color from the color inputs in the dialog. Modifications to these colors are stored in their corresponding user preference:
+
 - `browser.background_color`
 - `browser.foreground_color`
 - `browser.visited_color`
 - `browser.anchor_color`
 
 ## Color Usage and System Colors
+
 Before we render any Firefox/web content, we need to select a color palette to render that content _with_. There are three different sets of colors we can use to style Firefox and/or web content:
+
 - Stand-in colors
 - System colors
 - Colors-dialog colors
@@ -46,6 +52,7 @@ For a simplified flow chart of this decision tree, check out our [HCM Settings p
 ### Operating System High Contrast Mode (OS HCM)
 
 Operating System HCM (or OS HCM) describes a high contrast customisation that is enabled outside of Firefox, in the settings of a user's operating system. Each of our major desktop operating systems has an OS HCM variant:
+
 - Windows: Settings > Accessibility > Increase Contrast > (select theme) > Apply
 - MacOS: System Preferences > Accessibility > Display > Increase Contrast
 - Linux: Settings > Themes > High Contrast

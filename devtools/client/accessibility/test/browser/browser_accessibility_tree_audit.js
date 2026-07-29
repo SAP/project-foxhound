@@ -44,7 +44,7 @@ const tests = [
           level: 1,
         },
         {
-          role: "heading",
+          role: "heading (level 1)",
           name: `"Top level header"`,
           level: 2,
         },
@@ -55,7 +55,7 @@ const tests = [
           level: 3,
         },
         {
-          role: "heading",
+          role: "heading (level 2)",
           name: `"Second level header"`,
           level: 2,
         },
@@ -98,7 +98,7 @@ const tests = [
           level: 1,
         },
         {
-          role: "heading",
+          role: "heading (level 1)",
           name: `"Top level header"`,
           level: 2,
         },
@@ -109,7 +109,7 @@ const tests = [
           level: 3,
         },
         {
-          role: "heading",
+          role: "heading (level 2)",
           name: `"Second level header"`,
           level: 2,
         },

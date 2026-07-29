@@ -5,11 +5,11 @@
 
 use crate::ClientContext;
 use crate::{assert_not_in_callback, run_in_callback};
-use audioipc::messages::StreamCreateParams;
 use audioipc::messages::{self, CallbackReq, CallbackResp, ClientMessage, ServerMessage};
 use audioipc::shm::SharedMem;
 use audioipc::{rpccore, sys};
 use cubeb_backend::{ffi, DeviceRef, Error, InputProcessingParams, Result, Stream, StreamOps};
+use std::convert::TryFrom;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_void;
 use std::ptr;
@@ -48,6 +48,8 @@ pub struct ClientStream<'ctx> {
 
 struct CallbackServer {
     shm: SharedMem,
+    input_frame_size: Option<usize>,
+    output_frame_size: Option<usize>,
     duplex_input: Option<Vec<u8>>,
     data_cb: ffi::cubeb_data_callback,
     state_cb: ffi::cubeb_state_callback,
@@ -63,17 +65,34 @@ impl rpccore::Server for CallbackServer {
 
     fn process(&mut self, req: Self::ServerMessage) -> Self::ClientMessage {
         match req {
-            CallbackReq::Data {
-                nframes,
-                input_frame_size,
-                output_frame_size,
-            } => {
+            CallbackReq::Data { nframes } => {
+                let Ok(nframes) = usize::try_from(nframes) else {
+                    warn!("stream_thread: Data Callback: invalid nframes={nframes}");
+                    return CallbackResp::Error(ffi::CUBEB_ERROR);
+                };
+
+                let input_frame_size = self.input_frame_size.unwrap_or(0);
+                let output_frame_size = self.output_frame_size.unwrap_or(0);
+                let shm_size = self.shm.get_size();
                 trace!(
                     "stream_thread: Data Callback: nframes={nframes} input_fs={input_frame_size} output_fs={output_frame_size}",
                 );
 
-                let input_nbytes = nframes as usize * input_frame_size;
-                let output_nbytes = nframes as usize * output_frame_size;
+                let Some(input_nbytes) = nframes
+                    .checked_mul(input_frame_size)
+                    .filter(|&n| n <= shm_size)
+                else {
+                    warn!("stream_thread: Data Callback: invalid nframes={nframes} input_fs={input_frame_size} shm={}", shm_size);
+                    return CallbackResp::Error(ffi::CUBEB_ERROR);
+                };
+
+                let Some(output_nbytes) = nframes
+                    .checked_mul(output_frame_size)
+                    .filter(|&n| n <= shm_size)
+                else {
+                    warn!("stream_thread: Data Callback: invalid nframes={nframes} output_fs={output_frame_size} shm={}", shm_size);
+                    return CallbackResp::Error(ffi::CUBEB_ERROR);
+                };
 
                 // Input and output reuse the same shmem backing.  Unfortunately, cubeb's data_callback isn't
                 // specified in such a way that would require the callee to consume all of the input before
@@ -90,7 +109,7 @@ impl rpccore::Server for CallbackServer {
 
                 run_in_callback(|| {
                     let nframes = unsafe {
-                        let input_ptr = if input_frame_size > 0 {
+                        let input_ptr = if self.input_frame_size.is_some() {
                             if let Some(buf) = &mut self.duplex_input {
                                 buf.as_ptr()
                             } else {
@@ -99,7 +118,7 @@ impl rpccore::Server for CallbackServer {
                         } else {
                             ptr::null()
                         };
-                        let output_ptr = if output_frame_size > 0 {
+                        let output_ptr = if self.output_frame_size.is_some() {
                             self.shm.get_mut_slice(output_nbytes).unwrap().as_mut_ptr()
                         } else {
                             ptr::null_mut()
@@ -146,19 +165,25 @@ impl rpccore::Server for CallbackServer {
 impl<'ctx> ClientStream<'ctx> {
     fn init(
         ctx: &'ctx ClientContext,
-        init_params: messages::StreamInitParams,
+        params: messages::StreamCreateParams,
         data_callback: ffi::cubeb_data_callback,
         state_callback: ffi::cubeb_state_callback,
         user_ptr: *mut c_void,
     ) -> Result<Stream> {
         assert_not_in_callback();
+        let has_input = params.input_stream_params.is_some();
+        let has_output = params.output_stream_params.is_some();
+        let input_frame_size = params
+            .input_stream_params
+            .as_ref()
+            .map(messages::StreamParams::frame_size_in_bytes);
+        let output_frame_size = params
+            .output_stream_params
+            .as_ref()
+            .map(messages::StreamParams::frame_size_in_bytes);
 
         let rpc = ctx.rpc();
-        let create_params = StreamCreateParams {
-            input_stream_params: init_params.input_stream_params,
-            output_stream_params: init_params.output_stream_params,
-        };
-        let mut data = send_recv!(rpc, StreamCreate(create_params) => StreamCreated())?;
+        let mut data = send_recv!(rpc, StreamCreate(params) => StreamCreated())?;
 
         debug!(
             "token = {}, handle = {:?} area_size = {:?}",
@@ -177,10 +202,7 @@ impl<'ctx> ClientStream<'ctx> {
                 }
             };
 
-        let duplex_input = if let (Some(_), Some(_)) = (
-            init_params.input_stream_params,
-            init_params.output_stream_params,
-        ) {
+        let duplex_input = if has_input && has_output {
             let mut duplex_input = Vec::new();
             match duplex_input.try_reserve_exact(data.shm_area_size) {
                 Ok(()) => Some(duplex_input),
@@ -196,8 +218,7 @@ impl<'ctx> ClientStream<'ctx> {
             None
         };
 
-        let mut stream =
-            send_recv!(rpc, StreamInit(data.token, init_params) => StreamInitialized())?;
+        let mut stream = send_recv!(rpc, StreamInit(data.token) => StreamInitialized())?;
         let stream = unsafe { sys::Pipe::from_raw_handle(stream.take_handle()) };
 
         let user_data = user_ptr as usize;
@@ -209,6 +230,8 @@ impl<'ctx> ClientStream<'ctx> {
 
         let server = CallbackServer {
             shm,
+            input_frame_size,
+            output_frame_size,
             duplex_input,
             data_cb: data_callback,
             state_cb: state_callback,
@@ -337,12 +360,12 @@ impl StreamOps for ClientStream<'_> {
 
 pub fn init(
     ctx: &ClientContext,
-    init_params: messages::StreamInitParams,
+    params: messages::StreamCreateParams,
     data_callback: ffi::cubeb_data_callback,
     state_callback: ffi::cubeb_state_callback,
     user_ptr: *mut c_void,
 ) -> Result<Stream> {
-    let stm = ClientStream::init(ctx, init_params, data_callback, state_callback, user_ptr)?;
+    let stm = ClientStream::init(ctx, params, data_callback, state_callback, user_ptr)?;
     debug_assert_eq!(stm.user_ptr(), user_ptr);
     Ok(stm)
 }

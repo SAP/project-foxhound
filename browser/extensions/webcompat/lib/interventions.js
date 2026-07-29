@@ -4,11 +4,14 @@
 
 "use strict";
 
-/* globals browser, debugLog, InterventionHelpers */
+/* globals browser, ContentScriptRegistrationsBuilder, debugLog, InterventionHelpers, MatchPatternCache, SpecialContentScriptKeys */
 
 const ENABLE_INTERVENTIONS_PREF = "enable_interventions";
 
 function getTLDForUrl(url) {
+  if (url.startsWith("about:")) {
+    return undefined;
+  }
   try {
     // MatchPatterns usually have wildcards, so replace asterisks.
     return browser.urlHelpers.getBaseDomainFromHost(
@@ -22,8 +25,8 @@ function getTLDForUrl(url) {
 
 class InterventionsWebRequestListener {
   #interventionsByTLD = new Map();
-  #matchPatternCache = new Map();
   #matchPatternsForInterventions = new Map();
+  #excludePatternsForInterventions = new Map();
   #eventName = undefined;
   #listener = undefined;
   #opts = undefined;
@@ -35,20 +38,29 @@ class InterventionsWebRequestListener {
   }
 
   getMatchingInterventions(url, type) {
-    return [...this.#interventionsByTLD.get(getTLDForUrl(url))].filter(
-      intervention => {
-        // Matching the TLD may not be enough, so also check the MatchPatterns.
-        for (const {
-          pattern,
-          types,
-        } of this.#matchPatternsForInterventions.get(intervention)) {
-          if ((!types || types.includes(type)) && pattern.matches(url)) {
-            return true;
-          }
+    const interventions = this.#interventionsByTLD.get(getTLDForUrl(url));
+    if (!interventions) {
+      return [];
+    }
+    return [...interventions].filter(intervention => {
+      // Matching the TLD may not be enough, so also check the MatchPatterns.
+      for (const {
+        pattern,
+        types,
+      } of this.#excludePatternsForInterventions.get(intervention) ?? []) {
+        if ((!types || types.includes(type)) && pattern.matches(url)) {
+          return false;
         }
-        return false;
       }
-    );
+      for (const { pattern, types } of this.#matchPatternsForInterventions.get(
+        intervention
+      )) {
+        if ((!types || types.includes(type)) && pattern.matches(url)) {
+          return true;
+        }
+      }
+      return false;
+    });
   }
 
   restartListener() {
@@ -67,19 +79,9 @@ class InterventionsWebRequestListener {
     }
   }
 
-  #getMatchPatternInstance(patternString) {
-    let instance = this.#matchPatternCache.get(patternString);
-    if (!instance) {
-      instance = browser.matchPatterns.getMatcher([patternString]);
-      this.#matchPatternCache.set(patternString, instance);
-    }
-    return instance;
-  }
-
   interventionHandlesMatchPattern(intervention, infoOrPatternString) {
     const patternString = infoOrPatternString.url ?? infoOrPatternString;
-    const actualMatchPatternInstance =
-      this.#getMatchPatternInstance(patternString);
+    const actualMatchPatternInstance = MatchPatternCache.get(patternString);
 
     let set = this.#matchPatternsForInterventions.get(intervention);
     if (!set) {
@@ -98,10 +100,22 @@ class InterventionsWebRequestListener {
     set.add(intervention);
   }
 
+  interventionExcludesMatchPattern(intervention, infoOrPatternString) {
+    const patternString = infoOrPatternString.url ?? infoOrPatternString;
+    const actualMatchPatternInstance = MatchPatternCache.get(patternString);
+
+    let set = this.#excludePatternsForInterventions.get(intervention);
+    if (!set) {
+      set = new Set();
+      this.#excludePatternsForInterventions.set(intervention, set);
+    }
+    const types = infoOrPatternString.types;
+    set.add({ pattern: actualMatchPatternInstance, types });
+  }
+
   interventionNoLongerHandlesMatchPattern(intervention, infoOrPatternString) {
     const patternString = infoOrPatternString.url ?? infoOrPatternString;
-    const actualMatchPatternInstance =
-      this.#getMatchPatternInstance(patternString);
+    const actualMatchPatternInstance = MatchPatternCache.get(patternString);
 
     let set = this.#matchPatternsForInterventions.get(intervention);
     if (set) {
@@ -119,6 +133,135 @@ class InterventionsWebRequestListener {
         this.#interventionsByTLD.delete(tld);
       }
     }
+  }
+
+  interventionNoLongerExcludesMatchPattern(intervention, infoOrPatternString) {
+    const patternString = infoOrPatternString.url ?? infoOrPatternString;
+    const actualMatchPatternInstance = MatchPatternCache.get(patternString);
+
+    let set = this.#excludePatternsForInterventions.get(intervention);
+    if (set) {
+      set.delete(actualMatchPatternInstance);
+      if (!set.size) {
+        this.#excludePatternsForInterventions.delete(intervention);
+      }
+    }
+  }
+}
+
+// This class encapsulates the logic to actually serve metadata to the special
+// isolated content scripts we use, whenever they require it.
+
+class SpecialContentScriptMetadataServer {
+  // We cheat and use an InterventionsWebRequestListener to track which bits
+  // of metadata our special isolated content scripts need on start-up (to
+  // know which bug number to log to the console, which elements to hide, etc).
+  #metadata = new InterventionsWebRequestListener();
+
+  #listener = undefined;
+
+  constructor() {
+    this.#listener = this.#serve.bind(this);
+  }
+
+  start() {
+    browser.runtime.onConnect.addListener(this.#listener);
+  }
+
+  stopAndClear() {
+    this.#metadata = new InterventionsWebRequestListener();
+    browser.runtime.onConnect.removeListener(this.#listener);
+  }
+
+  addMetadata({ metadata, matches, excludesMatches }) {
+    if (!metadata) {
+      return;
+    }
+    for (const matchPattern of matches ?? []) {
+      this.#metadata.interventionHandlesMatchPattern(metadata, matchPattern);
+    }
+    for (const matchPattern of excludesMatches ?? []) {
+      this.#metadata.interventionExcludesMatchPattern(metadata, matchPattern);
+    }
+  }
+
+  clearMetadata(info) {
+    if (!info?.metadata) {
+      return;
+    }
+    const { metadata, matches, excludesMatches } = info;
+    for (const matchPattern of matches ?? []) {
+      this.#metadata.interventionNoLongerHandlesMatchPattern(
+        metadata,
+        matchPattern
+      );
+    }
+    for (const matchPattern of excludesMatches ?? []) {
+      this.#metadata.interventionNoLongerExcludesMatchPattern(
+        metadata,
+        matchPattern
+      );
+    }
+  }
+
+  #serve(port) {
+    const { tab, frameId, url } = port.sender;
+    if (url.startsWith("about:")) {
+      return;
+    }
+
+    const metadata = this.#metadata.getMatchingInterventions(url)[0];
+    if (!metadata) {
+      port.disconnect();
+      return;
+    }
+
+    // Pass along non-bug-number metadata we may have as-is (it has already
+    // been pre-processed by its addToMetadata function).
+    const dataToSend = Object.assign({}, metadata);
+    delete dataToSend.bugsByMatchPattern;
+
+    const { cssToInject } = dataToSend;
+    if (cssToInject) {
+      browser.scripting
+        .insertCSS({
+          css: cssToInject,
+          target: {
+            tabId: tab.id,
+            frameIds: [frameId],
+          },
+        })
+        .catch(err =>
+          console.error(
+            `webcompat addon failed to insert CSS on tab ${tab.id} frame ${frameId}: ${err}`
+          )
+        );
+      delete dataToSend.cssToInject;
+    }
+
+    // If we have bug-number metadata, provide the correct bug-number
+    // for the URL for which the content script has been loaded.
+    const { bugsByMatchPattern } = metadata;
+    if (bugsByMatchPattern) {
+      const bugNumber = this.#getBugNumberForUrl(url, bugsByMatchPattern);
+      if (bugNumber) {
+        dataToSend.bugNumber = bugNumber;
+      }
+    }
+
+    if (Object.keys(dataToSend).length) {
+      port.postMessage(dataToSend);
+    }
+    port.disconnect();
+  }
+
+  #getBugNumberForUrl(url, bugsByMatchPattern) {
+    for (const [pattern, bugNumber] of bugsByMatchPattern) {
+      if (pattern.matches(url)) {
+        return bugNumber;
+      }
+    }
+    return undefined;
   }
 }
 
@@ -145,6 +288,9 @@ class Interventions {
 
   #listenersForCheckedGlobalPrefs = new Map();
   #cachedCheckedGlobalPrefValues = new Map();
+
+  #specialContentScriptMetadataServer =
+    new SpecialContentScriptMetadataServer();
 
   #requestBlocksListener = new InterventionsWebRequestListener(
     "onBeforeRequest",
@@ -176,9 +322,9 @@ class Interventions {
 
   constructor(availableInterventions, customFunctions) {
     this.#customFunctions = customFunctions;
-    this.#originalInterventions = availableInterventions;
     let interventions = availableInterventions;
     if (browser.appConstants.isInAutomation()) {
+      this.#originalInterventions = structuredClone(availableInterventions);
       const override = browser.aboutConfigPrefs.getPref("test_interventions");
       if (override) {
         interventions = JSON.parse(override);
@@ -213,12 +359,14 @@ class Interventions {
 
   async replaceAllInterventions(newInterventions) {
     return await this.#postStartupAtomicOperation(async () => {
+      this.#specialContentScriptMetadataServer.stopAndClear();
       this.#stopListenersForTogglingIndividualInterventions();
       await this.#disableInterventionsInternal();
       this.#onSourceJSONChanged(newInterventions);
       await this.#enableInterventionsInternal({
         alsoClearObsoleteContentScripts: true,
       });
+      this.#specialContentScriptMetadataServer.start();
       await this.#signalInterventionChangesToAboutCompat(
         this.#availableInterventions
       );
@@ -230,7 +378,9 @@ class Interventions {
   }
 
   async resetToDefaultInterventions() {
-    await this.replaceAllInterventions(this.#originalInterventions);
+    await this.replaceAllInterventions(
+      structuredClone(this.#originalInterventions)
+    );
   }
 
   bindAboutCompatBroker(broker) {
@@ -262,6 +412,7 @@ class Interventions {
 
   async updateInterventions(_data) {
     return await this.#postStartupAtomicOperation(async () => {
+      this.#specialContentScriptMetadataServer.stopAndClear();
       await this.#disableInterventionsInternal(
         this.getInterventionsByIds(_data.map(i => i.id))
       );
@@ -276,6 +427,7 @@ class Interventions {
         }
       }
       await this.#enableInterventionsInternal({ whichInterventions: data });
+      this.#specialContentScriptMetadataServer.start();
       await this.#signalInterventionChangesToAboutCompat(data ?? false);
       return data;
     });
@@ -290,13 +442,20 @@ class Interventions {
     if (value) {
       return this.#enableInterventionsInternal({
         alsoClearObsoleteContentScripts,
+      }).then(() => {
+        this.#specialContentScriptMetadataServer.start();
       });
     }
+    this.#specialContentScriptMetadataServer.stopAndClear();
     return this.#disableInterventionsInternal();
   }
 
   getAvailableInterventions() {
     return this.#availableInterventions;
+  }
+
+  getAllOriginalInterventions() {
+    return this.#originalInterventions;
   }
 
   getInterventionsByIds(ids) {
@@ -334,6 +493,14 @@ class Interventions {
         .map(bug => bug.blocks)
         .flat()
         .filter(v => v !== undefined),
+      excludeBlocks: Object.values(bugs)
+        .map(bug => bug.exclude_blocks)
+        .flat()
+        .filter(v => v !== undefined),
+      excludeMatches: Object.values(bugs)
+        .map(bug => bug.exclude_matches)
+        .flat()
+        .filter(v => v !== undefined),
       matches: Object.values(bugs)
         .map(bug => bug.matches)
         .flat()
@@ -354,7 +521,19 @@ class Interventions {
         continue;
       }
 
-      const { blocks, matches } = this.getBlocksAndMatchesFor(config);
+      const { blocks, excludeBlocks, excludeMatches, matches } =
+        this.getBlocksAndMatchesFor(config);
+
+      const contentScriptData = this.#contentScriptsPerIntervention.get(config);
+      if (contentScriptData) {
+        this.#contentScriptsPerIntervention.delete(config);
+        this.#specialContentScriptMetadataServer.clearMetadata(
+          contentScriptData.metadata,
+          contentScriptData.matches,
+          contentScriptData.excludeMatches
+        );
+        contentScriptsToUnregister.push(...contentScriptData.registrations);
+      }
 
       for (const intervention of interventions) {
         if (!intervention.enabled) {
@@ -362,14 +541,17 @@ class Interventions {
         }
 
         this.#enableOrDisableCustomFuncs("disable", intervention, config);
-        contentScriptsToUnregister.push(
-          ...(this.#contentScriptsPerIntervention.get(intervention) ?? [])
-        );
 
         if ("ua_string" in intervention) {
           uaOverridesChanged = true;
           for (const matchPattern of matches) {
             this.#uaOverridesListener.interventionNoLongerHandlesMatchPattern(
+              intervention,
+              matchPattern
+            );
+          }
+          for (const matchPattern of excludeMatches) {
+            this.#uaOverridesListener.interventionNoLongerExcludesMatchPattern(
               intervention,
               matchPattern
             );
@@ -380,6 +562,12 @@ class Interventions {
           requestBlocksChanged = true;
           for (const matchPattern of blocks) {
             this.#requestBlocksListener.interventionNoLongerHandlesMatchPattern(
+              intervention,
+              matchPattern
+            );
+          }
+          for (const matchPattern of excludeBlocks) {
+            this.#requestBlocksListener.interventionNoLongerExcludesMatchPattern(
               intervention,
               matchPattern
             );
@@ -464,14 +652,19 @@ class Interventions {
     });
   }
 
-  #whichInterventionsShouldBeSkipped(config, customFunctionNames) {
+  #whichInterventionsShouldBeSkipped(
+    config,
+    customFunctionNames,
+    isForceEnabled
+  ) {
     const reasons = new Map();
     for (const intervention of config.interventions) {
       let reason = InterventionHelpers.shouldSkip(
         intervention,
         this.appVersionOverride ?? this.#appVersion,
         this.#updateChannel,
-        customFunctionNames
+        customFunctionNames,
+        isForceEnabled
       );
       if (reason) {
         reasons.set(intervention, reason);
@@ -541,24 +734,27 @@ class Interventions {
         continue;
       }
 
+      const disablingPref = this.#getInterventionDisablingPref(config.id);
+      const disablingPrefValue =
+        browser.aboutConfigPrefs.getPref(disablingPref);
+
       const whichInterventionsShouldBeSkipped =
-        this.#whichInterventionsShouldBeSkipped(config, customFunctionNames);
+        this.#whichInterventionsShouldBeSkipped(
+          config,
+          customFunctionNames,
+          disablingPrefValue === false
+        );
 
       // about:compat uses this var to determine whether to show interventions.
       config.availableOnPlatform =
+        disablingPrefValue !== undefined ||
         whichInterventionsShouldBeSkipped.size < config.interventions.length;
 
       try {
-        const disablingPref = this.#getInterventionDisablingPref(config.id);
-        const disablingPrefValue =
-          browser.aboutConfigPrefs.getPref(disablingPref);
-
-        if (config.availableOnPlatform) {
-          this.#ensureListeningForIndividualInterventionTogglingPref(
-            config.id,
-            disablingPref
-          );
-        }
+        this.#ensureListeningForIndividualInterventionTogglingPref(
+          config.id,
+          disablingPref
+        );
 
         // If disabled in about:config, and not being force-enabled
         // in about:compat, we can skip the rest of the checks.
@@ -568,7 +764,8 @@ class Interventions {
             `force-disabled by pref extensions.webcompat.${disablingPref}`,
           ]);
         } else {
-          const { blocks, matches } = this.getBlocksAndMatchesFor(config);
+          const { blocks, excludeBlocks, excludeMatches, matches } =
+            this.getBlocksAndMatchesFor(config);
 
           let uaOverridesEnabled = false;
           let requestBlocksEnabled = false;
@@ -610,24 +807,16 @@ class Interventions {
               usesCustomFuncs = true;
             }
 
-            if (intervention.content_scripts) {
-              const contentScriptsForIntervention =
-                this.buildContentScriptRegistrations(
-                  config.label,
-                  intervention,
-                  matches
-                );
-              this.#contentScriptsPerIntervention.set(
-                intervention,
-                contentScriptsForIntervention
-              );
-              contentScriptsToRegister.push(...contentScriptsForIntervention);
-            }
-
             if ("ua_string" in intervention) {
               uaOverridesEnabled = true;
               for (const matchPattern of matches) {
                 this.#uaOverridesListener.interventionHandlesMatchPattern(
+                  intervention,
+                  matchPattern
+                );
+              }
+              for (const matchPattern of excludeMatches) {
+                this.#uaOverridesListener.interventionExcludesMatchPattern(
                   intervention,
                   matchPattern
                 );
@@ -642,11 +831,25 @@ class Interventions {
                   matchPattern
                 );
               }
+              for (const matchPattern of excludeBlocks) {
+                this.#requestBlocksListener.interventionExcludesMatchPattern(
+                  intervention,
+                  matchPattern
+                );
+              }
             }
 
             somethingWasEnabled = true;
             intervention.enabled = true;
           }
+
+          contentScriptsToRegister.push(
+            ...this.buildContentScriptsRegistrationsForIntervention(
+              config,
+              matches,
+              excludeMatches
+            )
+          );
 
           if (uaOverridesEnabled) {
             enabledUAoverrides.push(config.label);
@@ -740,6 +943,67 @@ class Interventions {
     });
   }
 
+  buildContentScriptsRegistrationsForIntervention(
+    config,
+    matches,
+    excludeMatches,
+    force = false
+  ) {
+    // There are a few special JSON keys we support which require an isolated
+    // content script. We specially manage them to ensure their proper use.
+    // We also similarly manage console logging with an isolated script.
+    const specialContentScriptKeys = new SpecialContentScriptKeys();
+
+    const regsBuilder = new ContentScriptRegistrationsBuilder();
+
+    const noConsoleMessage = config.interventions?.some(
+      i => i.content_scripts?.no_console_message
+    );
+
+    // Group all JS and CSS for each intervention we've marked as enabled by
+    // whether they are isolated, should run in all frames, etc. Also check
+    // which special isolated scripts they will need.
+    for (const intervention of config.interventions) {
+      specialContentScriptKeys.filterFromContentScriptsSection(intervention);
+
+      if (
+        (!intervention.enabled && !force) ||
+        (!intervention.content_scripts &&
+          !specialContentScriptKeys.areAnyUsedBy(intervention))
+      ) {
+        continue;
+      }
+
+      const { content_scripts = {} } = intervention;
+      regsBuilder.add("css", content_scripts);
+      regsBuilder.add("js", content_scripts);
+      specialContentScriptKeys.foldIn(intervention, noConsoleMessage);
+    }
+
+    // Ensure that the special scripts start up if needed.
+    specialContentScriptKeys.addRegs(regsBuilder);
+
+    // Now get the actual content script registrations we'll need from that
+    // grouped info, and remember the list so we can later easily disable them.
+    const registrations = regsBuilder.build(
+      config.label,
+      matches,
+      excludeMatches
+    );
+
+    // Gather the data that any special isolated scripts will require on startup,
+    // such as which bug number to log to the console, or which elements to hide.
+    const contentScriptData = {
+      registrations,
+      metadata: specialContentScriptKeys.getNeededMetadata(config),
+      matches,
+      excludeMatches,
+    };
+    this.#specialContentScriptMetadataServer.addMetadata(contentScriptData);
+    this.#contentScriptsPerIntervention.set(config, contentScriptData);
+    return registrations;
+  }
+
   #enableOrDisableCustomFuncs(action, intervention, config) {
     let usesCustomFuncs = false;
     for (const [customFuncName, customFunc] of Object.entries(
@@ -829,55 +1093,5 @@ class Interventions {
         }
       }
     }
-  }
-
-  buildContentScriptRegistrations(label, intervention, matches) {
-    const registration = {
-      matches,
-    };
-
-    let { all_frames, css, isolated, js, run_at } =
-      intervention.content_scripts;
-    if (!css && !js) {
-      console.error(`Missing js or css for content_script in ${label}`);
-      return [];
-    }
-    if (js) {
-      if (isolated) {
-        registration.world = "ISOLATED";
-      } else {
-        registration.world = "MAIN";
-      }
-    }
-    if (all_frames) {
-      registration.allFrames = true;
-    }
-    if (css) {
-      registration.css = css.map(item => {
-        if (item.includes("/")) {
-          return item;
-        }
-        return `injections/css/${item}`;
-      });
-    }
-    if (js) {
-      registration.js = js.map(item => {
-        if (item.includes("/")) {
-          return item;
-        }
-        return `injections/js/${item}`;
-      });
-    }
-    if (run_at) {
-      registration.runAt = run_at;
-    } else {
-      registration.runAt = "document_start";
-    }
-
-    registration.id = `webcompat intervention for ${label}: ${JSON.stringify(registration)}`;
-
-    registration.persistAcrossSessions = true;
-
-    return [registration];
   }
 }

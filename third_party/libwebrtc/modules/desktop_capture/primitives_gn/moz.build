@@ -13,6 +13,7 @@ DEFINES["ABSL_ALLOCATOR_NOTHROW"] = "1"
 DEFINES["PROTOBUF_ENABLE_DEBUG_LOGGING_MAY_LEAK_PII"] = "0"
 DEFINES["RTC_DAV1D_IN_INTERNAL_DECODER_FACTORY"] = True
 DEFINES["RTC_ENABLE_VP9"] = True
+DEFINES["WEBRTC_DEPRECATE_PLAN_B"] = True
 DEFINES["WEBRTC_ENABLE_PROTOBUF"] = "0"
 DEFINES["WEBRTC_ENCODER_PSNR_STATS"] = True
 DEFINES["WEBRTC_LIBRARY_IMPL"] = True
@@ -39,6 +40,7 @@ UNIFIED_SOURCES += [
     "/third_party/libwebrtc/modules/desktop_capture/desktop_frame.cc",
     "/third_party/libwebrtc/modules/desktop_capture/desktop_geometry.cc",
     "/third_party/libwebrtc/modules/desktop_capture/desktop_region.cc",
+    "/third_party/libwebrtc/modules/desktop_capture/frame_texture.cc",
     "/third_party/libwebrtc/modules/desktop_capture/shared_desktop_frame.cc",
     "/third_party/libwebrtc/modules/desktop_capture/shared_memory.cc"
 ]

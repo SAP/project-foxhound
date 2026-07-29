@@ -1,14 +1,14 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/TransformStream.h"
-
+#include "ReadableStreamDefaultControllerAbstract.h"
 #include "StreamUtils.h"
+#include "TransformStreamAbstract.h"
+#include "TransformStreamDefaultControllerAbstract.h"
 #include "TransformerCallbackHelpers.h"
 #include "UnderlyingSourceCallbackHelpers.h"
+#include "WritableStreamDefaultControllerAbstract.h"
 #include "js/TypeDecls.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/Promise-inl.h"
@@ -265,8 +265,12 @@ class TransformStreamUnderlyingSinkAlgorithms final
                 // Step 3: If state is "erroring", throw
                 // writable.[[storedError]].
                 if (state == WritableStream::WriterState::Erroring) {
-                  JS::Rooted<JS::Value> storedError(aCx,
-                                                    writable->StoredError());
+                  JS::Rooted<JS::Value> storedError(aCx);
+                  writable->GetStoredError(aCx, &storedError, aRv);
+                  if (aRv.Failed()) {
+                    return nullptr;
+                  }
+
                   aRv.MightThrowJSException();
                   aRv.ThrowJSException(aCx, storedError);
                   return nullptr;
@@ -361,8 +365,12 @@ class TransformStreamUnderlyingSinkAlgorithms final
                   // readable.[[storedError]].
                   if (aReadable->State() ==
                       ReadableStream::ReaderState::Errored) {
-                    JS::Rooted<JS::Value> storedError(aCx,
-                                                      aReadable->StoredError());
+                    JS::Rooted<JS::Value> storedError(aCx);
+                    aReadable->GetStoredError(aCx, &storedError, aRv);
+                    if (aRv.Failed()) {
+                      return nullptr;
+                    }
+
                     aRv.MightThrowJSException();
                     aRv.ThrowJSException(aCx, storedError);
                     return nullptr;
@@ -389,8 +397,12 @@ class TransformStreamUnderlyingSinkAlgorithms final
                   }
 
                   // Step 5.2.2: Throw readable.[[storedError]].
-                  JS::Rooted<JS::Value> storedError(aCx,
-                                                    aReadable->StoredError());
+                  JS::Rooted<JS::Value> storedError(aCx);
+                  aReadable->GetStoredError(aCx, &storedError, aRv);
+                  if (aRv.Failed()) {
+                    return nullptr;
+                  }
+
                   aRv.MightThrowJSException();
                   aRv.ThrowJSException(aCx, storedError);
                   return nullptr;

@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -76,7 +75,7 @@ private fun ElevationSample(
             modifier = Modifier
                 .background(
                     color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    shape = RoundedCornerShape(size = 16.dp),
+                    shape = MaterialTheme.shapes.large,
                 )
                 .padding(horizontal = 16.dp, vertical = 4.dp),
         )
@@ -84,7 +83,7 @@ private fun ElevationSample(
         Card(
             modifier = Modifier
                 .size(80.dp),
-            shape = RoundedCornerShape(size = 28.dp),
+            shape = MaterialTheme.shapes.extraLarge,
             elevation = CardDefaults.cardElevation(defaultElevation = elevation),
             colors = CardDefaults.cardColors().copy(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
             content = { },

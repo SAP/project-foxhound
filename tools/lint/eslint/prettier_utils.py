@@ -1,5 +1,3 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -87,11 +85,11 @@ def run_prettier(cmd_args, config, fix):
     else:
         # When in "check" mode, Prettier will output the list of files that
         # need changing, so we'll wrap them in our result structure here.
-        for file in output:
-            if not file:
+        for f in output:
+            if not f:
                 continue
 
-            file = os.path.abspath(file)
+            file = os.path.abspath(f)
             results.append(
                 result.from_config(
                     config,

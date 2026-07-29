@@ -1,9 +1,9 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Base64.h"
+#include "mozilla/EndianUtils.h"
 #include "mozilla/MemoryReporting.h"
 
 #include "mozilla/dom/ContentChild.h"
@@ -166,6 +166,10 @@ FTUserFontData* FT2FontEntry::GetUserFontData() {
  */
 
 FT2FontEntry::~FT2FontEntry() {
+  auto* cache = mFontTableCache.exchange(nullptr);
+  delete cache;
+  auto* face = mHBFace.exchange(nullptr);
+  hb_face_destroy(face);
   if (mMMVar) {
     SharedFTFace* face = mFTFace;
     FT_Done_MM_Var(face->GetFace()->glyph->library, mMMVar);
@@ -229,11 +233,10 @@ gfxFont* FT2FontEntry::CreateFontInstance(const gfxFontStyle* aStyle) {
   RefPtr<UnscaledFontFreeType> unscaledFont(mUnscaledFont);
   if (!unscaledFont) {
     RefPtr<SharedFTFace> origFace(mFTFace);
-    unscaledFont =
-        !mFilename.IsEmpty() && mFilename[0] == '/'
-            ? new UnscaledFontFreeType(mFilename.BeginReading(), mFTFontIndex,
-                                       std::move(origFace))
-            : new UnscaledFontFreeType(std::move(origFace));
+    unscaledFont = !mFilename.IsEmpty() && mFilename[0] == '/'
+                       ? new UnscaledFontFreeType(mFilename.get(), mFTFontIndex,
+                                                  std::move(origFace))
+                       : new UnscaledFontFreeType(std::move(origFace));
     mUnscaledFont = unscaledFont;
   }
 
@@ -243,20 +246,20 @@ gfxFont* FT2FontEntry::CreateFontInstance(const gfxFontStyle* aStyle) {
 }
 
 /* static */
-FT2FontEntry* FT2FontEntry::CreateFontEntry(
+already_AddRefed<FT2FontEntry> FT2FontEntry::CreateFontEntry(
     const nsACString& aFontName, WeightRange aWeight, StretchRange aStretch,
     SlantStyleRange aStyle, const uint8_t* aFontData, uint32_t aLength) {
   // Ownership of aFontData is passed in here; the fontEntry must
   // retain it as long as the FT_Face needs it, and ensure it is
   // eventually deleted.
-  RefPtr<FTUserFontData> ufd = new FTUserFontData(aFontData, aLength);
+  RefPtr<FTUserFontData> ufd = MakeRefPtr<FTUserFontData>(aFontData, aLength);
   RefPtr<SharedFTFace> face = ufd->CloneFace();
   if (!face) {
     return nullptr;
   }
   // Create our FT2FontEntry, which inherits the name of the userfont entry
   // as it's not guaranteed that the face has valid names (bug 737315)
-  FT2FontEntry* fe =
+  RefPtr<FT2FontEntry> fe =
       FT2FontEntry::CreateFontEntry(aFontName, nullptr, 0, nullptr);
   if (fe) {
     fe->mFTFace = face.forget().take();  // mFTFace takes ownership.
@@ -265,7 +268,7 @@ FT2FontEntry* FT2FontEntry::CreateFontEntry(
     fe->mStretchRange = aStretch;
     fe->mIsDataUserFont = true;
   }
-  return fe;
+  return fe.forget();
 }
 
 /* static */
@@ -465,45 +468,52 @@ nsresult FT2FontEntry::ReadCMAP(FontInfoData* aFontInfoData) {
   return rv;
 }
 
-hb_face_t* FT2FontEntry::CreateHBFace() const {
-  hb_face_t* result = nullptr;
+hb_face_t* FT2FontEntry::CreateHBFace() {
+  if (mHBFace) {
+    return hb_face_reference(mHBFace);
+  }
 
+  hb_face_t* face = nullptr;
   if (mFilename[0] == '/') {
     // An absolute path means a normal file in the filesystem, so we can use
-    // hb_blob_create_from_file to read it.
-    gfxFontUtils::AutoHBBlob fileBlob(
-        hb_blob_create_from_file(mFilename.get()));
-    if (hb_blob_get_length(fileBlob) > 0) {
-      result = hb_face_create(fileBlob, mFTFontIndex);
+    // hb_face_create_from_file_or_fail, and keep the face around.
+    face = hb_face_create_from_file_or_fail(mFilename.get(), mFTFontIndex);
+    if (face) {
+      if (!mHBFace.compareExchange(nullptr, face)) {
+        hb_face_destroy(face);
+        face = mHBFace;
+      }
     }
-  } else {
-    // A relative path means an omnijar resource, which we may need to
-    // decompress to a temporary buffer.
-    RefPtr<nsZipArchive> reader = Omnijar::GetReader(Omnijar::Type::GRE);
-    nsZipItem* item = reader->GetItem(mFilename);
-    MOZ_ASSERT(item, "failed to find zip entry");
-    if (item) {
-      // TODO(jfkthame):
-      // Check whether the item is compressed; if not, we could just get a
-      // pointer without needing to allocate a buffer and copy the data.
-      // (Currently this configuration isn't used for Gecko on Android.)
-      uint32_t length = item->RealSize();
-      uint8_t* buffer = static_cast<uint8_t*>(malloc(length));
-      if (buffer) {
-        nsZipCursor cursor(item, reader, buffer, length);
-        cursor.Copy(&length);
-        MOZ_ASSERT(length == item->RealSize(), "error reading font");
-        if (length == item->RealSize()) {
-          gfxFontUtils::AutoHBBlob blob(
-              hb_blob_create((const char*)buffer, length,
-                             HB_MEMORY_MODE_READONLY, buffer, free));
-          result = hb_face_create(blob, mFTFontIndex);
-        }
+    return hb_face_reference(face);
+  }
+
+  // A relative path means an omnijar resource, which we may need to
+  // decompress to a temporary buffer.
+  RefPtr<nsZipArchive> reader = Omnijar::GetReader(Omnijar::Type::GRE);
+  nsZipItem* item = reader->GetItem(mFilename);
+  MOZ_ASSERT(item, "failed to find zip entry");
+  if (item) {
+    // TODO(jfkthame):
+    // Check whether the item is compressed; if not, we could just get a
+    // pointer without needing to allocate a buffer and copy the data.
+    // (Currently this configuration isn't used for Gecko on Android.)
+    uint32_t length = item->RealSize();
+    uint8_t* buffer = static_cast<uint8_t*>(malloc(length));
+    if (buffer) {
+      nsZipCursor cursor(item, reader, buffer, length);
+      cursor.Copy(&length);
+      MOZ_ASSERT(length == item->RealSize(), "error reading font");
+      if (length == item->RealSize()) {
+        gfxFontUtils::AutoHBBlob blob(
+            hb_blob_create((const char*)buffer, length, HB_MEMORY_MODE_READONLY,
+                           buffer, free));
+        // We don't retain this face; the caller will own the only reference.
+        return hb_face_create(blob, mFTFontIndex);
       }
     }
   }
 
-  return result;
+  return nullptr;
 }
 
 bool FT2FontEntry::HasFontTable(uint32_t aTableTag) {
@@ -574,20 +584,30 @@ hb_blob_t* FT2FontEntry::GetFontTable(uint32_t aTableTag) {
     }
   }
 
-  // If the FT_Face hasn't been instantiated, try to read table directly
-  // via harfbuzz API to avoid expensive FT_Face creation.
-  if (!mFTFace && !mFilename.IsEmpty()) {
-    hb_face_t* face = CreateHBFace();
-    if (face) {
+  // Try to read table directly via harfbuzz API, unless CreateHBFace will be
+  // expensive.
+  if (mHBFace || (!mFilename.IsEmpty() && mFilename[0] == '/')) {
+    if (hb_face_t* face = CreateHBFace()) {
       hb_blob_t* result = hb_face_reference_table(face, aTableTag);
       hb_face_destroy(face);
-      return result;
+      return result != hb_blob_get_empty() ? result : nullptr;
     }
   }
 
   // Otherwise, use the default method (which in turn will call our
   // implementation of CopyFontTable).
   return gfxFontEntry::GetFontTable(aTableTag);
+}
+
+gfxFontEntry::FontTableCache* FT2FontEntry::GetFontTableCache(bool aCreate) {
+  // Create the cache if it does not yet exist.
+  if (!mFontTableCache && aCreate) {
+    auto* cache = new FontTableCache();
+    if (!mFontTableCache.compareExchange(nullptr, cache)) {
+      delete cache;
+    }
+  }
+  return mFontTableCache;
 }
 
 bool FT2FontEntry::HasVariations() {
@@ -1812,21 +1832,21 @@ void gfxFT2FontList::InitSharedFontListForPlatform() {
   mFaceInitData.Clear();
 }
 
-gfxFontEntry* gfxFT2FontList::CreateFontEntry(fontlist::Face* aFace,
-                                              const fontlist::Family* aFamily) {
+already_AddRefed<gfxFontEntry> gfxFT2FontList::CreateFontEntry(
+    fontlist::Face* aFace, const fontlist::Family* aFamily) {
   fontlist::FontList* list = SharedFontList();
   nsAutoCString desc(aFace->mDescriptor.AsString(list));
-  FT2FontEntry* fe =
+  RefPtr<FT2FontEntry> fe =
       FT2FontEntry::CreateFontEntry(desc, desc.get(), aFace->mIndex, nullptr);
   fe->InitializeFrom(aFace, aFamily);
   fe->CheckForBrokenFont(aFamily->Key().AsString(list));
-  return fe;
+  return fe.forget();
 }
 
 // called for each family name, based on the assumption that the
 // first part of the full name is the family name
 
-gfxFontEntry* gfxFT2FontList::LookupLocalFont(
+already_AddRefed<gfxFontEntry> gfxFT2FontList::LookupLocalFont(
     FontVisibilityProvider* aFontVisibilityProvider,
     const nsACString& aFontName, WeightRange aWeightForEntry,
     StretchRange aStretchForEntry, SlantStyleRange aStyleForEntry) {
@@ -1883,7 +1903,7 @@ searchDone:
     return nullptr;
   }
 
-  FT2FontEntry* fe = FT2FontEntry::CreateFontEntry(
+  RefPtr<gfxFontEntry> fe = FT2FontEntry::CreateFontEntry(
       fontEntry->Name(), fontEntry->mFilename.get(), fontEntry->mFTFontIndex,
       nullptr);
   if (fe) {
@@ -1893,7 +1913,7 @@ searchDone:
     fe->mIsLocalUserFont = true;
   }
 
-  return fe;
+  return fe.forget();
 }
 
 FontFamily gfxFT2FontList::GetDefaultFontForPlatform(
@@ -1910,12 +1930,10 @@ FontFamily gfxFT2FontList::GetDefaultFontForPlatform(
   return ff;
 }
 
-gfxFontEntry* gfxFT2FontList::MakePlatformFont(const nsACString& aFontName,
-                                               WeightRange aWeightForEntry,
-                                               StretchRange aStretchForEntry,
-                                               SlantStyleRange aStyleForEntry,
-                                               const uint8_t* aFontData,
-                                               uint32_t aLength) {
+already_AddRefed<gfxFontEntry> gfxFT2FontList::MakePlatformFont(
+    const nsACString& aFontName, WeightRange aWeightForEntry,
+    StretchRange aStretchForEntry, SlantStyleRange aStyleForEntry,
+    const uint8_t* aFontData, uint32_t aLength) {
   // The FT2 font needs the font data to persist, so we do NOT free it here
   // but instead pass ownership to the font entry.
   // Deallocation will happen later, when the font face is destroyed.
@@ -1924,9 +1942,9 @@ gfxFontEntry* gfxFT2FontList::MakePlatformFont(const nsACString& aFontName,
                                        aFontData, aLength);
 }
 
-gfxFontFamily* gfxFT2FontList::CreateFontFamily(
+already_AddRefed<gfxFontFamily> gfxFT2FontList::CreateFontFamily(
     const nsACString& aName, FontVisibility aVisibility) const {
-  return new FT2FontFamily(aName, aVisibility);
+  return MakeAndAddRef<FT2FontFamily>(aName, aVisibility);
 }
 
 void gfxFT2FontList::WillShutdown() {

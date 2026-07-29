@@ -23,6 +23,7 @@ dependencies {
     implementation libs.androidx.fragment
     implementation libs.kotlinx.coroutines
     implementation libs.google.material
+    implementation project(':components:ui-widgets')
 }
 
 apply from: '../../../common-config.gradle'

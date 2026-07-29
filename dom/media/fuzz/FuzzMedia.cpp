@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -56,6 +55,10 @@ class BenchmarkPlayback : public QueueObject {
   uint32_t mFrameCount;
   bool mFinished;
   bool mDrained;
+  // Settled by Output()/Error(); delivered to mPromise from FinalizeShutdown
+  // so the consumer cannot observe completion before cleanup is done.
+  Maybe<MozPromise<uint32_t, MediaResult, true>::ResolveOrRejectValue>
+      mFinalResult;
 };
 
 // Init() must have been called at least once prior on the
@@ -96,8 +99,6 @@ class Benchmark : public QueueObject {
  private:
   friend class BenchmarkPlayback;
   virtual ~Benchmark();
-  void ReturnResult(uint32_t aDecodeFps);
-  void ReturnError(const MediaResult& aError);
   void Dispose();
   const Parameters mParameters;
   RefPtr<Benchmark> mKeepAliveUntilComplete;
@@ -149,18 +150,6 @@ RefPtr<Benchmark::BenchmarkPromise> Benchmark::Run() {
         "Benchmark::Run", [self]() { self->mPlaybackState.DemuxSamples(); }));
     return p;
   });
-}
-
-void Benchmark::ReturnResult(uint32_t aDecodeFps) {
-  MOZ_ASSERT(OnThread());
-
-  mPromise.ResolveIfExists(aDecodeFps, __func__);
-}
-
-void Benchmark::ReturnError(const MediaResult& aError) {
-  MOZ_ASSERT(OnThread());
-
-  mPromise.RejectIfExists(aError, __func__);
 }
 
 void Benchmark::Dispose() {
@@ -279,8 +268,12 @@ void BenchmarkPlayback::FinalizeShutdown() {
   mDecoderTaskQueue = nullptr;
 
   RefPtr<Benchmark> ref(mGlobalState);
+  auto result = mFinalResult.extract();
   ref->Thread()->Dispatch(NS_NewRunnableFunction(
-      "BenchmarkPlayback::FinalizeShutdown", [ref]() { ref->Dispose(); }));
+      "BenchmarkPlayback::FinalizeShutdown", [ref, r = std::move(result)]() {
+        ref->mPromise.ResolveOrRejectIfExists(r, __func__);
+        ref->Dispose();
+      }));
 }
 
 void BenchmarkPlayback::GlobalShutdown() {
@@ -330,21 +323,20 @@ void BenchmarkPlayback::Output(MediaDataDecoder::DecodedData&& aResults) {
        mFrameCount > ref->mParameters.mStartupFrame && frames > 0) ||
       elapsedTime >= ref->mParameters.mTimeout || mDrained) {
     uint32_t decodeFps = frames / elapsedTime.ToSeconds();
+    mFinalResult.emplace(
+        MozPromise<uint32_t, MediaResult,
+                   true>::ResolveOrRejectValue::MakeResolve(decodeFps));
     GlobalShutdown();
-    ref->Dispatch(NS_NewRunnableFunction(
-        "BenchmarkPlayback::Output",
-        [ref, decodeFps]() { ref->ReturnResult(decodeFps); }));
   }
 }
 
 void BenchmarkPlayback::Error(const MediaResult& aError) {
   MOZ_ASSERT(OnThread());
 
-  RefPtr<Benchmark> ref(mGlobalState);
+  mFinalResult.emplace(
+      MozPromise<uint32_t, MediaResult, true>::ResolveOrRejectValue::MakeReject(
+          aError));
   GlobalShutdown();
-  ref->Dispatch(
-      NS_NewRunnableFunction("BenchmarkPlayback::Error",
-                             [ref, aError]() { ref->ReturnError(aError); }));
 }
 
 void BenchmarkPlayback::InputExhausted() {

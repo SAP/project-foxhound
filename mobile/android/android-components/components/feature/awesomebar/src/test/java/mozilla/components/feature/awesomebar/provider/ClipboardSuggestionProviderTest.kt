@@ -21,7 +21,6 @@ import mozilla.components.support.test.eq
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -32,6 +31,7 @@ import org.mockito.Mockito.never
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class ClipboardSuggestionProviderTest {
@@ -120,7 +120,7 @@ class ClipboardSuggestionProviderTest {
         assertEquals(1, suggestions.size)
 
         val suggestion = suggestions.firstOrNull()
-        assertNotNull(suggestion!!)
+        assertNotNull(suggestion)
 
         assertEquals("https://www.mozilla.org", suggestion.description)
     }
@@ -205,7 +205,7 @@ class ClipboardSuggestionProviderTest {
         verify(engine, times(1)).speculativeConnect(eq("https://www.mozilla.org"))
 
         val suggestion = suggestions.firstOrNull()
-        assertNotNull(suggestion!!)
+        assertNotNull(suggestion)
         assertEquals("https://www.mozilla.org", suggestion.description)
     }
 
@@ -214,7 +214,7 @@ class ClipboardSuggestionProviderTest {
 
         assertNotNull(suggestion)
 
-        assertEquals(url, suggestion!!.description)
+        assertEquals(url, suggestion.description)
     }
 
     private suspend fun assertClipboardYieldsNothing(text: String) {

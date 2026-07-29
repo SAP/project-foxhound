@@ -4,7 +4,6 @@
 
 package org.mozilla.fenix.ui
 
-import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.R
@@ -12,16 +11,17 @@ import org.mozilla.fenix.customannotations.SmokeTest
 import org.mozilla.fenix.helpers.Constants.defaultTopSitesList
 import org.mozilla.fenix.helpers.DataGenerationHelper.generateRandomString
 import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
+import org.mozilla.fenix.helpers.FenixTestRule
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MockBrowserDataHelper
 import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.verifySnackBarText
-import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
 import org.mozilla.fenix.ui.robots.browserScreen
 import org.mozilla.fenix.ui.robots.homeScreen
 import org.mozilla.fenix.ui.robots.navigationToolbar
+import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidComposeTestRuleV2
 
 /**
  * Tests Top Sites functionality
@@ -32,14 +32,19 @@ import org.mozilla.fenix.ui.robots.navigationToolbar
  * - Verifies existence of default top sites available on the home-screen
  */
 
-class TopSitesTest : TestSetup() {
-    @get:Rule
-    val composeTestRule = AndroidComposeTestRule(
-        HomeActivityIntentTestRule.withDefaultSettingsOverrides(skipOnboarding = true),
+class TopSitesTest {
+    @get:Rule(order = 0)
+    val fenixTestRule: FenixTestRule = FenixTestRule()
+
+    private val mockWebServer get() = fenixTestRule.mockWebServer
+
+    @get:Rule(order = 1)
+    val composeTestRule = AndroidComposeTestRuleV2(
+        HomeActivityIntentTestRule.withDefaultSettingsOverrides(),
     ) { it.activity }
 
-    @get:Rule
-    val memoryLeaksRule = DetectMemoryLeaksRule()
+    @get:Rule(order = 2)
+    val memoryLeaksRule = DetectMemoryLeaksRule(composeTestRule = { composeTestRule })
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/532598
     @SmokeTest
@@ -134,6 +139,7 @@ class TopSitesTest : TestSetup() {
         }
     }
 
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2673886
     @Test
     fun editTopSiteTestWithInvalidURL() {
         val webPage = mockWebServer.getGenericAsset(1)

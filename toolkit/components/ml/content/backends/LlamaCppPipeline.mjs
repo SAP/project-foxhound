@@ -67,12 +67,20 @@ export class LlamaCppPipeline {
   generator = null;
   #options = {};
   #errorFactory = null;
+  #metrics = [];
 
   constructor(generator, options, errorFactory) {
     /** @type {LlamaRunner} */
     this.generator = generator;
     this.#errorFactory = errorFactory;
     this.#options = options;
+  }
+
+  #metricsSnapShot({ name, snapshot = {} }) {
+    if (!("when" in snapshot)) {
+      snapshot.when = ChromeUtils.now();
+    }
+    this.#metrics.push({ name, ...snapshot });
   }
 
   static async initialize(
@@ -183,7 +191,13 @@ export class LlamaCppPipeline {
       `Initialize: ${modelId}, ctx=${numContext}, threads=${options.n_threads}/${options.n_threads_decoding}`
     );
 
-    return new LlamaCppPipeline(generator, options, errorFactory);
+    const pipeline = new LlamaCppPipeline(generator, options, errorFactory);
+    pipeline.#metricsSnapShot({
+      name: "initializationStart",
+      snapshot: { when: startInitTime },
+    });
+    pipeline.#metricsSnapShot({ name: "initializationEnd" });
+    return pipeline;
   }
 
   /**
@@ -227,11 +241,15 @@ export class LlamaCppPipeline {
     port = null
   ) {
     try {
-      let startTime = ChromeUtils.now();
       let endPromptTime = null;
-      let startPromptTime = startTime;
-      let startDecodingTime = null;
 
+      const metrics = { runTimestamps: [] };
+      const snapshot = (name, when = ChromeUtils.now()) => {
+        metrics.runTimestamps.push({ name, when });
+      };
+
+      let inputTokens = 0;
+      let outputTokens = 0;
       let output = "";
 
       lazy.console.error("Running this.generator.createGenerationStream");
@@ -249,6 +267,9 @@ export class LlamaCppPipeline {
         );
         lazy.console.error("formated prompt ", formattedPrompt);
       }
+
+      const inferenceStartTime = ChromeUtils.now();
+      snapshot("runStart", inferenceStartTime);
 
       const stream = this.generator.createGenerationStream({
         prompt: formattedPrompt,
@@ -271,8 +292,12 @@ export class LlamaCppPipeline {
 
         if (isPrompt && chunk.isPhaseCompleted) {
           endPromptTime = ChromeUtils.now();
-        } else if (!startDecodingTime) {
-          startDecodingTime = ChromeUtils.now();
+        }
+
+        if (isPrompt) {
+          inputTokens += chunk.tokens.length;
+        } else {
+          outputTokens += chunk.tokens.length;
         }
 
         if (skipPrompt && isPrompt) {
@@ -307,16 +332,19 @@ export class LlamaCppPipeline {
       }
 
       const endTime = ChromeUtils.now();
-      const promptTime = endPromptTime - startPromptTime;
-      const decodingTime = endTime - startDecodingTime;
+      snapshot("runEnd", endTime);
+      const prefillEnd = endPromptTime ?? inferenceStartTime;
+      const inferenceTime = endTime - inferenceStartTime;
+      const decodingTime = endTime - prefillEnd;
+      const timeToFirstToken = prefillEnd - inferenceStartTime;
       lazy.console.debug("Decoding time", decodingTime);
-      lazy.console.debug("Prompt time", promptTime);
-      lazy.console.debug("Overall time", endTime - startTime);
+      lazy.console.debug("Time to first token", timeToFirstToken);
+      lazy.console.debug("Overall time", inferenceTime);
       lazy.console.debug("Generated", output);
 
       ChromeUtils.addProfilerMarker(
         "MLEngine:llama.cpp",
-        { startTime: startPromptTime },
+        { startTime: inferenceStartTime },
         `Prompt generation (${tokenCount} tokens generated)`
       );
 
@@ -333,7 +361,27 @@ export class LlamaCppPipeline {
         statusText: Progress.ProgressStatusText.DONE,
       });
 
-      return { done: true, finalOutput: output, ok: true, metrics: [] };
+      return {
+        done: true,
+        finalOutput: output,
+        ok: true,
+        metrics: {
+          runTimestamps: [...this.#metrics, ...metrics.runTimestamps],
+          inputTokens,
+          outputTokens,
+          inferenceTime,
+          decodingTime,
+          timeToFirstToken,
+          tokensPerSecond:
+            decodingTime > 0 && outputTokens > 0
+              ? outputTokens / (decodingTime / 1000)
+              : undefined,
+          timePerOutputToken:
+            outputTokens > 0 && decodingTime > 0
+              ? decodingTime / outputTokens
+              : undefined,
+        },
+      };
     } catch (error) {
       const backendError = this.#errorFactory(error);
       port?.postMessage({ done: true, ok: false, error: backendError });

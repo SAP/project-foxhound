@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -144,7 +142,7 @@ class CompareNetwork final : public nsIStreamLoaderObserver,
 
   bool Succeeded() const { return NS_SUCCEEDED(mNetworkResult); }
 
-  const nsTArray<nsCString>& URLList() const { return mURLList; }
+  const nsTArray<NotNull<RefPtr<nsIURI>>>& URLList() const { return mURLList; }
 
  private:
   ~CompareNetwork() {
@@ -166,7 +164,7 @@ class CompareNetwork final : public nsIStreamLoaderObserver,
   ChannelInfo mChannelInfo;
   RefPtr<InternalHeaders> mInternalHeaders;
   UniquePtr<PrincipalInfo> mPrincipalInfo;
-  nsTArray<nsCString> mURLList;
+  nsTArray<NotNull<RefPtr<nsIURI>>> mURLList;
 
   nsCString mMaxScope;
   nsLoadFlags mLoadFlags;
@@ -564,7 +562,7 @@ class CompareManager final : public PromiseNativeHandler {
         new Response(aCache->GetGlobalObject(), std::move(ir), nullptr);
 
     RequestOrUTF8String request;
-    request.SetAsUTF8String().ShareOrDependUpon(aCN->URL());
+    request.SetAsUTF8String() = aCN->URL();
 
     // For now we have to wait until the Put Promise is fulfilled before we can
     // continue since Cache does not yet support starting a read that is being
@@ -632,7 +630,7 @@ nsresult CompareNetwork::Initialize(nsIPrincipal* aPrincipal,
   }
 
   mURL = aURL;
-  mURLList.AppendElement(mURL);
+  mURLList.AppendElement(WrapNotNull(uri.get()));
 
   nsCOMPtr<nsILoadGroup> loadGroup;
   rv = NS_NewLoadGroup(getter_AddRefs(loadGroup), aPrincipal);
@@ -938,14 +936,13 @@ CompareNetwork::OnStreamComplete(nsIStreamLoader* aLoader,
       return rv;
     }
 
-    nsCString channelURLSpec;
-    MOZ_ALWAYS_SUCCEEDS(channelURL->GetSpec(channelURLSpec));
-
     // Append the final URL (which for an extension worker script is going to
     // be a file or jar url).
     MOZ_DIAGNOSTIC_ASSERT(!mURLList.IsEmpty());
-    if (channelURLSpec != mURLList[0]) {
-      mURLList.AppendElement(channelURLSpec);
+
+    bool equals = false;
+    if (NS_FAILED(channelURL->Equals(mURLList[0], &equals)) || !equals) {
+      mURLList.AppendElement(WrapNotNull(channelURL.get()));
     }
 
     UniquePtr<char16_t[], JS::FreePolicy> buffer;
@@ -1074,27 +1071,35 @@ CompareNetwork::OnStreamComplete(nsIStreamLoader* aLoader,
     mRegistration->RefreshLastUpdateCheckTime();
   }
 
-  nsAutoCString mimeType;
-  rv = httpChannel->GetContentType(mimeType);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    // We should only end up here if !mResponseHead in the channel.  If headers
-    // were received but no content type was specified, we'll be given
-    // UNKNOWN_CONTENT_TYPE "application/x-unknown-content-type" and so fall
-    // into the next case with its better error message.
-    rv = NS_ERROR_DOM_SECURITY_ERR;
-    return rv;
-  }
+  nsCOMPtr<nsILoadInfo> loadInfo = mChannel->LoadInfo();
+  if (!JS::Prefs::experimental_import_text() ||
+      (loadInfo->GetExternalContentPolicyType() !=
+       ExtContentPolicyType::TYPE_TEXT)) {
+    nsAutoCString mimeType;
+    rv = httpChannel->GetContentType(mimeType);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      // We should only end up here if !mResponseHead in the channel.  If
+      // headers were received but no content type was specified, we'll be given
+      // UNKNOWN_CONTENT_TYPE "application/x-unknown-content-type" and so fall
+      // into the next case with its better error message.
+      rv = NS_ERROR_DOM_SECURITY_ERR;
+      return rv;
+    }
 
-  auto mimeTypeUTF16 = NS_ConvertUTF8toUTF16(mimeType);
-  if (mimeTypeUTF16.IsEmpty() ||
-      !(nsContentUtils::IsJavascriptMIMEType(mimeTypeUTF16) ||
-        nsContentUtils::IsJsonMimeType(mimeTypeUTF16))) {
-    ServiceWorkerManager::LocalizeAndReportToAllClients(
-        mRegistration->Scope(), "ServiceWorkerRegisterMimeTypeError2",
-        nsTArray<nsString>{NS_ConvertUTF8toUTF16(mRegistration->Scope()),
-                           mimeTypeUTF16, NS_ConvertUTF8toUTF16(mURL)});
-    rv = NS_ERROR_DOM_SECURITY_ERR;
-    return rv;
+    auto mimeTypeUTF16 = NS_ConvertUTF8toUTF16(mimeType);
+    // The top-level service worker script must be served with a JavaScript
+    // MIME type. JSON is only permitted for non-top-level (imported) modules,
+    // such as `import data from "./x.json" with { type: "json" }`.
+    if (mimeTypeUTF16.IsEmpty() ||
+        !(nsContentUtils::IsJavascriptMIMEType(mimeTypeUTF16) ||
+          (!mIsMainScript && nsContentUtils::IsJsonMimeType(mimeTypeUTF16)))) {
+      ServiceWorkerManager::LocalizeAndReportToAllClients(
+          mRegistration->Scope(), "ServiceWorkerRegisterMimeTypeError2",
+          nsTArray<nsString>{NS_ConvertUTF8toUTF16(mRegistration->Scope()),
+                             mimeTypeUTF16, NS_ConvertUTF8toUTF16(mURL)});
+      rv = NS_ERROR_DOM_SECURITY_ERR;
+      return rv;
+    }
   }
 
   nsCOMPtr<nsIURI> channelURL;
@@ -1103,15 +1108,14 @@ CompareNetwork::OnStreamComplete(nsIStreamLoader* aLoader,
     return rv;
   }
 
-  nsCString channelURLSpec;
-  MOZ_ALWAYS_SUCCEEDS(channelURL->GetSpec(channelURLSpec));
-
   // Append the final URL if its different from the original
   // request URL.  This lets us note that a redirect occurred
   // even though we don't track every redirect URL here.
   MOZ_DIAGNOSTIC_ASSERT(!mURLList.IsEmpty());
-  if (channelURLSpec != mURLList[0]) {
-    mURLList.AppendElement(channelURLSpec);
+
+  bool equals = false;
+  if (NS_FAILED(channelURL->Equals(mURLList[0], &equals)) || !equals) {
+    mURLList.AppendElement(WrapNotNull(channelURL.get()));
   }
 
   UniquePtr<char16_t[], JS::FreePolicy> buffer;
@@ -1140,7 +1144,7 @@ nsresult CompareCache::Initialize(Cache* const aCache, const nsACString& aURL) {
   jsapi.Init();
 
   RequestOrUTF8String request;
-  request.SetAsUTF8String().ShareOrDependUpon(aURL);
+  request.SetAsUTF8String() = aURL;
   ErrorResult error;
   CacheQueryOptions params;
   RefPtr<Promise> promise = aCache->Match(jsapi.cx(), request, params, error);

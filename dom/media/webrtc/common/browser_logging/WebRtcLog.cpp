@@ -124,8 +124,8 @@ class LogSinkImpl : public WebrtcLogSinkHandle, public webrtc::LogSink {
   }
 
   void OnLogMessage(const webrtc::LogLineRef& aLogLine) override {
-    MOZ_LOG(sWebRtcLog, SeverityToLevel(aLogLine.severity()),
-            ("%s", aLogLine.DefaultLogLine().data()));
+    MOZ_LOG_FMT(sWebRtcLog, SeverityToLevel(aLogLine.severity()), "{}",
+                aLogLine.DefaultLogLine().data());
   }
 
   void OnLogMessage(const std::string&) override {

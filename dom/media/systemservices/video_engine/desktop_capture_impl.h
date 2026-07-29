@@ -16,7 +16,6 @@
  */
 
 #include <memory>
-#include <set>
 #include <string>
 
 #include "MediaEventSource.h"
@@ -30,6 +29,7 @@
 #include "mozilla/DataMutex.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/media/DesktopCaptureInterface.h"
 #include "nsCOMPtr.h"
 
 class nsIThread;
@@ -46,27 +46,25 @@ class VideoCaptureEncodeInterface;
 // Reuses the video engine pipeline for screen sharing.
 // As with video, DesktopCaptureImpl is a proxy for screen sharing
 // and follows the video pipeline design
-class DesktopCaptureImpl : public DesktopCapturer::Callback,
+class DesktopCaptureImpl : public mozilla::DesktopCaptureInterface,
+                           public DesktopCapturer::Callback,
                            public VideoCaptureModule {
  public:
   /* Create a screen capture modules object
    */
   static DesktopCaptureImpl* Create(
-      const int32_t aModuleId, const char* aUniqueId,
+      int32_t aCaptureId, const char* aUniqueId,
       const mozilla::camera::CaptureDeviceType aType);
 
   [[nodiscard]] static std::shared_ptr<VideoCaptureModule::DeviceInfo>
-  CreateDeviceInfo(const int32_t aId,
-                   const mozilla::camera::CaptureDeviceType aType);
+  CreateDeviceInfo(const mozilla::camera::CaptureDeviceType aType);
 
   // mControlThread only.
   void RegisterCaptureDataCallback(
       webrtc::VideoSinkInterface<VideoFrame>* aCallback) override;
   void RegisterCaptureDataCallback(
       RawVideoSinkInterface* dataCallback) override {}
-  void DeRegisterCaptureDataCallback(
-      webrtc::VideoSinkInterface<VideoFrame>* aCallback) override;
-  int32_t StopCaptureIfAllClientsClose() override;
+  void DeRegisterCaptureDataCallback() override;
 
   int32_t SetCaptureRotation(VideoRotation aRotation) override;
   bool SetApplyRotation(bool aEnable) override;
@@ -81,15 +79,14 @@ class DesktopCaptureImpl : public DesktopCapturer::Callback,
   int32_t CaptureSettings(VideoCaptureCapability& aSettings) override;
 
   void CaptureFrameOnThread();
-  mozilla::MediaEventSource<void>* CaptureEndedEvent();
+  mozilla::MediaEventSource<void>* CaptureEndedEvent() override;
 
-  const int32_t mModuleId;
   const mozilla::TrackingId mTrackingId;
   const std::string mDeviceUniqueId;
   const mozilla::camera::CaptureDeviceType mDeviceType;
 
  protected:
-  DesktopCaptureImpl(const int32_t aId, const char* aUniqueId,
+  DesktopCaptureImpl(const int32_t aCaptureId, const char* aUniqueId,
                      const mozilla::camera::CaptureDeviceType aType);
   virtual ~DesktopCaptureImpl();
 
@@ -130,10 +127,9 @@ class DesktopCaptureImpl : public DesktopCapturer::Callback,
       RTC_GUARDED_BY(mCaptureThreadChecker);
   // Used to make sure incoming timestamp is increasing for every frame.
   webrtc::Timestamp mNextFrameMinimumTime RTC_GUARDED_BY(mCaptureThreadChecker);
-  // Callbacks for captured frames. Mutated on mControlThread, callbacks happen
+  // Callback for captured frames. Mutated on mControlThread, callbacks happen
   // on mCaptureThread.
-  mozilla::DataMutex<std::set<webrtc::VideoSinkInterface<VideoFrame>*>>
-      mCallbacks;
+  mozilla::DataMutex<webrtc::VideoSinkInterface<VideoFrame>*> mCallback;
   // Subscribers to this event will be notified when the capture has ended.
   mozilla::MediaEventProducer<void> mCaptureEndedEvent;
 

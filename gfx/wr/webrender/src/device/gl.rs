@@ -3123,9 +3123,8 @@ impl Device {
     }
 
     #[cfg(feature = "replay")]
-    pub fn delete_external_texture(&mut self, mut external: ExternalTexture) {
+    pub fn delete_external_texture(&mut self, external: ExternalTexture) {
         self.gl.delete_textures(&[external.id]);
-        external.id = 0;
     }
 
     pub fn delete_program(&mut self, mut program: Program) {

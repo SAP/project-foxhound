@@ -52,6 +52,8 @@ add_task(async function testNotYetValidCert() {
       content.document.querySelector("net-error-card").wrappedJSObject;
     const info = Cu.cloneInto(mockErrorInfo, netErrorCard);
     netErrorCard.errorInfo = info;
+    netErrorCard.resolvedErrorId =
+      "MOZILLA_PKIX_ERROR_NOT_YET_VALID_CERTIFICATE";
     netErrorCard.errorConfig = netErrorCard.getErrorConfig();
     await netErrorCard.getUpdateComplete();
 
@@ -76,7 +78,7 @@ add_task(async function testNotYetValidCert() {
       "Proceed button should be shown for not-yet-valid certificates."
     );
     Assert.equal(
-      netErrorCard.certErrorIntro.dataset.l10nId,
+      netErrorCard.errorIntro.dataset.l10nId,
       "fp-certerror-intro",
       "Using the 'certificate error' intro."
     );

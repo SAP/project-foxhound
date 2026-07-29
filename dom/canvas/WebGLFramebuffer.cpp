@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -148,7 +147,7 @@ bool WebGLFBAttachPoint::IsComplete(WebGLContext* webgl,
         "Attachment has an effective format of %s,"
         " which is not renderable.",
         formatUsage->format->name);
-    fnWriteErrorInfo(info.BeginReading());
+    fnWriteErrorInfo(info.get());
     return false;
   }
   if (!formatUsage->IsExplicitlyRenderable()) {
@@ -294,10 +293,9 @@ Maybe<double> WebGLFBAttachPoint::GetParameter(WebGLContext* webgl,
     WebGLContext::EnumName(attachment, &attachmentName);
     if (webgl->IsWebGL2()) {
       webgl->ErrorInvalidOperation("No attachment at %s.",
-                                   attachmentName.BeginReading());
+                                   attachmentName.get());
     } else {
-      webgl->ErrorInvalidEnum("No attachment at %s.",
-                              attachmentName.BeginReading());
+      webgl->ErrorInvalidEnum("No attachment at %s.", attachmentName.get());
     }
     return Nothing();
   }
@@ -985,7 +983,7 @@ WebGLFramebuffer::CompletenessInfo::~CompletenessInfo() {
 // Entrypoints
 
 FBStatus WebGLFramebuffer::CheckFramebufferStatus() const {
-  if (MOZ_UNLIKELY(mOpaque && !mInOpaqueRAF)) {
+  if (mOpaque && !mInOpaqueRAF) [[unlikely]] {
     // Opaque Framebuffers are considered incomplete outside of a RAF.
     return LOCAL_GL_FRAMEBUFFER_UNSUPPORTED;
   }
@@ -1062,13 +1060,12 @@ FBStatus WebGLFramebuffer::CheckFramebufferStatus() const {
     }
     MOZ_ASSERT(info.width && info.height);
     mCompletenessInfo = std::move(info);
-    info.fb = nullptr;  // Don't trigger the invalidation warning.
     return LOCAL_GL_FRAMEBUFFER_COMPLETE;
   } while (false);
 
   MOZ_ASSERT(ret != LOCAL_GL_FRAMEBUFFER_COMPLETE);
   mContext->GenerateWarning("Framebuffer not complete. (status: 0x%04x) %s",
-                            ret.get(), statusInfo.BeginReading());
+                            ret.get(), statusInfo.get());
   return ret;
 }
 
@@ -1195,7 +1192,7 @@ bool WebGLFramebuffer::FramebufferAttach(const GLenum attachEnum,
   MOZ_ASSERT(mContext->mBoundDrawFramebuffer == this ||
              mContext->mBoundReadFramebuffer == this);
 
-  if (MOZ_UNLIKELY(mOpaque)) {
+  if (mOpaque) [[unlikely]] {
     // An opaque framebuffer's attachments cannot be inspected or changed.
     return false;
   }
@@ -1227,7 +1224,7 @@ Maybe<double> WebGLFramebuffer::GetAttachmentParameter(GLenum attachEnum,
         " STENCIL_ATTACHMENT for a framebuffer.");
     return Nothing();
   }
-  if (MOZ_UNLIKELY(mOpaque)) {
+  if (mOpaque) [[unlikely]] {
     mContext->ErrorInvalidOperation(
         "An opaque framebuffer's attachments cannot be inspected or changed.");
     return Nothing();

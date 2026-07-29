@@ -16,9 +16,14 @@
  * Each vector is made up of values representing the relationship with
  * features defined by the model.
  *
+ * Production callers MUST go through the static factories `forPlaces` and
+ * `forGeneral` so the policy for picking an embedding family stays in one
+ * place. `forTest` is provided for tests and dev tooling.
+ *
  * Note: The "engine" referenced in this module is specifically an ML engine
  * used for feature extraction and embedding generation.
  */
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
@@ -46,80 +51,255 @@ ChromeUtils.defineLazyGetter(lazy, "console", () => {
 const REQUIRED_MEMORY_BYTES = 7 * 1024 * 1024 * 1024;
 const REQUIRED_CPU_CORES = 2;
 
-const staticEmbeddingsOptions = {
+export const EMBEDDING_TYPE = Object.freeze({
+  STATIC: "static",
+  CONTEXTUAL: "contextual",
+});
+
+// Maps an embedding type to the engineConfigId that implements it.
+const EMBEDDING_BACKEND_DEFAULTS = Object.freeze({
+  [EMBEDDING_TYPE.STATIC]: "static-embeddings",
+  [EMBEDDING_TYPE.CONTEXTUAL]: "onnx-native",
+});
+
+// Pref that picks static vs contextual (i.e. transformer based) embeddings
+// for Places semantic history.
+const PREF_PLACES_EMBEDDING_TYPE = "places.semanticHistory.embeddingType";
+
+// Custom embedding size and model for ML driver support of testing new embeddings.
+const PREF_CONTEXTUAL_EMBEDDING_DIM = "browser.ml.embedGen.textEmbeddingSize";
+const PREF_CONTEXTUAL_MODEL_NAME =
+  "browser.ml.embedGen.textEmbeddingFeatureModel";
+
+// Default embedding-dimension envelope for engines that do not pin a list of
+// supportedDimensions: multiple of 8, in [128, 2048].
+const EMBEDDING_DIM_MIN = 128;
+const EMBEDDING_DIM_MAX = 2048;
+const EMBEDDING_DIM_GRANULARITY = 8;
+
+function isValidOnnxEmbeddingDim(dim) {
+  return (
+    Number.isInteger(dim) &&
+    dim >= EMBEDDING_DIM_MIN &&
+    dim <= EMBEDDING_DIM_MAX &&
+    dim % EMBEDDING_DIM_GRANULARITY === 0
+  );
+}
+
+const staticEmbeddingsOptions = Object.freeze({
   // See https://huggingface.co/Mozilla/static-embeddings/blob/main/models/minishlab/potion-retrieval-32M/README.md
   subfolder: "models/minishlab/potion-retrieval-32M",
   // Available: fp32, fp16, fp8_e5m2, fp8_e4m3
   dtype: "fp16",
-  // Avalable dimsensions: 32, 64, 128, 256, 512
-  dimensions: 256,
-  // Use zstd compression, probably set it to true.
+  // Use zstd compression.
   compression: true,
-};
+});
+
+// Registry of engine configurations keyed by engineConfigId. Each entry is
+// the base option dict for that engine; resolveEngineOptions() clones the
+// entry, fills in dimension + per-call overrides, and stamps engineConfigId.
+const ENGINE_OPTIONS = new Map([
+  [
+    "onnx-native",
+    {
+      taskName: "feature-extraction",
+      featureId: "simple-text-embedder",
+      timeoutMS: -1,
+      numThreads: 2,
+      backend: "onnx-native",
+      fallbackEngine: "onnx-wasm",
+      preferredDimension: 384,
+    },
+  ],
+  [
+    "onnx-wasm",
+    {
+      taskName: "feature-extraction",
+      featureId: "simple-text-embedder",
+      timeoutMS: -1,
+      numThreads: 2,
+      backend: "onnx",
+      preferredDimension: 384,
+    },
+  ],
+  [
+    "static-embeddings",
+    {
+      featureId: "simple-text-embedder",
+      modelId: "mozilla/static-embeddings",
+      modelRevision: "v1.0.0",
+      taskName: "static-embeddings",
+      modelHub: "mozilla",
+      backend: "static-embeddings",
+      supportedDimensions: [32, 64, 128, 256, 512],
+      preferredDimension: 512,
+    },
+  ],
+]);
 
 /**
+ * Resolve engine options for the given embedding type. Reads
+ * `browser.ml.embedGen.*` dev prefs for the contextual path.
  *
+ * @param {string} embeddingType
+ *   One of EMBEDDING_TYPE.*
+ * @param {number} [embeddingSize]
+ *   Explicit dimension override. Otherwise the engine's preferredDimension
+ *   (static) or the dev pref (contextual) is used.
+ * @returns {object} merged engine options
  */
+function resolveEngineOptions(embeddingType, embeddingSize) {
+  const engineConfigId = EMBEDDING_BACKEND_DEFAULTS[embeddingType];
+  if (!engineConfigId) {
+    throw new TypeError(`Unknown embedding type ${embeddingType}`);
+  }
+  const base = ENGINE_OPTIONS.get(engineConfigId);
+  const options = { ...base, engineConfigId };
+
+  if (embeddingType === EMBEDDING_TYPE.STATIC) {
+    const dim = embeddingSize ?? options.preferredDimension;
+    if (!options.supportedDimensions.includes(dim)) {
+      throw new TypeError(`Unsupported static embedding size ${dim}`);
+    }
+    options.embeddingDimension = dim;
+    options.staticEmbeddingsOptions = {
+      ...staticEmbeddingsOptions,
+      dimensions: dim,
+    };
+    return options;
+  }
+
+  // Contextual: dimension / model come from dev prefs unless explicit
+  // overrides were passed.
+  const dim =
+    embeddingSize ??
+    Services.prefs.getIntPref(
+      PREF_CONTEXTUAL_EMBEDDING_DIM,
+      options.preferredDimension
+    );
+  if (!isValidOnnxEmbeddingDim(dim)) {
+    throw new TypeError(`Unsupported contextual embedding size ${dim}`);
+  }
+  options.embeddingDimension = dim;
+
+  const modelOverride = Services.prefs.getStringPref(
+    PREF_CONTEXTUAL_MODEL_NAME,
+    ""
+  );
+  if (modelOverride) {
+    options.modelId = modelOverride;
+  }
+  return options;
+}
+
+/**
+ * Returns true if user is on Mac or Windows as part of a best effort to not
+ * use onnx-wasm for contextual (transformer based) embeddings.
+ * Separate function to support testing.
+ *
+ * TODO Bug #2039862 We may able to add linux support
+ */
+function isMacOrWindows() {
+  return AppConstants.platform === "macosx" || AppConstants.platform === "win";
+}
+
+/**
+ * Get the type of embedding we're using for Places (static vs contextual)
+ * based on config/Nimbus prefs. Contextual embeddings require the native ONNX
+ * runtime, so they're only selected when it is available; otherwise we fall
+ * back to static embeddings.
+ *
+ * @returns {string} One of the EMBEDDING_TYPE values.
+ */
+function resolvePlacesEmbeddingType() {
+  const val = Services.prefs.getStringPref(
+    PREF_PLACES_EMBEDDING_TYPE,
+    EMBEDDING_TYPE.STATIC
+  );
+  // We make a best effort to not use onnx-wasm engine. There is no
+  // reliable check without trying to use it. Our focus is Mac/Windows
+  // for contextual embeddings until onnx-native has wider Linux adoption.
+  return val === EMBEDDING_TYPE.CONTEXTUAL && isMacOrWindows()
+    ? EMBEDDING_TYPE.CONTEXTUAL
+    : EMBEDDING_TYPE.STATIC;
+}
+
 export class EmbeddingsGenerator {
   #engine = undefined;
   #promiseEngine;
   #embeddingSize;
   options;
-  #optionsByEngine = new Map([
-    [
-      "onnx-native",
-      {
-        taskName: "feature-extraction",
-        featureId: "simple-text-embedder",
-        timeoutMS: -1,
-        numThreads: 2,
-        backend: "onnx-native",
 
-        supportedDimensions: [384],
-        fallbackEngine: "onnx-wasm",
-      },
-    ],
-    [
-      "onnx-wasm",
-      {
-        taskName: "feature-extraction",
-        featureId: "simple-text-embedder",
-        timeoutMS: -1,
-        numThreads: 2,
-        backend: "onnx",
+  /**
+   * Internal — use {@link EmbeddingsGenerator.forPlaces},
+   * {@link EmbeddingsGenerator.forGeneral} or
+   * {@link EmbeddingsGenerator.forTest}.
+   *
+   * @param {object} resolvedOptions Output of `resolveEngineOptions`.
+   */
+  constructor(resolvedOptions) {
+    this.options = resolvedOptions;
+    this.#embeddingSize = resolvedOptions.embeddingDimension;
+  }
 
-        supportedDimensions: [384],
-      },
-    ],
-    [
-      "static-embeddings",
-      {
-        featureId: "simple-text-embedder",
-        modelId: "mozilla/static-embeddings",
-        modelRevision: "v1.0.0",
-        taskName: "static-embeddings",
-        modelHub: "mozilla",
-        backend: "static-embeddings",
-        staticEmbeddingsOptions,
+  /**
+   * Places semantic history. Embedding family comes from the Nimbus-driven
+   * pref `places.semanticHistory.embeddingType`.
+   *
+   * @returns {EmbeddingsGenerator}
+   */
+  static forPlaces() {
+    return new EmbeddingsGenerator(
+      resolveEngineOptions(resolvePlacesEmbeddingType())
+    );
+  }
 
-        supportedDimensions: [32, 64, 128, 256, 512],
-        setDimensions(embeddingSize) {
-          this.staticEmbeddingsOptions.dimensions = embeddingSize;
-        },
-      },
-    ],
-  ]);
+  /**
+   * Smart Window memories, navigation, and other general callers.
+   *
+   * @returns {EmbeddingsGenerator}
+   */
+  static forGeneral() {
+    return new EmbeddingsGenerator(
+      resolveEngineOptions(EMBEDDING_TYPE.CONTEXTUAL)
+    );
+  }
 
-  constructor({ backend = "static-embeddings", embeddingSize = 256 } = {}) {
-    this.#embeddingSize = embeddingSize;
-    this.options = this.#optionsByEngine.get(backend);
-    if (!this.options) {
-      throw new TypeError("Unsupported embedding engine");
-    }
-    if (!this.options.supportedDimensions.includes(embeddingSize)) {
-      throw new TypeError("Unsupported embedding size");
-    }
-    this.options.setDimensions?.(embeddingSize);
+  /**
+   * Tests and dev tooling only. Production callers MUST use forPlaces /
+   * forGeneral so policy stays in one place.
+   *
+   * @param {object} opts
+   * @param {string} opts.type One of EMBEDDING_TYPE.*
+   * @param {number} [opts.embeddingSize] Explicit dimension override.
+   * @returns {EmbeddingsGenerator}
+   */
+  static forTest({ type, embeddingSize } = {}) {
+    return new EmbeddingsGenerator(resolveEngineOptions(type, embeddingSize));
+  }
+
+  get embeddingSize() {
+    return this.#embeddingSize;
+  }
+
+  /**
+   * Returns model metadata that affects how embeddings are stored persistently.
+   * If any of these values change, embeddings should be recomputed.
+   *
+   * Note that we are using only feature information passed in the constructor and
+   * don't rely on inference manager details. This is to keep from persistent
+   * embeddings to rerun unless needed and not require the ML Engine to be created
+   * (which may trigger a model download) before the dimension can be checked.
+   *
+   * @returns {{
+   *   featureId: string,
+   *   embeddingDimension: number,
+   *   modelId: string | undefined
+   * }}
+   */
+  get modelContext() {
+    const { featureId, embeddingDimension, modelId } = this.options || {};
+    return { featureId, embeddingDimension, modelId };
   }
 
   /**
@@ -185,15 +365,20 @@ export class EmbeddingsGenerator {
             ex
         );
 
-        // Use a fallback engine if available.
         if (this.options.fallbackEngine) {
-          let options = this.#optionsByEngine.get(this.options.fallbackEngine);
-          options.setDimensions?.(this.#embeddingSize);
+          const fallbackBase = ENGINE_OPTIONS.get(this.options.fallbackEngine);
+          const fallbackOptions = {
+            ...fallbackBase,
+            engineConfigId: this.options.fallbackEngine,
+            embeddingDimension: this.#embeddingSize,
+            featureId: this.options.featureId,
+            modelId: this.options.modelId,
+          };
           try {
-            this.#engine = await lazy.createEngine(options);
+            this.#engine = await lazy.createEngine(fallbackOptions);
           } catch (fallbackEx) {
             lazy.console.error(
-              `Fallback engine ${options.backend} also failed. Error:` +
+              `Fallback engine ${fallbackOptions.backend} also failed. Error:` +
                 fallbackEx
             );
             throw new Error(
@@ -220,8 +405,6 @@ export class EmbeddingsGenerator {
    *
    * @private
    * @returns {Promise<void>}
-   *   Resolves when the engine is successfully terminated, or
-   *   immediately if not present.
    */
   async shutdown() {
     await this.#engine.terminate?.();
@@ -307,11 +490,18 @@ export class EmbeddingsGenerator {
     if (this.#promiseEngine) {
       return this.#promiseEngine;
     }
-    let { promise, resolve } = Promise.withResolvers();
+    let { promise, resolve, reject } = Promise.withResolvers();
+    // Suppress unhandled rejection when there are no concurrent callers awaiting this promise.
+    promise.catch(() => {});
     this.#promiseEngine = promise;
-    // Unset undefined synchronously so caller can use null check to skip.
-    await this.createEngineIfNotPresent();
-    resolve();
+    try {
+      await this.createEngineIfNotPresent();
+      resolve(this.#engine);
+    } catch (e) {
+      this.#promiseEngine = null;
+      reject(e);
+      throw e;
+    }
     return this.#engine;
   }
 

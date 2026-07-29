@@ -27,7 +27,7 @@ class DownloadStateKtTest {
         val fakeUtils = FakeDownloadFileUtils()
 
         val expectedName = with(download) {
-            fakeUtils.guessFileName(null, url, contentType)
+            fakeUtils.guessFileName(null, "downloads", url)
         }
 
         val result = download.getRealFilenameOrGuessed(fakeUtils)

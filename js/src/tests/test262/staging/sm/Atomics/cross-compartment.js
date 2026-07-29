@@ -1,3 +1,4 @@
+// |reftest| skip-if(!this.hasOwnProperty('Atomics')||!this.hasOwnProperty('SharedArrayBuffer')||(this.hasOwnProperty('getBuildConfiguration')&&getBuildConfiguration('arm64-simulator'))) -- Atomics,SharedArrayBuffer is not enabled unconditionally, ARM64 Simulator cannot emulate atomics
 // Copyright (C) 2024 Mozilla Corporation. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -5,6 +6,7 @@
 description: |
   pending
 esid: pending
+features: [Atomics, SharedArrayBuffer]
 ---*/
 
 const otherGlobal = $262.createRealm().global;
@@ -111,6 +113,5 @@ for (let TA of intArrayConstructors) {
   assert.sameValue(val, 3);
   assert.sameValue(ta[0], 2);
 }
-
 
 reportCompare(0, 0);

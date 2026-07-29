@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -154,8 +152,8 @@ VRManager::VRManager()
 #if !defined(MOZ_WIDGET_ANDROID)
   // XRE_IsGPUProcess() is helping us to check some platforms like
   // Win 7 try which are not using GPU process but VR process is enabled.
-  mVRProcessEnabled =
-      StaticPrefs::dom_vr_process_enabled_AtStartup() && XRE_IsGPUProcess();
+  mVRProcessEnabled = StaticPrefs::dom_vr_process_enabled_AtStartup() &&
+                      StaticPrefs::dom_vr_enabled() && XRE_IsGPUProcess();
   VRServiceHost::Init(mVRProcessEnabled);
   mServiceHost = VRServiceHost::Get();
   // We must shutdown before VRServiceHost, which is cleared
@@ -1365,8 +1363,12 @@ bool VRManager::SubmitFrame(const layers::SurfaceDescriptor& aTexture,
       const auto& desc = aTexture.get_SurfaceDescriptorMacIOSurface();
       layer.textureType = VRLayerTextureType::LayerTextureType_MacIOSurface;
       layer.textureHandle = desc.surfaceId();
-      RefPtr<MacIOSurface> surf = MacIOSurface::LookupSurface(
-          desc.surfaceId(), !desc.isOpaque(), desc.yUVColorSpace());
+      MacIOSurface::AllowAlpha allowAlpha = desc.isOpaque()
+                                                ? MacIOSurface::AllowAlpha::No
+                                                : MacIOSurface::AllowAlpha::Yes;
+      RefPtr<MacIOSurface> surf =
+          MacIOSurface::LookupSurface(desc.surfaceId(), desc.yUVColorSpace(),
+                                      gfx::TransferFunction::SRGB, allowAlpha);
       if (surf) {
         layer.textureSize.width = surf->GetDevicePixelWidth();
         layer.textureSize.height = surf->GetDevicePixelHeight();
@@ -1419,7 +1421,7 @@ bool VRManager::SubmitFrame(const layers::SurfaceDescriptor& aTexture,
 
   if (mDisplayInfo.mDisplayState.suppressFrames ||
       !mDisplayInfo.mDisplayState.isConnected) {
-    // External implementation wants to supress frames, service has shut
+    // External implementation wants to suppress frames, service has shut
     // down or hardware has been disconnected.
     return false;
   }

@@ -2,23 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const IS_PARENT_PROCESS =
-  Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_DEFAULT;
+if (Services.appinfo.processType != Services.appinfo.PROCESS_TYPE_DEFAULT) {
+  throw new Error("EventDispatcher is only available in the parent process");
+}
 
-function DispatcherDelegate(aDispatcher, aMessageManager) {
+function DispatcherDelegate(aDispatcher) {
   this._dispatcher = aDispatcher;
-  this._messageManager = aMessageManager;
-
-  if (!aDispatcher) {
-    // Child process.
-    // TODO: this doesn't work with Fission, remove this code path once every
-    // consumer has been migrated. Bug 1569360.
-    this._replies = new Map();
-    (aMessageManager || Services.cpmm).addMessageListener(
-      "GeckoView:MessagingReply",
-      this
-    );
-  }
 }
 
 DispatcherDelegate.prototype = {
@@ -29,9 +18,6 @@ DispatcherDelegate.prototype = {
    * @param aEvents   String or array of strings of events to listen to.
    */
   registerListener(aListener, aEvents) {
-    if (!this._dispatcher) {
-      throw new Error("Can only listen in parent process");
-    }
     this._dispatcher.registerListener(aListener, aEvents);
   },
 
@@ -59,53 +45,29 @@ DispatcherDelegate.prototype = {
    * @param aFinalizer Optional finalizer implementing nsIGeckoViewEventFinalizer.
    */
   dispatch(aEvent, aData, aCallback, aFinalizer) {
-    if (this._dispatcher) {
-      this._dispatcher.dispatch(aEvent, aData, aCallback, aFinalizer);
-      return;
-    }
-
-    const mm = this._messageManager || Services.cpmm;
-    const forwardData = {
-      global: !this._messageManager,
-      event: aEvent,
-      data: aData,
-    };
-
-    if (aCallback) {
-      const uuid = Services.uuid.generateUUID().toString();
-      this._replies.set(uuid, {
-        callback: aCallback,
-        finalizer: aFinalizer,
-      });
-      forwardData.uuid = uuid;
-    }
-
-    mm.sendAsyncMessage("GeckoView:Messaging", forwardData);
+    this._dispatcher.dispatch(aEvent, aData, aCallback, aFinalizer);
   },
 
   /**
    * Sends a request to Java.
    *
-   * @param aMsg      Message to send; must be an object with a "type" property
+   * @param aType     Type of message to send
+   * @param aMsg      Message to send
    * @param aCallback Optional callback implementing nsIGeckoViewEventCallback.
    */
-  sendRequest(aMsg, aCallback) {
-    const type = aMsg.type;
-    aMsg.type = undefined;
-    this.dispatch(type, aMsg, aCallback);
+  sendRequest(aType, aMsg, aCallback) {
+    this.dispatch(aType, aMsg, aCallback);
   },
 
   /**
    * Sends a request to Java, returning a Promise that resolves to the response.
    *
-   * @param aMsg Message to send; must be an object with a "type" property
+   * @param aType Type of message to send
+   * @param aMsg Message to send
    * @return A Promise resolving to the response
    */
-  sendRequestForResult(aMsg) {
+  sendRequestForResult(aType, aMsg) {
     return new Promise((resolve, reject) => {
-      const type = aMsg.type;
-      aMsg.type = undefined;
-
       // Manually release the resolve/reject functions after one callback is
       // received, so the JS GC is not tied up with the Java GC.
       const onCallback = (callback, ...args) => {
@@ -120,60 +82,16 @@ DispatcherDelegate.prototype = {
         onError: error => onCallback(reject, error),
         onFinalize: _ => onCallback(reject),
       };
-      this.dispatch(type, aMsg, callback, callback);
+      this.dispatch(aType, aMsg, callback, callback);
     });
-  },
-
-  finalize() {
-    if (!this._replies) {
-      return;
-    }
-    this._replies.forEach(reply => {
-      if (typeof reply.finalizer === "function") {
-        reply.finalizer();
-      } else if (reply.finalizer) {
-        reply.finalizer.onFinalize();
-      }
-    });
-    this._replies.clear();
-  },
-
-  receiveMessage(aMsg) {
-    const { uuid, type } = aMsg.data;
-    const reply = this._replies.get(uuid);
-    if (!reply) {
-      return;
-    }
-
-    if (type === "success") {
-      reply.callback.onSuccess(aMsg.data.response);
-    } else if (type === "error") {
-      reply.callback.onError(aMsg.data.response);
-    } else if (type === "finalize") {
-      if (typeof reply.finalizer === "function") {
-        reply.finalizer();
-      } else if (reply.finalizer) {
-        reply.finalizer.onFinalize();
-      }
-      this._replies.delete(uuid);
-    } else {
-      throw new Error("invalid reply type");
-    }
   },
 };
 
 export var EventDispatcher = {
-  instance: new DispatcherDelegate(
-    IS_PARENT_PROCESS ? Services.geckoviewBridge : undefined
-  ),
+  instance: new DispatcherDelegate(Services.geckoviewBridge),
 
   /**
-   * Return an EventDispatcher instance for a chrome DOM window. In a content
-   * process, return a proxy through the message manager that automatically
-   * forwards events to the main process.
-   *
-   * To force using a message manager proxy (for example in a frame script
-   * environment), call forMessageManager.
+   * Return an EventDispatcher instance for a chrome DOM window.
    *
    * @param aWindow a chrome DOM window.
    */
@@ -185,14 +103,7 @@ export var EventDispatcher = {
       aWindow.arguments[0].QueryInterface(Ci.nsIGeckoViewView);
 
     if (!view) {
-      const mm = !IS_PARENT_PROCESS && aWindow && aWindow.messageManager;
-      if (!mm) {
-        throw new Error(
-          "window is not a GeckoView-connected window and does" +
-            " not have a message manager"
-        );
-      }
-      return this.forMessageManager(mm);
+      throw new Error("The window is not a GeckoView-connected window");
     }
 
     return new DispatcherDelegate(view);
@@ -203,75 +114,7 @@ export var EventDispatcher = {
    * corresponding EventDispatcher on the java side.
    */
   byName(aName) {
-    if (!IS_PARENT_PROCESS) {
-      return undefined;
-    }
     const dispatcher = Services.geckoviewBridge.getDispatcherByName(aName);
     return new DispatcherDelegate(dispatcher);
   },
-
-  /**
-   * Return an EventDispatcher instance for a message manager associated with a
-   * window.
-   *
-   * @param aWindow a message manager.
-   */
-  forMessageManager(aMessageManager) {
-    return new DispatcherDelegate(null, aMessageManager);
-  },
-
-  receiveMessage(aMsg) {
-    // aMsg.data includes keys: global, event, data, uuid
-    let callback;
-    if (aMsg.data.uuid) {
-      const reply = (type, response) => {
-        const mm = aMsg.data.global ? aMsg.target : aMsg.target.messageManager;
-        if (!mm) {
-          if (type === "finalize") {
-            // It's normal for the finalize call to come after the browser has
-            // been destroyed. We can gracefully handle that case despite
-            // having no message manager.
-            return;
-          }
-          throw Error(
-            `No message manager for ${aMsg.data.event}:${type} reply`
-          );
-        }
-        mm.sendAsyncMessage("GeckoView:MessagingReply", {
-          type,
-          response,
-          uuid: aMsg.data.uuid,
-        });
-      };
-      callback = {
-        onSuccess: response => reply("success", response),
-        onError: error => reply("error", error),
-        onFinalize: () => reply("finalize"),
-      };
-    }
-
-    try {
-      if (aMsg.data.global) {
-        this.instance.dispatch(
-          aMsg.data.event,
-          aMsg.data.data,
-          callback,
-          callback
-        );
-        return;
-      }
-
-      const win = aMsg.target.ownerGlobal;
-      const dispatcher = win.WindowEventDispatcher || this.for(win);
-      dispatcher.dispatch(aMsg.data.event, aMsg.data.data, callback, callback);
-    } catch (e) {
-      callback?.onError(`Error getting dispatcher: ${e}`);
-      throw e;
-    }
-  },
 };
-
-if (IS_PARENT_PROCESS) {
-  Services.mm.addMessageListener("GeckoView:Messaging", EventDispatcher);
-  Services.ppmm.addMessageListener("GeckoView:Messaging", EventDispatcher);
-}

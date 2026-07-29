@@ -536,6 +536,8 @@ async function assertContextMenuFill(
     formId,
     unchangedSelector,
   };
+  // TODO: Switch to SpecialPowers.spawn
+  // eslint-disable-next-line mozilla/reject-contenttask-spawn
   let continuePromise = ContentTask.spawn(browser, data, async function (data) {
     let {
       username,

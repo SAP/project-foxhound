@@ -31,6 +31,7 @@ import mozilla.components.support.ktx.kotlin.isContentUrl
  * @property readerState The last [ReaderState] of the tab.
  * @property lastAccess The last time this tab was selected.
  * @property createdAt Timestamp of the tab's creation.
+ * @property lastVisibleAt The last time this tab was visible to the user before the session ended.
  * @property lastMediaAccessState Details about the last time was playing in this tab.
  * @property private If tab was private.
  * @property historyMetadata The last [HistoryMetadataKey] of the tab.
@@ -47,6 +48,7 @@ data class TabState(
     val readerState: ReaderState = ReaderState(),
     val lastAccess: Long = 0,
     val createdAt: Long = 0,
+    val lastVisibleAt: Long = 0,
     val lastMediaAccessState: LastMediaAccessState = LastMediaAccessState(),
     val private: Boolean = false,
     val historyMetadata: HistoryMetadataKey? = null,
@@ -83,6 +85,7 @@ fun TabSessionState.toRecoverableTab(index: Int = -1): RecoverableTab {
             readerState = readerState,
             lastAccess = lastAccess,
             createdAt = createdAt,
+            lastVisibleAt = lastVisibleAt,
             lastMediaAccessState = lastMediaAccessState,
             private = content.private,
             historyMetadata = historyMetadata,
@@ -108,6 +111,7 @@ fun RecoverableTab.toTabSessionState() = createTab(
     readerState = state.readerState,
     lastAccess = state.lastAccess,
     createdAt = state.createdAt,
+    lastVisibleAt = state.lastVisibleAt,
     lastMediaAccessState = state.lastMediaAccessState,
     private = state.private,
     historyMetadata = state.historyMetadata,

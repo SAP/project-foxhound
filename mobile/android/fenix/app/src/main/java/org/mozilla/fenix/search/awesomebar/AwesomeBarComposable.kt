@@ -40,13 +40,14 @@ import mozilla.components.lib.state.helpers.StoreProvider.Companion.fragmentStor
 import mozilla.components.support.ktx.android.view.hideKeyboard
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
+import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.Components
 import org.mozilla.fenix.components.appstate.AppAction.SearchAction.SearchEnded
 import org.mozilla.fenix.components.metrics.MetricsUtils
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.getRootView
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.home.toolbar.edgeToEdgeClipboardBarBackground
 import org.mozilla.fenix.search.BrowserStoreToFenixSearchMapperMiddleware
 import org.mozilla.fenix.search.BrowserToolbarToFenixSearchMapperMiddleware
 import org.mozilla.fenix.search.FenixSearchMiddleware
@@ -73,6 +74,7 @@ private const val MATERIAL_DESIGN_SCRIM = "#52000000"
  * @param tabId [String] Id of the current tab for which a new search was started.
  * @param showScrimWhenNoSuggestions Whether to show a scrim when no suggestions are available.
  * @param searchAccessPoint Where search was started from.
+ * @param isEdgeToEdgeBackgroundEnabled Whether the Edge2Edge background is enabled.
  */
 @Suppress("LongParameterList")
 class AwesomeBarComposable(
@@ -87,6 +89,7 @@ class AwesomeBarComposable(
     private val tabId: String? = null,
     private val showScrimWhenNoSuggestions: Boolean = false,
     private val searchAccessPoint: MetricsUtils.Source = MetricsUtils.Source.NONE,
+    private val isEdgeToEdgeBackgroundEnabled: Boolean = false,
 ) {
     private val searchStore by initializeSearchStore()
 
@@ -117,15 +120,17 @@ class AwesomeBarComposable(
             state.showClipboardSuggestions,
             state.query,
             state.clipboardHasUrl,
-            state.showSearchShortcuts,
         ) {
             derivedStateOf {
                 state.showClipboardSuggestions &&
                         state.query.isEmpty() &&
-                        state.clipboardHasUrl &&
-                        !state.showSearchShortcuts
+                        state.clipboardHasUrl
             }
         }
+        val clipboardBarBackground = edgeToEdgeClipboardBarBackground(
+            shouldUseEdgeToEdgeColors = isEdgeToEdgeBackgroundEnabled,
+            isPrivateMode = activity.browsingModeManager.mode == BrowsingMode.Private,
+        )
         val view = LocalView.current
         val focusManager = LocalFocusManager.current
         val keyboardController = LocalSoftwareKeyboardController.current
@@ -145,10 +150,11 @@ class AwesomeBarComposable(
 
             ClipboardSuggestionBar(
                 shouldUseBottomToolbar = components.settings.shouldUseBottomToolbar,
+                backgroundColor = clipboardBarBackground,
                 onClick = {
                     url?.let {
                         toolbarStore.dispatch(
-                            SearchQueryUpdated(query = BrowserToolbarQuery(url), isQueryPrefilled = false),
+                            SearchQueryUpdated(query = BrowserToolbarQuery(url), isQueryPrefilled = true),
                         )
                     }
                 },
@@ -159,15 +165,15 @@ class AwesomeBarComposable(
             if (state.showSearchSuggestionsHint) {
                 PrivateSuggestionsCard(
                     onSearchSuggestionsInPrivateModeAllowed = {
-                        activity.settings().shouldShowSearchSuggestionsInPrivate = true
-                        activity.settings().showSearchSuggestionsInPrivateOnboardingFinished = true
+                       components.settings.shouldShowSearchSuggestionsInPrivate = true
+                       components.settings.showSearchSuggestionsInPrivateOnboardingFinished = true
                         searchStore.dispatch(SearchFragmentAction.SetShowSearchSuggestions(true))
                         searchStore.dispatch(SearchFragmentAction.AllowSearchSuggestionsInPrivateModePrompt(false))
                         searchStore.dispatch(SearchFragmentAction.PrivateSuggestionsCardAccepted)
                     },
                     onSearchSuggestionsInPrivateModeBlocked = {
-                        activity.settings().shouldShowSearchSuggestionsInPrivate = false
-                        activity.settings().showSearchSuggestionsInPrivateOnboardingFinished = true
+                       components.settings.shouldShowSearchSuggestionsInPrivate = false
+                       components.settings.showSearchSuggestionsInPrivateOnboardingFinished = true
                         searchStore.dispatch(
                             SearchFragmentAction.AllowSearchSuggestionsInPrivateModePrompt(false),
                         )
@@ -244,10 +250,11 @@ class AwesomeBarComposable(
 
             ClipboardSuggestionBar(
                 shouldUseBottomToolbar = components.settings.shouldUseBottomToolbar,
+                backgroundColor = clipboardBarBackground,
                 onClick = {
                     url?.let {
                         toolbarStore.dispatch(
-                            SearchQueryUpdated(query = BrowserToolbarQuery(url), isQueryPrefilled = false),
+                            SearchQueryUpdated(query = BrowserToolbarQuery(url), isQueryPrefilled = true),
                         )
                     }
                 },
@@ -278,6 +285,7 @@ class AwesomeBarComposable(
                 BrowserStoreToFenixSearchMapperMiddleware(
                     browserStore = browserStore,
                     scope = lifecycleScope,
+                    appStore = components.appStore,
                 ),
                 FenixSearchMiddleware(
                     fragment = fragment,

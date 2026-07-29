@@ -244,6 +244,105 @@ add_task(async function test_icons_rendered() {
   BrowserTestUtils.removeTab(tab);
 });
 
+add_task(async function test_panel_clamped_to_viewport_in_sidebar_mode() {
+  const { tab, browser } = await openTestPage(TEST_PAGE);
+
+  await setPanelPropsInContent(browser, "test-panel", {
+    groups: [
+      {
+        items: [{ id: "tab1", label: "Tab 1" }],
+      },
+    ],
+    sidebarMode: true,
+  });
+
+  await SpecialPowers.spawn(browser, [], async () => {
+    const panelEl = content.document.getElementById("test-panel");
+    const panelList = panelEl.shadowRoot.querySelector("panel-list");
+
+    // Register before showing so we can't miss the event.
+    // #clampToViewport() is registered in firstUpdated() and fires first,
+    // so by the time this resolves the position has already been corrected.
+    const shownPromise = new Promise(resolve =>
+      panelList.addEventListener("shown", resolve, { once: true })
+    );
+
+    await panelEl.show();
+    await shownPromise;
+
+    // getBoundingClientRect() forces a synchronous layout flush, reflecting
+    // the corrected style.left / style.top / maxWidth set by #clampToViewport().
+    const rect = panelList.getBoundingClientRect();
+    Assert.greaterOrEqual(rect.left, 0, "Panel left edge within viewport");
+    Assert.greaterOrEqual(rect.top, 0, "Panel top edge within viewport");
+    Assert.lessOrEqual(
+      rect.right,
+      content.innerWidth,
+      "Panel right edge within viewport"
+    );
+    Assert.lessOrEqual(
+      rect.bottom,
+      content.innerHeight,
+      "Panel bottom edge within viewport"
+    );
+  });
+
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(
+  async function test_panel_repositions_when_groups_change_in_sidebar_mode() {
+    const { tab, browser } = await openTestPage(TEST_PAGE);
+
+    await SpecialPowers.spawn(browser, [], async () => {
+      const panelEl = content.document.getElementById("test-panel");
+      const panelList = panelEl.shadowRoot.querySelector("panel-list");
+
+      // Position near the bottom so setAlign() picks valign=top (panel opens
+      // above anchor). This is the condition where repositioning is necessary.
+      panelEl.style.position = "fixed";
+      panelEl.style.bottom = "10px";
+      panelEl.style.left = "10px";
+
+      panelEl.sidebarMode = true;
+      panelEl.anchor = panelEl;
+      panelEl.groups = [
+        {
+          items: [
+            { id: "tab1", label: "Tab 1" },
+            { id: "tab2", label: "Tab 2" },
+            { id: "tab3", label: "Tab 3" },
+            { id: "tab4", label: "Tab 4" },
+          ],
+        },
+      ];
+      await panelEl.updateComplete;
+
+      const shownPromise = new Promise(resolve =>
+        panelList.addEventListener("shown", resolve, { once: true })
+      );
+      await panelEl.show();
+      await shownPromise;
+
+      const topBefore = parseFloat(panelList.style.top);
+
+      panelEl.groups = [{ items: [{ id: "tab1", label: "Tab 1" }] }];
+      await panelEl.updateComplete;
+
+      await new Promise(resolve => content.requestAnimationFrame(resolve));
+
+      const topAfter = parseFloat(panelList.style.top);
+      Assert.notEqual(
+        topAfter,
+        topBefore,
+        "Panel should reposition when groups shrink in sidebar mode"
+      );
+    });
+
+    BrowserTestUtils.removeTab(tab);
+  }
+);
+
 add_task(async function test_keyboard_events() {
   const { tab, browser } = await openTestPage(TEST_PAGE);
 

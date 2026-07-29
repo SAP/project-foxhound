@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -231,9 +229,6 @@ class nsMemoryReporterManager final : public nsIMemoryReporterManager,
                         nsISupports* aHandleReportData, bool aAnonymize);
 
   static void TimeoutCallback(nsITimer* aTimer, void* aData);
-  // Note: this timeout needs to be long enough to allow for the
-  // possibility of DMD reports and/or running on a low-end phone.
-  static const uint32_t kTimeoutLengthMS = 180000;
 
   mozilla::Mutex mMutex;
   bool mIsRegistrationBlocked MOZ_GUARDED_BY(mMutex);

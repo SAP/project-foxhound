@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -42,7 +40,7 @@ static nsresult ReportLengthParseError(const nsString& aValue,
   AutoTArray<nsString, 1> arg = {aValue};
   return nsContentUtils::ReportToConsole(
       nsIScriptError::errorFlag, "MathML"_ns, aDocument,
-      nsContentUtils::eMATHML_PROPERTIES, "LengthParsingError", arg);
+      PropertiesFile::MATHML_PROPERTIES, "LengthParsingError", arg);
 }
 
 static nsresult ReportParseErrorNoTag(const nsString& aValue, nsAtom* aAtom,
@@ -50,15 +48,14 @@ static nsresult ReportParseErrorNoTag(const nsString& aValue, nsAtom* aAtom,
   AutoTArray<nsString, 2> argv = {aValue, nsDependentAtomString(aAtom)};
   return nsContentUtils::ReportToConsole(
       nsIScriptError::errorFlag, "MathML"_ns, &aDocument,
-      nsContentUtils::eMATHML_PROPERTIES, "AttributeParsingErrorNoTag", argv);
+      PropertiesFile::MATHML_PROPERTIES, "AttributeParsingErrorNoTag", argv);
 }
 
 MathMLElement::MathMLElement(
     already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
     : MathMLElementBase(std::move(aNodeInfo)), Link(this) {}
 
-MathMLElement::MathMLElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+MathMLElement::MathMLElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : MathMLElementBase(std::move(aNodeInfo)), Link(this) {}
 
 nsresult MathMLElement::BindToTree(BindContext& aContext, nsINode& aParent) {
@@ -66,6 +63,20 @@ nsresult MathMLElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   NS_ENSURE_SUCCESS(rv, rv);
 
   Link::BindToTree(aContext);
+
+  // Hide any nonce from the DOM, but keep the internal value of the
+  // nonce by copying and resetting the internal nonce value.
+  if (!aContext.IsMove() && HasFlag(NODE_HAS_NONCE_AND_HEADER_CSP) &&
+      IsInComposedDoc() && OwnerDoc()->GetBrowsingContext()) {
+    nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
+        "MathMLElement::ResetNonce::Runnable",
+        [self = RefPtr<MathMLElement>(this)]() {
+          nsAutoString nonce;
+          self->GetNonce(nonce);
+          self->SetAttr(kNameSpaceID_None, nsGkAtoms::nonce, u""_ns, true);
+          self->SetNonce(nonce);
+        }));
+  }
 
   // Set the bit in the document for telemetry.
   if (Document* doc = aContext.GetComposedDoc()) {
@@ -105,6 +116,15 @@ bool MathMLElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
         aResult.ParseClampedNonNegativeInt(aValue, 1, 0, MAX_ROWSPAN);
         return true;
       }
+    }
+    if (!StaticPrefs::mathml_href_link_on_non_anchor_element_disabled() &&
+        aAttribute == nsGkAtoms::href && !mNodeInfo->Equals(nsGkAtoms::a)) {
+      AutoTArray<nsString, 1> params;
+      params.AppendElement(mNodeInfo->NodeName());
+      OwnerDoc()->WarnOnceAbout(
+          dom::DeprecatedOperations::
+              eMathML_DeprecatedHrefLinkOnNonAnchorElement,
+          /* asError */ false, params);
     }
   }
 
@@ -635,6 +655,20 @@ nsresult MathMLElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
 
 NS_IMPL_ELEMENT_CLONE(MathMLElement)
 
+nsresult MathMLElement::CopyInnerTo(mozilla::dom::Element* aDest) {
+  nsresult rv = Element::CopyInnerTo(aDest);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  auto* dest = static_cast<MathMLElement*>(aDest);
+
+  // cloning a node must retain its internal nonce slot
+  if (auto* nonce = static_cast<nsString*>(GetProperty(nsGkAtoms::nonce))) {
+    dest->SetNonce(*nonce);
+  }
+
+  return NS_OK;
+}
+
 void MathMLElement::SetIncrementScriptLevel(bool aIncrementScriptLevel,
                                             bool aNotify) {
   NS_ASSERTION(aNotify, "We always notify!");
@@ -645,7 +679,13 @@ void MathMLElement::SetIncrementScriptLevel(bool aIncrementScriptLevel,
   }
 }
 
-int32_t MathMLElement::TabIndexDefault() { return IsLink() ? 0 : -1; }
+int32_t MathMLElement::TabIndexDefault() {
+  if (!StaticPrefs::mathml_href_link_on_non_anchor_element_disabled() &&
+      IsLink()) {
+    return 0;
+  }
+  return mNodeInfo->Equals(nsGkAtoms::a) ? 0 : -1;
+}
 
 // XXX Bug 1586011: Share logic with other element classes.
 Focusable MathMLElement::IsFocusableWithoutStyle(IsFocusableFlags) {
@@ -681,13 +721,16 @@ Focusable MathMLElement::IsFocusableWithoutStyle(IsFocusableFlags) {
 }
 
 already_AddRefed<nsIURI> MathMLElement::GetHrefURI() const {
+  if (!SupportsHrefAttribute()) {
+    return nullptr;
+  }
+
   // MathML href
-  // The REC says: "When user agents encounter MathML elements with both href
-  // and xlink:href attributes, the href attribute should take precedence."
   const nsAttrValue* href = mAttrs.GetAttr(nsGkAtoms::href, kNameSpaceID_None);
   if (!href) {
     return nullptr;
   }
+
   // Get absolute URI
   nsAutoString hrefStr;
   href->ToString(hrefStr);
@@ -726,7 +769,9 @@ void MathMLElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
   // that content states have changed will call IntrinsicState, which will try
   // to get updated information about the visitedness from Link.
   if (aName == nsGkAtoms::href && aNameSpaceID == kNameSpaceID_None) {
-    Link::ResetLinkState(aNotify, aValue || Link::ElementHasHref());
+    if (SupportsHrefAttribute()) {
+      Link::ResetLinkState(aNotify, aValue);
+    }
   }
 
   if (aNameSpaceID == kNameSpaceID_None) {
@@ -739,6 +784,20 @@ void MathMLElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
     }
   }
 
+  // The nonce will be copied over to an internal slot and cleared from the
+  // Element within BindToTree to avoid CSS Selector nonce exfiltration if
+  // the CSP list contains a header-delivered CSP.
+  if (nsGkAtoms::nonce == aName && kNameSpaceID_None == aNameSpaceID) {
+    if (aValue) {
+      SetNonce(nsAttrValueOrString(aValue).String());
+      if (OwnerDoc()->GetHasCSPDeliveredThroughHeader()) {
+        SetFlags(NODE_HAS_NONCE_AND_HEADER_CSP);
+      }
+    } else {
+      RemoveNonce();
+    }
+  }
+
   return MathMLElementBase::AfterSetAttr(aNameSpaceID, aName, aValue, aOldValue,
                                          aSubjectPrincipal, aNotify);
 }
@@ -746,4 +805,16 @@ void MathMLElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
 JSObject* MathMLElement::WrapNode(JSContext* aCx,
                                   JS::Handle<JSObject*> aGivenProto) {
   return MathMLElement_Binding::Wrap(aCx, this, aGivenProto);
+}
+
+bool MathMLElement::SupportsHrefAttribute() const {
+  // In MathML Core, href is only supported on the <a> element.
+  // https://w3c.github.io/mathml-core/#the-a-element
+  if (StaticPrefs::mathml_href_link_on_non_anchor_element_disabled()) {
+    return mNodeInfo->Equals(nsGkAtoms::a);
+  }
+
+  // In MathML 3, href is supported by any element.
+  // https://www.w3.org/TR/MathML3/chapter2.html#fund.globatt
+  return true;
 }

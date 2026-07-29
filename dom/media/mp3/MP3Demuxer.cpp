@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,6 +13,7 @@
 #include "TimeUnits.h"
 #include "VideoUtils.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/CheckedInt.h"
 
 #define MP3LOG(msg, ...) \
   DDMOZ_LOG(gMediaDemuxerLog, LogLevel::Debug, msg, ##__VA_ARGS__)
@@ -120,7 +119,14 @@ bool MP3TrackDemuxer::Init() {
   mInfo->mChannels = mChannels;
   mInfo->mBitDepth = 16;
   mInfo->mMimeType = "audio/mpeg";
-  mInfo->mDuration = Duration().valueOr(TimeUnit::FromInfinity());
+  // If we don't know the duration yet (e.g. the resource hasn't reported its
+  // length), leave mDuration at its default zero rather than latching
+  // Infinity. That keeps mInfo.mMetadataDuration unset in MediaFormatReader,
+  // so the state machine won't overwrite a finite mDuration produced from
+  // buffered ranges with Infinity from metadata.
+  if (auto duration = Duration(); duration && !duration->IsInfinite()) {
+    mInfo->mDuration = *duration;
+  }
 
   MP3LOG("Init mInfo={mRate=%d mChannels=%d mBitDepth=%d mDuration=%s (%lfs)}",
          mInfo->mRate, mInfo->mChannels, mInfo->mBitDepth,
@@ -374,11 +380,14 @@ media::NullableTimeUnit MP3TrackDemuxer::Duration() const {
     size -= 128;
   }
 
-  // If it's CBR, calculate the duration by bitrate.
-  if (!mParser.VBRInfo().IsValid()) {
-    const uint32_t bitrate = mParser.CurrentFrame().Header().Bitrate();
+  // If it's CBR, or the VBR header is incomplete (e.g. placeholder values
+  // left behind by an encoder that was killed before it could write the
+  // final frame and byte counts), estimate the duration from the bitrate.
+  // Use the bitrate captured from the first audio frame rather than the
+  // currently parsed frame, which may be the lower-bitrate VBR header frame.
+  if (!mParser.VBRInfo().IsComplete() && mBitrate) {
     return NothingIfNegative(
-        media::TimeUnit::FromSeconds(static_cast<double>(size) * 8 / bitrate));
+        media::TimeUnit::FromSeconds(static_cast<double>(size) * 8 / mBitrate));
   }
 
   if (AverageFrameLength() > 0) {
@@ -766,8 +775,14 @@ int64_t MP3TrackDemuxer::OffsetFromFrameIndex(int64_t aFrameIndex) const {
   const auto& vbr = mParser.VBRInfo();
 
   if (vbr.IsComplete()) {
-    offset = mFirstFrameOffset + aFrameIndex * vbr.NumBytes().value() /
-                                     vbr.NumAudioFrames().value();
+    CheckedInt<int64_t> product =
+        CheckedInt<int64_t>(aFrameIndex) * vbr.NumBytes().value();
+    if (product.isValid()) {
+      offset =
+          mFirstFrameOffset + product.value() / vbr.NumAudioFrames().value();
+    } else {
+      offset = StreamLength();
+    }
   } else if (AverageFrameLength() > 0) {
     offset = mFirstFrameOffset +
              AssertedCast<int64_t>(static_cast<float>(aFrameIndex) *
@@ -828,6 +843,7 @@ void MP3TrackDemuxer::UpdateState(const MediaByteRange& aRange) {
     mSamplesPerFrame = mParser.CurrentFrame().Header().SamplesPerFrame();
     mSamplesPerSecond = mParser.CurrentFrame().Header().SampleRate();
     mChannels = mParser.CurrentFrame().Header().Channels();
+    mBitrate = mParser.CurrentFrame().Header().Bitrate();
   }
 
   ++mNumParsedFrames;

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -367,7 +365,7 @@ FOG::TestGetExperimentData(const nsACString& aExperimentId, JSContext* aCx,
   for (unsigned int i = 0; i < extraKeys.Length(); i++) {
     JS::RootedValue jsValueStr(aCx);
     if (!dom::ToJSValue(aCx, extraValues[i], &jsValueStr) ||
-        !JS_DefineProperty(aCx, jsExtraObj, extraKeys[i].Data(), jsValueStr,
+        !JS_DefineProperty(aCx, jsExtraObj, extraKeys[i].get(), jsValueStr,
                            JSPROP_ENUMERATE)) {
       NS_WARNING("Failed to define extra property for experiment data object.");
       return NS_ERROR_FAILURE;
@@ -393,29 +391,35 @@ FOG::ApplyServerKnobsConfig(const nsACString& aJsonConfig) {
 
 NS_IMETHODIMP
 FOG::TestFlushAllChildren(JSContext* aCx, mozilla::dom::Promise** aOutPromise) {
+  MOZ_LOG(sLog, LogLevel::Verbose, ("FOG::TestFlushAllChildren start"));
   TimeStamp before = TimeStamp::Now();
   MOZ_ASSERT(XRE_IsParentProcess());
   NS_ENSURE_ARG(aOutPromise);
   *aOutPromise = nullptr;
   nsIGlobalObject* global = xpc::CurrentNativeGlobal(aCx);
   if (NS_WARN_IF(!global)) {
+    MOZ_LOG(sLog, LogLevel::Verbose, ("Could not get current global"));
     return NS_ERROR_FAILURE;
   }
 
   ErrorResult erv;
   RefPtr<dom::Promise> promise = dom::Promise::Create(global, erv);
   if (NS_WARN_IF(erv.Failed())) {
+    MOZ_LOG(sLog, LogLevel::Debug, ("Error creating promise"));
     return erv.StealNSResult();
   }
 
   glean::FlushAndUseFOGData()->Then(
       GetCurrentSerialEventTarget(), __func__, [promise, before]() {
+        MOZ_LOG(sLog, LogLevel::Verbose,
+                ("glean::FlushAndUseFOGData completed"));
         PROFILER_MARKER_UNTYPED("fog.testFlushAllChildren", TEST,
                                 MarkerTiming::IntervalUntilNowFrom(before));
         promise->MaybeResolveWithUndefined();
       });
 
   promise.forget(aOutPromise);
+  MOZ_LOG(sLog, LogLevel::Verbose, ("FOG::TestFlushAllChildren end"));
   return NS_OK;
 }
 

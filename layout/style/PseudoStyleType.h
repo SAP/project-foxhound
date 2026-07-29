@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -34,11 +32,13 @@ enum class PseudoStyleTypeFlags : uint16_t {
   IS_JS_CREATED_NAC = 1 << 6,
   IS_FLEX_OR_GRID_ITEM = 1 << 7,
   IS_ELEMENT_BACKED = 1 << 8,
-  SUPPORTS_USER_ACTION_STATE = 1 << 9,
-  IS_INHERITING_ANON_BOX = 1 << 10,
-  IS_NON_INHERITING_ANON_BOX = 1 << 11,
+  IS_TREE_ABIDING = 1 << 9,
+  SUPPORTS_USER_ACTION_STATE = 1 << 10,
+  IS_INHERITING_ANON_BOX = 1 << 11,
+  IS_NON_INHERITING_ANON_BOX = 1 << 12,
   IS_ANON_BOX = IS_INHERITING_ANON_BOX | IS_NON_INHERITING_ANON_BOX,
-  IS_WRAPPER_ANON_BOX = 1 << 12,
+  IS_WRAPPER_ANON_BOX = 1 << 13,
+  PARSES_AS_ELEMENT_BACKED = 1 << 14,
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(PseudoStyleTypeFlags)

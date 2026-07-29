@@ -23,6 +23,7 @@
 #include "absl/algorithm/container.h"
 #include "absl/functional/any_invocable.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
 #include "api/environment/environment.h"
 #include "api/jsep.h"
 #include "api/peer_connection_interface.h"
@@ -41,6 +42,7 @@
 #include "rtc_base/rtc_certificate_generator.h"
 #include "rtc_base/ssl_identity.h"
 #include "rtc_base/ssl_stream_adapter.h"
+#include "rtc_base/thread.h"
 
 namespace webrtc {
 namespace {
@@ -75,7 +77,7 @@ bool ValidMediaSessionOptions(const MediaSessionOptions& session_options) {
 // static
 void WebRtcSessionDescriptionFactory::CopyCandidatesFromSessionDescription(
     const SessionDescriptionInterface* source_desc,
-    const std::string& content_name,
+    absl::string_view content_name,
     SessionDescriptionInterface* dest_desc) {
   if (!source_desc) {
     return;
@@ -130,6 +132,7 @@ WebRtcSessionDescriptionFactory::WebRtcSessionDescriptionFactory(
       cert_generator_(dtls_enabled ? std::move(cert_generator) : nullptr),
       sdp_info_(sdp_info),
       session_id_(session_id),
+      env_(env),
       certificate_request_state_(CERTIFICATE_NOT_NEEDED),
       on_certificate_ready_(on_certificate_ready) {
   RTC_DCHECK(signaling_thread_);
@@ -176,6 +179,7 @@ WebRtcSessionDescriptionFactory::WebRtcSessionDescriptionFactory(
 
 WebRtcSessionDescriptionFactory::~WebRtcSessionDescriptionFactory() {
   RTC_DCHECK_RUN_ON(signaling_thread_);
+  RTC_DCHECK_DISALLOW_THREAD_BLOCKING_CALLS();
 
   // Fail any requests that were asked for before identity generation completed.
   FailPendingRequests(kFailedDueToSessionShutdown);
@@ -195,6 +199,7 @@ void WebRtcSessionDescriptionFactory::CreateOffer(
     CreateSessionDescriptionObserver* observer,
     const PeerConnectionInterface::RTCOfferAnswerOptions& options,
     const MediaSessionOptions& session_options) {
+  RTC_LOG_THREAD_BLOCK_COUNT();
   RTC_DCHECK_RUN_ON(signaling_thread_);
   std::string error = "CreateOffer";
   if (certificate_request_state_ == CERTIFICATE_FAILED) {
@@ -225,6 +230,7 @@ void WebRtcSessionDescriptionFactory::CreateOffer(
 void WebRtcSessionDescriptionFactory::CreateAnswer(
     CreateSessionDescriptionObserver* observer,
     const MediaSessionOptions& session_options) {
+  RTC_LOG_THREAD_BLOCK_COUNT();
   std::string error = "CreateAnswer";
   if (certificate_request_state_ == CERTIFICATE_FAILED) {
     error += kFailedDueToIdentityFailed;
@@ -299,7 +305,9 @@ void WebRtcSessionDescriptionFactory::InternalCreateOffer(
   RTC_DCHECK(session_version_ + 1 > session_version_);
   auto offer = SessionDescriptionInterface::Create(
       SdpType::kOffer, std::move(desc), session_id_,
-      absl::StrCat(session_version_++));
+      absl::StrCat(session_version_++), {},
+      {.use_wildcard =
+           env_.field_trials().IsEnabled("WebRTC-UseWildcardInSdp")});
   if (sdp_info_->local_description()) {
     for (const MediaDescriptionOptions& options :
          request.options.media_description_options) {
@@ -358,7 +366,9 @@ void WebRtcSessionDescriptionFactory::InternalCreateAnswer(
   RTC_DCHECK(session_version_ + 1 > session_version_);
   auto answer = SessionDescriptionInterface::Create(
       SdpType::kAnswer, std::move(desc), session_id_,
-      absl::StrCat(session_version_++));
+      absl::StrCat(session_version_++), {},
+      {.use_wildcard =
+           env_.field_trials().IsEnabled("WebRTC-UseWildcardInSdp")});
   if (sdp_info_->local_description()) {
     // Include all local ICE candidates in the SessionDescription unless
     // the remote peer has requested an ICE restart.

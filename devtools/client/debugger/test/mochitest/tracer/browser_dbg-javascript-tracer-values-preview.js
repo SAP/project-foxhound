@@ -47,7 +47,7 @@ add_task(async function () {
     }
     return false;
   });
-  tracerTree.ownerGlobal.focus();
+  tracerTree.documentGlobal.focus();
   ok(traces[0].textContent.startsWith("λ main"));
   ok(traces[1].textContent.startsWith("λ foo"));
   ok(traces[2].textContent.startsWith("λ foo"));

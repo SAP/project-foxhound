@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from json import loads
+from json import JSONDecodeError, loads
 from re import MULTILINE, compile
 from typing import Any
 
@@ -22,11 +22,18 @@ str_comment = compile(r'^((?:[^"\n]|"(?:[^"\\\n]|\\.)*")*?)//.*', MULTILINE)
 bytes_comment = compile(rb'^((?:[^"\n]|"(?:[^"\\\n]|\\.)*")*?)//.*', MULTILINE)
 
 
-def json_linecomment_loads(source: str | bytes) -> Any:
+def json_linecomment_loads(source: str | bytes) -> tuple[Any, bool]:
     """
+    `(json_data, is_valid_json)`
+
     Line comments // are supported in `webext` messages.json files.
     """
-    if isinstance(source, str):
-        return loads(str_comment.sub(r"\1", source))
-    else:
-        return loads(bytes_comment.sub(rb"\1", source))
+    try:
+        return loads(source), True
+    except JSONDecodeError:
+        source_: str | bytes
+        if isinstance(source, str):
+            source_ = str_comment.sub(r"\1", source)
+        else:
+            source_ = bytes_comment.sub(rb"\1", source)
+        return loads(source_), False

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -40,12 +38,14 @@ static const DelegateInfo sPermissionsMap[] = {
     {"midi", nullptr, DelegatePolicy::eDelegateUseIframeOrigin},
     // Like "midi" but with sysex support.
     {"midi-sysex", nullptr, DelegatePolicy::eDelegateUseIframeOrigin},
+    {"serial", nullptr, DelegatePolicy::eDelegateUseFeaturePolicy},
     {"storage-access", nullptr, DelegatePolicy::eDelegateUseIframeOrigin},
     {"camera", u"camera", DelegatePolicy::eDelegateUseFeaturePolicy},
     {"microphone", u"microphone", DelegatePolicy::eDelegateUseFeaturePolicy},
     {"screen", u"display-capture", DelegatePolicy::eDelegateUseFeaturePolicy},
     {"xr", u"xr-spatial-tracking", DelegatePolicy::eDelegateUseFeaturePolicy},
-    {"localhost", u"localhost", DelegatePolicy::eDelegateUseFeaturePolicy},
+    {"loopback-network", u"loopback-network",
+     DelegatePolicy::eDelegateUseFeaturePolicy},
     {"local-network", u"local-network",
      DelegatePolicy::eDelegateUseFeaturePolicy},
 
@@ -267,7 +267,23 @@ nsresult PermissionDelegateHandler::GetPermission(const nsACString& aType,
     }
   }
 
-  return (mPermissionManager->*testPermission)(principal, aType, aPermission);
+  nsresult rv =
+      (mPermissionManager->*testPermission)(principal, aType, aPermission);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (*aPermission == nsIPermissionManager::UNKNOWN_ACTION && bc) {
+    uint64_t browserId = bc->Top()->BrowserId();
+    if (browserId) {
+      uint32_t browserPerm = nsIPermissionManager::UNKNOWN_ACTION;
+      mPermissionManager->TestForBrowser(principal, aType, browserId,
+                                         &browserPerm);
+      if (browserPerm != nsIPermissionManager::UNKNOWN_ACTION) {
+        *aPermission = browserPerm;
+      }
+    }
+  }
+
+  return NS_OK;
 }
 
 nsresult PermissionDelegateHandler::GetPermissionForPermissionsAPI(
@@ -290,6 +306,9 @@ void PermissionDelegateHandler::PopulateAllDelegatedPermissions() {
   DelegatedPermissionList list;
   DelegatedPermissionList exactHostMatchList;
 
+  RefPtr<BrowsingContext> bc = mDocument->GetBrowsingContext();
+  uint64_t browserId = bc ? bc->Top()->BrowserId() : 0;
+
   for (const auto& perm : sPermissionsMap) {
     size_t idx = std::distance(sPermissionsMap, &perm);
 
@@ -298,12 +317,28 @@ void PermissionDelegateHandler::PopulateAllDelegatedPermissions() {
     uint32_t permission = nsIPermissionManager::UNKNOWN_ACTION;
     (void)mPermissionManager->TestPermissionFromPrincipal(mPrincipal, type,
                                                           &permission);
+    if (permission == nsIPermissionManager::UNKNOWN_ACTION && browserId) {
+      uint32_t browserPerm = nsIPermissionManager::UNKNOWN_ACTION;
+      mPermissionManager->TestForBrowser(mPrincipal, type, browserId,
+                                         &browserPerm);
+      if (browserPerm != nsIPermissionManager::UNKNOWN_ACTION) {
+        permission = browserPerm;
+      }
+    }
     list.mPermissions[idx] = permission;
 
     // Populate the exact-host-match permission.
     permission = nsIPermissionManager::UNKNOWN_ACTION;
     (void)mPermissionManager->TestExactPermissionFromPrincipal(mPrincipal, type,
                                                                &permission);
+    if (permission == nsIPermissionManager::UNKNOWN_ACTION && browserId) {
+      uint32_t browserPerm = nsIPermissionManager::UNKNOWN_ACTION;
+      mPermissionManager->TestForBrowser(mPrincipal, type, browserId,
+                                         &browserPerm);
+      if (browserPerm != nsIPermissionManager::UNKNOWN_ACTION) {
+        permission = browserPerm;
+      }
+    }
     exactHostMatchList.mPermissions[idx] = permission;
   }
 
@@ -372,6 +407,21 @@ bool PermissionDelegateHandler::UpdateDelegatePermissionInternal(
 
   uint32_t permission = nsIPermissionManager::UNKNOWN_ACTION;
   (void)(mPermissionManager->*aTestFunc)(mPrincipal, aType, &permission);
+
+  if (permission == nsIPermissionManager::UNKNOWN_ACTION) {
+    RefPtr<BrowsingContext> bc = mDocument->GetBrowsingContext();
+    if (bc) {
+      uint64_t browserId = bc->Top()->BrowserId();
+      if (browserId) {
+        uint32_t browserPerm = nsIPermissionManager::UNKNOWN_ACTION;
+        mPermissionManager->TestForBrowser(mPrincipal, aType, browserId,
+                                           &browserPerm);
+        if (browserPerm != nsIPermissionManager::UNKNOWN_ACTION) {
+          permission = browserPerm;
+        }
+      }
+    }
+  }
 
   if (aList.mPermissions[aIdx] != permission) {
     aList.mPermissions[aIdx] = permission;

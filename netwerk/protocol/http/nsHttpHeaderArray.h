@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -174,8 +172,10 @@ class nsHttpHeaderArray {
   void RemoveDuplicateHeaderValues(const nsACString& aHeaderValue,
                                    nsACString& aResult);
 
-  // All members must be copy-constructable and assignable
-  CopyableTArray<nsEntry> mHeaders;
+  // All members must be copy-constructable and assignable.
+  // 16 matches the measured median response header count
+  // (arxiv.org/abs/2402.01240).
+  CopyableAutoTArray<nsEntry, 16> mHeaders;
 
   friend struct IPC::ParamTraits<nsHttpHeaderArray>;
   friend class nsHttpRequestHead;
@@ -249,44 +249,41 @@ inline bool nsHttpHeaderArray::IsIgnoreMultipleHeader(
 [[nodiscard]] inline nsresult nsHttpHeaderArray::MergeHeader(
     const nsHttpAtom& header, nsEntry* entry, const nsACString& value,
     nsHttpHeaderArray::HeaderVariety variety) {
-  // merge of empty header = no-op
+  // An empty X-Frame-Options value still has effect, so treat it as non-empty.
   if (value.IsEmpty() && header != nsHttp::X_Frame_Options) {
     return NS_OK;
   }
 
-  // x-frame-options having an empty header value still has an effect so we make
-  // sure that we retain encountering it
-  nsCString newValue = entry->value;
-  if (!newValue.IsEmpty() || header == nsHttp::X_Frame_Options) {
-    // Append the new value to the existing value
+  auto AppendSeparator = [&header](nsCString& s) {
     if (header == nsHttp::Set_Cookie || header == nsHttp::WWW_Authenticate ||
         header == nsHttp::Proxy_Authenticate) {
-      // Special case these headers and use a newline delimiter to
-      // delimit the values from one another as commas may appear
-      // in the values of these headers contrary to what the spec says.
-      newValue.Append('\n');
+      s.Append('\n');
     } else {
-      // Delimit each value from the others using a comma (per HTTP spec)
-      newValue.AppendLiteral(", ");
+      s.AppendLiteral(", ");
     }
-  }
+  };
 
-  newValue.Append(value);
   if (entry->variety == eVarietyResponseNetOriginalAndResponse) {
     MOZ_ASSERT(variety == eVarietyResponse);
     entry->variety = eVarietyResponseNetOriginal;
-    // Copy entry->headerNameOriginal because in SetHeader_internal we are going
-    // to a new one and a realocation can happen.
+    // Copy both fields because SetHeader_internal -> AppendElement may
+    // reallocate mHeaders, invalidating the entry pointer.
     nsCString headerNameOriginal = entry->headerNameOriginal;
-    nsresult rv = SetHeader_internal(header, headerNameOriginal, newValue,
-                                     eVarietyResponse);
-    if (NS_FAILED(rv)) {
-      return rv;
+    nsCString newValue = entry->value;
+    if (!newValue.IsEmpty() || header == nsHttp::X_Frame_Options) {
+      AppendSeparator(newValue);
     }
-  } else {
-    entry->value = newValue;
-    entry->variety = variety;
+    newValue.Append(value);
+    return SetHeader_internal(header, headerNameOriginal, newValue,
+                              eVarietyResponse);
   }
+
+  // Common path: append directly to entry->value, no temporary needed.
+  if (!entry->value.IsEmpty() || header == nsHttp::X_Frame_Options) {
+    AppendSeparator(entry->value);
+  }
+  entry->value.Append(value);
+  entry->variety = variety;
   return NS_OK;
 }
 

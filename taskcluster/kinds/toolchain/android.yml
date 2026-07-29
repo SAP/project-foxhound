@@ -193,7 +193,7 @@ linux64-jdk-repack:
         toolchain-artifact: project/gecko/jdk/jdk-linux.tar.zst
         toolchain-alias: linux64-jdk
         toolchain-env:
-            JAVA_HOME: "/builds/worker/fetches/jdk/jdk-17.0.17+10"
+            JAVA_HOME: "/builds/worker/fetches/jdk/jdk-17.0.18+8"
 
 linux64-android-sdk-linux-repack:
     description: "Android SDK (Linux) repack toolchain build"
@@ -265,6 +265,7 @@ linux64-android-gradle-dependencies:
             - 'gradle.properties'
             - 'gradle/**'
             - 'mobile/android/**/*.gradle'
+            - 'mobile/android/**/*.gradle.kts'
             - 'mobile/android/**/gradle.properties'
             - 'mobile/android/android-components/plugins/dependencies/src/main/java/ApplicationServices.kt'
             - 'mobile/android/android-components/plugins/dependencies/src/main/java/DependenciesPlugin.kt'
@@ -302,6 +303,7 @@ linux64-android-gradle-dependencies-lite:
             - 'gradle.properties'
             - 'gradle/**'
             - 'mobile/android/**/*.gradle'
+            - 'mobile/android/**/*.gradle.kts'
             - 'mobile/android/**/gradle.properties'
             - 'mobile/android/android-components/plugins/dependencies/src/main/java/ApplicationServices.kt'
             - 'mobile/android/android-components/plugins/dependencies/src/main/java/DependenciesPlugin.kt'

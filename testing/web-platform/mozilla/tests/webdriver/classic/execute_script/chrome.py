@@ -1,7 +1,7 @@
 import pytest
 from support.context import using_context
 from tests.classic.execute_script import execute_script
-from tests.support.asserts import assert_success
+from tests.support.classic.asserts import assert_success
 from webdriver.client import WebFrame, WebWindow
 
 

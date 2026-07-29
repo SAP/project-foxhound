@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /*
@@ -20,7 +18,6 @@
 #include "mozilla/TimeStamp.h"
 #include "mozilla/XorShift128PlusRNG.h"
 
-#include <algorithm>
 #include <utility>
 
 #ifdef JS_HAS_INTL_API
@@ -50,6 +47,7 @@
 #include "js/WaitCallbacks.h"
 #include "js/Warnings.h"  // JS::WarningReporter
 #include "js/Zone.h"
+#include "util/LanguageId.h"
 #include "vm/Caches.h"  // js::RuntimeCaches
 #include "vm/CodeCoverage.h"
 #include "vm/GeckoProfiler.h"
@@ -220,46 +218,36 @@ class Metrics {
  public:
   explicit Metrics(JSRuntime* rt) : rt_(rt) {}
 
-  // Records a TimeDuration metric. These are converted to integers when being
-  // recorded so choose an appropriate scale. In the future these will be Glean
-  // Timing Distribution metrics.
-  struct TimeDuration_S {
+  // Records a TimeDuration metric.
+  struct TimeDuration {
     using SourceType = mozilla::TimeDuration;
-    static uint32_t convert(SourceType td) { return uint32_t(td.ToSeconds()); }
-  };
-  struct TimeDuration_MS {
-    using SourceType = mozilla::TimeDuration;
-    static uint32_t convert(SourceType td) {
-      return uint32_t(td.ToMilliseconds());
-    }
-  };
-  struct TimeDuration_US {
-    using SourceType = mozilla::TimeDuration;
-    static uint32_t convert(SourceType td) {
-      return uint32_t(td.ToMicroseconds());
+    static JSTelemetryData convert(SourceType td) {
+      return JSTelemetryData(td);
     }
   };
 
-  // Record a metric in bytes. In the future these will be Glean Memory
-  // Distribution metrics.
+  // Record a memory size metric.
   struct MemoryDistribution {
     using SourceType = size_t;
-    static uint32_t convert(SourceType sz) {
-      return static_cast<uint32_t>(std::min(sz, size_t(UINT32_MAX)));
+    static JSTelemetryData convert(SourceType sz) {
+      return JSTelemetryData(sz);
     }
   };
 
-  // Record a metric for a quanity of items. This doesn't currently have a Glean
-  // analogue and we avoid using MemoryDistribution directly to avoid confusion
-  // about units.
-  using QuantityDistribution = MemoryDistribution;
+  // Record a metric for a quanity of items.
+  struct QuantityDistribution {
+    using SourceType = size_t;
+    static JSTelemetryData convert(SourceType count) {
+      return JSTelemetryData(count);
+    }
+  };
 
   // Record the distribution of boolean values. In the future this will be a
   // Glean Rate metric.
   struct Boolean {
     using SourceType = bool;
-    static uint32_t convert(SourceType sample) {
-      return static_cast<uint32_t>(sample);
+    static JSTelemetryData convert(SourceType sample) {
+      return JSTelemetryData(sample);
     }
   };
 
@@ -268,9 +256,9 @@ class Metrics {
   // future, these should become Glean Labeled Counter metrics.
   struct Enumeration {
     using SourceType = unsigned int;
-    static uint32_t convert(SourceType sample) {
+    static JSTelemetryData convert(SourceType sample) {
       MOZ_ASSERT(sample <= 100);
-      return static_cast<uint32_t>(sample);
+      return JSTelemetryData(size_t(sample));
     }
   };
 
@@ -279,19 +267,21 @@ class Metrics {
   // Distribution unless they add a better match.
   struct Percentage {
     using SourceType = double;
-    static uint32_t convert(SourceType sample) {
+    static JSTelemetryData convert(SourceType sample) {
       MOZ_ASSERT(sample >= 0.0 && sample <= 100.0);
-      return static_cast<uint32_t>(sample);
+      return JSTelemetryData(size_t(sample));
     }
   };
 
   // Record an unsigned integer.
   struct Integer {
     using SourceType = uint32_t;
-    static uint32_t convert(SourceType sample) { return sample; }
+    static JSTelemetryData convert(SourceType sample) {
+      return JSTelemetryData(size_t(sample));
+    }
   };
 
-  inline void addTelemetry(JSMetric id, uint32_t sample);
+  inline void addTelemetry(JSMetric id, const JSTelemetryData& sample);
 
 #define DECLARE_METRIC_HELPER(NAME, TY)                \
   void NAME(TY::SourceType sample) {                   \
@@ -370,7 +360,6 @@ struct JSRuntime {
  public:
   JSContext* mainContextFromAnyThread() const { return mainContext_; }
   const void* addressOfMainContext() { return &mainContext_; }
-  js::Fprinter parserWatcherFile;
 
   inline JSContext* mainContextFromOwnThread();
 
@@ -414,7 +403,7 @@ struct JSRuntime {
 
  public:
   // Accumulates data for Firefox telemetry.
-  void addTelemetry(JSMetric id, uint32_t sample);
+  void addTelemetry(JSMetric id, const JSTelemetryData& sample);
 
   void setTelemetryCallback(JSRuntime* rt,
                             JSAccumulateTelemetryDataCallback callback);
@@ -431,8 +420,9 @@ struct JSRuntime {
   js::UnprotectedData<JS::ConsumeStreamCallback> consumeStreamCallback;
   js::UnprotectedData<JS::ReportStreamErrorCallback> reportStreamErrorCallback;
 
-  bool getHostDefinedData(JSContext* cx,
-                          JS::MutableHandle<JSObject*> data) const;
+  bool getHostDefinedData(
+      JSContext* cx, JS::MutableHandle<JSObject*> incumbentGlobal,
+      JS::MutableHandle<JSObject*> optionalHostDefinedData) const;
 
   void addUnhandledRejectedPromise(JSContext* cx, js::HandleObject promise);
   void removeUnhandledRejectedPromise(JSContext* cx, js::HandleObject promise);
@@ -446,12 +436,6 @@ struct JSRuntime {
    */
   js::MainThreadData<bool> allowRelazificationForTesting;
 
-  /* Zone destroy callback. */
-  js::MainThreadData<JSDestroyZoneCallback> destroyZoneCallback;
-
-  /* Compartment destroy callback. */
-  js::MainThreadData<JSDestroyCompartmentCallback> destroyCompartmentCallback;
-
   /* Compartment memory reporting callback. */
   js::MainThreadData<JSSizeOfIncludingThisCompartmentCallback>
       sizeOfIncludingThisCompartmentCallback;
@@ -464,9 +448,6 @@ struct JSRuntime {
    * js/public/UbiNode.h.
    */
   void (*constructUbiNodeForDOMObjectCallback)(void*, JSObject*) = nullptr;
-
-  /* Realm destroy callback. */
-  js::MainThreadData<JS::DestroyRealmCallback> destroyRealmCallback;
 
   /* Call this to get the name of a realm. */
   js::MainThreadData<JS::RealmNameCallback> realmNameCallback;
@@ -521,9 +502,7 @@ struct JSRuntime {
     js::PreBarriered<JSAtom*> name;
     bool isDebuggee;
 
-    void trace(JSTracer* trc) {
-      TraceNullableEdge(trc, &name, "JitCacheKey::name");
-    }
+    void trace(JSTracer* trc) { TraceEdge(trc, &name, "JitCacheKey::name"); }
   };
 
   struct JitCacheKeyHasher : public js::DefaultHasher<JitCacheKey> {
@@ -553,17 +532,6 @@ struct JSRuntime {
 
  public:
   js::GeckoProfilerRuntime& geckoProfiler() { return geckoProfiler_.ref(); }
-
-  // Heap GC roots for PersistentRooted pointers.
-  js::MainThreadData<mozilla::EnumeratedArray<
-      JS::RootKind, mozilla::LinkedList<js::PersistentRootedBase>,
-      size_t(JS::RootKind::Limit)>>
-      heapRoots;
-
-  void tracePersistentRoots(JSTracer* trc);
-  void finishPersistentRoots();
-
-  void finishRoots();
 
  private:
   js::UnprotectedData<const JSPrincipals*> trustedPrincipals_;
@@ -604,20 +572,6 @@ struct JSRuntime {
  public:
   const JSClass* maybeWindowProxyClass() const { return windowProxyClass_; }
   void setWindowProxyClass(const JSClass* clasp) { windowProxyClass_ = clasp; }
-
- private:
-  // List of non-ephemeron weak containers to sweep during
-  // beginSweepingSweepGroup.
-  js::MainThreadData<mozilla::LinkedList<JS::detail::WeakCacheBase>>
-      weakCaches_;
-
- public:
-  mozilla::LinkedList<JS::detail::WeakCacheBase>& weakCaches() {
-    return weakCaches_.ref();
-  }
-  void registerWeakCache(JS::detail::WeakCacheBase* cachep) {
-    weakCaches().insertBack(cachep);
-  }
 
   template <typename T>
   struct GlobalObjectWatchersLinkAccess {
@@ -715,7 +669,7 @@ struct JSRuntime {
   js::MainThreadData<const JSLocaleCallbacks*> localeCallbacks;
 
   /* Default locale for Internationalization API */
-  js::MainThreadData<js::UniqueChars> defaultLocale;
+  js::MainThreadData<js::LanguageId> defaultLocale;
 
   /* If true, new scripts must be created with PC counter information. */
   js::MainThreadOrIonCompileData<bool> profilingScripts;
@@ -771,7 +725,6 @@ struct JSRuntime {
       randomHashCodeGenerator_;
 
  public:
-  mozilla::HashCodeScrambler randomHashCodeScrambler();
   mozilla::non_crypto::XorShift128PlusRNG forkRandomKeyGenerator();
 
   js::HashNumber randomHashCode();
@@ -805,28 +758,41 @@ struct JSRuntime {
   // Locale information
   //-------------------------------------------------------------------------
 
+  void setDefaultLocale(js::LanguageId locale);
+
  public:
   /*
    * Set the default locale for the ECMAScript Internationalization API
-   * (Intl.Collator, Intl.NumberFormat, Intl.DateTimeFormat).
-   * Note that the Internationalization API encourages clients to
-   * specify their own locales.
+   * (Intl.Collator, Intl.NumberFormat, Intl.DateTimeFormat, ...).
+   * Note that the Internationalization API encourages clients to specify their
+   * own locales.
+   *
+   * The *actual* default locale for Intl operations is computed by a prefix
+   * lookup on the ICU available locales.
+   *
    * The locale string remains owned by the caller.
+   *
+   * A null-pointer input is ignored.
    */
   bool setDefaultLocale(const char* locale);
 
   /* Reset the default locale to OS defaults. */
   void resetDefaultLocale();
 
-  /* Gets current default locale. String remains owned by runtime. */
-  const char* getDefaultLocale();
+  /*
+   * Gets the current default locale.
+   *
+   * The returned locale is canonicalized, but not necessarily an available
+   * locale for the ECMA-402 Intl API. `intl::GlobalIntlData::defaultLocale()`
+   * returns the *actual* default locale used for `Intl` objects.
+   */
+  js::LanguageId getDefaultLocale();
 
   /*
-   * Gets current default locale or nullptr if not initialized.
-   * String remains owned by runtime.
+   * Gets the current default locale or `LanguageId::und()` if not initialized.
    */
-  const char* getDefaultLocaleIfInitialized() const {
-    return defaultLocale.ref().get();
+  js::LanguageId getDefaultLocaleIfInitialized() const {
+    return defaultLocale.ref();
   }
 
   /* Garbage collector state. */
@@ -1059,9 +1025,6 @@ struct JSRuntime {
    */
   js::MainThreadData<mozilla::MallocSizeOf> debuggerMallocSizeOf;
 
-  /* Last time at which an animation was played for this runtime. */
-  js::MainThreadData<mozilla::TimeStamp> lastAnimationTime;
-
  private:
   /* The stack format for the current runtime.  Only valid on non-child
    * runtimes. */
@@ -1160,7 +1123,7 @@ struct JSRuntime {
 
 namespace js {
 
-void Metrics::addTelemetry(JSMetric id, uint32_t sample) {
+void Metrics::addTelemetry(JSMetric id, const JSTelemetryData& sample) {
   rt_->addTelemetry(id, sample);
 }
 

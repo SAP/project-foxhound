@@ -1,0 +1,179 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+.fxview-tab-list {
+  grid-template-columns: unset;
+  position: relative;
+}
+
+.drag-indicator {
+  display: none;
+  position: absolute;
+  inset-inline: 0;
+  height: 1px;
+  /* stylelint-disable stylelint-plugin-mozilla/use-design-tokens */
+  background-color: var(--color-accent-primary);
+  border-radius: var(--border-radius-xsmall);
+  pointer-events: none;
+  z-index: 1;
+
+  &.visible {
+    display: block;
+  }
+}
+
+details[drag-over] > summary,
+.bookmark-folder-label[drag-over] {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-inset);
+  border-radius: var(--border-radius-small);
+}
+
+virtual-list {
+  grid-column: unset;
+  grid-template-columns: unset;
+
+  .top-padding,
+  .bottom-padding {
+    grid-column: unset;
+  }
+}
+
+.bookmark-separator {
+  display: grid;
+  grid-column: span 9;
+  margin-block: 0;
+  padding-block: var(--space-medium);
+  cursor: default;
+  position: relative;
+
+  &::before {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    inset-block-start: 50%;
+    border-top: 1px solid var(--border-color);
+  }
+
+  &:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: var(--focus-outline-inset);
+  }
+}
+
+details summary,
+.bookmark-folder-label {
+  line-height: var(--size-item-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Reserve a leading gutter for the expand/collapse chevron so the folder icon
+     stays aligned whether or not the folder has children. The gutter is the
+     leading inset (--space-small, where the chevron sits), plus the chevron width
+     (--space-medium), plus the gap between the chevron and the folder icon
+     (--space-large). The custom chevron is drawn in this gutter for expandable
+     folders below. */
+  padding-inline: calc(var(--space-small) + var(--space-medium) + var(--space-large)) var(--space-small);
+  border-radius: var(--border-radius-small);
+  grid-column: span 9;
+
+  &:hover {
+    background-color: var(--button-background-color-ghost-hover);
+    color: var(--button-text-color-ghost-hover);
+
+    &:active {
+      background-color: var(--button-background-color-ghost-active);
+      color: var(--button-text-color-ghost-active);
+    }
+  }
+
+  &:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: var(--focus-outline-inset);
+  }
+
+  &::before {
+    content: "";
+    display: inline-block;
+    width: var(--size-item-small);
+    height: var(--size-item-small);
+    vertical-align: middle;
+    margin-inline-end: var(--space-small);
+    -moz-context-properties: fill;
+    fill: currentColor;
+    background-image: url("chrome://global/skin/icons/folder.svg");
+    background-size: contain;
+    background-repeat: no-repeat;
+  }
+}
+
+details > summary {
+  /* Replace the native <details> triangle with a custom chevron drawn in the
+     reserved leading gutter, so folder icons stay vertically aligned. */
+  list-style: none;
+  background-image: url("chrome://global/skin/icons/arrow-right-12.svg");
+  background-position: var(--space-small) center;
+  background-repeat: no-repeat;
+  -moz-context-properties: fill;
+  fill: currentColor;
+}
+
+details > summary:dir(rtl) {
+  background-image: url("chrome://global/skin/icons/arrow-left-12.svg");
+  background-position-x: right var(--space-small);
+}
+
+details[open] > summary {
+  background-image: url("chrome://global/skin/icons/arrow-down-12.svg");
+}
+
+details[data-folder-kind="place-container"] > summary,
+.bookmark-folder-label[data-folder-kind="place-container"],
+details[data-folder-kind="tags-root"] > summary,
+.bookmark-folder-label[data-folder-kind="tags-root"] {
+  &::before {
+    background-image: url("chrome://browser/skin/places/folder-smart.svg");
+  }
+}
+
+details[data-folder-kind="tag-container"] > summary,
+.bookmark-folder-label[data-folder-kind="tag-container"] {
+  &::before {
+    background-image: url("chrome://browser/skin/places/tag.svg");
+  }
+}
+
+details {
+  min-width: 0;
+  grid-column: span 9;
+
+  div#content {
+    margin-inline-start: var(--space-xlarge);
+  }
+}
+
+sidebar-bookmark-row {
+  border-radius: var(--border-radius-circle);
+  height: var(--size-item-large);
+  align-items: center;
+
+  &:hover:not([selected]) {
+    background-color: var(--button-background-color-ghost-hover);
+    color: var(--button-text-color-ghost-hover);
+
+    &:active {
+      background-color: var(--button-background-color-ghost-active);
+      color: var(--button-text-color-ghost-active);
+    }
+  }
+
+  &:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: var(--focus-outline-inset);
+  }
+
+  @media not -moz-pref("browser.nova.enabled") {
+    border-radius: var(--border-radius-medium);
+  }
+}

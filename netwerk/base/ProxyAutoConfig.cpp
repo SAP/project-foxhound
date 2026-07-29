@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -134,7 +132,7 @@ class PACResolver final : public nsIDNSListener,
   nsCOMPtr<nsIDNSRecord> mResponse;
   nsCOMPtr<nsITimer> mTimer;
   nsCOMPtr<nsIEventTarget> mMainThreadEventTarget;
-  Mutex mMutex MOZ_UNANNOTATED;
+  Mutex mMutex MOZ_ANNOTATED;
 
  private:
   ~PACResolver() = default;
@@ -288,13 +286,7 @@ static bool PACResolveToString(const nsACString& aHostName,
   NetAddr netAddr;
   if (!PACResolve(aHostName, &netAddr, aTimeout)) return false;
 
-  char dottedDecimal[128];
-  if (!netAddr.ToStringBuffer(dottedDecimal, sizeof(dottedDecimal))) {
-    return false;
-  }
-
-  aDottedDecimal.Assign(dottedDecimal);
-  return true;
+  return netAddr.ToString(aDottedDecimal);
 }
 
 // dnsResolve(host) javascript implementation

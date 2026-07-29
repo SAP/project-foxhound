@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,10 +5,10 @@
 #include "UrlClassifierFeatureTrackingProtection.h"
 
 #include "mozilla/AntiTrackingUtils.h"
+#include "mozilla/ScopedPrefs.h"
+#include "mozilla/net/ChannelClassifierUtils.h"
 #include "mozilla/net/UrlClassifierCommon.h"
-#include "ChannelClassifierService.h"
 #include "nsIChannel.h"
-#include "nsIHttpChannelInternal.h"
 #include "nsILoadContext.h"
 #include "nsNetUtil.h"
 #include "mozilla/StaticPtr.h"
@@ -84,19 +82,26 @@ UrlClassifierFeatureTrackingProtection::MaybeCreate(nsIChannel* aChannel) {
       ("UrlClassifierFeatureTrackingProtection::MaybeCreate - channel %p",
        aChannel));
 
+#ifdef ANDROID  // TODO(Bug 2005278): keep behavior between platforms consistent
   nsCOMPtr<nsILoadContext> loadContext;
   NS_QueryNotificationCallbacks(aChannel, loadContext);
   if (!loadContext) {
     // Some channels don't have a loadcontext, check the global tracking
-    // protection preference.
-    if (!StaticPrefs::privacy_trackingprotection_enabled() &&
-        !(NS_UsePrivateBrowsing(aChannel) &&
-          StaticPrefs::privacy_trackingprotection_pbmode_enabled())) {
+    // protection preference with potential scoped overrides
+    if (!ScopedPrefs::BoolPrefScoped(
+            ScopedPrefs::PRIVACY_TRACKINGPROTECTION_ENABLED, aChannel)) {
       return nullptr;
     }
   } else if (!loadContext->UseTrackingProtection()) {
     return nullptr;
   }
+#else   // !ANDROID
+  // Always check tracking protection pref on desktop
+  if (!ScopedPrefs::BoolPrefScoped(
+          ScopedPrefs::PRIVACY_TRACKINGPROTECTION_ENABLED, aChannel)) {
+    return nullptr;
+  }
+#endif  // ANDROID
 
   RefPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
   bool isThirdParty = loadInfo->GetIsThirdPartyContextToTopWindow();
@@ -143,7 +148,7 @@ UrlClassifierFeatureTrackingProtection::ProcessChannel(
   NS_ENSURE_ARG_POINTER(aChannel);
   NS_ENSURE_ARG_POINTER(aShouldContinue);
 
-  bool isAllowListed = UrlClassifierCommon::IsAllowListed(aChannel);
+  bool isAllowListed = ChannelClassifierUtils::IsAllowListed(aChannel);
 
   // This is a blocking feature.
   *aShouldContinue = isAllowListed;
@@ -164,44 +169,13 @@ UrlClassifierFeatureTrackingProtection::ProcessChannel(
   nsAutoCString list;
   UrlClassifierCommon::TablesToString(aList, list);
 
-  ChannelBlockDecision decision =
-      ChannelClassifierService::OnBeforeBlockChannel(aChannel, mName, list);
-  if (decision != ChannelBlockDecision::Blocked) {
-    uint32_t event =
-        decision == ChannelBlockDecision::Replaced
-            ? nsIWebProgressListener::STATE_REPLACED_TRACKING_CONTENT
-            : nsIWebProgressListener::STATE_ALLOWED_TRACKING_CONTENT;
-
-    // Need to set aBlocked to True if we replace the Tracker with a shim,
-    //  since the shim is treated as a blocked event
-    // Note: If we need to account for which kind of tracker was replaced,
-    //  we need to create a new event type in nsIWebProgressListener
-    if (event == nsIWebProgressListener::STATE_REPLACED_TRACKING_CONTENT) {
-      ContentBlockingNotifier::OnEvent(aChannel, event, true);
-    } else {
-      ContentBlockingNotifier::OnEvent(aChannel, event, false);
-    }
-
-    *aShouldContinue = true;
-    return NS_OK;
-  }
-
-  UrlClassifierCommon::SetBlockedContent(aChannel, NS_ERROR_TRACKING_URI, list,
-                                         ""_ns, ""_ns);
-
-  UC_LOG(
-      ("UrlClassifierFeatureTrackingProtection::ProcessChannel - "
-       "cancelling channel %p",
-       aChannel));
-
-  nsCOMPtr<nsIHttpChannelInternal> httpChannel = do_QueryInterface(aChannel);
-  if (httpChannel) {
-    (void)httpChannel->CancelByURLClassifier(NS_ERROR_TRACKING_URI);
-  } else {
-    (void)aChannel->Cancel(NS_ERROR_TRACKING_URI);
-  }
-
-  return NS_OK;
+  ChannelBlockDecision decision;
+  nsresult rv = ChannelClassifierUtils::MaybeBlockChannel(
+      aChannel, mName, list, NS_ERROR_TRACKING_URI,
+      nsIWebProgressListener::STATE_REPLACED_TRACKING_CONTENT,
+      nsIWebProgressListener::STATE_ALLOWED_TRACKING_CONTENT, &decision);
+  *aShouldContinue = (decision != ChannelBlockDecision::Blocked);
+  return rv;
 }
 
 NS_IMETHODIMP

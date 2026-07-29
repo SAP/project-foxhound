@@ -19,17 +19,17 @@
 using mozilla::intl::Localization;
 
 #undef LOG
-#define LOG(msg, ...)                        \
-  MOZ_LOG(gMediaControlLog, LogLevel::Debug, \
-          ("MediaControlService=%p, " msg, this, ##__VA_ARGS__))
+#define LOG(msg, ...)                            \
+  MOZ_LOG_FMT(gMediaControlLog, LogLevel::Debug, \
+              "MediaControlService={}, " msg, fmt::ptr(this), ##__VA_ARGS__)
 
 #undef LOG_MAINCONTROLLER
 #define LOG_MAINCONTROLLER(msg, ...) \
-  MOZ_LOG(gMediaControlLog, LogLevel::Debug, (msg, ##__VA_ARGS__))
+  MOZ_LOG_FMT(gMediaControlLog, LogLevel::Debug, msg, ##__VA_ARGS__)
 
 #undef LOG_MAINCONTROLLER_INFO
 #define LOG_MAINCONTROLLER_INFO(msg, ...) \
-  MOZ_LOG(gMediaControlLog, LogLevel::Info, (msg, ##__VA_ARGS__))
+  MOZ_LOG_FMT(gMediaControlLog, LogLevel::Info, msg, ##__VA_ARGS__)
 
 namespace mozilla::dom {
 
@@ -160,11 +160,11 @@ bool MediaControlService::RegisterActiveMediaController(
   MOZ_DIAGNOSTIC_ASSERT(mControllerManager,
                         "Register controller before initializing service");
   if (!mControllerManager->AddController(aController)) {
-    LOG("Fail to register controller %" PRId64, aController->Id());
+    LOG("Fail to register controller {}", aController->Id());
     return false;
   }
-  LOG("Register media controller %" PRId64 ", currentNum=%" PRId64,
-      aController->Id(), GetActiveControllersNum());
+  LOG("Register media controller {}, currentNum={}", aController->Id(),
+      GetActiveControllersNum());
   if (StaticPrefs::media_mediacontrol_testingevents_enabled()) {
     if (nsCOMPtr<nsIObserverService> obs = services::GetObserverService()) {
       obs->NotifyObservers(nullptr, "media-controller-amount-changed", nullptr);
@@ -178,11 +178,11 @@ bool MediaControlService::UnregisterActiveMediaController(
   MOZ_DIAGNOSTIC_ASSERT(mControllerManager,
                         "Unregister controller before initializing service");
   if (!mControllerManager->RemoveController(aController)) {
-    LOG("Fail to unregister controller %" PRId64, aController->Id());
+    LOG("Fail to unregister controller {}", aController->Id());
     return false;
   }
-  LOG("Unregister media controller %" PRId64 ", currentNum=%" PRId64,
-      aController->Id(), GetActiveControllersNum());
+  LOG("Unregister media controller {}, currentNum={}", aController->Id(),
+      GetActiveControllersNum());
   if (StaticPrefs::media_mediacontrol_testingevents_enabled()) {
     if (nsCOMPtr<nsIObserverService> obs = services::GetObserverService()) {
       obs->NotifyObservers(nullptr, "media-controller-amount-changed", nullptr);
@@ -253,12 +253,16 @@ void MediaControlService::GenerateTestMediaControlKey(MediaControlKey aKey,
   switch (aKey) {
     case MediaControlKey::Seekto:
       mMediaKeysHandler->OnActionPerformed(MediaControlAction(
-          aKey, SeekDetails(aSeekValue, false /* fast seek */)));
+          aKey, MediaControlActionParams(aSeekValue, false /* fast seek */)));
       break;
     case MediaControlKey::Seekbackward:
     case MediaControlKey::Seekforward:
       mMediaKeysHandler->OnActionPerformed(
-          MediaControlAction(aKey, SeekDetails(aSeekValue)));
+          MediaControlAction(aKey, MediaControlActionParams(aSeekValue)));
+      break;
+    case MediaControlKey::Setvolume:
+      mMediaKeysHandler->OnActionPerformed(MediaControlAction(
+          aKey, MediaControlActionParams::FromVolume(aSeekValue)));
       break;
     default:
       mMediaKeysHandler->OnActionPerformed(MediaControlAction(aKey));
@@ -270,8 +274,10 @@ MediaMetadataBase MediaControlService::GetMainControllerMediaMetadata() const {
   if (!StaticPrefs::media_mediacontrol_testingevents_enabled()) {
     return metadata;
   }
-  return GetMainController() ? GetMainController()->GetCurrentMediaMetadata()
-                             : metadata;
+  if (auto* controller = GetMainController()) {
+    return controller->GetCurrentMediaMetadata();
+  }
+  return metadata;
 }
 
 MediaSessionPlaybackState MediaControlService::GetMainControllerPlaybackState()
@@ -417,7 +423,7 @@ void MediaControlService::ControllerManager::UpdateMainControllerInternal(
     mSource->Close();
     DisconnectMainControllerEvents();
   } else {
-    LOG_MAINCONTROLLER_INFO("Set controller %" PRId64 " as main controller",
+    LOG_MAINCONTROLLER_INFO("Set controller {} as main controller",
                             mMainController->Id());
     if (!mSource->Open()) {
       LOG("Failed to open source for monitoring media keys");

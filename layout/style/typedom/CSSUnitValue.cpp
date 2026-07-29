@@ -1,10 +1,10 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/CSSUnitValue.h"
+
+#include <math.h>
 
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/CSSPropertyId.h"
@@ -24,8 +24,21 @@ CSSUnitValue::CSSUnitValue(nsCOMPtr<nsISupports> aParent, double aValue,
 
 // static
 RefPtr<CSSUnitValue> CSSUnitValue::Create(nsCOMPtr<nsISupports> aParent,
+                                          double aValue,
+                                          const nsACString& aUnit) {
+  return MakeRefPtr<CSSUnitValue>(std::move(aParent), aValue, aUnit);
+}
+
+// static
+RefPtr<CSSUnitValue> CSSUnitValue::Create(nsCOMPtr<nsISupports> aParent,
+                                          double aValue) {
+  return Create(std::move(aParent), aValue, "number"_ns);
+}
+
+// static
+RefPtr<CSSUnitValue> CSSUnitValue::Create(nsCOMPtr<nsISupports> aParent,
                                           const StyleUnitValue& aUnitValue) {
-  return MakeRefPtr<CSSUnitValue>(aParent, aUnitValue.value, aUnitValue.unit);
+  return Create(std::move(aParent), aUnitValue.value, aUnitValue.unit);
 }
 
 JSObject* CSSUnitValue::WrapObject(JSContext* aCx,
@@ -48,8 +61,11 @@ already_AddRefed<CSSUnitValue> CSSUnitValue::Constructor(
 
   // Step 1.
 
-  // XXX A type should be created from unit and if that fails, the failure
-  // should be propagated here
+  StyleNumericType numericType;
+  if (!Servo_NumericType_Create(&aUnit, &numericType)) {
+    aRv.ThrowTypeError("Invalid unit: "_ns + aUnit);
+    return nullptr;
+  }
 
   // Step 2.
 
@@ -80,11 +96,36 @@ void CSSUnitValue::ToCssTextWithProperty(const CSSPropertyId& aPropertyId,
   // and fully spec-compliant manner. See bug 2005142
   const bool isValueOutOfRange = [](NonCustomCSSPropertyId aId, double aValue) {
     switch (aId) {
+      case eCSSProperty_order:
+      case eCSSProperty_z_index:
+        return round(aValue) != aValue;
+
+      case eCSSProperty_border_image_outset:
+      case eCSSProperty_border_image_slice:
+      case eCSSProperty_border_image_width:
+      case eCSSProperty_font_size_adjust:
       case eCSSProperty_font_stretch:
+      case eCSSProperty_flex_grow:
+      case eCSSProperty_flex_shrink:
+      case eCSSProperty_stroke_miterlimit:
+      case eCSSProperty_animation_duration:
+      case eCSSProperty_animation_iteration_count:
+      case eCSSProperty_background_size:
       case eCSSProperty_column_width:
       case eCSSProperty_flex_basis:
       case eCSSProperty_font_size:
+      case eCSSProperty_line_height:
       case eCSSProperty_perspective:
+      case eCSSProperty_stroke_dasharray:
+      case eCSSProperty_stroke_width:
+      case eCSSProperty_tab_size:
+      case eCSSProperty_transition_duration:
+      case eCSSProperty_grid_template_columns:
+      case eCSSProperty_grid_template_rows:
+      case eCSSProperty_grid_auto_columns:
+      case eCSSProperty_grid_auto_rows:
+      case eCSSProperty_column_gap:
+      case eCSSProperty_row_gap:
       case eCSSProperty_max_block_size:
       case eCSSProperty_max_height:
       case eCSSProperty_max_inline_size:
@@ -127,6 +168,9 @@ void CSSUnitValue::ToCssTextWithProperty(const CSSPropertyId& aPropertyId,
       case eCSSProperty_scroll_padding_right:
       case eCSSProperty_scroll_padding_top:
         return aValue < 0;
+
+      case eCSSProperty_font_weight:
+        return aValue < 1 || aValue > 1000;
 
       default:
         return false;

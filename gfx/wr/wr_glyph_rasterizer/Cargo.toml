@@ -33,9 +33,10 @@ serde = { optional = true, version = "1.0", features = ["serde_derive"] }
 env_logger = { version = "0.10", default-features = false }
 euclid = "0.22"
 gleam = { workspace = true }
-glutin = "0.28"
+glutin = { version = "0.32", default-features = false }
+glutin-winit = "0.5"
 rayon = "1"
-winit = "0.26"
+winit = "0.30"
 
 [target.'cfg(any(target_os = "android", all(unix, not(any(target_os = "macos", target_os = "ios")))))'.dependencies]
 freetype = { version = "0.7", default-features = false }

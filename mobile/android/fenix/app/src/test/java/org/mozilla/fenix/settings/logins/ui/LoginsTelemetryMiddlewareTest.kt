@@ -6,7 +6,6 @@ package org.mozilla.fenix.settings.logins.ui
 
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -15,6 +14,7 @@ import org.junit.runner.RunWith
 import org.mozilla.fenix.GleanMetrics.Logins
 import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 class LoginsTelemetryMiddlewareTest {

@@ -18,7 +18,8 @@
         android:layout_marginTop="12dp"
         android:text="@string/sign_out_confirmation_message_2"
         android:textSize="16sp"
-        app:drawableStartCompat="@drawable/ic_info"
+        app:drawableStartCompat="@drawable/mozac_ic_information_24"
+        app:drawableTint="?attr/colorOnSurface"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
@@ -34,7 +35,7 @@
         android:text="@string/sign_out_cancel"
         android:textAlignment="center"
         android:textAllCaps="false"
-        android:textColor="?attr/textPrimary"
+        android:textColor="?attr/colorOnSurface"
         android:textStyle="bold"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toStartOf="@id/signOutDisconnect"

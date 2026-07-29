@@ -9,7 +9,7 @@ import android.widget.FrameLayout
 import androidx.core.view.isVisible
 import io.mockk.MockKAnnotations
 import io.mockk.every
-import io.mockk.impl.annotations.MockK
+import io.mockk.impl.annotations.RelaxedMockK
 import io.mockk.mockk
 import io.mockk.spyk
 import mozilla.components.browser.state.state.createTab
@@ -35,7 +35,7 @@ class ProtectionsViewTest {
     private lateinit var interactor: ProtectionsInteractor
     private var trackingProtectionDivider: View = spyk(View(testContext))
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var settings: Settings
 
     @Before

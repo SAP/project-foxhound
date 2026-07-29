@@ -14,6 +14,7 @@ pdfjs.jar:
  content/web/wasm/openjpeg_nowasm_fallback.js (content/web/wasm/openjpeg_nowasm_fallback.js)
  content/web/wasm/qcms_bg.wasm (content/web/wasm/qcms_bg.wasm)
  content/web/wasm/jbig2.wasm (content/web/wasm/jbig2.wasm)
+ content/web/wasm/jbig2_nowasm_fallback.js (content/web/wasm/jbig2_nowasm_fallback.js)
  content/web/iccs/ (content/web/iccs/*.icc)
 #ifdef ANDROID
  content/GeckoViewPdfjsParent.sys.mjs (content/GeckoViewPdfjsParent.sys.mjs)
@@ -26,6 +27,7 @@ pdfjs.jar:
  content/PdfJsAIFeature.sys.mjs (content/PdfJsAIFeature.sys.mjs)
  content/PdfjsParent.sys.mjs (content/PdfjsParent.sys.mjs)
  content/PdfjsChild.sys.mjs (content/PdfjsChild.sys.mjs)
+ content/PdfjsContextMenu.sys.mjs (content/PdfjsContextMenu.sys.mjs)
  content/web/viewer.html (content/web/viewer.html)
  content/web/viewer.css (content/web/viewer.css)
  content/web/viewer.mjs (content/web/viewer.mjs)

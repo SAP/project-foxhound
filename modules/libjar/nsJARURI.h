@@ -1,5 +1,4 @@
-/* -*- Mode: c++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,12 +6,14 @@
 #ifndef nsJARURI_h_
 #define nsJARURI_h_
 
+#include "nsIIPCSerializableURI.h"
 #include "nsIJARURI.h"
 #include "nsISerializable.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsINestedURI.h"
 #include "nsIURIMutator.h"
+#include "nsIURIWithSizeOf.h"
 
 #define NS_THIS_JARURI_IMPL_CID               \
   {/* 9a55f629-730b-4d08-b75b-fa7d9570a691 */ \
@@ -37,7 +38,9 @@
 
 class nsJARURI final : public nsIJARURI,
                        public nsISerializable,
-                       public nsINestedURI {
+                       public nsINestedURI,
+                       public nsIIPCSerializableURI,
+                       public nsIURIWithSizeOf {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIURI
@@ -45,6 +48,8 @@ class nsJARURI final : public nsIJARURI,
   NS_DECL_NSIJARURI
   NS_DECL_NSISERIALIZABLE
   NS_DECL_NSINESTEDURI
+  NS_DECL_NSIIPCSERIALIZABLEURI
+  NS_DECL_NSIURIWITHSIZEOF
 
   NS_INLINE_DECL_STATIC_IID(NS_THIS_JARURI_IMPL_CID)
 
@@ -140,10 +145,10 @@ class nsJARURI final : public nsIJARURI,
       return NS_OK;
     }
 
-    explicit Mutator() {}
+    explicit Mutator() = default;
 
    private:
-    virtual ~Mutator() {}
+    virtual ~Mutator() = default;
 
     friend class nsJARURI;
   };

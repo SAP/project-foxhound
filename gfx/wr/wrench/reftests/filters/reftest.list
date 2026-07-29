@@ -45,10 +45,10 @@ skip_on(android,device) == filter-hue-rotate-alpha-1.yaml filter-hue-rotate-alph
 skip_on(android,device) fuzzy(2,10169) fuzzy-if(platform(swgl),9,109897) == filter-long-chain.yaml filter-long-chain.png  # fails on Pixel2
 platform(linux,mac) == filter-drop-shadow.yaml filter-drop-shadow.png
 platform(linux,mac) == filter-drop-shadow-on-viewport-edge.yaml filter-drop-shadow-on-viewport-edge.png
-platform(linux,mac) == blend-clipped.yaml blend-clipped.png
+fuzzy(2,50000) platform(linux,mac) == blend-clipped.yaml blend-clipped.png
 platform(linux,mac) == filter-drop-shadow-clip.yaml filter-drop-shadow-clip.png
 fuzzy(2,10) platform(linux,mac) == filter-drop-shadow-clip-2.yaml filter-drop-shadow-clip-2.png
-fuzzy(1,58) platform(linux) == filter-drop-shadow-clip-3.yaml filter-drop-shadow-clip-3.png
+fuzzy(1,100) platform(linux) == filter-drop-shadow-clip-3.yaml filter-drop-shadow-clip-3.png
 fuzzy(5,100000) == filter-drop-shadow-scaled.yaml filter-drop-shadow-scaled-ref.yaml
 == filter-segments.yaml filter-segments-ref.yaml
 == iframe-dropshadow.yaml iframe-dropshadow-ref.yaml
@@ -70,7 +70,7 @@ platform(linux,mac) == backdrop-filter-perspective.yaml backdrop-filter-perspect
 platform(linux,mac) == backdrop-filter-across-tiles.yaml backdrop-filter-across-tiles.png
 platform(linux,mac) == backdrop-filter-chain.yaml backdrop-filter-chain.png
 platform(linux,mac) == backdrop-filter-overlap.yaml backdrop-filter-overlap.png
-platform(linux,mac) == backdrop-filter-blur-across-tiles.yaml backdrop-filter-blur-across-tiles.png
+fuzzy(1,100) platform(linux,mac) == backdrop-filter-blur-across-tiles.yaml backdrop-filter-blur-across-tiles.png
 == fuzzy(1,4900) backdrop-filter-isolation.yaml backdrop-filter-isolation-ref.yaml
 #platform(linux,mac) == backdrop-filter-drop-shadow.yaml backdrop-filter-drop-shadow.png
 == backdrop-filter-blur-edge-mode.yaml backdrop-filter-blur-edge-mode-ref.yaml

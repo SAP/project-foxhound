@@ -4,7 +4,6 @@ subsuite = "devtools"
 support-files = [
   "head.js",
   "!/devtools/client/shared/test/shared-head.js",
-  "!/devtools/client/shared/test/telemetry-test-helpers.js",
 ]
 
 # Each metrics tests is loaded in a separate .ini file. This way the test is executed

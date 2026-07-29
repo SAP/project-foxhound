@@ -1,5 +1,6 @@
 [DEFAULT]
 dupe-manifest=true
+tags = "urlbar"
 support-files = [
   "dummy_page.html",
   "head.js",

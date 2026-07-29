@@ -18,12 +18,12 @@ class NeqoHttp3Conn final {
       const NetAddr& aLocalAddr, const NetAddr& aRemoteAddr,
       uint32_t aMaxTableSize, uint16_t aMaxBlockedStreams, uint64_t aMaxData,
       uint64_t aMaxStreamData, bool aVersionNegotiation, bool aWebTransport,
-      const nsACString& aQlogDir, uint32_t aProviderFlags,
-      uint32_t aIdleTimeout, NeqoHttp3Conn** aConn) {
+      const nsACString& aQlogDir, uint32_t aIdleTimeout, uint32_t aFastPto,
+      NeqoHttp3Conn** aConn) {
     return neqo_http3conn_new_use_nspr_for_io(
         &aOrigin, &aAlpn, &aLocalAddr, &aRemoteAddr, aMaxTableSize,
         aMaxBlockedStreams, aMaxData, aMaxStreamData, aVersionNegotiation,
-        aWebTransport, &aQlogDir, aProviderFlags, aIdleTimeout,
+        aWebTransport, &aQlogDir, aIdleTimeout, aFastPto,
         (const mozilla::net::NeqoHttp3Conn**)aConn);
   }
 
@@ -32,14 +32,14 @@ class NeqoHttp3Conn final {
                        uint32_t aMaxTableSize, uint16_t aMaxBlockedStreams,
                        uint64_t aMaxData, uint64_t aMaxStreamData,
                        bool aVersionNegotiation, bool aWebTransport,
-                       const nsACString& aQlogDir, uint32_t aProviderFlags,
-                       uint32_t aIdleTimeout, int64_t socket,
-                       bool aPMTUDEnabled, NeqoHttp3Conn** aConn) {
+                       const nsACString& aQlogDir, uint32_t aIdleTimeout,
+                       uint32_t aFastPto, int64_t socket, bool aPMTUDEnabled,
+                       NeqoHttp3Conn** aConn) {
     return neqo_http3conn_new(
         &aOrigin, &aAlpn, &aLocalAddr, &aRemoteAddr, aMaxTableSize,
         aMaxBlockedStreams, aMaxData, aMaxStreamData, aVersionNegotiation,
-        aWebTransport, &aQlogDir, aProviderFlags, aIdleTimeout, socket,
-        aPMTUDEnabled, (const mozilla::net::NeqoHttp3Conn**)aConn);
+        aWebTransport, &aQlogDir, aIdleTimeout, aFastPto, socket, aPMTUDEnabled,
+        (const mozilla::net::NeqoHttp3Conn**)aConn);
   }
 
   void Close(uint64_t aError) { neqo_http3conn_close(this, aError); }

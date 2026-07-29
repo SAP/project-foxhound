@@ -5,7 +5,7 @@
 #ifndef TOOLS_PROFILERCPUFREQ_H_
 #define TOOLS_PROFILERCPUFREQ_H_
 
-#include "PlatformMacros.h"
+#include "mozilla/ProfilerPlatformMacros.h"
 #include "mozilla/Vector.h"
 
 #if defined(GP_OS_windows) || defined(GP_OS_linux) || defined(GP_OS_android)

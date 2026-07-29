@@ -125,6 +125,35 @@ add_task(async function testBlackBoxedSources() {
   );
 });
 
+add_task(async function testStyleSheetSources() {
+  if (
+    !Services.prefs.getBoolPref(
+      "devtools.debugger.features.stylesheets-in-debugger"
+    )
+  ) {
+    return;
+  }
+  const dbg = await initDebugger("doc-react.html", "style.css");
+
+  await openProjectSearch(dbg);
+
+  const fileResults = await doProjectSearch(dbg, "background-color", 1);
+  is(fileResults.length, 1, "One result was found in style.css");
+
+  info("Click the single result found to open style.css");
+  await clickElement(dbg, "fileMatch");
+  await waitForSelectedSource(dbg, "style.css");
+
+  is(countTabs(dbg), 1, "There is one tab opened");
+
+  const tab = findElement(dbg, "activeTab");
+  is(
+    tab.textContent,
+    "style.css",
+    "The style sheet source (style.css) is opened"
+  );
+});
+
 async function toggleBlackbox(dbg) {
   await clickElement(dbg, "blackbox");
   await Promise.any([

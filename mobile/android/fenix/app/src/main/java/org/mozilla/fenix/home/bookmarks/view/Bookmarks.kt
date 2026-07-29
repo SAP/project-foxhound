@@ -54,7 +54,8 @@ import org.mozilla.fenix.theme.FirefoxTheme
 private val imageWidth = 126.dp
 private val imageHeight = 82.dp
 
-private val imageModifier = Modifier
+@Composable
+private fun Modifier.getImageModifier(): Modifier = this
     .size(width = imageWidth, height = imageHeight)
     .clip(homepageCardImageShape)
 
@@ -168,7 +169,7 @@ private fun BookmarkImage(bookmark: Bookmark) {
         !bookmark.previewImageUrl.isNullOrEmpty() -> {
             Image(
                 url = bookmark.previewImageUrl,
-                modifier = imageModifier,
+                modifier = Modifier.getImageModifier(),
                 targetSize = imageWidth,
                 contentScale = ContentScale.Crop,
                 fallback = {
@@ -196,7 +197,7 @@ private fun BookmarkImage(bookmark: Bookmark) {
 @Composable
 private fun PlaceholderBookmarkImage() {
     Box(
-        modifier = imageModifier.background(
+        modifier = Modifier.getImageModifier().background(
             color = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),
     )
@@ -207,7 +208,7 @@ private fun FallbackBookmarkFaviconImage(
     url: String,
 ) {
     Box(
-        modifier = imageModifier.background(
+        modifier = Modifier.getImageModifier().background(
             color = MaterialTheme.colorScheme.surfaceContainerLowest,
         ),
         contentAlignment = Alignment.Center,
@@ -224,7 +225,7 @@ private fun BookmarksPreview() {
             Bookmarks(
                 bookmarks = bookmarks(),
                 menuItems = listOf(),
-                backgroundColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+                backgroundColor = MaterialTheme.colorScheme.surfaceBright,
             )
         }
     }

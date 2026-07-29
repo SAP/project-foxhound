@@ -19,6 +19,13 @@ TEMPLATE_DIRECTORY = Path(__file__).parent / "apple_pkg"
 PBZX_CHUNK_SIZE = 16 * 1024 * 1024  # 16MB chunks
 
 
+def chmod(dir):
+    "Set permissions of contents"
+    perms = "a+rX,a-st,ug+w,o-w"
+    print(f"Setting app permissions to: {perms}")
+    subprocess.check_call(["chmod", "-R", perms, dir])
+
+
 def get_apple_template(name: str) -> Template:
     """
     Given <name>, open file at <TEMPLATE_DIRECTORY>/<name>, read contents and
@@ -286,6 +293,8 @@ def create_pkg(
         distribution_tmp = get_apple_template("Distribution.template")
         distribution = distribution_tmp.substitute(app_info)
         save_text_file(distribution, flat_path / "Distribution")
+
+        chmod(root_path)
 
         payload_path = flat_path / f"{app_name}.pkg/Payload"
         create_payload(payload_path, root_path, cpio_tool)

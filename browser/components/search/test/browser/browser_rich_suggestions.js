@@ -95,7 +95,7 @@ async function check_results({ featureEnabled = false }) {
     Assert.equal(result.isRichSuggestion, featureEnabled);
     if (featureEnabled) {
       Assert.equal(typeof result.payload.description, "string");
-      Assert.ok(result.payload.icon.startsWith("data:"));
+      Assert.ok(result.payload.icon.startsWith("moz-remote-image:"));
     }
   }
 

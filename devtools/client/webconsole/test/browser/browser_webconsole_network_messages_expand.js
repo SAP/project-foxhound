@@ -3,6 +3,10 @@
 
 "use strict";
 
+const {
+  EVENTS,
+} = require("resource://devtools/client/netmonitor/src/constants.js");
+
 const TEST_FILE = "test-network-request.html";
 const TEST_PATH =
   "https://example.com/browser/devtools/client/webconsole/test/browser/";
@@ -236,7 +240,7 @@ async function testSecurity(messageNode) {
 // Waiting helpers
 
 async function waitForPayloadReady(hud) {
-  return hud.ui.once("network-request-payload-ready");
+  return hud.ui.once(EVENTS.PAYLOAD_READY);
 }
 
 async function waitForRequestUpdates(hud) {

@@ -16,13 +16,14 @@
 #include <memory>
 #include <optional>
 #include <ostream>
+#include <span>
 #include <utility>
 #include <vector>
 
-#include "api/array_view.h"
 #include "api/rtp_packet_infos.h"
 #include "api/video/encoded_frame.h"
 #include "api/video/encoded_image.h"
+#include "api/video/video_codec_constants.h"
 #include "api/video/video_codec_type.h"
 #include "api/video/video_content_type.h"
 #include "api/video/video_frame_type.h"
@@ -136,8 +137,8 @@ class Frame {
         seq_num_end,
         /*markerBit=*/true,
         /*times_nacked=*/0,
-        /*first_packet_received_time=*/0,
-        /*last_packet_received_time=*/0,
+        /*first_packet_received_time=*/std::nullopt,
+        /*last_packet_received_time=*/std::nullopt,
         /*rtp_timestamp=*/0,
         /*ntp_time_ms=*/0,
         VideoSendTiming(),
@@ -191,7 +192,7 @@ class HasFrameMatcher : public MatcherInterface<const FrameVector&> {
       return false;
     }
 
-    ArrayView<int64_t> actual_refs((*it)->references, (*it)->num_references);
+    std::span<int64_t> actual_refs((*it)->references, (*it)->num_references);
     if (!Matches(UnorderedElementsAreArray(expected_refs_))(actual_refs)) {
       if (result_listener->IsInterested()) {
         *result_listener << "Frame with frame_id:" << frame_id_ << " and "
@@ -662,6 +663,34 @@ TEST_F(RtpVp9RefFinderTest, StashedFramesDoNotWrapTl0Backwards) {
   EXPECT_THAT(frames_, SizeIs(1));
   Insert(Frame().Pid(129).SidAndTid(0, 0).Tl0(129));
   EXPECT_THAT(frames_, SizeIs(2));
+}
+
+TEST_F(RtpVp9RefFinderTest, TemporalIndexTooHighDropsFrame) {
+  // kMaxTemporalLayers is 5.
+  Insert(Frame().Pid(0).SidAndTid(0, 5).AsKeyFrame());
+  EXPECT_THAT(frames_, SizeIs(0));
+
+  // Using a GoF frame type.
+  GofInfoVP9 ss;
+  ss.SetGofInfoVP9(kTemporalStructureMode1);
+  Insert(Frame().Pid(1).SidAndTid(0, 5).Tl0(0).AsKeyFrame().Gof(&ss));
+  EXPECT_THAT(frames_, SizeIs(0));
+}
+
+TEST_F(RtpVp9RefFinderTest, SpatialIndexTooHighDropsFrame) {
+  Insert(Frame().Pid(0).SidAndTid(kMaxSpatialLayers, 0).AsKeyFrame());
+  EXPECT_THAT(frames_, SizeIs(0));
+
+  // Using a GoF frame type.
+  GofInfoVP9 ss;
+  ss.SetGofInfoVP9(kTemporalStructureMode1);
+  Insert(Frame()
+             .Pid(1)
+             .SidAndTid(kMaxSpatialLayers, 0)
+             .Tl0(0)
+             .AsKeyFrame()
+             .Gof(&ss));
+  EXPECT_THAT(frames_, SizeIs(0));
 }
 
 }  // namespace webrtc

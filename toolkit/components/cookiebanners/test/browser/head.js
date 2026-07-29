@@ -486,7 +486,7 @@ async function runEventTest({ mode, detectOnly, initFn, triggerFn, testURL }) {
       "browser",
       "The top embedder element should be a browser"
     );
-    let chromeWin = browser.ownerGlobal;
+    let chromeWin = browser.documentGlobal;
     is(
       chromeWin,
       window,

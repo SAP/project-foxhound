@@ -104,7 +104,7 @@ var ParentUtils = {
         return false;
       }
 
-      let win = el.ownerGlobal;
+      let win = el.documentGlobal;
       return win.customElements.getName(el.constructor) == is;
     }, "Testing menu entry").then(() => {
       sendAsyncMessage("menuEntryTested");

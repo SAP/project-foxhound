@@ -774,6 +774,7 @@ export class ONNXPipeline {
           lazy.console.debug("Initializing pipeline");
           try {
             this.#genericPipelineFunction = await this.#genericPipelineFunction;
+            this.#isReady = true;
           } catch (error) {
             lazy.console.debug("Error initializing pipeline", error);
             throw this.#errorFactory(error);

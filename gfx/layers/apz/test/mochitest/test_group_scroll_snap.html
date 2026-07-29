@@ -62,7 +62,10 @@ const subtests = [
    "prefs": [["apz.test.mac.synth_wheel_input", true]]},
   {"file": "helper_bug1934118.html",
    "prefs": [["apz.test.mac.synth_wheel_input", true]]},
-  {"file": "helper_mousewheel_scroll_proximity_snap_type.html"}
+  {"file": "helper_mousewheel_scroll_proximity_snap_type.html"},
+  {"file": "helper_scroll_snap_to_current_position.html",
+   "prefs": [...getPrefs("TOUCH_EVENTS:PAN")]},
+
 ];
 
 if (isApzEnabled()) {

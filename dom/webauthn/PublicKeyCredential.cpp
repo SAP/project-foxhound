@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +5,6 @@
 #include "mozilla/dom/PublicKeyCredential.h"
 
 #include "mozilla/Base64.h"
-#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_security.h"
 #include "mozilla/dom/AuthenticatorResponse.h"
@@ -29,12 +26,12 @@ namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(PublicKeyCredential)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(PublicKeyCredential, Credential)
-  tmp->mRawIdCachedObj = nullptr;
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mAttestationResponse)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mAssertionResponse)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(PublicKeyCredential, Credential)
   NS_IMPL_CYCLE_COLLECTION_TRACE_PRESERVED_WRAPPER
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mRawIdCachedObj)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(PublicKeyCredential,
@@ -50,11 +47,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(PublicKeyCredential)
 NS_INTERFACE_MAP_END_INHERITING(Credential)
 
 PublicKeyCredential::PublicKeyCredential(nsPIDOMWindowInner* aParent)
-    : Credential(aParent), mRawIdCachedObj(nullptr) {
-  mozilla::HoldJSObjects(this);
-}
-
-PublicKeyCredential::~PublicKeyCredential() { mozilla::DropJSObjects(this); }
+    : Credential(aParent) {}
 
 JSObject* PublicKeyCredential::WrapObject(JSContext* aCx,
                                           JS::Handle<JSObject*> aGivenProto) {
@@ -64,13 +57,7 @@ JSObject* PublicKeyCredential::WrapObject(JSContext* aCx,
 void PublicKeyCredential::GetRawId(JSContext* aCx,
                                    JS::MutableHandle<JSObject*> aValue,
                                    ErrorResult& aRv) {
-  if (!mRawIdCachedObj) {
-    mRawIdCachedObj = ArrayBuffer::Create(aCx, mRawId, aRv);
-    if (aRv.Failed()) {
-      return;
-    }
-  }
-  aValue.set(mRawIdCachedObj);
+  aValue.set(ArrayBuffer::Create(aCx, mRawId, aRv));
 }
 
 void PublicKeyCredential::GetAuthenticatorAttachment(
@@ -214,7 +201,7 @@ already_AddRefed<Promise> PublicKeyCredential::GetClientCapabilities(
 
   entry = capabilities.Entries().AppendElement();
   entry->mKey = u"extension:largeBlob"_ns;
-#if defined(XP_MACOSX) || defined(XP_WIN)
+#if defined(XP_MACOSX) || defined(XP_WIN) || defined(MOZ_WIDGET_ANDROID)
   entry->mValue = true;
 #else
   entry->mValue = false;
@@ -246,7 +233,7 @@ already_AddRefed<Promise> PublicKeyCredential::GetClientCapabilities(
 
   entry = capabilities.Entries().AppendElement();
   entry->mKey = u"relatedOrigins"_ns;
-  entry->mValue = false;
+  entry->mValue = true;
 
   entry = capabilities.Entries().AppendElement();
   entry->mKey = u"signalAllAcceptedCredentials"_ns;

@@ -299,7 +299,8 @@ class MercurialVCS(ScriptMixin, LogMixin, TransferMixin):
             try:
                 revs = []
                 for line in (
-                    self.get_output_from_command(cmd, cwd=src, throw_exception=True)
+                    self
+                    .get_output_from_command(cmd, cwd=src, throw_exception=True)
                     .rstrip()
                     .split("\n")
                 ):

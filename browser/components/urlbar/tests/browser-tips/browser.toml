@@ -1,4 +1,5 @@
 [DEFAULT]
+tags = "urlbar"
 support-files = ["head.js"]
 prefs = ["browser.bookmarks.testing.skipDefaultBookmarksImport=true"]
 

@@ -20,13 +20,13 @@ browser.engagement:
       scalar browser.engagement.tab_unload_count.
     bugs:
       - https://bugzil.la/1715858
+      - https://bugzil.la/2033080
     data_reviews:
       - https://bugzil.la/1715858
     notification_emails:
       - dao@mozilla.com
       - rtestard@mozilla.com
     expires: never
-    telemetry_mirror: BROWSER_ENGAGEMENT_TAB_UNLOAD_COUNT
     no_lint:
       - COMMON_PREFIX
 
@@ -38,13 +38,13 @@ browser.engagement:
       scalar browser.engagement.tab_reload_count.
     bugs:
       - https://bugzil.la/1715858
+      - https://bugzil.la/2033080
     data_reviews:
       - https://bugzil.la/1715858
     notification_emails:
       - dao@mozilla.com
       - rtestard@mozilla.com
     expires: never
-    telemetry_mirror: BROWSER_ENGAGEMENT_TAB_RELOAD_COUNT
     no_lint:
       - COMMON_PREFIX
 
@@ -95,12 +95,12 @@ browser.engagement:
     time_unit: second
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1715858
+      - https://bugzil.la/2033080
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1715858
     notification_emails:
       - tkikuchi@mozilla.com
     expires: never
-    telemetry_mirror: TAB_UNLOAD_TO_RELOAD
     no_lint:
       - COMMON_PREFIX
 
@@ -115,13 +115,13 @@ browser.ui.interaction:
       browser.ui.interaction.all_tabs_panel_dragstart_tab_event_count.
     bugs:
       - https://bugzil.la/1804722
+      - https://bugzil.la/2033080
     data_reviews:
       - https://bugzil.la/1804722
     notification_emails:
       - shong@mozilla.com
       - mconley@mozilla.com
     expires: never
-    telemetry_mirror: BROWSER_UI_INTERACTION_ALL_TABS_PANEL_DRAGSTART_TAB_EVENT_COUNT
 
   all_tabs_panel_entrypoint:
     type: labeled_counter
@@ -132,13 +132,13 @@ browser.ui.interaction:
       scalar browser.ui.interaction.all_tabs_panel_entrypoint.
     bugs:
       - https://bugzil.la/1804722
+      - https://bugzil.la/2033080
     data_reviews:
       - https://bugzil.la/1804722
     notification_emails:
       - shong@mozilla.com
       - mconley@mozilla.com
     expires: never
-    telemetry_mirror: BROWSER_UI_INTERACTION_ALL_TABS_PANEL_ENTRYPOINT
 
   list_all_tabs_action:
     type: labeled_counter
@@ -467,7 +467,7 @@ tabgroup:
     description: >
       Records interactions with tab groups: expand/collapse; rename, change
       color; save/reopen/delete; ungroup tabs; open from tab menu/recent/
-      Awesomebar; move to another window
+      Awesomebar; move to another window; copy all links
     notification_emails:
       - dao@mozilla.com
       - jswinarton@mozilla.com
@@ -475,6 +475,7 @@ tabgroup:
     bugs:
       - https://bugzil.la/1938401
       - https://bugzil.la/1971241
+      - https://bugzil.la/2020866
     data_reviews:
       - https://bugzil.la/1938401
     data_sensitivity:
@@ -493,6 +494,7 @@ tabgroup:
       - ungroup
       - move_window
       - hover_preview
+      - copy_all_links
     expires: never
 
 
@@ -671,13 +673,13 @@ browser.tabswitch:
     time_unit: millisecond
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1489524
+      - https://bugzil.la/2033080
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1489524
     notification_emails:
       - perf-telemetry-alerts@mozilla.com
       - mconley@mozilla.com
     expires: never
-    telemetry_mirror: FX_TAB_SWITCH_UPDATE_MS
 
   total:
     type: timing_distribution
@@ -691,13 +693,20 @@ browser.tabswitch:
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1156592
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1489524
+      - https://bugzil.la/2033080
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1156592
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1489524
     notification_emails:
       - mconley@mozilla.com
+      - perf-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: FX_TAB_SWITCH_TOTAL_E10S_MS
+    metadata:
+      monitor:
+        alert: False
+        lower_is_better: True
+        platforms:
+          - All
 
   spinner_visible:
     type: timing_distribution
@@ -710,13 +719,13 @@ browser.tabswitch:
     time_unit: millisecond
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1156592
+      - https://bugzil.la/2033080
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1156592
     notification_emails:
       - mconley@mozilla.com
       - dothayer@mozilla.com
     expires: never
-    telemetry_mirror: FX_TAB_SWITCH_SPINNER_VISIBLE_MS
 
   spinner_visible_trigger:
     type: labeled_counter
@@ -736,12 +745,12 @@ browser.tabswitch:
       - onEndSwapDocShells
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1442068
+      - https://bugzil.la/2033080
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1442068
     notification_emails:
       - dothayer@mozilla.com
     expires: never
-    telemetry_mirror: h#FX_TAB_SWITCH_SPINNER_VISIBLE_TRIGGER
 
 browser.tabclose:
   time_anim:
@@ -756,13 +765,13 @@ browser.tabclose:
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1340842
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1488952
+      - https://bugzil.la/2033080
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1340842
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1488952
     notification_emails:
       - mconley@mozilla.com
     expires: never
-    telemetry_mirror: FX_TAB_CLOSE_TIME_ANIM_MS
 
   time_no_anim:
     type: timing_distribution
@@ -778,6 +787,7 @@ browser.tabclose:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1714255
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1730041
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1754640
+      - https://bugzil.la/2033080
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1340842
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1714255
@@ -786,7 +796,6 @@ browser.tabclose:
     notification_emails:
       - mconley@mozilla.com
     expires: never
-    telemetry_mirror: FX_TAB_CLOSE_TIME_NO_ANIM_MS
 
   permit_unload_time:
     type: timing_distribution
@@ -802,6 +811,7 @@ browser.tabclose:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1714255
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1730041
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1754640
+      - https://bugzil.la/2033080
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1340842
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1714255
@@ -810,7 +820,6 @@ browser.tabclose:
     notification_emails:
       - mconley@mozilla.com
     expires: never
-    telemetry_mirror: FX_TAB_CLOSE_PERMIT_UNLOAD_TIME_MS
 
 link.handling:
   open_next_to_active_tab_settings_enabled:
@@ -910,7 +919,7 @@ splitview:
         description: The layout of the tab strip (horizontal or vertical)
         type: string
       trigger:
-        description: The method used to start the split view (menu_add for 1 tab selected, menu_open for 2 tabs selected)
+        description: The method used to start the split view (menu_add for 1 tab selected, menu_open for 2 tabs selected, alt_click for Alt/Option+clicking another tab, keyboard_shortcut for a custom shortcut)
         type: string
       tabgroup:
         description: The tab group state (none for neither tab in a group, main for primary tab in a group, other for secondary tab in a group, both_same for both tabs in same group, both_different for both tabs in different groups)
@@ -934,7 +943,7 @@ splitview:
         description: The layout of the tab strip (horizontal or vertical)
         type: string
       trigger:
-        description: The method used to end the split view (menu_separate, icon_separate, icon_close, tab_close, footer_separate, footer_close)
+        description: The method used to end the split view (menu_separate, icon_separate, icon_close, tab_close, footer_separate, footer_close, keyboard_shortcut)
         type: string
 
   reverse:
@@ -972,3 +981,30 @@ splitview:
       width:
         description: Rounded percentage of view area width
         type: quantity
+
+performance.interaction:
+  tab_switch_composite:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      Time between tab selection and first composite of the tab content onto the
+      screen.
+      (Migrated from the geckoview metric of the same name.)
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1481704
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1529352
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1580077
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1877842
+      - https://bugzil.la/2033080
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1580077#c10
+    notification_emails:
+      - mconley@mozilla.com
+      - perf-telemetry-alerts@mozilla.com
+    expires: never
+    metadata:
+      monitor:
+        alert: False
+        lower_is_better: True
+        platforms:
+          - All

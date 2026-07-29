@@ -10,8 +10,8 @@ origin:
 
   url: http://hunspell.github.io
 
-  release: 1180421f50f211984211e968eb6801ffd3390b8f (2022-08-22T13:53:31Z).
-  revision: 1180421f50f211984211e968eb6801ffd3390b8f
+  release: c5f98152a274e25b5107101104bef632b83a0cc9 (2026-05-05T07:19:07Z).
+  revision: c5f98152a274e25b5107101104bef632b83a0cc9
   license: MPL-1.1
   license-file: COPYING.MPL
 
@@ -40,7 +40,8 @@ vendoring:
     - patches/bug1410214.patch
     - patches/bug1653659.patch
     - patches/bug1739761.patch
-    - patches/bug1838113.patch
+    - patches/bug2037089-build-fixes.patch
+    - patches/bug2037089-hentry-pack.patch
 
   update-actions:
     - action: move-dir

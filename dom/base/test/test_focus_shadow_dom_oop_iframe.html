@@ -1,0 +1,84 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test for Bug 2027108 - Tab order with OOP iframe inside shadow DOM</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=2027108">Mozilla Bug 2027108</a>
+<button id="before">before</button>
+<div id="container"></div>
+<script>
+"use strict";
+
+add_setup(async function () {
+  await new Promise(r => SimpleTest.waitForFocus(r, window));
+  if (navigator.platform.indexOf("Mac") === 0) {
+    await SpecialPowers.pushPrefEnv({
+      set: [["accessibility.tabfocus", 7]],
+    });
+  }
+});
+
+function promiseMessage(taskfn) {
+  return new Promise(resolve => {
+    window.addEventListener("message", resolve, { once: true });
+    taskfn();
+  })
+}
+
+// Attaches a shadow root containing a cross-origin (OOP) iframe to a fresh
+// host appended to #container.
+async function createShadowWithOOPIframe() {
+  let container = document.getElementById("container");
+
+  let host = document.createElement("div");
+  container.appendChild(host);
+  let sr = host.attachShadow({ mode: "open" });
+
+  let iframe = document.createElement("iframe");
+  iframe.src = "https://example.org/tests/dom/base/test/file_focus_shadow_dom_oop_iframe_inner.html";
+  sr.appendChild(iframe);
+  await new Promise(r => iframe.addEventListener("load", r, { once: true }));
+
+  return { host, sr, iframe };
+}
+
+// Case 1: focus is in a scope owned by Shadow DOM, tab forward into oop iframe.
+add_task(async function test_tab_forward_from_shadow_dom_into_oop_iframe() {
+  let { host, sr } = await createShadowWithOOPIframe();
+  let shadowBtn = document.createElement("button");
+  shadowBtn.textContent = "shadow";
+  sr.insertBefore(shadowBtn, sr.firstChild);
+
+  shadowBtn.focus();
+  is(sr.activeElement, shadowBtn, "shadow button should have focus");
+
+  let msg = await promiseMessage(() => synthesizeKey("KEY_Tab"));
+  is(msg.data.name, "BUTTON");
+  is(msg.data.id, "first");
+
+  host.remove();
+});
+
+// Case 2: focus is in light tree, tab forward into shadow DOM scope and find
+// oop iframe.
+add_task(async function test_tab_forward_from_light_dom_into_shadow_oop_iframe() {
+  const { host } = await createShadowWithOOPIframe();
+
+  let beforeBtn = document.getElementById("before");
+  beforeBtn.focus();
+  is(document.activeElement, beforeBtn, "before button should have focus");
+
+  let msg = await promiseMessage(() => synthesizeKey("KEY_Tab"));
+  is(msg.data.name, "BUTTON");
+  is(msg.data.id, "first");
+
+  host.remove();
+});
+</script>
+</body>
+</html>

@@ -34,14 +34,6 @@ use std::cmp::max;
 use std::ffi::CString;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 
-#[cfg(not(target_os = "android"))]
-const FONT_GAMMA: f32 = 0.0;
-#[cfg(target_os = "android")]
-const FONT_GAMMA: f32 = 1.4;
-
-lazy_static! {
-    static ref GAMMA_LUT: GammaLut = GammaLut::new(0.0, FONT_GAMMA, FONT_GAMMA);
-}
 
 // These constants are not present in the freetype
 // bindings due to bindgen not handling the way
@@ -292,6 +284,7 @@ lazy_static! {
 
 pub struct FontContext {
     fonts: FastHashMap<FontKey, Arc<Mutex<CachedFont>>>,
+    gamma_luts: FastHashMap<(i16, i16), GammaLut>,
 }
 
 fn get_skew_bounds(bottom: i32, top: i32, skew_factor: f32, _vertical: bool) -> (f32, f32) {
@@ -390,6 +383,7 @@ impl FontContext {
     pub fn new() -> FontContext {
         FontContext {
             fonts: FastHashMap::default(),
+            gamma_luts: FastHashMap::default(),
         }
     }
 
@@ -426,9 +420,12 @@ impl FontContext {
     pub fn delete_font_instance(&mut self, _instance: &FontInstance) {
     }
 
-    fn load_glyph(&mut self, font: &FontInstance, glyph: &GlyphKey)
-        -> Option<(MutexGuard<CachedFont>, FT_GlyphSlot, f32)> {
-        let mut cached = self.fonts.get(&font.font_key)?.lock().ok()?;
+    fn load_glyph<'a>(
+        fonts: &'a FastHashMap<FontKey, Arc<Mutex<CachedFont>>>,
+        font: &FontInstance,
+        glyph: &GlyphKey,
+    ) -> Option<(MutexGuard<'a, CachedFont>, FT_GlyphSlot, f32)> {
+        let mut cached = fonts.get(&font.font_key)?.lock().ok()?;
         let face = cached.face;
 
         let mm_var = cached.mm_var;
@@ -510,7 +507,7 @@ impl FontContext {
                             (face_flags & (FT_FACE_FLAG_SCALABLE as FT_Long)) == 0 &&
                             (load_flags & FT_LOAD_NO_BITMAP) == 0 {
             unsafe { FT_Set_Transform(face, ptr::null_mut(), ptr::null_mut()) };
-            self.choose_bitmap_size(face, req_size * y_scale)
+            Self::choose_bitmap_size(face, req_size * y_scale)
         } else {
             let mut shape = font.transform.invert_scale(x_scale, y_scale);
             if font.flags.contains(FontInstanceFlags::FLIP_X) {
@@ -763,11 +760,11 @@ impl FontContext {
         font: &FontInstance,
         key: &GlyphKey,
     ) -> Option<GlyphDimensions> {
-        let (_cached, slot, scale) = self.load_glyph(font, key)?;
+        let (_cached, slot, scale) = Self::load_glyph(&self.fonts, font, key)?;
         Self::get_glyph_dimensions_impl(slot, &font, key, scale, true)
     }
 
-    fn choose_bitmap_size(&self, face: FT_Face, requested_size: f64) -> FT_Error {
+    fn choose_bitmap_size(face: FT_Face, requested_size: f64) -> FT_Error {
         let mut best_dist = unsafe { *(*face).available_sizes.offset(0) }.y_ppem as f64 / 64.0 - requested_size;
         let mut best_size = 0;
         let num_fixed_sizes = unsafe { (*face).num_fixed_sizes };
@@ -785,6 +782,7 @@ impl FontContext {
     }
 
     pub fn prepare_font(font: &mut FontInstance) {
+        let preblend_enabled = font.platform_options.map_or(false, |o| o.gamma >= 0 || o.enhanced_contrast > 0);
         match font.render_mode {
             FontRenderMode::Mono => {
                 // In mono mode the color of the font is irrelevant.
@@ -793,7 +791,7 @@ impl FontContext {
                 font.disable_subpixel_position();
             }
             FontRenderMode::Alpha => {
-                if FONT_GAMMA > 0.0 {
+                if preblend_enabled {
                     font.color = font.color.luminance_color().quantize();
                 } else {
                     // Color is unused if there is no preblend.
@@ -801,7 +799,7 @@ impl FontContext {
                 }
             }
             FontRenderMode::Subpixel => {
-                if FONT_GAMMA > 0.0 {
+                if preblend_enabled {
                     font.color = font.color.quantize();
                 } else {
                     // Color is unused if there is no preblend.
@@ -906,7 +904,7 @@ impl FontContext {
     }
 
     pub fn rasterize_glyph(&mut self, font: &FontInstance, key: &GlyphKey) -> GlyphRasterResult {
-        let (_cached, slot, scale) = self.load_glyph(font, key)
+        let (_cached, slot, scale) = Self::load_glyph(&self.fonts, font, key)
                                          .ok_or(GlyphRasterError::LoadFailed)?;
 
         // Get dimensions of the glyph, to see if we need to rasterize it.
@@ -1053,12 +1051,6 @@ impl FontContext {
             dest = row_end + 8 * padding;
         }
 
-        if FONT_GAMMA > 0.0 &&
-           pixel_mode != FT_Pixel_Mode::FT_PIXEL_MODE_MONO &&
-           pixel_mode != FT_Pixel_Mode::FT_PIXEL_MODE_BGRA {
-          GAMMA_LUT.preblend(&mut final_buffer, font.color);
-        }
-
         if font.use_texture_padding() {
             left -= padding as i32;
             top += padding as i32;
@@ -1115,6 +1107,8 @@ impl FontContext {
             _ => font.get_alpha_glyph_format(),
         };
 
+        Self::gamma_correct_pixels(font, &mut self.gamma_luts, &mut final_buffer, glyph_format);
+
         Ok(RasterizedGlyph {
             left: left as f32,
             top: top as f32,
@@ -1125,6 +1119,47 @@ impl FontContext {
             bytes: final_buffer,
             is_packed_glyph: false,
         })
+    }
+
+    fn gamma_correct_pixels(
+        font: &FontInstance,
+        gamma_luts: &mut FastHashMap<(i16, i16), GammaLut>,
+        pixels: &mut Vec<u8>,
+        glyph_format: GlyphFormat,
+    ) {
+        let FontInstancePlatformOptions { gamma, enhanced_contrast, .. } =
+            font.platform_options.unwrap_or_default();
+
+        if gamma < 0 && enhanced_contrast <= 0 {
+            return;
+        }
+
+        match glyph_format {
+            GlyphFormat::ColorBitmap | GlyphFormat::Bitmap => return,
+            _ => {}
+        }
+
+        let gamma = gamma.min(400);
+        let enhanced_contrast = enhanced_contrast.clamp(0, 100);
+        let g = if gamma < 0 { 1.0 } else { gamma as f32 / 100.0 };
+        let c = enhanced_contrast as f32 / 100.0;
+
+        if gamma_luts.len() > 4 {
+            gamma_luts.clear();
+        }
+        let gamma_lut = gamma_luts
+            .entry((gamma, enhanced_contrast))
+            .or_insert_with(|| GammaLut::new(c, g, g));
+
+        match font.render_mode {
+            FontRenderMode::Alpha => {
+                gamma_lut.preblend_grayscale(pixels, font.color);
+            }
+            FontRenderMode::Subpixel => {
+                gamma_lut.preblend(pixels, font.color);
+            }
+            _ => {}
+        }
     }
 }
 

@@ -97,11 +97,20 @@ add_task(async function test_page_size_change() {
   info("Test that a VACUUM changes page_size");
   reset_vacuum_date();
 
+  // obfsvfs (the default VFS when SQLite encryption is enabled) forces a fixed
+  // page size and ignores PRAGMA/VACUUM page-size changes, so a VACUUM cannot
+  // change the page size of an encrypted in-profile database.
+  let encrypted = Services.prefs.getBoolPref(
+    "security.storage.encryption.sqlite.enabled",
+    false
+  );
+
   let conn = Services.storage.openDatabase(new_db_file());
   info("Check initial page size.");
   let stmt = conn.createStatement("PRAGMA page_size");
   Assert.ok(stmt.executeStep());
   Assert.equal(stmt.row.page_size, conn.defaultPageSize);
+  let initialPageSize = stmt.row.page_size;
   stmt.finalize();
   await populateFreeList(conn);
 
@@ -111,10 +120,12 @@ add_task(async function test_page_size_change() {
   synthesize_idle_daily();
   await promiseVacuumEnd;
 
-  info("Check that page size was updated.");
+  info("Check the page size after VACUUM.");
   stmt = conn.createStatement("PRAGMA page_size");
   Assert.ok(stmt.executeStep());
-  Assert.equal(stmt.row.page_size, 1024);
+  // Plaintext: the VACUUM applies the requested 1024-byte page size.
+  // Encrypted: obfsvfs keeps its fixed page size unchanged.
+  Assert.equal(stmt.row.page_size, encrypted ? initialPageSize : 1024);
   stmt.finalize();
 
   await participant.dispose();
@@ -179,11 +190,19 @@ add_task(async function test_change_to_incremental_vacuum() {
   info("Test we can change to incremental vacuum");
   reset_vacuum_date();
 
+  // obfsvfs creates encrypted databases with full auto_vacuum (1); a plaintext
+  // database starts with auto_vacuum disabled (0). Either way the incremental
+  // VACUUM below switches it to incremental (2).
+  let encrypted = Services.prefs.getBoolPref(
+    "security.storage.encryption.sqlite.enabled",
+    false
+  );
+
   let conn = Services.storage.openDatabase(new_db_file());
   info("Check initial vacuum.");
   let stmt = conn.createStatement("PRAGMA auto_vacuum");
   Assert.ok(stmt.executeStep());
-  Assert.equal(stmt.row.auto_vacuum, 0);
+  Assert.equal(stmt.row.auto_vacuum, encrypted ? 1 : 0);
   stmt.finalize();
   await populateFreeList(conn);
 
@@ -196,7 +215,10 @@ add_task(async function test_change_to_incremental_vacuum() {
   info("Check that auto_vacuum was updated.");
   stmt = conn.createStatement("PRAGMA auto_vacuum");
   Assert.ok(stmt.executeStep());
-  Assert.equal(stmt.row.auto_vacuum, 2);
+  // Plaintext switches to incremental (2). On an encrypted database obfsvfs
+  // keeps full auto_vacuum (1): its fixed page layout requires full
+  // auto_vacuum, so the incremental switch is not honored.
+  Assert.equal(stmt.row.auto_vacuum, encrypted ? 1 : 2);
   stmt.finalize();
 
   await participant.dispose();

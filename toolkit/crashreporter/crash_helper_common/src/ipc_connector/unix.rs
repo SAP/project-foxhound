@@ -143,9 +143,10 @@ impl IPCConnector {
     {
         let expected_payload_len = message.payload_size();
         let expected_ancillary_len = message.ancillary_data_len();
-        self.send(&message.header(), vec![])
+        let (header, payload, ancillary_data) = message.encode();
+
+        self.send(header.as_ref(), vec![])
             .map_err(IPCError::TransmissionFailure)?;
-        let (payload, ancillary_data) = message.into_payload();
         assert!(payload.len() == expected_payload_len);
         assert!(ancillary_data.len() == expected_ancillary_len);
         self.send(&payload, ancillary_data)
@@ -156,11 +157,6 @@ impl IPCConnector {
     where
         T: Message,
     {
-        // HACK: Workaround for a macOS-specific bug
-        #[cfg(target_os = "macos")]
-        self.poll(PollFlags::POLLIN)
-            .map_err(IPCError::ReceptionFailure)?;
-
         let header = self.recv_header()?;
 
         if header.kind != T::kind() {
@@ -168,7 +164,7 @@ impl IPCConnector {
         }
 
         let (data, ancillary_data) = self.recv(header.size)?;
-        T::decode(&data, ancillary_data).map_err(IPCError::from)
+        T::decode(data, ancillary_data).map_err(IPCError::from)
     }
 
     fn send_nonblock(&self, buff: &[u8], fds: &[AncillaryData]) -> Result<(), PlatformError> {
@@ -214,7 +210,7 @@ impl IPCConnector {
 
     pub(crate) fn recv_header(&self) -> Result<messages::Header, IPCError> {
         let (header, _) = self.recv(messages::HEADER_SIZE)?;
-        messages::Header::decode(&header).map_err(IPCError::BadMessage)
+        messages::Header::decode(header).map_err(IPCError::BadMessage)
     }
 
     fn recv_nonblock(
@@ -230,26 +226,8 @@ impl IPCConnector {
             &mut iov,
             Some(&mut cmsg_buffer),
             MsgFlags::empty(),
-        ));
-
-        // I know this looks weird, but bear with me. On macOS 10.15 every
-        // other recvmsg() call returns ENOMEM for no apparent reason. But then
-        // if works *fine* if you call it again with the same parameters. This
-        // makes no sense but OK, I stopped trying to understand macOS a long
-        // time ago. on macOS 15+ this isn't needed but since I can't test it
-        // everywhere and it doesn't hurt anyway, every version gets the same
-        // workaround.
-        let res = match res {
-            #[cfg(target_os = "macos")]
-            Err(_code @ Errno::ENOMEM) => ignore_eintr!(recvmsg::<()>(
-                self.as_raw(),
-                &mut iov,
-                Some(&mut cmsg_buffer),
-                MsgFlags::empty(),
-            ))?,
-            Err(e) => return Err(PlatformError::ReceiveFailure(e)),
-            Ok(val) => val,
-        };
+        ))
+        .map_err(PlatformError::ReceiveFailure)?;
 
         let mut owned_fds = Vec::<OwnedFd>::with_capacity(1);
         let cmsgs = res.cmsgs().map_err(PlatformError::ReceiveFailure)?;

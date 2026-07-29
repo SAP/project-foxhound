@@ -9,6 +9,22 @@ add_task(async function test() {
   const now = new Date();
   const host = "mozilla.org";
   const url = `https://${host}/test/`;
+
+  // Wait for the initial kickoff to complete, then pause recalculation to
+  // avoid races between background tasks and assertions.
+  let initSubject = {};
+  PlacesFrecencyRecalculator.observe(
+    initSubject,
+    "test-alternative-frecency-init",
+    ""
+  );
+  await initSubject.promise;
+  PlacesFrecencyRecalculator.observe(
+    null,
+    "test-pause-frecency-recalculation",
+    ""
+  );
+
   await PlacesTestUtils.addVisits([
     {
       url,
@@ -21,9 +37,6 @@ add_task(async function test() {
       transition: PlacesUtils.history.TRANSITION_TYPED,
     },
   ]);
-  // Temporarily unset recalculation, otherwise the task may flip the recalc
-  // fields before we check them.
-  PlacesUtils.history.shouldStartFrecencyRecalculation = false;
   Assert.equal(
     await PlacesTestUtils.getDatabaseValue("moz_origins", "recalc_frecency", {
       host,
@@ -43,6 +56,11 @@ add_task(async function test() {
     "Alt frecency should be calculated"
   );
 
+  PlacesFrecencyRecalculator.observe(
+    null,
+    "test-resume-frecency-recalculation",
+    ""
+  );
   await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
   let alt_frecency = await PlacesTestUtils.getDatabaseValue(
     "moz_origins",
@@ -94,15 +112,19 @@ add_task(async function test() {
 
   info("Add another page to the same host.");
   const url2 = `https://${host}/second/`;
+
+  PlacesFrecencyRecalculator.observe(
+    null,
+    "test-pause-frecency-recalculation",
+    ""
+  );
+
   await PlacesTestUtils.addVisits({
     url: url2,
     transition: PlacesUtils.history.TRANSITION_TYPED,
   });
   info("Remove the first page.");
   await PlacesUtils.history.remove(url);
-  // Temporarily unset recalculation, otherwise the task may flip the recalc
-  // fields before we check them.
-  PlacesUtils.history.shouldStartFrecencyRecalculation = false;
   Assert.equal(
     await PlacesTestUtils.getDatabaseValue("moz_origins", "recalc_frecency", {
       host,
@@ -118,6 +140,12 @@ add_task(async function test() {
     ),
     1,
     "Alt frecency should be calculated"
+  );
+
+  PlacesFrecencyRecalculator.observe(
+    null,
+    "test-resume-frecency-recalculation",
+    ""
   );
 });
 

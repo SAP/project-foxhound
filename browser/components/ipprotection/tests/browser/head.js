@@ -10,24 +10,27 @@ const { IPProtection, IPProtectionWidget } = ChromeUtils.importESModule(
 );
 
 const { IPProtectionService, IPProtectionStates } = ChromeUtils.importESModule(
-  "moz-src:///browser/components/ipprotection/IPProtectionService.sys.mjs"
+  "moz-src:///toolkit/components/ipprotection/IPProtectionService.sys.mjs"
 );
 
 const { IPPProxyManager, IPPProxyStates } = ChromeUtils.importESModule(
-  "moz-src:///browser/components/ipprotection/IPPProxyManager.sys.mjs"
+  "moz-src:///toolkit/components/ipprotection/IPPProxyManager.sys.mjs"
 );
 
 const { IPProtectionAlertManager } = ChromeUtils.importESModule(
   "moz-src:///browser/components/ipprotection/IPProtectionAlertManager.sys.mjs"
 );
 
-const { IPPSignInWatcher } = ChromeUtils.importESModule(
-  "moz-src:///browser/components/ipprotection/IPPSignInWatcher.sys.mjs"
+const { IPProtectionActivator } = ChromeUtils.importESModule(
+  "moz-src:///toolkit/components/ipprotection/IPProtectionActivator.sys.mjs"
 );
 
-const { IPPEnrollAndEntitleManager } = ChromeUtils.importESModule(
-  "moz-src:///browser/components/ipprotection/IPPEnrollAndEntitleManager.sys.mjs"
+const { IPPDummyAuthProvider } = ChromeUtils.importESModule(
+  "resource://testing-common/ipprotection/IPPDummyAuthProvider.sys.mjs"
 );
+IPProtectionActivator.addHelpers(IPPDummyAuthProvider.helpers);
+IPProtectionActivator.setupHelpers();
+IPProtectionActivator.setAuthProvider(IPPDummyAuthProvider);
 
 const { HttpServer, HTTP_403 } = ChromeUtils.importESModule(
   "resource://testing-common/httpd.sys.mjs"
@@ -38,7 +41,7 @@ const { NimbusTestUtils } = ChromeUtils.importESModule(
 );
 
 const { Server } = ChromeUtils.importESModule(
-  "moz-src:///browser/components/ipprotection/IPProtectionServerlist.sys.mjs"
+  "moz-src:///toolkit/components/ipprotection/IPProtectionServerlist.sys.mjs"
 );
 
 ChromeUtils.defineESModuleGetters(this, {
@@ -49,7 +52,7 @@ ChromeUtils.defineESModuleGetters(this, {
 });
 
 const { ProxyPass, ProxyUsage, Entitlement } = ChromeUtils.importESModule(
-  "moz-src:///browser/components/ipprotection/GuardianClient.sys.mjs"
+  "moz-src:///toolkit/components/ipprotection/GuardianTypes.sys.mjs"
 );
 const { RemoteSettings } = ChromeUtils.importESModule(
   "resource://services-settings/remote-settings.sys.mjs"
@@ -60,9 +63,13 @@ const { SpecialMessageActions } = ChromeUtils.importESModule(
 );
 
 // Adapted from devtools/client/performance-new/test/browser/helpers.js
-function waitForPanelEvent(document, eventName) {
+function waitForPanelEvent(
+  document,
+  eventName,
+  viewId = "PanelUI-ipprotection"
+) {
   return BrowserTestUtils.waitForEvent(document, eventName, false, event => {
-    if (event.target.getAttribute("viewId") === "PanelUI-ipprotection") {
+    if (event.target.getAttribute("viewId") === viewId) {
       return true;
     }
     return false;
@@ -102,7 +109,11 @@ const defaultState = new IPProtectionPanel().state;
 async function openPanel(state, win = window) {
   let panel = IPProtection.getPanel(win);
   if (state) {
-    panel.setState(state);
+    panel.setState({
+      isEnrolling: false,
+      unauthenticated: false,
+      ...state,
+    });
   }
 
   let panelShownPromise = waitForPanelEvent(win.document, "popupshown");
@@ -254,18 +265,12 @@ let DEFAULT_EXPERIMENT = {
   variant: "alpha",
   isRollout: false,
 };
-/* exported SETUP_EXPERIMENT */
+/* exported DEFAULT_EXPERIMENT */
 
 let DEFAULT_SERVICE_STATUS = {
-  isSignedIn: false,
-  isEnrolledAndEntitled: undefined,
+  isReady: false,
   canEnroll: true,
-  isLinkedToGuardian: false,
-  entitlement: {
-    status: 200,
-    error: undefined,
-    entitlement: createTestEntitlement(),
-  },
+  entitlement: createTestEntitlement(),
   proxyPass: {
     status: 200,
     error: undefined,
@@ -273,20 +278,10 @@ let DEFAULT_SERVICE_STATUS = {
     usage: makeUsage(),
   },
   usageInfo: makeUsage(),
-  signInFlow: true,
 };
 /* exported DEFAULT_SERVICE_STATUS */
 
-let STUBS = {
-  isEnrolledAndEntitled: undefined,
-  hasUpgraded: undefined,
-  enroll: undefined,
-  fetchUserInfo: undefined,
-  fetchProxyPass: undefined,
-  fetchProxyUsage: undefined,
-  isLinkedToGuardian: undefined,
-  fxaSignInFlow: undefined,
-};
+let STUBS = {};
 /* exported STUBS */
 
 async function waitForServiceInitialized() {
@@ -336,7 +331,7 @@ add_setup(async function setupVPN() {
 
   setupService();
 
-  await putServerInRemoteSettings(DEFAULT_SERVICE_STATUS.serverList);
+  await putServerInRemoteSettings();
 
   await SpecialPowers.pushPrefEnv({
     set: [["browser.ipProtection.enabled", true]],
@@ -361,102 +356,93 @@ add_setup(async function setupVPN() {
     Services.prefs.clearUserPref("browser.ipProtection.locationListCache");
     Services.prefs.clearUserPref("browser.ipProtection.usageCache");
     Services.prefs.clearUserPref("browser.ipProtection.onboardingMessageMask");
-    Services.prefs.clearUserPref("browser.ipProtection.egressLocationEnabled");
     Services.prefs.clearUserPref("browser.ipProtection.bandwidthThreshold");
+    Services.prefs.clearUserPref(
+      "browser.ipProtection.bandwidthWarningDismissedThreshold"
+    );
     Services.prefs.clearUserPref("browser.ipProtection.userEnabled");
+    Services.prefs.clearUserPref(
+      "browser.ipProtection.openedPanelWithLocation"
+    );
+    Services.prefs.clearUserPref(
+      "browser.ipProtection.locationButtonBadgeDismissed"
+    );
   });
 });
 
-function setupStubs(stubs = STUBS) {
-  stubs.isSignedIn = setupSandbox.stub(IPPSignInWatcher, "isSignedIn");
-  stubs.isEnrolledAndEntitled = setupSandbox.stub(
-    IPPEnrollAndEntitleManager,
-    "isEnrolledAndEntitled"
-  );
-  stubs.hasUpgraded = setupSandbox.stub(
-    IPPEnrollAndEntitleManager,
-    "hasUpgraded"
-  );
+// Default fxaSignInFlow behavior + default getEntitlement response. Used
+// by setupStubs at suite startup and re-applied by cleanupService between
+// tasks.
+function resetDummyDefaults() {
+  IPPDummyAuthProvider.setGetEntitlementResponse({
+    entitlement: DEFAULT_SERVICE_STATUS.entitlement,
+  });
+  // In production, a successful FxA flow signs the user in and the auth
+  // provider's sign-in watcher picks it up. The dummy has no watcher, so
+  // reflect the outcome here.
+  STUBS.fxaSignInFlow.callsFake(async () => {
+    IPPDummyAuthProvider.simulateSignIn(true);
+    return true;
+  });
+}
 
-  const guardianStub = {
-    enroll: setupSandbox.stub(),
-    fetchUserInfo: setupSandbox.stub(),
-    fetchProxyPass: setupSandbox.stub(),
-    fetchProxyUsage: setupSandbox.stub(),
-    isLinkedToGuardian: setupSandbox.stub(),
-  };
-  stubs.enroll = guardianStub.enroll;
-  stubs.fetchUserInfo = guardianStub.fetchUserInfo;
-  stubs.fetchProxyPass = guardianStub.fetchProxyPass;
-  stubs.fetchProxyUsage = guardianStub.fetchProxyUsage;
-  stubs.isLinkedToGuardian = guardianStub.isLinkedToGuardian;
-  stubs.fxaSignInFlow = setupSandbox.stub(
+function setupStubs() {
+  STUBS.fxaSignInFlow = setupSandbox.stub(
     SpecialMessageActions,
     "fxaSignInFlow"
   );
+  resetDummyDefaults();
 
-  setupSandbox.stub(IPProtectionService, "guardian").get(() => guardianStub);
+  // Start signed-out so initOnStartupCompleted() is a no-op until a test
+  // opts in via setupService({ isReady: true }) (or simulateSignIn directly).
+  IPPDummyAuthProvider.simulateSignIn(false);
 }
 /* exported setupStubs */
 
-function setupService(
-  {
-    isSignedIn,
-    isEnrolledAndEntitled,
-    hasUpgraded,
-    canEnroll,
-    entitlement,
-    proxyPass,
-    usageInfo,
-    isLinkedToGuardian,
-    signInFlow,
-  } = DEFAULT_SERVICE_STATUS,
-  stubs = STUBS
-) {
-  if (typeof isSignedIn != "undefined") {
-    stubs.isSignedIn.get(() => isSignedIn);
-  }
-
-  if (typeof isEnrolledAndEntitled != "undefined") {
-    stubs.isEnrolledAndEntitled.get(() => isEnrolledAndEntitled);
-  }
-
-  if (typeof hasUpgraded != "undefined") {
-    stubs.hasUpgraded.get(() => hasUpgraded);
-  }
-
+function setupService({
+  isReady,
+  hasUpgraded,
+  canEnroll,
+  proxyPass,
+  usageInfo,
+} = DEFAULT_SERVICE_STATUS) {
+  // Seed the provider's responses before triggering sign-in, so that the
+  // transition into READY (which schedules a usage refresh) reads the seeded
+  // usage instead of a stale default.
   if (typeof canEnroll != "undefined") {
-    stubs.enroll.resolves({
-      ok: canEnroll,
+    IPPDummyAuthProvider.setEnrollResponse({
+      isEnrolledAndEntitled: canEnroll,
+      entitlement: canEnroll ? DEFAULT_SERVICE_STATUS.entitlement : undefined,
     });
   }
 
-  if (typeof entitlement != "undefined") {
-    stubs.fetchUserInfo.resolves(entitlement);
-  } else {
-    stubs.fetchUserInfo.resolves(DEFAULT_SERVICE_STATUS.entitlement);
-  }
-
   if (typeof proxyPass != "undefined") {
-    stubs.fetchProxyPass.resolves(proxyPass);
+    IPPDummyAuthProvider.setProxyPass(proxyPass);
   }
 
   if (typeof usageInfo != "undefined") {
-    stubs.fetchProxyUsage.resolves(usageInfo);
+    IPPDummyAuthProvider.setProxyUsage(usageInfo);
   }
 
-  if (typeof isLinkedToGuardian != "undefined") {
-    stubs.isLinkedToGuardian.resolves(isLinkedToGuardian);
-  }
-
-  if (typeof signInFlow != "undefined") {
-    stubs.fxaSignInFlow.resolves(signInFlow);
+  if (typeof isReady != "undefined") {
+    if (isReady) {
+      IPPDummyAuthProvider.simulateSignIn(true);
+      IPPDummyAuthProvider.setEntitlement(
+        createTestEntitlement({ subscribed: !!hasUpgraded })
+      );
+    } else {
+      IPPDummyAuthProvider.simulateSignIn(false);
+    }
   }
 }
 /* exported setupService */
 
 async function cleanupService() {
-  setupService(DEFAULT_SERVICE_STATUS);
+  setupService();
+  // Reset the dummy's response overrides that aren't part of the params
+  // accepted by setupService, so they don't leak into the next task.
+  IPPDummyAuthProvider.setProxyPassError(null);
+  resetDummyDefaults();
 }
 /* exported cleanupService */
 
@@ -501,13 +487,8 @@ async function cleanupExperiment() {
  */
 function createTestEntitlement(overrides = {}) {
   return new Entitlement({
-    autostart: false,
-    created_at: "2023-01-01T12:00:00.000Z",
-    limited_bandwidth: false,
-    location_controls: false,
     subscribed: false,
     uid: 42,
-    website_inclusion: false,
     maxBytes: "0",
     ...overrides,
   });
@@ -637,3 +618,46 @@ function checkBandwidth(bandwidthEl, bandwidthUsage) {
     `MB used ${bandwidthUsage.mbCount} times`
   );
 }
+
+async function checkStatusBoxAriaLabel(statusBox) {
+  let titleEl = statusBox.titleEl;
+  Assert.ok(titleEl, "Status box title should be present");
+
+  await BrowserTestUtils.waitForMutationCondition(
+    titleEl,
+    { attributes: true, attributeFilter: ["aria-label"] },
+    () => titleEl.hasAttribute("aria-label")
+  );
+
+  Assert.equal(
+    titleEl.getAttribute("aria-label"),
+    titleEl.textContent.trim(),
+    "Status box title aria-label should match the displayed text"
+  );
+}
+/* exported checkStatusBoxAriaLabel */
+
+// Borrowed from browser_PanelMultiView_keyboard.js
+async function expectFocusAfterKey(aKey, aFocus) {
+  let res = aKey.match(/^(Shift\+)?(.+)$/);
+  let shift = Boolean(res[1]);
+  let key;
+  if (res[2].length == 1) {
+    key = res[2]; // Character.
+  } else {
+    key = "KEY_" + res[2]; // Tab, ArrowRight, etc.
+  }
+  info("Waiting for focus on " + aFocus.id);
+  // Attempts to capture a nested button element (ie. inside of a moz-button)
+  let focused = BrowserTestUtils.waitForEvent(
+    aFocus.buttonEl ?? aFocus,
+    "focus"
+  );
+  EventUtils.synthesizeKey(key, { shiftKey: shift });
+  await focused;
+  ok(
+    true,
+    `${aFocus.id || "unidentified element"} focused after [${aKey}] pressed`
+  );
+}
+/* exported expectFocusAfterKey */

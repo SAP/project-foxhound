@@ -949,7 +949,7 @@ WebConsoleCommandsManager.register({
 
     if (!owner.consoleActor.targetActor.isTracerFeatureEnabled) {
       throw new Error(
-        ":trace requires 'devtools.debugger.features.javascript-tracing' preference to be true"
+        ":trace requires 'devtools.command-button-jstracer.enabled' preference to be true"
       );
     }
     const tracerActor =

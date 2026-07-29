@@ -63,7 +63,10 @@ class DocumentEventsListener extends EventEmitter {
       // Ignore listening to anything if the page is already fully loaded.
       // This can be the case when opening DevTools against an already loaded page
       // or when doing bfcache navigations.
-      if (this.targetActor.window.document.readyState != "complete") {
+      if (
+        !Cu.isRemoteProxy(this.targetActor.window) &&
+        this.targetActor.window.document.readyState != "complete"
+      ) {
         this.webProgress = this.targetActor.docShell
           .QueryInterface(Ci.nsIInterfaceRequestor)
           .getInterface(Ci.nsIWebProgress);
@@ -115,16 +118,20 @@ class DocumentEventsListener extends EventEmitter {
 
     const time = this._getPerformanceTiming(window, "navigationStart");
 
+    const isErrorPage =
+      window.docShell.currentDocumentChannel?.loadInfo.loadErrorPage;
+
     this.emit("dom-loading", {
       time,
       isFrameSwitching,
+      isErrorPage,
     });
 
     // Error pages, like the Offline page, i.e. about:neterror?...
     // are special and the WebProgress listener doesn't trigger any notification for them.
     // Also they are stuck on "interactive" state and never reach the "complete" state.
     // So fake the two missing events.
-    if (window.docShell.currentDocumentChannel?.loadInfo.loadErrorPage) {
+    if (isErrorPage) {
       this.onContentLoaded({ target: window.document }, isFrameSwitching);
       this.onLoad({ target: window.document }, isFrameSwitching);
       return;

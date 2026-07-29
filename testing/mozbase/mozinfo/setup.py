@@ -35,6 +35,7 @@ setup(
     url="https://wiki.mozilla.org/Auto-tools/Projects/Mozbase",
     license="MPL",
     packages=["mozinfo"],
+    package_data={"mozinfo": ["android_os_to_api_map.yaml"]},
     include_package_data=True,
     zip_safe=False,
     install_requires=deps,

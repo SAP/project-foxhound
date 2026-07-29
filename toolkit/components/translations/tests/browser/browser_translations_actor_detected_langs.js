@@ -28,9 +28,9 @@ add_task(async function test_detected_language() {
   });
 
   async function getDetectedLanguagesFor(langTag) {
-    await ContentTask.spawn(
+    await SpecialPowers.spawn(
       tab.linkedBrowser,
-      { langTag },
+      [{ langTag }],
       function changeLanguage({ langTag }) {
         content.document.body.parentNode.setAttribute("lang", langTag);
       }
@@ -60,6 +60,26 @@ add_task(async function test_detected_language() {
       isDocLangTagSupported: false,
     },
     "Cherokee is detected, but is not a supported language."
+  );
+
+  Assert.deepEqual(
+    await getDetectedLanguagesFor("nb"),
+    {
+      docLangTag: "nb",
+      userLangTag: "en",
+      isDocLangTagSupported: true,
+    },
+    "Norwegian Bokmål is detected as a supported language."
+  );
+
+  Assert.deepEqual(
+    await getDetectedLanguagesFor("nn"),
+    {
+      docLangTag: "nn",
+      userLangTag: "en",
+      isDocLangTagSupported: false,
+    },
+    "Norwegian Nynorsk is detected, but is not a supported language."
   );
 
   Assert.deepEqual(

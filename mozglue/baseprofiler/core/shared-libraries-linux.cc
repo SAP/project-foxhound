@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -155,7 +153,7 @@ class MemoryRange {
 // directly making system calls for open, close, mmap, and munmap.
 class MemoryMappedFile {
  public:
-  MemoryMappedFile() {}
+  MemoryMappedFile() = default;
 
   // Constructor that calls Map() to map a file at |path| into memory.
   // If Map() fails, the object behaves as if it is default constructed.
@@ -261,7 +259,7 @@ const size_t kMDGUIDSize = sizeof(MDGUID);
 class FileID {
  public:
   explicit FileID(const char* path) : path_(path) {}
-  ~FileID() {}
+  ~FileID() = default;
 
   // Load the identifier for the elf file path specified in the constructor into
   // |identifier|.

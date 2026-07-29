@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -45,11 +43,12 @@ class nsArray final : public nsArrayBase {
   friend class nsArrayBase;
 
  public:
+  nsArray(const nsArray& aOther) = delete;
+
   NS_DECL_ISUPPORTS
 
  private:
-  nsArray() {}
-  nsArray(const nsArray& aOther);
+  nsArray() = default;
   explicit nsArray(const nsCOMArray_base& aBaseArray)
       : nsArrayBase(aBaseArray) {}
   ~nsArray() = default;
@@ -59,12 +58,13 @@ class nsArrayCC final : public nsArrayBase {
   friend class nsArrayBase;
 
  public:
+  nsArrayCC(const nsArrayCC& aOther) = delete;
+
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsArrayCC, nsIMutableArray)
 
  private:
-  nsArrayCC() {}
-  nsArrayCC(const nsArrayCC& aOther);
+  nsArrayCC() = default;
   explicit nsArrayCC(const nsCOMArray_base& aBaseArray)
       : nsArrayBase(aBaseArray) {}
   ~nsArrayCC() = default;

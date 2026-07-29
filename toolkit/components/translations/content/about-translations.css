@@ -30,6 +30,8 @@
 
   --AT-square-button-large: calc(var(--size-item-large) + var(--space-small));
   --AT-square-button-small: var(--size-item-large);
+  --AT-source-textarea-button-inline-padding: calc(var(--AT-square-button-small) + var(--space-small));
+  --AT-target-textarea-button-block-padding: calc(var(--AT-square-button-large) + var(--space-small));
 }
 
 body {
@@ -55,7 +57,7 @@ body {
 
 #about-translations-logo-and-h1 {
   display: flex;
-  align-items: start;
+  align-items: center;
   justify-content: start;
   column-gap: var(--space-small);
 }
@@ -69,16 +71,16 @@ body {
   margin: 0;
 }
 
-.about-translations-message-bar {
-  display: none;
-}
-
 #about-translations-main-user-interface {
-  display: none;
+  display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   gap: var(--space-medium);
   width: min(var(--AT-content-width), var(--AT-content-max));
   margin: 0 auto;
+}
+
+#about-translations-main-user-interface[hidden] {
+  display: none;
 }
 
 .about-translations-select {
@@ -91,9 +93,8 @@ body {
   &[type~="icon"]::part(button) {
     width: var(--AT-square-button-large);
     height: var(--AT-square-button-large);
-    transform: rotate(90deg) scaleX(-1);
-    background-image: url("chrome://global/skin/icons/arrows-updown.svg");
-    background-size: var(--size-item-medium);
+    background-image: url("chrome://global/skin/icons/swap-horizontal-20.svg");
+    background-size: 20px;
   }
 }
 
@@ -106,21 +107,26 @@ body {
 
 #about-translations-source-section,
 #about-translations-target-section {
+  position: relative;
+  display: flex;
+  flex-direction: column;
   width: 100%;
   min-height: var(--AT-section-height);
 }
 
 #about-translations-source-section {
-  display: grid;
-  grid-template-columns: 1fr auto;
   background-color: var(--background-color-box);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-medium);
   overflow: hidden;
 
-  &.focus-section {
+  &:focus-within {
     outline: var(--focus-outline);
     outline-offset: -1px;
+  }
+
+  &:has(moz-button:focus, a:focus) {
+    outline: none;
   }
 }
 
@@ -130,13 +136,59 @@ body {
   border-radius: var(--border-radius-medium);
   overflow: hidden;
 
-  &.focus-section {
+  &:focus-within {
     outline: var(--focus-outline);
     outline-offset: -1px;
   }
+
+  &:has(moz-button:focus) {
+    outline: none;
+  }
+
+  &.has-translation-error > #about-translations-target-textarea {
+    visibility: hidden;
+  }
+}
+
+#about-translations-translation-error-message {
+  --message-bar-border-radius: 0;
+  --message-bar-border-width: 0;
+  padding-inline: var(--space-xsmall);
+  border-block-end: var(--border-width) solid var(--border-color);
+}
+
+.about-translations-section-message {
+  --message-bar-border-radius: 0;
+  --message-bar-border-width: 0;
+  padding-inline: var(--space-xsmall);
+  border-block-end: var(--border-width) solid var(--border-color);
+}
+
+.about-translations-section-message-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  row-gap: var(--space-large);
+}
+
+.about-translations-section-message-subtext {
+  display: block;
+}
+
+.about-translations-section-message-action {
+  align-self: flex-start;
+}
+
+#about-translations-translation-error-subtext {
+  display: block;
+}
+
+#about-translations-translation-error-button {
+  margin-block-start: var(--space-large);
 }
 
 .about-translations-textarea {
+  flex: 1;
   width: 100%;
   margin: 0;
   padding: var(--AT-input-padding);
@@ -145,10 +197,12 @@ body {
 }
 
 #about-translations-source-textarea {
+  anchor-name: --AT-source-textarea-anchor;
   border: none;
   border-radius: 0;
   background-color: transparent;
-  padding-inline: var(--AT-input-padding) var(--space-xsmall);
+  padding-inline-start: var(--AT-input-padding);
+  padding-inline-end: var(--AT-source-textarea-button-inline-padding);
 
   &:focus-visible {
     outline: none;
@@ -157,34 +211,44 @@ body {
   :dir(ltr) > &:dir(rtl),
   :dir(rtl) > &:dir(ltr) {
     /*
-      We need to reverse which side has the small padding when the
-      locale direction is different than the textarea direction.
+      Reverse the side that reserves space for the anchored clear button
+      when locale direction differs from textarea direction.
     */
-    padding-inline: var(--space-xsmall) var(--AT-input-padding);
+    padding-inline-start: var(--AT-source-textarea-button-inline-padding);
+    padding-inline-end: var(--AT-input-padding);
   }
 }
 
-#about-translations-source-actions {
-  padding: var(--space-xsmall);
-  min-width: var(--AT-square-button-small);
-  background-color: transparent;
-}
-
-#about-translations-target-textarea {
-  border: none;
-  border-radius: 0;
-  background-color: transparent;
-  padding-block-end: var(--space-xsmall);
+#about-translations-clear-button {
+  position: absolute;
+  z-index: 1;
+  position-anchor: --AT-source-textarea-anchor;
+  inset-block-start: calc(anchor(top) + var(--space-xsmall));
+  inset-inline-end: calc(anchor(end) + var(--space-xsmall));
 
   &:focus-visible {
     outline: none;
   }
 }
 
-#about-translations-target-actions {
-  padding: var(--space-xsmall);
-  padding-block-end: var(--space-small);
+#about-translations-target-textarea {
+  anchor-name: --AT-target-textarea-anchor;
+  border: none;
+  border-radius: 0;
   background-color: transparent;
+  padding-block-end: var(--AT-target-textarea-button-block-padding);
+
+  &:focus-visible {
+    outline: none;
+  }
+}
+
+#about-translations-copy-button {
+  position: absolute;
+  z-index: 1;
+  position-anchor: --AT-target-textarea-anchor;
+  inset-block-end: calc(anchor(end) + var(--space-small));
+  inset-inline-start: calc(anchor(start) + var(--space-small));
 
   &:focus-visible {
     outline: none;
@@ -192,7 +256,7 @@ body {
 }
 
 #about-translations-copy-button::part(button) {
-  padding-inline: calc(var(--space-small) + var(--space-xxsmall));
+  padding-inline: var(--space-small);
 }
 
 #about-translations-empty-section {

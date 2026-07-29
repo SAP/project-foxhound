@@ -49,12 +49,12 @@ import mozilla.components.support.test.mock
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.`when`
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class EngineObserverTest {
@@ -148,7 +148,7 @@ class EngineObserverTest {
         assertEquals(true, store.state.selectedTab?.content?.loading)
 
         val tab = store.state.findTab("mozilla")
-        assertNotNull(tab!!)
+        assertNotNull(tab)
         assertTrue(tab.content.canGoForward)
         assertTrue(tab.content.canGoBack)
     }
@@ -1434,7 +1434,7 @@ class EngineObserverTest {
 
         val observedMediaSessionState = store.state.tabs[0].mediaSessionState
         assertNotNull(observedMediaSessionState)
-        assertEquals(mediaSessionController, observedMediaSessionState?.controller)
+        assertEquals(mediaSessionController, observedMediaSessionState.controller)
     }
 
     @Test
@@ -1490,8 +1490,8 @@ class EngineObserverTest {
 
         val observedMediaSessionState = store.state.findTab("mozilla")?.mediaSessionState
         assertNotNull(observedMediaSessionState)
-        assertEquals(mediaSessionController, observedMediaSessionState?.controller)
-        assertEquals(metaData, observedMediaSessionState?.metadata)
+        assertEquals(mediaSessionController, observedMediaSessionState.controller)
+        assertEquals(metaData, observedMediaSessionState.metadata)
     }
 
     @Test
@@ -1520,8 +1520,8 @@ class EngineObserverTest {
 
         val observedMediaSessionState = store.state.findTab("mozilla")?.mediaSessionState
         assertNotNull(observedMediaSessionState)
-        assertEquals(mediaSessionController, observedMediaSessionState?.controller)
-        assertEquals(playbackState, observedMediaSessionState?.playbackState)
+        assertEquals(mediaSessionController, observedMediaSessionState.controller)
+        assertEquals(playbackState, observedMediaSessionState.playbackState)
     }
 
     @Test
@@ -1550,8 +1550,8 @@ class EngineObserverTest {
 
         val observedMediaSessionState = store.state.findTab("mozilla")?.mediaSessionState
         assertNotNull(observedMediaSessionState)
-        assertEquals(mediaSessionController, observedMediaSessionState?.controller)
-        assertEquals(playFeature, observedMediaSessionState?.features)
+        assertEquals(mediaSessionController, observedMediaSessionState.controller)
+        assertEquals(playFeature, observedMediaSessionState.features)
     }
 
     @Test
@@ -1580,8 +1580,8 @@ class EngineObserverTest {
 
         val observedMediaSessionState = store.state.findTab("mozilla")?.mediaSessionState
         assertNotNull(observedMediaSessionState)
-        assertEquals(mediaSessionController, observedMediaSessionState?.controller)
-        assertEquals(positionState, observedMediaSessionState?.positionState)
+        assertEquals(mediaSessionController, observedMediaSessionState.controller)
+        assertEquals(positionState, observedMediaSessionState.positionState)
     }
 
     @Test
@@ -1609,8 +1609,8 @@ class EngineObserverTest {
 
         val observedMediaSessionState = store.state.findTab("mozilla")?.mediaSessionState
         assertNotNull(observedMediaSessionState)
-        assertEquals(mediaSessionController, observedMediaSessionState?.controller)
-        assertEquals(true, observedMediaSessionState?.muted)
+        assertEquals(mediaSessionController, observedMediaSessionState.controller)
+        assertEquals(true, observedMediaSessionState.muted)
     }
 
     @Test
@@ -1639,9 +1639,9 @@ class EngineObserverTest {
 
         val observedMediaSessionState = store.state.findTab("mozilla")?.mediaSessionState
         assertNotNull(observedMediaSessionState)
-        assertEquals(mediaSessionController, observedMediaSessionState?.controller)
-        assertEquals(true, observedMediaSessionState?.fullscreen)
-        assertEquals(elementMetadata, observedMediaSessionState?.elementMetadata)
+        assertEquals(mediaSessionController, observedMediaSessionState.controller)
+        assertEquals(true, observedMediaSessionState.fullscreen)
+        assertEquals(elementMetadata, observedMediaSessionState.elementMetadata)
     }
 
     @Test

@@ -74,6 +74,7 @@ class SiteSecurityRobot {
         Log.i(TAG, "clickQuickActionSheetClearSiteData: Trying to click the \"Clear cookies and site data\" button")
         quickActionSheetClearSiteData().click()
         Log.i(TAG, "clickQuickActionSheetClearSiteData: Clicked the \"Clear cookies and site data\" button")
+        waitForAppWindowToBeUpdated()
     }
     fun verifyClearSiteDataPrompt(url: String) {
         assertUIObjectExists(clearSiteDataPrompt(url))

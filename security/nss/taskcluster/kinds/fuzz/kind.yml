@@ -65,6 +65,30 @@ tasks:
                 target: certDN
                 corpus: certDN
 
+    linux64-dsau:
+        description: Linux x64 DSAU
+        dependencies:
+            build: build-linux64/debug-fuzz
+        treeherder:
+            symbol: DSAU
+            platform: linux64/debug-fuzz
+        task-context:
+            from-object:
+                target: dsau
+                corpus: dsau
+
+    linux64-ec-derive:
+        description: Linux x64 EC Derive
+        dependencies:
+            build: build-linux64/debug-fuzz
+        treeherder:
+            symbol: ECDerive
+            platform: linux64/debug-fuzz
+        task-context:
+            from-object:
+                target: ec-derive
+                corpus: ec-derive
+
     linux64-ech:
         description: Linux x64 ECH
         dependencies:
@@ -278,6 +302,30 @@ tasks:
             from-object:
                 target: certDN
                 corpus: certDN
+
+    linux32-dsau:
+        description: Linux 32 DSAU
+        dependencies:
+            build: build-linux32/debug-fuzz
+        treeherder:
+            symbol: DSAU
+            platform: linux32/debug-fuzz
+        task-context:
+            from-object:
+                target: dsau
+                corpus: dsau
+
+    linux32-ec-derive:
+        description: Linux 32 EC Derive
+        dependencies:
+            build: build-linux32/debug-fuzz
+        treeherder:
+            symbol: ECDerive
+            platform: linux32/debug-fuzz
+        task-context:
+            from-object:
+                target: ec-derive
+                corpus: ec-derive
 
     linux32-ech:
         description: Linux 32 ECH

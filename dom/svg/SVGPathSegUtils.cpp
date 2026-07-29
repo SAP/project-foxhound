@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,92 +14,86 @@ using namespace mozilla::gfx;
 
 namespace mozilla {
 
-static const float PATH_SEG_LENGTH_TOLERANCE = 0.0000001f;
-static const uint32_t MAX_RECURSION = 10;
+static constexpr double PATH_SEG_LENGTH_TOLERANCE = 0.0000001;
+static constexpr uint32_t MAX_RECURSION = 10;
 
-static float CalcDistanceBetweenPoints(const Point& aP1, const Point& aP2) {
+static double CalcDistanceBetweenPoints(const Point& aP1, const Point& aP2) {
   return NS_hypot(aP2.x - aP1.x, aP2.y - aP1.y);
 }
 
-static void SplitQuadraticBezier(const Point* aCurve, Point* aLeft,
-                                 Point* aRight) {
-  aLeft[0].x = aCurve[0].x;
-  aLeft[0].y = aCurve[0].y;
-  aRight[2].x = aCurve[2].x;
-  aRight[2].y = aCurve[2].y;
-  aLeft[1].x = (aCurve[0].x + aCurve[1].x) / 2;
-  aLeft[1].y = (aCurve[0].y + aCurve[1].y) / 2;
-  aRight[1].x = (aCurve[1].x + aCurve[2].x) / 2;
-  aRight[1].y = (aCurve[1].y + aCurve[2].y) / 2;
-  aLeft[2].x = aRight[0].x = (aLeft[1].x + aRight[1].x) / 2;
-  aLeft[2].y = aRight[0].y = (aLeft[1].y + aRight[1].y) / 2;
+template <std::size_t N>
+using PointArray = std::array<Point, N>;
+
+using QuadraticBezierArray = PointArray<3>;
+
+static void SplitQuadraticBezier(const QuadraticBezierArray& aCurve,
+                                 QuadraticBezierArray& aLeft,
+                                 QuadraticBezierArray& aRight) {
+  aLeft[0] = aCurve[0];
+  aRight[2] = aCurve[2];
+  aLeft[1] = (aCurve[0] + aCurve[1]) / 2;
+  aRight[1] = (aCurve[1] + aCurve[2]) / 2;
+  aLeft[2] = aRight[0] = (aLeft[1] + aRight[1]) / 2;
 }
 
-static void SplitCubicBezier(const Point* aCurve, Point* aLeft, Point* aRight) {
-  Point tmp;
-  tmp.x = (aCurve[1].x + aCurve[2].x) / 4;
-  tmp.y = (aCurve[1].y + aCurve[2].y) / 4;
-  aLeft[0].x = aCurve[0].x;
-  aLeft[0].y = aCurve[0].y;
-  aRight[3].x = aCurve[3].x;
-  aRight[3].y = aCurve[3].y;
-  aLeft[1].x = (aCurve[0].x + aCurve[1].x) / 2;
-  aLeft[1].y = (aCurve[0].y + aCurve[1].y) / 2;
-  aRight[2].x = (aCurve[2].x + aCurve[3].x) / 2;
-  aRight[2].y = (aCurve[2].y + aCurve[3].y) / 2;
-  aLeft[2].x = aLeft[1].x / 2 + tmp.x;
-  aLeft[2].y = aLeft[1].y / 2 + tmp.y;
-  aRight[1].x = aRight[2].x / 2 + tmp.x;
-  aRight[1].y = aRight[2].y / 2 + tmp.y;
-  aLeft[3].x = aRight[0].x = (aLeft[2].x + aRight[1].x) / 2;
-  aLeft[3].y = aRight[0].y = (aLeft[2].y + aRight[1].y) / 2;
+using CubicBezierArray = PointArray<4>;
+
+static void SplitCubicBezier(const CubicBezierArray& aCurve,
+                             CubicBezierArray& aLeft,
+                             CubicBezierArray& aRight) {
+  const Point tmp = (aCurve[1] + aCurve[2]) / 4;
+  aLeft[0] = aCurve[0];
+  aRight[3] = aCurve[3];
+  aLeft[1] = (aCurve[0] + aCurve[1]) / 2;
+  aRight[2] = (aCurve[2] + aCurve[3]) / 2;
+  aLeft[2] = aLeft[1] / 2 + tmp;
+  aRight[1] = aRight[2] / 2 + tmp;
+  aLeft[3] = aRight[0] = (aLeft[2] + aRight[1]) / 2;
 }
 
-static float CalcBezLengthHelper(const Point* aCurve, uint32_t aNumPts,
-                                 uint32_t aRecursionCount,
-                                 void (*aSplit)(const Point*, Point*, Point*)) {
-  Point left[4];
-  Point right[4];
-  float length = 0, dist;
-  for (uint32_t i = 0; i < aNumPts - 1; i++) {
+template <std::size_t N>
+static double CalcBezLengthHelper(
+    PointArray<N>& aCurve, uint32_t aRecursionCount,
+    void (*aSplit)(const PointArray<N>&, PointArray<N>&, PointArray<N>&)) {
+  PointArray<N> left, right;
+  double length = 0.0;
+  for (size_t i = 0; i < N - 1; i++) {
     length += CalcDistanceBetweenPoints(aCurve[i], aCurve[i + 1]);
   }
-  dist = CalcDistanceBetweenPoints(aCurve[0], aCurve[aNumPts - 1]);
+  double dist = CalcDistanceBetweenPoints(aCurve[0], aCurve[N - 1]);
   if (length - dist > PATH_SEG_LENGTH_TOLERANCE &&
       aRecursionCount < MAX_RECURSION) {
     aSplit(aCurve, left, right);
     ++aRecursionCount;
-    return CalcBezLengthHelper(left, aNumPts, aRecursionCount, aSplit) +
-           CalcBezLengthHelper(right, aNumPts, aRecursionCount, aSplit);
+    return CalcBezLengthHelper(left, aRecursionCount, aSplit) +
+           CalcBezLengthHelper(right, aRecursionCount, aSplit);
   }
   return length;
 }
 
-static inline float CalcLengthOfCubicBezier(const Point& aPos,
-                                            const Point& aCP1,
-                                            const Point& aCP2,
-                                            const Point& aTo) {
-  Point curve[4] = {aPos, aCP1, aCP2, aTo};
-  return CalcBezLengthHelper(curve, 4, 0, SplitCubicBezier);
+static inline double CalcLengthOfCubicBezier(const Point& aPos,
+                                             const Point& aCP1,
+                                             const Point& aCP2,
+                                             const Point& aTo) {
+  CubicBezierArray curve = {aPos, aCP1, aCP2, aTo};
+  return CalcBezLengthHelper(curve, 0, SplitCubicBezier);
 }
 
-static inline float CalcLengthOfQuadraticBezier(const Point& aPos,
-                                                const Point& aCP,
-                                                const Point& aTo) {
-  Point curve[3] = {aPos, aCP, aTo};
-  return CalcBezLengthHelper(curve, 3, 0, SplitQuadraticBezier);
+static inline double CalcLengthOfQuadraticBezier(const Point& aPos,
+                                                 const Point& aCP,
+                                                 const Point& aTo) {
+  QuadraticBezierArray curve = {aPos, aCP, aTo};
+  return CalcBezLengthHelper(curve, 0, SplitQuadraticBezier);
 }
 
-// Basically, this is just a variant version of the above TraverseXXX functions.
-// We just put those function inside this and use StylePathCommand instead.
-// This function and the above ones should be dropped by Bug 1388931.
 /* static */
 void SVGPathSegUtils::TraversePathSegment(const StylePathCommand& aCommand,
                                           SVGPathTraversalState& aState) {
   switch (aCommand.tag) {
     case StylePathCommand::Tag::Close:
       if (aState.ShouldUpdateLengthAndControlPoints()) {
-        aState.length += CalcDistanceBetweenPoints(aState.pos, aState.start);
+        aState.length +=
+            (float)CalcDistanceBetweenPoints(aState.pos, aState.start);
         aState.cp1 = aState.cp2 = aState.start;
       }
       aState.pos = aState.start;
@@ -122,7 +114,7 @@ void SVGPathSegUtils::TraversePathSegment(const StylePathCommand& aCommand,
                      ? aCommand.line.point.ToGfxPoint()
                      : aState.pos + aCommand.line.point.ToGfxPoint();
       if (aState.ShouldUpdateLengthAndControlPoints()) {
-        aState.length += CalcDistanceBetweenPoints(aState.pos, to);
+        aState.length += (float)CalcDistanceBetweenPoints(aState.pos, to);
         aState.cp1 = aState.cp2 = to;
       }
       aState.pos = to;
@@ -161,18 +153,18 @@ void SVGPathSegUtils::TraversePathSegment(const StylePathCommand& aCommand,
       Point to = arc.point.IsToPosition() ? arc.point.ToGfxPoint()
                                           : aState.pos + arc.point.ToGfxPoint();
       if (aState.ShouldUpdateLengthAndControlPoints()) {
-        float dist = 0;
+        float dist = 0.0f;
         Point radii = arc.radii.ToGfxPoint();
         if (radii.x == 0.0f || radii.y == 0.0f) {
           dist = CalcDistanceBetweenPoints(aState.pos, to);
         } else {
-          Point bez[4] = {aState.pos, Point(0, 0), Point(0, 0), Point(0, 0)};
+          CubicBezierArray bez = {aState.pos, Point(), Point(), Point()};
           const bool largeArcFlag = arc.arc_size == StyleArcSize::Large;
           const bool sweepFlag = arc.arc_sweep == StyleArcSweep::Cw;
           SVGArcConverter converter(aState.pos, to, radii, arc.rotate,
                                     largeArcFlag, sweepFlag);
           while (converter.GetNextSegment(&bez[1], &bez[2], &bez[3])) {
-            dist += CalcBezLengthHelper(bez, 4, 0, SplitCubicBezier);
+            dist += (float)CalcBezLengthHelper(bez, 0, SplitCubicBezier);
             bez[0] = bez[3];
           }
         }
@@ -246,13 +238,17 @@ enum class EdgeDir {
   NONE,
 };
 
-Maybe<EdgeDir> GetDirection(Point v) {
-  if (!std::isfinite(v.x.value) || !std::isfinite(v.y.value)) {
+static Maybe<EdgeDir> GetDirection(const Point& v) {
+  if (!v.IsFinite()) {
     return Nothing();
   }
 
-  bool x = std::abs(v.x) > 0.001;
-  bool y = std::abs(v.y) > 0.001;
+  // We may be dealing with very small rects scaled up so make
+  // adjust the threshold based on the magnitude of the sides.
+  float threshold = std::min((std::abs(v.x) + std::abs(v.y)) * 0.00001, 0.001);
+
+  bool x = std::abs(v.x) > threshold;
+  bool y = std::abs(v.y) > threshold;
   if (x && y) {
     return Nothing();
   }
@@ -268,7 +264,7 @@ Maybe<EdgeDir> GetDirection(Point v) {
   return Some(v.y > 0.0 ? EdgeDir::DOWN : EdgeDir::UP);
 }
 
-EdgeDir OppositeDirection(EdgeDir dir) {
+static EdgeDir OppositeDirection(EdgeDir dir) {
   switch (dir) {
     case EdgeDir::LEFT:
       return EdgeDir::RIGHT;
@@ -286,12 +282,14 @@ EdgeDir OppositeDirection(EdgeDir dir) {
 struct IsRectHelper {
   Point min;
   Point max;
-  EdgeDir currentDir;
+  EdgeDir currentDir = EdgeDir::NONE;
   // Index of the next corner.
-  uint32_t idx;
-  EdgeDir dirs[4];
+  uint32_t idx = 0;
+  std::array<EdgeDir, 4> dirs;
 
-  bool Edge(Point from, Point to) {
+  IsRectHelper() { dirs.fill(EdgeDir::NONE); }
+
+  bool Edge(const Point& from, const Point& to) {
     auto edge = to - from;
 
     auto maybeDir = GetDirection(edge);
@@ -308,7 +306,7 @@ struct IsRectHelper {
 
     if (dir != currentDir) {
       // The edge forms a corner with the previous edge.
-      if (idx >= 4) {
+      if (idx >= dirs.size()) {
         // We are at the 5th corner, can't be a rectangle.
         return false;
       }
@@ -318,21 +316,20 @@ struct IsRectHelper {
         return false;
       }
 
-      dirs[idx] = dir;
-      idx += 1;
+      dirs[idx++] = dir;
       currentDir = dir;
     }
 
-    min.x = fmin(min.x, to.x);
-    min.y = fmin(min.y, to.y);
-    max.x = fmax(max.x, to.x);
-    max.y = fmax(max.y, to.y);
+    min.x = std::min(min.x, to.x);
+    min.y = std::min(min.y, to.y);
+    max.x = std::max(max.x, to.x);
+    max.y = std::max(max.y, to.y);
 
     return true;
   }
 
-  bool EndSubpath() {
-    if (idx != 4) {
+  bool EndSubpath() const {
+    if (idx != dirs.size()) {
       return false;
     }
 
@@ -345,16 +342,11 @@ struct IsRectHelper {
   }
 };
 
-Maybe<gfx::Rect> SVGPathToAxisAlignedRect(Span<const StylePathCommand> aPath) {
-  Point pathStart(0.0, 0.0);
-  Point segStart(0.0, 0.0);
-  IsRectHelper helper = {
-      Point(0.0, 0.0),
-      Point(0.0, 0.0),
-      EdgeDir::NONE,
-      0,
-      {EdgeDir::NONE, EdgeDir::NONE, EdgeDir::NONE, EdgeDir::NONE},
-  };
+Maybe<gfx::Rect> SVGPathSegUtils::SVGPathToAxisAlignedRect(
+    Span<const StylePathCommand> aPath) {
+  Point pathStart;
+  Point segStart;
+  IsRectHelper helper;
   static constexpr float kEpsilon = 0.001f;
 
   for (const StylePathCommand& cmd : aPath) {

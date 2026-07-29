@@ -225,12 +225,8 @@ class BenchmarkSupport(PageloadSupport):
                         },
                     )["replicates"].append(subtest_result["value"])
 
-            for subtest_name in results[test_name]:
-                for subtest_name in result:
-                    subtest_result_name = f"{test_name} - {subtest_name}"
-                    _subtests[subtest_result_name]["value"] = filters.median(
-                        _subtests[subtest_result_name]["replicates"]
-                    )
+        for subtest in _subtests.values():
+            subtest["value"] = filters.median(subtest["replicates"])
 
         subtests = sorted(_subtests.values(), key=lambda x: x["name"], reverse=True)
         for subtest in subtests:
@@ -432,7 +428,7 @@ class BenchmarkSupport(PageloadSupport):
         if "twitch-animation" in testname:
             return round(filters.geometric_mean(_filter(vals, "run")), 2)
 
-        if "ve" in testname:
+        if testname.startswith("ve-"):
             if "rt" in testname:
                 # We collect the mean and cv of frame-to-frame performance and the
                 # frame-dropping rate for both keyframe and non-keyframe. However,
@@ -542,7 +538,7 @@ class BenchmarkSupport(PageloadSupport):
         subtests = None
         if "youtube-playback" in test["name"]:
             subtests, vals = self.parseYoutubePlaybackPerformanceOutput(test)
-        elif "ve" in test["name"]:
+        elif test["name"].startswith("ve-"):
             subtests, vals = self.parseWebCodecsOutput(test)
         else:
             # Attempt to parse the unknown benchmark by flattening the

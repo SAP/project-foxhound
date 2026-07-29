@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -59,7 +57,7 @@ static nsSize GetContentRectSize(const nsIFrame& aFrame) {
     // This can break in some edge cases like when layout overflows sizes or
     // what not.
     NS_ASSERTION(
-        !aFrame.PresContext()->UseOverlayScrollbars() ||
+        !f->UseOverlayScrollbars() ||
             scrollPort.Size() == aFrame.GetContentRectRelativeToSelf().Size(),
         "Wrong scrollport?");
     return scrollPort.Size();
@@ -220,14 +218,23 @@ void ResizeObservation::UpdateLastReportedSize(
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(ResizeObserver)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(ResizeObserver)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mOwner, mDocument, mCallback,
-                                    mActiveTargets, mObservationMap);
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mOwner, mDocument, mActiveTargets,
+                                    mObservationMap);
+  if (tmp->mCallback.is<RefPtr<ResizeObserverCallback>>()) {
+    ImplCycleCollectionTraverse(
+        cb, tmp->mCallback.as<RefPtr<ResizeObserverCallback>>(), "mCallback",
+        0);
+  }
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(ResizeObserver)
   tmp->Disconnect();
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mOwner, mDocument, mCallback, mActiveTargets,
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mOwner, mDocument, mActiveTargets,
                                   mObservationMap);
+  if (tmp->mCallback.is<RefPtr<ResizeObserverCallback>>()) {
+    ImplCycleCollectionUnlink(
+        tmp->mCallback.as<RefPtr<ResizeObserverCallback>>());
+  }
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
@@ -396,8 +403,12 @@ uint32_t ResizeObserver::BroadcastActiveObservations() {
     }
   }
 
-  RefPtr<ResizeObserverCallback> callback(mCallback);
-  callback->Call(this, entries, *this);
+  if (mCallback.is<RefPtr<ResizeObserverCallback>>()) {
+    auto callback(mCallback.as<RefPtr<ResizeObserverCallback>>());
+    callback->Call(this, entries, *this);
+  } else {
+    mCallback.as<NativeCallback>()(entries);
+  }
 
   mActiveTargets.Clear();
   mHasSkippedTargets = false;

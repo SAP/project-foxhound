@@ -23,22 +23,8 @@ const kWidgetId = "home-button";
 const kWidgetRemovedPref = "browser.engagement.home-button.has-removed";
 
 function getHomepagePref(useDefault) {
-  let homePage;
-  let prefs = Services.prefs;
-  if (useDefault) {
-    prefs = prefs.getDefaultBranch(null);
-  }
-  try {
-    // Historically, this was a localizable pref, but default Firefox builds
-    // don't use this.
-    // Distributions and local customizations might still use this, so let's
-    // keep it.
-    homePage = prefs.getComplexValue(kPrefName, Ci.nsIPrefLocalizedString).data;
-  } catch (ex) {}
-
-  if (!homePage) {
-    homePage = prefs.getStringPref(kPrefName);
-  }
+  let prefs = useDefault ? Services.prefs.getDefaultBranch("") : Services.prefs;
+  let homePage = prefs.getStringPref(kPrefName, "");
 
   // Apparently at some point users ended up with blank home pages somehow.
   // If that happens, reset the pref and read it again.

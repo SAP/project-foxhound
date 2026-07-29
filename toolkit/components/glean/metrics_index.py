@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -27,7 +25,6 @@ gecko_metrics = [
     "docshell/base/metrics.yaml",
     "dom/base/use_counter_metrics.yaml",
     "dom/canvas/metrics.yaml",
-    "dom/crypto/metrics.yaml",
     "dom/geolocation/metrics.yaml",
     "dom/indexedDB/metrics.yaml",
     "dom/localstorage/metrics.yaml",
@@ -68,7 +65,7 @@ gecko_metrics = [
     "security/ct/metrics.yaml",
     "security/manager/ssl/metrics.yaml",
     "security/sandbox/metrics.yaml",
-    "services/common/metrics.yaml",
+    "services/settings/metrics.yaml",
     "services/sync/modules/metrics.yaml",
     "startupcache/metrics.yaml",
     "storage/metrics.yaml",
@@ -76,6 +73,7 @@ gecko_metrics = [
     "toolkit/components/antitracking/metrics.yaml",
     "toolkit/components/backgroundhangmonitor/metrics.yaml",
     "toolkit/components/captchadetection/metrics.yaml",
+    "toolkit/components/cleardata/metrics.yaml",
     "toolkit/components/cookiebanners/metrics.yaml",
     "toolkit/components/doh/metrics.yaml",
     "toolkit/components/downloads/metrics.yaml",
@@ -84,6 +82,7 @@ gecko_metrics = [
     "toolkit/components/formautofill/metrics.yaml",
     "toolkit/components/gecko-trace/generated-metrics.yaml",
     "toolkit/components/glean/metrics.yaml",
+    "toolkit/components/ipprotection/metrics.yaml",
     "toolkit/components/mediasniffer/metrics.yaml",
     "toolkit/components/messaging-system/metrics.yaml",
     "toolkit/components/ml/metrics.yaml",
@@ -116,10 +115,13 @@ gecko_metrics = [
 # Order is lexicographical, enforced by t/c/glean/tests/pytest/test_yaml_indices.py
 firefox_desktop_metrics = [
     "browser/actors/metrics.yaml",
+    "browser/components/aiwindow/metrics.yaml",
     "browser/components/asrouter/metrics.yaml",
     "browser/components/attribution/metrics.yaml",
     "browser/components/backup/metrics.yaml",
+    "browser/components/contentsharing/metrics.yaml",
     "browser/components/contextualidentity/metrics.yaml",
+    "browser/components/controlcenter/metrics.yaml",
     "browser/components/customkeys/metrics.yaml",
     "browser/components/downloads/metrics.yaml",
     "browser/components/extensions/metrics.yaml",
@@ -144,7 +146,6 @@ firefox_desktop_metrics = [
     "browser/components/taskbartabs/metrics.yaml",
     "browser/components/textrecognition/metrics.yaml",
     "browser/components/urlbar/metrics.yaml",
-    "browser/extensions/data-leak-blocker/metrics.yaml",
     "browser/extensions/search-detection/metrics.yaml",
     "browser/modules/metrics.yaml",
     "dom/media/platforms/wmf/metrics.yaml",
@@ -226,9 +227,7 @@ firefox_desktop_pings = [
     "browser/components/profiles/pings.yaml",
     "browser/components/search/pings.yaml",
     "browser/components/urlbar/pings.yaml",
-    "browser/extensions/data-leak-blocker/pings.yaml",
     "browser/modules/pings.yaml",
-    "dom/security/pings.yaml",
     "services/fxaccounts/pings.yaml",
     "services/sync/pings.yaml",
     "toolkit/components/nimbus/pings.yaml",
@@ -236,6 +235,7 @@ firefox_desktop_pings = [
     "toolkit/components/telemetry/pings.yaml",
     "toolkit/modules/pings.yaml",
     "toolkit/mozapps/update/shared_pings.yaml",
+    "toolkit/profile/pings.yaml",
 ]
 
 # Pings that are sent by the Firefox Desktop Background Update Task

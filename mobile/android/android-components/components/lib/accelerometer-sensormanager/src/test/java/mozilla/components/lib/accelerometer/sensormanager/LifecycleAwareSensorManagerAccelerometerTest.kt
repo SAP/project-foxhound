@@ -44,6 +44,7 @@ class LifecycleAwareSensorManagerAccelerometerTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
         shadowSensorManager = Shadows.shadowOf(sensorManager)
+        shadowSensorManager.addSensor(ShadowSensor.newInstance(Sensor.TYPE_LINEAR_ACCELERATION))
         shadowSensorManager.addSensor(ShadowSensor.newInstance(Sensor.TYPE_ACCELEROMETER))
 
         logMessages.clear()
@@ -85,8 +86,8 @@ class LifecycleAwareSensorManagerAccelerometerTest {
         }
         testDispatcher.scheduler.runCurrent()
 
-        emitSensorEvent(floatArrayOf(SensorManager.GRAVITY_EARTH, SensorManager.GRAVITY_EARTH * 2f, SensorManager.GRAVITY_EARTH * 3f))
-        emitSensorEvent(floatArrayOf(SensorManager.GRAVITY_EARTH * 4f, SensorManager.GRAVITY_EARTH * 5f, SensorManager.GRAVITY_EARTH * 6f))
+        emitLinearAccelerationSensorEvent(floatArrayOf(1f, 2f, 3f))
+        emitLinearAccelerationSensorEvent(floatArrayOf(4f, 5f, 6f))
 
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -110,14 +111,32 @@ class LifecycleAwareSensorManagerAccelerometerTest {
         testDispatcher.scheduler.runCurrent()
 
         lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
-        emitSensorEvent(floatArrayOf(SensorManager.GRAVITY_EARTH, SensorManager.GRAVITY_EARTH * 2f, SensorManager.GRAVITY_EARTH * 3f))
-        emitSensorEvent(floatArrayOf(SensorManager.GRAVITY_EARTH * 4f, SensorManager.GRAVITY_EARTH * 5f, SensorManager.GRAVITY_EARTH * 6f))
+        emitLinearAccelerationSensorEvent(
+            floatArrayOf(
+                SensorManager.GRAVITY_EARTH,
+                SensorManager.GRAVITY_EARTH * 2f,
+                SensorManager.GRAVITY_EARTH * 3f,
+            ),
+        )
+        emitLinearAccelerationSensorEvent(
+            floatArrayOf(
+                SensorManager.GRAVITY_EARTH * 4f,
+                SensorManager.GRAVITY_EARTH * 5f,
+                SensorManager.GRAVITY_EARTH * 6f,
+            ),
+        )
 
         testDispatcher.scheduler.advanceUntilIdle()
 
         lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
 
-        emitSensorEvent(floatArrayOf(SensorManager.GRAVITY_EARTH * 7f, SensorManager.GRAVITY_EARTH * 8f, SensorManager.GRAVITY_EARTH * 9f))
+        emitLinearAccelerationSensorEvent(
+            floatArrayOf(
+                SensorManager.GRAVITY_EARTH * 7f,
+                SensorManager.GRAVITY_EARTH * 8f,
+                SensorManager.GRAVITY_EARTH * 9f,
+            ),
+        )
 
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -136,13 +155,7 @@ class LifecycleAwareSensorManagerAccelerometerTest {
         }
         testDispatcher.scheduler.runCurrent()
 
-        emitSensorEvent(
-            floatArrayOf(
-                SensorManager.GRAVITY_EARTH * 2.0f,
-                SensorManager.GRAVITY_EARTH * -1.5f,
-                SensorManager.GRAVITY_EARTH * 0.25f,
-            ),
-        )
+        emitLinearAccelerationSensorEvent(floatArrayOf(2.0f, -1.5f, 0.25f))
 
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -164,20 +177,8 @@ class LifecycleAwareSensorManagerAccelerometerTest {
         }
         testDispatcher.scheduler.runCurrent()
 
-        emitSensorEvent(
-            floatArrayOf(
-                SensorManager.GRAVITY_EARTH * 0.5f,
-                SensorManager.GRAVITY_EARTH * 1.0f,
-                SensorManager.GRAVITY_EARTH * 0.0f,
-            ),
-        )
-        emitSensorEvent(
-            floatArrayOf(
-                SensorManager.GRAVITY_EARTH * 1.5f,
-                SensorManager.GRAVITY_EARTH * -0.5f,
-                SensorManager.GRAVITY_EARTH * 2.0f,
-            ),
-        )
+        emitLinearAccelerationSensorEvent(floatArrayOf(0.5f, 1.0f, 0.0f))
+        emitLinearAccelerationSensorEvent(floatArrayOf(1.5f, -0.5f, 2.0f))
 
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -203,7 +204,7 @@ class LifecycleAwareSensorManagerAccelerometerTest {
         }
         testDispatcher.scheduler.runCurrent()
 
-        emitSensorEvent(floatArrayOf(0.0f, 0.0f, 0.0f))
+        emitLinearAccelerationSensorEvent(floatArrayOf(0.0f, 0.0f, 0.0f))
 
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -225,13 +226,7 @@ class LifecycleAwareSensorManagerAccelerometerTest {
         }
         testDispatcher.scheduler.runCurrent()
 
-        emitSensorEvent(
-            floatArrayOf(
-                -SensorManager.GRAVITY_EARTH,
-                -SensorManager.GRAVITY_EARTH * 2.0f,
-                -SensorManager.GRAVITY_EARTH * 0.5f,
-            ),
-        )
+        emitLinearAccelerationSensorEvent(floatArrayOf(-1f, -2.0f, -0.5f))
 
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -242,8 +237,53 @@ class LifecycleAwareSensorManagerAccelerometerTest {
         samplesJob.cancel()
     }
 
-    private fun emitSensorEvent(values: FloatArray) {
+    @Test
+    fun `when the sensor emits raw accelerometer readings, they are converted to linear acceleration`() = runTest(testDispatcher) {
+        lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+
+        val samples = mutableListOf<Accelerometer.Sample>()
+        val samplesJob = launch(testDispatcher) {
+            accelerometer.samples()
+                .collect { samples.add(it) }
+        }
+        testDispatcher.scheduler.runCurrent()
+
+        emitAccelerometerSensorEvent(floatArrayOf(-1f, -2.0f, -0.5f))
+
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(1, samples.size)
+
+        // Maths: gravity_component = a * gravity_component + (1-a) * raw_reading
+        //  where:
+        //      a = 0.8
+        //      gravity_component starts at 0
+        //
+        // linear acceleration = raw_reading - gravity_component
+        // x -> (-1) - (1 - 0.8) * -1 => (-1) - (-0.2) = -0.8
+        assertEquals(-0.8f, samples[0].xAccel, 0.001f)
+
+        // y -> (-2) - (1 - 0.8) * -2 => -2 - (-0.4) => 1.6
+        assertEquals(-1.6f, samples[0].yAccel, 0.001f)
+
+        // z -> (-0.5) - (1 - 0.8) * -0.5 => -1 - (-0.2) => -0.4
+        assertEquals(-0.4f, samples[0].zAccel, 0.001f)
+        samplesJob.cancel()
+    }
+
+    private fun emitAccelerometerSensorEvent(values: FloatArray) {
         val sensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        shadowSensorManager.sendSensorEventToListeners(
+            SensorEventBuilder.newBuilder()
+                .setSensor(requireNotNull(sensor))
+                .setValues(values)
+                .setTimestamp(1234)
+                .build(),
+        )
+    }
+
+    private fun emitLinearAccelerationSensorEvent(values: FloatArray) {
+        val sensor = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
         shadowSensorManager.sendSensorEventToListeners(
             SensorEventBuilder.newBuilder()
                 .setSensor(requireNotNull(sensor))

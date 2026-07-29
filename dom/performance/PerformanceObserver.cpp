@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,14 +26,14 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(PerformanceObserver)
   tmp->Disconnect();
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mCallback)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mPerformance)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mOwner)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mGlobal)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mQueuedEntries)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(PerformanceObserver)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCallback)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPerformance)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mOwner)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mGlobal)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mQueuedEntries)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
@@ -48,17 +46,17 @@ NS_INTERFACE_MAP_END
 
 PerformanceObserver::PerformanceObserver(nsPIDOMWindowInner* aOwner,
                                          PerformanceObserverCallback& aCb)
-    : mOwner(aOwner->AsGlobal()),
+    : mGlobal(aOwner->AsGlobal()),
       mCallback(&aCb),
       mObserverType(ObserverTypeUndefined),
       mConnected(false) {
-  MOZ_ASSERT(mOwner);
+  MOZ_ASSERT(mGlobal);
   mPerformance = aOwner->GetPerformance();
 }
 
 PerformanceObserver::PerformanceObserver(WorkerPrivate* aWorkerPrivate,
                                          PerformanceObserverCallback& aCb)
-    : mOwner(aWorkerPrivate->GlobalScope()),
+    : mGlobal(aWorkerPrivate->GlobalScope()),
       mCallback(&aCb),
       mObserverType(ObserverTypeUndefined),
       mConnected(false) {
@@ -143,7 +141,7 @@ void PerformanceObserver::Observe(const PerformanceObserverInit& aOptions,
   const Optional<nsString>& maybeType = aOptions.mType;
   const Optional<bool>& maybeBuffered = aOptions.mBuffered;
 
-  if (!mPerformance || !mOwner) {
+  if (!mPerformance || !mGlobal) {
     aRv.Throw(NS_ERROR_FAILURE);
     return;
   }
@@ -231,17 +229,17 @@ void PerformanceObserver::Observe(const PerformanceObserverInit& aOptions,
 
     if (!invalidTypesJoined.IsEmpty()) {
       AutoTArray<nsString, 1> params = {invalidTypesJoined};
-      mOwner->ReportToConsole(nsIScriptError::warningFlag, "DOM"_ns,
-                              nsContentUtils::eDOM_PROPERTIES,
-                              "UnsupportedEntryTypesIgnored"_ns, params);
+      mGlobal->ReportToConsole(nsIScriptError::warningFlag, "DOM"_ns,
+                               PropertiesFile::DOM_PROPERTIES,
+                               "UnsupportedEntryTypesIgnored"_ns, params);
       // (we don't return because we're ignoring and we keep going)
     }
 
     /* 3.3.1.5.3 */
     if (validEntryTypes.IsEmpty()) {
-      mOwner->ReportToConsole(nsIScriptError::warningFlag, "DOM"_ns,
-                              nsContentUtils::eDOM_PROPERTIES,
-                              "AllEntryTypesIgnored"_ns);
+      mGlobal->ReportToConsole(nsIScriptError::warningFlag, "DOM"_ns,
+                               PropertiesFile::DOM_PROPERTIES,
+                               "AllEntryTypesIgnored"_ns);
       return;
     }
 
@@ -281,9 +279,9 @@ void PerformanceObserver::Observe(const PerformanceObserverInit& aOptions,
 
     if (!typeValid) {
       AutoTArray<nsString, 1> params = {type};
-      mOwner->ReportToConsole(nsIScriptError::warningFlag, "DOM"_ns,
-                              nsContentUtils::eDOM_PROPERTIES,
-                              "UnsupportedEntryTypesIgnored"_ns, params);
+      mGlobal->ReportToConsole(nsIScriptError::warningFlag, "DOM"_ns,
+                               PropertiesFile::DOM_PROPERTIES,
+                               "UnsupportedEntryTypesIgnored"_ns, params);
       return;
     }
 

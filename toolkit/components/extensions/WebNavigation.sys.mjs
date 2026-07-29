@@ -367,9 +367,16 @@ export var WebNavigationManager = {
       browser,
     };
 
+    // bc is null for onCreatedNavigationTarget.
     if (bc) {
       details.frameId = lazy.WebNavigationFrames.getFrameId(bc);
       details.parentFrameId = lazy.WebNavigationFrames.getParentFrameId(bc);
+      if (type !== "onBeforeNavigate") {
+        details.documentId = lazy.WebNavigationFrames.getDocumentId(bc);
+      }
+      details.parentDocumentId = lazy.WebNavigationFrames.getDocumentId(
+        bc.parent
+      );
     }
 
     for (let prop in extra) {

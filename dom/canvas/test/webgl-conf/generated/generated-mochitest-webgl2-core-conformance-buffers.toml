@@ -1,0 +1,47 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl2-core"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/conformance/buffers/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_2_conformance__buffers__buffer-bind-test.html"]
+
+["test_2_conformance__buffers__buffer-data-and-buffer-sub-data.html"]
+
+["test_2_conformance__buffers__buffer-data-array-buffer-delete.html"]
+
+["test_2_conformance__buffers__buffer-data-dynamic-delay.html"]
+
+["test_2_conformance__buffers__buffer-uninitialized.html"]
+
+["test_2_conformance__buffers__element-array-buffer-delete-recreate.html"]
+
+["test_2_conformance__buffers__index-validation-copies-indices.html"]
+
+["test_2_conformance__buffers__index-validation-crash-with-buffer-sub-data.html"]
+
+["test_2_conformance__buffers__index-validation-large-buffer.html"]
+
+["test_2_conformance__buffers__index-validation-verifies-too-many-indices.html"]
+
+["test_2_conformance__buffers__index-validation-with-resized-buffer.html"]
+
+["test_2_conformance__buffers__index-validation.html"]
+
+["test_2_conformance__buffers__vertex-buffer-updated-after-draw.html"]

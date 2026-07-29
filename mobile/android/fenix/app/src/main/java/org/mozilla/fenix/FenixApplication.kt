@@ -20,22 +20,32 @@ import androidx.compose.runtime.Composable
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.getSystemService
 import androidx.core.net.toUri
+import androidx.emoji2.text.DefaultEmojiCompatConfig
+import androidx.emoji2.text.EmojiCompat
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration.Builder
 import androidx.work.Configuration.Provider
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import mozilla.appservices.autofill.AutofillApiException
+import mozilla.components.ExperimentalAndroidComponentsApi
+import mozilla.components.browser.state.action.SearchAction.SearchConfigurationAvailabilityChanged
 import mozilla.components.browser.state.action.SystemAction
 import mozilla.components.browser.state.selector.selectedTab
+import mozilla.components.browser.state.state.selectedOrDefaultPrivateSearchEngine
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.browser.storage.sync.GlobalPlacesDependencyProvider
+import mozilla.components.concept.ai.controls.isEnabled
 import mozilla.components.concept.base.crash.Breadcrumb
 import mozilla.components.concept.engine.webextension.WebExtension
 import mozilla.components.concept.engine.webextension.isUnsupported
@@ -47,10 +57,10 @@ import mozilla.components.feature.autofill.AutofillUseCases
 import mozilla.components.feature.fxsuggest.GlobalFxSuggestDependencyProvider
 import mozilla.components.feature.search.ext.buildSearchUrl
 import mozilla.components.feature.search.ext.waitForSelectedOrDefaultSearchEngine
+import mozilla.components.feature.summarize.settings.SummarizationSettings
 import mozilla.components.feature.syncedtabs.commands.GlobalSyncedTabsCommandsProvider
 import mozilla.components.feature.top.sites.TopSitesFrecencyConfig
 import mozilla.components.feature.top.sites.TopSitesProviderConfig
-import mozilla.components.feature.webcompat.reporter.WebCompatReporterFeature
 import mozilla.components.lib.crash.CrashReporter
 import mozilla.components.service.fxa.manager.SyncEnginesStorage
 import mozilla.components.service.sync.autofill.GlobalAutofillDependencyProvider
@@ -69,7 +79,7 @@ import mozilla.components.support.ktx.android.content.runOnlyInMainProcess
 import mozilla.components.support.locale.LocaleManager
 import mozilla.components.support.remotesettings.GlobalRemoteSettingsDependencyProvider
 import mozilla.components.support.rusthttp.RustHttpConfig
-import mozilla.components.support.utils.BrowsersCache
+import mozilla.components.support.utils.Browsers
 import mozilla.components.support.utils.RunWhenReadyQueue
 import mozilla.components.support.utils.logElapsedTime
 import mozilla.components.support.webextensions.WebExtensionSupport
@@ -77,30 +87,32 @@ import mozilla.telemetry.glean.Glean
 import org.mozilla.fenix.GleanMetrics.Addons
 import org.mozilla.fenix.GleanMetrics.Addresses
 import org.mozilla.fenix.GleanMetrics.AndroidAutofill
+import org.mozilla.fenix.GleanMetrics.Browser
 import org.mozilla.fenix.GleanMetrics.CreditCards
 import org.mozilla.fenix.GleanMetrics.CustomizeHome
 import org.mozilla.fenix.GleanMetrics.Events.marketingNotificationAllowed
+import org.mozilla.fenix.GleanMetrics.GenaiAiControls
 import org.mozilla.fenix.GleanMetrics.Logins
 import org.mozilla.fenix.GleanMetrics.Metrics
 import org.mozilla.fenix.GleanMetrics.PerfStartup
 import org.mozilla.fenix.GleanMetrics.Preferences
 import org.mozilla.fenix.GleanMetrics.SearchDefaultEngine
+import org.mozilla.fenix.GleanMetrics.SearchDefaultEngineForPrivate
 import org.mozilla.fenix.GleanMetrics.TabStrip
 import org.mozilla.fenix.GleanMetrics.TermsOfUse
+import org.mozilla.fenix.GleanMetrics.UserAiSummarize
 import org.mozilla.fenix.components.Components
 import org.mozilla.fenix.components.Core
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.initializeGlean
 import org.mozilla.fenix.components.metrics.MozillaProductDetector
 import org.mozilla.fenix.components.startMetricsIfEnabled
-import org.mozilla.fenix.experiments.NimbusGeckoPrefHandler
 import org.mozilla.fenix.experiments.maybeFetchExperiments
 import org.mozilla.fenix.ext.application
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.containsQueryParameters
 import org.mozilla.fenix.ext.isCustomEngine
 import org.mozilla.fenix.ext.isKnownSearchDomain
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.home.topsites.TopSitesConfigConstants.TOP_SITES_PROVIDER_LIMIT
 import org.mozilla.fenix.home.topsites.TopSitesConfigConstants.TOP_SITES_PROVIDER_MAX_THRESHOLD
 import org.mozilla.fenix.lifecycle.StoreLifecycleObserver
@@ -126,7 +138,6 @@ import org.mozilla.fenix.theme.ThemeProvider
 import org.mozilla.fenix.utils.Settings
 import org.mozilla.fenix.utils.isLargeScreenSize
 import org.mozilla.fenix.wallpapers.Wallpaper
-import org.mozilla.geckoview.ExperimentalGeckoViewApi
 import java.util.Date
 import java.util.concurrent.TimeUnit
 import kotlin.math.roundToLong
@@ -162,6 +173,8 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
     var visibilityLifecycleCallback: VisibilityLifecycleCallback? = null
         private set
 
+    protected val applicationScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    protected val ioDispatcher = Dispatchers.IO
     override fun onCreate() {
         super.onCreate()
         initializeFenixProcess()
@@ -221,6 +234,11 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         // Note: The A-C / Fenix crash service processes are responsible for their own setup and
         //       should minimize their dependencies to avoid also crashing.
         runOnlyInMainProcess {
+            // Start loading the SharedPreferences file from disk on a background thread immediately.
+            applicationScope.launch(IO) {
+                applicationContext.getSharedPreferences(Settings.FENIX_PREFERENCES, MODE_PRIVATE)
+            }
+
             // Initialization is split into two phases based on if libmegazord is fully initialized.
             setupEarlyMain()
             setupPostMegazord()
@@ -241,7 +259,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         // We delay the Glean initialization until we have user consent from onboarding.
         // If onboarding is disabled (when in local builds), continue to initialize Glean.
         if (components.fenixOnboarding.userHasBeenOnboarded() || !FeatureFlags.onboardingFeatureEnabled) {
-            initializeGlean(this, logger, settings().isTelemetryEnabled, components.core.client)
+            initializeGlean(this, logger, components.settings.isTelemetryEnabled, components.core.client)
         }
     }
 
@@ -278,10 +296,16 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
 
         ProfilerMarkerFactProcessor.create { components.core.engine.profiler }.register()
 
+        applicationScope.launch {
+            initializeEmojiCompat()
+        }
+
         // Ensure the Engine instance is initialized such that it can receive commands. Note
         // that full initialization is typically running off-thread and it may be a while
         // before pages can begin to render.
-        components.core.engine.warmUp()
+        // Here we access the engine property, which will cause the lazy property getter to
+        // construct the instance.
+        components.core.engine
 
         // Kick off initialization of Glean backend off-thread. Glean will continue to queue
         // metric samples until the backend is ready. If we don't have data-upload consent then
@@ -295,7 +319,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         // StartupMetrics accesses shared preferences so do this off thread.
         @OptIn(DelicateCoroutinesApi::class)
         GlobalScope.launch(IO) {
-            setStartupMetrics(store, settings())
+            setStartupMetrics(store, components.settings)
         }
 
         // Start setup for concept-fetch networking in megazord. This runs off-thread, but we wait
@@ -304,7 +328,6 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
 
         setDayNightTheme()
         components.strictMode.enableStrictMode(true)
-        warmBrowsersCache()
 
         initializeWebExtensionSupport()
 
@@ -343,10 +366,10 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             startMetricsIfEnabled(
                 logger = logger,
                 analytics = components.analytics,
-                isTelemetryEnabled = settings().isTelemetryEnabled,
-                isMarketingTelemetryEnabled = settings().isMarketingTelemetryEnabled &&
-                    settings().hasMadeMarketingTelemetrySelection,
-                isDailyUsagePingEnabled = settings().isDailyUsagePingEnabled,
+                isTelemetryEnabled = components.settings.isTelemetryEnabled,
+                isMarketingTelemetryEnabled = components.settings.isMarketingTelemetryEnabled &&
+                    components.settings.hasMadeMarketingTelemetrySelection,
+                isDailyUsagePingEnabled = components.settings.isDailyUsagePingEnabled,
             )
         } else {
             CoroutineScope(IO).launch {
@@ -355,6 +378,8 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         }
 
         setupPush()
+
+        maybeSetupIPProtection()
 
         GlobalFxSuggestDependencyProvider.initialize(components.fxSuggest.storage)
 
@@ -388,7 +413,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         val store = components.core.store
         val sessionStorage = components.core.sessionStorage
 
-        components.useCases.tabsUseCases.restore(sessionStorage, settings().getTabTimeout())
+        components.useCases.tabsUseCases.restore(sessionStorage, components.settings.getTabTimeout())
 
         // Now that we have restored our previous state (if there's one) let's setup auto saving the state while
         // the app is used.
@@ -409,15 +434,15 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         // startup path, before the UI finishes drawing (i.e. visual completeness).
         queueInitStorageAndServices(queue)
         queueMetrics(queue)
+        queueEngineWarmup(queue)
         queueIncrementNumberOfAppLaunches(queue)
         queueRestoreLocale(queue)
         queueStorageMaintenance(queue)
         queueIntegrityClientWarmUp(queue)
         queueNimbusFetchInForeground(queue)
-        queueSetAutofillMetrics(queue)
         queueDownloadWallpapers(queue)
 
-        if (settings().enableFxSuggest) {
+        if (components.settings.enableFxSuggest) {
             queueSuggestIngest(queue)
         }
 
@@ -478,7 +503,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                     // new search suggestions. The worker requires us to have called
                     // `GlobalFxSuggestDependencyProvider.initialize`, which we did before
                     // scheduling these tasks. When disabled we stop the periodic work.
-                    if (settings().enableFxSuggest) {
+                    if (components.settings.enableFxSuggest) {
                         components.fxSuggest.ingestionScheduler.startPeriodicIngestion()
                     } else {
                         components.fxSuggest.ingestionScheduler.stopPeriodicIngestion()
@@ -508,11 +533,19 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         StorageStatsMetrics.report(this.applicationContext)
     }
 
+    @OptIn(DelicateCoroutinesApi::class)
+    private fun queueEngineWarmup(queue: RunWhenReadyQueue) =
+        runOnVisualCompleteness(queue) {
+            GlobalScope.launch(Dispatchers.Main) {
+                components.core.engine.warmUp()
+            }
+        }
+
     @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
     private fun queueIncrementNumberOfAppLaunches(queue: RunWhenReadyQueue) =
         runOnVisualCompleteness(queue) {
             GlobalScope.launch(IO) {
-                settings().numberOfAppLaunches += 1
+                components.settings.numberOfAppLaunches += 1
             }
         }
 
@@ -534,22 +567,28 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
     }
 
     @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
-    private fun queueIntegrityClientWarmUp(queue: RunWhenReadyQueue) =
+    private fun queueIntegrityClientWarmUp(queue: RunWhenReadyQueue) {
+        // We want to avoid shipping this warmup into UI test builds to reduce quota impact, especially given
+        // that the Integrity verdicts will always fail anyway.
+        if (!BuildConfig.TELEMETRY) {
+            return
+        }
         runOnVisualCompleteness(queue) {
             GlobalScope.launch(IO) {
                 components.integrityClient.warmUp()
             }
         }
+    }
 
-    @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
+    @OptIn(DelicateCoroutinesApi::class, ExperimentalAndroidComponentsApi::class) // GlobalScope usage
     private fun queueNimbusFetchInForeground(queue: RunWhenReadyQueue) =
         runOnVisualCompleteness(queue) {
+            components.nimbus.geckoPrefHandler.start()
             GlobalScope.launch(IO) {
                 components.nimbus.sdk.maybeFetchExperiments(
-                    context = this@FenixApplication,
+                    settings = components.settings,
                 )
-                @ExperimentalGeckoViewApi
-                NimbusGeckoPrefHandler.getPreferenceStateFromGecko().await()
+                components.nimbus.geckoPrefHandler.getPreferenceStateFromGecko().await()
             }
         }
 
@@ -567,37 +606,12 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
     @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
     private fun queueCollectProcessExitInfo(queue: RunWhenReadyQueue) =
         runOnVisualCompleteness(queue) {
-            if (SDK_INT >= Build.VERSION_CODES.R && settings().isTelemetryEnabled) {
+            if (SDK_INT >= Build.VERSION_CODES.R && components.settings.isTelemetryEnabled) {
                 GlobalScope.launch(IO) {
                     ApplicationExitInfoMetrics.recordProcessExits(applicationContext)
                 }
             }
         }
-
-    /**
-     * Sets autofill telemetry about Addresses, CreditCards, and Logins.
-     *
-     * @param queue The queue the function should use.
-     */
-    @OptIn(DelicateCoroutinesApi::class)
-    private fun queueSetAutofillMetrics(queue: RunWhenReadyQueue) = runOnVisualCompleteness(queue) {
-        GlobalScope.launch(IO) {
-            try {
-                val autoFillStorage = applicationContext.components.core.autofillStorage
-                Addresses.savedAll.set(autoFillStorage.countAllAddresses())
-                CreditCards.savedAll.set(autoFillStorage.countAllCreditCards())
-            } catch (e: AutofillApiException) {
-                logger.error("Failed to fetch autofill data", e)
-            }
-
-            try {
-                val passwordsStorage = applicationContext.components.core.passwordsStorage
-                Logins.savedAll.set(passwordsStorage.count())
-            } catch (e: LoginsApiException) {
-                logger.error("Failed to fetch list of logins", e)
-            }
-        }
-    }
 
     /**
      * Sets up LeakCanary based on different build variant implementations.
@@ -637,6 +651,11 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             // Initialize the service. This could potentially be done in a coroutine in the future.
             it.initialize()
         }
+    }
+
+    private fun maybeSetupIPProtection() {
+        components.ipProtection.feature.initialize()
+        components.ipProtection.storageSynchronizer.initialize()
     }
 
     private fun setupCrashReporting(): CrashReporter {
@@ -699,7 +718,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
 
     @VisibleForTesting
     internal fun restoreMessaging() {
-        if (settings().isExperimentationEnabled) {
+        if (components.settings.isExperimentationEnabled) {
             components.appStore.dispatch(AppAction.MessagingAction.Restore)
         }
     }
@@ -732,7 +751,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
     }
 
     private fun setDayNightTheme() {
-        val settings = this.settings()
+        val settings = components.settings
         when {
             settings.shouldUseLightTheme -> {
                 AppCompatDelegate.setDefaultNightMode(
@@ -771,21 +790,29 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         }
     }
 
-    @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
-    private fun warmBrowsersCache() {
-        // We avoid blocking the main thread for BrowsersCache on startup by loading it on
-        // background thread.
-        GlobalScope.launch(Dispatchers.Default) {
-            BrowsersCache.all(this@FenixApplication)
-        }
-    }
-
     private fun initializeRemoteSettingsSupport() {
-        GlobalRemoteSettingsDependencyProvider.initialize(components.remoteSettingsService.value)
+        GlobalRemoteSettingsDependencyProvider.initialize(
+            remoteSettingsService = components.remoteSettingsService.value,
+            onRemoteCollectionsUpdated = ::setupRefreshingSearchEngines,
+        )
         components.remoteSettingsSyncScheduler.registerForSync()
     }
 
-    @Suppress("ForbiddenComment")
+    @VisibleForTesting
+    internal fun setupRefreshingSearchEngines(
+        updatedCollections: List<String>,
+        browserStore: BrowserStore = components.core.store,
+    ) {
+        val searchRelatedCollections = listOf(
+            "search-config-v2",
+            "search-config-overrides-v2",
+            "search-config-icons",
+        )
+        if (searchRelatedCollections.any { it in updatedCollections }) {
+            browserStore.dispatch(SearchConfigurationAvailabilityChanged(true))
+        }
+    }
+
     private fun initializeWebExtensionSupport() {
         try {
             GlobalAddonDependencyProvider.initialize(
@@ -798,14 +825,14 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             WebExtensionSupport.initialize(
                 components.core.engine,
                 components.core.store,
-                onNewTabOverride = { _, engineSession, url ->
+                onNewTabOverride = { _, engineSession, url, selected ->
                     val shouldCreatePrivateSession =
                         components.core.store.state.selectedTab?.content?.private
                             ?: components.settings.openLinksInAPrivateTab
 
                     components.useCases.tabsUseCases.addTab(
                         url = url,
-                        selectTab = true,
+                        selectTab = selected,
                         engineSession = engineSession,
                         private = shouldCreatePrivateSession,
                     )
@@ -819,15 +846,6 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                 onExtensionsLoaded = { extensions ->
                     components.addonUpdater.registerForFutureUpdates(extensions)
                     subscribeForNewAddonsIfNeeded(components.supportedAddonsChecker, extensions)
-
-                    // Bug 1948634 - Make sure the webcompat-reporter extension is fully uninstalled.
-                    // This is added here because we need gecko to load the extension first.
-                    //
-                    // TODO: Bug 1953359 - remove the code below in the next release.
-                    if (Config.channel.isNightlyOrDebug || Config.channel.isBeta) {
-                        logger.debug("Attempting to uninstall the WebCompat Reporter extension")
-                        WebCompatReporterFeature.uninstall(components.core.engine)
-                    }
                 },
                 onUpdatePermissionRequest = components.addonUpdater::onUpdatePermissionRequest,
             )
@@ -868,7 +886,6 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             components.core.engine,
             settings,
         ),
-        browsersCache: BrowsersCache = BrowsersCache,
         mozillaProductDetector: MozillaProductDetector = MozillaProductDetector,
     ) {
         setPreferenceMetrics(settings, dohSettingsProvider)
@@ -880,7 +897,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                 setTermsOfUseStartUpMetrics(settings)
             }
 
-            defaultBrowser.set(browsersCache.all(applicationContext).isDefaultBrowser)
+            defaultBrowser.set(Browsers.isDefaultBrowser(applicationContext))
             mozillaProductDetector.getMozillaBrowserDefault(applicationContext)?.also {
                 defaultMozBrowser.set(it)
             }
@@ -955,7 +972,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             )
 
             ramMoreThanThreshold.set(isDeviceRamAboveThreshold)
-            deviceTotalRam.set(getDeviceTotalRAM())
+            deviceTotalRam.set(deviceTotalRAM)
 
             isLargeDevice.set(isLargeScreenSize())
         }
@@ -964,6 +981,16 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             val autofillUseCases = AutofillUseCases()
             supported.set(autofillUseCases.isSupported(applicationContext))
             enabled.set(autofillUseCases.isEnabled(applicationContext))
+        }
+
+        val summarizeSettings = SummarizationSettings.dataStore(applicationContext)
+        UserAiSummarize.summarizationEnabled.set(summarizeSettings.getFeatureEnabledUserStatus().first() == true)
+        UserAiSummarize.gestureEnabled.set(summarizeSettings.getGestureEnabledUserStatus().first())
+        UserAiSummarize.summarizationConsented.set(summarizeSettings.getHasConsentedToShake().first())
+
+        Browser.globalAiControlIsBlocking.set(components.aiControlsFeatureBlock.isBlocked.first())
+        components.aiFeatureRegistry.getFeatures().forEach { feature ->
+            GenaiAiControls.featuresBlocked[feature.id.value].set(!feature.isEnabled.first())
         }
 
         browserStore.waitForSelectedOrDefaultSearchEngine { searchEngine ->
@@ -988,8 +1015,36 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                         name.set("custom")
                     }
                 }
+
+                val privateSearchEngine =
+                    browserStore.state.search.selectedOrDefaultPrivateSearchEngine
+                privateSearchEngine?.let { privateEngine ->
+                    val isSameAsDefault = privateEngine.id == searchEngine.id
+                    val sendPrivateSearchUrl =
+                        !privateEngine.isCustomEngine() || privateEngine.isKnownSearchDomain()
+                    if (sendPrivateSearchUrl) {
+                        SearchDefaultEngineForPrivate.apply {
+                            code.set(
+                                if (privateEngine.telemetrySuffix.isNullOrEmpty()) {
+                                    privateEngine.id
+                                } else {
+                                    "${privateEngine.id}-${privateEngine.telemetrySuffix}"
+                                },
+                            )
+                            name.set(if (isSameAsDefault) "default" else privateEngine.name)
+                            searchUrl.set(privateEngine.buildSearchUrl(""))
+                        }
+                    } else {
+                        SearchDefaultEngineForPrivate.apply {
+                            code.set(privateEngine.id)
+                            name.set(if (isSameAsDefault) "default" else "custom")
+                        }
+                    }
+                }
             }
         }
+
+        setAutofillMetrics()
     }
 
     private fun setTermsOfUseStartUpMetrics(settings: Settings) {
@@ -998,28 +1053,14 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
     }
 
     @VisibleForTesting
-    internal fun getDeviceTotalRAM(): Long {
-        val memoryInfo = getMemoryInfo()
-        return if (SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            memoryInfo.advertisedMem
-        } else {
-            memoryInfo.totalMem
+    internal val deviceTotalRAM: Long by lazy {
+        ActivityManager.MemoryInfo().let { info ->
+            (getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(info)
+            if (SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) info.advertisedMem else info.totalMem
         }
     }
 
-    @VisibleForTesting
-    internal fun getMemoryInfo(): ActivityManager.MemoryInfo {
-        val memoryInfo = ActivityManager.MemoryInfo()
-        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        activityManager.getMemoryInfo(memoryInfo)
-
-        return memoryInfo
-    }
-
-    private fun deviceRamApproxMegabytes(): Long {
-        val deviceRamBytes = getMemoryInfo().totalMem
-        return deviceRamBytes.toRoundedMegabytes()
-    }
+    private fun deviceRamApproxMegabytes(): Long = deviceTotalRAM.toRoundedMegabytes()
 
     private fun Long.toRoundedMegabytes(): Long = (this / BYTES_TO_MEGABYTES_CONVERSION).roundToLong()
 
@@ -1042,7 +1083,6 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             browsingHistorySuggestion.set(settings.shouldShowHistorySuggestions)
             bookmarksSuggestion.set(settings.shouldShowBookmarkSuggestions)
             clipboardSuggestionsEnabled.set(settings.shouldShowClipboardSuggestions)
-            searchShortcutsEnabled.set(settings.shouldShowSearchShortcuts)
             voiceSearchEnabled.set(settings.shouldShowVoiceSearch)
             openLinksInAppEnabled.set(settings.openLinksInExternalApp)
             signedInSync.set(settings.signedInFxaAccount)
@@ -1070,10 +1110,8 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                 },
             )
 
-            if (settings.shouldShowToolbarCustomization) {
-                toolbarSimpleShortcut.set(settings.toolbarSimpleShortcut)
-                toolbarExpandedShortcut.set(settings.toolbarExpandedShortcut)
-            }
+            toolbarSimpleShortcut.set(settings.toolbarSimpleShortcutKey)
+            toolbarExpandedShortcut.set(settings.toolbarExpandedShortcutKey)
 
             enhancedTrackingProtection.set(
                 when {
@@ -1114,6 +1152,26 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             globalPrivacyControlEnabled.set(settings.shouldEnableGlobalPrivacyControl)
         }
         reportHomeScreenMetrics(settings)
+    }
+
+    private fun setAutofillMetrics() {
+        @OptIn(DelicateCoroutinesApi::class)
+        GlobalScope.launch(IO) {
+            try {
+                val autoFillStorage = applicationContext.components.core.autofillStorage
+                Addresses.savedAll.set(autoFillStorage.countAllAddresses())
+                CreditCards.savedAll.set(autoFillStorage.countAllCreditCards())
+            } catch (e: AutofillApiException) {
+                logger.error("Failed to fetch autofill data", e)
+            }
+
+            try {
+                val passwordsStorage = applicationContext.components.core.passwordsStorage
+                Logins.savedAll.set(passwordsStorage.count())
+            } catch (e: LoginsApiException) {
+                logger.error("Failed to fetch list of logins", e)
+            }
+        }
     }
 
     @VisibleForTesting
@@ -1169,7 +1227,8 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         }
     }
 
-    override val workManagerConfiguration = Builder().setMinimumLoggingLevel(INFO).build()
+    override val workManagerConfiguration
+        get() = Builder().setMinimumLoggingLevel(INFO).build()
 
     @OptIn(DelicateCoroutinesApi::class)
     open fun downloadWallpapers() {
@@ -1184,6 +1243,46 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             Private
         } else {
             DefaultThemeProvider.provideTheme()
+        }
+    }
+
+    /**
+     * Initializes EmojiCompat manually on a background thread.
+     *
+     * By initializing manually, we avoid the startup penalty associated with the default
+     * EmojiCompat initializer's ContentProvider. [DefaultEmojiCompatConfig] is used to
+     * automatically find a compatible font provider (such as Google Play Services).
+     *
+     * @param dispatcher The [CoroutineDispatcher] on which the initialization will occur.
+     * Defaults to [ioDispatcher].
+     */
+    private suspend fun initializeEmojiCompat(dispatcher: CoroutineDispatcher = ioDispatcher) {
+        withContext(dispatcher) {
+            // If the device has no compatible provider (e.g. no Play Services), config will be null.
+            val config = DefaultEmojiCompatConfig.create(applicationContext) ?: return@withContext
+
+            config.setReplaceAll(true)
+
+            config.registerInitCallback(
+                object : EmojiCompat.InitCallback() {
+                    override fun onInitialized() {
+                        Log.log(
+                            tag = "EmojiCompat",
+                            message = "EmojiCompat initialization completed",
+                        )
+                    }
+
+                    override fun onFailed(throwable: Throwable?) {
+                        Log.log(
+                            tag = "EmojiCompat",
+                            throwable = throwable,
+                            message = "EmojiCompat initialization failed",
+                        )
+                    }
+                },
+            )
+
+            EmojiCompat.init(config)
         }
     }
 }

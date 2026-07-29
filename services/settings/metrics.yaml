@@ -1,0 +1,90 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Adding a new metric? We have docs for that!
+# https://firefox-source-docs.mozilla.org/toolkit/components/glean/user/new_definitions_file.html
+
+---
+$schema: moz://mozilla.org/schemas/glean/metrics/2-0-0
+$tags:
+  - 'Firefox :: Remote Settings Client'
+
+uptake.remotecontent.result:
+  uptake_remotesettings:
+    type: event
+    disabled: true # To be controlled by server knobs due to expected high volume
+    description: >
+      Was the remote content successfully pulled? This uptake telemetry
+      allows to monitor the behaviour of our clients when it comes to
+      fetching data from remote servers. This helps defect-detection and
+      allow observation of the proportion of success among clients and
+      sources, the distribution of error causes, and its evolution over
+      time.
+    bugs: &uptake_remotecontent_result_uptake_bugs
+      - https://bugzil.la/1517469
+      - https://bugzil.la/1617133
+      - https://bugzil.la/2028765
+    data_reviews: *uptake_remotecontent_result_uptake_bugs
+    notification_emails:
+      - mleplatre@mozilla.com
+      - acottner@mozilla.com
+    expires: never
+    extra_keys:
+      value:
+        description: >
+          The `value` of the event. Mirrors to the Legacy Telemetry
+          event's `value` parameter.
+          Reported statuses are:
+          - `up_to_date`: Local content was already up-to-date with remote content.
+          - `success`: Local content was updated successfully.
+          - `backoff`: Remote server asked clients to backoff.
+          - `parse_error`: Parsing server response has failed.
+          - `content_error`: Server response has unexpected content.
+          - `pref_disabled`: Update is disabled in user preferences.
+          - `sign_error`: Signature verification after diff-based sync has failed.
+          - `sign_retry_error`: Signature verification after full fetch has failed.
+          - `conflict_error`: Some remote changes are in conflict with local changes.
+          - `corruption_error`: Error related to corrupted local data.
+          - `sync_start`: Synchronization started.
+          - `sync_error`: Synchronization of remote changes has failed.
+          - `apply_error`: Application of changes locally has failed.
+          - `server_error`: Server failed to respond.
+          - `certificate_error`: Server certificate verification has failed.
+          - `download_start`: Attachment download started.
+          - `download_error`: Attachment could not be fully retrieved.
+          - `timeout_error`: Server response has timed out.
+          - `network_error`: Communication with server has failed.
+          - `offline_error`: Network not available.
+          - `shutdown_error`: Error occurring during shutdown.
+          - `unknown_error`: Uncategorized error.
+          - `cleanup_error`: Clean-up of temporary files has failed.
+          - `sync_broken_error`: Synchronization has been failing consistently.
+          - `custom_1_error`: Error related to IndexedDB.
+          - `stale_expected`: Poll changes was called with a stale expected value.
+        type: string
+      source:
+        description: >
+          The ``string`` identifying what is being pulled. ``settings-changes-monitoring`` for polling,
+          ``{{bucket}}/{{collection}}`` for each collection, and ``settings-sync`` for the global sync.
+        type: string
+      trigger:
+        description: >
+          The element that triggered the polling/fetching of remote content (eg. ``"broadcast"``, ``"timer"``, ``"forced"``, ``"manual"``).
+        type: string
+      age:
+        description: >
+          The age of pulled data in seconds (ie. difference between publication time and fetch time).
+        type: string
+      duration:
+        description: >
+          The duration of the synchronization process in milliseconds.
+        type: string
+      timestamp:
+        description: >
+          The current timestamp, received during synchronization.
+        type: string
+      errorName:
+        description: >
+          An optional string with the error name attribute in case of failure.
+        type: string

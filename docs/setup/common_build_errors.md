@@ -13,7 +13,7 @@ that can speed up some interactions with Git and Mercurial.
 ## VSCode Java extension
 
 If you happen to have the Java extension installed in VSCode, there's
-a chance that the "Problems" tab  in the integrated terminal will
+a chance that the "Problems" tab in the integrated terminal will
 display an error about `Cannot run program [...]/mozilla-unified/mach`.
 This is because the extension does not know how to parse the mozilla-central
 repository and specifically the `mach` command runner.

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -8,7 +6,7 @@
 #define mozilla_Try_h
 
 #include "mozilla/Likely.h"
-#include "mozilla/Result.h"
+#include "mozilla/Result.h"  // IWYU pragma: keep(used by macro MOZ_TRY)
 
 /**
  * MOZ_TRY(expr) is the C++ equivalent of Rust's `target = try!(expr);`, using

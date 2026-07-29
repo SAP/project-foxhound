@@ -98,6 +98,28 @@ class ExternalEngineStateMachine final
                                  self->NotifyResizingInternal(aWidth, aHeight);
                                }));
   }
+  void NotifyHardwareReset() {
+    // On the engine manager thread.
+    (void)OwnerThread()->Dispatch(NS_NewRunnableFunction(
+        "ExternalEngineStateMachine::NotifyHardwareReset",
+        [self = RefPtr{this}] { self->RecoverFromHardwareReset(); }));
+  }
+#ifdef MOZ_WMF_CDM
+  void NotifyWaitingForKey() {
+    // On the engine manager thread.
+    (void)OwnerThread()->Dispatch(NS_NewRunnableFunction(
+        "ExternalEngineStateMachine::NotifyWaitingForKey",
+        [self = RefPtr{this}] { self->NotifyWaitingForKeyInternal(); }));
+  }
+  // Frame server mode is used only for WMFClearKey (test-only CDM) — it
+  // bypasses DComp surface delivery and drives rendering via OnVideoStreamTick.
+  void NotifyFrameServerMode() {
+    // On the engine manager thread.
+    (void)OwnerThread()->Dispatch(NS_NewRunnableFunction(
+        "ExternalEngineStateMachine::NotifyFrameServerMode",
+        [self = RefPtr{this}] { self->NotifyFrameServerModeInternal(); }));
+  }
+#endif
 
   const char* GetStateStr() const;
 
@@ -294,7 +316,17 @@ class ExternalEngineStateMachine final
 
   void UpdateSecondaryVideoContainer() override;
 
+  // When the media engine enters an unrecoverable state, one of two recovery
+  // paths is taken:
+  // - CDM process crash : tear down reader resources and reinitialize entirely
+  // - hardware context reset : GPU/DRM state invalidated but process still
+  // alive, so reinitialize the engine only.
   void RecoverFromCDMProcessCrashIfNeeded();
+  void RecoverFromHardwareReset();
+#ifdef MOZ_WMF_CDM
+  void NotifyWaitingForKeyInternal();
+  void NotifyFrameServerModeInternal();
+#endif
 
   void ReportTelemetry(const MediaResult& aError);
 
@@ -308,6 +340,15 @@ class ExternalEngineStateMachine final
   bool mHasEnoughVideo = false;
   bool mSentPlaybackEndedEvent = false;
   bool mHasReceivedFirstDecodedVideoFrame = false;
+#ifdef MOZ_WMF_CDM
+  bool mIsFrameServerMode = false;
+  // True once we have sent the video EOS notification to the WMF engine.
+  // The WMF engine in frame server mode continues to fire TIMEUPDATE events
+  // after EOS via OnVideoStreamTick; without this guard RunningEngineUpdate
+  // would re-request video data after the stream has ended, causing spurious
+  // decode failures.
+  bool mVideoEOSSentToEngine = false;
+#endif
 
   // Only used if setting CDM happens before the engine finishes initialization.
   MozPromiseHolder<SetCDMPromise> mSetCDMProxyPromise;
@@ -330,6 +371,11 @@ class ExternalEngineStateMachine final
   nsTArray<RefPtr<nsIRunnable>> mPendingTasks;
 
   bool mHasFatalError = false;
+
+  // Set when the engine has been fully initialized (in OnEngineInitSuccess)
+  // and cleared on recovery (crash or hardware reset). Used to defer
+  // operations that require a ready engine.
+  bool mIsEngineReady = false;
 };
 
 class ExternalPlaybackEngine {

@@ -16,6 +16,8 @@ import { MozLitElement } from "../lit-utils.mjs";
  * @property {string} message - The message of the promo element.
  * @property {string} imageSrc - The main image of the promo element.
  * @property {string} imageAlignment - How the image should be aligned. Can be "start", "end", "center".
+ * @property {string} imageWidth - How big the image is sized. Can be "default", "small" or "large".
+ * @property {string} imageDisplay - Whether the image touches the edge of the promo or has a little bit of padding around it. Can be "cover" or "padded".
  */
 export default class MozPromo extends MozLitElement {
   static queries = {
@@ -29,19 +31,17 @@ export default class MozPromo extends MozLitElement {
     heading: { type: String, fluent: true },
     message: { type: String, fluent: true },
     imageSrc: { type: String, reflect: true },
+    imageWidth: { type: String, reflect: true },
     imageAlignment: { type: String, reflect: true },
+    imageDisplay: { type: String, reflect: true },
   };
 
   constructor() {
     super();
     this.type = "default";
     this.imageAlignment = "start";
-  }
-
-  updated(changedProperties) {
-    if (changedProperties.has("imageSrc") && this.imageSrc) {
-      this.style.setProperty("--promo-image-url", `url("${this.imageSrc}")`);
-    }
+    this.imageWidth = "small";
+    this.imageDisplay = "padded";
   }
 
   handleSlotChange() {
@@ -61,7 +61,9 @@ export default class MozPromo extends MozLitElement {
   }
   imageTemplate() {
     if (this.imageSrc) {
-      return html` <div class="image-container"></div> `;
+      return html`
+        <div class="image-container"><img src=${this.imageSrc} alt="" /></div>
+      `;
     }
     return "";
   }

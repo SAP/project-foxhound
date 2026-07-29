@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -17,7 +15,7 @@ extern mozilla::LazyLogModule gMediaTrackGraphLog;
 #  undef LOG_INTERNAL
 #endif  // LOG_INTERNAL
 #define LOG_INTERNAL(level, msg, ...) \
-  MOZ_LOG(gMediaTrackGraphLog, LogLevel::level, (msg, ##__VA_ARGS__))
+  MOZ_LOG_FMT(gMediaTrackGraphLog, LogLevel::level, msg, ##__VA_ARGS__)
 
 #ifdef LOG
 #  undef LOG
@@ -29,18 +27,18 @@ extern mozilla::LazyLogModule gMediaTrackGraphLog;
 #endif  // LOGE
 #define LOGE(msg, ...) LOG_INTERNAL(Error, msg, ##__VA_ARGS__)
 
-#define InvokeCubebWithLog(func, ...)                                          \
-  ({                                                                           \
-    int _retval;                                                               \
-    _retval = InvokeCubeb(func, ##__VA_ARGS__);                                \
-    if (_retval == CUBEB_OK) {                                                 \
-      LOG("CubebInputStream %p: %s for stream %p was successful", this, #func, \
-          mStream.get());                                                      \
-    } else {                                                                   \
-      LOGE("CubebInputStream %p: %s for stream %p was failed. Error %d", this, \
-           #func, mStream.get(), _retval);                                     \
-    }                                                                          \
-    _retval;                                                                   \
+#define InvokeCubebWithLog(func, ...)                                    \
+  ({                                                                     \
+    int _retval;                                                         \
+    _retval = InvokeCubeb(func, ##__VA_ARGS__);                          \
+    if (_retval == CUBEB_OK) {                                           \
+      LOG("CubebInputStream {}: {} for stream {} was successful",        \
+          fmt::ptr(this), #func, fmt::ptr(mStream.get()));               \
+    } else {                                                             \
+      LOGE("CubebInputStream {}: {} for stream {} was failed. Error {}", \
+           fmt::ptr(this), #func, fmt::ptr(mStream.get()), _retval);     \
+    }                                                                    \
+    _retval;                                                             \
   })
 
 static cubeb_stream_params CreateStreamInitParams(uint32_t aChannels,
@@ -65,10 +63,11 @@ void CubebInputStream::CubebDestroyPolicy::operator()(
     cubeb_stream* aStream) const {
   int r = cubeb_stream_register_device_changed_callback(aStream, nullptr);
   if (r == CUBEB_OK) {
-    LOG("Unregister device changed callback for %p successfully", aStream);
+    LOG("Unregister device changed callback for {} successfully",
+        fmt::ptr(aStream));
   } else {
-    LOGE("Fail to unregister device changed callback for %p. Error %d", aStream,
-         r);
+    LOGE("Fail to unregister device changed callback for {}. Error {}",
+         fmt::ptr(aStream), r);
   }
   cubeb_stream_destroy(aStream);
 }
@@ -104,13 +103,13 @@ UniquePtr<CubebInputStream> CubebInputStream::Create(cubeb_devid aDeviceId,
           StateCallback_s, listener.get());
       r != CUBEB_OK) {
     CubebUtils::ReportCubebStreamInitFailure(CubebUtils::GetFirstStream());
-    LOGE("Fail to create a cubeb stream. Error %d", r);
+    LOGE("Fail to create a cubeb stream. Error {}", r);
     return nullptr;
   }
 
   UniquePtr<cubeb_stream, CubebDestroyPolicy> inputStream(cubebStream);
 
-  LOG("Create a cubeb stream %p successfully", inputStream.get());
+  LOG("Create a cubeb stream {} successfully", fmt::ptr(inputStream.get()));
 
   UniquePtr<CubebInputStream> stream(new CubebInputStream(
       listener.forget(), handle.forget(), std::move(inputStream)));
@@ -119,8 +118,8 @@ UniquePtr<CubebInputStream> CubebInputStream::Create(cubeb_devid aDeviceId,
 }
 
 CubebInputStream::CubebInputStream(
-    already_AddRefed<Listener>&& aListener,
-    already_AddRefed<CubebUtils::CubebHandle>&& aCubeb,
+    already_AddRefed<Listener> aListener,
+    already_AddRefed<CubebUtils::CubebHandle> aCubeb,
     UniquePtr<cubeb_stream, CubebDestroyPolicy>&& aStream)
     : mListener(aListener), mCubeb(aCubeb), mStream(std::move(aStream)) {
   MOZ_ASSERT(mListener);

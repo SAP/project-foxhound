@@ -101,6 +101,9 @@ security-view-identity-validity =
     .value = Expires on:
 security-view-privacy =
     .value = Privacy & History
+security-view-qwac =
+    .label = View Qualified Certificate
+    .accesskey = Q
 
 security-view-privacy-history-value = Have I visited this website prior to today?
 security-view-privacy-sitedata-value = Is this website storing information on my computer?

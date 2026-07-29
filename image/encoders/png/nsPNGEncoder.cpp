@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -12,12 +11,47 @@
 #include "mozilla/CheckedInt.h"
 #include "mozilla/UniquePtrExtensions.h"
 
+#include <bit>
+#include <cstring>
+
 using namespace mozilla;
+
+#include "mozilla/gfx/Swizzle.h"
 
 static LazyLogModule sPNGEncoderLog("PNGEncoder");
 
 NS_IMPL_ISUPPORTS(nsPNGEncoder, imgIEncoder, nsIInputStream,
                   nsIAsyncInputStream)
+
+static bool IsHDRFormat(uint32_t aFormat) {
+  return aFormat == imgIEncoder::INPUT_FORMAT_R10G10B10A2 ||
+         aFormat == imgIEncoder::INPUT_FORMAT_RGBA_U10 ||
+         aFormat == imgIEncoder::INPUT_FORMAT_RGBA_U12 ||
+         aFormat == imgIEncoder::INPUT_FORMAT_RGBA_U16 ||
+         aFormat == imgIEncoder::INPUT_FORMAT_RGBA_F16;
+}
+
+static bool HasAlpha(uint32_t aFormat) {
+  return aFormat != imgIEncoder::INPUT_FORMAT_RGB;
+}
+
+static bool IsValidFormat(uint32_t aFormat) {
+  return aFormat == imgIEncoder::INPUT_FORMAT_RGB ||
+         aFormat == imgIEncoder::INPUT_FORMAT_RGBA ||
+         aFormat == imgIEncoder::INPUT_FORMAT_HOSTARGB || IsHDRFormat(aFormat);
+}
+
+static uint32_t BytesPerPixel(uint32_t aFormat) {
+  if (aFormat == imgIEncoder::INPUT_FORMAT_RGB) {
+    return 3;
+  }
+  if (aFormat == imgIEncoder::INPUT_FORMAT_R10G10B10A2 ||
+      aFormat == imgIEncoder::INPUT_FORMAT_RGBA ||
+      aFormat == imgIEncoder::INPUT_FORMAT_HOSTARGB) {
+    return 4;
+  }
+  return 8;
+}
 
 #define DEFAULT_ZLIB_LEVEL 3
 #define DEFAULT_FILTERS PNG_FILTER_SUB
@@ -93,6 +127,23 @@ nsPNGEncoder::InitFromData(const uint8_t* aData,
   return rv;
 }
 
+NS_IMETHODIMP
+nsPNGEncoder::SetColorSpaceInfo(
+    imgIEncoder::CICPColourPrimaries aColourPrimaries,
+    imgIEncoder::CICPTransferCharacteristics aTransferCharacteristics,
+    imgIEncoder::CICPMatrixCoefficients aMatrixCoefficients, bool aFullRange) {
+  mHasCICP = true;
+  mColourPrimaries =
+      static_cast<mozilla::gfx::CICP::ColourPrimaries>(aColourPrimaries);
+  mTransferCharacteristics =
+      static_cast<mozilla::gfx::CICP::TransferCharacteristics>(
+          aTransferCharacteristics);
+  mMatrixCoefficients =
+      static_cast<mozilla::gfx::CICP::MatrixCoefficients>(aMatrixCoefficients);
+  mFullRange = aFullRange;
+  return NS_OK;
+}
+
 // nsPNGEncoder::StartImageEncode
 //
 //
@@ -113,9 +164,23 @@ nsPNGEncoder::StartImageEncode(uint32_t aWidth, uint32_t aHeight,
   }
 
   // validate input format
-  if (aInputFormat != INPUT_FORMAT_RGB && aInputFormat != INPUT_FORMAT_RGBA &&
-      aInputFormat != INPUT_FORMAT_HOSTARGB)
+  if (!IsValidFormat(aInputFormat)) {
     return NS_ERROR_INVALID_ARG;
+  }
+
+  // PNG only supports 8-bit and 16-bit per channel. All wider-than-8-bit
+  // input formats are encoded as 16-bit PNG. For 10-bit and 12-bit input,
+  // values are scaled up to 16-bit and an sBIT chunk records the original
+  // significant bit depth.
+  if (IsHDRFormat(aInputFormat)) {
+    mBitDepth = 16;
+  }
+  if (aInputFormat == INPUT_FORMAT_R10G10B10A2 ||
+      aInputFormat == INPUT_FORMAT_RGBA_U10) {
+    mInputBitDepth = 10;
+  } else if (aInputFormat == INPUT_FORMAT_RGBA_U12) {
+    mInputBitDepth = 12;
+  }
 
   // parse and check any provided output options
   nsresult rv = ParseOptions(aOutputOptions, &useTransparency, &skipFirstFrame,
@@ -176,16 +241,38 @@ nsPNGEncoder::StartImageEncode(uint32_t aWidth, uint32_t aHeight,
 
   // include alpha?
   int colorType;
-  if ((aInputFormat == INPUT_FORMAT_HOSTARGB ||
-       aInputFormat == INPUT_FORMAT_RGBA) &&
-      useTransparency)
+  if (HasAlpha(aInputFormat) && useTransparency) {
     colorType = PNG_COLOR_TYPE_RGB_ALPHA;
-  else
+  } else {
     colorType = PNG_COLOR_TYPE_RGB;
+  }
 
-  png_set_IHDR(mPNG, mPNGinfo, aWidth, aHeight, 8, colorType,
-               PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT,
+  png_set_IHDR(mPNG, mPNGinfo, aWidth, aHeight, static_cast<int>(mBitDepth),
+               colorType, PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT,
                PNG_FILTER_TYPE_DEFAULT);
+
+  if (mInputBitDepth > 0) {
+    png_color_8 sBIT;
+    memset(&sBIT, 0, sizeof(sBIT));
+    sBIT.red = mInputBitDepth;
+    sBIT.green = mInputBitDepth;
+    sBIT.blue = mInputBitDepth;
+    if (colorType == PNG_COLOR_TYPE_RGB_ALPHA) {
+      // R10G10B10A2 has only 2-bit alpha; other formats have uniform depth.
+      sBIT.alpha =
+          (aInputFormat == INPUT_FORMAT_R10G10B10A2) ? 2 : mInputBitDepth;
+    }
+    png_set_sBIT(mPNG, mPNGinfo, &sBIT);
+  }
+
+#ifdef PNG_cICP_SUPPORTED
+  if (mHasCICP) {
+    png_set_cICP(mPNG, mPNGinfo, static_cast<png_byte>(mColourPrimaries),
+                 static_cast<png_byte>(mTransferCharacteristics),
+                 static_cast<png_byte>(mMatrixCoefficients),
+                 mFullRange ? 1 : 0);
+  }
+#endif
 
 #ifdef PNG_APNG_SUPPORTED
   if (mIsAnimation) {
@@ -197,6 +284,14 @@ nsPNGEncoder::StartImageEncode(uint32_t aWidth, uint32_t aHeight,
   // XXX: support PLTE, gAMA, tRNS, bKGD?
 
   png_write_info(mPNG, mPNGinfo);
+
+  // PNG uses big-endian for 16-bit samples. On little-endian hosts, tell
+  // libpng to byte-swap from host endianness. This must be after
+  // png_write_info because png_set_swap checks png_ptr->bit_depth, which
+  // is set inside png_write_IHDR (called by png_write_info).
+  if (mBitDepth == 16 && std::endian::native == std::endian::little) {
+    png_set_swap(mPNG);
+  }
 
   return NS_OK;
 }
@@ -246,9 +341,9 @@ nsPNGEncoder::AddImageFrame(const uint8_t* aData,
   }
 
   // validate input format
-  if (aInputFormat != INPUT_FORMAT_RGB && aInputFormat != INPUT_FORMAT_RGBA &&
-      aInputFormat != INPUT_FORMAT_HOSTARGB)
+  if (!IsValidFormat(aInputFormat)) {
     return NS_ERROR_INVALID_ARG;
+  }
 
   // libpng's error handler jumps back here upon an error.
   if (setjmp(png_jmpbuf(mPNG))) {
@@ -275,11 +370,14 @@ nsPNGEncoder::AddImageFrame(const uint8_t* aData,
   // Stride is the padded width of each row, so it better be longer
   // (I'm afraid people will not understand what stride means, so
   // check it well)
-  if ((aInputFormat == INPUT_FORMAT_RGB && aStride < aWidth * 3) ||
-      ((aInputFormat == INPUT_FORMAT_RGBA ||
-        aInputFormat == INPUT_FORMAT_HOSTARGB) &&
-       aStride < aWidth * 4)) {
+  uint32_t bytesPerPixel = BytesPerPixel(aInputFormat);
+  CheckedInt<uint32_t> minStride = CheckedInt<uint32_t>(aWidth) * bytesPerPixel;
+  if (!minStride.isValid() || aStride < minStride.value()) {
     NS_WARNING("Invalid stride for InitFromData/AddImageFrame");
+    return NS_ERROR_INVALID_ARG;
+  }
+  CheckedInt<uint32_t> maxOffset = CheckedInt<uint32_t>(aHeight) * aStride;
+  if (!maxOffset.isValid()) {
     return NS_ERROR_INVALID_ARG;
   }
 
@@ -316,6 +414,102 @@ nsPNGEncoder::AddImageFrame(const uint8_t* aData,
     // simple RBG(A), no conversion needed
     for (uint32_t y = 0; y < aHeight; y++) {
       png_write_row(mPNG, (uint8_t*)&aData[y * aStride]);
+    }
+
+  } else if (aInputFormat == INPUT_FORMAT_R10G10B10A2) {
+    // Unpack R10G10B10A2: 0bAARRRRRRRRRRGGGGGGGGGGBBBBBBBBBB
+    // Scale 10-bit color [0,1023] to 16-bit [0,65535] and 2-bit alpha [0,3]
+    // to 16-bit [0,65535].
+    uint32_t channels = useTransparency ? 4 : 3;
+    uint32_t rowBytes = aWidth * channels * 2;
+    UniquePtr<uint8_t[]> row = MakeUniqueFallible<uint8_t[]>(rowBytes);
+    if (NS_WARN_IF(!row)) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+    for (uint32_t y = 0; y < aHeight; y++) {
+      const uint32_t* src =
+          reinterpret_cast<const uint32_t*>(&aData[y * aStride]);
+      uint16_t* dst = reinterpret_cast<uint16_t*>(row.get());
+      for (uint32_t x = 0; x < aWidth; x++) {
+        uint32_t pixel = src[x];
+        uint32_t b = pixel & 0x3FF;
+        uint32_t g = (pixel >> 10) & 0x3FF;
+        uint32_t r = (pixel >> 20) & 0x3FF;
+        dst[x * channels + 0] = static_cast<uint16_t>((r * 65535 + 511) / 1023);
+        dst[x * channels + 1] = static_cast<uint16_t>((g * 65535 + 511) / 1023);
+        dst[x * channels + 2] = static_cast<uint16_t>((b * 65535 + 511) / 1023);
+        if (useTransparency) {
+          uint32_t a = (pixel >> 30) & 0x3;
+          dst[x * channels + 3] = static_cast<uint16_t>((a * 65535 + 1) / 3);
+        }
+      }
+      png_write_row(mPNG, row.get());
+    }
+
+  } else if (aInputFormat == INPUT_FORMAT_RGBA_U10 ||
+             aInputFormat == INPUT_FORMAT_RGBA_U12) {
+    // Scale 10-bit or 12-bit values up to 16-bit for PNG.
+    uint32_t maxVal = (aInputFormat == INPUT_FORMAT_RGBA_U10) ? 1023 : 4095;
+    uint32_t channels = useTransparency ? 4 : 3;
+    uint32_t rowBytes = aWidth * channels * 2;
+    UniquePtr<uint8_t[]> row = MakeUniqueFallible<uint8_t[]>(rowBytes);
+    if (NS_WARN_IF(!row)) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+    for (uint32_t y = 0; y < aHeight; y++) {
+      const uint16_t* src =
+          reinterpret_cast<const uint16_t*>(&aData[y * aStride]);
+      uint16_t* dst = reinterpret_cast<uint16_t*>(row.get());
+      for (uint32_t x = 0; x < aWidth; x++) {
+        for (uint32_t c = 0; c < channels; c++) {
+          uint32_t val = src[x * 4 + c];
+          dst[x * channels + c] =
+              static_cast<uint16_t>((val * 65535 + maxVal / 2) / maxVal);
+        }
+      }
+      png_write_row(mPNG, row.get());
+    }
+
+  } else if (aInputFormat == INPUT_FORMAT_RGBA_U16) {
+    // libpng handles the byte swap via png_set_swap.
+    if (useTransparency) {
+      for (uint32_t y = 0; y < aHeight; y++) {
+        png_write_row(mPNG, (uint8_t*)&aData[y * aStride]);
+      }
+    } else {
+      // Strip alpha: copy only RGB channels.
+      uint32_t rowBytes = aWidth * 3 * 2;
+      UniquePtr<uint8_t[]> row = MakeUniqueFallible<uint8_t[]>(rowBytes);
+      if (NS_WARN_IF(!row)) {
+        return NS_ERROR_OUT_OF_MEMORY;
+      }
+      for (uint32_t y = 0; y < aHeight; y++) {
+        const uint16_t* src =
+            reinterpret_cast<const uint16_t*>(&aData[y * aStride]);
+        uint16_t* dst = reinterpret_cast<uint16_t*>(row.get());
+        for (uint32_t x = 0; x < aWidth; x++) {
+          dst[x * 3 + 0] = src[x * 4 + 0];
+          dst[x * 3 + 1] = src[x * 4 + 1];
+          dst[x * 3 + 2] = src[x * 4 + 2];
+        }
+        png_write_row(mPNG, row.get());
+      }
+    }
+
+  } else if (aInputFormat == INPUT_FORMAT_RGBA_F16) {
+    // Convert float16 to uint16; libpng handles the byte swap.
+    uint32_t channels = useTransparency ? 4 : 3;
+    uint32_t rowBytes = aWidth * channels * 2;
+    UniquePtr<uint8_t[]> row = MakeUniqueFallible<uint8_t[]>(rowBytes);
+    if (NS_WARN_IF(!row)) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+    for (uint32_t y = 0; y < aHeight; y++) {
+      const uint16_t* src =
+          reinterpret_cast<const uint16_t*>(&aData[y * aStride]);
+      uint16_t* dst = reinterpret_cast<uint16_t*>(row.get());
+      mozilla::gfx::ConvertFloat16RowToUint16(src, dst, aWidth, channels);
+      png_write_row(mPNG, row.get());
     }
 
   } else {
@@ -377,6 +571,11 @@ nsresult nsPNGEncoder::MaybeAddCustomMetadata(
   nsresult rv = nsRFPService::GenerateRandomizationKeyFromHash(
       aRandomizationKey, mImageBufferHash, hex);
   NS_ENSURE_SUCCESS(rv, rv);
+
+  if (setjmp(png_jmpbuf(mPNG))) {
+    png_destroy_write_struct(&mPNG, &mPNGinfo);
+    return NS_ERROR_FAILURE;
+  }
 
   png_size_t chunkLength = 16;
   png_unknown_chunk chunk;

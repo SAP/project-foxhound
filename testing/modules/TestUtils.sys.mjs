@@ -369,9 +369,11 @@ export var TestUtils = {
     const omniJa = Services.dirsvc.get("XCurProcD", Ci.nsIFile);
     omniJa.append("omni.ja");
     if (!omniJa.exists()) {
+      const arg = Services.env.exists("XPCSHELL_TEST_PROFILE_DIR")
+        ? "--app-binary=$OBJDIR/dist/firefox/firefox"
+        : "--appname=dist";
       throw new Error(
-        "This test requires a packaged build, " +
-          "run 'mach package' and then use --app-binary=$OBJDIR/dist/firefox/firefox"
+        `This test requires a packaged build, run 'mach package' and then use ${arg}`
       );
     }
   },

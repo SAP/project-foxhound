@@ -1,0 +1,14 @@
+{
+  "background": {
+    "color": {
+      "@base": {
+        "value": "{background.color.box.@base}"
+      }
+    }
+  },
+  "border": {
+    "radius": {
+      "value": "{border.radius.large}"
+    }
+  }
+}

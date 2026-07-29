@@ -1,42 +1,39 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 MARKUPMAP(
     a,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
       // An anchor element without an href attribute and without a click
       // listener should be a generic.
       if (!aElement->HasAttr(nsGkAtoms::href) &&
           !nsCoreUtils::HasClickListener(aElement)) {
-        return new HyperTextAccessible(aElement, aContext->Document());
+        return MakeAndAddRef<HyperTextAccessible>(aElement, aContext->Document());
       }
       // Only some roles truly enjoy life as HTMLLinkAccessibles, for
       // details see closed bug 494807.
       const nsRoleMapEntry* roleMapEntry = aria::GetRoleMap(aElement);
       if (roleMapEntry && roleMapEntry->role != roles::NOTHING &&
           roleMapEntry->role != roles::LINK) {
-        return new HyperTextAccessible(aElement, aContext->Document());
+        return MakeAndAddRef<HyperTextAccessible>(aElement, aContext->Document());
       }
 
-      return new HTMLLinkAccessible(aElement, aContext->Document());
+      return MakeAndAddRef<HTMLLinkAccessible>(aElement, aContext->Document());
     },
     0)
 
 MARKUPMAP(
     abbr,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLAbbreviationAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLAbbreviationAccessible>(aElement, aContext->Document());
     },
     0)
 
 MARKUPMAP(
     acronym,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLAbbreviationAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLAbbreviationAccessible>(aElement, aContext->Document());
     },
     0)
 
@@ -46,8 +43,8 @@ MARKUPMAP(article, New_HyperText, roles::ARTICLE, Attr(xmlroles, article))
 
 MARKUPMAP(
     aside,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLAsideAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLAsideAccessible>(aElement, aContext->Document());
     },
     0)
 
@@ -55,20 +52,20 @@ MARKUPMAP(blockquote, New_HyperText, roles::BLOCKQUOTE)
 
 MARKUPMAP(
     button,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLButtonAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLButtonAccessible>(aElement, aContext->Document());
     },
     0)
 
 MARKUPMAP(
     caption,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
       if (aContext->IsTable()) {
         dom::HTMLTableElement* tableEl =
             dom::HTMLTableElement::FromNode(aContext->GetContent());
         if (tableEl && tableEl == aElement->GetParent() &&
             tableEl->GetCaption() == aElement) {
-          return new HTMLCaptionAccessible(aElement, aContext->Document());
+          return MakeAndAddRef<HTMLCaptionAccessible>(aElement, aContext->Document());
         }
       }
       return nullptr;
@@ -89,7 +86,7 @@ MARKUPMAP(dialog, New_HyperText, roles::DIALOG)
 
 MARKUPMAP(
     div,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
       // Never create an accessible if we're part of an anonymous
       // subtree.
       if (aElement->IsInNativeAnonymousSubtree()) {
@@ -97,7 +94,7 @@ MARKUPMAP(
       }
       // Always create an accessible if the div has an id.
       if (aElement->HasAttr(nsGkAtoms::id)) {
-        return new HyperTextAccessible(aElement, aContext->Document());
+        return MakeAndAddRef<HyperTextAccessible>(aElement, aContext->Document());
       }
       // Never create an accessible if the div is not display:block; or
       // display:inline-block or the like.
@@ -115,7 +112,7 @@ MARKUPMAP(
       if (prevSibling) {
         nsIFrame* prevSiblingFrame = prevSibling->GetPrimaryFrame();
         if (prevSiblingFrame && prevSiblingFrame->IsInlineOutside()) {
-          return new HyperTextAccessible(aElement, aContext->Document());
+          return MakeAndAddRef<HyperTextAccessible>(aElement, aContext->Document());
         }
       }
       // Now, check the children.
@@ -135,7 +132,7 @@ MARKUPMAP(
         }
         // Check to see if first child has an inline frame.
         if (firstChildFrame && firstChildFrame->IsInlineOutside()) {
-          return new HyperTextAccessible(aElement, aContext->Document());
+          return MakeAndAddRef<HyperTextAccessible>(aElement, aContext->Document());
         }
         nsIContent* lastChild = aElement->GetLastChild();
         MOZ_ASSERT(lastChild);
@@ -153,7 +150,7 @@ MARKUPMAP(
           }
           // Check to see if last child has an inline frame.
           if (lastChildFrame && lastChildFrame->IsInlineOutside()) {
-            return new HyperTextAccessible(aElement, aContext->Document());
+            return MakeAndAddRef<HyperTextAccessible>(aElement, aContext->Document());
           }
         }
       }
@@ -163,54 +160,54 @@ MARKUPMAP(
 
 MARKUPMAP(
     dl,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLListAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLListAccessible>(aElement, aContext->Document());
     },
     roles::DEFINITION_LIST)
 
 MARKUPMAP(dt, New_HTMLDtOrDd<HTMLLIAccessible>, roles::TERM)
 
-MARKUPMAP(em, New_HyperText, roles::EMPHASIS)
+MARKUPMAP(em, New_HyperText, roles::EMPHASIS, Attr(xmlroles, emphasis))
 
 MARKUPMAP(
     figcaption,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLFigcaptionAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLFigcaptionAccessible>(aElement, aContext->Document());
     },
     roles::CAPTION)
 
 MARKUPMAP(
     figure,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLFigureAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLFigureAccessible>(aElement, aContext->Document());
     },
     roles::FIGURE, Attr(xmlroles, figure))
 
 MARKUPMAP(
     fieldset,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLGroupboxAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLGroupboxAccessible>(aElement, aContext->Document());
     },
     0)
 
 MARKUPMAP(
     form,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLFormAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLFormAccessible>(aElement, aContext->Document());
     },
     0)
 
 MARKUPMAP(
     footer,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLHeaderOrFooterAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLHeaderOrFooterAccessible>(aElement, aContext->Document());
     },
     0)
 
 MARKUPMAP(
     header,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLHeaderOrFooterAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLHeaderOrFooterAccessible>(aElement, aContext->Document());
     },
     0)
 
@@ -230,38 +227,38 @@ MARKUPMAP(hgroup, New_HyperText, roles::GROUPING)
 
 MARKUPMAP(
     hr,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLHRAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLHRAccessible>(aElement, aContext->Document());
     },
     0)
 
 MARKUPMAP(
     input,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
       // TODO(emilio): This would be faster if it used
       // HTMLInputElement's already-parsed representation.
       if (aElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
                                 nsGkAtoms::checkbox, eIgnoreCase)) {
-        return new CheckboxAccessible(aElement, aContext->Document());
+        return MakeAndAddRef<CheckboxAccessible>(aElement, aContext->Document());
       }
       if (aElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
                                 nsGkAtoms::image, eIgnoreCase)) {
-        return new HTMLButtonAccessible(aElement, aContext->Document());
+        return MakeAndAddRef<HTMLButtonAccessible>(aElement, aContext->Document());
       }
       if (aElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
                                 nsGkAtoms::radio, eIgnoreCase)) {
-        return new HTMLRadioButtonAccessible(aElement, aContext->Document());
+        return MakeAndAddRef<HTMLRadioButtonAccessible>(aElement, aContext->Document());
       }
       if (aElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
                                 nsGkAtoms::time, eIgnoreCase)) {
-        return new HTMLDateTimeAccessible<roles::TIME_EDITOR>(
+        return MakeAndAddRef<HTMLDateTimeAccessible<roles::TIME_EDITOR>>(
             aElement, aContext->Document());
       }
       if (aElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
                                 nsGkAtoms::date, eIgnoreCase) ||
           aElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
                                 nsGkAtoms::datetime_local, eIgnoreCase)) {
-        return new HTMLDateTimeAccessible<roles::DATE_EDITOR>(
+        return MakeAndAddRef<HTMLDateTimeAccessible<roles::DATE_EDITOR>>(
             aElement, aContext->Document());
       }
       return nullptr;
@@ -272,28 +269,28 @@ MARKUPMAP(ins, New_HyperText, roles::CONTENT_INSERTION)
 
 MARKUPMAP(
     label,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLLabelAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLLabelAccessible>(aElement, aContext->Document());
     },
     roles::LABEL)
 
 MARKUPMAP(
     legend,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLLegendAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLLegendAccessible>(aElement, aContext->Document());
     },
     roles::LABEL)
 
 MARKUPMAP(
     li,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
       // If list item is a child of accessible list then create an
       // accessible for it unconditionally by tag name. nsBlockFrame
       // creates the list item accessible for other elements styled as
       // list items.
       if (aContext->IsList() &&
           aContext->GetContent() == aElement->GetParent()) {
-        return new HTMLLIAccessible(aElement, aContext->Document());
+        return MakeAndAddRef<HTMLLIAccessible>(aElement, aContext->Document());
       }
 
       return nullptr;
@@ -308,8 +305,8 @@ MARKUPMAP(mark, New_HyperText, roles::MARK, Attr(xmlroles, mark))
 
 MARKUPMAP(
     menu,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLListAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLListAccessible>(aElement, aContext->Document());
     },
     roles::LIST)
 
@@ -317,29 +314,29 @@ MARKUPMAP(nav, New_HyperText, roles::LANDMARK)
 
 MARKUPMAP(
     ol,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLListAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLListAccessible>(aElement, aContext->Document());
     },
     roles::LIST)
 
 MARKUPMAP(
     option,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLSelectOptionAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLSelectOptionAccessible>(aElement, aContext->Document());
     },
     0)
 
 MARKUPMAP(
     optgroup,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLSelectOptGroupAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLSelectOptGroupAccessible>(aElement, aContext->Document());
     },
     0)
 
 MARKUPMAP(
     output,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLOutputAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLOutputAccessible>(aElement, aContext->Document());
     },
     roles::STATUSBAR, Attr(aria_live, polite))
 
@@ -347,8 +344,8 @@ MARKUPMAP(p, nullptr, roles::PARAGRAPH)
 
 MARKUPMAP(
     progress,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLProgressAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLProgressAccessible>(aElement, aContext->Document());
     },
     0)
 
@@ -358,19 +355,19 @@ MARKUPMAP(s, New_HyperText, roles::CONTENT_DELETION)
 
 MARKUPMAP(
     section,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLSectionAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLSectionAccessible>(aElement, aContext->Document());
     },
     0)
 
-MARKUPMAP(strong, New_HyperText, roles::STRONG)
+MARKUPMAP(strong, New_HyperText, roles::STRONG, Attr(xmlroles, strong))
 
 MARKUPMAP(sub, New_HyperText, roles::SUBSCRIPT)
 
 MARKUPMAP(
     summary,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLSummaryAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLSummaryAccessible>(aElement, aContext->Document());
     },
     roles::SUMMARY)
 
@@ -378,8 +375,8 @@ MARKUPMAP(sup, New_HyperText, roles::SUPERSCRIPT)
 
 MARKUPMAP(
     table,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLTableAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLTableAccessible>(aElement, aContext->Document());
     },
     roles::TABLE)
 
@@ -390,15 +387,15 @@ MARKUPMAP(tbody, nullptr, roles::ROWGROUP)
 
 MARKUPMAP(
     td,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
       if (!aContext->IsHTMLTableRow()) {
         return nullptr;
       }
       if (aElement->HasAttr(nsGkAtoms::scope)) {
-        return new HTMLTableHeaderCellAccessible(aElement,
+        return MakeAndAddRef<HTMLTableHeaderCellAccessible>(aElement,
                                                  aContext->Document());
       }
-      return new HTMLTableCellAccessible(aElement, aContext->Document());
+      return MakeAndAddRef<HTMLTableCellAccessible>(aElement, aContext->Document());
     },
     0)
 
@@ -406,11 +403,11 @@ MARKUPMAP(tfoot, nullptr, roles::ROWGROUP)
 
 MARKUPMAP(
     th,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
       if (!aContext->IsHTMLTableRow()) {
         return nullptr;
       }
-      return new HTMLTableHeaderCellAccessible(aElement, aContext->Document());
+      return MakeAndAddRef<HTMLTableHeaderCellAccessible>(aElement, aContext->Document());
     },
     0)
 
@@ -418,7 +415,7 @@ MARKUPMAP(thead, nullptr, roles::ROWGROUP)
 
 MARKUPMAP(
     tr,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
       if (aContext->IsTableRow()) {
         // A <tr> within a row isn't valid.
         return nullptr;
@@ -436,7 +433,7 @@ MARKUPMAP(
       // <div role="table"> such as Monorail.
       if (aContext->IsTable() ||
           (aContext->LocalParent() && aContext->LocalParent()->IsTable())) {
-        return new HTMLTableRowAccessible(aElement, aContext->Document());
+        return MakeAndAddRef<HTMLTableRowAccessible>(aElement, aContext->Document());
       }
       return nullptr;
     },
@@ -444,15 +441,15 @@ MARKUPMAP(
 
 MARKUPMAP(
     ul,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLListAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLListAccessible>(aElement, aContext->Document());
     },
     roles::LIST)
 
 MARKUPMAP(
     meter,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLMeterAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLMeterAccessible>(aElement, aContext->Document());
     },
     roles::METER)
 

@@ -86,6 +86,10 @@ export class AboutTranslationsChild extends JSWindowActorChild {
     }
   }
 
+  RPMGetFormatURLPref(formatURL) {
+    return Services.urlFormatter.formatURLPref(formatURL);
+  }
+
   /**
    * @param {object} detail
    */
@@ -142,8 +146,11 @@ export class AboutTranslationsChild extends JSWindowActorChild {
     const fns = [
       "AT_log",
       "AT_logError",
-      "AT_getAppLocale",
+      "AT_getAppLocaleAsBCP47",
       "AT_getSupportedLanguages",
+      "AT_clearSourceText",
+      "AT_enableTranslationsFeature",
+      "AT_isEnabledStateManagedByPolicy",
       "AT_isTranslationEngineSupported",
       "AT_isHtmlTranslation",
       "AT_isInAutomation",
@@ -151,8 +158,8 @@ export class AboutTranslationsChild extends JSWindowActorChild {
       "AT_identifyLanguage",
       "AT_getDisplayName",
       "AT_getScriptDirection",
-      "AT_openSupportPage",
       "AT_telemetry",
+      "RPMGetFormatURLPref",
     ];
     for (const name of fns) {
       Cu.exportFunction(this[name].bind(this), window, { defineAs: name });
@@ -182,15 +189,8 @@ export class AboutTranslationsChild extends JSWindowActorChild {
    *
    * @returns {Intl.Locale}
    */
-  AT_getAppLocale() {
+  AT_getAppLocaleAsBCP47() {
     return Services.locale.appLocaleAsBCP47;
-  }
-
-  /**
-   * Opens the trusted link to the official Translations support page.
-   */
-  AT_openSupportPage() {
-    this.sendAsyncMessage("AboutTranslations:OpenSupportPage");
   }
 
   /**
@@ -204,6 +204,21 @@ export class AboutTranslationsChild extends JSWindowActorChild {
         Cu.cloneInto(data, this.contentWindow)
       )
     );
+  }
+
+  /**
+   * Clears the about:translations source textarea with privileged user-input
+   * semantics, rather than setting the value directly to an empty string.
+   *
+   * Clearing the text this way allows the text to be restored via `Ctrl/Cmd + Z`.
+   */
+  AT_clearSourceText() {
+    const sourceTextArea = this.contentWindow.document.getElementById(
+      "about-translations-source-textarea"
+    );
+
+    sourceTextArea.focus();
+    sourceTextArea.setUserInput("");
   }
 
   /**
@@ -227,6 +242,35 @@ export class AboutTranslationsChild extends JSWindowActorChild {
   AT_isTranslationEngineSupported() {
     return this.#convertToContentPromise(
       this.sendQuery("AboutTranslations:IsTranslationsEngineSupported")
+    );
+  }
+
+  /**
+   * Returns true if the enabled state is managed by an enterprise policy, otherwise false.
+   *
+   * When false, the user may freely enable or disable the Translations feature.
+   * When true, the enabled state cannot be changed by the user at run time.
+   *
+   * Note that it is possible for a policy to enforce that the feature is "disabled and immutable,"
+   * such that the user cannot turn the feature on, as well as "enabled and immutable," such that
+   * the user cannot turn the feature off.
+   *
+   * @returns {Promise<boolean>}
+   */
+  AT_isEnabledStateManagedByPolicy() {
+    return this.#convertToContentPromise(
+      this.sendQuery("AboutTranslations:IsEnabledStateManagedByPolicy")
+    );
+  }
+
+  /**
+   * Enables the Translations feature.
+   *
+   * @returns {Promise<void>}
+   */
+  AT_enableTranslationsFeature() {
+    return this.#convertToContentPromise(
+      this.sendQuery("AboutTranslations:EnableTranslationsFeature")
     );
   }
 

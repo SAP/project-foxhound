@@ -23,7 +23,8 @@ namespace mozilla {
 using Microsoft::WRL::ComPtr;
 using Microsoft::WRL::MakeAndInitialize;
 
-#define LOG(msg, ...) EME_LOG("MFCDMSession=%p, " msg, this, ##__VA_ARGS__)
+#define LOG(msg, ...) \
+  EME_LOG("MFCDMSession={}, " msg, fmt::ptr(this), ##__VA_ARGS__)
 
 static inline MF_MEDIAKEYSESSION_TYPE ConvertSessionType(
     KeySystemConfig::SessionType aType) {
@@ -136,7 +137,7 @@ HRESULT MFCDMSession::GenerateRequest(const nsAString& aInitDataType,
                                       const uint8_t* aInitData,
                                       uint32_t aInitDataSize) {
   AssertOnManagerThread();
-  LOG("GenerateRequest for %s (init sz=%u)",
+  LOG("GenerateRequest for {} (init sz={})",
       NS_ConvertUTF16toUTF8(aInitDataType).get(), aInitDataSize);
   RETURN_IF_FAILED(mSession->GenerateRequest(
       InitDataTypeToString(aInitDataType), aInitData, aInitDataSize));
@@ -150,8 +151,8 @@ HRESULT MFCDMSession::Load(const nsAString& aSessionId) {
   // Also, how do we know is this given session ID is equal to the session Id
   // asked from CDM session or not?
   BOOL rv = FALSE;
-  mSession->Load(char16ptr_t(aSessionId.BeginReading()), &rv);
-  LOG("Load, id=%s, rv=%s", NS_ConvertUTF16toUTF8(aSessionId).get(),
+  mSession->Load(PromiseFlatString(aSessionId).get(), &rv);
+  LOG("Load, id={}, rv={}", NS_ConvertUTF16toUTF8(aSessionId).get(),
       rv ? "success" : "fail");
   return rv ? S_OK : S_FALSE;
 }
@@ -196,7 +197,7 @@ bool MFCDMSession::RetrieveSessionId() {
     LOG("Can't get session id or empty session ID!");
     return false;
   }
-  LOG("Set session Id %ls", sessionId.Get());
+  LOG("Set session Id {}", NS_ConvertUTF16toUTF8(sessionId.Get()).get());
   mSessionId = Some(sessionId.Get());
   return true;
 }
@@ -258,13 +259,13 @@ void MFCDMSession::OnSessionKeysChange() {
     }
 
     nsAutoCString keyIdString(ToHexString(keyId));
-    LOG("Append keyid-sz=%u, keyid=%s, status=%s", keyStatus.cbKeyId,
+    LOG("Append keyid-sz={}, keyid={}, status={}", keyStatus.cbKeyId,
         keyIdString.get(),
         dom::GetEnumString(ToMediaKeyStatus(keyStatus.eMediaKeyStatus)).get());
     keyInfos.AppendElement(MFCDMKeyInformation{
         std::move(keyId), ToMediaKeyStatus(keyStatus.eMediaKeyStatus)});
   }
-  LOG("Notify 'keychange' for %s", NS_ConvertUTF16toUTF8(*mSessionId).get());
+  LOG("Notify 'keychange' for {}", NS_ConvertUTF16toUTF8(*mSessionId).get());
   mKeyChangeEvent.Notify(
       MFCDMKeyStatusChange{*mSessionId, std::move(keyInfos)});
 
@@ -292,7 +293,7 @@ HRESULT MFCDMSession::UpdateExpirationIfNeeded() {
     return S_OK;
   }
 
-  LOG("Session expiration change from %f to %f, notify 'expiration' for %s",
+  LOG("Session expiration change from {} to {}, notify 'expiration' for {}",
       mExpiredTimeMilliSecondsSinceEpoch, newExpiredEpochTimeMs,
       NS_ConvertUTF16toUTF8(*mSessionId).get());
   mExpiredTimeMilliSecondsSinceEpoch = newExpiredEpochTimeMs;
@@ -323,7 +324,7 @@ void MFCDMSession::OnSessionKeyMessage(
         MOZ_CRASH("Unknown session message type");
     }
   };
-  LOG("Notify 'keymessage' for %s", NS_ConvertUTF16toUTF8(*mSessionId).get());
+  LOG("Notify 'keymessage' for {}", NS_ConvertUTF16toUTF8(*mSessionId).get());
   mKeyMessageEvent.Notify(MFCDMKeyMessage{
       *mSessionId, ToMediaKeyMessageType(aType), std::move(aMessage)});
 }

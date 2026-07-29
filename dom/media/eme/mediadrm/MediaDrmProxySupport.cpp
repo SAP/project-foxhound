@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -70,7 +68,7 @@ void MediaDrmJavaCallbacksSupport::OnSessionCreated(
   nsCString sessionId(
       reinterpret_cast<char*>(aSessionId->GetElements().Elements()),
       aSessionId->Length());
-  MDRMN_LOG("SessionId(%s) closed", sessionId.get());
+  MDRMN_LOG("SessionId({}) closed", sessionId.get());
 
   mDecryptorProxyCallback->SetSessionId(aCreateSessionToken, sessionId);
   mDecryptorProxyCallback->ResolvePromise(aPromiseId);
@@ -80,7 +78,7 @@ void MediaDrmJavaCallbacksSupport::OnSessionUpdated(
     int aPromiseId, jni::ByteArray::Param aSessionId) {
   MOZ_ASSERT(NS_IsMainThread());
   MDRMN_LOG(
-      "SessionId(%s) closed",
+      "SessionId({}) closed",
       nsCString(reinterpret_cast<char*>(aSessionId->GetElements().Elements()),
                 aSessionId->Length())
           .get());
@@ -93,7 +91,7 @@ void MediaDrmJavaCallbacksSupport::OnSessionClosed(
   nsCString sessionId(
       reinterpret_cast<char*>(aSessionId->GetElements().Elements()),
       aSessionId->Length());
-  MDRMN_LOG("SessionId(%s) closed", sessionId.get());
+  MDRMN_LOG("SessionId({}) closed", sessionId.get());
   mDecryptorProxyCallback->ResolvePromise(aPromiseId);
   mDecryptorProxyCallback->SessionClosed(sessionId);
 }
@@ -124,7 +122,7 @@ void MediaDrmJavaCallbacksSupport::OnSessionError(
       reinterpret_cast<char*>(aSessionId->GetElements().Elements()),
       aSessionId->Length());
   nsCString errorMessage = aMessage->ToCString();
-  MDRMN_LOG("SessionId(%s)", sessionId.get());
+  MDRMN_LOG("SessionId({})", sessionId.get());
   // TODO: We cannot get system error code from media drm API.
   // Currently use -1 as an error code.
   mDecryptorProxyCallback->SessionError(
@@ -182,7 +180,7 @@ void MediaDrmJavaCallbacksSupport::OnRejectPromise(
     int aPromiseId, jni::String::Param aMessage) {
   MOZ_ASSERT(NS_IsMainThread());
   nsCString reason = aMessage->ToCString();
-  MDRMN_LOG("OnRejectPromise aMessage(%s) ", reason.get());
+  MDRMN_LOG("OnRejectPromise aMessage({}) ", reason.get());
   // Current implementation assume all the reject from MediaDrm is due to
   // invalid state. Other cases should be handled before calling into
   // MediaDrmProxy API.
@@ -191,7 +189,8 @@ void MediaDrmJavaCallbacksSupport::OnRejectPromise(
   mDecryptorProxyCallback->RejectPromise(aPromiseId, std::move(rv), reason);
 }
 
-MediaDrmProxySupport::MediaDrmProxySupport(const nsAString& aKeySystem)
+MediaDrmProxySupport::MediaDrmProxySupport(const nsAString& aKeySystem,
+                                           const nsACString& aOriginID)
     : mKeySystem(aKeySystem), mDestroyed(false) {
   mJavaCallbacks = java::MediaDrmProxy::NativeMediaDrmProxyCallbacks::New();
 
@@ -199,6 +198,13 @@ MediaDrmProxySupport::MediaDrmProxySupport(const nsAString& aKeySystem)
 
   MOZ_ASSERT(mBridgeProxy, "mBridgeProxy should not be null");
   mMediaDrmStubId = mBridgeProxy->GetStubId()->ToString();
+
+  if (!aOriginID.IsEmpty()) {
+    mBridgeProxy->SetOriginID(aOriginID);
+    MDRMN_LOG("Have origin ID ({:.4})", PromiseFlatCString(aOriginID).get());
+  } else {
+    MDRMN_LOG("Origin ID is empty");
+  }
 }
 
 MediaDrmProxySupport::~MediaDrmProxySupport() {

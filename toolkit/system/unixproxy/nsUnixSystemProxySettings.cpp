@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -279,6 +278,24 @@ nsresult nsUnixSystemProxySettings::GetProxyForURI(const nsACString& aSpec,
 NS_IMETHODIMP
 nsUnixSystemProxySettings::GetSystemWPADSetting(bool* aSystemWPADSetting) {
   *aSystemWPADSetting = false;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsUnixSystemProxySettings::GetSystemProxyDirect(bool* aResult) {
+  if (mozilla::toolkit::system::HasProxyEnvVars()) {
+    *aResult = false;
+    return NS_OK;
+  }
+
+  if (!mProxySettings) {
+    *aResult = true;
+    return NS_OK;
+  }
+
+  nsAutoCString proxyMode;
+  mProxySettings.GetString("mode"_ns, proxyMode);
+  *aResult = proxyMode.EqualsLiteral("none") || proxyMode.IsEmpty();
   return NS_OK;
 }
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -100,9 +98,9 @@ class DOMSVGLength final : public nsWrapperCache {
 
   /**
    * Create an unowned copy of a length that is owned or is reflecting a single
-   * attribute. The caller is responsible for the first AddRef().
+   * attribute.
    */
-  DOMSVGLength* Copy();
+  already_AddRefed<DOMSVGLength> Copy();
 
   /**
    * Returns true if our attribute is animating.
@@ -132,7 +130,10 @@ class DOMSVGLength final : public nsWrapperCache {
   }
 
   /// This method is called to notify this object that its list index changed.
-  void UpdateListIndex(uint32_t aListIndex) { mListIndex = aListIndex; }
+  void UpdateListIndex(uint32_t aListIndex) {
+    MOZ_RELEASE_ASSERT(aListIndex <= MaxListIndex());
+    mListIndex = aListIndex;
+  }
 
   /**
    * This method is called to notify this DOM object that it is about to be

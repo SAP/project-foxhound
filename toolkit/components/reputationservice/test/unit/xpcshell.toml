@@ -13,8 +13,8 @@ support-files = [
 
 ["test_app_rep_maclinux.js"]
 run-sequentially = ["true"] # fails 70% of the time in parallel
-skip-if = [
-  "os == 'win'",
+run-if = [
+  "os != 'win'",
 ]
 
 ["test_app_rep_windows.js"]

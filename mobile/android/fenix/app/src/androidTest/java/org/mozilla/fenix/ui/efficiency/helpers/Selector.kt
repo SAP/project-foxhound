@@ -9,8 +9,10 @@ import org.mozilla.fenix.R
 data class Selector(
     val strategy: SelectorStrategy,
     val value: String,
+    val secondaryValue: String? = null,
     val description: String,
-    val groups: List<String> = listOf(),
+    val groups: List<String> = emptyList(),
+    val name: String? = null,
 ) {
     fun toResourceId(): Int {
         return try {
@@ -28,17 +30,21 @@ enum class SelectorStrategy {
      * Supported strategies for locating UI elements.
      */
     COMPOSE_BY_CONTENT_DESCRIPTION,
+    COMPOSE_BY_CONTENT_DESCRIPTION_SUBSTRING,
     COMPOSE_BY_TAG,
-    COMPOSE_ON_ALL_NODES_BY_TAG_ON_LAST,
+    COMPOSE_ON_ALL_NODES_BY_TAG_ON_FIRST,
     COMPOSE_BY_TEXT,
     ESPRESSO_BY_ID,
     ESPRESSO_BY_TEXT,
     ESPRESSO_BY_CONTENT_DESC,
+    ESPRESSO_BY_RES_NAME,
     UIAUTOMATOR2_BY_RES,
     UIAUTOMATOR2_BY_CLASS,
     UIAUTOMATOR2_BY_TEXT,
     UIAUTOMATOR_WITH_TEXT_CONTAINS,
     UIAUTOMATOR_WITH_RES_ID,
+    UIAUTOMATOR_WITH_COMPOSE_TAG,
     UIAUTOMATOR_WITH_TEXT,
     UIAUTOMATOR_WITH_DESCRIPTION_CONTAINS,
+    UIAUTOMATOR_WITH_RES_ID_AND_TEXT,
 }

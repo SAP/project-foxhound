@@ -12,8 +12,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
 
-#include "api/array_view.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "rtc_base/buffer.h"
 #include "rtc_base/checks.h"
@@ -22,14 +22,16 @@ namespace webrtc {
 namespace rtcp {
 
 Buffer RtcpPacket::Build() const {
-  Buffer packet(BlockLength());
+  Buffer packet = Buffer::CreateWithCapacity(BlockLength());
 
-  size_t length = 0;
-  bool created = Create(packet.data(), &length, packet.capacity(), nullptr);
-  RTC_DCHECK(created) << "Invalid packet is not supported.";
-  RTC_DCHECK_EQ(length, packet.size())
-      << "BlockLength mispredicted size used by Create";
-
+  packet.AppendData(BlockLength(), [&](std::span<uint8_t> data) {
+    size_t length = 0;
+    bool created = Create(data.data(), &length, data.size(), nullptr);
+    RTC_DCHECK(created) << "Invalid packet is not supported.";
+    RTC_DCHECK_EQ(length, data.size())
+        << "BlockLength mispredicted size used by Create";
+    return length;
+  });
   return packet;
 }
 
@@ -48,7 +50,7 @@ bool RtcpPacket::OnBufferFull(uint8_t* packet,
   if (*index == 0)
     return false;
   RTC_DCHECK(callback) << "Fragmentation not supported.";
-  callback(ArrayView<const uint8_t>(packet, *index));
+  callback(std::span<const uint8_t>(packet, *index));
   *index = 0;
   return true;
 }

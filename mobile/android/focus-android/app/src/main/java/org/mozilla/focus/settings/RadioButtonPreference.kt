@@ -24,9 +24,18 @@ import mozilla.components.support.ktx.android.view.putCompoundDrawablesRelative
 import org.mozilla.focus.R
 import androidx.preference.R as preferenceR
 
+/**
+ * Interface for radio buttons that can be grouped together.
+ */
 interface GroupableRadioButton {
+    /**
+     * Updates the checked state of the radio button.
+     */
     fun updateRadioValue(isChecked: Boolean)
 
+    /**
+     * Adds the given [radioButton] to this radio button's group.
+     */
     fun addToRadioGroup(radioButton: GroupableRadioButton)
 }
 
@@ -43,10 +52,16 @@ fun addToRadioGroup(vararg radios: GroupableRadioButton) {
     }
 }
 
+/**
+ * Unchecks all radio buttons in this [Iterable].
+ */
 fun Iterable<GroupableRadioButton>.uncheckAll() {
     forEach { it.updateRadioValue(isChecked = false) }
 }
 
+/**
+ * A custom [Preference] that displays a radio button.
+ */
 @SuppressLint("RestrictedApi")
 open class RadioButtonPreference @JvmOverloads constructor(
     context: Context,
@@ -92,6 +107,9 @@ open class RadioButtonPreference @JvmOverloads constructor(
         radioGroups.add(radioButton)
     }
 
+    /**
+     * Sets a listener to be invoked when the preference is clicked.
+     */
     fun onClickListener(listener: (() -> Unit)) {
         clickListener = listener
     }

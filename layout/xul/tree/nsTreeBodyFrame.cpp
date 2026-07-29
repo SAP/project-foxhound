@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -253,7 +251,7 @@ nsTreeBodyFrame::nsTreeBodyFrame(ComputedStyle* aStyle,
       mVerticalOverflow(false),
       mReflowCallbackPosted(false),
       mCheckingOverflow(false) {
-  mColumns = new nsTreeColumns(this);
+  mColumns = MakeRefPtr<nsTreeColumns>(this);
 }
 
 // Destructor
@@ -3991,7 +3989,7 @@ void nsTreeBodyFrame::PostScrollEvent() {
     return;
   }
 
-  RefPtr<ScrollEvent> event = new ScrollEvent(this);
+  auto event = MakeRefPtr<ScrollEvent>(this);
   nsresult rv = mContent->OwnerDoc()->Dispatch(do_AddRef(event));
   if (NS_FAILED(rv)) {
     NS_WARNING("failed to dispatch ScrollEvent");
@@ -4064,8 +4062,7 @@ void nsTreeBodyFrame::FireRowCountChangedEvent(int32_t aIndex, int32_t aCount) {
 
   event->SetTrusted(true);
 
-  RefPtr<AsyncEventDispatcher> asyncDispatcher =
-      new AsyncEventDispatcher(tree, event.forget());
+  auto asyncDispatcher = MakeRefPtr<AsyncEventDispatcher>(tree, event.forget());
   asyncDispatcher->PostDOMEvent();
 }
 
@@ -4117,8 +4114,7 @@ void nsTreeBodyFrame::FireInvalidateEvent(int32_t aStartRowIdx,
 
   event->SetTrusted(true);
 
-  RefPtr<AsyncEventDispatcher> asyncDispatcher =
-      new AsyncEventDispatcher(tree, event.forget());
+  auto asyncDispatcher = MakeRefPtr<AsyncEventDispatcher>(tree, event.forget());
   asyncDispatcher->PostDOMEvent();
 }
 #endif
@@ -4155,7 +4151,7 @@ bool nsTreeBodyFrame::FullScrollbarsUpdate(bool aNeedsFullInvalidation) {
   // recursion during reflow. Do the first overflow check synchronously, but
   // force any nested checks to round-trip through the event loop. See bug
   // 905909.
-  RefPtr<nsOverflowChecker> checker = new nsOverflowChecker(this);
+  auto checker = MakeRefPtr<nsOverflowChecker>(this);
   if (!mCheckingOverflow) {
     nsContentUtils::AddScriptRunner(checker);
   } else {

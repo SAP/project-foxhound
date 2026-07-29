@@ -21,9 +21,9 @@
  */
 
 const IGNORED_URLS = ["debugger eval code", "XStringBundle"];
-const IGNORED_EXTENSIONS = ["css", "svg", "png"];
+const IGNORED_EXTENSIONS = ["svg", "png"];
 import { getRawSourceURL } from "../utils/source";
-import { prefs } from "../utils/prefs";
+import { prefs, features } from "../utils/prefs";
 import { getDisplayURL } from "../utils/sources-tree/getURL";
 
 import TargetCommand from "resource://devtools/shared/commands/target/target-command.js";
@@ -32,6 +32,11 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   BinarySearch: "resource://gre/modules/BinarySearch.sys.mjs",
 });
+
+// Allow css if the stylesheetsInDebugger pref is enabled
+if (!features.stylesheetsInDebugger) {
+  IGNORED_EXTENSIONS.push("css");
+}
 
 export function initialSourcesTreeState({
   isWebExtension,

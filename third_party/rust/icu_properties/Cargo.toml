@@ -74,6 +74,7 @@ serde = [
     "zerotrie/serde",
 ]
 unicode_bidi = ["dep:unicode-bidi"]
+harfbuzz_traits = ["dep:harfbuzz-traits"]
 
 [lib]
 name = "icu_properties"
@@ -108,6 +109,11 @@ version = "1.0.220"
 features = ["derive"]
 optional = true
 default-features = false
+
+[dependencies.harfbuzz-traits]
+version = "0.6.0"
+default-features = false
+optional = true
 
 [dependencies.unicode-bidi]
 version = "0.3.11"

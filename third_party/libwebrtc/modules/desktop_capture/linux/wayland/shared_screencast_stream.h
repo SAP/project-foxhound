@@ -26,6 +26,7 @@
 namespace webrtc {
 
 class SharedScreenCastStreamPrivate;
+class EglDmaBuf;
 
 class RTC_EXPORT SharedScreenCastStream
     : public RefCountedNonVirtual<SharedScreenCastStream> {
@@ -40,7 +41,14 @@ class RTC_EXPORT SharedScreenCastStream
     virtual void OnBufferCorruptedData() = 0;
     virtual void OnEmptyBuffer() = 0;
     virtual void OnStreamConfigured() = 0;
-    virtual void OnFrameRateChanged(uint32_t frame_rate) = 0;
+    // TODO: https://crbug.com/474141343 - Adapt Chrome Remote Desktop to
+    // SharedScreencastStream::Observer API changes
+    virtual void OnFrameRateChanged(uint32_t frame_rate) {}
+    virtual void OnFormatChanged(uint32_t format,
+                                 uint32_t width,
+                                 uint32_t height,
+                                 uint32_t frame_rate,
+                                 uint64_t modifier) {}
 
    protected:
     Observer() = default;
@@ -48,6 +56,8 @@ class RTC_EXPORT SharedScreenCastStream
   };
 
   static scoped_refptr<SharedScreenCastStream> CreateDefault();
+  static scoped_refptr<SharedScreenCastStream> CreateWithEglDmaBuf(
+      std::unique_ptr<EglDmaBuf> egl_dmabuf);
 
   bool StartScreenCastStream(uint32_t stream_node_id);
   bool StartScreenCastStream(uint32_t stream_node_id,
@@ -60,6 +70,8 @@ class RTC_EXPORT SharedScreenCastStream
   void UpdateScreenCastStreamFrameRate(uint32_t frame_rate);
   void SetUseDamageRegion(bool use_damage_region);
   void SetObserver(SharedScreenCastStream::Observer* observer);
+  void SetSharedMemoryFactory(
+      std::unique_ptr<webrtc::SharedMemoryFactory> shared_memory_factory);
   void StopScreenCastStream();
 
   // Below functions return the most recent information we get from a
@@ -88,6 +100,7 @@ class RTC_EXPORT SharedScreenCastStream
 
  protected:
   SharedScreenCastStream();
+  explicit SharedScreenCastStream(std::unique_ptr<EglDmaBuf> egl_dmabuf);
 
  private:
   friend class SharedScreenCastStreamPrivate;

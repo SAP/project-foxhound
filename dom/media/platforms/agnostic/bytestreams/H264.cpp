@@ -13,6 +13,8 @@
 #include "ByteStreamsUtils.h"
 #include "ByteWriter.h"
 #include "MediaInfo.h"
+#include "mozilla/CheckedInt.h"
+#include "mozilla/EndianUtils.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/Result.h"
 #include "mozilla/Try.h"
@@ -35,9 +37,17 @@
     aDest.var = uval;            \
   }
 
+#define CHECK_OR_RETURN(checked)                             \
+  do {                                                       \
+    if (!(checked).isValid()) {                              \
+      LOG("Aborting parsing, {} is out of range", #checked); \
+      return false;                                          \
+    }                                                        \
+  } while (0)
+
 mozilla::LazyLogModule gH264("H264");
 
-#define LOG(msg, ...) MOZ_LOG(gH264, LogLevel::Debug, (msg, ##__VA_ARGS__))
+#define LOG(msg, ...) MOZ_LOG_FMT(gH264, LogLevel::Debug, msg, ##__VA_ARGS__)
 
 namespace mozilla {
 
@@ -510,12 +520,20 @@ class SPSNALIterator {
   return rbsp.forget();
 }
 
+// ConditionDimension and IsDimensionValid enforce a Firefox-internal
+// constraint, not an H.264 spec rule.
 static int32_t ConditionDimension(double aValue) {
   // This will exclude NaNs and too-big values.
   if (aValue > 1.0 && aValue <= double(INT32_MAX) / 2) {
     return int32_t(aValue);
   }
   return 0;
+}
+
+static bool IsDimensionValid(uint32_t aDimension) {
+  return aDimension <=
+         static_cast<uint32_t>(
+             std::numeric_limits<decltype(gfx::IntSize::width)>::max());
 }
 
 /* static */
@@ -596,19 +614,28 @@ bool H264::DecodeSPS(const mozilla::MediaByteBuffer* aSPS, SPSData& aDest) {
     READSE(offset_for_non_ref_pic, -231, 230);
     READSE(offset_for_top_to_bottom_field, -231, 230);
     uint32_t num_ref_frames_in_pic_order_cnt_cycle = br.ReadUE();
+    if (num_ref_frames_in_pic_order_cnt_cycle > 255) {
+      return false;
+    }
     for (uint32_t i = 0; i < num_ref_frames_in_pic_order_cnt_cycle; i++) {
       br.ReadSE();  // offset_for_ref_frame[i]
     }
   }
   aDest.max_num_ref_frames = br.ReadUE();
   aDest.gaps_in_frame_num_allowed_flag = br.ReadBit();
+  // BitReader::ReadUE() returns at most 0xFFFFFFFE, so + 1 fits in uint32_t
+  // and pic_width_in_mbs can be written directly. pic_height_in_map_units is
+  // deferred to a CheckedUint32 local until the field-coded *= 2 step (whose
+  // doubled result must still fit in uint32_t) has been validated.
   aDest.pic_width_in_mbs = br.ReadUE() + 1;
-  aDest.pic_height_in_map_units = br.ReadUE() + 1;
+  CheckedUint32 picHeightInMapUnits = CheckedUint32(br.ReadUE()) + 1;
   aDest.frame_mbs_only_flag = br.ReadBit();
   if (!aDest.frame_mbs_only_flag) {
-    aDest.pic_height_in_map_units *= 2;
+    picHeightInMapUnits *= 2;
+    CHECK_OR_RETURN(picHeightInMapUnits);
     aDest.mb_adaptive_frame_field_flag = br.ReadBit();
   }
+  aDest.pic_height_in_map_units = picHeightInMapUnits.value();
   aDest.direct_8x8_inference_flag = br.ReadBit();
   aDest.frame_cropping_flag = br.ReadBit();
   if (aDest.frame_cropping_flag) {
@@ -644,8 +671,10 @@ bool H264::DecodeSPS(const mozilla::MediaByteBuffer* aSPS, SPSData& aDest) {
     CropUnitY *= SubHeightC;
   }
 
-  uint32_t width = aDest.pic_width_in_mbs * 16;
-  uint32_t height = aDest.pic_height_in_map_units * 16;
+  CheckedUint32 width = CheckedUint32(aDest.pic_width_in_mbs) * 16;
+  CHECK_OR_RETURN(width);
+  CheckedUint32 height = CheckedUint32(aDest.pic_height_in_map_units) * 16;
+  CHECK_OR_RETURN(height);
   if (aDest.frame_crop_left_offset <=
           std::numeric_limits<int32_t>::max() / 4 / CropUnitX &&
       aDest.frame_crop_right_offset <=
@@ -656,10 +685,10 @@ bool H264::DecodeSPS(const mozilla::MediaByteBuffer* aSPS, SPSData& aDest) {
           std::numeric_limits<int32_t>::max() / 4 / CropUnitY &&
       (aDest.frame_crop_left_offset + aDest.frame_crop_right_offset) *
               CropUnitX <
-          width &&
+          width.value() &&
       (aDest.frame_crop_top_offset + aDest.frame_crop_bottom_offset) *
               CropUnitY <
-          height) {
+          height.value()) {
     aDest.crop_left = aDest.frame_crop_left_offset * CropUnitX;
     aDest.crop_right = aDest.frame_crop_right_offset * CropUnitX;
     aDest.crop_top = aDest.frame_crop_top_offset * CropUnitY;
@@ -669,8 +698,8 @@ bool H264::DecodeSPS(const mozilla::MediaByteBuffer* aSPS, SPSData& aDest) {
     aDest.crop_left = aDest.crop_right = aDest.crop_top = aDest.crop_bottom = 0;
   }
 
-  aDest.pic_width = width - aDest.crop_left - aDest.crop_right;
-  aDest.pic_height = height - aDest.crop_top - aDest.crop_bottom;
+  aDest.pic_width = width.value() - aDest.crop_left - aDest.crop_right;
+  aDest.pic_height = height.value() - aDest.crop_top - aDest.crop_bottom;
 
   aDest.interlaced = !aDest.frame_mbs_only_flag;
 
@@ -685,6 +714,15 @@ bool H264::DecodeSPS(const mozilla::MediaByteBuffer* aSPS, SPSData& aDest) {
     aDest.display_width = aDest.pic_width;
     aDest.display_height = ConditionDimension(
         AssertedCast<double>(aDest.pic_height) / aDest.sample_ratio);
+  }
+
+  if (!IsDimensionValid(aDest.pic_width)) {
+    LOG("Aborting parsing, pic_width ({}) is out of range", aDest.pic_width);
+    return false;
+  }
+  if (!IsDimensionValid(aDest.pic_height)) {
+    LOG("Aborting parsing, pic_height ({}) is out of range", aDest.pic_height);
+    return false;
   }
 
   aDest.valid = true;
@@ -1340,7 +1378,7 @@ void H264::WriteExtraData(MediaByteBuffer* aDestExtraData,
   }
   if (aSample->mTrackInfo &&
       !aSample->mTrackInfo->mMimeType.EqualsLiteral("video/avc")) {
-    LOG("Only allow 'video/avc' (mimeType=%s)",
+    LOG("Only allow 'video/avc' (mimeType={})",
         aSample->mTrackInfo->mMimeType.get());
     return mozilla::Err(NS_ERROR_FAILURE);
   }
@@ -1357,7 +1395,7 @@ void H264::WriteExtraData(MediaByteBuffer* aDestExtraData,
 
   avcc.mConfigurationVersion = reader.ReadBits(8);
   if (avcc.mConfigurationVersion != 1) {
-    LOG("Invalid configuration version %u", avcc.mConfigurationVersion);
+    LOG("Invalid configuration version {}", avcc.mConfigurationVersion);
     return mozilla::Err(NS_ERROR_FAILURE);
   }
   avcc.mAVCProfileIndication = reader.ReadBits(8);
@@ -1376,13 +1414,13 @@ void H264::WriteExtraData(MediaByteBuffer* aDestExtraData,
     uint32_t spsBitsLength = sequenceParameterSetLength * 8;
     const uint8_t* spsPtr = aExtraData->Elements() + reader.BitCount() / 8;
     if (reader.AdvanceBits(spsBitsLength) < spsBitsLength) {
-      LOG("Aborting parsing, SPS NALU size (%u bits) is larger than remaining!",
+      LOG("Aborting parsing, SPS NALU size ({} bits) is larger than remaining!",
           spsBitsLength);
       return mozilla::Err(NS_ERROR_FAILURE);
     }
     H264NALU nalu(spsPtr, sequenceParameterSetLength);
     if (nalu.mNalUnitType != H264_NAL_SPS) {
-      LOG("Aborting parsing, expect SPS but got incorrect NALU type (%d)!",
+      LOG("Aborting parsing, expect SPS but got incorrect NALU type ({})!",
           nalu.mNalUnitType);
       return mozilla::Err(NS_ERROR_FAILURE);
     }
@@ -1402,13 +1440,13 @@ void H264::WriteExtraData(MediaByteBuffer* aDestExtraData,
     uint32_t ppsBitsLength = pictureParameterSetLength * 8;
     const uint8_t* ppsPtr = aExtraData->Elements() + reader.BitCount() / 8;
     if (reader.AdvanceBits(ppsBitsLength) < ppsBitsLength) {
-      LOG("Aborting parsing, PPS NALU size (%u bits) is larger than remaining!",
+      LOG("Aborting parsing, PPS NALU size ({} bits) is larger than remaining!",
           ppsBitsLength);
       return mozilla::Err(NS_ERROR_FAILURE);
     }
     H264NALU nalu(ppsPtr, pictureParameterSetLength);
     if (nalu.mNalUnitType != H264_NAL_PPS) {
-      LOG("Aborting parsing, expect PPS but got incorrect NALU type (%d)!",
+      LOG("Aborting parsing, expect PPS but got incorrect NALU type ({})!",
           nalu.mNalUnitType);
       return mozilla::Err(NS_ERROR_FAILURE);
     }
@@ -1441,7 +1479,7 @@ void H264::WriteExtraData(MediaByteBuffer* aDestExtraData,
       uint32_t spsExtBitsLength = sequenceParameterSetExtLength * 8;
       const uint8_t* spsExtPtr = aExtraData->Elements() + reader.BitCount() / 8;
       if (reader.AdvanceBits(spsExtBitsLength) < spsExtBitsLength) {
-        LOG("Aborting parsing, SPS Ext NALU size (%u bits) is larger than "
+        LOG("Aborting parsing, SPS Ext NALU size ({} bits) is larger than "
             "remaining!",
             spsExtBitsLength);
         break;
@@ -1449,7 +1487,7 @@ void H264::WriteExtraData(MediaByteBuffer* aDestExtraData,
       H264NALU nalu(spsExtPtr, sequenceParameterSetExtLength);
       if (nalu.mNalUnitType != H264_NAL_SPS_EXT) {
         LOG("Aborting parsing, expect SPSExt but got incorrect NALU type "
-            "(%d)!",
+            "({})!",
             nalu.mNalUnitType);
         break;
       }
@@ -1518,6 +1556,7 @@ H264NALU::H264NALU(const uint8_t* aData, uint32_t aByteCount)
 
 #undef READUE
 #undef READSE
+#undef CHECK_OR_RETURN
 
 }  // namespace mozilla
 

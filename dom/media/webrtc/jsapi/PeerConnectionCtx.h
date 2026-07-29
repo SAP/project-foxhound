@@ -100,6 +100,10 @@ class SharedWebrtcState {
 // * Upstream webrtc state shared across all Calls (processing thread)
 class PeerConnectionCtx {
  public:
+  // This is a singleton, so don't copy construct it, etc.
+  PeerConnectionCtx(const PeerConnectionCtx& other) = delete;
+  void operator=(const PeerConnectionCtx& other) = delete;
+
   static nsresult InitializeGlobal();
   static PeerConnectionCtx* GetInstance();
   static bool isActive();
@@ -139,14 +143,10 @@ class PeerConnectionCtx {
   void ClearClosedStats();
 
  private:
+  virtual ~PeerConnectionCtx() = default;
   std::map<const std::string, PeerConnectionImpl*> mPeerConnections;
 
   PeerConnectionCtx();
-
-  // This is a singleton, so don't copy construct it, etc.
-  PeerConnectionCtx(const PeerConnectionCtx& other) = delete;
-  void operator=(const PeerConnectionCtx& other) = delete;
-  virtual ~PeerConnectionCtx() = default;
 
   nsresult Initialize();
   nsresult StartTelemetryTimer();

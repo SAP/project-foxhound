@@ -9,6 +9,7 @@ const BASE_URL = "https://example.com/";
 // eslint-disable-next-line @microsoft/sdl/no-insecure-url
 const BASE_URL_HTTP = "http://mochi.test:8888/";
 const HIDDEN_URI = "about:about";
+const FILE_URI = "file:///";
 
 ChromeUtils.defineESModuleGetters(this, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
@@ -21,8 +22,8 @@ ChromeUtils.defineESModuleGetters(this, {
   TaskbarTabsUtils: "resource:///modules/taskbartabs/TaskbarTabsUtils.sys.mjs",
 });
 
-sinon.stub(TaskbarTabsPin, "pinTaskbarTab");
-sinon.stub(TaskbarTabsPin, "unpinTaskbarTab");
+const gPinStub = sinon.stub(TaskbarTabsPin, "pinTaskbarTab");
+const gUnpinStub = sinon.stub(TaskbarTabsPin, "unpinTaskbarTab");
 
 registerCleanupFunction(async () => {
   sinon.restore();
@@ -92,7 +93,7 @@ async function taskbarTabsPageAction(win, destWin) {
   let tab = (await tabOpenPromise).target;
 
   is(
-    tab.ownerGlobal,
+    tab.documentGlobal,
     destWin,
     "Shoud've reverted back to secondWin, as it is most recently focused"
   );
@@ -231,7 +232,7 @@ add_task(async function revertToMostRecent() {
   ]);
 
   await BrowserTestUtils.closeWindow(firstWin);
-  secondWin.focus();
+  await SimpleTest.promiseFocus(secondWin);
 
   // Revert back to regular window
   await taskbarTabsPageAction(taskbarTabWindow, secondWin);
@@ -249,6 +250,8 @@ add_task(async function testVariousVisibilityChanges() {
     [BASE_URL, BASE_URL_HTTP, true, true],
     [HIDDEN_URI, BASE_URL, false, true],
     [HIDDEN_URI, BASE_URL_HTTP, false, true],
+    [FILE_URI, BASE_URL, false, true],
+    [BASE_URL, FILE_URI, true, false],
   ];
 
   for (const args of argsList) {
@@ -271,7 +274,7 @@ async function testVisibilityChange(aFrom, aTo, aFirstVisible, aSecondVisible) {
   is(
     element.hidden,
     !aFirstVisible,
-    `Page action is ${aFirstVisible ? "" : "not "}hidden on ${getURIScheme(aFrom)} new tab`
+    `Page action is ${aFirstVisible ? "not " : ""}hidden on ${getURIScheme(aFrom)} new tab`
   );
 
   locationChange = BrowserTestUtils.waitForLocationChange(gBrowser, aTo);
@@ -281,7 +284,7 @@ async function testVisibilityChange(aFrom, aTo, aFirstVisible, aSecondVisible) {
   is(
     element.hidden,
     !aSecondVisible,
-    `Page action is ${aSecondVisible ? "" : "not "}hidden on ${getURIScheme(aTo)} reused tab`
+    `Page action is ${aSecondVisible ? "not " : ""}hidden on ${getURIScheme(aTo)} reused tab`
   );
 
   BrowserTestUtils.removeTab(tab);
@@ -366,6 +369,50 @@ add_task(async function test_moveTabIntoTaskbarTabReuse() {
     await BrowserTestUtils.closeWindow(move.window);
     await TaskbarTabs.removeTaskbarTab(tt.id);
   });
+});
+
+add_task(async function test_moveTabIntoTaskbarTabParentWindow() {
+  await BrowserTestUtils.withNewTab("https://example.com/", async browser => {
+    const tab = window.gBrowser.getTabForBrowser(browser);
+    gPinStub.resetHistory();
+
+    const move = await TaskbarTabs.moveTabIntoTaskbarTab(tab);
+    is(gPinStub.callCount, 1, "Exactly one pin was attempted");
+    is(
+      gPinStub.firstCall.args[3],
+      move.window,
+      "The newly-created window was passed as part of the pinning"
+    );
+
+    await BrowserTestUtils.closeWindow(move.window);
+    await TaskbarTabs.removeTaskbarTab(move.taskbarTab.id);
+  });
+});
+
+add_task(async function test_findOrCreateTaskbarTabParentWindow() {
+  gPinStub.resetHistory();
+
+  let uri = Services.io.newURI(BASE_URL);
+  let result = await TaskbarTabs.findOrCreateTaskbarTab(uri, 0);
+  is(gPinStub.callCount, 1, "Exactly one pin was attempted");
+  ok(
+    !gPinStub.firstCall.args[3]?.window,
+    "No window was passed to pinTaskbarTab"
+  );
+  await TaskbarTabs.removeTaskbarTab(result.taskbarTab.id);
+
+  uri = Services.io.newURI(BASE_URL);
+  const fakeWindow = {};
+  result = await TaskbarTabs.findOrCreateTaskbarTab(uri, 0, {
+    window: fakeWindow,
+  });
+  is(gPinStub.callCount, 2, "Exactly one pin was attempted");
+  is(
+    gPinStub.secondCall.args[3]?.window,
+    fakeWindow,
+    "Provided window was passed to pinTaskbarTab"
+  );
+  await TaskbarTabs.removeTaskbarTab(result.taskbarTab.id);
 });
 
 add_task(async function test_page_action_uses_manifest() {

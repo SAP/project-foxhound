@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from enum import Enum
 from io import BytesIO
-from json import JSONDecodeError, loads
+from json import JSONDecodeError
 from os.path import splitext
 from typing import Any
 
@@ -114,24 +114,17 @@ def detect_format(name: str | None, source: bytes | str | None = None) -> Format
     # Try parsing as JSON first, unless we're pretty sure it's XML
     if ext != ".xml":
         try:
-            json: dict[str, Any] = loads(source)
-            if not is_object_of_strings(json):
-                return None
+            json, valid_json = json_linecomment_loads(source)
+        except JSONDecodeError:
+            json, valid_json = None, False
+        if is_object_of_strings(json):
+            assert isinstance(json, dict)
             if all(is_webext_message(m) for m in json.values()):
                 return Format.webext
-            return Format.plain_json
-        except JSONDecodeError:
-            pass
-
-        try:
-            json = json_linecomment_loads(source)
-            if is_object_of_strings(json) and all(
-                is_webext_message(m) for m in json.values()
-            ):
-                return Format.webext
-            return None
-        except JSONDecodeError:
-            pass
+            else:
+                return Format.plain_json if valid_json else None
+        elif json is not None or valid_json:
+            return None  # JSON, but not an object with string scalar values
 
     # Let's presume the input is XML and look at its root node.
     try:

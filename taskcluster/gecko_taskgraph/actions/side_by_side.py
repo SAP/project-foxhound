@@ -17,7 +17,32 @@ from .util import create_tasks, fetch_graph_and_labels, get_decision_task_id, ge
 logger = logging.getLogger(__name__)
 
 
-def input_for_support_action(revision, base_revision, base_branch, task):
+def find_side_by_side_label(full_task_graph, platform):
+    """Resolve the Linux side-by-side task label from the current full task graph."""
+    candidates = sorted(
+        label
+        for label in full_task_graph.tasks.keys()
+        if label.startswith("perftest-linux-side-by-side")
+    )
+
+    if not candidates:
+        raise Exception(
+            "Could not find any side-by-side task label matching "
+            "'perftest-linux-side-by-side*' in full_task_graph"
+        )
+
+    for label in candidates:
+        if platform in label:
+            logger.info("Selected platform-matched side-by-side label: %s", label)
+            return label
+
+    logger.info("Selected fallback side-by-side label: %s", candidates[0])
+    return candidates[0]
+
+
+def input_for_support_action(
+    revision, base_revision, base_branch, task, full_task_graph
+):
     """Generate input for action to be scheduled.
 
     Define what label to schedule with 'label'.
@@ -26,8 +51,9 @@ def input_for_support_action(revision, base_revision, base_branch, task):
     platform, test_name = task["metadata"]["name"].split("/opt-")
     new_branch = os.environ.get("GECKO_HEAD_REPOSITORY", "/try").split("/")[-1]
     symbol = task["extra"]["treeherder"]["symbol"]
+    label = find_side_by_side_label(full_task_graph, platform)
     input = {
-        "label": "perftest-linux-side-by-side",
+        "label": label,
         "symbol": symbol,
         "new_revision": revision,
         "base_revision": base_revision,
@@ -120,6 +146,7 @@ def side_by_side_action(parameters, graph_config, input, task_group_id, task_id)
             base_revision=input.get("revision"),
             base_branch=input.get("project"),
             task=task,
+            full_task_graph=full_task_graph,
         )
     else:
         current_push_id = int(parameters["pushlog_id"]) - 1
@@ -156,6 +183,7 @@ def side_by_side_action(parameters, graph_config, input, task_group_id, task_id)
                         base_revision=pushes[str(current_push_id)]["changesets"][-1],
                         base_branch=input.get("project", parameters["project"]),
                         task=task,
+                        full_task_graph=full_task_graph,
                     )
                     break
             except Exception:

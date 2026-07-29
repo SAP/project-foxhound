@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -8,6 +6,8 @@
 
 #include "mozilla/DebugOnly.h"
 #include "mozilla/MathAlgorithms.h"
+
+#include <bit>
 
 #include "builtin/Number.h"
 #include "jit/CodeGenerator.h"
@@ -90,10 +90,8 @@ void CodeGeneratorARM64::bailoutIf(Assembler::Condition condition,
   masm.B(ool->entry(), condition);
 }
 
-void CodeGeneratorARM64::bailoutIfZero(Assembler::Condition condition,
+void CodeGeneratorARM64::bailoutIfTest(Assembler::Condition condition,
                                        ARMRegister rt, LSnapshot* snapshot) {
-  MOZ_ASSERT(condition == Assembler::Zero || condition == Assembler::NonZero);
-
   encode(snapshot);
 
   InlineScriptTree* tree = snapshot->mir()->block()->trackedTree();
@@ -102,10 +100,21 @@ void CodeGeneratorARM64::bailoutIfZero(Assembler::Condition condition,
   addOutOfLineCode(ool,
                    new (alloc()) BytecodeSite(tree, tree->script()->code()));
 
-  if (condition == Assembler::Zero) {
-    masm.Cbz(rt, ool->entry());
-  } else {
-    masm.Cbnz(rt, ool->entry());
+  switch (condition) {
+    case Assembler::Zero:
+      masm.Cbz(rt, ool->entry());
+      break;
+    case Assembler::NonZero:
+      masm.Cbnz(rt, ool->entry());
+      break;
+    case Assembler::Signed:
+      masm.Tbnz(rt, rt.GetSizeInBits() - 1, ool->entry());
+      break;
+    case Assembler::NotSigned:
+      masm.Tbz(rt, rt.GetSizeInBits() - 1, ool->entry());
+      break;
+    default:
+      MOZ_CRASH("unsupported condition");
   }
 }
 
@@ -263,7 +272,7 @@ void CodeGenerator::visitMulI(LMulI* ins) {
       default:
         // Use shift if cannot overflow and constant is a power of 2
         if (!mul->canOverflow() && constant > 0) {
-          int32_t shift = FloorLog2(constant);
+          int32_t shift = FloorLog2(uint32_t(constant));
           if ((1 << shift) == constant) {
             masm.Lsl(destreg32, lhsreg32, shift);
             return;
@@ -572,7 +581,7 @@ static void DivideWithConstant(MacroAssembler& masm, LDivOrMod* ins) {
   ARMRegister const32 = temps.AcquireW();
 
   // The absolute value of the denominator isn't a power of 2.
-  MOZ_ASSERT(!mozilla::IsPowerOfTwo(mozilla::Abs(d)));
+  MOZ_ASSERT(!std::has_single_bit(mozilla::Abs(d)));
 
   auto* mir = ins->mir();
 
@@ -683,7 +692,7 @@ static void UnsignedDivideWithConstant(MacroAssembler& masm, LUDivOrUMod* ins) {
   ARMRegister const32 = temps.AcquireW();
 
   // The denominator isn't a power of 2 (see LDivPowTwoI).
-  MOZ_ASSERT(!mozilla::IsPowerOfTwo(d));
+  MOZ_ASSERT(!std::has_single_bit(d));
 
   auto rmc = ReciprocalMulConstants::computeUnsignedDivisionConstants(d);
 
@@ -763,7 +772,7 @@ static void Divide64WithConstant(MacroAssembler& masm, LDivOrMod* ins) {
   ARMRegister const64 = temps.AcquireX();
 
   // The absolute value of the denominator isn't a power of 2.
-  MOZ_ASSERT(!mozilla::IsPowerOfTwo(mozilla::Abs(d)));
+  MOZ_ASSERT(!std::has_single_bit(mozilla::Abs(d)));
 
   auto* mir = ins->mir();
 
@@ -824,7 +833,7 @@ static void UnsignedDivide64WithConstant(MacroAssembler& masm,
   ARMRegister const64 = temps.AcquireX();
 
   // The denominator isn't a power of 2 (see LDivPowTwoI).
-  MOZ_ASSERT(!mozilla::IsPowerOfTwo(d));
+  MOZ_ASSERT(!std::has_single_bit(d));
 
   auto rmc = ReciprocalMulConstants::computeUnsignedDivisionConstants(d);
 
@@ -1221,8 +1230,9 @@ void CodeGenerator::visitShiftI(LShiftI* ins) {
           masm.Lsr(dest, lhs, shift);
         } else if (ins->mir()->toUrsh()->fallible()) {
           // x >>> 0 can overflow.
-          masm.Ands(dest, lhs, Operand(0xFFFFFFFF));
-          bailoutIf(Assembler::Signed, ins->snapshot());
+          Register lhsreg = lhs.asUnsized();
+          bailoutTest32(Assembler::Signed, lhsreg, lhsreg, ins->snapshot());
+          masm.Mov(dest, lhs);
         } else {
           masm.Mov(dest, lhs);
         }
@@ -1243,8 +1253,8 @@ void CodeGenerator::visitShiftI(LShiftI* ins) {
         masm.Lsr(dest, lhs, rhsreg);
         if (ins->mir()->toUrsh()->fallible()) {
           /// x >>> 0 can overflow.
-          masm.Cmp(dest, Operand(0));
-          bailoutIf(Assembler::LessThan, ins->snapshot());
+          Register destreg = dest.asUnsized();
+          bailoutTest32(Assembler::Signed, destreg, destreg, ins->snapshot());
         }
         break;
       default:
@@ -2297,7 +2307,7 @@ void CodeGenerator::visitMulI64(LMulI64* lir) {
       default:
         // Use shift if constant is nonnegative power of 2.
         if (constant > 0) {
-          int32_t shift = mozilla::FloorLog2(constant);
+          int32_t shift = mozilla::FloorLog2(uint64_t(constant));
           if (int64_t(1) << shift == constant) {
             masm.Lsl(ARMRegister(output.reg, 64),
                      ARMRegister(ToRegister64(lhs).reg, 64), shift);
@@ -2424,8 +2434,8 @@ void CodeGenerator::visitMulIntPtr(LMulIntPtr* ins) {
     }
 
     // Use shift if constant is a power of 2.
-    if (constant > 0 && mozilla::IsPowerOfTwo(uintptr_t(constant))) {
-      uint32_t shift = mozilla::FloorLog2(constant);
+    if (constant > 0 && std::has_single_bit(uintptr_t(constant))) {
+      uint32_t shift = mozilla::FloorLog2(uintptr_t(constant));
       masm.Lsl(dest, lhs, shift);
       return;
     }
@@ -2478,15 +2488,23 @@ void CodeGenerator::visitWasmLoad(LWasmLoad* lir) {
 void CodeGenerator::visitWasmStore(LWasmStore* lir) {
   const MWasmStore* mir = lir->mir();
 
+  AnyRegister value;
+  if (lir->value()->isConstant()) {
+    // Lowering only produces i32.const 0 here (Int64 uses useRegisterAtStart).
+    MOZ_ASSERT(ToInt32(lir->value()) == 0 && mir->access().byteSize() <= 4);
+    value = AnyRegister(Register::FromCode(Registers::xzr));
+  } else {
+    value = ToAnyRegister(lir->value());
+  }
+
   if (Maybe<uint64_t> absAddr = IsAbsoluteAddress(lir->ptr(), mir->access())) {
-    masm.wasmStoreAbsolute(mir->access(), ToAnyRegister(lir->value()),
-                           Register64::Invalid(), ToRegister(lir->memoryBase()),
-                           absAddr.value());
+    masm.wasmStoreAbsolute(mir->access(), value, Register64::Invalid(),
+                           ToRegister(lir->memoryBase()), absAddr.value());
     return;
   }
 
-  masm.wasmStore(mir->access(), ToAnyRegister(lir->value()),
-                 ToRegister(lir->memoryBase()), ToRegister(lir->ptr()));
+  masm.wasmStore(mir->access(), value, ToRegister(lir->memoryBase()),
+                 ToRegister(lir->ptr()));
 }
 
 void CodeGenerator::visitWasmSelect(LWasmSelect* lir) {
@@ -3750,6 +3768,28 @@ void CodeGenerator::visitWasmReplaceLaneSimd128(LWasmReplaceLaneSimd128* ins) {
   const LAllocation* rhs = ins->rhs();
   uint32_t laneIndex = ins->mir()->laneIndex();
 
+  if (MOZ_UNLIKELY(rhs->isConstant())) {
+    // Lowering only produces i32.const 0 here (I64x2 uses useRegister).
+    MOZ_ASSERT(ToInt32(rhs) == 0);
+    switch (ins->mir()->simdOp()) {
+      case wasm::SimdOp::I8x16ReplaceLane:
+        masm.replaceLaneInt8x16(laneIndex, Register::FromCode(Registers::xzr),
+                                lhsDest);
+        break;
+      case wasm::SimdOp::I16x8ReplaceLane:
+        masm.replaceLaneInt16x8(laneIndex, Register::FromCode(Registers::xzr),
+                                lhsDest);
+        break;
+      case wasm::SimdOp::I32x4ReplaceLane:
+        masm.replaceLaneInt32x4(laneIndex, Register::FromCode(Registers::xzr),
+                                lhsDest);
+        break;
+      default:
+        MOZ_CRASH();
+    }
+    return;
+  }
+
   switch (ins->mir()->simdOp()) {
     case wasm::SimdOp::I8x16ReplaceLane:
       masm.replaceLaneInt8x16(laneIndex, ToRegister(rhs), lhsDest);
@@ -4107,9 +4147,9 @@ void CodeGenerator::visitWasmReduceAndBranchSimd128(
 
   switch (ins->simdOp()) {
     case wasm::SimdOp::V128AnyTrue:
-      masm.Addp(Simd1D(scratch), Simd2D(src));
-      masm.Umov(ARMRegister(test, 64), Simd1D(scratch), 0);
-      masm.branch64(Assembler::Equal, Register64(test), Imm64(0),
+      masm.Umaxv(SimdReg(scratch).S(), Simd4S(src));
+      masm.Umov(ARMRegister(test, 32), SimdReg(scratch).S(), 0);
+      masm.branch32(Assembler::Equal, test, Imm32(0),
                     getJumpLabelForBranch(ins->ifFalse()));
       jumpToBlock(ins->ifTrue());
       break;
@@ -4256,4 +4296,13 @@ void CodeGenerator::visitWasmStoreLaneSimd128(LWasmStoreLaneSimd128* ins) {
 #else
   MOZ_CRASH("No SIMD");
 #endif
+}
+
+void CodeGenerator::visitWasmMulI64WideHI64(LWasmMulI64WideHI64* lir) {
+  Register lhs = ToRegister(lir->lhs());
+  Register rhs = ToRegister(lir->rhs());
+  Register output = ToRegister(lir->output());
+  // This holds because both operands are non-AtStart variants.
+  MOZ_ASSERT(output != lhs && output != rhs);
+  masm.wasmMulI64WideHI64(lhs, rhs, output, lir->isSigned());
 }

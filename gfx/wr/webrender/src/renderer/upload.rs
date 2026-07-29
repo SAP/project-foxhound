@@ -52,6 +52,9 @@ pub fn upload_to_texture_cache(
     renderer: &mut Renderer,
     update_list: FastHashMap<CacheTextureId, Vec<TextureCacheUpdate>>,
 ) {
+    if update_list.is_empty() {
+        return;
+    }
 
     let mut stats = UploadStats {
         num_draw_calls: 0,
@@ -386,13 +389,16 @@ fn copy_into_staging_buffer<'a>(
                     bytes: staging_texture_pool.get_temporary_buffer(),
                 },
                 UploadMethod::PixelBuffer(_) => {
-                    let pbo = uploader.stage(
+                    match uploader.stage(
                         device,
                         texture.get_format(),
                         BATCH_UPLOAD_TEXTURE_SIZE,
-                    ).unwrap();
-
-                    StagingBufferKind::Pbo(pbo)
+                    ) {
+                        Ok(pbo) => StagingBufferKind::Pbo(pbo),
+                        Err(_) => StagingBufferKind::CpuBuffer {
+                            bytes: staging_texture_pool.get_temporary_buffer(),
+                        },
+                    }
                 }
             };
             stats.cpu_buffer_alloc_time += zeitstempel::now() - cpu_buffer_alloc_start_time;

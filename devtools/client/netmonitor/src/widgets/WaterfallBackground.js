@@ -153,7 +153,7 @@ class WaterfallBackground {
   getThemeColorAsRgba(colorVariableName) {
     const colorStr = getCssVariableColor(
       colorVariableName,
-      document.ownerGlobal
+      document.documentGlobal
     );
     const { r, g, b, a } =
       InspectorUtils.colorToRGBA(colorStr) ||

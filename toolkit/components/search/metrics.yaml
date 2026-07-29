@@ -243,7 +243,7 @@ search.engine.default:
         description: |
           The reason for the change of engine. For possible values,
           see `REASON_CHANGE_MAP` in
-          https://searchfox.org/mozilla-central/source/toolkit/components/search/SearchService.sys.mjs
+          https://searchfox.org/firefox-main/source/toolkit/components/search/SearchService.sys.mjs
           This was renamed from change_source to change_reason in Fx 139.
 
 search.engine.private:
@@ -504,7 +504,7 @@ search.engine.private:
         description: |
           The reason for the change of engine. For possible values,
           see `REASON_CHANGE_MAP` in
-          https://searchfox.org/mozilla-central/source/toolkit/components/search/SearchService.sys.mjs
+          https://searchfox.org/firefox-main/source/toolkit/components/search/SearchService.sys.mjs
           This was renamed from change_source to change_reason in Fx 139.
 
 search.service:
@@ -553,6 +553,72 @@ search.service:
       - settingsCorrupt
       - success
 
+search.counts:
+  totals:
+    type: labeled_quantity
+    description: >
+      Records the type and number of search engines that a user has installed
+      and enabled.
+
+      The total of all labels is the total count of search engines installed.
+
+      - `appProvidedConfig` refers to the search engine integrations provided by
+        the application.
+      - `userInstalledConfig` refers to engines from the application's
+        configuration that the user has chosen to install.
+      - `openSearch` refers to an engine installed via a web page providing an
+        "OpenSearch" definition.
+      - `addon` refers to an engine linked to a particular add-on.
+      - `policy` refers to an engine added by an enterprise policy.
+      - `user` refers to an engine a user has added, e.g. via the settings
+        UI to add an engine, or via right-clicking on a search field on a web
+        page.
+    labels:
+      - appProvidedConfig
+      - userInstalledConfig
+      - openSearch
+      - addon
+      - policy
+      - user
+    unit: number of search engines
+    lifetime: application
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+      - mbanner@mozilla.com
+    expires: 159
+    bugs:
+      - https://bugzil.la/2044457
+    data_reviews:
+      - https://bugzil.la/2044457
+
+  hidden_engines:
+    type: labeled_quantity
+    description: >
+      Records the count of hidden search engines.
+
+      - `oneOff` refers to an engine hidden from only the one-off buttons or
+        the unified search button.
+      - `disabled` refers to an engine that has been disabled from the whole
+        application, e.g. removed from the old settings (prior to FF 152) or
+        disabled in the new settings (FF 152 & later).
+    labels:
+      - oneOff
+      - disabled
+    unit: number of search engines
+    lifetime: application
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+      - mbanner@mozilla.com
+    expires: 159
+    bugs:
+      - https://bugzil.la/2044457
+    data_reviews:
+      - https://bugzil.la/2044457
+
 browser.searchinit:
   engine_invalid_webextension:
     type: labeled_quantity
@@ -577,6 +643,7 @@ browser.searchinit:
       - https://bugzil.la/1897049
       - https://bugzil.la/1933859
       - https://bugzil.la/1994584
+      - https://bugzil.la/2034308
     data_reviews:
       - https://bugzil.la/1665938
       - https://bugzil.la/1691050
@@ -588,10 +655,11 @@ browser.searchinit:
       - https://bugzil.la/1897049
       - https://bugzil.la/1933859
       - https://bugzil.la/1994584
+      - https://bugzil.la/2034308
     notification_emails:
       - fx-search-telemetry@mozilla.com
       - mbanner@mozilla.com
-    expires: 153
+    expires: 159
     unit: custom enum value
 
   secure_opensearch_engine_count:
@@ -609,6 +677,7 @@ browser.searchinit:
       - https://bugzil.la/1916866
       - https://bugzil.la/1984248
       - https://bugzil.la/1984462
+      - https://bugzil.la/2019474
     data_reviews:
       - https://bugzil.la/1789438
       - https://bugzil.la/1811158
@@ -616,9 +685,10 @@ browser.searchinit:
       - https://bugzil.la/1881408
       - https://bugzil.la/1916866
       - https://bugzil.la/1984248
+      - https://bugzil.la/2019474
     notification_emails:
       - fx-search-telemetry@mozilla.com
-    expires: 151
+    expires: 157
     unit: engines
 
   insecure_opensearch_engine_count:
@@ -636,6 +706,7 @@ browser.searchinit:
       - https://bugzil.la/1916866
       - https://bugzil.la/1984248
       - https://bugzil.la/1984462
+      - https://bugzil.la/2019474
     data_reviews:
       - https://bugzil.la/1789438
       - https://bugzil.la/1811158
@@ -643,9 +714,10 @@ browser.searchinit:
       - https://bugzil.la/1881408
       - https://bugzil.la/1916866
       - https://bugzil.la/1984248
+      - https://bugzil.la/2019474
     notification_emails:
       - fx-search-telemetry@mozilla.com
-    expires: 151
+    expires: 157
     unit: engines
 
   secure_opensearch_update_count:
@@ -663,6 +735,7 @@ browser.searchinit:
       - https://bugzil.la/1916866
       - https://bugzil.la/1984248
       - https://bugzil.la/1984462
+      - https://bugzil.la/2019474
     data_reviews:
       - https://bugzil.la/1789438
       - https://bugzil.la/1811158
@@ -670,9 +743,10 @@ browser.searchinit:
       - https://bugzil.la/1881408
       - https://bugzil.la/1916866
       - https://bugzil.la/1984248
+      - https://bugzil.la/2019474
     notification_emails:
       - fx-search-telemetry@mozilla.com
-    expires: 151
+    expires: 157
     unit: updates
 
   insecure_opensearch_update_count:
@@ -690,6 +764,7 @@ browser.searchinit:
       - https://bugzil.la/1916866
       - https://bugzil.la/1984248
       - https://bugzil.la/1984462
+      - https://bugzil.la/2019474
     data_reviews:
       - https://bugzil.la/1789438
       - https://bugzil.la/1811158
@@ -697,9 +772,10 @@ browser.searchinit:
       - https://bugzil.la/1881408
       - https://bugzil.la/1916866
       - https://bugzil.la/1984248
+      - https://bugzil.la/2019474
     notification_emails:
       - fx-search-telemetry@mozilla.com
-    expires: 151
+    expires: 157
     unit: updates
 
 search.suggestions:

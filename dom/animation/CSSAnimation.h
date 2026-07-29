@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,6 +27,7 @@ enum class CSSAnimationProperties {
   Effect = Keyframes | Duration | IterationCount | Direction | Delay |
            FillMode | Composition,
   PlayState = 1 << 7,
+  Timeline = 1 << 8,
 };
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(CSSAnimationProperties)
 
@@ -64,7 +63,8 @@ class CSSAnimation final : public Animation {
 
   // Animation interface overrides
   void SetEffect(AnimationEffect* aEffect) override;
-  void SetStartTimeAsDouble(const Nullable<double>& aStartTime) override;
+  void SetStartTime(const Nullable<CSSNumberish>& aStartTime,
+                    ErrorResult& aRv) override;
   Promise* GetReady(ErrorResult& aRv) override;
   void Reverse(ErrorResult& aRv) override;
 
@@ -145,6 +145,15 @@ class CSSAnimation final : public Animation {
   }
   void AddOverriddenProperties(CSSAnimationProperties aProperties) {
     mOverriddenProperties |= aProperties;
+  }
+
+  void TimelineWillSetFromJS() override {
+    AddOverriddenProperties(CSSAnimationProperties::Timeline);
+  }
+
+  bool TimelineOverridenByJS() const override {
+    return static_cast<bool>(GetOverriddenProperties() &
+                             CSSAnimationProperties::Timeline);
   }
 
  protected:

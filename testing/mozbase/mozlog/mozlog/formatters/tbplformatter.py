@@ -225,7 +225,7 @@ class TbplFormatter(BaseFormatter):
 
         status = data["status"]
 
-        subtest = data["subtest"]
+        subtest = data.get("subtest")
 
         if "expected" in data:
             if status in data.get("known_intermittent", []):
@@ -392,7 +392,7 @@ class TbplFormatter(BaseFormatter):
     def mozleak_object(self, data):
         return "TEST-INFO | leakcheck | %s leaked %d %s\n" % (
             data["process"],
-            data["bytes"],
+            data["count"],
             data["name"],
         )
 

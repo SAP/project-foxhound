@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 40; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -24,7 +23,7 @@
 /* See https://bugzilla.gnome.org/show_bug.cgi?id=629608#c8
  *
  * GDK implements X11 error traps to ignore X11 errors.
- * Unfortunatelly We don't know which X11 events can be ignored
+ * Unfortunately we don't know which X11 events can be ignored
  * so we have to utilize the Gdk error handler to avoid
  * false alarms in Gtk3.
  */
@@ -80,7 +79,7 @@ static void GdkErrorHandler(const gchar* log_domain, GLogLevelFlags log_level,
 
     constexpr auto minorCodeString = " minor_code "_ns;
     start = buffer.Find(minorCodeString, endptr - buffer.BeginReading());
-    if (!start) {
+    if (start == kNotFound) {
       MOZ_CRASH_UNSAFE(message);
     }
 

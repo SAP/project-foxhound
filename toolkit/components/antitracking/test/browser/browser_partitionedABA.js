@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,10 +9,7 @@
 "use strict";
 
 add_setup(async function () {
-  await setCookieBehaviorPref(
-    BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
-    false
-  );
+  await setCookieBehaviorPref(BEHAVIOR_PARTITION_FOREIGN, false);
 });
 
 add_task(async function runTest() {
@@ -58,7 +54,7 @@ add_task(async function runTest() {
 
   info("Write cookie to the ABA third-party iframe");
   await SpecialPowers.spawn(ifrABABC, [], async _ => {
-    content.document.cookie = "foo; SameSite=None; Secure; Partitioned";
+    content.document.cookie = "foo=bar; SameSite=None; Secure; Partitioned";
   });
 
   let cookie = await SpecialPowers.spawn(browser, [], async () => {
@@ -86,8 +82,40 @@ add_task(async function runTest() {
   );
   is(
     abaSubresourceBody,
-    "cookie:foo",
+    "cookie:foo=bar",
     "Partitioned cookie exists in A(B-fetch->A) request"
+  );
+
+  info("Calling requestStorageAccess in the ABA iframe");
+  let granted = await SpecialPowers.spawn(ifrABABC, [], async () => {
+    SpecialPowers.wrap(content.document).notifyUserGestureActivation();
+    try {
+      await content.document.requestStorageAccess();
+    } catch {
+      return false;
+    }
+    return content.document.hasStorageAccess();
+  });
+
+  ok(granted, "requestStorageAccess resolved and hasStorageAccess is true");
+
+  info("Verifying no permission was written to the permission manager");
+  let topURI = Services.io.newURI(TEST_DOMAIN_HTTPS);
+  is(
+    PermissionTestUtils.testPermission(
+      topURI,
+      "3rdPartyFrameStorage^https://example.net"
+    ),
+    Services.perms.UNKNOWN_ACTION,
+    "No 3rdPartyFrameStorage permission was added for ABA iframe"
+  );
+  is(
+    PermissionTestUtils.testPermission(
+      topURI,
+      "3rdPartyStorage^https://example.net"
+    ),
+    Services.perms.UNKNOWN_ACTION,
+    "No 3rdPartyStorage permission was added for ABA iframe"
   );
 
   info("Clean up");

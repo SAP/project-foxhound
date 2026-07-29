@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -37,6 +35,7 @@
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/Exceptions.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/glean/bindings/Glean.h"
 #include "mozilla/glean/bindings/GleanPings.h"
 #include "mozilla/ScriptPreloader.h"
@@ -126,10 +125,8 @@ static void InitJSEngine() {
     MOZ_CRASH_UNSAFE(jsInitFailureReason);
   }
 
-#ifdef MOZ_GECKO_PROFILER
   JS::SetProfilingThreadCallbacks(profiler_register_thread,
                                   profiler_unregister_thread);
-#endif
 }
 
 // static
@@ -1152,6 +1149,17 @@ bool IsNotUAWidget(JSContext* cx, JSObject* /* unused */) {
   JS::Compartment* c = JS::GetCompartmentForRealm(realm);
 
   return !IsUAWidgetCompartment(c);
+}
+
+bool IsChromeOrWorkerDebugger(JSContext* cx, JSObject* /* unused */) {
+  // Replicates ChromeOnly checks
+  if (nsContentUtils::ThreadsafeIsSystemCaller(cx)) {
+    return true;
+  }
+
+  // But also accept WorkerDebugger modules used by DevTools.
+  JS::Rooted<JSObject*> global(cx, JS::CurrentGlobalOrNull(cx));
+  return IsWorkerDebuggerGlobal(global);
 }
 
 extern bool IsCurrentThreadRunningChromeWorker();

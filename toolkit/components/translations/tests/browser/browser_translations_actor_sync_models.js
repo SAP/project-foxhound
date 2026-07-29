@@ -35,9 +35,10 @@ add_task(async function test_translations_actor_sync_update_models() {
   const useLexicalShortlist = Services.prefs.getBoolPref(
     "browser.translations.useLexicalShortlist"
   );
-  const recordsToCreate = createRecordsForLanguagePair("en", "es").filter(
-    ({ fileType }) => useLexicalShortlist || fileType !== "lex"
-  );
+  const recordsToCreate = createRecordsForLanguagePair({
+    sourceLanguage: "en",
+    targetLanguage: "es",
+  }).filter(({ fileType }) => useLexicalShortlist || fileType !== "lex");
   for (const newModelRecord of recordsToCreate) {
     newModelRecord.id = oldModels[newModelRecord.fileType].record.id;
     newModelRecord.version = `${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1`;
@@ -141,7 +142,10 @@ add_task(async function test_translations_actor_sync_create_models() {
     `The version ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0 model is downloaded.`
   );
 
-  const recordsToCreate = createRecordsForLanguagePair("en", "fr");
+  const recordsToCreate = createRecordsForLanguagePair({
+    sourceLanguage: "en",
+    targetLanguage: "fr",
+  });
 
   await modifyRemoteSettingsRecords(remoteClients.translationModels.client, {
     recordsToCreate,
@@ -204,7 +208,10 @@ add_task(
       `The version ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0 model is downloaded.`
     );
 
-    const recordsToCreate = createRecordsForLanguagePair("en", "es");
+    const recordsToCreate = createRecordsForLanguagePair({
+      sourceLanguage: "en",
+      targetLanguage: "es",
+    });
     for (const newModelRecord of recordsToCreate) {
       newModelRecord.version = `${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1`;
     }
@@ -271,7 +278,10 @@ add_task(
       `The version ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0 model is downloaded.`
     );
 
-    const recordsToCreate = createRecordsForLanguagePair("en", "es");
+    const recordsToCreate = createRecordsForLanguagePair({
+      sourceLanguage: "en",
+      targetLanguage: "es",
+    });
     for (const newModelRecord of recordsToCreate) {
       newModelRecord.version = "2.0";
     }
@@ -325,7 +335,10 @@ add_task(async function test_translations_actor_sync_rollback_models() {
     ],
   });
 
-  const newRecords = createRecordsForLanguagePair("en", "es");
+  const newRecords = createRecordsForLanguagePair({
+    sourceLanguage: "en",
+    targetLanguage: "es",
+  });
   for (const newModelRecord of newRecords) {
     newModelRecord.version = `${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1`;
   }
@@ -456,11 +469,11 @@ add_task(async function test_transition_from_vocab_configurations() {
     info(
       `Publishing a new split-vocab configuration as version ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1`
     );
-    const recordsToCreate = createRecordsForLanguagePair(
-      "en",
-      "es",
-      /* splitVocab */ true
-    );
+    const recordsToCreate = createRecordsForLanguagePair({
+      sourceLanguage: "en",
+      targetLanguage: "es",
+      splitVocab: true,
+    });
     for (const newModelRecord of recordsToCreate) {
       newModelRecord.version = `${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1`;
     }
@@ -512,11 +525,11 @@ add_task(async function test_transition_from_vocab_configurations() {
     info(
       `Publishing a new shared-vocab configuration as version ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.2`
     );
-    const recordsToCreate = createRecordsForLanguagePair(
-      "en",
-      "es",
-      /* splitVocab */ false
-    );
+    const recordsToCreate = createRecordsForLanguagePair({
+      sourceLanguage: "en",
+      targetLanguage: "es",
+      splitVocab: false,
+    });
     for (const newModelRecord of recordsToCreate) {
       newModelRecord.version = `${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.2`;
     }

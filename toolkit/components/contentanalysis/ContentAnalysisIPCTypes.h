@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -72,12 +70,25 @@ struct ParamTraits<mozilla::contentanalysis::NoContentAnalysisResult>
           static_cast<mozilla::contentanalysis::NoContentAnalysisResult>(0),
           mozilla::contentanalysis::NoContentAnalysisResult::LAST_VALUE> {};
 
+struct nsIContentAnalysisResponseActionValidator {
+  using IntegralType =
+      std::underlying_type_t<nsIContentAnalysisResponse::Action>;
+
+  static bool IsLegalValue(const IntegralType e) {
+    return e ==
+               IntegralType(nsIContentAnalysisResponse::Action::eUnspecified) ||
+           e == IntegralType(nsIContentAnalysisResponse::Action::eReportOnly) ||
+           e == IntegralType(nsIContentAnalysisResponse::Action::eWarn) ||
+           e == IntegralType(nsIContentAnalysisResponse::Action::eBlock) ||
+           e == IntegralType(nsIContentAnalysisResponse::Action::eAllow) ||
+           e == IntegralType(nsIContentAnalysisResponse::Action::eCanceled);
+  }
+};
+
 template <>
 struct ParamTraits<nsIContentAnalysisResponse::Action>
-    : public ContiguousEnumSerializerInclusive<
-          nsIContentAnalysisResponse::Action,
-          nsIContentAnalysisResponse::Action::eUnspecified,
-          nsIContentAnalysisResponse::Action::eCanceled> {};
+    : EnumSerializer<nsIContentAnalysisResponse::Action,
+                     nsIContentAnalysisResponseActionValidator> {};
 
 }  // namespace IPC
 

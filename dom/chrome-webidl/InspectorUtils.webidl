@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -32,6 +31,7 @@ namespace InspectorUtils {
   sequence<DOMString> getCSSPropertyNames(optional PropertyNamesOptions options = {});
   sequence<PropertyPref> getCSSPropertyPrefs();
   [Throws] sequence<DOMString> getCSSValuesForProperty(UTF8String property);
+  sequence<DOMString> getCSSWideKeywords();
   UTF8String rgbToColorName(octet r, octet g, octet b);
   InspectorNearestColor rgbToNearestColorName(float r, float g, float b);
   sequence<float> rgbToHsv(float r, float g, float b);
@@ -40,6 +40,7 @@ namespace InspectorUtils {
   InspectorRGBATuple? colorToRGBA(UTF8String colorString);
   InspectorColorToResult? colorTo(UTF8String fromColor, UTF8String toColorSpace);
   boolean isValidCSSColor(UTF8String colorString);
+  boolean isValidCSSImage(UTF8String imageString);
   [Throws] sequence<DOMString> getSubpropertiesForCSSProperty(UTF8String property);
   [Throws] boolean cssPropertyIsShorthand(UTF8String property);
 
@@ -151,6 +152,18 @@ namespace InspectorUtils {
   // Given a DOM element, return the anchor named `anchorName`, or the default
   // anchor otherwise.
   InspectorAnchorElement? getAnchorFor(Element element, optional DOMString? anchorName = null);
+  // Given a DOM element, return a list of valid anchor anchor names.
+  sequence<DOMString> getAnchorNamesFor(Element element);
+
+
+  // Returns the list of functions we support in getComputationSteps
+  sequence<UTF8String> getComputationStepsSupportedCSSFunctions();
+
+  // Given a "CSS expression" (e.g. `calc(12vw + 25%)`), return a list of string that represent
+  // the steps from it to the computed value
+  sequence<DOMString> getComputationSteps(DOMString expression,
+                                          Element element,
+                                          optional [LegacyNullToEmptyString] DOMString pseudo = "");
 };
 
 enum InspectorAnchorType {

@@ -1,14 +1,8 @@
 // Default overrides from Feature Highlight
 .wallpaper-feature-highlight {
   .feature-highlight .feature-highlight-modal {
-    --arrow-size: 24px;
-
     width: auto;
     padding: var(--space-large);
-
-    .content-wrapper {
-      margin-block: 0;
-    }
 
     .message-icon {
       display: none;
@@ -27,7 +21,7 @@
       inset-inline-end: calc(var(--space-xxlarge) * 2);
 
       &::after {
-        inset-inline-end: calc(calc(var(--arrow-size) / 2) * -1);
+        inset-inline-end: calc(var(--space-xlarge) / -2);
       }
     }
 
@@ -45,12 +39,12 @@
 
       &::after {
         // just a nudge (2px) lower than the arrow size to point directly at the Customize icon
-        inset-block-end: calc(var(--arrow-size) - var(--space-xxsmall));
+        inset-block-end: calc(var(--space-xlarge) - var(--space-xxsmall));
       }
     }
 
     .title {
-      font-weight: var(--heading-font-weight);
+      font-weight: var(--font-weight-heading);
       margin-block: var(--space-medium);
     }
 
@@ -65,8 +59,8 @@
 
     // Message Arrow Pointer
     &::after {
-      height: var(--arrow-size);
-      width: var(--arrow-size);
+      height: var(--space-xlarge);
+      width: var(--space-xlarge);
       box-shadow: 4px -4px 6px -2px rgba(0, 0, 0, 15%);
       pointer-events: none;
     }
@@ -91,4 +85,121 @@
       }
     }
   }
+}
+
+.nova-enabled .wallpaper-feature-highlight {
+  .feature-highlight .wallpaper-feature-highlight-modal {
+    @include nova-feature-highlight-border;
+    --wallpaper-highlight-image-background: #FCF5F0;
+
+    width: 352px;
+    min-height: 382px;
+    padding: var(--space-xlarge);
+  }
+
+  .feature-highlight .wallpaper-feature-highlight-modal {
+    .content-wrapper {
+      width: 100%;
+    }
+
+    .wallpaper-feature-highlight-content {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-large);
+    }
+
+    .wallpaper-feature-highlight-image {
+      display: flex;
+      justify-content: center;
+      border-radius: var(--border-radius-large);
+      background-color: var(--wallpaper-highlight-image-background);
+      background-image: url('chrome://newtab/content/data/content/assets/highlights/firefox-wallpaper-desktop-hills-light-rgb.svg');
+      background-position: center;
+      background-repeat: no-repeat;
+      background-size: cover;
+      height: 222px;
+      /* stylelint-disable-next-line declaration-property-value-disallowed-list */
+      padding-block-start: 44px;
+      /* stylelint-disable-next-line declaration-property-value-disallowed-list */
+      padding-block-end: 22px;
+    }
+
+    .wallpaper-feature-highlight-image img {
+      display: block;
+      width: 207px;
+      height: 156px;
+      object-fit: contain;
+    }
+
+    .wallpaper-feature-highlight-copy {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-small);
+    }
+
+    .title {
+      font-size: var(--font-size-root, 13px);
+      font-weight: var(--font-weight-heading, var(--heading-font-weight));
+      margin: 0;
+    }
+
+    .subtitle {
+      font-size: var(--font-size-root, 13px);
+      margin: 0;
+    }
+
+    &.inset-block-start::after {
+      inset-inline-end: calc(var(--space-xlarge) / -2 + var(--border-width));
+      background: var(--background-color-box);
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+      border: var(--border-width) solid var(--nova-highlight-border-gradient-end);
+      border-start-end-radius: var(--border-radius-small);
+      box-shadow: none;
+      clip-path: polygon(0% 0%, 100% 0%, 100% 100%);
+    }
+
+    > moz-button {
+      inset-inline-end: var(--space-xsmall);
+      inset-block-start: var(--space-xsmall);
+    }
+  }
+
+  &.world-cup-variant .feature-highlight .wallpaper-feature-highlight-modal {
+    min-height: 355px;
+
+    .wallpaper-feature-highlight-content {
+      gap: var(--space-small);
+    }
+
+    .wallpaper-feature-highlight-image {
+      --wallpaper-highlight-image-background: transparent;
+
+      background-image: none;
+      height: auto;
+      padding-block: 0;
+    }
+
+    .wallpaper-feature-highlight-image img {
+      width: 100%;
+      height: auto;
+      max-width: 304px;
+      object-fit: contain;
+    }
+
+    .title {
+      color: var(--text-color);
+      font-size: var(--font-size-small);
+    }
+
+    .subtitle {
+      color: var(--text-color);
+      font-size: var(--font-size-small);
+      font-weight: var(--font-weight);
+    }
+
+    .button-wrapper {
+      margin-block-start: var(--space-medium);
+    }
+  }
+
 }

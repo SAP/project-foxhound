@@ -36,6 +36,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import kotlin.collections.set
 
 internal const val API_VERSION = "api/v4"
 internal const val DEFAULT_SERVER_URL = "https://services.addons.mozilla.org"
@@ -146,6 +147,39 @@ class AMOAddonsProvider(
                 }
             }
             throw e
+        }
+    }
+
+    override suspend fun getAddonByID(
+        id: String,
+        readTimeoutInSeconds: Long?,
+        language: String?,
+    ): Addon? {
+        val langParam = when (!language.isNullOrEmpty()) {
+            true -> "&lang=$language"
+            else -> ""
+        }
+
+        return client.fetch(
+            Request(
+                url = "$serverURL/$API_VERSION/addons/search/?guid=$id$langParam",
+                readTimeout = Pair(readTimeoutInSeconds ?: DEFAULT_READ_TIMEOUT_IN_SECONDS, TimeUnit.SECONDS),
+            ),
+        ).use { response ->
+            if (response.isSuccess) {
+                val responseBody = response.body.string(Charsets.UTF_8)
+                try {
+                    JSONObject(responseBody)
+                        .getAddonsFromSearchResults(language)
+                        .firstOrNull()
+                } catch (e: JSONException) {
+                    logger.error("Failed to get addon by uuid [$id]", e)
+                    null
+                }
+            } else {
+                logger.error("Failed to get addon by uuid [$id]. Status code: ${response.status}")
+                null
+            }
         }
     }
 
@@ -356,6 +390,13 @@ enum class SortOption(val value: String) {
     NAME_DESC("-name"),
     DATE_ADDED("added"),
     DATE_ADDED_DESC("-added"),
+}
+
+internal fun JSONObject.getAddonsFromSearchResults(language: String? = null): List<Addon> {
+    val addonsJson = getJSONArray("results")
+    return (0 until addonsJson.length()).map { index ->
+        addonsJson.getJSONObject(index).toAddon(language)
+    }
 }
 
 internal fun JSONObject.getAddonsFromCollection(language: String? = null): List<Addon> {

@@ -22,7 +22,6 @@ import mozilla.components.support.locale.LocaleManager
 import org.mozilla.fenix.FenixApplication
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.Components
-import org.mozilla.fenix.components.metrics.MetricController
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.settings.advanced.getSelectedLocale
 import org.mozilla.fenix.utils.isLargeScreenSize
@@ -41,12 +40,6 @@ val Context.application: FenixApplication
 val Context.components: Components
     get() = application.components
 
-/**
- * Helper function to get the MetricController off of context.
- */
-val Context.metrics: MetricController
-    get() = this.components.analytics.metrics
-
 fun Context.asActivity() = (this as? ContextThemeWrapper)?.baseContext as? Activity
     ?: this as? Activity
 
@@ -62,8 +55,6 @@ fun Context.getPreferenceKey(
  */
 fun Context.getRootView(): View? =
     asActivity()?.window?.decorView?.findViewById<View>(android.R.id.content) as? ViewGroup
-
-fun Context.settings() = components.settings
 
 /**
  * Used to catch IllegalArgumentException that is thrown when
@@ -152,13 +143,13 @@ fun Context.tabClosedUndoMessage(private: Boolean): String =
 
 /**
  * Returns the message to be shown when multiple tabs are closed based on whether the tabs were all private or not.
- * @param private true if the tab was private, false otherwise.
+ * @param count The number of tabs that were closed.
  */
-fun Context.tabsClosedUndoMessage(private: Boolean): String =
-    if (private) {
-        getString(R.string.snackbar_private_data_deleted)
+fun Context.tabsClosedUndoMessage(count: Int): String =
+    if (count > 1) {
+        getString(R.string.snackbar_num_tabs_closed, count.toString())
     } else {
-        getString(R.string.snackbar_tabs_closed)
+        getString(R.string.snackbar_tab_closed)
     }
 
 /**
@@ -219,6 +210,7 @@ fun Context.isToolbarAtBottom() =
  * @param resId Resource ID of the dimension.
  * @return The pixel size corresponding to the given dimension resource.
  */
+@Suppress("Resources.GetDimensionPixelSizeInsteadOfPixelSizeFor")
 fun Context.pixelSizeFor(
     @DimenRes resId: Int,
 ) = resources.getDimensionPixelSize(resId)

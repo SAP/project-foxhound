@@ -4,6 +4,8 @@
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
+  TranslationsFeature:
+    "chrome://global/content/translations/TranslationsFeature.sys.mjs",
   TranslationsParent: "resource://gre/actors/TranslationsParent.sys.mjs",
 });
 
@@ -140,20 +142,13 @@ export class AboutTranslationsParent extends JSWindowActorParent {
         return lazy.TranslationsParent.getIsTranslationsEngineSupported();
       }
       case "AboutTranslations:GetEnabledState": {
-        return lazy.TranslationsParent.AIFeature.isEnabled;
+        return lazy.TranslationsFeature.isEnabled;
       }
-      case "AboutTranslations:OpenSupportPage": {
-        const browser = this.browsingContext.top.embedderElement;
-        browser.ownerGlobal.openTrustedLinkIn(
-          "https://support.mozilla.org/kb/website-translation",
-          "tab",
-          {
-            forceForeground: true,
-            triggeringPrincipal:
-              Services.scriptSecurityManager.getSystemPrincipal(),
-          }
-        );
-
+      case "AboutTranslations:IsEnabledStateManagedByPolicy": {
+        return lazy.TranslationsFeature.isManagedByPolicy;
+      }
+      case "AboutTranslations:EnableTranslationsFeature": {
+        await lazy.TranslationsFeature.enable();
         return undefined;
       }
       case "AboutTranslations:Telemetry": {
@@ -169,7 +164,7 @@ export class AboutTranslationsParent extends JSWindowActorParent {
           );
         }
 
-        aboutTranslationsTelemetry[telemetryFunctionName](telemetryData);
+        telemetryFunction(telemetryData);
 
         return undefined;
       }

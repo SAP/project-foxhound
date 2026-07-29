@@ -4,7 +4,7 @@
 
 /**
  * Note: the schema can be found in
- * https://searchfox.org/mozilla-central/source/toolkit/components/telemetry/Events.yaml
+ * https://searchfox.org/firefox-main/source/toolkit/components/telemetry/Events.yaml
  */
 const EXTRAS_FIELD_NAMES = [
   "addon_version",

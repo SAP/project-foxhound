@@ -52,6 +52,7 @@ dependencies {
     testImplementation libs.junit4
     testRuntimeOnly libs.junit.platform.launcher
     testRuntimeOnly libs.junit.vintage
+    testImplementation libs.kotlin.test
     testImplementation libs.kotlinx.coroutines
     testImplementation libs.kotlinx.coroutines.test
     testImplementation libs.robolectric
@@ -63,7 +64,10 @@ dependencies {
     androidTestImplementation libs.androidx.test.core
     androidTestImplementation libs.androidx.test.rules
     androidTestImplementation libs.androidx.test.runner
+    androidTestImplementation libs.kotlin.test
     androidTestImplementation libs.kotlinx.coroutines.test
+
+    androidTestRuntimeOnly libs.okhttp
 }
 
 apply from: '../../../common-config.gradle'

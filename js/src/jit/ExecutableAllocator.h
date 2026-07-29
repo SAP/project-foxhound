@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright (C) 2008 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -94,6 +92,9 @@ class ExecutablePool {
 
   ~ExecutablePool();
 
+  ExecutablePool(const ExecutablePool&) = delete;
+  void operator=(const ExecutablePool&) = delete;
+
   void mark() {
     MOZ_ASSERT(!m_mark);
     m_mark = true;
@@ -105,9 +106,6 @@ class ExecutablePool {
   bool isMarked() const { return m_mark; }
 
  private:
-  ExecutablePool(const ExecutablePool&) = delete;
-  void operator=(const ExecutablePool&) = delete;
-
   void* alloc(size_t n, CodeKind kind);
 
   size_t available() const;
@@ -138,6 +136,9 @@ class ExecutableAllocator {
  public:
   ExecutableAllocator() = default;
   ~ExecutableAllocator();
+
+  ExecutableAllocator(const ExecutableAllocator&) = delete;
+  void operator=(const ExecutableAllocator&) = delete;
 
   void purge();
 
@@ -181,9 +182,6 @@ class ExecutableAllocator {
   static void poisonCode(JSRuntime* rt, JitPoisonRangeVector& ranges);
 
  private:
-  ExecutableAllocator(const ExecutableAllocator&) = delete;
-  void operator=(const ExecutableAllocator&) = delete;
-
   // These are strong references;  they keep pools alive.
   static const size_t maxSmallPools = 4;
   using SmallExecPoolVector =

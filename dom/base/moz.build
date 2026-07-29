@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -51,9 +49,9 @@ EXPORTS += [
     "nsCaseTreatment.h",
     "nsChildContentList.h",
     "nsContentCreatorFunctions.h",
-    "nsContentList.h",
     "nsContentListDeclarations.h",
     "nsContentPermissionHelper.h",
+    "nsContentPolicyType.h",
     "nsContentPolicyUtils.h",
     "nsContentSink.h",
     "nsContentTypeParser.h",
@@ -83,7 +81,6 @@ EXPORTS += [
     "nsImageLoadingContent.h",
     "nsIMutationObserver.h",
     "nsINode.h",
-    "nsINodeList.h",
     "nsIScriptContext.h",
     "nsIScriptGlobalObject.h",
     "nsIScriptObjectPrincipal.h",
@@ -111,6 +108,7 @@ EXPORTS += [
     "nsWindowSizes.h",
     "nsWrapperCache.h",
     "nsWrapperCacheInlines.h",
+    "SharedLcpMarkerState.h",
     "XPathGenerator.h",
 ]
 
@@ -143,6 +141,7 @@ EXPORTS.mozilla.dom += [
     "AncestorIterator.h",
     "AnimationFrameProvider.h",
     "AnonymousContent.h",
+    "AtomAttributes.h",
     "Attr.h",
     "AutoPrintEventDispatcher.h",
     "AutoSuppressEventHandlingAndSuspend.h",
@@ -163,6 +162,7 @@ EXPORTS.mozilla.dom += [
     "ChromeUtils.h",
     "Comment.h",
     "ContentFrameMessageManager.h",
+    "ContentList.h",
     "ContentProcessMessageManager.h",
     "CrossShadowBoundaryRange.h",
     "CustomElementRegistry.h",
@@ -206,6 +206,7 @@ EXPORTS.mozilla.dom += [
     "InteractiveWidget.h",
     "IntlUtils.h",
     "JSExecutionUtils.h",
+    "LifecycleCallbackArgs.h",
     "Link.h",
     "LinkStyle.h",
     "Location.h",
@@ -224,6 +225,7 @@ EXPORTS.mozilla.dom += [
     "NodeInfo.h",
     "NodeInfoInlines.h",
     "NodeIterator.h",
+    "NodeList.h",
     "ParentProcessMessageManager.h",
     "PlacesBookmark.h",
     "PlacesBookmarkAddition.h",
@@ -348,6 +350,7 @@ UNIFIED_SOURCES += [
     "Comment.cpp",
     "ContentFrameMessageManager.cpp",
     "ContentIterator.cpp",
+    "ContentList.cpp",
     "ContentProcessMessageManager.cpp",
     "CrossShadowBoundaryRange.cpp",
     "Crypto.cpp",
@@ -404,7 +407,6 @@ UNIFIED_SOURCES += [
     "nsAttrValueOrString.cpp",
     "nsCCUncollectableMarker.cpp",
     "nsContentAreaDragDrop.cpp",
-    "nsContentList.cpp",
     "nsContentPermissionHelper.cpp",
     "nsContentPolicy.cpp",
     "nsContentSink.cpp",

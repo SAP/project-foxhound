@@ -4,6 +4,9 @@
 
 #include "base/files/memory_mapped_file.h"
 
+#if defined(MOZ_ZUCCHINI)
+#include <cerrno>
+#endif  // defined(MOZ_ZUCCHINI)
 #include <fcntl.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -92,6 +95,7 @@ bool MemoryMappedFile::MapFileRegionToMemory(
     data_ = data;
   }
   else {
+    is_mapping_oom_ = errno == ENOMEM;
 #else
   data_ = static_cast<uint8_t*>(mmap(nullptr, map_size, flags, MAP_SHARED,
                                      file_.GetPlatformFile(), map_start));

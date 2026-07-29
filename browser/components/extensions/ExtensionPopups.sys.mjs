@@ -1,20 +1,20 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const lazy = {};
+import { ExtensionCommon } from "resource://gre/modules/ExtensionCommon.sys.mjs";
+import { ExtensionUtils } from "resource://gre/modules/ExtensionUtils.sys.mjs";
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-ChromeUtils.defineESModuleGetters(lazy, {
+const lazy = XPCOMUtils.declareLazy({
   CustomizableUI:
     "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   ExtensionParent: "resource://gre/modules/ExtensionParent.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
-});
 
-import { ExtensionCommon } from "resource://gre/modules/ExtensionCommon.sys.mjs";
-import { ExtensionUtils } from "resource://gre/modules/ExtensionUtils.sys.mjs";
+  // Delay defaults to 500 ms via modules/libpref/init/all.js, for all builds:
+  delayBeforeEnablingButtons: { pref: "security.notification_enable_delay" },
+});
 
 var { DefaultWeakMap, promiseEvent } = ExtensionUtils;
 
@@ -38,6 +38,33 @@ function promisePopupShown(popup) {
   });
 }
 
+function addPanelHidingHandler(panel) {
+  function handleClick(event) {
+    if (
+      event.target.closest(
+        "panel:not(#unified-extensions-panel),#notifications-toolbar"
+      )
+    ) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      Services.console.logStringMessage(
+        "Ignored click shortly after extension popup was closed"
+      );
+    }
+  }
+  panel.addEventListener(
+    "popuphiding",
+    () => {
+      const window = panel.documentGlobal;
+      window.addEventListener("click", handleClick, true);
+      window.setTimeout(() => {
+        window.removeEventListener("click", handleClick, true);
+      }, lazy.delayBeforeEnablingButtons);
+    },
+    { once: true, capture: true }
+  );
+}
+
 const REMOTE_PANEL_ID = "webextension-remote-preload-panel";
 
 export class BasePopup {
@@ -53,7 +80,7 @@ export class BasePopup {
     this.popupURL = popupURL;
     this.viewNode = viewNode;
     this.browserStyle = browserStyle;
-    this.window = viewNode.ownerGlobal;
+    this.window = viewNode.documentGlobal;
     this.destroyed = false;
     this.fixedWidth = fixedWidth;
     this.blockParser = blockParser;
@@ -119,8 +146,8 @@ export class BasePopup {
         panel.removeEventListener("popuppositioned", this, { capture: true });
       }
       if (panel && panel.id !== REMOTE_PANEL_ID) {
-        panel.style.removeProperty("--arrowpanel-background");
-        panel.style.removeProperty("--arrowpanel-border-color");
+        panel.style.removeProperty("--panel-background-color");
+        panel.style.removeProperty("--panel-border-color");
         panel.removeAttribute("remote");
       }
 
@@ -217,7 +244,7 @@ export class BasePopup {
               // to be fully flushed makes us sure that when the popup panel grabs the focus
               // nsMenuPopupFrame::LayoutPopup has already been colled and set the frame
               // visibility to `ViewVisibility::Show`).
-              this.browser.ownerGlobal.promiseDocumentFlushed(() => {
+              this.browser.documentGlobal.promiseDocumentFlushed(() => {
                 if (this.destroyed) {
                   return;
                 }
@@ -243,7 +270,7 @@ export class BasePopup {
 
       case "DoZoomEnlarge": {
         const browser = event.target;
-        let { ZoomManager } = browser.ownerGlobal;
+        let { ZoomManager } = browser.documentGlobal;
         let zoom = this.browser.fullZoom;
         zoom += 0.1;
         if (zoom > ZoomManager.MAX) {
@@ -255,7 +282,7 @@ export class BasePopup {
 
       case "DoZoomReduce": {
         const browser = event.target;
-        let { ZoomManager } = browser.ownerGlobal;
+        let { ZoomManager } = browser.documentGlobal;
         let zoom = browser.fullZoom;
         zoom -= 0.1;
         if (zoom < ZoomManager.MIN) {
@@ -434,12 +461,12 @@ export class BasePopup {
       background = "#fff";
     }
     if (this.panel.id != "widget-overflow") {
-      this.panel.style.setProperty("--arrowpanel-background", background);
+      this.panel.style.setProperty("--panel-background-color", background);
     }
     if (background == "#fff") {
       // Set a usable default color that work with the default background-color.
       this.panel.style.setProperty(
-        "--arrowpanel-border-color",
+        "--panel-border-color",
         "hsla(210,4%,10%,.15)"
       );
     }
@@ -480,6 +507,7 @@ export class PanelPopup extends BasePopup {
       },
       { once: true }
     );
+    addPanelHidingHandler(panel);
 
     super(extension, panel, popupURL, browserStyle);
   }
@@ -588,6 +616,7 @@ export class ViewPopup extends BasePopup {
       once: true,
       capture: true,
     });
+    addPanelHidingHandler(this.panel);
     if (this.extension.remote) {
       this.panel.setAttribute("remote", "true");
     }
@@ -728,11 +757,6 @@ export class ViewPopup extends BasePopup {
 // Checks whether there is anything preventing a panel from being opened via
 // action.openPopup(), browserAction.openPopup() or pageAction.openPopup().
 export function isGloballyBlockingOpenPopup(window) {
-  if (
-    Services.prefs.getBoolPref("extensions.openPopup.undoBug2022281", false)
-  ) {
-    return false;
-  }
   // Avoid covering existing menus and panels. We only need to check before
   // opening the extension popup, because any menus/panels that are opened
   // later will render on top of the extension popup.

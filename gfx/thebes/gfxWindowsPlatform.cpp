@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -245,8 +243,8 @@ gfxWindowsPlatform::gfxWindowsPlatform() {
      */
     CoInitialize(nullptr);
 
-    RegisterStrongMemoryReporter(new GPUAdapterReporter());
-    RegisterStrongMemoryReporter(new D3DSharedTexturesReporter());
+    RegisterStrongMemoryReporter(MakeAndAddRef<GPUAdapterReporter>());
+    RegisterStrongMemoryReporter(MakeAndAddRef<D3DSharedTexturesReporter>());
   }
 }
 
@@ -266,8 +264,8 @@ gfxWindowsPlatform::~gfxWindowsPlatform() {
 void gfxWindowsPlatform::InitMemoryReportersForGPUProcess() {
   MOZ_RELEASE_ASSERT(XRE_IsGPUProcess());
 
-  RegisterStrongMemoryReporter(new GPUAdapterReporter());
-  RegisterStrongMemoryReporter(new D3DSharedTexturesReporter());
+  RegisterStrongMemoryReporter(MakeAndAddRef<GPUAdapterReporter>());
+  RegisterStrongMemoryReporter(MakeAndAddRef<D3DSharedTexturesReporter>());
 }
 
 /* static */
@@ -1852,16 +1850,39 @@ void gfxWindowsPlatform::GetPlatformDisplayInfo(
 
   ScaledResolutionSet scaled;
   GetScaledResolutions(scaled);
-  if (scaled.IsEmpty()) {
-    return;
+  if (!scaled.IsEmpty()) {
+    aObj.DefineProperty("ScaledResolutionCount", scaled.Length());
+    for (size_t i = 0; i < scaled.Length(); ++i) {
+      auto& s = scaled[i];
+      nsPrintfCString name("ScaledResolution%zu", i);
+      nsPrintfCString value("source %dx%d, target %dx%d", s.first.width,
+                            s.first.height, s.second.width, s.second.height);
+      aObj.DefineProperty(name.get(), value.get());
+    }
   }
 
-  aObj.DefineProperty("ScaledResolutionCount", scaled.Length());
-  for (size_t i = 0; i < scaled.Length(); ++i) {
-    auto& s = scaled[i];
-    nsPrintfCString name("ScaledResolution%zu", i);
-    nsPrintfCString value("source %dx%d, target %dx%d", s.first.width,
-                          s.first.height, s.second.width, s.second.height);
-    aObj.DefineProperty(name.get(), value.get());
+  nsTArray<DXGI_OUTPUT_DESC1> outputs =
+      DeviceManagerDx::Get()->EnumerateOutputs();
+  if (!outputs.IsEmpty()) {
+    nsAutoCString colorSpaces;
+    for (size_t i = 0; i < outputs.Length(); ++i) {
+      if (i > 0) {
+        colorSpaces.AppendLiteral(", ");
+      }
+      switch (outputs[i].ColorSpace) {
+        case DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709:
+          colorSpaces.AppendLiteral("DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709");
+          break;
+        case DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020:
+          colorSpaces.AppendLiteral(
+              "DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020");
+          break;
+        default:
+          colorSpaces.AppendPrintf("DXGI_COLOR_SPACE_TYPE(%d)",
+                                   static_cast<int>(outputs[i].ColorSpace));
+          break;
+      }
+    }
+    aObj.DefineProperty("OutputColorSpaces", colorSpaces.get());
   }
 }

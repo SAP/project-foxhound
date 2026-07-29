@@ -157,8 +157,119 @@ add_task(async function test_dismissed_notification_switch_tabs() {
   gBrowser.removeTab(differentTab);
 });
 
-async function testPopupBlockingToolbar(tab) {
-  let win = tab.ownerGlobal;
+// Bug 2025170.
+// "Allow" should unblock all popups across multiple browsing contexts
+// without erroring on out-of-bounds per-document indices.
+add_task(async function test_bug2025170_allow_all() {
+  const tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "https://example.com"
+  );
+
+  await SpecialPowers.spawn(
+    tab.linkedBrowser,
+    [baseURL + "popup_blocker.html"],
+    uri => {
+      for (let i = 0; i < 2; i++) {
+        let iframe = content.document.createElement("iframe");
+        iframe.src = uri;
+        content.document.body.appendChild(iframe);
+      }
+    }
+  );
+
+  // Because popup_blocker.html is calling window.open() with target
+  // window names, we expect only two new tabs.
+  await testPopupBlockingToolbar(
+    tab,
+    /*expectedBlocked=*/ 4,
+    /*expectedOpened=*/ 2
+  );
+});
+
+// Bug 2025170.
+// Make sure the correct popup is opened when the blocked popup list
+// spans multiple browsing contexts.
+add_task(async function test_bug2025170_unblock_popup() {
+  const tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "https://example.com"
+  );
+
+  await SpecialPowers.spawn(
+    tab.linkedBrowser,
+    [baseURL + "popup_blocker.html"],
+    uri => {
+      for (let i = 0; i < 2; i++) {
+        let iframe = content.document.createElement("iframe");
+        iframe.src = uri;
+        content.document.body.appendChild(iframe);
+      }
+    }
+  );
+
+  // Wait for the popup-blocked notification.
+  let notification;
+  await TestUtils.waitForCondition(
+    () =>
+      (notification = gBrowser
+        .getNotificationBox()
+        .getNotificationWithValue("popup-blocked"))
+  );
+
+  // Show the menu.
+  const popupShown = BrowserTestUtils.waitForEvent(window, "popupshown");
+  const popupFilled = waitForBlockedPopups(4, { doc: document });
+  EventUtils.synthesizeMouseAtCenter(
+    notification.buttonContainer.querySelector("button"),
+    {},
+    window
+  );
+
+  // Wait for the menu.
+  const popupEvent = await popupShown;
+  const menu = popupEvent.target;
+  is(menu.id, "blockedPopupOptions", "Blocked popup menu shown");
+
+  await popupFilled;
+
+  const popupItems = menu.querySelectorAll("[popupReportIndex]");
+  is(popupItems.length, 4, "Should have 4 blocked popup items");
+
+  // Track new tabs.
+  const popupTabs = [];
+  const onTabOpen = e => popupTabs.push(e.target);
+  gBrowser.tabContainer.addEventListener("TabOpen", onTabOpen);
+
+  // The last item in the flattened list appears first in DOM order.
+  // Without the fix, its popupReportIndex would be out of bounds.
+  popupItems[0].doCommand();
+
+  await TestUtils.waitForCondition(
+    () =>
+      popupTabs.length == 1 &&
+      popupTabs[0].linkedBrowser.currentURI.spec != "about:blank",
+    "Waiting for popup tab to open"
+  );
+  ok(
+    popupTabs[0].linkedBrowser.currentURI.spec.endsWith("popup_blocker_b.html"),
+    "Should have opened popup_blocker_b.html"
+  );
+
+  gBrowser.tabContainer.removeEventListener("TabOpen", onTabOpen);
+
+  // Clean up.
+  menu.hidePopup();
+  BrowserTestUtils.removeTab(popupTabs[0]);
+  BrowserTestUtils.removeTab(tab);
+});
+
+async function testPopupBlockingToolbar(
+  tab,
+  expectedBlocked = 2,
+  expectedOpened = 2
+) {
+  let win = tab.documentGlobal;
   // Wait for the popup-blocked notification.
   let notification;
   await TestUtils.waitForCondition(
@@ -170,7 +281,7 @@ async function testPopupBlockingToolbar(tab) {
 
   // Show the menu.
   let popupShown = BrowserTestUtils.waitForEvent(win, "popupshown");
-  let popupFilled = waitForBlockedPopups(2, {
+  let popupFilled = waitForBlockedPopups(expectedBlocked, {
     doc: win.document,
   });
   EventUtils.synthesizeMouseAtCenter(
@@ -196,7 +307,7 @@ async function testPopupBlockingToolbar(tab) {
   allow.doCommand();
   await TestUtils.waitForCondition(
     () =>
-      popupTabs.length == 2 &&
+      popupTabs.length == expectedOpened &&
       popupTabs.every(
         aTab => aTab.linkedBrowser.currentURI.spec != "about:blank"
       )

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,7 +17,7 @@ using mozilla::DebugOnly;
 class xpcPivotRule : public PivotRule {
  public:
   explicit xpcPivotRule(nsIAccessibleTraversalRule* aRule) : mRule(aRule) {}
-  ~xpcPivotRule() {}
+  ~xpcPivotRule() = default;
 
   virtual uint16_t Match(Accessible* aAcc) override;
 
@@ -34,7 +32,7 @@ xpcAccessiblePivot::xpcAccessiblePivot(nsIAccessible* aRoot) : mRoot(aRoot) {
   NS_ASSERTION(aRoot, "A root accessible is required");
 }
 
-xpcAccessiblePivot::~xpcAccessiblePivot() {}
+xpcAccessiblePivot::~xpcAccessiblePivot() = default;
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsISupports

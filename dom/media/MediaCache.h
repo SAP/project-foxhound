@@ -1,11 +1,11 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef MediaCache_h_
 #define MediaCache_h_
+
+#include <limits>
 
 #include "DecoderDoctorLogger.h"
 #include "Intervals.h"
@@ -196,6 +196,12 @@ class MediaCacheStream : public DecoderDoctorLifeLogger<MediaCacheStream> {
  public:
   // This needs to be a power of two
   static constexpr int64_t BLOCK_SIZE = 32768;
+
+  static constexpr bool IsOffsetAllowed(int64_t aOffset) {
+    constexpr int64_t kMaxOffset =
+        (int64_t(std::numeric_limits<int32_t>::max()) + 1) * BLOCK_SIZE;
+    return aOffset >= 0 && aOffset < kMaxOffset;
+  }
 
   enum ReadMode { MODE_METADATA, MODE_PLAYBACK };
 

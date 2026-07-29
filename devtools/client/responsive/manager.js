@@ -235,7 +235,7 @@ class ResponsiveUIManager extends EventEmitter {
    * @return boolean
    */
   isActiveForWindow(window) {
-    return [...this.activeTabs.keys()].some(t => t.ownerGlobal === window);
+    return [...this.activeTabs.keys()].some(t => t.documentGlobal === window);
   }
 
   /**
@@ -266,7 +266,7 @@ class ResponsiveUIManager extends EventEmitter {
     }
   }
 
-  async setMenuCheckFor(tab, window = tab.ownerGlobal) {
+  async setMenuCheckFor(tab, window = tab.documentGlobal) {
     await startup(window);
 
     const menu = window.document.getElementById("menu_responsiveUI");

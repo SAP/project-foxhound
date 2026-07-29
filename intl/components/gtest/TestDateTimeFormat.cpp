@@ -7,6 +7,7 @@
 #include "mozilla/intl/DateTimeFormat.h"
 #include "mozilla/intl/DateTimePart.h"
 #include "mozilla/intl/DateTimePatternGenerator.h"
+#include "mozilla/intl/Locale.h"
 #include "mozilla/Span.h"
 #include "TestBuffer.h"
 
@@ -108,21 +109,49 @@ TEST(IntlDateTimeFormat, Time_zone_IANA_identifier)
 
 TEST(IntlDateTimeFormat, GetAllowedHourCycles)
 {
-  auto allowed_en_US = DateTimeFormat::GetAllowedHourCycles(
-                           MakeStringSpan("en"), Some(MakeStringSpan("US")))
-                           .unwrap();
+  auto language = [](const char* s) {
+    LanguageSubtag result;
+    result.Set(MakeStringSpan(s));
+    return result;
+  };
+
+  auto region = [](const char* s) {
+    RegionSubtag result;
+    result.Set(MakeStringSpan(s));
+    return result;
+  };
+
+  auto allowed_en_US =
+      DateTimeFormat::GetAllowedHourCycles(language("en"), region("US"))
+          .unwrap();
 
   ASSERT_TRUE(allowed_en_US.length() == 2);
   ASSERT_EQ(allowed_en_US[0], DateTimeFormat::HourCycle::H12);
   ASSERT_EQ(allowed_en_US[1], DateTimeFormat::HourCycle::H23);
 
-  auto allowed_de =
-      DateTimeFormat::GetAllowedHourCycles(MakeStringSpan("de"), Nothing())
+  auto allowed_de_DE =
+      DateTimeFormat::GetAllowedHourCycles(language("de"), region("DE"))
           .unwrap();
 
-  ASSERT_TRUE(allowed_de.length() == 2);
-  ASSERT_EQ(allowed_de[0], DateTimeFormat::HourCycle::H23);
-  ASSERT_EQ(allowed_de[1], DateTimeFormat::HourCycle::H12);
+  ASSERT_TRUE(allowed_de_DE.length() == 2);
+  ASSERT_EQ(allowed_de_DE[0], DateTimeFormat::HourCycle::H23);
+  ASSERT_EQ(allowed_de_DE[1], DateTimeFormat::HourCycle::H12);
+
+  auto allowed_en_CA =
+      DateTimeFormat::GetAllowedHourCycles(language("en"), region("CA"))
+          .unwrap();
+
+  ASSERT_TRUE(allowed_en_CA.length() == 2);
+  ASSERT_EQ(allowed_en_CA[0], DateTimeFormat::HourCycle::H12);
+  ASSERT_EQ(allowed_en_CA[1], DateTimeFormat::HourCycle::H23);
+
+  auto allowed_fr_CA =
+      DateTimeFormat::GetAllowedHourCycles(language("fr"), region("CA"))
+          .unwrap();
+
+  ASSERT_TRUE(allowed_fr_CA.length() == 2);
+  ASSERT_EQ(allowed_fr_CA[0], DateTimeFormat::HourCycle::H23);
+  ASSERT_EQ(allowed_fr_CA[1], DateTimeFormat::HourCycle::H12);
 }
 
 TEST(IntlDateTimePatternGenerator, GetBestPattern)
@@ -549,20 +578,19 @@ TEST(IntlDateTimeFormat, GetOriginalSkeleton)
 
 TEST(IntlDateTimeFormat, GetAvailableLocales)
 {
-  using namespace std::literals;
-
   int32_t english = 0;
   int32_t german = 0;
   int32_t chinese = 0;
 
   // Since this list is dependent on ICU, and may change between upgrades, only
   // test a subset of the available locales.
-  for (const char* locale : DateTimeFormat::GetAvailableLocales()) {
-    if (locale == "en"sv) {
+  for (mozilla::Span<const char> locale :
+       DateTimeFormat::GetAvailableLocales()) {
+    if (locale == mozilla::MakeStringSpan("en")) {
       english++;
-    } else if (locale == "de"sv) {
+    } else if (locale == mozilla::MakeStringSpan("de")) {
       german++;
-    } else if (locale == "zh"sv) {
+    } else if (locale == mozilla::MakeStringSpan("zh")) {
       chinese++;
     }
   }

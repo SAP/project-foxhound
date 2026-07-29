@@ -34,13 +34,15 @@ impl NativeSurface {
     }
 }
 
-impl Surface for NativeSurface {
-    unsafe fn delete_surface(self: Box<Self>) {
+impl Drop for NativeSurface {
+    fn drop(&mut self) {
         unsafe {
             self.functor.destroy_surface(self.raw, None);
         }
     }
+}
 
+impl Surface for NativeSurface {
     fn surface_capabilities(
         &self,
         adapter: &crate::vulkan::Adapter,
@@ -160,10 +162,10 @@ impl Surface for NativeSurface {
         profiling::scope!("Device::create_swapchain");
         let functor = khr::swapchain::Device::new(&self.instance.raw, &device.shared.raw);
 
-        let old_swapchain = match provided_old_swapchain {
-            Some(osc) => osc.as_any().downcast_ref::<NativeSwapchain>().unwrap().raw,
-            None => vk::SwapchainKHR::null(),
-        };
+        let old_swapchain = provided_old_swapchain
+            .as_ref()
+            .map(|osc| osc.as_any().downcast_ref::<NativeSwapchain>().unwrap().raw)
+            .unwrap_or(vk::SwapchainKHR::null());
 
         let color_space = if config.format == wgt::TextureFormat::Rgba16Float {
             // Enable wide color gamut mode
@@ -215,11 +217,6 @@ impl Surface for NativeSurface {
             profiling::scope!("vkCreateSwapchainKHR");
             unsafe { functor.create_swapchain(&info, None) }
         };
-
-        // doing this before bailing out with error
-        if old_swapchain != vk::SwapchainKHR::null() {
-            unsafe { functor.destroy_swapchain(old_swapchain, None) }
-        }
 
         let raw = match result {
             Ok(swapchain) => swapchain,
@@ -336,6 +333,14 @@ pub(crate) struct NativeSwapchain {
     next_present_time: Option<vk::PresentTimeGOOGLE>,
 }
 
+impl Drop for NativeSwapchain {
+    fn drop(&mut self) {
+        unsafe {
+            self.functor.destroy_swapchain(self.raw, None);
+        }
+    }
+}
+
 impl Swapchain for NativeSwapchain {
     unsafe fn release_resources(&mut self, device: &crate::vulkan::Device) {
         profiling::scope!("Swapchain::release_resources");
@@ -374,16 +379,11 @@ impl Swapchain for NativeSwapchain {
         }
     }
 
-    unsafe fn delete_swapchain(self: Box<Self>) {
-        unsafe { self.functor.destroy_swapchain(self.raw, None) };
-    }
-
     unsafe fn acquire(
         &mut self,
         timeout: Option<core::time::Duration>,
         fence: &crate::vulkan::Fence,
-    ) -> Result<Option<crate::AcquiredSurfaceTexture<crate::api::Vulkan>>, crate::SurfaceError>
-    {
+    ) -> Result<crate::AcquiredSurfaceTexture<crate::api::Vulkan>, crate::SurfaceError> {
         let mut timeout_ns = match timeout {
             Some(duration) => duration.as_nanos() as u64,
             None => u64::MAX,
@@ -421,11 +421,14 @@ impl Swapchain for NativeSwapchain {
         // thus waited for `locked_swapchain_semaphores.acquire`, wait for all
         // of them to finish, thus ensuring that it's okay to pass `acquire` to
         // `vkAcquireNextImageKHR` again.
-        self.device.wait_for_fence(
+        let completed = self.device.wait_for_fence(
             fence,
             acquire_semaphore_guard.previously_used_submission_index,
             timeout_ns,
         )?;
+        if !completed {
+            return Err(crate::SurfaceError::Timeout);
+        }
 
         // will block if no image is available
         let (index, suboptimal) = match unsafe {
@@ -445,7 +448,7 @@ impl Swapchain for NativeSwapchain {
             Ok(pair) => pair,
             Err(error) => {
                 return match error {
-                    vk::Result::TIMEOUT => Ok(None),
+                    vk::Result::TIMEOUT => Err(crate::SurfaceError::Timeout),
                     vk::Result::NOT_READY | vk::Result::ERROR_OUT_OF_DATE_KHR => {
                         Err(crate::SurfaceError::Outdated)
                     }
@@ -513,10 +516,10 @@ impl Swapchain for NativeSwapchain {
                 present_semaphores: present_semaphore_arc,
             }),
         };
-        Ok(Some(crate::AcquiredSurfaceTexture {
+        Ok(crate::AcquiredSurfaceTexture {
             texture,
             suboptimal,
-        }))
+        })
     }
 
     unsafe fn discard_texture(

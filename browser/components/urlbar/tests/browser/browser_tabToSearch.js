@@ -26,6 +26,7 @@ add_setup(async function () {
       // that specifically address onboarding.
       ["browser.urlbar.tabToSearch.onboard.interactionsLeft", 0],
       ["browser.urlbar.scotchBonnet.enableOverride", false],
+      ["browser.urlbar.autoFill.adaptiveHistory.enabled", false],
     ],
   });
 

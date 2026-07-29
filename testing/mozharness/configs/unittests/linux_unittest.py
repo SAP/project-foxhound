@@ -261,8 +261,6 @@ config = {
     "vcs_output_timeout": 1000,
     "minidump_save_path": "%(abs_work_dir)s/../minidumps",
     "unstructured_flavors": {
-        "gtest": [],
-        "cppunittest": [],
         "jittest": [],
     },
     "tooltool_cache": "/builds/worker/tooltool-cache",

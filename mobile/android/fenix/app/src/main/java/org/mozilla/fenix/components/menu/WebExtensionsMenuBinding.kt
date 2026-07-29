@@ -127,7 +127,9 @@ class WebExtensionsMenuBinding(
             return null
         }
 
-        val title = action.title ?: return null
+        val title = action.title?.takeUnless { it.isBlank() }
+            ?: extension.name
+            ?: return null
 
         val loadIcon = action.loadIcon?.invoke(iconSize)
 

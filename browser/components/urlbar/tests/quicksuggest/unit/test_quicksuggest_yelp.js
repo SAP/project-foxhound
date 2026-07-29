@@ -581,11 +581,11 @@ add_task(async function showSearchSuggestionsFirstDisabledSuggestedIndex() {
   UrlbarPrefs.clear("showSearchSuggestionsFirst");
 });
 
-// Tests the "Not relevant" command: a dismissed suggestion shouldn't be added.
-add_task(async function notRelevant() {
+// Tests the "Dismiss" command: a dismissed suggestion shouldn't be added.
+add_task(async function dismiss() {
   await doDismissOneTest({
     result: QuickSuggestTestUtils.yelpResult(TOKYO_RESULT),
-    command: "not_relevant",
+    command: "dismiss",
     feature: QuickSuggest.getFeature("YelpSuggestions"),
     queriesForDismissals: [
       // Yelp suggestions are dismissed by URL excluding location, so all

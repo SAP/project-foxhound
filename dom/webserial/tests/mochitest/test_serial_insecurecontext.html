@@ -1,0 +1,26 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test Web Serial API - Insecure context</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script>
+
+"use strict";
+
+add_task(async function testNoSerialInInsecureContext() {
+  if (window.isSecureContext) {
+    // Even setting scheme="http", the http3 tests will always
+    // run this in an https context. Just skip the test.
+    ok(true, "context is not secure, skipping");
+    return;
+  }
+  ok(!("serial" in navigator), "navigator.serial should not be defined on insecure scheme (http)");
+});
+
+</script>
+</body>
+</html>

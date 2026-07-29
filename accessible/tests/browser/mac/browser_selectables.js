@@ -166,7 +166,7 @@ addAccessibleTask(
     </optgroup>
     <option id="everything">Everything</option>
   </select>`,
-  async (browser, accDoc) => {
+  async function testGroupLabels(browser, accDoc) {
     let select = getNativeInterface(accDoc, "select");
 
     is(
@@ -182,53 +182,35 @@ addAccessibleTask(
       select.isAttributeSettable("AXSelectedChildren"),
       "Select can have AXSelectedChildren set"
     );
-    let childValueSelectablePairs = select
-      .getAttributeValue("AXChildren")
-      .map(c => [
-        c.getAttributeValue("AXValue"),
-        c.isAttributeSettable("AXSelected"),
-        c.getAttributeValue("AXEnabled"),
-      ]);
-    [
-      ["​", false, 0],
-      ["Fruits", false, 0],
-      ["Banana", true, 1],
-      ["Apple", true, 1],
-      ["Orange", true, 1],
-      ["​", false, 0],
-      ["Vegetables", false, 0],
-      ["Lettuce", true, 1],
-      ["Tomato", true, 1],
-      ["Onion", true, 1],
-      ["​", false, 0],
-      ["Spices", false, 0],
-      ["Cumin", true, 1],
-      ["Coriander", true, 1],
-      ["Allspice", true, 1],
-      ["Everything", true, 1],
-    ];
-    Assert.deepEqual(
-      childValueSelectablePairs,
-      [
-        ["​", false, false],
-        ["Fruits", false, false],
-        ["Banana", true, true],
-        ["Apple", true, true],
-        ["Orange", true, true],
-        ["​", false, false],
-        ["Vegetables", false, false],
-        ["Lettuce", true, true],
-        ["Tomato", true, true],
-        ["Onion", true, true],
-        ["​", false, false],
-        ["Spices", false, false],
-        ["Cumin", true, true],
-        ["Coriander", true, true],
-        ["Allspice", true, true],
-        ["Everything", true, true],
-      ],
-      "Options are selectable, group labels are not"
-    );
+    let children = select.getAttributeValue("AXChildren");
+    for (const [i, expected] of [
+      ["​", false, false],
+      ["Fruits", false, false],
+      ["Banana", true, true],
+      ["Apple", true, true],
+      ["Orange", true, true],
+      ["​", false, false],
+      ["Vegetables", false, false],
+      ["Lettuce", true, true],
+      ["Tomato", true, true],
+      ["Onion", true, true],
+      ["​", false, false],
+      ["Spices", false, false],
+      ["Cumin", true, true],
+      ["Coriander", true, true],
+      ["Allspice", true, true],
+      ["Everything", true, true],
+    ].entries()) {
+      Assert.deepEqual(
+        [
+          children[i].getAttributeValue("AXValue"),
+          children[i].isAttributeSettable("AXSelected"),
+          children[i].getAttributeValue("AXEnabled"),
+        ],
+        expected,
+        `Child ${i} (${expected[0]}) has correct value, selectability, and enabled state`
+      );
+    }
 
     let allspice = getNativeInterface(accDoc, "allspice");
     is(

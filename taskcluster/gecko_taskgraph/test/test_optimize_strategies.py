@@ -33,7 +33,7 @@ from gecko_taskgraph.util.bugbug import (
 
 @pytest.fixture(autouse=True)
 def clear_push_schedules_memoize():
-    push_schedules.clear()
+    push_schedules.cache_clear()
 
 
 @pytest.fixture

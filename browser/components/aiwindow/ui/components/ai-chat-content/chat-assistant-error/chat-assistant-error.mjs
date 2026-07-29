@@ -5,41 +5,61 @@
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 import { html, nothing } from "chrome://global/content/vendor/lit.all.mjs";
 
-const ERROR_TYPES = {
-  PAYLOAD_TOO_LARGE: 413,
-  RATE_LIMIT: 429,
-  SERVER_ERROR_MIN: 500,
-  SERVER_ERROR_MAX: 599,
+/**
+ * Numeric error codes received from the back-end via error.error.
+ * Codes 1-6 are MLPA spec codes; 7 is set locally for Fastly-blocked 406s
+ * (e.g. when the user's IP is blocked behind a VPN).
+ */
+const ERROR_CODES = {
+  BUDGET_EXCEEDED: 1,
+  RATE_LIMIT_EXCEEDED: 2,
+  CHAT_MAX_LENGTH: 3,
+  MAX_USERS_REACHED: 4,
+  UPSTREAM_RATE_LIMIT: 5,
+  FASTLY_WAF_RATE_LIMIT: 6,
+  FASTLY_BLOCKED: 7,
 };
 
 /**
- * Shows an error message based on an error status
+ * Shows an error message based on an error code
  */
 export class ChatAssistantError extends MozLitElement {
+  /**
+   * @typedef {object} ErrorObject
+   * @property {number|string} [error] - Error subcode - number for 429, string for others
+   */
   static properties = {
-    errorStatus: { type: Number },
+    error: { type: Object },
     actionButton: { type: Object },
     errorText: { type: Object },
   };
 
   constructor() {
     super();
-    this.actionButton = null;
-    this.errorText = {
-      header: "smartwindow-assistant-error-generic-header",
-    };
+    this.setGenericError();
   }
 
   willUpdate(changed) {
-    if (changed.has("errorStatus")) {
+    if (changed.has("error")) {
       this.getErrorInformation();
     }
   }
 
-  // TO DO: implement action buttons functionality
+  openNewChat() {
+    const event = new CustomEvent("aiChatError:new-chat", {
+      bubbles: true,
+      composed: true,
+    });
+    this.dispatchEvent(event);
+  }
 
-  /* https://mozilla-hub.atlassian.net/browse/GENAI-2863
-  also needs its own error message/functionality */
+  openAccountSignIn() {
+    const event = new CustomEvent("aiChatError:sign-in", {
+      bubbles: true,
+      composed: true,
+    });
+    this.dispatchEvent(event);
+  }
 
   retryAssistantMessage() {
     const event = new CustomEvent("aiChatError:retry-message", {
@@ -49,48 +69,83 @@ export class ChatAssistantError extends MozLitElement {
     this.dispatchEvent(event);
   }
 
-  /* https://mozilla-hub.atlassian.net/browse/GENAI-3170
-  switchToClassic() {
-    console.log("switch to classic..");
+  setGenericError() {
+    this.errorText = {
+      header: "smartwindow-assistant-error-generic-header",
+    };
+    this.actionButton = {
+      label: "smartwindow-retry-btn",
+      action: this.retryAssistantMessage.bind(this),
+    };
   }
-  */
-
-  /* https://mozilla-hub.atlassian.net/browse/GENAI-3171
-  clearChat() {
-    console.log("open a new chat..");
-  }
-  */
 
   getErrorInformation() {
-    if (this.errorStatus === ERROR_TYPES.PAYLOAD_TOO_LARGE) {
-      this.errorText = {
-        header: "smartwindow-assistant-error-long-message-header",
-      };
-      // this.actionButton = {
-      //   label: "smartwindow-clear-btn",
-      //   action: this.clearChat,
-      // };
+    if (!this.error) {
       return;
     }
-    if (this.errorStatus === ERROR_TYPES.RATE_LIMIT) {
+
+    if (this.error.clientReason === "fxaTokenUnavailable") {
       this.errorText = {
-        header: "smartwindow-assistant-error-budget-header",
-        body: "smartwindow-assistant-error-budget-body",
+        header: "smartwindow-assistant-error-account-header",
       };
-      // this.actionButton = {
-      //   label: "smartwindow-switch-btn",
-      //   action: this.switchToClassic,
-      // };
-      return;
-    }
-    if (
-      this.errorStatus >= ERROR_TYPES.SERVER_ERROR_MIN &&
-      this.errorStatus <= ERROR_TYPES.SERVER_ERROR_MAX
-    ) {
       this.actionButton = {
-        label: "smartwindow-retry-btn",
-        action: this.retryAssistantMessage.bind(this),
+        label: "smartwindow-signin-btn",
+        action: this.openAccountSignIn.bind(this),
       };
+      return;
+    }
+
+    switch (this.error.error) {
+      case ERROR_CODES.CHAT_MAX_LENGTH:
+        this.errorText = {
+          header: "smartwindow-assistant-error-max-length-header",
+        };
+        this.actionButton = {
+          label: "smartwindow-clear-btn",
+          action: this.openNewChat.bind(this),
+        };
+        break;
+
+      case ERROR_CODES.RATE_LIMIT_EXCEEDED:
+      case ERROR_CODES.UPSTREAM_RATE_LIMIT:
+      case ERROR_CODES.FASTLY_WAF_RATE_LIMIT:
+        this.errorText = {
+          header: "smartwindow-assistant-error-many-requests-header",
+        };
+        this.actionButton = null;
+        break;
+
+      case ERROR_CODES.BUDGET_EXCEEDED:
+        this.errorText = {
+          header: "smartwindow-assistant-error-budget-header",
+          body: "smartwindow-assistant-error-budget-body",
+        };
+        this.actionButton = null;
+        break;
+
+      case ERROR_CODES.MAX_USERS_REACHED:
+        this.errorText = {
+          header: "smartwindow-assistant-error-capacity-header",
+        };
+        this.actionButton = null;
+        break;
+
+      case ERROR_CODES.FASTLY_BLOCKED:
+        this.errorText = {
+          header: "smartwindow-assistant-error-request-blocked-header",
+        };
+        this.actionButton = null;
+        break;
+
+      default:
+        this.setGenericError();
+        if (this.error.httpStatus) {
+          this.errorText = {
+            header: "smartwindow-assistant-error-http-header",
+            args: { status: this.error.httpStatus },
+          };
+        }
+        break;
     }
   }
 
@@ -104,6 +159,9 @@ export class ChatAssistantError extends MozLitElement {
         <h3
           class="chat-assistant-error__header"
           data-l10n-id=${this.errorText?.header}
+          data-l10n-args=${this.errorText?.args
+            ? JSON.stringify(this.errorText.args)
+            : nothing}
         ></h3>
         ${this.errorText?.body
           ? html`<p
@@ -116,6 +174,7 @@ export class ChatAssistantError extends MozLitElement {
               class="chat-assistant-error__button"
               data-l10n-id=${this.actionButton?.label}
               size="small"
+              type="ghost"
               @click=${this.actionButton?.action}
             ></moz-button>`
           : nothing}

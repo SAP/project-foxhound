@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +7,7 @@
 
 #include "nsHttpHeaderArray.h"
 #include "nsHttp.h"
+#include "nsISupportsImpl.h"
 #include "nsString.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/RecursiveMutex.h"
@@ -254,9 +254,31 @@ class nsHttpResponseHead {
   // function calls nsIHttpHeaderVisitor::VisitHeader while under lock.
   mutable RecursiveMutex mRecursiveMutex{"nsHttpResponseHead.mRecursiveMutex"};
   // During VisitHeader we sould not allow call to SetHeader.
-  bool mInVisitHeaders MOZ_GUARDED_BY(mRecursiveMutex){false};
+  // Depth counter so nested visits cannot disarm the outer guard.
+  uint32_t mInVisitHeaders MOZ_GUARDED_BY(mRecursiveMutex){0};
 
   friend struct IPC::ParamTraits<nsHttpResponseHead>;
+};
+
+// Refcounted, immutable wrapper around the HTTP CONNECT response head. It lets
+// the connection, transaction and channel share a single head by pointer
+// instead of deep-copying the header array on every request, which used to be
+// a measurable per-request cost on proxied loads. See bug 2045419.
+class ProxyConnectResponseHead final {
+ public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ProxyConnectResponseHead)
+
+  explicit ProxyConnectResponseHead(const nsHttpResponseHead& aHead)
+      : mHead(aHead) {}
+  explicit ProxyConnectResponseHead(nsHttpResponseHead&& aHead)
+      : mHead(std::move(aHead)) {}
+
+  const nsHttpResponseHead& Head() const { return mHead; }
+
+ private:
+  ~ProxyConnectResponseHead() = default;
+
+  const nsHttpResponseHead mHead;
 };
 
 }  // namespace net

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -34,7 +32,7 @@ UntypedManagedEndpoint::~UntypedManagedEndpoint() {
     mInner->mOtherSide->ActorEventTarget()->Dispatch(NS_NewRunnableFunction(
         "~ManagedEndpoint (Local)",
         [otherSide = mInner->mOtherSide, id = mInner->mId] {
-          if (IProtocol* actor = otherSide->Get(); actor && actor->CanRecv()) {
+          if (IProtocol* actor = otherSide->Get(); actor && actor->CanSend()) {
             MOZ_DIAGNOSTIC_ASSERT(actor->Id() == id, "Wrong Actor?");
             RefPtr<ActorLifecycleProxy> strongProxy(actor->GetLifecycleProxy());
             strongProxy->Get()->OnMessageReceived(

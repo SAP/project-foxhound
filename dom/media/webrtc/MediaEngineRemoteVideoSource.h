@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,7 +26,7 @@ enum class VideoResizeModeEnum : uint8_t;
 // Fitness distance is defined in
 // https://w3c.github.io/mediacapture-main/getusermedia.html#dfn-selectsettings
 
-// In contrast, feasibility distance — used in the implementatioon of
+// In contrast, feasibility distance — used in the implementation of
 // crop_and_scale — effectively rounds width and height up to the nearest
 // native width and height before calculating distance (sorta).
 //

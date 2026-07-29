@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -142,14 +140,6 @@ class CodeGenerator final : public CodeGeneratorSpecific {
                              Register numElements, Register typeDefData,
                              Register allocSite, Register output,
                              const wasm::TrapSiteDesc& trapSiteDesc);
-
-#ifdef ENABLE_WASM_JSPI
-  void callWasmUpdateSuspenderState(wasm::UpdateSuspenderStateAction kind,
-                                    Register suspender, Register temp);
-  // Stack switching trampoline requires two arguments (suspender and data) to
-  // be passed. The function prepares stack and registers according Wasm ABI.
-  void prepareWasmStackSwitchTrampolineCall(Register suspender, Register data);
-#endif
 
   void setCompilationTime(mozilla::TimeDuration duration) {
     compileTime_ = duration;

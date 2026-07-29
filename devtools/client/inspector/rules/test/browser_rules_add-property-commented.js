@@ -14,7 +14,7 @@ add_task(async function () {
   info("Test creating a new set of commented and uncommented properties");
 
   info("Focusing a new property name in the rule-view");
-  const ruleEditor = getRuleViewRuleEditor(view, 0);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 0);
   const editor = await focusEditableField(view, ruleEditor.closeBrace);
   is(
     inplaceEditor(ruleEditor.newPropSpan),

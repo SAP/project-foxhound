@@ -797,3 +797,38 @@ var ns = ChromeUtils.importESModule("resource://test/es6module_top_level_await.j
   Assert.equal(window.eval(`ns2.foo == ns.foo;`), true);
 });
 */
+
+add_task(async function testErrorTwice() {
+  const uri = "http://example.com/";
+  const window = createContentWindow(uri);
+  const sandboxOpts = {
+    sandboxPrototype: window,
+    wantGlobalProperties: ["ChromeUtils"],
+  };
+  const sb = new Cu.Sandbox(uri, sandboxOpts);
+
+  Cu.evalInSandbox(`
+globalThis.caught = 0;
+globalThis.counter = 0;
+try {
+  // This will execute the top-level script, and then throws.
+  // The counter will be incremented.
+  ChromeUtils.importESModule("resource://test/error_twice.mjs", {
+    global: "current",
+  });
+} catch (e) {
+  globalThis.caught++;
+}
+try {
+  // This shouldn't re-execute the top-level script.
+  ChromeUtils.importESModule("resource://test/error_twice.mjs", {
+    global: "current",
+  });
+} catch (e) {
+  globalThis.caught++;
+}
+`, sb);
+
+  Assert.equal(Cu.evalInSandbox(`globalThis.caught;`, sb), 2);
+  Assert.equal(Cu.evalInSandbox(`globalThis.counter;`, sb), 1);
+}).only();

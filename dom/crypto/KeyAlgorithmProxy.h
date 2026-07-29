@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -35,20 +33,18 @@ struct RsaHashedKeyAlgorithmStorage {
   uint16_t mModulusLength;
   CryptoBuffer mPublicExponent;
 
-  bool ToKeyAlgorithm(JSContext* aCx, RsaHashedKeyAlgorithm& aRsa,
+  void ToKeyAlgorithm(JSContext* aCx, RsaHashedKeyAlgorithm& aRsa,
                       ErrorResult& aError) const {
     JS::Rooted<JSObject*> exponent(aCx,
                                    mPublicExponent.ToUint8Array(aCx, aError));
     if (aError.Failed()) {
-      return false;
+      return;
     }
 
     aRsa.mName = mName;
     aRsa.mModulusLength = mModulusLength;
     aRsa.mHash.mName = mHash.mName;
     aRsa.mPublicExponent.Init(exponent);
-
-    return true;
   }
 };
 

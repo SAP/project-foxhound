@@ -386,6 +386,20 @@ class MockMerinoServer {
     lazy.UrlbarPrefs.set("merino.endpointURL", this.#url.toString());
     lazy.UrlbarPrefs.set("merino.ohttpConfigURL", "");
     lazy.UrlbarPrefs.set("merino.ohttpRelayURL", "");
+    this._originalWeatherReportEndpointURL = lazy.UrlbarPrefs.get(
+      "merino.weather.reportEndpointURL"
+    );
+    lazy.UrlbarPrefs.set(
+      "merino.weather.reportEndpointURL",
+      this.#url.toString()
+    );
+    this._originalWeatherHourlyEndpointURL = lazy.UrlbarPrefs.get(
+      "merino.weather.hourlyEndpointURL"
+    );
+    lazy.UrlbarPrefs.set(
+      "merino.weather.hourlyEndpointURL",
+      this.#url.toString()
+    );
 
     this.registerCleanupFunction?.(() => this.stop());
 
@@ -425,6 +439,14 @@ class MockMerinoServer {
     await this.#httpServer.stop();
     this.#url = null;
     lazy.UrlbarPrefs.set("merino.endpointURL", this._originalEndpointURL);
+    lazy.UrlbarPrefs.set(
+      "merino.weather.reportEndpointURL",
+      this._originalWeatherReportEndpointURL
+    );
+    lazy.UrlbarPrefs.set(
+      "merino.weather.hourlyEndpointURL",
+      this._originalWeatherHourlyEndpointURL
+    );
 
     this.info?.("MockMerinoServer is now stopped");
   }

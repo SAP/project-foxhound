@@ -26,6 +26,9 @@ export function registerError(config) {
   if (!config.id) {
     throw new Error("Error configuration must have an id");
   }
+  if (ERROR_REGISTRY.has(config.id)) {
+    throw new Error(`Duplicate error registration: "${config.id}"`);
+  }
   ERROR_REGISTRY.set(config.id, Object.freeze(config));
 }
 

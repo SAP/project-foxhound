@@ -68,7 +68,7 @@ export default class VPNCard {
           vpnCard.classList.add("subscribed");
           document.l10n.setAttributes(
             vpnCard.querySelector(".card-title"),
-            "vpn-title-subscribed"
+            "protections-vpn-title-subscribed"
           );
 
           // hide the promo banner if the user is already subscribed to vpn

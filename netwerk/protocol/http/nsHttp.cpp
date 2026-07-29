@@ -1,6 +1,3 @@
-
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=4 sw=2 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -282,16 +279,6 @@ bool ValidationRequired(bool isForcedValid,
     *performBackgroundRevalidation = false;
   }
 
-  // Check isForcedValid to see if it is possible to skip validation.
-  // Don't skip validation if we have serious reason to believe that this
-  // content is invalid (it's expired).
-  // See netwerk/cache2/nsICacheEntry.idl for details
-  if (isForcedValid && (!cachedResponseHead->ExpiresInPast() ||
-                        !cachedResponseHead->MustValidateIfExpired())) {
-    LOG(("NOT validating based on isForcedValid being true.\n"));
-    return false;
-  }
-
   // If the LOAD_FROM_CACHE flag is set, any cached data can simply be used
   if (loadFlags & nsIRequest::LOAD_FROM_CACHE || allowStaleCacheContent) {
     LOG(("NOT validating based on LOAD_FROM_CACHE load flag\n"));
@@ -305,6 +292,16 @@ bool ValidationRequired(bool isForcedValid,
       !isImmutable) {
     LOG(("Validating based on VALIDATE_ALWAYS load flag\n"));
     return true;
+  }
+
+  // Check isForcedValid to see if it is possible to skip validation.
+  // Don't skip validation if we have serious reason to believe that this
+  // content is invalid (it's expired).
+  // See netwerk/cache2/nsICacheEntry.idl for details
+  if (isForcedValid && (!cachedResponseHead->ExpiresInPast() ||
+                        !cachedResponseHead->MustValidateIfExpired())) {
+    LOG(("NOT validating based on isForcedValid being true.\n"));
+    return false;
   }
 
   // Even if the VALIDATE_NEVER flag is set, there are still some cases in
@@ -1001,15 +998,17 @@ SupportedAlpnRank IsAlpnSupported(const nsACString& aAlpn) {
   return SupportedAlpnRank::NOT_SUPPORTED;
 }
 
-// NSS Errors which *may* have been triggered by the use of 0-RTT in the
-// presence of badly behaving middleboxes. We may re-attempt the connection
-// without early data.
+// NSS errors that may be triggered by early data or PSK session resumption
+// (e.g. badly behaving middleboxes, or a server whose session ticket
+// encryption key has rotated). We re-attempt the connection without early
+// data; MaybeRemoveSSLToken evicts the stale token so it is not re-offered.
 bool PossibleZeroRTTRetryError(nsresult aReason) {
   return (aReason ==
           psm::GetXPCOMFromNSSError(SSL_ERROR_PROTOCOL_VERSION_ALERT)) ||
          (aReason == psm::GetXPCOMFromNSSError(SSL_ERROR_BAD_MAC_ALERT)) ||
          (aReason ==
-          psm::GetXPCOMFromNSSError(SSL_ERROR_HANDSHAKE_UNEXPECTED_ALERT));
+          psm::GetXPCOMFromNSSError(SSL_ERROR_HANDSHAKE_UNEXPECTED_ALERT)) ||
+         (aReason == psm::GetXPCOMFromNSSError(SSL_ERROR_DECRYPT_ERROR_ALERT));
 }
 
 nsresult MakeOriginURL(const nsACString& origin, nsCOMPtr<nsIURI>& url) {
@@ -1165,18 +1164,19 @@ nsLiteralCString HttpVersionToTelemetryLabel(HttpVersion version) {
   return "unknown"_ns;
 }
 
-ProxyDNSStrategy GetProxyDNSStrategyHelper(const char* aType, uint32_t aFlag) {
+nsIHttpChannelInternal::ProxyDNSStrategy GetProxyDNSStrategyHelper(
+    const char* aType, uint32_t aFlag) {
   if (!aType) {
-    return ProxyDNSStrategy::ORIGIN;
+    return nsIHttpChannelInternal::PROXY_DNS_STRATEGY_ORIGIN;
   }
 
   if (!(aFlag & nsIProxyInfo::TRANSPARENT_PROXY_RESOLVES_HOST)) {
     if (aType == kProxyType_SOCKS) {
-      return ProxyDNSStrategy::ORIGIN;
+      return nsIHttpChannelInternal::PROXY_DNS_STRATEGY_ORIGIN;
     }
   }
 
-  return ProxyDNSStrategy::PROXY;
+  return nsIHttpChannelInternal::PROXY_DNS_STRATEGY_PROXY;
 }
 
 }  // namespace net

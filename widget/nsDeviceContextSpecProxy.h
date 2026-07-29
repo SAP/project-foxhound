@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -40,7 +38,8 @@ class nsDeviceContextSpecProxy final : public nsIDeviceContextSpec {
 
   NS_IMETHOD BeginDocument(const nsAString& aTitle,
                            const nsAString& aPrintToFileName,
-                           int32_t aStartPage, int32_t aEndPage) final;
+                           uint64_t aBrowsingContextId, int32_t aStartPage,
+                           int32_t aEndPage) final;
 
   RefPtr<mozilla::gfx::PrintEndDocumentPromise> EndDocument() final;
 

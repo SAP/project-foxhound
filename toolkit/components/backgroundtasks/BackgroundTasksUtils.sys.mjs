@@ -1,5 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -71,7 +70,8 @@ export var BackgroundTasksUtils = {
         // Sadly this writes to `profiles.ini`, but there's little to be done.
         this._defaultProfile = lazy.ProfileService.createProfile(
           tmpd,
-          `MOZ_BACKGROUNDTASKS_DEFAULT_PROFILE_PATH-${Date.now()}`
+          `MOZ_BACKGROUNDTASKS_DEFAULT_PROFILE_PATH-${Date.now()}`,
+          "backgroundtasks"
         );
       } else if (noDefaultProfile) {
         lazy.log.info(`getDefaultProfile: setting default profile to null`);
@@ -335,9 +335,8 @@ export var BackgroundTasksUtils = {
           // written, that's not the norm.
           recipe = recipe.data;
         }
-        let branch = recipe.branches.find(b => b.slug == branchSlug);
 
-        await lazy.ExperimentAPI.manager.forceEnroll(recipe, branch);
+        lazy.ExperimentAPI.manager.forceEnroll(recipe, branchSlug);
         lazy.log.info(`Forced enrollment into: ${path}, branch: ${branchSlug}`);
       }
     }

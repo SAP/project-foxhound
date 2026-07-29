@@ -49,6 +49,125 @@ browser.engagement:
       - BASELINE_PING
       - METRIC_ON_EVENTS_LIFETIME
 
+  active_ticks_non_synthesized:
+    type: counter
+    description: |
+      The number of five-second intervals ('ticks') the user was considered
+      'active', counting only non-synthesized events.
+
+      This is a corrected version of `active_ticks` that excludes synthesized
+      mouse and pointer events (for example, the synthesized pointer move that
+      is dispatched when content shifts under a stationary cursor during
+      scrolling, reflow or content insertion). Such synthesized events inflated
+      `active_ticks` starting in Firefox 140. Recorded side-by-side with
+      `active_ticks` for data continuity while the correction is evaluated.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2050081
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2050081
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - csadilek@mozilla.com
+      - tlong@mozilla.com
+    expires: 161
+    send_in_pings:
+      - baseline
+      - metrics
+      - usage-reporting
+      - events
+    no_lint:
+      - BASELINE_PING
+      - METRIC_ON_EVENTS_LIFETIME
+
+  consecutive_active_ticks:
+    type: labeled_custom_distribution
+    range_min: 1
+    range_max: 2000
+    bucket_count: 50
+    histogram_type: exponential
+    description: |
+      Distribution of the number of consecutive five-second intervals ('ticks')
+      the user was considered 'active' before transitioning to inactive.
+
+      Each sample is the length of one uninterrupted run of active ticks,
+      recorded when the run ends. This complements the `active_ticks` counters
+      (which only track the total) by capturing how long users stay
+      continuously engaged, and helps inform whether additional active-tick
+      intervals should be introduced in the future.
+
+      The `active_ticks` label mirrors the legacy `active_ticks` counter,
+      counting all events. The `active_ticks_non_synthesized` label mirrors
+      `active_ticks_non_synthesized`, excluding synthesized mouse and pointer
+      events. The two labels are recorded side-by-side for easier analysis.
+
+      A run still in progress when a ping is submitted is not recorded in that
+      ping; it is recorded in a later ping once the run ends.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2050093
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2050093
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - csadilek@mozilla.com
+      - tlong@mozilla.com
+    expires: 161
+    labels:
+      - active_ticks
+      - active_ticks_non_synthesized
+    send_in_pings:
+      - baseline
+      - metrics
+      - usage-reporting
+      - events
+    no_lint:
+      - BASELINE_PING
+      - METRIC_ON_EVENTS_LIFETIME
+
+  inactive_period_duration:
+    type: labeled_timing_distribution
+    time_unit: second
+    description: |
+      Distribution of the duration of periods during which the user was
+      considered 'inactive', measured from when the user goes inactive until
+      the next activity resumes.
+
+      Combined with `consecutive_active_ticks`, this helps reason about user
+      interaction patterns more holistically and informs whether additional
+      active-tick intervals (e.g. 20s or 60s) should be introduced in the
+      future.
+
+      The `active_ticks` label measures inactive periods for the legacy stream
+      (all events). The `active_ticks_non_synthesized` label measures them for
+      the corrected stream, which excludes synthesized mouse and pointer
+      events. The two labels are recorded side-by-side for easier analysis.
+
+      An inactive period still in progress when a ping is submitted is not
+      recorded in that ping; it is recorded in a later ping once activity
+      resumes.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2050099
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2050099
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - csadilek@mozilla.com
+      - tlong@mozilla.com
+    expires: 161
+    labels:
+      - active_ticks
+      - active_ticks_non_synthesized
+    send_in_pings:
+      - baseline
+      - metrics
+      - usage-reporting
+      - events
+    no_lint:
+      - BASELINE_PING
+      - METRIC_ON_EVENTS_LIFETIME
+
   uri_count:
     type: counter
     description: |
@@ -125,6 +244,7 @@ browser.engagement:
       - rtestard@mozilla.com
     send_in_pings:
       - metrics
+      - new-profile
     expires: never
     telemetry_mirror: BROWSER_ENGAGEMENT_PROFILE_COUNT
 
@@ -400,7 +520,6 @@ browser.engagement:
       - beth@mozilla.com
       - perf-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: LOADED_TAB_COUNT
 
 installation.first_seen:
   failure_reason:
@@ -415,6 +534,9 @@ installation.first_seen:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1811374
     data_sensitivity:
       - technical
+    send_in_pings:
+      - metrics
+      - new-profile
     notification_emails:
       - rtestard@mozilla.com
       - application-update-telemetry-alerts@mozilla.com
@@ -432,6 +554,9 @@ installation.first_seen:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1811374
     data_sensitivity:
       - technical
+    send_in_pings:
+      - metrics
+      - new-profile
     notification_emails:
       - rtestard@mozilla.com
       - application-update-telemetry-alerts@mozilla.com
@@ -449,6 +574,9 @@ installation.first_seen:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1811374
     data_sensitivity:
       - technical
+    send_in_pings:
+      - metrics
+      - new-profile
     notification_emails:
       - rtestard@mozilla.com
       - application-update-telemetry-alerts@mozilla.com
@@ -465,6 +593,9 @@ installation.first_seen:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1811374
     data_sensitivity:
       - technical
+    send_in_pings:
+      - metrics
+      - new-profile
     notification_emails:
       - rtestard@mozilla.com
       - application-update-telemetry-alerts@mozilla.com
@@ -481,6 +612,9 @@ installation.first_seen:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1811374
     data_sensitivity:
       - technical
+    send_in_pings:
+      - metrics
+      - new-profile
     notification_emails:
       - rtestard@mozilla.com
       - application-update-telemetry-alerts@mozilla.com
@@ -497,6 +631,9 @@ installation.first_seen:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1811374
     data_sensitivity:
       - technical
+    send_in_pings:
+      - metrics
+      - new-profile
     notification_emails:
       - rtestard@mozilla.com
       - application-update-telemetry-alerts@mozilla.com
@@ -513,6 +650,9 @@ installation.first_seen:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1811374
     data_sensitivity:
       - technical
+    send_in_pings:
+      - metrics
+      - new-profile
     notification_emails:
       - rtestard@mozilla.com
       - application-update-telemetry-alerts@mozilla.com
@@ -529,6 +669,9 @@ installation.first_seen:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1811374
     data_sensitivity:
       - technical
+    send_in_pings:
+      - metrics
+      - new-profile
     notification_emails:
       - rtestard@mozilla.com
       - application-update-telemetry-alerts@mozilla.com
@@ -546,6 +689,9 @@ installation.first_seen:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1811374
     data_sensitivity:
       - technical
+    send_in_pings:
+      - metrics
+      - new-profile
     notification_emails:
       - rtestard@mozilla.com
       - application-update-telemetry-alerts@mozilla.com
@@ -563,6 +709,9 @@ installation.first_seen:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1811374
     data_sensitivity:
       - technical
+    send_in_pings:
+      - metrics
+      - new-profile
     notification_emails:
       - rtestard@mozilla.com
       - application-update-telemetry-alerts@mozilla.com
@@ -580,35 +729,14 @@ installation.first_seen:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1811374
     data_sensitivity:
       - technical
+    send_in_pings:
+      - metrics
+      - new-profile
     notification_emails:
       - rtestard@mozilla.com
       - application-update-telemetry-alerts@mozilla.com
     expires: never
     telemetry_mirror: INSTALLATION_FIRSTSEEN_DEFAULT_PATH
-
-performance.interaction:
-  tab_switch_composite:
-    type: timing_distribution
-    time_unit: millisecond
-    telemetry_mirror: FX_TAB_SWITCH_COMPOSITE_E10S_MS
-    description: >
-      Time between tab selection and first composite of the tab content onto the
-      screen.
-      (Migrated from the geckoview metric of the same name.)
-    metadata:
-      tags:
-        - 'Firefox :: Tabbed Browser'
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1481704
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1529352
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1580077
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1877842
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1580077#c10
-    notification_emails:
-      - mconley@mozilla.com
-      - perf-telemetry-alerts@mozilla.com
-    expires: never
 
 browser.usage:
   interaction:
@@ -1068,11 +1196,18 @@ browser.ui.interaction:
       scalar browser.ui.interaction.tabs_context.
     bugs:
       - https://bugzil.la/1620358
+      - https://bugzil.la/2020865
+      - https://bugzil.la/2032598
+      - https://bugzil.la/2032602
     data_reviews:
       - https://bugzil.la/1620358
+      - https://bugzil.la/2020865
+      - https://bugzil.la/2032598
+      - https://bugzil.la/2032602
     notification_emails:
       - shong@mozilla.com
       - dtownsend@mozilla.com
+      - jswinarton@mozilla.com
     expires: never
     telemetry_mirror: BROWSER_UI_INTERACTION_TABS_CONTEXT
 
@@ -1342,6 +1477,122 @@ browser.ui.interaction:
       - sopsal@mozilla.com
     expires: never
 
+  preferences_pane_about:
+    type: labeled_counter
+    description: >
+      Records the items interacted with in the About Firefox section
+      of preferences. See
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
+    bugs:
+      - https://bugzil.la/1990885
+    data_reviews:
+      - https://bugzil.la/1990885
+    notification_emails:
+      - mstriemer@mozilla.com
+      - akulyk@mozilla.com
+    expires: never
+
+  preferences_pane_downloads:
+    type: labeled_counter
+    description: >
+      Records the items interacted with in the Downloads section
+      of preferences. See
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
+    bugs:
+      - https://bugzil.la/2001154
+    data_reviews:
+      - https://bugzil.la/2001154
+    notification_emails:
+      - mstriemer@mozilla.com
+      - mkennedy@mozilla.com
+    expires: never
+
+  preferences_pane_accessibility:
+    type: labeled_counter
+    description: >
+      Records the items interacted with in the Accessibility section
+      of preferences. See
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
+    bugs:
+      - https://bugzil.la/1968116
+    data_reviews:
+      - https://bugzil.la/1968116
+    notification_emails:
+      - mstriemer@mozilla.com
+      - tgiles@mozilla.com
+    expires: never
+
+  preferences_pane_appearance:
+    type: labeled_counter
+    description: >
+      Records the items interacted with in the Appearance section
+      of preferences. See
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
+    bugs:
+      - https://bugzil.la/1968113
+    data_reviews:
+      - https://bugzil.la/1968113
+    notification_emails:
+      - mstriemer@mozilla.com
+      - tgiles@mozilla.com
+    expires: never
+
+  preferences_pane_languages:
+    type: labeled_counter
+    description: >
+      Records the items interacted with in the Languages section
+      of preferences. See
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
+    bugs:
+      - https://bugzil.la/1972081
+    data_reviews:
+      - https://bugzil.la/1972081
+    notification_emails:
+      - mstriemer@mozilla.com
+    expires: never
+
+  preferences_pane_tabs_browsing:
+    type: labeled_counter
+    description: >
+      Records the items interacted with in the Tabs and browsing section
+      of preferences. See
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
+    bugs:
+      - https://bugzil.la/1968114
+    data_reviews:
+      - https://bugzil.la/1968114
+    notification_emails:
+      - hjones@mozilla.com
+    expires: never
+
+  preferences_pane_permissions_data:
+    type: labeled_counter
+    description: >
+      Records the items interacted with in the Permissions and data section
+      of preferences. See
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
+    bugs:
+      - https://bugzil.la/1968118
+    data_reviews:
+      - https://bugzil.la/1968118
+    notification_emails:
+      - hjones@mozilla.com
+    expires: never
+
+  preferences_pane_passwords_autofill:
+    type: labeled_counter
+    description: >
+      Records the items interacted with in the Passwords and autofill section
+      of preferences. See
+      https://firefox-source-docs.mozilla.org/browser/BrowserUsageTelemetry.html
+    bugs:
+      - https://bugzil.la/2041430
+    data_reviews:
+      - https://bugzil.la/2041430
+    notification_emails:
+      - hjones@mozilla.com
+    expires: never
+
   preferences_pane_experimental:
     type: labeled_counter
     description: >
@@ -1418,7 +1669,6 @@ timestamps:
       - mconley@mozilla.com
     expires: never
     unit: ms
-    telemetry_mirror: TIMESTAMPS_ABOUT_HOME_TOPSITES_FIRST_PAINT
 
 browser.sanitizer:
   total:
@@ -1803,4 +2053,53 @@ web_notification_permission:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1998053
     notification_emails:
       - jhan@mozilla.com
+    expires: never
+
+privacy.reduced_page_protection:
+  banner_shown:
+    type: counter
+    description: >
+      Counts how many times the reduced page protection infobar was shown
+      to the user in a private browsing window.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1994687
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1994687
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - manuel@mozilla.com
+      - privacy-team@mozilla.org
+    expires: never
+
+  reload_clicked:
+    type: counter
+    description: >
+      Counts how many times the user clicked the "Reload" button on the
+      reduced page protection infobar to reload with reduced protections.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1994687
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1994687
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - manuel@mozilla.com
+      - privacy-team@mozilla.org
+    expires: never
+
+  disable_clicked:
+    type: counter
+    description: >
+      Counts how many times the user clicked the "Don't show again" button
+      on the reduced page protection infobar to disable it permanently.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1994687
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1994687
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - manuel@mozilla.com
+      - privacy-team@mozilla.org
     expires: never

@@ -3,8 +3,13 @@
 
 "use strict";
 
-const { AIWindowUI } = ChromeUtils.importESModule(
-  "moz-src:///browser/components/aiwindow/ui/modules/AIWindowUI.sys.mjs"
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
+);
+// AI chat content loads Fluent strings asynchronously, which may not complete
+// before the test finishes. This is expected and doesn't affect test behavior.
+PromiseTestUtils.allowMatchingRejectionsGlobally(
+  /Missing message.*smartwindow-messages-document-title/
 );
 
 add_task(async function test_aiwindowui_constants() {
@@ -54,8 +59,8 @@ add_task(async function test_aiwindowui_sidebar_operations() {
 
     // Test closing
     AIWindowUI.closeSidebar(window);
-    is(box.hidden, true, "Box should be hidden after closing");
-    is(splitter.hidden, true, "Splitter should be hidden after closing");
+    is(box.collapsed, true, "Box should be hidden after closing");
+    is(splitter.collapsed, true, "Splitter should be hidden after closing");
     is(
       AIWindowUI.isSidebarOpen(window),
       false,
@@ -65,9 +70,9 @@ add_task(async function test_aiwindowui_sidebar_operations() {
     // Test toggling from closed to open
     const toggleResult1 = AIWindowUI.toggleSidebar(window);
     is(toggleResult1, true, "Toggle should return true when opening");
-    is(box.hidden, false, "Box should be visible after toggling open");
+    is(box.collapsed, false, "Box should be visible after toggling open");
     is(
-      splitter.hidden,
+      splitter.collapsed,
       false,
       "Splitter should be visible after toggling open"
     );
@@ -80,9 +85,9 @@ add_task(async function test_aiwindowui_sidebar_operations() {
     // Test toggling from open to closed
     const toggleResult2 = AIWindowUI.toggleSidebar(window);
     is(toggleResult2, false, "Toggle should return false when closing");
-    is(box.hidden, true, "Box should be hidden after toggling closed");
+    is(box.collapsed, true, "Box should be hidden after toggling closed");
     is(
-      splitter.hidden,
+      splitter.collapsed,
       true,
       "Splitter should be hidden after toggling closed"
     );
@@ -93,8 +98,32 @@ add_task(async function test_aiwindowui_sidebar_operations() {
     );
   } finally {
     // Restore initial state
-    box.hidden = initialBoxHidden;
-    splitter.hidden = initialSplitterHidden;
+    box.collapsed = initialBoxHidden;
+    splitter.collapsed = initialSplitterHidden;
+  }
+});
+
+// Verify sidebar opens for returning user
+add_task(async function test_returning_user_sidebar_opens() {
+  const win = await openAIWindow();
+
+  try {
+    BrowserTestUtils.startLoadingURIString(
+      win.gBrowser.selectedTab.linkedBrowser,
+      "https://example.com/"
+    );
+    await BrowserTestUtils.browserLoaded(
+      win.gBrowser.selectedTab.linkedBrowser
+    );
+
+    await TestUtils.waitForCondition(
+      () => AIWindowUI.isSidebarOpen(win),
+      "Sidebar should auto-open for returning user"
+    );
+    Assert.ok(AIWindowUI.isSidebarOpen(win), "Sidebar should be open");
+  } finally {
+    win.document.getElementById(AIWindowUI.BROWSER_ID)?.remove();
+    await BrowserTestUtils.closeWindow(win);
   }
 });
 

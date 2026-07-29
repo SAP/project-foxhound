@@ -42,15 +42,6 @@ android {
         }
     }
 
-    sourceSets {
-        main {
-            java {
-                // Generated files are output in the objdir
-                srcDir "${gradle.mozconfig.topobjdir}/mobile/android/android-components/components/lib/crash/src/main/java"
-            }
-        }
-    }
-
     ksp {
         arg("room.schemaLocation", "$projectDir/schemas".toString())
     }
@@ -61,6 +52,16 @@ android {
     }
 
     namespace = 'mozilla.components.lib.crash'
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        // CrashReport.kt and friends are generated into the objdir by the build system (not a
+        // Gradle task), so register the directory as a static source.
+        variant.sources.java.addStaticSourceDirectory(
+            "${gradle.mozconfig.topobjdir}/mobile/android/android-components/components/lib/crash/src/main/java".toString()
+        )
+    }
 }
 
 dependencies {
@@ -86,14 +87,18 @@ dependencies {
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
     testImplementation libs.androidx.work.testing
+    testImplementation libs.kotlin.test
     testImplementation libs.kotlinx.coroutines.test
     testImplementation libs.mockwebserver
     testImplementation libs.mozilla.glean
     testImplementation libs.mozilla.glean.forUnitTests
+    testImplementation libs.okhttp
+    testImplementation libs.okio
     testImplementation libs.robolectric
 
     androidTestImplementation project(':components:support-android-test')
     androidTestImplementation libs.androidx.test.junit
+    androidTestImplementation libs.kotlin.test
     androidTestImplementation libs.mozilla.glean
 
     // Depend on browser-engine-gecko to get the libcrashtools.so binary for tests. We don't use jniLibs because it

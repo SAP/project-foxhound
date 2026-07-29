@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* nsJARInputStream.cpp
  *
  * This Source Code Form is subject to the terms of the Mozilla Public

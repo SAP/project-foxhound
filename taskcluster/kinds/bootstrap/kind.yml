@@ -11,9 +11,6 @@ transforms:
     - gecko_taskgraph.transforms.bootstrap:transforms
     - gecko_taskgraph.transforms.task:transforms
 
-task-defaults:
-    run-on-repo-type: [hg]
-
 tasks:
     debian11:
         image: debian:bullseye

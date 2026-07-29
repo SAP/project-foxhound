@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -394,7 +392,8 @@ static_assert(
         nsIContentPolicy::TYPE_JSON == 62 &&
         nsIContentPolicy::TYPE_INTERNAL_JSON_PRELOAD == 63 &&
         nsIContentPolicy::TYPE_INTERNAL_IMAGE_NOTIFICATION == 64 &&
-        nsIContentPolicy::TYPE_END == 65,
+        nsIContentPolicy::TYPE_TEXT == 65 &&
+        nsIContentPolicy::TYPE_INTERNAL_TEXT_PRELOAD == 66,
     "nsContentPolicyType values are as expected");
 
 namespace {
@@ -1944,7 +1943,8 @@ nsresult InsertEntry(mozIStorageConnection& aConn, CacheId aCacheId,
                        ") VALUES (:url, :entry_id)"_ns));
 
     for (const auto& responseUrl : aResponse.urlList()) {
-      QM_TRY(MOZ_TO_RESULT(state->BindUTF8StringByName("url"_ns, responseUrl)));
+      QM_TRY(MOZ_TO_RESULT(state->BindUTF8StringByName(
+          "url"_ns, responseUrl->GetSpecOrDefault())));
       QM_TRY(MOZ_TO_RESULT(state->BindInt32ByName("entry_id"_ns, entryId)));
       QM_TRY(MOZ_TO_RESULT(state->Execute()));
     }
@@ -2132,22 +2132,34 @@ Result<SavedResponse, nsresult> ReadResponse(mozIStorageConnection& aConn,
   }
 
   {
+    // NOTE: We explicitly filter out empty URLs from the response_url_list
+    // table here. While recent versions should never add these to the table,
+    // the migration to version 21 is a bit naive, and would directly copy
+    // response_url into the table, even if it was "". We want to treat this
+    // case as an empty response_url_list.
     QM_TRY_INSPECT(const auto& state,
                    MOZ_TO_RESULT_INVOKE_MEMBER_TYPED(
                        nsCOMPtr<mozIStorageStatement>, aConn, CreateStatement,
                        "SELECT "
                        "url "
                        "FROM response_url_list "
-                       "WHERE entry_id=:entry_id;"_ns));
+                       "WHERE entry_id=:entry_id AND length(url) > 0;"_ns));
 
     QM_TRY(MOZ_TO_RESULT(state->BindInt32ByName("entry_id"_ns, aEntryId)));
 
-    QM_TRY_UNWRAP(savedResponse.mValue.urlList(),
-                  quota::CollectElementsWhileHasResult(
-                      *state, [](auto& stmt) -> Result<nsCString, nsresult> {
-                        QM_TRY_RETURN(MOZ_TO_RESULT_INVOKE_MEMBER_TYPED(
-                            nsCString, stmt, GetUTF8String, 0));
-                      }));
+    QM_TRY_UNWRAP(
+        savedResponse.mValue.urlList(),
+        quota::CollectElementsWhileHasResult(
+            *state,
+            [](auto& stmt) -> Result<NotNull<RefPtr<nsIURI>>, nsresult> {
+              QM_TRY_INSPECT(const auto& spec,
+                             MOZ_TO_RESULT_INVOKE_MEMBER_TYPED(
+                                 nsCString, stmt, GetUTF8String, 0));
+
+              RefPtr<nsIURI> url;
+              QM_TRY(MOZ_TO_RESULT(NS_NewURI(getter_AddRefs(url), spec)));
+              return WrapNotNull(url);
+            }));
   }
 
   return savedResponse;

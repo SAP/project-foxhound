@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -34,7 +32,7 @@ NS_IMPL_RELEASE_INHERITED(Response, FetchBody<Response>)
 NS_IMPL_CYCLE_COLLECTION_CLASS(Response)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(Response, FetchBody<Response>)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mOwner)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mGlobal)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mHeaders)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSignalImpl)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mFetchStreamReader)
@@ -42,7 +40,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(Response, FetchBody<Response>)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(Response, FetchBody<Response>)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mOwner)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mGlobal)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mHeaders)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSignalImpl)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFetchStreamReader)
@@ -331,18 +329,17 @@ already_AddRefed<Response> Response::CreateFromJson(const GlobalObject& aGlobal,
                                                     const ResponseInit& aInit,
                                                     ErrorResult& aRv) {
   aRv.MightThrowJSException();
-  nsAutoString serializedValue;
-  if (!nsContentUtils::StringifyJSON(aCx, aData, serializedValue,
+  Nullable<fetch::ResponseBodyInit> body;
+  auto& result = body.SetValue().SetAsUSVString();
+  if (!nsContentUtils::StringifyJSON(aCx, aData, result,
                                      UndefinedIsVoidString)) {
     aRv.StealExceptionFromJSContext(aCx);
     return nullptr;
   }
-  if (serializedValue.IsVoid()) {
+  if (result.IsVoid()) {
     aRv.ThrowTypeError<MSG_JSON_INVALID_VALUE>();
     return nullptr;
   }
-  Nullable<fetch::ResponseBodyInit> body;
-  body.SetValue().SetAsUSVString().ShareOrDependUpon(serializedValue);
   return CreateAndInitializeAResponse(aGlobal, body, "application/json"_ns,
                                       aInit, aRv);
 }
@@ -387,7 +384,7 @@ already_AddRefed<Response> Response::Clone(JSContext* aCx, ErrorResult& aRv) {
                                     : InternalResponse::eCloneInputStream);
 
   RefPtr<Response> response =
-      new Response(mOwner, ir.clonePtr(), GetSignalImpl());
+      new Response(mGlobal, ir.clonePtr(), GetSignalImpl());
 
   if (body) {
     // Maybe we have a body, but we receive null from MaybeTeeReadableStreamBody
@@ -397,6 +394,12 @@ already_AddRefed<Response> Response::Clone(JSContext* aCx, ErrorResult& aRv) {
     response->SetReadableStreamBody(aCx, body);
     response->mFetchStreamReader = streamReader;
     ir->SetBody(inputStream, InternalResponse::UNKNOWN_BODY_SIZE);
+  } else {
+    // We didn't tee: an existing, unread native ReadableStream keeps reflecting
+    // this response's body. InternalResponse::Clone() may have replaced the
+    // underlying input stream (a non-cloneable body is now consumed by the
+    // cloning copy), so repoint the reflector at the current stream.
+    MaybeRebindReadableStreamBody();
   }
 
   return response.forget();
@@ -428,7 +431,7 @@ already_AddRefed<Response> Response::CloneUnfiltered(JSContext* aCx,
                                     : InternalResponse::eCloneInputStream);
 
   SafeRefPtr<InternalResponse> ir = clone->Unfiltered();
-  RefPtr<Response> ref = new Response(mOwner, ir.clonePtr(), GetSignalImpl());
+  RefPtr<Response> ref = new Response(mGlobal, ir.clonePtr(), GetSignalImpl());
 
   if (body) {
     // Maybe we have a body, but we receive null from MaybeTeeReadableStreamBody
@@ -454,7 +457,7 @@ SafeRefPtr<InternalResponse> Response::GetInternalResponse() const {
 
 Headers* Response::Headers_() {
   if (!mHeaders) {
-    mHeaders = new Headers(mOwner, mInternalResponse->Headers());
+    mHeaders = new Headers(mGlobal, mInternalResponse->Headers());
   }
 
   return mHeaders;

@@ -142,7 +142,7 @@ add_task(async function test_bug1749957_bug1750056() {
   }).QueryInterface(Ci.nsIHttpChannel);
 
   // Similar to viaduct-necko implementation:
-  // https://searchfox.org/mozilla-central/source/services/application-services/components/viaduct-necko/backend.cpp
+  // https://searchfox.org/firefox-main/source/services/application-services/components/viaduct-necko/backend.cpp
   {
     chan.requestMethod = "POST";
     chan.setRequestHeader("content-length", "" + amount, /* aMerge = */ false);

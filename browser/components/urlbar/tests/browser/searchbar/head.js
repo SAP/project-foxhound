@@ -11,9 +11,8 @@ ChromeUtils.defineESModuleGetters(this, {
   SearchUtils: "moz-src:///toolkit/components/search/SearchUtils.sys.mjs",
   TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
   UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
-  UrlbarView: "moz-src:///browser/components/urlbar/UrlbarView.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
 });
 
@@ -32,5 +31,6 @@ registerCleanupFunction(async () => {
   document.getElementById("searchbar-new").handleRevert();
   await SearchbarTestUtils.promisePopupClose(window);
   await gCUITestUtils.removeSearchBar();
+  await SearchbarTestUtils.formHistory.clear();
   Services.prefs.clearUserPref("browser.search.widget.lastUsed");
 });

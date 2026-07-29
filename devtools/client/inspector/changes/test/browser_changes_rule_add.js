@@ -39,7 +39,7 @@ async function testTrackAddNewRule(store, inspector, ruleView, panel) {
 
 async function testTrackRenameNewRule(store, inspector, ruleView, panel) {
   info("Focusing the first rule's selector name in the Rule view");
-  const ruleEditor = getRuleViewRuleEditor(ruleView, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(ruleView, 1);
   const editor = await focusEditableField(ruleView, ruleEditor.selectorText);
   info("Entering a new selector name");
   editor.input.value = ".test";

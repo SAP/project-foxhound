@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -13,6 +11,8 @@ MOCHITEST_MANIFESTS += [
     "test/dialog/mochitest.toml",
     "test/forms/mochitest.toml",
     "test/forms/without_selectionchange/mochitest.toml",
+    "test/mochitest-bug1.toml",
+    "test/mochitest-bug2.toml",
     "test/mochitest.toml",
 ]
 
@@ -29,7 +29,6 @@ EXPORTS += [
     "nsHTMLDocument.h",
     "nsIConstraintValidation.h",
     "nsIFormControl.h",
-    "nsIHTMLCollection.h",
 ]
 
 EXPORTS.mozilla += [
@@ -41,6 +40,7 @@ EXPORTS.mozilla += [
 EXPORTS.mozilla.dom += [
     "ConstraintValidation.h",
     "CustomStateSet.h",
+    "EditContext.h",
     "ElementInternals.h",
     "FetchPriority.h",
     "HTMLAllCollection.h",
@@ -90,6 +90,7 @@ EXPORTS.mozilla.dom += [
     "HTMLPreElement.h",
     "HTMLProgressElement.h",
     "HTMLScriptElement.h",
+    "HTMLSelectedContentElement.h",
     "HTMLSelectElement.h",
     "HTMLSharedElement.h",
     "HTMLSharedListElement.h",
@@ -118,6 +119,7 @@ EXPORTS.mozilla.dom += [
 UNIFIED_SOURCES += [
     "ConstraintValidation.cpp",
     "CustomStateSet.cpp",
+    "EditContext.cpp",
     "ElementInternals.cpp",
     "FetchPriority.cpp",
     "HTMLAllCollection.cpp",
@@ -168,6 +170,7 @@ UNIFIED_SOURCES += [
     "HTMLPreElement.cpp",
     "HTMLProgressElement.cpp",
     "HTMLScriptElement.cpp",
+    "HTMLSelectedContentElement.cpp",
     "HTMLSelectElement.cpp",
     "HTMLSharedElement.cpp",
     "HTMLSharedListElement.cpp",
@@ -195,6 +198,7 @@ UNIFIED_SOURCES += [
     "nsHTMLDocument.cpp",
     "nsIConstraintValidation.cpp",
     "RadioNodeList.cpp",
+    "TextControlElement.cpp",
     "TextControlState.cpp",
     "ValidityState.cpp",
     "VideoDocument.cpp",

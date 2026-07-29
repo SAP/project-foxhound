@@ -505,7 +505,7 @@ async function crashSomeUtility(utilityPid, actorsCheck) {
   // writing leak logs
   utilityProcessTest().noteIntentionalCrash(utilityPid);
 
-  const dumpID = subject.getPropertyAsAString("dumpID");
+  const dumpID = subject.get("dumpID");
   ok(dumpID, "There should be a dumpID");
 
   await crashMan.ensureCrashIsPresent(dumpID);

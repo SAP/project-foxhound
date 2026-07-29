@@ -225,6 +225,9 @@ add_task(async function test_trainhop_cancel_on_version_check() {
 });
 
 add_task(async function test_trainhop_addon_after_browser_restart() {
+  let sandbox = sinon.createSandbox();
+  sandbox.stub(ExperimentAPI._rsLoader, "updateRecipes");
+
   // Sanity check (verifies built-in add-on resources have been mapped).
   assertNewTabResourceMapping();
   await asyncAssertNewTabAddon({
@@ -248,6 +251,11 @@ add_task(async function test_trainhop_addon_after_browser_restart() {
   Assert.ok(
     !Glean.newtab.addonXpiUsed.testGetValue(),
     "Probe says we're not using an XPI"
+  );
+
+  Assert.ok(
+    ExperimentAPI._rsLoader.updateRecipes.notCalled,
+    "Have not yet called updateRecipes"
   );
 
   info(
@@ -294,6 +302,19 @@ add_task(async function test_trainhop_addon_after_browser_restart() {
   // train-hop version as expected.
   assertASRouterTargetingNewtabAddonVersion(updateAddonVersion);
 
+  Assert.ok(
+    ExperimentAPI._rsLoader.updateRecipes.calledWith(
+      "newtab-trainhop",
+      sinon.match({
+        onlyFeatureIds: sinon.match(
+          s => s.size === 1 && s.has("newtabTrainhop"),
+          'Set {"newtabTrainhop"}'
+        ),
+      })
+    ),
+    "Re-computed Experiment recipes"
+  );
+
   info("Simulate newtabTrainhopAddon nimbus feature unenrolled");
   await nimbusFeatureCleanup();
   assertTrainhopAddonVersionPref("");
@@ -326,6 +347,7 @@ add_task(async function test_trainhop_addon_after_browser_restart() {
   // built-in version again after the client was fully unrolled
   // from the train-hop experiment version.
   assertASRouterTargetingNewtabAddonVersion(BUILTIN_ADDON_VERSION);
+  sandbox.restore();
 });
 
 add_task(async function test_builtin_version_upgrades() {

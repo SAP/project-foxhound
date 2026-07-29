@@ -359,6 +359,110 @@ add_task(async function test_translating_to_and_from_app_language() {
   await cleanup();
 });
 
+add_task(async function test_open_about_translations_derives_target_language() {
+  const originalGetTopPreferredSupportedToLang =
+    TranslationsParent.getTopPreferredSupportedToLang;
+  let invocationCount = 0;
+  let openedTabRequest = null;
+
+  TranslationsParent.getTopPreferredSupportedToLang = async () => {
+    invocationCount++;
+    return "fr";
+  };
+
+  try {
+    await TranslationsParent.openAboutTranslationsPage({
+      browserWindow: {
+        switchToTabHavingURI(requestedUri, shouldOpen, options) {
+          openedTabRequest = { spec: requestedUri.spec, shouldOpen, options };
+        },
+      },
+      sourceLanguage: "es",
+      targetLanguage: "derive",
+      text: "hello world",
+    });
+  } finally {
+    TranslationsParent.getTopPreferredSupportedToLang =
+      originalGetTopPreferredSupportedToLang;
+  }
+
+  ok(openedTabRequest, "The about:translations tab open request was captured");
+  const url = new URL(openedTabRequest.spec);
+  const hashParameters = new URLSearchParams(url.hash.substring(1));
+
+  is(invocationCount, 1, 'The "derive" target language path should run once');
+  is(
+    hashParameters.get("src"),
+    "es",
+    "The source language hash parameter is set"
+  );
+  is(
+    hashParameters.get("trg"),
+    "fr",
+    "The derived target language is appended to the hash parameters"
+  );
+  is(
+    hashParameters.get("text"),
+    "hello world",
+    "The text hash parameter is set"
+  );
+  ok(openedTabRequest.shouldOpen, "The about:translations tab should open");
+  is(
+    openedTabRequest.options.ignoreFragment,
+    "whenComparing",
+    "The existing about:translations tab matching behavior is preserved"
+  );
+});
+
+add_task(async function test_open_about_translations_derive_fallback() {
+  const originalGetTopPreferredSupportedToLang =
+    TranslationsParent.getTopPreferredSupportedToLang;
+  let openedTabRequest = null;
+
+  TranslationsParent.getTopPreferredSupportedToLang = async () => {
+    throw new Error("Simulated failure retrieving the preferred language");
+  };
+
+  try {
+    await TranslationsParent.openAboutTranslationsPage({
+      browserWindow: {
+        switchToTabHavingURI(requestedUri, shouldOpen, options) {
+          openedTabRequest = { spec: requestedUri.spec, shouldOpen, options };
+        },
+      },
+      sourceLanguage: "es",
+      targetLanguage: "derive",
+    });
+  } finally {
+    TranslationsParent.getTopPreferredSupportedToLang =
+      originalGetTopPreferredSupportedToLang;
+  }
+
+  ok(openedTabRequest, "The about:translations tab open request was captured");
+  const url = new URL(openedTabRequest.spec);
+  const hashParameters = new URLSearchParams(url.hash.substring(1));
+
+  is(
+    hashParameters.get("src"),
+    "es",
+    "The source language hash parameter is set"
+  );
+  is(
+    hashParameters.get("trg"),
+    null,
+    'The target language hash parameter is omitted when "derive" fails'
+  );
+  ok(
+    openedTabRequest.shouldOpen,
+    "The about:translations tab should still open"
+  );
+  is(
+    openedTabRequest.options.ignoreFragment,
+    "whenComparing",
+    "The existing about:translations tab matching behavior is preserved"
+  );
+});
+
 add_task(async function test_firstVisualChange() {
   const { cleanup } = await setupActorTest({
     languagePairs: [{ fromLang: "en", toLang: "es" }],

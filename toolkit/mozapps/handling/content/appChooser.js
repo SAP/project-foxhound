@@ -170,8 +170,6 @@ let dialog = {
             }
           }
         }
-      } else if (app instanceof Ci.nsIDBusHandlerApp) {
-        elm.setAttribute("description", app.method);
       } else if (!(app instanceof Ci.nsIGIOMimeApp)) {
         // We support GIO application handler, but no action required there
         throw new Error("unknown handler type");

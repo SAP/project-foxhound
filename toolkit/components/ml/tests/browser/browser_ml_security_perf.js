@@ -2,7 +2,7 @@
 http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
-// If metadata here are updated, run:  `./mach lint -l perfdocs --fix .` to update docs
+// If metadata here are updated, run:  `./mach perfdocs --generate` to update docs
 const perfMetadata = {
   owner: "GenAI Team",
   name: "ML Security Orchestrator Performance Tests",

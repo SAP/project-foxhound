@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +8,7 @@
 #include "gfxContext.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ReflowInput.h"
 #include "mozilla/ServoStyleSet.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/dom/Document.h"
@@ -411,13 +410,9 @@ nsTArray<Decimal> nsRangeFrame::TickMarks() {
   }
   auto min = input.GetMinimum();
   auto max = input.GetMaximum();
-  auto* options = list->Options();
-  nsAutoString label;
-  for (uint32_t i = 0; i < options->Length(); ++i) {
-    auto* item = options->Item(i);
-    auto* option = HTMLOptionElement::FromNode(item);
-    MOZ_ASSERT(option);
-    if (option->Disabled()) {
+  for (nsINode* n = list->GetFirstChild(); n; n = n->GetNextNode(list)) {
+    auto* option = HTMLOptionElement::FromNode(n);
+    if (!option || option->Disabled()) {
       continue;
     }
     nsAutoString str;

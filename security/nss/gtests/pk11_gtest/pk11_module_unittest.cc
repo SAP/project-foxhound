@@ -51,7 +51,7 @@ TEST_F(Pkcs11ModuleTest, ListSlots) {
   // These tokens are always present.
   const std::vector<std::string> kSlotsWithToken = {
       "NSS Internal Cryptographic Services",
-      "NSS User Private Key and Certificate Services",
+      "NSS User Private Key and Certificate Services", "Test PKCS11 Auth Slot",
       "Test PKCS11 Public Certs Slot", "Test PKCS11 Slot 二"};
   std::vector<std::string> foundSlots;
 

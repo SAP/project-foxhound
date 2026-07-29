@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -120,6 +118,17 @@ inline nsresult AttrArray::AddNewAttribute(Name* aName, nsAttrValue& aValue) {
   new (&attr.mValue) nsAttrValue();
   attr.mValue.SwapValueWith(aValue);
   return NS_OK;
+}
+
+const nsAttrValue* AttrArray::AddNewAttributeAssumeAvailableSlot(
+    RefPtr<nsAtom>& aName, nsAttrValue& aValue) {
+  MOZ_ASSERT(HasImpl());
+  MOZ_ASSERT(GetImpl()->mAttrCount < GetImpl()->mCapacity);
+  InternalAttr& attr = mImpl->mBuffer[mImpl->mAttrCount++];
+  new (&attr.mName) nsAttrName(aName.forget());
+  new (&attr.mValue) nsAttrValue();
+  attr.mValue.SwapValueWith(aValue);
+  return &attr.mValue;
 }
 
 nsresult AttrArray::SetAndSwapAttr(nsAtom* aLocalName, nsAttrValue& aValue,

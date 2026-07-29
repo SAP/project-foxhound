@@ -99,7 +99,7 @@ particularly useful if you are working on the analysis itself.
 If you are on osx, these will not be available. Instead, build sixgill manually
 (these directions are a little stale):
 
-        hg clone https://hg.mozilla.org/users/sfink_mozilla.com/sixgill
+        git clone https://github.com/mozilla-spidermonkey/sixgill
         cd sixgill
         CC=$HOME/.mozbuild/hazard-tools/gcc/bin/gcc ./release.sh --build # This will fail horribly.
         make bin/xdb.so CXX=clang++

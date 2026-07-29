@@ -1,7 +1,7 @@
 <script>
 let keepAlive;
 window.onpageshow = (pageShow) => {
-  let bc = new BroadcastChannel("bfcache_blocking");
+  let bc = SpecialPowers.wrap(BroadcastChannel).unpartitionedTestingChannel("bfcache_blocking");
 
   bc.onmessage = async function(m) {
     switch(m.data.message) {

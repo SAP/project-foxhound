@@ -2,10 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// keep eslint happy until it knows about WebTransport
-/* global WebTransport:false */
-/* global TextDecoderStream:false */
-
 // Using multiple files to reduce racing
 // This file tests reading/writing to incoming/outgoing streams (uni & bidi)
 //
@@ -16,7 +12,6 @@ var host;
 
 registerCleanupFunction(async () => {
   Services.prefs.clearUserPref("network.dns.localDomains");
-  Services.prefs.clearUserPref("network.webtransport.enabled");
   Services.prefs.clearUserPref("network.webtransport.redirect.enabled");
 });
 
@@ -45,7 +40,6 @@ function addCertFromFile(certdb, filename, trustString) {
 
 add_setup(async function setup() {
   Services.prefs.setCharPref("network.dns.localDomains", "foo.example.com");
-  Services.prefs.setBoolPref("network.webtransport.enabled", true);
   Services.prefs.setBoolPref("network.webtransport.redirect.enabled", true);
 
   h3Port = Services.env.get("MOZHTTP3_PORT");
@@ -68,7 +62,7 @@ add_setup(async function setup() {
 // Read all chunks from |readable_stream|, decode chunks to a utf-8 string, then
 // return the string. (borrowed from wpt tests)
 async function read_stream_as_string(readable_stream) {
-  const decoder = new TextDecoderStream();
+  const decoder = new (webTransportWindow().TextDecoderStream)();
   const decode_stream = readable_stream.pipeThrough(decoder);
   const reader = decode_stream.getReader();
 
@@ -86,7 +80,7 @@ async function read_stream_as_string(readable_stream) {
 
 add_task(async function test_wt_incoming_unidi_stream() {
   // trigger stream creation server side and default echo
-  let wt = new WebTransport(
+  let wt = newWebTransport(
     "https://" + host + "/create_unidi_stream_and_hello"
   );
   await wt.ready;
@@ -104,7 +98,7 @@ add_task(async function test_wt_incoming_unidi_stream() {
 add_task(async function test_wt_incoming_and_outgoing_unidi_stream() {
   // create the client's incoming stream from the server side
   // we need it to listen to the echo back
-  let wt = new WebTransport("https://" + host + "/create_unidi_stream");
+  let wt = newWebTransport("https://" + host + "/create_unidi_stream");
   await wt.ready;
 
   // send hello to server
@@ -112,7 +106,7 @@ add_task(async function test_wt_incoming_and_outgoing_unidi_stream() {
   let writableStream = await wt.createUnidirectionalStream(); // only triggers NewStream OnWrite
   let wsDefaultWriter = writableStream.getWriter();
   await wsDefaultWriter.ready;
-  let data = new TextEncoder().encode(expected);
+  let data = new (webTransportWindow().TextEncoder)().encode(expected);
   await wsDefaultWriter.write(data); // triggers Http3ServerEvent::Data
   await wsDefaultWriter.close();
   wsDefaultWriter.releaseLock();
@@ -130,7 +124,7 @@ add_task(async function test_wt_incoming_and_outgoing_unidi_stream() {
 });
 
 add_task(async function test_wt_outgoing_bidi_stream() {
-  let wt = new WebTransport("https://" + host + "/success");
+  let wt = newWebTransport("https://" + host + "/success");
   await wt.ready;
 
   // write to server
@@ -139,7 +133,7 @@ add_task(async function test_wt_outgoing_bidi_stream() {
   let wsDefaultWriter = writableStream.getWriter();
   await wsDefaultWriter.ready;
   let expected = "xyzhello";
-  let data = new TextEncoder().encode(expected);
+  let data = new (webTransportWindow().TextEncoder)().encode(expected);
   await wsDefaultWriter.write(data);
   await wsDefaultWriter.close();
   wsDefaultWriter.releaseLock();
@@ -152,9 +146,7 @@ add_task(async function test_wt_outgoing_bidi_stream() {
 });
 
 add_task(async function test_wt_incoming_bidi_stream() {
-  let wt = new WebTransport(
-    "https://" + host + "/create_bidi_stream_and_hello"
-  );
+  let wt = newWebTransport("https://" + host + "/create_bidi_stream_and_hello");
   // await wt.ready; // causes occasional hang on release --verify
 
   const stream_reader = wt.incomingBidirectionalStreams.getReader();
@@ -168,7 +160,7 @@ add_task(async function test_wt_incoming_bidi_stream() {
 });
 
 add_task(async function test_wt_incoming_bidi_stream_huge_data() {
-  let wt = new WebTransport(
+  let wt = newWebTransport(
     "https://" + host + "/create_bidi_stream_and_large_data"
   );
   // await wt.ready; // causes occasional hang on release --verify

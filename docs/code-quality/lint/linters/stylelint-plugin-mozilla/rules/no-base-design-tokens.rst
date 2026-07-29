@@ -3,7 +3,7 @@ no-base-design-tokens
 =====================
 
 This rule checks that CSS declarations do not use `base color token variables
-<https://firefox-source-docs.mozilla.org/toolkit/themes/shared/design-system/docs/README.design-tokens.stories.html#base>`_
+<https://acorn.firefox.com/latest/desktop/design-tokens/how-design-tokens-work/overview-YYp6MVjt#section-base-a3>`_
 directly. Instead, developers should reference higher-level, semantic tokens to
 ensure color usage is consistent and maintainable.
 

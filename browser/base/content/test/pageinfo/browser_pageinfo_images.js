@@ -79,7 +79,7 @@ add_task(async function test_view_image_info() {
 
       contextMenu.activateItem(viewImageInfo);
 
-      let pageInfo = (await promiseMediaLoad).target.ownerGlobal;
+      let pageInfo = (await promiseMediaLoad).target;
       let mediaBrowser = pageInfo.document.getElementById("mediaBrowser");
 
       let previewImageInfo = await SpecialPowers.spawn(mediaBrowser, [], () => {

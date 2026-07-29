@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // Test formatRange supports the different hour-cycle options.
 //
 // ICU bugs:

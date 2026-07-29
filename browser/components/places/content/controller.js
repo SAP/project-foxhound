@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -1428,15 +1427,23 @@ PlacesController.prototype = {
     // Open containing folder in left pane/sidebar bookmark tree
     let documentUrl = document.documentURI.toLowerCase();
     if (documentUrl.endsWith("browser.xhtml")) {
-      // We're in a menu or a panel.
+      // Invoked from the main browser window (e.g. the bookmarks menu or
+      // panel), so open the bookmarks sidebar and reveal the bookmark there.
       window.SidebarController._show("viewBookmarksSidebar").then(() => {
-        let theSidebar = document.getElementById("sidebar");
-        theSidebar.contentDocument
-          .getElementById("bookmarks-view")
-          .selectItems([aBookmarkGuid]);
-      });
+        let sidebar = document.getElementById("sidebar");
+        let updatedPanel =
+          sidebar.contentDocument.querySelector("sidebar-bookmarks");
+        if (updatedPanel) {
+          updatedPanel.showInFolder(aBookmarkGuid).catch(console.error);
+        } else {
+          sidebar.contentDocument
+            .getElementById("bookmarks-view")
+            .selectItems([aBookmarkGuid]);
+        }
+      }, console.error);
     } else if (documentUrl.includes("sidebar")) {
-      // We're in the sidebar - clear the search box first
+      // Invoked from within the bookmarks sidebar itself - clear the
+      // search box first
       let searchBox = document.getElementById("search-box");
       searchBox.clear();
 
@@ -1666,7 +1673,7 @@ var PlacesControllerDragHelper = {
       } else if (
         XULElement.isInstance(data) &&
         data.localName == "tab" &&
-        data.ownerGlobal.isChromeWindow
+        data.documentGlobal.isChromeWindow
       ) {
         let uri = data.linkedBrowser.currentURI;
         let spec = uri ? uri.spec : "about:blank";
@@ -1678,7 +1685,7 @@ var PlacesControllerDragHelper = {
       } else if (
         XULElement.isInstance(data) &&
         data.localName == "tab-split-view-wrapper" &&
-        data.ownerGlobal.isChromeWindow
+        data.documentGlobal.isChromeWindow
       ) {
         // Splitview tabs are dragged together via tab-split-view-wrapper, so that means
         // mozItemCount/dropCount is 1, which is why we unpack its tabs to bookmark here.

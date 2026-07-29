@@ -1,10 +1,10 @@
 # Fennec Migration
 
-Project board: https://github.com/orgs/mozilla-mobile/projects/40
+Project board: <https://github.com/orgs/mozilla-mobile/projects/40>
 
 ## 📱 Testing
 
-⚠️ **Warning**: Replacing a _Fennec_ (Firefox for Android) installation with _Fenix_ (Firefox Preview) can (and at the time of writing this definitely **will**) result in **DATA LOSS**. Do not replace an installation of Fennec (Firefox for Android) that contains data you do not want to risk losing (e.g. open tabs, history, bookmarks, top sites, ..).
+⚠️ **Warning**: Replacing a *Fennec* (Firefox for Android) installation with *Fenix* (Firefox Preview) can (and at the time of writing this definitely **will**) result in **DATA LOSS**. Do not replace an installation of Fennec (Firefox for Android) that contains data you do not want to risk losing (e.g. open tabs, history, bookmarks, top sites, ..).
 
 ## Release
 
@@ -33,7 +33,7 @@ The following links point to the latest *Fenix* (Firefox Preview) builds (Nightl
 ## 📝 Changelog
 
 The data migration work is tracked on the following project board:
-https://github.com/orgs/mozilla-mobile/projects/40
+<https://github.com/orgs/mozilla-mobile/projects/40>
 
 * **2019-09-05** - The first [migration builds](https://tools.taskcluster.net/index/project.mobile.fenix.v2.fennec-production/latest) are available now. A Firefox for Android (release) installation can be replaced with them. No actual migration code is in those builds yet. The replaced build is a "clean" Fenix installation.
 * **2019-10-22** - First iteration of migration code to migrate history, bookmarks and open tabs landed in builds.
@@ -49,9 +49,9 @@ In the example commands below, we assume you are replacing a **Fennec Nightly** 
 
 Download the latest version of Fennec:
 
- - [ARM64/Aarch64 devices (64 bit; Android 5+)](https://archive.mozilla.org/pub/mobile/nightly/latest-mozilla-esr68-android-aarch64/)
- - [ARM devices (32 bit; Android 5+)](https://archive.mozilla.org/pub/mobile/nightly/latest-mozilla-esr68-android-api-16/)
- - [x86_64 devices (64 bit; Android 5+)](https://archive.mozilla.org/pub/mobile/nightly/latest-mozilla-esr68-android-x86_64/)
+* [ARM64/Aarch64 devices (64 bit; Android 5+)](https://archive.mozilla.org/pub/mobile/nightly/latest-mozilla-esr68-android-aarch64/)
+* [ARM devices (32 bit; Android 5+)](https://archive.mozilla.org/pub/mobile/nightly/latest-mozilla-esr68-android-api-16/)
+* [x86_64 devices (64 bit; Android 5+)](https://archive.mozilla.org/pub/mobile/nightly/latest-mozilla-esr68-android-x86_64/)
 
 Strip out the original signature:
 
@@ -110,8 +110,6 @@ Modify the application id in `build.gradle` of the `samples-browser` module and 
         [..]
         versionCode 2100000000
 ```
-
-
 
 Click on "Sync Project with Gradle Files" and deploy the sample browser. This build should have replaced your Fennec build now.
 

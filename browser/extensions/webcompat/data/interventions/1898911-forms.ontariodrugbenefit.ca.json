@@ -1,0 +1,15 @@
+{
+  "label": "forms.ontariodrugbenefit.ca",
+  "bugs": {
+    "1898911": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://forms.ontariodrugbenefit.ca/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

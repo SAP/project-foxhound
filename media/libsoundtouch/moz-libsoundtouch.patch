@@ -1,3 +1,63 @@
+diff -u /src/AAFilter.cpp /src/AAFilter.cpp
+--- /src/AAFilter.cpp
++++ /src/AAFilter.cpp
+@@ -42,7 +42,7 @@
+ 
+ using namespace soundtouch;
+ 
+-#define PI       3.14159265358979323846
++#define PI       M_PI
+ #define TWOPI    (2 * PI)
+ 
+ // define this to save AA filter coefficients to a file
+diff -u /src/FIRFilter.cpp /src/FIRFilter.cpp
+--- /src/FIRFilter.cpp
++++ /src/FIRFilter.cpp
+@@ -282,10 +282,11 @@ void * FIRFilter::operator new(size_t)
+ 
+ FIRFilter * FIRFilter::newInstance()
+ {
++#if defined(SOUNDTOUCH_ALLOW_MMX) || defined(SOUNDTOUCH_ALLOW_SSE)
+     uint uExtensions;
+ 
+     uExtensions = detectCPUextensions();
+-    (void)uExtensions;
++#endif
+ 
+     // Check if MMX/SSE instruction set extensions supported by CPU
+ 
+diff -u /src/STTypes.h /src/STTypes.h
+--- /src/STTypes.h
++++ /src/STTypes.h
+@@ -47,11 +47,7 @@ typedef unsigned long   ulong;
+ #define SOUNDTOUCH_ALIGN_POINTER_16(x)      ( ( (ulongptr)(x) + 15 ) & ~(ulongptr)15 )
+ 
+ 
+-#if (defined(__GNUC__) && !defined(ANDROID))
+-    // In GCC, include soundtouch_config.h made by config scritps.
+-    // Skip this in Android compilation that uses GCC but without configure scripts.
+-    #include "soundtouch_config.h"
+-#endif
++#include "soundtouch_config.h"
+ 
+ 
+ namespace soundtouch
+diff -u /src/TDStretch.cpp /src/TDStretch.cpp
+--- /src/TDStretch.cpp
++++ /src/TDStretch.cpp
+@@ -750,10 +750,11 @@ void * TDStretch::operator new(size_t)
+ 
+ TDStretch * TDStretch::newInstance()
+ {
++#if defined(SOUNDTOUCH_ALLOW_MMX) || defined(SOUNDTOUCH_ALLOW_SSE)
+     uint uExtensions;
+ 
+     uExtensions = detectCPUextensions();
+-    (void)uExtensions;
++#endif
+ 
+     // Check if MMX/SSE instruction set extensions supported by CPU
+ 
 diff -u /src/cpu_detect_x86.cpp /src/cpu_detect_x86.cpp
 --- /src/cpu_detect_x86.cpp
 +++ /src/cpu_detect_x86.cpp
@@ -13,7 +73,7 @@ diff -u /src/cpu_detect_x86.cpp /src/cpu_detect_x86.cpp
         #include "cpuid.h"
     #elif defined(_M_IX86)
         // windows non-gcc
-@@ -71,10 +70,18 @@
+@@ -71,10 +70,18 @@ void disableExtensions(uint dwDisableMask)
  /// Checks which instruction set extensions are supported by the CPU.
  uint detectCPUextensions(void)
  {
@@ -33,10 +93,10 @@ diff -u /src/cpu_detect_x86.cpp /src/cpu_detect_x86.cpp
      || defined(_M_X64))  \
      && defined(SOUNDTOUCH_ALLOW_X86_OPTIMIZATIONS)
      return 0x19 & ~_dwDisabledISA;
-@@ -89,18 +96,7 @@
-  
+@@ -89,18 +96,7 @@ uint detectCPUextensions(void)
+ 
      uint res = 0;
-  
+ 
 -#if defined(__GNUC__)
 -    // GCC version of cpuid. Requires GCC 4.3.0 or later for __cpuid intrinsic support.
 -    uint eax, ebx, ecx, edx;  // unsigned int is the standard type. uint is defined by the compiler and not guaranteed to be portable.
@@ -50,10 +110,10 @@ diff -u /src/cpu_detect_x86.cpp /src/cpu_detect_x86.cpp
 -
 -#else
 +#if !defined(__GNUC__)
-     // Window / VS version of cpuid. Notice that Visual Studio 2005 or later required 
+     // Window / VS version of cpuid. Notice that Visual Studio 2005 or later required
      // for __cpuid intrinsic support.
      int reg[4] = {-1};
-@@ -113,7 +109,19 @@
+@@ -113,7 +109,19 @@ uint detectCPUextensions(void)
      if ((unsigned int)reg[3] & bit_MMX)  res = res | SUPPORT_MMX;
      if ((unsigned int)reg[3] & bit_SSE)  res = res | SUPPORT_SSE;
      if ((unsigned int)reg[3] & bit_SSE2) res = res | SUPPORT_SSE2;
@@ -73,70 +133,10 @@ diff -u /src/cpu_detect_x86.cpp /src/cpu_detect_x86.cpp
  #endif
  
      return res & ~_dwDisabledISA;
-diff -u /src/STTypes.h /src/STTypes.h
---- /src/STTypes.h
-+++ /src/STTypes.h
-@@ -54,11 +54,7 @@
- #define SOUNDTOUCH_ALIGN_POINTER_16(x)      ( ( (ulongptr)(x) + 15 ) & ~(ulongptr)15 )
- 
- 
--#if (defined(__GNUC__) && !defined(ANDROID))
--    // In GCC, include soundtouch_config.h made by config scritps.
--    // Skip this in Android compilation that uses GCC but without configure scripts.
--    #include "soundtouch_config.h"
--#endif
-+#include "soundtouch_config.h"
- 
- namespace soundtouch
- {
-diff -u /src/FIRFilter.cpp /src/FIRFilter.cpp
---- /src/FIRFilter.cpp
-+++ /src/FIRFilter.cpp
-@@ -291,9 +296,11 @@
- 
- FIRFilter * FIRFilter::newInstance()
- {
-+#if defined(SOUNDTOUCH_ALLOW_MMX) || defined(SOUNDTOUCH_ALLOW_SSE)
-     uint uExtensions;
- 
-     uExtensions = detectCPUextensions();
-+#endif
- 
-     // Check if MMX/SSE instruction set extensions supported by CPU
- 
-diff -u /src/TDStretch.cpp /src/TDStretch.cpp
---- /src/TDStretch.cpp
-+++ /src/TDStretch.cpp
-@@ -624,9 +624,11 @@
- 
- TDStretch * TDStretch::newInstance()
- {
-+#if defined(SOUNDTOUCH_ALLOW_MMX) || defined(SOUNDTOUCH_ALLOW_SSE)
-     uint uExtensions;
- 
-     uExtensions = detectCPUextensions();
-+#endif
- 
-     // Check if MMX/SSE instruction set extensions supported by CPU
-
-diff -u /src/AAFilter.cpp /src/AAFilter.cpp
---- /src/AAFilter.cpp
-+++ /src/AAFilter.cpp
-@@ -42,7 +42,7 @@
- 
- using namespace soundtouch;
- 
--#define PI       3.14159265358979323846
-+#define PI       M_PI
- #define TWOPI    (2 * PI)
- 
- // define this to save AA filter coefficients to a file
- 
-
 diff -u /src/sse_optimized.cpp /src/sse_optimized.cpp
 --- /src/sse_optimized.cpp
-+++ /src_patched/sse_optimized.cpp
-@@ -60,7 +60,13 @@
++++ /src/sse_optimized.cpp
+@@ -60,7 +60,13 @@ using namespace soundtouch;
  //////////////////////////////////////////////////////////////////////////////
  
  #include "TDStretch.h"

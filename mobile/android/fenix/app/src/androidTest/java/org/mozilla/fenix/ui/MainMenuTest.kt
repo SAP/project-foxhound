@@ -6,7 +6,6 @@
 
 package org.mozilla.fenix.ui
 
-import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.core.net.toUri
 import androidx.test.rule.ActivityTestRule
 import org.junit.Ignore
@@ -14,6 +13,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.IntentReceiverActivity
 import org.mozilla.fenix.R
+import org.mozilla.fenix.customannotations.Converted
 import org.mozilla.fenix.customannotations.SmokeTest
 import org.mozilla.fenix.helpers.AppAndSystemHelper.assertExternalAppOpens
 import org.mozilla.fenix.helpers.AppAndSystemHelper.assertNativeAppOpens
@@ -23,11 +23,12 @@ import org.mozilla.fenix.helpers.Constants.PackageName.GOOGLE_DOCS
 import org.mozilla.fenix.helpers.Constants.PackageName.PRINT_SPOOLER
 import org.mozilla.fenix.helpers.DataGenerationHelper.createCustomTabIntent
 import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
+import org.mozilla.fenix.helpers.FenixTestRule
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MatcherHelper
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
-import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdAndText
 import org.mozilla.fenix.helpers.MockBrowserDataHelper
+import org.mozilla.fenix.helpers.TestAssetHelper.articleSummaryAsset
 import org.mozilla.fenix.helpers.TestAssetHelper.firstForeignWebPageAsset
 import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
 import org.mozilla.fenix.helpers.TestAssetHelper.pdfFormAsset
@@ -43,24 +44,28 @@ import org.mozilla.fenix.helpers.TestHelper.restartApp
 import org.mozilla.fenix.helpers.TestHelper.verifySnackBarText
 import org.mozilla.fenix.helpers.TestHelper.waitForAppWindowToBeUpdated
 import org.mozilla.fenix.helpers.TestHelper.waitUntilSnackbarGone
-import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
-import org.mozilla.fenix.nimbus.FxNimbus
-import org.mozilla.fenix.nimbus.Translations
 import org.mozilla.fenix.ui.robots.browserScreen
 import org.mozilla.fenix.ui.robots.clickPageObject
 import org.mozilla.fenix.ui.robots.customTabScreen
 import org.mozilla.fenix.ui.robots.homeScreen
 import org.mozilla.fenix.ui.robots.navigationToolbar
+import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidComposeTestRuleV2
 
-class MainMenuTest : TestSetup() {
-    @get:Rule
+class MainMenuTest {
+    @get:Rule(order = 0)
+    val fenixTestRule: FenixTestRule = FenixTestRule()
+
+    private val mockWebServer get() = fenixTestRule.mockWebServer
+
+    @get:Rule(order = 1)
     val composeTestRule =
-        AndroidComposeTestRule(
+        AndroidComposeTestRuleV2(
             HomeActivityIntentTestRule(
                 skipOnboarding = true,
                 isMenuRedesignCFREnabled = false,
                 isPageLoadTranslationsPromptEnabled = false,
+                shakeToSummarizeFeatureFlagEnabled = true,
             ),
         ) { it.activity }
 
@@ -71,13 +76,18 @@ class MainMenuTest : TestSetup() {
         false,
     )
 
-    @get:Rule
-    val memoryLeaksRule = DetectMemoryLeaksRule()
+    @get:Rule(order = 2)
+    val memoryLeaksRule = DetectMemoryLeaksRule(composeTestRule = { composeTestRule })
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080168
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyMainMenuItemsTest"],
+        bug = 2040343,
+        since = "2026-05",
+    )
     @SmokeTest
     @Test
-    fun verifyTheHomepageRedesignedMenuItemsTest() {
+    fun verifyMainMenuItemsTest() {
         homeScreen(composeTestRule) {
         }.openThreeDotMenu {
             verifyHomeMainMenuItems()
@@ -85,9 +95,14 @@ class MainMenuTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080124
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyTheBrowserViewMainMenuItemsTest"],
+        bug = 2040343,
+        since = "2026-05",
+    )
     @SmokeTest
     @Test
-    fun verifyTheWebpageRedesignedMenuItemsTest() {
+    fun verifyTheBrowserViewMainMenuItemsTest() {
         val testPage = mockWebServer.getGenericAsset(1)
 
         navigationToolbar(composeTestRule) {
@@ -98,6 +113,11 @@ class MainMenuTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080133
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifySwitchToDesktopSiteIsDisabledOnPDFsTest"],
+        bug = 2041624,
+        since = "2026-05",
+    )
     @SmokeTest
     @Test
     fun verifySwitchToDesktopSiteIsDisabledOnPDFsTest() {
@@ -113,6 +133,11 @@ class MainMenuTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080130
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.FindInPageTest#verifyTheFindInPageMenuItemTest"],
+        bug = 2030658,
+        since = "2026-04",
+    )
     @SmokeTest
     @Test
     fun verifyTheFindInPageMenuItemTest() {
@@ -148,6 +173,11 @@ class MainMenuTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080136
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyTheHistoryMenuItemTest"],
+        bug = 2041634,
+        since = "2026-05",
+    )
     @SmokeTest
     @Test
     fun verifyTheHistoryMenuItemTest() {
@@ -157,13 +187,18 @@ class MainMenuTest : TestSetup() {
         }.enterURLAndEnterToBrowser(testPage.url) {
         }.openThreeDotMenu {
         }.clickHistoryButton {
-            verifyHistoryMenuView()
+            verifyHistoryMenuView(historyItemExists = true)
         }.goBack {
             verifyPageContent(testPage.content)
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080138
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyTheDownloadsMenuItemTest"],
+        bug = 2041282,
+        since = "2026-05",
+    )
     @SmokeTest
     @Test
     fun verifyTheDownloadsMenuItemTest() {
@@ -181,6 +216,11 @@ class MainMenuTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080139
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyThePasswordsMenuItemTest"],
+        bug = 2042398,
+        since = "2026-05",
+    )
     @SmokeTest
     @Test
     fun verifyThePasswordsMenuItemTest() {
@@ -199,50 +239,6 @@ class MainMenuTest : TestSetup() {
         exitMenu()
         browserScreen(composeTestRule) {
             verifyPageContent(testPage.content)
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080095
-    // Verifies the main menu of a custom tab with a custom menu item
-    @SmokeTest
-    @Test
-    fun verifyTheCustomTabsMainMenuItemsTest() {
-        val customMenuItem = "TestMenuItem"
-        val customTabPage = mockWebServer.getGenericAsset(1)
-
-        intentReceiverActivityTestRule.launchActivity(
-            createCustomTabIntent(
-                customTabPage.url.toString(),
-                customMenuItem,
-            ),
-        )
-
-        customTabScreen(composeTestRule) {
-            verifyCustomTabCloseButton()
-        }.openMainMenu {
-            verifyCustomTabsMainMenuItems(customMenuItem, true)
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080100
-    // The test opens a link in a custom tab then sends it to the browser
-    @SmokeTest
-    @Test
-    fun verifyOpenInFirefoxMainMenuTest() {
-        val customTabPage = mockWebServer.getGenericAsset(1)
-
-        intentReceiverActivityTestRule.launchActivity(
-            createCustomTabIntent(
-                customTabPage.url.toString(),
-            ),
-        )
-
-        customTabScreen(composeTestRule) {
-            verifyCustomTabCloseButton()
-        }.openMainMenu {
-        }.clickOpenInBrowserButtonFromRedesignedToolbar {
-            verifyPageContent(customTabPage.content)
-            verifyTabCounter("1")
         }
     }
 
@@ -335,6 +331,11 @@ class MainMenuTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080129
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyTheBookmarkPageMenuOptionTest"],
+        bug = 2041282,
+        since = "2026-05",
+    )
     @SmokeTest
     @Test
     fun verifyTheBookmarkPageMenuOptionTest() {
@@ -449,8 +450,8 @@ class MainMenuTest : TestSetup() {
         }.openThreeDotMenu {
             clickTheMoreButton()
         }.clickSaveAsPDFButton {
-            verifyDownloadPrompt(testPage.title + ".pdf")
-        }.clickDownload {
+            verifyDownloadPrompt(composeTestRule, testPage.title + ".pdf")
+        }.clickDownload(composeTestRule) {
             clickSnackbarButton(composeTestRule = composeTestRule, "OPEN")
             assertExternalAppOpens(GOOGLE_DOCS)
         }
@@ -583,8 +584,8 @@ class MainMenuTest : TestSetup() {
         }
         browserScreen(composeTestRule) {
         }.openThreeDotMenu {
-            verifyExtensionsButtonWithInstalledExtension(recommendedExtensionTitle)
         }.clickExtensionsButton {
+            verifyExtensionsButtonWithInstalledExtension(recommendedExtensionTitle)
             verifyDiscoverMoreExtensionsButton(composeTestRule, isDisplayed = false)
             verifyManageExtensionsButtonFromRedesignedMainMenu(composeTestRule, isDisplayed = true)
             verifyInstalledExtension(composeTestRule, recommendedExtensionTitle)
@@ -628,7 +629,7 @@ class MainMenuTest : TestSetup() {
         navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(testPage.url) {
             clickPageObject(composeTestRule, MatcherHelper.itemWithText("PDF form file"))
-            clickPageObject(composeTestRule, itemWithResIdAndText("android:id/button2", "Cancel"))
+            clickPageObject(composeTestRule, itemContainingText("Stay in"))
         }.openThreeDotMenu {
         }.clickFindInPageButton {
             verifyFindInPageNextButton()
@@ -789,8 +790,8 @@ class MainMenuTest : TestSetup() {
         }
         browserScreen(composeTestRule) {
         }.openThreeDotMenu {
-            verifyExtensionsButtonWithInstalledExtension(recommendedExtensionTitle)
         }.clickExtensionsButton {
+            verifyExtensionsButtonWithInstalledExtension(recommendedExtensionTitle)
             clickManageExtensionsButtonFromRedesignedMainMenu(composeTestRule)
         }.openDetailedMenuForAddon(recommendedExtensionTitle) {
             disableExtension()
@@ -1014,6 +1015,11 @@ class MainMenuTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080172
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyTheExtensionsMenuOptionTest"],
+        bug = 2024907,
+        since = "2026-03",
+    )
     @SmokeTest
     @Test
     fun verifyTheExtensionsMenuOptionTest() {
@@ -1116,6 +1122,11 @@ class MainMenuTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080125
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyTheMainMenuBackButtonTest"],
+        bug = 2043207,
+        since = "2026-05",
+    )
     @SmokeTest
     @Test
     fun verifyTheMainMenuBackButtonTest() {
@@ -1136,6 +1147,11 @@ class MainMenuTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080126
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyTheMainMenuForwardButtonTest"],
+        bug = 2043207,
+        since = "2026-05",
+    )
     @SmokeTest
     @Test
     fun verifyTheMainMenuForwardButtonTest() {
@@ -1191,6 +1207,7 @@ class MainMenuTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080135
+    @Ignore("Disabling to ease uplift. See bug 2049060.")
     @Test
     fun verifyTheMoreMainMenuListTest() {
         val firstTestPage = mockWebServer.firstForeignWebPageAsset
@@ -1374,6 +1391,7 @@ class MainMenuTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080110
+    @Ignore("Disabling to ease uplift. See bug 2049060.")
     @SmokeTest
     @Test
     fun verifyTheMoreMainMenuSubListTest() {
@@ -1384,6 +1402,51 @@ class MainMenuTest : TestSetup() {
         }.openThreeDotMenu {
             clickTheMoreButton()
             verifyMoreMainMenuItems()
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/4036009
+    @Ignore("Disabling to ease uplift. See bug 2049060.")
+    @SmokeTest
+    @Test
+    fun verifyTheMoreMainMenuSummarizePageButtonTest() {
+        composeTestRule.activityRule.applySettingsExceptions {
+            it.hasSeenShakeToSummarizeToolbarCfr = false
+        }
+
+        val articlePage = mockWebServer.articleSummaryAsset
+
+        navigationToolbar(composeTestRule) {
+        }.enterURLAndEnterToBrowser(articlePage.url) {
+            waitForPageToLoad()
+            clickTheDismissButtonOnSummarizeCFR()
+        }.openThreeDotMenu {
+            clickTheMoreButton()
+            verifySummarizePageButton()
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/4036011
+    @Ignore("Disabling to ease uplift. See bug 2049060.")
+    @SmokeTest
+    @Test
+    fun verifyTheMoreMainMenuSummarizePageButtonFunctionalityTest() {
+        composeTestRule.activityRule.applySettingsExceptions {
+            it.hasSeenShakeToSummarizeToolbarCfr = false
+        }
+
+        val articlePage = mockWebServer.articleSummaryAsset
+
+        navigationToolbar(composeTestRule) {
+        }.enterURLAndEnterToBrowser(articlePage.url) {
+            waitForPageToLoad()
+            clickTheDismissButtonOnSummarizeCFR()
+        }.openThreeDotMenu {
+            clickTheMoreButton()
+            verifySummarizePageButton()
+        }.clickSummarizePageButton {
+            composeTestRule.waitForIdle()
+            verifyTheSummarizedBottomSheet()
         }
     }
 }

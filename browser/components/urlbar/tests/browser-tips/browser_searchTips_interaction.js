@@ -369,7 +369,7 @@ add_task(async function ignoreEndsEngagement() {
         // technology and keyboard by pressing `Esc` key, this rule check shall
         // be ignored by a11y_checks suite.
         AccessibilityUtils.setEnv({ mustHaveAccessibleRule: false });
-        await EventUtils.synthesizeMouseAtCenter(spring, {});
+        EventUtils.synthesizeMouseAtCenter(spring, {});
         AccessibilityUtils.resetEnv();
       });
       Assert.equal(

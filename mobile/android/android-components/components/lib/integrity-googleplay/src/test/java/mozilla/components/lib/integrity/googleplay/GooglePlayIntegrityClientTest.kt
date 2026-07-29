@@ -4,68 +4,63 @@
 
 package mozilla.components.lib.integrity.googleplay
 
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.work.testing.WorkManagerTestInitHelper
 import com.google.android.play.core.integrity.StandardIntegrityException
 import com.google.android.play.core.integrity.model.StandardIntegrityErrorCode.INTEGRITY_TOKEN_PROVIDER_INVALID
 import kotlinx.coroutines.test.runTest
 import mozilla.components.concept.integrity.IntegrityToken
+import mozilla.components.lib.integrity.googleplay.GleanMetrics.Integrity
 import mozilla.components.support.test.mock
+import mozilla.telemetry.glean.Glean
+import mozilla.telemetry.glean.config.Configuration
+import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
 import org.mockito.Mockito.`when`
+import kotlin.test.assertIs
 
+@RunWith(AndroidJUnit4::class)
 class GooglePlayIntegrityClientTest {
-    @Test
-    fun `GIVEN an empty string WHEN I try to create a GoogleProjectNumber then I get an Invalid GoogleProjectNumber`() {
-        assertEquals(
-            "GoogleProjectNumber should be invalid",
-            GoogleProjectNumber.Invalid,
-            GoogleProjectNumber.create(""),
-        )
+
+    private val context: Context
+        get() = ApplicationProvider.getApplicationContext()
+
+    @Before
+    fun setUp() {
+        WorkManagerTestInitHelper.initializeTestWorkManager(context)
+        Glean.resetGlean(context = context, config = Configuration(), clearStores = true)
+    }
+
+    @After
+    fun tearDown() {
+        WorkManagerTestInitHelper.closeWorkDatabase()
     }
 
     @Test
-    fun `GIVEN a value that can't be cast to a Long WHEN I try to create a GoogleProjectNumber then I get an Invalid GoogleProjectNumber`() {
-        assertEquals(
-            "GoogleProjectNumber should be invalid",
-            GoogleProjectNumber.Invalid,
-            GoogleProjectNumber.create("100Z"),
-        )
-    }
+    fun `GIVEN a null project number WHEN I create a TokenProviderFactory THEN it returns a failure with InvalidProjectNumber`() = runTest {
+        val factory = TokenProviderFactory.create({ mock() }, null)
 
-    @Test
-    fun `GIVEN a value that can be cast to a Long WHEN I try to create a GoogleProjectNumber then I get a Valid GoogleProjectNumber`() {
-        assertEquals(
-            "GoogleProjectNumber should be invalid",
-            GoogleProjectNumber.Valid(1337L),
-            GoogleProjectNumber.create("1337"),
-        )
-    }
+        val result = factory.create()
 
-    @Test
-    fun `GIVEN an Invalid GoogleProjectNumber WHEN I create a TokenProviderFactory THEN I get a TokenProvider that returns a failure`() = runTest {
-        val tokenProvider = TokenProviderFactory.create(
-            { mock() },
-            GoogleProjectNumber.Invalid,
-        )
-
-        val result = tokenProvider.create()
-
-        assertTrue(
+        assertIs<InvalidProjectNumber>(
+            result.exceptionOrNull(),
             "Result should be InvalidProjectNumber",
-            result.exceptionOrNull() is InvalidProjectNumber,
         )
     }
 
     @Test
-    fun `GIVEN a Valid GoogleProjectNumber WHEN I create a TokenProviderFactory THEN I get a GooglePlayTokenProviderFactory`() {
-        val tokenProvider = TokenProviderFactory.create(
-            { mock() },
-            GoogleProjectNumber.Valid(100L),
-        )
-        assertTrue(
+    fun `GIVEN a valid project number WHEN I create a TokenProviderFactory THEN I get a GooglePlayTokenProviderFactory`() {
+        val factory = TokenProviderFactory.create({ mock() }, 100L)
+        assertIs<GooglePlayTokenProviderFactory>(
+            factory,
             "Result should be an instance of GooglePlayTokenProviderFactory",
-            tokenProvider is GooglePlayTokenProviderFactory,
         )
     }
 
@@ -79,7 +74,7 @@ class GooglePlayIntegrityClientTest {
 
         assertTrue(client.tokenProvider == null)
         client.warmUp()
-        assertEquals(tokenProvider, client.tokenProvider)
+        assertEquals(Result.success(tokenProvider), client.tokenProvider)
     }
 
     @Test
@@ -107,6 +102,35 @@ class GooglePlayIntegrityClientTest {
     }
 
     @Test
+    fun `GIVEN persistent provider expiry WHEN request is called THEN it retries 5 times before returning success`() = runTest {
+        val exception: StandardIntegrityException = mock {
+            `when`(this.errorCode)
+                .thenReturn(INTEGRITY_TOKEN_PROVIDER_INVALID)
+        }
+        var factoryCalls = 0
+        val alwaysExpiring = TokenProvider { _ ->
+            if (factoryCalls < 5) {
+                Result.failure(exception)
+            } else {
+                Result.success(IntegrityToken("test-value"))
+            }
+        }
+        val client = GooglePlayIntegrityClient(
+            {
+                factoryCalls++
+                Result.success(alwaysExpiring)
+            },
+            { "test-hash" },
+        )
+
+        val result = client.request()
+
+        // We shouldn't fail because our final request should return a result after 5 retries.
+        assertFalse(result.isFailure)
+        assertEquals(5, factoryCalls)
+    }
+
+    @Test
     fun `GIVEN an exception from a TokenProvider that isn't INTEGRITY_TOKEN_PROVIDER_INVALID WHEN request is called THEN return the result`() = runTest {
         val tokenProvider = TokenProvider { _ -> Result.failure(IllegalStateException("test exception")) }
         val client = GooglePlayIntegrityClient(
@@ -116,5 +140,67 @@ class GooglePlayIntegrityClientTest {
 
         val result = client.request()
         assertTrue(result.isFailure)
+    }
+
+    @Test
+    fun `WHEN request is called directly THEN token_request event records consumer as unknown`() = runTest {
+        val tokenProvider = TokenProvider { _ -> Result.success(IntegrityToken("test-token")) }
+        val client = GooglePlayIntegrityClient(
+            { Result.success(tokenProvider) },
+            { "test-hash" },
+        )
+
+        client.request()
+
+        val events = Integrity.tokenRequest.testGetValue()!!
+        assertEquals(1, events.size)
+        assertEquals("unknown", events.last().extra?.get("consumer"))
+    }
+
+    @Test
+    fun `WHEN forConsumer Summarize issues a request THEN token_request event records consumer as summarize`() = runTest {
+        val tokenProvider = TokenProvider { _ -> Result.success(IntegrityToken("test-token")) }
+        val client = GooglePlayIntegrityClient(
+            { Result.success(tokenProvider) },
+            { "test-hash" },
+        )
+
+        client.forConsumer(IntegrityConsumer.Summarize).request()
+
+        val events = Integrity.tokenRequest.testGetValue()!!
+        assertEquals(1, events.size)
+        assertEquals("summarize", events.last().extra?.get("consumer"))
+    }
+
+    @Test
+    fun `WHEN forConsumer IpProtection issues a request THEN token_request event records consumer as ip_protection`() = runTest {
+        val tokenProvider = TokenProvider { _ -> Result.success(IntegrityToken("test-token")) }
+        val client = GooglePlayIntegrityClient(
+            { Result.success(tokenProvider) },
+            { "test-hash" },
+        )
+
+        client.forConsumer(IntegrityConsumer.IpProtection).request()
+
+        val events = Integrity.tokenRequest.testGetValue()!!
+        assertEquals(1, events.size)
+        assertEquals("ip_protection", events.last().extra?.get("consumer"))
+    }
+
+    @Test
+    fun `GIVEN two consumer views WHEN each issues a request THEN both events are tagged with their respective consumer`() = runTest {
+        val tokenProvider = TokenProvider { _ -> Result.success(IntegrityToken("test-token")) }
+        val client = GooglePlayIntegrityClient(
+            { Result.success(tokenProvider) },
+            { "test-hash" },
+        )
+
+        client.forConsumer(IntegrityConsumer.Summarize).request()
+        client.forConsumer(IntegrityConsumer.IpProtection).request()
+
+        val events = Integrity.tokenRequest.testGetValue()!!
+        assertEquals(2, events.size)
+        assertEquals("summarize", events[0].extra?.get("consumer"))
+        assertEquals("ip_protection", events[1].extra?.get("consumer"))
     }
 }

@@ -7,6 +7,10 @@
 
 "use strict";
 
+const { AppProvidedConfigEngine } = ChromeUtils.importESModule(
+  "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs"
+);
+
 const legacyUseSavedOrderPrefName =
   SearchUtils.BROWSER_SEARCH_PREF + "useDBForOrder";
 
@@ -591,7 +595,7 @@ add_task(async function test_markAsUsed_affects_settings() {
   await settingsFileWritten;
 
   let engines = await SearchService.getEngines();
-  let appEngine = engines.find(e => e.isAppProvided);
+  let appEngine = engines.find(e => e instanceof AppProvidedConfigEngine);
 
   Assert.equal(
     SearchService._settings.getEngineMetaDataAttribute(

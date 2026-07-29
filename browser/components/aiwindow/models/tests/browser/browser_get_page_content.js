@@ -24,6 +24,10 @@ add_task(async function test_get_page_content_basic() {
     </html>
   `;
 
+  const { ChatConversation } = ChromeUtils.importESModule(
+    "moz-src:///browser/components/aiwindow/ui/modules/ChatConversation.sys.mjs"
+  );
+
   const { url_list, GetPageContent, cleanup } =
     await setupGetPageContentTests(html);
 
@@ -41,13 +45,17 @@ add_task(async function test_get_page_content_basic() {
       window.document.documentElement.hasAttribute("ai-window")
   );
 
-  // Create an allowed URLs set containing the test page
-  const allowedUrls = new Set(url_list);
+  const conversation = new ChatConversation({
+    title: "",
+    description: "",
+    pageUrl: new URL("https://example.com"),
+    pageMeta: {},
+  });
 
   // Call the tool with the URL
   const result_array = await GetPageContent.getPageContent(
     { url_list },
-    allowedUrls
+    conversation
   );
   const result = result_array[0];
 
@@ -64,8 +72,8 @@ add_task(async function test_get_page_content_basic() {
     "Text should contain text from the second paragraph"
   );
   ok(
-    result.startsWith("Content (") && result.includes(") from"),
-    "Text should indicate the extraction mode used"
+    result.startsWith("Content from"),
+    "Text should start with content prefix"
   );
 
   await cleanup();

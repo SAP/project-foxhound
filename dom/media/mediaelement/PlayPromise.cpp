@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +9,7 @@
 extern mozilla::LazyLogModule gMediaElementLog;
 
 #define PLAY_PROMISE_LOG(msg, ...) \
-  MOZ_LOG(gMediaElementLog, LogLevel::Debug, (msg, ##__VA_ARGS__))
+  MOZ_LOG_FMT(gMediaElementLog, LogLevel::Debug, msg, ##__VA_ARGS__)
 
 namespace mozilla::dom {
 
@@ -52,7 +50,7 @@ void PlayPromise::MaybeResolveWithUndefined() {
     return;
   }
   mFulfilled = true;
-  PLAY_PROMISE_LOG("PlayPromise %p resolved with undefined", this);
+  PLAY_PROMISE_LOG("PlayPromise {} resolved with undefined", fmt::ptr(this));
   Promise::MaybeResolveWithUndefined();
 }
 
@@ -76,7 +74,7 @@ void PlayPromise::MaybeReject(nsresult aReason) {
     return;
   }
   mFulfilled = true;
-  PLAY_PROMISE_LOG("PlayPromise %p rejected with 0x%x (%s)", this,
+  PLAY_PROMISE_LOG("PlayPromise {} rejected with 0x{:x} ({})", fmt::ptr(this),
                    static_cast<uint32_t>(aReason), ToPlayResultStr(aReason));
   Promise::MaybeReject(aReason);
 }

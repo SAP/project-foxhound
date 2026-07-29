@@ -13,8 +13,10 @@
 #include "mozilla/widget/Screen.h"
 #include "nsDocShell.h"
 #include "nsDocShellLoadState.h"
+#include "nsGlobalWindowOuter.h"
 #include "nsIWindowWatcher.h"
 #include "nsNetUtil.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsPIWindowWatcher.h"
 #include "nsServiceManagerUtils.h"
 #include "nsWindowWatcher.h"
@@ -92,9 +94,17 @@ void DocumentPictureInPicture::OnPiPClosed() {
   MOZ_LOG(gDPIPLog, LogLevel::Debug, ("PiP was closed"));
 
   mLastOpenedWindow = nullptr;
+
+  if (RefPtr<nsPIDOMWindowInner> ownerWin = GetOwnerWindow()) {
+    if (BrowsingContext* bc = ownerWin->GetBrowsingContext()) {
+      MOZ_ASSERT(bc->GetControlsDocumentPiP());
+      DebugOnly<nsresult> rv = bc->SetControlsDocumentPiP(false);
+      MOZ_ASSERT(NS_SUCCEEDED(rv));
+    }
+  }
 }
 
-nsGlobalWindowInner* DocumentPictureInPicture::GetWindow() {
+nsGlobalWindowInner* DocumentPictureInPicture::GetWindow() const {
   if (mLastOpenedWindow && mLastOpenedWindow->GetOuterWindow() &&
       !mLastOpenedWindow->GetOuterWindow()->Closed()) {
     return nsGlobalWindowInner::Cast(mLastOpenedWindow);
@@ -319,6 +329,10 @@ already_AddRefed<Promise> DocumentPictureInPicture::RequestWindow(
   rv = pipTraversable->SetIsDocumentPiP(true);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
 
+  MOZ_ASSERT(!bc->GetControlsDocumentPiP());
+  rv = bc->SetControlsDocumentPiP(true);
+  MOZ_ASSERT(NS_SUCCEEDED(rv));
+
   // 16. Set mLastOpenedWindow
   mLastOpenedWindow = pipTraversable->GetDOMWindow()->GetCurrentInnerWindow();
   MOZ_ASSERT(mLastOpenedWindow);
@@ -334,7 +348,7 @@ already_AddRefed<Promise> DocumentPictureInPicture::RequestWindow(
   asyncDispatcher->PostDOMEvent();
 
   // 18. Return pipTraversable
-  RefPtr<Promise> promise = Promise::CreateInfallible(GetOwnerGlobal());
+  RefPtr<Promise> promise = Promise::CreateInfallible(GetRelevantGlobal());
   promise->MaybeResolve(nsGlobalWindowInner::Cast(mLastOpenedWindow));
   return promise.forget();
 }

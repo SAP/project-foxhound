@@ -17,18 +17,6 @@ if (is_mac) {
   import("//chromium/build/config/mac/rules.gni")
 }
 
-group("sdk") {
-  public_deps = []
-  if (!build_with_chromium) {
-    if (is_android) {
-      public_deps += [ "android" ]
-    }
-    if (is_ios) {
-      public_deps += [ ":framework_objc" ]
-    }
-  }
-}
-
 rtc_library("media_constraints") {
   sources = [
     "media_constraints.cc",
@@ -36,7 +24,7 @@ rtc_library("media_constraints") {
   ]
   deps = [
     "../api:audio_options_api",
-    "../api:libjingle_peerconnection_api",
+    "../api:peer_connection_interface",
     "../rtc_base:stringutils",
   ]
 }
@@ -46,7 +34,7 @@ rtc_library("sdk_tests") {
   sources = [ "media_constraints_unittest.cc" ]
   deps = [
     ":media_constraints",
-    "../api:libjingle_peerconnection_api",
+    "../api:peer_connection_interface",
     "../test:test_support",
   ]
 }
@@ -328,7 +316,6 @@ if (is_ios || is_mac) {
           ":audio_session_observer",
           ":base_objc",
           ":core_audio_helpers_objc",
-          "../api:array_view",
           "../api:scoped_refptr",
           "../api:sequence_checker",
           "../api/audio:audio_device",
@@ -479,7 +466,6 @@ if (is_ios || is_mac) {
           ":native_video",
           ":videoframebuffer_objc",
           ":videosource_objc",
-          "../api:libjingle_peerconnection_api",
           "../api/video:video_frame",
           "../api/video:video_rtp_headers",
           "../common_video",
@@ -519,7 +505,6 @@ if (is_ios || is_mac) {
       deps = [
         ":audio_device_api_objc",
         ":core_audio_helpers_objc",
-        "../api:array_view",
         "../api:make_ref_counted",
         "../api:refcountedbase",
         "../api:scoped_refptr",
@@ -584,7 +569,6 @@ if (is_ios || is_mac) {
         ":mediasource_objc",
         ":native_video",
         ":videoframebuffer_objc",
-        "../api:libjingle_peerconnection_api",
         "../api:media_stream_interface",
         "../api/video:video_frame",
         "../api/video:video_rtp_headers",
@@ -775,17 +759,22 @@ if (is_ios || is_mac) {
         "objc/components/video_codec/RTCDefaultVideoDecoderFactory.h",
         "objc/components/video_codec/RTCDefaultVideoDecoderFactory.m",
         "objc/components/video_codec/RTCDefaultVideoEncoderFactory.h",
-        "objc/components/video_codec/RTCDefaultVideoEncoderFactory.m",
+        "objc/components/video_codec/RTCDefaultVideoEncoderFactory.mm",
       ]
 
       deps = [
+        ":base_native_additions_objc",
         ":base_objc",
+        ":helpers_objc",
         ":native_video",
         ":videocodec_objc",
         ":videotoolbox_objc",
         ":vp8",
         ":vp9",
         ":vpx_codec_constants",
+        "../api/video_codecs:scalability_mode",
+        "../api/video_codecs:scalability_mode_helper",
+        "//third_party/abseil-cpp/absl/algorithm:container",
       ]
 
       defines = []
@@ -824,10 +813,12 @@ if (is_ios || is_mac) {
       ]
 
       deps = [
+        ":base_native_additions_objc",
         ":base_objc",
         ":helpers_objc",
         ":wrapped_native_codec_objc",
         "../api/video_codecs:scalability_mode",
+        "../api/video_codecs:video_codecs_api",
         "../modules/video_coding:webrtc_vp8",
         "../modules/video_coding:webrtc_vp8_scalability",
       ]
@@ -844,10 +835,12 @@ if (is_ios || is_mac) {
       ]
 
       deps = [
+        ":base_native_additions_objc",
         ":base_objc",
         ":helpers_objc",
         ":wrapped_native_codec_objc",
         "../api/video_codecs:scalability_mode",
+        "../api/video_codecs:video_codecs_api",
         "../modules/video_coding:webrtc_vp9",
       ]
     }
@@ -861,8 +854,10 @@ if (is_ios || is_mac) {
       ]
 
       deps = [
+        ":base_native_additions_objc",
         ":base_objc",
         ":wrapped_native_codec_objc",
+        "../api/video_codecs:video_codecs_api",
         "../media:rtc_media_base",
         "../modules/video_coding/codecs/av1:dav1d_decoder",
       ]
@@ -877,10 +872,12 @@ if (is_ios || is_mac) {
       ]
 
       deps = [
+        ":base_native_additions_objc",
         ":base_objc",
         ":helpers_objc",
         ":wrapped_native_codec_objc",
         "../api/video_codecs:scalability_mode",
+        "../api/video_codecs:video_codecs_api",
         "../modules/video_coding/codecs/av1:av1_svc_config",
         "../modules/video_coding/codecs/av1:libaom_av1_encoder",
       ]
@@ -929,7 +926,6 @@ if (is_ios || is_mac) {
         ":base_objc",
         ":native_api",
         ":videoframebuffer_objc",
-        "../api:libjingle_peerconnection_api",
         "../api:media_stream_interface",
       ]
     }
@@ -1128,17 +1124,23 @@ if (is_ios || is_mac) {
         ":videosource_objc",
         ":videotoolbox_objc",
         "../api:create_modular_peer_connection_factory",
+        "../api:data_channel_interface",
         "../api:dtmf_sender_interface",
         "../api:enable_media",
         "../api:field_trials_view",
         "../api:jsep",
-        "../api:libjingle_peerconnection_api",
+        "../api:legacy_stats_types",
         "../api:media_stream_interface",
+        "../api:peer_connection_interface",
         "../api:rtc_event_log_output_file",
         "../api:rtc_stats_api",
         "../api:rtp_parameters",
+        "../api:rtp_receiver_interface",
         "../api:rtp_sender_interface",
+        "../api:rtp_transceiver_interface",
         "../api:scoped_refptr",
+        "../api:set_local_description_observer_interface",
+        "../api:set_remote_description_observer_interface",
         "../api/audio:audio_device",
         "../api/audio:audio_processing",
         "../api/audio:builtin_audio_processing_builder",
@@ -1148,6 +1150,7 @@ if (is_ios || is_mac) {
         "../api/crypto:frame_decryptor_interface",
         "../api/crypto:frame_encryptor_interface",
         "../api/environment",
+        "../api/environment:deprecated_global_field_trials",
         "../api/environment:environment_factory",
         "../api/rtc_event_log:rtc_event_log_factory",
         "../api/task_queue:default_task_queue_factory",
@@ -1173,8 +1176,8 @@ if (is_ios || is_mac) {
         "../rtc_base:stringutils",
         "../rtc_base:threading",
         "../rtc_base:timeutils",
+        "../rtc_base/system:plan_b_only",
         "../stats:rtc_stats",
-        "../system_wrappers:field_trial",
         "../system_wrappers:metrics",
       ]
 
@@ -1203,6 +1206,7 @@ if (is_ios || is_mac) {
             "objc/unittests/RTCCertificateTest.mm",
             "objc/unittests/RTCConfigurationTest.mm",
             "objc/unittests/RTCDataChannelConfigurationTest.mm",
+            "objc/unittests/RTCDefaultVideoEncoderFactory_xctest.mm",
             "objc/unittests/RTCEncodedImage_xctest.mm",
             "objc/unittests/RTCFileVideoCapturer_xctest.mm",
             "objc/unittests/RTCH264ProfileLevelId_xctest.m",
@@ -1234,6 +1238,7 @@ if (is_ios || is_mac) {
             ":base_native_additions_objc",
             ":base_objc",
             ":callback_logger_objc",
+            ":default_codec_factory_objc",
             ":framework_objc",
             ":helpers_objc",
             ":mediaconstraints_objc",
@@ -1248,9 +1253,7 @@ if (is_ios || is_mac) {
             ":videoframebuffer_objc",
             ":videosource_objc",
             ":videotoolbox_objc",
-            "../api:array_view",
             "../api:jsep",
-            "../api:libjingle_peerconnection_api",
             "../api:rtc_error_matchers",
             "../api:scoped_refptr",
             "../api/audio:audio_device",
@@ -1267,9 +1270,9 @@ if (is_ios || is_mac) {
             "../media:rtc_media_base",
             "../media:rtc_media_tests_utils",
             "../modules/video_coding:video_codec_interface",
-            "../rtc_base:gunit_helpers",
             "../rtc_base:refcount",
             "../rtc_base:rtc_event",
+            "../rtc_base:threading",
             "../rtc_base/system:unused",
             "../system_wrappers",
             "../test:create_test_environment",
@@ -1312,7 +1315,8 @@ if (is_ios || is_mac) {
             ":sdk_unittests_bundle_data",
             ":sdk_unittests_sources",
             "../rtc_base:threading",
-            "//test:test_support",
+            "../test:run_loop",
+            "//test:test_support_objc",
           ]
           ldflags = [ "-all_load" ]
         }
@@ -1331,7 +1335,8 @@ if (is_ios || is_mac) {
             ":framework_objc+link",
             ":ios_framework_bundle",
             "../rtc_base:threading",
-            "//test:test_support",
+            "../test:run_loop",
+            "//test:test_support_objc",
           ]
         }
       }
@@ -1680,10 +1685,11 @@ if (is_ios || is_mac) {
         ":base_objc",
         ":native_video",
         ":videoframebuffer_objc",
-        "../api:libjingle_peerconnection_api",
         "../api:make_ref_counted",
         "../api:media_stream_interface",
         "../api:scoped_refptr",
+        "../api:video_track_source_proxy_factory",
+        "../api/environment",
         "../api/video:video_frame",
         "../api/video:video_rtp_headers",
         "../api/video_codecs:video_codecs_api",
@@ -1783,7 +1789,6 @@ if (is_ios || is_mac) {
         "objc/components/video_codec/nalu_rewriter.h",
       ]
       deps = [
-        "../api:array_view",
         "../common_video",
         "../modules/video_coding:webrtc_h264",
         "../rtc_base:buffer",
@@ -1822,7 +1827,6 @@ if (is_ios || is_mac) {
         ":video_toolbox_cc",
         ":videocodec_objc",
         ":videoframebuffer_objc",
-        "../api:array_view",
         "../api/video:video_rtp_headers",
         "../api/video_codecs:video_codecs_api",
         "../common_video",
@@ -1831,6 +1835,7 @@ if (is_ios || is_mac) {
         "../rtc_base:checks",
         "../rtc_base:logging",
         "../rtc_base:timeutils",
+        "../system_wrappers",
         "//third_party/libyuv",
       ]
 

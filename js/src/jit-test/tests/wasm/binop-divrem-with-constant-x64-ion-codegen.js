@@ -259,6 +259,15 @@ const i64_div_s = [
                sar \\$0x3F, %rax
                sub %rax, %rdx`,
   },
+  {
+    divisor: 0x3_0000_0000,
+    expected: `mov \\$0x2AAAAAAAAAAAAAAB, %rax
+               imul %rdi
+               sar \\$0x1F, %rdx
+               mov %rdi, %rax
+               sar \\$0x3F, %rax
+               sub %rax, %rdx`,
+  },
 ];
 
 for (let {divisor, expected} of i64_div_s) {
@@ -357,6 +366,13 @@ const i64_div_u = [
     expected: `mov \\$-0x1C71C71C71C71C71, %rax
                mul %rdi
                shr \\$0x03, %rdx
+               mov %rdx, %rax`,
+  },
+  {
+    divisor: 0x3_0000_0000,
+    expected: `mov \\$-0x5555555555555555, %rax
+               mul %rdi
+               shr \\$0x21, %rdx
                mov %rdx, %rax`,
   },
 
@@ -631,9 +647,35 @@ const i64_rem_s = [
                and %r11, %rax
                neg %rax`,
   },
+
+  // Other divisors.
+  {
+    divisor: 0x3_0000_0000,
+    expected: `mov \\$0x2AAAAAAAAAAAAAAB, %rax
+               imul %rdi
+               sar \\$0x1F, %rdx
+               mov %rdi, %rax
+               sar \\$0x3F, %rax
+               sub %rax, %rdx
+               mov \\$0x300000000, %r11
+               imul %r11, %rdx
+               mov %rdi, %rax
+               sub %rdx, %rax`,
+    negative: `mov \\$0x2AAAAAAAAAAAAAAB, %rax
+               imul %rdi
+               sar \\$0x1F, %rdx
+               mov %rdi, %rax
+               sar \\$0x3F, %rax
+               sub %rax, %rdx
+               neg %rdx
+               mov \\$-0x300000000, %r11
+               imul %r11, %rdx
+               mov %rdi, %rax
+               sub %rdx, %rax`,
+  },
 ];
 
-for (let {divisor, expected} of i64_rem_s) {
+for (let {divisor, expected, negative = expected} of i64_rem_s) {
   let rems64 =
     `(module
        (func (export "f") (param i64) (result i64)
@@ -646,7 +688,7 @@ for (let {divisor, expected} of i64_rem_s) {
       `(module
          (func (export "f") (param i64) (result i64)
            (i64.rem_s (local.get 0) (i64.const -${divisor}))))`
-    codegenTestX64_adhoc(rems64, 'f', expected);
+    codegenTestX64_adhoc(rems64, 'f', negative);
   }
 }
 
@@ -707,6 +749,18 @@ const i64_rem_u = [
                mov %rcx, %rax
                mov \\$0x7FFFFFFFFFFFFFFF, %r11
                and %r11, %rax`,
+  },
+
+  // Other divisors.
+  {
+    divisor: 0x3_0000_0000,
+    expected: `mov \\$-0x5555555555555555, %rax
+               mul %rdi
+               shr \\$0x21, %rdx
+               mov \\$0x300000000, %r11
+               imul %r11, %rdx
+               mov %rdi, %rax
+               sub %rdx, %rax`,
   },
 ];
 

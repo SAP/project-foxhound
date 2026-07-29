@@ -2888,13 +2888,8 @@ export const NimbusRolloutMessageProvider = {
         id: "mozilla-vpn-in-private-browsing:treatment-d",
         groups: [],
         content: {
-          infoBody:
-            "fluent:about-private-browsing-info-description-private-window",
-          infoIcon: "",
-          infoTitle: "",
           promoTitle:
             "VPNs aren’t all the same. Some simply aren’t secure. Some log your activity. But Mozilla VPN is different — it’s open source and backed by a company with a track record of putting people and their privacy first.",
-          infoEnabled: true,
           promoButton: {
             action: {
               data: {
@@ -2904,12 +2899,10 @@ export const NimbusRolloutMessageProvider = {
             },
           },
           promoHeader: "Why Mozilla VPN?",
-          infoLinkText: "fluent:about-private-browsing-learn-more-link",
           promoEnabled: true,
           promoLinkText: "Check out Mozilla VPN",
           promoLinkType: "button",
           promoImageLarge: "chrome://browser/content/assets/moz-vpn.svg",
-          infoTitleEnabled: false,
           promoSectionStyle: "below-search",
           promoTitleEnabled: true,
         },

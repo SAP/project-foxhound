@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +8,7 @@
 #include <type_traits>
 #include "ipc/IPCMessageUtils.h"
 #include "ipc/IPCMessageUtilsSpecializations.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TelemetryProcessEnums.h"
 #include "mozilla/TelemetryHistogramEnums.h"
@@ -112,7 +112,8 @@ static_assert(
     "Update ParamTraits<HistogramID> implementation");
 
 template <>
-struct ParamTraits<mozilla::Telemetry::ScalarActionType>
+struct MOZ_ENUM_SERIALIZER_ALLOW_SENTINEL_UPPER_BOUND
+    ParamTraits<mozilla::Telemetry::ScalarActionType>
     : public ContiguousEnumSerializerInclusive<
           mozilla::Telemetry::ScalarActionType,
           mozilla::Telemetry::ScalarActionType::eSet,

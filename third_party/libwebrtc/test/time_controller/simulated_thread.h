@@ -12,6 +12,7 @@
 
 #include <memory>
 
+#include "absl/base/nullability.h"
 #include "absl/functional/any_invocable.h"
 #include "absl/strings/string_view.h"
 #include "api/function_view.h"
@@ -23,7 +24,7 @@
 #include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/thread_annotations.h"
-#include "test/time_controller/simulated_time_controller.h"
+#include "test/time_controller/simulated_time_controller_impl.h"
 
 namespace webrtc {
 
@@ -32,8 +33,13 @@ class SimulatedThread : public Thread,
  public:
   using CurrentThreadSetter = CurrentThreadSetter;
   SimulatedThread(sim_time_impl::SimulatedTimeControllerImpl* handler,
+                  absl::string_view name);
+  SimulatedThread(sim_time_impl::SimulatedTimeControllerImpl* handler,
                   absl::string_view name,
-                  std::unique_ptr<SocketServer> socket_server);
+                  std::unique_ptr<SocketServer> absl_nonnull socket_server);
+  SimulatedThread(sim_time_impl::SimulatedTimeControllerImpl* handler,
+                  absl::string_view name,
+                  SocketServer* absl_nonnull socket_server);
   ~SimulatedThread() override;
 
   void RunReady(Timestamp at_time) override;
@@ -70,7 +76,9 @@ class SimulatedMainThread : public SimulatedThread {
  public:
   explicit SimulatedMainThread(
       sim_time_impl::SimulatedTimeControllerImpl* handler);
-  ~SimulatedMainThread();
+  SimulatedMainThread(sim_time_impl::SimulatedTimeControllerImpl* handler,
+                      SocketServer* socket_server);
+  ~SimulatedMainThread() override;
 
  private:
   CurrentThreadSetter current_setter_;

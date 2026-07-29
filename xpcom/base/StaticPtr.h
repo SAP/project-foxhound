@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -73,6 +71,11 @@ class MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS StaticAutoPtr {
 };
 
 template <class T>
+std::ostream& operator<<(std::ostream& aOut, const StaticAutoPtr<T>& aObj) {
+  return mozilla::DebugValue(aOut, aObj.get());
+}
+
+template <class T>
 class MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS StaticRefPtr {
  public:
   constexpr StaticRefPtr() = default;
@@ -138,6 +141,11 @@ class MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS StaticRefPtr {
 
   T* MOZ_OWNING_REF mRawPtr = nullptr;
 };
+
+template <class T>
+std::ostream& operator<<(std::ostream& aOut, const StaticRefPtr<T>& aObj) {
+  return mozilla::DebugValue(aOut, aObj.get());
+}
 
 namespace StaticPtr_internal {
 class Zero;
@@ -215,6 +223,12 @@ REFLEXIVE_EQUALITY_OPERATORS(const StaticRefPtr<T>&, StaticPtr_internal::Zero*,
 #undef REFLEXIVE_EQUALITY_OPERATORS
 
 }  // namespace mozilla
+
+template <typename T>
+struct fmt::formatter<mozilla::StaticAutoPtr<T>> : fmt::ostream_formatter {};
+
+template <typename T>
+struct fmt::formatter<mozilla::StaticRefPtr<T>> : fmt::ostream_formatter {};
 
 // Declared in mozilla/RefPtr.h
 template <class T>

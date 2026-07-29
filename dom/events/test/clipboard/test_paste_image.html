@@ -107,7 +107,7 @@
       window.addEventListener("paste", async (e) => {
         isDeeply(e.clipboardData.types,
                  (navigator.platform.includes("Win") && imageAsFileEnabled) ?
-                    ["application/x-moz-file", "Files"] : ["text/html", "text/plain", "Files"]);
+                    ["Files"] : ["text/html", "text/plain", "Files"]);
         await onPaste(e, imageAsFileEnabled);
         resolve();
       }, { once: true });

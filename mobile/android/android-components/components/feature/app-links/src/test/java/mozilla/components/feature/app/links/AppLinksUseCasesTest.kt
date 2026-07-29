@@ -19,7 +19,6 @@ import mozilla.components.support.test.whenever
 import mozilla.components.support.utils.Browsers
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -31,6 +30,7 @@ import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.robolectric.Shadows.shadowOf
 import java.io.File
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class AppLinksUseCasesTest {
@@ -63,6 +63,10 @@ class AppLinksUseCasesTest {
         "https://mozilla.org/?link=https://example.com"
     private val urlWithBrowserFallbackLink =
         "https://mozilla.org/?S.browser_fallback_url=https://example.com"
+    private val appIntentWithUnsafeScheme =
+         "intent:foo#Intent;package=org.mozilla.fenix;scheme=file;end;"
+    private val appIntentWithUnsafeUpperScheme =
+         "intent:foo#Intent;package=org.mozilla.fenix;scheme=FILE;end;"
 
     @Before
     fun setup() {
@@ -263,7 +267,7 @@ class AppLinksUseCasesTest {
         val context = createContext(Triple(browserSchemeUrl, browserPackage, ""))
         val browsers: Browsers = mock()
         whenever(browsers.isInstalled(browserPackage)).thenReturn(true)
-        val subject = AppLinksUseCases(context = context, launchInApp = { true }, installedBrowsers = browsers)
+        val subject = AppLinksUseCases(context = context, launchInApp = { true }, installedBrowsers = { browsers })
 
         val redirect = subject.interceptedAppLinkRedirect(browserSchemeUrl)
         assertTrue(redirect.isRedirect())
@@ -277,7 +281,7 @@ class AppLinksUseCasesTest {
         val context = createContext(Triple(appUrl, browserPackage, ""))
         val browsers: Browsers = mock()
         whenever(browsers.isInstalled(browserPackage)).thenReturn(true)
-        val subject = AppLinksUseCases(context = context, launchInApp = { true }, installedBrowsers = browsers)
+        val subject = AppLinksUseCases(context = context, launchInApp = { true }, installedBrowsers = { browsers })
 
         val redirect = subject.interceptedAppLinkRedirect(appUrl)
         assertFalse(redirect.isRedirect())
@@ -297,7 +301,7 @@ class AppLinksUseCasesTest {
         assertNotNull(redirect.appIntent)
         assertNotNull(redirect.marketplaceIntent)
 
-        assertEquals("zxing://scan/", redirect.appIntent!!.dataString)
+        assertEquals("zxing://scan/", redirect.appIntent.dataString)
     }
 
     @Test
@@ -363,6 +367,24 @@ class AppLinksUseCasesTest {
 
         assertNull(redirect.appIntent)
         assertFalse(redirect.hasExternalApp())
+    }
+
+    @Test
+    fun `A intent scheme with unsafe scheme is not an app link`() {
+        val context = createContext(Triple(appIntentWithUnsafeScheme, appPackage, ""))
+        val subject = AppLinksUseCases(context, { true })
+
+        val redirect = subject.interceptedAppLinkRedirect(appIntentWithUnsafeScheme)
+        assertNull(redirect.appIntent)
+    }
+
+    @Test
+    fun `A intent scheme with unsafe upper scheme is not an app link`() {
+        val context = createContext(Triple(appIntentWithUnsafeUpperScheme, appPackage, ""))
+        val subject = AppLinksUseCases(context, { true })
+
+        val redirect = subject.interceptedAppLinkRedirect(appIntentWithUnsafeUpperScheme)
+        assertNull(redirect.appIntent)
     }
 
     @Test
@@ -652,7 +674,7 @@ class AppLinksUseCasesTest {
         val result = subject.safeParseUri(uri, 0)
 
         assertNotNull(result)
-        assertEquals(result?.`package`, "org.mozilla.test")
+        assertEquals(result.`package`, "org.mozilla.test")
     }
 
     @Test

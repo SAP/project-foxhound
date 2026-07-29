@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -223,28 +221,24 @@ struct WebMioData {
   CheckedInt<size_t> offset;
 };
 
-static int webm_read(void* aBuffer, size_t aLength, void* aUserData) {
+static int64_t webm_read(void* aBuffer, size_t aLength, void* aUserData) {
   MOZ_RELEASE_ASSERT(aUserData, "aUserData must point to a valid WebMioData");
   WebMioData* ioData = static_cast<WebMioData*>(aUserData);
 
-  // Check the read length.
-  if (aLength > ioData->data.Length()) {
-    return 0;
-  }
-
-  // Check eos.
-  if (ioData->offset.value() >= ioData->data.Length()) {
+  if (!ioData->offset.isValid() ||
+      ioData->offset.value() >= ioData->data.Length()) {
     return 0;
   }
 
   size_t oldOffset = ioData->offset.value();
-  ioData->offset += aLength;
-  if (!ioData->offset.isValid() ||
-      (ioData->offset.value() > ioData->data.Length())) {
+  size_t available = ioData->data.Length() - oldOffset;
+  size_t toRead = aLength < available ? aLength : available;
+  ioData->offset += toRead;
+  if (!ioData->offset.isValid()) {
     return -1;
   }
-  memcpy(aBuffer, ioData->data.Elements() + oldOffset, aLength);
-  return 1;
+  memcpy(aBuffer, ioData->data.Elements() + oldOffset, toRead);
+  return toRead;
 }
 
 static int webm_seek(int64_t aOffset, int aWhence, void* aUserData) {

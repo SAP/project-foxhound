@@ -1,4 +1,3 @@
-// -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -24,6 +23,7 @@ function run_test() {
     /[^\x20-\x7f]/.test(profile.path),
     "the profile path should contain a non-ASCII character"
   );
+  Services.fog.initializeFOG();
 
   let keyDBName = "key4.db";
   let keyDBFile = do_get_file(`test_broken_fips/${keyDBName}`);
@@ -35,6 +35,13 @@ function run_test() {
 
   // Initialize NSS.
   Cc["@mozilla.org/psm;1"].getService(Ci.nsINSSComponent);
+
+  ok(!Glean.nss.initializationFallbacks.READ_ONLY.testGetValue());
+  equal(Glean.nss.initializationFallbacks.RENAME_MODULE_DB.testGetValue(), 1);
+  ok(
+    !Glean.nss.initializationFallbacks.RENAME_MODULE_DB_READ_ONLY.testGetValue()
+  );
+  ok(!Glean.nss.initializationFallbacks.NO_DB_INIT.testGetValue());
 
   const fipsUtils = Cc["@mozilla.org/security/fipsutils;1"].getService(
     Ci.nsIFIPSUtils

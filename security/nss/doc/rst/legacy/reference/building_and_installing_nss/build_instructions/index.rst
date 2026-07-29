@@ -81,7 +81,7 @@ Build instructions
 
       .. code::
 
-         hg clone https://hg.mozilla.org/projects/nspr
+         git clone https://github.com/mozilla/nspr
          hg clone https://hg.mozilla.org/projects/nss
 
    #. If you want to build a releases other than the tips of these repositories, then switch to the

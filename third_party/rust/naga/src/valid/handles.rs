@@ -160,6 +160,7 @@ impl super::Validator {
                 binding: _,
                 ty,
                 init,
+                memory_decorations: _,
             } = global_variable;
             validate_type(ty)?;
             if let Some(init_expr) = init {
@@ -863,6 +864,18 @@ impl super::Validator {
                 validate_expr(data.stride)?;
                 Ok(())
             }
+            crate::Statement::RayPipelineFunction(fun) => match fun {
+                crate::RayPipelineFunction::TraceRay {
+                    acceleration_structure,
+                    descriptor,
+                    payload,
+                } => {
+                    validate_expr(acceleration_structure)?;
+                    validate_expr(descriptor)?;
+                    validate_expr(payload)?;
+                    Ok(())
+                }
+            },
             crate::Statement::Break
             | crate::Statement::Continue
             | crate::Statement::Kill

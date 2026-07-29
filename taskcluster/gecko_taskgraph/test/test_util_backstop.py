@@ -93,7 +93,7 @@ def params():
         pytest.param(
             {},
             {
-                "target_tasks_method": "nothing",
+                "dontbuild": True,
             },
             False,
             id="dontbuild",
@@ -156,7 +156,7 @@ def params():
             {
                 "repository_type": "git",
             },
-            True,
+            False,
             id="git",
         ),
     ),

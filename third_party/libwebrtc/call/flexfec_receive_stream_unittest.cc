@@ -12,22 +12,23 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <vector>
 
-#include "api/array_view.h"
 #include "api/call/transport.h"
 #include "api/environment/environment_factory.h"
 #include "api/rtp_headers.h"
 #include "call/flexfec_receive_stream_impl.h"
 #include "call/rtp_stream_receiver_controller.h"
+#include "logging/rtc_event_log/mock/mock_rtc_event_log.h"
 #include "modules/rtp_rtcp/mocks/mock_recovered_packet_receiver.h"
 #include "modules/rtp_rtcp/mocks/mock_rtcp_rtt_stats.h"
 #include "modules/rtp_rtcp/source/byte_io.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
-#include "rtc_base/thread.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/mock_transport.h"
+#include "test/run_loop.h"
 
 namespace webrtc {
 
@@ -44,14 +45,14 @@ FlexfecReceiveStream::Config CreateDefaultConfig(
     Transport* rtcp_send_transport) {
   FlexfecReceiveStream::Config config(rtcp_send_transport);
   config.payload_type = kFlexfecPlType;
-  config.rtp.remote_ssrc = ByteReader<uint32_t>::ReadBigEndian(kFlexfecSsrc);
+  config.remote_ssrc = ByteReader<uint32_t>::ReadBigEndian(kFlexfecSsrc);
   config.protected_media_ssrcs = {
       ByteReader<uint32_t>::ReadBigEndian(kMediaSsrc)};
   EXPECT_TRUE(config.IsCompleteAndEnabled());
   return config;
 }
 
-RtpPacketReceived ParsePacket(ArrayView<const uint8_t> packet) {
+RtpPacketReceived ParsePacket(std::span<const uint8_t> packet) {
   RtpPacketReceived parsed_packet(nullptr);
   EXPECT_TRUE(parsed_packet.Parse(packet));
   return parsed_packet;
@@ -63,14 +64,13 @@ TEST(FlexfecReceiveStreamConfigTest, IsCompleteAndEnabled) {
   MockTransport rtcp_send_transport;
   FlexfecReceiveStream::Config config(&rtcp_send_transport);
 
-  config.rtp.local_ssrc = 18374743;
   config.rtcp_mode = RtcpMode::kCompound;
   EXPECT_FALSE(config.IsCompleteAndEnabled());
 
   config.payload_type = 123;
   EXPECT_FALSE(config.IsCompleteAndEnabled());
 
-  config.rtp.remote_ssrc = 238423838;
+  config.remote_ssrc = 238423838;
   EXPECT_FALSE(config.IsCompleteAndEnabled());
 
   config.protected_media_ssrcs.push_back(138989393);
@@ -85,7 +85,8 @@ class FlexfecReceiveStreamTest : public ::testing::Test {
   FlexfecReceiveStreamTest()
       : config_(CreateDefaultConfig(&rtcp_send_transport_)) {
     receive_stream_ = std::make_unique<FlexfecReceiveStreamImpl>(
-        CreateEnvironment(), config_, &recovered_packet_receiver_, &rtt_stats_);
+        CreateEnvironment(&log_), config_, &recovered_packet_receiver_,
+        /* packet_router= */ nullptr, &rtt_stats_);
     receive_stream_->RegisterWithTransport(&rtp_stream_receiver_controller_);
   }
 
@@ -93,8 +94,9 @@ class FlexfecReceiveStreamTest : public ::testing::Test {
     receive_stream_->UnregisterFromTransport();
   }
 
-  AutoThread main_thread_;
+  test::RunLoop main_thread_;
   MockTransport rtcp_send_transport_;
+  MockRtcEventLog log_;
   FlexfecReceiveStream::Config config_;
   MockRecoveredPacketReceiver recovered_packet_receiver_;
   MockRtcpRttStats rtt_stats_;
@@ -147,6 +149,11 @@ TEST_F(FlexfecReceiveStreamTest, RecoversPacket) {
 
   // Tear-down
   receive_stream_->UnregisterFromTransport();
+}
+
+TEST_F(FlexfecReceiveStreamTest, LogsReceivedPacketToEventLog) {
+  EXPECT_CALL(log_, LogProxy);
+  receive_stream_->OnRtpPacket(RtpPacketReceived());
 }
 
 }  // namespace webrtc

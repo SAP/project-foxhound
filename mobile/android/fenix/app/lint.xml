@@ -12,10 +12,12 @@
     <!-- Lints that don't apply to our translation process -->
     <issue id="MissingTranslation" severity="ignore" />
     <issue id="MissingQuantity" severity="ignore" />
+    <issue id="ImpliedQuantity" severity="ignore" />
     <issue id="PluralsCandidate" severity="ignore" />
     <issue id="StringFormatCount" severity="ignore" />
     <issue id="TypographyEllipsis" severity="ignore" />
     <issue id="ExtraTranslation" severity="ignore" />
+    <issue id="Untranslatable" severity="ignore" />
     <issue id="MissingDefaultResource" severity="ignore" />
     <issue id="BrandUsage" severity="error">
         <ignore path="**/values-*/strings.xml" />

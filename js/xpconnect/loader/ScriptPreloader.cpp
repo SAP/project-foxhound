@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,6 +13,7 @@
 
 #include "mozilla/Components.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/EndianUtils.h"
 #include "mozilla/FileUtils.h"
 #include "mozilla/IOBuffers.h"
 #include "mozilla/Logging.h"
@@ -48,6 +47,16 @@
 #include "nsThreadUtils.h"
 #include "nsXULAppAPI.h"
 #include "xpcpublic.h"
+
+#if defined(XP_LINUX)
+#  include <sys/mman.h>
+// MADV_COLD was added in Linux 5.4 / Android API 30; define it for older SDKs
+// so we can call madvise() unconditionally (the kernel will return EINVAL and
+// we ignore it).
+#  ifndef MADV_COLD
+#    define MADV_COLD 20
+#  endif
+#endif
 
 #define STARTUP_COMPLETE_TOPIC "browser-delayed-startup-finished"
 #define DOC_ELEM_INSERTED_TOPIC "document-element-inserted"
@@ -366,6 +375,16 @@ nsresult ScriptPreloader::Observe(nsISupports* subject, const char* topic,
     MOZ_ASSERT(mStartupFinished);
     MOZ_ASSERT(XRE_IsParentProcess());
     mStartupHasAdvancedToCacheWritingStage = true;
+
+#if defined(XP_LINUX)
+    // Startup is complete; mark the cache mapping cold so the kernel can
+    // reclaim these pages under memory pressure without unmapping them.
+    if (mCacheData->initialized()) {
+      // MADV_COLD may return EINVAL on kernels older than 5.4.
+      (void)madvise(mCacheData->get<uint8_t>().get(), mCacheData->size(),
+                    MADV_COLD);
+    }
+#endif
 
     StartCacheWriteIfReady();
   } else if (mContentStartupFinishedTopic.Equals(topic)) {
@@ -1061,18 +1080,22 @@ already_AddRefed<JS::Stencil> ScriptPreloader::GetCachedStencil(
     RefPtr<JS::Stencil> stencil =
         mChildCache->GetCachedStencilInternal(cx, options, path);
     if (stencil) {
+#ifndef ANDROID
       glean::script_preloader::requests
           .EnumGet(glean::script_preloader::RequestsLabel::eHitchild)
           .Add();
+#endif
       return stencil.forget();
     }
   }
 
   RefPtr<JS::Stencil> stencil = GetCachedStencilInternal(cx, options, path);
+#ifndef ANDROID
   glean::script_preloader::requests
       .EnumGet(stencil ? glean::script_preloader::RequestsLabel::eHit
                        : glean::script_preloader::RequestsLabel::eMiss)
       .Add();
+#endif
 
   return stencil.forget();
 }

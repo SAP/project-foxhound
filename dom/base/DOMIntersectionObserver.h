@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -38,7 +36,7 @@ class DOMIntersectionObserverEntry final : public nsISupports,
         mIsIntersecting(aIsIntersecting),
         mTarget(aTarget),
         mIntersectionRatio(aIntersectionRatio) {}
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(DOMIntersectionObserverEntry)
 
   nsISupports* GetParentObject() const { return mOwner; }
@@ -112,16 +110,16 @@ struct IntersectionOutput {
 
 class DOMIntersectionObserver final : public nsISupports,
                                       public nsWrapperCache {
-  virtual ~DOMIntersectionObserver() { Disconnect(); }
+  ~DOMIntersectionObserver() { Disconnect(); }
 
   using NativeCallback = void (*)(
       const Sequence<OwningNonNull<DOMIntersectionObserverEntry>>& aEntries);
   DOMIntersectionObserver(Document&, NativeCallback);
 
  public:
-  DOMIntersectionObserver(already_AddRefed<nsPIDOMWindowInner>&& aOwner,
+  DOMIntersectionObserver(already_AddRefed<nsPIDOMWindowInner> aOwner,
                           dom::IntersectionCallback& aCb);
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(DOMIntersectionObserver)
   NS_INLINE_DECL_STATIC_IID(NS_DOM_INTERSECTION_OBSERVER_IID)
 

@@ -1,0 +1,15 @@
+{
+  "label": "game.granbluefantasy.jp",
+  "bugs": {
+    "1899067": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://game.granbluefantasy.jp/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

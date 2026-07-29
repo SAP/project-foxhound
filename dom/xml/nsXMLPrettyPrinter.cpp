@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -88,7 +87,7 @@ nsresult nsXMLPrettyPrinter::PrettyPrint(Document* aDocument,
   }
 
   // Attach an UA Widget Shadow Root on it.
-  rootElement->AttachAndSetUAShadowRoot(Element::NotifyUAWidgetSetup::No);
+  rootElement->AttachAndSetUAShadowRoot(Element::NotifyUAWidget::No);
   RefPtr<ShadowRoot> shadowRoot = rootElement->GetShadowRoot();
   MOZ_RELEASE_ASSERT(shadowRoot && shadowRoot->IsUAWidget(),
                      "There should be a UA Shadow Root here.");
@@ -188,6 +187,8 @@ void nsXMLPrettyPrinter::ContentWillBeRemoved(nsIContent* aChild,
 }
 
 void nsXMLPrettyPrinter::NodeWillBeDestroyed(nsINode* aNode) {
+  MOZ_DIAGNOSTIC_ASSERT(mDocument == aNode);
+  mDocument->RemoveMutationObserver(this);
   mDocument = nullptr;
   NS_RELEASE_THIS();
 }

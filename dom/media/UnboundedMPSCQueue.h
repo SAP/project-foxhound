@@ -100,7 +100,7 @@ class UnboundedMPSCQueue {
       return false;
     }
 
-    *aOutput = next->data;
+    *aOutput = std::move(next->data);
 
     // Simply shift the queue one node further, so that the sentinel node is
     // now pointing to the correct most ancient node. It contains stale data,

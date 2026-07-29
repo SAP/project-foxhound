@@ -164,6 +164,8 @@ const { NodeHTTP2Server } = ChromeUtils.importESModule(
 
 let server = new NodeHTTP2Server();
 await server.start();
+// Or with custom hostnames covered by a freshly-generated leaf cert:
+// await server.start(0, ["custom_domain.example"]);
 // Supports HTTP/2 specific features like server push, multiplexing
 
 // Check session count
@@ -344,10 +346,29 @@ server._skipCert = true;
 await server.start();
 ```
 
-The certificates are valid for the following domains: `localhost`, `foo.example.com`, `alt1.example.com`, `alt2.example.com`
-Check `http2-cert.pem.certspec` and `proxy-cert.pem.certspec` for the up to date information.
+The pre-shipped certificates are valid for the following domains: `localhost`, `foo.example.com`, `alt1.example.com`, `alt2.example.com`. Check `http2-cert.pem.certspec` and `proxy-cert.pem.certspec` for the up-to-date information.
 
-If you need the certs to be valid for more domains, consider using:
+### Custom hostnames
+
+Each TLS-bearing server (`NodeHTTPSServer`, `NodeHTTP2Server`, `NodeTLSEchoServer`, `NodeWebSocketServer`, `NodeWebSocketHttp2Server`, `NodeHTTPSProxyServer`, `NodeHTTP2ProxyServer`) accepts an optional list of hostnames as the last argument of `start()`. When provided, the server mints a fresh leaf certificate covering those hostnames as DNS SANs (signed by the same key the existing test CA uses, so it chains under the already-installed `http2-ca.pem`):
+
+```javascript
+const customDomain = "custom_domain.example";
+
+// Make Firefox resolve the custom hostname to 127.0.0.1.
+Services.prefs.setCharPref("network.dns.localDomains", customDomain);
+
+let server = new NodeHTTP2Server();
+await server.start(0, [customDomain]);
+
+// server.domain() and server.origin() now reflect the custom hostname.
+let chan = makeChan(`${server.origin()}/test`); // https://custom_domain.example:<port>/test
+```
+
+Generation runs entirely with Node builtins (no extra `node_modules` deps). When `start()` is called without hostnames, the pre-shipped on-disk certificates are used unchanged, so existing tests are unaffected.
+
+If you instead need to bypass cert validation altogether:
+
 ```javascript
 const certOverrideService = Cc[
   "@mozilla.org/security/certoverride;1"

@@ -4,8 +4,9 @@ prefs = [
   "browser.backup.archive.enabled=true",
   "browser.backup.restore.enabled=true",
   "browser.backup.scheduled.enabled=false",
-  "browser.backup.archive.overridePlatformCheck=true",
-  "browser.backup.restore.overridePlatformCheck=true",
+  # Profile backup is disabled when SQLite at-rest encryption is on
+  # (Bug 1996558); run these tests with it off (the production default).
+  "security.storage.encryption.sqlite.enabled=false",
 ]
 support-files = [
   "head.js",
@@ -27,6 +28,9 @@ skip-if = [
 ["browser_settings_errors.js"]
 
 ["browser_settings_restore_from_backup.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200'", # Bug 2019745
+]
 
 ["browser_settings_turn_off_scheduled_backups.js"]
 

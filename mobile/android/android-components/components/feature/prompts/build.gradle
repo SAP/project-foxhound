@@ -53,12 +53,15 @@ dependencies {
 
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
+    testImplementation libs.kotlin.test
     testImplementation libs.kotlinx.coroutines.test
     testImplementation libs.robolectric
 
     androidTestImplementation project(':components:support-android-test')
     androidTestImplementation libs.androidx.test.core
     androidTestImplementation libs.androidx.test.runner
+
+    androidTestRuntimeOnly libs.okhttp
 }
 
 apply from: '../../../common-config.gradle'

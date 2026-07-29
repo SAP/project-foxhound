@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -101,6 +99,7 @@ option(
 set_config("BUILT_BY_MOZILLA", depends("--built-by-mozilla")(lambda v: bool(v) or None))
 set_define("BUILT_BY_MOZILLA", depends("--built-by-mozilla")(lambda v: bool(v) or None))
 
+
 @depends("MOZ_APP_VENDOR", build_project)
 def check_moz_app_vendor(moz_app_vendor, build_project):
     if not moz_app_vendor:
@@ -172,47 +171,16 @@ set_config("MOZ_FOLD_LIBS", fold_libs)
 # Some of the options here imply an option from js/moz.configure,
 # so, need to be declared before the include.
 
-option("--disable-gecko-profiler", help="Disable the Gecko profiler")
-
-
-@depends("--disable-gecko-profiler", target)
-def gecko_profiler(enable_gecko_profiler, target):
-    if not enable_gecko_profiler:
-        return False
-
-    if target.os == "Android":
-        return target.cpu in ("aarch64", "arm", "x86", "x86_64")
-    elif target.kernel == "Linux":
-        return target.cpu in ("aarch64", "arm", "x86", "x86_64", "mips64")
-    elif target.kernel == "FreeBSD":
-        return target.cpu in ("aarch64", "x86_64")
-    return target.kernel in ("Darwin", "WINNT")
-
-
-@depends(gecko_profiler)
-def gecko_profiler_define(value):
-    if value:
-        return True
-
-
-set_config("MOZ_GECKO_PROFILER", gecko_profiler_define)
-set_define("MOZ_GECKO_PROFILER", gecko_profiler_define)
-
-
 # Enable perfetto on Android if gecko profiling is enabled and only for
 # nightly builds. Linux support requires at least linux-headers-3.18 for <linux/vm_sockets.h>
-set_config(
-    "MOZ_PERFETTO", gecko_profiler_define, when=target_is_android & milestone.is_nightly
-)
-set_define(
-    "MOZ_PERFETTO", gecko_profiler_define, when=target_is_android & milestone.is_nightly
-)
+set_config("MOZ_PERFETTO", True, when=target_is_android & milestone.is_nightly)
+set_define("MOZ_PERFETTO", True, when=target_is_android & milestone.is_nightly)
 
 
 # Whether code to parse ELF binaries should be compiled for the Gecko profiler
 # (for symbol table dumping).
-@depends(gecko_profiler, target)
-def gecko_profiler_parse_elf(value, target):
+@depends(target)
+def gecko_profiler_parse_elf(target):
     # Currently we only want to build this code on Linux (including Android) and BSD.
     # For Android, this is in order to dump symbols from Android system, where
     # on other platforms there exist alternatives that don't require bloating
@@ -222,7 +190,7 @@ def gecko_profiler_parse_elf(value, target):
     # MozDescribeCodeAddress to call into some Rust crates that parse ELF and
     # DWARF data, but build system issues currently prevent Rust from being
     # used in mozglue.)
-    if value and (target.kernel == "Linux" or target.kernel == "FreeBSD"):
+    if target.kernel == "Linux" or target.kernel == "FreeBSD":
         return True
 
 
@@ -230,8 +198,8 @@ set_config("MOZ_GECKO_PROFILER_PARSE_ELF", gecko_profiler_parse_elf)
 
 # enable this by default if the profiler is enabled
 # Note: also requires jemalloc
-set_config("MOZ_PROFILER_MEMORY", gecko_profiler_define)
-set_define("MOZ_PROFILER_MEMORY", gecko_profiler_define)
+set_config("MOZ_PROFILER_MEMORY", True)
+set_define("MOZ_PROFILER_MEMORY", True)
 
 
 @depends(
@@ -663,11 +631,13 @@ set_config("MOZ_WAYLAND", depends_if(wayland_headers)(lambda _: True))
 set_define("MOZ_WAYLAND", depends_if(wayland_headers)(lambda _: True))
 
 
-# Hardware-accelerated video decode with VAAPI and V4L2 on Linux
-# ==============================================================
+# Hardware-accelerated video decode (VAAPI, Vulkan, V4L2) on Linux
+# ================================================================
 set_config("MOZ_ENABLE_VAAPI", True, when=toolkit_gtk)
 set_define("MOZ_ENABLE_VAAPI", True, when=toolkit_gtk)
 
+set_config("MOZ_ENABLE_VULKAN_VIDEO", True, when=toolkit_gtk)
+set_define("MOZ_ENABLE_VULKAN_VIDEO", True, when=toolkit_gtk)
 
 @depends(target, toolkit_gtk)
 def v4l2(target, toolkit_gtk):
@@ -879,28 +849,19 @@ set_define("MOZ_FFMPEG", ffmpeg)
 
 # AV1 Video Codec Support
 # ==============================================================
-option("--disable-av1", help="Disable av1 video support")
-
-
-@depends("--enable-av1")
-def av1(value):
-    if value:
-        return True
-
-
 option("--with-system-av1", help="Use system av1 (located with pkg-config)")
 
 pkg_check_modules("MOZ_SYSTEM_LIBAOM", "aom >= 3.0.0", when="--with-system-av1")
 pkg_check_modules("MOZ_SYSTEM_LIBDAV1D", "dav1d >= 1.2.1", when="--with-system-av1")
 
 
-@depends(target, "--with-system-av1", when=av1 & compile_environment)
+@depends(target, "--with-system-av1", when=compile_environment)
 def dav1d_asm(target, system_av1):
     if not system_av1 and target.cpu in ("arm", "aarch64", "x86", "x86_64"):
         return True
 
 
-@depends(target, "--with-system-av1", when=av1 & compile_environment)
+@depends(target, "--with-system-av1", when=compile_environment)
 def dav1d_nasm(target, system_av1):
     if not system_av1 and target.cpu in ("x86", "x86_64"):
         return namespace(version="2.14", what="AV1")
@@ -908,8 +869,6 @@ def dav1d_nasm(target, system_av1):
 
 set_config("MOZ_DAV1D_ASM", dav1d_asm)
 set_define("MOZ_DAV1D_ASM", dav1d_asm)
-set_config("MOZ_AV1", av1)
-set_define("MOZ_AV1", av1)
 set_config("MOZ_SYSTEM_AV1", True, when="--with-system-av1")
 
 # JXL Image Codec Support
@@ -917,9 +876,9 @@ set_config("MOZ_SYSTEM_AV1", True, when="--with-system-av1")
 option("--disable-jxl", help="Disable jxl image support")
 
 
-@depends("--disable-jxl", milestone.is_nightly)
-def jxl(value, is_nightly):
-    if is_nightly and value:
+@depends("--disable-jxl")
+def jxl(value):
+    if value:
         return True
 
 
@@ -1189,7 +1148,7 @@ include("../build/moz.configure/keyfiles.configure")
 
 simple_keyfile("Mozilla API")
 
-with only_when(depends(target.os)(lambda os: os != "Android")):
+with only_when(depends(target.os)(lambda os: os not in ("Android", "WINNT"))):
     simple_keyfile("Google Location Service API")
 
 simple_keyfile("Google Safebrowsing API")
@@ -1346,9 +1305,9 @@ set_config("MOZ_SYSTEM_WEBP", depends(when=system_webp)(lambda: True))
 
 # Build Freetype in the tree
 # ==============================================================
-@depends(target, "--enable-skia-pdf")
-def tree_freetype(target, skia_pdf):
-    if target.os == "Android" or (skia_pdf and target.os == "WINNT"):
+@depends(target)
+def tree_freetype(target):
+    if target.os == "Android":
         return True
 
 
@@ -1570,6 +1529,7 @@ def x11_libs(webrtc):
         "xcb-shm",
         "x11-xcb",
         "xext",
+        "xfixes",
         "xrandr >= 1.4.0",
     ]
     if webrtc:
@@ -1579,7 +1539,6 @@ def x11_libs(webrtc):
             "xcomposite",
             "xcursor",
             "xdamage",
-            "xfixes",
             "xi",
         ]
     return libs
@@ -1662,6 +1621,10 @@ with only_when(compile_environment & depends(target.os)(lambda os: os != "WINNT"
 # ==============================================================
 with only_when(compile_environment & depends(target.os)(lambda os: os != "WINNT")):
     set_define("HAVE_SYSIOCCOM_H", check_header("sys/ioccom.h"))
+
+    set_config("HAVE_EXECINFO", check_header("execinfo.h"))
+
+    set_config("HAVE_SINGLE_THREADED_H", check_header("sys/single_threaded.h"))
 
 # Elfhack
 # ==============================================================
@@ -1756,7 +1719,7 @@ with only_when("--enable-compile-environment"):
                     "int main() { return 0; }\nint (*ptr)() = main;",
                     pack_rel_relocs
                     + ["-pie", "-o", path]
-                    + (extra_toolchain_flags or [])
+                    + extra_toolchain_flags
                     + linker_ldflags,
                     wrapper=c_compiler.wrapper,
                     onerror=lambda: None,
@@ -2417,8 +2380,7 @@ with only_when(compile_environment):
             flags=jpeg_flags.cflags,
             check_msg="for sufficient jpeg library version",
             onerror=lambda: die(
-                "Insufficient JPEG library version for "
-                "--with-system-jpeg (62 required)"
+                "Insufficient JPEG library version for --with-system-jpeg (62 required)"
             ),
         )
 
@@ -2436,7 +2398,7 @@ with only_when(compile_environment):
             flags=jpeg_flags.cflags,
             check_msg="for sufficient libjpeg-turbo JCS_EXTENSIONS",
             onerror=lambda: die(
-                "libjpeg-turbo JCS_EXTENSIONS required for " "--with-system-jpeg"
+                "libjpeg-turbo JCS_EXTENSIONS required for --with-system-jpeg"
             ),
         )
 
@@ -2759,7 +2721,7 @@ with only_when(target_is_windows):
         dxc_dll_path,
         when=dxc_supports_target,
     )
-    @checking("for dxcompiler.dll")
+    @checking("for dxcompiler.dll", lambda x: x.dxc_path if x.enabled else "not found")
     @imports("os.path")
     def dxcompiler(target, artifact, windows_sdk_dir, dxc_path):
         if not windows_sdk_dir and not artifact:
@@ -3209,12 +3171,6 @@ set_config("MOZ_BACKGROUNDTASKS", True, when="--enable-backgroundtasks")
 set_define("MOZ_BACKGROUNDTASKS", True, when="--enable-backgroundtasks")
 
 
-# Update-related programs: updater, maintenance service, update agent,
-# default browser agent.
-# ==============================================================
-include("../build/moz.configure/update-programs.configure")
-
-
 # Mobile optimizations
 # ==============================================================
 option(
@@ -3330,7 +3286,6 @@ confvar(
 
 
 with only_when(target_is_android):
-
     confvar(
         env="ANDROID_APPEND_USERNAME_TO_PACKAGE_NAME",
         set_as_config=False,
@@ -3513,6 +3468,7 @@ def crashreporter_default(target, developer_options, artifacts):
         # The crash reporter prevents crash stacktraces to be logged in the
         # logs on Android, so we leave it out by default in developer builds.
         return target.os != "Android" or not developer_options or artifacts
+    return False
 
 
 option(
@@ -3705,6 +3661,134 @@ option(env="MOZ_PKG_SPECIAL", nargs=1, help="Name of special moz flavor")
 set_config("MOZ_PKG_SPECIAL", depends_if("MOZ_PKG_SPECIAL")(lambda x: x[0]))
 
 
+option(env="MOZ_PKG_PLATFORM", nargs=1, help="Override the package platform name")
+
+
+@depends(target, build_project, "MOZ_PKG_PLATFORM", "MOZ_PKG_SPECIAL")
+def moz_pkg_platform(target, build_project, override, special):
+    if override:
+        platform = override[0]
+    else:
+        # target.raw_os and target.raw_cpu can be unintuitive; hardcode
+        # the well-known platforms.
+        platform = f"{target.raw_os}-{target.raw_cpu}"
+        if build_project == "mobile/android":
+            platform = f"android-{target.raw_cpu}"
+        if target.kernel == "WINNT":
+            if target.cpu == "x86":
+                platform = "win32"
+            elif target.cpu == "aarch64":
+                platform = "win64-aarch64"
+            else:
+                platform = "win64"
+        if target.kernel == "Darwin":
+            platform = "mac"
+        if target.raw_os == "linux-gnu":
+            platform = f"linux-{target.raw_cpu}"
+    if special:
+        platform = f"{platform}-{special[0]}"
+    return platform
+
+
+set_config("MOZ_PKG_PLATFORM", moz_pkg_platform)
+
+
+@depends(moz_pkg_platform, "MOZ_SIMPLE_PACKAGE_NAME")
+def pkg_langpack_path(platform, simple_name):
+    if simple_name:
+        return ""
+    return f"{platform}/xpi/"
+
+
+set_config("PKG_LANGPACK_PATH", pkg_langpack_path)
+
+
+option(
+    env="MOZ_PKG_APPNAME",
+    nargs=1,
+    help="Override the application name used in package file names",
+)
+
+
+@depends("MOZ_PKG_APPNAME", moz_app_name)
+def moz_pkg_appname(override, app_name):
+    if override:
+        return override[0]
+    return app_name
+
+
+set_config("MOZ_PKG_APPNAME", moz_pkg_appname)
+
+
+option(
+    env="MOZ_PKG_VERSION",
+    nargs=1,
+    help="Override the version used in package file names",
+)
+
+
+@depends("MOZ_PKG_VERSION", milestone.app_version)
+def moz_pkg_version(override, app_version):
+    if override:
+        return override[0]
+    return app_version
+
+
+set_config("MOZ_PKG_VERSION", moz_pkg_version)
+
+
+option(
+    env="MOZ_PKG_FORMAT",
+    nargs=1,
+    help="Override the package container format (TAR, TGZ, XZ, BZ2, ZIP, DMG, APK)",
+)
+
+
+@depends("MOZ_PKG_FORMAT", target, toolkit)
+def moz_pkg_format(override, target, toolkit):
+    if override:
+        return override[0]
+    if toolkit == "cocoa":
+        return "DMG"
+    if target.kernel == "WINNT":
+        return "ZIP"
+    if target.kernel == "SunOS":
+        return "XZ"
+    if toolkit == "gtk":
+        return "XZ"
+    if toolkit == "android":
+        return "APK"
+    return "TGZ"
+
+
+set_config("MOZ_PKG_FORMAT", moz_pkg_format)
+
+
+@depends(moz_pkg_format)
+@imports(_from="mozbuild.action.package", _import="FORMAT_SUFFIX")
+def pkg_suffix(pkg_format):
+    return FORMAT_SUFFIX[pkg_format]
+
+
+set_config("PKG_SUFFIX", pkg_suffix)
+
+
+@depends("MOZ_DEV_EDITION")
+def moz_langpack_eid_host(dev_edition):
+    if dev_edition:
+        return "devedition.mozilla.org"
+    return "firefox.mozilla.org"
+
+
+set_config("MOZ_LANGPACK_EID_HOST", moz_langpack_eid_host)
+
+
+# Every other platform just winds up in dist/bin
+non_macos_pkg_path = dependable("bin")
+set_config("MOZ_PKG_BINPATH", non_macos_pkg_path, when=~target_is_osx)
+set_config("MOZ_PKG_RESPATH", non_macos_pkg_path, when=~target_is_osx)
+
+
 # Smart card support
 # ==============================================================
 @depends(target)
@@ -3734,6 +3818,19 @@ with only_when(target_is_osx):
         return f"{prefix}{app_displayname}{suffix}.app"
 
     set_config("MOZ_MACBUNDLE_NAME", mac_bundle_name)
+
+    @depends(mac_bundle_name)
+    def moz_pkg_binpath(mac_bundle_name):
+        return f"{mac_bundle_name}/Contents/MacOS"
+
+    set_config("MOZ_PKG_BINPATH", moz_pkg_binpath)
+
+    # Resource path for the precomplete file
+    @depends(mac_bundle_name)
+    def moz_pkg_respath(mac_bundle_name):
+        return f"{mac_bundle_name}/Contents/Resources"
+
+    set_config("MOZ_PKG_RESPATH", moz_pkg_respath)
 
     @depends(
         "MOZ_MACBUNDLE_ID", moz_app_displayname, "--with-distribution-id", moz_debug
@@ -3855,6 +3952,55 @@ with only_when(target_is_osx):
             )
 
         set_config("MOZ_PKCS11_PROCESS_BUNDLEID", moz_pkcs11_process_bundle_id)
+
+
+# Update-related programs: updater, maintenance service, update agent,
+# default browser agent.
+# ==============================================================
+include("../build/moz.configure/update-programs.configure")
+
+
+# Per-format extra args passed to mozbuild.action.package
+# ==============================================================
+@depends(
+    moz_pkg_format,
+    toolkit,
+    enable_profile_use,
+    mac_bundle_name,
+    moz_branding_directory,
+    moz_app_displayname,
+    build_environment.topsrcdir,
+)
+@imports(_from="os.path", _import="join")
+@imports("shlex")
+def moz_package_extra_args(
+    pkg_format,
+    toolkit,
+    profile_use,
+    macbundle_name,
+    branding_dir,
+    app_displayname,
+    topsrcdir,
+):
+    args = []
+    # For non-shippable builds, we would rather finish the build sooner
+    # than have optimal compression.
+    if pkg_format == "XZ" and profile_use:
+        args.append("--strong-compression")
+    if pkg_format == "BZ2" and toolkit == "cocoa":
+        args += ["--app-name", macbundle_name]
+    if pkg_format == "DMG" and branding_dir:
+        brand = join(topsrcdir, branding_dir)
+        args += [
+            "--dsstore", join(brand, "dsstore"),
+            "--background", join(brand, "background.png"),
+            "--icon", join(brand, "disk.icns"),
+            "--volume-name", app_displayname,
+        ]
+    return " ".join(shlex.quote(a) for a in args)
+
+
+set_config("MOZ_PACKAGE_EXTRA_ARGS", moz_package_extra_args)
 
 
 # JS Packaging
@@ -4366,12 +4512,25 @@ set_define(
 # Desktop Launcher
 # ==============================================================
 with only_when(target_is_windows):
-    desktop_launcher_enabled = ~compile_environment | check_header(
-        "winhttp.h",
-        includes=["windows.h"],
-        body="auto flag = WINHTTP_FLAG_SECURE_DEFAULTS",
-        language="C++",
-        when=compile_environment,
-    )
+
+    @depends(target.abi)
+    def desktop_launcher_enabled(abi):
+        return abi == "msvc"
+
     set_config("DESKTOP_LAUNCHER_ENABLED", True, when=desktop_launcher_enabled)
     set_define("DESKTOP_LAUNCHER_ENABLED", True, when=desktop_launcher_enabled)
+
+
+option(
+    "--enable-appservices-in-tree",
+    help="Enables building from an in-tree app-services",
+)
+
+
+@depends("--enable-appservices-in-tree")
+def enable_appservices_in_tree(value):
+    if value:
+        return True
+
+
+set_config("MOZ_APPSERVICES_IN_TREE", enable_appservices_in_tree)

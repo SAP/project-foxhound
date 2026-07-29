@@ -1,4 +1,5 @@
 # Testing
+
 *This document is intended to explain which testing styles and technologies the Android teams at Mozilla use and why. It should be accessible to developers new to testing on Android.*
 
 *Presently this document describes testing on Firefox for Fire TV: it should grow to include other applications.*
@@ -6,7 +7,9 @@
 The primary problem we try to solve with automated testing is preventing unintended changes, which often lead to bugs or poor user experiences. This problem is most common -- thus we benefit the most from thorough testing -- when developers are modifying complex or unfamiliar code.
 
 ## Quick primer on automated testing
+
 Automated tests are typically broken up into the following categories:
+
 - End-to-End tests
   - Black box tests that act like users: they click the screen and assert what is displayed, typically following common user scenarios
   - Notable for being **the only test of the full system.** Tend to **run slowly**, **be fragile**, and **be difficult to debug**
@@ -20,7 +23,9 @@ Automated tests are typically broken up into the following categories:
 Due to trade-offs of speed, correctness, fragility, and ability to debug, it's recommended to have a significant number of unit tests, a small number of integration tests, and an even smaller number of end-to-end tests. For more details, research the Test Pyramid.
 
 ## Automated testing on Android
+
 Android tests are broken into two major categories:
+
 - On-device testing
   - Runs on Android hardware or emulator
   - Typically used for **end-to-end and integration tests**
@@ -37,7 +42,9 @@ In all categories, by default tests are declared using the JUnit APIs (see below
 Note: Google [is converging the test APIs][Frictionless Android Testing] for on-device and off-device testing so eventually you can write once and run anywhere.
 
 ### On-device testing
+
 Users run your code on Android devices so testing on these devices is **the most accurate form of testing**. However, between copying code and execution times, running tests on Android devices or emulators is **significantly slower** than running code on your development machine's JVM, especially when the test suites get large. As such, **on-device testing should generally only be used when:**
+
 - Running end-to-end tests or some integration tests
 - Reproducing the behavior on device is critical
 - The tests cannot be written accurately for the JVM (e.g. UI)
@@ -45,6 +52,7 @@ Users run your code on Android devices so testing on these devices is **the most
 See [Physical Device Testing](device_testing.md) for how to leverage available physical devices.
 
 #### Espresso and UI Automator: core UI testing libraries
+
 [Espresso] and [UI Automator] are Google's core UI testing libraries on Android: they provide APIs to select views, perform actions on them, and assert state without reaching into implementation details.
 
 **Espresso is *significantly* more reliable** than UI Automator because it provides **an API for `IdlingResource`s:** these APIs wait for some system to be idle before executing the next Espresso action. For example, the built-in `IdlingResource` will wait for the UI thread to be idle, allowing the test to be robust during asynchronous actions on the UI thread, animations, etc. You can write custom `IdlingResource`s.
@@ -56,9 +64,11 @@ These libraries can be used in the same test. However, due to the improved relia
 See [this FFTV example of Espresso and UI Automator working together][espresso example].
 
 #### Robot pattern: UI test architecture
+
 UI tests are notoriously difficult to write: the code is often duplicated across tests, written imperatively, and needs frequent updates to keep up with changing UI.
 
 The Robot Pattern is an architecture that attempts to address these problems: its **key feature is separating the "what" from the "how", making the tests declarative.** A Robot pattern test may look like:
+
 ```
 navigationOverlay {
     assertCanGoBack()
@@ -73,6 +83,7 @@ navigationOverlay {
 For more on the Robot pattern including learning resources, see [the Firefox TV Architecture Decision Record](https://github.com/mozilla-mobile/firefox-tv/blob/master/docs/architecture/adr-0002-robot-pattern.md). See [this FFTV example of the Robot pattern][robot example].
 
 ### JVM Testing
+
 **Most tests should be written to run on your development machine because of the speed benefits.** Typically these tests are written as "unit tests" where each test will test a non-overlapping set of functionality so, if they fail, you can precisely pinpoint what is broken.
 
 These tests can be written effectively with standard JUnit APIs.
@@ -80,6 +91,7 @@ These tests can be written effectively with standard JUnit APIs.
 Out-of-the-box accessing the Android framework APIs is not supported, however. You can use [Robolectric][] to "shadow" the Android framework (see below).
 
 #### Robolectric: Android API shadows
+
 The Android APIs are not available on your development machine and will cause your tests to throw exceptions when used. However, **[Robolectric] provides "shadows" that mimic the Android APIs on your development machine,** allowing you to write tests with working Android APIs.
 
 While the shadows are good enough to prevent crashes, sometimes they are incomplete: for example, the shadow for `Bitmap` may not return pixel data which would cause Bitmap tests to fail. In these cases, you can fix the issue by [writing custom shadows](http://robolectric.org/extending/), interacting with a mock, or testing on device instead.
@@ -91,14 +103,17 @@ To use Robolectric, annotate your test class with `@RunWith(RobolectricTestRunne
 Note: Robolectric can also be used for JVM-based UI testing but we don't have much experience with that yet.
 
 ### Cross-platform testing technologies
+
 Technologies that are used for both on-device testing and tests on your development machine are...
 
 #### JUnit: testing framework
+
 [JUnit] is the **go-to unit testing framework on the JVM.** It provides ways to define tests and test suites and provides assertion methods like `assertEquals(expectedValue, actualValue)`.
 
 By default, all test suites on Android are defined using JUnit 4. The latest version is JUnit 5.
 
 #### Mockito: mocking framework
+
 [Mockito] is the **go-to mocking framework on the JVM:** it includes mock, spy, and call count verification support. Mocks are used to implement custom functionality for classes without having to extend the classes because extending often requires a lot of boilerplate and fragile code.
 
 Mockito cannot be used to mock static methods. In these cases, you can also include [PowerMock] but know that mocking static methods is arguably considered a poor practice.
@@ -108,16 +123,19 @@ See [this FFTV example of Mockito][mockito example].
 Mockito does not interact well with Kotlin so we are considering alternatives, such as:
 
 #### MockK: alternate mocking framework
+
 [MockK] is a popular **mocking framework for Kotlin:** it includes mock, spy, and call count verification support that better aligns with Kotlin APIs. It can **mock static methods, extension functions, and objects**. We have documentation written for [using MockK](https://notwoods.github.io/mockk-guidebook/) and [transitioning from Mockito](https://notwoods.github.io/mockk-guidebook/docs/mockito-migrate/).
 
 See [this Fenix example of MockK][mockk example].
 
 #### MockWebServer: mock network interactions
+
 The network is unreliable so it should be avoided during testing. Instead, you can use **[MockWebServer] to provide your own data from "the network".** You access it by making your calls to the URL it returns. This lets it work with `WebView`s.
 
 See [this FFTV example of MockWebServer][mockwebserver example].
 
 ## Best practices
+
 This section is intended to be a non-exhaustive list of high-level guidelines (not rules!) when testing.
 
 - Don't depend on external factors, like the network, to ensure your tests are always reliable
@@ -130,6 +148,7 @@ This section is intended to be a non-exhaustive list of high-level guidelines (n
   - Performance (event duration, CPU use, memory use, APK size)
 
 ## Testing resources
+
 Members of our team recommend, ["Working Effectively with Legacy Code"][legacy code] to learn how to introduce tests into an existing, untested project.
 
 [Espresso]: https://developer.android.com/training/testing/espresso/

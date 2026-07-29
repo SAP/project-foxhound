@@ -36,12 +36,14 @@ dependencies {
     implementation libs.androidx.core
     implementation libs.androidx.core.ktx
     implementation libs.androidx.documentfile
+    implementation libs.disklrucache
     implementation libs.kotlinx.coroutines
 
     testImplementation project(":components:support-test")
 
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
+    testImplementation libs.kotlin.test
     testImplementation libs.kotlinx.coroutines.test
     testImplementation libs.robolectric
 

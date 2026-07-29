@@ -15,16 +15,14 @@ use crate::properties::longhands::position::computed_value::T as Position;
 use crate::properties::longhands::{
     contain::computed_value::T as Contain, container_type::computed_value::T as ContainerType,
     content_visibility::computed_value::T as ContentVisibility,
-    overflow_x::computed_value::T as Overflow,
 };
-use crate::properties::{ComputedValues, StyleBuilder};
+#[cfg(feature = "gecko")]
+use crate::properties::LonghandId;
+use crate::properties::{ComputedValues, LonghandIdSet, StyleBuilder};
 use crate::values::computed::position::{
     PositionTryFallbacksTryTactic, PositionTryFallbacksTryTacticKeyword, TryTacticAdjustment,
 };
 use crate::values::specified::align::AlignFlags;
-
-#[cfg(feature = "gecko")]
-use selectors::parser::PseudoElement;
 
 /// A struct that implements all the adjustment methods.
 ///
@@ -313,11 +311,6 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
             self.style
                 .add_flags(ComputedValueFlags::SELF_OR_ANCESTOR_HAS_SIZE_CONTAINER_TYPE);
         }
-
-        #[cfg(feature = "servo")]
-        if self.style.get_parent_column().is_multicol() {
-            self.style.add_flags(ComputedValueFlags::CAN_BE_FRAGMENTED);
-        }
     }
 
     /// Adjust the style for text style.
@@ -568,20 +561,6 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
                 .mutate_inherited_text()
                 .set_white_space_collapse(new_collapse);
         }
-
-        let box_style = self.style.get_box();
-        let overflow_x = box_style.clone_overflow_x();
-        let overflow_y = box_style.clone_overflow_y();
-
-        // If at least one is scrollable we'll adjust the other one in
-        // adjust_for_overflow if needed.
-        if overflow_x.is_scrollable() || overflow_y.is_scrollable() {
-            return;
-        }
-
-        let box_style = self.style.mutate_box();
-        box_style.set_overflow_x(Overflow::Auto);
-        box_style.set_overflow_y(Overflow::Auto);
     }
 
     /// If a <fieldset> has grid/flex display type, we need to inherit
@@ -831,7 +810,7 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
     /// We intentionally don't check 'list-style-image' below since we want it to use
     /// the same font as its fallback ('list-style-type') in case it fails to load.
     #[cfg(feature = "gecko")]
-    fn adjust_for_marker_pseudo(&mut self) {
+    fn adjust_for_marker_pseudo(&mut self, author_specified_properties: &LonghandIdSet) {
         use crate::values::computed::counters::Content;
         use crate::values::computed::font::{FontFamily, FontSynthesis, FontSynthesisStyle};
         use crate::values::computed::text::{LetterSpacing, WordSpacing};
@@ -842,8 +821,7 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
         if !is_legacy_marker {
             return;
         }
-        let flags = self.style.flags.get();
-        if !flags.contains(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_FONT_FAMILY) {
+        if !author_specified_properties.contains(LonghandId::FontFamily) {
             self.style
                 .mutate_font()
                 .set_font_family(FontFamily::moz_bullet().clone());
@@ -851,23 +829,23 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
             // FIXME(mats): We can remove this if support for font-synthesis is added to @font-face rules.
             // Then we can add it to the @font-face rule in html.css instead.
             // https://github.com/w3c/csswg-drafts/issues/6081
-            if !flags.contains(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_FONT_SYNTHESIS_WEIGHT) {
+            if !author_specified_properties.contains(LonghandId::FontSynthesisWeight) {
                 self.style
                     .mutate_font()
                     .set_font_synthesis_weight(FontSynthesis::None);
             }
-            if !flags.contains(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_FONT_SYNTHESIS_STYLE) {
+            if !author_specified_properties.contains(LonghandId::FontSynthesisStyle) {
                 self.style
                     .mutate_font()
                     .set_font_synthesis_style(FontSynthesisStyle::None);
             }
         }
-        if !flags.contains(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_LETTER_SPACING) {
+        if !author_specified_properties.contains(LonghandId::LetterSpacing) {
             self.style
                 .mutate_inherited_text()
                 .set_letter_spacing(LetterSpacing::normal());
         }
-        if !flags.contains(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_WORD_SPACING) {
+        if !author_specified_properties.contains(LonghandId::WordSpacing) {
             self.style
                 .mutate_inherited_text()
                 .set_word_spacing(WordSpacing::normal());
@@ -1043,11 +1021,13 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
     }
 
     /// Adjusts the style to account for various fixups that don't fit naturally into the cascade.
+    #[allow(unused_variables)]
     pub fn adjust<E>(
         &mut self,
         layout_parent_style: &ComputedValues,
         element: Option<E>,
         try_tactic: &PositionTryFallbacksTryTactic,
+        author_specified_properties: &LonghandIdSet,
     ) where
         E: TElement,
     {
@@ -1078,8 +1058,6 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
         {
             self.adjust_for_prohibited_display_contents(element);
             self.adjust_for_fieldset_content();
-            // NOTE: It's important that this happens before
-            // adjust_for_overflow.
             self.adjust_for_text_control_editing_root();
         }
         self.adjust_for_top_layer();
@@ -1100,7 +1078,7 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
         {
             self.adjust_for_ruby(element);
             self.adjust_for_appearance(element);
-            self.adjust_for_marker_pseudo();
+            self.adjust_for_marker_pseudo(author_specified_properties);
         }
         if !try_tactic.is_empty() {
             self.adjust_for_try_tactic(try_tactic);

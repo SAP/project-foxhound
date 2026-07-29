@@ -79,8 +79,8 @@ async function testOneDimScale(config) {
     await mouse.down(nw[0], center[1], selector);
     await mouse.move(nw[0] + dx, center[1], selector);
     await mouse.up(nw[0] + dx, center[1], selector);
-    await reflowContentPage();
     await onShapeChangeApplied;
+    await reflowContentPage();
 
     const wBB = await getBoundingBoxInPx({ selector, ...config });
     isnot(wBB.nw[0], nw[0], `${selector} nw moved right after w scale`);
@@ -95,8 +95,8 @@ async function testOneDimScale(config) {
     await mouse.down(wBB.ne[0], center[1], selector);
     await mouse.move(wBB.ne[0] - dx, center[1], selector);
     await mouse.up(wBB.ne[0] - dx, center[1], selector);
-    await reflowContentPage();
     await onShapeChangeApplied;
+    await reflowContentPage();
 
     const eBB = await getBoundingBoxInPx({ selector, ...config });
     isnot(eBB.ne[0], wBB.ne[0], `${selector} ne moved left after e scale`);
@@ -111,8 +111,9 @@ async function testOneDimScale(config) {
     await mouse.down(eBB.center[0], eBB.sw[1], selector);
     await mouse.move(eBB.center[0], eBB.sw[1] - dy, selector);
     await mouse.up(eBB.center[0], eBB.sw[1] - dy, selector);
-    await reflowContentPage();
+
     await onShapeChangeApplied;
+    await reflowContentPage();
 
     const sBB = await getBoundingBoxInPx({ selector, ...config });
     is(sBB.sw[0], eBB.sw[0], `${selector} sw not moved right after w scale`);
@@ -127,8 +128,8 @@ async function testOneDimScale(config) {
     await mouse.down(sBB.center[0], sBB.nw[1], selector);
     await mouse.move(sBB.center[0], sBB.nw[1] + dy, selector);
     await mouse.up(sBB.center[0], sBB.nw[1] + dy, selector);
-    await reflowContentPage();
     await onShapeChangeApplied;
+    await reflowContentPage();
 
     const nBB = await getBoundingBoxInPx({ selector, ...config });
     is(nBB.nw[0], sBB.nw[0], `${selector} nw not moved right after n scale`);

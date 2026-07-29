@@ -13,11 +13,11 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/rtc_event_log/rtc_event.h"
 #include "api/units/timestamp.h"
 #include "logging/rtc_event_log/events/rtc_event_definition.h"
@@ -53,7 +53,7 @@ class RtcEventAlrState final : public RtcEvent {
 
   bool in_alr() const { return in_alr_; }
 
-  static std::string Encode(ArrayView<const RtcEvent*> batch) {
+  static std::string Encode(std::span<const RtcEvent*> batch) {
     return RtcEventAlrState::definition_.EncodeBatch(batch);
   }
 
@@ -69,10 +69,13 @@ class RtcEventAlrState final : public RtcEvent {
   static constexpr RtcEventDefinition<RtcEventAlrState,
                                       LoggedAlrStateEvent,
                                       bool>
-      definition_{{"AlrState", RtcEventAlrState::kType},
-                  {&RtcEventAlrState::in_alr_,
-                   &LoggedAlrStateEvent::in_alr,
-                   {"in_alr", /*id=*/1, FieldType::kFixed8, /*width=*/1}}};
+      definition_{{.name = "AlrState", .id = RtcEventAlrState::kType},
+                  {.event_member = &RtcEventAlrState::in_alr_,
+                   .logged_member = &LoggedAlrStateEvent::in_alr,
+                   .params = {.name = "in_alr",
+                              /*id=*/.field_id = 1,
+                              .field_type = FieldType::kFixed8,
+                              /*width=*/.value_width = 1}}};
 };
 
 }  // namespace webrtc

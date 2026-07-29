@@ -138,8 +138,8 @@ export class ExtensionActionHelper {
     return window.WindowEventDispatcher;
   }
 
-  sendRequest(aTabId, aData) {
-    return this.eventDispatcherFor(aTabId).sendRequest({
+  sendRequest(aTabId, aType, aData) {
+    return this.eventDispatcherFor(aTabId).sendRequest(aType, {
       ...aData,
       aTabId,
       extensionId: this.extension.id,
@@ -164,15 +164,13 @@ class EmbedderPort {
     ]);
   }
   onPortDisconnect() {
-    this.dispatcher.sendRequest({
-      type: "GeckoView:WebExtension:Disconnect",
+    this.dispatcher.sendRequest("GeckoView:WebExtension:Disconnect", {
       sender: this.sender,
     });
     this.close();
   }
   onPortMessage(holder) {
-    this.dispatcher.sendRequest({
-      type: "GeckoView:WebExtension:PortMessage",
+    this.dispatcher.sendRequest("GeckoView:WebExtension:PortMessage", {
       data: holder.deserialize({}),
     });
   }
@@ -216,7 +214,7 @@ export class GeckoViewConnection {
       // If this is a WebExtension Page we will have a GeckoSession associated
       // to it and thus a dispatcher.
       const dispatcher = GeckoViewUtils.getDispatcherForWindow(
-        this.target.ownerGlobal
+        this.target.documentGlobal
       );
       if (dispatcher) {
         return dispatcher;
@@ -232,15 +230,14 @@ export class GeckoViewConnection {
       // If this message came from a content script, send the message to
       // the corresponding tab messenger so that GeckoSession can pick it
       // up.
-      return GeckoViewUtils.getDispatcherForWindow(this.target.ownerGlobal);
+      return GeckoViewUtils.getDispatcherForWindow(this.target.documentGlobal);
     }
 
     throw new Error(`Uknown sender envType: ${this.sender.envType}`);
   }
 
-  _sendMessage({ type, portId, data }) {
+  _sendMessage(type, { portId, data }) {
     const message = {
-      type,
       sender: this.sender,
       data,
       portId,
@@ -248,12 +245,11 @@ export class GeckoViewConnection {
       nativeApp: this.nativeApp,
     };
 
-    return this.dispatcher.sendRequestForResult(message);
+    return this.dispatcher.sendRequestForResult(type, message);
   }
 
   sendMessage(data) {
-    return this._sendMessage({
-      type: "GeckoView:WebExtension:Message",
+    return this._sendMessage("GeckoView:WebExtension:Message", {
       data: data.deserialize({}),
     });
   }
@@ -261,8 +257,7 @@ export class GeckoViewConnection {
   onConnect(portId, messenger) {
     const port = new EmbedderPort(portId, messenger);
 
-    this._sendMessage({
-      type: "GeckoView:WebExtension:Connect",
+    this._sendMessage("GeckoView:WebExtension:Connect", {
       data: {},
       portId: port.id,
     });
@@ -566,13 +561,15 @@ class ExtensionPromptObserver {
       );
 
     const extension = await exportExtension(aAddon, sourceURI);
-    const response = await lazy.EventDispatcher.instance.sendRequestForResult({
-      type: "GeckoView:WebExtension:InstallPrompt",
-      extension,
-      permissions: await filterPromptPermissions(permissions.permissions),
-      origins: permissions.origins,
-      dataCollectionPermissions: permissions.data_collection,
-    });
+    const response = await lazy.EventDispatcher.instance.sendRequestForResult(
+      "GeckoView:WebExtension:InstallPrompt",
+      {
+        extension,
+        permissions: await filterPromptPermissions(permissions.permissions),
+        origins: permissions.origins,
+        dataCollectionPermissions: permissions.data_collection,
+      }
+    );
 
     if (response.allow) {
       if (response.privateBrowsingAllowed) {
@@ -605,22 +602,26 @@ class ExtensionPromptObserver {
   }
 
   async optionalPermissionPrompt(aExtensionId, aPermissions, resolve) {
-    const response = await lazy.EventDispatcher.instance.sendRequestForResult({
-      type: "GeckoView:WebExtension:OptionalPrompt",
-      extensionId: aExtensionId,
-      permissions: aPermissions,
-    });
+    const response = await lazy.EventDispatcher.instance.sendRequestForResult(
+      "GeckoView:WebExtension:OptionalPrompt",
+      {
+        extensionId: aExtensionId,
+        permissions: aPermissions,
+      }
+    );
     resolve(response.allow);
   }
 
   async updatePermissionPrompt({ addon, permissions, resolve, reject }) {
-    const response = await lazy.EventDispatcher.instance.sendRequestForResult({
-      type: "GeckoView:WebExtension:UpdatePrompt",
-      extension: await exportExtension(addon, /* aSourceURI */ null),
-      newPermissions: await filterPromptPermissions(permissions.permissions),
-      newOrigins: permissions.origins,
-      newDataCollectionPermissions: permissions.data_collection,
-    });
+    const response = await lazy.EventDispatcher.instance.sendRequestForResult(
+      "GeckoView:WebExtension:UpdatePrompt",
+      {
+        extension: await exportExtension(addon, /* aSourceURI */ null),
+        newPermissions: await filterPromptPermissions(permissions.permissions),
+        newOrigins: permissions.origins,
+        newDataCollectionPermissions: permissions.data_collection,
+      }
+    );
 
     if (response.allow) {
       resolve();
@@ -665,14 +666,16 @@ class AddonInstallObserver {
       extension = await exportExtension(aAddon, /* aSourceURI */ null);
     }
 
-    lazy.EventDispatcher.instance.sendRequest({
-      type: "GeckoView:WebExtension:OnInstallationFailed",
-      extension,
-      addonId: aAddon?.id,
-      addonName: aAddonName,
-      addonVersion: aAddon?.version,
-      error: aError,
-    });
+    lazy.EventDispatcher.instance.sendRequest(
+      "GeckoView:WebExtension:OnInstallationFailed",
+      {
+        extension,
+        addonId: aAddon?.id,
+        addonName: aAddonName,
+        addonVersion: aAddon?.version,
+        error: aError,
+      }
+    );
   }
 
   observe(aSubject, aTopic) {
@@ -723,10 +726,10 @@ class AddonManagerListener {
       return;
     }
     const extension = await exportExtension(addon, /* aSourceURI */ null);
-    lazy.EventDispatcher.instance.sendRequest({
-      type: "GeckoView:WebExtension:OnOptionalPermissionsChanged",
-      extension,
-    });
+    lazy.EventDispatcher.instance.sendRequest(
+      "GeckoView:WebExtension:OnOptionalPermissionsChanged",
+      { extension }
+    );
   }
 
   async onExtensionReady(name, extInstance) {
@@ -750,90 +753,90 @@ class AddonManagerListener {
       addonWrapper,
       /* aSourceURI */ null
     );
-    lazy.EventDispatcher.instance.sendRequest({
-      type: "GeckoView:WebExtension:OnReady",
-      extension,
-    });
+    lazy.EventDispatcher.instance.sendRequest(
+      "GeckoView:WebExtension:OnReady",
+      { extension }
+    );
   }
 
   async onDisabling(aAddon) {
     debug`onDisabling ${aAddon.id}`;
 
     const extension = await exportExtension(aAddon, /* aSourceURI */ null);
-    lazy.EventDispatcher.instance.sendRequest({
-      type: "GeckoView:WebExtension:OnDisabling",
-      extension,
-    });
+    lazy.EventDispatcher.instance.sendRequest(
+      "GeckoView:WebExtension:OnDisabling",
+      { extension }
+    );
   }
 
   async onDisabled(aAddon) {
     debug`onDisabled ${aAddon.id}`;
 
     const extension = await exportExtension(aAddon, /* aSourceURI */ null);
-    lazy.EventDispatcher.instance.sendRequest({
-      type: "GeckoView:WebExtension:OnDisabled",
-      extension,
-    });
+    lazy.EventDispatcher.instance.sendRequest(
+      "GeckoView:WebExtension:OnDisabled",
+      { extension }
+    );
   }
 
   async onEnabling(aAddon) {
     debug`onEnabling ${aAddon.id}`;
 
     const extension = await exportExtension(aAddon, /* aSourceURI */ null);
-    lazy.EventDispatcher.instance.sendRequest({
-      type: "GeckoView:WebExtension:OnEnabling",
-      extension,
-    });
+    lazy.EventDispatcher.instance.sendRequest(
+      "GeckoView:WebExtension:OnEnabling",
+      { extension }
+    );
   }
 
   async onEnabled(aAddon) {
     debug`onEnabled ${aAddon.id}`;
 
     const extension = await exportExtension(aAddon, /* aSourceURI */ null);
-    lazy.EventDispatcher.instance.sendRequest({
-      type: "GeckoView:WebExtension:OnEnabled",
-      extension,
-    });
+    lazy.EventDispatcher.instance.sendRequest(
+      "GeckoView:WebExtension:OnEnabled",
+      { extension }
+    );
   }
 
   async onUninstalling(aAddon) {
     debug`onUninstalling ${aAddon.id}`;
 
     const extension = await exportExtension(aAddon, /* aSourceURI */ null);
-    lazy.EventDispatcher.instance.sendRequest({
-      type: "GeckoView:WebExtension:OnUninstalling",
-      extension,
-    });
+    lazy.EventDispatcher.instance.sendRequest(
+      "GeckoView:WebExtension:OnUninstalling",
+      { extension }
+    );
   }
 
   async onUninstalled(aAddon) {
     debug`onUninstalled ${aAddon.id}`;
 
     const extension = await exportExtension(aAddon, /* aSourceURI */ null);
-    lazy.EventDispatcher.instance.sendRequest({
-      type: "GeckoView:WebExtension:OnUninstalled",
-      extension,
-    });
+    lazy.EventDispatcher.instance.sendRequest(
+      "GeckoView:WebExtension:OnUninstalled",
+      { extension }
+    );
   }
 
   async onInstalling(aAddon) {
     debug`onInstalling ${aAddon.id}`;
 
     const extension = await exportExtension(aAddon, /* aSourceURI */ null);
-    lazy.EventDispatcher.instance.sendRequest({
-      type: "GeckoView:WebExtension:OnInstalling",
-      extension,
-    });
+    lazy.EventDispatcher.instance.sendRequest(
+      "GeckoView:WebExtension:OnInstalling",
+      { extension }
+    );
   }
 
   async onInstalled(aAddon) {
     debug`onInstalled ${aAddon.id}`;
 
     const extension = await exportExtension(aAddon, /* aSourceURI */ null);
-    lazy.EventDispatcher.instance.sendRequest({
-      type: "GeckoView:WebExtension:OnInstalled",
-      extension,
-    });
+    lazy.EventDispatcher.instance.sendRequest(
+      "GeckoView:WebExtension:OnInstalled",
+      { extension }
+    );
   }
 }
 
@@ -874,9 +877,9 @@ class ExtensionProcessListener {
       return;
     }
 
-    lazy.EventDispatcher.instance.sendRequest({
-      type: "GeckoView:WebExtension:OnDisabledProcessSpawning",
-    });
+    lazy.EventDispatcher.instance.sendRequest(
+      "GeckoView:WebExtension:OnDisabledProcessSpawning"
+    );
   }
 }
 
@@ -935,16 +938,16 @@ export var GeckoViewWebExtension = {
         // We pretend devtools installed/uninstalled this addon so we don't
         // have to add an API just for internal testing.
         // TODO: assert this is under a test
-        lazy.EventDispatcher.instance.sendRequest({
-          type: "GeckoView:WebExtension:DebuggerListUpdated",
-        });
+        lazy.EventDispatcher.instance.sendRequest(
+          "GeckoView:WebExtension:DebuggerListUpdated"
+        );
         break;
       }
 
       case "devtools-installed-addon": {
-        lazy.EventDispatcher.instance.sendRequest({
-          type: "GeckoView:WebExtension:DebuggerListUpdated",
-        });
+        lazy.EventDispatcher.instance.sendRequest(
+          "GeckoView:WebExtension:DebuggerListUpdated"
+        );
         break;
       }
     }

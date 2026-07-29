@@ -37,6 +37,12 @@ add_setup(async function () {
   // when the search service is initialized.
   do_get_profile();
 
+  // This initializes the policy engine for xpcshell tests.
+  let policies = Cc["@mozilla.org/enterprisepolicies;1"].getService(
+    Ci.nsIObserver
+  );
+  policies.observe(null, "policies-startup", null);
+
   registerCleanupFunction(async () => {
     sinon.restore();
   });

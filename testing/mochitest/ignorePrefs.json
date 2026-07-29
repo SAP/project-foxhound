@@ -9,7 +9,7 @@
   "browser.contextual-services.contextId",
   "browser.contextual-services.contextId.timestamp-in-seconds",
   "browser.download.lastDir",
-  "browser.firefox-view.view-count",
+  "browser.firefox-view.button-clicks",
   "browser.newtabpage.activity-stream.discoverystream.endpointSpocsClear",
   "browser.newtabpage.activity-stream.feeds.system.topsites",
   "browser.newtabpage.activity-stream.feeds.topsites",

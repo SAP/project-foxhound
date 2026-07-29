@@ -1,6 +1,3 @@
-/* -*- Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 8 -*- */
-/* vim: set sw=2 ts=8 et tw=80 ft=cpp : */
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -30,6 +27,7 @@ include PTabContext;
 include PBackgroundSharedTypes;
 
 include "mozilla/AntiTrackingIPCUtils.h";
+include "mozilla/EnumSet.h";
 include "mozilla/nsRFPIPCUtils.h";
 include "mozilla/dom/BindingIPCUtils.h";
 include "mozilla/dom/CSPMessageUtils.h";
@@ -64,7 +62,7 @@ using struct mozilla::void_t from "mozilla/ipc/IPCCore.h";
 using mozilla::WindowsHandle from "mozilla/ipc/IPCTypes.h";
 using class mozilla::WidgetCompositionEvent from "ipc/nsGUIEventIPC.h";
 using struct mozilla::widget::IMENotification from "mozilla/widget/IMEData.h";
-using struct mozilla::widget::IMENotificationRequests from "mozilla/widget/IMEData.h";
+using mozilla::widget::IMENotificationRequests from "mozilla/widget/IMEData.h";
 using struct mozilla::widget::IMEState from "mozilla/widget/IMEData.h";
 using struct mozilla::widget::InputContext from "mozilla/widget/IMEData.h";
 using struct mozilla::widget::InputContextAction from "mozilla/widget/IMEData.h";
@@ -84,8 +82,13 @@ using struct mozilla::layers::TextureFactoryIdentifier from "mozilla/layers/Comp
 using mozilla::layers::CompositorOptions from "mozilla/layers/CompositorOptions.h";
 using mozilla::CSSToScreenScale from "Units.h";
 using mozilla::CommandInt from "mozilla/EventForwards.h";
+using mozilla::HapticFeedbackType from "nsIWidget.h";
+using nsIWidget::NativeMouseMessage from "nsIWidget.h";
+using nsIWidget::NativeModifiers from "nsIWidget.h";
+using nsIWidget::NativePointerLockMode from "nsIWidget.h";
 using nsIWidget::TouchPointerState from "nsIWidget.h";
 using nsIWidget::TouchpadGesturePhase from "nsIWidget.h";
+using mozilla::MouseButton from "mozilla/EventForwards.h";
 using nsCursor from "nsIWidget.h";
 using struct LookAndFeelInt from "mozilla/widget/WidgetMessageUtils.h";
 using struct mozilla::DimensionRequest from "mozilla/widget/WidgetMessageUtils.h";
@@ -99,7 +102,7 @@ using struct mozilla::FontRange from "ipc/nsGUIEventIPC.h";
 using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
 using mozilla::dom::EffectsInfo from "mozilla/dom/EffectsInfo.h";
 using mozilla::dom::TabId from "mozilla/dom/ipc/IdType.h";
-using mozilla::ScrollAxis from "mozilla/PresShellForwards.h";
+using mozilla::AxisScrollParams from "mozilla/PresShellForwards.h";
 using mozilla::ScrollFlags from "mozilla/PresShellForwards.h";
 using struct InputFormData from "mozilla/dom/SessionStoreMessageUtils.h";
 using struct CollectedInputDataValue from "mozilla/dom/SessionStoreMessageUtils.h";
@@ -109,7 +112,7 @@ using mozilla::dom::CallerType from "mozilla/dom/BindingDeclarations.h";
 using mozilla::dom::EmbedderElementEventType from "mozilla/dom/TabMessageTypes.h";
 using mozilla::IntrinsicSize from "nsIFrame.h";
 using mozilla::AspectRatio from "mozilla/AspectRatio.h";
-using mozilla::NativeKeyBindingsType from "mozilla/NativeKeyBindingsType.h";
+using mozilla::NativeKeyBindingsType from "mozilla/widget/WidgetMessageUtils.h";
 using mozilla::StyleImageRendering from "mozilla/ServoStyleConsts.h";
 [MoveOnly] using class mozilla::ipc::BigBuffer from "mozilla/ipc/BigBuffer.h";
 using nsIFilePicker::Mode from "nsIFilePicker.h";
@@ -460,19 +463,20 @@ parent:
      * @return            Array of edit commands which should be executed in
      *                    editor of native applications.
      */
-    sync RequestNativeKeyBindings(uint32_t aType, WidgetKeyboardEvent aEvent)
+    sync RequestNativeKeyBindings(NativeKeyBindingsType aType,
+                                  WidgetKeyboardEvent aEvent)
         returns (CommandInt[] commands);
 
     async SynthesizeNativeKeyEvent(int32_t aNativeKeyboardLayout,
                                    int32_t aNativeKeyCode,
-                                   uint32_t aModifierFlags,
+                                   NativeModifiers aModifierFlags,
                                    nsString aCharacters,
                                    nsString aUnmodifiedCharacters,
                                    uint64_t? aCallbackId);
     async SynthesizeNativeMouseEvent(LayoutDeviceIntPoint aPoint,
-                                     uint32_t aNativeMessage,
-                                     int16_t aButton,
-                                     uint32_t aModifierFlags,
+                                     NativeMouseMessage aNativeMessage,
+                                     MouseButton aButton,
+                                     NativeModifiers aModifierFlags,
                                      uint64_t? aCallbackId);
     async SynthesizeNativeMouseMove(LayoutDeviceIntPoint aPoint,
                                     uint64_t? aCallbackId);
@@ -481,7 +485,7 @@ parent:
                                            double aDeltaX,
                                            double aDeltaY,
                                            double aDeltaZ,
-                                           uint32_t aModifierFlags,
+                                           NativeModifiers aModifierFlags,
                                            uint32_t aAdditionalFlags,
                                            uint64_t? aCallbackId);
     async SynthesizeNativeTouchPoint(uint32_t aPointerId,
@@ -514,8 +518,9 @@ parent:
                                       int32_t aModifierFlags,
                                       uint64_t? aCallbackId);
 
-    async LockNativePointer();
+    async LockNativePointer(NativePointerLockMode aNativePointerLockMode);
     async UnlockNativePointer();
+    async SetNativePointerLockMode(NativePointerLockMode aNativePointerLockMode);
 
     async AccessKeyNotHandled(WidgetKeyboardEvent event);
 
@@ -652,8 +657,8 @@ parent:
      */
     async MaybeFireEmbedderLoadEvents(EmbedderElementEventType aFireEventAtEmbeddingElement);
 
-    async ScrollRectIntoView(nsRect aRect, ScrollAxis aVertical,
-                             ScrollAxis aHorizontal, ScrollFlags aScrollFlags,
+    async ScrollRectIntoView(nsRect aRect, AxisScrollParams aVertical,
+                             AxisScrollParams aHorizontal, ScrollFlags aScrollFlags,
                              int32_t aAppUnitsPerDevPixel);
 
     async ShowDynamicToolbar();
@@ -725,19 +730,17 @@ child:
                                            uint64_t aInputBlockId);
 
     /**
-     * But don't compress mousemove events for tests since every event is
-     * important for the test since synthesizing various input events may
-     * be faster than what the user operates same things.  If you need to
-     * test the `Compress`, send mouse move events with setting `isSyntehsized`
-     * of `aEvent` of `EventUtils#syntehsizeMouse*()`.
+     * Don't compress mousemove events but events can still be coalesced.
+     * If you need to test the `Compress`, send mouse move events with setting
+     * `isSynthesized` of `aEvent` of `EventUtils#synthesizeMouse*()`.
      */
     [Priority=input]
-    async RealMouseMoveEventForTests(WidgetMouseEvent event,
-                                     ScrollableLayerGuid aGuid,
-                                     uint64_t aInputBlockId);
-    async NormalPriorityRealMouseMoveEventForTests(WidgetMouseEvent event,
-                                                   ScrollableLayerGuid aGuid,
-                                                   uint64_t aInputBlockId);
+    async RealMouseMoveEventNoCompress(WidgetMouseEvent event,
+                                       ScrollableLayerGuid aGuid,
+                                       uint64_t aInputBlockId);
+    async NormalPriorityRealMouseMoveEventNoCompress(WidgetMouseEvent event,
+                                                     ScrollableLayerGuid aGuid,
+                                                     uint64_t aInputBlockId);
 
     /**
      * Mouse move events with |reason == eSynthesized| are sent via a separate
@@ -937,7 +940,8 @@ child:
      * value (-1) but in the majority of the cases this saves us from two
      * sync requests from the child to the parent.
      */
-    async UIResolutionChanged(float dpi, int32_t rounding, double scale);
+    async UIResolutionChanged(float dpi, int32_t rounding, double scale,
+                              double desktopToDeviceScale);
 
     /**
      * Tell the child that whether it's allowed to render transparent has
@@ -950,6 +954,12 @@ child:
      *
      */
     async SafeAreaInsetsChanged(LayoutDeviceIntMargin aSafeAreaInsets);
+
+    /**
+     * Tell the child to init the supporting of unadjustedMovement.
+     *
+     */
+    async InitSupportsUnadjustedMovement(bool aSupportsUnadjustedMovement);
 
     /**
      * Tell the browser that its frame loader has been swapped
@@ -1069,6 +1079,10 @@ child:
      */
     async DispatchToDropTargetAndResumeEndDragSession(bool aShouldDrop, StringHashSet aAllowedFilePaths);
 
+#if defined(ACCESSIBILITY) && defined(MOZ_ENABLE_SKIA_PDF)
+    async RequestDocAccessibleForPrint();
+#endif
+
 parent:
     /**
      * Fetches whether this window supports protected media, which is sent back in response.
@@ -1096,6 +1110,8 @@ parent:
                           WindowGlobalInit aInit);
 
     async UpdateDropEffect(uint32_t aDragAction, uint32_t aDropEffect);
+
+    async PerformHapticFeedback(HapticFeedbackType aType);
 
 /*
  * FIXME: write protocol!

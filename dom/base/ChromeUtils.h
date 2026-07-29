@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -207,6 +205,13 @@ class ChromeUtils {
 
   static void InvalidateResourceCache(GlobalObject& aGlobal, ErrorResult& aRv);
 
+  static void GetCachedJavaScriptSource(GlobalObject& aGlobal,
+                                        const nsACString& aKey,
+                                        const nsACString& aURI,
+                                        const nsACString& aHintCharset,
+                                        JS::MutableHandle<JS::Value> aRetval,
+                                        ErrorResult& aRv);
+
   static void ClearBfcacheByPrincipal(GlobalObject& aGlobal,
                                       nsIPrincipal* aPrincipal,
                                       ErrorResult& aRv);
@@ -355,6 +360,17 @@ class ChromeUtils {
 
   static void EncodeURIForSrcset(GlobalObject&, const nsACString& aIn,
                                  nsACString& aOut);
+
+  static void PredictRemoteTypeForURI(GlobalObject& aGlobal, nsIURI* aURI,
+                                      const PredictRemoteTypeOptions& aOptions,
+                                      nsACString& aRemoteType,
+                                      ErrorResult& aRv);
+
+  static void PredictRemoteTypeForURI(GlobalObject& aGlobal,
+                                      const nsACString& aURIString,
+                                      const PredictRemoteTypeOptions& aOptions,
+                                      nsACString& aRemoteType,
+                                      ErrorResult& aRv);
 
 #ifdef MOZ_WMF_CDM
   static already_AddRefed<Promise> GetWMFContentDecryptionModuleInformation(

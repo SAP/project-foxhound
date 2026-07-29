@@ -122,24 +122,53 @@ function getArtifactPrefix(jobName) {
   return null;
 }
 
+const MIN_PUSHES = 2;
+
 async function fetchPushesForDate(project, targetDate) {
   console.log(`Fetching pushes for ${project} on ${targetDate}...`);
 
-  const startDate = new Date(targetDate + "T00:00:00.000Z");
   const endDate = new Date(targetDate + "T23:59:59.999Z");
-
-  const startTimestamp = Math.floor(startDate.getTime() / 1000);
   const endTimestamp = Math.floor(endDate.getTime() / 1000);
 
-  const url = `https://treeherder.mozilla.org/api/project/${project}/push/?full=true&count=100&push_timestamp__gte=${startTimestamp}&push_timestamp__lte=${endTimestamp}`;
+  const startDate = new Date(targetDate + "T00:00:00.000Z");
+  const startTimestamp = Math.floor(startDate.getTime() / 1000);
+
+  const baseUrl = `https://treeherder.mozilla.org/api/project/${project}/push/?full=true`;
+  const url = `${baseUrl}&count=100&push_timestamp__gte=${startTimestamp}&push_timestamp__lte=${endTimestamp}`;
 
   const result = await fetchJson(url);
   if (!result || !result.results) {
     throw new Error(`Failed to fetch pushes for ${project} on ${targetDate}`);
   }
 
-  console.log(`Found ${result.results.length} pushes`);
-  return result.results;
+  let pushes = result.results;
+  console.log(`Found ${pushes.length} pushes for ${targetDate}`);
+
+  if (pushes.length < MIN_PUSHES) {
+    console.log(
+      `Found fewer than ${MIN_PUSHES} pushes for ${targetDate}, fetching recent pushes...`
+    );
+    const recentUrl = `${baseUrl}&count=${MIN_PUSHES}&push_timestamp__lte=${endTimestamp}`;
+    const recentResult = await fetchJson(recentUrl);
+    if (recentResult && recentResult.results) {
+      for (const push of recentResult.results) {
+        if (!pushes.find(p => p.id === push.id)) {
+          pushes.push(push);
+        }
+      }
+      console.log(
+        `Now have ${pushes.length} pushes after including recent history`
+      );
+    }
+
+    if (pushes.length < MIN_PUSHES) {
+      throw new Error(
+        `Could only find ${pushes.length} pushes, need at least ${MIN_PUSHES}`
+      );
+    }
+  }
+
+  return pushes;
 }
 
 async function fetchTestJobsForPush(project, pushId) {
@@ -405,6 +434,12 @@ async function processDate(targetDate) {
     `Collected ${durations.length} manifest timings across ${tables.manifest.array.length} unique manifests and ${tables.jobName.array.length} job types`
   );
 
+  if (durations.length === 0) {
+    throw new Error(
+      "No manifest timing data collected. Aborting to avoid overwriting previous data with empty results."
+    );
+  }
+
   const taskIds = [];
   const taskJobNameIds = [];
   const taskCommitIds = [];
@@ -523,4 +558,7 @@ async function main() {
   await processDate(yesterday);
 }
 
-main().catch(console.error);
+main().catch(err => {
+  console.error(`FatalError: ${err.message}`);
+  process.exit(1);
+});

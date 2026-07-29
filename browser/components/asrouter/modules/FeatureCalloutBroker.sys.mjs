@@ -85,7 +85,7 @@ export class _FeatureCalloutBroker {
     if (this.isCalloutShowing) {
       return false;
     }
-    const win = browser.ownerGlobal;
+    const win = browser.documentGlobal;
     // Avoid showing feature callouts if a dialog or panel is showing.
     if (
       win.gDialogBox?.dialog ||

@@ -28,6 +28,8 @@ export function AdBannerContextMenu({
   type,
   showAdReporting,
   toggleActive = () => {},
+  // @nova-cleanup(remove-conditional): Remove novaEnabled, use size="small" and type="icon ghost" as default
+  novaEnabled,
 }) {
   const ADBANNER_CONTEXT_MENU_OPTIONS = [
     "BlockAdUrl",
@@ -94,13 +96,14 @@ export function AdBannerContextMenu({
     <div className="ads-context-menu-wrapper">
       <div className={contextMenuClassNames}>
         <moz-button
-          type="icon"
-          size="default"
+          type={novaEnabled ? "icon ghost" : "icon"}
+          size={novaEnabled ? "small" : "default"}
           data-l10n-id="newtab-menu-content-tooltip"
           data-l10n-args={JSON.stringify({
             title: spoc.title || spoc.sponsor || spoc.alt_text,
           })}
           iconsrc="chrome://global/skin/icons/more.svg"
+          aria-expanded={showContextMenu ? "true" : "false"}
           onClick={onClick}
           onKeyDown={onKeyDown}
         />
@@ -115,7 +118,6 @@ export function AdBannerContextMenu({
             site={{
               // Props we want to pass on for new ad types that come from Unified Ads API
               block_key: spoc.block_key,
-              fetchTimestamp: spoc.fetchTimestamp,
               flight_id: spoc.flight_id,
               format: spoc.format,
               id: spoc.id,

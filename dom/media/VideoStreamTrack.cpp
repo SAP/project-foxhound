@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,45 +26,41 @@ void VideoStreamTrack::Destroy() {
   MediaStreamTrack::Destroy();
 }
 
-void VideoStreamTrack::AddVideoOutput(VideoFrameContainer* aSink) {
-  if (Ended()) {
-    return;
-  }
-  auto output = MakeRefPtr<VideoOutput>(aSink, AbstractThread::MainThread());
-  AddVideoOutput(output);
-}
-
 void VideoStreamTrack::AddVideoOutput(VideoOutput* aOutput) {
   if (Ended()) {
     return;
   }
-  for (const auto& output : mVideoOutputs) {
-    if (output == aOutput) {
+  MOZ_ASSERT(aOutput->mAttachment == VideoOutput::State::Detached);
+  const bool exists = mVideoOutputs.Contains(aOutput);
+  if (exists) {
+    // A VideoOutput can be detached either through RemoveVideoOutput or by the
+    // graph removing it during (forced) shutdown. In the latter case it will
+    // still exist in mVideoOutputs in the detached state.
+    // Allow re-attaching a detached VideoOutput as users may listen to and use
+    // mAttachment to determine whether or not to re-try AddVideoOutput().
+    if (aOutput->mAttachment == VideoOutput::State::Attached) {
       MOZ_ASSERT_UNREACHABLE("A VideoOutput was already added");
       return;
     }
+  } else {
+    mVideoOutputs.AppendElement(aOutput);
   }
-  mVideoOutputs.AppendElement(aOutput);
+  aOutput->mAttachment = VideoOutput::State::Attached;
   AddDirectListener(aOutput);
   AddListener(aOutput);
-}
-
-void VideoStreamTrack::RemoveVideoOutput(VideoFrameContainer* aSink) {
-  for (const auto& output : mVideoOutputs.Clone()) {
-    if (output->mVideoFrameContainer == aSink) {
-      mVideoOutputs.RemoveElement(output);
-      RemoveDirectListener(output);
-      RemoveListener(output);
-    }
-  }
 }
 
 void VideoStreamTrack::RemoveVideoOutput(VideoOutput* aOutput) {
   for (const auto& output : mVideoOutputs.Clone()) {
     if (output == aOutput) {
       mVideoOutputs.RemoveElement(aOutput);
-      RemoveDirectListener(aOutput);
-      RemoveListener(aOutput);
+      // Don't mark the output detaching if it was already detached through
+      // forced graph shutdown.
+      if (aOutput->mAttachment == VideoOutput::State::Attached) {
+        aOutput->mAttachment = VideoOutput::State::Detaching;
+        RemoveDirectListener(aOutput);
+        RemoveListener(aOutput);
+      }
     }
   }
 }

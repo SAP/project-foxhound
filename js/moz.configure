@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -150,27 +148,6 @@ def enable_explicit_resource_management(value):
 
 set_config("ENABLE_EXPLICIT_RESOURCE_MANAGEMENT", enable_explicit_resource_management)
 set_define("ENABLE_EXPLICIT_RESOURCE_MANAGEMENT", enable_explicit_resource_management)
-
-
-# Enable source phase imports
-# ===================================================
-option(
-    "--enable-source-phase-imports",
-    default=False,
-    help="Enable experimental source phase imports support",
-)
-
-
-@depends("--enable-source-phase-imports")
-def enable_source_phase_imports(value):
-    if value:
-        return True
-
-
-set_config("ENABLE_SOURCE_PHASE_IMPORTS", enable_source_phase_imports)
-set_define("ENABLE_SOURCE_PHASE_IMPORTS", enable_source_phase_imports)
-
-
 
 # Portable Baseline Intepreter
 # =======================================================
@@ -1161,6 +1138,35 @@ def wasm_compact_imports(value, no_experimental):
 
 set_config("ENABLE_WASM_COMPACT_IMPORTS", wasm_compact_imports)
 set_define("ENABLE_WASM_COMPACT_IMPORTS", wasm_compact_imports)
+
+
+# Support for the WebAssembly component model.
+# ===========================
+
+
+@depends(milestone.is_nightly)
+def default_wasm_components(is_nightly):
+    if is_nightly:
+        return True
+
+
+option(
+    "--enable-wasm-components",
+    default=default_wasm_components,
+    help="{Enable|Disable} WebAssembly component model support",
+)
+
+
+@depends("--enable-wasm-components", "--wasm-no-experimental")
+def wasm_components(value, no_experimental):
+    if no_experimental or not value:
+        return
+
+    return True
+
+
+set_config("ENABLE_WASM_COMPONENTS", wasm_components)
+set_define("ENABLE_WASM_COMPONENTS", wasm_components)
 
 
 # Support for readline

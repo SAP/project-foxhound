@@ -43,12 +43,8 @@ function watch() {
   // If the page we navigate from supports being stored in bfcache,
   // the navigation will use a new BrowsingContext. And so force spawning
   // a new top-level target.
-  ChromeUtils.defineLazyGetter(
-    lazy,
-    "isBfcacheInParentEnabled",
-    () =>
-      Services.appinfo.sessionHistoryInParent &&
-      Services.prefs.getBoolPref("fission.bfcacheInParent", false)
+  ChromeUtils.defineLazyGetter(lazy, "isBfcacheInParentEnabled", () =>
+    Services.prefs.getBoolPref("fission.bfcacheInParent", false)
   );
 
   // Observe for all necessary event to track new and destroyed WindowGlobals.

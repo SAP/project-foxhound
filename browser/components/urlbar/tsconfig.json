@@ -3,8 +3,8 @@
   "exclude": [
     "content/SmartbarInput.mjs",
     "content/UrlbarInput.mjs",
+    "content/UrlbarView.mjs",
     "UrlbarProviderGlobalActions.sys.mjs",
-    "UrlbarView.sys.mjs",
     "private/SuggestBackendRust.sys.mjs",
     "tests/UrlbarTestUtils.sys.mjs"
   ],
@@ -12,6 +12,9 @@
 
   "compilerOptions": {
     "checkJs": true,
+    "strict": true,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
 
     "plugins": [
       {

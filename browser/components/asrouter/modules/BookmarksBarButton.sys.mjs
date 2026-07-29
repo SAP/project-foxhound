@@ -17,7 +17,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 export const BookmarksBarButton = {
   async showBookmarksBarButton(browser, message) {
     const { label, action, logo } = message.content;
-    let { gBrowser } = browser.ownerGlobal;
+    let { gBrowser } = browser.documentGlobal;
     const featureId = "fxms_bmb_button";
     const widgetId = "fxms-bmb-button";
     const supportedActions = ["OPEN_URL", "SET_PREF", "MULTI_ACTION"];

@@ -180,7 +180,7 @@ class ListManifestParser:
         B. If both the implicit and explicit (non) default value are present, add
         an OR like this (swgl || !swgl) -- that way the condition will match
         any value of swgl. For implicit variables see:
-        https://searchfox.org/mozilla-central/source/layout/tools/reftest/manifest.sys.mjs#30
+        https://searchfox.org/firefox-main/source/layout/tools/reftest/manifest.sys.mjs#30
         fission: true,
         is64Bit: true,
         useDrawSnapshot: false,

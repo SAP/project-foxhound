@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -186,8 +186,6 @@ class SkShaderBase : public SkShader {
 public:
     ~SkShaderBase() override;
 
-    uint32_t uniqueID() const { return fUniqueID; }
-
     sk_sp<SkShader> makeInvertAlpha() const;
     sk_sp<SkShader> makeWithCTM(const SkMatrix&) const;  // owns its own ctm
 
@@ -252,7 +250,7 @@ public:
         SkPoint     fPoint[2];                 //!< Type specific, see above.
         SkScalar    fRadius[2];                //!< Type specific, see above.
         SkTileMode  fTileMode;
-        uint32_t    fGradientFlags = 0;        //!< see SkGradientShader::Flags
+        bool        fPremulInterp;
     };
 
     virtual GradientType asGradient(GradientInfo* info    = nullptr,
@@ -409,8 +407,6 @@ protected:
     }
 
 private:
-    const uint32_t fUniqueID;
-
     friend class SkShaders::MatrixRec;
 };
 inline SkShaderBase* as_SB(SkShader* shader) {

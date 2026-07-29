@@ -1,8 +1,8 @@
 schema: 1
 
 bugzilla:
-  product: Toolkit
-  component: Storage
+  product: Core
+  component: SQLite and Embedded Database Bindings
 
 origin:
   name: SQLite
@@ -10,8 +10,8 @@ origin:
     SQLite is a C-language library that implements a small, fast,
     self-contained, high-reliability, full-featured, SQL database engine.
   url: https://www.sqlite.org/
-  release: version-3.51.2 (2026-01-09T17:27:48Z).
-  revision: version-3.51.2
+  release: version-3.53.2 (2026-06-03T19:12:13Z).
+  revision: version-3.53.2
   license: Public Domain
   license-file: LICENSE.md
   notes: >
@@ -26,6 +26,8 @@ vendoring:
   source-hosting: github
   tracking: tag
   vendor-directory: third_party/sqlite3/src
+  patches:
+    - patches/*.patch
   skip-vendoring-steps:
     - hg-add
     - spurious-check

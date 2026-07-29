@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -184,6 +183,8 @@ class gfxUserFontFamily : public gfxFontFamily {
 
   // Add the given font entry to the end of the family's list.
   void AddFontEntry(gfxFontEntry* aFontEntry) {
+    nsCString entryName = aFontEntry->FamilyName();
+
     mozilla::AutoWriteLock lock(mLock);
     MOZ_ASSERT(!mIsSimpleFamily, "not valid for user-font families");
 
@@ -203,12 +204,11 @@ class gfxUserFontFamily : public gfxFontFamily {
     // an existing entry here.)
     mAvailableFonts.AppendElement(aFontEntry);
 
-    if (aFontEntry->mFamilyName.IsEmpty()) {
-      aFontEntry->mFamilyName = Name();
+    if (entryName.IsEmpty()) {
+      aFontEntry->SetFamilyName(Name());
     } else {
 #ifdef DEBUG
       nsCString thisName = Name();
-      nsCString entryName = aFontEntry->mFamilyName;
       ToLowerCase(thisName);
       ToLowerCase(entryName);
       MOZ_ASSERT(thisName.Equals(entryName));
@@ -447,7 +447,7 @@ class gfxUserFontSet {
             principalHash + int(aKey->mPrivate), aKey->mURI->Hash(),
             HashFeatures(aKey->mFontEntry->mFeatureSettings),
             HashVariations(aKey->mFontEntry->mVariationSettings),
-            mozilla::HashString(aKey->mFontEntry->mFamilyName),
+            mozilla::HashString(aKey->mFontEntry->FamilyName()),
             aKey->mFontEntry->Weight().AsScalar(),
             aKey->mFontEntry->SlantStyle().AsScalar(),
             aKey->mFontEntry->Stretch().AsScalar(),
@@ -775,6 +775,8 @@ class gfxUserFontEntry : public gfxFontEntry {
   // font entry has been added to.  This will at least include the owner of this
   // user font entry.
   virtual void GetUserFontSets(nsTArray<RefPtr<gfxUserFontSet>>& aResult);
+
+  FontTableCache* GetFontTableCache(bool aCreate) override { return nullptr; }
 
   // general load state
   UserFontLoadState mUserFontLoadState;

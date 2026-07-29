@@ -60,6 +60,7 @@ object SupportUtils {
         UNSIGNED_ADDONS("unsigned-addons"),
         FX_SUGGEST("search-suggestions-firefox"),
         TRANSLATIONS("android-translation"),
+        AI_CONTROLS("android-ai-controls"),
         MANAGE_OPTIONAL_EXTENSION_PERMISSIONS("manage-optional-permissions-android-extensions"),
         EXTENSION_PERMISSIONS("extension-permissions"),
         CRASH_REPORTS("mobile-crash-reports"),
@@ -69,11 +70,13 @@ object SupportUtils {
         REQUESTED_CRASH_MINIDUMP("unsent-crash-reports-in-firefox-android"),
         TERMS_OF_USE("firefox-terms-of-use-faq"),
         RELAY("relay-masks-android"),
+        VPN("mobile-android-vpn"),
 
         /**
          * SUMO page for Local Network Access & Local Device Access permissions
          */
         LOCAL_NETWORK_AND_DEVICE_ACCESS("control-personal-device-local-network-permissions-firefox-android"),
+        PAGE_SUMMARIZATION("summarize-pages-android"),
     }
 
     enum class MozillaPage(internal val path: String) {

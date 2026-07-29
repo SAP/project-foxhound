@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +7,7 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { ExtensionUtils } from "resource://gre/modules/ExtensionUtils.sys.mjs";
 
 const lazy = XPCOMUtils.declareLazy({
+  ExtensionDocumentId: "resource://gre/modules/ExtensionDocumentId.sys.mjs",
   ExtensionParent: "resource://gre/modules/ExtensionParent.sys.mjs",
   ProxyService: {
     service: "@mozilla.org/network/protocol-proxy-service;1",
@@ -334,6 +333,12 @@ export class ProxyChannelFilter {
 
       frameId: channel.frameId,
       parentFrameId: channel.parentFrameId,
+      documentId: lazy.ExtensionDocumentId.getDocumentId(
+        channel.documentInnerWindowId
+      ),
+      parentDocumentId: lazy.ExtensionDocumentId.getDocumentId(
+        channel.parentDocumentInnerWindowId
+      ),
 
       frameAncestors: channel.frameAncestors || undefined,
 

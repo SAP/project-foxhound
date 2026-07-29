@@ -1,12 +1,18 @@
 How To Contribute Code To Firefox
 =================================
 
-The whole process can be a bit long, and it might take time to get things right.
-If at any point you are stuck, please don't hesitate to ask at `https://chat.mozilla.org <https://chat.mozilla.org>`_
-in the `#introduction <https://chat.mozilla.org/#/room/#introduction:mozilla.org>`_ channel.
-Additionally, here are some etiquette tips to help when reaching out:
+Welcome, and thank you for your interest in contributing to Firefox! If you've just
+built Firefox for the first time, congratulations, that's already a meaningful step.
 
-* Please don't ask to ask a question, post your question with the relevant context and someone will be able to help when they have time.
+This page walks you through the rest of the journey: finding a bug to work on, writing
+and submitting a patch, getting it reviewed, and landing your change. The process can
+take a little time to get the hang of, and that's completely normal.
+
+If at any point you get stuck, please don't hesitate to ask at `https://chat.mozilla.org <https://chat.mozilla.org>`_
+in the `#introduction <https://chat.mozilla.org/#/room/#introduction:mozilla.org>`_ channel.
+A few tips to help when reaching out:
+
+* Feel free to post your question directly, along with the relevant context. There's no need to ask whether you can ask, someone will help when they have time.
 * Use public facing channels to ask your questions instead of direct messaging folks.
 
   * Other people get to learn from your question and there's a higher chance your question will get answered quickly since there are many people in the #introduction room.
@@ -27,15 +33,15 @@ Please see the :ref:`Firefox Contributors Quick Reference <Firefox Contributors'
 Finding something to work on
 ----------------------------
 
-| Bugs listed as 'Assigned' are not usually a good place to start,
-  unless you're sure you have something worthy to contribute. Someone
-  else is already working on it!
-| Even with no assignee, it is polite to check if someone has recently
-  commented that they're looking at fixing the issue.
+| Bugs listed as 'Assigned' are usually best to skip as someone else is
+  already working on them. If you have something specific to add, you
+  can still leave a comment.
+| Even with no assignee, it's a good idea to check whether someone has
+  recently commented that they're looking at fixing the issue.
 | Once you have found something to work on, go ahead and comment! Let
   the bug submitter, reviewer, and component owner know that you'd like
-  to work on the bug. You might receive some extra information, perhaps
-  also made the assignee.
+  to work on the bug. You may receive some helpful pointers, and
+  possibly be assigned to the bug.
 
 .. _good-first-bug-guide:
 

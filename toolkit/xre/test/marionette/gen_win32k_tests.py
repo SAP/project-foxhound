@@ -70,15 +70,6 @@ def set_header(enable):
         )
 
 
-def set_bad_requirements(enabled):
-    output.write(
-        """
-        self.marionette.set_pref(Prefs.WEBGL, {})\n""".format(
-            "False" if enabled else "True"
-        )
-    )
-
-
 def restart():
     output.write("\n        self.restart()\n")
 
@@ -179,8 +170,6 @@ for line in TESTS:
             set_header(True)
         elif start == "Header-Off":
             set_header(False)
-        elif start == "Bad Requirements":
-            set_bad_requirements(True)
         elif start == "Restart":
             restart()
         elif start == "On":

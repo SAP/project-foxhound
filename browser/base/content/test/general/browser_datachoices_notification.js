@@ -4,9 +4,6 @@
 
 "use strict";
 
-var { Preferences } = ChromeUtils.importESModule(
-  "resource://gre/modules/Preferences.sys.mjs"
-);
 var { TelemetryReportingPolicy } = ChromeUtils.importESModule(
   "resource://gre/modules/TelemetryReportingPolicy.sys.mjs"
 );
@@ -100,49 +97,58 @@ async function triggerInfoBar(expectedTimeoutMs) {
 }
 
 add_setup(async function () {
-  const isFirstRun = Preferences.get(PREF_FIRST_RUN, true);
-  const bypassNotification = Preferences.get(PREF_BYPASS_NOTIFICATION, true);
-  const currentPolicyVersion = Preferences.get(PREF_CURRENT_POLICY_VERSION, 1);
+  const isFirstRun = Services.prefs.getBoolPref(PREF_FIRST_RUN, true);
+  const bypassNotification = Services.prefs.getBoolPref(
+    PREF_BYPASS_NOTIFICATION,
+    true
+  );
+  const currentPolicyVersion = Services.prefs.getIntPref(
+    PREF_CURRENT_POLICY_VERSION,
+    1
+  );
 
   // Register a cleanup function to reset our preferences.
   registerCleanupFunction(() => {
-    Preferences.set(PREF_FIRST_RUN, isFirstRun);
-    Preferences.set(PREF_BYPASS_NOTIFICATION, bypassNotification);
-    Preferences.set(PREF_CURRENT_POLICY_VERSION, currentPolicyVersion);
-    Preferences.reset(PREF_TELEMETRY_LOG_LEVEL);
-    Preferences.reset(PREF_ACCEPTED_POLICY_VERSION);
-    Preferences.reset(PREF_ACCEPTED_POLICY_DATE);
-    Preferences.reset(PREF_TOS_ENABLED);
-    Preferences.reset("browser.policies.alternatePath");
+    Services.prefs.setBoolPref(PREF_FIRST_RUN, isFirstRun);
+    Services.prefs.setBoolPref(PREF_BYPASS_NOTIFICATION, bypassNotification);
+    Services.prefs.setIntPref(
+      PREF_CURRENT_POLICY_VERSION,
+      currentPolicyVersion
+    );
+    Services.prefs.clearUserPref(PREF_TELEMETRY_LOG_LEVEL);
+    Services.prefs.clearUserPref(PREF_ACCEPTED_POLICY_VERSION);
+    Services.prefs.clearUserPref(PREF_ACCEPTED_POLICY_DATE);
+    Services.prefs.clearUserPref(PREF_TOS_ENABLED);
+    Services.prefs.clearUserPref("browser.policies.alternatePath");
     return closeAllNotifications();
   });
 
   // Don't skip the infobar visualisation.
-  Preferences.set(PREF_BYPASS_NOTIFICATION, false);
+  Services.prefs.setBoolPref(PREF_BYPASS_NOTIFICATION, false);
   // Set the current policy version.
-  Preferences.set(PREF_CURRENT_POLICY_VERSION, TEST_POLICY_VERSION);
+  Services.prefs.setIntPref(PREF_CURRENT_POLICY_VERSION, TEST_POLICY_VERSION);
   // Ensure this isn't the first run, because then we open the first run page.
-  Preferences.set(PREF_FIRST_RUN, false);
+  Services.prefs.setBoolPref(PREF_FIRST_RUN, false);
   TelemetryReportingPolicy.testUpdateFirstRun();
   // Do not enable the TOS modal
-  Preferences.set(PREF_TOS_ENABLED, false);
+  Services.prefs.setBoolPref(PREF_TOS_ENABLED, false);
 });
 
 function clearAcceptedPolicy() {
   // Reset the accepted policy.
-  Preferences.reset(PREF_ACCEPTED_POLICY_VERSION);
-  Preferences.reset(PREF_ACCEPTED_POLICY_DATE);
+  Services.prefs.clearUserPref(PREF_ACCEPTED_POLICY_VERSION);
+  Services.prefs.clearUserPref(PREF_ACCEPTED_POLICY_DATE);
 }
 
 function assertCoherentInitialState() {
   // Make sure that we have a coherent initial state.
   Assert.equal(
-    Preferences.get(PREF_ACCEPTED_POLICY_VERSION, 0),
+    Services.prefs.getIntPref(PREF_ACCEPTED_POLICY_VERSION, 0),
     0,
     "No version should be set on init."
   );
   Assert.equal(
-    Preferences.get(PREF_ACCEPTED_POLICY_DATE, 0),
+    Services.prefs.getIntPref(PREF_ACCEPTED_POLICY_DATE, 0),
     0,
     "No date should be set on init."
   );
@@ -206,12 +212,12 @@ add_task(async function test_single_window() {
     "User notified about datareporting policy."
   );
   Assert.equal(
-    Preferences.get(PREF_ACCEPTED_POLICY_VERSION, 0),
+    Services.prefs.getIntPref(PREF_ACCEPTED_POLICY_VERSION, 0),
     TEST_POLICY_VERSION,
     "Version pref set."
   );
   Assert.greater(
-    parseInt(Preferences.get(PREF_ACCEPTED_POLICY_DATE, null), 10),
+    parseInt(Services.prefs.getStringPref(PREF_ACCEPTED_POLICY_DATE, ""), 10),
     -1,
     "Date pref set."
   );
@@ -273,12 +279,12 @@ add_task(async function test_multiple_windows() {
     "User notified about datareporting policy."
   );
   Assert.equal(
-    Preferences.get(PREF_ACCEPTED_POLICY_VERSION, 0),
+    Services.prefs.getIntPref(PREF_ACCEPTED_POLICY_VERSION, 0),
     TEST_POLICY_VERSION,
     "Version pref set."
   );
   Assert.greater(
-    parseInt(Preferences.get(PREF_ACCEPTED_POLICY_DATE, null), 10),
+    parseInt(Services.prefs.getStringPref(PREF_ACCEPTED_POLICY_DATE, ""), 10),
     -1,
     "Date pref set."
   );

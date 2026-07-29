@@ -90,7 +90,7 @@ class JsepTrack {
         mActive(false),
         mRemoteSetSendBit(false) {}
 
-  virtual ~JsepTrack() {}
+  virtual ~JsepTrack() = default;
 
   void UpdateStreamIds(const std::vector<std::string>& streamIds) {
     mStreamIds = streamIds;

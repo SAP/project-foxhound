@@ -38,7 +38,7 @@ add_task(async function () {
   await navigateTo(TEST_URI);
 
   info("Wait until a rule is displayed at index 1");
-  await waitFor(() => view.element.children[1]);
+  await waitFor(() => getRuleViewRuleEditorAt(view, 1));
 
   info("Check that the displayed rule has been correctly updated.");
   const goldColorProp = getTextProperty(view, 1, { color: "gold" });

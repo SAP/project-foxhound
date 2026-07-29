@@ -106,7 +106,7 @@ arg_writer_info = {
 }
 
 
-def gen_writer_method(name, args, custom_writer):
+def gen_writer_method(name, args, custom_writer, inlining_candidate):
     """Generates a CacheIRWRiter method for a single opcode."""
 
     # Generate a single method that writes the opcode and each argument.
@@ -145,6 +145,8 @@ def gen_writer_method(name, args, custom_writer):
     if custom_writer:
         code += "private:\\\n"
     code += "{} {}({}) {{\\\n".format(ret_type, method_name, ", ".join(method_args))
+    if inlining_candidate:
+        code += "  trialInliningState_ = TrialInliningState::Candidate;\\\n"
     code += f"  writeOp(CacheOp::{name});\\\n"
     code += args_code
     code += "  assertLengthMatches();\\\n"
@@ -378,11 +380,11 @@ def gen_spewer_method(name, args):
         is_first = True
         for arg_name, arg_type in args.items():
             _, suffix, readexpr = arg_reader_info[arg_type]
-            arg_name += suffix
+            read_name = arg_name + suffix
             spew_method = arg_spewer_method[arg_type]
             if not is_first:
                 args_code += "  spewArgSeparator();\\\n"
-            args_code += f'  {spew_method}("{arg_name}", {readexpr});\\\n'
+            args_code += f'  {spew_method}("{read_name}", {readexpr});\\\n'
             is_first = False
 
     code = f"void {method_name}(CacheIRReader& reader) {{\\\n"
@@ -394,7 +396,7 @@ def gen_spewer_method(name, args):
     return code
 
 
-def gen_clone_method(name, args):
+def gen_clone_method(name, args, inlining_candidate):
     """Generates code for cloning a single opcode."""
 
     method_name = "clone" + name
@@ -414,15 +416,16 @@ def gen_clone_method(name, args):
     args_code = ""
     if args:
         for arg_name, arg_type in args.items():
+            read_arg_type = arg_type
             if arg_type == "RawId":
-                arg_type = "ValId"
+                read_arg_type = "ValId"
 
-            read_type, suffix, readexpr = arg_reader_info[arg_type]
+            read_type, suffix, readexpr = arg_reader_info[read_arg_type]
             read_name = arg_name + suffix
             value_name = read_name
             args_code += f"  {read_type} {read_name} = {readexpr};\\\n"
 
-            write_type, write_method = arg_writer_info[arg_type]
+            write_type, write_method = arg_writer_info[read_arg_type]
             if arg_name == "result":
                 args_code += "  writer.newOperandId();\\\n"
             if suffix == "Offset":
@@ -431,14 +434,14 @@ def gen_clone_method(name, args):
                 if write_type.endswith("&"):
                     write_type = write_type[:-1]
                 value_name = arg_name
-                args_code += (
-                    f"  {write_type} {value_name} = get{arg_type}({read_name});\\\n"
-                )
+                args_code += f"  {write_type} {value_name} = get{read_arg_type}({read_name});\\\n"
             args_code += f"  writer.{write_method}({value_name});\\\n"
 
     code = f"void {method_name}"
     code += "(CacheIRReader& reader, CacheIRWriter& writer) {{\\\n"
     code += f"  writer.writeOp(CacheOp::{name});\\\n"
+    if inlining_candidate:
+        code += "  writer.setTrialInliningState(TrialInliningState::Candidate);\\\n"
     code += args_code
     code += "  writer.assertLengthMatches();\\\n"
     code += "}}\\\n"
@@ -555,6 +558,9 @@ def generate_cacheirops_header(c_out, yaml_path):
         custom_writer = op.get("custom_writer", False)
         assert isinstance(custom_writer, bool)
 
+        inlining_candidate = op.get("inlining_candidate", False)
+        assert isinstance(inlining_candidate, bool)
+
         if args:
             args_length = " + ".join([str(arg_length[v]) for v in args.values()])
         else:
@@ -563,7 +569,9 @@ def generate_cacheirops_header(c_out, yaml_path):
         transpile_str = "true" if transpile else "false"
         ops_items.append(f"_({name}, {args_length}, {transpile_str}, {cost_estimate})")
 
-        writer_methods.append(gen_writer_method(name, args, custom_writer))
+        writer_methods.append(
+            gen_writer_method(name, args, custom_writer, inlining_candidate)
+        )
         reader_methods.append(gen_reader_method(name, args))
 
         if shared:
@@ -577,7 +585,7 @@ def generate_cacheirops_header(c_out, yaml_path):
 
         spewer_methods.append(gen_spewer_method(name, args))
 
-        clone_methods.append(gen_clone_method(name, args))
+        clone_methods.append(gen_clone_method(name, args, inlining_candidate))
 
     contents = "#define CACHE_IR_OPS(_)\\\n"
     contents += "\\\n".join(ops_items)
@@ -625,7 +633,7 @@ def read_aot_ics(ic_path):
         if entry.is_file() and os.path.basename(entry.path).startswith("IC-"):
             with open(entry.path) as f:
                 content = f.read().strip()
-                ics += "  _(%d, %s) \\\n" % (idx, content)
+                ics += f"  _({idx}, {content}) \\\n"
                 idx += 1
     return ics
 

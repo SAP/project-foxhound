@@ -1,24 +1,44 @@
 From: Michael Froman <mfroman@mozilla.com>
-Date: Tue, 13 May 2025 22:39:00 +0000
-Subject: Bug 1966238 - (fix-bf85c38fb3) fix build for our added 'pid' field in
- DesktopCapturer::Source r?pehrsons!
+Date: Wed, 17 Sep 2025 15:41:00 +0000
+Subject: Bug 1988042 - android build fix in
+ third_party/libwebrtc/rtc_base/cpu_info.cc r?ng!
 
-Differential Revision: https://phabricator.services.mozilla.com/D249164
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/b6b37905a574e7706d98eb683e6800c9525815e7
+Supports(...) is really used in unittests and outside of unittests
+it is only used when WEBRTC_ARCH_X86_FAMILY is defined.  For now,
+we'll return false when checking for arm/neon suport.
+
+Differential Revision: https://phabricator.services.mozilla.com/D265018
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/eae7b6ec4f7ca191e8eaa8e36787142528f2c132
 ---
- modules/desktop_capture/mac/screen_capturer_sck.mm | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
+ rtc_base/cpu_info.cc | 9 +++++++++
+ 1 file changed, 9 insertions(+)
 
-diff --git a/modules/desktop_capture/mac/screen_capturer_sck.mm b/modules/desktop_capture/mac/screen_capturer_sck.mm
-index 49c923e56b..0d0750f63e 100644
---- a/modules/desktop_capture/mac/screen_capturer_sck.mm
-+++ b/modules/desktop_capture/mac/screen_capturer_sck.mm
-@@ -444,7 +444,7 @@ bool ScreenCapturerSck::GetSourceList(SourceList* sources) {
-   sources->clear();
-   EnsurePickerHandle();
-   if (picker_handle_) {
--    sources->push_back({picker_handle_->Source(), std::string()});
-+    sources->push_back({picker_handle_->Source(), 0, std::string()});
-   }
-   return true;
- }
+diff --git a/rtc_base/cpu_info.cc b/rtc_base/cpu_info.cc
+index ec74055c26..a0f289e2ed 100644
+--- a/rtc_base/cpu_info.cc
++++ b/rtc_base/cpu_info.cc
+@@ -25,7 +25,9 @@
+ #elif defined(WEBRTC_MAC)
+ #include <sys/sysctl.h>
+ #elif defined(WEBRTC_ANDROID)
++#if !defined(WEBRTC_MOZILLA_BUILD)
+ #include <cpu-features.h>
++#endif
+ #include <unistd.h>
+ #elif defined(WEBRTC_FUCHSIA)
+ #include <zircon/syscalls.h>
+@@ -175,7 +177,14 @@ bool Supports(ISA instruction_set_architecture) {
+ #elif defined(WEBRTC_ARCH_ARM_FAMILY)
+   if (instruction_set_architecture == ISA::kNeon) {
+ #if defined(WEBRTC_ANDROID)
++#if defined(WEBRTC_MOZILLA_BUILD)
++    // We should revisit this if Supports(...) is ever more widely used.
++    // Currently, it is used in unittests and when WEBRTC_ARCH_X86_FAMILY
++    // is defined in non-unittest code.
++    return false;
++#else
+     return 0 != (android_getCpuFeatures() & ANDROID_CPU_ARM_FEATURE_NEON);
++#endif
+ #elif defined(WEBRTC_BSD)
+     // OpenBSD does not have getauxval() and does not have /proc reading
+     return false;

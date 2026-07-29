@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * Any copyright is dedicated to the Public Domain.
+/* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 // For ContentBlockingException
@@ -823,5 +822,272 @@ class ContentBlockingControllerTest : BaseSessionTest() {
             actualPrefs2[0] as Boolean,
             equalTo(true),
         )
+    }
+
+    @Test
+    fun trackingDBEventsByDateRange_emptyDatabase() {
+        sessionRule.setPrefsUntilTestEnd(
+            mapOf("browser.contentblocking.database.enabled" to true),
+        )
+        sessionRule.clearTrackingDB()
+
+        val now = System.currentTimeMillis()
+        val weekAgo = now - 7L * 24 * 60 * 60 * 1000
+
+        sessionRule.waitForResult(
+            sessionRule.runtime.contentBlockingController
+                .getTrackingDbEventsByDateRange(weekAgo, now)
+                .accept {
+                    assertThat("Result must not be null", it, notNullValue())
+                    assertThat("Result must be empty", it?.size, equalTo(0))
+                },
+        )
+    }
+
+    @Test
+    fun trackingDBEventsByDateRange_withSeededData() {
+        sessionRule.setPrefsUntilTestEnd(
+            mapOf("browser.contentblocking.database.enabled" to true),
+        )
+        sessionRule.clearTrackingDB()
+
+        // Seed: one tracking content block, one fingerprinter block, one cryptominer block.
+        seedTrackingDB(
+            mapOf(
+                "https://1.example.com" to arrayOf(
+                    intArrayOf(ContentBlockingController.Event.BLOCKED_TRACKING_CONTENT, 1, 1),
+                ),
+                "https://2.example.com" to arrayOf(
+                    intArrayOf(ContentBlockingController.Event.BLOCKED_FINGERPRINTING_CONTENT, 1, 1),
+                ),
+                "https://3.example.com" to arrayOf(
+                    intArrayOf(ContentBlockingController.Event.BLOCKED_CRYPTOMINING_CONTENT, 1, 1),
+                ),
+            ),
+        )
+
+        val now = System.currentTimeMillis()
+        val weekAgo = now - 7L * 24 * 60 * 60 * 1000
+
+        sessionRule.waitForResult(
+            sessionRule.runtime.contentBlockingController
+                .getTrackingDbEventsByDateRange(weekAgo, now)
+                .accept { events ->
+                    assertThat("Result must not be null", events, notNullValue())
+                    assertThat("Should have three rows", events?.size, equalTo(3))
+                    val byType = events!!.associateBy { it.type }
+                    assertThat(
+                        "Trackers row exists",
+                        byType.containsKey(ContentBlockingController.TrackingDbEvent.TRACKERS_ID),
+                        equalTo(true),
+                    )
+                    assertThat(
+                        "Fingerprinters row exists",
+                        byType.containsKey(ContentBlockingController.TrackingDbEvent.FINGERPRINTERS_ID),
+                        equalTo(true),
+                    )
+                    assertThat(
+                        "Cryptominers row exists",
+                        byType.containsKey(ContentBlockingController.TrackingDbEvent.CRYPTOMINERS_ID),
+                        equalTo(true),
+                    )
+                    events.forEach {
+                        assertThat("Count must be at least 1", it.count, not(0))
+                        assertThat("Date must be a non-empty string", it.date?.isNotEmpty(), equalTo(true))
+                    }
+                },
+        )
+    }
+
+    @Test
+    fun sumAllTrackingDbEvents_emptyDatabase() {
+        sessionRule.setPrefsUntilTestEnd(
+            mapOf("browser.contentblocking.database.enabled" to true),
+        )
+        sessionRule.clearTrackingDB()
+
+        sessionRule.waitForResult(
+            sessionRule.runtime.contentBlockingController
+                .sumAllTrackingDbEvents()
+                .accept {
+                    assertThat("Sum must be zero", it, equalTo(0))
+                },
+        )
+    }
+
+    @Test
+    fun sumAllTrackingDbEvents_withSeededData() {
+        sessionRule.setPrefsUntilTestEnd(
+            mapOf("browser.contentblocking.database.enabled" to true),
+        )
+        sessionRule.clearTrackingDB()
+
+        seedTrackingDB(
+            mapOf(
+                "https://1.example.com" to arrayOf(
+                    intArrayOf(ContentBlockingController.Event.BLOCKED_TRACKING_CONTENT, 1, 1),
+                ),
+                "https://2.example.com" to arrayOf(
+                    intArrayOf(ContentBlockingController.Event.BLOCKED_TRACKING_CONTENT, 1, 1),
+                ),
+                "https://3.example.com" to arrayOf(
+                    intArrayOf(ContentBlockingController.Event.BLOCKED_FINGERPRINTING_CONTENT, 1, 1),
+                ),
+            ),
+        )
+
+        sessionRule.waitForResult(
+            sessionRule.runtime.contentBlockingController
+                .sumAllTrackingDbEvents()
+                .accept {
+                    assertThat("Sum must be three", it, equalTo(3))
+                },
+        )
+    }
+
+    @Test
+    fun trackingDBEarliestRecordedDate_emptyDatabase() {
+        sessionRule.setPrefsUntilTestEnd(
+            mapOf("browser.contentblocking.database.enabled" to true),
+        )
+        sessionRule.clearTrackingDB()
+
+        sessionRule.waitForResult(
+            sessionRule.runtime.contentBlockingController
+                .getTrackingDbEarliestRecordedDate()
+                .accept {
+                    assertThat("Earliest date must be 0 when empty", it, equalTo(0L))
+                },
+        )
+    }
+
+    @Test
+    fun trackingDBEarliestRecordedDate_withSeededData() {
+        sessionRule.setPrefsUntilTestEnd(
+            mapOf("browser.contentblocking.database.enabled" to true),
+        )
+        sessionRule.clearTrackingDB()
+
+        val before = System.currentTimeMillis()
+        seedTrackingDB(
+            mapOf(
+                "https://1.example.com" to arrayOf(
+                    intArrayOf(ContentBlockingController.Event.BLOCKED_TRACKING_CONTENT, 1, 1),
+                ),
+            ),
+        )
+        val after = System.currentTimeMillis()
+
+        sessionRule.waitForResult(
+            sessionRule.runtime.contentBlockingController
+                .getTrackingDbEarliestRecordedDate()
+                .accept { date ->
+                    assertThat("Earliest date must not be null", date, notNullValue())
+                    // The TrackingDBService stores dates at 00:00 GMT and adds 12 hours when reading.
+                    // Allow a one-day window to either side to account for timezone offsets.
+                    val oneDayMs = 24L * 60 * 60 * 1000
+                    assertThat(
+                        "Earliest date should be within a day of the seeding time",
+                        date!! >= before - oneDayMs && date <= after + oneDayMs,
+                        equalTo(true),
+                    )
+                },
+        )
+    }
+
+    @Test
+    fun clearTrackingDb_removesAllTrackersData() {
+        sessionRule.setPrefsUntilTestEnd(
+            mapOf("browser.contentblocking.database.enabled" to true),
+        )
+        sessionRule.clearTrackingDB()
+
+        seedTrackingDB(
+            mapOf(
+                "https://1.example.com" to arrayOf(
+                    intArrayOf(ContentBlockingController.Event.BLOCKED_TRACKING_CONTENT, 1, 1),
+                ),
+                "https://2.example.com" to arrayOf(
+                    intArrayOf(ContentBlockingController.Event.BLOCKED_FINGERPRINTING_CONTENT, 1, 1),
+                ),
+            ),
+        )
+
+        sessionRule.waitForResult(
+            sessionRule.runtime.contentBlockingController
+                .sumAllTrackingDbEvents()
+                .accept {
+                    assertThat("Sum should be two after seeding", it, equalTo(2))
+                },
+        )
+
+        sessionRule.waitForResult(sessionRule.runtime.contentBlockingController.clearTrackingDb())
+        sessionRule.waitForResult(
+            sessionRule.runtime.contentBlockingController
+                .sumAllTrackingDbEvents()
+                .accept {
+                    assertThat("Sum should be zero after clearTrackingDb", it, equalTo(0))
+                },
+        )
+    }
+
+    @Test
+    fun contentBlockingDatabaseStatus() {
+        val contentBlocking = sessionRule.runtime.settings.contentBlocking
+
+        assertThat(
+            "Expect correct default for contentBlockingDatabaseStatus value which is false",
+            contentBlocking.contentBlockingDatabaseStatus,
+            equalTo(false),
+        )
+
+        // Checks that the pref value is also consistent with the runtime settings
+        val originalContentBlockingDatabaseStatus = sessionRule.getPrefs(
+            "browser.contentblocking.database.enabled",
+        )
+        assertThat(
+            "Initial content blocking database status is correct",
+            originalContentBlockingDatabaseStatus[0],
+            equalTo(contentBlocking.contentBlockingDatabaseStatus),
+        )
+
+        // Change from the default value.
+        contentBlocking.setContentBlockingDatabaseStatus(true)
+        val updatedPref = sessionRule.getPrefs(
+            "browser.contentblocking.database.enabled",
+        )
+        assertThat(
+            "content blocking database status is updated",
+            updatedPref[0] as Boolean,
+            equalTo(true),
+        )
+
+        // Change the value again.
+        contentBlocking.setContentBlockingDatabaseStatus(false)
+        val newUpdatedPref = sessionRule.getPrefs(
+            "browser.contentblocking.database.enabled",
+        )
+        assertThat(
+            "content blocking database status is updated",
+            newUpdatedPref[0] as Boolean,
+            equalTo(false),
+        )
+    }
+
+    private fun seedTrackingDB(events: Map<String, Array<IntArray>>) {
+        val log = org.json.JSONObject()
+        for ((origin, entries) in events) {
+            val arr = org.json.JSONArray()
+            for (entry in entries) {
+                val tuple = org.json.JSONArray()
+                // [state, blocked, count]
+                tuple.put(entry[0])
+                tuple.put(entry[1] == 1)
+                tuple.put(entry[2])
+                arr.put(tuple)
+            }
+            log.put(origin, arr)
+        }
+        sessionRule.saveTrackingDBEvents(log.toString())
     }
 }

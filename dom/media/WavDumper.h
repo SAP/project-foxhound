@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,10 +13,12 @@
 #  include <nsTArray.h>
 #  include <stdint.h>
 #  include <stdio.h>
+#  include <sys/stat.h>
 
 /**
- * If MOZ_DUMP_AUDIO is set, this dumps a file to disk containing the output of
- * an audio stream, in 16bits integers.
+ * If MOZ_DUMP_AUDIO is set to a directory path, audio streams are dumped as
+ * WAV files (16-bit integers) into that directory. If set to any other
+ * non-empty value, files are written to the current working directory.
  *
  * The sandbox needs to be disabled for this to work.
  */
@@ -32,17 +32,33 @@ class WavDumper {
   }
 
   void Open(const char* aBaseName, uint32_t aChannels, uint32_t aRate) {
-    using namespace mozilla;
-
-    if (!getenv("MOZ_DUMP_AUDIO")) {
+    const char* dumpAudio = getenv("MOZ_DUMP_AUDIO");
+    if (!dumpAudio) {
       return;
+    }
+
+    bool isDir = false;
+    if (dumpAudio[0] != '\0') {
+#  ifdef XP_WIN
+      nsAutoString widePath = NS_ConvertUTF8toUTF16(dumpAudio);
+      struct _stat64 st = {};
+      isDir = (_wstat64(widePath.get(), &st) == 0) && (st.st_mode & _S_IFDIR);
+#  else
+      struct stat st = {};
+      isDir = (stat(dumpAudio, &st) == 0) && S_ISDIR(st.st_mode);
+#  endif
     }
 
     static mozilla::Atomic<int> sDumpedAudioCount(0);
 
-    char buf[100];
-    SprintfLiteral(buf, "%s-%d.wav", aBaseName, ++sDumpedAudioCount);
-    OpenExplicit(buf, aChannels, aRate);
+    nsAutoCString path;
+    if (isDir) {
+      path.AppendPrintf("%s/%s-%d.wav", dumpAudio, aBaseName,
+                        ++sDumpedAudioCount);
+    } else {
+      path.AppendPrintf("%s-%d.wav", aBaseName, ++sDumpedAudioCount);
+    }
+    OpenExplicit(path.get(), aChannels, aRate);
   }
 
   void OpenExplicit(const char* aPath, uint32_t aChannels, uint32_t aRate) {

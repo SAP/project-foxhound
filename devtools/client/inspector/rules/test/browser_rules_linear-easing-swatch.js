@@ -134,7 +134,7 @@ add_task(async function testChart() {
   EventUtils.sendMouseEvent(
     { type: "dblclick" },
     middlePoint,
-    widget.parent.ownerGlobal
+    widget.parent.documentGlobal
   );
 
   let newValue = await onWidgetUpdated;
@@ -159,7 +159,7 @@ add_task(async function testChart() {
   EventUtils.sendMouseEvent(
     { type: "dblclick" },
     panel.querySelector(`svg.chart .control-points-group .control-point`),
-    widget.parent.ownerGlobal
+    widget.parent.documentGlobal
   );
   let raceWinner = await Promise.race([onWidgetUpdated, onTimeout]);
   is(
@@ -183,7 +183,7 @@ add_task(async function testChart() {
   EventUtils.synthesizeMouseAtCenter(
     panel.querySelector(`svg.chart`),
     { clickCount: 2, shiftKey: true },
-    widget.parent.ownerGlobal
+    widget.parent.documentGlobal
   );
 
   newValue = await onWidgetUpdated;
@@ -210,7 +210,7 @@ add_task(async function testChart() {
   EventUtils.synthesizeMouseAtCenter(
     panel.querySelector(`svg.chart .control-points-group .control-point`),
     { type: "mousedown" },
-    widget.parent.ownerGlobal
+    widget.parent.documentGlobal
   );
 
   EventUtils.synthesizeMouse(
@@ -218,7 +218,7 @@ add_task(async function testChart() {
     svgRect.width / 3,
     svgRect.height / 3,
     { type: "mousemove", shiftKey: true },
-    widget.parent.ownerGlobal
+    widget.parent.documentGlobal
   );
   newValue = await onWidgetUpdated;
   is(
@@ -249,7 +249,7 @@ add_task(async function testChart() {
     svgRect.width,
     svgRect.height / 3,
     { type: "mousemove", shiftKey: true },
-    widget.parent.ownerGlobal
+    widget.parent.documentGlobal
   );
   newValue = await onWidgetUpdated;
   is(
@@ -273,7 +273,7 @@ add_task(async function testChart() {
   EventUtils.synthesizeMouseAtCenter(
     svgEl,
     { type: "mouseup" },
-    widget.parent.ownerGlobal
+    widget.parent.documentGlobal
   );
 
   onTimeout = wait(1000).then(() => timeoutRes);
@@ -281,7 +281,7 @@ add_task(async function testChart() {
   EventUtils.synthesizeMouseAtCenter(
     svgEl,
     { type: "mousemove" },
-    widget.parent.ownerGlobal
+    widget.parent.documentGlobal
   );
   raceWinner = await Promise.race([onWidgetUpdated, onTimeout]);
   is(raceWinner, timeoutRes, "Dragging is disabled after mouseup");
@@ -295,7 +295,7 @@ add_task(async function testChart() {
     svgRect.width / 3,
     svgRect.height - 1,
     { clickCount: 2, shiftKey: true },
-    widget.parent.ownerGlobal
+    widget.parent.documentGlobal
   );
 
   newValue = await onWidgetUpdated;
@@ -325,7 +325,7 @@ add_task(async function testChart() {
       `svg.chart .control-points-group .control-point:nth-of-type(2)`
     ),
     { type: "mousedown" },
-    widget.parent.ownerGlobal
+    widget.parent.documentGlobal
   );
 
   EventUtils.synthesizeMouse(
@@ -333,7 +333,7 @@ add_task(async function testChart() {
     0,
     svgRect.height / 3,
     { type: "mousemove", shiftKey: true },
-    widget.parent.ownerGlobal
+    widget.parent.documentGlobal
   );
   newValue = await onWidgetUpdated;
   is(
@@ -358,7 +358,7 @@ add_task(async function testChart() {
   EventUtils.synthesizeMouseAtCenter(
     svgEl,
     { type: "mouseup" },
-    widget.parent.ownerGlobal
+    widget.parent.documentGlobal
   );
 
   info(

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -108,7 +107,7 @@ bool WebGLContext::InitWebGL2(FailureReason* const out_failReason) {
     const nsPrintfCString reason(
         "WebGL 2 requires support for the following"
         " features: %s",
-        exts.BeginReading());
+        exts.get());
     *out_failReason = FailureReason("FEATURE_FAILURE_WEBGL2_OCCL", reason);
     return false;
   }
@@ -117,6 +116,10 @@ bool WebGLContext::InitWebGL2(FailureReason* const out_failReason) {
       gl->GetIntAs<uint32_t>(LOCAL_GL_MIN_PROGRAM_TEXEL_OFFSET);
   mGLMaxProgramTexelOffset =
       gl->GetIntAs<uint32_t>(LOCAL_GL_MAX_PROGRAM_TEXEL_OFFSET);
+  mGLMaxVertexUniformBlocks =
+      gl->GetIntAs<uint32_t>(LOCAL_GL_MAX_VERTEX_UNIFORM_BLOCKS);
+  mGLMaxFragmentUniformBlocks =
+      gl->GetIntAs<uint32_t>(LOCAL_GL_MAX_FRAGMENT_UNIFORM_BLOCKS);
 
   mIndexedUniformBufferBindings.resize(mLimits->maxUniformBufferBindings);
 

@@ -252,7 +252,8 @@ def run_tests(tests, summary):
     # python 3.3 fixed a bug with concurrently writing .pyc files.
     # https://bugs.python.org/issue13146
     embedded_version = (
-        subprocess.check_output([
+        subprocess
+        .check_output([
             OPTIONS.gdb_executable,
             "--batch",
             "--ex",

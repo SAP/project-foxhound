@@ -1,0 +1,17 @@
+{
+  "label": "aladhan.com",
+  "bugs": {
+    "2021850": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://aladhan.com/calendar*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "content_scripts": {
+        "js": ["bug2021850-aladhan.com-unblock-fetch-requests.js"]
+      }
+    }
+  ]
+}

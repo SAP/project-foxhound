@@ -261,7 +261,7 @@ class RequestPanel extends Component {
       component = SourcePreview;
       componentProps = {
         text: postData,
-        mimeType: mimeType?.replace(/;.+/, ""),
+        mimeType: mimeType ? mimeType.replace(/;.+/, "") : "text/plain",
         targetSearchResult,
         url,
       };

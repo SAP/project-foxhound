@@ -19,8 +19,22 @@ import java.util.concurrent.atomic.AtomicReference
  * Indexes Settings preferences for the Settings Search screen.
  *
  * All the preference files that are parsed and indexed are listed in the companion object.
+ *
+ * @param context [Context] needed for various Android interactions.
+ * @param preferenceFileInformationList List of XML details backing preference screens which will
+ * be indexed for building the in-memory data for what settings can be searched through.
+ * @param additionalProviders List of additional providers of [SettingsSearchItem]s to be included
+ * in the in-memory data for what settings can be searched through.
+ * @param excludedPreferenceKeys Returns the set of preference keys to exclude from the search index,
+ * evaluated at index time. Used to keep runtime/Nimbus-gated preferences out of search when their
+ * feature is disabled.
  */
-class DefaultFenixSettingsIndexer(private val context: Context) : SettingsIndexer {
+class DefaultFenixSettingsIndexer(
+    private val context: Context,
+    private val preferenceFileInformationList: List<PreferenceFileInformation> = defaultPreferenceFileInformationList,
+    private val additionalProviders: List<SettingsSearchProvider> = emptyList(),
+    private val excludedPreferenceKeys: () -> Set<String> = { emptySet() },
+) : SettingsIndexer {
     private val settings = AtomicReference<List<SettingsSearchItem>>(emptyList())
 
     /**
@@ -36,7 +50,18 @@ class DefaultFenixSettingsIndexer(private val context: Context) : SettingsIndexe
             }
         }
 
-        settings.set(newSettings)
+        for (provider in additionalProviders) {
+            newSettings.addAll(provider.getSearchItems(context))
+        }
+
+        val excluded = excludedPreferenceKeys()
+        settings.set(
+            if (excluded.isEmpty()) {
+                newSettings
+            } else {
+                newSettings.filterNot { it.preferenceKey in excluded }
+            },
+        )
     }
 
     /**
@@ -308,8 +333,8 @@ class DefaultFenixSettingsIndexer(private val context: Context) : SettingsIndexe
         private const val PREFERENCE_CATEGORY_TAG = "androidx.preference.PreferenceCategory"
         private const val CHECKBOX_PREFERENCE_TAG = "androidx.preference.CheckBoxPreference"
         private const val PREFERENCE_TAG = "androidx.preference.Preference"
-        private const val SWITCH_PREFERENCE_TAG = "androidx.preference.SwitchPreference"
-        private const val SWITCH_PREFERENCE_PLAIN_TAG = "SwitchPreference"
+        private const val SWITCH_PREFERENCE_TAG = "androidx.preference.SwitchPreferenceCompat"
+        private const val SWITCH_PREFERENCE_PLAIN_TAG = "SwitchPreferenceCompat"
         private const val CUSTOM_CBH_SWITCH_PREFERENCE_TAG =
             "org.mozilla.fenix.settings.cookiebannerhandling.CustomCBHSwitchPreference"
         private const val DEFAULT_BROWSER_PREFERENCE_TAG = "org.mozilla.fenix.settings.DefaultBrowserPreference"
@@ -325,7 +350,7 @@ class DefaultFenixSettingsIndexer(private val context: Context) : SettingsIndexe
          * All the preference xml files to load with information for the indexer.
          * In a [List] of [PreferenceFileInformation]s.
          */
-        val preferenceFileInformationList = listOf(
+        val defaultPreferenceFileInformationList = listOf(
             PreferenceFileInformation.GeneralPreferences,
             PreferenceFileInformation.AccessibilityPreferences,
             PreferenceFileInformation.AutofillPreferences,
@@ -340,6 +365,9 @@ class DefaultFenixSettingsIndexer(private val context: Context) : SettingsIndexe
             PreferenceFileInformation.TabsPreferences,
             PreferenceFileInformation.TrackingProtectionPreferences,
             PreferenceFileInformation.SaveLoginsPreferences,
+            PreferenceFileInformation.DataChoicesPreferences,
+            PreferenceFileInformation.AIControlsPreferences,
+            PreferenceFileInformation.FirefoxLabsPreferences,
         )
 
         /**
@@ -348,7 +376,6 @@ class DefaultFenixSettingsIndexer(private val context: Context) : SettingsIndexe
          * All of them require the app name.
          */
         val stringsWithRequiredFormatting = listOf(
-            R.string.preferences_downloads_settings_clean_up_files_title,
             R.string.preferences_show_nonsponsored_suggestions,
             R.string.preferences_about,
         )

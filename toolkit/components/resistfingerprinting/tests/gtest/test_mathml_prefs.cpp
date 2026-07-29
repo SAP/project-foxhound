@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=2 et lcs=trail\:.,tab\:>~ :
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
@@ -21,9 +19,7 @@ static const struct {
     {"mathml.disabled", "dis"},
     {"mathml.scale_stretchy_operators.enabled", "str"},
     {"mathml.mathspace_names.disabled", "spc"},
-    {"mathml.rtl_operator_mirroring.enabled", "rtl"},
     {"mathml.mathvariant_styling_fallback.disabled", "var"},
-    {"mathml.math_shift.enabled", "shf"},
     {"mathml.operator_dictionary_accent.disabled", "acc"},
     {"mathml.legacy_mathvariant_attribute.disabled", "leg"},
     {"mathml.font_family_math.enabled", "fnt"},
@@ -111,8 +107,8 @@ TEST(ResistFingerprinting, UserCharacteristics_MathMLPrefs_NonAdjacent)
   ClearAllMathMLPrefs();
 
   // Set non-adjacent prefs: first and fourth
-  Preferences::SetBool(kMathMLPrefs[0].pref, true);   // dis=1
-  Preferences::SetBool(kMathMLPrefs[3].pref, false);  // rtl=0
+  Preferences::SetBool(kMathMLPrefs[0].pref, true);  // dis=1
+  Preferences::SetBool(kMathMLPrefs[4].pref, true);  // acc=1
 
   ASSERT_TRUE(mozilla::glean_pings::UserCharacteristics.TestSubmission(
       [](const nsACString& aReason) {
@@ -121,7 +117,7 @@ TEST(ResistFingerprinting, UserCharacteristics_MathMLPrefs_NonAdjacent)
                 .TestGetValue()
                 .unwrap()
                 .value();
-        ASSERT_STREQ("dis=1,rtl=0", result.get());
+        ASSERT_STREQ("dis=1,acc=1", result.get());
       },
       []() {
         testing::PopulateMathMLPrefs();

@@ -12,6 +12,7 @@ import mozpack.path as mozpath
 from mach.decorators import Command, CommandArgument
 
 from mozbuild.backend import backends
+from mozbuild.bootstrap import bootstrap_toolchain
 from mozbuild.mozconfig import MozconfigLoader
 from mozbuild.util import (
     MOZBUILD_METRICS_PATH,
@@ -145,6 +146,12 @@ def _set_priority(command_context, priority, verbose):
     action="store_true",
     help="Show all warnings including third-party and suppressed warnings.",
 )
+@CommandArgument(
+    "--allow-subdirectory-build",
+    default=False,
+    action="store_true",
+    help="Allow building subdirectories (not recommended, can result in bad tree state).",
+)
 def build(
     command_context,
     what=None,
@@ -156,6 +163,7 @@ def build(
     keep_going=False,
     priority="idle",
     show_all_warnings=None,
+    allow_subdirectory_build=False,
 ):
     """Build the source tree.
 
@@ -168,8 +176,8 @@ def build(
     There are a few special targets that can be used to perform a partial
     build faster than what `mach build` would perform:
 
-    * binaries - compiles and links all C/C++ sources and produces shared
-      libraries and executables (binaries).
+    * binaries - compiles and links all C/C++/Obj-C/Rust sources and produces
+      shared libraries and executables (binaries).
 
     * faster - builds JavaScript, XUL, CSS, etc files.
 
@@ -181,104 +189,166 @@ def build(
 
     command_context.log_manager.enable_all_structured_loggers()
 
-    # For coding agents, automatically enable quiet mode
-    if is_running_under_coding_agent():
-        command_context.log(
-            logging.WARNING,
-            "build",
-            {},
-            "AI agent detected. Terminal output limited to warnings and errors.",
-        )
-        quiet = True
-
-        if command_context.log_file_path:
-            command_context.log(
-                logging.WARNING,
-                "build",
-                {"logfile": command_context.log_file_path},
-                "Full output: {logfile}",
-            )
-        else:
+    original_log_level = command_context.log_manager.terminal_handler.level
+    try:
+        if is_running_under_coding_agent():
             command_context.log(
                 logging.WARNING,
                 "build",
                 {},
-                "Log file could not be created.",
+                "AI agent detected. Terminal output limited to warnings and errors.",
+            )
+            quiet = True
+
+            if command_context.log_file_path:
+                command_context.log(
+                    logging.WARNING,
+                    "build",
+                    {"logfile": command_context.log_file_path},
+                    "Full output: {logfile}",
+                )
+            else:
+                command_context.log(
+                    logging.WARNING,
+                    "build",
+                    {},
+                    "Log file could not be created.",
+                )
+
+        from mach.logging import THIRD_PARTY_WARNING
+
+        if quiet and show_all_warnings:
+            command_context.log(
+                logging.ERROR,
+                "build",
+                {},
+                "--quiet and --show-all-warnings are mutually exclusive.",
+            )
+            return 1
+
+        if quiet:
+            command_context.log_manager.terminal_handler.setLevel(logging.WARNING)
+
+        if show_all_warnings:
+            command_context.log_manager.terminal_handler.setLevel(THIRD_PARTY_WARNING)
+
+        if (
+            command_context.log_manager.terminal_handler.level > THIRD_PARTY_WARNING
+            and not is_running_under_coding_agent()
+        ):
+            warnings_path = os.path.join(
+                command_context.topobjdir,
+                ".mozbuild",
+                "logs",
+                "build",
+                "warnings_*.json",
+            )
+            command_context.log(
+                logging.WARNING,
+                "build",
+                {},
+                "Warnings in third-party code are being suppressed from the terminal output. "
+                "Use --show-all-warnings or --verbose to see them.",
+            )
+            command_context.log(
+                logging.WARNING,
+                "build",
+                {"warnings_path": warnings_path},
+                "All warnings will still be dumped to {warnings_path} at the end of the build.",
             )
 
-    from mach.logging import THIRD_PARTY_WARNING
+        loader = MozconfigLoader(command_context.topsrcdir)
+        mozconfig = loader.read_mozconfig(loader.AUTODETECT)
+        configure_args = mozconfig["configure_args"]
+        doing_pgo = configure_args and "MOZ_PGO=1" in configure_args
+        # Force verbosity on automation.
+        verbose = verbose or bool(os.environ.get("MOZ_AUTOMATION"))
+        # Keep going by default on automation so that we exhaust as many errors as
+        # possible.
+        keep_going = keep_going or bool(os.environ.get("MOZ_AUTOMATION"))
+        append_env = None
 
-    if quiet and show_all_warnings:
-        command_context.log(
-            logging.ERROR,
-            "build",
-            {},
-            "--quiet and --show-all-warnings are mutually exclusive.",
-        )
-        return 1
+        # By setting the current process's priority, by default our child processes
+        # will also inherit this same priority.
+        if not _set_priority(command_context, priority, verbose):
+            command_context.log(
+                logging.WARNING,
+                "priority",
+                {},
+                "--priority not supported on this platform.",
+            )
 
-    if quiet:
-        command_context.log_manager.terminal_handler.setLevel(logging.WARNING)
+        for target in what:
+            if target.startswith("installers-"):
+                ensure_l10n_central(command_context)
+                break
 
-    if show_all_warnings:
-        command_context.log_manager.terminal_handler.setLevel(THIRD_PARTY_WARNING)
+        if doing_pgo:
+            if what:
+                raise Exception(
+                    "Cannot specify targets (%s) in MOZ_PGO=1 builds" % what
+                )
+            instr = command_context._spawn(BuildDriver)
+            orig_topobjdir = instr._topobjdir
+            instr._topobjdir = mozpath.join(instr._topobjdir, "instrumented")
 
-    if (
-        command_context.log_manager.terminal_handler.level > THIRD_PARTY_WARNING
-        and not is_running_under_coding_agent()
-    ):
-        warnings_path = os.path.join(
-            command_context.topobjdir, ".mozbuild", "logs", "build", "warnings_*.json"
-        )
-        command_context.log(
-            logging.WARNING,
-            "build",
-            {},
-            "Warnings in third-party code are being suppressed from the terminal output. "
-            "Use --show-all-warnings or --verbose to see them.",
-        )
-        command_context.log(
-            logging.WARNING,
-            "build",
-            {"warnings_path": warnings_path},
-            "All warnings will still be dumped to {warnings_path} at the end of the build.",
-        )
+            use_extended_corpus = (
+                configure_args and "MOZ_PGO_EXTENDED_CORPUS=1" in configure_args
+            )
 
-    loader = MozconfigLoader(command_context.topsrcdir)
-    mozconfig = loader.read_mozconfig(loader.AUTODETECT)
-    configure_args = mozconfig["configure_args"]
-    doing_pgo = configure_args and "MOZ_PGO=1" in configure_args
-    # Force verbosity on automation.
-    verbose = verbose or bool(os.environ.get("MOZ_AUTOMATION"))
-    # Keep going by default on automation so that we exhaust as many errors as
-    # possible.
-    keep_going = keep_going or bool(os.environ.get("MOZ_AUTOMATION"))
-    append_env = None
+            if use_extended_corpus:
+                pgo_extended_corpus = bootstrap_toolchain("pgo-extended-corpus")
+                if not pgo_extended_corpus:
+                    raise Exception("Cannot find pgo-extended-corpus.")
 
-    # By setting the current process's priority, by default our child processes
-    # will also inherit this same priority.
-    if not _set_priority(command_context, priority, verbose):
-        command_context.log(
-            logging.WARNING,
-            "priority",
-            {},
-            "--priority not supported on this platform.",
-        )
+            append_env = {"MOZ_PROFILE_GENERATE": "1"}
+            status = instr.build(
+                command_context.metrics,
+                what=what,
+                jobs=jobs,
+                job_size=job_size,
+                directory=directory,
+                verbose=verbose,
+                keep_going=keep_going,
+                mach_context=command_context._mach_context,
+                append_env=append_env,
+                allow_subdirectory_build=allow_subdirectory_build,
+            )
+            if status != 0:
+                return status
 
-    for target in what:
-        if target.startswith("installers-"):
-            ensure_l10n_central(command_context)
-            break
+            # Packaging the instrumented build is required to get the jarlog
+            # data.
+            status = instr._run_make(
+                directory=".",
+                target="package",
+                silent=not verbose,
+                ensure_exit_code=False,
+                append_env=append_env,
+            )
+            if status != 0:
+                return status
 
-    if doing_pgo:
-        if what:
-            raise Exception("Cannot specify targets (%s) in MOZ_PGO=1 builds" % what)
-        instr = command_context._spawn(BuildDriver)
-        orig_topobjdir = instr._topobjdir
-        instr._topobjdir = mozpath.join(instr._topobjdir, "instrumented")
+            pgo_env = os.environ.copy()
+            if instr.config_environment.substs.get("CC_TYPE") in ("clang", "clang-cl"):
+                pgo_env["LLVM_PROFDATA"] = instr.config_environment.substs.get(
+                    "LLVM_PROFDATA"
+                )
+            pgo_env["JARLOG_FILE"] = mozpath.join(orig_topobjdir, "jarlog/en-US.log")
+            pgo_cmd = [
+                command_context.virtualenv_manager.python_path,
+                mozpath.join(command_context.topsrcdir, "build/pgo/profileserver.py"),
+            ]
+            if use_extended_corpus:
+                pgo_cmd.extend(["--extended-corpus", str(pgo_extended_corpus)])
 
-        append_env = {"MOZ_PROFILE_GENERATE": "1"}
-        status = instr.build(
+            subprocess.check_call(pgo_cmd, cwd=instr.topobjdir, env=pgo_env)
+
+            # Set the default build to MOZ_PROFILE_USE
+            append_env = {"MOZ_PROFILE_USE": "1"}
+
+        driver = command_context._spawn(BuildDriver)
+        return driver.build(
             command_context.metrics,
             what=what,
             jobs=jobs,
@@ -288,49 +358,10 @@ def build(
             keep_going=keep_going,
             mach_context=command_context._mach_context,
             append_env=append_env,
+            allow_subdirectory_build=allow_subdirectory_build,
         )
-        if status != 0:
-            return status
-
-        # Packaging the instrumented build is required to get the jarlog
-        # data.
-        status = instr._run_make(
-            directory=".",
-            target="package",
-            silent=not verbose,
-            ensure_exit_code=False,
-            append_env=append_env,
-        )
-        if status != 0:
-            return status
-
-        pgo_env = os.environ.copy()
-        if instr.config_environment.substs.get("CC_TYPE") in ("clang", "clang-cl"):
-            pgo_env["LLVM_PROFDATA"] = instr.config_environment.substs.get(
-                "LLVM_PROFDATA"
-            )
-        pgo_env["JARLOG_FILE"] = mozpath.join(orig_topobjdir, "jarlog/en-US.log")
-        pgo_cmd = [
-            command_context.virtualenv_manager.python_path,
-            mozpath.join(command_context.topsrcdir, "build/pgo/profileserver.py"),
-        ]
-        subprocess.check_call(pgo_cmd, cwd=instr.topobjdir, env=pgo_env)
-
-        # Set the default build to MOZ_PROFILE_USE
-        append_env = {"MOZ_PROFILE_USE": "1"}
-
-    driver = command_context._spawn(BuildDriver)
-    return driver.build(
-        command_context.metrics,
-        what=what,
-        jobs=jobs,
-        job_size=job_size,
-        directory=directory,
-        verbose=verbose,
-        keep_going=keep_going,
-        mach_context=command_context._mach_context,
-        append_env=append_env,
-    )
+    finally:
+        command_context.log_manager.terminal_handler.setLevel(original_log_level)
 
 
 @Command(

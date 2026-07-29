@@ -3,12 +3,12 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
+import functools
 import gzip
 import json
 import logging
 import os
 
-from mozbuild.util import memoize
 from taskgraph.loader.transform import loader as transform_loader
 from taskgraph.util.copy import deepcopy
 from taskgraph.util.yaml import load_yaml
@@ -28,6 +28,9 @@ def loader(kind, path, config, params, loaded_tasks, write_artifacts):
 
     builds_by_platform = get_builds_by_platform(
         dep_kind="build", loaded_tasks=loaded_tasks
+    )
+    builds_by_platform.update(
+        get_builds_by_platform(dep_kind="artifact-build", loaded_tasks=loaded_tasks)
     )
     signed_builds_by_platform = get_builds_by_platform(
         dep_kind="build-signing", loaded_tasks=loaded_tasks
@@ -153,7 +156,7 @@ PREFIX_BY_KIND = {
 }
 
 
-@memoize
+@functools.cache
 def is_test_for_kind(test_name, kind):
     if kind == "test":
         # the test kind is special: we assume that it should contain any tests

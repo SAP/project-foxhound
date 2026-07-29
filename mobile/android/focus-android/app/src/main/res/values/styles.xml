@@ -259,6 +259,11 @@
         <item name="android:textColor">@color/primaryText</item>
     </style>
 
+    <style name="PanelSubtitle" parent="Widget.MaterialComponents.TextView">
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/secondaryText</item>
+    </style>
+
     <style name="PanelHeading" parent="Widget.MaterialComponents.TextView">
         <item name="fontFamily">@font/metropolis</item>
         <item name="android:textSize">16sp</item>

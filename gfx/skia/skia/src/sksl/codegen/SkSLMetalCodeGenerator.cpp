@@ -245,6 +245,8 @@ protected:
 
     bool writeIntrinsicCall(const FunctionCall& c, IntrinsicKind kind);
 
+    void writeTextureTarget(const Expression& arg);
+
     void writeConstructorCompound(const ConstructorCompound& c, Precedence parentPrecedence);
 
     void writeConstructorCompoundVector(const ConstructorCompound& c, Precedence parentPrecedence);
@@ -912,7 +914,7 @@ bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind
     const ExpressionArray& arguments = c.arguments();
     switch (kind) {
         case k_textureRead_IntrinsicKind: {
-            this->writeExpression(*arguments[0], Precedence::kExpression);
+            this->writeTextureTarget(*arguments[0]);
             this->write(".read(");
             this->writeExpression(*arguments[1], Precedence::kSequence);
             this->write(")");
@@ -927,13 +929,21 @@ bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind
             this->write(")");
             return true;
         }
+        case k_textureSize_IntrinsicKind: {
+            this->write("uint2(");
+            this->writeTextureTarget(*arguments[0]);
+            this->write(".get_width(), ");
+            this->writeTextureTarget(*arguments[0]);
+            this->write(".get_height())");
+            return true;
+        }
         case k_textureWidth_IntrinsicKind: {
-            this->writeExpression(*arguments[0], Precedence::kExpression);
+            this->writeTextureTarget(*arguments[0]);
             this->write(".get_width()");
             return true;
         }
         case k_textureHeight_IntrinsicKind: {
-            this->writeExpression(*arguments[0], Precedence::kExpression);
+            this->writeTextureTarget(*arguments[0]);
             this->write(".get_height()");
             return true;
         }
@@ -1165,28 +1175,38 @@ bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind
             return true;
         }
         case k_bitCount_IntrinsicKind: {
-            this->write("popcount(");
+            // Cast to the signed return type required in SkSL
+            if (!c.arguments()[0]->type().componentType().isSigned()) {
+                this->write(this->typeName(c.type()));
+            }
+            this->write("(popcount(");
             this->writeExpression(*arguments[0], Precedence::kSequence);
-            this->write(")");
+            this->write("))");
             return true;
         }
         case k_findLSB_IntrinsicKind: {
             // Create a temp variable to store the expression, to avoid double-evaluating it.
             std::string skTemp = this->getTempVariable(arguments[0]->type());
+            std::string signedType = this->typeName(c.type()); // The return type is always signed
             std::string exprType = this->typeName(arguments[0]->type());
 
             // ctz returns numbits(type) on zero inputs; GLSL documents it as generating -1 instead.
-            // Use select to detect zero inputs and force a -1 result.
+            // - Use select to detect zero inputs and force a -1 result.
+            // - ctz returns an unsigned value for unsigned inputs, so we have to cast back to int
 
-            // (_skTemp1 = (.....), select(ctz(_skTemp1), int4(-1), _skTemp1 == int4(0)))
+            // (_skTemp1 = (.....), select(int4(ctz(_skTemp1)), int4(-1), _skTemp1 == int4(0)))
             this->write("(");
             this->write(skTemp);
             this->write(" = (");
             this->writeExpression(*arguments[0], Precedence::kSequence);
-            this->write("), select(ctz(");
+            this->write("), select(");
+            if (!c.arguments()[0]->type().componentType().isSigned()) {
+                this->write(signedType);
+            }
+            this->write("(ctz(");
             this->write(skTemp);
-            this->write("), ");
-            this->write(exprType);
+            this->write(")), ");
+            this->write(signedType);
             this->write("(-1), ");
             this->write(skTemp);
             this->write(" == ");
@@ -1197,11 +1217,14 @@ bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind
         case k_findMSB_IntrinsicKind: {
             // Create a temp variable to store the expression, to avoid double-evaluating it.
             std::string skTemp1 = this->getTempVariable(arguments[0]->type());
+            std::string signedType = this->typeName(c.type()); // The return type is always signed
             std::string exprType = this->typeName(arguments[0]->type());
 
             // GLSL findMSB is actually quite different from Metal's clz:
             // - For signed negative numbers, it returns the first zero bit, not the first one bit!
             // - For an empty input (0/~0 depending on sign), findMSB gives -1; clz is numbits(type)
+            // - clz is relative to the MSB whereas findMSB returns a 0-based bit number
+            // - clz returns an unsigned value for unsigned inputs, so we have to cast back to int
 
             // (_skTemp1 = (.....),
             this->write("(");
@@ -1228,13 +1251,15 @@ bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind
                 skTemp2 = skTemp1;
             }
 
-            // ... select(int4(clz(_skTemp2)), int4(-1), _skTemp2 == int4(0)))
-            this->write("select(");
-            this->write(this->typeName(c.type()));
+            // ... select(int4(31) - int4(clz(_skTemp2)), int4(-1), _skTemp2 == int4(0)))
+            this->write("select(31 - "); // Assuming 32-bit integer types
+            if (!c.arguments()[0]->type().componentType().isSigned()) {
+                this->write(signedType);
+            }
             this->write("(clz(");
             this->write(skTemp2);
             this->write(")), ");
-            this->write(this->typeName(c.type()));
+            this->write(signedType);
             this->write("(-1), ");
             this->write(skTemp2);
             this->write(" == ");
@@ -1370,6 +1395,16 @@ bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind
         }
         default:
             return false;
+    }
+}
+
+void MetalCodeGenerator::writeTextureTarget(const Expression& arg) {
+    SkASSERT(arg.type().typeKind() == Type::TypeKind::kTexture ||
+             arg.type().typeKind() == Type::TypeKind::kSampler);
+
+    this->writeExpression(arg, Precedence::kExpression);
+    if (arg.type().typeKind() == Type::TypeKind::kSampler) {
+        this->write(".tex");
     }
 }
 

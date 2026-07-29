@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +7,7 @@
 #include "mozilla/ErrorResult.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/dom/cache/AutoUtils.h"
+#include "mozilla/dom/cache/CacheStreamControlParent.h"
 #include "mozilla/dom/cache/ManagerId.h"
 #include "mozilla/dom/cache/ReadStream.h"
 #include "mozilla/dom/cache/SavedTypes.h"
@@ -196,9 +195,20 @@ already_AddRefed<nsIInputStream> CacheOpParent::DeserializeCacheStream(
 
   // Option 1: One of our own ReadStreams was passed back to us with a stream
   //           control actor.
-  stream = ReadStream::Create(readStream);
-  if (stream) {
-    return stream.forget();
+  if (readStream.control()) {
+    MOZ_ASSERT(readStream.control().IsParent());
+    auto actor =
+        static_cast<CacheStreamControlParent*>(readStream.control().AsParent());
+    // Make sure the stream control is coming from the same Manager/origin
+    MOZ_ASSERT(actor && actor->GetManager() == mManager.unsafeGetRawPtr());
+    if (!actor || actor->GetManager() != mManager.unsafeGetRawPtr())
+        [[unlikely]] {
+      return nullptr;
+    }
+    stream = ReadStream::Create(readStream);
+    if (stream) {
+      return stream.forget();
+    }
   }
 
   // Option 2: A stream was serialized using normal methods or passed

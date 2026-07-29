@@ -3,19 +3,19 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
+import functools
 import itertools
 import logging
 import math
 
 import taskgraph
-from mozbuild.util import memoize
 from mozpack.path import match as mozpackmatch
 from taskgraph.util import json
 
 logger = logging.getLogger(__name__)
 
 
-@memoize
+@functools.cache
 def perfile_number_of_chunks(is_try, try_task_config, files_changed, type):
     changed_files = set(files_changed)
     if taskgraph.fast and not is_try:

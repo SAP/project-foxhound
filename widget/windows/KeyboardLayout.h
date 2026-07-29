@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -62,14 +61,22 @@ enum ScanCode : uint16_t {
 // 2: Virtual keycode which distinguishes whether left or right location.
 // 3: Scan code.
 static const uint32_t sModifierKeyMap[][4] = {
-    {nsIWidget::CAPS_LOCK, VK_CAPITAL, 0, ScanCode::eCapsLock},
-    {nsIWidget::NUM_LOCK, VK_NUMLOCK, 0, ScanCode::eNumLock},
-    {nsIWidget::SHIFT_L, VK_SHIFT, VK_LSHIFT, ScanCode::eShiftLeft},
-    {nsIWidget::SHIFT_R, VK_SHIFT, VK_RSHIFT, ScanCode::eShiftRight},
-    {nsIWidget::CTRL_L, VK_CONTROL, VK_LCONTROL, ScanCode::eControlLeft},
-    {nsIWidget::CTRL_R, VK_CONTROL, VK_RCONTROL, ScanCode::eControlRight},
-    {nsIWidget::ALT_L, VK_MENU, VK_LMENU, ScanCode::eAltLeft},
-    {nsIWidget::ALT_R, VK_MENU, VK_RMENU, ScanCode::eAltRight}};
+    {static_cast<uint32_t>(nsIWidget::NativeModifiers::CAPS_LOCK), VK_CAPITAL,
+     0, ScanCode::eCapsLock},
+    {static_cast<uint32_t>(nsIWidget::NativeModifiers::NUM_LOCK), VK_NUMLOCK, 0,
+     ScanCode::eNumLock},
+    {static_cast<uint32_t>(nsIWidget::NativeModifiers::SHIFT_L), VK_SHIFT,
+     VK_LSHIFT, ScanCode::eShiftLeft},
+    {static_cast<uint32_t>(nsIWidget::NativeModifiers::SHIFT_R), VK_SHIFT,
+     VK_RSHIFT, ScanCode::eShiftRight},
+    {static_cast<uint32_t>(nsIWidget::NativeModifiers::CTRL_L), VK_CONTROL,
+     VK_LCONTROL, ScanCode::eControlLeft},
+    {static_cast<uint32_t>(nsIWidget::NativeModifiers::CTRL_R), VK_CONTROL,
+     VK_RCONTROL, ScanCode::eControlRight},
+    {static_cast<uint32_t>(nsIWidget::NativeModifiers::ALT_L), VK_MENU,
+     VK_LMENU, ScanCode::eAltLeft},
+    {static_cast<uint32_t>(nsIWidget::NativeModifiers::ALT_R), VK_MENU,
+     VK_RMENU, ScanCode::eAltRight}};
 
 class KeyboardLayout;
 
@@ -953,7 +960,7 @@ class KeyboardLayout {
   nsresult SynthesizeNativeKeyEvent(nsWindow* aWidget,
                                     int32_t aNativeKeyboardLayout,
                                     int32_t aNativeKeyCode,
-                                    uint32_t aModifierFlags,
+                                    nsIWidget::NativeModifiers aModifierFlags,
                                     const nsAString& aCharacters,
                                     const nsAString& aUnmodifiedCharacters);
 

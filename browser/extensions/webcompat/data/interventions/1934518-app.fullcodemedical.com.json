@@ -1,0 +1,15 @@
+{
+  "label": "app.fullcodemedical.com",
+  "bugs": {
+    "1934518": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://app.fullcodemedical.com/Player/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

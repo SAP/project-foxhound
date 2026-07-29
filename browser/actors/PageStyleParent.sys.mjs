@@ -29,7 +29,7 @@ export class PageStyleParent extends JSWindowActorParent {
   receiveMessage(msg) {
     // Check if things are alive:
     let browser = this.browsingContext.top.embedderElement;
-    if (!browser || browser.ownerGlobal.closed) {
+    if (!browser || browser.documentGlobal.closed) {
       return;
     }
 

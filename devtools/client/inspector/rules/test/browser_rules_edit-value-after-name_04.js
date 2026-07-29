@@ -22,7 +22,7 @@ add_task(async function () {
   info("Test click on background-image url while editing property name");
 
   await selectNode("#testid", inspector);
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
   const propEditor = ruleEditor.rule.textProps[0].editor;
   const anchor = propEditor.valueSpan.querySelector(
     ".ruleview-propertyvalue .theme-link"

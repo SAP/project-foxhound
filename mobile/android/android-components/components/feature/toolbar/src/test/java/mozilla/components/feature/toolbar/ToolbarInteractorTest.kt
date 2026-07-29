@@ -7,8 +7,8 @@ package mozilla.components.feature.toolbar
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.toolbar.fake.FakeToolbar
 import mozilla.components.feature.session.SessionUseCases
-import org.junit.Assert.assertNotNull
 import org.junit.Test
+import kotlin.test.assertNotNull
 
 class ToolbarInteractorTest {
 

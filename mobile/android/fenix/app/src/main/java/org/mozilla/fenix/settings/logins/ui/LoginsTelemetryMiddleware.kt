@@ -73,6 +73,9 @@ internal class LoginsTelemetryMiddleware : Middleware<LoginsState, LoginsAction>
             LoginsListSortMenuAction.OrderByNameClicked,
             is LoginsLoaded,
             is SearchLogins,
+            is ImportPasswordsOverflowMenuClicked,
+            is ImportPasswordsOverflowMenuDismissed,
+            is ImportFileClicked,
                 -> Unit
         }
     }

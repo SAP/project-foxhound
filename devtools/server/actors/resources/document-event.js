@@ -53,6 +53,8 @@ class DocumentEventWatcher {
         hasNativeConsoleAPI,
         // This is only passed for will-navigate event
         newURI,
+        // Are we loading an error page like about:neterror
+        isErrorPage,
       } = {}
     ) => {
       // Ignore will-navigate as that's managed by parent-process-document-event.js.
@@ -84,6 +86,8 @@ class DocumentEventWatcher {
           // other events
           hasNativeConsoleAPI:
             name == "dom-complete" ? hasNativeConsoleAPI : null,
+          // Fallback to undefined to drop the attribute when serializating to JSON
+          isErrorPage: isErrorPage || undefined,
         },
       ]);
     };

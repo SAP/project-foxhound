@@ -12,31 +12,104 @@
     --tabpanel-background-color: #2b2a33;
   }
   &[privatebrowsingmode="temporary"] {
-    /* Value for --background-color-canvas in aboutPrivateBrowsing.css.
-       !important overrides the direct setting of this variable in
-       ThemeVariableMap.sys.mjs when the user has a theme that defines
-       ntp_background. */
-    --tabpanel-background-color: #25003e !important;
+    --tabpanel-background-color: linear-gradient(45deg, #722291 0%, #45278d 50%, #393473 100%) !important;
+  }
+}
 
-    /* stylelint-disable-next-line media-query-no-invalid */
-    @media -moz-pref("browser.privatebrowsing.felt-privacy-v1") {
-      --tabpanel-background-color: linear-gradient(45deg, #722291 0%, #45278d 50%, #393473 100%) !important;
+@media -moz-pref("browser.nova.enabled") {
+  #navigator-toolbox {
+    will-change: background-color;
+    transition: background-color var(--inactive-window-transition);
+    margin-block-start: var(--chrome-window-gap);
+    margin-block-end: var(--chrome-window-gap);
+    margin-inline: var(--chrome-window-gap);
+    overflow: hidden;
+  }
+
+  #browser {
+    display: flex;
+    box-sizing: border-box;
+    padding: var(--chrome-window-gap);
+    padding-block-start: 0;
+    gap: var(--chrome-window-gap);
+  }
+
+  #tabbrowser-tabbox {
+    flex: 1;
+    box-sizing: border-box;
+  }
+
+  /* AI window splitter and box use visibility:collapse, not display:none, so
+   * they are separated by flexbox gaps even when invisible. Override in nova
+   * mode so the gaps disappear. This means that the AI window frame won't be
+   * properly preserved when hidden in nova mode; to be addressed in a future
+   * patch. See bug2033594. */
+  #ai-window-splitter[collapsed],
+  #ai-window-box[collapsed] {
+    display: none;
+  }
+
+  /* Match the .browserContainer of any tab panel that is not a split-view
+   * panel. This covers the initial state, the state after split-view is fully
+   * dissolved, and the suspended state — where #tabbrowser-tabpanels still
+   * has [splitview] (because suspended split-view panels remain in the
+   * tabbox) but the currently-selected tab is a non-split-view one. Without
+   * this, the visible tab loses its rounded corners until split-view is
+   * fully dissolved. */
+  #tabbrowser-tabpanels > :not(.split-view-panel) .browserContainer {
+    border-radius: var(--chrome-block-radius);
+    overflow: clip;
+    outline: none;
+    box-shadow: none;
+    border: 1px solid var(--chrome-content-separator-color);
+  }
+
+  /* Splitter between split-view panels. The active panel's 2px focus outline
+   * extends into the splitter margin on the active panel's side, so we widen
+   * that side's margin to 3px (2px outline + 1px clear) and keep the other
+   * side at 1px. See the :has() rules below for the asymmetric overrides. */
+  #tabbrowser-tabpanels[splitview] .split-view-splitter {
+    background-color: transparent;
+    border: none;
+    border-radius: var(--border-radius-large);
+    min-width: auto;
+    min-height: auto;
+    width: 4px;
+    margin-inline: 1px;
+    transition: background-color 0.5s ease-in-out;
+
+    &:hover {
+      background-color: var(--focus-outline-color);
     }
+  }
+
+  /* When column-0 is selected, its right outline extends into the splitter's
+   * inline-start margin: widen that side to 3px (2px outline + 1px clear). */
+  #tabbrowser-tabpanels[splitview]:has(.split-view-panel[column="0"].deck-selected) .split-view-splitter {
+    margin-inline-start: 3px;
+  }
+
+  /* When column-1 is selected, its left outline extends into the splitter's
+   * inline-end margin: widen that side to 3px (2px outline + 1px clear). */
+  #tabbrowser-tabpanels[splitview]:has(.split-view-panel[column="1"].deck-selected) .split-view-splitter {
+    margin-inline-end: 3px;
   }
 }
 
 #navigator-toolbox {
   border-bottom: 0.01px solid var(--chrome-content-separator-color);
 
-  /* stylelint-disable-next-line media-query-no-invalid */
   @media -moz-pref("sidebar.revamp") {
     /* This reserves space for the content area outline */
-    border-bottom-color: var(--toolbar-bgcolor);
+    border-bottom-color: var(--toolbar-background-color);
   }
 
-  /* stylelint-disable-next-line media-query-no-invalid */
   @media -moz-pref("sidebar.verticalTabs") {
     border-bottom-style: none;
+  }
+
+  @media -moz-pref("browser.nova.enabled") {
+    border-bottom: 1px solid var(--chrome-content-separator-color);
   }
 }
 
@@ -54,15 +127,10 @@
   min-height: 0;
 }
 
-#browser:not(.browser-toolbox-background) {
-  background-color: var(--toolbar-bgcolor);
-  color: var(--toolbar-color);
-
-  :root[lwtheme] & {
-    /* Ensure toolbar color displays on top of the frame/toolbox color to
-    * guarantee full opacity */
-    background-color: var(--lwt-accent-color);
-    background-image: linear-gradient(var(--toolbar-bgcolor), var(--toolbar-bgcolor));
+@media (not -moz-pref("sidebar.verticalTabs")) and (not -moz-pref("browser.nova.enabled")) {
+  #browser {
+    background-color: var(--toolbar-background-color);
+    color: var(--toolbar-text-color);
   }
 }
 
@@ -91,23 +159,26 @@
   /* We want to be able to show the frame color behind the clipped radiused corner */
   background: var(--tabpanel-background-color);
 
-  /* stylelint-disable-next-line media-query-no-invalid */
   @media -moz-pref("sidebar.revamp") {
     outline: 0.01px solid var(--chrome-content-separator-color);
     box-shadow: var(--content-area-shadow);
   }
 
-  /* stylelint-disable-next-line media-query-no-invalid */
   @media -moz-pref("sidebar.revamp") and -moz-pref("sidebar.revamp.round-content-area") {
     overflow: clip;
 
-    :root:not([inDOMFullscreen]) #tabbrowser-tabbox[sidebar-shown] & {
-      /* stylelint-disable-next-line media-query-no-invalid */
-      @media -moz-pref("sidebar.position_start") {
-        border-start-start-radius: var(--border-radius-medium);
+    @media not -moz-pref("browser.nova.enabled") {
+      :root:not([inDOMFullscreen]) #tabbrowser-tabbox[sidebar-shown] & {
+        @media -moz-pref("sidebar.position_start") {
+          border-start-start-radius: var(--border-radius-medium);
+        }
+        @media not -moz-pref("sidebar.position_start") {
+          border-start-end-radius: var(--border-radius-medium);
+        }
       }
-      /* stylelint-disable-next-line media-query-no-invalid */
-      @media not -moz-pref("sidebar.position_start") {
+
+      :root[ai-window]:not([inDOMFullscreen]) & {
+        border-start-start-radius: var(--border-radius-medium);
         border-start-end-radius: var(--border-radius-medium);
       }
     }
@@ -170,10 +241,21 @@
   }
 
   &[splitview] {
+    /* Split-view panels without split-view-panel-active are dormant (a non-split-view
+       tab is selected). Hide them from the flex layout without stripping their sizing
+       attributes, so they re-enter at the correct size when reactivated. */
+    .split-view-panel:not(.split-view-panel-active) {
+      display: none;
+    }
+
     .split-view-panel.split-view-panel-active {
       margin: var(--space-xsmall);
       position: relative;
       width: unset;
+
+      @media -moz-pref("browser.nova.enabled") and -moz-pref("sidebar.revamp") {
+        margin: var(--chrome-window-gap);
+      }
     }
 
     /* Ensure any dialogs are clipped in an inactive/not-selected panel. */
@@ -201,13 +283,14 @@
       }
     }
 
-    .browserContainer {
-      border-radius: var(--border-radius-medium);
-      overflow: clip;
-      outline: var(--border-width) solid var(--border-color);
+    .split-view-panel {
+      .browserContainer {
+        border-radius: var(--border-radius-medium);
+        overflow: clip;
+      }
 
       /* The selected panel's dialogs need to sit above the non-selected tab panels. */
-      .deck-selected > & {
+      &.deck-selected > .browserContainer {
         z-index: 1;
         outline: var(--focus-outline);
       }
@@ -216,12 +299,23 @@
     .split-view-panel[column="0"] {
       order: 0;
       margin-inline-end: 0;
+
+      @media not (-moz-platform: macos) {
+        z-index: 1;
+      }
+
+      @media -moz-pref("browser.nova.enabled") {
+        #tabbrowser-tabbox:is([sidebar-shown], [sidebar-panel-open]) & {
+          margin-inline-start: 0;
+        }
+      }
     }
 
     .split-view-splitter {
       order: 1;
       flex: none;
       -moz-user-focus: normal;
+      border-color: transparent;
 
       &:focus-visible {
         outline: auto;
@@ -236,6 +330,10 @@
     /* Panels with a custom width shouldn't grow. */
     .split-view-panel[width] {
       flex: none;
+
+      @media not (prefers-reduced-motion) {
+        transition: width 50ms ease-out;
+      }
     }
 
     /* Display split view footer within inactive panels. */
@@ -246,6 +344,26 @@
         display: none;
       }
     }
+  }
+}
+
+@media -moz-pref("browser.nova.enabled") {
+  /* Match the corner radius and separator border of unsplit panels.
+   * Skip the border on the active panel so its focus outline can sit flush
+   * against the content without a visible gap. */
+  #tabbrowser-tabpanels[splitview] .split-view-panel > .browserContainer {
+    border-radius: var(--chrome-block-radius);
+  }
+
+  #tabbrowser-tabpanels[splitview] .split-view-panel:not(.deck-selected) > .browserContainer {
+    border: var(--border-width) solid var(--chrome-content-separator-color);
+  }
+
+  /* Align split-view panels with the sidebar's block edges. The surrounding
+   * #browser already supplies --chrome-window-gap of padding on the
+   * top/bottom, so the panel itself shouldn't add more. */
+  #tabbrowser-tabpanels[splitview] .split-view-panel.split-view-panel-active {
+    margin-block: 0;
   }
 }
 
@@ -342,7 +460,6 @@ split-view-footer,
     }
   }
 
-  /* stylelint-disable-next-line media-query-no-invalid */
   @media -moz-pref("browser.tabs.hideStatusPanel") {
     visibility: hidden;
   }
@@ -374,6 +491,11 @@ split-view-footer {
   border-width: 1px;
   border-style: none;
   border-top-style: solid;
+
+  @media (-moz-mac-tahoe-theme) {
+    /* Slightly increasing the padding to prevent the first letter from partially getting cut off by the large window corner radius. */
+    padding: 3px 5px;
+  }
 
   #statuspanel:not([mirror]) > &:-moz-locale-dir(ltr),
   #statuspanel[mirror] > &:-moz-locale-dir(rtl) {
@@ -416,12 +538,12 @@ split-view-footer {
 }
 
 .ask-chat-shortcut-warning {
-  margin: var(--arrowpanel-menuitem-margin);
+  margin: var(--panel-menuitem-margin);
   margin-bottom: var(--space-xsmall);
 }
 
 .ask-chat-shortcuts-custom-prompt {
-  margin: var(--arrowpanel-menuitem-margin);
+  margin: var(--panel-menuitem-margin);
   margin-top: var(--space-small);
 }
 
@@ -473,7 +595,7 @@ split-view-footer {
   display: flex;
   padding: 0;
   overflow-x: auto;
-  outline: 0.5px solid var(--border-color-card);
+  outline: 0.5px solid var(--card-border-color);
 
   /* Ensure that dialog boxes are pixel-snapped, to keep their internal layout
    * consistent, regardless of whether the surrounding layout places them at a
@@ -483,7 +605,7 @@ split-view-footer {
   will-change: transform;
 
   &:not(.spotlightBox) {
-    box-shadow: var(--box-shadow-popup);
+    box-shadow: var(--popup-box-shadow);
     border-radius: var(--border-radius-medium);
   }
 
@@ -584,11 +706,9 @@ split-view-footer {
 
 /* Radius the backdrop so it doesnt occlude the radiused .browserContainer below it */
 :root:not([inDOMFullscreen]) #tabbrowser-tabbox[sidebar-shown] .dialogOverlay[topmost="true"] {
-  /* stylelint-disable-next-line media-query-no-invalid */
   @media -moz-pref("sidebar.revamp.round-content-area") {
     border-start-end-radius: var(--border-radius-medium);
 
-    /* stylelint-disable-next-line media-query-no-invalid */
     @media -moz-pref("sidebar.position_start") {
       border-start-start-radius: var(--border-radius-medium);
       border-start-end-radius: 0;

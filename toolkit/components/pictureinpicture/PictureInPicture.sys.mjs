@@ -74,14 +74,17 @@ XPCOMUtils.defineLazyPreferenceGetter(
 let gNextWindowID = 0;
 
 export class PictureInPictureLauncherParent extends JSWindowActorParent {
-  receiveMessage(aMessage) {
+  async receiveMessage(aMessage) {
     switch (aMessage.name) {
       case "PictureInPicture:Request": {
         let videoData = aMessage.data;
-        PictureInPicture.handlePictureInPictureRequest(this.manager, videoData);
-        break;
+        return PictureInPicture.handlePictureInPictureRequest(
+          this.manager,
+          videoData
+        );
       }
     }
+    return undefined;
   }
 }
 
@@ -91,7 +94,7 @@ export class PictureInPictureToggleParent extends JSWindowActorParent {
     let browser = browsingContext.top.embedderElement;
     switch (aMessage.name) {
       case "PictureInPicture:OpenToggleContextMenu": {
-        let win = browser.ownerGlobal;
+        let win = browser.documentGlobal;
         PictureInPicture.openToggleContextMenu(win, aMessage.data);
         break;
       }
@@ -119,29 +122,13 @@ export class PictureInPictureToggleParent extends JSWindowActorParent {
           break;
         }
         // If the tab is still selected, then we can ignore this event
-        if (browser.ownerGlobal.gBrowser.selectedBrowser == browser) {
+        if (browser.documentGlobal.gBrowser.selectedBrowser == browser) {
           break;
         }
         let actor = browsingContext.currentWindowGlobal.getActor(
           "PictureInPictureLauncher"
         );
         actor.sendAsyncMessage("PictureInPicture:AutoToggle");
-        break;
-      }
-      case "PictureInPicture:VideoTabShown": {
-        if (!lazy.PIP_ENABLED || !lazy.PIP_WHEN_SWITCHING_TABS) {
-          break;
-        }
-        if (browser.ownerGlobal.gBrowser.selectedBrowser != browser) {
-          break;
-        }
-        for (let win of Services.wm.getEnumerator(WINDOW_TYPE)) {
-          let originatingBrowser = PictureInPicture.weakWinToBrowser.get(win);
-          if (browser == originatingBrowser) {
-            win.closeFromForeground();
-            break;
-          }
-        }
         break;
       }
     }
@@ -153,7 +140,7 @@ export class PictureInPictureToggleParent extends JSWindowActorParent {
  * a clone of a video element running in web content.
  */
 export class PictureInPictureParent extends JSWindowActorParent {
-  receiveMessage(aMessage) {
+  async receiveMessage(aMessage) {
     switch (aMessage.name) {
       case "PictureInPicture:Resize": {
         let videoData = aMessage.data;
@@ -165,8 +152,10 @@ export class PictureInPictureParent extends JSWindowActorParent {
          * Content has requested that its Picture in Picture window go away.
          */
         let reason = aMessage.data.reason;
-        PictureInPicture.closeSinglePipWindow({ reason, actorRef: this });
-        break;
+        return PictureInPicture.closeSinglePipWindow({
+          reason,
+          actorRef: this,
+        });
       }
       case "PictureInPicture:Playing": {
         let player = PictureInPicture.getWeakPipPlayer(this);
@@ -213,17 +202,26 @@ export class PictureInPictureParent extends JSWindowActorParent {
       case "PictureInPicture:SetTimestampAndScrubberPosition": {
         let { timestamp, scrubberPosition } = aMessage.data;
         let player = PictureInPicture.getWeakPipPlayer(this);
-        player.setTimestamp(timestamp);
-        player.setScrubberPosition(scrubberPosition);
+        // The player window may already be closed by the time this async
+        // message arrives, in which case there is nothing to update.
+        if (player) {
+          player.setTimestamp(timestamp);
+          player.setScrubberPosition(scrubberPosition);
+        }
         break;
       }
       case "PictureInPicture:VolumeChange": {
         let { volume } = aMessage.data;
         let player = PictureInPicture.getWeakPipPlayer(this);
-        player.setVolume(volume);
+        // The player window may already be closed by the time this async
+        // message arrives, in which case there is nothing to update.
+        if (player) {
+          player.setVolume(volume);
+        }
         break;
       }
     }
+    return undefined;
   }
 }
 
@@ -247,9 +245,15 @@ export var PictureInPicture = {
   // Maps a WindowGlobal to count of eligible PiP videos
   weakGlobalToEligiblePipCount: new WeakMap(),
 
+  // Tracks the 1 pip window we allow to exist from video.requestPictureInPicture()
+  apiPipWindow: null,
+
   // Tracks the number of open player windows for Telemetry tracking.
   currentPlayerCount: 0,
   maxConcurrentPlayerCount: 0,
+
+  // Maps auto pip browser to PictureInPictureParent actor
+  weakAutoPipBrowserToParent: new WeakMap(),
 
   /**
    * Returns the player window if one exists and if it hasn't yet been closed.
@@ -305,6 +309,7 @@ export var PictureInPicture = {
         break;
       }
       case "TabSelect": {
+        this.unpipAutoPipBrowser(event);
         this.updatePlayingDurationHistograms();
         break;
       }
@@ -346,7 +351,7 @@ export var PictureInPicture = {
    *   we'll read its parent window to increase PiP window count in originatingWinWeakMap.
    */
   addOriginatingWinToWeakMap(browser) {
-    let parentWin = browser.ownerGlobal;
+    let parentWin = browser.documentGlobal;
     let count = this.originatingWinWeakMap.get(parentWin);
     if (!count || count == 0) {
       this.setOriginatingWindowActive(parentWin.browsingContext, true);
@@ -389,7 +394,7 @@ export var PictureInPicture = {
    *   we'll read its parent window to decrease PiP window count in originatingWinWeakMap.
    */
   removeOriginatingWinFromWeakMap(browser) {
-    let parentWin = browser?.ownerGlobal;
+    let parentWin = browser?.documentGlobal;
 
     if (!parentWin) {
       return;
@@ -409,6 +414,24 @@ export var PictureInPicture = {
     }
   },
 
+  /**
+   * Because we set the docShellIsActive = true on pip browsers, we never get a
+   * visibilitychange when we switch back to the pip browser tab. Therefore we
+   * use the TabSelect event to detect when we switch back to a tab that was
+   * auto pip'd and close the pip window if so.
+   * Note: this is the function that closes auto pip and is the counterpart to
+   * VideoTabHidden
+   */
+  unpipAutoPipBrowser(event) {
+    let browser = event.target.linkedBrowser;
+    if (this.weakAutoPipBrowserToParent.has(browser)) {
+      this.closeSinglePipWindow({
+        reason: "Foregrounded",
+        actorRef: this.weakAutoPipBrowserToParent.get(browser),
+      });
+    }
+  },
+
   onPipSwappedBrowsers(event) {
     let otherTab = event.detail;
     if (otherTab) {
@@ -419,6 +442,15 @@ export var PictureInPicture = {
           this.removeOriginatingWinFromWeakMap(event.target.linkedBrowser);
           this.addPiPBrowserToWeakMap(otherTab.linkedBrowser);
           this.addOriginatingWinToWeakMap(otherTab.linkedBrowser);
+        }
+        if (this.weakAutoPipBrowserToParent.has(event.target.linkedBrowser)) {
+          // Add the new browser with the existing actor
+          this.weakAutoPipBrowserToParent.set(
+            otherTab.linkedBrowser,
+            this.weakAutoPipBrowserToParent.get(event.target.linkedBrowser)
+          );
+          // Delete the old browser
+          this.weakAutoPipBrowserToParent.delete(event.target.linkedBrowser);
         }
       }
       otherTab.addEventListener("TabSwapPictureInPicture", this);
@@ -473,7 +505,7 @@ export var PictureInPicture = {
       return;
     }
 
-    let win = event.target.ownerGlobal;
+    let win = event.target.documentGlobal;
     let bc = Services.focus.focusedContentBrowsingContext;
     if (bc.top == win.gBrowser.selectedBrowser.browsingContext) {
       let actor = bc.currentWindowGlobal.getActor("PictureInPictureLauncher");
@@ -491,7 +523,7 @@ export var PictureInPicture = {
     let tab = gBrowser.getTabForBrowser(browser);
 
     // focus the tab's window
-    tab.ownerGlobal.focus();
+    tab.documentGlobal.focus();
 
     gBrowser.selectedTab = tab;
     await this.closeSinglePipWindow({ reason: "Unpip", actorRef: pipActor });
@@ -598,6 +630,18 @@ export var PictureInPicture = {
   },
 
   /**
+   * Dispatch entry point used by the `browser-window-location-change`
+   * category.
+   */
+  onLocationChange(_window, _locationURI, webProgress, _flags) {
+    const browser = webProgress.browsingContext.embedderElement;
+    if (!browser) {
+      return;
+    }
+    this.updateUrlbarToggle(browser);
+  },
+
+  /**
    * Toggles the visibility of the PiP urlbar button. If the total video count
    * is 1, then we will show the button. If any eligible video has PiPDisabled,
    * then the button will show. Otherwise the button is hidden.
@@ -609,7 +653,13 @@ export var PictureInPicture = {
       return;
     }
 
-    let win = browser.ownerGlobal;
+    // The browser may already be gone (e.g. tab closed) by the time the
+    // async message that triggered this call is processed.
+    if (!browser) {
+      return;
+    }
+
+    let win = browser.documentGlobal;
     if (win.closed || win.gBrowser?.selectedBrowser !== browser) {
       return;
     }
@@ -630,9 +680,9 @@ export var PictureInPicture = {
 
     let browserHasPip = !!this.browserWeakMap.get(browser);
     if (browserHasPip) {
-      this.setUrlbarPipIconActive(browser.ownerGlobal);
+      this.setUrlbarPipIconActive(browser.documentGlobal);
     } else {
-      this.setUrlbarPipIconInactive(browser.ownerGlobal);
+      this.setUrlbarPipIconInactive(browser.documentGlobal);
     }
   },
 
@@ -643,7 +693,7 @@ export var PictureInPicture = {
    * @param {Event} event Event from clicking the PiP urlbar button
    */
   toggleUrlbar(event) {
-    let win = event.target.ownerGlobal;
+    let win = event.target.documentGlobal;
     let browser = win.gBrowser.selectedBrowser;
 
     let pipPanel = this.getPanelForBrowser(browser);
@@ -844,9 +894,52 @@ export var PictureInPicture = {
       return;
     }
     this.removePiPBrowserFromWeakMap(this.weakWinToBrowser.get(win));
+    this.weakAutoPipBrowserToParent.delete(this.weakWinToBrowser.get(win));
 
     Glean.pictureinpicture["closedMethod" + reason].record();
     await this.closePipWindow(win);
+  },
+
+  /**
+   * Set the window that was created from the Picture In Picture API.
+   * Used specifically to force-close if another PIP API request is made.
+   */
+  setApiWindow(window) {
+    if (this.apiPipWindow != null) {
+      console.error(`PIP API Window reference not properly cleared.`);
+    }
+    this.apiPipWindow = Cu.getWeakReference(window);
+    window.addEventListener("unload", () => {
+      this.clearApiWindow(window);
+    });
+  },
+
+  /**
+   * When a PIP Window (PIP API) unloads it clears the weak reference to itself.
+   */
+  clearApiWindow(window) {
+    let currentWindow = this.apiPipWindow?.get();
+    if (currentWindow == window) {
+      this.apiPipWindow = null;
+    } else {
+      console.error(`PIP API Window state not properly cleared.`);
+    }
+  },
+
+  /**
+   * Closes PIP window that was opened via the Picture-in-Picture API.
+   * Current PIP API implementation has chosen to only support 1 window at a time.
+   *
+   * @param {string} reason
+   *   The reason for closing these windows (for telemetry)
+   */
+  async closeApiPipWindowIfOpen(reason = "Api") {
+    const pipApiWindow = this.apiPipWindow?.get();
+    if (pipApiWindow) {
+      Glean.pictureinpicture["closedMethod" + reason].record();
+      await this.closePipWindow(pipApiWindow);
+      this.apiPipWindow = null;
+    }
   },
 
   /**
@@ -866,11 +959,26 @@ export var PictureInPicture = {
    *   videoWidth (int):
    *     The preferred width of the video.
    *
+   *   videoRef (ContentDOMReference)
+   *    A reference to the video element that a Picture-in-Picture window
+   *    is being created for
+   *
+   *   isPipApiRequest {boolean}
+   *    True when this request originated from HTMLVideoElement.requestPictureInPicture().
+   *    The PictureInPictureWindow instance itself is handed off to the player
+   *    actor via a same-process WeakMap in PictureInPictureChild.sys.mjs.
+   *
    * @returns {Promise}
    *   Resolves once the Picture in Picture window has been created, and
    *   the player component inside it has finished loading.
    */
   async handlePictureInPictureRequest(wgp, videoData) {
+    const isApiRequest = !!videoData.isPipApiRequest;
+
+    if (isApiRequest) {
+      await this.closeApiPipWindowIfOpen();
+    }
+
     this.currentPlayerCount += 1;
     this.maxConcurrentPlayerCount = Math.max(
       this.maxConcurrentPlayerCount,
@@ -881,7 +989,7 @@ export var PictureInPicture = {
     );
 
     let browser = wgp.browsingContext.top.embedderElement;
-    let parentWin = browser.ownerGlobal;
+    let parentWin = browser.documentGlobal;
 
     let win = await this.openPipWindow(parentWin, videoData);
     win.setIsPlayingState(videoData.playing);
@@ -896,12 +1004,27 @@ export var PictureInPicture = {
     tab.addEventListener("TabSwapPictureInPicture", this);
 
     let pipId = gNextWindowID.toString();
-    win.setupPlayer(pipId, wgp, videoData.videoRef, videoData.autoFocus);
+    const { actor: actorRef, setupPromise } = win.setupPlayer(
+      pipId,
+      wgp,
+      videoData.videoRef,
+      isApiRequest,
+      videoData.autoFocus
+    );
     gNextWindowID++;
 
     this.weakWinToBrowser.set(win, browser);
     this.addPiPBrowserToWeakMap(browser);
     this.addOriginatingWinToWeakMap(browser);
+    if (lazy.PIP_WHEN_SWITCHING_TABS && !browser.docShellIsActive) {
+      // The docshell would only not be active when the video was pip'd via auto toggle
+      browser.docShellIsActive = true;
+      this.weakAutoPipBrowserToParent.set(browser, actorRef);
+    }
+
+    if (isApiRequest) {
+      this.setApiWindow(win);
+    }
 
     win.setScrubberPosition(videoData.scrubberPosition);
     win.setTimestamp(videoData.timestamp);
@@ -918,6 +1041,7 @@ export var PictureInPicture = {
       ccEnabled: videoData.ccEnabled,
       webVTTSubtitles: videoData.webVTTSubtitles,
     });
+    await setupPromise;
   },
 
   /**
@@ -967,7 +1091,7 @@ export var PictureInPicture = {
     // Saves the location of the Picture in Picture window
     this.savePosition(window);
     this.clearPipTabIcon(window);
-    this.setUrlbarPipIconInactive(browser?.ownerGlobal);
+    this.setUrlbarPipIconInactive(browser?.documentGlobal);
   },
 
   /**

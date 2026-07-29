@@ -11,9 +11,6 @@ root_dir=$MOZ_FETCHES_DIR
 build_dir=$GECKO_PATH/build
 data_dir=$GECKO_PATH/build/unix/build-gcc
 
-sixgill_rev=0b78708b131a
-sixgill_repo=https://hg.mozilla.org/users/sfink_mozilla.com/sixgill
-
 . $data_dir/build-gcc.sh
 
 mkdir $root_dir/gcc-source || true
@@ -28,11 +25,6 @@ export TMPDIR=${TMPDIR:-/tmp/}
 export gcc_bindir=$MOZ_FETCHES_DIR/gcc/bin
 export gmp_prefix=/tools/gmp
 export gmp_dir=$root_dir$gmp_prefix
-
-prepare_sixgill() {(
-    cd $root_dir
-    hg clone -r $sixgill_rev $sixgill_repo || ( cd sixgill && hg update -r $sixgill_rev )
-)}
 
 build_gmp() {
     if ! [ -x $gcc_bindir/gcc ]; then
@@ -71,7 +63,6 @@ build_sixgill() {(
     cp $tarball $root_dir/sixgill.tar.xz
 )}
 
-prepare_sixgill
 build_gmp
 build_sixgill
 

@@ -7,9 +7,9 @@ import os
 import select
 import signal
 import sys
+from collections import deque
 from datetime import datetime, timedelta
 
-from .adaptor import xdr_annotate
 from .progressbar import ProgressBar
 from .results import NullTestOutput, TestOutput, escape_cmdline
 
@@ -212,54 +212,102 @@ def kill_undead(tasks, timeout):
 
 
 def run_all_tests(tests, prefix, tempdir, pb, options):
-    # Copy and reverse for fast pop off end.
-    tests = list(tests)
-    tests = tests[:]
-    tests.reverse()
+    max_parallel_heavy_tasks = 1
+
+    # Updated by the main function, consulted by the `scheduler` generator.
+    num_tasks = 0
+    num_heavy_tasks = 0
+    task = None
+
+    def scheduler(tests, max_tasks):
+        # Deques of tests seen but not yet spawned, indexed by "weight"
+        # (a boolean, heavy vs light).
+        pending = (deque(), deque())
+        pending_heavy = pending[True]  # More readable name
+        tests = iter(tests)
+        xdr_mode = "off"
+
+        def with_xdr(test, mode):
+            test.selfhosted_xdr_mode = mode
+            return test
+
+        if options.use_xdr:
+            xdr_mode = "encode"
+
+            # Find a light test to spawn. Use it for XDR encoding,
+            for test in tests:
+                if test.heavy:
+                    pending_heavy.append(test)
+                else:
+                    yield ("spawn", with_xdr(test, "encode"))
+                    if task is not None:
+                        xdr_mode = "decode"
+                        break
+
+            # Fall back to using a heavy task.
+            while xdr_mode != "decode":
+                if not pending_heavy:
+                    return  # No runnable tests.
+                test = pending_heavy.popleft()
+                yield ("spawn", with_xdr(test, "encode"))
+                if task is not None:
+                    xdr_mode = "decode"
+
+            # Wait for the encoding task to complete.
+            yield ("wait-all", None)
+
+        # Walk through tests and spawn them, but keep a full set of heavy tasks
+        # running whenever possible (start them eagerly, and scan ahead to find
+        # more when the pending list runs out). Wait whenever spawning a task
+        # would exceed `max_tasks`.
+        while True:
+            if num_tasks >= max_tasks:
+                # Task pool is full.
+                yield ("wait-one", None)
+                continue
+
+            # The index within pending[], which is whether we want a heavy job.
+            weight = num_heavy_tasks < max_parallel_heavy_tasks
+
+            # If a test with the desired weight is pending, spawn it.
+            if pending[weight]:
+                test = pending[weight].popleft()
+                yield ("spawn", with_xdr(test, xdr_mode))
+                continue
+
+            # Scan for a test with the desired weight.
+            for test in tests:
+                pending[test.heavy].append(test)
+                if test.heavy == weight:
+                    break
+            else:
+                # No tests of this weight left, so spawn one of the others.
+                other = not weight
+                if pending[other]:
+                    if other:
+                        # We wanted a light but only have heavy. But wanting a
+                        # light means too many heavies are running. Wait.
+                        assert num_heavy_tasks >= max_parallel_heavy_tasks
+                        yield ("wait-one", None)
+                    test = pending[other].popleft()
+                    yield ("spawn", with_xdr(test, xdr_mode))
+                else:
+                    assert not any(pending)
+                    break
+
+        # All tests have been spawned.
+        yield ("wait-all", None)
 
     # The set of currently running tests.
     tasks = []
 
-    # Piggy back on the first test to generate the XDR content needed for all
-    # other tests to run. To avoid read/write races, we temporarily limit the
-    # number of workers.
-    wait_for_encoding = False
-    worker_count = options.worker_count
-    if options.use_xdr and len(tests) > 1:
-        # The next loop pops tests, thus we iterate over the tests in reversed
-        # order.
-        tests = list(xdr_annotate(reversed(tests), options))
-        tests = tests[:]
-        tests.reverse()
-        wait_for_encoding = True
-        worker_count = 1
+    for action, test in scheduler(tests, options.worker_count):
+        if action == "spawn":
+            if not test.enable and not options.run_skipped:
+                task = None
+                yield NullTestOutput(test)
+                continue
 
-    def running_heavy_test():
-        return any(task.test.heavy for task in tasks)
-
-    heavy_tests = [t for t in tests if t.heavy]
-    light_tests = [t for t in tests if not t.heavy]
-
-    encoding_test = None
-    while light_tests or heavy_tests or tasks:
-        new_tests = []
-        max_new_tests = worker_count - len(tasks)
-        if (
-            heavy_tests
-            and not running_heavy_test()
-            and len(new_tests) < max_new_tests
-            and not wait_for_encoding
-        ):
-            # Schedule a heavy test if available.
-            new_tests.append(heavy_tests.pop())
-        while light_tests and len(new_tests) < max_new_tests:
-            # Schedule as many more light tests as we can.
-            new_tests.append(light_tests.pop())
-
-        assert len(tasks) + len(new_tests) <= worker_count
-        assert len([x for x in new_tests if x.heavy]) <= 1
-
-        for test in new_tests:
             task = spawn_test(
                 test,
                 prefix,
@@ -270,25 +318,29 @@ def run_all_tests(tests, prefix, tempdir, pb, options):
             )
             if task:
                 tasks.append(task)
-                if not encoding_test:
-                    encoding_test = test
+                if test.heavy:
+                    num_heavy_tasks += 1
+                num_tasks += 1
             else:
                 yield NullTestOutput(test)
+            continue
 
-        timeout = get_max_wait(tasks, options.timeout)
-        read_input(tasks, timeout)
+        assert action.startswith("wait-")
+        wait_until_down_to = 0 if action == "wait-all" else num_tasks - 1
+        while num_tasks > wait_until_down_to:
+            timeout = get_max_wait(tasks, options.timeout)
+            read_input(tasks, timeout)
 
-        kill_undead(tasks, options.timeout)
-        tasks, finished = reap_zombies(tasks, options.timeout)
+            kill_undead(tasks, options.timeout)
+            tasks, finished = reap_zombies(tasks, options.timeout)
 
-        for out in finished:
-            yield out
-            if wait_for_encoding and out.test == encoding_test:
-                assert encoding_test.selfhosted_xdr_mode == "encode"
-                wait_for_encoding = False
-                worker_count = options.worker_count
+            for out in finished:
+                yield out
+                if out.test.heavy:
+                    num_heavy_tasks -= 1
+                num_tasks -= 1
 
-        # If we did not finish any tasks, poke the progress bar to show that
-        # the test harness is at least not frozen.
-        if len(finished) == 0:
-            pb.poke()
+            # If we did not finish any tasks, poke the progress bar to show that
+            # the test harness is at least not frozen.
+            if len(finished) == 0:
+                pb.poke()

@@ -16,10 +16,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "chrome://remote/content/shared/webdriver/UserPromptHandler.sys.mjs",
 });
 
-ChromeUtils.defineLazyGetter(lazy, "isHeadless", () => {
-  return Cc["@mozilla.org/gfx/info;1"].getService(Ci.nsIGfxInfo).isHeadless;
-});
-
 ChromeUtils.defineLazyGetter(lazy, "userAgent", () => {
   return Cc["@mozilla.org/network/protocol;1?name=http"].getService(
     Ci.nsIHttpProtocolHandler
@@ -470,6 +466,8 @@ export class ProxyConfiguration {
 }
 
 export class Capabilities extends Map {
+  #isBidi;
+
   /**
    * WebDriver session capabilities representation.
    *
@@ -490,7 +488,7 @@ export class Capabilities extends Map {
 
       // Gecko specific capabilities
       ["moz:buildID", lazy.AppInfo.appBuildID],
-      ["moz:headless", lazy.isHeadless],
+      ["moz:headless", lazy.AppInfo.isHeadless],
       ["moz:platformVersion", Services.sysinfo.getProperty("version")],
       ["moz:processID", lazy.AppInfo.processID],
       ["moz:profile", maybeProfile()],
@@ -512,6 +510,8 @@ export class Capabilities extends Map {
     }
 
     super(defaults);
+
+    this.#isBidi = isBidi;
   }
 
   /**
@@ -542,12 +542,17 @@ export class Capabilities extends Map {
   toJSON() {
     let marshalled = marshal(this);
 
-    // Always return the proxy capability even if it's empty
-    if (!("proxy" in marshalled)) {
-      marshalled.proxy = {};
+    if (!this.#isBidi) {
+      // For classic WebDriver, proxy is always returned at the moment even when not configured.
+      // See as well: https://github.com/w3c/webdriver/issues/1813
+      if (!("proxy" in marshalled)) {
+        marshalled.proxy = {};
+      }
+
+      // Don't add timeouts which is a WebDriver classic specific capability.
+      marshalled.timeouts = super.get("timeouts");
     }
 
-    marshalled.timeouts = super.get("timeouts");
     marshalled.unhandledPromptBehavior = super.get("unhandledPromptBehavior");
 
     return marshalled;

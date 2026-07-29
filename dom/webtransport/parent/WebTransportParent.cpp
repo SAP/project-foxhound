@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -35,9 +33,9 @@ WebTransportParent::~WebTransportParent() {
 
 void WebTransportParent::Create(
     const nsAString& aURL, nsIPrincipal* aPrincipal,
-    const uint64_t& aBrowsingContextID,
-    const mozilla::Maybe<IPCClientInfo>& aClientInfo, const bool& aDedicated,
-    const bool& aRequireUnreliable, const uint32_t& aCongestionControl,
+    const uint64_t& aBrowsingContextID, const IPCClientInfo& aClientInfo,
+    const bool& aDedicated, const bool& aRequireUnreliable,
+    const uint32_t& aCongestionControl,
     nsTArray<WebTransportHash>&& aServerCertHashes,
     Endpoint<PWebTransportParent>&& aParentEndpoint,
     std::function<void(std::tuple<const nsresult&, const uint8_t&>)>&&
@@ -95,11 +93,11 @@ void WebTransportParent::Create(
        nsServerCertHashes = std::move(nsServerCertHashes),
        principal = RefPtr{aPrincipal}, browsingContextID = aBrowsingContextID,
        flags = nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
-       clientInfo = aClientInfo] {
+       clientInfo = ClientInfo{aClientInfo}] {
         LOG(("WebTransport %p AsyncConnect", self.get()));
         if (NS_FAILED(self->mWebTransport->AsyncConnectWithClient(
                 uri, dedicated, std::move(nsServerCertHashes), principal,
-                browsingContextID, flags, self, clientInfo,
+                browsingContextID, flags, self, Some(clientInfo),
                 nsIWebTransport::HTTPVersion::h3))) {
           LOG(("AsyncConnect failure; we should get OnSessionClosed"));
         }
@@ -161,6 +159,9 @@ IPCResult WebTransportParent::RecvClose(const uint32_t& aCode,
                                         const nsACString& aReason) {
   LOG(("Close for %p received, code = %u, reason = %s", this, aCode,
        PromiseFlatCString(aReason).get()));
+  if (!mSessionReady) {
+    return IPC_FAIL(this, "Close received before session was ready");
+  }
   {
     MutexAutoLock lock(mMutex);
     MOZ_ASSERT(!mClosed);

@@ -1,0 +1,19 @@
+<script>
+var dbName = 'poc_' + Math.random();
+var req = indexedDB.open(dbName, 1);
+req.onupgradeneeded = function(e) {
+    var db = e.target.result;
+    var store = db.createObjectStore('s', {
+        autoIncrement: true
+    });
+    store.createIndex('idx', ['a', 'b'], {
+        locale: 'auto'
+    });
+    for (var i = 0; i < 20; i++) {
+        store.put({
+            a: 'test' + i,
+            b: new Uint8Array([0x7F])
+        });
+    }
+};
+</script>

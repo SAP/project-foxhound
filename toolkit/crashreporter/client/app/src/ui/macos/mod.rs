@@ -334,7 +334,11 @@ objc_class! {
                 // In newer versions of macos, makeMainWindow doesn't seem to work reliably when
                 // called from applicationDidFinishLaunching, so we call it here from
                 // windowDidBecomeKey.
-                unsafe { w.makeMainWindow() };
+                unsafe {
+                    w.center();
+                    w.setContentSize_(w.minSize());
+                    w.makeMainWindow();
+                }
                 self.window_type = WindowType::Main { make_main: false };
             }
         }
@@ -613,8 +617,8 @@ impl WindowRenderer {
                 content_parent.setTitlePosition_(cocoa::NSNoTitle);
                 content_parent.setTransparent_(runtime::YES);
                 content_parent.setContentViewMargins_(cocoa::NSSize {
-                    width: 5.0,
-                    height: 5.0,
+                    width: 8.0,
+                    height: 8.0,
                 });
                 if ViewRenderer::new_with_selector(self.rtl, *content_parent, sel!(setContentView:))
                     .render(*e)
@@ -1084,6 +1088,8 @@ fn render_element(
             unsafe {
                 sv.init();
                 sv.setHasVerticalScroller_(runtime::YES);
+                sv.setBorderType_(cocoa::NSBezelBorder);
+                sv.setDrawsBackground_(runtime::YES);
             }
             if let Some(content) = content {
                 ViewRenderer::new_with_selector(rtl, sv, sel!(setDocumentView:))

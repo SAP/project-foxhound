@@ -15,6 +15,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -23,7 +24,6 @@
 #include "absl/functional/any_invocable.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/candidate.h"
 #include "api/local_network_access_permission.h"
 #include "api/sequence_checker.h"
@@ -49,6 +49,7 @@
 #include "rtc_base/network/received_packet.h"
 #include "rtc_base/network/sent_packet.h"
 #include "rtc_base/socket_address.h"
+#include "rtc_base/span_helpers.h"
 #include "rtc_base/string_encode.h"
 #include "rtc_base/string_utils.h"
 #include "rtc_base/strings/string_builder.h"
@@ -109,9 +110,6 @@ Port::Port(const PortParametersRef& args,
       shared_socket_(shared_socket),
       network_cost_(args.network->GetCost(env_.field_trials())),
       role_conflict_callback_(nullptr),
-      unknown_address_trampoline_(this),
-      read_packet_trampoline_(this),
-      sent_packet_trampoline_(this),
       weak_factory_(this) {
   RTC_DCHECK_RUN_ON(thread_);
   RTC_DCHECK(factory_ != nullptr);
@@ -123,25 +121,28 @@ Port::Port(const PortParametersRef& args,
     ice_username_fragment_ = CreateRandomString(ICE_UFRAG_LENGTH);
     password_ = CreateRandomString(ICE_PWD_LENGTH);
   }
-  network_->SignalTypeChanged.connect(this, &Port::OnNetworkTypeChanged);
+  // TODO: https://issues.webrtc.org/462023697 - remove need for const_cast
+  const_cast<::webrtc::Network*>(network_)->SubscribeTypeChanged(
+      this, [this](const ::webrtc::Network* network) {
+        OnNetworkTypeChanged(network);
+      });
+  const_cast<::webrtc::Network*>(network_)->SubscribeNetworkSliceChanged(
+      this, [this](const ::webrtc::Network* network) {
+        OnNetworkSliceChanged(network);
+      });
 
   PostDestroyIfDead(/*delayed=*/true);
   RTC_LOG(LS_INFO) << ToString() << ": Port created with network cost "
                    << network_cost_;
-
-  // This is a temporary solution to support sigslot signals from
-  // downstream. We also register a method to send the callbacks in callback
-  // list. This will no longer be needed once downstream stops using
-  // the sigslot directly.
-  SignalCandidateReady.connect(this, &Port::SendCandidateReadyCallbackList);
-  SignalPortComplete.connect(this, &Port::SendPortCompleteCallbackList);
-  SignalPortError.connect(this, &Port::SendPortErrorCallbackList);
 }
 
 Port::~Port() {
   RTC_DCHECK_RUN_ON(thread_);
   DestroyAllConnections();
   CancelPendingTasks();
+  const_cast<::webrtc::Network*>(network_)->UnsubscribeTypeChanged(this);
+  const_cast<::webrtc::Network*>(network_)->UnsubscribeNetworkSliceChanged(
+      this);
 }
 
 IceCandidateType Port::Type() const {
@@ -247,6 +248,7 @@ void Port::AddAddress(const SocketAddress& address,
   c.set_underlying_type_for_vpn(network_->underlying_type_for_vpn());
   c.set_url(url);
   c.set_related_address(related_address);
+  c.set_network_slice(network_->network_slice());
 
   bool pending = MaybeObfuscateAddress(c, is_final);
 
@@ -293,36 +295,40 @@ bool Port::MaybeObfuscateAddress(const Candidate& c, bool is_final) {
 
 void Port::FinishAddingAddress(const Candidate& c, bool is_final) {
   candidates_.push_back(c);
-  SignalCandidateReady(this, c);
+  NotifyCandidateReady(this, c);
 
   PostAddAddress(is_final);
 }
 
 void Port::PostAddAddress(bool is_final) {
   if (is_final) {
-    SignalPortComplete(this);
+    NotifyPortComplete(this);
   }
 }
 
-void Port::SubscribePortComplete(absl::AnyInvocable<void(Port*)> callback) {
+[[deprecated]] void Port::SubscribePortComplete(
+    absl::AnyInvocable<void(Port*)> callback) {
   RTC_DCHECK_RUN_ON(thread_);
   port_complete_callback_list_.AddReceiver(std::move(callback));
 }
 
-void Port::SendPortCompleteCallbackList(Port*) {
+void Port::SubscribePortComplete(const void* tag,
+                                 absl::AnyInvocable<void(Port*)> callback) {
   RTC_DCHECK_RUN_ON(thread_);
-  port_complete_callback_list_.Send(this);
+  port_complete_callback_list_.AddReceiver(tag, std::move(callback));
 }
 
-void Port::SendPortErrorCallbackList(Port*) {
-  RTC_DCHECK_RUN_ON(thread_);
-  port_error_callback_list_.Send(this);
-}
-
-void Port::SubscribeCandidateError(
+[[deprecated]] void Port::SubscribeCandidateError(
     std::function<void(Port*, const IceCandidateErrorEvent&)> callback) {
   RTC_DCHECK_RUN_ON(thread_);
   candidate_error_callback_list_.AddReceiver(std::move(callback));
+}
+
+void Port::SubscribeCandidateError(
+    const void* tag,
+    std::function<void(Port*, const IceCandidateErrorEvent&)> callback) {
+  RTC_DCHECK_RUN_ON(thread_);
+  candidate_error_callback_list_.AddReceiver(tag, std::move(callback));
 }
 
 void Port::SendCandidateError(const IceCandidateErrorEvent& event) {
@@ -330,20 +336,29 @@ void Port::SendCandidateError(const IceCandidateErrorEvent& event) {
   candidate_error_callback_list_.Send(this, event);
 }
 
-void Port::SubscribeCandidateReadyCallback(
+[[deprecated]] void Port::SubscribeCandidateReadyCallback(
     absl::AnyInvocable<void(Port*, const Candidate&)> callback) {
   RTC_DCHECK_RUN_ON(thread_);
   candidate_ready_callback_list_.AddReceiver(std::move(callback));
 }
 
-void Port::SendCandidateReadyCallbackList(Port*, const Candidate& candidate) {
+void Port::SubscribeCandidateReadyCallback(
+    const void* tag,
+    absl::AnyInvocable<void(Port*, const Candidate&)> callback) {
   RTC_DCHECK_RUN_ON(thread_);
-  candidate_ready_callback_list_.Send(this, candidate);
+  candidate_ready_callback_list_.AddReceiver(tag, std::move(callback));
 }
 
-void Port::SubscribePortError(absl::AnyInvocable<void(Port*)> callback) {
+[[deprecated]] void Port::SubscribePortError(
+    absl::AnyInvocable<void(Port*)> callback) {
   RTC_DCHECK_RUN_ON(thread_);
   port_error_callback_list_.AddReceiver(std::move(callback));
+}
+
+void Port::SubscribePortError(const void* tag,
+                              absl::AnyInvocable<void(Port*)> callback) {
+  RTC_DCHECK_RUN_ON(thread_);
+  port_error_callback_list_.AddReceiver(tag, std::move(callback));
 }
 
 void Port::AddOrReplaceConnection(Connection* conn) {
@@ -368,12 +383,11 @@ void Port::AddOrReplaceConnection(Connection* conn) {
 void Port::OnReadPacket(const ReceivedIpPacket& packet, ProtocolType proto) {
   RTC_DCHECK_RUN_ON(thread_);
 
-  const char* data = reinterpret_cast<const char*>(packet.payload().data());
-  size_t size = packet.payload().size();
   const SocketAddress& addr = packet.source_address();
+  std::span<const uint8_t> data = packet.payload();
   // If the user has enabled port packets, just hand this over.
   if (enable_port_packets_) {
-    NotifyReadPacket(this, data, size, addr);
+    NotifyReadPacket(this, data, addr);
     return;
   }
 
@@ -381,7 +395,7 @@ void Port::OnReadPacket(const ReceivedIpPacket& packet, ProtocolType proto) {
   // send back a proper binding response.
   std::unique_ptr<IceMessage> msg;
   std::string remote_username;
-  if (!GetStunMessage(data, size, addr, &msg, &remote_username)) {
+  if (!GetStunMessage(data, addr, &msg, &remote_username)) {
     RTC_LOG(LS_ERROR) << ToString()
                       << ": Received non-STUN packet from unknown address: "
                       << addr.ToSensitiveString();
@@ -435,8 +449,7 @@ void Port::AddPrflxCandidate(const Candidate& local) {
   candidates_.push_back(local);
 }
 
-bool Port::GetStunMessage(const char* data,
-                          size_t size,
+bool Port::GetStunMessage(std::span<const uint8_t> data,
                           const SocketAddress& addr,
                           std::unique_ptr<IceMessage>* out_msg,
                           std::string* out_username) {
@@ -453,16 +466,15 @@ bool Port::GetStunMessage(const char* data,
   // Except GOOG_PING_REQUEST/RESPONSE that does not send fingerprint.
   int types[] = {GOOG_PING_REQUEST, GOOG_PING_RESPONSE,
                  GOOG_PING_ERROR_RESPONSE};
-  if (!StunMessage::IsStunMethod(types, data, size) &&
-      !StunMessage::ValidateFingerprint(data, size)) {
+  if (!StunMessage::IsStunMethod(types, data) &&
+      !StunMessage::ValidateFingerprint(data)) {
     return false;
   }
 
   // Parse the request message.  If the packet is not a complete and correct
   // STUN message, then ignore it.
   std::unique_ptr<IceMessage> stun_msg(new IceMessage());
-  ByteBufferReader buf(
-      MakeArrayView(reinterpret_cast<const uint8_t*>(data), size));
+  ByteBufferReader buf(data);
   if (!stun_msg->Read(&buf) || (buf.Length() > 0)) {
     return false;
   }
@@ -787,7 +799,7 @@ void Port::SendBindingErrorResponse(StunMessage* message,
   AsyncSocketPacketOptions options(StunDscpValue());
   options.info_signaled_after_sent.packet_type =
       PacketType::kIceConnectivityCheckResponse;
-  SendTo(buf.Data(), buf.Length(), addr, options, false);
+  SendTo(buf.DataView(), addr, options, false);
   RTC_LOG(LS_INFO) << ToString() << ": Sending STUN "
                    << StunMethodToString(response.type())
                    << ": reason=" << reason << " to "
@@ -825,7 +837,7 @@ void Port::SendUnknownAttributesErrorResponse(
   AsyncSocketPacketOptions options(StunDscpValue());
   options.info_signaled_after_sent.packet_type =
       PacketType::kIceConnectivityCheckResponse;
-  SendTo(buf.Data(), buf.Length(), addr, options, false);
+  SendTo(buf.DataView(), addr, options, false);
   RTC_LOG(LS_ERROR) << ToString() << ": Sending STUN binding error: reason="
                     << STUN_ERROR_UNKNOWN_ATTRIBUTE << " to "
                     << addr.ToSensitiveString();
@@ -881,10 +893,17 @@ void Port::DestroyIfDead() {
   }
 }
 
-void Port::SubscribePortDestroyed(
+[[deprecated]] void Port::SubscribePortDestroyed(
     std::function<void(PortInterface*)> callback) {
   RTC_DCHECK_RUN_ON(thread_);
   port_destroyed_callback_list_.AddReceiver(std::move(callback));
+}
+
+void Port::SubscribePortDestroyed(
+    const void* tag,
+    std::function<void(PortInterface*)> callback) {
+  RTC_DCHECK_RUN_ON(thread_);
+  port_destroyed_callback_list_.AddReceiver(tag, std::move(callback));
 }
 
 void Port::SendPortDestroyed(Port* port) {
@@ -894,6 +913,19 @@ void Port::SendPortDestroyed(Port* port) {
 void Port::OnNetworkTypeChanged(const ::webrtc::Network* network) {
   RTC_DCHECK(network == network_);
 
+  UpdateNetworkCost();
+}
+
+void Port::OnNetworkSliceChanged(const ::webrtc::Network* network) {
+  RTC_DCHECK_RUN_ON(thread_);
+  RTC_DCHECK(network == network_);
+
+  for (Candidate& candidate : candidates_) {
+    candidate.set_network_slice(network_->network_slice());
+  }
+
+  // The network slice affects the network cost as well, so also update the cost
+  // when the slice changes.
   UpdateNetworkCost();
 }
 
@@ -1045,27 +1077,32 @@ void Port::SubscribeRoleConflict(absl::AnyInvocable<void()> callback) {
   RTC_DCHECK_RUN_ON(thread_);
   RTC_DCHECK(callback);
   RTC_DCHECK(!role_conflict_callback_);
-  RTC_DCHECK(SignalRoleConflict.is_empty());
   role_conflict_callback_ = std::move(callback);
 }
 
 void Port::NotifyRoleConflict() {
   RTC_DCHECK_RUN_ON(thread_);
-  if (role_conflict_callback_) {
-    RTC_DCHECK(SignalRoleConflict.is_empty());
-    role_conflict_callback_();
-  } else {
-    SignalRoleConflict(this);
-  }
+  role_conflict_callback_();
 }
 
-void Port::SubscribeUnknownAddress(absl::AnyInvocable<void(PortInterface*,
+[[deprecated]] void Port::SubscribeUnknownAddress(
+    absl::AnyInvocable<void(PortInterface*,
+                            const SocketAddress&,
+                            ProtocolType,
+                            IceMessage*,
+                            const std::string&,
+                            bool)> callback) {
+  unknown_address_callbacks_.AddReceiver(std::move(callback));
+}
+
+void Port::SubscribeUnknownAddress(const void* tag,
+                                   absl::AnyInvocable<void(PortInterface*,
                                                            const SocketAddress&,
                                                            ProtocolType,
                                                            IceMessage*,
                                                            const std::string&,
                                                            bool)> callback) {
-  unknown_address_trampoline_.Subscribe(std::move(callback));
+  unknown_address_callbacks_.AddReceiver(tag, std::move(callback));
 }
 
 void Port::NotifyUnknownAddress(PortInterface* port,
@@ -1074,30 +1111,50 @@ void Port::NotifyUnknownAddress(PortInterface* port,
                                 IceMessage* msg,
                                 const std::string& rf,
                                 bool port_muxed) {
-  SignalUnknownAddress(port, address, proto, msg, rf, port_muxed);
+  unknown_address_callbacks_.Send(port, address, proto, msg, rf, port_muxed);
 }
 
+// deprecated
 void Port::SubscribeReadPacket(
     absl::AnyInvocable<
         void(PortInterface*, const char*, size_t, const SocketAddress&)>
         callback) {
-  read_packet_trampoline_.Subscribe(std::move(callback));
+  SubscribeReadPacket(
+      nullptr, [cb = std::move(callback)](PortInterface* port,
+                                          std::span<const uint8_t> data,
+                                          const SocketAddress& addr) mutable {
+        cb(port, AsCharSpan(data).data(), data.size(), addr);
+      });
+}
+
+void Port::SubscribeReadPacket(
+    const void* tag,
+    absl::AnyInvocable<void(PortInterface*,
+                            std::span<const uint8_t>,
+                            const SocketAddress&)> callback) {
+  read_packet_callbacks_.AddReceiver(tag, std::move(callback));
 }
 
 void Port::NotifyReadPacket(PortInterface* port,
-                            const char* data,
-                            size_t size,
+                            std::span<const uint8_t> data,
                             const SocketAddress& remote_address) {
-  SignalReadPacket(port, data, size, remote_address);
+  read_packet_callbacks_.Send(port, data, remote_address);
+}
+
+[[deprecated]] void Port::SubscribeSentPacket(
+
+    absl::AnyInvocable<void(const SentPacketInfo&)> callback) {
+  sent_packet_callbacks_.AddReceiver(std::move(callback));
 }
 
 void Port::SubscribeSentPacket(
+    const void* tag,
     absl::AnyInvocable<void(const SentPacketInfo&)> callback) {
-  sent_packet_trampoline_.Subscribe(std::move(callback));
+  sent_packet_callbacks_.AddReceiver(tag, std::move(callback));
 }
 
 void Port::NotifySentPacket(const SentPacketInfo& packet) {
-  SignalSentPacket(packet);
+  sent_packet_callbacks_.Send(packet);
 }
 
 }  // namespace webrtc

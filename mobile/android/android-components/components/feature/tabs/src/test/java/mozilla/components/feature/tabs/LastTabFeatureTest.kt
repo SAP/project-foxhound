@@ -10,18 +10,14 @@ import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.support.test.any
 import mozilla.components.support.test.mock
-import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Rule
 import org.junit.Test
 import org.mockito.ArgumentMatchers.anyBoolean
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 
 class LastTabFeatureTest {
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
 
     @Test
     fun `onBackPressed() removes the session if it was opened by an ACTION_VIEW intent`() {
@@ -105,6 +101,6 @@ class LastTabFeatureTest {
         )
 
         assertFalse(feature.onBackPressed())
-        verify(useCase, never()).invoke(any(), anyBoolean())
+        verify(useCase, never()).invoke(any(), anyBoolean(), any())
     }
 }

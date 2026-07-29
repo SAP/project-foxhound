@@ -24,6 +24,7 @@ scripts:
   testmc:
     lint: =>lint
     build: =>bundle:webpack
+    jest: jest
     unit: karma start karma.mc.config.js
 
   tddmc: karma start karma.mc.config.js --tdd
@@ -43,9 +44,6 @@ scripts:
 
   # tdd: Run content tests continuously
   tdd: =>tddmc
-
-  # Utility scripts for use when vendoring in Node packages
-  vendor: node ./bin/vendor.js
 
   # script for the `source-test-node-newtab-unit-tests` task on taskcluster.
   # this is what appears as `newtab` in treeherder results after pushing to try.

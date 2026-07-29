@@ -46,9 +46,9 @@ impl LabeledMemoryDistributionMetric {
         }
     }
 
-    pub fn accumulate_samples(&self, samples: Vec<u64>) {
+    pub fn accumulate_samples_unsigned(&self, samples: Vec<u64>) {
         match self {
-            LabeledMemoryDistributionMetric::Parent(p) => p.accumulate_samples(samples),
+            LabeledMemoryDistributionMetric::Parent(p) => p.accumulate_samples_unsigned(samples),
             LabeledMemoryDistributionMetric::Child { id, label } => {
                 #[cfg(feature = "with_gecko")]
                 if gecko_profiler::current_thread_is_being_profiled_for_markers() {
@@ -115,6 +115,10 @@ impl MemoryDistribution for LabeledMemoryDistributionMetric {
                 });
             }
         }
+    }
+
+    pub fn accumulate_samples(&self, samples: Vec<i64>) {
+        self.accumulate_samples_unsigned(samples.into_iter().map(|s| s as _).collect());
     }
 
     pub fn test_get_num_recorded_errors(&self, error: glean::ErrorType) -> i32 {

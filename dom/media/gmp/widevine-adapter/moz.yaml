@@ -12,9 +12,9 @@ origin:
   license: BSD-3-Clause
   license-file: OWNERS
 
-  release: 06395a2863cb1ebdb47617a995b73f95c14fe120 (Thu Dec 26 19:52:02 2024).
+  release: 8f62f3ba6f06483f3908f9cce4f8d931800c9d7c (Thu Apr 30 20:36:56 2026).
 
-  revision: 06395a2863cb1ebdb47617a995b73f95c14fe120
+  revision: 8f62f3ba6f06483f3908f9cce4f8d931800c9d7c
 
 updatebot:
   maintainer-phab: aosmond

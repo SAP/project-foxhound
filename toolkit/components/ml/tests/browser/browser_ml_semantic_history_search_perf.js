@@ -38,10 +38,18 @@ const perfMetadata = {
 };
 
 requestLongerTimeout(45);
+
+// This perf test focus is search performance, so we pin the embedding model and dimension
+// to ensure consistency.
+
+const CUSTOM_EMBEDDER_MODEL = "Xenova/all-MiniLM-L6-v2";
+const CUSTOM_EMBEDDER_DIM = 384;
+
 const CUSTOM_EMBEDDER_OPTIONS = {
   taskName: "feature-extraction",
   featureId: "simple-text-embedder",
-  modelId: "Xenova/all-MiniLM-L6-v2",
+  modelId: CUSTOM_EMBEDDER_MODEL,
+  embeddingDimension: CUSTOM_EMBEDDER_DIM,
   dtype: "q8",
   modelRevision: "main",
   numThreads: 2,
@@ -218,7 +226,7 @@ async function prepareSemanticSearchTest({
   const modelHubRootUrl = Services.env.get("MOZ_MODELS_HUB");
   if (!modelHubRootUrl) {
     throw new Error(
-      "MOZ_MODELS_HUB is not set, you need to run with --hooks toolkit/components/ml/tests/tools/hook_local_hub.py"
+      "MOZ_MODELS_HUB is not set, you need to run with --hooks toolkit/components/ml/tests/tools/hooks_local_hub.py"
     );
   }
 
@@ -229,13 +237,14 @@ async function prepareSemanticSearchTest({
       ["browser.ml.modelHubRootUrl", modelHubRootUrl],
       ["javascript.options.wasm_lazy_tiering", true],
       ["browser.ml.logLevel", "Info"],
+      ["places.semanticHistory.embeddingType", "contextual"],
+      ["browser.ml.embedGen.textEmbeddingSize", CUSTOM_EMBEDDER_DIM],
+      ["browser.ml.embedGen.textEmbeddingFeatureModel", CUSTOM_EMBEDDER_MODEL],
     ],
   });
 
   let semanticManager = lazy.getPlacesSemanticHistoryManager(
     {
-      backend: "onnx-native",
-      embeddingSize: 384,
       rowLimit,
       samplingAttrib: "frecency",
       changeThresholdCount: 0,
@@ -258,6 +267,7 @@ async function prepareSemanticSearchTest({
     canUseSemanticStub.restore();
   });
 
+  // Ensures dtype/revision is consistent for the test
   semanticManager.embedder.options = CUSTOM_EMBEDDER_OPTIONS;
   await semanticManager.embedder.ensureEngine();
 
@@ -287,13 +297,26 @@ async function runInferenceAndCollectMetrics({
   semanticManager,
   numIterations,
   searchQuery,
+  searchQueries,
   journal,
   concurrentInferenceFlag = false,
 }) {
-  const queryContext = { searchString: searchQuery };
+  // Use a single searchQuery or alternate through a list of queries in searchQueries
+  // Ideally numIterations is a multiple of the length of searchQueries
+  let numQueries = searchQueries && searchQueries.length;
+  Assert.ok(
+    numQueries || searchQuery,
+    "Single query or non-empty multiple queries must be specified"
+  );
+  let queryContext = { searchString: searchQuery };
   const startCpu = Math.floor(await getCpuTimeFromProcInfo());
-
+  let curQueryIndex = 0;
   for (let i = 0; i < numIterations; i++) {
+    if (searchQueries) {
+      queryContext = {
+        searchString: searchQueries[curQueryIndex++ % numQueries],
+      };
+    }
     const startTime = performance.now();
     const res = await semanticManager.infer(queryContext);
     const endTime = performance.now();
@@ -390,6 +413,33 @@ async function runShortAndLongQueryPerfTest(concurrentInferenceFlag) {
   info(`Short query journal = ${JSON.stringify(journalShortPrefixed)}`);
   reportMetrics(journalShortPrefixed);
 
+  const journalLongMultiple = {};
+  await runInferenceAndCollectMetrics({
+    semanticManager,
+    numIterations,
+    searchQueries: [
+      "best recipe with nutritional value and taste that kids like",
+      "symptoms and causes of meningitis",
+      "test plan for stress testing",
+      "Care and feeding of the ball python snake",
+      "schools in richmond virginia",
+      "2024 Form 1040 filing instructions for IRS",
+      "Oscar winners best picture",
+    ],
+    journal: journalLongMultiple,
+    concurrentInferenceFlag,
+  });
+  const journalLongMultiplePrefixed = Object.fromEntries(
+    Object.entries(journalLongMultiple).map(([k, v]) => [
+      `LONG-MULTIPLE-${k}`,
+      v,
+    ])
+  );
+  info(
+    `Long multiple query journal = ${JSON.stringify(journalLongMultiplePrefixed)}`
+  );
+  reportMetrics(journalLongMultiplePrefixed);
+
   const journalLong = {};
   await runInferenceAndCollectMetrics({
     semanticManager,
@@ -398,13 +448,11 @@ async function runShortAndLongQueryPerfTest(concurrentInferenceFlag) {
     journal: journalLong,
     concurrentInferenceFlag,
   });
-
   const updateTime = await cleanupSemanticSearchTest({
     semanticManager,
     conn,
     cleanup,
   });
-
   const journalLongPrefixed = Object.fromEntries(
     Object.entries(journalLong).map(([k, v]) => [`LONG-${k}`, v])
   );

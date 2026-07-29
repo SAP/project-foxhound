@@ -69,9 +69,10 @@ add_task(async function test_ai_chat_message_rendering() {
       }
 
       function setRoleAndMessage(el, role, message) {
-        // Set both property + attribute to avoid any reflection differences.
-        el.role = role;
-        el.setAttribute("role", role);
+        // `role` reflects to `data-message-role` (the `role` attribute is the
+        // native ARIA role and collides with Element.prototype.role), so drive
+        // it via that attribute rather than the `role` property/attribute.
+        el.setAttribute("data-message-role", role);
 
         el.message = message;
         el.setAttribute("message", message);
@@ -205,8 +206,9 @@ add_task(async function test_user_message_website_mentions_render_as_chips() {
       // Set properties on the unwrapped element AND set attributes to guarantee update.
       const elJS = el.wrappedJSObject || el;
 
-      elJS.role = "user";
-      el.setAttribute("role", "user");
+      // `role` reflects to `data-message-role` (the `role` attribute is the
+      // native ARIA role), so drive it via that attribute.
+      el.setAttribute("data-message-role", "user");
 
       elJS.message = markdown;
       el.setAttribute("message", markdown);
@@ -268,9 +270,11 @@ add_task(async function test_user_message_website_mentions_render_as_chips() {
 
       const img = chip.shadowRoot.querySelector("img.chip-icon");
       Assert.ok(img, "chip should render <img class='chip-icon'>");
+      const imgSrc = img.getAttribute("src");
       Assert.ok(
-        img.getAttribute("src").startsWith("page-icon:https://www.google.com"),
-        `chip img src should use page-icon:https://www.google.com (got: ${img.getAttribute("src")})`
+        imgSrc.startsWith("page-icon:https://www.google.com") ||
+          imgSrc.endsWith("defaultFavicon.svg"),
+        `chip img src should use page-icon or fallback favicon (got: ${imgSrc})`
       );
 
       const label = chip.shadowRoot.querySelector(".chip-label");
@@ -319,8 +323,7 @@ add_task(
         doc.body.appendChild(el);
 
         const elJS = el.wrappedJSObject || el;
-        elJS.role = "user";
-        el.setAttribute("role", "user");
+        el.setAttribute("data-message-role", "user");
         elJS.message = emptyMarkdown;
         el.setAttribute("message", emptyMarkdown);
 

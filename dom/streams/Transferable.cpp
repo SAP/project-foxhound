@@ -1,11 +1,13 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ErrorList.h"
+#include "ReadableStreamAbstract.h"
+#include "ReadableStreamDefaultControllerAbstract.h"
 #include "ReadableStreamPipeTo.h"
+#include "WritableStreamAbstract.h"
+#include "WritableStreamDefaultControllerAbstract.h"
 #include "js/RootingAPI.h"
 #include "js/String.h"
 #include "js/TypeDecls.h"
@@ -19,9 +21,7 @@
 #include "mozilla/dom/MessagePort.h"
 #include "mozilla/dom/Promise-inl.h"
 #include "mozilla/dom/Promise.h"
-#include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/TransformStream.h"
-#include "mozilla/dom/WritableStream.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIDOMEventListener.h"
 #include "nsIGlobalObject.h"
@@ -86,7 +86,7 @@ class SetUpTransformWritableMessageEventListener final
       WritableStreamDefaultController* aController, Promise* aPromise)
       : mController(aController), mBackpressurePromise(aPromise) {}
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_CLASS(SetUpTransformWritableMessageEventListener)
 
   // https://streams.spec.whatwg.org/#abstract-opdef-setupcrossrealmtransformwritable
@@ -214,7 +214,7 @@ class SetUpTransformWritableMessageErrorEventListener final
       WritableStreamDefaultController* aController, MessagePort* aPort)
       : mController(aController), mPort(aPort) {}
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_CLASS(
       SetUpTransformWritableMessageErrorEventListener)
 
@@ -490,7 +490,7 @@ class SetUpTransformReadableMessageEventListener final
       ReadableStreamDefaultController* aController, MessagePort* aPort)
       : mController(aController), mPort(aPort) {}
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_CLASS(SetUpTransformReadableMessageEventListener)
 
   // https://streams.spec.whatwg.org/#abstract-opdef-setupcrossrealmtransformreadable
@@ -624,7 +624,7 @@ class SetUpTransformReadableMessageErrorEventListener final
       ReadableStreamDefaultController* aController, MessagePort* aPort)
       : mController(aController), mPort(aPort) {}
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_CLASS(
       SetUpTransformReadableMessageErrorEventListener)
 

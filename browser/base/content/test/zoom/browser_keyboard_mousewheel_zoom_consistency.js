@@ -65,8 +65,8 @@ add_task(async function test_keyboard_mousewheel_zoom_consistency() {
     await FullZoom.enlarge();
     Assert.equal(
       ZoomManager.getZoomForBrowser(browser),
-      1.33,
-      "Third enlarge should go to 133%"
+      1.3,
+      "Third enlarge should go to 130%"
     );
 
     await synthesizeMouseWheelZoom(browser, WHEEL_ZOOM_OUT, 1.2);

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,7 +24,8 @@
 namespace mozilla {
 
 extern LazyLogModule gMediaDecoderLog;
-#define LOG(type, msg) MOZ_LOG(gMediaDecoderLog, type, msg)
+#define LOG(type, msg) \
+  MOZ_LOG_FMT(gMediaDecoderLog, type, MOZ_LOG_EXPAND_ARGS msg)
 
 using media::TimeUnit;
 
@@ -208,7 +207,11 @@ static OggPacketPtr CloneOutOfSandbox(tainted_ogg<ogg_packet*> aPacket) {
         p->bytes = val->bytes.unverified_safe_because(packet_reason);
         p->b_o_s = val->b_o_s.unverified_safe_because(packet_reason);
         p->e_o_s = val->e_o_s.unverified_safe_because(packet_reason);
-        p->granulepos = val->granulepos.unverified_safe_because(packet_reason);
+        ogg_int64_t gp = val->granulepos.unverified_safe_because(packet_reason);
+        // Translate the ogg "unknown" sentinel (-1) to INT64_MIN so that
+        // valid pre-roll positions including -1 (1 sample before t=0) are
+        // unambiguous after granulepos reconstruction.
+        p->granulepos = (gp == -1) ? INT64_MIN : gp;
         p->packetno = val->packetno.unverified_safe_because(packet_reason);
         if (p->bytes == 0) {
           p->packet = nullptr;
@@ -266,7 +269,7 @@ already_AddRefed<MediaRawData> OggCodecState::PacketOutAsMediaRawData() {
   }
 
   TimeUnit endTimestamp = Time(packet->granulepos);
-  NS_ASSERTION(endTimestamp.IsPositiveOrZero(), "timestamp invalid");
+  NS_ASSERTION(endTimestamp.IsValid(), "timestamp invalid");
 
   TimeUnit duration = PacketDuration(packet.get());
   if (!duration.IsValid() || !duration.IsPositiveOrZero()) {
@@ -482,17 +485,17 @@ TimeUnit VorbisState::Time(int64_t aGranulepos) {
 }
 
 TimeUnit VorbisState::Time(vorbis_info* aInfo, int64_t aGranulepos) {
-  if (aGranulepos == -1 || aInfo->rate == 0) {
+  if (aInfo->rate == 0) {
     return TimeUnit::Invalid();
   }
+  // Negative granulepos is valid: it represents pre-roll samples before t=0
+  // (encoder/decoder delay). The ogg "unknown" sentinel (-1) is translated to
+  // INT64_MIN in CloneOutOfSandbox, so it never reaches here.
   return TimeUnit(aGranulepos, aInfo->rate);
 }
 
 TimeUnit VorbisState::PacketDuration(ogg_packet* aPacket) {
   if (!mActive) {
-    return TimeUnit::Invalid();
-  }
-  if (aPacket->granulepos == -1) {
     return TimeUnit::Invalid();
   }
   // @FIXME store these in a more stable place
@@ -551,7 +554,6 @@ nsresult VorbisState::PageIn(tainted_opaque_ogg<ogg_page*> aPage) {
       AssertHasRecordedPacketSamples(packet.get());
       NS_ASSERTION(!IsHeader(packet.get()),
                    "Don't try to recover header packet gp");
-      NS_ASSERTION(packet->granulepos != -1, "Packet must have gp by now");
       mPackets.Append(std::move(packet));
     }
     mUnstamped.Clear();
@@ -576,8 +578,6 @@ void VorbisState::ReconstructVorbisGranulepos() {
 
   NS_ASSERTION(mUnstamped.Length() > 0, "Length must be > 0");
   auto& last = mUnstamped.LastElement();
-  NS_ASSERTION(last->e_o_s || last->granulepos >= 0,
-               "Must know last granulepos!");
   if (mUnstamped.Length() == 1) {
     auto& packet = mUnstamped[0];
     long blockSize = vorbis_packet_blocksize(&mVorbisInfo, packet.get());
@@ -590,7 +590,7 @@ void VorbisState::ReconstructVorbisGranulepos() {
     }
     long samples = mPrevVorbisBlockSize / 4 + blockSize / 4;
     mPrevVorbisBlockSize = blockSize;
-    if (packet->granulepos == -1) {
+    if (packet->granulepos == INT64_MIN) {
       packet->granulepos = mGranulepos + samples;
     }
 
@@ -604,13 +604,19 @@ void VorbisState::ReconstructVorbisGranulepos() {
     return;
   }
 
-  bool unknownGranulepos = last->granulepos == -1;
+  bool unknownGranulepos = last->granulepos == INT64_MIN;
+  if (unknownGranulepos) {
+    // The backward arithmetic below relies on -1 as the relative base for the
+    // unknown sentinel; INT64_MIN - samples would overflow.
+    last->granulepos = -1;
+  }
   int64_t totalSamples = 0;
   for (int32_t i = AssertedCast<int32_t>(mUnstamped.Length() - 1); i > 0; i--) {
     auto& packet = mUnstamped[i];
     auto& prev = mUnstamped[i - 1];
     ogg_int64_t granulepos = packet->granulepos;
-    NS_ASSERTION(granulepos != -1, "Must know granulepos!");
+    NS_ASSERTION(unknownGranulepos || granulepos != INT64_MIN,
+                 "Must know granulepos!");
     long prevBlockSize = vorbis_packet_blocksize(&mVorbisInfo, prev.get());
     long blockSize = vorbis_packet_blocksize(&mVorbisInfo, packet.get());
 
@@ -833,7 +839,8 @@ nsresult OpusState::PageIn(tainted_opaque_ogg<ogg_page*> aPage) {
   for (uint32_t i = 0; i < mUnstamped.Length(); i++) {
     OggPacketPtr packet = std::move(mUnstamped[i]);
     NS_ASSERTION(!IsHeader(packet.get()), "Don't try to play a header packet");
-    NS_ASSERTION(packet->granulepos != -1, "Packet should have a granulepos");
+    NS_ASSERTION(packet->granulepos != INT64_MIN,
+                 "Packet should have a granulepos");
     mPackets.Append(std::move(packet));
   }
   mUnstamped.Clear();
@@ -970,7 +977,7 @@ already_AddRefed<MediaRawData> OpusState::PacketOutAsMediaRawData() {
         0, std::min(endFrame - startFrame, static_cast<int64_t>(frames)));
     TimeUnit toTrim = TimeUnit(frames, 48000);
     LOG(LogLevel::Debug,
-        ("Trimming last opus packet: [%s, %s] to [%s, %s]",
+        ("Trimming last opus packet: [{}, {}] to [{}, {}]",
          data->mTime.ToString().get(), data->GetEndTime().ToString().get(),
          data->mTime.ToString().get(),
          (data->mTime + data->mDuration - toTrim).ToString().get()));
@@ -1046,7 +1053,8 @@ nsresult FlacState::PageIn(tainted_opaque_ogg<ogg_page*> aPage) {
       OggPacketPtr packet = std::move(mUnstamped[i]);
       NS_ASSERTION(!IsHeader(packet.get()),
                    "Don't try to recover header packet gp");
-      NS_ASSERTION(packet->granulepos != -1, "Packet must have gp by now");
+      NS_ASSERTION(packet->granulepos != INT64_MIN,
+                   "Packet must have gp by now");
       mPackets.Append(std::move(packet));
     }
     mUnstamped.Clear();
@@ -1205,9 +1213,9 @@ bool SkeletonState::DecodeIndex(ogg_packet* aPacket) {
 
   int64_t timeDenom =
       LittleEndian::readInt64(aPacket->packet + INDEX_TIME_DENOM_OFFSET);
-  if (timeDenom == 0) {
-    LOG(LogLevel::Debug, ("Ogg Skeleton Index packet for stream %u has 0 "
-                          "timestamp denominator.",
+  if (timeDenom <= 0) {
+    LOG(LogLevel::Debug, ("Ogg Skeleton Index packet for stream {} has "
+                          "non-positive timestamp denominator.",
                           serialno));
     return (mActive = false);
   }
@@ -1240,7 +1248,7 @@ bool SkeletonState::DecodeIndex(ogg_packet* aPacket) {
     // field is possibly malicious. Don't try decoding this index, we may run
     // out of memory.
     LOG(LogLevel::Debug, ("Possibly malicious number of key points reported "
-                          "(%" PRId64 ") in index packet for stream %u.",
+                          "({}) in index packet for stream {}.",
                           numKeyPoints, serialno));
     return (mActive = false);
   }
@@ -1274,7 +1282,7 @@ bool SkeletonState::DecodeIndex(ogg_packet* aPacket) {
     mIndex.InsertOrUpdate(serialno, std::move(keyPoints));
   }
 
-  LOG(LogLevel::Debug, ("Loaded %d keypoints for Skeleton on stream %u",
+  LOG(LogLevel::Debug, ("Loaded {} keypoints for Skeleton on stream {}",
                         keyPointsRead, serialno));
   return true;
 }
@@ -1333,7 +1341,7 @@ nsresult SkeletonState::IndexedSeekTarget(const TimeUnit& aTarget,
   if (r.IsNull()) {
     return NS_ERROR_FAILURE;
   }
-  LOG(LogLevel::Debug, ("Indexed seek target for time %s is offset %" PRId64,
+  LOG(LogLevel::Debug, ("Indexed seek target for time {} is offset {}",
                         aTarget.ToString().get(), r.mKeyPoint.mOffset));
   aResult = r;
   return NS_OK;
@@ -1480,7 +1488,7 @@ bool SkeletonState::DecodeHeader(OggPacketPtr aPacket) {
     mLength =
         LittleEndian::readInt64(aPacket->packet + SKELETON_FILE_LENGTH_OFFSET);
 
-    LOG(LogLevel::Debug, ("Skeleton segment length: %" PRId64, mLength));
+    LOG(LogLevel::Debug, ("Skeleton segment length: {}", mLength));
 
     // Initialize the serialno-to-index map.
     return true;

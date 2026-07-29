@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -229,7 +228,7 @@ ExternalTextureSourceClient::Create(
   // If source is not origin-clean, throw a SecurityError and return.
   // https://www.w3.org/TR/webgpu/#dom-gpudevice-importexternaltexture
   if (!sfeResult.mCORSUsed) {
-    const nsIGlobalObject* const global = aDevice->GetOwnerGlobal();
+    const nsIGlobalObject* const global = aDevice->GetRelevantGlobal();
     nsIPrincipal* const dstPrincipal =
         global ? global->PrincipalOrNull() : nullptr;
     if (!sfeResult.mPrincipal || !dstPrincipal ||
@@ -550,7 +549,9 @@ ExternalTextureSourceHost::CreateFromBufferDesc(
         .bytes_per_row = &stride,
         .rows_per_image = nullptr,
     };
-    const Span<uint8_t> slice = buffer.to(size.height * stride);
+    const auto len = CheckedInt<size_t>(size.height) * stride;
+    MOZ_RELEASE_ASSERT(len.isValid());
+    const Span<uint8_t> slice = buffer.to(len.value());
     const ffi::WGPUFfiSlice_u8 data{
         .data = slice.data(),
         .length = slice.size(),
@@ -600,11 +601,19 @@ ExternalTextureSourceHost::CreateFromBufferDesc(
                               mozilla::ToString(rgbDesc.format()).c_str()));
           return CreateError();
       }
+      auto stride = layers::ImageDataSerializer::GetRGBStride(rgbDesc);
+      if (stride.isNothing()) {
+        gfxCriticalErrorOnce() << "Invalid stride";
+        aParent->ReportError(aDeviceId, dom::GPUErrorFilter::Internal,
+                             "Invalid stride"_ns);
+        return CreateError();
+      }
       createPlane(aDesc.mTextureIds[0], aDesc.mViewIds[0], planeFormat,
-                  rgbDesc.size(), aBuffer,
-                  layers::ImageDataSerializer::GetRGBStride(rgbDesc));
+                  rgbDesc.size(), aBuffer, stride.value());
       usedTextureIds.AppendElement(aDesc.mTextureIds[0]);
       usedViewIds.AppendElement(aDesc.mViewIds[0]);
+      // TODO: support HLG and PQ
+      // https://bugzilla.mozilla.org/show_bug.cgi?id=2024870
       colorSpace = gfx::YUVRangedColorSpace::GbrIdentity;
     } break;
     case layers::BufferDescriptor::TYCbCrDescriptor: {
@@ -645,7 +654,8 @@ ExternalTextureSourceHost::CreateFromBufferDesc(
                                     aDesc.mTextureIds.size());
       usedViewIds.AppendElements(aDesc.mViewIds.data(), aDesc.mViewIds.size());
       colorSpace = gfx::ToYUVRangedColorSpace(yCbCrDesc.yUVColorSpace(),
-                                              yCbCrDesc.colorRange());
+                                              yCbCrDesc.colorRange(),
+                                              yCbCrDesc.transferFunction());
     } break;
     case layers::BufferDescriptor::T__None: {
       gfxCriticalErrorOnce() << "Invalid BufferDescriptor";
@@ -693,7 +703,7 @@ ExternalTextureSourceHost::CreateFromDXGITextureHost(
 
   const gfx::YUVRangedColorSpace colorSpace = gfx::ToYUVRangedColorSpace(
       gfx::ToYUVColorSpace(aTextureHost->mColorSpace),
-      aTextureHost->mColorRange);
+      aTextureHost->mColorRange, aTextureHost->mTransferFunction);
 
   ffi::WGPUTextureFormat textureFormat;
   AutoTArray<std::pair<ffi::WGPUTextureFormat, ffi::WGPUTextureAspect>, 2>
@@ -803,7 +813,8 @@ ExternalTextureSourceHost::CreateFromDXGIYCbCrTextureHost(
     const layers::DXGIYCbCrTextureHostD3D11* aTextureHost) {
 #ifdef XP_WIN
   const gfx::YUVRangedColorSpace colorSpace = gfx::ToYUVRangedColorSpace(
-      aTextureHost->mYUVColorSpace, aTextureHost->mColorRange);
+      aTextureHost->mYUVColorSpace, aTextureHost->mColorRange,
+      aTextureHost->mTransferFunction);
 
   ffi::WGPUTextureFormat planeFormat;
   switch (aTextureHost->mColorDepth) {
@@ -897,7 +908,8 @@ ExternalTextureSourceHost::CreateFromMacIOSurfaceTextureHost(
 
   const gfx::SurfaceFormat format = ioSurface->GetFormat();
   const gfx::YUVRangedColorSpace colorSpace = gfx::ToYUVRangedColorSpace(
-      ioSurface->GetYUVColorSpace(), ioSurface->GetColorRange());
+      ioSurface->GetYUVColorSpace(), ioSurface->GetColorRange(),
+      ioSurface->GetTransferFunction());
 
   auto planeSize = [ioSurface](auto plane) {
     return ffi::WGPUExtent3d{
@@ -1036,8 +1048,8 @@ static color::ColorspaceTransform GetColorSpaceTransform(
     case gfx::YUVRangedColorSpace::BT601_Narrow:
       srcColorSpace = {
           .chrom = color::Chromaticities::Rec601_525_Ntsc(),
-          .tf = rec709GammaAsSrgb ? color::PiecewiseGammaDesc::Srgb()
-                                  : color::PiecewiseGammaDesc::Rec709(),
+          .tf = rec709GammaAsSrgb ? color::TransferFunctionDesc::Srgb()
+                                  : color::TransferFunctionDesc::Rec709(),
           .yuv =
               color::YuvDesc{
                   .yCoeffs = color::YuvLumaCoeffs::Rec601(),
@@ -1048,8 +1060,8 @@ static color::ColorspaceTransform GetColorSpaceTransform(
     case gfx::YUVRangedColorSpace::BT601_Full:
       srcColorSpace = {
           .chrom = color::Chromaticities::Rec601_525_Ntsc(),
-          .tf = rec709GammaAsSrgb ? color::PiecewiseGammaDesc::Srgb()
-                                  : color::PiecewiseGammaDesc::Rec709(),
+          .tf = rec709GammaAsSrgb ? color::TransferFunctionDesc::Srgb()
+                                  : color::TransferFunctionDesc::Rec709(),
           .yuv =
               color::YuvDesc{
                   .yCoeffs = color::YuvLumaCoeffs::Rec601(),
@@ -1060,8 +1072,8 @@ static color::ColorspaceTransform GetColorSpaceTransform(
     case gfx::YUVRangedColorSpace::BT709_Narrow:
       srcColorSpace = {
           .chrom = color::Chromaticities::Rec709(),
-          .tf = rec709GammaAsSrgb ? color::PiecewiseGammaDesc::Srgb()
-                                  : color::PiecewiseGammaDesc::Rec709(),
+          .tf = rec709GammaAsSrgb ? color::TransferFunctionDesc::Srgb()
+                                  : color::TransferFunctionDesc::Rec709(),
           .yuv =
               color::YuvDesc{
                   .yCoeffs = color::YuvLumaCoeffs::Rec709(),
@@ -1072,8 +1084,8 @@ static color::ColorspaceTransform GetColorSpaceTransform(
     case gfx::YUVRangedColorSpace::BT709_Full:
       srcColorSpace = {
           .chrom = color::Chromaticities::Rec709(),
-          .tf = rec709GammaAsSrgb ? color::PiecewiseGammaDesc::Srgb()
-                                  : color::PiecewiseGammaDesc::Rec709(),
+          .tf = rec709GammaAsSrgb ? color::TransferFunctionDesc::Srgb()
+                                  : color::TransferFunctionDesc::Rec709(),
           .yuv =
               color::YuvDesc{
                   .yCoeffs = color::YuvLumaCoeffs::Rec709(),
@@ -1085,10 +1097,10 @@ static color::ColorspaceTransform GetColorSpaceTransform(
       srcColorSpace = {
           .chrom = color::Chromaticities::Rec2020(),
           .tf = rec2020GammaAsRec709 && rec709GammaAsSrgb
-                    ? color::PiecewiseGammaDesc::Srgb()
+                    ? color::TransferFunctionDesc::Srgb()
                     : (rec2020GammaAsRec709
-                           ? color::PiecewiseGammaDesc::Rec709()
-                           : color::PiecewiseGammaDesc::Rec2020_12bit()),
+                           ? color::TransferFunctionDesc::Rec709()
+                           : color::TransferFunctionDesc::Rec2020_12bit()),
           .yuv =
               color::YuvDesc{
                   .yCoeffs = color::YuvLumaCoeffs::Rec2020(),
@@ -1100,10 +1112,54 @@ static color::ColorspaceTransform GetColorSpaceTransform(
       srcColorSpace = {
           .chrom = color::Chromaticities::Rec2020(),
           .tf = rec2020GammaAsRec709 && rec709GammaAsSrgb
-                    ? color::PiecewiseGammaDesc::Srgb()
+                    ? color::TransferFunctionDesc::Srgb()
                     : (rec2020GammaAsRec709
-                           ? color::PiecewiseGammaDesc::Rec709()
-                           : color::PiecewiseGammaDesc::Rec2020_12bit()),
+                           ? color::TransferFunctionDesc::Rec709()
+                           : color::TransferFunctionDesc::Rec2020_12bit()),
+          .yuv =
+              color::YuvDesc{
+                  .yCoeffs = color::YuvLumaCoeffs::Rec2020(),
+                  .ycbcr = color::YcbcrDesc::Full8(),
+              },
+      };
+      break;
+    case gfx::YUVRangedColorSpace::BT2100_HLG_Narrow:
+      srcColorSpace = {
+          .chrom = color::Chromaticities::Rec2020(),
+          .tf = color::TransferFunctionDesc::Rec2100_HLG(),
+          .yuv =
+              color::YuvDesc{
+                  .yCoeffs = color::YuvLumaCoeffs::Rec2020(),
+                  .ycbcr = color::YcbcrDesc::Narrow8(),
+              },
+      };
+      break;
+    case gfx::YUVRangedColorSpace::BT2100_HLG_Full:
+      srcColorSpace = {
+          .chrom = color::Chromaticities::Rec2020(),
+          .tf = color::TransferFunctionDesc::Rec2100_HLG(),
+          .yuv =
+              color::YuvDesc{
+                  .yCoeffs = color::YuvLumaCoeffs::Rec2020(),
+                  .ycbcr = color::YcbcrDesc::Full8(),
+              },
+      };
+      break;
+    case gfx::YUVRangedColorSpace::BT2100_PQ_Narrow:
+      srcColorSpace = {
+          .chrom = color::Chromaticities::Rec2020(),
+          .tf = color::TransferFunctionDesc::Rec2100_PQ(),
+          .yuv =
+              color::YuvDesc{
+                  .yCoeffs = color::YuvLumaCoeffs::Rec2020(),
+                  .ycbcr = color::YcbcrDesc::Narrow8(),
+              },
+      };
+      break;
+    case gfx::YUVRangedColorSpace::BT2100_PQ_Full:
+      srcColorSpace = {
+          .chrom = color::Chromaticities::Rec2020(),
+          .tf = color::TransferFunctionDesc::Rec2100_PQ(),
           .yuv =
               color::YuvDesc{
                   .yCoeffs = color::YuvLumaCoeffs::Rec2020(),
@@ -1114,7 +1170,7 @@ static color::ColorspaceTransform GetColorSpaceTransform(
     case gfx::YUVRangedColorSpace::GbrIdentity:
       srcColorSpace = {
           .chrom = color::Chromaticities::Rec709(),
-          .tf = color::PiecewiseGammaDesc::Rec709(),
+          .tf = color::TransferFunctionDesc::Rec709(),
           .yuv =
               color::YuvDesc{
                   .yCoeffs = color::YuvLumaCoeffs::Gbr(),
@@ -1128,11 +1184,11 @@ static color::ColorspaceTransform GetColorSpaceTransform(
   switch (aDestColorSpace) {
     case ffi::WGPUPredefinedColorSpace_Srgb:
       destColorSpace = {.chrom = color::Chromaticities::Srgb(),
-                        .tf = color::PiecewiseGammaDesc::Srgb()};
+                        .tf = color::TransferFunctionDesc::Srgb()};
       break;
     case ffi::WGPUPredefinedColorSpace_DisplayP3:
       destColorSpace = {.chrom = color::Chromaticities::DisplayP3(),
-                        .tf = color::PiecewiseGammaDesc::DisplayP3()};
+                        .tf = color::TransferFunctionDesc::DisplayP3()};
       break;
     case ffi::WGPUPredefinedColorSpace_Sentinel:
       MOZ_CRASH("Invalid WGPUPredefinedColorSpace");
@@ -1158,8 +1214,9 @@ static ffi::WGPUExternalTextureFormat MapFormat(gfx::SurfaceFormat aFormat) {
   }
 }
 
+// TODO: support HLG and PQ https://bugzilla.mozilla.org/show_bug.cgi?id=2024870
 static ffi::WGPUExternalTextureTransferFunction MapTransferFunction(
-    std::optional<color::PiecewiseGammaDesc> aTf) {
+    std::optional<color::TransferFunctionDesc> aTf) {
   if (aTf) {
     return ffi::WGPUExternalTextureTransferFunction{
         .a = aTf->a,

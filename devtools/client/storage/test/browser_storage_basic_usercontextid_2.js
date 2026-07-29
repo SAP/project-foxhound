@@ -9,19 +9,19 @@
 
 const testCasesUserContextId = [
   [
-    ["cookies", "http://test1.example.org"],
+    ["cookies", MAIN_ORIGIN],
     [
-      getCookieId("c1uc1", "test1.example.org", "/browser"),
-      getCookieId("cs2uc1", ".example.org", "/"),
-      getCookieId("c3uc1", "test1.example.org", "/"),
-      getCookieId("uc1uc1", ".example.org", "/"),
+      getCookieId("c1uc1", MAIN_HOST, "/browser"),
+      getCookieId("cs2uc1", "." + MAIN_DOMAIN, "/"),
+      getCookieId("c3uc1", MAIN_HOST, "/"),
+      getCookieId("uc1uc1", "." + MAIN_DOMAIN, "/"),
     ],
   ],
   [
-    ["cookies", "https://sectest1.example.org"],
+    ["cookies", ALT_ORIGIN_SECURED],
     [
-      getCookieId("uc1uc1", ".example.org", "/"),
-      getCookieId("cs2uc1", ".example.org", "/"),
+      getCookieId("uc1uc1", "." + MAIN_DOMAIN, "/"),
+      getCookieId("cs2uc1", "." + MAIN_DOMAIN, "/"),
       getCookieId(
         "sc1uc1",
         "sectest1.example.org",
@@ -30,75 +30,47 @@ const testCasesUserContextId = [
     ],
   ],
   [
-    ["localStorage", "http://test1.example.org"],
+    ["localStorage", MAIN_ORIGIN],
     ["ls1uc1", "ls2uc1"],
   ],
-  [["localStorage", "http://sectest1.example.org"], ["iframe-u-ls1uc1"]],
-  [["localStorage", "https://sectest1.example.org"], ["iframe-s-ls1uc1"]],
-  [["sessionStorage", "http://test1.example.org"], ["ss1uc1"]],
+  [["localStorage", ALT_ORIGIN], ["iframe-u-ls1uc1"]],
+  [["localStorage", ALT_ORIGIN_SECURED], ["iframe-s-ls1uc1"]],
+  [["sessionStorage", MAIN_ORIGIN], ["ss1uc1"]],
   [
-    ["sessionStorage", "http://sectest1.example.org"],
+    ["sessionStorage", ALT_ORIGIN],
     ["iframe-u-ss1uc1", "iframe-u-ss2uc1"],
   ],
-  [["sessionStorage", "https://sectest1.example.org"], ["iframe-s-ss1uc1"]],
+  [["sessionStorage", ALT_ORIGIN_SECURED], ["iframe-s-ss1uc1"]],
   [
-    ["indexedDB", "http://test1.example.org"],
+    ["indexedDB", MAIN_ORIGIN],
     ["idb1uc1 (default)", "idb2uc1 (default)"],
   ],
   [
-    ["indexedDB", "http://test1.example.org", "idb1uc1 (default)"],
+    ["indexedDB", MAIN_ORIGIN, "idb1uc1 (default)"],
     ["obj1uc1", "obj2uc1"],
   ],
-  [["indexedDB", "http://test1.example.org", "idb2uc1 (default)"], ["obj3uc1"]],
+  [["indexedDB", MAIN_ORIGIN, "idb2uc1 (default)"], ["obj3uc1"]],
   [
-    ["indexedDB", "http://test1.example.org", "idb1uc1 (default)", "obj1uc1"],
+    ["indexedDB", MAIN_ORIGIN, "idb1uc1 (default)", "obj1uc1"],
     [1, 2, 3],
   ],
+  [["indexedDB", MAIN_ORIGIN, "idb1uc1 (default)", "obj2uc1"], [1]],
+  [["indexedDB", MAIN_ORIGIN, "idb2uc1 (default)", "obj3uc1"], []],
+  [["indexedDB", ALT_ORIGIN], []],
   [
-    ["indexedDB", "http://test1.example.org", "idb1uc1 (default)", "obj2uc1"],
-    [1],
-  ],
-  [
-    ["indexedDB", "http://test1.example.org", "idb2uc1 (default)", "obj3uc1"],
-    [],
-  ],
-  [["indexedDB", "http://sectest1.example.org"], []],
-  [
-    ["indexedDB", "https://sectest1.example.org"],
+    ["indexedDB", ALT_ORIGIN_SECURED],
     ["idb-s1uc1 (default)", "idb-s2uc1 (default)"],
   ],
+  [["indexedDB", ALT_ORIGIN_SECURED, "idb-s1uc1 (default)"], ["obj-s1uc1"]],
+  [["indexedDB", ALT_ORIGIN_SECURED, "idb-s2uc1 (default)"], ["obj-s2uc1"]],
   [
-    ["indexedDB", "https://sectest1.example.org", "idb-s1uc1 (default)"],
-    ["obj-s1uc1"],
-  ],
-  [
-    ["indexedDB", "https://sectest1.example.org", "idb-s2uc1 (default)"],
-    ["obj-s2uc1"],
-  ],
-  [
-    [
-      "indexedDB",
-      "https://sectest1.example.org",
-      "idb-s1uc1 (default)",
-      "obj-s1uc1",
-    ],
+    ["indexedDB", ALT_ORIGIN_SECURED, "idb-s1uc1 (default)", "obj-s1uc1"],
     [6, 7],
   ],
+  [["indexedDB", ALT_ORIGIN_SECURED, "idb-s2uc1 (default)", "obj-s2uc1"], [16]],
   [
-    [
-      "indexedDB",
-      "https://sectest1.example.org",
-      "idb-s2uc1 (default)",
-      "obj-s2uc1",
-    ],
-    [16],
-  ],
-  [
-    ["Cache", "http://test1.example.org", "plopuc1"],
-    [
-      MAIN_DOMAIN + "404_cached_file.js",
-      MAIN_DOMAIN + "browser_storage_basic.js",
-    ],
+    ["Cache", MAIN_ORIGIN, "plopuc1"],
+    [MAIN_URL + "404_cached_file.js", MAIN_URL + "browser_storage_basic.js"],
   ],
 ];
 
@@ -160,7 +132,7 @@ add_task(async function () {
   await pushPref("dom.security.https_first", false);
 
   await openTabAndSetupStorage(
-    MAIN_DOMAIN + "storage-listings-usercontextid.html",
+    MAIN_URL + "storage-listings-usercontextid.html",
     { userContextId: 1 }
   );
 

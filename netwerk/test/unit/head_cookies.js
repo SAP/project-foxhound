@@ -81,8 +81,7 @@ function do_close_profile(generator) {
   new _observer(generator, "cookie-db-closed");
 
   // Close the db.
-  let service = Services.cookies.QueryInterface(Ci.nsIObserver);
-  service.observe(null, "profile-before-change", null);
+  Services.cookies.testCloseCookieDB();
 }
 
 function _promise_observer(topic) {
@@ -112,8 +111,7 @@ function promise_close_profile() {
   let promise = new _promise_observer("cookie-db-closed");
 
   // Close the db.
-  let service = Services.cookies.QueryInterface(Ci.nsIObserver);
-  service.observe(null, "profile-before-change", null);
+  Services.cookies.testCloseCookieDB();
 
   return promise;
 }
@@ -124,8 +122,7 @@ function promise_load_profile() {
   let promise = new _promise_observer("cookie-db-read");
 
   // Load the profile.
-  let service = Services.cookies.QueryInterface(Ci.nsIObserver);
-  service.observe(null, "profile-do-change", "");
+  Services.cookies.testOpenCookieDB();
 
   return promise;
 }
@@ -137,8 +134,7 @@ function do_load_profile(generator) {
   new _observer(generator, "cookie-db-read");
 
   // Load the profile.
-  let service = Services.cookies.QueryInterface(Ci.nsIObserver);
-  service.observe(null, "profile-do-change", "");
+  Services.cookies.testOpenCookieDB();
 }
 
 // Set a single session cookie using http and test the cookie count

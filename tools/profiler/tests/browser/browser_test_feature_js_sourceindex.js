@@ -6,10 +6,7 @@
  * Test that sourceIndexes are collected properly in profiles.
  */
 add_task(async function test_profile_js_sources() {
-  Assert.ok(
-    !Services.profiler.IsActive(),
-    "The profiler is not currently active"
-  );
+  await ProfilerTestUtils.assertProfilerInactive();
 
   const url = BASE_URL + "simple.html";
   await BrowserTestUtils.withNewTab(url, async contentBrowser => {
@@ -104,10 +101,7 @@ add_task(async function test_profile_js_sources() {
  * Test that JS tracer frames include sourceIndexes when tracing is enabled.
  */
 add_task(async function test_profile_js_sources_with_tracing() {
-  Assert.ok(
-    !Services.profiler.IsActive(),
-    "The profiler is not currently active"
-  );
+  await ProfilerTestUtils.assertProfilerInactive();
 
   // sync about:blank (bug 543435) somehow causes a
   // CycleCollectedJSContext::EndExecutionTracingAsync runnable to leak. See bug 2000283
@@ -166,10 +160,7 @@ add_task(async function test_profile_js_sources_with_tracing() {
  * Test that sourceIndexes work with eval.
  */
 add_task(async function test_profile_js_sources_location_format() {
-  Assert.ok(
-    !Services.profiler.IsActive(),
-    "The profiler is not currently active"
-  );
+  await ProfilerTestUtils.assertProfilerInactive();
 
   const url = BASE_URL + "simple.html";
   await BrowserTestUtils.withNewTab(url, async contentBrowser => {

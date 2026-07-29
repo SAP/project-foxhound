@@ -1,5 +1,3 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -44,9 +42,6 @@ if CONFIG["MOZ_MEMORY"]:
 if CONFIG["MOZ_PLACES"]:
     gkrust_features += ["moz_places"]
 
-if CONFIG["MOZ_GECKO_PROFILER"]:
-    gkrust_features += ["gecko_profiler"]
-
 if CONFIG["MOZ_GECKO_PROFILER_PARSE_ELF"]:
     gkrust_features += ["gecko_profiler_parse_elf"]
 
@@ -87,6 +82,9 @@ if CONFIG["USE_LIBZ_RS"]:
 
 if CONFIG["MOZ_JXL"]:
     gkrust_features += ["jxl_decoder"]
+
+if CONFIG["MOZ_BUILD_APP"] == "browser" and CONFIG["OS_ARCH"] == "WINNT":
+    gkrust_features += ["shell_windows"]
 
 # This must remain last.
 gkrust_features = ["gkrust-shared/%s" % f for f in gkrust_features]

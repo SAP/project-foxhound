@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl'))
-
 const date = new Date("+100000-01-01T00:00:00.000Z");
 const options = {timeZone: "UTC"};
 const expected = "11/29/99999";

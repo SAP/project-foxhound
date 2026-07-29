@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -238,7 +237,7 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * Dispatches a runnable from any thread to the correct main thread for this
    * MediaTrackGraph.
    */
-  void Dispatch(already_AddRefed<nsIRunnable>&& aRunnable);
+  void Dispatch(already_AddRefed<nsIRunnable> aRunnable);
 
   /**
    * Make this MediaTrackGraph enter forced-shutdown state. This state
@@ -1021,7 +1020,7 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * True when processing real-time audio/video.  False when processing
    * non-realtime audio.
    */
-  bool mRealtime;
+  bool mRealtime = false;
   /**
    * True when a change has happened which requires us to recompute the track
    * blocking order.

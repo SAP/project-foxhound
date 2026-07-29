@@ -27,7 +27,12 @@ internal class NativeCrashTools {
         /**
          * Load the native crate tools. If the native library is not found, returns null.
          */
-        fun load(context: Context, buildId: String?, displayVersion: String?): NativeCrashTools? {
+        fun load(
+            context: Context,
+            buildId: String?,
+            displayVersion: String?,
+            pingUploadEnabled: Boolean = true,
+        ): NativeCrashTools? {
             if (loaded) {
                 return instance
             }
@@ -42,6 +47,7 @@ internal class NativeCrashTools {
                             context.packageName,
                             buildId,
                             displayVersion,
+                            pingUploadEnabled,
                         )
                         instance = NativeCrashTools()
                     } catch (e: UnsatisfiedLinkError) {
@@ -82,7 +88,13 @@ internal class NativeCrashTools {
 
         @JvmStatic
         @Throws(IOException::class)
-        private external fun nativeInit(dataPath: String, appId: String, buildId: String?, displayVersion: String?)
+        private external fun nativeInit(
+            dataPath: String,
+            appId: String,
+            buildId: String?,
+            displayVersion: String?,
+            pingUploadEnabled: Boolean,
+        )
     }
 
     /**
@@ -104,6 +116,13 @@ internal class NativeCrashTools {
     }
 
     /**
+     * Set whether ping upload is enabled or not.
+     */
+    fun setPingCollectionEnabled(enabled: Boolean) {
+        nativeSetPingCollectionEnabled(enabled)
+    }
+
+    /**
      * Test-only: get the metric values as a JSON string before the next crash
      * ping is sent.
      */
@@ -115,5 +134,6 @@ internal class NativeCrashTools {
 
     private external fun nativeAnalyzeMinidump(minidumpPath: String, extrasPath: String, allThreads: Boolean): String?
     private external fun nativeSendPing(extrasJson: String)
+    private external fun nativeSetPingCollectionEnabled(enabled: Boolean)
     private external fun nativeTestMetricValuesBeforeNextSend(callback: (metricsJson: String) -> Unit)
 }

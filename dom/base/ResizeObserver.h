@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,6 +13,7 @@
 #include "mozilla/WritingModes.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/DOMRect.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/ResizeObserverBinding.h"
 #include "nsCoord.h"
 #include "nsCycleCollectionParticipant.h"
@@ -122,12 +121,24 @@ class ResizeObservation final : public LinkedListElement<ResizeObservation> {
  */
 class ResizeObserver final : public nsISupports, public nsWrapperCache {
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(ResizeObserver)
 
   ResizeObserver(nsCOMPtr<nsPIDOMWindowInner>&& aOwner, Document* aDocument,
                  ResizeObserverCallback& aCb)
-      : mOwner(std::move(aOwner)), mDocument(aDocument), mCallback(&aCb) {
+      : mOwner(std::move(aOwner)),
+        mDocument(aDocument),
+        mCallback(RefPtr(&aCb)) {
+    MOZ_ASSERT(mOwner, "Need a non-null owner window");
+    MOZ_ASSERT(mDocument, "Need a non-null doc");
+    MOZ_ASSERT(mDocument == mOwner->GetExtantDoc());
+  }
+
+  using NativeCallback =
+      void (*)(const Sequence<OwningNonNull<ResizeObserverEntry>>& aCb);
+  ResizeObserver(nsCOMPtr<nsPIDOMWindowInner>&& aOwner, Document* aDocument,
+                 NativeCallback aCb)
+      : mOwner(std::move(aOwner)), mDocument(aDocument), mCallback(aCb) {
     MOZ_ASSERT(mOwner, "Need a non-null owner window");
     MOZ_ASSERT(mDocument, "Need a non-null doc");
     MOZ_ASSERT(mDocument == mOwner->GetExtantDoc());
@@ -196,13 +207,20 @@ class ResizeObserver final : public nsISupports, public nsWrapperCache {
       Element* aTarget, ResizeObserverBoxOptions aBox,
       bool aForceFragmentHandling = false);
 
+  /**
+   * Returns whether this ResizeObserver is currently observing |aElement|.
+   */
+  bool Observes(Element& aElement) const {
+    return mObservationMap.Contains(&aElement);
+  }
+
  protected:
   ~ResizeObserver() { Disconnect(); }
 
   nsCOMPtr<nsPIDOMWindowInner> mOwner;
   // The window's document at the time of ResizeObserver creation.
   RefPtr<Document> mDocument;
-  RefPtr<ResizeObserverCallback> mCallback;
+  Variant<RefPtr<ResizeObserverCallback>, NativeCallback> mCallback;
   nsTArray<RefPtr<ResizeObservation>> mActiveTargets;
   // The spec uses a list to store the skipped targets. However, it seems what
   // we want is to check if there are any skipped targets (i.e. existence).
@@ -227,7 +245,7 @@ class ResizeObserver final : public nsISupports, public nsWrapperCache {
  */
 class ResizeObserverEntry final : public nsISupports, public nsWrapperCache {
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(ResizeObserverEntry)
 
   ResizeObserverEntry(
@@ -289,7 +307,7 @@ class ResizeObserverEntry final : public nsISupports, public nsWrapperCache {
 
 class ResizeObserverSize final : public nsISupports, public nsWrapperCache {
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(ResizeObserverSize)
 
   ResizeObserverSize(nsISupports* aOwner, const LogicalPixelSize& aSize)

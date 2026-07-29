@@ -54,13 +54,13 @@ static int GetDTMFToneCode(uint16_t c) {
 
 static std::bitset<256> GetCharacterBitset(const std::string& aCharsInSet) {
   std::bitset<256> result;
-  for (auto c : aCharsInSet) {
+  for (unsigned char c : aCharsInSet) {
     result[c] = true;
   }
   return result;
 }
 
-static bool IsUnrecognizedChar(const char c) {
+static bool IsUnrecognizedChar(const unsigned char c) {
   static const std::bitset<256> recognized =
       GetCharacterBitset("0123456789ABCD#*,");
   return !recognized[c];
@@ -87,7 +87,7 @@ void RTCDTMFSender::InsertDTMF(const nsAString& aTones, uint32_t aDuration,
   std::string utf8Tones = NS_ConvertUTF16toUTF8(aTones).get();
 
   std::transform(utf8Tones.begin(), utf8Tones.end(), utf8Tones.begin(),
-                 [](const char c) { return std::toupper(c); });
+                 [](const unsigned char c) { return std::toupper(c); });
 
   if (std::any_of(utf8Tones.begin(), utf8Tones.end(), IsUnrecognizedChar)) {
     aRv.Throw(NS_ERROR_DOM_INVALID_CHARACTER_ERR);

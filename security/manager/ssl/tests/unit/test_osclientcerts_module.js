@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 // Any copyright is dedicated to the Public Domain.
 // http://creativecommons.org/publicdomain/zero/1.0/
 "use strict";
@@ -19,10 +18,7 @@ async function check_osclientcerts_module_loaded() {
   let testModule = await checkPKCS11ModuleExists("OS Client Cert Module");
 
   // Check that listing the slots for the osclientcerts module works.
-  let testModuleSlotNames = Array.from(
-    testModule.listSlots(),
-    slot => slot.name
-  );
+  let testModuleSlotNames = Array.from(testModule.slots, slot => slot.name);
   testModuleSlotNames.sort();
   const expectedSlotNames = ["OS Client Cert Slot"];
   deepEqual(

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,6 +13,7 @@
 
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ReflowInput.h"
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/dom/Element.h"
 #include "nsContentCreatorFunctions.h"
@@ -28,6 +27,10 @@
 
 using namespace mozilla;
 using mozilla::dom::Element;
+
+static mozilla::LazyLogModule sScrollBarLog("apz.scrollbar");
+#define SCROLLBAR_LOG(...) \
+  MOZ_LOG(sScrollBarLog, LogLevel::Debug, (__VA_ARGS__));
 
 //
 // NS_NewScrollbarFrame
@@ -314,15 +317,15 @@ nsSize nsScrollbarFrame::ScrollbarMinSize() const {
 }
 
 StyleScrollbarWidth nsScrollbarFrame::ScrollbarWidth() const {
-  return nsLayoutUtils::StyleForScrollbar(this)
-      ->StyleUIReset()
-      ->ScrollbarWidth();
+  return nsLayoutUtils::ScrollbarWidthFor(this);
 }
 
 nscoord nsScrollbarFrame::ScrollbarTrackSize() const {
+  auto overlay = nsLayoutUtils::UseOverlayScrollbars(this)
+                     ? nsITheme::Overlay::Yes
+                     : nsITheme::Overlay::No;
+
   nsPresContext* pc = PresContext();
-  auto overlay = pc->UseOverlayScrollbars() ? nsITheme::Overlay::Yes
-                                            : nsITheme::Overlay::No;
   return LayoutDevicePixel::ToAppUnits(
       pc->Theme()->GetScrollbarSize(pc, ScrollbarWidth(), overlay),
       pc->AppUnitsPerDevPixel());
@@ -479,4 +482,12 @@ void nsScrollbarFrame::AppendAnonymousContentTo(
   if (mDownBottomButton) {
     aElements.AppendElement(mDownBottomButton);
   }
+}
+
+void nsScrollbarFrame::SetButtonScrollDirectionAndUnit(
+    int32_t aDirection, mozilla::ScrollUnit aUnit) {
+  SCROLLBAR_LOG("nsScrollbarFrame(%p) setting button scroll direction=%d", this,
+                aDirection);
+  mButtonScrollDirection = aDirection;
+  mButtonScrollUnit = aUnit;
 }

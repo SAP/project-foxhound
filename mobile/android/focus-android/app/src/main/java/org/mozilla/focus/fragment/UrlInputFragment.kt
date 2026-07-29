@@ -391,7 +391,7 @@ class UrlInputFragment :
 
     private fun animateFirstDraw() {
         if (ANIMATION_BROWSER_SCREEN == arguments?.getString(ARGUMENT_ANIMATION)) {
-            playVisibilityAnimation(false)
+            animateEnter()
         }
     }
 
@@ -410,92 +410,99 @@ class UrlInputFragment :
         binding.dismissView.isClickable = false
 
         if (ANIMATION_BROWSER_SCREEN == arguments?.getString(ARGUMENT_ANIMATION)) {
-            playVisibilityAnimation(true)
+            animateExit(onEnd = { if (isOverlay) dismiss() })
         } else {
             dismiss()
         }
     }
 
-    /**
-     * This animation is quite complex. The 'reverse' flag controls whether we want to show the UI
-     * (false) or whether we are going to hide it (true). Additionally the animation is slightly
-     * different depending on whether this fragment is shown as an overlay on top of other fragments
-     * or if it draws its own background.
-     */
-    // This method correctly triggers a complexity warning. This method is indeed very and too complex.
-    // However refactoring it is not trivial at this point so we ignore the warning for now.
-    @Suppress("CognitiveComplexMethod")
-    private fun playVisibilityAnimation(reverse: Boolean) {
-        if (isAnimating) {
-            // We are already animating, let's ignore another request.
-            return
+    private data class AnimationParams(val xyOffset: Float, val widthScale: Float, val heightScale: Float)
+
+    private fun resolveAnimationParams(): AnimationParams {
+        val xyOffset = if (isOverlay) {
+            (binding.urlInputContainerView.layoutParams as FrameLayout.LayoutParams).bottomMargin.toFloat()
+        } else {
+            0f
         }
-
-        isAnimating = true
-
-        val xyOffset = (
-            if (isOverlay) {
-                (binding.urlInputContainerView.layoutParams as FrameLayout.LayoutParams).bottomMargin
-            } else {
-                0
-            }
-            ).toFloat()
-
         val width = binding.urlInputBackgroundView.width.toFloat()
         val height = binding.urlInputBackgroundView.height.toFloat()
+        return AnimationParams(
+            xyOffset = xyOffset,
+            widthScale = if (isOverlay) (width + 2 * xyOffset) / width else 1f,
+            heightScale = if (isOverlay) (height + 2 * xyOffset) / height else 1f,
+        )
+    }
 
-        val widthScale = if (isOverlay) {
-            (width + 2 * xyOffset) / width
-        } else {
-            1f
-        }
-
-        val heightScale = if (isOverlay) {
-            (height + 2 * xyOffset) / height
-        } else {
-            1f
-        }
-
-        if (!reverse) {
-            binding.urlInputBackgroundView.apply {
-                pivotX = 0f
-                pivotY = 0f
-                scaleX = widthScale
-                scaleY = heightScale
-                translationX = -xyOffset
-                translationY = -xyOffset
-            }
-        }
-
-        // Let the URL input use the full width/height and then shrink to the actual size
+    private fun animateBackground(
+        scaleX: Float,
+        scaleY: Float,
+        alpha: Float,
+        translationX: Float,
+        translationY: Float,
+        onEnd: (() -> Unit)? = null,
+    ) {
         binding.urlInputBackgroundView.animate()
             .setDuration(ANIMATION_DURATION.toLong())
-            .scaleX(if (reverse) widthScale else 1f)
-            .scaleY(if (reverse) heightScale else 1f)
-            .alpha((if (reverse && isOverlay) 0 else 1).toFloat())
-            .translationX(if (reverse) -xyOffset else 0f)
-            .translationY(if (reverse) -xyOffset else 0f)
-            .setListener(
-                object : AnimatorListenerAdapter() {
-                    override fun onAnimationEnd(animation: Animator) {
-                        if (reverse && isOverlay) {
-                            dismiss()
-                        }
+            .scaleX(scaleX)
+            .scaleY(scaleY)
+            .alpha(alpha)
+            .translationX(translationX)
+            .translationY(translationY)
+            .setListener(object : AnimatorListenerAdapter() {
+                // onAnimationEnd is called even after a cancel on ViewPropertyAnimator,
+                // so we track cancellation to avoid invoking onEnd in that case.
+                private var cancelled = false
 
-                        isAnimating = false
-                    }
-                },
-            )
+                override fun onAnimationCancel(animation: Animator) {
+                    cancelled = true
+                    isAnimating = false
+                }
 
-        if (reverse) {
-            binding.toolbarBottomBorder.isVisible = true
+                override fun onAnimationEnd(animation: Animator) {
+                    isAnimating = false
+                    if (!cancelled) onEnd?.invoke()
+                }
+            })
+    }
 
-            if (!isOverlay) {
-                binding.dismissView.isVisible = false
-                binding.menuView.isVisible = true
-            }
-        } else {
-            binding.toolbarBottomBorder.isVisible = false
+    private fun animateEnter() {
+        if (isAnimating) return
+        isAnimating = true
+
+        val (xyOffset, widthScale, heightScale) = resolveAnimationParams()
+
+        binding.urlInputBackgroundView.apply {
+            pivotX = 0f
+            pivotY = 0f
+            scaleX = widthScale
+            scaleY = heightScale
+            translationX = -xyOffset
+            translationY = -xyOffset
+        }
+
+        animateBackground(scaleX = 1f, scaleY = 1f, alpha = 1f, translationX = 0f, translationY = 0f)
+        binding.toolbarBottomBorder.isVisible = false
+    }
+
+    private fun animateExit(onEnd: (() -> Unit)? = null) {
+        if (isAnimating) return
+        isAnimating = true
+
+        val (xyOffset, widthScale, heightScale) = resolveAnimationParams()
+
+        animateBackground(
+            scaleX = widthScale,
+            scaleY = heightScale,
+            alpha = if (isOverlay) 0f else 1f,
+            translationX = -xyOffset,
+            translationY = -xyOffset,
+            onEnd = onEnd,
+        )
+
+        binding.toolbarBottomBorder.isVisible = true
+        if (!isOverlay) {
+            binding.dismissView.isVisible = false
+            binding.menuView.isVisible = true
         }
     }
 
@@ -506,7 +513,17 @@ class UrlInputFragment :
         // this transaction is committed. To avoid this we commit while allowing a state loss here.
         // We do not save any state in this fragment (It's getting destroyed) so this should not be a problem.
 
-        context?.components?.appStore?.dispatch(AppAction.FinishEdit(tab!!.id))
+        val components = context?.components ?: return
+        val tabId = tab?.id ?: return
+        val currentTabState = components.store.state.findTab(tabId)
+        if (currentTabState?.content?.url?.isEmpty() == true) {
+            components.tabsUseCases.removeTab(tabId, selectParentIfExists = false)
+            components.store.state.selectedTabId?.let { nextId ->
+                components.appStore.dispatch(AppAction.FinishEdit(nextId))
+            }
+        } else {
+            components.appStore.dispatch(AppAction.FinishEdit(tabId))
+        }
     }
 
     internal fun onCommit(input: String) {
@@ -625,13 +642,13 @@ class UrlInputFragment :
             binding.searchViewContainer.isVisible = false
 
             if (!isOverlay) {
-                playVisibilityAnimation(true)
+                animateExit()
             }
         } else {
             binding.menuView.isVisible = false
 
-            if (!isOverlay && binding.dismissView.isVisible != true) {
-                playVisibilityAnimation(false)
+            if (!isOverlay && !binding.dismissView.isVisible) {
+                animateEnter()
                 binding.dismissView.isVisible = true
             }
 

@@ -48,7 +48,7 @@ class TestSessionRestoreWithTabGroups(SessionStoreTestCase):
             gBrowser.removeTabGroup(closedGroup);
 
             let { TabStateFlusher } = ChromeUtils.importESModule("resource:///modules/sessionstore/TabStateFlusher.sys.mjs");
-            TabStateFlusher.flushWindow(gBrowser.ownerGlobal).then(resolve);
+            TabStateFlusher.flushWindow(gBrowser.documentGlobal).then(resolve);
         """
         )
 
@@ -58,7 +58,7 @@ class TestSessionRestoreWithTabGroups(SessionStoreTestCase):
         self.assertEqual(
             self.marionette.execute_script(
                 """
-                let closedGroupIds = SessionStore.getWindowState(gBrowser.ownerGlobal).windows[0].closedGroups.map(g => g.id);
+                let closedGroupIds = SessionStore.getWindowState(gBrowser.documentGlobal).windows[0].closedGroups.map(g => g.id);
                 return !(closedGroupIds.includes("group-left-open-1") && closedGroupIds.includes("group-left-open-2"));
                 """
             ),
@@ -68,7 +68,7 @@ class TestSessionRestoreWithTabGroups(SessionStoreTestCase):
 
         self.assertEqual(
             self.marionette.execute_script(
-                "return SessionStore.getWindowState(gBrowser.ownerGlobal).windows[0].closedGroups.length"
+                "return SessionStore.getWindowState(gBrowser.documentGlobal).windows[0].closedGroups.length"
             ),
             1,
             msg="There is one closed group in the window",
@@ -76,7 +76,7 @@ class TestSessionRestoreWithTabGroups(SessionStoreTestCase):
 
         self.assertEqual(
             self.marionette.execute_script(
-                "return SessionStore.getWindowState(gBrowser.ownerGlobal).windows[0].closedGroups[0].id"
+                "return SessionStore.getWindowState(gBrowser.documentGlobal).windows[0].closedGroups[0].id"
             ),
             "group-closed",
             msg="Correct group appears in closedGroups",
@@ -98,7 +98,7 @@ class TestSessionRestoreWithTabGroups(SessionStoreTestCase):
 
         self.assertEqual(
             self.marionette.execute_script(
-                "return SessionStore.getWindowState(gBrowser.ownerGlobal).windows[0].closedGroups[0].tabs.length"
+                "return SessionStore.getWindowState(gBrowser.documentGlobal).windows[0].closedGroups[0].tabs.length"
             ),
             1,
             msg="Closed group has 1 tab",
@@ -145,7 +145,7 @@ class TestSessionRestoreWithTabGroups(SessionStoreTestCase):
             """
             let group = gBrowser.addTabGroup([...gBrowser.tabs], { id: "group-to-save", label: "to-save" });
             let { TabStateFlusher } = ChromeUtils.importESModule("resource:///modules/sessionstore/TabStateFlusher.sys.mjs");
-            TabStateFlusher.flushWindow(gBrowser.ownerGlobal).then(() => {
+            TabStateFlusher.flushWindow(gBrowser.documentGlobal).then(() => {
                 group.saveAndClose();
             });
             """
@@ -182,7 +182,7 @@ class TestSessionRestoreWithTabGroups(SessionStoreTestCase):
             gBrowser.addTabGroup([gBrowser.tabs[1], gBrowser.tabs[2]], { id: "save-through-restore-2", label: "open-2" });
 
             let { TabStateFlusher } = ChromeUtils.importESModule("resource:///modules/sessionstore/TabStateFlusher.sys.mjs");
-            TabStateFlusher.flushWindow(gBrowser.ownerGlobal).then(resolve);
+            TabStateFlusher.flushWindow(gBrowser.documentGlobal).then(resolve);
         """
         )
 
@@ -253,7 +253,7 @@ class TestSessionRestoreWithTabGroups(SessionStoreTestCase):
             gBrowser.addTabGroup([gBrowser.tabs[1], gBrowser.tabs[2]], { id: "not-saved-after-restore-2", label: "open-2" });
 
             let { TabStateFlusher } = ChromeUtils.importESModule("resource:///modules/sessionstore/TabStateFlusher.sys.mjs");
-            TabStateFlusher.flushWindow(gBrowser.ownerGlobal).then(resolve);
+            TabStateFlusher.flushWindow(gBrowser.documentGlobal).then(resolve);
             """
         )
 

@@ -22,9 +22,9 @@
 #include "p2p/test/fake_port_allocator.h"
 #include "rtc_base/internal/default_socket_server.h"
 #include "rtc_base/socket_server.h"
-#include "rtc_base/thread.h"
 #include "test/create_test_environment.h"
 #include "test/gtest.h"
+#include "test/run_loop.h"
 
 namespace webrtc {
 
@@ -38,12 +38,12 @@ class IceTransportTest : public ::testing::Test {
 
  private:
   std::unique_ptr<SocketServer> socket_server_;
-  AutoSocketServerThread main_thread_;
+  test::RunLoop main_thread_;
 };
 
 TEST_F(IceTransportTest, CreateNonSelfDeletingTransport) {
   auto cricket_transport =
-      std::make_unique<FakeIceTransport>("name", 0, nullptr);
+      std::make_unique<FakeIceTransportInternal>("name", 0, nullptr);
   auto ice_transport =
       make_ref_counted<IceTransportWithPointer>(cricket_transport.get());
   EXPECT_EQ(ice_transport->internal(), cricket_transport.get());

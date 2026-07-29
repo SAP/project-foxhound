@@ -33,53 +33,7 @@ ipprotection:
         type: string
         description: >
           Reason why the alert was triggered: "paused" or "error".
-  started:
-    type: event
-    description: >
-      Recorded when IP Protection is started.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017486
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017486
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - kpatenio@mozilla.com
-      - vpn-telemetry@mozilla.com
-    expires: never
-    extra_keys:
-      userAction:
-        type: boolean
-        description: >
-          If the VPN was connected by a user action.
-      inPrivateBrowsing:
-        type: boolean
-        description: >
-          True if IP Protection was started in a private browsing window.
 
-  stopped:
-    type: event
-    description: >
-      Recorded when IP Protection is stopped.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017486
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017486
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - kpatenio@mozilla.com
-      - vpn-telemetry@mozilla.com
-    expires: never
-    extra_keys:
-      userAction:
-        type: boolean
-        description: >
-          If the VPN was disconnected by a user action.
-      duration:
-        type: string
-        description: >
-          Amount of time the VPN was connected in a session.
   click_upgrade_button:
     type: event
     description: >
@@ -92,6 +46,7 @@ ipprotection:
       - rking@mozilla.com
       - vpn-telemetry@mozilla.com
     expires: never
+
   removed_from_toolbar:
     type: event
     description: >
@@ -128,41 +83,6 @@ ipprotection:
         description: >
           The bandwidth usage threshold that was crossed (50, 75, or 90).
 
-  error:
-    type: event
-    description: >
-      Recorded when the in-panel error message is triggered.
-    bugs:
-     - https://bugzilla.mozilla.org/show_bug.cgi?id=1998500
-    data_reviews:
-     - https://bugzilla.mozilla.org/show_bug.cgi?id=1998500
-    data_sensitivity:
-     - interaction
-    notification_emails:
-      - rking@mozilla.com
-      - vpn-telemetry@mozilla.com
-    expires: never
-    extra_keys:
-      source:
-        type: string
-        description: >
-          Module where the error originated.
-
-  exclusion_added:
-    type: counter
-    description: >
-      Recorded when a site exclusion is added.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017487
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017487
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - kpatenio@mozilla.com
-      - vpn-telemetry@mozilla.com
-    expires: never
-
   exclusion_toggled:
     type: event
     description: >
@@ -183,25 +103,6 @@ ipprotection:
         description: >
           True if the site was excluded (VPN disabled for site).
           False if the exclusion was removed (VPN re-enabled for site).
-
-  paused:
-    type: event
-    description: >
-      Recorded when the IPP Proxy manager is set to the paused state.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1998500
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1998500
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - vpn-telemetry@mozilla.com
-    expires: never
-    extra_keys:
-      wasActive:
-        type: boolean
-        description: >
-          True if the previous state was the active state, otherwise false.
 
   get_started:
     type: event
@@ -237,3 +138,56 @@ ipprotection:
         type: boolean
         description: >
           True if the enrollment finished successfully.
+
+  location_selector_button_clicked:
+    type: event
+    description: >
+      Recorded when a user clicks the location selector button to open the
+      locations subview.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035944
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035944
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - kpatenio@mozilla.com
+      - vpn-telemetry@mozilla.com
+    expires: never
+
+  location_changed:
+    type: event
+    description: >
+      Recorded when a user picks a new egress location from the location selector.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035944
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035944
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - kpatenio@mozilla.com
+      - vpn-telemetry@mozilla.com
+    expires: never
+    extra_keys:
+      location:
+        type: string
+        description: >
+          The country code of the selected egress location, or "REC" if the
+          recommended location was selected.
+
+  location_upgrade_promo_clicked:
+    type: event
+    description: >
+      Recorded when a user clicks the upgrade promo button in the locations
+      subview.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035944
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035944
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - kpatenio@mozilla.com
+      - vpn-telemetry@mozilla.com
+    expires: never

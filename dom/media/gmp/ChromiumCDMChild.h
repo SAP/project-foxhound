@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -71,6 +70,10 @@ class ChromiumCDMChild final : public PChromiumCDMChild,
  protected:
   ~ChromiumCDMChild();
 
+  cdm::Exception ClampException(cdm::Exception aValue) const;
+  cdm::Status ClampStatus(cdm::Status aValue, cdm::Status aFallback) const;
+  cdm::KeyStatus ClampKeyStatus(cdm::KeyStatus aValue) const;
+
   bool OnResolveNewSessionPromiseInternal(uint32_t aPromiseId,
                                           const nsACString& aSessionId);
 
@@ -87,10 +90,11 @@ class ChromiumCDMChild final : public PChromiumCDMChild,
   ipc::IPCResult RecvSetServerCertificate(
       const uint32_t& aPromiseId, nsTArray<uint8_t>&& aServerCert) override;
   ipc::IPCResult RecvCreateSessionAndGenerateRequest(
-      const uint32_t& aPromiseId, const uint32_t& aSessionType,
-      const uint32_t& aInitDataType, nsTArray<uint8_t>&& aInitData) override;
+      const uint32_t& aPromiseId, const cdm::SessionType& aSessionType,
+      const cdm::InitDataType& aInitDataType,
+      nsTArray<uint8_t>&& aInitData) override;
   ipc::IPCResult RecvLoadSession(const uint32_t& aPromiseId,
-                                 const uint32_t& aSessionType,
+                                 const cdm::SessionType& aSessionType,
                                  const nsACString& aSessionId) override;
   ipc::IPCResult RecvUpdateSession(const uint32_t& aPromiseId,
                                    const nsACString& aSessionId,

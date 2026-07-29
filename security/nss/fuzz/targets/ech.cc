@@ -22,7 +22,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t len) {
   static PRFileDesc* sslFd = SSL_ImportFD(nullptr, prFd.get());
   assert(sslFd == prFd.get());
 
-  SSL_SetClientEchConfigs(sslFd, data, len);
+  SSL_SetClientEchConfigs(sslFd, data, (unsigned int)len);
 
   return 0;
 }

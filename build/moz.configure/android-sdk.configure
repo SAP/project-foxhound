@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -100,11 +98,16 @@ def _ensure_android_package(
     return [full_path]
 
 
-@depends("--with-android-sdk", android_os_info, want_bootstrap)
+@depends("--with-android-sdk", android_os_info, toolchains_base_dir, want_bootstrap)
 @imports(_from="os.path", _import="isdir")
+@imports(_from="os.path", _import="normcase")
+@imports(_from="os.path", _import="normpath")
+@imports(_from="pathlib", _import="Path")
+@imports(_from="mozboot.android", _import="CMDLINE_TOOLS_VERSION_STRING")
 @imports(_from="mozboot.android", _import="ensure_android_sdk")
 @imports(_from="mozboot.android", _import="get_sdk_path")
-def android_sdk_root(value, android_os_info, want_bootstrap):
+@imports(_from="mozboot.android", _import="get_sdkmanager_tool_path")
+def android_sdk_root(value, android_os_info, toolchains_base_dir, want_bootstrap):
     if value:
         sdk_path = value[0]
         if not isdir(sdk_path):
@@ -112,6 +115,27 @@ def android_sdk_root(value, android_os_info, want_bootstrap):
                 "The path you specified with --with-android-sdk (%s) is not "
                 "a directory" % sdk_path
             )
+        if not get_sdkmanager_tool_path(Path(sdk_path)).is_file():
+            default_candidates = (
+                os.path.join(
+                    toolchains_base_dir, f"android-sdk-{android_os_info.os_name}"
+                ),
+                os.path.join(toolchains_base_dir, "android-sdk"),
+            )
+            normalized_sdk = normcase(normpath(sdk_path))
+            is_default = any(
+                normalized_sdk == normcase(normpath(candidate))
+                for candidate in default_candidates
+            )
+            if not is_default or not want_bootstrap("android-sdk"):
+                die(
+                    "Android cmdline-tools %s not found under %s. "
+                    "Try |mach bootstrap|."
+                    % (CMDLINE_TOOLS_VERSION_STRING, sdk_path)
+                )
+            ensure_android_sdk(android_os_info.os_name, android_os_info.os_tag)
+            sdk_path = str(get_sdk_path(android_os_info.os_name))
+            assert get_sdkmanager_tool_path(Path(sdk_path)).is_file()
         return sdk_path
 
     if not want_bootstrap("android-sdk"):
@@ -127,7 +151,7 @@ def android_sdk_root(value, android_os_info, want_bootstrap):
 
 @dependable
 def android_sdk_version():
-    major, minor, patch = "36", "1", "0"
+    major, minor, patch = "37", "0", "0"
     return namespace(
         build_tools_version=f"{major}.{minor}.{patch}",
         compile_sdk_major_version=major,
@@ -201,15 +225,9 @@ def android_platform_tools(sdk_root, android_os_info, want_bootstrap):
 @imports(_from="mozboot.android", _import="AndroidPackageList")
 def android_platforms(sdk_root, sdk_version, android_os_info, want_bootstrap):
     prefix = "platforms"
-
-    version = sdk_version.compile_sdk_major_version
-    if int(sdk_version.compile_sdk_minor_version) != 0:
-        version = f"{version}.{sdk_version.compile_sdk_minor_version}"
-
-    platforms_path = os.path.join(prefix, f"android-{version}")
-
+    version = f"{sdk_version.compile_sdk_major_version}.{sdk_version.compile_sdk_minor_version}"
     return _ensure_android_package(
-        package_relative_path=platforms_path,
+        package_relative_path=os.path.join(prefix, f"android-{version}"),
         sdk_root=sdk_root,
         os_name=android_os_info.os_name,
         os_arch=android_os_info.os_arch,
@@ -296,12 +314,14 @@ def want_android_avd_bootstrap(want_bootstrap, moz_automation):
     avd_default_path,
     android_os_info,
     avd_manifest,
+    android_sdk_root,
     when=want_android_avd_bootstrap,
 )
 @checking("for AVD")
 @imports(_from="os.path", _import="exists")
+@imports(_from="pathlib", _import="Path")
 @imports(_from="mozboot.android", _import="ensure_android_avd")
-def android_avd(avd_path, avd_default_path, android_os_info, avd_manifest):
+def android_avd(avd_path, avd_default_path, android_os_info, avd_manifest, sdk_root):
     if avd_path:
         return [avd_path[0]]
 
@@ -313,6 +333,7 @@ def android_avd(avd_path, avd_default_path, android_os_info, avd_manifest):
         android_os_info.os_arch,
         no_interactive=True,
         avd_manifest=avd_manifest,
+        sdk_path=Path(sdk_root),
     )
     return [avd_path]
 

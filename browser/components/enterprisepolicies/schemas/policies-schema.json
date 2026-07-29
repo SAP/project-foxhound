@@ -16,6 +16,96 @@
       }
     },
 
+    "AIControls": {
+      "type": "object",
+      "properties": {
+        "Default": {
+          "type": "object",
+          "properties": {
+            "Value": {
+              "type": "string",
+              "enum": ["available", "blocked"]
+            },
+            "Locked": {
+              "type": "boolean"
+            }
+          }
+        },
+        "Translations": {
+          "type": "object",
+          "properties": {
+            "Value": {
+              "type": "string",
+              "enum": ["available", "blocked"]
+            },
+            "Locked": {
+              "type": "boolean"
+            }
+          }
+        },
+        "PDFAltText": {
+          "type": "object",
+          "properties": {
+            "Value": {
+              "type": "string",
+              "enum": ["available", "blocked"]
+            },
+            "Locked": {
+              "type": "boolean"
+            }
+          }
+        },
+        "SmartTabGroups": {
+          "type": "object",
+          "properties": {
+            "Value": {
+              "type": "string",
+              "enum": ["available", "blocked"]
+            },
+            "Locked": {
+              "type": "boolean"
+            }
+          }
+        },
+        "LinkPreviewKeyPoints": {
+          "type": "object",
+          "properties": {
+            "Value": {
+              "type": "string",
+              "enum": ["available", "blocked"]
+            },
+            "Locked": {
+              "type": "boolean"
+            }
+          }
+        },
+        "SidebarChatbot": {
+          "type": "object",
+          "properties": {
+            "Value": {
+              "type": "string",
+              "enum": ["available", "blocked"]
+            },
+            "Locked": {
+              "type": "boolean"
+            }
+          }
+        },
+        "SmartWindow": {
+          "type": "object",
+          "properties": {
+            "Value": {
+              "type": "string",
+              "enum": ["available", "blocked"]
+            },
+            "Locked": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+
     "AllowedDomainsForApps": {
       "type": "string"
     },
@@ -230,14 +320,15 @@
                 "type": "string",
                 "enum": [
                   "blue",
-                  "turquoise",
+                  "cyan",
                   "green",
                   "yellow",
                   "orange",
                   "red",
                   "pink",
                   "purple",
-                  "toolbar"
+                  "violet",
+                  "gray"
                 ]
               }
             },
@@ -399,7 +490,8 @@
             "reject",
             "limit-foreign",
             "reject-tracker",
-            "reject-tracker-and-partition-foreign"
+            "reject-tracker-and-partition-foreign",
+            "partition-foreign"
           ]
         },
 
@@ -411,7 +503,8 @@
             "reject",
             "limit-foreign",
             "reject-tracker",
-            "reject-tracker-and-partition-foreign"
+            "reject-tracker-and-partition-foreign",
+            "partition-foreign"
           ]
         }
       }
@@ -419,6 +512,11 @@
 
     "DefaultDownloadDirectory": {
       "type": "string"
+    },
+
+    "DefaultSerialGuardSetting": {
+      "type": "number",
+      "enum": [2, 3]
     },
 
     "DisableAccounts": {
@@ -560,6 +658,10 @@
     },
 
     "DisableRemoteImprovements": {
+      "type": "boolean"
+    },
+
+    "DisableRemoteSettingsAndAcceptSecurityConsequences": {
       "type": "boolean"
     },
 
@@ -771,8 +873,32 @@
                 "type": "string"
               }
             },
+            "runtime_allowed_hosts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "runtime_blocked_hosts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "temporarily_allow_weak_signatures": {
               "type": "boolean"
+            },
+            "blocked_permissions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "allowed_permissions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           }
         }
@@ -799,15 +925,42 @@
             "updates_disabled": {
               "type": "boolean"
             },
+            "update_url": {
+              "type": "URL"
+            },
             "default_area": {
               "type": "string",
               "enum": ["navbar", "menupanel"]
+            },
+            "runtime_allowed_hosts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "runtime_blocked_hosts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             },
             "temporarily_allow_weak_signatures": {
               "type": "boolean"
             },
             "private_browsing": {
               "type": "boolean"
+            },
+            "blocked_permissions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "allowed_permissions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           }
         }
@@ -822,6 +975,9 @@
       "type": "object",
       "properties": {
         "Search": {
+          "type": "boolean"
+        },
+        "Weather": {
           "type": "boolean"
         },
         "TopSites": {
@@ -879,6 +1035,9 @@
       "type": "object",
       "properties": {
         "Chatbot": {
+          "type": "boolean"
+        },
+        "SmartWindow": {
           "type": "boolean"
         },
         "LinkPreviews": {
@@ -963,6 +1122,9 @@
         "StartPage": {
           "type": "string",
           "enum": ["none", "homepage", "previous-session", "homepage-locked"]
+        },
+        "NewTabOnRestore": {
+          "type": "boolean"
         }
       }
     },
@@ -994,6 +1156,10 @@
           "type": "boolean"
         }
       }
+    },
+
+    "IPProtectionAvailable": {
+      "type": "boolean"
     },
 
     "LegacyProfiles": {
@@ -1048,6 +1214,9 @@
           "children": {
             "items": {
               "properties": {
+                "favicon": {
+                  "type": "URL"
+                },
                 "name": {
                   "type": "string"
                 },
@@ -1067,6 +1236,9 @@
               "type": "object"
             },
             "type": "array"
+          },
+          "favicon": {
+            "type": "URL"
           },
           "name": {
             "type": "string"
@@ -1483,6 +1655,26 @@
       }
     },
 
+    "RelaunchRequired": {
+      "type": "object",
+      "properties": {
+        "NotificationPeriodHours": {
+          "type": "number"
+        },
+        "RestartTimeOfDay": {
+          "type": "object",
+          "properties": {
+            "Hour": {
+              "type": "number"
+            },
+            "Minute": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    },
+
     "RequestedLocales": {
       "type": ["string", "array"],
       "items": {
@@ -1616,6 +1808,38 @@
       "type": "boolean"
     },
 
+    "SitePolicies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "Match": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+
+          "Exceptions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+
+          "Policies": {
+            "type": "object",
+            "properties": {
+              "DisableJit": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "required": ["Policies"]
+      }
+    },
+
     "SkipTermsOfUse": {
       "type": "boolean"
     },
@@ -1712,6 +1936,10 @@
     },
 
     "WindowsSSO": {
+      "type": "boolean"
+    },
+
+    "XSLTEnabled": {
       "type": "boolean"
     }
   }

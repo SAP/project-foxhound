@@ -137,6 +137,7 @@ pub extern "C" fn crashtools_crashping_init(
     app_id: &Utf16String,
     build_id: Option<&Utf16String>,
     display_version: Option<&Utf16String>,
+    upload_enabled: bool,
     upload_fn: UploadFn,
 ) -> Utf16String {
     let data_dir = data_dir.as_string_lossy();
@@ -156,6 +157,7 @@ pub extern "C" fn crashtools_crashping_init(
         },
     );
     init_glean.configuration.uploader = Some(Box::new(Uploader(upload_fn)));
+    init_glean.configuration.upload_enabled = upload_enabled;
     match init_glean.initialize() {
         Ok(glean_handle) => {
             glean_handle.application_lifetime();
@@ -181,6 +183,12 @@ pub extern "C" fn crashtools_send_ping(extras: &Utf16String) {
     } else {
         log::info!("sent crash ping");
     }
+}
+
+#[no_mangle]
+pub extern "C" fn crashtools_set_ping_collection_enabled(enabled: bool) {
+    log::debug!("setting ping collection enabled to {enabled}");
+    crashping::set_collection_enabled(enabled);
 }
 
 /// # Safety

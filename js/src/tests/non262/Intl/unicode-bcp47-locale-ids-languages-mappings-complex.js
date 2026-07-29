@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // CLDR contains language mappings where in addition to the language subtag also
 // the script or region subtag is modified, unless they're already present.
 

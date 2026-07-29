@@ -612,4 +612,116 @@ describe("selectLayoutRender", () => {
 
     assert.lengthOf(layoutRender, 0);
   });
+
+  describe("spoc injection based on allowAds", () => {
+    const fakeLayout = [
+      {
+        width: 3,
+        components: [{ type: "CardGrid", feed: { url: "foo.com" } }],
+      },
+    ];
+    const fakeSectionLayout = {
+      responsiveLayouts: [
+        {
+          columnCount: 1,
+          tiles: [
+            { position: 0, hasAd: true },
+            { position: 1, hasAd: false },
+          ],
+        },
+      ],
+    };
+    const fakeRecommendations = [
+      { id: "rec1", section: "section-1", pos: 0 },
+      { id: "rec2", section: "section-1", pos: 1 },
+    ];
+    const fakeSpocs = {
+      lastUpdated: 0,
+      spocs: {
+        newtab_spocs: { items: [{ id: "spoc1", url: "https://spoc.com" }] },
+      },
+    };
+    const fakePrefs = {
+      "discoverystream.sections.enabled": true,
+      "feeds.section.topstories": true,
+      "feeds.system.topstories": true,
+    };
+
+    function setupStore(allowAds) {
+      store.dispatch({
+        type: at.DISCOVERY_STREAM_LAYOUT_UPDATE,
+        data: { layout: fakeLayout },
+      });
+      store.dispatch({
+        type: at.DISCOVERY_STREAM_FEED_UPDATE,
+        data: {
+          feed: {
+            data: {
+              recommendations: fakeRecommendations,
+              sections: [
+                {
+                  sectionKey: "section-1",
+                  allowAds,
+                  receivedRank: 0,
+                  layout: fakeSectionLayout,
+                },
+              ],
+            },
+          },
+          url: "foo.com",
+        },
+      });
+      store.dispatch({ type: at.DISCOVERY_STREAM_FEEDS_UPDATE });
+      store.dispatch({
+        type: at.DISCOVERY_STREAM_SPOCS_UPDATE,
+        data: fakeSpocs,
+      });
+    }
+
+    it("should not add spoc positions for sections with allowAds: false", () => {
+      setupStore(false);
+
+      const { layoutRender } = selectLayoutRender({
+        state: store.getState().DiscoveryStream,
+        prefs: fakePrefs,
+      });
+
+      const [renderedSection] = layoutRender[0].components[0].data.sections;
+      assert.lengthOf(
+        renderedSection.data.filter(item => item.id === "spoc1"),
+        0,
+        "spoc should not be injected when allowAds is false"
+      );
+    });
+
+    it("should add spoc positions for sections with allowAds: true", () => {
+      setupStore(true);
+
+      const { layoutRender } = selectLayoutRender({
+        state: store.getState().DiscoveryStream,
+        prefs: fakePrefs,
+      });
+
+      const [renderedSection] = layoutRender[0].components[0].data.sections;
+      assert.isTrue(
+        renderedSection.data.some(item => item.id === "spoc1"),
+        "spoc should be injected when allowAds is true"
+      );
+    });
+
+    it("should add spoc positions for sections with allowAds: undefined", () => {
+      setupStore(undefined);
+
+      const { layoutRender } = selectLayoutRender({
+        state: store.getState().DiscoveryStream,
+        prefs: fakePrefs,
+      });
+
+      const [renderedSection] = layoutRender[0].components[0].data.sections;
+      assert.isTrue(
+        renderedSection.data.some(item => item.id === "spoc1"),
+        "spoc should be injected when allowAds is undefined"
+      );
+    });
+  });
 });

@@ -132,6 +132,12 @@ export const prefs = new PrefsHelper("devtools", {
 // Hardcode the fallback value to that of CodeMirror.defaults.cursorBlinkRate.
 prefs.cursorBlinkRate = Services.prefs.getIntPref("ui.caretBlinkTime", 530);
 
+// Pref which decides whether updates to the stylesheet use transitions
+prefs.styleSheetTransitions = Services.prefs.getBoolPref(
+  "devtools.styleeditor.transitions",
+  true
+);
+
 export const features = new PrefsHelper("devtools.debugger.features", {
   wasm: ["Bool", "wasm"],
   outline: ["Bool", "outline"],

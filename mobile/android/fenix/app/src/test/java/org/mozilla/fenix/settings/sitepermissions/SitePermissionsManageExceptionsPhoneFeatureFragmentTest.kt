@@ -9,8 +9,10 @@ import android.view.View
 import android.widget.RadioButton
 import androidx.core.view.isVisible
 import io.mockk.MockKAnnotations
+import io.mockk.Runs
 import io.mockk.every
-import io.mockk.impl.annotations.MockK
+import io.mockk.impl.annotations.RelaxedMockK
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.spyk
 import io.mockk.verify
@@ -34,10 +36,10 @@ import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class SitePermissionsManageExceptionsPhoneFeatureFragmentTest {
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var settings: Settings
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var permissions: SitePermissions
 
     private lateinit var fragment: SitePermissionsManageExceptionsPhoneFeatureFragment
@@ -56,7 +58,7 @@ class SitePermissionsManageExceptionsPhoneFeatureFragmentTest {
     @Test
     fun `GIVEN an AUTOPLAY permission WHEN onCreateView is called THEN initAutoplay is called`() {
         every { fragment.getFeature() } returns PhoneFeature.AUTOPLAY
-        every { fragment.initAutoplay(permissions) } returns Unit
+        every { fragment.initAutoplay(permissions) } just Runs
         every { fragment.getSitePermission() } returns permissions
 
         fragment.onCreateView(LayoutInflater.from(testContext), null, null)
@@ -74,7 +76,7 @@ class SitePermissionsManageExceptionsPhoneFeatureFragmentTest {
 
         features.forEach {
             every { fragment.getFeature() } returns it
-            every { fragment.initNormalFeature() } returns Unit
+            every { fragment.initNormalFeature() } just Runs
             every { fragment.getSitePermission() } returns permissions
 
             fragment.onCreateView(LayoutInflater.from(testContext), null, null)
@@ -89,7 +91,7 @@ class SitePermissionsManageExceptionsPhoneFeatureFragmentTest {
 
     @Test
     fun `WHEN initAutoplay is called THEN AllowAll, BlockAll and BlockAudible radio options will be configure`() {
-        every { fragment.initAutoplayOption(any(), any()) } returns Unit
+        every { fragment.initAutoplayOption(any(), any()) } just Runs
         every { fragment.getSitePermission() } returns permissions
         every { settings.getSitePermissionsCustomSettingsRules() } returns getRules()
 
@@ -114,8 +116,8 @@ class SitePermissionsManageExceptionsPhoneFeatureFragmentTest {
         every { rootView.findViewById<View>(any()) } returns radioButton
         every { autoplayValue.label } returns "label"
         with(fragment) {
-            every { updatedSitePermissions(any()) } returns Unit
-            every { any<RadioButton>().restoreState(any()) } returns Unit
+            every { updatedSitePermissions(any()) } just Runs
+            every { any<RadioButton>().restoreState(any()) } just Runs
         }
 
         fragment.initAutoplayOption(R.id.ask_to_allow_radio, autoplayValue)

@@ -1,11 +1,13 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ReadableStreamPipeTo.h"
 
+#include "ReadableStreamAbstract.h"
+#include "ReadableStreamDefaultReaderAbstract.h"
+#include "WritableStreamAbstract.h"
+#include "WritableStreamDefaultWriterAbstract.h"
 #include "js/Exception.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/ErrorResult.h"
@@ -14,10 +16,6 @@
 #include "mozilla/dom/Promise-inl.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
-#include "mozilla/dom/ReadableStream.h"
-#include "mozilla/dom/ReadableStreamDefaultReader.h"
-#include "mozilla/dom/WritableStream.h"
-#include "mozilla/dom/WritableStreamDefaultWriter.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupportsImpl.h"
 
@@ -55,7 +53,7 @@ class ShutdownActionFinishedPromiseHandler;
 //
 // clang-format on
 class PipeToPump final : public AbortFollower {
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_CLASS(PipeToPump)
 
   friend struct PipeToReadRequest;
@@ -139,7 +137,7 @@ class PipeToPumpHandler final : public PromiseNativeHandler {
   FunPtr mRejected;
 
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_CLASS(PipeToPumpHandler)
 
   explicit PipeToPumpHandler(PipeToPump* aPipeToPump, FunPtr aResolved,
@@ -258,7 +256,8 @@ bool PipeToPump::SourceOrDestErroredOrClosed(JSContext* aCx) {
   // Step 1. Errors must be propagated forward: if source.[[state]] is or
   // becomes "errored", then
   if (source->State() == ReadableStream::ReaderState::Errored) {
-    JS::Rooted<JS::Value> storedError(aCx, source->StoredError());
+    JS::Rooted<JS::Value> storedError(aCx);
+    source->GetStoredError(aCx, &storedError, IgnoredErrorResult());
     OnSourceErrored(aCx, storedError);
     return true;
   }
@@ -266,7 +265,8 @@ bool PipeToPump::SourceOrDestErroredOrClosed(JSContext* aCx) {
   // Step 2. Errors must be propagated backward: if dest.[[state]] is or becomes
   // "errored", then
   if (dest->State() == WritableStream::WriterState::Errored) {
-    JS::Rooted<JS::Value> storedError(aCx, dest->StoredError());
+    JS::Rooted<JS::Value> storedError(aCx);
+    dest->GetStoredError(aCx, &storedError, IgnoredErrorResult());
     OnDestErrored(aCx, storedError);
     return true;
   }
@@ -347,7 +347,7 @@ class WriteFinishedPromiseHandler final : public PromiseNativeHandler {
   virtual ~WriteFinishedPromiseHandler() { mozilla::DropJSObjects(this); };
 
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(WriteFinishedPromiseHandler)
 
   explicit WriteFinishedPromiseHandler(
@@ -440,7 +440,7 @@ class ShutdownActionFinishedPromiseHandler final : public PromiseNativeHandler {
   }
 
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(
       ShutdownActionFinishedPromiseHandler)
 
@@ -456,15 +456,20 @@ class ShutdownActionFinishedPromiseHandler final : public PromiseNativeHandler {
   }
 
   void ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue,
-                        ErrorResult&) override {
+                        ErrorResult& aRv) override {
     // https://streams.spec.whatwg.org/#rs-pipeTo-shutdown-with-action
     // Step 5. Upon fulfillment of p, finalize, passing along originalError if
     // it was given.
-    JS::Rooted<Maybe<JS::Value>> error(aCx);
+    JS::Rooted<Maybe<JS::Value>> maybeError(aCx);
     if (mHasError) {
-      error = Some(mError);
+      JS::Rooted<JS::Value> error(aCx, mError);
+      if (!JS_WrapValue(aCx, &error)) {
+        aRv.StealExceptionFromJSContext(aCx);
+        return;
+      }
+      maybeError = Some(error.get());
     }
-    mPipeToPump->Finalize(aCx, error);
+    mPipeToPump->Finalize(aCx, maybeError);
   }
 
   void RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aReason,

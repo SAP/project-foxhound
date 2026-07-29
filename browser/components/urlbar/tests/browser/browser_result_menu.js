@@ -1,12 +1,16 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
+add_setup(async function init() {
+  registerCleanupFunction(async function () {
+    await PlacesUtils.history.clear();
+    await UrlbarTestUtils.formHistory.clear();
+  });
+});
+
 add_task(async function test_history() {
   const TEST_URL = "https://remove.me/from_urlbar/";
   await PlacesTestUtils.addVisits(TEST_URL);
-  registerCleanupFunction(async function () {
-    await PlacesUtils.history.clear();
-  });
 
   const resultIndex = 1;
   let result;
@@ -94,10 +98,17 @@ add_task(async function test_history() {
   }
 
   await UrlbarTestUtils.promisePopupClose(window);
+  await PlacesUtils.history.clear();
 });
 
 add_task(async function test_remove_search_history() {
-  await SearchTestUtils.installSearchExtension({}, { setAsDefault: true });
+  let extension = await SearchTestUtils.installSearchExtension(
+    {},
+    {
+      setAsDefault: true,
+      skipUnload: true,
+    }
+  );
   let engine = SearchService.getEngineByName("Example");
   await SearchService.moveEngine(engine, 0);
   await SpecialPowers.pushPrefEnv({
@@ -177,6 +188,7 @@ add_task(async function test_remove_search_history() {
   );
 
   await SpecialPowers.popPrefEnv();
+  await extension.unload();
 });
 
 add_task(async function firefoxSuggest() {

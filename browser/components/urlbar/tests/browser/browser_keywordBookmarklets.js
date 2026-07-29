@@ -95,7 +95,7 @@ async function do_test(loadFn) {
       await promise;
       // URI should not change when we run a javascript: URL.
       Assert.equal(gBrowser.currentURI.spec, "about:blank");
-      const textContent = await ContentTask.spawn(browser, [], function () {
+      const textContent = await SpecialPowers.spawn(browser, [], function () {
         return content.document.documentElement.textContent;
       });
       Assert.equal(textContent, expectedTextContent);

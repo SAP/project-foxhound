@@ -29,6 +29,17 @@ use crate::values::DashedIdent;
 use crate::values::computed::Context;
 use crate::values::computed::ToComputedValue;
 
+/// Trait to check if the value of a potentially-tree-scoped type T
+/// is actually tree-scoped. e.g. `none` value of `anchor-scope` should
+/// not be tree-scoped.
+pub trait IsTreeScoped {
+    /// Returns true if the current value should be considered tree-scoped.
+    /// Default implementation assumes that the value is always tree-scoped.
+    fn is_tree_scoped(&self) -> bool {
+        true
+    }
+}
+
 /// A generic type for representing a value scoped to a specific cascade level
 /// in the shadow tree hierarchy.
 #[repr(C)]
@@ -37,7 +48,6 @@ use crate::values::computed::ToComputedValue;
     Copy,
     Debug,
     MallocSizeOf,
-    PartialEq,
     SpecifiedValueInfo,
     ToAnimatedValue,
     ToCss,
@@ -47,13 +57,29 @@ use crate::values::computed::ToComputedValue;
     Serialize,
     Deserialize,
 )]
-#[typed_value(derive_fields)]
 pub struct TreeScoped<T> {
     /// The scoped value.
     pub value: T,
     /// The cascade level in the shadow tree hierarchy.
     #[css(skip)]
     pub scope: CascadeLevel,
+}
+
+impl<T: IsTreeScoped + PartialEq> PartialEq for TreeScoped<T> {
+    fn eq(&self, other: &Self) -> bool {
+        let tree_scoped = self.value.is_tree_scoped();
+        if tree_scoped != other.value.is_tree_scoped() {
+            // Trivially different.
+            return false;
+        }
+        let scopes_equal = self.scope == other.scope;
+        if !scopes_equal && tree_scoped {
+            // Scope difference matters if the name is actually tree-scoped.
+            return false;
+        }
+        // Ok, do the actual value comparison.
+        self.value == other.value
+    }
 }
 
 impl<T> TreeScoped<T> {
@@ -87,7 +113,11 @@ where
     }
 }
 
-impl<T: ToComputedValue> ToComputedValue for TreeScoped<T> {
+impl<T> ToComputedValue for TreeScoped<T>
+where
+    T: ToComputedValue + IsTreeScoped,
+    T::ComputedValue: IsTreeScoped,
+{
     type ComputedValue = TreeScoped<T::ComputedValue>;
     fn to_computed_value(&self, context: &Context) -> Self::ComputedValue {
         TreeScoped {
@@ -312,6 +342,7 @@ pub enum PreferredRatio<N> {
     ToTyped,
 )]
 #[repr(C)]
+#[typed(todo_derive_fields)]
 pub struct GenericAspectRatio<N> {
     /// Specifiy auto or not.
     #[animation(constant)]
@@ -368,7 +399,6 @@ impl<N> ToAnimatedZero for AspectRatio<N> {
     ToTyped,
 )]
 #[repr(C)]
-#[typed_value(derive_fields)]
 pub enum GenericInset<P, LP> {
     /// A `<length-percentage>` value.
     LengthPercentage(LP),
@@ -439,6 +469,7 @@ pub use self::GenericInset as Inset;
     ToTyped,
 )]
 #[repr(C)]
+#[typed(todo_derive_fields)]
 pub struct GenericAnchorFunction<Percentage, Fallback> {
     /// Anchor name of the element to anchor to.
     /// If omitted, selects the implicit anchor element.

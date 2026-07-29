@@ -48,6 +48,9 @@ export const ERRORS = Object.freeze({
    * by a different application than the currently running application
    */
   UNSUPPORTED_APPLICATION: 14,
+  DECOMPRESSION_FAILED: 15,
+  PROFILE_CREATION_FAILED: 16,
+  RESOURCE_RECOVERY_FAILED: 17,
 });
 
 export function errorString(errorCodeToLookup) {
@@ -65,7 +68,7 @@ export function errorString(errorCodeToLookup) {
  * from a backup. This is used to provide extra information to our error
  * telemetry.
  */
-export const STEPS = Object.freeze({
+export const BACKUP_STEPS = Object.freeze({
   /**
    * This is the initial step upon creating a backup before any other steps
    * begin.
@@ -135,4 +138,18 @@ export const STEPS = Object.freeze({
    * directory.
    */
   CREATE_BACKUP_FINALIZE_ARCHIVE: 13,
+});
+
+export const RESTORE_STEPS = Object.freeze({
+  RESTORE_ENTRYPOINT: "ENTRYPOINT",
+  RESTORE_EXTRACT_SNAPSHOT: "EXTRACT_SNAPSHOT",
+  RESTORE_DECOMPRESS: "DECOMPRESS",
+  RESTORE_READ_MANIFEST: "READ_MANIFEST",
+  RESTORE_PROFILE_SETUP: "PROFILE_SETUP",
+  RESTORE_CREATE_PROFILE: "CREATE_PROFILE",
+  RESTORE_RECOVER_RESOURCES: "RECOVER_RESOURCES",
+  RESTORE_WRITE_POST_RECOVERY: "WRITE_POST_RECOVERY",
+  RESTORE_CONFIGURE_PROFILE: "CONFIGURE_PROFILE",
+  RESTORE_LAUNCH_PROFILE: "LAUNCH_PROFILE",
+  RESTORE_FINALIZE: "FINALIZE",
 });

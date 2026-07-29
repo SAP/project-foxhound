@@ -5,6 +5,7 @@
 import os
 from functools import partial
 
+import mozinfo
 import mozunit
 import pytest
 from conftest import setup_args
@@ -15,6 +16,10 @@ from moztest.selftest.output import filter_action, get_mozharness_status
 
 here = os.path.abspath(os.path.dirname(__file__))
 get_mozharness_status = partial(get_mozharness_status, "mochitest")
+
+# When MOZ_AUTOMATION is set, mochitest retries tests that failed unexpectedly
+# on the initial run once, which causes extra output lines for those tests.
+IN_CI = os.environ.get("MOZ_AUTOMATION") is not None
 
 
 @pytest.fixture
@@ -87,11 +92,16 @@ def test_output_extra_args(flavor, manifest, runtests, test_manifest, test_name)
 @pytest.mark.parametrize("flavor", ["plain", "browser-chrome"])
 def test_output_pass(flavor, runFailures, runtests, test_name):
     extra_opts = {}
+    # In selftest/runFailures mode, the passing test is unexpected (fail-if
+    # condition fires), which triggers a retry in CI that doubles the output.
+    lines = 2 if runFailures else 1
+    if runFailures and IN_CI:
+        lines *= 2
     results = {
         "status": 1 if runFailures else 0,
         "tbpl_status": TBPL_WARNING if runFailures else TBPL_SUCCESS,
         "log_level": (INFO, WARNING),
-        "lines": 2 if runFailures else 1,
+        "lines": lines,
         "line_status": "PASS",
     }
     if runFailures:
@@ -107,6 +117,10 @@ def test_output_pass(flavor, runFailures, runtests, test_name):
     assert log_level in results["log_level"]
 
     lines = filter_action("test_status", lines)
+    # Ignore pref-leak reports that can differ between the initial and retry runs.
+    lines = [
+        l for l in lines if not l.get("message", "").startswith("changed preference:")
+    ]
     assert len(lines) == results["lines"]
     assert lines[0]["status"] == results["line_status"]
 
@@ -115,11 +129,14 @@ def test_output_pass(flavor, runFailures, runtests, test_name):
 @pytest.mark.parametrize("flavor", ["plain", "browser-chrome"])
 def test_output_fail(flavor, runFailures, runtests, test_name):
     extra_opts = {}
+    # A real failure (runFailures="") triggers a retry in CI, doubling the
+    # test_status lines.
+    lines = 2 if not runFailures and IN_CI else 1
     results = {
         "status": 0 if runFailures else 1,
         "tbpl_status": TBPL_SUCCESS if runFailures else TBPL_WARNING,
         "log_level": (INFO, WARNING),
-        "lines": 1,
+        "lines": lines,
         "line_status": "PASS" if runFailures else "FAIL",
     }
     if runFailures:
@@ -143,11 +160,15 @@ def test_output_fail(flavor, runFailures, runtests, test_name):
 @pytest.mark.parametrize("flavor", ["plain", "browser-chrome"])
 def test_output_restart_after_failure(flavor, runFailures, runtests, test_name):
     extra_opts = {}
+    # Both tests fail when runFailures="", so each triggers a browser restart
+    # on the initial run (2 launches). In CI the first failed test is also
+    # retried, adding one more launch before restartAfterFailure stops the run.
+    lines = 3 if not runFailures and IN_CI else 2
     results = {
         "status": 0 if runFailures else 1,
         "tbpl_status": TBPL_SUCCESS if runFailures else TBPL_WARNING,
         "log_level": (INFO, WARNING),
-        "lines": 2,
+        "lines": lines,
         "line_status": "PASS" if runFailures else "FAIL",
     }
     extra_opts["restartAfterFailure"] = True
@@ -194,6 +215,18 @@ def test_output_crash(flavor, runFailures, runtests, test_name):
         if flavor == "browser-chrome":
             results["tbpl_status"] = TBPL_SUCCESS
             results["log_level"] = (INFO, WARNING)
+    elif flavor == "browser-chrome" and not mozinfo.info["debug"]:
+        # A browser-chrome crash isn't matched by mozharness's error regexes
+        # (see the MOZ_CRASHREPORTER_SHUTDOWN note above), so it only registers
+        # as the unexpected CRASH status, which is scored as a warning rather
+        # than a failure.
+        #
+        # This does not apply to debug builds: there the crash also trips the
+        # leak-detection checks (ShutdownLeaks and the DOCSHELL/DOMWINDOW
+        # logging), which emit TEST-UNEXPECTED-FAIL error lines and make the run
+        # a failure, as expected by the default above.
+        results["tbpl_status"] = TBPL_WARNING
+        results["log_level"] = WARNING
 
     status, lines = runtests(
         test_name("crash"), environment=["MOZ_CRASHREPORTER_SHUTDOWN=1"], **extra_opts
@@ -248,16 +281,19 @@ def test_output_asan(flavor, runFailures, runtests, test_name):
 @pytest.mark.parametrize("flavor", ["plain"])
 def test_output_assertion(flavor, runFailures, runtests, test_name):
     extra_opts = {}
+    # The assertion test fails on every run, so CI retries it once: both
+    # test_end and assertion_count messages appear twice, but each run still
+    # reports a single assertion.
+    lines = 2 if IN_CI else 1
     results = {
-        "status": 0,
+        "status": 1,
         "tbpl_status": TBPL_WARNING,
         "log_level": WARNING,
-        "lines": 1,
+        "lines": lines,
         "assertions": 1,
     }
 
     status, lines = runtests(test_name("assertion"), **extra_opts)
-    # TODO: mochitest should return non-zero here
     assert status == results["status"]
 
     tbpl_status, log_level, summary = get_mozharness_status(lines, status)
@@ -270,7 +306,7 @@ def test_output_assertion(flavor, runFailures, runtests, test_name):
     assert test_end[0]["status"] == "FAIL"
 
     assertions = filter_action("assertion_count", lines)
-    assert len(assertions) == results["assertions"]
+    assert len(assertions) == results["lines"]
     assert assertions[0]["count"] == results["assertions"]
 
 

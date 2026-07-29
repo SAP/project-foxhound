@@ -8,11 +8,14 @@ prefs = [
   "browser.ipProtection.features.siteExceptions=true",
   "dom.security.https_first=false",
   "browser.ipProtection.bandwidth.enabled=true",
+  "browser.ipProtection.fxa.useActivateFlow=false",
 ]
 
 ["browser_IPPChannelFilter.js"]
 
 ["browser_IPPProxyManager.js"]
+
+["browser_IPPUsageHelper.js"]
 
 ["browser_IPProtectionService.js"]
 
@@ -36,6 +39,12 @@ prefs = [
 
 ["browser_ipprotection_keyboard_navigation.js"]
 
+["browser_ipprotection_location_selector_telemetry.js"]
+
+["browser_ipprotection_locations_keyboard_navigation.js"]
+
+["browser_ipprotection_locations_list.js"]
+
 ["browser_ipprotection_message_bar.js"]
 
 ["browser_ipprotection_network_error.js"]
@@ -56,3 +65,5 @@ prefs = [
 skip-if = [
   "devedition",
 ]
+
+["browser_ipprotection_utils.js"]

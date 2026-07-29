@@ -6,6 +6,7 @@ loader: taskgraph.loader.transform:loader
 
 transforms:
     - gecko_taskgraph.transforms.release_deps:transforms
+    - taskgraph.transforms.task_context
     - gecko_taskgraph.transforms.partner_repack:transforms
     - gecko_taskgraph.transforms.job:transforms
     - gecko_taskgraph.transforms.task:transforms
@@ -23,6 +24,11 @@ task-defaults:
     run-on-repo-type: [hg]
     name: eme-free-repack
     description: Release Promotion eme-free repacks
+    task-context:
+        from-custom:
+            - release-level
+        substitution-fields:
+            - extra.limit-locales
     run-on-projects: []  # to make sure this never runs as part of CI
     shipping-product: firefox
     shipping-phase: promote

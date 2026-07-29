@@ -29,7 +29,7 @@ add_task(async function test_OPEN_TAB_IN_SPLITVIEW() {
   ok(splitView, "Selected tab should be part of a splitview");
   ok(openTabsTab, "about:opentabs should be part of the splitview");
 
-  gBrowser.unsplitTabs(splitView);
+  splitView.unsplitTabs();
   Services.prefs.setBoolPref(
     "browser.tabs.splitView.enabled",
     originalSplitViewPrefValue

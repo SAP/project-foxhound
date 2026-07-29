@@ -6,6 +6,8 @@ support-files = ["GentiumPlus-R.woff"]
 
 ["test_CSSStyleDeclaration_hasLonghandProperty.html"]
 
+["test_CSSStyleProperties_hasLonghandProperty.html"]
+
 ["test_CSSStyleRule_getScopeRootFor.html"]
 
 ["test_CSSStyleRule_querySelectorAll.html"]

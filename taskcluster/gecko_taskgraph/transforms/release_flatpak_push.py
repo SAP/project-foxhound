@@ -5,34 +5,36 @@
 Transform the release-flatpak-push kind into an actual task description.
 """
 
-from taskgraph.transforms.base import TransformSequence
-from taskgraph.util.schema import LegacySchema, optionally_keyed_by, resolve_keyed_by
-from voluptuous import Optional, Required
+from typing import Optional
 
-from gecko_taskgraph.transforms.task import task_description_schema
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.schema import Schema
+
+from gecko_taskgraph.transforms.task import TaskDescriptionSchema
 from gecko_taskgraph.util.attributes import release_level
 from gecko_taskgraph.util.scriptworker import add_scope_prefix
 
-push_flatpak_description_schema = LegacySchema({
-    Required("name"): str,
-    Required("task-from"): task_description_schema["task-from"],
-    Required("dependencies"): task_description_schema["dependencies"],
-    Required("description"): task_description_schema["description"],
-    Required("treeherder"): task_description_schema["treeherder"],
-    Required("run-on-projects"): task_description_schema["run-on-projects"],
-    Required("worker-type"): optionally_keyed_by("release-level", str),
-    Required("worker"): object,
-    Optional("scopes"): [str],
-    Required("shipping-phase"): task_description_schema["shipping-phase"],
-    Required("shipping-product"): task_description_schema["shipping-product"],
-    Required("flathub-scope"): str,
-    Optional("extra"): task_description_schema["extra"],
-    Optional("attributes"): task_description_schema["attributes"],
-    Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
-})
+
+class PushFlatpakDescriptionSchema(Schema, kw_only=True):
+    name: str
+    task_from: TaskDescriptionSchema.__annotations__["task_from"]  # noqa: F821
+    dependencies: TaskDescriptionSchema.__annotations__["dependencies"]  # noqa: F821
+    description: TaskDescriptionSchema.__annotations__["description"]  # noqa: F821
+    treeherder: TaskDescriptionSchema.__annotations__["treeherder"]  # noqa: F821
+    run_on_projects: TaskDescriptionSchema.__annotations__["run_on_projects"]  # noqa: F821
+    worker_type: str
+    worker: object  # noqa: F821
+    scopes: Optional[list[str]] = None
+    shipping_phase: TaskDescriptionSchema.__annotations__["shipping_phase"]  # noqa: F821
+    shipping_product: TaskDescriptionSchema.__annotations__["shipping_product"]  # noqa: F821
+    flathub_scope: str
+    extra: TaskDescriptionSchema.__annotations__["extra"] = None
+    attributes: TaskDescriptionSchema.__annotations__["attributes"] = None
+    run_on_repo_type: TaskDescriptionSchema.__annotations__["run_on_repo_type"] = None
+
 
 transforms = TransformSequence()
-transforms.add_validate(push_flatpak_description_schema)
+transforms.add_validate(PushFlatpakDescriptionSchema)
 
 
 @transforms.add
@@ -45,23 +47,18 @@ def make_task_description(config, jobs):
             job["dependencies"]
         )
 
-        resolve_keyed_by(
-            job,
-            "worker.channel",
-            item_name=job["name"],
-            **{"release-type": config.params["release_type"]},
-        )
-        resolve_keyed_by(
-            job,
-            "worker-type",
-            item_name=job["name"],
-            **{"release-level": release_level(config.params)},
-        )
         if release_level(config.params) == "production":
+            dep_job = config.kind_dependencies_tasks[
+                next(iter(job["dependencies"].values()))
+            ]
             job.setdefault("scopes", []).append(
                 add_scope_prefix(
                     config,
-                    "{}:{}".format(job["flathub-scope"], job["worker"]["channel"]),
+                    "{}:{}:{}".format(
+                        job["flathub-scope"],
+                        job["worker"]["channel"],
+                        dep_job.attributes["flatpak_name"],
+                    ),
                 )
             )
         del job["flathub-scope"]

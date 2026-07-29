@@ -263,6 +263,9 @@ add_task(async function test_prune_old() {
 
 add_task(async function test_schedule_maintenance() {
   let m = await getManager();
+  // Make sure the cleanupPings() maintenance is run (though we can't test much
+  // more about it).
+  m._disableGleanPing = false;
   await m.createEventsFile("1", "crash.main.3", DUMMY_DATE, "id1", "{}");
 
   let oldDate = new Date(
@@ -274,6 +277,7 @@ add_task(async function test_schedule_maintenance() {
   let crashes = await m.getCrashes();
   Assert.equal(crashes.length, 1);
   Assert.equal(crashes[0].id, "id1");
+  Assert.ok(m._cleanupPingsResult);
 });
 
 const crashId = "3cb67eba-0dc7-6f78-6a569a0e-172287ec";
@@ -281,7 +285,7 @@ const productName = "Firefox";
 const productId = "{ec8030f7-c20a-464f-9b0e-13a3a9e97384}";
 const sha256Hash =
   "f8410c3ac4496cfa9191a1240f0e365101aef40c7bf34fc5bcb8ec511832ed79";
-const stackTraces = { status: "OK" };
+const stackTraces = "{}";
 
 add_task(async function test_main_crash_event_file() {
   let ac = new TelemetryArchiveTesting.Checker();
@@ -294,6 +298,7 @@ add_task(async function test_main_crash_event_file() {
   theEnvironment.testValue = 'MyValue"';
 
   let m = await getManager();
+  m._disableGleanPing = false;
   const metadata = JSON.stringify({
     ProductName: productName,
     ProductID: productId,
@@ -311,6 +316,7 @@ add_task(async function test_main_crash_event_file() {
     crashId,
     metadata
   );
+
   let count = await m.aggregateEventsFiles();
   Assert.equal(count, 1);
 
@@ -323,29 +329,10 @@ add_task(async function test_main_crash_event_file() {
   Assert.ok(crashes[0].metadata.TelemetryEnvironment);
   Assert.equal(Object.getOwnPropertyNames(crashes[0].metadata).length, 7);
   Assert.equal(crashes[0].metadata.TelemetrySessionId, sessionId);
-  Assert.ok(crashes[0].metadata.StackTraces);
+  Assert.equal(crashes[0].metadata.StackTraces, stackTraces);
   Assert.deepEqual(crashes[0].crashDate, DUMMY_DATE);
 
-  let found = await ac.promiseFindPing("crash", [
-    [["payload", "hasCrashEnvironment"], true],
-    [["payload", "metadata", "ProductName"], productName],
-    [["payload", "metadata", "ProductID"], productId],
-    [["payload", "minidumpSha256Hash"], sha256Hash],
-    [["payload", "crashId"], crashId],
-    [["payload", "stackTraces", "status"], "OK"],
-    [["payload", "sessionId"], sessionId],
-  ]);
-  Assert.ok(found, "Telemetry ping submitted for found crash");
-  Assert.deepEqual(
-    found.environment,
-    theEnvironment,
-    "The saved environment should be present"
-  );
-  Assert.equal(
-    found.payload.metadata.TestKey,
-    undefined,
-    "Non-allowed fields should be filtered out"
-  );
+  Assert.ok(m._gleanPingPromise, "ping submitted for found crash");
 
   count = await m.aggregateEventsFiles();
   Assert.equal(count, 0);
@@ -360,6 +347,7 @@ add_task(async function test_main_crash_event_file_noenv() {
   });
 
   let m = await getManager();
+  m._disableGleanPing = false;
   await m.createEventsFile(
     crashId,
     "crash.main.3",
@@ -367,6 +355,7 @@ add_task(async function test_main_crash_event_file_noenv() {
     crashId,
     metadata
   );
+
   let count = await m.aggregateEventsFiles();
   Assert.equal(count, 1);
 
@@ -380,13 +369,7 @@ add_task(async function test_main_crash_event_file_noenv() {
   });
   Assert.deepEqual(crashes[0].crashDate, DUMMY_DATE);
 
-  let found = await ac.promiseFindPing("crash", [
-    [["payload", "hasCrashEnvironment"], false],
-    [["payload", "metadata", "ProductName"], productName],
-    [["payload", "metadata", "ProductID"], productId],
-  ]);
-  Assert.ok(found, "Telemetry ping submitted for found crash");
-  Assert.ok(found.environment, "There is an environment");
+  Assert.ok(m._gleanPingPromise, "ping submitted for found crash");
 
   count = await m.aggregateEventsFiles();
   Assert.equal(count, 0);
@@ -482,6 +465,42 @@ add_task(
     Assert.equal(store.crashesCount, store.HIGH_WATER_DAILY_THRESHOLD + 1);
   }
 );
+
+add_task(async function test_sendUnsubmittedPings() {
+  let m = await getManager();
+
+  let store = await m._getStore();
+  store.addCrash(
+    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT],
+    m.CRASH_TYPE_CRASH,
+    "unsubmitted-crash",
+    DUMMY_DATE,
+    {}
+  );
+  store.addCrash(
+    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT],
+    m.CRASH_TYPE_CRASH,
+    "submitted-crash",
+    DUMMY_DATE,
+    {}
+  );
+  Assert.ok(store.setPingSubmitted("submitted-crash"));
+
+  {
+    const crashes = store.crashesWithoutPingSubmissions();
+    Assert.equal(crashes.length, 1);
+    Assert.equal(crashes[0].id, "unsubmitted-crash");
+  }
+
+  m._disableGleanPing = false;
+
+  await m.sendUnsubmittedPings();
+
+  Assert.ok(m._gleanPingPromise);
+  await m._gleanPingPromise;
+
+  Assert.equal(store.crashesWithoutPingSubmissions().length, 0);
+});
 
 add_task(async function test_addCrash() {
   let m = await getManager();
@@ -717,101 +736,6 @@ add_task(async function test_addCrash() {
   );
 });
 
-add_task(async function test_child_process_crash_ping() {
-  let m = await getManager();
-  const EXPECTED_PROCESSES = [
-    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT],
-    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_CONTENT],
-    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_GMPLUGIN],
-    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_GPU],
-    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_VR],
-    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_RDD],
-    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_SOCKET],
-    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_FORKSERVER],
-    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_UTILITY],
-  ];
-
-  const UNEXPECTED_PROCESSES = [
-    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_IPDLUNITTEST],
-    null,
-    12, // non-string process type
-  ];
-
-  let ac = new TelemetryArchiveTesting.Checker();
-  await ac.promiseInit();
-
-  // Add a child-process crash for each allowed process type.
-  for (let p of EXPECTED_PROCESSES) {
-    // Generate a ping.
-    const remoteType =
-      p === m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_CONTENT]
-        ? "web"
-        : undefined;
-    let id = await m.createDummyDump();
-    await m.addCrash(p, m.CRASH_TYPE_CRASH, id, DUMMY_DATE, {
-      RemoteType: remoteType,
-      StackTraces: stackTraces,
-      MinidumpSha256Hash: sha256Hash,
-      ipc_channel_error: "ShutDownKill",
-      TestKey: "this-should-not-end-up-in-the-ping",
-    });
-    await m._pingPromise;
-
-    let found = await ac.promiseFindPing("crash", [
-      [["payload", "crashId"], id],
-      [["payload", "minidumpSha256Hash"], sha256Hash],
-      [["payload", "processType"], p],
-      [["payload", "stackTraces", "status"], "OK"],
-    ]);
-    Assert.ok(found, "Telemetry ping submitted for " + p + " crash");
-
-    let hoursOnly = new Date(DUMMY_DATE);
-    hoursOnly.setSeconds(0);
-    hoursOnly.setMinutes(0);
-    Assert.equal(
-      new Date(found.payload.crashTime).getTime(),
-      hoursOnly.getTime()
-    );
-
-    Assert.equal(
-      found.payload.metadata.TestKey,
-      undefined,
-      "Non-allowed fields should be filtered out"
-    );
-    Assert.equal(
-      found.payload.metadata.RemoteType,
-      remoteType,
-      "RemoteType should be allowed for content crashes"
-    );
-    Assert.equal(
-      found.payload.metadata.ipc_channel_error,
-      "ShutDownKill",
-      "ipc_channel_error should be allowed for content crashes"
-    );
-  }
-
-  // Check that we don't generate a crash ping for invalid/unexpected process
-  // types.
-  for (let p of UNEXPECTED_PROCESSES) {
-    let id = await m.createDummyDump();
-    await m.addCrash(p, m.CRASH_TYPE_CRASH, id, DUMMY_DATE, {
-      StackTraces: stackTraces,
-      MinidumpSha256Hash: sha256Hash,
-      TestKey: "this-should-not-end-up-in-the-ping",
-    });
-    await m._pingPromise;
-
-    // Check that we didn't receive any new ping.
-    let found = await ac.promiseFindPing("crash", [
-      [["payload", "crashId"], id],
-    ]);
-    Assert.ok(
-      !found,
-      "No telemetry ping must be submitted for invalid process types"
-    );
-  }
-});
-
 add_task(async function test_glean_crash_ping() {
   let m = await getManager();
   m._disableGleanPing = false;
@@ -831,6 +755,31 @@ add_task(async function test_glean_crash_ping() {
   // Tests for all fields are in the crashping crate. We forward the
   // annotations directly to the crash reporter to submit using the crashping
   // crate.
+});
+
+const TELEMETRY_ENABLE_PREF = "datareporting.healthreport.uploadEnabled";
+
+add_task(async function test_glean_crash_ping_disabled_by_telemetry_pref() {
+  let m = await getManager();
+  m._disableGleanPing = false;
+
+  const originalPref = Services.prefs.getBoolPref(TELEMETRY_ENABLE_PREF);
+  Services.prefs.setBoolPref(TELEMETRY_ENABLE_PREF, false);
+
+  try {
+    let id = await m.createDummyDump();
+
+    await m.addCrash(
+      m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_CONTENT],
+      m.CRASH_TYPE_CRASH,
+      id,
+      DUMMY_DATE,
+      {}
+    );
+    Assert.equal(m._gleanPingPromise, null);
+  } finally {
+    Services.prefs.setBoolPref(TELEMETRY_ENABLE_PREF, originalPref);
+  }
 });
 
 add_task(async function test_generateSubmissionID() {
@@ -1016,35 +965,27 @@ add_task(async function test_telemetryHistogram() {
   );
 });
 
-// Test that a ping with `CrashPingUUID` in the metadata (as set by the
-// external crash reporter) is sent with Glean but not with Telemetry (because
-// the crash reporter already sends it using Telemetry).
-add_task(async function test_crash_reporter_ping_with_uuid() {
+add_task(async function start_shutdown() {
+  Services.startup.advanceShutdownPhase(
+    Services.startup.SHUTDOWN_PHASE_APPSHUTDOWNCONFIRMED
+  );
+});
+
+// NOTE: Any tests after this point will behave as if the browser is shutting
+// down.
+
+add_task(async function test_pings_not_submitted_during_shutdown() {
   let m = await getManager();
-  m._disableGleanPing = false;
-
-  let id = await m.createDummyDump();
-
-  // Realistically this case will only happen through
-  // `_handleEventFilePayload`, however the `_sendCrashPing` method will check
-  // for it regardless of where it is called.
-  let metadata = { CrashPingUUID: "bff6bde4-f96c-4859-8c56-6b3f40878c26" };
-
-  const oldGleanPingPromise = m._gleanPingPromise;
-
   await m.addCrash(
-    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_CONTENT],
+    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT],
     m.CRASH_TYPE_CRASH,
-    id,
+    "shutdown-crash",
     DUMMY_DATE,
-    metadata
+    {}
   );
 
-  // Ping promise is only set if the Telemetry ping is submitted.
-  const telemetry_submitted = !!m._pingPromise;
-  // Glean ping promise is updated when a new Glean ping is submitted.
-  const glean_submitted = m._gleanPingPromise !== oldGleanPingPromise;
-
-  Assert.ok(glean_submitted);
-  Assert.ok(!telemetry_submitted);
+  let store = await m._getStore();
+  const crashes = store.crashesWithoutPingSubmissions();
+  Assert.equal(crashes.length, 1);
+  Assert.equal(crashes[0].id, "shutdown-crash");
 });

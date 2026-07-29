@@ -9,13 +9,6 @@
 <resources>
   <!-- The tile for the list of external apps to open the link in -->
   <string name="mozac_feature_applinks_open_in">… ᱨᱮ ᱡᱷᱤᱡᱽ ᱢᱮ</string>
-  <!-- The description to warn users that their private browsing session changes -->
-  <string name="mozac_feature_applinks_confirm_dialog_title">ᱮᱯ ᱨᱮ ᱡᱷᱤᱡᱽ ᱢᱮ? ᱟᱢᱟᱜ ᱠᱟᱹᱢᱤ ᱟᱨ ᱡᱟᱹᱥᱛᱤ ᱜᱷᱟᱹᱬᱤᱡ ᱱᱤᱡᱮᱨᱟᱜ ᱵᱟᱝ ᱛᱟᱦᱮᱸᱱ-ᱟ ᱾</string>
-  <!--
-    The description to warn users that their private browsing session changes
-    %s is a placeholder that will be replaced by an app name
-  -->
-  <string name="mozac_feature_applinks_confirm_dialog_title_with_app_name">%s ᱨᱮ ᱡᱷᱤᱡᱽ ᱢᱮ? ᱟᱢᱟᱜ ᱠᱟᱹᱢᱤᱦᱚᱨᱟ ᱫᱚ ᱱᱤᱛ ᱵᱟᱝ ᱯᱨᱟᱭᱣᱮᱴ ᱦᱩᱭ ᱫᱟᱲᱮᱭᱟᱜᱼᱟ ᱾</string>
   <!-- The title of the prompt that warns users their normal browsing session is trying to open another app -->
   <string name="mozac_feature_applinks_normal_confirm_dialog_title">ᱮᱴᱟᱜ ᱮᱯ ᱨᱮ ᱡᱷᱤᱡᱽ ᱢᱮ</string>
   <!--
@@ -34,4 +27,18 @@
   <string name="mozac_feature_applinks_confirm_dialog_deny">ᱵᱟᱹᱰᱨᱟᱹ</string>
   <!-- The label of the checkbox that, depending of user's choice, can change the Open links in apps setting -->
   <string name="mozac_feature_applinks_confirm_dialog_checkbox_label">ᱮᱯᱥ ᱨᱮ ᱥᱟᱨᱟ ᱜᱷᱟᱹᱲᱤᱡ ᱞᱤᱝᱠ ᱡᱷᱤᱡᱽ ᱢᱮ</string>
+  <!-- The label for the expandable section that shows additional details -->
+  <string name="mozac_feature_applinks_view_details">ᱵᱤᱵᱨᱟᱬ ᱫᱮᱠᱷᱟᱣ ᱢᱮ</string>
+  <!-- The label for the expandable section when details are shown -->
+  <string name="mozac_feature_applinks_hide_details">ᱵᱤᱵᱨᱟᱬ ᱩᱠᱩᱭ ᱢᱮ</string>
+  <!-- The label for the source URL in the details section -->
+  <string name="mozac_feature_applinks_source_url">URL ᱥᱨᱚᱛ</string>
+  <!-- The label for the destination URL in the details section -->
+  <string name="mozac_feature_applinks_destination_url">URL ᱡᱟᱭᱜᱟ</string>
+  <!-- The label for the URL if opening in the browser in the details section. %s is the browser name. -->
+  <string name="mozac_feature_applinks_firefox_url">URL ᱡᱩᱫᱤ %s ᱨᱮ ᱡᱷᱤᱡᱽ ᱠᱟᱱᱟ</string>
+  <!-- The label for the unique identifier in the details section -->
+  <string name="mozac_feature_applinks_unique_identifier">ᱵᱷᱮᱜᱟᱨ ᱩᱨᱩᱢ</string>
+  <!-- The text shown when there is no Firefox URL -->
+  <string name="mozac_feature_applinks_none">ᱵᱟᱹᱱᱩᱜᱼᱟ</string>
 </resources>

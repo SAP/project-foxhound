@@ -30,7 +30,7 @@ add_task(async function test_302_redirect_cookies_set_everywhere() {
     url: kSimplePageURL,
     forceNewProcess: true,
   });
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     tab1.linkedBrowser,
     [kRedirectURL],
     async function (redirectURL) {
@@ -65,7 +65,7 @@ add_task(async function test_302_redirect_cookies_set_everywhere() {
   let browser2 = gBrowser.getBrowserForTab(tab2);
 
   // Verify cookie is accessible in second tab (different content process)
-  await ContentTask.spawn(browser2, [], async function () {
+  await SpecialPowers.spawn(browser2, [], async function () {
     Assert.equal(
       content.document.cookie,
       "test-cookie=redirect-value",

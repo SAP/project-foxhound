@@ -39,7 +39,7 @@ export const MenuMessage = {
       return;
     }
 
-    let win = browser.ownerGlobal;
+    let win = browser.documentGlobal;
 
     if (!win || lazy.PrivateBrowsingUtils.isWindowPrivate(win)) {
       return;
@@ -122,7 +122,7 @@ export const MenuMessage = {
   },
 
   async showAppMenuMessage(browser, message, force) {
-    const win = browser.ownerGlobal;
+    const win = browser.documentGlobal;
     const msgContainer = this.hideAppMenuMessage(browser);
     const type = message?.content?.messageType;
 
@@ -167,7 +167,7 @@ export const MenuMessage = {
   },
 
   hideAppMenuMessage(browser) {
-    const win = browser.ownerGlobal;
+    const win = browser.documentGlobal;
     const document = browser.ownerDocument;
     const msgContainer = lazy.PanelMultiView.getViewNode(
       document,
@@ -185,7 +185,7 @@ export const MenuMessage = {
   },
 
   async showPxiMenuMessage(browser, message, force) {
-    const win = browser.ownerGlobal;
+    const win = browser.documentGlobal;
     const { document } = win;
     const msgContainer = this.hidePxiMenuMessage(browser);
 

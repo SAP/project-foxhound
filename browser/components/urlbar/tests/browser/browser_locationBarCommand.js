@@ -100,7 +100,7 @@ add_task(async function shift_accel_left_click_test() {
   // Check the load occurred in a new background tab.
   info("URL should be loaded in a new background tab");
   is(gURLBar.value, "", "Urlbar reverted to original value");
-  ok(!gURLBar.focused, "Urlbar is no longer focused after urlbar command");
+  ok(gURLBar.focused, "Urlbar keeps focus after opening in a background tab");
   is(gBrowser.selectedTab, tab, "Focus did not change to the new tab");
 
   // Select the new background tab
@@ -150,9 +150,12 @@ add_task(async function load_in_current_tab_test() {
     let tab = await promiseOpenNewTab();
 
     // Trigger a load and check it occurs in the current tab.
-    let loadStartedPromise = promiseLoadStarted();
+    let browserLoadedPromise = BrowserTestUtils.browserLoaded(
+      gBrowser.selectedBrowser,
+      { wantLoad: TEST_VALUE + "/" }
+    );
     await typeAndCommand(type, details);
-    await loadStartedPromise;
+    await browserLoadedPromise;
 
     info("URL should be loaded in the current tab");
     is(
@@ -182,6 +185,12 @@ add_task(async function load_in_new_tab_test() {
       url: "about:blank",
     },
     {
+      desc: "Middleclick on go button",
+      type: "click",
+      details: { button: 1 },
+      url: "about:blank",
+    },
+    {
       desc: "Alt+Return keypress in a dirty tab",
       type: "keypress",
       details: { altKey: true },
@@ -202,9 +211,13 @@ add_task(async function load_in_new_tab_test() {
     let tab = await promiseOpenNewTab(url);
 
     // Trigger a load and check it occurs in a new tab.
-    let tabSwitchedPromise = promiseNewTabSwitched();
+    let newTabPromise = BrowserTestUtils.waitForNewTab(
+      gBrowser,
+      TEST_VALUE + "/",
+      true
+    );
     await typeAndCommand(type, details);
-    await tabSwitchedPromise;
+    let newTab = await newTabPromise;
 
     // Check the load occurred in a new tab.
     info("URL should be loaded in a new focused tab");
@@ -213,10 +226,10 @@ add_task(async function load_in_new_tab_test() {
       UrlbarTestUtils.trimURL(TEST_VALUE),
       "Urlbar still has the value we entered"
     );
-    await promiseCheckChildNoFocusedElement(gBrowser.selectedBrowser);
+    await promiseCheckChildNoFocusedElement(newTab.linkedBrowser);
     is(
       document.activeElement,
-      gBrowser.selectedBrowser,
+      newTab.linkedBrowser,
       "Content window should be focused"
     );
     isnot(gBrowser.selectedTab, tab, "New URL was loaded in a new tab");
@@ -246,9 +259,12 @@ add_task(async function go_button_after_tab_switch() {
   );
 
   // Trigger a load and check it occurs in the current tab.
-  let loadStartedPromise = promiseLoadStarted();
+  let browserLoadedPromise = BrowserTestUtils.browserLoaded(
+    gBrowser.selectedBrowser,
+    { wantLoad: TEST_VALUE + "/" }
+  );
   await triggerCommand("click");
-  await loadStartedPromise;
+  await browserLoadedPromise;
 
   info("URL should be loaded in the current tab");
   is(
@@ -274,7 +290,7 @@ add_task(async function changing_ref_does_not_reload() {
   for (let protocol of ["http://", "https://"]) {
     let url = protocol + "example.com/#ref";
     await BrowserTestUtils.withNewTab({ gBrowser, url }, async function () {
-      await ContentTask.spawn(gBrowser.selectedBrowser, null, () => {
+      await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
         let link = content.document.createElement("a");
         link.textContent = "Click me";
         link.name = "refmod";
@@ -363,18 +379,6 @@ async function promiseOpenNewTab(url = "about:blank") {
   return tab;
 }
 
-function promiseNewTabSwitched() {
-  return new Promise(resolve => {
-    gBrowser.addEventListener(
-      "TabSwitchDone",
-      function () {
-        executeSoon(resolve);
-      },
-      { once: true }
-    );
-  });
-}
-
 function promiseCheckChildNoFocusedElement(browser) {
   if (!gMultiProcessBrowser) {
     Assert.equal(
@@ -385,7 +389,7 @@ function promiseCheckChildNoFocusedElement(browser) {
     return null;
   }
 
-  return ContentTask.spawn(browser, null, async function () {
+  return SpecialPowers.spawn(browser, [], async function () {
     Assert.equal(
       Services.focus.focusedElement,
       null,

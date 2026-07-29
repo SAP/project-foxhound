@@ -41,16 +41,38 @@ class nsHtml5String final {
 
   inline Kind GetKind() const { return (Kind)(mBits & kKindMask); }
 
+ public:
+  inline bool IsAtom() const { return GetKind() == eAtom; }
+
+  inline bool IsStringBuffer() const { return GetKind() == eStringBuffer; }
+
   inline mozilla::StringBuffer* AsStringBuffer() const {
-    MOZ_ASSERT(GetKind() == eStringBuffer);
+    MOZ_ASSERT(IsStringBuffer());
     return reinterpret_cast<mozilla::StringBuffer*>(mBits & kPtrMask);
   }
 
+  // DANGER: Calling this is only valid if this is a logically owning
+  // nsHtml5String and calling Release would be valid.
+  inline already_AddRefed<mozilla::StringBuffer> ForgetStringBuffer() {
+    already_AddRefed<mozilla::StringBuffer> ret(AsStringBuffer());
+    mBits = eNull;
+    return ret;
+  }
+
   inline nsAtom* AsAtom() const {
-    MOZ_ASSERT(GetKind() == eAtom);
+    MOZ_ASSERT(IsAtom());
     return reinterpret_cast<nsAtom*>(mBits & kPtrMask);
   }
 
+  // DANGER: Calling this is only valid if this is a logically owning
+  // nsHtml5String and calling Release would be valid.
+  inline already_AddRefed<nsAtom> ForgetAtom() {
+    already_AddRefed<nsAtom> ret(AsAtom());
+    mBits = eNull;
+    return ret;
+  }
+
+ private:
   inline const char16_t* AsPtr() const {
     switch (GetKind()) {
       case eStringBuffer:
@@ -94,7 +116,7 @@ class nsHtml5String final {
    * does not hold an atom.
    */
   inline nsAtom* MaybeAsAtom() {
-    if (GetKind() == eAtom) {
+    if (IsAtom()) {
       return AsAtom();
     }
     return nullptr;
@@ -110,6 +132,12 @@ class nsHtml5String final {
   }
 
   void ToString(nsAString& aString);
+
+  // Same output as above, but this string is logically null afterwards.
+  // Avoids an AddRef if this string is holding a StringBuffer.
+  // DANGER: Use this only on an instance that is logically an
+  // owning instance and `Release()` would be valid to call!
+  void MoveToString(nsAString& aString);
 
   void CopyToBuffer(char16_t* aBuffer) const;
 
@@ -134,6 +162,8 @@ class nsHtml5String final {
   static nsHtml5String FromString(const nsAString& aString);
 
   static nsHtml5String FromAtom(already_AddRefed<nsAtom> aAtom);
+
+  static nsHtml5String FromStaticAtom(nsStaticAtom* aAtom);
 
   static nsHtml5String EmptyString();
 

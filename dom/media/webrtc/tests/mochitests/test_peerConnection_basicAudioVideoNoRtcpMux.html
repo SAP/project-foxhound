@@ -12,10 +12,16 @@
   });
 
   var test;
-  runNetworkTest(function (options) {
+  runNetworkTest(async function (options) {
     options = options || { };
     options.rtcpmux = false;
-    test = new PeerConnectionTest(options);
+    // This test requires rtcpMuxPolicy: "negotiate", which causes a
+    // deprecation warning, so don't fail because of that.
+    await withPrefs(
+      [["media.peerconnection.treat_warnings_as_errors", false]],
+      () => {
+        test = new PeerConnectionTest(options);
+      });
     test.chain.replace("PC_LOCAL_VERIFY_SDP_AFTER_END_OF_TRICKLE", [
       function PC_LOCAL_REQUIRE_SDP_AFTER_END_OF_TRICKLE(test) {
         return test.pcLocal.endOfTrickleSdp .then(sdp =>

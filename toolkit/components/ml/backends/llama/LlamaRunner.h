@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -112,6 +110,8 @@ class LlamaGenerateTask final : public mozilla::CancelableRunnable {
   // a message is ready. Rejects immediately if the task has failed.
   RefPtr<LlamaGenerateTaskPromise> GetMessage();
 
+  bool IsActive() const;
+
  private:
   // Attempts to push a message only if a consumer is actively waiting.
   // Returns true if the message was consumed immediately or queued to resolve a
@@ -212,6 +212,8 @@ class LlamaStreamSource final : public UnderlyingSourceAlgorithmsWrapper,
 
   void DisconnectFromOwner() override;
 
+  bool IsActive() const;
+
  private:
   ~LlamaStreamSource();
 
@@ -249,11 +251,13 @@ class MetadataCallback;
  *
  * It provides JavaScript with an API to format prompts, launch inference, and
  * receive output as a `ReadableStream`. It delegates inference to a
- * thread-safe LlamaBackend and manages stream logic via LlamaStreamSource.
+ * LlamaBackend and manages stream logic via LlamaStreamSource.
  *
- * This class is designed for use in JS.
+ * This class is designed for use in JS, from a single thread.
  */
-class LlamaRunner final : public nsISupports, public nsWrapperCache {
+class LlamaRunner final : public nsISupports,
+                          public nsWrapperCache,
+                          public SupportsWeakPtr {
  public:
   MOZ_DECLARE_REFCOUNTED_TYPENAME(LlamaRunner)
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -290,6 +294,9 @@ class LlamaRunner final : public nsISupports, public nsWrapperCache {
    * @note This function is designed for use in JavaScript via WebIDL. It
    * supports streaming output for real-time use cases such as chat UIs or
    * progressive rendering.
+   *
+   * @throws DOMException via `aRv` on failure (e.g., a previously created
+   * generation stream has not finished).
    *
    * @example JavaScript usage:
    * const stream = CreateGenerationStream(chatOptions);

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -33,7 +31,7 @@ namespace mozilla::dom {
 #  undef LOG_INTERNAL
 #endif  // LOG_INTERNAL
 #define LOG_INTERNAL(level, msg, ...) \
-  MOZ_LOG(gWebCodecsLog, LogLevel::level, (msg, ##__VA_ARGS__))
+  MOZ_LOG_FMT(gWebCodecsLog, LogLevel::level, msg, ##__VA_ARGS__)
 
 #ifdef LOG
 #  undef LOG
@@ -79,7 +77,7 @@ RefPtr<AudioDecoderConfigInternal> AudioDecoderConfigInternal::Create(
     const AudioDecoderConfig& aConfig) {
   nsCString errorMessage;
   if (!AudioDecoderTraits::Validate(aConfig, errorMessage)) {
-    LOGE("Failed to create AudioDecoderConfigInternal: %s", errorMessage.get());
+    LOGE("Failed to create AudioDecoderConfigInternal: {}", errorMessage.get());
     return nullptr;
   }
 
@@ -91,7 +89,7 @@ RefPtr<AudioDecoderConfigInternal> AudioDecoderConfigInternal::Create(
       GetErrorName(rv.unwrapErr(), error);
       LOGE(
           "Failed to create AudioDecoderConfigInternal due to invalid "
-          "description data. Error: %s",
+          "description data. Error: {}",
           error.get());
       return nullptr;
     }
@@ -246,7 +244,7 @@ bool AudioDecoderTraits::IsSupported(
 /* static */
 Result<UniquePtr<TrackInfo>, nsresult> AudioDecoderTraits::CreateTrackInfo(
     const AudioDecoderConfigInternal& aConfig) {
-  LOG("Create a AudioInfo from %s config",
+  LOG("Create a AudioInfo from {} config",
       NS_ConvertUTF16toUTF8(aConfig.mCodec).get());
 
   nsTArray<UniquePtr<TrackInfo>> tracks = GetTracksInfo(aConfig);
@@ -264,7 +262,7 @@ Result<UniquePtr<TrackInfo>, nsresult> AudioDecoderTraits::CreateTrackInfo(
 
   if (aConfig.mDescription) {
     if (!aConfig.mDescription->IsEmpty()) {
-      LOG("The given config has %zu bytes of description data",
+      LOG("The given config has {} bytes of description data",
           aConfig.mDescription->Length());
       ai->mCodecSpecificConfig = AudioCodecSpecificVariant{
           AudioCodecSpecificBinaryBlob{aConfig.mDescription}};
@@ -274,8 +272,7 @@ Result<UniquePtr<TrackInfo>, nsresult> AudioDecoderTraits::CreateTrackInfo(
   ai->mChannels = aConfig.mNumberOfChannels;
   ai->mRate = aConfig.mSampleRate;
 
-  LOG("Created AudioInfo %s (%" PRIu32 "ch %" PRIu32
-      "Hz - with extra-data: %s)",
+  LOG("Created AudioInfo {} ({}ch {}Hz - with extra-data: {})",
       NS_ConvertUTF16toUTF8(aConfig.mCodec).get(), ai->mChannels, ai->mRate,
       aConfig.mDescription && !aConfig.mDescription->IsEmpty() ? "yes" : "no");
 
@@ -295,7 +292,7 @@ bool AudioDecoderTraits::Validate(const AudioDecoderConfig& aConfig,
     return false;
   }
 
-  LOG("Validating AudioDecoderConfig: codec: %s %uch %uHz %s extradata",
+  LOG("Validating AudioDecoderConfig: codec: {} {}ch {}Hz {} extradata",
       NS_ConvertUTF16toUTF8(codec.value()).get(), aConfig.mNumberOfChannels,
       aConfig.mSampleRate, aConfig.mDescription.WasPassed() ? "w/" : "no");
 
@@ -357,11 +354,11 @@ AudioDecoder::AudioDecoder(nsIGlobalObject* aParent,
                       std::move(aOutputCallback)) {
   MOZ_ASSERT(mErrorCallback);
   MOZ_ASSERT(mOutputCallback);
-  LOG("AudioDecoder %p ctor", this);
+  LOG("AudioDecoder {} ctor", fmt::ptr(this));
 }
 
 AudioDecoder::~AudioDecoder() {
-  LOG("AudioDecoder %p dtor", this);
+  LOG("AudioDecoder {} dtor", fmt::ptr(this));
   (void)ResetInternal(NS_ERROR_DOM_ABORT_ERR);
 }
 
@@ -393,7 +390,7 @@ already_AddRefed<AudioDecoder> AudioDecoder::Constructor(
 already_AddRefed<Promise> AudioDecoder::IsConfigSupported(
     const GlobalObject& aGlobal, const AudioDecoderConfig& aConfig,
     ErrorResult& aRv) {
-  LOG("AudioDecoder::IsConfigSupported, config: %s",
+  LOG("AudioDecoder::IsConfigSupported, config: {}",
       NS_ConvertUTF16toUTF8(aConfig.mCodec).get());
 
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
@@ -450,10 +447,9 @@ already_AddRefed<MediaRawData> AudioDecoder::InputDataToMediaRawData(
   }
 
   LOGV(
-      "EncodedAudioChunkData %p converted to %zu-byte MediaRawData - time: "
-      "%" PRIi64 "us, timecode: %" PRIi64 "us, duration: %" PRIi64
-      "us, key-frame: %s",
-      aData.get(), sample->Size(), sample->mTime.ToMicroseconds(),
+      "EncodedAudioChunkData {} converted to {}-byte MediaRawData - time: "
+      "{}us, timecode: {}us, duration: {}us, key-frame: {}",
+      fmt::ptr(aData.get()), sample->Size(), sample->mTime.ToMicroseconds(),
       sample->mTimecode.ToMicroseconds(), sample->mDuration.ToMicroseconds(),
       sample->mKeyframe ? "yes" : "no");
 

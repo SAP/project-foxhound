@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,14 +7,21 @@
 #include "ScriptLoadHandler.h"  // ScriptLoadHandler
 #include "ScriptLoader.h"       // ScriptLoader
 #include "ScriptTrace.h"        // TRACE_FOR_TEST
+#include "js/RootingAPI.h"      // JS::MutableHandle
+#include "js/Value.h"           // JS::Value
 #include "js/experimental/CompileScript.h"  // JS::FrontendContext, JS::NewFrontendContext, JS::DestroyFrontendContext
+#include "js/experimental/JSStencil.h"  // JS::GetScriptSourceText
+#include "mozilla/HalTypes.h"           // hal::CONTENT_PROCESS_ID_*
 #include "mozilla/Maybe.h"              // Maybe, Some, Nothing
 #include "mozilla/TaskController.h"     // TaskController, Task
+#include "mozilla/dom/ContentChild.h"   // dom::ContentChild
 #include "mozilla/dom/ContentParent.h"  // dom::ContentParent
+#include "mozilla/glean/DomMetrics.h"   // mozilla::glean::dom::*
 #include "nsIMemoryReporter.h"  // nsIMemoryReporter, MOZ_DEFINE_MALLOC_SIZE_OF, RegisterWeakMemoryReporter, UnregisterWeakMemoryReporter, MOZ_COLLECT_REPORT, KIND_HEAP, UNITS_BYTES
 #include "nsIPrefBranch.h"   // nsIPrefBranch, NS_PREFBRANCH_PREFCHANGE_TOPIC_ID
 #include "nsIPrefService.h"  // NS_PREFSERVICE_CONTRACTID
 #include "nsIPrincipal.h"    // nsIPrincipal
+#include "nsIPropertyBag2.h"  // nsIPropertyBag2
 #include "nsISupportsImpl.h"  // NS_IMPL_ISUPPORTS
 #include "nsStringFwd.h"      // nsACString
 
@@ -33,9 +38,7 @@ ScriptHashKey::ScriptHashKey(
       mLoaderPrincipal(aLoader->LoaderPrincipal()),
       mKind(aRequest->mKind),
       mCORSMode(aFetchOptions->mCORSMode),
-      mReferrerPolicy(aReferrerPolicy),
-      mSRIMetadata(aRequest->mIntegrity),
-      mNonce(aFetchOptions->mNonce) {
+      mReferrerPolicy(aReferrerPolicy) {
   if (mKind == JS::loader::ScriptKind::eClassic) {
     if (aRequest->GetScriptLoadContext()->HasScriptElement()) {
       aRequest->GetScriptLoadContext()->GetHintCharset(mHintCharset);
@@ -43,13 +46,6 @@ ScriptHashKey::ScriptHashKey(
   }
 
   MOZ_COUNT_CTOR(ScriptHashKey);
-}
-
-ScriptHashKey::ScriptHashKey(ScriptLoader* aLoader,
-                             const JS::loader::ScriptLoadRequest* aRequest,
-                             const JS::loader::LoadedScript* aLoadedScript)
-    : ScriptHashKey(aLoader, aRequest, aLoadedScript->ReferrerPolicy(),
-                    aLoadedScript->GetFetchOptions(), aLoadedScript->GetURI()) {
 }
 
 ScriptHashKey::ScriptHashKey(const ScriptLoadData& aLoadData)
@@ -82,15 +78,6 @@ bool ScriptHashKey::KeyEquals(const ScriptHashKey& aKey) const {
     return false;
   }
 
-  if (!mSRIMetadata.CanTrustBeDelegatedTo(aKey.mSRIMetadata) ||
-      !aKey.mSRIMetadata.CanTrustBeDelegatedTo(mSRIMetadata)) {
-    return false;
-  }
-
-  if (mNonce != aKey.mNonce) {
-    return false;
-  }
-
   // NOTE: module always use UTF-8.
   if (mKind == JS::loader::ScriptKind::eClassic) {
     if (mHintCharset != aKey.mHintCharset) {
@@ -101,14 +88,161 @@ bool ScriptHashKey::KeyEquals(const ScriptHashKey& aKey) const {
   return true;
 }
 
+void ScriptHashKey::ToStringForLookup(nsACString& aResult) {
+  aResult.Truncate();
+
+  aResult.AppendLiteral("SharedScriptCache:");
+  switch (mKind) {
+    case JS::loader::ScriptKind::eClassic:
+      aResult.Append('c');
+      break;
+    case JS::loader::ScriptKind::eModule:
+      aResult.Append('m');
+      break;
+    case JS::loader::ScriptKind::eEvent:
+      aResult.Append('e');
+      break;
+    case JS::loader::ScriptKind::eImportMap:
+      aResult.Append('i');
+      break;
+  }
+
+  switch (mCORSMode) {
+    case CORS_NONE:
+      aResult.Append('n');
+      break;
+    case CORS_ANONYMOUS:
+      aResult.Append('a');
+      break;
+    case CORS_USE_CREDENTIALS:
+      aResult.Append('c');
+      break;
+  }
+
+  switch (mReferrerPolicy) {
+    case ReferrerPolicy::_empty:
+      aResult.Append('_');
+      break;
+    case ReferrerPolicy::No_referrer:
+      aResult.Append('n');
+      break;
+    case ReferrerPolicy::No_referrer_when_downgrade:
+      aResult.Append('d');
+      break;
+    case ReferrerPolicy::Origin:
+      aResult.Append('o');
+      break;
+    case ReferrerPolicy::Origin_when_cross_origin:
+      aResult.Append('c');
+      break;
+    case ReferrerPolicy::Unsafe_url:
+      aResult.Append('u');
+      break;
+    case ReferrerPolicy::Same_origin:
+      aResult.Append('s');
+      break;
+    case ReferrerPolicy::Strict_origin:
+      aResult.Append('S');
+      break;
+    case ReferrerPolicy::Strict_origin_when_cross_origin:
+      aResult.Append('C');
+      break;
+  }
+
+  nsAutoCString partitionPrincipal;
+  BasePrincipal::Cast(mPartitionPrincipal)->ToJSON(partitionPrincipal);
+  aResult.Append(partitionPrincipal);
+}
+
+/* static */
+Maybe<ScriptHashKey> ScriptHashKey::FromStringsForLookup(
+    const nsACString& aKey, const nsACString& aURI,
+    const nsACString& aHintCharset) {
+  if (aKey.Length() < 22) {
+    return Nothing();
+  }
+
+  if (Substring(aKey, 0, 18) != "SharedScriptCache:") {
+    return Nothing();
+  }
+
+  JS::loader::ScriptKind kind;
+  char kindChar = aKey[18];
+  if (kindChar == 'c') {
+    kind = JS::loader::ScriptKind::eClassic;
+  } else if (kindChar == 'm') {
+    kind = JS::loader::ScriptKind::eModule;
+  } else if (kindChar == 'e') {
+    kind = JS::loader::ScriptKind::eEvent;
+  } else if (kindChar == 'i') {
+    kind = JS::loader::ScriptKind::eImportMap;
+  } else {
+    return Nothing();
+  }
+
+  CORSMode corsMode;
+  char corsModeChar = aKey[19];
+  if (corsModeChar == 'n') {
+    corsMode = CORS_NONE;
+  } else if (corsModeChar == 'a') {
+    corsMode = CORS_ANONYMOUS;
+  } else if (corsModeChar == 'c') {
+    corsMode = CORS_USE_CREDENTIALS;
+  } else {
+    return Nothing();
+  }
+
+  mozilla::dom::ReferrerPolicy referrerPolicy;
+  char referrerPolicyChar = aKey[20];
+  if (referrerPolicyChar == '_') {
+    referrerPolicy = ReferrerPolicy::_empty;
+  } else if (referrerPolicyChar == 'n') {
+    referrerPolicy = ReferrerPolicy::No_referrer;
+  } else if (referrerPolicyChar == 'd') {
+    referrerPolicy = ReferrerPolicy::No_referrer_when_downgrade;
+  } else if (referrerPolicyChar == 'o') {
+    referrerPolicy = ReferrerPolicy::Origin;
+  } else if (referrerPolicyChar == 'c') {
+    referrerPolicy = ReferrerPolicy::Origin_when_cross_origin;
+  } else if (referrerPolicyChar == 'u') {
+    referrerPolicy = ReferrerPolicy::Unsafe_url;
+  } else if (referrerPolicyChar == 's') {
+    referrerPolicy = ReferrerPolicy::Same_origin;
+  } else if (referrerPolicyChar == 'S') {
+    referrerPolicy = ReferrerPolicy::Strict_origin;
+  } else if (referrerPolicyChar == 'C') {
+    referrerPolicy = ReferrerPolicy::Strict_origin_when_cross_origin;
+  } else {
+    return Nothing();
+  }
+
+  nsCOMPtr<nsIPrincipal> partitionPrincipal =
+      BasePrincipal::FromJSON(Substring(aKey, 21));
+  if (!partitionPrincipal) {
+    return Nothing();
+  }
+
+  nsCOMPtr<nsIURI> uri;
+  nsresult rv = NS_NewURI(getter_AddRefs(uri), aURI);
+  if (NS_FAILED(rv)) {
+    return Nothing();
+  }
+
+  return Some(ScriptHashKey(uri, partitionPrincipal, kind, corsMode,
+                            referrerPolicy,
+                            NS_ConvertUTF8toUTF16(aHintCharset)));
+}
+
 NS_IMPL_ISUPPORTS(ScriptLoadData, nsISupports)
 
 ScriptLoadData::ScriptLoadData(ScriptLoader* aLoader,
                                JS::loader::ScriptLoadRequest* aRequest,
+                               CacheExpirationTime aExpirationTime,
                                JS::loader::LoadedScript* aLoadedScript)
-    : mExpirationTime(aRequest->ExpirationTime()),
+    : mExpirationTime(aExpirationTime),
       mLoader(aLoader),
-      mKey(aLoader, aRequest, aLoadedScript),
+      mKey(aLoader, aRequest, aRequest->ReferrerPolicy(),
+           aRequest->FetchOptions(), aLoadedScript->GetURI()),
       mLoadedScript(aLoadedScript),
       mNetworkMetadata(aRequest->mNetworkMetadata) {}
 
@@ -132,13 +266,24 @@ void SharedScriptCache::Init() {
                                 "privacy.trackingprotection.enabled");
 }
 
-SharedScriptCache::~SharedScriptCache() { UnregisterWeakMemoryReporter(this); }
+SharedScriptCache::~SharedScriptCache() {
+  UnregisterWeakMemoryReporter(this);
+  ClearDiskCacheTimer();
+}
 
 bool SharedScriptCache::ShouldIgnoreMemoryPressure() {
   // During the automated testing, we need to ignore the memory pressure,
   // in order to get the deterministic result.
   return !StaticPrefs::
       dom_script_loader_experimental_navigation_cache_check_memory_pressure();
+}
+
+void SharedScriptCache::ClearInProcessForMemoryPressure() {
+  for (auto iter = mComplete.Iter(); !iter.Done(); iter.Next()) {
+    iter.Data().mResource->InvalidateCachedStencil();
+  }
+
+  SharedSubResourceCache::ClearInProcessForMemoryPressure();
 }
 
 void SharedScriptCache::LoadCompleted(SharedScriptCache* aCache,
@@ -192,6 +337,45 @@ void SharedScriptCache::Invalidate() {
   TRACE_FOR_TEST_0("memorycache:invalidate");
 }
 
+/* static */
+bool SharedScriptCache::GetCachedScriptSource(
+    JSContext* aCx, const nsACString& aKey, const nsACString& aURI,
+    const nsACString& aHintCharset, JS::MutableHandle<JS::Value> aRetval) {
+  if (!sSingleton) {
+    aRetval.setUndefined();
+    return true;
+  }
+
+  Maybe<ScriptHashKey> maybeKey =
+      ScriptHashKey::FromStringsForLookup(aKey, aURI, aHintCharset);
+  if (!maybeKey) {
+    aRetval.setUndefined();
+    return true;
+  }
+
+  JS::Stencil* stencil = nullptr;
+  if (auto lookup = sSingleton->mComplete.Lookup(*maybeKey)) {
+    JS::loader::LoadedScript* loadedScript = lookup.Data().mResource;
+    if (loadedScript->IsInvalidatedCachedStencil()) {
+      aRetval.setUndefined();
+      return true;
+    }
+
+    // NOTE: We don't check the SRIMetadata here, because this is not a
+    //       request from <script> element.
+    stencil = loadedScript->GetCachedStencil();
+  } else {
+    aRetval.setUndefined();
+    return true;
+  }
+
+  if (!JS::GetScriptSourceText(aCx, stencil, aRetval)) {
+    return false;
+  }
+
+  return true;
+}
+
 void SharedScriptCache::InvalidateInProcess() {
   for (auto iter = mComplete.Iter(); !iter.Done(); iter.Next()) {
     if (!iter.Data().mResource->HasCacheEntryId()) {
@@ -212,6 +396,7 @@ void SharedScriptCache::PrepareForLastCC() {
 }
 
 static bool ShouldSave(JS::loader::LoadedScript* aLoadedScript,
+                       JS::Stencil* aStencil,
                        ScriptLoader::DiskCacheStrategy aStrategy) {
   if (!aLoadedScript->HasDiskCacheReference()) {
     return false;
@@ -222,7 +407,7 @@ static bool ShouldSave(JS::loader::LoadedScript* aLoadedScript,
   }
 
   if (aStrategy.mHasSourceLengthMin) {
-    size_t len = JS::GetScriptSourceLength(aLoadedScript->GetStencil());
+    size_t len = JS::GetScriptSourceLength(aStencil);
     if (len < aStrategy.mSourceLengthMin) {
       return false;
     }
@@ -246,7 +431,12 @@ bool SharedScriptCache::MaybeScheduleUpdateDiskCache() {
   bool hasSaveable = false;
   for (auto iter = mComplete.Iter(); !iter.Done(); iter.Next()) {
     JS::loader::LoadedScript* loadedScript = iter.Data().mResource;
-    if (ShouldSave(loadedScript, strategy)) {
+    if (loadedScript->IsInvalidatedCachedStencil()) {
+      continue;
+    }
+
+    JS::Stencil* stencil = loadedScript->GetCachedStencil();
+    if (ShouldSave(loadedScript, stencil, strategy)) {
       hasSaveable = true;
       break;
     }
@@ -256,14 +446,50 @@ bool SharedScriptCache::MaybeScheduleUpdateDiskCache() {
     return false;
   }
 
-  // TODO: Apply more flexible scheduling (bug 1902951)
-
-  nsCOMPtr<nsIRunnable> updater =
-      NewRunnableMethod("SharedScriptCache::UpdateDiskCache", this,
-                        &SharedScriptCache::UpdateDiskCache);
-  (void)NS_DispatchToCurrentThreadQueue(updater.forget(),
-                                        EventQueuePriority::Idle);
+  SetDiskCacheTimer();
   return true;
+}
+
+void SharedScriptCache::SetDiskCacheTimer() {
+  if (mDiskCacheTimer) {
+    mRetryDiskCacheTimer = true;
+    return;
+  }
+
+  auto result = NS_NewTimerWithFuncCallback(
+      [](nsITimer*, void* aClosure) {
+        auto* self = static_cast<SharedScriptCache*>(aClosure);
+        self->OnDiskCacheTimer();
+      },
+      this, StaticPrefs::dom_script_loader_disk_cache_delay_ms(),
+      nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY,
+      "SharedScriptCache::DiskCacheTimer"_ns);
+
+  if (result.isErr()) {
+    return;
+  }
+
+  mDiskCacheTimer = result.unwrap();
+}
+
+void SharedScriptCache::ClearDiskCacheTimer() {
+  if (!mDiskCacheTimer) {
+    return;
+  }
+
+  mDiskCacheTimer->Cancel();
+  mDiskCacheTimer = nullptr;
+}
+
+void SharedScriptCache::OnDiskCacheTimer() {
+  mDiskCacheTimer = nullptr;
+  if (mRetryDiskCacheTimer) {
+    mRetryDiskCacheTimer = false;
+    SetDiskCacheTimer();
+    return;
+  }
+
+  UpdateDiskCache();
 }
 
 class ScriptEncodeAndCompressionTask : public mozilla::Task {
@@ -317,12 +543,16 @@ void SharedScriptCache::UpdateDiskCache() {
 
   for (auto iter = mComplete.Iter(); !iter.Done(); iter.Next()) {
     JS::loader::LoadedScript* loadedScript = iter.Data().mResource;
-    if (!ShouldSave(loadedScript, strategy)) {
+    if (loadedScript->IsInvalidatedCachedStencil()) {
       continue;
     }
 
-    if (!mEncodeItems.emplaceBack(loadedScript->GetStencil(),
-                                  std::move(loadedScript->SRI()),
+    RefPtr<JS::Stencil> stencil = loadedScript->GetCachedStencil();
+    if (!ShouldSave(loadedScript, stencil, strategy)) {
+      continue;
+    }
+
+    if (!mEncodeItems.emplaceBack(stencil, std::move(loadedScript->SRI()),
                                   loadedScript)) {
       continue;
     }
@@ -384,6 +614,137 @@ void SharedScriptCache::SaveToDiskCache() {
   }
 
   mEncodeItems.clear();
+}
+
+void SharedScriptCache::OnEntryInserted() { mEntryInserted++; }
+
+void SharedScriptCache::OnEntryEverHit() { mEntryEverHit++; }
+
+void SharedScriptCache::UpdateEverHitTelemetry() {
+  if (mEntryInserted == 0) {
+    return;
+  }
+
+  uint32_t rate = mEntryEverHit * 100 / mEntryInserted;
+  if (rate == mLastEverHitRatio) {
+    return;
+  }
+  mLastEverHitRatio = rate;
+
+  if (XRE_IsParentProcess()) {
+    if (!EnsureEverHitMap()) {
+      return;
+    }
+    (void)mEverHitMap->put(hal::CONTENT_PROCESS_ID_MAIN, rate);
+    return;
+  }
+
+  if (!XRE_IsContentProcess()) {
+    return;
+  }
+  auto* cc = ContentChild::GetSingleton();
+  if (!cc) {
+    return;
+  }
+
+  uint64_t childId = cc->GetID();
+  cc->SendUpdateScriptCacheEverHitTelemetry(childId, rate);
+}
+
+/* static */
+void SharedScriptCache::RecvUpdateEverHitTelemetry(const uint64_t& aChildId,
+                                                   const uint32_t& aRate) {
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  SharedScriptCache* self = SharedScriptCache::Get();
+  if (!self) {
+    return;
+  }
+  if (!self->EnsureEverHitMap()) {
+    return;
+  }
+  (void)self->mEverHitMap->put(aChildId, aRate);
+}
+
+bool SharedScriptCache::EnsureEverHitMap() {
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  if (mPreparedEverHitMap) {
+    return !!mEverHitMap;
+  }
+  mPreparedEverHitMap = true;
+
+  nsCOMPtr<nsIObserverService> os = services::GetObserverService();
+  if (!os) {
+    return false;
+  }
+  os->AddObserver(this, "ipc:content-shutdown", /* ownsWeak= */ false);
+  os->AddObserver(this, "profile-before-change", /* ownsWeak= */ false);
+
+  mEverHitMap.reset(new EverHitMapType());
+  return !!mEverHitMap;
+}
+
+// When a content process gets shutdown, accumulate the latest cache-hit ratio
+// to the telemetry, and remove the entry from the map, to avoid keeping the
+// data unnecessarily longer.
+void SharedScriptCache::OnContentShutdown(nsISupports* aSubject) {
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  if (!mEverHitMap) {
+    return;
+  }
+
+  nsCOMPtr<nsIPropertyBag2> props = do_QueryInterface(aSubject);
+  if (!props) {
+    return;
+  }
+
+  uint64_t childID = hal::CONTENT_PROCESS_ID_UNKNOWN;
+  props->GetPropertyAsUint64(u"childID"_ns, &childID);
+  if (childID == hal::CONTENT_PROCESS_ID_UNKNOWN) {
+    return;
+  }
+
+  auto p = mEverHitMap->lookup(childID);
+  if (!p) {
+    return;
+  }
+  AccumulateEverHitTelemetry(p->value());
+  mEverHitMap->remove(p);
+}
+
+// When the parent process is getting shutdown, accumulate the latest cache-hit
+// ratio of all processes to the telemetry.
+//
+// We perform this at ShutdownPhase::AppShutdown phase.
+// Glean submits the telemetry at ShutdownPhase::AppShutdownTelemetry, which
+// is after the ShutdownPhase::AppShutdown phase.
+void SharedScriptCache::OnProfileBeforeChange() {
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  if (!mEverHitMap) {
+    return;
+  }
+
+  for (auto iter = mEverHitMap->iter(); !iter.done(); iter.next()) {
+    AccumulateEverHitTelemetry(iter.get().value());
+  }
+  mEverHitMap->clear();
+  mEverHitMap.reset();
+}
+
+void SharedScriptCache::AccumulateEverHitTelemetry(uint32_t aRate) {
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  using namespace mozilla::glean::dom;
+
+  // Skip this function if we are not running telemetry.
+  if (!mozilla::Telemetry::CanRecordExtended()) {
+    return;
+  }
+
+  script_memory_cache_ever_hit.AccumulateSingleSample(aRate);
 }
 
 }  // namespace mozilla::dom

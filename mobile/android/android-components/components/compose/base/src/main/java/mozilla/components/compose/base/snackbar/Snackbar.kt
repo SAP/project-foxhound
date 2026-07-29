@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.SnackbarDefaults
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SwipeToDismissBox
@@ -30,6 +29,7 @@ import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import androidx.compose.ui.unit.dp
 import mozilla.components.compose.base.R
+import mozilla.components.compose.base.button.IconButton
 import mozilla.components.compose.base.button.TextButton
 import mozilla.components.compose.base.theme.AcornTheme
 import mozilla.components.compose.base.theme.acornPrivateColorScheme
@@ -132,12 +132,15 @@ private fun SnackbarAction(actionLabel: String, onClick: () -> Unit) {
 
 @Composable
 private fun SnackbarDismissButton(onClick: () -> Unit) {
-    IconButton(onClick = onClick) {
+    IconButton(
+        onClick = onClick,
+        contentDescription = stringResource(
+            id = R.string.mozac_compose_base_snackbar_dismiss_content_description,
+        ),
+    ) {
         Icon(
             painter = painterResource(id = iconsR.drawable.mozac_ic_cross_24),
-            contentDescription = stringResource(
-                id = R.string.mozac_compose_base_snackbar_dismiss_content_description,
-            ),
+            contentDescription = null,
         )
     }
 }

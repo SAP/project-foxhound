@@ -562,7 +562,8 @@ async function runTestBounce(options = {}) {
             1,
             "Should have one tracker in purge log."
           );
-          let { siteHost, timeStamp, purgeTime } = purgeLog[0];
+          let { siteHost, timeStamp, purgeTime, bounceTrackingRecord } =
+            purgeLog[0];
 
           Assert.equal(
             siteHost,
@@ -583,6 +584,24 @@ async function runTestBounce(options = {}) {
             purgeTime,
             timeStamp,
             "The purge time should be greater or equal to bounce time."
+          );
+          Assert.ok(
+            bounceTrackingRecord,
+            "The purge log entry should have a bounceTrackingRecord."
+          );
+          Assert.equal(
+            bounceTrackingRecord.initialHost,
+            SITE_A,
+            "The record should have the correct initial host."
+          );
+          Assert.equal(
+            bounceTrackingRecord.finalHost,
+            SITE_B,
+            "The record should have the correct final host."
+          );
+          Assert.ok(
+            bounceTrackingRecord.bounceHosts.includes(SITE_TRACKER),
+            `The record bounce hosts should include '${SITE_TRACKER}'.`
           );
         } else {
           Assert.equal(

@@ -72,17 +72,13 @@ add_task(async function testDiskCache_compression() {
 });
 
 add_task(async function testMemoryCache_compression() {
-  if (!AppConstants.NIGHTLY_BUILD) {
-    todo(false, "navigation cache is not yet enabled on non-nightly");
-    return;
-  }
-
   await SpecialPowers.pushPrefEnv({
     set: [
       ["dom.expose_test_interfaces", true],
       ["dom.script_loader.bytecode_cache.enabled", true],
       ["dom.script_loader.bytecode_cache.strategy", 0],
       ["dom.script_loader.experimental.navigation_cache", true],
+      ["dom.script_loader.disk_cache_delay_ms", 0],
       ["browser.cache.jsbc_compression_level", 2],
     ],
   });

@@ -1,0 +1,11 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+browser.jar:
+  content/browser/controlcenter/components/breach-alert-panel.mjs  (content/components/breach-alert-panel.mjs)
+  content/browser/controlcenter/components/breach-alert-panel.css  (content/components/breach-alert-panel.css)
+  content/browser/controlcenter/assets/fox-concern.svg  (content/assets/fox-concern.svg)
+  content/browser/controlcenter/assets/breach-alert-shield-check.svg    (content/assets/breach-alert-shield-check.svg)
+  content/browser/controlcenter/assets/breach-alert-shield-cross.svg    (content/assets/breach-alert-shield-cross.svg)
+  content/browser/controlcenter/assets/breach-alert-shield-warning.svg  (content/assets/breach-alert-shield-warning.svg)

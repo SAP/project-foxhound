@@ -20,9 +20,10 @@ import kotlinx.coroutines.launch
 import mozilla.components.browser.state.selector.findCustomTabOrSelectedTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.feature.accounts.push.SendTabUseCases
-import mozilla.components.feature.downloads.AbstractFetchDownloadService
 import mozilla.components.feature.tabs.TabsUseCases
 import mozilla.components.lib.state.helpers.AbstractBinding
+import mozilla.components.support.utils.DefaultDownloadFileUtils
+import mozilla.components.support.utils.DownloadFileUtils
 import mozilla.components.ui.widgets.SnackbarDelegate
 import org.mozilla.fenix.GleanMetrics.SentFromFirefox
 import org.mozilla.fenix.R
@@ -30,6 +31,7 @@ import org.mozilla.fenix.bookmarks.BookmarksGlobalResultReport
 import org.mozilla.fenix.bookmarks.friendlyRootTitle
 import org.mozilla.fenix.browser.BrowserFragmentDirections
 import org.mozilla.fenix.components.AppStore
+import org.mozilla.fenix.components.accounts.FenixFxAEntryPoint
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.AppAction.ShareAction
 import org.mozilla.fenix.components.appstate.AppAction.SnackbarAction
@@ -38,8 +40,9 @@ import org.mozilla.fenix.components.appstate.snackbar.SnackbarState
 import org.mozilla.fenix.downloads.getCannotOpenFileErrorMessage
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.navigateWithBreadcrumb
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.tabClosedUndoMessage
+import org.mozilla.fenix.ipprotection.ui.IPProtectionSnackbarBinding
+import org.mozilla.fenix.settings.downloads.DownloadLocationManager
 import org.mozilla.fenix.utils.getSnackbarTimeout
 
 /**
@@ -54,6 +57,10 @@ import org.mozilla.fenix.utils.getSnackbarTimeout
  * @param sendTabUseCases [SendTabUseCases] used to send tabs to other devices.
  * @param customTabSessionId Optional custom tab session ID if navigating from a custom tab or null
  * if the selected session should be used.
+ * @param viewHasFocus Whether the host view is currently focused. Used to determine if the binding should consume the
+ * snackbar in case there are multiple bindings active (e.g., menu is shown on top of the home fragment, and both host
+ * snackbar bindings).
+ * @param downloadFileUtils [DownloadFileUtils] used for file-related operations in download snackbars.
  * @param ioDispatcher The [CoroutineDispatcher] used for background operations executed when
  * the user starts a snackbar action.
  * @param mainDispatcher The [CoroutineDispatcher] on which the state observation and updates will occur.
@@ -69,6 +76,13 @@ class SnackbarBinding(
     private val tabsUseCases: TabsUseCases,
     private val sendTabUseCases: SendTabUseCases?,
     private val customTabSessionId: String?,
+    private val viewHasFocus: () -> Boolean = { true },
+    private val downloadFileUtils: DownloadFileUtils = DefaultDownloadFileUtils(
+        context = context,
+        downloadLocation = {
+            DownloadLocationManager(context.components.settings, context.contentResolver).defaultLocation
+        },
+    ),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) : AbstractBinding<AppState>(appStore, mainDispatcher) {
@@ -191,7 +205,7 @@ class SnackbarBinding(
                             )
                         }
 
-                        context.settings().linkSharingSettingsSnackbarShown = true
+                        context.components.settings.linkSharingSettingsSnackbarShown = true
                         appStore.dispatch(SnackbarAction.SnackbarShown)
                     }
 
@@ -260,7 +274,7 @@ class SnackbarBinding(
                     SnackbarState.WebCompatReportSent -> {
                         snackbarDelegate.show(
                             text = context.getString(R.string.webcompat_reporter_success_snackbar_text_2),
-                            duration = context.getSnackbarTimeout().value.toInt(),
+                            duration = context.components.settings.getSnackbarTimeout().value.toInt(),
                             listener = { snackbarDelegate.dismiss() },
                         )
 
@@ -281,7 +295,7 @@ class SnackbarBinding(
                     is SnackbarState.DownloadInProgress -> {
                         snackbarDelegate.show(
                             text = context.getString(R.string.download_in_progress_snackbar),
-                            duration = context.getSnackbarTimeout(hasAction = true).value.toInt(),
+                            duration = context.components.settings.getSnackbarTimeout(hasAction = true).value.toInt(),
                             action = context.getString(R.string.download_in_progress_snackbar_action_details),
                         ) {
                             navController.navigate(
@@ -313,15 +327,13 @@ class SnackbarBinding(
                             text = context.getString(R.string.download_completed_snackbar),
                             subText = state.downloadState.fileName,
                             subTextOverflow = TextOverflow.MiddleEllipsis,
-                            duration = context.getSnackbarTimeout(hasAction = true).value.toInt(),
+                            duration = context.components.settings.getSnackbarTimeout(hasAction = true).value.toInt(),
                             action = context.getString(R.string.download_completed_snackbar_action_open),
                         ) {
-                            val fileWasOpened = AbstractFetchDownloadService.openFile(
-                                applicationContext = context.applicationContext,
-                                packageName = context.applicationContext.packageName,
-                                downloadFileName = state.downloadState.fileName,
-                                downloadFilePath = state.downloadState.filePath,
-                                downloadContentType = state.downloadState.contentType,
+                            val fileWasOpened = downloadFileUtils.openFile(
+                                fileName = state.downloadState.fileName,
+                                directoryPath = state.downloadState.directoryPath,
+                                contentType = state.downloadState.contentType,
                             )
 
                             if (!fileWasOpened) {
@@ -339,7 +351,7 @@ class SnackbarBinding(
                                 context,
                                 state.downloadState.filePath,
                             ),
-                            duration = context.getSnackbarTimeout(hasAction = false).value.toInt(),
+                            duration = context.components.settings.getSnackbarTimeout(hasAction = false).value.toInt(),
                         )
                         appStore.dispatch(SnackbarAction.SnackbarShown)
                     }
@@ -352,6 +364,12 @@ class SnackbarBinding(
                     }
 
                     is SnackbarState.None -> Unit
+
+                    is SnackbarState.IPProtectionDataLimitReached ->
+                        handleIPProtectionDataLimitReachedSnackbarState(state)
+
+                    is SnackbarState.IPProtectionConnectionError ->
+                        handleIPProtectionConnectionErrorSnackbarSate(state)
                 }
             }
     }
@@ -402,5 +420,42 @@ class SnackbarBinding(
             text = context.getString(id),
             duration = Snackbar.LENGTH_LONG,
         )
+    }
+
+    /**
+     * The state could be consumed by [IPProtectionSnackbarBinding] as well (e.g. three dot menu or trust panel opened),
+     * in which case, to avoid showing snackbar twice, we only show it here if the view is active.
+     */
+    private fun handleIPProtectionDataLimitReachedSnackbarState(state: SnackbarState.IPProtectionDataLimitReached) {
+        if (viewHasFocus()) {
+            snackbarDelegate.show(
+                text = state.title,
+                duration = Snackbar.LENGTH_LONG,
+                action = context.getString(R.string.ip_protection_data_limit_reached_snackbar_action),
+            ) {
+                navController.navigate(
+                    BrowserFragmentDirections.actionGlobalIpProtectionFragment(
+                        entrypoint = FenixFxAEntryPoint.IPProtectionSettings,
+                    ),
+                )
+            }
+
+            appStore.dispatch(SnackbarAction.SnackbarShown)
+        }
+    }
+
+    /**
+     * The state could be consumed by [IPProtectionSnackbarBinding] as well (e.g. three dot menu or trust panel opened),
+     * in which case, to avoid showing snackbar twice, we only show it here if the view is active.
+     */
+    private fun handleIPProtectionConnectionErrorSnackbarSate(state: SnackbarState.IPProtectionConnectionError) {
+        if (viewHasFocus()) {
+            snackbarDelegate.show(
+                text = state.title,
+                duration = Snackbar.LENGTH_SHORT,
+            )
+
+            appStore.dispatch(SnackbarAction.SnackbarShown)
+        }
     }
 }

@@ -1,20 +1,16 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
-
-const TIMING_HISTOGRAM = "WEBEXT_BROWSERACTION_POPUP_OPEN_MS";
-const TIMING_HISTOGRAM_KEYED = "WEBEXT_BROWSERACTION_POPUP_OPEN_MS_BY_ADDONID";
-const RESULT_HISTOGRAM = "WEBEXT_BROWSERACTION_POPUP_PRELOAD_RESULT_COUNT";
-const RESULT_HISTOGRAM_KEYED =
-  "WEBEXT_BROWSERACTION_POPUP_PRELOAD_RESULT_COUNT_BY_ADDONID";
 
 const EXTENSION_ID1 = "@test-extension1";
 const EXTENSION_ID2 = "@test-extension2";
 
-// Keep this in sync with the order in Histograms.json for
-// WEBEXT_BROWSERACTION_POPUP_PRELOAD_RESULT_COUNT
-const CATEGORIES = ["popupShown", "clearAfterHover", "clearAfterMousedown"];
-const GLEAN_RESULT_LABELS = [...CATEGORIES, "__other__"];
+// Keep this in sync with the order in browser_action_preload_result
+// defined in toolkit/components/extensions/metrics.yaml.
+const GLEAN_RESULT_LABELS = [
+  "popupShown",
+  "clearAfterHover",
+  "clearAfterMousedown",
+  "__other__",
+];
 
 function assertGleanPreloadResultLabelCounter(expectedLabelsValue) {
   for (const label of GLEAN_RESULT_LABELS) {
@@ -27,40 +23,6 @@ function assertGleanPreloadResultLabelCounter(expectedLabelsValue) {
       }`
     );
   }
-}
-
-function assertGleanPreloadResultLabelCounterEmpty() {
-  // All empty labels passed to the other helpers to make it
-  // assert that all labels are empty.
-  assertGleanPreloadResultLabelCounter({});
-}
-
-/**
- * Takes a Telemetry histogram snapshot and makes sure
- * that the index for that value (as defined by CATEGORIES)
- * has a count of 1, and that it's the only value that
- * has been incremented.
- *
- * @param {object} snapshot
- *        The Telemetry histogram snapshot to examine.
- * @param {string} category
- *        The category in CATEGORIES whose index we expect to have
- *        been set to 1.
- */
-function assertOnlyOneTypeSet(snapshot, category) {
-  let categoryIndex = CATEGORIES.indexOf(category);
-  Assert.equal(
-    snapshot.values[categoryIndex],
-    1,
-    `Should have seen the ${category} count increment.`
-  );
-  // Use Array.prototype.reduce to sum up all of the
-  // snapshot.count entries
-  Assert.equal(
-    Object.values(snapshot.values).reduce((a, b) => a + b, 0),
-    1,
-    "Should only be 1 collected value."
-  );
 }
 
 add_task(async function testBrowserActionTelemetryTiming() {
@@ -96,181 +58,149 @@ add_task(async function testBrowserActionTelemetryTiming() {
     },
   });
 
-  let histogram = Services.telemetry.getHistogramById(TIMING_HISTOGRAM);
-  let histogramKeyed = Services.telemetry.getKeyedHistogramById(
-    TIMING_HISTOGRAM_KEYED
-  );
-
-  histogram.clear();
-  histogramKeyed.clear();
   Services.fog.testResetFOG();
 
-  is(
-    histogram.snapshot().sum,
-    0,
-    `No data recorded for histogram: ${TIMING_HISTOGRAM}.`
-  );
-  is(
-    Object.keys(histogramKeyed).length,
-    0,
-    `No data recorded for histogram: ${TIMING_HISTOGRAM_KEYED}.`
-  );
   Assert.deepEqual(
     Glean.extensionsTiming.browserActionPopupOpen.testGetValue(),
     undefined,
     "No data recorded for glean metric extensionsTiming.browserActionPopupOpen"
+  );
+  Assert.deepEqual(
+    Glean.extensionsTiming.browserActionPopupOpenByAddonid.testGetValue(),
+    {},
+    "No data recorded for glean metric extensionsTiming.browserActionPopupOpenByAddonid"
   );
 
   await extension1.startup();
   await extension2.startup();
 
-  is(
-    histogram.snapshot().sum,
-    0,
-    `No data recorded for histogram after startup: ${TIMING_HISTOGRAM}.`
-  );
-  is(
-    Object.keys(histogramKeyed).length,
-    0,
-    `No data recorded for histogram after startup: ${TIMING_HISTOGRAM_KEYED}.`
-  );
   Assert.deepEqual(
     Glean.extensionsTiming.browserActionPopupOpen.testGetValue(),
     undefined,
     "No data recorded for glean metric extensionsTiming.browserActionPopupOpen"
   );
+  Assert.deepEqual(
+    Glean.extensionsTiming.browserActionPopupOpenByAddonid.testGetValue(),
+    {},
+    "No data recorded for glean metric extensionsTiming.browserActionPopupOpenByAddonid"
+  );
+
+  info("Open extension1 browserAction popup");
 
   clickBrowserAction(extension1);
   await awaitExtensionPanel(extension1);
-  let sumOld = histogram.snapshot().sum;
-  Assert.greater(
-    sumOld,
-    0,
-    `Data recorded for first extension for histogram: ${TIMING_HISTOGRAM}.`
-  );
 
-  let oldKeyedSnapshot = histogramKeyed.snapshot();
   Assert.deepEqual(
-    Object.keys(oldKeyedSnapshot),
-    [EXTENSION_ID1],
-    `Data recorded for first extension for histogram: ${TIMING_HISTOGRAM_KEYED}.`
-  );
-  Assert.greater(
-    oldKeyedSnapshot[EXTENSION_ID1].sum,
-    0,
-    `Data recorded for first extension for histogram: ${TIMING_HISTOGRAM_KEYED}.`
+    Glean.extensionsTiming.browserActionPopupOpen.testGetValue()?.count,
+    1,
+    "Got the expected number of samples in browserActionPopupOpen Glean metric"
   );
 
-  let gleanSumOld =
+  const allAddonsTimingSum =
     Glean.extensionsTiming.browserActionPopupOpen.testGetValue()?.sum;
+  const ext1TimingSum =
+    Glean.extensionsTiming.browserActionPopupOpenByAddonid.testGetValue()?.[
+      extension1.id
+    ]?.sum;
   Assert.greater(
-    gleanSumOld,
+    allAddonsTimingSum,
     0,
-    "Data recorded for first extension on glean metric extensionsTiming.browserActionPopupOpen"
+    "Expect browserActionPopupOpen metric data to be found"
+  );
+  Assert.greater(
+    ext1TimingSum,
+    0,
+    "Expect browserActionPopupOpenByAddonid metric data for extension1 to be found"
   );
 
   await closeBrowserAction(extension1);
 
+  info("Open extension2 browserAction popup");
+
   clickBrowserAction(extension2);
   await awaitExtensionPanel(extension2);
-  let sumNew = histogram.snapshot().sum;
-  Assert.greater(
-    sumNew,
-    sumOld,
-    `Data recorded for second extension for histogram: ${TIMING_HISTOGRAM}.`
-  );
-  sumOld = sumNew;
 
-  let gleanSumNew =
-    Glean.extensionsTiming.browserActionPopupOpen.testGetValue()?.sum;
-  Assert.greater(
-    gleanSumNew,
-    gleanSumOld,
-    "Data recorded for second extension on glean metric extensionsTiming.browserActionPopupOpen"
-  );
-  gleanSumOld = gleanSumNew;
-
-  let newKeyedSnapshot = histogramKeyed.snapshot();
   Assert.deepEqual(
-    Object.keys(newKeyedSnapshot).sort(),
-    [EXTENSION_ID1, EXTENSION_ID2],
-    `Data recorded for second extension for histogram: ${TIMING_HISTOGRAM_KEYED}.`
+    Glean.extensionsTiming.browserActionPopupOpen.testGetValue()?.count,
+    2,
+    "Got the expected number of samples in browserActionPopupOpen Glean metric"
   );
   Assert.greater(
-    newKeyedSnapshot[EXTENSION_ID2].sum,
+    Glean.extensionsTiming.browserActionPopupOpen.testGetValue()?.sum,
+    allAddonsTimingSum,
+    "Expect browserActionPopupOpen metric data to increase after extension2 action panel open"
+  );
+  const ext2TimingSum =
+    Glean.extensionsTiming.browserActionPopupOpenByAddonid.testGetValue()?.[
+      extension2.id
+    ]?.sum;
+  Assert.greater(
+    ext2TimingSum,
     0,
-    `Data recorded for second extension for histogram: ${TIMING_HISTOGRAM_KEYED}.`
+    "Expect browserActionPopupOpenByAddonid metric data for extension2 to be found"
   );
-  is(
-    newKeyedSnapshot[EXTENSION_ID1].sum,
-    oldKeyedSnapshot[EXTENSION_ID1].sum,
-    `Data recorded for first extension should not change for histogram: ${TIMING_HISTOGRAM_KEYED}.`
+  Assert.equal(
+    Glean.extensionsTiming.browserActionPopupOpenByAddonid.testGetValue()?.[
+      extension1.id
+    ]?.sum,
+    ext1TimingSum,
+    "Expect browserActionPopupOpenByAddonid metric data for extension1 to not change"
   );
-  oldKeyedSnapshot = newKeyedSnapshot;
 
   await closeBrowserAction(extension2);
+
+  info("Open extension1 browserAction popup again");
 
   clickBrowserAction(extension2);
   await awaitExtensionPanel(extension2);
-  sumNew = histogram.snapshot().sum;
-  Assert.greater(
-    sumNew,
-    sumOld,
-    `Data recorded for second opening of popup for histogram: ${TIMING_HISTOGRAM}.`
-  );
-  sumOld = sumNew;
 
-  gleanSumNew =
-    Glean.extensionsTiming.browserActionPopupOpen.testGetValue()?.sum;
+  Assert.deepEqual(
+    Glean.extensionsTiming.browserActionPopupOpen.testGetValue()?.count,
+    3,
+    "Got the expected number of samples in browserActionPopupOpen Glean metric"
+  );
+  const ext2TimingSumMeasure2 =
+    Glean.extensionsTiming.browserActionPopupOpenByAddonid.testGetValue()?.[
+      extension2.id
+    ]?.sum;
   Assert.greater(
-    gleanSumNew,
-    gleanSumOld,
-    "Data recorded for second popup opening on glean metric extensionsTiming.browserActionPopupOpen"
+    ext2TimingSumMeasure2,
+    ext2TimingSum,
+    "Expect browserActionPopupOpenByAddonid metric data for extension2 to increase"
   );
-  gleanSumOld = gleanSumNew;
-
-  newKeyedSnapshot = histogramKeyed.snapshot();
-  Assert.greater(
-    newKeyedSnapshot[EXTENSION_ID2].sum,
-    oldKeyedSnapshot[EXTENSION_ID2].sum,
-    `Data recorded for second opening of popup for histogram: ${TIMING_HISTOGRAM_KEYED}.`
+  Assert.equal(
+    Glean.extensionsTiming.browserActionPopupOpenByAddonid.testGetValue()?.[
+      extension1.id
+    ]?.sum,
+    ext1TimingSum,
+    "Expect browserActionPopupOpenByAddonid metric data for extension1 to not change"
   );
-  is(
-    newKeyedSnapshot[EXTENSION_ID1].sum,
-    oldKeyedSnapshot[EXTENSION_ID1].sum,
-    `Data recorded for first extension should not change for histogram: ${TIMING_HISTOGRAM_KEYED}.`
-  );
-  oldKeyedSnapshot = newKeyedSnapshot;
 
   await closeBrowserAction(extension2);
+
+  info("Open extension1 browserAction popup again");
 
   clickBrowserAction(extension1);
   await awaitExtensionPanel(extension1);
-  sumNew = histogram.snapshot().sum;
-  Assert.greater(
-    sumNew,
-    sumOld,
-    `Data recorded for third opening of popup for histogram: ${TIMING_HISTOGRAM}.`
-  );
 
-  gleanSumNew =
-    Glean.extensionsTiming.browserActionPopupOpen.testGetValue()?.sum;
-  Assert.greater(
-    gleanSumNew,
-    gleanSumOld,
-    "Data recorded for third popup opening on glean metric extensionsTiming.browserActionPopupOpen"
+  Assert.deepEqual(
+    Glean.extensionsTiming.browserActionPopupOpen.testGetValue()?.count,
+    4,
+    "Got the expected number of samples in browserActionPopupOpen Glean metric"
   );
-
-  newKeyedSnapshot = histogramKeyed.snapshot();
   Assert.greater(
-    newKeyedSnapshot[EXTENSION_ID1].sum,
-    oldKeyedSnapshot[EXTENSION_ID1].sum,
-    `Data recorded for second opening of popup for histogram: ${TIMING_HISTOGRAM_KEYED}.`
+    Glean.extensionsTiming.browserActionPopupOpenByAddonid.testGetValue()?.[
+      extension1.id
+    ]?.sum,
+    ext1TimingSum,
+    "Expect browserActionPopupOpenByAddonid metric data for extension1 to increase"
   );
-  is(
-    newKeyedSnapshot[EXTENSION_ID2].sum,
-    oldKeyedSnapshot[EXTENSION_ID2].sum,
-    `Data recorded for second extension should not change for histogram: ${TIMING_HISTOGRAM_KEYED}.`
+  Assert.equal(
+    Glean.extensionsTiming.browserActionPopupOpenByAddonid.testGetValue()?.[
+      extension2.id
+    ]?.sum,
+    ext2TimingSumMeasure2,
+    "Expect pageActionPopupOpenByAddonid metric data for extension2 to not change"
   );
 
   await closeBrowserAction(extension1);
@@ -298,26 +228,29 @@ add_task(async function testBrowserActionTelemetryResults() {
   };
   let extension = ExtensionTestUtils.loadExtension(extensionOptions);
 
-  let histogram = Services.telemetry.getHistogramById(RESULT_HISTOGRAM);
-  let histogramKeyed = Services.telemetry.getKeyedHistogramById(
-    RESULT_HISTOGRAM_KEYED
-  );
-
-  histogram.clear();
-  histogramKeyed.clear();
   Services.fog.testResetFOG();
 
-  is(
-    histogram.snapshot().sum,
-    0,
-    `No data recorded for histogram: ${RESULT_HISTOGRAM}.`
+  Assert.deepEqual(
+    Glean.extensionsCounters.browserActionPreloadResult.testGetValue(),
+    {},
+    "No data recorded for glean metric extensionsTiming.browserActionPreloadResult"
   );
-  is(
-    Object.keys(histogramKeyed).length,
-    0,
-    `No data recorded for histogram: ${RESULT_HISTOGRAM_KEYED}.`
-  );
-  assertGleanPreloadResultLabelCounterEmpty();
+
+  // TODO: simplify assertion verifying that there isn't any data in the
+  // browserActionPreloadResultByAddonid GleanDoubleLabeled metric
+  // (currently blocked on Bug 2026013).
+  for (const category of GLEAN_RESULT_LABELS) {
+    const metric =
+      Glean.extensionsCounters.browserActionPreloadResultByAddonid.get(
+        EXTENSION_ID1,
+        category
+      );
+    Assert.equal(
+      metric.testGetValue(),
+      null,
+      `No browserActionPreloadResultByAddonid metric data for extension1 and category ${category}`
+    );
+  }
 
   await extension.startup();
 
@@ -343,19 +276,15 @@ add_task(async function testBrowserActionTelemetryResults() {
     window
   );
 
-  assertOnlyOneTypeSet(histogram.snapshot(), "clearAfterHover");
   assertGleanPreloadResultLabelCounter({ clearAfterHover: 1 });
-
-  let keyedSnapshot = histogramKeyed.snapshot();
-  Assert.deepEqual(
-    Object.keys(keyedSnapshot),
-    [EXTENSION_ID1],
-    `Data recorded for histogram: ${RESULT_HISTOGRAM_KEYED}.`
+  Assert.equal(
+    Glean.extensionsCounters.browserActionPreloadResultByAddonid
+      .get(EXTENSION_ID1, "clearAfterHover")
+      .testGetValue(),
+    1,
+    "Expect browserActionPreloadResultByAddonid metric data for extension1 and clearAfterHover label"
   );
-  assertOnlyOneTypeSet(keyedSnapshot[EXTENSION_ID1], "clearAfterHover");
 
-  histogram.clear();
-  histogramKeyed.clear();
   Services.fog.testResetFOG();
 
   // TODO: Create a test for cancel after mousedown.
@@ -365,16 +294,14 @@ add_task(async function testBrowserActionTelemetryResults() {
   clickBrowserAction(extension);
   await awaitExtensionPanel(extension);
 
-  assertOnlyOneTypeSet(histogram.snapshot(), "popupShown");
   assertGleanPreloadResultLabelCounter({ popupShown: 1 });
-
-  keyedSnapshot = histogramKeyed.snapshot();
-  Assert.deepEqual(
-    Object.keys(keyedSnapshot),
-    [EXTENSION_ID1],
-    `Data recorded for histogram: ${RESULT_HISTOGRAM_KEYED}.`
+  Assert.equal(
+    Glean.extensionsCounters.browserActionPreloadResultByAddonid
+      .get(EXTENSION_ID1, "popupShown")
+      .testGetValue(),
+    1,
+    "Expect browserActionPreloadResultByAddonid metric data for extension1 and popupShown label"
   );
-  assertOnlyOneTypeSet(keyedSnapshot[EXTENSION_ID1], "popupShown");
 
   await closeBrowserAction(extension);
 

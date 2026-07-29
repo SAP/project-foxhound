@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -223,7 +221,7 @@ void IntegrityPolicyService::ReportToConsole(
       NS_ConvertUTF8toUTF16(aContentLocation->GetSpecOrDefault())};
   nsAutoString localizedMsg;
   nsresult rv = nsContentUtils::FormatLocalizedString(
-      nsContentUtils::eSECURITY_PROPERTIES, messageKey, params, localizedMsg);
+      PropertiesFile::SECURITY_PROPERTIES, messageKey, params, localizedMsg);
   NS_ENSURE_SUCCESS_VOID(rv);
 
   uint64_t windowID = aLoadInfo->GetInnerWindowID();
@@ -292,6 +290,9 @@ void dom::IntegrityPolicyService::ReportViolation(
       break;
     case IntegrityPolicy::DestinationType::Style:
       destination = "style"_ns;
+      break;
+    case IntegrityPolicy::DestinationType::Image:
+      destination = "image"_ns;
       break;
   }
 

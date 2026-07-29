@@ -39,7 +39,7 @@ class ConnectionPanelDialogFragment : FenixDialogFragment() {
         val rootView = inflateRootView(container)
 
         val controller = DefaultConnectionDetailsController(
-            context = requireContext(),
+            components = requireComponents,
             scope = viewLifecycleOwner.lifecycleScope,
             cookieBannersStorage = requireComponents.core.cookieBannersStorage,
             fragment = this,

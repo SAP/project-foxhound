@@ -13,7 +13,10 @@ use mach2::{
         MACH_MSG_TYPE_COPY_SEND, MACH_MSG_TYPE_MAKE_SEND, MACH_RCV_MSG, MACH_RCV_TIMEOUT,
         MACH_SEND_MSG, MACH_SEND_TIMEOUT,
     },
-    port::{mach_port_name_t, mach_port_t, MACH_PORT_NULL, MACH_PORT_RIGHT_RECEIVE},
+    port::{
+        mach_port_name_t, mach_port_t, MACH_PORT_NULL, MACH_PORT_RIGHT_RECEIVE,
+        MACH_PORT_RIGHT_SEND,
+    },
     traps::mach_task_self,
 };
 use nix::errno::Errno;
@@ -28,9 +31,11 @@ use thiserror::Error;
 
 use crate::IO_TIMEOUT;
 
+pub(crate) const PROCESS_RENDEZVOUS_ANCILLARY_DATA_LEN: usize = 1;
+
 pub type Result<T> = result::Result<T, PlatformError>;
 
-pub type ProcessHandle = ();
+pub type ProcessHandle = SendRight;
 
 #[derive(Error, Debug)]
 pub enum PlatformError {
@@ -68,6 +73,7 @@ pub trait AsRawPort {
     fn as_raw_port(&self) -> mach_port_t;
 }
 
+#[derive(Debug)]
 #[repr(transparent)]
 pub struct ReceiveRight(mach_port_name_t);
 
@@ -134,6 +140,7 @@ impl AsRawPort for ReceiveRight {
     }
 }
 
+#[derive(Debug)]
 #[repr(transparent)]
 pub struct SendRight(mach_port_name_t);
 
@@ -160,9 +167,11 @@ impl AsRawPort for SendRight {
 
 impl Drop for SendRight {
     fn drop(&mut self) {
-        // We use `mach_port_deallocate()` instead of `mach_port_mod_refs()`
-        // because it doesn't fail if the corresponding receive right has
-        // already been destroyed.
+        // Note that we use `mach_port_deallocate()` instead of
+        // `mach_port_mod_refs()` because it doesn't fail if the corresponding
+        // receive right has already been destroyed.
+
+        // SAFETY: Calling `mach_port_deallocate` is always safe.
         let rv = unsafe { mach_port_deallocate(mach_task_self(), self.0) };
         assert!(
             rv == KERN_SUCCESS,
@@ -172,9 +181,51 @@ impl Drop for SendRight {
     }
 }
 
-pub enum OwnedRight {
+impl Clone for SendRight {
+    fn clone(&self) -> Self {
+        // SAFETY: Calling `mach_port_mod_refs()` to increment a port right
+        // reference count is always safe.
+        let rv = unsafe { mach_port_mod_refs(mach_task_self(), self.0, MACH_PORT_RIGHT_SEND, 1) };
+        assert!(
+            rv == KERN_SUCCESS,
+            "Could not increase reference count of a send right {}, error {rv}",
+            self.0,
+        );
+
+        SendRight(self.0)
+    }
+}
+
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct SendRightRef(mach_port_name_t);
+
+impl SendRightRef {
+    /// Create a shared send right from a raw port right name.
+    ///
+    /// # Safety
+    ///
+    /// `port` must be a valid send right to a Mach port.
+    pub unsafe fn from_raw_port(port: mach_port_name_t) -> SendRightRef {
+        SendRightRef(port)
+    }
+
+    pub fn into_raw_port(self) -> mach_port_name_t {
+        ManuallyDrop::new(self).0
+    }
+}
+
+impl AsRawPort for SendRightRef {
+    fn as_raw_port(&self) -> mach_port_name_t {
+        self.0
+    }
+}
+
+#[derive(Debug)]
+pub enum MachPortRight {
     Send(SendRight),
     Receive(ReceiveRight),
+    SendRef(SendRightRef),
 }
 
 /****************************************************************************
@@ -372,10 +423,13 @@ pub fn mach_msg_recv(
         )
     };
 
-    if msg.header().msgh_id == MACH_NOTIFY_NO_SENDERS {
+    let msgh_id = msg.header().msgh_id;
+    if msgh_id == MACH_NOTIFY_NO_SENDERS {
         // We've got a message, but it's a disconnection
         return Err(PlatformError::NoMoreSenders);
     }
+
+    assert!(msgh_id == 0, "Unexpected mach message id: {msgh_id:x}");
 
     if rv == MACH_MSG_SUCCESS {
         Ok(msg)

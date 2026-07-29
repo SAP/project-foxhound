@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,13 +25,13 @@
       return static_cast<mozilla::LogModule*>(log); \
     }
 
-#  define MOZ_MTLOG(level, b)                                      \
-    do {                                                           \
-      if (MOZ_LOG_TEST(getLogModule(), level)) {                   \
-        std::stringstream str;                                     \
-        str << b;                                                  \
-        MOZ_LOG(getLogModule(), level, ("%s", str.str().c_str())); \
-      }                                                            \
+#  define MOZ_MTLOG(level, b)                                        \
+    do {                                                             \
+      if (MOZ_LOG_TEST(getLogModule(), level)) {                     \
+        std::stringstream str;                                       \
+        str << b;                                                    \
+        MOZ_LOG_FMT(getLogModule(), level, "{}", str.str().c_str()); \
+      }                                                              \
     } while (0)
 #else
 // When building mtransport outside of XUL, for example in stand-alone gtests,

@@ -16,6 +16,7 @@ const {
 } = require("resource://devtools/server/actors/highlighters/utils/markup.js");
 const {
   PSEUDO_CLASSES,
+  ELEMENT_SPECIFIC_PSEUDO_CLASSES,
 } = require("resource://devtools/shared/css/constants.js");
 const {
   getCurrentZoom,
@@ -347,7 +348,7 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
    */
   _trackMutations() {
     if (isNodeValid(this.currentNode)) {
-      const win = this.currentNode.ownerGlobal;
+      const win = this.currentNode.documentGlobal;
       this.currentNodeObserver = new win.MutationObserver(this.update);
       this.currentNodeObserver.observe(this.currentNode, { attributes: true });
     }
@@ -894,7 +895,10 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
       return [];
     }
 
-    return PSEUDO_CLASSES.filter(pseudo => hasPseudoClassLock(node, pseudo));
+    return [
+      ...PSEUDO_CLASSES,
+      ...Object.keys(ELEMENT_SPECIFIC_PSEUDO_CLASSES),
+    ].filter(pseudo => hasPseudoClassLock(node, pseudo));
   }
 
   /**

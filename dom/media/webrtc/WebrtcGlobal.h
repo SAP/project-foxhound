@@ -37,7 +37,7 @@ static auto ForAllPublicRTCStatsCollectionMembers(Collection& aStats,
       aStats.mPeerConnectionStats, aStats.mRtpContributingSourceStats,
       aStats.mIceCandidatePairStats, aStats.mIceCandidateStats,
       aStats.mTrickledIceCandidateStats, aStats.mDataChannelStats,
-      aStats.mCodecStats);
+      aStats.mCodecStats, aStats.mTransportStats);
 }
 
 // Calls aFunction with all members of aStats, including internal ones.
@@ -79,6 +79,11 @@ template <>
 struct ParamTraits<mozilla::dom::RTCBundlePolicy>
     : public mozilla::dom::WebIDLEnumSerializer<mozilla::dom::RTCBundlePolicy> {
 };
+
+template <>
+struct ParamTraits<mozilla::dom::RTCIceTcpCandidateType>
+    : public mozilla::dom::WebIDLEnumSerializer<
+          mozilla::dom::RTCIceTcpCandidateType> {};
 
 DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::dom::RTCIceServerInternal, mUrls,
                                   mCredentialProvided, mUserNameProvided);
@@ -128,8 +133,8 @@ DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS_AND_FIELDS(
 
 DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS_AND_FIELDS(
     mozilla::dom::RTCIceCandidateStats, mozilla::dom::RTCStats, mCandidateType,
-    mPriority, mTransportId, mAddress, mRelayProtocol, mPort, mProtocol,
-    mProxied);
+    mPriority, mTransportId, mAddress, mRelayProtocol, mUsernameFragment,
+    mFoundation, mPort, mProtocol, mTcpType, mProxied);
 
 DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS_AND_FIELDS(
     mozilla::dom::RTCReceivedRtpStreamStats, mozilla::dom::RTCRtpStreamStats,
@@ -220,6 +225,24 @@ DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::dom::RTCCodecStats, mTimestamp,
                                   mType, mId, mPayloadType, mCodecType,
                                   mTransportId, mMimeType, mClockRate,
                                   mChannels, mSdpFmtpLine)
+
+DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS_AND_FIELDS(
+    mozilla::dom::RTCTransportStats, mozilla::dom::RTCStats, mIceRole,
+    mIceLocalUsernameFragment, mDtlsState, mIceState, mSelectedCandidatePairId,
+    mTlsVersion, mDtlsCipher, mDtlsRole, mSrtpCipher)
+
+template <>
+struct ParamTraits<mozilla::dom::RTCIceRole>
+    : public mozilla::dom::WebIDLEnumSerializer<mozilla::dom::RTCIceRole> {};
+
+template <>
+struct ParamTraits<mozilla::dom::RTCDtlsRole>
+    : public mozilla::dom::WebIDLEnumSerializer<mozilla::dom::RTCDtlsRole> {};
+
+template <>
+struct ParamTraits<mozilla::dom::RTCDtlsTransportState>
+    : public mozilla::dom::WebIDLEnumSerializer<
+          mozilla::dom::RTCDtlsTransportState> {};
 
 template <>
 struct ParamTraits<mozilla::dom::RTCCodecType>

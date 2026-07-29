@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -32,10 +31,10 @@ namespace mozilla {
 namespace dom {
 
 class SHEntrySharedParentState;
+class SessionHistoryEntry;
 
 }
 }
-class nsSHEntryShared;
 class nsDocShellLoadState;
 struct EntriesAndBrowsingContextData;
 %}
@@ -43,6 +42,7 @@ struct EntriesAndBrowsingContextData;
 [ptr] native nsDocShellEditorDataPtr(nsDocShellEditorData);
 [ptr] native nsDocShellLoadStatePtr(nsDocShellLoadState);
 [ptr] native SHEntrySharedParentStatePtr(mozilla::dom::SHEntrySharedParentState);
+[ptr] native SessionHistoryEntryPtr(mozilla::dom::SessionHistoryEntry);
 webidl BrowsingContext;
 
 [builtinclass, scriptable, uuid(0dad26b8-a259-42c7-93f1-2fa7fc076e45)]
@@ -112,19 +112,10 @@ interface nsISHEntry : nsISupports
     /** Referrer Info*/
     [infallible] attribute nsIReferrerInfo referrerInfo;
 
-    /** Document viewer, for fast restoration of presentation */
-    [infallible] attribute nsIDocumentViewer documentViewer;
-
     [infallible] readonly attribute boolean isInBFCache;
 
     /** Whether the content viewer is marked "sticky" */
     [infallible] attribute boolean sticky;
-
-    /** Saved state of the global window object */
-    [infallible] attribute nsISupports windowState;
-
-    /** Saved refresh URI list for the content viewer */
-    [infallible] attribute nsIMutableArray refreshURIList;
 
     /** Post Data for the document */
     [infallible] attribute nsIInputStream postData;
@@ -289,34 +280,6 @@ interface nsISHEntry : nsISupports
     [noscript, notxpcom] void setViewerBounds([const] in nsIntRect bounds);
 
     /**
-     * Saved child docshells corresponding to documentViewer.  The child shells
-     * are restored as children of the parent docshell, in this order, when the
-     * parent docshell restores a saved presentation.
-     */
-
-    /** Append a child shell to the end of our list. */
-    [noscript, notxpcom] void addChildShell(in nsIDocShellTreeItem shell);
-
-    /**
-     * Get the child shell at |index|; returns null if |index| is out of bounds.
-     */
-    [noscript] nsIDocShellTreeItem childShellAt(in long index);
-
-    /**
-     * Clear the child shell list.
-     */
-    [noscript, notxpcom] void clearChildShells();
-
-    /**
-     * Ensure that the cached presentation members are self-consistent.
-     * If either |documentViewer| or |windowState| are null, then all of the
-     * following members are cleared/reset:
-     *  documentViewer, sticky, windowState, viewerBounds, childShells,
-     *  refreshURIList.
-     */
-    [noscript, notxpcom] void syncPresentationState();
-
-    /**
      * Initialises `layoutHistoryState` if it doesn't already exist
      * and returns a reference to it.
      */
@@ -348,23 +311,6 @@ interface nsISHEntry : nsISupports
     nsISHEntry clone();
 
     /**
-     * Gets the owning pointer to the editor data assosicated with
-     * this shistory entry. This forgets its pointer, so free it when
-     * you're done.
-     */
-    [noscript, notxpcom] nsDocShellEditorDataPtr forgetEditorData();
-
-    /**
-     * Sets the owning pointer to the editor data assosicated with
-     * this shistory entry. Unless forgetEditorData() is called, this
-     * shentry will destroy the editor data when it's destroyed.
-     */
-    [noscript, notxpcom] void setEditorData(in nsDocShellEditorDataPtr aData);
-
-    /** Returns true if this shistory entry is storing a detached editor. */
-    [noscript, notxpcom] boolean hasDetachedEditor();
-
-    /**
      * Returns true if the related docshell was added because of
      * dynamic addition of an iframe/frame.
      */
@@ -389,12 +335,6 @@ interface nsISHEntry : nsISupports
      * aEntry's BFCacheEntry.
      */
     void adoptBFCacheEntry(in nsISHEntry aEntry);
-
-    /**
-     * Create a new BFCache entry and drop our reference to our old one. This
-     * call unlinks this SHEntry from any other SHEntries for its document.
-     */
-    void abandonBFCacheEntry();
 
     /**
      * Does this SHEntry correspond to the same document as aEntry? This is
@@ -472,10 +412,8 @@ interface nsISHEntry : nsISupports
 
     /**
      * If browser.history.collectWireframes is true, this will get populated
-     * with a Wireframe upon document navigation / pushState. This will only
-     * be set for nsISHEntry's accessed in the parent process with
-     * sessionHistoryInParent enabled. See Document.webidl for more details on
-     * what a Wireframe is.
+     * with a Wireframe upon document navigation / pushState. See
+     * Document.webidl for more details on what a Wireframe is.
      */
     [implicit_jscontext] attribute jsval wireframe;
 
@@ -489,4 +427,9 @@ interface nsISHEntry : nsISupports
      * Only used with SHIP enabled.
      */
     attribute nsIDRef navigationId;
+
+    /**
+     * Get as SessionHistoryEntry native pointer.
+     */
+    [noscript, notxpcom] SessionHistoryEntryPtr GetAsSessionHistoryEntry();
 };

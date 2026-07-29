@@ -1,5 +1,3 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -24,6 +22,7 @@ IGNORE_PREFS = {
     "dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled",  # NOQA: E501; Uses the 'locked' attribute.
     "extensions.backgroundServiceWorker.enabled",  # NOQA: E501; Uses the 'locked' attribute.
     "general.smoothScroll",  # Uses the 'sticky` attribute.
+    "security.storage.encryption.sqlite.enabled",  # NOQA: E501; Uses the 'locked' attribute.
 }
 
 # A regular expression to match preference names and values from js preference

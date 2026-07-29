@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -65,7 +63,7 @@ class nsIContent : public nsINode {
   // If you're using the external API, the only thing you can know about
   // nsIContent is that it exists with an IID
 
-  explicit nsIContent(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+  explicit nsIContent(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
       : nsINode(std::move(aNodeInfo)) {
     MOZ_ASSERT(mNodeInfo);
     MOZ_ASSERT(static_cast<nsINode*>(this) == reinterpret_cast<nsINode*>(this));
@@ -303,16 +301,6 @@ class nsIContent : public nsINode {
   virtual IMEState GetDesiredIMEState();
 
   /**
-   * Gets the root of the node tree for this content if it is in a shadow tree.
-   *
-   * @return The ShadowRoot that is the root of the node tree.
-   */
-  mozilla::dom::ShadowRoot* GetContainingShadow() const {
-    const nsExtendedContentSlots* slots = GetExistingExtendedContentSlots();
-    return slots ? slots->mContainingShadow : nullptr;
-  }
-
-  /**
    * Gets the assigned slot associated with this content.
    *
    * @return The assigned slot element or null.
@@ -520,9 +508,7 @@ class nsIContent : public nsINode {
    * In the case of absolutely positioned elements and floated elements, this
    * frame is the out of flow frame, not the placeholder.
    */
-  nsIFrame* GetPrimaryFrame() const {
-    return IsInComposedDoc() ? mPrimaryFrame : nullptr;
-  }
+  nsIFrame* GetPrimaryFrame() const { return mPrimaryFrame; }
 
   /**
    * Get the primary frame for this content with flushing
@@ -563,9 +549,15 @@ class nsIContent : public nsINode {
   /**
    * If the content is a part of HTML editor, this returns editing
    * host content.  When the content is in designMode, this returns its body
-   * element.  Also, when the content isn't editable, this returns null.
+   * element.
    */
   mozilla::dom::Element* GetEditingHost() const;
+
+  /**
+   * If this is editable, return `this`.
+   * Otherwise, return the inclusive editable ancestor.
+   */
+  nsIContent* GetInclusiveEditableAncestor() const;
 
   bool SupportsLangAttr() const {
     return IsHTMLElement() || IsSVGElement() || IsXULElement();
@@ -602,6 +594,13 @@ class nsIContent : public nsINode {
       nsIPrincipal* aSubjectPrincipal = nullptr) const;
 
   void GetEventTargetParent(mozilla::EventChainPreVisitor& aVisitor) override;
+
+  /**
+   * Whenever a HeadingReset or HeadingOffset attribute changes on an ancestor,
+   * or a node is slotted/unslotted, all descendant heading elements (including
+   * those in shadow trees and assigned to slots) should be updated.
+   */
+  void UpdateHeadingElementsOffsetChange();
 
   bool IsPurple() const { return mRefCnt.IsPurple(); }
 
@@ -647,12 +646,6 @@ class nsIContent : public nsINode {
 
     virtual size_t SizeOfExcludingThis(
         mozilla::MallocSizeOf aMallocSizeOf) const;
-
-    /**
-     * @see nsIContent::GetContainingShadow
-     * This is a weak pointer maintained by BindToTree() / UnbindFromTree().
-     */
-    mozilla::dom::ShadowRoot* mContainingShadow = nullptr;
 
     /**
      * @see nsIContent::GetAssignedSlot

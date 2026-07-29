@@ -1,13 +1,13 @@
 [Application]
-name=org.mozilla.firefox
+name=${FLATPAK_NAME}
 runtime=org.freedesktop.Platform/${ARCH_NAME}/${FREEDESKTOP_VERSION}
 sdk=org.freedesktop.Sdk/${ARCH_NAME}/${FREEDESKTOP_VERSION}
 base=app/org.mozilla.firefox.BaseApp/${ARCH_NAME}/${FIREFOX_BASEAPP_CHANNEL}
-[Extension org.mozilla.firefox.Locale]
+[Extension ${FLATPAK_NAME}.Locale]
 directory=share/runtime/langpack
 autodelete=true
 locale-subset=true
 
-[Extension org.mozilla.firefox.systemconfig]
-directory=etc/firefox
+[Extension ${FLATPAK_NAME}.systemconfig]
+directory=etc/${FLATPAK_BASENAME}
 no-autodownload=true

@@ -12,7 +12,7 @@ use std::f32::consts::{PI, SQRT_2};
 const POW2F_NUMER_COEFFS: [f32; 3] = [1.01749063e1, 4.88687798e1, 9.85506591e1];
 const POW2F_DENOM_COEFFS: [f32; 4] = [2.10242958e-1, -2.22328856e-2, -1.94414990e1, 9.85506633e1];
 
-#[inline]
+#[inline(always)]
 pub fn fast_cos(x: f32) -> f32 {
     // Step 1: range reduction to [0, 2pi)
     let pi2 = PI * 2.0;
@@ -41,7 +41,7 @@ pub fn fast_cos(x: f32) -> f32 {
     }
 }
 
-#[inline]
+#[inline(always)]
 pub fn fast_erff(x: f32) -> f32 {
     // Formula from
     // https://en.wikipedia.org/wiki/Error_function#Numerical_approximations
@@ -58,7 +58,23 @@ pub fn fast_erff(x: f32) -> f32 {
     result.copysign(x)
 }
 
-#[inline]
+#[inline(always)]
+pub fn fast_erff_simd<D: SimdDescriptor>(d: D, x: D::F32Vec) -> D::F32Vec {
+    let absx = x.abs();
+    let denom1 = absx.mul_add(
+        D::F32Vec::splat(d, 7.77394369e-02),
+        D::F32Vec::splat(d, 2.05260015e-04),
+    );
+    let denom2 = denom1.mul_add(absx, D::F32Vec::splat(d, 2.32120216e-01));
+    let denom3 = denom2.mul_add(absx, D::F32Vec::splat(d, 2.77820801e-01));
+    let denom4 = denom3.mul_add(absx, D::F32Vec::splat(d, 1.0));
+    let denom5 = denom4 * denom4;
+    let inv_denom5 = D::F32Vec::splat(d, 1.0) / denom5;
+    let result = D::F32Vec::splat(d, 1.0) - inv_denom5 * inv_denom5;
+    result.copysign(x)
+}
+
+#[inline(always)]
 pub fn fast_pow2f(x: f32) -> f32 {
     let x_floor = x.floor();
     let exp = f32::from_bits(((x_floor as i32 + 127) as u32) << 23);
@@ -106,7 +122,7 @@ const LOG2F_Q: [f32; 3] = [
     1.7409343003366853e-1,
 ];
 
-#[inline]
+#[inline(always)]
 pub fn fast_log2f(x: f32) -> f32 {
     let x_bits = x.to_bits() as i32;
     let exp_bits = x_bits.wrapping_sub(0x3f2aaaab);
@@ -131,16 +147,17 @@ pub fn fast_log2f_simd<D: SimdDescriptor>(d: D, x: D::F32Vec) -> D::F32Vec {
 }
 
 // Max relative error: ~3e-5
-#[inline]
+#[inline(always)]
 pub fn fast_powf(base: f32, exp: f32) -> f32 {
     fast_pow2f(fast_log2f(base) * exp)
 }
 
-#[inline]
+#[inline(always)]
 pub fn fast_powf_simd<D: SimdDescriptor>(d: D, base: D::F32Vec, exp: D::F32Vec) -> D::F32Vec {
     fast_pow2f_simd(d, fast_log2f_simd(d, base) * exp)
 }
 
+#[inline(always)]
 pub fn floor_log2_nonzero(x: u64) -> u32 {
     (u64::BITS as usize - 1) as u32 ^ x.leading_zeros()
 }

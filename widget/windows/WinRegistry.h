@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,6 +14,9 @@
 #include "mozilla/Span.h"
 
 class nsISerialEventTarget;
+
+#define LSTATUS_SUCCEEDED(x) (x == ERROR_SUCCESS)
+#define LSTATUS_FAILED(x) (x != ERROR_SUCCESS)
 
 namespace mozilla::widget::WinRegistry {
 
@@ -149,9 +151,9 @@ class Key {
   [[nodiscard]] bool WriteValueAsString(const nsString& aName,
                                         const nsString& aValue) {
     MOZ_ASSERT(mKey);
-    return SUCCEEDED(RegSetValueExW(mKey, aName.get(), 0, REG_SZ,
-                                    (const BYTE*)aValue.get(),
-                                    (aValue.Length() + 1) * sizeof(char16_t)));
+    return LSTATUS_SUCCEEDED(
+        RegSetValueExW(mKey, aName.get(), 0, REG_SZ, (const BYTE*)aValue.get(),
+                       (aValue.Length() + 1) * sizeof(char16_t)));
   }
 
   HKEY RawKey() const { return mKey; }

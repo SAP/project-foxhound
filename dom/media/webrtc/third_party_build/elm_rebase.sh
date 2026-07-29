@@ -455,15 +455,14 @@ else
   COMMIT_RANGE_SEPARATOR="::"
 fi
 
-echo "Checking for new mercurial changes in third_party/libwebrtc"
+echo "Checking for new Mozilla changes in third_party/libwebrtc"
 FIXUP_INSTRUCTIONS=$"
-Mercurial changes in third_party/libwebrtc since the last rebase have been
+Mozilla changes in third_party/libwebrtc since the last rebase have been
 detected (using the verify_vendoring.sh script).  Running the following
 commands should help remedy the situation:
 
   ./mach python $SCRIPT_DIR/extract-for-git.py \\
-         $MOZ_OLD_CENTRAL$COMMIT_RANGE_SEPARATOR$MOZ_NEW_CENTRAL \\
-         $EXTRACT_COMMIT_RANGE
+         $MOZ_OLD_CENTRAL$COMMIT_RANGE_SEPARATOR$MOZ_NEW_CENTRAL $EXTRACT_COMMIT_RANGE
   mv mailbox.patch $MOZ_LIBWEBRTC_SRC
   (cd $MOZ_LIBWEBRTC_SRC && \\
    git am mailbox.patch)
@@ -482,7 +481,7 @@ echo "Restoring patch-stack..."
 ./mach python $SCRIPT_DIR/restore_patch_stack.py --repo-path $MOZ_LIBWEBRTC_SRC
 echo "Verify vendoring..."
 bash $SCRIPT_DIR/verify_vendoring.sh &> $LOG_DIR/log-verify.txt || PATCH_STACK_FIXUP="$FIXUP_INSTRUCTIONS"
-echo "Done checking for new mercurial changes in third_party/libwebrtc"
+echo "Done checking for new Mozilla changes in third_party/libwebrtc"
 
 # now that we've run all the things that should be fallible, remove the
 # resume state file

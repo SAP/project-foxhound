@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -139,6 +138,16 @@ void AssignPassTimestampWrites(const T& src,
   }
 
   dest.query_set = src.mQuerySet->GetId();
+}
+
+// Metal imposes a limit on the number of outstanding command buffers.
+// Attempting to create another command buffer after reaching that limit
+// will block, which can result in a deadlock if GC is required to
+// recover old command buffers. To encourage garbage collection of
+// command buffers before that happens, we associate some additional
+// memory with each command buffer.
+inline size_t BindingJSObjectMallocBytes(CommandEncoder* aEncoder) {
+  return 16384;
 }
 
 }  // namespace webgpu

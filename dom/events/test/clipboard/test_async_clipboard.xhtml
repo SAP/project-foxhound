@@ -41,7 +41,6 @@
     });
 
     let expected = "x";
-    // eslint-disable-next-line no-undef
     let item = new ClipboardItem({[kTextPlainMimeType]: expected});
     await navigator.clipboard.write([item]);
     let actual = SpecialPowers.getClipboardData(kTextPlainMimeType);

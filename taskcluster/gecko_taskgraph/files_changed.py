@@ -6,11 +6,11 @@
 Support for optimizing tasks based on the set of files that have changed.
 """
 
+import functools
 import logging
 import os
 from subprocess import CalledProcessError
 
-from mozbuild.util import memoize
 from mozpack.path import join as join_path
 from mozpack.path import match as mozpackmatch
 from mozversioncontrol import InvalidRepoPath, get_repository_object
@@ -21,7 +21,7 @@ from gecko_taskgraph.util.hg import get_json_pushchangedfiles
 logger = logging.getLogger(__name__)
 
 
-@memoize
+@functools.cache
 def get_changed_files(repository, revision):
     """
     Get the set of files changed in the push headed by the given revision.
@@ -121,7 +121,7 @@ class PreloadedGetLocallyChangedFiles:
         self.preloading_thread = threading.Thread(target=preloading, daemon=True)
         self.preloading_thread.start()
 
-    @memoize
+    @functools.cache
     def __call__(self, repo):
         if repo == self.preloaded_repo:
             # A thread can be joined many times, but it's going to happen only

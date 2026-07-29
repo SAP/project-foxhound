@@ -430,98 +430,6 @@ add_task(async function groupByHost() {
   await cleanup();
 });
 
-// This is the same as the previous (groupByHost), but it changes the standard
-// deviation multiplier by setting the corresponding pref.  This makes sure that
-// the pref is respected.
-add_task(async function groupByHostNonDefaultStddevMultiplier() {
-  let stddevMultiplier = 1.5;
-  Services.prefs.setCharPref(
-    "browser.urlbar.autoFill.stddevMultiplier",
-    Number(stddevMultiplier).toFixed(1)
-  );
-
-  await PlacesTestUtils.addVisits([
-    {
-      uri: "http://example.com/",
-      visitDate: daysAgo(30),
-      transition: PlacesUtils.history.TRANSITION_TYPED,
-    },
-
-    {
-      uri: "https://example.com/",
-      visitDate: daysAgo(7),
-      transition: PlacesUtils.history.TRANSITION_TYPED,
-    },
-
-    {
-      uri: "https://mozilla.org/",
-      transition: PlacesUtils.history.TRANSITION_TYPED,
-    },
-    {
-      uri: "https://mozilla.org/1",
-      visitDate: daysAgo(1),
-      transition: PlacesUtils.history.TRANSITION_TYPED,
-    },
-    {
-      uri: "https://mozilla.org/2",
-      visitDate: daysAgo(2),
-      transition: PlacesUtils.history.TRANSITION_TYPED,
-    },
-
-    // Add more origins to make the threshold higher
-    {
-      uri: "https://mozilla.com/",
-      transition: PlacesUtils.history.TRANSITION_TYPED,
-    },
-    {
-      uri: "https://mozilla.ca/",
-      transition: PlacesUtils.history.TRANSITION_TYPED,
-    },
-  ]);
-
-  let httpFrec = await getOriginFrecency("http://", "example.com");
-  let httpsFrec = await getOriginFrecency("https://", "example.com");
-  let otherFrec = await getOriginFrecency("https://", "mozilla.org");
-  Assert.less(httpFrec, httpsFrec, "Sanity check");
-  Assert.less(httpsFrec, otherFrec, "Sanity check");
-
-  // Make sure the frecencies of the three origins are as expected in relation
-  // to the threshold.
-  let threshold = await getOriginAutofillThreshold();
-  Assert.less(httpFrec, threshold, "http origin should be < threshold");
-  Assert.less(httpsFrec, threshold, "https origin should be < threshold");
-  Assert.lessOrEqual(
-    threshold,
-    otherFrec,
-    "Other origin should cross threshold"
-  );
-
-  Assert.lessOrEqual(
-    threshold,
-    httpFrec + httpsFrec,
-    "http and https origin added together should cross threshold"
-  );
-
-  // The https origin should be autofilled.
-  let context = createContext("ex", { isPrivate: false });
-  await check_results({
-    context,
-    autofilled: "example.com/",
-    completed: "https://example.com/",
-    matches: [
-      makeVisitResult(context, {
-        uri: "https://example.com/",
-        title: "test visit for https://example.com/",
-        heuristic: true,
-      }),
-    ],
-  });
-
-  Services.prefs.clearUserPref("browser.urlbar.autoFill.stddevMultiplier");
-
-  await cleanup();
-});
-
 // This is similar to suggestHistoryFalse_bookmark_0 in test_autofill_tasks.js,
 // but it adds unbookmarked visits for multiple URLs with the same origin.
 add_task(async function suggestHistoryFalse_bookmark_multiple() {
@@ -1152,6 +1060,12 @@ async function doTitleTest({ visits, input, expected }) {
   permanent private browsing mode), then the only information we have is the
   number of bookmarks per origin, and we're going to use that. */
 add_task(async function just_multiple_unvisited_bookmarks() {
+  // Bookmark-driven autofill is disabled when adaptive autofill is on.
+  Services.prefs.setBoolPref(
+    "browser.urlbar.autoFill.adaptiveHistory.enabled",
+    false
+  );
+
   // These are sorted to avoid confusion with natural sorting, so the one with
   // the highest score is added in the middle.
   let filledUrl = "https://www.tld2.com/";
@@ -1210,5 +1124,8 @@ add_task(async function just_multiple_unvisited_bookmarks() {
     ],
   });
 
+  Services.prefs.clearUserPref(
+    "browser.urlbar.autoFill.adaptiveHistory.enabled"
+  );
   await cleanup();
 });

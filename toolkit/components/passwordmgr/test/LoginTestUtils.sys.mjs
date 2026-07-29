@@ -516,20 +516,13 @@ LoginTestUtils.primaryPassword = {
       newPW = "";
     }
     try {
-      let pk11db = Cc["@mozilla.org/security/pk11tokendb;1"].getService(
-        Ci.nsIPK11TokenDB
+      let token = Cc["@mozilla.org/security/internalkeytoken;1"].createInstance(
+        Ci.nsIPKCS11Token
       );
-      let token = pk11db.getInternalKeyToken();
-      if (token.needsUserInit) {
-        dump("MP initialized to " + newPW + "\n");
-        token.initPassword(newPW);
-      } else {
-        token.checkPassword(oldPW);
-        dump("MP change from " + oldPW + " to " + newPW + "\n");
-        token.changePassword(oldPW, newPW);
-        if (!stayLoggedIn) {
-          token.logoutSimple();
-        }
+      dump("MP change from " + oldPW + " to " + newPW + "\n");
+      token.changePassword(oldPW, newPW);
+      if (!stayLoggedIn) {
+        token.logout();
       }
     } catch (e) {
       dump(

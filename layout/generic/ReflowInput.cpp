@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -1956,8 +1954,10 @@ static nscoord CalcQuirkContainingBlockHeight(
       // If the current frame we're looking at is positioned, we don't want to
       // go any further (see bug 221784).  The behavior we want here is: 1) If
       // not auto-height, use this as the percentage base.  2) If auto-height,
-      // keep looking, unless the frame is positioned.
-      if (NS_UNCONSTRAINEDSIZE == ri->ComputedHeight()) {
+      // or treating the height as indefinite, keep looking, unless the frame is
+      // positioned.
+      if (ri->ComputedHeight() == NS_UNCONSTRAINEDSIZE ||
+          ri->mFlags.mTreatBSizeAsIndefinite) {
         if (ri->mFrame->IsAbsolutelyPositioned(ri->mStyleDisplay)) {
           break;
         } else {

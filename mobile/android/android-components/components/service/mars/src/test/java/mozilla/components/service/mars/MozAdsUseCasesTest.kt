@@ -10,6 +10,7 @@ import mozilla.appservices.adsclient.MozAdsClientApiException
 import mozilla.components.concept.base.crash.CrashReporting
 import mozilla.components.support.test.any
 import mozilla.components.support.test.mock
+import mozilla.components.support.test.nullable
 import mozilla.components.support.test.whenever
 import org.junit.After
 import org.junit.Assert.assertFalse
@@ -57,7 +58,7 @@ class MozAdsUseCasesTest {
         val clickUrl = "https://firefox.com/click"
         val exception = MozAdsClientApiException.Other("test error")
 
-        whenever(client.recordClick(clickUrl = any())).thenThrow(exception)
+        whenever(client.recordClick(clickUrl = any(), options = nullable())).thenThrow(exception)
 
         assertFalse(useCases.recordClickInteraction(clickUrl = clickUrl))
         verify(client).recordClick(clickUrl = clickUrl)
@@ -78,7 +79,7 @@ class MozAdsUseCasesTest {
         val impressionUrl = "https://firefox.com/click"
         val exception = MozAdsClientApiException.Other("test error")
 
-        whenever(client.recordImpression(impressionUrl = any())).thenThrow(exception)
+        whenever(client.recordImpression(impressionUrl = any(), options = nullable())).thenThrow(exception)
 
         assertFalse(useCases.recordImpressionInteraction(impressionUrl = impressionUrl))
         verify(client).recordImpression(impressionUrl = impressionUrl)

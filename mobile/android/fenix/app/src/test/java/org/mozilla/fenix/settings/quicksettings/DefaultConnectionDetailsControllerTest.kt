@@ -11,11 +11,11 @@ import androidx.navigation.NavDirections
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.verify
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.feature.session.TrackingProtectionUseCases
-import mozilla.components.support.test.any
 import org.junit.Test
 import org.mozilla.fenix.ext.components
 import kotlin.coroutines.ContinuationInterceptor
@@ -39,7 +39,7 @@ class DefaultConnectionDetailsControllerTest {
         val navController: NavController = mockk(relaxed = true)
         val controller = DefaultConnectionDetailsController(
             fragment = fragment,
-            context = context,
+            components = context.components,
             scope = this,
             cookieBannersStorage = mockk(),
             navController = { navController },
@@ -60,8 +60,8 @@ class DefaultConnectionDetailsControllerTest {
         controller.handleBackPressed()
         testScheduler.advanceUntilIdle()
 
-        navController.popBackStack()
+        verify { navController.popBackStack() }
 
-        navController.navigate(any<NavDirections>())
+        verify { navController.navigate(any<NavDirections>()) }
     }
 }

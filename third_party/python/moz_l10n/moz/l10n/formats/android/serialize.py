@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from re import compile
-from typing import Dict, cast
+from typing import cast
 
 from lxml import etree
 
@@ -321,7 +321,7 @@ def set_pattern(
             ent_name = entity_name(part)
             if part.attributes.get("translate", None) == "no":
                 # <xliff:g>
-                attrib = cast(Dict[str, str], part.options) if part.function else None
+                attrib = cast(dict[str, str], part.options) if part.function else None
                 nsmap = {"xliff": xliff_ns} if not el.nsmap.get("xliff", None) else None
                 node = etree.SubElement(parent, xliff_g, attrib=attrib, nsmap=nsmap)
                 if ent_name:
@@ -370,7 +370,7 @@ def set_pattern(
                 name = f"{{{xmlns}}}{local}"
             else:
                 name = part.name
-            attrib = cast(Dict[str, str], part.options)
+            attrib = cast(dict[str, str], part.options)
             if part.kind == "standalone":
                 node = etree.SubElement(parent, name, attrib=attrib)
             elif part.kind == "open":

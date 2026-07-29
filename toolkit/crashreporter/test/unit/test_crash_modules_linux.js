@@ -17,7 +17,7 @@ add_task(async function run_test() {
       extra = await IOUtils.readJSON(extraFile.path);
 
       // Check modules' versions
-      const modules = extra.StackTraces.modules;
+      const modules = JSON.parse(extra.StackTraces).modules;
       const version_regexp = /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/;
 
       for (let module of modules) {

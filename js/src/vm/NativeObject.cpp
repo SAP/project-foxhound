@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -217,8 +215,8 @@ void ObjectElements::dumpStringContent(js::GenericPrinter& out) const {
       });
   out.put("]");
 
-  out.printf(", init=%u, capacity=%u, length=%u>", initializedLength, capacity,
-             length);
+  out.printf(", init=%u, capacity=%u, length=%u>", initializedLength.get(),
+             capacity, length);
 }
 #endif
 
@@ -299,16 +297,6 @@ bool NativeObject::setUniqueId(JSRuntime* runtime, uint64_t uid) {
 
   Nursery& nursery = runtime->gc.nursery();
   if (!hasDynamicSlots() && !allocateSlots(nursery, 0)) {
-    return false;
-  }
-
-  getSlotsHeader()->setUniqueId(uid);
-  return true;
-}
-
-bool NativeObject::setOrUpdateUniqueId(JSContext* cx, uint64_t uid) {
-  if (!hasDynamicSlots() && !allocateSlots(cx->nursery(), 0)) {
-    ReportOutOfMemory(cx);
     return false;
   }
 
@@ -1210,10 +1198,44 @@ static bool CallJSAddPropertyOp(JSContext* cx, JSAddPropertyOp op,
   return op(cx, obj, id, v);
 }
 
+static MOZ_ALWAYS_INLINE bool PreserveAnyUnpreservedWrapper(
+    JSContext* cx, Handle<NativeObject*> obj) {
+  if (MOZ_LIKELY(!obj->hasUnpreservedWrapper())) {
+    return true;
+  }
+
+  JS::Value objectWrapperSlot = obj->getReservedSlot(JS_OBJECT_WRAPPER_SLOT);
+  if (objectWrapperSlot.isUndefined() || !objectWrapperSlot.toPrivate()) {
+    return true;
+  }
+
+  // The flag is used to guard against having a wrapper that needs to be
+  // preserved but isn't so it's OK if we preserve the wrapper but fail to set
+  // the flag.
+  return MaybePreserveDOMWrapper(cx, obj) &&
+         JSObject::setFlag(cx, obj, ObjectFlag::HasPreservedWrapper);
+}
+
 static MOZ_ALWAYS_INLINE bool CallAddPropertyHook(JSContext* cx,
                                                   Handle<NativeObject*> obj,
                                                   HandleId id,
                                                   HandleValue value) {
+  // Inline addProperty for array objects.
+  if (obj->is<ArrayObject>()) {
+    ArrayObject* arr = &obj->as<ArrayObject>();
+    uint32_t length = arr->length();
+    uint32_t index;
+    if (IdIsIndex(id, &index) && index >= length) {
+      arr->setLength(cx, index + 1);
+    }
+    return true;
+  }
+
+  // Ensure any wrapper is preserved first.
+  if (!PreserveAnyUnpreservedWrapper(cx, obj)) {
+    return false;
+  }
+
   JSAddPropertyOp addProperty = obj->getClass()->getAddProperty();
   if (MOZ_UNLIKELY(addProperty)) {
     if (!CallJSAddPropertyOp(cx, addProperty, obj, id, value)) {
@@ -1221,16 +1243,7 @@ static MOZ_ALWAYS_INLINE bool CallAddPropertyHook(JSContext* cx,
       return false;
     }
   }
-  if (MOZ_UNLIKELY(obj->hasUnpreservedWrapper())) {
-    JS::Value objectWrapperSlot =
-        JS::GetReservedSlot(obj, JS_OBJECT_WRAPPER_SLOT);
-    if (objectWrapperSlot.isUndefined() || !objectWrapperSlot.toPrivate()) {
-      return true;
-    }
 
-    MOZ_ALWAYS_TRUE(MaybePreserveDOMWrapper(cx, obj));
-    return JSObject::setFlag(cx, obj, ObjectFlag::HasPreservedWrapper);
-  }
   return true;
 }
 
@@ -1247,6 +1260,11 @@ static MOZ_ALWAYS_INLINE bool CallAddPropertyHookDense(
     return true;
   }
 
+  // Ensure any wrapper is preserved first.
+  if (!PreserveAnyUnpreservedWrapper(cx, obj)) {
+    return false;
+  }
+
   JSAddPropertyOp addProperty = obj->getClass()->getAddProperty();
   if (MOZ_UNLIKELY(addProperty)) {
     RootedId id(cx, PropertyKey::Int(index));
@@ -1256,20 +1274,6 @@ static MOZ_ALWAYS_INLINE bool CallAddPropertyHookDense(
     }
   }
 
-  if (MOZ_UNLIKELY(obj->hasUnpreservedWrapper())) {
-    JS::Value objectWrapperSlot =
-        JS::GetReservedSlot(obj, JS_OBJECT_WRAPPER_SLOT);
-    if (objectWrapperSlot.isUndefined() || !objectWrapperSlot.toPrivate()) {
-      return true;
-    }
-
-    if (objectWrapperSlot.isUndefined() || !objectWrapperSlot.toPrivate()) {
-      return true;
-    }
-
-    MOZ_ALWAYS_TRUE(MaybePreserveDOMWrapper(cx, obj));
-    return JSObject::setFlag(cx, obj, ObjectFlag::HasPreservedWrapper);
-  }
   return true;
 }
 
@@ -1394,8 +1398,10 @@ static MOZ_ALWAYS_INLINE bool AddOrChangeProperty(
     }
     if (edResult == DenseElementResult::Success) {
       obj->setDenseElement(index, desc.value());
-      if (!CallAddPropertyHookDense(cx, obj, index, desc.value())) {
-        return false;
+      if constexpr (AddOrChange == IsAddOrChange::Add) {
+        if (!CallAddPropertyHookDense(cx, obj, index, desc.value())) {
+          return false;
+        }
       }
       return true;
     }
@@ -1471,16 +1477,29 @@ static MOZ_ALWAYS_INLINE bool AddOrChangeProperty(
       }
       if (edResult == DenseElementResult::Success) {
         MOZ_ASSERT(!desc.isAccessorDescriptor());
-        return CallAddPropertyHookDense(cx, obj, index, desc.value());
+        if constexpr (AddOrChange == IsAddOrChange::Add) {
+          if (!CallAddPropertyHookDense(cx, obj, index, desc.value())) {
+            return false;
+          }
+        }
+        return true;
       }
     }
   }
 
-  if (desc.isDataDescriptor()) {
-    return CallAddPropertyHook(cx, obj, id, desc.value());
+  if constexpr (AddOrChange == IsAddOrChange::Add) {
+    if (desc.isDataDescriptor()) {
+      if (!CallAddPropertyHook(cx, obj, id, desc.value())) {
+        return false;
+      }
+    } else {
+      if (!CallAddPropertyHook(cx, obj, id, UndefinedHandleValue)) {
+        return false;
+      }
+    }
   }
 
-  return CallAddPropertyHook(cx, obj, id, UndefinedHandleValue);
+  return true;
 }
 
 // Versions of AddOrChangeProperty optimized for adding a plain data property.
@@ -2024,6 +2043,7 @@ bool js::AddOrUpdateSparseElementHelper(JSContext* cx,
   // At this point we're updating a property: See SetExistingProperty.
   PropertyInfo prop = map->getPropertyInfo(index);
   if (prop.isDataProperty() && prop.writable()) {
+    Watchtower::watchPropertyValueChange<AllowGC::CanGC>(cx, obj, id, v, prop);
     obj->setSlot(prop.slot(), v);
     return true;
   }
@@ -2899,6 +2919,32 @@ bool js::NativeDeleteProperty(JSContext* cx, Handle<NativeObject*> obj,
   return SuppressDeletedProperty(cx, obj, id);
 }
 
+#ifdef DEBUG
+void NativeObject::assertHasNoNonWritableOrAccessorPropExclProto() const {
+  // Check the most recent MaxCount properties to not slow down debug builds too
+  // much.
+  static constexpr size_t MaxCount = 8;
+
+  size_t count = 0;
+  PropertyName* protoName = runtimeFromMainThread()->commonNames->proto_;
+
+  for (ShapePropertyIter<NoGC> iter(shape()); !iter.done(); iter++) {
+    // __proto__ is always allowed.
+    if (iter->key().isAtom(protoName)) {
+      continue;
+    }
+
+    MOZ_ASSERT(iter->isDataProperty());
+    MOZ_ASSERT(iter->writable());
+
+    count++;
+    if (count > MaxCount) {
+      return;
+    }
+  }
+}
+#endif
+
 bool js::CopyDataPropertiesNative(JSContext* cx, Handle<PlainObject*> target,
                                   Handle<NativeObject*> from,
                                   Handle<PlainObject*> excludedItems,
@@ -2966,7 +3012,7 @@ bool js::CopyDataPropertiesNative(JSContext* cx, Handle<PlainObject*> target,
       MOZ_ASSERT(!target->containsPure(key),
                  "didn't expect to find an existing property");
 
-      if (!AddDataPropertyToPlainObject(cx, target, key, value)) {
+      if (!AddDataPropertyToNativeObjectNoHooks(cx, target, key, value)) {
         return false;
       }
     } else {

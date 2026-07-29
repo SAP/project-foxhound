@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -205,9 +203,8 @@ LExpr* RuleSet::ExprForRegno(DW_REG_NUMBER aRegno) {
   }
 }
 
-RuleSet::RuleSet() {
-  // All fields are of type LExpr and so are initialised by LExpr::LExpr().
-}
+// All fields are of type LExpr and so are initialised by LExpr::LExpr().
+RuleSet::RuleSet() = default;
 
 ////////////////////////////////////////////////////////////////
 // SecMap                                                     //
@@ -1071,8 +1068,8 @@ TaggedUWord EvaluatePfxExpr(int32_t start, const UnwindRegs* aOldRegs,
   // the highest numbered in-use element.
   const int N_STACK = 10;
   TaggedUWord stack[N_STACK];
+  std::fill(std::begin(stack), std::end(stack), TaggedUWord());
   int stackPointer = -1;
-  for (int i = 0; i < N_STACK; i++) stack[i] = TaggedUWord();
 
 #define PUSH(_tuw)                                             \
   do {                                                         \
@@ -1687,7 +1684,7 @@ static __attribute__((noinline)) bool GetAndCheckStackTrace(
   memset(&startRegs, 0, sizeof(startRegs));
 #if defined(GP_ARCH_amd64)
   volatile uintptr_t block[3];
-  MOZ_ASSERT(sizeof(block) == 24);
+  static_assert(sizeof(block) == 24);
   __asm__ __volatile__(
       "leaq 0(%%rip), %%r15"
       "\n\t"
@@ -1707,7 +1704,7 @@ static __attribute__((noinline)) bool GetAndCheckStackTrace(
   uintptr_t start = block[1] - REDZONE_SIZE;
 #elif defined(GP_PLAT_x86_linux) || defined(GP_PLAT_x86_android)
   volatile uintptr_t block[3];
-  MOZ_ASSERT(sizeof(block) == 12);
+  static_assert(sizeof(block) == 12);
   __asm__ __volatile__(
       ".byte 0xE8,0x00,0x00,0x00,0x00" /*call next insn*/
       "\n\t"
@@ -1729,7 +1726,7 @@ static __attribute__((noinline)) bool GetAndCheckStackTrace(
   uintptr_t start = block[1] - REDZONE_SIZE;
 #elif defined(GP_PLAT_arm_linux) || defined(GP_PLAT_arm_android)
   volatile uintptr_t block[6];
-  MOZ_ASSERT(sizeof(block) == 24);
+  static_assert(sizeof(block) == 24);
   __asm__ __volatile__(
       "mov r0, r15"
       "\n\t"
@@ -1758,7 +1755,7 @@ static __attribute__((noinline)) bool GetAndCheckStackTrace(
   uintptr_t start = block[1] - REDZONE_SIZE;
 #elif defined(GP_ARCH_arm64)
   volatile uintptr_t block[4];
-  MOZ_ASSERT(sizeof(block) == 32);
+  static_assert(sizeof(block) == 32);
   __asm__ __volatile__(
       "adr x0, . \n\t"
       "str x0, [%0, #0] \n\t"
@@ -1777,7 +1774,7 @@ static __attribute__((noinline)) bool GetAndCheckStackTrace(
   uintptr_t start = block[1] - REDZONE_SIZE;
 #elif defined(GP_ARCH_mips64)
   volatile uintptr_t block[3];
-  MOZ_ASSERT(sizeof(block) == 24);
+  static_assert(sizeof(block) == 24);
   __asm__ __volatile__(
       "sd $29, 8(%0)     \n"
       "sd $30, 16(%0)    \n"

@@ -238,6 +238,9 @@ export const PREFS = Object.freeze({
   "nimbus.qa.pref-2": PREF_STRING,
   "security.sandbox.content.level": PREF_INT,
   "termsofuse.acceptedDate": PREF_STRING,
+  "termsofuse.acceptedVersion": PREF_INT,
+  "termsofuse.bypassNotification": PREF_BOOL,
+  "termsofuse.firstAcceptedDate": PREF_STRING,
   "trailhead.firstrun.didSeeAboutWelcome": PREF_BOOL,
 });
 

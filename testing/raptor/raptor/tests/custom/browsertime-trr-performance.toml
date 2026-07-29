@@ -20,13 +20,6 @@ test_script = "trr_multi_domain_performance.js"
 test_url = "None"
 custom_data = true
 
-["dns-usatdy"]
-browsertime_args = "--browsertime.test_type=browser_idle --browsertime.test_url=https://www.usatoday.com/ --firefox.preference network.trr.mode:0"
-browser_cycles = 3
-test_script = "trr_performance.js"
-test_url = "None"
-custom_data = true
-
 ["trr-cira"]
 browsertime_args = "--browsertime.test_type=browser_idle --firefox.preference network.trr.mode:3 --firefox.preference network.trr.uri:https://private.canadianshield.cira.ca/dns-query"
 browser_cycles = 3
@@ -64,13 +57,6 @@ custom_data = true
 
 ["trr-next"]
 browsertime_args = "--browsertime.test_type=browser_idle --firefox.preference network.trr.mode:3 --firefox.preference network.trr.uri:https://firefox.dns.nextdns.io/dns-query"
-browser_cycles = 3
-test_script = "trr_performance.js"
-test_url = "None"
-custom_data = true
-
-["trr-usatdy"]
-browsertime_args = "--browsertime.test_type=browser_idle --browsertime.test_url=https://www.usatoday.com/ --firefox.preference network.trr.mode:3 --firefox.preference network.trr.uri:https://mozilla.cloudflare-dns.com/dns-query"
 browser_cycles = 3
 test_script = "trr_performance.js"
 test_url = "None"

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -181,25 +180,162 @@ template bool HTMLEditUtils::IsSameCSSColorValue(const nsAString& aColorA,
 template bool HTMLEditUtils::IsSameCSSColorValue(const nsACString& aColorA,
                                                  const nsACString& aColorB);
 
-template Maybe<EditorLineBreak> HTMLEditUtils::GetFollowingUnnecessaryLineBreak(
-    const EditorDOMPoint& aPoint);
-template Maybe<EditorLineBreak> HTMLEditUtils::GetFollowingUnnecessaryLineBreak(
-    const EditorRawDOMPoint& aPoint);
-template Maybe<EditorLineBreak> HTMLEditUtils::GetFollowingUnnecessaryLineBreak(
-    const EditorDOMPointInText& aPoint);
-template Maybe<EditorLineBreak> HTMLEditUtils::GetFollowingUnnecessaryLineBreak(
-    const EditorRawDOMPointInText& aPoint);
+template bool HTMLEditUtils::IsPreformattedLineBreakFollowedByBlockBoundary(
+    const EditorDOMPoint&, SkipWhiteSpaceStyleCheck, const Element*, Element**);
+template bool HTMLEditUtils::IsPreformattedLineBreakFollowedByBlockBoundary(
+    const EditorRawDOMPoint&, SkipWhiteSpaceStyleCheck, const Element*,
+    Element**);
+template bool HTMLEditUtils::IsPreformattedLineBreakFollowedByBlockBoundary(
+    const EditorDOMPointInText&, SkipWhiteSpaceStyleCheck, const Element*,
+    Element**);
+template bool HTMLEditUtils::IsPreformattedLineBreakFollowedByBlockBoundary(
+    const EditorRawDOMPointInText&, SkipWhiteSpaceStyleCheck, const Element*,
+    Element**);
+
+template bool
+HTMLEditUtils::IsPreformattedLineBreakFollowedByCurrentBlockBoundary(
+    const EditorDOMPoint&, SkipWhiteSpaceStyleCheck, const Element*, Element**);
+template bool
+HTMLEditUtils::IsPreformattedLineBreakFollowedByCurrentBlockBoundary(
+    const EditorRawDOMPoint&, SkipWhiteSpaceStyleCheck, const Element*,
+    Element**);
+template bool
+HTMLEditUtils::IsPreformattedLineBreakFollowedByCurrentBlockBoundary(
+    const EditorDOMPointInText&, SkipWhiteSpaceStyleCheck, const Element*,
+    Element**);
+template bool
+HTMLEditUtils::IsPreformattedLineBreakFollowedByCurrentBlockBoundary(
+    const EditorRawDOMPointInText&, SkipWhiteSpaceStyleCheck, const Element*,
+    Element**);
+
+template bool
+HTMLEditUtils::IsPreformattedLineBreakFollowingCurrentBlockBoundary(
+    const EditorDOMPoint&, SkipWhiteSpaceStyleCheck, const Element*, Element**);
+template bool
+HTMLEditUtils::IsPreformattedLineBreakFollowingCurrentBlockBoundary(
+    const EditorRawDOMPoint&, SkipWhiteSpaceStyleCheck, const Element*,
+    Element**);
+template bool
+HTMLEditUtils::IsPreformattedLineBreakFollowingCurrentBlockBoundary(
+    const EditorDOMPointInText&, SkipWhiteSpaceStyleCheck, const Element*,
+    Element**);
+template bool
+HTMLEditUtils::IsPreformattedLineBreakFollowingCurrentBlockBoundary(
+    const EditorRawDOMPointInText&, SkipWhiteSpaceStyleCheck, const Element*,
+    Element**);
+
+template bool
+HTMLEditUtils::IsPreformattedLineBreakFollowedByOtherBlockBoundary(
+    const EditorDOMPoint&, SkipWhiteSpaceStyleCheck, const Element*, Element**);
+template bool
+HTMLEditUtils::IsPreformattedLineBreakFollowedByOtherBlockBoundary(
+    const EditorRawDOMPoint&, SkipWhiteSpaceStyleCheck, const Element*,
+    Element**);
+template bool
+HTMLEditUtils::IsPreformattedLineBreakFollowedByOtherBlockBoundary(
+    const EditorDOMPointInText&, SkipWhiteSpaceStyleCheck, const Element*,
+    Element**);
+template bool
+HTMLEditUtils::IsPreformattedLineBreakFollowedByOtherBlockBoundary(
+    const EditorRawDOMPointInText&, SkipWhiteSpaceStyleCheck, const Element*,
+    Element**);
+
+template bool HTMLEditUtils::IsPreformattedLineBreakFollowedByLineBoundary(
+    const EditorDOMPoint&, SkipWhiteSpaceStyleCheck, const Element*, Element**);
+template bool HTMLEditUtils::IsPreformattedLineBreakFollowedByLineBoundary(
+    const EditorRawDOMPoint&, SkipWhiteSpaceStyleCheck, const Element*,
+    Element**);
+template bool HTMLEditUtils::IsPreformattedLineBreakFollowedByLineBoundary(
+    const EditorDOMPointInText&, SkipWhiteSpaceStyleCheck, const Element*,
+    Element**);
+template bool HTMLEditUtils::IsPreformattedLineBreakFollowedByLineBoundary(
+    const EditorRawDOMPointInText&, SkipWhiteSpaceStyleCheck, const Element*,
+    Element**);
+
+template bool HTMLEditUtils::IsPreformattedLineBreakFollowingLineBoundary(
+    const EditorDOMPoint&, SkipWhiteSpaceStyleCheck, const Element*, Element**);
+template bool HTMLEditUtils::IsPreformattedLineBreakFollowingLineBoundary(
+    const EditorRawDOMPoint&, SkipWhiteSpaceStyleCheck, const Element*,
+    Element**);
+template bool HTMLEditUtils::IsPreformattedLineBreakFollowingLineBoundary(
+    const EditorDOMPointInText&, SkipWhiteSpaceStyleCheck, const Element*,
+    Element**);
+template bool HTMLEditUtils::IsPreformattedLineBreakFollowingLineBoundary(
+    const EditorRawDOMPointInText&, SkipWhiteSpaceStyleCheck, const Element*,
+    Element**);
+
+template bool HTMLEditUtils::IsPreformattedLineBreakFollowingLineBreak(
+    const EditorDOMPoint&, SkipWhiteSpaceStyleCheck, const Element*);
+template bool HTMLEditUtils::IsPreformattedLineBreakFollowingLineBreak(
+    const EditorRawDOMPoint&, SkipWhiteSpaceStyleCheck, const Element*);
+template bool HTMLEditUtils::IsPreformattedLineBreakFollowingLineBreak(
+    const EditorDOMPointInText&, SkipWhiteSpaceStyleCheck, const Element*);
+template bool HTMLEditUtils::IsPreformattedLineBreakFollowingLineBreak(
+    const EditorRawDOMPointInText&, SkipWhiteSpaceStyleCheck, const Element*);
+
+template bool HTMLEditUtils::IsUnnecessaryPreformattedLineBreak(
+    const EditorDOMPoint&, PaddingForEmptyBlock, SkipWhiteSpaceStyleCheck,
+    const Element*, Element**);
+template bool HTMLEditUtils::IsUnnecessaryPreformattedLineBreak(
+    const EditorRawDOMPoint&, PaddingForEmptyBlock, SkipWhiteSpaceStyleCheck,
+    const Element*, Element**);
+template bool HTMLEditUtils::IsUnnecessaryPreformattedLineBreak(
+    const EditorDOMPointInText&, PaddingForEmptyBlock, SkipWhiteSpaceStyleCheck,
+    const Element*, Element**);
+template bool HTMLEditUtils::IsUnnecessaryPreformattedLineBreak(
+    const EditorRawDOMPointInText&, PaddingForEmptyBlock,
+    SkipWhiteSpaceStyleCheck, const Element*, Element**);
+
+template bool HTMLEditUtils::IsSignificantPreformattedLineBreak(
+    const EditorDOMPoint&, PaddingForEmptyBlock, SkipWhiteSpaceStyleCheck,
+    const Element*, Element**);
+template bool HTMLEditUtils::IsSignificantPreformattedLineBreak(
+    const EditorRawDOMPoint&, PaddingForEmptyBlock, SkipWhiteSpaceStyleCheck,
+    const Element*, Element**);
+template bool HTMLEditUtils::IsSignificantPreformattedLineBreak(
+    const EditorDOMPointInText&, PaddingForEmptyBlock, SkipWhiteSpaceStyleCheck,
+    const Element*, Element**);
+template bool HTMLEditUtils::IsSignificantPreformattedLineBreak(
+    const EditorRawDOMPointInText&, PaddingForEmptyBlock,
+    SkipWhiteSpaceStyleCheck, const Element*, Element**);
+
+template WSScanResult
+HTMLEditUtils::ScanInclusiveNextThingWithIgnoringUnnecessaryLineBreak(
+    const EditorDOMPoint&, PaddingForEmptyBlock, const Element&,
+    const Element*);
+template WSScanResult
+HTMLEditUtils::ScanInclusiveNextThingWithIgnoringUnnecessaryLineBreak(
+    const EditorRawDOMPoint&, PaddingForEmptyBlock, const Element&,
+    const Element*);
+template WSScanResult
+HTMLEditUtils::ScanInclusiveNextThingWithIgnoringUnnecessaryLineBreak(
+    const EditorDOMPointInText&, PaddingForEmptyBlock, const Element&,
+    const Element*);
+template WSScanResult
+HTMLEditUtils::ScanInclusiveNextThingWithIgnoringUnnecessaryLineBreak(
+    const EditorRawDOMPointInText&, PaddingForEmptyBlock, const Element&,
+    const Element*);
+
+template Maybe<EditorLineBreak> HTMLEditUtils::GetPrecedingUnnecessaryLineBreak(
+    const EditorDOMPoint&, const Element*);
+template Maybe<EditorLineBreak> HTMLEditUtils::GetPrecedingUnnecessaryLineBreak(
+    const EditorRawDOMPoint&, const Element*);
+template Maybe<EditorLineBreak> HTMLEditUtils::GetPrecedingUnnecessaryLineBreak(
+    const EditorDOMPointInText&, const Element*);
+template Maybe<EditorLineBreak> HTMLEditUtils::GetPrecedingUnnecessaryLineBreak(
+    const EditorRawDOMPointInText&, const Element*);
 template Maybe<EditorRawLineBreak>
-HTMLEditUtils::GetFollowingUnnecessaryLineBreak(const EditorDOMPoint& aPoint);
+HTMLEditUtils::GetPrecedingUnnecessaryLineBreak(const EditorDOMPoint&,
+                                                const Element*);
 template Maybe<EditorRawLineBreak>
-HTMLEditUtils::GetFollowingUnnecessaryLineBreak(
-    const EditorRawDOMPoint& aPoint);
+HTMLEditUtils::GetPrecedingUnnecessaryLineBreak(const EditorRawDOMPoint&,
+                                                const Element*);
 template Maybe<EditorRawLineBreak>
-HTMLEditUtils::GetFollowingUnnecessaryLineBreak(
-    const EditorDOMPointInText& aPoint);
+HTMLEditUtils::GetPrecedingUnnecessaryLineBreak(const EditorDOMPointInText&,
+                                                const Element*);
 template Maybe<EditorRawLineBreak>
-HTMLEditUtils::GetFollowingUnnecessaryLineBreak(
-    const EditorRawDOMPointInText& aPoint);
+HTMLEditUtils::GetPrecedingUnnecessaryLineBreak(const EditorRawDOMPointInText&,
+                                                const Element*);
 
 template bool HTMLEditUtils::PointIsImmediatelyBeforeCurrentBlockBoundary(
     const EditorDOMPoint& aPoint,
@@ -213,11 +349,6 @@ template bool HTMLEditUtils::PointIsImmediatelyBeforeCurrentBlockBoundary(
 template bool HTMLEditUtils::PointIsImmediatelyBeforeCurrentBlockBoundary(
     const EditorRawDOMPointInText& aPoint,
     IgnoreInvisibleLineBreak aIgnoreInvisibleLineBreak);
-
-template Maybe<EditorLineBreak> HTMLEditUtils::GetUnnecessaryLineBreak(
-    const Element& aBlockElement, ScanLineBreak aScanLineBreak);
-template Maybe<EditorRawLineBreak> HTMLEditUtils::GetUnnecessaryLineBreak(
-    const Element& aBlockElement, ScanLineBreak aScanLineBreak);
 
 bool HTMLEditUtils::ElementIsEditableRoot(const Element& aElement) {
   MOZ_ASSERT(!aElement.IsInNativeAnonymousSubtree());
@@ -288,7 +419,7 @@ static bool IsHTMLBlockElementByDefault(const nsIContent& aContent) {
   }
   if (aContent.IsHTMLElement(nsGkAtoms::br)) {  // shortcut for TextEditor
     MOZ_ASSERT(!nsHTMLElement::IsBlock(
-        nsHTMLTags::CaseSensitiveAtomTagToId(nsGkAtoms::br)));
+        aContent.NodeInfo()->HTMLTag().valueOr(eHTMLTag_userdefined)));
     return false;
   }
   // We want to treat these as block nodes even though nsHTMLElement says
@@ -301,7 +432,7 @@ static bool IsHTMLBlockElementByDefault(const nsIContent& aContent) {
   }
 
   return nsHTMLElement::IsBlock(
-      nsHTMLTags::CaseSensitiveAtomTagToId(aContent.NodeInfo()->NameAtom()));
+      aContent.NodeInfo()->HTMLTag().valueOr(eHTMLTag_userdefined));
 }
 
 bool HTMLEditUtils::IsBlockElement(const nsIContent& aContent,
@@ -501,11 +632,6 @@ bool HTMLEditUtils::IsVisibleElementEvenIfLeafNode(const nsIContent& aContent) {
   if (!aContent.IsHTMLElement()) {
     return true;
   }
-  nsIFrame* const primaryFrame = aContent.GetPrimaryFrame();
-  if (primaryFrame && aContent.IsInComposedDoc() &&
-      HTMLEditUtils::IsInclusiveAncestorCSSDisplayNone(aContent)) {
-    return false;
-  }
   if (HTMLEditUtils::IsBlockElement(
           aContent, BlockInlineCheck::UseComputedDisplayStyle)) {
     return true;
@@ -519,11 +645,10 @@ bool HTMLEditUtils::IsVisibleElementEvenIfLeafNode(const nsIContent& aContent) {
                                    nsGkAtoms::select, nsGkAtoms::textarea)) {
     return true;
   }
-  if (const HTMLInputElement* inputElement =
-          HTMLInputElement::FromNode(&aContent)) {
+  if (const auto* inputElement = HTMLInputElement::FromNode(aContent)) {
     return inputElement->ControlType() != FormControlType::InputHidden;
   }
-  if (primaryFrame) {
+  if (nsIFrame* const primaryFrame = aContent.GetPrimaryFrame()) {
     // If the frame is not dirty or non-inline container frame, we can trust
     // whether the frame is empty or not.
     if (!primaryFrame->IsSubtreeDirty() || !primaryFrame->IsInlineFrame()) {
@@ -700,9 +825,6 @@ bool HTMLEditUtils::IsReplacedElement(const Element& aElement) {
     return !aElement.AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
                                  nsGkAtoms::hidden, eIgnoreCase);
   }
-  if (HTMLEditUtils::IsFormWidgetElement(aElement)) {
-    return true;
-  }
   // <object> is a special element, it shows its subtree when it does not load
   // its content.
   if (aElement.IsHTMLElement(nsGkAtoms::object)) {
@@ -718,20 +840,14 @@ bool HTMLEditUtils::IsReplacedElement(const Element& aElement) {
       nsGkAtoms::audio,
       // In strictly speaking, <br> is not a replaced element, but treating it
       // as a replaced element makes HTMLEditor and its peers simpler.
-      nsGkAtoms::br, nsGkAtoms::canvas, nsGkAtoms::embed, nsGkAtoms::iframe,
-      nsGkAtoms::img,
+      nsGkAtoms::br, nsGkAtoms::button, nsGkAtoms::canvas, nsGkAtoms::embed,
+      nsGkAtoms::iframe, nsGkAtoms::img, nsGkAtoms::meter,
       // <optgroup> and <option> are not replaced element actually but they
       // are treated as so for the compatibility with Chrome.
       // XXX I wonder if we can treat them as so only when they are in
       // <select>.
-      nsGkAtoms::optgroup, nsGkAtoms::option, nsGkAtoms::video);
-}
-
-bool HTMLEditUtils::IsFormWidgetElement(const nsIContent& aContent) {
-  return aContent.IsAnyOfHTMLElements(nsGkAtoms::textarea, nsGkAtoms::select,
-                                      nsGkAtoms::button, nsGkAtoms::output,
-                                      nsGkAtoms::progress, nsGkAtoms::meter,
-                                      nsGkAtoms::input);
+      nsGkAtoms::optgroup, nsGkAtoms::option, nsGkAtoms::progress,
+      nsGkAtoms::select, nsGkAtoms::textarea, nsGkAtoms::video);
 }
 
 bool HTMLEditUtils::IsAlignAttrSupported(const nsIContent& aContent) {
@@ -742,24 +858,76 @@ bool HTMLEditUtils::IsAlignAttrSupported(const nsIContent& aContent) {
       nsGkAtoms::h4, nsGkAtoms::h5, nsGkAtoms::h6);
 }
 
-bool HTMLEditUtils::IsVisibleTextNode(const Text& aText) {
+bool HTMLEditUtils::IsVisibleTextNode(
+    const Text& aText, TreatInvisibleLineBreakAs aTreatInvisibleLineBreakAs) {
   if (!aText.TextDataLength()) {
     return false;
   }
 
-  Maybe<uint32_t> visibleCharOffset =
+  EditorRawDOMPointInText atPreformattedLineBreak;
+  const Maybe<uint32_t> visibleCharOffset =
       HTMLEditUtils::GetInclusiveNextNonCollapsibleCharOffset(
           EditorDOMPointInText(&aText, 0));
   if (visibleCharOffset.isSome()) {
-    return true;
+    atPreformattedLineBreak.Set(&aText, *visibleCharOffset);
+    if (aTreatInvisibleLineBreakAs == TreatInvisibleLineBreakAs::Visible ||
+        !atPreformattedLineBreak.IsCharNewLine()) {
+      return true;
+    }
+    // If aText has a visible character other than the first preformatted
+    // linefeed, it's visible.
+    Maybe<EditorRawLineBreak> preformattedLineBreak =
+        EditorRawLineBreak::CreateIfTextHasOnlyOneAndNoOtherVisibleCharacters(
+            aText);
+    if (!preformattedLineBreak) {
+      return true;  // not only a preformatted linefeed so that it's visible.
+    }
+    if (!preformattedLineBreak->IsFollowedByBlockBoundary()) {
+      return true;  // a line break before a visible content.
+    }
+    // If the line break follows a line boundary, it makes an empty line before
+    // the block boundary.
+    return preformattedLineBreak->IsFollowingLineBoundary();
   }
 
   // Now, all characters in aText is collapsible white-spaces.  The node is
   // invisible if next to block boundary.
-  return !HTMLEditUtils::GetElementOfImmediateBlockBoundary(
-             aText, WalkTreeDirection::Forward) &&
-         !HTMLEditUtils::GetElementOfImmediateBlockBoundary(
-             aText, WalkTreeDirection::Backward);
+  const WSScanResult followingThing =
+      WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
+          {}, EditorRawDOMPoint::After(aText));
+  if (followingThing.ReachedBlockBoundary()) {
+    // If collapsible white-spaces are followed by a block boundary, they are
+    // invisible.
+    return false;
+  }
+  const WSScanResult precedingThing =
+      WSRunScanner::ScanPreviousVisibleNodeOrBlockBoundary(
+          {}, EditorRawDOMPoint(&aText));
+  if (precedingThing.ReachedBlockBoundary()) {
+    // If collapsible white-spaces follows a block boundary, they are
+    // invisible.
+    return false;
+  }
+  // Backward compatibility for the legacy document created by us.
+  // Putting a <br> after a collapsed white-space made it visible if and only if
+  // it follows a visible thing.
+  // FIXME: We should stop doing this after fixing bug 1951041 even if we'd
+  // break the backward compatibility.
+  if (followingThing.ReachedBRElement() &&
+      !precedingThing.ReachedLineBoundary()) {
+    return true;
+  }
+  // If aText is between line breaks or block boundaries, it's invisible.
+  if (followingThing.ReachedLineBoundary() &&
+      precedingThing.ReachedLineBoundary()) {
+    return false;
+  }
+  // Otherwise, the white-spaces should be collapsed to a visible white-space.
+  // FIXME: If aText has only collapsible white-spaces and a preceding `Text`
+  // ends with collapsible white-spaces, all of the invisible white-spaces in
+  // aText is merged into the preceding white-spaces.  Therefore, in such case,
+  // we need to treat aText is invisible.
+  return true;
 }
 
 bool HTMLEditUtils::IsInVisibleTextFrames(nsPresContext* aPresContext,
@@ -781,6 +949,596 @@ bool HTMLEditUtils::IsInVisibleTextFrames(nsPresContext* aPresContext,
   }
 
   return textFrame->HasVisibleText();
+}
+
+bool HTMLEditUtils::IsBRElementFollowedByBlockBoundary(
+    const dom::HTMLBRElement& aBRElement,
+    const Element* aAncestorLimiter /* = nullptr */,
+    Element** aFollowingBlockBoundaryElement /* = nullptr */) {
+  if (aFollowingBlockBoundaryElement) {
+    *aFollowingBlockBoundaryElement = nullptr;
+  }
+  const WSScanResult followingThing =
+      WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
+          // If there is a visible thing including empty inline elements,
+          // aBRElement causes a line break so that we cant treat it's not
+          // followed by a block boundary in such case.
+          {WSRunScanner::Option::StopAtVisibleEmptyInlineContainers},
+          EditorRawDOMPoint::After(aBRElement), aAncestorLimiter);
+  if (!followingThing.ReachedBlockBoundary()) {
+    return false;
+  }
+  if (aFollowingBlockBoundaryElement) {
+    *aFollowingBlockBoundaryElement = followingThing.ElementPtr();
+  }
+  return true;
+}
+
+template <typename EditorDOMPointType>
+bool HTMLEditUtils::IsPreformattedLineBreakFollowedByBlockBoundary(
+    const EditorDOMPointType& aPoint,
+    SkipWhiteSpaceStyleCheck
+        aSkipWhiteSpaceStyleCheck /* = SkipWhiteSpaceStyleCheck::No */,
+    const Element* aAncestorLimiter /* = nullptr */,
+    Element** aFollowingBlockBoundaryElement /* = nullptr */) {
+  if (aFollowingBlockBoundaryElement) {
+    *aFollowingBlockBoundaryElement = nullptr;
+  }
+  if (!aPoint.IsInTextNode() || aPoint.IsEndOfContainer() ||
+      !aPoint.IsCharNewLine()) {
+    return false;
+  }
+  if (aSkipWhiteSpaceStyleCheck == SkipWhiteSpaceStyleCheck::No &&
+      !EditorUtils::IsNewLinePreformatted(
+          *aPoint.template ContainerAs<Text>())) {
+    return false;
+  }
+  const WSScanResult followingThing =
+      WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
+          // If there is a visible thing including empty inline elements,
+          // aBRElement causes a line break so that we can treat it's not
+          // followed by a block boundary in such case.
+          {WSRunScanner::Option::StopAtVisibleEmptyInlineContainers},
+          aPoint.template NextPoint<EditorRawDOMPoint>(), aAncestorLimiter);
+  if (!followingThing.ReachedBlockBoundary()) {
+    return false;
+  }
+  if (aFollowingBlockBoundaryElement) {
+    *aFollowingBlockBoundaryElement = followingThing.ElementPtr();
+  }
+  return true;
+}
+
+bool HTMLEditUtils::IsBRElementFollowedByCurrentBlockBoundary(
+    const dom::HTMLBRElement& aBRElement,
+    const Element* aAncestorLimiter /* = nullptr */,
+    Element** aFollowingBlockBoundaryElement /* = nullptr */) {
+  if (aFollowingBlockBoundaryElement) {
+    *aFollowingBlockBoundaryElement = nullptr;
+  }
+  const WSScanResult followingThing =
+      WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
+          // If there is a visible thing including empty inline elements,
+          // aBRElement causes a line break so that we cant treat it's not
+          // followed by a block boundary in such case.
+          {WSRunScanner::Option::StopAtVisibleEmptyInlineContainers},
+          EditorRawDOMPoint::After(aBRElement), aAncestorLimiter);
+  if (!followingThing.ReachedCurrentBlockBoundary()) {
+    return false;
+  }
+  if (aFollowingBlockBoundaryElement) {
+    *aFollowingBlockBoundaryElement = followingThing.ElementPtr();
+  }
+  return true;
+}
+
+bool HTMLEditUtils::IsBRElementFollowedByOtherBlockBoundary(
+    const dom::HTMLBRElement& aBRElement,
+    const Element* aAncestorLimiter /* = nullptr */,
+    Element** aFollowingBlockBoundaryElement /* = nullptr */) {
+  if (aFollowingBlockBoundaryElement) {
+    *aFollowingBlockBoundaryElement = nullptr;
+  }
+  const WSScanResult followingThing =
+      WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
+          // If there is a visible thing including empty inline elements,
+          // aBRElement causes a line break so that we cant treat it's not
+          // followed by a block boundary in such case.
+          {WSRunScanner::Option::StopAtVisibleEmptyInlineContainers},
+          EditorRawDOMPoint::After(aBRElement), aAncestorLimiter);
+  if (!followingThing.ReachedOtherBlockElement()) {
+    return false;
+  }
+  if (aFollowingBlockBoundaryElement) {
+    *aFollowingBlockBoundaryElement = followingThing.ElementPtr();
+  }
+  return true;
+}
+
+template <typename EditorDOMPointType>
+bool HTMLEditUtils::IsPreformattedLineBreakFollowedByCurrentBlockBoundary(
+    const EditorDOMPointType& aPoint,
+    SkipWhiteSpaceStyleCheck
+        aSkipWhiteSpaceStyleCheck /* = SkipWhiteSpaceStyleCheck::No */,
+    const Element* aAncestorLimiter /* = nullptr */,
+    Element** aFollowingBlockBoundaryElement /* = nullptr */) {
+  if (aFollowingBlockBoundaryElement) {
+    *aFollowingBlockBoundaryElement = nullptr;
+  }
+  if (!aPoint.IsInTextNode() || aPoint.IsEndOfContainer() ||
+      !aPoint.IsCharNewLine()) {
+    return false;
+  }
+  if (aSkipWhiteSpaceStyleCheck == SkipWhiteSpaceStyleCheck::No &&
+      !EditorUtils::IsNewLinePreformatted(
+          *aPoint.template ContainerAs<Text>())) {
+    return false;
+  }
+  const WSScanResult followingThing =
+      WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
+          // If there is a visible thing including empty inline elements,
+          // aBRElement causes a line break so that we can treat it's not
+          // followed by a block boundary in such case.
+          {WSRunScanner::Option::StopAtVisibleEmptyInlineContainers},
+          aPoint.template NextPoint<EditorRawDOMPoint>(), aAncestorLimiter);
+  if (!followingThing.ReachedCurrentBlockBoundary()) {
+    return false;
+  }
+  if (aFollowingBlockBoundaryElement) {
+    *aFollowingBlockBoundaryElement = followingThing.ElementPtr();
+  }
+  return true;
+}
+
+template <typename EditorDOMPointType>
+bool HTMLEditUtils::IsPreformattedLineBreakFollowedByOtherBlockBoundary(
+    const EditorDOMPointType& aPoint,
+    SkipWhiteSpaceStyleCheck
+        aSkipWhiteSpaceStyleCheck /* = SkipWhiteSpaceStyleCheck::No */,
+    const Element* aAncestorLimiter /* = nullptr */,
+    Element** aFollowingBlockBoundaryElement /* = nullptr */) {
+  if (aFollowingBlockBoundaryElement) {
+    *aFollowingBlockBoundaryElement = nullptr;
+  }
+  if (!aPoint.IsInTextNode() || aPoint.IsEndOfContainer() ||
+      !aPoint.IsCharNewLine()) {
+    return false;
+  }
+  if (aSkipWhiteSpaceStyleCheck == SkipWhiteSpaceStyleCheck::No &&
+      !EditorUtils::IsNewLinePreformatted(
+          *aPoint.template ContainerAs<Text>())) {
+    return false;
+  }
+  const WSScanResult followingThing =
+      WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
+          // If there is a visible thing including empty inline elements,
+          // aBRElement causes a line break so that we can treat it's not
+          // followed by a block boundary in such case.
+          {WSRunScanner::Option::StopAtVisibleEmptyInlineContainers},
+          aPoint.template NextPoint<EditorRawDOMPoint>(), aAncestorLimiter);
+  if (!followingThing.ReachedOtherBlockElement()) {
+    return false;
+  }
+  if (aFollowingBlockBoundaryElement) {
+    *aFollowingBlockBoundaryElement = followingThing.ElementPtr();
+  }
+  return true;
+}
+
+bool HTMLEditUtils::IsBRElementFollowedByLineBoundary(
+    const dom::HTMLBRElement& aBRElement,
+    const Element* aAncestorLimiter /* = nullptr */,
+    Element** aFollowingBlockBoundaryElement /* = nullptr */) {
+  if (aFollowingBlockBoundaryElement) {
+    *aFollowingBlockBoundaryElement = nullptr;
+  }
+  const WSScanResult followingThing =
+      WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
+          // If there is a visible thing including empty inline elements,
+          // aBRElement causes a line break so that we cant treat it's not
+          // followed by a block boundary in such case.
+          {WSRunScanner::Option::StopAtVisibleEmptyInlineContainers},
+          EditorRawDOMPoint::After(aBRElement), aAncestorLimiter);
+  if (!followingThing.ReachedLineBoundary()) {
+    return false;
+  }
+  if (aFollowingBlockBoundaryElement) {
+    *aFollowingBlockBoundaryElement = followingThing.ReachedBlockBoundary()
+                                          ? followingThing.ElementPtr()
+                                          : nullptr;
+  }
+  return true;
+}
+
+bool HTMLEditUtils::IsBRElementFollowingCurrentBlockBoundary(
+    const dom::HTMLBRElement& aBRElement,
+    const Element* aAncestorLimiter /* = nullptr */,
+    Element** aPrecedingBlockBoundaryElement /* = nullptr */) {
+  if (aPrecedingBlockBoundaryElement) {
+    *aPrecedingBlockBoundaryElement = nullptr;
+  }
+  const WSScanResult precedingThing =
+      WSRunScanner::ScanPreviousVisibleNodeOrBlockBoundary(
+          // Even if there is a visible empty inline elements, we can ignore
+          // them because they will be removed together when deleting something
+          // across the element.
+          {}, EditorRawDOMPoint(&aBRElement), aAncestorLimiter);
+  if (!precedingThing.ReachedCurrentBlockBoundary()) {
+    return false;
+  }
+  if (aPrecedingBlockBoundaryElement) {
+    *aPrecedingBlockBoundaryElement = precedingThing.ElementPtr();
+  }
+  return true;
+}
+
+template <typename EditorDOMPointType>
+bool HTMLEditUtils::IsPreformattedLineBreakFollowingCurrentBlockBoundary(
+    const EditorDOMPointType& aPoint,
+    SkipWhiteSpaceStyleCheck
+        aSkipWhiteSpaceStyleCheck /* = SkipWhiteSpaceStyleCheck::No */,
+    const Element* aAncestorLimiter /* = nullptr */,
+    Element** aPrecedingBlockBoundaryElement /* = nullptr */) {
+  if (aPrecedingBlockBoundaryElement) {
+    *aPrecedingBlockBoundaryElement = nullptr;
+  }
+  if (!aPoint.IsInTextNode() || aPoint.IsEndOfContainer() ||
+      !aPoint.IsCharNewLine()) {
+    return false;
+  }
+  if (aSkipWhiteSpaceStyleCheck == SkipWhiteSpaceStyleCheck::No &&
+      !EditorUtils::IsNewLinePreformatted(
+          *aPoint.template ContainerAs<Text>())) {
+    return false;
+  }
+  const WSScanResult precedingThing =
+      WSRunScanner::ScanPreviousVisibleNodeOrBlockBoundary(
+          // Even if there is a visible empty inline elements, we can ignore
+          // them because they will be removed together when deleting something
+          // across the element.
+          {}, aPoint, aAncestorLimiter);
+  if (!precedingThing.ReachedCurrentBlockBoundary()) {
+    return false;
+  }
+  if (aPrecedingBlockBoundaryElement) {
+    *aPrecedingBlockBoundaryElement = precedingThing.ElementPtr();
+  }
+  return true;
+}
+
+bool HTMLEditUtils::IsBRElementFollowingLineBreak(
+    const dom::HTMLBRElement& aBRElement,
+    const Element* aAncestorLimiter /* = nullptr */) {
+  const WSScanResult precedingThing =
+      WSRunScanner::ScanPreviousVisibleNodeOrBlockBoundary(
+          // Even if there is a visible empty inline elements, we can ignore
+          // them because they will be removed together when deleting something
+          // across the element.
+          {}, EditorRawDOMPoint(&aBRElement), aAncestorLimiter);
+  return precedingThing.ReachedLineBreak();
+}
+
+template <typename EditorDOMPointType>
+bool HTMLEditUtils::IsPreformattedLineBreakFollowedByLineBoundary(
+    const EditorDOMPointType& aPoint,
+    SkipWhiteSpaceStyleCheck
+        aSkipWhiteSpaceStyleCheck /* = SkipWhiteSpaceStyleCheck::No */,
+    const Element* aAncestorLimiter /* = nullptr */,
+    Element** aFollowingBlockBoundaryElement /* = nullptr */) {
+  if (aFollowingBlockBoundaryElement) {
+    *aFollowingBlockBoundaryElement = nullptr;
+  }
+  if (!aPoint.IsInTextNode() || aPoint.IsEndOfContainer() ||
+      !aPoint.IsCharNewLine()) {
+    return false;
+  }
+  if (aSkipWhiteSpaceStyleCheck == SkipWhiteSpaceStyleCheck::No &&
+      !EditorUtils::IsNewLinePreformatted(
+          *aPoint.template ContainerAs<Text>())) {
+    return false;
+  }
+  const WSScanResult followingThing =
+      WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
+          // If there is a visible thing including empty inline elements,
+          // aBRElement causes a line break so that we can treat it's not
+          // followed by a line boundary in such case.
+          {WSRunScanner::Option::StopAtVisibleEmptyInlineContainers},
+          aPoint.template NextPoint<EditorRawDOMPoint>(), aAncestorLimiter);
+  if (!followingThing.ReachedLineBoundary()) {
+    return false;
+  }
+  if (aFollowingBlockBoundaryElement) {
+    *aFollowingBlockBoundaryElement = followingThing.ReachedBlockBoundary()
+                                          ? followingThing.ElementPtr()
+                                          : nullptr;
+  }
+  return true;
+}
+
+bool HTMLEditUtils::IsBRElementFollowingLineBoundary(
+    const dom::HTMLBRElement& aBRElement,
+    const Element* aAncestorLimiter /* = nullptr */,
+    Element** aPrecedingBlockBoundaryElement /* = nullptr */) {
+  const WSScanResult precedingThing =
+      WSRunScanner::ScanPreviousVisibleNodeOrBlockBoundary(
+          // Even if there is a visible empty inline elements, we can ignore
+          // them because they will be removed together when deleting something
+          // across the element.
+          {}, EditorRawDOMPoint(&aBRElement), aAncestorLimiter);
+  if (!precedingThing.ReachedLineBoundary()) {
+    return false;
+  }
+  if (aPrecedingBlockBoundaryElement) {
+    *aPrecedingBlockBoundaryElement = precedingThing.ReachedBlockBoundary()
+                                          ? precedingThing.ElementPtr()
+                                          : nullptr;
+  }
+  return true;
+}
+
+template <typename EditorDOMPointType>
+bool HTMLEditUtils::IsPreformattedLineBreakFollowingLineBoundary(
+    const EditorDOMPointType& aPoint,
+    SkipWhiteSpaceStyleCheck
+        aSkipWhiteSpaceStyleCheck /* = SkipWhiteSpaceStyleCheck::No */,
+    const Element* aAncestorLimiter /* = nullptr */,
+    Element** aPrecedingBlockBoundaryElement /* = nullptr */) {
+  if (!aPoint.IsInTextNode() || aPoint.IsEndOfContainer() ||
+      !aPoint.IsCharNewLine()) {
+    return false;
+  }
+  if (aSkipWhiteSpaceStyleCheck == SkipWhiteSpaceStyleCheck::No &&
+      !EditorUtils::IsNewLinePreformatted(
+          *aPoint.template ContainerAs<Text>())) {
+    return false;
+  }
+  const WSScanResult precedingThing =
+      WSRunScanner::ScanPreviousVisibleNodeOrBlockBoundary(
+          // Even if there is a visible empty inline elements, we can ignore
+          // them because they will be removed together when deleting something
+          // across the element.
+          {}, aPoint, aAncestorLimiter);
+  if (!precedingThing.ReachedLineBoundary()) {
+    return false;
+  }
+  if (aPrecedingBlockBoundaryElement) {
+    *aPrecedingBlockBoundaryElement = precedingThing.ReachedBlockBoundary()
+                                          ? precedingThing.ElementPtr()
+                                          : nullptr;
+  }
+  return true;
+}
+
+template <typename EditorDOMPointType>
+bool HTMLEditUtils::IsPreformattedLineBreakFollowingLineBreak(
+    const EditorDOMPointType& aPoint,
+    SkipWhiteSpaceStyleCheck
+        aSkipWhiteSpaceStyleCheck /* = SkipWhiteSpaceStyleCheck::No */,
+    const Element* aAncestorLimiter /* = nullptr */) {
+  if (!aPoint.IsInTextNode() || aPoint.IsEndOfContainer() ||
+      !aPoint.IsCharNewLine()) {
+    return false;
+  }
+  if (aSkipWhiteSpaceStyleCheck == SkipWhiteSpaceStyleCheck::No &&
+      !EditorUtils::IsNewLinePreformatted(
+          *aPoint.template ContainerAs<Text>())) {
+    return false;
+  }
+  const WSScanResult precedingThing =
+      WSRunScanner::ScanPreviousVisibleNodeOrBlockBoundary(
+          // Even if there is a visible empty inline elements, we can ignore
+          // them because they will be removed together when deleting something
+          // across the element.
+          {}, aPoint, aAncestorLimiter);
+  return precedingThing.ReachedLineBreak();
+}
+
+bool HTMLEditUtils::IsUnnecessaryBRElement(
+    const dom::HTMLBRElement& aBRElement,
+    PaddingForEmptyBlock aPaddingForEmptyBlock,
+    const Element* aAncestorLimiter /* = nullptr */,
+    Element** aFollowingBlockBoundaryElement /* = nullptr */) {
+  if (aFollowingBlockBoundaryElement) {
+    *aFollowingBlockBoundaryElement = nullptr;
+  }
+  // If the <br> is followed by a block boundary and does not follow another
+  // line break nor another block boundary, the <br> does not affect to the
+  // layout so that it's unnecessary.
+  Element* followingBlockBoundaryElement = nullptr;
+  if (!HTMLEditUtils::IsBRElementFollowedByBlockBoundary(
+          aBRElement, aAncestorLimiter, &followingBlockBoundaryElement)) {
+    return false;
+  }
+  if (aFollowingBlockBoundaryElement) {
+    *aFollowingBlockBoundaryElement = followingBlockBoundaryElement;
+  }
+  Element* precedingBlockBoundaryElement = nullptr;
+  if (HTMLEditUtils::IsBRElementFollowingLineBoundary(
+          aBRElement, aAncestorLimiter, &precedingBlockBoundaryElement)) {
+    if (followingBlockBoundaryElement == precedingBlockBoundaryElement) {
+      // <br> in an empty block and the caller wants to treat it as unnecessary.
+      return aPaddingForEmptyBlock == PaddingForEmptyBlock::Unnecessary;
+    }
+    return false;
+  }
+  return true;
+}
+
+template <typename EditorDOMPointType>
+bool HTMLEditUtils::IsUnnecessaryPreformattedLineBreak(
+    const EditorDOMPointType& aPoint,
+    PaddingForEmptyBlock aPaddingForEmptyBlock,
+    SkipWhiteSpaceStyleCheck
+        aSkipWhiteSpaceStyleCheck /* = SkipWhiteSpaceStyleCheck::No */,
+    const Element* aAncestorLimiter /* = nullptr */,
+    Element** aFollowingBlockBoundaryElement /* = nullptr */) {
+  if (aFollowingBlockBoundaryElement) {
+    *aFollowingBlockBoundaryElement = nullptr;
+  }
+  // If the linefeed is not followed by a block boundary, it causes a line
+  // break.  So, let's check whether it's followed by a block boundary first.
+  Element* followingBlockBoundaryElement = nullptr;
+  if (!HTMLEditUtils::IsPreformattedLineBreakFollowedByBlockBoundary(
+          aPoint, aSkipWhiteSpaceStyleCheck, aAncestorLimiter,
+          &followingBlockBoundaryElement)) {
+    return false;
+  }
+  if (aFollowingBlockBoundaryElement) {
+    *aFollowingBlockBoundaryElement = followingBlockBoundaryElement;
+  }
+  MOZ_ASSERT(aPoint.IsInTextNode());
+  MOZ_ASSERT(aPoint.IsCharNewLine());
+  // The linefeed is followed by a block boundary, then, it's unnecessary
+  // unless:
+  // - it follows another line break
+  // - it follows another block boundary
+  const WSScanResult precedingThing =
+      WSRunScanner::ScanPreviousVisibleNodeOrBlockBoundary(
+          // Even if there is a visible empty inline elements, we can ignore
+          // them because they will be removed together when deleting something
+          // across the element.
+          {}, aPoint, aAncestorLimiter);
+  if (precedingThing.ReachedCurrentBlockBoundary() &&
+      followingBlockBoundaryElement == precedingThing.ElementPtr()) {
+    // <br> in an empty block and the caller wants to treat it as unnecessary.
+    return aPaddingForEmptyBlock == PaddingForEmptyBlock::Unnecessary;
+  }
+  return !precedingThing.ReachedLineBoundary();
+}
+
+template <typename EditorDOMPointType>
+bool HTMLEditUtils::IsSignificantPreformattedLineBreak(
+    const EditorDOMPointType& aPoint,
+    PaddingForEmptyBlock aPaddingForEmptyBlock,
+    SkipWhiteSpaceStyleCheck
+        aSkipWhiteSpaceStyleCheck /* = SkipWhiteSpaceStyleCheck::No */,
+    const Element* aAncestorLimiter /* = nullptr */,
+    Element** aFollowingBlockBoundaryElement /* = nullptr */) {
+  if (aFollowingBlockBoundaryElement) {
+    *aFollowingBlockBoundaryElement = nullptr;
+  }
+  if (!aPoint.IsInTextNode() || aPoint.IsEndOfContainer() ||
+      !aPoint.IsCharNewLine()) {
+    return false;
+  }
+  if (aSkipWhiteSpaceStyleCheck == SkipWhiteSpaceStyleCheck::No &&
+      !EditorUtils::IsNewLinePreformatted(
+          *aPoint.template ContainerAs<Text>())) {
+    return false;
+  }
+  // If the linefeed is not followed by a block boundary, it causes a line
+  // break.
+  const WSScanResult followingThing =
+      WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
+          // If there is a visible thing including empty inline elements,
+          // aBRElement causes a line break so that we can treat it's not
+          // followed by a block boundary in such case.
+          {WSRunScanner::Option::StopAtVisibleEmptyInlineContainers},
+          aPoint.template NextPoint<EditorRawDOMPoint>(), aAncestorLimiter);
+  if (!followingThing.ReachedBlockBoundary()) {
+    return true;
+  }
+  if (aFollowingBlockBoundaryElement) {
+    *aFollowingBlockBoundaryElement = followingThing.ElementPtr();
+  }
+  MOZ_ASSERT(aPoint.IsInTextNode());
+  MOZ_ASSERT(aPoint.IsCharNewLine());
+  // The linefeed is followed by a block boundary, then, it affects to the
+  // layout when:
+  // - it follows another line break
+  // - it follows another block boundary
+  const WSScanResult precedingThing =
+      WSRunScanner::ScanPreviousVisibleNodeOrBlockBoundary(
+          // Even if there is a visible empty inline elements, we can ignore
+          // them because they will be removed together when deleting something
+          // across the element.
+          {}, aPoint, aAncestorLimiter);
+  if (followingThing.ReachedCurrentBlockBoundary() &&
+      precedingThing.ReachedCurrentBlockBoundary()) {
+    // Preformatted linefeed in an empty block and the caller wants to treat it
+    // as unnecessary.
+    return aPaddingForEmptyBlock == PaddingForEmptyBlock::Significant;
+  }
+  return precedingThing.ReachedLineBoundary();
+}
+
+template <typename EditorDOMPointType>
+WSScanResult
+HTMLEditUtils::ScanInclusiveNextThingWithIgnoringUnnecessaryLineBreak(
+    const EditorDOMPointType& aPoint,
+    PaddingForEmptyBlock aPaddingForEmptyBlock, const Element& aEditingHost,
+    const Element* aAncestorLimiter) {
+  MOZ_ASSERT(aPoint.IsSetAndValid());
+
+  WSScanResult nextThing =
+      WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
+          {}, aPoint, aAncestorLimiter);
+  if (!nextThing.ReachedLineBreak()) {
+    return nextThing;
+  }
+  WSScanResult nextThingOfLineBreak =
+      WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
+          // If there is a visible thing including empty inline elements,
+          // the found line break makes a new line for the visible inline
+          // element so that we can treat it's not followed by a block boundary
+          // in such case.
+          {WSRunScanner::Option::StopAtVisibleEmptyInlineContainers},
+          nextThing.PointAfterReachedContent<EditorRawDOMPoint>(),
+          aAncestorLimiter);
+  // If the line break is not followed by a block boundary, it's significant so
+  // that we should not skip it.
+  if (!nextThingOfLineBreak.ReachedBlockBoundary()) {
+    MOZ_ASSERT(
+        nextThing.CreateEditorLineBreak<EditorRawLineBreak>().IsSignificant(
+            aPaddingForEmptyBlock));
+    return nextThing;
+  }
+  const WSScanResult previousThingOfLineBreak =
+      WSRunScanner::ScanPreviousVisibleNodeOrBlockBoundary(
+          // Even if there is a visible empty inline elements, we can ignore
+          // them because they will be removed together when deleting something
+          // across the element.
+          {}, nextThing.PointAtReachedContent<EditorRawDOMPoint>(),
+          aAncestorLimiter);
+  // If the line break follows a block boundary or a line break, it's
+  // significant so that we should not skip it.
+  if (previousThingOfLineBreak.ReachedLineBoundary()) {
+    if (aPaddingForEmptyBlock == PaddingForEmptyBlock::Significant ||
+        !nextThingOfLineBreak.ReachedCurrentBlockBoundary() ||
+        !previousThingOfLineBreak.ReachedCurrentBlockBoundary()) {
+      MOZ_ASSERT(
+          nextThing.CreateEditorLineBreak<EditorRawLineBreak>().IsSignificant(
+              aPaddingForEmptyBlock));
+      return nextThing;
+    }
+  }
+  EditorLineBreak unnecessaryLineBreak =
+      nextThing.CreateEditorLineBreak<EditorLineBreak>();
+  MOZ_ASSERT(unnecessaryLineBreak.IsUnnecessary(aPaddingForEmptyBlock,
+                                                aAncestorLimiter));
+  return WSScanResult(std::move(nextThingOfLineBreak),
+                      std::move(unnecessaryLineBreak), aEditingHost);
+}
+
+template <typename EditorLineBreakType, typename EditorDOMPointType>
+Maybe<EditorLineBreakType> HTMLEditUtils::GetPrecedingUnnecessaryLineBreak(
+    const EditorDOMPointType& aPoint,
+    const Element* aAncestorLimiter /* = nullptr */) {
+  MOZ_ASSERT(aPoint.IsSetAndValid());
+  MOZ_ASSERT(aPoint.IsInContentNode());
+
+  const WSScanResult previousThing =
+      WSRunScanner::ScanPreviousVisibleNodeOrBlockBoundary(
+          {WSRunScanner::Option::StopAtVisibleEmptyInlineContainers}, aPoint,
+          aAncestorLimiter);
+  if (!previousThing.ReachedLineBreak()) {
+    return Nothing{};
+  }
+  auto lineBreak = previousThing.CreateEditorLineBreak<EditorLineBreakType>();
+  if (lineBreak.IsUnnecessary(PaddingForEmptyBlock::Significant)) {
+    return Some(lineBreak);
+  }
+  return Nothing{};
 }
 
 template <typename PT, typename CT>
@@ -951,114 +1709,6 @@ EditorDOMPoint HTMLEditUtils::LineRequiresPaddingLineBreakToBeVisible(
   return preferredPaddingLineBreakPoint;
 }
 
-Element* HTMLEditUtils::GetElementOfImmediateBlockBoundary(
-    const nsIContent& aContent, const WalkTreeDirection aDirection) {
-  MOZ_ASSERT(aContent.IsHTMLElement(nsGkAtoms::br) || aContent.IsText());
-
-  // First, we get a block container.  This is not designed for reaching
-  // no block boundaries in the tree.
-  Element* maybeNonEditableAncestorBlock = HTMLEditUtils::GetAncestorElement(
-      aContent, HTMLEditUtils::ClosestBlockElement,
-      BlockInlineCheck::UseComputedDisplayStyle);
-  if (NS_WARN_IF(!maybeNonEditableAncestorBlock)) {
-    return nullptr;
-  }
-
-  auto getNextContent = [&aDirection, &maybeNonEditableAncestorBlock](
-                            const nsIContent& aContent) -> nsIContent* {
-    return aDirection == WalkTreeDirection::Forward
-               ? HTMLEditUtils::GetNextLeafContentOrNextBlockElement(
-                     aContent, {LeafNodeOption::TreatChildBlockAsLeafNode},
-                     BlockInlineCheck::UseComputedDisplayStyle,
-                     maybeNonEditableAncestorBlock)
-               : HTMLEditUtils::GetPreviousLeafContentOrPreviousBlockElement(
-                     aContent, {LeafNodeOption::TreatChildBlockAsLeafNode},
-                     BlockInlineCheck::UseComputedDisplayStyle,
-                     maybeNonEditableAncestorBlock);
-  };
-
-  // Then, scan block element boundary while we don't see visible things.
-  const bool isBRElement = aContent.IsHTMLElement(nsGkAtoms::br);
-  for (nsIContent* nextContent = getNextContent(aContent); nextContent;
-       nextContent = getNextContent(*nextContent)) {
-    if (nextContent->IsElement()) {
-      // Break is right before a child block, it's not visible
-      if (HTMLEditUtils::IsBlockElement(
-              *nextContent, BlockInlineCheck::UseComputedDisplayStyle)) {
-        return nextContent->AsElement();
-      }
-
-      // XXX How about other non-HTML elements?  Assume they are styled as
-      //     blocks for now.
-      if (!nextContent->IsHTMLElement()) {
-        return nextContent->AsElement();
-      }
-
-      if (nextContent->IsHTMLElement(nsGkAtoms::br)) {
-        // If aContent is a <br> element, another <br> element prevents the
-        // block boundary special handling.
-        if (isBRElement) {
-          return nullptr;
-        }
-
-        MOZ_ASSERT(aContent.IsText());
-        // Following <br> element always hides its following block boundary.
-        // I.e., white-spaces is at end of the text node is visible.
-        if (aDirection == WalkTreeDirection::Forward) {
-          return nullptr;
-        }
-        // Otherwise, if text node follows <br> element, its white-spaces at
-        // start of the text node are invisible.  In this case, we return
-        // the found <br> element.
-        return nextContent->AsElement();
-      }
-
-      // If there is a visible content which generates something visible,
-      // stop scanning.
-      if (HTMLEditUtils::IsVisibleElementEvenIfLeafNode(*nextContent)) {
-        return nullptr;
-      }
-
-      continue;
-    }
-
-    switch (nextContent->NodeType()) {
-      case nsINode::TEXT_NODE:
-      case nsINode::CDATA_SECTION_NODE:
-        break;
-      default:
-        continue;
-    }
-
-    Text* textNode = Text::FromNode(nextContent);
-    MOZ_ASSERT(textNode);
-    if (!textNode->TextDataLength()) {
-      continue;  // empty invisible text node, keep scanning next one.
-    }
-    if (HTMLEditUtils::IsInclusiveAncestorCSSDisplayNone(*textNode)) {
-      continue;  // Styled as invisible.
-    }
-    if (EditorUtils::IsWhiteSpacePreformatted(*textNode)) {
-      return nullptr;  // found a visible text node.
-    }
-    const uint32_t nonWhiteSpaceOffset =
-        textNode->DataBuffer().FindNonWhitespaceChar(
-            EditorUtils::IsNewLinePreformatted(*textNode)
-                ? WhitespaceOptions{WhitespaceOption::FormFeedIsSignificant,
-                                    WhitespaceOption::NewLineIsSignificant}
-                : WhitespaceOptions{WhitespaceOption::FormFeedIsSignificant});
-    if (nonWhiteSpaceOffset != CharacterDataBuffer::kNotFound) {
-      return nullptr;  // found a visible text node.
-    }
-    // All white-spaces in the text node are invisible, keep scanning next one.
-  }
-
-  // There is no visible content and reached current block boundary.  Then,
-  // the <br> element is the last content in the block and invisible.
-  // XXX Should we treat it visible if it's the only child of a block?
-  return maybeNonEditableAncestorBlock;
-}
-
 template <typename PT, typename CT>
 bool HTMLEditUtils::PointIsImmediatelyBeforeCurrentBlockBoundary(
     const EditorDOMPointBase<PT, CT>& aPoint,
@@ -1074,27 +1724,13 @@ bool HTMLEditUtils::PointIsImmediatelyBeforeCurrentBlockBoundary(
   if (nextThing.ReachedCurrentBlockBoundary()) {
     return true;
   }
-  if (nextThing.ReachedInvisibleBRElement()) {
-    if (aIgnoreInvisibleLineBreak == IgnoreInvisibleLineBreak::No) {
-      return false;
-    }
-    const WSScanResult afterInvisibleBRThing =
-        WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
-            {WSRunScanner::Option::OnlyEditableNodes},
-            nextThing.PointAfterReachedContent<EditorRawDOMPoint>());
-    return afterInvisibleBRThing.ReachedCurrentBlockBoundary();
+  if (aIgnoreInvisibleLineBreak == IgnoreInvisibleLineBreak::No ||
+      !nextThing.ReachedLineBreak()) {
+    return false;
   }
-  if (nextThing.ReachedPreformattedLineBreak()) {
-    if (aIgnoreInvisibleLineBreak == IgnoreInvisibleLineBreak::No) {
-      return false;
-    }
-    const WSScanResult afterPreformattedLineBreakThing =
-        WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
-            {WSRunScanner::Option::OnlyEditableNodes},
-            nextThing.PointAfterReachedContent<EditorRawDOMPoint>());
-    return afterPreformattedLineBreakThing.ReachedCurrentBlockBoundary();
-  }
-  return false;
+  const EditorRawLineBreak lineBreak =
+      nextThing.CreateEditorLineBreak<EditorRawLineBreak>();
+  return lineBreak.IsFollowedByCurrentBlockBoundary();
 }
 
 // static
@@ -1114,6 +1750,15 @@ HTMLEditUtils::LeafNodeType HTMLEditUtils::GetLeafNodeType(
     if (HTMLEditUtils::IsReplacedElement(*element)) {
       return LeafNodeType::Leaf;
     }
+    // If the element has a shadow root, its children will be replaced with the
+    // shadow root children which are not editable.  Therefore, we should treat
+    // it as a leaf.
+    // XXX Should we check whether it's empty and/or invisible? In theory, it
+    // should be yes. However, web apps shouldn't create empty shadow DOM so
+    // that it must be okay for now.
+    if (element->GetShadowRootForSelection()) {
+      return LeafNodeType::Leaf;
+    }
     // We're looking for a child block, check the display-outside style.
     if (aOptions.contains(LeafNodeOption::TreatChildBlockAsLeafNode) &&
         HTMLEditUtils::IsBlockElement(
@@ -1125,7 +1770,10 @@ HTMLEditUtils::LeafNodeType HTMLEditUtils::GetLeafNodeType(
     if (!HTMLEditUtils::IsContainerNode(*element)) {
       return aOptions.contains(
                  LeafNodeOption::IgnoreInvisibleInlineVoidElements) &&
-                     !HTMLEditUtils::IsVisibleElementEvenIfLeafNode(*element)
+                     (!HTMLEditUtils::IsVisibleElementEvenIfLeafNode(
+                          *element) ||
+                      HTMLEditUtils::IsInclusiveAncestorCSSDisplayNone(
+                          *element))
                  ? LeafNodeType::Ignore
                  : LeafNodeType::Leaf;
     }
@@ -1139,16 +1787,14 @@ HTMLEditUtils::LeafNodeType HTMLEditUtils::GetLeafNodeType(
                           : BlockInlineCheck::UseComputedDisplayStyle)) {
       return LeafNodeType::Leaf;
     }
-    if (!HTMLEditUtils::IsContainerNode(*element)) {
-      return LeafNodeType::Ignore;
-    }
     // Now the element is an empty inline container like <span></span>.
     if (aOptions.contains(LeafNodeOption::IgnoreAnyEmptyInlineContainers)) {
       return LeafNodeType::Ignore;
     }
     if (aOptions.contains(
             LeafNodeOption::IgnoreInvisibleEmptyInlineContainers) &&
-        !HTMLEditUtils::IsVisibleElementEvenIfLeafNode(*element)) {
+        (!HTMLEditUtils::IsVisibleElementEvenIfLeafNode(*element) ||
+         HTMLEditUtils::IsInclusiveAncestorCSSDisplayNone(*element))) {
       return LeafNodeType::Ignore;
     }
     return LeafNodeType::Leaf;
@@ -1161,7 +1807,9 @@ HTMLEditUtils::LeafNodeType HTMLEditUtils::GetLeafNodeType(
                  : LeafNodeType::Leaf;
     }
     return !aOptions.contains(LeafNodeOption::IgnoreInvisibleText) ||
-                   IsVisibleTextNode(*text)
+                   (HTMLEditUtils::IsVisibleTextNode(
+                        *text, TreatInvisibleLineBreakAs::Visible) &&
+                    !HTMLEditUtils::IsInclusiveAncestorCSSDisplayNone(*text))
                ? LeafNodeType::Leaf
                : LeafNodeType::Ignore;
   }
@@ -1705,208 +2353,6 @@ nsIContent* HTMLEditUtils::GetFirstOrLastChild(
   return nullptr;
 }
 
-template <typename EditorLineBreakType>
-Maybe<EditorLineBreakType> HTMLEditUtils::GetUnnecessaryLineBreak(
-    const Element& aBlockElement, ScanLineBreak aScanLineBreak) {
-  auto* lastLineBreakContent = [&]() -> nsIContent* {
-    for (nsIContent* content =
-             aScanLineBreak == ScanLineBreak::AtEndOfBlock
-                 ? HTMLEditUtils::GetLastLeafContent(aBlockElement, {})
-                 : HTMLEditUtils::GetPreviousLeafContentOrPreviousBlockElement(
-                       aBlockElement,
-                       {LeafNodeOption::TreatChildBlockAsLeafNode},
-                       BlockInlineCheck::UseComputedDisplayStyle,
-                       aBlockElement.GetParentElement());
-         content;
-         content = HTMLEditUtils::GetPreviousLeafContentOrPreviousBlockElement(
-             *content,
-             aScanLineBreak == ScanLineBreak::AtEndOfBlock
-                 ? LeafNodeOptions{}
-                 : LeafNodeOptions{LeafNodeOption::TreatChildBlockAsLeafNode},
-             BlockInlineCheck::UseComputedDisplayStyle,
-             aScanLineBreak == ScanLineBreak::AtEndOfBlock
-                 ? &aBlockElement
-                 : aBlockElement.GetParentElement())) {
-      // If we're scanning preceding <br> element of aBlockElement, we don't
-      // need to look for a line break in another block because the caller
-      // needs to handle only preceding <br> element of aBlockElement.
-      if (aScanLineBreak == ScanLineBreak::BeforeBlock &&
-          HTMLEditUtils::IsBlockElement(
-              *content, BlockInlineCheck::UseComputedDisplayStyle)) {
-        return nullptr;
-      }
-      if (Text* textNode = Text::FromNode(content)) {
-        if (!textNode->TextLength()) {
-          continue;  // ignore empty text node
-        }
-        const CharacterDataBuffer& characterDataBuffer = textNode->DataBuffer();
-        if (EditorUtils::IsNewLinePreformatted(*textNode) &&
-            characterDataBuffer.CharAt(characterDataBuffer.GetLength() - 1u) ==
-                HTMLEditUtils::kNewLine) {
-          // If the text node ends with a preserved line break, it's unnecessary
-          // unless it follows another preformatted line break.
-          if (characterDataBuffer.GetLength() == 1u) {
-            return textNode;  // Need to scan previous leaf.
-          }
-          return characterDataBuffer.CharAt(characterDataBuffer.GetLength() -
-                                            2u) == HTMLEditUtils::kNewLine
-                     ? nullptr
-                     : textNode;
-        }
-        if (HTMLEditUtils::IsVisibleTextNode(*textNode)) {
-          return nullptr;
-        }
-        continue;
-      }
-      if (content->IsCharacterData()) {
-        continue;  // ignore hidden character data nodes like comment
-      }
-      if (content->IsHTMLElement(nsGkAtoms::br)) {
-        return content;
-      }
-      if (HTMLEditUtils::IsVisibleElementEvenIfLeafNode(*content)) {
-        return nullptr;
-      }
-      // Otherwise, e.g., empty <b>, we should keep scanning.
-    }
-    return nullptr;
-  }();
-  if (!lastLineBreakContent) {
-    return Nothing();
-  }
-
-  // If the found node is a text node and contains only one preformatted new
-  // line break, we need to keep scanning previous one, but if it has 2 or more
-  // characters, we know it has redundant line break.
-  Text* const lastLineBreakText = Text::FromNode(lastLineBreakContent);
-  if (lastLineBreakText && lastLineBreakText->TextDataLength() != 1u) {
-    return Some(EditorLineBreakType::AtLastChar(*lastLineBreakText));
-  }
-  HTMLBRElement* const lastBRElement =
-      lastLineBreakText ? nullptr
-                        : HTMLBRElement::FromNode(lastLineBreakContent);
-  MOZ_ASSERT_IF(!lastLineBreakText, lastBRElement);
-
-  // Scan previous leaf content, but now, we can stop at child block boundary.
-  const Element* blockElement = HTMLEditUtils::GetAncestorElement(
-      *lastLineBreakContent, HTMLEditUtils::ClosestBlockElement,
-      BlockInlineCheck::UseComputedDisplayStyle);
-  for (nsIContent* content =
-           HTMLEditUtils::GetPreviousLeafContentOrPreviousBlockElement(
-               *lastLineBreakContent,
-               {LeafNodeOption::TreatChildBlockAsLeafNode},
-               BlockInlineCheck::UseComputedDisplayStyle, blockElement);
-       content;
-       content = HTMLEditUtils::GetPreviousLeafContentOrPreviousBlockElement(
-           *content, {LeafNodeOption::TreatChildBlockAsLeafNode},
-           BlockInlineCheck::UseComputedDisplayStyle, blockElement)) {
-    if (HTMLEditUtils::IsBlockElement(
-            *content, BlockInlineCheck::UseComputedDisplayStyle) ||
-        (content->IsElement() && !content->IsHTMLElement())) {
-      // Now, must found <div>...<div>...</div><br></div>
-      //                                       ^^^^
-      // In this case, the <br> element is necessary to make a following empty
-      // line of the inner <div> visible.
-      return Nothing();
-    }
-    if (Text* textNode = Text::FromNode(content)) {
-      if (!textNode->TextDataLength()) {
-        continue;  // ignore empty text node
-      }
-      const CharacterDataBuffer& characterDataBuffer = textNode->DataBuffer();
-      if (EditorUtils::IsNewLinePreformatted(*textNode) &&
-          characterDataBuffer.CharAt(characterDataBuffer.GetLength() - 1u) ==
-              HTMLEditUtils::kNewLine) {
-        // So, we are here because the preformatted line break is followed by
-        // lastLineBreakContent which is <br> or a text node containing only
-        // one.  In this case, even if their parents are different,
-        // lastLineBreakContent is necessary to make the last line visible.
-        return Nothing();
-      }
-      if (!HTMLEditUtils::IsVisibleTextNode(*textNode)) {
-        continue;
-      }
-      if (EditorUtils::IsWhiteSpacePreformatted(*textNode)) {
-        // If the white-space is preserved, neither following <br> nor a
-        // preformatted line break is not necessary.
-        return Some(lastLineBreakText
-                        ? EditorLineBreakType::AtLastChar(*lastLineBreakText)
-                        : EditorLineBreakType(*lastBRElement));
-      }
-      // Otherwise, only if the last character is a collapsible white-space,
-      // we need lastLineBreakContent to make the trailing white-space visible.
-      switch (characterDataBuffer.LastChar()) {
-        case HTMLEditUtils::kSpace:
-        case HTMLEditUtils::kNewLine:
-        case HTMLEditUtils::kCarriageReturn:
-        case HTMLEditUtils::kTab:
-          return Nothing();
-        default:
-          return Some(lastLineBreakText
-                          ? EditorLineBreakType::AtLastChar(*lastLineBreakText)
-                          : EditorLineBreakType(*lastBRElement));
-      }
-    }
-    if (content->IsCharacterData()) {
-      continue;  // ignore hidden character data nodes like comment
-    }
-    // If lastLineBreakContent follows a <br> element in same block, it's
-    // necessary to make the empty last line visible.
-    if (content->IsHTMLElement(nsGkAtoms::br)) {
-      return Nothing();
-    }
-    if (HTMLEditUtils::IsVisibleElementEvenIfLeafNode(*content)) {
-      return Some(lastLineBreakText
-                      ? EditorLineBreakType::AtLastChar(*lastLineBreakText)
-                      : EditorLineBreakType(*lastBRElement));
-    }
-    // Otherwise, ignore empty inline elements such as <b>.
-  }
-  // If the block is empty except invisible data nodes and lastLineBreakContent,
-  // lastLineBreakContent is necessary to make the block visible.
-  return Nothing();
-}
-
-template <typename EditorLineBreakType, typename EditorDOMPointType>
-Maybe<EditorLineBreakType> HTMLEditUtils::GetFollowingUnnecessaryLineBreak(
-    const EditorDOMPointType& aPoint) {
-  MOZ_ASSERT(aPoint.IsSetAndValid());
-  MOZ_ASSERT(aPoint.IsInContentNode());
-
-  const WSScanResult nextThing =
-      WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary({}, aPoint);
-  if (!nextThing.ReachedBRElement() &&
-      !(nextThing.ReachedPreformattedLineBreak() &&
-        nextThing.PointAtReachedContent<EditorRawDOMPoint>()
-            .IsAtLastContent())) {
-    return Nothing();  // no line break next to aPoint
-  }
-  const WSScanResult nextThingOfLineBreak =
-      WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
-          {}, nextThing.PointAfterReachedContent<EditorRawDOMPoint>());
-  const Element* const blockElement =
-      nextThingOfLineBreak.ReachedBlockBoundary()
-          ? nextThingOfLineBreak.ElementPtr()
-          : HTMLEditUtils::GetAncestorElement(
-                *nextThing.GetContent(), {AncestorType::ClosestBlockElement},
-                BlockInlineCheck::UseComputedDisplayStyle);
-  if (MOZ_UNLIKELY(!blockElement)) {
-    return Nothing();
-  }
-  Maybe<EditorLineBreakType> unnecessaryLineBreak =
-      GetUnnecessaryLineBreak<EditorLineBreakType>(
-          *blockElement, nextThingOfLineBreak.ReachedOtherBlockElement()
-                             ? ScanLineBreak::BeforeBlock
-                             : ScanLineBreak::AtEndOfBlock);
-  // If the line break content is different from the found line break
-  // immediately after aPoint, it's too far. So, the caller should not touch it.
-  if (unnecessaryLineBreak.isSome() &&
-      &unnecessaryLineBreak->ContentRef() != nextThing.GetContent()) {
-    unnecessaryLineBreak.reset();
-  }
-  return unnecessaryLineBreak;
-}
-
 uint32_t HTMLEditUtils::GetFirstVisibleCharOffset(const Text& aText) {
   const CharacterDataBuffer& characterDataBuffer = aText.DataBuffer();
   if (!characterDataBuffer.GetLength() ||
@@ -2045,7 +2491,11 @@ bool HTMLEditUtils::IsEmptyNode(nsPresContext* aPresContext,
   if (const Text* text = Text::FromNode(&aNode)) {
     return aOptions.contains(EmptyCheckOption::SafeToAskLayout)
                ? !IsInVisibleTextFrames(aPresContext, *text)
-               : !IsVisibleTextNode(*text);
+               : !IsVisibleTextNode(
+                     *text, aOptions.contains(
+                                EmptyCheckOption::TreatSingleBRElementAsVisible)
+                                ? TreatInvisibleLineBreakAs::Visible
+                                : TreatInvisibleLineBreakAs::Invisible);
   }
 
   const bool treatCommentAsVisible =
@@ -2099,7 +2549,7 @@ bool HTMLEditUtils::IsEmptyNode(nsPresContext* aPresContext,
               IsTableCellElement(*aNode.AsContent()), false};
     }
     if (styleDisplay->mDisplay != StyleDisplay::None &&
-        styleDisplay->HasAppearance()) {
+        styleDisplay->HasNativeAppearance()) {
       return {false, false, true};
     }
     if (styleDisplay->IsListItem()) {
@@ -2149,7 +2599,11 @@ bool HTMLEditUtils::IsEmptyNode(nsPresContext* aPresContext,
       // break out if we find we aren't empty
       if (aOptions.contains(EmptyCheckOption::SafeToAskLayout)
               ? IsInVisibleTextFrames(aPresContext, *text)
-              : IsVisibleTextNode(*text)) {
+              : IsVisibleTextNode(
+                    *text, aOptions.contains(
+                               EmptyCheckOption::TreatSingleBRElementAsVisible)
+                               ? TreatInvisibleLineBreakAs::Visible
+                               : TreatInvisibleLineBreakAs::Invisible)) {
         return false;
       }
       continue;
@@ -2466,6 +2920,7 @@ static const ElementInfo kElements[eHTMLTag_userdefined] = {
     ELEM(search, true, true, GROUP_BLOCK, GROUP_FLOW_ELEMENT),
     ELEM(section, true, true, GROUP_BLOCK, GROUP_FLOW_ELEMENT),
     ELEM(select, true, false, GROUP_FORMCONTROL, GROUP_SELECT_CONTENT),
+    ELEM(selectedcontent, true, false, GROUP_NONE, GROUP_INLINE_ELEMENT),
     ELEM(small, true, true, GROUP_FONTSTYLE, GROUP_INLINE_ELEMENT),
     ELEM(slot, true, false, GROUP_NONE, GROUP_FLOW_ELEMENT),
     ELEM(source, false, false, GROUP_PICTURE_CONTENT, GROUP_NONE),
@@ -3487,7 +3942,8 @@ size_t HTMLEditUtils::CollectChildren(
     }
     if (aOptions.contains(CollectChildrenOption::IgnoreInvisibleTextNodes) &&
         content->IsText() &&
-        !HTMLEditUtils::IsVisibleTextNode(*content->AsText())) {
+        !HTMLEditUtils::IsVisibleTextNode(*content->AsText(),
+                                          TreatInvisibleLineBreakAs::Visible)) {
       continue;
     }
     aOutArrayOfContents.InsertElementAt(

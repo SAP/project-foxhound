@@ -21,7 +21,15 @@ from collections.abc import Iterator
 from re import DOTALL, MULTILINE, UNICODE, compile
 from sys import maxsize
 
-from ...model import Comment, Entry, Message, PatternMessage, Resource, Section
+from ...model import (
+    Comment,
+    Entry,
+    Message,
+    Metadata,
+    PatternMessage,
+    Resource,
+    Section,
+)
 from .. import Format
 
 name_start_char = (
@@ -35,6 +43,12 @@ re_entity = compile(
     r"<!ENTITY\s+(" + name + r")\s+((?:\"[^\"]*\")|(?:'[^']*'))\s*>",
     DOTALL | UNICODE,
 )
+re_system_include = compile(
+    r"\s*<!ENTITY\s+%\s+("
+    + name
+    + r")\s+SYSTEM\s+((?:\"[^\"]*\")|(?:'[^']*'))\s*>\s*%\1;\s*",
+    DOTALL | UNICODE,
+)
 
 re_comment = compile(r"\<!\s*--(.*?)--\s*\>", MULTILINE | DOTALL)
 
@@ -43,10 +57,21 @@ def dtd_parse(source: str | bytes) -> Resource[Message]:
     """
     Parse a .dtd file into a message resource.
 
-    The parsed resource will not include any metadata.
+    The metadata of the parsed resource may include
+    references to other DTD files to include with the current one, as in:
+
+        <!ENTITY % brandDTD SYSTEM "chrome://branding/locale/brand.dtd">
+        %brandDTD;
     """
     entries: list[Entry[Message] | Comment] = []
     resource = Resource(Format.dtd, [Section((), entries)])
+
+    def handle_other_content(entry: str) -> None:
+        if sm := re_system_include.fullmatch(entry):
+            resource.meta.append(Metadata(sm[1], sm[2][1:-1]))
+        elif entry and not entry.isspace():
+            raise ValueError(f"Unexpected content in DTD: {entry}")
+
     pos = 0
     at_newline = True
     comment: str = ""
@@ -57,8 +82,7 @@ def dtd_parse(source: str | bytes) -> Resource[Message]:
         has_prev_entries = False
         for entry in dtd_iter(source, pos, endpos=cstart):
             if isinstance(entry, str):
-                if entry and not entry.isspace():
-                    raise ValueError(f"Unexpected content in DTD: {entry}")
+                handle_other_content(entry)
                 lines = entry.split("\n")
                 if comment and len(lines) > 2:
                     if entries or resource.comment:
@@ -88,8 +112,7 @@ def dtd_parse(source: str | bytes) -> Resource[Message]:
     if len(source) > pos:
         for entry in dtd_iter(source, pos):
             if isinstance(entry, str):
-                if entry and not entry.isspace():
-                    raise ValueError(f"Unexpected content in DTD: {entry}")
+                handle_other_content(entry)
             else:
                 if comment:
                     entry.comment = comment

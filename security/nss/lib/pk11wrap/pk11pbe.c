@@ -487,7 +487,12 @@ sec_pkcs5v2_key_length(SECAlgorithmID *algid, SECAlgorithmID *cipherAlgId)
          * where we used the MAX keysize for the algorithm,
          * but put an incorrect header for a different keysize.
          */
+        PORT_SetError(0);
         length = DER_GetInteger(&p5_param.keyLength);
+        if (PORT_GetError() != 0) {
+            length = -1;
+            goto loser;
+        }
     } else {
         /* if the keylength was not specified, figure it
          * out from the oid */
@@ -934,7 +939,11 @@ pbe_PK11AlgidToParam(SECAlgorithmID *algid, SECItem *mech)
 
     /* get salt */
     salt = &p5_param.salt;
+    PORT_SetError(0);
     iterations = (CK_ULONG)DER_GetInteger(&p5_param.iteration);
+    if (PORT_GetError() != 0) {
+        goto loser;
+    }
 
     /* allocate and fill in the PKCS #11 parameters
      * based on the algorithm. */
@@ -1206,7 +1215,7 @@ SEC_PKCS5GetIV(SECAlgorithmID *algid, SECItem *pwitem, PRBool faulty3DES)
     CK_MECHANISM_TYPE type;
     SECItem *param = NULL;
     SECItem *iv = NULL;
-    SECItem src;
+    SECItem src = { siBuffer, NULL, 0 };
     int iv_len = 0;
     PK11SymKey *symKey;
     PK11SlotInfo *slot;
@@ -1246,7 +1255,7 @@ SEC_PKCS5GetIV(SECAlgorithmID *algid, SECItem *pwitem, PRBool faulty3DES)
     type = PK11_AlgtagToMechanism(pbeAlg);
     param = PK11_ParamFromAlgid(algid);
     if (param == NULL) {
-        goto done;
+        goto loser;
     }
     slot = PK11_GetInternalSlot();
     symKey = PK11_RawPBEKeyGen(slot, type, param, pwitem, faulty3DES, NULL);

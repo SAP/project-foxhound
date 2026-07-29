@@ -96,24 +96,26 @@
   }
 
   runNetworkTest(async () => {
-    await pushPrefs(
+    await withPrefs([
         ['media.peerconnection.video.lock_scaling', true],
         // Disable h264 hardware support, to ensure it is not prioritized over VP8
         ["media.webrtc.hw.h264.enabled", false],
         // Use libwebrtc VP8 encoder to avoid unexpected resolution alignment on
         // some devices.
         ["media.webrtc.encoder_creation_strategy", 0],
-      );
-    await testScale("VP8");
+        ["media.peerconnection.allow_old_setParameters", true]
+    ], async () => {
+      await testScale("VP8");
 
-    const h264Support = checkPlatformH264CodecPrefs();
-    if (!h264Support.webrtc) {
-      // MediaDataEncoder always uses 16-alignment.
-      resolutionAlignment = 16;
-    }
-    if (h264Support.any) {
-      await testScale("H264");
-    }
+      const h264Support = checkPlatformH264CodecPrefs();
+      if (!h264Support.webrtc) {
+        // MediaDataEncoder always uses 16-alignment.
+        resolutionAlignment = 16;
+      }
+      if (h264Support.any) {
+        await testScale("H264");
+      }
+    });
   });
 </script>
 </pre>

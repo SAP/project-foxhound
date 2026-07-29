@@ -6,6 +6,7 @@ package org.mozilla.fenix.browser.tabstrip
 
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -32,6 +33,7 @@ import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -73,7 +75,7 @@ import org.mozilla.fenix.components.components
 import org.mozilla.fenix.compose.Favicon
 import org.mozilla.fenix.compose.HorizontalFadingEdgeBox
 import org.mozilla.fenix.compose.ext.isItemPartiallyVisible
-import org.mozilla.fenix.tabstray.browser.compose.DragItemContainer
+import org.mozilla.fenix.tabstray.browser.compose.ReorderableDragItemContainer
 import org.mozilla.fenix.tabstray.browser.compose.createListReorderState
 import org.mozilla.fenix.tabstray.browser.compose.detectListPressAndDrag
 import org.mozilla.fenix.theme.FirefoxTheme
@@ -87,11 +89,13 @@ import org.mozilla.fenix.GleanMetrics.TabStrip as TabStripMetrics
 private val minTabStripItemWidth = 130.dp
 private val maxTabStripItemWidth = 280.dp
 private val tabItemHeight = 40.dp
-private val tabStripIconSize = 24.dp
 private val spaceBetweenTabs = 4.dp
 private val tabStripListContentStartPadding = 8.dp
 private val titleFadeWidth = 16.dp
-private val tabStripHorizontalPadding = 16.dp
+
+private val tabStripIconSize
+    @Composable
+    get() = FirefoxTheme.layout.size.static200
 
 /**
  * Top level composable for the tabs strip.
@@ -193,9 +197,8 @@ private fun TabStripContent(
         modifier = Modifier
             .fillMaxWidth()
             .height(dimensionResource(R.dimen.tab_strip_height))
-            .background(colors.backgroundColor)
-            .systemGestureExclusion()
-            .padding(horizontal = tabStripHorizontalPadding),
+            .background(brush = colors.backgroundBrush)
+            .systemGestureExclusion(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
@@ -278,7 +281,7 @@ private fun TabsList(
                 items = state.tabs,
                 key = { _, item -> item.id },
             ) { index, itemState ->
-                DragItemContainer(
+                ReorderableDragItemContainer(
                     state = reorderState,
                     key = itemState.id,
                     position = index,
@@ -357,10 +360,13 @@ private fun TabItem(
     TabStripCard(
         modifier = modifier.height(tabItemHeight),
         backgroundColor = backgroundColor,
-        elevation = if (state.isSelected) {
-            selectedTabStripCardElevation
+        border = if (state.isSelected) {
+            BorderStroke(
+                width = 1.dp,
+                brush = FirefoxTheme.gradients.tabOutline.brush,
+            )
         } else {
-            defaultTabStripCardElevation
+            null
         },
     ) {
         Row(
@@ -414,7 +420,7 @@ private fun TabItem(
                         color = MaterialTheme.colorScheme.onSurface,
                         softWrap = false,
                         maxLines = 1,
-                        style = FirefoxTheme.typography.subtitle2,
+                        style = FirefoxTheme.typography.body2,
                     )
                 }
             }
@@ -569,11 +575,10 @@ private fun TabStripPreview(
 
 @Composable
 private fun TabStripContentPreview(tabs: List<TabStripItem>) {
-    Box(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .height(dimensionResource(id = R.dimen.tab_strip_height)),
-        contentAlignment = Alignment.Center,
     ) {
         TabStripContent(
             state = TabStripState(
@@ -599,11 +604,10 @@ private fun TabStripPreview(
     val browserStore = BrowserStore()
 
     FirefoxTheme(theme) {
-        Box(
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(dimensionResource(id = R.dimen.tab_strip_height)),
-            contentAlignment = Alignment.Center,
         ) {
             TabStrip(
                 appStore = AppStore(),

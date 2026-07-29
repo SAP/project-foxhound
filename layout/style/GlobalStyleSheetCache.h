@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,11 +6,10 @@
 #define mozilla_GlobalStyleSheetCache_h_
 
 #include "mozilla/BuiltInStyleSheets.h"
+#include "mozilla/EnumeratedArray.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/NotNull.h"
-#include "mozilla/PreferenceSheet.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/css/Loader.h"
 #include "mozilla/ipc/SharedMemoryHandle.h"
 #include "mozilla/ipc/SharedMemoryMapping.h"
 #include "nsIMemoryReporter.h"
@@ -22,12 +19,12 @@ class nsIFile;
 class nsIURI;
 
 namespace mozilla {
-class CSSStyleSheet;
-}  // namespace mozilla
+class StyleSheet;
+enum class StyleOrigin : uint8_t;
+struct StyleLockedCssRules;
 
-namespace mozilla {
 namespace css {
-
+class Loader;
 // Enum defining how error should be handled.
 enum FailureAction { eCrash = 0, eLogToConsole };
 
@@ -100,17 +97,14 @@ class GlobalStyleSheetCache final : public nsIObserver,
   void InitFromProfile();
   void InitSharedSheetsInParent();
   void InitMemoryReporter();
-  RefPtr<StyleSheet> LoadSheetURL(const nsACString& aURL,
-                                  css::SheetParsingMode aParsingMode,
+  RefPtr<StyleSheet> LoadSheetURL(const nsACString& aURL, StyleOrigin,
                                   css::FailureAction aFailureAction);
-  RefPtr<StyleSheet> LoadSheetFile(nsIFile* aFile,
-                                   css::SheetParsingMode aParsingMode);
-  RefPtr<StyleSheet> LoadSheet(nsIURI* aURI, css::SheetParsingMode aParsingMode,
+  RefPtr<StyleSheet> LoadSheetFile(nsIFile* aFile, StyleOrigin);
+  RefPtr<StyleSheet> LoadSheet(nsIURI* aURI, StyleOrigin,
                                css::FailureAction aFailureAction);
   void LoadSheetFromSharedMemory(const nsACString& aURL,
-                                 RefPtr<StyleSheet>* aSheet,
-                                 css::SheetParsingMode, const Header*,
-                                 BuiltInStyleSheet);
+                                 RefPtr<StyleSheet>* aSheet, StyleOrigin,
+                                 const Header*, BuiltInStyleSheet);
 
   static StaticRefPtr<GlobalStyleSheetCache> gStyleCache;
   static StaticRefPtr<css::Loader> gCSSLoader;

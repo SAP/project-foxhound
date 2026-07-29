@@ -2,14 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from mozparsers.shared_telemetry_utils import ParserError
-from perfecthash import PerfectHash
-
-PHFSIZE = 1024
-
 import sys
 
 from mozparsers import parse_user_interactions
+from mozparsers.shared_telemetry_utils import ParserError
+from perfecthash import PerfectHash
 
 banner = """/* This file is auto-generated, see gen_userinteraction_phf.py.  */
 """
@@ -50,7 +47,7 @@ def main(output, *filenames):
         (bytearray(ui.label, "ascii"), idx)
         for (idx, ui) in enumerate(user_interactions)
     ]
-    name_phf = PerfectHash(user_interactions, PHFSIZE)
+    name_phf = PerfectHash(user_interactions)
 
     output.write(
         name_phf.cxx_codegen(

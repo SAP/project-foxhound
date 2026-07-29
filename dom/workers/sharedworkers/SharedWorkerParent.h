@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -50,6 +48,12 @@ class SharedWorkerParent final
   mozilla::ipc::IPCResult RecvFreeze();
 
   mozilla::ipc::IPCResult RecvThaw();
+
+  mozilla::ipc::IPCResult RecvSetLocaleOverride(
+      const nsCString& aLanguageOverride, nsTArray<nsString>&& aLanguages);
+
+  mozilla::ipc::IPCResult RecvUpdateTimezoneOverride(
+      const nsString& aTimezoneOverride);
 
   bool IsSuspended() const { return mSuspended; }
 

@@ -5,22 +5,34 @@
 package mozilla.components.compose.tabstray
 
 import androidx.compose.foundation.Image
-import androidx.compose.material3.IconButton
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.TabSessionState
+import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
+import mozilla.components.compose.base.button.IconButton
+import mozilla.components.compose.base.theme.AcornTheme
 import mozilla.components.compose.browser.tabstray.R
 import mozilla.components.lib.state.ext.observeAsComposableState
 
 private const val MAX_VISIBLE_TABS = 99
 private const val SO_MANY_TABS_OPEN = "∞"
+
+private val PREVIEW_TAB_COUNTS = listOf(0, 1, 5, 42, MAX_VISIBLE_TABS + 1)
 
 /**
  * A button showing the count of tabs in the [store] using the provided [tabsFilter].
@@ -35,17 +47,18 @@ fun TabCounterButton(
     onClicked: () -> Unit,
     tabsFilter: (TabSessionState) -> Boolean = { true },
 ) {
+    val backgroundColor = MaterialTheme.colorScheme.primaryContainer
+    val foregroundColor = contentColorFor(backgroundColor)
+    val tabs = store.observeAsComposableState { state -> state.tabs.filter(tabsFilter) }
+    val count = tabs.value.size
+
     IconButton(
         onClick = onClicked,
+        contentDescription = createContentDescription(count),
     ) {
-        val backgroundColor = MaterialTheme.colorScheme.primaryContainer
-        val foregroundColor = contentColorFor(backgroundColor)
-        val tabs = store.observeAsComposableState { state -> state.tabs.filter(tabsFilter) }
-        val count = tabs.value.size
-
         Image(
             painter = painterResource(R.drawable.mozac_tabcounter_background),
-            contentDescription = createContentDescription(count),
+            contentDescription = null,
             colorFilter = ColorFilter.tint(foregroundColor),
         )
 
@@ -74,5 +87,31 @@ private fun createContentDescription(count: Int): String {
             stringResource(R.string.mozac_tab_counter_open_tab_tray_plural),
             count.toString(),
         )
+    }
+}
+
+@PreviewLightDark
+@Composable
+private fun TabCounterButtonPreview() {
+    AcornTheme {
+        Surface {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                PREVIEW_TAB_COUNTS.forEach { count ->
+                    TabCounterButton(
+                        store = BrowserStore(
+                            initialState = BrowserState(
+                                tabs = List(count) { index ->
+                                    createTab(url = "https://example.com/$index")
+                                },
+                            ),
+                        ),
+                        onClicked = {},
+                    )
+                }
+            }
+        }
     }
 }

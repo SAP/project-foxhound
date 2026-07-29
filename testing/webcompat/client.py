@@ -13,9 +13,15 @@ from urllib.parse import quote
 
 import pytest
 import webdriver
-from PIL import Image
+from PIL import Image, ImageChops
 from webdriver.bidi.error import InvalidArgumentException, NoSuchFrameException
 from webdriver.bidi.modules.script import ContextTarget
+
+
+def escape_xpath_string_quotes(text):
+    if not "'" in text:
+        return f"'{text}'"
+    return "concat('" + """', "'", '""".join(text.split("'")) + "')"
 
 
 class Client:
@@ -40,7 +46,7 @@ class Client:
             self.execute_script(
                 r"""
                     const [ level ] = arguments;
-                    const win = browser.ownerGlobal;
+                    const win = browser.documentGlobal;
                     win.ZoomManager.setZoomForBrowser(win.gBrowser.selectedTab.linkedBrowser, level);
                     """,
                 level,
@@ -805,7 +811,8 @@ class Client:
             )
 
         async def await_text(self, text, **kwargs):
-            xpath = f"//*[text()[contains(.,'{text}')]]"
+            escaped_text = escape_xpath_string_quotes(text)
+            xpath = f"//*[text()[contains(.,{escaped_text})]]"
             return await self.await_xpath(self, xpath, **kwargs)
 
         async def await_xpath(
@@ -1034,33 +1041,41 @@ class Client:
                     return found
                 await asyncio.sleep(polling_interval)
 
-    async def await_popup(self, url=None):
+    async def await_popup(self, url=None, timeout=15):
         if not hasattr(self, "popup_preload_script"):
             self.popup_preload_script = await self.make_preload_script(
                 """
-                    window.__popups = [];
-                    window.wrappedJSObject.open = function(url) {
-                        window.__popups.push(url);
+                    const win = window.wrappedJSObject;
+                    win.__popups = new win.Array();
+                    win.open = function(url) {
+                        win.__popups.push(url);
                     }
                 """,
                 "popup_detector",
             )
         return self.popup_preload_script.run(
-            """(url) => new Promise(done => {
+            """(url, timeout) => new Promise(done => {
+                    let attempts = timeout;
                     const to = setInterval(() => {
-                        if (url === undefined && window.__popups.length) {
+                        const { __popups } = window.wrappedJSObject;
+                        if (url === undefined && __popups.length) {
                             clearInterval(to);
-                            return done(window.__popups[0]);
+                            return done(true);
                         }
-                        const found = window.__popups.find(u => u.includes(url));
+                        const found = __popups.find(u => u.includes(url));
                         if (found !== undefined) {
                             clearInterval(to);
-                            done(found);
+                            done(true);
+                        }
+                        if (!--attempts) {
+                            clearInterval(to);
+                            done(false);
                         }
                     }, 1000);
                })
             """,
             url,
+            timeout,
             await_promise=True,
         )
 
@@ -1173,7 +1188,8 @@ class Client:
 
     def find_text(self, text, is_displayed=None, **kwargs):
         try:
-            e = self.find_xpath(f"//*[text()[contains(.,'{text}')]]", **kwargs)
+            escaped_text = escape_xpath_string_quotes(text)
+            e = self.find_xpath(f"//*[text()[contains(.,{escaped_text})]]", **kwargs)
             return self._do_is_displayed_check(e, is_displayed)
         except webdriver.error.NoSuchElementException:
             return None
@@ -1428,18 +1444,44 @@ class Client:
             element,
         )
 
+    async def does_fastclick_activate(self, url, wait="load"):
+        async with self.monitor_for_fastclick_attachment():
+            await self.navigate(url, wait=wait)
+            return await self.was_fastclick_attached()
+
     @contextlib.asynccontextmanager
-    async def ensure_fastclick_activates(self):
+    async def monitor_for_fastclick_attachment(self):
         fastclick_preload_script = await self.make_preload_script(
             """
-                var _ = document.createElement("webcompat_test");
-                _.style = "position:absolute;right:-1px;width:1px;height:1px";
-                document.documentElement.appendChild(_);
+                // FastClick can check for document.documentElement.scrollWidth <= window.outerWidth
+                // in notNeeded, so let's force it to enable (as there may be devices where it's false).
+                window.wrappedJSObject.outerWidth--;
+
+                window.detected = false;
+
+                const { prototype } = window.wrappedJSObject.EventTarget;
+                const { addEventListener } = prototype;
+                prototype.addEventListener = function (type, fn, c, d) {
+                  if (type == "touchstart" && new Error().stack?.includes("attach@")) {
+                    window.detected = true;
+                  }
+                  try {
+                    return addEventListener.call(this, type, fn, c, d);
+                  } catch(_) { // throws if attaching to window, since it's a sandbox, not EventTarget
+                    return addEventListener.call(window, type, fn, c, d);
+                  }
+                };
             """,
-            "fastclick_forcer",
+            "fastclick_detector",
         )
         yield
         fastclick_preload_script.stop()
+
+    async def was_fastclick_attached(self):
+        result = await self.run_script_in_context(
+            "window.detected", sandbox="fastclick_detector"
+        )
+        return result["value"]
 
     async def ensure_InstallTrigger_defined(self):
         return await self.make_preload_script("window.InstallTrigger = function() {}")
@@ -1527,36 +1569,6 @@ class Client:
                 "scrollbar does not cover any text"
             )
 
-    def test_for_fastclick(self, element):
-        # FastClick cancels touchend, breaking default actions on Fenix.
-        # It instead fires a mousedown or click, which we can detect.
-        self.execute_script(
-            """
-                const sel = arguments[0];
-                window.fastclicked = false;
-                const evt = sel.nodeName === "SELECT" ? "mousedown" : "click";
-                document.addEventListener(evt, e => {
-                    if (e.target === sel && !e.isTrusted) {
-                        window.fastclicked = true;
-                    }
-                }, true);
-                sel.style.position = "absolute";
-                sel.style.zIndex = 2147483647;
-            """,
-            element,
-        )
-        self.scroll_into_view(element)
-        self.clear_covering_elements(element)
-        # tap a few times in case the site's other code interferes, but
-        # FastClick can move the element out of bounds, so take care.
-        try:
-            self.touch.click(element=element).perform()
-            self.touch.click(element=element).perform()
-            self.touch.click(element=element).perform()
-        except webdriver.error.MoveTargetOutOfBoundsException:
-            pass
-        return self.execute_script("return window.fastclicked")
-
     async def test_aceomni_pan_and_zoom_works(self, url):
         await self.navigate(url, wait="none")
         img = self.await_css("#imageZoom", is_displayed=True)
@@ -1575,8 +1587,14 @@ class Client:
         coords = self.get_element_screen_position(img)
         coords = [coords[0] + 50, coords[1] + 100]
         await self.apz_move(coords=coords)
-        await self.stall(0.5)
-        old_x = float(get_zoom_x())
+        for _ in range(20):
+            try:
+                old_x = float(get_zoom_x())
+                break
+            except TypeError as e:
+                if _ == 20:
+                    raise e
+                await self.stall(0.5)
 
         for i in range(20):
             coords = [coords[0] + 10, coords[1]]
@@ -1608,11 +1626,17 @@ class Client:
         except webdriver.error.StaleElementReferenceException:
             return False
 
-    def is_one_solid_color(self, element, max_fuzz=8):
+    def diff_images(self, img1b64, img2b64):
+        img1 = Image.open(BytesIO(b64decode(img1b64))).convert("RGB")
+        img2 = Image.open(BytesIO(b64decode(img2b64))).convert("RGB")
+        return ImageChops.difference(img1, img2)
+
+    def is_one_solid_color(self, image, max_fuzz=8):
         # max_fuzz is needed as screenshots can have slight color bleeding/fringing
-        shotb64 = element.screenshot()
-        shot = Image.open(BytesIO(b64decode(shotb64))).convert("RGB")
-        for min, max in shot.getextrema():
+        if isinstance(image, webdriver.client.WebElement):
+            shotb64 = image.screenshot()
+            image = Image.open(BytesIO(b64decode(shotb64))).convert("RGB")
+        for min, max in image.getextrema():
             if max - min > max_fuzz:
                 return False
         return True
@@ -1648,7 +1672,7 @@ class Client:
                 string,
             )
 
-    def do_paste(self):
+    def send_key(self, key, options={}):
         with self.using_context("chrome"):
             self.execute_script(
                 """
@@ -1665,13 +1689,19 @@ class Client:
                     );
                     return eventUtilsObject;
                 }
-                const win = browser.ownerGlobal;
+                const win = browser.documentGlobal;
                 if (!win.EventUtils) {
                     win.EventUtils = _getEventUtils(win);
                 }
-                win.EventUtils.synthesizeKey("v", { accelKey: true }, win);
-            """
+                const [key, options] = arguments;
+                win.EventUtils.synthesizeKey(key, options, win);
+            """,
+                key,
+                options,
             )
+
+    def do_paste(self):
+        self.send_key("v", {"accelKey": True})
 
     def make_base64_xpi(self, files):
         buf = BytesIO()

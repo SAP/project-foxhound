@@ -331,17 +331,16 @@ export class TranslationsTelemetry {
   }
 
   /**
-   * Records a telemetry event when a full-page translation request is sent.
+   * Records a telemetry event when a translation request is sent.
    *
    * @param {object} data
    * @param {boolean} data.autoTranslate
-   * @param {string} data.docLangTag
+   * @param {string} [data.docLangTag]
    * @param {string} data.sourceLanguage
    * @param {string} data.targetLanguage
-   * @param {string} data.topPreferredLanguage
    * @param {string} data.requestTarget
    * @param {number} data.sourceTextCodeUnits
-   * @param {number} data.sourceTextWordCount
+   * @param {number} [data.sourceTextWordCount]
    */
   static onTranslate(data) {
     const {
@@ -350,7 +349,6 @@ export class TranslationsTelemetry {
       sourceLanguage,
       requestTarget,
       targetLanguage,
-      topPreferredLanguage,
       sourceTextCodeUnits,
       sourceTextWordCount,
     } = data;
@@ -361,7 +359,6 @@ export class TranslationsTelemetry {
       to_language: targetLanguage,
       auto_translate: autoTranslate,
       document_language: docLangTag,
-      top_preferred_language: topPreferredLanguage,
       request_target: requestTarget ?? "full_page",
       source_text_code_units: sourceTextCodeUnits,
       source_text_word_count: sourceTextWordCount,
@@ -810,7 +807,6 @@ class SelectTranslationsPanelTelemetry {
    * @param {boolean} data.maintainFlow
    * @param {string} data.sourceLanguage
    * @param {string} data.targetLanguage
-   * @param {string} data.topPreferredLanguage
    * @param {string} data.textSource
    */
   static onOpen(data) {
@@ -826,7 +822,6 @@ class SelectTranslationsPanelTelemetry {
         document_language: data.docLangTag,
         from_language: data.sourceLanguage,
         to_language: data.targetLanguage,
-        top_preferred_language: data.topPreferredLanguage,
         text_source: data.textSource,
       });
       TranslationsTelemetry.logEventToConsole(
@@ -1070,6 +1065,24 @@ class AboutTranslationsPageTelemetry {
   }
 
   /**
+   * Records when a translation request is sent from about:translations.
+   *
+   * @param {object} data
+   * @param {boolean} data.autoTranslate
+   * @param {string} data.sourceLanguage
+   * @param {string} data.targetLanguage
+   * @param {number} data.sourceTextCodeUnits
+   * @param {number} [data.sourceTextWordCount]
+   */
+  static onTranslate(data) {
+    // Translation requests are explicitly excluded from rate limiting.
+    TranslationsTelemetry.onTranslate({
+      ...data,
+      requestTarget: "about_translations",
+    });
+  }
+
+  /**
    * Records when the about:translations page is opened.
    *
    * @param {object} data
@@ -1088,6 +1101,157 @@ class AboutTranslationsPageTelemetry {
       });
       TranslationsTelemetry.logEventToConsole(
         AboutTranslationsPageTelemetry.onOpen,
+        data
+      );
+    });
+  }
+
+  /**
+   * Records when the try-again button is invoked in about:translations.
+   */
+  static onTryAgainButton() {
+    AboutTranslationsPageTelemetry.#withRateLimits(({ flowId }) => {
+      Glean.translationsAboutTranslationsPage.tryAgainButton.record({
+        flow_id: flowId,
+      });
+      TranslationsTelemetry.logEventToConsole(
+        AboutTranslationsPageTelemetry.onTryAgainButton
+      );
+    });
+  }
+
+  /**
+   * Records when the copy button is invoked in about:translations.
+   */
+  static onCopyButton() {
+    AboutTranslationsPageTelemetry.#withRateLimits(({ flowId }) => {
+      Glean.translationsAboutTranslationsPage.copyButton.record({
+        flow_id: flowId,
+      });
+      TranslationsTelemetry.logEventToConsole(
+        AboutTranslationsPageTelemetry.onCopyButton
+      );
+    });
+  }
+
+  /**
+   * Records when the clear source text button is invoked in about:translations.
+   */
+  static onClearSourceTextButton() {
+    AboutTranslationsPageTelemetry.#withRateLimits(({ flowId }) => {
+      Glean.translationsAboutTranslationsPage.clearSourceTextButton.record({
+        flow_id: flowId,
+      });
+      TranslationsTelemetry.logEventToConsole(
+        AboutTranslationsPageTelemetry.onClearSourceTextButton
+      );
+    });
+  }
+
+  /**
+   * Records when the swap button is invoked in about:translations.
+   */
+  static onSwapButton() {
+    AboutTranslationsPageTelemetry.#withRateLimits(({ flowId }) => {
+      Glean.translationsAboutTranslationsPage.swapButton.record({
+        flow_id: flowId,
+      });
+      TranslationsTelemetry.logEventToConsole(
+        AboutTranslationsPageTelemetry.onSwapButton
+      );
+    });
+  }
+
+  /**
+   * Records when the language-load-error message is shown in about:translations.
+   */
+  static onLanguageLoadErrorMessage() {
+    AboutTranslationsPageTelemetry.#withRateLimits(({ flowId }) => {
+      Glean.translationsAboutTranslationsPage.languageLoadErrorMessage.record({
+        flow_id: flowId,
+      });
+      TranslationsTelemetry.logEventToConsole(
+        AboutTranslationsPageTelemetry.onLanguageLoadErrorMessage
+      );
+    });
+  }
+
+  /**
+   * Records when the unsupported-info message is shown in about:translations.
+   */
+  static onUnsupportedInfoMessage() {
+    AboutTranslationsPageTelemetry.#withRateLimits(({ flowId }) => {
+      Glean.translationsAboutTranslationsPage.unsupportedInfoMessage.record({
+        flow_id: flowId,
+      });
+      TranslationsTelemetry.logEventToConsole(
+        AboutTranslationsPageTelemetry.onUnsupportedInfoMessage
+      );
+    });
+  }
+
+  /**
+   * Records when the policy-disabled-info message is shown in about:translations.
+   */
+  static onPolicyDisabledInfoMessage() {
+    AboutTranslationsPageTelemetry.#withRateLimits(({ flowId }) => {
+      Glean.translationsAboutTranslationsPage.policyDisabledInfoMessage.record({
+        flow_id: flowId,
+      });
+      TranslationsTelemetry.logEventToConsole(
+        AboutTranslationsPageTelemetry.onPolicyDisabledInfoMessage
+      );
+    });
+  }
+
+  /**
+   * Records when the feature-blocked-info message is shown in about:translations.
+   */
+  static onFeatureBlockedInfoMessage() {
+    AboutTranslationsPageTelemetry.#withRateLimits(({ flowId }) => {
+      Glean.translationsAboutTranslationsPage.featureBlockedInfoMessage.record({
+        flow_id: flowId,
+      });
+      TranslationsTelemetry.logEventToConsole(
+        AboutTranslationsPageTelemetry.onFeatureBlockedInfoMessage
+      );
+    });
+  }
+
+  /**
+   * Records when unblock-feature is invoked in about:translations.
+   */
+  static onUnblockFeature() {
+    AboutTranslationsPageTelemetry.#withRateLimits(({ flowId }) => {
+      Glean.translationsAboutTranslationsPage.unblockFeature.record({
+        flow_id: flowId,
+      });
+      TranslationsTelemetry.logEventToConsole(
+        AboutTranslationsPageTelemetry.onUnblockFeature
+      );
+    });
+  }
+
+  /**
+   * Records when the unsupported-language message is shown in about:translations.
+   *
+   * @param {object} data
+   * @param {string} data.detectedLanguage
+   * @param {number} data.sourceTextCodeUnits
+   * @param {number | null} [data.sourceTextWordCount]
+   */
+  static onUnsupportedLanguageMessage(data) {
+    AboutTranslationsPageTelemetry.#withRateLimits(({ flowId }) => {
+      Glean.translationsAboutTranslationsPage.unsupportedLanguageMessage.record(
+        {
+          flow_id: flowId,
+          detected_language: data.detectedLanguage,
+          source_text_code_units: data.sourceTextCodeUnits,
+          source_text_word_count: data.sourceTextWordCount,
+        }
+      );
+      TranslationsTelemetry.logEventToConsole(
+        AboutTranslationsPageTelemetry.onUnsupportedLanguageMessage,
         data
       );
     });

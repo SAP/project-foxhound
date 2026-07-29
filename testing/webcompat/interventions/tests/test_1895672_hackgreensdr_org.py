@@ -9,7 +9,7 @@ AUDIO_START_CSS = "input[type=button][value='Chrome audio start']"
 @pytest.mark.with_interventions
 async def test_enabled(client):
     await client.navigate(URL, wait="none")
-    client.await_css(AUDIO_START_CSS, is_displayed=True, timeout=4000)
+    client.await_css(AUDIO_START_CSS, is_displayed=True)
 
 
 @pytest.mark.asyncio

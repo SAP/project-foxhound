@@ -29,9 +29,6 @@ const { NetUtil } = ChromeUtils.importESModule(
   "resource://gre/modules/NetUtil.sys.mjs"
 );
 
-// Always log packets when running tests. runxpcshelltests.py will throw
-// the output away anyway, unless you give it the --verbose flag.
-Services.prefs.setBoolPref("devtools.debugger.log", false);
 // Enable remote debugging for the relevant tests.
 Services.prefs.setBoolPref("devtools.debugger.remote-enabled", true);
 

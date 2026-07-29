@@ -15,6 +15,9 @@ async function decodeImage(arrayBuffer) {
 }
 
 add_setup(async () => {
+  await SpecialPowers.pushPrefEnv({set: [
+    ["privacy.baselineFingerprintingProtection", false]
+  ]});
   await NotificationTest.allowNotifications();
   await MockAlertsService.register();
   await MockAlertsService.enableAutoClick();

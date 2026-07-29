@@ -1,7 +1,7 @@
 [DEFAULT]
 prefs = [
   "extensions.formautofill.creditCards.enabled=true",
-  "toolkit.telemetry.ipcBatchTimeout=0", # lower the interval for event telemetry in the content process to update the parent process
+  "extensions.formautofill.skipProgrammaticCheckForTests=true"
 ]
 support-files = [
   "../head.js",
@@ -95,11 +95,6 @@ support-files = ["browser_telemetry_utils.js"]
 
 ["browser_creditCard_telemetry_manage.js"]
 support-files = ["browser_telemetry_utils.js"]
-skip-if = [
-  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan && swgl", # Bug 1960313
-  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1960313
-  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1960313
-]
 
 ["browser_creditCard_telemetry_popup.js"]
 support-files = ["browser_telemetry_utils.js"]

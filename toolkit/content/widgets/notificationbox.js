@@ -273,6 +273,12 @@
       // Ensure the DOM has been created for the Lit-based notification-message
       // element so that we add the .animated class + it animates as expected.
       await newitem.updateComplete;
+
+      if (aNotification.label?.["l10n-id"] && newitem.shadowRoot) {
+        await document.l10n.translateFragment(newitem.shadowRoot);
+        newitem.setAlertRole();
+      }
+
       this._showNotification(newitem, true);
 
       // Fire event for accessibility APIs
@@ -559,8 +565,8 @@
           this.messageL10nArgs = value["l10n-args"];
         } else {
           this.message = value;
+          this.setAlertRole();
         }
-        this.setAlertRole();
       }
 
       setButtons(buttons) {

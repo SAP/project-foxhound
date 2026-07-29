@@ -3,6 +3,7 @@
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import platform
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -256,9 +257,8 @@ class OSXBootstrapper(OSXAndroidBootstrapper, BaseBootstrapper):
 
     def install_homebrew(self):
         print(BREW_INSTALL)
-        bootstrap = urlopen(
-            url=HOMEBREW_BOOTSTRAP, cafile=certifi.where(), timeout=20
-        ).read()
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
+        bootstrap = urlopen(HOMEBREW_BOOTSTRAP, context=ssl_context, timeout=20).read()
         with tempfile.NamedTemporaryFile() as tf:
             tf.write(bootstrap)
             tf.flush()

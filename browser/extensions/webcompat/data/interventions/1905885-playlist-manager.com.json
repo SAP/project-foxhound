@@ -1,0 +1,15 @@
+{
+  "label": "playlist-manager.com",
+  "bugs": {
+    "1905885": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://playlist-manager.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

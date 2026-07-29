@@ -1253,6 +1253,24 @@ export default [
     }
   },
 
+  // new Document()
+  {
+    "type": "object",
+    "class": "Document",
+    "ownPropertyLength": 0,
+    "isError": false,
+    "extensible": false,
+    "sealed": false,
+    "frozen": false,
+    "preview": {
+      "kind": "DOMNode",
+      "nodeType": 9,
+      "nodeName": "#document",
+      "isConnected": 1,
+      "location": ""
+    }
+  },
+
   // new Error("foo")
   {
     "type": "object",

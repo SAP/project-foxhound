@@ -160,7 +160,7 @@ command_list_push_group (cairo_pdf_surface_t    *surface,
     cairo_pdf_recording_surface_commands_t recording_commands;
     cairo_int_status_t status = CAIRO_STATUS_SUCCESS;
 
-    group = _cairo_malloc (sizeof(cairo_pdf_command_list_t));
+    group = _cairo_calloc (sizeof(cairo_pdf_command_list_t));
     _cairo_array_init (&group->commands, sizeof(cairo_pdf_command_t));
     group->parent = ic->current_commands;
 
@@ -374,7 +374,7 @@ add_tree_node (cairo_pdf_surface_t           *surface,
     cairo_pdf_struct_tree_node_t *node;
     cairo_int_status_t status = CAIRO_STATUS_SUCCESS;
 
-    node = _cairo_malloc (sizeof(cairo_pdf_struct_tree_node_t));
+    node = _cairo_calloc (sizeof(cairo_pdf_struct_tree_node_t));
     if (unlikely (node == NULL))
 	return _cairo_error (CAIRO_STATUS_NO_MEMORY);
 
@@ -484,7 +484,7 @@ add_annotation (cairo_pdf_surface_t           *surface,
     cairo_pdf_interchange_t *ic = &surface->interchange;
     cairo_pdf_annotation_t *annot;
 
-    annot = _cairo_malloc (sizeof (cairo_pdf_annotation_t));
+    annot = _cairo_calloc (sizeof (cairo_pdf_annotation_t));
     if (unlikely (annot == NULL))
 	return _cairo_error (CAIRO_STATUS_NO_MEMORY);
 
@@ -1583,7 +1583,7 @@ _cairo_pdf_interchange_write_document_dests (cairo_pdf_surface_t *surface)
         return CAIRO_STATUS_SUCCESS;
     }
 
-    ic->sorted_dests = calloc (ic->num_dests, sizeof (cairo_pdf_named_dest_t *));
+    ic->sorted_dests = _cairo_calloc_ab (ic->num_dests, sizeof (cairo_pdf_named_dest_t *));
     if (unlikely (ic->sorted_dests == NULL))
 	return _cairo_error (CAIRO_STATUS_NO_MEMORY);
 
@@ -1766,7 +1766,7 @@ _cairo_pdf_interchange_begin_structure_tag (cairo_pdf_surface_t    *surface,
 	    return status;
 
 	/* Add to command_id to node map. */
-	command_entry = _cairo_malloc (sizeof(cairo_pdf_command_entry_t));
+	command_entry = _cairo_calloc (sizeof(cairo_pdf_command_entry_t));
 	command_entry->recording_id = ic->recording_id;
 	command_entry->command_id = ic->command_id;
 	command_entry->node = ic->current_analyze_node;
@@ -1782,7 +1782,7 @@ _cairo_pdf_interchange_begin_structure_tag (cairo_pdf_surface_t    *surface,
 	}
 
 	if (ic->current_analyze_node->type == PDF_NODE_CONTENT) {
-	    cairo_pdf_content_tag_t *content = _cairo_malloc (sizeof(cairo_pdf_content_tag_t));
+	    cairo_pdf_content_tag_t *content = _cairo_calloc (sizeof(cairo_pdf_content_tag_t));
 	    content->node = ic->current_analyze_node;
 	    _cairo_pdf_content_tag_init_key (content);
 	    status = _cairo_hash_table_insert (ic->content_tag_map, &content->base);
@@ -1838,7 +1838,7 @@ _cairo_pdf_interchange_begin_dest_tag (cairo_pdf_surface_t    *surface,
     cairo_int_status_t status = CAIRO_STATUS_SUCCESS;
 
     if (surface->paginated_mode == CAIRO_PAGINATED_MODE_ANALYZE) {
-	dest = calloc (1, sizeof (cairo_pdf_named_dest_t));
+	dest = _cairo_calloc (sizeof (cairo_pdf_named_dest_t));
 	if (unlikely (dest == NULL))
 	    return _cairo_error (CAIRO_STATUS_NO_MEMORY);
 
@@ -1959,6 +1959,8 @@ _cairo_pdf_interchange_tag_end (cairo_pdf_surface_t *surface,
 
     } else if (surface->paginated_mode == CAIRO_PAGINATED_MODE_RENDER) {
 	status = _cairo_tag_stack_pop (&ic->render_tag_stack, name, &elem);
+    } else {
+	ASSERT_NOT_REACHED;
     }
     if (unlikely (status))
 	return status;
@@ -2035,8 +2037,8 @@ _cairo_pdf_interchange_struct_tree_requires_recording_surface (
     if (_cairo_surface_is_snapshot (recording_surface))
 	free_me = recording_surface = _cairo_surface_snapshot_get_target (recording_surface);
 
-    if (_cairo_surface_is_recording(recording_surface) &&
-        _cairo_recording_surface_has_tags(recording_surface))
+    if (_cairo_surface_is_recording (recording_surface) &&
+	_cairo_recording_surface_has_tags (recording_surface))
     {
 	/* Check if tags are to be ignored in this source */
 	switch (source_type) {
@@ -2439,7 +2441,7 @@ _cairo_pdf_interchange_init (cairo_pdf_surface_t *surface)
 
     _cairo_tag_stack_init (&ic->analysis_tag_stack);
     _cairo_tag_stack_init (&ic->render_tag_stack);
-    ic->struct_root = calloc (1, sizeof(cairo_pdf_struct_tree_node_t));
+    ic->struct_root = _cairo_calloc (sizeof(cairo_pdf_struct_tree_node_t));
     if (unlikely (ic->struct_root == NULL))
 	return _cairo_error (CAIRO_STATUS_NO_MEMORY);
 
@@ -2483,7 +2485,7 @@ _cairo_pdf_interchange_init (cairo_pdf_surface_t *surface)
     ic->mcid_order = 0;
 
     _cairo_array_init (&ic->outline, sizeof(cairo_pdf_outline_entry_t *));
-    outline_root = calloc (1, sizeof(cairo_pdf_outline_entry_t));
+    outline_root = _cairo_calloc (sizeof(cairo_pdf_outline_entry_t));
     if (unlikely (outline_root == NULL))
 	return _cairo_error (CAIRO_STATUS_NO_MEMORY);
 
@@ -2597,7 +2599,7 @@ _cairo_pdf_interchange_add_outline (cairo_pdf_surface_t        *surface,
     if (parent_id < 0 || parent_id >= (int)_cairo_array_num_elements (&ic->outline))
 	return CAIRO_STATUS_SUCCESS;
 
-    outline = _cairo_malloc (sizeof(cairo_pdf_outline_entry_t));
+    outline = _cairo_calloc (sizeof(cairo_pdf_outline_entry_t));
     if (unlikely (outline == NULL))
 	return _cairo_error (CAIRO_STATUS_NO_MEMORY);
 
@@ -2831,8 +2833,10 @@ _cairo_pdf_interchange_set_custom_metadata (cairo_pdf_surface_t  *surface,
     if (value && strlen(value)) {
 	new_data.name = strdup (name);
 	status = _cairo_utf8_to_pdf_string (value, &s);
-	if (unlikely (status))
+	if (unlikely (status)) {
+            free (new_data.name);
 	    return status;
+        }
 	new_data.value = s;
 	status = _cairo_array_append (&ic->custom_metadata, &new_data);
     }

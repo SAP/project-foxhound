@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -19,7 +18,7 @@ extern LazyLogModule gMediaManagerLog;
 #else
 static mozilla::LazyLogModule gMediaManagerLog("MediaManager");
 #endif
-#define LOG(...) MOZ_LOG(gMediaManagerLog, LogLevel::Debug, (__VA_ARGS__))
+#define LOG(...) MOZ_LOG_FMT(gMediaManagerLog, LogLevel::Debug, __VA_ARGS__)
 
 namespace mozilla {
 
@@ -263,7 +262,7 @@ void NormalizedConstraintSet::StringRange::Intersect(
   set_intersection(mExact.begin(), mExact.end(), aOther.mExact.begin(),
                    aOther.mExact.end(),
                    std::inserter(intersection, intersection.begin()));
-  mExact = intersection;
+  mExact = std::move(intersection);
 }
 
 bool NormalizedConstraintSet::StringRange::Merge(const StringRange& aOther) {
@@ -275,7 +274,7 @@ bool NormalizedConstraintSet::StringRange::Merge(const StringRange& aOther) {
   ValueType unioned;
   set_union(mIdeal.begin(), mIdeal.end(), aOther.mIdeal.begin(),
             aOther.mIdeal.end(), std::inserter(unioned, unioned.begin()));
-  mIdeal = unioned;
+  mIdeal = std::move(unioned);
   return true;
 }
 
@@ -508,7 +507,7 @@ const char* MediaConstraintsHelper::FindBadConstraint(
 static void LogConstraintStringRange(
     const NormalizedConstraintSet::StringRange& aRange) {
   if (aRange.mExact.size() <= 1 && aRange.mIdeal.size() <= 1) {
-    LOG("  %s: { exact: [%s], ideal: [%s] }", aRange.mName.get(),
+    LOG("  {}: {{ exact: [{}], ideal: [{}] }}", aRange.mName.get(),
         (aRange.mExact.empty()
              ? ""
              : NS_ConvertUTF16toUTF8(*aRange.mExact.begin()).get()),
@@ -516,15 +515,15 @@ static void LogConstraintStringRange(
              ? ""
              : NS_ConvertUTF16toUTF8(*aRange.mIdeal.begin()).get()));
   } else {
-    LOG("  %s: { exact: [", aRange.mName.get());
+    LOG("  {}: {{ exact: [", aRange.mName.get());
     for (const auto& entry : aRange.mExact) {
-      LOG("      %s,", NS_ConvertUTF16toUTF8(entry).get());
+      LOG("      {},", NS_ConvertUTF16toUTF8(entry).get());
     }
     LOG("    ], ideal: [");
     for (const auto& entry : aRange.mIdeal) {
-      LOG("      %s,", NS_ConvertUTF16toUTF8(entry).get());
+      LOG("      {},", NS_ConvertUTF16toUTF8(entry).get());
     }
-    LOG("    ]}");
+    LOG("    ]}}");
   }
 }
 
@@ -532,10 +531,10 @@ template <typename T>
 static void LogConstraintRange(
     const NormalizedConstraintSet::Range<T>& aRange) {
   if (aRange.mIdeal.isSome()) {
-    LOG("  %s: { min: %d, max: %d, ideal: %d }", aRange.mName.get(),
+    LOG("  {}: {{ min: {}, max: {}, ideal: {} }}", aRange.mName.get(),
         aRange.mMin, aRange.mMax, aRange.mIdeal.valueOr(0));
   } else {
-    LOG("  %s: { min: %d, max: %d }", aRange.mName.get(), aRange.mMin,
+    LOG("  {}: {{ min: {}, max: {} }}", aRange.mName.get(), aRange.mMin,
         aRange.mMax);
   }
 }
@@ -543,10 +542,10 @@ static void LogConstraintRange(
 template <>
 void LogConstraintRange(const NormalizedConstraintSet::Range<double>& aRange) {
   if (aRange.mIdeal.isSome()) {
-    LOG("  %s: { min: %f, max: %f, ideal: %f }", aRange.mName.get(),
+    LOG("  {}: {{ min: {}, max: {}, ideal: {} }}", aRange.mName.get(),
         aRange.mMin, aRange.mMax, aRange.mIdeal.valueOr(0));
   } else {
-    LOG("  %s: { min: %f, max: %f }", aRange.mName.get(), aRange.mMin,
+    LOG("  {}: {{ min: {}, max: {} }}", aRange.mName.get(), aRange.mMin,
         aRange.mMax);
   }
 }
@@ -555,8 +554,8 @@ void LogConstraintRange(const NormalizedConstraintSet::Range<double>& aRange) {
 void MediaConstraintsHelper::LogConstraints(
     const NormalizedConstraintSet& aConstraints) {
   const auto& c = aConstraints;
-  LOG("Constraints: {");
-  LOG("%s", [&]() {
+  LOG("Constraints: {{");
+  LOG("{}", [&]() {
     LogConstraintRange(c.mWidth);
     LogConstraintRange(c.mHeight);
     LogConstraintRange(c.mFrameRate);

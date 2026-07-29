@@ -22,15 +22,11 @@ case "$TARGET" in
   export TARGET_CFLAGS="-Xclang -ivfsoverlay -Xclang $MOZ_FETCHES_DIR/vs/overlay.yaml"
   export TARGET_CXXFLAGS="-Xclang -ivfsoverlay -Xclang $MOZ_FETCHES_DIR/vs/overlay.yaml"
   ;;
-# OSX cross builds are a bit harder
-*-apple-darwin)
+# OSX cross builds: build both architectures and create a universal binary.
+*apple-darwin)
+  MACOSCROSS=1
   export PATH="$MOZ_FETCHES_DIR/clang/bin:$PATH"
-  RUSTFLAGS="-Clinker=$MOZ_FETCHES_DIR/clang/bin/clang++ -C link-arg=-isysroot -C link-arg=$MOZ_FETCHES_DIR/MacOSX26.2.sdk -C link-arg=-fuse-ld=lld -C link-arg=--target=$TARGET"
-  if test "$TARGET" = "aarch64-apple-darwin"; then
-      export MACOSX_DEPLOYMENT_TARGET=11.0
-  else
-      export MACOSX_DEPLOYMENT_TARGET=10.15
-  fi
+  COMMON_RUSTFLAGS="-Clinker=$MOZ_FETCHES_DIR/clang/bin/clang++ -C link-arg=-isysroot -C link-arg=$MOZ_FETCHES_DIR/MacOSX26.5.sdk -C link-arg=-fuse-ld=lld"
   ;;
 aarch64-unknown-linux-musl)
   RUSTFLAGS="-C linker=$MOZ_FETCHES_DIR/clang/bin/clang -C link-arg=--target=$TARGET -C link-arg=-fuse-ld=lld"
@@ -38,18 +34,37 @@ aarch64-unknown-linux-musl)
 esac
 
 export PATH="$MOZ_FETCHES_DIR/rustc/bin:$PATH"
-export RUSTFLAGS="-Dwarnings $RUSTFLAGS"
 
 cd $GECKO_PATH/testing/geckodriver
 
 cp $GECKO_PATH/.cargo/config.toml.in $GECKO_PATH/.cargo/config.toml
 
-cargo build --frozen --verbose --release --target "$TARGET"
+if [ -n "$MACOSCROSS" ]; then
+    RUSTFLAGS="-Dwarnings $COMMON_RUSTFLAGS -C link-arg=--target=x86_64-apple-darwin" \
+        MACOSX_DEPLOYMENT_TARGET=10.15 \
+        cargo build --frozen --verbose --release --target x86_64-apple-darwin
 
-cd $GECKO_PATH
+    RUSTFLAGS="-Dwarnings $COMMON_RUSTFLAGS -C link-arg=--target=aarch64-apple-darwin" \
+        MACOSX_DEPLOYMENT_TARGET=11.0 \
+        cargo build --frozen --verbose --release --target aarch64-apple-darwin
+
+    cd $GECKO_PATH
+
+    LIPO=$MOZ_FETCHES_DIR/cctools/bin/x86_64-apple-darwin-lipo
+    $LIPO -create \
+        target/x86_64-apple-darwin/release/geckodriver \
+        target/aarch64-apple-darwin/release/geckodriver \
+        -output geckodriver
+else
+    export RUSTFLAGS="-Dwarnings $RUSTFLAGS"
+    cargo build --frozen --verbose --release --target "$TARGET"
+
+    cd $GECKO_PATH
+    cp target/$TARGET/release/geckodriver$EXE .
+fi
+
 mkdir -p $UPLOAD_DIR
 
-cp target/$TARGET/release/geckodriver$EXE .
 if [ "$COMPRESS_EXT" = "zip" ]; then
     zip geckodriver.zip geckodriver$EXE
     cp geckodriver.zip $UPLOAD_DIR

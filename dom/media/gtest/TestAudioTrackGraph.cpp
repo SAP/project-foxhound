@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,7 @@
 #include "CrossGraphPort.h"
 #include "DeviceInputTrack.h"
 #include "MediaTrackGraphImpl.h"
+#include "StaticComponents.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest-printers.h"
 #include "gtest/gtest.h"
@@ -15,9 +14,13 @@
 #endif  // MOZ_WEBRTC
 #include "MockCubeb.h"
 #include "WavDumper.h"
+#include "mozilla/GenericFactory.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/Services.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/gtest/WaitFor.h"
+#include "nsComponentManager.h"
+#include "nsXPCOMPrivate.h"
 
 using namespace mozilla;
 using testing::AtLeast;
@@ -3497,6 +3500,111 @@ TEST(TestAudioTrackGraph, DefaultOutputDeviceIDTracking)
   // destroy our cubeb.
   (void)WaitFor(destroyPromise).unwrap()[0];
 #endif
+}
+
+class TrackDestroyShutdownFactory final : public nsIFactory {
+  ~TrackDestroyShutdownFactory() = default;
+
+ public:
+  NS_DECL_THREADSAFE_ISUPPORTS
+
+  explicit TrackDestroyShutdownFactory(MediaTrack* aTrack)
+      : mShutdownSvc(services::GetAsyncShutdownService()), mTrack(aTrack) {}
+
+  NS_IMETHOD CreateInstance(const nsIID& aIID, void** aResult) override {
+    if (!mTrack->IsDestroyed()) {
+      // Emulate a track destroyed by an Unlink() during
+      // nsCycleCollector::CollectWhite().
+      mTrack->Destroy();
+    }
+
+    *aResult = do_AddRef(mShutdownSvc).take();
+    return NS_OK;
+  }
+
+ private:
+  const nsCOMPtr<nsIAsyncShutdownService> mShutdownSvc;
+  const RefPtr<MediaTrack> mTrack;
+};
+
+NS_IMPL_ISUPPORTS(TrackDestroyShutdownFactory, nsIFactory)
+
+TEST(TestAudioTrackGraph, GraphRemovalInGetInstance)
+{
+  TrackRate sampleRate1 = 24000;
+  TrackRate sampleRate2 = 48000;
+  const char* shutdownSvcContractId = "@mozilla.org/async-shutdown-service;1";
+  nsID shutdownSvcClassId = xpcom::StaticComponents::LookupByContractID(
+                                nsDependentCString(shutdownSvcContractId))
+                                ->CID();
+
+  MockCubeb* cubeb = new MockCubeb();
+  CubebUtils::ForceSetCubebContext(cubeb->AsCubebContext());
+
+  RefPtr graph1 = MediaTrackGraphImpl::GetInstance(
+      MediaTrackGraph::AUDIO_THREAD_DRIVER, /*Window ID*/ 1, sampleRate1,
+      nullptr, GetMainThreadSerialEventTarget());
+
+  // Dummy track to remove the graph from the global hash table.
+  RefPtr<SourceMediaTrack> dummySource1;
+  DispatchFunction(
+      [&] { dummySource1 = graph1->CreateSourceTrack(MediaSegment::AUDIO); });
+
+  (void)WaitFor(cubeb->StreamInitEvent());
+
+#define TRACKDESTROYTEST_CID /* 6b5d42c9-9a03-4255-9016-73905216cdbe */ \
+  {                                                                     \
+    0x6b5d42c9, 0x9a03, 0x4255,                                         \
+        {0x90, 0x16, 0x73, 0x90, 0x52, 0x16, 0xcd, 0xbe}                \
+  }
+  NS_DEFINE_NAMED_CID(TRACKDESTROYTEST_CID);
+
+  // Register an async shutdown service that removes dummySource1 when
+  // instantiated on demand.  The component manager makes this override the
+  // static async shutdown service, but `services` cached the previous lookup
+  // and so its cache needs to be cleared.
+  RefPtr factory = new TrackDestroyShutdownFactory(dummySource1);
+  nsresult rv = nsComponentManagerImpl::gComponentManager->RegisterFactory(
+      kTRACKDESTROYTEST_CID, "TrackDestroyTestService", shutdownSvcContractId,
+      factory);
+  EXPECT_EQ(rv, NS_OK);
+
+  auto ClearServicesCache = [] {
+    mozilla::services::Shutdown();
+    // Restore after services::Shutdown() set to true;
+    gXPCOMShuttingDown = false;
+  };
+  ClearServicesCache();
+
+  MediaTrackGraph* graph2;
+  DispatchFunction([&] {
+    EXPECT_FALSE(dummySource1->IsDestroyed());
+    graph2 = MediaTrackGraphImpl::GetInstance(
+        MediaTrackGraph::AUDIO_THREAD_DRIVER, /*Window ID*/ 1, sampleRate2,
+        nullptr, GetMainThreadSerialEventTarget());
+    EXPECT_TRUE(dummySource1->IsDestroyed());
+  });
+  // Destroying the last track in the graph triggered graph destruction.
+  (void)WaitFor(cubeb->StreamDestroyEvent());
+  EXPECT_TRUE(graph1->Destroyed());
+
+  // Test has finished.
+  // Restore the static async shutdown service.
+  rv = nsComponentManagerImpl::gComponentManager->RegisterFactory(
+      shutdownSvcClassId, nullptr, shutdownSvcContractId, nullptr);
+  EXPECT_EQ(rv, NS_OK);
+  // Clean up.
+  rv = nsComponentManagerImpl::gComponentManager->UnregisterFactory(
+      kTRACKDESTROYTEST_CID, factory);
+  EXPECT_EQ(rv, NS_OK);
+  ClearServicesCache();
+  // Destroy a track to shutdown the MTG.
+  RefPtr<SourceMediaTrack> dummySource2;
+  DispatchFunction(
+      [&] { dummySource2 = graph2->CreateSourceTrack(MediaSegment::AUDIO); });
+  (void)WaitFor(cubeb->StreamInitEvent());
+  DispatchMethod(dummySource2, &SourceMediaTrack::Destroy);
+  (void)WaitFor(cubeb->StreamDestroyEvent());
 }
 
 #undef InvokeAsync

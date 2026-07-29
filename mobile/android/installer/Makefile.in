@@ -60,12 +60,9 @@ endif
 
 include $(topsrcdir)/toolkit/mozapps/installer/packager.mk
 
+BINPATH = $(MOZ_PKG_BINPATH)
 ifeq (Darwin,$(OS_TARGET))
-BINPATH = $(_BINPATH)
-DEFINES += -DAPPNAME=$(_APPNAME)
-else
-# Every other platform just winds up in dist/bin
-BINPATH = bin
+DEFINES += -DAPPNAME=$(MOZ_MACBUNDLE_NAME)
 endif
 DEFINES += -DBINPATH=$(BINPATH)
 

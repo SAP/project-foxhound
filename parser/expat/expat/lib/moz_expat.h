@@ -1,4 +1,3 @@
-/* -*- Mode: C; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -88,8 +87,10 @@ int
 MOZ_XML_SetParamEntityParsing(XML_Parser parser,
                               enum XML_ParamEntityParsing parsing);
 
-int
-MOZ_XML_SetHashSalt(XML_Parser parser, unsigned long hash_salt);
+// Takes char (not uint8_t) because RLBox only permits memcpy of char/short/
+// wchar_t/char16_t/float/double across the sandbox boundary.
+XML_Bool
+MOZ_XML_SetHashSalt16Bytes(XML_Parser parser, const char entropy[16]);
 
 // The return value is an XML_Error.
 int

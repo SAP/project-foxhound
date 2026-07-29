@@ -4,11 +4,15 @@
 ---
 task-defaults:
     test-manifest-loader: null  # don't load tests in the taskgraph
+    worker-type:
+        by-test-platform:
+            windows11-(32|64)-24h2(-ccov|-devedition|-mingwclang|-shippable)?/.*: win11-64-25h2
+            default: default
 
 geckoview-junit:
     description: "Geckoview junit run"
     suite: geckoview-junit
-    variants: ["geckoview-fission", "no-fission", "geckoview-no-fission-no-ship", "geckoview-zygote"]
+    variants: ["geckoview-fission", "no-fission", "geckoview-zygote"]
     treeherder-symbol: gv-junit
     loopback-video: true
     target: geckoview-androidTest.apk
@@ -17,7 +21,6 @@ geckoview-junit:
         by-variant:
             geckoview-fission: ['trunk']
             no-fission: built-projects
-            geckoview-no-fission-no-ship: built-projects
             geckoview-zygote: []
             default: []
     tier: default

@@ -5,8 +5,6 @@
 "use strict";
 
 const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
-const { dumpn, dumpv } = DevToolsUtils;
-const flags = require("resource://devtools/shared/flags.js");
 const StreamUtils = require("resource://devtools/shared/transport/stream-utils.js");
 const {
   Packet,
@@ -20,6 +18,11 @@ loader.lazyGetter(this, "ScriptableInputStream", () => {
     "nsIScriptableInputStream",
     "init"
   );
+});
+
+const logger = console.createInstance({
+  prefix: "devtools_rdp",
+  maxLogLevel: "Warn",
 });
 
 const PACKET_HEADER_MAX = 200;
@@ -56,7 +59,7 @@ const PACKET_HEADER_MAX = 200;
  *                   |copyToBuffer| below), you must signal completion by
  *                   resolving / rejecting this deferred. If it's rejected, the
  *                   transport will be closed.  If an Error is supplied as a
- *                   rejection value, it will be logged via |dumpn|. If you do
+ *                   rejection value, it will be logged via MOZ_LOG. If you do
  *                   use |copyTo| or |copyToBuffer|, resolving is taken care of
  *                   for you when copying completes.
  *   * copyTo:       A helper function for getting your data out of the stream that
@@ -159,7 +162,7 @@ class DebuggerTransport {
    *                             completion by resolving / rejecting this
    *                             deferred.  If it's rejected, the transport will
    *                             be closed.  If an Error is supplied as a
-   *                             rejection value, it will be logged via |dumpn|.
+   *                             rejection value, it will be logged via MOZ_LOG.
    *                             If you do use |copyFrom| or |copyFromBuffer|,
    *                             resolving is taken care of for you when copying
    *                             completes.
@@ -211,9 +214,11 @@ class DebuggerTransport {
       this.hooks = null;
     }
     if (reason) {
-      dumpn("Transport closed: " + DevToolsUtils.safeErrorString(reason));
+      logger.debug(
+        "Transport closed: " + DevToolsUtils.safeErrorString(reason)
+      );
     } else {
-      dumpn("Transport closed.");
+      logger.debug("Transport closed.");
     }
   }
 
@@ -379,16 +384,16 @@ class DebuggerTransport {
    *         remaining data.
    */
   _processIncoming(stream, count) {
-    dumpv("Data available: " + count);
+    logger.debug("Data available: " + count);
 
     if (!count) {
-      dumpv("Nothing to read, skipping");
+      logger.debug("Nothing to read, skipping");
       return false;
     }
 
     try {
       if (!this._incoming) {
-        dumpv("Creating a new packet from incoming");
+        logger.debug("Creating a new packet from incoming");
 
         if (!this._readHeader(stream)) {
           // Not enough data to read packet type
@@ -407,13 +412,13 @@ class DebuggerTransport {
 
       if (!this._incoming.done) {
         // We have an incomplete packet, keep reading it.
-        dumpv("Existing packet incomplete, keep reading");
+        logger.debug("Existing packet incomplete, keep reading");
         this._incoming.read(stream, this._scriptableInput);
       }
     } catch (e) {
       const msg =
         "Error reading incoming packet: (" + e + " - " + e.stack + ")";
-      dumpn(msg);
+      logger.error(msg);
 
       // Now in an invalid state, shut down the transport.
       this.close();
@@ -422,7 +427,7 @@ class DebuggerTransport {
 
     if (!this._incoming.done) {
       // Still not complete, we'll wait for more data.
-      dumpv("Packet not done, wait for more");
+      logger.debug("Packet not done, wait for more");
       return true;
     }
 
@@ -446,14 +451,10 @@ class DebuggerTransport {
       ":",
       amountToRead
     );
-    if (flags.wantVerbose) {
-      dumpv("Header read: " + this._incomingHeader);
-    }
+    logger.debug("Header read: " + this._incomingHeader);
 
     if (this._incomingHeader.endsWith(":")) {
-      if (flags.wantVerbose) {
-        dumpv("Found packet header successfully: " + this._incomingHeader);
-      }
+      logger.debug("Found packet header successfully: " + this._incomingHeader);
       return true;
     }
 
@@ -472,8 +473,9 @@ class DebuggerTransport {
     if (!this._incoming.done) {
       return;
     }
-    if (flags.wantLogging) {
-      dumpn("Got: " + this._incoming);
+    // `_incoming` is the RDP packet as a string, so it can be very large.
+    if (logger.shouldLog("Debug")) {
+      logger.debug("Got: ", this._incoming);
     }
     this._destroyIncoming();
   }

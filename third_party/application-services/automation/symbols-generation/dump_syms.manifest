@@ -1,0 +1,9 @@
+[
+  {
+    "filename": "dump_syms",
+    "visibility": "public",
+    "size": 12587216,
+    "algorithm": "sha512",
+    "digest": "03627869015d8fb88830c89c1539192f7ac1a18a64cc9776436721a187d4fd6e7a4e23aef032f116d9224b55607d1c45efbf570415cddff2f4c1f998e763fbb1"
+  }
+]

@@ -21,10 +21,7 @@ add_task(async function test_network_markers_service_worker_setup() {
 
 add_task(async function test_network_markers_redirect_to_https() {
   // In this test, we request an HTML page with http that gets redirected to https.
-  Assert.ok(
-    !Services.profiler.IsActive(),
-    "The profiler is not currently active"
-  );
+  await ProfilerTestUtils.assertProfilerInactive();
 
   await ProfilerTestUtils.startProfilerForMarkerTests();
 

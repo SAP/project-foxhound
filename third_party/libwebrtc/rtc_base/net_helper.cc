@@ -18,6 +18,7 @@
 namespace webrtc {
 
 const char UDP_PROTOCOL_NAME[] = "udp";
+const char DTLS_PROTOCOL_NAME[] = "dtls";
 const char TCP_PROTOCOL_NAME[] = "tcp";
 const char SSLTCP_PROTOCOL_NAME[] = "ssltcp";
 const char TLS_PROTOCOL_NAME[] = "tls";
@@ -28,7 +29,8 @@ int GetProtocolOverhead(absl::string_view protocol) {
   } else if (protocol == UDP_PROTOCOL_NAME) {
     return kUdpHeaderSize;
   } else {
-    // TODO(srte): We should crash on unexpected input and handle TLS correctly.
+    // TODO(srte): We should crash on unexpected input and handle DTLS and TLS
+    // correctly.
     return 8;
   }
 }
@@ -37,6 +39,8 @@ absl::string_view ProtoToString(ProtocolType proto) {
   switch (proto) {
     case PROTO_UDP:
       return UDP_PROTOCOL_NAME;
+    case PROTO_DTLS:
+      return DTLS_PROTOCOL_NAME;
     case PROTO_TCP:
       return TCP_PROTOCOL_NAME;
     case PROTO_SSLTCP:
@@ -51,10 +55,10 @@ std::optional<ProtocolType> StringToProto(absl::string_view proto_name) {
     ProtocolType type;
     absl::string_view name;
   } const mappings[] = {
-      {PROTO_UDP, UDP_PROTOCOL_NAME},
-      {PROTO_TCP, TCP_PROTOCOL_NAME},
-      {PROTO_SSLTCP, SSLTCP_PROTOCOL_NAME},
-      {PROTO_TLS, TLS_PROTOCOL_NAME},
+      {.type = PROTO_UDP, .name = UDP_PROTOCOL_NAME},
+      {.type = PROTO_TCP, .name = TCP_PROTOCOL_NAME},
+      {.type = PROTO_SSLTCP, .name = SSLTCP_PROTOCOL_NAME},
+      {.type = PROTO_TLS, .name = TLS_PROTOCOL_NAME},
   };
   for (const auto& m : mappings) {
     if (absl::EqualsIgnoreCase(m.name, proto_name)) {

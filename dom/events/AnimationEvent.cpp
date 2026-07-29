@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,6 +34,7 @@ already_AddRefed<AnimationEvent> AnimationEvent::Constructor(
   internalEvent->mAnimationName = aParam.mAnimationName;
   internalEvent->mElapsedTime = aParam.mElapsedTime;
   internalEvent->mPseudoElement = aParam.mPseudoElement;
+  internalEvent->mAnimation = aParam.mAnimation;
 
   e->SetTrusted(trusted);
   e->SetComposed(aParam.mComposed);
@@ -52,6 +51,10 @@ float AnimationEvent::ElapsedTime() {
 
 void AnimationEvent::GetPseudoElement(nsAString& aPseudoElement) {
   aPseudoElement = mEvent->AsAnimationEvent()->mPseudoElement;
+}
+
+CSSAnimation* AnimationEvent::GetAnimation() {
+  return mEvent->AsAnimationEvent()->mAnimation;
 }
 
 }  // namespace mozilla::dom

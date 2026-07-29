@@ -95,12 +95,9 @@ var gTestIterator = {
             "'\n"
         );
       }
-      waitForEvent(
-        EVENT_REORDER,
-        document,
-        testNamesForMarkup,
-        null,
-        this.markupElms[this.markupIdx]
+      const markupElm = this.markupElms[this.markupIdx];
+      waitForEvent(EVENT_REORDER, document).then(() =>
+        testNamesForMarkup(markupElm)
       );
 
       document.body.removeChild(this.container);
@@ -146,13 +143,8 @@ function testNamesForMarkup(aMarkupElm) {
         "'\n"
     );
   }
-  waitForEvent(
-    EVENT_REORDER,
-    document,
-    testNamesForMarkupRules,
-    null,
-    aMarkupElm,
-    div
+  waitForEvent(EVENT_REORDER, document).then(() =>
+    testNamesForMarkupRules(aMarkupElm, div)
   );
 
   document.body.appendChild(div);
@@ -187,7 +179,7 @@ function testNamesForMarkupRules(aMarkupElm, aContainer) {
   if (isAccessible(elm) || isLogged("stack")) {
     processMarkupRules();
   } else {
-    waitForEvent(EVENT_SHOW, elm, processMarkupRules);
+    waitForEvent(EVENT_SHOW, elm).then(() => processMarkupRules());
   }
 }
 
@@ -259,12 +251,7 @@ function testNameForAttrRule(aElm, aRule) {
     testAbsentAttrs(aElm, { "explicit-name": "true" });
   }
 
-  waitForEvent(
-    EVENT_NAME_CHANGE,
-    aElm,
-    gTestIterator.iterateNext,
-    gTestIterator
-  );
+  waitForEvent(EVENT_NAME_CHANGE, aElm).then(() => gTestIterator.iterateNext());
 
   aElm.removeAttribute(attr);
 }
@@ -325,12 +312,7 @@ function testNameForElmRule(aElm, aRule) {
         "\n"
     );
   }
-  waitForEvent(
-    EVENT_NAME_CHANGE,
-    aElm,
-    gTestIterator.iterateNext,
-    gTestIterator
-  );
+  waitForEvent(EVENT_NAME_CHANGE, aElm).then(() => gTestIterator.iterateNext());
 
   parentNode.removeChild(labelElm);
 }
@@ -347,12 +329,7 @@ function testNameForSubtreeRule(aElm) {
         "\n"
     );
   }
-  waitForEvent(
-    EVENT_NAME_CHANGE,
-    aElm,
-    gTestIterator.iterateNext,
-    gTestIterator
-  );
+  waitForEvent(EVENT_NAME_CHANGE, aElm).then(() => gTestIterator.iterateNext());
 
   while (aElm.firstChild) {
     aElm.firstChild.remove();

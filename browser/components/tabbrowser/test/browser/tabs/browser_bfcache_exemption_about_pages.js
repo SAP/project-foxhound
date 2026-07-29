@@ -6,6 +6,7 @@ const BASE = getRootDirectory(gTestPath).replace(
 );
 
 async function navigateTo(browser, urls, expectedPersist) {
+  const initialUri = browser.currentURI.spec;
   // Navigate to a bunch of urls
   for (let url of urls) {
     let loaded = BrowserTestUtils.browserLoaded(browser, false, url);
@@ -15,7 +16,7 @@ async function navigateTo(browser, urls, expectedPersist) {
   // When we track pageshow event, save the evt.persisted on a doc element,
   // so it can be checked from the test directly.
   let pageShowCheck = evt => {
-    evt.target.ownerGlobal.document.documentElement.setAttribute(
+    evt.target.documentGlobal.document.documentElement.setAttribute(
       "persisted",
       evt.persisted
     );
@@ -78,6 +79,12 @@ async function navigateTo(browser, urls, expectedPersist) {
     let persisted = await SpecialPowers.spawn(browser, [], async function () {
       return content.document.documentElement.getAttribute("persisted");
     });
+    const penultimateUri = urls.length > 1 ? urls[urls.length - 2] : initialUri;
+    is(
+      browser.currentURI.spec,
+      penultimateUri,
+      "Went back to expected penultimate URL"
+    );
     is(
       persisted,
       expectedPersist.toString(),
@@ -96,7 +103,9 @@ add_task(async function testAboutPagesExemptFromBfcache() {
   // If Fission is disabled, the pref is no-op.
   await SpecialPowers.pushPrefEnv({ set: [["fission.bfcacheInParent", true]] });
 
-  // Navigate to a bunch of urls, then go back once, check that the penultimate page did not go into BFbache
+  // Navigate to a bunch of urls, go back once, check the the pageshow event
+  // persisted property.
+  // The goal is to ensure the penultimate page did not go into BFcache.
   var browser;
   // First page is about:privatebrowsing
   const private_test_cases = [
@@ -114,12 +123,8 @@ add_task(async function testAboutPagesExemptFromBfcache() {
     await BrowserTestUtils.closeWindow(win);
   }
 
-  // First page is about:blank
-  const regular_test_cases = [
-    ["about:home"],
-    ["about:home", "about:blank"],
-    ["about:blank", "about:newtab"],
-  ];
+  // First page is about:blank, we always manually go to about:newtab
+  const regular_test_cases = [["about:home"], ["about:home", "about:blank"]];
   for (const urls of regular_test_cases) {
     info(`Regular tab - navigate to ${urls} urls`);
     let win = await BrowserTestUtils.openNewBrowserWindow();

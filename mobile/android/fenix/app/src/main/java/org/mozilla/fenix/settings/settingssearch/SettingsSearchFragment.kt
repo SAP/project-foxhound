@@ -18,15 +18,18 @@ import androidx.fragment.compose.content
 import androidx.lifecycle.coroutineScope
 import androidx.navigation.fragment.findNavController
 import mozilla.components.lib.state.helpers.StoreProvider.Companion.storeProvider
+import org.mozilla.fenix.GleanMetrics.SettingsSearch
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.settings.settingssearch.DefaultFenixSettingsIndexer.Companion.defaultPreferenceFileInformationList
 import org.mozilla.fenix.theme.FirefoxTheme
 
 /**
  * Fragment for the settings search screen.
  */
-class SettingsSearchFragment : Fragment() {
+open class SettingsSearchFragment : Fragment(), SystemInsetsPaddedFragment {
 
-    lateinit var settingsSearchStore: SettingsSearchStore
+    protected lateinit var settingsSearchStore: SettingsSearchStore
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -45,6 +48,9 @@ class SettingsSearchFragment : Fragment() {
                 },
                 isSearchFocused = isSearchFocused,
                 onSearchFocusChange = { isSearchFocused = it },
+                onResultItemClick = { item, isRecentSearch ->
+                    onResultItemClick(item, isRecentSearch)
+                },
             )
         }
     }
@@ -54,8 +60,11 @@ class SettingsSearchFragment : Fragment() {
         (activity as? AppCompatActivity)?.supportActionBar?.show()
     }
 
-    private fun buildSettingsSearchStore(): SettingsSearchStore {
-        val recentSettingsSearchesRepository = FenixRecentSettingsSearchesRepository(requireContext())
+    protected open fun buildSettingsSearchStore(): SettingsSearchStore {
+        val recentSettingsSearchesRepository = FenixRecentSettingsSearchesRepository(
+            dataStore = requireContext().recentSearchesDataStore,
+            preferenceFileInformationList = defaultPreferenceFileInformationList,
+        )
 
         return storeProvider.get { restoredState ->
             SettingsSearchStore(
@@ -70,5 +79,18 @@ class SettingsSearchFragment : Fragment() {
                 ),
             )
         }
+    }
+
+    protected open fun onResultItemClick(
+        item: SettingsSearchItem,
+        isRecentSearch: Boolean,
+    ) {
+        SettingsSearch.searchResultClicked.record(
+            SettingsSearch.SearchResultClickedExtra(
+                itemPreferenceKey = item.preferenceKey,
+                isRecentSearch = isRecentSearch,
+            ),
+        )
+        settingsSearchStore.dispatch(SettingsSearchAction.ResultItemClicked(item))
     }
 }

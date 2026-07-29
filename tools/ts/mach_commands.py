@@ -143,7 +143,6 @@ def subs(ctx):
     maybe_setup(ctx)
     processed = [
         # AppConstants.sys.mjs has a (better) manually created declaration file.
-        "dist/bin/browser/modules/policies/schema.sys.mjs",
         "dist/bin/modules/Readerable.sys.mjs",
         "toolkit/components/nimbus/FeatureManifest.sys.mjs",
         "toolkit/components/promiseworker/worker/PromiseWorker.js",

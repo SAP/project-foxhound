@@ -24,7 +24,8 @@ neterror-override-exception-button = Accept the Risk and Continue
 neterror-pref-reset-button = Restore default settings
 neterror-return-to-previous-page-button = Go Back
 neterror-return-to-previous-page-recommended-button = Go Back (Recommended)
-neterror-try-again-button = Try Again
+neterror-try-again-button-2 = Try Again
+    .accesskey = T
 neterror-add-exception-button = Always continue for this site
 neterror-settings-button = Change DNS settings
 neterror-view-certificate-link = View Certificate
@@ -58,6 +59,8 @@ neterror-dns-not-found-hint-header = <strong>If you entered the right address, y
 neterror-dns-not-found-hint-try-again = Try again later
 neterror-dns-not-found-hint-check-network = Check your network connection
 neterror-dns-not-found-hint-firewall = Check that { -brand-short-name } has permission to access the web (you might be connected but behind a firewall)
+neterror-dns-not-found-hint-check-network-2 = Check your network connection.
+neterror-dns-not-found-hint-firewall-2 = Check that { -brand-short-name } has permission to access the web (you might be connected but behind a firewall).
 neterror-dns-not-found-offline-hint-header = <strong>What can you do about it?</strong>
 neterror-dns-not-found-offline-hint-different-device = Try connecting on a different device.
 neterror-dns-not-found-offline-hint-modem = Check your modem or router.
@@ -83,6 +86,11 @@ neterror-dns-not-found-trr-unknown-problem = Unexpected problem.
 
 neterror-file-not-found-filename = Check the file name for capitalization or other typing errors.
 neterror-file-not-found-moved = Check to see if the file was moved, renamed or deleted.
+
+# Variables:
+#   $path (String) - Path of the local file that could not be found.
+neterror-file-not-found-intro = { -brand-short-name } can’t find the file at <strong>{ $path }</strong>. It either doesn’t exist or the path is incorrect.
+neterror-file-not-found-what-can-you-do = If you typed the address manually, check for capitalization mistakes or typos in the file name or path. If you followed a saved bookmark or link, the file may have been moved, renamed, or deleted since it was saved. Try locating it using your file manager or a recent search.
 
 neterror-access-denied = It may have been removed, moved, or file permissions may be preventing access.
 
@@ -200,7 +208,19 @@ fp-neterror-offline-body-title = Looks like there’s a problem with your intern
 
 fp-neterror-connection-intro = { -brand-short-name } can’t create a secure connection to the server at { $hostname }.
 fp-neterror-offline-intro = { -brand-short-name } can’t connect to the server at <strong>{ $hostname }</strong>
+fp-neterror-offline-intro-2 = { -brand-short-name } can’t connect to the server at <strong>{ $hostname }</strong>.
+fp-neterror-net-timeout-intro = The server at <strong>{ $hostname }</strong> is taking too long to respond.
+# Variables:
+#   $hostname (String) - Hostname of the website to which the user was trying to connect.
+#   $responsestatus (Number) - HTTP response status code (e.g., 404).
+#   $responsestatustext (String) - HTTP response status text (e.g., "Not Found", always in English).
+fp-neterror-http-error-intro = The server at <strong>{ $hostname }</strong> sent back an error: { $responsestatus } { $responsestatustext }
+# Variables:
+#   $hostname (String) - Hostname of the website to which the user was trying to connect.
+fp-neterror-invalid-header-value-intro = <strong>{ $hostname }</strong> sent back a header with empty characters not allowed by web security standards.
+fp-neterror-content-encoding-intro = The page you are trying to view cannot be shown because it uses an invalid or unsupported form of compression.
 fp-neterror-coop-coep-intro = { -brand-short-name } didn’t load this page because it looks like the security configuration doesn’t match the previous page.
+fp-neterror-blocked-by-policy-intro = Your organization has blocked access to this page or website.
 fp-neterror-http-auth-disabled-intro = Someone pretending to be the site could try to steal things like your username, password, or email.
 fp-neterror-http-auth-disabled-secure-connection = This site requires a secure connection, and you can’t add an exception to visit it.
 
@@ -220,3 +240,5 @@ fp-learn-more-about-https-connections = Learn about HTTPS connections
 
 fp-neterror-vpn-error-title = Couldn’t connect to VPN
 fp-neterror-vpn-error-description = Try again in a few minutes.
+
+fp-neterror-denied-port-access = This address uses a network port which is normally used for purposes other than Web browsing. { -brand-short-name } has canceled the request for your protection.

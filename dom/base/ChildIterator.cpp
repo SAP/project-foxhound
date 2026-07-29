@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -171,6 +169,13 @@ nsIContent* AllChildrenIterator::Get() const {
       return marker;
     }
 
+    case Phase::AtCheckmarkKid: {
+      Element* checkmark = nsLayoutUtils::GetCheckmarkPseudo(Parent());
+      MOZ_ASSERT(checkmark,
+                 "No content checkmark frame at AtCheckmarkKid phase");
+      return checkmark;
+    }
+
     case Phase::AtBeforeKid: {
       Element* before = nsLayoutUtils::GetBeforePseudo(Parent());
       MOZ_ASSERT(before, "No content before frame at AtBeforeKid phase");
@@ -187,6 +192,13 @@ nsIContent* AllChildrenIterator::Get() const {
       Element* after = nsLayoutUtils::GetAfterPseudo(Parent());
       MOZ_ASSERT(after, "No content after frame at AtAfterKid phase");
       return after;
+    }
+
+    case Phase::AtPickerIconKid: {
+      Element* pickerIcon = nsLayoutUtils::GetPickerIconPseudo(Parent());
+      MOZ_ASSERT(pickerIcon,
+                 "No content picker-icon frame at AtPickerIconKid phase");
+      return pickerIcon;
     }
 
     default:
@@ -229,6 +241,13 @@ nsIContent* AllChildrenIterator::GetNextChild() {
       }
       [[fallthrough]];
     case Phase::AtMarkerKid:
+      if (Element* checkmarkContent =
+              nsLayoutUtils::GetCheckmarkPseudo(Parent())) {
+        mPhase = Phase::AtCheckmarkKid;
+        return checkmarkContent;
+      }
+      [[fallthrough]];
+    case Phase::AtCheckmarkKid:
       if (Element* beforeContent = nsLayoutUtils::GetBeforePseudo(Parent())) {
         mPhase = Phase::AtBeforeKid;
         return beforeContent;
@@ -262,6 +281,12 @@ nsIContent* AllChildrenIterator::GetNextChild() {
       }
       [[fallthrough]];
     case Phase::AtAfterKid:
+      if (Element* pickerIcon = nsLayoutUtils::GetPickerIconPseudo(Parent())) {
+        mPhase = Phase::AtPickerIconKid;
+        return pickerIcon;
+      }
+      [[fallthrough]];
+    case Phase::AtPickerIconKid:
     case Phase::AtEnd:
       break;
   }
@@ -273,6 +298,12 @@ nsIContent* AllChildrenIterator::GetNextChild() {
 nsIContent* AllChildrenIterator::GetPreviousChild() {
   switch (mPhase) {
     case Phase::AtEnd:
+      if (Element* pickerIcon = nsLayoutUtils::GetPickerIconPseudo(Parent())) {
+        mPhase = Phase::AtPickerIconKid;
+        return pickerIcon;
+      }
+      [[fallthrough]];
+    case Phase::AtPickerIconKid:
       if (Element* afterContent = nsLayoutUtils::GetAfterPseudo(Parent())) {
         mPhase = Phase::AtAfterKid;
         return afterContent;
@@ -305,6 +336,13 @@ nsIContent* AllChildrenIterator::GetPreviousChild() {
       }
       [[fallthrough]];
     case Phase::AtBeforeKid:
+      if (Element* checkmarkContent =
+              nsLayoutUtils::GetCheckmarkPseudo(Parent())) {
+        mPhase = Phase::AtCheckmarkKid;
+        return checkmarkContent;
+      }
+      [[fallthrough]];
+    case Phase::AtCheckmarkKid:
       if (Element* markerContent = nsLayoutUtils::GetMarkerPseudo(Parent())) {
         mPhase = Phase::AtMarkerKid;
         return markerContent;

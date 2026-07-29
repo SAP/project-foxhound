@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -124,6 +122,8 @@ static inline constexpr auto kDefaultTouchBehavior =
 
 class MockContentController : public GeckoContentController {
  public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MockContentController, final);
+
   MOCK_METHOD1(NotifyLayerTransforms, void(nsTArray<MatrixMessage>&&));
   MOCK_METHOD1(RequestContentRepaint, void(const RepaintRequest&));
   MOCK_METHOD6(HandleTap, void(TapType, const LayoutDevicePoint&, Modifiers,
@@ -159,6 +159,9 @@ class MockContentController : public GeckoContentController {
                void(const ScrollableLayerGuid&, float, float, bool));
   MOCK_METHOD4(UpdateOverscrollOffset,
                void(const ScrollableLayerGuid&, float, float, bool));
+
+ protected:
+  virtual ~MockContentController() = default;
 };
 
 class MockContentControllerDelayed : public MockContentController {

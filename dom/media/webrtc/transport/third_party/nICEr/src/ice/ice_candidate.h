@@ -34,10 +34,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef _ice_candidate_h
 #define _ice_candidate_h
-#ifdef __cplusplus
-using namespace std;
-extern "C" {
-#endif /* __cplusplus */
 
 typedef enum {HOST=1, SERVER_REFLEXIVE, PEER_REFLEXIVE, RELAYED, CTYPE_MAX} nr_ice_candidate_type;
 
@@ -94,6 +90,8 @@ struct nr_ice_candidate_ {
     } relayed;
   } u;
 
+  int error_code; /* STUN error code on failure, 0 if no STUN response was received */
+
   NR_async_cb done_cb;
   void *cb_arg;
 
@@ -120,8 +118,5 @@ int nr_ice_peer_candidate_from_attribute(nr_ice_ctx *ctx,char *attr,nr_ice_media
 int nr_ice_peer_peer_rflx_candidate_create(nr_ice_ctx *ctx, const char *label, nr_ice_component *comp,nr_transport_addr *addr, nr_ice_candidate **candp);
 int nr_ice_candidate_compute_priority(nr_ice_candidate *cand);
 
-#ifdef __cplusplus
-}
-#endif /* __cplusplus */
 #endif
 

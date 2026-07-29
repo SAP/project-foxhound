@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +8,7 @@
 #include <queue>
 
 #include "mozilla/layers/TextureHost.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/webrender/webrender_ffi.h"
 #include "Units.h"
 
@@ -33,30 +32,26 @@ class AsyncImagePipelineOp {
 
   const Tag mTag;
 
-  AsyncImagePipelineManager* const mAsyncImageManager;
+  // Hold a strong reference: queued ops can outlive their owning
+  // WebRenderBridgeParent and be processed after StopAndClearResources frees
+  // the manager via a deferred remote-texture callback.
+  const RefPtr<AsyncImagePipelineManager> mAsyncImageManager;
   const wr::PipelineId mPipelineId;
   const CompositableTextureHostRef mTextureHost;
 
- private:
-  AsyncImagePipelineOp(const Tag aTag,
-                       AsyncImagePipelineManager* aAsyncImageManager,
-                       const wr::PipelineId& aPipelineId,
-                       TextureHost* aTextureHost)
-      : mTag(aTag),
-        mAsyncImageManager(aAsyncImageManager),
-        mPipelineId(aPipelineId),
-        mTextureHost(aTextureHost) {
-    MOZ_ASSERT(mTag == Tag::ApplyAsyncImageForPipeline);
-  }
+  // Out-of-line so callers don't need the full AsyncImagePipelineManager type
+  // to instantiate ~RefPtr<AsyncImagePipelineManager>.
+  ~AsyncImagePipelineOp();
+  AsyncImagePipelineOp(AsyncImagePipelineOp&&);
+  AsyncImagePipelineOp(const AsyncImagePipelineOp&);
 
-  AsyncImagePipelineOp(const Tag aTag,
-                       AsyncImagePipelineManager* aAsyncImageManager,
-                       const wr::PipelineId& aPipelineId)
-      : mTag(aTag),
-        mAsyncImageManager(aAsyncImageManager),
-        mPipelineId(aPipelineId) {
-    MOZ_ASSERT(mTag == Tag::RemoveAsyncImagePipeline);
-  }
+ private:
+  AsyncImagePipelineOp(Tag aTag, AsyncImagePipelineManager* aAsyncImageManager,
+                       const wr::PipelineId& aPipelineId,
+                       TextureHost* aTextureHost);
+
+  AsyncImagePipelineOp(Tag aTag, AsyncImagePipelineManager* aAsyncImageManager,
+                       const wr::PipelineId& aPipelineId);
 
  public:
   static AsyncImagePipelineOp ApplyAsyncImageForPipeline(
@@ -77,6 +72,9 @@ class AsyncImagePipelineOp {
 struct AsyncImagePipelineOps {
   explicit AsyncImagePipelineOps(wr::Transaction* aTransaction)
       : mTransaction(aTransaction) {}
+  // Out-of-line so callers don't need the full AsyncImagePipelineManager type
+  // to instantiate ~RefPtr<AsyncImagePipelineManager> for queued ops.
+  ~AsyncImagePipelineOps();
 
   void HandleOps(wr::TransactionBuilder& aTxn);
 

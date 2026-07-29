@@ -17,12 +17,12 @@
 #include <memory>
 #include <numeric>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
 #include "absl/algorithm/container.h"
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/candidate.h"
 #include "api/dtls_transport_interface.h"
 #include "api/rtc_event_log/rtc_event_log.h"
@@ -87,7 +87,6 @@
 #include "rtc_base/buffer.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/random.h"
-#include "rtc_base/time_utils.h"
 #include "system_wrappers/include/ntp_time.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
@@ -128,7 +127,7 @@ constexpr ExtensionPair kExtensions[kMaxNumExtensions] = {
      .name = RtpExtension::kDependencyDescriptorUri}};
 
 template <typename T>
-void ShuffleInPlace(Random* prng, ArrayView<T> array) {
+void ShuffleInPlace(Random* prng, std::span<T> array) {
   RTC_DCHECK_LE(array.size(), std::numeric_limits<uint32_t>::max());
   for (uint32_t i = 0; i + 1 < array.size(); i++) {
     uint32_t other = prng->Rand(i, static_cast<uint32_t>(array.size() - 1));
@@ -238,13 +237,14 @@ std::unique_ptr<RtcEventFrameDecoded> EventGenerator::NewFrameDecodedEvent(
   constexpr VideoCodecType kCodecList[kNumCodecTypes] = {
       kVideoCodecGeneric, kVideoCodecVP8,  kVideoCodecVP9,
       kVideoCodecAV1,     kVideoCodecH264, kVideoCodecH265};
-  const int64_t render_time_ms =
-      TimeMillis() + prng_.Rand(kMinRenderDelayMs, kMaxRenderDelayMs);
+  const Timestamp render_time =
+      clock_.CurrentTime() +
+      TimeDelta::Millis(prng_.Rand(kMinRenderDelayMs, kMaxRenderDelayMs));
   const int width = prng_.Rand(kMinWidth, kMaxWidth);
   const int height = prng_.Rand(kMinHeight, kMaxHeight);
   const VideoCodecType codec = kCodecList[prng_.Rand(0, kNumCodecTypes - 1)];
   const uint8_t qp = prng_.Rand<uint8_t>();
-  return Create<RtcEventFrameDecoded>(render_time_ms, ssrc, width, height,
+  return Create<RtcEventFrameDecoded>(render_time.ms(), ssrc, width, height,
                                       codec, qp);
 }
 
@@ -606,7 +606,12 @@ std::unique_ptr<RtcEventRtpPacketIncoming> EventGenerator::NewRtpPacketIncoming(
   RandomizeRtpPacket(payload_size, padding_size, ssrc, extension_map,
                      &rtp_packet, all_configured_exts);
 
-  return Create<RtcEventRtpPacketIncoming>(rtp_packet);
+  std::optional<uint16_t> rtx_osn = std::nullopt;
+  if (prng_.Rand(0, 9) == 0) {
+    rtx_osn = prng_.Rand(
+        0u, static_cast<uint32_t>(std::numeric_limits<uint16_t>::max()));
+  }
+  return Create<RtcEventRtpPacketIncoming>(rtp_packet, rtx_osn);
 }
 
 std::unique_ptr<RtcEventRtpPacketOutgoing> EventGenerator::NewRtpPacketOutgoing(
@@ -636,7 +641,13 @@ std::unique_ptr<RtcEventRtpPacketOutgoing> EventGenerator::NewRtpPacketOutgoing(
                      &rtp_packet, all_configured_exts);
 
   int probe_cluster_id = prng_.Rand(0, 100000);
-  return Create<RtcEventRtpPacketOutgoing>(rtp_packet, probe_cluster_id);
+  std::optional<uint16_t> rtx_osn = std::nullopt;
+  if (prng_.Rand(0, 9) == 0) {
+    rtx_osn = prng_.Rand(
+        0u, static_cast<uint32_t>(std::numeric_limits<uint16_t>::max()));
+  }
+  return Create<RtcEventRtpPacketOutgoing>(rtp_packet, probe_cluster_id,
+                                           rtx_osn);
 }
 
 RtpHeaderExtensionMap EventGenerator::NewRtpHeaderExtensionMap(
@@ -646,7 +657,7 @@ RtpHeaderExtensionMap EventGenerator::NewRtpHeaderExtensionMap(
   std::vector<int> id(RtpExtension::kOneByteHeaderExtensionMaxId -
                       RtpExtension::kMinId + 1);
   std::iota(id.begin(), id.end(), RtpExtension::kMinId);
-  ShuffleInPlace(&prng_, ArrayView<int>(id));
+  ShuffleInPlace(&prng_, std::span<int>(id));
 
   auto not_excluded = [&](RTPExtensionType type) -> bool {
     return !absl::c_linear_search(excluded_extensions, type);
@@ -1020,7 +1031,7 @@ void EventVerifier::VerifyLoggedDependencyDescriptor(
     const Event& packet,
     const std::vector<uint8_t>& logged_dd) const {
   if (expect_dependency_descriptor_rtp_header_extension_is_set_) {
-    ArrayView<const uint8_t> original =
+    std::span<const uint8_t> original =
         packet.template GetRawExtension<RtpDependencyDescriptorExtension>();
     EXPECT_THAT(logged_dd, ElementsAreArray(original));
   } else {
@@ -1069,6 +1080,10 @@ void EventVerifier::VerifyLoggedRtpPacketIncoming(
   VerifyLoggedRtpHeader(original_event, logged_event.rtp.header);
   VerifyLoggedDependencyDescriptor(
       original_event, logged_event.rtp.dependency_descriptor_wire_format);
+  if (encoding_type_ == RtcEventLog::EncodingType::NewFormat) {
+    EXPECT_EQ(original_event.rtx_original_sequence_number(),
+              logged_event.rtp.rtx_original_sequence_number);
+  }
 }
 
 void EventVerifier::VerifyLoggedRtpPacketOutgoing(
@@ -1093,6 +1108,10 @@ void EventVerifier::VerifyLoggedRtpPacketOutgoing(
   VerifyLoggedRtpHeader(original_event, logged_event.rtp.header);
   VerifyLoggedDependencyDescriptor(
       original_event, logged_event.rtp.dependency_descriptor_wire_format);
+  if (encoding_type_ == RtcEventLog::EncodingType::NewFormat) {
+    EXPECT_EQ(original_event.rtx_original_sequence_number(),
+              logged_event.rtp.rtx_original_sequence_number);
+  }
 }
 
 void EventVerifier::VerifyLoggedRtcpPacketIncoming(

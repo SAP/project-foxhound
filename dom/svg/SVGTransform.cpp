@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,11 +6,8 @@
 
 #include "nsContentUtils.h"  // for NS_ENSURE_FINITE
 #include "nsError.h"
+#include "nsMathUtils.h"
 #include "nsTextFormatter.h"
-
-namespace {
-const double kRadPerDegree = 2.0 * M_PI / 360.0;
-}  // namespace
 
 namespace mozilla {
 
@@ -29,9 +24,9 @@ void SVGTransform::GetValueAsString(nsAString& aValue) const {
         nsTextFormatter::ssprintf(aValue, u"translate(%g)", mMatrix._31);
       break;
     case SVG_TRANSFORM_ROTATE:
-      if (mOriginX != 0.0f || mOriginY != 0.0f)
+      if (mOrigin != gfx::Point())
         nsTextFormatter::ssprintf(aValue, u"rotate(%g, %g, %g)", mAngle,
-                                  mOriginX, mOriginY);
+                                  mOrigin.x, mOrigin.y);
       else
         nsTextFormatter::ssprintf(aValue, u"rotate(%g)", mAngle);
       break;
@@ -66,24 +61,21 @@ void SVGTransform::SetMatrix(const gfxMatrix& aMatrix) {
   // We set the other members here too, since operator== requires it and
   // the DOM requires it for mAngle.
   mAngle = 0.f;
-  mOriginX = 0.f;
-  mOriginY = 0.f;
+  mOrigin = gfx::Point();
 }
 
 void SVGTransform::SetTranslate(float aTx, float aTy) {
   mType = SVG_TRANSFORM_TRANSLATE;
   mMatrix = gfxMatrix::Translation(aTx, aTy);
   mAngle = 0.f;
-  mOriginX = 0.f;
-  mOriginY = 0.f;
+  mOrigin = gfx::Point();
 }
 
 void SVGTransform::SetScale(float aSx, float aSy) {
   mType = SVG_TRANSFORM_SCALE;
   mMatrix = gfxMatrix::Scaling(aSx, aSy);
   mAngle = 0.f;
-  mOriginX = 0.f;
-  mOriginY = 0.f;
+  mOrigin = gfx::Point();
 }
 
 void SVGTransform::SetRotate(float aAngle, float aCx, float aCy) {
@@ -92,8 +84,7 @@ void SVGTransform::SetRotate(float aAngle, float aCx, float aCy) {
                 .PreRotate(aAngle * kRadPerDegree)
                 .PreTranslate(-aCx, -aCy);
   mAngle = aAngle;
-  mOriginX = aCx;
-  mOriginY = aCy;
+  mOrigin.MoveTo(aCx, aCy);
 }
 
 nsresult SVGTransform::SetSkewX(float aAngle) {
@@ -105,8 +96,7 @@ nsresult SVGTransform::SetSkewX(float aAngle) {
   mMatrix = gfxMatrix();
   mMatrix._21 = ta;
   mAngle = aAngle;
-  mOriginX = 0.f;
-  mOriginY = 0.f;
+  mOrigin = gfx::Point();
   return NS_OK;
 }
 
@@ -119,9 +109,31 @@ nsresult SVGTransform::SetSkewY(float aAngle) {
   mMatrix = gfxMatrix();
   mMatrix._12 = ta;
   mAngle = aAngle;
-  mOriginX = 0.f;
-  mOriginY = 0.f;
+  mOrigin = gfx::Point();
   return NS_OK;
+}
+
+uint16_t SVGTransform::GetTransformTypeForString(
+    const nsAString& aTransformType) {
+  if (aTransformType.EqualsLiteral("translate")) {
+    return SVG_TRANSFORM_TRANSLATE;
+  }
+  if (aTransformType.EqualsLiteral("scale")) {
+    return SVG_TRANSFORM_SCALE;
+  }
+  if (aTransformType.EqualsLiteral("rotate")) {
+    return SVG_TRANSFORM_ROTATE;
+  }
+  if (aTransformType.EqualsLiteral("skewX")) {
+    return SVG_TRANSFORM_SKEWX;
+  }
+  if (aTransformType.EqualsLiteral("skewY")) {
+    return SVG_TRANSFORM_SKEWY;
+  }
+  if (aTransformType.EqualsLiteral("matrix")) {
+    return SVG_TRANSFORM_MATRIX;
+  }
+  return SVG_TRANSFORM_UNKNOWN;
 }
 
 SVGTransformSMILData::SVGTransformSMILData(const SVGTransform& aTransform)
@@ -130,9 +142,7 @@ SVGTransformSMILData::SVGTransformSMILData(const SVGTransform& aTransform)
                  mTransformType <= SVG_TRANSFORM_SKEWY,
              "Unexpected transform type");
 
-  for (uint32_t i = 0; i < NUM_STORED_PARAMS; ++i) {
-    mParams[i] = 0.f;
-  }
+  mParams.fill(0.f);
 
   switch (mTransformType) {
     case SVG_TRANSFORM_MATRIX: {
@@ -207,6 +217,35 @@ SVGTransform SVGTransformSMILData::ToSVGTransform() const {
       break;
   }
   return result;
+}
+
+nsresult SVGTransformSMILData::Distance(const SVGTransformSMILData& aOther,
+                                        double& aDistance) const {
+  NS_ASSERTION(mTransformType == aOther.mTransformType,
+               "Incompatible transform types to calculate distance between");
+
+  switch (mTransformType) {
+    // We adopt the SVGT1.2 notions of distance here
+    // See: http://www.w3.org/TR/SVGTiny12/animate.html#complexDistances
+    // (As discussed in bug #469040)
+    case SVG_TRANSFORM_TRANSLATE:
+    case SVG_TRANSFORM_SCALE: {
+      aDistance = NS_hypot(mParams[0] - aOther.mParams[0],
+                           mParams[1] - aOther.mParams[1]);
+    } break;
+
+    case SVG_TRANSFORM_ROTATE:
+    case SVG_TRANSFORM_SKEWX:
+    case SVG_TRANSFORM_SKEWY: {
+      aDistance = std::abs(mParams[0] - aOther.mParams[0]);
+    } break;
+
+    default:
+      NS_ERROR("Got bad transform types for calculating distances");
+      aDistance = 1.0f;
+      return NS_ERROR_FAILURE;
+  }
+  return NS_OK;
 }
 
 }  // namespace mozilla

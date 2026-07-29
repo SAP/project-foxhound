@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,7 +27,7 @@ namespace glean {
  * @param aResolver - The function you need to call with the bincoded,
  *                    serialized payload that the Rust impl hands you.
  */
-void FlushFOGData(std::function<void(ipc::ByteBuf&&)>&& aResolver);
+void FlushFOGData(std::function<void(mozilla::ipc::ByteBuf&&)>&& aResolver);
 
 /**
  * Called by FOG on the parent process when it wants to flush all its
@@ -36,19 +35,19 @@ void FlushFOGData(std::function<void(ipc::ByteBuf&&)>&& aResolver);
  * @param aResolver - The function that'll be called with the results.
  */
 void FlushAllChildData(
-    std::function<void(nsTArray<ipc::ByteBuf>&&)>&& aResolver);
+    std::function<void(nsTArray<mozilla::ipc::ByteBuf>&&)>&& aResolver);
 
 /**
  * A child process has sent you this buf as a treat.
  * @param buf - a bincoded serialized payload that the Rust impl understands.
  */
-void FOGData(ipc::ByteBuf&& buf);
+void FOGData(mozilla::ipc::ByteBuf&& buf);
 
 /**
  * Called by FOG on a child process when it wants to send a buf to the parent.
  * @param buf - a bincoded serialized payload that the Rust impl understands.
  */
-void SendFOGData(ipc::ByteBuf&& buf);
+void SendFOGData(mozilla::ipc::ByteBuf&& buf);
 
 /**
  * Called on the parent process to ask all child processes for data,

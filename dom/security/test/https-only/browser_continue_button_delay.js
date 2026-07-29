@@ -52,14 +52,14 @@ async function waitForEnabledButtonAndCheckTiming() {
 
   Assert.greater(
     observedDelay,
-    specifiedDelay - 100,
+    specifiedDelay - 300,
     `The observed delay (${observedDelay}ms) should be roughly the same or greater than the delay specified in "security.dialog_enable_delay" (${specifiedDelay}ms)`
   );
 }
 
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.urlbar.trustPanel.featureGate", false]],
+    set: [["browser.urlbar.trustPanel.featureGate", true]],
   });
 });
 
@@ -90,16 +90,15 @@ add_task(async function () {
   loaded = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
   BrowserTestUtils.startLoadingURIString(gBrowser, TEST_URL);
   await loaded;
-
-  info("Opening identity pane");
-  document.getElementById("identity-icon-box").click();
-  const identityPopup = document.getElementById("identity-popup");
-  ok(!!identityPopup, "Identity pane should exist");
-  await BrowserTestUtils.waitForPopupEvent(identityPopup, "shown");
+  info("Unified trust panel");
+  document.getElementById("trust-icon-container").click();
+  const trustPanelPopup = document.getElementById("trustpanel-popup");
+  ok(!!trustPanelPopup, "Trust panel should exist");
+  await BrowserTestUtils.waitForPopupEvent(trustPanelPopup, "shown");
 
   info("Removing exception in identity pane");
   const menulist = document.getElementById(
-    "identity-popup-security-httpsonlymode-menulist"
+    "trustpanel-popup-security-httpsonlymode-menulist"
   );
   ok(!!menulist, "Identity pane should contain HTTPS-Only menulist");
   loaded = BrowserTestUtils.waitForErrorPage(gBrowser.selectedBrowser);

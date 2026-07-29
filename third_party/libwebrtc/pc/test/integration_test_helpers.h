@@ -23,11 +23,11 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
 #include "absl/functional/any_invocable.h"
-#include "absl/memory/memory.h"
 #include "absl/strings/string_view.h"
 #include "api/audio_options.h"
 #include "api/candidate.h"
@@ -56,15 +56,20 @@
 #include "api/stats/rtc_stats_report.h"
 #include "api/stats/rtcstats_objects.h"
 #include "api/task_queue/pending_task_safety_flag.h"
+#include "api/task_queue/task_queue_base.h"
 #include "api/test/mock_async_dns_resolver.h"
 #include "api/test/rtc_error_matchers.h"
+#include "api/test/time_controller.h"
 #include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
 #include "api/video/video_rotation.h"
 #include "logging/rtc_event_log/fake_rtc_event_log_factory.h"
 #include "media/base/stream_params.h"
 #include "p2p/base/ice_transport_internal.h"
 #include "p2p/base/port.h"
+#include "p2p/base/port_allocator.h"
 #include "p2p/test/fake_ice_transport.h"
+#include "p2p/test/test_stun_server.h"
 #include "p2p/test/test_turn_customizer.h"
 #include "p2p/test/test_turn_server.h"
 #include "pc/peer_connection.h"
@@ -77,6 +82,7 @@
 #include "pc/test/fake_rtc_certificate_generator.h"
 #include "pc/test/fake_video_track_renderer.h"
 #include "pc/test/mock_peer_connection_observers.h"
+#include "pc/test/rtc_stats_obtainer.h"
 #include "pc/video_track_source.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/crypto_random.h"
@@ -90,6 +96,7 @@
 #include "rtc_base/socket_factory.h"
 #include "rtc_base/socket_server.h"
 #include "rtc_base/ssl_stream_adapter.h"
+#include "rtc_base/system/plan_b_only.h"
 #include "rtc_base/task_queue_for_test.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/virtual_socket_server.h"
@@ -98,9 +105,15 @@
 #include "test/create_test_field_trials.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
+#include "test/run_loop.h"
+#include "test/time_controller/simulated_time_controller.h"
 #include "test/wait_until.h"
 
 namespace webrtc {
+
+namespace internal {
+class PeerConnectionIntegrationTestBase;
+}  // namespace internal
 
 using ::testing::_;
 using ::testing::Combine;
@@ -196,13 +209,22 @@ class MockRtpReceiverObserver : public RtpReceiverObserverInterface {
     ASSERT_EQ(expected_media_type_, media_type);
     first_packet_received_ = true;
   }
+  void OnFirstPacketReceivedAfterReceptiveChange(
+      webrtc::MediaType media_type) override {
+    ASSERT_EQ(expected_media_type_, media_type);
+    first_packet_received_after_receptive_change_ = true;
+  }
 
   bool first_packet_received() const { return first_packet_received_; }
+  bool first_packet_received_after_receptive_change() const {
+    return first_packet_received_after_receptive_change_;
+  }
 
-  virtual ~MockRtpReceiverObserver() {}
+  ~MockRtpReceiverObserver() override {}
 
  private:
   bool first_packet_received_ = false;
+  bool first_packet_received_after_receptive_change_ = false;
   webrtc::MediaType expected_media_type_;
 };
 
@@ -218,7 +240,7 @@ class MockRtpSenderObserver : public RtpSenderObserverInterface {
 
   bool first_packet_sent() const { return first_packet_sent_; }
 
-  virtual ~MockRtpSenderObserver() {}
+  ~MockRtpSenderObserver() override {}
 
  private:
   bool first_packet_sent_ = false;
@@ -236,6 +258,12 @@ class MockRtpSenderObserver : public RtpSenderObserverInterface {
 class PeerConnectionIntegrationWrapper : public PeerConnectionObserver,
                                          public SignalingMessageReceiver {
  public:
+  explicit PeerConnectionIntegrationWrapper(
+      const std::string& debug_name,
+      Environment env,
+      internal::PeerConnectionIntegrationTestBase* test)
+      : debug_name_(debug_name), env_(env), test_(test) {}
+
   PeerConnectionFactoryInterface* pc_factory() const {
     return peer_connection_factory_.get();
   }
@@ -364,7 +392,7 @@ class PeerConnectionIntegrationWrapper : public PeerConnectionObserver,
 
   scoped_refptr<VideoTrackInterface> CreateLocalVideoTrack() {
     FakePeriodicVideoSource::Config config;
-    config.timestamp_offset_ms = env_.clock().TimeInMilliseconds();
+    config.timestamp_offset = env_.clock().CurrentTime();
     return CreateLocalVideoTrackInternal(config);
   }
 
@@ -377,7 +405,7 @@ class PeerConnectionIntegrationWrapper : public PeerConnectionObserver,
       VideoRotation rotation) {
     FakePeriodicVideoSource::Config config;
     config.rotation = rotation;
-    config.timestamp_offset_ms = env_.clock().TimeInMilliseconds();
+    config.timestamp_offset = env_.clock().CurrentTime();
     return CreateLocalVideoTrackInternal(config);
   }
 
@@ -496,16 +524,7 @@ class PeerConnectionIntegrationWrapper : public PeerConnectionObserver,
   // Returns a MockStatsObserver in a state after stats gathering finished,
   // which can be used to access the gathered stats.
   scoped_refptr<MockStatsObserver> OldGetStatsForTrack(
-      MediaStreamTrackInterface* track) {
-    auto observer = make_ref_counted<MockStatsObserver>();
-    EXPECT_TRUE(peer_connection_->GetStats(
-        observer.get(), nullptr,
-        PeerConnectionInterface::kStatsOutputLevelStandard));
-    EXPECT_THAT(
-        WaitUntil([&] { return observer->called(); }, ::testing::IsTrue()),
-        IsRtcOk());
-    return observer;
-  }
+      MediaStreamTrackInterface* track);
 
   // Version that doesn't take a track "filter", and gathers all stats.
   scoped_refptr<MockStatsObserver> OldGetStats() {
@@ -514,13 +533,39 @@ class PeerConnectionIntegrationWrapper : public PeerConnectionObserver,
 
   // Synchronously gets stats and returns them. If it times out, fails the test
   // and returns null.
-  scoped_refptr<const RTCStatsReport> NewGetStats() {
-    auto callback = make_ref_counted<MockRTCStatsCollectorCallback>();
+  // TODO(bugs.webrtc.org/501310910): Unify NewGetStats implementations by
+  // making RunLoop an interface that can be implemented for simulated time too.
+  // TODO(tommi) - Remove this method in favor of the one that supports RunLoop.
+  scoped_refptr<const RTCStatsReport> NewGetStats(
+      WaitUntilSettings settings = {});
+
+  scoped_refptr<const RTCStatsReport> NewGetStats(test::RunLoop& run_loop) {
+    scoped_refptr<const RTCStatsReport> report;
+    auto callback = RTCStatsObtainer::Create(&report, run_loop.QuitClosure());
     peer_connection_->GetStats(callback.get());
-    EXPECT_THAT(
-        WaitUntil([&] { return callback->called(); }, ::testing::IsTrue()),
-        IsRtcOk());
-    return callback->report();
+    run_loop.Run();
+    EXPECT_TRUE(report);
+    return report;
+  }
+
+  std::string DtlsCipher() {
+    auto report = NewGetStats();
+    if (!report)
+      return "";
+    auto stats = report->GetStatsOfType<RTCTransportStats>();
+    if (stats.empty() || !stats[0]->dtls_cipher.has_value())
+      return "";
+    return *stats[0]->dtls_cipher;
+  }
+
+  std::string SrtpCipher() {
+    auto report = NewGetStats();
+    if (!report)
+      return "";
+    auto stats = report->GetStatsOfType<RTCTransportStats>();
+    if (stats.empty() || !stats[0]->srtp_cipher.has_value())
+      return "";
+    return *stats[0]->srtp_cipher;
   }
 
   int rendered_width() {
@@ -567,14 +612,14 @@ class PeerConnectionIntegrationWrapper : public PeerConnectionObserver,
            local_rendered_height();
   }
 
-  size_t number_of_remote_streams() {
+  PLAN_B_ONLY size_t number_of_remote_streams() {
     if (!pc()) {
       return 0;
     }
     return pc()->remote_streams()->count();
   }
 
-  StreamCollectionInterface* remote_streams() const {
+  PLAN_B_ONLY StreamCollectionInterface* remote_streams() const {
     if (!pc()) {
       ADD_FAILURE();
       return nullptr;
@@ -582,7 +627,7 @@ class PeerConnectionIntegrationWrapper : public PeerConnectionObserver,
     return pc()->remote_streams().get();
   }
 
-  StreamCollectionInterface* local_streams() {
+  PLAN_B_ONLY StreamCollectionInterface* local_streams() {
     if (!pc()) {
       ADD_FAILURE();
       return nullptr;
@@ -668,11 +713,7 @@ class PeerConnectionIntegrationWrapper : public PeerConnectionObserver,
   }
 
   // Returns null on failure.
-  std::unique_ptr<SessionDescriptionInterface> CreateOfferAndWait() {
-    auto observer = make_ref_counted<MockCreateSessionDescriptionObserver>();
-    pc()->CreateOffer(observer.get(), offer_answer_options_);
-    return WaitForDescriptionFromObserver(observer.get());
-  }
+  std::unique_ptr<SessionDescriptionInterface> CreateOfferAndWait();
   bool Rollback() {
     return SetRemoteDescription(CreateRollbackSessionDescription());
   }
@@ -682,31 +723,16 @@ class PeerConnectionIntegrationWrapper : public PeerConnectionObserver,
 
   void UpdateDelayStats(std::string tag, int desc_size);
 
+  bool AudioDelayStatsPercentageChecked() const {
+    return audio_delay_stats_percentage_checked_;
+  }
+
   // Sets number of candidates expected
   void ExpectCandidates(int candidate_count) {
     candidates_expected_ = candidate_count;
   }
 
-  bool SetRemoteDescription(std::unique_ptr<SessionDescriptionInterface> desc) {
-    auto observer = make_ref_counted<FakeSetRemoteDescriptionObserver>();
-    std::string sdp;
-    EXPECT_TRUE(desc->ToString(&sdp));
-    RTC_LOG(LS_INFO) << debug_name_
-                     << ": SetRemoteDescription SDP: type=" << desc->GetType()
-                     << " contents=\n"
-                     << sdp;
-    pc()->SetRemoteDescription(std::move(desc), observer);  // desc.release());
-    RemoveUnusedVideoRenderers();
-    EXPECT_THAT(
-        WaitUntil([&] { return observer->called(); }, ::testing::IsTrue()),
-        IsRtcOk());
-    auto err = observer->error();
-    if (!err.ok()) {
-      RTC_LOG(LS_WARNING) << debug_name_
-                          << ": SetRemoteDescription error: " << err.message();
-    }
-    return observer->error().ok();
-  }
+  bool SetRemoteDescription(std::unique_ptr<SessionDescriptionInterface> desc);
 
   void NegotiateCorruptionDetectionHeader() {
     for (const auto& transceiver : pc()->GetTransceivers()) {
@@ -772,32 +798,9 @@ class PeerConnectionIntegrationWrapper : public PeerConnectionObserver,
   // waiting for the observer to be called. This ensures that ICE candidates
   // don't outrace the description.
   bool SetLocalDescriptionAndSendSdpMessage(
-      std::unique_ptr<SessionDescriptionInterface> desc) {
-    auto observer = make_ref_counted<MockSetSessionDescriptionObserver>();
-    RTC_LOG(LS_INFO) << debug_name_ << ": SetLocalDescriptionAndSendSdpMessage";
-    SdpType type = desc->GetType();
-    std::string sdp;
-    EXPECT_TRUE(desc->ToString(&sdp));
-    RTC_LOG(LS_INFO) << debug_name_ << ": local SDP type=" << desc->GetType()
-                     << " contents=\n"
-                     << sdp;
-    pc()->SetLocalDescription(observer.get(), desc.release());
-    RemoveUnusedVideoRenderers();
-    // As mentioned above, we need to send the message immediately after
-    // SetLocalDescription.
-    SendSdpMessage(type, sdp);
-    EXPECT_THAT(
-        WaitUntil([&] { return observer->called(); }, ::testing::IsTrue()),
-        IsRtcOk());
-    return true;
-  }
+      std::unique_ptr<SessionDescriptionInterface> desc);
 
- private:
-  // Constructor used by friend class PeerConnectionIntegrationBaseTest.
-  explicit PeerConnectionIntegrationWrapper(const std::string& debug_name,
-                                            Environment env)
-      : debug_name_(debug_name), env_(env) {}
-
+ public:
   bool Init(const PeerConnectionFactory::Options* options,
             const PeerConnectionInterface::RTCConfiguration* config,
             PeerConnectionDependencies dependencies,
@@ -843,7 +846,7 @@ class PeerConnectionIntegrationWrapper : public PeerConnectionObserver,
       FakePeriodicVideoSource::Config config) {
     // Set max frame rate to 10fps to reduce the risk of test flakiness.
     // TODO(deadbeef): Do something more robust.
-    config.frame_interval_ms = 100;
+    config.frame_interval = TimeDelta::Millis(100);
 
     video_track_sources_.emplace_back(
         make_ref_counted<FakePeriodicVideoTrackSource>(config,
@@ -896,26 +899,7 @@ class PeerConnectionIntegrationWrapper : public PeerConnectionObserver,
   }
 
   // Returns null on failure.
-  std::unique_ptr<SessionDescriptionInterface> CreateAnswer() {
-    auto observer = make_ref_counted<MockCreateSessionDescriptionObserver>();
-    pc()->CreateAnswer(observer.get(), offer_answer_options_);
-    return WaitForDescriptionFromObserver(observer.get());
-  }
-
-  std::unique_ptr<SessionDescriptionInterface> WaitForDescriptionFromObserver(
-      MockCreateSessionDescriptionObserver* observer) {
-    EXPECT_THAT(
-        WaitUntil([&] { return observer->called(); }, ::testing::IsTrue()),
-        IsRtcOk());
-    if (!observer->result()) {
-      return nullptr;
-    }
-    auto description = observer->MoveDescription();
-    if (generated_sdp_munger_) {
-      generated_sdp_munger_(description);
-    }
-    return description;
-  }
+  std::unique_ptr<SessionDescriptionInterface> CreateAnswer();
 
   // This is a work around to remove unused fake_video_renderers from
   // transceivers that have either stopped or are no longer receiving.
@@ -1009,17 +993,7 @@ class PeerConnectionIntegrationWrapper : public PeerConnectionObserver,
 
   void ReceiveIceMessage(const std::string& sdp_mid,
                          int sdp_mline_index,
-                         const std::string& msg) override {
-    RTC_LOG(LS_INFO) << debug_name_ << ": ReceiveIceMessage";
-    std::optional<RTCError> result;
-    pc()->AddIceCandidate(absl::WrapUnique(CreateIceCandidate(
-                              sdp_mid, sdp_mline_index, msg, nullptr)),
-                          [&result](RTCError r) { result = r; });
-    EXPECT_THAT(
-        WaitUntil([&] { return result.has_value(); }, ::testing::IsTrue()),
-        IsRtcOk());
-    EXPECT_TRUE(result.value().ok());
-  }
+                         const std::string& msg) override;
 
  private:
   // PeerConnectionObserver callbacks.
@@ -1076,7 +1050,7 @@ class PeerConnectionIntegrationWrapper : public PeerConnectionObserver,
   }
 
   void OnIceSelectedCandidatePairChanged(
-      const CandidatePairChangeEvent& event) {
+      const CandidatePairChangeEvent& event) override {
     ice_candidate_pair_change_history_.push_back(event);
   }
 
@@ -1144,6 +1118,7 @@ class PeerConnectionIntegrationWrapper : public PeerConnectionObserver,
     return false;
   }
 
+ private:
   std::string debug_name_;
   const Environment env_;
 
@@ -1220,18 +1195,18 @@ class PeerConnectionIntegrationWrapper : public PeerConnectionObserver,
   uint64_t audio_samples_stat_ = 0;
   uint64_t audio_concealed_stat_ = 0;
   std::string rtp_stats_id_;
+  bool audio_delay_stats_percentage_checked_ = false;
 
   std::function<void(PeerConnectionInterface::PeerConnectionState)>
       connection_change_callback_ = nullptr;
 
   ScopedTaskSafety task_safety_;
-
-  friend class PeerConnectionIntegrationBaseTest;
+  internal::PeerConnectionIntegrationTestBase* test_ = nullptr;
 };
 
 class MockRtcEventLogOutput : public RtcEventLogOutput {
  public:
-  virtual ~MockRtcEventLogOutput() = default;
+  ~MockRtcEventLogOutput() override = default;
   MOCK_METHOD(bool, IsActive, (), (const, override));
   MOCK_METHOD(bool, Write, (absl::string_view), (override));
 };
@@ -1344,15 +1319,14 @@ class MediaExpectations {
 class MockIceTransport : public IceTransportInterface {
  public:
   MockIceTransport(const std::string& name, int component)
-      : internal_(
-            std::make_unique<FakeIceTransport>(name,
-                                               component,
-                                               nullptr /* network_thread */)) {}
-  ~MockIceTransport() = default;
-  IceTransportInternal* internal() { return internal_.get(); }
+      : internal_(std::make_unique<FakeIceTransportInternal>(name,
+                                                             component,
+                                                             nullptr)) {}
+  ~MockIceTransport() override = default;
+  IceTransportInternal* internal() override { return internal_.get(); }
 
  private:
-  std::unique_ptr<FakeIceTransport> internal_;
+  std::unique_ptr<FakeIceTransportInternal> internal_;
 };
 
 class MockIceTransportFactory : public IceTransportFactory {
@@ -1361,7 +1335,7 @@ class MockIceTransportFactory : public IceTransportFactory {
   scoped_refptr<IceTransportInterface> CreateIceTransport(
       const std::string& transport_name,
       int component,
-      IceTransportInit init) {
+      IceTransportInit init) override {
     RecordIceTransportCreated();
     return make_ref_counted<MockIceTransport>(transport_name, component);
   }
@@ -1372,13 +1346,26 @@ class MockIceTransportFactory : public IceTransportFactory {
 // virtual network, fake A/V capture and fake encoder/decoders. The
 // PeerConnections share the threads/socket servers, but use separate versions
 // of everything else (including "PeerConnectionFactory"s).
-class PeerConnectionIntegrationBaseTest : public ::testing::Test {
+namespace internal {
+class PeerConnectionIntegrationTestBase : public ::testing::Test {
  public:
   static constexpr char kCallerName[] = "Caller";
   static constexpr char kCalleeName[] = "Callee";
 
-  explicit PeerConnectionIntegrationBaseTest(SdpSemantics sdp_semantics);
-  ~PeerConnectionIntegrationBaseTest() override;
+  explicit PeerConnectionIntegrationTestBase(Environment env,
+                                             SdpSemantics sdp_semantics);
+  PeerConnectionIntegrationTestBase(Environment env,
+                                    SdpSemantics sdp_semantics,
+                                    TimeController* time_controller);
+  ~PeerConnectionIntegrationTestBase() override;
+
+  virtual std::unique_ptr<PeerConnectionIntegrationWrapper>
+  CreatePeerConnectionWrapperInternal(const std::string& debug_name,
+                                      Environment env);
+
+  virtual Waiter GetWaiter(WaitUntilSettings overrides = {}) = 0;
+  virtual TimeController* time_controller() { return nullptr; }
+  virtual std::unique_ptr<Thread> CreateThread(absl::string_view name) = 0;
 
   bool SignalingStateStable() {
     return caller_->SignalingStateStable() && callee_->SignalingStateStable();
@@ -1451,8 +1438,8 @@ class PeerConnectionIntegrationBaseTest : public ::testing::Test {
     }
     env.Set(CreateTestFieldTrialsPtr(field_trials));
 
-    std::unique_ptr<PeerConnectionIntegrationWrapper> client(
-        new PeerConnectionIntegrationWrapper(debug_name, env.Create()));
+    std::unique_ptr<PeerConnectionIntegrationWrapper> client =
+        CreatePeerConnectionWrapperInternal(debug_name, env.Create());
 
     if (!client->Init(options, &modified_config, std::move(dependencies),
                       fss_.get(), network_thread_.get(), worker_thread_.get(),
@@ -1698,14 +1685,19 @@ class PeerConnectionIntegrationBaseTest : public ::testing::Test {
   // get dropped before exit.
   void DestroyPeerConnections() {
     if (caller_) {
+      caller_->set_signaling_message_receiver(nullptr);
       caller_->pc()->Close();
     }
     if (callee_) {
+      callee_->set_signaling_message_receiver(nullptr);
       callee_->pc()->Close();
     }
     caller_.reset();
     callee_.reset();
   }
+
+  void DestroyTurnServers();
+  void DestroyThreads();
 
   // Set the `caller_` to the `wrapper` passed in and return the
   // original `caller_`.
@@ -1767,19 +1759,21 @@ class PeerConnectionIntegrationBaseTest : public ::testing::Test {
     }
 
     // Wait for the expected frames.
-    EXPECT_THAT(WaitUntil(
-                    [&] {
-                      return caller()->audio_frames_received() >=
-                                 total_caller_audio_frames_expected &&
-                             caller()->min_video_frames_received_per_track() >=
-                                 total_caller_video_frames_expected &&
-                             callee()->audio_frames_received() >=
-                                 total_callee_audio_frames_expected &&
-                             callee()->min_video_frames_received_per_track() >=
-                                 total_callee_video_frames_expected;
-                    },
-                    ::testing::IsTrue(), {.timeout = kMaxWaitForFrames}),
-                IsRtcOk());
+    EXPECT_THAT(
+        GetWaiter({.timeout = kMaxWaitForFrames})
+            .Until(
+                [&] {
+                  return caller()->audio_frames_received() >=
+                             total_caller_audio_frames_expected &&
+                         caller()->min_video_frames_received_per_track() >=
+                             total_caller_video_frames_expected &&
+                         callee()->audio_frames_received() >=
+                             total_callee_audio_frames_expected &&
+                         callee()->min_video_frames_received_per_track() >=
+                             total_callee_video_frames_expected;
+                },
+                ::testing::IsTrue()),
+        IsRtcOk());
     bool expectations_correct =
         caller()->audio_frames_received() >=
             total_caller_audio_frames_expected &&
@@ -1857,12 +1851,30 @@ class PeerConnectionIntegrationBaseTest : public ::testing::Test {
     caller()->AddAudioVideoTracks();
     callee()->AddAudioVideoTracks();
     caller()->CreateAndSetAndSignalOffer();
-    ASSERT_THAT(WaitUntil([&] { return DtlsConnected(); }, ::testing::IsTrue()),
+    WaitUntilSettings settings;
+    settings.polling_interval = TimeDelta::Millis(100);
+    if (auto* tc = time_controller()) {
+      settings.clock = tc;
+    }
+    ASSERT_THAT(GetWaiter(settings).Until([&] { return DtlsConnected(); },
+                                          ::testing::IsTrue()),
                 IsRtcOk());
-    EXPECT_THAT(
-        WaitUntil([&] { return caller()->OldGetStats()->SrtpCipher(); },
-                  ::testing::Eq(SrtpCryptoSuiteToName(expected_cipher_suite))),
-        IsRtcOk());
+    EXPECT_THAT(GetWaiter(settings).Until(
+                    [&] {
+                      auto report = caller()->NewGetStats(settings);
+                      if (!report) {
+                        return false;
+                      }
+                      auto transport_stats =
+                          report->GetStatsOfType<RTCTransportStats>();
+                      if (transport_stats.empty()) {
+                        return false;
+                      }
+                      return *transport_stats[0]->srtp_cipher ==
+                             SrtpCryptoSuiteToName(expected_cipher_suite);
+                    },
+                    ::testing::IsTrue()),
+                IsRtcOk());
   }
 
   void TestGcmNegotiationUsesCipherSuite(bool local_gcm_enabled,
@@ -1889,6 +1901,9 @@ class PeerConnectionIntegrationBaseTest : public ::testing::Test {
   SdpSemantics sdp_semantics_;
   const Environment env_;
 
+  virtual void ExecuteTask(TaskQueueBase& task_queue,
+                           absl::AnyInvocable<void()> task) = 0;
+
  private:
   // Support for optionally changing the default logging level for the duration
   // of the test. Scoped wider than other member variables to also affect
@@ -1896,10 +1911,10 @@ class PeerConnectionIntegrationBaseTest : public ::testing::Test {
   class ScopedSetLoggingLevel;
   std::unique_ptr<ScopedSetLoggingLevel> overridden_logging_level_;
 
-  AutoThread main_thread_;  // Used as the signal thread by most tests.
   // `ss_` is used by `network_thread_` so it must be destroyed later.
   std::unique_ptr<VirtualSocketServer> ss_;
   std::unique_ptr<FirewallSocketServer> fss_;
+
   // `network_thread_` and `worker_thread_` are used by both
   // `caller_` and `callee_` so they must be destroyed
   // later.
@@ -1914,6 +1929,132 @@ class PeerConnectionIntegrationBaseTest : public ::testing::Test {
   std::unique_ptr<PeerConnectionIntegrationWrapper> callee_;
   std::string field_trials_;
   std::map<std::string, std::string> field_trials_overrides_;
+};
+}  // namespace internal
+
+class PeerConnectionIntegrationBaseTest
+    : public internal::PeerConnectionIntegrationTestBase {
+ public:
+  explicit PeerConnectionIntegrationBaseTest(SdpSemantics sdp_semantics);
+  ~PeerConnectionIntegrationBaseTest() override {
+    DestroyPeerConnections();
+    DestroyTurnServers();
+  }
+
+  test::RunLoop& run_loop() { return run_loop_; }
+
+  void ExecuteTask(TaskQueueBase& task_queue,
+                   absl::AnyInvocable<void()> task) override {
+    task_queue.PostTask([this, task = std::move(task)]() mutable {
+      task();
+      run_loop_.task_queue()->PostTask(run_loop_.QuitClosure());
+    });
+    run_loop_.Run();
+  }
+
+  Waiter GetWaiter(WaitUntilSettings overrides = {}) override {
+    return Waiter(overrides);
+  }
+
+  std::unique_ptr<Thread> CreateThread(absl::string_view name) override {
+    auto thread = Thread::Create();
+    thread->Start();
+    return thread;
+  }
+
+ protected:
+  test::RunLoop run_loop_;
+};
+
+class PeerConnectionIntegrationTestWithSimulatedTime
+    : public internal::PeerConnectionIntegrationTestBase {
+ public:
+  explicit PeerConnectionIntegrationTestWithSimulatedTime(
+      SdpSemantics sdp_semantics);
+
+  void ExecuteTask(TaskQueueBase& task_queue,
+                   absl::AnyInvocable<void()> task) override {
+    task_queue.PostTask(std::move(task));
+    time_controller_->AdvanceTime(TimeDelta::Zero());
+  }
+
+  Waiter GetWaiter(WaitUntilSettings overrides = {}) override {
+    overrides.clock = time_controller_.get();
+    return Waiter(overrides);
+  }
+  TimeController* time_controller() override { return time_controller_.get(); }
+  std::unique_ptr<Thread> CreateThread(absl::string_view name) override {
+    return time_controller_->CreateThread(std::string(name), nullptr);
+  }
+
+  ~PeerConnectionIntegrationTestWithSimulatedTime() override;
+
+ private:
+  PeerConnectionIntegrationTestWithSimulatedTime(
+      SdpSemantics sdp_semantics,
+      std::unique_ptr<GlobalSimulatedTimeController> time_controller);
+
+ protected:
+  std::unique_ptr<GlobalSimulatedTimeController> time_controller_;
+};
+
+template <typename Base>
+class PeerConnectionIntegrationIceStatesTestBase
+    : public Base,
+      public ::testing::WithParamInterface<
+          std::tuple<SdpSemantics, std::tuple<std::string, uint32_t>>> {
+ protected:
+  PeerConnectionIntegrationIceStatesTestBase()
+      : Base(std::get<0>(this->GetParam())) {
+    port_allocator_flags_ = std::get<1>(std::get<1>(this->GetParam()));
+  }
+
+  void StartStunServer(const SocketAddress& server_address) {
+    stun_server_ = TestStunServer::Create(
+        this->env_, server_address, *this->firewall(), *this->network_thread());
+  }
+
+  bool TestIPv6() {
+    return (port_allocator_flags_ & PORTALLOCATOR_ENABLE_IPV6);
+  }
+
+  std::vector<SocketAddress> CallerAddresses() {
+    std::vector<SocketAddress> addresses;
+    addresses.push_back(SocketAddress("1.1.1.1", 0));
+    if (TestIPv6()) {
+      addresses.push_back(SocketAddress("1111:0:a:b:c:d:e:f", 0));
+    }
+    return addresses;
+  }
+
+  std::vector<SocketAddress> CalleeAddresses() {
+    std::vector<SocketAddress> addresses;
+    addresses.push_back(SocketAddress("2.2.2.2", 0));
+    if (TestIPv6()) {
+      addresses.push_back(SocketAddress("2222:0:a:b:c:d:e:f", 0));
+    }
+    return addresses;
+  }
+
+  void SetUpNetworkInterfaces() {
+    // Remove the default interfaces added by the test infrastructure.
+    this->caller()->network_manager()->RemoveInterface(kDefaultLocalAddress);
+    this->callee()->network_manager()->RemoveInterface(kDefaultLocalAddress);
+
+    // Add network addresses for test.
+    for (const auto& caller_address : CallerAddresses()) {
+      this->caller()->network_manager()->AddInterface(caller_address);
+    }
+    for (const auto& callee_address : CalleeAddresses()) {
+      this->callee()->network_manager()->AddInterface(callee_address);
+    }
+  }
+
+  uint32_t port_allocator_flags() const { return port_allocator_flags_; }
+
+ private:
+  uint32_t port_allocator_flags_;
+  TestStunServer::StunServerPtr stun_server_;
 };
 
 }  // namespace webrtc

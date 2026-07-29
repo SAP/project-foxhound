@@ -42,13 +42,9 @@ add_task(async function () {
   EventUtils.synthesizeKey("KEY_Enter");
 
   // Wait until there are two resources rendered in the results
-  await waitForDOMIfNeeded(
-    document,
-    ".search-panel-content .treeRow.resourceRow",
-    2
-  );
+  await waitForDOM(document, ".search-panel-content .treeRow.resourceRow", 2);
 
-  const searchMatchContents = document.querySelectorAll(
+  let searchMatchContents = document.querySelectorAll(
     ".search-panel-content .treeRow .treeIcon"
   );
 
@@ -57,11 +53,7 @@ add_task(async function () {
   }
 
   // Wait until there are two resources rendered in the results
-  await waitForDOMIfNeeded(
-    document,
-    ".search-panel-content .treeRow.resultRow",
-    12
-  );
+  await waitForDOM(document, ".search-panel-content .treeRow.resultRow", 12);
 
   // Check the matches
   const matches = document.querySelectorAll(
@@ -165,6 +157,35 @@ add_task(async function () {
     [SEARCH_STRING]
   );
 
+  const onRequest = waitForNetworkEvents(monitor, 1);
+  await SpecialPowers.spawn(
+    tab.linkedBrowser,
+    [[HTTPS_CUSTOM_GET_URL]],
+    makeRequests
+  );
+  await onRequest;
+
+  // Focus the Search input
+  const searchInput = document.querySelector(
+    ".search-panel .devtools-searchinput"
+  );
+  searchInput.focus();
+  searchInput.select();
+  typeInNetmonitor("function get(", monitor);
+  EventUtils.synthesizeKey("KEY_Enter");
+
+  // Wait until there's a resource rendered in the results
+  searchMatchContents = await waitForDOM(
+    document,
+    ".search-panel-content .treeRow.resourceRow"
+  );
+
+  is(
+    searchMatchContents.length,
+    1,
+    "Got a result for a search query with an unclosed parenthesis"
+  );
+
   await teardown(monitor);
 });
 
@@ -212,11 +233,7 @@ add_task(async function () {
   await waitForAllNetworkUpdateEvents();
 
   // Wait until there are two resources rendered in the results
-  await waitForDOMIfNeeded(
-    document,
-    ".search-panel-content .treeRow.resourceRow",
-    2
-  );
+  await waitForDOM(document, ".search-panel-content .treeRow.resourceRow", 2);
 
   const resourceMatches = document.querySelectorAll(
     ".search-panel-content .treeRow .treeIcon"
@@ -227,11 +244,7 @@ add_task(async function () {
   clickElement(firstResourceMatch, monitor);
 
   // Wait until the expanded resource is rendered in the results
-  await waitForDOMIfNeeded(
-    document,
-    ".search-panel-content .treeRow.resultRow",
-    1
-  );
+  await waitForDOM(document, ".search-panel-content .treeRow.resultRow", 1);
 
   // Check the content matches
   const contentMatches = document.querySelectorAll(
@@ -319,14 +332,10 @@ add_task(async function searchWithRequestOnUnload() {
   EventUtils.synthesizeKey("KEY_Enter");
 
   // Wait until there are two resources rendered in the results
-  await waitForDOMIfNeeded(
-    document,
-    ".search-panel-content .treeRow.resourceRow",
-    1
-  );
+  await waitForDOM(document, ".search-panel-content .treeRow.resourceRow", 1);
 
   // Wait until there are two resources rendered in the results
-  await waitForDOMIfNeeded(document, ".search-panel .status-bar-label");
+  await waitForDOM(document, ".search-panel .status-bar-label");
   const statusBar = document.querySelector(".search-panel .status-bar-label");
   const matchingLines = PluralForm.get(
     1,

@@ -45,9 +45,9 @@ git -C ${tmpclonedir} log -1 > ${icu_dir}/GIT-INFO
 rm -rf ${tmpclonedir}
 
 # Remove layoutex, tests, and samples, but leave makefiles and test data in place.
-find ${icu_dir}/source/layoutex -name '*Makefile.in' -prune -or -type f -print | xargs rm
-find ${icu_dir}/source/test -name '*Makefile.in' -prune -or -name 'testdata' -prune -or -type f -print | xargs rm
-find ${icu_dir}/source/samples -name '*Makefile.in' -prune -or -type f -print | xargs rm
+find ${icu_dir}/source/layoutex -name '*Makefile.in' -prune -or -type f -print | xargs --no-run-if-empty rm
+find ${icu_dir}/source/test -name '*Makefile.in' -prune -or -name 'testdata' -prune -or -type f -print | xargs --no-run-if-empty rm
+find ${icu_dir}/source/samples -name '*Makefile.in' -prune -or -type f -print | xargs --no-run-if-empty rm
 
 for patch in \
  bug-915735 \
@@ -65,20 +65,27 @@ for patch in \
  bug-2000225-ICU-23264-increase-measure-unit-capacity.diff \
  bug-2000225-ICU-23262-missing-resource-error-for-iso8601-era.diff \
  bug-2002735-ICU-23277-coptic-single-era.diff \
- bug-2010411-patch-cldr-hv-en-root.diff \
+ skip-norm-coll.diff \
+ bug-1989738-remove-historical-eras.diff \
+ bug-1989738-use-gregorian-era.diff \
+ bug-1989738-gregorian-era-gannen.diff \
+ bug-2028127-add-inherited-era-names.diff \
+ bug-2028127-remove-historical-eras.diff \
+ bug-2028443-CLDR-19362-CLDR-19382-london-tz-abbr.diff \
+ bug-2029806-surrogates.diff \
 ; do
   echo "Applying local patch $patch"
   patch -d ${icu_dir}/../../ -p1 --no-backup-if-mismatch < ${icu_dir}/../icu-patches/$patch
 done
 
 topsrcdir=`dirname $0`/../
-python ${topsrcdir}/js/src/tests/non262/String/make-normalize-generateddata-input.py $topsrcdir
+python3 ${topsrcdir}/js/src/tests/non262/String/make-normalize-generateddata-input.py $topsrcdir
 
 # Update our moz.build files in config/external/icu, and build a new ICU data
 # file.
-python `dirname $0`/icu_sources_data.py $topsrcdir
+python3 `dirname $0`/icu_sources_data.py $topsrcdir
 
-hg addremove "${icu_dir}/source" "${icu_dir}/GIT-INFO" ${topsrcdir}/config/external/icu
+git -C "${topsrcdir}" add --all "intl/icu/source" "intl/icu/GIT-INFO" "config/external/icu"
 
 # Check local tzdata version.
 `dirname $0`/update-tzdata.sh -c

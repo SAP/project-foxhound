@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -281,7 +280,7 @@ class nsAutoRetainUIKitObject {
       continue;
     }
     int id = [value intValue];
-    RefPtr<Touch> t = new Touch(id, loc, radius, 0.0f, 1.0f);
+    auto t = MakeRefPtr<Touch>(id, loc, radius, 0.0f, 1.0f);
     event.mRefPoint = loc;
     event.mTouches.AppendElement(t);
   }
@@ -1281,7 +1280,7 @@ id<GeckoViewWindow> GeckoViewOpenWindow(NSString* aId,
   }
 
   // Prepare an nsIGeckoViewView to pass as argument to the window.
-  RefPtr<IOSView> iosView = new IOSView();
+  auto iosView = MakeRefPtr<IOSView>();
   iosView->mEventDispatcher->Attach(aDispatcher);
   iosView->mInitData.AssignUnderGetRule((CFDictionaryRef)aInitData);
 

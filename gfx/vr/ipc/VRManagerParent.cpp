@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,8 +25,9 @@ void ReleaseVRManagerParentSingleton();
 
 VRManagerParent::VRManagerParent(ipc::EndpointProcInfo aChildProcess,
                                  dom::ContentParentId aChildId,
-                                 bool aIsContentChild)
+                                 uint32_t aNamespace, bool aIsContentChild)
     : mChildId(aChildId),
+      mNamespace(aNamespace),
       mHaveEventListener(false),
       mHaveControllerListener(false),
       mIsContentChild(aIsContentChild),
@@ -45,22 +44,16 @@ VRManagerParent::~VRManagerParent() {
   MOZ_COUNT_DTOR(VRManagerParent);
 }
 
-PVRLayerParent* VRManagerParent::AllocPVRLayerParent(const uint32_t& aDisplayID,
-                                                     const uint32_t& aGroup) {
+already_AddRefed<PVRLayerParent> VRManagerParent::AllocPVRLayerParent(
+    const uint32_t& aDisplayID, const uint32_t& aGroup) {
   if (!StaticPrefs::dom_vr_enabled() && !StaticPrefs::dom_vr_webxr_enabled()) {
     return nullptr;
   }
 
-  RefPtr<VRLayerParent> layer;
-  layer = new VRLayerParent(aDisplayID, aGroup);
+  auto layer = MakeRefPtr<VRLayerParent>(aDisplayID, aGroup);
   VRManager* vm = VRManager::Get();
   vm->AddLayer(layer);
-  return layer.forget().take();
-}
-
-bool VRManagerParent::DeallocPVRLayerParent(PVRLayerParent* actor) {
-  delete actor;
-  return true;
+  return layer.forget();
 }
 
 bool VRManagerParent::IsSameProcess() const {
@@ -81,13 +74,14 @@ void VRManagerParent::UnregisterFromManager() {
 
 /* static */
 bool VRManagerParent::CreateForContent(Endpoint<PVRManagerParent>&& aEndpoint,
-                                       dom::ContentParentId aChildId) {
+                                       dom::ContentParentId aChildId,
+                                       uint32_t aNamespace) {
   if (!CompositorThread()) {
     return false;
   }
 
-  RefPtr<VRManagerParent> vmp =
-      new VRManagerParent(aEndpoint.OtherEndpointProcInfo(), aChildId, true);
+  RefPtr<VRManagerParent> vmp = new VRManagerParent(
+      aEndpoint.OtherEndpointProcInfo(), aChildId, aNamespace, true);
   CompositorThread()->Dispatch(NewRunnableMethod<Endpoint<PVRManagerParent>&&>(
       "gfx::VRManagerParent::Bind", vmp, &VRManagerParent::Bind,
       std::move(aEndpoint)));
@@ -111,9 +105,11 @@ void VRManagerParent::RegisterVRManagerInCompositorThread(
 }
 
 /*static*/
-already_AddRefed<VRManagerParent> VRManagerParent::CreateSameProcess() {
-  RefPtr<VRManagerParent> vmp = new VRManagerParent(
-      ipc::EndpointProcInfo::Current(), dom::ContentParentId(), false);
+already_AddRefed<VRManagerParent> VRManagerParent::CreateSameProcess(
+    uint32_t aNamespace) {
+  RefPtr<VRManagerParent> vmp =
+      new VRManagerParent(ipc::EndpointProcInfo::Current(),
+                          dom::ContentParentId(), aNamespace, false);
   vmp->mCompositorThreadHolder = CompositorThreadHolder::GetSingleton();
   CompositorThread()->Dispatch(
       NewRunnableFunction("RegisterVRManagerIncompositorThreadRunnable",
@@ -122,9 +118,10 @@ already_AddRefed<VRManagerParent> VRManagerParent::CreateSameProcess() {
 }
 
 bool VRManagerParent::CreateForGPUProcess(
-    Endpoint<PVRManagerParent>&& aEndpoint) {
-  RefPtr<VRManagerParent> vmp = new VRManagerParent(
-      aEndpoint.OtherEndpointProcInfo(), dom::ContentParentId(), false);
+    Endpoint<PVRManagerParent>&& aEndpoint, uint32_t aNamespace) {
+  RefPtr<VRManagerParent> vmp =
+      new VRManagerParent(aEndpoint.OtherEndpointProcInfo(),
+                          dom::ContentParentId(), aNamespace, false);
   vmp->mCompositorThreadHolder = CompositorThreadHolder::GetSingleton();
   CompositorThread()->Dispatch(NewRunnableMethod<Endpoint<PVRManagerParent>&&>(
       "gfx::VRManagerParent::Bind", vmp, &VRManagerParent::Bind,

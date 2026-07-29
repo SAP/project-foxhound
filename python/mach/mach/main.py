@@ -24,8 +24,7 @@ from .config import ConfigSettings
 from .dispatcher import CommandAction
 from .logging import LoggingManager
 from .registrar import Registrar
-from .sentry import NoopErrorReporter, register_sentry
-from .telemetry import create_telemetry_from_environment, report_invocation_metrics
+from .sentry import NoopErrorReporter
 from .util import UserError, setenv
 
 SUGGEST_MACH_BUSTED_TEMPLATE = r"""
@@ -206,6 +205,7 @@ To see more help for a specific command, run:
         self.settings_paths = []
         self.settings_loaded = False
         self.command_site_manager = None
+        self._telemetry_future = None
 
         if "MACHRC" in os.environ:
             self.settings_paths.append(os.environ["MACHRC"])
@@ -298,6 +298,8 @@ To see more help for a specific command, run:
     def _run(self, argv):
         if self.populate_context_handler:
             topsrcdir = Path(self.populate_context_handler("topdir"))
+            from .sentry import register_sentry
+
             sentry = register_sentry(argv, self.settings, topsrcdir)
         else:
             sentry = NoopErrorReporter()
@@ -311,6 +313,9 @@ To see more help for a specific command, run:
 
         if self.populate_context_handler:
             context = ContextWrapper(context, self.populate_context_handler)
+
+        context._telemetry_init_done = None
+        context._telemetry_start_time_ns = None
 
         parser = get_argument_parser(context)
         context.global_parser = parser
@@ -349,10 +354,31 @@ To see more help for a specific command, run:
             and sys.__stderr__.isatty()
             and not os.environ.get("MOZ_AUTOMATION", None)
         )
-        context.telemetry = create_telemetry_from_environment(self.settings)
-
         handler = getattr(args, "mach_handler")
-        report_invocation_metrics(context.telemetry, handler.name)
+
+        import time
+
+        from .telemetry_interface import NoopTelemetry
+
+        context.telemetry = NoopTelemetry(False)
+        context._telemetry_start_time_ns = time.monotonic_ns()
+
+        # Glean SDK initialization was started early in mach_initialize.py
+        # via driver._telemetry_future. Retrieve the result here (non-blocking
+        # if already complete) and report invocation metrics.
+        if self._telemetry_future is not None:
+            import threading
+
+            context._telemetry_init_done = threading.Event()
+
+            def _finish_telemetry_init(future):
+                from .telemetry import report_invocation_metrics
+
+                context.telemetry = future.result()
+                report_invocation_metrics(context.telemetry, handler.name)
+                context._telemetry_init_done.set()
+
+            self._telemetry_future.add_done_callback(_finish_telemetry_init)
 
         # Add JSON logging to a file if requested.
         if args.logfile:
@@ -462,6 +488,9 @@ To see more help for a specific command, run:
             )
 
             return 1
+        finally:
+            if context._telemetry_init_done is not None:
+                context._telemetry_init_done.wait()
 
     def log(self, level, action, params, format_str):
         """Helper method to record a structured log event."""

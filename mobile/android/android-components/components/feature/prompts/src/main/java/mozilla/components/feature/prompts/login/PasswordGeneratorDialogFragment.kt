@@ -55,7 +55,7 @@ internal class PasswordGeneratorDialogFragment : PromptDialogFragment() {
             setOnShowListener {
                 val bottomSheet = findViewById<View>(materialR.id.design_bottom_sheet) as FrameLayout
                 val behavior = BottomSheetBehavior.from(bottomSheet)
-                behavior.peekHeight = resources.displayMetrics.heightPixels
+                behavior.peekHeight = context.resources.displayMetrics.heightPixels
                 behavior.state = BottomSheetBehavior.STATE_EXPANDED
             }
         }

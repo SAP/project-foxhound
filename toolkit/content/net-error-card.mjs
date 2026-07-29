@@ -15,17 +15,21 @@ import {
   getFailedCertificatesAsPEMString,
   handleNSSFailure,
   recordSecurityUITelemetry,
+  getFilePath,
   gOffline,
+  gNoConnectivity,
   retryThis,
   VPN_ACTIVE,
+  detectClockSkew,
 } from "chrome://global/content/aboutNetErrorHelpers.mjs";
 import { initializeRegistry } from "chrome://global/content/errors/error-registry.mjs";
 import {
   getResolvedErrorConfig,
-  isFeltPrivacySupported,
+  resolveErrorID,
 } from "chrome://global/content/errors/error-lookup.mjs";
-import { html } from "chrome://global/content/vendor/lit.all.mjs";
+import { html, ifDefined } from "chrome://global/content/vendor/lit.all.mjs";
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
+import { NET_ERROR_ILLUSTRATIONS } from "chrome://global/content/errors/net-error-illustrations.mjs";
 import "chrome://global/content/elements/moz-button-group.mjs";
 import "chrome://global/content/elements/moz-button.mjs";
 import "chrome://global/content/elements/moz-support-link.mjs";
@@ -35,6 +39,7 @@ const FELT_PRIVACY_REFRESH = RPMGetBoolPref(
   "security.certerrors.felt-privacy-v1",
   false
 );
+const EXPERT_BAD_CERT = getCSSClass() === "expertBadCert";
 
 export class NetErrorCard extends MozLitElement {
   static properties = {
@@ -55,34 +60,22 @@ export class NetErrorCard extends MozLitElement {
     errorCode: "#errorCode",
     advancedContainer: ".advanced-container",
     advancedButton: "#advanced-button",
-    certErrorIntro: "#certErrorIntro",
+    errorIntro: "#error-intro",
+    dnsSuggestion: "#dns-suggestion",
     certErrorDebugInfo: "#certificateErrorDebugInformation",
     certErrorText: "#certificateErrorText",
     viewCertificate: "#viewCertificate",
-    certErrorBodyTitle: "#certErrorBodyTitle",
+    errorTitle: "#error-title",
+    responseStatusLabel: "#response-status-label",
     returnButton: "#returnButton",
-    learnMoreLink: "#learnMoreLink",
+    learnMoreLink: "#error-learn-more-link",
     whatCanYouDo: "#whatCanYouDo",
     whyDangerous: "#fp-why-site-dangerous",
-    netErrorTitleText: "#neterror-title-text",
-    netErrorIntro: "#netErrorIntro",
-    netErrorLearnMoreLink: "#neterror-learn-more-link",
-    httpAuthIntroText: "#fp-http-auth-disabled-intro-text",
     tryAgainButton: "#tryAgainButton",
     prefResetButton: "#prefResetButton",
     tlsNotice: "#tlsVersionNotice",
     badStsCertExplanation: "#badStsCertExplanation",
   };
-
-  static getCustomErrorID(defaultCode) {
-    if (gOffline) {
-      return "NS_ERROR_OFFLINE";
-    }
-    if (defaultCode === "proxyConnectFailure" && VPN_ACTIVE) {
-      return "vpnFailure";
-    }
-    return defaultCode;
-  }
 
   static isSupported() {
     if (!FELT_PRIVACY_REFRESH) {
@@ -91,19 +84,33 @@ export class NetErrorCard extends MozLitElement {
 
     initializeRegistry();
 
-    let errorInfo;
+    let errorInfo = { errorCodeString: "" };
     try {
       errorInfo = gIsCertError
         ? document.getFailedCertSecurityInfo()
         : document.getNetErrorInfo();
-    } catch {
+    } catch {}
+
+    const resolvedErrorId = resolveErrorID({
+      errorCodeString: errorInfo.errorCodeString,
+      gErrorCode,
+      noConnectivity: gNoConnectivity,
+      vpnActive: VPN_ACTIVE,
+    });
+
+    // Bug 2038887: the felt privacy error page does not surface the DoH
+    // domain, learn-more link, exclude-domain button, or settings shortcut
+    // that the legacy page provides for TRR-only failures. Fall back to the
+    // legacy page until the felt privacy page supports this case.
+    if (
+      resolvedErrorId === "dnsNotFound" &&
+      !gNoConnectivity &&
+      RPMIsTRROnlyFailure()
+    ) {
       return false;
     }
 
-    const id = NetErrorCard.getCustomErrorID(
-      errorInfo.errorCodeString || gErrorCode
-    );
-    return isFeltPrivacySupported(id);
+    return resolvedErrorId !== null;
   }
 
   constructor() {
@@ -153,6 +160,7 @@ export class NetErrorCard extends MozLitElement {
     document.dispatchEvent(
       new CustomEvent("AboutNetErrorLoad", { bubbles: true })
     );
+    this.focusTryAgainButton();
   }
 
   shouldHideExceptionButton() {
@@ -171,6 +179,14 @@ export class NetErrorCard extends MozLitElement {
   init() {
     this.hostname = HOST_NAME;
     this.errorInfo = this.getErrorInfo();
+    // isSupported() gates component creation, so resolvedErrorId should never
+    // be null here. getErrorConfig() guards against it defensively regardless.
+    this.resolvedErrorId = resolveErrorID({
+      errorCodeString: this.errorInfo.errorCodeString,
+      gErrorCode,
+      noConnectivity: gNoConnectivity,
+      vpnActive: VPN_ACTIVE,
+    });
     this.errorConfig = this.getErrorConfig();
     this.hideExceptionButton = this.shouldHideExceptionButton();
 
@@ -189,6 +205,19 @@ export class NetErrorCard extends MozLitElement {
         "securityUiCerterror",
         "loadAboutcerterror",
         this.errorInfo
+      );
+    }
+
+    // nssFailure2 are TLS errors which are tracked by load_abouttlserror
+    if (!gIsCertError && gErrorCode !== "nssFailure2" && !isCaptive()) {
+      let neterrorInfo = Object.assign({}, this.errorInfo);
+      if (!neterrorInfo.errorCodeString) {
+        neterrorInfo.errorCodeString = gErrorCode;
+      }
+      recordSecurityUITelemetry(
+        "securityUiNeterror",
+        "loadAboutneterror",
+        neterrorInfo
       );
     }
 
@@ -233,13 +262,13 @@ export class NetErrorCard extends MozLitElement {
 
   // Check for alternate host for dnsNotFound errors.
   checkForDomainSuggestions() {
-    if (gErrorCode == "dnsNotFound" && !this.isTRROnlyFailure()) {
+    if (this.resolvedErrorId === "dnsNotFound" && !this.isTRROnlyFailure()) {
       RPMCheckAlternateHostAvailable();
     }
   }
 
   isTRROnlyFailure() {
-    return gErrorCode == "dnsNotFound" && RPMIsTRROnlyFailure();
+    return this.resolvedErrorId === "dnsNotFound" && RPMIsTRROnlyFailure();
   }
 
   checkAndRecordTRRTelemetry() {
@@ -274,6 +303,21 @@ export class NetErrorCard extends MozLitElement {
   handlePrefChangeDetected() {
     this.showPrefReset = true;
     this.focusPrefResetButton();
+  }
+
+  async focusTryAgainButton() {
+    await this.getUpdateComplete();
+
+    if (window.top != window) {
+      return;
+    }
+
+    if (!this.tryAgainButton) {
+      return;
+    }
+
+    await this.tryAgainButton.updateComplete;
+    this.tryAgainButton.focus();
   }
 
   async focusPrefResetButton() {
@@ -313,22 +357,42 @@ export class NetErrorCard extends MozLitElement {
   }
 
   getErrorInfo() {
-    return gIsCertError
-      ? document.getFailedCertSecurityInfo()
-      : document.getNetErrorInfo();
+    try {
+      return gIsCertError
+        ? document.getFailedCertSecurityInfo()
+        : document.getNetErrorInfo();
+    } catch {
+      return { errorCodeString: "" };
+    }
   }
 
   getErrorConfig() {
-    const id = NetErrorCard.getCustomErrorID(
-      this.errorInfo.errorCodeString || gErrorCode
-    );
+    const id = this.resolvedErrorId;
+    if (!id) {
+      return {};
+    }
     const errorConfig = getResolvedErrorConfig(id, {
       hostname: this.hostname,
       errorInfo: this.errorInfo,
       cssClass: getCSSClass(),
       domainMismatchNames: this.domainMismatchNames,
+      mitmName: this.errorInfo?.issuerCommonName ?? "",
       offline: gOffline,
+      filePath: getFilePath(),
+      showOSXPermissionWarning:
+        !gIsCertError && RPMShowOSXLocalNetworkPermissionWarning(),
     });
+
+    if (errorConfig.checkClockSkew && gIsCertError) {
+      const now = Date.now();
+      if (detectClockSkew(this.errorInfo, now)) {
+        this.showCustomNetErrorCard = true;
+        return getResolvedErrorConfig("CLOCK_SKEW_ERROR", {
+          hostname: this.hostname,
+          now,
+        });
+      }
+    }
 
     if (errorConfig.customNetError) {
       this.showCustomNetErrorCard = true;
@@ -349,8 +413,7 @@ export class NetErrorCard extends MozLitElement {
       return null;
     }
 
-    // Determine element ID based on error type
-    const elementId = gIsCertError ? "certErrorIntro" : "netErrorIntro";
+    const elementId = "error-intro";
 
     if (Array.isArray(config.introContent)) {
       return html`<p id=${elementId}>
@@ -368,12 +431,8 @@ export class NetErrorCard extends MozLitElement {
 
     const { dataL10nId, dataL10nArgs } = config.introContent;
 
-    // Handle NS_ERROR_BASIC_HTTP_AUTH_DISABLED special case with additional content
     if (config.errorCode === "NS_ERROR_BASIC_HTTP_AUTH_DISABLED") {
-      return html`<p
-          id="fp-http-auth-disabled-intro-text"
-          data-l10n-id=${dataL10nId}
-        ></p>
+      return html`<p id=${elementId} data-l10n-id=${dataL10nId}></p>
         ${this.hideExceptionButton
           ? html`<p
               id="fp-http-auth-disabled-secure-connection-text"
@@ -413,8 +472,10 @@ export class NetErrorCard extends MozLitElement {
     );
 
     return html`<div class="advanced-container">
-      <h2 data-l10n-id="fp-certerror-advanced-title"></h2>
-      ${content}
+      ${EXPERT_BAD_CERT
+        ? null
+        : html`<h2 data-l10n-id="fp-certerror-advanced-title"></h2>`}
+      ${EXPERT_BAD_CERT ? this.certErrorCodeTemplate() : null} ${content}
     </div>`;
   }
 
@@ -461,6 +522,23 @@ export class NetErrorCard extends MozLitElement {
 
   getNSSErrorWhyDangerousL10nId(errorString) {
     return errorString.toLowerCase().replace(/_/g, "-");
+  }
+
+  certErrorCodeTemplate() {
+    if (!this.errorConfig?.errorCode || !gIsCertError) {
+      return null;
+    }
+    return html`<p>
+      <a
+        id="errorCode"
+        data-l10n-id="fp-cert-error-code"
+        data-l10n-name="error-code-link"
+        data-telemetry-id="error_code_link"
+        data-l10n-args='{"error": "${this.errorConfig.errorCode}"}'
+        @click=${this.toggleCertErrorDebugInfoShowing}
+        href="#certificateErrorDebugInformation"
+      ></a>
+    </p>`;
   }
 
   advancedSectionTemplate(params) {
@@ -515,24 +593,12 @@ export class NetErrorCard extends MozLitElement {
               data-l10n-id=${learnMoreL10nId}
               data-l10n-args=${JSON.stringify(learnMoreL10nArgs)}
               data-telemetry-id="learn_more_link"
-              id="learnMoreLink"
+              id="error-learn-more-link"
               @click=${this.handleTelemetryClick}
             ></a>
           </p>`
         : null}
-      ${this.errorConfig?.errorCode && gIsCertError
-        ? html`<p>
-            <a
-              id="errorCode"
-              data-l10n-id="fp-cert-error-code"
-              data-l10n-name="error-code-link"
-              data-telemetry-id="error_code_link"
-              data-l10n-args='{"error": "${this.errorConfig.errorCode}"}'
-              @click=${this.toggleCertErrorDebugInfoShowing}
-              href="#certificateErrorDebugInformation"
-            ></a>
-          </p>`
-        : null}
+      ${EXPERT_BAD_CERT ? null : this.certErrorCodeTemplate()}
       ${this.errorConfig?.errorCode && !gIsCertError
         ? html`<p
             data-l10n-id="fp-cert-error-code"
@@ -548,7 +614,8 @@ export class NetErrorCard extends MozLitElement {
       ${!this.hideExceptionButton
         ? html` <moz-button
             id="exception-button"
-            data-l10n-id="fp-certerror-override-exception-button"
+            data-l10n-id="fp-certerror-override-exception-button-2"
+            data-l10n-attrs="accesskey"
             data-l10n-args=${JSON.stringify({ hostname: this.hostname })}
             data-telemetry-id="exception_button"
             @click=${this.handleProceedToUrlClick}
@@ -600,14 +667,19 @@ export class NetErrorCard extends MozLitElement {
   mapCustomNetErrorConfigToParams(customNetError, config) {
     const params = {
       titleL10nId: customNetError.titleL10nId,
+      showResponseStatus: customNetError.showResponseStatus,
       whyDangerousL10nId: customNetError.whyDangerousL10nId,
       whyDangerousL10nArgs: customNetError.whyDangerousL10nArgs,
       whyDidThisHappenL10nId: customNetError.whyDidThisHappenL10nId,
       whyDidThisHappenL10nArgs: customNetError.whyDidThisHappenL10nArgs,
       whatCanYouDoL10nId: customNetError.whatCanYouDoL10nId,
       whatCanYouDoL10nArgs: customNetError.whatCanYouDoL10nArgs,
+      whatCanYouDoItems: customNetError.whatCanYouDoItems,
       learnMoreL10nId: customNetError.learnMoreL10nId,
       learnMoreSupportPage: customNetError.learnMoreSupportPage,
+      errorCode:
+        this.errorInfo?.errorCodeString ||
+        (customNetError.showErrorCode ? config.errorCode : null),
       buttons: {
         tryAgain: config.buttons?.showTryAgain,
         goBack: config.buttons?.showGoBack && window.self === window.top,
@@ -632,17 +704,42 @@ export class NetErrorCard extends MozLitElement {
     return params;
   }
 
+  returnButtonTemplate() {
+    return html`<moz-button
+      type="primary"
+      data-l10n-id="fp-certerror-return-to-previous-page-recommended-button-2"
+      data-l10n-attrs="accesskey"
+      data-telemetry-id="return_button_adv"
+      id="returnButton"
+      @click=${this.handleGoBackClick}
+    ></moz-button>`;
+  }
+
+  tryAgainButtonTemplate() {
+    return html`<moz-button
+      id="tryAgainButton"
+      type="primary"
+      data-l10n-id="neterror-try-again-button-2"
+      data-l10n-attrs="accesskey"
+      data-telemetry-id="try_again_button"
+      @click=${this.handleTryAgain}
+    ></moz-button>`;
+  }
+
   customNetErrorSectionTemplate(params) {
     const {
       titleL10nId,
+      showResponseStatus,
       whyDangerousL10nId,
       whyDangerousL10nArgs,
       whyDidThisHappenL10nId,
       whyDidThisHappenL10nArgs,
       whatCanYouDoL10nId,
       whatCanYouDoL10nArgs,
+      whatCanYouDoItems,
       learnMoreL10nId,
       learnMoreSupportPage,
+      errorCode,
       buttons = {},
       useAdvancedSection,
     } = params;
@@ -660,6 +757,25 @@ export class NetErrorCard extends MozLitElement {
       learnMoreHref = baseURL + learnMoreSupportPage;
     }
 
+    let whatCanYouDoSection = null;
+    if (whatCanYouDoItems?.length) {
+      whatCanYouDoSection = html`<div>
+        <h3 data-l10n-id="fp-certerror-what-can-you-do"></h3>
+        <ul class="what-can-you-do-list">
+          ${whatCanYouDoItems.map(id => html`<li data-l10n-id=${id}></li>`)}
+        </ul>
+      </div>`;
+    } else if (whatCanYouDoL10nId) {
+      whatCanYouDoSection = html`<div>
+        <h3 data-l10n-id="fp-certerror-what-can-you-do"></h3>
+        <p
+          id="whatCanYouDo"
+          data-l10n-id=${whatCanYouDoL10nId}
+          data-l10n-args=${JSON.stringify(whatCanYouDoL10nArgs)}
+        ></p>
+      </div>`;
+    }
+
     const content = html`
       ${whyDangerousL10nId
         ? html`<div>
@@ -670,16 +786,7 @@ export class NetErrorCard extends MozLitElement {
             ></p>
           </div>`
         : null}
-      ${whatCanYouDoL10nId
-        ? html`<div>
-            <h3 data-l10n-id="fp-certerror-what-can-you-do"></h3>
-            <p
-              id="whatCanYouDo"
-              data-l10n-id=${whatCanYouDoL10nId}
-              data-l10n-args=${JSON.stringify(whatCanYouDoL10nArgs)}
-            ></p>
-          </div>`
-        : null}
+      ${whatCanYouDoSection}
       ${whyDidThisHappenL10nId
         ? html`<div>
             <h3 data-l10n-id="fp-certerror-what-can-you-do"></h3>
@@ -695,22 +802,22 @@ export class NetErrorCard extends MozLitElement {
               href=${learnMoreHref}
               data-l10n-id=${learnMoreL10nId}
               data-telemetry-id="learn_more_link"
-              id="neterror-learn-more-link"
+              id="error-learn-more-link"
               @click=${this.handleTelemetryClick}
               rel="noopener noreferrer"
               target="_blank"
             ></a>
           </p>`
         : null}
+      ${errorCode
+        ? html`<p
+            data-l10n-id="fp-cert-error-code"
+            data-l10n-args=${JSON.stringify({ error: errorCode })}
+          ></p>`
+        : null}
       ${tryAgain
         ? html`<moz-button-group>
-            <moz-button
-              id="tryAgainButton"
-              type="primary"
-              data-l10n-id="neterror-try-again-button"
-              data-telemetry-id="try_again_button"
-              @click=${this.handleTryAgain}
-            ></moz-button>
+            ${this.tryAgainButtonTemplate()}
             ${this.showTrrSettingsButton
               ? html`<moz-button
                   id="trrSettingsButton"
@@ -724,39 +831,27 @@ export class NetErrorCard extends MozLitElement {
         : null}
       ${goBack
         ? html`<moz-button-group
-            ><moz-button
-              type="primary"
-              data-l10n-id="fp-certerror-return-to-previous-page-recommended-button"
-              data-telemetry-id="return_button_adv"
-              id="returnButton"
-              @click=${this.handleGoBackClick}
-            ></moz-button
-          ></moz-button-group>`
+            >${this.returnButtonTemplate()}</moz-button-group
+          >`
         : null}
     `;
 
-    return html`<h1 id="neterror-title-text" data-l10n-id=${titleL10nId}></h1>
+    return html`<h1 id="error-title" data-l10n-id=${titleL10nId}></h1>
       ${this.introContentTemplate()}
+      ${showResponseStatus && this.errorInfo?.responseStatus >= 400
+        ? html`<p
+            id="response-status-label"
+            data-l10n-id="neterror-response-status-code"
+            data-l10n-args=${JSON.stringify({
+              responsestatus: this.errorInfo.responseStatus,
+              responsestatustext: this.errorInfo.responseStatusText ?? "",
+            })}
+          ></p>`
+        : null}
       ${useAdvancedSection
         ? html`<moz-button-group>
-            ${goBack
-              ? html`<moz-button
-                  type="primary"
-                  data-l10n-id="fp-certerror-return-to-previous-page-recommended-button"
-                  data-telemetry-id="return_button_adv"
-                  id="returnButton"
-                  @click=${this.handleGoBackClick}
-                ></moz-button>`
-              : null}
-            ${tryAgain
-              ? html`<moz-button
-                  id="tryAgainButton"
-                  type="primary"
-                  data-l10n-id="neterror-try-again-button"
-                  data-telemetry-id="try_again_button"
-                  @click=${this.handleTryAgain}
-                ></moz-button>`
-              : null}
+            ${goBack ? this.returnButtonTemplate() : null}
+            ${tryAgain ? this.tryAgainButtonTemplate() : null}
             <moz-button
               id="advanced-button"
               data-l10n-id=${this.advancedShowing
@@ -981,40 +1076,42 @@ export class NetErrorCard extends MozLitElement {
     }
 
     const { bodyTitleL10nId, image } = this.errorConfig;
-    const img =
-      image ?? "chrome://global/skin/illustrations/security-error.svg";
+    const {
+      src,
+      alt = "",
+      className,
+    } = image ?? NET_ERROR_ILLUSTRATIONS.securityError;
     const title = bodyTitleL10nId ?? "fp-certerror-body-title";
 
     return html`<link
         rel="stylesheet"
         href="chrome://global/skin/aboutNetError.css"
       />
-      <article class="felt-privacy-container">
+      <article
+        class="felt-privacy-container"
+        aria-labelledby="error-title"
+        aria-describedby="error-intro whatCanYouDo"
+      >
         <div class="img-container">
-          <img src=${img} />
+          <img src=${src} class=${ifDefined(className)} alt=${alt} />
         </div>
         <div class="container">
           ${this.showCustomNetErrorCard
             ? html`${this.customNetErrorContainerTemplate()}`
-            : html`<h1 id="certErrorBodyTitle" data-l10n-id=${title}></h1>
+            : html`<h1 id="error-title" data-l10n-id=${title}></h1>
                 ${this.introContentTemplate()}
                 <moz-button-group
-                  ><moz-button
-                    type="primary"
-                    data-l10n-id="fp-certerror-return-to-previous-page-recommended-button"
-                    data-telemetry-id="return_button_adv"
-                    id="returnButton"
-                    @click=${this.handleGoBackClick}
-                  ></moz-button
-                  ><moz-button
-                    id="advanced-button"
-                    data-l10n-id=${this.advancedShowing
-                      ? "fp-certerror-hide-advanced-button"
-                      : "fp-certerror-advanced-button"}
-                    data-telemetry-id="advanced_button"
-                    @click=${this.toggleAdvancedShowing}
-                  ></moz-button
-                ></moz-button-group>
+                  >${this.returnButtonTemplate()}${EXPERT_BAD_CERT
+                    ? null
+                    : html`<moz-button
+                        id="advanced-button"
+                        data-l10n-id=${this.advancedShowing
+                          ? "fp-certerror-hide-advanced-button"
+                          : "fp-certerror-advanced-button"}
+                        data-telemetry-id="advanced_button"
+                        @click=${this.toggleAdvancedShowing}
+                      ></moz-button>`}</moz-button-group
+                >
                 ${this.advancedContainerTemplate()}
                 ${this.certErrorDebugInfoTemplate()}`}
         </div>

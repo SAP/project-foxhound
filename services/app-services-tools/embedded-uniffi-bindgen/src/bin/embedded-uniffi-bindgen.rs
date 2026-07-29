@@ -3,5 +3,5 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 fn main() {
-    unreachable!("a place-holder for the app-services monorepo migration");
+    embedded_uniffi_bindgen::main().unwrap()
 }

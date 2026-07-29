@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s تاسو ته بشپړ کنټرول درکوي.</p>\n<p>دا د یو شخصي براوزر په توګه وکاروئ:\n<ul>\n<li>په همدې کاريال کې لټون او براوز کول</li>\n<li>تعقیبوونکي بندول (یا د تنظیماتو له لارې یې اجازه ورکول)</li>\n<li>پاکول، تر څو کوکيز، پلټنې او د براوزر تاريخچه ړنګه شي</li>\n</ul> </p>\n<p>%1$s د موزيلا لخوا جوړ شوی دی. زموږ موخه یو سالم او پرانیستي انټرنېټ ته وده ورکول دي.<br/>\n<a href=\"%2$s\">نور مالومات</a></p>\n]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s تاسو ته بشپړ کنټرول درکوي.</p>\n<p>دا د یو شخصي براوزر په توګه وکاروئ:\n<ul>\n<li>په همدې کاريال کې لټون او براوز کول</li>\n<li>تعقیبوونکي بندول (یا د تنظیماتو له لارې یې اجازه ورکول)</li>\n<li>پاکول، تر څو کوکيز، پلټنې او د براوزر تاريخچه ړنګه شي</li>\n</ul> </p>\n<p>%1$s د موزيلا لخوا جوړ شوی دی. زموږ موخه یو سالم او پرانیستي انټرنېټ ته وده ورکول دي.<br/>\n<a href=\"%2$s\">نور مالومات</a></p>\n]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">نور مالومات ترلاسه کړئ</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -245,7 +245,7 @@
   <!-- A link to SUMO at autocomplete settings. -->
   <string name="preference_autocomplete_learn_more">نور مالومات ترلاسه کړئ</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">بېلګه: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">بېلګه: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">بېلګه: example.com</string>
   <!-- Menu item to remove existing autocomplete URLs. -->
@@ -266,7 +266,7 @@
   -->
   <string name="preference_privacy_secure_mode">پټ حالت</string>
   <string name="preference_category_security">خونديتوب</string>
-  <string name="preference_category_mozilla">موزیلا</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">موزیلا</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">نور مالومات ترلاسه کړئ</string>
   <string name="preference_daily_usage_ping_learn_more">نور مالومات تر لاسه کول</string>

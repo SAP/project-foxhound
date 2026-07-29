@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set et sw=2 ts=4: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -44,8 +42,8 @@ class nsNotifyAddrListener : public nsINetworkLinkService,
                                    mozilla::SHA1Sum& sha1);
 
  protected:
-  bool mLinkUp{true};  // assume true by default
-  bool mStatusKnown{false};
+  mozilla::Atomic<bool, mozilla::Relaxed> mLinkUp{true};
+  mozilla::Atomic<bool, mozilla::Relaxed> mStatusKnown{false};
   bool mCheckAttempted{false};
 
   nsresult Shutdown(void);
@@ -68,10 +66,10 @@ class nsNotifyAddrListener : public nsINetworkLinkService,
   void calculateNetworkId(void);
   bool findMac(char* gateway);
 
-  mozilla::Mutex mMutex MOZ_UNANNOTATED{"nsNotifyAddrListener::mMutex"};
-  nsCString mNetworkId;
-  nsTArray<nsCString> mDnsSuffixList;
-  nsTArray<mozilla::net::NetAddr> mDNSResolvers;
+  mozilla::Mutex mMutex{"nsNotifyAddrListener::mMutex"};
+  nsCString mNetworkId MOZ_GUARDED_BY(mMutex);
+  nsTArray<nsCString> mDnsSuffixList MOZ_GUARDED_BY(mMutex);
+  nsTArray<mozilla::net::NetAddr> mDNSResolvers MOZ_GUARDED_BY(mMutex);
 
   HANDLE mCheckEvent{nullptr};
 

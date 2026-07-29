@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s እርስዎን ውሣኔ ሰጪ ያደርግዎታል።</p>\n<p>እንደ የግል አሳሽ ይጠቀሙበት፡-\n<ul>\n<li>በመተግበሪያው ውስጥ ይፈልጉ እና ያስሱ</li>\n<li>መከታተያዎችን ያግዱ (ወይም መከታተያዎችን ለመፍቀድ ቅንብሮችን ያዘምኑ)</li>\n<li>ኩኪዎችን እንዲሁም የፍለጋ እና የአሰሳ ታሪክን ለማጥፋት ይደምስሱ</li>\n</ul> </p>\n<p>%1$s የሚመረተው በሞዚላ ነው። የእኛ ተልዕኮ ጤናማ እና ክፍት በይነመረብን ማዳበር ነው።<br/>\n<a href=\"%2$s\">የበለጠ ለመረዳት</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s እርስዎን ውሣኔ ሰጪ ያደርግዎታል።</p>\n<p>እንደ የግል አሳሽ ይጠቀሙበት፡-\n<ul>\n<li>በመተግበሪያው ውስጥ ይፈልጉ እና ያስሱ</li>\n<li>መከታተያዎችን ያግዱ (ወይም መከታተያዎችን ለመፍቀድ ቅንብሮችን ያዘምኑ)</li>\n<li>ኩኪዎችን እንዲሁም የፍለጋ እና የአሰሳ ታሪክን ለማጥፋት ይደምስሱ</li>\n</ul> </p>\n<p>%1$s የሚመረተው በሞዚላ ነው። የእኛ ተልዕኮ ጤናማ እና ክፍት በይነመረብን ማዳበር ነው።<br/>\n<a href=\"%2$s\">የበለጠ ለመረዳት</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">ግላዊነት እና ደህንነት</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -249,7 +249,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">ለጥፍ ወይም ግባ URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">ምሳሌ: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">ምሳሌ: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">ምሳሌ : ምሳሌ.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -321,15 +321,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">አከናውን %1$s ነባሪ አሳሽ</string>
-  <string name="preference_category_mozilla">ሞዚላ</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">ሞዚላ</string>
   <string name="preference_mozilla_telemetry2">የአጠቃቀም ውሂብ ይላኩ</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">ተጨማሪ ይወቁ</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">ሞዚላ %1$s ለሁሉም ለማቅረብ እና ለማሻሻል የሚያስፈልገንን ብቻ ለመሰብሰብ ይጥራል</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">ሞዚላ %1$s ለሁሉም ለማቅረብ እና ለማሻሻል የሚያስፈልገንን ብቻ ለመሰብሰብ ይጥራል</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">ዕለታዊ አጠቃቀም ማሳወቂያ</string>
-  <string name="preference_daily_usage_ping_description">ይህ Mozilla ንቁ ተጠቃሚዎችን ለመገመት ይረዳል።</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">ይህ Mozilla ንቁ ተጠቃሚዎችን ለመገመት ይረዳል።</string>
   <string name="preference_daily_usage_ping_learn_more">ተጨማሪ ይወቁ</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">የግላዊነት ማሳወቂያ</string>
@@ -810,7 +810,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">ትርን ዝጋ</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">የብልሽት ሪፖርት ወደ ሞዚላ ይላኩ</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">የብልሽት ሪፖርት ወደ ሞዚላ ይላኩ</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

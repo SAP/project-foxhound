@@ -178,3 +178,50 @@ add_task(async function test_spinner_year_markup() {
 
   await helper.tearDown();
 });
+
+/**
+ * Test that the spinner shows the selection indicator when appropriate
+ */
+add_task(async function test_spinner_selection() {
+  info("Test that the spinner shows the selection indicator when appropriate");
+
+  const inputValue = "2001-01-01";
+  const minValue = "2001-01-01";
+
+  await helper.openPicker(
+    `data:text/html, <input type="date" value="${inputValue}" min="${minValue}">`
+  );
+  helper.click(helper.getElement(MONTH_YEAR));
+
+  // Test that the first item is displayed as selected when it is the initial value
+  const spinnerYear = helper.getElement(SPINNER_YEAR);
+  Assert.ok(
+    spinnerYear.querySelector(".selection"),
+    "When the first item of a spinner is selected, it has the selection class"
+  );
+
+  // Test that infinite scroll wraps the selection when scrolling wraps
+  const spinnerMonth = helper.getElement(SPINNER_MONTH);
+  const spinnerMonthSpinner = spinnerMonth.children[1];
+  const spinnerMonthNext = spinnerMonth.children[2];
+  const monthOptions = Array.from(spinnerMonthSpinner.children);
+  // Select the last item before wrapping occurs
+  while (
+    !monthOptions[monthOptions.length - 3].classList.contains("selection")
+  ) {
+    let changePromise = helper.promiseChange();
+    helper.click(spinnerMonthNext);
+    await changePromise;
+  }
+  // Advance by one more item to trigger wrap
+  let changePromise = helper.promiseChange();
+  helper.click(spinnerMonthNext);
+  await changePromise;
+  Assert.ok(
+    !monthOptions[monthOptions.length - 2].classList.contains("selection") &&
+      spinnerMonthSpinner.querySelector(".selection"),
+    "When an infinite scrolling spinner wraps, the selection also wraps"
+  );
+
+  await helper.tearDown();
+});

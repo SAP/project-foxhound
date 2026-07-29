@@ -9,6 +9,7 @@ support-files = ["head.js"]
 skip-if = [
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1886299
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1886299
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && opt", # Bug 1886299
 ]
 
 ["browser_contextmenu_sendtab.js"]
@@ -20,6 +21,8 @@ https_first_disabled = true
 support-files = ["browser_fxa_web_channel.html"]
 
 ["browser_sendtab_telemetry.js"]
+
+["browser_sendtab_toolbarbutton.js"]
 
 ["browser_signed_out_avatar_variants.js"]
 

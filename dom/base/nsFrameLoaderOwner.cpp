@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -106,7 +104,7 @@ void nsFrameLoaderOwner::ChangeRemotenessCommon(
   // no other blockers. Since we're going to be adding a new blocker as soon as
   // we recreate the frame loader, this is not what we want, so add our own
   // blocker until the process is complete.
-  Document* doc = owner->OwnerDoc();
+  RefPtr<Document> doc = owner->OwnerDoc();
   doc->BlockOnload();
   auto cleanup = MakeScopeExit([&]() { doc->UnblockOnload(false); });
 
@@ -146,7 +144,7 @@ void nsFrameLoaderOwner::ChangeRemotenessCommon(
           MOZ_LOG(gSHIPBFCacheLog, LogLevel::Debug,
                   ("nsFrameLoaderOwner::ChangeRemotenessCommon: store the old "
                    "page in bfcache"));
-          (void)bc->SetIsInBFCache(true);
+          bc->Canonical()->DeactivateDocuments();
           bfcacheEntry->SetFrameLoader(mFrameLoader);
           // Session history owns now the frameloader.
           mFrameLoader = nullptr;

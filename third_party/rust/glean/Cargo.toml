@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.87"
+rust-version = "1.90"
 name = "glean"
-version = "67.0.0"
+version = "67.3.2"
 authors = [
     "Jan-Erik Rediger <jrediger@mozilla.com>",
     "The Glean Team <glean-team@mozilla.com>",
@@ -53,6 +53,10 @@ gecko = ["glean-core/gecko"]
 [lib]
 name = "glean"
 path = "src/lib.rs"
+
+[[test]]
+name = "alloc_size_no_crash"
+path = "tests/alloc_size_no_crash.rs"
 
 [[test]]
 name = "collection_enabled"
@@ -146,7 +150,7 @@ path = "tests/uploader_capabilities.rs"
 version = "0.5"
 
 [dependencies.glean-core]
-version = "67.0.0"
+version = "67.3.2"
 
 [dependencies.inherent]
 version = "1"
@@ -176,9 +180,6 @@ version = "1.0.19"
 
 [dev-dependencies.jsonschema-valid]
 version = "0.5.0"
-
-[dev-dependencies.libc]
-version = "0.2"
 
 [dev-dependencies.serde_json]
 version = "1.0.44"

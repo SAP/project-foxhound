@@ -26,9 +26,10 @@ tags = "newtab"
 ["browser_SmartShortcuts.js"]
 skip-if = [
   "os == 'win' && os_version == '11.26100' && verify-standalone",
+  "os == 'win' && os_version == '11.26200' && verify-standalone",
 ]
 
-["browser_WallpaperThemeWorker.js"]
+["browser_WallpaperThemeUtils.js"]
 
 ["browser_activation_window.js"]
 
@@ -76,6 +77,8 @@ skip-if = [
 skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && socketprocess_networking", # Bug 1945649
 ]
+
+["browser_newtab_sticky_search.js"]
 
 ["browser_newtab_towindow.js"]
 skip-if = [

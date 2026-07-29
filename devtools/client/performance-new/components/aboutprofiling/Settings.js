@@ -640,10 +640,11 @@ function _intervalTextDisplay(value) {
  * Format the entries number for display.
  *
  * @param {number} value
- * @return {string}
+ * @return {React.ReactNode}
  */
 function _entriesTextDisplay(value) {
-  return formatFileSize(value * PROFILE_ENTRY_SIZE);
+  const { size, unitL10nId } = formatFileSize(value * PROFILE_ENTRY_SIZE);
+  return Localized({ id: unitL10nId, $num: size });
 }
 
 /**

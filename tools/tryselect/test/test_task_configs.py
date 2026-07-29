@@ -157,6 +157,14 @@ def mock_root_url(monkeypatch):
     monkeypatch.setenv("TASKCLUSTER_ROOT_URL", TC_URL)
 
 
+@pytest.fixture(autouse=True)
+def mock_get_worker_type(mocker):
+    mocker.patch(
+        "gecko_taskgraph.util.workertypes.get_worker_type",
+        side_effect=lambda gc, worker_type, parameters: ("gecko-1", worker_type),
+    )
+
+
 def test_task_configs(config_patch_resolver, task_config, args, expected):
     parser = ArgumentParser()
 

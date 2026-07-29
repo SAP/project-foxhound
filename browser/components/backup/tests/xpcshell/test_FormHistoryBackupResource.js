@@ -28,17 +28,7 @@ add_task(async function test_measure() {
 
   let formHistoryMeasurement =
     Glean.browserBackup.formHistorySize.testGetValue();
-  let scalars = TelemetryTestUtils.getProcessScalars("parent", false, false);
 
-  // Compare glean vs telemetry measurements
-  TelemetryTestUtils.assertScalar(
-    scalars,
-    "browser.backup.form_history_size",
-    formHistoryMeasurement,
-    "Glean and telemetry measurements for formhistory.sqlite should be equal"
-  );
-
-  // Compare glean measurements vs actual file sizes
   Assert.equal(
     formHistoryMeasurement,
     EXPECTED_FORM_HISTORY_DB_SIZE,

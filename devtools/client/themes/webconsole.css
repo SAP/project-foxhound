@@ -287,14 +287,14 @@
 }
 
 .message > .icon.logpoint {
-  background-image: url(chrome://devtools/content/debugger/images/webconsole-logpoint.svg);
+  background-image: url(chrome://devtools/content/shared/components/images/webconsole-logpoint.svg);
   -moz-context-properties: fill, stroke;
-  fill: var(--theme-graphs-purple);
-  stroke: var(--theme-graphs-purple);
+  fill: var(--theme-breakpoint-logpoint);
+  stroke: var(--theme-breakpoint-logpoint);
 }
 
 .message > .icon.logtrace {
-  background-image: url(chrome://devtools/content/debugger/images/trace.svg);
+  background-image: url(chrome://devtools/content/shared/components/images/trace.svg);
   -moz-context-properties: fill, stroke;
   fill: var(--theme-icon-checked-color);
 }
@@ -453,6 +453,7 @@
 .network.message .network-info .panels {
   min-height: 250px;
 }
+
 /* Response panel needs an absolute height size as the
  * sizing of its content depends on it, it also needs override
  * the inline height set on the panels */
@@ -543,7 +544,8 @@ html #webconsole-notificationbox {
   padding-inline-start: calc(var(--console-inline-start-gutter) - 4px);
   /* Create a new stacking context */
   position: relative;
-  z-index: 0; /* Keep below column resizers */
+  z-index: 0;
+  /* Keep below column resizers */
   /* input icon */
   background-image: url(chrome://devtools/skin/images/webconsole/input.svg);
   background-position-x: calc(10px + var(--console-icon-horizontal-offset));
@@ -739,6 +741,7 @@ a.learn-more-link.webconsole-learn-more-link {
 .theme-dark .message.warn .arrayRightBracket {
   color: var(--theme-body-color);
 }
+
 .theme-dark .message.error .tree.object-inspector,
 .theme-dark .message.warn .tree.object-inspector {
   --console-indent-border-color: var(--theme-body-color);
@@ -769,19 +772,23 @@ a.learn-more-link.webconsole-learn-more-link {
   padding-inline: 4px;
   margin-inline: 2px;
 }
+
 .webconsole-app .jstracer-dom-event {
   background-color: var(--console-tracer-dom-background);
   color: var(--console-tracer-dom-color);
 }
+
 .webconsole-app .jstracer-dom-mutation {
   background-color: var(--console-tracer-dom-background);
   color: var(--console-tracer-dom-color);
   margin-inline-end: 4px;
 }
+
 .webconsole-app .jstracer-implementation {
   background-color: var(--theme-toolbarbutton-checked-hover-background);
   color: var(--theme-toolbarbutton-checked-hover-color);
 }
+
 .webconsole-app .jstracer-display-name {
   color: var(--theme-highlight-blue);
   margin-inline: 2px;

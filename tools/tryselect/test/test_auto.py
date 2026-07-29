@@ -2,7 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from unittest import mock
 
 import mozunit
 import pytest
@@ -37,13 +36,9 @@ def test_returns_zero_exit_code(run_mach):
     assert run_mach(["try", "auto", "--no-push"]) == 0
 
 
-def test_returns_zero_with_job_id(run_mach):
-    """Test that mach try auto returns 0 even when push_to_lando_try returns a job_id."""
-    # Mock push_to_lando_try to return a job_id (simulating actual push)
-    with mock.patch("tryselect.push.push_to_lando_try") as mock_push:
-        mock_push.return_value = 42  # Simulate job_id returned by Lando
-        # Without the fix, this would return 42 instead of 0
-        assert run_mach(["try", "auto"]) == 0
+def test_returns_zero_with_job_id(run_mach, mock_push_to_lando_try):
+    """Test that mach try auto returns 0 even when push_to_lando_try returns job data."""
+    assert run_mach(["try", "auto"]) == 0
 
 
 def test_returns_error_exit_code(run_mach):

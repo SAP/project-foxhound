@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { html } from "chrome://global/content/vendor/lit.all.mjs";
+import { html, nothing } from "chrome://global/content/vendor/lit.all.mjs";
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 import { Preferences } from "chrome://global/content/preferences/Preferences.mjs";
 import { SettingGroupManager } from "chrome://browser/content/preferences/config/SettingGroupManager.mjs";
@@ -23,21 +23,31 @@ const XPCOMUtils = ChromeUtils.importESModule(
 const lazy = XPCOMUtils.declareLazy({
   AIWindow:
     "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
+  ChatStore:
+    "moz-src:///browser/components/aiwindow/ui/modules/ChatStore.sys.mjs",
   GenAI: "resource:///modules/GenAI.sys.mjs",
   MemoryStore:
     "moz-src:///browser/components/aiwindow/services/MemoryStore.sys.mjs",
+  getCachedModelsData:
+    "moz-src:///browser/components/aiwindow/models/Utils.sys.mjs",
 });
+
+let previousAssistantModel = "No model";
 
 Preferences.addAll([
   // browser.ai.control.* prefs defined in main.js
   { id: "browser.ml.chat.provider", type: "string" },
+  { id: "browser.ml.chat.shortcuts.smartwindow", type: "bool" },
   { id: "browser.smartwindow.apiKey", type: "string" },
   { id: "browser.smartwindow.enabled", type: "bool" },
   { id: "browser.smartwindow.endpoint", type: "string" },
   { id: "browser.smartwindow.firstrun.modelChoice", type: "string" },
-  { id: "browser.smartwindow.memories", type: "bool" },
+  { id: "browser.smartwindow.memories.generateFromConversation", type: "bool" },
+  { id: "browser.smartwindow.memories.generateFromHistory", type: "bool" },
   { id: "browser.smartwindow.model", type: "string" },
-  { id: "browser.smartwindow.preferences.endpoint", type: "string" },
+  { id: "browser.smartwindow.customEndpoint", type: "string" },
+  { id: "browser.smartwindow.isDefaultWindow", type: "bool" },
+  { id: "browser.smartwindow.sidebar.openByDefault", type: "bool" },
   { id: "browser.smartwindow.tos.consentTime", type: "int" },
   { id: "browser.preferences.aiControls.showUnavailable", type: "bool" },
 ]);
@@ -77,7 +87,9 @@ Preferences.addSetting({ id: "sidebarChatbotFieldset" });
 Preferences.addSetting({
   id: "aiBlockedMessage",
   deps: ["aiControlDefaultToggle"],
-  visible: deps => deps.aiControlDefaultToggle.value,
+  visible: deps => {
+    return deps.aiControlDefaultToggle.value;
+  },
 });
 
 const AiControlStates = Object.freeze({
@@ -100,10 +112,10 @@ function updateAiControlDefault(state) {
   for (let feature of Object.values(OnDeviceModelManager.features)) {
     if (isBlocked) {
       // Reset to default (blocked) state unless it was already blocked.
-      OnDeviceModelManager.disable(feature);
+      OnDeviceModelManager.block(feature);
     } else if (!isBlocked && !OnDeviceModelManager.isEnabled(feature)) {
       // Reset to default (available) state unless it was manually enabled.
-      OnDeviceModelManager.reset(feature);
+      OnDeviceModelManager.makeAvailable(feature);
     }
   }
   if (isBlocked) {
@@ -119,6 +131,20 @@ function updateAiControlDefault(state) {
 }
 
 class BlockAiConfirmationDialog extends MozLitElement {
+  static properties = {
+    headingL10nId: { type: String },
+    descriptionL10nId: { type: String },
+    isGlobal: { type: Boolean },
+  };
+
+  #resolvers = Promise.withResolvers();
+  #confirmed = false;
+
+  constructor() {
+    super();
+    this.isGlobal = true;
+  }
+
   get dialog() {
     return this.renderRoot.querySelector("dialog");
   }
@@ -131,18 +157,77 @@ class BlockAiConfirmationDialog extends MozLitElement {
     return this.renderRoot.querySelector('moz-button:not([type="primary"])');
   }
 
-  async showModal() {
-    await this.updateComplete;
-    this.dialog.showModal();
+  /**
+   * @param {object} options
+   * @param {boolean} options.all - Show the global block dialog with all features listed
+   * @param {string} [options.headingL10nId] - Custom heading l10n ID for feature-specific dialogs
+   * @param {string} [options.descriptionL10nId] - Custom description l10n ID for feature-specific dialogs
+   * @returns {Promise<boolean>} - Resolves true if the user confirmed, false if cancelled
+   */
+  showModal({ all, headingL10nId, descriptionL10nId }) {
+    this.#resolvers = Promise.withResolvers();
+    this.#confirmed = false;
+    this.isGlobal = !!all;
+    this.headingL10nId = headingL10nId;
+    this.descriptionL10nId = descriptionL10nId;
+    this.updateComplete.then(() => this.dialog.showModal());
+    return this.#resolvers.promise;
   }
 
   handleCancel() {
+    this.#confirmed = false;
     this.dialog.close();
   }
 
   handleConfirm() {
+    this.#confirmed = true;
     this.dialog.close();
-    updateAiControlDefault(AiControlGlobalStates.blocked);
+  }
+
+  globalTemplate() {
+    return html`
+      <p
+        data-l10n-id="preferences-ai-controls-block-confirmation-description"
+      ></p>
+      <p
+        class="ul-prefix-p"
+        data-l10n-id="preferences-ai-controls-block-confirmation-features-start"
+      ></p>
+      <ul>
+        <li
+          data-l10n-id="preferences-ai-controls-block-confirmation-translations"
+        ></li>
+        <li
+          data-l10n-id="preferences-ai-controls-block-confirmation-pdfjs"
+        ></li>
+        <li
+          data-l10n-id="preferences-ai-controls-block-confirmation-tab-group-suggestions"
+        ></li>
+        <li
+          data-l10n-id="preferences-ai-controls-block-confirmation-key-points"
+        ></li>
+        <li
+          data-l10n-id="preferences-ai-controls-block-confirmation-smart-window"
+        ></li>
+        <li
+          data-l10n-id="preferences-ai-controls-block-confirmation-sidebar-chatbot"
+        ></li>
+      </ul>
+      <p
+        data-l10n-id="preferences-ai-controls-block-confirmation-features-after"
+      ></p>
+      <a is="moz-support-link" support-page="firefox-ai-controls"></a>
+    `;
+  }
+
+  descriptionTemplate() {
+    return html`<p data-l10n-id=${this.descriptionL10nId}></p>`;
+  }
+
+  onToggle() {
+    if (!this.dialog.open) {
+      this.#resolvers.resolve(this.#confirmed);
+    }
   }
 
   render() {
@@ -159,48 +244,29 @@ class BlockAiConfirmationDialog extends MozLitElement {
         rel="stylesheet"
         href="chrome://browser/content/preferences/config/block-ai-confirmation-dialog.css"
       />
-      <dialog aria-labelledby="heading" aria-describedby="content">
+      <dialog
+        aria-labelledby="heading"
+        aria-describedby="content"
+        @toggle=${this.onToggle}
+      >
         <div class="dialog-header">
-          <img
-            class="dialog-header-icon"
-            src="chrome://global/skin/icons/block.svg"
-            alt=""
-          />
+          ${this.isGlobal
+            ? html`<img
+                class="dialog-header-icon"
+                src="chrome://global/skin/icons/block.svg"
+                alt=""
+              />`
+            : nothing}
           <h2
             id="heading"
             class="text-box-trim-start"
-            data-l10n-id="preferences-ai-controls-block-confirmation-heading"
+            data-l10n-id=${this.isGlobal
+              ? "preferences-ai-controls-block-confirmation-heading"
+              : this.headingL10nId}
           ></h2>
         </div>
         <div id="content" class="dialog-body">
-          <p
-            data-l10n-id="preferences-ai-controls-block-confirmation-description"
-          ></p>
-          <p
-            class="ul-prefix-p"
-            data-l10n-id="preferences-ai-controls-block-confirmation-features-start"
-          ></p>
-          <ul>
-            <li
-              data-l10n-id="preferences-ai-controls-block-confirmation-translations"
-            ></li>
-            <li
-              data-l10n-id="preferences-ai-controls-block-confirmation-pdfjs"
-            ></li>
-            <li
-              data-l10n-id="preferences-ai-controls-block-confirmation-tab-group-suggestions"
-            ></li>
-            <li
-              data-l10n-id="preferences-ai-controls-block-confirmation-key-points"
-            ></li>
-            <li
-              data-l10n-id="preferences-ai-controls-block-confirmation-sidebar-chatbot"
-            ></li>
-          </ul>
-          <p
-            data-l10n-id="preferences-ai-controls-block-confirmation-features-after"
-          ></p>
-          <a is="moz-support-link" support-page="firefox-ai-controls"></a>
+          ${this.isGlobal ? this.globalTemplate() : this.descriptionTemplate()}
         </div>
         <moz-button-group>
           <moz-button
@@ -237,6 +303,11 @@ const AI_CONTROL_OPTIONS = [
     l10nId: "preferences-ai-controls-state-blocked",
   },
 ];
+
+const modelL10nArgs = key => ({
+  model: lazy.getCachedModelsData()[key].model,
+  ownerName: lazy.getCachedModelsData()[key].ownerName,
+});
 
 /**
  * Validates that a URL is trustworthy (HTTPS or localhost).
@@ -279,7 +350,11 @@ Preferences.addSetting({
       let dialog = /** @type {BlockAiConfirmationDialog} */ (
         document.querySelector("block-ai-confirmation-dialog")
       );
-      dialog.showModal();
+      dialog.showModal({ all: true }).then(confirmed => {
+        if (confirmed) {
+          updateAiControlDefault(AiControlGlobalStates.blocked);
+        }
+      });
     } else {
       updateAiControlDefault(AiControlGlobalStates.available);
     }
@@ -292,16 +367,20 @@ Preferences.addSetting({
  * @param {string} options.id Setting id to create
  * @param {string} options.pref Pref id for the state
  * @param {OnDeviceModelFeaturesEnum} options.feature Feature id for removing models
- * @param {boolean} [options.supportsEnabled] If the feature supports the "enabled" state
  * @param {SettingConfig['getControlConfig']} [options.getControlConfig] A getControlConfig implementation.
+ * @param {() => Promise<boolean>} [options.onBeforeBlock] Optional async callback to show a modal before blocking
  */
 function makeAiControlSetting({
   id,
   pref,
   feature,
-  supportsEnabled = true,
   getControlConfig,
+  onBeforeBlock,
 }) {
+  function recordTelemetry(selection) {
+    Glean.browser.aiControlChanged.record({ feature, selection });
+  }
+
   Preferences.addSetting({
     id,
     pref,
@@ -325,30 +404,46 @@ function makeAiControlSetting({
         );
     },
     get(prefVal, deps) {
+      const aiControlState = OnDeviceModelManager.getAiControlState(feature);
+
       if (
         prefVal == AiControlStates.blocked ||
         (prefVal == AiControlStates.default &&
           deps.aiControlDefault.value == AiControlGlobalStates.blocked) ||
-        OnDeviceModelManager.isBlocked(feature)
+        aiControlState == AiControlStates.blocked
       ) {
         return AiControlStates.blocked;
       }
+
       if (
-        supportsEnabled &&
+        OnDeviceModelManager.hasDistinctEnabledState(feature) &&
         (prefVal == AiControlStates.enabled ||
-          OnDeviceModelManager.isEnabled(feature))
+          aiControlState == AiControlStates.enabled)
       ) {
         return AiControlStates.enabled;
       }
+
       return AiControlStates.available;
     },
-    set(prefVal) {
+    set(prefVal, _, setting) {
+      if (prefVal == AiControlStates.blocked && onBeforeBlock) {
+        setting.onChange();
+        onBeforeBlock().then(confirmed => {
+          if (confirmed) {
+            OnDeviceModelManager.block(feature);
+            recordTelemetry(AiControlStates.blocked);
+          }
+        });
+
+        return setting.value;
+      }
+
       if (prefVal == AiControlStates.available) {
-        OnDeviceModelManager.reset(feature);
+        OnDeviceModelManager.makeAvailable(feature);
       } else if (prefVal == AiControlStates.enabled) {
         OnDeviceModelManager.enable(feature);
       } else if (prefVal == AiControlStates.blocked) {
-        OnDeviceModelManager.disable(feature);
+        OnDeviceModelManager.block(feature);
       }
       return prefVal;
     },
@@ -361,17 +456,30 @@ function makeAiControlSetting({
         deps.aiControlsShowUnavailable.value
       );
     },
-    onUserChange(selection) {
-      Glean.browser.aiControlChanged.record({ feature, selection });
+    onUserChange(selection, _, setting) {
+      // Only record telemetry if the selection was actually saved
+      // since selecting "blocked" shows a block confirmation dialog that the user may cancel
+      if (selection === setting.value) {
+        recordTelemetry(selection);
+      }
     },
-    getControlConfig,
+    getControlConfig(config, deps, setting) {
+      if (!OnDeviceModelManager.hasDistinctEnabledState(feature)) {
+        config.options = config.options.filter(
+          option => option.value != AiControlStates.enabled
+        );
+      }
+
+      return getControlConfig
+        ? getControlConfig(config, deps, setting)
+        : config;
+    },
   });
 }
 makeAiControlSetting({
   id: "aiControlTranslationsSelect",
   pref: "browser.ai.control.translations",
   feature: OnDeviceModelManager.features.Translations,
-  supportsEnabled: false,
   getControlConfig(config, _, setting) {
     let isBlocked = setting.value == AiControlStates.blocked;
     let moreSettingsLink = config.options.at(-1);
@@ -428,23 +536,30 @@ Preferences.addSetting(
         );
     },
     get(prefVal, deps) {
+      const aiControlState = OnDeviceModelManager.getAiControlState(
+        this.feature
+      );
+
       if (
         prefVal == AiControlStates.blocked ||
         (prefVal == AiControlStates.default &&
           deps.aiControlDefault.value == AiControlGlobalStates.blocked) ||
-        OnDeviceModelManager.isBlocked(this.feature)
+        aiControlState == AiControlStates.blocked
       ) {
         return AiControlStates.blocked;
       }
-      return deps.chatbotProvider.value || AiControlStates.available;
+
+      return aiControlState == AiControlStates.enabled
+        ? deps.chatbotProvider.value
+        : aiControlState;
     },
     set(inputVal, deps) {
       if (inputVal == AiControlStates.blocked) {
-        OnDeviceModelManager.disable(this.feature);
+        OnDeviceModelManager.block(this.feature);
         return inputVal;
       }
       if (inputVal == AiControlStates.available) {
-        OnDeviceModelManager.reset(this.feature);
+        OnDeviceModelManager.makeAvailable(this.feature);
         return inputVal;
       }
       if (inputVal) {
@@ -504,32 +619,74 @@ Preferences.addSetting({
   id: "smartWindowEnabled",
   pref: "browser.smartwindow.enabled",
 });
-
-Preferences.addSetting({
-  id: "smartWindowFieldset",
-  deps: ["smartWindowEnabled"],
-  visible: deps => {
-    return deps.smartWindowEnabled.value;
-  },
-});
-
-Preferences.addSetting({
-  id: "aiFeaturesSmartWindowGroup",
-});
-
 Preferences.addSetting({
   id: "smartWindowToConsentTime",
   pref: "browser.smartwindow.tos.consentTime",
 });
 
 Preferences.addSetting({
-  id: "activateSmartWindowLink",
-  deps: ["smartWindowEnabled", "smartWindowToConsentTime"],
-  visible: deps => {
-    return (
-      deps.smartWindowEnabled.value && !deps.smartWindowToConsentTime.value
+  id: "smartWindowFieldset",
+  deps: ["smartWindowEnabled"],
+  visible: deps => deps.smartWindowEnabled.value,
+});
+
+Preferences.addSetting({
+  id: "aiFeaturesSmartWindowGroup",
+});
+
+Preferences.addSetting({ id: "smartWindowControlItem" });
+makeAiControlSetting({
+  id: "aiControlSmartWindowSelect",
+  pref: "browser.ai.control.smartWindow",
+  feature: OnDeviceModelManager.features.SmartWindow,
+  async onBeforeBlock() {
+    const hasChats = !!(await lazy.ChatStore.findRecentConversations(1)).length;
+    const hasMemories = !!(await lazy.MemoryStore.getMemories()).length;
+
+    // if no data, skip modal
+    if (!hasChats && !hasMemories) {
+      return true;
+    }
+
+    const dialog = /** @type {BlockAiConfirmationDialog} */ (
+      document.querySelector("block-ai-confirmation-dialog")
     );
+    let descriptionL10nId;
+
+    if (hasChats && hasMemories) {
+      descriptionL10nId = "smart-window-block-description-both";
+    } else if (hasChats) {
+      descriptionL10nId = "smart-window-block-description-chats";
+    } else {
+      descriptionL10nId = "smart-window-block-description-memories";
+    }
+    return dialog.showModal({
+      all: false,
+      headingL10nId: "smart-window-block-title",
+      descriptionL10nId,
+    });
   },
+  getControlConfig(config) {
+    let isEnabled = OnDeviceModelManager.isEnabled(
+      OnDeviceModelManager.features.SmartWindow
+    );
+
+    config.options = AI_CONTROL_OPTIONS.filter(option => {
+      if (option.value == AiControlStates.available) {
+        return !isEnabled;
+      } else if (option.value == AiControlStates.enabled) {
+        return isEnabled;
+      }
+      return true;
+    });
+    return config;
+  },
+});
+Preferences.addSetting({
+  id: "activateSmartWindowLink",
+  deps: ["aiControlSmartWindowSelect"],
+  visible: deps =>
+    deps.aiControlSmartWindowSelect.value === AiControlStates.available,
   onUserClick(e) {
     e.preventDefault();
     const browser = window.browsingContext.embedderElement;
@@ -539,10 +696,9 @@ Preferences.addSetting({
 
 Preferences.addSetting({
   id: "personalizeSmartWindowButton",
-  deps: ["smartWindowEnabled", "smartWindowToConsentTime"],
-  visible: deps => {
-    return deps.smartWindowEnabled.value && deps.smartWindowToConsentTime.value;
-  },
+  deps: ["aiControlSmartWindowSelect"],
+  visible: deps =>
+    deps.aiControlSmartWindowSelect.value == AiControlStates.enabled,
   onUserClick(e) {
     e.preventDefault();
     window.gotoPref("panePersonalizeSmartWindow");
@@ -550,8 +706,18 @@ Preferences.addSetting({
 });
 
 Preferences.addSetting({
-  id: "smartWindowEndpoint",
-  pref: "browser.smartwindow.endpoint",
+  id: "openSidebarByDefault",
+  pref: "browser.smartwindow.sidebar.openByDefault",
+});
+
+Preferences.addSetting({
+  id: "smartCursorInSmartWindow",
+  pref: "browser.ml.chat.shortcuts.smartwindow",
+});
+
+Preferences.addSetting({
+  id: "smartWindowIsDefaultWindow",
+  pref: "browser.smartwindow.isDefaultWindow",
 });
 
 Preferences.addSetting({
@@ -565,8 +731,8 @@ Preferences.addSetting({
 });
 
 Preferences.addSetting({
-  id: "smartWindowPreferencesEndpoint",
-  pref: "browser.smartwindow.preferences.endpoint",
+  id: "smartWindowCustomEndpoint",
+  pref: "browser.smartwindow.customEndpoint",
 });
 
 Preferences.addSetting({
@@ -574,51 +740,138 @@ Preferences.addSetting({
   pref: "browser.smartwindow.firstrun.modelChoice",
 });
 
-Preferences.addSetting({
-  id: "modelSelection",
-  deps: [
-    "smartWindowModel",
-    "smartWindowFirstRunModelChoice",
-    "smartWindowEndpoint",
-    "smartWindowPreferencesEndpoint",
-  ],
-  get(_, deps) {
-    const modelChoice = deps.smartWindowFirstRunModelChoice.value;
-    if (modelChoice) {
-      return modelChoice;
-    }
-
-    // Fall back to no selection
-    return null;
-  },
-  set(value, deps) {
-    // Save model selection
-    // Preset models save pref immediately, "Custom" waits for clicking the Save button
-    if (value !== "0") {
-      // Switching to preset
-      const endpointEl = document.getElementById("customModelEndpoint");
-      const currentEndpoint = endpointEl?.value?.trim();
-      if (currentEndpoint) {
-        deps.smartWindowPreferencesEndpoint.value = currentEndpoint;
+{
+  // Track when the custom radio is selected but not yet saved
+  // Defer writing modelChoice = "0" until Save button is clicked
+  let customRadioSelected = false;
+  Preferences.addSetting({
+    id: "modelSelection",
+    deps: [
+      "smartWindowModel",
+      "smartWindowFirstRunModelChoice",
+      "smartWindowCustomEndpoint",
+    ],
+    get(_, deps) {
+      if (customRadioSelected) {
+        return "0";
       }
 
-      Services.prefs.clearUserPref("browser.smartwindow.endpoint");
-    }
+      const modelChoice = deps.smartWindowFirstRunModelChoice.value;
+      if (modelChoice) {
+        return modelChoice;
+      }
 
-    // Write index to firstrun.modelChoice
-    deps.smartWindowFirstRunModelChoice.value = value;
-  },
-});
+      // Fall back to no selection
+      return null;
+    },
+    set(value, deps, setting) {
+      const prev = deps.smartWindowFirstRunModelChoice.value;
+      previousAssistantModel = prev
+        ? lazy.getCachedModelsData()[String(prev)].model
+        : "No model";
+
+      customRadioSelected = value === "0";
+      if (customRadioSelected) {
+        // If the user has previously saved a custom model, switching back to
+        // the custom radio re-activates that saved configuration so the form
+        // reflects the active state and Save stays disabled until edited.
+        if (deps.smartWindowCustomEndpoint.value && prev !== "0") {
+          deps.smartWindowFirstRunModelChoice.value = "0";
+        }
+        setting.onChange();
+        return;
+      }
+      // Switching to preset
+      deps.smartWindowFirstRunModelChoice.value = value;
+    },
+    onUserChange(value, _) {
+      // sending telemetry only for the preset models
+      // custom model telemetry is sent after user hits the save button
+      if (value !== "0") {
+        const new_model = lazy.getCachedModelsData()[String(value)].model;
+        Glean.smartWindow.settingsModel.record({
+          previous_model: previousAssistantModel,
+          new_model,
+        });
+        previousAssistantModel = new_model;
+      }
+    },
+  });
+}
+
+const CUSTOM_MODEL_FIELD_IDS = new Set([
+  "customModelName",
+  "customModelEndpoint",
+  "customModelAuthToken",
+]);
+
+// Tracks which fields the user has actually edited. An input may show a
+// fallback value that doesn't match what's saved, so without this the form
+// would look unsaved before anyone has typed anything.
+const editedCustomModelFields = new WeakSet();
+
+function getCustomModelFieldValue(id, fallback = "") {
+  const field = document.getElementById(id);
+  if (!field || !editedCustomModelFields.has(field)) {
+    return fallback;
+  }
+  return field.value?.trim() ?? "";
+}
+
+function getCustomModelFormValues(deps) {
+  return {
+    modelName: getCustomModelFieldValue(
+      "customModelName",
+      deps.smartWindowModel.value || ""
+    ),
+    endpoint: getCustomModelFieldValue(
+      "customModelEndpoint",
+      deps.smartWindowCustomEndpoint.value || ""
+    ),
+    authToken: getCustomModelFieldValue(
+      "customModelAuthToken",
+      deps.smartWindowApiKey.value || ""
+    ),
+  };
+}
+
+function hasUnsavedCustomModelChanges(deps) {
+  // Compare each form value to what is actually saved.
+  const { modelName, endpoint, authToken } = getCustomModelFormValues(deps);
+  return (
+    modelName !== (deps.smartWindowModel.value || "") ||
+    endpoint !== (deps.smartWindowCustomEndpoint.value || "") ||
+    authToken !== (deps.smartWindowApiKey.value || "")
+  );
+}
+
+function isCustomModelSaveButtonDisabled(deps) {
+  const { endpoint } = getCustomModelFormValues(deps);
+  return !validateEndpointUrl(endpoint) || !hasUnsavedCustomModelChanges(deps);
+}
+
+// Any edit to a custom-model field re-emits change on the form-row setting;
+// the Save button and confirmation depend on it and re-evaluate their
+// enabled/disabled states from the live form values.
+function setupCustomModelFormChangeListener(emitChange) {
+  const handler = e => {
+    if (CUSTOM_MODEL_FIELD_IDS.has(e.target?.id)) {
+      editedCustomModelFields.add(e.target);
+      emitChange();
+    }
+  };
+  document.addEventListener("input", handler);
+  document.addEventListener("change", handler);
+  return () => {
+    document.removeEventListener("input", handler);
+    document.removeEventListener("change", handler);
+  };
+}
 
 Preferences.addSetting({
   id: "customModelName",
-  deps: [
-    "smartWindowFirstRunModelChoice",
-    "smartWindowModel",
-    "smartWindowEndpoint",
-    "smartWindowPreferencesEndpoint",
-  ],
-  visible: deps => deps.smartWindowFirstRunModelChoice.value === "0",
+  deps: ["smartWindowModel", "modelSelection"],
+  visible: deps => deps.modelSelection.value === "0",
   get(_, deps) {
     return deps.smartWindowModel.value || "";
   },
@@ -626,43 +879,17 @@ Preferences.addSetting({
 
 Preferences.addSetting({
   id: "customModelEndpoint",
-  deps: [
-    "smartWindowFirstRunModelChoice",
-    "smartWindowEndpoint",
-    "smartWindowPreferencesEndpoint",
-  ],
-  visible: deps => deps.smartWindowFirstRunModelChoice.value === "0",
+  deps: ["smartWindowCustomEndpoint", "modelSelection"],
+  visible: deps => deps.modelSelection.value === "0",
   get(_, deps) {
-    const defaultEndpoint = Services.prefs
-      .getDefaultBranch("")
-      .getStringPref("browser.smartwindow.endpoint", "");
-
-    // Show saved endpoint if user has set a custom value if its different from default
-    if (
-      deps.smartWindowEndpoint.value &&
-      deps.smartWindowEndpoint.value !== defaultEndpoint
-    ) {
-      return deps.smartWindowEndpoint.value;
-    }
-
-    // Show backup endpoint when switching back to custom
-    if (deps.smartWindowPreferencesEndpoint.value) {
-      return deps.smartWindowPreferencesEndpoint.value;
-    }
-    return "";
-  },
-  onUserChange(value) {
-    const saveButton = document.getElementById("customModelSaveButton");
-    if (saveButton) {
-      saveButton.disabled = !validateEndpointUrl(value?.trim());
-    }
+    return deps.smartWindowCustomEndpoint.value || "";
   },
 });
 
 Preferences.addSetting({
   id: "customModelAuthToken",
-  deps: ["smartWindowFirstRunModelChoice", "smartWindowApiKey"],
-  visible: deps => deps.smartWindowFirstRunModelChoice.value === "0",
+  deps: ["smartWindowApiKey", "modelSelection"],
+  visible: deps => deps.modelSelection.value === "0",
   get(_, deps) {
     if (deps.smartWindowApiKey.value) {
       return deps.smartWindowApiKey.value;
@@ -673,8 +900,31 @@ Preferences.addSetting({
 
 Preferences.addSetting({
   id: "customModelHelpLink",
-  deps: ["smartWindowFirstRunModelChoice"],
-  visible: deps => deps.smartWindowFirstRunModelChoice.value === "0",
+  deps: ["modelSelection"],
+  visible: deps => deps.modelSelection.value === "0",
+});
+
+Preferences.addSetting({
+  id: "customModelSaveRow",
+  deps: ["modelSelection"],
+  visible: deps => deps.modelSelection.value === "0",
+  setup: setupCustomModelFormChangeListener,
+});
+
+Preferences.addSetting({
+  id: "customModelSaveConfirmation",
+  deps: [
+    "smartWindowFirstRunModelChoice",
+    "smartWindowModel",
+    "smartWindowApiKey",
+    "smartWindowCustomEndpoint",
+    "modelSelection",
+    "customModelSaveRow",
+  ],
+  visible: deps =>
+    deps.smartWindowFirstRunModelChoice.value === "0" &&
+    deps.modelSelection.value === "0" &&
+    !hasUnsavedCustomModelChanges(deps),
 });
 
 Preferences.addSetting({
@@ -682,18 +932,13 @@ Preferences.addSetting({
   deps: [
     "smartWindowFirstRunModelChoice",
     "smartWindowModel",
-    "smartWindowEndpoint",
     "smartWindowApiKey",
-    "smartWindowPreferencesEndpoint",
+    "smartWindowCustomEndpoint",
+    "modelSelection",
+    "customModelSaveRow",
   ],
-  visible: deps => deps.smartWindowFirstRunModelChoice.value === "0",
-  disabled() {
-    // Read from input element since setting only updates on Save button
-    const endpoint = document
-      .getElementById("customModelEndpoint")
-      ?.value?.trim();
-    return !validateEndpointUrl(endpoint);
-  },
+  visible: deps => deps.modelSelection.value === "0",
+  disabled: isCustomModelSaveButtonDisabled,
   onUserClick(e, deps) {
     const doc = e.target.ownerDocument;
     // TODO: (bug 2014287) Utilize ways of handling the input changes instead of using document.getElementById()
@@ -705,31 +950,58 @@ Preferences.addSetting({
       doc.getElementById("customModelAuthToken")?.value?.trim() || "";
 
     if (!validateEndpointUrl(modelEndpoint)) {
-      console.warn("For custom setting URL must be HTTPS or localhost");
-      e.target.disabled = true;
       return;
     }
 
-    // custom uses .model pref
+    const new_model = lazy.getCachedModelsData()["0"].model;
+    Glean.smartWindow.settingsModel.record({
+      previous_model: previousAssistantModel,
+      new_model,
+    });
+    previousAssistantModel = new_model;
+
+    // Save custom selection pref
+    deps.smartWindowFirstRunModelChoice.value = "0";
     deps.smartWindowModel.value = modelName;
-    deps.smartWindowEndpoint.value = modelEndpoint;
     deps.smartWindowApiKey.value = modelAuthToken;
-    // Update backup custom endpoint when saving
-    deps.smartWindowPreferencesEndpoint.value = modelEndpoint;
+    deps.smartWindowCustomEndpoint.value = modelEndpoint;
   },
 });
 
-Preferences.addSetting({ id: "learnFromActivityWrapper" });
+Preferences.addSetting({ id: "learnFromChatActivityWrapper" });
+Preferences.addSetting({ id: "learnFromBrowsingActivityWrapper" });
 Preferences.addSetting({
-  id: "learnFromActivity",
-  pref: "browser.smartwindow.memories",
+  id: "learnFromChatActivity",
+  pref: "browser.smartwindow.memories.generateFromConversation",
+  onUserChange(val) {
+    Glean.smartWindow.settingsMemories.record({
+      type: "chat",
+      enabled: val,
+    });
+  },
+});
+Preferences.addSetting({
+  id: "learnFromBrowsingActivity",
+  pref: "browser.smartwindow.memories.generateFromHistory",
+  onUserChange(val) {
+    Glean.smartWindow.settingsMemories.record({
+      type: "browsing",
+      enabled: val,
+    });
+  },
 });
 
 Preferences.addSetting({
   id: "manageMemoriesButton",
-  onUserClick(e) {
+  async onUserClick(e) {
     e.preventDefault();
     window.gotoPref("manageMemories");
+
+    const memories = await lazy.MemoryStore.getMemories();
+    Glean.smartWindow.memoriesPanelDisplayed.record({
+      source: "settings",
+      memories: memories?.length ?? 0,
+    });
   },
 });
 
@@ -741,7 +1013,7 @@ Preferences.addSetting({
     const action = e.target.getAttribute("action");
     const memoryId = e.target.getAttribute("memoryId");
     if (action === "delete") {
-      lazy.MemoryStore.hardDeleteMemory(memoryId);
+      lazy.MemoryStore.hardDeleteMemory(memoryId, "settings");
     }
   },
 });
@@ -785,9 +1057,10 @@ Preferences.addSetting({
     );
 
     if (result.get("buttonNumClicked") === 0) {
+      Glean.smartWindow.memoriesNuke.record();
       for (const memory of memories) {
         try {
-          await lazy.MemoryStore.hardDeleteMemory(memory.id);
+          await lazy.MemoryStore.hardDeleteMemory(memory.id, "settings");
         } catch (err) {
           console.error("Failed to delete memory:", memory.id, err);
         }
@@ -806,13 +1079,21 @@ Preferences.addSetting(
     setup() {
       Services.obs.addObserver(this.emitChange, "memory-store-changed");
       Services.prefs.addObserver(
-        "browser.smartwindow.memories",
+        "browser.smartwindow.memories.generateFromConversation",
+        this.emitChange
+      );
+      Services.prefs.addObserver(
+        "browser.smartwindow.memories.generateFromHistory",
         this.emitChange
       );
       return () => {
         Services.obs.removeObserver(this.emitChange, "memory-store-changed");
         Services.prefs.removeObserver(
-          "browser.smartwindow.memories",
+          "browser.smartwindow.memories.generateFromConversation",
+          this.emitChange
+        );
+        Services.prefs.removeObserver(
+          "browser.smartwindow.memories.generateFromHistory",
           this.emitChange
         );
       };
@@ -824,10 +1105,15 @@ Preferences.addSetting(
 
     async getControlConfig() {
       const memories = await this.getMemories();
-      const isLearningEnabled = Services.prefs.getBoolPref(
-        "browser.smartwindow.memories",
-        false
-      );
+      const isLearningEnabled =
+        Services.prefs.getBoolPref(
+          "browser.smartwindow.memories.generateFromConversation",
+          false
+        ) ||
+        Services.prefs.getBoolPref(
+          "browser.smartwindow.memories.generateFromHistory",
+          false
+        );
 
       if (!memories.length) {
         return {
@@ -974,7 +1260,7 @@ SettingGroupManager.registerGroups({
             l10nId: "preferences-ai-controls-block-ai",
             control: "moz-toggle",
             controlAttrs: {
-              headinglevel: 2,
+              headinglevel: 3,
               inputlayout: "inline-end",
             },
             options: [
@@ -999,6 +1285,9 @@ SettingGroupManager.registerGroups({
             id: "aiBlockedMessage",
             control: "moz-message-bar",
             l10nId: "preferences-ai-controls-blocked-message",
+            controlAttrs: {
+              role: "status",
+            },
           },
         ],
       },
@@ -1097,8 +1386,11 @@ SettingGroupManager.registerGroups({
         id: "smartWindowFieldset",
         l10nId: "ai-window-features-group",
         control: "moz-fieldset",
+        supportPage: "smart-window",
         controlAttrs: {
           headinglevel: 2,
+          iconsrc: "chrome://browser/skin/smart-window-mono.svg",
+          badge: "beta",
         },
         items: [
           {
@@ -1106,12 +1398,28 @@ SettingGroupManager.registerGroups({
             control: "moz-box-group",
             items: [
               {
+                id: "smartWindowControlItem",
+                control: "moz-box-item",
+                items: [
+                  {
+                    id: "aiControlSmartWindowSelect",
+                    l10nId: "smart-window-select-label",
+                    control: "moz-select",
+                    controlAttrs: {
+                      inputlayout: "inline-end",
+                    },
+                    options: [...AI_CONTROL_OPTIONS],
+                  },
+                ],
+              },
+              {
                 id: "activateSmartWindowLink",
                 l10nId: "ai-window-activate-link",
                 control: "moz-box-link",
               },
               {
                 id: "personalizeSmartWindowButton",
+                loadPane: "personalizeSmartWindow",
                 l10nId: "ai-window-personalize-button",
                 control: "moz-box-button",
               },
@@ -1126,7 +1434,7 @@ SettingGroupManager.registerGroups({
         supportPage: "ai-chatbot",
         controlAttrs: {
           headinglevel: 2,
-          iconsrc: "chrome://browser/skin/sidebars.svg",
+          iconsrc: "chrome://browser/skin/sidebar-collapsed.svg",
         },
         items: [
           {
@@ -1158,10 +1466,31 @@ SettingGroupManager.registerGroups({
       },
     ],
   },
+  assistantDefaultGroup: {
+    l10nId: "ai-window-default-section",
+    headingLevel: 2,
+    items: [
+      {
+        id: "smartWindowIsDefaultWindow",
+        l10nId: "ai-window-is-default-window",
+        control: "moz-checkbox",
+      },
+      {
+        id: "openSidebarByDefault",
+        l10nId: "ai-window-open-sidebar",
+        control: "moz-checkbox",
+      },
+      {
+        id: "smartCursorInSmartWindow",
+        l10nId: "ai-window-smart-cursor-in-smart-window",
+        control: "moz-checkbox",
+      },
+    ],
+  },
   assistantModelGroup: {
     l10nId: "smart-window-model-section",
     headingLevel: 2,
-    supportPage: "smart-window-model",
+    supportPage: "smart-window-models",
     items: [
       {
         id: "modelSelection",
@@ -1170,17 +1499,23 @@ SettingGroupManager.registerGroups({
           {
             value: "1",
             l10nId: "smart-window-model-fast",
-            l10nArgs: { modelName: "gemini-flash-lite" },
+            get l10nArgs() {
+              return modelL10nArgs("1");
+            },
           },
           {
             value: "2",
             l10nId: "smart-window-model-flexible",
-            l10nArgs: { modelName: "Qwen3-235B-A22B-throughput" },
+            get l10nArgs() {
+              return modelL10nArgs("2");
+            },
           },
           {
             value: "3",
             l10nId: "smart-window-model-personal",
-            l10nArgs: { modelName: "gpt-oss-120b" },
+            get l10nArgs() {
+              return modelL10nArgs("3");
+            },
           },
           {
             value: "0",
@@ -1204,9 +1539,10 @@ SettingGroupManager.registerGroups({
               {
                 id: "customModelHelpLink",
                 control: "moz-message-bar",
-                l10nId: "smart-window-model-custom-help",
+                l10nId: "smart-window-model-custom-info",
                 controlAttrs: {
                   type: "info",
+                  role: "status",
                 },
                 options: [
                   {
@@ -1214,18 +1550,50 @@ SettingGroupManager.registerGroups({
                     l10nId: "smart-window-model-custom-more-link",
                     slot: "support-link",
                     controlAttrs: {
-                      href: "",
+                      is: "moz-support-link",
+                      "support-page": "smart-window-byom",
                     },
                   },
                 ],
               },
               {
-                id: "customModelSaveButton",
-                control: "moz-button",
-                l10nId: "smart-window-model-custom-save",
+                id: "customModelSaveRow",
+                control: "div",
                 controlAttrs: {
-                  type: "primary",
+                  class: "custom-model-save-row",
                 },
+                items: [
+                  {
+                    id: "customModelSaveButton",
+                    control: "moz-button",
+                    l10nId: "smart-window-model-custom-save",
+                    controlAttrs: {
+                      type: "primary",
+                    },
+                  },
+                  {
+                    id: "customModelSaveConfirmation",
+                    control: "span",
+                    controlAttrs: {
+                      class: "custom-model-save-confirmation",
+                      role: "status",
+                    },
+                    options: [
+                      {
+                        control: "img",
+                        controlAttrs: {
+                          class: "custom-model-save-confirmation-icon",
+                          src: "chrome://global/skin/icons/check-filled.svg",
+                          alt: "",
+                        },
+                      },
+                      {
+                        control: "span",
+                        l10nId: "smart-window-model-custom-save-confirmation",
+                      },
+                    ],
+                  },
+                ],
               },
             ],
           },
@@ -1236,7 +1604,6 @@ SettingGroupManager.registerGroups({
   memoriesGroup: {
     l10nId: "ai-window-memories-section",
     headingLevel: 2,
-    // TODO: Finalize SUMO support page slug (GENAI-3016)
     supportPage: "smart-window-memories",
     items: [
       {
@@ -1244,18 +1611,30 @@ SettingGroupManager.registerGroups({
         control: "moz-box-group",
         items: [
           {
-            id: "learnFromActivityWrapper",
+            id: "learnFromChatActivityWrapper",
             control: "moz-box-item",
             items: [
               {
-                id: "learnFromActivity",
-                l10nId: "ai-window-learn-from-activity",
+                id: "learnFromChatActivity",
+                l10nId: "ai-window-learn-from-chat-activity",
+                control: "moz-checkbox",
+              },
+            ],
+          },
+          {
+            id: "learnFromBrowsingActivityWrapper",
+            control: "moz-box-item",
+            items: [
+              {
+                id: "learnFromBrowsingActivity",
+                l10nId: "ai-window-learn-from-browsing-activity",
                 control: "moz-checkbox",
               },
             ],
           },
           {
             id: "manageMemoriesButton",
+            loadPane: "manageMemories",
             l10nId: "ai-window-manage-memories-button",
             control: "moz-box-button",
           },

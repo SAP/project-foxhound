@@ -133,6 +133,10 @@
 ; Similar to glxtest, this tests the capabilities of the Video Acceleration API (VA-API).
 @BINPATH@/vaapitest
 #endif
+#ifdef MOZ_ENABLE_VULKAN_VIDEO
+; Vulkan video decode probe (device extension / codec support).
+@BINPATH@/vulkantest
+#endif
 #endif
 
 ; We don't have a complete view of which dlls to expect when doing an artifact
@@ -215,6 +219,13 @@
 
 #ifdef MOZ_DXCOMPILER
 @BINPATH@/@MOZ_DXC_DLL_NAME@
+#endif
+
+; Bundled stub PDFs handed to the OS "Open with" picker by the
+; set-default-PDF-handler flow (see WindowsSetDefaultAppCmdHandler).
+#ifdef XP_WIN
+@RESPATH@/browser/confused_fox.pdf
+@RESPATH@/browser/blank.pdf
 #endif
 
 ; [Browser Chrome Files]

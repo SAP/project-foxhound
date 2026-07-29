@@ -30,10 +30,13 @@
           </toolbarbutton>
         </hbox>
 
+        <html:script type="module" src="chrome://browser/content/controlcenter/components/breach-alert-panel.mjs"></html:script>
+        <html:breach-alert-panel id="trustpanel-breach-alert-section">
+        </html:breach-alert-panel>
         <vbox id="trustpanel-graphic-section">
-          <hbox>
-            <image id="trustpanel-graphic-image"></image>
-            <vbox id="trustpanel-graphic-section-text">
+          <hbox class="trustpanel-card-main">
+            <image id="trustpanel-graphic-image-legacy"></image>
+            <vbox id="trustpanel-graphic-section-text" class="trustpanel-card-content">
               <label when-connection="secure secure-ev secure-etsi secure-cert-user-overridden chrome file extension net-error-page https-only-error-page"
                      id="trustpanel-header"
                      class="trustpanel-header"></label>
@@ -45,20 +48,20 @@
               <label when-connection="not-secure cert-error-page"
                      data-l10n-id="trustpanel-description-enabled-insecure"></label>
             </vbox>
+            <image id="trustpanel-graphic-image"></image>
           </hbox>
-          <vbox id="trustpanel-blocker-section" class="trustpanel-graphic-inner">
+          <vbox id="trustpanel-blocker-section" class="trustpanel-card-content trustpanel-card-divided trustpanel-graphic-inner">
             <label data-l10n-id="trustpanel-blocker-section-header2" data-l10n-args='{"count":0}' id="trustpanel-blocker-section-header" class="trustpanel-header"></label>
             <label data-l10n-id="trustpanel-blocker-description"></label>
             <html:moz-button-group>
-              <html:moz-button id="trustpanel-blocker-see-all" data-l10n-id="trustpanel-blocker-see-all" default="true" size="small" type="primary"></html:moz-button>
+              <html:moz-button id="trustpanel-blocker-see-all" data-l10n-id="trustpanel-blocker-see-all" default="true" type="primary"></html:moz-button>
             </html:moz-button-group>
           </vbox>
-          <vbox id="trustpanel-insecure-section" class="trustpanel-graphic-inner">
+          <vbox id="trustpanel-insecure-section" class="trustpanel-card-content trustpanel-card-divided trustpanel-graphic-inner" when-connection="not-secure">
             <label data-l10n-id="trustpanel-insecure-section-header" class="trustpanel-header"></label>
             <label data-l10n-id="trustpanel-insecure-description"></label>
           </vbox>
         </vbox>
-
         <vbox id="trustpanel-toggle-section">
           <hbox id="trustpanel-toggle-checkbox-container">
             <label id="trustpanel-etp-label" class="trustpanel-header"></label>
@@ -71,7 +74,7 @@
         <toolbarbutton data-l10n-id="trustpanel-clear-cookies-button" id="trustpanel-clear-cookies-button" class="subviewbutton subviewbutton-nav"></toolbarbutton>
 
         <toolbarseparator></toolbarseparator>
-        <html:a id="trustpanel-privacy-link" data-l10n-id="trustpanel-privacy-link" role="link" class="trustpanel-section panel-subview-footer-button"></html:a>
+        <toolbarbutton id="trustpanel-privacy-link" data-l10n-id="trustpanel-privacy-link" class="subviewbutton"></toolbarbutton>
       </vbox>
     </panelview>
 
@@ -79,7 +82,6 @@
                class="PanelUI-subView"
                role="document">
 #include securityInformation.inc.xhtml
-      <toolbarseparator></toolbarseparator>
       <html:a id="trustpanel-siteinformation-morelink" data-l10n-id="trustpanel-siteinformation-morelink" role="link" class="trustpanel-section panel-subview-footer-button"></html:a>
     </panelview>
 

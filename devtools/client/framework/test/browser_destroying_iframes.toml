@@ -4,7 +4,6 @@ subsuite = "devtools"
 support-files = [
   "head.js",
   "!/devtools/client/shared/test/shared-head.js",
-  "!/devtools/client/shared/test/telemetry-test-helpers.js",
 ]
 
 ["browser_destroying_iframes.js"]

@@ -5,7 +5,7 @@
 "use strict";
 
 const { IPPExceptionsManager } = ChromeUtils.importESModule(
-  "moz-src:///browser/components/ipprotection/IPPExceptionsManager.sys.mjs"
+  "moz-src:///toolkit/components/ipprotection/IPPExceptionsManager.sys.mjs"
 );
 
 const MOCK_SITE_NAME = "https://example.com";
@@ -35,7 +35,6 @@ add_task(async function test_site_exclusion_feature_pref_disabled() {
   );
 
   let content = await openPanel({
-    isSignedOut: false,
     isProtectionEnabled: true,
     siteData: {
       isExclusion: false,
@@ -73,13 +72,10 @@ add_task(async function test_site_exclusion_feature_pref_disabled() {
  */
 add_task(async function test_site_exclusion_toggle_with_siteData() {
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: true,
+    isReady: true,
   });
-  await IPPEnrollAndEntitleManager.refetchEntitlement();
 
   let content = await openPanel({
-    isSignedOut: false,
     isProtectionEnabled: false,
     siteData: {
       isExclusion: false,
@@ -105,7 +101,6 @@ add_task(async function test_site_exclusion_toggle_with_siteData() {
 
   // Turn VPN on
   await setPanelState({
-    isSignedOut: false,
     isProtectionEnabled: true,
     siteData: {
       isExclusion: false,
@@ -131,13 +126,10 @@ add_task(async function test_site_exclusion_toggle_with_siteData() {
  */
 add_task(async function test_site_exclusion_toggle_no_siteData() {
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: true,
+    isReady: true,
   });
-  await IPPEnrollAndEntitleManager.refetchEntitlement();
 
   let content = await openPanel({
-    isSignedOut: false,
     isProtectionEnabled: false,
     siteData: null,
   });
@@ -159,13 +151,10 @@ add_task(async function test_site_exclusion_toggle_no_siteData() {
  */
 add_task(async function test_site_exclusion_VPN_error() {
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: true,
+    isReady: true,
   });
-  await IPPEnrollAndEntitleManager.refetchEntitlement();
 
   let content = await openPanel({
-    isSignedOut: false,
     isProtectionEnabled: true,
     siteData: {
       isExclusion: false,
@@ -190,7 +179,6 @@ add_task(async function test_site_exclusion_VPN_error() {
 
   // Turn VPN on
   await setPanelState({
-    isSignedOut: false,
     isProtectionEnabled: true,
     siteData: {
       isExclusion: false,
@@ -213,13 +201,10 @@ add_task(async function test_site_exclusion_VPN_error() {
  */
 add_task(async function test_site_exclusion_toggle_pressed_isExclusion() {
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: true,
+    isReady: true,
   });
-  await IPPEnrollAndEntitleManager.refetchEntitlement();
 
   let content = await openPanel({
-    isSignedOut: false,
     isProtectionEnabled: true,
     siteData: {
       isExclusion: false,
@@ -256,7 +241,6 @@ add_task(async function test_site_exclusion_toggle_pressed_isExclusion() {
 
   // Set isExclusion to true
   await setPanelState({
-    isSignedOut: false,
     isProtectionEnabled: true,
     siteData: {
       isExclusion: true,
@@ -283,10 +267,8 @@ add_task(
     Services.perms.removeByType(PERM_NAME);
 
     setupService({
-      isSignedIn: true,
-      isEnrolledAndEntitled: true,
+      isReady: true,
     });
-    await IPPEnrollAndEntitleManager.refetchEntitlement();
 
     let setExclusionSpy = sandbox.spy(IPPExceptionsManager, "setExclusion");
     sandbox.stub(IPPProxyManager, "state").value(IPPProxyStates.ACTIVE);
@@ -298,7 +280,6 @@ add_task(
     );
 
     let content = await openPanel({
-      isSignedOut: false,
       isProtectionEnabled: true,
       siteData: {
         isExclusion: false,
@@ -388,10 +369,8 @@ add_task(
     Services.perms.removeByType(PERM_NAME);
 
     setupService({
-      isSignedIn: true,
-      isEnrolledAndEntitled: true,
+      isReady: true,
     });
-    await IPPEnrollAndEntitleManager.refetchEntitlement();
 
     sandbox.stub(IPPProxyManager, "state").value(IPPProxyStates.ACTIVE);
 
@@ -416,7 +395,6 @@ add_task(
     );
 
     let content = await openPanel({
-      isSignedOut: false,
       isProtectionEnabled: true,
     });
 
@@ -484,10 +462,8 @@ add_task(async function test_site_exclusion_updates_on_navigation_same_tab() {
   Services.perms.removeByType(PERM_NAME);
 
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: true,
+    isReady: true,
   });
-  await IPPEnrollAndEntitleManager.refetchEntitlement();
 
   sandbox.stub(IPPProxyManager, "state").value(IPPProxyStates.ACTIVE);
 
@@ -511,7 +487,6 @@ add_task(async function test_site_exclusion_updates_on_navigation_same_tab() {
   );
 
   let content = await openPanel({
-    isSignedOut: false,
     isProtectionEnabled: true,
   });
 
@@ -574,10 +549,8 @@ add_task(async function test_site_exclusion_updates_on_tab_switch() {
   Services.perms.removeByType(PERM_NAME);
 
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: true,
+    isReady: true,
   });
-  await IPPEnrollAndEntitleManager.refetchEntitlement();
 
   sandbox.stub(IPPProxyManager, "state").value(IPPProxyStates.ACTIVE);
 
@@ -654,6 +627,57 @@ add_task(async function test_site_exclusion_updates_on_tab_switch() {
 });
 
 /**
+ * Tests that the site exclusion description is shown when the site is not
+ * excluded, and hidden when the site is excluded.
+ */
+add_task(async function test_site_exclusion_description_visibility() {
+  setupService({
+    isSignedIn: true,
+    isEnrolledAndEntitled: true,
+  });
+
+  let content = await openPanel({
+    isSignedOut: false,
+    isProtectionEnabled: true,
+    siteData: {
+      isExclusion: false,
+    },
+  });
+
+  Assert.ok(
+    BrowserTestUtils.isVisible(content),
+    "ipprotection content component should be present"
+  );
+  Assert.ok(
+    content.siteExclusionDescriptionEl,
+    "Site exclusion description should be present when site is not excluded"
+  );
+
+  let descriptionHiddenPromise = BrowserTestUtils.waitForMutationCondition(
+    content.shadowRoot,
+    { childList: true, subtree: true },
+    () => !content.siteExclusionDescriptionEl
+  );
+
+  await setPanelState({
+    isSignedOut: false,
+    isProtectionEnabled: true,
+    siteData: {
+      isExclusion: true,
+    },
+  });
+
+  await Promise.all([content.updateComplete, descriptionHiddenPromise]);
+
+  Assert.ok(
+    !content.siteExclusionDescriptionEl,
+    "Site exclusion description should not be present when site is excluded"
+  );
+
+  await closePanel();
+});
+
+/**
  * Tests that we don't show the site exclusion toggle on privileged pages.
  */
 add_task(async function test_site_exclusion_toggle_privileged_page() {
@@ -661,10 +685,8 @@ add_task(async function test_site_exclusion_toggle_privileged_page() {
   const ABOUT_PAGE = "about:about";
 
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: true,
+    isReady: true,
   });
-  await IPPEnrollAndEntitleManager.refetchEntitlement();
 
   let panel = IPProtection.getPanel(window);
   sandbox.stub(panel, "_isPrivilegedPage").returns(true);
@@ -672,7 +694,6 @@ add_task(async function test_site_exclusion_toggle_privileged_page() {
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, ABOUT_PAGE);
 
   let content = await openPanel({
-    isSignedOut: false,
     isProtectionEnabled: true,
   });
 

@@ -1,12 +1,11 @@
-import asyncio
-
 import pytest
+from webdriver.error import NoSuchElementException
 
 URL = "https://tjoy.jp/shinjuku_wald9#schedule-content"
 
 DATES_CSS = ".calendar-item"
-CARD_CSS = ".card-header.js-card-click"
-RESERVE_CSS = ".schedule-box-body[onclick*=reservation]"
+CARD_CSS = ".box-film-wapper:has(.schedule-status[onclick])"
+RESERVE_CSS = ".schedule-status[onclick]"
 ZOOM_WRAPPER_CSS = ".js-zoom-in"
 MAP_CSS = ".js-map"
 
@@ -31,11 +30,12 @@ async def does_correct_zoom(client):
     # The element is overlapped by another one, so we have to use javascript to click it.
     client.execute_script("arguments[0].click()", reserve)
 
-    # The seat map takes time to be displayed.
-    await asyncio.sleep(4)
-
     # Zoom in to the seat map and check if it sets only 'zoom' without '-moz-transform'.
-    seat_map_zoom_wrapper = client.await_css(ZOOM_WRAPPER_CSS)
+    try:
+        # The seat map takes time to be displayed, and may not even appear at all.
+        seat_map_zoom_wrapper = client.await_css(ZOOM_WRAPPER_CSS, timeout=10)
+    except NoSuchElementException:
+        return False
     client.execute_script("arguments[0].click()", seat_map_zoom_wrapper)
     seat_map = client.await_css(MAP_CSS)
     moz_transform = client.execute_script(

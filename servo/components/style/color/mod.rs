@@ -9,6 +9,7 @@ pub mod convert;
 
 mod color_function;
 pub mod component;
+pub mod gamut;
 pub mod mix;
 pub mod parsing;
 mod to_css;
@@ -36,6 +37,28 @@ impl ColorComponents {
     #[must_use]
     pub fn map(self, f: impl Fn(f32) -> f32) -> Self {
         Self(f(self.0), f(self.1), f(self.2))
+    }
+
+    /// Return the components as an array
+    #[inline]
+    pub fn to_array(&self) -> [f32; 3] {
+        [self.0, self.1, self.2]
+    }
+}
+
+impl std::ops::Add for ColorComponents {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0, self.1 + rhs.1, self.2 + rhs.2)
+    }
+}
+
+impl std::ops::Sub for ColorComponents {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self(self.0 - rhs.0, self.1 - rhs.1, self.2 - rhs.2)
     }
 }
 
@@ -177,6 +200,24 @@ impl ColorSpace {
             },
         }
     }
+
+    /// Returns the corresponding linear version of this color space if
+    /// one exists, else returns `None`.
+    /// Linear color spaces return themselves; this includes XYZ.
+    /// Perceptual/non-RGB color spaces return None.
+    #[inline]
+    pub fn get_linear_color_space(self) -> Option<Self> {
+        match self {
+            Self::Srgb | Self::Hsl | Self::Hwb => Some(Self::SrgbLinear),
+            Self::DisplayP3 => Some(Self::DisplayP3Linear),
+            Self::SrgbLinear | Self::DisplayP3Linear | Self::XyzD50 | Self::XyzD65 => Some(self),
+            // We currently don't have the linear versions of these wide RGB spaces
+            // implemented, so returning `None`` for the time being. Grouping them
+            // separately here as a nod to future work.
+            Self::A98Rgb | Self::ProphotoRgb | Self::Rec2020 => None,
+            Self::Lab | Self::Lch | Self::Oklab | Self::Oklch => None,
+        }
+    }
 }
 
 /// Flags used when serializing colors.
@@ -202,9 +243,10 @@ bitflags! {
 
 /// An absolutely specified color, using either rgb(), rgba(), lab(), lch(),
 /// oklab(), oklch() or color().
-#[derive(Copy, Clone, Debug, MallocSizeOf, PartialEq, ToShmem, ToTyped)]
+#[derive(Copy, Clone, Debug, MallocSizeOf, ToShmem, ToTyped)]
 #[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
 #[repr(C)]
+#[typed(todo_derive_fields)]
 pub struct AbsoluteColor {
     /// The 3 components that make up colors in any color space.
     pub components: ColorComponents,
@@ -212,8 +254,39 @@ pub struct AbsoluteColor {
     pub alpha: f32,
     /// The current color space that the components represent.
     pub color_space: ColorSpace,
-    /// Extra flags used durring serialization of this color.
+    /// Extra flags used during serialization of this color.
     pub flags: ColorFlags,
+}
+
+impl PartialEq for AbsoluteColor {
+    // See https://github.com/w3c/csswg-drafts/issues/13157#issuecomment-4165667681
+    fn eq(&self, other: &Self) -> bool {
+        let none_flags = ColorFlags::C0_IS_NONE
+            | ColorFlags::C1_IS_NONE
+            | ColorFlags::C2_IS_NONE
+            | ColorFlags::ALPHA_IS_NONE;
+        // If both colors have the same color-space, just compare components; note that
+        // any `none` components only match `none` in the other color.
+        if self.color_space == other.color_space {
+            return self.components == other.components
+                && self.alpha == other.alpha
+                && (self.flags & none_flags) == (other.flags & none_flags);
+        }
+        // Otherwise, if any `none` components are present in either color, return false.
+        if self.flags.union(other.flags).intersects(none_flags) {
+            return false;
+        }
+        // Otherwise, convert both colors to Oklab for comparison, and allow EPSILON
+        // difference in component values.
+        // TODO: check value of EPSILON once the spec is updated to cover this.
+        const EPSILON: f32 = 0.0001;
+        let a = self.to_color_space(ColorSpace::Oklab);
+        let b = other.to_color_space(ColorSpace::Oklab);
+        (a.components.0 - b.components.0).abs() <= EPSILON
+            && (a.components.1 - b.components.1).abs() <= EPSILON
+            && (a.components.2 - b.components.2).abs() <= EPSILON
+            && (a.alpha - b.alpha).abs() <= EPSILON
+    }
 }
 
 /// Given an [`AbsoluteColor`], return the 4 float components as the type given,
@@ -469,7 +542,7 @@ impl AbsoluteColor {
         &self,
         channel_keyword: ChannelKeyword,
     ) -> Result<Option<f32>, ()> {
-        if channel_keyword == ChannelKeyword::Alpha {
+        if channel_keyword == ChannelKeyword::ALPHA {
             return Ok(self.alpha());
         }
 
@@ -638,6 +711,30 @@ impl AbsoluteColor {
             self.alpha(),
         )
     }
+
+    /// Convert a color value to `nscolor`.
+    pub fn to_nscolor(&self) -> u32 {
+        let srgb = self.to_color_space(ColorSpace::Srgb);
+        u32::from_le_bytes([
+            (srgb.components.0 * 255.0).round() as u8,
+            (srgb.components.1 * 255.0).round() as u8,
+            (srgb.components.2 * 255.0).round() as u8,
+            (srgb.alpha * 255.0).round() as u8,
+        ])
+    }
+
+    /// Convert a given `nscolor` to a Servo AbsoluteColor value.
+    pub fn from_nscolor(color: u32) -> Self {
+        let [r, g, b, a] = color.to_le_bytes();
+        Self::srgb_legacy(r, g, b, a as f32 / 255.0)
+    }
+}
+
+#[test]
+fn from_nscolor_should_be_in_legacy_syntax() {
+    let result = AbsoluteColor::from_nscolor(0x336699CC);
+    assert!(result.flags.contains(ColorFlags::IS_LEGACY_SRGB));
+    assert!(result.is_legacy_syntax());
 }
 
 impl From<PredefinedColorSpace> for ColorSpace {

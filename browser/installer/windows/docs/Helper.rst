@@ -1,7 +1,7 @@
 ======
 Helper
 ======
-helper.exe contains the uninstaller, plus a routine that's run by the application updater after it applies an update, as well as a few utilities used for default browser handling and shortcut maintenance. It mainly consists of two files, uninstaller.nsi_, which is the main script and contains the entry point and the uninstall logic, and shared.nsh_, which contains most of the logic for the other functions.
+helper.exe contains the uninstaller, plus a routine that's run by the application updater after it applies an update, as well as a few utilities used for default browser handling and shortcut maintenance. It mainly consists of two files, :searchfox:`uninstaller.nsi <browser/installer/windows/nsis/uninstaller.nsi>`, which is the main script and contains the entry point and the uninstall logic, and :searchfox:`shared.nsh <browser/installer/windows/nsis/shared.nsh>`, which contains most of the logic for the other functions.
 
 Uninstaller
 -----------
@@ -33,7 +33,3 @@ Windows versions older than 10 contain a control panel called Set Program Access
 The helper also implements the ``/SetAsDefaultAppUser`` switch, which is invoked by the "Make Default" button in the Firefox preferences UI.
 
 On Windows 10 neither SetAsDefaultAppUser nor SetAsDefaultAppGlobal is effective because the default programs settings can only be modified by the Windows settings app. However they do still write the registry entries that are needed to get us an entry in the system default browser menu, should those entries not already exist (the installer always creates them, but running Firefox without having run the installer is supported). ShowShortcuts and HideShortcuts are never called on Windows 10 because the SPAD control panel no longer exists.
-
-
-.. _uninstaller.nsi: https://searchfox.org/mozilla-central/source/browser/installer/windows/nsis/uninstaller.nsi
-.. _shared.nsh: https://searchfox.org/mozilla-central/source/browser/installer/windows/nsis/shared.nsh

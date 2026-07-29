@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -58,6 +56,32 @@ typedef MALLOC_USABLE_SIZE_CONST_PTR void* usable_ptr_t;
 
 typedef size_t arena_id_t;
 
+// A chunk allocator provides an abstraction for mapping, unmapping, committing
+// and decommitting chunks of pages. This allows for greater control over the
+// memory used to back an arena's allocations.
+//
+// The current primary use case for this is to restrict all of an arena's
+// allocations to a specific memory region as is required for
+// SpiderMonkey's sandbox.
+typedef struct chunk_allocator_s {
+  // Map aSize bytes of memory with alignment aAligment.
+  // The returned pages are expected to be committed with read-write
+  // permissions.
+  void* (*map)(size_t aSize, size_t aAlignment);
+
+  // Unmap aSize bytes of previously mapped memory starting at aAddr.
+  // The pages are returned to the allocator.
+  void (*unmap)(void* aAddr, size_t aSize);
+
+  // Commit aSize bytes of previously mapped decommitted memory starting at
+  // aAddr.
+  bool (*commit)(void* aAddr, size_t aSize);
+
+  // Decommit aSize bytes of previously mapped memory starting at aAddr.
+  // These pages need to be re-committed before they can be used again.
+  void (*decommit)(void* aAddr, size_t aSize);
+} chunk_allocator_t;
+
 #define ARENA_FLAG_RANDOMIZE_SMALL_MASK 0x3
 #define ARENA_FLAG_RANDOMIZE_SMALL_DEFAULT 0
 #define ARENA_FLAG_RANDOMIZE_SMALL_ENABLED 1
@@ -86,13 +110,18 @@ typedef struct arena_params_s {
   // within the arena.  It may be null for unamed arenas
   const char* mLabel;
 
+  // Chunk allocator to be used by the Arena.
+  // If this is not set, the default system allocator will be used.
+  chunk_allocator_t* mChunkAllocator;
+
 #ifdef __cplusplus
   arena_params_s()
       : mMaxDirty(0),
         mMaxDirtyIncreaseOverride(0),
         mMaxDirtyDecreaseOverride(0),
         mFlags(0),
-        mLabel(nullptr) {}
+        mLabel(nullptr),
+        mChunkAllocator(nullptr) {}
 #endif
 } arena_params_t;
 
@@ -109,7 +138,7 @@ typedef struct {
   size_t quantum_max;        // Max quantum-spaced allocation size.
   size_t quantum_wide;       // Allocation quantum (QuantuWide).
   size_t quantum_wide_max;   // Max quantum-wide-spaced allocation size.
-  size_t unused;             // Unused field.
+  size_t subpage_max;        // Max subpage allocation size.
   size_t large_max;          // Max sub-chunksize allocation size.
   size_t chunksize;          // Size of each virtual memory mapping.
   size_t page_size;          // Size of pages in mozjemalloc internal
@@ -136,6 +165,7 @@ typedef struct {
                           // operations.  Which internal operations (eg in place
                           // or move, or different size classes) require
                           // different internal operations is unspecified.
+  size_t arena_run_header;
 } jemalloc_stats_t;
 
 typedef struct {

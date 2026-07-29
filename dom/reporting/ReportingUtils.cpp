@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,10 +9,12 @@
 #include "mozilla/dom/ReportBody.h"
 #include "mozilla/dom/ReportDeliver.h"
 #include "mozilla/dom/SecurityPolicyViolationEvent.h"
+#include "mozilla/dom/WorkerPrivate.h"
 #include "nsAtom.h"
 #include "nsIGlobalObject.h"
 #include "nsIURIMutator.h"
 #include "nsNetUtil.h"
+#include "nsPIDOMWindowInlines.h"
 
 namespace mozilla::dom {
 
@@ -43,6 +43,22 @@ void ReportingUtils::StripURL(nsIURI* aURI, nsACString& outStrippedURL) {
 }
 
 // static
+void ReportingUtils::StripLocationFileName(
+    const mozilla::JSCallingLocation& aLocation,
+    nsACString& outStrippedFileName) {
+  nsCOMPtr<nsIURI> uri;
+  if (aLocation.mResource.is<nsCOMPtr<nsIURI>>()) {
+    uri = aLocation.mResource.as<nsCOMPtr<nsIURI>>();
+  } else {
+    (void)NS_NewURI(getter_AddRefs(uri), aLocation.FileName());
+  }
+
+  if (uri) {
+    ReportingUtils::StripURL(uri, outStrippedFileName);
+  }
+}
+
+// static
 void ReportingUtils::Report(nsIGlobalObject* aGlobal, nsAtom* aType,
                             const nsAString& aGroupName, const nsAString& aURL,
                             ReportBody* aBody) {
@@ -59,7 +75,20 @@ void ReportingUtils::Report(nsIGlobalObject* aGlobal, nsAtom* aType,
     return;
   }
 
-  ReportDeliver::AttemptDelivery(aGlobal, type, aGroupName, aURL, aBody);
+  uint64_t associatedBrowsingContextId = 0;
+
+  // Try to get browsing context from window (for main thread)
+  if (nsPIDOMWindowInner* window = aGlobal->GetAsInnerWindow()) {
+    if (BrowsingContext* bc = window->GetBrowsingContext()) {
+      associatedBrowsingContextId = bc->Id();
+    }
+  } else if (WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate()) {
+    // For workers, get the associated browsing context
+    associatedBrowsingContextId = workerPrivate->AssociatedBrowsingContextID();
+  }
+
+  ReportDeliver::AttemptDelivery(aGlobal, type, aGroupName, aURL, aBody,
+                                 associatedBrowsingContextId);
 }
 
 /* static */

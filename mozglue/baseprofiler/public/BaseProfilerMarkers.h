@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -35,13 +33,11 @@
 #include "mozilla/BaseProfilerLabels.h"
 #include "mozilla/TimeStamp.h"
 
-#include <functional>
 #include <string>
 #include <utility>
 
 namespace mozilla::baseprofiler {
 
-#ifdef MOZ_GECKO_PROFILER
 // Forward-declaration. TODO: Move to more common header, see bug 1681416.
 MFBT_API bool profiler_capture_backtrace_into(
     ProfileChunkedBuffer& aChunkedBuffer, StackCaptureOptions aCaptureOptions);
@@ -73,7 +69,6 @@ inline ProfileBufferBlockIndex AddMarkerToBuffer(
   return AddMarkerToBuffer(aBuffer, aName, aCategory, std::move(aOptions),
                            markers::NoPayload{});
 }
-#endif  // MOZ_GECKO_PROFILER
 
 // Add a marker to the Base Profiler buffer.
 // - aName: Main name of this marker.
@@ -88,9 +83,6 @@ ProfileBufferBlockIndex AddMarker(
     const ProfilerString8View& aName, const MarkerCategory& aCategory,
     MarkerOptions&& aOptions, MarkerType aMarkerType,
     const PayloadArguments&... aPayloadArguments) {
-#ifndef MOZ_GECKO_PROFILER
-  return {};
-#else
   // Record base markers whenever the core buffer is in session.
   // TODO: When profiler_thread_is_being_profiled becomes available from
   // mozglue, use it instead.
@@ -102,7 +94,6 @@ ProfileBufferBlockIndex AddMarker(
   return ::mozilla::baseprofiler::AddMarkerToBuffer(
       coreBuffer, aName, aCategory, std::move(aOptions), aMarkerType,
       aPayloadArguments...);
-#endif
 }
 
 // Add a marker (without payload) to the Base Profiler buffer.
@@ -114,8 +105,7 @@ inline ProfileBufferBlockIndex AddMarker(const ProfilerString8View& aName,
 
 }  // namespace mozilla::baseprofiler
 
-// Same as `AddMarker()` (without payload). This macro is safe to use even if
-// MOZ_GECKO_PROFILER is not #defined.
+// Same as `AddMarker()` (without payload).
 #define BASE_PROFILER_MARKER_UNTYPED(markerName, categoryName, ...)  \
   do {                                                               \
     AUTO_PROFILER_STATS(BASE_PROFILER_MARKER_UNTYPED);               \
@@ -124,8 +114,7 @@ inline ProfileBufferBlockIndex AddMarker(const ProfilerString8View& aName,
         ##__VA_ARGS__);                                              \
   } while (false)
 
-// Same as `AddMarker()` (with payload). This macro is safe to use even if
-// MOZ_GECKO_PROFILER is not #defined.
+// Same as `AddMarker()` (with payload).
 #define BASE_PROFILER_MARKER(markerName, categoryName, options, MarkerType,   \
                              ...)                                             \
   do {                                                                        \
@@ -254,8 +243,7 @@ struct StackMarker : public BaseMarkerType<StackMarker> {
 
 }  // namespace mozilla::baseprofiler::markers
 
-// Add a text marker. This macro is safe to use even if MOZ_GECKO_PROFILER is
-// not #defined.
+// Add a text marker.
 #define BASE_PROFILER_MARKER_TEXT(markerName, categoryName, options, text)    \
   do {                                                                        \
     AUTO_PROFILER_STATS(BASE_PROFILER_MARKER_TEXT);                           \
@@ -276,13 +264,14 @@ class MOZ_RAII AutoProfilerTextMarker {
                          MarkerOptions&& aOptions, const std::string& aText)
       : mMarkerName(aMarkerName),
         mCategory(aCategory),
-        mOptions(std::move(aOptions)),
-        mText(aText) {
+        mOptions(std::move(aOptions)) {
     MOZ_ASSERT(mOptions.Timing().EndTime().IsNull(),
                "AutoProfilerTextMarker options shouldn't have an end time");
-    if (profiler_is_active_and_unpaused() &&
-        mOptions.Timing().StartTime().IsNull()) {
-      mOptions.Set(MarkerTiming::InstantNow());
+    if (profiler_is_active_and_unpaused()) {
+      mText = aText;
+      if (mOptions.Timing().StartTime().IsNull()) {
+        mOptions.Set(MarkerTiming::InstantNow());
+      }
     }
   }
 
@@ -303,7 +292,6 @@ class MOZ_RAII AutoProfilerTextMarker {
   std::string mText;
 };
 
-#ifdef MOZ_GECKO_PROFILER
 extern template MFBT_API ProfileBufferBlockIndex
 AddMarker(const ProfilerString8View&, const MarkerCategory&, MarkerOptions&&,
           markers::TextMarker, const std::string&);
@@ -315,12 +303,10 @@ AddMarkerToBuffer(ProfileChunkedBuffer&, const ProfilerString8View&,
 extern template MFBT_API ProfileBufferBlockIndex AddMarkerToBuffer(
     ProfileChunkedBuffer&, const ProfilerString8View&, const MarkerCategory&,
     MarkerOptions&&, markers::TextMarker, const std::string&);
-#endif  // MOZ_GECKO_PROFILER
 
 }  // namespace mozilla::baseprofiler
 
-// Creates an AutoProfilerTextMarker RAII object.  This macro is safe to use
-// even if MOZ_GECKO_PROFILER is not #defined.
+// Creates an AutoProfilerTextMarker RAII object.
 #define AUTO_BASE_PROFILER_MARKER_TEXT(markerName, categoryName, options,   \
                                        text)                                \
   ::mozilla::baseprofiler::AutoProfilerTextMarker PROFILER_RAII(            \

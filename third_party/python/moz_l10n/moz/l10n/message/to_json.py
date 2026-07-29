@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..model import (
+    Entry,
     Expression,
     Markup,
     Message,
@@ -27,21 +28,47 @@ from ..model import (
 )
 
 
+def entry_to_json(entry: Entry[Message]) -> tuple[str, dict[str, Any]]:
+    """
+    Represent an Entry as a JSON-serializable value.
+
+    Returns the stringified entry id and a JSON object.
+    The JSON Schema of the output is provided as [entry.json](../../../../schemas/entry.json).
+    """
+    id = ".".join(part.replace(".", r"\.") for part in entry.id)
+    json: dict[str, Any] = {}
+    if entry.meta:
+        json["@"] = list([m.key, m.value] for m in entry.meta)
+    if entry.comment:
+        json["#"] = entry.comment
+    if (
+        not entry.properties
+        or not isinstance(entry.value, PatternMessage)
+        or entry.value.pattern
+    ):
+        json["="] = message_to_json(entry.value)
+    if entry.properties:
+        json["+"] = {
+            key: message_to_json(prop) for key, prop in entry.properties.items()
+        }
+    return id, json
+
+
 def message_to_json(msg: Message) -> list[Any] | dict[str, Any]:
     """
     Represent a Message as a JSON-serializable value.
 
-    The JSON Schema of the output is provided as [schema.json](./schema.json).
+    The JSON Schema of the output is provided as [message.json](../../../../schemas/message.json).
     """
     json_declarations = {
-        name: _expression_to_json(expr) for name, expr in msg.declarations.items()
+        name: _expression(expr) for name, expr in msg.declarations.items()
     }
     if isinstance(msg, PatternMessage):
         if not json_declarations:
-            return _pattern_to_json(msg.pattern)
+            return _pattern(msg.pattern)
         return {
             "decl": json_declarations,
-            "msg": _pattern_to_json(msg.pattern),
+            "msg": _pattern(msg.pattern),
         }
     else:
         assert isinstance(msg, SelectMessage)
@@ -54,25 +81,25 @@ def message_to_json(msg: Message) -> list[Any] | dict[str, Any]:
                         key if isinstance(key, str) else {"*": key.value or ""}
                         for key in keys
                     ],
-                    "pat": _pattern_to_json(pattern),
+                    "pat": _pattern(pattern),
                 }
                 for keys, pattern in msg.variants.items()
             ],
         }
 
 
-def _pattern_to_json(pattern: Pattern) -> list[str | dict[str, Any]]:
+def _pattern(pattern: Pattern) -> list[str | dict[str, Any]]:
     return [
         part
         if isinstance(part, str)
-        else _markup_to_json(part)
+        else _markup(part)
         if isinstance(part, Markup)
-        else _expression_to_json(part)
+        else _expression(part)
         for part in pattern
     ]
 
 
-def _expression_to_json(expr: Expression) -> dict[str, Any]:
+def _expression(expr: Expression) -> dict[str, Any]:
     json: dict[str, Any] = {}
     if isinstance(expr.arg, str):
         json["_"] = expr.arg
@@ -81,24 +108,24 @@ def _expression_to_json(expr: Expression) -> dict[str, Any]:
     if expr.function:
         json["fn"] = expr.function
         if expr.options:
-            json["opt"] = _options_to_json(expr.options)
+            json["opt"] = _options(expr.options)
     if expr.attributes:
         json["attr"] = expr.attributes
     return json
 
 
-def _markup_to_json(markup: Markup) -> dict[str, Any]:
+def _markup(markup: Markup) -> dict[str, Any]:
     json: dict[str, Any] = {
         "elem" if markup.kind == "standalone" else markup.kind: markup.name
     }
     if markup.options:
-        json["opt"] = _options_to_json(markup.options)
+        json["opt"] = _options(markup.options)
     if markup.attributes:
         json["attr"] = markup.attributes
     return json
 
 
-def _options_to_json(options: dict[str, str | VariableRef]) -> dict[str, Any]:
+def _options(options: dict[str, str | VariableRef]) -> dict[str, Any]:
     return {
         name: value if isinstance(value, str) else {"$": value.name}
         for name, value in options.items()

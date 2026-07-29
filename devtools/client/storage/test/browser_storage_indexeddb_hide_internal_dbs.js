@@ -13,7 +13,7 @@ Services.scriptloader.loadSubScript(
 // Browser Toolbox
 add_task(async function () {
   await openTabAndSetupStorage(
-    MAIN_DOMAIN_SECURED + "storage-empty-objectstores.html"
+    MAIN_URL_SECURED + "storage-empty-objectstores.html"
   );
   const doc = gPanelWindow.document;
 
@@ -21,7 +21,7 @@ add_task(async function () {
   info("Check indexedDB tree in toolbox");
   const hosts = getDBHostsInTree(doc);
   is(hosts.length, 1, "There is only one host for indexedDB storage");
-  is(hosts[0], "https://test1.example.org", "Host is test1.example.org");
+  is(hosts[0], MAIN_ORIGIN_SECURED, "Host is test1.example.org");
 
   // check browser toolbox
   info("awaiting to open browser toolbox");

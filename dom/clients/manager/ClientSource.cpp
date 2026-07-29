@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,6 +16,7 @@
 #include "mozilla/Try.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/ClientIPCTypes.h"
+#include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/DOMMozPromiseRequestHolder.h"
 #include "mozilla/dom/JSExecutionManager.h"
 #include "mozilla/dom/MessageEvent.h"
@@ -183,7 +182,8 @@ void ClientSource::Activate(PClientManagerChild* aActor) {
   // This can happen since we use MozURL for validation which does not handle
   // some of the more obscure internal principal/url combinations.  Normal
   // content pages will pass this check.
-  if (NS_WARN_IF(!ClientIsValidPrincipalInfo(mClientInfo.PrincipalInfo()))) {
+  if (NS_WARN_IF(!ClientIsValidPrincipalInfo(mClientInfo.PrincipalInfo(),
+                                             CurrentRemoteType()))) {
     Shutdown();
     return;
   }
@@ -520,11 +520,12 @@ RefPtr<ClientOpPromise> ClientSource::Focus(const ClientFocusArgs& aArgs) {
     return ClientOpPromise::CreateAndReject(rv, __func__);
   }
   nsCOMPtr<nsPIDOMWindowOuter> outer;
-  nsPIDOMWindowInner* inner = GetInnerWindow();
+  nsCOMPtr<nsPIDOMWindowInner> inner = GetInnerWindow();
+  nsIDocShell* docshell = nullptr;
   if (inner) {
     outer = inner->GetOuterWindow();
   } else {
-    nsIDocShell* docshell = GetDocShell();
+    docshell = GetDocShell();
     if (docshell) {
       outer = docshell->GetWindow();
     }
@@ -537,9 +538,48 @@ RefPtr<ClientOpPromise> ClientSource::Focus(const ClientFocusArgs& aArgs) {
   }
 
   MOZ_ASSERT(NS_IsMainThread());
+
+  // Inlined from `ClientSource::SnapshotWindowState()`:
+  // Should not be necessary after bug 543435. Clean this up in bug 2025284.
+  if (docshell) {
+    // Force the creation of the initial document if it does not yet exist.
+    if (!docshell->GetDocument()) {
+      CopyableErrorResult rv;
+      rv.ThrowInvalidStateError("No document available.");
+      return ClientOpPromise::CreateAndReject(rv, __func__);
+    }
+    inner = GetInnerWindow();
+  }
+
   nsFocusManager::FocusWindow(outer, aArgs.callerType());
 
-  Result<ClientState, ErrorResult> state = SnapshotState();
+  Result<ClientState, ErrorResult> state =
+      [&]() -> Result<ClientState, ErrorResult> {
+    if (!inner) {
+      // Inlined from `ClientSource::SnapshotWindowState()`:
+      return ClientState(ClientWindowState(VisibilityState::Hidden, TimeStamp(),
+                                           StorageAccess::eDeny, false));
+    }
+    if (inner->GetClientSource() == this) {
+      // The pointer comparison assumes that an inner window
+      // cannot gain a new ClientSource other than this same
+      // `ClientSource` having moved from a docshell owner to an
+      // inner window owner gained via `outer`, so we don't need to worry
+      // about a newly-allocated ClientSource occupying the same
+      // memory as the one pointed to by `this`. That is, in the case
+      // of the pointers being unequal, `inner->GetClientSource()`
+      // returns `nullptr` and `this` is an invalid pointer.
+      // Per [expr.eq], it's not UB to compare a pointer to a deleted
+      // object, since no pointer comparisons are UB anymore. The
+      // case about pointer-past-end for a different object being
+      // _unspecified_ behavior does not apply here.
+      return SnapshotState();
+    }
+    ErrorResult rv;
+    rv.ThrowInvalidStateError("Client destroyed during focus");
+    return Err(std::move(rv));
+  }();
+
   if (state.isErr()) {
     return ClientOpPromise::CreateAndReject(
         CopyableErrorResult(state.unwrapErr()), __func__);

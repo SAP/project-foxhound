@@ -2,15 +2,15 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
-// Test that AnimationPlayerActor.getName returns the right name depending on
+// Test that AnimationActor.getName returns the right name depending on
 // the type of an animation and the various properties available on it.
 
 const {
-  AnimationPlayerActor,
+  AnimationActor,
 } = require("resource://devtools/server/actors/animation.js");
 
 function run_test() {
-  // Mock a window with just the properties the AnimationPlayerActor uses.
+  // Mock a window with just the properties the AnimationActor uses.
   const window = {};
   window.MutationObserver = class {
     constructor() {
@@ -46,7 +46,7 @@ function run_test() {
   // - props {Objet} Properties of this object will be added to the animation
   //   object.
   // - expectedName {String} The expected name returned by
-  //   AnimationPlayerActor.getName.
+  //   AnimationActor.getName.
   const TEST_DATA = [
     {
       desc: "Animation with an id",
@@ -91,7 +91,7 @@ function run_test() {
     for (const key in props) {
       animation[key] = props[key];
     }
-    const actor = new AnimationPlayerActor({}, animation);
+    const actor = new AnimationActor({}, animation);
     Assert.equal(actor.getName(), expectedName);
   }
 }

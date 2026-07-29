@@ -9,9 +9,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
-import androidx.compose.foundation.layout.exclude
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -37,7 +36,6 @@ import kotlinx.coroutines.flow.map
 import mozilla.components.browser.state.search.RegionState
 import mozilla.components.compose.base.Dropdown
 import mozilla.components.compose.base.annotation.FlexibleWindowPreview
-import mozilla.components.compose.base.button.DestructiveButton
 import mozilla.components.compose.base.button.FilledButton
 import mozilla.components.compose.base.button.OutlinedButton
 import mozilla.components.compose.base.menu.MenuItem
@@ -51,11 +49,9 @@ import org.mozilla.fenix.settings.address.store.AddressState
 import org.mozilla.fenix.settings.address.store.AddressStore
 import org.mozilla.fenix.settings.address.store.AddressStructureState
 import org.mozilla.fenix.settings.address.store.CancelTapped
-import org.mozilla.fenix.settings.address.store.DeleteTapped
 import org.mozilla.fenix.settings.address.store.FormChange
 import org.mozilla.fenix.settings.address.store.SaveTapped
 import org.mozilla.fenix.settings.address.store.ViewAppeared
-import org.mozilla.fenix.settings.address.store.isEditing
 import org.mozilla.fenix.settings.address.utils.generateAddress
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.PreviewThemeProvider
@@ -97,13 +93,14 @@ fun EditAddressScreen(store: AddressStore) {
             verticalArrangement = Arrangement.spacedBy(10.dp),
             state = rememberLazyListState(),
             modifier = Modifier
-                .padding(paddingValues)
+                .padding(top = paddingValues.calculateTopPadding())
                 .consumeWindowInsets(paddingValues)
                 .padding(
                     horizontal = FirefoxTheme.layout.space.static200,
                     vertical = FirefoxTheme.layout.space.static100,
                 )
-                .windowInsetsPadding(WindowInsets.ime.exclude(WindowInsets.navigationBars)),
+                .windowInsetsPadding(WindowInsets.ime)
+                .testTag(EditAddressTestTag.FORM),
         ) {
             val firstTextField = structureState.structure.fields.firstOrNull {
                 it is AddressStructure.Field.TextField
@@ -183,18 +180,10 @@ private fun SelectField(
 
 @Composable
 private fun FormButtons(store: AddressStore) {
-    Row {
-        if (store.state.isEditing) {
-            DestructiveButton(
-                text = stringResource(R.string.addressess_delete_address_button),
-                modifier = Modifier.testTag(EditAddressTestTag.DELETE_BUTTON),
-            ) {
-                store.dispatch(DeleteTapped)
-            }
-        }
-
-        Spacer(Modifier.weight(1f))
-
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+    ) {
         OutlinedButton(
             text = stringResource(R.string.addresses_cancel_button),
             modifier = Modifier.testTag(EditAddressTestTag.CANCEL_BUTTON),

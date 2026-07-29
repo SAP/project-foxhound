@@ -196,18 +196,31 @@ async function testMiddleClickOnURLBar(isMiddleMousePastePrefOn) {
   info(`Set middlemouse.paste [${isMiddleMousePastePrefOn}]`);
   Services.prefs.setBoolPref("middlemouse.paste", isMiddleMousePastePrefOn);
 
-  info("Set initial value");
-  SpecialPowers.clipboardCopyString("test\nsample");
-  gURLBar.value = "";
+  info("Test with focused urlbar");
+  // Use a short value so clicking in the center pastes after the value.
+  gURLBar.value = "a";
   gURLBar.focus();
 
   info("Middle click on the urlbar");
   EventUtils.synthesizeMouseAtCenter(gURLBar.inputField, { button: 1 });
 
   if (isMiddleMousePastePrefOn) {
-    Assert.equal(gURLBar.value, "test sample", "URLBar has pasted value");
+    Assert.equal(gURLBar.value, "atest sample", "Pasted behind initial value");
   } else {
-    Assert.equal(gURLBar.value, "", "URLBar has no pasted value");
+    Assert.equal(gURLBar.value, "a", "Wasn't pasted");
+  }
+
+  info("Test with blured urlbar");
+  gURLBar.value = "initial value";
+  gURLBar.blur();
+
+  info("Middle click on the urlbar");
+  EventUtils.synthesizeMouseAtCenter(gURLBar.inputField, { button: 1 });
+
+  if (isMiddleMousePastePrefOn) {
+    Assert.equal(gURLBar.value, "test sample", "Replaced initial value");
+  } else {
+    Assert.equal(gURLBar.value, "initial value", "Wasn't pasted");
   }
 }
 

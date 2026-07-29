@@ -59,7 +59,7 @@ class Components(
     }
 
     val fxSuggestStorage: FxSuggestStorage by lazy {
-        FxSuggestStorage(context, remoteSettingsService)
+        FxSuggestStorage(context, remoteSettingsService, null)
     }
 
     val fxSuggestIngestionScheduler: FxSuggestIngestionScheduler by lazy {

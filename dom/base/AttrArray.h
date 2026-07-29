@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -209,6 +207,12 @@ class AttrArray {
     // Reinitialize to default tagged bloom filter
     SetTaggedBloom(0x1ULL);
   }
+
+  // For the HTML parser to call only after ensuring capacity.
+  // Moves out of the arguments and returns a pointer to the
+  // value once it is in place.
+  const nsAttrValue* AddNewAttributeAssumeAvailableSlot(RefPtr<nsAtom>& aName,
+                                                        nsAttrValue& aValue);
 
  private:
   // Tries to create an attribute, growing the buffer if needed, with the given

@@ -91,7 +91,8 @@ class ShellScriptRunner(Layer):
         parsed_metrics = []
         for metrics in self.metrics:
             prepared_metrics = (
-                metrics.replace("perfMetrics:", "")
+                metrics
+                .replace("perfMetrics:", "")
                 .replace("{{", "{")
                 .replace("}}", "}")
                 .strip()

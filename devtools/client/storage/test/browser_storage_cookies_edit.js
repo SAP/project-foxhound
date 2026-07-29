@@ -8,7 +8,7 @@
 
 add_task(async function () {
   const { toolbox, storage } = await openTabAndSetupStorage(
-    MAIN_DOMAIN + "storage-cookies.html"
+    MAIN_URL + "storage-cookies.html"
   );
   const doc = storage.panelWindow.document;
   showAllColumns(true);
@@ -17,15 +17,15 @@ add_task(async function () {
   await editCell(id, "name", "newTest3");
 
   id = getCookieId("newTest3", ".test1.example.org", "/browser");
-  await editCell(id, "host", "test1.example.org");
+  await editCell(id, "host", MAIN_HOST);
 
-  id = getCookieId("newTest3", "test1.example.org", "/browser");
+  id = getCookieId("newTest3", MAIN_HOST, "/browser");
   await editCell(id, "path", "/");
 
   const date = new Date();
   date.setDate(date.getDate() + 8);
 
-  id = getCookieId("newTest3", "test1.example.org", "/");
+  id = getCookieId("newTest3", MAIN_HOST, "/");
   await editCell(id, "expires", date.toGMTString());
   await editCell(id, "value", "newValue3");
   await editCell(id, "isSecure", "true");
@@ -47,7 +47,7 @@ add_task(async function () {
     "The expected name cell exists"
   );
 
-  id = getCookieId("newTest3", "test1.example.org", "/");
+  id = getCookieId("newTest3", MAIN_HOST, "/");
   // Adding a space prefix does make the cookie invalid
   const invalidCookieName = " thisIsInvalid";
   await editCell(id, "name", invalidCookieName, /* validate */ false);
@@ -81,7 +81,7 @@ add_task(async function () {
   );
 
   isnot(
-    getRowItem(getCookieId("newTest3", "test1.example.org", "/")),
+    getRowItem(getCookieId("newTest3", MAIN_HOST, "/")),
     null,
     "The cookie row for the original cookie is displayed"
   );

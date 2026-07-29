@@ -269,21 +269,21 @@ class Assembler : public MozBaseAssembler {
   void bl(Label* label);
 
   // Branch with link to PC offset.
-  void bl(int imm26, const LabelDoc& doc);
+  BufferOffset bl(int imm26, const LabelDoc& doc);
   static void bl(Instruction* at, int imm26);
 
   // Compare and branch to label if zero.
   void cbz(const Register& rt, Label* label);
 
   // Compare and branch to PC offset if zero.
-  void cbz(const Register& rt, int imm19, const LabelDoc& doc);
+  BufferOffset cbz(const Register& rt, int imm19, const LabelDoc& doc);
   static void cbz(Instruction* at, const Register& rt, int imm19);
 
   // Compare and branch to label if not zero.
   void cbnz(const Register& rt, Label* label);
 
   // Compare and branch to PC offset if not zero.
-  void cbnz(const Register& rt, int imm19, const LabelDoc& doc);
+  BufferOffset cbnz(const Register& rt, int imm19, const LabelDoc& doc);
   static void cbnz(Instruction* at, const Register& rt, int imm19);
 
   // Table lookup from one register.
@@ -342,14 +342,14 @@ class Assembler : public MozBaseAssembler {
   void tbz(const Register& rt, unsigned bit_pos, Label* label);
 
   // Test bit and branch to PC offset if zero.
-  void tbz(const Register& rt, unsigned bit_pos, int imm14, const LabelDoc& doc);
+  BufferOffset tbz(const Register& rt, unsigned bit_pos, int imm14, const LabelDoc& doc);
   static void tbz(Instruction* at, const Register& rt, unsigned bit_pos, int imm14);
 
   // Test bit and branch to label if not zero.
   void tbnz(const Register& rt, unsigned bit_pos, Label* label);
 
   // Test bit and branch to PC offset if not zero.
-  void tbnz(const Register& rt, unsigned bit_pos, int imm14, const LabelDoc& doc);
+  BufferOffset tbnz(const Register& rt, unsigned bit_pos, int imm14, const LabelDoc& doc);
   static void tbnz(Instruction* at, const Register& rt, unsigned bit_pos, int imm14);
 
   // Address calculation instructions.
@@ -360,14 +360,14 @@ class Assembler : public MozBaseAssembler {
   void adr(const Register& rd, Label* label);
 
   // Calculate the address of a PC offset.
-  void adr(const Register& rd, int imm21, const LabelDoc& doc);
+  BufferOffset adr(const Register& rd, int imm21, const LabelDoc& doc);
   static void adr(Instruction* at, const Register& rd, int imm21);
 
   // Calculate the page address of a label.
   void adrp(const Register& rd, Label* label);
 
   // Calculate the page address of a PC offset.
-  void adrp(const Register& rd, int imm21, const LabelDoc& doc);
+  BufferOffset adrp(const Register& rd, int imm21, const LabelDoc& doc);
   static void adrp(Instruction* at, const Register& rd, int imm21);
 
   // Data Processing instructions.
@@ -4220,22 +4220,6 @@ class Assembler : public MozBaseAssembler {
   Instr LoadStoreMemOperand(const MemOperand& addr,
                             unsigned access_size,
                             LoadStoreScalingOption option);
-
- protected:
-  // Prevent generation of a literal pool for the next |maxInst| instructions.
-  // Guarantees instruction linearity.
-  class AutoBlockLiteralPool {
-    ARMBuffer* armbuffer_;
-
-   public:
-    AutoBlockLiteralPool(Assembler* assembler, size_t maxInst)
-      : armbuffer_(&assembler->armbuffer_) {
-      armbuffer_->enterNoPool(maxInst);
-    }
-    ~AutoBlockLiteralPool() {
-      armbuffer_->leaveNoPool();
-    }
-  };
 
  protected:
   // Buffer where the code is emitted.

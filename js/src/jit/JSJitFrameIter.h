@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -388,7 +386,11 @@ class SnapshotIterator {
   uintptr_t fromStack(int32_t offset) const;
 
   bool hasInstructionResult(uint32_t index) const {
-    return instructionResults_;
+    if (!instructionResults_) {
+      return false;
+    }
+    MOZ_RELEASE_ASSERT(index < instructionResults_->length());
+    return true;
   }
   bool hasInstructionResults() const { return instructionResults_; }
   Value fromInstructionResult(uint32_t index) const;
@@ -403,10 +405,13 @@ class SnapshotIterator {
  public:
   // Handle iterating over RValueAllocations of the snapshots.
   inline RValueAllocation readAllocation() {
-    MOZ_ASSERT(moreAllocations());
+    MOZ_RELEASE_ASSERT(moreAllocations());
     return snapshot_.readAllocation();
   }
-  void skip() { snapshot_.skipAllocation(); }
+  void skip() {
+    MOZ_RELEASE_ASSERT(moreAllocations());
+    snapshot_.skipAllocation();
+  }
 
   const RResumePoint* resumePoint() const;
   const RInstruction* instruction() const { return recover_.instruction(); }
@@ -440,7 +445,7 @@ class SnapshotIterator {
   // Read the next instruction available and get ready to either skip it or
   // evaluate it.
   inline void nextInstruction() {
-    MOZ_ASSERT(snapshot_.numAllocationsRead() == numAllocations());
+    MOZ_RELEASE_ASSERT(snapshot_.numAllocationsRead() == numAllocations());
     recover_.nextInstruction();
     snapshot_.resetNumAllocationsRead();
   }
@@ -654,6 +659,9 @@ class InlineFrameIterator {
   InlineFrameIterator(JSContext* cx, const JSJitFrameIter* iter);
   InlineFrameIterator(JSContext* cx, const InlineFrameIterator* iter);
 
+  InlineFrameIterator() = delete;
+  InlineFrameIterator(const InlineFrameIterator& iter) = delete;
+
   bool more() const { return frame_ && framesRead_ < frameCount_; }
 
   // Due to optimizations, we are not always capable of reading the callee of
@@ -837,10 +845,6 @@ class InlineFrameIterator {
     MOZ_ASSERT(frameCount_ != UINT32_MAX);
     return frameCount_;
   }
-
- private:
-  InlineFrameIterator() = delete;
-  InlineFrameIterator(const InlineFrameIterator& iter) = delete;
 };
 
 }  // namespace jit

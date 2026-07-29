@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,10 +25,10 @@ class TrustedHTMLOrString;
 class DOMParser final : public nsISupports, public nsWrapperCache {
   typedef mozilla::dom::GlobalObject GlobalObject;
 
-  virtual ~DOMParser();
+  ~DOMParser();
 
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(DOMParser)
 
   // WebIDL API
@@ -72,10 +70,10 @@ class DOMParser final : public nsISupports, public nsWrapperCache {
 
   void ForceEnableDTD() { mForceEnableDTD = true; }
 
-  nsIGlobalObject* GetParentObject() const { return mOwner; }
+  nsIGlobalObject* GetParentObject() const { return mGlobal; }
 
-  virtual JSObject* WrapObject(JSContext* aCx,
-                               JS::Handle<JSObject*> aGivenProto) override {
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override {
     return mozilla::dom::DOMParser_Binding::Wrap(aCx, this, aGivenProto);
   }
 
@@ -83,13 +81,13 @@ class DOMParser final : public nsISupports, public nsWrapperCache {
   static already_AddRefed<DOMParser> CreateWithoutGlobal(ErrorResult& aRv);
 
  private:
-  DOMParser(nsIGlobalObject* aOwner, nsIPrincipal* aDocPrincipal,
+  DOMParser(nsIGlobalObject* aGlobal, nsIPrincipal* aDocPrincipal,
             nsIURI* aDocumentURI);
 
   already_AddRefed<Document> SetUpDocument(DocumentFlavor aFlavor,
                                            ErrorResult& aRv);
 
-  nsCOMPtr<nsIGlobalObject> mOwner;
+  nsCOMPtr<nsIGlobalObject> mGlobal;
   nsCOMPtr<nsIPrincipal> mPrincipal;
   nsCOMPtr<nsIURI> mDocumentURI;
 

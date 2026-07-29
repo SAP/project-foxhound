@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,11 +6,12 @@
 #define MOZILLA_GFX_TYPES_H_
 
 #include "mozilla/DefineEnum.h"  // for MOZ_DEFINE_ENUM_CLASS_WITH_BASE
-#include "mozilla/EndianUtils.h"
 #include "mozilla/EnumeratedRange.h"
 #include "mozilla/MacroArgs.h"  // for MOZ_CONCAT
+#include "mozilla/Maybe.h"
 #include "mozilla/TypedEnumBits.h"
 
+#include <bit>
 #include <iosfwd>  // for ostream
 #include <stddef.h>
 #include <stdint.h>
@@ -107,18 +106,15 @@ enum class SurfaceFormat : int8_t {
   // This represents the unknown format.
   UNKNOWN,  // TODO: Replace uses with Maybe<SurfaceFormat>.
 
-// The following values are endian-independent synonyms. The _UINT32 suffix
-// indicates that the name reflects the layout when viewed as a uint32_t
-// value.
-#if MOZ_LITTLE_ENDIAN()
-  A8R8G8B8_UINT32 = B8G8R8A8,  // 0xAARRGGBB
-  X8R8G8B8_UINT32 = B8G8R8X8,  // 0x00RRGGBB
-#elif MOZ_BIG_ENDIAN()
-  A8R8G8B8_UINT32 = A8R8G8B8,  // 0xAARRGGBB
-  X8R8G8B8_UINT32 = X8R8G8B8,  // 0x00RRGGBB
-#else
-#  error "bad endianness"
-#endif
+  // The following values are endian-independent synonyms. The _UINT32 suffix
+  // indicates that the name reflects the layout when viewed as a uint32_t
+  // value.
+  A8R8G8B8_UINT32 = std::endian::native == std::endian::little
+                        ? B8G8R8A8
+                        : A8R8G8B8,  // 0xAARRGGBB
+  X8R8G8B8_UINT32 = std::endian::native == std::endian::little
+                        ? B8G8R8X8
+                        : X8R8G8B8,  // 0x00RRGGBB
 
   // The following values are OS and endian-independent synonyms.
   //
@@ -268,19 +264,10 @@ std::ostream& operator<<(std::ostream& aOut, const SurfaceFormat& aFormat);
 // Represents the bit-shifts required to access color channels when the layout
 // is viewed as a uint32_t value.
 enum class SurfaceFormatBit : uint32_t {
-#if MOZ_LITTLE_ENDIAN()
-  R8G8B8A8_R = 0,
-  R8G8B8A8_G = 8,
-  R8G8B8A8_B = 16,
-  R8G8B8A8_A = 24,
-#elif MOZ_BIG_ENDIAN()
-  R8G8B8A8_A = 0,
-  R8G8B8A8_B = 8,
-  R8G8B8A8_G = 16,
-  R8G8B8A8_R = 24,
-#else
-#  error "bad endianness"
-#endif
+  R8G8B8A8_R = std::endian::native == std::endian::little ? 0 : 24,
+  R8G8B8A8_G = std::endian::native == std::endian::little ? 8 : 16,
+  R8G8B8A8_B = std::endian::native == std::endian::little ? 16 : 8,
+  R8G8B8A8_A = std::endian::native == std::endian::little ? 24 : 0,
 
   // The following values are endian-independent for A8R8G8B8_UINT32.
   A8R8G8B8_UINT32_B = 0,
@@ -553,12 +540,49 @@ enum class ColorDepth : uint8_t {
 std::ostream& operator<<(std::ostream& aOut, const ColorDepth& aColorDepth);
 
 enum class TransferFunction : uint8_t {
+  // BT709 is the common SDR video transfer function, because BT709 only defines
+  // an OETF, this actually represents BT1886 and BT2020 which add an EOTF.
+  // https://en.wikipedia.org/wiki/ITU-R_BT.1886
+  // https://en.wikipedia.org/wiki/Rec._2020
   BT709,
+  // sRGB is the common SDR web content transfer function, there is some dispute
+  // as to how this standard is meant to be interpreted as it was made to encode
+  // incoming light (OETF) in a way that is aesthetically pleasing on a CRT in
+  // a brightly lit office environment (which can be considered an EOTF), many
+  // modern displays display sRGB content using a plain 2.4 gamma mimicking a
+  // CRT of that era without regard to the piecewise gamma defined in sRGB.
+  //
+  // There is much debate about how to interpret this standard, this is just one
+  // of the more common interpretations, and is the one that matches BT1886,
+  // which also describes analog CRT behavior so seems a good point of
+  // reference.
+  //
+  // This can be used with RGBA16F surfaces to preserve sRGB blending behavior
+  // expected in CSS on the web, while still allowing for HDR and wide color
+  // gamut content, but it has surprising behaviors such as negative colors and
+  // colors up to 65530 (10100 cd/m^2, assuming 1.0 is 100 cd/m^2), for Canvas
+  // rendering it's preferred to use LINEAR with RGBA16F however.
+  //
+  // https://en.wikipedia.org/wiki/SRGB
   SRGB,
+  // Perceptual Quantizer, popularized as HDR10, used for both YUV (P010) and
+  // RGB (RGB10A2) formats, requires 10bit pixel formats to avoid visible
+  // banding.
+  // https://en.wikipedia.org/wiki/Perceptual_quantizer
   PQ,
+  // Hybrid Log-Gamma, used for both HDR YUV and RGB formats, especially on
+  // broadcast HDR content that is meant to be backward compatible with SDR
+  // displays in a usable way, can be reasonably used with 8bit (BGRA8, NV12,
+  // YV12) or 10bit pixel formats (RGB10A2, P010).
+  // https://en.wikipedia.org/wiki/Hybrid_log%E2%80%93gamma
   HLG,
+  // Linear transfer function for HDR Canvas and WebRender surfaces with
+  // RGBA16F format, can be used for high dynamic range and wide color gamut
+  // even on colorspaces that do not otherwise support that (e.g. SRGB),
+  // when paired with sRGB this is often called scRGB or srgb-linear.
+  LINEAR,
   _First = BT709,
-  _Last = HLG,
+  _Last = LINEAR,
   Default = BT709,
 };
 
@@ -569,14 +593,72 @@ enum class ColorRange : uint8_t {
   _Last = FULL,
 };
 
-// Really "YcbcrColorColorSpace"
+// HDR metadata structures, populated from codec-level signalling.
+struct Chromaticity {
+  float x = 0.0f;
+  float y = 0.0f;
+  bool operator==(const Chromaticity&) const = default;
+};
+
+// SMPTE ST 2086 mastering display colour volume.
+struct Smpte2086Metadata {
+  Chromaticity displayPrimaryRed;
+  Chromaticity displayPrimaryGreen;
+  Chromaticity displayPrimaryBlue;
+  Chromaticity whitePoint;
+  float maxLuminance = 0.0f;  // cd/m^2
+  float minLuminance = 0.0f;  // cd/m^2
+  bool operator==(const Smpte2086Metadata&) const = default;
+};
+
+// CTA-861.3 content light level (MaxCLL/MaxFALL).
+struct ContentLightLevel {
+  uint16_t maxContentLightLevel = 0;
+  uint16_t maxFrameAverageLightLevel = 0;
+  bool operator==(const ContentLightLevel&) const = default;
+};
+
+// HDR metadata signalled at container or codec level. Each field is
+// independently optional since streams may carry one without the other.
+struct HDRMetadata {
+  Maybe<Smpte2086Metadata> mSmpte2086;
+  Maybe<ContentLightLevel> mContentLightLevel;
+  bool operator==(const HDRMetadata&) const = default;
+  bool IsValid() const {
+    return mSmpte2086.isSome() || mContentLightLevel.isSome();
+  }
+};
+
+// Really "YcbcrColorColorSpace" but YUV is the common parlance. This represents
+// the combination of matrix coefficients and color range (studio or full) for
+// YUV formats. The color primaries are inferred to have the same name as the
+// matrix coefficients. The transfer function is assumed for the first set of
+// enum values, but the transfer function is explicit in the name of the enum
+// value for the last set of enum values. This enum is currently only used for
+// video.
 enum class YUVRangedColorSpace : uint8_t {
+  // BT601 and BT709 use BT709 transfer function in common usage (however on
+  // Windows the DXGI colorspace enums conflate sRGB and BT709, which is
+  // interesting to think about, both have an EOTF identical to BT1886 but their
+  // OETF differs significantly).
   BT601_Narrow = 0,
   BT601_Full,
   BT709_Narrow,
   BT709_Full,
+  // BT2020 is used with TransferFunction::BT709 but isn't quite the same, where
+  // BT2020 at 12bit+ precision uses its own constants for a more precise fit
+  // than BT709 defines.  In practice all video is 8bit or 10bit, so BT709 is a
+  // reasonable way to think about it for canonicalization purposes.
   BT2020_Narrow,
   BT2020_Full,
+  // BT2100 shares the same primaries with BT2020 but implies the content is HDR
+  // so the transfer function is explicitly either HLG (1000 nits) or PQ (10000)
+  BT2100_HLG_Narrow,
+  BT2100_HLG_Full,
+  // Windows supports this only for YUV pixel formats
+  BT2100_PQ_Narrow,
+  // Windows supports this only for RGB pixel formats
+  BT2100_PQ_Full,
   GbrIdentity,
 
   _First = BT601_Narrow,
@@ -584,19 +666,31 @@ enum class YUVRangedColorSpace : uint8_t {
   Default = BT709_Narrow,
 };
 
-// I can either come up with a longer "very clever" name that doesn't conflict
-// with FilterSupport.h, embrace and expand FilterSupport, or rename the old
-// one.
-// Some times Worse Is Better.
+// ColorSpace2 defines what color primaries are used for a given surface, this
+// is used alongside a TransferFunction and in case of YUV also a ColorRange.
 enum class ColorSpace2 : uint8_t {
+  // Display color space matches a physical display (usually primary), this is
+  // going away in favor of more explicit color management of surfaces.
   Display,
   UNKNOWN = Display,  // We feel sufficiently bad about this TODO.
+  // sRGB color primaries, this is the web standard from the beginning, and is
+  // expected to be paired with TransferFunction::SRGB or
+  // TransferFunction::LINEAR (which some call srgb-linear or scRGB).
   SRGB,
+  // Display P3 color primaries, used primarily by macOS/iOS devices, this is
+  // typically paired with TransferFunction::SRGB, but could be linear too.
   DISPLAY_P3,
-  BT601_525,  // aka smpte170m NTSC
-  BT709,      // Same gamut as SRGB, but different gamma.
-  BT601_625 =
-      BT709,  // aka bt470bg PAL. Basically BT709, just Xg is 0.290 not 0.300.
+  // SMPTE C 170M NTSC color primaries, used with BT709 transfer function.
+  BT601_525,
+  // ITU-R BT.709 HDTV color primaries, used with BT709 transfer function.
+  BT709,
+  // ITU-R BT.601 PAL/SECAM color primaries, used with BT709 transfer function
+  // Preserving a note here: Basically BT709, just Xg is 0.290 not 0.300.
+  BT601_625 = BT709,
+  // ITU-R BT.2020 color primaries, used with BT709 transfer function (except in
+  // case of 12bit or higher precision in which case BT2020 defines a more
+  // precise set of constants for the BT709 gamma function), or HLG or PQ
+  // transfer functions for HDR content (BT2100).
   BT2020,
   _First = Display,
   _Last = BT2020,
@@ -637,35 +731,49 @@ inline YUVColorSpace ToYUVColorSpace(const ColorSpace2 in) {
 struct FromYUVRangedColorSpaceT final {
   const YUVColorSpace space;
   const ColorRange range;
+  const TransferFunction transferFunction;
 };
 
 inline FromYUVRangedColorSpaceT FromYUVRangedColorSpace(
     const YUVRangedColorSpace s) {
   switch (s) {
     case YUVRangedColorSpace::BT601_Narrow:
-      return {YUVColorSpace::BT601, ColorRange::LIMITED};
+      return {YUVColorSpace::BT601, ColorRange::LIMITED,
+              TransferFunction::BT709};
     case YUVRangedColorSpace::BT601_Full:
-      return {YUVColorSpace::BT601, ColorRange::FULL};
+      return {YUVColorSpace::BT601, ColorRange::FULL, TransferFunction::BT709};
 
     case YUVRangedColorSpace::BT709_Narrow:
-      return {YUVColorSpace::BT709, ColorRange::LIMITED};
+      return {YUVColorSpace::BT709, ColorRange::LIMITED,
+              TransferFunction::BT709};
     case YUVRangedColorSpace::BT709_Full:
-      return {YUVColorSpace::BT709, ColorRange::FULL};
+      return {YUVColorSpace::BT709, ColorRange::FULL, TransferFunction::BT709};
 
     case YUVRangedColorSpace::BT2020_Narrow:
-      return {YUVColorSpace::BT2020, ColorRange::LIMITED};
+      return {YUVColorSpace::BT2020, ColorRange::LIMITED,
+              TransferFunction::BT709};
     case YUVRangedColorSpace::BT2020_Full:
-      return {YUVColorSpace::BT2020, ColorRange::FULL};
+      return {YUVColorSpace::BT2020, ColorRange::FULL, TransferFunction::BT709};
+    case YUVRangedColorSpace::BT2100_HLG_Narrow:
+      return {YUVColorSpace::BT2020, ColorRange::LIMITED,
+              TransferFunction::HLG};
+    case YUVRangedColorSpace::BT2100_HLG_Full:
+      return {YUVColorSpace::BT2020, ColorRange::FULL, TransferFunction::HLG};
+    case YUVRangedColorSpace::BT2100_PQ_Narrow:
+      return {YUVColorSpace::BT2020, ColorRange::LIMITED, TransferFunction::PQ};
+    case YUVRangedColorSpace::BT2100_PQ_Full:
+      return {YUVColorSpace::BT2020, ColorRange::FULL, TransferFunction::PQ};
 
     case YUVRangedColorSpace::GbrIdentity:
-      return {YUVColorSpace::Identity, ColorRange::FULL};
+      return {YUVColorSpace::Identity, ColorRange::FULL,
+              TransferFunction::BT709};
   }
   MOZ_CRASH("bad YUVRangedColorSpace");
 }
 
-// Todo: This should go in the CPP.
-inline YUVRangedColorSpace ToYUVRangedColorSpace(const YUVColorSpace space,
-                                                 const ColorRange range) {
+inline YUVRangedColorSpace ToYUVRangedColorSpace(
+    const YUVColorSpace space, const ColorRange range,
+    const gfx::TransferFunction transferFunction) {
   bool narrow;
   switch (range) {
     case ColorRange::FULL:
@@ -690,15 +798,30 @@ inline YUVRangedColorSpace ToYUVRangedColorSpace(const YUVColorSpace space,
                     : YUVRangedColorSpace::BT709_Full;
 
     case YUVColorSpace::BT2020:
-      return narrow ? YUVRangedColorSpace::BT2020_Narrow
-                    : YUVRangedColorSpace::BT2020_Full;
+      switch (transferFunction) {
+        case gfx::TransferFunction::PQ:
+          return narrow ? YUVRangedColorSpace::BT2100_PQ_Narrow
+                        : YUVRangedColorSpace::BT2100_PQ_Full;
+        case gfx::TransferFunction::HLG:
+          return narrow ? YUVRangedColorSpace::BT2100_HLG_Narrow
+                        : YUVRangedColorSpace::BT2100_HLG_Full;
+        case gfx::TransferFunction::SRGB:
+          return narrow ? YUVRangedColorSpace::BT2020_Narrow
+                        : YUVRangedColorSpace::BT2020_Full;
+        case gfx::TransferFunction::BT709:
+          return narrow ? YUVRangedColorSpace::BT2020_Narrow
+                        : YUVRangedColorSpace::BT2020_Full;
+        default:
+          MOZ_CRASH("bad TransferFunction for BT2020");
+      }
   }
   MOZ_CRASH("bad YUVColorSpace");
 }
 
 template <typename DescriptorT>
 inline YUVRangedColorSpace GetYUVRangedColorSpace(const DescriptorT& d) {
-  return ToYUVRangedColorSpace(d.yUVColorSpace(), d.colorRange());
+  return ToYUVRangedColorSpace(d.yUVColorSpace(), d.colorRange(),
+                               d.transferFunction());
 }
 
 static inline SurfaceFormat SurfaceFormatForColorDepth(ColorDepth aColorDepth) {
@@ -751,18 +874,16 @@ static inline ColorDepth ColorDepthForBitDepth(uint8_t aBitDepth) {
   return depth;
 }
 
-// 10 and 12 bits color depth image are using 16 bits integers for storage
-// As such we need to rescale the value from 10 or 12 bits to 16.
+// 10 and 12 bits color depth image are using 16 bits integers for storage.
+// Data is placed as MSB and texture is sampled within [0 - 1] range.
 static inline uint32_t RescalingFactorForColorDepth(ColorDepth aColorDepth) {
   uint32_t factor = 1;
   switch (aColorDepth) {
     case ColorDepth::COLOR_8:
       break;
     case ColorDepth::COLOR_10:
-      factor = 64;
       break;
     case ColorDepth::COLOR_12:
-      factor = 16;
       break;
     case ColorDepth::COLOR_16:
       break;
@@ -775,6 +896,7 @@ static inline bool IsHDRTransferFunction(
   switch (aTransferFunction) {
     case gfx::TransferFunction::PQ:
     case gfx::TransferFunction::HLG:
+    case gfx::TransferFunction::LINEAR:
       return true;
     case gfx::TransferFunction::BT709:
     case gfx::TransferFunction::SRGB:

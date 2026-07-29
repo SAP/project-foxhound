@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -82,19 +80,15 @@ add_task(async function test_execute() {
 
   Assert.equal(await getFormHistoryCount(), 0, "Form history cleared");
 
-  let stmt = DBConn(true).createStatement(
-    "SELECT id FROM moz_places WHERE url = :page_url "
-  );
-
-  try {
-    URIS.forEach(function (aUrl) {
-      stmt.params.page_url = aUrl;
-      Assert.ok(!stmt.executeStep());
-      stmt.reset();
-    });
-  } finally {
-    stmt.finalize();
+  let db = await Sqlite.openConnection({ path: "places.sqlite" });
+  for (let aUrl of URIS) {
+    let rows = await db.execute(
+      "SELECT id FROM moz_places WHERE url = :page_url",
+      { page_url: aUrl }
+    );
+    Assert.ok(!rows.length, `${aUrl} should not be in the database`);
   }
+  await db.close();
 
   info("Check cache");
   // Check cache.

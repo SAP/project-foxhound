@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -118,8 +116,6 @@ class CamerasSingleton {
 // it will set up the CamerasSingleton.
 CamerasChild* GetCamerasChild();
 
-CamerasChild* GetCamerasChildIfExists();
-
 // Shut down the IPC channel and everything associated, like WebRTC.
 // This is a static call because the CamerasChild object may not even
 // be alive when we're called.
@@ -221,6 +217,11 @@ class CamerasChild final : public PCamerasChild {
   }
 
   FrameRelay* Callback(int capture_id);
+
+  // Remove a FrameRelay callback by capture_id if a CamerasChild exists.
+  static void RemoveCallbackIfExists(int capture_id);
+
+  void ClearAllCallbacks();
 
  private:
   CamerasChild();

@@ -6,7 +6,7 @@
 
 #include <codecvt>
 #include <cmath>
-#include <Mferror.h>
+#include <mferror.h>
 #include <winerror.h>
 
 #include "WMFClearKeyCDM.h"
@@ -180,7 +180,7 @@ STDMETHODIMP WMFClearKeySession::GetKeyStatuses(MFMediaKeyStatus** aKeyStatuses,
   for (UINT idx = 0; idx < keyStatusCount; idx++) {
     keyStatusArray[idx].cbKeyId = mKeyInfo[idx].mKeyId.size();
     keyStatusArray[idx].pbKeyId =
-        static_cast<BYTE*>(CoTaskMemAlloc(sizeof(mKeyInfo[idx].mKeyId.size())));
+        static_cast<BYTE*>(CoTaskMemAlloc(mKeyInfo[idx].mKeyId.size()));
     if (keyStatusArray[idx].pbKeyId == nullptr) {
       ENTRY_LOG_ARGS("OOM when alloacting keyStatusArray's pbKeyId!");
       return E_OUTOFMEMORY;

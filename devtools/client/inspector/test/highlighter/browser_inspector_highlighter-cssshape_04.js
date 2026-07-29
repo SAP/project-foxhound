@@ -110,9 +110,9 @@ async function testPolygonMovePoint(config) {
   await mouse.down(x, y);
   await mouse.move(x + dx, y + dy);
   await mouse.up();
-  await reflowContentPage();
   info("Waiting for rule view changed from shape change");
   await onRuleViewChanged;
+  await reflowContentPage();
 
   const definition = await getComputedPropertyValue(
     selector,
@@ -152,15 +152,17 @@ async function testPolygonAddPoint(config) {
   y2 = top + (height * y2) / 100;
 
   const { mouse } = helper;
+  let onRuleViewChanged = view.once("ruleview-changed");
   await mouse.down(x1, y1);
   await mouse.move(x2, y1);
   await mouse.up();
+  await onRuleViewChanged;
   await reflowContentPage();
 
   let newPointX = x2;
   let newPointY = (y1 + y2) / 2;
 
-  const onRuleViewChanged = view.once("ruleview-changed");
+  onRuleViewChanged = view.once("ruleview-changed");
   info("Adding new polygon point");
   BrowserTestUtils.synthesizeMouse(
     ":root",
@@ -170,9 +172,9 @@ async function testPolygonAddPoint(config) {
     gBrowser.selectedTab.linkedBrowser
   );
 
-  await reflowContentPage();
   info("Waiting for rule view changed from shape change");
   await onRuleViewChanged;
+  await reflowContentPage();
 
   // Decimal precision for coordinates with percentage units is 2
   const precision = 2;
@@ -193,7 +195,8 @@ async function testPolygonAddPoint(config) {
 }
 
 async function testPolygonRemovePoint(config) {
-  const { inspector, highlighters, highlighterTestFront, helper } = config;
+  const { inspector, highlighters, highlighterTestFront, helper, view } =
+    config;
   const selector = "#polygon";
   const property = "clip-path";
 
@@ -227,6 +230,7 @@ async function testPolygonRemovePoint(config) {
   const onShapeChangeApplied = highlighters.once(
     "shapes-highlighter-changes-applied"
   );
+  const onRuleViewChanged = view.once("ruleview-changed");
   BrowserTestUtils.synthesizeMouse(
     ":root",
     adjustedX,
@@ -237,6 +241,7 @@ async function testPolygonRemovePoint(config) {
 
   info("Waiting for shape changes to apply");
   await onShapeChangeApplied;
+  await onRuleViewChanged;
   const definition = await getComputedPropertyValue(
     selector,
     property,
@@ -248,13 +253,11 @@ async function testPolygonRemovePoint(config) {
 }
 
 async function testCircleMoveCenter(config) {
-  const { inspector, highlighters, highlighterTestFront, helper } = config;
+  const { inspector, highlighters, highlighterTestFront, helper, view } =
+    config;
   const selector = "#circle";
   const property = "clip-path";
 
-  const onShapeChangeApplied = highlighters.once(
-    "shapes-highlighter-changes-applied"
-  );
   await setup({ selector, property, ...config });
 
   const cx = parseFloat(
@@ -280,12 +283,17 @@ async function testCircleMoveCenter(config) {
 
   info("Moving circle center");
   const { mouse } = helper;
+  const onShapeChangeApplied = highlighters.once(
+    "shapes-highlighter-changes-applied"
+  );
+  const onRuleViewChanged = view.once("ruleview-changed");
   await mouse.down(cxPixel, cyPixel, selector);
   await mouse.move(cxPixel + dx, cyPixel + dy, selector);
   await mouse.up(cxPixel + dx, cyPixel + dy, selector);
-  await reflowContentPage();
   info("Waiting for shape changes to apply");
   await onShapeChangeApplied;
+  await onRuleViewChanged;
+  await reflowContentPage();
 
   const definition = await getComputedPropertyValue(
     selector,
@@ -301,7 +309,8 @@ async function testCircleMoveCenter(config) {
 }
 
 async function testCircleWithoutPosition(config) {
-  const { inspector, highlighters, highlighterTestFront, helper } = config;
+  const { inspector, highlighters, highlighterTestFront, helper, view } =
+    config;
   const selector = "#circle-without-position";
   const property = "clip-path";
 
@@ -347,11 +356,13 @@ async function testCircleWithoutPosition(config) {
   let onShapeChangeApplied = highlighters.once(
     "shapes-highlighter-changes-applied"
   );
+  let onRuleViewChanged = view.once("ruleview-changed");
   await mouse.down(rxPixel, cyPixel, selector);
   await mouse.move(rxPixel + dx, cyPixel, selector);
   await mouse.up(rxPixel + dx, cyPixel, selector);
-  await reflowContentPage();
   await onShapeChangeApplied;
+  await onRuleViewChanged;
+  await reflowContentPage();
 
   let definition = await getComputedPropertyValue(
     selector,
@@ -368,12 +379,15 @@ async function testCircleWithoutPosition(config) {
   onShapeChangeApplied = highlighters.once(
     "shapes-highlighter-changes-applied"
   );
+  onRuleViewChanged = view.once("ruleview-changed");
   await mouse.down(cxPixel, cyPixel, selector);
   await mouse.move(cxPixel + dx, cyPixel, selector);
   await mouse.up(cxPixel + dx, cyPixel, selector);
-  await reflowContentPage();
+
   info("Waiting for shape changes to apply");
   await onShapeChangeApplied;
+  await onRuleViewChanged;
+  await reflowContentPage();
 
   definition = await getComputedPropertyValue(selector, property, inspector);
   is(
@@ -386,7 +400,8 @@ async function testCircleWithoutPosition(config) {
 }
 
 async function testEllipseMoveRadius(config) {
-  const { inspector, highlighters, highlighterTestFront, helper } = config;
+  const { inspector, highlighters, highlighterTestFront, helper, view } =
+    config;
   const selector = "#ellipse";
   const property = "clip-path";
 
@@ -436,20 +451,24 @@ async function testEllipseMoveRadius(config) {
 
   const { mouse } = helper;
   info("Moving ellipse rx");
+  let onRuleViewChanged = view.once("ruleview-changed");
   await mouse.down(rxPixel, cyPixel, selector);
   await mouse.move(rxPixel + dx, cyPixel, selector);
   await mouse.up(rxPixel + dx, cyPixel, selector);
+  await onRuleViewChanged;
   await reflowContentPage();
 
   info("Moving ellipse ry");
   const onShapeChangeApplied = highlighters.once(
     "shapes-highlighter-changes-applied"
   );
+  onRuleViewChanged = view.once("ruleview-changed");
   await mouse.down(cxPixel, ryPixel, selector);
   await mouse.move(cxPixel, ryPixel - dy, selector);
   await mouse.up(cxPixel, ryPixel - dy, selector);
-  await reflowContentPage();
   await onShapeChangeApplied;
+  await onRuleViewChanged;
+  await reflowContentPage();
 
   const definition = await getComputedPropertyValue(
     selector,
@@ -465,7 +484,8 @@ async function testEllipseMoveRadius(config) {
 }
 
 async function testInsetMoveEdges(config) {
-  const { inspector, highlighters, highlighterTestFront, helper } = config;
+  const { inspector, highlighters, highlighterTestFront, helper, view } =
+    config;
   const selector = "#inset";
   const property = "clip-path";
 
@@ -516,11 +536,13 @@ async function testInsetMoveEdges(config) {
   let onShapeChangeApplied = highlighters.once(
     "shapes-highlighter-changes-applied"
   );
+  let onRuleViewChanged = view.once("ruleview-changed");
   await mouse.down(xCenter, top, selector);
   await mouse.move(xCenter, top + dy, selector);
   await mouse.up(xCenter, top + dy, selector);
-  await reflowContentPage();
   await onShapeChangeApplied;
+  await onRuleViewChanged;
+  await reflowContentPage();
 
   // TODO: Test bottom inset marker after Bug 1456777 is fixed.
   // Bug 1456777 - https://bugzilla.mozilla.org/show_bug.cgi?id=1456777
@@ -531,21 +553,25 @@ async function testInsetMoveEdges(config) {
   onShapeChangeApplied = highlighters.once(
     "shapes-highlighter-changes-applied"
   );
+  onRuleViewChanged = view.once("ruleview-changed");
   await mouse.down(left, yCenter, selector);
   await mouse.move(left + dx, yCenter, selector);
   await mouse.up(left + dx, yCenter, selector);
-  await reflowContentPage();
   await onShapeChangeApplied;
+  await onRuleViewChanged;
+  await reflowContentPage();
 
   info("Moving inset right");
   onShapeChangeApplied = highlighters.once(
     "shapes-highlighter-changes-applied"
   );
+  onRuleViewChanged = view.once("ruleview-changed");
   await mouse.down(right, yCenter, selector);
   await mouse.move(right + dx, yCenter, selector);
   await mouse.up(right + dx, yCenter, selector);
-  await reflowContentPage();
   await onShapeChangeApplied;
+  await onRuleViewChanged;
+  await reflowContentPage();
 
   const definition = await getComputedPropertyValue(
     selector,

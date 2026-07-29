@@ -14,6 +14,8 @@ def add_pernosco_route(config, tasks):
         yield from tasks
         return
 
+    states = ("completed", "defined", "exception", "failed", "running")
     for task in tasks:
-        task.setdefault("routes", []).append("notify.pulse.pernosco-v1.on-resolved")
+        routes = task.setdefault("routes", [])
+        routes.extend([f"notify.pulse.pernosco-v1.on-{state}" for state in states])
         yield task

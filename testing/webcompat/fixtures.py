@@ -100,9 +100,28 @@ class FirefoxWebDriver(WebDriver):
         if "use_strict_etp" in test_config:
             prefs[STRICT_ETP_PREF] = test_config["use_strict_etp"]
 
+        if test_config.get("use_big_minimum_font_size"):
+            prefs["font.size.variable.x-western"] = 14
+            prefs["font.minimum-size.x-western"] = 20
+
         if test_config.get("no_overlay_scrollbars"):
             prefs["widget.gtk.overlay-scrollbars.enabled"] = False
             prefs["widget.windows.overlay-scrollbars.enabled"] = False
+
+        if test_config.get("enable_speechrecognition"):
+            prefs["media.webspeech.recognition.enable"] = True
+        elif test_config.get("disable_speechrecognition"):
+            prefs["media.webspeech.recognition.enable"] = False
+
+        if test_config.get("enable_standard_captureStream"):
+            prefs["media.captureStream.enabled"] = True
+        elif test_config.get("disable_standard_captureStream"):
+            prefs["media.captureStream.enabled"] = False
+
+        if test_config.get("enable_webkit_scrollbar"):
+            prefs["layout.css.fake-webkit-scrollbar.enabled"] = True
+        elif test_config.get("disable_webkit_scrollbar"):
+            prefs["layout.css.fake-webkit-scrollbar.enabled"] = False
 
         if test_config.get("enable_webkit_fill_available"):
             prefs["layout.css.webkit-fill-available.enabled"] = True
@@ -120,6 +139,9 @@ class FirefoxWebDriver(WebDriver):
         cookieBehavior = 4 if test_config.get("without_tcp") else 5
         prefs[CB_PREF] = cookieBehavior
         prefs[CB_PBM_PREF] = cookieBehavior
+
+        prefs["webgl.allow-in-parent"] = True
+        prefs["layout.css.getBoxQuads.enabled"] = True
 
         # prevent "allow notifications for?" popups by setting the
         # default permission for notificaitons to PERM_DENY_ACTION.
@@ -455,11 +477,14 @@ def only_platforms(bug_number, platform, request, session):
         pytest.skip(
             f"Bug #{bug_number} skipped; needs to be run on the actual platform, won't work while overriding"
         )
+    is_desktop = platform in ["linux", "mac", "windows"]
     if request.node.get_closest_marker("only_platforms"):
         plats = request.node.get_closest_marker("only_platforms").args
         for only in plats:
             if (
                 only == platform
+                or (only == "android" and not is_desktop)
+                or (only == "desktop" and is_desktop)
                 or (only == "fenix" and is_fenix)
                 or (only == "gve" and is_gve)
             ):
@@ -476,11 +501,14 @@ def skip_platforms(bug_number, platform, request, session):
     is_gve = "org.mozilla.geckoview_example" in session.capabilities.get(
         "moz:profile", ""
     )
+    is_desktop = platform in ["linux", "mac", "windows"]
     if request.node.get_closest_marker("skip_platforms"):
         plats = request.node.get_closest_marker("skip_platforms").args
         for skipped in plats:
             if (
                 skipped == platform
+                or (skipped == "android" and not is_desktop)
+                or (skipped == "desktop" and is_desktop)
                 or (skipped == "fenix" and is_fenix)
                 or (skipped == "gve" and is_gve)
             ):

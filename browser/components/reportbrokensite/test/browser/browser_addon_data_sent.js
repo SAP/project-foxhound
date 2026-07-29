@@ -70,30 +70,23 @@ async function installAddons() {
 
 add_task(async function testSendButton() {
   ensureReportBrokenSitePreffedOn();
-  ensureReasonOptional();
   const addonCleanup = await installAddons();
-
-  const tab = await openTab(REPORTABLE_PAGE_URL);
-
-  await testSend(tab, AppMenu(), {
-    addons: EXPECTED_ADDONS,
+  await withNewTab(REPORTABLE_PAGE_URL, async (_, tab) => {
+    await testSend(tab, AppMenu(), {
+      addons: EXPECTED_ADDONS,
+    });
   });
-
-  closeTab(tab);
   await addonCleanup();
 });
 
 add_task(async function testSendingMoreInfo() {
   ensureReportBrokenSitePreffedOn();
-  ensureSendMoreInfoEnabled();
+  enableSendMoreInfo();
   const addonCleanup = await installAddons();
-
-  const tab = await openTab(REPORTABLE_PAGE_URL);
-
-  await testSendMoreInfo(tab, AppMenu(), {
-    addons: EXPECTED_ADDONS,
+  await withNewTab(REPORTABLE_PAGE_URL, async (_, tab) => {
+    await testSendMoreInfo(tab, AppMenu(), {
+      addons: EXPECTED_ADDONS,
+    });
   });
-
-  closeTab(tab);
   await addonCleanup();
 });

@@ -144,9 +144,7 @@ Maybe<PreloadHashKey> EarlyHintPreloader::GenerateHashKey(
         aURI, aCorsMode, JS::loader::ScriptKind::eClassic));
   }
   if (aAs == ASDestination::DESTINATION_STYLE) {
-    return Some(PreloadHashKey::CreateAsStyle(
-        aURI, aPrincipal, aCorsMode,
-        css::SheetParsingMode::eAuthorSheetFeatures));
+    return Some(PreloadHashKey::CreateAsStyle(aURI, aPrincipal, aCorsMode));
   }
   if (aAs == ASDestination::DESTINATION_FETCH && aCorsMode != CORS_NONE) {
     return Some(PreloadHashKey::CreateAsFetch(aURI, aCorsMode));
@@ -439,11 +437,6 @@ nsresult EarlyHintPreloader::OpenChannel(
 
   PriorizeAsPreload();
 
-  if (nsCOMPtr<nsIRaceCacheWithNetwork> rcwn = do_QueryInterface(httpChannel)) {
-    // Since this is an early hint, we should consult the cache first.
-    rcwn->SetAllowRacing(false);
-  }
-
   rv = mChannel->AsyncOpen(mParentListener);
   if (NS_FAILED(rv)) {
     mParentListener = nullptr;
@@ -645,9 +638,9 @@ EarlyHintPreloader::OnStartRequest(nsIRequest* aRequest) {
   nsresult status = NS_OK;
   (void)aRequest->GetStatus(&status);
 
-  if (mParent) {
+  if (nsCOMPtr<nsIParentChannel> parent = mParent) {
     SetParentChannel();
-    mParent->OnStartRequest(aRequest);
+    parent->OnStartRequest(aRequest);
     InvokeStreamListenerFunctions();
   } else {
     // Don't suspend the chanel when the channel got cancelled with

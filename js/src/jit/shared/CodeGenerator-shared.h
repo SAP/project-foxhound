@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -451,6 +449,12 @@ class OutOfLineCode : public TempObject,
 // should have the signature (OutOfLineCode& ool) -> void.
 template <typename Func>
 class LambdaOutOfLineCode : public OutOfLineCode {
+  // Enforce a void return so a fallible lambda's bool result cannot be
+  // silently discarded here; signal failure via masm.setOOM() instead.
+  static_assert(std::is_void_v<std::invoke_result_t<Func, OutOfLineCode&>>,
+                "LambdaOutOfLineCode lambda must return void; use "
+                "masm.setOOM() to report failure");
+
   Func generateFunc_;
 
  public:

@@ -13,25 +13,33 @@ import androidx.appcompat.widget.AppCompatCheckBox
 import androidx.core.view.isVisible
 import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.FragmentTransaction
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleRegistry
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import mozilla.components.feature.addons.Addon
 import mozilla.components.feature.addons.R
 import mozilla.components.feature.addons.ui.AddonDialogFragment.PromptsStyling
+import mozilla.components.support.test.any
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.utils.ext.getParcelableCompat
-import org.junit.Assert
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.doNothing
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class PermissionsDialogFragmentTest {
@@ -93,7 +101,7 @@ class PermissionsDialogFragmentTest {
         // T&I checkbox is not shown, unless the extension declares it in its manifest.
         assertFalse(technicalAndInteractionDataCheckbox.isVisible)
 
-        Assert.assertNotNull(recyclerAdapter)
+        assertNotNull(recyclerAdapter)
         assertEquals(3, recyclerAdapter.itemCount)
 
         val firstItem = recyclerAdapter
@@ -165,6 +173,44 @@ class PermissionsDialogFragmentTest {
         assertTrue(allowedWasExecuted)
         assertTrue(denyWasExecuted)
         assertTrue(learnMoreWasExecuted)
+    }
+
+    @Test
+    fun `allow button is disabled immediately after the dialog is shown`() = runTest {
+        val addon = Addon("id", translatableName = mapOf(Addon.DEFAULT_LOCALE to "my_addon"))
+        val fragment = createPermissionsDialogFragment(
+            addon,
+            dispatcher = StandardTestDispatcher(testScheduler),
+        )
+
+        doReturn(testContext).`when`(fragment).requireContext()
+
+        val dialog = fragment.onCreateDialog(null)
+        dialog.show()
+
+        val positiveButton = dialog.findViewById<Button>(R.id.allow_button)
+        assertFalse(positiveButton.isEnabled)
+    }
+
+    @Test
+    fun `allow button becomes enabled after the initial delay`() = runTest {
+        val addon = Addon("id", translatableName = mapOf(Addon.DEFAULT_LOCALE to "my_addon"))
+        val fragment = createPermissionsDialogFragment(
+            addon,
+            dispatcher = StandardTestDispatcher(testScheduler),
+        )
+
+        doReturn(testContext).`when`(fragment).requireContext()
+
+        val dialog = fragment.onCreateDialog(null)
+        dialog.show()
+
+        val positiveButton = dialog.findViewById<Button>(R.id.allow_button)
+        assertFalse(positiveButton.isEnabled)
+
+        testScheduler.advanceUntilIdle()
+
+        assertTrue(positiveButton.isEnabled)
     }
 
     @Test
@@ -756,7 +802,7 @@ class PermissionsDialogFragmentTest {
     }
 
     @Test
-    fun `require double confirmation for userScripts optional permission`() {
+    fun `require double confirmation for userScripts optional permission`() = runTest {
         // Most of the "userScripts" optional permission request is rendered as an optional permission,
         // which is already covered by the "build dialog for optional permissions" test above.
         // Here, we check aspects specific to the userScripts permission.
@@ -776,6 +822,7 @@ class PermissionsDialogFragmentTest {
             // the at_most_one_optional_only_permission_in_request test at:
             // https://searchfox.org/mozilla-central/rev/fcfb558f8946f3648d962576125af46bf6e2910a/toolkit/components/extensions/test/xpcshell/test_ext_permissions_optional_only.js#251-268
             permissions = listOf("userScripts"),
+            dispatcher = StandardTestDispatcher(testScheduler),
         )
 
         doReturn(testContext).`when`(fragment).requireContext()
@@ -815,7 +862,7 @@ class PermissionsDialogFragmentTest {
         )
 
         val holder = recyclerAdapter.onCreateViewHolder(permissionsRecyclerView, 3)
-        assertTrue(holder is RequiredPermissionsAdapter.OptInPermissionViewHolder)
+        assertIs<RequiredPermissionsAdapter.OptInPermissionViewHolder>(holder)
         recyclerAdapter.onBindViewHolder(holder, 0)
 
         val permissionOptInCheckbox = holder.itemView.findViewById<AppCompatCheckBox>(R.id.permission_opt_in_item)
@@ -828,6 +875,11 @@ class PermissionsDialogFragmentTest {
         assertFalse(permissionOptInCheckbox.isChecked)
         assertFalse(allowButton.isEnabled)
         assertTrue(denyButton.isEnabled)
+
+        // Even after the initial delay elapses, the "allow" button must remain
+        // disabled until the opt-in checkbox is checked.
+        testScheduler.advanceUntilIdle()
+        assertFalse(allowButton.isEnabled)
 
         // Toggling checkbox should enable "allow" button.
         permissionOptInCheckbox.performClick()
@@ -852,6 +904,46 @@ class PermissionsDialogFragmentTest {
                     R.string.mozac_feature_addons_permissions_user_scripts_extra_warning,
                 ),
         )
+    }
+
+    @Test
+    fun `userScripts allow button stays disabled if opt-in is checked before the initial delay elapses`() = runTest {
+        val addon = Addon(
+            "id",
+            translatableName = mapOf(Addon.DEFAULT_LOCALE to "my_addon"),
+            optionalPermissions = listOf(Addon.Permission("userScripts", false)),
+        )
+        val fragment = createPermissionsDialogFragment(
+            addon,
+            forOptionalPermissions = true,
+            permissions = listOf("userScripts"),
+            dispatcher = StandardTestDispatcher(testScheduler),
+        )
+
+        doReturn(testContext).`when`(fragment).requireContext()
+        val dialog = fragment.onCreateDialog(null)
+        dialog.show()
+
+        val permissionsRecyclerView = dialog.findViewById<RecyclerView>(R.id.permissions)
+        val recyclerAdapter = permissionsRecyclerView.adapter!! as RequiredPermissionsAdapter
+        val allowButton = dialog.findViewById<Button>(R.id.allow_button)
+
+        val holder = recyclerAdapter.onCreateViewHolder(permissionsRecyclerView, 3)
+        assertIs<RequiredPermissionsAdapter.OptInPermissionViewHolder>(holder)
+        recyclerAdapter.onBindViewHolder(holder, 0)
+        val permissionOptInCheckbox = holder.itemView.findViewById<AppCompatCheckBox>(R.id.permission_opt_in_item)
+
+        // Initial state: both gates closed; button disabled.
+        assertFalse(allowButton.isEnabled)
+
+        // Satisfy the opt-in gate before the delay elapses. Button must stay disabled.
+        permissionOptInCheckbox.performClick()
+        assertTrue(permissionOptInCheckbox.isChecked)
+        assertFalse(allowButton.isEnabled)
+
+        // Once the delay also elapses, both gates are satisfied and the button enables.
+        testScheduler.advanceUntilIdle()
+        assertTrue(allowButton.isEnabled)
     }
 
     @Test
@@ -1492,6 +1584,7 @@ class PermissionsDialogFragmentTest {
         dataCollectionPermissions: List<String> = emptyList(),
         promptsStyling: PromptsStyling? = null,
         forOptionalPermissions: Boolean = false,
+        dispatcher: CoroutineDispatcher? = null,
     ): PermissionsDialogFragment {
         return spy(
             PermissionsDialogFragment.newInstance(
@@ -1501,9 +1594,19 @@ class PermissionsDialogFragmentTest {
                 dataCollectionPermissions = dataCollectionPermissions,
                 promptsStyling = promptsStyling,
                 forOptionalPermissions = forOptionalPermissions,
+                mainDispatcher = dispatcher,
             ),
         ).apply {
             doNothing().`when`(this).dismiss()
+
+            val lifecycle = LifecycleRegistry(this)
+            doReturn(lifecycle).`when`(this).lifecycle
+            doAnswer { invocation ->
+                val dialog = invocation.callRealMethod()
+                lifecycle.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+                dialog
+            }
+                .`when`(this).onCreateDialog(any())
         }
     }
 

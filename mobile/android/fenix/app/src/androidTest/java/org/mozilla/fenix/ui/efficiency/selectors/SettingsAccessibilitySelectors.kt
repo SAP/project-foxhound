@@ -11,7 +11,7 @@ import org.mozilla.fenix.ui.efficiency.helpers.SelectorStrategy
 
 object SettingsAccessibilitySelectors {
     val SETTINGS_ACCESSIBILITY_TITLE = Selector(
-        strategy = SelectorStrategy.UIAUTOMATOR2_BY_TEXT,
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
         value = getStringResource(R.string.preferences_accessibility),
         description = "The Accessibility Settings header",
         groups = listOf("requiredForPage"),

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,15 +27,19 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(PaymentResponse,
                                                   DOMEventTargetHelper)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mRequest)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mShippingAddress)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPromise)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mRetryPromise)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTimer)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(PaymentResponse,
                                                 DOMEventTargetHelper)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mRequest)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mShippingAddress)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mPromise)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mRetryPromise)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mTimer)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
@@ -200,7 +202,7 @@ already_AddRefed<Promise> PaymentResponse::Complete(PaymentComplete result,
     return nullptr;
   }
 
-  RefPtr<Promise> promise = Promise::Create(GetOwnerGlobal(), aRv);
+  RefPtr<Promise> promise = Promise::Create(GetRelevantGlobal(), aRv);
   if (aRv.Failed()) {
     return nullptr;
   }
@@ -219,13 +221,14 @@ void PaymentResponse::RespondComplete() {
 
 already_AddRefed<Promise> PaymentResponse::Retry(
     JSContext* aCx, const PaymentValidationErrors& aErrors, ErrorResult& aRv) {
-  MOZ_ASSERT(mRequest);
-  if (!mRequest->InFullyActiveDocument()) {
+  RefPtr<PaymentRequest> request(mRequest);
+  MOZ_ASSERT(request);
+  if (!request->InFullyActiveDocument()) {
     aRv.ThrowAbortError("The owner document is not fully active");
     return nullptr;
   }
 
-  RefPtr<Promise> promise = Promise::Create(GetOwnerGlobal(), aRv);
+  RefPtr<Promise> promise = Promise::Create(GetRelevantGlobal(), aRv);
   if (aRv.Failed()) {
     return nullptr;
   }
@@ -258,8 +261,12 @@ already_AddRefed<Promise> PaymentResponse::Retry(
     return nullptr;
   }
 
-  MOZ_ASSERT(mRequest);
-  mRequest->RetryPayment(aCx, aErrors, aRv);
+  if (!request->InFullyActiveDocument()) {
+    aRv.ThrowAbortError("The owner document is not fully active");
+    return nullptr;
+  }
+
+  request->RetryPayment(aCx, aErrors, aRv);
   if (aRv.Failed()) {
     return nullptr;
   }
@@ -287,7 +294,7 @@ void PaymentResponse::RespondRetry(const nsAString& aMethodName,
   mPayerEmail = aPayerEmail;
   mPayerPhone = aPayerPhone;
 
-  if (NS_WARN_IF(!GetOwnerGlobal())) {
+  if (NS_WARN_IF(!GetRelevantGlobal())) {
     return;
   }
 

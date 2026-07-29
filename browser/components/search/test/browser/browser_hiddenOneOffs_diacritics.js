@@ -7,14 +7,18 @@ const searchPopup = document.getElementById("PopupSearchAutoComplete");
 
 const diacritic_engine = "Foo \u2661";
 
-var { Preferences } = ChromeUtils.importESModule(
-  "resource://gre/modules/Preferences.sys.mjs"
-);
-
 let searchIcon;
 let engine;
 
 add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      // Force settings redesign to false, so that `hideOneOffButton` will correctly
+      // work for the time being.
+      ["browser.settings-redesign.enabled", false],
+    ],
+  });
+
   let searchbar = await gCUITestUtils.addSearchBar();
   registerCleanupFunction(() => {
     gCUITestUtils.removeSearchBar();

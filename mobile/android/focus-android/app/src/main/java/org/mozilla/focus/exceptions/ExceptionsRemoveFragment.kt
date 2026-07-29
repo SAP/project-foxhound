@@ -18,6 +18,9 @@ import org.mozilla.focus.ext.showToolbar
 import org.mozilla.focus.state.AppAction
 import kotlin.collections.forEach as withEach
 
+/**
+ * Fragment for removing tracking protection exceptions.
+ */
 class ExceptionsRemoveFragment : ExceptionsListFragment() {
 
     override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {

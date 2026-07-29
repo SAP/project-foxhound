@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,6 +10,8 @@
 #include "EditorUtils.h"
 
 #include "mozilla/Maybe.h"
+#include "mozilla/ToString.h"
+#include "mozilla/dom/CharacterDataBuffer.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLBRElement.h"
 #include "mozilla/dom/Text.h"
@@ -24,6 +25,26 @@ namespace mozilla {
 
 class AutoTrackLineBreak;
 
+enum class PaddingForEmptyBlock {
+  // If the line break is padding for empty block, treat it as not
+  // significant. This is useful to select unecessary things at deletion.
+  Unnecessary,
+  // Treat the padding for empty block as significant since it makes the block
+  // have one-line height.
+  Significant,
+};
+
+inline std::string format_as(const PaddingForEmptyBlock& aValue) {
+  return aValue == PaddingForEmptyBlock::Significant
+             ? "PaddingForEmptyBlock::Significant"
+             : "PaddingForEmptyBlock::Unnecessary";
+}
+
+inline std::ostream& operator<<(std::ostream& aStream,
+                                const PaddingForEmptyBlock& aValue) {
+  return aStream << format_as(aValue);
+}
+
 /******************************************************************************
  * EditorLineBreakBase stores <br> or a preformatted line break position.
  * This cannot represent no line break.  Therefore, if a method may not return
@@ -34,6 +55,7 @@ class EditorLineBreakBase {
   using SelfType = EditorLineBreakBase<ContentType>;
 
  public:
+  using CharacterDataBuffer = dom::CharacterDataBuffer;
   using HTMLBRElement = dom::HTMLBRElement;
   using Text = dom::Text;
 
@@ -46,6 +68,73 @@ class EditorLineBreakBase {
       : mContent(const_cast<Text*>(&aText)), mOffsetInText(Some(aOffset)) {}
   EditorLineBreakBase(RefPtr<Text>&& aText, uint32_t aOffset);
   EditorLineBreakBase(nsCOMPtr<nsIContent>&& aText, uint32_t aOffset);
+
+  template <typename EditorDOMPointType>
+  [[nodiscard]] static Maybe<EditorLineBreakBase> MaybeFrom(
+      const EditorDOMPointType& aPoint) {
+    if (HTMLBRElement* const childAsBRElement =
+            HTMLBRElement::FromNodeOrNull(aPoint.GetChild())) {
+      return Some(EditorLineBreakBase(*childAsBRElement));
+    }
+    if (Text* const containerAsText =
+            Text::FromNodeOrNull(aPoint.GetContainer())) {
+      if (EditorUtils::IsNewLinePreformatted(*containerAsText) &&
+          aPoint.Offset() < containerAsText->TextDataLength() &&
+          aPoint.IsCharNewLine()) {
+        return Some(EditorLineBreakBase(*containerAsText, aPoint.Offset()));
+      }
+    }
+    return Nothing{};
+  }
+
+  /**
+   * Return a preformatted line break if and only if aText contains only one
+   * preformatted line break and there is no visible text around it. E.g.,
+   * the preformatted line break may be surrounded by collapsible
+   * white-spaces.
+   */
+  [[nodiscard]] static Maybe<EditorLineBreakBase>
+  CreateIfTextHasOnlyOneAndNoOtherVisibleCharacters(const Text& aText) {
+    if (!aText.TextDataLength() || !EditorUtils::IsNewLinePreformatted(aText)) {
+      return Nothing();
+    }
+    if (aText.TextDataLength() == 1) {
+      return aText.DataBuffer().CharAt(0) == '\n'
+                 ? Some(EditorLineBreakBase(aText, 0u))
+                 : Nothing();
+    }
+    if (EditorUtils::IsWhiteSpacePreformatted(aText) &&
+        aText.TextDataLength() > 1) {
+      return Nothing();  // Contains at least 2 visible characters.
+    }
+    using WhitespaceOption = CharacterDataBuffer::WhitespaceOption;
+    const CharacterDataBuffer::WhitespaceOptions whitespaceOptions{
+        WhitespaceOption::FormFeedIsSignificant,
+        WhitespaceOption::NewLineIsSignificant};
+    const uint32_t firstVisibleCharOffset =
+        aText.DataBuffer().FindNonWhitespaceChar(whitespaceOptions, 0u);
+    if (firstVisibleCharOffset == CharacterDataBuffer::kNotFound) {
+      return Nothing();  // No visible characters.
+    }
+    if (aText.DataBuffer().CharAt(firstVisibleCharOffset) != '\n') {
+      return Nothing();  // The first visible character is not a linefeed.
+    }
+    if (firstVisibleCharOffset + 1 == aText.TextDataLength()) {
+      // The first visible character is a preformatted linefeed following some
+      // collapsible white-spaces and it's the last character.
+      return Some(EditorLineBreakBase(aText, firstVisibleCharOffset));
+    }
+    const uint32_t secondVisibleCharOffset =
+        aText.DataBuffer().FindNonWhitespaceChar(whitespaceOptions,
+                                                 firstVisibleCharOffset + 1);
+    if (secondVisibleCharOffset != CharacterDataBuffer::kNotFound) {
+      // There is another visible character after the preformatted linefeed.
+      return Nothing();
+    }
+    // aText contains only one preformatted linefeed and it's surrounded by
+    // collapsible white-spaces.
+    return Some(EditorLineBreakBase(aText, firstVisibleCharOffset));
+  }
 
   [[nodiscard]] static SelfType AtLastChar(const Text& aText) {
     MOZ_RELEASE_ASSERT(aText.TextDataLength());
@@ -71,11 +160,23 @@ class EditorLineBreakBase {
 
   template <typename EditorDOMPointType>
   [[nodiscard]] EditorDOMPointType To() const {
-    static_assert(std::is_same<EditorDOMPointType, EditorRawDOMPoint>::value ||
-                  std::is_same<EditorDOMPointType, EditorDOMPoint>::value);
-    return mOffsetInText.isSome()
-               ? EditorDOMPointType(mContent, mOffsetInText.value())
-               : EditorDOMPointType(mContent);
+    if constexpr (std::is_same_v<EditorDOMPointType, EditorDOMPoint> ||
+                  std::is_same_v<EditorDOMPointType, EditorRawDOMPoint>) {
+      return mOffsetInText ? EditorDOMPointType(mContent, *mOffsetInText)
+                           : EditorDOMPointType(mContent);
+    } else if constexpr (std::is_same_v<EditorDOMPointType,
+                                        EditorDOMPointInText> ||
+                         std::is_same_v<EditorDOMPointType,
+                                        EditorRawDOMPointInText>) {
+      MOZ_ASSERT(IsPreformattedLineBreak());
+      return IsPreformattedLineBreak()
+                 ? EditorDOMPointType(&TextRef(), *mOffsetInText)
+                 : EditorDOMPointType();
+    } else {
+      MOZ_MAKE_COMPILER_ASSUME_IS_UNREACHABLE(
+          "Handle the new EditorDOMPointType!");
+      return EditorDOMPointType();
+    }
   }
   template <typename EditorDOMPointType>
   [[nodiscard]] EditorDOMPointType After() const {
@@ -122,6 +223,10 @@ class EditorLineBreakBase {
 
   [[nodiscard]] nsIContent& ContentRef() const { return *mContent; }
 
+  [[nodiscard]] bool IsInclusiveDescendantOf(const nsINode& aNode) const {
+    return mContent->IsInclusiveDescendantOf(&aNode);
+  }
+
   [[nodiscard]] HTMLBRElement& BRElementRef() const {
     MOZ_DIAGNOSTIC_ASSERT(IsHTMLBRElement());
     MOZ_DIAGNOSTIC_ASSERT(GetBRElement());
@@ -154,6 +259,43 @@ class EditorLineBreakBase {
     return parent && parent->IsEditable();
   }
 
+  [[nodiscard]] bool IsFollowedByBlockBoundary(
+      const dom::Element* aAncestorLimiter = nullptr) const;
+  [[nodiscard]] bool IsFollowedByCurrentBlockBoundary(
+      const dom::Element* aAncestorLimiter = nullptr) const;
+  [[nodiscard]] bool IsFollowingCurrentBlockBoundary(
+      const dom::Element* aAncestorLimiter = nullptr) const;
+  [[nodiscard]] bool IsFollowedByLineBoundary(
+      const dom::Element* aAncestorLimiter = nullptr) const;
+  [[nodiscard]] bool IsFollowingLineBoundary(
+      const dom::Element* aAncestorLimiter = nullptr) const;
+  [[nodiscard]] bool IsFollowingAnotherLineBreak(
+      const dom::Element* aAncestorLimiter = nullptr) const;
+  [[nodiscard]] bool IsPaddingForEmptyBlock(
+      const dom::Element* aAncestorLimiter = nullptr) const;
+  [[nodiscard]] bool IsUnnecessary(
+      PaddingForEmptyBlock aPaddingForEmptyBlock,
+      const dom::Element* aAncestorLimiter = nullptr) const;
+  [[nodiscard]] bool IsSignificant(
+      PaddingForEmptyBlock aPaddingForEmptyBlock,
+      const dom::Element* aAncestorLimiter = nullptr) const;
+
+  [[nodiscard]] dom::Element* GetBlockElementIfFollowedByBlockBoundary(
+      const dom::Element* aAncestorLimiter = nullptr) const;
+  [[nodiscard]] dom::Element* GetBlockElementIfFollowedByCurrentBlockBoundary(
+      const dom::Element* aAncestorLimiter = nullptr) const;
+  [[nodiscard]] dom::Element* GetBlockElementIfFollowedByOtherBlockBoundary(
+      const dom::Element* aAncestorLimiter = nullptr) const;
+
+  friend inline std::ostream& operator<<(
+      std::ostream& aStream, const EditorLineBreakBase& aLineBreak) {
+    return aStream << fmt::format("{{ mContent={}, mOffsetInText={} }}",
+                                  nsCOMPtr<nsIContent>(aLineBreak.mContent),
+                                  // XXX Oddly, cannot make Maybe<uint32>
+                                  // formattable. Maybe a bug of {fmt}.
+                                  ToString(aLineBreak.mOffsetInText));
+  }
+
  private:
   ContentType mContent;
   Maybe<uint32_t> mOffsetInText;
@@ -163,6 +305,11 @@ class EditorLineBreakBase {
 
 using EditorLineBreak = EditorLineBreakBase<nsCOMPtr<nsIContent>>;
 using EditorRawLineBreak = EditorLineBreakBase<nsIContent*>;
+
+#define NS_INSTANTIATE_EDITOR_LINE_BREAK_CONST_METHOD(aResultType,      \
+                                                      aMethodName, ...) \
+  template aResultType EditorLineBreak::aMethodName(__VA_ARGS__) const; \
+  template aResultType EditorRawLineBreak::aMethodName(__VA_ARGS__) const;
 
 template <>
 inline EditorLineBreakBase<nsCOMPtr<nsIContent>>::EditorLineBreakBase(
@@ -280,6 +427,12 @@ class CreateLineBreakResult final : public CaretPoint {
   explicit CreateLineBreakResult(CreateElementResult&& aCreateElementResult)
       : CaretPoint(aCreateElementResult.UnwrapCaretPoint()),
         mLineBreak(Some(aCreateElementResult.UnwrapNewNode())) {}
+  explicit CreateLineBreakResult(CreateElementResult&& aCreateElementResult,
+                                 EditorDOMPoint&& aCaretPoint)
+      : CaretPoint(std::forward<EditorDOMPoint>(aCaretPoint)),
+        mLineBreak(Some(aCreateElementResult.UnwrapNewNode())) {
+    aCreateElementResult.IgnoreCaretPointSuggestion();
+  }
 
   [[nodiscard]] static CreateLineBreakResult NotHandled() {
     return CreateLineBreakResult();
@@ -322,5 +475,9 @@ class CreateLineBreakResult final : public CaretPoint {
 };
 
 }  // namespace mozilla
+
+template <typename CT>
+struct fmt::formatter<mozilla::EditorLineBreakBase<CT>>
+    : fmt::ostream_formatter {};
 
 #endif  // #ifndef EditorLineBreak_h

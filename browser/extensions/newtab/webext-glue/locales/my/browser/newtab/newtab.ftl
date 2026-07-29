@@ -9,6 +9,37 @@ newtab-page-title = တပ်ဗ်အသစ်ဖွင့်
 newtab-settings-button =
     .title = သင့်တပ်ဗ်အသစ်စာမျက်နှာအား ပြင်ဆင်မည်
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = တပ်ဗ်အသစ်များ
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+           *[other] { $num } တန်း
+        }
+home-restore-defaults-srd =
+    .label = မူလအတိုင်း ပြန်ထားပါ
+    .accesskey = R
+home-mode-choice-custom-srd =
+    .label = စိတ်ကြိုက် URL များ...
+home-mode-choice-blank-srd =
+    .label = စာမျက်နှာအလွတ်
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = ထောက်ပံ့ထာသော ဇာတ်လမ်းများ
+home-prefs-highlights-option-visited-pages-srd =
+    .label = လည်ပတ်ခဲ့သည့် စာမျက်နှာများ
+home-prefs-highlights-options-bookmarks-srd =
+    .label = စာမှတ်များ
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = လတ်တလော ဒေါင်းလုပ် ခဲ့သည်များ
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +47,7 @@ newtab-search-box-search-button =
     .title = ရှာ
     .aria-label = ရှာ
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = ရှာဖွေရေးအင်ဂျင် ထည့်ပါ
 newtab-topsites-edit-topsites-header = ထိပ်တန်းဆိုက်ကို တည်းဖြတ်ရန်

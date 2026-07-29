@@ -4,16 +4,17 @@
 
 :host(login-alert) {
   display: grid;
-  column-gap: 16px;
+  column-gap: var(--space-large);
   grid-template-areas: "icon title action" "icon content content";
   grid-template-columns: min-content 1fr auto;
-  padding: 16px 32px;
+  padding: var(--space-large) var(--space-xxlarge);
   color: var(--text-color);
   background-color: var(--background-color-box);
   border-radius: var(--border-radius-small);
-  border: 1px solid var(--border-color);
-  box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.1);
-  font-size: 0.9em;
+  border: var(--border-width) solid var(--border-color);
+  box-shadow: var(--box-shadow-level-2);
+  font-size: var(--font-size-small);
+  margin-block-end: var(--space-large);
 }
 
 :host([variant="info"]) {

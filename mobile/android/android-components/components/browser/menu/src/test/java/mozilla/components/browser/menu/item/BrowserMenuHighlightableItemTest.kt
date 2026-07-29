@@ -27,13 +27,14 @@ import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.mock
 import org.robolectric.Shadows
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import mozilla.components.ui.colors.R as colorsR
 
 @RunWith(AndroidJUnit4::class)
@@ -211,7 +212,7 @@ class BrowserMenuHighlightableItemTest {
         assertEquals("label", view.textView.text)
         assertEquals("label", view.highlightedTextView.text)
         assertTrue(view.highlightedTextView.isVisible)
-        assertTrue(view.background is ColorDrawable)
+        assertIs<ColorDrawable>(view.background)
         assertNull(view.endImageView.drawable)
     }
 

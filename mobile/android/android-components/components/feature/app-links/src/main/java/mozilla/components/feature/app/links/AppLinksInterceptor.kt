@@ -90,18 +90,20 @@ class AppLinksInterceptor(
         val engineSupportsScheme = engineSupportedSchemes.contains(uriScheme)
         val isAllowedRedirect = (isRedirect && !isSubframeRequest)
         val tabSessionState = store?.state?.findTabOrCustomTab(engineSession)
+        val isIntentionalNavigation = hasUserGesture || isAllowedRedirect || isDirectNavigation
+        val isSameDomainNavigation = isSameDomain(lastUri, uri)
 
         val doNotIntercept = when {
             uriScheme == null -> true
             // A subframe request not triggered by the user and not in allow list should not go to
             // an external app.
             (!hasUserGesture && isSubframeRequest && !isSubframeAllowed(uriScheme)) -> true
-            // If request not from an user gesture, allowed redirect and direct navigation
-            // or if we're already on the site then let's not go to an external app.
-            (
-                (!hasUserGesture && !isAllowedRedirect && !isDirectNavigation) ||
-                    isSameDomain(lastUri, uri)
-                ) && engineSupportsScheme -> true
+            // Avoid external app interception when the navigation is unintentional
+            engineSupportsScheme && !isIntentionalNavigation -> true
+            // Avoid external app interception when on the same domain (outside authentication flows),
+            // as these should continue in the browser.
+            engineSupportsScheme && isSameDomainNavigation && !isPossibleAuthentication(tabSessionState) -> true
+
             // If scheme not in supported list then follow user preference
             !launchInApp() && !isPossibleAuthentication(tabSessionState) && engineSupportsScheme -> true
             // Never go to an external app when scheme is in blocklist
@@ -139,8 +141,7 @@ class AppLinksInterceptor(
             if ((launchFromInterceptor || isAuthenticationFlow) &&
                 result is RequestInterceptor.InterceptionResponse.AppIntent
             ) {
-                result.appIntent.flags = result.appIntent.flags or Intent.FLAG_ACTIVITY_NEW_TASK
-                useCases.openAppLink(result.appIntent)
+                useCases.openAppLink(result.appIntent, clearTop = isAuthenticationFlow)
 
                 return RequestInterceptor.InterceptionResponse.Deny
             }

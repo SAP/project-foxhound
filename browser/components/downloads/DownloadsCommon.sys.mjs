@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80 filetype=javascript: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -327,17 +325,6 @@ export var DownloadsCommon = {
    * Removes a Download object from both session and history downloads.
    */
   async deleteDownload(download) {
-    // Check hasBlockedData to avoid double counting if you click the X button
-    // in the Library view and then delete the download from the history.
-    if (
-      download.error?.becauseBlockedByReputationCheck &&
-      download.hasBlockedData
-    ) {
-      Glean.downloads.userActionOnBlockedDownload[
-        download.error.reputationCheckVerdict
-      ].accumulateSingleSample(1); // confirm block
-    }
-
     // Remove the associated history element first, if any, so that the views
     // that combine history and session downloads won't resurrect the history
     // download into the view just before it is deleted permanently.
@@ -348,7 +335,11 @@ export var DownloadsCommon = {
     }
     let list = await lazy.Downloads.getList(lazy.Downloads.ALL);
     await list.remove(download);
-    if (download.error?.becauseBlockedByContentAnalysis) {
+    if (download.hasBlockedData) {
+      // confirmBlock handles telemetry, content analysis response,
+      // file removal, and sets `deleted`.
+      await download.confirmBlock();
+    } else if (download.error?.becauseBlockedByContentAnalysis) {
       await download.respondToContentAnalysisWarnWithBlock();
     }
     await download.finalize(true);

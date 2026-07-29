@@ -35,6 +35,14 @@ let goButton;
 let engine;
 
 add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      // Force settings redesign to false, so that `hideOneOffButton` will correctly
+      // work for the time being.
+      ["browser.settings-redesign.enabled", false],
+    ],
+  });
+
   searchbar = await gCUITestUtils.addSearchBar();
   textbox = searchbar.textbox;
   searchIcon = searchbar.querySelector(".searchbar-search-button");

@@ -39,7 +39,13 @@ tasks:
         description: Localization
         from-deps:
             group-by: platform
-        locales-file: browser/locales/l10n-changesets.json
+        locales-file:
+            by-project:
+                try: browser/locales/l10n-onchange-changesets.json
+                default: browser/locales/l10n-changesets.json
+        # One might think that using separate tasks per-locale would be faster, but
+        # this turns out not to be the case. Due to VCS and build system overhead
+        # it would more than triple the total runtime of these tasks.
         locales-per-chunk: 5
         run-on-projects: ['release']
         attributes:
@@ -58,13 +64,10 @@ tasks:
                         - linux64-libdmg
                         - linux64-hfsplus
                     win.*:
+                        - linux64-7zz
+                        - linux64-upx
                         - linux64-wine
                         - nsis
-            fetch:
-                by-build-platform:
-                    default: []
-                    win.*:
-                        - upx-3.95-win
         tooltool:
             by-build-platform:
                 default: internal

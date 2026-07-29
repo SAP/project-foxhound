@@ -8,20 +8,20 @@ ChromeUtils.defineESModuleGetters(this, {
   BackupError: "resource:///modules/backup/BackupError.mjs",
 });
 
-add_task(function test_empty() {
+add_task(async function test_empty() {
   let bs = new BackupService();
-  Assert.throws(
-    () => bs.setParentDirPath(""),
+  await Assert.rejects(
+    bs.setParentDirPath(""),
     BackupError,
     "empty string is rejected"
   );
 });
 
-add_task(function test_typical() {
+add_task(async function test_typical() {
   let bs = new BackupService();
   let name = "setParentDirPath_typical";
   let path = PathUtils.join(do_get_profile().path, name);
-  bs.setParentDirPath(path);
+  await bs.setParentDirPath(path);
   Assert.equal(
     Services.prefs.getStringPref("browser.backup.location"),
     PathUtils.join(path, "Restore Firefox"),
@@ -29,11 +29,11 @@ add_task(function test_typical() {
   );
 });
 
-add_task(function test_already_decorated() {
+add_task(async function test_already_decorated() {
   let bs = new BackupService();
   let name = "setParentDirPath_already_decorated";
   let path = PathUtils.join(do_get_profile().path, name, "Restore Firefox");
-  bs.setParentDirPath(path);
+  await bs.setParentDirPath(path);
   Assert.equal(
     Services.prefs.getStringPref("browser.backup.location"),
     path,

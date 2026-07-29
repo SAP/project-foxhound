@@ -89,7 +89,7 @@ async function setup(tabChangeEventName) {
   info("setup,waiting for both private and nonPrivateListener to be called");
   await TestUtils.waitForCondition(() => {
     return nonPrivateListener.called && privateListener.called;
-  });
+  }, "Wait for both the non-private and private listeners to be called");
   nonPrivateListener.resetHistory();
   privateListener.resetHistory();
 

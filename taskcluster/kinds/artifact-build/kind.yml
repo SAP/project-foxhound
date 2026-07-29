@@ -29,6 +29,7 @@ task-defaults:
     worker:
         max-run-time: 3600
         env:
+            MOZ_AUTOMATION_PACKAGE_TESTS: '1'
             PERFHERDER_EXTRA_OPTIONS: artifact
             MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: system
             USE_ARTIFACT: '1'
@@ -40,7 +41,6 @@ task-defaults:
         script: "mozharness/scripts/fx_desktop_build.py"
         secrets: true
         tooltool-downloads: public
-        keep-artifacts: false
     use-python: default
     fetches:
         toolchain:
@@ -65,6 +65,27 @@ tasks:
             toolchain:
                 - linux64-node
 
+    linux64-artifact/debug:
+        description: "Linux64 Debug Artifact Build"
+        index:
+            job-name: linux64-artifact-debug
+        treeherder:
+            platform: linux64/debug
+        worker:
+            env:
+                MOZ_ARTIFACT_TASK: {task-reference: '<linux64-debug>'}
+        run:
+            config:
+                - builds/releng_base_linux_64_builds.py
+            custom-build-variant-cfg: debug
+            extra-config:
+                mozconfig_variant: debug
+        dependencies:
+            linux64-debug: build-linux64/debug
+        fetches:
+            toolchain:
+                - linux64-node
+
     macosx64-artifact/opt:
         description: "MacOS X x64 Opt Artifact Build"
         index:
@@ -85,13 +106,39 @@ tasks:
                 - linux64-libdmg
                 - linux64-node
 
+    macosx64-artifact/debug:
+        description: "MacOS X x64 Debug Artifact Build"
+        index:
+            job-name: macosx64-artifact-debug
+        treeherder:
+            platform: osx-cross/debug
+        worker:
+            env:
+                MOZ_ARTIFACT_TASK: {task-reference: '<macosx64-debug>'}
+        run:
+            config:
+                - builds/releng_base_mac_64_cross_builds.py
+            custom-build-variant-cfg: cross-debug
+            extra-config:
+                mozconfig_variant: debug
+        dependencies:
+            macosx64-debug: build-macosx64/debug
+        fetches:
+            toolchain:
+                - linux64-hfsplus
+                - linux64-libdmg
+                - linux64-node
+
     win64-artifact/opt:
         description: "Win64 Opt Artifact Build"
         index:
             job-name: win64-artifact-opt
+        attributes:
+            enable-build-signing: true
         treeherder:
             platform: windows2012-64/opt
         worker:
+            chain-of-trust: true
             env:
                 MOZ_ARTIFACT_TASK: {task-reference: '<win64-opt>'}
         run:
@@ -103,8 +150,37 @@ tasks:
             win64-opt: build-win64/opt
         fetches:
             toolchain:
+                - linux64-7zz
                 - linux64-node
+                - linux64-upx
                 - linux64-wine
                 - nsis
-            fetch:
-                - upx-3.95-win
+
+    win64-artifact/debug:
+        description: "Win64 Debug Artifact Build"
+        index:
+            job-name: win64-artifact-debug
+        attributes:
+            enable-build-signing: true
+        treeherder:
+            platform: windows2012-64/debug
+        worker:
+            chain-of-trust: true
+            env:
+                MOZ_ARTIFACT_TASK: {task-reference: '<win64-debug>'}
+        run:
+            config:
+                - builds/releng_base_linux_64_builds.py
+                - builds/taskcluster_sub_win64/debug.py
+            extra-config:
+                mozconfig_platform: win64
+                mozconfig_variant: debug
+        dependencies:
+            win64-debug: build-win64/debug
+        fetches:
+            toolchain:
+                - linux64-7zz
+                - linux64-node
+                - linux64-upx
+                - linux64-wine
+                - nsis

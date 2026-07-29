@@ -1,6 +1,8 @@
 # IOUtils Migration Guide
 
+<!-- rumdl-disable MD036 -->
 **Improving performance through a new file API**
+<!-- rumdl-enable MD036 -->
 
 ---
 
@@ -17,7 +19,7 @@ I/O tasks via a collection of static methods inspired from `OS.File`.
 It is implemented in C++, and exposed to JavaScript via WebIDL bindings.
 
 The most up-to-date API can always be found in
-[IOUtils.webidl](https://searchfox.org/mozilla-central/source/dom/chrome-webidl/IOUtils.webidl).
+[IOUtils.webidl](https://searchfox.org/firefox-main/source/dom/chrome-webidl/IOUtils.webidl).
 
 ## Differences from `OS.File`
 
@@ -61,11 +63,11 @@ For various reasons
 the following `OS.File` methods have no analogue in IOUtils.
 They also will **not** be implemented.
 
--   void unixSymlink(in string targetPath, in string createPath)
--   string getCurrentDirectory(void)
--   void setCurrentDirectory(in string path)
--   object open(in string path)
--   object openUnique(in string path)
+- void unixSymlink(in string targetPath, in string createPath)
+- string getCurrentDirectory(void)
+- void setCurrentDirectory(in string path)
+- object open(in string path)
+- object openUnique(in string path)
 
 ### Errors are reported as `DOMException`s
 
@@ -135,10 +137,13 @@ SyncReadFile openFileForSyncReading(DOMString path);
 ##### Read raw (unsigned) byte values
 
 **`OS.File`**
+
 ```js
 let bytes = await OS.File.read(path); // Uint8Array
 ```
+
 **`IOUtils`**
+
 ```js
 let bytes = await IOUtils.read(path); // Uint8Array
 ```
@@ -146,10 +151,13 @@ let bytes = await IOUtils.read(path); // Uint8Array
 ##### Read UTF-8 encoded text
 
 **`OS.File`**
+
 ```js
 let utf8 = await OS.File.read(path, { encoding: 'utf-8' }); // string
 ```
+
 **`IOUtils`**
+
 ```js
 let utf8 = await IOUtils.readUTF8(path); // string
 ```
@@ -157,6 +165,7 @@ let utf8 = await IOUtils.readUTF8(path); // string
 ##### Read JSON file
 
 **`IOUtils`**
+
 ```js
 let obj = await IOUtils.readJSON(path); // object
 ```
@@ -164,6 +173,7 @@ let obj = await IOUtils.readJSON(path); // object
 ##### Read LZ4 compressed file contents
 
 **`OS.File`**
+
 ```js
 // Uint8Array
 let bytes = await OS.File.read(path, { compression: 'lz4' });
@@ -173,7 +183,9 @@ let utf8 = await OS.File.read(path, {
     compression: 'lz4',
 });
 ```
+
 **`IOUtils`**
+
 ```js
 let bytes = await IOUtils.read(path, { decompress: true }); // Uint8Array
 let utf8 = await IOUtils.readUTF8(path, { decompress: true }); // string
@@ -182,6 +194,7 @@ let utf8 = await IOUtils.readUTF8(path, { decompress: true }); // string
 ##### Synchronously read a fragment of a file into a buffer, from a worker
 
 **`OS.File`**
+
 ```js
 // Read 64 bytes at offset 128, workers only:
 let file = OS.File.open(path, { read: true });
@@ -189,7 +202,9 @@ file.setPosition(128);
 let bytes = file.read({ bytes: 64 }); // Uint8Array
 file.close();
 ```
+
 **`IOUtils`**
+
 ```js
 // Read 64 bytes at offset 128, workers only:
 let file = IOUtils.openFileForSyncReading(path);
@@ -222,15 +237,18 @@ Promise<unsigned long long> writeJSON(DOMString path, any value, ...);
 | encoding: 'utf-8'    | N/A; use `writeUTF8` instead. | Allows the caller to supply a string to be encoded as utf-8 text on disk.                                                                                                 |
 
 #### Examples
+
 ##### Write raw (unsigned) byte values
 
 **`OS.File`**
+
 ```js
 let bytes = new Uint8Array();
 await OS.File.writeAtomic(path, bytes);
 ```
 
 **`IOUtils`**
+
 ```js
 let bytes = new Uint8Array();
 await IOUtils.write(path, bytes);
@@ -239,12 +257,14 @@ await IOUtils.write(path, bytes);
 ##### Write UTF-8 encoded text
 
 **`OS.File`**
+
 ```js
 let str = "";
 await OS.File.writeAtomic(path, str, { encoding: 'utf-8' });
 ```
 
 **`IOUtils`**
+
 ```js
 let str = "";
 await IOUtils.writeUTF8(path, str);
@@ -253,6 +273,7 @@ await IOUtils.writeUTF8(path, str);
 ##### Write A JSON object
 
 **`IOUtils`**
+
 ```js
 let obj = {};
 await IOUtils.writeJSON(path, obj);
@@ -261,6 +282,7 @@ await IOUtils.writeJSON(path, obj);
 ##### Write with LZ4 compression
 
 **`OS.File`**
+
 ```js
 let bytes = new Uint8Array();
 await OS.File.writeAtomic(path, bytes, { compression: 'lz4' });
@@ -271,6 +293,7 @@ await OS.File.writeAtomic(path, str, {
 ```
 
 **`IOUtils`**
+
 ```js
 let bytes = new Uint8Array();
 await IOUtils.write(path, bytes, { compress: true });
@@ -297,11 +320,13 @@ Promise<void> move(DOMString sourcePath, DOMString destPath, ...);
 #### Example
 
 **`OS.File`**
+
 ```js
 await OS.File.move(srcPath, destPath);
 ```
 
 **`IOUtils`**
+
 ```js
 await IOUtils.move(srcPath, destPath);
 ```
@@ -327,11 +352,13 @@ Promise<void> remove(DOMString path, ...);
 ##### Remove a file
 
 **`OS.File`**
+
 ```js
 await OS.File.remove(path, { ignoreAbsent: true });
 ```
 
 **`IOUtils`**
+
 ```js
 await IOUtils.remove(path);
 ```
@@ -339,11 +366,13 @@ await IOUtils.remove(path);
 ##### Remove a directory and all its contents
 
 **`OS.File`**
+
 ```js
 await OS.File.removeDir(path, { ignoreAbsent: true });
 ```
 
 **`IOUtils`**
+
 ```js
 await IOUtils.remove(path, { recursive: true });
 ```
@@ -351,11 +380,13 @@ await IOUtils.remove(path, { recursive: true });
 ##### Remove an empty directory
 
 **`OS.File`**
+
 ```js
 await OS.File.removeEmptyDir(path); // Will throw an exception if `path` is not empty.
 ```
 
 **`IOUtils`**
+
 ```js
 await IOUtils.remove(path); // Will throw an exception if `path` is not empty.
 ```
@@ -381,10 +412,13 @@ Promise<void> makeDirectory(DOMString path, ...);
 #### Example
 
 **`OS.File`**
+
 ```js
 await OS.File.makeDir(srcPath, destPath);
 ```
+
 **`IOUtils`**
+
 ```js
 await IOUtils.makeDirectory(srcPath, destPath);
 ```
@@ -400,11 +434,13 @@ Promise<void> setModificationTime(DOMString path, optional long long modificatio
 #### Example
 
 **`OS.File`**
+
 ```js
 await OS.File.setDates(path, new Date(), new Date());
 ```
 
 **`IOUtils`**
+
 ```js
 await IOUtils.setModificationTime(path, new Date().valueOf());
 ```
@@ -420,11 +456,13 @@ Promise<void> stat(DOMString path);
 #### Example
 
 **`OS.File`**
+
 ```js
 let fileInfo = await OS.File.stat(path);
 ```
 
 **`IOUtils`**
+
 ```js
 let fileInfo = await IOUtils.stat(path);
 ```
@@ -450,11 +488,13 @@ Promise<void> copy(DOMString path, ...);
 ##### Copy a file
 
 **`OS.File`**
+
 ```js
 await OS.File.copy(srcPath, destPath);
 ```
 
 **`IOUtils`**
+
 ```js
 await IOUtils.copy(srcPath, destPath);
 ```
@@ -462,11 +502,13 @@ await IOUtils.copy(srcPath, destPath);
 ##### Copy a directory recursively
 
 **`OS.File`**
+
 ```js
 // Not easy to do.
 ```
 
 **`IOUtils`**
+
 ```js
 await IOUtils.copy(srcPath, destPath, { recursive: true });
 ```
@@ -486,6 +528,7 @@ Promise<sequence<DOMString>> getChildren(DOMString path);
 #### Example
 
 **`OS.File`**
+
 ```js
 for await (const { path } of new OS.FileDirectoryIterator(dirName)) {
   ...
@@ -493,6 +536,7 @@ for await (const { path } of new OS.FileDirectoryIterator(dirName)) {
 ```
 
 **`IOUtils`**
+
 ```js
 for (const path of await IOUtils.getChildren(dirName)) {
   ...
@@ -510,6 +554,7 @@ Promise<boolean> exists(DOMString path);
 #### Example
 
 **`OS.File`**
+
 ```js
 if (await OS.File.exists(path)) {
   ...
@@ -517,6 +562,7 @@ if (await OS.File.exists(path)) {
 ```
 
 **`IOUtils`**
+
 ```js
 if (await IOUtils.exists(path)) {
   ...
@@ -541,11 +587,13 @@ Promise<void> setPermissions(DOMString path, unsigned long permissions, optional
 #### Example
 
 **`OS.File`**
+
 ```js
 await OS.File.setPermissions(path, { unixMode: 0o600 });
 ```
 
 **`IOUtils`**
+
 ```js
 await IOUtils.setPermissions(path, 0o600);
 ```
@@ -556,9 +604,10 @@ await IOUtils.setPermissions(path, 0o600);
 
 [Bug 1231711](https://bugzilla.mozilla.org/show_bug.cgi?id=1231711)
 provides some good context, but some reasons include:
-* reduced cache-contention,
-* faster startup, and
-* less memory usage.
+
+- reduced cache-contention,
+- faster startup, and
+- less memory usage.
 
 Additionally, `IOUtils` benefits from a native implementation,
 which assists in performance-related work for

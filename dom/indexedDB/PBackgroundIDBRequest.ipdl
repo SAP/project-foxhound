@@ -80,6 +80,19 @@ struct IndexGetAllKeysResponse
   Key[] keys;
 };
 
+struct ObjectStoreGetAllRecordsResponse
+{
+  Key[] keys;
+  SerializedStructuredCloneReadInfo[] cloneInfos;
+};
+
+struct IndexGetAllRecordsResponse
+{
+  Key[] keys;
+  Key[] primaryKeys;
+  SerializedStructuredCloneReadInfo[] cloneInfos;
+};
+
 struct IndexCountResponse
 {
   uint64_t count;
@@ -97,10 +110,12 @@ union RequestResponse
   ObjectStoreCountResponse;
   ObjectStoreGetAllResponse;
   ObjectStoreGetAllKeysResponse;
+  ObjectStoreGetAllRecordsResponse;
   IndexGetResponse;
   IndexGetKeyResponse;
   IndexGetAllResponse;
   IndexGetAllKeysResponse;
+  IndexGetAllRecordsResponse;
   IndexCountResponse;
 };
 

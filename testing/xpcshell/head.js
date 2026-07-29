@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -41,6 +39,7 @@ var _XPCSHELL_PROCESS;
 // Register the testing-common resource protocol early, to have access to its
 // modules.
 let _Services = Services;
+let _Cc = Cc;
 _register_modules_protocol_handler();
 
 let { AppConstants: _AppConstants } = ChromeUtils.importESModule(
@@ -399,9 +398,6 @@ function _setupDevToolsServer(breakpointFiles, callback) {
   if (_Services.env.get("DEVTOOLS_DEBUGGER_LOG")) {
     _Services.prefs.setBoolPref("devtools.debugger.log", true);
   }
-  if (_Services.env.get("DEVTOOLS_DEBUGGER_LOG_VERBOSE")) {
-    _Services.prefs.setBoolPref("devtools.debugger.log.verbose", true);
-  }
 
   let require;
   try {
@@ -520,12 +516,12 @@ function _initDebugging(port) {
 function _do_upload_profile() {
   let name = _TEST_NAME.replace(/.*\//, "");
   let filename = `profile_${name}.json`;
-  let path = Services.env.get("MOZ_UPLOAD_DIR");
+  let path = _Services.env.get("MOZ_UPLOAD_DIR");
   let profilePath = PathUtils.join(path, filename);
   let done = false;
   (async function _save_profile() {
     const { profile } =
-      await Services.profiler.getProfileDataAsGzippedArrayBuffer();
+      await _Services.profiler.getProfileDataAsGzippedArrayBuffer();
     await IOUtils.write(profilePath, new Uint8Array(profile));
     _testLogger.testStatus(
       _TEST_NAME,
@@ -596,14 +592,6 @@ function _execute_test() {
 
   _PromiseTestUtils.init();
 
-  let coverageCollector = null;
-  if (typeof _JSCOV_DIR === "string") {
-    let _CoverageCollector = ChromeUtils.importESModule(
-      "resource://testing-common/CoverageUtils.sys.mjs"
-    ).CoverageCollector;
-    coverageCollector = new _CoverageCollector(_JSCOV_DIR);
-  }
-
   let startTime = ChromeUtils.now();
 
   // _HEAD_FILES is dynamically defined by <runxpcshelltests.py>.
@@ -627,14 +615,12 @@ function _execute_test() {
 
   let timer;
   if (
-    // Services.profiler is missing on some tier3 platforms where
-    // MOZ_GECKO_PROFILER is not set.
-    Services.profiler?.IsActive() &&
-    !Services.env.exists("MOZ_PROFILER_SHUTDOWN") &&
-    Services.env.exists("MOZ_UPLOAD_DIR") &&
-    Services.env.exists("MOZ_TEST_TIMEOUT_INTERVAL")
+    _Services.profiler.IsActive() &&
+    !_Services.env.exists("MOZ_PROFILER_SHUTDOWN") &&
+    _Services.env.exists("MOZ_UPLOAD_DIR") &&
+    _Services.env.exists("MOZ_TEST_TIMEOUT_INTERVAL")
   ) {
-    timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
+    timer = _Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
     timer.initWithCallback(
       function upload_test_timeout_profile() {
         ChromeUtils.addProfilerMarker(
@@ -644,7 +630,7 @@ function _execute_test() {
         );
         _do_upload_profile();
       },
-      parseInt(Services.env.get("MOZ_TEST_TIMEOUT_INTERVAL")) * 1000 * 0.9, // Keep 10% of the time to gather the profile.
+      parseInt(_Services.env.get("MOZ_TEST_TIMEOUT_INTERVAL")) * 1000 * 0.9, // Keep 10% of the time to gather the profile.
       timer.TYPE_ONE_SHOT
     );
   }
@@ -663,10 +649,6 @@ function _execute_test() {
     do_test_finished("MAIN run_test");
     _do_main();
     _PromiseTestUtils.assertNoUncaughtRejections();
-
-    if (coverageCollector != null) {
-      coverageCollector.recordTestCoverage(_TEST_FILE[0]);
-    }
 
     if (runningInParent) {
       PerTestCoverageUtils.afterTestSync();
@@ -694,10 +676,6 @@ function _execute_test() {
         extra.stack = _format_stack(e.stack);
       }
       _testLogger.error(message, extra);
-    }
-  } finally {
-    if (coverageCollector != null) {
-      coverageCollector.finalize();
     }
   }
 
@@ -803,9 +781,9 @@ function _execute_test() {
   if (
     !_passed &&
     runningInParent &&
-    Services.env.exists("MOZ_UPLOAD_DIR") &&
-    !Services.env.exists("MOZ_PROFILER_SHUTDOWN") &&
-    Services.profiler.IsActive()
+    _Services.env.exists("MOZ_UPLOAD_DIR") &&
+    !_Services.env.exists("MOZ_PROFILER_SHUTDOWN") &&
+    _Services.profiler.IsActive()
   ) {
     if (_EXPECTED != "pass") {
       _testLogger.error(
@@ -868,7 +846,8 @@ function _wrap_with_quotes_if_necessary(val) {
  * Prints a message to the output log.
  */
 function info(msg, data) {
-  ChromeUtils.addProfilerMarker("INFO", { category: "Test" }, msg);
+  // String() to force addProfilerMarker's text-marker path.
+  ChromeUtils.addProfilerMarker("INFO", { category: "Test" }, String(msg));
   msg = _wrap_with_quotes_if_necessary(msg);
   data = data ? data : null;
   _testLogger.info(msg, data);
@@ -1023,14 +1002,17 @@ function do_note_exception(ex, text) {
 
 function do_report_result(passed, text, stack, todo) {
   // Match names like head.js, head_foo.js, and foo_head.js, but not
-  // test_headache.js
+  // test_headache.js. Stack may be a pre-formatted string (e.g., for uncaught
+  // Promise rejections, where the original frame is stringified eagerly because
+  // the context may be gone by the time the rejection is reported); in that
+  // case stack.filename is undefined and the loop is skipped.
   while (/(\/head(_.+)?|head)\.js$/.test(stack.filename) && stack.caller) {
     stack = stack.caller;
   }
 
-  let name = _gRunningTest ? _gRunningTest.name : stack.name;
+  let name = _gRunningTest ? _gRunningTest.name : (stack.name ?? "");
   let message;
-  if (name) {
+  if (name && stack.lineNumber) {
     message = "[" + name + " : " + stack.lineNumber + "] " + text;
   } else {
     message = text;

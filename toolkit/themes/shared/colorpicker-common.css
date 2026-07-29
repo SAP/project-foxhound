@@ -42,7 +42,7 @@
   box-sizing: border-box;
   width: 25px;
   height: 25px;
-  background-image: linear-gradient(var(--overlay-color)), repeating-conic-gradient(#ccc 0 25%, white 0 50%);
+  background-image: image(var(--overlay-color)), repeating-conic-gradient(#ccc 0 25%, white 0 50%);
   background-size: 12px 12px;
   /* Make sure that the background color is properly set in High Contrast Mode */
   forced-color-adjust: none;

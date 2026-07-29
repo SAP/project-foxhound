@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -55,8 +54,9 @@ void ChromiumCDMCallbackProxy::RejectPromise(uint32_t aPromiseId,
       std::move(aException), aErrorMessage);
 }
 
-static dom::MediaKeyMessageType ToDOMMessageType(uint32_t aMessageType) {
-  switch (static_cast<cdm::MessageType>(aMessageType)) {
+static dom::MediaKeyMessageType ToDOMMessageType(
+    cdm::MessageType aMessageType) {
+  switch (aMessageType) {
     case cdm::kLicenseRequest:
       return dom::MediaKeyMessageType::License_request;
     case cdm::kLicenseRenewal:
@@ -71,7 +71,7 @@ static dom::MediaKeyMessageType ToDOMMessageType(uint32_t aMessageType) {
 }
 
 void ChromiumCDMCallbackProxy::SessionMessage(const nsACString& aSessionId,
-                                              uint32_t aMessageType,
+                                              cdm::MessageType aMessageType,
                                               nsTArray<uint8_t>&& aMessage) {
   DispatchToMainThread("ChromiumCDMProxy::OnSessionMessage",
                        &ChromiumCDMProxy::OnSessionMessage,
@@ -79,8 +79,8 @@ void ChromiumCDMCallbackProxy::SessionMessage(const nsACString& aSessionId,
                        ToDOMMessageType(aMessageType), std::move(aMessage));
 }
 
-static dom::MediaKeyStatus ToDOMMediaKeyStatus(uint32_t aStatus) {
-  switch (static_cast<cdm::KeyStatus>(aStatus)) {
+static dom::MediaKeyStatus ToDOMMediaKeyStatus(cdm::KeyStatus aStatus) {
+  switch (aStatus) {
     case cdm::kUsable:
       return dom::MediaKeyStatus::Usable;
     case cdm::kInternalError:
@@ -101,7 +101,7 @@ static dom::MediaKeyStatus ToDOMMediaKeyStatus(uint32_t aStatus) {
 }
 
 void ChromiumCDMCallbackProxy::ResolvePromiseWithKeyStatus(
-    uint32_t aPromiseId, uint32_t aKeyStatus) {
+    uint32_t aPromiseId, cdm::KeyStatus aKeyStatus) {
   DispatchToMainThread("ChromiumCDMProxy::OnResolvePromiseWithKeyStatus",
                        &ChromiumCDMProxy::OnResolvePromiseWithKeyStatus,
                        aPromiseId, ToDOMMediaKeyStatus(aKeyStatus));

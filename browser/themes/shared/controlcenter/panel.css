@@ -8,6 +8,23 @@
   --trustpanel-warning-bg: light-dark(var(--color-red-20), var(--color-red-90));
   --trustpanel-inner-border: 1px solid var(--color-violet-20);
   --trustpanel-inner-warning-border: 1px solid var(--color-red-10);
+
+  @media -moz-pref("browser.nova.enabled") {
+    --trustpanel-highlight-bg: light-dark(var(--color-violet-10), var(--color-violet-desaturated-70));
+    /* White cards use the standard border token, like the breach alert card;
+       tinted states override these below. */
+    --trustpanel-card-border-color: var(--border-color);
+    --trustpanel-card-divider-color: var(--border-color);
+  }
+}
+
+/* On the tinted cards (violet for enabled, box-info for disabled) the border
+   and divider use a subtle wash that blends with the fill. */
+#trustpanel-popup:is([tracking-protection="enabled"], [tracking-protection="disabled"]) {
+  @media -moz-pref("browser.nova.enabled") {
+    --trustpanel-card-border-color: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.12));
+    --trustpanel-card-divider-color: light-dark(rgba(0, 0, 0, 0.12), rgba(255, 255, 255, 0.12));
+  }
 }
 
 /* Hide all conditional elements by default. */
@@ -19,18 +36,18 @@
 #permission-popup,
 #trustpanel-popup,
 #protections-popup {
-  --popup-width: 30.81em;
+  --controlcenter-popup-content-width: 30.81em;
   /* Set default fill for icons in the identity popup.
      Individual icons can override this. */
   fill: currentColor;
-  --horizontal-padding: calc(var(--arrowpanel-menuitem-padding-inline) * 2);
+  --horizontal-padding: calc(var(--panel-menuitem-padding-inline) * 2);
   --vertical-section-padding: 0.9em;
   --height-offset: 0px;
   font: menu;
 }
 
 #protections-popup[toast] {
-  --popup-width: 27.12em;
+  --controlcenter-popup-content-width: 27.12em;
 }
 
 #protections-popup[infoMessageShowing] {
@@ -45,7 +62,7 @@
 }
 
 /* Show the right elements for the right connection states. */
-.site-information-popup[customroot=true] [when-customroot=true],
+.site-information-popup[customroot] [when-customroot],
 .site-information-popup[connection=not-secure] [when-connection~=not-secure],
 .site-information-popup[connection=secure-cert-user-overridden] [when-connection~=secure-cert-user-overridden],
 .site-information-popup[connection=secure-ev] [when-connection~=secure-ev],
@@ -76,6 +93,15 @@
   display: revert;
 }
 
+#identity-popup-content-eu-trust-mark {
+  list-style-image: light-dark(url("chrome://global/skin/icons/EU-trust-mark.svg"), url("chrome://global/skin/icons/EU-trust-mark-inverted.svg"));
+  align-self: start;
+  /* The EU trust mark MUST be at least 64px wide (and 85px tall). */
+  width: 64px;
+  margin-top: var(--space-xlarge);
+  margin-inline-end: var(--space-xlarge);
+}
+
 /* Hide 'not secure' message in subview when weak cipher or mixed content messages are shown. */
 #identity-popup-securityView-extended-info:is([mixedcontent],[ciphers]) > description[when-connection=not-secure],
 /* Hide 'passive-loaded (only)' message when there is mixed passive content loaded and active blocked. */
@@ -94,8 +120,8 @@
 #trustpanel-popup-mainView,
 #trustpanel-blockerView,
 #protections-popup-mainView {
-  min-width: var(--popup-width);
-  max-width: var(--popup-width);
+  min-width: var(--controlcenter-popup-content-width);
+  max-width: var(--controlcenter-popup-content-width);
 }
 
 #protections-popup[toast] #protections-popup-mainView > :not(#protections-popup-mainView-panel-header-section),
@@ -147,7 +173,7 @@
 #permission-popup .panel-header > h1 > span,
 #identity-popup .panel-header > h1 > span {
   /* This is needed for the overflow-wrap to work correctly when the domain name is really long. */
-  max-width: calc(var(--popup-width) - 2 * var(--arrowpanel-menuitem-margin-inline));
+  max-width: calc(var(--controlcenter-popup-content-width) - 2 * var(--panel-menuitem-margin-inline));
   overflow-wrap: break-word;
 }
 
@@ -156,17 +182,17 @@
    * icon-full-width is included twice to compensate for the margin-inline-start of the text,
    * used to center it even if the header includes a info button. See .panel-header-with-info-button */
   /* prettier-ignore */
-  max-width: calc(var(--popup-width)
-                  - var(--arrowpanel-menuitem-margin-inline) * 2
-                  - var(--arrowpanel-header-info-icon-full-width) * 2);
+  max-width: calc(var(--controlcenter-popup-content-width)
+                  - var(--panel-menuitem-margin-inline) * 2
+                  - var(--panel-header-info-icon-full-width) * 2);
 }
 
 #identity-popup .panel-header > .subviewbutton-back + h1 > span {
   /* Same idea as above, but in the identity popup when there's a back button. */
   /* prettier-ignore */
-  max-width: calc(var(--popup-width)
-                  - var(--arrowpanel-menuitem-margin-inline) * 2
-                  - var(--arrowpanel-header-back-icon-full-width) * 2);
+  max-width: calc(var(--controlcenter-popup-content-width)
+                  - var(--panel-menuitem-margin-inline) * 2
+                  - var(--panel-header-back-icon-full-width) * 2);
 }
 
 #protections-popup:not([infoMessageShowing]) #protections-popup-mainView-panel-header-section + toolbarseparator {
@@ -204,22 +230,22 @@
 }
 
 .identity-popup-section {
-  margin-inline: var(--arrowpanel-menuitem-margin-inline);
-  padding-inline: var(--arrowpanel-menuitem-padding-inline);
+  margin-inline: var(--panel-menuitem-margin-inline);
+  padding-inline: var(--panel-menuitem-padding-inline);
 }
 
 .identity-popup-section.indented {
   /* Align with the text displayed following the lock icon, in the connection status button above.
      16px is the icon size and 8px is the inline-start padding of the text. */
-  padding-inline: calc(var(--arrowpanel-menuitem-padding-inline) + 16px + 8px);
+  padding-inline: calc(var(--panel-menuitem-padding-inline) + 16px + 8px);
 }
 
 .identity-popup-security-connection {
   list-style-image: url(chrome://global/skin/icons/security-broken.svg);
-  margin: var(--arrowpanel-menuitem-margin);
-  padding: var(--arrowpanel-menuitem-padding);
+  margin: var(--panel-menuitem-margin);
+  padding: var(--panel-menuitem-padding);
+  padding-block: var(--space-large);
   -moz-context-properties: fill;
-  min-height: 24px;
 }
 
 .site-information-popup[connection="chrome"] .identity-popup-security-connection {
@@ -236,6 +262,10 @@
 
 .site-information-popup[connection^="secure"] .identity-popup-security-connection {
   list-style-image: url(chrome://global/skin/icons/security.svg);
+}
+
+.site-information-popup[connection^="secure"][customroot] .identity-popup-security-connection {
+  list-style-image: url(chrome://global/skin/icons/security-custom-root.svg);
 }
 
 /* Use [isbroken] to make sure we don't show a warning lock on an http page. See Bug 1192162. */
@@ -278,31 +308,52 @@
 
 #identity-popup-securityView-extended-info > button,
 #identity-popup-securityView-extended-info > hbox > .text-link,
-#identity-popup-content-verifier,
-#identity-popup-content-verifier ~ description,
-#identity-popup-content-owner-label {
+#identity-popup-content-owner-label,
+#identity-popup-content-verifier-label,
+#identity-popup-content-etsi,
+#identity-popup-content-cert-exception-overridden {
   margin-block: 0.5em;
 }
 
-#identity-popup-securityView-extended-info > .identity-popup-warning-box {
-  font-weight: var(--font-weight-semibold);
+#identity-popup-content-supplemental {
+  margin-block-end: 0.5em;
 }
 
-#identity-popup-securityView-extended-info > .identity-popup-warning-box > label {
-  display: inline-block;
+#identity-popup-content-verifier {
+  margin-block-end: 0.5em;
 }
 
-#identity-popup-securityView-extended-info > button {
-  margin-inline: 0;
-}
+#identity-popup-securityView-extended-info {
+  margin-inline: var(--panel-menuitem-margin-inline);
 
-@media (-moz-platform: macos) {
-  #identity-popup-securityView-extended-info > button {
-    min-height: 30px;
+  @media not (prefers-contrast) {
+    --card-background-color: color-mix(in srgb, currentColor 2%, transparent);
   }
 
-  #identity-popup-securityView-extended-info > button:focus-visible {
-    outline: var(--focus-outline);
+  #trustpanel-popup:is([connection="chrome"], [connection="file"], [connection="associated"], [connection="extension"]) & {
+    display: none;
+  }
+
+  > .identity-popup-warning-box {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  > .identity-popup-warning-box > label {
+    display: inline-block;
+  }
+
+  > button {
+    margin-inline: 0;
+  }
+
+  @media (-moz-platform: macos) {
+    > button {
+      min-height: 30px;
+    }
+
+    > button:focus-visible {
+      outline: var(--focus-outline);
+    }
   }
 }
 
@@ -393,7 +444,7 @@
   }
 
   > tooltip {
-    max-width: var(--popup-width);
+    max-width: var(--controlcenter-popup-content-width);
   }
 }
 
@@ -568,8 +619,8 @@
 /* Protection popup footer categories */
 
 #protections-popup-trackers-blocked-counter-box {
-  margin: var(--arrowpanel-menuitem-margin);
-  padding: var(--arrowpanel-menuitem-padding);
+  margin: var(--panel-menuitem-margin);
+  padding: var(--panel-menuitem-padding);
   visibility: hidden;
   opacity: 0;
   transition: opacity 200ms linear;
@@ -674,12 +725,17 @@
   > menupopup {
     min-width: 6.5em;
   }
+
+  &[disabled] {
+    opacity: 0.5;
+    pointer-events: none;
+  }
 }
 
 .protections-popup-section-header,
 .protections-popup-switch-section-header {
-  padding: var(--arrowpanel-menuitem-padding);
-  margin: var(--arrowpanel-menuitem-margin);
+  padding: var(--panel-menuitem-padding);
+  margin: var(--panel-menuitem-margin);
 }
 
 .identity-popup-expander:focus-visible,
@@ -779,21 +835,25 @@
 .protections-popup-smartblock-section {
   background-color: var(--background-color-information);
   border-radius: var(--border-radius-small);
-  margin-inline: var(--arrowpanel-menuitem-margin-inline);
+  margin-inline: var(--panel-menuitem-margin-inline);
   margin-block-start: var(--space-small);
   padding-block: var(--space-small);
 }
 
 .protections-popup-smartblock-toggle-box {
-  margin-inline: var(--arrowpanel-menuitem-margin-inline);
-  padding-inline: var(--arrowpanel-menuitem-padding-inline);
+  margin-inline: var(--panel-menuitem-margin-inline);
+  padding-inline: var(--panel-menuitem-padding-inline);
 }
 
 .protections-popup-smartblock-toggle-box > moz-toggle {
-  padding-block-end: var(--arrowpanel-menuitem-padding-block);
+  padding-block-end: var(--panel-menuitem-padding-block);
 }
 
 /* Trustpanel popup */
+
+#trustpanel-header-section {
+  padding-block-end: var(--space-small);
+}
 
 #trustpanel-header-row {
   justify-content: space-between;
@@ -815,6 +875,58 @@
   padding-block-start: var(--space-small);
   border-radius: var(--border-radius-medium);
   flex-direction: column;
+
+  &[hidden] {
+    display: none;
+  }
+
+  @media -moz-pref("browser.nova.enabled") {
+    padding-block-start: var(--space-large);
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-large);
+    align-self: stretch;
+    border: 1px solid var(--trustpanel-card-border-color);
+    border-radius: var(--border-radius-large);
+  }
+}
+
+@media -moz-pref("browser.nova.enabled") {
+  .trustpanel-card-main {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    gap: var(--space-large);
+    align-self: stretch;
+  }
+
+  .trustpanel-card-content {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-small);
+    align-self: stretch;
+
+    &[hidden] {
+      display: none;
+    }
+  }
+
+  /* Only the text vbox inside the row needs to fill horizontal space alongside
+     the shield icon. */
+  .trustpanel-card-main > .trustpanel-card-content {
+    flex: 1 0 0;
+  }
+
+  .trustpanel-card-content > label,
+  .trustpanel-card-content > description,
+  .trustpanel-card-content > .trustpanel-header {
+    margin: 0;
+  }
+
+  .trustpanel-card-divided {
+    border-top: 1px solid var(--trustpanel-card-divider-color);
+  }
 }
 
 .only-trustpanel {
@@ -825,52 +937,97 @@
   }
 }
 
-#trustpanel-popup {
-  &[tracking-protection="warning"] {
-    #trustpanel-graphic-image {
-      background-image: url(chrome://browser/skin/trustpanel-graphic-warning.svg);
-    }
-    #trustpanel-graphic-section {
-      background: var(--trustpanel-warning-bg);
-    }
-  }
-  &[tracking-protection="enabled"] {
-    #trustpanel-graphic-image {
-      background-image: url(chrome://browser/skin/trustpanel-graphic-enabled.svg);
-    }
-    #trustpanel-graphic-section {
-      background: var(--trustpanel-highlight-bg);
-    }
+/* Assets per state: the graphic image (legacy + Nova) and the card background
+   are selected by the tracking-protection state via custom properties. */
+#trustpanel-popup[tracking-protection="warning"] {
+  --trustpanel-image-legacy: url(chrome://browser/skin/trustpanel-graphic-warning.svg);
+  --trustpanel-image-nova: url(chrome://browser/content/controlcenter/assets/breach-alert-shield-warning.svg);
+  --trustpanel-background: var(--trustpanel-warning-bg);
+}
+
+#trustpanel-popup[tracking-protection="enabled"] {
+  --trustpanel-image-legacy: url(chrome://browser/skin/trustpanel-graphic-enabled.svg);
+  --trustpanel-image-nova: url(chrome://browser/content/controlcenter/assets/breach-alert-shield-check.svg);
+  --trustpanel-background: var(--trustpanel-highlight-bg);
+}
+
+#trustpanel-popup[tracking-protection="disabled"] {
+  --trustpanel-image-legacy: url(chrome://browser/skin/trustpanel-graphic-disabled.svg);
+  --trustpanel-image-nova: url(chrome://browser/content/controlcenter/assets/breach-alert-shield-cross.svg);
+  --trustpanel-background: var(--trustpanel-graphic-bg);
+}
+
+#trustpanel-graphic-section {
+  background: var(--trustpanel-background, none);
+}
+
+@media -moz-pref("browser.nova.enabled") {
+  #trustpanel-popup[tracking-protection="warning"] #trustpanel-graphic-section,
+  #trustpanel-popup[connection="not-secure"] #trustpanel-graphic-section,
+  #trustpanel-popup[connection="cert-error-page"] #trustpanel-graphic-section {
+    background: none;
   }
 
-  &[tracking-protection="disabled"] {
-    #trustpanel-graphic-image {
-      background-image: url(chrome://browser/skin/trustpanel-graphic-disabled.svg);
-    }
-    #trustpanel-graphic-section {
-      background: var(--trustpanel-graphic-bg);
-    }
+  #trustpanel-popup[tracking-protection="disabled"] #trustpanel-graphic-section {
+    background: var(--background-color-box-info);
+  }
+
+  /* Only one secondary section in the card per state. When the insecure
+     callout is active (tracking-protection="warning"), it trumps the blocker
+     callout. When ETP is off (tracking-protection="disabled") the blocker
+     count is meaningless, so hide it too. */
+  #trustpanel-popup[tracking-protection="warning"] #trustpanel-blocker-section,
+  #trustpanel-popup[tracking-protection="disabled"] #trustpanel-blocker-section {
+    display: none;
+  }
+}
+
+#trustpanel-graphic-image,
+#trustpanel-graphic-image-legacy {
+  -moz-context-properties: fill;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  fill: light-dark(#0090ed, #80ebff);
+}
+
+/* Legacy graphic shows by default; the Nova graphic replaces it behind the
+   pref. */
+#trustpanel-graphic-image-legacy {
+  width: 80px;
+  height: 80px;
+  margin-inline-end: var(--space-small);
+  background-image: var(--trustpanel-image-legacy);
+
+  @media -moz-pref("browser.nova.enabled") {
+    display: none;
   }
 }
 
 #trustpanel-graphic-image {
-  -moz-context-properties: fill;
-  background-repeat: no-repeat;
-  background-position: center;
-  fill: light-dark(#0090ed, #80ebff);
-  width: 80px;
-  height: 80px;
-  background-size: contain;
-  margin-inline-end: var(--space-small);
+  display: none;
+
+  @media -moz-pref("browser.nova.enabled") {
+    display: revert;
+    width: var(--size-image-medium);
+    height: var(--size-image-medium);
+    flex-shrink: 0;
+    background-image: var(--trustpanel-image-nova);
+  }
 }
 
 #trustpanel-graphic-section-text {
   align-self: center;
   margin-inline-start: var(--space-medium);
+
+  @media -moz-pref("browser.nova.enabled") {
+    align-self: flex-start;
+    margin-inline-start: 0;
+  }
 }
 
 .trustpanel-header {
-  font-weight: var(--heading-font-weight);
+  font-weight: var(--font-weight-heading);
   margin-block-end: var(--space-medium);
 
   #trustpanel-blockerDetailsView &,
@@ -904,6 +1061,10 @@
     list-style-image: url(chrome://global/skin/icons/security.svg);
   }
 
+  #trustpanel-popup[connection^="secure"][customroot] & {
+    list-style-image: url(chrome://global/skin/icons/security-custom-root.svg);
+  }
+
   #trustpanel-popup[connection="net-error-page"] & {
     list-style-image: url(chrome://global/skin/icons/info.svg);
   }
@@ -915,12 +1076,14 @@
 }
 
 .trustpanel-section {
-  padding: var(--arrowpanel-menuitem-padding);
-  margin: var(--arrowpanel-menuitem-margin);
+  padding: var(--panel-menuitem-padding);
+  margin: var(--panel-menuitem-margin);
 }
 
 #trustpanel-toggle-section {
-  margin: var(--space-large);
+  margin-block: var(--space-large);
+  margin-inline: var(--panel-menuitem-margin-inline);
+  padding-inline: var(--panel-menuitem-padding-inline);
 
   &[disabled] label {
     color: var(--button-text-color-ghost-disabled);
@@ -937,28 +1100,52 @@
   color: var(--color-accent-primary);
 }
 
-.trustpanel-graphic-inner {
-  margin: var(--space-xsmall);
-  padding: var(--space-medium);
-  border-radius: var(--border-radius-medium);
-}
-
-#trustpanel-blocker-section {
-  background: light-dark(rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.12));
-  border: var(--trustpanel-inner-border);
-}
-
 .trustpanel-blocker-section[hidden] + toolbarseparator {
   display: none;
 }
 
+/* Legacy UI renders the blocker/insecure sections as filled, bordered boxes.
+   Nova replaces them with a plain top divider (.trustpanel-card-divided). */
+.trustpanel-graphic-inner {
+  margin: var(--space-xsmall);
+  padding: var(--space-medium);
+  border-radius: var(--border-radius-medium);
+  background: light-dark(rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.12));
+
+  @media -moz-pref("browser.nova.enabled") {
+    margin: 0;
+    padding: 0;
+    border-radius: 0;
+    background: none;
+  }
+}
+
+#trustpanel-blocker-section {
+  border: var(--trustpanel-inner-border);
+
+  @media -moz-pref("browser.nova.enabled") {
+    border: none;
+    border-top: 1px solid var(--trustpanel-card-divider-color);
+    padding-top: var(--space-large);
+  }
+}
+
+/* Insecure-section lives inline in the card. Visibility is gated to the
+   not-secure connection state — cert-overridden HTTPS pages also have
+   tracking-protection="warning" but should not surface the unencrypted
+   warning. */
 #trustpanel-insecure-section {
   visibility: collapse;
-  background: light-dark(rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.12));
   border: var(--trustpanel-inner-warning-border);
 
-  #trustpanel-popup[tracking-protection="warning"] & {
+  #trustpanel-popup[tracking-protection="warning"][connection="not-secure"] & {
     visibility: visible;
+  }
+
+  @media -moz-pref("browser.nova.enabled") {
+    border: none;
+    border-top: 1px solid var(--trustpanel-card-divider-color);
+    padding-block-start: var(--space-large);
   }
 
   .trustpanel-header {
@@ -972,6 +1159,11 @@
     &:-moz-locale-dir(rtl) {
       background-position-x: right;
     }
+
+    @media -moz-pref("browser.nova.enabled") {
+      background-image: none;
+      padding-inline-start: 0;
+    }
   }
 }
 
@@ -981,6 +1173,10 @@
 
 #trustpanel-smartblock-toggle-container {
   margin-block-start: var(--space-large);
+}
+
+#trustpanel-securityInformationView > .panel-header + toolbarseparator {
+  padding-bottom: 0;
 }
 
 .moz-button-subviewbutton-nav {

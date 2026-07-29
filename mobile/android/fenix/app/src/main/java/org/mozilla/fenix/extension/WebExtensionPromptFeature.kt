@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+@file:Suppress("TooManyFunctions")
+
 package org.mozilla.fenix.extension
 
 import android.content.Context
@@ -18,12 +20,17 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.launch
 import mozilla.components.browser.state.action.WebExtensionAction
 import mozilla.components.browser.state.state.extension.WebExtensionPromptRequest
 import mozilla.components.browser.state.store.BrowserStore
+import mozilla.components.concept.engine.CancellableOperation
+import mozilla.components.concept.engine.webextension.InstallationMethod
 import mozilla.components.concept.engine.webextension.PermissionPromptResponse
 import mozilla.components.concept.engine.webextension.WebExtensionInstallException
 import mozilla.components.feature.addons.Addon
@@ -38,10 +45,14 @@ import mozilla.components.ui.widgets.withCenterAlignedButtons
 import org.mozilla.fenix.BuildConfig
 import org.mozilla.fenix.R
 import org.mozilla.fenix.addons.AddonsManagementFragmentDirections
+import org.mozilla.fenix.addons.DownloadAddonDialogFragment
+import org.mozilla.fenix.addons.DownloadAddonDialogFragmentArgs
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.pixelSizeFor
 import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.theme.ThemeManager
+import androidx.appcompat.R as appcompatR
+import com.google.android.material.R as materialR
 import mozilla.components.feature.addons.R as addonsR
 
 /**
@@ -61,7 +72,16 @@ class WebExtensionPromptFeature(
      * Whether or not an add-on installation is in progress.
      */
     private var isInstallationInProgress = false
+    private var downloadAddonOperation: CancellableOperation? = null
     private var scope: CoroutineScope? = null
+
+    /**
+     * Job that completes once the [DownloadAddonDialogFragment] has been on screen for
+     * at least [MIN_DOWNLOAD_DIALOG_DISPLAY_MS].
+     * Used to gate dismissals and any follow-up dialogs (permissions, post-install, error) so that the
+     * download dialog isn't shown and then immediately replaced, which users would see as a flicker.
+     */
+    private var minDownloadDialogDisplayJob: Job? = null
 
     /**
      * Starts observing the selected session to listen for window requests
@@ -74,18 +94,41 @@ class WebExtensionPromptFeature(
             }.distinctUntilChanged().collect { promptRequest ->
 
                 when (promptRequest) {
+                    is WebExtensionPromptRequest.InstallationRequested -> {
+                        handleInstallationStartedRequest(promptRequest)
+                        consumePromptRequest()
+                    }
+
                     is WebExtensionPromptRequest.AfterInstallation -> {
-                        handleAfterInstallationRequest(promptRequest)
+                        guardPromptActionWithDownloadDialogDelay {
+                            handleAfterInstallationRequest(promptRequest)
+                        }
                     }
 
                     is WebExtensionPromptRequest.BeforeInstallation.InstallationFailed -> {
-                        handleBeforeInstallationRequest(promptRequest)
-                        consumePromptRequest()
+                        guardPromptActionWithDownloadDialogDelay {
+                            handleBeforeInstallationRequest(promptRequest)
+                            consumePromptRequest()
+                        }
                     }
                 }
             }
         }
         tryToReAttachButtonHandlersToPreviousDialog()
+    }
+
+    private fun handleInstallationStartedRequest(promptRequest: WebExtensionPromptRequest.InstallationRequested) {
+        startInstallingAddon(
+            addonDownloadUrl = promptRequest.url,
+            addonInstallationSource = promptRequest.installationMethod,
+        )
+
+        showDownloadAddonDialog(
+            addonDownloadUrl = promptRequest.url,
+            addonName = promptRequest.name,
+            addonImageUrl = promptRequest.iconUrl,
+            addonInstallationSource = promptRequest.installationMethod,
+        )
     }
 
     @VisibleForTesting
@@ -264,6 +307,58 @@ class WebExtensionPromptFeature(
     }
 
     @VisibleForTesting
+    internal fun startInstallingAddon(
+        addonDownloadUrl: String,
+        addonInstallationSource: InstallationMethod,
+    ) {
+        downloadAddonOperation = addonManager.installAddon(
+            url = addonDownloadUrl,
+            installationMethod = addonInstallationSource,
+            onSuccess = {
+                scope?.launch {
+                    minDownloadDialogDisplayJob?.join()
+                    findPreviousDownloadAddonDialogFragment()?.dismissAllowingStateLoss()
+                }
+            },
+            onError = {
+                scope?.launch {
+                    minDownloadDialogDisplayJob?.join()
+                    findPreviousDownloadAddonDialogFragment()?.dismissAllowingStateLoss()
+                }
+            },
+        )
+    }
+
+    @VisibleForTesting
+    internal fun showDownloadAddonDialog(
+        addonDownloadUrl: String,
+        addonName: String?,
+        addonImageUrl: String?,
+        addonInstallationSource: InstallationMethod,
+    ): DownloadAddonDialogFragment? {
+        if (hasExistingDownloadAddonDialogFragment()) {
+            return null
+        }
+
+        val dialog = DownloadAddonDialogFragment().apply {
+            arguments = DownloadAddonDialogFragmentArgs(
+                addonDownloadUrl = addonDownloadUrl,
+                addonName = addonName,
+                addonImageUrl = addonImageUrl,
+                addonInstallationSource = addonInstallationSource,
+            ).toBundle()
+        }
+        dialog.onCancelled = ::handleDownloadAddonDialogCancelled
+        dialog.show(fragmentManager, DOWNLOAD_ADDON_DIALOG_FRAGMENT_TAG)
+
+        minDownloadDialogDisplayJob = scope?.launch {
+            delay(MIN_DOWNLOAD_DIALOG_DISPLAY_MS)
+        }
+
+        return dialog
+    }
+
+    @VisibleForTesting
     internal fun showPermissionDialog(
         addon: Addon,
         promptRequest: WebExtensionPromptRequest.AfterInstallation.Permissions,
@@ -286,11 +381,11 @@ class WebExtensionPromptFeature(
                 gravity = Gravity.BOTTOM,
                 shouldWidthMatchParent = true,
                 confirmButtonBackgroundColor = ThemeManager.resolveAttribute(
-                    R.attr.actionPrimary,
+                    appcompatR.attr.colorPrimary,
                     context,
                 ),
                 confirmButtonTextColor = ThemeManager.resolveAttribute(
-                    R.attr.textActionPrimary,
+                    materialR.attr.colorOnPrimary,
                     context,
                 ),
                 confirmButtonDisabledBackgroundColor = ThemeManager.resolveAttribute(
@@ -303,7 +398,7 @@ class WebExtensionPromptFeature(
                 ),
                 confirmButtonRadius = context.pixelSizeFor(R.dimen.tab_corner_radius).toFloat(),
                 learnMoreLinkTextColor = ThemeManager.resolveAttribute(
-                    R.attr.textAccent,
+                    materialR.attr.colorTertiary,
                     context,
                 ),
             ),
@@ -339,6 +434,10 @@ class WebExtensionPromptFeature(
     }
 
     private fun tryToReAttachButtonHandlersToPreviousDialog() {
+        findPreviousDownloadAddonDialogFragment()?.let { dialog ->
+            dialog.onCancelled = ::handleDownloadAddonDialogCancelled
+        }
+
         findPreviousPermissionDialogFragment()?.let { dialog ->
             dialog.onPositiveButtonClicked = { addon, privateBrowsingAllowed, technicalAndInteractionDataGranted ->
                 store.state.webExtensionPromptRequest?.let { promptRequest ->
@@ -390,6 +489,14 @@ class WebExtensionPromptFeature(
         }
     }
 
+    private fun handleDownloadAddonDialogCancelled() {
+        scope?.launch(mainDispatcher) {
+            downloadAddonOperation?.cancel()?.await()
+            minDownloadDialogDisplayJob?.cancel()
+            minDownloadDialogDisplayJob = null
+        }
+    }
+
     private fun handlePermissions(
         promptRequest: WebExtensionPromptRequest.AfterInstallation.Permissions,
         granted: Boolean,
@@ -418,6 +525,10 @@ class WebExtensionPromptFeature(
         store.dispatch(WebExtensionAction.ConsumePromptRequestWebExtensionAction)
     }
 
+    private fun hasExistingDownloadAddonDialogFragment(): Boolean {
+        return findPreviousDownloadAddonDialogFragment() != null
+    }
+
     private fun hasExistingPermissionDialogFragment(): Boolean {
         return findPreviousPermissionDialogFragment() != null
     }
@@ -425,6 +536,10 @@ class WebExtensionPromptFeature(
     private fun hasExistingAddonPostInstallationDialogFragment(): Boolean {
         return fragmentManager.findFragmentByTag(POST_INSTALLATION_DIALOG_FRAGMENT_TAG)
             as? AddonInstallationDialogFragment != null
+    }
+
+    private fun findPreviousDownloadAddonDialogFragment(): DownloadAddonDialogFragment? {
+        return fragmentManager.findFragmentByTag(DOWNLOAD_ADDON_DIALOG_FRAGMENT_TAG) as? DownloadAddonDialogFragment
     }
 
     private fun findPreviousPermissionDialogFragment(): PermissionsDialogFragment? {
@@ -446,11 +561,11 @@ class WebExtensionPromptFeature(
                     gravity = Gravity.BOTTOM,
                     shouldWidthMatchParent = true,
                     confirmButtonBackgroundColor = ThemeManager.resolveAttribute(
-                        R.attr.actionPrimary,
+                        appcompatR.attr.colorPrimary,
                         context,
                     ),
                     confirmButtonTextColor = ThemeManager.resolveAttribute(
-                        R.attr.textActionPrimary,
+                        materialR.attr.colorOnPrimary,
                         context,
                     ),
                     confirmButtonRadius = context.pixelSizeFor(R.dimen.tab_corner_radius).toFloat(),
@@ -511,10 +626,32 @@ class WebExtensionPromptFeature(
         }
     }
 
+    /**
+     * Execute the given [action] after [MIN_DOWNLOAD_DIALOG_DISPLAY_MS] if the download dialog is shown or
+     * consume any prompt requests received before [MIN_DOWNLOAD_DIALOG_DISPLAY_MS] if the download dialog is canceled.
+     */
+    private fun guardPromptActionWithDownloadDialogDelay(action: () -> Unit) {
+        val delayJob = minDownloadDialogDisplayJob
+
+        scope?.launch {
+            delayJob?.join()
+
+            if (delayJob != null && delayJob.isCancelled) {
+                consumePromptRequest()
+            } else {
+                action()
+            }
+        }
+    }
+
     companion object {
+        private const val DOWNLOAD_ADDON_DIALOG_FRAGMENT_TAG = "DOWNLOAD_ADDON_DIALOG_FRAGMENT_TAG"
         private const val PERMISSIONS_DIALOG_FRAGMENT_TAG = "ADDONS_PERMISSIONS_DIALOG_FRAGMENT"
         private const val POST_INSTALLATION_DIALOG_FRAGMENT_TAG =
             "ADDONS_INSTALLATION_DIALOG_FRAGMENT"
         private const val AMO_BLOCKED_PAGE_URL = "${BuildConfig.AMO_BASE_URL}/android/blocked-addon/%s/"
+
+        @VisibleForTesting
+        internal const val MIN_DOWNLOAD_DIALOG_DISPLAY_MS = 1500L
     }
 }

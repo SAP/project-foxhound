@@ -314,7 +314,9 @@ def upload_symbols(zip_path):
 
     log.info(f'Uploading symbol file "{zip_path}" to "{url}"')
 
-    for i, _ in enumerate(redo.retrier(attempts=MAX_RETRIES), start=1):
+    for i, _ in enumerate(
+        redo.retrier(attempts=MAX_RETRIES, sleeptime=60, sleepscale=1), start=1
+    ):
         log.info("Attempt %d of %d..." % (i, MAX_RETRIES))
         try:
             if zip_path.startswith("http"):
@@ -326,9 +328,8 @@ def upload_symbols(zip_path):
                 headers={"Auth-Token": auth_token},
                 allow_redirects=False,
                 # Allow a longer read timeout because uploading by URL means the server
-                # has to fetch the entire zip file, which can take a while. The load balancer
-                # in front of symbols.mozilla.org has a 300 second timeout, so we'll use that.
-                timeout=(300, 300),
+                # has to fetch the entire zip file, which can take a while.
+                timeout=(300, 600),
                 **zip_arg,
             )
             # 408, 429 or any 5XX is likely to be a transient failure.

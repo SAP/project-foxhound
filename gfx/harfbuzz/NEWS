@@ -1,10 +1,504 @@
+Overview of changes leading to 14.2.0
+Monday, April 20, 2026
+=====================================
+
+In this release, the experimental raster, vector, and GPU libraries went
+through several rounds of code review and cleanup to make sure they follow the
+high standards expected of HarfBuzz code. The API has also been extensively
+reviewed based on experience gained from using these libraries. We consider the
+code and API to be ready for stabilization, and we expect to graduate them from
+experimental in the near future. If you are using or planning to use these
+libraries and have any concerns about the API, it is time to raise them. Once a
+library is deemed stable, we will never change the API or ABI in an
+incompatible way.
+
+- GPU library:
+  * New color-glyph paint renderer, based on design by Lê Duy Quang.
+    `hb_gpu_paint_t` walks a font's paint tree (COLRv0 or COLRv1) and encodes
+    its layers (solid fills, linear / radial / sweep gradients, transforms,
+    composite groups) into a compact blob.
+    A new fragment-shader function `hb_gpu_paint()` renders the blob in
+    premultiplied RGBA; monochrome glyphs are handled transparently via a
+    synthesized foreground-colored layer.
+    Shader sources provided in GLSL, WGSL, MSL, and HLSL.
+  * Paint encoder limitations: the encoder sets `unsupported` and returns
+    `NULL` when `num_ops` would exceed 32767, `push_group` nests deeper than 4,
+    or the paint tree calls back through the image callback (PaintImage).
+    Nested glyph clips are intersected up to 3 levels; a few composite modes
+    use approximate fallbacks; `push_clip_rectangle` is silently ignored.
+  * Encode entry point now returns extents and auto-clears the encoder; the
+    standalone `get_extents()` is gone.
+  * Gradient color stop interpolation now happens in premultiplied space per
+    the OpenType COLR specification.
+  * The foreground color sentinel (`is_foreground`) now correctly preserves the
+    paint-tree alpha from the encoded color data instead of discarding it.
+  * The hb-gpu utility gains `--draw` / `--paint` flags with per-font
+    auto-detect, and `--output-file` / `-o` for headless single-frame rendering
+    to a PPM image.
+
+- Vector library:
+  * New PDF output backend. Vector paint glyphs now render to PDF page content,
+    producing scalable COLRv0 / COLRv1 color-glyph artwork (solid fills, linear
+    / radial / sweep gradients, blend modes, PNG images with transparency) that
+    can be embedded directly in PDF documents. Useful for PDF producers such as
+    LibreOffice that want crisp, resolution-independent color emoji.
+  * New SVG id prefix API on paint allows prefixing document references, which
+    allows for embedding multiple SVGs in the same page without name clashes
+    (`hb_vector_paint_set_svg_prefix`).
+  * Removed glyph path dedup from vector draw and paint. Each glyph is emitted
+    inline; no `<defs>` / `<use>` caching.
+  * `_glyph()` functions are now thin convenience wrappers documented as
+    equivalent expansions of the underlying font draw/paint API.
+  * Drop glyph-source rendering of SVG-in-OT fonts.
+
+- Raster library:
+  * Drop glyph-source rendering of SVG-in-OT fonts.
+
+- Across Draw / Paint subsystems:
+  * `_reset()` methods gain matching`_clear()` companions that drop accumulated
+    data while preserving user configuration. Getter companions added for
+    setters across raster, vector, and gpu types.
+
+- Various fuzzer fixes for raster, vector, and GPU libraries.
+
+- Paint API:
+  * New arbitrary-path clip: `hb_paint_push_clip_path_start` / `_end` let
+    callers clip to a caller-supplied outline, not just a font glyph.
+    `push_clip_path_start()` returns the draw-funcs (and matching draw data)
+    for the backend’s path accumulator; the caller drives `hb_draw_*()` into
+    it, then calls `push_clip_path_end()`, followed by painted ops, then
+    `hb_paint_pop_clip()` to release the clip. Implemented for all paint
+    backends: vector (SVG defs + clipPath + url ref), vector PDF (q / path / W
+    n), raster (path rendered to an alpha mask, intersected with the current
+    clip), and GPU (the path is encoded into a Slug sub-blob so the fragment
+    shader clips against it the same way it clips against glyph outlines).
+
+- Shaping:
+  * Indic: categorize U+1CF5 and U+1CF6 as CS.
+
+- Changed API
+  * GPU library:
+    - `hb_gpu_draw_glyph()` now returns `void` (was `hb_bool_t`). Use
+      `hb_gpu_draw_glyph_or_fail()` if you need the success status.
+    - `hb_gpu_paint_glyph()` now returns `void` (was `hb_bool_t`) and
+      internally synthesizes a foreground-colored layer for non-color glyphs
+      via `hb_font_paint_glyph()`, so every glyph with an outline produces
+      output. Use `hb_gpu_paint_glyph_or_fail()` (which delegates to
+      `hb_font_paint_glyph_or_fail()`) if you need to distinguish color vs
+      synthesized paint. Encoder-level limits (unsupported ops, group-stack
+      overflow) no longer fail paint_glyph; they surface from
+      `hb_gpu_paint_encode()` returning `NULL`.
+    - `hb_gpu_draw_encode()` now takes an `extents` out-parameter and
+      auto-clears the encoder on return.
+    - `hb_gpu_draw_darken()` renamed to `hb_gpu_stem_darken()`.
+
+  * Vector library:
+    - `hb_vector_svg_set_precision()` and its paint counterpart renamed to
+      `hb_vector_draw_set_precision()` / `hb_vector_paint_set_precision()`
+      (SVG-specific naming is inaccurate with the PDF backend added).
+    - `hb_vector_draw_glyph()` / `hb_vector_paint_glyph()` now return `void`
+      (were `hb_bool_t`). Paint additionally gains a draw fallback for
+      non-color glyphs. Use the matching `_or_fail()` variants for the
+      `hb_bool_t` return.
+
+  * Raster library:
+    - `hb_raster_draw_glyph()` / `hb_raster_paint_glyph()` now return `void`
+      (were `hb_bool_t`). Paint additionally gains a draw fallback for
+      non-color glyphs. Use the matching `_or_fail()` variants for the
+      `hb_bool_t` return.
+
+  * General:
+    - Many read-only getters gained const on their object argument.
+    - Six public draw / paint funcs getters across raster, vector, and gpu now
+      take a const-pointer to the relevant context instance instead of being
+      singletons:
+        hb_raster_draw_get_funcs (const hb_raster_draw_t *)`
+        hb_raster_paint_get_funcs (const hb_raster_paint_t *)
+        hb_vector_draw_get_funcs (const hb_vector_draw_t *)
+        hb_vector_paint_get_funcs (const hb_vector_paint_t *)
+        hb_gpu_draw_get_funcs (const hb_gpu_draw_t *)
+        hb_gpu_paint_get_funcs (const hb_gpu_paint_t *)
+      This is what lets vector_paint dispatch to SVG- vs PDF- flavored
+      callbacks transparently when called from outside code; the others
+      currently use the instance for symmetry only.
+
+- New API
+  * Draw:
+    +HB_DRAW_LINE_CAP_BUTT
+    +HB_DRAW_LINE_CAP_ROUND
+    +HB_DRAW_LINE_CAP_SQUARE
+    +hb_draw_line_cap_t
+    +hb_draw_line()
+    +hb_draw_rectangle()
+    +hb_draw_circle()
+
+  * Paint:
+    +hb_paint_push_clip_path_start_func_t
+    +hb_paint_push_clip_path_end_func_t
+    +hb_paint_sweep_gradient_tile_func_t
+    +hb_paint_push_group_for_func_t
+    +hb_paint_push_group_for()
+    +hb_paint_funcs_set_push_group_for_func()
+    +hb_paint_reduce_linear_anchors()
+    +hb_paint_normalize_color_line()
+    +hb_paint_sweep_gradient_tiles()
+    +hb_paint_push_clip_path_start()
+    +hb_paint_push_clip_path_end()
+    +hb_paint_funcs_set_push_clip_path_start_func()
+    +hb_paint_funcs_set_push_clip_path_end_func()
+
+  * GPU library:
+    +HB_GPU_SHADER_STAGE_VERTEX
+    +HB_GPU_SHADER_STAGE_FRAGMENT
+    +HB_GPU_SHADER_LANG_INVALID
+    +hb_gpu_shader_stage_t
+    +hb_gpu_paint_t
+    +hb_gpu_paint_create_or_fail()
+    +hb_gpu_paint_reference()
+    +hb_gpu_paint_destroy()
+    +hb_gpu_paint_set_user_data()
+    +hb_gpu_paint_get_user_data()
+    +hb_gpu_paint_get_funcs()
+    +hb_gpu_paint_set_palette()
+    +hb_gpu_paint_get_palette()
+    +hb_gpu_paint_set_custom_palette_color()
+    +hb_gpu_paint_clear_custom_palette_colors()
+    +hb_gpu_paint_set_scale()
+    +hb_gpu_paint_get_scale()
+    +hb_gpu_paint_glyph()
+    +hb_gpu_paint_encode()
+    +hb_gpu_paint_clear()
+    +hb_gpu_paint_reset()
+    +hb_gpu_paint_recycle_blob()
+    +hb_gpu_paint_shader_source()
+    +hb_gpu_paint_glyph_or_fail()
+    +hb_gpu_shader_source()
+    +hb_gpu_draw_shader_source()
+    +hb_gpu_draw_clear()
+    +hb_gpu_draw_get_scale()
+    +hb_gpu_draw_glyph_or_fail()
+
+  * Raster library:
+    +hb_raster_draw_clear()
+    +hb_raster_draw_glyph_or_fail()
+    +hb_raster_paint_clear()
+    +hb_raster_paint_glyph_or_fail()
+    +hb_raster_paint_set_palette()
+    +hb_raster_paint_get_palette()
+    +hb_raster_paint_get_foreground()
+    +hb_raster_paint_set_background()
+    +hb_raster_paint_get_background()
+
+  * Vector library:
+    +HB_VECTOR_FORMAT_PDF
+    +hb_vector_draw_clear()
+    +hb_vector_draw_get_precision()
+    +hb_vector_draw_get_format()
+    +hb_vector_draw_glyph_or_fail()
+    +hb_vector_draw_new_path()
+    +hb_vector_draw_set_foreground()
+    +hb_vector_draw_get_foreground()
+    +hb_vector_draw_set_background()
+    +hb_vector_draw_get_background()
+    +hb_vector_paint_clear()
+    +hb_vector_paint_get_precision()
+    +hb_vector_paint_get_format()
+    +hb_vector_paint_get_foreground()
+    +hb_vector_paint_set_background()
+    +hb_vector_paint_get_background()
+    +hb_vector_paint_get_palette()
+    +hb_vector_paint_glyph_or_fail()
+    +hb_vector_paint_set_svg_prefix()
+    +hb_vector_paint_get_svg_prefix()
+
+- Removed API
+  * GPU library:
+    -hb_gpu_shader_fragment_source()   (replaced by hb_gpu_shader_source(stage))
+    -hb_gpu_shader_vertex_source()     (replaced by hb_gpu_shader_source(stage))
+    -hb_gpu_draw_get_extents()         (extents are now an out-parameter of hb_gpu_draw_encode())
+
+  * Vector library:
+    -hb_vector_draw_set_flat()
+    -hb_vector_draw_get_flat()
+    -hb_vector_paint_set_flat()
+    -hb_vector_paint_get_flat()
+
+
+Overview of changes leading to 14.1.0
+Saturday, April 4, 2026
+=====================================
+- GPU library improvements:
+  * Add anti-aliased rendering for small sizes.
+  * Store font scale in blob header.
+  * Port scale/ppem support to MSL, WGSL, and HLSL shaders.
+  * Fix contour breaks and bounds quantization in encode.
+  * Fix garbled rendering after font change in web demo.
+  * Various robustness fixes.
+- Various fuzzing fixes for `harfbuzz-raster`, `harfbuzz-gpu` and
+  `harfbuzz-vector` libraries.
+- Move `HB_NO_CFF` from `HB_LEAN` to `HB_NO_DRAW` closure, and fix
+  `HB_TINY` build.
+- New API:
+  +hb_gpu_draw_set_scale()
+
+
+Overview of changes leading to 14.0.0
+Wednesday, April 1, 2026
+=====================================
+- New `libharfbuzz-gpu` library: GPU text rasterization based on the
+  Slug algorithm by Eric Lengyel.  Encodes glyph outlines on the CPU
+  into compact blobs that the GPU decodes and rasterizes directly in
+  the fragment shader, with no intermediate bitmap atlas.
+  Shader sources provided in GLSL, WGSL, MSL, and HLSL.
+  New `hb-gpu` installed utility for interactive GPU text rendering.
+  Live web demo: https://harfbuzz.github.io/hb-gpu-demo/
+- New `harfbuzz-world.cc` amalgamated source for building a subset of
+  all HarfBuzz libraries into one compilation unit, driven by a custom
+  `hb-features.h`.
+- Updated README with libraries overview and project description.
+- Various bug fixes.
+- New API:
+  +hb_gpu_draw_t
+  +hb_gpu_draw_create_or_fail()
+  +hb_gpu_draw_reference()
+  +hb_gpu_draw_destroy()
+  +hb_gpu_draw_set_user_data()
+  +hb_gpu_draw_get_user_data()
+  +hb_gpu_draw_get_funcs()
+  +hb_gpu_draw_glyph()
+  +hb_gpu_draw_encode()
+  +hb_gpu_draw_get_extents()
+  +hb_gpu_draw_reset()
+  +hb_gpu_draw_recycle_blob()
+  +hb_gpu_shader_lang_t
+  +hb_gpu_shader_fragment_source()
+  +hb_gpu_shader_vertex_source()
+
+
+Overview of changes leading to 13.2.1
+Thursday, March 19, 2026
+=====================================
+- Fix regression in tracing messages from previous release.
+
+
+Overview of changes leading to 13.2.0
+Thursday, March 19, 2026
+=====================================
+- Fix `hb-view` glyph positioning with `--glyphs` input from `hb-shape --ned`.
+- Various fuzzing fixes for `harfbuzz-subset`, `harfbuzz-raster` and
+  `harfbuzz-vector` libraries.
+- Various improvements to tracing messages.
+- Various documentation improvements.
+- New API:
+  +HB_OT_SHAPE_BUFFER_FORMAT_SERIAL
+  +hb_ot_shape_get_buffer_format_serial()
+
+
+Overview of changes leading to 13.1.1
+Friday, March 13, 2026
+=====================================
+- Support gzip-compressed `SVG` glyphs in `harfbuzz-raster` and
+  `harfbuzz-vector` libraries. This new functionality requires `zlib`, and will
+   not be available if HarfBuzz is built without `zlib`.
+- Improve handling of `SVG` glyphs in `harfbuzz-raster` and
+  `harfbuzz-vector` libraries.
+- Further harden application of `stch` feature against malicious fonts.
+- Various fuzzing fixes.
+- Various build fixes:
+  * Add missing `chafa` dependency to `hb-raster` utility, and remove
+    accidental `cairo` dependency.
+  * Don’t build raster and vector fuzzers if the library is disabled.
+  * Add meson options for enabling / disabling `libpng` and `zlib`.
+  * Support building `harfbuzz-raster` and `harfbuzz-vector` libraries with
+    CMake.
+
+
+Overview of changes leading to 13.1.0
+Wednesday, March 11, 2026
+=====================================
+- The `harfbuzz-raster` library can now render bitmap color glyph formats
+  (`CBDT` and `sbix`). It now also has an API to serialize / deserialize images
+  to and from PNGs. This new functionality requires `libpng`, and will not be
+  available if HarfBuzz is built without `libpng`.
+- Install `hb-raster` command line utility.
+- Fix overflow when applying `stch` feature with malicious fonts.
+- Fix memory leaks in `harfbuzz-raster` and `harfbuzz-vector` in error
+  conditions, as well as more robust handling of allocation failures.
+- Various documentation improvements and build fixes.
+- New API:
+  +hb_raster_image_serialize_to_png_or_fail()
+  +hb_raster_image_deserialize_from_png_or_fail()
+
+
+Overview of changes leading to 13.0.1
+Saturday, March 7, 2026
+=====================================
+- Bug fixes in rendering `COLR` v1 fonts.
+- Various build fixes.
+
+
+Overview of changes leading to 13.0.0
+Wednesday, March 4, 2026
+=====================================
+- New experimental drawing and rendering libraries:
+  * New public `hb-vector` API for vector output of glyph outlines. The only
+    supported output format currently is SVG.
+    The new API is available in a separate `harfbuzz-vector` library.
+  * New public `hb-raster` API for rasterizing glyphs to A8 / BGRA32 images.
+    The new API is available in a separate `harfbuzz-raster` library.
+  * Both APIs are still experimental and subject to change.
+  * Both libraries support monochrome as well as vector color glyph formats
+    (`COLR` v0, v1, and `SVG`).
+  * Additionally, `hb-vector` supports also bitmap color glyph formats (`CBDT`
+    and `sbix`).
+  * New command line utilities to accompany the new APIs: `hb-vector` and
+    `hb-raster`. They share many of the same options as `hb-view`.
+
+- New subset flag `HB_SUBSET_FLAGS_DOWNGRADE_CFF2` to convert instantiated
+  `CFF2` table to `CFF `. This options will desubroutinize `CFF2` table and
+  convert it to CID-keyed `CFF` table. This is useful for compatibility with
+  older renderers that do not support `CFF2` table, including embedding
+  instantiated fonts in PDF documents.
+
+- The `hb-view` command-line utility got a few bells and whistles as well,
+  including support for logical / ink extents (with the default being the union
+  of both), stroke, and an option to rotate glyph foreground colors
+  (rainbow coloring).
+
+- New API to inspect color-glyph documents in `SVG` table.
+- New API to signal that the buffer content was changed by the client in
+  message callbacks.
+- Improve `VARC` drawing accuracy with multiple transform / rounding fixes.
+- Don’t reject malformed `cmap` subtables, a regression from 12.3.0 when we
+  stopped sanitizing malformed tables.
+- Disallow calling `hb_buffer_set_message_func()` from within the message
+  callback.
+- Various performance optimizations, fuzzing fixes, and documentation
+  improvements.
+
+- New API:
+
+  * harfbuzz:
+    +hb_buffer_changed()
+    +hb_ot_color_get_svg_document_count()
+    +hb_ot_color_get_svg_document_glyph_range()
+    +hb_ot_color_glyph_get_svg_document_index()
+
+  * harfbuzz-subset:
+    +HB_SUBSET_FLAGS_DOWNGRADE_CFF2
+
+  * harfbuzz-raster:
+    +hb_raster_draw_t
+    +hb_raster_extents_t
+    +hb_raster_format_t
+    +hb_raster_image_t
+    +hb_raster_paint_t
+    +hb_raster_draw_create_or_fail()
+    +hb_raster_draw_destroy()
+    +hb_raster_draw_get_extents()
+    +hb_raster_draw_get_funcs()
+    +hb_raster_draw_get_scale_factor()
+    +hb_raster_draw_get_transform()
+    +hb_raster_draw_get_user_data()
+    +hb_raster_draw_glyph()
+    +hb_raster_draw_recycle_image()
+    +hb_raster_draw_reference()
+    +hb_raster_draw_render()
+    +hb_raster_draw_reset()
+    +hb_raster_draw_set_extents()
+    +hb_raster_draw_set_glyph_extents()
+    +hb_raster_draw_set_scale_factor()
+    +hb_raster_draw_set_transform()
+    +hb_raster_draw_set_user_data()
+    +hb_raster_image_clear()
+    +hb_raster_image_configure()
+    +hb_raster_image_create_or_fail()
+    +hb_raster_image_destroy()
+    +hb_raster_image_get_buffer()
+    +hb_raster_image_get_extents()
+    +hb_raster_image_get_format()
+    +hb_raster_image_get_user_data()
+    +hb_raster_image_reference()
+    +hb_raster_image_set_user_data()
+    +hb_raster_paint_clear_custom_palette_colors()
+    +hb_raster_paint_create_or_fail()
+    +hb_raster_paint_destroy()
+    +hb_raster_paint_get_extents()
+    +hb_raster_paint_get_funcs()
+    +hb_raster_paint_get_scale_factor()
+    +hb_raster_paint_get_transform()
+    +hb_raster_paint_get_user_data()
+    +hb_raster_paint_glyph()
+    +hb_raster_paint_recycle_image()
+    +hb_raster_paint_reference()
+    +hb_raster_paint_render()
+    +hb_raster_paint_reset()
+    +hb_raster_paint_set_custom_palette_color()
+    +hb_raster_paint_set_extents()
+    +hb_raster_paint_set_foreground()
+    +hb_raster_paint_set_glyph_extents()
+    +hb_raster_paint_set_scale_factor()
+    +hb_raster_paint_set_transform()
+    +hb_raster_paint_set_user_data()
+
+  * harfbuzz-vector:
+    +hb_vector_draw_t
+    +hb_vector_extents_mode_t
+    +hb_vector_extents_t
+    +hb_vector_format_t
+    +hb_vector_paint_t
+    +hb_vector_draw_create_or_fail()
+    +hb_vector_draw_destroy()
+    +hb_vector_draw_get_extents()
+    +hb_vector_draw_get_funcs()
+    +hb_vector_draw_get_scale_factor()
+    +hb_vector_draw_get_transform()
+    +hb_vector_draw_get_user_data()
+    +hb_vector_draw_glyph()
+    +hb_vector_draw_recycle_blob()
+    +hb_vector_draw_reference()
+    +hb_vector_draw_render()
+    +hb_vector_draw_reset()
+    +hb_vector_draw_set_extents()
+    +hb_vector_draw_set_glyph_extents()
+    +hb_vector_draw_set_scale_factor()
+    +hb_vector_draw_set_transform()
+    +hb_vector_draw_set_user_data()
+    +hb_vector_paint_clear_custom_palette_colors()
+    +hb_vector_paint_create_or_fail()
+    +hb_vector_paint_destroy()
+    +hb_vector_paint_get_extents()
+    +hb_vector_paint_get_funcs()
+    +hb_vector_paint_get_scale_factor()
+    +hb_vector_paint_get_transform()
+    +hb_vector_paint_get_user_data()
+    +hb_vector_paint_glyph()
+    +hb_vector_paint_recycle_blob()
+    +hb_vector_paint_reference()
+    +hb_vector_paint_render()
+    +hb_vector_paint_reset()
+    +hb_vector_paint_set_custom_palette_color()
+    +hb_vector_paint_set_extents()
+    +hb_vector_paint_set_foreground()
+    +hb_vector_paint_set_glyph_extents()
+    +hb_vector_paint_set_palette()
+    +hb_vector_paint_set_scale_factor()
+    +hb_vector_paint_set_transform()
+    +hb_vector_paint_set_user_data()
+    +hb_vector_svg_paint_set_flat()
+    +hb_vector_svg_paint_set_precision()
+    +hb_vector_svg_set_flat()
+    +hb_vector_svg_set_precision()
+
+
 Overview of changes leading to 12.3.2
 Tuesday, January 24, 2026
 =====================================
 - Fix padding `gvar` table during subsetting when the original font uses long
-  format and subset font using short format.
+  format and subset font uses short format.
 - Various fuzzing fixes.
 - Fix NULL pointer deference when malloc fails.
+
 
 Overview of changes leading to 12.3.1
 Tuesday, January 20, 2026

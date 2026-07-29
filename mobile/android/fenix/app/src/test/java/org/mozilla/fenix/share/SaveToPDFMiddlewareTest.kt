@@ -21,7 +21,6 @@ import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -37,6 +36,7 @@ import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.mozilla.geckoview.GeckoSession
 import org.robolectric.RobolectricTestRunner
 import java.io.IOException
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 class SaveToPDFMiddlewareTest {
@@ -89,9 +89,9 @@ class SaveToPDFMiddlewareTest {
             testScheduler.advanceUntilIdle()
             val response = Events.saveToPdfFailure.testGetValue()?.firstOrNull()
             assertNotNull(response)
-            val reason = response?.extra?.get("reason")
+            val reason = response.extra?.get("reason")
             assertEquals("unknown", reason)
-            val source = response?.extra?.get("source")
+            val source = response.extra?.get("source")
             assertEquals("unknown", source)
             verify {
                 appStore.dispatch(
@@ -131,9 +131,9 @@ class SaveToPDFMiddlewareTest {
             testScheduler.advanceUntilIdle()
             val response = Events.saveToPdfFailure.testGetValue()?.firstOrNull()
             assertNotNull(response)
-            val reason = response?.extra?.get("reason")
+            val reason = response.extra?.get("reason")
             assertEquals("io_error", reason)
-            val source = response?.extra?.get("source")
+            val source = response.extra?.get("source")
             assertEquals("unknown", source)
             verify {
                 appStore.dispatch(
@@ -173,9 +173,9 @@ class SaveToPDFMiddlewareTest {
             testScheduler.advanceUntilIdle()
             val response = Events.saveToPdfFailure.testGetValue()?.firstOrNull()
             assertNotNull(response)
-            val reason = response?.extra?.get("reason")
+            val reason = response.extra?.get("reason")
             assertEquals("no_settings_service", reason)
-            val source = response?.extra?.get("source")
+            val source = response.extra?.get("source")
             assertEquals("unknown", source)
             verify {
                 appStore.dispatch(
@@ -214,7 +214,7 @@ class SaveToPDFMiddlewareTest {
             testScheduler.advanceUntilIdle()
             val response = Events.saveToPdfCompleted.testGetValue()
             assertNotNull(response)
-            val source = response?.firstOrNull()?.extra?.get("source")
+            val source = response.firstOrNull()?.extra?.get("source")
             assertEquals("non-pdf", source)
         }
 
@@ -250,7 +250,7 @@ class SaveToPDFMiddlewareTest {
             testScheduler.advanceUntilIdle()
             val response = Events.saveToPdfTapped.testGetValue()
             assertNotNull(response)
-            val source = response?.firstOrNull()?.extra?.get("source")
+            val source = response.firstOrNull()?.extra?.get("source")
             assertEquals("non-pdf", source)
         }
 
@@ -299,9 +299,9 @@ class SaveToPDFMiddlewareTest {
         testScheduler.advanceUntilIdle()
         val response = Events.printFailure.testGetValue()?.firstOrNull()
         assertNotNull(response)
-        val reason = response?.extra?.get("reason")
+        val reason = response.extra?.get("reason")
         assertEquals("unknown", reason)
-        val source = response?.extra?.get("source")
+        val source = response.extra?.get("source")
         assertEquals("unknown", source)
         verify {
             appStore.dispatch(
@@ -340,9 +340,9 @@ class SaveToPDFMiddlewareTest {
         testScheduler.advanceUntilIdle()
         val response = Events.printFailure.testGetValue()?.firstOrNull()
         assertNotNull(response)
-        val reason = response?.extra?.get("reason")
+        val reason = response.extra?.get("reason")
         assertEquals("no_settings_service", reason)
-        val source = response?.extra?.get("source")
+        val source = response.extra?.get("source")
         assertEquals("unknown", source)
         verify {
             appStore.dispatch(
@@ -380,7 +380,7 @@ class SaveToPDFMiddlewareTest {
         testScheduler.advanceUntilIdle()
         val response = Events.printCompleted.testGetValue()
         assertNotNull(response)
-        val source = response?.firstOrNull()?.extra?.get("source")
+        val source = response.firstOrNull()?.extra?.get("source")
         assertEquals("pdf", source)
     }
 
@@ -415,7 +415,7 @@ class SaveToPDFMiddlewareTest {
         testScheduler.advanceUntilIdle()
         val response = Events.printTapped.testGetValue()
         assertNotNull(response)
-        val source = response?.firstOrNull()?.extra?.get("source")
+        val source = response.firstOrNull()?.extra?.get("source")
         assertEquals("non-pdf", source)
         verify { testContext.recordEventInNimbus("print_tapped") }
     }

@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 var dtf = new Intl.DateTimeFormat("ja-u-ca-japanese", {
     era: "short",
     timeZone: "Asia/Tokyo",

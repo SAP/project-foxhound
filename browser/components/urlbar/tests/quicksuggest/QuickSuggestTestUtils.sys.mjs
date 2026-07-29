@@ -423,6 +423,7 @@ class _QuickSuggestTestUtils {
     keywords = ["amp"],
     full_keywords = keywords.map(kw => [kw, 1]),
     url = "https://example.com/amp",
+    click_url = "https://example.com/amp-click",
     title = "Amp Suggestion",
     score = 0.3,
   } = {}) {
@@ -433,7 +434,7 @@ class _QuickSuggestTestUtils {
       title,
       score,
       id: 1,
-      click_url: "https://example.com/amp-click",
+      click_url,
       impression_url: "https://example.com/amp-impression",
       advertiser: "Amp",
       iab_category: "22 - Shopping",

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright 2015 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,8 +15,6 @@
  */
 
 #include "wasm/WasmModule.h"
-
-#include <chrono>
 
 #include "js/BuildId.h"                 // JS::BuildIdCharVector
 #include "js/experimental/TypedData.h"  // JS_NewUint8Array
@@ -53,8 +49,8 @@ using namespace js::jit;
 using namespace js::wasm;
 
 static UniqueChars Tier2ResultsContext(const ScriptedCaller& scriptedCaller) {
-  return scriptedCaller.filename
-             ? JS_smprintf("%s:%d", scriptedCaller.filename.get(),
+  return scriptedCaller.source
+             ? JS_smprintf("%s:%d", scriptedCaller.source.get(),
                            scriptedCaller.line)
              : UniqueChars();
 }

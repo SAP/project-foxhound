@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<body>
+<script>
+const a = document.createElement("audio");
+
+document.addEventListener("mozreportmediaerror", () => {
+  for (let i = 0; i < 64; i++) {
+    a.canPlayType("audio/webm");
+  }
+  document.documentElement.removeAttribute("class");
+}, { once: true });
+
+const ms = new MediaSource();
+const v = document.createElement("video");
+v.src = URL.createObjectURL(ms);
+ms.addEventListener("sourceopen", () => {
+  ms.endOfStream("decode");
+}, { once: true });
+</script>
+</body>
+</html>

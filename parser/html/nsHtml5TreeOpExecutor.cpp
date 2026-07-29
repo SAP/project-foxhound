@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,7 +13,11 @@
 
 #include "imgLoader.h"
 #include "mozAutoDocUpdate.h"
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/IdleTaskRunner.h"
+#include "nsIAsyncShutdown.h"
+#include "nsIPropertyBag.h"
+#include "nsIWritablePropertyBag.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/ProfilerMarkers.h"
@@ -45,6 +47,7 @@
 #include "nsIViewSourceChannel.h"
 #include "nsNetUtil.h"
 #include "xpcpublic.h"
+#include "mozilla/Services.h"
 
 using namespace mozilla;
 
@@ -126,8 +129,68 @@ class MOZ_RAII nsHtml5AutoFlush final {
   }
 };
 
-static LinkedList<nsHtml5TreeOpExecutor>* gBackgroundFlushList = nullptr;
+StaticAutoPtr<LinkedList<nsHtml5TreeOpExecutor>> gBackgroundFlushList;
 StaticRefPtr<IdleTaskRunner> gBackgroundFlushRunner;
+static bool sShutdown = false;
+
+class Html5BackgroundFlushShutdownBlocker final
+    : public nsIAsyncShutdownBlocker {
+ public:
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSIASYNCSHUTDOWNBLOCKER
+
+  Html5BackgroundFlushShutdownBlocker() = default;
+
+ private:
+  ~Html5BackgroundFlushShutdownBlocker() = default;
+};
+
+NS_IMPL_ISUPPORTS(Html5BackgroundFlushShutdownBlocker, nsIAsyncShutdownBlocker)
+
+NS_IMETHODIMP
+Html5BackgroundFlushShutdownBlocker::GetName(nsAString& aName) {
+  aName.AssignLiteral(
+      "HTML5 Parser: Cancel background flush runner before shutdown");
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+Html5BackgroundFlushShutdownBlocker::BlockShutdown(
+    nsIAsyncShutdownClient* aBarrierClient) {
+  sShutdown = true;
+
+  if (gBackgroundFlushRunner) {
+    gBackgroundFlushRunner->Cancel();
+  }
+
+  ClearOnShutdown(&gBackgroundFlushList);
+  ClearOnShutdown(&gBackgroundFlushRunner);
+
+  aBarrierClient->RemoveBlocker(this);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+Html5BackgroundFlushShutdownBlocker::GetState(nsIPropertyBag** aState) {
+  *aState = nullptr;
+  return NS_OK;
+}
+
+// static
+void nsHtml5TreeOpExecutor::InitializeStatics() {
+  MOZ_ASSERT(!sShutdown, "InitializeStatics called after shutdown");
+  nsCOMPtr<nsIAsyncShutdownService> svc = services::GetAsyncShutdownService();
+  if (svc) {
+    nsCOMPtr<nsIAsyncShutdownClient> phase;
+    nsresult rv = svc->GetXpcomWillShutdown(getter_AddRefs(phase));
+    if (NS_SUCCEEDED(rv) && phase) {
+      RefPtr<Html5BackgroundFlushShutdownBlocker> blocker =
+          new Html5BackgroundFlushShutdownBlocker();
+      phase->AddBlocker(blocker, NS_LITERAL_STRING_FROM_CSTRING(__FILE__),
+                        __LINE__, u""_ns);
+    }
+  }
+}
 
 nsHtml5TreeOpExecutor::nsHtml5TreeOpExecutor()
     : nsHtml5DocumentBuilder(false),
@@ -146,8 +209,6 @@ nsHtml5TreeOpExecutor::~nsHtml5TreeOpExecutor() {
     ClearOpQueue();
     removeFrom(*gBackgroundFlushList);
     if (gBackgroundFlushList->isEmpty()) {
-      delete gBackgroundFlushList;
-      gBackgroundFlushList = nullptr;
       if (gBackgroundFlushRunner) {
         gBackgroundFlushRunner->Cancel();
         gBackgroundFlushRunner = nullptr;
@@ -434,16 +495,20 @@ static bool BackgroundFlushCallback(TimeStamp /*aDeadline*/) {
     ex->RunFlushLoop();
   }
   if (gBackgroundFlushList && gBackgroundFlushList->isEmpty()) {
-    delete gBackgroundFlushList;
-    gBackgroundFlushList = nullptr;
-    gBackgroundFlushRunner->Cancel();
-    gBackgroundFlushRunner = nullptr;
+    if (gBackgroundFlushRunner) {
+      gBackgroundFlushRunner->Cancel();
+      gBackgroundFlushRunner = nullptr;
+    }
     return true;
   }
   return true;
 }
 
 void nsHtml5TreeOpExecutor::ContinueInterruptedParsingAsync() {
+  if (sShutdown) {
+    return;
+  }
+
   if (mDocument && !mDocument->IsInBackgroundWindow()) {
     nsCOMPtr<nsIRunnable> flusher = new nsHtml5ExecutorReflusher(this);
     if (NS_FAILED(mDocument->Dispatch(flusher.forget()))) {
@@ -463,7 +528,7 @@ void nsHtml5TreeOpExecutor::ContinueInterruptedParsingAsync() {
     gBackgroundFlushRunner = IdleTaskRunner::Create(
         &BackgroundFlushCallback,
         "nsHtml5TreeOpExecutor::BackgroundFlushCallback"_ns,
-        0,  // Start looking for idle time immediately.
+        nullptr,  // Start looking for idle time immediately.
         TimeDuration::FromMilliseconds(250),  // The hard deadline.
         TimeDuration::FromMicroseconds(
             StaticPrefs::content_sink_interactive_parse_time()),  // Required
@@ -474,6 +539,10 @@ void nsHtml5TreeOpExecutor::ContinueInterruptedParsingAsync() {
 }
 
 void nsHtml5TreeOpExecutor::FlushSpeculativeLoads() {
+  if (sShutdown) {
+    return;
+  }
+
   nsTArray<nsHtml5SpeculativeLoad> speculativeLoadQueue;
   mStage.MoveSpeculativeLoadsTo(speculativeLoadQueue);
   nsHtml5SpeculativeLoad* start = speculativeLoadQueue.Elements();
@@ -544,7 +613,7 @@ void nsHtml5TreeOpExecutor::RunFlushLoop() {
   // Remember the entry time
   (void)nsContentSink::WillParseImpl();
 
-  for (;;) {
+  while (!sShutdown) {
     if (!mParser) {
       // Parse has terminated.
       ClearOpQueue();  // clear in order to be able to assert in destructor
@@ -730,6 +799,10 @@ void nsHtml5TreeOpExecutor::RunFlushLoop() {
 }
 
 nsresult nsHtml5TreeOpExecutor::FlushDocumentWrite() {
+  if (sShutdown) {
+    return NS_OK;
+  }
+
   nsresult rv = IsBroken();
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1003,7 +1076,7 @@ void nsHtml5TreeOpExecutor::MaybeComplainAboutCharset(const char* aMsgId,
   }
   nsContentUtils::ReportToConsole(
       aError ? nsIScriptError::errorFlag : nsIScriptError::warningFlag,
-      "HTML parser"_ns, mDocument, nsContentUtils::eHTMLPARSER_PROPERTIES,
+      "HTML parser"_ns, mDocument, PropertiesFile::HTMLPARSER_PROPERTIES,
       aMsgId, nsTArray<nsString>(),
       SourceLocation{mDocument->GetDocumentURI(), aLineNumber});
 }
@@ -1015,7 +1088,7 @@ void nsHtml5TreeOpExecutor::ComplainAboutBogusProtocolCharset(
   mAlreadyComplainedAboutCharset = true;
   nsContentUtils::ReportToConsole(
       nsIScriptError::errorFlag, "HTML parser"_ns, aDoc,
-      nsContentUtils::eHTMLPARSER_PROPERTIES,
+      PropertiesFile::HTMLPARSER_PROPERTIES,
       aUnrecognized ? "EncProtocolUnsupported" : "EncProtocolReplacement");
 }
 
@@ -1026,7 +1099,7 @@ void nsHtml5TreeOpExecutor::MaybeComplainAboutDeepTree(uint32_t aLineNumber) {
   mAlreadyComplainedAboutDeepTree = true;
   nsContentUtils::ReportToConsole(
       nsIScriptError::errorFlag, "HTML parser"_ns, mDocument,
-      nsContentUtils::eHTMLPARSER_PROPERTIES, "errDeepTree",
+      PropertiesFile::HTMLPARSER_PROPERTIES, "errDeepTree",
       nsTArray<nsString>(),
       SourceLocation{mDocument->GetDocumentURI(), aLineNumber});
 }
@@ -1083,7 +1156,7 @@ nsIURI* nsHtml5TreeOpExecutor::GetViewSourceBaseURI() {
     } else {
       // Fail gracefully if the base URL isn't a view-source: URL.
       // Not sure if this can ever happen.
-      mViewSourceBaseURI = orig;
+      mViewSourceBaseURI = std::move(orig);
     }
   }
   return mViewSourceBaseURI;
@@ -1229,8 +1302,7 @@ void nsHtml5TreeOpExecutor::PreloadStyle(
   if (aLinkPreload) {
     auto hashKey = PreloadHashKey::CreateAsStyle(
         uri, mDocument->NodePrincipal(),
-        dom::Element::StringToCORSMode(aCrossOrigin),
-        css::eAuthorSheetFeatures);
+        dom::Element::StringToCORSMode(aCrossOrigin));
     if (mDocument->Preloads().PreloadExists(hashKey)) {
       return;
     }

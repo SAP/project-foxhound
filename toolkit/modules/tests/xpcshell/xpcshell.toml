@@ -43,6 +43,11 @@ skip-if = [
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # osx: Bug 1550141
 ]
 
+["test_DeferredTask_gc.js"]
+
+["test_DeferredTask_window.js"]
+support-files = ["test_DeferredTask_window/*"]
+
 ["test_E10SUtils_getRemoteTypeForURIObject.js"]
 
 ["test_EventEmitter.js"]
@@ -119,6 +124,8 @@ skip-if = [
   "os == 'android'",
 ]
 
+["test_ScheduledTask.js"]
+
 ["test_Services.js"]
 
 ["test_UpdateUtils_updatechannel.js"]
@@ -160,11 +167,10 @@ run-if = [
 ]
 tags = "os_integration"
 
-["test_readCertPrefs.js"]
-
 ["test_servicerequest_xhr.js"]
 
 ["test_sqlite.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 skip-if = [
   "os == 'android'",
 ]
@@ -173,6 +179,8 @@ skip-if = [
 skip-if = [
   "os == 'android'",
 ]
+
+["test_sqlite_carray.js"]
 
 ["test_sqlite_shutdown.js"]
 

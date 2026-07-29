@@ -64,3 +64,23 @@ namespace bar {Global g8;}  // expected-error {{Global variable has runtime init
 // Static variable with extern constructor in a class
 class foobar {static Global g9;};
 Global foobar::g9; // expected-error {{Global variable has runtime initialisation, try to remove it, make it constexpr or constinit if possible, or as a last resort flag it as MOZ_RUNINIT.}}
+
+struct almost_trivial_constructor1 {
+  void* p;
+  almost_trivial_constructor1() : p(nullptr) {}
+};
+
+almost_trivial_constructor1 atc1;
+
+struct almost_trivial_constructor2 {
+  void* p = nullptr;
+  almost_trivial_constructor2() {}
+};
+
+almost_trivial_constructor2 atc2;
+
+struct almost_trivial_constructor3 {
+  void* p = nullptr;
+};
+
+almost_trivial_constructor3 atc3;

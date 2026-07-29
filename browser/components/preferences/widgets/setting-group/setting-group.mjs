@@ -5,6 +5,7 @@
 import { html } from "chrome://global/content/vendor/lit.all.mjs";
 import {
   SettingElement,
+  bumpHeadingLevelForSrd,
   spread,
 } from "chrome://browser/content/preferences/widgets/setting-element.mjs";
 import { SettingControl } from "chrome://browser/content/preferences/widgets/setting-control.mjs";
@@ -25,6 +26,10 @@ import { SettingControl } from "chrome://browser/content/preferences/widgets/set
  * browser.settings-redesign.<groupid>.enabled prefs are true.
  * @property {"default"|"always"|"never"} [card]
  * Whether to use a card. Default: use a card after SRD or in a sub-pane.
+ * @property {boolean} [hiddenFromSearch]
+ * Whether this group should be hidden from search.
+ * @property {boolean} [hidden] Whether this group should be visible.
+ * @property {string} [subcategory] Value for the `data-subcategory` attribute, used as a scroll target.
  */
 /** @typedef {SettingElementConfig & SettingGroupConfigExtensions} SettingGroupConfig */
 
@@ -36,6 +41,7 @@ const CLICK_HANDLERS = new Set([
   "moz-button",
   "moz-box-group",
   "moz-message-bar",
+  "a",
 ]);
 const DISMISS_HANDLERS = new Set(["moz-message-bar"]);
 const REORDER_HANDLERS = new Set(["moz-box-group"]);
@@ -70,6 +76,9 @@ export class SettingGroup extends SettingElement {
    * get all ancestors.
    */
   get childControlEls() {
+    if (!this.config) {
+      return [];
+    }
     // @ts-expect-error bug 1997478
     return [...this.fieldsetEl.children].filter(
       child => child instanceof SettingControl
@@ -107,12 +116,36 @@ export class SettingGroup extends SettingElement {
     if (!this.srdEnabled) {
       this.classList.toggle("subcategory", this.config?.headingLevel == 1);
     }
+    // Only set/remove attributes when explicitly defined in config
+    // This allows handleVisibilityChange to manage visibility independently
+    if (this.config?.hiddenFromSearch !== undefined) {
+      if (this.config.hiddenFromSearch) {
+        this.setAttribute(HiddenAttr.Search, "true");
+      } else {
+        this.removeAttribute(HiddenAttr.Search);
+      }
+    }
+    if (this.config?.hidden !== undefined) {
+      this.toggleAttribute(HiddenAttr.Self, this.config.hidden);
+    }
+    if (this.config?.subcategory) {
+      this.setAttribute("data-subcategory", this.config.subcategory);
+    }
   }
 
   async handleVisibilityChange() {
     await this.updateComplete;
-    let hasVisibleControls = this.childControlEls.some(el => !el.hidden);
+
+    // Don't change visibility if explicitly hidden by config
+    if (this.config?.hidden) {
+      return;
+    }
+
+    let hasVisibleControls =
+      !!this.childControlEls?.length &&
+      this.childControlEls?.some(el => !el.hidden);
     let groupbox = /** @type {XULElement} */ (this.closest("groupbox"));
+
     if (hasVisibleControls) {
       if (this.hasAttribute(HiddenAttr.Self)) {
         this.removeAttribute(HiddenAttr.Self);
@@ -225,7 +258,7 @@ export class SettingGroup extends SettingElement {
       (this.srdEnabled || this.inSubPane || this.config.card == "always") &&
       this.config.card != "never"
     ) {
-      return html`<moz-card>${content}</moz-card>`;
+      return html`<moz-card role="presentation">${content}</moz-card>`;
     }
     return content;
   }
@@ -234,9 +267,13 @@ export class SettingGroup extends SettingElement {
     if (!this.config) {
       return "";
     }
+    let headingLevel = this.config.headingLevel;
+    if (this.srdEnabled) {
+      headingLevel = bumpHeadingLevelForSrd(headingLevel ?? 2, true);
+    }
     return this.containerTemplate(
       html`<moz-fieldset
-        .headingLevel=${this.srdEnabled ? 2 : this.config.headingLevel}
+        .headingLevel=${headingLevel}
         @change=${this.onChange}
         @toggle=${this.onChange}
         @click=${this.onClick}

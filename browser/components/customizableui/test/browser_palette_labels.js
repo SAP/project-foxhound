@@ -18,12 +18,6 @@
  * palette.
  */
 
-add_setup(async function () {
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.search.widget.new", true]],
-  });
-});
-
 add_task(async function test_all_buttons_have_labels() {
   let win = await BrowserTestUtils.openNewBrowserWindow();
   registerCleanupFunction(async () => {
@@ -46,7 +40,9 @@ add_task(async function test_all_buttons_have_labels() {
         wrapper.firstElementChild.id + " has a label."
       );
     }
-    let icons = Array.from(wrapper.querySelectorAll(".toolbarbutton-icon"));
+    let icons = Array.from(
+      wrapper.querySelectorAll(".toolbarbutton-icon, img")
+    );
     // If there are icons, at least one must be visible
     // (not everything necessarily has one, e.g. the search bar has no icon)
     if (icons.length) {

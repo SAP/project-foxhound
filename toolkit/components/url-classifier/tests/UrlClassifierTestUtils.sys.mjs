@@ -466,4 +466,11 @@ export var UrlClassifierTestUtils = {
     );
     dbService.cleanRealTimeSimulatorCache();
   },
+
+  expireRealTimeSimulatorCache() {
+    let dbService = Cc["@mozilla.org/url-classifier/dbservice;1"].getService(
+      Ci.nsIUrlClassifierDBService
+    );
+    dbService.expireRealTimeSimulatorCache();
+  },
 };

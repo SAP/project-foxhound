@@ -32,8 +32,8 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         app:lineHeight="16.sp"
-        android:textColor="?attr/textSecondary"
-        android:textColorLink="?attr/textSecondary"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:textColorLink="?attr/colorOnSurfaceVariant"
         android:textSize="12sp"
         app:layout_constraintBottom_toTopOf="@id/https_only_modes"
         app:layout_constraintEnd_toEndOf="@id/https_only_title"
@@ -42,7 +42,7 @@
         tools:targetApi="p"
         tools:text="@string/preferences_https_only_summary" />
 
-    <androidx.appcompat.widget.SwitchCompat
+    <com.google.android.material.materialswitch.MaterialSwitch
         android:id="@+id/https_only_switch"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

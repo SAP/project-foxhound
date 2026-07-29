@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -270,7 +268,7 @@ nsDirEnumeratorUnix::Close() {
   return NS_OK;
 }
 
-nsLocalFile::nsLocalFile() {}
+nsLocalFile::nsLocalFile() = default;
 
 nsLocalFile::nsLocalFile(const nsLocalFile& aOther) : mPath(aOther.mPath) {}
 
@@ -1466,12 +1464,12 @@ nsLocalFile::SetLastModifiedTimeOfLink(PRTime aLastModTimeOfLink) {
 
 NS_IMETHODIMP
 nsLocalFile::GetCreationTime(PRTime* aCreationTime) {
-  return GetCreationTimeImpl(aCreationTime, false);
+  return GetCreationTimeImpl(aCreationTime, true);
 }
 
 NS_IMETHODIMP
 nsLocalFile::GetCreationTimeOfLink(PRTime* aCreationTimeOfLink) {
-  return GetCreationTimeImpl(aCreationTimeOfLink, /* aFollowLinks = */ true);
+  return GetCreationTimeImpl(aCreationTimeOfLink, false);
 }
 
 nsresult nsLocalFile::GetCreationTimeImpl(PRTime* aCreationTime,
@@ -1793,11 +1791,12 @@ nsresult nsLocalFile::GetDiskInfo(StatInfoFunc&& aStatInfoFunc,
 
 NS_IMETHODIMP
 nsLocalFile::GetDiskSpaceAvailable(int64_t* aDiskSpaceAvailable) {
+#ifdef STATFS
   return GetDiskInfo(
       [](const struct STATFS& aStatInfo) {
         return aStatInfo.f_bavail * static_cast<uint64_t>(aStatInfo.F_BSIZE);
       },
-#if defined(USE_LINUX_QUOTACTL)
+#  if defined(USE_LINUX_QUOTACTL)
       [](const struct dqblk& aQuotaInfo) -> uint64_t {
         // dqb_bhardlimit is count of BLOCK_SIZE blocks, dqb_curspace is bytes
         const uint64_t hardlimit = aQuotaInfo.dqb_bhardlimit * BLOCK_SIZE;
@@ -1806,23 +1805,40 @@ nsLocalFile::GetDiskSpaceAvailable(int64_t* aDiskSpaceAvailable) {
         }
         return 0;
       },
-#endif
+#  endif
       aDiskSpaceAvailable);
+#else
+#  ifdef DEBUG
+  printf(
+      "ERROR: GetDiskSpaceAvailable: Not implemented for plaforms without "
+      "statfs.\n");
+#  endif
+  return NS_ERROR_NOT_IMPLEMENTED;
+#endif
 }
 
 NS_IMETHODIMP
 nsLocalFile::GetDiskCapacity(int64_t* aDiskCapacity) {
+#ifdef STATFS
   return GetDiskInfo(
       [](const struct STATFS& aStatInfo) {
         return aStatInfo.f_blocks * static_cast<uint64_t>(aStatInfo.F_BSIZE);
       },
-#if defined(USE_LINUX_QUOTACTL)
+#  if defined(USE_LINUX_QUOTACTL)
       [](const struct dqblk& aQuotaInfo) {
         // dqb_bhardlimit is count of BLOCK_SIZE blocks
         return aQuotaInfo.dqb_bhardlimit * BLOCK_SIZE;
       },
-#endif
+#  endif
       aDiskCapacity);
+#else
+#  ifdef DEBUG
+  printf(
+      "ERROR: GetDiskCapacity: Not implemented for plaforms without "
+      "statfs.\n");
+#  endif
+  return NS_ERROR_NOT_IMPLEMENTED;
+#endif
 }
 
 NS_IMETHODIMP
@@ -1946,21 +1962,22 @@ nsLocalFile::IsExecutable(bool* aResult) {
     // Search for any of the set of executable extensions.
     static const char* const executableExts[] = {
 #ifdef MOZ_WIDGET_COCOA
-        "afploc",  // Can point to other files.
+        ".afploc",  // Can point to other files.
 #endif
-        "air",  // Adobe AIR installer
+        ".air",  // Adobe AIR installer
 #ifdef MOZ_WIDGET_COCOA
-        "atloc",     // Can point to other files.
-        "fileloc",   // File location files can be used to point to other
-                     // files.
-        "ftploc",    // Can point to other files.
-        "inetloc",   // Shouldn't be able to do the same, but can, due to
-                     // macOS vulnerabilities.
-        "terminal",  // macOS Terminal app configuration files
+        ".atloc",     // Can point to other files.
+        ".command",   // Mac script
+        ".fileloc",   // File location files can be used to point to other
+                      // files.
+        ".ftploc",    // Can point to other files.
+        ".inetloc",   // Shouldn't be able to do the same, but can, due to
+                      // macOS vulnerabilities.
+        ".terminal",  // macOS Terminal app configuration files
 #endif
-        "jar"  // java application bundle
+        ".jar"  // java application bundle
     };
-    nsDependentSubstring ext = Substring(path, dotIdx + 1);
+    nsDependentSubstring ext = Substring(path, dotIdx);
     for (auto executableExt : executableExts) {
       if (ext.EqualsASCII(executableExt)) {
         // Found a match.  Set result and quit.
@@ -1979,9 +1996,9 @@ nsLocalFile::IsExecutable(bool* aResult) {
     return NS_ERROR_FAILURE;
   }
 
-  CFBooleanRef isApp = NULL;
+  CFBooleanRef isApp = nullptr;
   *aResult = ::CFURLCopyResourcePropertyForKey(url, kCFURLIsApplicationKey,
-                                               &isApp, NULL) &&
+                                               &isApp, nullptr) &&
              (isApp == kCFBooleanTrue);
   ::CFRelease(url);
   if (isApp) {

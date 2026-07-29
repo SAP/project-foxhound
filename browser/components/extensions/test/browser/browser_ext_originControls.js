@@ -1,5 +1,7 @@
 "use strict";
 
+requestLongerTimeout(2);
+
 const { AddonTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/AddonTestUtils.sys.mjs"
 );
@@ -26,6 +28,19 @@ add_setup(async function setup() {
       ["test.wait300msAfterTabSwitch", true],
       ["extensions.originControls.grantByDefault", false],
     ],
+  });
+
+  // Reset CustomizableUI state to prevent failures in tests that
+  // follow this one in the same toml file (due to two test files
+  // using the same extension id but don't expect the extension
+  // action button to inherit a previous CustomizableUI state).
+  //
+  // TODO: it may be worth considering if we should make sure this
+  // is done implicitly for all mochitests? (eg. like we do move
+  // the mouse to avoid this kind of unexpected interactions between
+  // different mochitest files running on the same browser instance).
+  registerCleanupFunction(async () => {
+    await CustomizableUI.reset();
   });
 });
 

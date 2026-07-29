@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -38,17 +37,18 @@ import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import mozilla.components.compose.base.Dropdown
+import mozilla.components.compose.base.InfoCard
+import mozilla.components.compose.base.InfoType
+import mozilla.components.compose.base.LinkText
+import mozilla.components.compose.base.LinkTextState
 import mozilla.components.compose.base.button.FilledButton
+import mozilla.components.compose.base.button.IconButton
 import mozilla.components.compose.base.button.TextButton
 import mozilla.components.compose.base.menu.MenuItem.CheckableItem
 import mozilla.components.compose.base.text.Text
 import mozilla.components.concept.engine.translate.Language
 import mozilla.components.concept.engine.translate.TranslationError
 import org.mozilla.fenix.R
-import org.mozilla.fenix.compose.InfoCard
-import org.mozilla.fenix.compose.InfoType
-import org.mozilla.fenix.compose.LinkText
-import org.mozilla.fenix.compose.LinkTextState
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.PreviewThemeProvider
 import org.mozilla.fenix.theme.Theme
@@ -470,13 +470,14 @@ private fun TranslationsDialogHeader(
         ) {
             IconButton(
                 onClick = { onSettingClicked() },
+                contentDescription = stringResource(
+                    id = R.string.translation_option_bottom_sheet_title_heading,
+                ),
                 modifier = Modifier.size(24.dp),
             ) {
                 Icon(
                     painter = painterResource(id = iconsR.drawable.mozac_ic_settings_24),
-                    contentDescription = stringResource(
-                        id = R.string.translation_option_bottom_sheet_title_heading,
-                    ),
+                    contentDescription = null,
                 )
             }
         }
@@ -534,7 +535,7 @@ private fun TranslationErrorWarning(
             documentLangDisplayName?.let {
                 InfoCard(
                     description = stringResource(
-                        id = R.string.translation_error_language_not_supported_warning_text,
+                        id = R.string.translation_error_language_not_supported_warning_text_2,
                         it,
                     ),
                     type = InfoType.Info,

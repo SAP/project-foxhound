@@ -48,11 +48,11 @@
     @include newtab-card-style;
 
     position: relative;
-    box-shadow: var(--box-shadow-card);
+    box-shadow: var(--card-box-shadow);
     border-radius: var(--border-radius-large);
 
     &:hover {
-      box-shadow: var(--box-shadow-card-hover);
+      box-shadow: var(--card-box-shadow-hover);
     }
 
     .ad-banner-link {
@@ -148,5 +148,21 @@
     }
 
     z-index: 1;
+  }
+}
+
+// @nova-cleanup(remove-conditional): Remove .nova-enabled selector, make default behavior for .ad-banner-inner.billboard
+.nova-enabled .ad-banner-wrapper .ad-banner-inner.billboard {
+  --billboard-container-width: var(--col-span-12);
+
+  .ad-banner-link {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-block-start: var(--space-small);
+
+    .ad-banner-sponsored {
+      height: 19px;
+    }
   }
 }

@@ -16,6 +16,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   CleanupManager: "resource://normandy/lib/CleanupManager.sys.mjs",
   ExperimentManager: "resource://nimbus/lib/ExperimentManager.sys.mjs",
   FeatureManifest: "resource://nimbus/FeatureManifest.sys.mjs",
+  FirstStartup: "resource://gre/modules/FirstStartup.sys.mjs",
   NimbusMigrations: "resource://nimbus/lib/Migrations.sys.mjs",
   NimbusTelemetry: "resource://nimbus/lib/Telemetry.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
@@ -121,8 +122,12 @@ export const EnrollmentType = Object.freeze({
 export const ExperimentAPI = new (class {
   /**
    * Whether or not the ExperimentAPI has been initialized.
+   * Returns the in-flight or settled init() promise, or null if init has not been
+   * called. Is truthy once init has been kicked off.
+   *
+   * @type {Promise<void> | null}
    */
-  #initialized = false;
+  #initializedPromise = null;
 
   /**
    * The current ExperimentManager.
@@ -185,6 +190,11 @@ export const ExperimentAPI = new (class {
    */
   #studiesEnabled = false;
 
+  /**
+   * @type {FirstStartupTimestamps | null }
+   */
+  #firstStartupTimestamps = null;
+
   constructor() {
     if (IS_MAIN_PROCESS) {
       // Ensure that the profile ID is cached in a pref.
@@ -246,15 +256,24 @@ export const ExperimentAPI = new (class {
    *        Force the RemoteSettingsExperimentLoader to trigger a RemoteSettings
    *        sync before updating recipes for the first time.
    *
-   * @returns {boolean}
+   * @returns {Promise<boolean>}
    *          Whether or not the ExperimentAPI was initialized.
    */
   async init({ extraContext, forceSync = false } = {}) {
-    if (this.#initialized) {
-      return false;
+    if (this.#initializedPromise) {
+      // Either init has already finished, or it is in flight. Either way,
+      // chain off the promise so we only return once init is actually complete.
+      return this.#initializedPromise.then(() => false);
     }
 
-    this.#initialized = true;
+    await (this.#initializedPromise = this.#init({ extraContext, forceSync }));
+    return true;
+  }
+
+  async #init({ extraContext, forceSync }) {
+    if (lazy.FirstStartup.state === lazy.FirstStartup.IN_PROGRESS) {
+      this.#firstStartupTimestamps = {};
+    }
 
     // Compute the enabled state and cache it. It is possible for the enabled
     // state to change during ExperimentAPI initialization, but we do not
@@ -293,10 +312,18 @@ export const ExperimentAPI = new (class {
       );
     }
 
+    if (this.#firstStartupTimestamps) {
+      this.#firstStartupTimestamps.storeInitEnd = ChromeUtils.now();
+    }
+
     try {
       await this.manager.onStartup(extraContext);
     } catch (e) {
       lazy.log.error("Failed to initialize ExperimentManager:", e);
+    }
+
+    if (this.#firstStartupTimestamps) {
+      this.#firstStartupTimestamps.managerInitEnd = ChromeUtils.now();
     }
 
     try {
@@ -316,6 +343,10 @@ export const ExperimentAPI = new (class {
         }`,
         e
       );
+    }
+
+    if (this.#firstStartupTimestamps) {
+      this.#firstStartupTimestamps.loaderInitEnd = ChromeUtils.now();
     }
 
     if (CRASHREPORTER_ENABLED) {
@@ -351,7 +382,9 @@ export const ExperimentAPI = new (class {
     // no-op.
     await this._onEnabledPrefChange();
 
-    return true;
+    if (this.#firstStartupTimestamps) {
+      this.#firstStartupTimestamps.nimbusInitEnd = ChromeUtils.now();
+    }
   }
 
   /**
@@ -417,7 +450,7 @@ export const ExperimentAPI = new (class {
       this._onEnabledPrefChange
     );
 
-    this.#initialized = false;
+    this.#initializedPromise = null;
   }
 
   #computeEnabled() {
@@ -527,7 +560,7 @@ export const ExperimentAPI = new (class {
   }
 
   _removeCrashReportAnnotator() {
-    if (this.#initialized) {
+    if (this.#initializedPromise) {
       this.#experimentManager?.store.off("update", this._annotateCrashReport);
     }
   }
@@ -536,7 +569,7 @@ export const ExperimentAPI = new (class {
    * Handle a pref change that may result in Nimbus being enabled or disabled.
    */
   async _onEnabledPrefChange() {
-    if (!this.#initialized) {
+    if (!this.#initializedPromise) {
       return;
     }
 
@@ -660,6 +693,39 @@ export const ExperimentAPI = new (class {
    */
   async optInToExperiment(options) {
     return this._rsLoader._optInToExperiment(options);
+  }
+
+  /**
+   * @typedef {object} FirstStartupTimestamps
+   *
+   * All properties are timestamps in milliseconds, as reported by
+   * `ChromeUtils.now`.
+   *
+   * @property {number | undefined} storeInitEnd
+   * The time that the ExperimentStore finished initializing.
+   *
+   * @property {number | undefined} managerInitEnd
+   * The time that the ExperimentManager finished initialization.
+   *
+   * @property {number | undefined} loaderInitEnd
+   * The time that the RemoteSettingsExperimentLoader finished
+   * initialization.
+   *
+   * @property {number | undefined} nimbusInitEnd
+   * The time that Nimbus became fully initialized.
+   */
+
+  /**
+   * Return the first startup timestamps.
+   *
+   * The timestamps will be cleared.
+   *
+   * @returns {FirstStartupTimestamps | null} The timestamps, if any.
+   */
+  getAndClearFirstStartupTimestamps() {
+    const timestamps = this.#firstStartupTimestamps;
+    this.#firstStartupTimestamps = null;
+    return timestamps;
   }
 })();
 

@@ -12,6 +12,40 @@ const { sinon } = ChromeUtils.importESModule(
   "resource://testing-common/Sinon.sys.mjs"
 );
 
+const { sanitizeUntrustedContent } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/aiwindow/models/ChatUtils.sys.mjs"
+);
+
+const { getPlacesSemanticHistoryManager } = ChromeUtils.importESModule(
+  "resource://gre/modules/PlacesSemanticHistoryManager.sys.mjs"
+);
+
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
+);
+
+/**
+ * Mock engine that returns a fixed vector per entry title, mirroring the one
+ * used in the PlacesSemanticHistoryManager unit tests. Titles not in `entries`
+ * embed to a zero vector.
+ */
+class MockMLEngine {
+  #embeddingSize;
+  #entries;
+  constructor(embeddingSize, entries = []) {
+    this.#embeddingSize = embeddingSize;
+    this.#entries = entries;
+  }
+
+  async run(request) {
+    const texts = request.args;
+    return texts.map(text => {
+      let entry = this.#entries.find(e => e.title === text);
+      return entry ? entry.vector : Array(this.#embeddingSize).fill(0);
+    });
+  }
+}
+
 let sb;
 
 // setup
@@ -21,11 +55,18 @@ add_task(async function setup() {
     sb.restore();
     Services.prefs.clearUserPref("browser.ml.enable");
     Services.prefs.clearUserPref("places.semanticHistory.featureGate");
+    Services.prefs.clearUserPref(
+      "places.semanticHistory.smartwindow.featureGate"
+    );
     Services.prefs.clearUserPref("browser.search.region");
   });
 
   Services.prefs.setBoolPref("browser.ml.enable", true);
   Services.prefs.setBoolPref("places.semanticHistory.featureGate", true);
+  Services.prefs.setBoolPref(
+    "places.semanticHistory.smartwindow.featureGate",
+    true
+  );
   Services.prefs.setCharPref("browser.search.region", "US");
 
   await PlacesUtils.history.clear();
@@ -67,13 +108,12 @@ add_task(async function test_basic_history_fetch_and_shape() {
 
   await PlacesUtils.history.insertMany(seeded);
 
-  const allRowsStr = await searchBrowsingHistory({
+  const allRowsObj = await searchBrowsingHistory({
     searchTerm: "",
     startTs: null,
     endTs: null,
     historyLimit: 15,
   });
-  const allRowsObj = JSON.parse(allRowsStr);
 
   // check count match
   Assert.equal(
@@ -91,7 +131,11 @@ add_task(async function test_basic_history_fetch_and_shape() {
   const byUrl = new Map(allRowsObj.results.map(r => [r.url, r]));
   for (const { url, title } of seeded) {
     Assert.ok(byUrl.has(url), `Has entry for ${url}`);
-    Assert.equal(byUrl.get(url).title, title, `Title matches for ${url}`);
+    Assert.equal(
+      byUrl.get(url).title,
+      sanitizeUntrustedContent(title),
+      `Title matches for ${url}`
+    );
   }
 
   // check visitDate iso string
@@ -125,13 +169,12 @@ add_task(async function test_time_range_only_startTs() {
   // records after last 10 minutes
   const startTs = new Date(now - 10 * 60 * 1000).toISOString(); // ISO input
 
-  const rowsStr = await searchBrowsingHistory({
+  const rows = await searchBrowsingHistory({
     searchTerm: "",
     startTs,
     endTs: null,
     historyLimit: 15,
   });
-  const rows = JSON.parse(rowsStr);
   const urls = rows.results.map(r => r.url);
 
   Assert.ok(
@@ -166,13 +209,12 @@ add_task(async function test_time_range_only_endTs() {
   // Anything before last 10 minutes
   const endTs = new Date(now - 10 * 60 * 1000).toISOString(); // ISO input
 
-  const rowsStr = await searchBrowsingHistory({
+  const rows = await searchBrowsingHistory({
     searchTerm: "",
     startTs: null,
     endTs,
     historyLimit: 15,
   });
-  const rows = JSON.parse(rowsStr);
   const urls = rows.results.map(r => r.url);
 
   Assert.ok(
@@ -213,13 +255,12 @@ add_task(async function test_time_range_start_and_endTs() {
   const startTs = new Date(now - 45 * 60 * 1000).toISOString();
   const endTs = new Date(now - 15 * 60 * 1000).toISOString();
 
-  const rowsStr = await searchBrowsingHistory({
+  const rows = await searchBrowsingHistory({
     searchTerm: "",
     startTs,
     endTs,
     historyLimit: 15,
   });
-  const rows = JSON.parse(rowsStr);
   const urls = rows.results.map(r => r.url);
 
   Assert.ok(urls.includes(inWindow.url), "In window entry should be included");
@@ -244,13 +285,12 @@ add_task(async function test_no_results_messages() {
   await PlacesUtils.history.clear();
 
   // No search term: time range message.
-  let outputStr = await searchBrowsingHistory({
+  let output = await searchBrowsingHistory({
     searchTerm: "",
     startTs: null,
     endTs: null,
     historyLimit: 15,
   });
-  let output = JSON.parse(outputStr);
 
   Assert.equal(output.results.length, 0, "No results when history is empty");
   Assert.ok(
@@ -259,13 +299,12 @@ add_task(async function test_no_results_messages() {
   );
 
   // With search term: search specific message.
-  outputStr = await searchBrowsingHistory({
+  output = await searchBrowsingHistory({
     searchTerm: "mozilla",
     startTs: null,
     endTs: null,
     historyLimit: 15,
   });
-  output = JSON.parse(outputStr);
 
   Assert.equal(output.results.length, 0, "No results for semantic search");
   Assert.ok(
@@ -297,17 +336,16 @@ add_task(async function test_basic_text_search_when_semantic_disabled() {
   await PlacesUtils.history.insertMany(seeded);
 
   // Disable semantic search so searchBrowsingHistory must fall back
-  // to the basic history search.
+  // to the basic Places history search.
   Services.prefs.setBoolPref("browser.ml.enable", false);
   Services.prefs.setBoolPref("places.semanticHistory.featureGate", false);
 
-  const outputStr = await searchBrowsingHistory({
+  const output = await searchBrowsingHistory({
     searchTerm: "mozilla",
     startTs: null,
     endTs: null,
     historyLimit: 15,
   });
-  const output = JSON.parse(outputStr);
 
   Assert.equal(output.searchTerm, "mozilla", "searchTerm match");
   Assert.equal(output.results.length, 1, "One history entry is returned");
@@ -315,13 +353,129 @@ add_task(async function test_basic_text_search_when_semantic_disabled() {
   const urls = output.results.map(r => r.url);
   Assert.ok(
     urls.includes("https://www.mozilla.org/en-US/"),
-    "Basic history search should find the Mozilla entry"
+    "Basic Places history search should find the Mozilla entry"
   );
 
   // Restore prefs
   Services.prefs.setBoolPref("browser.ml.enable", true);
   Services.prefs.setBoolPref("places.semanticHistory.featureGate", true);
 });
+
+// test: non-empty searchTerm falls back to basic history search
+// and still respects the time range when semantic search is disabled.
+add_task(
+  async function test_basic_text_search_with_time_range_when_semantic_disabled() {
+    await PlacesUtils.history.clear();
+
+    const now = Date.now();
+
+    const olderMozilla = {
+      url: "https://example.com/mozilla-older",
+      title: "Mozilla Older Result",
+      visits: [{ date: new Date(now - 60 * 60 * 1000) }], // 60 min ago
+    };
+
+    const recentMozilla = {
+      url: "https://example.com/mozilla-recent",
+      title: "Mozilla Recent Result",
+      visits: [{ date: new Date(now - 5 * 60 * 1000) }], // 5 min ago
+    };
+
+    const unrelatedRecent = {
+      url: "https://example.com/unrelated",
+      title: "Unrelated Result",
+      visits: [{ date: new Date(now - 3 * 60 * 1000) }], // 3 min ago
+    };
+
+    await PlacesUtils.history.insertMany([
+      olderMozilla,
+      recentMozilla,
+      unrelatedRecent,
+    ]);
+
+    // Disable semantic search so searchBrowsingHistory must fall back
+    // to the basic Places history search.
+    Services.prefs.setBoolPref("browser.ml.enable", false);
+    Services.prefs.setBoolPref("places.semanticHistory.featureGate", false);
+
+    // Only include results from the last 10 minutes.
+    const startTs = new Date(now - 10 * 60 * 1000).toISOString();
+
+    const output = await searchBrowsingHistory({
+      searchTerm: "mozilla",
+      startTs,
+      endTs: null,
+      historyLimit: 15,
+    });
+    const urls = output.results.map(r => r.url);
+
+    Assert.ok(
+      urls.includes(recentMozilla.url),
+      "Recent matching entry should be included in basic fallback search"
+    );
+    Assert.ok(
+      !urls.includes(olderMozilla.url),
+      "Older matching entry should be excluded by the time filter in basic fallback search"
+    );
+    Assert.ok(
+      !urls.includes(unrelatedRecent.url),
+      "Non-matching entry should not be returned even if it is in the time window"
+    );
+
+    // Restore prefs
+    Services.prefs.setBoolPref("browser.ml.enable", true);
+    Services.prefs.setBoolPref("places.semanticHistory.featureGate", true);
+  }
+);
+
+// test: basic fallback search respects endTs when semantic search is disabled.
+add_task(
+  async function test_basic_text_search_with_endTs_when_semantic_disabled() {
+    await PlacesUtils.history.clear();
+
+    const now = Date.now();
+
+    const olderMozilla = {
+      url: "https://example.com/mozilla-older-endts",
+      title: "Mozilla Older EndTs Result",
+      visits: [{ date: new Date(now - 60 * 60 * 1000) }], // 60 min ago
+    };
+
+    const recentMozilla = {
+      url: "https://example.com/mozilla-recent-endts",
+      title: "Mozilla Recent EndTs Result",
+      visits: [{ date: new Date(now - 5 * 60 * 1000) }], // 5 min ago
+    };
+
+    await PlacesUtils.history.insertMany([olderMozilla, recentMozilla]);
+
+    Services.prefs.setBoolPref("browser.ml.enable", false);
+    Services.prefs.setBoolPref("places.semanticHistory.featureGate", false);
+
+    // Only include results before the last 10 minutes.
+    const endTs = new Date(now - 10 * 60 * 1000).toISOString();
+
+    const output = await searchBrowsingHistory({
+      searchTerm: "mozilla",
+      startTs: null,
+      endTs,
+      historyLimit: 15,
+    });
+    const urls = output.results.map(r => r.url);
+
+    Assert.ok(
+      urls.includes(olderMozilla.url),
+      "Older matching entry should be included in basic fallback search"
+    );
+    Assert.ok(
+      !urls.includes(recentMozilla.url),
+      "Recent matching entry should be excluded by endTs in basic fallback search"
+    );
+
+    Services.prefs.setBoolPref("browser.ml.enable", true);
+    Services.prefs.setBoolPref("places.semanticHistory.featureGate", true);
+  }
+);
 
 // test: region = RO (not supported in semantic search), time range search should still work
 add_task(async function test_time_range_search_with_region_ro() {
@@ -354,13 +508,12 @@ add_task(async function test_time_range_search_with_region_ro() {
   const startTs = new Date(now - 45 * 60 * 1000).toISOString();
   const endTs = new Date(now - 15 * 60 * 1000).toISOString();
 
-  const rowsStr = await searchBrowsingHistory({
+  const rows = await searchBrowsingHistory({
     searchTerm: "",
     startTs,
     endTs,
     historyLimit: 15,
   });
-  const rows = JSON.parse(rowsStr);
   const urls = rows.results.map(r => r.url);
 
   Assert.ok(
@@ -378,4 +531,267 @@ add_task(async function test_time_range_search_with_region_ro() {
 
   // Restore region pref for other tests.
   Services.prefs.setCharPref("browser.search.region", "US");
+});
+
+add_task(async function test_hybrid_search_path() {
+  await PlacesUtils.history.clear();
+  sb.restore();
+
+  const now = Date.now();
+
+  // Fake Places SQL rows.
+  await PlacesUtils.history.insertMany([
+    {
+      url: "https://example.com/mozilla",
+      title: "Mozilla From Places",
+      visits: [{ date: new Date(now - 5 * 60 * 1000) }],
+    },
+    {
+      url: "https://example.com/firefox",
+      title: "Firefox From Places",
+      visits: [{ date: new Date(now - 10 * 60 * 1000) }],
+    },
+  ]);
+
+  const semanticManager = getPlacesSemanticHistoryManager();
+
+  sb.stub(semanticManager, "hasSufficientEntriesForSearching").resolves(true);
+  sb.stub(semanticManager, "isEnabledForSmartWindow").value(true);
+
+  sb.stub(semanticManager.embedder, "ensureEngine").resolves();
+  sb.stub(semanticManager.embedder, "embed").resolves({
+    output: [[0.1, 0.2, 0.3]],
+  });
+
+  // Fake semantic SQL rows.
+  sb.stub(semanticManager, "getConnection").resolves({
+    execute: async () => [],
+    executeCached: async () => [
+      {
+        getResultByName(name) {
+          const row = {
+            title: "Mozilla From Semantic",
+            url: "https://example.com/mozilla",
+            visit_count: 1,
+            distance: 0.1,
+            frecency: 10,
+            last_visit_date: (now - 60 * 60 * 1000) * 1000,
+          };
+          return row[name];
+        },
+      },
+      {
+        getResultByName(name) {
+          const row = {
+            title: "Semantic Only",
+            url: "https://example.com/semantic-only",
+            visit_count: 1,
+            distance: 0.2,
+            frecency: 5,
+            last_visit_date: (now - 30 * 60 * 1000) * 1000,
+          };
+          return row[name];
+        },
+      },
+    ],
+  });
+
+  const output = await searchBrowsingHistory({
+    searchTerm: "mozilla",
+    startTs: null,
+    endTs: null,
+    historyLimit: 15,
+  });
+
+  Assert.greater(output.results.length, 0, "Hybrid path should return results");
+
+  const byUrl = new Map(output.results.map(r => [r.url, r]));
+
+  Assert.ok(
+    byUrl.has("https://example.com/mozilla"),
+    "Shared semantic + Places URL should be returned"
+  );
+  Assert.ok(
+    byUrl.has("https://example.com/semantic-only"),
+    "Semantic-only URL should be returned"
+  );
+
+  Assert.equal(
+    byUrl.get("https://example.com/mozilla").title,
+    sanitizeUntrustedContent("Mozilla From Places"),
+    "Places metadata should win in hybrid merge"
+  );
+});
+
+add_task(async function test_hybrid_search_rrf_ranking_prefers_shared_result() {
+  await PlacesUtils.history.clear();
+  sb.restore();
+
+  const now = Date.now();
+
+  const siteA = {
+    url: "https://example.com/site-a",
+    title: "Site A From Places",
+    visits: [{ date: new Date(now - 5 * 60 * 1000) }], // newer
+  };
+
+  const siteB = {
+    url: "https://example.com/site-b",
+    title: "Site B From Places",
+    visits: [{ date: new Date(now - 10 * 60 * 1000) }],
+  };
+
+  await PlacesUtils.history.insertMany([siteA, siteB]);
+
+  const semanticManager = getPlacesSemanticHistoryManager();
+
+  sb.stub(semanticManager, "hasSufficientEntriesForSearching").resolves(true);
+  sb.stub(semanticManager, "isEnabledForSmartWindow").value(true);
+
+  sb.stub(semanticManager.embedder, "ensureEngine").resolves();
+  sb.stub(semanticManager.embedder, "embed").resolves({
+    output: [[0.1, 0.2, 0.3]],
+  });
+
+  sb.stub(semanticManager, "getConnection").resolves({
+    execute: async () => [],
+    executeCached: async () => [
+      {
+        getResultByName(name) {
+          const row = {
+            id: 1,
+            title: "Site B From Semantic",
+            url: siteB.url,
+            distance: 0.05,
+            visit_count: 1,
+            frecency: 100,
+            last_visit_date: (now - 60 * 60 * 1000) * 1000,
+          };
+          return row[name];
+        },
+      },
+    ],
+  });
+
+  const output = await searchBrowsingHistory({
+    searchTerm: "site",
+    startTs: null,
+    endTs: null,
+    historyLimit: 15,
+  });
+
+  Assert.greaterOrEqual(
+    output.results.length,
+    2,
+    "Hybrid search should return both rows"
+  );
+
+  //   Places: site A rank 1, site B rank 2.
+  // Semantic: site B rank 1.
+  // After RRF fusion, site B should rank first because it appears in both lists.
+  Assert.equal(
+    output.results[0].url,
+    siteB.url,
+    "Site B should rank first after RRF because it appears in both lists"
+  );
+  Assert.equal(
+    output.results[1].url,
+    siteA.url,
+    "Site A should rank after site B because it only appears in Places results"
+  );
+
+  // Shared URL should still prefer Places metadata.
+  Assert.equal(
+    output.results[0].title,
+    sanitizeUntrustedContent(siteB.title),
+    "Hybrid merge should prefer Places metadata for the shared URL"
+  );
+});
+
+add_task(async function test_hybrid_semantic_respects_distance_threshold() {
+  await PlacesUtils.history.clear();
+  sb.restore();
+
+  // Float prefs are stored as char prefs.
+  Services.prefs.setCharPref("places.semanticHistory.distanceThreshold", "0.5");
+  registerCleanupFunction(() => {
+    Services.prefs.clearUserPref("places.semanticHistory.distanceThreshold");
+  });
+
+  const makeVector = (size, components) => {
+    let v = Array(size).fill(0);
+    for (let [i, val] of Object.entries(components)) {
+      v[i] = val;
+    }
+    return v;
+  };
+
+  // Shut down any pre-existing singleton first so its open connection to
+  // places_semantic.sqlite is released. Otherwise removeDatabaseFiles() below
+  // fails on Windows, where an open connection locks the file.
+  await getPlacesSemanticHistoryManager().shutdown();
+
+  const semanticManager = getPlacesSemanticHistoryManager(
+    { changeThresholdCount: 1, deferredTaskInterval: 100 },
+    true
+  );
+  const embeddingSize = semanticManager.embedder.embeddingSize;
+
+  const queryVector = makeVector(embeddingSize, { 0: 1 });
+  // The query term embeds to queryVector but does not match either page title,
+  // so the keyword leg of the hybrid search contributes nothing and the
+  // semantic distance filter is exercised in isolation.
+  const searchTerm = "qqzz semantic probe";
+  const entries = [
+    {
+      url: "https://near.moz.com/",
+      title: "near entry page",
+      vector: makeVector(embeddingSize, { 0: 1, 1: 0.05 }),
+    },
+    {
+      url: "https://far.moz.com/",
+      title: "far entry page",
+      vector: makeVector(embeddingSize, { 1: 1 }),
+    },
+  ];
+
+  await PlacesTestUtils.addVisits(entries);
+
+  await semanticManager.semanticDB.removeDatabaseFiles();
+
+  await semanticManager.getConnection();
+  semanticManager.embedder.setEngine(
+    new MockMLEngine(embeddingSize, [
+      ...entries,
+      { title: searchTerm, vector: queryVector },
+    ])
+  );
+  await TestUtils.topicObserved(
+    "places-semantichistorymanager-update-complete"
+  );
+
+  // Make the hybrid path eligible.
+  sb.stub(semanticManager, "hasSufficientEntriesForSearching").resolves(true);
+  sb.stub(semanticManager, "isEnabledForSmartWindow").value(true);
+
+  const output = await searchBrowsingHistory({
+    searchTerm,
+    startTs: null,
+    endTs: null,
+    historyLimit: 15,
+  });
+
+  Assert.ok(!output.error, "Semantic query should run without SQL errors");
+
+  const urls = new Set(output.results.map(r => r.url));
+  Assert.ok(
+    urls.has("https://near.moz.com/"),
+    "Entry within the distance threshold should be returned"
+  );
+  Assert.ok(
+    !urls.has("https://far.moz.com/"),
+    "Entry beyond the distance threshold should be filtered out"
+  );
+
+  await semanticManager.shutdown();
 });

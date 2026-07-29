@@ -1,52 +1,148 @@
-To upgrade to a new revision of libjpeg-turbo, do the following:
+== 2026-04-12 (libjpeg-turbo v3.1.2) ==
 
-* Check out libjpeg-turbo from git:
+* Updated to v3.1.2 release.
+* Replaced jpeg12/ and jpeg16/ subdirectories with src/wrapper/ using
+  upstream wrapper files (jcapistd-8.c, -12.c, -16.c, etc.) that set
+  BITS_IN_JSAMPLE internally via #define.
+* Updated update.py check_source_lists() for new JPEG_SOURCES structure
+  (no more separate JPEG12_SOURCES/JPEG16_SOURCES cmake variables).
 
-    $ git clone https://github.com/libjpeg-turbo/libjpeg-turbo.git
+== Automated update (preferred) ==
 
-* In a clean clone of mozilla-central, run the update script (tag defaults to HEAD):
+1. Fetch the new upstream source and register file changes with version control:
 
-    $ ./media/update-libjpeg.sh /path/to/libjpeg-turbo [tag]
+       $ ./mach vendor media/libjpeg/moz.yaml -r <new-tag> --patch-mode none
 
-  and fix up any rejects from applying the Mozilla specific patches at the end
-  of that script.
+   Review the VCS diff. For routine version bumps only existing files change
+   (hg status shows only M). If files were added or removed (A or R in hg
+   status), handle them before committing (see "Handling new and removed files"
+   below). Commit all changes from this step before proceeding to step 2.
 
-* Since libjpeg-turbo normally creates jconfig.h and jconfigint.h at build time
-  and we use pre-generated versions, changes to jconfig.h.in and jconfigint.h.in
-  should be looked for and noted for later inclusion.
+2. Apply the Mozilla patches and run the post-vendor update script:
 
-* Now look through the new files and rm any which are npotb.  When I upgraded
-  to libjpeg-turbo 1.1.0, the only files I kept which didn't match
+       $ ./mach vendor media/libjpeg/moz.yaml -r <new-tag> --patch-mode only
 
-    *.c  *.h *.asm *.inc
+   The update script (update.py) handles version string updates and the
+   moz.yaml revision field automatically. If it exits non-zero, it will print
+   guidance explaining what needs attention. Common cases:
 
-  were README and README-turbo.
+   "Source list mismatch" -- upstream changed which .c files are compiled:
+     Update the relevant moz.build file(s) to match the new CMakeLists.txt
+     source lists, then re-run step 2.
 
-  You can easily look for all non *.c, *.h, *.asm, and *.inc files by running
+   "Config template files changed" -- a jconfig template file changed beyond
+     the auto-updated version strings: review the diff and manually update
+     the corresponding in-tree file (jconfig.h, jconfigint.h, jversion.h,
+     or simd/arm/neon-compat.h) as needed, then re-run step 2.
 
-    $ hg status -nu | grep -v '\(c\|h\|asm\|inc\|md\|ijg\)$'
+   "Unhandled file changes in the vendored tree" -- a new file appeared in
+     the tip commit that update.py does not know how to classify. Decide
+     what to do with it (see "Handling new and removed files" below), then
+     re-run step 2 (or step 1 then step 2 if moz.yaml's exclude list changed).
 
-  Once you're comfortable that you're only deleting files you want to delete
-  (and you've hg add'ed the files you want to keep), you can nuke the remaining
-  files with
+== Handling new and removed files ==
 
-    $ hg status -nu | grep -v '\(c\|h\|asm\|inc\|md\|ijg\)$' | xargs rm
+When upstream adds a new file it will appear as A (added) in hg status after
+step 1. Decide what to do based on the file type:
 
-  A helpful command for finding the *.c files which aren't *currently* part of
-  the build is
+  .c file listed in CMakeLists.txt JPEG_SOURCES / JPEG12_SOURCES /
+  JPEG16_SOURCES -- Firefox needs to compile it. Add it to SOURCES in the
+  appropriate moz.build (moz.build, jpeg12/moz.build, or jpeg16/moz.build).
+  Note: update.py's "Source list mismatch" check will catch this automatically.
 
-    diff <(ls *.c | sort) <(grep -o '\w*\.c' Makefile.in | sort)
+  .c file NOT in any CMakeLists.txt source list -- it is a standalone utility
+  or test program that Firefox does not need. Add it (and any associated .h
+  files) to the 'exclude:' list in moz.yaml, then re-run step 1 so that mach
+  vendor removes it from the tree.
 
-  Of course, libjpeg-turbo might have added some new source files, so you'll
-  have to look though and figure out which of these files to keep.
+  .h file -- headers are always allowed in the tree; no action required unless
+  the file is a standalone utility header associated with an excluded .c file,
+  in which case also add it to 'exclude:' in moz.yaml.
 
-* Update jconfig.h and jconfigint.h as noted previously.
+  Other file (metadata, config, build system) -- if Firefox needs it in the
+  tree but it will not be compiled, add its basename to KNOWN_NON_MOZ_BUILD_FILES
+  in update.py. If it is not needed at all, add it to 'exclude:' in moz.yaml.
 
-* Update moz.build to build any new files.
+When upstream removes a file it will appear as R (removed) in hg status.
+If it was in a moz.build SOURCES block, remove it from there. update.py's
+"removed (still in moz.build)" check will catch this automatically.
 
-* Finally, tell hg that we've added or removed some files:
+== Manual update (fallback) ==
 
-    $ hg addremove
+If the automated update cannot be used, do the following:
+
+* Clone (or fetch) libjpeg-turbo and check out the new tag:
+
+       $ git clone https://github.com/libjpeg-turbo/libjpeg-turbo.git
+       $ cd libjpeg-turbo && git fetch --tags
+
+* Find files added or deleted between the old and new upstream tags. Files
+  deleted upstream must be explicitly removed from the tree because the
+  git archive step below only extracts files, it does not delete anything.
+
+       $ git diff --name-status OLD_TAG NEW_TAG | grep '^[AD]'
+
+  For each deleted file (D): remove it from the tree and from version control:
+
+    With hg (from the mozilla-central root):
+       $ hg rm media/libjpeg/<filename>
+
+    With git (from the mozilla-central root):
+       $ git rm media/libjpeg/<filename>
+
+  New files (A) will be picked up automatically in the steps below.
+
+* From the mozilla-central root, overwrite the existing vendor tree with the
+  new upstream source:
+
+       $ (cd /path/to/libjpeg-turbo && git archive --prefix=media/libjpeg/ NEW_TAG) | \
+           tar xf -
+
+* From media/libjpeg/, remove upstream files that Firefox does not need
+  (as listed in the 'exclude:' section of moz.yaml):
+
+       $ cd media/libjpeg
+       $ python3 -c "
+import shutil, os, yaml
+data = yaml.safe_load(open('moz.yaml'))
+for x in data['vendoring']['exclude']:
+    shutil.rmtree(x, True) if os.path.isdir(x) else os.path.exists(x) and os.remove(x)
+"
+
+* From the mozilla-central root, register any new upstream files with version
+  control. Newly added files from the git archive step are untracked; this
+  makes them known to version control:
+
+    With hg:
+       $ hg addremove media/libjpeg/
+
+    With git:
+       $ git add media/libjpeg/
+
+  Review the newly added and removed files and handle them following the
+  guidance in "Handling new and removed files" above.
+
+* From media/libjpeg/, apply the Mozilla patch:
+
+       $ patch -p1 < mozilla.diff
+
+* From media/libjpeg/, run the update script to update version strings and
+  check source lists:
+
+       $ python3 update.py
+
+  If it exits non-zero, follow the guidance it prints.
+
+* Update the release field in moz.yaml (the revision field is updated
+  automatically by update.py).
+
+== (libjpeg-turbo v3.1.0) ==
+
+* Updated to v3.1.0 release.
+* All source files moved upstream to src/ subdirectory.
+* Updated moz.build, jpeg12/moz.build, jpeg16/moz.build for new src/ paths.
+* Updated mozilla.diff patch target to src/jmorecfg.h.
+* Updated moz.yaml exclude list and update.py for new src/ layout.
 
 == September 14, 2024 (libjpeg-turbo v3.0.4 f29eda648547b36aa594c4116c7764a6c8a079b9 2024-09-14) ==
 

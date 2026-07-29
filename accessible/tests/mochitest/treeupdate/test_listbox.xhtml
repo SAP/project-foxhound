@@ -20,132 +20,83 @@
     ////////////////////////////////////////////////////////////////////////////
     // Test
 
-    function insertListitem(aListboxID)
-    {
-      this.listboxNode = getNode(aListboxID);
-
-      this.listitemNode = document.createXULElement("richlistitem");
-      var label = document.createXULElement("label");
-      label.setAttribute("value", "item1");
-      this.listitemNode.appendChild(label);
-
-      this.eventSeq = [
-        new invokerChecker(EVENT_SHOW, this.listitemNode),
-        new invokerChecker(EVENT_REORDER, this.listboxNode)
-      ];
-
-      this.invoke = function insertListitem_invoke()
-      {
-        this.listboxNode.insertBefore(this.listitemNode,
-                                      this.listboxNode.firstChild);
-      }
-
-      this.finalCheck = function insertListitem_finalCheck()
-      {
-        var tree =
-          { LISTBOX: [
-            {
-              role: ROLE_RICH_OPTION,
-              name: "item1"
-            },
-            {
-              role: ROLE_RICH_OPTION,
-              name: "item2"
-            },
-            {
-              role: ROLE_RICH_OPTION,
-              name: "item3"
-            },
-            {
-              role: ROLE_RICH_OPTION,
-              name: "item4"
-            }
-          ] };
-        testAccessibleTree(this.listboxNode, tree);
-      }
-
-      this.getID = function insertListitem_getID()
-      {
-        return "insert listitem ";
-      }
-    }
-
-    function removeListitem(aListboxID)
-    {
-      this.listboxNode = getNode(aListboxID);
-      this.listitemNode = null;
-      this.listitem;
-
-      function getListitem(aThisObj)
-      {
-        return aThisObj.listitem;
-      }
-
-      this.eventSeq = [
-        new invokerChecker(EVENT_HIDE, getListitem, this),
-        new invokerChecker(EVENT_REORDER, this.listboxNode)
-      ];
-
-      this.invoke = function removeListitem_invoke()
-      {
-        this.listitemNode = this.listboxNode.firstChild;
-        this.listitem = getAccessible(this.listitemNode);
-
-        this.listboxNode.removeChild(this.listitemNode);
-      }
-
-      this.finalCheck = function removeListitem_finalCheck()
-      {
-        var tree =
-          { LISTBOX: [
-            {
-              role: ROLE_RICH_OPTION,
-              name: "item2"
-            },
-            {
-              role: ROLE_RICH_OPTION,
-              name: "item3"
-            },
-            {
-              role: ROLE_RICH_OPTION,
-              name: "item4"
-            }
-          ] };
-        testAccessibleTree(this.listboxNode, tree);
-      }
-
-      this.getID = function removeListitem_getID()
-      {
-        return "remove listitem ";
-      }
-    }
-
-    //gA11yEventDumpToConsole = true; // debug stuff
-
-    var gQueue = null;
-    function doTest()
-    {
-      var tree =
+    async function doTest() {
+      let tree =
         { LISTBOX: [
           {
             role: ROLE_RICH_OPTION,
-            name: "item2"
+            name: "item2",
           },
           {
             role: ROLE_RICH_OPTION,
-            name: "item3"
+            name: "item3",
           },
           {
             role: ROLE_RICH_OPTION,
-            name: "item4"
-          }
+            name: "item4",
+          },
         ] };
       testAccessibleTree("listbox", tree);
 
-      gQueue = new eventQueue();
-      gQueue.push(new insertListitem("listbox"));
-      gQueue.push(new removeListitem("listbox"));
-      gQueue.invoke(); // Will call SimpleTest.finish()
+      // insertListitem
+      let listboxNode = getNode("listbox");
+      let listitemNode = document.createXULElement("richlistitem");
+      const label = document.createXULElement("label");
+      label.setAttribute("value", "item1");
+      listitemNode.appendChild(label);
+
+      let shown = waitForEvent(EVENT_SHOW, listitemNode);
+      let reordered = waitForEvent(EVENT_REORDER, listboxNode);
+      listboxNode.insertBefore(listitemNode, listboxNode.firstChild);
+      await shown;
+      await reordered;
+
+      const insertTree =
+        { LISTBOX: [
+          {
+            role: ROLE_RICH_OPTION,
+            name: "item1",
+          },
+          {
+            role: ROLE_RICH_OPTION,
+            name: "item2",
+          },
+          {
+            role: ROLE_RICH_OPTION,
+            name: "item3",
+          },
+          {
+            role: ROLE_RICH_OPTION,
+            name: "item4",
+          },
+        ] };
+      testAccessibleTree(listboxNode, insertTree);
+
+      // removeListitem
+      let removeNode = listboxNode.firstChild;
+
+      reordered = waitForEvent(EVENT_REORDER, listboxNode);
+      listboxNode.removeChild(removeNode);
+      await reordered;
+
+      const removeTree =
+        { LISTBOX: [
+          {
+            role: ROLE_RICH_OPTION,
+            name: "item2",
+          },
+          {
+            role: ROLE_RICH_OPTION,
+            name: "item3",
+          },
+          {
+            role: ROLE_RICH_OPTION,
+            name: "item4",
+          },
+        ] };
+      testAccessibleTree(listboxNode, removeTree);
+
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

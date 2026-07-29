@@ -14,6 +14,49 @@ newtab-personalize-icon-label =
 newtab-personalize-dialog-label =
     .aria-label = Napasuj
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Nowe karty
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } wiersz
+            [few] { $num } wiersze
+           *[many] { $num } wierszōw
+        }
+home-restore-defaults-srd =
+    .label = Wrōć bazowe
+    .accesskey = W
+home-mode-choice-custom-srd =
+    .label = Włosne adresy…
+home-mode-choice-blank-srd =
+    .label = Prōzno strōna
+home-prefs-shortcuts-header-srd =
+    .label = Skrōty
+home-prefs-shortcuts-select =
+    .aria-label = Skrōty
+home-prefs-shortcuts-by-option-sponsored-srd =
+    .label = Spōnsorowane skrōty
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Spōnsorowane nowiny
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Nawiedzōne strōny
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Zokłodki
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Niydowno pobrane
+home-prefs-recent-activity-header-srd =
+    .label = Niydowno aktywność
+home-prefs-recent-activity-select =
+    .aria-label = Niydowno aktywność
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -39,7 +82,7 @@ newtab-search-box-input =
     .placeholder = Szukej w internecie
     .aria-label = Szukej w internecie
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Przidej wyszukowarka
 newtab-topsites-add-shortcut-header = Nowy skrōt
@@ -233,9 +276,22 @@ newtab-error-fallback-refresh-link = Ôdświyż strōna, coby sprōbować jeszcz
 
 newtab-custom-shortcuts-title = Skrōty
 newtab-custom-shortcuts-subtitle = Spamiyntane i nawiydzane strōny
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = Skrōty
     .description = Spamiyntane i nawiydzane strōny
+newtab-custom-shortcuts-nova =
+    .label = Skrōty
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+            [one] { $num } raja
+            [few] { $num } raje
+           *[many] { $num } raji
+        }
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector =

@@ -30,7 +30,7 @@ described by number 1 below.
 
 1. When the user opens the Firefox Browser, the code starts to build the browser
    UI components. During this startup phase, we have various systems making
-   calls to the ``SearchService``. E.g. `browser.js <https://searchfox.org/mozilla-central/rev/47db1be98f8069b387ce07dcbea22d09f1854515/browser/base/content/browser.js#3325>`_
+   calls to the ``SearchService``. E.g. :searchfox:`browser.js <mozilla-central/rev/47db1be98f8069b387ce07dcbea22d09f1854515:browser/base/content/browser.js#3325>`
    calls ``SearchService.getDefault`` to fetch the default Search Engine.
 
 2. The ``SearchService`` needs information from ``Extension System``,
@@ -38,8 +38,8 @@ described by number 1 below.
    the right order and to return the list of engines to its callers.
 
    a) First, the ``SearchService`` makes a request for the search configuration.
-   ``SearchService`` calls `SearchEngineSelector.fetchEngineConfiguration <https://searchfox.org/mozilla-central/rev/47db1be98f8069b387ce07dcbea22d09f1854515/toolkit/components/search/SearchService.sys.mjs#2602>`_
-   which makes a call to `Remote Settings <https://searchfox.org/mozilla-central/rev/47db1be98f8069b387ce07dcbea22d09f1854515/toolkit/components/search/SearchEngineSelector.sys.mjs#119>`_
+   ``SearchService`` calls :searchfox:`SearchEngineSelector.fetchEngineConfiguration <mozilla-central/rev/47db1be98f8069b387ce07dcbea22d09f1854515:toolkit/components/search/SearchService.sys.mjs#2602>`
+   which makes a call to :searchfox:`Remote Settings <mozilla-central/rev/47db1be98f8069b387ce07dcbea22d09f1854515:toolkit/components/search/SearchEngineSelector.sys.mjs#119>`
    for the search configuration. Remote Settings does not fetch the search
    configuration from the remote database on startup. Instead Remote Settings
    tries to load the :searchfox:`search configuration dump file <services/settings/dumps/main/search-config-v2.json>`
@@ -48,13 +48,13 @@ described by number 1 below.
    remote database when necessary. By connecting after startup, it avoids
    a potential network request that could delay startup.
 
-   b) Second, the ``SearchService`` `loads the JSON file <https://searchfox.org/mozilla-central/rev/47db1be98f8069b387ce07dcbea22d09f1854515/toolkit/components/search/SearchService.sys.mjs#1368>`_
-   containing the `SearchSettings <https://searchfox.org/mozilla-central/source/toolkit/components/search/SearchSettings.sys.mjs>`_.
+   b) Second, the ``SearchService`` :searchfox:`loads the JSON file <mozilla-central/rev/47db1be98f8069b387ce07dcbea22d09f1854515:toolkit/components/search/SearchService.sys.mjs#1368>`
+   containing the :searchfox:`SearchSettings <toolkit/components/search/SearchSettings.sys.mjs>`.
    This JSON file contains Search Engine metadata that is saved on the user's
    computer. It's information that helps the ``SearchService`` remember the
    user's custom settings for the Search Engines.
 
-   c) Third, the `Extension System <https://searchfox.org/mozilla-central/rev/cb6f8d7b1f1782b9d4b2ee7312de1dcc284aaf06/browser/components/extensions/parent/ext-chrome-settings-overrides.js#536>`_
+   c) Third, the :searchfox:`Extension System <mozilla-central/rev/cb6f8d7b1f1782b9d4b2ee7312de1dcc284aaf06:browser/components/extensions/parent/ext-chrome-settings-overrides.js#536>`
    passes the extension data to the ``SearchService``. At this point, the
    ``SearchService`` only installs user installed search extensions.
 

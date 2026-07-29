@@ -124,6 +124,7 @@ def main(args=sys.argv[1:]):
             clean=args.clean,
             screenshot_on_failure=args.screenshot_on_failure,
             power_test=args.power_test,
+            simpleperf=args.simpleperf,
         )
     except Exception:
         traceback.print_exc()

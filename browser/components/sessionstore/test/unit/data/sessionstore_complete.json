@@ -543,7 +543,11 @@
                 "state": "available",
                 "value": "available"
               },
-              "learnFromActivity": {
+              "learnFromChatActivity": {
+                "state": "on",
+                "value": "on"
+              },
+              "learnFromBrowsingActivity": {
                 "state": "on",
                 "value": "on"
               }

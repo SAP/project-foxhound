@@ -130,3 +130,43 @@ class TelemetrySpy {
 const clickCTA = async doc => {
   doc.querySelector(CTASelector).click();
 };
+
+/**
+ * Sets up stubs for ASRouter methods to simulate a scenario where a specific
+ * message is made available via the ASRouter system.
+ *
+ * This function stubs:
+ *  - `ASRouter.handleMessageRequest` to resolve the provided message.
+ *  - `ASRouter.messagesEnabledInAutomation` to consider the message enabled for automation.
+ *  - `ASRouter.getMessageById` to return the provided message when queried by its ID.
+ *
+ * After the provided task function `taskFn` is executed, it restores all the stubs.
+ *
+ * @param {SinonSandbox} sandbox - The Sinon sandbox used to create the stubs and ensure cleanup.
+ * @param {object} message - The message object to be used in the stubs and passed for testing.
+ * @param {function} taskFn - The function to be executed with the stubs in place.
+ */
+async function withTestMessage(sandbox, message, taskFn) {
+  let handleMessageRequestStub = sandbox.stub(ASRouter, "handleMessageRequest");
+  handleMessageRequestStub.callsFake(async ({ template, returnAll } = {}) => {
+    if (!template || template === message.template) {
+      return returnAll ? [message] : message;
+    }
+    return returnAll ? [] : null;
+  });
+
+  let messagesEnabledInAutomationStub = sandbox.stub(
+    ASRouter,
+    "messagesEnabledInAutomation"
+  );
+  messagesEnabledInAutomationStub.value([message.id]);
+
+  let getMessageByIdStub = sandbox.stub(ASRouter, "getMessageById");
+  getMessageByIdStub.withArgs(message.id).returns(message);
+
+  await taskFn(handleMessageRequestStub);
+
+  handleMessageRequestStub.restore();
+  messagesEnabledInAutomationStub.restore();
+  getMessageByIdStub.restore();
+}

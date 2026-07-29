@@ -1,6 +1,4 @@
-/* vim: se cin sw=2 ts=2 et : */
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -140,12 +138,18 @@ NS_IMPL_ISUPPORTS(GfxInfoBase, nsIGfxInfo, nsIObserver,
 static const char* GetPrefNameForFeature(int32_t aFeature) {
   const char* fullpref = nullptr;
   switch (aFeature) {
-#define GFXINFO_FEATURE(id, name, pref)    \
+#define GFXINFO_FEATURE(id, pref)          \
   case nsIGfxInfo::FEATURE_##id:           \
     fullpref = BLOCKLIST_PREF_BRANCH pref; \
     break;
+#define GFXINFO_FEATURE_RETIRED(id, pref)
+#define GFXINFO_FEATURE_ALLOWLIST(id, pref) GFXINFO_FEATURE(id, pref)
+#define GFXINFO_FEATURE_MISMATCHED(id, name, pref) GFXINFO_FEATURE(id, pref)
 #include "mozilla/widget/GfxInfoFeatureDefs.inc"
 #undef GFXINFO_FEATURE
+#undef GFXINFO_FEATURE_RETIRED
+#undef GFXINFO_FEATURE_ALLOWLIST
+#undef GFXINFO_FEATURE_MISMATCHED
     default:
       MOZ_ASSERT_UNREACHABLE("Unexpected nsIGfxInfo feature?!");
       break;
@@ -263,12 +267,21 @@ static already_AddRefed<const GfxDeviceFamily> BlocklistDevicesToDeviceFamily(
 
 static int32_t BlocklistFeatureToGfxFeature(const nsAString& aFeature) {
   MOZ_ASSERT(!aFeature.IsEmpty());
-#define GFXINFO_FEATURE(id, name, pref) \
-  if (aFeature.Equals(u##name##_ns)) {  \
-    return nsIGfxInfo::FEATURE_##id;    \
+#define GFXINFO_FEATURE_MISMATCHED(id, name, pref) \
+  if (aFeature.Equals(u## #name##_ns)) {           \
+    return nsIGfxInfo::FEATURE_##id;               \
   }
+#define GFXINFO_FEATURE(id, pref)      \
+  if (aFeature.Equals(u## #id##_ns)) { \
+    return nsIGfxInfo::FEATURE_##id;   \
+  }
+#define GFXINFO_FEATURE_ALLOWLIST(id, pref) GFXINFO_FEATURE(id, pref)
+#define GFXINFO_FEATURE_RETIRED(id, pref)
 #include "mozilla/widget/GfxInfoFeatureDefs.inc"
 #undef GFXINFO_FEATURE
+#undef GFXINFO_FEATURE_RETIRED
+#undef GFXINFO_FEATURE_ALLOWLIST
+#undef GFXINFO_FEATURE_MISMATCHED
 
   // If we don't recognize the feature, it may be new, and something
   // this version doesn't understand.  So, nothing to do.  This is
@@ -297,7 +310,7 @@ static void GfxFeatureStatusToBlocklistFeatureStatus(int32_t aStatus,
     aStatusOut.Assign(u## #id##_ns); \
     break;
 #include "mozilla/widget/GfxInfoFeatureStatusDefs.inc"
-#undef GFXINFO_FEATURE
+#undef GFXINFO_FEATURE_STATUS
     default:
       MOZ_ASSERT_UNREACHABLE("Unexpected feature status!");
       break;
@@ -533,6 +546,11 @@ GfxInfoBase::SpoofMonitorInfo(uint32_t aScreenCount, int32_t aMinRefreshRate,
 NS_IMETHODIMP
 GfxInfoBase::GetFeatureStatus(int32_t aFeature, nsACString& aFailureId,
                               int32_t* aStatus) {
+  if (IsFeatureRetired(aFeature)) {
+    MOZ_ASSERT_UNREACHABLE("Checking retired feature!");
+    return NS_ERROR_INVALID_ARG;
+  }
+
   // Ignore the gfx.blocklist.all pref on release and beta.
 #if defined(RELEASE_OR_BETA)
   int32_t blocklistAll = 0;
@@ -603,33 +621,26 @@ nsTArray<gfx::GfxInfoFeatureStatus> GfxInfoBase::GetAllFeatures() {
     InitFeatureStatus(new nsTArray<gfx::GfxInfoFeatureStatus>());
     for (int32_t i = nsIGfxInfo::FEATURE_START; i < nsIGfxInfo::FEATURE_COUNT;
          ++i) {
+      if (IsFeatureRetired(i)) {
+        continue;
+      }
       int32_t status = nsIGfxInfo::FEATURE_STATUS_INVALID;
       nsAutoCString failureId;
       GetFeatureStatus(i, failureId, &status);
       gfx::GfxInfoFeatureStatus gfxFeatureStatus;
       gfxFeatureStatus.feature() = i;
       gfxFeatureStatus.status() = status;
-      gfxFeatureStatus.failureId() = failureId;
-      sFeatureStatus->AppendElement(gfxFeatureStatus);
+      gfxFeatureStatus.failureId() = std::move(failureId);
+      sFeatureStatus->AppendElement(std::move(gfxFeatureStatus));
     }
   }
 
   nsTArray<gfx::GfxInfoFeatureStatus> features;
   for (const auto& status : *sFeatureStatus) {
     gfx::GfxInfoFeatureStatus copy = status;
-    features.AppendElement(copy);
+    features.AppendElement(std::move(copy));
   }
   return features;
-}
-
-inline bool MatchingAllowStatus(int32_t aStatus) {
-  switch (aStatus) {
-    case nsIGfxInfo::FEATURE_ALLOW_ALWAYS:
-    case nsIGfxInfo::FEATURE_ALLOW_QUALIFIED:
-      return true;
-    default:
-      return false;
-  }
 }
 
 // Matching OS go somewhat beyond the simple equality check because of the
@@ -638,14 +649,14 @@ inline bool MatchingAllowStatus(int32_t aStatus) {
 // aBlockedOS is describing the system(s) we are trying to block.
 // aSystemOS is describing the system we are running on.
 //
-// aSystemOS should not be "Windows" or "OSX" - it should be set to
+// aSystemOS should not be "Windows" or "macOS" - it should be set to
 // a particular version instead.
 // However, it is valid for aBlockedOS to be one of those generic values,
 // as we could be blocking all of the versions.
 inline bool MatchingOperatingSystems(OperatingSystem aBlockedOS,
                                      OperatingSystem aSystemOS) {
   MOZ_ASSERT(aSystemOS != OperatingSystem::Windows &&
-             aSystemOS != OperatingSystem::OSX);
+             aSystemOS != OperatingSystem::MacOS);
 
   // If the block entry OS is unknown, it doesn't match
   if (aBlockedOS == OperatingSystem::Unknown) {
@@ -666,7 +677,7 @@ inline bool MatchingOperatingSystems(OperatingSystem aBlockedOS,
 #endif
 
 #if defined(XP_MACOSX)
-  if (aBlockedOS == OperatingSystem::OSX) {
+  if (aBlockedOS == OperatingSystem::MacOS) {
     // We do want even "unknown" aSystemOS to fall under "all OS X"
     return true;
   }
@@ -1054,10 +1065,6 @@ bool GfxInfoBase::DoesDriverVendorMatch(const nsAString& aBlocklistVendor,
              nsCaseInsensitiveStringComparator);
 }
 
-bool GfxInfoBase::IsFeatureAllowlisted(int32_t aFeature) const {
-  return aFeature == nsIGfxInfo::FEATURE_HW_DECODED_VIDEO_ZERO_COPY;
-}
-
 nsresult GfxInfoBase::GetFeatureStatusImpl(
     int32_t aFeature, int32_t* aStatus, nsAString& aSuggestedVersion,
     const nsTArray<RefPtr<GfxDriverInfo>>& aDriverInfo, nsACString& aFailureId,
@@ -1193,6 +1200,10 @@ void GfxInfoBase::EvaluateDownloadedBlocklist(
   // anywhere permanent.
   for (int feature = nsIGfxInfo::FEATURE_START;
        feature < nsIGfxInfo::FEATURE_COUNT; ++feature) {
+    if (IsFeatureRetired(feature)) {
+      continue;
+    }
+
     int32_t status = nsIGfxInfo::FEATURE_STATUS_UNKNOWN;
     nsCString failureId;
     nsAutoString suggestedVersion;
@@ -1251,7 +1262,7 @@ GfxInfoBase::LogFailure(const nsACString& failure) {
 
   // By default, gfxCriticalError asserts; make it not assert in this case.
   gfxCriticalError(CriticalLog::DefaultOptions(false))
-      << "(LF) " << failure.BeginReading();
+      << "(LF) " << PromiseFlatCString(failure).get();
 }
 
 NS_IMETHODIMP GfxInfoBase::GetFailures(nsTArray<int32_t>& indices,
@@ -1332,9 +1343,8 @@ const nsCString& GfxInfoBase::GetApplicationVersion() {
     case nsIGfxInfo::FEATURE_GPU_PROCESS:
     // We can mostly assume that ANGLE will work
     case nsIGfxInfo::FEATURE_DIRECT3D_11_ANGLE:
-    // Remote WebGL is needed for Win32k Lockdown, so it should be enabled
-    // regardless of HW support or not
-    case nsIGfxInfo::FEATURE_ALLOW_WEBGL_OUT_OF_PROCESS:
+    // WebGL was historically allowed on unknown configurations.
+    case nsIGfxInfo::FEATURE_WEBGL:
     // Backdrop filter should generally work, especially if we fall back to
     // Software WebRender because of an unknown vendor.
     case nsIGfxInfo::FEATURE_BACKDROP_FILTER:
@@ -1377,11 +1387,11 @@ static void AppendMonitor(JSContext* aCx, widget::Screen& aScreen,
 
   JS::Rooted<JS::Value> defaultCssScaleFactor(
       aCx,
-      JS::Float32Value(static_cast<float>(aScreen.GetDefaultCSSScaleFactor())));
+      JS_NumberValue(static_cast<float>(aScreen.GetDefaultCSSScaleFactor())));
   JS_SetProperty(aCx, obj, "defaultCSSScaleFactor", defaultCssScaleFactor);
 
   JS::Rooted<JS::Value> contentsScaleFactor(
-      aCx, JS::NumberValue(aScreen.GetContentsScaleFactor()));
+      aCx, JS_NumberValue(aScreen.GetContentsScaleFactor()));
   JS_SetProperty(aCx, obj, "contentsScaleFactor", contentsScaleFactor);
 
 #ifdef XP_WIN

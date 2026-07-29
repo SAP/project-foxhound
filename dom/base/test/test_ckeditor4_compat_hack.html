@@ -66,6 +66,10 @@ add_task(async function test_gwt_src_present() {
   await base_test({ name: "__gwt_stylesLoaded", cls: "gwt-RichTextArea", src: "", asyncLoad: false });
 });
 
+add_task(async function test_polarion() {
+  await base_test({ name: "__gwt_stylesLoaded", cls: "polarion-rte-RichTextArea", src: null });
+});
+
 add_task(async function test_ze() {
   await base_test({ name: "ZE_Init", cls: "ze_area", src: null });
 });

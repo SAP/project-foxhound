@@ -1,0 +1,67 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# This file defines the metrics that are recorded by glean telemetry. They are
+# automatically converted to Kotlin code at build time using the `glean_parser`
+# PyPI package.
+---
+
+$schema: moz://mozilla.org/schemas/glean/metrics/2-0-0
+
+integrity:
+  warmed_up:
+    type: event
+    description: >
+      Records when the Play Integrity client has completed its warm-up phase
+      (Phase 1 prepare), including whether it succeeded and how long it took.
+    extra_keys:
+      success:
+        description: Whether the warm-up succeeded.
+        type: boolean
+      duration_ms:
+        description: >
+          Time in milliseconds between starting warm-up and its completion.
+        type: quantity
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2026727
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2033110
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D290217
+      - https://phabricator.services.mozilla.com/D295065
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - android-probes@mozilla.com
+    expires: never
+
+  token_request:
+    type: event
+    description: >
+      Records each completed integrity token request (Phase 2), including the
+      number of retries required and whether the final attempt succeeded.
+    extra_keys:
+      retries:
+        description: Number of retries performed (0 if the first attempt succeeded or failed without expiry).
+        type: quantity
+      request_success:
+        description: Whether the token request ultimately succeeded.
+        type: boolean
+      consumer:
+        description: >
+          Identifies the caller that issued this integrity request. Known
+          values: "summarize" (Shake-to-Summarize), "ip_protection"
+          (IP Protection, future), "unknown" (request made without a
+          labelled consumer view; indicates a wiring bug if seen on
+          release channel).
+        type: string
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2026727
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2041133
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D290217
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - android-probes@mozilla.com
+    expires: never

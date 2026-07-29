@@ -60,11 +60,16 @@ async function waitForLoad(url) {
  */
 function loadURLInFrame(browser, url) {
   let loadPromise = waitForLoad(url);
-  ContentTask.spawn(browser, [url], async testURL => {
-    let frame = content.document.createElement("iframe");
-    frame.src = testURL;
-    content.document.body.appendChild(frame);
-  });
+  SpecialPowers.spawn(
+    browser,
+
+    [url],
+    async testURL => {
+      let frame = content.document.createElement("iframe");
+      frame.src = testURL;
+      content.document.body.appendChild(frame);
+    }
+  );
   return loadPromise;
 }
 

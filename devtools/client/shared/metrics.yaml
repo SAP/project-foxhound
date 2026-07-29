@@ -41,9 +41,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_Activate_ResponsiveDesign
 
   activate_split_console:
     type: event
@@ -57,7 +56,6 @@ devtools.main:
     notification_emails: *devtools_main_activate_emails
     expires: never
     extra_keys: *devtools_main_activate_extra
-    telemetry_mirror: DevtoolsMain_Activate_SplitConsole
 
   add_breakpoint_debugger:
     type: event
@@ -80,9 +78,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_AddBreakpoint_Debugger
 
   blackbox_debugger:
     type: event
@@ -105,9 +102,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_Blackbox_Debugger
 
   close_tools:
     type: event
@@ -138,9 +134,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_Close_Tools
 
   close_adbg_aboutdebugging:
     type: event
@@ -167,9 +162,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_CloseAdbg_Aboutdebugging
 
   connection_attempt_aboutdebugging:
     type: event
@@ -208,9 +202,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_ConnectionAttempt_Aboutdebugging
 
   continue_debugger:
     type: event
@@ -233,9 +226,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_Continue_Debugger
 
   deactivate_responsive_design:
     type: event
@@ -267,9 +259,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_Deactivate_ResponsiveDesign
 
   deactivate_split_console:
     type: event
@@ -283,7 +274,6 @@ devtools.main:
     notification_emails: *devtools_main_deactivate_emails
     expires: never
     extra_keys: *devtools_main_deactivate_extra
-    telemetry_mirror: DevtoolsMain_Deactivate_SplitConsole
 
   device_added_aboutdebugging:
     type: event
@@ -314,9 +304,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_DeviceAdded_Aboutdebugging
 
   device_removed_aboutdebugging:
     type: event
@@ -347,9 +336,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_DeviceRemoved_Aboutdebugging
 
   edit_html_inspector:
     type: event
@@ -380,9 +368,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_EditHtml_Inspector
 
   edit_resend_netmonitor:
     type: event
@@ -407,7 +394,6 @@ devtools.main:
         description: >
           The toolbox session start time e.g. 13963.
         type: string
-    telemetry_mirror: DevtoolsMain_EditResend_Netmonitor
 
   edit_rule_ruleview:
     type: event
@@ -431,9 +417,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_EditRule_Ruleview
 
   enter_accessibility:
     type: event
@@ -480,9 +465,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_Enter_Accessibility
 
   enter_application:
     type: event
@@ -495,7 +479,6 @@ devtools.main:
     notification_emails: *devtools_main_enter_emails
     expires: never
     extra_keys: *devtools_main_enter_extra
-    telemetry_mirror: DevtoolsMain_Enter_Application
 
   enter_dom:
     type: event
@@ -508,7 +491,6 @@ devtools.main:
     notification_emails: *devtools_main_enter_emails
     expires: never
     extra_keys: *devtools_main_enter_extra
-    telemetry_mirror: DevtoolsMain_Enter_Dom
 
   enter_inspector:
     type: event
@@ -521,7 +503,6 @@ devtools.main:
     notification_emails: *devtools_main_enter_emails
     expires: never
     extra_keys: *devtools_main_enter_extra
-    telemetry_mirror: DevtoolsMain_Enter_Inspector
 
   enter_jsdebugger:
     type: event
@@ -534,7 +515,6 @@ devtools.main:
     notification_emails: *devtools_main_enter_emails
     expires: never
     extra_keys: *devtools_main_enter_extra
-    telemetry_mirror: DevtoolsMain_Enter_Jsdebugger
 
   enter_memory:
     type: event
@@ -547,7 +527,6 @@ devtools.main:
     notification_emails: *devtools_main_enter_emails
     expires: never
     extra_keys: *devtools_main_enter_extra
-    telemetry_mirror: DevtoolsMain_Enter_Memory
 
   enter_netmonitor:
     type: event
@@ -560,7 +539,6 @@ devtools.main:
     notification_emails: *devtools_main_enter_emails
     expires: never
     extra_keys: *devtools_main_enter_extra
-    telemetry_mirror: DevtoolsMain_Enter_Netmonitor
 
   enter_options:
     type: event
@@ -573,7 +551,6 @@ devtools.main:
     notification_emails: *devtools_main_enter_emails
     expires: never
     extra_keys: *devtools_main_enter_extra
-    telemetry_mirror: DevtoolsMain_Enter_Options
 
   enter_performance:
     type: event
@@ -586,7 +563,6 @@ devtools.main:
     notification_emails: *devtools_main_enter_emails
     expires: never
     extra_keys: *devtools_main_enter_extra
-    telemetry_mirror: DevtoolsMain_Enter_Performance
 
   enter_storage:
     type: event
@@ -599,7 +575,6 @@ devtools.main:
     notification_emails: *devtools_main_enter_emails
     expires: never
     extra_keys: *devtools_main_enter_extra
-    telemetry_mirror: DevtoolsMain_Enter_Storage
 
   enter_styleeditor:
     type: event
@@ -612,7 +587,6 @@ devtools.main:
     notification_emails: *devtools_main_enter_emails
     expires: never
     extra_keys: *devtools_main_enter_extra
-    telemetry_mirror: DevtoolsMain_Enter_Styleeditor
 
   enter_webconsole:
     type: event
@@ -625,7 +599,6 @@ devtools.main:
     notification_emails: *devtools_main_enter_emails
     expires: never
     extra_keys: *devtools_main_enter_extra
-    telemetry_mirror: DevtoolsMain_Enter_Webconsole
 
   enter_whatsnew:
     type: event
@@ -638,7 +611,6 @@ devtools.main:
     notification_emails: *devtools_main_enter_emails
     expires: never
     extra_keys: *devtools_main_enter_extra
-    telemetry_mirror: DevtoolsMain_Enter_Whatsnew
 
   enter_other:
     type: event
@@ -651,7 +623,6 @@ devtools.main:
     notification_emails: *devtools_main_enter_emails
     expires: never
     extra_keys: *devtools_main_enter_extra
-    telemetry_mirror: DevtoolsMain_Enter_Other
 
   enter_fake_tool4242:
     type: event
@@ -664,7 +635,6 @@ devtools.main:
     notification_emails: *devtools_main_enter_emails
     expires: never
     extra_keys: *devtools_main_enter_extra
-    telemetry_mirror: DevtoolsMain_Enter_Faketool4242
 
   enter_test_blank_panel:
     type: event
@@ -677,7 +647,6 @@ devtools.main:
     notification_emails: *devtools_main_enter_emails
     expires: never
     extra_keys: *devtools_main_enter_extra
-    telemetry_mirror: DevtoolsMain_Enter_Testblankpanel
 
   enter_test_tool:
     type: event
@@ -690,7 +659,6 @@ devtools.main:
     notification_emails: *devtools_main_enter_emails
     expires: never
     extra_keys: *devtools_main_enter_extra
-    telemetry_mirror: DevtoolsMain_Enter_Testtool
 
   enter_testtool1:
     type: event
@@ -703,7 +671,6 @@ devtools.main:
     notification_emails: *devtools_main_enter_emails
     expires: never
     extra_keys: *devtools_main_enter_extra
-    telemetry_mirror: DevtoolsMain_Enter_Testtool1
 
   enter_test_tool1072208:
     type: event
@@ -716,7 +683,6 @@ devtools.main:
     notification_emails: *devtools_main_enter_emails
     expires: never
     extra_keys: *devtools_main_enter_extra
-    telemetry_mirror: DevtoolsMain_Enter_Testtool1072208
 
   enter_testtool2:
     type: event
@@ -729,7 +695,6 @@ devtools.main:
     notification_emails: *devtools_main_enter_emails
     expires: never
     extra_keys: *devtools_main_enter_extra
-    telemetry_mirror: DevtoolsMain_Enter_Testtool2
 
   execute_js_webconsole:
     type: event
@@ -760,9 +725,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_ExecuteJs_Webconsole
 
   reverse_search_webconsole:
     type: event
@@ -790,9 +754,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_ReverseSearch_Webconsole
 
   exit_accessibility:
     type: event
@@ -835,9 +798,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_Exit_Accessibility
 
   exit_application:
     type: event
@@ -850,7 +812,6 @@ devtools.main:
     notification_emails: *devtools_main_exit_emails
     expires: never
     extra_keys: *devtools_main_exit_extra
-    telemetry_mirror: DevtoolsMain_Exit_Application
 
   exit_dom:
     type: event
@@ -863,7 +824,6 @@ devtools.main:
     notification_emails: *devtools_main_exit_emails
     expires: never
     extra_keys: *devtools_main_exit_extra
-    telemetry_mirror: DevtoolsMain_Exit_Dom
 
   exit_inspector:
     type: event
@@ -876,7 +836,6 @@ devtools.main:
     notification_emails: *devtools_main_exit_emails
     expires: never
     extra_keys: *devtools_main_exit_extra
-    telemetry_mirror: DevtoolsMain_Exit_Inspector
 
   exit_jsdebugger:
     type: event
@@ -889,7 +848,6 @@ devtools.main:
     notification_emails: *devtools_main_exit_emails
     expires: never
     extra_keys: *devtools_main_exit_extra
-    telemetry_mirror: DevtoolsMain_Exit_Jsdebugger
 
   exit_memory:
     type: event
@@ -902,7 +860,6 @@ devtools.main:
     notification_emails: *devtools_main_exit_emails
     expires: never
     extra_keys: *devtools_main_exit_extra
-    telemetry_mirror: DevtoolsMain_Exit_Memory
 
   exit_netmonitor:
     type: event
@@ -915,7 +872,6 @@ devtools.main:
     notification_emails: *devtools_main_exit_emails
     expires: never
     extra_keys: *devtools_main_exit_extra
-    telemetry_mirror: DevtoolsMain_Exit_Netmonitor
 
   exit_options:
     type: event
@@ -928,7 +884,6 @@ devtools.main:
     notification_emails: *devtools_main_exit_emails
     expires: never
     extra_keys: *devtools_main_exit_extra
-    telemetry_mirror: DevtoolsMain_Exit_Options
 
   exit_performance:
     type: event
@@ -941,7 +896,6 @@ devtools.main:
     notification_emails: *devtools_main_exit_emails
     expires: never
     extra_keys: *devtools_main_exit_extra
-    telemetry_mirror: DevtoolsMain_Exit_Performance
 
   exit_storage:
     type: event
@@ -954,7 +908,6 @@ devtools.main:
     notification_emails: *devtools_main_exit_emails
     expires: never
     extra_keys: *devtools_main_exit_extra
-    telemetry_mirror: DevtoolsMain_Exit_Storage
 
   exit_styleeditor:
     type: event
@@ -967,7 +920,6 @@ devtools.main:
     notification_emails: *devtools_main_exit_emails
     expires: never
     extra_keys: *devtools_main_exit_extra
-    telemetry_mirror: DevtoolsMain_Exit_Styleeditor
 
   exit_webconsole:
     type: event
@@ -980,7 +932,6 @@ devtools.main:
     notification_emails: *devtools_main_exit_emails
     expires: never
     extra_keys: *devtools_main_exit_extra
-    telemetry_mirror: DevtoolsMain_Exit_Webconsole
 
   exit_whatsnew:
     type: event
@@ -993,7 +944,6 @@ devtools.main:
     notification_emails: *devtools_main_exit_emails
     expires: never
     extra_keys: *devtools_main_exit_extra
-    telemetry_mirror: DevtoolsMain_Exit_Whatsnew
 
   exit_other:
     type: event
@@ -1006,7 +956,6 @@ devtools.main:
     notification_emails: *devtools_main_exit_emails
     expires: never
     extra_keys: *devtools_main_exit_extra
-    telemetry_mirror: DevtoolsMain_Exit_Other
 
   exit_fake_tool4242:
     type: event
@@ -1019,7 +968,6 @@ devtools.main:
     notification_emails: *devtools_main_exit_emails
     expires: never
     extra_keys: *devtools_main_exit_extra
-    telemetry_mirror: DevtoolsMain_Exit_Faketool4242
 
   exit_test_blank_panel:
     type: event
@@ -1032,7 +980,6 @@ devtools.main:
     notification_emails: *devtools_main_exit_emails
     expires: never
     extra_keys: *devtools_main_exit_extra
-    telemetry_mirror: DevtoolsMain_Exit_Testblankpanel
 
   exit_test_tool:
     type: event
@@ -1045,7 +992,6 @@ devtools.main:
     notification_emails: *devtools_main_exit_emails
     expires: never
     extra_keys: *devtools_main_exit_extra
-    telemetry_mirror: DevtoolsMain_Exit_Testtool
 
   exit_testtool1:
     type: event
@@ -1058,7 +1004,6 @@ devtools.main:
     notification_emails: *devtools_main_exit_emails
     expires: never
     extra_keys: *devtools_main_exit_extra
-    telemetry_mirror: DevtoolsMain_Exit_Testtool1
 
   exit_test_tool1072208:
     type: event
@@ -1071,7 +1016,6 @@ devtools.main:
     notification_emails: *devtools_main_exit_emails
     expires: never
     extra_keys: *devtools_main_exit_extra
-    telemetry_mirror: DevtoolsMain_Exit_Testtool1072208
 
   exit_testtool2:
     type: event
@@ -1084,7 +1028,6 @@ devtools.main:
     notification_emails: *devtools_main_exit_emails
     expires: never
     extra_keys: *devtools_main_exit_extra
-    telemetry_mirror: DevtoolsMain_Exit_Testtool2
 
   filters_changed_netmonitor:
     type: event
@@ -1121,9 +1064,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_FiltersChanged_Netmonitor
 
   filters_changed_webconsole:
     type: event
@@ -1136,7 +1078,6 @@ devtools.main:
     notification_emails: *devtools_main_filters_changed_emails
     expires: never
     extra_keys: *devtools_main_filters_changed_extra
-    telemetry_mirror: DevtoolsMain_FiltersChanged_Webconsole
 
   inspect_aboutdebugging:
     type: event
@@ -1168,9 +1109,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_Inspect_Aboutdebugging
 
   jump_to_definition_webconsole:
     type: event
@@ -1194,9 +1134,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_JumpToDefinition_Webconsole
 
   jump_to_source_webconsole:
     type: event
@@ -1219,9 +1158,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_JumpToSource_Webconsole
 
   object_expanded_webconsole:
     type: event
@@ -1244,9 +1182,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_ObjectExpanded_Webconsole
 
   open_tools:
     type: event
@@ -1295,9 +1232,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_Open_Tools
 
   open_adbg_aboutdebugging:
     type: event
@@ -1324,9 +1260,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_OpenAdbg_Aboutdebugging
 
   pause_on_exceptions_debugger:
     type: event
@@ -1357,9 +1292,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_PauseOnExceptions_Debugger
 
   pause_debugger:
     type: event
@@ -1390,9 +1324,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_Pause_Debugger
 
   persist_changed_netmonitor:
     type: event
@@ -1417,9 +1350,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_PersistChanged_Netmonitor
 
   persist_changed_webconsole:
     type: event
@@ -1432,7 +1364,6 @@ devtools.main:
     notification_emails: *devtools_main_persist_changed_emails
     expires: never
     extra_keys: *devtools_main_persist_changed_extra
-    telemetry_mirror: DevtoolsMain_PersistChanged_Webconsole
 
   pretty_print_debugger:
     type: event
@@ -1455,9 +1386,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_PrettyPrint_Debugger
 
   remove_breakpoint_debugger:
     type: event
@@ -1480,9 +1410,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_RemoveBreakpoint_Debugger
 
   runtime_added_aboutdebugging:
     type: event
@@ -1521,9 +1450,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_RuntimeAdded_Aboutdebugging
 
   runtime_connected_aboutdebugging:
     type: event
@@ -1572,9 +1500,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_RuntimeConnected_Aboutdebugging
 
   runtime_disconnected_aboutdebugging:
     type: event
@@ -1613,9 +1540,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_RuntimeDisconnected_Aboutdebugging
 
   runtime_removed_aboutdebugging:
     type: event
@@ -1654,9 +1580,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_RuntimeRemoved_Aboutdebugging
 
   select_page_aboutdebugging:
     type: event
@@ -1686,9 +1611,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_SelectPage_Aboutdebugging
 
   select_page_application:
     type: event
@@ -1702,7 +1626,6 @@ devtools.main:
     notification_emails: *devtools_main_select_page_emails
     expires: never
     extra_keys: *devtools_main_select_page_extra
-    telemetry_mirror: DevtoolsMain_SelectPage_Application
 
   show_profiler_aboutdebugging:
     type: event
@@ -1730,9 +1653,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_ShowProfiler_Aboutdebugging
 
   select_ws_frame_netmonitor:
     type: event
@@ -1755,9 +1677,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_SelectWsFrame_Netmonitor
 
   sidepanel_changed_inspector:
     type: event
@@ -1794,9 +1715,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_SidepanelChanged_Inspector
 
   sidepanel_changed_netmonitor:
     type: event
@@ -1809,7 +1729,6 @@ devtools.main:
     notification_emails: *devtools_main_sidepanel_changed_emails
     expires: never
     extra_keys: *devtools_main_sidepanel_changed_extra
-    telemetry_mirror: DevtoolsMain_SidepanelChanged_Netmonitor
 
   start_worker_application:
     type: event
@@ -1832,9 +1751,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_StartWorker_Application
 
   throttle_changed_netmonitor:
     type: event
@@ -1863,7 +1781,6 @@ devtools.main:
         description: >
           The toolbox session start time e.g. 13963.
         type: string
-    telemetry_mirror: DevtoolsMain_ThrottleChanged_Netmonitor
 
   tool_timer_animationinspector:
     type: event
@@ -1896,9 +1813,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_ToolTimer_Animationinspector
 
   tool_timer_compatibilityview:
     type: event
@@ -1911,7 +1827,6 @@ devtools.main:
     notification_emails: *devtools_main_tool_timer_emails
     expires: never
     extra_keys: *devtools_main_tool_timer_extra
-    telemetry_mirror: DevtoolsMain_ToolTimer_Compatibilityview
 
   tool_timer_computedview:
     type: event
@@ -1924,7 +1839,6 @@ devtools.main:
     notification_emails: *devtools_main_tool_timer_emails
     expires: never
     extra_keys: *devtools_main_tool_timer_extra
-    telemetry_mirror: DevtoolsMain_ToolTimer_Computedview
 
   tool_timer_changesview:
     type: event
@@ -1937,7 +1851,6 @@ devtools.main:
     notification_emails: *devtools_main_tool_timer_emails
     expires: never
     extra_keys: *devtools_main_tool_timer_extra
-    telemetry_mirror: DevtoolsMain_ToolTimer_Changesview
 
   tool_timer_fontinspector:
     type: event
@@ -1950,7 +1863,6 @@ devtools.main:
     notification_emails: *devtools_main_tool_timer_emails
     expires: never
     extra_keys: *devtools_main_tool_timer_extra
-    telemetry_mirror: DevtoolsMain_ToolTimer_Fontinspector
 
   tool_timer_layoutview:
     type: event
@@ -1963,7 +1875,6 @@ devtools.main:
     notification_emails: *devtools_main_tool_timer_emails
     expires: never
     extra_keys: *devtools_main_tool_timer_extra
-    telemetry_mirror: DevtoolsMain_ToolTimer_Layoutview
 
   tool_timer_ruleview:
     type: event
@@ -1976,7 +1887,6 @@ devtools.main:
     notification_emails: *devtools_main_tool_timer_emails
     expires: never
     extra_keys: *devtools_main_tool_timer_extra
-    telemetry_mirror: DevtoolsMain_ToolTimer_Ruleview
 
   unregister_worker_application:
     type: event
@@ -1999,9 +1909,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_UnregisterWorker_Application
 
   update_conn_prompt_aboutdebugging:
     type: event
@@ -2033,9 +1942,8 @@ devtools.main:
         type: string
       session_id:
         description: >
-          The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
-    telemetry_mirror: DevtoolsMain_UpdateConnPrompt_Aboutdebugging
 
   toolbox_component_error:
     type: event
@@ -2083,10 +1991,30 @@ devtools.main:
       - jdescottes@mozilla.com
     expires: never
     extra_keys:
+      descriptor_type:
+        description: >
+          The type of the target descriptor for the toolbox.
+        type: string
       error_name:
         description: >
           The name of the captured error.
         type: string
+      host_type:
+        description: >
+          The host type of the toolbox.
+        type: string
+      is_destroying:
+        description: >
+          True if toolbox destroy already started when the error occurred.
+        type: boolean
+      is_local_tab:
+        description: >
+          True if the toolbox is debugging a local tab.
+        type: boolean
+      is_window_closed:
+        description: >
+          True if the window owning the toolbox is closed.
+        type: boolean
       stack:
         description: >
           The original stacktrace for the error.
@@ -2106,6 +2034,14 @@ devtools.main:
       server_stack:
         description: >
           The server-side stack trace for the error.
+        type: string
+      server_content_process_stack:
+        description: >
+          The server-side content process stack trace for the error.
+        type: string
+      session_id:
+        description: >
+          The start time of DevTools since the browser session began in milliseconds.
         type: string
 
 devtools.accessibility:
@@ -2127,7 +2063,6 @@ devtools.accessibility:
       - devtools-telemetry-alerts@mozilla.com
       - accessibility@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_ACCESSIBILITY_OPENED_COUNT
 
   picker_used_count:
     type: counter
@@ -2148,7 +2083,6 @@ devtools.accessibility:
       - devtools-telemetry-alerts@mozilla.com
       - accessibility@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_ACCESSIBILITY_PICKER_USED_COUNT
 
 devtools.changesview:
   opened_count:
@@ -2165,7 +2099,6 @@ devtools.changesview:
       - devtools-telemetry-alerts@mozilla.com
       - mbalfanz@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_CHANGESVIEW_OPENED_COUNT
 
 devtools:
   toolbox_opened_count:
@@ -2182,7 +2115,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_TOOLBOX_OPENED_COUNT
 
   options_opened_count:
     type: counter
@@ -2198,7 +2130,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_OPTIONS_OPENED_COUNT
 
   webconsole_opened_count:
     type: counter
@@ -2214,7 +2145,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_WEBCONSOLE_OPENED_COUNT
 
   browserconsole_opened_count:
     type: counter
@@ -2230,7 +2160,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_BROWSERCONSOLE_OPENED_COUNT
 
   inspector_opened_count:
     type: counter
@@ -2246,7 +2175,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_INSPECTOR_OPENED_COUNT
 
   ruleview_opened_count:
     type: counter
@@ -2262,7 +2190,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_RULEVIEW_OPENED_COUNT
 
   computedview_opened_count:
     type: counter
@@ -2278,7 +2205,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_COMPUTEDVIEW_OPENED_COUNT
 
   layoutview_opened_count:
     type: counter
@@ -2294,7 +2220,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_LAYOUTVIEW_OPENED_COUNT
 
   fontinspector_opened_count:
     type: counter
@@ -2310,7 +2235,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_FONTINSPECTOR_OPENED_COUNT
 
   animationinspector_opened_count:
     type: counter
@@ -2326,7 +2250,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_ANIMATIONINSPECTOR_OPENED_COUNT
 
   jsdebugger_opened_count:
     type: counter
@@ -2342,7 +2265,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_JSDEBUGGER_OPENED_COUNT
 
   jsbrowserdebugger_opened_count:
     type: counter
@@ -2358,7 +2280,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_JSBROWSERDEBUGGER_OPENED_COUNT
 
   styleeditor_opened_count:
     type: counter
@@ -2374,7 +2295,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_STYLEEDITOR_OPENED_COUNT
 
   jsprofiler_opened_count:
     type: counter
@@ -2390,7 +2310,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_JSPROFILER_OPENED_COUNT
 
   memory_opened_count:
     type: counter
@@ -2406,7 +2325,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_MEMORY_OPENED_COUNT
 
   netmonitor_opened_count:
     type: counter
@@ -2422,7 +2340,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_NETMONITOR_OPENED_COUNT
 
   storage_opened_count:
     type: counter
@@ -2438,7 +2355,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_STORAGE_OPENED_COUNT
 
   dom_opened_count:
     type: counter
@@ -2454,7 +2370,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_DOM_OPENED_COUNT
 
   responsive_opened_count:
     type: counter
@@ -2470,7 +2385,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_RESPONSIVE_OPENED_COUNT
 
   eyedropper_opened_count:
     type: counter
@@ -2486,7 +2400,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_EYEDROPPER_OPENED_COUNT
 
   menu_eyedropper_opened_count:
     type: counter
@@ -2503,7 +2416,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_MENU_EYEDROPPER_OPENED_COUNT
 
   picker_eyedropper_opened_count:
     type: counter
@@ -2520,7 +2432,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_PICKER_EYEDROPPER_OPENED_COUNT
 
   aboutdebugging_opened_count:
     type: counter
@@ -2539,7 +2450,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - jan@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_ABOUTDEBUGGING_OPENED_COUNT
 
   compatibilityview_opened_count:
     type: counter
@@ -2558,7 +2468,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - jan@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_COMPATIBILITYVIEW_OPENED_COUNT
 
   custom_opened_count:
     type: counter
@@ -2574,7 +2483,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_CUSTOM_OPENED_COUNT
 
   accessibility_time_active:
     type: timing_distribution
@@ -2596,7 +2504,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - yzenevich@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_ACCESSIBILITY_TIME_ACTIVE_SECONDS
 
   accessibility_picker_time_active:
     type: timing_distribution
@@ -2618,7 +2525,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - yzenevich@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_ACCESSIBILITY_PICKER_TIME_ACTIVE_SECONDS
 
   accessibility_service_time_active:
     type: timing_distribution
@@ -2641,7 +2547,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - yzenevich@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_ACCESSIBILITY_SERVICE_TIME_ACTIVE_SECONDS
 
   flexbox_highlighter_time_active:
     type: timing_distribution
@@ -2659,7 +2564,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - mbalfanz@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_FLEXBOX_HIGHLIGHTER_TIME_ACTIVE_SECONDS
 
   grid_highlighter_time_active:
     type: timing_distribution
@@ -2677,7 +2581,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - mbalfanz@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_GRID_HIGHLIGHTER_TIME_ACTIVE_SECONDS
 
   toolbox_time_active:
     type: timing_distribution
@@ -2695,7 +2598,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - jryans@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_TOOLBOX_TIME_ACTIVE_SECONDS
 
   options_time_active:
     type: timing_distribution
@@ -2713,7 +2615,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - jryans@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_OPTIONS_TIME_ACTIVE_SECONDS
 
   webconsole_time_active:
     type: timing_distribution
@@ -2731,7 +2632,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - jryans@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_WEBCONSOLE_TIME_ACTIVE_SECONDS
 
   browserconsole_time_active:
     type: timing_distribution
@@ -2749,7 +2649,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - jryans@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_BROWSERCONSOLE_TIME_ACTIVE_SECONDS
 
   inspector_time_active:
     type: timing_distribution
@@ -2767,7 +2666,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - jryans@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_INSPECTOR_TIME_ACTIVE_SECONDS
 
   ruleview_time_active:
     type: timing_distribution
@@ -2785,7 +2683,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - jryans@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_RULEVIEW_TIME_ACTIVE_SECONDS
 
   changesview_time_active:
     type: timing_distribution
@@ -2803,7 +2700,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - mbalfanz@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_CHANGESVIEW_TIME_ACTIVE_SECONDS
 
   computedview_time_active:
     type: timing_distribution
@@ -2821,7 +2717,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - jryans@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_COMPUTEDVIEW_TIME_ACTIVE_SECONDS
 
   layoutview_time_active:
     type: timing_distribution
@@ -2841,7 +2736,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - jryans@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_LAYOUTVIEW_TIME_ACTIVE_SECONDS
 
   fontinspector_time_active:
     type: timing_distribution
@@ -2859,7 +2753,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - jryans@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_FONTINSPECTOR_TIME_ACTIVE_SECONDS
 
   animationinspector_time_active:
     type: timing_distribution
@@ -2877,7 +2770,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - jryans@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_ANIMATIONINSPECTOR_TIME_ACTIVE_SECONDS
 
   jsdebugger_time_active:
     type: timing_distribution
@@ -2895,7 +2787,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - jryans@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_JSDEBUGGER_TIME_ACTIVE_SECONDS
 
   jsbrowserdebugger_time_active:
     type: timing_distribution
@@ -2913,7 +2804,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - jryans@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_JSBROWSERDEBUGGER_TIME_ACTIVE_SECONDS
 
   styleeditor_time_active:
     type: timing_distribution
@@ -2931,7 +2821,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - jryans@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_STYLEEDITOR_TIME_ACTIVE_SECONDS
 
   jsprofiler_time_active:
     type: timing_distribution
@@ -2949,7 +2838,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - jryans@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_JSPROFILER_TIME_ACTIVE_SECONDS
 
   memory_time_active:
     type: timing_distribution
@@ -2967,7 +2855,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - jryans@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_MEMORY_TIME_ACTIVE_SECONDS
 
   netmonitor_time_active:
     type: timing_distribution
@@ -2985,7 +2872,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - jryans@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_NETMONITOR_TIME_ACTIVE_SECONDS
 
   storage_time_active:
     type: timing_distribution
@@ -3003,7 +2889,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - jryans@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_STORAGE_TIME_ACTIVE_SECONDS
 
   dom_time_active:
     type: timing_distribution
@@ -3023,7 +2908,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - jryans@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_DOM_TIME_ACTIVE_SECONDS
 
   responsive_time_active:
     type: timing_distribution
@@ -3043,7 +2927,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - jryans@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_RESPONSIVE_TIME_ACTIVE_SECONDS
 
   aboutdebugging_time_active:
     type: timing_distribution
@@ -3061,7 +2944,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - jryans@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_ABOUTDEBUGGING_TIME_ACTIVE_SECONDS
 
   compatibilityview_time_active:
     type: timing_distribution
@@ -3078,7 +2960,6 @@ devtools:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_COMPATIBILITYVIEW_TIME_ACTIVE_SECONDS
 
   custom_time_active:
     type: timing_distribution
@@ -3096,7 +2977,6 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - jryans@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_CUSTOM_TIME_ACTIVE_SECONDS
 
   entry_point:
     type: labeled_counter
@@ -3121,4 +3001,3 @@ devtools:
       - devtools-telemetry-alerts@mozilla.com
       - apoirot@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_ENTRY_POINT

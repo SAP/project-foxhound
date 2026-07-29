@@ -27,13 +27,13 @@ add_task(async function () {
   await setSearchFilter(view, SEARCH);
 
   info("Focus the height property value");
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
   const rule = ruleEditor.rule;
   const propEditor = rule.textProps[1].editor;
   await focusEditableField(view, propEditor.valueSpan);
 
   info("Check that the correct rules are visible");
-  is(view.element.children.length, 2, "Should have 2 rules.");
+  assertDisplayedRulesCount(view, 2);
   is(rule.selectorText, "#testid", "Second rule is #testid.");
   ok(
     rule.textProps[0].editor.container.classList.contains("ruleview-highlight"),

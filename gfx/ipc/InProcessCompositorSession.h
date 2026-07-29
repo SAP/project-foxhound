@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,18 +14,16 @@ namespace mozilla {
 namespace layers {
 
 class CompositorOptions;
-class WebRenderLayerManager;
 
 // A CompositorSession where both the child and parent CompositorBridge reside
 // in the same process.
 class InProcessCompositorSession final : public CompositorSession {
  public:
   static RefPtr<InProcessCompositorSession> Create(
-      nsIWidget* baseWidget, WebRenderLayerManager* aLayerManager,
-      const LayersId& aRootLayerTreeId, CSSToLayoutDeviceScale aScale,
-      const CompositorOptions& aOptions, bool aUseExternalSurfaceSize,
-      const gfx::IntSize& aSurfaceSize, uint32_t aNamespace,
-      uint64_t aInnerWindowId);
+      nsIWidget* baseWidget, const LayersId& aRootLayerTreeId,
+      CSSToLayoutDeviceScale aScale, const CompositorOptions& aOptions,
+      bool aUseExternalSurfaceSize, const gfx::IntSize& aSurfaceSize,
+      uint32_t aNamespace, uint64_t aInnerWindowId);
 
   CompositorBridgeParent* GetInProcessBridge() const override;
   void SetContentController(GeckoContentController* aController) override;

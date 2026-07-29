@@ -10,7 +10,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.launchActivity
 import androidx.test.internal.runner.junit4.AndroidJUnit4ClassRunner
 import androidx.test.rule.ActivityTestRule
-import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -20,22 +19,24 @@ import org.junit.runner.RunWith
 import org.mozilla.focus.activity.robots.browserScreen
 import org.mozilla.focus.activity.robots.customTab
 import org.mozilla.focus.helpers.FeatureSettingsHelper
-import org.mozilla.focus.helpers.MockWebServerHelper
+import org.mozilla.focus.helpers.FocusTestRule
 import org.mozilla.focus.helpers.TestAssetHelper.genericAsset
 import org.mozilla.focus.helpers.TestAssetHelper.getGenericTabAsset
 import org.mozilla.focus.helpers.TestHelper.createCustomTabIntent
 import org.mozilla.focus.helpers.TestHelper.mDevice
 import org.mozilla.focus.helpers.TestHelper.waitingTime
-import org.mozilla.focus.helpers.TestSetup
 import org.mozilla.focus.testAnnotations.SmokeTest
-import java.io.IOException
 
 @RunWith(AndroidJUnit4ClassRunner::class)
-class CustomTabTest : TestSetup() {
-    private lateinit var webServer: MockWebServer
+class CustomTabTest {
     private val menuItemTestLabel = "TestItem4223"
     private val actionButtonDescription = "TestButton"
     private val featureSettingsHelper = FeatureSettingsHelper()
+
+    @get:Rule(order = 0)
+    val focusTestRule: FocusTestRule = FocusTestRule()
+
+    private val webServerRule get() = focusTestRule.mockWebServerRule
 
     @get:Rule
     val activityTestRule = ActivityTestRule(
@@ -45,31 +46,21 @@ class CustomTabTest : TestSetup() {
     )
 
     @Before
-    override fun setUp() {
-        super.setUp()
+    fun setUp() {
         featureSettingsHelper.setCfrForTrackingProtectionEnabled(false)
         featureSettingsHelper.setShowStartBrowsingCfrEnabled(false)
         featureSettingsHelper.setCookieBannerReductionEnabled(false)
-        webServer = MockWebServer().apply {
-            dispatcher = MockWebServerHelper.AndroidAssetDispatcher()
-            start()
-        }
     }
 
     @After
     fun tearDown() {
-        try {
-            webServer.shutdown()
-        } catch (e: IOException) {
-            throw AssertionError("Could not stop web server", e)
-        }
         featureSettingsHelper.resetAllFeatureFlags()
     }
 
     @SmokeTest
     @Test
     fun testCustomTabUI() {
-        val customTabPage = webServer.genericAsset
+        val customTabPage = webServerRule.server.genericAsset
         val customTabActivity =
             launchActivity<IntentReceiverActivity>(
                 createCustomTabIntent(customTabPage.url, menuItemTestLabel, actionButtonDescription),
@@ -97,7 +88,7 @@ class CustomTabTest : TestSetup() {
     @SmokeTest
     @Test
     fun openCustomTabInFocusTest() {
-        val customTabPage = webServer.getGenericTabAsset(1)
+        val customTabPage = webServerRule.server.getGenericTabAsset(1)
 
         launchActivity<IntentReceiverActivity>(createCustomTabIntent(customTabPage.url))
         customTab {
@@ -112,8 +103,8 @@ class CustomTabTest : TestSetup() {
     @SmokeTest
     @Test
     fun customTabNavigationButtonsTest() {
-        val firstPage = webServer.getGenericTabAsset(1)
-        val secondPage = webServer.getGenericTabAsset(2)
+        val firstPage = webServerRule.server.getGenericTabAsset(1)
+        val secondPage = webServerRule.server.getGenericTabAsset(2)
 
         launchActivity<IntentReceiverActivity>(createCustomTabIntent(firstPage.url))
         customTab {

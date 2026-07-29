@@ -1,5 +1,4 @@
 import pytest
-from tests.bidi import wait_for_bidi_events
 from tests.bidi.network import (
     RESPONSE_COMPLETED_EVENT,
     STYLESHEET_RED_COLOR,
@@ -8,15 +7,17 @@ from tests.bidi.network import (
 )
 from webdriver.bidi import error
 
+pytestmark = pytest.mark.asyncio
+
 
 @pytest.mark.parametrize(
     "use_collector",
     [True, False],
 )
-@pytest.mark.asyncio
 async def test_cached_stylesheet(
     bidi_session,
     url,
+    wait_for_bidi_events,
     inline,
     setup_network_test,
     top_context,
@@ -45,7 +46,11 @@ async def test_cached_stylesheet(
     )
 
     # Expect two events, one for the document, one for the stylesheet.
-    await wait_for_bidi_events(bidi_session, events, 2, timeout=2)
+    await wait_for_bidi_events(
+        events,
+        2,
+        timeout=2,
+    )
 
     collector = await add_data_collector(
         collector_type="blob", data_types=["response"], max_encoded_data_size=1000
@@ -57,7 +62,11 @@ async def test_cached_stylesheet(
     )
 
     # Expect two events after reload, for the document and the stylesheet.
-    await wait_for_bidi_events(bidi_session, events, 4, timeout=2)
+    await wait_for_bidi_events(
+        events,
+        4,
+        timeout=2,
+    )
 
     # Assert only cached events after reload.
     cached_events = events[2:]

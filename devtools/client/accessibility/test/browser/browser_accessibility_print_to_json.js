@@ -6,7 +6,7 @@
 const TEST_URI = "<h1>Top level header</h1>";
 
 function getMenuItems(toolbox) {
-  const menuDoc = toolbox.doc.defaultView.windowRoot.ownerGlobal.document;
+  const menuDoc = toolbox.doc.defaultView.windowRoot.window.document;
   const menu = menuDoc.getElementById("accessibility-row-contextmenu");
   return {
     menu,

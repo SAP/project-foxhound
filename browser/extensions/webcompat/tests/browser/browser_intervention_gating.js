@@ -28,7 +28,7 @@ function getConfig(
       if (css || js) {
         delete i.css;
         delete i.js;
-        i.content_scripts = { css, js };
+        i.content_scripts = { css, js, no_console_message: true };
       }
       return i;
     }),
@@ -213,25 +213,25 @@ add_task(async function test_disabling_by_default() {
     await ContentTaskUtils.waitForCondition(
       () =>
         content.document.querySelector(
-          "#interventions tr[data-id=test3] [data-l10n-id=label-enable]"
+          "#interventions [data-id=test3] [data-l10n-id=label-enable]"
         ),
       "test3 is correctly shown"
     );
     ok(
-      !content.document.querySelector("#interventions tr[data-id=test4]"),
+      !content.document.querySelector("#interventions [data-id=test4]"),
       "test4 is correctly hidden"
     );
 
     // click enable, confirm it is enabled
     content.document
       .querySelector(
-        "#interventions tr[data-id=test3] [data-l10n-id=label-enable]"
+        "#interventions [data-id=test3] [data-l10n-id=label-enable]"
       )
       .click();
     await ContentTaskUtils.waitForCondition(
       () =>
         content.document.querySelector(
-          "#interventions tr[data-id=test3] [data-l10n-id=label-disable]"
+          "#interventions [data-id=test3] [data-l10n-id=label-disable]"
         ),
       "test3 is correctly enabled on click"
     );
@@ -239,13 +239,13 @@ add_task(async function test_disabling_by_default() {
     // now click disable, confirm it is disabled
     content.document
       .querySelector(
-        "#interventions tr[data-id=test3] [data-l10n-id=label-disable]"
+        "#interventions [data-id=test3] [data-l10n-id=label-disable]"
       )
       .click();
     await ContentTaskUtils.waitForCondition(
       () =>
         content.document.querySelector(
-          "#interventions tr[data-id=test3] [data-l10n-id=label-enable]"
+          "#interventions [data-id=test3] [data-l10n-id=label-enable]"
         ),
       "test3 is correctly disabled again on second click"
     );
@@ -380,14 +380,14 @@ add_task(async function test_individual_interventions_prefs() {
     await ContentTaskUtils.waitForCondition(
       () =>
         content.document.querySelector(
-          "#interventions tr[data-id=test5] [data-l10n-id=label-disable]"
+          "#interventions [data-id=test5] [data-l10n-id=label-disable]"
         ),
       "test5 is correctly shown as disabled"
     );
     await ContentTaskUtils.waitForCondition(
       () =>
         content.document.querySelector(
-          "#interventions tr[data-id=test6] [data-l10n-id=label-enable]"
+          "#interventions [data-id=test6] [data-l10n-id=label-enable]"
         ),
       "test6 is correctly shown as enabled"
     );
@@ -395,13 +395,13 @@ add_task(async function test_individual_interventions_prefs() {
     // click to disable test5 and confirm
     content.document
       .querySelector(
-        "#interventions tr[data-id=test5] [data-l10n-id=label-disable]"
+        "#interventions [data-id=test5] [data-l10n-id=label-disable]"
       )
       .click();
     await ContentTaskUtils.waitForCondition(
       () =>
         content.document.querySelector(
-          "#interventions tr[data-id=test5] [data-l10n-id=label-enable]"
+          "#interventions [data-id=test5] [data-l10n-id=label-enable]"
         ),
       "test5 is correctly disabled"
     );
@@ -409,13 +409,13 @@ add_task(async function test_individual_interventions_prefs() {
     // click to enable test6 and confirm
     content.document
       .querySelector(
-        "#interventions tr[data-id=test6] [data-l10n-id=label-enable]"
+        "#interventions [data-id=test6] [data-l10n-id=label-enable]"
       )
       .click();
     await ContentTaskUtils.waitForCondition(
       () =>
         content.document.querySelector(
-          "#interventions tr[data-id=test6] [data-l10n-id=label-disable]"
+          "#interventions [data-id=test6] [data-l10n-id=label-disable]"
         ),
       "test6 is correctly enabled"
     );
@@ -423,13 +423,13 @@ add_task(async function test_individual_interventions_prefs() {
     // click to disable test7 and confirm
     content.document
       .querySelector(
-        "#interventions tr[data-id=test7] [data-l10n-id=label-disable]"
+        "#interventions [data-id=test7] [data-l10n-id=label-disable]"
       )
       .click();
     await ContentTaskUtils.waitForCondition(
       () =>
         content.document.querySelector(
-          "#interventions tr[data-id=test5] [data-l10n-id=label-enable]"
+          "#interventions [data-id=test5] [data-l10n-id=label-enable]"
         ),
       "test7 is correctly disabled"
     );
@@ -461,13 +461,13 @@ add_task(async function test_individual_interventions_prefs() {
     // click to re-enable test5 and confirm
     content.document
       .querySelector(
-        "#interventions tr[data-id=test5] [data-l10n-id=label-enable]"
+        "#interventions [data-id=test5] [data-l10n-id=label-enable]"
       )
       .click();
     await ContentTaskUtils.waitForCondition(
       () =>
         content.document.querySelector(
-          "#interventions tr[data-id=test5] [data-l10n-id=label-disable]"
+          "#interventions [data-id=test5] [data-l10n-id=label-disable]"
         ),
       "test5 is correctly disabled"
     );
@@ -475,13 +475,13 @@ add_task(async function test_individual_interventions_prefs() {
     // click to re-disable test6 and confirm
     content.document
       .querySelector(
-        "#interventions tr[data-id=test6] [data-l10n-id=label-disable]"
+        "#interventions [data-id=test6] [data-l10n-id=label-disable]"
       )
       .click();
     await ContentTaskUtils.waitForCondition(
       () =>
         content.document.querySelector(
-          "#interventions tr[data-id=test6] [data-l10n-id=label-enable]"
+          "#interventions [data-id=test6] [data-l10n-id=label-enable]"
         ),
       "test6 is correctly disabled"
     );
@@ -489,13 +489,13 @@ add_task(async function test_individual_interventions_prefs() {
     // click to re-enable test7 and confirm
     content.document
       .querySelector(
-        "#interventions tr[data-id=test7] [data-l10n-id=label-enable]"
+        "#interventions [data-id=test7] [data-l10n-id=label-enable]"
       )
       .click();
     await ContentTaskUtils.waitForCondition(
       () =>
         content.document.querySelector(
-          "#interventions tr[data-id=test7] [data-l10n-id=label-disable]"
+          "#interventions [data-id=test7] [data-l10n-id=label-disable]"
         ),
       "test7 is correctly disabled"
     );
@@ -625,7 +625,7 @@ add_task(async function test_batched_webrequest_listeners() {
 
     let blocked = false;
     try {
-      fetch(
+      await content.wrappedJSObject.fetch(
         "https://example.com/browser/browser/base/content/test/general/download_page.html"
       );
     } catch (_) {
@@ -650,7 +650,7 @@ add_task(async function test_batched_webrequest_listeners() {
 
     let blocked = false;
     try {
-      fetch(
+      await content.wrappedJSObject.fetch(
         "https://example.com/browser/browser/base/content/test/static/download_page.html"
       );
     } catch (_) {
@@ -675,7 +675,7 @@ add_task(async function test_batched_webrequest_listeners() {
 
     let blocked = true;
     try {
-      fetch(
+      await content.wrappedJSObject.fetch(
         "https://example.net/browser/browser/base/content/test/about/download_page.html"
       );
       blocked = false;
@@ -699,7 +699,7 @@ add_task(async function test_batched_webrequest_listeners() {
 
     let blocked = false;
     try {
-      fetch(
+      await content.wrappedJSObject.fetch(
         "https://www.example.com/browser/browser/base/content/test/about/download_page.html"
       );
     } catch (_) {
@@ -715,4 +715,83 @@ add_task(async function test_batched_webrequest_listeners() {
     "test10",
     "test11",
   ]);
+});
+
+add_task(async function test_exclusions() {
+  const config12 = getConfig(
+    "test12",
+    [
+      {
+        ua_string: ["change_Gecko_to_like_Gecko"],
+        js: ["lib/ua_helpers.js"],
+      },
+    ],
+    {
+      blocks: ["*://example.com/*/general/download*"],
+      exclude_blocks: ["*://example.com/*/general/download_page_2.txt"],
+      matches: ["*://example.com/*/general/*"],
+      exclude_matches: ["*://example.com/*/general/clipboard*"],
+    }
+  );
+
+  await WebCompatExtension.interventionsSettled();
+  const configs = await WebCompatExtension.updateInterventions([config12]);
+  Assert.deepEqual(
+    configs.map(c => c.active),
+    [true],
+    "The intervention was activated"
+  );
+  Assert.deepEqual(
+    configs.map(c => c.interventions.map(i => i.enabled)),
+    [[true]],
+    "The intervention was enabled"
+  );
+
+  let tab = await BrowserTestUtils.openNewForegroundTab({
+    gBrowser,
+    opening:
+      "https://example.com/browser/browser/base/content/test/general/dummy_page.html",
+    waitForLoad: true,
+  });
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
+    const ua = content.navigator.userAgent;
+    ok(ua.includes("like Gecko"), "Intended UA override was applied");
+    ok(content.wrappedJSObject.UAHelpers, "Content script was injected");
+
+    let blocked = false;
+    try {
+      await content.wrappedJSObject.fetch(
+        "https://example.com/browser/browser/base/content/test/general/download_page_1.txt"
+      );
+    } catch (_) {
+      blocked = true;
+    }
+    ok(blocked, "blocked as expected");
+
+    blocked = false;
+    try {
+      await content.wrappedJSObject.fetch(
+        "https://example.com/browser/browser/base/content/test/general/download_page_2.txt"
+      );
+    } catch (_) {
+      blocked = true;
+    }
+    ok(!blocked, "not blocked, as expected");
+  });
+  await BrowserTestUtils.removeTab(tab);
+
+  tab = await BrowserTestUtils.openNewForegroundTab({
+    gBrowser,
+    opening:
+      "https://example.com/browser/browser/base/content/test/general/clipboard_pastefile.html",
+    waitForLoad: true,
+  });
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
+    const ua = content.navigator.userAgent;
+    ok(!ua.includes("like Gecko"), "Unintended UA override was not applied");
+    ok(!content.wrappedJSObject.UAHelpers, "Content script was not injected");
+  });
+  await BrowserTestUtils.removeTab(tab);
+
+  await WebCompatExtension.disableInterventions(["test12"]);
 });

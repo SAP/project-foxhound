@@ -46,6 +46,9 @@ skip-if = [
   "tsan",
 ]
 
+["test_promise_safe_resolve.html"]
+skip-if = ["!nightly_build"]
+
 ["test_promise_utils.html"]
 
 ["test_resolve.html"]

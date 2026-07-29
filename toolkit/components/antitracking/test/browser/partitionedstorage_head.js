@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -135,7 +134,7 @@ this.PartitionedStorageHelper = {
 
       await SpecialPowers.flushPrefEnv();
       await setCookieBehaviorPref(
-        BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+        BEHAVIOR_PARTITION_FOREIGN,
         runInPrivateWindow
       );
       await SpecialPowers.pushPrefEnv({
@@ -348,38 +347,38 @@ this.PartitionedStorageHelper = {
       }
 
       info("Creating data in the first tab");
-      await createDataInThirdParty(browser1, "A");
+      await createDataInThirdParty(browser1, "part=A");
 
       info("Creating data in the second tab");
-      await createDataInThirdParty(browser2, "B");
+      await createDataInThirdParty(browser2, "part=B");
 
       // Before writing browser4, check data written by browser1
       info("First tab should still have just 'A'");
-      await getDataFromThirdParty(browser1, "A");
+      await getDataFromThirdParty(browser1, "part=A");
       info("Forth tab should still have just 'A'");
-      await getDataFromThirdParty(browser4, "A");
+      await getDataFromThirdParty(browser4, "part=A");
 
       // Ensure to create data in the forth tab before the third tab,
       // otherwise cookie will be written successfully due to prior cookie
       // of the base domain exists.
       info("Creating data in the forth tab");
-      await createDataInThirdParty(browser4, "D");
+      await createDataInThirdParty(browser4, "part=D");
 
       info("Creating data in the third tab");
-      await createDataInFirstParty(browser3, "C");
+      await createDataInFirstParty(browser3, "part=C");
 
       // read all tabs
       info("First tab should be changed to 'D'");
-      await getDataFromThirdParty(browser1, "D");
+      await getDataFromThirdParty(browser1, "part=D");
 
       info("Second tab should still have just 'B'");
-      await getDataFromThirdParty(browser2, "B");
+      await getDataFromThirdParty(browser2, "part=B");
 
       info("Third tab should still have just 'C'");
-      await getDataFromFirstParty(browser3, "C");
+      await getDataFromFirstParty(browser3, "part=C");
 
       info("Forth tab should still have just 'D'");
-      await getDataFromThirdParty(browser4, "D");
+      await getDataFromThirdParty(browser4, "part=D");
 
       async function setStorageAccessForThirdParty(browser) {
         info(`Setting permission for ${browser.currentURI.spec}`);
@@ -424,16 +423,16 @@ this.PartitionedStorageHelper = {
 
         // read all tabs
         info("First tab should still have just 'D'");
-        await getDataFromThirdParty(browser1, "D");
+        await getDataFromThirdParty(browser1, "part=D");
 
         info("Second tab should still have just 'B'");
-        await getDataFromThirdParty(browser2, "B");
+        await getDataFromThirdParty(browser2, "part=B");
 
         info("Third tab should still have just 'C'");
-        await getDataFromFirstParty(browser3, "C");
+        await getDataFromFirstParty(browser3, "part=C");
 
         info("Forth tab should still have just 'D'");
-        await getDataFromThirdParty(browser4, "D");
+        await getDataFromThirdParty(browser4, "part=D");
       }
 
       info("Done checking departitioned state");

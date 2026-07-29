@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,6 +13,7 @@
 #include "mozilla/dom/JSWindowActorChild.h"
 #include "mozilla/dom/JSWindowActorParent.h"
 #include "mozilla/dom/JSWindowActorProtocol.h"
+#include "mozilla/dom/ParentProcessChannelHandle.h"
 #include "mozilla/dom/PopupBlocker.h"
 #include "mozilla/dom/WindowContext.h"
 #include "mozilla/dom/WindowGlobalChild.h"
@@ -23,6 +22,7 @@
 #include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
 #include "nsNetUtil.h"
+#include "nsPIDOMWindowInlines.h"
 
 namespace mozilla::dom {
 
@@ -59,6 +59,7 @@ WindowGlobalInit WindowGlobalActor::BaseInitializer(
   fields.Get<Indexes::IDX_AutoplayPermission>() =
       nsIPermissionManager::UNKNOWN_ACTION;
   fields.Get<Indexes::IDX_AllowJavascript>() = true;
+  fields.Get<Indexes::IDX_IsFramebustingAllowed>() = aBrowsingContext->IsTop();
   return init;
 }
 
@@ -94,6 +95,9 @@ WindowGlobalInit WindowGlobalActor::WindowInitializer(
   Document* doc = aWindow->GetDocument();
 
   init.isInitialDocument() = doc->IsInitialDocument();
+  if (Document* original = doc->GetOriginalDocument()) {
+    init.staticCloneOf() = original->GetWindowContext();
+  }
   init.isUncommittedInitialDocument() = doc->IsUncommittedInitialDocument();
   init.blockAllMixedContent() = doc->GetBlockAllMixedContent(false);
   init.upgradeInsecureRequests() = doc->GetUpgradeInsecureRequests(false);
@@ -101,6 +105,15 @@ WindowGlobalInit WindowGlobalActor::WindowInitializer(
   net::CookieJarSettings::Cast(doc->CookieJarSettings())
       ->Serialize(init.cookieJarSettings());
   init.httpsOnlyStatus() = doc->HttpsOnlyStatus();
+
+  if (nsIChannel* chan = doc->GetChannel()) {
+    (void)chan->GetParentProcessChannelHandle(
+        getter_AddRefs(init.documentChannelHandle()));
+  }
+  if (nsIChannel* chan = doc->GetFailedChannel()) {
+    (void)chan->GetParentProcessChannelHandle(
+        getter_AddRefs(init.failedChannelHandle()));
+  }
 
   using Indexes = WindowContext::FieldIndexes;
 
@@ -117,6 +130,8 @@ WindowGlobalInit WindowGlobalActor::WindowInitializer(
   fields.Get<Indexes::IDX_OverriddenFingerprintingSettings>() =
       doc->GetOverriddenFingerprintingSettings();
   fields.Get<Indexes::IDX_IsSecureContext>() = aWindow->IsSecureContext();
+  fields.Get<Indexes::IDX_IsFramebustingAllowed>() =
+      aWindow->GetBrowsingContext()->ComputeIsFramebustingAllowed();
 
   // Initialze permission fields
   fields.Get<Indexes::IDX_AutoplayPermission>() =
@@ -139,7 +154,6 @@ WindowGlobalInit WindowGlobalActor::WindowInitializer(
   fields.Get<Indexes::IDX_IsSecure>() =
       innerDocURI && innerDocURI->SchemeIs("https");
 
-  nsCOMPtr<nsITransportSecurityInfo> securityInfo;
   if (nsCOMPtr<nsIChannel> channel = doc->GetChannel()) {
     nsCOMPtr<nsILoadInfo> loadInfo(channel->LoadInfo());
     fields.Get<Indexes::IDX_IsOriginalFrameSource>() =
@@ -150,10 +164,7 @@ WindowGlobalInit WindowGlobalActor::WindowInitializer(
     fields.Get<Indexes::IDX_UsingStorageAccess>() =
         storageAccess == nsILoadInfo::HasStoragePermission ||
         storageAccess == nsILoadInfo::StoragePermissionAllowListed;
-
-    channel->GetSecurityInfo(getter_AddRefs(securityInfo));
   }
-  init.securityInfo() = securityInfo;
 
   fields.Get<Indexes::IDX_IsLocalIP>() =
       init.principal()->GetIsLocalIpAddress();

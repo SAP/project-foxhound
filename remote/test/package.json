@@ -1,0 +1,7 @@
+{
+  "description": "(Bug 2036785) Shim node_modules/@typescript/lib-dom to prevent tsc from using root node_modules during puppeteer builds.",
+  "private": true,
+  "dependencies": {
+    "@typescript/lib-dom": "file:node_modules/@typescript/lib-dom"
+  }
+}

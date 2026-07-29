@@ -13,6 +13,10 @@ import {
   FxviewTabListBase,
   FxviewTabRowBase,
 } from "chrome://browser/content/firefoxview/fxview-tab-list.mjs";
+import { defaultMarkdownParser } from "chrome://browser/content/multilineeditor/prosemirror.bundle.mjs";
+
+const SNIPPET_CONTEXT_CHARS = 10;
+const SNIPPET_FALLBACK_CHARS = 20;
 
 /**
  * A list of clickable chat history items
@@ -59,6 +63,7 @@ export class ChatsTabList extends FxviewTabListBase {
       .time=${ifDefined(time)}
       .title=${tabItem.title}
       .url=${tabItem.url}
+      .matchingSnippet=${ifDefined(tabItem.matchingSnippet)}
       .searchQuery=${ifDefined(this.searchQuery)}
       .timeMsPref=${ifDefined(this.timeMsPref)}
       .hasPopup=${this.hasPopup}
@@ -80,6 +85,7 @@ export class ChatsTabRow extends FxviewTabRowBase {
     ...FxviewTabRowBase.properties,
     pageUrl: { type: String },
     convId: { type: String },
+    matchingSnippet: { type: String },
   };
 
   faviconTemplate() {
@@ -132,6 +138,38 @@ export class ChatsTabRow extends FxviewTabRowBase {
     </span>`;
   }
 
+  // e.g. template would display "…tips for wavy hair…" when searching "wavy"
+  snippetTemplate() {
+    if (!this.matchingSnippet || !this.searchQuery) {
+      return null;
+    }
+    // Parse markdown to a ProseMirror doc and extract plain text.
+    const doc = defaultMarkdownParser.parse(this.matchingSnippet);
+    const text = doc
+      .textBetween(0, doc.content.size, " ")
+      .replace(/\*{2,}/g, "") // remove unparsed bold markers
+      .trim();
+    const idx = text.toLowerCase().indexOf(this.searchQuery.toLowerCase());
+    let snippet;
+
+    if (idx === -1) {
+      snippet = text.substring(0, SNIPPET_FALLBACK_CHARS);
+    } else {
+      const start = Math.max(0, idx - SNIPPET_CONTEXT_CHARS);
+      const end = Math.min(
+        text.length,
+        idx + this.searchQuery.length + SNIPPET_CONTEXT_CHARS
+      );
+      snippet =
+        (start > 0 ? "…" : "") +
+        text.substring(start, end) +
+        (end < text.length ? "…" : "");
+    }
+    return html`<span class="fxview-tab-row-snippet text-truncated-ellipsis">
+      ${this.highlightSearchMatches(this.searchQuery, snippet)}
+    </span>`;
+  }
+
   render() {
     return html`
       ${this.stylesheets()}
@@ -159,7 +197,7 @@ export class ChatsTabRow extends FxviewTabRowBase {
           !this.compact,
           () =>
             html`${this.urlTemplate()} ${this.dateTemplate()}
-            ${this.timeTemplate()}`
+            ${this.timeTemplate()} ${this.snippetTemplate()}`
         )}
       </a>
       ${this.secondaryButtonTemplate()} ${this.tertiaryButtonTemplate()}

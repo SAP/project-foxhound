@@ -19,6 +19,8 @@ import org.mozilla.fenix.GleanMetrics.RecentlyClosedTabs
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.components.AppStore
+import org.mozilla.fenix.components.share.ShareSource
+import org.mozilla.fenix.components.usecases.ShareUseCases
 import org.mozilla.fenix.ext.openToBrowser
 
 @Suppress("TooManyFunctions")
@@ -50,6 +52,7 @@ class DefaultRecentlyClosedController(
     private val recentlyClosedStore: RecentlyClosedFragmentStore,
     private val recentlyClosedTabsStorage: RecentlyClosedTabsStorage,
     private val tabsUseCases: TabsUseCases,
+    private val shareUseCases: ShareUseCases,
     private val lifecycleScope: CoroutineScope,
     private val openToBrowser: (url: String) -> Unit,
 ) : RecentlyClosedController {
@@ -104,11 +107,18 @@ class DefaultRecentlyClosedController(
 
     override fun handleShare(tabs: Set<TabState>) {
         RecentlyClosedTabs.menuShare.record(NoExtras())
+
         val shareData = tabs.map { ShareData(url = it.url, title = it.title) }
-        navController.navigate(
-            RecentlyClosedFragmentDirections.actionGlobalShareFragment(
-                data = shareData.toTypedArray(),
-            ),
+        shareUseCases.shareItems(
+            items = shareData,
+            source = ShareSource.RECENTLY_CLOSED,
+            navigateToShareFragment = {
+                navController.navigate(
+                    RecentlyClosedFragmentDirections.actionGlobalShareFragment(
+                        data = shareData.toTypedArray(),
+                    ),
+                )
+            },
         )
     }
 

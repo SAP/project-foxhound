@@ -18,8 +18,13 @@ describe("<FeatureHighlight>", () => {
 
   it("should render a title", () => {
     wrapper.setProps({ message: "foo" });
-    assert.ok(wrapper.find(".feature-highlight-modal p").exists());
-    assert.equal(wrapper.find(".feature-highlight-modal p").text(), "foo");
+    assert.ok(
+      wrapper.find(".feature-highlight-modal .content-wrapper").exists()
+    );
+    assert.equal(
+      wrapper.find(".feature-highlight-modal .content-wrapper").text(),
+      "foo"
+    );
   });
 
   it("should open a modal", () => {

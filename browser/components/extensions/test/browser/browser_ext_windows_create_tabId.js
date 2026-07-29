@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 function assertNoLeaksInTabTracker() {
@@ -10,7 +8,7 @@ function assertNoLeaksInTabTracker() {
   const { tabTracker } = ExtensionParent.apiManager.global;
 
   for (const [tabId, nativeTab] of tabTracker._tabIds) {
-    if (!nativeTab.ownerGlobal) {
+    if (!nativeTab.documentGlobal) {
       // Disable this check due to bug 1987344, 1806361
       //ok(false,
       info(

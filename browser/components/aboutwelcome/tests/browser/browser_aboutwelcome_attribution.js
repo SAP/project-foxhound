@@ -3,6 +3,9 @@
 const { ASRouter } = ChromeUtils.importESModule(
   "resource:///modules/asrouter/ASRouter.sys.mjs"
 );
+const { AboutWelcomeDefaults } = ChromeUtils.importESModule(
+  "resource:///modules/aboutwelcome/AboutWelcomeDefaults.sys.mjs"
+);
 const { AttributionCode } = ChromeUtils.importESModule(
   "moz-src:///browser/components/attribution/AttributionCode.sys.mjs"
 );
@@ -103,9 +106,9 @@ async function test_screen_content(
   expectedSelectors = [],
   unexpectedSelectors = []
 ) {
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     browser,
-    { expectedSelectors, experiment, unexpectedSelectors },
+    [{ expectedSelectors, experiment, unexpectedSelectors }],
     async ({
       expectedSelectors: expected,
       experiment: experimentName,
@@ -126,6 +129,12 @@ async function test_screen_content(
     }
   );
 }
+
+add_setup(async () => {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.backup.restore.enabled", false]],
+  });
+});
 
 add_task(async function test_rtamo_attribution() {
   let browser = await openRTAMOWithAttribution();
@@ -173,9 +182,9 @@ async function openMultiStageWithUserAgentAttribution() {
 }
 
 async function onButtonClick(browser, elementId) {
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     browser,
-    { elementId },
+    [{ elementId }],
     async ({ elementId: buttonId }) => {
       await ContentTaskUtils.waitForCondition(
         () => content.document.querySelector(buttonId),
@@ -221,8 +230,6 @@ add_task(async function test_smart_window_attribution() {
   await AttributionCode.deleteFileAsync();
   await ASRouter.forceAttribution(TEST_SMART_WINDOW_ATTRIBUTION_DATA);
 
-  await setAboutWelcomePref(true);
-
   AttributionCode._clearCache();
   const data = await AttributionCode.getAttrDataAsync();
 
@@ -232,12 +239,13 @@ add_task(async function test_smart_window_attribution() {
     "Attribution campaign should be set"
   );
 
-  let tab = await BrowserTestUtils.openNewForegroundTab(
-    gBrowser,
-    "about:welcome",
-    true
-  );
+  const attributionContent = await AboutWelcomeDefaults.getAttributionContent();
 
+  Assert.equal(
+    attributionContent.campaign,
+    "smart_window",
+    "Smart Window campaign was returned"
+  );
   Assert.equal(
     Services.prefs.getBoolPref("browser.smartwindow.enabled", false),
     true,
@@ -245,7 +253,6 @@ add_task(async function test_smart_window_attribution() {
   );
 
   registerCleanupFunction(async () => {
-    BrowserTestUtils.removeTab(tab);
     await ASRouter.forceAttribution("");
     Services.prefs.clearUserPref("browser.smartwindow.enabled");
     sandbox.restore();

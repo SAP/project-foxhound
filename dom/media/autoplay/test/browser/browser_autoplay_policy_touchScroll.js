@@ -47,29 +47,38 @@ async function callMediaPlay(shouldStartPlaying) {
   );
 }
 
-async function synthesizeTouchScroll(target, browser) {
-  const offset = 100;
-  await BrowserTestUtils.synthesizeTouch(
-    target,
-    0,
-    0,
-    { type: "touchstart" },
-    browser
-  );
-  await BrowserTestUtils.synthesizeTouch(
-    target,
-    offset / 2,
-    offset / 2,
-    { type: "touchmove" },
-    browser
-  );
-  await BrowserTestUtils.synthesizeTouch(
-    target,
-    offset,
-    offset,
-    { type: "touchend" },
-    browser
-  );
+async function synthesizeTouchScroll(browser) {
+  const promise = SpecialPowers.spawn(browser, [], () => {
+    return new Promise(resolve => {
+      content.document.addEventListener(
+        "touchend",
+        () => {
+          resolve();
+        },
+        { once: true }
+      );
+    });
+  });
+  // Ensure the event listener is registered before we synthesize touch events.
+  await SpecialPowers.spawn(browser, [], () => {});
+
+  let currentY = 50;
+  EventUtils.synthesizeTouch(browser, 10, currentY, {
+    type: "touchstart",
+    asyncEnabled: true,
+  });
+  for (let i = 0; i < 20; i++) {
+    EventUtils.synthesizeTouch(browser, 10, currentY, {
+      type: "touchmove",
+      asyncEnabled: true,
+    });
+    currentY -= 1;
+  }
+  EventUtils.synthesizeTouch(browser, 10, currentY, {
+    type: "touchend",
+    asyncEnabled: true,
+  });
+  await promise;
 }
 
 add_task(async function setup_test_preference() {
@@ -92,11 +101,23 @@ add_task(async function testTouchScroll() {
       await SpecialPowers.spawn(browser, [false], checkMediaPlayingState);
 
       info(`- simulate touch scroll which should not activate document -`);
-      await synthesizeTouchScroll("#testAudio", browser);
+      await synthesizeTouchScroll(browser);
       await SpecialPowers.spawn(browser, [false], callMediaPlay);
 
-      info(`- simulate touch at a point which should activate document -`);
-      await BrowserTestUtils.synthesizeTouch("#testAudio", 0, 0, {}, browser);
+      await SpecialPowers.spawn(browser, [], () => {
+        content.document.addEventListener(
+          "touchmove",
+          e => {
+            e.preventDefault();
+          },
+          { once: true, passive: false }
+        );
+      });
+      info(
+        `- simulate touch actions without causing scroll which should activate document -`
+      );
+      //await EventUtils.synthesizeTouch(browser, 0, 0, { asyncEnabled: true });
+      await synthesizeTouchScroll(browser);
       await SpecialPowers.spawn(browser, [true], callMediaPlay);
     }
   );

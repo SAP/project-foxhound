@@ -3,6 +3,7 @@ tags = "devtools"
 subsuite = "devtools"
 support-files = [
   "doc_alert.svg",
+  "doc_anchor_names.html",
   "doc_at_scope.css",
   "doc_blob_stylesheet.html",
   "doc_copystyles.css",
@@ -22,7 +23,6 @@ support-files = [
   "!/devtools/client/inspector/test/head.js",
   "!/devtools/client/inspector/test/shared-head.js",
   "!/devtools/client/shared/test/shared-head.js",
-  "!/devtools/client/shared/test/telemetry-test-helpers.js",
   "!/devtools/client/shared/test/highlighter-test-actor.js",
 ]
 
@@ -70,6 +70,10 @@ support-files = [
 
 ["browser_rules_add-rule.js"]
 
+["browser_rules_anchor-names-autocomplete.js"]
+
+["browser_rules_at_appearance-base.js"]
+
 ["browser_rules_at_scope.js"]
 
 ["browser_rules_at_starting-style.js"]
@@ -83,6 +87,7 @@ support-files = [
 ["browser_rules_authored_color.js"]
 skip-if = [
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1781471
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && opt", # Bug 1781471
 ]
 
 ["browser_rules_authored_override.js"]
@@ -104,6 +109,8 @@ skip-if = [
 ["browser_rules_class_panel_state_preserved.js"]
 
 ["browser_rules_class_panel_toggle.js"]
+
+["browser_rules_color-preview.js"]
 
 ["browser_rules_colorUnit.js"]
 
@@ -191,6 +198,8 @@ fail-if = [
 ["browser_rules_content_02.js"]
 
 ["browser_rules_copy_styles.js"]
+
+["browser_rules_css_explainers.js"]
 
 ["browser_rules_cssom.js"]
 
@@ -336,6 +345,9 @@ skip-if = [
 ["browser_rules_variables-in-pseudo-element_02.js"]
 
 ["browser_rules_variables-jump-to-definition.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2034604
+]
 
 ["browser_rules_variables_01.js"]
 

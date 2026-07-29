@@ -1,4 +1,3 @@
-/* -*- Mode: C++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 2; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -38,8 +37,8 @@ class nsPrinterCUPS final : public nsPrinterBase {
 
   nsPrinterCUPS(const mozilla::CommonPaperInfoArray* aArray,
                 const nsCUPSShim& aShim, nsString aDisplayName,
-                cups_dest_t* aPrinter)
-      : nsPrinterBase(aArray),
+                cups_dest_t* aPrinter, bool aSortAfterLocal)
+      : nsPrinterBase(aArray, aSortAfterLocal),
         mShim(aShim),
         mDisplayName(std::move(aDisplayName)),
         mPrinterInfoMutex(CUPSPrinterInfo{aPrinter},

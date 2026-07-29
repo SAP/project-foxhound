@@ -184,8 +184,7 @@ target similar to writing a gtest. This target will automatically be
 usable with libFuzzer and AFLFuzz. We offer a :ref:`comprehensive manual <Fuzzing Interface>`
 that describes how to write and utilize your own target.
 
-A simple example here is the `SDP parser
-target <https://searchfox.org/mozilla-central/rev/efdf9bb55789ea782ae3a431bda6be74a87b041e/media/webrtc/signaling/fuzztest/sdp_parser_libfuzz.cpp#30>`__,
+A simple example here is the :searchfox:`SDP parser target <mozilla-central/rev/efdf9bb55789ea782ae3a431bda6be74a87b041e:media/webrtc/signaling/fuzztest/sdp_parser_libfuzz.cpp#30>`,
 which tests the SipccSdpParser in our codebase.
 
 Shell-based Fuzzing
@@ -338,7 +337,7 @@ it on. Then, a fuzzer can hit the optimization code much more
 frequently, increasing the chance to find issues. Some examples from
 Firefox and SpiderMonkey:
 
-- The `FuzzingFunctions <https://searchfox.org/mozilla-central/rev/efdf9bb55789ea782ae3a431bda6be74a87b041e/dom/webidl/FuzzingFunctions.webidl#15>`__
+- The :searchfox:`FuzzingFunctions <mozilla-central/rev/efdf9bb55789ea782ae3a431bda6be74a87b041e:dom/webidl/FuzzingFunctions.webidl#15>`
   interface in the browser allows fuzzing tools to perform GC/CC, tune various
   settings related to garbage collection or enable features like accessibility
   mode. Being able to force a garbage collection at a specific time helped
@@ -361,7 +360,7 @@ cryptographic signatures. Being able to turn off the validation of these
 features as part of a fuzzing switch is extremely helpful.
 
 An example for such a checksum can be found in the
-`FlacDemuxer <https://searchfox.org/mozilla-central/rev/efdf9bb55789ea782ae3a431bda6be74a87b041e/dom/media/flac/FlacDemuxer.cpp#494>`__.
+:searchfox:`FlacDemuxer <mozilla-central/rev/efdf9bb55789ea782ae3a431bda6be74a87b041e:dom/media/flac/FlacDemuxer.cpp#494>`.
 
 Test Samples
 ~~~~~~~~~~~~

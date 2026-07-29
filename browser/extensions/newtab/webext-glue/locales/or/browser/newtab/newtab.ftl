@@ -9,6 +9,13 @@ newtab-page-title = ନୂତନ ଟ୍ୟାବ
 newtab-settings-button =
     .title = ଆପଣଙ୍କର ନୂତନ ଟ୍ୟାବ ପୃଷ୍ଠାକୁ ଇଚ୍ଛାରୂପଣ କରନ୍ତୁ
 
+## Firefox Home content
+
+home-prefs-recent-activity-header-srd =
+    .label = ସାମ୍ପ୍ରତିକ ଗତିବିଧି
+home-prefs-recent-activity-select =
+    .aria-label = ସାମ୍ପ୍ରତିକ ଗତିବିଧି
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +23,7 @@ newtab-search-box-search-button =
     .title = ସନ୍ଧାନ
     .aria-label = ସନ୍ଧାନ
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = ଖୋଜା ଯନ୍ତ୍ର ଯୋଗ କରନ୍ତୁ
 newtab-topsites-edit-topsites-header = ସବୁଠାରୁ ଭଲ ସାଇଟଗୁଡ଼ିକୁ ସମ୍ପାଦନ କରନ୍ତୁ

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright 2015 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,9 +17,9 @@
 #include "wasm/WasmIonCompile.h"
 
 #include "mozilla/DebugOnly.h"
-#include "mozilla/MathAlgorithms.h"
 
 #include <algorithm>
+#include <bit>
 
 #include "jit/ABIArgGenerator.h"
 #include "jit/CodeGenerator.h"
@@ -43,6 +41,7 @@
 #include "wasm/WasmGenerator.h"
 #include "wasm/WasmOpIter.h"
 #include "wasm/WasmSignalHandlers.h"
+#include "wasm/WasmStacks.h"
 #include "wasm/WasmStubs.h"
 #include "wasm/WasmValidate.h"
 
@@ -50,7 +49,6 @@ using namespace js;
 using namespace js::jit;
 using namespace js::wasm;
 
-using mozilla::IsPowerOfTwo;
 using mozilla::Nothing;
 
 namespace {
@@ -560,6 +558,10 @@ class FunctionCompiler {
 
   MBasicBlock* getCurBlock() const { return curBlock_; }
   BytecodeOffset bytecodeOffset() const { return iter_.bytecodeOffset(); }
+  CallSiteDesc callSiteDesc(CallSiteKind kind) {
+    return CallSiteDesc(bytecodeOffset().offset(),
+                        rootCompiler_.inlinedCallerOffsetsIndex(), kind);
+  }
   TrapSiteDesc trapSiteDesc() {
     return TrapSiteDesc(wasm::BytecodeOffset(bytecodeOffset()),
                         rootCompiler_.inlinedCallerOffsetsIndex());
@@ -1125,6 +1127,15 @@ class FunctionCompiler {
     return ins;
   }
 
+  MDefinition* wrapI32(MDefinition* op) {
+    if (inDeadCode()) {
+      return nullptr;
+    }
+    auto* ins = MWrapInt64ToInt32::New(alloc(), op, /*bottomHalf=*/true);
+    curBlock_->add(ins);
+    return ins;
+  }
+
   MDefinition* convertI64ToFloatingPoint(MDefinition* op, MIRType type,
                                          bool isUnsigned) {
     if (inDeadCode()) {
@@ -1209,7 +1220,8 @@ class FunctionCompiler {
   }
 
   [[nodiscard]] bool brOnNull(uint32_t relativeDepth, const DefVector& values,
-                              const ResultType& type, MDefinition* condition) {
+                              const ResultType& type, MDefinition* condition,
+                              BranchHint branchHint) {
     if (inDeadCode()) {
       return true;
     }
@@ -1224,8 +1236,8 @@ class FunctionCompiler {
       return false;
     }
     MTest* test = MTest::New(alloc(), check, nullptr, fallthroughBlock);
-    if (!test ||
-        !addControlFlowPatch(test, relativeDepth, MTest::TrueBranchIndex)) {
+    if (!test || !addControlFlowPatch(test, relativeDepth,
+                                      MTest::TrueBranchIndex, branchHint)) {
       return false;
     }
 
@@ -1240,8 +1252,8 @@ class FunctionCompiler {
 
   [[nodiscard]] bool brOnNonNull(uint32_t relativeDepth,
                                  const DefVector& values,
-                                 const ResultType& type,
-                                 MDefinition* condition) {
+                                 const ResultType& type, MDefinition* condition,
+                                 BranchHint branchHint) {
     if (inDeadCode()) {
       return true;
     }
@@ -1256,8 +1268,8 @@ class FunctionCompiler {
       return false;
     }
     MTest* test = MTest::New(alloc(), check, nullptr, fallthroughBlock);
-    if (!test ||
-        !addControlFlowPatch(test, relativeDepth, MTest::TrueBranchIndex)) {
+    if (!test || !addControlFlowPatch(test, relativeDepth,
+                                      MTest::TrueBranchIndex, branchHint)) {
       return false;
     }
 
@@ -2998,7 +3010,7 @@ class FunctionCompiler {
       const TableDesc& table = codeMeta().tables[tableIndex];
       // ensured by asm.js validation
       MOZ_ASSERT(table.initialLength() <= UINT32_MAX);
-      MOZ_ASSERT(IsPowerOfTwo(table.initialLength()));
+      MOZ_ASSERT(std::has_single_bit(table.initialLength()));
 
       MDefinition* mask = constantI32(int32_t(table.initialLength() - 1));
       MBitAnd* maskedAddress =
@@ -3295,35 +3307,6 @@ class FunctionCompiler {
     return emitInstanceCallN(lineOrBytecode, callee, args, 6, result);
   }
 
-  [[nodiscard]] MDefinition* stackSwitch(MDefinition* suspender,
-                                         MDefinition* fn, MDefinition* data,
-                                         StackSwitchKind kind) {
-    MOZ_ASSERT(!inDeadCode());
-
-    MInstruction* ins;
-    switch (kind) {
-      case StackSwitchKind::SwitchToMain:
-        ins = MWasmStackSwitchToMain::New(alloc(), instancePointer_, suspender,
-                                          fn, data);
-        break;
-      case StackSwitchKind::SwitchToSuspendable:
-        ins = MWasmStackSwitchToSuspendable::New(alloc(), instancePointer_,
-                                                 suspender, fn, data);
-        break;
-      case StackSwitchKind::ContinueOnSuspendable:
-        ins = MWasmStackContinueOnSuspendable::New(alloc(), instancePointer_,
-                                                   suspender, data);
-        break;
-    }
-    if (!ins) {
-      return nullptr;
-    }
-
-    curBlock_->add(ins);
-
-    return ins;
-  }
-
   [[nodiscard]]
   bool callRef(const FuncType& funcType, MDefinition* ref,
                uint32_t lineOrBytecode, const DefVector& args,
@@ -3550,6 +3533,17 @@ class FunctionCompiler {
 
     auto* ins =
         MWasmTrap::New(alloc(), wasm::Trap::Unreachable, trapSiteDesc());
+    curBlock_->end(ins);
+    curBlock_ = nullptr;
+  }
+
+  void unimplementedTrap() {
+    if (inDeadCode()) {
+      return;
+    }
+
+    auto* ins =
+        MWasmTrap::New(alloc(), wasm::Trap::Unimplemented, trapSiteDesc());
     curBlock_->end(ins);
     curBlock_ = nullptr;
   }
@@ -4537,7 +4531,7 @@ class FunctionCompiler {
                                          uint32_t tagIndex, DefVector* values) {
     SharedTagType tagType = codeMeta().tags[tagIndex].type;
     const ValTypeVector& params = tagType->argTypes();
-    const TagOffsetVector& offsets = tagType->argOffsets();
+    const TagOffsetVector& offsets = tagType->exceptionArgOffsets();
 
     // Get the data pointer from the exception object
     auto* data = MWasmLoadField::New(
@@ -4705,12 +4699,12 @@ class FunctionCompiler {
 
     // Store the params into the data pointer
     SharedTagType tagType = codeMeta().tags[tagIndex].type;
-    for (size_t i = 0; i < tagType->argOffsets().length(); i++) {
+    for (size_t i = 0; i < tagType->exceptionArgOffsets().length(); i++) {
       if (!mirGen().ensureBallast()) {
         return false;
       }
       ValType type = tagType->argTypes()[i];
-      uint32_t offset = tagType->argOffsets()[i];
+      uint32_t offset = tagType->exceptionArgOffsets()[i];
 
       if (!type.isRefRepr()) {
         auto* store = MWasmStoreField::New(
@@ -5533,29 +5527,11 @@ class FunctionCompiler {
     curBlock_->end(test);
     curBlock_ = copyBlock;
 
-    MInstruction* dstData = MWasmLoadField::New(
-        alloc(), dstArrayObject, nullptr, WasmArrayObject::offsetOfData(),
-        mozilla::Nothing(), MIRType::WasmArrayData, MWideningOp::None,
-        AliasSet::Load(AliasSet::WasmArrayDataPointer));
-    if (!dstData) {
-      return false;
-    }
-    curBlock_->add(dstData);
-
-    MInstruction* srcData = MWasmLoadField::New(
-        alloc(), srcArrayObject, nullptr, WasmArrayObject::offsetOfData(),
-        mozilla::Nothing(), MIRType::WasmArrayData, MWideningOp::None,
-        AliasSet::Load(AliasSet::WasmArrayDataPointer));
-    if (!srcData) {
-      return false;
-    }
-    curBlock_->add(srcData);
-
     if (elemsAreRefTyped) {
       MOZ_RELEASE_ASSERT(elemSize == sizeof(void*));
 
-      if (!builtinCall6(SASigArrayRefsMove, lineOrBytecode, dstArrayObject,
-                        dstData, dstArrayIndex, srcData, srcArrayIndex,
+      if (!builtinCall5(SASigArrayRefsMove, lineOrBytecode, dstArrayObject,
+                        dstArrayIndex, srcArrayObject, srcArrayIndex,
                         numElements, nullptr)) {
         return false;
       }
@@ -5565,9 +5541,9 @@ class FunctionCompiler {
         return false;
       }
 
-      if (!builtinCall6(SASigArrayMemMove, lineOrBytecode, dstData,
-                        dstArrayIndex, srcData, srcArrayIndex, elemSizeDef,
-                        numElements, nullptr)) {
+      if (!builtinCall6(SASigArrayMemMove, lineOrBytecode, dstArrayObject,
+                        dstArrayIndex, srcArrayObject, srcArrayIndex,
+                        elemSizeDef, numElements, nullptr)) {
         return false;
       }
     }
@@ -5618,37 +5594,6 @@ class FunctionCompiler {
 
   /*********************************************** WasmGC: other helpers ***/
 
-  // Generate MIR that causes a trap of kind `trapKind` if `arg` is zero.
-  // Currently `arg` may only be a MIRType::Int32, but that requirement could
-  // be relaxed if needed in future.
-  [[nodiscard]] bool trapIfZero(wasm::Trap trapKind, MDefinition* arg) {
-    MOZ_ASSERT(arg->type() == MIRType::Int32);
-
-    MBasicBlock* trapBlock = nullptr;
-    if (!newBlock(curBlock_, &trapBlock)) {
-      return false;
-    }
-
-    auto* trap = MWasmTrap::New(alloc(), trapKind, trapSiteDesc());
-    if (!trap) {
-      return false;
-    }
-    trapBlock->end(trap);
-
-    MBasicBlock* joinBlock = nullptr;
-    if (!newBlock(curBlock_, &joinBlock)) {
-      return false;
-    }
-
-    auto* test = MTest::New(alloc(), arg, joinBlock, trapBlock);
-    if (!test) {
-      return false;
-    }
-    curBlock_->end(test);
-    curBlock_ = joinBlock;
-    return true;
-  }
-
   // Generate MIR that attempts to cast `ref` to `castToTypeDef`.  If the
   // cast fails, we trap.  If it succeeds, then `ref` can be assumed to
   // have a type that is a subtype of (or the same as) `castToTypeDef` after
@@ -5698,7 +5643,8 @@ class FunctionCompiler {
   [[nodiscard]] bool brOnCastCommon(bool onSuccess, uint32_t labelRelativeDepth,
                                     RefType sourceType, RefType destType,
                                     const ResultType& labelType,
-                                    const DefVector& values) {
+                                    const DefVector& values,
+                                    BranchHint branchHint) {
     if (inDeadCode()) {
       return true;
     }
@@ -5729,13 +5675,13 @@ class FunctionCompiler {
     if (onSuccess) {
       test = MTest::New(alloc(), success, nullptr, fallthroughBlock);
       if (!test || !addControlFlowPatch(test, labelRelativeDepth,
-                                        MTest::TrueBranchIndex)) {
+                                        MTest::TrueBranchIndex, branchHint)) {
         return false;
       }
     } else {
       test = MTest::New(alloc(), success, fallthroughBlock, nullptr);
       if (!test || !addControlFlowPatch(test, labelRelativeDepth,
-                                        MTest::FalseBranchIndex)) {
+                                        MTest::FalseBranchIndex, branchHint)) {
         return false;
       }
     }
@@ -5940,10 +5886,23 @@ class FunctionCompiler {
                       const DefVector& args, DefVector* results);
   bool emitCall(bool asmJSFuncDef);
   bool emitCallIndirect(bool oldStyle);
-  bool emitStackSwitch();
   bool emitReturnCall();
   bool emitReturnCallIndirect();
   bool emitReturnCallRef();
+#ifdef ENABLE_WASM_JSPI
+  bool emitContNew();
+  bool emitContBind();
+  bool emitStoreSuspendParams(MDefinition* paramsArea,
+                              const ValTypeVector& suspendTagParams,
+                              const DefVector& suspendParams,
+                              MDefinition* suspendedCont);
+  bool emitSuspend();
+  bool emitResume();
+  bool emitResumeThrow();
+  bool emitResumeThrowRef();
+  bool emitSwitch();
+  bool emitGuardSuspending();
+#endif
   bool emitGetLocal();
   bool emitSetLocal();
   bool emitTeeLocal();
@@ -5963,6 +5922,7 @@ class FunctionCompiler {
                     bool isSaturating);
   bool emitSignExtend(uint32_t srcSize, uint32_t targetSize);
   bool emitExtendI32(bool isUnsigned);
+  bool emitWrapI32();
   bool emitConvertI64ToFloatingPoint(ValType resultType, MIRType mirType,
                                      bool isUnsigned);
   bool emitReinterpret(ValType resultType, ValType operandType,
@@ -6024,6 +5984,8 @@ class FunctionCompiler {
   bool emitRefFunc();
   bool emitRefNull();
   bool emitRefIsNull();
+  bool emitI64AddSub128(bool isAdd);
+  bool emitI64MulWide(bool isSigned);
   bool emitConstSimd128();
   bool emitBinarySimd128(bool commutative, SimdOp op);
   bool emitTernarySimd128(wasm::SimdOp op);
@@ -6663,27 +6625,6 @@ bool FunctionCompiler::emitCallIndirect(bool oldStyle) {
   return true;
 }
 
-#ifdef ENABLE_WASM_JSPI
-bool FunctionCompiler::emitStackSwitch() {
-  StackSwitchKind kind;
-  MDefinition* suspender;
-  MDefinition* fn;
-  MDefinition* data;
-  if (!iter().readStackSwitch(&kind, &suspender, &fn, &data)) {
-    return false;
-  }
-  MDefinition* result = stackSwitch(suspender, fn, data, kind);
-  if (!result) {
-    return false;
-  }
-
-  if (kind == StackSwitchKind::SwitchToMain) {
-    iter().setResult(result);
-  }
-  return true;
-}
-#endif
-
 bool FunctionCompiler::emitReturnCall() {
   uint32_t lineOrBytecode = readCallSiteLineOrBytecode();
 
@@ -6972,6 +6913,16 @@ bool FunctionCompiler::emitExtendI32(bool isUnsigned) {
   }
 
   iter().setResult(extendI32(input, isUnsigned));
+  return true;
+}
+
+bool FunctionCompiler::emitWrapI32() {
+  MDefinition* input;
+  if (!iter().readConversion(ValType::I64, ValType::I32, &input)) {
+    return false;
+  }
+
+  iter().setResult(wrapI32(input));
   return true;
 }
 
@@ -8287,6 +8238,17 @@ bool FunctionCompiler::emitRefIsNull() {
     return true;
   }
 
+  // Some types are not castable (right now just continuations). The casting
+  // machinery cannot handle them. So emit a direct null-check for now.
+  if (!sourceType.isCastable()) {
+    MDefinition* isNull = compareIsNull(input, JSOp::Eq);
+    if (!isNull) {
+      return false;
+    }
+    iter().setResult(isNull);
+    return true;
+  }
+
   // ref.is_null is implemented as a ref.test against the bottom type of the
   // input ref's hierarchy. This will codegen to a simple null comparison, but
   // allows this op to participate in other optimizations surrounding ref.test
@@ -8299,6 +8261,182 @@ bool FunctionCompiler::emitRefIsNull() {
   iter().setResult(test);
   return true;
 }
+
+//////////////////////////////////////////////////////////////////////////////
+//
+// Wide Arithmetic support
+
+bool FunctionCompiler::emitI64AddSub128(bool isAdd) {
+  MDefinition* xLo;
+  MDefinition* xHi;
+  MDefinition* yLo;
+  MDefinition* yHi;
+  if (!iter().readBinaryI128(&xLo, &xHi, &yLo, &yHi)) {
+    return false;
+  }
+  if (inDeadCode()) {
+    return true;
+  }
+
+  // Compute zHi:zLo = xHi:xLo +/- yHi:yLo.
+  MInstruction* zHi;
+  MInstruction* zLo;
+
+#ifdef JS_64BIT
+  // 64 bit implementation.  Produce inline code.
+  if (isAdd) {
+    zLo = MAdd::NewWasm(alloc(), xLo, yLo, MIRType::Int64);
+  } else {
+    zLo = MSub::NewWasm(alloc(), xLo, yLo, MIRType::Int64,
+                        /*mustPreserveNaN=*/false);
+  }
+  if (!zLo) {
+    return false;
+  }
+  curBlock_->add(zLo);
+
+  zHi = MWasmAddSubI128HI64::New(alloc(), xLo, xHi, yLo, yHi, isAdd);
+  if (!zHi) {
+    return false;
+  }
+  curBlock_->add(zHi);
+
+#else
+  // 32 bit implementation.  Call a helper function.  The arguments and return
+  // value are passed in Instance::baselineScratchWords_[0..7]; see
+  // Instance::addSubI128 for details.
+  MDefinition* storeSequence[4] = {xLo, xHi, yLo, yHi};
+  for (int i = 0; i < 4; i++) {
+    auto* store = MWasmStoreInstanceScratch2xI32::New(
+        alloc(),
+        /*byteOffset=*/i * 8, storeSequence[i], instancePointer_);
+    if (!store) {
+      return false;
+    }
+    curBlock_->add(store);
+  }
+
+  MDefinition* mIsAdd = constantI32(isAdd ? 1 : 0);
+  if (!mIsAdd ||
+      !emitInstanceCall1(readBytecodeOffset(), SASigAddSubI128, mIsAdd)) {
+    return false;
+  }
+
+  zLo = MWasmLoadInstanceScratch2xI32::New(alloc(), /*byteOffset=*/0,
+                                           instancePointer_);
+  if (!zLo) {
+    return false;
+  }
+  curBlock_->add(zLo);
+
+  zHi = MWasmLoadInstanceScratch2xI32::New(alloc(), /*byteOffset=*/8,
+                                           instancePointer_);
+  if (!zHi) {
+    return false;
+  }
+  curBlock_->add(zHi);
+#endif  // JS_64BIT
+
+  DefVector results;
+  if (!results.reserve(2)) {
+    return false;
+  }
+  results.infallibleAppend(zLo);
+  results.infallibleAppend(zHi);
+  iter().setResults(results.length(), results);
+
+  return true;
+}
+
+bool FunctionCompiler::emitI64MulWide(bool isSigned) {
+  MDefinition* x;
+  MDefinition* y;
+  if (!iter().readBinaryI64Wide(&x, &y)) {
+    return false;
+  }
+  if (inDeadCode()) {
+    return true;
+  }
+
+  // Compute zHi:zLo = x *widen y
+  MInstruction* zLo;
+  MInstruction* zHi;
+
+#ifdef JS_64BIT
+  // 64 bit implementation.  Produce inline code.
+
+  // We can compute the low and high halves in either order.  However, the
+  // RiscV specification advises computing the high half first, in the hope
+  // that microarchitectures can merge it with the immediately following low
+  // half multiply, hence avoiding the duplicate multiply.
+  zHi = MWasmMulI64WideHI64::New(alloc(), x, y, isSigned);
+  if (!zHi) {
+    return false;
+  }
+  curBlock_->add(zHi);
+
+  zLo = MMul::NewWasm(alloc(), x, y, MIRType::Int64,
+                      /*mode=*/MMul::Normal, /*mustPreserveNaN=*/false);
+  if (!zLo) {
+    return false;
+  }
+  curBlock_->add(zLo);
+
+#else
+  // 32 bit implementation.  Call a helper function.  The arguments and return
+  // value are passed in Instance::baselineScratchWords_[0..4]; see
+  // Instance::mulI64Wide for details.
+  auto* store = MWasmStoreInstanceScratch2xI32::New(alloc(),
+                                                    /*byteOffset=*/0, x,
+                                                    instancePointer_);
+  if (!store) {
+    return false;
+  }
+  curBlock_->add(store);
+
+  store = MWasmStoreInstanceScratch2xI32::New(alloc(),
+                                              /*byteOffset=*/8, y,
+                                              instancePointer_);
+  if (!store) {
+    return false;
+  }
+  curBlock_->add(store);
+
+  MDefinition* mIsSigned = constantI32(isSigned ? 1 : 0);
+  if (!mIsSigned ||
+      !emitInstanceCall1(readBytecodeOffset(), SASigMulI64Wide, mIsSigned)) {
+    return false;
+  }
+
+  zLo = MWasmLoadInstanceScratch2xI32::New(alloc(), /*byteOffset=*/0,
+                                           instancePointer_);
+  if (!zLo) {
+    return false;
+  }
+  curBlock_->add(zLo);
+
+  zHi = MWasmLoadInstanceScratch2xI32::New(alloc(), /*byteOffset=*/8,
+                                           instancePointer_);
+  if (!zHi) {
+    return false;
+  }
+  curBlock_->add(zHi);
+#endif
+
+  DefVector results;
+  if (!results.reserve(2)) {
+    return false;
+  }
+  results.infallibleAppend(zLo);
+  results.infallibleAppend(zHi);
+  iter().setResults(results.length(), results);
+
+  return true;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+//
+// SIMD support
 
 #ifdef ENABLE_WASM_SIMD
 bool FunctionCompiler::emitConstSimd128() {
@@ -8510,11 +8648,18 @@ bool FunctionCompiler::emitBrOnNull() {
   ResultType type;
   DefVector values;
   MDefinition* condition;
+
+  BranchHint branchHint =
+      iter().getBranchHint(funcIndex(), relativeBytecodeOffset());
+  if (branchHint == BranchHint::Invalid) {
+    branchHint = BranchHint::Unlikely;
+  }
+
   if (!iter().readBrOnNull(&relativeDepth, &type, &values, &condition)) {
     return false;
   }
 
-  return brOnNull(relativeDepth, values, type, condition);
+  return brOnNull(relativeDepth, values, type, condition, branchHint);
 }
 
 bool FunctionCompiler::emitBrOnNonNull() {
@@ -8522,11 +8667,18 @@ bool FunctionCompiler::emitBrOnNonNull() {
   ResultType type;
   DefVector values;
   MDefinition* condition;
+
+  BranchHint branchHint =
+      iter().getBranchHint(funcIndex(), relativeBytecodeOffset());
+  if (branchHint == BranchHint::Invalid) {
+    branchHint = BranchHint::Likely;
+  }
+
   if (!iter().readBrOnNonNull(&relativeDepth, &type, &values, &condition)) {
     return false;
   }
 
-  return brOnNonNull(relativeDepth, values, type, condition);
+  return brOnNonNull(relativeDepth, values, type, condition, branchHint);
 }
 
 // Speculatively inline a call_refs that are likely to target the expected
@@ -9341,13 +9493,20 @@ bool FunctionCompiler::emitBrOnCast(bool onSuccess) {
   RefType destType;
   ResultType labelType;
   DefVector values;
+
+  BranchHint branchHint =
+      iter().getBranchHint(funcIndex(), relativeBytecodeOffset());
+  if (branchHint == BranchHint::Invalid) {
+    branchHint = onSuccess ? BranchHint::Likely : BranchHint::Unlikely;
+  }
+
   if (!iter().readBrOnCast(onSuccess, &labelRelativeDepth, &sourceType,
                            &destType, &labelType, &values)) {
     return false;
   }
 
   return brOnCastCommon(onSuccess, labelRelativeDepth, sourceType, destType,
-                        labelType, values);
+                        labelType, values, branchHint);
 }
 
 bool FunctionCompiler::emitAnyConvertExtern() {
@@ -9398,6 +9557,443 @@ bool FunctionCompiler::emitCallBuiltinModuleFunc() {
 
   return callBuiltinModuleFunc(*builtinModuleFunc, params);
 }
+
+#ifdef ENABLE_WASM_JSPI
+bool FunctionCompiler::emitContNew() {
+  uint32_t typeIndex;
+  MDefinition* func;
+  if (!iter().readContNew(&typeIndex, &func)) {
+    return false;
+  }
+
+  const TypeDef& typeDef = codeMeta().types->type(typeIndex);
+  const ContType& contType = typeDef.contType();
+
+  // TODO: Temporary restriction that cont type cannot have params or results.
+  if (!contType.funcType().args().empty() ||
+      !contType.funcType().results().empty()) {
+    unimplementedTrap();
+    return true;
+  }
+
+  if (inDeadCode()) {
+    return true;
+  }
+
+  MDefinition* result = nullptr;
+  if (!emitInstanceCall1(readBytecodeOffset(), SASigContNew, func, &result)) {
+    return false;
+  }
+  iter().setResult(result);
+
+  return true;
+}
+
+bool FunctionCompiler::emitContBind() {
+  uint32_t inputContTypeIndex;
+  uint32_t outputContTypeIndex;
+  DefVector boundArgs;
+  MDefinition* cont;
+  if (!iter().readContBind(&inputContTypeIndex, &outputContTypeIndex,
+                           &boundArgs, &cont)) {
+    return false;
+  }
+
+  if (inDeadCode()) {
+    return true;
+  }
+
+  // TODO: Not yet implemented
+  unimplementedTrap();
+  return true;
+}
+
+bool FunctionCompiler::emitStoreSuspendParams(
+    MDefinition* paramsArea, const ValTypeVector& suspendTagParams,
+    const DefVector& suspendParams, MDefinition* suspendedCont) {
+  // Last param is the cont, it goes first in stack results.
+  size_t paramsAreaOffset = 0;
+  MWasmStackResultArea::StackResult loc(paramsAreaOffset,
+                                        js::jit::MIRType::WasmAnyRef);
+  MWasmStoreStackResult* storeCont = MWasmStoreStackResult::New(
+      alloc(), paramsArea, paramsAreaOffset, suspendedCont);
+  if (!storeCont) {
+    return false;
+  }
+  curBlock_->add(storeCont);
+  paramsAreaOffset = loc.endOffset();
+
+  // The rest are suspendTagParams, again in reverse order.
+  for (uint32_t i = 0; i < suspendTagParams.length(); i++) {
+    if (!mirGen().ensureBallast()) {
+      return false;
+    }
+    size_t reverseIndex = suspendTagParams.length() - i - 1;
+
+    ValType handlerParam = suspendTagParams[reverseIndex];
+    MWasmStackResultArea::StackResult loc(paramsAreaOffset,
+                                          handlerParam.toMIRType());
+
+    MDefinition* param = suspendParams[reverseIndex];
+    MWasmStoreStackResult* store = MWasmStoreStackResult::New(
+        alloc(), paramsArea, paramsAreaOffset, param);
+    if (!store) {
+      return false;
+    }
+    curBlock_->add(store);
+
+    paramsAreaOffset = loc.endOffset();
+  }
+  return true;
+}
+
+bool FunctionCompiler::emitSuspend() {
+  uint32_t tagIndex;
+  DefVector suspendParams;
+  if (!iter().readSuspend(&tagIndex, &suspendParams)) {
+    return false;
+  }
+
+  if (inDeadCode()) {
+    return true;
+  }
+
+  const TagDesc& tagDesc = codeMeta().tags[tagIndex];
+  const TagType& tagType = *tagDesc.type;
+
+  // TODO: Temporary restriction that suspend tags cannot have results.
+  if (!tagType.resultTypes().empty()) {
+    unimplementedTrap();
+    return true;
+  }
+
+  // TODO: Temporary restriction that we can't be in a try block yet. A
+  // resume_throw will be able to trigger an exception that we need to handle.
+  if (inTryCode()) {
+    unimplementedTrap();
+    return true;
+  }
+
+  // Load the tag we're going to search for.
+  MDefinition* tag = loadTag(tagIndex);
+  if (!tag) {
+    return false;
+  }
+
+  // Search for the handler for this tag. When this suspend is used for JS-PI
+  // this find handler will be infallible because we emit a different find
+  // handler in emitGuardSuspending (which throws an exception instead of a
+  // trap).
+  MWasmFindHandler* handler =
+      MWasmFindHandler::New(alloc(), instancePointer_, tag,
+                            Trap::NullPointerDereference, trapSiteDesc());
+  if (!handler) {
+    return false;
+  }
+  curBlock_->add(handler);
+
+  // Load the paramsArea from the handler.
+  MWasmLoadInstance* paramsArea =
+      MWasmLoadInstance::New(alloc(), handler,
+                             offsetof(wasm::Handler, target) +
+                                 offsetof(wasm::SwitchTarget, paramsArea),
+                             MIRType::Pointer, AliasSet::None());
+  if (!paramsArea) {
+    return false;
+  }
+  curBlock_->add(paramsArea);
+
+  // Allocate a new continuation that will hold our stack when we suspend.
+  MDefinition* suspendedCont = nullptr;
+  if (!emitInstanceCall0(readBytecodeOffset(), SASigContNewEmpty,
+                         &suspendedCont)) {
+    return false;
+  }
+
+  // Store all the params into the handler params area.
+  if (!emitStoreSuspendParams(paramsArea, tagType.argTypes(), suspendParams,
+                              suspendedCont)) {
+    return false;
+  }
+
+  // Emit the suspend instruction.
+  MWasmSuspend* suspend =
+      MWasmSuspend::New(alloc(), instancePointer_, suspendedCont, handler,
+                        callSiteDesc(CallSiteKind::StackSwitch));
+  if (!suspend) {
+    return false;
+  }
+  curBlock_->add(suspend);
+
+  return true;
+}
+
+bool FunctionCompiler::emitResume() {
+  uint32_t typeIndex;
+  MDefinition* cont;
+  DefVector args;
+  HandlerExprVector handlers;
+  if (!iter().readResume(&typeIndex, &handlers, &args, &cont)) {
+    return false;
+  }
+
+  if (inDeadCode()) {
+    return true;
+  }
+
+  // TODO: Temporary restriction that cont type cannot have params or results.
+  const TypeDef& typeDef = codeMeta().types->type(typeIndex);
+  const ContType& contType = typeDef.contType();
+  if (!contType.funcType().args().empty() ||
+      !contType.funcType().results().empty()) {
+    unimplementedTrap();
+    return true;
+  }
+
+  // TODO: Temporary restriction that suspend tags cannot have params or
+  // results.
+  for (const HandlerExpr& handler : handlers) {
+    const TagDesc& tagDesc = codeMeta().tags[handler.tagIndex()];
+    const TagType& tagType = *tagDesc.type;
+
+    if (handler.isSwitch() || !tagType.resultTypes().empty()) {
+      unimplementedTrap();
+      return true;
+    }
+  }
+
+  // Start with a resume barrier which will mark the stack if it hasn't yet and
+  // we're in an incremental GC.
+  MWasmResumeBarrier* barrier =
+      MWasmResumeBarrier::New(alloc(), instancePointer_, cont);
+  if (!barrier) {
+    return false;
+  }
+  curBlock_->add(barrier);
+
+  MBasicBlock* fallthroughBlock = nullptr;
+  MBasicBlock* prePadBlock = nullptr;
+
+  ControlInstructionVector* tryLandingPadPatches = nullptr;
+  mozilla::Maybe<uint32_t> tryNote;
+  if (inTryBlock(&tryLandingPadPatches)) {
+    tryNote.emplace(0);
+    if (!rootCompiler_.addTryNote(tryNote.ptr())) {
+      return false;
+    }
+    if (!newBlock(curBlock_, &prePadBlock)) {
+      return false;
+    }
+  }
+
+  if (!newBlock(curBlock_, &fallthroughBlock)) {
+    return false;
+  }
+
+  size_t numResultsAreaItems = 0;
+  for (size_t i = 0; i < handlers.length(); i++) {
+    const HandlerExpr& handler = handlers[i];
+    MOZ_ASSERT(!handler.isSwitch());
+    numResultsAreaItems +=
+        1 + codeMeta().getTagType(handler.tagIndex()).argTypes().length();
+  }
+
+  MWasmStackResultArea* handlersResultArea = nullptr;
+  if (numResultsAreaItems) {
+    handlersResultArea = MWasmStackResultArea::New(alloc());
+    if (!handlersResultArea ||
+        !handlersResultArea->init(alloc(), numResultsAreaItems)) {
+      return false;
+    }
+    curBlock_->add(handlersResultArea);
+  }
+
+  MWasmResume* resume =
+      MWasmResume::New(alloc(), callSiteDesc(CallSiteKind::StackSwitch),
+                       tryNote, instancePointer_, cont, handlersResultArea);
+  if (!resume ||
+      !resume->init(fallthroughBlock, prePadBlock, handlers.length())) {
+    return false;
+  }
+  curBlock_->end(resume);
+  MBasicBlock* resumeBlock = curBlock_;
+  curBlock_ = nullptr;
+
+  // emitHandlerLandingPads
+  size_t currentResultsAreaIndex = 0;
+  size_t currentResultsAreaOffset = 0;
+  for (size_t i = 0; i < handlers.length(); i++) {
+    MOZ_ASSERT(!curBlock_);
+
+    const HandlerExpr& handler = handlers[i];
+    MOZ_ASSERT(!handler.isSwitch());
+
+    uint32_t baseResultsAreaByteOffset = currentResultsAreaOffset;
+    const TagDesc& tagDesc = codeMeta().tags[handler.tagIndex()];
+    const TagType& tagType = *tagDesc.type;
+    ResultType suspendTagParams = tagType.argResultType();
+
+    // Last param is the cont, it goes first in stack results.
+    MWasmStackResultArea::StackResult loc(currentResultsAreaOffset,
+                                          js::jit::MIRType::WasmAnyRef);
+    handlersResultArea->initResult(currentResultsAreaIndex, loc);
+    currentResultsAreaIndex++;
+    currentResultsAreaOffset = loc.endOffset();
+
+    // The rest are suspendTagParams, again in reverse order.
+    for (uint32_t i = 0; i < suspendTagParams.length(); i++) {
+      size_t reverseIndex = suspendTagParams.length() - i - 1;
+      ValType handlerParam = suspendTagParams[reverseIndex];
+
+      MWasmStackResultArea::StackResult loc(currentResultsAreaOffset,
+                                            handlerParam.toMIRType());
+      handlersResultArea->initResult(currentResultsAreaIndex, loc);
+      currentResultsAreaIndex++;
+      currentResultsAreaOffset = loc.endOffset();
+    }
+
+    MBasicBlock* target;
+    if (!newBlock(resumeBlock, &target)) {
+      return false;
+    }
+    curBlock_ = target;
+
+    if (!resume->initHandler(
+            i, codeMeta().offsetOfTagInstanceData(handler.tagIndex()),
+            baseResultsAreaByteOffset, target)) {
+      return false;
+    }
+
+    DefVector resultDefs;
+    size_t suspendLabelParams = suspendTagParams.length() + 1;
+    for (uint32_t i = 0; i < suspendLabelParams; i++) {
+      if (!mirGen().ensureBallast()) {
+        return false;
+      }
+      size_t stackResultIndex = currentResultsAreaIndex - i - 1;
+
+      MWasmStackResult* stackResult =
+          MWasmStackResult::New(alloc(), handlersResultArea, stackResultIndex);
+      if (!stackResult || !resultDefs.append(stackResult)) {
+        return false;
+      }
+      curBlock_->add(stackResult);
+    }
+
+    if (!br(handler.labelDepth(), resultDefs)) {
+      return false;
+    }
+
+    curBlock_ = nullptr;
+  }
+
+  MOZ_ASSERT(!curBlock_);
+  if (tryNote.isSome()) {
+    // Switch to the prePadBlock
+    curBlock_ = prePadBlock;
+
+    // Mark this as the landing pad for the call
+    curBlock_->add(MWasmCallLandingPrePad::New(alloc(), resumeBlock, *tryNote));
+
+    // End with a pending jump to the landing pad
+    if (!endWithPadPatch(tryLandingPadPatches)) {
+      return false;
+    }
+  }
+
+  // Compilation continues in the fallthroughBlock.
+  curBlock_ = fallthroughBlock;
+  return true;
+}
+
+bool FunctionCompiler::emitResumeThrow() {
+  uint32_t typeIndex;
+  uint32_t tagIndex;
+  MDefinition* cont;
+  DefVector args;
+  HandlerExprVector handlers;
+  if (!iter().readResumeThrow(&typeIndex, &tagIndex, &handlers, &args, &cont)) {
+    return false;
+  }
+
+  if (inDeadCode()) {
+    return true;
+  }
+
+  // TODO: Not yet implemented.
+  unimplementedTrap();
+  return true;
+}
+
+bool FunctionCompiler::emitResumeThrowRef() {
+  uint32_t contTypeIndex;
+  MDefinition* cont;
+  MDefinition* exception;
+  HandlerExprVector handlers;
+  if (!iter().readResumeThrowRef(&contTypeIndex, &handlers, &exception,
+                                 &cont)) {
+    return false;
+  }
+
+  if (inDeadCode()) {
+    return true;
+  }
+
+  // TODO: Not yet implemented.
+  unimplementedTrap();
+  return true;
+}
+
+bool FunctionCompiler::emitSwitch() {
+  uint32_t contTypeIndex;
+  uint32_t tagIndex;
+  MDefinition* cont;
+  DefVector args;
+  HandlerExprVector handlers;
+  if (!iter().readSwitch(&contTypeIndex, &tagIndex, &args, &cont)) {
+    return false;
+  }
+
+  if (inDeadCode()) {
+    return true;
+  }
+
+  // TODO: Not yet implemented.
+  unimplementedTrap();
+  return true;
+}
+
+bool FunctionCompiler::emitGuardSuspending() {
+  uint32_t tagIndex;
+  if (!iter().readGuardSuspending(&tagIndex)) {
+    return false;
+  }
+
+  if (inDeadCode()) {
+    return true;
+  }
+
+  MDefinition* tag = loadTag(tagIndex);
+  if (!tag) {
+    return false;
+  }
+
+  // This will throw an exception (not a trap) which would require us to add
+  // branches to catch blocks. However this is only used in self-hosted wasm
+  // code for JS-PI where we ensure there is no try blocks.
+  MOZ_ASSERT(!inTryCode());
+
+  MWasmFindHandler* handler = MWasmFindHandler::New(
+      alloc(), instancePointer_, tag, Trap::ThrowSuspendError, trapSiteDesc());
+  if (!handler) {
+    return false;
+  }
+  curBlock_->add(handler);
+
+  return true;
+}
+
+#endif  // ENABLE_WASM_JSPI
 
 bool FunctionCompiler::emitBodyExprs() {
   if (!iter().startFunction(funcIndex())) {
@@ -9768,7 +10364,7 @@ bool FunctionCompiler::emitBodyExprs() {
 
       // Conversions
       case uint16_t(Op::I32WrapI64):
-        CHECK(emitConversion<MWrapInt64ToInt32>(ValType::I64, ValType::I32));
+        CHECK(emitWrapI32());
       case uint16_t(Op::I32TruncF32S):
       case uint16_t(Op::I32TruncF32U):
         CHECK(emitTruncate(ValType::F32, ValType::I32,
@@ -9865,6 +10461,51 @@ bool FunctionCompiler::emitBodyExprs() {
       case uint16_t(Op::ReturnCallRef): {
         CHECK(emitReturnCallRef());
       }
+
+#ifdef ENABLE_WASM_JSPI
+      case uint16_t(Op::ContNew): {
+        if (!codeMeta().stackSwitchingEnabled()) {
+          return iter().unrecognizedOpcode(&op);
+        }
+        CHECK(emitContNew());
+      }
+      case uint16_t(Op::ContBind): {
+        if (!codeMeta().stackSwitchingEnabled()) {
+          return iter().unrecognizedOpcode(&op);
+        }
+        CHECK(emitContBind());
+      }
+      case uint16_t(Op::Suspend): {
+        if (!codeMeta().stackSwitchingEnabled()) {
+          return iter().unrecognizedOpcode(&op);
+        }
+        CHECK(emitSuspend());
+      }
+      case uint16_t(Op::Resume): {
+        if (!codeMeta().stackSwitchingEnabled()) {
+          return iter().unrecognizedOpcode(&op);
+        }
+        CHECK(emitResume());
+      }
+      case uint16_t(Op::ResumeThrow): {
+        if (!codeMeta().stackSwitchingEnabled()) {
+          return iter().unrecognizedOpcode(&op);
+        }
+        CHECK(emitResumeThrow());
+      }
+      case uint16_t(Op::ResumeThrowRef): {
+        if (!codeMeta().stackSwitchingEnabled()) {
+          return iter().unrecognizedOpcode(&op);
+        }
+        CHECK(emitResumeThrowRef());
+      }
+      case uint16_t(Op::Switch): {
+        if (!codeMeta().stackSwitchingEnabled()) {
+          return iter().unrecognizedOpcode(&op);
+        }
+        CHECK(emitSwitch());
+      }
+#endif  // ENABLE_WASM_JSPI
 
       // Gc operations
       case uint16_t(Op::GcPrefix): {
@@ -10327,6 +10968,28 @@ bool FunctionCompiler::emitBodyExprs() {
             CHECK(emitTableGrow());
           case uint32_t(MiscOp::TableSize):
             CHECK(emitTableSize());
+
+          case uint32_t(MiscOp::I64Add128):
+            if (!codeMeta().wideArithmeticEnabled()) {
+              return iter().unrecognizedOpcode(&op);
+            }
+            CHECK(emitI64AddSub128(/*isAdd=*/true));
+          case uint32_t(MiscOp::I64Sub128):
+            if (!codeMeta().wideArithmeticEnabled()) {
+              return iter().unrecognizedOpcode(&op);
+            }
+            CHECK(emitI64AddSub128(/*isAdd=*/false));
+          case uint32_t(MiscOp::I64MulWideS):
+            if (!codeMeta().wideArithmeticEnabled()) {
+              return iter().unrecognizedOpcode(&op);
+            }
+            CHECK(emitI64MulWide(/*isSigned=*/true));
+          case uint32_t(MiscOp::I64MulWideU):
+            if (!codeMeta().wideArithmeticEnabled()) {
+              return iter().unrecognizedOpcode(&op);
+            }
+            CHECK(emitI64MulWide(/*isSigned=*/false));
+
           default:
             return iter().unrecognizedOpcode(&op);
         }
@@ -10495,25 +11158,18 @@ bool FunctionCompiler::emitBodyExprs() {
 
       // asm.js-specific operators
       case uint16_t(Op::MozPrefix): {
-        if (op.b1 == uint32_t(MozOp::CallBuiltinModuleFunc)) {
+        // Perform a single feature check based on whether the opcode is asm.js
+        // or for builtin modules.
+        if (op.b1 <= uint32_t(MozOp::LastAsmJSOp)) {
+          if (!codeMeta().isAsmJS()) {
+            return iter().unrecognizedOpcode(&op);
+          }
+        } else {
           if (!codeMeta().isBuiltinModule()) {
             return iter().unrecognizedOpcode(&op);
           }
-          CHECK(emitCallBuiltinModuleFunc());
         }
-#ifdef ENABLE_WASM_JSPI
-        if (op.b1 == uint32_t(MozOp::StackSwitch)) {
-          if (!codeMeta().isBuiltinModule() ||
-              !codeMeta().jsPromiseIntegrationEnabled()) {
-            return iter().unrecognizedOpcode(&op);
-          }
-          CHECK(emitStackSwitch());
-        }
-#endif
 
-        if (!codeMeta().isAsmJS()) {
-          return iter().unrecognizedOpcode(&op);
-        }
         switch (op.b1) {
           case uint32_t(MozOp::TeeGlobal):
             CHECK(emitTeeGlobal());
@@ -10582,6 +11238,12 @@ bool FunctionCompiler::emitBodyExprs() {
             CHECK(emitCall(/* asmJSFuncDef = */ true));
           case uint32_t(MozOp::OldCallIndirect):
             CHECK(emitCallIndirect(/* oldStyle = */ true));
+          case uint32_t(MozOp::CallBuiltinModuleFunc):
+            CHECK(emitCallBuiltinModuleFunc());
+#ifdef ENABLE_WASM_JSPI
+          case uint32_t(MozOp::GuardSuspending):
+            CHECK(emitGuardSuspending());
+#endif  // ENABLE_WASM_JSPI
 
           default:
             return iter().unrecognizedOpcode(&op);
@@ -10764,7 +11426,7 @@ bool wasm::IonCompileFunctions(const CodeMetadata& codeMeta,
   GenerateTrapExitRegisterOffsets(&trapExitLayout, &trapExitLayoutNumWords);
 
   for (const FuncCompileInput& func : inputs) {
-    JitSpewCont(JitSpew_Codegen, "\n");
+    JitSpew(JitSpew_Codegen, "\n");
     JitSpew(JitSpew_Codegen,
             "# ================================"
             "==================================");
@@ -10853,7 +11515,7 @@ bool wasm::IonCompileFunctions(const CodeMetadata& codeMeta,
     JitSpew(JitSpew_Codegen,
             "# ================================"
             "==================================");
-    JitSpewCont(JitSpew_Codegen, "\n");
+    JitSpew(JitSpew_Codegen, "\n");
   }
 
   masm.finish();

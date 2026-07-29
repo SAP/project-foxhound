@@ -6,14 +6,14 @@ const ROW_IDS = ["emoji", "tall", "long"];
 add_task(async function test_storage_layout_tall_content() {
   // Load the HTML page that pre-fills localStorage
   await openTabAndSetupStorage(
-    MAIN_DOMAIN_SECURED + "storage-localstorage-tall-content.html"
+    MAIN_URL_SECURED + "storage-localstorage-tall-content.html"
   );
 
   // Ensure all columns are visible before testing layout
   showAllColumns(true);
 
   // Focus on the relevant storage tree item
-  await selectTreeItem(["localStorage", "https://test1.example.org"]);
+  await selectTreeItem(["localStorage", MAIN_ORIGIN_SECURED]);
 
   // Check row heights before any actions
   await testRowHeights(ROW_IDS, "initial layout");

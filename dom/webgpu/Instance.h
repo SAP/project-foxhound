@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -53,12 +52,15 @@ class Instance final : public nsWrapperCache {
   GPU_DECL_CYCLE_COLLECTION(Instance)
   GPU_DECL_JS_WRAP(Instance)
 
-  nsIGlobalObject* GetParentObject() const { return mOwner; }
+  nsIGlobalObject* GetParentObject() const { return mGlobal; }
 
-  static bool PrefEnabled(JSContext* aCx, JSObject* aObj);
+  static bool PrefEnabled();
+  static bool PrefEnabled(JSContext* aCx, JSObject* aObj) {
+    return PrefEnabled();
+  }
   static bool ExternalTexturePrefEnabled(JSContext* aCx, JSObject* aObj);
 
-  static already_AddRefed<Instance> Create(nsIGlobalObject* aOwner);
+  static already_AddRefed<Instance> Create(nsIGlobalObject* aGlobal);
 
   already_AddRefed<dom::Promise> RequestAdapter(
       const dom::GPURequestAdapterOptions& aOptions, ErrorResult& aRv);
@@ -74,10 +76,10 @@ class Instance final : public nsWrapperCache {
   };
 
  private:
-  explicit Instance(nsIGlobalObject* aOwner);
+  explicit Instance(nsIGlobalObject* aGlobal);
   virtual ~Instance() = default;
 
-  nsCOMPtr<nsIGlobalObject> mOwner;
+  nsCOMPtr<nsIGlobalObject> mGlobal;
   RefPtr<WGSLLanguageFeatures> mWgslLanguageFeatures;
 
  public:

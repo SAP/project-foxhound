@@ -122,13 +122,10 @@ class VideoCaptureModule : public RefCountInterface {
       RawVideoSinkInterface* dataCallback) = 0;
 
   //  Remove capture data callback
-  virtual void DeRegisterCaptureDataCallback(
-      webrtc::VideoSinkInterface<VideoFrame> *dataCallback) = 0;
+  virtual void DeRegisterCaptureDataCallback() = 0;
 
   // Start capture device
   virtual int32_t StartCapture(const VideoCaptureCapability& capability) = 0;
-
-  virtual int32_t StopCaptureIfAllClientsClose() = 0;
 
   virtual bool FocusOnSelectedSource() { return false; }
 

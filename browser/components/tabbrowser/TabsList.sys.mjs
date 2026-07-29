@@ -256,7 +256,7 @@ class TabsListBase {
   _refreshDOM() {
     if (!this.#domRefreshPromise) {
       this.#domRefreshPromise = new Promise(resolve => {
-        this.containerNode.ownerGlobal.requestAnimationFrame(() => {
+        this.containerNode.documentGlobal.requestAnimationFrame(() => {
           if (this.#domRefreshPromise) {
             if (this.listenersRegistered) {
               // Only re-render the menu DOM if the menu is still open.
@@ -607,6 +607,10 @@ export class TabsPanel extends TabsListBase {
     row.style.setProperty(
       "--tab-group-color-pale",
       `var(--tab-group-color-${group.color}-pale)`
+    );
+    row.style.setProperty(
+      "--tab-group-background-color",
+      `var(--tab-group-${group.color})`
     );
 
     let button = doc.createXULElement("toolbarbutton");

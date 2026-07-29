@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -277,6 +275,11 @@ void NodeController::DropPeer(NodeName aNodeName) {
 #ifdef FUZZING_SNAPSHOT
   MOZ_FUZZING_IPC_DROP_PEER("NodeController::DropPeer");
 #endif
+
+  // This may cause many error tasks to be dispatched.
+  // We batch them together to reduce locking contention when destroying a large
+  // number of actors due to a peer disconnecting.
+  MessageChannel::ErrorNotifyBatcher autoBatchNotify;
 
   Invite invite;
   RefPtr<NodeChannel> channel;
@@ -731,7 +734,8 @@ void NodeController::OnAcceptInvite(const NodeName& aFromNode,
     return;
   }
 
-  if (aRealName == mojo::core::ports::kInvalidNodeName ||
+  if (aRealName == kBrokerNodeName ||
+      aRealName == mojo::core::ports::kInvalidNodeName ||
       aInitialPort == mojo::core::ports::kInvalidPortName) {
     NODECONTROLLER_WARNING("Invalid name in AcceptInvite message");
     DropPeer(aFromNode);
@@ -871,6 +875,8 @@ void NodeController::CleanUp() {
 
   RefPtr<NodeController> nodeController = gNodeController;
   gNodeController = nullptr;
+
+  MessageChannel::ErrorNotifyBatcher autoBatchNotify;
 
   // Collect all objects from our state which need to be cleaned up.
   nsTArray<NodeName> lostConnections;

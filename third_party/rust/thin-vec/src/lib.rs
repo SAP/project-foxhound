@@ -22,6 +22,14 @@
 //!   but it could be done if someone cared enough to implement it.
 //!
 //!
+//! # Optional Features
+//!
+//! ## `const_new`
+//!
+//! **This feature requires Rust 1.83.**
+//!
+//! This feature makes `ThinVec::new()` a `const fn`.
+//!
 //!
 //! # Gecko FFI
 //!
@@ -160,7 +168,7 @@ use core::ops::Bound;
 use core::ops::{Deref, DerefMut, RangeBounds};
 use core::ptr::NonNull;
 use core::slice::Iter;
-use core::{fmt, mem, ptr, slice};
+use core::{fmt, mem, ops, ptr, slice};
 
 use impl_details::*;
 
@@ -341,7 +349,10 @@ impl Header {
 
     fn set_cap_and_auto(&mut self, cap: usize, is_auto: bool) {
         // debug check that our packing is working
-        debug_assert_eq!(unpack_capacity(pack_capacity_and_auto(cap as SizeType, is_auto)), cap);
+        debug_assert_eq!(
+            unpack_capacity(pack_capacity_and_auto(cap as SizeType, is_auto)),
+            cap
+        );
         self._cap = pack_capacity_and_auto(assert_size(cap), is_auto);
     }
 
@@ -513,8 +524,22 @@ impl<T> ThinVec<T> {
     /// Creates a new empty ThinVec.
     ///
     /// This will not allocate.
+    #[cfg(not(feature = "const_new"))]
     pub fn new() -> ThinVec<T> {
         ThinVec::with_capacity(0)
+    }
+
+    /// Creates a new empty ThinVec.
+    ///
+    /// This will not allocate.
+    #[cfg(feature = "const_new")]
+    pub const fn new() -> ThinVec<T> {
+        unsafe {
+            ThinVec {
+                ptr: NonNull::new_unchecked(&EMPTY_HEADER as *const Header as *mut Header),
+                boo: PhantomData,
+            }
+        }
     }
 
     /// Constructs a new, empty `ThinVec<T>` with at least the specified capacity.
@@ -822,7 +847,26 @@ impl<T> ThinVec<T> {
             self.reserve(1);
         }
         unsafe {
+            // SAFETY: reserve() ensures sufficient capacity.
+            self.push_unchecked(val);
+        }
+    }
+
+    /// Appends an element to the back like `push`,
+    /// but assumes that sufficient capacity has already been reserved, i.e.
+    /// `len() < capacity()`.
+    ///
+    /// # Safety
+    ///
+    /// - Capacity must be reserved in advance such that `capacity() > len()`.
+    #[inline]
+    unsafe fn push_unchecked(&mut self, val: T) {
+        let old_len = self.len();
+        debug_assert!(old_len < self.capacity());
+        unsafe {
             ptr::write(self.data_raw().add(old_len), val);
+
+            // SAFETY: capacity > len >= 0, so capacity != 0, so this is not a singleton.
             self.set_len_non_singleton(old_len + 1);
         }
     }
@@ -1037,8 +1081,18 @@ impl<T> ThinVec<T> {
     /// ```
     pub fn clear(&mut self) {
         unsafe {
-            ptr::drop_in_place(&mut self[..]);
-            self.set_len(0); // could be the singleton
+            // Decrement len even in the case of a panic.
+            struct DropGuard<'a, T>(&'a mut ThinVec<T>);
+            impl<T> Drop for DropGuard<'_, T> {
+                fn drop(&mut self) {
+                    unsafe {
+                        // Could be the singleton.
+                        self.0.set_len(0);
+                    }
+                }
+            }
+            let guard = DropGuard(self);
+            ptr::drop_in_place(&mut guard.0[..]);
         }
     }
 
@@ -1209,7 +1263,10 @@ impl<T> ThinVec<T> {
                 if stack_buf == self.ptr.as_ptr() {
                     return;
                 }
-                stack_buf.add(1).cast::<T>().copy_from_nonoverlapping(self.data_raw(), new_cap);
+                stack_buf
+                    .add(1)
+                    .cast::<T>()
+                    .copy_from_nonoverlapping(self.data_raw(), new_cap);
                 dealloc(self.ptr() as *mut u8, layout::<T>(old_cap));
                 self.ptr = NonNull::new_unchecked(stack_buf);
                 self.ptr.as_mut().set_len(new_cap);
@@ -1547,6 +1604,140 @@ impl<T> ThinVec<T> {
         }
     }
 
+    /// Creates an iterator which uses a closure to determine if an element should be removed.
+    ///
+    /// If the closure returns true, then the element is removed and yielded.
+    /// If the closure returns false, the element will remain in the vector and will not be yielded
+    /// by the iterator.
+    ///
+    /// If the returned `ExtractIf` is not exhausted, e.g. because it is dropped without iterating
+    /// or the iteration short-circuits, then the remaining elements will be retained.
+    /// Use [`ThinVec::retain`] with a negated predicate if you do not need the returned iterator.
+    ///
+    /// Using this method is equivalent to the following code:
+    ///
+    /// ```
+    /// # use thin_vec::{ThinVec, thin_vec};
+    /// # let some_predicate = |x: &mut i32| { *x == 2 || *x == 3 || *x == 6 };
+    /// # let mut vec = thin_vec![1, 2, 3, 4, 5, 6];
+    /// let mut i = 0;
+    /// while i < vec.len() {
+    ///     if some_predicate(&mut vec[i]) {
+    ///         let val = vec.remove(i);
+    ///         // your code here
+    ///     } else {
+    ///         i += 1;
+    ///     }
+    /// }
+    ///
+    /// # assert_eq!(vec, thin_vec![1, 4, 5]);
+    /// ```
+    ///
+    /// But `extract_if` is easier to use. `extract_if` is also more efficient,
+    /// because it can backshift the elements of the array in bulk.
+    ///
+    /// Note that `extract_if` also lets you mutate every element in the filter closure,
+    /// regardless of whether you choose to keep or remove it.
+    ///
+    /// # Examples
+    ///
+    /// Splitting an array into evens and odds, reusing the original allocation:
+    ///
+    /// ```
+    /// use thin_vec::{ThinVec, thin_vec};
+    ///
+    /// let mut numbers = thin_vec![1, 2, 3, 4, 5, 6, 8, 9, 11, 13, 14, 15];
+    ///
+    /// let evens = numbers.extract_if(.., |x| *x % 2 == 0).collect::<ThinVec<_>>();
+    /// let odds = numbers;
+    ///
+    /// assert_eq!(evens, thin_vec![2, 4, 6, 8, 14]);
+    /// assert_eq!(odds, thin_vec![1, 3, 5, 9, 11, 13, 15]);
+    /// ```
+    pub fn extract_if<F, R: RangeBounds<usize>>(
+        &mut self,
+        range: R,
+        filter: F,
+    ) -> ExtractIf<'_, T, F>
+    where
+        F: FnMut(&mut T) -> bool,
+    {
+        // Copy of https://github.com/rust-lang/rust/blob/ee361e8fca1c30e13e7a31cc82b64c045339d3a8/library/core/src/slice/index.rs#L37
+        fn slice_index_fail(start: usize, end: usize, len: usize) -> ! {
+            if start > len {
+                panic!(
+                    "range start index {} out of range for slice of length {}",
+                    start, len
+                )
+            }
+
+            if end > len {
+                panic!(
+                    "range end index {} out of range for slice of length {}",
+                    end, len
+                )
+            }
+
+            if start > end {
+                panic!("slice index starts at {} but ends at {}", start, end)
+            }
+
+            // Only reachable if the range was a `RangeInclusive` or a
+            // `RangeToInclusive`, with `end == len`.
+            panic!(
+                "range end index {} out of range for slice of length {}",
+                end, len
+            )
+        }
+
+        // Backport of https://github.com/rust-lang/rust/blob/ee361e8fca1c30e13e7a31cc82b64c045339d3a8/library/core/src/slice/index.rs#L855
+        pub fn slice_range<R>(range: R, bounds: ops::RangeTo<usize>) -> ops::Range<usize>
+        where
+            R: ops::RangeBounds<usize>,
+        {
+            let len = bounds.end;
+
+            let end = match range.end_bound() {
+                ops::Bound::Included(&end) if end >= len => slice_index_fail(0, end, len),
+                // Cannot overflow because `end < len` implies `end < usize::MAX`.
+                ops::Bound::Included(&end) => end + 1,
+
+                ops::Bound::Excluded(&end) if end > len => slice_index_fail(0, end, len),
+                ops::Bound::Excluded(&end) => end,
+                ops::Bound::Unbounded => len,
+            };
+
+            let start = match range.start_bound() {
+                ops::Bound::Excluded(&start) if start >= end => slice_index_fail(start, end, len),
+                // Cannot overflow because `start < end` implies `start < usize::MAX`.
+                ops::Bound::Excluded(&start) => start + 1,
+
+                ops::Bound::Included(&start) if start > end => slice_index_fail(start, end, len),
+                ops::Bound::Included(&start) => start,
+
+                ops::Bound::Unbounded => 0,
+            };
+
+            ops::Range { start, end }
+        }
+
+        let old_len = self.len();
+        let ops::Range { start, end } = slice_range(range, ..old_len);
+
+        // Guard against the vec getting leaked (leak amplification)
+        unsafe {
+            self.set_len(0);
+        }
+        ExtractIf {
+            vec: self,
+            idx: start,
+            del: 0,
+            end,
+            old_len,
+            pred: filter,
+        }
+    }
+
     /// Resize the buffer and update its capacity, without changing the length.
     /// Unsafe because it can cause length to be greater than capacity.
     unsafe fn reallocate(&mut self, new_cap: usize) {
@@ -1565,7 +1756,7 @@ impl<T> ThinVec<T> {
             (*ptr).set_cap_and_auto(new_cap, (*ptr).is_auto());
             self.ptr = NonNull::new_unchecked(ptr);
         } else {
-            let new_header = header_with_capacity::<T>(new_cap, self.is_auto_array());
+            let mut new_header = header_with_capacity::<T>(new_cap, self.is_auto_array());
 
             // If we get here and have a non-zero len, then we must be handling
             // a gecko auto array, and we have items in a stack buffer. We shouldn't
@@ -1586,6 +1777,7 @@ impl<T> ThinVec<T> {
                     .cast::<T>()
                     .copy_from_nonoverlapping(self.data_raw(), len);
                 self.set_len_non_singleton(0);
+                new_header.as_mut().set_len(len);
             }
 
             self.ptr = new_header;
@@ -1604,9 +1796,7 @@ impl<T> ThinVec<T> {
         if !self.is_auto_array() {
             return ptr::null_mut();
         }
-        unsafe {
-            (self as *mut Self).byte_add(AUTO_ARRAY_HEADER_OFFSET) as *mut Header
-        }
+        unsafe { (self as *mut Self).byte_add(AUTO_ARRAY_HEADER_OFFSET) as *mut Header }
     }
 
     #[cfg(feature = "gecko-ffi")]
@@ -1615,9 +1805,7 @@ impl<T> ThinVec<T> {
         if !self.is_auto_array() {
             return ptr::null_mut();
         }
-        unsafe {
-            (self as *const Self).byte_add(AUTO_ARRAY_HEADER_OFFSET) as *const Header
-        }
+        unsafe { (self as *const Self).byte_add(AUTO_ARRAY_HEADER_OFFSET) as *const Header }
     }
 
     #[inline]
@@ -1791,11 +1979,21 @@ impl<T> Extend<T> for ThinVec<T> {
     where
         I: IntoIterator<Item = T>,
     {
-        let iter = iter.into_iter();
+        let mut iter = iter.into_iter();
         let hint = iter.size_hint().0;
         if hint > 0 {
             self.reserve(hint);
+            for x in iter.by_ref().take(hint) {
+                // SAFETY: `reserve(hint)` ensures the next `hint` calls of `push_unchecked`
+                // have sufficient capacity.
+                unsafe {
+                    self.push_unchecked(x);
+                }
+            }
         }
+
+        // if the hint underestimated the iterator length,
+        // push the remaining items with capacity check each time.
         for x in iter {
             self.push(x);
         }
@@ -2355,10 +2553,18 @@ impl<T> Drop for IntoIter<T> {
         #[cold]
         #[inline(never)]
         fn drop_non_singleton<T>(this: &mut IntoIter<T>) {
+            // Leak on panic.
+            struct DropGuard<'a, T>(&'a mut IntoIter<T>);
+            impl<T> Drop for DropGuard<'_, T> {
+                fn drop(&mut self) {
+                    unsafe {
+                        self.0.vec.set_len_non_singleton(0);
+                    }
+                }
+            }
             unsafe {
-                let mut vec = mem::replace(&mut this.vec, ThinVec::new());
-                ptr::drop_in_place(&mut vec[this.start..]);
-                vec.set_len_non_singleton(0)
+                let guard = DropGuard(this);
+                ptr::drop_in_place(&mut guard.0.vec[guard.0.start..]);
             }
         }
 
@@ -2731,7 +2937,7 @@ impl<T, const N: usize> Deref for AutoThinVec<T, N> {
 /// Create a ThinVec<$ty> named `$name`, with capacity for `$cap` inline elements.
 ///
 /// TODO(emilio): This would be a lot more convenient to use with super let, see
-/// https://github.com/rust-lang/rust/issues/139076
+/// <https://github.com/rust-lang/rust/issues/139076>
 #[cfg(feature = "gecko-ffi")]
 #[macro_export]
 macro_rules! auto_thin_vec {
@@ -2780,6 +2986,79 @@ impl<T> Drain<'_, T> {
             ptr::copy(src, dst, self.tail);
         }
         self.end = new_tail_start;
+    }
+}
+
+/// An iterator for [`ThinVec`] which uses a closure to determine if an element should be removed.
+#[must_use = "iterators are lazy and do nothing unless consumed"]
+pub struct ExtractIf<'a, T, F> {
+    vec: &'a mut ThinVec<T>,
+    /// The index of the item that will be inspected by the next call to `next`.
+    idx: usize,
+    /// Elements at and beyond this point will be retained. Must be equal or smaller than `old_len`.
+    end: usize,
+    /// The number of items that have been drained (removed) thus far.
+    del: usize,
+    /// The original length of `vec` prior to draining.
+    old_len: usize,
+    /// The filter test predicate.
+    pred: F,
+}
+
+impl<T, F> Iterator for ExtractIf<'_, T, F>
+where
+    F: FnMut(&mut T) -> bool,
+{
+    type Item = T;
+
+    fn next(&mut self) -> Option<T> {
+        unsafe {
+            let v = self.vec.data_raw();
+            while self.idx < self.end {
+                let i = self.idx;
+                let drained = (self.pred)(&mut *v.add(i));
+                // Update the index *after* the predicate is called. If the index
+                // is updated prior and the predicate panics, the element at this
+                // index would be leaked.
+                self.idx += 1;
+                if drained {
+                    self.del += 1;
+                    return Some(ptr::read(v.add(i)));
+                } else if self.del > 0 {
+                    let del = self.del;
+                    let src: *const T = v.add(i);
+                    let dst: *mut T = v.add(i - del);
+                    ptr::copy_nonoverlapping(src, dst, 1);
+                }
+            }
+            None
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, Some(self.end - self.idx))
+    }
+}
+
+impl<A, F> Drop for ExtractIf<'_, A, F> {
+    fn drop(&mut self) {
+        unsafe {
+            if self.idx < self.old_len && self.del > 0 {
+                // This is a pretty messed up state, and there isn't really an
+                // obviously right thing to do. We don't want to keep trying
+                // to execute `pred`, so we just backshift all the unprocessed
+                // elements and tell the vec that they still exist. The backshift
+                // is required to prevent a double-drop of the last successfully
+                // drained item prior to a panic in the predicate.
+                let ptr = self.vec.data_raw();
+                let src = ptr.add(self.idx);
+                let dst = src.sub(self.del);
+                let tail_len = self.old_len - self.idx;
+                src.copy_to(dst, tail_len);
+            }
+
+            self.vec.set_len(self.old_len - self.del);
+        }
     }
 }
 
@@ -2842,6 +3121,7 @@ mod tests {
     #[cfg_attr(feature = "gecko-ffi", should_panic)]
     fn test_overaligned_type_is_rejected_for_gecko_ffi_mode() {
         #[repr(align(16))]
+        #[allow(unused)]
         struct Align16(u8);
 
         let v = ThinVec::<Align16>::new();
@@ -3196,7 +3476,6 @@ mod std_tests {
         string::{String, ToString},
     };
     use core::mem::size_of;
-    use core::usize;
 
     struct DropCounter<'a> {
         count: &'a mut u32,
@@ -3569,6 +3848,7 @@ mod std_tests {
     #[test]
     fn test_vec_truncate_drop() {
         static mut DROPS: u32 = 0;
+        #[allow(unused)]
         struct Elem(i32);
         impl Drop for Elem {
             fn drop(&mut self) {
@@ -3773,19 +4053,19 @@ mod std_tests {
     #[test]
     #[cfg(not(feature = "gecko-ffi"))]
     fn test_drain_max_vec_size() {
-        let mut v = ThinVec::<()>::with_capacity(usize::max_value());
+        let mut v = ThinVec::<()>::with_capacity(usize::MAX);
         unsafe {
-            v.set_len(usize::max_value());
+            v.set_len(usize::MAX);
         }
-        for _ in v.drain(usize::max_value() - 1..) {}
-        assert_eq!(v.len(), usize::max_value() - 1);
+        for _ in v.drain(usize::MAX - 1..) {}
+        assert_eq!(v.len(), usize::MAX - 1);
 
-        let mut v = ThinVec::<()>::with_capacity(usize::max_value());
+        let mut v = ThinVec::<()>::with_capacity(usize::MAX);
         unsafe {
-            v.set_len(usize::max_value());
+            v.set_len(usize::MAX);
         }
-        for _ in v.drain(usize::max_value() - 1..=usize::max_value() - 1) {}
-        assert_eq!(v.len(), usize::max_value() - 1);
+        for _ in v.drain(usize::MAX - 1..=usize::MAX - 1) {}
+        assert_eq!(v.len(), usize::MAX - 1);
     }
 
     #[test]
@@ -4363,7 +4643,7 @@ mod std_tests {
         }
     */
 
-    #[cfg(all(feature = "gecko-ffi"))]
+    #[cfg(feature = "gecko-ffi")]
     #[test]
     fn auto_t_array_basic() {
         crate::auto_thin_vec!(let t: [u8; 10]);
@@ -4371,6 +4651,7 @@ mod std_tests {
         assert!(t.is_auto_array());
         assert!(t.uses_stack_allocated_buffer());
         assert!(!t.has_allocation());
+        assert_eq!(t.len(), 0);
         {
             let inner = unsafe { &mut *t.as_mut().as_mut_ptr() };
             for i in 0..30 {
@@ -4512,5 +4793,37 @@ mod std_tests {
     fn test_capacity_overflow_cap_really_isnt_isize() {
         let vec: ThinVec<u8> = ThinVec::with_capacity(isize::MAX as usize);
         assert!(vec.capacity() > 0);
+    }
+
+    struct PanicBomb(&'static str);
+
+    impl Drop for PanicBomb {
+        fn drop(&mut self) {
+            if self.0 == "panic" {
+                panic!("panic!");
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "panic!")]
+    fn test_panic_into_iter() {
+        let mut v = ThinVec::new();
+        v.push(PanicBomb("normal1"));
+        v.push(PanicBomb("panic"));
+        v.push(PanicBomb("normal2"));
+
+        let mut iter = v.into_iter();
+        iter.next();
+    }
+
+    #[test]
+    #[should_panic(expected = "panic!")]
+    fn test_panic_clear() {
+        let mut v = ThinVec::new();
+        v.push(PanicBomb("normal1"));
+        v.push(PanicBomb("panic"));
+        v.push(PanicBomb("normal2"));
+        v.clear();
     }
 }

@@ -46,6 +46,10 @@
           "type": "string",
           "description": "The OS version that the backup was created on"
         },
+        "osBuildNumber": {
+          "type": "string",
+          "description": "The OS build number that the backup was created on. On Windows, this can be used to distinguish between Windows 10 and Windows 11."
+        },
         "accountID": {
           "type": "string",
           "description": "The ID for the account that the user profile was signed into when backing up. Optional."

@@ -269,20 +269,20 @@ add_task(async function test_restrict() {
   );
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
-    value: UrlbarTokenizer.RESTRICT.SEARCH,
+    value: UrlbarShared.RESTRICT_TOKENS.SEARCH,
   });
   await AssertNoPrivateResult(window);
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
-    value: UrlbarTokenizer.RESTRICT.SEARCH + " ",
+    value: UrlbarShared.RESTRICT_TOKENS.SEARCH + " ",
   });
   await AssertNoPrivateResult(window);
   await UrlbarTestUtils.exitSearchMode(window);
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
-    value: " " + UrlbarTokenizer.RESTRICT.SEARCH,
+    value: " " + UrlbarShared.RESTRICT_TOKENS.SEARCH,
   });
   await AssertNoPrivateResult(window);
 });
@@ -294,14 +294,14 @@ add_task(async function test_restrict_search() {
   let engine = await SearchService.getDefaultPrivate();
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
-    value: UrlbarTokenizer.RESTRICT.SEARCH + "test",
+    value: UrlbarShared.RESTRICT_TOKENS.SEARCH + "test",
   });
   let result = await AssertPrivateResult(window, engine, true);
   Assert.equal(result.searchParams.query, "test");
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
-    value: "test" + UrlbarTokenizer.RESTRICT.SEARCH,
+    value: "test" + UrlbarShared.RESTRICT_TOKENS.SEARCH,
   });
   result = await AssertPrivateResult(window, engine, true);
   Assert.equal(result.searchParams.query, "test?");

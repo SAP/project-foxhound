@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /*
@@ -11,14 +9,8 @@
 
 #include "mozilla/Atomics.h"
 #include "mozilla/DebugOnly.h"
-#if JS_HAS_INTL_API
-#  include "mozilla/intl/Locale.h"
-#endif
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/ThreadLocal.h"
-
-#include <locale.h>
-#include <string.h>
 
 #include "jsfriendapi.h"
 
@@ -28,6 +20,7 @@
 #include "gc/GC.h"
 #include "gc/PublicIterators.h"
 #include "jit/IonCompileTask.h"
+#include "jit/JitOptions.h"  // js::fuzzingSafe
 #include "jit/JitRuntime.h"
 #include "jit/Simulator.h"
 #include "js/AllocationLogging.h"  // JS_COUNT_CTOR, JS_COUNT_DTOR
@@ -39,6 +32,7 @@
 #include "js/Stack.h"  // JS::NativeStackLimitMin
 #include "js/Wrapper.h"
 #include "js/WrapperCallbacks.h"
+#include "util/DefaultLocale.h"
 #include "util/RandomSeed.h"
 #include "vm/DateTime.h"
 #include "vm/JSFunction.h"
@@ -101,9 +95,7 @@ JSRuntime::JSRuntime(JSRuntime* parentRuntime)
       reportStreamErrorCallback(nullptr),
       hadOutOfMemory(false),
       allowRelazificationForTesting(false),
-      destroyCompartmentCallback(nullptr),
       sizeOfIncludingThisCompartmentCallback(nullptr),
-      destroyRealmCallback(nullptr),
       realmNameCallback(nullptr),
       securityCallbacks(&NullSecurityCallbacks),
       DOMcallbacks(nullptr),
@@ -122,7 +114,7 @@ JSRuntime::JSRuntime(JSRuntime* parentRuntime)
       numDebuggeeRealms_(0),
       numDebuggeeRealmsObservingCoverage_(0),
       localeCallbacks(nullptr),
-      defaultLocale(nullptr),
+      defaultLocale(LanguageId::und()),
       profilingScripts(false),
       scriptAndCountsVector(nullptr),
       watchtowerTestingLog(nullptr),
@@ -243,6 +235,9 @@ void JSRuntime::destroyRuntime() {
     CancelOffThreadDelazify(this);
     CancelOffThreadCompressions(this);
 
+    /* Wait for GC tasks to finish, including background allocation. */
+    gc.waitForBackgroundTasks();
+
     /*
      * Flag us as being destroyed. This allows the GC to free things like
      * interned atoms and Ion trampolines.
@@ -274,7 +269,6 @@ void JSRuntime::destroyRuntime() {
   }
   cleanupClosures.ref().clear();
 
-  defaultLocale = nullptr;
   js_delete(jitRuntime_.ref());
 
 #ifdef DEBUG
@@ -282,7 +276,7 @@ void JSRuntime::destroyRuntime() {
 #endif
 }
 
-void JSRuntime::addTelemetry(JSMetric id, uint32_t sample) {
+void JSRuntime::addTelemetry(JSMetric id, const JSTelemetryData& sample) {
   if (telemetryCallback) {
     (*telemetryCallback)(id, sample);
   }
@@ -358,9 +352,8 @@ void JSRuntime::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
     auto& table = scriptDataTableHolder().getWithoutLock();
 
     rtSizes->scriptData += table.shallowSizeOfExcludingThis(mallocSizeOf);
-    for (SharedImmutableScriptDataTable::Range r = table.all(); !r.empty();
-         r.popFront()) {
-      rtSizes->scriptData += r.front()->sizeOfIncludingThis(mallocSizeOf);
+    for (auto iter = table.iter(); !iter.done(); iter.next()) {
+      rtSizes->scriptData += iter.get()->sizeOfIncludingThis(mallocSizeOf);
     }
   }
 
@@ -370,9 +363,8 @@ void JSRuntime::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
     auto& table = js::globalSharedScriptDataTableHolder.get(lock);
 
     rtSizes->scriptData += table.shallowSizeOfExcludingThis(mallocSizeOf);
-    for (SharedImmutableScriptDataTable::Range r = table.all(); !r.empty();
-         r.popFront()) {
-      rtSizes->scriptData += r.front()->sizeOfIncludingThis(mallocSizeOf);
+    for (auto iter = table.iter(); !iter.done(); iter.next()) {
+      rtSizes->scriptData += iter.get()->sizeOfIncludingThis(mallocSizeOf);
     }
   }
 
@@ -385,6 +377,11 @@ void JSRuntime::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
 
   rtSizes->wasmRuntime +=
       wasmInstances.lock()->sizeOfExcludingThis(mallocSizeOf);
+
+#ifdef ENABLE_WASM_JSPI
+  rtSizes->wasmContStacks +=
+      mainContextFromAnyThread()->wasm().contStacks().sizeOfNonHeap();
+#endif
 }
 
 static bool InvokeInterruptCallbacks(JSContext* cx) {
@@ -431,8 +428,10 @@ static bool HandleInterrupt(JSContext* cx, bool invokeCallback,
 
   if (!InvokeInterruptCallbacks(cx)) {
     // Debugger treats invoking the interrupt callback as a "step", so
-    // invoke the onStep handler.
-    if (cx->realm()->isDebuggee()) {
+    // invoke the onStep handler. Skip this in --fuzzing-safe mode because
+    // fuzzer-generated onStep handlers can mutate state that native/builtin
+    // code (e.g. TypedArrayJoinKernel) assumes is stable.
+    if (cx->realm()->isDebuggee() && !fuzzingSafe) {
       ScriptFrameIter iter(cx);
       if (!iter.done() && cx->compartment() == iter.compartment() &&
           DebugAPI::stepModeEnabled(iter.script())) {
@@ -522,69 +521,42 @@ void JSContext::clearPendingInterrupt(js::InterruptReason reason) {
   interruptBits_ &= ~uint32_t(reason);
 }
 
+void JSRuntime::setDefaultLocale(LanguageId locale) {
+  // Replace "und" with "und-Zzzz-ZZ" to mark the locale as resolved.
+  //
+  // "und-Zzzz-ZZ" is an undetermined language with unknown script and region.
+  if (locale == LanguageId::und()) {
+    locale = LanguageId::fromValidBcp49("und-Zzzz-ZZ");
+  }
+
+#if JS_HAS_INTL_API
+  if (!LocaleHasDefaultCaseMapping(locale)) {
+    runtimeFuses.ref().defaultLocaleHasDefaultCaseMappingFuse.popFuse(
+        mainContextFromOwnThread());
+  }
+#endif
+
+  defaultLocale = locale;
+}
+
 bool JSRuntime::setDefaultLocale(const char* locale) {
   if (!locale) {
     return false;
   }
 
-  UniqueChars newLocale = DuplicateString(mainContextFromOwnThread(), locale);
-  if (!newLocale) {
-    return false;
-  }
-
-#if JS_HAS_INTL_API
-  if (!LocaleHasDefaultCaseMapping(newLocale.get())) {
-    runtimeFuses.ref().defaultLocaleHasDefaultCaseMappingFuse.popFuse(
-        mainContextFromOwnThread());
-  }
-#endif
-
-  defaultLocale.ref() = std::move(newLocale);
+  setDefaultLocale(DefaultLocaleFrom(locale));
   return true;
 }
 
-void JSRuntime::resetDefaultLocale() { defaultLocale = nullptr; }
+void JSRuntime::resetDefaultLocale() { defaultLocale = LanguageId::und(); }
 
-const char* JSRuntime::getDefaultLocale() {
-  if (defaultLocale.ref()) {
-    return defaultLocale.ref().get();
+LanguageId JSRuntime::getDefaultLocale() {
+  auto locale = defaultLocale.ref();
+  if (locale == LanguageId::und()) {
+    locale = SystemDefaultLocale();
+    setDefaultLocale(locale);
   }
-
-  // Use ICU if available to retrieve the default locale, this ensures ICU's
-  // default locale matches our default locale.
-#if JS_HAS_INTL_API
-  const char* locale = mozilla::intl::Locale::GetDefaultLocale();
-#else
-  const char* locale = setlocale(LC_ALL, nullptr);
-#endif
-
-  // convert to a well-formed BCP 47 language tag
-  if (!locale || !strcmp(locale, "C")) {
-    locale = "und";
-  }
-
-  UniqueChars lang = DuplicateString(mainContextFromOwnThread(), locale);
-  if (!lang) {
-    return nullptr;
-  }
-
-  char* p;
-  if ((p = strchr(lang.get(), '.'))) {
-    *p = '\0';
-  }
-  while ((p = strchr(lang.get(), '_'))) {
-    *p = '-';
-  }
-
-#if JS_HAS_INTL_API
-  if (!LocaleHasDefaultCaseMapping(lang.get())) {
-    runtimeFuses.ref().defaultLocaleHasDefaultCaseMappingFuse.popFuse(
-        mainContextFromOwnThread());
-  }
-#endif
-
-  defaultLocale.ref() = std::move(lang);
-  return defaultLocale.ref().get();
+  return locale;
 }
 
 #ifdef JS_HAS_INTL_API
@@ -597,11 +569,31 @@ SharedScriptDataTableHolder& JSRuntime::scriptDataTableHolder() {
   return scriptDataTableHolder_;
 }
 
-bool JSRuntime::getHostDefinedData(JSContext* cx,
-                                   JS::MutableHandle<JSObject*> data) const {
+bool JSRuntime::getHostDefinedData(
+    JSContext* cx, JS::MutableHandle<JSObject*> incumbentGlobal,
+    JS::MutableHandle<JSObject*> optionalHostDefinedData) const {
   MOZ_ASSERT(cx->jobQueue);
 
-  return cx->jobQueue->getHostDefinedData(cx, data);
+  if (!cx->jobQueue->getHostDefinedData(cx, incumbentGlobal,
+                                        optionalHostDefinedData)) {
+    return false;
+  }
+
+  // incumbentGlobal is returned unwrapped. Callers will convert this to its
+  // Object.prototype representative and then wrap that into cx's compartment.
+  // It must therefore be a raw GlobalObject (or null), not a CCW.
+  //
+  // The intuition here would be that you would want to instead have a
+  // MutableHandle<GlobalObject*> outparam, however to reduce rooting
+  // costs, having two type-incompatible roots is probably the worse
+  // performance choice, and so instead we keep JSObject, as the
+  // final wrapped representative will have type JSObject.
+  MOZ_ASSERT_IF(incumbentGlobal, incumbentGlobal->is<GlobalObject>());
+
+  // optionalHostDefined data on the other hand should be same compartment,
+  // but will be wrapped as necessary.
+  cx->check(optionalHostDefinedData);
+  return true;
 }
 
 JS_PUBLIC_API JSObject*
@@ -668,11 +660,6 @@ mozilla::non_crypto::XorShift128PlusRNG& JSRuntime::randomKeyGenerator() {
     randomKeyGenerator_.emplace(seed[0], seed[1]);
   }
   return randomKeyGenerator_.ref();
-}
-
-mozilla::HashCodeScrambler JSRuntime::randomHashCodeScrambler() {
-  auto& rng = randomKeyGenerator();
-  return mozilla::HashCodeScrambler(rng.next(), rng.next());
 }
 
 mozilla::non_crypto::XorShift128PlusRNG JSRuntime::forkRandomKeyGenerator() {
@@ -771,6 +758,10 @@ void JSRuntime::commitPendingWrapperPreservations(JS::Zone* zone) {
     bool success = preserveWrapperCallback(mainContextFromOwnThread(), rooted);
     MOZ_RELEASE_ASSERT(success);
   }
+
+  // The callback must not cause more wrappers to be preserved or they will
+  // overwrite the buffer we're processing in the loop above.
+  MOZ_ASSERT(!zone->hasPendingWrapperPreservations());
 }
 
 void JSRuntime::incrementNumDebuggeeRealms() {
@@ -852,7 +843,7 @@ JS_PUBLIC_API void JS::DisableRecordingAllocations(JSContext* cx) {
 
 JS_PUBLIC_API void JS::shadow::RegisterWeakCache(
     JSRuntime* rt, detail::WeakCacheBase* cachep) {
-  rt->registerWeakCache(cachep);
+  rt->gc.registerWeakCache(cachep);
 }
 
 void JSRuntime::startRecordingAllocations(

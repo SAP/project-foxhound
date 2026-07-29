@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -32,9 +30,8 @@ namespace dom::WebAudioUtils {
 // createScriptProcessor() and matches what is used by Blink.  The limit
 // protects against large memory allocations.
 const size_t MaxChannelCount = 32;
-// AudioContext::CreateBuffer() "must support sample-rates in at least the
-// range 22050 to 96000."
-const uint32_t MinSampleRate = 8000;
+// https://webaudio.github.io/web-audio-api/#sample-rates
+const uint32_t MinSampleRate = 3000;
 const uint32_t MaxSampleRate = 768000;
 
 inline bool FuzzyEqual(float v1, float v2) { return fabsf(v1 - v2) < 1e-7f; }

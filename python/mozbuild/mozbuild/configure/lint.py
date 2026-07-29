@@ -6,10 +6,8 @@ import inspect
 import re
 import types
 from dis import Bytecode
-from functools import wraps
+from functools import cache, wraps
 from io import StringIO
-
-from mozbuild.util import memoize
 
 from . import (
     CombinedDependsFunction,
@@ -176,7 +174,7 @@ class LintSandbox(ConfigureSandbox):
             return False
         return self._need_help_dependency(obj)
 
-    @memoize
+    @cache
     def _value_for_depends(self, obj):
         with_help = self._help_option in obj.dependencies
         if with_help:

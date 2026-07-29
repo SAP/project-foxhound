@@ -51,7 +51,19 @@ async function genericChecker() {
   }
 
   browser.test.log(`${kind} extension page loaded`);
-  browser.test.sendMessage(`${kind}-loaded`);
+  // Collect a part of the context that runtime.getContexts() is expected to
+  // return, that can only be meaningfull computed here in the page itself.
+  const thisPartialContext = {
+    documentId: browser.runtime.getDocumentId(window),
+  };
+  if (kind === "sidebar" || kind === "sidebar-subframe") {
+    // The test opens multiple windows; to have deterministic test results, we
+    // order by windowId. To enable correlation, include windowId.
+    thisPartialContext.windowId = (await browser.windows.getCurrent()).id;
+    // The sidebar-subframe test needs the frameId for assertions.
+    thisPartialContext.frameId = browser.runtime.getFrameId(window);
+  }
+  browser.test.sendMessage(`${kind}-loaded`, thisPartialContext);
 }
 
 async function triggerActionPopup(extension, win, callback) {
@@ -167,12 +179,15 @@ add_task(async function test_runtime_getContexts() {
   });
 
   await extension.startup();
-  await extension.awaitMessage("background-loaded");
+  const bgPartialContext = await extension.awaitMessage("background-loaded");
 
   // Expect 3 sidebars (2 non-private and 1 private windows).
-  await extension.awaitMessage("sidebar-loaded");
-  await extension.awaitMessage("sidebar-loaded");
-  await extension.awaitMessage("sidebar-loaded");
+  const sidebarPartialContexts = [
+    await extension.awaitMessage("sidebar-loaded"),
+    await extension.awaitMessage("sidebar-loaded"),
+    await extension.awaitMessage("sidebar-loaded"),
+  ];
+  sidebarPartialContexts.sort(byWindowId);
 
   let firstWinId = windowTracker.getId(firstWin);
   let secondWinId = windowTracker.getId(secondWin);
@@ -197,6 +212,7 @@ add_task(async function test_runtime_getContexts() {
   const getExpectedExtensionContext = ({
     contextId,
     contextType,
+    documentId,
     documentUrl,
     incognito = false,
     frameId = 0,
@@ -205,6 +221,7 @@ add_task(async function test_runtime_getContexts() {
   }) => {
     let props = {
       contextType,
+      documentId,
       documentOrigin,
       documentUrl,
       incognito,
@@ -221,28 +238,33 @@ add_task(async function test_runtime_getContexts() {
   let expected = [
     getExpectedExtensionContext({
       contextType: "BACKGROUND",
+      documentId: bgPartialContext.documentId,
       documentUrl: resolveExtPageUrl("page.html?kind=background"),
     }),
 
     getExpectedExtensionContext({
       contextType: "SIDE_PANEL",
+      documentId: sidebarPartialContexts[0].documentId,
       documentUrl: resolveExtPageUrl("page.html?kind=sidebar"),
       windowId: firstWinId,
     }),
 
     getExpectedExtensionContext({
       contextType: "SIDE_PANEL",
+      documentId: sidebarPartialContexts[1].documentId,
       documentUrl: resolveExtPageUrl("page.html?kind=sidebar"),
       windowId: secondWinId,
     }),
 
     getExpectedExtensionContext({
       contextType: "SIDE_PANEL",
+      documentId: sidebarPartialContexts[2].documentId,
       documentUrl: resolveExtPageUrl("page.html?kind=sidebar"),
       windowId: privateWinId,
       incognito: true,
     }),
   ].sort(byWindowId);
+  let expectedSidebars = expected.filter(c => c.contextType === "SIDE_PANEL");
 
   info("Test getContexts error on unsupported getContexts filter property");
   extension.sendMessage("background-get-contexts-invalid-params");
@@ -269,12 +291,13 @@ add_task(async function test_runtime_getContexts() {
     },
     async browser => {
       info("Wait the extension page to be fully loaded in the new tab");
-      await extension.awaitMessage("tab-loaded");
+      const tabPartialContext = await extension.awaitMessage("tab-loaded");
 
       const tabId = tabTracker.getBrowserData(browser).tabId;
 
       const expectedTabContext = getExpectedExtensionContext({
         contextType: "TAB",
+        documentId: tabPartialContext.documentId,
         documentUrl: resolveExtPageUrl("page.html?kind=tab"),
         windowId: secondWinId,
         tabId,
@@ -323,7 +346,8 @@ add_task(async function test_runtime_getContexts() {
         triggeringPrincipal:
           Services.scriptSecurityManager.getSystemPrincipal(),
       });
-      await extension.awaitMessage("tab-loaded");
+      const navigatedTabPartialContext =
+        await extension.awaitMessage("tab-loaded");
 
       actual = await getGetContextsResults({
         filter: {
@@ -332,6 +356,16 @@ add_task(async function test_runtime_getContexts() {
         },
       });
       Assert.equal(actual.length, 1, "Expect 1 tab extension context");
+      Assert.equal(
+        actual[0].documentId,
+        navigatedTabPartialContext.documentId,
+        "Expect documentId to match the new loaded document"
+      );
+      Assert.notEqual(
+        tabPartialContext.documentId,
+        navigatedTabPartialContext.documentId,
+        "documentId differs after tab navigation"
+      );
       Assert.equal(
         actual[0].documentUrl,
         newTabURL,
@@ -353,10 +387,11 @@ add_task(async function test_runtime_getContexts() {
 
   await triggerActionPopup(extension, privateWin, async () => {
     info("Wait the extension page to be fully loaded in the action popup");
-    await extension.awaitMessage("action-loaded");
+    const popupPartialContext = await extension.awaitMessage("action-loaded");
 
     const expectedPopupContext = getExpectedExtensionContext({
       contextType: "POPUP",
+      documentId: popupPartialContext.documentId,
       documentUrl: resolveExtPageUrl("page.html?kind=action"),
       windowId: privateWinId,
       tabId: -1,
@@ -394,7 +429,9 @@ add_task(async function test_runtime_getContexts() {
     `background-create-iframe`,
     resolveExtPageUrl("page.html?kind=background-subframe")
   );
-  await extension.awaitMessage(`background-subframe-loaded`);
+  const bgFramePartialContext = await extension.awaitMessage(
+    `background-subframe-loaded`
+  );
 
   actual = await getGetContextsResults({
     filter: { contextTypes: ["BACKGROUND"] },
@@ -440,6 +477,16 @@ add_task(async function test_runtime_getContexts() {
     bgTopFrame.tabId,
     "Expect background top frame to have same tabId as the top frame"
   );
+  Assert.equal(
+    bgPartialContext.documentId,
+    bgTopFrame.documentId,
+    "Background top frame's documentId still matches"
+  );
+  Assert.equal(
+    bgFramePartialContext.documentId,
+    bgSubFrame.documentId,
+    "Background sub frame's documentId matches"
+  );
 
   info("Test getContexts with existing sidebars iframes");
   extension.sendMessage(
@@ -447,52 +494,72 @@ add_task(async function test_runtime_getContexts() {
     resolveExtPageUrl("page.html?kind=sidebar-subframe")
   );
   // Expect 3 sidebar subframe to be created.
-  await extension.awaitMessage(`sidebar-subframe-loaded`);
-  await extension.awaitMessage(`sidebar-subframe-loaded`);
-  await extension.awaitMessage(`sidebar-subframe-loaded`);
+  const sidebarFramePartialContexts = [
+    await extension.awaitMessage(`sidebar-subframe-loaded`),
+    await extension.awaitMessage(`sidebar-subframe-loaded`),
+    await extension.awaitMessage(`sidebar-subframe-loaded`),
+  ];
+  sidebarFramePartialContexts.sort(byWindowId);
+  for (const c of sidebarFramePartialContexts) {
+    Assert.greater(c.frameId, 0, "Sidebar subframe has non-zero frameId");
+    Assert.ok(!!c.documentId, "Sidebar subframe has documentId");
+  }
+
+  let expectedSidebarFrames = [
+    getExpectedExtensionContext({
+      contextType: "SIDE_PANEL",
+      documentId: sidebarFramePartialContexts[0].documentId,
+      documentUrl: resolveExtPageUrl("page.html?kind=sidebar-subframe"),
+      windowId: firstWinId,
+      tabId: -1,
+      frameId: sidebarFramePartialContexts[0].frameId,
+    }),
+    getExpectedExtensionContext({
+      contextType: "SIDE_PANEL",
+      documentId: sidebarFramePartialContexts[1].documentId,
+      documentUrl: resolveExtPageUrl("page.html?kind=sidebar-subframe"),
+      windowId: secondWinId,
+      tabId: -1,
+      frameId: sidebarFramePartialContexts[1].frameId,
+    }),
+    getExpectedExtensionContext({
+      contextType: "SIDE_PANEL",
+      documentId: sidebarFramePartialContexts[2].documentId,
+      documentUrl: resolveExtPageUrl("page.html?kind=sidebar-subframe"),
+      incognito: true,
+      windowId: privateWinId,
+      tabId: -1,
+      frameId: sidebarFramePartialContexts[2].frameId,
+    }),
+  ];
 
   actual = await getGetContextsResults({
     filter: { contextTypes: ["SIDE_PANEL"], windowIds: [firstWinId] },
     sortBy: byFrameId,
   });
-  Assert.equal(
-    actual.length,
-    2,
-    "Expect 2 sidebar extension contexts to be found for the first window"
-  );
-  // NOTE: we have already asserted that the sidebar top level frame has frameId 0.
-  Assert.greater(
-    actual.find(
-      it =>
-        it.documentUrl == resolveExtPageUrl("page.html?kind=sidebar-subframe")
-    )?.frameId,
-    0,
-    "Expect sidebar subframe to have the expected frameId"
-  );
-  // NOTE: we have already asserted that the top level frame have tabId -1.
-  Assert.equal(
-    actual[0].tabId,
-    actual[1].tabId,
-    "Expect iframe and top level sidebar frame to have the same tabId"
+  assertGetContextsResult(
+    actual,
+    [expectedSidebars[0], expectedSidebarFrames[0]],
+    "Found sidebar extension context and its subframe in first window"
   );
 
   actual = await getGetContextsResults({
     filter: { contextTypes: ["SIDE_PANEL"], windowIds: [secondWinId] },
     sortBy: byFrameId,
   });
-  Assert.equal(
-    actual.length,
-    2,
-    "Expect 2 sidebar extension contexts to be found for the second window"
+  assertGetContextsResult(
+    actual,
+    [expectedSidebars[1], expectedSidebarFrames[1]],
+    "Found sidebar extension context and its subframe in second window"
   );
 
   actual = await getGetContextsResults({
     filter: { contextTypes: ["SIDE_PANEL"], incognito: true },
   });
-  Assert.equal(
-    actual.length,
-    2,
-    "Expect 2 sidebar extension contexts to be found for private windows"
+  assertGetContextsResult(
+    actual,
+    [expectedSidebars[2], expectedSidebarFrames[2]],
+    "Found sidebar extension context and its subframe in second window"
   );
 
   info("Test getContexts after background history push state");
@@ -527,7 +594,8 @@ add_task(async function test_runtime_getContexts() {
   );
   await BrowserTestUtils.withNewTab("about:addons", async () => {
     extension.sendMessage("background-open-options-page");
-    await extension.awaitMessage("options-loaded");
+    const optionsPartialContext =
+      await extension.awaitMessage("options-loaded");
     const { selectedBrowser } = firstWin.gBrowser;
     Assert.equal(
       selectedBrowser.currentURI.spec,
@@ -544,6 +612,7 @@ add_task(async function test_runtime_getContexts() {
       [
         getExpectedExtensionContext({
           contextType: "TAB",
+          documentId: optionsPartialContext.documentId,
           documentUrl: resolveExtPageUrl("page.html?kind=options"),
           windowId: firstWinId,
           tabId: optionsTabId,
@@ -559,6 +628,7 @@ add_task(async function test_runtime_getContexts() {
     const toolbox = await openToolboxForTab(tab);
 
     info("Wait for the devtools page to be loaded");
+    // TODO bug 1918719: when supported, check documentId from message:
     await extension.awaitMessage("devtools-page-loaded");
 
     Assert.equal(
@@ -570,6 +640,7 @@ add_task(async function test_runtime_getContexts() {
     await gDevTools.showToolboxForTab(tab, { toolId: panelId });
 
     info("Wait for the devtools panel to be loaded");
+    // TODO bug 1918719: when supported, check documentId from message:
     await extension.awaitMessage("devtools-panel-loaded");
 
     actual = await getGetContextsResults({ filter: {} });
@@ -587,7 +658,7 @@ add_task(async function test_runtime_getContexts() {
     );
     // Expect no other context to be listed in the getContexts results
     // (devtools page and panel are currently expected to not be
-    // part of getContexts results).
+    // part of getContexts results, see bug 1918719).
     Assert.deepEqual(
       actual.filter(
         ctx => !["BACKGROUND", "SIDE_PANEL"].includes(ctx.contextType)

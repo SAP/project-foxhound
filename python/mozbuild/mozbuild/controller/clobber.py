@@ -85,7 +85,7 @@ class Clobberer:
         This returns a list of lines describing why the clobber was required.
         Each line is stripped of leading and trailing whitespace.
         """
-        with open(self.src_clobber) as fh:
+        with open(self.src_clobber, encoding="utf-8") as fh:
             lines = [l.strip() for l in fh.readlines()]
             return [l for l in lines if l and not l.startswith("#")]
 
@@ -147,7 +147,7 @@ class Clobberer:
             rust_build_kind = "debug"
 
         # Top-level files and directories to not clobber by default.
-        no_clobber = {".mozbuild", "msvc", "_virtualenvs"}
+        no_clobber = {".clangd", ".mozbuild", "clangd", "msvc", "_virtualenvs"}
 
         # Hold off on clobbering cargo build artifacts
         no_clobber |= rust_targets

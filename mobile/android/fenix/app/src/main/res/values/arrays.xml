@@ -48,4 +48,11 @@
         <item>@color/fx_mobile_icon_color_accent_green</item>
         <item>@color/fx_mobile_icon_color_accent_yellow</item>
     </array>
+
+    <string name="remote_settings_server_prod">production</string>
+    <string name="remote_settings_server_dev">development</string>
+    <string name="remote_settings_server_stage">staging</string>
+    <string name="remote_settings_server_prod_v2">production v2</string>
+    <string name="remote_settings_server_dev_v2">development v2</string>
+    <string name="remote_settings_server_stage_v2">staging v2</string>
 </resources>

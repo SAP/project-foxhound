@@ -88,7 +88,7 @@ export class GeckoViewTranslations extends GeckoViewModule {
             this.getActor("Translations").shouldNeverTranslateSite();
           aCallback.onSuccess(value);
         } catch (error) {
-          aCallback.onError(`Could not set site setting: ${error}`);
+          aCallback.onError(`Could not get site setting: ${error}`);
         }
         break;
 
@@ -109,9 +109,7 @@ export class GeckoViewTranslations extends GeckoViewModule {
     debug`handleEvent: ${aEvent.type}`;
     switch (aEvent.type) {
       case "TranslationsParent:OfferTranslation":
-        this.eventDispatcher.sendRequest({
-          type: "GeckoView:Translations:Offer",
-        });
+        this.eventDispatcher.sendRequest("GeckoView:Translations:Offer");
         break;
       case "TranslationsParent:LanguageState": {
         const {
@@ -130,8 +128,7 @@ export class GeckoViewTranslations extends GeckoViewModule {
           isEngineReady,
         };
 
-        this.eventDispatcher.sendRequest({
-          type: "GeckoView:Translations:StateChange",
+        this.eventDispatcher.sendRequest("GeckoView:Translations:StateChange", {
           data,
         });
 

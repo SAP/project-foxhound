@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,7 +15,6 @@
 #include "mozilla/StaticPrefs_mathml.h"
 #include "mozilla/TextEditor.h"
 #include "mozilla/gfx/2D.h"
-#include "nsGkAtoms.h"
 #include "nsLineBreaker.h"
 #include "nsSpecialCasingData.h"
 #include "nsStyleConsts.h"
@@ -287,7 +284,7 @@ static LanguageSpecificCasingBehavior GetCasingFor(const nsAtom* aLang) {
 bool nsCaseTransformTextRunFactory::TransformString(
     const nsAString& aString, nsString& aConvertedString,
     const Maybe<StyleTextTransform>& aGlobalTransform, char16_t aMaskChar,
-    bool aCaseTransformsOnly, const nsAtom* aLanguage,
+    bool aCaseTransformsOnly, bool aUseCapitalEsZet, const nsAtom* aLanguage,
     nsTArray<bool>& aCharsToMergeArray, nsTArray<bool>& aDeletedCharsArray,
     const nsTransformedTextRun* aTextRun, uint32_t aOffsetInTextRun,
     nsTArray<uint8_t>* aCanBreakBeforeArray,
@@ -655,9 +652,7 @@ bool nsCaseTransformTextRunFactory::TransformString(
           // Updated mapping for German eszett, not currently reflected in the
           // Unicode data files. This is behind a pref, as it may not work well
           // with many (esp. older) fonts.
-          if (ch == 0x00DF &&
-              StaticPrefs::
-                  layout_css_text_transform_uppercase_eszett_enabled()) {
+          if (ch == 0x00DF && aUseCapitalEsZet) {
             ch = 0x1E9E;
             break;
           }
@@ -899,8 +894,9 @@ void nsCaseTransformTextRunFactory::RebuildTextRun(
       mAllUppercase ? Some(StyleTextTransform::UPPERCASE) : Nothing();
   bool mergeNeeded = TransformString(
       aTextRun->mString, convertedString, globalTransform, mMaskChar,
-      /* aCaseTransformsOnly = */ false, nullptr, charsToMergeArray,
-      deletedCharsArray, aTextRun, 0, &canBreakBeforeArray, &styleArray);
+      /* aCaseTransformsOnly = */ false, mUseCapitalEsZet, nullptr,
+      charsToMergeArray, deletedCharsArray, aTextRun, 0, &canBreakBeforeArray,
+      &styleArray);
 
   gfx::ShapedTextFlags flags;
   gfxTextRunFactory::Parameters innerParams =

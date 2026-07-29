@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sw=2 et tw=78: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -402,9 +400,16 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
             } else if (rel.LowerCaseEqualsASCII("preload")) {
               nsHtml5String url =
                   aAttributes->getValue(nsHtml5AttributeName::ATTR_HREF);
-              if (url) {
-                nsHtml5String as =
-                    aAttributes->getValue(nsHtml5AttributeName::ATTR_AS);
+              nsHtml5String as =
+                  aAttributes->getValue(nsHtml5AttributeName::ATTR_AS);
+              bool isImage = as.LowerCaseEqualsASCII("image");
+              nsHtml5String srcset;
+              if (isImage) {
+                srcset = aAttributes->getValue(
+                    nsHtml5AttributeName::ATTR_IMAGESRCSET);
+              }
+
+              if (url || (isImage && srcset)) {
                 nsHtml5String charset =
                     aAttributes->getValue(nsHtml5AttributeName::ATTR_CHARSET);
                 nsHtml5String crossOrigin = aAttributes->getValue(
@@ -440,15 +445,14 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
                       url, charset, crossOrigin, media, referrerPolicy, nonce,
                       integrity, true, fetchPriority);
                 } else if (as.LowerCaseEqualsASCII("image")) {
-                  nsHtml5String srcset = aAttributes->getValue(
-                      nsHtml5AttributeName::ATTR_IMAGESRCSET);
                   nsHtml5String sizes = aAttributes->getValue(
                       nsHtml5AttributeName::ATTR_IMAGESIZES);
                   nsHtml5String type =
                       aAttributes->getValue(nsHtml5AttributeName::ATTR_TYPE);
                   mSpeculativeLoadQueue.AppendElement()->InitImage(
-                      url, crossOrigin, media, referrerPolicy, srcset, sizes,
-                      true, fetchPriority, type);
+                      url ? url : nsHtml5String::EmptyString(), crossOrigin,
+                      media, referrerPolicy, srcset, sizes, true, fetchPriority,
+                      type);
                 } else if (as.LowerCaseEqualsASCII("font")) {
                   mSpeculativeLoadQueue.AppendElement()->InitFont(
                       url, crossOrigin, media, referrerPolicy, fetchPriority);
@@ -836,6 +840,11 @@ nsIContentHandle* nsHtml5TreeBuilder::createAndInsertFosterParentedElement(
   return child;
 }
 
+void nsHtml5TreeBuilder::optionElementPopped(nsIContentHandle* aOption) {
+  // TODO: Implement "maybe clone an option into selectedcontent" for
+  // customizable <select>.
+}
+
 void nsHtml5TreeBuilder::detachFromParent(nsIContentHandle* aElement) {
   MOZ_ASSERT(aElement, "Null element");
 
@@ -1100,7 +1109,7 @@ void nsHtml5TreeBuilder::addAttributesToElement(
   MOZ_ASSERT(aElement, "Null element");
   MOZ_ASSERT(aAttributes, "Null attributes");
 
-  if (aAttributes == nsHtml5HtmlAttributes::EMPTY_ATTRIBUTES) {
+  if (aAttributes->isEmpty()) {
     return;
   }
 
@@ -1732,14 +1741,25 @@ nsIContentHandle* nsHtml5TreeBuilder::getShadowRootFromHost(
     nsIContentHandle* aHost, nsIContentHandle* aTemplateNode,
     nsHtml5String aShadowRootMode, bool aShadowRootIsClonable,
     bool aShadowRootIsSerializable, bool aShadowRootDelegatesFocus,
+    bool aShadowRootCustomElementRegistry,
+    nsHtml5String aShadowRootSlotAssignment,
     nsHtml5String aShadowRootReferenceTarget) {
-  mozilla::dom::ShadowRootMode mode;
+  using mozilla::dom::ShadowRootMode;
+  using mozilla::dom::SlotAssignmentMode;
+
+  ShadowRootMode mode;
   if (aShadowRootMode.LowerCaseEqualsASCII("open")) {
-    mode = mozilla::dom::ShadowRootMode::Open;
+    mode = ShadowRootMode::Open;
   } else if (aShadowRootMode.LowerCaseEqualsASCII("closed")) {
-    mode = mozilla::dom::ShadowRootMode::Closed;
+    mode = ShadowRootMode::Closed;
   } else {
     return nullptr;
+  }
+
+  SlotAssignmentMode slotAssignment = SlotAssignmentMode::Named;
+  if (mozilla::StaticPrefs::dom_shadowdom_shadowRootSlotAssignment_enabled() &&
+      aShadowRootSlotAssignment.LowerCaseEqualsASCII("manual")) {
+    slotAssignment = SlotAssignmentMode::Manual;
   }
 
   nsString shadowRootReferenceTarget;
@@ -1749,6 +1769,7 @@ nsIContentHandle* nsHtml5TreeBuilder::getShadowRootFromHost(
     nsIContent* root = nsContentUtils::AttachDeclarativeShadowRoot(
         static_cast<nsIContent*>(aHost), mode, aShadowRootIsClonable,
         aShadowRootIsSerializable, aShadowRootDelegatesFocus,
+        aShadowRootCustomElementRegistry, slotAssignment,
         shadowRootReferenceTarget);
     if (!root) {
       nsContentUtils::LogSimpleConsoleError(
@@ -1768,6 +1789,7 @@ nsIContentHandle* nsHtml5TreeBuilder::getShadowRootFromHost(
   opGetShadowRootFromHost operation(
       aHost, fragHandle, aTemplateNode, mode, aShadowRootIsClonable,
       aShadowRootIsSerializable, aShadowRootDelegatesFocus,
+      aShadowRootCustomElementRegistry, slotAssignment,
       shadowRootReferenceTarget);
   treeOp->Init(mozilla::AsVariant(operation));
   return fragHandle;

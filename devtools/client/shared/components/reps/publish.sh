@@ -8,7 +8,7 @@
 # Replace all ES Module import URL which only works within Firefox
 # and make them compatible with Node environment.
 
-if [ -n "$(git status -s -uno)" ]; then
+if [ -n "$(git status -s -uno .)" ]; then
   echo "It looks like you have pending changes in reps/ folder."
   echo "You have to commit or reset them before running this command"
   exit 1

@@ -237,9 +237,13 @@ addons_manager:
       - https://bugzilla.mozilla.org/1912166
       - https://bugzilla.mozilla.org/1958151
       - https://bugzilla.mozilla.org/1994595
+      - https://bugzilla.mozilla.org/2014567
+      - https://bugzilla.mozilla.org/2041166
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1433335#c8
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1820153#c3
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2014567
+      - https://phabricator.services.mozilla.com/D306509
     data_sensitivity:
       - interaction
     notification_emails:
@@ -290,7 +294,7 @@ addons_manager:
           "install-from-file" or "url" as method), one of: "amWebAPI",
           "drag-and-drop", "installTrigger", "install-from-file",
           "link", "management-webext-api", "sideload", "onboarding",
-          "synthetic-install", "url", "product-updates".
+          "rtamo", "synthetic-install", "url", "product-updates".
         type: string
       num_strings:
         description: |
@@ -314,7 +318,13 @@ addons_manager:
           site_warning, site_blocked,install_disabled_warning,
           download_started, download_completed, download_failed
         type: string
-    expires: 154
+      site_permission:
+        description: |
+          Only set for site permission add-on installs. The gated
+          permission being granted by this install flow, currently one of
+          "serial", "midi", "midi-sysex".
+        type: string
+    expires: 161
 
   update: *install_update_event
 
@@ -398,10 +408,12 @@ addons_manager:
       - https://bugzilla.mozilla.org/1917859
       - https://bugzilla.mozilla.org/1958149
       - https://bugzilla.mozilla.org/1994595
+      - https://bugzilla.mozilla.org/2041166
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1433335#c8
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1820153#c3
       - https://phabricator.services.mozilla.com/D224982
+      - https://phabricator.services.mozilla.com/D306509
     data_sensitivity:
       - interaction
     notification_emails:
@@ -439,7 +451,7 @@ addons_manager:
           The add-on blocklistState (0 not-blocked, 1 soft-blocked, 2
           hard-blocked) at the time the manage event was being collected.
         type: string
-    expires: 154
+    expires: 161
 
   report_suspicious_site:
     type: event
@@ -453,9 +465,11 @@ addons_manager:
       - https://bugzilla.mozilla.org/1912166
       - https://bugzilla.mozilla.org/1958151
       - https://bugzilla.mozilla.org/1994595
+      - https://bugzilla.mozilla.org/2041166
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1806056#c3
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1820153#c3
+      - https://phabricator.services.mozilla.com/D306509
     data_sensitivity:
       - stored_content
     notification_emails:
@@ -464,7 +478,10 @@ addons_manager:
       suspicious_site:
         description: The domain of the site that was reported.
         type: string
-    expires: 154
+      permission_type:
+        description: The permission that the site was requesting.
+        type: string
+    expires: 161
 
   compatibility_check_enabled:
     type: boolean
@@ -488,8 +505,10 @@ addons_manager:
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1966154
       - https://bugzilla.mozilla.org/1994595
+      - https://bugzilla.mozilla.org/2041166
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1966154
+      - https://phabricator.services.mozilla.com/D306509
     data_sensitivity:
       - technical
     notification_emails:
@@ -510,7 +529,7 @@ addons_manager:
           and if the application version was changing, while the write error was hit.
           The expected values are: "new", "existing" "existingWithVersionChanged"
         type: string
-    expires: 154
+    expires: 161
 
   startup_timeline:
     type: labeled_quantity
@@ -639,10 +658,12 @@ blocklist:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1820155
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1861296
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1912167
+      - https://bugzilla.mozilla.org/2018311/
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1662857#c11
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1861296#c5
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1912167#c4
+      - https://bugzilla.mozilla.org/2018311/
     data_sensitivity:
       - technical
     metadata:
@@ -652,17 +673,15 @@ blocklist:
       - addons-dev-internal@mozilla.com
       - rwu@mozilla.com
     expires: never
-    telemetry_mirror: BLOCKLIST_MLBF_SOURCE
-    no_lint:
-      - GIFFT_NON_PING_LIFETIME
 
   mlbf_softblocks_source:
     <<: *mlbf_source
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1917859
+      - https://bugzilla.mozilla.org/2018311/
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1917859#c2
-    telemetry_mirror: BLOCKLIST_MLBF_SOFTBLOCKS_SOURCE
+      - https://bugzilla.mozilla.org/2018311/
 
   mlbf_generation_time: &mlbf_generation_time
     type: datetime

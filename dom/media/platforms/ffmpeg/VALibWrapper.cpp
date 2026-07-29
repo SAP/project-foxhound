@@ -6,6 +6,7 @@
 
 #include "FFmpegLog.h"
 #include "PlatformDecoderModule.h"
+#include "mozilla/DataMutex.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/widget/DMABufDevice.h"
 #include "prlink.h"
@@ -17,8 +18,8 @@ static int (*vaInitialize)(void* dpy, int* major_version, int* minor_version);
 static int (*vaTerminate)(void* dpy);
 static void* (*vaGetDisplayDRM)(int fd);
 
-static VADisplayHolder* sDisplayHolder;
-static StaticMutex sDisplayHolderMutex;
+constinit static StaticDataMutex<ThreadSafeWeakPtr<VADisplayHolder>>
+    sDisplayHolder("VADisplayHolder::sDisplayHolder");
 
 void VALibWrapper::Link() {
 #define VA_FUNC_OPTION_SILENT(func)                               \
@@ -58,7 +59,7 @@ bool VALibWrapper::LinkVAAPILibs() {
   lspec.value.pathname = libDrm;
   mVALibDrm = PR_LoadLibraryWithFlags(lspec, PR_LD_NOW | PR_LD_LOCAL);
   if (!mVALibDrm) {
-    FFMPEGP_LOG("VA-API support: Missing or old %s library.\n", libDrm);
+    FFMPEGP_LOG("VA-API support: Missing or old {} library.\n", libDrm);
     return false;
   }
 
@@ -71,7 +72,7 @@ bool VALibWrapper::LinkVAAPILibs() {
     mVALib = nullptr;
   }
   if (!mVALib) {
-    FFMPEGP_LOG("VA-API support: Missing or old %s library.\n", lib);
+    FFMPEGP_LOG("VA-API support: Missing or old {} library.\n", lib);
     return false;
   }
 
@@ -102,10 +103,11 @@ VADisplayHolder::~VADisplayHolder() = default;
 
 /* static */
 RefPtr<VADisplayHolder> VADisplayHolder::GetSingleton() {
-  StaticMutexAutoLock lock(sDisplayHolderMutex);
+  auto weakInstance = sDisplayHolder.Lock();
 
-  if (sDisplayHolder) {
-    return RefPtr{sDisplayHolder};
+  RefPtr<VADisplayHolder> instance(*weakInstance);
+  if (instance) {
+    return instance;
   }
 
   widget::DMABufDeviceLock device;
@@ -126,21 +128,9 @@ RefPtr<VADisplayHolder> VADisplayHolder::GetSingleton() {
     return nullptr;
   }
 
-  RefPtr displayHolder =
-      new VADisplayHolder(std::move(display), std::move(drmFd));
-  sDisplayHolder = displayHolder;
-
-  return displayHolder;
-}
-
-void VADisplayHolder::MaybeDestroy() {
-  StaticMutexAutoLock lock(sDisplayHolderMutex);
-  MOZ_ASSERT(int32_t(mRefCnt) >= 0, "dup release");
-  if (mRefCnt == 0) {
-    // No new reference added before the lock was taken.
-    sDisplayHolder = nullptr;
-    delete this;
-  }
+  instance = new VADisplayHolder(std::move(display), std::move(drmFd));
+  *weakInstance = instance;
+  return instance;
 }
 
 void VADisplayHolder::VADisplayDeleter::operator()(VADisplay aDisplay) {

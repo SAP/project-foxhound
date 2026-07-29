@@ -39,6 +39,17 @@ add_task(async function test_contentscript_about_blank() {
         css: ["mochi_with.css"],
         js: ["mochi_with.js"],
         all_frames: true,
+      }, {
+        matches: ["*://mochi.test/*"],
+        exclude_matches: ["*://mochi.test/tests*"], // all non-blob test resources have this path segment
+        js: ["mochi_wild_without.js"],
+        all_frames: true,
+      }, {
+        match_about_blank: true,
+        matches: ["*://mochi.test/*"],
+        exclude_matches: ["*://mochi.test/tests*"], // all non-blob test resources have this path segment
+        js: ["mochi_wild_with.js"],
+        all_frames: true,
       },
     ],
   };
@@ -62,6 +73,12 @@ add_task(async function test_contentscript_about_blank() {
     "mochi_with.css": `
       body { text-align: right; }
     `,
+    "mochi_wild_without.js": function() {
+      browser.runtime.sendMessage("mochi_wild_without");
+    },
+    "mochi_wild_with.js": function() {
+      browser.runtime.sendMessage("mochi_wild_with");
+    },
   };
 
   function background() {
@@ -154,15 +171,14 @@ add_task(async function test_contentscript_about_blank() {
   info(`Opening blob:-URL: ${blobUrl} from ${win.document.URL}`);
 
   let blobWin = window.open(blobUrl);
-  // blob:-URLs should not have content scripts because
-  // match_origin_as_fallback is not set.
+  // blob:-URLs should not have content scripts because match_origin_as_fallback
+  // is not set, but an about:{blank,srcdoc} iframe loaded within the blob URL
+  // will match the origin, with a wildcard path component (undocumented).
   await Promise.all([
-    extension.awaitMessage("all:about:blank"),
-    extension.awaitMessage("all:about:srcdoc"),
-    extension.awaitMessage("mochi_with:about:blank"),
-    extension.awaitMessage("mochi_with:about:srcdoc"),
+    extension.awaitMessage("mochi_wild_with:about:blank"),
+    extension.awaitMessage("mochi_wild_with:about:srcdoc"),
   ]);
-  is(count, 4, "exactly 4 more scripts ran for blob:-URL");
+  is(count, 2, "exactly 2 more scripts ran for blob:-URL");
   count = 0;
 
   // Test coverage for execution on blob:-URLs is at

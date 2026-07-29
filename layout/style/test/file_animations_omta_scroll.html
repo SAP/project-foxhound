@@ -23,6 +23,10 @@
       to { width: 100px; }
     }
 
+    body {
+      timeline-scope: all;
+    }
+
     .target {
       /* The animation target needs geometry in order to qualify for OMTA */
       width: 100px;
@@ -192,7 +196,7 @@ addAsyncAnimTest(async function() {
   let compositorStr =
     SpecialPowers.DOMWindowUtils.getOMTAStyle(gDiv, "transform");
   ok(compositorStr === "matrix(1, 0, 0, 1, 25, 0)",
-     "scroll animations is in delay phase before advancing time to next tick");
+     `scroll animation in delay phase gets the OMTA style "${compositorStr}"`);
 
   utils.advanceTimeAndRefresh(16);
   utils.restoreNormalRefresh();
@@ -246,7 +250,7 @@ addAsyncAnimTest(async function() {
   let compositorStr =
     SpecialPowers.DOMWindowUtils.getOMTAStyle(gDiv, "transform");
   ok(compositorStr === "matrix(1, 0, 0, 1, 0, 0)",
-     "scroll animations is in delay phase before advancing time to next tick");
+     `scroll animation in delay phase gets the OMTA style "${compositorStr}"`);
 
   utils.advanceTimeAndRefresh(16);
   utils.restoreNormalRefresh();

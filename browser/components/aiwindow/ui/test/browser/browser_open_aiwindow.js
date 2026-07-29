@@ -3,13 +3,25 @@
 
 "use strict";
 
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
+);
+// AI chat content loads Fluent strings asynchronously, which may not complete
+// before the test finishes. This is expected and doesn't affect test behavior.
+PromiseTestUtils.allowMatchingRejectionsGlobally(
+  /Missing message.*smartwindow-messages-document-title/
+);
+
 /**
  * Test window type detection and menu item visibility based on aiwindow pref and window type.
  */
 add_task(async function test_window_type_and_menu_visibility() {
-  // AI Window disabled
+  // AI Window blocked via AI Control
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.smartwindow.enabled", false]],
+    set: [
+      ["browser.smartwindow.enabled", false],
+      ["browser.ai.control.smartWindow", "blocked"],
+    ],
   });
 
   await openHamburgerMenu();
@@ -35,9 +47,12 @@ add_task(async function test_window_type_and_menu_visibility() {
 
   await SpecialPowers.popPrefEnv();
 
-  // AI Window enabled
+  // AI Window enabled and AI Control default settings
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.smartwindow.enabled", true]],
+    set: [
+      ["browser.smartwindow.enabled", true],
+      ["browser.ai.control.smartWindow", "default"],
+    ],
   });
 
   await openHamburgerMenu();
@@ -79,7 +94,10 @@ add_task(async function test_file_menu_no_browser_window() {
 
   try {
     await SpecialPowers.pushPrefEnv({
-      set: [["browser.smartwindow.enabled", false]],
+      set: [
+        ["browser.smartwindow.enabled", false],
+        ["browser.ai.control.smartWindow", "blocked"],
+      ],
     });
 
     await openFileMenu(fileMenuPopup);
@@ -215,7 +233,10 @@ add_task(async function test_openNewBrowserWindow_and_ai_inherit() {
 
   await SpecialPowers.popPrefEnv();
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.smartwindow.enabled", false]],
+    set: [
+      ["browser.smartwindow.enabled", false],
+      ["browser.ai.control.smartWindow", "blocked"],
+    ],
   });
 
   const newWindowAfterDisabledAI = await BrowserTestUtils.openNewBrowserWindow({
@@ -263,6 +284,11 @@ add_task(async function test_aiwindow_html_mode_detection() {
       "fullpage",
       `Mode should be detected as fullpage, got: ${aiWindowElement.mode}`
     );
+
+    Assert.ok(
+      !aiWindowElement.hasAttribute("classic-mode"),
+      "classic-mode attribute should not be set on a Smart Window"
+    );
   });
 
   await BrowserTestUtils.closeWindow(newAIWindow);
@@ -284,15 +310,15 @@ function checkMenuItemVisibility(
   if (!aiWindowEnabled) {
     Assert.ok(
       !aiOpenerButton || aiOpenerButton.hidden,
-      `AI Window button should not be visible when browser.smartwindow.enabled is false`
+      `AI Window button should not be visible when Smart Window feature is blocked`
     );
     Assert.ok(
       !classicOpenerButton || classicOpenerButton.hidden,
-      `Classic Window button should not be visible when browser.smartwindow.enabled is false`
+      `Classic Window button should not be visible when Smart Window feature is blocked`
     );
     Assert.ok(
       !chatsButton || chatsButton.hidden,
-      `Chats history button should not be visible when browser.smartwindow.enabled is false`
+      `Chats history button should not be visible when Smart Window feature is blocked`
     );
   } else if (currentWindowIsAIWindow) {
     Assert.ok(

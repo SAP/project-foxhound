@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -61,14 +59,12 @@
 #include "nsServiceManagerUtils.h"
 #include "runnable_utils.h"
 
-extern "C" {
 // clang-format off
 #include "async_wait.h"
 #include "async_timer.h"
 #include "r_errors.h"
 #include "r_log.h"
 // clang-format on
-}
 
 namespace mozilla {
 
@@ -100,7 +96,7 @@ class nrappkitTimerCallback : public nrappkitCallback,
                         int line)
       : nrappkitCallback(cb, cb_arg, function, line), timer_(nullptr) {}
 
-  void SetTimer(already_AddRefed<nsITimer>&& timer) { timer_ = timer; }
+  void SetTimer(already_AddRefed<nsITimer> timer) { timer_ = timer; }
 
   virtual void Cancel() override {
     AddRef();  // Cancelling the timer causes the callback it holds to

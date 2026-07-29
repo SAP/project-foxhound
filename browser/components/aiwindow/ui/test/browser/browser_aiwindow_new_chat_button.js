@@ -72,49 +72,38 @@ add_task(async function test_new_chat_button_sidebar() {
 });
 
 /**
- * Test that new chat button is not present in fullpage mode.
+ * Test that new chat button is present in fullpage mode and visible when chat is active.
  */
-add_task(async function test_new_chat_button_not_in_fullpage() {
+add_task(async function test_new_chat_button_in_fullpage() {
   const sb = this.sinon.createSandbox();
 
   try {
     sb.stub(this.openAIEngine, "build");
 
-    await SpecialPowers.pushPrefEnv({
-      set: [
-        ["browser.smartwindow.enabled", true],
-        ["browser.smartwindow.firstrun.hasCompleted", true],
-        ["browser.smartwindow.endpoint", "http://localhost:0/v1"],
-      ],
-    });
-
     const aiWin = await openAIWindow();
     const browser = aiWin.gBrowser.selectedBrowser;
 
-    // Use SpecialPowers.spawn to access the content properly
     const result = await SpecialPowers.spawn(browser, [], async () => {
       const aiWindowElement = content.document.querySelector("ai-window");
 
-      // In fullpage mode, the browser container starts with 0 height (collapsed)
-      // until chat starts, but the component should still be fully functional.
-      // Wait a bit more for grid layout to settle
       await new Promise(resolve => content.setTimeout(resolve, 100));
 
-      // Wait for the AI Window component to be ready
       await ContentTaskUtils.waitForCondition(
         () => aiWindowElement && aiWindowElement.shadowRoot,
         "Wait for AI Window to be rendered with shadow root"
       );
 
-      // Check mode and button existence
       const mode = aiWindowElement.mode;
       const newChatButton = aiWindowElement.shadowRoot.querySelector(
         ".new-chat-icon-button"
       );
+      const fullpageHeader =
+        aiWindowElement.shadowRoot.querySelector(".fullpage-header");
 
       return {
         mode,
         hasButton: !!newChatButton,
+        hasFullpageHeader: !!fullpageHeader,
       };
     });
 
@@ -123,14 +112,60 @@ add_task(async function test_new_chat_button_not_in_fullpage() {
       "fullpage",
       "AI Window should be in fullpage mode"
     );
-    Assert.equal(
+    Assert.ok(
       result.hasButton,
-      false,
-      "New chat button should not exist in fullpage mode"
+      "New chat button should exist in fullpage mode"
+    );
+    Assert.ok(
+      result.hasFullpageHeader,
+      "Fullpage header container should exist in fullpage mode"
     );
 
     await BrowserTestUtils.closeWindow(aiWin);
-    await SpecialPowers.popPrefEnv();
+  } finally {
+    sb.restore();
+  }
+});
+
+/**
+ * Test that clicking new chat in fullpage mode keeps the chat-active state
+ * instead of reverting to the initial empty state.
+ */
+add_task(async function test_new_chat_fullpage_stays_chat_active() {
+  const sb = this.sinon.createSandbox();
+
+  try {
+    sb.stub(this.openAIEngine, "build");
+
+    const aiWin = await openAIWindow();
+    const browser = aiWin.gBrowser.selectedBrowser;
+
+    const result = await SpecialPowers.spawn(browser, [], async () => {
+      const aiWindowElement = content.document.querySelector("ai-window");
+
+      await ContentTaskUtils.waitForCondition(
+        () => aiWindowElement && aiWindowElement.shadowRoot,
+        "Wait for AI Window to be rendered with shadow root"
+      );
+
+      aiWindowElement.classList.add("chat-active");
+
+      Assert.ok(
+        aiWindowElement.classList.contains("chat-active"),
+        "chat-active class should be set before clicking new chat"
+      );
+
+      aiWindowElement.onCreateNewChatClick();
+
+      return aiWindowElement.classList.contains("chat-active");
+    });
+
+    Assert.ok(
+      result,
+      "chat-active class should be retained after new chat click in fullpage mode"
+    );
+
+    await BrowserTestUtils.closeWindow(aiWin);
   } finally {
     sb.restore();
   }

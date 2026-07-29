@@ -369,6 +369,10 @@ async function test_strict_native_fallback() {
   }
 
   info("Now a successful case.");
+  // Cancel connections to let TRR recover after the connection/decode error cases
+  // above. On Android (ADB port forwarding) reconnection is slower.
+  Services.obs.notifyObservers(null, "net:cancel-all-connections");
+  await new Promise(resolve => do_timeout(500, resolve));
   Services.dns.clearCache(true);
   setModeAndURI(2, "doh?responseIP=2.2.2.2");
   if (!mozinfo.socketprocess_networking) {

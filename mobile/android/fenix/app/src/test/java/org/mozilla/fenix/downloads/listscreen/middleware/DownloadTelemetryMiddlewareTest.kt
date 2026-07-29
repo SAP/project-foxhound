@@ -2,7 +2,6 @@ package org.mozilla.fenix.downloads.listscreen.middleware
 
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
@@ -12,8 +11,10 @@ import org.mozilla.fenix.downloads.listscreen.store.DownloadUIAction
 import org.mozilla.fenix.downloads.listscreen.store.DownloadUIState
 import org.mozilla.fenix.downloads.listscreen.store.DownloadUIStore
 import org.mozilla.fenix.downloads.listscreen.store.FileItem
+import org.mozilla.fenix.downloads.listscreen.store.fileItem
 import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 class DownloadTelemetryMiddlewareTest {
@@ -65,7 +66,7 @@ class DownloadTelemetryMiddlewareTest {
 
         assertNull(Downloads.shareFile.testGetValue())
 
-        store.dispatch(DownloadUIAction.ShareFileClicked(filePath = "path", contentType = ""))
+        store.dispatch(DownloadUIAction.ShareFileClicked(directoryPath = "path", fileName = "", contentType = ""))
 
         assertNotNull(Downloads.shareFile.testGetValue())
         val snapshot = Downloads.shareFile.testGetValue()!!
@@ -149,7 +150,8 @@ class DownloadTelemetryMiddlewareTest {
 
         assertNull(Downloads.deleteSnackbarShown.testGetValue())
 
-        store.dispatch(DownloadUIAction.AddPendingDeletionSet(setOf("id")))
+        val fileItem = fileItem(id = "id")
+        store.dispatch(DownloadUIAction.AddPendingDeletionSet(setOf(fileItem), removeFromDisk = true))
 
         assertNotNull(Downloads.deleteSnackbarShown.testGetValue())
         val snapshot = Downloads.deleteSnackbarShown.testGetValue()!!

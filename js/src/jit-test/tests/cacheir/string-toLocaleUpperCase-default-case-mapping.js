@@ -12,11 +12,8 @@ function testTurkishCaseMapping() {
   }
 }
 
-// JIT tests run with "en-US" by default. (Or "en-US-POSIX" for some Android tests.)
-assertEq(
-  getDefaultLocale() === "en-US" || getDefaultLocale() === "en-US-POSIX",
-  true
-);
+// JIT tests run with "en-US" by default.
+assertEq(getDefaultLocale() === "en-US", true);
 assertEq(getRealmLocale(), "en-US");
 
 // Ensure case mapping fuse is intact.

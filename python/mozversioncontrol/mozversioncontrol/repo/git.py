@@ -64,6 +64,10 @@ class GitRepository(Repository):
 
     @property
     def head_ref(self):
+        return self.branch or "HEAD"
+
+    @property
+    def head_rev(self):
         return self._run("rev-parse", "HEAD").strip()
 
     def is_cinnabar_repo(self) -> bool:
@@ -146,7 +150,7 @@ class GitRepository(Repository):
         ).splitlines()
         if refs:
             return refs[-1][1:]  # boundary starts with a prefix `-`
-        return self.head_ref
+        return self.head_rev
 
     def base_ref_as_hg(self):
         base_ref = self.base_ref
@@ -192,6 +196,26 @@ class GitRepository(Repository):
         if not name:
             return None
         return name.strip()
+
+    def get_remote_url(self, remote=None, push=False):
+        if not remote:
+            keys = [f"branch.{self.branch}.remote"]
+            if push:
+                keys[0:0] = [f"branch.{self.branch}.pushRemote", "remote.pushDefault"]
+
+            for key in keys:
+                if remote := self._run("config", key, return_codes=[0, 1]):
+                    break
+            else:
+                return None
+
+            remote = remote.strip()
+
+        cmd = ["remote", "get-url", remote]
+        if push:
+            cmd.append("--push")
+        url = self._run(*cmd, return_codes=[0, 2, 128], stderr=subprocess.DEVNULL)
+        return url.strip() if url else None
 
     def get_changed_files(self, diff_filter="ADM", mode="unstaged", rev=None):
         assert all(f.lower() in self._valid_diff_filter for f in diff_filter)
@@ -288,9 +312,9 @@ class GitRepository(Repository):
         if exclude_file is not None:
             with open(exclude_file) as exclude_pattern_file:
                 for pattern in exclude_pattern_file.readlines():
-                    pattern = self._translate_exclude_expr(pattern.rstrip())
-                    if pattern is not None:
-                        args.append(pattern)
+                    translated = self._translate_exclude_expr(pattern.rstrip())
+                    if translated is not None:
+                        args.append(translated)
         return self._pipefrom(*args)
 
     def working_directory_clean(self, untracked=False, ignored=False):
@@ -319,12 +343,39 @@ class GitRepository(Repository):
     def update(self, ref):
         self._run("checkout", ref)
 
-    def push_to_try(
+    def push(
         self,
-        message: str,
-        changed_files: dict[str, str] = {},
-        allow_log_capture: bool = False,
+        remote: Optional[str] = None,
+        ref: Optional[str] = None,
+        dest_branch: Optional[str] = None,
+        force: bool = False,
     ):
+        if ref and not remote:
+            raise ValueError("Cannot specify ref without specifying remote")
+        if dest_branch and not ref:
+            raise ValueError("Cannot specify dest_branch without specifying ref")
+
+        args = ["push"]
+        if force:
+            args.append("--force")
+        if remote:
+            args.append(remote)
+        if ref:
+            if dest_branch:
+                args.append(f"{ref}:refs/heads/{dest_branch}")
+            else:
+                args.append(ref)
+        (cmd, _, env) = self._process_run_args(*args)
+        subprocess.check_call(cmd, cwd=self.path, env=env)
+
+    def _resolve_try_branch(self):
+        if not self.branch:
+            raise ValueError(
+                "Cannot push to try from a detached HEAD; checkout a branch first."
+            )
+        return self.branch
+
+    def _push_to_hg_try(self, message, changed_files, allow_log_capture):
         if not self.has_git_cinnabar:
             raise MissingVCSExtension("cinnabar")
 
@@ -353,6 +404,16 @@ class GitRepository(Repository):
                 )
             else:
                 subprocess.check_call(cmd, cwd=self.path)
+
+    def add_note(
+        self,
+        note: str,
+        content: str,
+        commit: Optional[str] = None,
+    ):
+        if not note.startswith("refs/notes/"):
+            note = f"refs/notes/{note}"
+        self._run("notes", "--ref", note, "add", "-f", "-m", content, commit or "HEAD")
 
     def set_config(self, name, value):
         self._run("config", name, value)
@@ -384,7 +445,15 @@ class GitRepository(Repository):
     def get_commit_patches(self, nodes: list[str]) -> list[bytes]:
         """Return the contents of the patch `node` in the VCS' standard format."""
         return [
-            self._run("format-patch", node, "-1", "--always", "--stdout", encoding=None)
+            self._run(
+                "format-patch",
+                node,
+                "-1",
+                "--always",
+                "--stdout",
+                "--no-base",  # In case the user has format.useAutoBase true
+                encoding=None,
+            )
             for node in nodes
         ]
 
@@ -418,7 +487,7 @@ class GitRepository(Repository):
         This function returns a tuple of the ref of the new head and a function
         that can be called to remove the head from the local repository.
         """
-        current_head = self.head_ref
+        current_head = self.head_rev
 
         def data(content):
             return f"data {len(content)}\n{content}"
@@ -491,25 +560,17 @@ class GitRepository(Repository):
         return datetime.strptime(out.strip(), "%Y-%m-%d %H:%M:%S %z")
 
     def get_config_key_value(self, key: str):
-        try:
-            value = subprocess.check_output(
-                [self._tool, "config", "--get", key],
-                stderr=subprocess.DEVNULL,
-                text=True,
-            ).strip()
-            return value or None
-        except subprocess.CalledProcessError:
-            return None
+        value = self._run(
+            "config", "--get", key, stderr=subprocess.DEVNULL, return_codes=[0, 1]
+        ).strip()
+        return value or None
 
     def set_config_key_value(self, key: str, value: str):
         """
         Set a git config value in the given repo and print
         logging output indicating what was done.
         """
-        subprocess.check_call(
-            [self._tool, "config", key, value],
-            cwd=str(self.path),
-        )
+        self._run("config", key, value)
         print(f'Set git config: "{key} = {value}"')
 
     def configure(self, state_dir: Path, update_only: bool = False):
@@ -728,7 +789,9 @@ class GitRepository(Repository):
         Retrieve git format-patch style patches of all commits that occurred
         after `base_ref`.
         """
-        return self._run("format-patch", f"{base_ref}..HEAD", "--stdout")
+        return self._run(
+            "format-patch", f"{base_ref}..HEAD", "--stdout", f"--base={base_ref}"
+        )
 
     def get_patch_for_uncommitted_changes(
         self, message: str = "[PATCH] Uncommitted changes", date: datetime = None

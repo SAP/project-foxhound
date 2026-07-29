@@ -4,6 +4,7 @@
 
 import bisect
 import errno
+import functools
 import inspect
 import json
 import os
@@ -22,9 +23,8 @@ from tempfile import mkstemp
 
 import mozpack.path as mozpath
 from mozbuild import makeutil
-from mozbuild.nodeutil import package_setup
 from mozbuild.preprocessor import Preprocessor
-from mozbuild.util import FileAvoidWrite, ensure_unicode, memoize
+from mozbuild.util import FileAvoidWrite, ensure_unicode
 from mozpack.chrome.manifest import ManifestEntry, ManifestInterfaces
 from mozpack.errors import ErrorMessage, errors
 from mozpack.executables import elfhack, is_executable, may_elfhack, may_strip, strip
@@ -112,6 +112,15 @@ class BaseFile:
     their own copy function, or rely on BaseFile.copy using the open() member
     function and/or the path property.
     """
+
+    # True if this file type is safe to skip re-installing via a stamp file.
+    # Only types that are never stale (symlinks, already-existing files) should
+    # set this. File copies can become stale when the source changes.
+    supports_stamp = False
+
+    # True if this file type creates a symlink on disk. Used to spot-check
+    # that the filesystem actually supports symlinks before writing a stamp.
+    is_symlink_backed = False
 
     @staticmethod
     def is_older(first, second):
@@ -333,6 +342,9 @@ class AbsoluteSymlinkFile(File):
     This class only works if the target path is absolute.
     """
 
+    supports_stamp = True
+    is_symlink_backed = True
+
     def __init__(self, path):
         if not os.path.isabs(path):
             raise ValueError("Symlink target not absolute: %s" % path)
@@ -369,7 +381,9 @@ class AbsoluteSymlinkFile(File):
         # so we replace with a proper symlink.
         if st and stat.S_ISLNK(st.st_mode):
             link = os.readlink(dest)
-            if link == self.path:
+            if mozpath.strip_extended_length_prefix(
+                link
+            ) == mozpath.strip_extended_length_prefix(self.path):
                 return False
 
             os.remove(dest)
@@ -484,6 +498,8 @@ class ExistingFile(BaseFile):
     existing file is required, it must exist during copy() or an error is
     raised.
     """
+
+    supports_stamp = True
 
     def __init__(self, required):
         self.required = required
@@ -825,6 +841,8 @@ class MinifiedJavaScript(BaseFile):
 
             if not terser_path.exists():
                 # Automatically set up node_modules if terser is not found
+                from mozbuild.nodeutil import package_setup
+
                 package_setup(str(terser_dir), "terser")
 
                 # Verify that terser is now available after setup
@@ -1305,7 +1323,7 @@ class FileListFinder(BaseFinder):
     def __init__(self, files):
         self._files = sorted(files)
 
-    @memoize
+    @functools.cache
     def _match(self, pattern):
         """Return a sorted list of all files matching the given pattern."""
         # We don't use the utility _find_helper method because it's not tuned

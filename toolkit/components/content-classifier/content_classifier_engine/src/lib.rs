@@ -84,6 +84,7 @@ pub unsafe extern "C" fn content_classifier_engine_check_network_request_prepars
     source_schemeless_site: &nsACString,
     request_type: &nsACString,
     third_party: bool,
+    previously_matched_rule: bool,
     out_matched: *mut bool,
     out_important: *mut bool,
     out_exception: *mut nsCString,
@@ -108,7 +109,7 @@ pub unsafe extern "C" fn content_classifier_engine_check_network_request_prepars
         third_party,
     );
 
-    let result = engine.check_network_request(&request);
+    let result = engine.check_network_request_subset(&request, previously_matched_rule, false);
 
     *out_matched = result.matched;
     *out_important = result.important;

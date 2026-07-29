@@ -367,6 +367,9 @@ http://localhost:9899
 # Host for testing APIs whitelisted for mozilla.org
 https://www.mozilla.org:443
 
+# Host for testing WNP URL on firefox.com (Bug 2025987)
+https://www.firefox.com:443
+
 # local-IP origins for password manager tests (Bug 1582499)
 http://10.0.0.0:80                 privileged
 http://192.168.0.0:80              privileged

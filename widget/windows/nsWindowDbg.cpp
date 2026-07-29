@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -393,10 +392,10 @@ bool NativeEventLogger::NativeEventLoggerInternal() {
           "%s | %6ld %08" PRIX64 " - 0x%04X %s%s%s: 0x%08" PRIX64 " (%s)\n",
           mMsgLoopName, mEventCounter.valueOr(gEventCounter),
           reinterpret_cast<uint64_t>(mHwnd), mMsg,
-          !msgText.IsEmpty() ? msgText.Data() : "Unknown",
+          !msgText.IsEmpty() ? msgText.get() : "Unknown",
           paramInfo.IsEmpty() ? "" : " ", paramInfo.get(),
           mResult.isSome() ? static_cast<uint64_t>(mRetValue) : 0, resultMsg);
-      const char* logMessageData = logMessage.Data();
+      const char* logMessageData = logMessage.get();
       MOZ_LOG(gWindowsEventLog, targetLogLevel, ("%s", logMessageData));
     }
     return true;

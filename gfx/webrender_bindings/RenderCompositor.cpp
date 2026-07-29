@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -152,11 +150,6 @@ void wr_compositor_end_frame(void* aCompositor) {
   compositor->CompositorEndFrame();
 }
 
-void wr_compositor_enable_native_compositor(void* aCompositor, bool aEnable) {
-  RenderCompositor* compositor = static_cast<RenderCompositor*>(aCompositor);
-  compositor->EnableNativeCompositor(aEnable);
-}
-
 void wr_compositor_get_capabilities(void* aCompositor,
                                     CompositorCapabilities* aCaps) {
   RenderCompositor* compositor = static_cast<RenderCompositor*>(aCompositor);
@@ -245,7 +238,7 @@ UniquePtr<RenderCompositor> RenderCompositor::Create(
 #if defined(MOZ_WAYLAND)
   if (gfx::gfxVars::UseWebRenderCompositor() &&
       aWidget->GetCompositorOptions().AllowNativeCompositor()) {
-    if (StaticPrefs::gfx_webrender_layer_compositor_AtStartup()) {
+    if (StaticPrefs::gfx_webrender_layer_compositor()) {
       return RenderCompositorLayerNativeOGL::Create(aWidget, aError);
     } else {
       return RenderCompositorNativeOGL::Create(aWidget, aError);
@@ -267,7 +260,7 @@ UniquePtr<RenderCompositor> RenderCompositor::Create(
 #elif defined(XP_DARWIN)
   if (gfx::gfxVars::UseWebRenderCompositor() &&
       aWidget->GetCompositorOptions().AllowNativeCompositor()) {
-    if (StaticPrefs::gfx_webrender_layer_compositor_AtStartup()) {
+    if (StaticPrefs::gfx_webrender_layer_compositor()) {
       UniquePtr<RenderCompositor> compositor =
           RenderCompositorLayerNativeOGL::Create(aWidget, aError);
       if (compositor) {

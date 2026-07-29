@@ -292,10 +292,18 @@ class PeerConnectionEncodingsIntegrationTest : public ::testing::Test {
   void ExchangeIceCandidates(
       scoped_refptr<PeerConnectionTestWrapper> local_pc_wrapper,
       scoped_refptr<PeerConnectionTestWrapper> remote_pc_wrapper) {
-    local_pc_wrapper->SignalOnIceCandidateReady.connect(
-        remote_pc_wrapper.get(), &PeerConnectionTestWrapper::AddIceCandidate);
-    remote_pc_wrapper->SignalOnIceCandidateReady.connect(
-        local_pc_wrapper.get(), &PeerConnectionTestWrapper::AddIceCandidate);
+    local_pc_wrapper->SubscribeOnIceCandidateReady(
+        remote_pc_wrapper.get(),
+        [remote_pc = remote_pc_wrapper.get()](const std::string& mid, int index,
+                                              const std::string& candidate) {
+          remote_pc->AddIceCandidate(mid, index, candidate);
+        });
+    remote_pc_wrapper->SubscribeOnIceCandidateReady(
+        local_pc_wrapper.get(),
+        [local_pc = local_pc_wrapper.get()](const std::string& mid, int index,
+                                            const std::string& candidate) {
+          local_pc->AddIceCandidate(mid, index, candidate);
+        });
   }
 
   // Negotiate without any tweaks (does not work for simulcast loopback).
@@ -2122,6 +2130,64 @@ TEST_F(PeerConnectionEncodingsIntegrationTest,
 }
 
 TEST_F(PeerConnectionEncodingsIntegrationTest,
+       EncodingParametersRedEnabledBeforeNegotiationAudioWithFieldTrial) {
+  scoped_refptr<PeerConnectionTestWrapper> local_pc_wrapper =
+      CreatePc("WebRTC-PayloadTypesInTransport/Enabled/");
+  scoped_refptr<PeerConnectionTestWrapper> remote_pc_wrapper =
+      CreatePc("WebRTC-PayloadTypesInTransport/Enabled/");
+  ExchangeIceCandidates(local_pc_wrapper, remote_pc_wrapper);
+
+  std::vector<RtpCodecCapability> send_codecs =
+      local_pc_wrapper->pc_factory()
+          ->GetRtpSenderCapabilities(MediaType::AUDIO)
+          .codecs;
+
+  std::optional<RtpCodecCapability> opus =
+      local_pc_wrapper->FindFirstSendCodecWithName(MediaType::AUDIO, "opus");
+  ASSERT_TRUE(opus);
+
+  std::optional<RtpCodecCapability> red =
+      local_pc_wrapper->FindFirstSendCodecWithName(MediaType::AUDIO, "red");
+  ASSERT_TRUE(red);
+
+  RtpTransceiverInit init;
+  init.direction = RtpTransceiverDirection::kSendOnly;
+  RtpEncodingParameters encoding_parameters;
+  encoding_parameters.codec = opus;
+  init.send_encodings.push_back(encoding_parameters);
+
+  auto transceiver_or_error =
+      local_pc_wrapper->pc()->AddTransceiver(MediaType::AUDIO, init);
+  ASSERT_TRUE(transceiver_or_error.ok());
+  scoped_refptr<RtpTransceiverInterface> audio_transceiver =
+      transceiver_or_error.MoveValue();
+
+  // Preferring RED over Opus should enable RED with Opus encoding.
+  send_codecs[0] = red.value();
+  send_codecs[1] = opus.value();
+
+  ASSERT_TRUE(audio_transceiver->SetCodecPreferences(send_codecs).ok());
+  NegotiateWithSimulcastTweaks(local_pc_wrapper, remote_pc_wrapper);
+  local_pc_wrapper->WaitForConnection();
+  remote_pc_wrapper->WaitForConnection();
+
+  RtpParameters parameters = audio_transceiver->sender()->GetParameters();
+  EXPECT_EQ(parameters.encodings[0].codec, opus);
+  EXPECT_EQ(parameters.codecs[0].name, red->name);
+
+  // Check that it's possible to switch back to Opus without RED.
+  send_codecs[0] = opus.value();
+  send_codecs[1] = red.value();
+
+  ASSERT_TRUE(audio_transceiver->SetCodecPreferences(send_codecs).ok());
+  NegotiateWithSimulcastTweaks(local_pc_wrapper, remote_pc_wrapper);
+
+  parameters = audio_transceiver->sender()->GetParameters();
+  EXPECT_EQ(parameters.encodings[0].codec, opus);
+  EXPECT_EQ(parameters.codecs[0].name, opus->name);
+}
+
+TEST_F(PeerConnectionEncodingsIntegrationTest,
        SetParametersRejectsScalabilityModeForSelectedCodec) {
   scoped_refptr<PeerConnectionTestWrapper> local_pc_wrapper = CreatePc();
 
@@ -2525,9 +2591,8 @@ TEST_P(PeerConnectionEncodingsIntegrationParameterizedTest, Simulcast) {
               StrCaseEq(mime_type_));
   EXPECT_THAT(GetCurrentCodecMimeType(report, *outbound_rtps[2]),
               StrCaseEq(mime_type_));
-  EXPECT_THAT(*outbound_rtps[0]->scalability_mode, StrEq("L1T3"));
-  EXPECT_THAT(*outbound_rtps[1]->scalability_mode, StrEq("L1T3"));
-  EXPECT_THAT(*outbound_rtps[2]->scalability_mode, StrEq("L1T3"));
+  EXPECT_THAT(report, OutboundRtpStatsAre(
+                          Each(ScalabilityModeIs(Optional(StrEq("L1T3"))))));
 }
 
 // Configure 4:2:1 using `scale_resolution_down_to`.
@@ -2577,20 +2642,28 @@ TEST_P(PeerConnectionEncodingsIntegrationParameterizedTest,
   EXPECT_THAT(parameters.encodings[2].scalability_mode,
               Optional(std::string("L1T3")));
 
-  // Wait until media is flowing on all three layers.
-  // Ramp up time is needed before all three layers are sending.
-  auto error_or_report =
-      GetStatsUntil(local_pc_wrapper, HasOutboundRtpBytesSent(3u),
-                    {.timeout = kLongTimeoutForRampingUp});
+  // Wait until media is flowing on all three layers AND scalability mode is
+  // reported. Ramp up time is needed before all three layers are sending.
+  auto error_or_report = GetStatsUntil(
+      local_pc_wrapper,
+      AllOf(HasOutboundRtpBytesSent(3u),
+            OutboundRtpStatsAre(
+                Each(ScalabilityModeIs(Optional(StrEq("L1T3")))))),
+      {.timeout = kLongTimeoutForRampingUp});
   ASSERT_THAT(error_or_report, IsRtcOk());
   // Verify codec and scalability mode.
   scoped_refptr<const RTCStatsReport> report = error_or_report.value();
   auto outbound_rtp_by_rid = GetOutboundRtpStreamStatsByRid(report);
-  EXPECT_THAT(outbound_rtp_by_rid,
-              UnorderedElementsAre(Pair("q", ResolutionIs(320, 180)),
-                                   Pair("h", ResolutionIs(640, 360)),
-                                   Pair("f", ResolutionIs(1280, 720))));
-  // Verify codec and scalability mode.
+  EXPECT_THAT(
+      outbound_rtp_by_rid,
+      UnorderedElementsAre(
+          Pair("q", AllOf(ResolutionIs(320, 180),
+                          ScalabilityModeIs(Optional(StrEq("L1T3"))))),
+          Pair("h", AllOf(ResolutionIs(640, 360),
+                          ScalabilityModeIs(Optional(StrEq("L1T3"))))),
+          Pair("f", AllOf(ResolutionIs(1280, 720),
+                          ScalabilityModeIs(Optional(StrEq("L1T3")))))));
+  // Verify codec.
   std::vector<const RTCOutboundRtpStreamStats*> outbound_rtps =
       report->GetStatsOfType<RTCOutboundRtpStreamStats>();
   ASSERT_THAT(outbound_rtps, SizeIs(3u));
@@ -2600,9 +2673,6 @@ TEST_P(PeerConnectionEncodingsIntegrationParameterizedTest,
               StrCaseEq(mime_type_));
   EXPECT_THAT(GetCurrentCodecMimeType(report, *outbound_rtps[2]),
               StrCaseEq(mime_type_));
-  EXPECT_THAT(*outbound_rtps[0]->scalability_mode, StrEq("L1T3"));
-  EXPECT_THAT(*outbound_rtps[1]->scalability_mode, StrEq("L1T3"));
-  EXPECT_THAT(*outbound_rtps[2]->scalability_mode, StrEq("L1T3"));
 }
 
 // Simulcast starting in 720p 4:2:1 then changing to {180p, 360p, 540p} using

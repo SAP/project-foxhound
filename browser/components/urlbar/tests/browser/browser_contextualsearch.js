@@ -272,10 +272,93 @@ add_task(async function test_selectContextualSearchResult_already_installed() {
     expectedUrl,
     "Selecting the contextual search result opens the search URL"
   );
-  await UrlbarTestUtils.exitSearchMode(window, {
-    clickClose: true,
-    waitForSearch: false,
+  Assert.ok(
+    !gURLBar.view.isOpen,
+    "Urlbar view should be closed after navigation"
+  );
+  Assert.equal(
+    gURLBar.searchMode,
+    null,
+    "Search mode should be cleared after navigation"
+  );
+});
+
+add_task(async function test_host_match_installed_engine_immediate_search() {
+  await SearchTestUtils.updateRemoteSettingsConfig([CONFIG[0]]);
+  let ext = await SearchTestUtils.installSearchExtension({
+    name: "HostMatchEngine",
+    search_url: "https://example.net/search",
   });
+  await AddonTestUtils.waitForSearchProviderStartup(ext);
+
+  const query = "testquery";
+  let engine = SearchService.getEngineByName("HostMatchEngine");
+  const [expectedUrl] = UrlbarUtils.getSearchQueryUrl(engine, query);
+
+  await loadUri("https://example.net/");
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: query,
+  });
+
+  Assert.ok(
+    await hasActions(1),
+    "Contextual search action is shown for host-matched installed engine"
+  );
+
+  let onLoad = BrowserTestUtils.browserLoaded(
+    gBrowser.selectedBrowser,
+    false,
+    expectedUrl
+  );
+  let btn = window.document.querySelector(".urlbarView-action-btn");
+  EventUtils.synthesizeMouseAtCenter(btn, {}, window);
+  await onLoad;
+
+  Assert.equal(
+    gBrowser.selectedBrowser.currentURI.spec,
+    expectedUrl,
+    "Clicking contextual search for host-matched installed engine navigates immediately"
+  );
+  Assert.ok(!gURLBar.searchMode, "Search mode was not entered");
+
+  await loadUri("https://example.net/");
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: query,
+  });
+
+  Assert.ok(
+    await hasActions(1),
+    "Contextual search action is shown for host-matched installed engine"
+  );
+
+  EventUtils.synthesizeKey("KEY_Tab");
+  await UrlbarTestUtils.assertSearchMode(window, {
+    engineName: "HostMatchEngine",
+    entry: "keywordoffer",
+    isPreview: true,
+  });
+
+  onLoad = BrowserTestUtils.browserLoaded(
+    gBrowser.selectedBrowser,
+    false,
+    expectedUrl
+  );
+  EventUtils.synthesizeKey("KEY_Enter");
+  await onLoad;
+
+  Assert.equal(
+    gBrowser.selectedBrowser.currentURI.spec,
+    expectedUrl,
+    "A single Enter after tabbing into the action navigates immediately"
+  );
+  Assert.ok(
+    !gURLBar.searchMode,
+    "Search mode was not entered after tab + Enter"
+  );
+
+  await SearchTestUtils.updateRemoteSettingsConfig(CONFIG);
 });
 
 add_task(async function test_tab_to_search_engine() {
@@ -405,6 +488,7 @@ add_task(async function keep_search_query_searchbar() {
   });
 
   let gCUITestUtils = new CustomizableUITestUtils(window);
+  registerCleanupFunction(() => gCUITestUtils.removeSearchBar());
   let searchbar = await gCUITestUtils.addSearchBar();
 
   // Visit page where de-engine will be suggested.

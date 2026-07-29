@@ -29,6 +29,7 @@ struct pw_context * (*pw_context_new_fn)(struct pw_loop *main_loop,
                                       size_t user_data_size);
 static int (*pw_core_disconnect_fn)(struct pw_core *core);
 static void (*pw_init_fn)(int *argc, char **argv[]);
+static void (*pw_deinit_fn)();
 static void (*pw_proxy_destroy_fn)(struct pw_proxy *proxy);
 static void (*pw_stream_add_listener_fn)(struct pw_stream *stream,
                                       struct spa_hook *listener,
@@ -65,6 +66,14 @@ static void (*pw_thread_loop_wait_fn)(struct pw_thread_loop *loop);
 static void (*pw_thread_loop_signal_fn)(struct pw_thread_loop *loop, bool wait_for_accept);
 static struct pw_properties* (*pw_properties_new_string_fn)(const char *str);
 static const char* (*pw_get_library_version_fn)();
+static struct pw_node_info * (*pw_node_info_update_fn)(struct pw_node_info *info,
+                                                       const struct pw_node_info *update);
+static void (*pw_node_info_free_fn)(struct pw_node_info *info);
+static void (*pw_proxy_add_listener_fn)(struct pw_proxy *proxy,
+                                        struct spa_hook *listener,
+                                        const struct pw_proxy_events *events,
+                                        void *data);
+static int (*pw_proxy_sync_fn)(struct pw_proxy *proxy, int seq);
 
 bool IsPwLibraryLoaded() {
   static bool isLoaded =
@@ -74,6 +83,7 @@ bool IsPwLibraryLoaded() {
           IS_FUNC_LOADED(pw_context_new_fn) &&
           IS_FUNC_LOADED(pw_core_disconnect_fn) &&
           IS_FUNC_LOADED(pw_init_fn) &&
+          IS_FUNC_LOADED(pw_deinit_fn) &&
           IS_FUNC_LOADED(pw_proxy_destroy_fn) &&
           IS_FUNC_LOADED(pw_stream_add_listener_fn) &&
           IS_FUNC_LOADED(pw_stream_connect_fn) &&
@@ -94,7 +104,11 @@ bool IsPwLibraryLoaded() {
           IS_FUNC_LOADED(pw_thread_loop_signal_fn) &&
           IS_FUNC_LOADED(pw_thread_loop_wait_fn) &&
           IS_FUNC_LOADED(pw_properties_new_string_fn) &&
-          IS_FUNC_LOADED(pw_get_library_version_fn));
+          IS_FUNC_LOADED(pw_get_library_version_fn) &&
+          IS_FUNC_LOADED(pw_node_info_update_fn) &&
+          IS_FUNC_LOADED(pw_node_info_free_fn) &&
+          IS_FUNC_LOADED(pw_proxy_add_listener_fn) &&
+          IS_FUNC_LOADED(pw_proxy_sync_fn));
 
   return isLoaded;
 }
@@ -117,6 +131,7 @@ bool LoadPWLibrary() {
     GET_FUNC(pw_context_new, pwLib);
     GET_FUNC(pw_core_disconnect, pwLib);
     GET_FUNC(pw_init, pwLib);
+    GET_FUNC(pw_deinit, pwLib);
     GET_FUNC(pw_stream_add_listener, pwLib);
     GET_FUNC(pw_stream_connect, pwLib);
     GET_FUNC(pw_stream_disconnect, pwLib);
@@ -138,6 +153,10 @@ bool LoadPWLibrary() {
     GET_FUNC(pw_properties_new_string, pwLib);
     GET_FUNC(pw_get_library_version, pwLib);
     GET_FUNC(pw_proxy_destroy, pwLib);
+    GET_FUNC(pw_node_info_update, pwLib);
+    GET_FUNC(pw_node_info_free, pwLib);
+    GET_FUNC(pw_proxy_add_listener, pwLib);
+    GET_FUNC(pw_proxy_sync, pwLib);
   }
 
   return IsPwLibraryLoaded();
@@ -202,6 +221,15 @@ pw_init(int *argc, char **argv[])
     return;
   }
   return pw_init_fn(argc, argv);
+}
+
+void
+pw_deinit()
+{
+  if (!LoadPWLibrary()) {
+    return;
+  }
+  return pw_deinit_fn();
 }
 
 void
@@ -406,5 +434,45 @@ pw_get_library_version()
     return nullptr;
   }
   return pw_get_library_version_fn();
+}
+
+struct pw_node_info *
+pw_node_info_update(struct pw_node_info *info,
+                    const struct pw_node_info *update)
+{
+  if (!LoadPWLibrary()) {
+    return nullptr;
+  }
+  return pw_node_info_update_fn(info, update);
+}
+
+void
+pw_node_info_free(struct pw_node_info *info)
+{
+  if (!LoadPWLibrary()) {
+    return;
+  }
+  return pw_node_info_free_fn(info);
+}
+
+void
+pw_proxy_add_listener(struct pw_proxy *proxy,
+                      struct spa_hook *listener,
+                      const struct pw_proxy_events *events,
+                      void *data)
+{
+  if (!LoadPWLibrary()) {
+    return;
+  }
+  return pw_proxy_add_listener_fn(proxy, listener, events, data);
+}
+
+int
+pw_proxy_sync(struct pw_proxy *proxy, int seq)
+{
+  if (!LoadPWLibrary()) {
+    return 0;
+  }
+  return pw_proxy_sync_fn(proxy, seq);
 }
 

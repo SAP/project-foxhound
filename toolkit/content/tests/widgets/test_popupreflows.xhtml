@@ -44,7 +44,7 @@ href="chrome://mochikit/content/tests/SimpleTest/test.css" type="text/css"?>
     function countReflows(testfn, expected) {
       return new Promise(resolve => {
         observer.reflows = [];
-        let docShell = panel.ownerGlobal.docShell;
+        let docShell = panel.documentGlobal.docShell;
         docShell.addWeakReflowObserver(observer);
         testfn().then(() => {
           docShell.removeWeakReflowObserver(observer);

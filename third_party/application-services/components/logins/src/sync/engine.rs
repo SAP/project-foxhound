@@ -297,20 +297,6 @@ impl LoginsSyncEngine {
         Ok(Some(ServerTimestamp(millis)))
     }
 
-    pub fn set_global_state(&self, state: &Option<String>) -> Result<()> {
-        let to_write = match state {
-            Some(ref s) => s,
-            None => "",
-        };
-        let db = self.store.lock_db()?;
-        db.put_meta(schema::GLOBAL_STATE_META_KEY, &to_write)
-    }
-
-    pub fn get_global_state(&self) -> Result<Option<String>> {
-        let db = self.store.lock_db()?;
-        db.get_meta::<String>(schema::GLOBAL_STATE_META_KEY)
-    }
-
     fn mark_as_synchronized(&self, guids: &[&str], ts: ServerTimestamp) -> Result<()> {
         let db = self.store.lock_db()?;
         let tx = db.unchecked_transaction()?;
@@ -378,7 +364,6 @@ impl LoginsSyncEngine {
                 db.put_meta(schema::COLLECTION_SYNCID_META_KEY, &ids.coll)?;
             }
         };
-        db.delete_meta(schema::GLOBAL_STATE_META_KEY)?;
         tx.commit()?;
         Ok(())
     }
@@ -501,7 +486,7 @@ mod tests {
     use crate::encryption::test_utils::TEST_ENCDEC;
     use crate::login::test_utils::enc_login;
     use crate::{LoginEntry, LoginFields, LoginMeta, SecureLoginFields};
-    use nss::ensure_initialized;
+    use nss_as::ensure_initialized;
     use std::collections::HashMap;
     use std::sync::Arc;
 

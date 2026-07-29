@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,6 +11,7 @@
 #include "mozilla/layers/WebRenderLayerManager.h"
 #include "mozilla/layers/CompositorBridgeChild.h"
 #include "mozilla/layers/CompositorManagerParent.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticPrefs_image.h"
 #include "mozilla/PresShell.h"
@@ -69,7 +68,13 @@ SharedSurfacesChild::SharedUserData::~SharedUserData() {
     if (NS_IsMainThread()) {
       SharedSurfacesChild::Unshare(mId, mShared, mKeys);
     } else {
-      MOZ_ASSERT_UNREACHABLE("Shared resources not released!");
+      // Dispatching to the main thread can fail late in shutdown (past
+      // XPCOMShutdownThreads), in which case the runnable is released on
+      // the calling thread and we end up here off-main. Tolerate that
+      // case so it doesn't show up as orange; outside of shutdown this
+      // path is still a bug.
+      MOZ_ASSERT(AppShutdown::IsInOrBeyond(ShutdownPhase::XPCOMShutdownThreads),
+                 "Shared resources not released!");
     }
   }
 }
@@ -80,7 +85,10 @@ void SharedSurfacesChild::SharedUserData::Destroy(void* aClosure) {
   RefPtr<SharedUserData> data =
       dont_AddRef(static_cast<SharedUserData*>(aClosure));
   if (data->mShared || !data->mKeys.IsEmpty()) {
-    SchedulerGroup::Dispatch(data.forget());
+    // Use NS_DISPATCH_FALLIBLE so that if main thread dispatch fails late in
+    // shutdown the runnable is released on the calling thread rather than
+    // leaked. ~SharedUserData tolerates that case.
+    SchedulerGroup::Dispatch(data.forget(), NS_DISPATCH_FALLIBLE);
   }
 }
 
@@ -436,7 +444,10 @@ AnimationImageKeyData& AnimationImageKeyData::operator=(
 AnimationImageKeyData::~AnimationImageKeyData() = default;
 
 SharedSurfacesAnimation::~SharedSurfacesAnimation() {
-  MOZ_ASSERT(mKeys.IsEmpty());
+  // mKeys may still be non-empty if Destroy() failed to redispatch to the
+  // main thread late in shutdown, after the main thread is gone.
+  MOZ_ASSERT(mKeys.IsEmpty() ||
+             AppShutdown::IsInOrBeyond(ShutdownPhase::XPCOMShutdownThreads));
 }
 
 void SharedSurfacesAnimation::Destroy() {
@@ -444,7 +455,11 @@ void SharedSurfacesAnimation::Destroy() {
     nsCOMPtr<nsIRunnable> task =
         NewRunnableMethod("SharedSurfacesAnimation::Destroy", this,
                           &SharedSurfacesAnimation::Destroy);
-    NS_DispatchToMainThread(task.forget());
+    // Use NS_DISPATCH_FALLIBLE so that if main thread dispatch fails late in
+    // shutdown the runnable is released on the calling thread rather than
+    // leaked. ~SharedSurfacesAnimation tolerates the leftover mKeys in that
+    // case.
+    NS_DispatchToMainThread(task.forget(), NS_DISPATCH_FALLIBLE);
     return;
   }
 

@@ -79,10 +79,24 @@ export const INTENTS_LIST = [
 
 // if generate memories is enabled. This is used by
 // - MemoriesScheduler
-export const PREF_GENERATE_MEMORIES = "browser.smartwindow.memories";
+export const PREF_GENERATE_MEMORIES_FROM_HISTORY =
+  "browser.smartwindow.memories.generateFromHistory";
+export const PREF_GENERATE_MEMORIES_FROM_CONVERSATION =
+  "browser.smartwindow.memories.generateFromConversation";
 
 // Number of latest sessions to check drift
 export const DRIFT_EVAL_DELTA_COUNT = 3;
 
 // Quantile of baseline scores used as a threshold (e.g. 0.9 => 90th percentile).
 export const DRIFT_TRIGGER_QUANTILE = 0.9;
+
+// Important! Changing or removing this value requires a security review.
+//
+// Memories are generated from conversations that may contain private and untrusted content.
+// However, memories are easily applied to conversations, and if they are marked with untrusted
+// content flags then some tool calls may no longer be allowed for that conversation. In order to
+// relax this restriction, we enforce a limit for each memory to be no larger than 100 characters.
+// This limits the potential for prompt injection. The memories are already told to be short by the
+// model requiring 4-10 words, but this programmatic check ensures that memories adhere to these
+// requirements.
+export const MAX_MEMORY_SUMMARY_LENGTH = 100;

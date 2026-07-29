@@ -2,8 +2,6 @@
 
 ["ShowSSEConfig"]
 
-["TestAlgorithm"]
-
 ["TestArm64Disassembler"]
 run-if = [
   "os == 'win' && arch == 'aarch64'",
@@ -37,10 +35,6 @@ skip-if = [
 ["TestCheckedInt"]
 
 ["TestCompactPair"]
-
-["TestCountPopulation"]
-
-["TestCountZeroes"]
 
 ["TestCrossProcessWin"]
 run-if = [
@@ -92,7 +86,9 @@ skip-if = [
   "os == 'android' && os_version == '14' && arch == 'aarch64'", # requires administrator permission on aarch64
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # requires administrator permission on aarch64
   "os == 'win' && os_version == '11.26100' && arch == 'aarch64'",
+  "os == 'win' && os_version == '11.26200' && arch == 'aarch64'",
   "os == 'win' && os_version == '11.26100' && arch == 'x86'", # fails on win/x86
+  "os == 'win' && os_version == '11.26200' && arch == 'x86'", # fails on win/x86
 ]
 
 ["TestIntegerPrintfMacros"]
@@ -135,8 +131,11 @@ skip-if = [
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
   "os == 'win' && os_version == '10.2009' && arch == 'x86_64'",
   "os == 'win' && os_version == '11.26100' && arch == 'x86'",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86'",
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64'",
   "os == 'win' && os_version == '11.26100' && arch == 'aarch64'",
+  "os == 'win' && os_version == '11.26200' && arch == 'aarch64'",
 ]
 
 ["TestMozJemallocUtils"]

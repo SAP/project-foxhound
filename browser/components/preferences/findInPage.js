@@ -78,7 +78,6 @@ var gSearchResultsPane = {
         window.requestIdleCallback(() => this.initializeCategories());
       });
     }
-    ensureScrollPadding();
   },
 
   /** @param {InputEvent} event */
@@ -86,17 +85,6 @@ var gSearchResultsPane = {
     // Ensure categories are initialized if idle callback didn't run sooo enough.
     await this.initializeCategories();
     this.searchFunction(event);
-  },
-
-  /**
-   * This stops the search input from moving, when typing in it
-   * changes which items in the prefs are visible.
-   */
-  fixInputPosition() {
-    let innerContainer = document.querySelector(".sticky-inner-container");
-    let width =
-      window.windowUtils.getBoundsWithoutFlushing(innerContainer).width;
-    innerContainer.style.maxWidth = width + "px";
   },
 
   /**
@@ -134,6 +122,12 @@ var gSearchResultsPane = {
           document.addEventListener("L10nMutationsFinished", r, { once: true })
         );
       }
+      queueMicrotask(() =>
+        Services.obs.notifyObservers(
+          window,
+          "preferences-MaybeCategoriesInitializedSLOW"
+        )
+      );
     }
   },
 
@@ -143,21 +137,25 @@ var gSearchResultsPane = {
    * array if it's a TEXT_NODE, and otherwise recurses to check text nodes within it.
    * Source - http://stackoverflow.com/questions/10730309/find-all-text-nodes-in-html-page
    *
-   * @param Node nodeObject
-   *    DOM element
-   * @returns array of text nodes
+   * @param {Node | HTMLElement | ShadowRoot | null} node DOM element
+   * @returns {Node[]}
    */
   textNodeDescendants(node) {
     if (!node) {
       return [];
     }
+    /** @type {Node[]} */
     let all = [];
+    let originalNode = node;
     for (node = node.firstChild; node; node = node.nextSibling) {
       if (node.nodeType === node.TEXT_NODE) {
         all.push(node);
-      } else {
+      } else if (!node.hidden) {
         all = all.concat(this.textNodeDescendants(node));
       }
+    }
+    if (originalNode.shadowRoot) {
+      all = all.concat(this.textNodeDescendants(originalNode.shadowRoot));
     }
     return all;
   },
@@ -230,12 +228,18 @@ var gSearchResultsPane = {
           }
         }
       }
-      let range = document.createRange();
-      range.setStart(startNode, startValue);
-      range.setEnd(endNode, endValue);
-      this.getFindSelection(startNode.ownerGlobal).addRange(range);
+      try {
+        let range = document.createRange();
+        range.setStart(startNode, startValue);
+        range.setEnd(endNode, endValue);
+        this.getFindSelection(startNode.documentGlobal).addRange(range);
 
-      this.searchResultsHighlighted = true;
+        this.searchResultsHighlighted = true;
+      } catch (ex) {
+        // The range can span text nodes that don't share a selection root (e.g.
+        // across a shadow DOM boundary), which the find selection rejects. The
+        // match still counts as found, so don't let it abort the whole search.
+      }
     }
 
     return !!indices.length;
@@ -276,8 +280,6 @@ var gSearchResultsPane = {
       return;
     }
 
-    let firstQuery = !this.query && query;
-    let endQuery = !query && this.query;
     let subQuery = this.query && query.includes(this.query);
     this.query = query;
 
@@ -289,11 +291,6 @@ var gSearchResultsPane = {
     let srHeader = document.getElementById("header-searchResults");
     let noResultsEl = document.getElementById("no-results-message");
     if (this.query) {
-      // If this is the first query, fix the search input in place.
-      if (firstQuery) {
-        this.fixInputPosition();
-      }
-      // Showing the Search Results Tag
       await gotoPref("paneSearchResults");
       srHeader.hidden = false;
 
@@ -320,6 +317,14 @@ var gSearchResultsPane = {
           child.classList.add("visually-hidden");
           child.hidden = false;
         }
+        // For setting-panes, also prepare their setting-group children.
+        if (child.localName === "setting-pane") {
+          for (let group of child.querySelectorAll("setting-group")) {
+            if (group.hidden || group.hasAttribute("data-hidden-from-search")) {
+              group.classList.add("visually-hidden");
+            }
+          }
+        }
       }
 
       let ts = performance.now();
@@ -338,6 +343,51 @@ var gSearchResultsPane = {
           if (query !== this.query) {
             return;
           }
+        }
+
+        // For setting-pane elements, search each setting-group individually
+        // so that only matching groups are shown. If no group matches, fall
+        // back to a whole-pane search so panes still surface when the match
+        // is in the pane title (moz-page-header) or in content rendered
+        // outside any setting-group (e.g. paneExperimental's description).
+        if (child.localName === "setting-pane") {
+          const BASE_SELECTOR =
+            "setting-group:not([data-hidden-from-search]):not([hidden]):not([data-hidden-by-setting-group])";
+          let groupSelector = subQuery
+            ? `${BASE_SELECTOR}:not(.visually-hidden)`
+            : BASE_SELECTOR;
+
+          let groups = child.querySelectorAll(groupSelector);
+          let anyGroupMatched = false;
+          for (let group of groups) {
+            let matched = await this.searchWithinNode(group, this.query);
+            if (matched) {
+              group.classList.remove("visually-hidden");
+              anyGroupMatched = true;
+            } else {
+              group.classList.add("visually-hidden");
+            }
+          }
+          let paneMatched = anyGroupMatched;
+          if (!paneMatched) {
+            paneMatched = await this.searchWithinNode(child, this.query);
+            if (paneMatched) {
+              // Pane title or pane-level content matched but no specific group
+              // did. Re-query with the base selector to make sure previously
+              // .visually-hidden groups get shown.
+              for (let group of child.querySelectorAll(BASE_SELECTOR)) {
+                group.classList.remove("visually-hidden");
+              }
+            }
+          }
+          if (paneMatched) {
+            child.classList.remove("visually-hidden");
+            child.onSearchPane = true;
+            resultsFound = true;
+          } else {
+            child.classList.add("visually-hidden");
+          }
+          continue;
         }
 
         if (
@@ -384,17 +434,24 @@ var gSearchResultsPane = {
         for (let anchorNode of this.listSearchTooltips) {
           this.createSearchTooltip(anchorNode, this.query);
         }
+        // Tooltips created during the search loop above may have been positioned
+        // against an intermediate layout (e.g. while the no-results message was
+        // still visible). Now that layout has settled, reposition them all.
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        if (query !== this.query) {
+          return;
+        }
+        this._recomputeTooltipPositions();
       }
     } else {
-      if (endQuery) {
-        document
-          .querySelector(".sticky-inner-container")
-          .style.removeProperty("max-width");
-      }
       noResultsEl.hidden = true;
       document.getElementById("sorry-message-query").textContent = "";
-      // Going back to General when cleared
-      await gotoPref("paneGeneral");
+      // Going back to Account and sync or General when cleared
+      let redesignEnabled = Services.prefs.getBoolPref(
+        "browser.settings-redesign.enabled"
+      );
+      let defaultPane = redesignEnabled ? "paneSync" : "paneGeneral";
+      await gotoPref(defaultPane);
       srHeader.hidden = true;
 
       // Hide some special second level headers in normal view
@@ -422,28 +479,25 @@ var gSearchResultsPane = {
    * Finding leaf nodes and checking their content for words to search,
    * It is a recursive function
    *
-   * @param Node nodeObject
-   *    DOM Element
-   * @param String searchPhrase
-   * @returns boolean
+   * @param {Node} nodeObject DOM Element
+   * @param {string} searchPhrase
+   * @param {boolean} forceSearch Allow this node to be searched.
+   * @returns {Promise<boolean>}
    *    Returns true when found in at least one childNode, false otherwise
    */
-  async searchWithinNode(nodeObject, searchPhrase) {
+  async searchWithinNode(nodeObject, searchPhrase, forceSearch = false) {
     let matchesFound = false;
     if (
-      nodeObject.childElementCount == 0 ||
-      (typeof nodeObject.children !== "undefined" &&
-        Array.prototype.every.call(nodeObject.children, this._isAnchor)) ||
-      this.searchableNodes.has(nodeObject.localName) ||
-      (nodeObject.localName?.startsWith("moz-") &&
-        nodeObject.localName !== "moz-input-box")
+      Element.isInstance(nodeObject) &&
+      (nodeObject.childElementCount == 0 ||
+        (typeof nodeObject.children !== "undefined" &&
+          Array.prototype.every.call(nodeObject.children, this._isAnchor)) ||
+        forceSearch ||
+        this.searchableNodes.has(nodeObject.localName) ||
+        (nodeObject.localName?.startsWith("moz-") &&
+          nodeObject.localName !== "moz-input-box"))
     ) {
       let simpleTextNodes = this.textNodeDescendants(nodeObject);
-      if (nodeObject.shadowRoot) {
-        simpleTextNodes.push(
-          ...this.textNodeDescendants(nodeObject.shadowRoot)
-        );
-      }
       for (let node of simpleTextNodes) {
         let result = this.highlightMatches(
           [node],
@@ -505,6 +559,27 @@ var gSearchResultsPane = {
         nodeObject.hasAttribute("search-l10n-ids") &&
         (await this.matchesSearchL10nIDs(nodeObject, searchPhrase));
 
+      if (!keywordsResult && nodeObject.getAttribute("data-load-pane")) {
+        let subPane = document.querySelector(
+          `setting-pane[data-category="${nodeObject.getAttribute("data-load-pane")}"]`
+        );
+        if (subPane) {
+          for (let group of subPane.querySelectorAll("setting-group")) {
+            // The this.searchWithinNode() call will highlight matches that are
+            // never shown which is unnecessary work, but won't cause any harm.
+            // We just need the result of "does anything match".
+            keywordsResult = await this.searchWithinNode(
+              group,
+              searchPhrase,
+              true
+            );
+            if (keywordsResult) {
+              break;
+            }
+          }
+        }
+      }
+
       if (!keywordsResult) {
         // Searching some elements, such as xul:button, buttons to open subdialogs
         // using searchkeywords attribute.
@@ -520,7 +595,7 @@ var gSearchResultsPane = {
       // Creating tooltips for buttons
       if (
         keywordsResult &&
-        (nodeObject instanceof HTMLElement ||
+        (HTMLElement.isInstance(nodeObject) ||
           nodeObject.localName === "button" ||
           nodeObject.localName == "menulist")
       ) {
@@ -596,8 +671,12 @@ var gSearchResultsPane = {
       nodeObject.getAttribute("data-hidden-from-search") !== "true"
     ) {
       result = await this.searchWithinNode(child, searchPhrase);
-      // Creating tooltips for menulist element
-      if (result && nodeObject.localName === "menulist") {
+      // Creating tooltips for menulist and moz-select elements
+      if (
+        result &&
+        (nodeObject.localName === "menulist" ||
+          nodeObject.localName === "moz-select")
+      ) {
         this.listSearchTooltips.add(nodeObject);
       }
 
@@ -741,7 +820,14 @@ var gSearchResultsPane = {
     // putting tooltips on, we have to flush layout intentionally. Once
     // menulists don't use XUL layout we can remove this and use plain CSS to
     // position them, see bug 1363730.
-    let anchorRect = anchorNode.getBoundingClientRect();
+    let positioningNode = anchorNode;
+    if (anchorNode.localName == "moz-select") {
+      // Position relative to the visible select control rather than the
+      // full-width moz-select host element so the tooltip is centered on it.
+      positioningNode =
+        anchorNode.shadowRoot?.querySelector(".select-wrapper") ?? anchorNode;
+    }
+    let anchorRect = positioningNode.getBoundingClientRect();
     let tooltipContainerRect =
       this.searchTooltipContainer.getBoundingClientRect();
     let tooltipRect = searchTooltip.getBoundingClientRect();

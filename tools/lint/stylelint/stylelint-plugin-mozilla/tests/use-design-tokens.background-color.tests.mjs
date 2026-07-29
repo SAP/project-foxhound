@@ -235,7 +235,7 @@ testRule({
     },
     {
       code: `
-        :root { --custom-token: light-dark(var(--color-gray-05), var(--color-gray-100)); }
+        :root { --custom-token: light-dark(var(--color-gray-0), var(--color-gray-100)); }
         .bg { background-color: var(--custom-token); }
       `,
       description:
@@ -281,6 +281,11 @@ testRule({
       description:
         "Using a custom token that resolves to a system color, even if non-semantic, is valid.",
     },
+    {
+      code: ".bg { background-color: var(--custom-token, Field); }",
+      description:
+        "Using a custom token that falls back to a system color is valid",
+    },
   ],
   reject: [
     {
@@ -323,7 +328,7 @@ testRule({
     },
     {
       code: ".bg { background-color: Field; }",
-      message: messages.rejected("Field", ["background-color"]),
+      message: messages.warning("Field", "a background-color design token"),
       description: "Field should use a background-color design token.",
     },
     {

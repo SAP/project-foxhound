@@ -156,14 +156,14 @@ struct TestCopyWithDeletedMove {
   void operator()() { MOZ_RELEASE_ASSERT(mCopyCounter); }
   int* mCopyCounter;
 };
-struct TestMove {
-  explicit TestMove(int* aMoveCounter) : mMoveCounter(aMoveCounter) {}
-  TestMove(const TestMove&) = delete;
-  TestMove(TestMove&& a) : mMoveCounter(a.mMoveCounter) {
+struct TestMoveCounter {
+  explicit TestMoveCounter(int* aMoveCounter) : mMoveCounter(aMoveCounter) {}
+  TestMoveCounter(const TestMoveCounter&) = delete;
+  TestMoveCounter(TestMoveCounter&& a) : mMoveCounter(a.mMoveCounter) {
     a.mMoveCounter = nullptr;
     *mMoveCounter += 1;
   }
-  ~TestMove() { mMoveCounter = nullptr; }
+  ~TestMoveCounter() { mMoveCounter = nullptr; }
   void operator()() { MOZ_RELEASE_ASSERT(mMoveCounter); }
   int* mMoveCounter;
 };
@@ -292,7 +292,7 @@ static void TestRunnableFactory(bool aNamed) {
     {
       nsCOMPtr<nsIRunnable> trackedRunnable;
       {
-        TestMove tracker(&moveCounter);
+        TestMoveCounter tracker(&moveCounter);
         trackedRunnable =
             aNamed ? RunnableFactory::Create("unused", std::move(tracker))
                    : RunnableFactory::Create("TestNewRunnableFunction",
@@ -308,9 +308,10 @@ static void TestRunnableFactory(bool aNamed) {
       nsCOMPtr<nsIRunnable> trackedRunnable;
       {
         trackedRunnable =
-            aNamed ? RunnableFactory::Create("unused", TestMove(&moveCounter))
+            aNamed ? RunnableFactory::Create("unused",
+                                             TestMoveCounter(&moveCounter))
                    : RunnableFactory::Create("TestNewRunnableFunction",
-                                             TestMove(&moveCounter));
+                                             TestMoveCounter(&moveCounter));
       }
       trackedRunnable->Run();
     }
@@ -505,13 +506,13 @@ static void TestNewRunnableMethod(bool aNamed) {
   // Scope the smart ptrs so that the runnables need to hold on to whatever they
   // need
   {
-    RefPtr<nsFoo> foo = new nsFoo();
-    RefPtr<nsBar> bar = new nsBar();
+    RefPtr foo = MakeRefPtr<nsFoo>();
+    RefPtr bar = MakeRefPtr<nsBar>();
     RefPtr<const nsBar> constBar = bar;
 
     // This pointer will be freed at the end of the block
     // Do not dereference this pointer in the runnable method!
-    RefPtr<nsFoo> rawFoo = new nsFoo();
+    RefPtr rawFoo = MakeRefPtr<nsFoo>();
 
     // Read only string. Dereferencing in runnable method to check this works.
     char* message = (char*)"Test message";
@@ -610,7 +611,7 @@ TEST(ThreadUtils, NamedRunnableMethod)
 
   // Test naming.
   {
-    RefPtr<nsFoo> foo = new nsFoo();
+    RefPtr foo = MakeRefPtr<nsFoo>();
     const char* expectedName = "NamedRunnable";
     bool unused;
     RefPtr<Runnable> NamedRunnable =
@@ -754,9 +755,8 @@ class IdleObject final {
 TEST(ThreadUtils, IdleRunnableMethod)
 {
   {
-    RefPtr<IdleObject> idle = new IdleObject();
-    RefPtr<IdleObjectWithoutSetDeadline> idleNoSetDeadline =
-        new IdleObjectWithoutSetDeadline();
+    RefPtr idle = MakeRefPtr<IdleObject>();
+    RefPtr idleNoSetDeadline = MakeRefPtr<IdleObjectWithoutSetDeadline>();
     RefPtr<IdleObjectInheritedSetDeadline> idleInheritedSetDeadline =
         new IdleObjectInheritedSetDeadline();
 

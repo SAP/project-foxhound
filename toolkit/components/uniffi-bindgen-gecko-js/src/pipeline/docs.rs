@@ -27,10 +27,8 @@ pub fn pass(root: &mut Root) -> Result<()> {
                 })
                 | TypeDefinition::Custom(CustomType {
                     name, docstring, ..
-                }) => {
-                    if docstring.is_some() {
-                        docs.classes.push(name.clone());
-                    }
+                }) if docstring.is_some() => {
+                    docs.classes.push(name.clone());
                 }
                 TypeDefinition::Enum(Enum {
                     name,

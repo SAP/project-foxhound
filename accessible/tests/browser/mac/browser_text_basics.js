@@ -245,17 +245,13 @@ function testMarkerIntegrity(accDoc, expectedMarkerValues) {
   is(count, 0, "Iterated backward through all text markers");
 }
 
-// Run tests with old word segmenter
 addAccessibleTask("mac/doc_textmarker_test.html", async (browser, accDoc) => {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["intl.icu4x.segmenter.enabled", false],
-      ["layout.word_select.stop_at_punctuation", true], // This is default
-    ],
+    set: [["layout.word_select.stop_at_punctuation", false]],
   });
 
   const expectedValues = await SpecialPowers.spawn(browser, [], async () => {
-    return content.wrappedJSObject.getExpected(false, true);
+    return content.wrappedJSObject.getExpected(false);
   });
 
   testMarkerIntegrity(accDoc, expectedValues);
@@ -263,35 +259,15 @@ addAccessibleTask("mac/doc_textmarker_test.html", async (browser, accDoc) => {
   await SpecialPowers.popPrefEnv();
 });
 
-// new UAX#14 segmenter without stop_at_punctuation.
 addAccessibleTask("mac/doc_textmarker_test.html", async (browser, accDoc) => {
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["intl.icu4x.segmenter.enabled", true],
-      ["layout.word_select.stop_at_punctuation", false],
-    ],
-  });
-
-  const expectedValues = await SpecialPowers.spawn(browser, [], async () => {
-    return content.wrappedJSObject.getExpected(true, false);
-  });
-
-  testMarkerIntegrity(accDoc, expectedValues);
-
-  await SpecialPowers.popPrefEnv();
-});
-
-// new UAX#14 segmenter with stop_at_punctuation
-addAccessibleTask("mac/doc_textmarker_test.html", async (browser, accDoc) => {
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      ["intl.icu4x.segmenter.enabled", true],
       ["layout.word_select.stop_at_punctuation", true], // this is default
     ],
   });
 
   const expectedValues = await SpecialPowers.spawn(browser, [], async () => {
-    return content.wrappedJSObject.getExpected(true, true);
+    return content.wrappedJSObject.getExpected(true);
   });
 
   testMarkerIntegrity(accDoc, expectedValues);

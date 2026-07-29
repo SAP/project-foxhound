@@ -35,6 +35,10 @@ add_task(async function () {
   // note that the worker from WORKER2_URL will appear second in the list with
   // the "installed" state
   info("Check the workers data for this registration");
+  await waitFor(
+    () => registrationContainer.querySelectorAll(".js-sw-worker").length === 2,
+    "Wait until both workers are listed for the registration."
+  );
   const workers = registrationContainer.querySelectorAll(".js-sw-worker");
   is(workers.length, 2, "Registration has two workers");
   // check url for worker from WORKER1_URL
@@ -55,7 +59,7 @@ async function openTabAndWaitForWorker(url) {
   const { panel, commands, tab } = await openNewTabAndApplicationPanel(url);
   const doc = panel.panelWin.document;
 
-  selectPage(panel, "service-workers");
+  await selectPage(panel, "service-workers");
 
   info("Wait until the service worker appears in the application panel");
   await waitUntil(() => getWorkerContainers(doc).length === 1);

@@ -14,7 +14,6 @@ const { AppConstants } = ChromeUtils.importESModule(
   "resource://gre/modules/AppConstants.sys.mjs"
 );
 
-let REDESIGN_ENABLED = false;
 const METRIC_DATA = {};
 let MAPPED_METRIC_DATA = [];
 let FILTERED_METRIC_DATA = [];
@@ -215,52 +214,39 @@ function showTab(button) {
 }
 
 function handleRedesign() {
-  REDESIGN_ENABLED = Services.prefs.getBoolPref("about.glean.redesign.enabled");
-  // If about:glean redesign is enabled, add the navigation category for it.
-  if (REDESIGN_ENABLED) {
-    const categories = document.getElementById("categories");
-    const div = document.createElement("div");
-    div.id = "category-metrics-table";
-    div.className = "category";
-    div.setAttribute("role", "menuitem");
-    div.setAttribute("tabindex", 0);
-    const span = document.createElement("span");
-    span.className = "category-name";
-    span.setAttribute("data-l10n-id", "about-glean-category-metrics-table");
-    div.appendChild(span);
-    categories.appendChild(div);
+  const categories = document.getElementById("categories");
+  const div = document.createElement("div");
+  div.id = "category-metrics-table";
+  div.className = "category";
+  div.setAttribute("role", "menuitem");
+  div.setAttribute("tabindex", 0);
+  const span = document.createElement("span");
+  span.className = "category-name";
+  span.setAttribute("data-l10n-id", "about-glean-category-metrics-table");
+  div.appendChild(span);
+  categories.appendChild(div);
 
-    document
-      .getElementById("enable-new-features")
-      .setAttribute("data-l10n-id", "about-glean-disable-new-features-button");
+  /**
+   * Handle metric filter input.
+   *
+   * This uses a timeout to debounce the events down to 200ms.
+   * Instead of updating the DOM every time the input changes, it'll only update when the input hasn't changed in the last 200ms since it last changed.
+   */
+  let inputTimeout = undefined;
+  document.getElementById("filter-metrics").addEventListener("input", e => {
+    clearTimeout(inputTimeout);
+    inputTimeout = setTimeout(() => {
+      updateFilteredMetricData(e.target.value.toLowerCase() ?? "");
+    }, 200);
+  });
 
-    /**
-     * Handle metric filter input.
-     *
-     * This uses a timeout to debounce the events down to 200ms.
-     * Instead of updating the DOM every time the input changes, it'll only update when the input hasn't changed in the last 200ms since it last changed.
-     */
-    let inputTimeout = undefined;
-    document.getElementById("filter-metrics").addEventListener("input", e => {
-      clearTimeout(inputTimeout);
-      inputTimeout = setTimeout(() => {
-        updateFilteredMetricData(e.target.value.toLowerCase() ?? "");
-      }, 200);
+  // Handle loading all metric data
+  document.getElementById("load-all").addEventListener("click", () => {
+    MAPPED_METRIC_DATA.forEach(datum => {
+      updateDatum(datum);
     });
-
-    // Handle loading all metric data
-    document.getElementById("load-all").addEventListener("click", () => {
-      MAPPED_METRIC_DATA.forEach(datum => {
-        updateDatum(datum);
-      });
-      updateTable();
-    });
-  } else {
-    document
-      .getElementById("enable-new-features")
-      .setAttribute("data-l10n-id", "about-glean-enable-new-features-button");
-    document.getElementById("category-metrics-table")?.remove();
-  }
+    updateTable();
+  });
 }
 
 function onLoad() {
@@ -317,17 +303,6 @@ function onLoad() {
   DOCUMENT_BODY_SEL = d3.select(document.body);
 
   document
-    .getElementById("enable-new-features")
-    .addEventListener("click", () => {
-      if (!REDESIGN_ENABLED) {
-        Services.prefs.setBoolPref("about.glean.redesign.enabled", true);
-      } else {
-        Services.prefs.setBoolPref("about.glean.redesign.enabled", false);
-      }
-      handleRedesign();
-    });
-
-  document
     .getElementById("metrics-table-settings-button")
     .addEventListener("click", () => {
       const settingsDiv = document.getElementById("metrics-table-settings");
@@ -382,6 +357,38 @@ function updateButtonsSelection(selection) {
   selection.attr("data-l10n-id", d =>
     d.watching ? "about-glean-button-unwatch" : "about-glean-button-watch"
   );
+}
+
+function createOrUpdateLabeledHistogram(selection, datum) {
+  const keysAndValues = Object.entries(datum.value || {}).map(
+    ([key, value]) => [
+      key,
+      {
+        fullName: datum.fullName + `.${key}`,
+        value,
+      },
+    ]
+  );
+
+  selection.selectAll("*").remove();
+  if (keysAndValues.length === 0) {
+    selection
+      .append("p")
+      .attr("data-l10n-id", "about-glean-no-data-to-display");
+    return;
+  }
+  for (let entry of keysAndValues.toSorted((a, b) =>
+    d3.ascending(a[1].fullName, b[1].fullName)
+  )) {
+    const div = selection
+      .append("div")
+      .classed({ "keyed-chart": true })
+      .attr("id", `${entry[0]}-container`)
+      .attr("data-d3-key", entry[0]);
+    div.append("h2").text(entry[0]);
+    const svgContainer = div.append("div");
+    createOrUpdateHistogram(svgContainer, entry[1]);
+  }
 }
 
 function createOrUpdateHistogram(selection, datum) {
@@ -817,6 +824,11 @@ function updateValueSelection(selection) {
           case "MemoryDistribution":
           case "TimingDistribution":
             createOrUpdateHistogram(d3.select(this), datum);
+            break;
+          case "LabeledCustomDistribution":
+          case "LabeledMemoryDistribution":
+          case "LabeledTimingDistribution":
+            createOrUpdateLabeledHistogram(d3.select(this), datum);
             break;
           default:
             if (codeSelection.empty()) {

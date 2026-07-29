@@ -79,8 +79,8 @@ async function testScale(config) {
     await mouse.down(nw[0], nw[1], selector);
     await mouse.move(nw[0] + dx, nw[1] + dy, selector);
     await mouse.up(nw[0] + dx, nw[1] + dy, selector);
-    await reflowContentPage();
     await onShapeChangeApplied;
+    await reflowContentPage();
 
     const nwBB = await getBoundingBoxInPx({ selector, ...config });
     isnot(nwBB.nw[0], nw[0], `${selector} nw moved right after nw scale`);
@@ -95,8 +95,8 @@ async function testScale(config) {
     await mouse.down(nwBB.ne[0], nwBB.ne[1], selector);
     await mouse.move(nwBB.ne[0] - dx, nwBB.ne[1] + dy, selector);
     await mouse.up(nwBB.ne[0] - dx, nwBB.ne[1] + dy, selector);
-    await reflowContentPage();
     await onShapeChangeApplied;
+    await reflowContentPage();
 
     const neBB = await getBoundingBoxInPx({ selector, ...config });
     isnot(neBB.ne[0], nwBB.ne[0], `${selector} ne moved right after ne scale`);
@@ -115,8 +115,8 @@ async function testScale(config) {
     await mouse.down(neBB.sw[0], neBB.sw[1], selector);
     await mouse.move(neBB.sw[0] + dx, neBB.sw[1] - dy, selector);
     await mouse.up(neBB.sw[0] + dx, neBB.sw[1] - dy, selector);
-    await reflowContentPage();
     await onShapeChangeApplied;
+    await reflowContentPage();
 
     const swBB = await getBoundingBoxInPx({ selector, ...config });
     isnot(swBB.sw[0], neBB.sw[0], `${selector} sw moved right after sw scale`);
@@ -135,8 +135,8 @@ async function testScale(config) {
     await mouse.down(swBB.se[0], swBB.se[1], selector);
     await mouse.move(swBB.se[0] - dx, swBB.se[1] - dy, selector);
     await mouse.up(swBB.se[0] - dx, swBB.se[1] - dy, selector);
-    await reflowContentPage();
     await onShapeChangeApplied;
+    await reflowContentPage();
 
     const seBB = await getBoundingBoxInPx({ selector, ...config });
     isnot(seBB.se[0], swBB.se[0], `${selector} se moved right after se scale`);

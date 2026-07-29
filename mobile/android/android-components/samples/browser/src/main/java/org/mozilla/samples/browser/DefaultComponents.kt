@@ -88,6 +88,7 @@ import mozilla.components.support.base.android.NotificationsDelegate
 import mozilla.components.support.base.worker.Frequency
 import mozilla.components.support.utils.DateTimeProvider
 import mozilla.components.support.utils.DefaultDateTimeProvider
+import mozilla.components.support.utils.DefaultDownloadFileUtils
 import org.mozilla.samples.browser.addons.AddonsActivity
 import org.mozilla.samples.browser.autofill.AutofillConfirmActivity
 import org.mozilla.samples.browser.autofill.AutofillSearchActivity
@@ -176,6 +177,9 @@ open class DefaultComponents(private val applicationContext: Context) {
                     applicationContext = applicationContext,
                     downloadServiceClass = DownloadService::class.java,
                     deleteFileFromStorage = { false },
+                    downloadFileUtils = DefaultDownloadFileUtils(
+                        context = applicationContext,
+                    ),
                 ),
                 ReaderViewMiddleware(),
                 ThumbnailsMiddleware(thumbnailStorage),
@@ -465,7 +469,7 @@ open class DefaultComponents(private val applicationContext: Context) {
             isInPrimaryState = {
                 store.state.selectedTab?.content?.loading == false
             },
-            secondaryImageResource = iconsR.drawable.mozac_ic_stop,
+            secondaryImageResource = iconsR.drawable.mozac_ic_cross_24,
             secondaryContentDescription = "Stop",
             secondaryImageTintResource = colorsR.color.photonBlue90,
             disableInSecondaryState = false,
@@ -487,7 +491,14 @@ open class DefaultComponents(private val applicationContext: Context) {
     }
 
     val tabsUseCases: TabsUseCases by lazy { TabsUseCases(store) }
-    val downloadsUseCases: DownloadsUseCases by lazy { DownloadsUseCases(store, applicationContext) }
+    val downloadsUseCases: DownloadsUseCases by lazy {
+        DownloadsUseCases(
+            store = store,
+            downloadFileUtils = DefaultDownloadFileUtils(
+                context = applicationContext,
+            ),
+        )
+    }
     val contextMenuUseCases: ContextMenuUseCases by lazy { ContextMenuUseCases(store) }
 
     val crashReporter: CrashReporter by lazy {

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,6 +10,9 @@
 #include "GMPVideoHost.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/gmp/GMPTypes.h"
+#include "nsProxyRelease.h"
+#include "nsThreadUtils.h"
+#include "nsXULAppAPI.h"
 
 namespace mozilla::gmp {
 
@@ -50,7 +52,6 @@ GMPVideoi420FrameImpl::GMPVideoi420FrameImpl(
       mTimestamp(0ll),
       mDuration(0ll) {
   MOZ_ASSERT(aHost);
-  aHost->DecodedFrameCreated(this);
 }
 
 GMPVideoi420FrameImpl::GMPVideoi420FrameImpl(
@@ -69,7 +70,6 @@ GMPVideoi420FrameImpl::GMPVideoi420FrameImpl(
       mUpdatedTimestamp(aFrameData.mUpdatedTimestamp()),
       mDuration(aFrameData.mDuration()) {
   MOZ_ASSERT(aHost);
-  aHost->DecodedFrameCreated(this);
 }
 
 GMPVideoi420FrameImpl::GMPVideoi420FrameImpl(
@@ -88,22 +88,23 @@ GMPVideoi420FrameImpl::GMPVideoi420FrameImpl(
       mUpdatedTimestamp(aFrameData.mUpdatedTimestamp()),
       mDuration(aFrameData.mDuration()) {
   MOZ_ASSERT(aHost);
-  aHost->DecodedFrameCreated(this);
 }
 
 GMPVideoi420FrameImpl::~GMPVideoi420FrameImpl() {
-  DestroyBuffer();
-  if (mHost) {
-    mHost->DecodedFrameDestroyed(this);
+  if (mReportPolicy == HostReportPolicy::Destroyed) {
+    mHost->MgrDecodedFrameDestroyed(this);
   }
-}
-
-void GMPVideoi420FrameImpl::DoneWithAPI() {
-  DestroyBuffer();
-
-  // Do this after destroying the buffer because destruction
-  // involves deallocation, which requires a host.
-  mHost = nullptr;
+  if (mShmemBuffer.IsWritable()) {
+    mHost->MgrGiveShmem(GMPSharedMemClass::Decoded, std::move(mShmemBuffer));
+  }
+  // Proxy release to ensure that any synchronous runnables from the plugin can
+  // first unblock the worker thread. If we destroy the plugin once this
+  // reference is freed, we won't be blocked trying to join the worker thread.
+  if (XRE_IsGMPluginProcess()) {
+    NS_ProxyRelease("GMPVideoi420FrameImpl::~GMPVideoi420FrameImpl",
+                    GetMainThreadSerialEventTarget(), mHost.forget(),
+                    /* aAlwaysProxy */ true);
+  }
 }
 
 void GMPVideoi420FrameImpl::InitFrameData(GMPVideoi420FrameData& aFrameData) {
@@ -158,6 +159,9 @@ bool GMPVideoi420FrameImpl::CheckFrameData(
   // This implies a bug or serious error on the child size.  Ignore this frame
   // if so. Note: Size() greater than expected is also an error, but with no
   // negative consequences
+  if (aFrameData.mWidth() <= 0 || aFrameData.mHeight() <= 0) {
+    return false;
+  }
   int32_t half_width = (aFrameData.mWidth() + 1) / 2;
   int32_t half_height = (aFrameData.mHeight() + 1) / 2;
 
@@ -182,6 +186,11 @@ bool GMPVideoi420FrameImpl::CheckFrameData(
   if ((aFrameData.mYPlane().mStride() < aFrameData.mWidth()) ||
       (aFrameData.mUPlane().mStride() < half_width) ||
       (aFrameData.mVPlane().mStride() < half_width)) {
+    return false;
+  }
+
+  // Check that plane strides match.
+  if (aFrameData.mUPlane().mStride() != aFrameData.mVPlane().mStride()) {
     return false;
   }
 
@@ -311,10 +320,6 @@ GMPErr GMPVideoi420FrameImpl::MaybeResize(int32_t aNewSize) {
     return GMPNoErr;
   }
 
-  if (!mHost) {
-    return GMPGenericErr;
-  }
-
   if (!mArrayBuffer.IsEmpty()) {
     if (!mArrayBuffer.SetLength(aNewSize, fallible)) {
       return GMPAllocErr;
@@ -323,32 +328,22 @@ GMPErr GMPVideoi420FrameImpl::MaybeResize(int32_t aNewSize) {
   }
 
   ipc::Shmem new_mem;
-  if (!mHost->SharedMemMgr()->MgrTakeShmem(GMPSharedMemClass::Decoded, aNewSize,
-                                           &new_mem) &&
+  if (!mHost->MgrTakeShmem(GMPSharedMemClass::Decoded, aNewSize, &new_mem) &&
       !mArrayBuffer.SetLength(aNewSize, fallible)) {
     return GMPAllocErr;
   }
 
   if (mShmemBuffer.IsReadable()) {
     if (new_mem.IsWritable()) {
-      memcpy(new_mem.get<uint8_t>(), mShmemBuffer.get<uint8_t>(), aNewSize);
+      memcpy(new_mem.get<uint8_t>(), mShmemBuffer.get<uint8_t>(),
+             mShmemBuffer.Size<uint8_t>());
     }
-    mHost->SharedMemMgr()->MgrGiveShmem(GMPSharedMemClass::Decoded,
-                                        std::move(mShmemBuffer));
+    mHost->MgrGiveShmem(GMPSharedMemClass::Decoded, std::move(mShmemBuffer));
   }
 
   mShmemBuffer = new_mem;
 
   return GMPNoErr;
-}
-
-void GMPVideoi420FrameImpl::DestroyBuffer() {
-  if (mHost && mShmemBuffer.IsWritable()) {
-    mHost->SharedMemMgr()->MgrGiveShmem(GMPSharedMemClass::Decoded,
-                                        std::move(mShmemBuffer));
-  }
-  mShmemBuffer = ipc::Shmem();
-  mArrayBuffer.Clear();
 }
 
 GMPErr GMPVideoi420FrameImpl::CreateEmptyFrame(int32_t aWidth, int32_t aHeight,

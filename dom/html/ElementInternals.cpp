@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,6 +12,7 @@
 #include "mozilla/dom/FormData.h"
 #include "mozilla/dom/HTMLElement.h"
 #include "mozilla/dom/HTMLFieldSetElement.h"
+#include "mozilla/dom/LifecycleCallbackArgs.h"
 #include "mozilla/dom/MutationObservers.h"
 #include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/dom/ValidityState.h"
@@ -56,6 +55,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ElementInternals)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
   NS_INTERFACE_MAP_ENTRY(nsIFormControl)
   NS_INTERFACE_MAP_ENTRY(nsIConstraintValidation)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIFormControl)
 NS_INTERFACE_MAP_END
 
 ElementInternals::ElementInternals(HTMLElement* aTarget)
@@ -310,7 +310,7 @@ bool ElementInternals::ReportValidity(ErrorResult& aRv) {
   invalidElements.AppendElement(mTarget);
 
   AutoJSAPI jsapi;
-  if (!jsapi.Init(mTarget->GetOwnerGlobal())) {
+  if (!jsapi.Init(mTarget->GetRelevantGlobal())) {
     return false;
   }
   JS::Rooted<JS::Value> detail(jsapi.cx());
@@ -331,8 +331,7 @@ bool ElementInternals::ReportValidity(ErrorResult& aRv) {
 }
 
 // https://html.spec.whatwg.org/#dom-elementinternals-labels
-already_AddRefed<nsINodeList> ElementInternals::GetLabels(
-    ErrorResult& aRv) const {
+already_AddRefed<NodeList> ElementInternals::GetLabels(ErrorResult& aRv) const {
   MOZ_ASSERT(mTarget);
 
   if (!mTarget->IsFormAssociatedElement()) {
@@ -457,10 +456,13 @@ nsresult ElementInternals::SetAttr(nsAtom* aName, const nsAString& aValue) {
   Document* document = mTarget->GetComposedDoc();
   mozAutoDocUpdate updateBatch(document, true);
 
+#ifdef ACCESSIBILITY
   const AttrModType modType =
       mAttrs.HasAttr(aName) ? AttrModType::Modification : AttrModType::Addition;
-  MutationObservers::NotifyARIAAttributeDefaultWillChange(mTarget, aName,
-                                                          modType);
+  if (auto* accService = GetAccService()) {
+    accService->NotifyARIAAttributeDefaultWillChange(mTarget, aName, modType);
+  }
+#endif
 
   nsAttrValue attrValue(aValue);
   nsresult rs = NS_OK;
@@ -475,8 +477,11 @@ nsresult ElementInternals::SetAttr(nsAtom* aName, const nsAString& aValue) {
   }
   nsMutationGuard::DidMutate();
 
-  MutationObservers::NotifyARIAAttributeDefaultChanged(mTarget, aName, modType);
-
+#ifdef ACCESSIBILITY
+  if (auto* accService = GetAccService()) {
+    accService->NotifyARIAAttributeDefaultChanged(mTarget, aName, modType);
+  }
+#endif
   return rs;
 }
 
@@ -637,7 +642,11 @@ void ElementInternals::GetAttrElements(
   // elements.
   auto elements = getAttrAssociatedElements();
 
-  if (elements == cachedAttrElements) {
+  // aUseCachedValue is null when the binding has no cached attr-associated
+  // elements object to reuse yet (e.g. the first getter call). In that case we
+  // must return the freshly computed elements below rather than signalling a
+  // cache hit, otherwise we would dereference a null pointer.
+  if (aUseCachedValue && elements == cachedAttrElements) {
     // 2. If the contents of elements is equal to the contents of this's cached
     // attr-associated elements, then return this's cached attr-associated
     // elements object.

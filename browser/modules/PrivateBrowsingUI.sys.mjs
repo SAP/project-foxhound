@@ -10,6 +10,9 @@ import { PanelMultiView } from "moz-src:///browser/components/customizableui/Pan
 // share menu items but not much else. See nonbrowser-mac.js.
 export const PrivateBrowsingUI = {
   init: function PBUI_init(window) {
+    if (!PrivateBrowsingUtils.isWindowPrivate(window)) {
+      return;
+    }
     const document = window.document;
     const gBrowser = window.gBrowser;
 

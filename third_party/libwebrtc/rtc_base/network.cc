@@ -16,15 +16,17 @@
 #include <cstring>
 #include <map>
 #include <memory>
+#include <span>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
 #include "absl/algorithm/container.h"
 #include "absl/base/nullability.h"
+#include "absl/functional/any_invocable.h"
 #include "absl/strings/match.h"
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/environment/environment.h"
 #include "api/field_trials_view.h"
 #include "api/sequence_checker.h"
@@ -110,10 +112,15 @@ bool SortNetworks(const Network* a, const Network* b) {
 uint16_t ComputeNetworkCostByType(int type,
                                   bool is_vpn,
                                   bool use_differentiated_cellular_costs,
-                                  bool add_network_cost_to_vpn) {
-  // TODO(jonaso) : Rollout support for cellular network cost using A/B
-  // experiment to make sure it does not introduce regressions.
+                                  bool add_network_cost_to_vpn,
+                                  NetworkSlice network_slice,
+                                  bool add_network_cost_for_slice) {
   int vpnCost = (is_vpn && add_network_cost_to_vpn) ? kNetworkCostVpn : 0;
+  uint16_t slice_cost =
+      (add_network_cost_for_slice && network_slice != NetworkSlice::NO_SLICE)
+          ? kNetworkCostSlice
+          : 0;
+
   switch (type) {
     case ADAPTER_TYPE_ETHERNET:
     case ADAPTER_TYPE_LOOPBACK:
@@ -121,7 +128,7 @@ uint16_t ComputeNetworkCostByType(int type,
     case ADAPTER_TYPE_WIFI:
       return kNetworkCostLow + vpnCost;
     case ADAPTER_TYPE_CELLULAR:
-      return kNetworkCostCellular + vpnCost;
+      return kNetworkCostCellular + vpnCost + slice_cost;
     case ADAPTER_TYPE_CELLULAR_2G:
       return (use_differentiated_cellular_costs ? kNetworkCostCellular2G
                                                 : kNetworkCostCellular) +
@@ -137,7 +144,7 @@ uint16_t ComputeNetworkCostByType(int type,
     case ADAPTER_TYPE_CELLULAR_5G:
       return (use_differentiated_cellular_costs ? kNetworkCostCellular5G
                                                 : kNetworkCostCellular) +
-             vpnCost;
+             vpnCost + slice_cost;
     case ADAPTER_TYPE_ANY:
       // Candidates gathered from the any-address/wildcard ports, as backups,
       // are given the maximum cost so that if there are other candidates with
@@ -320,8 +327,42 @@ MdnsResponderInterface* NetworkManager::GetMdnsResponder() const {
   return nullptr;
 }
 
+NetworkManager::NetworkManager(NetworksChangedCallback callback) {
+  RTC_CHECK(callback.callback != nullptr);
+  networks_changed_callbacks_.AddReceiver(callback.removal_tag,
+                                          std::move(callback.callback));
+}
+
+void NetworkManager::SubscribeNetworksChanged(
+    absl::AnyInvocable<void()> callback) {
+  networks_changed_callbacks_.AddReceiver(std::move(callback));
+}
+
+void NetworkManager::SubscribeNetworksChanged(
+    void* tag,
+    absl::AnyInvocable<void()> callback) {
+  networks_changed_callbacks_.AddReceiver(tag, std::move(callback));
+}
+
+void NetworkManager::UnsubscribeNetworksChanged(void* tag) {
+  networks_changed_callbacks_.RemoveReceivers(tag);
+}
+
+void NetworkManager::SubscribeError(void* tag,
+                                    absl::AnyInvocable<void()> callback) {
+  error_callbacks_.AddReceiver(tag, std::move(callback));
+}
+
+void NetworkManager::UnsubscribeError(void* tag) {
+  error_callbacks_.RemoveReceivers(tag);
+}
+
 NetworkManagerBase::NetworkManagerBase()
     : enumeration_permission_(NetworkManager::ENUMERATION_ALLOWED) {}
+
+NetworkManagerBase::NetworkManagerBase(NetworksChangedCallback callback)
+    : NetworkManager(std::move(callback)),
+      enumeration_permission_(NetworkManager::ENUMERATION_ALLOWED) {}
 
 NetworkManager::EnumerationPermission
 NetworkManagerBase::enumeration_permission() const {
@@ -448,6 +489,10 @@ void NetworkManagerBase::MergeNetworkList(
       if (net->network_preference() != existing_net->network_preference()) {
         existing_net->set_network_preference(net->network_preference());
       }
+      if (net->network_slice() != existing_net->network_slice()) {
+        existing_net->set_network_slice(net->network_slice());
+      }
+
       RTC_DCHECK(net->active());
     }
     networks_map_[key]->set_mdns_responder_provider(this);
@@ -532,7 +577,7 @@ Network* NetworkManagerBase::GetNetworkFromAddress(const IPAddress& ip) const {
   return nullptr;
 }
 
-bool NetworkManagerBase::IsVpnMacAddress(ArrayView<const uint8_t> address) {
+bool NetworkManagerBase::IsVpnMacAddress(std::span<const uint8_t> address) {
   if (address.data() == nullptr && address.empty()) {
     return false;
   }
@@ -550,6 +595,22 @@ BasicNetworkManager::BasicNetworkManager(
     SocketFactory* absl_nonnull socket_factory,
     NetworkMonitorFactory* absl_nullable network_monitor_factory)
     : env_(env),
+      network_monitor_factory_(network_monitor_factory),
+      socket_factory_(socket_factory),
+      allow_mac_based_ipv6_(
+          env_.field_trials().IsEnabled("WebRTC-AllowMACBasedIPv6")),
+      bind_using_ifname_(
+          !env_.field_trials().IsDisabled("WebRTC-BindUsingInterfaceName")) {
+  RTC_DCHECK(socket_factory_);
+}
+
+BasicNetworkManager::BasicNetworkManager(
+    const Environment& env,
+    SocketFactory* absl_nonnull socket_factory,
+    NetworksChangedCallback callback,
+    NetworkMonitorFactory* absl_nullable network_monitor_factory)
+    : NetworkManagerBase(std::move(callback)),
+      env_(env),
       network_monitor_factory_(network_monitor_factory),
       socket_factory_(socket_factory),
       allow_mac_based_ipv6_(
@@ -689,6 +750,7 @@ void BasicNetworkManager::ConvertIfAddrs(
     }
     network->set_underlying_type_for_vpn(if_info.underlying_type_for_vpn);
     network->set_network_preference(if_info.network_preference);
+    network->set_network_slice(if_info.slice);
     if (include_ignored || !network->ignored()) {
       current_networks[key] = network.get();
       networks->push_back(std::move(network));
@@ -874,7 +936,7 @@ bool BasicNetworkManager::CreateNetworks(
             adapter_type = ADAPTER_TYPE_VPN;
           }
           if (adapter_type != ADAPTER_TYPE_VPN &&
-              IsVpnMacAddress(ArrayView<const uint8_t>(
+              IsVpnMacAddress(std::span<const uint8_t>(
                   reinterpret_cast<const uint8_t*>(
                       adapter_addrs->PhysicalAddress),
                   adapter_addrs->PhysicalAddressLength))) {
@@ -956,7 +1018,7 @@ void BasicNetworkManager::StartUpdating() {
     if (sent_first_update_)
       thread_->PostTask(SafeTask(task_safety_flag_, [this] {
         RTC_DCHECK_RUN_ON(thread_);
-        SignalNetworksChanged();
+        NotifyNetworksChanged();
       }));
   } else {
     RTC_DCHECK(task_safety_flag_ == nullptr);
@@ -1053,7 +1115,7 @@ void BasicNetworkManager::UpdateNetworksOnce() {
 
   std::vector<std::unique_ptr<Network>> list;
   if (!CreateNetworks(false, &list)) {
-    SignalError();
+    NotifyError();
   } else {
     bool changed;
     NetworkManager::Stats stats;
@@ -1061,7 +1123,7 @@ void BasicNetworkManager::UpdateNetworksOnce() {
     set_default_local_addresses(QueryDefaultLocalAddress(AF_INET),
                                 QueryDefaultLocalAddress(AF_INET6));
     if (changed || !sent_first_update_) {
-      SignalNetworksChanged();
+      NotifyNetworksChanged();
       sent_first_update_ = true;
     }
   }
@@ -1117,30 +1179,23 @@ Network::Network(absl::string_view name,
       type_(type),
       preference_(0) {}
 
-Network::Network(const Network& o)
-    : default_local_address_provider_(o.default_local_address_provider_),
-      mdns_responder_provider_(o.mdns_responder_provider_),
-      name_(o.name_),
-      description_(o.description_),
-      prefix_(o.prefix_),
-      prefix_length_(o.prefix_length_),
-      key_(o.key_),
-      ips_(o.ips_),
-      scope_id_(o.scope_id_),
-      ignored_(o.ignored_),
-      type_(o.type_),
-      underlying_type_for_vpn_(o.underlying_type_for_vpn_),
-      preference_(o.preference_),
-      active_(o.active_),
-      id_(o.id_),
-      network_preference_(o.network_preference_) {
-  // Copying a Network with signals set is hard to reason about.
-  // So don't allow it.
-  RTC_CHECK(SignalTypeChanged.is_empty());
-  RTC_CHECK(SignalNetworkPreferenceChanged.is_empty());
-}
-
 Network::~Network() = default;
+
+std::unique_ptr<Network> Network::Clone() const {
+  auto clone = std::make_unique<Network>(name_, description_, prefix_,
+                                         prefix_length_, type_);
+  clone->key_ = key_;
+  clone->ips_ = ips_;
+  clone->scope_id_ = scope_id_;
+  clone->ignored_ = ignored_;
+  clone->underlying_type_for_vpn_ = underlying_type_for_vpn_;
+  clone->preference_ = preference_;
+  clone->active_ = active_;
+  clone->id_ = id_;
+  clone->network_preference_ = network_preference_;
+  clone->network_slice_ = network_slice_;
+  return clone;
+}
 
 // Sets the addresses of this network. Returns true if the address set changed.
 // Change detection is short circuited if the changed argument is true.
@@ -1222,54 +1277,68 @@ uint16_t Network::GetCost(const FieldTrialsView& field_trials) const {
       field_trials.IsEnabled("WebRTC-UseDifferentiatedCellularCosts");
   const bool add_network_cost_to_vpn =
       field_trials.IsEnabled("WebRTC-AddNetworkCostToVpn");
-  return ComputeNetworkCostByType(type, IsVpn(),
-                                  use_differentiated_cellular_costs,
-                                  add_network_cost_to_vpn);
+  const bool add_network_cost_for_slice =
+      field_trials.IsEnabled("WebRTC-UnifiedCommunications");
+  return ComputeNetworkCostByType(
+      type, IsVpn(), use_differentiated_cellular_costs, add_network_cost_to_vpn,
+      network_slice(), add_network_cost_for_slice);
 }
 
 // This is the inverse of ComputeNetworkCostByType().
-std::pair<AdapterType, bool /* vpn */> Network::GuessAdapterFromNetworkCost(
-    int network_cost) {
+std::tuple<AdapterType, bool /* vpn */, NetworkSlice>
+Network::GuessAdapterFromNetworkCost(int network_cost) {
   switch (network_cost) {
     case kNetworkCostMin:
-      return {ADAPTER_TYPE_ETHERNET, false};
+      return {ADAPTER_TYPE_ETHERNET, false, NetworkSlice::NO_SLICE};
     case kNetworkCostMin + kNetworkCostVpn:
-      return {ADAPTER_TYPE_ETHERNET, true};
+      return {ADAPTER_TYPE_ETHERNET, true, NetworkSlice::NO_SLICE};
     case kNetworkCostLow:
-      return {ADAPTER_TYPE_WIFI, false};
+      return {ADAPTER_TYPE_WIFI, false, NetworkSlice::NO_SLICE};
     case kNetworkCostLow + kNetworkCostVpn:
-      return {ADAPTER_TYPE_WIFI, true};
+      return {ADAPTER_TYPE_WIFI, true, NetworkSlice::NO_SLICE};
     case kNetworkCostCellular:
-      return {ADAPTER_TYPE_CELLULAR, false};
+      return {ADAPTER_TYPE_CELLULAR, false, NetworkSlice::NO_SLICE};
     case kNetworkCostCellular + kNetworkCostVpn:
-      return {ADAPTER_TYPE_CELLULAR, true};
+      return {ADAPTER_TYPE_CELLULAR, true, NetworkSlice::NO_SLICE};
+    case kNetworkCostCellularSlice:
+      return {ADAPTER_TYPE_CELLULAR, false,
+              NetworkSlice::UNIFIED_COMMUNICATIONS};
+    case kNetworkCostCellularVpnSlice:
+      return {ADAPTER_TYPE_CELLULAR, true,
+              NetworkSlice::UNIFIED_COMMUNICATIONS};
     case kNetworkCostCellular2G:
-      return {ADAPTER_TYPE_CELLULAR_2G, false};
+      return {ADAPTER_TYPE_CELLULAR_2G, false, NetworkSlice::NO_SLICE};
     case kNetworkCostCellular2G + kNetworkCostVpn:
-      return {ADAPTER_TYPE_CELLULAR_2G, true};
+      return {ADAPTER_TYPE_CELLULAR_2G, true, NetworkSlice::NO_SLICE};
     case kNetworkCostCellular3G:
-      return {ADAPTER_TYPE_CELLULAR_3G, false};
+      return {ADAPTER_TYPE_CELLULAR_3G, false, NetworkSlice::NO_SLICE};
     case kNetworkCostCellular3G + kNetworkCostVpn:
-      return {ADAPTER_TYPE_CELLULAR_3G, true};
+      return {ADAPTER_TYPE_CELLULAR_3G, true, NetworkSlice::NO_SLICE};
     case kNetworkCostCellular4G:
-      return {ADAPTER_TYPE_CELLULAR_4G, false};
+      return {ADAPTER_TYPE_CELLULAR_4G, false, NetworkSlice::NO_SLICE};
     case kNetworkCostCellular4G + kNetworkCostVpn:
-      return {ADAPTER_TYPE_CELLULAR_4G, true};
+      return {ADAPTER_TYPE_CELLULAR_4G, true, NetworkSlice::NO_SLICE};
     case kNetworkCostCellular5G:
-      return {ADAPTER_TYPE_CELLULAR_5G, false};
+      return {ADAPTER_TYPE_CELLULAR_5G, false, NetworkSlice::NO_SLICE};
     case kNetworkCostCellular5G + kNetworkCostVpn:
-      return {ADAPTER_TYPE_CELLULAR_5G, true};
+      return {ADAPTER_TYPE_CELLULAR_5G, true, NetworkSlice::NO_SLICE};
+    case kNetworkCostCellular5GSlice:
+      return {ADAPTER_TYPE_CELLULAR_5G, false,
+              NetworkSlice::UNIFIED_COMMUNICATIONS};
+    case kNetworkCostCellular5GVpnSlice:
+      return {ADAPTER_TYPE_CELLULAR_5G, true,
+              NetworkSlice::UNIFIED_COMMUNICATIONS};
     case kNetworkCostUnknown:
-      return {ADAPTER_TYPE_UNKNOWN, false};
+      return {ADAPTER_TYPE_UNKNOWN, false, NetworkSlice::NO_SLICE};
     case kNetworkCostUnknown + kNetworkCostVpn:
-      return {ADAPTER_TYPE_UNKNOWN, true};
+      return {ADAPTER_TYPE_UNKNOWN, true, NetworkSlice::NO_SLICE};
     case kNetworkCostMax:
-      return {ADAPTER_TYPE_ANY, false};
+      return {ADAPTER_TYPE_ANY, false, NetworkSlice::NO_SLICE};
     case kNetworkCostMax + kNetworkCostVpn:
-      return {ADAPTER_TYPE_ANY, true};
+      return {ADAPTER_TYPE_ANY, true, NetworkSlice::NO_SLICE};
   }
   RTC_LOG(LS_VERBOSE) << "Unknown network cost: " << network_cost;
-  return {ADAPTER_TYPE_UNKNOWN, false};
+  return {ADAPTER_TYPE_UNKNOWN, false, NetworkSlice::NO_SLICE};
 }
 
 std::string Network::ToString() const {
@@ -1281,6 +1350,9 @@ std::string Network::ToString() const {
      << AdapterTypeToString(type_);
   if (IsVpn()) {
     ss << "/" << AdapterTypeToString(underlying_type_for_vpn_);
+  }
+  if (network_slice() != NetworkSlice::NO_SLICE) {
+    ss << "/" << NetworkSliceToString(network_slice());
   }
   ss << ":id=" << id_ << "]";
   return ss.Release();

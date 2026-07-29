@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -18,6 +16,7 @@ UNIFIED_SOURCES = [
     "TestDeinterlacingFilter.cpp",
     "TestDownscalingFilter.cpp",
     "TestFrameAnimator.cpp",
+    "TestHDRPNGEncoder.cpp",
     "TestLoader.cpp",
     "TestMetadata.cpp",
     "TestRemoveFrameRectFilter.cpp",
@@ -33,6 +32,7 @@ TEST_HARNESS_FILES.gtest += [
     "animated-with-extra-image-sub-blocks.gif",
     "blend.avif",
     "blend.gif",
+    "blend.jxl",
     "blend.png",
     "blend.webp",
     "bug-1655846.avif",
@@ -40,6 +40,7 @@ TEST_HARNESS_FILES.gtest += [
     "corrupt-with-bad-bmp-width.ico",
     "corrupt-with-bad-ico-bpp.ico",
     "corrupt.jpg",
+    "corrupt.jxl",
     "downscaled.avif",
     "downscaled.bmp",
     "downscaled.gif",
@@ -99,6 +100,7 @@ TEST_HARNESS_FILES.gtest += [
     "large.avif",
     "large.jxl",
     "large.webp",
+    "long-animated.jxl",
     "multilayer.avif",
     "no-frame-delay.gif",
     "perf_cmyk.jpg",
@@ -108,11 +110,16 @@ TEST_HARNESS_FILES.gtest += [
     "perf_srgb.gif",
     "perf_srgb.png",
     "perf_srgb_alpha.png",
+    "perf_srgb_alpha_lossless.jxl",
     "perf_srgb_alpha_lossless.webp",
+    "perf_srgb_alpha_lossy.jxl",
     "perf_srgb_alpha_lossy.webp",
+    "perf_srgb_lossless.jxl",
     "perf_srgb_lossless.webp",
+    "perf_srgb_lossy.jxl",
     "perf_srgb_lossy.webp",
     "perf_ycbcr.jpg",
+    "progressive.jxl",
     "rle4.bmp",
     "rle8.bmp",
     "stackcheck.avif",

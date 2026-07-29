@@ -34,7 +34,6 @@ import mozilla.components.support.test.argumentCaptor
 import mozilla.components.support.test.expectException
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import org.junit.Assert
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
@@ -52,6 +51,7 @@ import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
+import kotlin.test.assertNotNull
 import mozilla.appservices.fxaclient.AccountEvent as ASAccountEvent
 import mozilla.appservices.fxaclient.Device as NativeDevice
 import mozilla.appservices.fxaclient.DevicePushSubscription as NativeDevicePushSubscription
@@ -246,7 +246,6 @@ class FxaDeviceConstellationTest {
 
         assertFalse(success)
         verify(constellation.crashReporter!!, never()).submitCaughtException(any())
-        Unit
     }
 
     @Test
@@ -400,7 +399,7 @@ class FxaDeviceConstellationTest {
         )
         assertTrue(constellation.pollForCommands())
 
-        Assert.assertNotNull(eventsObserver.latestEvents)
+        assertNotNull(eventsObserver.latestEvents)
         assertEquals(1, eventsObserver.latestEvents!!.size)
         command = (eventsObserver.latestEvents!![0] as AccountEvent.DeviceCommandIncoming).command
         assertEquals(testDevice1.into(), (command as DeviceCommandIncoming.TabReceived).from)

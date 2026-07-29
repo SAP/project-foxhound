@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // Ensure we provide 'long' and 'short' descriptive names for non-meta time
 // zones. (CLDR stores names for Etc/UTC, Europe/Dublin, and Europe/London as
 // non-meta zones.)

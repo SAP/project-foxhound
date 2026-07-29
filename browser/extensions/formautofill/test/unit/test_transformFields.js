@@ -578,7 +578,7 @@ const CREDIT_CARD_COMPUTE_TESTCASES = [
     },
     expectedResult: {
       "cc-name": "Timothy John Berners-Lee",
-      "cc-number": "************1045",
+      "cc-number": "••••••••••••1045",
       "cc-given-name": "Timothy",
       "cc-additional-name": "John",
       "cc-family-name": "Berners-Lee",
@@ -592,7 +592,7 @@ const CREDIT_CARD_COMPUTE_TESTCASES = [
       "cc-number": "4929001587121045",
     },
     expectedResult: {
-      "cc-number": "************1045",
+      "cc-number": "••••••••••••1045",
     },
   },
 
@@ -608,7 +608,7 @@ const CREDIT_CARD_COMPUTE_TESTCASES = [
       "cc-exp-month": 12,
       "cc-exp-year": 2022,
       "cc-exp": "2022-12",
-      "cc-number": "************1045",
+      "cc-number": "••••••••••••1045",
     },
   },
   {
@@ -620,7 +620,7 @@ const CREDIT_CARD_COMPUTE_TESTCASES = [
     expectedResult: {
       "cc-exp-month": 12,
       "cc-exp": undefined,
-      "cc-number": "************1045",
+      "cc-number": "••••••••••••1045",
     },
   },
   {
@@ -632,7 +632,7 @@ const CREDIT_CARD_COMPUTE_TESTCASES = [
     expectedResult: {
       "cc-exp-year": 2022,
       "cc-exp": undefined,
-      "cc-number": "************1045",
+      "cc-number": "••••••••••••1045",
     },
   },
 ];

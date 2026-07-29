@@ -98,8 +98,7 @@ tasks:
         retries: 0
 
         payload:
-          image: mozillareleases/taskgraph:decision-v14.2.1@sha256:f4e3a22df9ec0017a2534b3a7b4cd9b60318f86619e0c2156c12c1ec1a0e32cb
-
+          image: mozillareleases/taskgraph:decision-v23.1.0@sha256:a1c4bbab3fc885000eb4e9b53dd48131128ba995479a8c3a4263cf321bf0a581
           env:
             $merge:
               - NSS_BASE_REPOSITORY: 'https://hg.mozilla.org/projects/nss'

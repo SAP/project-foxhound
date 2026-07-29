@@ -38,6 +38,12 @@
           data-l10n-id="about-networking-websockets"
         ></span>
       </div>
+      <div class="category category-no-icon" id="category-altsvc">
+        <span
+          class="category-name"
+          data-l10n-id="about-networking-alt-svc"
+        ></span>
+      </div>
       <hr />
       <div class="category category-no-icon" id="category-dnslookuptool">
         <span
@@ -50,9 +56,6 @@
           class="category-name"
           data-l10n-id="about-networking-logging"
         ></span>
-      </div>
-      <div class="category category-no-icon" id="category-rcwn">
-        <span class="category-name" data-l10n-id="about-networking-rcwn"></span>
       </div>
       <div class="category category-no-icon" id="category-networkid">
         <span
@@ -99,6 +102,7 @@
               <th data-l10n-id="about-networking-ssl"></th>
               <th data-l10n-id="about-networking-active"></th>
               <th data-l10n-id="about-networking-idle"></th>
+              <th data-l10n-id="about-networking-originAttributesSuffix"></th>
             </tr>
           </thead>
           <tbody id="http_content"></tbody>
@@ -115,6 +119,7 @@
               <th data-l10n-id="about-networking-active"></th>
               <th data-l10n-id="about-networking-sent"></th>
               <th data-l10n-id="about-networking-received"></th>
+              <th data-l10n-id="about-networking-originAttributesSuffix"></th>
             </tr>
           </thead>
           <tbody id="sockets_content"></tbody>
@@ -177,6 +182,24 @@
         </table>
       </div>
 
+      <div id="altsvc" class="tab" hidden="true">
+        <table>
+          <thead>
+            <tr>
+              <th data-l10n-id="about-networking-alt-svc-origin"></th>
+              <th data-l10n-id="about-networking-alt-svc-alternate"></th>
+              <th data-l10n-id="about-networking-alt-svc-alpn"></th>
+              <th data-l10n-id="about-networking-alt-svc-validated"></th>
+              <th data-l10n-id="about-networking-alt-svc-ttl"></th>
+              <th
+                data-l10n-id="about-networking-alt-svc-origin-attributes-suffix"
+              ></th>
+            </tr>
+          </thead>
+          <tbody id="altsvc_content"></tbody>
+        </table>
+      </div>
+
       <div id="dnslookuptool" class="tab" hidden="true">
         <label data-l10n-id="about-networking-dns-domain"></label>
         <input type="text" name="host" id="host" />
@@ -203,83 +226,6 @@
             </tr>
           </thead>
           <tbody id="https_rr_content"></tbody>
-        </table>
-      </div>
-
-      <div id="rcwn" class="tab" hidden="true">
-        <table>
-          <thead>
-            <tr>
-              <th data-l10n-id="about-networking-rcwn-status"></th>
-              <th data-l10n-id="about-networking-total-network-requests"></th>
-              <th data-l10n-id="about-networking-rcwn-cache-won-count"></th>
-              <th data-l10n-id="about-networking-rcwn-net-won-count"></th>
-            </tr>
-          </thead>
-          <tbody id="rcwn_content">
-            <tr>
-              <td id="rcwn_status"></td>
-              <td id="total_req_count"></td>
-              <td id="rcwn_cache_won_count"></td>
-              <td id="rcwn_cache_net_count"></td>
-            </tr>
-          </tbody>
-        </table>
-
-        <br /><br />
-
-        <table>
-          <thead>
-            <tr>
-              <th data-l10n-id="about-networking-rcwn-operation"></th>
-              <th data-l10n-id="about-networking-rcwn-avg-short"></th>
-              <th data-l10n-id="about-networking-rcwn-avg-long"></th>
-              <th data-l10n-id="about-networking-rcwn-std-dev-long"></th>
-            </tr>
-          </thead>
-          <tbody id="cacheperf_content">
-            <tr>
-              <td data-l10n-id="about-networking-rcwn-perf-open"></td>
-              <td id="rcwn_perfstats_open_avgShort"></td>
-              <td id="rcwn_perfstats_open_avgLong"></td>
-              <td id="rcwn_perfstats_open_stddevLong"></td>
-            </tr>
-            <tr>
-              <td data-l10n-id="about-networking-rcwn-perf-read"></td>
-              <td id="rcwn_perfstats_read_avgShort"></td>
-              <td id="rcwn_perfstats_read_avgLong"></td>
-              <td id="rcwn_perfstats_read_stddevLong"></td>
-            </tr>
-            <tr>
-              <td data-l10n-id="about-networking-rcwn-perf-write"></td>
-              <td id="rcwn_perfstats_write_avgShort"></td>
-              <td id="rcwn_perfstats_write_avgLong"></td>
-              <td id="rcwn_perfstats_write_stddevLong"></td>
-            </tr>
-            <tr>
-              <td data-l10n-id="about-networking-rcwn-perf-entry-open"></td>
-              <td id="rcwn_perfstats_entryopen_avgShort"></td>
-              <td id="rcwn_perfstats_entryopen_avgLong"></td>
-              <td id="rcwn_perfstats_entryopen_stddevLong"></td>
-            </tr>
-          </tbody>
-        </table>
-
-        <br /><br />
-
-        <table>
-          <thead>
-            <tr>
-              <th data-l10n-id="about-networking-rcwn-cache-slow"></th>
-              <th data-l10n-id="about-networking-rcwn-cache-not-slow"></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td id="rcwn_cache_slow"></td>
-              <td id="rcwn_cache_not_slow"></td>
-            </tr>
-          </tbody>
         </table>
       </div>
 

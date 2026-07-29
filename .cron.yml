@@ -179,6 +179,7 @@ jobs:
           - mozilla-beta
           - mozilla-release
           - mozilla-esr140
+          - mozilla-esr153
           - elm
           - cypress
       # For all non m-c jobs we just run once daily matching the 10 UTC
@@ -359,11 +360,13 @@ jobs:
       run-on-projects:
           - autoland
           - mozilla-beta
+          - mozilla-release
       when:
           by-project:
               autoland: [{hour: 6, minute: 45}, {hour: 18, minute: 45}]
               # 4h before launch of `daily-releases`
               mozilla-beta: [{hour: 9, minute: 00}]
+              mozilla-release: [{weekday: 'Sunday', hour: 19, minute: 00}]
               # No default
 
     - name: system-symbols
@@ -469,6 +472,15 @@ jobs:
       when:
           - {hour: 2, minute: 0}
 
+    - name: android-l10n-sync-beta-to-release
+      job:
+          type: decision-task
+          treeherder-symbol: android-l10n-sync-rel
+          target-tasks-method: android-l10n-sync-beta-to-release
+      run-on-projects: [mozilla-release]
+      when:
+          - {weekday: 'Sunday', hour: 19, minute: 0}
+
     - name: os-integration
       job:
           type: decision-task
@@ -498,3 +510,33 @@ jobs:
           - mozilla-central
       when:
           - {hour: 3, minute: 0}
+
+    - name: run-missing-tests
+      job:
+          type: trigger-action
+          action-name: run-missing-tests
+          include-cron-input: false
+      run-on-projects:
+          - mozilla-beta
+      when:
+          - {hour: 0, minute: 15}
+          - {hour: 3, minute: 15}
+          - {hour: 6, minute: 15}
+          - {hour: 9, minute: 15}
+          - {hour: 12, minute: 15}
+          - {hour: 15, minute: 15}
+          - {hour: 18, minute: 15}
+          - {hour: 21, minute: 15}
+
+    - name: android-macrobenchmark-daily
+      job:
+          type: decision-task
+          treeherder-symbol: mbench
+          target-tasks-method: android-macrobenchmark_daily
+          include-push-tasks: true
+      run-on-projects:
+          - mozilla-central
+          - mozilla-beta
+          - mozilla-release
+      when:
+          - {hour: 2, minute: 0}

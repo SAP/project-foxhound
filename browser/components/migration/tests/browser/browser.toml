@@ -22,12 +22,21 @@ run-if = [
 ["browser_disabled_migrator.js"]
 
 ["browser_do_migration.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
+
+["browser_edge_bookmarks_success_strings.js"]
+skip-if = [
+  "a11y_checks", # Bug 1858037 to investigate intermittent a11y_checks results (fails on Try, passes on Autoland)
+]
 
 ["browser_entrypoint_telemetry.js"]
 
 ["browser_extension_migration.js"]
 skip-if = [
   "a11y_checks", # Bug 1858037 to investigate intermittent a11y_checks results (fails on Try, passes on Autoland)
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
 ]
 
 ["browser_file_migration.js"]
@@ -36,14 +45,10 @@ skip-if = [
 ]
 support-files = ["dummy_file.csv"]
 
-["browser_ie_edge_bookmarks_success_strings.js"]
-skip-if = [
-  "a11y_checks", # Bug 1858037 to investigate intermittent a11y_checks results (fails on Try, passes on Autoland)
-]
-
 ["browser_misc_telemetry.js"]
 skip-if = [
   "a11y_checks", # Bug 1858037 to investigate intermittent a11y_checks results (fails on Autoland, passes on Try)
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
 ]
 
 ["browser_no_browsers_state.js"]
@@ -53,6 +58,7 @@ skip-if = [
 ["browser_permissions.js"]
 skip-if = [
   "a11y_checks", # Bug 1858037 and 1855492 to investigate intermittent a11y_checks results (fails on Try, passes on Autoland)
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
 ]
 
 ["browser_safari_passwords.js"]

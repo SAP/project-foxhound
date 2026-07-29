@@ -395,7 +395,7 @@ async function testPasswordChange(
     },
     async function (browser) {
       info(`Opened tab with url: ${url}, waiting for focus`);
-      await SimpleTest.promiseFocus(browser.ownerGlobal);
+      await SimpleTest.promiseFocus(browser.documentGlobal);
       info("Waiting for form-processed message");
       await formProcessedPromise;
       await initForm(browser, formDefaults, { passwordFieldType });
@@ -469,17 +469,17 @@ async function testPasswordChange(
 }
 
 async function initForm(browser, formDefaults, passwordFieldType) {
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     browser,
-    { passwordInputSelector, passwordFieldType },
+    [{ passwordInputSelector, passwordFieldType }],
     async function ({ passwordInputSelector, passwordFieldType }) {
       content.document.querySelector(passwordInputSelector).type =
         passwordFieldType;
     }
   );
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     browser,
-    formDefaults,
+    [formDefaults],
     async function (selectorValues) {
       for (let [sel, value] of Object.entries(selectorValues)) {
         content.document.querySelector(sel).value = value;
@@ -489,12 +489,14 @@ async function initForm(browser, formDefaults, passwordFieldType) {
 }
 
 async function checkForm(browser, expected) {
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     browser,
-    {
-      [passwordInputSelector]: expected.password,
-      [usernameInputSelector]: expected.username,
-    },
+    [
+      {
+        [passwordInputSelector]: expected.password,
+        [usernameInputSelector]: expected.username,
+      },
+    ],
     async function contentCheckForm(selectorValues) {
       for (let [sel, value] of Object.entries(selectorValues)) {
         let field = content.document.querySelector(sel);

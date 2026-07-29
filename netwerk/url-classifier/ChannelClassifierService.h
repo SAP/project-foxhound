@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set expandtab ts=2 sw=2 sts=2 cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,18 +6,13 @@
 #define mozilla_net_ChannelClassifierService_h
 
 #include "nsIChannelClassifierService.h"
+#include "mozilla/net/ChannelClassifierUtils.h"
 #include "mozilla/net/UrlClassifierCommon.h"
 #include "nsCOMPtr.h"
 #include "nsTArray.h"
 
 namespace mozilla {
 namespace net {
-
-enum class ChannelBlockDecision {
-  Blocked,
-  Replaced,
-  Allowed,
-};
 
 class UrlClassifierBlockedChannel final
     : public nsIUrlClassifierBlockedChannel {

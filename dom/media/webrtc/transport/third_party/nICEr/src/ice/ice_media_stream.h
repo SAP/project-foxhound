@@ -34,10 +34,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef _ice_media_stream_h
 #define _ice_media_stream_h
-#ifdef __cplusplus
-using namespace std;
-extern "C" {
-#endif /* __cplusplus */
 
 #include "transport_addr.h"
 
@@ -45,6 +41,8 @@ typedef struct nr_ice_stun_server_ {
   nr_transport_addr addr;
   int id;
 } nr_ice_stun_server;
+
+int nr_ice_stun_server_get_url(const nr_ice_stun_server *server, int is_turn, char **urlp);
 
 typedef struct nr_ice_turn_server_ {
     nr_ice_stun_server    turn_server;
@@ -137,8 +135,5 @@ int nr_ice_media_stream_disable_component(nr_ice_media_stream *stream, int compo
 int nr_ice_media_stream_pair_new_trickle_candidate(nr_ice_peer_ctx *pctx, nr_ice_media_stream *pstream, nr_ice_candidate *cand);
 void nr_ice_media_stream_role_change(nr_ice_media_stream *stream);
 
-#ifdef __cplusplus
-}
-#endif /* __cplusplus */
 #endif
 

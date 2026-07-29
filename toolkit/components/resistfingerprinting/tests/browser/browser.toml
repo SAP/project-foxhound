@@ -6,6 +6,7 @@ support-files = [
   "font-fingerprinter.html",
   "head-fpp-matrix.js",
   "head.js",
+  "srcset.html",
   "scriptExecPage.html",
   "serviceWorker.js",
   "serviceWorkerTester.js",
@@ -17,6 +18,8 @@ support-files = [
 ["browser_canvas_fingerprinter_telemetry.js"]
 
 ["browser_canvas_randomization.js"]
+
+["browser_canvas_randomization_offscreen_transfer.js"]
 
 ["browser_canvas_randomization_permission.js"]
 
@@ -31,6 +34,9 @@ support-files = [
 ["browser_fingerprintingWebCompat.js"]
 
 ["browser_fingerprinting_randomization_key.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
 
 ["browser_font_fingerprinter_telemetry.js"]
 
@@ -81,6 +87,8 @@ support-files = ["file_pdf.pdf"]
 
 ["browser_service_worker_randomization_key_originattrs.js"]
 
+["browser_srcset.js"]
+
 ["browser_usercharacteristics.js"]
 
 ["browser_usercharacteristics_canvas_filtering.js"]
@@ -95,7 +103,9 @@ skip-if = [
 ["browser_usercharacteristics_gamepads.js"]
 
 ["browser_usercharacteristics_linux_distro.js"]
-skip-if = ["os != 'linux'"]
+run-if = [
+  "os == 'linux'",
+]
 
 ["browser_usercharacteristics_math.js"]
 
@@ -104,6 +114,8 @@ skip-if = ["os != 'linux'"]
 ["browser_usercharacteristics_svg.js"]
 
 ["browser_usercharacteristics_timezone.js"]
+
+["browser_usercharacteristics_voices.js"]
 
 ["browser_worker_granular_overrides.js"]
 

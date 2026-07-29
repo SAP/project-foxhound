@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -42,7 +41,7 @@ class txXPathResultComparator {
 class txResultStringComparator : public txXPathResultComparator {
  public:
   txResultStringComparator(bool aAscending, bool aUpperFirst);
-  nsresult init(const nsString& aLanguage);
+  nsresult init(const nsACString& aLanguage, bool aResistFingerPrinting);
 
   int compareValues(txObject* aVal1, txObject* aVal2) override;
   std::pair<mozilla::UniquePtr<txObject>, nsresult> createSortableValue(

@@ -80,7 +80,7 @@ fuzzy-if(winWidget,0-1,0-75) == grid-track-intrinsic-sizing-003.html grid-track-
 == grid-track-fit-content-sizing-001.html grid-track-fit-content-sizing-001-ref.html
 == grid-track-fit-content-sizing-002.html grid-track-fit-content-sizing-002-ref.html
 == grid-max-sizing-flex-001.html grid-max-sizing-flex-001-ref.html
-fuzzy(0-2,0-100) == grid-max-sizing-flex-002.html grid-max-sizing-flex-002-ref.html
+fuzzy(0-2,0-200) == grid-max-sizing-flex-002.html grid-max-sizing-flex-002-ref.html
 fuzzy-if(winWidget,0-1,0-10) == grid-max-sizing-flex-003.html grid-max-sizing-flex-003-ref.html
 == grid-max-sizing-flex-004.html grid-max-sizing-flex-004-ref.html
 == grid-max-sizing-flex-005.html grid-max-sizing-flex-005-ref.html
@@ -142,7 +142,7 @@ skip-if(!gtkWidget) == grid-container-baselines-003.html grid-container-baseline
 == grid-container-synthesized-baseline-001.html grid-container-synthesized-baseline-001-ref.html
 == grid-column-gap-001.html grid-column-gap-001-ref.html
 == grid-column-gap-002.html grid-column-gap-002-ref.html
-fuzzy(0-2,0-60) == grid-column-gap-003.html grid-column-gap-003-ref.html
+fuzzy(0-2,0-200) == grid-column-gap-003.html grid-column-gap-003-ref.html
 == grid-column-gap-004.html grid-column-gap-004-ref.html
 == grid-row-gap-001.html grid-row-gap-001-ref.html
 == grid-percent-grid-gap-001.html grid-percent-grid-gap-001-ref.html
@@ -187,6 +187,7 @@ test-pref(layout.css.serialize-grid-implicit-tracks,false) == grid-repeat-auto-f
 == grid-fragmentation-004.html grid-fragmentation-004-ref.html
 == grid-fragmentation-005.html grid-fragmentation-005-ref.html
 == grid-fragmentation-006.html grid-fragmentation-006-ref.html
+fails == grid-fragmentation-006-avoid-break.html grid-fragmentation-006-avoid-break-ref.html
 == grid-fragmentation-007.html grid-fragmentation-007-ref.html
 == grid-fragmentation-008.html grid-fragmentation-008-ref.html
 == grid-fragmentation-009.html grid-fragmentation-009-ref.html
@@ -212,6 +213,10 @@ fuzzy-if(winWidget,0-1,0-5) == grid-fragmentation-027.html grid-fragmentation-02
 == grid-fragmentation-029.html grid-fragmentation-029-ref.html
 == grid-fragmentation-030.html grid-fragmentation-030-ref.html
 == grid-fragmentation-031.html grid-fragmentation-031-ref.html
+== grid-fragmentation-break-before.html grid-fragmentation-break-before-ref.html
+fails == grid-fragmentation-032.html grid-fragmentation-032-ref.html
+fails == grid-fragmentation-033.html grid-fragmentation-033-ref.html
+fails == grid-fragmentation-034.html grid-fragmentation-034-ref.html
 
 # Fragmentation tests that does dynamic content removal/insertions.
 # They should give the same result as the corresponding static test.
@@ -273,6 +278,8 @@ fuzzy-if(winWidget,0-1,0-5) == grid-fragmentation-027.html grid-fragmentation-02
 == grid-fragmentation-dyn2-029.html grid-fragmentation-029-ref.html
 == grid-fragmentation-dyn2-030.html grid-fragmentation-030-ref.html
 == grid-fragmentation-dyn2-031.html grid-fragmentation-031-ref.html
+== grid-fragmentation-dyn1-break-before.html grid-fragmentation-break-before-ref.html
+== grid-fragmentation-dyn2-break-before.html grid-fragmentation-break-before-ref.html
 
 == bug1306106.html bug1306106-ref.html
 == bug1349571.html bug1349571-ref.html

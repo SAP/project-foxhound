@@ -4,19 +4,16 @@
 
 package mozilla.components.support.ktx.kotlin
 
-import android.net.InetAddresses
-import android.util.Patterns
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import mozilla.components.lib.publicsuffixlist.PublicSuffixList
+import mozilla.components.support.ktx.helpers.ShadowInetAddresses
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import org.robolectric.annotation.Implementation
-import org.robolectric.annotation.Implements
 
 @RunWith(RobolectricTestRunner::class)
 @Config(shadows = [ShadowInetAddresses::class])
@@ -125,21 +122,5 @@ class DomainIndexesInUrlTest {
         )
 
         assertEquals(expectedIndexes, urlWithMarkedDomain.getRegistrableDomainIndexRange())
-    }
-}
-
-/**
- * Robolectric default implementation of [InetAddresses] returns false for any address.
- * This shadow is used to override that behavior and return true for any IP address.
- */
-@Implements(InetAddresses::class)
-private class ShadowInetAddresses {
-    companion object {
-        @Implementation
-        @JvmStatic
-        @Suppress("DEPRECATION")
-        fun isNumericAddress(address: String): Boolean {
-            return Patterns.IP_ADDRESS.matcher(address).matches() || address.contains(":")
-        }
     }
 }

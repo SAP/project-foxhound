@@ -9,18 +9,59 @@ members = [
   "js/src/rust",
   "netwerk/base/idna_glue",
   "netwerk/test/http3server",
-  "security/manager/ssl/abridged_certs",
-  "security/manager/ssl/ipcclientcerts",
-  "security/manager/ssl/osclientcerts",
+  "security/lockstore/lockstore_ffi",
+  "security/lockstore/lockstore_rs",
   "security/manager/ssl/tests/unit/pkcs11testmodule",
   "security/manager/ssl/tests/unit/test_trust_anchors",
-  "security/manager/ssl/qwac_trust_anchors",
-  "security/manager/ssl/pdf_trust_anchors",
-  "security/manager/ssl/trust_anchors",
-  "security/mls/mls_gk",
   "services/app-services-tools/embedded-uniffi-bindgen",
   "services/app-services-tools/nimbus-fml",
   "testing/geckodriver",
+  "third_party/application-services/tools/embedded-uniffi-bindgen",
+  "third_party/application-services/tools/uniffi-bindgen-library-mode",
+  "third_party/application-services/components/ads-client",
+  "third_party/application-services/components/autofill",
+  "third_party/application-services/components/context_id",
+  "third_party/application-services/components/crashtest",
+  "third_party/application-services/components/example",
+  "third_party/application-services/components/filter_adult",
+  "third_party/application-services/components/fxa-client",
+  "third_party/application-services/components/init_rust_components",
+  "third_party/application-services/components/logins",
+  "third_party/application-services/components/merino",
+  "third_party/application-services/components/places",
+  "third_party/application-services/components/push",
+  "third_party/application-services/components/relay",
+  "third_party/application-services/components/relevancy",
+  "third_party/application-services/components/remote_settings",
+  "third_party/application-services/components/search",
+  "third_party/application-services/components/suggest",
+  "third_party/application-services/components/support/error",
+  "third_party/application-services/components/support/find-places-db",
+  "third_party/application-services/components/support/firefox-versioning",
+  "third_party/application-services/components/support/guid",
+  "third_party/application-services/components/support/interrupt",
+  "third_party/application-services/components/support/jwcrypto",
+  "third_party/application-services/components/support/payload",
+  "third_party/application-services/components/support/nimbus-fml",
+  "third_party/application-services/components/support/rand_rccrypto",
+  "third_party/application-services/components/support/rate-limiter",
+  "third_party/application-services/components/support/restmail-client",
+  "third_party/application-services/components/support/rc_crypto",
+  "third_party/application-services/components/support/rc_crypto/nss",
+  "third_party/application-services/components/support/rc_crypto/nss/nss_build_common",
+  "third_party/application-services/components/support/rc_crypto/nss/nss_sys",
+  "third_party/application-services/components/support/rust-log-forwarder",
+  "third_party/application-services/components/support/sql",
+  "third_party/application-services/components/support/text-table",
+  "third_party/application-services/components/support/tracing",
+  "third_party/application-services/components/support/types",
+  "third_party/application-services/components/sync_manager",
+  "third_party/application-services/components/sync15",
+  "third_party/application-services/components/tabs",
+  "third_party/application-services/components/viaduct",
+  "third_party/application-services/components/webext-storage",
+  "third_party/application-services/components/webext-storage/ffi",
+  "third_party/application-services/megazords/full",
   "toolkit/components/uniffi-bindgen-gecko-js",
   "toolkit/crashreporter/android/export",
   "toolkit/crashreporter/client/app",
@@ -31,6 +72,7 @@ members = [
   "toolkit/library/gtest/rust",
   "toolkit/library/rust/",
   "services/application-services/components/viaduct-necko",
+  "js/src/builtin/normalizer_glue",
 ]
 
 # Excluded crates may be built as dependencies, but won't be considered members
@@ -57,9 +99,52 @@ exclude = [
   "dom/base/rust",
   "dom/origin-trials/ffi",
   "ipc/rust/ipdl_utils",
+  "tools/update-verify/marannon",
 
   # Excluded because we don't want to vendor their dependencies.
   "intl/l10n/rust/l10nregistry-tests",
+
+  # Exclude various app-services crates to avoid vendoring in their dependencies
+  # The disadvantage of this is that building these crates will require a separate `Cargo.lock` file and `target` directory.
+  # This is not ideal, but we are willing accept the trade-off for now.
+  #
+  # These depend on `hyper-tls` and we do not want to bring in the subdependencies, like `openssl`
+  "third_party/application-services/components/support/viaduct-hyper",
+  "third_party/application-services/components/support/viaduct-reqwest",
+  # Excluded because it depends on `hyper` and having it as top-level member would make
+  # `cargo vet` require it to be `safe-to-deploy`.  However, since we only use it as a dev-dependency, we want
+  # it to be `safe-to-run`.
+  "third_party/application-services/components/support/viaduct-dev",
+  # CLIs that depend on `viaduct-hyper`
+  "third_party/application-services/examples/autofill-utils/",
+  "third_party/application-services/examples/cli-support/",
+  "third_party/application-services/examples/example-cli/",
+  "third_party/application-services/examples/fxa-client/",
+  "third_party/application-services/examples/merino-cli/",
+  "third_party/application-services/examples/places-autocomplete/",
+  "third_party/application-services/examples/places-utils/",
+  "third_party/application-services/examples/push-livetest/",
+  "third_party/application-services/examples/relay-cli/",
+  "third_party/application-services/examples/relevancy-cli/",
+  "third_party/application-services/examples/remote-settings-cli/",
+  "third_party/application-services/examples/suggest-cli/",
+  "third_party/application-services/examples/sync-pass/",
+  "third_party/application-services/examples/tabs-sync/",
+  "third_party/application-services/examples/viaduct-cli/",
+  "third_party/application-services/components/example/cli",
+  "third_party/application-services/components/support/nimbus-cli",
+  "third_party/application-services/components/support/nimbus-fml",
+  # Excluded to avoid vendoring in `trybuild` and its subdependencies
+  "third_party/application-services/components/support/error/tests",
+  # Temporarily in excludes until we can land some nimbus fixes:
+  # * Remove unicode_segmentation dependency
+  # * Split off the `examples` code into a separate crate
+  "third_party/application-services/components/nimbus",
+  "third_party/application-services/megazords/full",
+  # Temporarily in excludes until everyone is on the same `ohttp`/`bhttp` version
+  "third_party/application-services/components/as-ohttp-client",
+  # Excluded because of the `viaduct-reqwest` dependency
+  "third_party/application-services/megazords/ios-rust",
 ]
 
 # Use the new dependency resolver to reduce some of the platform-specific dependencies.
@@ -77,7 +162,7 @@ uniffi_pipeline = "0.31"
 # Shared across multiple application-services consumers.
 rusqlite = "0.37"
 # Shared across multiple glean consumers.
-glean = "=67.0.0"
+glean = "=67.3.2"
 
 # Explicitly specify what our profiles use.  The opt-level setting here is
 # a total fiction; see the setup of MOZ_RUST_DEFAULT_FLAGS for what the
@@ -109,6 +194,16 @@ opt-level = 2
 
 [profile.release.package.glsl]
 opt-level = 2
+
+# Megazord profiles: same as dev/release but with panic=unwind for parity with
+# how app-services is currently built.
+[profile.dev-megazord]
+inherits = "dev"
+panic = "unwind"
+
+[profile.release-megazord]
+inherits = "release"
+panic = "unwind"
 
 [patch.crates-io]
 # The build system doesn't want those to be used, but they are pulled anyways (because
@@ -156,6 +251,13 @@ redox_syscall = { path = "build/rust/redox_syscall" }
 # Patch hermit-abi to an empty crate
 hermit-abi = { path = "build/rust/hermit-abi" }
 
+# mls-rs pulls these in unconditionally (or for non-Gecko targets), but their
+# code paths are gated on `cfg(not(feature = "std"))` or
+# `cfg(not(target_has_atomic = "ptr"))`, neither of which Gecko ever hits.
+spin = { path = "build/rust/spin" }
+portable-atomic = { path = "build/rust/portable-atomic" }
+portable-atomic-util = { path = "build/rust/portable-atomic-util" }
+
 # Patch base64 0.21 to 0.22
 base64_21 = { package = "base64", path = "build/rust/base64" }
 
@@ -176,8 +278,16 @@ bindgen_0_72 = { package = "bindgen", git = "https://github.com/rust-lang/rust-b
 # Patch bindgen 0.69 to 0.72
 bindgen = { path = "build/rust/bindgen" }
 
-# Patch nix 0.29 to 0.30+
-nix = { path = "build/rust/nix" }
+# Locally patch icu_normalizer to take fixes from the 2.3 track
+icu_collator = { path = "third_party/rust/icu_collator" }
+icu_collator_data = { path = "third_party/rust/icu_collator_data" }
+icu_normalizer = { path = "third_party/rust/icu_normalizer" }
+icu_normalizer_data = { path = "third_party/rust/icu_normalizer_data" }
+icu_collections = { path = "third_party/rust/icu_collections" }
+utf8_iter = { path = "third_party/rust/utf8_iter" }
+utf16_iter = { path = "third_party/rust/utf16_iter" }
+icu_properties = { path = "third_party/rust/icu_properties" }
+icu_properties_data = { path = "third_party/rust/icu_properties_data" }
 
 # Patch autocfg to hide rustc output. Workaround for https://github.com/cuviper/autocfg/issues/30
 autocfg = { path = "third_party/rust/autocfg" }
@@ -187,6 +297,9 @@ goblin = { path = "build/rust/goblin" }
 
 # Implement getrandom 0.2 in terms of 0.3
 getrandom = { path = "build/rust/getrandom" }
+
+# Implement procfs-core 0.17.0 in terms of 0.18.0
+procfs-core = { path = "build/rust/procfs-core" }
 
 # Patch rustc-hash 1.1.0 to 2.1.1
 rustc-hash = { path = "build/rust/rustc-hash" }
@@ -201,7 +314,10 @@ hashbrown_0_13 = { package = "hashbrown", path = "build/rust/hashbrown-0.13" }
 hashbrown_0_14 = { package = "hashbrown", path = "build/rust/hashbrown-0.14" }
 
 # Patch `hashbrown` 0.15.* to depend on 0.16.*
-hashbrown_0_15 = { package = "hashbrown", path = "build/rust/hashbrown" }
+hashbrown_0_15 = { package = "hashbrown", path = "build/rust/hashbrown-0.15" }
+
+# Patch `hashbrown` 0.16.* to depend on 0.17.*
+hashbrown_0_16 = { package = "hashbrown", path = "build/rust/hashbrown" }
 
 # Patch `hashlink` 0.10.* to 0.11.*
 # This technically breaks `hashbrown::DefaultHashBuilder: Copy`, but it's not something we use.
@@ -212,9 +328,6 @@ thiserror = { path = "build/rust/thiserror" }
 
 # Patch `toml` 0.5 to 0.9
 toml = { path = "build/rust/toml" }
-
-# Patch thin_vec with not-yet-published changes.
-thin-vec = { path = "third_party/rust/thin-vec" }
 
 # The following overrides point to dummy projects, as a temporary measure until this is resolved:
 # https://github.com/rust-lang/cargo/issues/6179
@@ -230,9 +343,6 @@ core-graphics-types = { path = "build/rust/core-graphics-types" }
 # Patch `dispatch2` to an empty crate that cannot be built.
 dispatch2 = { path = "build/rust/dispatch2" }
 
-# Patch `half` 1.* to 2.
-half = { path = "build/rust/half" }
-
 # Upgrade `rusqlite` 0.31 to 0.33.
 rusqlite = { path = "build/rust/rusqlite" }
 
@@ -246,14 +356,15 @@ moz_asserts = { path = "mozglue/static/rust/moz_asserts" }
 # Workaround for https://github.com/rust-lang/cargo/issues/11232
 rure = { path = "third_party/rust/rure" }
 
+# Patch zlib-rs to test a workaround for crashes on Intel Raptor Lake CPU.
+zlib-rs = { path = "third_party/rust/zlib-rs" }
+
 # To-be-published changes.
 unicode-bidi = { git = "https://github.com/servo/unicode-bidi", rev = "ca612daf1c08c53abe07327cb3e6ef6e0a760f0c" }
-nss-gk-api = { git = "https://github.com/beurdouche/nss-gk-api", rev = "e48a946811ffd64abc78de3ee284957d8d1c0d63" }
+
 
 # Other overrides
 any_all_workaround = { git = "https://github.com/hsivonen/any_all_workaround", rev = "7fb1b7034c9f172aade21ee1c8554e8d8a48af80" }
-chardetng = { git = "https://github.com/hsivonen/chardetng", rev = "a07d20273ce36146adaf76bd667dd57bd7b3508b" }
-chardetng_c = { git = "https://github.com/hsivonen/chardetng_c", rev = "2f0aba284677d098de14f91ffe5a9e5b9a4922c2" }
 cose = { git = "https://github.com/franziskuskiefer/cose-rust", rev = "43c22248d136c8b38fe42ea709d08da6355cf04b" }
 firefox-on-glean = { path = "toolkit/components/glean/api" }
 icu_capi = { path = "intl/icu_capi" }
@@ -265,6 +376,14 @@ midir = { git = "https://github.com/mozilla/midir.git", rev = "54759f681f3b523e1
 malloc_size_of_derive = { path = "xpcom/rust/malloc_size_of_derive" }
 # Use the in-tree code instead of pulling it in. It matches the crates.io version
 wr_malloc_size_of = { path = "gfx/wr/wr_malloc_size_of" }
+# Remove HarfBuzz itself from harfbuzz-sys, since we already maintain HarfBuzz itself in the tree.
+harfbuzz-sys = { git = "https://github.com/hsivonen/rust-harfbuzz", rev = "9d58a23a98772a197291d04af93f7041b7093d95" }
+# Make `harfbuzz` compile for targets with unsigned C char, such as aarch64 Android.
+harfbuzz = { git = "https://github.com/hsivonen/rust-harfbuzz", rev = "9d58a23a98772a197291d04af93f7041b7093d95" }
+# Also vendor `harfbuzz-traits` to keep cargo-vendor happy.
+harfbuzz-traits = { git = "https://github.com/hsivonen/rust-harfbuzz", rev = "9d58a23a98772a197291d04af93f7041b7093d95" }
+# Make --enable-rust-simd compatible with Rust 1.95
+encoding_rs = { git = "https://github.com/hsivonen/encoding_rs", rev = "1236d1bc423e6ba35a06485f74a6304db2d703b5" }
 
 # objc 0.2.7 + fa7ca43b862861dd1cd000d7ad01e6e0266cda13
 objc = { git = "https://github.com/glandium/rust-objc", rev = "4de89f5aa9851ceca4d40e7ac1e2759410c04324" }
@@ -288,6 +407,10 @@ viaduct = { path = "third_party/application-services/components/viaduct" }
 webext-storage = { path = "third_party/application-services/components/webext-storage" }
 logins = { path = "third_party/application-services/components/logins" }
 init_rust_components = { path = "third_party/application-services/components/init_rust_components" }
+breach-alerts = { path = "third_party/application-services/components/breach-alerts" }
+# temporary ohttp override enabling app-services build-related hacks while we wait for a new version.
+ohttp = { git = "https://github.com/martinthomson/ohttp", revision = "324f876e79394c9b815dcacda3fd4f48f105fdf2" }
+
 # Patched version of zip 2.4.2 to allow for reading omnijars.
 zip = { path = "third_party/rust/zip" }
 

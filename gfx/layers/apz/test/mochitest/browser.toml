@@ -16,6 +16,18 @@ prefs = ["sidebar.revamp=false"]
 ["browser_test_autoscrolling_in_oop_frame.js"]
 support-files = ["helper_test_autoscrolling_in_oop_frame.html"]
 
+["browser_bug2043349-fast-fling.js"]
+support-files = ["helper_bug2043349_browser.html"]
+skip-if = [
+  "os == 'win'", # bug 1495580
+]
+
+["browser_bug2044829.js"]
+support-files = ["helper_bug2043349_browser.html"]
+skip-if = [
+  "os == 'win'", # bug 1495580
+]
+
 ["browser_test_background_tab_load_scroll.js"]
 support-files = ["helper_background_tab_load_scroll.html"]
 
@@ -97,7 +109,8 @@ run-if = [
 support-files = [
   "helper_test_select_popup_position.html",
   "helper_test_select_popup_position_transformed_in_parent.html",
-  "helper_test_select_popup_position_zoomed.html"
+  "helper_test_select_popup_position_zoomed.html",
+  "helper_test_select_popup_position_iframe_zoom.html"
 ]
 
 ["browser_test_select_zoom.js"]
@@ -105,7 +118,9 @@ support-files = ["helper_test_select_zoom.html"]
 skip-if = [
   "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # bug 1938737
   "os == 'win' && os_version == '11.26100' && arch == 'x86'", # bug 1495580
+  "os == 'win' && os_version == '11.26200' && arch == 'x86'", # bug 1495580
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # bug 1495580
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64'", # bug 1495580
 ]
 
 ["browser_test_tab_drag_event_counts.js"]

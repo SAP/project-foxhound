@@ -12,11 +12,11 @@ import android.text.style.URLSpan
 import android.view.View
 import android.widget.TextView
 import androidx.annotation.VisibleForTesting
-import androidx.appcompat.widget.SwitchCompat
 import androidx.core.content.edit
 import androidx.core.text.HtmlCompat
 import androidx.core.text.getSpans
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.materialswitch.MaterialSwitch
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -29,7 +29,6 @@ import org.mozilla.fenix.GleanMetrics.Preferences
 import org.mozilla.fenix.R
 import org.mozilla.fenix.databinding.SettingsStudiesBinding
 import org.mozilla.fenix.ext.getPreferenceKey
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.settings.SupportUtils.SumoTopic.OPT_OUT_STUDIES
 import org.mozilla.fenix.utils.Settings
@@ -64,7 +63,7 @@ class StudiesView(
             settings.isExperimentationEnabled = isChecked
             settings.hasUserDisabledExperimentation = !isChecked
             val experimentsKey = context.getPreferenceKey(R.string.pref_key_experimentation_v2)
-            context.settings().preferences.edit(commit = true) { putBoolean(experimentsKey, isChecked) }
+            settings.preferences.edit(commit = true) { putBoolean(experimentsKey, isChecked) }
 
             // Use experimentParticipation for studies-specific settings
             experiments.experimentParticipation = isChecked
@@ -153,7 +152,7 @@ class StudiesView(
     internal fun provideStudiesTitle(): TextView = binding.studiesTitle
 
     @VisibleForTesting
-    internal fun provideStudiesSwitch(): SwitchCompat = binding.studiesSwitch
+    internal fun provideStudiesSwitch(): MaterialSwitch = binding.studiesSwitch
 
     @VisibleForTesting
     internal fun provideStudiesList(): RecyclerView = binding.studiesList

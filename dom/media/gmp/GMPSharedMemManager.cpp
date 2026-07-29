@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -64,7 +63,9 @@ void GMPSharedMemManager::MgrGiveShmem(GMPSharedMemClass aClass,
                                        ipc::Shmem&& aMem) {
   MOZ_ASSERT(MgrIsOnOwningThread());
 
-  if (!aMem.IsWritable()) {
+  if (!aMem.IsWritable() || !MgrCanSend()) {
+    // Either the shmem is not allocated, or the actor is already dead and it
+    // will get freed when the Shmem reference goes away.
     return;
   }
 

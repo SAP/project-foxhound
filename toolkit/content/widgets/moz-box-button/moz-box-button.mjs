@@ -51,8 +51,8 @@ export default class MozBoxButton extends MozBoxBase {
       is="moz-label"
       class="label"
       shownaccesskey=${ifDefined(this.accessKey)}
+      .textContent=${this.label}
     >
-      ${this.label}
     </label>`;
   }
 

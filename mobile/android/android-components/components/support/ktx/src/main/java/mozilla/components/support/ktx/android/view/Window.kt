@@ -23,6 +23,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsCompat.Type.displayCutout
 import androidx.core.view.WindowInsetsCompat.Type.systemBars
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.setPadding
+import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.ktx.android.content.isEdgeToEdgeDisabled
 import mozilla.components.support.ktx.android.util.dpToPx
 import mozilla.components.support.utils.ColorUtils.isDark
@@ -130,25 +132,11 @@ fun Window.setupPersistentInsets(consumeInsets: Boolean = false) {
     if (SDK_INT < VERSION_CODES.TIRAMISU) return
 
     val rootView = decorView.findViewById<View>(android.R.id.content)
-    val persistentInsetsTypes = systemBars() or displayCutout()
+
+    ViewCompat.requestApplyInsets(rootView)
 
     ViewCompat.setOnApplyWindowInsetsListener(rootView) { _, windowInsets ->
-        val isInImmersiveMode = attributes.flags and WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS != 0
-        val persistentInsets = when (isInImmersiveMode) {
-            true -> {
-                // If we are in immersive mode we need to reset current paddings and avoid setting others.
-                Insets.of(0, 0, 0, 0)
-            }
-
-            false -> windowInsets.getInsets(persistentInsetsTypes)
-        }
-
-        rootView.setPadding(
-            persistentInsets.left,
-            persistentInsets.top,
-            persistentInsets.right,
-            persistentInsets.bottom,
-        )
+        setPersistentInsets(windowInsets, rootView)
 
         // Pass window insets further to allow below listeners also know when there is a change.
         if (consumeInsets) {
@@ -157,6 +145,49 @@ fun Window.setupPersistentInsets(consumeInsets: Boolean = false) {
             windowInsets
         }
     }
+}
+
+/**
+ * Clear any paddings manually added to this window's root view.
+ * This will result in showing this [Window] as edge-to-edge.
+ */
+fun Window.clearPersistentInsets() {
+    if (SDK_INT < VERSION_CODES.TIRAMISU) return
+
+    val rootView = decorView.findViewById<View>(android.R.id.content)
+
+    rootView.setPadding(0)
+
+    // Remove any already set insets delegates to ensure framework insets are applied.
+    ViewCompat.setOnApplyWindowInsetsListener(rootView, null)
+    ViewCompat.requestApplyInsets(rootView)
+}
+
+private fun Window.setPersistentInsets(
+    windowInsets: WindowInsetsCompat?,
+    rootView: View,
+) {
+    if (windowInsets == null) {
+        Logger().warn("Cannot set null insets for [$rootView]")
+        return
+    }
+    val persistentInsetsTypes = systemBars() or displayCutout()
+    val isInImmersiveMode = attributes.flags and WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS != 0
+    val persistentInsets = when (isInImmersiveMode) {
+        true -> {
+            // If we are in immersive mode we need to reset current paddings and avoid setting others.
+            Insets.of(0, 0, 0, 0)
+        }
+
+        false -> windowInsets.getInsets(persistentInsetsTypes)
+    }
+
+    rootView.setPadding(
+        persistentInsets.left,
+        persistentInsets.top,
+        persistentInsets.right,
+        persistentInsets.bottom,
+    )
 }
 
 /**

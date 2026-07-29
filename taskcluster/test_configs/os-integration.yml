@@ -20,10 +20,10 @@
       - macosx1500-aarch64/debug
       - macosx1470-64/debug
       - windows10-64-2009-qr/debug
-      - windows11-32-24h2/opt
-      - windows11-32-24h2/debug
-      - windows11-64-24h2/opt
-      - windows11-64-24h2/debug
+      - windows11-32-25h2/opt
+      - windows11-32-25h2/debug
+      - windows11-64-25h2/opt
+      - windows11-64-25h2/debug
   unittest_suite: &unittest-suites
       - marionette-integration
       - mochitest-browser-chrome
@@ -63,11 +63,17 @@
       - mochitest-webgpu
   unittest_variant: null
 
+# linux 24.04 wayland snap (basic only — Bug 1941642)
+- kind: snap-upstream-test
+  snap_test_release: "2404"
+  snap_test_type: basic
+  primary-dependency-label: snap-upstream-build-amd64-nightly/opt
+
 # win/gpu
 - kind: web-platform-tests
   test_platform:
-      - windows11-64-24h2/opt
-      - windows11-64-24h2/debug
+      - windows11-64-25h2/opt
+      - windows11-64-25h2/debug
   unittest_suite:
       - web-platform-tests-reftest
   unittest_variant: null
@@ -82,7 +88,7 @@
 
 - kind: *unittest-kinds
   test_platform:
-      - windows11-64-24h2-asan/opt
+      - windows11-64-25h2-asan/opt
   unittest_suite: *unittest-suites
   unittest_variant:
       - null
@@ -97,7 +103,7 @@
   test_platform: &perf-platforms
       - android-em-14-x86_64-shippable-qr/opt
       - linux1804-64-shippable-qr/opt
-      - macosx1400-64-shippable-qr/opt
+      - linux2404-64-shippable/opt
       - macosx1470-64-shippable/opt
       - windows11-64-24h2-shippable/opt
       - windows11-64-shippable-qr/opt

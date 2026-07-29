@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -34,7 +32,6 @@ using namespace js::jit;
 //   GuardToInt32                   inputId 0, resultId 2
 //   GuardToInt32                   inputId 1, resultId 3
 //   CompareInt32Result             op JSOp::Lt, lhsId 2, rhsId 3
-//   ReturnFromIC
 class MOZ_RAII CacheIROpsJitSpewer {
   GenericPrinter& out_;
 
@@ -537,7 +534,6 @@ static const char* ArrayBufferViewKindName(ArrayBufferViewKind kind) {
 //   OP(GuardToInt32) ID(0) ID(2)
 //   OP(GuardToInt32) ID(1) ID(3)
 //   OP(CompareInt32Result) JSOP(Lt) ID(2) ID(3)
-//   OP(ReturnFromIC)
 //
 // The output is meant to be interpreted in the context of defined
 // preprocessor macros to reproduce the CacheIR bytecode.

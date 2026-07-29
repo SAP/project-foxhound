@@ -652,7 +652,8 @@ add_task(condition, async () => {
   profilePath.append(`test_windows_alert_service`);
   let profile = profileService.createUniqueProfile(
     profilePath,
-    "test_windows_alert_service"
+    "test_windows_alert_service",
+    "tests"
   );
 
   profileService.defaultProfile = profile;

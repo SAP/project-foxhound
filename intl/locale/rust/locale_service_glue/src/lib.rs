@@ -149,7 +149,10 @@ pub extern "C" fn locale_service_default_accept_languages(name: &nsACString, out
                 "lb" => "lb, de-DE, de",
                 "lg" => "lg, en-GB",
                 "lij" => "lij, it",
-                "lt" => "lt, ru, pl",
+                "lt" => {
+                    add_en_us = false;
+                    "lt, en-US, en, ru, pl"
+                }
                 "ltg" => "ltg, lv",
                 "mai" => "mai, hi-IN, en",
                 "meh" => "meh, es-MX, es",

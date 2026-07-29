@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -7,7 +6,6 @@
 #include "gfxMacFont.h"
 #include "gfxFontUtils.h"
 #include "gfxTextRun.h"
-#include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/ScaledFontMac.h"
 #include "mozilla/UniquePtrExtensions.h"
 
@@ -75,8 +73,7 @@ static bool IsBuggyIndicScript(intl::Script aScript) {
          aScript == intl::Script::ORIYA || aScript == intl::Script::KHMER;
 }
 
-bool gfxCoreTextShaper::ShapeText(DrawTarget* aDrawTarget,
-                                  const char16_t* aText, uint32_t aOffset,
+bool gfxCoreTextShaper::ShapeText(const char16_t* aText, uint32_t aOffset,
                                   uint32_t aLength, Script aScript,
                                   nsAtom* aLanguage, bool aVertical,
                                   RoundingFlags aRounding,

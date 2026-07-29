@@ -4,7 +4,6 @@ import sys
 from collections import OrderedDict
 from urllib.parse import urlparse
 
-import mozinfo
 import mozlog
 
 here = os.path.abspath(os.path.dirname(__file__))
@@ -444,14 +443,6 @@ class ReftestArgumentsParser(argparse.ArgumentParser):
             "default": options.defaultLeakThreshold,
             "tab": options.defaultLeakThreshold,
         }
-
-        if mozinfo.isWin:
-            if mozinfo.info["bits"] == 32:
-                # See bug 1408554.
-                options.leakThresholds["tab"] = 3000
-            else:
-                # See bug 1404482.
-                options.leakThresholds["tab"] = 100
 
         if options.topsrcdir is None:
             if self.build_obj:

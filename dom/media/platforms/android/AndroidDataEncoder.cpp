@@ -16,12 +16,14 @@
 namespace mozilla {
 
 extern LazyLogModule sPEMLog;
-#define AND_ENC_LOG(arg, ...)                \
-  MOZ_LOG(sPEMLog, mozilla::LogLevel::Debug, \
-          ("AndroidDataEncoder(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
-#define AND_ENC_LOGE(arg, ...)               \
-  MOZ_LOG(sPEMLog, mozilla::LogLevel::Error, \
-          ("AndroidDataEncoder(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
+#define AND_ENC_LOG(arg, ...)                                               \
+  MOZ_LOG_FMT(sPEMLog, mozilla::LogLevel::Debug,                            \
+              "AndroidDataEncoder({})::{}: " arg, fmt::ptr(this), __func__, \
+              ##__VA_ARGS__)
+#define AND_ENC_LOGE(arg, ...)                                              \
+  MOZ_LOG_FMT(sPEMLog, mozilla::LogLevel::Error,                            \
+              "AndroidDataEncoder({})::{}: " arg, fmt::ptr(this), __func__, \
+              ##__VA_ARGS__)
 
 #define REJECT_IF_ERROR()                                                \
   do {                                                                   \
@@ -273,9 +275,10 @@ static RefPtr<MediaByteBuffer> ExtractCodecConfig(
     const int32_t aSize, const bool aAsAVCC) {
   auto config = MakeRefPtr<MediaByteBuffer>(aSize);
   config->SetLength(aSize);
-  jni::ByteBuffer::LocalRef dest =
-      jni::ByteBuffer::New(config->Elements(), aSize);
-  aBuffer->WriteToByteBuffer(dest, aOffset, aSize);
+  NS_ENSURE_SUCCESS(
+      aBuffer->NativeCopy(reinterpret_cast<jlong>(config->Elements()),
+                          config->Length(), aOffset, aSize),
+      nullptr);
   if (!aAsAVCC) {
     return config;
   }
@@ -309,7 +312,11 @@ void AndroidDataEncoder::ProcessOutput(
 
   int32_t flags;
   bool ok = NS_SUCCEEDED(info->Flags(&flags));
-  bool isEOS = !!(flags & java::sdk::MediaCodec::BUFFER_FLAG_END_OF_STREAM);
+  bool isEOS =
+      ok && !!(flags & java::sdk::MediaCodec::BUFFER_FLAG_END_OF_STREAM);
+  if (isEOS) {
+    mDrainState = DrainState::DRAINED;
+  }
 
   int32_t offset;
   ok &= NS_SUCCEEDED(info->Offset(&offset));
@@ -321,6 +328,8 @@ void AndroidDataEncoder::ProcessOutput(
   ok &= NS_SUCCEEDED(info->PresentationTimeUs(&presentationTimeUs));
 
   if (!ok) {
+    Error(MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                      "fail to get output buffer info"_ns));
     return;
   }
 
@@ -347,15 +356,17 @@ void AndroidDataEncoder::ProcessOutput(
           aBuffer, offset, size,
           !!(flags & java::sdk::MediaCodec::BUFFER_FLAG_KEY_FRAME));
     }
+    if (!output) {
+      Error(MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                        "fail to copy sample buffer"_ns));
+      return;
+    }
     output->mEOS = isEOS;
     output->mTime = media::TimeUnit::FromMicroseconds(presentationTimeUs);
     output->mDuration = mInputSampleDuration;
     mEncodedData.AppendElement(std::move(output));
   }
 
-  if (isEOS) {
-    mDrainState = DrainState::DRAINED;
-  }
   if (!mDrainPromise.IsEmpty()) {
     EncodedData pending = std::move(mEncodedData);
     mDrainPromise.Resolve(std::move(pending), __func__);
@@ -369,12 +380,13 @@ RefPtr<MediaRawData> AndroidDataEncoder::GetOutputData(
   auto output = MakeRefPtr<MediaRawData>();
   UniquePtr<MediaRawDataWriter> writer(output->CreateWriter());
   if (!writer->SetSize(aSize)) {
-    AND_ENC_LOGE("fail to allocate output buffer");
+    AND_ENC_LOGE("fail to allocate output buffer: size={}", aSize);
     return nullptr;
   }
 
-  jni::ByteBuffer::LocalRef buf = jni::ByteBuffer::New(writer->Data(), aSize);
-  aBuffer->WriteToByteBuffer(buf, aOffset, aSize);
+  NS_ENSURE_SUCCESS(aBuffer->NativeCopy(reinterpret_cast<jlong>(writer->Data()),
+                                        writer->Size(), aOffset, aSize),
+                    nullptr);
   output->mKeyframe = aIsKeyFrame;
 
   return output;
@@ -407,9 +419,10 @@ RefPtr<MediaRawData> AndroidDataEncoder::GetOutputDataH264(
     PodCopy(writer->Data(), mConfigData->Elements(), prependSize);
   }
 
-  jni::ByteBuffer::LocalRef buf =
-      jni::ByteBuffer::New(writer->Data() + prependSize, aSize);
-  aBuffer->WriteToByteBuffer(buf, aOffset, aSize);
+  NS_ENSURE_SUCCESS(
+      aBuffer->NativeCopy(reinterpret_cast<jlong>(writer->Data() + prependSize),
+                          writer->Size() - prependSize, aOffset, aSize),
+      nullptr);
 
   if (asAVCC && !AnnexB::ConvertSampleToAVCC(output, avccHeader)) {
     AND_ENC_LOGE("fail to convert annex-b sample to AVCC");
@@ -497,6 +510,9 @@ void AndroidDataEncoder::Error(const MediaResult& aError) {
   AssertOnTaskQueue();
 
   mError = Some(aError);
+  if (!mDrainPromise.IsEmpty()) {
+    mDrainPromise.Reject(aError, __func__);
+  }
 }
 
 void AndroidDataEncoder::CallbacksSupport::HandleInput(int64_t aTimestamp,

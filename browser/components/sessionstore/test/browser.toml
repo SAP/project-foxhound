@@ -64,6 +64,7 @@ run-if = [
 skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1787024
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && asan", # Bug 1787024
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && asan", # Bug 1787024
 ]
 
 ["browser_async_window_flushing.js"]
@@ -71,7 +72,9 @@ https_first_disabled = true
 skip-if = [
   "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # Bug 1775616
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && asan", # Bug 1775616
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && asan", # Bug 1775616
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1775616
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && opt", # Bug 1775616
 ]
 
 ["browser_attributes.js"]
@@ -189,6 +192,7 @@ skip-if = [
   "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && opt && socketprocess_networking", # Bug 1868915
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1775605
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && opt", # Bug 1775605
 ]
 
 ["browser_movePendingTabToNewWindow.js"]
@@ -247,10 +251,6 @@ skip-if = [
 ["browser_restoreLastActionCorrectOrder.js"]
 
 ["browser_restoreLastClosedTabOrWindowOrSession.js"]
-skip-if = [
-  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # Bug 1838996
-  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1838996
-]
 
 ["browser_restoreTabContainer.js"]
 
@@ -277,6 +277,9 @@ skip-if = [
 ["browser_restore_verticalPinnedTabs.js"]
 
 ["browser_restored_window_features.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
 
 ["browser_revive_crashed_bg_tabs.js"]
 https_first_disabled = true
@@ -311,10 +314,15 @@ tags = "os_integration"
 skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && socketprocess_networking", # Bug 1848488
   "os == 'win' && os_version == '11.26100' && arch == 'x86' && debug && verify-standalone",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86' && debug && verify-standalone",
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug", # Bug 1848488
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && debug", # Bug 1848488
 ]
 
 ["browser_sizemodeBeforeMinimized.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
 
 ["browser_speculative_connect.js"]
 
@@ -332,6 +340,7 @@ skip-if = [
 skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && socketprocess_networking", # Bug 1934803
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug", # Bug 1934803
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && debug", # Bug 1934803
 ]
 
 ["browser_tab_groups_closed_groups_in_closed_windows.js"]
@@ -372,6 +381,9 @@ skip-if = [
 
 ["browser_tab_groups_undo.js"]
 
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2023967
+]
 ["browser_tab_label_during_restore.js"]
 https_first_disabled = true
 

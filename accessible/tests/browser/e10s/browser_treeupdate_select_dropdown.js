@@ -25,6 +25,12 @@ const snippet = `
 addAccessibleTask(
   snippet,
   async function (browser) {
+    if (AppConstants.platform == "macosx") {
+      // Accessible content is available for non-native menus only
+      await SpecialPowers.pushPrefEnv({
+        set: [["widget.macos.allow-native-select", false]],
+      });
+    }
     await invokeFocus(browser, "select");
     // Expand the select. A dropdown item should get focus.
     // Note that the dropdown is rendered in the parent process.

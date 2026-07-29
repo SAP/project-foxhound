@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -336,6 +335,11 @@ void Http3ConnectUDPStream::MarkAsTRRServiceChannel() {
 
 bool Http3ConnectUDPStream::IsTRRServiceChannel() {
   return mIsTRRServiceChannel;
+}
+
+void Http3ConnectUDPStream::SetOriginAttributes(
+    const mozilla::OriginAttributes& aOriginAttributes) {
+  mOriginAttributes = aOriginAttributes;
 }
 
 }  // namespace mozilla::net

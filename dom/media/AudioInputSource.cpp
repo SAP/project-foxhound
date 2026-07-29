@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -18,7 +16,7 @@ extern mozilla::LazyLogModule gMediaTrackGraphLog;
 #  undef LOG_INTERNAL
 #endif  // LOG_INTERNAL
 #define LOG_INTERNAL(level, msg, ...) \
-  MOZ_LOG(gMediaTrackGraphLog, LogLevel::level, (msg, ##__VA_ARGS__))
+  MOZ_LOG_FMT(gMediaTrackGraphLog, LogLevel::level, msg, ##__VA_ARGS__)
 
 #ifdef LOG
 #  undef LOG
@@ -69,15 +67,15 @@ void AudioInputSource::Init() {
   // operations to the task thread.
   MOZ_ASSERT(mTaskThread);
 
-  LOG("AudioInputSource %p, init", this);
+  LOG("AudioInputSource {}, init", fmt::ptr(this));
   MOZ_ALWAYS_SUCCEEDS(mTaskThread->Dispatch(
       NS_NewRunnableFunction(__func__, [this, self = RefPtr(this)]() mutable {
         mStream = CubebInputStream::Create(mDeviceId, mChannelCount,
                                            static_cast<uint32_t>(mRate),
                                            mIsVoice, this);
         if (!mStream) {
-          LOGE("AudioInputSource %p, cannot create an audio input stream!",
-               self.get());
+          LOGE("AudioInputSource {}, cannot create an audio input stream!",
+               fmt::ptr(self.get()));
           return;
         }
       })));
@@ -90,26 +88,27 @@ void AudioInputSource::Start() {
   // operations to the task thread.
   MOZ_ASSERT(mTaskThread);
 
-  LOG("AudioInputSource %p, start", this);
+  LOG("AudioInputSource {}, start", fmt::ptr(this));
   MOZ_ALWAYS_SUCCEEDS(mTaskThread->Dispatch(
       NS_NewRunnableFunction(__func__, [this, self = RefPtr(this)]() mutable {
         if (!mStream) {
-          LOGE("AudioInputSource %p, no audio input stream!", self.get());
+          LOGE("AudioInputSource {}, no audio input stream!",
+               fmt::ptr(self.get()));
           return;
         }
 
         if (uint32_t latency = 0; mStream->Latency(&latency) == CUBEB_OK) {
           Data data(LatencyChangeData{media::TimeUnit(latency, mRate)});
           if (mSPSCQueue.Enqueue(data) == 0) {
-            LOGE("AudioInputSource %p, failed to enqueue latency change",
-                 self.get());
+            LOGE("AudioInputSource {}, failed to enqueue latency change",
+                 fmt::ptr(self.get()));
           }
         }
         if (int r = mStream->Start(); r != CUBEB_OK) {
           LOGE(
-              "AudioInputSource %p, cannot start its audio input stream! The "
+              "AudioInputSource {}, cannot start its audio input stream! The "
               "stream is destroyed directly!",
-              self.get());
+              fmt::ptr(self.get()));
           mStream = nullptr;
           mConfiguredProcessingParams = CUBEB_INPUT_PROCESSING_PARAM_NONE;
         }
@@ -123,19 +122,19 @@ void AudioInputSource::Stop() {
   // operations to the task thread.
   MOZ_ASSERT(mTaskThread);
 
-  LOG("AudioInputSource %p, stop", this);
+  LOG("AudioInputSource {}, stop", fmt::ptr(this));
   MOZ_ALWAYS_SUCCEEDS(mTaskThread->Dispatch(
       NS_NewRunnableFunction(__func__, [this, self = RefPtr(this)]() mutable {
         if (!mStream) {
-          LOGE("AudioInputSource %p, has no audio input stream to stop!",
-               self.get());
+          LOGE("AudioInputSource {}, has no audio input stream to stop!",
+               fmt::ptr(self.get()));
           return;
         }
         if (int r = mStream->Stop(); r != CUBEB_OK) {
           LOGE(
-              "AudioInputSource %p, cannot stop its audio input stream! The "
+              "AudioInputSource {}, cannot stop its audio input stream! The "
               "stream is going to be destroyed forcefully",
-              self.get());
+              fmt::ptr(self.get()));
         }
         mStream = nullptr;
         mConfiguredProcessingParams = CUBEB_INPUT_PROCESSING_PARAM_NONE;
@@ -151,7 +150,7 @@ auto AudioInputSource::SetRequestedProcessingParams(
   // operations to the task thread.
   MOZ_ASSERT(mTaskThread);
 
-  LOG("AudioInputSource %p, SetProcessingParams(%s)", this,
+  LOG("AudioInputSource {}, SetProcessingParams({})", fmt::ptr(this),
       CubebUtils::ProcessingParamsToString(aParams).get());
   using ProcessingPromise = SetRequestedProcessingParamsPromise;
   MozPromiseHolder<ProcessingPromise> holder;
@@ -161,9 +160,9 @@ auto AudioInputSource::SetRequestedProcessingParams(
                  aParams]() mutable {
         if (!mStream) {
           LOGE(
-              "AudioInputSource %p, has no audio input stream to set "
+              "AudioInputSource {}, has no audio input stream to set "
               "processing params on!",
-              this);
+              fmt::ptr(this));
           holder.Reject(CUBEB_ERROR,
                         "AudioInputSource::SetProcessingParams no stream");
           return;
@@ -249,11 +248,11 @@ long AudioInputSource::DataCallback(const void* aBuffer, long aFrames) {
   Data data(std::move(c));
   int writes = mSPSCQueue.Enqueue(data);
   if (writes == 0) {
-    LOGW("AudioInputSource %p, buffer is full. Dropping %ld frames", this,
-         aFrames);
+    LOGW("AudioInputSource {}, buffer is full. Dropping {} frames",
+         fmt::ptr(this), aFrames);
   } else {
-    LOGV("AudioInputSource %p, enqueue %ld frames (%d AudioChunks)", this,
-         aFrames, writes);
+    LOGV("AudioInputSource {}, enqueue {} frames ({} AudioChunks)",
+         fmt::ptr(this), aFrames, writes);
   }
   return aFrames;
 }
@@ -261,17 +260,17 @@ long AudioInputSource::DataCallback(const void* aBuffer, long aFrames) {
 void AudioInputSource::StateCallback(cubeb_state aState) {
   EventListener::State state;
   if (aState == CUBEB_STATE_STARTED) {
-    LOG("AudioInputSource %p, stream started", this);
+    LOG("AudioInputSource {}, stream started", fmt::ptr(this));
     state = EventListener::State::Started;
   } else if (aState == CUBEB_STATE_STOPPED) {
-    LOG("AudioInputSource %p, stream stopped", this);
+    LOG("AudioInputSource {}, stream stopped", fmt::ptr(this));
     state = EventListener::State::Stopped;
   } else if (aState == CUBEB_STATE_DRAINED) {
-    LOG("AudioInputSource %p, stream is drained", this);
+    LOG("AudioInputSource {}, stream is drained", fmt::ptr(this));
     state = EventListener::State::Drained;
   } else {
     MOZ_ASSERT(aState == CUBEB_STATE_ERROR);
-    LOG("AudioInputSource %p, error happend", this);
+    LOG("AudioInputSource {}, error happend", fmt::ptr(this));
     state = EventListener::State::Error;
   }
   // This can be called on any thread, so we forward the event to main thread
@@ -283,7 +282,7 @@ void AudioInputSource::StateCallback(cubeb_state aState) {
 }
 
 void AudioInputSource::DeviceChangedCallback() {
-  LOG("AudioInputSource %p, device changed", this);
+  LOG("AudioInputSource {}, device changed", fmt::ptr(this));
   // This can be called on any thread, so we forward the event to main thread
   // first.
   NS_DispatchToMainThread(

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -94,8 +92,8 @@ void DataTransferItem::SetData(nsIVariant* aData) {
     MOZ_ASSERT(!mType.EqualsASCII(kNativeImageMime));
 
     mKind = KIND_STRING;
-    for (uint32_t i = 0; i < std::size(kFileMimeNameMap); ++i) {
-      if (mType.EqualsASCII(kFileMimeNameMap[i].mMimeName)) {
+    for (const auto& entry : kFileMimeNameMap) {
+      if (mType.EqualsASCII(entry.mMimeName)) {
         mKind = KIND_FILE;
         break;
       }
@@ -406,9 +404,9 @@ already_AddRefed<FileSystemEntry> DataTransferItem::GetAsEntry(
 already_AddRefed<File> DataTransferItem::CreateFileFromInputStream(
     nsIInputStream* aStream) {
   const char* key = nullptr;
-  for (uint32_t i = 0; i < std::size(kFileMimeNameMap); ++i) {
-    if (mType.EqualsASCII(kFileMimeNameMap[i].mMimeName)) {
-      key = kFileMimeNameMap[i].mFileName;
+  for (const auto& enrty : kFileMimeNameMap) {
+    if (mType.EqualsASCII(enrty.mMimeName)) {
+      key = enrty.mFileName;
       break;
     }
   }
@@ -425,7 +423,7 @@ already_AddRefed<File> DataTransferItem::CreateFileFromInputStream(
     const nsAString& aContentType) {
   nsAutoString fileName;
   nsresult rv = nsContentUtils::GetLocalizedString(
-      nsContentUtils::eDOM_PROPERTIES, aFileNameKey, fileName);
+      PropertiesFile::DOM_PROPERTIES, aFileNameKey, fileName);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return nullptr;
   }
@@ -574,7 +572,7 @@ already_AddRefed<nsIVariant> DataTransferItem::Data(nsIPrincipal* aPrincipal,
   if (NS_SUCCEEDED(rv) && data) {
     nsCOMPtr<EventTarget> pt = do_QueryInterface(data);
     if (pt) {
-      nsIGlobalObject* go = pt->GetOwnerGlobal();
+      nsIGlobalObject* go = pt->GetRelevantGlobal();
       if (NS_WARN_IF(!go)) {
         return nullptr;
       }

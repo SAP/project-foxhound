@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -82,9 +80,11 @@ bool SourceSurfaceSharedDataWrapper::EnsureMapped() {
 
   auto computedStride =
       CheckedInt<int32_t>(mSize.width) * BytesPerPixel(mFormat);
+  auto computedLength = CheckedInt<int32_t>(mSize.height) * mStride;
   if (mSize.width < 0 || mSize.height < 0 || mStride < 0 ||
-      !computedStride.isValid() || mStride < computedStride.value() ||
-      !image::SurfaceCache::IsLegalSize(mSize) ||
+      !computedStride.isValid() || computedStride.value() <= 0 ||
+      mStride < computedStride.value() || !computedLength.isValid() ||
+      computedLength.value() <= 0 || !image::SurfaceCache::IsLegalSize(mSize) ||
       mBufHandle.Size() < GetAlignedDataLength()) {
     return false;
   }

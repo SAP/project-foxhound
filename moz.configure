@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -174,7 +172,7 @@ set_config("MOZ_DEBUG_DEFINES", debug_defines)
 
 option(env="MOZ_PGO", help="Build with profile guided optimizations")
 
-set_config("MOZ_PGO", depends("MOZ_PGO")(lambda x: bool(x)))
+set_config("MOZ_PGO", depends("MOZ_PGO")(lambda x: bool(x)))  # noqa: PLW0108
 
 
 # Imply --enable-release when MOZILLA_OFFICIAL is set rather than adjusting the
@@ -277,8 +275,8 @@ def so_version(value):
 def library_name_info_template(host_or_target):
     assert host_or_target in {host, target}
     windows_abi = {
-        host: host_windows_abi,
-        target: target_windows_abi,
+        host: host.abi,
+        target: target.abi,
     }[host_or_target]
 
     @depends(host_or_target, host_or_target.abi | windows_abi, so_version)
@@ -607,22 +605,25 @@ include(
 
 # GNU make detection
 # ==============================================================
-option(env="MAKE", nargs=1, help="Path to GNU make")
+option(env="GMAKE", nargs=1, help="Path to GNU Make")
+
+option(env="MAKE", nargs=1, help="Path to GNU Make")
 
 
-@depends("MAKE", host)
-def possible_makes(make, host):
-    candidates = []
-    if make:
-        candidates.append(make[0])
+@depends(host)
+def possible_makes(host):
+    candidates = ["gmake", "make"]
     if host.kernel == "WINNT":
-        candidates.extend(("mozmake", "mingw32-make", "make", "gmake"))
-    else:
-        candidates.extend(("gmake", "make"))
+        candidates = ["mozmake", "mingw32-make"] + candidates
     return candidates
 
 
-gmake = check_prog("GMAKE", possible_makes, bootstrap="mozmake")
+gmake = check_prog(
+    "GMAKE",
+    possible_makes,
+    input=depends("GMAKE", "MAKE")(lambda g, m: g or m),
+    bootstrap="mozmake",
+)
 
 
 @depends(gmake)
@@ -631,7 +632,7 @@ def gmake_version(prog):
     out = check_cmd_output(prog, "--version")
     version_line = out.splitlines()[0]
     if not version_line.startswith("GNU Make"):
-        die("GNU make is required")
+        die("GNU Make is required")
     return Version(version_line[8:].strip())
 
 
@@ -783,8 +784,18 @@ def nsis_flags(host):
 
 set_config("MAKENSISU_FLAGS", nsis_flags)
 
-check_prog("7Z", ("7z", "7za"), allow_missing=True, when=target_is_windows)
-check_prog("UPX", ("upx",), allow_missing=True, when=target_is_windows)
+check_prog("7Z", ("7zz",), allow_missing=True, bootstrap="7zz", when=target_is_windows)
+
+
+# UPX is used for compressing the Windows installer SFX stub.
+# UPX currently does not support ARM64 PE binaries
+# https://github.com/upx/upx/issues/650
+@depends(target)
+def need_upx(target):
+    return target.os == "WINNT" and target.cpu != "aarch64"
+
+
+check_prog("UPX", ("upx",), allow_missing=True, bootstrap="upx/bin", when=need_upx)
 
 
 check_prog(
@@ -937,7 +948,7 @@ set_config("MOZ_SYSTEM_ZLIB", True, when="--with-system-zlib")
 
 option(
     env="USE_LIBZ_RS",
-    default=milestone.is_early_beta_or_earlier,
+    default=True,
     help="Use libz-rs-sys instead of zlib",
     when=toolkit & ~with_system_zlib_option,
 )

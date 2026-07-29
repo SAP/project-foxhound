@@ -8,6 +8,7 @@ import { FileUtils } from "resource://gre/modules/FileUtils.sys.mjs";
 import { ProfilesDatastoreService } from "moz-src:///toolkit/profile/ProfilesDatastoreService.sys.mjs";
 import { SelectableProfileService } from "resource:///modules/profiles/SelectableProfileService.sys.mjs";
 import { BackupService } from "resource:///modules/backup/BackupService.sys.mjs";
+import { ArchiveEncryptionState } from "resource:///modules/backup/ArchiveEncryptionState.sys.mjs";
 
 const lazy = {};
 
@@ -452,7 +453,7 @@ export class SelectableProfile {
   }
 
   saveUpdatesToDB() {
-    SelectableProfileService.updateProfile(this);
+    return SelectableProfileService.updateProfile(this);
   }
 
   /**
@@ -533,46 +534,22 @@ export class SelectableProfile {
     // the copied profile will not show the backup welcome messaging.
     Services.prefs.setBoolPref("browser.profiles.profile-copied", true);
 
-    // If the user has created a desktop shortcut, clear the shortcut name pref
-    // to prevent the copied profile trying to manage the original profile's
-    // shortcut.
-    let shortcutFileName = Services.prefs.getCharPref(
-      "browser.profiles.shortcutFileName",
-      ""
-    );
-    if (shortcutFileName !== "") {
-      Services.prefs.clearUserPref("browser.profiles.shortcutFileName");
-    }
-
     const backupServiceInstance = new BackupService();
 
-    let encState = await backupServiceInstance.loadEncryptionState(this.path);
-    let createdEncState = false;
-    if (!encState) {
-      // If we don't have encryption enabled, temporarily create encryption so
-      // we can copy resources that require encryption
-      await backupServiceInstance.enableEncryption(
-        Services.uuid.generateUUID().toString().slice(1, -1),
-        this.path
-      );
-      encState = await backupServiceInstance.loadEncryptionState(this.path);
-      createdEncState = true;
-    }
+    // We want to copy everything, which means telling the BackupService that
+    // encryption is enabled. We instantiate a new ArchiveEncryptionState with
+    // a randomized passphrase (passing nothing to initialize causes a random
+    // one to be generated). Since we don't actually encrypt or decrypt the
+    // backup (since we're just staging, and then recovering from staging),
+    // we can forget the generated passphrase.
+    let { instance: encState } = await ArchiveEncryptionState.initialize();
     let result = await backupServiceInstance.createAndPopulateStagingFolder(
-      this.path
+      this.path,
+      encState
     );
 
     // Clear the pref now that the copied profile has inherited it.
     Services.prefs.clearUserPref("browser.profiles.profile-copied");
-
-    // Restore the desktop shortcut pref now that the copied profile will not
-    // inherit it.
-    if (shortcutFileName !== "") {
-      Services.prefs.setCharPref(
-        "browser.profiles.shortcutFileName",
-        shortcutFileName
-      );
-    }
 
     if (result.error) {
       throw result.error;
@@ -582,13 +559,8 @@ export class SelectableProfile {
       await backupServiceInstance.recoverFromSnapshotFolderIntoSelectableProfile(
         result.stagingPath,
         true, // shouldLaunch
-        encState, // encState
         this // copiedProfile
       );
-
-    if (createdEncState) {
-      await backupServiceInstance.disableEncryption(this.path);
-    }
 
     copiedProfile.theme = this.theme;
     await copiedProfile.setAvatar(this.avatar);

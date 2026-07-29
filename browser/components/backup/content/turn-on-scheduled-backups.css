@@ -137,7 +137,7 @@
     }
 
     #backup-turn-on-scheduled-header {
-      font-weight: var(--heading-font-weight);
+      font-weight: var(--font-weight-heading);
       font-size: var(--font-size-heading);
       text-align: start;
     }

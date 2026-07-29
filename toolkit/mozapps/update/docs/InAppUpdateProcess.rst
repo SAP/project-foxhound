@@ -28,9 +28,9 @@ A file written to and read from, in part, to communicate between Firefox
 and the updater. The file will contain a short string indicating the
 current status. If that status is "failed", it will also contain an
 error code. A list of recognized status strings can be found
-`here <https://searchfox.org/mozilla-central/rev/7ccb618f45a1398e31a086a009f87c8fd3a790b6/toolkit/mozapps/update/nsIUpdateService.idl#177-190>`__.
+:searchfox:`here <mozilla-central/rev/7ccb618f45a1398e31a086a009f87c8fd3a790b6:toolkit/mozapps/update/nsIUpdateService.idl#177-190>`.
 The error codes used for failure status can be found
-`here <https://searchfox.org/mozilla-central/rev/3265b390bd5d08a5be520253ef71835bcb715f27/toolkit/mozapps/update/common/updatererrors.h>`__.
+:searchfox:`here <mozilla-central/rev/3265b390bd5d08a5be520253ef71835bcb715f27:toolkit/mozapps/update/common/updatererrors.h>`.
 
 Documentation
 -------------

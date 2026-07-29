@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -61,15 +59,14 @@ class BackgroundEventTarget final : public nsIEventTarget {
  private:
   ~BackgroundEventTarget() = default;
 
-  nsCOMPtr<nsIThreadPool> mPool;
-  nsCOMPtr<nsIThreadPool> mIOPool;
+  RefPtr<nsThreadPool> mPool;
+  RefPtr<nsThreadPool> mIOPool;
 };
 
 NS_IMPL_ISUPPORTS(BackgroundEventTarget, nsIEventTarget)
 
 nsresult BackgroundEventTarget::Init() {
-  nsCOMPtr<nsIThreadPool> pool(new nsThreadPool());
-  NS_ENSURE_TRUE(pool, NS_ERROR_FAILURE);
+  RefPtr pool = MakeRefPtr<nsThreadPool>();
 
   nsresult rv = pool->SetName("BackgroundThreadPool"_ns);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -94,8 +91,7 @@ nsresult BackgroundEventTarget::Init() {
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Initialize the background I/O event target.
-  nsCOMPtr<nsIThreadPool> ioPool(new nsThreadPool());
-  NS_ENSURE_TRUE(ioPool, NS_ERROR_FAILURE);
+  RefPtr ioPool = MakeRefPtr<nsThreadPool>();
 
   // The io pool spends a lot of its time blocking on io, so we want to offload
   // these jobs on a lower priority if available.
@@ -328,16 +324,16 @@ nsresult nsThreadManager::Init() {
   TaskController::Initialize();
 
   // Initialize idle handling.
-  nsCOMPtr<nsIIdlePeriod> idlePeriod = new MainThreadIdlePeriod();
-  TaskController::Get()->SetIdleTaskManager(
-      new IdleTaskManager(idlePeriod.forget()));
+  RefPtr idlePeriod = MakeRefPtr<MainThreadIdlePeriod>();
+  RefPtr idleManager = MakeRefPtr<IdleTaskManager>(idlePeriod.forget());
+  TaskController::Get()->SetIdleTaskManager(idleManager.forget());
 
   // Create main thread queue that forwards events to TaskController and
   // construct main thread.
   UniquePtr<EventQueue> queue = MakeUnique<EventQueue>(true);
 
-  RefPtr<ThreadEventQueue> synchronizedQueue =
-      new ThreadEventQueue(std::move(queue), true);
+  RefPtr synchronizedQueue =
+      MakeRefPtr<ThreadEventQueue>(std::move(queue), true);
 
   mMainThread =
       new nsThread(WrapNotNull(synchronizedQueue), nsThread::MAIN_THREAD,
@@ -350,6 +346,7 @@ nsresult nsThreadManager::Init() {
   }
 #ifdef MOZ_MEMORY
   jemalloc_set_main_thread();
+  jemalloc_thread_local_arena(true);
 #endif
 
   // Init AbstractThread.
@@ -506,7 +503,8 @@ void nsThreadManager::UnregisterCurrentThread(nsThread& aThread) {
 }
 
 // Not to be used for MainThread!
-nsThread* nsThreadManager::CreateCurrentThread(SynchronizedEventQueue* aQueue) {
+RefPtr<nsThread> nsThreadManager::CreateCurrentThread(
+    SynchronizedEventQueue* aQueue) {
   // Make sure we don't have an nsThread yet.
   MOZ_ASSERT(!PR_GetThreadPrivate(mCurThreadIndex));
 
@@ -520,7 +518,10 @@ nsThread* nsThreadManager::CreateCurrentThread(SynchronizedEventQueue* aQueue) {
     return nullptr;
   }
 
-  return thread.get();  // reference held in TLS
+  // Note: 'thread' now has an additional reference, held in TLS (because
+  // nsThreadManager::RegisterCurrentThread manually AddRef()s it). That keeps
+  // the object alive, even if our caller disregards our returned RefPtr.
+  return thread;
 }
 
 nsresult nsThreadManager::DispatchToBackgroundThread(
@@ -577,7 +578,10 @@ nsThread* nsThreadManager::GetCurrentThread() {
     return nullptr;
   }
 
-  return thread.get();  // reference held in TLS
+  // Note: 'thread' now has an additional reference, held in TLS (because
+  // nsThreadManager::RegisterCurrentThread manually AddRef()s it). That keeps
+  // the object alive, even though our local reference is going out of scope.
+  return thread.get();
 }
 
 bool nsThreadManager::IsNSThread() const {
@@ -604,10 +608,9 @@ nsThreadManager::NewNamedThread(
 
   TimeStamp startTime = TimeStamp::Now();
 
-  RefPtr<ThreadEventQueue> queue =
-      new ThreadEventQueue(MakeUnique<EventQueue>());
-  RefPtr<nsThread> thr =
-      new nsThread(WrapNotNull(queue), nsThread::NOT_MAIN_THREAD, aOptions);
+  RefPtr queue = MakeRefPtr<ThreadEventQueue>(MakeUnique<EventQueue>());
+  RefPtr thr = MakeRefPtr<nsThread>(WrapNotNull(queue),
+                                    nsThread::NOT_MAIN_THREAD, aOptions);
 
   // Note: nsThread::Init() will check AllowNewXPCOMThreads, and return an
   // error if we're too late in shutdown to create new XPCOM threads. If we
@@ -788,8 +791,7 @@ NS_IMETHODIMP
 nsThreadManager::DispatchToMainThreadWithMicroTask(nsIRunnable* aEvent,
                                                    uint32_t aPriority,
                                                    uint8_t aArgc) {
-  RefPtr<AutoMicroTaskWrapperRunnable> runnable =
-      new AutoMicroTaskWrapperRunnable(aEvent);
+  RefPtr runnable = MakeRefPtr<AutoMicroTaskWrapperRunnable>(aEvent);
 
   return DispatchToMainThread(runnable, aPriority, aArgc);
 }

@@ -30,6 +30,8 @@ buildscript {
 plugins {
     id 'ApkSizePlugin'
     id "mozac.ConfigPlugin"
+    id 'org.mozilla.conventions.mach-tasks'
+    alias(libs.plugins.android.library) apply false
     alias(libs.plugins.dependency.analysis)
     alias(libs.plugins.detekt)
     alias(libs.plugins.kotlin.android) apply false
@@ -163,19 +165,6 @@ allprojects {
     }
 }
 
-abstract class MozconfigService implements BuildService<MozconfigService.Params>, AutoCloseable {
-    interface Params extends BuildServiceParameters {
-        MapProperty<String, Object> getMozconfigParam()
-    }
-
-    void close() {
-    }
-
-    Object getMozconfig() {
-        return parameters.mozconfigParam.get()
-    }
-}
-
 // Non-official versions are like "61.0a1" or "61.0b1", where "a1" and "b1"
 // are the milestone.
 // This simply strips that off, leaving "61.0" in this example.
@@ -219,7 +208,16 @@ def getVersionName() {
 
 // Mimic Python: open(os.path.join(buildconfig.topobjdir, 'buildid.h')).readline().split()[2]
 def getBuildId() {
-    return file("${topobjdir}/buildid.h").getText('utf-8').split()[2]
+    def buildidFile = file("${topobjdir}/buildid.h")
+    if (!buildidFile.exists()) {
+        throw new GradleException(
+            "A required build file is missing from the object directory:\n" +
+                "  - ${buildidFile}\n\n" +
+                "This file is produced by a full build, not by Gradle.\n" +
+                "Run `./mach build` from the source directory first, then retry your Gradle build."
+        )
+    }
+    return buildidFile.getText('utf-8').split()[2]
 }
 
 def getVersionNumber() {
@@ -246,106 +244,6 @@ def getArtifactSuffix() {
     return suffix
 }
 
-abstract class MachExec extends Exec {
-    def MachExec() {
-        // Bug 1543982: When invoking `mach build` recursively, the outer `mach
-        // build` itself modifies the environment, causing configure to run
-        // again.  This tries to restore the environment that the outer `mach
-        // build` was invoked in.  See the comment in
-        // $topsrcdir/settings.gradle.
-        project.ext.mozconfig.mozconfig.env.unmodified.each { k, v -> environment.remove(k) }
-        environment project.ext.mozconfig.orig_mozconfig.env.unmodified
-        environment 'MOZCONFIG', project.ext.mozconfig.substs.MOZCONFIG
-    }
-
-    static def geckoBinariesOnlyIf(task, mozconfig) {
-        // Never when Gradle was invoked within `mach build`.
-        if ('1' == System.env.GRADLE_INVOKED_WITHIN_MACH_BUILD) {
-            task.logger.lifecycle("Skipping task ${task.path} because: within `mach build`")
-            return false
-        }
-
-        // Never for official builds.
-        if (mozconfig.substs.MOZILLA_OFFICIAL) {
-            task.logger.lifecycle("Skipping task ${task.path} because: MOZILLA_OFFICIAL")
-            return false
-        }
-        if (mozconfig.substs.ENABLE_MOZSEARCH_PLUGIN) {
-            task.logger.lifecycle("Skipping task ${task.path} because: ENABLE_MOZSEARCH_PLUGIN")
-            return false
-        }
-
-        // Multi-l10n builds set `AB_CD=multi`, which isn't a valid locale, and
-        // `MOZ_CHROME_MULTILOCALE`.  To avoid failures, if Gradle is invoked with
-        // either, we don't invoke Make at all; this allows a multi-locale omnijar
-        // to be consumed without modification.
-        if ('multi' == System.env.AB_CD || System.env.MOZ_CHROME_MULTILOCALE) {
-            task.logger.lifecycle("Skipping task ${task.path} because: AB_CD=multi")
-            return false
-        }
-
-        // Single-locale l10n repacks set `IS_LANGUAGE_REPACK=1` and handle resource
-        // and code generation themselves.
-        if ('1' == System.env.IS_LANGUAGE_REPACK) {
-            task.logger.lifecycle("Skipping task ${task.path} because: IS_LANGUAGE_REPACK")
-            return false
-        }
-
-        task.logger.lifecycle("Executing task ${task.path}")
-        return true
-    }
-}
-
-task machBuildFaster(type: MachExec) {
-    def mozconfigProvider = gradle.sharedServices.registerIfAbsent("mozconfig", MozconfigService) {
-        parameters.mozconfigParam.set(project.ext.mozconfig)
-    }
-    usesService(mozconfigProvider)
-    onlyIf { task -> MachExec.geckoBinariesOnlyIf(task, mozconfigProvider.get().getMozconfig()) }
-
-    workingDir "${topsrcdir}"
-
-    commandLine mozconfig.substs.PYTHON3
-    args "${topsrcdir}/mach"
-    args 'build'
-    args 'faster'
-
-    // Add `-v` if we're running under `--info` (or `--debug`).
-    if (project.logger.isEnabled(LogLevel.INFO)) {
-        args '-v'
-    }
-
-    standardOutput = System.out
-    errorOutput = System.err
-}
-
-task machStagePackage(type: MachExec) {
-    def mozconfigProvider = gradle.sharedServices.registerIfAbsent("mozconfig", MozconfigService) {
-        parameters.mozconfigParam.set(project.ext.mozconfig)
-    }
-    usesService(mozconfigProvider)
-    onlyIf { task -> MachExec.geckoBinariesOnlyIf(task, mozconfigProvider.get().getMozconfig()) }
-    dependsOn rootProject.machBuildFaster
-
-    workingDir "${topobjdir}"
-
-    commandLine mozconfig.substs.PYTHON3
-    args "${topsrcdir}/mach"
-    args 'build'
-    args 'stage-package'
-
-    outputs.file "${topobjdir}/dist/geckoview/assets/omni.ja"
-
-    outputs.file "${topobjdir}/dist/geckoview/assets/${mozconfig.substs.ANDROID_CPU_ARCH}/libxul.so"
-    outputs.file "${topobjdir}/dist/geckoview/lib/${mozconfig.substs.ANDROID_CPU_ARCH}/libmozglue.so"
-
-    // Force running `stage-package`.
-    outputs.upToDateWhen { false }
-
-    standardOutput = System.out
-    errorOutput = System.err
-}
-
 afterEvaluate {
     subprojects { project ->
         tasks.withType(JavaCompile) {
@@ -366,7 +264,6 @@ afterEvaluate {
             def projectName = project.getName()
             if (projectName.startsWith('geckoview')
                 || projectName == 'annotations'
-                || projectName == 'exoplayer2'
                 || projectName == 'messaging_example'
                 || projectName == 'port_messaging_example'
                 || projectName == 'test_runner'
@@ -412,7 +309,6 @@ subprojects { project ->
     def projectName = project.getName()
     if (projectName.startsWith('geckoview')
             || projectName == 'annotations'
-            || projectName == 'exoplayer2'
             || projectName == 'messaging_example'
             || projectName == 'port_messaging_example'
             || projectName == 'test_runner'
@@ -449,9 +345,7 @@ subprojects { project ->
     }
 
     afterEvaluate {
-        // Our vendored copy of exoplayer2 hits build failures when targeting Java 17.
-        // Given our intent to remove it in the near future, just leave it alone here.
-        if (it.hasProperty('android') && projectName != 'exoplayer2') {
+        if (it.hasProperty('android')) {
             kotlin {
                 jvmToolchain(config.jvmTargetCompatibility)
             }
@@ -495,12 +389,12 @@ tasks.register("lint") {
     description = "Runs lint on all mobile projects."
     mobileProjects.each { dependsOn "${it}:lint" }
 }
-tasks.register("ktlint") {
+tasks.named("ktlint").configure {
     group = "verification"
     description = "Runs ktlint on all mobile projects."
     mobileProjects.each { dependsOn "${it}:ktlint" }
 }
-tasks.register("ktlintFormat") {
+tasks.named("ktlintFormat").configure {
     group = "formatting"
     description = "Runs ktlintFormat on all mobile projects."
     mobileProjects.each { dependsOn "${it}:ktlintFormat" }

@@ -7,9 +7,10 @@
 <script src="chrome://browser/content/preferences/sync.js"/>
 <html:template id="template-paneSync">
 <hbox id="firefoxAccountCategory"
-      class="subcategory"
-      hidden="true"
-      data-category="paneSync">
+    class="subcategory"
+    hidden="true"
+    data-category="paneSync"
+    data-srd-groupid="sync">
   <html:h1 data-l10n-id="pane-sync-title3"/>
 </hbox>
 
@@ -236,7 +237,8 @@
         </groupbox>
       </vbox>
     </hbox>
-    <vbox align="start">
+    <vbox id="syncConnectAnotherDevice"
+          align="start">
       <html:a id="connect-another-device"
              is="text-link"
              class="fxaMobilePromo"
@@ -246,30 +248,8 @@
 </vbox>
 </deck>
 
-<!-- Default browser -->
-<html:setting-group groupid="defaultBrowserSync" data-category="paneSync" hidden="true" />
-
-<!-- Mozilla account -->
-<html:setting-group groupid="account" hidden="true" data-category="paneSync"/>
-
-<!-- Sync -->
-<html:setting-group groupid="sync" hidden="true" data-category="paneSync"/>
 
 <!-- Firefox Backup -->
-<hbox id="backupCategory"
-    class="subcategory"
-    hidden="true"
-    data-category="paneSync"
-    >
-  <html:h1 data-l10n-id="settings-data-backup-header"/>
-</hbox>
-<groupbox id="dataBackupGroup"
-          data-category="paneSync"
-          data-subcategory="backup"
-          hidden="true">
-  <label class="search-header" hidden="true"><html:h2 data-l10n-id="settings-data-backup-header"/></label>
-  <hbox flex="1">
-    <html:backup-settings />
-  </hbox>
-</groupbox>
+<html:setting-group groupid="backup" hidden="true" data-category="paneSync" data-subcategory="backup" data-srd-migrated="" />
+
 </html:template>

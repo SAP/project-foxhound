@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -39,6 +37,7 @@ struct DocumentFrameCallbacks;
 
 namespace mozilla {
 class AnimationEventDispatcher;
+class PaintPendingHangAnnotator;
 class PresShell;
 class RefreshDriverTimer;
 class Runnable;
@@ -360,6 +359,8 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   // paints to one per vsync (see CanDoExtraTick).
   void FinishedVsyncTick() { mAttemptedExtraTickSinceLastVsync = false; }
 
+  bool HasReasonsToTick() const;
+
  private:
   using RequestTable = nsTHashSet<RefPtr<imgIRequest>>;
   struct ImageStartData {
@@ -443,9 +444,6 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   void UpdateAnimatedImages(mozilla::TimeStamp aPreviousRefresh,
                             mozilla::TimeStamp aNowTime);
 
-  bool HasReasonsToTick() const {
-    return GetReasonsToTick() != TickReasons::None;
-  }
   TickReasons GetReasonsToTick() const;
   void AppendTickReasonsToString(TickReasons aReasons, nsACString& aStr) const;
 
@@ -539,6 +537,8 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   bool mHasImageAnimations : 1;
 
   bool mHasStartedTimerAtLeastOnce : 1;
+
+  mozilla::UniquePtr<mozilla::PaintPendingHangAnnotator> mHangAnnotator;
 
   mozilla::TimeStamp mMostRecentRefresh;
   mozilla::TimeStamp mTickStart;

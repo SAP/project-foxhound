@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,6 +26,7 @@
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "nsIURL.h"
 #include "nsIWebTransportStream.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsUTF8Utils.h"
 
 using namespace mozilla::ipc;
@@ -288,12 +287,13 @@ void WebTransport::Init(const GlobalObject& aGlobal, const nsAString& aURL,
     return;
   }
 
-  nsCOMPtr<nsIPrincipal> principal = mGlobal->PrincipalOrNull();
-  mozilla::Maybe<IPCClientInfo> ipcClientInfo;
-
-  if (mGlobal->GetClientInfo().isSome()) {
-    ipcClientInfo = mozilla::Some(mGlobal->GetClientInfo().ref().ToIPC());
+  if (mGlobal->GetClientInfo().isNothing()) {
+    aError.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+    return;
   }
+  IPCClientInfo ipcClientInfo = mGlobal->GetClientInfo().ref().ToIPC();
+
+  nsCOMPtr<nsIPrincipal> principal = mGlobal->PrincipalOrNull();
 
   nsPIDOMWindowInner* window = mGlobal->GetAsInnerWindow();
   if (window) {

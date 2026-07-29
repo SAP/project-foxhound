@@ -3,8 +3,36 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import functools
+import subprocess
+import sys
 import types
 from unittest.case import SkipTest
+
+
+@functools.cache
+def _running_on_macos_vm():
+    """Whether we're running on a macOS virtual-machine worker.
+
+    These headless VM workers (Apple Virtualization Framework guests) still run
+    a WindowServer, hold a logged-in GUI session, and report a framebuffer, so
+    by capability they are indistinguishable from bare metal -- only the
+    hardware model identifies them. Tests that depend on real window
+    focus/activation (e.g. BrowserWindowTracker.getTopWindow() ordering) race on
+    these workers, so they are skipped via skip_if_macos_vm.
+    """
+    if sys.platform != "darwin":
+        return False
+    try:
+        model = subprocess.run(
+            ["sysctl", "-n", "hw.model"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        ).stdout.strip()
+    except Exception:
+        return False
+    return model.startswith("VirtualMac")
 
 
 def parameterized(func_suffix, *args, **kwargs):
@@ -73,6 +101,28 @@ def skip_if_chrome(reason):
         @functools.wraps(test_item)
         def skip_wrapper(self, *args, **kwargs):
             if self.marionette._send_message("getContext", key="value") == "chrome":
+                raise SkipTest(reason)
+            return test_item(self, *args, **kwargs)
+
+        return skip_wrapper
+
+    return decorator
+
+
+def skip_if_macos_vm(reason):
+    """Decorator which skips a test on macOS virtual-machine workers.
+
+    Useful for tests that depend on native window focus/activation, which races
+    on the headless macOS VM workers (Apple Virtualization Framework guests).
+    """
+
+    def decorator(test_item):
+        if not isinstance(test_item, types.FunctionType):
+            raise Exception("Decorator only supported for functions")
+
+        @functools.wraps(test_item)
+        def skip_wrapper(self, *args, **kwargs):
+            if _running_on_macos_vm():
                 raise SkipTest(reason)
             return test_item(self, *args, **kwargs)
 

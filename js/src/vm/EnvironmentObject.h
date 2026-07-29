@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -754,6 +752,8 @@ class ModuleEnvironmentObject : public EnvironmentObject {
                                          Handle<ModuleObject*> module);
   static ModuleEnvironmentObject* createSynthetic(JSContext* cx,
                                                   Handle<ModuleObject*> module);
+  static ModuleEnvironmentObject* createForWasmModule(
+      JSContext* cx, Handle<ModuleObject*> module);
 
   ModuleObject& module() const;
   IndirectBindingMap& importBindings() const;
@@ -1175,9 +1175,6 @@ class MOZ_RAII EnvironmentIter {
   void incrementScopeIter();
   void settle();
 
-  // No value semantics.
-  EnvironmentIter(const EnvironmentIter& ei) = delete;
-
  public:
   // Constructing from a copy of an existing EnvironmentIter.
   EnvironmentIter(JSContext* cx, const EnvironmentIter& ei);
@@ -1194,6 +1191,9 @@ class MOZ_RAII EnvironmentIter {
   // to initialize to proper enclosing environment/scope.
   EnvironmentIter(JSContext* cx, JSObject* env, Scope* scope,
                   AbstractFramePtr frame);
+
+  // No value semantics.
+  EnvironmentIter(const EnvironmentIter& ei) = delete;
 
   bool done() const { return si_.done(); }
 
@@ -1559,6 +1559,7 @@ class DebugEnvironments {
                            const jsbytecode* pc);
   static void onPopWith(AbstractFramePtr frame);
   static void onPopModule(JSContext* cx, const EnvironmentIter& ei);
+  static void onPopWasm(JSContext* cx, AbstractFramePtr frame);
   static void onRealmUnsetIsDebuggee(Realm* realm);
 };
 

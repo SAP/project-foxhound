@@ -18,6 +18,7 @@ import "chrome://browser/content/aiwindow/components/applied-memories-button.mjs
  *   - A copy button for copying the assistant response.
  *   - A retry button for regenerating the response.
  *   - An applied memories button for viewing and/or deleting applied memories.
+ *   - Thumbs up/down feedback buttons.
  *
  * Data updates and network behavior are controlled by its parent.
  *
@@ -33,25 +34,23 @@ import "chrome://browser/content/aiwindow/components/applied-memories-button.mjs
  *       detail: { messageId }
  *   - "retry-message"
  *       detail: { messageId }
- *   - "retry-without-memories"
+ *   - "thumbs-up"
  *       detail: { messageId }
- *   - "remove-applied-memory"
- *       (re-dispatched from the applied memories button)
- *       detail: { messageId, index, memory }
- *   - "toggle-applied-memories"
- *       (re-dispatched from the applied memories button)
- *       detail: { messageId, open }
+ *   - "thumbs-down"
+ *       detail: { messageId }
  */
 export class AssistantMessageFooter extends MozLitElement {
   static properties = {
     messageId: { type: String, attribute: "message-id" },
     appliedMemories: { attribute: false },
+    showCallout: { type: Boolean },
   };
 
   constructor() {
     super();
     this.messageId = null;
     this.appliedMemories = [];
+    this.showCallout = false;
   }
 
   static eventBehaviors = {
@@ -63,9 +62,8 @@ export class AssistantMessageFooter extends MozLitElement {
     return {
       copy: "copy-message",
       retry: "retry-message",
-      toggleMemories: "toggle-applied-memories",
-      removeMemory: "remove-applied-memory",
-      retryWithoutMemories: "retry-without-memories",
+      thumbsUp: "thumbs-up",
+      thumbsDown: "thumbs-down",
     };
   }
 
@@ -86,19 +84,14 @@ export class AssistantMessageFooter extends MozLitElement {
     this.#emit(this.constructor.events.retry, { messageId: this.messageId });
   }
 
-  #onAppliedMemoriesToggle(event) {
-    this.#emit(this.constructor.events.toggleMemories, event.detail);
+  #emitThumbsUp() {
+    this.#emit(this.constructor.events.thumbsUp, { messageId: this.messageId });
   }
 
-  #onRemoveAppliedMemory(event) {
-    this.#emit(this.constructor.events.removeMemory, event.detail);
-  }
-
-  #onRetryWithoutMemories(event) {
-    this.#emit(
-      this.constructor.events.retryWithoutMemories,
-      event.detail ?? { messageId: this.messageId }
-    );
+  #emitThumbsDown() {
+    this.#emit(this.constructor.events.thumbsDown, {
+      messageId: this.messageId,
+    });
   }
 
   render() {
@@ -108,6 +101,30 @@ export class AssistantMessageFooter extends MozLitElement {
         href="chrome://browser/content/aiwindow/components/assistant-message-footer.css"
       />
       <div class="footer">
+        <moz-button
+          data-l10n-id="aiwindow-thumbs-up"
+          data-l10n-attrs="tooltiptext,aria-label"
+          class="footer-icon-button thumbs-up-button"
+          type="ghost"
+          size="small"
+          iconsrc="chrome://global/skin/icons/thumbs-up-20.svg"
+          @click=${() => {
+            this.#emitThumbsUp();
+          }}
+        >
+        </moz-button>
+        <moz-button
+          data-l10n-id="aiwindow-thumbs-down"
+          data-l10n-attrs="tooltiptext,aria-label"
+          class="footer-icon-button thumbs-down-button"
+          type="ghost"
+          size="small"
+          iconsrc="chrome://global/skin/icons/thumbs-down-20.svg"
+          @click=${() => {
+            this.#emitThumbsDown();
+          }}
+        >
+        </moz-button>
         <moz-button
           data-l10n-id="aiwindow-copy-message"
           data-l10n-attrs="tooltiptext,aria-label"
@@ -135,15 +152,7 @@ export class AssistantMessageFooter extends MozLitElement {
         <applied-memories-button
           .messageId=${this.messageId}
           .appliedMemories=${this.appliedMemories ?? []}
-          @toggle-applied-memories=${event => {
-            this.#onAppliedMemoriesToggle(event);
-          }}
-          @remove-applied-memory=${event => {
-            this.#onRemoveAppliedMemory(event);
-          }}
-          @retry-without-memories=${event => {
-            this.#onRetryWithoutMemories(event);
-          }}
+          .showCallout=${this.showCallout}
         >
         </applied-memories-button>
       </div>

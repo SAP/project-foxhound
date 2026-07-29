@@ -68,7 +68,7 @@ export class HiddenFrame {
    */
   getWindow() {
     this.get();
-    return this.#browser.document.ownerGlobal;
+    return this.#browser.document.documentGlobal;
   }
 
   /**
@@ -119,7 +119,7 @@ export class HiddenFrame {
         this.#listener = null;
         this.#webProgress = null;
         // Get the window reference via the document.
-        this.#frame = this.#browser.document.ownerGlobal;
+        this.#frame = this.#browser.document.documentGlobal;
         this.#deferred.resolve(this.#frame);
       }
     };
@@ -157,8 +157,10 @@ export const HiddenBrowserManager = new (class HiddenBrowserManager {
 
   /**
    * Creates and returns a new hidden browser.
+   *
+   * @param {string} [messageManagerGroup]
    */
-  async #acquireBrowser() {
+  async #acquireBrowser(messageManagerGroup) {
     this.#browsers++;
     if (!this.#frame) {
       this.#frame = new HiddenFrame();
@@ -174,6 +176,10 @@ export const HiddenBrowserManager = new (class HiddenBrowserManager {
     browser.style.height = `${BACKGROUND_HEIGHT}px`;
     browser.style.minHeight = `${BACKGROUND_HEIGHT}px`;
     browser.setAttribute("maychangeremoteness", "true");
+    browser.setAttribute("nodefaultsrc", "true");
+    if (messageManagerGroup) {
+      browser.setAttribute("messagemanagergroup", messageManagerGroup);
+    }
     doc.documentElement.appendChild(browser);
 
     return browser;
@@ -203,10 +209,12 @@ export const HiddenBrowserManager = new (class HiddenBrowserManager {
    * @param {(MozBrowser) => T | Promise<T>} callback
    *   The callback function will be called with the browser element and may
    *   be asynchronous.
+   * @param {object} [options]
+   * @param {string} [options.messageManagerGroup] Specify a custom message manager group for this browser.
    * @returns {Promise<T>}
    */
-  async withHiddenBrowser(callback) {
-    let browser = await this.#acquireBrowser();
+  async withHiddenBrowser(callback, { messageManagerGroup = undefined } = {}) {
+    let browser = await this.#acquireBrowser(messageManagerGroup);
     try {
       return await callback(browser);
     } finally {

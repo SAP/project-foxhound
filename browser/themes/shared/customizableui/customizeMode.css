@@ -28,21 +28,14 @@ toolbar[overflowable][customizing] > .customization-target {
 #customization-container {
   flex-direction: column;
   min-height: 0;
-  background-color: var(--toolbar-bgcolor);
-  color: var(--toolbar-color);
+  background-color: var(--toolbar-background-color);
+  color: var(--toolbar-text-color);
   color-scheme: var(--toolbar-color-scheme);
 
   &:not([hidden]) {
     /* In a separate rule to avoid 'display:flex' causing the node to be
      * displayed while the container is still hidden. */
     display: flex;
-  }
-
-  :root[lwtheme] & {
-    /* Ensure toolbar color displays on top of the frame/toolbox color to
-     * guarantee full opacity */
-    background-color: var(--lwt-accent-color);
-    background-image: linear-gradient(var(--toolbar-bgcolor), var(--toolbar-bgcolor));
   }
 }
 
@@ -53,7 +46,7 @@ toolbar[overflowable][customizing] > .customization-target {
 }
 
 #customization-header {
-  font-weight: var(--heading-font-weight);
+  font-weight: var(--font-weight-heading);
   font-size: 1.2em;
   margin: 20px 20px 15px;
 }
@@ -326,11 +319,11 @@ toolbarpaletteitem {
 
 #customization-uidensity-touch-spacer {
   border-top: 1px solid var(--panel-separator-color);
-  margin: 6px calc(-1 * var(--arrowpanel-padding)) 9px;
+  margin: 6px calc(-1 * var(--panel-padding)) 9px;
 }
 
 #customization-uidensity-autotouchmode-checkbox {
-  margin-bottom: var(--arrowpanel-padding);
+  margin-bottom: var(--panel-padding);
 }
 
 #customization-uidensity-menu {
@@ -338,7 +331,7 @@ toolbarpaletteitem {
 
   /* Make the panel padding uniform across all platforms due to the
      styling of the section headers and footer. */
-  --arrowpanel-padding: 8px;
+  --panel-padding: 8px;
 }
 
 .customization-uidensity-menuitem {
@@ -405,8 +398,8 @@ toolbarpaletteitem {
   align-items: end; /* align to the end on the cross-axis (affects arrow) */
 
   > .panel-arrowcontent {
-    color: var(--arrowpanel-color);
-    background: var(--arrowpanel-background);
+    color: var(--panel-text-color);
+    background: var(--panel-background-color);
     background-clip: padding-box;
     max-width: 29em;
 
@@ -417,11 +410,11 @@ toolbarpaletteitem {
         0 0 1px hsla(0, 0%, 0%, 0.3),
         0 4px 10px hsla(0, 0%, 0%, 0.3);
       appearance: none;
-      border-radius: var(--arrowpanel-border-radius);
+      border-radius: var(--panel-border-radius);
     }
 
     @media not (-moz-platform: macos) {
-      border: 1px solid var(--arrowpanel-border-color);
+      border: 1px solid var(--panel-border-color);
       margin: 0;
       box-shadow: 0 0 4px hsla(0, 0%, 0%, 0.2);
     }
@@ -437,8 +430,8 @@ toolbarpaletteitem {
   > .panel-arrow[side="top"] {
     list-style-image: url("chrome://global/skin/arrow/panelarrow-vertical.svg");
     -moz-context-properties: fill, stroke;
-    fill: var(--arrowpanel-background);
-    stroke: var(--arrowpanel-border-color);
+    fill: var(--panel-background-color);
+    stroke: var(--panel-border-color);
     /* JS code sets --panel-arrow-offset to the distance between the middle of the
      * overflow button and the end of the window. We subtract the padding of our
      * container (#customization-panel-container) and half our own width:
@@ -464,7 +457,7 @@ toolbarpaletteitem {
 
 #customization-panelHeader {
   font-size: 1.3em;
-  font-weight: var(--heading-font-weight);
+  font-weight: var(--font-weight-heading);
   padding: 2px 12px;
   margin: 0;
 }
@@ -517,7 +510,7 @@ toolbarpaletteitem {
 }
 
 #downloads-button-autohide-panel {
-  --arrowpanel-padding: 5px 12px;
+  --panel-padding: 5px 12px;
 }
 
 #downloads-button-autohide-checkbox {

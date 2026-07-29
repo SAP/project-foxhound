@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -71,9 +69,9 @@ void GMPVideoDecoder::Decoded(GMPVideoi420Frame* aDecodedFrame) {
     entryHandle.Remove();
   } else {
     GMP_LOG_DEBUG(
-        "GMPVideoDecoder::Decoded(this=%p) missing sample metadata for "
-        "time %" PRIu64,
-        this, decodedFrame->Timestamp());
+        "GMPVideoDecoder::Decoded(this={}) missing sample metadata for "
+        "time {}",
+        fmt::ptr(this), decodedFrame->Timestamp());
     if (mSamples.IsEmpty()) {
       // If we have no remaining samples in the table, then we have processed
       // all outstanding decode requests.

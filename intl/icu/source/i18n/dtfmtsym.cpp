@@ -1740,7 +1740,7 @@ struct CalendarDataSink : public ResourceSink {
             // == Handle String elements ==
             if (value.getType() == URES_STRING) {
                 // We are on a leaf, store the map elements into the stringMap
-                if (i == 0) {
+                if (stringMap == nullptr) {
                     // mapRefs will keep ownership of 'stringMap':
                     stringMap = mapRefs.create(false, errorCode);
                     if (stringMap == nullptr) {
@@ -1804,7 +1804,7 @@ struct CalendarDataSink : public ResourceSink {
 
             AliasType aliasType = processAliasFromValue(path, value, errorCode);
             if (U_FAILURE(errorCode)) { return; }
-            if (aliasType == SAME_CALENDAR) {
+            if (aliasType != NONE) {
                 // Store the alias path and the current path on aliasPathPairs
                 LocalPointer<UnicodeString> aliasRelativePathCopy(aliasRelativePath.clone(), errorCode);
                 aliasPathPairs.adoptElement(aliasRelativePathCopy.orphan(), errorCode);

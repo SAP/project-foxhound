@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +9,6 @@
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nspr.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/ChromeUtilsBinding.h"
@@ -29,8 +27,8 @@ using mozilla::dom::AutoJSAPI;
 
 //*****************************************************************************
 
-MOZ_RUNINIT static JS::PersistentRooted<JSObject*> autoconfigSystemSb;
-MOZ_RUNINIT static JS::PersistentRooted<JSObject*> autoconfigSb;
+constinit static JS::PersistentRooted<JSObject*> autoconfigSystemSb;
+constinit static JS::PersistentRooted<JSObject*> autoconfigSb;
 bool sandboxEnabled;
 
 nsresult CentralizedAdminPrefManagerInit(bool aSandboxEnabled) {

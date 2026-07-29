@@ -2,15 +2,15 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
-// Test the output of AnimationPlayerActor.getType().
+// Test the output of AnimationActor.getType().
 
 const {
   ANIMATION_TYPES,
-  AnimationPlayerActor,
+  AnimationActor,
 } = require("resource://devtools/server/actors/animation.js");
 
 function run_test() {
-  // Mock a window with just the properties the AnimationPlayerActor uses.
+  // Mock a window with just the properties the AnimationActor uses.
   const window = {};
   window.MutationObserver = class {
     constructor() {
@@ -44,7 +44,7 @@ function run_test() {
   // - animation {Object} An animation object instantiated from one of the mock
   //   window animation constructors.
   // - expectedType {String} The expected type returned by
-  //   AnimationPlayerActor.getType.
+  //   AnimationActor.getType.
   const TEST_DATA = [
     {
       desc: "Test CSSAnimation type",
@@ -70,7 +70,7 @@ function run_test() {
 
   for (const { desc, animation, expectedType } of TEST_DATA) {
     info(desc);
-    const actor = new AnimationPlayerActor({}, animation);
+    const actor = new AnimationActor({}, animation);
     Assert.equal(actor.getType(), expectedType);
   }
 }

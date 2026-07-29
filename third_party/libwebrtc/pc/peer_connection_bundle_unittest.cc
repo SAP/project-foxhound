@@ -43,7 +43,7 @@
 #include "p2p/base/p2p_constants.h"
 #include "p2p/base/port_allocator.h"
 #include "p2p/base/transport_info.h"
-#include "pc/channel.h"
+#include "pc/jsep_transport_controller.h"
 #include "pc/peer_connection.h"
 #include "pc/peer_connection_wrapper.h"
 #include "pc/rtp_transceiver.h"
@@ -63,6 +63,7 @@
 #include "rtc_base/virtual_socket_server.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
+#include "test/run_loop.h"
 #include "test/wait_until.h"
 
 #ifdef WEBRTC_ANDROID
@@ -121,28 +122,24 @@ class PeerConnectionWrapperForBundleTest : public PeerConnectionWrapper {
   }
 
   RtpTransportInternal* voice_rtp_transport() {
-    return (voice_channel() ? voice_channel()->rtp_transport() : nullptr);
-  }
-
-  VoiceChannel* voice_channel() {
     auto transceivers = GetInternalPeerConnection()->GetTransceiversInternal();
     for (const auto& transceiver : transceivers) {
-      if (transceiver->media_type() == MediaType::AUDIO) {
-        return static_cast<VoiceChannel*>(transceiver->internal()->channel());
+      if (transceiver->media_type() == MediaType::AUDIO && transceiver->mid()) {
+        return GetInternalPeerConnection()
+            ->transport_controller_n()
+            ->GetRtpTransport(*transceiver->mid());
       }
     }
     return nullptr;
   }
 
   RtpTransportInternal* video_rtp_transport() {
-    return (video_channel() ? video_channel()->rtp_transport() : nullptr);
-  }
-
-  VideoChannel* video_channel() {
     auto transceivers = GetInternalPeerConnection()->GetTransceiversInternal();
     for (const auto& transceiver : transceivers) {
-      if (transceiver->media_type() == MediaType::VIDEO) {
-        return static_cast<VideoChannel*>(transceiver->internal()->channel());
+      if (transceiver->media_type() == MediaType::VIDEO && transceiver->mid()) {
+        return GetInternalPeerConnection()
+            ->transport_controller_n()
+            ->GetRtpTransport(*transceiver->mid());
       }
     }
     return nullptr;
@@ -268,7 +265,7 @@ class PeerConnectionBundleBaseTest : public ::testing::Test {
   }
 
   VirtualSocketServer vss_;
-  AutoSocketServerThread main_;
+  test::RunLoop main_;
   const SdpSemantics sdp_semantics_;
 };
 

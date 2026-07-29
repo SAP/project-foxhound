@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -17,6 +15,7 @@
 #include "mozilla/intl/TimeZone.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Span.h"
+#include "mozilla/UsingEnum.h"
 
 #include "builtin/Array.h"
 #include "builtin/Date.h"
@@ -27,7 +26,6 @@
 #include "builtin/intl/Packed.h"
 #include "builtin/intl/ParameterNegotiation.h"
 #include "builtin/intl/SharedIntlData.h"
-#include "builtin/intl/UsingEnum.h"
 #include "builtin/temporal/Calendar.h"
 #include "builtin/temporal/Instant.h"
 #include "builtin/temporal/PlainDate.h"
@@ -66,16 +64,7 @@ using namespace js::temporal;
 using JS::ClippedTime;
 
 const JSClassOps DateTimeFormatObject::classOps_ = {
-    nullptr,                         // addProperty
-    nullptr,                         // delProperty
-    nullptr,                         // enumerate
-    nullptr,                         // newEnumerate
-    nullptr,                         // resolve
-    nullptr,                         // mayResolve
-    DateTimeFormatObject::finalize,  // finalize
-    nullptr,                         // call
-    nullptr,                         // construct
-    nullptr,                         // trace
+    .finalize = DateTimeFormatObject::finalize,
 };
 
 const JSClass DateTimeFormatObject::class_ = {
@@ -341,11 +330,7 @@ void js::intl::DateTimeFormatObject::setOptions(
 
 static constexpr std::string_view HourCycleToString(
     DateTimeFormatOptions::HourCycle hourCycle) {
-#ifndef USING_ENUM
-  using enum DateTimeFormatOptions::HourCycle;
-#else
-  USING_ENUM(DateTimeFormatOptions::HourCycle, H11, H12, H23, H24);
-#endif
+  MOZ_USING_ENUM(DateTimeFormatOptions::HourCycle, H11, H12, H23, H24);
   switch (hourCycle) {
     case H11:
       return "h11";
@@ -427,12 +412,8 @@ static constexpr std::string_view YearToString(
 
 static constexpr std::string_view MonthToString(
     DateTimeFormatOptions::Month month) {
-#ifndef USING_ENUM
-  using enum DateTimeFormatOptions::Month;
-#else
-  USING_ENUM(DateTimeFormatOptions::Month, TwoDigit, Numeric, Narrow, Short,
-             Long);
-#endif
+  MOZ_USING_ENUM(DateTimeFormatOptions::Month, TwoDigit, Numeric, Narrow, Short,
+                 Long);
   switch (month) {
     case TwoDigit:
       return "2-digit";
@@ -474,12 +455,8 @@ static constexpr std::string_view SecondToString(
 
 static constexpr std::string_view TimeZoneNameToString(
     DateTimeFormatOptions::TimeZoneName timeZoneName) {
-#ifndef USING_ENUM
-  using enum DateTimeFormatOptions::TimeZoneName;
-#else
-  USING_ENUM(DateTimeFormatOptions::TimeZoneName, Short, Long, ShortOffset,
-             LongOffset, ShortGeneric, LongGeneric);
-#endif
+  MOZ_USING_ENUM(DateTimeFormatOptions::TimeZoneName, Short, Long, ShortOffset,
+                 LongOffset, ShortGeneric, LongGeneric);
   switch (timeZoneName) {
     case Short:
       return "short";
@@ -501,11 +478,7 @@ enum class FormatMatcher { Basic, BestFit };
 
 static constexpr std::string_view FormatMatcherToString(
     FormatMatcher formatMatcher) {
-#ifndef USING_ENUM
-  using enum FormatMatcher;
-#else
-  USING_ENUM(FormatMatcher, Basic, BestFit);
-#endif
+  MOZ_USING_ENUM(FormatMatcher, Basic, BestFit);
   switch (formatMatcher) {
     case Basic:
       return "basic";
@@ -537,17 +510,11 @@ static bool CreateDateTimeFormat(
   // Steps 2-4. (Inlined ResolveOptions)
 
   // ResolveOptions, step 1.
-  Rooted<LocalesList> requestedLocales(cx, cx);
-  if (!CanonicalizeLocaleList(cx, locales, &requestedLocales)) {
+  auto* requestedLocales = CanonicalizeLocaleList(cx, locales);
+  if (!requestedLocales) {
     return false;
   }
-
-  Rooted<ArrayObject*> requestedLocalesArray(
-      cx, LocalesListToArray(cx, requestedLocales));
-  if (!requestedLocalesArray) {
-    return false;
-  }
-  dateTimeFormat->setRequestedLocales(requestedLocalesArray);
+  dateTimeFormat->setRequestedLocales(requestedLocales);
 
   auto dtfOptions = DateTimeFormatOptions{
       .required = required,
@@ -980,11 +947,7 @@ static bool MozDateTimeFormat(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 static auto ToRequired(DateTimeFormatKind kind) {
-#ifndef USING_ENUM
-  using enum DateTimeFormatOptions::Required;
-#else
-  USING_ENUM(DateTimeFormatOptions::Required, Any, Date, Time);
-#endif
+  MOZ_USING_ENUM(DateTimeFormatOptions::Required, Any, Date, Time);
   switch (kind) {
     case DateTimeFormatKind::All:
       return Any;
@@ -997,11 +960,7 @@ static auto ToRequired(DateTimeFormatKind kind) {
 }
 
 static auto ToDefaults(DateTimeFormatKind kind) {
-#ifndef USING_ENUM
-  using enum DateTimeFormatOptions::Defaults;
-#else
-  USING_ENUM(DateTimeFormatOptions::Defaults, All, Date, Time);
-#endif
+  MOZ_USING_ENUM(DateTimeFormatOptions::Defaults, All, Date, Time);
   switch (kind) {
     case DateTimeFormatKind::All:
       return All;
@@ -1151,11 +1110,7 @@ static bool ResolveLocale(JSContext* cx,
     localeOptions.setUnicodeExtension(UnicodeExtensionKey::HourCycle, nullptr);
   } else {
     if (auto hourCycle = dtfOptions.hourCycle) {
-#ifndef USING_ENUM
-      using enum DateTimeFormatOptions::HourCycle;
-#else
-      USING_ENUM(DateTimeFormatOptions::HourCycle, H11, H12, H23, H24);
-#endif
+      MOZ_USING_ENUM(DateTimeFormatOptions::HourCycle, H11, H12, H23, H24);
 
       JSLinearString* hc;
       switch (*hourCycle) {
@@ -1195,42 +1150,29 @@ static bool ResolveLocale(JSContext* cx,
   // Changes from "Intl era and monthCode" proposal.
   //
   // https://tc39.es/proposal-intl-era-monthcode/#sec-createdatetimeformat
-  auto ca = resolved.extension(UnicodeExtensionKey::Calendar);
-  MOZ_ASSERT(ca, "resolved calendar is non-null");
+  if (auto ca = resolved.extension(UnicodeExtensionKey::Calendar)) {
+    if (StringEqualsLiteral(ca, "islamic")) {
+      if (!WarnNumberASCII(cx, JSMSG_ISLAMIC_FALLBACK)) {
+        return false;
+      }
 
-  if (StringEqualsLiteral(ca, "islamic")) {
-    if (!WarnNumberASCII(cx, JSMSG_ISLAMIC_FALLBACK)) {
-      return false;
+      // Fallback to "islamic-tbla" calendar.
+      auto* str = NewStringCopyZ<CanGC>(cx, "islamic-tbla");
+      if (!str) {
+        return false;
+      }
+      dateTimeFormat->setCalendar(str);
+    } else {
+      dateTimeFormat->setCalendar(ca);
     }
-
-    // Fallback to "islamic-tbla" calendar.
-    auto* str = NewStringCopyZ<CanGC>(cx, "islamic-tbla");
-    if (!str) {
-      return false;
-    }
-    dateTimeFormat->setCalendar(str);
-  } else if (StringEqualsLiteral(ca, "islamic-rgsa")) {
-    // Fallback to "islamic-tbla" calendar for 147 uplift compatibility.
-    // The above warning text isn't suitable, and per 2025-12 TG2 meeting
-    // treatment as unknown is expected going forward (bug 2005702).
-    auto* str = NewStringCopyZ<CanGC>(cx, "islamic-tbla");
-    if (!str) {
-      return false;
-    }
-    dateTimeFormat->setCalendar(str);
   } else {
-    dateTimeFormat->setCalendar(ca);
+    dateTimeFormat->setCalendar(cx->names().default_);
   }
 
   auto hc = resolved.extension(UnicodeExtensionKey::HourCycle);
   if (hc) {
     MOZ_ASSERT(dtfOptions.hour12.isNothing());
-
-#ifndef USING_ENUM
-    using enum DateTimeFormatOptions::HourCycle;
-#else
-    USING_ENUM(DateTimeFormatOptions::HourCycle, H11, H12, H23, H24);
-#endif
+    MOZ_USING_ENUM(DateTimeFormatOptions::HourCycle, H11, H12, H23, H24);
     if (StringEqualsLiteral(hc, "h11")) {
       dtfOptions.hourCycle = mozilla::Some(H11);
     } else if (StringEqualsLiteral(hc, "h12")) {
@@ -1241,11 +1183,16 @@ static bool ResolveLocale(JSContext* cx,
       MOZ_ASSERT(StringEqualsLiteral(hc, "h24"));
       dtfOptions.hourCycle = mozilla::Some(H24);
     }
+  } else {
+    // The first element of [[LocaleData]].[[<locale>]].[[hc]] is |null|, so
+    // hour-cycle is left unset if no explicit option was present.
   }
 
-  auto nu = resolved.extension(UnicodeExtensionKey::NumberingSystem);
-  MOZ_ASSERT(nu, "resolved numbering system is non-null");
-  dateTimeFormat->setNumberingSystem(nu);
+  if (auto nu = resolved.extension(UnicodeExtensionKey::NumberingSystem)) {
+    dateTimeFormat->setNumberingSystem(nu);
+  } else {
+    dateTimeFormat->setNumberingSystem(cx->names().default_);
+  }
 
   auto* locale = resolved.toLocale(cx);
   if (!locale) {
@@ -1259,6 +1206,36 @@ static bool ResolveLocale(JSContext* cx,
   MOZ_ASSERT(dateTimeFormat->isLocaleResolved(),
              "locale successfully resolved");
   return true;
+}
+
+static JSLinearString* ResolveCalendar(
+    JSContext* cx, Handle<DateTimeFormatObject*> dateTimeFormat) {
+  MOZ_ASSERT(dateTimeFormat->isLocaleResolved());
+
+  auto* calendar = dateTimeFormat->getCalendar();
+  if (calendar == cx->names().default_) {
+    calendar = DefaultCalendar(cx, dateTimeFormat->getLocale());
+    if (!calendar) {
+      return nullptr;
+    }
+    dateTimeFormat->setCalendar(calendar);
+  }
+  return calendar;
+}
+
+static JSLinearString* ResolveNumberingSystem(
+    JSContext* cx, Handle<DateTimeFormatObject*> dateTimeFormat) {
+  MOZ_ASSERT(dateTimeFormat->isLocaleResolved());
+
+  auto* numberingSystem = dateTimeFormat->getNumberingSystem();
+  if (numberingSystem == cx->names().default_) {
+    numberingSystem = DefaultNumberingSystem(cx, dateTimeFormat->getLocale());
+    if (!numberingSystem) {
+      return nullptr;
+    }
+    dateTimeFormat->setNumberingSystem(numberingSystem);
+  }
+  return numberingSystem;
 }
 
 enum class HourCycle {
@@ -1283,21 +1260,29 @@ static UniqueChars DateTimeFormatLocale(
 
   // ICU expects calendar, numberingSystem, and hourCycle as Unicode locale
   // extensions on locale.
+  //
+  // We don't add any Unicode extension keywords when the default values can be
+  // used, because ICU optimizes for this case.
 
   JS::RootedVector<UnicodeExtensionKeyword> keywords(cx);
-  if (!keywords.emplaceBack("ca", dateTimeFormat->getCalendar())) {
-    return nullptr;
+
+  auto* calendar = dateTimeFormat->getCalendar();
+  if (calendar != cx->names().default_) {
+    if (!keywords.emplaceBack("ca", calendar)) {
+      return nullptr;
+    }
   }
-  if (!keywords.emplaceBack("nu", dateTimeFormat->getNumberingSystem())) {
-    return nullptr;
+
+  auto* numberingSystem = dateTimeFormat->getNumberingSystem();
+  if (numberingSystem != cx->names().default_) {
+    if (!keywords.emplaceBack("nu", numberingSystem)) {
+      return nullptr;
+    }
   }
 
   if (hourCycle) {
-#ifndef USING_ENUM
-    using enum mozilla::intl::DateTimeFormat::HourCycle;
-#else
-    USING_ENUM(mozilla::intl::DateTimeFormat::HourCycle, H11, H12, H23, H24);
-#endif
+    MOZ_USING_ENUM(mozilla::intl::DateTimeFormat::HourCycle, H11, H12, H23,
+                   H24);
 
     JSAtom* hourCycleStr;
     switch (*hourCycle) {
@@ -1340,11 +1325,7 @@ struct DateTimeFormatArgs {
  * Get the "required" argument passed to CreateDateTimeFormat.
  */
 static auto GetRequired(DateTimeFormatOptions::Required required) {
-#ifndef USING_ENUM
-  using enum Required;
-#else
-  USING_ENUM(Required, Date, Time, Any);
-#endif
+  MOZ_USING_ENUM(Required, Date, Time, Any);
   switch (required) {
     case DateTimeFormatOptions::Required::Date:
       return Date;
@@ -1360,11 +1341,7 @@ static auto GetRequired(DateTimeFormatOptions::Required required) {
  * Get the "defaults" argument passed to CreateDateTimeFormat.
  */
 static auto GetDefaults(DateTimeFormatOptions::Defaults defaults) {
-#ifndef USING_ENUM
-  using enum Defaults;
-#else
-  USING_ENUM(Defaults, Date, Time, All);
-#endif
+  MOZ_USING_ENUM(Defaults, Date, Time, All);
   switch (defaults) {
     case DateTimeFormatOptions::Defaults::Date:
       return Date;
@@ -1627,7 +1604,7 @@ GetDateTimeFormat(const mozilla::intl::DateTimeFormat::ComponentsBag& options,
       formatOptions.minute = numericOption;
     }
     if (defaultOptions.contains(DateTimeField::Second)) {
-      formatOptions.second = numericOption;
+      formatOptions.second = std::move(numericOption);
     }
 
     // Step 17.c.
@@ -1647,56 +1624,102 @@ GetDateTimeFormat(const mozilla::intl::DateTimeFormat::ComponentsBag& options,
  *
  * https://tc39.es/proposal-temporal/#sec-adjustdatetimestyleformat
  */
-static mozilla::Result<mozilla::intl::DateTimeFormat::ComponentsBag,
-                       mozilla::intl::ICUError>
-AdjustDateTimeStyleFormat(mozilla::intl::DateTimeFormat* baseFormat,
-                          mozilla::EnumSet<DateTimeField> allowedOptions) {
+static mozilla::Maybe<mozilla::intl::DateTimeFormat::ComponentsBag>
+AdjustDateTimeStyleFormat(
+    const mozilla::intl::DateTimeFormat::ComponentsBag& baseFormat,
+    mozilla::EnumSet<DateTimeField> allowedOptions) {
   // Step 1.
+  bool anyConflictingFields = false;
+
+  // Step 5. (Reordered)
   mozilla::intl::DateTimeFormat::ComponentsBag formatOptions;
 
-  // Step 2. (Loop unrolled)
-  auto result = baseFormat->ResolveComponents();
-  if (result.isErr()) {
-    return result.propagateErr();
+  // Steps 2 and 6. (Loops unrolled)
+  if (baseFormat.era) {
+    if (allowedOptions.contains(DateTimeField::Era)) {
+      formatOptions.era = baseFormat.era;
+    } else {
+      anyConflictingFields = true;
+    }
   }
-  auto options = result.unwrap();
+  if (baseFormat.weekday) {
+    if (allowedOptions.contains(DateTimeField::Weekday)) {
+      formatOptions.weekday = baseFormat.weekday;
+    } else {
+      anyConflictingFields = true;
+    }
+  }
+  if (baseFormat.year) {
+    if (allowedOptions.contains(DateTimeField::Year)) {
+      formatOptions.year = baseFormat.year;
+    } else {
+      anyConflictingFields = true;
+    }
+  }
+  if (baseFormat.month) {
+    if (allowedOptions.contains(DateTimeField::Month)) {
+      formatOptions.month = baseFormat.month;
+    } else {
+      anyConflictingFields = true;
+    }
+  }
+  if (baseFormat.day) {
+    if (allowedOptions.contains(DateTimeField::Day)) {
+      formatOptions.day = baseFormat.day;
+    } else {
+      anyConflictingFields = true;
+    }
+  }
+  if (baseFormat.dayPeriod) {
+    if (allowedOptions.contains(DateTimeField::DayPeriod)) {
+      formatOptions.dayPeriod = baseFormat.dayPeriod;
+    } else {
+      anyConflictingFields = true;
+    }
+  }
+  if (baseFormat.hour) {
+    if (allowedOptions.contains(DateTimeField::Hour)) {
+      formatOptions.hour = baseFormat.hour;
+      formatOptions.hourCycle = baseFormat.hourCycle;
+    } else {
+      anyConflictingFields = true;
+    }
+  }
+  if (baseFormat.minute) {
+    if (allowedOptions.contains(DateTimeField::Minute)) {
+      formatOptions.minute = baseFormat.minute;
+    } else {
+      anyConflictingFields = true;
+    }
+  }
+  if (baseFormat.second) {
+    if (allowedOptions.contains(DateTimeField::Second)) {
+      formatOptions.second = baseFormat.second;
+    } else {
+      anyConflictingFields = true;
+    }
+  }
+  if (baseFormat.fractionalSecondDigits) {
+    if (allowedOptions.contains(DateTimeField::FractionalSecondDigits)) {
+      formatOptions.fractionalSecondDigits = baseFormat.fractionalSecondDigits;
+    } else {
+      anyConflictingFields = true;
+    }
+  }
+  if (baseFormat.timeZoneName) {
+    anyConflictingFields = true;
+  }
 
-  if (allowedOptions.contains(DateTimeField::Era) && options.era) {
-    formatOptions.era = options.era;
-  }
-  if (allowedOptions.contains(DateTimeField::Weekday) && options.weekday) {
-    formatOptions.weekday = options.weekday;
-  }
-  if (allowedOptions.contains(DateTimeField::Year) && options.year) {
-    formatOptions.year = options.year;
-  }
-  if (allowedOptions.contains(DateTimeField::Month) && options.month) {
-    formatOptions.month = options.month;
-  }
-  if (allowedOptions.contains(DateTimeField::Day) && options.day) {
-    formatOptions.day = options.day;
-  }
-  if (allowedOptions.contains(DateTimeField::DayPeriod) && options.dayPeriod) {
-    formatOptions.dayPeriod = options.dayPeriod;
-  }
-  if (allowedOptions.contains(DateTimeField::Hour) && options.hour) {
-    formatOptions.hour = options.hour;
-    formatOptions.hourCycle = options.hourCycle;
-  }
-  if (allowedOptions.contains(DateTimeField::Minute) && options.minute) {
-    formatOptions.minute = options.minute;
-  }
-  if (allowedOptions.contains(DateTimeField::Second) && options.second) {
-    formatOptions.second = options.second;
-  }
-  if (allowedOptions.contains(DateTimeField::FractionalSecondDigits) &&
-      options.fractionalSecondDigits) {
-    formatOptions.fractionalSecondDigits = options.fractionalSecondDigits;
+  // Steps 3-4.
+  if (!anyConflictingFields) {
+    return mozilla::Nothing();
   }
 
-  // Steps 3-5. (Performed in caller)
+  // Steps 5-6. (Moved above)
 
-  return formatOptions;
+  // Steps 7-9. (Performed in caller)
+
+  return mozilla::Some(formatOptions);
 }
 
 static const char* DateTimeValueKindToString(DateTimeValueKind kind) {
@@ -1837,7 +1860,7 @@ class TimeZoneChars final {
   bool init(JSContext* cx, JSLinearString* timeZone) {
     auto timeZoneOffset = TimeZoneOffsetString::from(timeZone);
     if (timeZoneOffset) {
-      timeZoneOffset_ = timeZoneOffset;
+      timeZoneOffset_ = std::move(timeZoneOffset);
       return true;
     }
     return timeZone_.initTwoByte(cx, timeZone);
@@ -2011,16 +2034,21 @@ static mozilla::intl::DateTimeFormat* NewDateTimeFormat(
       return df.release();
     }
 
-    auto adjusted = AdjustDateTimeStyleFormat(df.get(), allowedOptions);
-    if (adjusted.isErr()) {
-      ReportInternalError(cx, adjusted.unwrapErr());
+    auto baseFormatResult = df->ResolveComponents();
+    if (baseFormatResult.isErr()) {
+      ReportInternalError(cx, baseFormatResult.unwrapErr());
       return nullptr;
     }
-    auto bag = adjusted.unwrap();
+    auto baseFormat = baseFormatResult.unwrap();
+
+    auto adjusted = AdjustDateTimeStyleFormat(baseFormat, allowedOptions);
+    if (adjusted.isNothing()) {
+      return df.release();
+    }
 
     auto dfAdjustedResult =
         mozilla::intl::DateTimeFormat::TryCreateFromComponents(
-            mozilla::MakeStringSpan(locale.get()), bag, dtpg, timeZone);
+            mozilla::MakeStringSpan(locale.get()), *adjusted, dtpg, timeZone);
     if (dfAdjustedResult.isErr()) {
       ReportInternalError(cx, dfAdjustedResult.unwrapErr());
       return nullptr;
@@ -2298,7 +2326,10 @@ static bool ResolveCalendarValue(JSContext* cx,
     return false;
   }
 
-  Rooted<JSString*> calendarString(cx, dateTimeFormat->getCalendar());
+  Rooted<JSString*> calendarString(cx, ResolveCalendar(cx, dateTimeFormat));
+  if (!calendarString) {
+    return false;
+  }
 
   Rooted<CalendarValue> calendar(cx);
   if (!CanonicalizeCalendar(cx, calendarString, &calendar)) {
@@ -2309,29 +2340,58 @@ static bool ResolveCalendarValue(JSContext* cx,
 }
 
 /**
+ * Throws an error if `dateTimeFormat`'s calendar is not equal to `calendarId`.
+ */
+static bool ThrowIfCalendarNotEqual(
+    JSContext* cx, Handle<DateTimeFormatObject*> dateTimeFormat,
+    CalendarId calendarId) {
+  if (!ResolveCalendarValue(cx, dateTimeFormat)) {
+    return false;
+  }
+  auto calendar = dateTimeFormat->getCalendarValue();
+
+  if (calendarId != calendar.identifier()) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_TEMPORAL_CALENDAR_INCOMPATIBLE,
+                              CalendarIdentifier(calendarId).data(),
+                              CalendarIdentifier(calendar).data());
+    return false;
+  }
+  return true;
+}
+
+struct EpochMilliseconds {
+  double milliseconds = 0;
+
+  EpochMilliseconds() = default;
+
+  explicit EpochMilliseconds(EpochNanoseconds epochNs)
+      : milliseconds(epochNs.floorToMilliseconds()) {}
+
+  explicit EpochMilliseconds(JS::ClippedTime time)
+      : milliseconds(time.toDouble()) {
+    MOZ_ASSERT(time.isValid());
+  }
+
+  double toDouble() const { return milliseconds; }
+};
+
+/**
  * HandleDateTimeTemporalDate ( dateTimeFormat, temporalDate )
  *
  * https://tc39.es/proposal-temporal/#sec-temporal-handledatetimetemporaldate
  */
 static bool HandleDateTimeTemporalDate(
     JSContext* cx, Handle<DateTimeFormatObject*> dateTimeFormat,
-    Handle<PlainDateObject*> unwrappedTemporalDate, ClippedTime* result) {
+    Handle<PlainDateObject*> unwrappedTemporalDate, EpochMilliseconds* result) {
   auto isoDate = unwrappedTemporalDate->date();
   auto calendarId = unwrappedTemporalDate->calendar().identifier();
 
-  if (!ResolveCalendarValue(cx, dateTimeFormat)) {
-    return false;
-  }
-  Rooted<CalendarValue> calendar(cx, dateTimeFormat->getCalendarValue());
-
   // Step 1.
-  if (calendarId != CalendarId::ISO8601 &&
-      calendarId != calendar.identifier()) {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_TEMPORAL_CALENDAR_INCOMPATIBLE,
-                              CalendarIdentifier(calendarId).data(),
-                              CalendarIdentifier(calendar).data());
-    return false;
+  if (calendarId != CalendarId::ISO8601) {
+    if (!ThrowIfCalendarNotEqual(cx, dateTimeFormat, calendarId)) {
+      return false;
+    }
   }
 
   // Step 2.
@@ -2343,8 +2403,7 @@ static bool HandleDateTimeTemporalDate(
   // Steps 4-5. (Performed in NewDateTimeFormat)
 
   // Step 6.
-  int64_t milliseconds = epochNs.floorToMilliseconds();
-  *result = JS::TimeClip(double(milliseconds));
+  *result = EpochMilliseconds{epochNs};
   return true;
 }
 
@@ -2356,21 +2415,12 @@ static bool HandleDateTimeTemporalDate(
 static bool HandleDateTimeTemporalYearMonth(
     JSContext* cx, Handle<DateTimeFormatObject*> dateTimeFormat,
     Handle<PlainYearMonthObject*> unwrappedTemporalYearMonth,
-    ClippedTime* result) {
+    EpochMilliseconds* result) {
   auto isoDate = unwrappedTemporalYearMonth->date();
   auto calendarId = unwrappedTemporalYearMonth->calendar().identifier();
 
-  if (!ResolveCalendarValue(cx, dateTimeFormat)) {
-    return false;
-  }
-  Rooted<CalendarValue> calendar(cx, dateTimeFormat->getCalendarValue());
-
   // Step 1.
-  if (calendarId != calendar.identifier()) {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_TEMPORAL_CALENDAR_INCOMPATIBLE,
-                              CalendarIdentifier(calendarId).data(),
-                              CalendarIdentifier(calendar).data());
+  if (!ThrowIfCalendarNotEqual(cx, dateTimeFormat, calendarId)) {
     return false;
   }
 
@@ -2383,8 +2433,7 @@ static bool HandleDateTimeTemporalYearMonth(
   // Steps 4-5. (Performed in NewDateTimeFormat)
 
   // Step 6.
-  int64_t milliseconds = epochNs.floorToMilliseconds();
-  *result = JS::TimeClip(double(milliseconds));
+  *result = EpochMilliseconds{epochNs};
   return true;
 }
 
@@ -2396,21 +2445,12 @@ static bool HandleDateTimeTemporalYearMonth(
 static bool HandleDateTimeTemporalMonthDay(
     JSContext* cx, Handle<DateTimeFormatObject*> dateTimeFormat,
     Handle<PlainMonthDayObject*> unwrappedTemporalMonthDay,
-    ClippedTime* result) {
+    EpochMilliseconds* result) {
   auto isoDate = unwrappedTemporalMonthDay->date();
   auto calendarId = unwrappedTemporalMonthDay->calendar().identifier();
 
-  if (!ResolveCalendarValue(cx, dateTimeFormat)) {
-    return false;
-  }
-  Rooted<CalendarValue> calendar(cx, dateTimeFormat->getCalendarValue());
-
   // Step 1.
-  if (calendarId != calendar.identifier()) {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_TEMPORAL_CALENDAR_INCOMPATIBLE,
-                              CalendarIdentifier(calendarId).data(),
-                              CalendarIdentifier(calendar).data());
+  if (!ThrowIfCalendarNotEqual(cx, dateTimeFormat, calendarId)) {
     return false;
   }
 
@@ -2423,8 +2463,7 @@ static bool HandleDateTimeTemporalMonthDay(
   // Steps 4-5. (Performed in NewDateTimeFormat)
 
   // Step 6.
-  int64_t milliseconds = epochNs.floorToMilliseconds();
-  *result = JS::TimeClip(double(milliseconds));
+  *result = EpochMilliseconds{epochNs};
   return true;
 }
 
@@ -2434,7 +2473,7 @@ static bool HandleDateTimeTemporalMonthDay(
  * https://tc39.es/proposal-temporal/#sec-temporal-handledatetimetemporaltime
  */
 static bool HandleDateTimeTemporalTime(PlainTimeObject* unwrappedTemporalTime,
-                                       ClippedTime* result) {
+                                       EpochMilliseconds* result) {
   auto time = unwrappedTemporalTime->time();
 
   // Steps 1-2.
@@ -2446,8 +2485,7 @@ static bool HandleDateTimeTemporalTime(PlainTimeObject* unwrappedTemporalTime,
   // Steps 4-5. (Performed in NewDateTimeFormat)
 
   // Step 6.
-  int64_t milliseconds = epochNs.floorToMilliseconds();
-  *result = JS::TimeClip(double(milliseconds));
+  *result = EpochMilliseconds{epochNs};
   return true;
 }
 
@@ -2458,23 +2496,15 @@ static bool HandleDateTimeTemporalTime(PlainTimeObject* unwrappedTemporalTime,
  */
 static bool HandleDateTimeTemporalDateTime(
     JSContext* cx, Handle<DateTimeFormatObject*> dateTimeFormat,
-    Handle<PlainDateTimeObject*> unwrappedDateTime, ClippedTime* result) {
+    Handle<PlainDateTimeObject*> unwrappedDateTime, EpochMilliseconds* result) {
   auto isoDateTime = unwrappedDateTime->dateTime();
   auto calendarId = unwrappedDateTime->calendar().identifier();
 
-  if (!ResolveCalendarValue(cx, dateTimeFormat)) {
-    return false;
-  }
-  Rooted<CalendarValue> calendar(cx, dateTimeFormat->getCalendarValue());
-
   // Step 1.
-  if (calendarId != CalendarId::ISO8601 &&
-      calendarId != calendar.identifier()) {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_TEMPORAL_CALENDAR_INCOMPATIBLE,
-                              CalendarIdentifier(calendarId).data(),
-                              CalendarIdentifier(calendar).data());
-    return false;
+  if (calendarId != CalendarId::ISO8601) {
+    if (!ThrowIfCalendarNotEqual(cx, dateTimeFormat, calendarId)) {
+      return false;
+    }
   }
 
   // Step 2.
@@ -2483,8 +2513,7 @@ static bool HandleDateTimeTemporalDateTime(
   // Step 3. (Performed in NewDateTimeFormat)
 
   // Step 4.
-  int64_t milliseconds = epochNs.floorToMilliseconds();
-  *result = JS::TimeClip(double(milliseconds));
+  *result = EpochMilliseconds{epochNs};
   return true;
 }
 
@@ -2494,13 +2523,12 @@ static bool HandleDateTimeTemporalDateTime(
  * https://tc39.es/proposal-temporal/#sec-temporal-handledatetimetemporalinstant
  */
 static bool HandleDateTimeTemporalInstant(InstantObject* unwrappedInstant,
-                                          ClippedTime* result) {
+                                          EpochMilliseconds* result) {
   // Step 1. (Performed in NewDateTimeFormat)
 
   // Step 2.
   auto epochNs = unwrappedInstant->epochNanoseconds();
-  int64_t milliseconds = epochNs.floorToMilliseconds();
-  *result = JS::TimeClip(double(milliseconds));
+  *result = EpochMilliseconds{epochNs};
   return true;
 }
 
@@ -2509,28 +2537,20 @@ static bool HandleDateTimeTemporalInstant(InstantObject* unwrappedInstant,
  */
 static bool HandleDateTimeTemporalZonedDateTime(
     JSContext* cx, Handle<DateTimeFormatObject*> dateTimeFormat,
-    Handle<ZonedDateTimeObject*> unwrappedZonedDateTime, ClippedTime* result) {
+    Handle<ZonedDateTimeObject*> unwrappedZonedDateTime,
+    EpochMilliseconds* result) {
   auto epochNs = unwrappedZonedDateTime->epochNanoseconds();
   auto calendarId = unwrappedZonedDateTime->calendar().identifier();
 
-  if (!ResolveCalendarValue(cx, dateTimeFormat)) {
-    return false;
-  }
-  Rooted<CalendarValue> calendar(cx, dateTimeFormat->getCalendarValue());
-
   // Step 4.
-  if (calendarId != CalendarId::ISO8601 &&
-      calendarId != calendar.identifier()) {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_TEMPORAL_CALENDAR_INCOMPATIBLE,
-                              CalendarIdentifier(calendarId).data(),
-                              CalendarIdentifier(calendar).data());
-    return false;
+  if (calendarId != CalendarId::ISO8601) {
+    if (!ThrowIfCalendarNotEqual(cx, dateTimeFormat, calendarId)) {
+      return false;
+    }
   }
 
   // Step 5.
-  int64_t milliseconds = epochNs.floorToMilliseconds();
-  *result = JS::TimeClip(double(milliseconds));
+  *result = EpochMilliseconds{epochNs};
   return true;
 }
 
@@ -2540,7 +2560,7 @@ static bool HandleDateTimeTemporalZonedDateTime(
  * https://tc39.es/proposal-temporal/#sec-temporal-handledatetimeothers
  */
 static bool HandleDateTimeOthers(JSContext* cx, const char* method, double x,
-                                 ClippedTime* result) {
+                                 EpochMilliseconds* result) {
   // Step 1.
   auto clipped = JS::TimeClip(x);
 
@@ -2554,7 +2574,7 @@ static bool HandleDateTimeOthers(JSContext* cx, const char* method, double x,
   // Step 4. (Performed in NewDateTimeFormat)
 
   // Steps 3 and 5.
-  *result = clipped;
+  *result = EpochMilliseconds{clipped};
   return true;
 }
 
@@ -2565,7 +2585,7 @@ static bool HandleDateTimeOthers(JSContext* cx, const char* method, double x,
  */
 static bool HandleDateTimeValue(JSContext* cx, const char* method,
                                 Handle<DateTimeFormatObject*> dateTimeFormat,
-                                JSObject* x, ClippedTime* result) {
+                                JSObject* x, EpochMilliseconds* result) {
   // Step 1.
   Rooted<JSObject*> unwrapped(cx, CheckedUnwrapStatic(x));
   if (!unwrapped) {
@@ -2619,7 +2639,7 @@ static bool HandleDateTimeValue(JSContext* cx, const char* method,
 }
 
 struct DateTimeValue {
-  ClippedTime time;
+  EpochMilliseconds time;
   DateTimeValueKind kind{};
 };
 
@@ -2633,7 +2653,7 @@ static bool ToDateTimeValue(JSContext* cx, const char* method,
   // DateTime Format Functions, step 3.
   // Intl.DateTimeFormat.prototype.formatToParts, step 3.
   if (date.isUndefined()) {
-    result->time = DateNow(cx);
+    result->time = EpochMilliseconds{DateNow(cx)};
     result->kind = DateTimeValueKind::Number;
     return true;
   }
@@ -2685,13 +2705,13 @@ static bool ToDateTimeValue(JSContext* cx, const char* method,
  */
 static bool FormatDateTime(JSContext* cx,
                            const mozilla::intl::DateTimeFormat* df,
-                           ClippedTime x, MutableHandle<JS::Value> result) {
+                           EpochMilliseconds x,
+                           MutableHandle<JS::Value> result) {
   // FormatDateTime, step 1. (Inlined call to PartitionDateTimePattern)
 
-  // PartitionDateTimePattern, steps 1-2.
-  MOZ_ASSERT(x.isValid());
+  // PartitionDateTimePattern, step 1. (Performed in caller)
 
-  // PartitionDateTimePattern, steps 3-8.
+  // PartitionDateTimePattern, steps 2-7.
   FormatBuffer<char16_t, INITIAL_CHAR_BUFFER_SIZE> buffer(cx);
   auto dfResult = df->TryFormat(x.toDouble(), buffer);
   if (dfResult.isErr()) {
@@ -2865,12 +2885,14 @@ static bool CreateDateTimePartArray(
   return true;
 }
 
-static bool FormatToPartsDateTime(JSContext* cx,
+/**
+ * FormatDateTimeToParts ( dateTimeFormat, x )
+ */
+static bool FormatDateTimeToParts(JSContext* cx,
                                   const mozilla::intl::DateTimeFormat* df,
-                                  ClippedTime x, DateTimeSource dateTimeSource,
+                                  EpochMilliseconds x,
+                                  DateTimeSource dateTimeSource,
                                   MutableHandle<JS::Value> result) {
-  MOZ_ASSERT(x.isValid());
-
   FormatBuffer<char16_t, INITIAL_CHAR_BUFFER_SIZE> buffer(cx);
   mozilla::intl::DateTimePartVector parts;
   auto r = df->TryFormatToParts(x.toDouble(), buffer, parts);
@@ -2882,7 +2904,10 @@ static bool FormatToPartsDateTime(JSContext* cx,
   return CreateDateTimePartArray(cx, buffer, dateTimeSource, parts, result);
 }
 
-static bool FormatToPartsDateTime(JSContext* cx,
+/**
+ * FormatDateTimeToParts ( dateTimeFormat, x )
+ */
+static bool FormatDateTimeToParts(JSContext* cx,
                                   Handle<DateTimeFormatObject*> dateTimeFormat,
                                   const DateTimeValue& date,
                                   MutableHandle<JS::Value> result) {
@@ -2890,12 +2915,12 @@ static bool FormatToPartsDateTime(JSContext* cx,
   if (!df) {
     return false;
   }
-  return FormatToPartsDateTime(cx, df, date.time, DateTimeSource::No, result);
+  return FormatDateTimeToParts(cx, df, date.time, DateTimeSource::No, result);
 }
 
 struct DateTimeRangeValue {
-  ClippedTime start;
-  ClippedTime end;
+  EpochMilliseconds start;
+  EpochMilliseconds end;
   DateTimeValueKind kind{};
 };
 
@@ -2983,8 +3008,9 @@ bool js::intl::FormatDateTime(JSContext* cx,
   auto x = JS::TimeClip(millis);
   MOZ_ASSERT(x.isValid());
 
-  return FormatDateTime(cx, dateTimeFormat, {x, DateTimeValueKind::Number},
-                        result);
+  auto epochMillis = EpochMilliseconds{x};
+  auto dateTime = DateTimeValue{epochMillis, DateTimeValueKind::Number};
+  return FormatDateTime(cx, dateTimeFormat, dateTime, result);
 }
 
 /**
@@ -3065,11 +3091,8 @@ static mozilla::intl::DateIntervalFormat* GetOrCreateDateIntervalFormat(
 static bool PartitionDateTimeRangePattern(
     JSContext* cx, const mozilla::intl::DateTimeFormat* df,
     const mozilla::intl::DateIntervalFormat* dif,
-    mozilla::intl::AutoFormattedDateInterval& formatted, ClippedTime x,
-    ClippedTime y, bool* equal) {
-  MOZ_ASSERT(x.isValid());
-  MOZ_ASSERT(y.isValid());
-
+    mozilla::intl::AutoFormattedDateInterval& formatted, EpochMilliseconds x,
+    EpochMilliseconds y, bool* equal) {
   auto result =
       dif->TryFormatDateTime(x.toDouble(), y.toDouble(), df, formatted, equal);
   if (result.isErr()) {
@@ -3160,7 +3183,7 @@ static bool FormatDateTimeRangeToParts(
 
   // PartitionDateTimeRangePattern, step 12.
   if (equal) {
-    return FormatToPartsDateTime(cx, df, values.start, DateTimeSource::Yes,
+    return FormatDateTimeToParts(cx, df, values.start, DateTimeSource::Yes,
                                  result);
   }
 
@@ -3207,13 +3230,13 @@ static constexpr uint32_t DateTimeFormatFunction_DateTimeFormat = 0;
 /**
  * DateTime Format Functions
  */
-static bool DateTimeCompareFunction(JSContext* cx, unsigned argc, Value* vp) {
+static bool DateTimeFormatFunction(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Steps 1-2.
-  auto* compare = &args.callee().as<JSFunction>();
+  auto* format = &args.callee().as<JSFunction>();
   auto dtfValue =
-      compare->getExtendedSlot(DateTimeFormatFunction_DateTimeFormat);
+      format->getExtendedSlot(DateTimeFormatFunction_DateTimeFormat);
   Rooted<DateTimeFormatObject*> dateTimeFormat(
       cx, &dtfValue.toObject().as<DateTimeFormatObject>());
 
@@ -3239,7 +3262,7 @@ static bool dateTimeFormat_format(JSContext* cx, const CallArgs& args) {
   if (!boundFormat) {
     Handle<PropertyName*> funName = cx->names().empty_;
     auto* fn =
-        NewNativeFunction(cx, DateTimeCompareFunction, 1, funName,
+        NewNativeFunction(cx, DateTimeFormatFunction, 1, funName,
                           gc::AllocKind::FUNCTION_EXTENDED, GenericObject);
     if (!fn) {
       return false;
@@ -3283,7 +3306,7 @@ static bool dateTimeFormat_formatToParts(JSContext* cx, const CallArgs& args) {
   }
 
   // Step 5.
-  return FormatToPartsDateTime(cx, dateTimeFormat, x, args.rval());
+  return FormatDateTimeToParts(cx, dateTimeFormat, x, args.rval());
 }
 
 /**
@@ -3378,13 +3401,21 @@ static bool dateTimeFormat_resolvedOptions(JSContext* cx,
     return false;
   }
 
+  auto* calendar = ResolveCalendar(cx, dateTimeFormat);
+  if (!calendar) {
+    return false;
+  }
   if (!options.emplaceBack(NameToId(cx->names().calendar),
-                           StringValue(dateTimeFormat->getCalendar()))) {
+                           StringValue(calendar))) {
     return false;
   }
 
+  auto* numberingSystem = ResolveNumberingSystem(cx, dateTimeFormat);
+  if (!numberingSystem) {
+    return false;
+  }
   if (!options.emplaceBack(NameToId(cx->names().numberingSystem),
-                           StringValue(dateTimeFormat->getNumberingSystem()))) {
+                           StringValue(numberingSystem))) {
     return false;
   }
 
@@ -3513,7 +3544,7 @@ bool js::intl::TemporalObjectToLocaleString(
     return false;
   }
 
-  JS::ClippedTime x;
+  EpochMilliseconds x;
   if (kind == DateTimeValueKind::TemporalZonedDateTime) {
     auto zonedDateTime = thisValue.as<ZonedDateTimeObject>();
     if (!HandleDateTimeTemporalZonedDateTime(cx, dateTimeFormat, zonedDateTime,

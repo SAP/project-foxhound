@@ -32,6 +32,9 @@ class StartupActivityLog {
     private val _log = mutableListOf<LogEntry>()
     val log: List<LogEntry> = _log
 
+    /**
+     * Registers the activity and process lifecycle observers.
+     */
     fun registerInAppOnCreate(
         application: Application,
         processLifecycleOwner: LifecycleOwner = ProcessLifecycleOwner.get(),
@@ -40,9 +43,15 @@ class StartupActivityLog {
         application.registerActivityLifecycleCallbacks(StartupLogActivityLifecycleCallbacks())
     }
 
+    /**
+     * Returns the app and activity lifecycle observers for testing.
+     */
     @VisibleForTesting(otherwise = NONE)
     fun getObserversForTesting() = Pair(StartupLogAppLifecycleObserver(), StartupLogActivityLifecycleCallbacks())
 
+    /**
+     * Logs the captured startup entries.
+     */
     @VisibleForTesting(otherwise = PRIVATE)
     fun logEntries(loggerArg: Logger = logger, logLevel: Log.Priority = Log.logLevel) {
         // Optimization: we want to avoid the potentially expensive conversions
@@ -64,6 +73,9 @@ class StartupActivityLog {
         loggerArg.debug(transformedEntries.toString())
     }
 
+    /**
+     * [DefaultLifecycleObserver] that logs app-level start and stop events.
+     */
     @VisibleForTesting(otherwise = PRIVATE)
     inner class StartupLogAppLifecycleObserver : DefaultLifecycleObserver {
         override fun onStart(owner: LifecycleOwner) {
@@ -77,6 +89,9 @@ class StartupActivityLog {
         }
     }
 
+    /**
+     * [DefaultActivityLifecycleCallbacks] that logs activity-level events.
+     */
     @VisibleForTesting(otherwise = PRIVATE)
     inner class StartupLogActivityLifecycleCallbacks : DefaultActivityLifecycleCallbacks {
         override fun onActivityCreated(activity: Activity, bundle: Bundle?) {
@@ -96,11 +111,29 @@ class StartupActivityLog {
      * A log entry with its detailed information for the [StartupActivityLog].
      */
     sealed class LogEntry {
+        /**
+         * Represents an application-started event.
+         */
         object AppStarted : LogEntry()
+
+        /**
+         * Represents an application-stopped event.
+         */
         object AppStopped : LogEntry()
 
+        /**
+         * Represents an activity-created event.
+         */
         data class ActivityCreated(val activityClass: Class<out Activity>) : LogEntry()
+
+        /**
+         * Represents an activity-started event.
+         */
         data class ActivityStarted(val activityClass: Class<out Activity>) : LogEntry()
+
+        /**
+         * Represents an activity-stopped event.
+         */
         data class ActivityStopped(val activityClass: Class<out Activity>) : LogEntry()
     }
 }

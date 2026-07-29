@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +8,7 @@
 
 add_task(async function run_test() {
   do_get_profile();
+  Services.fog.initializeFOG();
 
   // Simulate starting in safe mode.
   let xulRuntime = {
@@ -62,4 +62,12 @@ add_task(async function run_test() {
     ok(/NS_ERROR_FAILURE/.test(e), "expecting NS_ERROR_FAILURE");
   }
   ok(caughtException, "addModule should throw when in safe mode");
+
+  // Though we loaded in safe mode, no NSS initialization fallbacks should have been used.
+  ok(!Glean.nss.initializationFallbacks.READ_ONLY.testGetValue());
+  ok(!Glean.nss.initializationFallbacks.RENAME_MODULE_DB.testGetValue());
+  ok(
+    !Glean.nss.initializationFallbacks.RENAME_MODULE_DB_READ_ONLY.testGetValue()
+  );
+  ok(!Glean.nss.initializationFallbacks.NO_DB_INIT.testGetValue());
 });

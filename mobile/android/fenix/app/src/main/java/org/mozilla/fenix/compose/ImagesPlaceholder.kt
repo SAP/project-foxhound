@@ -6,7 +6,6 @@ package org.mozilla.fenix.compose
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -77,7 +76,7 @@ private fun DefaultImagePlaceholderPreview() {
         DefaultImagePlaceholder(
             modifier = Modifier
                 .size(200.dp, 100.dp)
-                .clip(RoundedCornerShape(8.dp)),
+                .clip(MaterialTheme.shapes.small),
         )
     }
 }

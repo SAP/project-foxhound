@@ -25,7 +25,7 @@
       'type': 'none',
       'direct_dependent_settings': {
         'sources': [
-          'client_config.cc',
+          'config.cc',
           'common.cc',
           'mutators.cc',
           'socket.cc'
@@ -44,7 +44,7 @@
           'common.cc',
           'mutators.cc',
           'server_certs.cc',
-          'server_config.cc',
+          'config.cc',
           'socket.cc'
         ],
         'include_dirs': [

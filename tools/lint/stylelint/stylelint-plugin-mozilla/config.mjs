@@ -4,20 +4,20 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-import { createRawValuesObject } from "./helpers.mjs";
-import { SYSTEM_COLORS } from "./referenceColors.mjs";
+import { SYSTEM_COLORS, createRawValuesObject } from "./helpers.mjs";
 
 /**
  * @typedef {object} PropertyTypeConfig
  * @property {string[]} allow Allowed keyword values (e.g., "auto", "none", "transparent")
  * @property {string[]} allowAlias Allowed keyword values that should only be used via local variables
- * @property {string[]} [tokenTypes] Token categories from tokens-table.mjs whose tokens are valid
- * @property {string[]} [aliasTokenTypes] Token categories from tokens-table.mjs whose tokens are valid only when used through local custom properties
+ * @property {string[]} [tokenTypes] Token categories from semantic-categories.mjs whose tokens are valid
+ * @property {string[]} [aliasTokenTypes] Token categories from semantic-categories.mjs whose tokens are valid only when used through local custom properties
  * @property {string[]} [allowFunctions] Allowed CSS function names (e.g., "url", "linear-gradient")
  * @property {boolean} [allowUnits] Whether values with CSS units (e.g., "10px", "50%") are allowed
  * @property {string[]} [allowedUnits] Specific unit types allowed (e.g., ["em", "ch", "%"]). If provided, only these units are allowed when allowUnits is true
  * @property {Record<string, string>} [customFixes] Map of raw values to their token replacements for autofix
  * @property {Record<string, string>} [customSuggestions] Map of raw values to their token replacements for suggested fixes
+ * @property {boolean} [warnSystemColors] Whether to warn about system colors when there are no suitable tokens to use.
  */
 
 const customColorFixes = {
@@ -72,6 +72,15 @@ const systemColorSuggestions = {
   windowframe: "var(--button-border-color)",
   windowtext: "var(--text-color)",
 };
+
+// Some "primitive" color tokens can be used directly for background-color, color, fill, stroke, etc.
+const versatileColorTokens = [
+  "--color-accent-primary",
+  "--color-accent-primary-hover",
+  "--color-accent-primary-active",
+  "--color-accent-primary-selected",
+  "--color-accent-attention",
+];
 
 /** @type {PropertyTypeConfig} */
 const BackgroundColor = {
@@ -139,27 +148,32 @@ const BackgroundColor = {
     "--tab-group-color-invert",
     "--tab-group-color-pale",
     "--tab-group-color",
+    "--tab-group-background-color",
+    "--tab-group-text-color",
+    "--tab-group-background-color-hover",
     "--tab-loading-fill",
     "--tabgroup-swatch-color-invert",
     "--tabgroup-swatch-color",
-    "--toolbar-bgcolor",
-    "--toolbarbutton-active-background",
-    "--toolbarbutton-hover-background",
-    "--toolbox-bgcolor-inactive",
-    "--toolbox-bgcolor",
-    "--urlbar-box-active-bgcolor",
-    "--urlbar-box-bgcolor",
-    "--urlbar-box-focus-bgcolor",
-    "--urlbar-box-hover-bgcolor",
-    "--urlbarView-highlight-background",
-    "--urlbarView-hover-background",
+    "--toolbar-background-color",
+    "--toolbarbutton-background-color-active",
+    "--toolbarbutton-background-color-hover",
+    "--toolbox-background-color-inactive",
+    "--toolbox-background-color",
+    "--urlbar-box-background-color",
+    "--urlbar-box-background-color-focus",
+    "--urlbar-box-background-color-hover",
+    "--urlbar-box-background-color-active",
+    "--urlbarview-background-color-hover",
+    "--urlbarview-background-color-selected",
     "--urlbarView-result-button-hover-background-color",
     "--urlbarView-result-button-selected-background-color",
+    ...versatileColorTokens,
   ],
   tokenTypes: ["background-color"],
   aliasTokenTypes: ["color", "text-color", "border-color", "icon-color"],
   customFixes: customColorFixes,
   customSuggestions: systemColorSuggestions,
+  warnSystemColors: true,
 };
 
 /** @type {PropertyTypeConfig} */
@@ -193,6 +207,7 @@ const BackgroundPosition = {
 /** @type {PropertyTypeConfig} */
 const BackgroundSize = {
   allow: ["auto", "cover", "contain"],
+  allowFunctions: ["max"],
   tokenTypes: ["size", "space", "icon-size"],
   aliasTokenTypes: ["dimension"],
   allowUnits: true,
@@ -222,10 +237,14 @@ const Fill = {
     "context-stroke",
     "currentColor",
     "transparent",
+    "white",
+    "black",
   ],
+  allowedTokens: [...versatileColorTokens],
   allowFunctions: ["url"],
   tokenTypes: ["icon-color"],
   aliasTokenTypes: [
+    "color",
     "background-color",
     "border-color",
     "text-color",
@@ -247,6 +266,7 @@ const FontSize = {
     "xxx-large",
     "smaller",
     "larger",
+    "1em",
   ],
   tokenTypes: ["font-size"],
 };
@@ -282,10 +302,12 @@ const BorderColor = {
     "0",
   ],
   allowAlias: [...SYSTEM_COLORS],
-  tokenTypes: ["border-color", "border", "outline"],
+  allowedTokens: [...versatileColorTokens],
+  tokenTypes: ["border-color", "border", "outline-color", "outline"],
   aliasTokenTypes: ["color", "background-color", "text-color"],
   customFixes: customColorFixes,
   customSuggestions: systemColorSuggestions,
+  warnSystemColors: true,
 };
 
 /** @type {PropertyTypeConfig} */
@@ -307,7 +329,7 @@ const BorderStyle = {
 /** @type {PropertyTypeConfig} */
 const BorderWidth = {
   allow: ["0"],
-  tokenTypes: ["border-width", "outline"],
+  tokenTypes: ["border-width", "outline-width", "outline"],
   allowUnits: true,
 };
 
@@ -350,21 +372,30 @@ const FlexShorthand = {
   tokenTypes: ["size", "icon-size"],
 };
 
+const Opacity = {
+  allow: ["0", "1"],
+  tokenTypes: ["opacity"],
+};
+
 /** @type {PropertyTypeConfig} */
 const TextColor = {
   allow: ["currentColor", "white", "black"],
   allowAlias: [...SYSTEM_COLORS],
+  allowedTokens: [...versatileColorTokens, "--toolbarseparator-color"],
   tokenTypes: ["text-color", "icon-color"],
   aliasTokenTypes: ["color", "background-color", "border-color"],
   customFixes: customColorFixes,
   customSuggestions: systemColorSuggestions,
+  warnSystemColors: true,
 };
 
 /** @type {PropertyTypeConfig} */
 const Space = {
-  allow: ["0", "auto"],
+  allow: ["-1px", "0", "1px", "auto"],
   tokenTypes: ["space"],
   aliasTokenTypes: ["dimension"],
+  allowUnits: true,
+  allowedUnits: ["ch", "em", "lh"],
   customFixes: {
     "2px": "var(--space-xxsmall)",
     "4px": "var(--space-xsmall)",
@@ -378,11 +409,22 @@ const Space = {
 
 /** @type {PropertyTypeConfig} */
 const Size = {
-  allow: ["0", "auto", "none", "fit-content", "min-content", "max-content"],
+  allow: [
+    "0",
+    "1px",
+    "auto",
+    "none",
+    "fit-content",
+    "min-content",
+    "max-content",
+    "stretch",
+    "-moz-available",
+  ],
+  allowFunctions: ["max"],
   tokenTypes: ["size", "icon-size"],
   aliasTokenTypes: ["dimension"],
   allowUnits: true,
-  allowedUnits: ["em", "ch", "%", "vh", "vw"],
+  allowedUnits: ["%", "ch", "em", "vh", "vw"],
   customFixes: {
     ...createRawValuesObject(["size", "icon-size"]),
     "0.75rem": "var(--size-item-xsmall)",
@@ -400,10 +442,19 @@ const Size = {
 
 /** @type {PropertyTypeConfig} */
 const Stroke = {
-  allow: ["none", "context-stroke", "currentColor", "transparent"],
+  allow: [
+    "none",
+    "context-stroke",
+    "currentColor",
+    "transparent",
+    "white",
+    "black",
+  ],
   allowFunctions: ["url"],
+  allowedTokens: [...versatileColorTokens],
   tokenTypes: ["icon-color"],
   aliasTokenTypes: [
+    "color",
     "background-color",
     "border-color",
     "text-color",
@@ -873,5 +924,8 @@ export const propertyConfig = {
   },
   "scroll-padding-top": {
     validTypes: [Space],
+  },
+  opacity: {
+    validTypes: [Opacity],
   },
 };

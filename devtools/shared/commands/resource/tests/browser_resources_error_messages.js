@@ -185,9 +185,9 @@ async function triggerErrors(tab, resourceCommand) {
       }
     );
 
-    await ContentTask.spawn(
+    await SpecialPowers.spawn(
       tab.linkedBrowser,
-      expression,
+      [expression],
       function frameScript(expr) {
         const document = content.document;
         const scriptEl = document.createElement("script");
@@ -210,8 +210,11 @@ function checkPageErrorResource(pageErrorResource, expected) {
   // Let's remove test harness related frames in stacktrace
   const clonedPageErrorResource = { ...pageErrorResource };
   if (clonedPageErrorResource.stacktrace) {
-    const index = clonedPageErrorResource.stacktrace.findIndex(frame =>
-      frame.filename.startsWith("resource://testing-common/content-task.js")
+    const index = clonedPageErrorResource.stacktrace.findIndex(
+      frame =>
+        frame.filename.startsWith(
+          "resource://testing-common/content-task.js"
+        ) || frame.filename.startsWith(gTestPath)
     );
     if (index > -1) {
       clonedPageErrorResource.stacktrace =

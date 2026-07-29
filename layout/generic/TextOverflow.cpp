@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,33 +26,15 @@ using mozilla::layout::TextDrawTarget;
 
 namespace mozilla::css {
 
-class LazyReferenceRenderingDrawTargetGetterFromFrame final
-    : public gfxFontGroup::LazyReferenceDrawTargetGetter {
- public:
-  typedef mozilla::gfx::DrawTarget DrawTarget;
-
-  explicit LazyReferenceRenderingDrawTargetGetterFromFrame(nsIFrame* aFrame)
-      : mFrame(aFrame) {}
-  virtual already_AddRefed<DrawTarget> GetRefDrawTarget() override {
-    UniquePtr<gfxContext> ctx =
-        mFrame->PresShell()->CreateReferenceRenderingContext();
-    RefPtr<DrawTarget> dt = ctx->GetDrawTarget();
-    return dt.forget();
-  }
-
- private:
-  nsIFrame* mFrame;
-};
-
-static gfxTextRun* GetEllipsisTextRun(nsIFrame* aFrame) {
+static already_AddRefed<gfxTextRun> MakeEllipsisTextRun(nsIFrame* aFrame) {
   RefPtr<nsFontMetrics> fm =
       nsLayoutUtils::GetInflatedFontMetricsForFrame(aFrame);
-  LazyReferenceRenderingDrawTargetGetterFromFrame lazyRefDrawTargetGetter(
-      aFrame);
-  return fm->GetThebesFontGroup()->GetEllipsisTextRun(
+  UniquePtr<gfxContext> ctx =
+      aFrame->PresShell()->CreateReferenceRenderingContext();
+  return fm->GetThebesFontGroup()->MakeEllipsisTextRun(
       aFrame->PresContext()->AppUnitsPerDevPixel(),
       nsLayoutUtils::GetTextRunOrientFlagsForStyle(aFrame->Style()),
-      lazyRefDrawTargetGetter);
+      ctx->GetDrawTarget());
 }
 
 static nsIFrame* GetSelfOrNearestBlock(nsIFrame* aFrame) {
@@ -148,11 +128,13 @@ class nsDisplayTextOverflowMarker final : public nsPaintedDisplayItem {
  public:
   nsDisplayTextOverflowMarker(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
                               const nsRect& aRect, nscoord aAscent,
-                              const StyleTextOverflowSide& aStyle)
+                              const StyleTextOverflowSide& aStyle,
+                              gfxTextRun* aTextRun)
       : nsPaintedDisplayItem(aBuilder, aFrame),
         mRect(aRect),
         mStyle(aStyle),
-        mAscent(aAscent) {
+        mAscent(aAscent),
+        mTextRun(aTextRun) {
     MOZ_COUNT_CTOR(nsDisplayTextOverflowMarker);
   }
 
@@ -193,7 +175,8 @@ class nsDisplayTextOverflowMarker final : public nsPaintedDisplayItem {
  private:
   nsRect mRect;  // in reference frame coordinates
   const StyleTextOverflowSide mStyle;
-  nscoord mAscent;  // baseline for the marker text in mRect
+  nscoord mAscent;              // baseline for the marker text in mRect
+  RefPtr<gfxTextRun> mTextRun;  // precached textrun, if available
 };
 
 static void PaintTextShadowCallback(gfxContext* aCtx, nsPoint aShadowOffset,
@@ -233,23 +216,23 @@ void nsDisplayTextOverflowMarker::PaintTextToContext(gfxContext* aCtx,
   }
   pt += aOffsetFromRect;
 
-  if (mStyle.IsEllipsis()) {
-    gfxTextRun* textRun = GetEllipsisTextRun(mFrame);
-    if (textRun) {
-      NS_ASSERTION(!textRun->IsRightToLeft(),
-                   "Ellipsis textruns should always be LTR!");
-      gfx::Point gfxPt(pt.x, pt.y);
-      auto& paletteCache = mFrame->PresContext()->FontPaletteCache();
-      textRun->Draw(gfxTextRun::Range(textRun), gfxPt,
-                    gfxTextRun::DrawParams(aCtx, paletteCache));
-    }
-  } else {
-    RefPtr<nsFontMetrics> fm =
-        nsLayoutUtils::GetInflatedFontMetricsForFrame(mFrame);
-    nsDependentAtomString str16(mStyle.AsString().AsAtom());
-    nsLayoutUtils::DrawString(mFrame, *fm, aCtx, str16.get(), str16.Length(),
-                              pt);
+  if (mTextRun) {
+    gfx::Point gfxPt(pt.x, pt.y);
+    auto& paletteCache = mFrame->PresContext()->FontPaletteCache();
+    mTextRun->Draw(gfxTextRun::Range(mTextRun), gfxPt,
+                   gfxTextRun::DrawParams(aCtx, paletteCache));
+    return;
   }
+
+  if (mStyle.IsEllipsis()) [[unlikely]] {
+    // Text-run allocation might've failed, in which case well...
+    return;
+  }
+
+  RefPtr<nsFontMetrics> fm =
+      nsLayoutUtils::GetInflatedFontMetricsForFrame(mFrame);
+  nsDependentAtomString str16(mStyle.AsString().AsAtom());
+  nsLayoutUtils::DrawString(mFrame, *fm, aCtx, str16.get(), str16.Length(), pt);
 }
 
 bool nsDisplayTextOverflowMarker::CreateWebRenderCommands(
@@ -264,8 +247,8 @@ bool nsDisplayTextOverflowMarker::CreateWebRenderCommands(
   }
 
   // Run the rendering algorithm to capture the glyphs and shadows
-  RefPtr<TextDrawTarget> textDrawer =
-      new TextDrawTarget(aBuilder, aResources, aSc, aManager, this, bounds);
+  auto textDrawer = MakeRefPtr<TextDrawTarget>(aBuilder, aResources, aSc,
+                                               aManager, this, bounds);
   MOZ_ASSERT(textDrawer->IsValid());
   if (!textDrawer->IsValid()) {
     return false;
@@ -333,21 +316,21 @@ TextOverflow::TextOverflow(nsDisplayListBuilder* aBuilder,
 }
 
 /* static */
-Maybe<TextOverflow> TextOverflow::WillProcessLines(
+UniquePtr<TextOverflow> TextOverflow::WillProcessLines(
     nsDisplayListBuilder* aBuilder, nsBlockFrame* aBlockFrame) {
   // Ignore text-overflow and -webkit-line-clamp for event and frame visibility
   // processing.
   if (aBuilder->IsForEventDelivery() || aBuilder->IsForFrameVisibility() ||
       !CanHaveOverflowMarkers(aBlockFrame)) {
-    return Nothing();
+    return nullptr;
   }
   ScrollContainerFrame* scrollContainerFrame =
       nsLayoutUtils::GetScrollContainerFrameFor(aBlockFrame);
   if (scrollContainerFrame && scrollContainerFrame->IsTransformingByAPZ()) {
     // If the APZ is actively scrolling this, don't bother with markers.
-    return Nothing();
+    return nullptr;
   }
-  return Some(TextOverflow(aBuilder, aBlockFrame));
+  return UniquePtr<TextOverflow>(new TextOverflow(aBuilder, aBlockFrame));
 }
 
 void TextOverflow::ExamineFrameSubtree(nsIFrame* aFrame,
@@ -596,10 +579,8 @@ LogicalRect TextOverflow::ExamineLineFrames(nsLineBox* aLine,
     // Analyze the frames on aLine for the overflow situation at the content
     // edges and at the edges of the area between the markers.
     bool foundVisibleTextOrAtomic = false;
-    int32_t n = aLine->GetChildCount();
-    nsIFrame* child = aLine->mFirstChild;
     InnerClipEdges clippedMarkerEdges;
-    for (; n-- > 0; child = child->GetNextSibling()) {
+    for (nsIFrame* child : aLine->ChildFrames()) {
       ExamineFrameSubtree(child, contentArea, insideMarkersArea, aFramesToHide,
                           aAlignmentEdges, &foundVisibleTextOrAtomic,
                           &clippedMarkerEdges);
@@ -748,8 +729,8 @@ void TextOverflow::ProcessLine(const nsDisplayListSet& aLists, nsLineBox* aLine,
 
   // Clip and remove display items as needed at the final marker edges.
   nsDisplayList* lists[] = {aLists.Content(), aLists.PositionedDescendants()};
-  for (uint32_t i = 0; i < std::size(lists); ++i) {
-    PruneDisplayListContents(lists[i], framesToHide, insideMarkersArea);
+  for (auto& list : lists) {
+    PruneDisplayListContents(list, framesToHide, insideMarkersArea);
   }
   CreateMarkers(aLine, needIStart, needIEnd, insideMarkersArea, contentArea,
                 aLineNumber);
@@ -840,7 +821,7 @@ bool TextOverflow::CanHaveOverflowMarkers(nsBlockFrame* aBlockFrame,
   }
 
   // Inhibit the markers if a descendant content owns the caret.
-  RefPtr<nsCaret> caret = aBlockFrame->PresShell()->GetCaret();
+  RefPtr<nsCaret> caret = aBlockFrame->PresShell()->GetActiveCaret();
   if (caret && caret->IsVisible()) {
     RefPtr<dom::Selection> domSelection = caret->GetSelection();
     if (domSelection) {
@@ -878,7 +859,8 @@ void TextOverflow::CreateMarkers(const nsLineBox* aLine, bool aCreateIStart,
 
     mMarkerList.AppendNewToTopWithIndex<nsDisplayTextOverflowMarker>(
         mBuilder, mBlock, /* aIndex = */ (aLineNumber << 1) + 0, markerRect,
-        aLine->GetLogicalAscent(), *mIStart.mStyle);
+        aLine->GetLogicalAscent(), *mIStart.mStyle,
+        mIStart.mStyle->IsEllipsis() ? GetEllipsisTextRun() : nullptr);
   }
 
   if (aCreateIEnd) {
@@ -897,8 +879,18 @@ void TextOverflow::CreateMarkers(const nsLineBox* aLine, bool aCreateIStart,
         mBuilder, mBlock, /* aIndex = */ (aLineNumber << 1) + 1, markerRect,
         aLine->GetLogicalAscent(),
         mIEnd.mHasBlockEllipsis ? StyleTextOverflowSide::Ellipsis()
-                                : *mIEnd.mStyle);
+                                : *mIEnd.mStyle,
+        mIEnd.mHasBlockEllipsis || mIEnd.mStyle->IsEllipsis()
+            ? GetEllipsisTextRun()
+            : nullptr);
   }
+}
+
+gfxTextRun* TextOverflow::GetEllipsisTextRun() {
+  if (!mEllipsisTextRun) {
+    mEllipsisTextRun = MakeEllipsisTextRun(mBlock);
+  }
+  return mEllipsisTextRun;
 }
 
 void TextOverflow::Marker::SetupString(nsIFrame* aFrame) {
@@ -912,7 +904,7 @@ void TextOverflow::Marker::SetupString(nsIFrame* aFrame) {
   // separately, if both apply to the element, we will always use "…" as the
   // string for text-overflow.
   if (HasBlockEllipsis(aFrame) || mStyle->IsEllipsis()) {
-    gfxTextRun* textRun = GetEllipsisTextRun(aFrame);
+    RefPtr<gfxTextRun> textRun = MakeEllipsisTextRun(aFrame);
     if (textRun) {
       mISize = textRun->GetAdvanceWidth();
     } else {

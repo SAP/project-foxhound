@@ -1,22 +1,7 @@
 "use strict";
 
-/**
- * Tests the FX_TAB_SWITCH_SPINNER_VISIBLE_MS telemetry probe
- */
 const MIN_HANG_TIME = 500; // ms
 const MAX_HANG_TIME = 5 * 1000; // ms
-
-/**
- * Returns the sum of all values in an array.
- *
- * @param  {Array}  aArray An array of integers
- * @return {number} The sum of the integers in the array
- */
-function sum(aArray) {
-  return aArray.reduce(function (previousValue, currentValue) {
-    return previousValue + currentValue;
-  });
-}
 
 /**
  * Causes the content process for a remote <xul:browser> to run
@@ -32,6 +17,8 @@ function sum(aArray) {
  *        Resolves once the hang is done.
  */
 function hangContentProcess(browser, aMs) {
+  // TODO: Switch to SpecialPowers.spawn
+  // eslint-disable-next-line mozilla/reject-contenttask-spawn
   return ContentTask.spawn(browser, aMs, function (ms) {
     let then = Date.now();
     while (Date.now() - then < ms) {
@@ -40,16 +27,22 @@ function hangContentProcess(browser, aMs) {
   });
 }
 
-/**
- * A generator intended to be run as a Task. It tests one of the tab spinner
- * telemetry probes.
- *
- * @param {string} aProbe The probe to test. Should be:
- *                  - FX_TAB_SWITCH_SPINNER_VISIBLE_MS
- */
-async function testProbe(aProbe) {
-  info(`Testing probe: ${aProbe}`);
-  let histogram = Services.telemetry.getHistogramById(aProbe);
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["test.wait300msAfterTabSwitch", true],
+      ["dom.ipc.processCount", 1],
+      // We can interrupt JS to paint now, which is great for
+      // users, but bad for testing spinners. We temporarily
+      // disable that feature for this test so that we can
+      // easily get ourselves into a predictable tab spinner
+      // state.
+      ["browser.tabs.remote.force-paint", false],
+    ],
+  });
+});
+
+add_task(async function test_spinner_visible() {
   let delayTime = MIN_HANG_TIME + 1; // Pick a bucket arbitrarily
 
   // The tab spinner does not show up instantly. We need to hang for a little
@@ -69,34 +62,12 @@ async function testProbe(aProbe) {
   await BrowserTestUtils.switchTab(gBrowser, origTab);
 
   let tabHangPromise = hangContentProcess(hangBrowser, delayTime);
-  histogram.clear();
+  Services.fog.testResetFOG();
   let hangTabSwitch = BrowserTestUtils.switchTab(gBrowser, hangTab);
   await tabHangPromise;
   await hangTabSwitch;
 
-  // Now we should have a hang in our histogram.
-  let snapshot = histogram.snapshot();
+  Assert.greater(Glean.browserTabswitch.spinnerVisible.testGetValue().sum, 0);
+
   BrowserTestUtils.removeTab(hangTab);
-  Assert.greater(
-    sum(Object.values(snapshot.values)),
-    0,
-    `Spinner probe should now have a value in some bucket`
-  );
-}
-
-add_setup(async function () {
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      ["test.wait300msAfterTabSwitch", true],
-      ["dom.ipc.processCount", 1],
-      // We can interrupt JS to paint now, which is great for
-      // users, but bad for testing spinners. We temporarily
-      // disable that feature for this test so that we can
-      // easily get ourselves into a predictable tab spinner
-      // state.
-      ["browser.tabs.remote.force-paint", false],
-    ],
-  });
 });
-
-add_task(testProbe.bind(null, "FX_TAB_SWITCH_SPINNER_VISIBLE_MS"));

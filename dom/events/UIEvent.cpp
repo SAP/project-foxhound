@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -243,9 +241,9 @@ Modifiers UIEvent::ComputeModifierState(const nsAString& aModifiersList) {
   aModifiersList.BeginReading(listStart);
   aModifiersList.EndReading(listEnd);
 
-  for (uint32_t i = 0; i < std::size(kPairs); i++) {
+  for (auto entry : kPairs) {
     nsAString::const_iterator start(listStart), end(listEnd);
-    if (!FindInReadable(NS_ConvertASCIItoUTF16(kPairs[i].name), start, end)) {
+    if (!FindInReadable(NS_ConvertASCIItoUTF16(entry.name), start, end)) {
       continue;
     }
 
@@ -253,7 +251,7 @@ Modifiers UIEvent::ComputeModifierState(const nsAString& aModifiersList) {
         (end != listEnd && !NS_IsAsciiWhitespace(*(end)))) {
       continue;
     }
-    modifiers |= kPairs[i].modifier;
+    modifiers |= entry.modifier;
   }
 
   return modifiers;

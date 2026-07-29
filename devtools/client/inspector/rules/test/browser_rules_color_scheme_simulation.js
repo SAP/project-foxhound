@@ -118,7 +118,7 @@ add_task(async function () {
 
   await navigateTo(TEST_URI);
   await selectNode("div", inspector);
-  await waitFor(() => view.element.children[1]);
+  await waitFor(() => getRuleViewRuleEditorAt(view, 1));
   ok(
     await divHasDarkSchemeStyling(),
     "dark mode is still simulated after reloading the page"

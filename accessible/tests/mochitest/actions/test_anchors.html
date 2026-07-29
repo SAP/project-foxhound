@@ -17,55 +17,38 @@
           src="../actions.js"></script>
 
   <script type="application/javascript">
-    // //////////////////////////////////////////////////////////////////////////
-    // Event checkers
+    /* global testAction */
 
-    function scrollingChecker(aAcc) {
-      this.type = EVENT_SCROLLING_START;
-      this.target = aAcc;
-      this.getID = function scrollingChecker_getID() {
-        return "scrolling start handling for " + prettyName(aAcc);
-      };
-    }
-
-    // //////////////////////////////////////////////////////////////////////////
-    // Test
-
-    // gA11yEventDumpID = "debug"; // debug stuff
-    // gA11yEventDumpToConsole = true; // debug stuff
-
-    function doTest() {
-      var actionsArray = [
-        {
-          ID: "anchor1",
-          actionName: "jump",
-          actionIndex: 0,
-          events: CLICK_EVENTS,
-          eventSeq: [
-            new scrollingChecker(getAccessible("bottom1")),
-          ],
-        },
-        { // jump again (test for bug 437607)
-          ID: "anchor1",
-          actionName: "jump",
-          actionIndex: 0,
-          events: CLICK_EVENTS,
-          eventSeq: [
-            new scrollingChecker(getAccessible("bottom1")),
-          ],
-        },
-        {
-          ID: "anchor2",
-          actionName: "jump",
-          actionIndex: 0,
-          events: CLICK_EVENTS,
-          eventSeq: [
-            new scrollingChecker(getAccessible("bottom2")),
-          ],
-        },
-      ];
-
-      testActions(actionsArray);
+    async function doTest() {
+      await testAction({
+        id: "anchor1",
+        actionName: "jump",
+        actionIndex: 0,
+        events: CLICK_EVENTS,
+        eventSeq: [
+          [EVENT_SCROLLING_START, getAccessible("bottom1")],
+        ],
+      });
+      // jump again (test for bug 437607)
+      await testAction({
+        id: "anchor1",
+        actionName: "jump",
+        actionIndex: 0,
+        events: CLICK_EVENTS,
+        eventSeq: [
+          [EVENT_SCROLLING_START, getAccessible("bottom1")],
+        ],
+      });
+      await testAction({
+        id: "anchor2",
+        actionName: "jump",
+        actionIndex: 0,
+        events: CLICK_EVENTS,
+        eventSeq: [
+          [EVENT_SCROLLING_START, getAccessible("bottom2")],
+        ],
+      });
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

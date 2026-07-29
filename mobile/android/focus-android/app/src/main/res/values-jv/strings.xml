@@ -149,7 +149,7 @@
   <string name="preference_category_privacy">Privasi</string>
   <string name="preference_privacy_category_cookies">Blokir kuki</string>
   <string name="preference_performance_block_javascript">Blokir JavaScript</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <!-- Item in Preferences that shows the about page. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar"). -->
   <string name="preference_about">Ngenani %1$s</string>
   <!-- Header for the list of installed search engines -->

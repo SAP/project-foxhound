@@ -45,7 +45,7 @@ add_setup(async function os_key_store_setup() {
 let rootDir = do_get_file("chromefiles/", true);
 
 function checkCardsAreEqual(importedCard, testCard, id) {
-  const CC_NUMBER_RE = /^(\*+)(.{4})$/;
+  const CC_NUMBER_RE = /^(\•+)(.{4})$/;
 
   Assert.equal(
     importedCard["cc-name"],

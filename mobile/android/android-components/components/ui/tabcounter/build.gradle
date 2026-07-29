@@ -16,6 +16,14 @@ android {
     }
 
     namespace = 'mozilla.components.ui.tabcounter'
+
+    testOptions {
+        animationsDisabled = true
+        execution = 'ANDROIDX_TEST_ORCHESTRATOR'
+        unitTests {
+            includeAndroidResources = true
+        }
+    }
 }
 
 dependencies {
@@ -37,6 +45,8 @@ dependencies {
 
     testImplementation project(":components:support-test")
 
+    testImplementation libs.androidx.activity.compose
+    testImplementation libs.androidx.compose.ui.test
     testImplementation libs.androidx.test.junit
     testImplementation libs.robolectric
 }

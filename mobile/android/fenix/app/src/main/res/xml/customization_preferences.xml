@@ -9,6 +9,7 @@
         android:layout="@layout/preference_cat_style"
         android:title="@string/preferences_app_icon"
         android:key="@string/pref_key_customization_category_app_icon"
+        app:allowDividerBelow="false"
         app:iconSpaceReserved="false">
         <org.mozilla.fenix.iconpicker.ui.AppIconPreference
             android:key="@string/pref_key_app_icon" />
@@ -64,7 +65,7 @@
         android:layout="@layout/preference_cat_style"
         android:title="@string/preferences_tab_strip"
         app:iconSpaceReserved="false">
-        <androidx.preference.SwitchPreference
+        <androidx.preference.SwitchPreferenceCompat
             android:key="@string/pref_key_tab_strip_show"
             android:title="@string/preference_tab_strip_show" />
     </androidx.preference.PreferenceCategory>
@@ -87,26 +88,28 @@
         android:key="@string/pref_key_customization_category_toolbar_shortcut"
         android:layout="@layout/preference_cat_style"
         android:title="@string/preferences_toolbar_shortcut"
-        android:visible="false"
         app:iconSpaceReserved="false" />
 
     <androidx.preference.PreferenceCategory
         android:layout="@layout/preference_cat_style"
         android:title="@string/preferences_gestures"
         app:iconSpaceReserved="false">
-        <androidx.preference.SwitchPreference
+        <androidx.preference.SwitchPreferenceCompat
             android:key="@string/pref_key_website_pull_to_refresh"
             android:title="@string/preference_gestures_website_pull_to_refresh"
             app:isPreferenceVisible="false" />
-        <androidx.preference.SwitchPreference
+        <androidx.preference.SwitchPreferenceCompat
             android:key="@string/pref_key_dynamic_toolbar"
             android:title="@string/preference_gestures_dynamic_toolbar" />
-        <androidx.preference.SwitchPreference
+        <androidx.preference.SwitchPreferenceCompat
             android:key="@string/pref_key_swipe_toolbar_switch_tabs"
             android:title="@string/preference_gestures_swipe_toolbar_switch_tabs_2" />
-        <androidx.preference.SwitchPreference
+        <androidx.preference.SwitchPreferenceCompat
             android:key="@string/pref_key_swipe_toolbar_show_tabs"
-            android:title="@string/preference_gestures_swipe_toolbar_show_tabs"
+            android:title="@string/preference_gestures_swipe_toolbar_show_tabs_2" />
+        <androidx.preference.SwitchPreferenceCompat
+            android:key="@string/pref_key_shake_gesture_enabled"
+            android:title="@string/preferences_shake_to_summarize"
             app:isPreferenceVisible="false" />
     </androidx.preference.PreferenceCategory>
 </androidx.preference.PreferenceScreen>

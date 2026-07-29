@@ -6,11 +6,11 @@ Support for running toolchain-building jobs via dedicated scripts
 """
 
 import os
+from typing import Literal, Optional, Union
 
 import taskgraph
 from mozshellutil import quote as shell_quote
-from taskgraph.util.schema import LegacySchema, optionally_keyed_by, resolve_keyed_by
-from voluptuous import Any, Optional, Required
+from taskgraph.util.schema import Schema, optionally_keyed_by, resolve_keyed_by
 
 from gecko_taskgraph import GECKO
 from gecko_taskgraph.transforms.job import configure_taskdesc_for_run, run_job_using
@@ -23,52 +23,50 @@ from gecko_taskgraph.util.hash import hash_paths
 
 CACHE_TYPE = "toolchains.v3"
 
-toolchain_run_schema = LegacySchema({
-    Required("using"): "toolchain-script",
+
+class ToolchainRunSchema(Schema, kw_only=True):
+    using: Literal["toolchain-script"]
     # The script (in taskcluster/scripts/misc) to run.
     # Python scripts are invoked with `mach python` so vendored libraries
     # are available.
-    Required("script"): str,
+    script: str
     # Arguments to pass to the script.
-    Optional("arguments"): [str],
+    arguments: Optional[list[str]] = None
     # If not false, tooltool downloads will be enabled via relengAPIProxy
     # for either just public files, or all files.  Not supported on Windows
-    Required("tooltool-downloads"): Any(
-        False,
-        "public",
-        "internal",
-    ),
+    tooltool_downloads: Union[bool, Literal["public", "internal"]]
     # Sparse profile to give to checkout using `run-task`.  If given,
     # Defaults to "toolchain-build". The value is relative to
     # "sparse-profile-prefix", optionally defined below is the path,
     # defaulting to "build/sparse-profiles".
     # i.e. `build/sparse-profiles/toolchain-build`.
     # If `None`, instructs `run-task` to not use a sparse profile at all.
-    Required("sparse-profile"): Any(str, None),
+    sparse_profile: Optional[str]
     # The relative path to the sparse profile.
-    Optional("sparse-profile-prefix"): str,
+    sparse_profile_prefix: Optional[str] = None
     # Paths/patterns pointing to files that influence the outcome of a
     # toolchain build.
-    Optional("resources"): [str],
+    resources: Optional[list[str]] = None
     # Path to the artifact produced by the toolchain job
-    Required("toolchain-artifact"): str,
-    Optional(
-        "toolchain-alias",
-        description="An alias that can be used instead of the real toolchain job name in "
-        "fetch stanzas for jobs.",
-    ): optionally_keyed_by("project", Any(None, str, [str])),
-    Optional(
-        "toolchain-env",
-        description="Additional env variables to add to the worker when using this toolchain",
-    ): {str: object},
-    Optional(
-        "toolchain-extract",
-        description="Whether the toolchain should be extracted after it is fetched "
-        + "(default: True)",
-    ): bool,
+    toolchain_artifact: str
+    # An alias that can be used instead of the real toolchain job name in
+    # fetch stanzas for jobs.
+    toolchain_alias: Optional[
+        optionally_keyed_by("project", Union[None, str, list[str]], use_msgspec=True)
+    ] = None
+    # Additional env variables to add to the worker when using this toolchain
+    toolchain_env: Optional[dict[str, object]] = None
+    # Whether the toolchain should be extracted after it is fetched
+    # (default: True)
+    toolchain_extract: Optional[bool] = None
     # Base work directory used to set up the task.
-    Optional("workdir"): str,
-})
+    workdir: Optional[str] = None
+
+    def __post_init__(self):
+        if self.tooltool_downloads is True:
+            raise ValueError(
+                "tooltool-downloads must be False, 'public', or 'internal'"
+            )
 
 
 def get_digest_data(config, run, taskdesc):
@@ -252,7 +250,7 @@ toolchain_defaults = {
 @run_job_using(
     "docker-worker",
     "toolchain-script",
-    schema=toolchain_run_schema,
+    schema=ToolchainRunSchema,
     defaults=toolchain_defaults,
 )
 def docker_worker_toolchain(config, job, taskdesc):
@@ -262,7 +260,7 @@ def docker_worker_toolchain(config, job, taskdesc):
 @run_job_using(
     "generic-worker",
     "toolchain-script",
-    schema=toolchain_run_schema,
+    schema=ToolchainRunSchema,
     defaults=toolchain_defaults,
 )
 def generic_worker_toolchain(config, job, taskdesc):

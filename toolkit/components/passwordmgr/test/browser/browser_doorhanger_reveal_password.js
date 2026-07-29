@@ -15,19 +15,21 @@ add_task(async function test_do_not_reveal_password() {
   );
 
   await update_credentials("username", "password1", () => {
-    document.getElementById("password-notification-password").revealPassword =
-      true;
+    document.getElementById(
+      "password-notification-password"
+    ).inputEl.revealPassword = true;
   });
   await update_credentials("username", "password2", () => {
     Assert.strictEqual(
-      document.getElementById("password-notification-password").revealPassword,
+      document.getElementById("password-notification-password").inputEl
+        .revealPassword,
       false,
       "Password expected to not be revealed"
     );
   });
 
   // Clean up the database before the next test case is executed.
-  Services.logins.removeAllUserFacingLogins();
+  await Services.logins.removeAllUserFacingLoginsAsync();
 });
 
 /**
@@ -46,7 +48,7 @@ async function update_credentials(username, password, afterDoorhangerShown) {
         "passwordmgr/test/browser/form_basic.html",
     },
     async function (browser) {
-      await SimpleTest.promiseFocus(browser.ownerGlobal);
+      await SimpleTest.promiseFocus(browser.documentGlobal);
 
       info("Waiting for form-processed message");
       await formProcessedPromise;

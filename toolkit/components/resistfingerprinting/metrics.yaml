@@ -1420,7 +1420,20 @@ characteristics:
     type: quantity
     unit: RGB
     description: >
-      The CSS system-color Accentcolor.
+      The platform Accentcolor returned by LookAndFeel::GetColor with
+      ColorScheme::Light forced and UseStandins::No (see
+      PopulateCSSProperties in nsUserCharacteristics.cpp). On Windows this
+      reports the user's real OS accent color; the AccentColor entry in
+      `css_system_colors` instead reports the Firefox brand color 0060DF
+      because the content path applies a standin gated on
+      widget.non-native-theme.use-theme-accent (default false on Windows),
+      see widget/ThemeColors.h::sDefaultAccent and
+      nsXPLookAndFeel.cpp::ShouldUseStandinsForNativeColorForNonNativeTheme.
+      In Windows High Contrast / forced-colors mode
+      (`use_document_colors`=false) the standin is suppressed and content
+      sees the real accent. The value is the raw nscolor uint32 with R in
+      the low byte and includes the alpha channel; `css_system_colors`
+      also emits 8-char RRGGBBAA.
     lifetime: application
     send_in_pings:
       - user-characteristics
@@ -1438,7 +1451,14 @@ characteristics:
     type: quantity
     unit: RGB
     description: >
-      The CSS system-color Accentcolortext.
+      The platform Accentcolortext returned by LookAndFeel::GetColor with
+      ColorScheme::Light forced and UseStandins::No (see
+      PopulateCSSProperties in nsUserCharacteristics.cpp). Same standin
+      semantics as `color_accentcolor`: on Windows the content path
+      (`css_system_colors`) substitutes the Firefox brand AccentColorText
+      while this metric reports the real OS value. The value is the raw
+      nscolor uint32 with R in the low byte and includes the alpha
+      channel; `css_system_colors` also emits 8-char RRGGBBAA.
     lifetime: application
     send_in_pings:
       - user-characteristics
@@ -1456,7 +1476,17 @@ characteristics:
     type: quantity
     unit: RGB
     description: >
-      The CSS system-color Canvas.
+      The Canvas default background from
+      PreferenceSheet::ContentPrefs::ColorsFor(ColorScheme::Light)
+      .mDefaultBackground (see PopulateCSSProperties in
+      nsUserCharacteristics.cpp). This value is forced-Light: for users
+      browsing in dark mode it is still the Light default (typically
+      FFFFFF) and is NOT the canvas the user actually sees rendered
+      (Firefox's dark canvas is 1C1B22). To capture the canvas as it
+      resolves in content with the page color-scheme applied, see the
+      Canvas entry in `css_system_colors`. The value is the raw nscolor
+      uint32 with R in the low byte and includes the alpha channel;
+      `css_system_colors` also emits 8-char RRGGBBAA.
     lifetime: application
     send_in_pings:
       - user-characteristics
@@ -1474,7 +1504,14 @@ characteristics:
     type: quantity
     unit: RGB
     description: >
-      The CSS system-color Canvastext.
+      The Canvas default foreground from
+      PreferenceSheet::ContentPrefs::ColorsFor(ColorScheme::Light)
+      .mDefault (see PopulateCSSProperties in nsUserCharacteristics.cpp).
+      Same forced-Light semantics as `color_canvas`: dark-mode users still
+      see the Light default here, while the content-rendered value lives
+      in the CanvasText entry of `css_system_colors`. The value is the
+      raw nscolor uint32 with R in the low byte and includes the alpha
+      channel; `css_system_colors` also emits 8-char RRGGBBAA.
     lifetime: application
     send_in_pings:
       - user-characteristics
@@ -1492,7 +1529,16 @@ characteristics:
     type: quantity
     unit: RGB
     description: >
-      The CSS system-color Highlight.
+      The platform Highlight (selection background) returned by
+      LookAndFeel::GetColor with ColorScheme::Light forced and
+      UseStandins::No (see PopulateCSSProperties in
+      nsUserCharacteristics.cpp). This metric preserves the alpha
+      channel: the OS-default highlight is translucent on several
+      platforms (e.g. macOS alpha 0x7F, Android 0x4E); the parallel
+      Highlight entry in `css_system_colors` resolves with the page
+      color-scheme; alpha is preserved where CSS resolution preserves it
+      (mac Highlight 0x7F survives). The value is the raw nscolor uint32
+      with R in the low byte.
     lifetime: application
     send_in_pings:
       - user-characteristics
@@ -1510,7 +1556,18 @@ characteristics:
     type: quantity
     unit: RGB
     description: >
-      The CSS system-color Highlighttext.
+      The platform Highlighttext (selection foreground) returned by
+      LookAndFeel::GetColor with ColorScheme::Light forced and
+      UseStandins::No (see PopulateCSSProperties in
+      nsUserCharacteristics.cpp). Includes alpha — on some platforms
+      (e.g. Android) the OS value is a translucent/edge color with no
+      direct equivalent in the content-resolved path; the parallel
+      HighlightText entry in `css_system_colors` resolves with the page
+      color-scheme against a backdrop (the source's alpha is folded into
+      the opaque result, so `css_system_colors` reports the resolved
+      opaque value with a trailing FF, not the original translucent
+      source). The value is the raw nscolor uint32 with R in the low
+      byte.
     lifetime: application
     send_in_pings:
       - user-characteristics
@@ -1528,7 +1585,14 @@ characteristics:
     type: quantity
     unit: RGB
     description: >
-      The CSS system-color Selecteditem.
+      The platform Selecteditem color returned by LookAndFeel::GetColor
+      with ColorScheme::Light forced and UseStandins::No (see
+      PopulateCSSProperties in nsUserCharacteristics.cpp). Same
+      alpha-preservation and forced-Light semantics as `color_highlight`;
+      the parallel SelectedItem entry in `css_system_colors` resolves
+      with the page color-scheme; alpha is preserved where CSS resolution
+      preserves it. The value is the raw nscolor uint32 with R in the
+      low byte.
     lifetime: application
     send_in_pings:
       - user-characteristics
@@ -1546,7 +1610,16 @@ characteristics:
     type: quantity
     unit: RGB
     description: >
-      The CSS system-color Selecteditemtext.
+      The platform Selecteditemtext color returned by
+      LookAndFeel::GetColor with ColorScheme::Light forced and
+      UseStandins::No (see PopulateCSSProperties in
+      nsUserCharacteristics.cpp). Same alpha-preservation and
+      forced-Light semantics as `color_highlighttext`; the parallel
+      SelectedItemText entry in `css_system_colors` resolves with the
+      page color-scheme; alpha follows the same rules as
+      `color_highlighttext`'s CSS counterpart (translucent sources are
+      resolved to opaque against a backdrop). The value is the raw
+      nscolor uint32 with R in the low byte.
     lifetime: application
     send_in_pings:
       - user-characteristics
@@ -4669,8 +4742,7 @@ characteristics:
       MathML prefs that have been modified from defaults. Format is
       "shortname=val,..." (e.g. "dis=1,fnt=0"). Empty if no prefs modified.
       Shortnames: dis=disabled, str=scale_stretchy_operators,
-      spc=mathspace_names, rtl=rtl_operator_mirroring,
-      var=mathvariant_styling_fallback, shf=math_shift,
+      spc=mathspace_names, var=mathvariant_styling_fallback,
       acc=operator_dictionary_accent, leg=legacy_mathvariant_attribute,
       fnt=font_family_math. Values are 1 (true) or 0 (false).
     lifetime: application
@@ -6109,10 +6181,31 @@ characteristics:
     type: text
     description: >
       JSON array containing CSS system color keywords and their computed values as
-      uppercase hex (without # prefix). System colors (like Canvas, ButtonFace,
-      LinkText, etc.) are CSS keywords that resolve to theme/OS-specific colors and
-      can be used for fingerprinting. This metric collects the computed backgroundColor
-      for each system color keyword. Data format: [{"Canvas": "FFFFFF"}, {"ButtonFace": "F0F0F0"}, ...].
+      uppercase 8-char RRGGBBAA hex (without # prefix). System colors (like Canvas,
+      ButtonFace, LinkText, etc.) are CSS keywords that resolve to theme/OS-specific
+      colors and can be used for fingerprinting. This metric collects the computed
+      backgroundColor for each system color keyword. Data format:
+      [{"Canvas": "FFFFFFFF"}, {"ButtonFace": "E9E9EDFF"}, ...].
+      Values here are content-resolved: they respect the page color-scheme
+      (so dark-mode users will see Firefox's dark Canvas 1C1B22FF, etc.)
+      and have content-side standins applied. Alpha is preserved where
+      CSS resolution preserves it (e.g. macOS Highlight comes through
+      with alpha 0x7F); for translucent system colors that CSS resolves
+      against a backdrop (e.g. HighlightText on some platforms), the
+      resolved opaque RGB carries a trailing FF and the source's alpha
+      is no longer recoverable from this metric — see the `color_*`
+      quantities for the raw nscolor values, which preserve alpha
+      unconditionally. Notably on Windows the
+      AccentColor entry returns the Firefox brand color 0060DF rather
+      than the user's real Windows accent because
+      widget.non-native-theme.use-theme-accent defaults to false on
+      Windows (see widget/ThemeColors.h::sDefaultAccent and
+      nsXPLookAndFeel.cpp::ShouldUseStandinsForNativeColorForNonNativeTheme).
+      The standin is suppressed in High Contrast / forced-colors mode
+      (`use_document_colors`=false), where the real accent passes through.
+      The `color_*` quantity metrics report the underlying platform value
+      (LookAndFeel with ColorScheme::Light forced and UseStandins::No),
+      bypassing the standin and color-scheme paths entirely.
     lifetime: application
     send_in_pings:
       - user-characteristics
@@ -6398,8 +6491,17 @@ characteristics:
   mathml_diag_font_family:
     type: string
     description: >
-      The computed font-family value from a MathML element on the page.
-      Shows what font is actually being used for MathML rendering.
+      The family name of the resolved MATH-table font for MathML rendering,
+      as reported by InspectorUtils.getMathFontFamily on a <math> element.
+      Expected values include "Cambria Math" on Windows, "STIX Two Math"
+      on macOS Ventura+, one of "Latin Modern Math" / "STIX Two Math" /
+      "TeX Gyre Pagella Math" / etc. on Linux depending on installed
+      packages, and the literal sentinel "(no MATH font)" on platforms
+      where the layout engine has no MATH-table font available (Android,
+      pre-Ventura macOS). Earlier schema versions of this metric reported
+      the CSS-author font-family value, which was always the literal
+      "math" generic due to mathml.css; see kSubmissionSchema to
+      distinguish.
     lifetime: application
     send_in_pings:
       - user-characteristics

@@ -24,7 +24,6 @@ import mozilla.components.support.test.any
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -33,6 +32,7 @@ import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.`when`
 import org.robolectric.RobolectricTestRunner
 import java.util.UUID
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 internal class FillRequestHandlerTest {
@@ -46,7 +46,7 @@ internal class FillRequestHandlerTest {
                 packageName = "com.twitter.android",
                 logins = mapOf(credentials),
                 assertThat = { builder ->
-                    assertNotNull(builder!!)
+                    assertNotNull(builder)
                     assertEquals(1, builder.logins.size)
                     assertEquals(credentials.second, builder.logins[0])
                     assertEquals(false, builder.needsConfirmation)
@@ -73,7 +73,7 @@ internal class FillRequestHandlerTest {
                 packageName = "com.twitter.android",
                 logins = emptyMap(),
                 assertThat = { builder ->
-                    assertNotNull(builder!!)
+                    assertNotNull(builder)
                     assertEquals(0, builder.logins.size)
                     assertEquals(false, builder.needsConfirmation)
                 },
@@ -114,7 +114,7 @@ internal class FillRequestHandlerTest {
             packageName = "com.facebook.katana",
             logins = mapOf(credentials),
             assertThat = { builder ->
-                assertNotNull(builder!!)
+                assertNotNull(builder)
                 assertEquals(1, builder.logins.size)
                 assertEquals(credentials.second, builder.logins[0])
             },
@@ -129,7 +129,7 @@ internal class FillRequestHandlerTest {
             packageName = "com.facebook.lite",
             logins = mapOf(credentials),
             assertThat = { builder ->
-                assertNotNull(builder!!)
+                assertNotNull(builder)
                 assertEquals(1, builder.logins.size)
                 assertEquals(credentials.second, builder.logins[0])
             },
@@ -144,7 +144,7 @@ internal class FillRequestHandlerTest {
             packageName = "com.facebook.mlite",
             logins = mapOf(credentials),
             assertThat = { builder ->
-                assertNotNull(builder!!)
+                assertNotNull(builder)
                 assertEquals(1, builder.logins.size)
                 assertEquals(credentials.second, builder.logins[0])
             },
@@ -159,7 +159,7 @@ internal class FillRequestHandlerTest {
             packageName = "org.mozilla.fenix",
             logins = mapOf(credentials),
             assertThat = { builder ->
-                assertNotNull(builder!!)
+                assertNotNull(builder)
                 assertEquals(1, builder.logins.size)
                 assertEquals(credentials.second, builder.logins[0])
             },
@@ -174,7 +174,7 @@ internal class FillRequestHandlerTest {
             packageName = "org.chromium.webview_shell",
             logins = mapOf(credentials),
             assertThat = { builder ->
-                assertNotNull(builder!!)
+                assertNotNull(builder)
                 assertEquals(0, builder.logins.size)
                 assertEquals(false, builder.needsConfirmation)
             },

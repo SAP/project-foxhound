@@ -10,4 +10,4 @@ path = "prost_build_wrapper.rs"
 [dependencies]
 anyhow = "1.0.99"
 clap = { version = "4.5.45", features = ["derive"] }
-prost-build = "0.12.1"
+prost-build = "0.14.3"

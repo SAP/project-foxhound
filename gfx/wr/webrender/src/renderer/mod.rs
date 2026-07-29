@@ -150,10 +150,6 @@ const GPU_TAG_BRUSH_OPACITY: GpuProfileTag = GpuProfileTag {
     label: "B_Opacity",
     color: debug_colors::DARKMAGENTA,
 };
-const GPU_TAG_BRUSH_LINEAR_GRADIENT: GpuProfileTag = GpuProfileTag {
-    label: "B_LinearGradient",
-    color: debug_colors::POWDERBLUE,
-};
 const GPU_TAG_BRUSH_YUV_IMAGE: GpuProfileTag = GpuProfileTag {
     label: "B_YuvImage",
     color: debug_colors::DARKGREEN,
@@ -186,25 +182,13 @@ const GPU_TAG_CACHE_LINE_DECORATION: GpuProfileTag = GpuProfileTag {
     label: "C_LineDecoration",
     color: debug_colors::YELLOWGREEN,
 };
-const GPU_TAG_CACHE_FAST_LINEAR_GRADIENT: GpuProfileTag = GpuProfileTag {
-    label: "C_FastLinearGradient",
-    color: debug_colors::BROWN,
-};
-const GPU_TAG_CACHE_LINEAR_GRADIENT: GpuProfileTag = GpuProfileTag {
-    label: "C_LinearGradient",
-    color: debug_colors::BROWN,
-};
 const GPU_TAG_GRADIENT: GpuProfileTag = GpuProfileTag {
     label: "C_Gradient",
     color: debug_colors::BROWN,
 };
-const GPU_TAG_RADIAL_GRADIENT: GpuProfileTag = GpuProfileTag {
-    label: "C_RadialGradient",
-    color: debug_colors::BROWN,
-};
-const GPU_TAG_CONIC_GRADIENT: GpuProfileTag = GpuProfileTag {
-    label: "C_ConicGradient",
-    color: debug_colors::BROWN,
+const GPU_TAG_REPEAT: GpuProfileTag = GpuProfileTag {
+    label: "Repeat",
+    color: debug_colors::CHARTREUSE,
 };
 const GPU_TAG_SETUP_TARGET: GpuProfileTag = GpuProfileTag {
     label: "target init",
@@ -284,13 +268,17 @@ impl BatchKind {
                     BrushBatchKind::Blend => GPU_TAG_BRUSH_BLEND,
                     BrushBatchKind::MixBlend { .. } => GPU_TAG_BRUSH_MIXBLEND,
                     BrushBatchKind::YuvImage(..) => GPU_TAG_BRUSH_YUV_IMAGE,
-                    BrushBatchKind::LinearGradient => GPU_TAG_BRUSH_LINEAR_GRADIENT,
                     BrushBatchKind::Opacity => GPU_TAG_BRUSH_OPACITY,
                 }
             }
             BatchKind::TextRun(_) => GPU_TAG_PRIM_TEXT_RUN,
             BatchKind::Quad(PatternKind::ColorOrTexture) => GPU_TAG_PRIMITIVE,
+            BatchKind::Quad(PatternKind::TextureExternal) => GPU_TAG_PRIMITIVE,
+            BatchKind::Quad(PatternKind::TextureExternalBT709) => GPU_TAG_PRIMITIVE,
+            BatchKind::Quad(PatternKind::TextureRect) => GPU_TAG_PRIMITIVE,
             BatchKind::Quad(PatternKind::Gradient) => GPU_TAG_GRADIENT,
+            BatchKind::Quad(PatternKind::Repeat) => GPU_TAG_REPEAT,
+            BatchKind::Quad(PatternKind::BoxShadow) => GPU_TAG_PRIMITIVE,
             BatchKind::Quad(PatternKind::Mask) => GPU_TAG_INDIRECT_MASK,
         }
     }
@@ -900,6 +888,14 @@ pub struct Renderer {
 
     /// Hold DebugItems of DebugFlags::EXTERNAL_COMPOSITE_BORDERS for debug overlay
     external_composite_debug_items: Vec<DebugItem>,
+
+    /// On-demand RenderDoc frame capture, driven from the debugger / wrshell.
+    #[cfg(feature = "debugger")]
+    renderdoc: crate::renderdoc::RenderDocCapture,
+    /// Pending reply channel for an in-flight RenderDoc capture request; sent the
+    /// written .rdc path (or an error) once the next frame has been captured.
+    #[cfg(feature = "debugger")]
+    renderdoc_capture_reply: Option<crate::api::channel::Sender<crate::api::debugger::RenderDocReply>>,
 }
 
 #[derive(Debug)]
@@ -1310,6 +1306,18 @@ impl Renderer {
                     &self.profiler,
                 );
             }
+            #[cfg(feature = "debugger")]
+            DebugCommand::CaptureRenderDoc(reply) => {
+                if self.renderdoc.is_available() {
+                    self.renderdoc.arm();
+                    self.renderdoc_capture_reply = Some(reply);
+                } else {
+                    let _ = reply.send(crate::api::debugger::RenderDocReply::Error(
+                        "RenderDoc not available (launch the host with \
+                         LD_PRELOAD=librenderdoc.so)".to_string(),
+                    ));
+                }
+            }
         }
     }
 
@@ -1364,12 +1372,36 @@ impl Renderer {
                     None
                 };
 
+                #[cfg(feature = "debugger")]
+                let capture = self.renderdoc.take_request();
+                #[cfg(feature = "debugger")]
+                if capture {
+                    self.renderdoc.start();
+                }
+
                 let result = self.render_impl(
                     doc_id,
                     &mut doc,
                     size,
                     buffer_age,
                 );
+
+                #[cfg(feature = "debugger")]
+                if capture {
+                    let path = self.renderdoc.end();
+                    if let Some(reply) = self.renderdoc_capture_reply.take() {
+                        let result = match path {
+                            Some(p) => crate::api::debugger::RenderDocReply::Path(
+                                p.to_string_lossy().into_owned()
+                            ),
+                            None => crate::api::debugger::RenderDocReply::Error(
+                                "RenderDoc capture failed (launch the host with \
+                                 LD_PRELOAD=librenderdoc.so)".to_string()
+                            ),
+                        };
+                        let _ = reply.send(result);
+                    }
+                }
 
                 self.active_documents.insert(doc_id, doc);
 
@@ -1683,6 +1715,10 @@ impl Renderer {
             &frame.deferred_resolves,
             &mut frame.gpu_buffer_f,
         );
+
+        // Now that external images are resolved, copy their (potentially Y-flipped) uv
+        // rects into the quad segment blocks that reference them.
+        frame.gpu_buffer_f.apply_deferred_uv_copies();
 
         self.draw_frame(
             frame,
@@ -3453,109 +3489,6 @@ impl Renderer {
             self.set_blend(false, FramebufferKind::Other);
         }
 
-        // Draw any fast path linear gradients for this target.
-        if !target.fast_linear_gradients.is_empty() {
-            let _timer = self.gpu_profiler.start_timer(GPU_TAG_CACHE_FAST_LINEAR_GRADIENT);
-
-            self.set_blend(false, FramebufferKind::Other);
-
-            self.shaders.borrow_mut().cs_fast_linear_gradient().bind(
-                &mut self.device,
-                &projection,
-                None,
-                &mut self.renderer_errors,
-                &mut self.profile,
-                &mut self.command_log,
-            );
-
-            self.draw_instanced_batch(
-                &target.fast_linear_gradients,
-                VertexArrayKind::FastLinearGradient,
-                &BatchTextures::empty(),
-                stats,
-            );
-        }
-
-        // Draw any linear gradients for this target.
-        if !target.linear_gradients.is_empty() {
-            let _timer = self.gpu_profiler.start_timer(GPU_TAG_CACHE_LINEAR_GRADIENT);
-
-            self.set_blend(false, FramebufferKind::Other);
-
-            self.shaders.borrow_mut().cs_linear_gradient().bind(
-                &mut self.device,
-                &projection,
-                None,
-                &mut self.renderer_errors,
-                &mut self.profile,
-                &mut self.command_log,
-            );
-
-            if let Some(ref texture) = self.dither_matrix_texture {
-                self.device.bind_texture(TextureSampler::Dither, texture, Swizzle::default());
-            }
-
-            self.draw_instanced_batch(
-                &target.linear_gradients,
-                VertexArrayKind::LinearGradient,
-                &BatchTextures::empty(),
-                stats,
-            );
-        }
-
-        // Draw any radial gradients for this target.
-        if !target.radial_gradients.is_empty() {
-            let _timer = self.gpu_profiler.start_timer(GPU_TAG_RADIAL_GRADIENT);
-
-            self.set_blend(false, FramebufferKind::Other);
-
-            self.shaders.borrow_mut().cs_radial_gradient().bind(
-                &mut self.device,
-                &projection,
-                None,
-                &mut self.renderer_errors,
-                &mut self.profile,
-                &mut self.command_log,
-            );
-
-            if let Some(ref texture) = self.dither_matrix_texture {
-                self.device.bind_texture(TextureSampler::Dither, texture, Swizzle::default());
-            }
-
-            self.draw_instanced_batch(
-                &target.radial_gradients,
-                VertexArrayKind::RadialGradient,
-                &BatchTextures::empty(),
-                stats,
-            );
-        }
-
-        // Draw any conic gradients for this target.
-        if !target.conic_gradients.is_empty() {
-            let _timer = self.gpu_profiler.start_timer(GPU_TAG_CONIC_GRADIENT);
-
-            self.set_blend(false, FramebufferKind::Other);
-
-            self.shaders.borrow_mut().cs_conic_gradient().bind(
-                &mut self.device,
-                &projection,
-                None,
-                &mut self.renderer_errors,
-                &mut self.profile,
-                &mut self.command_log,
-            );
-
-            if let Some(ref texture) = self.dither_matrix_texture {
-                self.device.bind_texture(TextureSampler::Dither, texture, Swizzle::default());
-            }
-
-            self.draw_instanced_batch(
-                &target.conic_gradients,
-                VertexArrayKind::ConicGradient,
-                &BatchTextures::empty(),
-                stats,
-            );
-        }
 
         // Draw any blurs for this target.
         // Blurs are rendered as a standard 2-pass
@@ -3742,25 +3675,6 @@ impl Renderer {
             );
         }
 
-        // draw box-shadow clips
-        for (mask_texture_id, items) in list.box_shadows.iter() {
-            let _gm2 = self.gpu_profiler.start_marker("box-shadows");
-            let textures = BatchTextures::composite_rgb(*mask_texture_id);
-            self.shaders.borrow_mut().cs_clip_box_shadow().bind(
-                &mut self.device,
-                projection,
-                None,
-                &mut self.renderer_errors,
-                &mut self.profile,
-                &mut self.command_log,
-            );
-            self.draw_instanced_batch(
-                items,
-                VertexArrayKind::ClipBoxShadow,
-                &textures,
-                stats,
-            );
-        }
     }
 
     fn bind_frame_data(&mut self, frame: &mut Frame) {
@@ -5243,9 +5157,6 @@ fn should_skip_batch(kind: &BatchKind, flags: DebugFlags) -> bool {
     match kind {
         BatchKind::TextRun(_) => {
             flags.contains(DebugFlags::DISABLE_TEXT_PRIMS)
-        }
-        BatchKind::Brush(BrushBatchKind::LinearGradient) => {
-            flags.contains(DebugFlags::DISABLE_GRADIENT_PRIMS)
         }
         _ => false,
     }

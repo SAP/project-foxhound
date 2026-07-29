@@ -60,9 +60,8 @@ void CSFLogV(CSFLogLevel priority, const char* sourceFile, int sourceLine,
   }
 
   VsprintfLiteral(message, format, args);
-  MOZ_LOG(
-      gSignalingLog, level,
-      ("[%s|%s] %s:%d: %s", threadName, tag, sourceFile, sourceLine, message));
+  MOZ_LOG_FMT(gSignalingLog, level, "[{}|{}] {}:{}: {}", threadName, tag,
+              sourceFile, sourceLine, message);
 #endif
 }
 

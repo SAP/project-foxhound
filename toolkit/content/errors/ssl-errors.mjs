@@ -142,6 +142,40 @@ export const SSL_ERRORS = [
     hasNoUserFix: true,
   },
   {
+    id: "SSL_ERROR_RX_RECORD_TOO_LONG",
+    errorCode: "SSL_ERROR_RX_RECORD_TOO_LONG",
+    category: "cert",
+    bodyTitleL10nId: "nssFailure2-title",
+    introContent: [
+      {
+        dataL10nId: "cert-error-ssl-connection-error",
+        dataL10nArgs: { hostname: null, errorMessage: null },
+      },
+      {
+        dataL10nId: "ssl-error-rx-record-too-long",
+      },
+    ],
+    buttons: {
+      showTryAgain: true,
+      showGoBack: true,
+      showAdvanced: true,
+      showAddException: false,
+    },
+    advanced: {
+      whyDangerous: {
+        dataL10nId: "neterror-nss-failure-not-verified",
+      },
+      whatCanYouDo: {
+        dataL10nId: "neterror-nss-failure-contact-website",
+      },
+      learnMore: {
+        dataL10nId: "fp-learn-more-about-secure-connection-failures",
+        supportPage: "connection-not-secure",
+      },
+    },
+    hasNoUserFix: true,
+  },
+  {
     id: "SSL_ERROR_PROTOCOL_VERSION_ALERT",
     errorCode: "SSL_ERROR_PROTOCOL_VERSION_ALERT",
     category: "cert",

@@ -207,7 +207,7 @@ function setupOnAvailableFunction(
  * Sets invalid values for width and height on the document's body style attribute.
  */
 function triggerCSSWarning(tab) {
-  return ContentTask.spawn(tab.linkedBrowser, null, function frameScript() {
+  return SpecialPowers.spawn(tab.linkedBrowser, [], function frameScript() {
     content.document.body.style.width = "red";
     content.document.body.style.height = "blue";
   });

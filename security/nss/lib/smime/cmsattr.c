@@ -412,7 +412,17 @@ NSS_CMSAttributeArray_SetAttr(PLArenaPool *poolp, NSSCMSAttribute ***attrs,
     } else {
         /* found, shove it in */
         /* XXX we need a decent memory model @#$#$!#!!! */
+        if (attr->values == NULL || attr->values[0] == NULL) {
+            /* The existing values array may be NULL or hold only the NULL
+             * terminator (e.g. decoded from an empty SET). Allocate a fresh,
+             * NULL-terminated two-slot array so encoders can safely walk it. */
+            SECItem **values = PORT_ArenaZNewArray(poolp, SECItem *, 2);
+            if (values == NULL)
+                goto loser;
+            attr->values = values;
+        }
         attr->values[0] = value;
+        attr->values[1] = NULL;
         attr->encoded = encoded;
     }
 

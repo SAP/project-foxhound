@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -141,7 +140,8 @@ class GMPServiceChild : public PGMPServiceChild {
   // implementations in PGMPServiceChild.
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GMPServiceChild, final)
 
-  explicit GMPServiceChild() = default;
+  explicit GMPServiceChild(GeckoMediaPluginServiceChild* aService)
+      : mService(aService) {}
 
   already_AddRefed<GMPContentParent> GetBridgedGMPContentParent(
       ProcessId aOtherPid, ipc::Endpoint<PGMPContentParent>&& endpoint);
@@ -160,10 +160,16 @@ class GMPServiceChild : public PGMPServiceChild {
 
   bool HaveContentParents() const;
 
+  GeckoMediaPluginServiceChild* Service() const { return mService; }
+
  private:
   ~GMPServiceChild() = default;
 
   nsRefPtrHashtable<nsUint64HashKey, GMPContentParent> mContentParents;
+
+  // Raw pointer to our owning service. The service owns us via a RefPtr in
+  // mServiceChild, so it strictly outlives us.
+  GeckoMediaPluginServiceChild* const mService;
 };
 
 }  // namespace mozilla::gmp

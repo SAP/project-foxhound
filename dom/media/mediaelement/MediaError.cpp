@@ -1,14 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/MediaError.h"
 
-#include "js/Warnings.h"  // JS::WarnASCII
+#include "js/Warnings.h"  // JS::WarnUTF8
 #include "jsapi.h"
+#include "mozilla/Utf8.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/HTMLMediaElement.h"
 #include "mozilla/dom/MediaErrorBinding.h"
 #include "nsContentUtils.h"
 #include "nsIScriptError.h"
@@ -51,16 +51,25 @@ void MediaError::GetMessage(nsAString& aResult) const {
         mMessage;
     Document* ownerDoc = mParent->OwnerDoc();
     AutoJSAPI api;
+    // mMessage is an nsCString with no encoding guarantee (it may contain
+    // raw bytes from HTTP status text). Ensure valid UTF-8 for WarnUTF8
+    // below by converting non-UTF-8 bytes through Latin-1 (a superset of
+    // ASCII that maps every byte 0x00-0xFF to a Unicode codepoint).
+    if (!IsUtf8(message)) {
+      nsAutoCString utf8;
+      CopyLatin1toUTF8(message, utf8);
+      message = std::move(utf8);
+    }
     if (api.Init(ownerDoc->GetScopeObject())) {
       // We prefer this API because it can also print to our debug log and
       // try server's log viewer.
-      JS::WarnASCII(api.cx(), "%s", message.get());
+      JS::WarnUTF8(api.cx(), "%s", message.get());
     } else {
-      // If failed to use JS::WarnASCII, fall back to
+      // If failed to use JS::WarnUTF8, fall back to
       // nsContentUtils::ReportToConsoleNonLocalized, which can only print to
       // JavaScript console.
       nsContentUtils::ReportToConsoleNonLocalized(
-          NS_ConvertASCIItoUTF16(message), nsIScriptError::warningFlag,
+          NS_ConvertUTF8toUTF16(message), nsIScriptError::warningFlag,
           "MediaError"_ns, ownerDoc);
     }
 

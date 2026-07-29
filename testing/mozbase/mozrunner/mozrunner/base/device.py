@@ -4,6 +4,7 @@
 
 import codecs
 import datetime
+import os
 import re
 import signal
 import sys
@@ -28,16 +29,19 @@ class DeviceRunner(BaseRunner):
         "MOZ_CRASHREPORTER_SHUTDOWN": "1",
         "MOZ_HIDE_RESULTS_TABLE": "1",
         "MOZ_IN_AUTOMATION": "1",
-        "MOZ_LOG": "signaling:3,mtransport:4,DataChannel:3,jsep:4",
-        "R_LOG_LEVEL": "6",
-        "R_LOG_DESTINATION": "stderr",
-        "R_LOG_VERBOSE": "1",
     }
 
     def __init__(self, device_class, device_args=None, **kwargs):
         process_log = tempfile.NamedTemporaryFile(suffix="pidlog")
         # the env will be passed to the device, it is not a *real* env
         self._device_env = dict(DeviceRunner.env)
+        if "MOZ_AUTOMATION" in os.environ:
+            self._device_env.setdefault(
+                "MOZ_LOG", "signaling:3,mtransport:4,DataChannel:3,jsep:4"
+            )
+            self._device_env.setdefault("R_LOG_LEVEL", "6")
+            self._device_env.setdefault("R_LOG_DESTINATION", "stderr")
+            self._device_env.setdefault("R_LOG_VERBOSE", "1")
         self._device_env["MOZ_PROCESS_LOG"] = process_log.name
         # be sure we do not pass env to the parent class ctor
         env = kwargs.pop("env", None)

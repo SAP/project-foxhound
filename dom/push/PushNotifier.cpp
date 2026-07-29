@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,8 +8,6 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/dom/BodyUtil.h"
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/ServiceWorkerManager.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
@@ -86,27 +82,13 @@ PushNotifier::NotifyError(const nsACString& aScope, nsIPrincipal* aPrincipal,
 }
 
 nsresult PushNotifier::Dispatch(PushDispatcher& aDispatcher) {
-  if (XRE_IsParentProcess()) {
-    // Always notify XPCOM observers in the parent process.
-    (void)NS_WARN_IF(NS_FAILED(aDispatcher.NotifyObservers()));
+  MOZ_ASSERT(XRE_IsParentProcess());
 
-    // e10s is disabled; notify workers in the parent.
-    return aDispatcher.NotifyWorkers();
-  }
+  // Always notify XPCOM observers in the parent process.
+  (void)NS_WARN_IF(NS_FAILED(aDispatcher.NotifyObservers()));
 
-  // Otherwise, we're in the content process, so e10s must be enabled. Notify
-  // observers and workers, then send a message to notify observers in the
-  // parent.
-  MOZ_ASSERT(XRE_IsContentProcess());
-
-  nsresult rv = aDispatcher.NotifyObserversAndWorkers();
-
-  ContentChild* parentActor = ContentChild::GetSingleton();
-  if (!NS_WARN_IF(!parentActor)) {
-    (void)NS_WARN_IF(!aDispatcher.SendToParent(parentActor));
-  }
-
-  return rv;
+  // notify workers in the parent.
+  return aDispatcher.NotifyWorkers();
 }
 
 PushData::PushData(const nsTArray<uint8_t>& aData) : mData(aData.Clone()) {}
@@ -203,8 +185,6 @@ PushDispatcher::PushDispatcher(const nsACString& aScope,
 
 PushDispatcher::~PushDispatcher() = default;
 
-nsresult PushDispatcher::HandleNoChildProcesses() { return NS_OK; }
-
 nsresult PushDispatcher::NotifyObserversAndWorkers() {
   (void)NS_WARN_IF(NS_FAILED(NotifyObservers()));
   return NotifyWorkers();
@@ -216,21 +196,14 @@ bool PushDispatcher::ShouldNotifyWorkers() {
   }
 
   // System subscriptions use observer notifications instead of service worker
-  // events. The `testing.notifyWorkers` pref disables worker events for
-  // non-system subscriptions.
-  if (mPrincipal->IsSystemPrincipal() ||
-      !Preferences::GetBool("dom.push.testing.notifyWorkers", true)) {
+  // events.
+  if (mPrincipal->IsSystemPrincipal()) {
     return false;
   }
 
-  // If e10s is off, no need to worry about processes.
-  if (!BrowserTabsRemoteAutostart()) {
-    return true;
-  }
-
-  // We only want to notify in the parent process.
-  bool isContentProcess = XRE_GetProcessType() == GeckoProcessType_Content;
-  return !isContentProcess;
+  // The `testing.notifyWorkers` pref controls worker events for non-system
+  // subscriptions.
+  return Preferences::GetBool("dom.push.testing.notifyWorkers", true);
 }
 
 nsresult PushDispatcher::DoNotifyObservers(nsISupports* aSubject,
@@ -291,22 +264,6 @@ nsresult PushMessageDispatcher::NotifyWorkers() {
   return swm->SendPushEvent(originSuffix, mScope, mMessageId, mData);
 }
 
-bool PushMessageDispatcher::SendToParent(ContentChild* aParentActor) {
-  if (mData) {
-    return aParentActor->SendNotifyPushObserversWithData(
-        mScope, mPrincipal, mMessageId, mData.ref());
-  }
-  return aParentActor->SendNotifyPushObservers(mScope, mPrincipal, mMessageId);
-}
-
-bool PushMessageDispatcher::SendToChild(ContentParent* aContentActor) {
-  if (mData) {
-    return aContentActor->SendPushWithData(mScope, mPrincipal, mMessageId,
-                                           mData.ref());
-  }
-  return aContentActor->SendPush(mScope, mPrincipal, mMessageId);
-}
-
 PushSubscriptionChangeDispatcher::PushSubscriptionChangeDispatcher(
     const nsACString& aScope, nsIPrincipal* aPrincipal,
     nsIPushSubscription* aOldSubscription)
@@ -336,16 +293,6 @@ nsresult PushSubscriptionChangeDispatcher::NotifyWorkers() {
                                               mOldSubscription);
 }
 
-bool PushSubscriptionChangeDispatcher::SendToParent(
-    ContentChild* aParentActor) {
-  return true;
-}
-
-bool PushSubscriptionChangeDispatcher::SendToChild(
-    ContentParent* aContentActor) {
-  return true;
-}
-
 PushSubscriptionModifiedDispatcher::PushSubscriptionModifiedDispatcher(
     const nsACString& aScope, nsIPrincipal* aPrincipal)
     : PushDispatcher(aScope, aPrincipal) {}
@@ -359,18 +306,6 @@ nsresult PushSubscriptionModifiedDispatcher::NotifyObservers() {
 }
 
 nsresult PushSubscriptionModifiedDispatcher::NotifyWorkers() { return NS_OK; }
-
-bool PushSubscriptionModifiedDispatcher::SendToParent(
-    ContentChild* aParentActor) {
-  return aParentActor->SendNotifyPushSubscriptionModifiedObservers(mScope,
-                                                                   mPrincipal);
-}
-
-bool PushSubscriptionModifiedDispatcher::SendToChild(
-    ContentParent* aContentActor) {
-  return aContentActor->SendNotifyPushSubscriptionModifiedObservers(mScope,
-                                                                    mPrincipal);
-}
 
 PushErrorDispatcher::PushErrorDispatcher(const nsACString& aScope,
                                          nsIPrincipal* aPrincipal,
@@ -401,26 +336,6 @@ nsresult PushErrorDispatcher::NotifyWorkers() {
                             mFlags);
   }
   return NS_OK;
-}
-
-bool PushErrorDispatcher::SendToParent(ContentChild* aContentActor) {
-  return aContentActor->SendPushError(mScope, mPrincipal, mMessage, mFlags);
-}
-
-bool PushErrorDispatcher::SendToChild(ContentParent* aContentActor) {
-  return aContentActor->SendPushError(mScope, mPrincipal, mMessage, mFlags);
-}
-
-nsresult PushErrorDispatcher::HandleNoChildProcesses() {
-  // Report to the console if no content processes are active.
-  nsCOMPtr<nsIURI> scopeURI;
-  nsresult rv = NS_NewURI(getter_AddRefs(scopeURI), mScope);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-  return nsContentUtils::ReportToConsoleNonLocalized(
-      mMessage, mFlags, "Push"_ns, /* aDocument = */ nullptr,
-      SourceLocation(scopeURI.get()));
 }
 
 }  // namespace mozilla::dom

@@ -21,14 +21,15 @@ import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.engine.content.blocking.TrackerLog
+import mozilla.components.concept.engine.content.blocking.TrackingProtectionEvent
 import mozilla.components.concept.engine.content.blocking.TrackingProtectionException
 import mozilla.components.concept.engine.content.blocking.TrackingProtectionExceptionStorage
 import mozilla.components.support.test.any
 import mozilla.components.support.test.eq
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.whenever
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -36,6 +37,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class TrackingProtectionUseCasesTest {
@@ -257,5 +259,88 @@ class TrackingProtectionUseCasesTest {
     fun `fetch exceptions`() {
         useCases.fetchExceptions {}
         verify(exceptionStore).fetchAll(any())
+    }
+
+    @Test
+    fun `GIVEN a request to fetch tracking events WHEN successful THEN invoke the success callback`() {
+        val dateFrom = 1000L
+        val dateTo = 2000L
+        val events = listOf(TrackingProtectionEvent(1, 5, "2023-01-01"))
+        whenever(engine.getTrackingProtectionEventsByDateRange(eq(dateFrom), eq(dateTo), any(), any())).then {
+            it.getArgument<(List<TrackingProtectionEvent>) -> Unit>(2).invoke(events)
+        }
+        var capturedEvents: List<TrackingProtectionEvent>? = null
+
+        useCases.fetchTrackingEvents(dateFrom, dateTo, onSuccess = { capturedEvents = it })
+
+        verify(engine).getTrackingProtectionEventsByDateRange(eq(dateFrom), eq(dateTo), any(), any())
+        assertEquals(events, capturedEvents)
+    }
+
+    @Test
+    fun `GIVEN a request to fetch total trackers blocked WHEN successful THEN invoke the success callback`() {
+        val total = 42
+        whenever(engine.sumAllTrackingProtectionEvents(any(), any())).then {
+            it.getArgument<(Int) -> Unit>(0).invoke(total)
+        }
+        var capturedTotal = -1
+
+        useCases.fetchTotalTrackersBlocked(onSuccess = { capturedTotal = it })
+
+        verify(engine).sumAllTrackingProtectionEvents(any(), any())
+        assertEquals(total, capturedTotal)
+    }
+
+    @Test
+    fun `GIVEN a request to fetch earliest tracking date WHEN successful THEN invoke the success callback`() {
+        val date = 123456789L
+        whenever(engine.getEarliestTrackingProtectionDate(any(), any())).then {
+            it.getArgument<(Long?) -> Unit>(0).invoke(date)
+        }
+        var capturedDate: Long? = -1L
+
+        useCases.fetchEarliestTrackingDate(onSuccess = { capturedDate = it })
+
+        verify(engine).getEarliestTrackingProtectionDate(any(), any())
+        assertEquals(date, capturedDate)
+    }
+
+    @Test
+    fun `GIVEN a request to fetch tracking events WHEN an error is encountered THEN call the error callback`() {
+        val error = Exception("Test error")
+        val onError: (Throwable) -> Unit = mock()
+        whenever(engine.getTrackingProtectionEventsByDateRange(eq(0L), eq(0L), any(), any())).then {
+            it.getArgument<(Throwable) -> Unit>(3).invoke(error)
+        }
+
+        useCases.fetchTrackingEvents(0L, 0L, onSuccess = {}, onError = onError)
+
+        verify(onError).invoke(error)
+    }
+
+    @Test
+    fun `GIVEN a request to fetch total trackers blocked WHEN an error is encountered THEN call the error callback`() {
+        val error = Exception("Test error")
+        val onError: (Throwable) -> Unit = mock()
+        whenever(engine.sumAllTrackingProtectionEvents(any(), any())).then {
+            it.getArgument<(Throwable) -> Unit>(1).invoke(error)
+        }
+
+        useCases.fetchTotalTrackersBlocked(onSuccess = {}, onError = onError)
+
+        verify(onError).invoke(error)
+    }
+
+    @Test
+    fun `GIVEN a request to fetch earliest tracking date WHEN an error is encountered THEN call the error callback`() {
+        val error = Exception("Test error")
+        val onError: (Throwable) -> Unit = mock()
+        whenever(engine.getEarliestTrackingProtectionDate(any(), any())).then {
+            it.getArgument<(Throwable) -> Unit>(1).invoke(error)
+        }
+
+        useCases.fetchEarliestTrackingDate(onSuccess = {}, onError = onError)
+
+        verify(onError).invoke(error)
     }
 }

@@ -38,6 +38,7 @@ dependencies {
     testImplementation libs.androidx.concurrent
     testImplementation libs.androidx.test.junit
     testImplementation libs.androidx.work.testing
+    testImplementation libs.kotlin.test
     testImplementation libs.kotlinx.coroutines.test
     testImplementation libs.robolectric
 }

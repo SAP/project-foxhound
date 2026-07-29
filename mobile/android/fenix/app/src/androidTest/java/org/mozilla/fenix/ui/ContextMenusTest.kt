@@ -4,24 +4,23 @@
 
 package org.mozilla.fenix.ui
 
-import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.core.net.toUri
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.helpers.AppAndSystemHelper.assertExternalAppOpens
 import org.mozilla.fenix.helpers.Constants.PackageName.YOUTUBE_APP
+import org.mozilla.fenix.helpers.FenixTestRule
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
-import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdAndText
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithText
 import org.mozilla.fenix.helpers.RetryTestRule
+import org.mozilla.fenix.helpers.RetryableComposeTestRule
 import org.mozilla.fenix.helpers.TestAssetHelper.externalLinksAsset
 import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
 import org.mozilla.fenix.helpers.TestAssetHelper.imageAsset
 import org.mozilla.fenix.helpers.TestHelper.clickSnackbarButton
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.verifySnackBarText
-import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
 import org.mozilla.fenix.ui.robots.clickContextMenuItem
 import org.mozilla.fenix.ui.robots.clickPageObject
@@ -29,6 +28,7 @@ import org.mozilla.fenix.ui.robots.downloadRobot
 import org.mozilla.fenix.ui.robots.longClickPageObject
 import org.mozilla.fenix.ui.robots.navigationToolbar
 import org.mozilla.fenix.ui.robots.shareOverlay
+import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidComposeTestRuleV2
 
 /**
  *  Tests for verifying basic functionality of content context menus
@@ -44,24 +44,31 @@ import org.mozilla.fenix.ui.robots.shareOverlay
  *
  */
 
-class ContextMenusTest : TestSetup() {
+class ContextMenusTest {
 
     @get:Rule(order = 0)
-    val composeTestRule =
-        AndroidComposeTestRule(
+    val fenixTestRule: FenixTestRule = FenixTestRule()
+
+    private val mockWebServer get() = fenixTestRule.mockWebServer
+
+    @get:Rule(order = 1)
+    val retryTestRule = RetryTestRule(3)
+
+    @get:Rule(order = 2)
+    val retryableComposeTestRule = RetryableComposeTestRule {
+        AndroidComposeTestRuleV2(
             HomeActivityIntentTestRule(
                 // workaround for toolbar at top position by default
                 // remove with https://bugzilla.mozilla.org/show_bug.cgi?id=1917640
                 shouldUseBottomToolbar = true,
             ),
         ) { it.activity }
+    }
 
-    @get:Rule(order = 1)
-    val memoryLeaksRule = DetectMemoryLeaksRule()
+    private val composeTestRule get() = retryableComposeTestRule.current
 
-    @Rule(order = 2)
-    @JvmField
-    val retryTestRule = RetryTestRule(3)
+    @get:Rule(order = 3)
+    val memoryLeaksRule = DetectMemoryLeaksRule(composeTestRule = { composeTestRule })
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/243837
     @Test
@@ -125,6 +132,7 @@ class ContextMenusTest : TestSetup() {
         }
     }
 
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/4024997
     @Test
     fun verifyCopyLinkTextContextMenuOptionTest() {
         val pageLinks = mockWebServer.getGenericAsset(4)
@@ -247,7 +255,7 @@ class ContextMenusTest : TestSetup() {
         }.enterURLAndEnterToBrowser(genericURL.url) {
             clickPageObject(composeTestRule, itemWithText("PDF form file"))
             waitForPageToLoad()
-            clickPageObject(composeTestRule, itemWithResIdAndText("android:id/button2", "Cancel"))
+            clickPageObject(composeTestRule, itemContainingText("Stay in"))
             longClickPageObject(composeTestRule, itemWithText("Wikipedia link"))
             verifyContextMenuForLinksToOtherHosts("wikipedia.org".toUri())
             dismissContentContextMenu()

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,8 +21,6 @@
 
 namespace mozilla {
 namespace net {
-
-NS_IMPL_ISUPPORTS(Tickler, nsISupportsWeakReference, Tickler)
 
 Tickler::Tickler()
     : mLock("Tickler::mLock"),
@@ -56,32 +53,45 @@ nsresult Tickler::Init() {
   }
 
   MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(!mTimer);
-  MOZ_ASSERT(!mActive);
-  MOZ_ASSERT(!mThread);
-  MOZ_ASSERT(!mFD);
 
   if (jni::IsAvailable()) {
     java::GeckoAppShell::EnableNetworkNotifications();
   }
 
-  mFD = PR_OpenUDPSocket(PR_AF_INET);
-  if (!mFD) return NS_ERROR_FAILURE;
+  // Allocate resources before acquiring the lock.
+  PRFileDesc* fd = PR_OpenUDPSocket(PR_AF_INET);
+  if (!fd) return NS_ERROR_FAILURE;
 
   // make sure new socket has a ttl of 1
   // failure is not fatal.
   PRSocketOptionData opt;
   opt.option = PR_SockOpt_IpTimeToLive;
   opt.value.ip_ttl = 1;
-  PR_SetSocketOption(mFD, &opt);
+  PR_SetSocketOption(fd, &opt);
 
-  nsresult rv = NS_NewNamedThread("wifi tickler", getter_AddRefs(mThread));
-  if (NS_FAILED(rv)) return rv;
+  nsCOMPtr<nsIThread> thread;
+  nsresult rv = NS_NewNamedThread("wifi tickler", getter_AddRefs(thread));
+  if (NS_FAILED(rv)) {
+    PR_Close(fd);
+    return rv;
+  }
 
-  nsCOMPtr<nsITimer> tmpTimer = NS_NewTimer(mThread);
-  if (!tmpTimer) return NS_ERROR_OUT_OF_MEMORY;
+  nsCOMPtr<nsITimer> timer = NS_NewTimer(thread);
+  if (!timer) {
+    thread->AsyncShutdown();
+    PR_Close(fd);
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
 
-  mTimer.swap(tmpTimer);
+  MutexAutoLock lock(mLock);
+  MOZ_ASSERT(!mTimer);
+  MOZ_ASSERT(!mActive);
+  MOZ_ASSERT(!mThread);
+  MOZ_ASSERT(!mFD);
+
+  mFD = fd;
+  mThread = thread;
+  mTimer.swap(timer);
 
   mAddr.inet.family = PR_AF_INET;
   mAddr.inet.port = PR_htons(4886);
@@ -182,9 +192,7 @@ class TicklerTimer final : public nsITimerCallback, public nsINamed {
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSITIMERCALLBACK
 
-  explicit TicklerTimer(Tickler* aTickler) {
-    mTickler = do_GetWeakReference(aTickler);
-  }
+  explicit TicklerTimer(Tickler* t) : mTickler(t) {}
 
   // nsINamed
   NS_IMETHOD GetName(nsACString& aName) override {
@@ -195,7 +203,7 @@ class TicklerTimer final : public nsITimerCallback, public nsINamed {
  private:
   ~TicklerTimer() {}
 
-  nsWeakPtr mTickler;
+  ThreadSafeWeakPtr<Tickler> mTickler;
 };
 
 void Tickler::StartTickler() {
@@ -219,7 +227,7 @@ void Tickler::SetIPV4Port(uint16_t port) { mAddr.inet.port = port; }
 NS_IMPL_ISUPPORTS(TicklerTimer, nsITimerCallback, nsINamed)
 
 NS_IMETHODIMP TicklerTimer::Notify(nsITimer* timer) {
-  RefPtr<Tickler> tickler = do_QueryReferent(mTickler);
+  RefPtr<Tickler> tickler(mTickler);
   if (!tickler) return NS_ERROR_FAILURE;
   MutexAutoLock lock(tickler->mLock);
 

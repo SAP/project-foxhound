@@ -26,9 +26,17 @@ import org.mozilla.focus.state.AppAction
 import org.mozilla.focus.state.Screen
 import org.mozilla.focus.widget.CookiesPreference
 
+/**
+ * Settings fragment for privacy and security options.
+ */
 class PrivacySecuritySettingsFragment :
     BaseSettingsFragment(),
     SharedPreferences.OnSharedPreferenceChangeListener {
+
+    private val engineSharedPreferencesListener by lazy {
+        EngineSharedPreferencesListener(requireContext())
+    }
+
     override fun onCreatePreferences(p0: Bundle?, p1: String?) {
         addPreferencesFromResource(R.xml.privacy_security_settings)
 
@@ -50,8 +58,6 @@ class PrivacySecuritySettingsFragment :
             privacySecuritySettingsToolTip?.let { preferenceScreen.removePreference(it) }
         }
 
-        val preferencesListener = EngineSharedPreferencesListener(requireContext())
-
         val cookiesPreference =
             findPreference(getString(R.string.pref_key_performance_enable_cookies)) as? CookiesPreference
         cookiesPreference?.updateSummary()
@@ -64,10 +70,10 @@ class PrivacySecuritySettingsFragment :
             findPreference(getString(R.string.pref_key_performance_block_webfonts)) as? SwitchPreference
         val cookieBannerPreference = findPreference<Preference>(getString(R.string.pref_key_cookie_banner_settings))
 
-        cookiesPreference?.onPreferenceChangeListener = preferencesListener
-        safeBrowsingSwitchPreference?.onPreferenceChangeListener = preferencesListener
-        javaScriptPreference?.onPreferenceChangeListener = preferencesListener
-        webFontsPreference?.onPreferenceChangeListener = preferencesListener
+        cookiesPreference?.onPreferenceChangeListener = engineSharedPreferencesListener
+        safeBrowsingSwitchPreference?.onPreferenceChangeListener = engineSharedPreferencesListener
+        javaScriptPreference?.onPreferenceChangeListener = engineSharedPreferencesListener
+        webFontsPreference?.onPreferenceChangeListener = engineSharedPreferencesListener
 
         cookieBannerPreference?.isVisible = requireContext().settings.isCookieBannerEnable
         if (requireContext().settings.getCurrentCookieBannerOptionFromSharePref() ==
@@ -153,7 +159,6 @@ class PrivacySecuritySettingsFragment :
     }
 
     override fun onPreferenceTreeClick(preference: Preference): Boolean {
-        val engineSharedPreferencesListener = EngineSharedPreferencesListener(requireContext())
         when (preference.key) {
             resources.getString(R.string.pref_key_screen_exceptions) -> {
                 TrackingProtectionExceptions.allowListOpened.record(NoExtras())
@@ -173,24 +178,28 @@ class PrivacySecuritySettingsFragment :
                 engineSharedPreferencesListener.updateTrackingProtectionPolicy(
                     EngineSharedPreferencesListener.ChangeSource.SETTINGS.source,
                     EngineSharedPreferencesListener.TrackerChanged.SOCIAL.tracker,
+                    requireContext().settings.shouldBlockSocialTrackers(),
                 )
 
             resources.getString(R.string.pref_key_privacy_block_ads) ->
                 engineSharedPreferencesListener.updateTrackingProtectionPolicy(
                     EngineSharedPreferencesListener.ChangeSource.SETTINGS.source,
                     EngineSharedPreferencesListener.TrackerChanged.ADVERTISING.tracker,
+                    requireContext().settings.shouldBlockAdTrackers(),
                 )
 
             resources.getString(R.string.pref_key_privacy_block_analytics) ->
                 engineSharedPreferencesListener.updateTrackingProtectionPolicy(
                     EngineSharedPreferencesListener.ChangeSource.SETTINGS.source,
                     EngineSharedPreferencesListener.TrackerChanged.ANALYTICS.tracker,
+                    requireContext().settings.shouldBlockAnalyticTrackers(),
                 )
 
             resources.getString(R.string.pref_key_privacy_block_other3) ->
                 engineSharedPreferencesListener.updateTrackingProtectionPolicy(
                     EngineSharedPreferencesListener.ChangeSource.SETTINGS.source,
                     EngineSharedPreferencesListener.TrackerChanged.CONTENT.tracker,
+                    requireContext().settings.shouldBlockOtherTrackers(),
                 )
             resources.getString(R.string.pref_key_cookie_banner_settings) -> {
                 CookieBanner.visitedSetting.record(NoExtras())

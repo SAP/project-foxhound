@@ -48,10 +48,16 @@ function debug(s) {
 }
 
 function _updateCurrentBrowserId(browser) {
+  // _trackedWindows[0] may be a minimized window because `activate` can fire
+  // while the window is still in STATE_MINIMIZED on macOS (see bug 2007691),
+  // so compare against the topmost non-minimized tracked window instead.
+  const topNonMinimized = _trackedWindows.find(
+    w => !w.closed && w.windowState != w.STATE_MINIMIZED
+  );
   if (
     !browser.browserId ||
     browser.browserId === _lastCurrentBrowserId ||
-    browser.ownerGlobal != _trackedWindows[0]
+    browser.documentGlobal != topNonMinimized
   ) {
     return;
   }
@@ -76,7 +82,7 @@ function _handleEvent(event) {
   switch (event.type) {
     case "TabBrowserInserted":
       if (
-        event.target.ownerGlobal.gBrowser.selectedBrowser ===
+        event.target.documentGlobal.gBrowser.selectedBrowser ===
         event.target.linkedBrowser
       ) {
         _updateCurrentBrowserId(event.target.linkedBrowser);
@@ -94,18 +100,13 @@ function _handleEvent(event) {
   }
 }
 
+// Tracks the window at the front of the list. Minimized state is intentionally
+// not considered here. Callers that need to skip minimized windows should do so
+// at read time. See bug 2007691: on macOS, `activate` fires before the window
+// state transitions out of STATE_MINIMIZED, so any write-time filter on the
+// minimized state would place the just-activated window in the wrong slot.
 function _trackWindowOrder(window) {
-  if (window.windowState == window.STATE_MINIMIZED) {
-    let firstMinimizedWindow = _trackedWindows.findIndex(
-      w => w.windowState == w.STATE_MINIMIZED
-    );
-    if (firstMinimizedWindow == -1) {
-      firstMinimizedWindow = _trackedWindows.length;
-    }
-    _trackedWindows.splice(firstMinimizedWindow, 0, window);
-  } else {
-    _trackedWindows.unshift(window);
-  }
+  _trackedWindows.unshift(window);
 }
 
 function _untrackWindowOrder(window) {
@@ -205,6 +206,7 @@ export const BrowserWindowTracker = {
    */
   getTopWindow(options = {}) {
     let cloakedWin = null;
+    let minimizedWin = null;
     for (let win of _trackedWindows) {
       if (
         !win.closed &&
@@ -225,12 +227,22 @@ export const BrowserWindowTracker = {
           }
           continue;
         }
+        // Prefer non-minimized windows. Fall back to a minimized one only if
+        // no non-minimized non-cloaked window qualifies. This matters mainly
+        // on macOS where `activate` can fire while the window is still in
+        // STATE_MINIMIZED (bug 2007691); on Linux/Windows it keeps us from
+        // returning null when the only eligible window happens to be
+        // minimized.
+        if (win.windowState == win.STATE_MINIMIZED) {
+          minimizedWin ??= win;
+          continue;
+        }
         return win;
       }
     }
-    // If we didn't find a non-cloaked window, return the cloaked one if it exists and
-    // the options allow us to do so.
-    return cloakedWin;
+    // No non-minimized non-cloaked window matched. Prefer a minimized window
+    // on the current desktop over a cloaked one from another virtual desktop.
+    return minimizedWin || cloakedWin;
   },
 
   /**
@@ -447,9 +459,21 @@ export const BrowserWindowTracker = {
    *   all windows.
    */
   getOrderedWindows({ private: isPrivate = undefined } = {}) {
-    // Clone the windows array immediately as it may change during iteration.
-    // We'd rather have an outdated order than skip/revisit windows.
-    const windows = [..._trackedWindows];
+    const nonMinimized = [];
+    const minimized = [];
+    for (const w of _trackedWindows) {
+      if (w.windowState == w.STATE_MINIMIZED) {
+        minimized.push(w);
+      } else {
+        nonMinimized.push(w);
+      }
+    }
+    // Move minimized windows to the back while preserving the relative order
+    // of each group, so consumers prefer non-minimized windows. See bug
+    // 2007691. concat() also returns a fresh array, so callers do not get a
+    // reference to the internal _trackedWindows list.
+    let windows = nonMinimized.concat(minimized);
+
     if (
       typeof isPrivate !== "boolean" ||
       (isPrivate && lazy.PrivateBrowsingUtils.permanentPrivateBrowsing)

@@ -26,6 +26,11 @@ logger = logging.getLogger(__name__)
     ),
     order=250,
     context=[],  # Applies to decision task
+    schema={
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    },
 )
 def run_missing_tests(parameters, graph_config, input, task_group_id, task_id):
     decision_task_id, full_task_graph, label_to_taskid, _ = fetch_graph_and_labels(

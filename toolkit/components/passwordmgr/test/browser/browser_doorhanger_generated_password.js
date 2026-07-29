@@ -109,7 +109,7 @@ async function openFormInNewTab(url, formValues, taskFn) {
       url,
     },
     async function (browser) {
-      await SimpleTest.promiseFocus(browser.ownerGlobal);
+      await SimpleTest.promiseFocus(browser.documentGlobal);
       await formFilled;
 
       await SpecialPowers.spawn(
@@ -241,9 +241,9 @@ async function openAndVerifyDoorhanger(browser, type, expected) {
 }
 
 async function appendContentInputvalue(browser, selector, str) {
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     browser,
-    { selector, str },
+    [{ selector, str }],
     async function ({ selector, str }) {
       const EventUtils = ContentTaskUtils.getEventUtils(content);
       let input = content.document.querySelector(selector);
@@ -1113,7 +1113,7 @@ add_task(
         },
       },
       async function taskFn(browser) {
-        await SimpleTest.promiseFocus(browser.ownerGlobal);
+        await SimpleTest.promiseFocus(browser.documentGlobal);
 
         let storageChangedPromise = TestUtils.topicObserved(
           "passwordmgr-storage-changed",
@@ -1290,7 +1290,7 @@ add_task(async function autosaved_login_updated_to_existing_login_onsubmit() {
       },
     },
     async function taskFn(browser) {
-      await SimpleTest.promiseFocus(browser.ownerGlobal);
+      await SimpleTest.promiseFocus(browser.documentGlobal);
 
       // first, create an auto-saved login with generated password
       let storageChangedPromise = TestUtils.topicObserved(

@@ -20,6 +20,6 @@
     <string name="mozac_feature_addons_successfully_uninstalled">Successfully uninstalled %1$s</string>
     <!-- Text shown after failed to uninstall an add-on. %1$s is the add-on name. -->
     <string name="mozac_feature_addons_failed_to_uninstall">Failed to uninstall %1$s</string>
-    <!-- Error shown when something unexpected happened while trying to get the extension list from the server -->
-    <string name="mozac_feature_addons_failed_to_query_extensions">Failed to query extensions!</string>
+    <!-- Error shown when extension could not be loaded -->
+    <string name="mozac_feature_addon_failed_to_load_extension">Couldn’t load extension. Try again later.</string>
 </resources>

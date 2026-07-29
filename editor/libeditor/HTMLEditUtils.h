@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -107,9 +106,7 @@ class HTMLEditUtils final {
    * native anonymous node or something.
    */
   static bool IsNeverElementContentsEditableByUser(const nsIContent& aContent) {
-    return aContent.IsElement() &&
-           // XXX I think we should not treat <button> contents as editable
-           !aContent.IsHTMLElement(nsGkAtoms::button) &&
+    return aContent.IsElement() && !aContent.IsHTMLElement(nsGkAtoms::button) &&
            (!HTMLEditUtils::IsContainerNode(aContent) ||
             HTMLEditUtils::IsReplacedElement(*aContent.AsElement()) ||
             aContent.IsAnyOfHTMLElements(nsGkAtoms::applet, nsGkAtoms::colgroup,
@@ -474,12 +471,6 @@ class HTMLEditUtils final {
   }
 
   /**
-   * Return true if aElement is a form widget, i.e., a replaced element for the
-   * <form>.
-   */
-  [[nodiscard]] static bool IsFormWidgetElement(const nsIContent& aContent);
-
-  /**
    * Return true if aContent is an element which can ahve `align` attribute.
    */
   [[nodiscard]] static bool IsAlignAttrSupported(const nsIContent& aContent);
@@ -708,11 +699,17 @@ class HTMLEditUtils final {
            EditorUtils::IsNewLinePreformatted(aText);
   }
 
+  enum class TreatInvisibleLineBreakAs : bool { Invisible, Visible };
+
   /**
    * IsVisibleTextNode() returns true if aText has visible text.  If it has
    * only white-spaces and they are collapsed, returns false.
+   * If aText has only a preformatted line break which may be surrounded by
+   * collapsible white-spaces, retrun true if aTreatInvisibleLineBreakAs is
+   * Visible, but false otherwise.
    */
-  [[nodiscard]] static bool IsVisibleTextNode(const Text& aText);
+  [[nodiscard]] static bool IsVisibleTextNode(
+      const Text& aText, TreatInvisibleLineBreakAs aTreatInvisibleLineBreakAs);
 
   /**
    * IsInVisibleTextFrames() returns true if any text in aText is in visible
@@ -722,33 +719,547 @@ class HTMLEditUtils final {
                                     const Text& aText);
 
   /**
-   * IsVisibleBRElement() and IsInvisibleBRElement() return true if aContent is
-   * a visible HTML <br> element, i.e., not a padding <br> element for making
-   * last line in a block element visible, or an invisible <br> element.
+   * Return true if aContent is a <br> element and it's followed by a block
+   * boundary.
+   *
+   * @param aAncestorLimiter    [optional] If set, this stops scanning the DOM
+   *                            when it reaches the element boundary.  If this
+   *                            is an inline editing host, the result may be
+   *                            changed.
+   * @param aFollowingBlockBoundaryElement
+   *                            [out][optional] If aContent is followed by a
+   *                            block boundary, this will be set to the block
+   *                            element without add-ref.
    */
-  static bool IsVisibleBRElement(const nsIContent& aContent) {
-    if (const dom::HTMLBRElement* brElement =
-            dom::HTMLBRElement::FromNode(&aContent)) {
-      return IsVisibleBRElement(*brElement);
-    }
-    return false;
+  [[nodiscard]] static bool IsBRElementFollowedByBlockBoundary(
+      const nsIContent& aContent, const Element* aAncestorLimiter = nullptr,
+      Element** aFollowingBlockBoundaryElement = nullptr) {
+    const auto* const brElement = dom::HTMLBRElement::FromNode(aContent);
+    return brElement &&
+           IsBRElementFollowedByBlockBoundary(*brElement, aAncestorLimiter,
+                                              aFollowingBlockBoundaryElement);
   }
-  static bool IsVisibleBRElement(const dom::HTMLBRElement& aBRElement) {
-    // If followed by a block boundary without visible content, it's invisible
-    // <br> element.
-    return !HTMLEditUtils::GetElementOfImmediateBlockBoundary(
-        aBRElement, WalkTreeDirection::Forward);
+
+  /**
+   * Return true if aBRElement is followed by a block boundary.
+   *
+   * @param aAncestorLimiter    [optional] If set, this stops scanning the DOM
+   *                            when it reaches the element boundary.  If this
+   *                            is an inline editing host, the result may be
+   *                            changed.
+   * @param aFollowingBlockBoundaryElement
+   *                            [out][optional] If aBRElement is followed by a
+   *                            block boundary, this will be set to the block
+   *                            element without add-ref.
+   */
+  [[nodiscard]] static bool IsBRElementFollowedByBlockBoundary(
+      const dom::HTMLBRElement& aBRElement,
+      const Element* aAncestorLimiter = nullptr,
+      Element** aFollowingBlockBoundaryElement = nullptr);
+
+  /**
+   * Return true if aContent is a <br> element and it's followed by the current
+   * block boundary.
+   *
+   * @param aAncestorLimiter    [optional] If set, this stops scanning the DOM
+   *                            when it reaches the element boundary.  If this
+   *                            is an inline editing host, the result may be
+   *                            changed.
+   * @param aFollowingBlockBoundaryElement
+   *                            [out][optional] If aContent is followed by a
+   *                            block boundary, this will be set to the block
+   *                            element without add-ref.
+   */
+  [[nodiscard]] static bool IsBRElementFollowedByCurrentBlockBoundary(
+      const nsIContent& aContent, const Element* aAncestorLimiter = nullptr,
+      Element** aFollowingBlockBoundaryElement = nullptr) {
+    const auto* const brElement = dom::HTMLBRElement::FromNode(aContent);
+    return brElement &&
+           IsBRElementFollowedByCurrentBlockBoundary(
+               *brElement, aAncestorLimiter, aFollowingBlockBoundaryElement);
   }
-  static bool IsInvisibleBRElement(const nsIContent& aContent) {
-    if (const dom::HTMLBRElement* brElement =
-            dom::HTMLBRElement::FromNode(&aContent)) {
-      return IsInvisibleBRElement(*brElement);
-    }
-    return false;
+
+  /**
+   * Return true if aBRElement is followed by the current block boundary.
+   *
+   * @param aAncestorLimiter    [optional] If set, this stops scanning the DOM
+   *                            when it reaches the element boundary.  If this
+   *                            is an inline editing host, the result may be
+   *                            changed.
+   * @param aFollowingBlockBoundaryElement
+   *                            [out][optional] If aBRElement is followed by a
+   *                            block boundary, this will be set to the block
+   *                            element without add-ref.
+   */
+  [[nodiscard]] static bool IsBRElementFollowedByCurrentBlockBoundary(
+      const dom::HTMLBRElement& aBRElement,
+      const Element* aAncestorLimiter = nullptr,
+      Element** aFollowingBlockBoundaryElement = nullptr);
+
+  /**
+   * Return true if aContent is a <br> element which is following the current
+   * block boundary.
+   *
+   * @param aAncestorLimiter    [optional] If set, this stops scanning the DOM
+   *                            when it reaches the element boundary.  If this
+   *                            is an inline editing host, the result may be
+   *                            changed.
+   * @param aFollowingBlockBoundaryElement
+   *                            [out][optional] If aContent is followed by a
+   *                            block boundary, this will be set to the block
+   *                            element without add-ref.
+   */
+  [[nodiscard]] static bool IsBRElementFollowingCurrentBlockBoundary(
+      const nsIContent& aContent, const Element* aAncestorLimiter = nullptr,
+      Element** aPrecedingBlockBoundaryElement = nullptr) {
+    const auto* const brElement = dom::HTMLBRElement::FromNode(aContent);
+    return brElement &&
+           IsBRElementFollowingCurrentBlockBoundary(
+               *brElement, aAncestorLimiter, aPrecedingBlockBoundaryElement);
   }
-  static bool IsInvisibleBRElement(const dom::HTMLBRElement& aBRElement) {
-    return !HTMLEditUtils::IsVisibleBRElement(aBRElement);
+
+  /**
+   * Return true if aBRElement is following the current block boundary.
+   *
+   * @param aAncestorLimiter    [optional] If set, this stops scanning the DOM
+   *                            when it reaches the element boundary.  If this
+   *                            is an inline editing host, the result may be
+   *                            changed.
+   * @param aFollowingBlockBoundaryElement
+   *                            [out][optional] If aBRElement is followed by a
+   *                            block boundary, this will be set to the block
+   *                            element without add-ref.
+   */
+  [[nodiscard]] static bool IsBRElementFollowingCurrentBlockBoundary(
+      const dom::HTMLBRElement& aBRElement,
+      const Element* aAncestorLimiter = nullptr,
+      Element** aPrecedingBlockBoundaryElement = nullptr);
+
+  /**
+   * Return true if aContent is a <br> element and it's followed by a block
+   * boundary which is not of the current block.
+   *
+   * @param aAncestorLimiter    [optional] If set, this stops scanning the DOM
+   *                            when it reaches the element boundary.  If this
+   *                            is an inline editing host, the result may be
+   *                            changed.
+   * @param aFollowingBlockBoundaryElement
+   *                            [out][optional] If aContent is followed by a
+   *                            block boundary, this will be set to the block
+   *                            element without add-ref.
+   */
+  [[nodiscard]] static bool IsBRElementFollowedByOtherBlockBoundary(
+      const nsIContent& aContent, const Element* aAncestorLimiter = nullptr,
+      Element** aFollowingBlockBoundaryElement = nullptr) {
+    const auto* const brElement = dom::HTMLBRElement::FromNode(aContent);
+    return brElement &&
+           IsBRElementFollowedByOtherBlockBoundary(
+               *brElement, aAncestorLimiter, aFollowingBlockBoundaryElement);
   }
+
+  /**
+   * Return true if aBRElement is followed by a block boundary which is not of
+   * the the current block.
+   *
+   * @param aAncestorLimiter    [optional] If set, this stops scanning the DOM
+   *                            when it reaches the element boundary.  If this
+   *                            is an inline editing host, the result may be
+   *                            changed.
+   * @param aFollowingBlockBoundaryElement
+   *                            [out][optional] If aBRElement is followed by a
+   *                            block boundary, this will be set to the block
+   *                            element without add-ref.
+   */
+  [[nodiscard]] static bool IsBRElementFollowedByOtherBlockBoundary(
+      const dom::HTMLBRElement& aBRElement,
+      const Element* aAncestorLimiter = nullptr,
+      Element** aFollowingBlockBoundaryElement = nullptr);
+
+  /**
+   * Return true if aContent is a <br> element and it's followed by a line
+   * boundary such as a block boundary or a line break.
+   *
+   * @param aAncestorLimiter    [optional] If set, this stops scanning the DOM
+   *                            when it reaches the element boundary.  If this
+   *                            is an inline editing host, the result may be
+   *                            changed.
+   * @param aFollowingBlockBoundaryElement
+   *                            [out][optional] If aContent is followed by a
+   *                            block boundary, this will be set to the block
+   *                            element without add-ref.  If followed by a line
+   *                            break, this is set to nullptr.
+   */
+  [[nodiscard]] static bool IsBRElementFollowedByLineBoundary(
+      const nsIContent& aContent, const Element* aAncestorLimiter = nullptr,
+      Element** aFollowingBlockBoundaryElement = nullptr) {
+    const auto* const brElement = dom::HTMLBRElement::FromNode(aContent);
+    return brElement &&
+           IsBRElementFollowedByLineBoundary(*brElement, aAncestorLimiter,
+                                             aFollowingBlockBoundaryElement);
+  }
+
+  /**
+   * Return true if aBRElement is followed by a line boundary
+   * such as a block boundary or a line break.
+   *
+   * @param aAncestorLimiter    [optional] If set, this stops scanning the DOM
+   *                            when it reaches the element boundary.  If this
+   *                            is an inline editing host, the result may be
+   *                            changed.
+   * @param aFollowingBlockBoundaryElement
+   *                            [out][optional] If aBRElement is followed by a
+   *                            block boundary, this will be set to the block
+   *                            element without add-ref.  If followed by a line
+   *                            break, this is set to nullptr.
+   */
+  [[nodiscard]] static bool IsBRElementFollowedByLineBoundary(
+      const dom::HTMLBRElement& aBRElement,
+      const Element* aAncestorLimiter = nullptr,
+      Element** aFollowingBlockBoundaryElement = nullptr);
+
+  /**
+   * Return true if aContent is a <br> element and it follows a line boundary
+   * such as a block boundary or a line break.
+   *
+   * @param aAncestorLimiter    [optional] If set, this stops scanning the DOM
+   *                            when it reaches the element boundary.  If this
+   *                            is an inline editing host, the result may be
+   *                            changed.
+   * @param aPrecedingBlockBoundaryElement
+   *                            [out][optional] If aContent follows a block
+   *                            boundary, this will be set to the block element
+   *                            without add-ref.  If follows a line break, this
+   *                            is set to nullptr.
+   */
+  [[nodiscard]] static bool IsBRElementFollowingLineBoundary(
+      const nsIContent& aContent, const Element* aAncestorLimiter = nullptr,
+      Element** aPrecedingBlockBoundaryElement = nullptr) {
+    const auto* const brElement = dom::HTMLBRElement::FromNode(aContent);
+    return brElement &&
+           IsBRElementFollowingLineBoundary(*brElement, aAncestorLimiter,
+                                            aPrecedingBlockBoundaryElement);
+  }
+
+  /**
+   * Return true if aBRElement follows a line boundary such as a block boundary
+   * or a line break.
+   *
+   * @param aAncestorLimiter    [optional] If set, this stops scanning the DOM
+   *                            when it reaches the element boundary.  If this
+   *                            is an inline editing host, the result may be
+   *                            changed.
+   * @param aPrecedingBlockBoundaryElement
+   *                            [out][optional] If aBRElement follows a block
+   *                            boundary, this will be set to the block element
+   *                            without add-ref.  If follows a line break, this
+   *                            is set to nullptr.
+   */
+  [[nodiscard]] static bool IsBRElementFollowingLineBoundary(
+      const dom::HTMLBRElement& aBRElement,
+      const Element* aAncestorLimiter = nullptr,
+      Element** aPrecedingBlockBoundaryElement = nullptr);
+
+  /**
+   * Return true if aContent is a <br> element and it follows a line break.
+   *
+   * @param aAncestorLimiter    [optional] If set, this stops scanning the DOM
+   *                            when it reaches the element boundary.  If this
+   *                            is an inline editing host, the result may be
+   *                            changed.
+   */
+  [[nodiscard]] static bool IsBRElementFollowingLineBreak(
+      const nsIContent& aContent, const Element* aAncestorLimiter = nullptr) {
+    const auto* const brElement = dom::HTMLBRElement::FromNode(aContent);
+    return brElement &&
+           IsBRElementFollowingLineBreak(*brElement, aAncestorLimiter);
+  }
+
+  /**
+   * Return true if aBRElement follows a line break.
+   *
+   * @param aAncestorLimiter    [optional] If set, this stops scanning the DOM
+   *                            when it reaches the element boundary.  If this
+   *                            is an inline editing host, the result may be
+   *                            changed.
+   */
+  [[nodiscard]] static bool IsBRElementFollowingLineBreak(
+      const dom::HTMLBRElement& aBRElement,
+      const Element* aAncestorLimiter = nullptr);
+
+  /**
+   * Return true if aContent is a <br> element and does not affect to the
+   * layout, i.e., if it's invisible.
+   *
+   * @param aAncestorLimiter    [optional] If set, this stops scanning the DOM
+   *                            when it reaches the element boundary.  If this
+   *                            is an inline editing host, the result may be
+   *                            changed.
+   * @param aFollowingBlockBoundaryElement
+   *                            [out][optional] If aContent is unnecessary, this
+   *                            will be set to the element whose block boundary
+   *                            follows aContent without add-ref.
+   */
+  [[nodiscard]] static bool IsUnnecessaryBRElement(
+      const nsIContent& aContent, PaddingForEmptyBlock aPaddingForEmptyBlock,
+      const Element* aAncestorLimiter = nullptr,
+      Element** aFollowingBlockBoundaryElement = nullptr) {
+    const auto* const brElement = dom::HTMLBRElement::FromNode(aContent);
+    return brElement && IsUnnecessaryBRElement(
+                            *brElement, aPaddingForEmptyBlock, aAncestorLimiter,
+                            aFollowingBlockBoundaryElement);
+  }
+
+  /**
+   * Return true if aBRElement does not affect to the layout.  I.e., if it's
+   * invisible.
+   *
+   * @param aAncestorLimiter    [optional] If set, this stops scanning the DOM
+   *                            when it reaches the element boundary.  If this
+   *                            is an inline editing host, the result may be
+   *                            changed.
+   * @param aFollowingBlockBoundaryElement
+   *                            [out][optional] If aBRElement is unnecessary,
+   *                            this will be set to the element whose block
+   *                            boundary follows aBRElement without add-ref.
+   */
+  [[nodiscard]] static bool IsUnnecessaryBRElement(
+      const dom::HTMLBRElement& aBRElement,
+      PaddingForEmptyBlock aPaddingForEmptyBlock,
+      const Element* aAncestorLimiter = nullptr,
+      Element** aFollowingBlockBoundaryElement = nullptr);
+
+  /**
+   * Return true if aContent is a <br> element and it actually represents a line
+   * break, i.e., if it's visible.
+   */
+  [[nodiscard]] static bool IsSignificantBRElement(
+      const nsIContent& aContent, PaddingForEmptyBlock aPaddingForEmptyBlock,
+      const Element* aAncestorLimiter = nullptr,
+      Element** aFollowingBlockBoundaryElement = nullptr) {
+    const auto* const brElement = dom::HTMLBRElement::FromNode(aContent);
+    return brElement && !IsUnnecessaryBRElement(
+                            *brElement, aPaddingForEmptyBlock, aAncestorLimiter,
+                            aFollowingBlockBoundaryElement);
+  }
+
+  /**
+   * Return true if aBRElement actually represents a line break, i.e., if it's
+   * visible.
+   */
+  [[nodiscard]] static bool IsSignificantBRElement(
+      const dom::HTMLBRElement& aBRElement,
+      PaddingForEmptyBlock aPaddingForEmptyBlock,
+      const Element* aAncestorLimiter = nullptr,
+      Element** aFollowingBlockBoundaryElement = nullptr) {
+    return !IsUnnecessaryBRElement(aBRElement, aPaddingForEmptyBlock,
+                                   aAncestorLimiter,
+                                   aFollowingBlockBoundaryElement);
+  }
+
+  enum class SkipWhiteSpaceStyleCheck : bool { No, Yes };
+
+  /**
+   * Return true if the character at aPoint is a preformatted linefeed and
+   * followed by a block boundary.
+   *
+   * @param aAncestorLimiter    [optional] If set, this stops scanning the DOM
+   *                            when it reaches the element boundary.  If this
+   *                            is an inline editing host, the result may be
+   *                            changed.
+   * @param aFollowingBlockBoundaryElement
+   *                            [out][optional] If the linefeed is followed by a
+   *                            block boundary, this will be set to the block
+   *                            element without add-ref.
+   */
+  template <typename EditorDOMPointType>
+  [[nodiscard]] static bool IsPreformattedLineBreakFollowedByBlockBoundary(
+      const EditorDOMPointType& aPoint,
+      SkipWhiteSpaceStyleCheck aSkipWhiteSpaceStyleCheck =
+          SkipWhiteSpaceStyleCheck::No,
+      const Element* aAncestorLimiter = nullptr,
+      Element** aFollowingBlockBoundaryElement = nullptr);
+
+  /**
+   * Return true if the character at aPoint is a preformatted linefeed and
+   * followed by the current block boundary.
+   *
+   * @param aAncestorLimiter    [optional] If set, this stops scanning the DOM
+   *                            when it reaches the element boundary.  If this
+   *                            is an inline editing host, the result may be
+   *                            changed.
+   * @param aFollowingBlockBoundaryElement
+   *                            [out][optional] If the linefeed is followed by a
+   *                            block boundary, this will be set to the block
+   *                            element without add-ref.
+   */
+  template <typename EditorDOMPointType>
+  [[nodiscard]] static bool
+  IsPreformattedLineBreakFollowedByCurrentBlockBoundary(
+      const EditorDOMPointType& aPoint,
+      SkipWhiteSpaceStyleCheck aSkipWhiteSpaceStyleCheck =
+          SkipWhiteSpaceStyleCheck::No,
+      const Element* aAncestorLimiter = nullptr,
+      Element** aFollowingBlockBoundaryElement = nullptr);
+
+  /**
+   * Return true if the character at aPoint is a preformatted linefeed and
+   * follows the current block boundary.
+   *
+   * @param aAncestorLimiter    [optional] If set, this stops scanning the DOM
+   *                            when it reaches the element boundary.  If this
+   *                            is an inline editing host, the result may be
+   *                            changed.
+   * @param aPrecedingBlockBoundaryElement
+   *                            [out][optional] If the linefeed is following
+   *                            current block boundary, this will be set to the
+   *                            block element without add-ref.
+   */
+  template <typename EditorDOMPointType>
+  [[nodiscard]] static bool
+  IsPreformattedLineBreakFollowingCurrentBlockBoundary(
+      const EditorDOMPointType& aPoint,
+      SkipWhiteSpaceStyleCheck aSkipWhiteSpaceStyleCheck =
+          SkipWhiteSpaceStyleCheck::No,
+      const Element* aAncestorLimiter = nullptr,
+      Element** aPrecedingBlockBoundaryElement = nullptr);
+
+  /**
+   * Return true if the character at aPoint is a preformatted linefeed and
+   * followed by a block boundary which is not of the current block.
+   *
+   * @param aAncestorLimiter    [optional] If set, this stops scanning the DOM
+   *                            when it reaches the element boundary.  If this
+   *                            is an inline editing host, the result may be
+   *                            changed.
+   * @param aFollowingBlockBoundaryElement
+   *                            [out][optional] If the linefeed is followed by a
+   *                            block boundary, this will be set to the block
+   *                            element without add-ref.
+   */
+  template <typename EditorDOMPointType>
+  [[nodiscard]] static bool IsPreformattedLineBreakFollowedByOtherBlockBoundary(
+      const EditorDOMPointType& aPoint,
+      SkipWhiteSpaceStyleCheck aSkipWhiteSpaceStyleCheck =
+          SkipWhiteSpaceStyleCheck::No,
+      const Element* aAncestorLimiter = nullptr,
+      Element** aFollowingBlockBoundaryElement = nullptr);
+
+  /**
+   * Return true if the character at aPoint is a preformatted linefeed and
+   * followed by a line boundary such as a block boundary or a line break.
+   *
+   * @param aAncestorLimiter    [optional] If set, this stops scanning the DOM
+   *                            when it reaches the element boundary.  If this
+   *                            is an inline editing host, the result may be
+   *                            changed.
+   * @param aFollowingBlockBoundaryElement
+   *                            [out][optional] If the linefeed is followed by a
+   *                            block boundary, this will be set to the block
+   *                            element without add-ref.  If the linefeed is
+   *                            followed by a line break, this will be set to
+   *                            nullptr.
+   */
+  template <typename EditorDOMPointType>
+  [[nodiscard]] static bool IsPreformattedLineBreakFollowedByLineBoundary(
+      const EditorDOMPointType& aPoint,
+      SkipWhiteSpaceStyleCheck aSkipWhiteSpaceStyleCheck =
+          SkipWhiteSpaceStyleCheck::No,
+      const Element* aAncestorLimiter = nullptr,
+      Element** aFollowingBlockBoundaryElement = nullptr);
+
+  /**
+   * Return true if the character at aPoint is a preformatted linefeed and
+   * follows a line boundary such as a block boundary or a line break.
+   *
+   * @param aAncestorLimiter    [optional] If set, this stops scanning the DOM
+   *                            when it reaches the element boundary.  If this
+   *                            is an inline editing host, the result may be
+   *                            changed.
+   * @param aPrecedingBlockBoundaryElement
+   *                            [out][optional] If the linefeed follows a block
+   *                            boundary, this will be set to the block element
+   *                            without add-ref.  If follows a line break, this
+   *                            is set to nullptr.
+   */
+  template <typename EditorDOMPointType>
+  [[nodiscard]] static bool IsPreformattedLineBreakFollowingLineBoundary(
+      const EditorDOMPointType& aPoint,
+      SkipWhiteSpaceStyleCheck aSkipWhiteSpaceStyleCheck =
+          SkipWhiteSpaceStyleCheck::No,
+      const Element* aAncestorLimiter = nullptr,
+      Element** aPrecedingBlockBoundaryElement = nullptr);
+
+  /**
+   * Return true if the character at aPoint is a preformatted linefeed and
+   * follows a line break.
+   *
+   * @param aAncestorLimiter    [optional] If set, this stops scanning the DOM
+   *                            when it reaches the element boundary.  If this
+   *                            is an inline editing host, the result may be
+   *                            changed.
+   */
+  template <typename EditorDOMPointType>
+  [[nodiscard]] static bool IsPreformattedLineBreakFollowingLineBreak(
+      const EditorDOMPointType& aPoint,
+      SkipWhiteSpaceStyleCheck aSkipWhiteSpaceStyleCheck =
+          SkipWhiteSpaceStyleCheck::No,
+      const Element* aAncestorLimiter = nullptr);
+
+  /**
+   * Return true if the character at aPoint is a preformatted linefeed and
+   * does not affect to the layout, i.e., if it's an invisible linefeed.
+   *
+   * @param aAncestorLimiter    [optional] If set, this stops scanning the DOM
+   *                            when it reaches the element boundary.  If this
+   *                            is an inline editing host, the result may be
+   *                            changed.
+   * @param aFollowingBlockBoundaryElement
+   *                            [out][optional] If the linefeed is unnecessary,
+   *                            this will be set to the element whose block
+   *                            boundary follows the linefeed without add-ref.
+   */
+  template <typename EditorDOMPointType>
+  [[nodiscard]] static bool IsUnnecessaryPreformattedLineBreak(
+      const EditorDOMPointType& aPoint,
+      PaddingForEmptyBlock aPaddingForEmptyBlock,
+      SkipWhiteSpaceStyleCheck aSkipWhiteSpaceStyleCheck =
+          SkipWhiteSpaceStyleCheck::No,
+      const Element* aAncestorLimiter = nullptr,
+      Element** aFollowingBlockBoundaryElement = nullptr);
+
+  /**
+   * Return true if the character at aPoint is a preformatted linefeed and it
+   * actually represents a line break, i.e., if it's a visible linefeed.
+   */
+  template <typename EditorDOMPointType>
+  [[nodiscard]] static bool IsSignificantPreformattedLineBreak(
+      const EditorDOMPointType& aPoint,
+      PaddingForEmptyBlock aPaddingForEmptyBlock,
+      SkipWhiteSpaceStyleCheck aSkipWhiteSpaceStyleCheck =
+          SkipWhiteSpaceStyleCheck::No,
+      const Element* aAncestorLimiter = nullptr,
+      Element** aFollowingBlockBoundaryElement = nullptr);
+
+  /**
+   * Return an invisible line break before aPoint if and only if there is.
+   * Note that the result may be non-editable and/or non-removable linebreak.
+   */
+  template <typename EditorLineBreakType, typename EditorDOMPointType>
+  [[nodiscard]] static Maybe<EditorLineBreakType>
+  GetPrecedingUnnecessaryLineBreak(const EditorDOMPointType& aPoint,
+                                   const Element* aAncestorLimiter = nullptr);
+
+  /**
+   * Return a following visible thing with ignoring unnecessary line break.
+   * You can get the skipped unnecessary line break with
+   * WSScanResult::MaybeIgnoredLineBreak().
+   */
+  template <typename EditorDOMPointType>
+  [[nodiscard]] static WSScanResult
+  ScanInclusiveNextThingWithIgnoringUnnecessaryLineBreak(
+      const EditorDOMPointType& aPoint,
+      PaddingForEmptyBlock aPaddingForEmptyBlock, const Element& aEditingHost,
+      const Element* aAncestorLimiter = nullptr);
 
   enum class IgnoreInvisibleLineBreak { No, Yes };
 
@@ -792,71 +1303,6 @@ class HTMLEditUtils final {
    */
   [[nodiscard]] static bool IsInclusiveAncestorCSSDisplayNone(
       const nsIContent& aContent, const nsIContent* aAncestorLimiter = nullptr);
-
-  /**
-   * IsVisiblePreformattedNewLine() and IsInvisiblePreformattedNewLine() return
-   * true if the point is preformatted linefeed and it's visible or invisible.
-   * If linefeed is immediately before a block boundary, it's invisible.
-   *
-   * @param aFollowingBlockElement  [out] If the node is followed by a block
-   *                                boundary, this is set to the element
-   *                                creating the block boundary.
-   */
-  template <typename EditorDOMPointType>
-  [[nodiscard]] static bool IsVisiblePreformattedNewLine(
-      const EditorDOMPointType& aPoint,
-      Element** aFollowingBlockElement = nullptr) {
-    if (aFollowingBlockElement) {
-      *aFollowingBlockElement = nullptr;
-    }
-    if (!aPoint.IsInTextNode() || aPoint.IsEndOfContainer() ||
-        !aPoint.IsCharPreformattedNewLine()) {
-      return false;
-    }
-    // If there are some other characters in the text node, it's a visible
-    // linefeed.
-    if (!aPoint.IsAtLastContent()) {
-      if (EditorUtils::IsWhiteSpacePreformatted(
-              *aPoint.template ContainerAs<Text>())) {
-        return true;
-      }
-      const dom::CharacterDataBuffer& characterDataBuffer =
-          aPoint.template ContainerAs<Text>()->DataBuffer();
-      const uint32_t nextVisibleCharOffset =
-          characterDataBuffer.FindNonWhitespaceChar(
-              EditorUtils::IsNewLinePreformatted(
-                  *aPoint.template ContainerAs<Text>())
-                  ? WhitespaceOptions{WhitespaceOption::FormFeedIsSignificant,
-                                      WhitespaceOption::NewLineIsSignificant}
-                  : WhitespaceOptions{WhitespaceOption::FormFeedIsSignificant},
-              aPoint.Offset() + 1);
-      if (nextVisibleCharOffset != dom::CharacterDataBuffer::kNotFound) {
-        return true;  // There is a visible character after the point.
-      }
-    }
-    // If followed by a block boundary without visible content, it's invisible
-    // linefeed.
-    Element* followingBlockElement =
-        HTMLEditUtils::GetElementOfImmediateBlockBoundary(
-            *aPoint.template ContainerAs<Text>(), WalkTreeDirection::Forward);
-    if (aFollowingBlockElement) {
-      *aFollowingBlockElement = followingBlockElement;
-    }
-    return !followingBlockElement;
-  }
-  template <typename EditorDOMPointType>
-  static bool IsInvisiblePreformattedNewLine(
-      const EditorDOMPointType& aPoint,
-      Element** aFollowingBlockElement = nullptr) {
-    if (!aPoint.IsInTextNode() || aPoint.IsEndOfContainer() ||
-        !aPoint.IsCharPreformattedNewLine()) {
-      if (aFollowingBlockElement) {
-        *aFollowingBlockElement = nullptr;
-      }
-      return false;
-    }
-    return !IsVisiblePreformattedNewLine(aPoint, aFollowingBlockElement);
-  }
 
   /**
    * Return a point to insert a padding line break if aPoint is following a
@@ -970,7 +1416,8 @@ class HTMLEditUtils final {
         return false;  // found sublist or illegal child.
       }
       if (child->IsText() &&
-          HTMLEditUtils::IsVisibleTextNode(*child->AsText())) {
+          HTMLEditUtils::IsVisibleTextNode(
+              *child->AsText(), TreatInvisibleLineBreakAs::Invisible)) {
         return false;  // found illegal visible text node.
       }
     }
@@ -1009,8 +1456,15 @@ class HTMLEditUtils final {
       if (MOZ_UNLIKELY(child->IsElement())) {
         return false;
       }
-      if (MOZ_LIKELY(child->IsText())) {
-        if (MOZ_UNLIKELY(HTMLEditUtils::IsVisibleTextNode(*child->AsText()))) {
+      if (child->IsText()) [[likely]] {
+        // XXX Probably, we should treat the Text which contains only one
+        // preformatted line break as invisible. However, even if the `Text`
+        // contains any preformatted whites-spaces including line breaks, the
+        // list is valid from HTML point of view. So, should we check whether
+        // it's empty with assuming that the Text is white-space:normal?
+        if (HTMLEditUtils::IsVisibleTextNode(
+                *child->AsText(), TreatInvisibleLineBreakAs::Invisible))
+            [[unlikely]] {
           return false;
         }
       }
@@ -1921,6 +2375,7 @@ class HTMLEditUtils final {
         break;
       }
       if (element->GetChildCount() > 1) {
+        // FIXME: We should check whether the each other children is empty.
         for (const nsIContent* child = element->GetFirstChild(); child;
              child = child->GetNextSibling()) {
           if (child == lastEmptyContent || child->IsComment()) {
@@ -2085,29 +2540,6 @@ class HTMLEditUtils final {
     return Nothing();
   }
 
-  enum class ScanLineBreak {
-    AtEndOfBlock,
-    BeforeBlock,
-  };
-  /**
-   * Return last <br> element or last text node ending with a preserved line
-   * break of/before aBlockElement.
-   * Note that the result may be non-editable and/or non-removable.
-   */
-  template <typename EditorLineBreakType>
-  static Maybe<EditorLineBreakType> GetUnnecessaryLineBreak(
-      const Element& aBlockElement, ScanLineBreak aScanLineBreak);
-
-  /**
-   * Return following <br> element from aPoint if and only if it's immediately
-   * before a block boundary but it's not necessary to make the preceding
-   * empty line of the block boundary visible anymore.
-   * Note that the result may be non-editable and/or non-removable linebreak.
-   */
-  template <typename EditorLineBreakType, typename EditorDOMPointType>
-  [[nodiscard]] static Maybe<EditorLineBreakType>
-  GetFollowingUnnecessaryLineBreak(const EditorDOMPointType& aPoint);
-
   /**
    * IsInTableCellSelectionMode() returns true when Gecko's editor thinks that
    * selection is in a table cell selection mode.
@@ -2136,12 +2568,16 @@ class HTMLEditUtils final {
     TreatNBSPsCollapsible,
   };
   using WalkTextOptions = EnumSet<WalkTextOption>;
+  template <typename PT, typename CT>
   static Maybe<uint32_t> GetPreviousNonCollapsibleCharOffset(
-      const EditorDOMPointInText& aPoint,
+      const EditorDOMPointBase<PT, CT>& aPoint,
       const WalkTextOptions& aWalkTextOptions = {}) {
+    static_assert(std::is_same<PT, RefPtr<Text>>::value ||
+                  std::is_same<PT, Text*>::value);
     MOZ_ASSERT(aPoint.IsSetAndValid());
     return GetPreviousNonCollapsibleCharOffset(
-        *aPoint.ContainerAs<Text>(), aPoint.Offset(), aWalkTextOptions);
+        *aPoint.template ContainerAs<Text>(), aPoint.Offset(),
+        aWalkTextOptions);
   }
   static Maybe<uint32_t> GetPreviousNonCollapsibleCharOffset(
       const Text& aTextNode, uint32_t aOffset,
@@ -2392,7 +2828,7 @@ class HTMLEditUtils final {
     // If we are going backward, put caret to next node unless aContent is an
     // invisible `<br>` element.
     // XXX Shouldn't we put caret to first leaf of the next node?
-    if (!HTMLEditUtils::IsInvisibleBRElement(aContent)) {
+    if (!HTMLEditUtils::IsBRElementFollowedByBlockBoundary(aContent)) {
       EditorDOMPointType ret(EditorDOMPointType::After(aContent));
       NS_WARNING_ASSERTION(ret.IsSet(), "Failed to set after aContent");
       return ret;
@@ -2595,7 +3031,8 @@ class HTMLEditUtils final {
     [[nodiscard]] bool NodeShouldBeIgnored(const nsIContent& aContent) const {
       if (mIgnoreInvisibleText && aContent.IsText() &&
           HTMLEditUtils::IsSimplyEditableNode(aContent) &&
-          !HTMLEditUtils::IsVisibleTextNode(*aContent.AsText())) {
+          !HTMLEditUtils::IsVisibleTextNode(
+              *aContent.AsText(), TreatInvisibleLineBreakAs::Visible)) {
         return true;
       }
       if (mIgnoreComment && aContent.IsComment()) {
@@ -2860,17 +3297,6 @@ class HTMLEditUtils final {
          aContent.IsHTMLElement(nsGkAtoms::table));
     return !cannotCrossBoundary;
   }
-
-  /**
-   * GetElementOfImmediateBlockBoundary() returns a block element if its
-   * block boundary and aContent may be first visible thing before/after the
-   * boundary.  And it may return a <br> element only when aContent is a
-   * text node and follows a <br> element because only in this case, the
-   * start white-spaces are invisible.  So the <br> element works same as
-   * a block boundary.
-   */
-  static Element* GetElementOfImmediateBlockBoundary(
-      const nsIContent& aContent, const WalkTreeDirection aDirection);
 
   /**
    * Return true if parent element is a grid or flex container.

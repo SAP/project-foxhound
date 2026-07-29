@@ -3,9 +3,6 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 from taskgraph.transforms.base import TransformSequence
-from taskgraph.util.schema import resolve_keyed_by
-
-from gecko_taskgraph.util.attributes import release_level
 
 transforms = TransformSequence()
 
@@ -19,13 +16,6 @@ def make_task_description(config, jobs):
         return
 
     for job in jobs:
-        resolve_keyed_by(
-            job,
-            "scopes",
-            item_name=job["name"],
-            **{"release-level": release_level(config.params)},
-        )
-
         job["worker"]["merge-automation-id"] = merge_automation_id
 
         yield job

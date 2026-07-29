@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,16 +15,18 @@ namespace layers {
 class APZInputBridgeChild;
 class RemoteCompositorSession;
 
-class APZCTreeManagerChild : public IAPZCTreeManager,
-                             public PAPZCTreeManagerChild {
+class APZCTreeManagerChild final : public IAPZCTreeManager,
+                                   public PAPZCTreeManagerChild {
   friend class PAPZCTreeManagerChild;
   using TapType = GeckoContentController_TapType;
 
  public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(APZCTreeManagerChild, final);
+
   APZCTreeManagerChild();
 
   void SetCompositorSession(RemoteCompositorSession* aSession);
-  void SetInputBridge(APZInputBridgeChild* aInputBridge);
+  void SetInputBridge(RefPtr<APZInputBridgeChild>&& aInputBridge);
   void Destroy();
 
   void SetKeyboardMap(const KeyboardMap& aKeyboardMap) override;
@@ -64,11 +64,9 @@ class APZCTreeManagerChild : public IAPZCTreeManager,
 
   void SetLongTapEnabled(bool aTapGestureEnabled) override;
 
-  APZInputBridge* InputBridge() override;
+  void NotifyApzAwareListenerAdded(const ScrollableLayerGuid& aGuid) override;
 
-  void AddIPDLReference();
-  void ReleaseIPDLReference();
-  void ActorDestroy(ActorDestroyReason aWhy) override;
+  APZInputBridge* InputBridge() override;
 
  protected:
   mozilla::ipc::IPCResult RecvNotifyPinchGesture(
@@ -87,7 +85,6 @@ class APZCTreeManagerChild : public IAPZCTreeManager,
  private:
   MOZ_NON_OWNING_REF RemoteCompositorSession* mCompositorSession;
   RefPtr<APZInputBridgeChild> mInputBridge;
-  bool mIPCOpen;
 };
 
 }  // namespace layers

@@ -1,0 +1,128 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl2-ext"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/conformance/glsl/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_2_conformance__glsl__bugs__angle-ambiguous-function-call.html"]
+
+["test_2_conformance__glsl__bugs__angle-constructor-invalid-parameters.html"]
+
+["test_2_conformance__glsl__bugs__angle-d3d11-compiler-error.html"]
+
+["test_2_conformance__glsl__bugs__angle-dx-variable-bug.html"]
+
+["test_2_conformance__glsl__bugs__array-of-struct-with-int-first-position.html"]
+
+["test_2_conformance__glsl__bugs__assign-to-swizzled-twice-in-function.html"]
+
+["test_2_conformance__glsl__bugs__bool-type-cast-bug-int-float.html"]
+
+["test_2_conformance__glsl__bugs__character-set.html"]
+
+["test_2_conformance__glsl__bugs__compare-loop-index-to-uniform.html"]
+
+["test_2_conformance__glsl__bugs__complex-glsl-does-not-crash.html"]
+
+["test_2_conformance__glsl__bugs__compound-assignment-type-combination.html"]
+
+["test_2_conformance__glsl__bugs__conditional-discard-in-loop.html"]
+
+["test_2_conformance__glsl__bugs__conditional-discard-optimization.html"]
+
+["test_2_conformance__glsl__bugs__conditional-texture-fetch.html"]
+
+["test_2_conformance__glsl__bugs__constant-precision-qualifier.html"]
+
+["test_2_conformance__glsl__bugs__floor-div-cos-should-not-truncate.html"]
+
+["test_2_conformance__glsl__bugs__floored-division-accuracy.html"]
+
+["test_2_conformance__glsl__bugs__fragcoord-linking-bug.html"]
+
+["test_2_conformance__glsl__bugs__gl-fragcoord-multisampling-bug.html"]
+
+["test_2_conformance__glsl__bugs__global-invariant-does-not-leak-across-shaders.html"]
+
+["test_2_conformance__glsl__bugs__if-return-and-elseif.html"]
+
+["test_2_conformance__glsl__bugs__in-parameter-passed-as-inout-argument-and-global.html"]
+
+["test_2_conformance__glsl__bugs__init-array-with-loop.html"]
+
+["test_2_conformance__glsl__bugs__invariant-does-not-leak-across-shaders.html"]
+
+["test_2_conformance__glsl__bugs__logic-inside-block-without-braces.html"]
+
+["test_2_conformance__glsl__bugs__long-expressions-should-not-crash.html"]
+
+["test_2_conformance__glsl__bugs__loop-if-loop-gradient.html"]
+
+["test_2_conformance__glsl__bugs__modulo-arithmetic-accuracy.html"]
+
+["test_2_conformance__glsl__bugs__multiplication-assignment.html"]
+
+["test_2_conformance__glsl__bugs__nested-functions-should-not-crash.html"]
+
+["test_2_conformance__glsl__bugs__nested-loops-with-break-and-continue.html"]
+
+["test_2_conformance__glsl__bugs__nested-sequence-operator.html"]
+
+["test_2_conformance__glsl__bugs__pow-of-small-constant-in-user-defined-function.html"]
+
+["test_2_conformance__glsl__bugs__pow-with-constant-exponent-should-not-crash.html"]
+
+["test_2_conformance__glsl__bugs__qualcomm-crash.html"]
+
+["test_2_conformance__glsl__bugs__qualcomm-loop-with-continue-crash.html"]
+
+["test_2_conformance__glsl__bugs__sampler-array-struct-function-arg.html"]
+
+["test_2_conformance__glsl__bugs__sampler-array-using-loop-index.html"]
+
+["test_2_conformance__glsl__bugs__sampler-struct-function-arg.html"]
+
+["test_2_conformance__glsl__bugs__sequence-operator-evaluation-order.html"]
+
+["test_2_conformance__glsl__bugs__sketchfab-lighting-shader-crash.html"]
+
+["test_2_conformance__glsl__bugs__struct-constructor-highp-bug.html"]
+
+["test_2_conformance__glsl__bugs__struct-with-single-member-constructor.html"]
+
+["test_2_conformance__glsl__bugs__temp-expressions-should-not-crash.html"]
+
+["test_2_conformance__glsl__bugs__unary-minus-operator-float-bug.html"]
+
+["test_2_conformance__glsl__bugs__undefined-index-should-not-crash.html"]
+
+["test_2_conformance__glsl__bugs__uniforms-should-not-lose-values.html"]
+
+["test_2_conformance__glsl__bugs__varying-arrays-should-not-be-reversed.html"]
+
+["test_2_conformance__glsl__bugs__vector-matrix-constructor-scalarization.html"]
+fail-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64' && opt",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+]
+
+["test_2_conformance__glsl__bugs__vector-scalar-arithmetic-inside-loop-complex.html"]
+
+["test_2_conformance__glsl__bugs__vector-scalar-arithmetic-inside-loop.html"]

@@ -17,27 +17,20 @@ class IPDLTestCase(unittest.TestCase):
         self.checkPassed()
 
     def mkCustomMsg(self, msg):
-        return """
-### Command: %s
-### %s
+        return f"""
+### Command: {" ".join(self.compile.argv)}
+### {msg}
 ### stderr:
-%s""" % (
-            " ".join(self.compile.argv),
-            msg,
-            self.compile.stderr,
-        )
+{self.compile.stderr}"""
 
     def mkFailMsg(self):
-        return """
-### Command: %s
+        return f"""
+### Command: {" ".join(self.compile.argv)}
 ### stderr:
-%s""" % (
-            " ".join(self.compile.argv),
-            self.compile.stderr,
-        )
+{self.compile.stderr}"""
 
     def shortDescription(self):
-        return '%s test of "%s"' % (self.__class__.__name__, self.filename)
+        return f'{self.__class__.__name__} test of "{self.filename}"'
 
 
 class OkTestCase(IPDLTestCase):

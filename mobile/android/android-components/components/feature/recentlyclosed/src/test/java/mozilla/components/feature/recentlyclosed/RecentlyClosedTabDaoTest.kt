@@ -63,7 +63,6 @@ class RecentlyClosedTabDaoTest {
             assertEquals(tab1, this[0])
             assertEquals(tab2, this[1])
         }
-        Unit
     }
 
     @Test
@@ -92,7 +91,6 @@ class RecentlyClosedTabDaoTest {
             assertEquals(1, this.size)
             assertEquals(tab2, this[0])
         }
-        Unit
     }
 
     @Test
@@ -120,7 +118,6 @@ class RecentlyClosedTabDaoTest {
         tabDao.getTabs().first().apply {
             assertEquals(0, this.size)
         }
-        Unit
     }
 
     @After

@@ -84,8 +84,15 @@ def run_fxc(shader_model, shader_file, shader_name, output_fp):
         f"-Vn{shader_name}",
         "-Vi",
     ]
+    env = None
     if "WINNT" not in buildconfig.substs["HOST_OS_ARCH"]:
         argv.insert(0, buildconfig.substs["WINE"])
+        # Wine 11.10 dropped --prefer-native from its builtin d3dcompiler_47
+        # (wine commit d56bae228090), so it loads its own vkd3d-backed build
+        # instead of the native DLL next to fxc.exe / fxc2.exe, which can't
+        # compile our shaders. Force the native implementation.
+        env = os.environ.copy()
+        env["WINEDLLOVERRIDES"] = "d3dcompiler_47=n"
     if shader_model.startswith("vs_"):
         argv += ["-DVERTEX_SHADER"]
     elif shader_model.startswith("ps_"):
@@ -97,7 +104,7 @@ def run_fxc(shader_model, shader_file, shader_name, output_fp):
 
         sys.stdout.write("{}\n".format(" ".join(argv)))
         sys.stdout.flush()
-        proc_stdout = subprocess.check_output(argv)
+        proc_stdout = subprocess.check_output(argv, env=env)
         proc_stdout = decode_console_text(sys.stdout, proc_stdout)
         deps = find_dependencies(proc_stdout)
         assert "fxc2" in fxc_location or len(deps) > 0

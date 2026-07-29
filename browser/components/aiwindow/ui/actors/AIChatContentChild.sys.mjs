@@ -28,14 +28,31 @@ export class AIChatContentChild extends JSWindowActorChild {
     "AIChatContent:RemoveAppliedMemory": {
       event: "aiChatContentActor:remove-applied-memory",
     },
+    "AIChatContent:SeenUrls": {
+      event: "aiChatContentActor:seen-urls",
+    },
+    "AIChatContent:SetGenerating": {
+      event: "aiChatContentActor:set-generating",
+    },
+    "AIChatContent:AssetsReady": {
+      event: "aiChatContentActor:assets-ready",
+    },
+    "AIChatContent:HistoryResults": {
+      event: "aiChatContentActor:history-results",
+    },
   };
 
   static #VALID_EVENTS_FROM_CONTENT = new Set([
-    "AIChatContent:DispatchSearch",
     "AIChatContent:DispatchFollowUp",
     "AIChatContent:Ready",
     "AIChatContent:DispatchAction",
     "AIChatContent:OpenLink",
+    "AIChatContent:DispatchNewChat",
+    "AIChatContent:AccountSignIn",
+    "AIChatContent:ToolUIUpdate",
+    "AIChatContent:RequestAssets",
+    "AIChatContent:HistoryGridRender",
+    "AIChatContent:HistoryGridItemClick",
   ]);
 
   /**
@@ -49,53 +66,25 @@ export class AIChatContentChild extends JSWindowActorChild {
       return;
     }
 
-    switch (event.type) {
-      case "AIChatContent:DispatchSearch":
-        this.#handleSearchDispatch(event);
-        break;
-
-      case "AIChatContent:DispatchAction": {
-        this.#handleActionDispatch(event);
-        break;
-      }
-
-      case "AIChatContent:DispatchFollowUp":
-        this.#handleFollowUpDispatch(event);
-        break;
-
-      case "AIChatContent:Ready":
-        this.sendAsyncMessage("AIChatContent:Ready");
-        break;
-
-      case "AIChatContent:OpenLink":
-        this.sendAsyncMessage("AIChatContent:OpenLink", event.detail);
-        break;
-
-      default:
-        console.warn(
-          `AIChatContentChild received unknown event: ${event.type}`
-        );
-    }
-  }
-
-  #handleSearchDispatch(event) {
-    this.sendAsyncMessage("aiChatContentActor:search", event.detail);
-  }
-
-  #handleActionDispatch(event) {
     const { action, text } = event.detail ?? {};
-    // Copy is handled in the child actor since it depends on content-side
-    // selection and clipboard context.
-    if (action === "copy") {
-      if (text) {
-        lazy.ClipboardHelper.copyString(text, this.windowContext);
-      }
-    }
-    this.sendAsyncMessage("aiChatContentActor:footer-action", event.detail);
-  }
+    const copyActions = ["copy", "copy-table"];
+    const isCopyAction = copyActions.includes(action) && text;
 
-  #handleFollowUpDispatch(event) {
-    this.sendAsyncMessage("aiChatContentActor:followUp", event.detail);
+    switch (event.type) {
+      case "AIChatContent:DispatchAction":
+        // Copy is handled in the child actor since it depends on content-side
+        // selection and clipboard context.
+        if (isCopyAction) {
+          lazy.ClipboardHelper.copyString(text, this.windowContext);
+        }
+
+        this.sendAsyncMessage(event.type, event.detail);
+        break;
+
+      // Relay known events to AIChatContentParent
+      default:
+        this.sendAsyncMessage(event.type, event.detail);
+    }
   }
 
   async receiveMessage(message) {

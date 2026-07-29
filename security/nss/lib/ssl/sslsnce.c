@@ -1690,17 +1690,16 @@ ssl_SetSelfEncryptKeyPair(SECKEYPublicKey *pubKey,
     SECKEYPrivateKey *privKeyCopy, *oldPrivKey;
 
     PORT_Assert(ssl_self_encrypt_key_pair.lock);
+    PR_RWLock_Wlock(ssl_self_encrypt_key_pair.lock);
     pubKeyCopy = SECKEY_CopyPublicKey(pubKey);
     privKeyCopy = SECKEY_CopyPrivateKey(privKey);
-
     if (!pubKeyCopy || !privKeyCopy) {
+        PR_RWLock_Unlock(ssl_self_encrypt_key_pair.lock);
         SECKEY_DestroyPublicKey(pubKeyCopy);
         SECKEY_DestroyPrivateKey(privKeyCopy);
         PORT_SetError(SEC_ERROR_NO_MEMORY);
         return SECFailure;
     }
-
-    PR_RWLock_Wlock(ssl_self_encrypt_key_pair.lock);
     oldPubKey = ssl_self_encrypt_key_pair.pubKey;
     oldPrivKey = ssl_self_encrypt_key_pair.privKey;
     ssl_self_encrypt_key_pair.pubKey = pubKeyCopy;

@@ -129,16 +129,23 @@ Assert.AssertionError = function (options) {
   this.expected = options.expected;
   this.operator = options.operator;
   this.message = getMessage(this, options.message, options.truncate);
-  // The part of the stack that comes from this module is not interesting.
   let stack = options.stack || Components.stack;
-  do {
-    stack = stack.asyncCaller || stack.caller;
-  } while (
-    stack &&
-    stack.filename &&
-    stack.filename.includes("Assert.sys.mjs")
-  );
-  this.stack = stack;
+  if (typeof stack == "string") {
+    this.stack = stack;
+  } else {
+    // The part of the stack that comes from this module is not interesting.
+    do {
+      stack = stack.asyncCaller || stack.caller;
+    } while (
+      stack &&
+      stack.filename &&
+      stack.filename.includes("Assert.sys.mjs")
+    );
+    this.stack = stack;
+  }
+  if (options.time !== undefined) {
+    this.time = options.time;
+  }
 };
 
 // assert.AssertionError instanceof Error
@@ -223,7 +230,8 @@ Assert.prototype.report = function (
   message,
   operator,
   truncate = true,
-  stack = null // Defaults to Components.stack in AssertionError.
+  stack = null, // Defaults to Components.stack in AssertionError.
+  time = undefined
 ) {
   // Although not ideal, we allow a "null" message due to the way some of the extension tests
   // work.
@@ -240,6 +248,7 @@ Assert.prototype.report = function (
     operator,
     truncate,
     stack,
+    time,
   });
   if (!this._reporter) {
     // If no custom reporter is set, throw the error.

@@ -56,18 +56,25 @@ class EvalMetrics(Layer):
             # Run the evals from toolkit/components/ml/eval.
             for test_name, payloads in eval_payloads:
                 self.info(f"[eval] Running {eval_name} on {test_name}")
-                result = eval_instance.run(payloads)
-                metric_name = result.get("name")
-                if not metric_name:
-                    raise EvalMetricsResultError("Eval metric result is missing a name")
-                lower_is_better = result.get("lowerIsBetter")
-                if lower_is_better is None:
-                    raise EvalMetricsResultError(
-                        f"Eval result for {metric_name} missing lowerIsBetter"
-                    )
-                result["subtest"] = test_name
-                per_metric_results.setdefault(metric_name, []).append(result)
-                metric_to_config[metric_name] = eval_config
+                results = eval_instance.run(payloads)
+                if not isinstance(
+                    results, list
+                ):  # Allow evals to return a single result dict or a list of result dicts.
+                    results = [results]
+                for result in results:
+                    metric_name = result.get("name")
+                    if not metric_name:
+                        raise EvalMetricsResultError(
+                            "Eval metric result is missing a name"
+                        )
+                    lower_is_better = result.get("lowerIsBetter")
+                    if lower_is_better is None:
+                        raise EvalMetricsResultError(
+                            f"Eval result for {metric_name} missing lowerIsBetter"
+                        )
+                    result["subtest"] = test_name
+                    per_metric_results.setdefault(metric_name, []).append(result)
+                    metric_to_config[metric_name] = eval_config
 
         output_dir = Path(self.get_arg("output")).resolve()
         output_dir.mkdir(parents=True, exist_ok=True)

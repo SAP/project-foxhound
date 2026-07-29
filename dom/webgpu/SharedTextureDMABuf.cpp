@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +7,6 @@
 #include <gbm.h>
 
 #include "mozilla/gfx/Logging.h"
-#include "mozilla/layers/ImageDataSerializer.h"
 #include "mozilla/webgpu/WebGPUParent.h"
 #include "mozilla/widget/DMABufDevice.h"
 #include "mozilla/widget/DMABufSurface.h"
@@ -96,14 +94,17 @@ SharedTextureDMABuf::SharedTextureDMABuf(
       mSurface(std::move(aSurface)),
       mSurfaceDescriptor(aSurfaceDescriptor) {}
 
-SharedTextureDMABuf::~SharedTextureDMABuf() {}
+SharedTextureDMABuf::~SharedTextureDMABuf() = default;
 
 void SharedTextureDMABuf::CleanForRecycling() {
+  SharedTexture::CleanForRecycling();
   mSemaphoreFds.Clear();
   mVkSemaphoreHandles.Clear();
 }
 
 Maybe<layers::SurfaceDescriptor> SharedTextureDMABuf::ToSurfaceDescriptor() {
+  MOZ_ASSERT(mSubmissionIndex > 0);
+
   layers::SurfaceDescriptor sd;
   if (!mSurface->Serialize(sd)) {
     return Nothing();
@@ -120,7 +121,7 @@ Maybe<layers::SurfaceDescriptor> SharedTextureDMABuf::ToSurfaceDescriptor() {
 }
 
 void SharedTextureDMABuf::GetSnapshot(const ipc::Shmem& aDestShmem,
-                                      const gfx::IntSize& aSize) {
+                                      size_t aDestStride) {
   const RefPtr<gfx::SourceSurface> surface = mSurface->GetAsSourceSurface();
   if (!surface) {
     MOZ_ASSERT_UNREACHABLE("unexpected to be called");
@@ -141,18 +142,21 @@ void SharedTextureDMABuf::GetSnapshot(const ipc::Shmem& aDestShmem,
     return;
   }
 
-  const uint32_t stride = layers::ImageDataSerializer::ComputeRGBStride(
-      gfx::SurfaceFormat::B8G8R8A8, aSize.width);
   uint8_t* src = static_cast<uint8_t*>(map.GetData());
   uint8_t* dst = aDestShmem.get<uint8_t>();
 
-  MOZ_ASSERT(stride * aSize.height <= aDestShmem.Size<uint8_t>());
-  MOZ_ASSERT(static_cast<uint32_t>(map.GetStride()) >= stride);
+  const size_t src_stride = static_cast<size_t>(map.GetStride());
+  const size_t bytesPerRow = static_cast<size_t>(mWidth) * 4;
+  MOZ_RELEASE_ASSERT(src_stride >= bytesPerRow);
+  MOZ_RELEASE_ASSERT(aDestStride >= bytesPerRow);
 
-  for (int y = 0; y < aSize.height; y++) {
-    memcpy(dst, src, stride);
-    src += map.GetStride();
-    dst += stride;
+  for (uint32_t y = 0; y < mHeight; y++) {
+    memcpy(dst, src, bytesPerRow);
+    if (bytesPerRow < aDestStride) {
+      memset(dst + bytesPerRow, 0, aDestStride - bytesPerRow);
+    }
+    src += src_stride;
+    dst += aDestStride;
   }
 }
 
@@ -165,6 +169,7 @@ const ffi::WGPUVkImageHandle* SharedTextureDMABuf::GetHandle() {
 }
 
 void SharedTextureDMABuf::onBeforeQueueSubmit(RawId aQueueId) {
+  SharedTexture::onBeforeQueueSubmit(aQueueId);
   if (!mParent) {
     return;
   }

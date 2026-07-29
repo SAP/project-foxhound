@@ -21,6 +21,14 @@ import org.mozilla.fenix.BuildConfig
 import org.mozilla.fenix.Config
 import org.mozilla.fenix.GleanMetrics.AdjustAttribution
 import org.mozilla.fenix.GleanMetrics.Pings
+import org.mozilla.fenix.components.metrics.AdjustThirdPartySharingController.Companion.AURA_PARTNER_ID
+import org.mozilla.fenix.components.metrics.AdjustThirdPartySharingController.Companion.GOOGLE_PARTNER_ID
+import org.mozilla.fenix.components.metrics.AdjustThirdPartySharingController.Companion.META_PARTNER_ID
+import org.mozilla.fenix.components.metrics.AdjustThirdPartySharingController.Companion.REDDIT_PARTNER_ID
+import org.mozilla.fenix.components.metrics.AdjustThirdPartySharingController.Companion.TIKTOK_PARTNER_ID
+import org.mozilla.fenix.components.metrics.AdjustThirdPartySharingController.Companion.X_TWITTER_PARTNER_ID
+import org.mozilla.fenix.distributions.DistributionAdjustStartupStrategy
+import org.mozilla.fenix.distributions.DistributionIdManager
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.utils.Settings
 
@@ -64,8 +72,14 @@ class AdjustMetricsService(
 
             // If we skipped the marketing consent screen, enable COPPA compliance to prevent
             // personal identifiers from being shared with Adjust.
-            if (distributionIdManager.shouldSkipMarketingConsentScreen()) {
-                config.enableCoppaCompliance()
+            when (distributionIdManager.getDistributionAdjustStartupStrategy()) {
+                DistributionAdjustStartupStrategy.IMMEDIATE_WITH_COPPA ->
+                    config.enableCoppaCompliance()
+
+                DistributionAdjustStartupStrategy.IMMEDIATE_WITH_PLAY_STORE_KIDS ->
+                    config.enablePlayStoreKidsCompliance()
+
+                else -> {}
             }
 
             if (!alreadyKnown(settings)) {
@@ -98,9 +112,23 @@ class AdjustMetricsService(
 
             config.setLogLevel(LogLevel.SUPPRESS)
 
+            config.disableFbIdReading()
+            applyThirdPartySharingSettings(
+                distribution = distributionIdManager.getDistribution(),
+                isUserMetaAttributed = settings.isUserMetaAttributed,
+                isUserTikTokAttributed = settings.isUserTikTokAttributed,
+                isUserRedditAttributed = settings.isUserRedditAttributed,
+                isUserXTwitterAttributed = settings.isUserXTwitterAttributed,
+            )
+
+            // All configuration have to be done before this.
             Adjust.initSdk(config)
             Adjust.enable()
             logger.info("Adjust SDK enabled")
+
+            // This is a temporary race condition workaround until
+            // https://bugzilla.mozilla.org/show_bug.cgi?id=2016858 is fixed
+            track(Event.GrowthData.ConversionEvent6)
         }
     }
 
@@ -122,15 +150,14 @@ class AdjustMetricsService(
                     is Event.FirstWeekPostInstall -> event.tokenName
                 }
 
-                if (event is Event.GrowthData || event is Event.FirstWeekPostInstall) {
-                    if (storage.shouldTrack(event)) {
-                        Adjust.trackEvent(AdjustEvent(tokenName))
-                        storage.updateSentState(event)
-                        logger.info("Update sent state $event")
-                    } else {
-                        storage.updatePersistentState(event)
-                        logger.info("Update persistent state $event")
-                    }
+                if (
+                    (event is Event.GrowthData || event is Event.FirstWeekPostInstall) &&
+                    storage.shouldTrack(event)
+                ) {
+                    Adjust.trackEvent(AdjustEvent(tokenName))
+                    storage.updateSentState(event)
+                    sendGleanEventAndPing(event)
+                    logger.info("Update sent state $event")
                 }
             } catch (e: Exception) {
                 crashReporter.submitCaughtException(e)
@@ -143,6 +170,96 @@ class AdjustMetricsService(
         event is Event.GrowthData || event is Event.FirstWeekPostInstall
 
     companion object {
+        const val CONVERSION_EVENT_1 = 1
+        const val CONVERSION_EVENT_2 = 2
+        const val CONVERSION_EVENT_3 = 3
+        const val CONVERSION_EVENT_4 = 4
+        const val CONVERSION_EVENT_5 = 5
+        const val CONVERSION_EVENT_6 = 6
+        const val CONVERSION_EVENT_7 = 7
+        const val CONVERSION_EVENT_8 = 8
+        const val CONVERSION_EVENT_9 = 9
+        const val CONVERSION_EVENT_10 = 10
+
+        /**
+         * Records a glean event matching the Adjust conversion event, and sends the Adjust attribution ping.
+         */
+        @VisibleForTesting
+        internal fun sendGleanEventAndPing(
+            event: Event,
+            conversionEventRecorder: ConversionEventRecorder = GleanConversionEventRecorder(),
+        ) {
+            when (event) {
+                is Event.GrowthData.ConversionEvent1 ->
+                    conversionEventRecorder.recordConversionEvent(CONVERSION_EVENT_1)
+                is Event.GrowthData.ConversionEvent2 ->
+                    conversionEventRecorder.recordConversionEvent(CONVERSION_EVENT_2)
+                is Event.GrowthData.ConversionEvent3 ->
+                    conversionEventRecorder.recordConversionEvent(CONVERSION_EVENT_3)
+                is Event.GrowthData.ConversionEvent4 ->
+                    conversionEventRecorder.recordConversionEvent(CONVERSION_EVENT_4)
+                is Event.GrowthData.ConversionEvent5 ->
+                    conversionEventRecorder.recordConversionEvent(CONVERSION_EVENT_5)
+                is Event.GrowthData.ConversionEvent6 ->
+                    conversionEventRecorder.recordConversionEvent(CONVERSION_EVENT_6)
+                is Event.GrowthData.ConversionEvent7 ->
+                    conversionEventRecorder.recordConversionEvent(CONVERSION_EVENT_7)
+                is Event.FirstWeekPostInstall.ConversionEvent8 ->
+                    conversionEventRecorder.recordConversionEvent(CONVERSION_EVENT_8)
+                is Event.FirstWeekPostInstall.ConversionEvent9 ->
+                    conversionEventRecorder.recordConversionEvent(CONVERSION_EVENT_9)
+                is Event.FirstWeekPostInstall.ConversionEvent10 ->
+                    conversionEventRecorder.recordConversionEvent(CONVERSION_EVENT_10)
+            }
+        }
+
+        /**
+         * Sets third party sharing settings based on distribution and attribution.
+         */
+        @VisibleForTesting
+        internal fun applyThirdPartySharingSettings(
+            distribution: DistributionIdManager.Distribution,
+            isUserMetaAttributed: Boolean,
+            isUserTikTokAttributed: Boolean,
+            isUserRedditAttributed: Boolean,
+            isUserXTwitterAttributed: Boolean,
+            controller: ThirdPartySharingController = AdjustThirdPartySharingController(),
+        ) {
+            when (distribution) {
+                DistributionIdManager.Distribution.DEFAULT -> {
+                    controller.disableAllThirdPartySharing()
+                    // Listed in priority order. Multiple flags can be true at once, so the order
+                    // is load-bearing. Insert new partners at the position matching their priority.
+                    when {
+                        isUserMetaAttributed ->
+                            controller.enableThirdPartySharingForPartner(META_PARTNER_ID)
+                        isUserTikTokAttributed ->
+                            controller.enableThirdPartySharingForPartner(TIKTOK_PARTNER_ID)
+                        isUserRedditAttributed ->
+                            controller.enableThirdPartySharingForPartner(REDDIT_PARTNER_ID)
+                        isUserXTwitterAttributed ->
+                            controller.enableThirdPartySharingForPartner(X_TWITTER_PARTNER_ID)
+                        else ->
+                            controller.enableThirdPartySharingForPartner(GOOGLE_PARTNER_ID)
+                    }
+                }
+
+                DistributionIdManager.Distribution.AURA_001 -> {
+                    controller.enableThirdPartySharingForPartner(AURA_PARTNER_ID)
+                }
+
+                DistributionIdManager.Distribution.VIVO_001,
+                DistributionIdManager.Distribution.DT_001,
+                DistributionIdManager.Distribution.DT_002,
+                DistributionIdManager.Distribution.DT_003,
+                DistributionIdManager.Distribution.XIAOMI_001,
+                    -> {
+                    controller.disableAllThirdPartySharing()
+                }
+                // Do not add an else branch here. All distributions should be handled deliberately.
+            }
+        }
+
         @VisibleForTesting
         internal fun alreadyKnown(settings: Settings): Boolean {
             return settings.adjustCampaignId.isNotEmpty() || settings.adjustNetwork.isNotEmpty() ||

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -92,25 +90,27 @@ static inline JSOp NegateCompareOp(JSOp op) {
   }
 }
 
-class BytecodeRange {
+class MOZ_STACK_CLASS BytecodeRange {
  public:
   BytecodeRange(JSContext* cx, JSScript* script)
-      : script(cx, script), pc(script->code()), end(pc + script->length()) {}
+      : delazified(cx, script),
+        pc(script->code()),
+        end(pc + script->length()) {}
   bool empty() const { return pc == end; }
   jsbytecode* frontPC() const { return pc; }
   JSOp frontOpcode() const { return JSOp(*pc); }
-  size_t frontOffset() const { return script->pcToOffset(pc); }
+  size_t frontOffset() const { return delazified.script()->pcToOffset(pc); }
   void popFront() { pc += GetBytecodeLength(pc); }
 
  private:
-  RootedScript script;
+  JSScript::AutoKeepDelazified delazified;
   jsbytecode* pc;
   jsbytecode* end;
 };
 
 enum class SkipPrologueOps { No, Yes };
 
-class BytecodeRangeWithPosition : private BytecodeRange {
+class MOZ_STACK_CLASS BytecodeRangeWithPosition : private BytecodeRange {
  public:
   using BytecodeRange::empty;
   using BytecodeRange::frontOffset;

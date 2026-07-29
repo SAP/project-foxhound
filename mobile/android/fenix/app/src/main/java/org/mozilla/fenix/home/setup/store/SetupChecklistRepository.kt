@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import org.mozilla.fenix.R
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.utils.Settings
 
 /**
  * The repository for managing setup checklist preferences.
@@ -69,13 +69,14 @@ enum class SetupChecklistPreference(
  * The default implementation of [SetupChecklistRepository].
  *
  * @param context the Android context.
+ * @param settings the [Settings] instance for accessing and modifying preferences.
  * @param coroutineScope the coroutine scope used for emitting flows.
  */
 class DefaultSetupChecklistRepository(
     private val context: Context,
+    private val settings: Settings,
     private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.Main),
 ) : SetupChecklistRepository {
-    private val settings = context.settings()
     private val _setupChecklistPreferenceUpdates =
         MutableSharedFlow<SetupChecklistRepository.SetupChecklistPreferenceUpdate>()
 

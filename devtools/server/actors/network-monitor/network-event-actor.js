@@ -132,6 +132,8 @@ class NetworkEventActor extends Actor {
     };
 
     this._resource = this._createResource(networkEventOptions, channel);
+
+    this._memoryCacheData = null;
   }
 
   /**
@@ -213,6 +215,8 @@ class NetworkEventActor extends Actor {
       blockedReason = "unknown";
     }
 
+    const priority = lazy.NetworkUtils.getChannelPriority(channel);
+
     const resource = {
       resourceId: this._channelId,
       resourceType: NETWORK_EVENT,
@@ -229,7 +233,7 @@ class NetworkEventActor extends Actor {
         lazy.NetworkUtils.isThirdPartyTrackingResource(channel),
       isXHR,
       method,
-      priority: lazy.NetworkUtils.getChannelPriority(channel),
+      priority,
       private: lazy.NetworkUtils.isChannelPrivate(channel),
       referrerPolicy: lazy.NetworkUtils.getReferrerPolicy(channel),
       stacktraceResourceId,
@@ -438,7 +442,43 @@ class NetworkEventActor extends Actor {
    * @return object
    *         The response packet - network response content.
    */
-  getResponseContent() {
+  async getResponseContent() {
+    if (!this._response.content.text && this._memoryCacheData) {
+      const data = this._memoryCacheData;
+      this._memoryCacheData = null;
+
+      if (data.key.startsWith("SharedScriptCache:")) {
+        // This should be performed on the same process as the
+        // http-on-resource-cache-response observer notification is received, in
+        // order to query on the SharedScriptCache instance that has the
+        // corresponding cache entry.
+        const text = ChromeUtils.getCachedJavaScriptSource(
+          data.key,
+          this._resource.url,
+          data.charset
+        );
+        if (text !== undefined) {
+          this._response.content.text = text;
+        } else {
+          this._discardResponseBody = true;
+        }
+      }
+    }
+
+    if (!this._response.content.text && this._response.content.encodedData) {
+      this._response.content.text =
+        await lazy.NetworkUtils.decodeResponseChunks(
+          this._response.content.encodedData,
+          {
+            charset: this._response.content.contentCharset,
+            compressionEncodings: this._response.content.compressionEncodings,
+            encodedBodySize: this._response.content.encodedBodySize,
+            encoding: this._response.content.encoding,
+          }
+        );
+      delete this._response.content.encodedData;
+    }
+
     const content = { ...this._response.content };
     if (this._response.contentLongStringActor) {
       // Remove the old actor from the pool as new actor will be created
@@ -491,6 +531,17 @@ class NetworkEventActor extends Actor {
       fromCache,
       fromServiceWorker,
     });
+  }
+
+  addMemoryCacheData(channel, memoryCacheKey) {
+    let charset = "";
+    if (channel instanceof Ci.nsIHttpChannel) {
+      charset = channel.classicScriptHintCharset || "";
+    }
+    this._memoryCacheData = {
+      key: memoryCacheKey,
+      charset,
+    };
   }
 
   addRawHeaders({ channel, rawHeaders }) {
@@ -613,6 +664,8 @@ class NetworkEventActor extends Actor {
       proxyInfo = proxyResponseRawHeaders.split("\r\n")[0].split(" ");
     }
 
+    const priority = lazy.NetworkUtils.getChannelPriority(channel);
+
     this._onEventUpdate(lazy.NetworkUtils.NETWORK_EVENT_TYPES.RESPONSE_START, {
       httpVersion: isDataOrFile
         ? null
@@ -626,6 +679,7 @@ class NetworkEventActor extends Actor {
       earlyHintsStatus: earlyHintsResponseRawHeaders ? "103" : "",
       waitingTime,
       isResolvedByTRR: channel.isResolvedByTRR,
+      priority,
       proxyHttpVersion: proxyInfo[0],
       proxyStatus: proxyInfo[1],
       proxyStatusText: proxyInfo[2],
@@ -638,7 +692,7 @@ class NetworkEventActor extends Actor {
    * @param object info
    *        The object containing security information.
    */
-  addSecurityInfo(info, isRacing) {
+  addSecurityInfo(info) {
     // Ignore calls when this actor is already destroyed
     if (this.isDestroyed()) {
       return;
@@ -648,7 +702,6 @@ class NetworkEventActor extends Actor {
 
     this._onEventUpdate(lazy.NetworkUtils.NETWORK_EVENT_TYPES.SECURITY_INFO, {
       state: info.state,
-      isRacing,
     });
   }
 
@@ -657,18 +710,29 @@ class NetworkEventActor extends Actor {
    *
    * @param object
    */
-  addResponseContentComplete({ blockedReason, extension }) {
+  addResponseContentComplete({ blockedReason, extension, channel }) {
     // Ignore calls when this actor is already destroyed
     if (this.isDestroyed()) {
       return;
     }
 
+    const changed = {
+      blockedReason,
+      extension,
+    };
+
+    if (channel) {
+      // Get the final priority. It can't change after now.
+      const priority = lazy.NetworkUtils.getChannelPriority(channel);
+
+      if (Number.isInteger(priority) && priority != this._resource.priority) {
+        changed.priority = priority;
+      }
+    }
+
     this._onEventUpdate(
       lazy.NetworkUtils.NETWORK_EVENT_TYPES.RESPONSE_CONTENT_COMPLETE,
-      {
-        blockedReason,
-        extension,
-      }
+      changed
     );
   }
 

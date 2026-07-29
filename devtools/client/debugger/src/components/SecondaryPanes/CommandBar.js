@@ -17,7 +17,7 @@ import {
 } from "../../selectors/index";
 import actions from "../../actions/index";
 import { debugBtn } from "../shared/Button/CommandBarButton";
-import DebuggerImage from "../shared/DebuggerImage";
+import DebuggerImage from "devtools/client/shared/components/DebuggerImage";
 
 const {
   stringifyFromElectronKey,

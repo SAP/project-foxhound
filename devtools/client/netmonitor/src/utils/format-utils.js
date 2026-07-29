@@ -122,6 +122,37 @@ function getRequestPriorityAsText(priority) {
   return "Lowest";
 }
 
+/**
+ * Converts the English textual value of the priority of a request
+ * into a number. For HAR file importing.
+ * Based on unix conventions
+ * See xpcom/threads/nsISupportsPriority.idl for values
+ *
+ * @param {string} priority - request priority
+ */
+function getRequestPriorityAsNumber(priority) {
+  switch (priority) {
+    case "Highest":
+      return Ci.nsISupportsPriority.PRIORITY_HIGHEST;
+    case "VeryHigh": // Chromium based HAR tooling equivalent
+      return Ci.nsISupportsPriority.PRIORITY_HIGHEST;
+    case "High":
+      return Ci.nsISupportsPriority.PRIORITY_HIGH;
+    case "Normal":
+      return Ci.nsISupportsPriority.PRIORITY_NORMAL;
+    case "Medium": // Chromium based HAR tooling equivalent
+      return Ci.nsISupportsPriority.PRIORITY_NORMAL;
+    case "Low":
+      return Ci.nsISupportsPriority.PRIORITY_LOW;
+    case "Lowest":
+      return Ci.nsISupportsPriority.PRIORITY_LOWEST;
+    case "VeryLow": // Chromium based HAR tooling equivalent
+      return Ci.nsISupportsPriority.PRIORITY_LOWEST;
+    default:
+      return null;
+  }
+}
+
 module.exports = {
   getFormattedIPAndPort,
   getFormattedSize,
@@ -129,4 +160,5 @@ module.exports = {
   getSizeWithDecimals,
   getTimeWithDecimals,
   getRequestPriorityAsText,
+  getRequestPriorityAsNumber,
 };

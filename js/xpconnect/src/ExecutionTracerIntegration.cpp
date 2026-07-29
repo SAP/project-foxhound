@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,6 +12,7 @@
 #include "mozilla/dom/DOMExceptionBinding.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Location.h"
+#include "mozilla/dom/NodeList.h"
 #include "nsDOMAttributeMap.h"
 #include "nsQueryObject.h"
 
@@ -63,7 +62,7 @@ bool ExecutionTracerIntegration::WriteNodeSummary(
                         uint8_t(NodeSubkind::Document));
     RefPtr<Location> location = doc->GetLocation();
     nsAutoCString href;
-    if (location->GetHref(href) != NS_OK) {
+    if (location && location->GetHref(href) != NS_OK) {
       JS_ReportErrorASCII(aCx, "Failed to get document location's href");
       return false;
     }
@@ -77,7 +76,7 @@ bool ExecutionTracerIntegration::WriteNodeSummary(
     aWriter->writeUint8(uint8_t(isConnected) << 7 |
                         uint8_t(NodeSubkind::DocumentFragment));
 
-    nsCOMPtr<nsINodeList> children = aNode->ChildNodes();
+    RefPtr<NodeList> children = aNode->ChildNodes();
     if (!children) {
       JS_ReportErrorASCII(aCx, "OOM getting node's children");
       return false;

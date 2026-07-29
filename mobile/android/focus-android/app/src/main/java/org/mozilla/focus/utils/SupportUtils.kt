@@ -25,6 +25,9 @@ import java.io.UnsupportedEncodingException
 import java.net.URLEncoder
 import java.util.Locale
 
+/**
+ * Utility class for support-related URLs and operations.
+ */
 object SupportUtils {
     const val HELP_URL = "https://support.mozilla.org/kb/what-firefox-focus-android"
     const val FOCUS_PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=${BuildConfig.APPLICATION_ID}"
@@ -57,6 +60,9 @@ object SupportUtils {
         return "https://www.mozilla.org/$langTag/$path"
     }
 
+    /**
+     * Topics available on Mozilla Support (SUMO).
+     */
     enum class SumoTopic(
         /** The final path segment for a SUMO URL - see {@see #getSumoURLForTopic}  */
         internal val topicStr: String,
@@ -70,6 +76,9 @@ object SupportUtils {
         COOKIE_BANNER("cookie-banner-reduction-firefox-focus-android"),
     }
 
+    /**
+     * Returns a generic Mozilla Support (SUMO) URL for the given [topic].
+     */
     fun getGenericSumoURLForTopic(topic: SumoTopic): String {
         val escapedTopic = getEncodedTopicUTF8(topic.topicStr)
         val langTag = Locales.getLanguageTag(Locale.getDefault())
@@ -86,7 +95,9 @@ object SupportUtils {
         return "https://support.mozilla.org/1/mobile/$appVersion/$osTarget/$langTag/$escapedTopic"
     }
 
-    // For some reason this URL has a different format than the other SUMO URLs
+    /**
+     * Returns the Mozilla Support (SUMO) URL for safe browsing.
+     */
     fun getSafeBrowsingURL(): String {
         val langTag = Locales.getLanguageTag(Locale.getDefault())
         return "https://support.mozilla.org/$langTag/kb/how-does-phishing-and-malware-protection-work"
@@ -115,6 +126,9 @@ object SupportUtils {
         }
     }
 
+    /**
+     * Opens the default browser Mozilla Support (SUMO) page.
+     */
     fun openDefaultBrowserSumoPage(context: Context) {
         val tabId = context.components.tabsUseCases.addTab(
             DEFAULT_BROWSER_URL,

@@ -1,6 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
-
 "use strict";
 
 requestLongerTimeout(4);
@@ -24,6 +21,7 @@ const CONTROLLED_BY_OTHER = "controlled_by_other_extensions";
 const NOT_CONTROLLABLE = "not_controllable";
 
 const HOMEPAGE_URL_PREF = "browser.startup.homepage";
+const SPOTLIGHT_SUBCATEGORY = "homeOverride";
 
 const getHomePageURL = () => {
   return Services.prefs.getStringPref(HOMEPAGE_URL_PREF);
@@ -54,6 +52,7 @@ async function assertPreferencesShown(_spotlight) {
         spotlight,
         "The correct section is spotlighted."
       );
+      await new Promise(r => content.setTimeout(r, 2000));
     }
   );
 
@@ -146,7 +145,7 @@ add_task(async function test_multiple_extensions_overriding_home_page() {
   // Because we are expecting the pref to change when we start or unload, we
   // need to wait on a pref change.  This is because the pref management is
   // async and can happen after the startup/unload is finished.
-  let prefPromise = promisePrefChangeObserved(HOMEPAGE_URL_PREF);
+  let prefPromise = TestUtils.waitForPrefChange(HOMEPAGE_URL_PREF);
   await ext2.startup();
   await prefPromise;
 
@@ -176,7 +175,7 @@ add_task(async function test_multiple_extensions_overriding_home_page() {
     "Home url should be overridden by the second extension."
   );
 
-  prefPromise = promisePrefChangeObserved(HOMEPAGE_URL_PREF);
+  prefPromise = TestUtils.waitForPrefChange(HOMEPAGE_URL_PREF);
   await ext3.startup();
   await prefPromise;
 
@@ -197,7 +196,7 @@ add_task(async function test_multiple_extensions_overriding_home_page() {
 
   await checkHomepageOverride(ext3, HOME_URI_3, CONTROLLED_BY_THIS);
 
-  prefPromise = promisePrefChangeObserved(HOMEPAGE_URL_PREF);
+  prefPromise = TestUtils.waitForPrefChange(HOMEPAGE_URL_PREF);
   await ext4.startup();
   await prefPromise;
 
@@ -208,7 +207,7 @@ add_task(async function test_multiple_extensions_overriding_home_page() {
 
   await checkHomepageOverride(ext3, HOME_URI_4, CONTROLLED_BY_OTHER);
 
-  prefPromise = promisePrefChangeObserved(HOMEPAGE_URL_PREF);
+  prefPromise = TestUtils.waitForPrefChange(HOMEPAGE_URL_PREF);
   await ext4.unload();
   await prefPromise;
 
@@ -219,7 +218,7 @@ add_task(async function test_multiple_extensions_overriding_home_page() {
 
   await checkHomepageOverride(ext3, HOME_URI_3, CONTROLLED_BY_THIS);
 
-  prefPromise = promisePrefChangeObserved(HOMEPAGE_URL_PREF);
+  prefPromise = TestUtils.waitForPrefChange(HOMEPAGE_URL_PREF);
   await ext3.unload();
   await prefPromise;
 
@@ -248,7 +247,7 @@ add_task(async function test_extension_setting_home_page_back() {
   // Because we are expecting the pref to change when we start or unload, we
   // need to wait on a pref change.  This is because the pref management is
   // async and can happen after the startup/unload is finished.
-  let prefPromise = promisePrefChangeObserved(HOMEPAGE_URL_PREF);
+  let prefPromise = TestUtils.waitForPrefChange(HOMEPAGE_URL_PREF);
   await ext1.startup();
   await prefPromise;
 
@@ -257,7 +256,7 @@ add_task(async function test_extension_setting_home_page_back() {
     "Home url should be overridden by the second extension."
   );
 
-  prefPromise = promisePrefChangeObserved(HOMEPAGE_URL_PREF);
+  prefPromise = TestUtils.waitForPrefChange(HOMEPAGE_URL_PREF);
   await ext1.unload();
   await prefPromise;
 
@@ -286,7 +285,7 @@ add_task(async function test_disable() {
     useAddonManager: "temporary",
   });
 
-  let prefPromise = promisePrefChangeObserved(HOMEPAGE_URL_PREF);
+  let prefPromise = TestUtils.waitForPrefChange(HOMEPAGE_URL_PREF);
   await ext1.startup();
   await prefPromise;
 
@@ -300,14 +299,14 @@ add_task(async function test_disable() {
   is(addon.id, ID, "Found the correct add-on.");
 
   let disabledPromise = awaitEvent("shutdown", ID);
-  prefPromise = promisePrefChangeObserved(HOMEPAGE_URL_PREF);
+  prefPromise = TestUtils.waitForPrefChange(HOMEPAGE_URL_PREF);
   await addon.disable();
   await Promise.all([disabledPromise, prefPromise]);
 
   is(getHomePageURL(), defaultHomePage, "Home url should be the default");
 
   let enabledPromise = awaitEvent("ready", ID);
-  prefPromise = promisePrefChangeObserved(HOMEPAGE_URL_PREF);
+  prefPromise = TestUtils.waitForPrefChange(HOMEPAGE_URL_PREF);
   await addon.enable();
   await Promise.all([enabledPromise, prefPromise]);
 
@@ -317,7 +316,7 @@ add_task(async function test_disable() {
     "Home url should be overridden by the extension."
   );
 
-  prefPromise = promisePrefChangeObserved(HOMEPAGE_URL_PREF);
+  prefPromise = TestUtils.waitForPrefChange(HOMEPAGE_URL_PREF);
   await ext1.unload();
   await prefPromise;
 
@@ -330,7 +329,7 @@ add_task(async function test_local() {
     useAddonManager: "temporary",
   });
 
-  let prefPromise = promisePrefChangeObserved(HOMEPAGE_URL_PREF);
+  let prefPromise = TestUtils.waitForPrefChange(HOMEPAGE_URL_PREF);
   await ext1.startup();
   await prefPromise;
 
@@ -354,7 +353,7 @@ add_task(async function test_multiple() {
     useAddonManager: "temporary",
   });
 
-  let prefPromise = promisePrefChangeObserved(HOMEPAGE_URL_PREF);
+  let prefPromise = TestUtils.waitForPrefChange(HOMEPAGE_URL_PREF);
   await extension.startup();
   await prefPromise;
 
@@ -400,12 +399,12 @@ add_task(async function test_doorhanger_homepage_button() {
   // Click Manage.
   let popupHidden = promisePopupHidden(panel);
   // Ensures the preferences tab opens, checks the spotlight, and then closes it
-  let spotlightShown = assertPreferencesShown("homeOverride");
+  let spotlightShown = assertPreferencesShown(SPOTLIGHT_SUBCATEGORY);
   popupnotification.secondaryButton.click();
   await popupHidden;
   await spotlightShown;
 
-  let prefPromise = promisePrefChangeObserved(HOMEPAGE_URL_PREF);
+  let prefPromise = TestUtils.waitForPrefChange(HOMEPAGE_URL_PREF);
   await ext2.unload();
   await prefPromise;
 
@@ -424,12 +423,12 @@ add_task(async function test_doorhanger_homepage_button() {
   // Click manage again.
   popupHidden = promisePopupHidden(panel);
   // Ensures the preferences tab opens, checks the spotlight, and then closes it
-  spotlightShown = assertPreferencesShown("homeOverride");
+  spotlightShown = assertPreferencesShown(SPOTLIGHT_SUBCATEGORY);
   popupnotification.secondaryButton.click();
   await popupHidden;
   await spotlightShown;
 
-  prefPromise = promisePrefChangeObserved(HOMEPAGE_URL_PREF);
+  prefPromise = TestUtils.waitForPrefChange(HOMEPAGE_URL_PREF);
   await ext1.unload();
   await prefPromise;
 
@@ -517,7 +516,7 @@ add_task(async function test_doorhanger_new_window() {
   popupnotification.secondaryButton.click();
   await popupHidden;
 
-  let prefPromise = promisePrefChangeObserved(HOMEPAGE_URL_PREF);
+  let prefPromise = TestUtils.waitForPrefChange(HOMEPAGE_URL_PREF);
   await ext2.unload();
   await prefPromise;
 

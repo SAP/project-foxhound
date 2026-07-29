@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // The rounding mode defaults to half-up for both NumberFormat and PluralRules.
 
 var locale = "en";

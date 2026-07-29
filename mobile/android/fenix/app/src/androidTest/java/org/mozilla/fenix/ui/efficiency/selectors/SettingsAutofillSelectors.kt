@@ -9,7 +9,7 @@ import org.mozilla.fenix.ui.efficiency.helpers.SelectorStrategy
 
 object SettingsAutofillSelectors {
     val SETTINGS_AUTOFILL_TITLE = Selector(
-        strategy = SelectorStrategy.UIAUTOMATOR2_BY_TEXT,
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
         value = "Autofill",
         description = "The Autofill Settings title",
         groups = listOf("requiredForPage"),

@@ -20,7 +20,6 @@ add_task(async function test_fill_creditCard_but_cancel_login() {
 
   await Services.fog.testFlushAllChildren();
   Services.fog.testResetFOG();
-  Services.telemetry.clearEvents();
 
   await setStorage(TEST_CREDIT_CARD_2);
 
@@ -34,7 +33,7 @@ add_task(async function test_fill_creditCard_but_cancel_login() {
         browser.autoCompletePopup,
         "hidden"
       );
-      await EventUtils.synthesizeMouseAtCenter(ccItem, {});
+      EventUtils.synthesizeMouseAtCenter(ccItem, {});
       await Promise.all([osKeyStoreLoginShown, popupClosePromise]);
 
       await SpecialPowers.spawn(browser, [], async function () {

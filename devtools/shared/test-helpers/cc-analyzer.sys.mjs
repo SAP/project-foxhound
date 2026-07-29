@@ -87,6 +87,24 @@ export class CCAnalyzer {
     });
   }
 
+  noteWeakMapEntry(mapAddr, keyAddr, keyDelegateAddr, valueAddr) {
+    if (valueAddr == "0x0") {
+      return;
+    }
+    // As an approximation, we only record the edge from the key to the value,
+    // ignoring the path to the map and key delegates.
+    const fromAddr = keyAddr != "0x0" ? keyAddr : mapAddr;
+    if (fromAddr == "0x0") {
+      return;
+    }
+    const fromObject = this.ensureObject(fromAddr);
+    const toObject = this.ensureObject(valueAddr);
+    const edgeName = "WeakMap value via key " + keyAddr;
+    fromObject.edges.push({ name: edgeName, to: toObject });
+    toObject.owners.push({ name: edgeName, from: fromObject });
+    this.edges.push({ name: edgeName, from: fromObject, to: toObject });
+  }
+
   describeRoot(address, knownEdges) {
     const o = this.ensureObject(address);
     o.root = true;

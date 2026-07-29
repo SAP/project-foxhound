@@ -1,34 +1,32 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "MediaResource.h"
-#include "nsError.h"
-#ifdef MOZ_AV1
-#  include "AOMDecoder.h"
-#endif
+#include "WebMDemuxer.h"
+
 #include <opus/opus.h>
 #include <stdint.h>
 
 #include <algorithm>
 #include <numeric>
 
+#include "AOMDecoder.h"
 #include "MediaDataDemuxer.h"
+#include "MediaResource.h"
 #include "NesteggPacketHolder.h"
 #include "VPXDecoder.h"
 #include "VideoUtils.h"
 #include "WebMBufferedParser.h"
-#include "WebMDemuxer.h"
 #include "XiphExtradata.h"
 #include "gfx2DGlue.h"
 #include "gfxUtils.h"
+#include "mozilla/CheckedInt.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/Sprintf.h"
 #include "nsAutoRef.h"
+#include "nsError.h"
 #include "prprf.h"  // leaving it for PR_vsnprintf()
 
 #define WEBM_DEBUG(arg, ...)                                          \
@@ -53,24 +51,53 @@ LazyLogModule gNesteggLog("Nestegg");
 // Functions for reading and seeking using WebMDemuxer required for
 // nestegg_io. The 'user data' passed to these functions is the
 // demuxer's context.
-static int webmdemux_read(void* aBuffer, size_t aLength, void* aUserData) {
+static int64_t webmdemux_read(void* aBuffer, size_t aLength, void* aUserData) {
   MOZ_ASSERT(aUserData);
   MOZ_ASSERT(aLength < UINT32_MAX);
   WebMDemuxer::NestEggContext* context =
       reinterpret_cast<WebMDemuxer::NestEggContext*>(aUserData);
+  // Nestegg buffers reads internally and may request up to its IO buffer
+  // size (several KiB) even when the parser only needs a few bytes.
+  // SourceBufferResource returns NS_ERROR_DOM_MEDIA_WAITING_FOR_DATA for any
+  // read that extends past currently-appended data rather than serving a
+  // partial read, so an unclamped read-ahead near the end of an MSE append
+  // would misreport a fully-available packet as waiting for data. Clamp to
+  // the cached range so short reads surface through the new nestegg
+  // short-read path, and only let WAITING_FOR_DATA propagate when no bytes
+  // are currently cached at the stream position.
+  if (context->IsMediaSource()) {
+    int64_t offset = context->GetResource()->Tell();
+    int64_t cachedEnd =
+        context->GetResource()->GetResource()->GetCachedDataEnd(offset);
+    if (cachedEnd > offset) {
+      int64_t available = cachedEnd - offset;
+      if (static_cast<int64_t>(aLength) > available) {
+        aLength = static_cast<size_t>(available);
+      }
+    }
+  }
   uint32_t bytes = 0;
   context->mLastIORV = context->GetResource()->Read(static_cast<char*>(aBuffer),
                                                     aLength, &bytes);
-  bool eof = bytes < aLength;
-  return NS_FAILED(context->mLastIORV) ? -1 : eof ? 0 : 1;
+  if (NS_FAILED(context->mLastIORV)) {
+    return -1;
+  }
+  return bytes;
 }
 
 static int webmdemux_seek(int64_t aOffset, int aWhence, void* aUserData) {
   MOZ_ASSERT(aUserData);
   WebMDemuxer::NestEggContext* context =
       reinterpret_cast<WebMDemuxer::NestEggContext*>(aUserData);
-  context->mLastIORV = context->GetResource()->Seek(aWhence, aOffset);
-  return NS_SUCCEEDED(context->mLastIORV) ? 0 : -1;
+  nsresult rv = context->GetResource()->Seek(aWhence, aOffset);
+  // Don't overwrite mLastIORV on success: nestegg performs internal rewind
+  // seeks after failed reads, and a successful rewind must not mask the
+  // original read failure (e.g. NS_ERROR_DOM_MEDIA_WAITING_FOR_DATA).
+  if (NS_FAILED(rv)) {
+    context->mLastIORV = rv;
+    return -1;
+  }
+  return 0;
 }
 
 static int64_t webmdemux_tell(void* aUserData) {
@@ -115,7 +142,7 @@ static void webmdemux_log(nestegg* aContext, unsigned int aSeverity,
 
   SprintfLiteral(msg, "%p [Nestegg-%s] ", aContext, sevStr);
   PR_vsnprintf(msg + strlen(msg), sizeof(msg) - strlen(msg), aFormat, args);
-  MOZ_LOG(gNesteggLog, LogLevel::Debug, ("%s", msg));
+  MOZ_LOG_FMT(gNesteggLog, LogLevel::Debug, "{}", msg);
 
   va_end(args);
 }
@@ -297,9 +324,8 @@ nsresult WebMDemuxer::SetVideoCodecInfo(nestegg* aContext, int aTrackId) {
   return NS_OK;
 }
 
-nsresult WebMDemuxer::SetAudioCodecInfo(nestegg* aContext, int aTrackId,
-                                        const nestegg_audio_params& aParams) {
-  mAudioCodec = nestegg_track_codec_id(aContext, aTrackId);
+nsresult WebMDemuxer::SetContainerAudioCodecInfo(
+    nestegg* aContext, const nestegg_audio_params& aParams) {
   switch (mAudioCodec) {
     case NESTEGG_CODEC_VORBIS: {
       mInfo.mAudio.mCodecSpecificConfig =
@@ -323,10 +349,21 @@ nsresult WebMDemuxer::SetAudioCodecInfo(nestegg* aContext, int aTrackId,
       NS_WARNING("Unknown WebM audio codec");
       return NS_ERROR_DOM_MEDIA_METADATA_ERR;
   }
+  return NS_OK;
+}
+
+nsresult WebMDemuxer::SetAudioCodecInfo(nestegg* aContext, int aTrackId,
+                                        const nestegg_audio_params& aParams) {
+  mAudioCodec = nestegg_track_codec_id(aContext, aTrackId);
+
+  nsresult rv = SetContainerAudioCodecInfo(aContext, aParams);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
 
   AutoTArray<const unsigned char*, 4> headers;
   AutoTArray<size_t, 4> headerLens;
-  nsresult rv = GetCodecPrivateData(aContext, aTrackId, &headers, &headerLens);
+  rv = GetCodecPrivateData(aContext, aTrackId, &headers, &headerLens);
   if (NS_FAILED(rv)) {
     WEBM_DEBUG("GetCodecPrivateData error for WebM");
     return rv;
@@ -373,6 +410,41 @@ nsresult WebMDemuxer::GetCodecPrivateData(
     aHeaderLens->AppendElement(length);
   }
   return NS_OK;
+}
+
+static Maybe<gfx::HDRMetadata> ParseWebMMasteringMetadata(
+    const nestegg_video_params& aParams) {
+  gfx::HDRMetadata hdr;
+  if (!std::isnan(aParams.primary_r_chromacity_x)) {
+    gfx::Smpte2086Metadata smpte;
+    smpte.displayPrimaryRed.x =
+        static_cast<float>(aParams.primary_r_chromacity_x);
+    smpte.displayPrimaryRed.y =
+        static_cast<float>(aParams.primary_r_chromacity_y);
+    smpte.displayPrimaryGreen.x =
+        static_cast<float>(aParams.primary_g_chromacity_x);
+    smpte.displayPrimaryGreen.y =
+        static_cast<float>(aParams.primary_g_chromacity_y);
+    smpte.displayPrimaryBlue.x =
+        static_cast<float>(aParams.primary_b_chromacity_x);
+    smpte.displayPrimaryBlue.y =
+        static_cast<float>(aParams.primary_b_chromacity_y);
+    smpte.whitePoint.x = static_cast<float>(aParams.white_point_chromaticity_x);
+    smpte.whitePoint.y = static_cast<float>(aParams.white_point_chromaticity_y);
+    smpte.maxLuminance = static_cast<float>(aParams.luminance_max);
+    smpte.minLuminance = static_cast<float>(aParams.luminance_min);
+    hdr.mSmpte2086 = Some(smpte);
+  }
+  if (aParams.max_cll != 0 || aParams.max_fall != 0) {
+    gfx::ContentLightLevel cll;
+    cll.maxContentLightLevel = aParams.max_cll;
+    cll.maxFrameAverageLightLevel = aParams.max_fall;
+    hdr.mContentLightLevel = Some(cll);
+  }
+  if (!hdr.IsValid()) {
+    return Nothing();
+  }
+  return Some(hdr);
 }
 
 nsresult WebMDemuxer::ReadMetadata() {
@@ -453,26 +525,30 @@ nsresult WebMDemuxer::ReadMetadata() {
           static_cast<gfx::CICP::TransferCharacteristics>(
               params.transfer_characteristics));
 
-      // Picture region, taking into account cropping, before scaling
-      // to the display size.
-      unsigned int cropH = params.crop_right + params.crop_left;
-      unsigned int cropV = params.crop_bottom + params.crop_top;
-      gfx::IntRect pictureRect(params.crop_left, params.crop_top,
-                               params.width - cropH, params.height - cropV);
+      mInfo.mVideo.mHDRMetadata = ParseWebMMasteringMetadata(params);
 
-      // If the cropping data appears invalid then use the frame data
-      if (pictureRect.width <= 0 || pictureRect.height <= 0 ||
-          pictureRect.x < 0 || pictureRect.y < 0) {
-        pictureRect.x = 0;
-        pictureRect.y = 0;
-        pictureRect.width = params.width;
-        pictureRect.height = params.height;
+      CheckedInt<uint32_t> cropH =
+          CheckedInt<uint32_t>(params.crop_left) + params.crop_right;
+      CheckedInt<uint32_t> cropV =
+          CheckedInt<uint32_t>(params.crop_top) + params.crop_bottom;
+      if (!cropH.isValid() || !cropV.isValid() ||
+          cropH.value() >= params.width || cropV.value() >= params.height) {
+        WEBM_DEBUG("Invalid crop values left: %u right: %u top: %u bottom: %u",
+                   params.crop_left, params.crop_right, params.crop_top,
+                   params.crop_bottom);
+        continue;
       }
 
       // Validate the container-reported frame and pictureRect sizes. This
       // ensures that our video frame creation code doesn't overflow.
       gfx::IntSize displaySize(params.display_width, params.display_height);
       gfx::IntSize frameSize(params.width, params.height);
+      const uint32_t croppedWidth = params.width - cropH.value();
+      const uint32_t croppedHeight = params.height - cropV.value();
+      gfx::IntRect pictureRect(AssertedCast<int32_t>(params.crop_left),
+                               AssertedCast<int32_t>(params.crop_top),
+                               AssertedCast<int32_t>(croppedWidth),
+                               AssertedCast<int32_t>(croppedHeight));
       if (!IsValidVideoRegion(frameSize, pictureRect, displaySize)) {
         // Video track's frame sizes will overflow. Ignore the video track.
         continue;
@@ -654,10 +730,8 @@ bool WebMDemuxer::CheckKeyFrameByExamineByteStream(
       return VPXDecoder::IsKeyframe(*aSample, VPXDecoder::Codec::VP8);
     case NESTEGG_CODEC_VP9:
       return VPXDecoder::IsKeyframe(*aSample, VPXDecoder::Codec::VP9);
-#ifdef MOZ_AV1
     case NESTEGG_CODEC_AV1:
       return AOMDecoder::IsKeyframe(*aSample);
-#endif
     default:
       MOZ_ASSERT_UNREACHABLE(
           "Cannot detect keyframes in unknown WebM video codec");
@@ -794,7 +868,7 @@ nsresult WebMDemuxer::GetNextPacket(TrackInfo::TrackType aType,
     }
 
     RefPtr<MediaRawData> sample;
-    if (mInfo.mVideo.HasAlpha() && alphaLength != 0) {
+    if (mInfo.mVideo.HasAlpha() && alphaData) {
       sample = new MediaRawData(data, length, alphaData, alphaLength);
       if ((length && !sample->Data()) ||
           (alphaLength && !sample->AlphaData())) {
@@ -1021,7 +1095,11 @@ Result<RefPtr<NesteggPacketHolder>, nsresult> WebMDemuxer::NextPacket(
 Result<RefPtr<NesteggPacketHolder>, nsresult> WebMDemuxer::DemuxPacket(
     TrackInfo::TrackType aType) {
   nestegg_packet* packet;
-  const NestEggContext& context = CallbackContext(aType);
+  NestEggContext& context =
+      aType == TrackInfo::kVideoTrack ? mVideoContext : mAudioContext;
+  // Clear any IO result carried over from a prior nestegg operation so that
+  // mLastIORV only reflects failures that occur during this packet read.
+  context.mLastIORV = NS_OK;
   int r = nestegg_read_packet(context.mContext, &packet);
   if (r <= 0) {
     nsresult rv = context.mLastIORV;
@@ -1042,7 +1120,14 @@ Result<RefPtr<NesteggPacketHolder>, nsresult> WebMDemuxer::DemuxPacket(
     return Err(NS_ERROR_DOM_MEDIA_DEMUXER_ERR);
   }
 
-  int64_t offset = Resource(aType).Tell();
+  // Use nestegg's logical end-of-packet offset rather than the resource
+  // cursor: nestegg's internal buffering means the cursor may be ahead of
+  // the packet's actual end in the stream.
+  int64_t offset = 0;
+  if (nestegg_packet_end_offset(packet, &offset) != 0) {
+    WEBM_DEBUG("nestegg_packet_end_offset: error");
+    return Err(NS_ERROR_DOM_MEDIA_DEMUXER_ERR);
+  }
   RefPtr<NesteggPacketHolder> holder = new NesteggPacketHolder();
   if (!holder->Init(packet, offset, track, false)) {
     WEBM_DEBUG("NesteggPacketHolder::Init: error");

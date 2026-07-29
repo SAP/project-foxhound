@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -20,8 +19,6 @@
 #include "gfxFT2Utils.h"
 #include "gfxFT2FontList.h"
 #include "gfxTextRun.h"
-#include <locale.h>
-#include "nsGkAtoms.h"
 #include "nsTArray.h"
 #include "nsCRT.h"
 #include "nsXULAppAPI.h"
@@ -40,17 +37,15 @@ using namespace mozilla::gfx;
  * gfxFT2Font
  */
 
-bool gfxFT2Font::ShapeText(DrawTarget* aDrawTarget, const char16_t* aText,
-                           uint32_t aOffset, uint32_t aLength, Script aScript,
-                           nsAtom* aLanguage, bool aVertical,
-                           RoundingFlags aRounding,
+bool gfxFT2Font::ShapeText(const char16_t* aText, uint32_t aOffset,
+                           uint32_t aLength, Script aScript, nsAtom* aLanguage,
+                           bool aVertical, RoundingFlags aRounding,
                            gfxShapedText* aShapedText) {
-  if (!gfxFont::ShapeText(aDrawTarget, aText, aOffset, aLength, aScript,
-                          aLanguage, aVertical, aRounding, aShapedText)) {
+  if (!gfxFont::ShapeText(aText, aOffset, aLength, aScript, aLanguage,
+                          aVertical, aRounding, aShapedText)) {
     // harfbuzz must have failed(?!), just render raw glyphs
     AddRange(aText, aOffset, aLength, aShapedText);
-    PostShapingFixup(aDrawTarget, aText, aOffset, aLength, aVertical,
-                     aShapedText);
+    PostShapingFixup(aText, aOffset, aLength, aVertical, aShapedText);
   }
 
   return true;

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,9 +26,9 @@ class CSSNestedDeclarationsDeclaration final : public nsDOMCSSDeclaration {
   nsISupports* GetParentObject() const final;
 
  protected:
-  DeclarationBlock* GetOrCreateCSSDeclaration(
-      Operation aOperation, DeclarationBlock** aCreated) final;
-  nsresult SetCSSDeclaration(DeclarationBlock* aDecl,
+  Block* GetOrCreateCSSDeclaration(Operation aOperation,
+                                   Block** aCreated) final;
+  nsresult SetCSSDeclaration(Block* aDecl,
                              MutationClosureData* aClosureData) final;
   ParsingEnvironment GetParsingEnvironment(
       nsIPrincipal* aSubjectPrincipal) const final;
@@ -39,16 +37,14 @@ class CSSNestedDeclarationsDeclaration final : public nsDOMCSSDeclaration {
   // For accessing the constructor.
   friend class CSSNestedDeclarations;
 
-  explicit CSSNestedDeclarationsDeclaration(
-      already_AddRefed<StyleLockedDeclarationBlock> aDecls);
+  explicit CSSNestedDeclarationsDeclaration(already_AddRefed<Block> aDecls);
   ~CSSNestedDeclarationsDeclaration();
 
   inline CSSNestedDeclarations* Rule();
   inline const CSSNestedDeclarations* Rule() const;
 
-  void SetRawAfterClone(RefPtr<StyleLockedDeclarationBlock>);
-
-  RefPtr<DeclarationBlock> mDecls;
+  void SetRawAfterClone(RefPtr<Block>);
+  RefPtr<Block> mDecls;
 };
 
 class CSSNestedDeclarations final : public css::Rule {

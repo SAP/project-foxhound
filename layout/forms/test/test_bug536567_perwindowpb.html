@@ -19,7 +19,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=536567
 const Cm = Components.manager;
 
 var MockFilePicker = SpecialPowers.MockFilePicker;
-MockFilePicker.init(SpecialPowers.wrap(window).browsingContext);
+MockFilePicker.init();
 
 var tmpDir = Services.dirsvc.get("TmpD", Ci.nsIFile);
 var homeDir = Services.dirsvc.get("Desk", Ci.nsIFile);
@@ -181,11 +181,11 @@ MockFilePicker.showCallback = function(filepicker) {
   } else {
     is(returned, test[1], 'test ' + testIndex);
   }
+};
 
-  filepicker.window.setTimeout(function() {
-    testIndex++;
-    runTest();
-  }, 0);
+MockFilePicker.afterOpenCallback = function() {
+  testIndex++;
+  runTest();
 };
 
 window.onload = function() {

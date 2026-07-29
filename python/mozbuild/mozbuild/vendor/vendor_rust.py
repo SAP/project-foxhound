@@ -210,7 +210,8 @@ class VendorRust(MozbuildObject):
 
     def cargo_version(self, cargo):
         out = (
-            subprocess.check_output([cargo, "--version"])
+            subprocess
+            .check_output([cargo, "--version"])
             .splitlines()[0]
             .decode("UTF-8")
         )
@@ -296,6 +297,7 @@ Please commit or stash these changes before vendoring, or re-run with `--ignore-
     # Licenses for code used at runtime. Please see the above comment before
     # adding anything to this list.
     RUNTIME_LICENSE_WHITELIST = [
+        "0BSD",
         "Apache-2.0",
         "Apache-2.0 WITH LLVM-exception",
         # BSD-2-Clause and BSD-3-Clause are ok, but packages using them
@@ -898,6 +900,63 @@ license file's hash.
                 new_obj.body[:] = body
                 return new_obj
             return obj
+
+        # cargo 1.94 started removing .gitattributes and .gitignore files, as well
+        # as vendoring files older versions didn't. It's a tough sell to bump the vendoring
+        # requirement to 1.94 when we're still using 1.90 on CI, so adjust the tree for the
+        # common denominator.
+        for package in cargo_lock["package"]:
+            source = package.get("source")
+            if not source:
+                continue
+            unlinked = []
+            package_dir = Path(vendor_dir) / package["name"]
+            # All differing files are dotfiles.
+            for path in package_dir.glob("**/.*"):
+                if path.name in (
+                    ".gitattributes",
+                    ".gitignore",
+                    ".vscode",
+                    ".cargo-ok",
+                ):
+                    if path.is_dir():
+                        for root_path, dirs, files in os.walk(path, topdown=False):
+                            root = Path(root_path)
+                            for name in files:
+                                to_unlink = root / name
+                                try:
+                                    to_unlink.unlink()
+                                    unlinked.append(
+                                        mozpath.normsep(
+                                            str(to_unlink.relative_to(package_dir))
+                                        )
+                                    )
+                                except FileNotFoundError:
+                                    pass
+                            for name in dirs:
+                                try:
+                                    (root / name).rmdir()
+                                except OSError:
+                                    pass
+                    else:
+                        try:
+                            path.unlink()
+                            unlinked.append(
+                                mozpath.normsep(str(path.relative_to(package_dir)))
+                            )
+                        except FileNotFoundError:
+                            pass
+            # Update the checksums with the changes we made.
+            checksum_json = package_dir / ".cargo-checksum.json"
+            with checksum_json.open(encoding="utf-8") as fh:
+                checksum_data = json.load(fh)
+            for path in unlinked:
+                try:
+                    del checksum_data["files"][path]
+                except KeyError:
+                    pass
+            with checksum_json.open(mode="w", encoding="utf-8") as fh:
+                json.dump(checksum_data, fh, separators=(",", ":"))
 
         if not self._check_licenses(vendor_dir) and not force:
             self.log(

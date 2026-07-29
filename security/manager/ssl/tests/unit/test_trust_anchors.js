@@ -23,10 +23,7 @@ add_setup(async function load_nssckbi_testlib() {
   let testModule = await checkPKCS11ModuleExists(moduleName, libraryName);
 
   // Check that listing the slots for the test module works.
-  let testModuleSlotNames = Array.from(
-    testModule.listSlots(),
-    slot => slot.name
-  );
+  let testModuleSlotNames = Array.from(testModule.slots, slot => slot.name);
   testModuleSlotNames.sort();
   const expectedSlotNames = ["NSS Builtin Objects"];
   deepEqual(

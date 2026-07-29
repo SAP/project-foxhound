@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,7 +11,6 @@
 #define mozilla_DeclarationBlock_h
 
 #include "NonCustomCSSPropertyId.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/ServoBindings.h"
 #include "nsString.h"
 
@@ -29,18 +26,11 @@ class Rule;
 
 class DeclarationBlock final {
   DeclarationBlock(const DeclarationBlock& aCopy)
-      : mRaw(Servo_DeclarationBlock_Clone(aCopy.mRaw).Consume()),
-        mImmutable(false),
-        mIsDirty(false) {
-    mContainer.mRaw = 0;
-  }
+      : mRaw(Servo_DeclarationBlock_Clone(aCopy.mRaw).Consume()) {}
 
  public:
-  explicit DeclarationBlock(
-      already_AddRefed<const StyleLockedDeclarationBlock> aRaw)
-      : mRaw(aRaw), mImmutable(false), mIsDirty(false) {
-    mContainer.mRaw = 0;
-  }
+  explicit DeclarationBlock(already_AddRefed<StyleLockedDeclarationBlock> aRaw)
+      : mRaw(aRaw) {}
 
   DeclarationBlock()
       : DeclarationBlock(Servo_DeclarationBlock_CreateEmpty().Consume()) {}
@@ -54,94 +44,45 @@ class DeclarationBlock final {
   /**
    * Return whether |this| may be modified.
    */
-  bool IsMutable() const { return !mImmutable; }
+  bool IsMutable() const { return !IsImmutable(); }
 
   /**
    * Crash in debug builds if |this| cannot be modified.
    */
   void AssertMutable() const {
     MOZ_ASSERT(IsMutable(), "someone forgot to call EnsureMutable");
-    MOZ_ASSERT(!OwnerIsReadOnly(), "User Agent sheets shouldn't be modified");
   }
 
   /**
    * Mark this declaration as unmodifiable.
    */
-  void SetImmutable() { mImmutable = true; }
-
-  /**
-   * Return whether |this| has been restyled after modified.
-   */
-  bool IsDirty() const { return mIsDirty; }
-
-  /**
-   * Mark this declaration as dirty.
-   */
-  void SetDirty() { mIsDirty = true; }
-
-  /**
-   * Mark this declaration as not dirty.
-   */
-  void UnsetDirty() { mIsDirty = false; }
+  void SetImmutable() { Servo_DeclarationBlock_SetImmutable(mRaw.get()); }
 
   /**
    * Copy |this|, if necessary to ensure that it can be modified.
    */
   already_AddRefed<DeclarationBlock> EnsureMutable() {
-    MOZ_ASSERT(!OwnerIsReadOnly());
-
-    if (!IsDirty()) {
-      // In stylo, the old DeclarationBlock is stored in element's rule node
-      // tree directly, to avoid new values replacing the DeclarationBlock in
-      // the tree directly, we need to copy the old one here if we haven't yet
-      // copied. As a result the new value does not replace rule node tree until
-      // traversal happens.
-      //
-      // FIXME(emilio, bug 1606413): This is a hack for ::first-line and
-      // transitions starting due to CSSOM changes when other transitions are
-      // already running. Try to simplify this setup, so that rule tree updates
-      // find the mutated declaration block properly rather than having to
-      // insert the cloned declaration in the tree.
+    if (IsImmutable()) {
       return Clone();
     }
-
-    if (!IsMutable()) {
-      return Clone();
-    }
-
     return do_AddRef(this);
   }
 
-  void SetOwningRule(css::Rule* aRule) {
-    MOZ_ASSERT(!mContainer.mOwningRule || !aRule,
-               "should never overwrite one rule with another");
-    mContainer.mOwningRule = aRule;
-  }
-
-  css::Rule* GetOwningRule() const {
-    if (mContainer.mRaw & 0x1) {
-      return nullptr;
-    }
-    return mContainer.mOwningRule;
+  // Returns whether our raw block might be referenced from an existing style.
+  // FIXME(emilio): Some of this is needed so that animation-only traversals and
+  // ::first-line reparenting don't get the wrong style by reusing a mutated
+  // rule node, but ideally should go away, see bug 1606413.
+  bool IsImmutable() const {
+    return Servo_DeclarationBlock_IsImmutable(mRaw.get());
   }
 
   void SetAttributeStyles(AttributeStyles* aAttributeStyles) {
-    MOZ_ASSERT(!mContainer.mAttributeStyles || !aAttributeStyles,
+    MOZ_ASSERT(!mAttributeStyles || !aAttributeStyles,
                "should never overwrite one sheet with another");
-    mContainer.mAttributeStyles = aAttributeStyles;
-    if (aAttributeStyles) {
-      mContainer.mRaw |= uintptr_t(1);
-    }
+    mAttributeStyles = aAttributeStyles;
   }
 
-  AttributeStyles* GetAttributeStyles() const {
-    if (!(mContainer.mRaw & 0x1)) {
-      return nullptr;
-    }
-    auto c = mContainer;
-    c.mRaw &= ~uintptr_t(1);
-    return c.mAttributeStyles;
-  }
+  AttributeStyles* GetAttributeStyles() const { return mAttributeStyles; }
 
   bool IsReadOnly() const;
 
@@ -164,7 +105,7 @@ class DeclarationBlock final {
     return FromCssText(value, aExtraData, aMode, aLoader, aRuleType);
   }
 
-  const StyleLockedDeclarationBlock* Raw() const { return mRaw; }
+  StyleLockedDeclarationBlock* Raw() const { return mRaw; }
 
   void ToString(nsACString& aResult) const {
     Servo_DeclarationBlock_GetCssText(mRaw, &aResult);
@@ -196,10 +137,10 @@ class DeclarationBlock final {
     return Servo_DeclarationBlock_GetPropertyIsImportant(mRaw, &aProperty);
   }
 
-  bool GetPropertyTypedValue(const nsACString& aProperty,
-                             StylePropertyTypedValueResult& aResult) const {
-    return Servo_DeclarationBlock_GetPropertyTypedValue(mRaw, &aProperty,
-                                                        &aResult);
+  bool GetPropertyTypedValueList(const CSSPropertyId& aPropId,
+                                 StylePropertyTypedValueList& aValue) const {
+    return Servo_DeclarationBlock_GetPropertyTypedValueList(mRaw, &aPropId,
+                                                            &aValue);
   }
 
   // Returns whether the property was removed.
@@ -219,40 +160,11 @@ class DeclarationBlock final {
  private:
   ~DeclarationBlock() = default;
 
-  bool OwnerIsReadOnly() const;
+  // The AttributeStyles that is responsible for this declaration. Only
+  // non-null for style attributes.
+  AttributeStyles* mAttributeStyles = nullptr;
 
-  union {
-    // We only ever have one of these since we have a AttributeStyles only for
-    // style attributes, and style attributes never have an owning rule. It's a
-    // AttributeStyles if the low bit is set.
-
-    uintptr_t mRaw;
-
-    // The style rule that owns this declaration.  May be null.
-    css::Rule* mOwningRule;
-
-    // The AttributeStyles that is responsible for this declaration. Only
-    // non-null for style attributes.
-    AttributeStyles* mAttributeStyles;
-  } mContainer;
-
-  RefPtr<const StyleLockedDeclarationBlock> mRaw;
-
-  // set when declaration put in the rule tree;
-  bool mImmutable;
-
-  // True if this declaration has not been restyled after modified.
-  //
-  // Since we can clear this flag from style worker threads, we use an Atomic.
-  //
-  // Note that although a single DeclarationBlock can be shared between
-  // different rule nodes (due to the style="" attribute cache), whenever a
-  // DeclarationBlock has its mIsDirty flag set to true, we always clone it to
-  // a unique object first. So when we clear this flag during Servo traversal,
-  // we know that we are clearing it on a DeclarationBlock that has a single
-  // reference, and there is no problem with another user of the same
-  // DeclarationBlock thinking that it is not dirty.
-  Atomic<bool, MemoryOrdering::Relaxed> mIsDirty;
+  RefPtr<StyleLockedDeclarationBlock> mRaw;
 };
 
 }  // namespace mozilla

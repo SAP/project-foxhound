@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,6 +10,7 @@
 #include "mozilla/MacroForEach.h"
 #include "mozilla/Span.h"
 
+#include <fmt/format.h>
 #include <cstdio>
 #include <sstream>
 
@@ -45,12 +44,13 @@ struct supports_os<T, std::void_t<decltype(std::declval<std::ostream&>()
 // be dereferenced (in which cases we just write the pointer value).
 template <typename T>
 std::ostream& DebugValue(std::ostream& aOut, T* aValue) {
-  if constexpr (detail::supports_os<T>::value) {
-    if (aValue) {
-      return aOut << *aValue << " @ " << aValue;
-    } else {
-      return aOut << "null";
-    }
+  if (!aValue) {
+    return aOut << "null";
+  }
+  if constexpr (fmt::is_formattable<T>::value) {
+    return aOut << fmt::format("{}", *aValue) << " @ " << aValue;
+  } else if constexpr (detail::supports_os<T>::value) {
+    return aOut << *aValue << " @ " << aValue;
   } else {
     return aOut << aValue;
   }

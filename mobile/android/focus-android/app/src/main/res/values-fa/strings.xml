@@ -143,7 +143,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s شما را تحت کنترل قرار می‌دهد.</p>\n<p>از این به عنوان یک مرورگر خصوصی استفاده کنید:\n<ul>\n<li>مستقیما در برنامه جست‌وجو و مرور کنید</li>\n<li>ردیاب‌ها را مسدود کنید (یا تنظیمات را برای اجازه دادن به ردیاب‌ها تغییر دهید)</li>\n<li>کوکی‌ها را مانند جست‌وجو و تاریخچه مرور پاک یا حذف کنید</li>\n</ul> </p>\n<p>%1$s توسط موزیلا ساخته شده است. ماموریت ما تا رواج یک اینترنت سالم و باز است.<br/>\n<a href=\"%2$s\">بیشتر بدانید</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s شما را تحت کنترل قرار می‌دهد.</p>\n<p>از این به عنوان یک مرورگر خصوصی استفاده کنید:\n<ul>\n<li>مستقیما در برنامه جست‌وجو و مرور کنید</li>\n<li>ردیاب‌ها را مسدود کنید (یا تنظیمات را برای اجازه دادن به ردیاب‌ها تغییر دهید)</li>\n<li>کوکی‌ها را مانند جست‌وجو و تاریخچه مرور پاک یا حذف کنید</li>\n</ul> </p>\n<p>%1$s توسط موزیلا ساخته شده است. ماموریت ما تا رواج یک اینترنت سالم و باز است.<br/>\n<a href=\"%2$s\">بیشتر بدانید</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">اطلاعات بیشتر</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -238,7 +238,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">جای‌گذاری یا ورود نشانی</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">مثال: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">مثال: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">مثال: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -310,12 +310,12 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">تبدیل %1$s به مرورگر پیش‌فرض</string>
-  <string name="preference_category_mozilla">موزیلا</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">موزیلا</string>
   <string name="preference_mozilla_telemetry2">ارسال اطلاعات استفاده</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">اطلاعات بیشتر</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">موزیلا تلاش می‌کند تنها اطلاعاتی که برای بهینه‌سازی %1$s برای همه به آنها نیاز دارد را جمع‌آوری کند.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">موزیلا تلاش می‌کند تنها اطلاعاتی که برای بهینه‌سازی %1$s برای همه به آنها نیاز دارد را جمع‌آوری کند.</string>
   <string name="preference_daily_usage_ping_learn_more">اطلاعات بیشتر</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">نکات حریم‌خصوصی</string>
@@ -668,7 +668,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">بستن زبانه</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">ارسال گزارش ازکارافتادگی به Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">ارسال گزارش ازکارافتادگی به Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

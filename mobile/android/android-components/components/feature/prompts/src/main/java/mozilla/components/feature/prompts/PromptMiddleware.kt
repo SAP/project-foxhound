@@ -4,6 +4,7 @@
 
 package mozilla.components.feature.prompts
 
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 import mozilla.components.browser.state.action.BrowserAction
@@ -17,9 +18,9 @@ import mozilla.components.lib.state.Store
 /**
  * [Middleware] implementation for managing [PromptRequest]s.
  */
-class PromptMiddleware : Middleware<BrowserState, BrowserAction> {
-
-    private val scope = MainScope()
+class PromptMiddleware(
+    private val scope: CoroutineScope = MainScope(),
+) : Middleware<BrowserState, BrowserAction> {
 
     override fun invoke(
         store: Store<BrowserState, BrowserAction>,

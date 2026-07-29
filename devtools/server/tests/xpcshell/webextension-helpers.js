@@ -143,6 +143,18 @@ async function extensionScriptWithMessageListener() {
       case "storage-local-clear":
         await browser.storage.local.clear();
         break;
+      case "storage-sync-set":
+        await browser.storage.sync.set(args[0]);
+        break;
+      case "storage-sync-get":
+        item = await browser.storage.sync.get(args[0]);
+        break;
+      case "storage-sync-remove":
+        await browser.storage.sync.remove(args[0]);
+        break;
+      case "storage-sync-clear":
+        await browser.storage.sync.clear();
+        break;
       case "storage-local-fireOnChanged": {
         // Allow the storage.onChanged listener to send a test event
         // message when onChanged is being fired.

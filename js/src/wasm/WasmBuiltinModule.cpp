@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright 2021 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +15,8 @@
  */
 
 #include "wasm/WasmBuiltinModule.h"
+
+#include <array>
 
 #include "util/Text.h"
 #include "vm/GlobalObject.h"
@@ -83,13 +83,20 @@ bool BuiltinModuleFuncs::init() {
 
 #define VISIT_BUILTIN_FUNC(op, export, sa_name, abitype, needs_thunk, entry,   \
                            uses_memory, inline_op, ...)                        \
-  const ValType op##Params[] =                                                 \
-      DECLARE_BUILTIN_MODULE_FUNC_PARAM_VALTYPES_##op;                         \
   Maybe<ValType> op##Result = DECLARE_BUILTIN_MODULE_FUNC_RESULT_VALTYPE_##op; \
-  if (!singleton_->funcs_[BuiltinModuleFuncId::op].init(                       \
-          types, mozilla::Span<const ValType>(op##Params), op##Result,         \
-          uses_memory, &SASig##sa_name, inline_op, export)) {                  \
-    return false;                                                              \
+  {                                                                            \
+    constexpr size_t numParams = DECLARE_BUILTIN_MODULE_FUNC_NUM_PARAMS_##op;  \
+    mozilla::Span<const ValType> op##ParamsSpan;                               \
+    if constexpr (numParams > 0) {                                             \
+      static const std::array<const ValType, numParams> op##Params(            \
+          DECLARE_BUILTIN_MODULE_FUNC_PARAM_VALTYPES_##op);                    \
+      op##ParamsSpan = mozilla::Span<const ValType>(op##Params);               \
+    }                                                                          \
+    if (!singleton_->funcs_[BuiltinModuleFuncId::op].init(                     \
+            types, op##ParamsSpan, op##Result, uses_memory, &SASig##sa_name,   \
+            inline_op, export)) {                                              \
+      return false;                                                            \
+    }                                                                          \
   }
   FOR_EACH_BUILTIN_MODULE_FUNC(VISIT_BUILTIN_FUNC)
 #undef VISIT_BUILTIN_FUNC
@@ -148,7 +155,7 @@ bool CompileBuiltinModule(JSContext* cx,
 
   // Initialize the compiler environment, choosing the best tier possible
   SharedCompileArgs compileArgs = CompileArgs::buildAndReport(
-      cx, ScriptedCaller(), featureOptions, /* reportOOM */ true);
+      cx, ScriptedCaller::selfHosted(cx), featureOptions, /* reportOOM */ true);
   if (!compileArgs) {
     return false;
   }
@@ -376,10 +383,29 @@ Maybe<BuiltinModuleId> wasm::ImportMatchesBuiltinModule(
   return Nothing();
 }
 
-bool wasm::ImportMatchesBuiltinModuleFunc(mozilla::Span<const char> importName,
-                                          BuiltinModuleId module,
-                                          const BuiltinModuleFunc** matchedFunc,
-                                          BuiltinModuleFuncId* matchedFuncId) {
+Maybe<BuiltinModuleId> wasm::ImportMatchesBuiltinModule(
+    const Import& import, const BuiltinModuleIds& enabledBuiltins) {
+  Maybe<BuiltinModuleId> builtinModule =
+      ImportMatchesBuiltinModule(import.module.utf8Bytes(), enabledBuiltins);
+  if (builtinModule &&
+      !ImportFieldMatchesBuiltinModuleDefinition(import.field.utf8Bytes(),
+                                                 *builtinModule, import.kind)) {
+    return Nothing();
+  }
+  return builtinModule;
+}
+
+bool wasm::ImportFieldMatchesBuiltinModuleDefinition(
+    mozilla::Span<const char> importName, BuiltinModuleId module,
+    DefinitionKind kind, const BuiltinModuleFunc** matchedFunc,
+    BuiltinModuleFuncId* matchedFuncId) {
+  if (kind != DefinitionKind::Function) {
+    // JSStringConstants accepts all global imports; other builtin modules only
+    // define functions.
+    return module == BuiltinModuleId::JSStringConstants &&
+           kind == DefinitionKind::Global;
+  }
+
   // Imported string constants don't define any functions
   if (module == BuiltinModuleId::JSStringConstants) {
     return false;
@@ -390,11 +416,16 @@ bool wasm::ImportMatchesBuiltinModuleFunc(mozilla::Span<const char> importName,
     for (BuiltinModuleFuncId funcId : IntGemmFuncs) {
       const BuiltinModuleFunc& func = BuiltinModuleFuncs::getFromId(funcId);
       if (importName == mozilla::MakeStringSpan(func.exportName())) {
-        *matchedFunc = &func;
-        *matchedFuncId = funcId;
+        if (matchedFunc) {
+          *matchedFunc = &func;
+        }
+        if (matchedFuncId) {
+          *matchedFuncId = funcId;
+        }
         return true;
       }
     }
+    return false;
   }
 #endif
 
@@ -404,8 +435,12 @@ bool wasm::ImportMatchesBuiltinModuleFunc(mozilla::Span<const char> importName,
   for (BuiltinModuleFuncId funcId : JSStringFuncs) {
     const BuiltinModuleFunc& func = BuiltinModuleFuncs::getFromId(funcId);
     if (importName == mozilla::MakeStringSpan(func.exportName())) {
-      *matchedFunc = &func;
-      *matchedFuncId = funcId;
+      if (matchedFunc) {
+        *matchedFunc = &func;
+      }
+      if (matchedFuncId) {
+        *matchedFuncId = funcId;
+      }
       return true;
     }
   }
@@ -415,6 +450,8 @@ bool wasm::ImportMatchesBuiltinModuleFunc(mozilla::Span<const char> importName,
 bool wasm::CompileBuiltinModule(JSContext* cx, BuiltinModuleId module,
                                 const Import* moduleMemoryImport,
                                 MutableHandle<WasmModuleObject*> result) {
+  // NOTE(bvisness): If you update the memory descriptors here, pay attention to
+  // CheckBuiltinImportsHaveMemory in WasmValidate.cpp.
   switch (module) {
     case BuiltinModuleId::SelfTest:
       return CompileBuiltinModule(
@@ -454,7 +491,6 @@ bool wasm::InstantiateBuiltinModule(JSContext* cx, BuiltinModuleId module,
   RootedObject instanceProto(cx);
   if (!moduleObj->module().instantiate(cx, *imports.address(), instanceProto,
                                        &instanceObj)) {
-    MOZ_RELEASE_ASSERT(cx->isThrowingOutOfMemory());
     return false;
   }
   result.set(&instanceObj->exportsObj());

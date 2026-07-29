@@ -25,4 +25,7 @@ TemporalHelpers.assertDuration(explicit, 0, 0, 0, 397, 1, 1, 1, 1, 1, 1, "defaul
 const implicit = earlier.until(later, {});
 TemporalHelpers.assertDuration(implicit, 0, 0, 0, 397, 1, 1, 1, 1, 1, 1, "default roundingIncrement is 1");
 
+const lambda = earlier.until(later, () => {});
+TemporalHelpers.assertDuration(lambda, 0, 0, 0, 397, 1, 1, 1, 1, 1, 1, "default roundingIncrement is 1");
+
 reportCompare(0, 0);

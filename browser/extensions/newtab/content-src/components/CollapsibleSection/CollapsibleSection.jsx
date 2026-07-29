@@ -12,6 +12,9 @@ import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
  * A section that can collapse. As of bug 1710937, it can no longer collapse.
  * See bug 1727365 for follow-up work to simplify this component.
  */
+// @nova-cleanup(remove-pref): Remove PREF_NOVA_ENABLED
+const PREF_NOVA_ENABLED = "nova.enabled";
+
 export class _CollapsibleSection extends React.PureComponent {
   constructor(props) {
     super(props);
@@ -101,15 +104,20 @@ export class _CollapsibleSection extends React.PureComponent {
       this.props.Prefs.values["discoverystream.topicSelection.selectedTopics"];
     const topicsHaveBeenPreviouslySet =
       hasBeenUpdatedPreviously || selectedTopics;
+    // @nova-cleanup(remove-conditional): Remove conditional class "collapsible-section"
+    const novaEnabled = this.props.Prefs.values[PREF_NOVA_ENABLED];
     return (
       <section
-        className={`collapsible-section ${this.props.className}${
-          active ? " active" : ""
-        }`}
+        className={`
+          ${novaEnabled ? "" : "collapsible-section"}
+          ${this.props.className}
+          ${active ? " active" : ""}`}
         // Note: data-section-id is used for web extension api tests in mozilla central
         data-section-id={id}
       >
-        {!sectionsEnabled && (
+        {/* eslint-disable-next-line jsdoc/no-bad-blocks */}
+        {/* @nova-cleanup(remove-conditional): Remove !novaEnabled check, title moves to CardGrid */}
+        {!sectionsEnabled && !novaEnabled && (
           <div className="section-top-bar">
             <h2
               className={`section-title-container ${hasSubtitleClassName}`}

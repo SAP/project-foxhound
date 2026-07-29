@@ -8,6 +8,7 @@ import android.app.Activity
 import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
 import androidx.test.core.app.launchActivity
 import com.google.android.gms.tasks.OnCompleteListener
 import com.google.android.gms.tasks.OnFailureListener
@@ -18,6 +19,7 @@ import com.google.android.play.core.review.ReviewManager
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import mozilla.components.support.test.assertUnused
+import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -37,6 +39,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executor
+import kotlin.test.assertIs
 
 @RunWith(RobolectricTestRunner::class)
 class PlayStoreReviewPromptControllerTest {
@@ -52,57 +55,52 @@ class PlayStoreReviewPromptControllerTest {
                 manager = reviewManager,
                 numberOfAppLaunches = { 5 },
             )
-            val scenario = launchActivity<ComponentActivity>()
-            scenario.moveToState(Lifecycle.State.RESUMED)
+            launchActivity<ComponentActivity>().use { scenario ->
+                scenario.moveToState(Lifecycle.State.RESUMED)
+                scenario.onActivity { activity ->
+                    activity.lifecycleScope.launch {
+                        controller.tryPromptReview(activity)
 
-            scenario.onActivity { activity ->
-                launch {
-                    controller.tryPromptReview(activity)
-
-                    assertTrue(reviewManager.promptHasBeenRequested)
+                        assertTrue(reviewManager.promptHasBeenRequested)
+                    }
                 }
             }
         }
 
     @Test
-    fun `GIVEN activity is stopped WHEN tryPromptReview is called THEN doesn't run the on complete callback`() =
-        runTest {
-            val reviewManager = SuccessfulReviewManager(testContext)
-            val controller = PlayStoreReviewPromptController(
-                manager = reviewManager,
-                numberOfAppLaunches = { 5 },
-            )
-            val scenario = launchActivity<ComponentActivity>()
+    fun `GIVEN activity is destroyed WHEN tryPromptReview is called THEN doesn't launch review flow`() = runTest {
+        val reviewManager = SuccessfulReviewManager(testContext)
+        val controller = PlayStoreReviewPromptController(
+            manager = reviewManager,
+            numberOfAppLaunches = { 5 },
+        )
+        launchActivity<ComponentActivity>().use { scenario ->
             scenario.moveToState(Lifecycle.State.RESUMED)
-            scenario.moveToState(Lifecycle.State.CREATED) // Move back from resumed to created, in effect stopping it.
-
             scenario.onActivity { activity ->
-                launch {
-                    controller.tryPromptReview(activity)
-
-                    assertFalse(reviewManager.promptHasBeenRequested)
-                }
+                activity.lifecycleScope
+                    .launch {
+                        scenario.moveToState(Lifecycle.State.DESTROYED)
+                        controller.tryPromptReview(activity)
+                    }
+                    .joinBlocking()
             }
         }
+        assertFalse(reviewManager.promptHasBeenRequested)
+    }
 
     @Test
-    fun `WHEN the reviews API fails THEN runs the error callback`() = runTest {
+    fun `WHEN the reviews API fails THEN returns Error result`() = runTest {
         val controller = PlayStoreReviewPromptController(
             manager = FailingReviewManager(),
             numberOfAppLaunches = { 5 },
         )
-        val scenario = launchActivity<ComponentActivity>()
-        scenario.moveToState(Lifecycle.State.RESUMED)
-        var onErrorRan = false
+        launchActivity<ComponentActivity>().use { scenario ->
+            scenario.onActivity { activity ->
+                activity.lifecycleScope.launch {
+                    val result = controller.tryPromptReview(activity)
 
-        scenario.onActivity { activity ->
-            launch {
-                controller.tryPromptReview(
-                    activity = activity,
-                    onError = { onErrorRan = true },
-                )
-
-                assertTrue(onErrorRan)
+                    assertIs<Error>(result)
+                }
             }
         }
     }
@@ -144,7 +142,7 @@ class PlayStoreReviewPromptControllerTest {
 
     @Test
     fun reviewPromptDisplayStateError() {
-        testRecordReviewPromptEventRecordsTheExpectedData(Error, "error")
+        testRecordReviewPromptEventRecordsTheExpectedData(Error(RuntimeException()), "error")
     }
 
     @Test
@@ -197,24 +195,26 @@ private class SuccessfulReviewManager(context: Context) : ReviewManager {
 }
 
 private class FailingReviewManager : ReviewManager {
-    override fun requestReviewFlow() = FailingTask<ReviewInfo>()
+    override fun requestReviewFlow() = FailedTask<ReviewInfo>()
     override fun launchReviewFlow(activity: Activity, reviewInfo: ReviewInfo) = assertUnused()
 }
 
-private class SuccessfulTask<T>(private val result: T) : FakeGmsTask<T>() {
+private class SuccessfulTask<T>(private val result: T) : CompleteTask<T>() {
     override fun isSuccessful() = true
     override fun getResult() = result
     override fun <X : Throwable?> getResult(exceptionType: Class<X>) = result
+    override fun getException() = null
 }
 
-private class FailingTask<T> : FakeGmsTask<T>() {
+private class FailedTask<T> : CompleteTask<T>() {
     override fun isSuccessful() = false
     override fun getException() = RuntimeException("Unexpected exception.")
 }
 
-private class VoidTask : FakeGmsTask<Void?>()
+private open class CompleteTask<T> : FakeGmsTask<T>() {
+    override fun isComplete() = true
+    override fun isCanceled() = false
 
-private open class FakeGmsTask<T> : Task<T>() {
     override fun addOnCompleteListener(activity: Activity, listener: OnCompleteListener<T>): Task<T> {
         val isNotStopped = (activity as ComponentActivity).lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
         if (isNotStopped) {
@@ -222,7 +222,11 @@ private open class FakeGmsTask<T> : Task<T>() {
         }
         return this
     }
+}
 
+private class VoidTask : FakeGmsTask<Void?>()
+
+private open class FakeGmsTask<T> : Task<T>() {
     override fun isSuccessful(): Boolean = assertUnused()
     override fun isComplete(): Boolean = assertUnused()
     override fun isCanceled(): Boolean = assertUnused()
@@ -235,5 +239,4 @@ private open class FakeGmsTask<T> : Task<T>() {
     override fun addOnFailureListener(listener: OnFailureListener): Task<T> = assertUnused()
     override fun addOnFailureListener(executor: Executor, listener: OnFailureListener): Task<T> = assertUnused()
     override fun addOnFailureListener(activity: Activity, listener: OnFailureListener): Task<T> = assertUnused()
-    override fun addOnCompleteListener(listener: OnCompleteListener<T>): Task<T> = assertUnused()
 }

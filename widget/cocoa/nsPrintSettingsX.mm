@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,7 +28,7 @@ nsPrintSettingsX::nsPrintSettingsX() {
 
 already_AddRefed<nsIPrintSettings> CreatePlatformPrintSettings(
     const PrintSettingsInitializer& aSettings) {
-  RefPtr<nsPrintSettings> settings = new nsPrintSettingsX();
+  auto settings = MakeRefPtr<nsPrintSettingsX>();
   settings->InitWithInitializer(aSettings);
   settings->SetDefaultFileName();
   return settings.forget();
@@ -214,7 +213,11 @@ NSPrintInfo* nsPrintSettingsX::CreateOrCopyPrintInfo(bool aWithScaling) {
     }
   }
 
-  if (StaticPrefs::print_cups_monochrome_enabled() && !GetPrintInColor()) {
+  [printSettings
+      setObject:(GetPrintInColor() ? @"" CUPS_PRINT_COLOR_MODE_COLOR
+                                   : @"" CUPS_PRINT_COLOR_MODE_MONOCHROME)
+         forKey:@"" CUPS_PRINT_COLOR_MODE];
+  if (!GetPrintInColor()) {
     for (const auto& setting : kKnownMonochromeSettings) {
       [printSettings setObject:setting.mValue forKey:setting.mName];
     }
@@ -345,15 +348,22 @@ void nsPrintSettingsX::SetFromPrintInfo(NSPrintInfo* aPrintInfo,
   }
 
   const bool color = [&] {
-    if (StaticPrefs::print_cups_monochrome_enabled()) {
-      for (const auto& setting : kKnownMonochromeSettings) {
-        NSString* value = [printSettings objectForKey:setting.mName];
-        if (!value) {
-          continue;
-        }
-        if ([setting.mValue isEqualToString:value]) {
-          return false;
-        }
+    if (NSString* value =
+            [printSettings objectForKey:@"" CUPS_PRINT_COLOR_MODE]) {
+      if ([value isEqualToString:@"" CUPS_PRINT_COLOR_MODE_COLOR]) {
+        return true;
+      }
+      if ([value isEqualToString:@"" CUPS_PRINT_COLOR_MODE_MONOCHROME]) {
+        return false;
+      }
+    }
+    for (const auto& setting : kKnownMonochromeSettings) {
+      NSString* value = [printSettings objectForKey:setting.mName];
+      if (!value) {
+        continue;
+      }
+      if ([setting.mValue isEqualToString:value]) {
+        return false;
       }
     }
     return true;

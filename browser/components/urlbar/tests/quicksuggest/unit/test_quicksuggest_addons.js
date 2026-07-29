@@ -452,8 +452,8 @@ add_task(async function merinoIsTopPick() {
   });
 });
 
-// Tests the "Not relevant" command: a dismissed suggestion shouldn't be added.
-add_task(async function notRelevant() {
+// Tests the "Dismiss" command: a dismissed suggestion shouldn't be added.
+add_task(async function dismiss() {
   // Disable Merino suggestions to make this task simpler.
   UrlbarPrefs.set("quicksuggest.online.enabled", false);
 
@@ -461,7 +461,7 @@ add_task(async function notRelevant() {
     result: makeExpectedResult({
       suggestion: REMOTE_SETTINGS_RESULTS[0].attachment[0],
     }),
-    command: "not_relevant",
+    command: "dismiss",
     feature: QuickSuggest.getFeature("AddonSuggestions"),
     queriesForDismissals: [
       {
@@ -563,4 +563,137 @@ function makeExpectedResult({
     originalUrl: suggestion.url,
     icon: suggestion.icon,
   });
+}
+
+/**
+ * Tests the `show_less_frequently` command for a given feature.
+ *
+ * @param {object} options
+ *   Options object.
+ * @param {SuggestFeature} options.feature
+ *   The feature being tested.
+ * @param {SuggestFeature} options.keyword
+ *   The keyword to search for. Its length must be at least 3, and each prefix
+ *   starting at `keyword.length - 3` must match a suggestion.
+ * @param {object} options.expectedResult
+ *   The result that is expected to match the keyword and its prefixes.
+ * @param {string} options.minKeywordLengthPref
+ *   The name of the pref for the min keyword length being tested.
+ * @param {string} options.showLessFrequentlyCountPref
+ *   The name of the pref for the "show less frequently" count being tested.
+ */
+async function doShowLessFrequentlyTest({
+  feature,
+  keyword,
+  expectedResult,
+  minKeywordLengthPref,
+  showLessFrequentlyCountPref,
+}) {
+  let showLessFrequentlyCap = 3;
+
+  if (keyword.length < showLessFrequentlyCap) {
+    throw new Error(
+      "keyword must be long enough to 'Show less frequently' enough times"
+    );
+  }
+
+  await QuickSuggestTestUtils.withConfig({
+    config: { show_less_frequently_cap: showLessFrequentlyCap },
+    callback: async () => {
+      // Do `showLessFrequentlyCap` searches and trigger the
+      // `show_less_frequently` command after each one. In each iteration, the
+      // length of `searchString` increases by 1.
+      for (let count = 0; count < showLessFrequentlyCap; count++) {
+        let searchString = keyword.substring(
+          0,
+          keyword.length - showLessFrequentlyCap + count + 1
+        );
+
+        info(
+          "Doing search: " +
+            JSON.stringify({
+              count,
+              searchString,
+            })
+        );
+
+        // Check prefs and other values before searching.
+        Assert.equal(
+          UrlbarPrefs.get(minKeywordLengthPref),
+          count == 0 ? 0 : searchString.length,
+          "minKeywordLength pref should be correct before search " + count
+        );
+        Assert.equal(
+          feature.showLessFrequentlyCount,
+          count,
+          "showLessFrequentlyCount should be correct before search " + count
+        );
+        Assert.equal(
+          UrlbarPrefs.get(showLessFrequentlyCountPref),
+          count,
+          "showLessFrequentlyCount pref should be correct before search " +
+            count
+        );
+        Assert.ok(
+          feature.canShowLessFrequently,
+          "canShowLessFrequently should be correct before search " + count
+        );
+
+        // Do the search.
+        await check_results({
+          context: createContext(searchString, {
+            providers: [UrlbarProviderQuickSuggest.name],
+            isPrivate: false,
+          }),
+          matches: [expectedResult],
+        });
+
+        // Trigger the command.
+        triggerCommand({
+          feature,
+          searchString,
+          command: "show_less_frequently",
+          result: expectedResult,
+          expectedCountsByCall: {
+            acknowledgeFeedback: 1,
+            invalidateResultMenuCommands:
+              count == showLessFrequentlyCap - 1 ? 1 : 0,
+          },
+        });
+
+        // The same search should now match nothing.
+        await check_results({
+          context: createContext(searchString, {
+            providers: [UrlbarProviderQuickSuggest.name],
+            isPrivate: false,
+          }),
+          matches: [],
+        });
+      }
+
+      // Check prefs and other values now that all searches are done.
+      Assert.equal(
+        UrlbarPrefs.get(minKeywordLengthPref),
+        keyword.length + 1,
+        "minKeywordLength pref should be correct after all searches"
+      );
+      Assert.equal(
+        feature.showLessFrequentlyCount,
+        showLessFrequentlyCap,
+        "showLessFrequentlyCount should be correct after all searches"
+      );
+      Assert.equal(
+        UrlbarPrefs.get(showLessFrequentlyCountPref),
+        showLessFrequentlyCap,
+        "showLessFrequentlyCap pref should be correct after all searches"
+      );
+      Assert.ok(
+        !feature.canShowLessFrequently,
+        "canShowLessFrequently should be correct after all searches"
+      );
+    },
+  });
+
+  UrlbarPrefs.clear(minKeywordLengthPref);
+  UrlbarPrefs.clear(showLessFrequentlyCountPref);
 }

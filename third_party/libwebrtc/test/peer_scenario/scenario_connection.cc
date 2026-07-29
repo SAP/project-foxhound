@@ -11,11 +11,12 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "api/array_view.h"
+#include "absl/strings/string_view.h"
 #include "api/candidate.h"
 #include "api/environment/environment.h"
 #include "api/jsep.h"
@@ -26,7 +27,6 @@
 #include "api/test/network_emulation_manager.h"
 #include "api/transport/data_channel_transport_interface.h"
 #include "api/transport/enums.h"
-#include "call/payload_type_picker.h"
 #include "call/rtp_demuxer.h"
 #include "call/rtp_packet_sink_interface.h"
 #include "media/base/rtp_utils.h"
@@ -50,14 +50,12 @@
 #include "rtc_base/ssl_fingerprint.h"
 #include "rtc_base/ssl_identity.h"
 #include "rtc_base/task_queue_for_test.h"
-#include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/thread_annotations.h"
 #include "test/network/network_emulation_manager.h"
 
 namespace webrtc {
 class ScenarioIceConnectionImpl : public ScenarioIceConnection,
-                                  public sigslot::has_slots<>,
                                   private JsepTransportController::Observer,
                                   private RtpPacketSinkInterface {
  public:
@@ -66,8 +64,8 @@ class ScenarioIceConnectionImpl : public ScenarioIceConnection,
                             IceConnectionObserver* observer);
   ~ScenarioIceConnectionImpl() override;
 
-  void SendRtpPacket(ArrayView<const uint8_t> packet_view) override;
-  void SendRtcpPacket(ArrayView<const uint8_t> packet_view) override;
+  void SendRtpPacket(std::span<const uint8_t> packet_view) override;
+  void SendRtcpPacket(std::span<const uint8_t> packet_view) override;
 
   void SetRemoteSdp(SdpType type, const std::string& remote_sdp) override;
   void SetLocalSdp(SdpType type, const std::string& local_sdp) override;
@@ -80,13 +78,13 @@ class ScenarioIceConnectionImpl : public ScenarioIceConnection,
  private:
   JsepTransportController::Config CreateJsepConfig();
   bool OnTransportChanged(
-      const std::string& mid,
+      absl::string_view mid,
       RtpTransportInternal* rtp_transport,
       scoped_refptr<DtlsTransport> dtls_transport,
       DataChannelTransportInterface* data_channel_transport) override;
 
   void OnRtpPacket(const RtpPacketReceived& packet) override;
-  void OnCandidates(const std::string& mid,
+  void OnCandidates(absl::string_view mid,
                     const std::vector<Candidate>& candidates);
 
   IceConnectionObserver* const observer_;
@@ -102,7 +100,6 @@ class ScenarioIceConnectionImpl : public ScenarioIceConnection,
   BasicPacketSocketFactory packet_socket_factory_;
   std::unique_ptr<BasicPortAllocator> port_allocator_
       RTC_GUARDED_BY(network_thread_);
-  PayloadTypePicker payload_type_picker_;
   std::unique_ptr<JsepTransportController> jsep_controller_;
   RtpTransportInternal* rtp_transport_ RTC_GUARDED_BY(network_thread_) =
       nullptr;
@@ -144,12 +141,13 @@ ScenarioIceConnectionImpl::ScenarioIceConnectionImpl(
                                                &packet_socket_factory_)),
       jsep_controller_(
           new JsepTransportController(env,
+                                      signaling_thread_,
                                       network_thread_,
                                       port_allocator_.get(),
                                       /*async_resolver_factory*/ nullptr,
                                       /*lna_permission_factory*/ nullptr,
-                                      payload_type_picker_,
                                       CreateJsepConfig())) {
+  jsep_controller_->SetLocalCertificate(certificate_);
   SendTask(network_thread_, [this] {
     RTC_DCHECK_RUN_ON(network_thread_);
     uint32_t flags = PORTALLOCATOR_DISABLE_TCP;
@@ -158,7 +156,6 @@ ScenarioIceConnectionImpl::ScenarioIceConnectionImpl(
     RTC_CHECK(port_allocator_->SetConfiguration(/*stun_servers*/ {},
                                                 /*turn_servers*/ {}, 0,
                                                 NO_PRUNE));
-    jsep_controller_->SetLocalCertificate(certificate_);
   });
 }
 
@@ -172,20 +169,25 @@ ScenarioIceConnectionImpl::~ScenarioIceConnectionImpl() {
 }
 
 JsepTransportController::Config ScenarioIceConnectionImpl::CreateJsepConfig() {
-  JsepTransportController::Config config;
-  config.transport_observer = this;
-  config.bundle_policy =
-      PeerConnectionInterface::BundlePolicy::kBundlePolicyMaxBundle;
-  config.rtcp_handler = [this](const CopyOnWriteBuffer& packet,
-                               int64_t packet_time_us) {
-    RTC_DCHECK_RUN_ON(network_thread_);
-    observer_->OnPacketReceived(packet);
+  return {
+      .bundle_policy =
+          PeerConnectionInterface::BundlePolicy::kBundlePolicyMaxBundle,
+      .transport_observer = this,
+      .rtcp_handler =
+          [this](const CopyOnWriteBuffer& packet, int64_t packet_time_us) {
+            RTC_DCHECK_RUN_ON(network_thread_);
+            observer_->OnPacketReceived(packet);
+          },
+      .signal_ice_candidates_gathered =
+          [this](absl::string_view transport,
+                 const std::vector<Candidate>& candidate) {
+            OnCandidates(transport, candidate);
+          },
   };
-  return config;
 }
 
 void ScenarioIceConnectionImpl::SendRtpPacket(
-    ArrayView<const uint8_t> packet_view) {
+    std::span<const uint8_t> packet_view) {
   CopyOnWriteBuffer packet(packet_view.data(), packet_view.size(),
                            kMaxRtpPacketLen);
   network_thread_->PostTask([this, packet = std::move(packet)]() mutable {
@@ -197,7 +199,7 @@ void ScenarioIceConnectionImpl::SendRtpPacket(
 }
 
 void ScenarioIceConnectionImpl::SendRtcpPacket(
-    ArrayView<const uint8_t> packet_view) {
+    std::span<const uint8_t> packet_view) {
   CopyOnWriteBuffer packet(packet_view.data(), packet_view.size(),
                            kMaxRtpPacketLen);
   network_thread_->PostTask([this, packet = std::move(packet)]() mutable {
@@ -211,12 +213,6 @@ void ScenarioIceConnectionImpl::SetRemoteSdp(SdpType type,
                                              const std::string& remote_sdp) {
   RTC_DCHECK_RUN_ON(signaling_thread_);
   remote_description_ = CreateSessionDescription(type, remote_sdp);
-  jsep_controller_->SubscribeIceCandidateGathered(
-      [this](const std::string& transport,
-             const std::vector<Candidate>& candidate) {
-        ScenarioIceConnectionImpl::OnCandidates(transport, candidate);
-      });
-
   auto res = jsep_controller_->SetRemoteDescription(
       remote_description_->GetType(),
       local_description_ ? local_description_->description() : nullptr,
@@ -248,7 +244,7 @@ void ScenarioIceConnectionImpl::SetLocalSdp(SdpType type,
 }
 
 bool ScenarioIceConnectionImpl::OnTransportChanged(
-    const std::string& mid,
+    absl::string_view mid,
     RtpTransportInternal* rtp_transport,
     scoped_refptr<DtlsTransport> dtls_transport,
     DataChannelTransportInterface* data_channel_transport) {
@@ -272,7 +268,7 @@ void ScenarioIceConnectionImpl::OnRtpPacket(const RtpPacketReceived& packet) {
 }
 
 void ScenarioIceConnectionImpl::OnCandidates(
-    const std::string& mid,
+    absl::string_view mid,
     const std::vector<Candidate>& candidates) {
   RTC_DCHECK_RUN_ON(signaling_thread_);
   observer_->OnIceCandidates(mid, candidates);

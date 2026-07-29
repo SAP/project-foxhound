@@ -20,7 +20,7 @@ const {
 
 const { isInitialDocument, isUncommittedInitialDocument } =
   ChromeUtils.importESModule(
-    "chrome://remote/content/shared/messagehandler/transports/BrowsingContextUtils.sys.mjs"
+    "chrome://remote/content/shared/BrowsingContextUtils.sys.mjs"
   );
 
 const LOAD_FLAG_ERROR_PAGE = 0x10000;

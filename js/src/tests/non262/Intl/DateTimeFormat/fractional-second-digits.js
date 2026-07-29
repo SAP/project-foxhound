@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 const {
     Second, FractionalSecond, Literal
 } = DateTimeFormatParts

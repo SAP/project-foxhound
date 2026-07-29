@@ -4,6 +4,7 @@ import {
   useIntersectionObserver,
   getActiveCardSize,
   getActiveColumnLayout,
+  getNovaColumnLayout,
   useConfetti,
 } from "content-src/lib/utils.jsx";
 
@@ -135,11 +136,6 @@ describe("getActiveCardSize", () => {
     assert.equal(result, "medium-card");
   });
 
-  it("returns 'medium-card' for col-1-small at 500px (edge case)", () => {
-    const result = getActiveCardSize(500, "col-1-small col-1-position-0", true);
-    assert.equal(result, "medium-card");
-  });
-
   it("returns null when no matching card type is found (edge case)", () => {
     const result = getActiveCardSize(
       1200,
@@ -163,6 +159,49 @@ describe("getActiveCardSize", () => {
     const result = getActiveCardSize(null, null, false, 123);
     assert.equal(result, "spoc");
   });
+
+  it("uses columnLayout override instead of screenWidth when provided", () => {
+    const result = getActiveCardSize(
+      1400,
+      "col-4-large col-3-medium col-2-small col-1-small",
+      true,
+      null,
+      "col-3"
+    );
+    assert.equal(result, "medium-card");
+  });
+
+  it("returns correct size with columnLayout and no screenWidth", () => {
+    const result = getActiveCardSize(
+      null,
+      "col-3-large col-2-medium col-1-small",
+      true,
+      null,
+      "col-3"
+    );
+    assert.equal(result, "large-card");
+  });
+});
+
+describe("getNovaColumnLayout", () => {
+  it("returns null when el is null", () => {
+    assert.isNull(getNovaColumnLayout(null));
+  });
+
+  it("returns null when --sections-col-count is not set", () => {
+    const el = document.createElement("div");
+    document.body.appendChild(el);
+    assert.isNull(getNovaColumnLayout(el));
+    el.remove();
+  });
+
+  it("returns the correct col-N string when --sections-col-count is set", () => {
+    const el = document.createElement("div");
+    el.style.setProperty("--sections-col-count", "3");
+    document.body.appendChild(el);
+    assert.equal(getNovaColumnLayout(el), "col-3");
+    el.remove();
+  });
 });
 
 describe("getActiveColumnLayout", () => {
@@ -183,6 +222,11 @@ describe("getActiveColumnLayout", () => {
 
   it("returns 'col-1' for screen width 500", () => {
     const result = getActiveColumnLayout(500);
+    assert.equal(result, "col-1");
+  });
+
+  it("returns 'col-1' when screen width is missing", () => {
+    const result = getActiveColumnLayout(undefined);
     assert.equal(result, "col-1");
   });
 });

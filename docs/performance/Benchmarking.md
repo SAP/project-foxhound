@@ -22,10 +22,12 @@ ac_add_options RUSTC_OPT_LEVEL=2
 ```
 
 ## Profile Guided Optimization (PGO)
+
 [Profile Guided
 Optimization](/build/buildsystem/pgo.rst#profile-guided-optimization) is
 disabled by default and may improve runtime by up to 20%. However, it takes a
 long time to build. To enable, add the following to your [mozconfig]:
+
 ```
 ac_add_options MOZ_PGO=1
 ```

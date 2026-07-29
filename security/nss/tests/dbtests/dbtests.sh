@@ -69,11 +69,14 @@ dbtest_init()
   R_TRUST4_DIR=../trust4dir
   TRUST5_DIR=${HOSTDIR}/trust5dir
   R_TRUST5_DIR=../trust5dir
+  CRAFTED_KEYDB_DIR=${HOSTDIR}/craftedkeydbdir
+  R_CRAFTED_KEYDB_DIR=../craftedkeydbdir
   mkdir -p $TRUST1_DIR
   mkdir -p $TRUST2_DIR
   mkdir -p $TRUST3_DIR
   mkdir -p $TRUST4_DIR
   mkdir -p $TRUST5_DIR
+  mkdir -p $CRAFTED_KEYDB_DIR
 
   cd ${TRUST1_DIR}
   certutil -N -d ${R_TRUST1_DIR} -f ${R_PWFILE}
@@ -81,6 +84,7 @@ dbtest_init()
   certutil -N -d ${R_TRUST3_DIR} -f ${R_PWFILE}
   certutil -N -d ${R_TRUST4_DIR} -f ${R_PWFILE}
   certutil -N -d ${R_TRUST5_DIR} -f ${R_PWFILE}
+  certutil -N -d ${R_CRAFTED_KEYDB_DIR} -f ${R_PWFILE}
 
   html_head "CERT and Key DB Tests"
 
@@ -255,6 +259,26 @@ __EOF__
         ret=$?
         html_msg $ret 0 "Verify trust on $CATestCert is 'C,C,'"
     fi
+}
+
+dbtest_metaData()
+{
+    Echo "Create a specially-crafted key4.db file"
+    cd ${CRAFTED_KEYDB_DIR}
+    cat >> cmds << __EOF__
+DROP TABLE metaData;
+CREATE TABLE metaData (id, item1, item2);
+INSERT INTO metaData VALUES('password',X'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF',X'');
+INSERT INTO metaData VALUES('password',X'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF',X'');
+__EOF__
+    sqlite3 key4.db < cmds
+    ret=$?
+    html_msg $ret 0 "Create a specially-crafted key4.db file"
+
+    Echo "Open the specially-crafted key4.db file without crashing"
+    certutil -d . -L
+    ret=$?
+    html_msg $ret 0 "Open the specially-crafted key4.db file without crashing"
 }
 
 dbtest_main()
@@ -449,6 +473,15 @@ dbtest_main()
     else
       html_passed "Importing Token Private Key correctly creates the corrresponding Public Key"
     fi
+    Echo "Importing Token Private Key without explicit public key"
+    echo "pk11importtest -n ${IMPORT_OPTIONS} -d ${CONFLICT_DIR} -f ${R_PWFILE}"
+    ${BINDIR}/pk11importtest -n ${IMPORT_OPTIONS} -d ${CONFLICT_DIR} -f ${R_PWFILE}
+    ret=$?
+    if [ $ret -ne 0 ]; then
+      html_failed "Importing Token Private Key does not regenerate the corrresponding Public Key"
+    else
+      html_passed "Importing Token Private Key correctly regenerates the corrresponding Public Key"
+    fi
     #
     # If we are testing an sqlite db, make sure we detect corrupted attributes.
     # This test only runs if 1) we have sqlite3 (the command line sqlite diagnostic
@@ -478,7 +511,7 @@ dbtest_main()
         Echo "testing if key corruption is detected in attribute $i"
         cp ${KEYDB}.save ${KEYDB}  # restore the saved keydb
         # find all the hmacs for this key attribute and mangle each entry
-        sqlite3 ${KEYDB} ".dump metadata" |  sed -e "/sig_key_.*_00000$i/{s/.*VALUES('\\(.*\\)',X'\\(.*\\)',NULL.*/\\1 \\2/;p;};d" | while read sig data
+        sqlite3 ${KEYDB} ".dump metadata" |  sed -e "/sig_key_.*_00000$i/{s/.*VALUES('\\(.*\\)',[xX]'\\(.*\\)',NULL.*/\\1 \\2/;p;};d" | while read sig data
         do
           # mangle the last byte of the hmac
           # The following increments the last nibble by 1 with both F and f
@@ -561,7 +594,8 @@ dbtest_main()
 
 dbtest_init
 dbtest_main 2>&1
-if  using_sql; then
+if using_sql; then
   dbtest_trust
+  dbtest_metaData
 fi
 dbtest_cleanup

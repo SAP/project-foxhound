@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -218,7 +216,8 @@ class DataChannelConnection : public net::NeckoTargetHolder {
                           const uint16_t aLocalPort,
                           const uint16_t aRemotePort);
   void TransportStateChange(const std::string& aTransportId,
-                            TransportLayer::State aState);
+                            TransportLayer::State aState,
+                            const nsTArray<nsTArray<uint8_t>>& aRemoteCerts);
   void SetSignals(const std::string& aTransportId);
 
   [[nodiscard]] already_AddRefed<DataChannel> Open(
@@ -441,13 +440,7 @@ class DataChannel {
   // Called when there will be no more data sent
   void EndOfStream();
 
-  dom::RTCDataChannel* GetDomDataChannel() const {
-    MOZ_ASSERT(mDomEventTarget->IsOnCurrentThread());
-    if (NS_IsMainThread()) {
-      return mMainthreadDomDataChannel;
-    }
-    return mWorkerDomDataChannel;
-  }
+  RefPtr<dom::RTCDataChannel> GetDomDataChannel() const;
 
  private:
   nsresult AddDataToBinaryMsg(const char* data, uint32_t size);

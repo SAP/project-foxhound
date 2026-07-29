@@ -100,6 +100,11 @@ struct RemoteWorkerData
 
   // Child process remote type where the worker should only run on.
   nsCString remoteType;
+
+  nsCString languageOverrideLocale;
+  nsString[] languageOverride;
+
+  nsString timezoneOverride;
 };
 
 // ErrorData/ErrorDataNote correspond to WorkerErrorReport/WorkerErrorNote

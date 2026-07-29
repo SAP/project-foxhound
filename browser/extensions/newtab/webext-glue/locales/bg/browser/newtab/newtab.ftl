@@ -8,9 +8,13 @@
 newtab-page-title = Нов раздел
 newtab-settings-button =
     .title = Настройки на новия раздел
+#  (developer note): @nova-cleanup(remove-string): Remove newtab-customize-panel-icon-button once Nova lands, will be using newtab-customize-panel-label instead
 newtab-customize-panel-icon-button =
     .title = Персонализирайте тази страница
+#  (developer note): @nova-cleanup(remove-string): Remove newtab-customize-panel-icon-button-label once Nova lands, will be using newtab-customize-panel-label instead
 newtab-customize-panel-icon-button-label = Персонализиране
+newtab-customize-panel-label =
+    .label = Персонализиране
 newtab-personalize-settings-icon-label =
     .title = Персонализиране на нов раздел
     .aria-label = Настройки
@@ -23,6 +27,59 @@ newtab-personalize-dialog-label =
     .aria-label = Приспособяване
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
+
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Нов раздел
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } ред
+           *[other] { $num } реда
+        }
+# Dropdown option shown when an extension replaces the contents of new windows or tabs.
+# Variables:
+#   $extension (string) - Name of the extension
+home-prefs-homepage-extension-option =
+    .label = Разширение ({ $extension })
+home-restore-defaults-srd =
+    .label = Стандартни настройки
+    .accesskey = с
+home-mode-choice-default-fx-srd =
+    .label = { -firefox-home-brand-name } (По подразбиране)
+home-mode-choice-custom-srd =
+    .label = Потребителски адреси…
+home-mode-choice-blank-srd =
+    .label = Празна страница
+home-prefs-shortcuts-header-srd =
+    .label = Преки пътища
+home-prefs-shortcuts-select =
+    .aria-label = Преки пътища
+home-prefs-shortcuts-by-option-sponsored-srd =
+    .label = Спонсорирани препратки
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Платени публикации
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Посетени страници
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Отметки
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Последни изтегляния
+home-prefs-recent-activity-header-srd =
+    .label = Последна активност
+home-prefs-recent-activity-select =
+    .aria-label = Последна активност
+home-prefs-weather-header-srd =
+    .label = Времето
+home-prefs-support-firefox-header-srd =
+    .label = Подкрепете { -brand-product-name }
 
 ## Search box component.
 
@@ -49,7 +106,7 @@ newtab-search-box-input =
     .placeholder = Търсене в мрежата
     .aria-label = Търсене в мрежата
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Добавяне на търсеща машина
 newtab-topsites-add-shortcut-header = Нова клавишна комбинация
@@ -136,6 +193,8 @@ newtab-menu-report = Докладване
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
 # e.g. "Sports". "Block" is a verb here.
 newtab-menu-section-block = Забраняване
+# Context menu option to open a support page explaining the New Tab personalization features and privacy controls.
+newtab-menu-section-learn-more = Научете повече
 # "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
 # e.g. Following the travel section of stories.
 newtab-menu-section-unfollow = Прекратяване  на следенето на темата
@@ -304,9 +363,21 @@ newtab-error-fallback-refresh-link = Презаредете страницата
 
 newtab-custom-shortcuts-title = Препратки
 newtab-custom-shortcuts-subtitle = Страници за преглед по-късно
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = Препратки
     .description = Страници за преглед по-късно
+newtab-custom-shortcuts-nova =
+    .label = Препратки
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+            [one] { $num } ред
+           *[other] { $num } реда
+        }
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector =
@@ -317,9 +388,12 @@ newtab-custom-row-selector =
 newtab-custom-sponsored-sites = Спонсорирани препратки
 newtab-custom-pocket-title = Препоръчани от { -pocket-brand-name }
 newtab-custom-pocket-subtitle = Изключително съдържание, подбрано от { -pocket-brand-name }, част от семейството на { -brand-product-name }
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be having a description under "Recommended stories" anymore
 newtab-custom-stories-toggle =
     .label = Препоръчани истории
     .description = Изключително съдържание подбрано от семейството на { -brand-product-name }
+newtab-recommended-stories-toggle =
+    .label = Препоръчани истории
 newtab-custom-stories-personalized-toggle =
     .label = Истории
 newtab-custom-stories-personalized-checkbox-label = Персонализирани истории въз основа на вашата активност
@@ -347,8 +421,11 @@ newtab-custom-settings = Настройки
 
 newtab-wallpaper-title = Тапети
 newtab-wallpaper-reset = Връщане на стандартни настройки
+#  (developer note): @nova-cleanup(remove-string): Remove old "Upload an image" string once Nova lands. The new "Add an image"  string will take over
 newtab-wallpaper-upload-image = Качване на изображение
 newtab-wallpaper-custom-color = Изберете цвят
+newtab-wallpaper-toggle-title =
+    .label = Тапети
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = Изображението надхвърля ограничението за големина на файла от { $file_size }MB. Моля, опитайте се да качите по-малък файл.
@@ -368,6 +445,7 @@ newtab-wallpaper-dark-city = Лилав градски пейзаж
 
 ## Solid Colors
 
+#  (developer note): @nova-cleanup(remove-string): Remove old "Solid colors" string once Nova lands. The simplified "Colors" string will take over
 newtab-wallpaper-category-title-colors = Едноцветни
 newtab-wallpaper-blue = Синьо
 newtab-wallpaper-light-blue = Светлосиньо
@@ -482,8 +560,7 @@ newtab-widget-lists-menu-delete = Изтриване на този списък
 newtab-widget-lists-menu-learn-more = Научете повече
 newtab-widget-lists-input-menu-delete = Изтриване
 
-## Strings for timer productivity widget
-## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+## Strings introduced by the Nova redesign of the Timer widget
 
 newtab-widget-timer-menu-learn-more = Научете повече
 newtab-promo-card-body = Нашите спонсори подкрепят мисията ни да изградим по-добра мрежа

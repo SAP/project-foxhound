@@ -270,8 +270,8 @@ def get_dependencies():
     return (
         "https://files.pythonhosted.org/packages/" + NUMPY[get_plat()],
         "https://files.pythonhosted.org/packages/" + SCIPY[get_plat()],
-        "Pillow==%s" % _PILLOW_VERSION,
-        "pyssim==%s" % _PYSSIM_VERSION,
+        f"Pillow=={_PILLOW_VERSION}",
+        f"pyssim=={_PYSSIM_VERSION}",
         "influxdb==5.3.0",
         "grafana_api==1.0.3",
     )

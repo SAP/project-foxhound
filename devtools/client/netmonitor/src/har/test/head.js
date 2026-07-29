@@ -63,7 +63,7 @@ async function saveAsHARWithContextMenu(monitor, { asString = false } = {}) {
 
   info("Mock the file picker dialog to save the HAR file to disk");
   const MockFilePicker = SpecialPowers.MockFilePicker;
-  MockFilePicker.init(window.browsingContext);
+  MockFilePicker.init();
   const nsiFile = new FileUtils.File(
     PathUtils.join(PathUtils.tempDir, `save_as_har-${Date.now()}.har`)
   );

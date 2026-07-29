@@ -15,9 +15,6 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.swipeDown
-import androidx.compose.ui.test.swipeUp
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.ViewInteraction
 import androidx.test.espresso.action.ViewActions.click
@@ -39,14 +36,11 @@ import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
 import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectExists
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
-import org.mozilla.fenix.helpers.MatcherHelper.itemWithResId
-import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
 import org.mozilla.fenix.helpers.TestHelper.appName
 import org.mozilla.fenix.helpers.TestHelper.hasCousin
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.packageName
 import org.mozilla.fenix.helpers.TestHelper.scrollToElementByText
-import org.mozilla.fenix.helpers.TestHelper.waitForAppWindowToBeUpdated
 import org.mozilla.fenix.helpers.click
 
 /**
@@ -274,6 +268,133 @@ class SettingsSubMenuCustomizeRobot {
         Log.i(TAG, "verifyToolbarLayoutPreference: Verified that the $selectedToolbarLayout toolbar layout option is checked")
     }
 
+    fun clickShowTabBarToggle() {
+        Log.i(TAG, "clickShowTabBarToggle: Trying to click the \"Show tab bar\" toggle")
+        showTabBarToggle().click()
+        Log.i(TAG, "clickShowTabBarToggle: Clicked the \"Show tab bar\" toggle")
+    }
+
+    fun scrollToExpandedToolbarOption() {
+        scrollToElementByText("Expanded")
+    }
+
+    fun scrollToTheScrollToHideToolbarOption() {
+        scrollToElementByText("Scroll to hide toolbar")
+    }
+
+    fun scrollToAddressBarLocation() {
+        scrollToElementByText("Address bar location")
+    }
+
+    fun verifyTheSimpleToolbarShortcutOptions() {
+        Log.i(TAG, "verifyTheSimpleToolbarShortcutOptions: Trying to verify that the \"Open a new tab\" simple toolbar shortcut option is visible")
+        openANewTabToolbarShortcutOption()
+            .check(matches(ViewMatchers.withEffectiveVisibility(ViewMatchers.Visibility.VISIBLE)))
+        Log.i(TAG, "verifyTheSimpleToolbarShortcutOptions: Verified that the \"Open a new tab\" simple toolbar shortcut option is visible")
+        Log.i(TAG, "verifyTheSimpleToolbarShortcutOptions: Trying to verify that the \"Share\" simple toolbar shortcut option is visible")
+        shareToolbarShortcutOption()
+            .check(matches(ViewMatchers.withEffectiveVisibility(ViewMatchers.Visibility.VISIBLE)))
+        Log.i(TAG, "verifyTheSimpleToolbarShortcutOptions: Verified that the \"Share\" simple toolbar shortcut option is visible")
+        Log.i(TAG, "verifyTheSimpleToolbarShortcutOptions: Trying to verify that the \"Add bookmark\" simple toolbar shortcut option is visible")
+        addBookmarkToolbarShortcutOption()
+            .check(matches(ViewMatchers.withEffectiveVisibility(ViewMatchers.Visibility.VISIBLE)))
+        Log.i(TAG, "verifyTheSimpleToolbarShortcutOptions: Verified that the \"Add bookmark\" simple toolbar shortcut option is visible")
+        Log.i(TAG, "verifyTheSimpleToolbarShortcutOptions: Trying to verify that the \"Translate\" simple toolbar shortcut option is visible")
+        translateToolbarShortcutOption()
+            .check(matches(ViewMatchers.withEffectiveVisibility(ViewMatchers.Visibility.VISIBLE)))
+        Log.i(TAG, "verifyTheSimpleToolbarShortcutOptions: Verified that the \"Translate\" simple toolbar shortcut option is visible")
+        Log.i(TAG, "verifyTheSimpleToolbarShortcutOptions: Trying to verify that the \"Homepage\" simple toolbar shortcut option is visible")
+        homepageToolbarShortcutOption()
+            .check(matches(ViewMatchers.withEffectiveVisibility(ViewMatchers.Visibility.VISIBLE)))
+        Log.i(TAG, "verifyTheSimpleToolbarShortcutOptions: Verified that the \"Homepage\" simple toolbar shortcut option is visible")
+        Log.i(TAG, "verifyTheSimpleToolbarShortcutOptions: Trying to verify that the \"Back\" simple toolbar shortcut option is visible")
+        backToolbarShortcutOption()
+            .check(matches(ViewMatchers.withEffectiveVisibility(ViewMatchers.Visibility.VISIBLE)))
+        Log.i(TAG, "verifyTheSimpleToolbarShortcutOptions: Verified that the \"Back\" simple toolbar shortcut option is visible")
+        Log.i(TAG, "verifyTheSimpleToolbarShortcutOptions: Trying to verify that the \"None\" simple toolbar shortcut option is visible")
+        noneToolbarShortcutOption()
+            .check(matches(ViewMatchers.withEffectiveVisibility(ViewMatchers.Visibility.VISIBLE)))
+        Log.i(TAG, "verifyTheSimpleToolbarShortcutOptions: Verified that the \"None\" simple toolbar shortcut option is visible")
+    }
+
+    fun verifyTheExpandedToolbarShortcutOptions() {
+        Log.i(TAG, "verifyTheSimpleToolbarShortcutOptions: Trying to verify that the \"Add bookmark\" simple toolbar shortcut option is visible")
+        addBookmarkToolbarShortcutOption()
+            .check(matches(ViewMatchers.withEffectiveVisibility(ViewMatchers.Visibility.VISIBLE)))
+        Log.i(TAG, "verifyTheSimpleToolbarShortcutOptions: Verified that the \"Add bookmark\" simple toolbar shortcut option is visible")
+        Log.i(TAG, "verifyTheSimpleToolbarShortcutOptions: Trying to verify that the \"Translate\" simple toolbar shortcut option is visible")
+        translateToolbarShortcutOption()
+            .check(matches(ViewMatchers.withEffectiveVisibility(ViewMatchers.Visibility.VISIBLE)))
+        Log.i(TAG, "verifyTheSimpleToolbarShortcutOptions: Verified that the \"Translate\" simple toolbar shortcut option is visible")
+        Log.i(TAG, "verifyTheSimpleToolbarShortcutOptions: Trying to verify that the \"Homepage\" simple toolbar shortcut option is visible")
+        homepageToolbarShortcutOption()
+            .check(matches(ViewMatchers.withEffectiveVisibility(ViewMatchers.Visibility.VISIBLE)))
+        Log.i(TAG, "verifyTheSimpleToolbarShortcutOptions: Verified that the \"Homepage\" simple toolbar shortcut option is visible")
+        Log.i(TAG, "verifyTheSimpleToolbarShortcutOptions: Trying to verify that the \"Back\" simple toolbar shortcut option is visible")
+        backToolbarShortcutOption()
+            .check(matches(ViewMatchers.withEffectiveVisibility(ViewMatchers.Visibility.VISIBLE)))
+        Log.i(TAG, "verifyTheSimpleToolbarShortcutOptions: Verified that the \"Back\" simple toolbar shortcut option is visible")
+    }
+
+    fun verifyTheOpenANewTabToolbarShortcutIsSelected() {
+        Log.i(TAG, "verifyTheOpenANewTabToolbarShortcutIsSelected: Trying to verify that the \"Open a new tab\" simple toolbar shortcut option is checked")
+        openANewTabToolbarShortcutOption()
+            .check(matches(hasSibling(allOf(withId(R.id.radio_button), isChecked()))))
+        Log.i(TAG, "verifyTheOpenANewTabToolbarShortcutIsSelected: Verified that the \"Open a new tab\" simple toolbar shortcut option is checked")
+    }
+
+    fun verifyTheShareToolbarShortcutIsSelected() {
+        Log.i(TAG, "verifyTheShareToolbarShortcutIsSelected: Trying to verify that the \"Share\" simple toolbar shortcut option is checked")
+        shareToolbarShortcutOption()
+            .check(matches(hasSibling(allOf(withId(R.id.radio_button), isChecked()))))
+        Log.i(TAG, "verifyTheShareToolbarShortcutIsSelected: Verified that the \"Share\" simple toolbar shortcut option is checked")
+    }
+
+    fun clickTheShareToolbarShortcut() {
+        Log.i(TAG, "clickTheShareToolbarShortcut: Trying to click the \"Share\" simple toolbar shortcut option")
+        shareToolbarShortcutOption().click()
+        Log.i(TAG, "clickTheShareToolbarShortcut: Clicked the \"Share\" simple toolbar shortcut option")
+    }
+
+    fun verifyTheAddBookmarkToolbarShortcutIsSelected() {
+        Log.i(TAG, "verifyTheAddBookmarkToolbarShortcutIsSelected: Trying to verify that the \"Add bookmark\" simple toolbar shortcut option is checked")
+        addBookmarkToolbarShortcutOption()
+            .check(matches(hasSibling(allOf(withId(R.id.radio_button), isChecked()))))
+        Log.i(TAG, "verifyTheAddBookmarkToolbarShortcutIsSelected: Verified that the \"Add bookmark\" simple toolbar shortcut option is checked")
+    }
+
+    fun clickTheAddBookmarkToolbarShortcut() {
+        Log.i(TAG, "clickTheAddBookmarkToolbarShortcut: Trying to click the \"Add bookmark\" simple toolbar shortcut option")
+        addBookmarkToolbarShortcutOption().click()
+        Log.i(TAG, "clickTheAddBookmarkToolbarShortcut: Clicked the \"Add bookmark\" simple toolbar shortcut option")
+    }
+
+    fun verifyTheTranslateToolbarShortcutIsSelected() {
+        Log.i(TAG, "verifyTheTranslateToolbarShortcutIsSelected: Trying to verify that the \"Translate\" simple toolbar shortcut option is checked")
+        translateToolbarShortcutOption()
+            .check(matches(hasSibling(allOf(withId(R.id.radio_button), isChecked()))))
+        Log.i(TAG, "verifyTheTranslateToolbarShortcutIsSelected: Verified that the \"Translate\" simple toolbar shortcut option is checked")
+    }
+
+    fun clickTheTranslateToolbarShortcut() {
+        Log.i(TAG, "clickTheTranslateToolbarShortcut: Trying to click the \"Translate\" simple toolbar shortcut option")
+        translateToolbarShortcutOption().click()
+        Log.i(TAG, "clickTheTranslateToolbarShortcut: Clicked the \"Translate\" simple toolbar shortcut option")
+    }
+
+    fun verifyTheHomepageToolbarShortcutIsSelected() {
+        Log.i(TAG, "verifyTheHomepageToolbarShortcutIsSelected: Trying to verify that the \"Homepage\" simple toolbar shortcut option is checked")
+        homepageToolbarShortcutOption()
+            .check(matches(hasSibling(allOf(withId(R.id.radio_button), isChecked()))))
+        Log.i(TAG, "verifyTheHomepageToolbarShortcutIsSelected: Verified that the \"Homepage\" simple toolbar shortcut option is checked")
+    }
+
+    fun clickTheHomepageToolbarShortcut() {
+        Log.i(TAG, "clickTheHomepageToolbarShortcut: Trying to click the \"Homepage\" simple toolbar shortcut option")
+        homepageToolbarShortcutOption().click()
+        Log.i(TAG, "clickTheHomepageToolbarShortcut: Clicked the \"Homepage\" simple toolbar shortcut option")
+    }
+
     class Transition {
         fun goBack(interact: SettingsRobot.() -> Unit): SettingsRobot.Transition {
             Log.i(TAG, "goBack: Waiting for device to be idle")
@@ -318,3 +439,20 @@ private fun expandedToolbarLayoutToggle() = onView(withText("Expanded"))
 
 private fun customizeSettingsList() =
     UiScrollable(UiSelector().resourceId("$packageName:id/recycler_view"))
+
+private fun showTabBarToggle() =
+    onView(withText(getStringResource(R.string.preference_tab_strip_show)))
+
+private fun openANewTabToolbarShortcutOption() = onView(withText(getStringResource(R.string.toolbar_customize_shortcut_new_tab)))
+
+private fun shareToolbarShortcutOption() = onView(withText(getStringResource(R.string.toolbar_customize_shortcut_share)))
+
+private fun addBookmarkToolbarShortcutOption() = onView(withText(getStringResource(R.string.toolbar_customize_shortcut_add_bookmark)))
+
+private fun translateToolbarShortcutOption() = onView(withText(getStringResource(R.string.toolbar_customize_shortcut_translate)))
+
+private fun homepageToolbarShortcutOption() = onView(withText(getStringResource(R.string.toolbar_customize_shortcut_homepage)))
+
+private fun backToolbarShortcutOption() = onView(withText(getStringResource(R.string.toolbar_customize_shortcut_back)))
+
+private fun noneToolbarShortcutOption() = onView(withText(getStringResource(R.string.toolbar_customize_shortcut_none)))

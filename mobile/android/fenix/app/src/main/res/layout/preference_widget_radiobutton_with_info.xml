@@ -16,7 +16,8 @@
         android:id="@+id/radio_button"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginStart="76dp"
+        android:layout_gravity="center"
+        android:layout_marginStart="12dp"
         android:background="@android:color/transparent"
         android:button="@null"
         android:clickable="false"
@@ -85,7 +86,8 @@
             android:layout_height="24dp"
             android:layout_gravity="center"
             android:contentDescription="@string/radio_preference_info_content_description"
-            app:srcCompat="@drawable/ic_info" />
+            app:srcCompat="@drawable/mozac_ic_information_24"
+            app:tint="?attr/colorOnSurface" />
     </FrameLayout>
-    
+
 </androidx.constraintlayout.widget.ConstraintLayout>

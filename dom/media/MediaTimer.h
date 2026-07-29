@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,7 @@
 #if !defined(MediaTimer_h_)
 #  define MediaTimer_h_
 
+#  include <cstdint>
 #  include <queue>
 
 #  include "mozilla/AbstractThread.h"
@@ -22,11 +21,11 @@ namespace mozilla {
 
 extern LazyLogModule gMediaTimerLog;
 
-#  define TIMER_LOG(x, ...)                                    \
-    MOZ_ASSERT(gMediaTimerLog);                                \
-    MOZ_LOG(gMediaTimerLog, LogLevel::Debug,                   \
-            ("[MediaTimer=%p relative_t=%" PRId64 "]" x, this, \
-             RelativeMicroseconds(T::Now()), ##__VA_ARGS__))
+#  define TIMER_LOG(x, ...)                                        \
+    MOZ_ASSERT(gMediaTimerLog);                                    \
+    MOZ_LOG_FMT(gMediaTimerLog, LogLevel::Debug,                   \
+                "[MediaTimer={} relative_t={}]" x, fmt::ptr(this), \
+                RelativeMicroseconds(T::Now()), ##__VA_ARGS__)
 
 // This promise type is only exclusive because so far there isn't a reason for
 // it not to be. Feel free to change that.

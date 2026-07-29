@@ -400,6 +400,24 @@ class DebuggerPanel {
     this._actions.setPrimaryPaneTab("tracer");
   }
 
+  /**
+   * Called by toolbox.js on `Esc` keydown to check if the Debugger should prevent the
+   * split console from being toggled.
+   *
+   * @returns {boolean} true if the split console toggle should be prevented.
+   */
+  shouldPreventSplitConsoleToggle() {
+    // If popovers or tooltips are displayed, prevent the split console from being toggled.
+    const popoverEl = this.panelWin.document.querySelector(".popover,.tooltip");
+    if (popoverEl) {
+      // Hiding the popover/tooltip is handled in the Popover component, here we just
+      // want to indicate to the toolbox that the split console shouldn't open.
+      return true;
+    }
+
+    return false;
+  }
+
   destroy() {
     this.panelWin.Debugger.destroy();
     this.lazyModules = {};

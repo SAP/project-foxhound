@@ -5397,7 +5397,7 @@ void vp9_init_tile_data(VP9_COMP *cpi) {
   int tile_col, tile_row;
   TOKENEXTRA *pre_tok = cpi->tile_tok[0][0];
   TOKENLIST *tplist = cpi->tplist[0][0];
-  int tile_tok = 0;
+  int64_t tile_tok = 0;
   int tplist_count = 0;
 
   if (cpi->tile_data == NULL || cpi->allocated_tiles < tile_cols * tile_rows) {

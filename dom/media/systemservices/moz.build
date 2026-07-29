@@ -1,5 +1,3 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -14,6 +12,7 @@ if CONFIG["MOZ_WEBRTC"]:
     UNIFIED_SOURCES += [
         "CamerasChild.cpp",
         "CamerasParent.cpp",
+        "fake_video_capture/device_info_empty.cc",
         "fake_video_capture/device_info_fake.cc",
         "fake_video_capture/video_capture_fake.cc",
         "video_engine/video_capture_factory.cc",
@@ -52,7 +51,11 @@ if CONFIG["MOZ_WEBRTC"]:
             "-fobjc-arc",
         ]
 
-    if CONFIG["OS_TARGET"] != "Android":
+    if CONFIG["OS_TARGET"] == "Android":
+        UNIFIED_SOURCES += [
+            "EmptyDesktopCapturer.cpp",
+        ]
+    else:
         SOURCES += [
             "video_engine/desktop_capture_impl.cc",
             "video_engine/tab_capturer.cc",
@@ -80,6 +83,7 @@ EXPORTS.mozilla += [
 
 EXPORTS.mozilla.media += [
     "CamerasTypes.h",
+    "DesktopCaptureInterface.h",
     "MediaChild.h",
     "MediaParent.h",
     "MediaSystemResourceClient.h",

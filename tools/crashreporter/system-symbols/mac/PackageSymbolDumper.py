@@ -44,6 +44,7 @@ import concurrent.futures
 import errno
 import logging
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -64,6 +65,16 @@ MACHO_MAGIC = {
     b"\xca\xfe\xba\xbe",
     b"\xbe\xba\xfe\xca",
 }
+
+PACKAGE_ID_RE = re.compile(r"\d+-\d+(?:::\d+)?$")
+
+
+def package_id_from_path(path):
+    path = Path(path)
+    for part in path.parts:
+        if PACKAGE_ID_RE.fullmatch(part):
+            return part
+    return None
 
 
 def expand_pkg(pkg_path, out_path):
@@ -101,7 +112,8 @@ def expand_zip(zip_path, out_path):
     @param out_path: a path to hold the archive contents
     """
     subprocess.check_call(
-        ["unzip", "-d", out_path, zip_path], stdout=subprocess.DEVNULL
+        ["7zz", "-bd", "x", zip_path, f"-o{out_path}"],
+        stdout=subprocess.DEVNULL,
     )
 
 
@@ -129,8 +141,10 @@ def find_packages(path):
     @param path: root path to search for .pkg, .dmg and .zip files
     """
     return filter_files(
-        lambda filename: os.path.splitext(filename)[1] in (".pkg", ".dmg", ".zip")
-        and not filename.startswith("._"),
+        lambda filename: (
+            os.path.splitext(filename)[1] in (".pkg", ".dmg", ".zip")
+            and not filename.startswith("._")
+        ),
         path,
     )
 
@@ -391,6 +405,7 @@ def dump_symbols_from_package(executor, dump_syms, pkg, dest):
                 res = dump_symbols_from_package(executor, dump_syms, subpackage, dest)
                 if not res:
                     logging.error("Error while dumping subpackage: " + subpackage)
+                    successful = False
 
             # dump symbols from any payloads (only expecting one) in the package
             for payload in find_payloads(temp_dir):
@@ -409,32 +424,22 @@ def dump_symbols_from_package(executor, dump_syms, pkg, dest):
     return successful
 
 
-def read_processed_packages(tracking_file):
-    if tracking_file is None or not os.path.exists(tracking_file):
-        return set()
-    logging.info(f"Reading processed packages from {tracking_file}")
-    return set(open(tracking_file).read().splitlines())
-
-
-def write_processed_packages(tracking_file, processed_packages):
-    if tracking_file is None:
+def write_package_ids(package_ids_file, package_ids):
+    if package_ids_file is None:
         return
-    logging.info(
-        f"Writing {len(processed_packages)} processed packages to {tracking_file}"
-    )
-    open(tracking_file, "w").write("\n".join(processed_packages))
+    with open(package_ids_file, "w") as fh:
+        fh.write("\n".join(package_ids))
 
 
-def process_packages(package_finder, to, tracking_file, dump_syms):
-    processed_packages = read_processed_packages(tracking_file)
+def process_packages(package_finder, to, dump_syms, failed_package_ids_file):
+    failed_package_ids = []
     with concurrent.futures.ProcessPoolExecutor() as executor:
         for pkg in package_finder():
-            if pkg in processed_packages:
-                logging.info(f"Skipping already-processed package: {pkg}")
-            else:
-                dump_symbols_from_package(executor, dump_syms, pkg, to)
-                processed_packages.add(pkg)
-                write_processed_packages(tracking_file, processed_packages)
+            if not dump_symbols_from_package(executor, dump_syms, pkg, to):
+                package_id = package_id_from_path(pkg)
+                if package_id is not None:
+                    failed_package_ids.append(package_id)
+    write_package_ids(failed_package_ids_file, failed_package_ids)
 
 
 def main():
@@ -448,10 +453,9 @@ def main():
         help="path to the Breakpad dump_syms executable",
     )
     parser.add_argument(
-        "--tracking-file",
+        "--failed-package-ids-file",
         type=str,
-        help="Path to a file in which to store information "
-        + "about already-processed packages",
+        help="Path to a file in which to store failed package ids",
     )
     parser.add_argument(
         "search", nargs="+", help="Paths to search recursively for packages"
@@ -477,7 +481,7 @@ def main():
     def finder():
         return find_all_packages(args.search)
 
-    process_packages(finder, args.to, args.tracking_file, args.dump_syms)
+    process_packages(finder, args.to, args.dump_syms, args.failed_package_ids_file)
 
 
 if __name__ == "__main__":

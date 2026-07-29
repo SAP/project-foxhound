@@ -11,7 +11,7 @@
     tools:ignore="VectorRaster">
   <path
       android:pathData="M5,0.5L297,0.5A4.5,4.5 0,0 1,301.5 5L301.5,44.61A4.5,4.5 0,0 1,297 49.11L5,49.11A4.5,4.5 0,0 1,0.5 44.61L0.5,5A4.5,4.5 0,0 1,5 0.5z"
-      android:fillColor="@color/fx_mobile_layer_color_2"/>
+      android:fillColor="?attr/colorSurfaceContainerLowest"/>
   <path
       android:strokeWidth="1"
       android:pathData="M5,0.5L297,0.5A4.5,4.5 0,0 1,301.5 5L301.5,44.61A4.5,4.5 0,0 1,297 49.11L5,49.11A4.5,4.5 0,0 1,0.5 44.61L0.5,5A4.5,4.5 0,0 1,5 0.5z"
@@ -19,7 +19,7 @@
       android:strokeColor="?attr/colorOutlineVariant"/>
   <path
       android:pathData="M7,1.5L295,1.5A5.5,5.5 0,0 1,300.5 7L300.5,42.61A5.5,5.5 0,0 1,295 48.11L7,48.11A5.5,5.5 0,0 1,1.5 42.61L1.5,7A5.5,5.5 0,0 1,7 1.5z"
-      android:fillColor="@color/fx_mobile_layer_color_2"/>
+      android:fillColor="?attr/colorSurfaceContainerLowest"/>
   <path
       android:pathData="M7,1.5L295,1.5A5.5,5.5 0,0 1,300.5 7L300.5,42.61A5.5,5.5 0,0 1,295 48.11L7,48.11A5.5,5.5 0,0 1,1.5 42.61L1.5,7A5.5,5.5 0,0 1,7 1.5z"
       android:strokeWidth="3"
@@ -30,20 +30,20 @@
         android:pathData="M20.81,9L162.36,9A15.81,15.81 0,0 1,178.16 24.81L178.16,24.81A15.81,15.81 0,0 1,162.36 40.61L20.81,40.61A15.81,15.81 0,0 1,5 24.81L5,24.81A15.81,15.81 0,0 1,20.81 9z"/>
     <path
         android:pathData="M20.81,9L162.36,9A15.81,15.81 0,0 1,178.16 24.81L178.16,24.81A15.81,15.81 0,0 1,162.36 40.61L20.81,40.61A15.81,15.81 0,0 1,5 24.81L5,24.81A15.81,15.81 0,0 1,20.81 9z"
-        android:fillColor="@color/fx_mobile_layer_color_3"/>
+        android:fillColor="?attr/colorSurfaceContainerHighest"/>
   </group>
   <group>
     <clip-path
         android:pathData="M186.16,9L209.78,9A4,4 0,0 1,213.78 13L213.78,36.61A4,4 0,0 1,209.78 40.61L186.16,40.61A4,4 0,0 1,182.16 36.61L182.16,13A4,4 0,0 1,186.16 9z"/>
     <path
         android:pathData="M186.16,9L209.78,9A4,4 0,0 1,213.78 13L213.78,36.61A4,4 0,0 1,209.78 40.61L186.16,40.61A4,4 0,0 1,182.16 36.61L182.16,13A4,4 0,0 1,186.16 9z"
-        android:fillColor="?attr/colorPrimaryContainer"/>
+        android:fillColor="?attr/colorSecondaryContainer"/>
   </group>
   <path
       android:strokeWidth="1"
       android:pathData="M186.16,9.5L209.78,9.5A3.5,3.5 0,0 1,213.28 13L213.28,36.61A3.5,3.5 0,0 1,209.78 40.11L186.16,40.11A3.5,3.5 0,0 1,182.66 36.61L182.66,13A3.5,3.5 0,0 1,186.16 9.5z"
       android:fillColor="@android:color/transparent"
-      android:strokeColor="?attr/colorTertiary"/>
+      android:strokeColor="?attr/colorPrimary"/>
   <group>
     <clip-path
         android:pathData="M237.58,8.3L237.58,8.3A16.5,16.5 0,0 1,254.09 24.81L254.09,24.81A16.5,16.5 0,0 1,237.58 41.31L237.58,41.31A16.5,16.5 0,0 1,221.08 24.81L221.08,24.81A16.5,16.5 0,0 1,237.58 8.3z"/>

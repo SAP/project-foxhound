@@ -92,26 +92,24 @@ for (let {day, leapMonth, expected} of tests) {
     assertEq(pd.day, day);
     assertEq(pd.toString(), expectedToString);
 
-    // This is subject to change:
-    // https://github.com/tc39/proposal-intl-era-monthcode/issues/113
-    {
-      let pmd = pd.toPlainMonthDay();
-      assertEq(pmd.monthCode, monthCode);
-      assertEq(pmd.day, day);
-      assertEq(pmd.toString(), expectedToString);
-    }
-
     // Dates before ISO year 1900 are changed to use the non-leap month.
+    let expectedMonthCode = monthCode;
     if (leapMonth && pd.withCalendar("iso8601").year < 1900) {
       // Use the expected string from the non-leap month case.
       expectedToString = tests.find(e => e.day === day && !e.leapMonth).expected[i - 1];
-      monthCode = monthCode.slice(0, -1);
+      expectedMonthCode = monthCode.slice(0, -1);
     }
 
-    let pmd = Temporal.PlainMonthDay.from({calendar, monthCode, day});
-    assertEq(pmd.monthCode, monthCode);
-    assertEq(pmd.day, day);
-    assertEq(pmd.toString(), expectedToString);
+    for (let pmd of [
+      Temporal.PlainMonthDay.from({calendar, monthCode, day}),
+      Temporal.PlainMonthDay.from({calendar, monthCode: expectedMonthCode, day}),
+      Temporal.PlainMonthDay.from({calendar, year: pd.year, month: pd.month, day}),
+      pd.toPlainMonthDay(),
+    ]) {
+      assertEq(pmd.monthCode, expectedMonthCode);
+      assertEq(pmd.day, day);
+      assertEq(pmd.toString(), expectedToString);
+    }
   }
 }
 

@@ -123,7 +123,7 @@ You can also use `./mach addstory new-component "Your Project" --path browser/co
 
 If you want to colocate your story with the code it is documenting you will need
 to add to the `stories` array in the `.storybook/main.js` [configuration
-file](https://searchfox.org/mozilla-central/source/browser/components/storybook/.storybook/main.js)
+file](https://searchfox.org/firefox-main/source/browser/components/storybook/.storybook/main.js)
 so that Storybook knows where to look for your files.
 
 The Storybook docs site has a [good
@@ -140,8 +140,8 @@ For example, the name `moz-support-link` informs us that this widget is design s
 
 Storybook can also be used to help document and prototype widgets that are specific to a part of the codebase and not intended for more global use.
 Stories for these types of widgets live under the "Domain-Specific UI Widgets" category, while the code can live in any appropriate folder in `mozilla-central`.
-[See the Credential Management folder as an example of a domain specific folder](https://firefoxux.github.io/firefox-desktop-components/?path=/docs/domain-specific-ui-widgets-credential-management-timeline--empty-timeline) and [see the login-timeline.stories.mjs for how to make a domain specific folder in Storybook](https://searchfox.org/mozilla-central/source/browser/components/storybook/stories/login-timeline.stories.mjs).
-[To add a non-team specific widget to the "Domain-specific UI Widgets" section, see the migration-wizard.stories.mjs file](https://searchfox.org/mozilla-central/source/browser/components/storybook/stories/migration-wizard.stories.mjs).
+[See the Credential Management folder as an example of a domain specific folder](https://firefoxux.github.io/firefox-desktop-components/?path=/docs/domain-specific-ui-widgets-credential-management-timeline--empty-timeline) and [see the login-timeline.stories.mjs for how to make a domain specific folder in Storybook](https://searchfox.org/firefox-main/source/browser/components/storybook/stories/login-timeline.stories.mjs).
+[To add a non-team specific widget to the "Domain-specific UI Widgets" section, see the migration-wizard.stories.mjs file](https://searchfox.org/firefox-main/source/browser/components/storybook/stories/migration-wizard.stories.mjs).
 
 Creating and documenting domain specific UI widgets allows other teams to be aware of and take inspiration from existing UI patterns.
 With these widgets, **there is no guarantee that the element will work for your domain.**

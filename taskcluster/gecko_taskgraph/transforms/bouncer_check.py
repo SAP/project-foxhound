@@ -7,9 +7,7 @@ from shlex import quote as shell_quote
 
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util import json
-from taskgraph.util.schema import resolve_keyed_by
 
-from gecko_taskgraph.util.attributes import release_level
 from gecko_taskgraph.util.scriptworker import get_release_config
 
 logger = logging.getLogger(__name__)
@@ -51,29 +49,11 @@ def add_previous_versions(config, jobs):
 
 @transforms.add
 def handle_keyed_by(config, jobs):
-    """Resolve fields that can be keyed by project, etc."""
-    fields = [
-        "run.config",
-        "run.product-field",
-        "run.extra-config",
-    ]
-
+    """Build the bouncer-check command from resolved fields."""
     release_config = get_release_config(config)
     version = release_config["version"]
 
     for job in jobs:
-        for field in fields:
-            resolve_keyed_by(
-                item=job,
-                field=field,
-                item_name=job["name"],
-                **{
-                    "project": config.params["project"],
-                    "release-level": release_level(config.params),
-                    "release-type": config.params["release_type"],
-                },
-            )
-
         for cfg in job["run"]["config"]:
             job["run"]["mach"].extend(["--config", cfg])
 

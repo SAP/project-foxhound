@@ -1,12 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/CSSKeyframeRule.h"
 
-#include "mozilla/DeclarationBlock.h"
+#include "mozilla/ServoBindings.h"
 #include "mozilla/dom/CSSKeyframeRuleBinding.h"
 #include "nsDOMCSSDeclaration.h"
 
@@ -18,11 +16,8 @@ namespace mozilla::dom {
 
 class CSSKeyframeDeclaration final : public nsDOMCSSDeclaration {
  public:
-  explicit CSSKeyframeDeclaration(CSSKeyframeRule* aRule) : mRule(aRule) {
-    mDecls =
-        new DeclarationBlock(Servo_Keyframe_GetStyle(aRule->Raw()).Consume());
-    mDecls->SetOwningRule(aRule);
-  }
+  explicit CSSKeyframeDeclaration(CSSKeyframeRule* aRule)
+      : mRule(aRule), mDecls(Servo_Keyframe_GetStyle(aRule->Raw()).Consume()) {}
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS_AMBIGUOUS(CSSKeyframeDeclaration,
@@ -30,13 +25,10 @@ class CSSKeyframeDeclaration final : public nsDOMCSSDeclaration {
 
   css::Rule* GetParentRule() final { return mRule; }
 
-  void DropReference() {
-    mRule = nullptr;
-    mDecls->SetOwningRule(nullptr);
-  }
+  void DropReference() { mRule = nullptr; }
 
-  DeclarationBlock* GetOrCreateCSSDeclaration(
-      Operation aOperation, DeclarationBlock** aCreated) final {
+  Block* GetOrCreateCSSDeclaration(Operation aOperation,
+                                   Block** aCreated) final {
     if (aOperation != Operation::Read && mRule) {
       if (StyleSheet* sheet = mRule->GetStyleSheet()) {
         sheet->WillDirty();
@@ -44,17 +36,15 @@ class CSSKeyframeDeclaration final : public nsDOMCSSDeclaration {
     }
     return mDecls;
   }
-  nsresult SetCSSDeclaration(DeclarationBlock* aDecls,
+  nsresult SetCSSDeclaration(Block* aDecls,
                              MutationClosureData* aClosureData) final {
     if (!mRule) {
       return NS_OK;
     }
     mRule->UpdateRule([this, aDecls]() {
       if (mDecls != aDecls) {
-        mDecls->SetOwningRule(nullptr);
         mDecls = aDecls;
-        mDecls->SetOwningRule(mRule);
-        Servo_Keyframe_SetStyle(mRule->Raw(), mDecls->Raw());
+        Servo_Keyframe_SetStyle(mRule->Raw(), mDecls);
       }
     });
     return NS_OK;
@@ -79,9 +69,7 @@ class CSSKeyframeDeclaration final : public nsDOMCSSDeclaration {
   }
 
   void SetRawAfterClone(StyleLockedKeyframe* aKeyframe) {
-    mDecls->SetOwningRule(nullptr);
-    mDecls = new DeclarationBlock(Servo_Keyframe_GetStyle(aKeyframe).Consume());
-    mDecls->SetOwningRule(mRule);
+    mDecls = Servo_Keyframe_GetStyle(aKeyframe).Consume();
   }
 
  private:
@@ -90,7 +78,7 @@ class CSSKeyframeDeclaration final : public nsDOMCSSDeclaration {
   }
 
   CSSKeyframeRule* mRule;
-  RefPtr<DeclarationBlock> mDecls;
+  RefPtr<Block> mDecls;
 };
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(CSSKeyframeDeclaration)

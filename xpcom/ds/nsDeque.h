@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -50,6 +48,9 @@ namespace detail {
  */
 class nsDequeBase {
  public:
+  nsDequeBase& operator=(const nsDequeBase& aOther) = delete;
+  nsDequeBase(const nsDequeBase& aOther) = delete;
+
   /**
    * Returns the number of items currently stored in
    * this deque.
@@ -140,9 +141,6 @@ class nsDequeBase {
   size_t mOrigin;
   void* mBuffer[8];
   void** mData;
-
-  nsDequeBase& operator=(const nsDequeBase& aOther) = delete;
-  nsDequeBase(const nsDequeBase& aOther) = delete;
 };
 
 // This iterator assumes that the deque itself is const, i.e., it cannot be
@@ -278,6 +276,9 @@ class nsDeque : public mozilla::detail::nsDequeBase {
     Erase();
     SetDeallocator(nullptr);
   }
+
+  nsDeque(const nsDeque& aOther) = delete;
+  nsDeque& operator=(const nsDeque& aOther) = delete;
 
   /**
    * Appends new member at the end of the deque.
@@ -419,21 +420,6 @@ class nsDeque : public mozilla::detail::nsDequeBase {
   nsDequeFunctor<T>* mDeallocator;
 
  private:
-  /**
-   * Copy constructor (deleted)
-   *
-   * @param aOther another deque
-   */
-  nsDeque(const nsDeque& aOther) = delete;
-
-  /**
-   * Deque assignment operator (deleted)
-   *
-   * @param aOther another deque
-   * @return *this
-   */
-  nsDeque& operator=(const nsDeque& aOther) = delete;
-
   void SetDeallocator(nsDequeFunctor<T>* aDeallocator) {
     delete mDeallocator;
     mDeallocator = aDeallocator;

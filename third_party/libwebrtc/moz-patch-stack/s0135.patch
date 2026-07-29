@@ -1,61 +1,33 @@
 From: Michael Froman <mfroman@mozilla.com>
-Date: Sun, 28 Dec 2025 15:36:00 -0600
-Subject: Bug 2006933 - (fix-d381cc8b23) fix base-toolchains build
+Date: Wed, 8 Apr 2026 10:58:00 -0500
+Subject: Bug 2030139 - (fix-bb3693c382) fix linux builds for constexpr
+ containing std::string
 
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/ff7279205c599769b913c9359873562896b80799
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/cab51cf0d4e9e67e9f5b053128d05e859d47b7c2
 ---
- modules/rtp_rtcp/source/rtp_format.cc | 15 +++++++--------
- 1 file changed, 7 insertions(+), 8 deletions(-)
+ modules/portal/pipewire_utils.cc | 9 +++++++++
+ 1 file changed, 9 insertions(+)
 
-diff --git a/modules/rtp_rtcp/source/rtp_format.cc b/modules/rtp_rtcp/source/rtp_format.cc
-index fda60ffac9..195b5ec77b 100644
---- a/modules/rtp_rtcp/source/rtp_format.cc
-+++ b/modules/rtp_rtcp/source/rtp_format.cc
-@@ -36,32 +36,31 @@ std::unique_ptr<RtpPacketizer> RtpPacketizer::Create(
-     PayloadSizeLimits limits,
-     // Codec-specific details.
-     const RTPVideoHeader& rtp_video_header) {
--  using enum PacketizationFormat;
-   switch (format) {
--    case kRaw: {
-+    case PacketizationFormat::kRaw: {
-       return std::make_unique<RtpPacketizerGeneric>(payload, limits);
-     }
--    case kH264: {
-+    case PacketizationFormat::kH264: {
-       const auto& h264 =
-           std::get<RTPVideoHeaderH264>(rtp_video_header.video_type_header);
-       return std::make_unique<RtpPacketizerH264>(payload, limits,
-                                                  h264.packetization_mode);
-     }
--    case kVP8: {
-+    case PacketizationFormat::kVP8: {
-       const auto& vp8 =
-           std::get<RTPVideoHeaderVP8>(rtp_video_header.video_type_header);
-       return std::make_unique<RtpPacketizerVp8>(payload, limits, vp8);
-     }
--    case kVP9: {
-+    case PacketizationFormat::kVP9: {
-       const auto& vp9 =
-           std::get<RTPVideoHeaderVP9>(rtp_video_header.video_type_header);
-       return std::make_unique<RtpPacketizerVp9>(payload, limits, vp9);
-     }
--    case kAV1:
-+    case PacketizationFormat::kAV1:
-       return std::make_unique<RtpPacketizerAv1>(
-           payload, limits, rtp_video_header.frame_type,
-           rtp_video_header.is_last_frame_in_picture);
--    case kH265: {
-+    case PacketizationFormat::kH265: {
- #ifdef RTC_ENABLE_H265
-       return std::make_unique<RtpPacketizerH265>(payload, limits);
- #else
-@@ -69,7 +68,7 @@ std::unique_ptr<RtpPacketizer> RtpPacketizer::Create(
-                                                     rtp_video_header);
- #endif
-     }
--    case kGeneric: {
-+    case PacketizationFormat::kGeneric: {
-       return std::make_unique<RtpPacketizerGeneric>(payload, limits,
-                                                     rtp_video_header);
-     }
+diff --git a/modules/portal/pipewire_utils.cc b/modules/portal/pipewire_utils.cc
+index 850726cc58..7008696b7d 100644
+--- a/modules/portal/pipewire_utils.cc
++++ b/modules/portal/pipewire_utils.cc
+@@ -28,9 +28,18 @@
+ 
+ namespace webrtc {
+ 
++#if defined(__GNUC__) && defined(WEBRTC_MOZILLA_BUILD)
++// Mozilla linux builds are using -std=gnu++20, which doesn't approve
++// of using std::string in a constexpr.  PipewireVersion now contains
++// std::string as of libwebrtc commit d167fe9296.
++static const PipeWireVersion kReentrantDeinitMinVersion = {.major = 0,
++                                                           .minor = 3,
++                                                           .micro = 49};
++#else
+ constexpr PipeWireVersion kReentrantDeinitMinVersion = {.major = 0,
+                                                         .minor = 3,
+                                                         .micro = 49};
++#endif
+ 
+ PipeWireVersion PipeWireVersion::Parse(const std::string_view& version) {
+   std::vector<std::string_view> parsed_version = split(version, '.');

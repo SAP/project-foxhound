@@ -1,4 +1,3 @@
-/* vim:t ts=4 sw=2 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -51,24 +50,36 @@ class PendingTransactionQueue {
       uint32_t maxCount = 0);
 
   // Return the count of pending transactions for all window ids.
-  size_t PendingQueueLength() const;
+  inline size_t PendingQueueLength() const {
+    MOZ_ASSERT(mPendingQueueLength == ComputePendingQueueLength());
+    return mPendingQueueLength;
+  }
+
   size_t PendingQueueLengthForWindow(uint64_t windowId) const;
 
-  // Return true if there are any pending transactions (optimized version of
-  // PendingQueueLength() == 0). Returns early as soon as a non-empty queue is
-  // found.
-  bool PendingQueueIsEmpty() const;
+  inline bool PendingQueueIsEmpty() const {
+    MOZ_ASSERT(mPendingQueueLength == ComputePendingQueueLength());
+    return mPendingQueueLength == 0;
+  }
 
   // Remove the empty pendingQ in |mPendingTransactionTable|.
   void RemoveEmptyPendingQ();
 
+  // Notify that a transaction was removed directly from a per-window array
+  // returned by GetTransactionPendingQHelper (not from mUrgentStartQ).
+  void OnPendingTransactionRemovedFromTable();
+
   void PrintDiagnostics(nsCString& log);
 
-  size_t UrgentStartQueueLength();
+  inline size_t UrgentStartQueueLength() const {
+    return mUrgentStartQ.Length();
+  }
 
   // Return true if the urgent start queue is empty (optimized version of
   // UrgentStartQueueLength() == 0).
-  bool UrgentStartQueueIsEmpty() const;
+  inline bool UrgentStartQueueIsEmpty() const {
+    return mUrgentStartQ.IsEmpty();
+  }
 
   void PrintPendingQ();
 
@@ -79,6 +90,10 @@ class PendingTransactionQueue {
   ~PendingTransactionQueue() = default;
 
  private:
+#ifdef DEBUG
+  size_t ComputePendingQueueLength() const;
+#endif
+
   void InsertTransactionNormal(PendingTransactionInfo* info,
                                bool aInsertAsFirstForTheSamePriority = false);
 
@@ -93,6 +108,10 @@ class PendingTransactionQueue {
   // is initialized without a window.
   nsClassHashtable<nsUint64HashKey, nsTArray<RefPtr<PendingTransactionInfo>>>
       mPendingTransactionTable;
+
+  // Running count of transactions across all per-window arrays in
+  // mPendingTransactionTable (excludes mUrgentStartQ).
+  size_t mPendingQueueLength{0};
 };
 
 }  // namespace net

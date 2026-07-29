@@ -147,11 +147,42 @@ export class LanguageDetector {
    *     or the options.
    * @returns {Promise<DetectionResult>}
    */
-  static detectLanguage(options) {
-    if (typeof options == "string") {
+  static async detectLanguage(options) {
+    if (typeof options === "string") {
       options = { text: options };
     }
 
-    return workerManager.detectLanguage(options);
+    const result = await workerManager.detectLanguage(options);
+
+    // Some language tags are not supported by CLD2
+    result.language = this.maybeRefineMacroLanguageTag(result.language);
+    result.languages.forEach(lng => {
+      lng.languageCode = this.maybeRefineMacroLanguageTag(lng.languageCode);
+    });
+
+    return result;
+  }
+
+  /**
+   * Attempts to make the language tag more specific if it is a supported macro language tag.
+   * If no special cases apply, the provided language tag is returned as-is.
+   *
+   * @param {string} langTag - A BCP-47 language tag to evaluate and possibly refine.
+   * @returns {string} - The refined language tag
+   */
+  static maybeRefineMacroLanguageTag(langTag) {
+    if (langTag === "no") {
+      // Choose "Norwegian Bokmål" over "Norwegian Nynorsk" as it is more widely used.
+      //
+      // https://en.wikipedia.org/wiki/Norwegian_language#Bokm%C3%A5l_and_Nynorsk
+      //
+      //   > A 2005 poll indicates that 86.3% use primarily Bokmål as their daily
+      //   > written language, 5.5% use both Bokmål and Nynorsk, and 7.5% use
+      //   > primarily Nynorsk.
+      return "nb";
+    }
+
+    // No special cases were handled above, so pass the langTag through.
+    return langTag;
   }
 }

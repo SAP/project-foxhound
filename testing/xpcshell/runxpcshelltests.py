@@ -26,7 +26,7 @@ from functools import partial
 from multiprocessing import cpu_count
 from subprocess import PIPE, STDOUT, Popen
 from tempfile import gettempdir, mkdtemp
-from threading import Event, Thread, Timer, current_thread
+from threading import Event, Lock, Thread, Timer, current_thread
 
 import mozdebug
 import six
@@ -34,7 +34,7 @@ from mozgeckoprofiler import (
     symbolicate_profile_json,
     view_gecko_profile,
 )
-from mozserve import Http3Server
+from mozserve import Http3Server, MozHttp2Server
 
 try:
     import psutil
@@ -91,7 +91,7 @@ import mozfile
 import mozinfo
 from manifestparser import TestManifest
 from manifestparser.expression import parse
-from manifestparser.filters import chunk_by_slice, failures, pathprefix, tags
+from manifestparser.filters import failures, pathprefix, tags
 from manifestparser.util import normsep
 from mozlog import commandline
 from mozprofile import Profile
@@ -254,6 +254,8 @@ class XPCShellTestThread(Thread):
         # event from main thread to signal work done
         self.event = kwargs.get("event")
         self.done = False  # explicitly set flag so we don't rely on thread.isAlive
+        self.timer = None  # Timer used to detect test timeouts
+        self.lock = Lock()  # lock used to serialize access to the timer
 
     def run(self):
         try:
@@ -423,6 +425,17 @@ class XPCShellTestThread(Thread):
             self.failCount = 1
 
     def testTimeout(self, proc):
+        # Ensure that we didn't race the test finishing execution between when
+        # the timeout timer fired and this code started executing.
+        self.lock.acquire()
+
+        # If `self.timer` has been set to None it means that the test actually
+        # finished execution before we managed to get the lock and the code in
+        # this timer shouldn't run, so return right away.
+        if self.timer is None:
+            self.lock.release()
+            return
+
         # Set these flags first to prevent test_end from being logged again
         # while we output the full log.
         self.done = True
@@ -468,6 +481,10 @@ class XPCShellTestThread(Thread):
         self.log.info("xpcshell return code: %s" % self.getReturnCode(proc))
         self.postCheck(proc)
         self.clean_temp_dirs(self.test_object["path"])
+
+        # Now that we've finished cleaning up after the timed out test we can
+        # relinquish the lock to allow run_test() to finish.
+        self.lock.release()
 
     def updateTestPrefsFile(self):
         # If the Manifest file has some additional prefs, merge the
@@ -876,6 +893,8 @@ class XPCShellTestThread(Thread):
             self.keep_going = True
             return
 
+        self.log.test_start(name, group=group)
+
         # Check for known-fail tests
         expect_pass = self.test_object["expected"] == "pass"
 
@@ -963,17 +982,15 @@ class XPCShellTestThread(Thread):
 
         testTimeoutInterval = self.harness_timeout * self.timeout_factor
 
-        testTimer = None
         if not self.interactive and not self.debuggerInfo and not self.jsDebuggerInfo:
-            testTimer = Timer(testTimeoutInterval, lambda: self.testTimeout(proc))
-            testTimer.start()
+            self.timer = Timer(testTimeoutInterval, lambda: self.testTimeout(proc))
+            self.timer.start()
             self.env["MOZ_TEST_TIMEOUT_INTERVAL"] = str(testTimeoutInterval)
 
         proc = None
         process_output = None
 
         try:
-            self.log.test_start(name, group=group)
             if self.verbose:
                 self.logCommand(name, self.command, test_dir)
 
@@ -1005,8 +1022,16 @@ class XPCShellTestThread(Thread):
                 self.keep_going = True
                 return
 
-            if testTimer:
-                testTimer.cancel()
+            # Cancel the test timeout timer, note that this must happen under
+            # lock to prevent this code from racing with the code within the
+            # timer itself.
+            self.lock.acquire()
+
+            if self.timer:
+                self.timer.cancel()
+                self.timer = None
+
+            self.lock.release()
 
             if process_output:
                 # For the remote case, stdout is not yet depleted, so we parse
@@ -1178,6 +1203,7 @@ class XPCShellTests:
         self.harness_timeout = HARNESS_TIMEOUT
         self.nodeProc = {}
         self.http3Server = None
+        self.mozHttp2Server = None
         self.conditioned_profile_dir = None
 
     def getTestManifest(self, manifest):
@@ -1267,8 +1293,6 @@ class XPCShellTests:
             filters.append(failures(self.runFailures))
             noDefaultFilters = True
 
-        if self.totalChunks > 1:
-            filters.append(chunk_by_slice(self.thisChunk, self.totalChunks))
         try:
             self.alltests = list(
                 map(
@@ -1539,8 +1563,6 @@ class XPCShellTests:
                 )
             return
 
-        # We try to find the node executable in the path given to us by the user in
-        # the MOZ_NODE_PATH environment variable
         nodeBin = os.getenv("MOZ_NODE_PATH", None)
         if not nodeBin and build:
             nodeBin = build.substs.get("NODEJS")
@@ -1559,81 +1581,27 @@ class XPCShellTests:
         self.log.info("Found node at %s" % (nodeBin,))
 
         node_env = self.buildNodeEnvironment()
-
-        def read_streams(name, proc, pipe):
-            output = "stdout" if pipe == proc.stdout else "stderr"
-            for line in iter(pipe.readline, ""):
-                self.log.info("node %s [%s] %s" % (name, output, line))
-
-        def startServer(name, serverJs):
-            if not os.path.exists(serverJs):
-                error = "%s not found at %s" % (name, serverJs)
-                self.log.error(error)
-                raise OSError(error)
-
-            # OK, we found our server, let's try to get it running
-            self.log.info("Found %s at %s" % (name, serverJs))
-            try:
-                # We pipe stdin to node because the server will exit when its
-                # stdin reaches EOF
-                with popenCleanupHack():
-                    process = Popen(
-                        [nodeBin, serverJs],
-                        stdin=PIPE,
-                        stdout=PIPE,
-                        stderr=PIPE,
-                        env=node_env,
-                        cwd=os.getcwd(),
-                        universal_newlines=True,
-                        start_new_session=True,
-                    )
-                self.nodeProc[name] = process
-
-                # Check to make sure the server starts properly by waiting for it to
-                # tell us it's started
-                msg = process.stdout.readline()
-                if "server listening" in msg:
-                    searchObj = re.search(
-                        r"HTTP2 server listening on ports ([0-9]+),([0-9]+)", msg, 0
-                    )
-                    if searchObj:
-                        self.env["MOZHTTP2_PORT"] = searchObj.group(1)
-                        self.env["MOZNODE_EXEC_PORT"] = searchObj.group(2)
-                t1 = Thread(
-                    target=read_streams,
-                    args=(name, process, process.stdout),
-                    daemon=True,
-                )
-                t1.start()
-                t2 = Thread(
-                    target=read_streams,
-                    args=(name, process, process.stderr),
-                    daemon=True,
-                )
-                t2.start()
-            except OSError as e:
-                # This occurs if the subprocess couldn't be started
-                self.log.error("Could not run %s server: %s" % (name, str(e)))
-                raise
-
         myDir = os.path.split(os.path.abspath(__file__))[0]
-        startServer("moz-http2", os.path.join(myDir, "moz-http2", "moz-http2.js"))
+        serverPath = os.path.join(myDir, "moz-http2", "moz-http2.js")
+
+        serverOptions = {}
+        serverOptions["nodeBin"] = nodeBin
+        serverOptions["serverPath"] = serverPath
+        serverOptions["isWin"] = sys.platform == "win32"
+
+        self.mozHttp2Server = MozHttp2Server(serverOptions, node_env, self.log)
+        self.mozHttp2Server.start()
+
+        for key, value in self.mozHttp2Server.ports().items():
+            self.env[key] = value
 
     def shutdownNode(self):
         """
         Shut down our node process, if it exists
         """
-        for name, proc in self.nodeProc.items():
-            self.log.info("Node %s server shutting down ..." % name)
-            if proc.poll() is not None:
-                self.log.info("Node server %s already dead %s" % (name, proc.poll()))
-            elif sys.platform != "win32":
-                # Kill process and all its spawned children.
-                os.killpg(proc.pid, signal.SIGTERM)
-            else:
-                proc.terminate()
-
-        self.nodeProc = {}
+        if self.mozHttp2Server is not None:
+            self.mozHttp2Server.stop()
+            self.mozHttp2Server = None
 
     def startHttp3Server(self):
         """
@@ -1648,7 +1616,10 @@ class XPCShellTests:
             if self.mozInfo["buildapp"] == "mobile/android":
                 # For android, use binary from host utilities.
                 http3ServerPath = os.path.join(self.xrePath, "http3server" + binSuffix)
-                serverEnv["LD_LIBRARY_PATH"] = self.xrePath
+                if sys.platform == "darwin":
+                    serverEnv["DYLD_LIBRARY_PATH"] = self.xrePath
+                else:
+                    serverEnv["LD_LIBRARY_PATH"] = self.xrePath
             elif build:
                 http3ServerPath = os.path.join(
                     build.topobjdir, "dist", "bin", "http3server" + binSuffix
@@ -1730,9 +1701,7 @@ class XPCShellTests:
         self.mozInfo = fixedInfo
 
         self.mozInfo["fission"] = prefs.get("fission.autostart", True)
-        self.mozInfo["sessionHistoryInParent"] = self.mozInfo[
-            "fission"
-        ] or not prefs.get("fission.disableSessionHistoryInParent", False)
+        self.mozInfo["sessionHistoryInParent"] = True
 
         self.mozInfo["verify"] = options.get("verify", False)
 
@@ -1754,7 +1723,7 @@ class XPCShellTests:
             (release, versioninfo, machine) = platform.mac_ver()
             versionNums = release.split(".")[:2]
             os_version = "%s.%s" % (versionNums[0], versionNums[1].ljust(2, "0"))
-            if os_version.split(".")[0] in ["14", "15"]:
+            if os_version.split(".", 1)[0] in ["14", "15"]:
                 self.mozInfo["crashreporter"] = False
 
         # we default to false for e10s on xpcshell
@@ -2027,8 +1996,6 @@ class XPCShellTests:
         self.verboseIfFails = options.get("verboseIfFails")
         self.keepGoing = options.get("keepGoing")
         self.logfiles = options.get("logfiles")
-        self.totalChunks = options.get("totalChunks", 1)
-        self.thisChunk = options.get("thisChunk")
         self.profileName = options.get("profileName") or "xpcshell"
         self.mozInfo = options.get("mozInfo")
         self.testingModulesDir = testingModulesDir
@@ -2464,7 +2431,7 @@ class XPCShellTests:
         # Start group for parallel test execution
         parallel_group_started = False
         if tests_queue:
-            self.log.group_start(name="parallel")
+            self.log.group_start(name="parallel", extra={"threads": self.threadCount})
             parallel_group_started = True
 
         while tests_queue or running_tests:
@@ -2563,13 +2530,15 @@ class XPCShellTests:
         if self.try_again_list:
             self.log.info("Retrying tests that failed when run in parallel.")
             self.log.group_start(name="retry")
+
+        try_again_kwargs = kwargs.copy()
+        try_again_kwargs["retry"] = False
         for test_object in self.try_again_list:
             test = testClass(
                 test_object,
-                retry=False,
                 verbose=self.verbose,
                 mobileArgs=mobileArgs,
-                **kwargs,
+                **try_again_kwargs,
             )
             self.start_test(test)
             test.join()
@@ -2638,7 +2607,7 @@ def main():
     parser = parser_desktop()
     options = parser.parse_args()
 
-    log = commandline.setup_logging("XPCShell", options, {"tbpl": sys.stdout})
+    log = commandline.setup_logging("XPCShell", options, {"raw": sys.stdout})
 
     if options.xpcshell is None and options.app_binary is None:
         log.error(

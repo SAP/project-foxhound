@@ -6,7 +6,7 @@ import React from "devtools/client/shared/vendor/react";
 import { button } from "devtools/client/shared/vendor/react-dom-factories";
 import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 
-import DebuggerImage from "../DebuggerImage";
+import DebuggerImage from "devtools/client/shared/components/DebuggerImage";
 
 const classnames = require("resource://devtools/client/shared/classnames.js");
 

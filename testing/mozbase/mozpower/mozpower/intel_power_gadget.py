@@ -490,7 +490,8 @@ class IPGResultsHandler:
             # Make sure we don't have any bad line endings
             # contaminating the cleaned rows.
             fmt_row = [
-                val.replace("\n", "")
+                val
+                .replace("\n", "")
                 .replace("\t", "")
                 .replace("\r", "")
                 .replace("\\n", "")

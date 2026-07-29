@@ -1,8 +1,9 @@
 "use strict";
 
-// We use data URL because CSP_ShouldURIInheritCSP requires the URL to be
-// about:blank, abour:srcdoc, or be a blob, filesystem, data, or javascript scheme.
-const URL = `data:text/html,<html><body> <span id="change_me">Original</span> <script> document.getElementById("change_me").textContent = "Modified"; </script></body></html>`;
+// We use about:blank because CSP_ShouldURIInheritCSP requires the URL to be
+// about:blank, about:srcdoc, or be a blob, filesystem, data, or javascript
+// scheme. Top-level data: URI navigation is always blocked.
+const URL = "about:blank";
 
 const CSP_JSON = `{"csp-policies":[{"default-src":["'self'"],"report-only":false}]}`;
 
@@ -26,11 +27,6 @@ add_task(async function () {
     "CSP should deserialize correctly from serialized CSP string"
   );
 
-  // Sanity check
-  await checkScriptRunsWithoutCSP({
-    url: URL,
-  });
-
   // Firefox 142 and earlier writes entry.csp;
   await checkCSPWithSessionHistoryEntry({ url: URL, csp: CSP_SERIALIZED });
   // Firefox 143 and later writes to policyContainer (bug 1974070).
@@ -41,11 +37,7 @@ add_task(async function () {
 });
 
 async function checkCSPWithSessionHistoryEntry(entry) {
-  // Create session history entry with `csp` property
   const tab = await createTabWithSessionHistoryEntry(entry);
-
-  // check that the inline script is blocked
-  is(await didScriptRun(tab.linkedBrowser), false);
 
   is(
     tab.linkedBrowser.policyContainer.csp.toJSON(),
@@ -53,24 +45,6 @@ async function checkCSPWithSessionHistoryEntry(entry) {
     "CSP should be restored correctly from session history entry"
   );
 
-  // cleanup
-  BrowserTestUtils.removeTab(tab);
-}
-
-async function checkScriptRunsWithoutCSP(entry) {
-  // Create session history entry without `csp` property
-  const tab = await createTabWithSessionHistoryEntry(entry);
-
-  // check that the inline script runs
-  is(await didScriptRun(tab.linkedBrowser), true);
-
-  is(
-    tab.linkedBrowser.policyContainer.csp.toJSON(),
-    `{"csp-policies":[]}`,
-    "CSP should not be restored when not present in session history entry"
-  );
-
-  // cleanup
   BrowserTestUtils.removeTab(tab);
 }
 
@@ -79,22 +53,16 @@ async function createTabWithSessionHistoryEntry(entry) {
     entries: [entry],
   };
 
-  // create a new tab
-  const tab = BrowserTestUtils.addTab(gBrowser);
+  // Open a tab at a non-about:blank URL first. If the tab is already at
+  // about:blank, setTabState with url=about:blank won't trigger a real
+  // cross-document navigation, so the CSP from the session history entry
+  // would never be applied to the document's policyContainer.
+  const tab = BrowserTestUtils.addTab(gBrowser, "about:robots");
+  await promiseBrowserLoaded(tab.linkedBrowser, true, "about:robots");
 
-  // set the tab's state
+  const restored = promiseTabRestored(tab);
   ss.setTabState(tab, JSON.stringify(state));
-
-  // wait for the tab to be loaded
-  await promiseBrowserLoaded(tab.linkedBrowser);
+  await restored;
 
   return tab;
-}
-
-function didScriptRun(browser) {
-  return SpecialPowers.spawn(browser, [], function () {
-    return (
-      content.document.getElementById("change_me").innerText === "Modified"
-    );
-  });
 }

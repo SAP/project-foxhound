@@ -16,6 +16,7 @@
 
 #include "api/sequence_checker.h"
 #include "api/task_queue/pending_task_safety_flag.h"
+#include "api/task_queue/task_queue_base.h"
 #include "api/units/time_delta.h"
 #include "p2p/base/basic_ice_controller.h"
 #include "p2p/base/connection.h"
@@ -29,17 +30,12 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/thread.h"
 
-namespace {
-using ::webrtc::SafeTask;
-using ::webrtc::TimeDelta;
-}  // unnamed namespace
-
 namespace webrtc {
 
 WrappingActiveIceController::WrappingActiveIceController(
     IceAgentInterface* ice_agent,
     std::unique_ptr<IceControllerInterface> wrapped)
-    : network_thread_(Thread::Current()),
+    : network_thread_(TaskQueueBase::Current()),
       wrapped_(std::move(wrapped)),
       agent_(*ice_agent) {
   RTC_DCHECK(ice_agent != nullptr);

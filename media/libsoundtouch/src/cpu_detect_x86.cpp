@@ -2,7 +2,7 @@
 ///
 /// Generic version of the x86 CPU extension detection routine.
 ///
-/// This file is for GNU & other non-Windows compilers, see 'cpu_detect_x86_win.cpp' 
+/// This file is for GNU & other non-Windows compilers, see 'cpu_detect_x86_win.cpp'
 /// for the Microsoft compiler version.
 ///
 /// Author        : Copyright (c) Olli Parviainen
@@ -93,11 +93,11 @@ uint detectCPUextensions(void)
     && defined(SOUNDTOUCH_ALLOW_X86_OPTIMIZATIONS)
 
     if (_dwDisabledISA == 0xffffffff) return 0;
- 
+
     uint res = 0;
- 
+
 #if !defined(__GNUC__)
-    // Window / VS version of cpuid. Notice that Visual Studio 2005 or later required 
+    // Window / VS version of cpuid. Notice that Visual Studio 2005 or later required
     // for __cpuid intrinsic support.
     int reg[4] = {-1};
 

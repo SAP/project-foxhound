@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -73,7 +71,7 @@ nsresult NetworkLoadHandler::DataReceivedFromNetwork(nsIStreamLoader* aLoader,
   if (aStringLen > GetWorkerScriptMaxSizeInBytes()) {
     Document* parentDoc = mWorkerRef->Private()->GetDocument();
     nsContentUtils::ReportToConsole(nsIScriptError::errorFlag, "DOM"_ns,
-                                    parentDoc, nsContentUtils::eDOM_PROPERTIES,
+                                    parentDoc, PropertiesFile::DOM_PROPERTIES,
                                     "WorkerScriptTooLargeError");
     return NS_ERROR_DOM_ABORT_ERR;
   }
@@ -208,9 +206,9 @@ nsresult NetworkLoadHandler::DataReceivedFromNetwork(nsIStreamLoader* aLoader,
     NS_ENSURE_SUCCESS(rv, rv);
 
     if (!loadContext->mRequest->ScriptTextLength()) {
-      nsContentUtils::ReportToConsole(
-          nsIScriptError::warningFlag, "DOM"_ns, parentDoc,
-          nsContentUtils::eDOM_PROPERTIES, "EmptyWorkerSourceWarning");
+      nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "DOM"_ns,
+                                      parentDoc, PropertiesFile::DOM_PROPERTIES,
+                                      "EmptyWorkerSourceWarning");
     }
   }
 
@@ -356,8 +354,12 @@ nsresult NetworkLoadHandler::PrepareForRequest(nsIRequest* aRequest) {
 
     auto mimeTypeUTF16 = NS_ConvertUTF8toUTF16(mimeType);
     if (!nsContentUtils::IsJavascriptMIMEType(mimeTypeUTF16)) {
-      // JSON is allowed as a non-toplevel.
+      // JSON is only allowed for non-toplevel JSON module imports, not for
+      // classic importScripts() or the top-level worker script.
       if (!((!loadContext->IsTopLevel() &&
+             loadContext->mRequest->IsModuleRequest() &&
+             loadContext->mRequest->AsModuleRequest()->mModuleType ==
+                 JS::ModuleType::JSON &&
              nsContentUtils::IsJsonMimeType(mimeTypeUTF16))
 #ifdef NIGHTLY_BUILD
             // Allow wasm modules.
@@ -365,7 +367,12 @@ nsresult NetworkLoadHandler::PrepareForRequest(nsIRequest* aRequest) {
                     javascript_options_experimental_wasm_esm_integration() &&
                 nsContentUtils::HasWasmMimeTypeEssence(mimeTypeUTF16))
 #endif
-                )) {
+            // Allow non-toplevel text modules
+            || (JS::Prefs::experimental_import_text() &&
+                !loadContext->IsTopLevel() &&
+                loadContext->mRequest->IsModuleRequest() &&
+                loadContext->mRequest->AsModuleRequest()->mModuleType ==
+                    JS::ModuleType::Text))) {
         const nsCString& scope = mWorkerRef->Private()
                                      ->GetServiceWorkerRegistrationDescriptor()
                                      .Scope();
@@ -410,13 +417,18 @@ nsresult NetworkLoadHandler::PrepareForRequest(nsIRequest* aRequest) {
   ir->SetPrincipalInfo(std::move(principalInfo));
   ir->Headers()->FillResponseHeaders(channel);
 
+  RefPtr<CacheCreator> cacheCreator = mRequestHandle->GetCacheCreator();
+  if (NS_WARN_IF(!cacheCreator)) {
+    return NS_ERROR_FAILURE;
+  }
+
   RefPtr<mozilla::dom::Response> response = new mozilla::dom::Response(
-      mRequestHandle->GetCacheCreator()->Global(), std::move(ir), nullptr);
+      cacheCreator->Global(), std::move(ir), nullptr);
 
   mozilla::dom::RequestOrUTF8String request;
 
   MOZ_ASSERT(!loadContext->mFullURL.IsEmpty());
-  request.SetAsUTF8String().ShareOrDependUpon(loadContext->mFullURL);
+  request.SetAsUTF8String() = loadContext->mFullURL;
 
   // This JSContext will not end up executing JS code because here there are
   // no ReadableStreams involved.
@@ -425,8 +437,7 @@ nsresult NetworkLoadHandler::PrepareForRequest(nsIRequest* aRequest) {
 
   ErrorResult error;
   RefPtr<Promise> cachePromise =
-      mRequestHandle->GetCacheCreator()->Cache_()->Put(jsapi.cx(), request,
-                                                       *response, error);
+      cacheCreator->Cache_()->Put(jsapi.cx(), request, *response, error);
   error.WouldReportJSException();
   if (NS_WARN_IF(error.Failed())) {
     return error.StealNSResult();

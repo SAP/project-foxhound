@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright 2021 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -310,6 +308,10 @@ class MOZ_NON_PARAM Val : public LitVal {
     MOZ_ASSERT(isAnyRef());
     return cell_.ref_;
   }
+  AnyRef* anyRefPtr() {
+    MOZ_ASSERT(isAnyRef() || isInvalid());
+    return &cell_.ref_;
+  }
 
   // Initialize from `loc` which is a rooted location and needs no barriers.
   void initFromRootedLocation(ValType type, const void* loc);
@@ -333,7 +335,7 @@ class MOZ_NON_PARAM Val : public LitVal {
   void trace(JSTracer* trc) const;
 };
 
-using GCPtrVal = GCPtr<Val>;
+using HeapPtrVal = HeapPtr<Val>;
 using RootedVal = Rooted<Val>;
 using HandleVal = Handle<Val>;
 using MutableHandleVal = MutableHandle<Val>;
@@ -427,7 +429,7 @@ struct InternalBarrierMethods<wasm::AnyRef> {
                                             const wasm::AnyRef prev,
                                             const wasm::AnyRef next) {
     // This assumes that callers have already checked that |vp| is in the
-    // tenured heap. Don't use GCPtr<AnyRef> for things that could be in the
+    // tenured heap. Don't use HeapPtr<AnyRef> for things that could be in the
     // nursery!
 #ifdef DEBUG
     AssertEdgeSourceNotInsideNursery(vp);
@@ -468,6 +470,16 @@ struct InternalBarrierMethods<wasm::AnyRef> {
 };
 
 template <>
+struct AtomicMethods<wasm::AnyRef> {
+  static wasm::AnyRef atomicGet(wasm::AnyRef const* vp) {
+    return vp->atomicGet();
+  }
+  static void atomicSet(wasm::AnyRef* vp, const wasm::AnyRef& v) {
+    vp->atomicSet(v);
+  }
+};
+
+template <>
 struct InternalBarrierMethods<wasm::Val> {
   static bool isMarkable(const wasm::Val& v) { return v.isAnyRef(); }
 
@@ -481,16 +493,15 @@ struct InternalBarrierMethods<wasm::Val> {
                                             const wasm::Val& prev,
                                             const wasm::Val& next) {
     // A wasm::Val can transition from being uninitialized to holding an anyref
-    // but cannot change kind after that.
+    // but cannot change kind after that, except on destruction.
     MOZ_ASSERT_IF(next.isAnyRef(), prev.isAnyRef() || prev.isInvalid());
-    MOZ_ASSERT_IF(prev.isAnyRef(), next.isAnyRef());
+    MOZ_ASSERT_IF(prev.isAnyRef(), next.isAnyRef() || next.isInvalid());
 
-    if (next.isAnyRef()) {
+    if (prev.isAnyRef() || next.isAnyRef()) {
       InternalBarrierMethods<wasm::AnyRef>::postBarrier(
-          &vp->toAnyRef(),
+          vp->anyRefPtr(),
           prev.isAnyRef() ? prev.toAnyRef() : wasm::AnyRef::null(),
-          next.toAnyRef());
-      return;
+          next.isAnyRef() ? next.toAnyRef() : wasm::AnyRef::null());
     }
   }
 

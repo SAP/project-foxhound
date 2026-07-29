@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -430,25 +428,25 @@ TEST(ShortcutKeyDefinitions, Browser)
 {
   // clang-format off
   const nsTArray<ShortcutKeyMap> expectedMap{
-    // KeyCode       Modifiers         Windows             macOS               Linux               Android                    Emacs
-    {NS_VK_LEFT,  0, MODIFIER_NONE,    u"cmd_moveLeft",    u"cmd_moveLeft",    u"cmd_moveLeft",    u"cmd_moveLeft",           u"cmd_moveLeft"},
-    {NS_VK_RIGHT, 0, MODIFIER_NONE,    u"cmd_moveRight",   u"cmd_moveRight",   u"cmd_moveRight",   u"cmd_moveRight",          u"cmd_moveRight"},
-    {NS_VK_LEFT,  0, MODIFIER_SHIFT,   u"cmd_selectLeft",  u"cmd_selectLeft",  u"cmd_selectLeft",  u"cmd_selectCharPrevious", u"cmd_selectLeft"},
-    {NS_VK_RIGHT, 0, MODIFIER_SHIFT,   u"cmd_selectRight", u"cmd_selectRight", u"cmd_selectRight", u"cmd_selectCharNext",     u"cmd_selectRight"},
-    {NS_VK_LEFT,  0, MODIFIER_CONTROL, u"cmd_moveLeft2",   nullptr,            u"cmd_moveLeft2",   u"cmd_wordPrevious",       u"cmd_wordPrevious"},
-    {NS_VK_RIGHT, 0, MODIFIER_CONTROL, u"cmd_moveRight2",  nullptr,            u"cmd_moveRight2",  u"cmd_wordNext",           u"cmd_wordNext"},
-    {NS_VK_LEFT,  0, MODIFIER_ALT,     nullptr,            u"cmd_moveLeft2",   nullptr,            u"cmd_beginLine",          nullptr},
-    {NS_VK_RIGHT, 0, MODIFIER_ALT,     nullptr,            u"cmd_moveRight2",  nullptr,            u"cmd_endLine",            nullptr},
-    {NS_VK_UP,    0, MODIFIER_NONE,    u"cmd_moveUp",      u"cmd_moveUp",      u"cmd_moveUp",      u"cmd_moveUp",             u"cmd_moveUp"},
-    {NS_VK_DOWN,  0, MODIFIER_NONE,    u"cmd_moveDown",    u"cmd_moveDown",    u"cmd_moveDown",    u"cmd_moveDown",           u"cmd_moveDown"},
-    {NS_VK_UP,    0, MODIFIER_SHIFT,   u"cmd_selectUp",    u"cmd_selectUp",    u"cmd_selectUp",    u"cmd_selectLinePrevious", u"cmd_selectUp"},
-    {NS_VK_DOWN,  0, MODIFIER_SHIFT,   u"cmd_selectDown",  u"cmd_selectDown",  u"cmd_selectDown",  u"cmd_selectLineNext",     u"cmd_selectDown"},
-    {NS_VK_UP,    0, MODIFIER_CONTROL, u"cmd_moveUp2",     nullptr,            u"cmd_moveUp2",     nullptr,                   nullptr},
-    {NS_VK_DOWN,  0, MODIFIER_CONTROL, u"cmd_moveDown2",   nullptr,            u"cmd_moveDown2",   nullptr,                   nullptr},
-    {NS_VK_UP,    0, MODIFIER_ALT,     nullptr,            nullptr,            nullptr,            u"cmd_moveTop",            nullptr},
-    {NS_VK_DOWN,  0, MODIFIER_ALT,     nullptr,            nullptr,            nullptr,            u"cmd_moveBottom",         nullptr},
-    {NS_VK_UP,    0, MODIFIER_META,    nullptr,            u"cmd_moveUp2",     nullptr,            nullptr,                   nullptr},
-    {NS_VK_DOWN,  0, MODIFIER_META,    nullptr,            u"cmd_moveDown2",   nullptr,            nullptr,                   nullptr},
+    // KeyCode       Modifiers         Windows             macOS                  Linux               Android                    Emacs
+    {NS_VK_LEFT,  0, MODIFIER_NONE,    u"cmd_moveLeft",    u"cmd_moveLeft",       u"cmd_moveLeft",    u"cmd_moveLeft",           u"cmd_moveLeft"},
+    {NS_VK_RIGHT, 0, MODIFIER_NONE,    u"cmd_moveRight",   u"cmd_moveRight",      u"cmd_moveRight",   u"cmd_moveRight",          u"cmd_moveRight"},
+    {NS_VK_LEFT,  0, MODIFIER_SHIFT,   u"cmd_selectLeft",  u"cmd_selectLeft",     u"cmd_selectLeft",  u"cmd_selectCharPrevious", u"cmd_selectLeft"},
+    {NS_VK_RIGHT, 0, MODIFIER_SHIFT,   u"cmd_selectRight", u"cmd_selectRight",    u"cmd_selectRight", u"cmd_selectCharNext",     u"cmd_selectRight"},
+    {NS_VK_LEFT,  0, MODIFIER_CONTROL, u"cmd_moveLeft2",   nullptr,               u"cmd_moveLeft2",   u"cmd_wordPrevious",       u"cmd_wordPrevious"},
+    {NS_VK_RIGHT, 0, MODIFIER_CONTROL, u"cmd_moveRight2",  nullptr,               u"cmd_moveRight2",  u"cmd_wordNext",           u"cmd_wordNext"},
+    {NS_VK_LEFT,  0, MODIFIER_ALT,     nullptr,            u"cmd_moveLeft2",      nullptr,            u"cmd_beginLine",          nullptr},
+    {NS_VK_RIGHT, 0, MODIFIER_ALT,     nullptr,            u"cmd_moveRight2",     nullptr,            u"cmd_endLine",            nullptr},
+    {NS_VK_UP,    0, MODIFIER_NONE,    u"cmd_moveUp",      u"cmd_moveUp",         u"cmd_moveUp",      u"cmd_moveUp",             u"cmd_moveUp"},
+    {NS_VK_DOWN,  0, MODIFIER_NONE,    u"cmd_moveDown",    u"cmd_moveDown",       u"cmd_moveDown",    u"cmd_moveDown",           u"cmd_moveDown"},
+    {NS_VK_UP,    0, MODIFIER_SHIFT,   u"cmd_selectUp",    u"cmd_selectUp",       u"cmd_selectUp",    u"cmd_selectLinePrevious", u"cmd_selectUp"},
+    {NS_VK_DOWN,  0, MODIFIER_SHIFT,   u"cmd_selectDown",  u"cmd_selectDown",     u"cmd_selectDown",  u"cmd_selectLineNext",     u"cmd_selectDown"},
+    {NS_VK_UP,    0, MODIFIER_CONTROL, u"cmd_moveUp2",     nullptr,               u"cmd_moveUp2",     nullptr,                   nullptr},
+    {NS_VK_DOWN,  0, MODIFIER_CONTROL, u"cmd_moveDown2",   nullptr,               u"cmd_moveDown2",   nullptr,                   nullptr},
+    {NS_VK_UP,    0, MODIFIER_ALT,     nullptr,            u"cmd_scrollPageUp",   nullptr,            u"cmd_moveTop",            nullptr},
+    {NS_VK_DOWN,  0, MODIFIER_ALT,     nullptr,            u"cmd_scrollPageDown", nullptr,            u"cmd_moveBottom",         nullptr},
+    {NS_VK_UP,    0, MODIFIER_META,    nullptr,            u"cmd_moveUp2",        nullptr,            nullptr,                   nullptr},
+    {NS_VK_DOWN,  0, MODIFIER_META,    nullptr,            u"cmd_moveDown2",      nullptr,            nullptr,                   nullptr},
 
     // KeyCode       Modifiers                          Windows              macOS                Linux                Android                    Emacs
     {NS_VK_LEFT,  0, MODIFIER_SHIFT | MODIFIER_CONTROL, u"cmd_selectLeft2",  nullptr,             u"cmd_selectLeft2",  u"cmd_selectWordPrevious", u"cmd_selectWordPrevious"},

@@ -5,7 +5,7 @@
 /* eslint no-shadow: error, mozilla/no-aArgs: error */
 
 /**
- * @typedef {import("./OpenSearchLoader.sys.mjs").OpenSearchProperties} OpenSearchProperties
+ * @typedef {import("./OpenSearchParser.sys.mjs").OpenSearchProperties} OpenSearchProperties
  */
 
 import {

@@ -279,7 +279,7 @@ export class PrefFlipsFeature {
     }
   }
 
-  async _annotateEnrollment(enrollment) {
+  _annotateEnrollment(enrollment) {
     const { featureIds } = enrollment;
     if (!featureIds.includes(FEATURE_ID)) {
       return;
@@ -302,7 +302,7 @@ export class PrefFlipsFeature {
       } else {
         originalValues[pref] = Object.hasOwn(originalValues, pref)
           ? originalValues[pref]
-          : lazy.PrefUtils.getPref(pref, { branch });
+          : lazy.PrefUtils.getPrefStrict(pref, branch);
       }
     }
 
@@ -671,7 +671,7 @@ export class PrefFlipsFeature {
       // branch.
       return "user";
     } else if (expectedBranch === "default") {
-      const value = lazy.PrefUtils.getPref(pref, { branch: "default" });
+      const value = lazy.PrefUtils.getPrefStrict(pref, "default");
       if (value === expectedValue) {
         // The pref we control was set on the default branch and still matches
         // the expected value. Therefore, the user branch must have been

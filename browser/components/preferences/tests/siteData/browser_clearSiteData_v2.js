@@ -48,19 +48,17 @@ async function testClearData(clearSiteData, clearCache) {
   Assert.greater(quotaUsage, 0, "The quota usage should not be 0");
   Assert.greater(totalUsage, 0, "The total usage should not be 0");
 
-  let initialSizeLabelValue = await SpecialPowers.spawn(
-    gBrowser.selectedBrowser,
-    [],
-    async function () {
-      let siteDataSizeItem = content.document.getElementById("siteDataSize");
-      // The <strong> element contains the data size.
-      let usage = siteDataSizeItem.querySelector("strong");
-      let siteDataSizeText = usage.textContent;
-      return siteDataSizeText;
-    }
+  let doc = gBrowser.selectedBrowser.contentDocument;
+  let siteDataSizeItem = doc.getElementById("siteDataSize");
+  await TestUtils.waitForCondition(
+    () =>
+      doc.l10n.getAttributes(siteDataSizeItem).id === "sitedata-total-size3",
+    "Should show calculated site data size, not the calculating state"
+  );
+  let initialSizeLabelValue = JSON.stringify(
+    doc.l10n.getAttributes(siteDataSizeItem)
   );
 
-  let doc = gBrowser.selectedBrowser.contentDocument;
   let clearSiteDataButton = doc.getElementById("clearSiteDataButton");
 
   let url = "chrome://browser/content/sanitize_v2.xhtml";
@@ -165,18 +163,11 @@ async function testClearData(clearSiteData, clearCache) {
 
   if (clearCache || clearSiteData) {
     // Check that the size label in about:preferences updates after we cleared data.
-    await SpecialPowers.spawn(
-      gBrowser.selectedBrowser,
-      [{ initialSizeLabelValue }],
-      async function (opts) {
-        let siteDataSizeItem = content.document.getElementById("siteDataSize");
-        // The <strong> element contains the data size.
-        let usage = siteDataSizeItem.querySelector("strong");
-        let siteDataSizeText = usage.textContent;
-        await ContentTaskUtils.waitForCondition(() => {
-          return siteDataSizeText != opts.initialSizeLabelValue;
-        }, "Site data size label should have updated.");
-      }
+    await TestUtils.waitForCondition(
+      () =>
+        JSON.stringify(doc.l10n.getAttributes(siteDataSizeItem)) !==
+        initialSizeLabelValue,
+      "Site data size label should have updated."
     );
   }
 

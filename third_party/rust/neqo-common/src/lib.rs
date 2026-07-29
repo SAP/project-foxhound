@@ -107,6 +107,31 @@ pub enum MessageType {
     Response,
 }
 
+/// Dispatch a method call on an enum to its variants' inner values.
+///
+/// The variant list is given once in a local wrapper; method bodies stay clean:
+///
+/// ```ignore
+/// // Once per enum, in the impl module:
+/// macro_rules! dispatch {
+///     ($self:ident . $method:ident $args:tt) => {
+///         neqo_common::dispatch!([Variant1, Variant2, Variant3] $self . $method $args)
+///     };
+/// }
+///
+/// impl SomeTrait for MyEnum {
+///     fn method(&self) -> T { dispatch!(self.method()) }
+/// }
+/// ```
+#[macro_export]
+macro_rules! dispatch {
+    ([$($variant:ident),+ $(,)?] $self:ident . $method:ident $args:tt) => {
+        match $self {
+            $( Self::$variant(v) => v.$method $args, )+
+        }
+    };
+}
+
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
@@ -128,10 +153,22 @@ mod tests {
 
     #[test]
     fn hex_snip_middle_boundary() {
+        // Exactly SHOW_LEN*2 = 16 bytes: should use full hex (no "..").
         let short: Vec<u8> = (0..16).collect();
-        assert!(hex_snip_middle(&short).ends_with("0e0f"));
+        let s = hex_snip_middle(&short);
+        assert!(!s.contains(".."), "16 bytes should not be truncated");
+        assert!(s.ends_with("0e0f"));
+
+        // 17 bytes: one over the boundary, should be truncated.
+        let just_over: Vec<u8> = (0..17).collect();
+        assert!(hex_snip_middle(&just_over).contains(".."));
+
+        // 20 bytes: truncated, check first 8 and last 8 bytes are exact.
         let long: Vec<u8> = (0..20).collect();
         let s = hex_snip_middle(&long);
-        assert!(s.starts_with("[20]: 00") && s.contains("..") && s.ends_with("1213"));
+        assert!(s.starts_with("[20]: 0001020304050607"));
+        assert!(s.contains(".."));
+        // Last 8 bytes (12..20 = 0x0c..0x13) must be exactly "0c0d0e0f10111213".
+        assert!(s.ends_with("0c0d0e0f10111213"));
     }
 }

@@ -1,0 +1,29 @@
+[DEFAULT]
+dupe-manifest=true
+prefs = [
+  "browser.settings-redesign.enabled=false",
+]
+support-files = [
+  "head.js",
+]
+tags = "os_integration"
+
+["browser_experimental_features.js"]
+
+["browser_experimental_features_filter.js"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1969933
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1969933
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # Bug 1969933
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1969933
+  "os == 'win' && os_version == '11.26100' && arch == 'x86'", # Bug 1969933
+  "os == 'win' && os_version == '11.26200' && arch == 'x86'", # Bug 1969933
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 1969933
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64'", # Bug 1969933
+]
+
+["browser_experimental_features_hidden_when_not_public.js"]
+
+["browser_experimental_features_resetall.js"]
+
+["browser_experimental_features_studies_disabled.js"]

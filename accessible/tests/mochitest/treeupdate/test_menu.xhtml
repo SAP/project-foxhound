@@ -17,73 +17,43 @@
 
   <script type="application/javascript">
   <![CDATA[
-    ////////////////////////////////////////////////////////////////////////////
-    // Invokers
+    async function doTest() {
+      let menuNode = getNode("menu");
 
-    function openMenu(aID)
-    {
-      this.menuNode = getNode(aID);
-
-      this.eventSeq = [
-        new invokerChecker(EVENT_FOCUS, this.menuNode)
-      ];
-
-      this.invoke = function openMenu_invoke()
-      {
-        var tree;
-        if (LINUX || SOLARIS) {
-          tree =
-            { PARENT_MENUITEM: [ ] };
-
-        } else {
-          tree =
-            { PARENT_MENUITEM: [
-              { MENUPOPUP: [ ] }
-            ] };
-        }
-        testAccessibleTree(aID, tree);
-
-        // Show menu.
-        this.menuNode.open = true;
+      let tree;
+      if (LINUX || SOLARIS) {
+        tree =
+          { PARENT_MENUITEM: [] };
+      } else {
+        tree =
+          { PARENT_MENUITEM: [
+            { MENUPOPUP: [] },
+          ] };
       }
+      testAccessibleTree("menu", tree);
 
-      this.finalCheck = function openMenu_finalCheck()
-      {
-        var tree;
-        if (LINUX || SOLARIS) {
-          tree =
-            { PARENT_MENUITEM: [
-              { MENUITEM: [ ] },
-              { MENUITEM: [ ] }
-            ] };
+      let focused = waitForEvent(EVENT_FOCUS, menuNode);
+      menuNode.open = true;
+      await focused;
 
-        } else {
-          tree =
-            { PARENT_MENUITEM: [
-              { MENUPOPUP: [
-                { MENUITEM: [ ] },
-                { MENUITEM: [ ] }
-              ] }
-            ] };
-        }
-        testAccessibleTree(aID, tree);
+      if (LINUX || SOLARIS) {
+        tree =
+          { PARENT_MENUITEM: [
+            { MENUITEM: [] },
+            { MENUITEM: [] },
+          ] };
+      } else {
+        tree =
+          { PARENT_MENUITEM: [
+            { MENUPOPUP: [
+              { MENUITEM: [] },
+              { MENUITEM: [] },
+            ] },
+          ] };
       }
+      testAccessibleTree("menu", tree);
 
-      this.getID = function openMenu_getID()
-      {
-        return "open menu " + prettyName(aID);
-      }
-    }
-
-    ////////////////////////////////////////////////////////////////////////////
-    // Test
-
-    var gQueue = null;
-    function doTest()
-    {
-      gQueue = new eventQueue();
-      gQueue.push(new openMenu("menu"));
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();
@@ -114,7 +84,7 @@
     <vbox flex="1">
       <menubar>
         <menu id="menu" label="menu">
-          <menupopup native="false">
+          <menupopup nonnative="">
             <menuitem label="menuitem"/>
             <menuitem label="menuitem"/>
           </menupopup>

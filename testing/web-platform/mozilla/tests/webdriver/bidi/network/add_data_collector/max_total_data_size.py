@@ -7,6 +7,9 @@ from tests.bidi.network import (
 )
 from webdriver.bidi import error
 
+pytestmark = pytest.mark.asyncio
+
+
 MAX_TOTAL_SIZE = 1000
 
 # Prepare various data sizes to test against a max total size of 1000
@@ -55,13 +58,6 @@ async def send_request(wait_for_event, inline, fetch, wait_for_future_safe):
     return _send_request
 
 
-@pytest.mark.capabilities({
-    "moz:firefoxOptions": {
-        "prefs": {
-            "remote.network.maxTotalDataSize": MAX_TOTAL_SIZE,
-        },
-    },
-})
 @pytest.mark.parametrize(
     "mode",
     [
@@ -70,7 +66,6 @@ async def send_request(wait_for_event, inline, fetch, wait_for_future_safe):
         "request or response",
     ],
 )
-@pytest.mark.asyncio
 async def test_max_total_data_size(
     bidi_session,
     setup_network_test,
@@ -78,7 +73,9 @@ async def test_max_total_data_size(
     add_data_collector,
     send_request,
     mode,
+    use_pref,
 ):
+    await use_pref("remote.network.maxTotalDataSize", MAX_TOTAL_SIZE)
     await setup_network_test(
         events=[
             BEFORE_REQUEST_SENT_EVENT,

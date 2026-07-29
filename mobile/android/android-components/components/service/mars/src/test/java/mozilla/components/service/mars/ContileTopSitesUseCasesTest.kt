@@ -28,8 +28,6 @@ class ContileTopSitesUseCasesTest {
         ContileTopSitesUseCases().refreshContileTopSites.invoke()
 
         verify(provider).getTopSites(eq(false))
-
-        Unit
     }
 
     @Test(expected = IOException::class)

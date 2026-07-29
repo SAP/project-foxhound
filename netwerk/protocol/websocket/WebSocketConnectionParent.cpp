@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -52,8 +50,9 @@ mozilla::ipc::IPCResult WebSocketConnectionParent::RecvOnError(
   LOG(("WebSocketConnectionParent::RecvOnError %p\n", this));
   MOZ_ASSERT(mBackgroundThread->IsOnCurrentThread());
 
-  MOZ_ASSERT(mListener);
-  mListener->OnError(aStatus);
+  if (mListener) {
+    mListener->OnError(aStatus);
+  }
   return IPC_OK();
 }
 
@@ -72,8 +71,9 @@ mozilla::ipc::IPCResult WebSocketConnectionParent::RecvOnTCPClosed() {
   LOG(("WebSocketConnectionParent::RecvOnTCPClosed %p\n", this));
   MOZ_ASSERT(mBackgroundThread->IsOnCurrentThread());
 
-  MOZ_ASSERT(mListener);
-  mListener->OnTCPClosed();
+  if (mListener) {
+    mListener->OnTCPClosed();
+  }
   return IPC_OK();
 }
 
@@ -82,11 +82,16 @@ mozilla::ipc::IPCResult WebSocketConnectionParent::RecvOnDataReceived(
   LOG(("WebSocketConnectionParent::RecvOnDataReceived %p\n", this));
   MOZ_ASSERT(mBackgroundThread->IsOnCurrentThread());
 
-  MOZ_ASSERT(mListener);
+  if (!mListener) {
+    return IPC_OK();
+  }
+
   uint8_t* buffer = const_cast<uint8_t*>(aData.Elements());
   nsresult rv = mListener->OnDataReceived(buffer, aData.Length());
   if (NS_FAILED(rv)) {
-    mListener->OnError(rv);
+    RefPtr<WebSocketConnectionListener> listener;
+    listener.swap(mListener);
+    listener->OnError(rv);
   }
 
   return IPC_OK();

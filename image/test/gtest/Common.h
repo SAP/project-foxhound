@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -529,12 +528,16 @@ ImageTestCase GreenFirstFrameAnimatedWebPTestCase();
 ImageTestCase GreenFirstFrameAnimatedAVIFTestCase();
 #ifdef MOZ_JXL
 ImageTestCase GreenFirstFrameAnimatedJXLTestCase();
+ImageTestCase LongAnimatedJXLTestCase();
 #endif
 
 ImageTestCase BlendAnimatedGIFTestCase();
 ImageTestCase BlendAnimatedPNGTestCase();
 ImageTestCase BlendAnimatedWebPTestCase();
 ImageTestCase BlendAnimatedAVIFTestCase();
+#ifdef MOZ_JXL
+ImageTestCase BlendAnimatedJXLTestCase();
+#endif
 
 ImageTestCase CorruptTestCase();
 ImageTestCase CorruptBMPWithTruncatedHeader();
@@ -591,9 +594,15 @@ ImageTestCase TransparentAVIFTestCase();
 
 #ifdef MOZ_JXL
 ImageTestCase GreenJXLTestCase();
+ImageTestCase ProgressiveJXLTestCase();
 ImageTestCase DownscaledJXLTestCase();
 ImageTestCase LargeJXLTestCase();
 ImageTestCase TransparentJXLTestCase();
+ImageTestCase CorruptJXLTestCase();
+ImageTestCase PerfRgbLosslessJXLTestCase();
+ImageTestCase PerfRgbAlphaLosslessJXLTestCase();
+ImageTestCase PerfRgbLossyJXLTestCase();
+ImageTestCase PerfRgbAlphaLossyJXLTestCase();
 #endif
 
 ImageTestCase ExifResolutionTestCase();

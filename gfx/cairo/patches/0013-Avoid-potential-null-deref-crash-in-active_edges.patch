@@ -1,0 +1,36 @@
+From 13876e66871bae9af054b1bcbfd55f6226a8be80 Mon Sep 17 00:00:00 2001
+From: Jonathan Kew <jkew@mozilla.com>
+Date: Wed, 22 Apr 2026 13:00:22 -0700
+Subject: [PATCH 13/29] Avoid potential null-deref crash in active_edges
+
+---
+ src/cairo-polygon-intersect.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/src/cairo-polygon-intersect.c b/src/cairo-polygon-intersect.c
+index 001e55ee0..2277e14e5 100644
+--- a/src/cairo-polygon-intersect.c
++++ b/src/cairo-polygon-intersect.c
+@@ -1167,7 +1167,7 @@ active_edges (cairo_bo_edge_t		*left,
+ 	    } while (1);
+ 
+ 	    right = left->next;
+-	    do {
++	    while (right) {
+ 		if unlikely ((right->deferred.other))
+ 		    edges_end (right, top, polygon);
+ 
+@@ -1179,7 +1179,9 @@ active_edges (cairo_bo_edge_t		*left,
+ 		}
+ 
+ 		right = right->next;
+-	    } while (1);
++	    };
++	    if (! right)
++		return;
+ 
+ 	    edges_start_or_continue (left, right, top, polygon);
+ 
+-- 
+2.53.0
+

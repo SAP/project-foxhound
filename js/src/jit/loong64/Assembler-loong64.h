@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -809,19 +807,18 @@ class Operand {
 };
 
 // int check.
-inline bool is_intN(int64_t x, unsigned n) {
+inline constexpr bool is_intN(int64_t x, unsigned n) {
   MOZ_ASSERT((0 < n) && (n < 64));
   int64_t limit = static_cast<int64_t>(1) << (n - 1);
   return (-limit <= x) && (x < limit);
 }
 
-inline bool is_uintN(int32_t x, unsigned n) {
-  MOZ_ASSERT((0 < n) && (n < (sizeof(x) * 8)));
+inline constexpr bool is_uintN(int64_t x, unsigned n) {
+  MOZ_ASSERT((0 < n) && (n < 64));
   return !(x >> n);
 }
 
-static constexpr int32_t SliceSize = 1024;
-typedef js::jit::AssemblerBuffer<SliceSize, Instruction> LOONGBuffer;
+typedef js::jit::AssemblerBuffer<Instruction> LOONGBuffer;
 
 class LOONGBufferWithExecutableCopy : public LOONGBuffer {
  public:
@@ -829,21 +826,12 @@ class LOONGBufferWithExecutableCopy : public LOONGBuffer {
     if (this->oom()) {
       return;
     }
-
-    for (Slice* cur = head; cur != nullptr; cur = cur->getNext()) {
-      memcpy(buffer, &cur->instructions, cur->length());
-      buffer += cur->length();
-    }
+    memcpy(buffer, this->data(), this->size());
   }
 
   bool appendRawCode(const uint8_t* code, size_t numBytes) {
     if (this->oom()) {
       return false;
-    }
-    while (numBytes > SliceSize) {
-      this->putBytes(SliceSize, code);
-      numBytes -= SliceSize;
-      code += SliceSize;
     }
     this->putBytes(numBytes, code);
     return !this->oom();

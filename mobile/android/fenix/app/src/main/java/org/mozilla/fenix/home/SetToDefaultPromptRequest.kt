@@ -15,8 +15,8 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.annotation.RequiresApi
 import mozilla.components.support.utils.DateTimeProvider
 import org.mozilla.fenix.HomeActivity
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.openSetDefaultBrowserOption
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.utils.Settings
 import java.lang.ref.WeakReference
 
@@ -38,6 +38,8 @@ private const val MINIMUM_INTERACTION_DURATION_MS = 300
  * @param settings The [Settings] instance used to access and reset the prompt timestamp.
  * @param dateTimeProvider A provider used to retrieve the current system time, allowing for consistent
  * time calculations and easier unit testing.
+ * @param isChecklistTask A boolean flag indicating whether it's triggered from a checklist flow.
+ * When true and the browser is already set as default, we avoid redirecting the user to device settings.
  * @param navigationAction A lambda function that executes the navigation to the system's default
  * app settings screen.
  */
@@ -45,14 +47,18 @@ fun maybeNavigateToSystemSetToDefaultAction(
     resultCode: Int,
     settings: Settings,
     dateTimeProvider: DateTimeProvider,
+    isChecklistTask: Boolean = false,
     navigationAction: () -> Unit,
 ) {
-    if (shouldNavigateToAppSettingsLauncher(
-            resultCode,
-            settings.setToDefaultPromptRequested,
-            dateTimeProvider,
-        )
-    ) {
+    val promptBlockedBySystem = wasPromptBlockedBySystem(
+        resultCode,
+        settings.setToDefaultPromptRequested,
+        dateTimeProvider,
+    )
+    val isEligibleForAppSettingsNavigation = settings.isDefaultBrowser && !isChecklistTask
+    val shouldNavigateToAppSettingsLauncher = promptBlockedBySystem || isEligibleForAppSettingsNavigation
+
+    if (shouldNavigateToAppSettingsLauncher) {
         navigationAction()
     }
 
@@ -88,7 +94,7 @@ fun maybeRequestDefaultBrowserPrompt(
 ) {
     val activity = activityRef.get() ?: return
 
-    activity.settings().setToDefaultPromptRequested = System.currentTimeMillis()
+    activity.components.settings.setToDefaultPromptRequested = System.currentTimeMillis()
 
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
         activity.openSetDefaultBrowserOption()
@@ -110,10 +116,9 @@ fun maybeRequestDefaultBrowserPrompt(
  * displayed, used to calculate the interaction duration.
  * @param dateTimeProvider A provider used to retrieve the current system time, allowing for consistent
  * time calculations and easier unit testing.
- * @return True if the prompt was likely blocked by the system (detected by a very short interaction time)
- * or if the user explicitly accepted the prompt, indicating a need for further configuration in Settings.
+ * @return True if the prompt was likely blocked by system.
  */
-private fun shouldNavigateToAppSettingsLauncher(
+private fun wasPromptBlockedBySystem(
     resultCode: Int,
     promptRequestTimestamp: Long,
     dateTimeProvider: DateTimeProvider,

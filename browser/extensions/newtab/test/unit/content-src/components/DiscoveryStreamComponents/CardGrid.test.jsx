@@ -89,6 +89,76 @@ describe("<CardGrid>", () => {
     assert.ok(wrapper.find(TopicsWidget).exists());
   });
 
+  it("should render ds-card-grid-container as outer wrapper", () => {
+    wrapper.setProps({ data: { recommendations: [] } });
+    assert.ok(wrapper.find(".ds-card-grid-container").exists());
+  });
+
+  it("should render nova header h2 when nova enabled and sections disabled", () => {
+    wrapper.setProps({
+      data: { recommendations: [] },
+      Prefs: {
+        ...INITIAL_STATE.Prefs,
+        values: {
+          ...INITIAL_STATE.Prefs.values,
+          "nova.enabled": true,
+          "discoverystream.sections.enabled": false,
+        },
+      },
+    });
+    const header = wrapper.find("h2.ds-header");
+    assert.ok(header.exists());
+    assert.equal(header.prop("data-l10n-id"), "newtab-section-header-stories");
+  });
+
+  it("should not render nova header h2 when nova disabled", () => {
+    wrapper.setProps({
+      data: { recommendations: [] },
+      title: "My Title",
+      Prefs: {
+        ...INITIAL_STATE.Prefs,
+        values: {
+          ...INITIAL_STATE.Prefs.values,
+          "nova.enabled": false,
+          "discoverystream.sections.enabled": false,
+        },
+      },
+    });
+    assert.notOk(wrapper.find("h2.ds-header").exists());
+    assert.ok(wrapper.find(".ds-header").exists());
+  });
+
+  it("should not render nova header h2 when sections enabled", () => {
+    wrapper.setProps({
+      data: { recommendations: [] },
+      Prefs: {
+        ...INITIAL_STATE.Prefs,
+        values: {
+          ...INITIAL_STATE.Prefs.values,
+          "nova.enabled": true,
+          "discoverystream.sections.enabled": true,
+        },
+      },
+    });
+    assert.notOk(wrapper.find("h2.ds-header").exists());
+  });
+
+  it("should render title div header when not in nova mode", () => {
+    wrapper.setProps({
+      data: { recommendations: [] },
+      title: "Test Title",
+      Prefs: {
+        ...INITIAL_STATE.Prefs,
+        values: {
+          ...INITIAL_STATE.Prefs.values,
+          "nova.enabled": false,
+        },
+      },
+    });
+    assert.ok(wrapper.find(".ds-header .title").exists());
+    assert.equal(wrapper.find(".ds-header .title").text(), "Test Title");
+  });
+
   it("should render AdBanner if enabled", () => {
     const commonProps = {
       ...INITIAL_STATE,

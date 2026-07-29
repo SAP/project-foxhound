@@ -22,7 +22,7 @@ add_task(async function test_SET_SEARCH_MODE() {
     isGeneralPurposeEngine: true,
     source: 3,
     isPreview: false,
-    entry: "other",
+    entry: "messagingSystem",
   };
 
   let action = {

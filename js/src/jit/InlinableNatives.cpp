@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -262,6 +260,7 @@ bool js::jit::CanInlineNativeCrossRealm(InlinableNative native) {
     case InlinableNative::DataViewSetBigUint64:
     case InlinableNative::DataViewByteLength:
     case InlinableNative::DataViewByteOffset:
+    case InlinableNative::Date:
     case InlinableNative::DateGetTime:
     case InlinableNative::DateGetFullYear:
     case InlinableNative::DateGetMonth:
@@ -270,6 +269,8 @@ bool js::jit::CanInlineNativeCrossRealm(InlinableNative native) {
     case InlinableNative::DateGetHours:
     case InlinableNative::DateGetMinutes:
     case InlinableNative::DateGetSeconds:
+    case InlinableNative::DateNow:
+    case InlinableNative::DateParse:
     case InlinableNative::FunctionBind:
     case InlinableNative::MapConstructor:
     case InlinableNative::MapGet:

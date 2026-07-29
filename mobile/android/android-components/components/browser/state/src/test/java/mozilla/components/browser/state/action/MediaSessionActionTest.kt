@@ -12,9 +12,9 @@ import mozilla.components.browser.state.state.createTab
 import mozilla.components.concept.engine.mediasession.MediaSession
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
+import kotlin.test.assertNotNull
 
 class MediaSessionActionTest {
     @Test
@@ -37,7 +37,7 @@ class MediaSessionActionTest {
 
         val mediaSessionState: MediaSessionState? = state.findTab("test-tab")?.mediaSessionState
         assertNotNull(mediaSessionState)
-        assertEquals(mediaSessionController, mediaSessionState?.controller)
+        assertEquals(mediaSessionController, mediaSessionState.controller)
     }
 
     @Test
@@ -98,8 +98,8 @@ class MediaSessionActionTest {
 
         val mediaSessionState: MediaSessionState? = state.findTab("test-tab")?.mediaSessionState
         assertNotNull(mediaSessionState)
-        assertEquals(mediaSessionController, mediaSessionState?.controller)
-        assertEquals(metadata, mediaSessionState?.metadata)
+        assertEquals(mediaSessionController, mediaSessionState.controller)
+        assertEquals(metadata, mediaSessionState.metadata)
     }
 
     @Test
@@ -131,8 +131,8 @@ class MediaSessionActionTest {
 
         val mediaSessionState: MediaSessionState? = state.findTab("test-tab")?.mediaSessionState
         assertNotNull(mediaSessionState)
-        assertEquals(mediaSessionController, mediaSessionState?.controller)
-        assertEquals(playbackState, mediaSessionState?.playbackState)
+        assertEquals(mediaSessionController, mediaSessionState.controller)
+        assertEquals(playbackState, mediaSessionState.playbackState)
     }
 
     @Test
@@ -164,8 +164,8 @@ class MediaSessionActionTest {
 
         val mediaSessionState: MediaSessionState? = state.findTab("test-tab")?.mediaSessionState
         assertNotNull(mediaSessionState)
-        assertEquals(mediaSessionController, mediaSessionState?.controller)
-        assertEquals(features, mediaSessionState?.features)
+        assertEquals(mediaSessionController, mediaSessionState.controller)
+        assertEquals(features, mediaSessionState.features)
     }
 
     @Test
@@ -197,8 +197,8 @@ class MediaSessionActionTest {
 
         val mediaSessionState: MediaSessionState? = state.findTab("test-tab")?.mediaSessionState
         assertNotNull(mediaSessionState)
-        assertEquals(mediaSessionController, mediaSessionState?.controller)
-        assertEquals(positionState, mediaSessionState?.positionState)
+        assertEquals(mediaSessionController, mediaSessionState.controller)
+        assertEquals(positionState, mediaSessionState.positionState)
     }
 
     @Test
@@ -229,8 +229,8 @@ class MediaSessionActionTest {
 
         val mediaSessionState: MediaSessionState? = state.findTab("test-tab")?.mediaSessionState
         assertNotNull(mediaSessionState)
-        assertEquals(mediaSessionController, mediaSessionState?.controller)
-        assertEquals(true, mediaSessionState?.muted)
+        assertEquals(mediaSessionController, mediaSessionState.controller)
+        assertEquals(true, mediaSessionState.muted)
     }
 
     @Test
@@ -263,9 +263,9 @@ class MediaSessionActionTest {
 
         val mediaSessionState: MediaSessionState? = state.findTab("test-tab")?.mediaSessionState
         assertNotNull(mediaSessionState)
-        assertEquals(mediaSessionController, mediaSessionState?.controller)
-        assertEquals(true, mediaSessionState?.fullscreen)
-        assertEquals(elementMetadata, mediaSessionState?.elementMetadata)
+        assertEquals(mediaSessionController, mediaSessionState.controller)
+        assertEquals(true, mediaSessionState.fullscreen)
+        assertEquals(elementMetadata, mediaSessionState.elementMetadata)
     }
 
     @Test

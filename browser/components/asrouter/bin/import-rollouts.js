@@ -194,14 +194,14 @@ async function main() {
     `
     Usage
       $ node bin/import-rollouts.js [options]
-  
+
     Options
       -c ID, --collection ID   The Nimbus collection ID to import from
                                default: ${DEFAULT_COLLECTION_ID}
       -e, --experiments        Import all messaging experiments, not just rollouts
       -s, --skip-validation    Skip validation of experiments and messages
       -h, --help               Show this help message
-  
+
     Examples
       $ node bin/import-rollouts.js --collection nimbus-preview
       $ ./mach npm run import-rollouts --prefix=browser/components/asrouter -- -e

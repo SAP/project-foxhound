@@ -58,6 +58,17 @@ where `actor` is the name of the non-existent actor. (It is strange to receive m
 
 Clients should silently ignore packet properties they do not recognize. We expect that, as the protocol evolves, we will specify new properties that can appear in existing packets, and experimental implementations will do the same.
 
+### Logging RDP Packets
+
+You can easily trace all RDP Packets to stdout, or in the Browser Console by using MOZ_LOG.
+
+```
+$ MOZ_LOG="devtools_rdp:3" ./mach run
+[...]
+[Parent 258112: Main Thread]: I/devtools_rdp log: -> ({type:"connect", frontendVersion:"152.0a1", to:"root"})
+[Parent 258112: Main Thread]: I/devtools_rdp log: <- ({from:"root"})
+```
+
 ### Common Patterns of Actor Communication
 
 Each type of actor specifies which packets it can receive, which it might send, and when it can do each. Although in principle these interaction rules could be complex, in practice most actors follow one of two simple patterns:
@@ -296,7 +307,6 @@ and sending a ["prototypeAndProperties"](#finding-an-object-s-prototype-and-prop
 }
 ```
 
-
 Sending a ["prototypeAndProperties"](#finding-an-object-s-prototype-and-properties) request to an object actor referring to a DOM mouse event might produce the following reply:
 
 ```
@@ -351,7 +361,6 @@ with a *name*:<descriptor> pair for each safe getter the object inherits from it
 
 ##### Finding an Object's Prototype
 
-
 To find an object's prototype, a client can send the object's grip's actor a request of the form:
 
 ```
@@ -365,7 +374,6 @@ to which the grip actor replies:
 ```
 
 where *prototype* is a grip on the object's prototype (possibly `{ "type":"null" }`).
-
 
 ##### Listing an Object's Own Properties' Names
 
@@ -1426,7 +1434,7 @@ then we would hit that breakpoint, eliciting a packet like the following:
 You can see here the three nested environment forms, starting with the `environment` property of the top stack frame, reported in the pause:
 
 * The first environment form shows the environment record created by the call to `g`, with the string `"argument to g"` passed as the value of `y`.
-* Because `g` is nested within `f`, each function object generated for `g` captures the environment of a call to the enclosing function `f`.  Thus, the next thing on `g`'s scope chain is an environment form for the call to `f`, where `"argument to f"` was passed as the vale of `x`.
+* Because `g` is nested within `f`, each function object generated for `g` captures the environment of a call to the enclosing function `f`. Thus, the next thing on `g`'s scope chain is an environment form for the call to `f`, where `"argument to f"` was passed as the vale of `x`.
 * Because `f` is a top-level function, the (only) function object for `f` closes over the global object. This is the "type":"object" environment shown as the parent of `f`'s environment record.
 * Because the global object is at the end of the scope chain, its environment form has no `parent` property.
 

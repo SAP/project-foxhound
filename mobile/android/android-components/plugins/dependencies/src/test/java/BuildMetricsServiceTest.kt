@@ -27,7 +27,7 @@ class BuildMetricsServiceTest {
 
         service.close()
 
-        val metricsFile = File(tempDir, "gradle/build/metrics/build-metrics-$suffix.json")
+        val metricsFile = File(tempDir, "build-metrics-$suffix.json")
         assertTrue(metricsFile.exists())
 
         val metrics = JsonSlurper().parseText(metricsFile.readText()) as Map<*, *>
@@ -56,7 +56,7 @@ class BuildMetricsServiceTest {
 
         service.close()
 
-        val metricsFile = File(tempDir, "gradle/build/metrics/build-metrics-$suffix.json")
+        val metricsFile = File(tempDir, "build-metrics-$suffix.json")
         val metrics = JsonSlurper().parseText(metricsFile.readText()) as Map<*, *>
 
         assertNotNull(metrics["invocation"])
@@ -75,7 +75,7 @@ class BuildMetricsServiceTest {
         service.onFinish(createTaskEvent(":task1"))
         service.close()
 
-        val metricsFile = File(tempDir, "gradle/build/metrics/build-metrics-$suffix.json")
+        val metricsFile = File(tempDir, "build-metrics-$suffix.json")
         assertTrue(metricsFile.exists())
     }
 
@@ -90,7 +90,7 @@ class BuildMetricsServiceTest {
 
         service.close()
 
-        val metricsFile = File(tempDir, "gradle/build/metrics/build-metrics-$suffix.json")
+        val metricsFile = File(tempDir, "build-metrics-$suffix.json")
         val metrics = JsonSlurper().parseText(metricsFile.readText()) as Map<*, *>
         val tasks = metrics["tasks"] as List<*>
 
@@ -107,7 +107,7 @@ class BuildMetricsServiceTest {
         service.onFinish(createTaskEvent(":testTask"))
         service.close()
 
-        val metricsFile = File(tempDir, "gradle/build/metrics/build-metrics-$suffix.json")
+        val metricsFile = File(tempDir, "build-metrics-$suffix.json")
         val metrics = JsonSlurper().parseText(metricsFile.readText()) as Map<*, *>
         val tasks = metrics["tasks"] as List<*>
         val task = tasks[0] as Map<*, *>
@@ -128,7 +128,7 @@ class BuildMetricsServiceTest {
 
         service.close()
 
-        val metricsFile = File(tempDir, "gradle/build/metrics/build-metrics-$suffix.json")
+        val metricsFile = File(tempDir, "build-metrics-$suffix.json")
         val metrics = JsonSlurper().parseText(metricsFile.readText()) as Map<*, *>
         val tasks = metrics["tasks"] as List<*>
 
@@ -147,24 +147,23 @@ class BuildMetricsServiceTest {
         service.onFinish(createTaskEvent(":task"))
         service.close()
 
-        val metricsDir = File(newTempDir, "gradle/build/metrics")
-        assertTrue(metricsDir.exists())
-        assertTrue(metricsDir.isDirectory)
+        assertTrue(newTempDir.exists())
+        assertTrue(newTempDir.isDirectory)
 
-        val metricsFile = File(metricsDir, "build-metrics-$suffix.json")
+        val metricsFile = File(newTempDir, "build-metrics-$suffix.json")
         assertTrue(metricsFile.exists())
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun createService(topobjdir: File, fileSuffix: String): BuildMetricsService {
-        val topojdirProperty = mock(org.gradle.api.provider.Property::class.java) as org.gradle.api.provider.Property<String>
-        `when`(topojdirProperty.get()).thenReturn(topobjdir.absolutePath)
+    private fun createService(outputDir: File, fileSuffix: String): BuildMetricsService {
+        val outputDirProperty = mock(org.gradle.api.provider.Property::class.java) as org.gradle.api.provider.Property<String>
+        `when`(outputDirProperty.get()).thenReturn(outputDir.absolutePath)
 
         val fileSuffixProperty = mock(org.gradle.api.provider.Property::class.java) as org.gradle.api.provider.Property<String>
         `when`(fileSuffixProperty.get()).thenReturn(fileSuffix)
 
         val parameters = object : BuildMetricsServiceParameters {
-            override val topobjdir = topojdirProperty
+            override val outputDir = outputDirProperty
             override val fileSuffix = fileSuffixProperty
         }
         return TestBuildMetricsService(parameters).apply {

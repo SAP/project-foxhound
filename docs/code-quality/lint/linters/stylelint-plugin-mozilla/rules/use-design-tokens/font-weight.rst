@@ -91,7 +91,7 @@ Examples of correct token usage for this rule:
 .. code-block:: css
 
   .heading-text {
-    font-weight: var(--heading-font-weight);
+    font-weight: var(--font-weight-heading);
   }
 
 .. code-block:: css

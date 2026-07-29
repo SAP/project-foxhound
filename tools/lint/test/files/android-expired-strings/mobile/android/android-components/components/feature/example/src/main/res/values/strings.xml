@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
+    <string name="ac_deprecated" tools:ignore="UnusedResources" moz:removedIn="149">Old AC text</string>
+    <!-- Same name as a fenix string, but deprecated here in AC -->
+    <string name="shadowed_name" tools:ignore="UnusedResources" moz:removedIn="148">AC deprecated version</string>
+    <string name="shared_name">AC version, still active</string>
+</resources>

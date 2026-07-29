@@ -160,12 +160,7 @@ const AVAILABLE_BREAKPOINTS = [
       generalEvent("control", "focus"),
       generalEvent("control", "focusin"),
       generalEvent("control", "focusout"),
-      // The condition should be removed when "dom.element.commandfor.enabled" is removed
-      generalEvent(
-        "control",
-        "command",
-        global => global && "CommandEvent" in global
-      ),
+      generalEvent("control", "command"),
       generalEvent("control", "reset"),
       generalEvent("control", "resize"),
       generalEvent("control", "scroll"),

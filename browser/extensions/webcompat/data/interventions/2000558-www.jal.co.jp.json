@@ -1,0 +1,18 @@
+{
+  "label": "www.jal.co.jp",
+  "bugs": {
+    "2000558": {
+      "issue": "broken-layout",
+      "matches": ["*://www.jal.co.jp/*"]
+    }
+  },
+  "css": {
+    "fix_table_rendering": ".fixed_th1st table { min-width: unset; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "css": ["fix_table_rendering"]
+    }
+  ]
+}

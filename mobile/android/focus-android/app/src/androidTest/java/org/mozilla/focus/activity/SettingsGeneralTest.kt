@@ -17,6 +17,7 @@ import org.junit.rules.TestWatcher
 import org.junit.runner.Description
 import org.mozilla.focus.activity.robots.homeScreen
 import org.mozilla.focus.ext.components
+import org.mozilla.focus.helpers.FocusTestRule
 import org.mozilla.focus.helpers.MainActivityIntentsTestRule
 import org.mozilla.focus.helpers.StringsHelper.AF_GENERAL_HEADING
 import org.mozilla.focus.helpers.StringsHelper.AF_HELP
@@ -30,13 +31,15 @@ import org.mozilla.focus.helpers.StringsHelper.FR_LANGUAGE_SYSTEM_DEFAULT
 import org.mozilla.focus.helpers.StringsHelper.FR_SETTINGS
 import org.mozilla.focus.helpers.TestHelper.exitToTop
 import org.mozilla.focus.helpers.TestHelper.verifyTranslatedTextExists
-import org.mozilla.focus.helpers.TestSetup
 import org.mozilla.focus.locale.Locales
 import org.mozilla.focus.testAnnotations.SmokeTest
 import org.mozilla.gecko.util.ThreadUtils.runOnUiThread
 
 // Tests for the General settings sub-menu: changing theme, locale and default browser
-class SettingsGeneralTest : TestSetup() {
+class SettingsGeneralTest {
+    @get:Rule(order = 0)
+    val focusTestRule: FocusTestRule = FocusTestRule()
+
     @get:Rule
     val mActivityTestRule = MainActivityIntentsTestRule(showFirstRun = false)
 

@@ -3,26 +3,26 @@
 DMD (short for "dark matter detector") is a heap profiler within
 Firefox. It has four modes.
 
--   "Dark Matter" mode. In this mode, DMD tracks the contents of the
-    heap, including which heap blocks have been reported by memory
-    reporters. It helps us reduce the "heap-unclassified" value in
-    Firefox's about:memory page, and also detects if any heap blocks
-    are reported twice. Originally, this was the only mode that DMD had,
-    which explains DMD's name. This is the default mode.
--   "Live" mode. In this mode, DMD tracks the current contents of the
-    heap. You can dump that information to file, giving a profile of the
-    live heap blocks at that point in time. This is good for
-    understanding how memory is used at an interesting point in time,
-    such as peak memory usage.
--   "Cumulative" mode. In this mode, DMD tracks both the past and
-    current contents of the heap. You can dump that information to file,
-    giving a profile of the heap usage for the entire session. This is
-    good for finding parts of the code that cause high heap churn, e.g.
-    by allocating many short-lived allocations.
--   "Heap scanning" mode. This mode is like live mode, but it also
-    records the contents of every live block in the log. This can be
-    used to investigate leaks by figuring out which objects might be
-    holding references to other objects.
+- "Dark Matter" mode. In this mode, DMD tracks the contents of the
+  heap, including which heap blocks have been reported by memory
+  reporters. It helps us reduce the "heap-unclassified" value in
+  Firefox's about:memory page, and also detects if any heap blocks
+  are reported twice. Originally, this was the only mode that DMD had,
+  which explains DMD's name. This is the default mode.
+- "Live" mode. In this mode, DMD tracks the current contents of the
+  heap. You can dump that information to file, giving a profile of the
+  live heap blocks at that point in time. This is good for
+  understanding how memory is used at an interesting point in time,
+  such as peak memory usage.
+- "Cumulative" mode. In this mode, DMD tracks both the past and
+  current contents of the heap. You can dump that information to file,
+  giving a profile of the heap usage for the entire session. This is
+  good for finding parts of the code that cause high heap churn, e.g.
+  by allocating many short-lived allocations.
+- "Heap scanning" mode. This mode is like live mode, but it also
+  records the contents of every live block in the log. This can be
+  used to investigate leaks by figuring out which objects might be
+  holding references to other objects.
 
 ## Building and Running
 
@@ -87,13 +87,13 @@ form dmd-<pid>.
 
 The ways to trigger a DMD snapshot are:
 
-1.  Visit about:memory and click the "Save" button under "Save DMD output".
-    The button won't be present in non-DMD builds, and will be grayed out
-    in DMD builds if DMD isn't enabled at start-up.
+1. Visit about:memory and click the "Save" button under "Save DMD output".
+   The button won't be present in non-DMD builds, and will be grayed out
+   in DMD builds if DMD isn't enabled at start-up.
 
-2.  If you wish to trigger DMD dumps from within C++ or JavaScript code,
-    you can use `nsIMemoryInfoDumper.dumpMemoryInfoToTempDir`. For example,
-    from JavaScript code you can do the following.
+2. If you wish to trigger DMD dumps from within C++ or JavaScript code,
+   you can use `nsIMemoryInfoDumper.dumpMemoryInfoToTempDir`. For example,
+   from JavaScript code you can do the following.
 
         const Cc = Components.classes;
         let mydumper = Cc["@mozilla.org/memory-info-dumper;1"]
@@ -107,8 +107,8 @@ The ways to trigger a DMD snapshot are:
     be anonymized; and `minimize` is a boolean that indicates if memory
     usage should be minimized first.
 
-3.  On Linux, you can send signal 34 to the firefox process, e.g.
-    with the following command.
+3. On Linux, you can send signal 34 to the firefox process, e.g.
+   with the following command.
 
         $ killall -34 firefox
 
@@ -130,11 +130,10 @@ The ways to trigger a DMD snapshot are:
 
 **NOTE:**
 
--   To dump DMD data from content processes, you'll need to disable the
-    sandbox with `MOZ_DISABLE_CONTENT_SANDBOX=1`.
--   MOZ_DMD_SHUTDOWN_LOG must (currently) include the trailing separator
-    (\'\'/\")
-
+- To dump DMD data from content processes, you'll need to disable the
+  sandbox with `MOZ_DISABLE_CONTENT_SANDBOX=1`.
+- MOZ_DMD_SHUTDOWN_LOG must (currently) include the trailing separator
+  (\'\'/\")
 
 ### Fennec
 
@@ -148,7 +147,6 @@ are very old. Hopefully they'll be more useful than not having them.
 In order to use DMD on Fennec you will need root access on the Android
 device. Instructions on how to root your device is outside the scope of
 this document.
-
 
 #### Build
 
@@ -258,18 +256,18 @@ For "dark matter" mode, `dmd.py`'s output describes how the live heap
 blocks are covered by memory reports. This output is broken into
 multiple sections.
 
-1.  "Invocation". This tells you how DMD was invoked, i.e. what
-    options were used.
-2.  "Twice-reported stack trace records". This tells you which heap
-    blocks were reported twice or more. The presence of any such records
-    indicates bugs in one or more memory reporters.
-3.  "Unreported stack trace records". This tells you which heap blocks
-    were not reported, which indicate where additional memory reporters
-    would be most helpful.
-4.  "Once-reported stack trace records": like the "Unreported stack
-    trace records" section, but for blocks reported once.
-5.  "Summary": gives measurements of the total heap, and the
-    unreported/once-reported/twice-reported portions of it.
+1. "Invocation". This tells you how DMD was invoked, i.e. what
+   options were used.
+2. "Twice-reported stack trace records". This tells you which heap
+   blocks were reported twice or more. The presence of any such records
+   indicates bugs in one or more memory reporters.
+3. "Unreported stack trace records". This tells you which heap blocks
+   were not reported, which indicate where additional memory reporters
+   would be most helpful.
+4. "Once-reported stack trace records": like the "Unreported stack
+   trace records" section, but for blocks reported once.
+5. "Summary": gives measurements of the total heap, and the
+   unreported/once-reported/twice-reported portions of it.
 
 The "Twice-reported stack trace records" and "Unreported stack trace
 records" sections are the most important, because they indicate ways in
@@ -371,15 +369,14 @@ is controlled by an option (see below).
 
 ### "Live" mode output
 
-
 For "live" mode, dmd.py's output describes what live heap blocks are
 present. This output is broken into multiple sections.
 
-1.  "Invocation". This tells you how DMD was invoked, i.e. what
-    options were used.
-2.  "Live stack trace records". This tells you which heap blocks were
-    present.
-3.  "Summary": gives measurements of the total heap.
+1. "Invocation". This tells you how DMD was invoked, i.e. what
+   options were used.
+2. "Live stack trace records". This tells you which heap blocks were
+   present.
+3. "Summary": gives measurements of the total heap.
 
 The individual records are similar to those output in "dark matter"
 mode.
@@ -390,11 +387,11 @@ For "cumulative" mode, dmd.py's output describes how the live heap
 blocks are covered by memory reports. This output is broken into
 multiple sections.
 
-1.  "Invocation". This tells you how DMD was invoked, i.e. what
-    options were used.
-2.  "Cumulative stack trace records". This tells you which heap blocks
-    were allocated during the session.
-3.  "Summary": gives measurements of the total (cumulative) heap.
+1. "Invocation". This tells you how DMD was invoked, i.e. what
+   options were used.
+2. "Cumulative stack trace records". This tells you which heap blocks
+   were allocated during the session.
+3. "Summary": gives measurements of the total (cumulative) heap.
 
 The individual records are similar to those output in "dark matter"
 mode.
@@ -436,29 +433,29 @@ stacks).
 `dmd.py` also takes options that control how it works. Run `dmd.py -h`
 for documentation. The following options are the most interesting ones.
 
--   `-f` / `--max-frames`. By default, records show up to 8 stack
-    frames. You can choose a smaller number, in which case more
-    allocations will be aggregated into each record, but you'll have
-    less context. Or you can choose a larger number, in which cases
-    allocations will be split across more records, but you will have
-    more context. There is no single best value, but values in the range
-    2..10 are often good. The maximum is 24.
+- `-f` / `--max-frames`. By default, records show up to 8 stack
+  frames. You can choose a smaller number, in which case more
+  allocations will be aggregated into each record, but you'll have
+  less context. Or you can choose a larger number, in which cases
+  allocations will be split across more records, but you will have
+  more context. There is no single best value, but values in the range
+  2..10 are often good. The maximum is 24.
 
--   `-a` / `--ignore-alloc-fns`. Many allocation stack traces start
-    with multiple frames that mention allocation wrapper functions, e.g.
-    `js_calloc()` calls `replace_calloc()`. This option filters these
-    out. It often helps improve the quality of the output when using a
-    small `--max-frames` value.
+- `-a` / `--ignore-alloc-fns`. Many allocation stack traces start
+  with multiple frames that mention allocation wrapper functions, e.g.
+  `js_calloc()` calls `replace_calloc()`. This option filters these
+  out. It often helps improve the quality of the output when using a
+  small `--max-frames` value.
 
--   `-s` / `--sort-by`. This controls how records are sorted. Acceptable
-    values are `usable` (the default), `req`, `slop` and `num-blocks`.
+- `-s` / `--sort-by`. This controls how records are sorted. Acceptable
+  values are `usable` (the default), `req`, `slop` and `num-blocks`.
 
--   `--clamp-contents`. For a heap scan log, this performs a
-    conservative pointer analysis on the contents of each block,
-    changing any value that is a pointer into the middle of a live block
-    into a pointer to the start of that block. All other values are
-    changes to null. In addition, all trailing nulls are removed from
-    the block contents.
+- `--clamp-contents`. For a heap scan log, this performs a
+  conservative pointer analysis on the contents of each block,
+  changing any value that is a pointer into the middle of a live block
+  into a pointer to the start of that block. All other values are
+  changes to null. In addition, all trailing nulls are removed from
+  the block contents.
 
 As an example that combines multiple options, if you apply the following
 command to a profile obtained in "live" mode:

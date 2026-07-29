@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -363,7 +361,9 @@ void BlobURLInputStream::RetrieveBlobData(const MutexAutoLock& aProofOfLock) {
 
   auto cleanupOnEarlyExit = MakeScopeExit([&] {
     mState = State::ERROR;
-    mError = NS_ERROR_FAILURE;
+    if (NS_SUCCEEDED(mError)) {
+      mError = NS_ERROR_FAILURE;
+    }
     NS_ReleaseOnMainThread("BlobURLInputStream::mChannel", mChannel.forget());
     NotifyWaitTargets(aProofOfLock);
   });
@@ -390,14 +390,9 @@ void BlobURLInputStream::RetrieveBlobData(const MutexAutoLock& aProofOfLock) {
   nsAutoString partKey;
   cookieJarSettings->GetPartitionKey(partKey);
 
-  bool ok = XRE_IsParentProcess();
-  if (!ok) {
-    // check if inner scheme of blobURL is not http and https
-    ok = !StringBeginsWith(mBlobURLSpec, "blob:http://"_ns) &&
-         !StringBeginsWith(mBlobURLSpec, "blob:https://"_ns);
-  }
-
-  if (ok) {
+  // If we're in the parent process, perform the fetch directly from the store.
+  // If we're in a content process, we'll instead perform the fetch over IPC.
+  if (XRE_IsParentProcess()) {
     RefPtr<BlobImpl> blobImpl;
 
     // Since revoked blobs are also retrieved, it is possible that the blob no
@@ -411,8 +406,8 @@ void BlobURLInputStream::RetrieveBlobData(const MutexAutoLock& aProofOfLock) {
       return;
     }
 
-    if (NS_WARN_IF(
-            NS_FAILED(StoreBlobImplStream(blobImpl.forget(), aProofOfLock)))) {
+    mError = StoreBlobImplStream(blobImpl.forget(), aProofOfLock);
+    if (NS_WARN_IF(NS_FAILED(mError))) {
       return;
     }
 
@@ -448,16 +443,19 @@ void BlobURLInputStream::RetrieveBlobData(const MutexAutoLock& aProofOfLock) {
               if (self->mState == State::WAITING) {
                 RefPtr<BlobImpl> blobImpl =
                     IPCBlobUtils::Deserialize(aResult.get_IPCBlob());
-                if (blobImpl && self->StoreBlobImplStream(blobImpl.forget(),
-                                                          lock) == NS_OK) {
-                  self->mState = State::READY;
-                  // By design, execution can only reach here when a caller has
-                  // called AsyncWait or AsyncLengthWait on this stream. The
-                  // underlying stream is valid, but the caller should not be
-                  // informed until that stream has data to read or it is
-                  // closed.
-                  self->WaitOnUnderlyingStream(lock);
-                  return;
+                if (blobImpl) {
+                  self->mError =
+                      self->StoreBlobImplStream(blobImpl.forget(), lock);
+                  if (NS_SUCCEEDED(self->mError)) {
+                    self->mState = State::READY;
+                    // By design, execution can only reach here when a caller
+                    // has called AsyncWait or AsyncLengthWait on this stream.
+                    // The underlying stream is valid, but the caller should not
+                    // be informed until that stream has data to read or it is
+                    // closed.
+                    self->WaitOnUnderlyingStream(lock);
+                    return;
+                  }
                 }
               } else {
                 MOZ_ASSERT(self->mState == State::CLOSED);
@@ -465,12 +463,14 @@ void BlobURLInputStream::RetrieveBlobData(const MutexAutoLock& aProofOfLock) {
                 self->NotifyWaitTargets(lock);
                 return;
               }
+            } else if (aResult.type() == BlobURLDataRequestResult::Tnsresult) {
+              self->mError = aResult.get_nsresult();
             }
             NS_WARNING("Blob data was not retrieved!");
             self->mState = State::ERROR;
-            self->mError = aResult.type() == BlobURLDataRequestResult::Tnsresult
-                               ? aResult.get_nsresult()
-                               : NS_ERROR_FAILURE;
+            if (NS_SUCCEEDED(self->mError)) {
+              self->mError = NS_ERROR_FAILURE;
+            }
             NS_ReleaseOnMainThread("BlobURLInputStream::mChannel",
                                    self->mChannel.forget());
             self->NotifyWaitTargets(lock);
@@ -493,20 +493,35 @@ nsresult BlobURLInputStream::StoreBlobImplStream(
   nsAutoString blobContentType;
   nsAutoCString channelContentType;
 
-  // If a Range header was in the request then fetch/XHR will have set a
-  // ContentRange on the channel earlier so we may slice the blob now.
   blobImpl->GetType(blobContentType);
-  const RefPtr<mozilla::net::ContentRange>& contentRange =
-      mChannel->ContentRange();
-  if (contentRange) {
+
+  // If a Range header was in the request then fetch/XHR will have set a request
+  // content range on the channel earlier so we may slice the blob now.
+  if (mChannel->GetRequestContentRange()) {
+    // Convert the requested content range into a response ContentRange. This
+    // ensures the range is within the blobImpl's size.
     IgnoredErrorResult result;
+    uint64_t size = blobImpl->GetSize(result);
+    if (NS_WARN_IF(result.Failed())) {
+      return NS_ERROR_NO_CONTENT;
+    }
+    auto contentRange = MakeRefPtr<mozilla::net::ContentRange>(
+        *mChannel->GetRequestContentRange(), size);
+    if (NS_WARN_IF(!contentRange->IsValid())) {
+      return NS_ERROR_NET_PARTIAL_TRANSFER;
+    }
+    MOZ_ALWAYS_SUCCEEDS(mChannel->SetResponseContentRange(contentRange));
+
+    // Using this content range, perform a slice over the BlobImpl.
     uint64_t start = contentRange->Start();
     uint64_t end = contentRange->End();
     RefPtr<BlobImpl> slice =
         blobImpl->CreateSlice(start, end - start + 1, blobContentType, result);
-    if (!result.Failed()) {
-      blobImpl = slice;
+    if (NS_WARN_IF(result.Failed())) {
+      return NS_ERROR_NET_PARTIAL_TRANSFER;
     }
+
+    blobImpl = slice;
   }
 
   mChannel->GetContentType(channelContentType);
@@ -546,6 +561,8 @@ nsresult BlobURLInputStream::StoreBlobImplStream(
   }
 
   mChannel->SetContentLength(mBlobSize);
+
+  mChannel->SetBackingBlob(blobImpl);
 
   nsCOMPtr<nsIInputStream> inputStream;
   blobImpl->CreateInputStream(getter_AddRefs(inputStream), errorResult);

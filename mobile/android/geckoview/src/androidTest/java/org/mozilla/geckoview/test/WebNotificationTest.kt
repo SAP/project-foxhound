@@ -6,7 +6,6 @@ import androidx.test.filters.MediumTest
 import org.hamcrest.Matchers.endsWith
 import org.hamcrest.Matchers.equalTo
 import org.hamcrest.Matchers.not
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeThat
 import org.junit.Before
@@ -18,6 +17,7 @@ import org.mozilla.geckoview.GeckoSession.PermissionDelegate
 import org.mozilla.geckoview.WebNotification
 import org.mozilla.geckoview.WebNotificationDelegate
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule
+import kotlin.test.assertNotNull
 
 const val VERY_LONG_IMAGE_URL = "https://example.com/this/is/a/very/long/address/that/is/meant/to/be/longer/than/is/one/hundred/and/fifth/characters/long/for/testing/imageurl/length.ico"
 

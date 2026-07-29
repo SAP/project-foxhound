@@ -23,7 +23,7 @@ android-gradle-build:
             MOZ_OBJDIR: obj-firefox
             PERFHERDER_EXTRA_OPTIONS: android-gradle-build
             TINDERBOX_OUTPUT: '1'
-        max-run-time: 3600
+        max-run-time: 7200
     run-on-repo-type: [hg]
     run:
         using: run-task

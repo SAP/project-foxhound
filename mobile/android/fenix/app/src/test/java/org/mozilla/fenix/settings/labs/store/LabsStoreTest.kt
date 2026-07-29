@@ -13,8 +13,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.R
-import org.mozilla.fenix.settings.labs.FeatureKey
-import org.mozilla.fenix.settings.labs.LabsFeature
+import org.mozilla.fenix.settings.labs.LabsItem
+import org.mozilla.fenix.settings.labs.LabsItemSlugs
 
 @RunWith(AndroidJUnit4::class)
 class LabsStoreTest {
@@ -39,92 +39,96 @@ class LabsStoreTest {
     }
 
     @Test
-    fun `WHEN UpdateFeatures action is dispatched THEN labsFeatures are updated`() = runTest {
+    fun `WHEN UpdateLabsItems action is dispatched THEN labsItems are updated`() = runTest {
         val store = LabsStore(initialState = LabsState.INITIAL)
 
-        assertTrue(store.state.labsFeatures.isEmpty())
+        assertTrue(store.state.labsItems.isEmpty())
 
-        val features = listOf(
-            LabsFeature(
-                key = FeatureKey.HOMEPAGE_AS_A_NEW_TAB,
-                name = R.string.firefox_labs_homepage_as_a_new_tab,
+        val items = listOf(
+            LabsItem(
+                slug = LabsItemSlugs.HOMEPAGE_AS_NEW_TAB,
+                title = R.string.firefox_labs_homepage_as_a_new_tab,
                 description = R.string.firefox_labs_homepage_as_a_new_tab_description,
-                enabled = false,
+                enrolled = false,
+                requiresRestart = true,
             ),
         )
-        store.dispatch(LabsAction.UpdateFeatures(features))
+        store.dispatch(LabsAction.UpdateLabsItems(items))
 
-        assertEquals(features, store.state.labsFeatures)
+        assertEquals(items, store.state.labsItems)
     }
 
     @Test
-    fun `WHEN RestoreDefaults action is dispatched THEN all features are disabled`() = runTest {
-        val features = listOf(
-            LabsFeature(
-                key = FeatureKey.HOMEPAGE_AS_A_NEW_TAB,
-                name = R.string.firefox_labs_homepage_as_a_new_tab,
+    fun `WHEN RestoreDefaults action is dispatched THEN all labs items are unenrolled`() = runTest {
+        val items = listOf(
+            LabsItem(
+                slug = LabsItemSlugs.HOMEPAGE_AS_NEW_TAB,
+                title = R.string.firefox_labs_homepage_as_a_new_tab,
                 description = R.string.firefox_labs_homepage_as_a_new_tab_description,
-                enabled = true,
+                enrolled = true,
+                requiresRestart = true,
             ),
         )
         val store = LabsStore(
             initialState = LabsState(
-                labsFeatures = features,
+                labsItems = items,
                 dialogState = DialogState.RestoreDefaults,
             ),
         )
 
         store.dispatch(LabsAction.RestoreDefaults)
 
-        store.state.labsFeatures.forEach {
-            assertFalse(it.enabled)
+        store.state.labsItems.forEach {
+            assertFalse(it.enrolled)
         }
         assertEquals(DialogState.Closed, store.state.dialogState)
     }
 
     @Test
-    fun `WHEN ToggleFeature action is dispatched THEN feature is toggled`() = runTest {
-        val feature = LabsFeature(
-            key = FeatureKey.HOMEPAGE_AS_A_NEW_TAB,
-            name = R.string.firefox_labs_homepage_as_a_new_tab,
+    fun `WHEN ToggleLabsItem action is dispatched THEN labs item is toggled`() = runTest {
+        val item = LabsItem(
+            slug = LabsItemSlugs.HOMEPAGE_AS_NEW_TAB,
+            title = R.string.firefox_labs_homepage_as_a_new_tab,
             description = R.string.firefox_labs_homepage_as_a_new_tab_description,
-            enabled = false,
+            enrolled = false,
+            requiresRestart = true,
         )
         val store = LabsStore(
             initialState = LabsState(
-                labsFeatures = listOf(feature),
-                dialogState = DialogState.ToggleFeature(feature),
+                labsItems = listOf(item),
+                dialogState = DialogState.ToggleLabsItem(item),
             ),
         )
 
-        assertFalse(store.state.labsFeatures.first().enabled)
+        assertFalse(store.state.labsItems.first().enrolled)
 
-        store.dispatch(LabsAction.ToggleFeature(feature))
+        store.dispatch(LabsAction.ToggleLabsItem(item))
 
-        assertTrue(store.state.labsFeatures.first().enabled)
+        assertTrue(store.state.labsItems.first().enrolled)
         assertEquals(DialogState.Closed, store.state.dialogState)
 
-        store.dispatch(LabsAction.ToggleFeature(feature))
+        store.dispatch(LabsAction.ToggleLabsItem(item))
 
-        assertFalse(store.state.labsFeatures.first().enabled)
+        assertFalse(store.state.labsItems.first().enrolled)
         assertEquals(DialogState.Closed, store.state.dialogState)
     }
 
     @Test
-    fun `WHEN ShowToggleFeatureDialog action is dispatched THEN dialogState is updated`() = runTest {
+    fun `WHEN ShowToggleLabsItemDialog action is dispatched THEN dialogState is updated`() = runTest {
         val store = LabsStore(initialState = LabsState.INITIAL)
-        val feature = LabsFeature(
-            key = FeatureKey.HOMEPAGE_AS_A_NEW_TAB,
-            name = R.string.firefox_labs_homepage_as_a_new_tab,
+        val item = LabsItem(
+            slug = LabsItemSlugs.HOMEPAGE_AS_NEW_TAB,
+            title = R.string.firefox_labs_homepage_as_a_new_tab,
             description = R.string.firefox_labs_homepage_as_a_new_tab_description,
-            enabled = false,
+            enrolled = false,
+            requiresRestart = true,
         )
 
         assertEquals(DialogState.Closed, store.state.dialogState)
 
-        store.dispatch(LabsAction.ShowToggleFeatureDialog(feature))
+        store.dispatch(LabsAction.ShowToggleLabsItemDialog(item))
 
-        assertEquals(DialogState.ToggleFeature(feature), store.state.dialogState)
+        assertEquals(DialogState.ToggleLabsItem(item), store.state.dialogState)
     }
 
     @Test
@@ -139,15 +143,16 @@ class LabsStoreTest {
 
     @Test
     fun `WHEN CloseDialog action is dispatched THEN dialogState is updated to Closed`() = runTest {
-        val feature = LabsFeature(
-            key = FeatureKey.HOMEPAGE_AS_A_NEW_TAB,
-            name = R.string.firefox_labs_homepage_as_a_new_tab,
+        val item = LabsItem(
+            slug = LabsItemSlugs.HOMEPAGE_AS_NEW_TAB,
+            title = R.string.firefox_labs_homepage_as_a_new_tab,
             description = R.string.firefox_labs_homepage_as_a_new_tab_description,
-            enabled = false,
+            enrolled = false,
+            requiresRestart = true,
         )
         val store = LabsStore(
             initialState = LabsState(
-                labsFeatures = listOf(feature),
+                labsItems = listOf(item),
                 dialogState = DialogState.RestoreDefaults,
             ),
         )

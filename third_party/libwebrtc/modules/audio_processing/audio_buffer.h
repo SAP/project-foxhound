@@ -21,6 +21,7 @@
 #include "api/audio/audio_view.h"
 #include "common_audio/channel_buffer.h"
 #include "common_audio/include/audio_util.h"
+#include "modules/audio_processing/capture_mixer/capture_mixer.h"
 #include "rtc_base/gtest_prod_util.h"
 
 namespace webrtc {
@@ -37,6 +38,7 @@ class AudioBuffer {
   static const int kSplitBandSize = 160;
   // TODO(tommi): Remove this (`AudioBuffer::kMaxSampleRate`) constant.
   static const int kMaxSampleRate = kMaxSampleRateHz;
+
   AudioBuffer(size_t input_rate,
               size_t input_num_channels,
               size_t buffer_rate,
@@ -44,16 +46,21 @@ class AudioBuffer {
               size_t output_rate,
               size_t output_num_channels);
 
+  AudioBuffer(
+      size_t input_rate,
+      size_t input_num_channels,
+      size_t buffer_rate,
+      size_t buffer_num_channels,
+      size_t output_rate,
+      AudioProcessing::Config::Pipeline::DownmixMethod downmix_method =
+          AudioProcessing::Config::Pipeline::DownmixMethod::kAverageChannels,
+      AudioProcessing::Config::Pipeline::DownmixMethod downmix_method_stereo =
+          AudioProcessing::Config::Pipeline::DownmixMethod::kAverageChannels);
+
   virtual ~AudioBuffer();
 
   AudioBuffer(const AudioBuffer&) = delete;
   AudioBuffer& operator=(const AudioBuffer&) = delete;
-
-  // Specify that downmixing should be done by selecting a single channel.
-  void set_downmixing_to_specific_channel(size_t channel);
-
-  // Specify that downmixing should be done by averaging all channels,.
-  void set_downmixing_by_averaging();
 
   // Set the number of channels in the buffer. The specified number of channels
   // cannot be larger than the specified buffer_num_channels. The number is also
@@ -89,12 +96,10 @@ class AudioBuffer {
   // 0 <= band < `num_bands_`
   // 0 <= sample < `num_split_frames_`
   const float* const* split_bands_const(size_t channel) const {
-    return split_data_.get() ? split_data_->bands(channel)
-                             : data_->bands(channel);
+    return split_data_ ? split_data_->bands(channel) : data_->bands(channel);
   }
   float* const* split_bands(size_t channel) {
-    return split_data_.get() ? split_data_->bands(channel)
-                             : data_->bands(channel);
+    return split_data_ ? split_data_->bands(channel) : data_->bands(channel);
   }
 
   // Returns a pointer array to the channels for a specific band.
@@ -105,7 +110,7 @@ class AudioBuffer {
   // 0 <= channel < `buffer_num_channels_`
   // 0 <= sample < `num_split_frames_`
   const float* const* split_channels_const(Band band) const {
-    if (split_data_.get()) {
+    if (split_data_) {
       return split_data_->channels(band);
     } else {
       return band == kBand0To8kHz ? data_->channels() : nullptr;
@@ -158,10 +163,13 @@ class AudioBuffer {
                            SetNumChannelsSetsChannelBuffersNumChannels);
   void RestoreNumChannels();
 
+  const AudioProcessing::Config::Pipeline::DownmixMethod downmix_method_;
+  const AudioProcessing::Config::Pipeline::DownmixMethod downmix_method_stereo_;
   const size_t input_num_frames_;
   const size_t input_num_channels_;
   const size_t buffer_num_frames_;
   const size_t buffer_num_channels_;
+  const size_t buffer_internal_num_channels_;
   const size_t output_num_frames_;
   const size_t output_num_channels_;
 
@@ -176,6 +184,7 @@ class AudioBuffer {
   std::vector<std::unique_ptr<PushSincResampler>> output_resamplers_;
   bool downmix_by_averaging_ = true;
   size_t channel_for_downmixing_ = 0;
+  CaptureMixer capture_mixer_;
 };
 
 }  // namespace webrtc

@@ -2,6 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+ChromeUtils.importESModule(
+  "chrome://browser/content/tabbrowser/tab-groups-list.mjs",
+  { global: "current" }
+);
+
 ChromeUtils.defineESModuleGetters(this, {
   AppMenuNotifications: "resource://gre/modules/AppMenuNotifications.sys.mjs",
   ASRouter: "resource:///modules/asrouter/ASRouter.sys.mjs",
@@ -94,6 +99,36 @@ const PanelUI = {
       }
     );
 
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "AIControlDefault",
+      "browser.ai.control.default",
+      "available",
+      (_pref, _previousValue, _newValue) => {
+        this._showAIMenuItem();
+      }
+    );
+
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "AIControlSmartWindow",
+      "browser.ai.control.smartWindow",
+      "default",
+      (_pref, _previousValue, _newValue) => {
+        this._showAIMenuItem();
+      }
+    );
+
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "tabGroupsAlternateMenu",
+      "browser.tabs.groups.alternateMenu",
+      false,
+      (_pref, _previousValue, _newValue) => {
+        this._showTabGroupsMenuItem();
+      }
+    );
+
     if (this.autoHideToolbarInFullScreen) {
       window.addEventListener("fullscreen", this);
     } else {
@@ -122,6 +157,7 @@ const PanelUI = {
     );
 
     this._showAIMenuItem();
+    this._showTabGroupsMenuItem();
     this._initialized = true;
   },
 
@@ -386,6 +422,9 @@ const PanelUI = {
       case "appMenu-history-button":
         this.showSubView("PanelUI-history", target);
         break;
+      case "appMenu-tab-groups-button":
+        this.showSubView("appMenu-tabGroupsListView", target);
+        break;
       case "appMenu-passwords-button":
         LoginHelper.openPasswordManager(window, { entryPoint: "Mainmenu" });
         break;
@@ -537,6 +576,7 @@ const PanelUI = {
         tempPanel.setAttribute("animate", "false");
       }
       tempPanel.setAttribute("context", "");
+
       document.getElementById("mainPopupSet").appendChild(tempPanel);
 
       let multiView = document.createXULElement("panelmultiview");
@@ -546,6 +586,16 @@ const PanelUI = {
       multiView.appendChild(viewNode);
       tempPanel.appendChild(multiView);
       viewNode.classList.add("cui-widget-panelview", "PanelUI-subView");
+
+      // Set a role and name on the panel.
+      // If the panelview provides either data-panelrole or
+      // data-panelname, use it.
+      tempPanel.role = viewNode.dataset.panelrole || "group";
+      if (viewNode.dataset.panelname) {
+        tempPanel.ariaLabel = viewNode.dataset.panelname;
+      } else {
+        tempPanel.ariaLabelledByElements = [aAnchor];
+      }
 
       let viewShown = false;
       let panelRemover = event => {
@@ -789,7 +839,7 @@ const PanelUI = {
 
   _onLibraryCommand(aEvent) {
     let button = aEvent.target;
-    let { BookmarkingUI, DownloadsPanel } = button.ownerGlobal;
+    let { BookmarkingUI, DownloadsPanel } = button.documentGlobal;
     switch (button.id) {
       case "appMenu-library-bookmarks-button":
         BookmarkingUI.showSubView(button);
@@ -1073,6 +1123,11 @@ const PanelUI = {
 
   _showAIMenuItem() {
     const isAIWindowActive = document.documentElement.hasAttribute("ai-window");
+    const isBlocked =
+      (this.AIControlSmartWindow === "default" &&
+        this.AIControlDefault === "blocked") ||
+      this.AIControlSmartWindow === "blocked";
+    const isSmartWindowAvailable = this.isAIWindowEnabled && !isBlocked;
     const aiMenuItem = PanelMultiView.getViewNode(
       document,
       "appMenu-new-ai-window-button"
@@ -1086,10 +1141,18 @@ const PanelUI = {
       "appMenu-chats-history-button"
     );
 
-    aiMenuItem.hidden = !this.isAIWindowEnabled || isAIWindowActive;
-    classicWindowMenuItem.hidden = !this.isAIWindowEnabled || !isAIWindowActive;
+    aiMenuItem.hidden = !isSmartWindowAvailable || isAIWindowActive;
+    classicWindowMenuItem.hidden = !isSmartWindowAvailable || !isAIWindowActive;
 
-    chatHistoryMenuItem.hidden = !this.isAIWindowEnabled || !isAIWindowActive;
+    chatHistoryMenuItem.hidden = !isSmartWindowAvailable || !isAIWindowActive;
+  },
+
+  _showTabGroupsMenuItem() {
+    const button = PanelMultiView.getViewNode(
+      document,
+      "appMenu-tab-groups-button"
+    );
+    button.hidden = !this.tabGroupsAlternateMenu;
   },
 
   _showBadge(notification) {

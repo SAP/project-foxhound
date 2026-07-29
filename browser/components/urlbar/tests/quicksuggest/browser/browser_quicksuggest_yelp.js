@@ -318,10 +318,10 @@ async function doShowLessFrequently({
   UrlbarPrefs.clear("yelp.minKeywordLength");
 }
 
-// Tests the "Not relevant" result menu dismissal command.
-add_task(async function resultMenu_not_relevant() {
+// Tests the "Dismiss" result menu dismissal command.
+add_task(async function resultMenu_dismiss() {
   await doDismiss({
-    menu: "not_relevant",
+    menu: "dismiss",
     assert: result => {
       Assert.ok(
         QuickSuggest.isResultDismissed(result),

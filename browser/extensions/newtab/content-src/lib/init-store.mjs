@@ -55,6 +55,35 @@ const messageMiddleware = () => next => action => {
   }
 };
 
+/**
+ * widgetsOptInMiddleware - expands a WIDGETS_OPT_IN action (dispatched by an
+ * OMC message via the asrouter-newtab-message component) into the underlying
+ * SetPref actions needed to enable the master widgets switch and each
+ * requested widget at its requested size. Flips both the `.system.` tier
+ * (the operator availability gate) and the user tier so a stale user-tier
+ * `false` (e.g. previously toggled off via the customize menu) can't silently
+ * suppress the opt-in. The original action is consumed here and not
+ * forwarded; routing for each SetPref is handled by messageMiddleware
+ * downstream.
+ */
+const widgetsOptInMiddleware =
+  ({ dispatch }) =>
+  next =>
+  action => {
+    if (action.type === at.WIDGETS_OPT_IN) {
+      dispatch(ac.SetPref("widgets.system.enabled", true));
+      for (const { id, size } of action.data?.widgets ?? []) {
+        dispatch(ac.SetPref(`widgets.system.${id}.enabled`, true));
+        dispatch(ac.SetPref(`widgets.${id}.enabled`, true));
+        if (size) {
+          dispatch(ac.SetPref(`widgets.${id}.size`, size));
+        }
+      }
+      return null;
+    }
+    return next(action);
+  };
+
 export const rehydrationMiddleware = ({ getState }) => {
   // NB: The parameter here is MiddlewareAPI which looks like a Store and shares
   // the same getState, so attached properties are accessible from the store.
@@ -119,7 +148,11 @@ export function initStore(reducers, initialState) {
     mergeStateReducer(combineReducers(reducers)),
     initialState,
     globalThis.RPMAddMessageListener &&
-      applyMiddleware(rehydrationMiddleware, messageMiddleware)
+      applyMiddleware(
+        rehydrationMiddleware,
+        widgetsOptInMiddleware,
+        messageMiddleware
+      )
   );
 
   if (globalThis.RPMAddMessageListener) {

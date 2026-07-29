@@ -4,11 +4,15 @@
 
 package org.mozilla.fenix.ui.robots
 
+import android.os.SystemClock
 import android.util.Log
+import android.view.accessibility.AccessibilityWindowInfo
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isNotDisplayed
@@ -18,8 +22,10 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
 import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.assertion.ViewAssertions.matches
@@ -31,6 +37,7 @@ import androidx.test.espresso.matcher.ViewMatchers.withChild
 import androidx.test.espresso.matcher.ViewMatchers.withClassName
 import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.espresso.matcher.ViewMatchers.withText
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiSelector
 import org.hamcrest.CoreMatchers.allOf
 import org.hamcrest.CoreMatchers.endsWith
@@ -41,12 +48,14 @@ import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectExists
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithDescription
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
+import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeLong
 import org.mozilla.fenix.helpers.TestHelper.hasCousin
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.packageName
 import org.mozilla.fenix.helpers.TestHelper.waitForAppWindowToBeUpdated
 import org.mozilla.fenix.helpers.click
 import org.mozilla.fenix.helpers.ext.clearAndSetText
+import org.mozilla.fenix.helpers.waitUntilDisplayed
 import org.mozilla.fenix.settings.address.ui.edit.EditAddressTestTag
 import org.mozilla.fenix.settings.creditcards.ui.CreditCardEditorTestTags
 
@@ -170,9 +179,8 @@ class SettingsSubMenuAutofillRobot(private val composeTestRule: ComposeTestRule)
     fun verifyAddAddressView() {
         Log.i(TAG, "verifyAddAddressView: Trying to perform \"Close soft keyboard\" action")
         // Closing the keyboard to ensure full visibility of the "Add address" view
-        closeSoftKeyboard()
+        waitForKeyboardDismiss()
         Log.i(TAG, "verifyAddAddressView: Performed \"Close soft keyboard\" action")
-        Log.i(TAG, "verifyAddAddressView: Trying to verify the \"Add address\" view items")
         listOf(
             composeTestRule.navigateBackButton(),
             composeTestRule.addAddressToolbarTitle(),
@@ -184,24 +192,24 @@ class SettingsSubMenuAutofillRobot(private val composeTestRule: ComposeTestRule)
             composeTestRule.zipCodeTextInput(),
             composeTestRule.countryDropDown(),
             composeTestRule.phoneTextInput(),
-            composeTestRule.emailTextInput(),
         ).forEach { it.assertIsDisplayed() }
+        composeTestRule.addressForm().performScrollToNode(hasTestTag(EditAddressTestTag.EMAIL_FIELD))
+        composeTestRule.waitUntilDisplayed(composeTestRule.emailTextInput())
+        composeTestRule.emailTextInput().assertIsDisplayed()
 
-        if (composeTestRule.saveButton().isNotDisplayed()) {
-            composeTestRule.saveButton().performScrollTo()
-        }
-
-        listOf(
-            composeTestRule.saveButton(),
-            composeTestRule.cancelButton(),
-        ).forEach { it.assertIsDisplayed() }
+        // Use performScrollToNode on the form container to handle lazy-list off-screen items.
+        composeTestRule.addressForm().performScrollToNode(hasTestTag(EditAddressTestTag.SAVE_BUTTON))
+        composeTestRule.waitForIdle()
+        composeTestRule.addressForm().performScrollToNode(hasTestTag(EditAddressTestTag.CANCEL_BUTTON))
+        composeTestRule.waitForIdle()
         Log.i(TAG, "verifyAddAddressView: Verified the \"Add address\" view items")
     }
 
     fun verifyCountryOption(country: String) {
         Log.i(TAG, "verifyCountryOption: Trying to perform \"Close soft keyboard\" action")
         // Closing the keyboard to ensure full visibility of the "Add address" view
-        closeSoftKeyboard()
+        waitForKeyboardDismiss()
+        composeTestRule.waitForIdle()
         Log.i(TAG, "verifyCountryOption: Performed \"Close soft keyboard\" action")
         assertUIObjectExists(itemContainingText(country))
     }
@@ -221,15 +229,14 @@ class SettingsSubMenuAutofillRobot(private val composeTestRule: ComposeTestRule)
         }
     }
 
+    @OptIn(ExperimentalTestApi::class)
     fun selectCountry(country: String) {
-        Log.i(TAG, "selectCountry: Trying to click the \"Country or region\" dropdown")
-        composeTestRule.countryDropDown().performClick()
-        Log.i(TAG, "selectCountry: Clicked the \"Country or region\" dropdown")
         Log.i(TAG, "selectCountry: Trying to select $country dropdown option")
-        composeTestRule.countryOption(country).performClick()
+        clickCountryOption(country)
         Log.i(TAG, "selectCountry: Selected $country dropdown option")
     }
 
+    @OptIn(ExperimentalTestApi::class)
     fun verifyEditAddressView() {
         Log.i(TAG, "verifyEditAddressView: Trying to verify that the \"Edit address\" items are displayed")
         listOf(
@@ -248,25 +255,24 @@ class SettingsSubMenuAutofillRobot(private val composeTestRule: ComposeTestRule)
         Log.i(TAG, "verifyEditAddressView: Clicked device back button to dismiss keyboard using device back button")
         waitForAppWindowToBeUpdated()
 
-        if (composeTestRule.countryDropDown().isNotDisplayed()) {
-            composeTestRule.countryDropDown().performScrollTo()
-        }
-
         listOf(
             composeTestRule.zipCodeTextInput(),
             composeTestRule.countryDropDown(),
             composeTestRule.phoneTextInput(),
-            composeTestRule.emailTextInput(),
         ).forEach { it.assertIsDisplayed() }
+        composeTestRule.addressForm().performScrollToNode(hasTestTag(EditAddressTestTag.EMAIL_FIELD))
+        composeTestRule.waitUntilDisplayed(composeTestRule.emailTextInput())
+        composeTestRule.emailTextInput().assertIsDisplayed()
 
         if (composeTestRule.saveButton().isNotDisplayed()) {
             composeTestRule.saveButton().performScrollTo()
+            composeTestRule.waitForIdle()
+            mDevice.waitForIdle()
         }
 
         listOf(
             composeTestRule.saveButton(),
             composeTestRule.cancelButton(),
-            composeTestRule.deleteAddressButton(),
         ).forEach { it.assertIsDisplayed() }
         Log.i(TAG, "verifyEditAddressView: Verified that the \"Edit address\" items are displayed")
     }
@@ -276,7 +282,12 @@ class SettingsSubMenuAutofillRobot(private val composeTestRule: ComposeTestRule)
         saveAndAutofillAddressesOption().click()
         Log.i(TAG, "clickSaveAndAutofillAddressesOption: Clicked the \"Save and fill addresses\" button")
     }
+
+    @OptIn(ExperimentalTestApi::class)
     fun clickAddAddressButton() {
+        Log.i(TAG, "clickAddAddressButton: Waiting for $waitingTime ms for \"Add address\" button to exist")
+        addAddressButton().waitForExists(waitingTime)
+        Log.i(TAG, "clickAddAddressButton: Verified \"Add address\" button exists")
         Log.i(TAG, "clickAddAddressButton: Trying to click the \"Add address\" button")
         addAddressButton().click()
         Log.i(TAG, "clickAddAddressButton: Clicked the \"Add address\" button")
@@ -316,36 +327,33 @@ class SettingsSubMenuAutofillRobot(private val composeTestRule: ComposeTestRule)
 
     @OptIn(ExperimentalTestApi::class)
     fun clickSubRegionOption(subRegion: String) {
-        composeTestRule.subRegionOption(subRegion).performScrollTo()
-        Log.i(TAG, "clickSubRegionOption: Waiting for $waitingTime ms for the \"State\" $subRegion dropdown option to exist")
-        composeTestRule.waitUntilAtLeastOneExists(hasTestTag(EditAddressTestTag.ADDRESS_LEVEL1_FIELD + ".$subRegion"), waitingTime)
-        Log.i(TAG, "clickSubRegionOption: Waited for $waitingTime ms for the \"State\" $subRegion dropdown option to exist")
-        Log.i(TAG, "clickSubRegionOption: Trying to click the \"State\" $subRegion dropdown option")
-        composeTestRule.subRegionOption(subRegion).performClick()
-        Log.i(TAG, "clickSubRegionOption: Clicked the \"State\" $subRegion dropdown option")
+        clickDropdownOption(
+            composeTestRule = composeTestRule,
+            dropDown = { composeTestRule.subRegionDropDown() },
+            optionText = subRegion,
+            logTag = "clickSubRegionOption",
+            errorMessage = "Sub-region option \"$subRegion\" not found after 3 attempts",
+        )
     }
 
-    fun clickCountryDropdown() {
-        Log.i(TAG, "clickCountryDropdown: Trying to close the keyboard.")
-        closeSoftKeyboard()
-        Log.i(TAG, "clickCountryDropdown: Closed the keyboard.")
-        waitForAppWindowToBeUpdated()
-        Log.i(TAG, "clickCountryDropdown: Trying to click \"Country or region\" dropdown")
-        composeTestRule.countryDropDown().performClick()
-        Log.i(TAG, "clickCountryDropdown: Clicked \"Country or region\" dropdown")
+    @OptIn(ExperimentalTestApi::class)
+    fun waitForAddressFormReady() {
+        Log.i(TAG, "waitForAddressFormReady: Waiting for $waitingTime ms for the address form to be ready")
+        composeTestRule.waitUntilAtLeastOneExists(hasTestTag(EditAddressTestTag.COUNTRY_FIELD), waitingTime)
+        Log.i(TAG, "waitForAddressFormReady: Address form is ready")
     }
 
     @OptIn(ExperimentalTestApi::class)
     fun clickCountryOption(country: String) {
-        Log.i(TAG, "clickCountryOption: Waiting for $waitingTime ms for the \"Country or region\" $country dropdown option to exist")
-
-        composeTestRule.waitUntilAtLeastOneExists(hasTestTag(EditAddressTestTag.COUNTRY_FIELD + ".$country"), waitingTime)
-        Log.i(TAG, "clickCountryOption: Waited for $waitingTime ms for the \"Country or region\" $country dropdown option to exist")
-        Log.i(TAG, "clickCountryOption: Trying to click \"Country or region\" $country dropdown option")
-        composeTestRule.countryOption(country).performScrollTo()
-        composeTestRule.countryOption(country).performClick()
-        Log.i(TAG, "clickCountryOption: Clicked \"Country or region\" $country dropdown option")
+        clickDropdownOption(
+            composeTestRule = composeTestRule,
+            dropDown = { composeTestRule.countryDropDown() },
+            optionText = country,
+            logTag = "clickCountryOption",
+            errorMessage = "Country option \"$country\" not found after 3 attempts",
+        )
     }
+
     fun verifyAddAddressButton() = assertUIObjectExists(addAddressButton())
 
     @OptIn(ExperimentalTestApi::class)
@@ -372,9 +380,9 @@ class SettingsSubMenuAutofillRobot(private val composeTestRule: ComposeTestRule)
                 clickAddAddressButton()
             }
         }
-        Log.i(TAG, "fillAndSaveAddress: Waiting for $waitingTime ms for \"Name\" text field to exist")
-        composeTestRule.waitUntilAtLeastOneExists(hasTestTag(EditAddressTestTag.NAME_FIELD), waitingTime)
-        Log.i(TAG, "fillAndSaveAddress: Waited for $waitingTime ms for \"Name\" text field to exist")
+        Log.i(TAG, "fillAndSaveAddress: Waiting for $waitingTimeLong ms for \"Name\" text field to exist")
+        composeTestRule.waitUntilAtLeastOneExists(hasTestTag(EditAddressTestTag.NAME_FIELD), waitingTimeLong)
+        Log.i(TAG, "fillAndSaveAddress: Waited for $waitingTimeLong ms for \"Name\" text field to exist")
         Log.i(TAG, "fillAndSaveAddress: Trying to set \"Name\" to $name")
         composeTestRule.nameTextInput().performTextInput(name)
         Log.i(TAG, "fillAndSaveAddress: \"Name\" was set to $name")
@@ -384,35 +392,32 @@ class SettingsSubMenuAutofillRobot(private val composeTestRule: ComposeTestRule)
         Log.i(TAG, "fillAndSaveAddress: Trying to set \"City\" to $city")
         composeTestRule.cityTextInput().performTextInput(city)
         Log.i(TAG, "fillAndSaveAddress: \"City\" was set to $city")
-        Log.i(TAG, "fillAndSaveAddress: Trying to click \"State\" dropdown button")
-        composeTestRule.subRegionDropDown().performClick()
-        Log.i(TAG, "fillAndSaveAddress: Clicked \"State\" dropdown button")
-        Log.i(TAG, "fillAndSaveAddress: Trying to click the $state dropdown option")
-        clickSubRegionOption(state)
-        Log.i(TAG, "fillAndSaveAddress: Clicked $state dropdown option")
-        Log.i(TAG, "fillAndSaveAddress: Trying to set \"Zip\" to $zipCode")
-        composeTestRule.zipCodeTextInput().performTextInput(zipCode)
-        Log.i(TAG, "fillAndSaveAddress: \"Zip\" was set to $zipCode")
-        Log.i(TAG, "fillAndSaveAddress: Trying to close the keyboard.")
-        closeSoftKeyboard()
-        Log.i(TAG, "fillAndSaveAddress: Closed the keyboard.")
-        Log.i(TAG, "fillAndSaveAddress: Trying to click \"Country or region\" dropdown button")
-        composeTestRule.countryDropDown().performClick()
-        Log.i(TAG, "fillAndSaveAddress: Clicked \"Country or region\" dropdown button")
         Log.i(TAG, "fillAndSaveAddress: Trying to click $country dropdown option")
         clickCountryOption(country)
         Log.i(TAG, "fillAndSaveAddress: Clicked $country dropdown option")
+        Log.i(TAG, "fillAndSaveAddress: Trying to click the $state dropdown option")
+        clickSubRegionOption(state)
+        Log.i(TAG, "fillAndSaveAddress: Clicked $state dropdown option")
+        composeTestRule.waitForIdle()
+        Log.i(TAG, "fillAndSaveAddress: Trying to set \"Zip\" to $zipCode")
+        composeTestRule.zipCodeTextInput().performTextInput(zipCode)
+        Log.i(TAG, "fillAndSaveAddress: \"Zip\" was set to $zipCode")
+        waitForKeyboardDismiss()
+        composeTestRule.waitForIdle()
         Log.i(TAG, "fillAndSaveAddress: Trying to set \"Phone\" to $phoneNumber")
         composeTestRule.phoneTextInput().performTextInput(phoneNumber)
         Log.i(TAG, "fillAndSaveAddress: \"Phone\" was set to $phoneNumber")
+        composeTestRule.waitForIdle()
         Log.i(TAG, "fillAndSaveAddress: Trying to close the keyboard.")
-        closeSoftKeyboard()
+        waitForKeyboardDismiss()
+        composeTestRule.waitForIdle()
         Log.i(TAG, "fillAndSaveAddress: Closed the keyboard.")
         Log.i(TAG, "fillAndSaveAddress: Trying to set \"Email\" to $emailAddress")
         composeTestRule.emailTextInput().performTextInput(emailAddress)
         Log.i(TAG, "fillAndSaveAddress: \"Email\" was set to $emailAddress")
         Log.i(TAG, "fillAndSaveAddress: Trying to close the keyboard.")
-        closeSoftKeyboard()
+        waitForKeyboardDismiss()
+        composeTestRule.waitForIdle()
         Log.i(TAG, "fillAndSaveAddress: Closed the keyboard.")
         Log.i(TAG, "fillAndSaveAddress: Trying to click the \"Save\" button")
         if (composeTestRule.saveButton().isNotDisplayed()) {
@@ -594,6 +599,10 @@ class SettingsSubMenuAutofillRobot(private val composeTestRule: ComposeTestRule)
         expiryMonth: String,
         expiryYear: String,
     ) = with(composeTestRule) {
+        Log.i(TAG, "verifyEditCreditCardView: Waiting for compose rule to be idle")
+        composeTestRule.waitForIdle()
+        Log.i(TAG, "verifyEditCreditCardView: Waited for compose rule to be idle")
+
         editCreditCardToolbarTitle()
             .assertExists("Unable to assert that the edit credit card toolbar title exists")
         deleteCreditCardToolbarButton()
@@ -728,9 +737,9 @@ private fun ComposeTestRule.zipCodeTextInput() = onNodeWithTag(EditAddressTestTa
 private fun ComposeTestRule.countryDropDown() = onNodeWithTag(EditAddressTestTag.COUNTRY_FIELD)
 private fun ComposeTestRule.phoneTextInput() = onNodeWithTag(EditAddressTestTag.TEL_FIELD)
 private fun ComposeTestRule.emailTextInput() = onNodeWithTag(EditAddressTestTag.EMAIL_FIELD)
+private fun ComposeTestRule.addressForm() = onNodeWithTag(EditAddressTestTag.FORM)
 private fun ComposeTestRule.saveButton() = onNodeWithTag(EditAddressTestTag.SAVE_BUTTON)
 private fun ComposeTestRule.cancelButton() = onNodeWithTag(EditAddressTestTag.CANCEL_BUTTON)
-private fun ComposeTestRule.deleteAddressButton() = onNodeWithTag(EditAddressTestTag.DELETE_BUTTON)
 private fun ComposeTestRule.toolbarDeleteAddressButton() = onNodeWithTag(EditAddressTestTag.TOPBAR_DELETE_BUTTON)
 private fun ComposeTestRule.cancelDeleteAddressButton() = onNodeWithTag(EditAddressTestTag.DIALOG_CANCEL_BUTTON)
 private fun ComposeTestRule.confirmDeleteAddressButton() = onNodeWithTag(EditAddressTestTag.DIALOG_DELETE_BUTTON)
@@ -764,10 +773,114 @@ private fun ComposeTestRule.saveFormButton() = onNodeWithTag(CreditCardEditorTes
 private fun ComposeTestRule.cancelFormButton() = onNodeWithTag(CreditCardEditorTestTags.CANCEL_BUTTON)
 private fun ComposeTestRule.deleteFormButton() = onNodeWithTag(CreditCardEditorTestTags.DELETE_BUTTON)
 
-private fun ComposeTestRule.subRegionOption(subRegion: String) = onNodeWithTag(EditAddressTestTag.ADDRESS_LEVEL1_FIELD + ".$subRegion")
-private fun ComposeTestRule.countryOption(country: String) = onNodeWithTag(EditAddressTestTag.COUNTRY_FIELD + ".$country")
-
 private fun ComposeTestRule.expiryMonthOption(expiryMonth: String) =
     onNodeWithText(expiryMonth, substring = true, ignoreCase = true)
 
 private fun ComposeTestRule.expiryYearOption(expiryYear: String) = onNodeWithText(expiryYear, substring = true, ignoreCase = true)
+
+@OptIn(ExperimentalTestApi::class)
+private fun clickDropdownOption(
+    composeTestRule: ComposeTestRule,
+    dropDown: () -> SemanticsNodeInteraction,
+    optionText: String,
+    logTag: String,
+    errorMessage: String,
+) {
+    waitForKeyboardDismiss()
+    // Drain any leftover popup from a previous attempt; non-fatal if it times out.
+    runCatching { waitForPopupToDismiss(composeTestRule) }
+        .onFailure { Log.w(TAG, "$logTag: pre-call waitForPopupToDismiss timed out: $it") }
+    composeTestRule.waitForIdle()
+
+    for (attempt in 1..3) {
+        if (attempt > 1) {
+            // The previous attempt failed mid-flow and may have left a popup visible; clicking
+            // the dropdown trigger again with the popup still open would toggle it shut rather
+            // than re-open it. Best-effort dismiss before retrying.
+            runCatching { waitForPopupToDismiss(composeTestRule, timeoutMs = 2_000L) }
+                .onFailure { Log.w(TAG, "$logTag: inter-attempt waitForPopupToDismiss timed out: $it") }
+        }
+        dropDown().performTouchInput { click() }
+
+        try {
+            composeTestRule.waitUntilAtLeastOneExists(hasText(optionText), 5_000L)
+            val nodeCount = composeTestRule.onAllNodes(hasText(optionText)).fetchSemanticsNodes().size
+            try {
+                composeTestRule.onAllNodes(hasText(optionText))[nodeCount - 1].performScrollTo()
+                composeTestRule.waitForIdle()
+            } catch (scrollEx: Exception) {
+                Log.w(TAG, "$logTag: performScrollTo failed: ${scrollEx.message?.take(100)}")
+            }
+            composeTestRule.onAllNodes(hasText(optionText))[nodeCount - 1].performClick()
+        } catch (e: Exception) {
+            Log.w(TAG, "$logTag: attempt $attempt failed: ${e.javaClass.simpleName}: ${e.message?.take(200)}")
+            continue
+        }
+        waitForPopupToDismiss(composeTestRule)
+        return
+    }
+    throw AssertionError(errorMessage)
+}
+
+/**
+ * Polls until the Compose DropdownMenu popup window is no longer present in the accessibility
+ * window hierarchy, or throws if it does not dismiss within [timeoutMs].
+ */
+private fun waitForPopupToDismiss(composeTestRule: ComposeTestRule, timeoutMs: Long = 10000L) {
+    composeTestRule.waitForIdle()
+    val startTime = SystemClock.elapsedRealtime()
+    var polled = 0
+    while (SystemClock.elapsedRealtime() - startTime < timeoutMs) {
+        // Compose's DropdownMenu renders into a separate popup window whose
+        // AccessibilityWindowInfo.title is set to "Pop-Up" by the framework.
+        val hasPopup = InstrumentationRegistry.getInstrumentation()
+            .uiAutomation
+            .windows
+            .any { it.title?.contains("Pop-Up", ignoreCase = true) == true }
+        if (!hasPopup) {
+            if (polled > 0) {
+                Log.i(TAG, "waitForPopupToDismiss: popup gone after ${SystemClock.elapsedRealtime() - startTime}ms ($polled polls)")
+            } else {
+                Log.i(TAG, "waitForPopupToDismiss: no popup present")
+            }
+            return
+        }
+        polled++
+        composeTestRule.waitForIdle()
+        SystemClock.sleep(100)
+    }
+    throw AssertionError("waitForPopupToDismiss: popup did not dismiss within ${timeoutMs}ms")
+}
+
+/**
+ * Closes the soft keyboard and waits until the IME window is fully gone from the window
+ * hierarchy. On slow emulators (e.g. Firebase Test Lab) the hide animation can take ~9 s; polling
+ * here prevents the IME animation from dismissing a dropdown popup that opens immediately after.
+ */
+private fun waitForKeyboardDismiss(timeoutMs: Long = 15000L) {
+    Log.i(TAG, "waitForKeyboardDismiss: Trying to close the soft keyboard")
+    closeSoftKeyboard()
+    Log.i(TAG, "waitForKeyboardDismiss: Successfully closed the soft keyboard")
+
+    waitForAppWindowToBeUpdated()
+
+    val startTime = SystemClock.elapsedRealtime()
+    var polled = 0
+    while (SystemClock.elapsedRealtime() - startTime < timeoutMs) {
+        val hasImeWindow = InstrumentationRegistry.getInstrumentation()
+            .uiAutomation
+            .windows
+            .any { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+        if (!hasImeWindow) {
+            if (polled > 0) {
+                Log.i(TAG, "waitForKeyboardDismiss: keyboard gone after ${SystemClock.elapsedRealtime() - startTime}ms ($polled polls)")
+            } else {
+                Log.i(TAG, "waitForKeyboardDismiss: keyboard was not present")
+            }
+            return
+        }
+        polled++
+        SystemClock.sleep(300)
+    }
+    throw AssertionError("waitForKeyboardDismiss: keyboard did not dismiss within ${timeoutMs}ms")
+}

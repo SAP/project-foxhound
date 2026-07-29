@@ -149,6 +149,7 @@ private fun AutofillSettingsAddressSection(
         label = stringResource(id = R.string.preferences_addresses_save_and_autofill_addresses_2),
         checked = state.saveFillAddresses,
         description = stringResource(id = R.string.preferences_addresses_save_and_autofill_addresses_summary_2),
+        maxDescriptionLines = Int.MAX_VALUE,
         showSwitchAfter = true,
         onClick = { store.dispatch(ChangeAddressSaveFillPreference(!state.saveFillAddresses)) },
     )
@@ -206,6 +207,7 @@ private fun AutofillSettingsCreditCardSection(store: AutofillSettingsStore) {
             id = R.string.preferences_credit_cards_save_and_autofill_cards_summary_2,
             stringResource(id = R.string.app_name),
         ),
+        maxDescriptionLines = Int.MAX_VALUE,
         showSwitchAfter = true,
     ) {
         store.dispatch(ChangeCardSaveFillPreference(!state.saveFillCards))

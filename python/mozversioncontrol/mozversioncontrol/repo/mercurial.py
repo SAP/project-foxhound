@@ -48,6 +48,10 @@ class HgRepository(Repository):
 
     @property
     def head_ref(self):
+        return self.branch or self.head_rev
+
+    @property
+    def head_rev(self):
         return self._run("log", "-r", ".", "-T", "{node}")
 
     def is_cinnabar_repo(self) -> bool:
@@ -146,6 +150,14 @@ class HgRepository(Repository):
             # "ui.username" doesn't follow the "Full Name <email@domain>" convention
             return None
         return match.group(1)
+
+    def get_remote_url(self, remote=None, push=False):
+        remote = remote or "default"
+        if push:
+            remote = f"{remote}-push"
+
+        url = self._run("paths", remote, return_codes=[0, 1], stderr=subprocess.DEVNULL)
+        return url.strip() if url else None
 
     def _format_diff_filter(self, diff_filter, for_status=False):
         df = diff_filter.lower()
@@ -276,7 +288,32 @@ class HgRepository(Repository):
         except subprocess.CalledProcessError:
             raise MissingVCSExtension(extension)
 
-    def push_to_try(
+    def push(
+        self,
+        remote: Optional[str] = None,
+        ref: Optional[str] = None,
+        dest_branch: Optional[str] = None,
+        force: bool = False,
+    ):
+        if ref and not remote:
+            raise ValueError("Cannot specify ref without specifying remote")
+
+        args = ["push"]
+        if force:
+            args.append("--force")
+        if remote:
+            args.append(remote)
+        if ref:
+            args.extend(["-r", ref])
+        self._run(*args)
+
+    def _resolve_try_branch(self):
+        return self.branch
+
+    def _push_to_git_try(self, *args, **kwargs):
+        raise ValueError("Unable to push to Git from a Mercurial repo")
+
+    def _push_to_hg_try(
         self,
         message: str,
         changed_files: dict[str, str] = {},
@@ -286,7 +323,7 @@ class HgRepository(Repository):
             self.stage_changes(changed_files)
 
         try:
-            cmd = (str(self._tool), "push-to-try", "-m", message)
+            cmd = (str(self._tool), "push-to-try", "--message", message)
             if allow_log_capture:
                 self._push_to_try_with_log_capture(
                     cmd,
@@ -309,7 +346,7 @@ class HgRepository(Repository):
             self.raise_for_missing_extension("push-to-try")
             raise
         finally:
-            self._run("revert", "-a")
+            self._run("revert", "--all")
 
     def get_commits(
         self,

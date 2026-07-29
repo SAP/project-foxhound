@@ -133,16 +133,12 @@ pub enum Error {
     // Generic arithmetic overflow. Prefer using other errors if possible.
     #[error("Arithmetic overflow")]
     ArithmeticOverflow,
-    #[error("Empty frame sequence")]
-    NoFrames,
     #[error(
         "Pipeline channel type mismatch: stage {0} channel {1}, expected {2:?} but found {3:?}"
     )]
     PipelineChannelTypeMismatch(String, usize, DataTypeTag, DataTypeTag),
     #[error("Invalid stage {0} after extend stage")]
     PipelineInvalidStageAfterExtend(String),
-    #[error("Channel {0} was not used in the render pipeline")]
-    PipelineChannelUnused(usize),
     #[error("Trying to copy rects of different size, src: {0}x{1} dst {2}x{3}")]
     CopyOfDifferentSize(usize, usize, usize, usize),
     #[error("LF quantization factor is too small: {0}")]
@@ -171,6 +167,10 @@ pub enum Error {
     PatchesOutOfBounds(String, usize, usize, usize),
     #[error("Patches cannot use frames saved post color transforms")]
     PatchesPostColorTransform(),
+    #[error(
+        "Patches with extra-channel upsampling {1} that does not match non-1 color upsampling ({0}) are unsupported"
+    )]
+    PatchesUnsupportedMixedUpsampling(u32, u32),
     #[error("Too many {0}: {1}, limit is {2}")]
     PatchesTooMany(String, usize, usize),
     #[error("Reference too large: {0}, limit is {1}")]

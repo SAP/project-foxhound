@@ -61,7 +61,7 @@ class SHistoryListener {
 
     if (writeToCache) {
       const win =
-        browsingContext.embedderElement?.ownerGlobal ||
+        browsingContext.embedderElement?.documentGlobal ||
         browsingContext.currentWindowGlobal?.browsingContext?.window;
 
       GeckoViewSessionStore.onTabStateUpdate(permanentKey, win, {
@@ -146,8 +146,7 @@ export var GeckoViewSessionStore = {
   },
 
   onTabStateUpdate(permanentKey, win, data) {
-    win.WindowEventDispatcher.sendRequest({
-      type: "GeckoView:StateUpdated",
+    win.WindowEventDispatcher.sendRequest("GeckoView:StateUpdated", {
       data: data.data,
     });
   },
@@ -218,10 +217,9 @@ export var GeckoViewSessionStore = {
     if (listener) {
       const historychange =
         // If it is not the scheduled update (tab closed, window closed etc),
-        // try to store the loading non-web-controlled page opened in _blank
-        // first.
+        // try to store the loading non-web-controlled page first.
         (forStorage &&
-          lazy.SessionHistory.collectNonWebControlledBlankLoadingSession(
+          lazy.SessionHistory.collectNonWebControlledLoadingSession(
             browsingContext
           )) ||
         listener.collect(permanentKey, browsingContext, {
@@ -237,7 +235,7 @@ export var GeckoViewSessionStore = {
     }
 
     const win =
-      browsingContext.embedderElement?.ownerGlobal ||
+      browsingContext.embedderElement?.documentGlobal ||
       browsingContext.currentWindowGlobal?.browsingContext?.window;
 
     this.onTabStateUpdate(permanentKey, win, update);

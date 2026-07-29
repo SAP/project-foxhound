@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -511,17 +509,8 @@ struct nsCSSRendering {
                                        const nsStyleImageLayers::Layer& aLayer,
                                        uint32_t aFlags);
 
-  /**
-   * Called when we start creating a display list. The frame tree will not
-   * change until a matching EndFrameTreeLocked is called.
-   */
-  static void BeginFrameTreesLocked();
-  /**
-   * Called when we've finished using a display list. When all
-   * BeginFrameTreeLocked calls have been balanced by an EndFrameTreeLocked,
-   * the frame tree may start changing again.
-   */
-  static void EndFrameTreesLocked();
+  /** Called when we switch pres shells during painting. */
+  static void PresShellChanged();
 
   // Draw a border segment in the table collapsing border model with beveling
   // corners.
@@ -738,7 +727,8 @@ struct nsCSSRendering {
 
  protected:
   static gfxRect GetTextDecorationRectInternal(
-      const Point& aPt, const DecorationRectParams& aParams);
+      const Point& aPt, const DecorationRectParams& aParams,
+      bool aSnapToDevicePixels);
 
   /**
    * Returns inflated rect for painting a decoration line.

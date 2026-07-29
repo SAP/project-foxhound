@@ -19,7 +19,7 @@ use std::sync::atomic::{self, AtomicPtr, AtomicUsize, Ordering};
 
 use super::map::{Entry, Map};
 use super::unsafe_box::UnsafeBox;
-use super::{CascadeLevel, StyleSource};
+use super::{CascadeLevel, CascadeOrigin, RuleCascadeFlags, StyleSource};
 
 /// The rule tree, the structure servo uses to preserve the results of selector
 /// matching.
@@ -317,6 +317,7 @@ impl RuleNode {
         cascade_priority: CascadePriority,
     ) -> Self {
         debug_assert!(root.p.parent.is_none());
+        source.mark_in_rule_tree();
         RuleNode {
             root: Some(root),
             parent: Some(parent),
@@ -334,7 +335,11 @@ impl RuleNode {
             root: None,
             parent: None,
             source: None,
-            cascade_priority: CascadePriority::new(CascadeLevel::UANormal, LayerOrder::root()),
+            cascade_priority: CascadePriority::new(
+                CascadeLevel::new(CascadeOrigin::UA),
+                LayerOrder::root(),
+                RuleCascadeFlags::empty(),
+            ),
             refcount: AtomicUsize::new(1),
             approximate_free_count: AtomicUsize::new(0),
             children: Default::default(),
@@ -554,8 +559,6 @@ impl StrongRuleNode {
         source: StyleSource,
         cascade_priority: CascadePriority,
     ) -> StrongRuleNode {
-        use parking_lot::RwLockUpgradableReadGuard;
-
         debug_assert!(
             self.p.cascade_priority <= cascade_priority,
             "Should be ordered (instead {:?} > {:?}), from {:?} and {:?}",
@@ -566,12 +569,14 @@ impl StrongRuleNode {
         );
 
         let key = ChildKey(cascade_priority, source.key());
-        let children = self.p.children.upgradable_read();
-        if let Some(child) = children.get(&key, |node| node.p.key()) {
-            // Sound to call because we read-locked the parent's children.
-            return unsafe { child.upgrade() };
+        {
+            let children = self.p.children.read();
+            if let Some(child) = children.get(&key, |node| node.p.key()) {
+                // Sound to call because we read-locked the parent's children.
+                return unsafe { child.upgrade() };
+            }
         }
-        let mut children = RwLockUpgradableReadGuard::upgrade(children);
+        let mut children = self.p.children.write();
         match children.entry(key, |node| node.p.key()) {
             Entry::Occupied(child) => {
                 // Sound to call because we write-locked the parent's children.

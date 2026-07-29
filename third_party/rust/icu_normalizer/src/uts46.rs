@@ -10,12 +10,32 @@
 
 use crate::ComposingNormalizer;
 use crate::ComposingNormalizerBorrowed;
-use crate::NormalizerNfcV1;
+use crate::IgnorableBehavior;
+use crate::IteratorPolicy;
+use crate::NormalizerNfcV2;
 use crate::NormalizerNfdTablesV1;
 use crate::NormalizerNfkdTablesV1;
 use crate::NormalizerUts46DataV1;
+use icu_collections::codepointtrie::CharIterWithTrie;
+use icu_collections::codepointtrie::CodePointTrie;
 use icu_provider::DataError;
 use icu_provider::DataProvider;
+
+type Trie46<'trie> = CodePointTrie<'trie, u32>;
+
+#[derive(Debug)]
+struct Uts46MapNormalizePolicy;
+
+impl IteratorPolicy for Uts46MapNormalizePolicy {
+    const IGNORABLE_BEHAVIOR: IgnorableBehavior = IgnorableBehavior::Ignored;
+}
+
+#[derive(Debug)]
+struct Uts46NormalizeValidatePolicy;
+
+impl IteratorPolicy for Uts46NormalizeValidatePolicy {
+    const IGNORABLE_BEHAVIOR: IgnorableBehavior = IgnorableBehavior::ReplacementCharacter;
+}
 
 // Implementation note: Despite merely wrapping a `ComposingNormalizer`,
 // having a `Uts46Mapper` serves two purposes:
@@ -67,15 +87,15 @@ impl Uts46MapperBorrowed<'_> {
     /// operations from the "Map" and "Normalize" steps of the "Processing"
     /// section of UTS 46 lazily applied to it:
     ///
-    /// 1. The _ignored_ characters are ignored.
-    /// 2. The _mapped_ characters are mapped.
-    /// 3. The _disallowed_ characters are replaced with U+FFFD,
+    /// 1. The `ignored` characters are ignored.
+    /// 2. The `mapped` characters are mapped.
+    /// 3. The `disallowed` characters are replaced with U+FFFD,
     ///    which itself is a disallowed character.
-    /// 4. The _deviation_ characters are treated as _mapped_ or _valid_
+    /// 4. The `deviation` characters are treated as `mapped` or `valid`
     ///    as appropriate.
-    /// 5. The _disallowed_STD3_valid_ characters are treated as allowed.
-    /// 6. The _disallowed_STD3_mapped_ characters are treated as
-    ///    _mapped_.
+    /// 5. The `disallowed_STD3_valid` characters are treated as allowed.
+    /// 6. The `disallowed_STD3_mapped` characters are treated as
+    ///    `mapped`.
     /// 7. The result is normalized to NFC.
     ///
     /// Notably:
@@ -89,8 +109,13 @@ impl Uts46MapperBorrowed<'_> {
         &'delegate self,
         iter: I,
     ) -> impl Iterator<Item = char> + 'delegate {
-        self.normalizer
-            .normalize_iter_private(iter, crate::IgnorableBehavior::Ignored)
+        let mut ret =
+            self.normalizer
+                .normalize_iter_private::<_, Trie46, Uts46MapNormalizePolicy>(
+                    CharIterWithTrie::new(iter, self.normalizer.trie::<Trie46<'_>>()),
+                );
+        ret.decomposition.init(); // Discard the U+0000.
+        ret
     }
 
     /// Returns an iterator adaptor that turns an `Iterator` over `char`
@@ -98,15 +123,15 @@ impl Uts46MapperBorrowed<'_> {
     /// operations from the NFC check and statucs steps of the "Validity
     /// Criteria" section of UTS 46 lazily applied to it:
     ///
-    /// 1. The _ignored_ characters are treated as _disallowed_.
-    /// 2. The _mapped_ characters are mapped.
-    /// 3. The _disallowed_ characters are replaced with U+FFFD,
+    /// 1. The `ignored` characters are treated as `disallowed`.
+    /// 2. The `mapped` characters are mapped.
+    /// 3. The `disallowed` characters are replaced with U+FFFD,
     ///    which itself is a disallowed character.
-    /// 4. The _deviation_ characters are treated as _mapped_ or _valid_
+    /// 4. The `deviation` characters are treated as `mapped` or `valid`
     ///    as appropriate.
-    /// 5. The _disallowed_STD3_valid_ characters are treated as allowed.
-    /// 6. The _disallowed_STD3_mapped_ characters are treated as
-    ///    _mapped_.
+    /// 5. The `disallowed_STD3_valid` characters are treated as allowed.
+    /// 6. The `disallowed_STD3_mapped` characters are treated as
+    ///    `mapped`.
     /// 7. The result is normalized to NFC.
     ///
     /// Notably:
@@ -121,12 +146,18 @@ impl Uts46MapperBorrowed<'_> {
     ///   and status requirements. In particular, this comparison results
     ///   in _mapped_ characters resulting in error like "Validity Criteria"
     ///   requires.
+    #[inline]
     pub fn normalize_validate<'delegate, I: Iterator<Item = char> + 'delegate>(
         &'delegate self,
         iter: I,
     ) -> impl Iterator<Item = char> + 'delegate {
-        self.normalizer
-            .normalize_iter_private(iter, crate::IgnorableBehavior::ReplacementCharacter)
+        let mut ret = self
+            .normalizer
+            .normalize_iter_private::<_, Trie46, Uts46NormalizeValidatePolicy>(
+                CharIterWithTrie::new(iter, self.normalizer.trie::<Trie46<'_>>()),
+            );
+        ret.decomposition.init(); // Discard the U+0000.
+        ret
     }
 }
 
@@ -167,7 +198,7 @@ impl Uts46Mapper {
             + DataProvider<NormalizerNfdTablesV1>
             + DataProvider<NormalizerNfkdTablesV1>
             // UTS 46 tables merged into NormalizerNfkdTablesV1
-            + DataProvider<NormalizerNfcV1>
+            + DataProvider<NormalizerNfcV2>
             + ?Sized,
     {
         let normalizer = ComposingNormalizer::try_new_uts46_unstable(provider)?;

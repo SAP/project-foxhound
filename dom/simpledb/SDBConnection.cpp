@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -236,6 +234,12 @@ SDBConnection::Init(nsIPrincipal* aPrincipal,
                     const nsACString& aPersistenceType) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aPrincipal);
+
+  if (!BackgroundChild::ValidatePrincipal(aPrincipal, {})) {
+    MOZ_ASSERT_UNREACHABLE(
+        "Process is not allowed to access simpleDB for this principal");
+    return NS_ERROR_INVALID_ARG;
+  }
 
   UniquePtr<PrincipalInfo> principalInfo(new PrincipalInfo());
   nsresult rv = PrincipalToPrincipalInfo(aPrincipal, principalInfo.get());

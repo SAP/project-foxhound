@@ -11,6 +11,7 @@
 import os
 import platform
 import re
+import subprocess
 import sys
 from ctypes.util import find_library
 
@@ -121,6 +122,23 @@ if (
 info["apple_catalina"] = False
 if info["os"] == "mac" and float(os_version) == 10.15:
     info["apple_catalina"] = True
+
+info["macos_vm"] = False
+if info["os"] == "mac":
+    try:
+        _hw_model = subprocess.run(
+            ["sysctl", "-n", "hw.model"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if _hw_model.returncode == 0 and _hw_model.stdout.strip().startswith(
+            "VirtualMac"
+        ):
+            info["macos_vm"] = True
+    except Exception:
+        pass
 
 info["win10_2009"] = False
 if info["os"] == "win" and version == "10.0.19045":

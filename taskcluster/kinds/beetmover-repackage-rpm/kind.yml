@@ -7,7 +7,6 @@ loader: taskgraph.loader.transform:loader
 transforms:
     - taskgraph.transforms.from_deps
     - gecko_taskgraph.transforms.name_sanity
-    - gecko_taskgraph.transforms.release:run_on_releases
     - gecko_taskgraph.transforms.beetmover_repackage_rpm
     - gecko_taskgraph.transforms.task
 
@@ -34,8 +33,3 @@ tasks:
                 by-release-type:
                     beta|release|esr.*: taskcluster/gecko_taskgraph/manifests/firefox_candidates.yml
                     default: taskcluster/gecko_taskgraph/manifests/firefox_nightly.yml
-        run-on-releases:
-            - nightly
-            - beta
-            # - release
-            # - esr140

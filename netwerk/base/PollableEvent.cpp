@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -273,38 +271,24 @@ PollableEvent::~PollableEvent() {
   }
 }
 
-// we do not record signals on the socket thread
-// because the socket thread can reliably look at its
-// own runnable queue before selecting a poll time
-// this is the "service the network without blocking" comment in
-// nsSocketTransportService2.cpp
-bool PollableEvent::Signal() {
+// The socket thread can reliably look at its own runnable queue before
+// selecting a poll time, so signaling from the socket thread is a no-op.
+bool PollableEvent::Signal(bool aForce) {
   SOCKET_LOG(("PollableEvent::Signal\n"));
 
   if (!mWriteFD) {
     SOCKET_LOG(("PollableEvent::Signal Failed on no FD\n"));
     return false;
   }
-#ifndef XP_WIN
-  // On windows poll can hang and this became worse when we introduced the
-  // patch for bug 698882 (see also bug 1292181), therefore we reverted the
-  // behavior on windows to be as before bug 698882, e.g. write to the socket
-  // also if an event dispatch is on the socket thread and writing to the
-  // socket for each event. See bug 1292181.
+
   if (OnSocketThread()) {
     SOCKET_LOG(("PollableEvent::Signal OnSocketThread nop\n"));
     return true;
   }
-#endif
 
-#ifndef XP_WIN
-  // To wake up the poll writing once is enough, but for Windows that can cause
-  // hangs so we will write for every event.
-  // For non-Windows systems it is enough to write just once.
-  if (mSignaled) {
+  if (mSignaled && !aForce) {
     return true;
   }
-#endif
 
   if (!mSignaled) {
     mSignaled = true;

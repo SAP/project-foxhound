@@ -1,55 +1,23 @@
 From: Michael Froman <mfroman@mozilla.com>
-Date: Thu, 10 Oct 2024 13:42:00 +0000
-Subject: Bug 1921707 - add filtering for new build directory location in
- third_party/libwebrtc/webrtc.gni r=ng,webrtc-reviewers
+Date: Mon, 13 Jan 2025 08:14:00 -0600
+Subject: Bug 1942428 - (fix-69cc695699) uncomment an arg that upstream thinks
+ is unused
 
-Differential Revision: https://phabricator.services.mozilla.com/D224545
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/f18c05287ce831369f44715a4174facff4f12652
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/73f9e0e64eb65e9f2579b0f3eb34b88e2b5e5d74
 ---
- webrtc.gni | 14 ++++++++++++--
- 1 file changed, 12 insertions(+), 2 deletions(-)
+ modules/rtp_rtcp/source/rtcp_sender.cc | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/webrtc.gni b/webrtc.gni
-index da08c490e7..18c5f9c080 100644
---- a/webrtc.gni
-+++ b/webrtc.gni
-@@ -538,7 +538,7 @@ template("rtc_test") {
-       min_sdk_version = 23
-       target_sdk_version = 24
-       deps += [
--        "//build/android/gtest_apk:native_test_instrumentation_test_runner_java",
-+        "//chromium/build/android/gtest_apk:native_test_instrumentation_test_runner_java",
-         webrtc_root + "sdk/android:native_test_jni_onload",
-         webrtc_root + "sdk/android:base_java",
-         webrtc_root + "test:native_test_java",
-@@ -993,11 +993,21 @@ template("rtc_library") {
-       modified_deps = []
-       foreach (dep, deps) {
-         newdep = string_replace(dep, "//third_party/", "//libwebrtc/third_party/")
-+        newdep = string_replace(newdep, "//build", "//chromium/build")
-         modified_deps += [ newdep ]
-       }
-       deps = []
-       deps = modified_deps
-     }
-+    if (build_with_mozilla && defined(data_deps)) {
-+      modified_deps = []
-+      foreach (dep, data_deps) {
-+        newdep = string_replace(dep, "//build/", "//chromium/build/")
-+        modified_deps += [ newdep ]
-+      }
-+      data_deps = []
-+      data_deps = modified_deps
-+    }
-   }
+diff --git a/modules/rtp_rtcp/source/rtcp_sender.cc b/modules/rtp_rtcp/source/rtcp_sender.cc
+index b84bc66316..1762623bc1 100644
+--- a/modules/rtp_rtcp/source/rtcp_sender.cc
++++ b/modules/rtp_rtcp/source/rtcp_sender.cc
+@@ -196,7 +196,7 @@ bool RTCPSender::Sending() const {
+   return sending_;
  }
  
-@@ -1035,7 +1045,7 @@ template("rtc_executable") {
-     if (is_win) {
-       deps += [
-         # Give executables the default manifest on Windows (a no-op elsewhere).
--        "//build/win:default_exe_manifest",
-+        "//chromium/build/win:default_exe_manifest",
-       ]
-     }
- 
+-void RTCPSender::SetSendingStatus(const FeedbackState& /* feedback_state */,
++void RTCPSender::SetSendingStatus(const FeedbackState& feedback_state,
+                                   bool sending) {
+   bool sendRTCPBye = false;
+   {

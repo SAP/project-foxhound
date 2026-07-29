@@ -229,8 +229,16 @@ strong {
 }
 
 /* Tooltip: query container info */
+.tooltip-container:has(.devtools-tooltip-query-container) {
+  /* By default, in dark mode, the tooltip background color is lighter than the background
+     color of the Rules view. Since we're using the same color than in the Rules view
+     for CSS values, this can lead to poor contrast.
+     To prevent this, we apply the same background color than in the Rules view */
+  --theme-arrowpanel-background: var(--theme-body-background);
+}
+
 .devtools-tooltip-query-container {
-  color: var(--theme-arrowpanel-color);
+  color: var(--theme-body-color);
   margin: 0;
   padding: 10px 14px 12px;
   font-size: 12px;
@@ -247,12 +255,37 @@ strong {
   text-overflow: ellipsis;
   overflow: hidden;
   color: var(--theme-body-color);
+
+  .open-inspector {
+    display: inline-block;
+    vertical-align: top;
+    height: 15px;
+    width: 15px;
+    margin: 1px 4px 0;
+    padding: 0;
+    border: none;
+    color: var(--theme-icon-color);
+    fill: currentColor;
+    cursor: pointer;
+    -moz-context-properties: fill;
+    background: url("chrome://devtools/skin/images/open-inspector.svg") no-repeat;
+  }
+
+  .objectBox-node:hover .open-inspector {
+    color: var(--theme-icon-alternate-hover-color);
+  }
 }
 
 .devtools-tooltip-query-container ul {
   padding: 0;
   margin: 0;
   list-style: none;
+}
+
+.devtools-tooltip-query-container ul.unset-properties {
+  margin-block-start: 1em;
+  padding-block-start: 1em;
+  border-block-start: 1px solid var(--theme-popup-dimmed);
 }
 
 .devtools-tooltip-query-container .objectBox-node .tag-name {
@@ -269,6 +302,55 @@ strong {
 
 .devtools-tooltip-query-container .property-value {
   color: var(--theme-highlight-red);
+
+  &.empty {
+    color: var(--theme-text-color-inactive);
+  }
+}
+
+/* Tooltip: CSS explainers */
+.tooltip-container:has(.devtools-tooltip-css-explainers) {
+  /* By default, in dark mode, the tooltip background color is lighter than the background
+     color of the Rules view. Since we're using the same color than in the Rules view
+     for CSS values, this can lead to poor contrast.
+     To prevent this, we apply the same background color than in the Rules view */
+  --theme-arrowpanel-background: var(--theme-body-background);
+}
+
+.tooltip-container[type="doorhanger"] > .tooltip-panel:has(.devtools-tooltip-css-explainers) {
+  --max-tooltip-width: 600px;
+  max-width: var(--max-tooltip-width);
+}
+
+.devtools-tooltip-css-explainers {
+  color: var(--theme-body-color);
+  width: max-content;
+  max-width: min(var(--max-tooltip-width), 100vw);
+  box-sizing: border-box;
+  padding: 5px 10px;
+  user-select: text;
+  -moz-user-focus: normal;
+
+  ol {
+    margin: 0;
+    padding: 0;
+    font-family: var(--monospace-font-family);
+
+    li {
+      padding-inline-start: 1ch;
+      color: var(--theme-highlight-red);
+    }
+
+    li:not(:first-of-type)::marker {
+      content: "↪";
+      color: var(--theme-body-color);
+    }
+
+    /* Add a top margin for the last item unless there are less that 2 steps displayed */
+    li:last-of-type:not(:nth-of-type(1), :nth-of-type(2)) {
+      margin-block-start: 8px;
+    }
+  }
 }
 
 /* Tooltip: Tiles */
@@ -305,12 +387,12 @@ strong {
   -moz-window-shadow: none;
   --panel-border-radius: 0px;
   --panel-padding: 0px;
-  --panel-background: transparent;
+  --panel-background-color: transparent;
   --panel-border-color: transparent;
-  --panel-shadow: none;
+  --panel-box-shadow: none;
 
   /* This is enough room for the shadow of the tooltip-container */
-  --panel-shadow-margin: 10px;
+  --panel-box-shadow-margin: 10px;
 
   &::part(content) {
     border: none;

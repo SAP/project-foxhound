@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -37,7 +35,6 @@
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/ImageDataSerializer.h"
 #include "mozilla/layers/RemoteTextureMap.h"
-#include "mozilla/widget/ScreenManager.h"
 #include "nsContentUtils.h"
 #include "nsIMemoryReporter.h"
 #include "skia/include/core/SkPixmap.h"
@@ -83,7 +80,8 @@ class AcceleratedCanvas2DMemoryReporter final : public nsIMemoryReporter {
     static bool registered = false;
     if (!registered) {
       registered = true;
-      RegisterStrongMemoryReporter(new AcceleratedCanvas2DMemoryReporter);
+      RegisterStrongMemoryReporter(
+          MakeAndAddRef<AcceleratedCanvas2DMemoryReporter>());
     }
   }
 };
@@ -219,6 +217,10 @@ DrawTargetWebgl::~DrawTargetWebgl() {
 SharedContextWebgl::SharedContextWebgl() = default;
 
 SharedContextWebgl::~SharedContextWebgl() {
+  // Detach weak references first so that no cleanup below can promote a
+  // WeakPtr to this object while it is being destroyed, which would AddRef
+  // an object with a zero refcount and recursively delete it on Release.
+  DetachWeakPtr();
   // Detect context loss before deletion.
   if (mWebgl) {
     ExitTlsScope();
@@ -449,34 +451,44 @@ bool DrawTargetWebgl::Init(const IntSize& size, const SurfaceFormat format,
     return false;
   }
 
-  size_t byteSize = layers::ImageDataSerializer::ComputeRGBBufferSize(
+  Maybe<size_t> byteSize = layers::ImageDataSerializer::ComputeRGBBufferSize(
       mSize, SurfaceFormat::B8G8R8A8);
-  if (byteSize == 0) {
+  if (byteSize.isNothing()) {
     return false;
   }
 
-  size_t shmemSize = mozilla::ipc::shared_memory::PageAlignedSize(byteSize);
+  size_t shmemSize =
+      mozilla::ipc::shared_memory::PageAlignedSize(byteSize.value());
   if (NS_WARN_IF(shmemSize > UINT32_MAX)) {
     MOZ_ASSERT_UNREACHABLE("Buffer too big?");
     return false;
   }
 
-  auto handle = mozilla::ipc::shared_memory::Create(shmemSize);
+  // The handle must be frozen to prevent resizing or writing to the buffer
+  // backing our local Skia DrawTarget.
+  auto handle = mozilla::ipc::shared_memory::CreateFreezable(shmemSize);
   if (NS_WARN_IF(!handle)) {
     return false;
   }
-  auto mapping = handle.Map();
+  auto mapping = std::move(handle).Map();
   if (NS_WARN_IF(!mapping)) {
     return false;
   }
 
-  mShmemHandle = std::move(handle).ToReadOnly();
-  mShmem = std::move(mapping);
+  std::tie(mShmemHandle, mShmem) =
+      std::move(mapping).FreezeWithMutableMapping();
+  if (NS_WARN_IF(!mShmemHandle) || NS_WARN_IF(!mShmem)) {
+    return false;
+  }
 
   mSkia = new DrawTargetSkia;
   auto stride = layers::ImageDataSerializer::ComputeRGBStride(
       SurfaceFormat::B8G8R8A8, size.width);
-  if (!mSkia->Init(mShmem.DataAs<uint8_t>(), size, stride,
+  if (NS_WARN_IF(stride.isNothing())) {
+    return false;
+  }
+
+  if (!mSkia->Init(mShmem.DataAs<uint8_t>(), size, stride.value(),
                    SurfaceFormat::B8G8R8A8, true)) {
     return false;
   }
@@ -882,7 +894,7 @@ bool DrawTargetWebgl::GenerateComplexClipMask() {
   return !!data;
 }
 
-bool DrawTargetWebgl::SetSimpleClipRect() {
+Maybe<Rect> DrawTargetWebgl::ComputeSimpleClipRect() const {
   // Determine whether the clipping rectangle is simple enough to accelerate.
   // Check if there is a device space clip rectangle available from the Skia
   // target.
@@ -894,9 +906,7 @@ bool DrawTargetWebgl::SetSimpleClipRect() {
     if (!clip->IsEmpty() && clip->Contains(GetRect())) {
       clip = Some(GetRect());
     }
-    mSharedContext->SetClipRect(*clip);
-    mSharedContext->SetNoClipMask();
-    return true;
+    return Some(Rect(*clip));
   }
 
   // There was no pixel-aligned clip rect available, so check the clip stack to
@@ -907,15 +917,22 @@ bool DrawTargetWebgl::SetSimpleClipRect() {
     // complex.
     if (clipStack.mPath ||
         !clipStack.mTransform.PreservesAxisAlignedRectangles()) {
-      return false;
+      return Nothing();
     }
     // Transform the rect and intersect it with the current clip.
     rect =
         clipStack.mTransform.TransformBounds(clipStack.mRect).Intersect(rect);
   }
-  mSharedContext->SetClipRect(rect);
-  mSharedContext->SetNoClipMask();
-  return true;
+  return Some(rect);
+}
+
+bool DrawTargetWebgl::SetSimpleClipRect() {
+  if (Maybe<Rect> rect = ComputeSimpleClipRect()) {
+    mSharedContext->SetClipRect(*rect);
+    mSharedContext->SetNoClipMask();
+    return true;
+  }
+  return false;
 }
 
 // Installs the Skia clip rectangle, if applicable, onto the shared WebGL
@@ -944,6 +961,21 @@ bool DrawTargetWebgl::PrepareContext(bool aClipped,
     mRefreshClipState = false;
   }
   return mSharedContext->SetTarget(this, aHandle, aViewportSize);
+}
+
+// Whether clipping may be necessary for the operation. This tries to avoid
+// generating a complex clip mask in case the current target is not active
+// or not using WebGL. If there is only a simple clip mask and its bounds
+// encompass the viewport, then no clipping is required.
+bool DrawTargetWebgl::ShouldClip() {
+  if (mSharedContext->IsCurrentTarget(this) && !mRefreshClipState) {
+    return mSharedContext->HasClipMask() ||
+           !mSharedContext->mClipAARect.Contains(Rect(GetRect()));
+  }
+  if (Maybe<Rect> rect = ComputeSimpleClipRect()) {
+    return !rect->Contains(Rect(GetRect()));
+  }
+  return true;
 }
 
 void SharedContextWebgl::RestoreCurrentTarget(
@@ -994,29 +1026,12 @@ bool DrawTargetWebgl::CanCreate(const IntSize& aSize, SurfaceFormat aFormat) {
     return false;
   }
 
-  // Maximum pref allows 3 different options:
-  //  0 means unlimited size,
+  // Maximum pref allows 2 different options:
+  //  <= 0 means unlimited size,
   //  > 0 means use value as an absolute threshold,
-  //  < 0 means use the number of screen pixels as a threshold.
   int32_t maxSize = StaticPrefs::gfx_canvas_accelerated_max_size();
-  if (maxSize > 0) {
-    if (std::max(aSize.width, aSize.height) > maxSize) {
-      return false;
-    }
-  } else if (maxSize < 0) {
-    // Default to historical mobile screen size of 980x480, like FishIEtank.
-    // In addition, allow acceleration up to this size even if the screen is
-    // smaller. A lot content expects this size to work well. See Bug 999841
-    static const int32_t kScreenPixels = 980 * 480;
-
-    if (RefPtr<widget::Screen> screen =
-            widget::ScreenManager::GetSingleton().GetPrimaryScreen()) {
-      LayoutDeviceIntSize screenSize = screen->GetRect().Size();
-      if (aSize.width * aSize.height >
-          std::max(screenSize.width * screenSize.height, kScreenPixels)) {
-        return false;
-      }
-    }
+  if (maxSize > 0 && std::max(aSize.width, aSize.height) > maxSize) {
+    return false;
   }
 
   return true;
@@ -1288,7 +1303,8 @@ already_AddRefed<DataSourceSurface> SharedContextWebgl::ReadSnapshot(
   return surface.forget();
 }
 
-static inline int32_t GetPBOStride(int32_t aWidth, SurfaceFormat aFormat) {
+static inline Maybe<int32_t> GetPBOStride(int32_t aWidth,
+                                          SurfaceFormat aFormat) {
   return GetAlignedStride<16>(aWidth, BytesPerPixel(aFormat));
 }
 
@@ -1307,8 +1323,12 @@ already_AddRefed<WebGLBuffer> SharedContextWebgl::ReadSnapshotIntoPBO(
     format = mCurrentTarget->GetFormat();
     bounds = mCurrentTarget->GetRect();
   }
-  int32_t pboStride = GetPBOStride(bounds.width, format);
-  size_t bufSize = BufferSizeFromStrideAndHeight(pboStride, bounds.height);
+  auto pboStride = GetPBOStride(bounds.width, format);
+  if (pboStride.isNothing()) {
+    return nullptr;
+  }
+  size_t bufSize =
+      BufferSizeFromStrideAndHeight(pboStride.value(), bounds.height);
   if (!bufSize) {
     return nullptr;
   }
@@ -1329,7 +1349,7 @@ already_AddRefed<WebGLBuffer> SharedContextWebgl::ReadSnapshotIntoPBO(
   mWebgl->UninitializedBufferData_SizeOnly(LOCAL_GL_PIXEL_PACK_BUFFER, bufSize,
                                            LOCAL_GL_STREAM_READ);
   mWebgl->BindBuffer(LOCAL_GL_PIXEL_PACK_BUFFER, 0);
-  if (!ReadInto(nullptr, pboStride, format, bounds, aHandle, pbo)) {
+  if (!ReadInto(nullptr, pboStride.value(), format, bounds, aHandle, pbo)) {
     return nullptr;
   }
 
@@ -1349,9 +1369,12 @@ already_AddRefed<DataSourceSurface> SharedContextWebgl::ReadSnapshotFromPBO(
     const IntSize& aSize, uint8_t* aData, int32_t aStride) {
   // For an existing PBO where a readback has been initiated previously, create
   // a new data surface and copy the PBO's data into the data surface.
-  int32_t pboStride = GetPBOStride(aSize.width, aFormat);
-  size_t bufSize =
-      BufferSizeFromStrideAndHeight(aData ? aStride : pboStride, aSize.height);
+  auto pboStride = GetPBOStride(aSize.width, aFormat);
+  if (pboStride.isNothing()) {
+    return nullptr;
+  }
+  size_t bufSize = BufferSizeFromStrideAndHeight(
+      aData ? aStride : pboStride.value(), aSize.height);
   if (!bufSize) {
     return nullptr;
   }
@@ -1359,7 +1382,7 @@ already_AddRefed<DataSourceSurface> SharedContextWebgl::ReadSnapshotFromPBO(
       aData ? Factory::CreateWrappingDataSourceSurface(aData, aStride, aSize,
                                                        aFormat)
             : Factory::CreateDataSourceSurfaceWithStride(aSize, aFormat,
-                                                         pboStride);
+                                                         pboStride.value());
   if (!surface) {
     return nullptr;
   }
@@ -1371,7 +1394,8 @@ already_AddRefed<DataSourceSurface> SharedContextWebgl::ReadSnapshotFromPBO(
   Range<uint8_t> range = {dstMap.GetData(), bufSize};
   bool success = mWebgl->AsWebGL2()->GetBufferSubData(
       LOCAL_GL_PIXEL_PACK_BUFFER, 0, range, aSize.height,
-      BytesPerPixel(aFormat) * aSize.height, pboStride, dstMap.GetStride());
+      BytesPerPixel(aFormat) * aSize.width, pboStride.value(),
+      dstMap.GetStride());
   mWebgl->BindBuffer(LOCAL_GL_PIXEL_PACK_BUFFER, 0);
   if (success) {
     return surface.forget();
@@ -1385,8 +1409,10 @@ void SharedContextWebgl::RemoveSnapshotPBO(
   MOZ_ASSERT(aOwner && buffer);
   IntSize size = aOwner->GetSize();
   SurfaceFormat format = aOwner->GetFormat();
-  int32_t pboStride = GetPBOStride(size.width, format);
-  size_t bufSize = BufferSizeFromStrideAndHeight(pboStride, size.height);
+  size_t bufSize = 0;
+  if (auto pboStride = GetPBOStride(size.width, format)) {
+    bufSize = BufferSizeFromStrideAndHeight(pboStride.value(), size.height);
+  }
   // If the queue is empty, no memory should be used. Otherwise, deduct the
   // usage from the queue.
   if (mSnapshotPBOs.empty()) {
@@ -1569,7 +1595,12 @@ void SharedContextWebgl::ResetPathVertexBuffer() {
   mPathVertexOffset = sizeof(kRectVertexData);
 
   size_t newCapacity = mPathVertexBuffer->ByteLength();
-  AddUntrackedTextureMemory(newCapacity);
+  if (newCapacity > 0) {
+    AddUntrackedTextureMemory(newCapacity);
+  } else {
+    mPathVertexCapacity = 0;
+    mPathVertexOffset = 0;
+  }
 
   if (mWGROutputBuffer &&
       (!mPathVertexCapacity || newCapacity != oldCapacity)) {
@@ -2113,9 +2144,7 @@ void DrawTargetWebgl::ClearRect(const Rect& aRect) {
 
   // If the clear rectangle encompasses the entire viewport and is not clipped,
   // then mark the target as entirely clear.
-  if (containsViewport && mSharedContext->IsCurrentTarget(this) &&
-      !mSharedContext->HasClipMask() &&
-      mSharedContext->mClipAARect.Contains(Rect(GetRect()))) {
+  if (containsViewport && !ShouldClip()) {
     mIsClear = true;
   }
 }
@@ -2559,6 +2588,7 @@ bool SharedContextWebgl::UploadSurface(DataSourceSurface* aData,
   if (srcRect.IsEmpty()) {
     return true;
   }
+  Maybe<DataSourceSurface::ScopedMap> map;
   if (aData) {
     // If the source rect could not possibly overlap the surface, then it is
     // effectively empty with nothing to upload.
@@ -2579,15 +2609,15 @@ bool SharedContextWebgl::UploadSurface(DataSourceSurface* aData,
     // The surface needs to be uploaded to its backing texture either to
     // initialize or update the texture handle contents. Map the data
     // contents of the surface so it can be read.
-    DataSourceSurface::ScopedMap map(aData, DataSourceSurface::READ);
-    if (!map.IsMapped()) {
+    map.emplace(aData, DataSourceSurface::READ);
+    if (!map->IsMapped()) {
       return false;
     }
-    int32_t stride = map.GetStride();
+    int32_t stride = map->GetStride();
     // Get the data pointer range considering the sampling rect offset and
     // size.
     Span<const uint8_t> range(
-        map.GetData() + srcRect.y * size_t(stride) + srcRect.x * bpp,
+        map->GetData() + srcRect.y * size_t(stride) + srcRect.x * bpp,
         std::max(srcRect.height - 1, 0) * size_t(stride) + srcRect.width * bpp);
     texDesc.cpuData = Some(range);
     // If the stride happens to be 4 byte aligned, assume that is the
@@ -2602,20 +2632,26 @@ bool SharedContextWebgl::UploadSurface(DataSourceSurface* aData,
       MOZ_ASSERT_UNREACHABLE("Invalid origin for texture initialization.");
       return false;
     }
-    int32_t stride = GetAlignedStride<4>(srcRect.width, BytesPerPixel(aFormat));
-    if (stride <= 0) {
+    auto stride = GetAlignedStride<4>(srcRect.width, BytesPerPixel(aFormat));
+    if (stride.isNothing()) {
       MOZ_ASSERT_UNREACHABLE("Invalid stride for texture initialization.");
       return false;
     }
-    size_t size = size_t(stride) * srcRect.height;
-    if (!mZeroBuffer || size > mZeroSize) {
+    CheckedInt<size_t> size =
+        CheckedInt<size_t>(stride.value()) * srcRect.height;
+    if (!size.isValid()) {
+      MOZ_ASSERT_UNREACHABLE(
+          "Invalid stride * srcRect.height for texture initialization.");
+      return false;
+    }
+    if (!mZeroBuffer || size.value() > mZeroSize) {
       ClearZeroBuffer();
       mZeroBuffer = mWebgl->CreateBuffer();
-      mZeroSize = size;
+      mZeroSize = size.value();
       mWebgl->BindBuffer(LOCAL_GL_PIXEL_UNPACK_BUFFER, mZeroBuffer);
       // WebGL will zero initialize the empty buffer, so we don't send zero data
       // explicitly.
-      mWebgl->BufferData(LOCAL_GL_PIXEL_UNPACK_BUFFER, size, nullptr,
+      mWebgl->BufferData(LOCAL_GL_PIXEL_UNPACK_BUFFER, mZeroSize, nullptr,
                          LOCAL_GL_STATIC_DRAW);
       AddUntrackedTextureMemory(mZeroBuffer);
     } else {
@@ -4362,8 +4398,7 @@ void DrawTargetWebgl::FillRect(const Rect& aRect, const Pattern& aPattern,
   } else {
     // If the pattern is unsupported, then transform the rect to a path so it
     // can be cached.
-    SkPath skiaPath;
-    skiaPath.addRect(RectToSkRect(aRect));
+    SkPath skiaPath = SkPath::Rect(RectToSkRect(aRect));
     RefPtr<PathSkia> path = new PathSkia(skiaPath, FillRule::FILL_WINDING);
     DrawPath(path, aPattern, aOptions);
   }
@@ -5583,8 +5618,8 @@ void DrawTargetWebgl::DrawSurfaceWithShadow(SourceSurface* aSurface,
   if (ShouldAccelPath(options, nullptr)) {
     SurfacePattern pattern(aSurface, ExtendMode::CLAMP,
                            Matrix::Translation(aDest));
-    SkPath skiaPath;
-    skiaPath.addRect(RectToSkRect(Rect(aSurface->GetRect()) + aDest));
+    SkPath skiaPath =
+        SkPath::Rect(RectToSkRect(Rect(aSurface->GetRect()) + aDest));
     RefPtr<PathSkia> path = new PathSkia(skiaPath, FillRule::FILL_WINDING);
     AutoRestoreTransform restore(this);
     SetTransform(Matrix());
@@ -5618,8 +5653,7 @@ void DrawTargetWebgl::StrokeRect(const Rect& aRect, const Pattern& aPattern,
   } else {
     // If the stroke options are unsupported, then transform the rect to a path
     // so it can be cached.
-    SkPath skiaPath;
-    skiaPath.addRect(RectToSkRect(aRect));
+    SkPath skiaPath = SkPath::Rect(RectToSkRect(aRect));
     RefPtr<PathSkia> path = new PathSkia(skiaPath, FillRule::FILL_WINDING);
     DrawPath(path, aPattern, aOptions, &aStrokeOptions, true);
   }
@@ -5710,9 +5744,8 @@ void DrawTargetWebgl::StrokeLine(const Point& aStart, const Point& aEnd,
                               aOptions)) {
     // If the stroke options are unsupported, then transform the line to a path
     // so it can be cached.
-    SkPath skiaPath;
-    skiaPath.moveTo(PointToSkPoint(aStart));
-    skiaPath.lineTo(PointToSkPoint(aEnd));
+    SkPath skiaPath =
+        SkPath::Line(PointToSkPoint(aStart), PointToSkPoint(aEnd));
     RefPtr<PathSkia> path = new PathSkia(skiaPath, FillRule::FILL_WINDING);
     DrawPath(path, aPattern, aOptions, &aStrokeOptions, true);
   }
@@ -6133,8 +6166,14 @@ bool SharedContextWebgl::DrawGlyphsAccel(ScaledFont* aFont,
   // AA.
   bool usePreblend =
       aUseSubpixelAA || aOptions.mAntialiasMode != AntialiasMode::NONE;
+#elif defined(MOZ_WIDGET_GTK) || defined(MOZ_WIDGET_ANDROID)
+  // FreeType preblend is conditional on gamma pref being enabled.
+  bool usePreblend =
+      (StaticPrefs::gfx_font_rendering_freetype_gamma() >= 0 ||
+       StaticPrefs::gfx_font_rendering_freetype_enhanced_contrast() > 0) &&
+      (aUseSubpixelAA || aOptions.mAntialiasMode != AntialiasMode::NONE);
 #else
-  // FreeType backends currently don't use any preblending.
+  // Other platforms (uikit) do not use preblend.
   bool usePreblend = false;
 #endif
 
@@ -6332,13 +6371,19 @@ bool DrawTargetWebgl::ReadIntoSkia() {
     } else {
       // If there's no existing snapshot and we can successfully map the Skia
       // target for reading, then try to read into that.
+      bool readInto = false;
       if (!mSnapshot && mSkia->LockBits(&data, &size, &stride, &format)) {
-        (void)ReadInto(data, stride);
+        if (size == GetSize()) {
+          readInto = ReadInto(data, stride);
+        }
         mSkia->ReleaseBits(data);
-      } else if (RefPtr<SourceSurface> snapshot = Snapshot()) {
-        // Otherwise, fall back to getting a snapshot from WebGL if available
-        // and then copying that to Skia.
-        mSkia->CopySurface(snapshot, GetRect(), IntPoint(0, 0));
+      }
+      if (!readInto) {
+        if (RefPtr<SourceSurface> snapshot = Snapshot()) {
+          // Otherwise, fall back to getting a snapshot from WebGL if available
+          // and then copying that to Skia.
+          mSkia->CopySurface(snapshot, GetRect(), IntPoint(0, 0));
+        }
       }
       didReadback = true;
     }
@@ -6476,7 +6521,10 @@ bool DrawTargetWebgl::UsageProfile::RequiresRefresh() const {
 }
 
 void SharedContextWebgl::CachePrefs() {
-  uint32_t capacity = StaticPrefs::gfx_canvas_accelerated_gpu_path_size() << 20;
+  uint32_t capacity =
+      std::min(StaticPrefs::gfx_canvas_accelerated_gpu_path_size(),
+               uint32_t(INT32_MAX) >> 20)
+      << 20;
   if (capacity != mPathVertexCapacity) {
     mPathVertexCapacity = capacity;
     if (mPathCache) {

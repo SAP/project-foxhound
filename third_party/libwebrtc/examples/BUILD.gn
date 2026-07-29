@@ -65,7 +65,6 @@ rtc_library("read_auth_file") {
     "turnserver/read_auth_file.h",
   ]
   deps = [
-    "../api:array_view",
     "../rtc_base:stringutils",
     "//third_party/abseil-cpp/absl/strings:string_view",
   ]
@@ -77,7 +76,6 @@ if (rtc_include_tests) {
     sources = [ "turnserver/read_auth_file_unittest.cc" ]
     deps = [
       ":read_auth_file",
-      "../test:test_main",
       "//test:test_support",
       "//testing/gtest",
     ]
@@ -483,13 +481,15 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
       deps = [
         "../api:create_modular_peer_connection_factory",
         "../api:enable_media",
-        "../api:libjingle_peerconnection_api",
+        "../api:peer_connection_interface",
         "../api:scoped_refptr",
         "../api:sequence_checker",
         "../api/audio:audio_processing",
         "../api/audio:builtin_audio_processing_builder",
         "../api/audio_codecs:builtin_audio_decoder_factory",
         "../api/audio_codecs:builtin_audio_encoder_factory",
+        "../api/environment",
+        "../api/environment:environment_factory",
         "../api/rtc_event_log:rtc_event_log_factory",
         "../rtc_base/synchronization:mutex",
         "../sdk:base_objc",
@@ -643,7 +643,7 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
           ":AppRTCMobile_lib",
           ":apprtcmobile_test_sources",
           "../sdk:framework_objc",
-          "//test:test_support",
+          "//test:test_support_objc",
         ]
         ldflags = [ "-all_load" ]
       }
@@ -676,18 +676,19 @@ if (is_linux || is_chromeos || is_win) {
     ]
 
     deps = [
-      "../api:array_view",
       "../api:async_dns_resolver",
       "../api:audio_options_api",
       "../api:create_frame_generator",
       "../api:create_modular_peer_connection_factory",
+      "../api:data_channel_interface",
       "../api:enable_media",
       "../api:field_trials",
       "../api:jsep",
-      "../api:libjingle_peerconnection_api",
       "../api:make_ref_counted",
       "../api:media_stream_interface",
+      "../api:peer_connection_interface",
       "../api:rtc_error",
+      "../api:rtp_receiver_interface",
       "../api:rtp_sender_interface",
       "../api:scoped_refptr",
       "../api/audio:audio_device",
@@ -719,7 +720,6 @@ if (is_linux || is_chromeos || is_win) {
       "../rtc_base:ssl_adapter",
       "../rtc_base:stringutils",
       "../rtc_base:threading",
-      "../rtc_base/third_party/sigslot",
       "../system_wrappers",
       "../test:frame_generator_capturer",
       "../test:platform_video_capturer",
@@ -759,7 +759,6 @@ if (is_linux || is_chromeos || is_win) {
     }
 
     deps += [
-      "../api:libjingle_peerconnection_api",
       "../api/audio_codecs:builtin_audio_decoder_factory",
       "../api/audio_codecs:builtin_audio_encoder_factory",
       "../api/video:video_frame",
@@ -821,6 +820,7 @@ if (is_linux || is_chromeos || is_win) {
       "../pc:rtc_pc",
       "../rtc_base:async_udp_socket",
       "../rtc_base:ip_address",
+      "../rtc_base:net_helper",
       "../rtc_base:socket_address",
       "../rtc_base:socket_server",
       "../rtc_base:threading",

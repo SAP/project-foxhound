@@ -23,7 +23,7 @@ function run_test() {
       });
       channel.open();
     },
-    /NS_ERROR_FILE_NOT_FOUND/,
+    /NS_ERROR_MALFORMED_URI/,
     "An embedded null must not truncate the path being loaded"
   );
 }

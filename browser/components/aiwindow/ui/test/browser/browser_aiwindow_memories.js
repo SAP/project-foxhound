@@ -37,8 +37,8 @@ add_task(async function test_memories_scheduler_on_toggle_to_aiwindow() {
 
 add_task(
   async function test_memories_scheduler_not_called_on_toggle_to_classic() {
-    if (!document.documentElement.hasAttribute("ai-window")) {
-      document.documentElement.setAttribute("ai-window", "");
+    if (!AIWindow.isAIWindowActive(window)) {
+      AIWindow.toggleAIWindow(window, true);
     }
 
     const stub = sinon.stub(MemoriesSchedulers, "maybeRunAndSchedule");

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -105,14 +103,16 @@ auto GraphRunner::OneIteration(GraphTime aStateTime,
 #ifdef MOZ_WIDGET_ANDROID
 namespace {
 void PromoteRenderingThreadAndroid() {
-  MOZ_LOG(gMediaTrackGraphLog, LogLevel::Debug,
-          ("GraphRunner default thread priority: %d",
-           java::sdk::Process::GetThreadPriority(java::sdk::Process::MyTid())));
+  MOZ_LOG_FMT(
+      gMediaTrackGraphLog, LogLevel::Debug,
+      "GraphRunner default thread priority: {}",
+      java::sdk::Process::GetThreadPriority(java::sdk::Process::MyTid()));
   java::sdk::Process::SetThreadPriority(
       java::sdk::Process::THREAD_PRIORITY_URGENT_AUDIO);
-  MOZ_LOG(gMediaTrackGraphLog, LogLevel::Debug,
-          ("GraphRunner promoted thread priority: %d",
-           java::sdk::Process::GetThreadPriority(java::sdk::Process::MyTid())));
+  MOZ_LOG_FMT(
+      gMediaTrackGraphLog, LogLevel::Debug,
+      "GraphRunner promoted thread priority: {}",
+      java::sdk::Process::GetThreadPriority(java::sdk::Process::MyTid()));
 }
 };  // namespace
 #endif  // MOZ_WIDGET_ANDROID

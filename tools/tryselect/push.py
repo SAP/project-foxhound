@@ -2,10 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-
 import json
 import os
 import sys
+from functools import cache
+from typing import Optional
 
 from mach.util import get_state_dir
 from mozbuild.base import MozbuildObject
@@ -32,17 +33,21 @@ when pushing from hg. Please install it by running:
 """.lstrip()
 
 VCS_NOT_FOUND = """
-Could not detect version control. Only `hg` or `git` are supported.
+error: could not detect version control (only `hg` or `git` are supported)
+""".strip()
+
+NO_REMOTE_CONFIGURED = """
+error: no version control remote configured
 """.strip()
 
 UNCOMMITTED_CHANGES = """
-ERROR please commit changes before continuing
+error: commit changes before continuing
 """.strip()
 
 LARGE_PUSH_THRESHOLD = 1000
 LARGE_PUSH_WARNING = f"""
 Your push would schedule at least {{}} tasks. To avoid backlogs that cause delays for
-others, your tasks will be scheduled at a lower priority and may not run before
+others, your tasks will be scheduled at the lowest priority and may not run before
 their deadline. Consider selecting fewer than {LARGE_PUSH_THRESHOLD} tasks to save resources and
 get results faster.
 """
@@ -51,9 +56,10 @@ MAX_HISTORY = 10
 
 MACH_TRY_PUSH_TO_VCS = os.getenv("MACH_TRY_PUSH_TO_VCS") == "1"
 
-TREEHERDER_LANDO_TRY_RUN_URL = (
-    "https://treeherder.mozilla.org/jobs?repo=try&landoCommitID={job_id}"
-)
+HG_TRY_URL = "ssh://hg.mozilla.org/try"
+MACH_TRY_REMOTE: Optional[str] = None
+
+TREEHERDER_LANDO_TRY_RUN_URL = "https://treeherder.mozilla.org/jobs?repo=try&landoInstance={lando_instance}&landoCommitID={job_id}"
 
 here = os.path.abspath(os.path.dirname(__file__))
 build = MozbuildObject.from_environment(cwd=here)
@@ -113,7 +119,11 @@ def generate_try_task_config(method, labels, params=None, routes=None):
     # and have no way of knowing how many chunks will be scheduled for a given
     # task. For the purposes of this check, we'll ignore test chunks as it's
     # causing us to underestimate anyway.
-    num_tasks = len(labels) * try_config.get("rebuild", 1)
+    rebuild = try_config.get("rebuild", 1)
+    if isinstance(rebuild, dict):
+        num_tasks = sum(rebuild.get(label, 1) for label in labels)
+    else:
+        num_tasks = len(labels) * rebuild
     if "priority" not in try_config and num_tasks > LARGE_PUSH_THRESHOLD:
         print(LARGE_PUSH_WARNING.format(num_tasks))
         while True:
@@ -165,6 +175,16 @@ def get_sys_argv(injected_argv=None):
     return " ".join(formatted_argv)
 
 
+@cache
+def _is_hg_try(remote):
+    if not remote:
+        return False
+
+    if remote_url := vcs.get_remote_url(remote, push=True):
+        remote = remote_url
+    return HG_TRY_URL in remote
+
+
 def push_to_try(
     method,
     msg,
@@ -176,10 +196,18 @@ def push_to_try(
     files_to_change=None,
     allow_log_capture=False,
     push_to_vcs=False,
+    force_old_lando=False,
 ):
+    remote = os.environ.get("MACH_TRY_REMOTE") or MACH_TRY_REMOTE
     metrics.mach_try.commit_prep.start()
     push = not stage_changes and not dry_run
-    push_to_vcs |= MACH_TRY_PUSH_TO_VCS
+
+    if push and not remote:
+        print(NO_REMOTE_CONFIGURED)
+        sys.exit(1)
+
+    # Use direct push if explicitly requested or we aren't pushing to hg.mozilla.org/try.
+    push_to_vcs |= MACH_TRY_PUSH_TO_VCS or not _is_hg_try(remote)
     check_working_directory(push)
 
     # Format the commit message
@@ -222,16 +250,30 @@ def push_to_try(
                 commit_message,
                 changed_files=changed_files,
                 allow_log_capture=allow_log_capture,
+                remote=remote,
             )
         else:
-            job_id = push_to_lando_try(vcs, commit_message, changed_files, metrics)
-            if job_id:
+            push_data = push_to_lando_try(
+                vcs,
+                commit_message,
+                changed_files,
+                metrics,
+                force_old_lando=force_old_lando,
+            )
+            if not push_data:
+                sys.exit(1)
+            lando_instance = push_data["lando_instance"]
+            job_id = push_data["lando_job_id"]
+            if lando_instance and job_id:
+                treeherder_url = TREEHERDER_LANDO_TRY_RUN_URL.format(
+                    lando_instance=lando_instance, job_id=job_id
+                )
                 print(
-                    f"Follow the progress of your build on Treeherder: "
-                    f"{TREEHERDER_LANDO_TRY_RUN_URL.format(job_id=job_id)}"
+                    f"try submission success in {push_data['duration']:.1f}s:\n"
+                    f" {treeherder_url}"
                 )
 
-            return job_id
+            return push_data
     except MissingVCSExtension as e:
         if e.ext == "push-to-try":
             print(HG_PUSH_TO_TRY_NOT_FOUND)

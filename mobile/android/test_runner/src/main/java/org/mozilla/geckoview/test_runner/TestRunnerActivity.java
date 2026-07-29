@@ -239,7 +239,22 @@ public class TestRunnerActivity extends Activity {
           if (details.active == Boolean.TRUE) {
             webExtensionController().setTabActive(mOwnedSessions.peek(), false);
           }
-          final GeckoSession newSession = createSession(settings, details.active == Boolean.TRUE);
+          // Bug 1467915 introduced createBackgroundSession so that sessions
+          // created with window.open() would have a display surface. This
+          // means that window.open()'d sessions would have their own Display.
+          //
+          // This onNewTab delegate here handles browser.tabs.create() calls,
+          // and should open a foreground tab iff details.active is true. This
+          // handler is also reused by AppTestDelegate.openNewForegroundTab.
+          //
+          // Bug 2040023 shows that sessions without surface cause unexpected
+          // behavior, which we can fix by using createBackgroundSession here
+          // as well. Confusingly (but not mistaken), we use createSession for
+          // background tabs, and createBackgroundSession for foreground tabs.
+          final GeckoSession newSession =
+              details.active == Boolean.TRUE
+                  ? createBackgroundSession(settings, /* active */ true)
+                  : createSession(settings, /* active */ false);
           return GeckoResult.fromValue(newSession);
         }
       };
@@ -382,6 +397,11 @@ public class TestRunnerActivity extends Activity {
 
   /**
    * Creates a session with a display attached.
+   *
+   * <p>NOTE: This might not be very realistic, i.e. differing from A-C/Fenix. GeckoView ordinarily
+   * has only one display, associated with a view's active session via GeckoView.setSession. But
+   * this method here creates a distinct display for a created session (introduced in bug 1467915).
+   * TODO bug 2040375: Consider changing this test-only implementation to match A-C/Fenix.
    *
    * @param settings settings for the newly created {@link GeckoSession}, could be null if no extra
    *     settings need to be added.

@@ -1,5 +1,3 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -163,10 +161,7 @@ def fenix_format(_paths, config, fix=None, **lintargs):
         fix,
         os.path.join("mobile", "android", "fenix"),
         project_name="fenix",
-        lint_tasks=[
-            ":fenix:lint",
-            ":fenix:lintDebug",
-        ],
+        lint_tasks=[":fenix:lintDebug"],
         **lintargs,
     )
 
@@ -198,13 +193,14 @@ def report_gradlew(config, fix, subdir, project_name, lint_tasks=[], **lintargs)
     topobjdir = lintargs["topobjdir"]
 
     if fix:
-        tasks = [f":{project_name}:ktlintFormat", f":{project_name}:detekt"]
+        ktlint_task = f":{project_name}:ktlintFormat"
     else:
-        tasks = [f":{project_name}:ktlint", f":{project_name}:detekt"]
+        ktlint_task = f":{project_name}:ktlint"
+    tasks = [ktlint_task, f":{project_name}:detekt"] + list(lint_tasks)
 
     extra_args = lintargs.get("extra_args") or []
 
-    gradle(
+    ret = gradle(
         lintargs["log"],
         topsrcdir=topsrcdir,
         topobjdir=topobjdir,
@@ -291,7 +287,9 @@ def report_gradlew(config, fix, subdir, project_name, lint_tasks=[], **lintargs)
         print(f"Could not read ktlint report: `{ktlint_file}`")
         pass
 
-    return results + read_lint_report(config, subdir, tasks=lint_tasks, **lintargs)
+    return results + parse_lint_report(
+        config, subdir, tasks=lint_tasks, ret=ret, **lintargs
+    )
 
 
 def is_excluded_file(topsrcdir, excludes, file):
@@ -420,17 +418,8 @@ def lint(_paths, config, **lintargs):
     return results
 
 
-def read_lint_report(config, subdir, tasks=[], **lintargs):
+def parse_lint_report(config, subdir, tasks=[], ret=0, **lintargs):
     topsrcdir = lintargs["root"]
-    topobjdir = lintargs["topobjdir"]
-
-    ret = gradle(
-        lintargs["log"],
-        topsrcdir=topsrcdir,
-        topobjdir=topobjdir,
-        tasks=tasks,
-        extra_args=lintargs.get("extra_args") or [],
-    )
 
     reports = os.path.join(topsrcdir, subdir, "build", "reports")
 
@@ -468,7 +457,8 @@ def read_lint_report(config, subdir, tasks=[], **lintargs):
                     dir = os.path.join(topsrcdir, subdir)
                 name = os.path.join(
                     dir,
-                    issue.get("locations", [{}])[0]
+                    issue
+                    .get("locations", [{}])[0]
                     .get("physicalLocation", {})
                     .get("artifactLocation", {})
                     .get("uri"),
@@ -492,11 +482,13 @@ def read_lint_report(config, subdir, tasks=[], **lintargs):
                 err = {
                     "rule": issue.get("ruleId"),
                     "path": name,
-                    "lineno": issue.get("locations", [{}])[0]
+                    "lineno": issue
+                    .get("locations", [{}])[0]
                     .get("physicalLocation", {})
                     .get("region", {})
                     .get("startLine"),
-                    "column": issue.get("locations", [{}])[0]
+                    "column": issue
+                    .get("locations", [{}])[0]
                     .get("physicalLocation", {})
                     .get("region", {})
                     .get("startColumn"),
@@ -516,8 +508,14 @@ def read_lint_report(config, subdir, tasks=[], **lintargs):
             results.append(result.from_config(config, **err))
         return results
     except FileNotFoundError:
-        print("Could not read lint report from ", subdir)
-        return []
+        err = {
+            "level": "error",
+            "rule": "build-failure",
+            "message": f"Lint reports were not generated for {subdir} - Please check logs for more information",
+            "path": os.path.join(topsrcdir, subdir),
+            "lineno": 0,
+        }
+        return [result.from_config(config, **err)]
 
 
 def _parse_checkstyle_output(config, topsrcdir=None, report_path=None):

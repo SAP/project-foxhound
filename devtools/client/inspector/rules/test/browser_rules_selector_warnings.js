@@ -41,7 +41,7 @@ add_task(async function () {
   const { inspector, view } = await openRuleView();
 
   await selectNode("main", inspector);
-  const { ancestorDataEl, selectorText } = getRuleViewRuleEditor(view, 1);
+  const { ancestorDataEl, selectorText } = getRuleViewRuleEditorAt(view, 1);
 
   info(
     "Check that unconstrained :has() warnings are displayed for the rules selectors"
@@ -89,7 +89,7 @@ add_task(async function () {
     expectedWarnings: [UNCONSTRAINED_HAS_WARNING_MESSAGE],
   });
 
-  const scopeSiblingRuleEditor = getRuleViewRuleEditor(view, 3);
+  const scopeSiblingRuleEditor = getRuleViewRuleEditorAt(view, 3);
   ruleSelectors = Array.from(
     scopeSiblingRuleEditor.selectorText.querySelectorAll(".ruleview-selector")
   );

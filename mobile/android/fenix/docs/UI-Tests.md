@@ -26,7 +26,6 @@ fun displaySaysHello() {
 3. **Define Test Methods**: Write test methods to cover the functionality you want to test. Each method should represent a specific test case.
 4. **Leverage the Robot Pattern:** Use the Robot Pattern to encapsulate UI interactions and assertions. This pattern involves creating a separate class for each screen or feature under test. Each robo class encapsulates the actions and assertions related to that specific screen or feature.
 
-
 ## Writing Test Cases
 
 1. **Set Up Your Test**: Before running your test, set up the necessary conditions. This might involve navigating to a specific screen, or preparing Firefox state.
@@ -62,7 +61,7 @@ To run UI tests directly in Android Studio, you can follow a straightforward pro
 
 1. **Open the Project Window**: On the left side of Android Studio, you’ll find the Project window. This window displays the structure of Fenix, including the `src/androidTest/java/org.mozilla.fenix/ui` directory where UI tests are located.
 2. **Navigate to the target test Class**: In the Project window, navigate to the `src/androidTest/java/org.mozilla.fenix.ui` directory. Here you will find all test classes.
-3. **Run a Single Test**:  To run a single test, right-click on the test class file you wish to run. From the context menu that appears, select “Run ‘ClassNameTest’”. Replace `ClassNameTest` with the actual name of your test class. Android Studio will compile your app and run the test class on the selected device or emulator.
+3. **Run a Single Test**: To run a single test, right-click on the test class file you wish to run. From the context menu that appears, select “Run ‘ClassNameTest’”. Replace `ClassNameTest` with the actual name of your test class. Android Studio will compile your app and run the test class on the selected device or emulator.
 4. **Run All Tests in a Class**: To run all tests within a specific test class, right-click on the class file and select “Run ‘ClassNameTest”. This will execute all test methods within that class.
 5. **Run All Tests in a Package**: To run all tests within a package, right-click on the package name in the Project window and select “Run Tests”. This will execute all test classes within the selected package.
 6. **View Test Results**: After running your tests, you can view the results in the Run window at the bottom of Android Studio. This window displays the outcome of each test, including passed, failed, and skipped tests. You can click on individual tests to see more details about their execution.

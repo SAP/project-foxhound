@@ -57,6 +57,8 @@ class BeaconOnPagehideShutdownTestCase(MarionetteTestCase):
     def setUp(self):
         super().setUp()
 
+        self.marionette.set_pref("network.dns.disableIPv6", True)
+
         # Find a free port for our test server
         sock = socket.socket()
         sock.bind(("", 0))
@@ -123,8 +125,10 @@ class BeaconOnPagehideShutdownTestCase(MarionetteTestCase):
 
         # Wait for navigation and any pending beacon requests
         Wait(self.marionette, timeout=10).until(
-            lambda _: self.marionette.execute_script("return document.readyState")
-            == "complete"
+            lambda _: (
+                self.marionette.execute_script("return document.readyState")
+                == "complete"
+            )
         )
         time.sleep(2)  # Give server time to process the beacon
 

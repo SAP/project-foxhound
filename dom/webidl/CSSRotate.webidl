@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -18,7 +17,5 @@ interface CSSRotate : CSSTransformComponent {
   [SetterThrows] attribute CSSNumberish x;
   [SetterThrows] attribute CSSNumberish y;
   [SetterThrows] attribute CSSNumberish z;
-  // TODO: Change to [SetterThrows] once the angle attribute is fully
-  //       implemented
-  [Throws] attribute CSSNumericValue angle;
+  [SetterThrows] attribute CSSNumericValue angle;
 };

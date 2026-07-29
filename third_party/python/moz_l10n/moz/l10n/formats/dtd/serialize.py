@@ -34,7 +34,11 @@ def dtd_serialize(
     Section identifiers will be prepended to their constituent message identifiers.
     Multi-part identifiers will be joined with `.` between each part.
 
-    Metadata is not supported.
+    Metadata is only supported for the resource,
+    which may include references to other DTD files to include with the current one, as in:
+
+        <!ENTITY % brandDTD SYSTEM "chrome://branding/locale/brand.dtd">
+        %brandDTD;
 
     Yields each entity, comment, and empty line separately.
     Re-parsing a serialized DTD file is not guaranteed to result in the same Resource,
@@ -70,7 +74,17 @@ def dtd_serialize(
                 yield "\n"
                 at_empty_line = True
 
-    yield from comment(resource.comment, resource.meta, True)
+    def quote(value: str) -> str:
+        if '"' in value and "'" not in value:
+            quoted = f"'{value}'"
+        else:
+            quoted = value.replace('"', "&quot;")
+            quoted = f'"{quoted}"'
+        return re_comment.sub("", quoted)
+
+    yield from comment(resource.comment, None, True)
+    for meta in resource.meta:
+        yield f"<!ENTITY % {meta.key} SYSTEM {quote(meta.value)}>\n%{meta.key};\n"
     for section in resource.sections:
         yield from comment(section.comment, section.meta, True)
         id_prefix = ".".join(section.id) + "." if section.id else ""
@@ -90,14 +104,7 @@ def dtd_serialize(
                 else:
                     raise ValueError(f"Unsupported message for {name}: {msg}")
 
-                if '"' in value and "'" not in value:
-                    quoted = f"'{value}'"
-                else:
-                    quoted = value.replace('"', "&quot;")
-                    quoted = f'"{quoted}"'
-                quoted = re_comment.sub("", quoted)
-
-                yield f"<!ENTITY {name} {quoted}>\n"
+                yield f"<!ENTITY {name} {quote(value)}>\n"
                 at_empty_line = False
             else:
                 yield from comment(entry.comment, None, True)

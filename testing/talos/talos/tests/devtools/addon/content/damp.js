@@ -533,7 +533,6 @@ Damp.prototype = {
   _registerDampLoadActors() {
     dump(`[DampLoad helper] Register DampLoad actors\n`);
     ChromeUtils.registerWindowActor("DampLoad", {
-      kind: "JSWindowActor",
       parent: {
         esModuleURI:
           "resource://damp-test/content/actors/DampLoadParent.sys.mjs",

@@ -24,10 +24,10 @@ attributes, and the default style specified by our own user agent style
 sheets. There are two major sets of data structures within the style
 system:
 
--   first, data structures that represent sources of style data, such as
-    CSS style sheets or data from stylistic HTML attributes
--   second, data structures that represent computed style for a given
-    DOM node.
+- first, data structures that represent sources of style data, such as
+  CSS style sheets or data from stylistic HTML attributes
+- second, data structures that represent computed style for a given
+  DOM node.
 
 These sets of data structures are mostly distinct (for example, they
 store values in different ways).
@@ -153,21 +153,21 @@ owned structures. ComputedStyles are reference counted, and own their
 parents (from which they inherit), and rule nodes are garbage collected
 with a simple mark and sweep collector (which often never needs to run).
 
--   code:
-    [layout/style/](http://dxr.mozilla.org/mozilla-central/source/layout/style/),
-    where most files have useful one line descriptions at the top that
-    show up in DXR
--   Bugzilla: Style System (CSS)
--   specifications
-    -   [CSS 2.1](http://www.w3.org/TR/CSS21/)
-    -   [CSS 2010, listing stable css3
-        modules](http://www.w3.org/TR/css-2010/)
-    -   [CSS WG editors drafts](http://dev.w3.org/csswg/) (often more
-        current, but sometimes more unstable than the drafts on the
-        technical reports page)
-    -   [Preventing attacks on a user\'s history through CSS :visited
-        selectors](http://dbaron.org/mozilla/visited-privacy)
--   documentation
-    -   [style system
-        documentation](http://www-archive.mozilla.org/newlayout/doc/style-system.html)
-        (somewhat out of date)
+- code:
+  [layout/style/](http://dxr.mozilla.org/mozilla-central/source/layout/style/),
+  where most files have useful one line descriptions at the top that
+  show up in DXR
+- Bugzilla: Style System (CSS)
+- specifications
+  - [CSS 2.1](http://www.w3.org/TR/CSS21/)
+  - [CSS 2010, listing stable css3
+    modules](http://www.w3.org/TR/css-2010/)
+  - [CSS WG editors drafts](http://dev.w3.org/csswg/) (often more
+    current, but sometimes more unstable than the drafts on the
+    technical reports page)
+  - [Preventing attacks on a user\'s history through CSS :visited
+    selectors](http://dbaron.org/mozilla/visited-privacy)
+- documentation
+  - [style system
+    documentation](http://www-archive.mozilla.org/newlayout/doc/style-system.html)
+    (somewhat out of date)

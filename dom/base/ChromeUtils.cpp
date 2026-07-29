@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -24,6 +22,7 @@
 #include "jsfriendapi.h"
 #include "mozJSModuleLoader.h"
 #include "mozilla/Base64.h"
+#include "mozilla/Components.h"
 #include "mozilla/ControllerCommand.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
 #include "mozilla/ErrorNames.h"
@@ -50,6 +49,7 @@
 #include "mozilla/dom/MediaSessionBinding.h"
 #include "mozilla/dom/PBrowserParent.h"
 #include "mozilla/dom/PopupBlocker.h"
+#include "mozilla/dom/ProcessIsolation.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Record.h"
 #include "mozilla/dom/ReportingHeader.h"
@@ -66,14 +66,16 @@
 #include "mozilla/ipc/UtilityProcessSandboxing.h"
 #include "mozilla/layers/WebRenderBridgeChild.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
-#include "mozilla/net/UrlClassifierFeatureFactory.h"
+#include "mozilla/net/ChannelClassifierUtils.h"
 #include "nsContentUtils.h"
 #include "nsControllerCommandTable.h"
 #include "nsDocShell.h"
 #include "nsIException.h"
 #include "nsIRFPTargetSetIDL.h"
+#include "nsIURIFixup.h"
 #include "nsIWidget.h"
 #include "nsNativeTheme.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsRFPTargetSetIDL.h"
 #include "nsString.h"
 #include "nsThreadUtils.h"
@@ -370,8 +372,31 @@ void ChromeUtils::AddProfilerMarker(
                             data.GetAsUTF8String());
       } else {
         JSContext* cx = aGlobal.Context();
-        JS::Rooted<JS::Value> objValue(cx,
-                                       JS::ObjectValue(*data.GetAsObject()));
+        JS::Rooted<JSObject*> obj(cx, data.GetAsObject());
+
+        // JS::ToJSONMaybeSafely asserts that its input is a plain object or
+        // array; a wrapper would trip that assertion. Unwrap and test the
+        // underlying object directly.
+        JS::Rooted<JSObject*> unwrapped(cx, js::CheckedUnwrapStatic(obj));
+
+        if (!unwrapped || !JS::IsPlainObject(unwrapped)) {
+          // Non-plain object (e.g. an Error) or denied unwrap: fall back to a
+          // text marker using the object's string form.
+          JS::Rooted<JS::Value> objValue(cx, JS::ObjectValue(*obj));
+          JS::Rooted<JSString*> str(cx, JS::ToString(cx, objValue));
+          nsAutoCString text;
+          if (!str) {
+            JS_ClearPendingException(cx);
+            text.AssignLiteral("<error converting to string>");
+          } else {
+            nsAutoJSString jsText;
+            NS_ENSURE_TRUE_VOID(jsText.init(cx, str));
+            CopyUTF16toUTF8(jsText, text);
+          }
+          profiler_add_marker(aName, category, std::move(options),
+                              ::geckoprofiler::markers::TextMarker{}, text);
+          return;
+        }
 
         nsString jsonString;
         auto callback = [](const char16_t* buf, uint32_t len, void* d) {
@@ -379,9 +404,14 @@ void ChromeUtils::AddProfilerMarker(
           return true;
         };
 
-        JS::Rooted<JSObject*> obj(cx, &objValue.toObject());
-        if (!JS::ToJSONMaybeSafely(cx, obj, callback, &jsonString)) {
-          return;
+        // ToJSONMaybeSafely requires same-realm input; enter the unwrapped
+        // object's realm before calling it.
+        {
+          JSAutoRealm ar(cx, unwrapped);
+          if (!JS::ToJSONMaybeSafely(cx, unwrapped, callback, &jsonString)) {
+            JS_ClearPendingException(cx);
+            return;
+          }
         }
 
         NS_ConvertUTF16toUTF8 jsonUTF8(jsonString);
@@ -801,6 +831,10 @@ void ChromeUtils::ImportESModule(
   nsresult rv =
       moduleloader->ImportESModule(cx, registryLocation, &moduleNamespace);
   if (NS_FAILED(rv)) {
+    if (maybeSyncLoaderScope) {
+      // Import error itself should be propagated.
+      maybeSyncLoaderScope->Finish();
+    }
     aRv.Throw(rv);
     return;
   }
@@ -1018,6 +1052,10 @@ static bool ESModuleGetter(JSContext* aCx, unsigned aArgc, JS::Value* aVp) {
   JS::Rooted<JSObject*> moduleNamespace(aCx);
   nsresult rv = moduleloader->ImportESModule(aCx, uri, &moduleNamespace);
   if (NS_FAILED(rv)) {
+    if (maybeSyncLoaderScope) {
+      // Import error itself should be propagated.
+      maybeSyncLoaderScope->Finish();
+    }
     Throw(aCx, rv);
     return false;
   }
@@ -1170,6 +1208,11 @@ void ChromeUtils::GetLibcConstants(const GlobalObject&,
   aConsts.mO_CREAT.Construct(O_CREAT);
   aConsts.mO_NONBLOCK.Construct(O_NONBLOCK);
   aConsts.mO_WRONLY.Construct(O_WRONLY);
+#  ifdef O_CLOEXEC
+  aConsts.mO_CLOEXEC.Construct(O_CLOEXEC);
+  // In the unlikely event of a target where O_CLOEXEC isn't defined
+  // (Solaris 10?), the property will be absent in JS.
+#  endif
 
   aConsts.mPOLLERR.Construct(POLLERR);
   aConsts.mPOLLHUP.Construct(POLLHUP);
@@ -1181,6 +1224,7 @@ void ChromeUtils::GetLibcConstants(const GlobalObject&,
 
 #  ifdef XP_LINUX
   aConsts.mPR_CAPBSET_READ.Construct(PR_CAPBSET_READ);
+  aConsts.mO_PATH.Construct(O_PATH);
 #  endif
 }
 #endif
@@ -1794,6 +1838,17 @@ void ChromeUtils::InvalidateResourceCache(GlobalObject& aGlobal,
   SharedScriptCache::Invalidate();
 }
 
+void ChromeUtils::GetCachedJavaScriptSource(
+    GlobalObject& aGlobal, const nsACString& aKey, const nsACString& aURI,
+    const nsACString& aHintCharset, JS::MutableHandle<JS::Value> aRetval,
+    ErrorResult& aRv) {
+  JSContext* cx = aGlobal.Context();
+  if (!SharedScriptCache::GetCachedScriptSource(cx, aKey, aURI, aHintCharset,
+                                                aRetval)) {
+    aRv.NoteJSContextException(aGlobal.Context());
+  }
+}
+
 void ChromeUtils::ClearBfcacheByPrincipal(GlobalObject& aGlobal,
                                           nsIPrincipal* aPrincipal,
                                           ErrorResult& aRv) {
@@ -2215,8 +2270,9 @@ already_AddRefed<Promise> ChromeUtils::CollectPerfStats(GlobalObject& aGlobal,
 
   extPromise->Then(
       GetCurrentSerialEventTarget(), __func__,
-      [promise](const nsCString& aResult) {
-        promise->MaybeResolve(NS_ConvertUTF8toUTF16(aResult));
+      [promise](const std::string& aResult) {
+        promise->MaybeResolve(
+            NS_ConvertUTF8toUTF16(aResult.c_str(), aResult.length()));
       },
       [promise](bool aValue) { promise->MaybeReject(NS_ERROR_FAILURE); });
 
@@ -2522,7 +2578,7 @@ already_AddRefed<Promise> ChromeUtils::EnsureHeadlessContentProcess(
 /* static */
 bool ChromeUtils::IsClassifierBlockingErrorCode(GlobalObject& aGlobal,
                                                 uint32_t aError) {
-  return net::UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(
+  return net::ChannelClassifierUtils::IsClassifierBlockingErrorCode(
       static_cast<nsresult>(aError));
 }
 
@@ -2905,6 +2961,89 @@ void ChromeUtils::GetLastOOMStackTrace(GlobalObject& aGlobal,
                                        nsAString& aRetval) {
   JSContext* cx = aGlobal.Context();
   aRetval = NS_ConvertUTF8toUTF16(JS_GetLastOOMStackTrace(cx));
+}
+
+void ChromeUtils::PredictRemoteTypeForURI(
+    GlobalObject& aGlobal, nsIURI* aURI,
+    const PredictRemoteTypeOptions& aOptions, nsACString& aRemoteType,
+    ErrorResult& aRv) {
+  // If 'useRemoteTabs' is disabled, immediately return with NOT_REMOTE_TYPE,
+  // as we won't perform any process isolation.
+  bool useRemoteTabs = true;
+  if (aOptions.mUseRemoteTabs.WasPassed()) {
+    useRemoteTabs = aOptions.mUseRemoteTabs.Value();
+  } else if (aOptions.mWindow) {
+    useRemoteTabs = aOptions.mWindow->GetBrowsingContext()->UseRemoteTabs();
+  }
+  if (!useRemoteTabs) {
+    aRemoteType = NOT_REMOTE_TYPE;
+    return;
+  }
+
+  bool useRemoteSubframes = true;
+  if (aOptions.mUseRemoteSubframes.WasPassed()) {
+    useRemoteSubframes = aOptions.mUseRemoteSubframes.Value();
+  } else if (aOptions.mWindow) {
+    useRemoteSubframes =
+        aOptions.mWindow->GetBrowsingContext()->UseRemoteSubframes();
+  }
+
+  OriginAttributes attrs;
+  attrs.mUserContextId = aOptions.mUserContextId;
+  attrs.mGeckoViewSessionContextId = aOptions.mGeckoViewSessionContextId;
+  if (aOptions.mPrivateBrowsingId.WasPassed()) {
+    attrs.mPrivateBrowsingId = aOptions.mPrivateBrowsingId.Value();
+  } else if (aOptions.mWindow) {
+    attrs.mPrivateBrowsingId = aOptions.mWindow->IsPrivateBrowsing() ? 1 : 0;
+  }
+
+  nsCString preferredRemoteType = aOptions.mPreferredRemoteType.WasPassed()
+                                      ? aOptions.mPreferredRemoteType.Value()
+                                      : SharedWebRemoteType(attrs);
+
+  // If we got nullptr as our argument URI argument, treat it like an
+  // about:blank document, and load it into our preferred remote type.
+  if (!aURI) {
+    aRemoteType = preferredRemoteType;
+    return;
+  }
+
+  auto result = mozilla::dom::PredictRemoteTypeForURI(
+      aURI, attrs, preferredRemoteType, useRemoteSubframes);
+  if (result.isErr()) {
+    aRv.Throw(result.unwrapErr());
+    return;
+  }
+
+  aRemoteType = result.unwrap();
+}
+
+void ChromeUtils::PredictRemoteTypeForURI(
+    GlobalObject& aGlobal, const nsACString& aURIString,
+    const PredictRemoteTypeOptions& aOptions, nsACString& aRemoteType,
+    ErrorResult& aRv) {
+  // Attempt to invoke URIFixup to fix up the given URI string into a functional
+  // string. If this fails, `preferredURI` will be `nullptr`. We intentionally
+  // don't forward any errors reported, as we want to recover in the case of an
+  // invalid URI.
+  nsCOMPtr<nsIURI> preferredURI;
+  if (nsCOMPtr<nsIURIFixup> uriFixup = components::URIFixup::Service()) {
+    nsCOMPtr<nsIURIFixupInfo> fixupInfo;
+    uriFixup->GetFixupURIInfo(aURIString, nsIURIFixup::FIXUP_FLAG_NONE,
+                              getter_AddRefs(fixupInfo));
+    if (fixupInfo) {
+      fixupInfo->GetPreferredURI(getter_AddRefs(preferredURI));
+    }
+  }
+
+  // If parsing the URI with fixup failed, clear out `mPreferredRemoteType`, so
+  // we always fall back to the least privileged remote type.
+  PredictRemoteTypeOptions newOptions(aOptions);
+  if (!preferredURI) {
+    newOptions.mPreferredRemoteType.Reset();
+  }
+
+  PredictRemoteTypeForURI(aGlobal, preferredURI, newOptions, aRemoteType, aRv);
 }
 
 }  // namespace mozilla::dom

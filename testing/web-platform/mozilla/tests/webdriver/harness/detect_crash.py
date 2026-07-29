@@ -22,7 +22,12 @@ def test_content_process(configuration, geckodriver):
         with pytest.raises(error.UnknownErrorException):
             driver.session.url
 
-    run_crash_test(configuration, geckodriver, crash_callback=trigger_crash)
+    run_crash_test(
+        configuration,
+        geckodriver,
+        crash_callback=trigger_crash,
+        reason="MOZ_CRASH(Crash via about:crashcontent)",
+    )
 
 
 def test_parent_process(configuration, geckodriver):
@@ -30,10 +35,15 @@ def test_parent_process(configuration, geckodriver):
         with pytest.raises(error.UnknownErrorException):
             driver.session.url = "about:crashparent"
 
-    run_crash_test(configuration, geckodriver, crash_callback=trigger_crash)
+    run_crash_test(
+        configuration,
+        geckodriver,
+        crash_callback=trigger_crash,
+        reason="MOZ_CRASH(Crash via about:crashparent)",
+    )
 
 
-def run_crash_test(configuration, geckodriver, crash_callback):
+def run_crash_test(configuration, geckodriver, crash_callback, reason=None):
     config = deepcopy(configuration)
     config["capabilities"]["webSocketUrl"] = True
 
@@ -41,7 +51,9 @@ def run_crash_test(configuration, geckodriver, crash_callback):
         # Use a custom temporary minidump save path to only see
         # the minidump files related to this test
         driver = geckodriver(
-            config=config, extra_env={"MINIDUMP_SAVE_PATH": tmpdirname}
+            config=config,
+            extra_args=["--allow-system-access"],
+            extra_env={"MINIDUMP_SAVE_PATH": tmpdirname},
         )
 
         driver.new_session()
@@ -62,6 +74,11 @@ def run_crash_test(configuration, geckodriver, crash_callback):
         assert extra_data.get("RemoteAgent") == "1", (
             "RemoteAgent entry is missing or invalid"
         )
+        if reason is not None:
+            crash_reason = extra_data.get("MozCrashReason")
+            assert crash_reason == reason, (
+                f"Expected crash reason {reason} found {crash_reason}"
+            )
 
         # Remove original minidump files from the profile directory
         remove_files(profile_minidump_path, file_map.values())

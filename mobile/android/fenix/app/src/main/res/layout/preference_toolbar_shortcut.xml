@@ -21,6 +21,11 @@
         android:text="@string/preferences_toolbar_select_shortcut" />
 
     <include
+        android:id="@+id/toolbar_simple_no_shortcut_preview"
+        layout="@layout/toolbar_simple_no_shortcut_preview"
+        android:visibility="gone" />
+
+    <include
         android:id="@+id/toolbar_simple_shortcut_preview"
         layout="@layout/toolbar_simple_shortcut_preview"
         android:visibility="gone" />

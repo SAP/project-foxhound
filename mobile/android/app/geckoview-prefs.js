@@ -253,8 +253,6 @@ pref("formhelper.autozoom", true);
 // Optionally send web console output to logcat (bug 1415318)
 pref("geckoview.console.enabled", false);
 
-pref("image.cache.size", 1048576); // bytes
-
 // Inherit locale from the OS, used for multi-locale builds
 pref("intl.locale.requested", "");
 
@@ -338,6 +336,14 @@ pref("network.ohttp.configURL", "https://prod.ohttp-gateway.prod.webservices.moz
 // Controls OHTTP relay URL
 pref("network.ohttp.relayURL", "https://mozilla-ohttp.fastly-edge.com/");
 
+// Nimbus QA prefs. Used for testing pref-setting experiments.
+pref("nimbus.qa.pref-string-default", "default");
+pref("nimbus.qa.pref-string-user", "default");
+pref("nimbus.qa.pref-int-default", 0);
+pref("nimbus.qa.pref-int-user", 0);
+pref("nimbus.qa.pref-bool-default", false);
+pref("nimbus.qa.pref-bool-user", false);
+
 // Complete the page load progress bar at different places according to this pref.
 // See the possible values below:
 // 0 no change
@@ -377,3 +383,8 @@ pref("xpinstall.signatures.required", true);
 
 pref("xpinstall.whitelist.add", "https://addons.mozilla.org");
 pref("xpinstall.whitelist.fileRequest", false);
+
+// Pref to enable the IP protection feature
+pref("browser.ipProtection.enabled", true);
+pref("browser.ipProtection.guardian.endpoint", "https://vpn.mozilla.org/");
+pref("toolkit.ipProtection.android.authProvider", "fxa");

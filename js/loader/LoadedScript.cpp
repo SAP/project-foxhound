@@ -1,15 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "LoadedScript.h"
 
-#include "mozilla/AlreadyAddRefed.h"  // already_AddRefed
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/RefPtr.h"     // RefPtr, mozilla::MakeRefPtr
-#include "mozilla/UniquePtr.h"  // mozilla::UniquePtr
+#include "mozilla/Sprintf.h"    // SprintfLiteral
+#include "mozilla/UniquePtr.h"  // mozilla::UniquePtr, mozilla::MakeUnique
+#include "nsIURI.h"             // nsIURI::GetSpecOrDefault
 
 #include "mozilla/dom/ScriptLoadContext.h"  // ScriptLoadContext
 #include "nsTaintingUtils.h"
@@ -21,123 +20,109 @@
 
 namespace JS::loader {
 
+NS_IMPL_ISUPPORTS(ScriptFetchInfo, nsISupports);
+
+ScriptFetchInfo::ScriptFetchInfo(ScriptKind aKind,
+                                 mozilla::dom::ReferrerPolicy aReferrerPolicy,
+                                 ScriptFetchOptions* aFetchOptions,
+                                 nsIURI* aURI)
+    : mKind(aKind),
+      mReferrerPolicy(aReferrerPolicy),
+      mFetchOptions(aFetchOptions),
+      mBaseURL(aURI) {
+  MOZ_ASSERT(mFetchOptions);
+}
+
+size_t ScriptFetchInfo::SizeOfIncludingThis(
+    mozilla::MallocSizeOf aMallocSizeOf) const {
+  return aMallocSizeOf(this) +
+         mFetchOptions->SizeOfIncludingThis(aMallocSizeOf);
+}
+
+static bool IsInternalURIScheme(nsIURI* uri) {
+  return uri->SchemeIs("moz-extension") || uri->SchemeIs("resource") ||
+         uri->SchemeIs("moz-src") || uri->SchemeIs("chrome");
+}
+
+void ScriptFetchInfo::SetBaseURLFromChannelAndOriginalURI(
+    nsIChannel* aChannel, nsIURI* aOriginalURI) {
+  // Fixup moz-extension: and resource: URIs, because the channel URI will
+  // point to file:, which won't be allowed to load.
+  if (aOriginalURI && IsInternalURIScheme(aOriginalURI)) {
+    mBaseURL = aOriginalURI;
+  } else {
+    aChannel->GetURI(getter_AddRefs(mBaseURL));
+  }
+}
+
+void ScriptFetchInfo::AssociateWithScript(JSScript* aScript) {
+  // Verify that the rewritten URL is available when manipulating the referrer.
+  MOZ_ASSERT(mBaseURL);
+
+  // Set a JSScript's private value to point to this object. The JS engine will
+  // increment our reference count by calling
+  // HostAddRefScriptFetchInfo(). This is decremented by
+  // HostReleaseScriptFetchInfo() below when the JSScript dies.
+
+  MOZ_ASSERT(GetScriptPrivate(aScript).isUndefined());
+  SetScriptPrivate(aScript, PrivateValue(this));
+}
+
+void ScriptFetchInfo::AssociateWithModule(JSObject* aModuleRecord) {
+  MOZ_ASSERT(mBaseURL);
+
+  // Make module's host defined field point to this object. The JS engine
+  // will increment our reference count by calling
+  // HostAddRefScriptFetchInfo(). This is decremented when the
+  // module record dies.
+  MOZ_ASSERT(GetModulePrivate(aModuleRecord).isUndefined());
+  SetModulePrivate(aModuleRecord, PrivateValue(this));
+}
+
+void HostAddRefScriptFetchInfo(const Value& aPrivate) {
+  // Increment the reference count of a ScriptFetchInfo object that is
+  // now pointed to by a JSScript. The reference count is decremented by
+  // HostReleaseScriptFetchInfo() below.
+
+  auto fetchInfo = static_cast<ScriptFetchInfo*>(aPrivate.toPrivate());
+  fetchInfo->AddRef();
+}
+
+void HostReleaseScriptFetchInfo(const Value& aPrivate) {
+  // Decrement the reference count of a ScriptFetchInfo object that was
+  // pointed to by a JSScript. The reference count was originally incremented by
+  // HostAddRefScriptFetchInfo() above.
+
+  auto fetchInfo = static_cast<ScriptFetchInfo*>(aPrivate.toPrivate());
+  fetchInfo->Release();
+}
+
 //////////////////////////////////////////////////////////////
 // LoadedScript
 //////////////////////////////////////////////////////////////
 
-MOZ_DEFINE_MALLOC_SIZE_OF(LoadedScriptMallocSizeOf)
+NS_IMPL_ISUPPORTS(LoadedScript, nsISupports)
 
-// LoadedScript itself doesn't have to be cycle-collected,
-// but ModuleScript subclass needs cycle-collection.
-//
-// Provide a base class that does nothing.
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(LoadedScript)
-  NS_INTERFACE_MAP_ENTRY(nsISupports)
-NS_INTERFACE_MAP_END
-
-// LoadedScript can be accessed from multiple threads.
-//
-// For instance, worker script loader passes the ScriptLoadRequest and
-// the associated LoadedScript to the main thread to perform the actual load.
-// Even while it's handled by the main thread, the LoadedScript is
-// the target of the worker thread's cycle collector.
-//
-// Fields that can be modified by other threads shouldn't be touched by
-// the cycle collection.
-//
-// Currently there's no field that can form a cycle at this point.
-// If you're adding any field here, please make sure the field is not modified
-// by other threads.
-NS_IMPL_CYCLE_COLLECTION(LoadedScript)
-
-NS_IMPL_CYCLE_COLLECTING_ADDREF(LoadedScript)
-NS_IMPL_CYCLE_COLLECTING_RELEASE(LoadedScript)
-
-LoadedScript::LoadedScript(ScriptKind aKind,
-                           mozilla::dom::ReferrerPolicy aReferrerPolicy,
-                           ScriptFetchOptions* aFetchOptions, nsIURI* aURI)
+LoadedScript::LoadedScript(ScriptKind aKind, nsIURI* aURI)
     : mDataType(DataType::eUnknown),
       mKind(aKind),
-      mReferrerPolicy(aReferrerPolicy),
       mSerializedStencilOffset(0),
       mCacheEntryId(InvalidCacheEntryId),
       mIsDirty(false),
       mTookLongInPreviousRuns(false),
-      mFetchOptions(aFetchOptions),
+      mIsEverHitFromMemoryCache(false),
       mURI(aURI),
       mReceivedScriptTextLength(0),
       mScriptTextTaint(EmptyTaint) {
-  MOZ_ASSERT(mFetchOptions);
   MOZ_ASSERT(mURI);
-}
-
-LoadedScript::LoadedScript(const LoadedScript& aOther)
-    : mDataType(DataType::eCachedStencil),
-      mKind(aOther.mKind),
-      mReferrerPolicy(aOther.mReferrerPolicy),
-      mSerializedStencilOffset(0),
-      mCacheEntryId(aOther.mCacheEntryId),
-      mIsDirty(aOther.mIsDirty),
-      mTookLongInPreviousRuns(aOther.mTookLongInPreviousRuns),
-      mFetchOptions(aOther.mFetchOptions),
-      mURI(aOther.mURI),
-      mBaseURL(aOther.mBaseURL),
-      mReceivedScriptTextLength(0),
-      mStencil(aOther.mStencil) {
-  MOZ_ASSERT(mFetchOptions);
-  MOZ_ASSERT(mURI);
-  // NOTE: This is only for the cached stencil case.
-  //       The script text and the serialized stencil are not reflected.
-  MOZ_DIAGNOSTIC_ASSERT(aOther.mDataType == DataType::eCachedStencil);
-  MOZ_DIAGNOSTIC_ASSERT(mStencil);
-  MOZ_ASSERT(!mScriptData);
-  MOZ_ASSERT(mSRIAndSerializedStencil.empty());
-}
-
-LoadedScript::~LoadedScript() {
-  mozilla::UnregisterWeakMemoryReporter(this);
-  mozilla::DropJSObjects(this);
-}
-
-void LoadedScript::RegisterMemoryReport() {
-  mozilla::RegisterWeakMemoryReporter(this);
-}
-
-NS_IMETHODIMP
-LoadedScript::CollectReports(nsIHandleReportCallback* aHandleReport,
-                             nsISupports* aData, bool aAnonymize) {
-#define COLLECT_REPORT(path, kind)                                   \
-  MOZ_COLLECT_REPORT(path, KIND_HEAP, UNITS_BYTES,                   \
-                     SizeOfIncludingThis(LoadedScriptMallocSizeOf),  \
-                     "Memory used for LoadedScript to hold on " kind \
-                     " across documents")
-
-  switch (mKind) {
-    case ScriptKind::eClassic:
-      COLLECT_REPORT("explicit/js/script/loaded-script/classic", "scripts");
-      break;
-    case ScriptKind::eImportMap:
-      COLLECT_REPORT("explicit/js/script/loaded-script/import-map",
-                     "import-maps");
-      break;
-    case ScriptKind::eModule:
-      COLLECT_REPORT("explicit/js/script/loaded-script/module", "modules");
-      break;
-    case ScriptKind::eEvent:
-      COLLECT_REPORT("explicit/js/script/loaded-script/event", "event scripts");
-      break;
-  }
-
-#undef COLLECT_REPORT
-  return NS_OK;
 }
 
 size_t LoadedScript::SizeOfIncludingThis(
     mozilla::MallocSizeOf aMallocSizeOf) const {
   size_t bytes = aMallocSizeOf(this);
 
-  if (mFetchOptions) {
-    bytes += mFetchOptions->SizeOfIncludingThis(aMallocSizeOf);
+  if (mSRIMetadata) {
+    bytes += mSRIMetadata->SizeOfIncludingThis(aMallocSizeOf);
   }
 
   if (IsTextSource()) {
@@ -150,23 +135,11 @@ size_t LoadedScript::SizeOfIncludingThis(
 
   bytes += mSRIAndSerializedStencil.sizeOfExcludingThis(aMallocSizeOf);
 
-  if (mStencil) {
-    bytes += JS::SizeOfStencil(mStencil, aMallocSizeOf);
+  if (mCachedStencil) {
+    bytes += JS::SizeOfStencil(mCachedStencil, aMallocSizeOf);
   }
 
   return bytes;
-}
-
-void LoadedScript::AssociateWithScript(JSScript* aScript) {
-  // Verify that the rewritten URL is available when manipulating LoadedScript.
-  MOZ_ASSERT(mBaseURL);
-
-  // Set a JSScript's private value to point to this object. The JS engine will
-  // increment our reference count by calling HostAddRefTopLevelScript(). This
-  // is decremented by HostReleaseTopLevelScript() below when the JSScript dies.
-
-  MOZ_ASSERT(GetScriptPrivate(aScript).isUndefined());
-  SetScriptPrivate(aScript, PrivateValue(this));
 }
 
 nsresult LoadedScript::GetScriptSource(JSContext* aCx,
@@ -236,136 +209,61 @@ nsresult LoadedScript::GetScriptSource(JSContext* aCx,
   return NS_OK;
 }
 
-static bool IsInternalURIScheme(nsIURI* uri) {
-  return uri->SchemeIs("moz-extension") || uri->SchemeIs("resource") ||
-         uri->SchemeIs("moz-src") || uri->SchemeIs("chrome");
-}
-
-void LoadedScript::SetBaseURLFromChannelAndOriginalURI(nsIChannel* aChannel,
-                                                       nsIURI* aOriginalURI) {
-  // Fixup moz-extension: and resource: URIs, because the channel URI will
-  // point to file:, which won't be allowed to load.
-  if (aOriginalURI && IsInternalURIScheme(aOriginalURI)) {
-    mBaseURL = aOriginalURI;
-  } else {
-    aChannel->GetURI(getter_AddRefs(mBaseURL));
+void LoadedScript::SetSRIMetadata(
+    const mozilla::dom::SRIMetadata& aSRIMetadata) {
+  if (aSRIMetadata.IsEmpty()) {
+    return;
   }
+
+  mSRIMetadata = mozilla::MakeUnique<mozilla::dom::SRIMetadata>(aSRIMetadata);
 }
 
-inline void CheckModuleScriptPrivate(LoadedScript* script,
-                                     const Value& aPrivate) {
-#ifdef DEBUG
-  if (script->IsModuleScript()) {
-    JSObject* module = script->AsModuleScript()->mModuleRecord.unbarrieredGet();
-    MOZ_ASSERT_IF(module, GetModulePrivate(module) == aPrivate);
+bool LoadedScript::IsSRIMetadataReusableBy(
+    const mozilla::dom::SRIMetadata& aSRIMetadata) {
+  if (aSRIMetadata.IsEmpty()) {
+    return true;
   }
-#endif
+
+  if (!mSRIMetadata) {
+    return false;
+  }
+
+  return aSRIMetadata.CanTrustBeDelegatedTo(*mSRIMetadata);
 }
-
-void HostAddRefTopLevelScript(const Value& aPrivate) {
-  // Increment the reference count of a LoadedScript object that is now pointed
-  // to by a JSScript. The reference count is decremented by
-  // HostReleaseTopLevelScript() below.
-
-  auto script = static_cast<LoadedScript*>(aPrivate.toPrivate());
-  CheckModuleScriptPrivate(script, aPrivate);
-  script->AddRef();
-}
-
-void HostReleaseTopLevelScript(const Value& aPrivate) {
-  // Decrement the reference count of a LoadedScript object that was pointed to
-  // by a JSScript. The reference count was originally incremented by
-  // HostAddRefTopLevelScript() above.
-
-  auto script = static_cast<LoadedScript*>(aPrivate.toPrivate());
-  CheckModuleScriptPrivate(script, aPrivate);
-  script->Release();
-}
-
-//////////////////////////////////////////////////////////////
-// EventScript
-//////////////////////////////////////////////////////////////
-
-EventScript::EventScript(mozilla::dom::ReferrerPolicy aReferrerPolicy,
-                         ScriptFetchOptions* aFetchOptions, nsIURI* aURI)
-    : LoadedScript(ScriptKind::eEvent, aReferrerPolicy, aFetchOptions, aURI) {
-  // EventScripts are not using ScriptLoadRequest, and mBaseURL and mURI are
-  // the same thing.
-  SetBaseURL(aURI);
-}
-
-//////////////////////////////////////////////////////////////
-// ClassicScript
-//////////////////////////////////////////////////////////////
-
-ClassicScript::ClassicScript(mozilla::dom::ReferrerPolicy aReferrerPolicy,
-                             ScriptFetchOptions* aFetchOptions, nsIURI* aURI)
-    : LoadedScript(ScriptKind::eClassic, aReferrerPolicy, aFetchOptions, aURI) {
-}
-
-//////////////////////////////////////////////////////////////
-// ImportMapScript
-//////////////////////////////////////////////////////////////
-
-ImportMapScript::ImportMapScript(mozilla::dom::ReferrerPolicy aReferrerPolicy,
-                                 ScriptFetchOptions* aFetchOptions,
-                                 nsIURI* aURI)
-    : LoadedScript(ScriptKind::eImportMap, aReferrerPolicy, aFetchOptions,
-                   aURI) {}
 
 //////////////////////////////////////////////////////////////
 // ModuleScript
 //////////////////////////////////////////////////////////////
 
-NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(ModuleScript, LoadedScript)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ModuleScript)
+  NS_INTERFACE_MAP_ENTRY(nsISupports)
+NS_INTERFACE_MAP_END
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(ModuleScript)
 
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(ModuleScript, LoadedScript)
-  tmp->UnlinkModuleRecord();
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(ModuleScript)
+  tmp->mModuleRecord = nullptr;
   tmp->mParseError.setUndefined();
   tmp->mErrorToRethrow.setUndefined();
-  tmp->DropDiskCacheReference();
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(ModuleScript, LoadedScript)
+NS_IMPL_CYCLE_COLLECTING_ADDREF(ModuleScript)
+NS_IMPL_CYCLE_COLLECTING_RELEASE(ModuleScript)
+
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(ModuleScript)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(ModuleScript, LoadedScript)
+NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(ModuleScript)
   NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mModuleRecord)
   NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mParseError)
   NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mErrorToRethrow)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
-ModuleScript::ModuleScript(mozilla::dom::ReferrerPolicy aReferrerPolicy,
-                           ScriptFetchOptions* aFetchOptions, nsIURI* aURI)
-    : LoadedScript(ScriptKind::eModule, aReferrerPolicy, aFetchOptions, aURI) {
+ModuleScript::ModuleScript(ScriptFetchInfo* aFetchInfo)
+    : mFetchInfoForAccessingPreloadFlag(aFetchInfo) {
   MOZ_ASSERT(!ModuleRecord());
   MOZ_ASSERT(!HasParseError());
   MOZ_ASSERT(!HasErrorToRethrow());
-}
-
-ModuleScript::ModuleScript(const LoadedScript& aOther) : LoadedScript(aOther) {
-  MOZ_ASSERT(!ModuleRecord());
-  MOZ_ASSERT(!HasParseError());
-  MOZ_ASSERT(!HasErrorToRethrow());
-}
-
-/* static */
-already_AddRefed<ModuleScript> ModuleScript::FromCache(
-    const LoadedScript& aScript) {
-  MOZ_DIAGNOSTIC_ASSERT(aScript.IsModuleScript());
-  MOZ_DIAGNOSTIC_ASSERT(aScript.IsCachedStencil());
-
-  return mozilla::MakeRefPtr<ModuleScript>(aScript).forget();
-}
-
-already_AddRefed<LoadedScript> ModuleScript::ToCache() {
-  MOZ_DIAGNOSTIC_ASSERT(IsCachedStencil());
-  MOZ_DIAGNOSTIC_ASSERT(!HasParseError());
-  MOZ_DIAGNOSTIC_ASSERT(!HasErrorToRethrow());
-
-  return mozilla::MakeRefPtr<LoadedScript>(*this).forget();
 }
 
 void ModuleScript::Shutdown() {
@@ -373,47 +271,29 @@ void ModuleScript::Shutdown() {
     ClearModuleEnvironment(mModuleRecord);
   }
 
-  UnlinkModuleRecord();
-}
-
-void ModuleScript::UnlinkModuleRecord() {
-  // Remove the module record's pointer to this object if present and decrement
-  // our reference count. The reference is added by SetModuleRecord() below.
-  //
-  if (mModuleRecord) {
-    // Take care not to trigger gray unmarking because this takes a lot of time
-    // when we're tearing down the entire page. This is safe because we are only
-    // writing undefined into the module private, so it won't create any
-    // black-gray edges.
-    JSObject* module = mModuleRecord.unbarrieredGet();
-    if (IsCyclicModule(module)) {
-      MOZ_ASSERT(GetModulePrivate(module).toPrivate() == this);
-      ClearModulePrivate(module);
-    }
-    mModuleRecord = nullptr;
-  }
+  mModuleRecord = nullptr;
 }
 
 ModuleScript::~ModuleScript() {
   // The object may be destroyed without being unlinked first.
-  UnlinkModuleRecord();
+  mModuleRecord = nullptr;
+  mozilla::DropJSObjects(this);
 }
 
 void ModuleScript::SetModuleRecord(Handle<JSObject*> aModuleRecord) {
   MOZ_ASSERT(!mModuleRecord);
-  MOZ_ASSERT_IF(IsModuleScript(), !AsModuleScript()->HasParseError());
-  MOZ_ASSERT_IF(IsModuleScript(), !AsModuleScript()->HasErrorToRethrow());
+  MOZ_ASSERT(!HasParseError());
+  MOZ_ASSERT(!HasErrorToRethrow());
 
   mModuleRecord = aModuleRecord;
 
-  if (IsCyclicModule(mModuleRecord)) {
-    // Make module's host defined field point to this object. The JS engine will
-    // increment our reference count by calling HostAddRefTopLevelScript(). This
-    // is decremented when the field is cleared in UnlinkModuleRecord() above or
-    // when the module record dies.
-    MOZ_ASSERT(GetModulePrivate(mModuleRecord).isUndefined());
-    SetModulePrivate(mModuleRecord, PrivateValue(this));
+#ifdef DEBUG
+  // Sync the [[PreloadSlot]] in ModuleObject.
+  if (mModuleRecord) {
+    SetModulePreload(mModuleRecord,
+                     mFetchInfoForAccessingPreloadFlag->IsForModulePreload());
   }
+#endif
 
   mozilla::HoldJSObjects(this);
 }
@@ -423,7 +303,7 @@ void ModuleScript::SetParseError(const Value& aError) {
   MOZ_ASSERT(!HasParseError());
   MOZ_ASSERT(!HasErrorToRethrow());
 
-  UnlinkModuleRecord();
+  mModuleRecord = nullptr;
   mParseError = aError;
   mozilla::HoldJSObjects(this);
 }
@@ -438,7 +318,37 @@ void ModuleScript::SetErrorToRethrow(const Value& aError) {
   mErrorToRethrow = aError;
 }
 
-void ModuleScript::SetForPreload(bool aValue) { mForPreload = aValue; }
+void ModuleScript::SetForPreload(bool aValue) {
+  mFetchInfoForAccessingPreloadFlag->SetForModulePreload(aValue);
+#ifdef DEBUG
+  if (ModuleRecord()) {
+    SetModulePreload(ModuleRecord(), aValue);
+  }
+#endif
+}
 void ModuleScript::SetHadImportMap(bool aValue) { mHadImportMap = aValue; }
+
+ResolvedModuleSet* ModuleScript::GetPreloadedResolvedSet() {
+  if (!mPreloadedResolvedSet) {
+    mPreloadedResolvedSet = mozilla::MakeUnique<ResolvedModuleSet>();
+  }
+
+  return mPreloadedResolvedSet.get();
+}
+
+void ModuleScript::ResetPreload() {
+  MOZ_ASSERT(mFetchInfoForAccessingPreloadFlag->IsForModulePreload());
+  if (mModuleRecord) {
+    ResetPreloadedModule(mModuleRecord);
+  }
+
+  if (HasParseError()) {
+    mParseError = UndefinedValue();
+  }
+
+  if (HasErrorToRethrow()) {
+    mErrorToRethrow = UndefinedValue();
+  }
+}
 
 }  // namespace JS::loader

@@ -193,17 +193,17 @@ ${assertionValues.join("\n\n")}
 }
 
 async function testOrUpdateExpectedValues(expectedValuesFileName, actualValues) {
+  const isMochitest = "gTestPath" in gTestScope;
+
   let expectedValues = loadExpectedValues(expectedValuesFileName);
   if (expectedValues) {
     // Clone the Array as we are going to mutate it via Array.shift().
     expectedValues = [...expectedValues];
 
-    const testPath = "gtestPath" in gTestScope ? gTestScope.gTestPath.replace("chrome://mochitest/content/browser/", "") : "path/to/your/xpcshell/test";
-    const failureMessage = `This is a JavaScript value processing test, which includes an automatically generated snapshot file (${expectedValuesFileName}).\n` +
-      "You may update this file by running:`\n" +
-      `  $ mach test ${testPath} --headless --setenv ${UPDATE_SNAPSHOT_ENV}=true\n` +
-      "And then carefuly review if the result is valid regarding your ongoing changes.\n" +
-      "`More info in https://firefox-source-docs.mozilla.org/devtools/tests/js-object-tests.html\n";
+    const testPath = isMochitest ? gTestScope.gTestPath.replace("chrome://mochitest/content/browser/", "") : "path/to/your/xpcshell/test";
+    const failureWarningMessage = "DEVTOOLS GENERATED-TEST FAILURE! SEE: https://firefox-source-docs.mozilla.org/devtools/tests/js-object-tests.html\n" +
+      "This test uses a generated file which might need to be updated by running:\n" +
+      `  $ mach test ${testPath} --headless --setenv ${UPDATE_SNAPSHOT_ENV}=true`;
 
     let failed = false;
     let i = 0;
@@ -220,32 +220,24 @@ async function testOrUpdateExpectedValues(expectedValuesFileName, actualValues) 
         continue;
       }
 
+      let failureMessage = `Got expected output for "${expression}"`;
       const expected = expectedValues.shift();
-
-      const isMochitest = "gTestPath" in gTestScope;
-      try {
-        gTestScope.Assert.deepEqual(actual, expected, `Got expected output for "${expression}"`);
-      } catch(e) {
-        // deepEqual only throws in case of differences when running in XPCShell tests. Mochitest won't throw and keep running.
-        // XPCShell will stop at the first failing assertion, so ensure showing our failure message and ok() will throw and stop the test.
-        if (!isMochitest) {
-          gTestScope.Assert.ok(false, failureMessage);
+      if (!ObjectUtils.deepEqual(actual, expected)) {
+        if (isMochitest) {
+          if (!failed) {
+            // If this is the first failure, log a first failure with the full
+            // failure message including a link to the documentation.
+            failed = true;
+            gTestScope.Assert.ok(false, failureWarningMessage);
+          }
+          gTestScope.Assert.deepEqual(actual, expected, failureMessage);
+        } else {
+          // For xpcshell tests, the first failure will throw and stop the test
+          // so include both the documentation link and the failure details.
+          failureMessage = failureWarningMessage + "\n\n" + failureMessage;
+          gTestScope.Assert.deepEqual(actual, expected, failureMessage);
         }
-        throw e;
       }
-      // As mochitest won't throw when calling deepEqual with differences in the objects,
-      // we have to recompute the difference in order to know if any of the tests failed.
-      if (isMochitest && !failed && !ObjectUtils.deepEqual(actual, expected)) {
-        failed = true;
-      }
-    }
-
-    if (failed) {
-      const failMessage = "This is a JavaScript value processing test, which includes an automatically generated snapshot file.\n" +
-        "If the change made to that snapshot file makes sense, you may simply update them by running:`\n" +
-        `  $ mach test ${testPath} --headless --setenv ${UPDATE_SNAPSHOT_ENV}=true\n` +
-        "`More info in devtools/shared/tests/objects/README.md\n";
-      gTestScope.Assert.ok(false, failMessage);
     }
   }
 

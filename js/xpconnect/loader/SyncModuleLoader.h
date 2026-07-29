@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -88,13 +86,13 @@ class SyncLoadContext : public JS::loader::LoadContextBase {
  public:
   // The result of compiling a module script. These fields are used temporarily
   // before being passed to the module loader.
-  nsresult mRv;
+  nsresult mRv = NS_OK;
 
   // The exception thrown during compiling a module script. These fields are
   // used temporarily before being passed to the module loader.
   JS::PersistentRooted<JS::Value> mExceptionValue;
 
-  JS::PersistentRooted<JSScript*> mScript;
+  JS::PersistentRooted<JSObject*> mModule;
 };
 
 }  // namespace loader

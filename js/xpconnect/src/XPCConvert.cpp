@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -100,7 +98,7 @@ bool XPCConvert::NativeData2JS(JSContext* cx, MutableHandleValue d,
       d.setNumber(static_cast<double>(*static_cast<const uint64_t*>(s)));
       return true;
     case nsXPTType::T_FLOAT:
-      d.setNumber(*static_cast<const float*>(s));
+      d.set(JS_NumberValue(double(*static_cast<const float*>(s))));
       return true;
     case nsXPTType::T_DOUBLE:
       d.set(JS_NumberValue(*static_cast<const double*>(s)));

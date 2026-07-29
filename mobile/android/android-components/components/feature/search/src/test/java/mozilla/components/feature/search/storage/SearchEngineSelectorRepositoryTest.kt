@@ -86,6 +86,7 @@ class SearchEngineSelectorRepositoryTest {
         val expectedBundle = SearchMiddleware.BundleStorage.Bundle(
             emptyList(),
             defaultSearchEngineId = "",
+            searchEnvironmentId = null,
         )
 
         val expectedConfig = RefinedSearchConfig(
@@ -121,6 +122,7 @@ class SearchEngineSelectorRepositoryTest {
         val expectedBundle = SearchMiddleware.BundleStorage.Bundle(
             emptyList(),
             defaultSearchEngineId = "",
+            searchEnvironmentId = null,
         )
 
         val expectedConfig = RefinedSearchConfig(

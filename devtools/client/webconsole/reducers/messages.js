@@ -650,6 +650,12 @@ function messages(
         if (!request) {
           continue;
         }
+
+        // We do not want to overwrite priority with "undefined"
+        if (!Number.isInteger(data.priority)) {
+          delete data.priority;
+        }
+
         newState.networkMessagesUpdateById[id] = {
           ...request,
           ...processNetworkUpdates(data),

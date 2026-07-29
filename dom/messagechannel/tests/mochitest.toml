@@ -10,15 +10,19 @@ support-files = [
   "sharedWorker2_messageChannel.js",
   "iframe_messageChannel_sharedWorker2.html",
   "!/dom/events/test/event_leak_utils.js",
+  "worker_messageChannel_atomics_wait.js",
 ]
 
 ["test_event_listener_leaks.html"]
 skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1777087
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug && xorigin && verify-standalone",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && debug && xorigin && verify-standalone",
 ]
 
 ["test_messageChannel.html"]
+
+["test_messageChannel_atomics_wait.html"]
 
 ["test_messageChannel_any.html"]
 

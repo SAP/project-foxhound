@@ -47,7 +47,7 @@ data class WallpaperState(
                     Color(currentWallpaper.cardColorLight)
                 }
             }
-            else -> MaterialTheme.colorScheme.surfaceContainerLowest
+            else -> MaterialTheme.colorScheme.surfaceBright
         }
 
     /**

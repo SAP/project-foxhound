@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=4 sw=2 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -191,7 +189,7 @@ bool TRR::MaybeBlockRequest() {
       return true;
     }
 
-    if (TRRService::Get()->IsExcludedFromTRR(mHost)) {
+    if (TRRService::Get()->IsExcludedFromTRR(mHost, mRec->mEffectiveTRRMode)) {
       RecordReason(TRRSkippedReason::TRR_EXCLUDED);
       return true;
     }
@@ -519,7 +517,7 @@ void TRR::SaveAdditionalRecords(
         mRec->originSuffix, getter_AddRefs(hostRecord));
     if (NS_FAILED(rv)) {
       LOG(("Failed to get host record for additional record %s",
-           nsCString(recordEntry.GetKey()).get()));
+           PromiseFlatCString(recordEntry.GetKey()).get()));
       continue;
     }
     RefPtr<AddrInfo> ai(
@@ -536,7 +534,7 @@ void TRR::SaveAdditionalRecords(
     hostRecord->mEffectiveTRRMode =
         static_cast<nsIRequest::TRRMode>(mRec->mEffectiveTRRMode);
     LOG(("Completing lookup for additional: %s",
-         nsCString(recordEntry.GetKey()).get()));
+         PromiseFlatCString(recordEntry.GetKey()).get()));
     (void)mHostResolver->CompleteLookup(hostRecord, NS_OK, ai, mPB,
                                         mOriginSuffix, TRRSkippedReason::TRR_OK,
                                         this);
@@ -632,28 +630,6 @@ nsresult TRR::ReturnData(nsIChannel* aChannel) {
                                               mTRRSkippedReason, mTTL, mPB);
   }
 
-  nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aChannel);
-  if (httpChannel) {
-    nsAutoCString version;
-    if (NS_SUCCEEDED(httpChannel->GetProtocolVersion(version))) {
-      nsAutoCString key("h1"_ns);
-      if (version.Equals("h3"_ns)) {
-        key.Assign("h3"_ns);
-      } else if (version.Equals("h2"_ns)) {
-        key.Assign("h2"_ns);
-      }
-
-      if (trrFetchDuration) {
-        glean::networking::trr_fetch_duration.Get(key).AccumulateRawDuration(
-            *trrFetchDuration);
-      }
-      if (trrFetchDurationNetworkOnly) {
-        key.Append("_network_only"_ns);
-        glean::networking::trr_fetch_duration.Get(key).AccumulateRawDuration(
-            *trrFetchDurationNetworkOnly);
-      }
-    }
-  }
   return NS_OK;
 }
 

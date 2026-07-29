@@ -21,7 +21,6 @@
 
 #include "api/audio/audio_frame.h"
 #include "api/audio/audio_mixer.h"
-#include "api/audio_codecs/audio_codec_pair_id.h"
 #include "api/audio_codecs/audio_decoder_factory.h"
 #include "api/audio_codecs/audio_format.h"
 #include "api/call/audio_sink.h"
@@ -95,7 +94,7 @@ class ChannelSendInterface;
 
 class ChannelReceiveInterface : public RtpPacketSinkInterface {
  public:
-  virtual ~ChannelReceiveInterface() = default;
+  ~ChannelReceiveInterface() override = default;
 
   virtual void SetSink(AudioSinkInterface* sink) = 0;
 
@@ -138,6 +137,8 @@ class ChannelReceiveInterface : public RtpPacketSinkInterface {
   // determines minimum delay until audio playout.
   virtual bool SetBaseMinimumPlayoutDelayMs(int delay_ms) = 0;
   virtual int GetBaseMinimumPlayoutDelayMs() const = 0;
+  virtual void SetMaximumBufferPackets(size_t max_packets) = 0;
+  virtual void SetFastAccelerate(bool enable) = 0;
 
   // Produces the transport-related timestamps; current_delay_ms is left unset.
   virtual std::optional<Syncable::Info> GetSyncInfo() const = 0;
@@ -166,8 +167,6 @@ class ChannelReceiveInterface : public RtpPacketSinkInterface {
 
   virtual void SetFrameDecryptor(
       scoped_refptr<webrtc::FrameDecryptorInterface> frame_decryptor) = 0;
-
-  virtual void OnLocalSsrcChange(uint32_t local_ssrc) = 0;
 };
 
 std::unique_ptr<ChannelReceiveInterface> CreateChannelReceive(
@@ -175,18 +174,17 @@ std::unique_ptr<ChannelReceiveInterface> CreateChannelReceive(
     NetEqFactory* neteq_factory,
     AudioDeviceModule* audio_device_module,
     Transport* rtcp_send_transport,
-    uint32_t local_ssrc,
     uint32_t remote_ssrc,
     size_t jitter_buffer_max_packets,
     bool jitter_buffer_fast_playout,
     int jitter_buffer_min_delay_ms,
     bool enable_non_sender_rtt,
     scoped_refptr<AudioDecoderFactory> decoder_factory,
-    std::optional<AudioCodecPairId> codec_pair_id,
     scoped_refptr<FrameDecryptorInterface> frame_decryptor,
     const webrtc::CryptoOptions& crypto_options,
     scoped_refptr<FrameTransformerInterface> frame_transformer,
-    RtcpEventObserver* rtcp_event_observer);
+    RtcpEventObserver* rtcp_event_observer,
+    uint32_t local_ssrc);
 
 }  // namespace voe
 }  // namespace webrtc

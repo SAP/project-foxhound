@@ -7,7 +7,7 @@
 
 #include <stdint.h>
 
-#include "jit/riscv64/extension/base-assembler-riscv.h"
+#include "jit/riscv64/base/base-assembler-riscv.h"
 #include "jit/riscv64/Register-riscv64.h"
 
 namespace js {
@@ -19,14 +19,12 @@ class AssemblerRISCVB : public AssemblerRiscvBase {
   void sh1add(Register rd, Register rs1, Register rs2);
   void sh2add(Register rd, Register rs1, Register rs2);
   void sh3add(Register rd, Register rs1, Register rs2);
-#ifdef JS_CODEGEN_RISCV64
   void add_uw(Register rd, Register rs1, Register rs2);
   void zext_w(Register rd, Register rs1) { add_uw(rd, rs1, zero_reg); }
   void sh1add_uw(Register rd, Register rs1, Register rs2);
   void sh2add_uw(Register rd, Register rs1, Register rs2);
   void sh3add_uw(Register rd, Register rs1, Register rs2);
   void slli_uw(Register rd, Register rs1, uint8_t shamt);
-#endif
 
   // Zbb Extension
   void andn(Register rd, Register rs1, Register rs2);
@@ -36,11 +34,9 @@ class AssemblerRISCVB : public AssemblerRiscvBase {
   void clz(Register rd, Register rs);
   void ctz(Register rd, Register rs);
   void cpop(Register rd, Register rs);
-#ifdef JS_CODEGEN_RISCV64
   void clzw(Register rd, Register rs);
   void ctzw(Register rd, Register rs);
   void cpopw(Register rd, Register rs);
-#endif
 
   void max(Register rd, Register rs1, Register rs2);
   void maxu(Register rd, Register rs1, Register rs2);
@@ -57,11 +53,9 @@ class AssemblerRISCVB : public AssemblerRiscvBase {
   void rori(Register rd, Register rs1, uint8_t shamt);
   void orc_b(Register rd, Register rs);
   void rev8(Register rd, Register rs);
-#ifdef JS_CODEGEN_RISCV64
   void rolw(Register rd, Register rs1, Register rs2);
   void roriw(Register rd, Register rs1, uint8_t shamt);
   void rorw(Register rd, Register rs1, Register rs2);
-#endif
 
   // Zbs
   void bclr(Register rd, Register rs1, Register rs2);

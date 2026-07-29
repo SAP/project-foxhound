@@ -6,6 +6,10 @@
 
 /* import-globals-from head_http3.js */
 
+const { HTTP3Server } = ChromeUtils.importESModule(
+  "resource://testing-common/NodeServer.sys.mjs"
+);
+
 function makeChan(uri) {
   let chan = NetUtil.newChannel({
     uri,
@@ -32,9 +36,12 @@ add_setup(async function setup() {
   Assert.notEqual(h2Port, null);
   Assert.notEqual(h2Port, "");
 
-  h3Port = Services.env.get("MOZHTTP3_PORT");
-  Assert.notEqual(h3Port, null);
-  Assert.notEqual(h3Port, "");
+  let h3ServerPath = Services.env.get("MOZ_HTTP3_SERVER_PATH");
+  let h3DBPath = Services.env.get("MOZ_HTTP3_CERT_DB_PATH");
+
+  let server = new HTTP3Server();
+  await server.start(h3ServerPath, h3DBPath);
+  h3Port = server.port();
 
   Services.prefs.setBoolPref("network.http.http3.enable", true);
   Services.prefs.setCharPref("network.dns.localDomains", "foo.example.com");
@@ -51,6 +58,10 @@ add_setup(async function setup() {
 
   let chan = makeChan(`https://localhost`);
   await channelOpenPromise(chan, CL_EXPECT_FAILURE);
+
+  registerCleanupFunction(async () => {
+    await server.stop();
+  });
 });
 
 // Test non-ASCII header with HTTP/3 and HTTP/2 fallback
@@ -70,6 +81,16 @@ add_task(async function test_non_ascii_header() {
   let protocol1 = req1.protocolVersion;
   Assert.strictEqual(protocol1, "h3", `Using ${protocol1}`);
   Assert.equal(req1.responseStatus, 200);
+
+  let headerValue1;
+  chan1.visitRequestHeaders({
+    visitHeader(name, value) {
+      if (name === "x-panel-title") {
+        headerValue1 = value;
+      }
+    },
+  });
+  Assert.equal(headerValue1, "ä");
   info(buf1);
 
   // Second request with different non-ASCII header

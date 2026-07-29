@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -612,7 +610,11 @@ JitCode* IonCacheIRCompiler::compile(IonICStub* stub) {
     allocator.nextOp();
   } while (reader.more());
 
-  masm.assumeUnreachable("Should have returned from IC");
+  if (!savedLiveRegs_) {
+    allocator.restoreInputState(masm);
+  }
+  uint8_t* rejoinAddr = ic_->rejoinAddr(ionScript_);
+  masm.jump(ImmPtr(rejoinAddr));
 
   // Done emitting the main IC code. Now emit the failure paths.
   perfSpewer_.recordOffset(masm, "FailurePath");
@@ -968,7 +970,7 @@ bool IonCacheIRCompiler::emitCallScriptedGetterResult(
   Register callee = allocator.useRegister(masm, calleeId);
   AutoScratchRegister scratch(allocator, masm);
 
-  int32_t nargsAndFlags = int32StubField(nargsAndFlagsOffset);
+  uint32_t nargsAndFlags = int32StubField(nargsAndFlagsOffset);
   size_t nargs = nargsAndFlags >> JSFunction::ArgCountShift;
 
   allocator.discardStack(masm);
@@ -1778,7 +1780,7 @@ bool IonCacheIRCompiler::emitCallScriptedSetter(ObjOperandId receiverId,
   Register callee = allocator.useRegister(masm, calleeId);
   ConstantOrRegister val = allocator.useConstantOrRegister(masm, rhsId);
 
-  int32_t nargsAndFlags = int32StubField(nargsAndFlagsOffset);
+  uint32_t nargsAndFlags = int32StubField(nargsAndFlagsOffset);
   size_t nargs = nargsAndFlags >> JSFunction::ArgCountShift;
 
   AutoScratchRegister scratch(allocator, masm);
@@ -1951,17 +1953,6 @@ bool IonCacheIRCompiler::emitMegamorphicSetElement(ObjOperandId objId,
   return true;
 }
 
-bool IonCacheIRCompiler::emitReturnFromIC() {
-  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
-  if (!savedLiveRegs_) {
-    allocator.restoreInputState(masm);
-  }
-
-  uint8_t* rejoinAddr = ic_->rejoinAddr(ionScript_);
-  masm.jump(ImmPtr(rejoinAddr));
-  return true;
-}
-
 bool IonCacheIRCompiler::emitGuardDOMExpandoMissingOrGuardShape(
     ValOperandId expandoId, uint32_t shapeOffset) {
   JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
@@ -2119,14 +2110,21 @@ void IonIC::attachCacheIRStub(JSContext* cx, const CacheIRWriter& writer,
   // identify this as Ion code.
   if (ionScript->hasProfilingInstrumentation()) {
     uint8_t* addr = rejoinAddr(ionScript);
-    auto entry = MakeJitcodeGlobalEntry<IonICEntry>(cx, code, code->raw(),
-                                                    code->rawEnd(), addr);
+    auto* globalTable = cx->runtime()->jitRuntime()->getJitcodeGlobalTable();
+
+    // Resolve the parent IonEntry once here and hand it to the IonICEntry.
+    // The IonEntry for this IonScript was added to the table when the script
+    // was compiled, so it must still be present in the AVL tree.
+    auto* parent = globalTable->lookup(addr);
+    MOZ_RELEASE_ASSERT(parent && parent->isIon());
+
+    auto entry = MakeJitcodeGlobalEntry<IonICEntry>(
+        cx, code, code->raw(), code->rawEnd(), addr, &parent->asIon());
     if (!entry) {
       cx->recoverFromOutOfMemory();
       return;
     }
 
-    auto* globalTable = cx->runtime()->jitRuntime()->getJitcodeGlobalTable();
     if (!globalTable->addEntry(std::move(entry))) {
       return;
     }

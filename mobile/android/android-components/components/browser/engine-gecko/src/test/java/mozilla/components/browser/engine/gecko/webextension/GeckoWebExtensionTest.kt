@@ -23,7 +23,6 @@ import mozilla.components.support.test.whenever
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -39,6 +38,7 @@ import org.mozilla.geckoview.Image
 import org.mozilla.geckoview.WebExtension
 import org.mozilla.geckoview.WebExtensionController
 import org.robolectric.Shadows.shadowOf
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class GeckoWebExtensionTest {
@@ -344,20 +344,7 @@ class GeckoWebExtensionTest {
         assertNotNull(engineSessionCaptor.value)
 
         tabDelegateCaptor.value.onOpenOptionsPage(nativeGeckoWebExt)
-        verify(tabHandler, never()).onNewTab(eq(extension), any(), eq(false), eq("http://options-page.moz"))
-
-        val nativeGeckoWebExtWithMetadata =
-            mockNativeWebExtension(id = "id", location = "uri", metaData = mockNativeWebExtensionMetaData())
-        tabDelegateCaptor.value.onOpenOptionsPage(nativeGeckoWebExtWithMetadata)
-        verify(tabHandler, never()).onNewTab(eq(extension), any(), eq(false), eq("http://options-page.moz"))
-
-        val nativeGeckoWebExtWithOptionsPageUrl = mockNativeWebExtension(
-            id = "id",
-            location = "uri",
-            metaData = mockNativeWebExtensionMetaData(optionsPageUrl = "http://options-page.moz"),
-        )
-        tabDelegateCaptor.value.onOpenOptionsPage(nativeGeckoWebExtWithOptionsPageUrl)
-        verify(tabHandler).onNewTab(eq(extension), any(), eq(false), eq("http://options-page.moz"))
+        verify(tabHandler).onOpenOptionsPage(eq(extension))
     }
 
     @Test

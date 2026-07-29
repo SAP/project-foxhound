@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -247,6 +245,10 @@ void MacroAssembler::mulPtr(ImmWord rhs, Register srcDest) {
   MOZ_ASSERT(srcDest != scratch);
   mov(rhs, scratch);
   mulPtr(scratch, srcDest);
+}
+
+void MacroAssembler::mul64(const Register64& rhs, const Register64& srcDest) {
+  mul64(rhs, srcDest, InvalidReg);
 }
 
 void MacroAssembler::mul64(Imm64 imm, const Register64& dest) {
@@ -779,6 +781,15 @@ void MacroAssembler::branchTestMagic(Condition cond, const Address& valaddr,
   ma_b(scratch, ImmWord(magic), label, cond);
 }
 
+void MacroAssembler::branchTestMagic(Condition cond, const BaseIndex& valaddr,
+                                     JSWhyMagic why, Label* label) {
+  uint64_t magic = MagicValue(why).asRawBits();
+  UseScratchRegisterScope temps(*this);
+  Register scratch = temps.Acquire();
+  loadPtr(valaddr, scratch);
+  ma_b(scratch, ImmWord(magic), label, cond);
+}
+
 template <typename T>
 void MacroAssembler::branchTestValue(Condition cond, const T& lhs,
                                      const ValueOperand& rhs, Label* label) {
@@ -872,6 +883,47 @@ void MacroAssembler::fallibleUnboxPtr(const BaseIndex& src, Register dest,
                                       JSValueType type, Label* fail) {
   loadValue(src, ValueOperand(dest));
   fallibleUnboxPtr(ValueOperand(dest), dest, type, fail);
+}
+
+// ===============================================================
+// 128-bit arithmetic
+
+void MacroAssembler::wasmAddSubI128HI64(Register lhsLo, Register lhsHi,
+                                        Register rhsLo, Register rhsHi,
+                                        Register output, bool isAdd) {
+  // Require: the output is not the same as any of the inputs.
+  MOZ_RELEASE_ASSERT(output != lhsLo && output != lhsHi && output != rhsLo &&
+                     output != rhsHi);
+  // We use `output` as a temp to hold the carry or borrow.
+  if (isAdd) {
+    as_daddu(output, lhsLo, rhsLo);   // output = lhsLo + rhsLo
+    as_sltu(output, output, lhsLo);   // output = carry from `lhsLo + rhsLo`
+    as_daddu(output, output, lhsHi);  // output = carry + lhsHi
+    as_daddu(output, output, rhsHi);  // output = carry + lhsHi + rhsHi
+  } else {
+    as_sltu(output, lhsLo, rhsLo);    // output = borrow from `lhsLo - rhsLo`
+    as_dsubu(output, lhsHi, output);  // output = lhsHi - borrow
+    as_dsubu(output, output, rhsHi);  // output = lhsHi - borrow - rhsHi
+  }
+}
+
+void MacroAssembler::wasmMulI64WideHI64(Register lhs, Register rhs,
+                                        Register output, bool isSigned) {
+  if (isSigned) {
+#ifdef MIPSR6
+    as_dmuh(output, lhs, rhs);
+#else
+    as_dmult(lhs, rhs);
+    as_mfhi(output);
+#endif
+  } else {
+#ifdef MIPSR6
+    as_dmuhu(output, lhs, rhs);
+#else
+    as_dmultu(lhs, rhs);
+    as_mfhi(output);
+#endif
+  }
 }
 
 //}}} check_macroassembler_style

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -477,8 +475,8 @@ void DrawTargetRecording::MarkChanged() {
 }
 
 already_AddRefed<SourceSurface> DrawTargetRecording::Snapshot() {
-  RefPtr<SourceSurface> retSurf =
-      new SourceSurfaceRecording(mRect.Size(), mFormat, mRecorder);
+  RefPtr retSurf =
+      MakeRefPtr<SourceSurfaceRecording>(mRect.Size(), mFormat, mRecorder);
 
   RecordEventSelfSkipFlushTransform(RecordedSnapshot(ReferencePtr(retSurf)));
 
@@ -488,8 +486,8 @@ already_AddRefed<SourceSurface> DrawTargetRecording::Snapshot() {
 already_AddRefed<SourceSurface>
 DrawTargetRecording::CreateExternalSourceSurface(const IntSize& aSize,
                                                  SurfaceFormat aFormat) {
-  RefPtr<SourceSurface> retSurf =
-      new SourceSurfaceRecording(aSize, aFormat, mRecorder);
+  RefPtr retSurf =
+      MakeRefPtr<SourceSurfaceRecording>(aSize, aFormat, mRecorder);
 
   return retSurf.forget();
 }
@@ -505,8 +503,8 @@ already_AddRefed<SourceSurface> DrawTargetRecording::SnapshotExternalCanvas(
 
 already_AddRefed<SourceSurface> DrawTargetRecording::IntoLuminanceSource(
     LuminanceType aLuminanceType, float aOpacity) {
-  RefPtr<SourceSurface> retSurf =
-      new SourceSurfaceRecording(mRect.Size(), SurfaceFormat::A8, mRecorder);
+  RefPtr retSurf = MakeRefPtr<SourceSurfaceRecording>(
+      mRect.Size(), SurfaceFormat::A8, mRecorder);
 
   RecordEventSelfSkipFlushTransform(
       RecordedIntoLuminanceSource(retSurf, aLuminanceType, aOpacity));
@@ -520,8 +518,8 @@ already_AddRefed<SourceSurface> SourceSurfaceRecording::ExtractSubrect(
     return nullptr;
   }
 
-  RefPtr<SourceSurface> subSurf =
-      new SourceSurfaceRecording(aRect.Size(), mFormat, mRecorder);
+  RefPtr subSurf =
+      MakeRefPtr<SourceSurfaceRecording>(aRect.Size(), mFormat, mRecorder);
   mRecorder->RecordEvent(RecordedExtractSubrect(subSurf, this, aRect));
   return subSurf.forget();
 }
@@ -603,7 +601,7 @@ void DrawTargetRecording::DrawFilter(FilterNode* aNode, const Rect& aSourceRect,
 
 already_AddRefed<FilterNode> DrawTargetRecording::CreateFilter(
     FilterType aType) {
-  RefPtr<FilterNode> retNode = new FilterNodeRecording(mRecorder);
+  RefPtr retNode = MakeRefPtr<FilterNodeRecording>(mRecorder);
 
   RecordEventSelfSkipFlushTransform(RecordedFilterNodeCreation(retNode, aType));
 
@@ -614,7 +612,7 @@ already_AddRefed<FilterNode> DrawTargetRecording::DeferFilterInput(
     const Path* aPath, const Pattern& aPattern, const IntRect& aSourceRect,
     const IntPoint& aDestOffset, const DrawOptions& aOptions,
     const StrokeOptions* aStrokeOptions) {
-  RefPtr<FilterNode> retNode = new FilterNodeRecording(mRecorder);
+  RefPtr retNode = MakeRefPtr<FilterNodeRecording>(mRecorder);
 
   RefPtr<PathRecording> pathRecording = EnsurePathStored(aPath);
   EnsurePatternDependenciesStored(aPattern);
@@ -766,7 +764,7 @@ already_AddRefed<SourceSurface> DrawTargetRecording::OptimizeSourceSurface(
                "EnsureSurfaceStoredRecording.");
   }
 
-  RefPtr<SourceSurface> retSurf = new SourceSurfaceRecording(
+  RefPtr retSurf = MakeRefPtr<SourceSurfaceRecording>(
       aSurface->GetSize(), aSurface->GetFormat(), mRecorder, aSurface);
   RecordEventSelfSkipFlushTransform(
       RecordedOptimizeSourceSurface(aSurface, retSurf));
@@ -877,7 +875,7 @@ already_AddRefed<PathBuilder> DrawTargetRecording::CreatePathBuilder(
 
 already_AddRefed<GradientStops> DrawTargetRecording::CreateGradientStops(
     GradientStop* aStops, uint32_t aNumStops, ExtendMode aExtendMode) const {
-  RefPtr<GradientStops> retStops = new GradientStopsRecording(mRecorder);
+  RefPtr retStops = MakeRefPtr<GradientStopsRecording>(mRecorder);
 
   RecordEventSelfSkipFlushTransform(
       RecordedGradientStopsCreation(retStops, aStops, aNumStops, aExtendMode));
@@ -919,8 +917,8 @@ already_AddRefed<PathRecording> DrawTargetRecording::EnsurePathStored(
   } else {
     MOZ_ASSERT(!mRecorder->HasStoredObject(aPath));
     FillRule fillRule = aPath->GetFillRule();
-    RefPtr<PathBuilderRecording> builderRecording =
-        new PathBuilderRecording(mFinalDT->GetBackendType(), fillRule);
+    RefPtr builderRecording =
+        MakeRefPtr<PathBuilderRecording>(mFinalDT->GetBackendType(), fillRule);
     aPath->StreamToSink(builderRecording);
     pathRecording = builderRecording->Finish().downcast<PathRecording>();
     mRecorder->AddStoredObject(pathRecording);
@@ -988,6 +986,12 @@ void DrawTargetRecording::EnsurePatternDependenciesStored(
       return;
     }
   }
+}
+
+void DrawTargetRecording::AccessibleId(uint64_t aBrowsingContextId,
+                                       uint64_t aAccId) {
+  MarkChanged();
+  RecordEventSelf(RecordedAccessibleId(aBrowsingContextId, aAccId));
 }
 
 }  // namespace gfx

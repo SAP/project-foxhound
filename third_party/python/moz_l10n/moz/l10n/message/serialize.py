@@ -21,7 +21,7 @@ from ..formats.fluent.serialize import fluent_serialize_message
 from ..formats.mf2.serialize import mf2_serialize_message
 from ..formats.properties.serialize import properties_serialize_message
 from ..formats.webext.serialize import webext_serialize_message
-from ..model import Message, PatternMessage
+from ..model import Message, Pattern, PatternMessage
 
 android_serialize_message: Callable[[Message], str] | None = None
 xliff_serialize_message: Callable[[Message], str] | None = None
@@ -32,15 +32,23 @@ except ImportError:
     pass
 
 
-def serialize_message(format: Format | None, msg: Message) -> str:
+def serialize_message(
+    format: Format | None,
+    msg: Message | Pattern,
+    *,
+    fluent_escape_empty: bool = False,
+    fluent_escape_syntax: bool = True,
+) -> str:
     """
-    Serialize a `Message` to its string representation.
+    Serialize a `Message` or `Pattern` to its string representation.
 
     Custom serialisers are used for `android`, `fluent`, `mf2`, `properties`, `webext`, and `xliff` formats.
     Many formats rely on non-string message parts including an appropriate `source` attribute.
 
     SelectMessage serialization is only supported for `fluent` and `mf2`.
     """
+    if isinstance(msg, list):
+        msg = PatternMessage(msg)
     # TODO post-py38: should be a match
     if format == Format.properties:
         return properties_serialize_message(msg)
@@ -58,7 +66,9 @@ def serialize_message(format: Format | None, msg: Message) -> str:
     elif format == Format.mf2:
         return mf2_serialize_message(msg)
     elif format == Format.fluent:
-        return fluent_serialize_message(msg)
+        return fluent_serialize_message(
+            msg, escape_empty=fluent_escape_empty, escape_syntax=fluent_escape_syntax
+        )
     elif not isinstance(msg, PatternMessage) or msg.declarations:
         raise ValueError(f"Unsupported message: {msg}")
     else:

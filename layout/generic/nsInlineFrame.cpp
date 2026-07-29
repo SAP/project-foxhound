@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -376,10 +374,37 @@ void nsInlineFrame::Reflow(nsPresContext* aPresContext,
 
   ReflowFrames(aPresContext, aReflowInput, irs, aReflowOutput, aStatus);
 
-  ReflowAbsoluteFrames(aPresContext, aReflowOutput, aReflowInput, aStatus);
+  if (!StaticPrefs::layout_abspos_fragment_aware_inline_cb_enabled()) {
+    // This is the legacy, spec-incompatible behavior to reflow abspos children
+    // using only the first inline fragment's rect.
+    ReflowAbsoluteFrames(aPresContext, aReflowOutput, aReflowInput, aStatus);
+  } else {
+    MarkBlockAncestorHavingAbsoluteDescendants(aReflowInput);
+  }
 
   // Note: the line layout code will properly compute our
   // overflow-rect state for us.
+}
+
+void nsInlineFrame::MarkBlockAncestorHavingAbsoluteDescendants(
+    const ReflowInput& aReflowInput) const {
+  if (!HasAbsolutelyPositionedChildren()) {
+    return;
+  }
+
+  // The line container is usually the block ancestor that will run
+  // ReflowAbsoluteDescendantsInInlineFrame(). Ruby is the exception, whose
+  // content is reflowed in a nested line layout with nsRubyTextContainerFrame
+  // as the line container. In that case, keep finding the nearest block
+  // ancestor.
+  nsIFrame* lineContainer = aReflowInput.mLineLayout->LineContainerFrame();
+  nsBlockFrame* block = do_QueryFrame(lineContainer);
+  if (!block) {
+    block = nsLayoutUtils::FindNearestBlockAncestor(lineContainer);
+  }
+  MOZ_ASSERT(block,
+             "An inline absolute containing block must have a block ancestor!");
+  block->AddStateBits(NS_BLOCK_HAS_INLINE_ABSPOS_DESCENDANT);
 }
 
 nsresult nsInlineFrame::AttributeChanged(int32_t aNameSpaceID,
@@ -927,7 +952,15 @@ void nsInlineFrame::UpdateStyleOfOwnedAnonBoxesForIBSplit(
     }
 
     nsIFrame* nextInline = blockFrame->GetProperty(nsIFrame::IBSplitSibling());
-    MOZ_ASSERT(nextInline, "There is always a trailing inline in an IB split");
+    if (MOZ_UNLIKELY(!nextInline)) {
+      MOZ_ASSERT_UNREACHABLE(
+          "There should always a be trailing inline "
+          "in an IB split");
+      // Gracefully bail so that nextInline usage below doesn't
+      // null-deref.  (We can stop worrying about this when we remove
+      // IB split siblings in bug 2031448.)
+      return;
+    }
 
     for (nsIFrame* cont = nextInline; cont;
          cont = cont->GetNextContinuation()) {
@@ -1061,7 +1094,11 @@ void nsFirstLineFrame::Reflow(nsPresContext* aPresContext,
   ReflowFrames(aPresContext, aReflowInput, irs, aReflowOutput, aStatus);
   aReflowInput.mLineLayout->SetInFirstLine(false);
 
-  ReflowAbsoluteFrames(aPresContext, aReflowOutput, aReflowInput, aStatus);
+  // If we could be an abspos containing block, then this is where we would call
+  // ReflowAbsoluteFrames. But we can't be, per bug 2036239 comment 1.
+  MOZ_ASSERT(!IsAbsoluteContainer(),
+             "None of the properties that apply to ::first-line could make it "
+             "an abspos containing block!");
 
   // Note: the line layout code will properly compute our overflow state for us
 }

@@ -18,7 +18,7 @@ Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/c8606497de1f461a6
  1 file changed, 28 insertions(+), 2 deletions(-)
 
 diff --git a/modules/desktop_capture/linux/wayland/egl_dmabuf.cc b/modules/desktop_capture/linux/wayland/egl_dmabuf.cc
-index cf5b4da824..50de04a0d4 100644
+index 10bfd88d14..c8653928d9 100644
 --- a/modules/desktop_capture/linux/wayland/egl_dmabuf.cc
 +++ b/modules/desktop_capture/linux/wayland/egl_dmabuf.cc
 @@ -19,6 +19,7 @@
@@ -28,8 +28,8 @@ index cf5b4da824..50de04a0d4 100644
 +#include <gdk/gdk.h>
  #include <libdrm/drm_fourcc.h>
  #include <spa/param/video/raw.h>
- #include <unistd.h>
-@@ -230,6 +231,26 @@ static void CloseLibrary(void* library) {
+ #include <sys/stat.h>
+@@ -239,6 +240,26 @@ static void CloseLibrary(void* library) {
    }
  }
  
@@ -53,22 +53,22 @@ index cf5b4da824..50de04a0d4 100644
 +                                      sGdkX11DisplayGetType()));
 +}
 +
- static void* g_lib_egl = nullptr;
- 
  RTC_NO_SANITIZE("cfi-icall")
-@@ -375,8 +396,13 @@ EglDmaBuf::EglDmaBuf() {
-     return;
-   }
+ static std::vector<std::string> GetClientExtensions(EGLDisplay display,
+                                                     EGLint name) {
+@@ -817,8 +838,13 @@ RTC_NO_SANITIZE("cfi-icall")
+ bool EglDmaBuf::CreatePlatformDevice() {
+   EGLDisplay display = EGL_NO_DISPLAY;
  
--  egl_.display = EglGetPlatformDisplay(EGL_PLATFORM_WAYLAND_KHR,
--                                       (void*)EGL_DEFAULT_DISPLAY, nullptr);
+-  display = EglGetPlatformDisplay(EGL_PLATFORM_WAYLAND_KHR,
+-                                  (void*)EGL_DEFAULT_DISPLAY, nullptr);
 +  if (IsWaylandDisplay()) {
-+    egl_.display = EglGetPlatformDisplay(EGL_PLATFORM_WAYLAND_KHR,
-+                                         (void*)EGL_DEFAULT_DISPLAY, nullptr);
++    display = EglGetPlatformDisplay(EGL_PLATFORM_WAYLAND_KHR,
++                                    (void*)EGL_DEFAULT_DISPLAY, nullptr);
 +  } else if (IsX11Display()) {
-+    egl_.display = EglGetPlatformDisplay(EGL_PLATFORM_X11_KHR,
-+                                         (void*)EGL_DEFAULT_DISPLAY, nullptr);
++    display = EglGetPlatformDisplay(EGL_PLATFORM_X11_KHR,
++                                    (void*)EGL_DEFAULT_DISPLAY, nullptr);
 +  }
  
-   if (egl_.display == EGL_NO_DISPLAY) {
-     RTC_LOG(LS_ERROR) << "Failed to obtain default EGL display: "
+   if (display == EGL_NO_DISPLAY) {
+     RTC_LOG(LS_ERROR) << "Failed to obtain platform EGL display: "

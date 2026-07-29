@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -43,6 +41,10 @@ elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
     SOURCES += [
         "nsGNOMEShellService.cpp",
     ]
+    LOCAL_INCLUDES += [
+        "/widget",
+        "/widget/gtk",  # for nsWindow
+    ]
     if CONFIG["MOZ_ENABLE_DBUS"]:
         SOURCES += [
             "nsGNOMEShellDBusHelper.cpp",
@@ -52,11 +54,12 @@ elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
 
 elif CONFIG["OS_ARCH"] == "WINNT":
     XPIDL_SOURCES += [
+        "nsILimitedAccessFeature.idl",
+        "nsISecondaryTile.idl",
         "nsIWindowsShellService.idl",
     ]
     SOURCES += [
         "nsWindowsShellService.cpp",
-        "Windows11LimitedAccessFeatures.cpp",
         "Windows11TaskbarPinning.cpp",
         "WindowsDefaultBrowser.cpp",
         "WindowsUserChoice.cpp",
@@ -70,6 +73,15 @@ elif CONFIG["OS_ARCH"] == "WINNT":
         "crypt32",
         "propsys",
     ]
+    FINAL_TARGET_FILES += ["content/blank.pdf", "content/confused_fox.pdf"]
+
+    MOZ_SRC_FILES += [
+        "WindowsSetDefaultAppCmdHandler.sys.mjs",
+    ]
+
+    XPCOM_MANIFESTS += [
+        "components.conf",
+    ]
 
 XPIDL_MODULE = "shellservice"
 
@@ -80,6 +92,7 @@ MOZ_SRC_FILES += [
     "HeadlessShell.sys.mjs",
     "ScreenshotChild.sys.mjs",
     "ShellService.sys.mjs",
+    "WindowsSetDefaultRedirect.sys.mjs",
 ]
 
 MOZ_SRC_FILES += [

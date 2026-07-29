@@ -67,7 +67,7 @@ function taskify(fun) {
 }
 
 function is_hidden(element) {
-  let win = element.ownerGlobal;
+  let win = element.documentGlobal;
   let style = win.getComputedStyle(element);
   if (style.display == "none") {
     return true;
@@ -88,7 +88,7 @@ function is_hidden(element) {
 }
 
 function is_visible(element) {
-  let win = element.ownerGlobal;
+  let win = element.documentGlobal;
   let style = win.getComputedStyle(element);
   if (style.display == "none") {
     return false;
@@ -290,7 +290,7 @@ function is_element_hidden(element, msg) {
 }
 
 function isTourBrowser(aBrowser) {
-  let chromeWindow = aBrowser.ownerGlobal;
+  let chromeWindow = aBrowser.documentGlobal;
   return (
     UITour.tourBrowsersByWindow.has(chromeWindow) &&
     UITour.tourBrowsersByWindow.get(chromeWindow).has(aBrowser)

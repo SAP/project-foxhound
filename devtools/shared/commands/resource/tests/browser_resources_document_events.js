@@ -14,6 +14,7 @@ add_task(async function () {
   await testDomCompleteWithWindowStop();
   await testCrossOriginNavigation();
   await testDomCompleteWithOfflineDocument();
+  await testDocumentEventErrorPage();
 });
 
 async function testDocumentEventResources() {
@@ -249,10 +250,7 @@ async function testIframeNavigation() {
 }
 
 function isBfCacheInParentEnabled() {
-  return (
-    Services.appinfo.sessionHistoryInParent &&
-    Services.prefs.getBoolPref("fission.bfcacheInParent", false)
-  );
+  return Services.prefs.getBoolPref("fission.bfcacheInParent", false);
 }
 
 async function testBfCacheNavigation() {
@@ -586,6 +584,44 @@ async function testDomCompleteWithOfflineDocument() {
   await client.close();
 }
 
+async function testDocumentEventErrorPage() {
+  info("Test error page flag when loading a non existing domain");
+
+  const tab = await addTab(
+    `https://non-existing-domain-without-doing-a-network-connection.com`,
+    { waitForLoad: false }
+  );
+  await BrowserTestUtils.waitForErrorPage(gBrowser.selectedBrowser);
+
+  const { commands, client, resourceCommand, targetCommand } =
+    await initResourceCommand(tab);
+
+  info("Check that all DOCUMENT_EVENTS are fired for the already loaded page");
+  const documentEvents = [];
+  await resourceCommand.watchResources([resourceCommand.TYPES.DOCUMENT_EVENT], {
+    onAvailable: resources => documentEvents.push(...resources),
+  });
+  is(documentEvents.length, 3, "Existing document events are fired");
+
+  assertEvents({
+    commands,
+    documentEvents: [null /* no will-navigate */, ...documentEvents],
+    // We are receiving 0 timestamp in case of error pages
+    ignoreAllTimestamps: true,
+    // This is the important assertion in this test.
+    isErrorPage: true,
+  });
+
+  is(
+    targetCommand.targetFront.isErrorPage,
+    true,
+    "The target front also expose the isErrorPage flag"
+  );
+
+  targetCommand.destroy();
+  await client.close();
+}
+
 async function assertPromises(
   commands,
   targetBeforeNavigation,
@@ -623,6 +659,7 @@ function assertEvents({
   // The observed failures are within < 5ms.
   ignoreWillNavigateTimestamp = isSlowPlatform,
   ignoreAllTimestamps = false,
+  isErrorPage = false,
 }) {
   const [willNavigateEvent, loadingEvent, interactiveEvent, completeEvent] =
     documentEvents;
@@ -639,6 +676,15 @@ function assertEvents({
     "dom-loading",
     "loading received in the exepected order"
   );
+  if (isErrorPage) {
+    is(loadingEvent.isErrorPage, true, "loading received the error flag");
+  } else {
+    is(
+      loadingEvent.isErrorPage,
+      undefined,
+      "loading isn't flagging an error page"
+    );
+  }
   is(
     interactiveEvent.name,
     "dom-interactive",

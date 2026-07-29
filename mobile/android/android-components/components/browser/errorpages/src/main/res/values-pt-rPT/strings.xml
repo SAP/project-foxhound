@@ -138,7 +138,7 @@
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_harmful_addon_uri_title">Site bloqueado para sua segurança</string>
   <!-- The %1$s will be replaced by the malicious website URL -->
-  <string name="mozac_browser_errorpages_harmful_addon_uri_message"><![CDATA[<p>Esta página web em %1$s foi bloqueada porque um dos seus extras tentou abri-la. Este site pode ser utilizado para roubar a sua informação — tais como palavras-passe ou números de cartão de crédito.</p>]]></string>
+  <string name="mozac_browser_errorpages_harmful_addon_uri_message"><![CDATA[<p>Esta página web em %1$s foi bloqueada porque um dos seus complementos tentou abri-la. Este site pode ser utilizado para roubar a sua informação — tais como palavras-passe ou números de cartão de crédito.</p>]]></string>
   <!-- The title of the error page for websites that do not support HTTPS when HTTPS-Only is turned on -->
   <string name="mozac_browser_errorpages_httpsonly_title">Site seguro não disponível</string>
   <!-- The text of the error page for websites that do not support HTTPS when HTTPS-Only is turned on. %1$s will be replaced with the URL of the website. -->

@@ -76,9 +76,9 @@ async function checkRules(view) {
         {
           name: "background-color",
           value: "#00F !important",
-          highlighted: true,
         },
       ],
+      highlighted: ["background-color: #00F !important;"],
     },
   ]);
 }
@@ -109,7 +109,6 @@ async function clearSearchAndCheckRules(view) {
         {
           name: "background-color",
           value: "#00F !important",
-          highlighted: false,
         },
       ],
     },
@@ -119,7 +118,6 @@ async function clearSearchAndCheckRules(view) {
         {
           name: "width",
           value: "100%",
-          highlighted: false,
         },
       ],
     },

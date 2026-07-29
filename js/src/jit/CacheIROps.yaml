@@ -52,7 +52,15 @@
 # ========================
 # If true, the generated CacheIRWriter method will be private and has a trailing
 # '_'. This is useful for ops that need custom CacheIRWriter logic on top of the
-# generated code.
+# generated code. Note that custom writers should avoid side-effects that aren't
+# reflected in the generated CacheIR; the custom writer is not called when
+# cloning the op, so the side-effect could be lost.
+#
+# inlining_candidate (optional)
+# ========================
+# If true, the generated CacheIRWriter method and the generated CacheIRCloner
+# method will set the writer's TrialInliningState to Candidate to indicate that
+# this stub can be considered for inlining.
 #
 # args
 # ====
@@ -73,12 +81,6 @@
 #
 # If there's an argument named 'result', the generated CacheIRWriter method will
 # return a new OperandId of this type.
-
-- name: ReturnFromIC
-  shared: false
-  transpile: true
-  cost_estimate: 1
-  args:
 
 - name: GuardToObject
   shared: true
@@ -103,6 +105,13 @@
     input: ValId
 
 - name: GuardIsUndefined
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    input: ValId
+
+- name: GuardIsNotObject
   shared: true
   transpile: true
   cost_estimate: 1
@@ -494,13 +503,6 @@
     obj: ObjId
 
 - name: GuardIsNotArrayBufferMaybeShared
-  shared: true
-  transpile: true
-  cost_estimate: 1
-  args:
-    obj: ObjId
-
-- name: GuardIsTypedArray
   shared: true
   transpile: true
   cost_estimate: 1
@@ -2039,6 +2041,7 @@
   transpile: true
   cost_estimate: 3
   custom_writer: true
+  inlining_candidate: true
   args:
     receiver: ObjId
     callee: ObjId
@@ -2143,7 +2146,7 @@
   shared: false
   transpile: true
   cost_estimate: 3
-  custom_writer: true
+  inlining_candidate: true
   args:
     callee: ObjId
     argc: Int32Id
@@ -2244,7 +2247,6 @@
   shared: false
   transpile: true
   cost_estimate: 4
-  custom_writer: true
   args:
     callee: ObjId
     argc: Int32Id
@@ -2558,6 +2560,14 @@
     obj: ObjId
     result: IntPtrId
 
+- name: LinearizeString
+  shared: true
+  transpile: true
+  cost_estimate: 4
+  args:
+    str: StringId
+    result: StringId
+
 - name: LinearizeForCharAccess
   shared: true
   transpile: true
@@ -2681,6 +2691,7 @@
   transpile: true
   cost_estimate: 5
   custom_writer: true
+  inlining_candidate: true
   args:
     receiver: ValId
     callee: ObjId
@@ -3823,6 +3834,37 @@
   args:
     secondsIntoYear: ValId
 
+- name: DateNow
+  shared: true
+  transpile: true
+  cost_estimate: 4
+  args:
+    result: NumberId
+
+- name: DateParse
+  shared: true
+  transpile: true
+  cost_estimate: 4
+  args:
+    str: StringId
+    result: NumberId
+
+- name: TimeClip
+  shared: true
+  transpile: true
+  cost_estimate: 2
+  args:
+    time: NumberId
+    result: NumberId
+
+- name: NewDateObjectResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    templateObject: ObjectField
+    utcTime: NumberId
+
 - name: ArrayFromArgumentsObjectResult
   shared: true
   transpile: true
@@ -3898,3 +3940,11 @@
   args:
     val: ValId
 #endif
+
+# This is a pseudo-op used by PBL to simplify dispatch. It is never generated,
+# but PBL will dispatch to it when the end of the CacheIR sequence is reached.
+- name: PblReturn
+  shared: true
+  transpile: false
+  cost_estimate: 1
+  args:

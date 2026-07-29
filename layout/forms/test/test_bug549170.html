@@ -39,8 +39,6 @@ SimpleTest.waitForExplicitFinish();
 function mouseHandler(aEvent)
 {
   gNumberOfMouseEventsCaught++;
-  is(SpecialPowers.wrap(aEvent).originalTarget.nodeName, "DIV", "An inner div should be the target of the event");
-  ok(SpecialPowers.wrap(aEvent).originalTarget.implementedPseudoElement == "::-moz-text-control-editing-root", "the target div should be the editor div");
 }
 
 function checkMouseEvents(element)

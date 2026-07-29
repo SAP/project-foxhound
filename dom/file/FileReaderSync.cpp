@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +8,7 @@
 #include "js/RootingAPI.h"   // JS::{,Mutable}Handle
 #include "js/Utility.h"  // js::ArrayBufferContentsArena, JS::FreePolicy, js_pod_arena_malloc
 #include "mozilla/Base64.h"
+#include "mozilla/CheckedInt.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FileReaderSyncBinding.h"
@@ -51,13 +50,15 @@ void FileReaderSync::ReadAsArrayBuffer(JSContext* aCx,
                                        Blob& aBlob,
                                        JS::MutableHandle<JSObject*> aRetval,
                                        ErrorResult& aRv) {
-  uint64_t blobSize = aBlob.GetSize(aRv);
-  if (NS_WARN_IF(aRv.Failed())) {
+  // Check blobSize is in uint32_t's range because SyncRead expects an uint32_t
+  // js_pod_arena_malloc also expects a 32 bits integer on 32 bits systems
+  CheckedInt<uint32_t> blobSize = aBlob.GetSize(aRv);
+  if (NS_WARN_IF(aRv.Failed() || !blobSize.isValid())) {
     return;
   }
 
-  UniquePtr<char[], JS::FreePolicy> bufferData(
-      js_pod_arena_malloc<char>(js::ArrayBufferContentsArena, blobSize));
+  UniquePtr<char[], JS::FreePolicy> bufferData(js_pod_arena_malloc<char>(
+      js::ArrayBufferContentsArena, blobSize.value()));
   if (!bufferData) {
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return;
@@ -70,7 +71,7 @@ void FileReaderSync::ReadAsArrayBuffer(JSContext* aCx,
   }
 
   uint32_t numRead;
-  aRv = SyncRead(stream, bufferData.get(), blobSize, &numRead);
+  aRv = SyncRead(stream, bufferData.get(), blobSize.value(), &numRead);
   if (NS_WARN_IF(aRv.Failed())) {
     return;
   }
@@ -81,8 +82,8 @@ void FileReaderSync::ReadAsArrayBuffer(JSContext* aCx,
     return;
   }
 
-  JSObject* arrayBuffer =
-      JS::NewArrayBufferWithContents(aCx, blobSize, std::move(bufferData));
+  JSObject* arrayBuffer = JS::NewArrayBufferWithContents(aCx, blobSize.value(),
+                                                         std::move(bufferData));
   if (!arrayBuffer) {
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return;

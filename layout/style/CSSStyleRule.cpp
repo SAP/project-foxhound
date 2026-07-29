@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,11 +6,12 @@
 
 #include "PseudoStyleType.h"
 #include "mozilla/CSSEnabledState.h"
-#include "mozilla/DeclarationBlock.h"
+#include "mozilla/PseudoStyleRequest.h"
 #include "mozilla/PseudoStyleType.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/dom/CSSScopeRule.h"
 #include "mozilla/dom/CSSStyleRuleBinding.h"
+#include "mozilla/dom/ContentList.h"
 #include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/dom/StylePropertyMap.h"
 #include "nsISupports.h"
@@ -21,15 +20,10 @@ namespace mozilla::dom {
 
 // -- CSSStyleRuleDeclaration ---------------------------------------
 
-CSSStyleRuleDeclaration::CSSStyleRuleDeclaration(
-    already_AddRefed<StyleLockedDeclarationBlock> aDecls)
-    : mDecls(new DeclarationBlock(std::move(aDecls))) {
-  mDecls->SetOwningRule(Rule());
-}
+CSSStyleRuleDeclaration::CSSStyleRuleDeclaration(already_AddRefed<Block> aDecls)
+    : mDecls(aDecls) {}
 
-CSSStyleRuleDeclaration::~CSSStyleRuleDeclaration() {
-  mDecls->SetOwningRule(nullptr);
-}
+CSSStyleRuleDeclaration::~CSSStyleRuleDeclaration() = default;
 
 // QueryInterface implementation for CSSStyleRuleDeclaration
 NS_INTERFACE_MAP_BEGIN(CSSStyleRuleDeclaration)
@@ -57,8 +51,8 @@ nsISupports* CSSStyleRuleDeclaration::GetParentObject() const {
   return Rule()->GetParentObject();
 }
 
-DeclarationBlock* CSSStyleRuleDeclaration::GetOrCreateCSSDeclaration(
-    Operation aOperation, DeclarationBlock** aCreated) {
+StyleLockedDeclarationBlock* CSSStyleRuleDeclaration::GetOrCreateCSSDeclaration(
+    Operation aOperation, Block** aCreated) {
   if (aOperation != Operation::Read) {
     if (StyleSheet* sheet = Rule()->GetStyleSheet()) {
       sheet->WillDirty();
@@ -67,12 +61,8 @@ DeclarationBlock* CSSStyleRuleDeclaration::GetOrCreateCSSDeclaration(
   return mDecls;
 }
 
-void CSSStyleRuleDeclaration::SetRawAfterClone(
-    RefPtr<StyleLockedDeclarationBlock> aRaw) {
-  auto block = MakeRefPtr<DeclarationBlock>(aRaw.forget());
-  mDecls->SetOwningRule(nullptr);
-  mDecls = std::move(block);
-  mDecls->SetOwningRule(Rule());
+void CSSStyleRuleDeclaration::SetRawAfterClone(RefPtr<Block> aRaw) {
+  mDecls = std::move(aRaw);
 }
 
 void CSSStyleRule::SetRawAfterClone(RefPtr<StyleLockedStyleRule> aRaw) {
@@ -86,15 +76,13 @@ already_AddRefed<StyleLockedCssRules> CSSStyleRule::GetOrCreateRawRules() {
 }
 
 nsresult CSSStyleRuleDeclaration::SetCSSDeclaration(
-    DeclarationBlock* aDecl, MutationClosureData* aClosureData) {
+    Block* aDecl, MutationClosureData* aClosureData) {
   CSSStyleRule* rule = Rule();
-  RefPtr<DeclarationBlock> oldDecls;
+  RefPtr<Block> oldDecls;
   if (aDecl != mDecls) {
     oldDecls = std::move(mDecls);
-    oldDecls->SetOwningRule(nullptr);
-    Servo_StyleRule_SetStyle(rule->Raw(), aDecl->Raw());
+    Servo_StyleRule_SetStyle(rule->Raw(), aDecl);
     mDecls = aDecl;
-    mDecls->SetOwningRule(rule);
   }
   if (StyleSheet* sheet = rule->GetStyleSheet()) {
     sheet->RuleChanged(rule, {StyleRuleChangeKind::StyleRuleDeclarations,
@@ -200,10 +188,10 @@ void CSSStyleRule::GetCssText(nsACString& aCssText) const {
 /* CSSStyleRule implementation */
 
 const StyleLockedDeclarationBlock* CSSStyleRule::RawStyle() const {
-  return mDecls.mDecls->Raw();
+  return mDecls.mDecls.get();
 }
 
-DeclarationBlock& CSSStyleRule::GetDeclarationBlock() const {
+StyleLockedDeclarationBlock& CSSStyleRule::GetDeclarationBlock() const {
   return *mDecls.mDecls;
 }
 
@@ -314,8 +302,9 @@ bool CSSStyleRule::SelectorMatchesElement(uint32_t aSelectorIndex,
                                           Element& aElement,
                                           const nsAString& aPseudo,
                                           bool aRelevantLinkVisited) {
-  const auto pseudo =
-      PseudoStyleRequest::Parse(aPseudo, /* aIgnoreEnabledState = */ true);
+  const auto pseudo = PseudoStyleRequest::Parse(
+      aPseudo, aElement.OwnerDoc()->DefaultStyleAttrURLData(),
+      /* aIgnoreEnabledState = */ true);
   if (!pseudo) {
     return false;
   }
@@ -345,8 +334,9 @@ Element* CSSStyleRule::GetScopeRootFor(uint32_t aSelectorIndex,
                                        dom::Element& aElement,
                                        const nsAString& aPseudo,
                                        bool aRelevantLinkVisited) {
-  const auto pseudo =
-      PseudoStyleRequest::Parse(aPseudo, /* aIgnoreEnabledState = */ true);
+  const auto pseudo = PseudoStyleRequest::Parse(
+      aPseudo, aElement.OwnerDoc()->DefaultStyleAttrURLData(),
+      /* aIgnoreEnabledState = */ true);
   if (!pseudo) {
     return nullptr;
   }
@@ -387,11 +377,11 @@ void CSSStyleRule::GetSelectorWarnings(
   }
 }
 
-already_AddRefed<nsINodeList> CSSStyleRule::QuerySelectorAll(nsINode& aRoot) {
+already_AddRefed<NodeList> CSSStyleRule::QuerySelectorAll(nsINode& aRoot) {
   AutoTArray<const StyleLockedStyleRule*, 8> rules;
   AutoTArray<StyleScopeRuleData, 1> scopes;
   CollectStyleRules(*this, /* aDesugared = */ true, rules, &scopes);
-  auto contentList = MakeRefPtr<nsSimpleContentList>(&aRoot);
+  auto contentList = MakeRefPtr<SimpleContentList>(&aRoot);
   if (scopes.IsEmpty()) {
     StyleSelectorList* list = Servo_StyleRule_GetSelectorList(&rules);
     Servo_SelectorList_QueryAll(&aRoot, list, contentList.get(),

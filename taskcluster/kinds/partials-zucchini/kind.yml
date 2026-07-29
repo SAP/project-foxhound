@@ -14,7 +14,6 @@ transforms:
 kind-dependencies:
     - toolchain
     - repackage
-    - repackage-l10n
 
 only-for-attributes:
     - nightly
@@ -44,6 +43,12 @@ tasks:
             group-by: single-with-filters
         shipping-phase: promote
         run-on-projects: ["mozilla-central"]
+        validate-cert:
+            by-project:
+                # don't validate certs on try; this allows generating
+                # dep signed partials with nightly signed `from` MARs
+                try: false
+                default: true
         fetches:
             toolchain:
                 - linux64-zucchini-bin

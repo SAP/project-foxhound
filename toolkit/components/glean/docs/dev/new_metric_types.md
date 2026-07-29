@@ -82,7 +82,7 @@ Pings also hold state to support `testBeforeNextSubmit()`.
 If your new metric type requires state in C++,
 the current state-of-the-art is a `StaticDataMutex`-locked `UniquePtr` to a `nsTHashTable`.
 Access to the inner map is guarded by the lock and is controlled and lazily-instantiated through a single access function.
-[See Ping's `GetCallbackMapLock()`](https://searchfox.org/mozilla-central/source/toolkit/components/glean/bindings/private/Ping.cpp)
+[See Ping's `GetCallbackMapLock()`](https://searchfox.org/firefox-main/source/toolkit/components/glean/bindings/private/Ping.cpp)
 for example.
 
 It is important to clear this state to avoid leaks.
@@ -90,7 +90,7 @@ It is important to clear this state to avoid leaks.
 However, instrumentation may call metrics APIs at any time.
 
 Therefore, GIFFT explicitly stops supporting these state-requiring operations after the
-[`AppShutdownTelemetry` shutdown phase](https://searchfox.org/mozilla-central/source/xpcom/base/ShutdownPhase.h).
+[`AppShutdownTelemetry` shutdown phase](https://searchfox.org/firefox-main/source/xpcom/base/ShutdownPhase.h).
 This is because during the next phase (`XPCOMWillShutdown`) we clear the state.
 
 ## Rust
@@ -118,7 +118,7 @@ To support IPC and the MLA FFI (see below)
 we identify metric instances by MetricId and store them in maps in
 [the `__glean_metric_maps` mod of `metrics.rs`](https://hg.mozilla.org/mozilla-central/toolkit/components/glean/api/src/metrics.rs).
 This work is done by the `rust.py` and `rust(_pings).jinja2` extensions to `glean_parser` found
-[in the `build_scripts/glean_parser_ext/` folder](https://searchfox.org/mozilla-central/source/toolkit/components/glean/build_scripts/glean_parser_ext).
+[in the `build_scripts/glean_parser_ext/` folder](https://searchfox.org/firefox-main/source/toolkit/components/glean/build_scripts/glean_parser_ext).
 
 You shouldn't have to edit these files for new metric types,
 as the original modifications to `glean_parser` for this type should already be generating correct code.

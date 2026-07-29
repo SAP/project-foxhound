@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -161,7 +159,7 @@ static already_AddRefed<SVGReference> ResolveURLUsingLocalRef(
     return nullptr;
   }
 
-  return do_AddRef(new SVGReference(uri, aURL.ExtraData()));
+  return MakeAndAddRef<SVGReference>(uri, aURL.ExtraData());
 }
 
 static already_AddRefed<SVGReference> ResolveURLUsingLocalRef(
@@ -197,7 +195,7 @@ static already_AddRefed<SVGReference> ResolveURLUsingLocalRef(
   if (!uri) {
     return nullptr;
   }
-  return do_AddRef(new SVGReference(uri, referrerInfo));
+  return MakeAndAddRef<SVGReference>(uri, referrerInfo);
 }
 
 class SVGFilterObserverList;
@@ -1314,16 +1312,8 @@ static T* GetEffectProperty(SVGReference* aReference, nsIFrame* aFrame,
     return nullptr;
   }
 
-  bool found;
-  T* prop = aFrame->GetProperty(aProperty, &found);
-  if (found) {
-    MOZ_ASSERT(prop, "this property should only store non-null values");
-    return prop;
-  }
-  prop = new T(aReference, aFrame, false);
-  NS_ADDREF(prop);
-  aFrame->AddProperty(aProperty, prop);
-  return prop;
+  return aFrame->GetOrCreateReleasableProperty(aProperty, aReference, aFrame,
+                                               false);
 }
 
 static SVGPaintingProperty* GetPaintingProperty(
@@ -1384,17 +1374,7 @@ static SVGFilterObserverListForCSSProp* GetOrCreateFilterObserverListForCSS(
     return nullptr;
   }
 
-  bool found;
-  SVGFilterObserverListForCSSProp* observers =
-      aFrame->GetProperty(aProperty, &found);
-  if (found) {
-    MOZ_ASSERT(observers, "this property should only store non-null values");
-    return observers;
-  }
-  observers = new SVGFilterObserverListForCSSProp(aFilters, aFrame);
-  NS_ADDREF(observers);
-  aFrame->AddProperty(aProperty, observers);
-  return observers;
+  return aFrame->GetOrCreateReleasableProperty(aProperty, aFilters, aFrame);
 }
 
 static SVGFilterObserverListForCSSProp* GetOrCreateFilterObserverListForCSS(
@@ -1466,8 +1446,8 @@ already_AddRefed<ISVGFilterObserverList>
 SVGObserverUtils::ObserveFiltersForCanvasContext(
     CanvasRenderingContext2D* aContext, Element* aCanvasElement,
     const Span<const StyleFilter> aFilters) {
-  return do_AddRef(new SVGFilterObserverListForCanvasContext(
-      aContext, aCanvasElement, aFilters));
+  return MakeAndAddRef<SVGFilterObserverListForCanvasContext>(
+      aContext, aCanvasElement, aFilters);
 }
 
 static SVGPaintingProperty* GetOrCreateClipPathObserver(
@@ -1549,16 +1529,8 @@ static SVGMaskObserverList* GetOrCreateMaskObserverList(
 
   MOZ_ASSERT(style->mMask.mImageCount > 0);
 
-  bool found;
-  SVGMaskObserverList* prop = aMaskedFrame->GetProperty(MaskProperty(), &found);
-  if (found) {
-    MOZ_ASSERT(prop, "this property should only store non-null values");
-    return prop;
-  }
-  prop = new SVGMaskObserverList(aMaskedFrame);
-  NS_ADDREF(prop);
-  aMaskedFrame->AddProperty(MaskProperty(), prop);
-  return prop;
+  return aMaskedFrame->GetOrCreateReleasableProperty(MaskProperty(),
+                                                     aMaskedFrame);
 }
 
 SVGObserverUtils::ReferenceState SVGObserverUtils::GetAndObserveMasks(
@@ -1735,15 +1707,8 @@ void SVGObserverUtils::RemoveTemplateObserver(nsIFrame* aFrame) {
 
 Element* SVGObserverUtils::GetAndObserveBackgroundImage(nsIFrame* aFrame,
                                                         const nsAtom* aHref) {
-  bool found;
   URIObserverHashtable* hashtable =
-      aFrame->GetProperty(BackgroundImageProperty(), &found);
-  if (!found) {
-    hashtable = new URIObserverHashtable();
-    aFrame->AddProperty(BackgroundImageProperty(), hashtable);
-  } else {
-    MOZ_ASSERT(hashtable, "this property should only store non-null values");
-  }
+      aFrame->GetOrCreateDeletableProperty(BackgroundImageProperty());
   nsAutoString localRef = u"#"_ns + nsDependentAtomString(aHref);
   auto* doc = aFrame->GetContent()->OwnerDoc();
   nsIURI* baseURI = aFrame->GetContent()->GetBaseURI();
@@ -1763,15 +1728,8 @@ Element* SVGObserverUtils::GetAndObserveBackgroundImage(nsIFrame* aFrame,
 }
 
 Element* SVGObserverUtils::GetAndObserveBackgroundClip(nsIFrame* aFrame) {
-  bool found;
-  BackgroundClipRenderingObserver* obs =
-      aFrame->GetProperty(BackgroundClipObserverProperty(), &found);
-  if (!found) {
-    obs = new BackgroundClipRenderingObserver(aFrame);
-    NS_ADDREF(obs);
-    aFrame->AddProperty(BackgroundClipObserverProperty(), obs);
-  }
-
+  BackgroundClipRenderingObserver* obs = aFrame->GetOrCreateReleasableProperty(
+      BackgroundClipObserverProperty(), aFrame);
   return obs->GetAndObserveReferencedElement();
 }
 
@@ -1783,8 +1741,10 @@ SVGPaintServerFrame* SVGObserverUtils::GetAndObservePaintServer(
   // anonymous block frame, then we look up to its parent (the SVGTextFrame).
   nsIFrame* paintedFrame = aPaintedFrame;
   if (paintedFrame->IsInSVGTextSubtree()) {
-    paintedFrame = paintedFrame->GetParent();
-    nsIFrame* grandparent = paintedFrame->GetParent();
+    // Continuations can come and go during reflow, and we don't need to
+    // observe the referenced element more than once for a given node.
+    paintedFrame = paintedFrame->GetParent()->FirstContinuation();
+    nsIFrame* grandparent = paintedFrame->GetParent()->FirstContinuation();
     if (grandparent && grandparent->IsSVGTextFrame()) {
       paintedFrame = grandparent;
     }
@@ -1901,35 +1861,23 @@ void SVGObserverUtils::InvalidateRenderingObservers(nsIFrame* aFrame) {
   NS_ASSERTION(!aFrame->GetPrevContinuation(),
                "aFrame must be first continuation");
 
-  auto* element = Element::FromNodeOrNull(aFrame->GetContent());
-  if (!element) {
-    return;
-  }
-
-  // If the rendering has changed, the bounds may well have changed too:
-  aFrame->RemoveProperty(SVGUtils::ObjectBoundingBoxProperty());
-
-  if (auto* observers = GetObserverSet(element)) {
-    observers->InvalidateAll(aFrame->HasAnyStateBits(NS_FRAME_IN_REFLOW));
-    return;
-  }
-
-  if (aFrame->IsSVGRenderingObserverContainer()) {
-    return;
-  }
+  bool ceaseInvalidation = false;
 
   // Check ancestor SVG containers. The root frame cannot be of type
   // eSVGContainer so we don't have to check f for null here.
-  for (nsIFrame* f = aFrame->GetParent(); f->IsSVGContainerFrame();
+  for (nsIFrame* f = aFrame; f->IsSVGContainerFrame() || f == aFrame;
        f = f->GetParent()) {
-    if (auto* element = Element::FromNode(f->GetContent())) {
+    f->RemoveProperty(SVGUtils::ObjectBoundingBoxProperty());
+    if (ceaseInvalidation) {
+      continue;
+    }
+    if (auto* element = Element::FromNodeOrNull(f->GetContent())) {
       if (auto* observers = GetObserverSet(element)) {
         observers->InvalidateAll(f->HasAnyStateBits(NS_FRAME_IN_REFLOW));
-        return;
       }
     }
     if (f->IsSVGRenderingObserverContainer()) {
-      return;
+      ceaseInvalidation = true;
     }
   }
 }

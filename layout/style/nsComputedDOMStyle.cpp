@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -68,7 +66,8 @@ using namespace mozilla::dom;
 already_AddRefed<nsComputedDOMStyle> NS_NewComputedDOMStyle(
     dom::Element* aElement, const nsAString& aPseudoElt, Document* aDocument,
     nsComputedDOMStyle::StyleType aStyleType, mozilla::ErrorResult&) {
-  auto request = PseudoStyleRequest::Parse(aPseudoElt);
+  auto request = PseudoStyleRequest::Parse(
+      aPseudoElt, aElement->OwnerDoc()->DefaultStyleAttrURLData());
   auto returnEmpty = nsComputedDOMStyle::AlwaysReturnEmptyStyle::No;
   if (!request) {
     if (!aPseudoElt.IsEmpty() && aPseudoElt.First() == u':') {
@@ -435,7 +434,8 @@ void nsComputedDOMStyle::GetPropertyValue(
     const nsACString& name =
         Substring(aMaybeCustomPropertyName, CSS_CUSTOM_NAME_PREFIX_LENGTH);
     Servo_GetCustomPropertyValue(mComputedStyle, &name,
-                                 mPresShell->StyleSet()->RawData(), &aReturn);
+                                 mPresShell->StyleSet()->RawData(), mElement,
+                                 &aReturn);
     return;
   }
 
@@ -508,6 +508,15 @@ static bool IsInFlatTree(const Element& aElement) {
   }
   auto* root = topmost->GetFlattenedTreeParentNode();
   return root && root->IsDocument();
+}
+
+already_AddRefed<const ComputedStyle>
+nsComputedDOMStyle::GetComputedStyleNoFlush(const Element* aElement,
+                                            const PseudoStyleRequest& aPseudo,
+                                            StyleType aStyleType) {
+  return DoGetComputedStyleNoFlush(
+      aElement, aPseudo, nsContentUtils::GetPresShellForContent(aElement),
+      aStyleType);
 }
 
 already_AddRefed<const ComputedStyle>
@@ -730,12 +739,12 @@ void nsComputedDOMStyle::GetCSSImageURLs(const nsACString& aPropertyName,
 // nsDOMCSSDeclaration abstract methods which should never be called
 // on a nsComputedDOMStyle object, but must be defined to avoid
 // compile errors.
-DeclarationBlock* nsComputedDOMStyle::GetOrCreateCSSDeclaration(
-    Operation aOperation, DeclarationBlock** aCreated) {
+StyleLockedDeclarationBlock* nsComputedDOMStyle::GetOrCreateCSSDeclaration(
+    Operation aOperation, StyleLockedDeclarationBlock** aCreated) {
   MOZ_CRASH("called nsComputedDOMStyle::GetCSSDeclaration");
 }
 
-nsresult nsComputedDOMStyle::SetCSSDeclaration(DeclarationBlock*,
+nsresult nsComputedDOMStyle::SetCSSDeclaration(StyleLockedDeclarationBlock*,
                                                MutationClosureData*) {
   MOZ_CRASH("called nsComputedDOMStyle::SetCSSDeclaration");
 }
@@ -889,12 +898,13 @@ static Side SideForPaddingOrMarginOrInsetProperty(
 
 static bool PaddingNeedsUsedValue(const LengthPercentage& aValue,
                                   const ComputedStyle& aStyle) {
-  return !aValue.ConvertsToLength() || aStyle.StyleDisplay()->HasAppearance();
+  return !aValue.ConvertsToLength() ||
+         aStyle.StyleDisplay()->HasNativeAppearance();
 }
 
 static bool HasPositionFallbacks(nsIFrame* aFrame) {
   return aFrame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW) &&
-         !aFrame->StylePosition()->mPositionTryFallbacks._0.IsEmpty();
+         !aFrame->StylePosition()->mPositionTryFallbacks.value._0.IsEmpty();
 }
 
 bool nsComputedDOMStyle::NeedsToFlushLayout(
@@ -1089,7 +1099,7 @@ void nsComputedDOMStyle::UpdateCurrentStyleSources(
       const auto* style = mInnerFrame->Style();
       if (auto* data = mInnerFrame->GetProperty(
               nsIFrame::LastSuccessfulPositionFallback())) {
-        style = data->mStyle.get();
+        style = data->mLastStyle.get();
       }
       SetFrameComputedStyle(std::move(style), currentGeneration);
       NS_ASSERTION(mComputedStyle, "Frame without style?");
@@ -1467,9 +1477,9 @@ void nsComputedDOMStyle::SetValueToTrackBreadth(
       return aValue->SetString("auto");
     case Tag::Breadth:
       return SetValueToLengthPercentage(aValue, aBreadth.AsBreadth(), true);
-    case Tag::Fr: {
+    case Tag::Flex: {
       nsAutoString tmpStr;
-      nsStyleUtil::AppendCSSNumber(aBreadth.AsFr(), tmpStr);
+      nsStyleUtil::AppendCSSNumber(aBreadth.AsFlex()._0, tmpStr);
       tmpStr.AppendLiteral("fr");
       return aValue->SetString(tmpStr);
     }
@@ -1510,7 +1520,7 @@ already_AddRefed<nsROCSSPrimitiveValue> nsComputedDOMStyle::GetGridTrackSize(
 
   // minmax(auto, <flex>) is equivalent to (and is our internal representation
   // of) <flex>, and both compute to <flex>
-  if (min.IsAuto() && max.IsFr()) {
+  if (min.IsAuto() && max.IsFlex()) {
     return GetGridTrackBreadth(max);
   }
 
@@ -2349,7 +2359,12 @@ already_AddRefed<CSSValue> nsComputedDOMStyle::GetTransformValue(
    */
   nsStyleTransformMatrix::TransformReferenceBox refBox(mInnerFrame, nsRect());
   gfx::Matrix4x4 matrix = nsStyleTransformMatrix::ReadTransforms(
-      aTransform, refBox, float(mozilla::AppUnitsPerCSSPixel()));
+      aTransform, refBox, float(mozilla::AppUnitsPerCSSPixel()),
+      mozilla::StyleZoom::ONE);  // One is passed in, as computed value does not
+                                 // need zooming
+  // TODO(salipov, bug 2045846): Fix zooming for transforms other than matrix.
+  // Note that unzooming may be neded here for transforms using lengths as
+  // opposed to numbers.
 
   return MatrixToCSSValue(matrix);
 }
@@ -2422,4 +2437,33 @@ void nsComputedDOMStyle::UnregisterPrefChangeCallbacks() {
                                    gCallbackPrefs->Elements(),
                                    GetComputedStyleMap());
   gCallbackPrefs = nullptr;
+}
+
+bool nsComputedDOMStyle::HasLonghandProperty(
+    const nsACString& aMaybeCustomPropertyName) {
+  NonCustomCSSPropertyId id =
+      nsCSSProps::LookupProperty(aMaybeCustomPropertyName);
+
+  if (id == eCSSProperty_UNKNOWN) {
+    return false;
+  }
+
+  if (nsCSSProps::IsShorthand(id)) {
+    return false;
+  }
+
+  if (id != eCSSPropertyExtra_variable) {
+    return !!GetComputedStyleMap()->FindEntryForProperty(id);
+  }
+
+  UpdateCurrentStyleSources(id);
+  if (!mComputedStyle) {
+    return false;
+  }
+
+  const nsACString& name =
+      Substring(aMaybeCustomPropertyName, CSS_CUSTOM_NAME_PREFIX_LENGTH);
+  return Servo_GetCustomPropertyValue(mComputedStyle, &name,
+                                      mPresShell->StyleSet()->RawData(),
+                                      mElement, nullptr);
 }

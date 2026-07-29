@@ -67,9 +67,8 @@ skip-if = [
 ["browser_bookmark_change_location.js"]
 
 ["browser_bookmark_context_menu_contents.js"]
-skip-if = [
-  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && socketprocess_networking", # Bug 1775657
-]
+
+["browser_bookmark_context_on_gutter.js"]
 
 ["browser_bookmark_copy_folder_tree.js"]
 tags = "os_integration"
@@ -236,6 +235,11 @@ https_first_disabled = true
 ["browser_recursive_hierarchies.js"]
 
 ["browser_remove_bookmarks.js"]
+
+["browser_sidebar_bookmarks_glean.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug", # Bug 2036783
+]
 
 ["browser_sidebar_bookmarks_telemetry.js"]
 

@@ -26,12 +26,12 @@ add_task(async function () {
 
   info("Change the current time to 75% after selecting '.div2'");
   await selectNode(".div2", inspector);
-  await waitUntil(() => panel.querySelectorAll(".animation-item").length === 1);
+  await waitFor(() => panel.querySelectorAll(".animation-item").length === 1);
   clickOnCurrentTimeScrubberController(animationInspector, panel, 0.75);
 
   info("Check each adjusted result of animations after selecting 'body' again");
   await selectNode("body", inspector);
-  await waitUntil(() => panel.querySelectorAll(".animation-item").length === 2);
+  await waitFor(() => panel.querySelectorAll(".animation-item").length === 2);
 
   checkAdjustingTheTime(
     animationInspector.state.animations[0].state,

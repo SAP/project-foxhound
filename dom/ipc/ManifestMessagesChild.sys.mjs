@@ -70,13 +70,14 @@ export class ManifestMessagesChild extends JSWindowActorChild {
    * Given a manifest and an expected icon size, ask ManifestIcons
    * to fetch the appropriate icon and send along result
    */
-  async fetchIcon({ data: { manifest, iconSize } }) {
+  async fetchIcon({ data: { manifest, iconSize, purposes } }) {
     const response = makeMsgResponse();
     try {
       response.result = await lazy.ManifestIcons.contentFetchIcon(
         this.contentWindow,
         manifest,
-        iconSize
+        iconSize,
+        purposes
       );
       response.success = true;
     } catch (err) {

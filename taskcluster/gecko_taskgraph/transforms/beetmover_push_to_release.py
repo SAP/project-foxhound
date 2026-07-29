@@ -5,36 +5,37 @@
 Transform the beetmover-push-to-release task into a task description.
 """
 
-from taskgraph.transforms.base import TransformSequence
-from taskgraph.util.schema import LegacySchema, taskref_or_string
-from voluptuous import Optional, Required
+from typing import Optional
 
-from gecko_taskgraph.transforms.task import task_description_schema
+from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.schema import Schema, taskref_or_string_msgspec
+
+from gecko_taskgraph.transforms.task import TaskDescriptionSchema
 from gecko_taskgraph.util.scriptworker import (
     add_scope_prefix,
     get_beetmover_bucket_scope,
 )
 
-beetmover_push_to_release_description_schema = LegacySchema({
-    Required("name"): str,
-    Required("product"): str,
-    Required("treeherder-platform"): str,
-    Optional("attributes"): {str: object},
-    Optional("task-from"): task_description_schema["task-from"],
-    Optional("run"): {str: object},
-    Optional("run-on-projects"): task_description_schema["run-on-projects"],
-    Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
-    Optional("dependencies"): {str: taskref_or_string},
-    Optional("index"): {str: str},
-    Optional("routes"): [str],
-    Required("shipping-phase"): task_description_schema["shipping-phase"],
-    Required("shipping-product"): task_description_schema["shipping-product"],
-    Optional("extra"): task_description_schema["extra"],
-})
+
+class BeetmoverPushToReleaseDescriptionSchema(Schema, kw_only=True):
+    name: str
+    product: str
+    treeherder_platform: str
+    attributes: Optional[dict[str, object]] = None
+    task_from: TaskDescriptionSchema.__annotations__["task_from"] = None
+    run: Optional[dict[str, object]] = None
+    run_on_projects: TaskDescriptionSchema.__annotations__["run_on_projects"] = None
+    run_on_repo_type: TaskDescriptionSchema.__annotations__["run_on_repo_type"] = None
+    dependencies: Optional[dict[str, taskref_or_string_msgspec]] = None
+    index: Optional[dict[str, str]] = None
+    routes: Optional[list[str]] = None
+    shipping_phase: TaskDescriptionSchema.__annotations__["shipping_phase"]  # noqa: F821
+    shipping_product: TaskDescriptionSchema.__annotations__["shipping_product"]  # noqa: F821
+    extra: TaskDescriptionSchema.__annotations__["extra"] = None
 
 
 transforms = TransformSequence()
-transforms.add_validate(beetmover_push_to_release_description_schema)
+transforms.add_validate(BeetmoverPushToReleaseDescriptionSchema)
 
 
 @transforms.add

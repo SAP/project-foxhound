@@ -85,6 +85,7 @@ security.doh.settings:
       security.doh.settings.mode_changed#button.
     bugs:
       - https://bugzil.la/1829905
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037081
     data_reviews:
       - https://bugzil.la/1829905
     notification_emails:
@@ -97,7 +98,6 @@ security.doh.settings:
           The `value` of the event. Mirrors to the Legacy Telemetry
           event's `value` parameter.
         type: string
-    telemetry_mirror: SecurityDohSettings_ModeChanged_Button
 
   provider_choice_value:
     type: event
@@ -108,6 +108,7 @@ security.doh.settings:
       security.doh.settings.provider_choice#value.
     bugs:
       - https://bugzil.la/1829905
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037081
     data_reviews:
       - https://bugzil.la/1829905
     notification_emails:
@@ -120,7 +121,6 @@ security.doh.settings:
           The `value` of the event. Mirrors to the Legacy Telemetry
           event's `value` parameter.
         type: string
-    telemetry_mirror: SecurityDohSettings_ProviderChoice_Value
 
 intl.ui.browser_language:
   manage_main:
@@ -380,6 +380,9 @@ aboutpreferences:
         description: >
           identifier of pane shown.
         type: string
+      session:
+        description: Identifier for this tab.
+        type: string
     telemetry_mirror: Aboutpreferences_Show_Initial
     no_lint:
       - COMMON_PREFIX
@@ -414,6 +417,47 @@ aboutpreferences:
     telemetry_mirror: Aboutpreferences_Show_Hash
     no_lint:
       - COMMON_PREFIX
+
+  change:
+    type: event
+    description: >
+      This is recorded when a setting is changed.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2024011
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2024011
+    notification_emails:
+      - mstriemer@mozilla.com
+      - gharp@mozilla.com
+    expires: never
+    extra_keys:
+      setting:
+        description: Identifier for the setting.
+        type: string
+      session:
+        description: Identifier for this tab.
+        type: string
+      pane:
+        description: >
+          Identifier for the page (paneGeneral, paneSearchResults, etc).
+        type: string
+
+  close:
+    type: event
+    description: >
+      This is recorded when the preferences tab is unloaded.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2024011
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2024011
+    notification_emails:
+      - mstriemer@mozilla.com
+      - gharp@mozilla.com
+    expires: never
+    extra_keys:
+      session:
+        description: Identifier for this tab.
+        type: string
 
 security.preferences.warnings:
   warnings_shown:

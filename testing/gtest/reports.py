@@ -96,7 +96,7 @@ class AggregatedGTestReport(dict):
         if exc_info[0] is None:
             d = self.result_dir.name
             result_files = filter(
-                lambda f: path.isfile(f), map(lambda f: path.join(d, f), os.listdir(d))
+                path.isfile, map(lambda f: path.join(d, f), os.listdir(d))
             )
 
             def json_from_file(file):

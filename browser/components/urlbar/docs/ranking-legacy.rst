@@ -6,13 +6,16 @@ Ranking (Legacy)
   The frecency algorithm was changed in Firefox 147. For current documentation,
   see `ranking.rst <https://firefox-source-docs.mozilla.org/browser/urlbar/ranking.html>`_
 
+.. NOTE:: The ``places.frecency.*`` preferences referenced throughout this
+  document were removed in Firefox 151. The values shown below reflect the
+  hardcoded defaults that were in effect at the time of removal.
 
 Before results appear in the UrlbarView, they are fetched from providers.
 
 Each `UrlbarProvider <https://firefox-source-docs.mozilla.org/browser/urlbar/overview.html#urlbarprovider>`_
 implements its own internal ranking and returns sorted results.
 
-Externally all the results are ranked by the `UrlbarMuxer <https://searchfox.org/mozilla-central/source/browser/components/urlbar/UrlbarMuxerStandard.sys.mjs>`_
+Externally all the results are ranked by the :searchfox:`UrlbarMuxer <browser/components/urlbar/UrlbarMuxerStandard.sys.mjs>`
 according to a hardcoded list of groups and sub-groups.
 
 .. NOTE:: Preferences can influence the groups order, for example by putting
@@ -189,7 +192,7 @@ Frecency is recalculated:
   In this case, when a change influencing frecency happens, the ``recalc_frecency``
   database field for the page is set to ``1``.
 
-Recalculation is done by the `PlacesFrecencyRecalculator <https://searchfox.org/mozilla-central/source/toolkit/components/places/PlacesFrecencyRecalculator.sys.mjs>`_ module.
+Recalculation is done by the :searchfox:`PlacesFrecencyRecalculator <toolkit/components/places/PlacesFrecencyRecalculator.sys.mjs>` module.
 The Recalculator is notified when ``PlacesUtils.history.shouldStartFrecencyRecalculation``
 value changes from false to true, that means there's values to recalculate.
 A DeferredTask is armed, that will look for a user idle opportunity

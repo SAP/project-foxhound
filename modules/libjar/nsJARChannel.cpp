@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,6 +18,7 @@
 #include "nsIURIMutator.h"
 
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/dom/ParentProcessChannelHandle.h"
 #include "mozilla/ErrorNames.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Preferences.h"
@@ -247,7 +246,7 @@ nsresult nsJARChannel::CreateJarInput(nsIZipReaderCache* jarCache,
     if (NS_FAILED(rv)) return rv;
 
     if (mInnerJarEntry.IsEmpty())
-      reader = outerReader;
+      reader = std::move(outerReader);
     else {
       reader = do_CreateInstance(kZipReaderCID, &rv);
       if (NS_FAILED(rv)) return rv;
@@ -261,6 +260,9 @@ nsresult nsJARChannel::CreateJarInput(nsIZipReaderCache* jarCache,
       new nsJARInputThunk(reader, mJarEntry, jarCache != nullptr);
   rv = input->Init();
   if (NS_FAILED(rv)) {
+    if (rv == NS_ERROR_FILE_NOT_FOUND) {
+      CheckForBrokenChromeURL(mLoadInfo, mOriginalURI);
+    }
     return rv;
   }
 
@@ -289,6 +291,10 @@ nsresult nsJARChannel::LookupFile() {
   // does basic escaping by default, which breaks reading zipped files which
   // have e.g. spaces in their filenames.
   NS_UnescapeURL(mJarEntry);
+
+  if (mJarEntry.FindChar('\0') != -1) {
+    return NS_ERROR_MALFORMED_URI;
+  }
 
   if (mJarFileOverride) {
     mJarFile = mJarFileOverride;
@@ -399,7 +405,9 @@ nsresult nsJARChannel::OpenLocalFile() {
   RefPtr<nsJARChannel> self = this;
   return mWorker->Dispatch(NS_NewRunnableFunction(
       "nsJARChannel::OpenLocalFile",
-      [self, jarCache, clonedFile, jarEntry, innerJarEntry]() mutable {
+      [self, jarCache = std::move(jarCache), clonedFile = std::move(clonedFile),
+       jarEntry = std::move(jarEntry),
+       innerJarEntry = std::move(innerJarEntry)]() mutable {
         RefPtr<nsJARInputThunk> input;
         nsresult rv = CreateLocalJarInput(jarCache, clonedFile, innerJarEntry,
                                           jarEntry, getter_AddRefs(input));
@@ -690,6 +698,26 @@ NS_IMETHODIMP
 nsJARChannel::SetLoadInfo(nsILoadInfo* aLoadInfo) {
   MOZ_RELEASE_ASSERT(aLoadInfo, "loadinfo can't be null");
   mLoadInfo = aLoadInfo;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsJARChannel::GetParentProcessChannelHandle(
+    mozilla::dom::ParentProcessChannelHandle** aValue) {
+  NS_IF_ADDREF(*aValue = mParentProcessChannelHandle);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsJARChannel::SetParentProcessChannelHandle(
+    mozilla::dom::ParentProcessChannelHandle* aValue) {
+  if (XRE_IsParentProcess()) {
+    MOZ_ASSERT_UNREACHABLE(
+        "SetParentProcessChannelHandle in the parent process would leak");
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  mParentProcessChannelHandle = aValue;
   return NS_OK;
 }
 
@@ -1059,14 +1087,6 @@ static void RecordZeroLengthEvent(bool aIsSync, const nsCString& aSpec,
       return;
     }
 
-    // See bug 1695560. "search-extensions/google/favicon.ico" with
-    // NS_BINDING_ABORTED is filtered out.
-    if (fileName.EqualsLiteral(
-            "omni.ja!/chrome/browser/search-extensions/google/favicon.ico") &&
-        aStatus == NS_BINDING_ABORTED) {
-      return;
-    }
-
     glean::zero_byte_load::LoadOthersExtra extra = {
         .cancelReason = Some(aCanceledReason),
         .cancelled = Some(aCanceled),
@@ -1161,7 +1181,7 @@ nsJARChannel::AsyncOpen(nsIStreamListener* aListener) {
   // Initialize mProgressSink
   NS_QueryNotificationCallbacks(mCallbacks, mLoadGroup, mProgressSink);
 
-  mListener = listener;
+  mListener = std::move(listener);
   mIsPending = true;
 
   rv = LookupFile();
@@ -1275,7 +1295,8 @@ nsJARChannel::OnStartRequest(nsIRequest* req) {
   LOG(("nsJARChannel::OnStartRequest [this=%p %s]\n", this, mSpec.get()));
 
   mRequest = req;
-  nsresult rv = mListener->OnStartRequest(this);
+  nsCOMPtr<nsIStreamListener> listener = mListener;
+  nsresult rv = listener->OnStartRequest(this);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -1309,13 +1330,13 @@ nsJARChannel::OnStopRequest(nsIRequest* req, nsresult status) {
 
   if (NS_SUCCEEDED(mStatus)) mStatus = status;
 
-  if (mListener) {
+  if (nsCOMPtr<nsIStreamListener> listener = mListener) {
     if (!mOnDataCalled || NS_FAILED(status)) {
       RecordZeroLengthEvent(false, mSpec, status, mCanceled, mCanceledReason,
                             mLoadInfo);
     }
 
-    mListener->OnStopRequest(this, status);
+    listener->OnStopRequest(this, status);
     mListener = nullptr;
   }
 
@@ -1351,7 +1372,8 @@ nsJARChannel::OnDataAvailable(nsIRequest* req, nsIInputStream* stream,
   }
 
   mOnDataCalled = true;
-  rv = mListener->OnDataAvailable(this, stream, offset, count);
+  nsCOMPtr<nsIStreamListener> listener = mListener;
+  rv = listener->OnDataAvailable(this, stream, offset, count);
 
   // simply report progress here instead of hooking ourselves up as a
   // nsITransportEventSink implementation.

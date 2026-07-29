@@ -1,0 +1,152 @@
+{
+  "badge": {
+    "background": {
+      "color": {
+        "value": {
+          "light": "{color.red.60}",
+          "dark": "{color.red.40}"
+        }
+      }
+    },
+    "font": {
+      "size": {
+        "value": "10px"
+      }
+    },
+    "min": {
+      "width": {
+        "value": "14px"
+      }
+    },
+    "max": {
+      "width": {
+        "value": "20px"
+      }
+    },
+    "padding": {
+      "inline": {
+        "value": "2px"
+      },
+      "block": {
+        "end": {
+          "value": "1px"
+        }
+      }
+    }
+  },
+  "padding": {
+    "outer": {
+      "@base": {
+        "value": "2px"
+      },
+      "narrow": {
+        "value": "1px"
+      }
+    },
+    "inner": {
+      "@base": {
+        "value": "8px"
+      },
+      "narrow": {
+        "value": "7px"
+      },
+      "compact": {
+        "value": "6px"
+      },
+      "touch": {
+        "@base": {
+          "value": "9px"
+        },
+        "narrow": {
+          "value": "8px"
+        }
+      }
+    }
+  },
+  "icon": {
+    "fill": {
+      "@base": {
+        "value": {
+          "light": "{color.gray.70}",
+          "dark": "{color.gray.0}",
+          "nativeTheme": "currentColor"
+        }
+      },
+      "attention": {
+        "@base": {
+          "value": {
+            "light": "{color.blue.60}",
+            "dark": "{color.cyan.30}",
+            "nativeTheme": "AccentColor"
+          }
+        },
+        "text": {
+          "value": {
+            "light": "{color.gray.20}",
+            "dark": "{color.gray.90}",
+            "nativeTheme": "AccentColorText"
+          }
+        }
+      }
+    }
+  },
+  "opacity": {
+    "disabled": {
+      "value": {
+        "default": "{button.opacity.disabled}",
+        "prefersContrast": 0.3
+      }
+    }
+  },
+  "border": {
+    "radius": {
+      "value": "{button.border.radius}"
+    }
+  },
+  "background": {
+    "color": {
+      "hover": {
+        "value": "color-mix(in srgb, currentColor 17%, transparent)"
+      },
+      "active": {
+        "value": "color-mix(in srgb, currentColor 30%, transparent)"
+      }
+    }
+  },
+  "outline": {
+    "@base": {
+      "value": "{border.width} solid {toolbarbutton.outline.color.@base}"
+    },
+    "color": {
+      "@base": {
+        "value": {
+          "default": "transparent",
+          "forcedColors": "ButtonText"
+        }
+      },
+      "hover": {
+        "value": {
+          "default": "transparent",
+          "prefersContrast": "currentColor",
+          "forcedColors": "SelectedItem"
+        }
+      },
+      "active": {
+        "value": {
+          "default": "transparent",
+          "prefersContrast": "currentColor",
+          "forcedColors": "ButtonText"
+        }
+      },
+      "selected": {
+        "value": {
+          "default": "{toolbarbutton.outline.color.active}",
+          "forcedColors": "SelectedItem"
+        }
+      }
+    },
+    "offset": {
+      "value": "calc(-1 * {border.width})"
+    }
+  }
+}

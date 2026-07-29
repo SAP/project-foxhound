@@ -1,0 +1,254 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Tests scripting API with documentId target</title>
+  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
+  <script type="text/javascript" src="head.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+
+<script type="text/javascript">
+"use strict";
+
+add_task(async function test_executeScript_documentId_top_and_iframe() {
+  const extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      manifest_version: 3,
+      permissions: ["scripting", "webNavigation"],
+      host_permissions: ["*://example.com/*"],
+    },
+    async background() {
+      const BASE =
+        "https://example.com/tests/toolkit/components/extensions/test/mochitest/";
+      const TOP_URL_END = "file_webNavigation_manualSubframe.html";
+      const FRAME_URL_END = "file_webNavigation_manualSubframe_page1.html";
+
+      const frameLoadedPromise = new Promise(resolve => {
+        browser.webNavigation.onCommitted.addListener(details => {
+          if (details.url.endsWith(FRAME_URL_END)) {
+            browser.test.assertEq(0, details.parentFrameId, "Got child frame");
+            resolve(details);
+          }
+        });
+      });
+
+      await browser.tabs.create({ url: BASE + TOP_URL_END });
+      const {
+        tabId,
+        frameId,
+        parentDocumentId,
+        documentId,
+      } = await frameLoadedPromise;
+
+      // Execute in the iframe only via its documentId.
+      const frameResults = await browser.scripting.executeScript({
+        target: { tabId, documentIds: [documentId] },
+        func: () => location.pathname.split("/").pop(),
+      });
+      browser.test.assertDeepEq(
+        [{ frameId, documentId, result: FRAME_URL_END }],
+        frameResults,
+        "scripting.executeScript with documentId in child frame works"
+      );
+
+      // Execute in main frame only via its documentId.
+      const topResults = await browser.scripting.executeScript({
+        target: { tabId, documentIds: [parentDocumentId] },
+        func: () => location.pathname.split("/").pop(),
+      });
+      browser.test.assertDeepEq(
+        [{ frameId: 0, documentId: parentDocumentId, result: TOP_URL_END }],
+        topResults,
+        "scripting.executeScript with documentId in top frame works"
+      );
+
+      // Execute in both frames at once.
+      const bothResults = await browser.scripting.executeScript({
+        target: { tabId, documentIds: [documentId, parentDocumentId] },
+        func: () => location.pathname.split("/").pop(),
+      });
+      browser.test.assertDeepEq(
+        [
+          // The order of the two is not guaranteed by the API, but in practice
+          // we use the order of documentIds as given.
+          { frameId, documentId, result: FRAME_URL_END },
+          { frameId: 0, documentId: parentDocumentId, result: TOP_URL_END },
+        ],
+        bothResults,
+        "scripting.executeScript with documentId for both frames works"
+      );
+
+      // Given same documentId twice, get only one result.
+      const doubleResults = await browser.scripting.executeScript({
+        target: { tabId, documentIds: [documentId, documentId] },
+        func: () => location.pathname.split("/").pop(),
+      });
+      browser.test.assertDeepEq(
+        [{ frameId, documentId, result: FRAME_URL_END }],
+        doubleResults,
+        "scripting.executeScript with same documentId twice returns 1 result"
+      );
+
+      // Now navigate the frame to change its documentId.
+      const navigateResults = await browser.scripting.executeScript({
+        target: { tabId, documentIds: [parentDocumentId] },
+        func: async () => {
+          let frame = document.querySelector("iframe");
+          await new Promise(resolve => {
+            frame.addEventListener("load", resolve, { once: true });
+            frame.contentWindow.location.reload();
+          });
+          return browser.runtime.getFrameId(frame);
+        },
+      });
+      browser.test.assertDeepEq(
+        [{ frameId: 0, documentId: parentDocumentId, result: frameId }],
+        navigateResults,
+        "Navigating a subframe works and preserves its frameId"
+      );
+      await browser.test.assertRejects(
+        browser.scripting.executeScript({
+          target: { tabId, documentIds: [documentId] },
+          func: () => browser.test.fail("Should not execute after reload"),
+        }),
+        `Invalid documentId: ${documentId}`,
+        "scripting.executeScript with stale documentId should fail"
+      );
+
+      await browser.tabs.remove(tabId);
+      browser.test.sendMessage("done");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+});
+
+add_task(async function test_executeScript_documentId_validation() {
+  const extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      manifest_version: 3,
+      permissions: ["scripting", "webNavigation"],
+      host_permissions: ["*://example.com/*"],
+    },
+    async background() {
+      const onCommittedPromise = new Promise(resolve => {
+        browser.webNavigation.onCommitted.addListener(details => {
+          if (details.url.endsWith("?myMainFrame")) {
+            resolve(details);
+          }
+        });
+      });
+
+      await browser.tabs.create({ url: "https://example.com/?myMainFrame" });
+      const { tabId, documentId } = await onCommittedPromise;
+
+      await browser.test.assertRejects(
+        browser.scripting.executeScript({
+          target: { tabId, documentIds: [documentId], frameIds: [0] },
+          func: () => browser.test.fail("should not run with frameIds"),
+        }),
+        "Cannot specify both 'documentIds' and 'frameIds'.",
+        "documentIds and frameIds are mutually exclusive"
+      );
+
+      await browser.test.assertRejects(
+        browser.scripting.executeScript({
+          target: { tabId, documentIds: [documentId], allFrames: true },
+          func: () => browser.test.fail("should not run with allFrames"),
+        }),
+        "Cannot specify both 'allFrames' and 'documentIds'.",
+        "documentIds and allFrames are mutually exclusive"
+      );
+
+      await browser.test.assertRejects(
+        browser.scripting.executeScript({
+          target: {
+            tabId,
+            documentIds: [documentId, "00000000-0000-0000-0000-000000000000"],
+          },
+          func: () => browser.test.fail("should not run with bad documentId"),
+        }),
+        "Invalid documentId: 00000000-0000-0000-0000-000000000000",
+        "Invalid documentIds should prevent whole call altogether"
+      );
+
+      await browser.tabs.remove(tabId);
+      browser.test.sendMessage("done");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+});
+
+// Tests that scripting.insertCSS and removeCSS with documentId works. This is
+// a basic test only; we don't test all combinations of parameters because the
+// logic of executeScript, insertCSS and removeCSS are shared, so there is no
+// point in validating all combinations again.
+add_task(async function test_insertCSS_removeCSS_documentId() {
+  const extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      manifest_version: 3,
+      permissions: ["scripting", "webNavigation"],
+      host_permissions: ["*://example.com/*"],
+    },
+    async background() {
+      const onCommittedPromise = new Promise(resolve => {
+        browser.webNavigation.onCommitted.addListener(details => {
+          if (details.url.endsWith("?targetForCSS")) {
+            resolve(details);
+          }
+        });
+      });
+
+      await browser.tabs.create({ url: "https://example.com/?targetForCSS" });
+      const { tabId, documentId } = await onCommittedPromise;
+
+      const getCSSValue = async () => {
+        // Assume that scripting.executeScript works as expected - we already
+        // validated its behavior in other tests above.
+        const [{ result }] = await browser.scripting.executeScript({
+          target: { tabId, documentIds: [documentId] },
+          func: () => getComputedStyle(document.body).getPropertyValue("--hi"),
+        });
+        return result;
+      };
+
+      const cssInjection = {
+        target: { tabId, documentIds: [documentId] },
+        css: ":root { --hi: insertCSS_here; }",
+      };
+
+      await browser.scripting.insertCSS(cssInjection);
+      browser.test.assertEq(
+        "insertCSS_here",
+        await getCSSValue(),
+        "scripting.insertCSS with documentId works"
+      );
+
+      await browser.scripting.removeCSS(cssInjection);
+      browser.test.assertEq(
+        "",
+        await getCSSValue(),
+        "scripting.removeCSS with documentId works"
+      );
+
+      await browser.tabs.remove(tabId);
+      browser.test.sendMessage("done");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+});
+
+</script>
+</body>
+</html>

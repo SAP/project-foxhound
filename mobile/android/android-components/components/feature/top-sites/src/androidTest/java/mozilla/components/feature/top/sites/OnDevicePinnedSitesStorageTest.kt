@@ -15,13 +15,13 @@ import mozilla.components.feature.top.sites.db.Migrations
 import mozilla.components.feature.top.sites.db.TopSiteDatabase
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 
 private const val MIGRATION_TEST_DB = "migration-test"
 
@@ -74,16 +74,16 @@ class OnDevicePinnedSitesStorageTest {
 
         assertEquals("Mozilla", topSites[0].title)
         assertEquals("https://www.mozilla.org", topSites[0].url)
-        assertTrue(topSites[0] is TopSite.Default)
+        assertIs<TopSite.Default>(topSites[0])
         assertEquals("Firefox", topSites[1].title)
         assertEquals("https://www.firefox.com", topSites[1].url)
-        assertTrue(topSites[1] is TopSite.Default)
+        assertIs<TopSite.Default>(topSites[1])
         assertEquals("Wikipedia", topSites[2].title)
         assertEquals("https://www.wikipedia.com", topSites[2].url)
-        assertTrue(topSites[2] is TopSite.Default)
+        assertIs<TopSite.Default>(topSites[2])
         assertEquals("Pocket", topSites[3].title)
         assertEquals("https://www.getpocket.com", topSites[3].url)
-        assertTrue(topSites[3] is TopSite.Default)
+        assertIs<TopSite.Default>(topSites[3])
     }
 
     @Test
@@ -98,10 +98,10 @@ class OnDevicePinnedSitesStorageTest {
 
         assertEquals("Mozilla", topSites[0].title)
         assertEquals("https://www.mozilla.org", topSites[0].url)
-        assertTrue(topSites[0] is TopSite.Pinned)
+        assertIs<TopSite.Pinned>(topSites[0])
         assertEquals("Firefox", topSites[1].title)
         assertEquals("https://www.firefox.com", topSites[1].url)
-        assertTrue(topSites[1] is TopSite.Default)
+        assertIs<TopSite.Default>(topSites[1])
     }
 
     @Test
@@ -139,13 +139,13 @@ class OnDevicePinnedSitesStorageTest {
         with(topSites[0]) {
             assertEquals("Mozilla", title)
             assertEquals("https://www.mozilla.org", url)
-            assertTrue(this is TopSite.Pinned)
+            assertIs<TopSite.Pinned>(this)
         }
 
         with(topSites[1]) {
             assertEquals("Firefox", title)
             assertEquals("https://www.firefox.com", url)
-            assertTrue(this is TopSite.Default)
+            assertIs<TopSite.Default>(this)
         }
     }
 

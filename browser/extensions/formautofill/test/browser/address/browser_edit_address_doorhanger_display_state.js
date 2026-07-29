@@ -75,7 +75,7 @@ add_task(async function test_edit_doorhanger_display_state() {
         const element = notification.querySelector(`#${id}`);
 
         is(
-          element.label,
+          element.selectedOption?.label ?? "",
           TEST.expected.label,
           "Edit address doorhanger shows the expected address-level1 select option"
         );

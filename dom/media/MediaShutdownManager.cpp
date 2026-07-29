@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,7 +17,8 @@ namespace mozilla {
 #undef LOGW
 
 extern LazyLogModule gMediaDecoderLog;
-#define DECODER_LOG(type, msg) MOZ_LOG(gMediaDecoderLog, type, msg)
+#define DECODER_LOG(type, ...) \
+  MOZ_LOG_FMT(gMediaDecoderLog, type, MOZ_LOG_EXPAND_ARGS __VA_ARGS__)
 #define LOGW(...) NS_WARNING(nsPrintfCString(__VA_ARGS__).get())
 
 NS_IMPL_ISUPPORTS(MediaShutdownManager, nsIAsyncShutdownBlocker)

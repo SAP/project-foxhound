@@ -104,7 +104,8 @@ impl InitGlean {
         // No need to check `cfg!(test)`, since we don't set an uploader in unit tests (and if we
         // did, it would be test-specific).
         let is_test = std::env::var_os("XPCSHELL_TEST_PROFILE_DIR").is_some()
-            || std::env::var_os("MOZ_AUTOMATION").is_some();
+            || std::env::var_os("MOZ_AUTOMATION").is_some()
+            || std::env::var_os("MOZ_DISABLE_NONLOCAL_CONNECTIONS") == Some("1".into());
         if self.clear_uploader_for_tests && is_test {
             self.configuration.uploader = None;
             self.configuration.server_endpoint = None;
@@ -122,6 +123,11 @@ pub fn send(annotations: &serde_json::Value, reason: Option<&str>) -> anyhow::Re
     log::debug!("submitting Glean crash ping");
     glean_metrics::crash.submit(reason);
     Ok(())
+}
+
+/// Set whether upload is enabled or not.
+pub fn set_collection_enabled(enabled: bool) {
+    glean::set_collection_enabled(enabled);
 }
 
 /// **Test-only API**
@@ -258,19 +264,16 @@ mod test {
                     }
                 }"#,
                 "SecondsSinceLastCrash": "50000",
-                "StackTraces": {
-                    "status": "OK",
-                    // Add extraneous field to ensure it doesn't affect setting the metric
+                // Add extraneous field `foobar` to ensure it doesn't affect setting the metric
+                "StackTraces": r#"{
                     "foobar": "baz",
-                    "crash_info": {
-                        "type": "bad crash",
-                        "address": "0xcafe",
-                        "crashing_thread": 1
-                    },
+                    "crash_type": "bad crash",
+                    "crash_address": "0xcafe",
+                    "crash_thread": 1,
                     "main_module": 0,
                     "modules": [{
-                        "base_addr": "0xcafe",
-                        "end_addr": "0xf000",
+                        "base_address": "0xcafe",
+                        "end_address": "0xf000",
                         "code_id": "CODEID",
                         "debug_file": "debug_file.so",
                         "debug_id": "DEBUGID",
@@ -298,7 +301,7 @@ mod test {
                             }
                         ]}
                     ]
-                },
+                }"#,
                 "UptimeTS": "400.5",
                 "UtilityActorsName": "abc,def",
                 "WindowsFileDialogErrorCode": "40",
@@ -482,18 +485,15 @@ mod test {
         }
 
         test_stack_traces(StackTraces) {
-            {
-                "status": "OK",
-                "crash_info": {
-                    "type": "main",
-                    "address": "0xf001ba11",
-                    "crashing_thread": 1
-                },
+            r#"{
+                "crash_type": "main",
+                "crash_address": "0xf001ba11",
+                "crash_thread": 1,
                 "main_module": 0,
                 "modules": [
                     {
-                        "base_addr": "0x00000000",
-                        "end_addr": "0x00004000",
+                        "base_address": "0x00000000",
+                        "end_address": "0x00004000",
                         "code_id": "8675309",
                         "debug_file": "",
                         "debug_id": "18675309",
@@ -501,8 +501,8 @@ mod test {
                         "version": "1.0.0"
                     },
                     {
-                        "base_addr": "0x00004000",
-                        "end_addr": "0x00008000",
+                        "base_address": "0x00004000",
+                        "end_address": "0x00008000",
                         "code_id": "42",
                         "debug_file": "foo.pdb",
                         "debug_id": "43",
@@ -524,7 +524,7 @@ mod test {
                         ]
                     }
                 ]
-            }
+            }"#
             => {
                 "crash_type": "main",
                 "crash_address": "0xf001ba11",

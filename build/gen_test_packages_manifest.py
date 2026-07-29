@@ -51,6 +51,16 @@ OPTIONAL_PACKAGES = [
     "gtest",
 ]
 
+# Harnesses that load the train-hop NSS/libxul bundle at runtime
+# (see testing/mochitest/runtests.py for the consumer). Other harnesses
+# must not pull this in: on macOS aarch64 the trainhop archive contains
+# x86_64-only dylibs that overwrite the universal libnss3.dylib from
+# target.jsshell.zip and break jit-test (bug 1986386).
+HARNESSES_NEEDING_TRAINHOP = {
+    "mochitest",
+    "trainhop",
+}
+
 
 def parse_args():
     parser = ArgumentParser(
@@ -117,7 +127,8 @@ def generate_package_data(args):
             continue
         harness_requirements[harness].append(pkg_name)
         harness_requirements[harness].append("target.condprof.tests.tar.zst")
-        harness_requirements[harness].append("target.trainhop.tests.tar.zst")
+        if harness in HARNESSES_NEEDING_TRAINHOP:
+            harness_requirements[harness].append("target.trainhop.tests.tar.zst")
     return harness_requirements
 
 

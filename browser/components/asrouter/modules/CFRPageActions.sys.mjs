@@ -773,7 +773,7 @@ export class PageAction {
               },
             },
           },
-          this.window
+          this.window.gBrowser.selectedBrowser
         );
         break;
     }
@@ -893,11 +893,23 @@ export const CFRPageActions = {
   PageActionMap,
 
   /**
+   * Dispatch entry point used by the `browser-window-location-change`
+   * category.
+   */
+  onLocationChange(_window, _locationURI, webProgress, _flags) {
+    const browser = webProgress.browsingContext.embedderElement;
+    if (!browser) {
+      return;
+    }
+    this.updatePageActions(browser);
+  },
+
+  /**
    * To be called from browser.js on a location change, passing in the browser
    * that's been updated
    */
   updatePageActions(browser) {
-    const win = browser.ownerGlobal;
+    const win = browser.documentGlobal;
     const pageAction = PageActionMap.get(win);
     if (!pageAction || browser !== win.gBrowser.selectedBrowser) {
       return;
@@ -970,7 +982,7 @@ export const CFRPageActions = {
       return false;
     }
     // If we are forcing via the Admin page, the browser comes in a different format
-    const win = browser.ownerGlobal;
+    const win = browser.documentGlobal;
     const { id, content } = recommendation;
     RecommendationMap.set(browser, {
       id,
@@ -1008,7 +1020,7 @@ export const CFRPageActions = {
     if (!browser) {
       return false;
     }
-    const win = browser.ownerGlobal;
+    const win = browser.documentGlobal;
     if (
       browser !== win.gBrowser.selectedBrowser ||
       // We can have recommendations without URL restrictions

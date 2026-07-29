@@ -54,7 +54,11 @@ class BrowsertimeAndroid(PerftestAndroid, Browsertime):
         if self.device is None:
             self.device = ADBDeviceFactory(verbose=True)
             if not self.config.get("disable_perf_tuning", False):
-                tune_performance(self.device, log=LOG)
+                tune_performance(
+                    self.device,
+                    log=LOG,
+                    test_names=self._test_names,
+                )
 
     @property
     def android_external_storage(self):
@@ -235,6 +239,7 @@ class BrowsertimeAndroid(PerftestAndroid, Browsertime):
             self.remove_mozprofile_delimiters_from_profile()
 
     def run_tests(self, tests, test_names):
+        self._test_names = test_names
         self.setup_adb_device()
 
         if self.config["app"] in CHROME_ANDROID_APPS:

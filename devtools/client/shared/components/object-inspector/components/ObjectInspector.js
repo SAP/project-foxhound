@@ -279,7 +279,7 @@ class ObjectInspector extends Component {
 
     if (expand === true) {
       const actor = getActor(item, roots);
-      nodeExpand(item, actor);
+      nodeExpand(item, actor, this.props);
       if (recordTelemetryEvent) {
         recordTelemetryEvent("object_expanded");
       }

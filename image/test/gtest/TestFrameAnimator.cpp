@@ -127,3 +127,9 @@ TEST_F(ImageFrameAnimator, BlendWebPWithFilter) {
 TEST_F(ImageFrameAnimator, BlendAVIFWithFilter) {
   CheckFrameAnimatorBlend(BlendAnimatedAVIFTestCase(), 2);
 }
+
+#ifdef MOZ_JXL
+TEST_F(ImageFrameAnimator, BlendJXLWithFilter) {
+  CheckFrameAnimatorBlend(BlendAnimatedJXLTestCase(), /* aFuzz = */ 1);
+}
+#endif

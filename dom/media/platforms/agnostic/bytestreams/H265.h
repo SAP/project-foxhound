@@ -12,6 +12,7 @@
 #include "mozilla/Result.h"
 #include "mozilla/Span.h"
 #include "mozilla/gfx/Point.h"
+#include "mozilla/gfx/Types.h"
 #include "nsStringFwd.h"
 #include "nsTArray.h"
 
@@ -410,6 +411,18 @@ class H265 final {
   // determine the result.
   static Result<bool, nsresult> IsKeyFrame(
       const mozilla::MediaRawData* aSample);
+
+  // Parse SMPTE ST 2086 mastering display and CTA-861.3 content light level
+  // from a PREFIX_SEI_NUT NALU. Returns Nothing if neither type is present.
+  static mozilla::Maybe<mozilla::gfx::HDRMetadata> ParseSEIHDRMetadata(
+      const H265NALU& aNALU);
+
+#ifdef MOZ_WMF
+  // Return a filtered PREFIX_SEI_NUT NAL unit with user_data_unregistered
+  // payloads removed, or nullptr if no other payloads remain.
+  static already_AddRefed<mozilla::MediaByteBuffer> FilterPrefixSEIForWindows(
+      const H265NALU& aNALU);
+#endif
 
  private:
   // Return RAW BYTE SEQUENCE PAYLOAD (rbsp) from NAL content.

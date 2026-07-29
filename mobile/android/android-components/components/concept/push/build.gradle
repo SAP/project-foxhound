@@ -18,6 +18,7 @@ dependencies {
 
     testImplementation project(':components:support-test')
 
+    testImplementation libs.kotlin.test
     testImplementation platform(libs.junit.bom)
     testImplementation libs.junit4
     testRuntimeOnly libs.junit.platform.launcher

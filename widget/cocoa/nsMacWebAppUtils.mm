@@ -52,7 +52,7 @@ NS_IMETHODIMP nsMacWebAppUtils::LaunchAppWithIdentifier(
 
   nsAutoreleasePool localPool;
 
-  // Note this might return false, meaning the app wasnt launched for some
+  // Note this might return false, meaning the app wasn't launched for some
   // reason.
   BOOL success = [[NSWorkspace sharedWorkspace]
        launchAppWithBundleIdentifier:
@@ -62,7 +62,7 @@ NS_IMETHODIMP nsMacWebAppUtils::LaunchAppWithIdentifier(
                              length:((nsString)bundleIdentifier).Length()]
                              options:(NSWorkspaceLaunchOptions)0
       additionalEventParamDescriptor:nil
-                    launchIdentifier:NULL];
+                    launchIdentifier:nullptr];
 
   return success ? NS_OK : NS_ERROR_FAILURE;
 

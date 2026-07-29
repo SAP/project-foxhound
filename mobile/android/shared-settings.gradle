@@ -5,8 +5,6 @@
 
 import org.yaml.snakeyaml.Yaml
 
-import java.time.format.DateTimeFormatter
-
 buildscript {
     if (!gradle.root.hasProperty("mozconfig")){
         apply from: file('./gradle/mozconfig.gradle')
@@ -67,37 +65,6 @@ class Config {
     }
 }
 
-// Mimic Python: open(os.path.join(buildconfig.topobjdir, 'buildid.h')).readline().split()[2]
-def getBuildId() {
-    if (System.env.MOZ_BUILD_DATE) {
-        if (System.env.MOZ_BUILD_DATE.length() == 14) {
-            return System.env.MOZ_BUILD_DATE
-        }
-        logger.warn("Ignoring invalid MOZ_BUILD_DATE: ${System.env.MOZ_BUILD_DATE}")
-    }
-    return file("${gradle.mozconfig.topobjdir}/buildid.h").getText('utf-8').split()[2]
-}
-
-// Return a manifest version string that respects the Firefox version format,
-// see: https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/version#version_format
-def getManifestVersionString(componentsVersion) {
-    // We assume that the `version.txt` file will always contain a version
-    // string with at least two parts separated with a dot. Below, we extract
-    // each part, and we make sure that there is no letter, e.g. `"0a2"` would
-    // become `"0"`.
-    String[] parts = componentsVersion.split("\\.").collect {
-        part -> part.split("a|b")[0]
-    };
-
-    // Per https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/version,
-    // each part can have up to 9 digits.  Note the single `H` when formatting the output avoid
-    // leading zeros, which are not allowed.
-    def buildDate = LocalDateTime.parse(getBuildId(), DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
-    def dateAndTime = buildDate.format(DateTimeFormatter.ofPattern("YYYYMMdd.Hmmss"));
-
-    return "${parts[0]}.${parts[1]}.${dateAndTime}";
-}
-
 gradle.projectsLoaded { ->
     def versionFile = new File(gradle.mozconfig.topsrcdir, "mobile/android/version.txt")
     String version = versionFile.text.stripTrailing()
@@ -130,56 +97,4 @@ gradle.projectsLoaded { ->
             configData.targetSdkVersion,
             ndkVersion
     )
-
-    // Define a reusable task for updating the version in manifest.json for modules that package
-    // a web extension. We automate this to make sure we never forget to update the version, either
-    // in local development or for releases. In both cases, we want to make sure the latest version
-    // of all extensions (including their latest changes) are installed on first start-up.
-    gradle.rootProject.allprojects {
-        ext.updateExtensionVersion = { task, extDir ->
-            configure(task) {
-                from extDir
-                include 'manifest.template.json'
-                rename { 'manifest.json' }
-                into extDir
-
-                def values = ['version': getManifestVersionString(rootProject.ext.config.componentsVersion)]
-                inputs.properties(values)
-                expand(values)
-            }
-        }
-    }
-
-    // Initialize all project buildDirs to be in ${topobjdir} to follow
-    // conventions of mozilla-central build system.
-    gradle.rootProject.allprojects { project ->
-        def topSrcPath = file(gradle.mozconfig.topsrcdir).toPath()
-        def topObjPath = file(gradle.mozconfig.topobjdir).toPath()
-
-        def sourcePath = project.getBuildFile().toPath().getParent()
-        def relativePath = topSrcPath.relativize(sourcePath)
-
-        if (relativePath.startsWith("..")) {
-            // The project doesn't appear to be in topsrcdir so leave the
-            // buildDir alone.
-        } else {
-            // Transplant the project path into "${topobjdir}/gradle/build".
-            // This is consistent with existing gradle / taskcluster
-            // configurations but less consistent with the result of the
-            // non-gradle build system.
-            project.layout.buildDirectory.set(topObjPath.resolve("gradle/build").resolve(relativePath).toFile())
-        }
-    }
-
-    // This explicitly disables stripping of native libraries in our projects to match the existing
-    // implicit behaviour. Our projects do not specify the `ndkVersion` for our main Android builds
-    // and so stripping would otherwise fail with a warning. Note that gecko builds themselves will
-    // already strip the *.so files when compiled as release targets.
-    gradle.rootProject.allprojects { project ->
-        project.afterEvaluate {
-            if (it.hasProperty('android')) {
-                android.packagingOptions.jniLibs.keepDebugSymbols += "**/*.so"
-            }
-        }
-    }
 }

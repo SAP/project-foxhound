@@ -70,8 +70,9 @@ t.appendChild(document.createTextNode("defgh"));
 valueIs("abcdefgh", "Appended another textnode again");
 defValueIs("abcdefgh", "Appended another textnode again 2");
 
-t.focus(); // This puts the caret at the end of the textarea, and doing
-           // something like "home" in a cross-platform way is kinda hard.
+t.focus();
+// This puts the caret at the end of the textarea
+t.selectionStart = -1;
 sendKey("left");
 sendKey("left");
 sendKey("left");

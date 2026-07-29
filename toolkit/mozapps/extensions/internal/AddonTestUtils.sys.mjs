@@ -1928,6 +1928,30 @@ export var AddonTestUtils = {
   },
 
   /**
+   * Assert that the expected addon install telemetry steps were recorded.
+   *
+   * @param {Array<string>} expectedSteps
+   *        The expected extra.step values for install events.
+   * @param {string} [addonType]
+   *        If provided, only events with evt.object === addonType are considered.
+   *        If omitted, all install events are considered.
+   */
+  assertInstallTelemetryEvents(expectedSteps, addonType) {
+    let amInstallEvents = this.getAMTelemetryEvents()
+      .filter(
+        evt =>
+          evt.method === "install" &&
+          (addonType == null || evt.object === addonType)
+      )
+      .map(evt => evt.extra.step);
+    this.testScope.Assert.deepEqual(
+      amInstallEvents,
+      expectedSteps,
+      `got expected${addonType != null ? ` ${addonType}` : ""} install telemetry events`
+    );
+  },
+
+  /**
    * @param {string|string[]} events - The event(s) to retrieve.
    * @param {object} [filter] - key/value pairs to filter events.
    * @returns {object[]} Collected extra objects from events.

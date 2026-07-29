@@ -308,11 +308,6 @@ function runTests() {
      "removed preserveAspectRatio attribute");
 
   // viewBox attribute
-  var baseViewBox = marker.viewBox.baseVal;
-  var animViewBox = marker.viewBox.animVal;
-  is(baseViewBox, null, "viewBox baseVal");
-  is(animViewBox, null, "viewBox animVal");
-
   marker.setAttribute("viewBox", "1 2 3 4");
   is(marker.viewBox.baseVal.x, 1, "viewBox.x baseVal");
   is(marker.viewBox.animVal.x, 1, "viewBox.x animVal");
@@ -331,25 +326,12 @@ function runTests() {
   marker.viewBox.baseVal.height = 8;
   is(marker.viewBox.animVal.height, 8, "viewBox.height animVal");
   is(marker.getAttribute("viewBox"), "5 6 7 8", "viewBox attribute");
-  var storedViewBox = marker.viewBox.baseVal;
   marker.removeAttribute("viewBox");
   is(marker.hasAttribute("viewBox"), false, "viewBox hasAttribute");
   ok(marker.getAttribute("viewBox") === null, "removed viewBox attribute");
-  is(marker.viewBox.baseVal, null, "viewBox baseVal");
-  is(marker.viewBox.animVal, null, "viewBox animVal");
-
-  is(storedViewBox.width, 7, "Should not lose values");
-  storedViewBox.width = 200;
-  is(storedViewBox.width, 200, "Should be able to change detached viewBox rect");
-  is(marker.hasAttribute("viewBox"), false, "viewBox hasAttribute should still be false");
-  ok(marker.getAttribute("viewBox") === null, "viewBox attribute should still be null");
-  is(marker.viewBox.baseVal, null, "viewBox baseVal");
-  is(marker.viewBox.animVal, null, "viewBox animVal");
 
   marker.setAttribute("viewBox", "none");
   is(marker.hasAttribute("viewBox"), true, "viewBox hasAttribute");
-  is(marker.viewBox.baseVal, null, "viewBox baseVal");
-  is(marker.viewBox.animVal, null, "viewBox animVal");
 
   marker.setAttribute("viewBox", "");
   is(marker.hasAttribute("viewBox"), true, "viewBox hasAttribute");

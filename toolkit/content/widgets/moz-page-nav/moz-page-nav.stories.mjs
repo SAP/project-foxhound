@@ -58,7 +58,7 @@ const Template = ({
       moz-page-nav:not([type="mobile"]) {
         height: ${customHeight};
         margin-inline-start: 10px;
-        --page-nav-margin-top: 10px;
+        --page-nav-margin-block-start: 10px;
 
         @media (max-width: 52rem) {
           margin-inline-start: 0;

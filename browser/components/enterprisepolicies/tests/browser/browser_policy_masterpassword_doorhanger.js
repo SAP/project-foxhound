@@ -26,7 +26,7 @@ add_task(async function test_policy_masterpassword_doorhanger() {
         "passwordmgr/test/browser/form_basic.html",
     },
     async function (browser) {
-      await SimpleTest.promiseFocus(browser.ownerGlobal);
+      await SimpleTest.promiseFocus(browser.documentGlobal);
 
       // Update the form with credentials from the test case.
       info(`update form with username: ${username}, password: ${password}`);

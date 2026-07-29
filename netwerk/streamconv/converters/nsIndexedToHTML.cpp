@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -109,7 +108,8 @@ nsIndexedToHTML::OnStartRequest(nsIRequest* request) {
     request->Cancel(rv);
   }
 
-  rv = mListener->OnStartRequest(request);
+  nsCOMPtr<nsIStreamListener> listener = mListener;
+  rv = listener->OnStartRequest(request);
   if (NS_FAILED(rv)) return rv;
 
   // The request may have been canceled, and if that happens, we want to
@@ -148,7 +148,8 @@ nsresult nsIndexedToHTML::DoOnStartRequest(nsIRequest* request,
   rv = mParser->SetListener(this);
   if (NS_FAILED(rv)) return rv;
 
-  rv = mParser->OnStartRequest(request);
+  nsCOMPtr<nsIDirIndexParser> parser = mParser;
+  rv = parser->OnStartRequest(request);
   if (NS_FAILED(rv)) return rv;
 
   nsAutoCString baseUri, titleUri;
@@ -178,20 +179,32 @@ nsresult nsIndexedToHTML::DoOnStartRequest(nsIRequest* request,
     nsCOMPtr<nsIFileURL> fileUrl = do_QueryInterface(uri);
     nsCOMPtr<nsIFile> file;
     rv = fileUrl->GetFile(getter_AddRefs(file));
-    if (NS_FAILED(rv)) return rv;
-
-    nsAutoCString url;
-    rv = net_GetURLSpecFromFile(file, url);
-    if (NS_FAILED(rv)) return rv;
-    baseUri.Assign(url);
-
-    nsCOMPtr<nsIFile> parent;
-    rv = file->GetParent(getter_AddRefs(parent));
-
-    if (parent && NS_SUCCEEDED(rv)) {
-      net_GetURLSpecFromDir(parent, url);
+    if (NS_SUCCEEDED(rv)) {
+      nsAutoCString url;
+      rv = net_GetURLSpecFromFile(file, url);
       if (NS_FAILED(rv)) return rv;
-      parentStr.Assign(url);
+      baseUri.Assign(url);
+
+      nsCOMPtr<nsIFile> parent;
+      rv = file->GetParent(getter_AddRefs(parent));
+
+      if (parent && NS_SUCCEEDED(rv)) {
+        net_GetURLSpecFromDir(parent, url);
+        if (NS_FAILED(rv)) return rv;
+        parentStr.Assign(url);
+      }
+    } else {
+#ifndef XP_WIN
+      return rv;
+#else
+      // On Windows, file:/// has no backing nsIFile (virtual drives root).
+      // baseUri was already set from uri->GetAsciiSpec() above; keep it.
+      // parentStr stays empty so no "Go up" link is rendered.
+      nsAutoCString path;
+      if (NS_FAILED(uri->GetFilePath(path)) || !path.EqualsLiteral("/")) {
+        return rv;
+      }
+#endif
     }
 
     // Directory index will be always encoded in UTF-8 if this is file url
@@ -602,10 +615,12 @@ nsIndexedToHTML::OnStopRequest(nsIRequest* request, nsresult aStatus) {
     aStatus = SendToListener(request, buffer);
   }
 
-  mParser->OnStopRequest(request, aStatus);
+  nsCOMPtr<nsIDirIndexParser> parser = mParser;
+  parser->OnStopRequest(request, aStatus);
   mParser = nullptr;
 
-  return mListener->OnStopRequest(request, aStatus);
+  nsCOMPtr<nsIStreamListener> listener = mListener;
+  return listener->OnStopRequest(request, aStatus);
 }
 
 nsresult nsIndexedToHTML::SendToListener(nsIRequest* aRequest,
@@ -613,13 +628,15 @@ nsresult nsIndexedToHTML::SendToListener(nsIRequest* aRequest,
   nsCOMPtr<nsIInputStream> inputData;
   nsresult rv = NS_NewCStringInputStream(getter_AddRefs(inputData), aBuffer);
   NS_ENSURE_SUCCESS(rv, rv);
-  return mListener->OnDataAvailable(aRequest, inputData, 0, aBuffer.Length());
+  nsCOMPtr<nsIStreamListener> listener = mListener;
+  return listener->OnDataAvailable(aRequest, inputData, 0, aBuffer.Length());
 }
 
 NS_IMETHODIMP
 nsIndexedToHTML::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInput,
                                  uint64_t aOffset, uint32_t aCount) {
-  return mParser->OnDataAvailable(aRequest, aInput, aOffset, aCount);
+  nsCOMPtr<nsIDirIndexParser> parser = mParser;
+  return parser->OnDataAvailable(aRequest, aInput, aOffset, aCount);
 }
 
 NS_IMETHODIMP

@@ -45,7 +45,6 @@ import mozilla.components.support.test.whenever
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -53,6 +52,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class ContentActionTest {
@@ -806,10 +806,11 @@ class ContentActionTest {
             ),
         )
 
-        assertNotNull(tab.content.loadRequest)
-        assertEquals(loadRequestUrl, tab.content.loadRequest!!.url)
-        assertTrue(tab.content.loadRequest!!.triggeredByRedirect)
-        assertFalse(tab.content.loadRequest!!.triggeredByUser)
+        assertNotNull(tab.content.loadRequest) {
+            assertEquals(loadRequestUrl, it.url)
+            assertTrue(it.triggeredByRedirect)
+            assertFalse(it.triggeredByUser)
+        }
     }
 
     @Test

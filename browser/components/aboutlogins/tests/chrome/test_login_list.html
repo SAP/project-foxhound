@@ -622,7 +622,7 @@ add_task(async function test_login_list_item_removed_next_selected() {
     return visibleLogins.length == 6;
   }, "Only logins with BB in the username should be visible, visible count: " + visibleLogins.length);
 
-  is(gLoginList._selectedGuid, logins[0].guid, "login0 should still be selected after filtering");
+  is(gLoginList._selectedGuid, logins[1].guid, "login1 should be selected after filtering as the first visible login");
 
   gLoginList.loginRemoved({guid: logins[0].guid});
 
@@ -635,7 +635,7 @@ add_task(async function test_login_list_item_removed_next_selected() {
     return visibleLogins.length == 6;
   }, "the number of visible logins should not change, got " + visibleLogins.length);
   is(gLoginList._selectedGuid, logins[1].guid,
-     "login1 should be selected after delete since the deleted login was not visible and login1 was the first in the list");
+     "login1 should still be selected after deleting the non-selected login0");
 
   let loginToSwitchTo = gLoginList._logins[visibleLogins[1].dataset.guid].login;
   window.dispatchEvent(

@@ -1,0 +1,15 @@
+{
+  "label": "app.rnova.org",
+  "bugs": {
+    "1902390": {
+      "issue": "unsupported-warning",
+      "matches": ["*://app.rnova.org/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

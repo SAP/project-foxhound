@@ -15,6 +15,7 @@
 #include <memory>
 #include <optional>
 #include <ostream>
+#include <span>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -26,7 +27,6 @@
 #include "api/jsep.h"
 #include "api/make_ref_counted.h"
 #include "api/scoped_refptr.h"
-#include "call/payload_type_picker.h"
 #include "media/base/fake_rtp.h"
 #include "p2p/base/ice_transport_internal.h"
 #include "p2p/base/p2p_constants.h"
@@ -36,6 +36,7 @@
 #include "p2p/dtls/fake_dtls_transport.h"
 #include "p2p/test/fake_ice_transport.h"
 #include "pc/dtls_srtp_transport.h"
+#include "pc/dtls_transport.h"
 #include "pc/rtp_transport.h"
 #include "pc/srtp_transport.h"
 #include "pc/transport_stats.h"
@@ -52,9 +53,9 @@
 #include "rtc_base/ssl_fingerprint.h"
 #include "rtc_base/ssl_identity.h"
 #include "rtc_base/ssl_stream_adapter.h"
-#include "rtc_base/thread.h"
 #include "test/create_test_field_trials.h"
 #include "test/gtest.h"
+#include "test/run_loop.h"
 
 namespace webrtc {
 namespace {
@@ -87,12 +88,12 @@ std::ostream& operator<<(std::ostream& os, const NegotiateRoleParams& param) {
 }
 
 scoped_refptr<IceTransportInterface> CreateIceTransport(
-    std::unique_ptr<FakeIceTransport> internal) {
+    std::unique_ptr<FakeIceTransportInternal> internal) {
   if (!internal) {
     return nullptr;
   }
 
-  return make_ref_counted<FakeIceTransportWrapper>(std::move(internal));
+  return make_ref_counted<FakeIceTransport>(std::move(internal));
 }
 
 class JsepTransport2Test : public ::testing::Test {
@@ -111,47 +112,45 @@ class JsepTransport2Test : public ::testing::Test {
   }
 
   std::unique_ptr<DtlsSrtpTransport> CreateDtlsSrtpTransport(
-      DtlsTransportInternal* rtp_dtls_transport,
-      DtlsTransportInternal* rtcp_dtls_transport) {
+      std::unique_ptr<DtlsTransportInternal> rtp_dtls_transport,
+      std::unique_ptr<DtlsTransportInternal> rtcp_dtls_transport) {
     auto dtls_srtp_transport = std::make_unique<DtlsSrtpTransport>(
         rtcp_dtls_transport == nullptr, field_trials_);
-    dtls_srtp_transport->SetDtlsTransports(rtp_dtls_transport,
-                                           rtcp_dtls_transport);
+    dtls_srtp_transport->SetDtlsTransportsOwned(std::move(rtp_dtls_transport),
+                                                std::move(rtcp_dtls_transport));
     return dtls_srtp_transport;
   }
 
   // Create a new JsepTransport with a FakeDtlsTransport and a
-  // FakeIceTransport.
+  // FakeIceTransportInternal.
   std::unique_ptr<JsepTransport> CreateJsepTransport2(bool rtcp_mux_enabled) {
-    auto ice_internal = std::make_unique<FakeIceTransport>(
+    auto ice_internal = std::make_unique<FakeIceTransportInternal>(
         kTransportName, ICE_CANDIDATE_COMPONENT_RTP);
-    auto rtp_dtls_transport =
-        std::make_unique<FakeDtlsTransport>(ice_internal.get());
     auto ice = CreateIceTransport(std::move(ice_internal));
+    auto rtp_dtls_transport = std::make_unique<FakeDtlsTransport>(ice);
 
-    std::unique_ptr<FakeIceTransport> rtcp_ice_internal;
+    std::unique_ptr<FakeIceTransportInternal> rtcp_ice_internal;
     std::unique_ptr<FakeDtlsTransport> rtcp_dtls_transport;
+    scoped_refptr<IceTransportInterface> rtcp_ice;
     if (!rtcp_mux_enabled) {
-      rtcp_ice_internal = std::make_unique<FakeIceTransport>(
+      rtcp_ice_internal = std::make_unique<FakeIceTransportInternal>(
           kTransportName, ICE_CANDIDATE_COMPONENT_RTCP);
-      rtcp_dtls_transport =
-          std::make_unique<FakeDtlsTransport>(rtcp_ice_internal.get());
+      rtcp_ice = CreateIceTransport(std::move(rtcp_ice_internal));
+      rtcp_dtls_transport = std::make_unique<FakeDtlsTransport>(rtcp_ice);
     }
-    auto rtcp_ice = CreateIceTransport(std::move(rtcp_ice_internal));
 
-    std::unique_ptr<RtpTransport> unencrypted_rtp_transport;
-    std::unique_ptr<DtlsSrtpTransport> dtls_srtp_transport;
-    dtls_srtp_transport = CreateDtlsSrtpTransport(rtp_dtls_transport.get(),
-                                                  rtcp_dtls_transport.get());
+    DtlsTransportInternal* rtp_dtls_transport_ptr = rtp_dtls_transport.get();
+    std::unique_ptr<RtpTransport> rtp_transport = CreateDtlsSrtpTransport(
+        std::move(rtp_dtls_transport), std::move(rtcp_dtls_transport));
+
+    scoped_refptr<DtlsTransport> rtp_dtls_transport_wrapper =
+        make_ref_counted<DtlsTransport>(rtp_dtls_transport_ptr);
 
     auto jsep_transport = std::make_unique<JsepTransport>(
-        kTransportName, /*local_certificate=*/nullptr, std::move(ice),
-        std::move(rtcp_ice), std::move(unencrypted_rtp_transport),
-        std::move(dtls_srtp_transport), std::move(rtp_dtls_transport),
-        std::move(rtcp_dtls_transport),
+        /*local_certificate=*/nullptr, std::move(rtp_transport),
+        std::move(rtp_dtls_transport_wrapper),
         /*sctp_transport=*/nullptr,
-        /*rtcp_mux_active_callback=*/[&]() { OnRtcpMuxActive(); },
-        payload_type_picker_);
+        /*rtcp_mux_active_callback=*/[&]() { OnRtcpMuxActive(); });
 
     signal_rtcp_mux_active_received_ = false;
     return jsep_transport;
@@ -187,11 +186,10 @@ class JsepTransport2Test : public ::testing::Test {
 
   void OnRtcpMuxActive() { signal_rtcp_mux_active_received_ = true; }
 
-  AutoThread main_thread_;
+  test::RunLoop main_thread_;
   std::unique_ptr<JsepTransport> jsep_transport_;
   bool signal_rtcp_mux_active_received_ = false;
   FieldTrials field_trials_ = CreateTestFieldTrials();
-  PayloadTypePicker payload_type_picker_;
 };
 
 // The parameterized tests cover both cases when RTCP mux is enable and
@@ -211,13 +209,13 @@ TEST_P(JsepTransport2WithRtcpMux, SetIceParameters) {
       jsep_transport_
           ->SetLocalJsepTransportDescription(jsep_description, SdpType::kOffer)
           .ok());
-  auto fake_ice_transport = static_cast<FakeIceTransport*>(
+  auto fake_ice_transport = static_cast<FakeIceTransportInternal*>(
       jsep_transport_->rtp_dtls_transport()->ice_transport());
   EXPECT_EQ(ICEMODE_FULL, fake_ice_transport->remote_ice_mode());
   EXPECT_EQ(kIceUfrag1, fake_ice_transport->local_ice_parameters()->ufrag);
   EXPECT_EQ(kIcePwd1, fake_ice_transport->local_ice_parameters()->pwd);
   if (!rtcp_mux_enabled) {
-    fake_ice_transport = static_cast<FakeIceTransport*>(
+    fake_ice_transport = static_cast<FakeIceTransportInternal*>(
         jsep_transport_->rtcp_dtls_transport()->ice_transport());
     ASSERT_TRUE(fake_ice_transport);
     EXPECT_EQ(ICEMODE_FULL, fake_ice_transport->remote_ice_mode());
@@ -230,13 +228,13 @@ TEST_P(JsepTransport2WithRtcpMux, SetIceParameters) {
                   ->SetRemoteJsepTransportDescription(jsep_description,
                                                       SdpType::kAnswer)
                   .ok());
-  fake_ice_transport = static_cast<FakeIceTransport*>(
+  fake_ice_transport = static_cast<FakeIceTransportInternal*>(
       jsep_transport_->rtp_dtls_transport()->ice_transport());
   EXPECT_EQ(ICEMODE_FULL, fake_ice_transport->remote_ice_mode());
   EXPECT_EQ(kIceUfrag2, fake_ice_transport->remote_ice_parameters()->ufrag);
   EXPECT_EQ(kIcePwd2, fake_ice_transport->remote_ice_parameters()->pwd);
   if (!rtcp_mux_enabled) {
-    fake_ice_transport = static_cast<FakeIceTransport*>(
+    fake_ice_transport = static_cast<FakeIceTransportInternal*>(
         jsep_transport_->rtcp_dtls_transport()->ice_transport());
     ASSERT_TRUE(fake_ice_transport);
     EXPECT_EQ(ICEMODE_FULL, fake_ice_transport->remote_ice_mode());
@@ -342,6 +340,76 @@ TEST_P(JsepTransport2WithRtcpMux, SetDtlsParametersWithPassiveAnswer) {
         remote_description.transport_desc.identity_fingerprint->ToString(),
         fake_rtcp_dtls->dtls_fingerprint().ToString());
   }
+}
+
+TEST_P(JsepTransport2WithRtcpMux, SetGoogSpedV1OptionUpdatesIceConfig) {
+  bool rtcp_mux_enabled = GetParam();
+  jsep_transport_ = CreateJsepTransport2(rtcp_mux_enabled);
+
+  scoped_refptr<RTCCertificate> local_cert =
+      RTCCertificate::Create(SSLIdentity::Create("local", KT_DEFAULT));
+  scoped_refptr<RTCCertificate> remote_cert =
+      RTCCertificate::Create(SSLIdentity::Create("remote", KT_DEFAULT));
+  jsep_transport_->SetLocalCertificate(local_cert);
+
+  JsepTransportDescription local_description =
+      MakeJsepTransportDescription(rtcp_mux_enabled, kIceUfrag1, kIcePwd1,
+                                   local_cert, CONNECTIONROLE_ACTPASS);
+  local_description.transport_desc.AddOption(ICE_OPTION_GOOG_SPED_V1);
+
+  ASSERT_TRUE(
+      jsep_transport_
+          ->SetLocalJsepTransportDescription(local_description, SdpType::kOffer)
+          .ok());
+
+  JsepTransportDescription remote_description =
+      MakeJsepTransportDescription(rtcp_mux_enabled, kIceUfrag2, kIcePwd2,
+                                   remote_cert, CONNECTIONROLE_ACTIVE);
+
+  ASSERT_TRUE(jsep_transport_
+                  ->SetRemoteJsepTransportDescription(remote_description,
+                                                      SdpType::kAnswer)
+                  .ok());
+
+  auto fake_ice_transport = static_cast<FakeIceTransportInternal*>(
+      jsep_transport_->rtp_dtls_transport()->ice_transport());
+
+  EXPECT_TRUE(fake_ice_transport->config().dtls_handshake_in_stun);
+}
+
+TEST_P(JsepTransport2WithRtcpMux,
+       MissingGoogSpedV1OptionDoesNotUpdateIceConfig) {
+  bool rtcp_mux_enabled = GetParam();
+  jsep_transport_ = CreateJsepTransport2(rtcp_mux_enabled);
+
+  scoped_refptr<RTCCertificate> local_cert =
+      RTCCertificate::Create(SSLIdentity::Create("local", KT_DEFAULT));
+  scoped_refptr<RTCCertificate> remote_cert =
+      RTCCertificate::Create(SSLIdentity::Create("remote", KT_DEFAULT));
+  jsep_transport_->SetLocalCertificate(local_cert);
+
+  JsepTransportDescription local_description =
+      MakeJsepTransportDescription(rtcp_mux_enabled, kIceUfrag1, kIcePwd1,
+                                   local_cert, CONNECTIONROLE_ACTPASS);
+
+  ASSERT_TRUE(
+      jsep_transport_
+          ->SetLocalJsepTransportDescription(local_description, SdpType::kOffer)
+          .ok());
+
+  JsepTransportDescription remote_description =
+      MakeJsepTransportDescription(rtcp_mux_enabled, kIceUfrag2, kIcePwd2,
+                                   remote_cert, CONNECTIONROLE_ACTIVE);
+
+  ASSERT_TRUE(jsep_transport_
+                  ->SetRemoteJsepTransportDescription(remote_description,
+                                                      SdpType::kAnswer)
+                  .ok());
+
+  auto fake_ice_transport = static_cast<FakeIceTransportInternal*>(
+      jsep_transport_->rtp_dtls_transport()->ice_transport());
+
+  EXPECT_FALSE(fake_ice_transport->config().dtls_handshake_in_stun);
 }
 
 // Tests SetNeedsIceRestartFlag and need_ice_restart, ensuring needs_ice_restart
@@ -1059,7 +1127,7 @@ TEST_F(JsepTransport2Test, RtcpMuxNegotiation) {
 // local and remote descriptions are set.
 TEST_F(JsepTransport2Test, AddRemoteCandidates) {
   jsep_transport_ = CreateJsepTransport2(/*rtcp_mux_enabled=*/true);
-  auto fake_ice_transport = static_cast<FakeIceTransport*>(
+  auto fake_ice_transport = static_cast<FakeIceTransportInternal*>(
       jsep_transport_->rtp_dtls_transport()->ice_transport());
 
   Candidates candidates;
@@ -1170,12 +1238,12 @@ class JsepTransport2HeaderExtensionTest
       JsepTransport* sender_transport) {
     size_t rtp_len = sizeof(kPcmuFrameWithExtensions);
     size_t packet_size = rtp_len + GetRtpAuthLen();
-    Buffer rtp_packet_buffer(packet_size);
+    Buffer rtp_packet_buffer = Buffer::CreateUninitializedWithSize(packet_size);
     char* rtp_packet_data = rtp_packet_buffer.data<char>();
     memcpy(rtp_packet_data, kPcmuFrameWithExtensions, rtp_len);
     // In order to be able to run this test function multiple times we can not
     // use the same sequence number twice. Increase the sequence number by one.
-    SetBE16(reinterpret_cast<uint8_t*>(rtp_packet_data) + 2,
+    SetBE16(std::span<uint8_t>(rtp_packet_buffer).subspan(2),
             ++sequence_number_);
     CopyOnWriteBuffer rtp_packet(rtp_packet_data, rtp_len, packet_size);
 
@@ -1307,7 +1375,7 @@ TEST_F(JsepTransport2Test, SetIceParametersWithRenomination) {
       jsep_transport_
           ->SetLocalJsepTransportDescription(jsep_description, SdpType::kOffer)
           .ok());
-  auto fake_ice_transport = static_cast<FakeIceTransport*>(
+  auto fake_ice_transport = static_cast<FakeIceTransportInternal*>(
       jsep_transport_->rtp_dtls_transport()->ice_transport());
   EXPECT_EQ(ICEMODE_FULL, fake_ice_transport->remote_ice_mode());
   EXPECT_EQ(kIceUfrag1, fake_ice_transport->local_ice_parameters()->ufrag);
@@ -1320,7 +1388,7 @@ TEST_F(JsepTransport2Test, SetIceParametersWithRenomination) {
                   ->SetRemoteJsepTransportDescription(jsep_description,
                                                       SdpType::kAnswer)
                   .ok());
-  fake_ice_transport = static_cast<FakeIceTransport*>(
+  fake_ice_transport = static_cast<FakeIceTransportInternal*>(
       jsep_transport_->rtp_dtls_transport()->ice_transport());
   EXPECT_EQ(ICEMODE_FULL, fake_ice_transport->remote_ice_mode());
   EXPECT_EQ(kIceUfrag2, fake_ice_transport->remote_ice_parameters()->ufrag);

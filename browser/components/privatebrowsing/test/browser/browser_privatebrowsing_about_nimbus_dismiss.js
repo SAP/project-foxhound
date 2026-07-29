@@ -18,10 +18,7 @@ add_task(async function test_experiment_messaging_system_dismiss() {
     content: {
       hideDefault: true,
       promoEnabled: true,
-      infoEnabled: true,
-      infoBody: "fluent:about-private-browsing-info-title",
       promoLinkText: "fluent:about-private-browsing-prominent-cta",
-      infoLinkUrl: "http://foo.example.com/%LOCALE%",
       promoLinkType: "link",
       promoButton: {
         action: {
@@ -71,10 +68,7 @@ add_task(async function test_experiment_messaging_show_default_on_dismiss() {
     content: {
       hideDefault: false,
       promoEnabled: true,
-      infoEnabled: true,
-      infoBody: "fluent:about-private-browsing-info-title",
       promoLinkText: "fluent:about-private-browsing-prominent-cta",
-      infoLinkUrl: "http://foo.example.com",
       promoLinkType: "link",
       promoButton: {
         action: {

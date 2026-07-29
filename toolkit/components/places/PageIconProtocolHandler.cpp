@@ -66,7 +66,7 @@ static nsresult GetFaviconMetadata(
 
   favicon->GetWidth(&aMetadata.mWidth);
   favicon->GetMimeType(aMetadata.mContentType);
-  aMetadata.mStream = stream;
+  aMetadata.mStream = std::move(stream);
   aMetadata.mContentLength = rawData.Length();
 
   return NS_OK;

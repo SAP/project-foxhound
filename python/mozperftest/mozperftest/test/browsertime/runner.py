@@ -454,7 +454,7 @@ class BrowsertimeRunner(NodeRunner):
         extra = self.extra_default_args(args=args)
 
         command = [str(self.browsertime_js)] + extra + args
-        self.info("Running browsertime with this command %s" % " ".join(command))
+        self.info(f"Running browsertime with this command {' '.join(command)}")
 
         if visualmetrics and self.get_arg("xvfb"):
             with xvfb():

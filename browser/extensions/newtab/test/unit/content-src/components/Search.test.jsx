@@ -1,13 +1,9 @@
 import { GlobalOverrider } from "test/unit/utils";
-import { mount, shallow } from "enzyme";
+import { shallow } from "enzyme";
 import React from "react";
-import { _Search as Search } from "content-src/components/Search/Search";
+import { Search } from "content-src/components/Search/Search";
 import { Logo } from "content-src/components/Logo/Logo";
-
-const DEFAULT_PROPS = {
-  dispatch() {},
-  Prefs: { values: { featureConfig: {}, "search.useHandoffComponent": true } },
-};
+import { ExternalComponentWrapper } from "content-src/components/ExternalComponentWrapper/ExternalComponentWrapper";
 
 describe("<Search>", () => {
   let globals;
@@ -23,32 +19,29 @@ describe("<Search>", () => {
   });
 
   it("should render a Search element", () => {
-    const wrapper = shallow(<Search {...DEFAULT_PROPS} />);
+    const wrapper = shallow(<Search />);
     assert.ok(wrapper.exists());
   });
   it("should not use a <form> element", () => {
-    const wrapper = mount(<Search {...DEFAULT_PROPS} />);
-
+    const wrapper = shallow(<Search />);
     assert.equal(wrapper.find("form").length, 0);
   });
   it("should show our logo when the prop exists.", () => {
-    const showLogoProps = Object.assign({}, DEFAULT_PROPS, { showLogo: true });
-    const wrapper = shallow(<Search {...showLogoProps} />);
-    const logo_component = wrapper.find(Logo);
-    assert.ok(logo_component.exists());
+    const wrapper = shallow(<Search showLogo={true} />);
+    assert.ok(wrapper.find(Logo).exists());
   });
   it("should not show our logo when the prop does not exist.", () => {
-    const hideLogoProps = Object.assign({}, DEFAULT_PROPS, { showLogo: false });
-    const wrapper = shallow(<Search {...hideLogoProps} />);
-    const logo_component = wrapper.find(Logo);
-    assert.ok(!logo_component.exists());
+    const wrapper = shallow(<Search showLogo={false} />);
+    assert.ok(!wrapper.find(Logo).exists());
   });
 
   describe("Search Hand-off", () => {
     it("should render a Search hand-off element", () => {
-      const wrapper = shallow(<Search {...DEFAULT_PROPS} />);
+      const wrapper = shallow(<Search />);
       assert.ok(wrapper.exists());
-      assert.equal(wrapper.find("content-search-handoff-ui").length, 1);
+      const externalComponentWrapper = wrapper.find(ExternalComponentWrapper);
+      assert.equal(externalComponentWrapper.length, 1);
+      assert.equal(externalComponentWrapper.prop("type"), "SEARCH");
     });
   });
 });

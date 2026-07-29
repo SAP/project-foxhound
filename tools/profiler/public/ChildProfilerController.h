@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,7 +26,6 @@ class ChildProfilerController final {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ChildProfilerController)
 
-#ifdef MOZ_GECKO_PROFILER
   static already_AddRefed<ChildProfilerController> Create(
       mozilla::ipc::Endpoint<PProfilerChild>&& aEndpoint);
 
@@ -49,20 +47,6 @@ class ChildProfilerController final {
 
   RefPtr<ProfilerChild> mProfilerChild;  // only accessed on mThread
   DataMutex<RefPtr<nsIThread>> mThread;
-#else
-  static already_AddRefed<ChildProfilerController> Create(
-      mozilla::ipc::Endpoint<PProfilerChild>&& aEndpoint) {
-    return nullptr;
-  }
-  [[nodiscard]] ProfileAndAdditionalInformation
-  GrabShutdownProfileAndShutdown() {
-    return ProfileAndAdditionalInformation();
-  }
-  void Shutdown() {}
-
- private:
-  ~ChildProfilerController() {}
-#endif  // MOZ_GECKO_PROFILER
 };
 
 }  // namespace mozilla

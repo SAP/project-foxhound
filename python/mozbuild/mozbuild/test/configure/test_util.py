@@ -331,7 +331,7 @@ class TestConfigureOutputHandler(unittest.TestCase):
 class TestLineIO(unittest.TestCase):
     def test_lineio(self):
         lines = []
-        l = LineIO(lambda l: lines.append(l))
+        l = LineIO(lines.append)
 
         l.write("a")
         self.assertEqual(lines, [])
@@ -364,7 +364,7 @@ class TestLineIO(unittest.TestCase):
 
     def test_lineio_contextmanager(self):
         lines = []
-        with LineIO(lambda l: lines.append(l)) as l:
+        with LineIO(lines.append) as l:
             l.write("a\nb\nc")
 
             self.assertEqual(lines, ["a", "b"])

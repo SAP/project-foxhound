@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +8,8 @@
 #include "gfxUtils.h"
 #include "mozilla/Likely.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ReflowInput.h"
+#include "mozilla/StaticPrefs_mathml.h"
 #include "mozilla/dom/MathMLElement.h"
 #include "mozilla/gfx/2D.h"
 #include "nsContentUtils.h"
@@ -167,7 +167,7 @@ nscoord nsMathMLContainerFrame::ApplyAdjustmentForWidthAndHeight(
     auto oldWidth = aReflowOutput.Width();
     if (IsMathContentBoxHorizontallyCentered()) {
       shiftX = (width - oldWidth) / 2;
-    } else if (StyleVisibility()->mDirection == StyleDirection::Rtl) {
+    } else if (GetWritingMode().IsBidiRTL()) {
       shiftX = width - oldWidth;
     }
     aBoundingMetrics.leftBearing = 0;
@@ -294,156 +294,159 @@ nsMathMLContainerFrame::Stretch(DrawTarget* aDrawTarget,
                                 StretchDirection aStretchDirection,
                                 nsBoundingMetrics& aContainerSize,
                                 ReflowOutput& aDesiredStretchSize) {
-  if (mEmbellishData.flags.contains(MathMLEmbellishFlag::EmbellishedOperator)) {
-    if (mPresentationData.flags.contains(MathMLPresentationFlag::StretchDone)) {
-      NS_WARNING("it is wrong to fire stretch more than once on a frame");
-      return NS_OK;
+  if (!mEmbellishData.flags.contains(
+          MathMLEmbellishFlag::EmbellishedOperator)) {
+    return NS_OK;
+  }
+  if (mPresentationData.flags.contains(MathMLPresentationFlag::StretchDone)) {
+    NS_WARNING("it is wrong to fire stretch more than once on a frame");
+    return NS_OK;
+  }
+  mPresentationData.flags += MathMLPresentationFlag::StretchDone;
+
+  // Pass the stretch to the base child ...
+  nsIFrame* baseFrame = mPresentationData.baseFrame;
+  if (!baseFrame) {
+    return NS_OK;
+  }
+  nsIMathMLFrame* mathMLFrame = do_QueryFrame(baseFrame);
+  NS_ASSERTION(mathMLFrame, "Something is wrong somewhere");
+  if (!mathMLFrame) {
+    return NS_OK;
+  }
+  // And the trick is that the child's rect.x is still holding the
+  // descent, and rect.y is still holding the ascent ...
+  ReflowOutput childSize(aDesiredStretchSize);
+  GetReflowAndBoundingMetricsFor(baseFrame, childSize,
+                                 childSize.mBoundingMetrics);
+
+  // See if we should downsize and confine the stretch to us...
+  // XXX there may be other cases where we can downsize the stretch,
+  // e.g., the first &Sum; might appear big in the following situation
+  // <math xmlns='http://www.w3.org/1998/Math/MathML'>
+  //   <mstyle>
+  //     <msub>
+  //        <msub><mo>&Sum;</mo><mfrac><mi>a</mi><mi>b</mi></mfrac></msub>
+  //        <msub><mo>&Sum;</mo><mfrac><mi>a</mi><mi>b</mi></mfrac></msub>
+  //      </msub>
+  //   </mstyle>
+  // </math>
+  nsBoundingMetrics containerSize = aContainerSize;
+  if (aStretchDirection != mEmbellishData.direction &&
+      mEmbellishData.direction != StretchDirection::Unsupported) {
+    NS_ASSERTION(mEmbellishData.direction != StretchDirection::Default,
+                 "Stretches may have a default direction, operators can not.");
+    if (mPresentationData.flags.contains(
+            mEmbellishData.direction == StretchDirection::Vertical
+                ? MathMLPresentationFlag::StretchAllChildrenVertically
+                : MathMLPresentationFlag::StretchAllChildrenHorizontally)) {
+      GetPreferredStretchSize(
+          aDrawTarget,
+          PreferredStretchSizeMode::EmbellishmentsIfSameStretchDirection,
+          mEmbellishData.direction, containerSize);
+      // Stop further recalculations
+      aStretchDirection = mEmbellishData.direction;
+    } else {
+      // We aren't going to stretch the child, so just use the child
+      // metrics.
+      containerSize = childSize.mBoundingMetrics;
     }
-    mPresentationData.flags += MathMLPresentationFlag::StretchDone;
+  }
 
-    // Pass the stretch to the base child ...
+  // do the stretching...
+  mathMLFrame->Stretch(aDrawTarget, aStretchDirection, containerSize,
+                       childSize);
+  // store the updated metrics
+  SaveReflowAndBoundingMetricsFor(baseFrame, childSize,
+                                  childSize.mBoundingMetrics);
 
-    nsIFrame* baseFrame = mPresentationData.baseFrame;
-    if (baseFrame) {
-      nsIMathMLFrame* mathMLFrame = do_QueryFrame(baseFrame);
-      NS_ASSERTION(mathMLFrame, "Something is wrong somewhere");
-      if (mathMLFrame) {
-        // And the trick is that the child's rect.x is still holding the
-        // descent, and rect.y is still holding the ascent ...
-        ReflowOutput childSize(aDesiredStretchSize);
-        GetReflowAndBoundingMetricsFor(baseFrame, childSize,
-                                       childSize.mBoundingMetrics);
+  // Remember the siblings which were _deferred_.
+  // Now that this embellished child may have changed, we need to
+  // fire the stretch on its siblings using our updated size
 
-        // See if we should downsize and confine the stretch to us...
-        // XXX there may be other cases where we can downsize the stretch,
-        // e.g., the first &Sum; might appear big in the following situation
-        // <math xmlns='http://www.w3.org/1998/Math/MathML'>
-        //   <mstyle>
-        //     <msub>
-        //        <msub><mo>&Sum;</mo><mfrac><mi>a</mi><mi>b</mi></mfrac></msub>
-        //        <msub><mo>&Sum;</mo><mfrac><mi>a</mi><mi>b</mi></mfrac></msub>
-        //      </msub>
-        //   </mstyle>
-        // </math>
-        nsBoundingMetrics containerSize = aContainerSize;
-        if (aStretchDirection != mEmbellishData.direction &&
-            mEmbellishData.direction != StretchDirection::Unsupported) {
-          NS_ASSERTION(
-              mEmbellishData.direction != StretchDirection::Default,
-              "Stretches may have a default direction, operators can not.");
-          if (mPresentationData.flags.contains(
-                  mEmbellishData.direction == StretchDirection::Vertical
-                      ? MathMLPresentationFlag::StretchAllChildrenVertically
-                      : MathMLPresentationFlag::
-                            StretchAllChildrenHorizontally)) {
-            GetPreferredStretchSize(
-                aDrawTarget,
-                PreferredStretchSizeMode::EmbellishmentsIfSameStretchDirection,
-                mEmbellishData.direction, containerSize);
-            // Stop further recalculations
-            aStretchDirection = mEmbellishData.direction;
-          } else {
-            // We aren't going to stretch the child, so just use the child
-            // metrics.
-            containerSize = childSize.mBoundingMetrics;
-          }
+  if (mPresentationData.flags.contains(
+          MathMLPresentationFlag::StretchAllChildrenVertically) ||
+      mPresentationData.flags.contains(
+          MathMLPresentationFlag::StretchAllChildrenHorizontally)) {
+    StretchDirection stretchDir =
+        mPresentationData.flags.contains(
+            MathMLPresentationFlag::StretchAllChildrenVertically)
+            ? StretchDirection::Vertical
+            : StretchDirection::Horizontal;
+
+    GetPreferredStretchSize(aDrawTarget,
+                            PreferredStretchSizeMode::Embellishments,
+                            stretchDir, containerSize);
+
+    nsIFrame* childFrame = mFrames.FirstChild();
+    while (childFrame) {
+      if (childFrame != mPresentationData.baseFrame) {
+        mathMLFrame = do_QueryFrame(childFrame);
+        if (mathMLFrame) {
+          // retrieve the metrics that was stored at the previous pass
+          GetReflowAndBoundingMetricsFor(childFrame, childSize,
+                                         childSize.mBoundingMetrics);
+          // do the stretching...
+          mathMLFrame->Stretch(aDrawTarget, stretchDir, containerSize,
+                               childSize);
+          // store the updated metrics
+          SaveReflowAndBoundingMetricsFor(childFrame, childSize,
+                                          childSize.mBoundingMetrics);
         }
+      }
+      childFrame = childFrame->GetNextSibling();
+    }
+  }
 
-        // do the stretching...
-        mathMLFrame->Stretch(aDrawTarget, aStretchDirection, containerSize,
-                             childSize);
-        // store the updated metrics
-        SaveReflowAndBoundingMetricsFor(baseFrame, childSize,
-                                        childSize.mBoundingMetrics);
+  // re-position all our children
+  PlaceFlags flags;
+  Place(aDrawTarget, flags, aDesiredStretchSize);
 
-        // Remember the siblings which were _deferred_.
-        // Now that this embellished child may have changed, we need to
-        // fire the stretch on its siblings using our updated size
+  // If our parent is not embellished, it means we are the outermost
+  // embellished container and so we put the spacing, otherwise we don't
+  // include the spacing, the outermost embellished container will take
+  // care of it.
 
-        if (mPresentationData.flags.contains(
-                MathMLPresentationFlag::StretchAllChildrenVertically) ||
-            mPresentationData.flags.contains(
-                MathMLPresentationFlag::StretchAllChildrenHorizontally)) {
-          StretchDirection stretchDir =
-              mPresentationData.flags.contains(
-                  MathMLPresentationFlag::StretchAllChildrenVertically)
-                  ? StretchDirection::Vertical
-                  : StretchDirection::Horizontal;
+  nsEmbellishData parentData;
+  GetEmbellishDataFrom(GetParent(), parentData);
+  // ensure that we are the embellished child, not just a sibling
+  // (need to test coreFrame since <mfrac> resets other things)
+  if (parentData.coreFrame != mEmbellishData.coreFrame) {
+    // (we fetch values from the core since they may use units that depend
+    // on style data, and style changes could have occurred in the core
+    // since our last visit there)
+    nsEmbellishData coreData;
+    GetEmbellishDataFrom(mEmbellishData.coreFrame, coreData);
 
-          GetPreferredStretchSize(aDrawTarget,
-                                  PreferredStretchSizeMode::Embellishments,
-                                  stretchDir, containerSize);
+    nscoord leadingSpace = 0, trailingSpace = 0;
+    if (!StaticPrefs::
+            mathml_lspace_rspace_for_child_spacing_during_mrow_layout_enabled()) {
+      leadingSpace = coreData.leadingSpace;
+      trailingSpace = coreData.trailingSpace;
+    }
+    mBoundingMetrics.width += leadingSpace + trailingSpace;
+    aDesiredStretchSize.Width() = mBoundingMetrics.width;
+    aDesiredStretchSize.mBoundingMetrics.width = mBoundingMetrics.width;
 
-          nsIFrame* childFrame = mFrames.FirstChild();
-          while (childFrame) {
-            if (childFrame != mPresentationData.baseFrame) {
-              mathMLFrame = do_QueryFrame(childFrame);
-              if (mathMLFrame) {
-                // retrieve the metrics that was stored at the previous pass
-                GetReflowAndBoundingMetricsFor(childFrame, childSize,
-                                               childSize.mBoundingMetrics);
-                // do the stretching...
-                mathMLFrame->Stretch(aDrawTarget, stretchDir, containerSize,
-                                     childSize);
-                // store the updated metrics
-                SaveReflowAndBoundingMetricsFor(childFrame, childSize,
-                                                childSize.mBoundingMetrics);
-              }
-            }
-            childFrame = childFrame->GetNextSibling();
-          }
-        }
+    nscoord dx = GetWritingMode().IsBidiRTL() ? trailingSpace : leadingSpace;
+    if (dx != 0) {
+      mBoundingMetrics.leftBearing += dx;
+      mBoundingMetrics.rightBearing += dx;
+      aDesiredStretchSize.mBoundingMetrics.leftBearing += dx;
+      aDesiredStretchSize.mBoundingMetrics.rightBearing += dx;
 
-        // re-position all our children
-        PlaceFlags flags;
-        Place(aDrawTarget, flags, aDesiredStretchSize);
-
-        // If our parent is not embellished, it means we are the outermost
-        // embellished container and so we put the spacing, otherwise we don't
-        // include the spacing, the outermost embellished container will take
-        // care of it.
-
-        nsEmbellishData parentData;
-        GetEmbellishDataFrom(GetParent(), parentData);
-        // ensure that we are the embellished child, not just a sibling
-        // (need to test coreFrame since <mfrac> resets other things)
-        if (parentData.coreFrame != mEmbellishData.coreFrame) {
-          // (we fetch values from the core since they may use units that depend
-          // on style data, and style changes could have occurred in the core
-          // since our last visit there)
-          nsEmbellishData coreData;
-          GetEmbellishDataFrom(mEmbellishData.coreFrame, coreData);
-
-          mBoundingMetrics.width +=
-              coreData.leadingSpace + coreData.trailingSpace;
-          aDesiredStretchSize.Width() = mBoundingMetrics.width;
-          aDesiredStretchSize.mBoundingMetrics.width = mBoundingMetrics.width;
-
-          nscoord dx = StyleVisibility()->mDirection == StyleDirection::Rtl
-                           ? coreData.trailingSpace
-                           : coreData.leadingSpace;
-          if (dx != 0) {
-            mBoundingMetrics.leftBearing += dx;
-            mBoundingMetrics.rightBearing += dx;
-            aDesiredStretchSize.mBoundingMetrics.leftBearing += dx;
-            aDesiredStretchSize.mBoundingMetrics.rightBearing += dx;
-
-            nsIFrame* childFrame = mFrames.FirstChild();
-            while (childFrame) {
-              childFrame->SetPosition(childFrame->GetPosition() +
-                                      nsPoint(dx, 0));
-              childFrame = childFrame->GetNextSibling();
-            }
-          }
-        }
-
-        // Finished with these:
-        ClearSavedChildMetrics();
-        // Set our overflow area
-        GatherAndStoreOverflow(&aDesiredStretchSize);
+      nsIFrame* childFrame = mFrames.FirstChild();
+      while (childFrame) {
+        childFrame->SetPosition(childFrame->GetPosition() + nsPoint(dx, 0));
+        childFrame = childFrame->GetNextSibling();
       }
     }
   }
+
+  // Finished with these:
+  ClearSavedChildMetrics();
+  // Set our overflow area
+  GatherAndStoreOverflow(&aDesiredStretchSize);
   return NS_OK;
 }
 
@@ -653,7 +656,7 @@ nsresult nsMathMLContainerFrame::ReLayoutChildren(nsIFrame* aParentFrame) {
 
   // walk-up to the first frame that is a MathML frame, stop if we reach <math>
   nsIFrame* frame = aParentFrame;
-  while (1) {
+  while (true) {
     nsIFrame* parent = frame->GetParent();
     if (!parent || !parent->GetContent()) {
       break;
@@ -1095,19 +1098,39 @@ static nscoord GetThinSpace(const nsStyleFont* aStyleFont) {
   return aStyleFont->mFont.size.ScaledBy(3.0f / 18.0f).ToAppUnits();
 }
 
+static void GetCoreOperatorLeftAndRightSpace(nsIFrame* aFrame, bool aRTL,
+                                             nscoord& aLeftSpace,
+                                             nscoord& aRightSpace) {
+  if (!StaticPrefs::
+          mathml_lspace_rspace_for_child_spacing_during_mrow_layout_enabled()) {
+    aLeftSpace = 0;
+    aRightSpace = 0;
+    return;
+  }
+
+  nsEmbellishData embellishData;
+  nsMathMLContainerFrame::GetEmbellishDataFrom(aFrame, embellishData);
+  nsEmbellishData coreData;
+  nsMathMLContainerFrame::GetEmbellishDataFrom(embellishData.coreFrame,
+                                               coreData);
+  aLeftSpace = aRTL ? coreData.trailingSpace : coreData.leadingSpace;
+  aRightSpace = aRTL ? coreData.leadingSpace : coreData.trailingSpace;
+}
+
 class nsMathMLContainerFrame::RowChildFrameIterator {
  public:
   explicit RowChildFrameIterator(nsMathMLContainerFrame* aParentFrame,
-                                 const PlaceFlags& aFlags)
+                                 const PlaceFlags& aFlags,
+                                 bool aAddOperatorSpacing)
       : mParentFrame(aParentFrame),
         mReflowOutput(aParentFrame->GetWritingMode()),
         mX(0),
         mFlags(aFlags),
+        mAddOperatorSpacing(aAddOperatorSpacing),
         mChildFrameType(MathMLFrameType::Unknown),
         mCarrySpace(0),
         mFromFrameType(MathMLFrameType::Unknown),
-        mRTL(aParentFrame->StyleVisibility()->mDirection ==
-             StyleDirection::Rtl) {
+        mRTL(aParentFrame->GetWritingMode().IsBidiRTL()) {
     if (!mRTL) {
       mChildFrame = aParentFrame->mFrames.FirstChild();
     } else {
@@ -1126,6 +1149,12 @@ class nsMathMLContainerFrame::RowChildFrameIterator {
     mX += mReflowOutput.mBoundingMetrics.width + mItalicCorrection;
     mX += mMargin.LeftRight();
 
+    if (mAddOperatorSpacing) {
+      nscoord dummy, rightSpace;
+      GetCoreOperatorLeftAndRightSpace(mChildFrame, mRTL, dummy, rightSpace);
+      mX += rightSpace;
+    }
+
     if (!mRTL) {
       mChildFrame = mChildFrame->GetNextSibling();
     } else {
@@ -1143,6 +1172,7 @@ class nsMathMLContainerFrame::RowChildFrameIterator {
     nscoord space = GetInterFrameSpacing(prevFrameType, mChildFrameType,
                                          &mFromFrameType, &mCarrySpace);
     mX += space * GetThinSpace(mParentFrame->StyleFont());
+
     return *this;
   }
 
@@ -1164,6 +1194,7 @@ class nsMathMLContainerFrame::RowChildFrameIterator {
   ReflowOutput mReflowOutput;
   nscoord mX;
   const PlaceFlags mFlags;
+  bool mAddOperatorSpacing;
   nsMargin mMargin;
 
   nscoord mItalicCorrection;
@@ -1174,6 +1205,12 @@ class nsMathMLContainerFrame::RowChildFrameIterator {
   bool mRTL;
 
   void InitMetricsForChild() {
+    if (mAddOperatorSpacing) {
+      nscoord leftSpace, dummy;
+      GetCoreOperatorLeftAndRightSpace(mChildFrame, mRTL, leftSpace, dummy);
+      mX += leftSpace;
+    }
+
     GetReflowAndBoundingMetricsFor(mChildFrame, mReflowOutput,
                                    mReflowOutput.mBoundingMetrics,
                                    &mChildFrameType);
@@ -1205,7 +1242,11 @@ void nsMathMLContainerFrame::Place(DrawTarget* aDrawTarget,
   // This is needed in case this frame is empty (i.e., no child frames)
   mBoundingMetrics = nsBoundingMetrics();
 
-  RowChildFrameIterator child(this, aFlags);
+  // TODO(bug 2018403): Also add space around children of mtd/math elements,
+  // these are currently handled specially in AddInterFrameSpacingToSize().
+  bool add_space =
+      !mEmbellishData.flags.contains(MathMLEmbellishFlag::EmbellishedOperator);
+  RowChildFrameIterator child(this, aFlags, add_space);
   nscoord ascent = 0, descent = 0;
   while (child.Frame()) {
     nscoord topMargin = child.Margin().top;
@@ -1253,7 +1294,7 @@ void nsMathMLContainerFrame::Place(DrawTarget* aDrawTarget,
   //////////////////
   // Place Children
   if (!aFlags.contains(PlaceFlag::MeasureOnly)) {
-    PositionRowChildFrames(shiftX, aDesiredSize.BlockStartAscent());
+    PositionRowChildFrames(shiftX, aDesiredSize.BlockStartAscent(), add_space);
   }
 }
 
@@ -1264,9 +1305,10 @@ void nsMathMLContainerFrame::PlaceAsMrow(DrawTarget* aDrawTarget,
 }
 
 void nsMathMLContainerFrame::PositionRowChildFrames(nscoord aOffsetX,
-                                                    nscoord aBaseline) {
+                                                    nscoord aBaseline,
+                                                    bool aAddOperatorSpacing) {
   PlaceFlags flags;
-  RowChildFrameIterator child(this, flags);
+  RowChildFrameIterator child(this, flags, aAddOperatorSpacing);
   while (child.Frame()) {
     nscoord dx = aOffsetX + child.X() + child.Margin().left;
     nscoord dy = aBaseline - child.Ascent();
@@ -1319,6 +1361,8 @@ static nscoord AddInterFrameSpacingToSize(ReflowOutput& aDesiredSize,
   if (MOZ_UNLIKELY(!parentContent)) {
     return 0;
   }
+  // TODO(bug 2018403): Wrap children of math and mtd in an anonymous mrow, so
+  // that this whole logic can go away.
   if (parentContent->IsAnyOfMathMLElements(nsGkAtoms::math, nsGkAtoms::mtd)) {
     gap = GetInterFrameSpacingFor(parent, aFrame);
     // add our own italic correction
@@ -1326,14 +1370,21 @@ static nscoord AddInterFrameSpacingToSize(ReflowOutput& aDesiredSize,
     nsMathMLContainerFrame::GetItalicCorrection(
         aDesiredSize.mBoundingMetrics, leftCorrection, italicCorrection);
     gap += leftCorrection;
+
+    // Take into account lspace/rspace around (embellished) operators.
+    nscoord leftSpace, rightSpace;
+    bool isRTL = parent->GetWritingMode().IsBidiRTL();
+    GetCoreOperatorLeftAndRightSpace(aFrame, isRTL, leftSpace, rightSpace);
+    gap += leftSpace;
+
     if (gap) {
       aDesiredSize.mBoundingMetrics.leftBearing += gap;
       aDesiredSize.mBoundingMetrics.rightBearing += gap;
       aDesiredSize.mBoundingMetrics.width += gap;
       aDesiredSize.Width() += gap;
     }
-    aDesiredSize.mBoundingMetrics.width += italicCorrection;
-    aDesiredSize.Width() += italicCorrection;
+    aDesiredSize.mBoundingMetrics.width += italicCorrection + rightSpace;
+    aDesiredSize.Width() += italicCorrection + rightSpace;
   }
   return gap;
 }
@@ -1448,7 +1499,7 @@ nsresult nsMathMLContainerFrame::ReportErrorToConsole(
     const char* errorMsgId, const nsTArray<nsString>& aParams) {
   return nsContentUtils::ReportToConsole(
       nsIScriptError::errorFlag, "Layout: MathML"_ns, mContent->OwnerDoc(),
-      nsContentUtils::eMATHML_PROPERTIES, errorMsgId, aParams);
+      PropertiesFile::MATHML_PROPERTIES, errorMsgId, aParams);
 }
 
 nsresult nsMathMLContainerFrame::ReportParseError(const char16_t* aAttribute,

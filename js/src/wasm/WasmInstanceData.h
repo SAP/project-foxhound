@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright 2021 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -172,6 +170,10 @@ struct MemoryInstanceData {
 
   // Whether this memory is shared or not.
   bool isShared;
+
+  // Total mapped size of the memory buffer, including guard pages. Stored
+  // here to avoid touching GC objects from signal handlers.
+  size_t mappedSize;
 };
 
 // TableInstanceData describes the region of wasm global memory allocated in the

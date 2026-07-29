@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -1153,7 +1152,7 @@ class MOZ_STACK_CLASS StreamWriter : public CoreDumpWriter {
         stream(stream),
         compartments(compartments) {}
 
-  ~StreamWriter() override {}
+  ~StreamWriter() override = default;
 
   bool writeMetadata(uint64_t timestamp) final {
     protobuf::Metadata metadata;
@@ -1386,7 +1385,7 @@ already_AddRefed<nsIFile> HeapSnapshot::CreateUniqueCoreDumpFile(
 // Deletion policy for cleaning up PHeapSnapshotTempFileHelperChild pointers.
 class DeleteHeapSnapshotTempFileHelperChild {
  public:
-  constexpr DeleteHeapSnapshotTempFileHelperChild() {}
+  constexpr DeleteHeapSnapshotTempFileHelperChild() = default;
 
   void operator()(PHeapSnapshotTempFileHelperChild* ptr) const {
     (void)NS_WARN_IF(!HeapSnapshotTempFileHelperChild::Send__delete__(ptr));

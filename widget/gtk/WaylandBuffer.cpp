@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -207,6 +206,7 @@ void WaylandBufferSHM::Clear() {
 #ifdef MOZ_LOGGING
 void WaylandBufferSHM::DumpToFile(const char* aHint) {
   if (!mDumpSerial) {
+    NS_WARNING("mDumpSerial is not set!");
     return;
   }
 
@@ -293,6 +293,7 @@ WaylandBufferDMABUF::~WaylandBufferDMABUF() {
 #ifdef MOZ_LOGGING
 void WaylandBufferDMABUF::DumpToFile(const char* aHint) {
   if (!mDumpSerial) {
+    NS_WARNING("mDumpSerial is not set!");
     return;
   }
   nsCString filename;

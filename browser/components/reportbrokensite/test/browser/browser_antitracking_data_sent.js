@@ -28,99 +28,88 @@ function getEtpCategory() {
 
 add_task(async function testSendButton() {
   ensureReportBrokenSitePreffedOn();
-  ensureReasonOptional();
 
-  const win = await BrowserTestUtils.openNewBrowserWindow({ private: true });
-  const blockedPromise = waitForContentBlockingEvent(3, win);
-  const tab = await openTab(REPORTABLE_PAGE_URL3, win);
-  await blockedPromise;
-
-  await testSend(tab, AppMenu(win), {
-    breakageCategory: "adblocker",
-    description: "another test description",
-    antitracking: {
-      blockList: "strict",
-      blockedOrigins: null,
-      isPrivateBrowsing: true,
-      hasTrackingContentBlocked: true,
-      hasMixedActiveContentBlocked: true,
-      hasMixedDisplayContentBlocked: true,
-      btpHasPurgedSite: false,
-      etpCategory: getEtpCategory(),
-    },
-    frameworks: {
-      fastclick: true,
-      marfeel: true,
-      mobify: true,
-    },
+  await withNewTab(REPORTABLE_PAGE_URL3, async (win, tab) => {
+    await testSend(tab, AppMenu(win), {
+      breakageCategory: "adblocker",
+      description: "another test description",
+      antitracking: {
+        blockList: "strict",
+        blockedOrigins: null,
+        isPrivateBrowsing: true,
+        hasTrackingContentBlocked: true,
+        hasMixedActiveContentBlocked: true,
+        hasMixedDisplayContentBlocked: true,
+        btpHasPurgedSite: false,
+        etpCategory: getEtpCategory(),
+      },
+      frameworks: {
+        fastclick: true,
+        marfeel: true,
+        mobify: true,
+      },
+    });
   });
-
-  await BrowserTestUtils.closeWindow(win);
 });
 
 add_task(async function testSendingMoreInfo() {
   ensureReportBrokenSitePreffedOn();
-  ensureSendMoreInfoEnabled();
+  enableSendMoreInfo();
 
-  const win = await BrowserTestUtils.openNewBrowserWindow({ private: true });
-  const blockedPromise = waitForContentBlockingEvent(3, win);
-  const tab = await openTab(REPORTABLE_PAGE_URL3, win);
-  await blockedPromise;
-
-  await testSendMoreInfo(tab, AppMenu(win), {
-    antitracking: {
-      blockList: "strict",
-      blockedOrigins: ["https://trackertest.org"],
-      isPrivateBrowsing: true,
-      hasTrackingContentBlocked: true,
-      hasMixedActiveContentBlocked: true,
-      hasMixedDisplayContentBlocked: true,
-      btpHasPurgedSite: false,
-      etpCategory: getEtpCategory(),
-    },
-    frameworks: { fastclick: true, mobify: true, marfeel: true },
-    consoleLog: [
-      {
-        level: "error",
-        log(actual) {
-          // "Blocked loading mixed display content http://example.com/tests/image/test/mochitest/blue.png"
-          return (
-            Array.isArray(actual) &&
-            actual.length == 1 &&
-            actual[0].includes("blue.png")
-          );
-        },
-        pos: "0:1",
-        uri: REPORTABLE_PAGE_URL3,
+  await withNewTab(REPORTABLE_PAGE_URL3, async (win, tab) => {
+    await testSendMoreInfo(tab, AppMenu(win), {
+      antitracking: {
+        blockList: "strict",
+        blockedOrigins: ["https://trackertest.org"],
+        isPrivateBrowsing: true,
+        hasTrackingContentBlocked: true,
+        hasMixedActiveContentBlocked: true,
+        hasMixedDisplayContentBlocked: true,
+        btpHasPurgedSite: false,
+        etpCategory: getEtpCategory(),
       },
-      {
-        level: "error",
-        log(actual) {
-          // "Blocked loading mixed active content http://tracking.example.org/browser/browser/base/content/test/protectionsUI/benignPage.html",
-          return (
-            Array.isArray(actual) &&
-            actual.length == 1 &&
-            actual[0].includes("benignPage.html")
-          );
+      frameworks: { fastclick: true, mobify: true, marfeel: true },
+      consoleLog: [
+        {
+          level: "error",
+          log(actual) {
+            // "Blocked loading mixed display content http://example.com/tests/image/test/mochitest/blue.png"
+            return (
+              Array.isArray(actual) &&
+              actual.length == 1 &&
+              actual[0].includes("blue.png")
+            );
+          },
+          pos: "0:1",
+          uri: REPORTABLE_PAGE_URL3,
         },
-        pos: "0:1",
-        uri: REPORTABLE_PAGE_URL3,
-      },
-      {
-        level: "warn",
-        log(actual) {
-          // "The resource at https://trackertest.org/ was blocked because content blocking is enabled.",
-          return (
-            Array.isArray(actual) &&
-            actual.length == 1 &&
-            actual[0].includes("trackertest.org")
-          );
+        {
+          level: "error",
+          log(actual) {
+            // "Blocked loading mixed active content http://tracking.example.org/browser/browser/base/content/test/protectionsUI/benignPage.html",
+            return (
+              Array.isArray(actual) &&
+              actual.length == 1 &&
+              actual[0].includes("benignPage.html")
+            );
+          },
+          pos: "0:1",
+          uri: REPORTABLE_PAGE_URL3,
         },
-        pos: "0:1",
-        uri: REPORTABLE_PAGE_URL3,
-      },
-    ],
+        {
+          level: "warn",
+          log(actual) {
+            // "The resource at https://trackertest.org/ was blocked because content blocking is enabled.",
+            return (
+              Array.isArray(actual) &&
+              actual.length == 1 &&
+              actual[0].includes("trackertest.org")
+            );
+          },
+          pos: "0:1",
+          uri: REPORTABLE_PAGE_URL3,
+        },
+      ],
+    });
   });
-
-  await BrowserTestUtils.closeWindow(win);
 });

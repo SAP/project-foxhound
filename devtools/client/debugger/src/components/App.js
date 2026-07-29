@@ -14,7 +14,7 @@ import { connect } from "devtools/client/shared/vendor/react-redux";
 import { prefs } from "../utils/prefs";
 import { primaryPaneTabs } from "../constants";
 import actions from "../actions/index";
-import DebuggerImage from "./shared/DebuggerImage";
+import DebuggerImage from "devtools/client/shared/components/DebuggerImage";
 
 import {
   getSelectedLocation,

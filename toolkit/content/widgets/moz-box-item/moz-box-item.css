@@ -2,14 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-:host([layout="medium-icon"]) {
-  --box-icon-size: var(--icon-size-large);
-}
-
-:host([layout="large-icon"]) {
-  --box-icon-size: var(--icon-size-xlarge);
-}
-
 :host([layout$="-icon"]) {
   .text-content.has-icon.has-description {
     grid-template-areas:
@@ -23,24 +15,31 @@
   padding-inline-start: calc(var(--button-size-icon) + var(--space-small));
 }
 
-.text-content.has-support-page {
-  display: flex;
+:host(:focus-visible) {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-inset);
+}
 
-  &.has-description {
-    flex-wrap: wrap;
-  }
-
+.text-content {
   .label-wrapper {
-    width: 100%;
-    display: flex;
-    gap: var(--space-small);
-    align-items: center;
-
-    .support-page {
-      margin-inline-start: var(--space-xsmall);
-    }
+    grid-area: label;
   }
 
+  .description-wrapper {
+    grid-area: description;
+  }
+
+  &.has-support-page .label,
+  &.has-support-page .description {
+    margin-inline-end: var(--space-xsmall);
+  }
+
+  &:not(.has-description) .description-wrapper,
+  &:not(.has-support-page) slot[name="support-link"] {
+    display: none;
+  }
+
+  .label,
   .description,
   .support-page {
     display: inline;
@@ -52,7 +51,7 @@
 }
 
 .box-container {
-  padding: var(--box-padding);
+  padding: var(--box-padding, var(--space-large));
   font-size: inherit;
   text-align: start;
 }
@@ -74,14 +73,20 @@ slot[name="actions-start"] {
   height: var(--button-size-icon);
   cursor: grab;
   background-image: url("chrome://global/skin/icons/move-16.svg");
+  background-color: var(--button-background-color-ghost);
   background-position: center;
   background-repeat: no-repeat;
   border-radius: var(--button-border-radius);
   -moz-context-properties: fill;
   /** Override the text color set by description-deemphasized for the handle.
       This cannot be disabled, hence the color should remain the default. */
-  fill: var(--text-color);
+  color: var(--button-text-color-ghost);
+  fill: var(--button-icon-fill);
   flex-shrink: 0;
+}
+
+.actions {
+  word-wrap: normal;
 }
 
 .actions:has(> slot:not(:has-slotted)) {

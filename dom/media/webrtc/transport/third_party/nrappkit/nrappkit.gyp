@@ -30,32 +30,31 @@
 
               # libekr
               './src/util/libekr/assoc.h',
-              './src/util/libekr/r_assoc.c',
+              './src/util/libekr/r_assoc.cpp',
               './src/util/libekr/r_assoc.h',
               './src/util/libekr/r_common.h',
-              './src/util/libekr/r_crc32.c',
+              './src/util/libekr/r_crc32.cpp',
               './src/util/libekr/r_crc32.h',
-              './src/util/libekr/r_data.c',
+              './src/util/libekr/r_data.cpp',
               './src/util/libekr/r_data.h',
               './src/util/libekr/r_defaults.h',
-              './src/util/libekr/r_errors.c',
+              './src/util/libekr/r_errors.cpp',
               './src/util/libekr/r_errors.h',
               './src/util/libekr/r_includes.h',
               './src/util/libekr/r_macros.h',
-              './src/util/libekr/r_memory.c',
               './src/util/libekr/r_memory.h',
-              './src/util/libekr/r_time.c',
+              './src/util/libekr/r_time.cpp',
               './src/util/libekr/r_time.h',
               './src/util/libekr/r_types.h',
 
               # Utilities
-              './src/util/byteorder.c',
+              './src/util/byteorder.cpp',
               './src/util/byteorder.h',
-              './src/util/hex.c',
+              './src/util/hex.cpp',
               './src/util/hex.h',
-              './src/util/p_buf.c',
+              './src/util/p_buf.cpp',
               './src/util/p_buf.h',
-              './src/util/util.c',
+              './src/util/util.cpp',
               './src/util/util.h',
 
               # Events
@@ -63,15 +62,15 @@
               './src/event/async_wait.h',
 
               # Logging
-              './src/log/r_log.c',
+              './src/log/r_log.cpp',
               './src/log/r_log.h',
 
               # Registry
-              './src/registry/registry.c',
+              './src/registry/registry.cpp',
               './src/registry/registry.h',
               './src/registry/registry_int.h',
-              './src/registry/registry_local.c',
-              './src/registry/registrycb.c',
+              './src/registry/registry_local.cpp',
+              './src/registry/registrycb.cpp',
           ],
 
           'defines' : [
@@ -164,8 +163,6 @@
                  'cflags_mozilla': [
                      '-Wall',
                      '-Wno-parentheses',
-                     '-Wno-strict-prototypes',
-                     '-Wmissing-prototypes',
                      '-Wno-format',
                      '-Wno-format-security',
                  ],

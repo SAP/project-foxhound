@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,7 +11,9 @@
 #include "nsQueryObject.h"
 
 mozilla::LazyLogModule gMediaChildLog("MediaChild");
-#define LOG(args) MOZ_LOG(gMediaChildLog, mozilla::LogLevel::Debug, args)
+#define LOG(args)                                       \
+  MOZ_LOG_FMT(gMediaChildLog, mozilla::LogLevel::Debug, \
+              MOZ_LOG_EXPAND_ARGS args)
 
 namespace mozilla::media {
 
@@ -45,7 +45,7 @@ RefPtr<PrincipalKeyPromise> GetPrincipalKey(
 }
 
 void SanitizeOriginKeys(const uint64_t& aSinceWhen, bool aOnlyPrivateBrowsing) {
-  LOG(("SanitizeOriginKeys since %" PRIu64 " %s", aSinceWhen,
+  LOG(("SanitizeOriginKeys since {} {}", aSinceWhen,
        (aOnlyPrivateBrowsing ? "in Private Browsing." : ".")));
 
   if (XRE_GetProcessType() == GeckoProcessType_Default) {
@@ -71,12 +71,12 @@ Child* Child::Get() {
 }
 
 Child::Child() : mActorDestroyed(false) {
-  LOG(("media::Child: %p", this));
+  LOG(("media::Child: {}", fmt::ptr(this)));
   MOZ_COUNT_CTOR(Child);
 }
 
 Child::~Child() {
-  LOG(("~media::Child: %p", this));
+  LOG(("~media::Child: {}", fmt::ptr(this)));
   sChild = nullptr;
   MOZ_COUNT_DTOR(Child);
 }

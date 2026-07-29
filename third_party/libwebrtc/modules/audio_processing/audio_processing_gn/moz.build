@@ -14,6 +14,7 @@ DEFINES["PROTOBUF_ENABLE_DEBUG_LOGGING_MAY_LEAK_PII"] = "0"
 DEFINES["RTC_DAV1D_IN_INTERNAL_DECODER_FACTORY"] = True
 DEFINES["RTC_ENABLE_VP9"] = True
 DEFINES["WEBRTC_APM_DEBUG_DUMP"] = "1"
+DEFINES["WEBRTC_DEPRECATE_PLAN_B"] = True
 DEFINES["WEBRTC_ENABLE_PROTOBUF"] = "0"
 DEFINES["WEBRTC_ENCODER_PSNR_STATS"] = True
 DEFINES["WEBRTC_LIBRARY_IMPL"] = True
@@ -35,7 +36,6 @@ LOCAL_INCLUDES += [
 ]
 
 SOURCES += [
-    "/third_party/libwebrtc/modules/audio_processing/echo_control_mobile_impl.cc",
     "/third_party/libwebrtc/modules/audio_processing/gain_control_impl.cc"
 ]
 

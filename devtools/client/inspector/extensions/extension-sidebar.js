@@ -128,16 +128,21 @@ class ExtensionSidebar extends EventEmitter {
    *
    * This method is called by the inspector when the ExtensionSidebar is being removed
    * (or when the inspector is being destroyed).
+   *
+   * @param {object} options
+   * @param {boolean} options.fromInspectorDestroy
    */
-  destroy() {
+  destroy({ fromInspectorDestroy } = {}) {
     if (this.destroyed) {
       throw new Error(
         `ExtensionSidebar instances cannot be destroyed more than once`
       );
     }
 
-    // Remove the data related to this extension from the inspector store.
-    this.store.dispatch(removeExtensionSidebar(this.id));
+    if (fromInspectorDestroy !== true) {
+      // Remove the data related to this extension from the inspector store
+      this.store.dispatch(removeExtensionSidebar(this.id));
+    }
 
     this.inspector = null;
     this.store = null;

@@ -10,6 +10,24 @@ $schema: moz://mozilla.org/schemas/glean/metrics/2-0-0
 $tags:
   - 'Core :: WebRTC'
 
+rtcpeerconnection:
+  count_rtcp_mux_policy_negotiate:
+    type: counter
+    description: >
+      The number of RTCPeerConnections created with rtcpMuxPolicy set to
+      "negotiate". This value was removed from the spec, and we would like
+      to track usage before removing it.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1339203
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1339203
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - bcampen@mozilla.com
+      - webrtc-telemetry-alerts@mozilla.com
+    expires: never
+
 rtcrtpsender:
   count:
     type: counter
@@ -463,7 +481,7 @@ webrtcdtls:
     notification_emails:
       - webrtc-telemetry-alerts@mozilla.com
       - seceng-telemetry@mozilla.com
-    expires: 152
+    expires: 158
 
   srtp_cipher:
     type: labeled_counter

@@ -1,0 +1,82 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Testing caret visibility of <input> when moving focus in a shadow</title>
+<script>
+"use strict";
+
+const SimpleTest = window.opener.SimpleTest;
+const ok = window.opener.SimpleTest.ok;
+const todo = window.opener.SimpleTest.todo;
+const info = window.opener.SimpleTest.info;
+
+addEventListener("unload", SimpleTest.finish, {once: true});
+
+SimpleTest.waitForFocus(() => {
+  function runTest(aWindow, aDocument, aDesc) {
+    info(`${aDesc}: starts (${aDocument.readyState}, ${aDocument.location.href})`);
+    const firstInput = aDocument.querySelector("div").shadowRoot.querySelector("input");
+    const secondInput = firstInput.nextElementSibling;
+    aWindow.focus();
+    firstInput.focus();
+    ok(
+      SpecialPowers.wrap(firstInput).editor?.selectionController?.caretVisible,
+      `${aDesc}: the first <input>'s caret should be visible at start`
+    );
+    ok(
+      !SpecialPowers.wrap(secondInput).editor?.selectionController?.caretVisible,
+      `${aDesc}: the second <input>'s caret should be hidden at start`
+    );
+    secondInput.focus();
+    ok(
+      !SpecialPowers.wrap(firstInput).editor?.selectionController?.caretVisible,
+      `${aDesc}: the first <input>'s caret should be hidden after moving focus to the second <input>`
+    );
+    ok(
+      SpecialPowers.wrap(secondInput).editor?.selectionController?.caretVisible,
+      `${aDesc}: the second <input>'s caret should be visible after moving focus to the second <input>`
+    );
+    firstInput.focus();
+    ok(
+      SpecialPowers.wrap(firstInput).editor?.selectionController?.caretVisible,
+      `${aDesc}: the first <input>'s caret should be visible after moving focus back to the first <input>`
+    );
+    ok(
+      !SpecialPowers.wrap(secondInput).editor?.selectionController?.caretVisible,
+      `${aDesc}: the second <input>'s caret should be hidden after moving focus back to the first <input>`
+    );
+    firstInput.blur();
+    ok(
+      !SpecialPowers.wrap(firstInput).editor?.selectionController?.caretVisible,
+      `${aDesc}: the first <input>'s caret should be visible when no <input> has focus`
+    );
+    ok(
+      !SpecialPowers.wrap(secondInput).editor?.selectionController?.caretVisible,
+      `${aDesc}: the second <input>'s caret should be visible when no <input> has focus`
+    );
+  }
+  runTest(window, document, "Test in the root document");
+  const iframe = document.querySelector("iframe");
+  runTest(iframe.contentWindow, iframe.contentDocument, "Test in the sub document");
+  window.close();
+}, window);
+</script>
+</head>
+<body>
+  <div>
+    <template shadowrootmode="open">
+      <input value="aaa">
+      <input value="bbb">
+    </template>
+  </div>
+  <iframe srcdoc="
+    <div>
+      <template shadowrootmode='open'>
+        <input value='aaa'>
+        <input value='bbb'>
+      </template>
+    </div>
+  "></iframe>
+</body>
+</html>

@@ -190,7 +190,7 @@ class ListenerHelper {
       return;
     }
 
-    let document = elements[0].ownerGlobal.document;
+    let document = elements[0].ownerDocument;
     let callback = documentToEventCallbackMap.get(document);
     if (!callback) {
       return;
@@ -377,8 +377,8 @@ class SearchAdImpression {
     let componentToVisibilityMap = new Map();
     let hrefToComponentMap = new Map();
 
-    let innerWindowHeight = document.ownerGlobal.innerHeight;
-    let scrollY = document.ownerGlobal.scrollY;
+    let innerWindowHeight = document.documentGlobal.innerHeight;
+    let scrollY = document.documentGlobal.scrollY;
 
     // Iterate over the results:
     // - If it's searchbox add event listeners.
@@ -962,7 +962,7 @@ class SearchAdImpression {
     scrollY
   ) {
     let elementRect =
-      element.ownerGlobal.windowUtils.getBoundsWithoutFlushing(element);
+      element.documentGlobal.windowUtils.getBoundsWithoutFlushing(element);
 
     // If the parent element is not visible, assume all ads within are
     // also not visible.
@@ -1023,7 +1023,7 @@ class SearchAdImpression {
       }
 
       let itemRect =
-        child.ownerGlobal.windowUtils.getBoundsWithoutFlushing(child);
+        child.documentGlobal.windowUtils.getBoundsWithoutFlushing(child);
       // If the child element is to the right of the containing element and
       // can't be viewed, skip it. We do this check because some elements like
       // carousels can hide additional content horizontally. We don't apply the
@@ -1756,6 +1756,11 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
   #urlIsSERP() {
     let provider = this._getProviderInfoForUrl(this.document.documentURI);
     if (provider) {
+      // Providers that use POST-based searches have no query params in the URL.
+      // They set alwaysMatchSERP to indicate the URL match alone is sufficient.
+      if (provider.alwaysMatchSERP?.child) {
+        return true;
+      }
       // Some URLs can match provider info but also be the provider's homepage
       // instead of a SERP.
       // e.g. https://example.com/ vs. https://example.com/?foo=bar

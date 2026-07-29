@@ -7,8 +7,6 @@ add_setup(async function test_setup() {
   mockCA = await mockContentAnalysisService(mockCA);
 });
 
-const PAGE_URL =
-  "https://example.com/browser/toolkit/components/contentanalysis/tests/browser/clipboard_paste_chat_shortcuts.html";
 const CHAT_PROVIDER_URL = "http://localhost:8080/";
 const CLIPBOARD_TEXT_STRING = "Some GenAI shortcut text";
 
@@ -85,56 +83,54 @@ add_task(async function testClipboardPasteIntoChatShortcut() {
 
   setClipboardData(CLIPBOARD_TEXT_STRING);
 
-  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_URL);
-  let browser = tab.linkedBrowser;
-
-  await SimpleTest.promiseFocus(browser);
-  const selectPromise = SpecialPowers.spawn(browser, [], () => {
-    ContentTaskUtils.waitForCondition(() => content.getSelection());
-  });
-  goDoCommand("cmd_selectAll");
-  await selectPromise;
-  BrowserTestUtils.synthesizeMouseAtCenter(
-    browser,
-    { type: "mouseup" },
-    browser
-  );
-
-  await TestUtils.waitForCondition(() => {
-    const panelElement = document.getElementById(
-      "selection-shortcut-action-panel"
+  await BrowserTestUtils.withNewTab("data:text/plain,hi", async browser => {
+    await SimpleTest.promiseFocus(browser);
+    const selectPromise = SpecialPowers.spawn(browser, [], () => {
+      ContentTaskUtils.waitForCondition(() => content.getSelection());
+    });
+    goDoCommand("cmd_selectAll");
+    await selectPromise;
+    BrowserTestUtils.synthesizeMouseAtCenter(
+      browser,
+      { type: "mouseup" },
+      browser
     );
-    return panelElement.getAttribute("panelopen") === "true";
-  }, "Wait for shortcut action panel icon to show");
-  const shortcuts = document.querySelector("#ai-action-button");
-  const popup = document.getElementById("chat-shortcuts-options-panel");
 
-  shortcuts.click();
-  await BrowserTestUtils.waitForEvent(popup, "popupshown");
+    await TestUtils.waitForCondition(() => {
+      const panelElement = document.getElementById(
+        "selection-shortcut-action-panel"
+      );
+      return panelElement.getAttribute("panelopen") === "true";
+    }, "Wait for shortcut action panel icon to show");
+    const shortcuts = document.querySelector("#ai-action-button");
+    const popup = document.getElementById("chat-shortcuts-options-panel");
 
-  const shortcutTextArea = document.querySelector(
-    ".ask-chat-shortcuts-custom-prompt"
-  );
-  shortcutTextArea.value = "";
-  shortcutTextArea.focus();
-  // Note that we use the EventUtils version here because we're sending this to the
-  // parent process, since the GenAI overlay isn't part of the page's content.
-  EventUtils.synthesizeKey("v", { accelKey: true });
+    shortcuts.click();
+    await BrowserTestUtils.waitForEvent(popup, "popupshown");
 
-  await TestUtils.waitForCondition(() => {
-    return shortcutTextArea.value === CLIPBOARD_TEXT_STRING;
-  }, "Wait for chat shortcuts textarea to get pasted text");
+    const shortcutTextArea = document.querySelector(
+      ".ask-chat-shortcuts-custom-prompt"
+    );
+    shortcutTextArea.value = "";
+    shortcutTextArea.focus();
+    // Note that we use the EventUtils version here because we're sending this to the
+    // parent process, since the GenAI overlay isn't part of the page's content.
+    EventUtils.synthesizeKey("v", { accelKey: true });
 
-  is(mockCA.calls.length, 1, "Correct number of calls to Content Analysis");
-  assertContentAnalysisRequest(
-    mockCA.calls[0],
-    CLIPBOARD_TEXT_STRING,
-    mockCA.calls[0].userActionId,
-    1
-  );
-  mockCA.clearCalls();
+    await TestUtils.waitForCondition(() => {
+      return shortcutTextArea.value === CLIPBOARD_TEXT_STRING;
+    }, "Wait for chat shortcuts textarea to get pasted text");
 
-  BrowserTestUtils.removeTab(tab);
-  SidebarController.hide();
-  await SpecialPowers.popPrefEnv();
+    is(mockCA.calls.length, 1, "Correct number of calls to Content Analysis");
+    assertContentAnalysisRequest(
+      mockCA.calls[0],
+      CLIPBOARD_TEXT_STRING,
+      mockCA.calls[0].userActionId,
+      1
+    );
+    mockCA.clearCalls();
+
+    SidebarController.hide();
+    await SpecialPowers.popPrefEnv();
+  });
 });

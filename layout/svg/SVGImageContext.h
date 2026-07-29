@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -85,6 +83,14 @@ class SVGImageContext {
     mPreserveAspectRatio = aPAR;
   }
 
+  const StyleLinkParameters& GetLinkParameters() const {
+    return mLinkParameters;
+  }
+
+  void SetLinkParameters(const StyleLinkParameters& aLinkParameters) {
+    mLinkParameters = aLinkParameters;
+  }
+
   const SVGEmbeddingContextPaint* GetContextPaint() const {
     return mContextPaint.get();
   }
@@ -109,7 +115,8 @@ class SVGImageContext {
 
     return contextPaintIsEqual && mViewportSize == aOther.mViewportSize &&
            mPreserveAspectRatio == aOther.mPreserveAspectRatio &&
-           mColorScheme == aOther.mColorScheme;
+           mColorScheme == aOther.mColorScheme &&
+           mLinkParameters == aOther.mLinkParameters;
   }
 
   bool operator!=(const SVGImageContext&) const = default;
@@ -121,7 +128,8 @@ class SVGImageContext {
     }
     return HashGeneric(hash, mViewportSize.map(HashSize).valueOr(0),
                        mPreserveAspectRatio.map(HashPAR).valueOr(0),
-                       mColorScheme.map(HashColorScheme).valueOr(0));
+                       mColorScheme.map(HashColorScheme).valueOr(0),
+                       HashLinkParameters(mLinkParameters));
   }
 
  private:
@@ -134,12 +142,31 @@ class SVGImageContext {
   static PLDHashNumber HashColorScheme(ColorScheme aScheme) {
     return HashGeneric(uint8_t(aScheme));
   }
+  static PLDHashNumber HashLinkParam(const StyleLinkParam& aLinkParam) {
+    PLDHashNumber valueHash = 0;
+    if (aLinkParam.value.IsSpecified()) {
+      const auto& value = aLinkParam.value.AsSpecified().AsString();
+      valueHash = HashBytes(value.BeginReading(), value.Length());
+    }
+
+    return HashGeneric(aLinkParam.name.AsAtom()->hash(), valueHash);
+  }
+
+  static PLDHashNumber HashLinkParameters(
+      const StyleLinkParameters& aLinkParameters) {
+    PLDHashNumber hash = 0;
+    for (const auto& p : aLinkParameters._0.AsSpan()) {
+      hash = HashGeneric(hash, HashLinkParam(p));
+    }
+    return hash;
+  }
 
   // NOTE: When adding new member-vars, remember to update Hash() & operator==.
   RefPtr<SVGEmbeddingContextPaint> mContextPaint;
   Maybe<CSSIntSize> mViewportSize;
   Maybe<SVGPreserveAspectRatio> mPreserveAspectRatio;
   Maybe<ColorScheme> mColorScheme;
+  StyleLinkParameters mLinkParameters;
 };
 
 }  // namespace mozilla

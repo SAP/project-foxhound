@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,8 +20,7 @@ namespace dom {
 
 class HTMLAreaElement final : public nsGenericHTMLElement, public Link {
  public:
-  explicit HTMLAreaElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+  explicit HTMLAreaElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
@@ -84,6 +81,19 @@ class HTMLAreaElement final : public nsGenericHTMLElement, public Link {
   }
   void SetDownload(const nsAString& aDownload, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::download, aDownload, aError);
+  }
+
+  void GetHreflang(DOMString& aValue) const {
+    GetHTMLAttr(nsGkAtoms::hreflang, aValue);
+  }
+  void SetHreflang(const nsAString& aValue, mozilla::ErrorResult& rv) {
+    SetHTMLAttr(nsGkAtoms::hreflang, aValue, rv);
+  }
+  void GetType(DOMString& aValue) const {
+    GetHTMLAttr(nsGkAtoms::type, aValue);
+  }
+  void SetType(const nsAString& aValue, mozilla::ErrorResult& rv) {
+    SetHTMLAttr(nsGkAtoms::type, aValue, rv);
   }
 
   void GetPing(DOMString& aValue) { GetHTMLAttr(nsGkAtoms::ping, aValue); }

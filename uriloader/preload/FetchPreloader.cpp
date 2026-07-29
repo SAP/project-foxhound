@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  *
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -207,18 +206,21 @@ NS_IMETHODIMP FetchPreloader::OnStartRequest(nsIRequest* request) {
     mConsumeListener = new Cache();
   }
 
-  return mConsumeListener->OnStartRequest(request);
+  nsCOMPtr<nsIStreamListener> consumeListener = mConsumeListener;
+  return consumeListener->OnStartRequest(request);
 }
 
 NS_IMETHODIMP FetchPreloader::OnDataAvailable(nsIRequest* request,
                                               nsIInputStream* input,
                                               uint64_t offset, uint32_t count) {
-  return mConsumeListener->OnDataAvailable(request, input, offset, count);
+  nsCOMPtr<nsIStreamListener> consumeListener = mConsumeListener;
+  return consumeListener->OnDataAvailable(request, input, offset, count);
 }
 
 NS_IMETHODIMP FetchPreloader::OnStopRequest(nsIRequest* request,
                                             nsresult status) {
-  mConsumeListener->OnStopRequest(request, status);
+  nsCOMPtr<nsIStreamListener> consumeListener = mConsumeListener;
+  consumeListener->OnStopRequest(request, status);
 
   // We want 404 or other types of server responses to be treated as 'error'.
   if (nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(request)) {
@@ -244,8 +246,8 @@ NS_IMPL_ISUPPORTS(FetchPreloader::Cache, nsIStreamListener, nsIRequestObserver)
 NS_IMETHODIMP FetchPreloader::Cache::OnStartRequest(nsIRequest* request) {
   mRequest = request;
 
-  if (mFinalListener) {
-    return mFinalListener->OnStartRequest(mRequest);
+  if (nsCOMPtr<nsIStreamListener> finalListener = mFinalListener) {
+    return finalListener->OnStartRequest(mRequest);
   }
 
   mCalls.AppendElement(Call{VariantIndex<0>{}, StartRequest{}});
@@ -256,8 +258,8 @@ NS_IMETHODIMP FetchPreloader::Cache::OnDataAvailable(nsIRequest* request,
                                                      nsIInputStream* input,
                                                      uint64_t offset,
                                                      uint32_t count) {
-  if (mFinalListener) {
-    return mFinalListener->OnDataAvailable(mRequest, input, offset, count);
+  if (nsCOMPtr<nsIStreamListener> finalListener = mFinalListener) {
+    return finalListener->OnDataAvailable(mRequest, input, offset, count);
   }
 
   DataAvailable data;
@@ -277,8 +279,8 @@ NS_IMETHODIMP FetchPreloader::Cache::OnDataAvailable(nsIRequest* request,
 
 NS_IMETHODIMP FetchPreloader::Cache::OnStopRequest(nsIRequest* request,
                                                    nsresult status) {
-  if (mFinalListener) {
-    return mFinalListener->OnStopRequest(mRequest, status);
+  if (nsCOMPtr<nsIStreamListener> finalListener = mFinalListener) {
+    return finalListener->OnStopRequest(mRequest, status);
   }
 
   mCalls.AppendElement(Call{VariantIndex<2>{}, StopRequest{status}});
@@ -314,7 +316,8 @@ void FetchPreloader::Cache::Consume(nsCOMPtr<nsIStreamListener> aListener) {
   for (auto& call : mCalls) {
     nsresult rv = call.match(
         [&](const StartRequest& startRequest) mutable {
-          return self->mFinalListener->OnStartRequest(self->mRequest);
+          nsCOMPtr<nsIStreamListener> finalListener = self->mFinalListener;
+          return finalListener->OnStartRequest(self->mRequest);
         },
         [&](const DataAvailable& dataAvailable) mutable {
           if (NS_FAILED(status)) {
@@ -329,14 +332,16 @@ void FetchPreloader::Cache::Consume(nsCOMPtr<nsIStreamListener> aListener) {
             return rv;
           }
 
-          return self->mFinalListener->OnDataAvailable(
-              self->mRequest, input, 0, dataAvailable.mData.Length());
+          nsCOMPtr<nsIStreamListener> finalListener = self->mFinalListener;
+          return finalListener->OnDataAvailable(self->mRequest, input, 0,
+                                                dataAvailable.mData.Length());
         },
         [&](const StopRequest& stopRequest) {
           // First cancellation overrides mStatus in nsHttpChannel.
           nsresult stopStatus =
               NS_FAILED(status) ? status : stopRequest.mStatus;
-          self->mFinalListener->OnStopRequest(self->mRequest, stopStatus);
+          nsCOMPtr<nsIStreamListener> finalListener = self->mFinalListener;
+          finalListener->OnStopRequest(self->mRequest, stopStatus);
           self->mFinalListener = nullptr;
           self->mRequest = nullptr;
           return NS_OK;

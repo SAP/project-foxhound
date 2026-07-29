@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -90,33 +88,19 @@ ServiceWorkerInterceptController::ShouldPrepareForIntercept(
       registration->MaybeScheduleTimeCheckAndUpdate();
     }
 
-    RefPtr<net::HttpBaseChannel> httpChannel = do_QueryObject(aChannel);
-
     RequestMode requestMode =
         InternalRequest::MapChannelToRequestMode(aChannel);
 
-    if (httpChannel &&
+    // Block ServiceWorker interception for ranged request from media, see bug
+    // 1762078. Other request with Range header would be intercepted, ex.
+    // Author-issued fetch() range request.
+    RefPtr<net::HttpBaseChannel> httpChannel = do_QueryObject(aChannel);
+    if (requestMode == RequestMode::No_cors && loadInfo->GetIsMediaRequest() &&
+        httpChannel &&
         httpChannel->GetRequestHead()->HasHeader(net::nsHttp::Range)) {
       bool mayLoad = nsContentUtils::CheckMayLoad(
           loadInfo->GetLoadingPrincipal(), aChannel,
           /*allowIfInheritsPrincipal*/ false);
-      if (requestMode == RequestMode::No_cors && !mayLoad) {
-        *aShouldIntercept = false;
-      }
-    }
-
-    RequestDestination requestDest =
-        InternalRequest::MapContentPolicyTypeToRequestDestination(
-            loadInfo->GetExternalContentPolicyType());
-    // Skip no_cors Cross-Origin sub-resource request from CSS.
-    if (requestMode == RequestMode::No_cors &&
-        requestDest == RequestDestination::Style) {
-      nsCOMPtr<nsIPrincipal> triggeringPrincipal;
-      (void)loadInfo->GetTriggeringPrincipal(
-          getter_AddRefs(triggeringPrincipal));
-      MOZ_ASSERT(triggeringPrincipal);
-      bool mayLoad = nsContentUtils::CheckMayLoad(
-          triggeringPrincipal, aChannel, /*allowIfInheritsPrincipal*/ false);
       if (!mayLoad) {
         *aShouldIntercept = false;
       }

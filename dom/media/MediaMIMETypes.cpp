@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,7 +11,10 @@
 namespace mozilla {
 
 template <int N>
-static bool StartsWith(const nsACString& string, const char (&prefix)[N]) {
+static bool HasMajorMIMEType(const nsACString& string,
+                             const char (&prefix)[N]) {
+  static_assert(N > 1, "empty MIME type");
+  MOZ_ASSERT(prefix[N - 2] == '/');
   if (N - 1 > string.Length()) {
     return false;
   }
@@ -21,15 +22,15 @@ static bool StartsWith(const nsACString& string, const char (&prefix)[N]) {
 }
 
 bool MediaMIMEType::HasApplicationMajorType() const {
-  return StartsWith(mMIMEType, "application/");
+  return HasMajorMIMEType(mMIMEType, "application/");
 }
 
 bool MediaMIMEType::HasAudioMajorType() const {
-  return StartsWith(mMIMEType, "audio/");
+  return HasMajorMIMEType(mMIMEType, "audio/");
 }
 
 bool MediaMIMEType::HasVideoMajorType() const {
-  return StartsWith(mMIMEType, "video/");
+  return HasMajorMIMEType(mMIMEType, "video/");
 }
 
 size_t MediaMIMEType::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const {
@@ -254,6 +255,15 @@ size_t MediaExtendedMIMEType::GetParameterCount() const {
   RefPtr<CMimeType> parsed = CMimeType::Parse(mOriginalString);
   mNumParams = parsed ? parsed->GetParameterCount() : 0;
   return mNumParams;
+}
+
+nsDependentCSubstring MediaExtendedMIMEType::Subtype() const {
+  const nsCString& mimeStr = mMIMEType.AsString();
+  const int32_t slash = mimeStr.FindChar('/');
+  if (slash < 0) {
+    return {};
+  }
+  return Substring(mimeStr, slash + 1);
 }
 
 size_t MediaExtendedMIMEType::SizeOfExcludingThis(

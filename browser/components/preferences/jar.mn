@@ -12,15 +12,12 @@ browser.jar:
    content/browser/preferences/home.js
    content/browser/preferences/search.js
    content/browser/preferences/privacy.js
-   content/browser/preferences/containers.js
    content/browser/preferences/sync.js
-   content/browser/preferences/experimental.js
    content/browser/preferences/moreFromMozilla.js
    content/browser/preferences/fxaPairDevice.xhtml
    content/browser/preferences/fxaPairDevice.js
    content/browser/preferences/findInPage.js
    content/browser/preferences/more-from-mozilla-qr-code-simple.svg
-   content/browser/preferences/more-from-mozilla-qr-code-simple-cn.svg
    content/browser/preferences/browser-layout-horizontal.svg
    content/browser/preferences/browser-layout-vertical.svg
    content/browser/preferences/web-appearance-dark.svg
@@ -29,9 +26,29 @@ browser.jar:
    content/browser/preferences/etp-advanced-banner.svg
    content/browser/preferences/spell-check-promo.svg
    content/browser/preferences/OnDeviceModelManager.mjs
+   content/browser/preferences/config/about-firefox.mjs                 (config/about-firefox.mjs)
+   content/browser/preferences/config/containers.mjs                    (config/containers.mjs)
+   content/browser/preferences/config/account-sync.mjs                  (config/account-sync.mjs)
+   content/browser/preferences/config/accessibility.mjs                 (config/accessibility.mjs)
+   content/browser/preferences/config/appearance.mjs                    (config/appearance.mjs)
    content/browser/preferences/config/aiFeatures.mjs                    (config/aiFeatures.mjs)
+   content/browser/preferences/config/firefoxLabs.mjs                   (config/firefoxLabs.mjs)
+   content/browser/preferences/config/moreFromMozilla.mjs               (config/moreFromMozilla.mjs)
+   content/browser/preferences/config/downloads.mjs                     (config/downloads.mjs)
+   content/browser/preferences/config/passwords-autofill.mjs            (config/passwords-autofill.mjs)
    content/browser/preferences/config/block-ai-confirmation-dialog.css  (config/block-ai-confirmation-dialog.css)
+   content/browser/preferences/config/home-startup.mjs                  (config/home-startup.mjs)
+   content/browser/preferences/config/languages.mjs                     (config/languages.mjs)
+   content/browser/preferences/config/permissions-data.mjs              (config/permissions-data.mjs)
+   content/browser/preferences/config/tabs-browsing.mjs                 (config/tabs-browsing.mjs)
+   content/browser/preferences/config/privacy.mjs                       (config/privacy.mjs)
+   content/browser/preferences/config/LegacyPaneMappings.mjs            (config/LegacyPaneMappings.mjs)
+   content/browser/preferences/config/search.mjs                        (config/search.mjs)
+   content/browser/preferences/config/translations.mjs                  (config/translations.mjs)
    content/browser/preferences/config/SettingGroupManager.mjs           (config/SettingGroupManager.mjs)
+   content/browser/preferences/config/SettingPaneManager.mjs            (config/SettingPaneManager.mjs)
+   content/browser/preferences/widgets/browser-language-restart-message.mjs          (widgets/browser-language-restart-message/browser-language-restart-message.mjs)
+   content/browser/preferences/widgets/browser-language-restart-message.css          (widgets/browser-language-restart-message/browser-language-restart-message.css)
    content/browser/preferences/widgets/dialog-button.mjs                (widgets/dialog-button/dialog-button.mjs)
    content/browser/preferences/widgets/placeholder-message.mjs          (widgets/placeholder-message/placeholder-message.mjs)
    content/browser/preferences/widgets/placeholder-message.css          (widgets/placeholder-message/placeholder-message.css)
@@ -49,3 +66,7 @@ browser.jar:
    content/browser/preferences/widgets/sync-device-name.mjs          (widgets/sync-device-name/sync-device-name.mjs)
    content/browser/preferences/widgets/sync-engines-list.mjs          (widgets/sync-engine-list/sync-engines-list.mjs)
    content/browser/preferences/widgets/sync-engines-list.css          (widgets/sync-engine-list/sync-engines-list.css)
+   content/browser/preferences/widgets/update-information.mjs          (widgets/update-information/update-information.mjs)
+   content/browser/preferences/widgets/update-information.css          (widgets/update-information/update-information.css)
+   content/browser/preferences/widgets/update-state.mjs          (widgets/update-state/update-state.mjs)
+   content/browser/preferences/widgets/update-state.css          (widgets/update-state/update-state.css)

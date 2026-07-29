@@ -6,7 +6,7 @@
   file, You can obtain one at http://mozilla.org/MPL/2.0/.
 -->
 
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!-- Name of the "notification channel" used for displaying download notification. See https://developer.android.com/training/notify-user/channels -->
   <string name="mozac_feature_downloads_notification_channel">Descargas</string>
   <!--
@@ -34,12 +34,28 @@
   <string name="mozac_feature_downloads_dialog_title_3">¿Descargar archivo? (%1$s)</string>
   <!-- This string is used as the title for the download confirmation dialog when the size of the file is not known. -->
   <string name="mozac_feature_downloads_dialog_title_with_unknown_size">¿Descargar archivo?</string>
+  <!-- Alert dialog confirmation before downloading a previously downloaded file, this is the title when the size of the file is not known. -->
+  <string name="mozac_feature_downloads_again_dialog_title_with_unknown_size">¿Descargar archivo de nuevo?</string>
   <!-- Alert dialog confirmation before download a file, this is the positive action. -->
   <string name="mozac_feature_downloads_dialog_download">Descargar</string>
   <!-- Alert dialog confirmation before downloading a file again, this is the positive action. -->
   <string name="mozac_feature_downloads_dialog_download_again">Descargar de nuevo</string>
   <!-- Alert dialog confirmation before download a file, this is the negative action. -->
   <string name="mozac_feature_downloads_dialog_cancel">Cancelar</string>
+  <!--
+    Alert dialog confirmation before downloading a previously downloaded file, this is the description.
+    %1$s will be replaced with the name of the file.
+  -->
+  <string name="mozac_feature_downloads_already_exists_dialog_title">%1$s ya existe.</string>
+  <!-- Alert dialog confirmation before downloading a previously downloaded file, this is the neutral action that proposes to open the file instead. -->
+  <string name="mozac_feature_downloads_open_existing_file">Abrir archivo existente</string>
+  <!--
+    Alert dialog confirmation before downloading a file without network connection, this is the description.
+    %1$s will be replaced with the name of the file.
+  -->
+  <string name="mozac_feature_downloads_file_failure_no_connection" tools:ignore="UnusedResources">No se descargó %1$s.</string>
+  <!-- Alert dialog confirmation before downloading a file without network connection, this is the description. -->
+  <string name="mozac_feature_downloads_file_check_connection" tools:ignore="UnusedResources">Comprueba la conexión e inténtalo de nuevo.</string>
   <!-- Error shown when the user is trying to download a invalid file. %1$s will be replaced with the name of the app. -->
   <string name="mozac_feature_downloads_file_not_supported2">%1$s no puede descargar este tipo de archivo</string>
   <!-- Message that appears when the downloaded file could not be opened. -->

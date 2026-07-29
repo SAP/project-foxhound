@@ -113,7 +113,7 @@ class nsPrefetchNode final : public nsIStreamListener,
   bool mPreload;
 
  private:
-  ~nsPrefetchNode() {}
+  ~nsPrefetchNode() = default;
 
   RefPtr<nsPrefetchService> mService;
   nsCOMPtr<nsIChannel> mChannel;

@@ -342,7 +342,7 @@ addAccessibleTask(
       waitForStateChange(docAcc, STATE_READONLY, true, false),
     ]);
     await invokeContentTask(browser, [], () => {
-      content.document.body.contentEditable = false;
+      content.document.body.contentEditable = "inherit";
     });
     await stateChanged;
     testStates(docAcc, STATE_READONLY, 0, 0, EXT_STATE_EDITABLE);
@@ -414,10 +414,13 @@ addAccessibleTask(
     // This iframe won't finish loading. Thus, it will get the stale state and
     // won't fire a document load complete event. We use the reorder event on
     // the iframe to know when the document has been created.
-    let reordered = waitForEvent(EVENT_REORDER, iframe);
+    let reordered = waitForEvent(
+      EVENT_REORDER,
+      event => event.accessible === iframe && event.accessible.firstChild
+    );
     await invokeContentTask(browser, [], () => {
       content.document.getElementById("iframe").src =
-        'data:text/html,<img src="http://example.com/a11y/accessible/tests/mochitest/events/slow_image.sjs">';
+        "https://example.com/browser/accessible/tests/browser/events/slow_doc.sjs?second";
     });
     const iframeDoc = (await reordered).accessible.firstChild;
     testStates(iframeDoc, STATE_BUSY, EXT_STATE_STALE, 0, 0);
@@ -425,7 +428,7 @@ addAccessibleTask(
     info("Finishing load of iframe doc");
     let loadCompleted = waitForEvent(EVENT_DOCUMENT_LOAD_COMPLETE, iframeDoc);
     await fetch(
-      "https://example.com/a11y/accessible/tests/mochitest/events/slow_image.sjs?complete"
+      "https://example.com/browser/accessible/tests/browser/events/slow_doc.sjs?scriptFinish"
     );
     await loadCompleted;
     testStates(iframeDoc, 0, 0, STATE_BUSY, EXT_STATE_STALE);
@@ -870,6 +873,43 @@ body {
     testStates(docAcc, 0, 0, 0, EXT_STATE_SELECTABLE_TEXT);
     const p = findAccessibleChildByID(docAcc, "p");
     testStates(p, 0, 0, 0, EXT_STATE_SELECTABLE_TEXT);
+  },
+  {
+    chrome: true,
+    topLevel: true,
+  }
+);
+
+/**
+ * Test the expanded and expandable states using aria-expanded
+ */
+addAccessibleTask(
+  `
+<div id="menuitem-true" role="menuitem" aria-expanded="true"></div>
+<div id="listbox-true" role="listbox" aria-expanded="true"></div>
+<div id="menuitem-false" role="menuitem" aria-expanded="false"></div>
+<div id="listbox-false" role="listbox" aria-expanded="false"></div>
+<button id="button-true" aria-expanded="true"></button>
+<button id="button-false" aria-expanded="false"></button>
+  `,
+  async function testExpanded(browser, docAcc) {
+    const menuitemTrue = findAccessibleChildByID(docAcc, "menuitem-true");
+    testStates(menuitemTrue, STATE_EXPANDED, EXT_STATE_EXPANDABLE);
+
+    const listboxTrue = findAccessibleChildByID(docAcc, "listbox-true");
+    testStates(listboxTrue, 0, 0, STATE_EXPANDED, EXT_STATE_EXPANDABLE);
+
+    const menuitemFalse = findAccessibleChildByID(docAcc, "menuitem-false");
+    testStates(menuitemFalse, STATE_COLLAPSED, EXT_STATE_EXPANDABLE);
+
+    const listboxFalse = findAccessibleChildByID(docAcc, "listbox-false");
+    testStates(listboxFalse, 0, 0, STATE_COLLAPSED, EXT_STATE_EXPANDABLE);
+
+    const buttonTrue = findAccessibleChildByID(docAcc, "button-true");
+    testStates(buttonTrue, STATE_EXPANDED, EXT_STATE_EXPANDABLE);
+
+    const buttonFalse = findAccessibleChildByID(docAcc, "button-false");
+    testStates(buttonFalse, STATE_COLLAPSED, EXT_STATE_EXPANDABLE);
   },
   {
     chrome: true,

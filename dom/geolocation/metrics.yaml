@@ -92,6 +92,23 @@ geolocation:
     notification_emails:
       - daparks@mozilla.com
     expires: never
+  network_failures:
+    type: labeled_counter
+    description: >
+      How many network geolocation requests received an error response.  The
+      number of successful network geolocation requests should resemble the
+      the values for these labels in the geolocation_service probe, minus
+      these failure counts.  Not all failures can be known.
+    labels:
+      - network_wifi_and_ip
+      - network_ip
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2046658
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2046658
+    notification_emails:
+      - daparks@mozilla.com
+    expires: never
   geolocation_cache_hit:
     type: labeled_counter
     description: >

@@ -196,6 +196,21 @@ anotherunknown {
     content: "unmatched pseudo";
 }
 
+/* stylelint-disable-next-line selector-pseudo-element-no-unknown */
+#customizable-select::picker-icon {
+    color: purple;
+}
+
+/* stylelint-disable-next-line selector-pseudo-element-no-unknown */
+#customizable-select::picker(select) {
+    border: 1px solid purple;
+}
+
+/* stylelint-disable-next-line selector-pseudo-element-no-unknown */
+#customizable-select option::checkmark {
+    color: tomato;
+}
+
     </style>
   </head>
   <body>
@@ -245,6 +260,10 @@ anotherunknown {
         <h2>::details-content</h2>
         <p>In details</p>
     </details>
+
+    <select id="customizable-select">
+        <option id="customizable-select-option">Option</option>
+    </select>
 
     <aside class="transition">Transition</section>
 

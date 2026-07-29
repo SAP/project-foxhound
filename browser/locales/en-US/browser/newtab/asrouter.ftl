@@ -271,6 +271,20 @@ launch-on-login-infobar-final-message = <strong>Open { -brand-short-name } every
 launch-on-login-infobar-final-reject-button = No thanks
   .accesskey = N
 
+## Launch on login spotlight
+##
+## Shown as a spotlight message when the user closes the browser, offering to set
+## { -brand-short-name } to launch when the computer starts up.
+
+launch-on-login-spotlight-title = Open { -brand-short-name } next time your computer starts up?
+launch-on-login-spotlight-startup-checkbox = Launch { -brand-short-name } at startup
+launch-on-login-spotlight-pin-taskbar-checkbox = Pin to taskbar
+# This checkbox label intentionally matches “startup-restore-windows-and-tabs”
+# in the Settings (preferences.ftl). Localizers can reuse the existing
+# translation suggested by translation memory.
+launch-on-login-spotlight-restore-checkbox = Open previous windows and tabs
+launch-on-login-spotlight-primary-button = Save and close { -brand-short-name }
+
 ## Tail Fox Set Default Spotlight
 
 # This title is displayed together with the picture of a running fox with a long tail.
@@ -281,6 +295,12 @@ tail-fox-spotlight-title = Keep pesky trackers off your tail
 tail-fox-spotlight-subtitle = Say goodbye to annoying ad trackers and settle into a safer, speedy internet experience.
 tail-fox-spotlight-primary-button = Open my links with { -brand-short-name }
 tail-fox-spotlight-secondary-button = Not now
+
+## Welcome Back Spotlight and Import
+
+welcome-back-spotlight-title = Leap back into built-in privacy
+welcome-back-spotlight-subtitle = Welcome back to the only major browser backed by a non-profit. We take extra steps to protect your data wherever you roam.
+welcome-back-embedded-import-title = Import your data and make { -brand-short-name } feel like home
 
 ## Root Certificate Succession Infobar
 
@@ -394,6 +414,14 @@ windows-10-eos-feature-toast-subtitle = By popular request, { -brand-product-nam
 windows-10-eos-feature-toast-whats-new-button = See what’s new
 windows-10-eos-feature-toast-dismiss-button = Dismiss
 
+## Windows 10 EoS Global Infobar
+
+windows-10-eos-global-infobar-title = <strong>Microsoft is no longer supporting Windows 10.</strong> Back up your info to get { -brand-product-name } ready for Windows 11.
+windows-10-eos-global-infobar-primary-button = Turn on backup
+  .accesskey = T
+windows-10-eos-global-infobar-learn-more-link = Learn more
+  .accessKey = L
+
 ## ETP (Enhanced Tracking Protection) Strict exceptions infobar
 ##
 ## These strings are displayed in an infobar notification that appears when
@@ -424,3 +452,23 @@ set-default-menu-message-row-layout-subtitle-variant = { PLATFORM() ->
 
 set-default-menu-message-primary-button = Set as default
 set-default-menu-message-primary-button-variant = Set as primary browser
+
+## Firefox Relay 50 Masks Announcement
+
+# "on us" in this context means "for free" or "at no cost"
+relay-50-masks-announcement-title = 50 email masks, on us
+relay-50-masks-announcement-subtitle = Now you get 50 free masks (up from 5). Use one for every account to keep your real email private.
+relay-50-masks-announcement-primary-button = Go to { -relay-brand-name }
+  .accesskey = G
+relay-50-masks-announcement-secondary-button = Dismiss
+  .accesskey = D
+
+## Nova Early Access Infobar
+
+nova-early-access-infobar-title = <strong>{ -brand-product-name } is getting a new look.</strong> You’re previewing an early, unpolished version before the launch later this year.
+
+nova-early-access-share-feedback-link = Share feedback
+  .accesskey = S
+
+nova-early-access-infobar-primary-button = Got it
+  .accesskey = G

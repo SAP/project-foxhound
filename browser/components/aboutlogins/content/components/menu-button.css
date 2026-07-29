@@ -25,7 +25,7 @@
   background-color: var(--background-color-box);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-small);
-  box-shadow: var(--box-shadow-popup);
+  box-shadow: var(--popup-box-shadow);
   min-width: max-content;
   list-style-type: none;
   display: flex;

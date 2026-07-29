@@ -45,6 +45,7 @@ loader.lazyRequireGetter(
 
 const PREF_SIDEBAR_ENABLED = "devtools.webconsole.sidebarToggle";
 const PREF_BROWSERTOOLBOX_SCOPE = "devtools.browsertoolbox.scope";
+const PREF_CMNEXT_ENABLED = "devtools.webconsole.codemirrorNext";
 
 /**
  * A WebConsoleUI instance is an interactive console initialized *per target*
@@ -529,6 +530,11 @@ class WebConsoleUI extends EventEmitter {
       }
 
       if (resource.resourceType === TYPES.NETWORK_EVENT) {
+        // We still don't show any request done by DevTools,
+        // but bug 2038986 intent to revise that.
+        if (resource.cause.type == "devtools") {
+          return;
+        }
         this.networkDataProvider?.onNetworkResourceAvailable(resource);
       }
       messages.push(resource);
@@ -619,16 +625,27 @@ class WebConsoleUI extends EventEmitter {
 
   _initOutputSyntaxHighlighting() {
     // Given a DOM node, we syntax highlight identically to how the input field
-    // looks. See https://codemirror.net/demo/runmode.html;
-    const syntaxHighlightNode = node => {
+    // looks.
+    const syntaxHighlightNode = (doc, node, text) => {
       const editor = this.jsterm && this.jsterm.editor;
       if (node && editor) {
-        node.classList.add("cm-s-mozilla");
-        editor.CodeMirror.runMode(
-          node.textContent,
-          "application/javascript",
-          node
-        );
+        if (Services.prefs.getBoolPref(PREF_CMNEXT_ENABLED)) {
+          node.classList.add("cm-highlighted");
+          const htmlString = editor.highlightText(doc, text);
+          const sanitizer = new win.Sanitizer({
+            elements: ["span"],
+            attributes: ["class"],
+          });
+          node.setHTML(htmlString, { sanitizer });
+        } else {
+          // For CM5 See https://codemirror.net/demo/runmode.html
+          node.classList.add("cm-s-mozilla");
+          editor.CodeMirror.runMode(
+            node.textContent,
+            "application/javascript",
+            node
+          );
+        }
       }
     };
 
@@ -641,14 +658,14 @@ class WebConsoleUI extends EventEmitter {
         connectedCallback() {
           if (!this.connected) {
             this.connected = true;
-            syntaxHighlightNode(this);
+            syntaxHighlightNode(win.document, this, this.textContent);
 
             // Highlight Again when the innerText changes
             // We remove the listener before running codemirror mode and add
             // it again to capture text changes
             this.observer = new win.MutationObserver((mutations, observer) => {
               observer.disconnect();
-              syntaxHighlightNode(this);
+              syntaxHighlightNode(win.document, this, this.textContent);
               observer.observe(this, { childList: true });
             });
 
@@ -762,7 +779,11 @@ class WebConsoleUI extends EventEmitter {
   }
 
   getJsTermTooltipAnchor() {
-    return this.outputNode.querySelector(".CodeMirror-cursor");
+    return this.outputNode.querySelector(
+      Services.prefs.getBoolPref(PREF_CMNEXT_ENABLED)
+        ? ".cm-cursor"
+        : ".CodeMirror-cursor"
+    );
   }
 
   attachRef(id, node) {

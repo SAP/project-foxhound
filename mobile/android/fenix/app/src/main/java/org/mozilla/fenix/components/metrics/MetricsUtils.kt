@@ -45,7 +45,7 @@ object MetricsUtils {
      * Possible sources for a performed search.
      */
     enum class Source {
-        ACTION, SHORTCUT, SUGGESTION, TOPSITE, WIDGET, NONE
+        ACTION, SHORTCUT, SUGGESTION, TOPSITE, WIDGET, DIGITAL_ASSISTANT, NONE
     }
 
     /**

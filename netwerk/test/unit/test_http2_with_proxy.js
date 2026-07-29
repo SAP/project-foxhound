@@ -41,7 +41,6 @@ add_setup(async function setup() {
 
   Services.prefs.setBoolPref("network.http.http2.enabled", true);
   Services.prefs.setBoolPref("network.http.altsvc.enabled", true);
-  Services.prefs.setBoolPref("network.http.altsvc.oe", true);
   Services.prefs.setCharPref(
     "network.dns.localDomains",
     "foo.example.com, bar.example.com"
@@ -68,7 +67,6 @@ registerCleanupFunction(async () => {
   Services.prefs.clearUserPref("network.http.speculative-parallel-limit");
   Services.prefs.clearUserPref("network.http.http2.enabled");
   Services.prefs.clearUserPref("network.http.altsvc.enabled");
-  Services.prefs.clearUserPref("network.http.altsvc.oe");
   Services.prefs.clearUserPref("network.dns.localDomains");
   Services.prefs.clearUserPref(
     "network.cookieJarSettings.unblocked_for_testing"

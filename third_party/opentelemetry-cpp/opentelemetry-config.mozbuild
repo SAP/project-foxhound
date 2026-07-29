@@ -5,6 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 LOCAL_INCLUDES += [
+    "/third_party/abseil-cpp",
     "/third_party/opentelemetry-cpp/api/include",
     "/third_party/opentelemetry-cpp/exporters/otlp/include",
     "/third_party/opentelemetry-cpp/sdk/include",

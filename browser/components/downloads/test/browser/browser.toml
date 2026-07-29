@@ -3,6 +3,8 @@ support-files = ["head.js"]
 
 ["browser_about_downloads.js"]
 
+["browser_blocked_and_deleted_status.js"]
+
 ["browser_basic_functionality.js"]
 
 ["browser_confirm_unblock_download.js"]
@@ -25,6 +27,7 @@ support-files = [
 ["browser_download_spam_protection.js"]
 skip-if = [
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && asan", # Bug 1775779
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && asan", # Bug 1775779
 ]
 support-files = ["test_spammy_page.html"]
 
@@ -70,6 +73,9 @@ support-files = [
 ["browser_downloads_panel_height.js"]
 
 ["browser_downloads_panel_opens.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
 support-files = [
   "foo.txt",
   "foo.txt^headers^",

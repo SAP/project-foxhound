@@ -5,6 +5,24 @@
 const DOH_DOORHANGER_DECISION_PREF = "doh-rollout.doorhanger-decision";
 const NETWORK_TRR_MODE_PREF = "network.trr.mode";
 
+// Allowlist of about page IDs that OPEN_ABOUT_PAGE is permitted to open.
+// Sourced from pages listened in AboutRedirector.
+const ALLOWED_ABOUT_PAGES = new Set([
+  "addons",
+  "profiles",
+  "translations",
+  "keyboard",
+  "logins",
+  "preferences",
+  "privatebrowsing",
+  "protections",
+  "settings",
+  "welcome",
+  "newtab",
+  "home",
+  "robots",
+]);
+
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -18,6 +36,9 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
   GenAI: "resource:///modules/GenAI.sys.mjs",
+  IPProtection:
+    // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
+    "moz-src:///browser/components/ipprotection/IPProtection.sys.mjs",
   MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
   ON_SERVICE_ENABLED_NOTIFICATION:
     "resource://gre/modules/FxAccountsCommon.sys.mjs",
@@ -25,9 +46,11 @@ ChromeUtils.defineESModuleGetters(lazy, {
   // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
   PlacesUIUtils: "moz-src:///browser/components/places/PlacesUIUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
   SelectableProfileService:
     "resource:///modules/profiles/SelectableProfileService.sys.mjs",
+  SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
   // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
   Spotlight: "resource:///modules/asrouter/Spotlight.sys.mjs",
   // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
@@ -115,6 +138,58 @@ export const SpecialMessageActions = {
   },
 
   /**
+   * Pin a web app (Taskbar Tab) to the taskbar by manifest data, without
+   * requiring the site to be open or previously visited.
+   *
+   * Returns true if the tab was newly created and pinned, null if a Taskbar
+   * Tab for this URL already existed, or false if an error occurred.
+   *
+   * NOTE: findOrCreateTaskbarTab resolves once the taskbar tab is registered,
+   * not once it has actually been pinned. The internal pin step (and the
+   * Windows 11 OS pin dialog) runs after the promise settles, so we return
+   * before the user has accepted or rejected the OS prompt.
+   *
+   * @param {object} data
+   * @param {string} data.url - The URL of the web app (HTTP/HTTPS only).
+   * @param {string} data.name - Display name for the web app.
+   * @param {string} data.iconUrl - URL of the icon (256x256 PNG recommended).
+   * @returns {Promise<boolean|null>}
+   */
+  async pinTaskbarTab({ url, name, iconUrl }) {
+    let uri;
+    try {
+      uri = Services.io.newURI(url);
+    } catch (e) {
+      return false;
+    }
+    if (uri.scheme !== "https" && uri.scheme !== "http") {
+      return false;
+    }
+
+    const manifest = {
+      name,
+      start_url: url,
+      scope: uri.prePath + "/",
+      // NOTE: Manifest icon support (bug 1979462) is not yet implemented.
+      // Until that lands, the icon may fall back to the favicon service.
+      icons: [{ src: iconUrl, sizes: "256x256", type: "image/png" }],
+    };
+
+    try {
+      const result = await lazy.TaskbarTabs.findOrCreateTaskbarTab(uri, 0, {
+        manifest,
+      });
+      if (result.created) {
+        return true;
+      }
+      return null;
+    } catch (e) {
+      console.error("Failed to pin Taskbar Tab:", e);
+      return false;
+    }
+  },
+
+  /**
    *  Set browser as the operating system default browser.
    *
    *  @param {Window} window Reference to a window object
@@ -128,8 +203,14 @@ export const SpecialMessageActions = {
    *
    * @param {Window} window Reference to a window object
    */
-  setDefaultPDFHandler(window, onlyIfKnownBrowser = false) {
-    window.getShellService().setAsDefaultPDFHandler(onlyIfKnownBrowser);
+  async setDefaultPDFHandler(
+    window,
+    onlyIfKnownBrowser = false,
+    openInFirefox = false
+  ) {
+    await window
+      .getShellService()
+      .setAsDefaultPDFHandler(onlyIfKnownBrowser, openInFirefox);
   },
 
   /**
@@ -256,8 +337,14 @@ export const SpecialMessageActions = {
       "browser.smartwindow.enabled",
       "browser.smartwindow.firstrun.hasCompleted",
       "browser.smartwindow.firstrun.modelChoice",
+      "browser.smartwindow.isDefaultWindow",
+      "browser.smartwindow.sidebar.openByDefault",
+      "browser.smartwindow.memories.generateFromConversation",
+      "browser.smartwindow.memories.generateFromHistory",
       "browser.crashReports.unsubmittedCheck.autoSubmit2",
       "browser.dataFeatureRecommendations.enabled",
+      "browser.ipProtection.bandwidth.enabled",
+      "browser.ipProtection.blockIPProtectionCallouts",
       "browser.ipProtection.enabled",
       "browser.ipProtection.optedOut",
       "browser.migrate.content-modal.about-welcome-behavior",
@@ -364,7 +451,7 @@ export const SpecialMessageActions = {
       data?.extraParams || {}
     );
 
-    let window = browser.ownerGlobal;
+    let window = browser.documentGlobal;
 
     let fxaBrowser = await new Promise(resolve => {
       window.openLinkIn(url, data?.where || "tab", {
@@ -447,8 +534,7 @@ export const SpecialMessageActions = {
         { once: true, signal }
       );
 
-      let window = fxaTab.ownerGlobal;
-      window.addEventListener("unload", () => {
+      fxaTab.documentGlobal.addEventListener("unload", () => {
         // If the hosting window unload event was fired before the event handler
         // was removed, this means that the window was closed and sign-in was
         // not completed, which means we should resolve didSignIn to false.
@@ -581,7 +667,11 @@ export const SpecialMessageActions = {
   },
 
   async createAndOpenProfile() {
-    await lazy.SelectableProfileService.createNewProfile();
+    await lazy.SelectableProfileService.createNewProfile(
+      true,
+      null,
+      "asrouter"
+    );
   },
 
   async submitOnboardingOptOutPing() {
@@ -651,7 +741,7 @@ export const SpecialMessageActions = {
    */
   /* eslint-disable-next-line complexity */
   async handleAction(action, browser) {
-    const window = browser.ownerGlobal;
+    const window = browser.documentGlobal;
     switch (action.type) {
       case "SHOW_MIGRATION_WIZARD":
         lazy.MigrationUtils.showMigrationWizard(window, {
@@ -674,11 +764,18 @@ export const SpecialMessageActions = {
             private: false,
             triggeringPrincipal:
               Services.scriptSecurityManager.createNullPrincipal({}),
+            width: action.data.width,
+            height: action.data.height,
           }
         );
         break;
       case "OPEN_ABOUT_PAGE": {
         let aboutPageURL = new URL(`about:${action.data.args}`);
+        if (!ALLOWED_ABOUT_PAGES.has(aboutPageURL.pathname)) {
+          throw new Error(
+            `SpecialMessageActions: OPEN_ABOUT_PAGE disallows about:${action.data.args}`
+          );
+        }
         if (action.data.entrypoint) {
           aboutPageURL.search = action.data.entrypoint;
         }
@@ -727,6 +824,8 @@ export const SpecialMessageActions = {
       case "PIN_FIREFOX_TO_TASKBAR":
         await this.pinFirefoxToTaskbar(window, action.data?.privatePin);
         break;
+      case "PIN_TASKBAR_TAB":
+        return this.pinTaskbarTab(action.data);
       case "PIN_FIREFOX_TO_START_MENU":
         await this.pinToStartMenu(window);
         break;
@@ -743,9 +842,10 @@ export const SpecialMessageActions = {
         await this.setDefaultBrowser(window);
         break;
       case "SET_DEFAULT_PDF_HANDLER":
-        this.setDefaultPDFHandler(
+        await this.setDefaultPDFHandler(
           window,
-          action.data?.onlyIfKnownBrowser ?? false
+          action.data?.onlyIfKnownBrowser ?? false,
+          action.data?.openInFirefox ?? false
         );
         break;
       case "DECLINE_DEFAULT_PDF_HANDLER":
@@ -759,6 +859,44 @@ export const SpecialMessageActions = {
           "resource://gre/modules/WindowsLaunchOnLogin.sys.mjs"
         );
         await WindowsLaunchOnLogin.createLaunchOnLogin();
+        break;
+      }
+      case "REMOVE_LAUNCH_ON_LOGIN": {
+        const { WindowsLaunchOnLogin } = ChromeUtils.importESModule(
+          "resource://gre/modules/WindowsLaunchOnLogin.sys.mjs"
+        );
+        await WindowsLaunchOnLogin.removeLaunchOnLogin();
+        break;
+      }
+      case "CREATE_GROUP_FROM_CURRENT_TAB": {
+        let tab =
+          window.gBrowser.getTabForBrowser(browser) ??
+          window.gBrowser.selectedTab;
+        if (tab.group) {
+          // Create a new tab after the current tab's group, add the new tab to
+          // a new tab group.
+          /** @type {Extract<nsIObserver, Function>} */
+          async function observer(aSubject) {
+            Services.obs.removeObserver(observer, "browser-open-newtab-start");
+            /** @type {nsIBrowser} */
+            let newBrowser = await aSubject.wrappedJSObject;
+            let newTab = window.gBrowser.getTabForBrowser(newBrowser);
+            window.gBrowser.addTabGroup([newTab], {
+              insertBefore: tab.group.nextElementSibling,
+              isUserTriggered: true,
+              telemetryUserCreateSource: "messaging",
+            });
+          }
+          Services.obs.addObserver(observer, "browser-open-newtab-start");
+          window.gBrowser.addAdjacentNewTab(tab);
+        } else {
+          // Add the current tab to a new tab group in place.
+          window.gBrowser.addTabGroup([tab], {
+            insertBefore: tab,
+            isUserTriggered: true,
+            telemetryUserCreateSource: "messaging",
+          });
+        }
         break;
       }
       case "PIN_CURRENT_TAB": {
@@ -843,17 +981,6 @@ export const SpecialMessageActions = {
           action.data.orderedExecution
         );
         break;
-      default:
-        throw new Error(
-          `Special message action with type ${action.type} is unsupported.`
-        );
-      case "CLICK_ELEMENT": {
-        const clickElement = window.document.querySelector(
-          action.data.selector
-        );
-        clickElement?.click();
-        break;
-      }
       case "RELOAD_BROWSER":
         browser.reload();
         break;
@@ -910,6 +1037,22 @@ export const SpecialMessageActions = {
         await lazy.TaskbarTabs.moveTabIntoTaskbarTab(currentTab);
         break;
       }
+      case "RESTORE_SESSION": {
+        if (
+          lazy.SessionStore.canRestoreLastSession &&
+          !lazy.PrivateBrowsingUtils.isWindowPrivate(window)
+        ) {
+          await lazy.SessionStore.restoreLastSession();
+        }
+        break;
+      }
+      case "IPPROTECTION_ENROLL":
+        await lazy.IPProtection.getPanel(window)?.enroll();
+        break;
+      default:
+        throw new Error(
+          `Special message action with type ${action.type} is unsupported.`
+        );
     }
     return undefined;
   },

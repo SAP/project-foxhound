@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -58,30 +55,30 @@ MARKUPMAP(mmultiscripts, New_HyperText, roles::MATHML_MULTISCRIPTS)
 
 MARKUPMAP(
     mtable,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLTableAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLTableAccessible>(aElement, aContext->Document());
     },
     roles::MATHML_TABLE, AttrFromDOM(align, align),
     AttrFromDOM(columnlines, columnlines), AttrFromDOM(rowlines, rowlines))
 
 MARKUPMAP(
     mlabeledtr,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLTableRowAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLTableRowAccessible>(aElement, aContext->Document());
     },
     roles::MATHML_LABELED_ROW)
 
 MARKUPMAP(
     mtr,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLTableRowAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLTableRowAccessible>(aElement, aContext->Document());
     },
     roles::MATHML_TABLE_ROW)
 
 MARKUPMAP(
     mtd,
-    [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      return new HTMLTableCellAccessible(aElement, aContext->Document());
+    [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+      return MakeAndAddRef<HTMLTableCellAccessible>(aElement, aContext->Document());
     },
     0)
 

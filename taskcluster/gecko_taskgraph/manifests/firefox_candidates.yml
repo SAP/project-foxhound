@@ -58,6 +58,8 @@ tasktype_map:
     repackage-signing: repackage
     repackage-signing-msi: repackage
     repackage-signing-shippable-l10n-msix: signing
+    repackage-pkg-notarization: signing
+    repackage-l10n-pkg-notarization: signing
     langpack-copy: scriptworker
     attribution: build
     attribution-l10n: build
@@ -66,7 +68,6 @@ platform_names:
         by-platform:
             linux64-shippable: 'linux-x86_64'
             linux64-devedition: 'linux-x86_64'
-            linux64-asan-reporter-shippable: 'linux-x86_64-asan-reporter'
             linux64-aarch64-shippable: 'linux-aarch64'
             linux64-aarch64-devedition: 'linux-aarch64'
             macosx64-shippable: 'mac'
@@ -77,12 +78,10 @@ platform_names:
             win64-devedition: 'win64'
             win64-aarch64-shippable: 'win64-aarch64'
             win64-aarch64-devedition: 'win64-aarch64'
-            win64-asan-reporter-shippable: 'win64-asan-reporter'
     tools_platform:
         by-platform:
             linux64-shippable: 'linux64'
             linux64-devedition: 'linux64-devedition'
-            linux64-asan-reporter-shippable: 'linux-x86_64-asan-reporter'
             linux64-aarch64-shippable: 'linux64-aarch64'
             linux64-aarch64-devedition: 'linux64-aarch64-devedition'
             macosx64-shippable: 'macosx64'
@@ -93,12 +92,10 @@ platform_names:
             win64-devedition: 'win64-devedition'
             win64-aarch64-shippable: 'win64-aarch64'
             win64-aarch64-devedition: 'win64-aarch64-devedition'
-            win64-asan-reporter-shippable: 'win64-asan-reporter'
     filename_platform:
         by-platform:
             linux64-shippable: 'linux64'
             linux64-devedition: 'linux64'
-            linux64-asan-reporter-shippable: 'linux-x86_64-asan-reporter'
             linux64-aarch64-shippable: 'linux64-aarch64'
             linux64-aarch64-devedition: 'linux64-aarch64'
             macosx64-shippable: 'macosx64'
@@ -109,7 +106,6 @@ platform_names:
             win64-devedition: 'win64'
             win64-aarch64-shippable: 'win64_aarch64'
             win64-aarch64-devedition: 'win64_aarch64'
-            win64-asan-reporter-shippable: 'win64-asan-reporter'
 
 default: &default
     from:
@@ -278,7 +274,13 @@ mapping:
         description: "Main package installer for Mac OS X platforms"
         all_locales: true
         from:
-            - signing
+            by-level:
+                "3":
+                    - repackage-pkg-notarization
+                    - repackage-l10n-pkg-notarization
+                default:
+                    - repackage
+                    - repackage-l10n
         only_for_platforms:
             - macosx64-shippable
         pretty_name: Firefox ${version}.pkg

@@ -9,6 +9,19 @@ newtab-page-title = Cluaisín Nua
 newtab-settings-button =
     .title = Saincheap an Leathanach do Chluaisín Nua
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Cluaisíní nua
+
+## Firefox Home content
+
+home-mode-choice-blank-srd =
+    .label = Leathanach Bán
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Leabharmharcanna
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -34,7 +47,7 @@ newtab-search-box-input =
     .placeholder = Cuardaigh an Gréasán
     .aria-label = Cuardaigh an Gréasán
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Cuir Inneall Cuardaigh Leis
 newtab-topsites-edit-topsites-header = Cuir an Barrshuíomh in Eagar

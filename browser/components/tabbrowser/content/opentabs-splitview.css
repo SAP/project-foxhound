@@ -8,4 +8,32 @@ moz-card {
   --card-padding: var(--space-medium);
   --card-border-radius: var(--border-radius-large);
   margin-block-end: var(--space-xxlarge);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  width: var(--splitview-opentabs-card-width);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  max-width: var(--splitview-opentabs-card-width);
+}
+
+.sticky-header {
+  background: linear-gradient(to bottom, light-dark(#f0ebfd, #332a50) 0%, light-dark(#f1ebf8, #342a47) 95%, transparent 100%);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  align-items: center;
+}
+
+h3 {
+  color: var(--text-color);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  margin-block: calc(var(--size-item-large) * 3.375) var(--space-xxlarge);
+  height: min-content;
+}
+
+moz-input-search {
+  margin-block-end: var(--space-large);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  width: var(--splitview-opentabs-card-width);
 }

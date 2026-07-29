@@ -1,5 +1,3 @@
-/* -*- Mode: javascript; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4
- * -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -376,10 +374,13 @@ bool ModuleTypeToString(JSContext* cx, JS::Handle<JSObject*> owner,
       to.setString(cx->names().json);
       break;
     case JS::ModuleType::CSS:
-      MOZ_ASSERT_UNREACHABLE("CSS modules are not supported in the shell");
+      to.setString(cx->names().css);
       break;
     case JS::ModuleType::Bytes:
       to.setString(cx->names().bytes);
+      break;
+    case JS::ModuleType::Text:
+      to.setString(cx->names().text);
       break;
   }
 

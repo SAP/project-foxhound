@@ -75,6 +75,72 @@
   }
 }
 
+// Bug 2020945 - CSS custom properties cannot be used in container queries, so these values
+// are stored as SCSS variables to be interpolated into calc() expressions.
+$col-width-px: 75px;
+$col-gap-px: 0.75rem;
+$side-col-width-px: $col-width-px * 2;
+
+// Returns the width of $n grid columns including the (n-1) gaps between them.
+// stylelint-disable-next-line scss/at-function-pattern
+@function --col-span($n) {
+  @return calc(#{$n} * var(--col-width) + #{$n - 1} * var(--space-medium));
+}
+
+// Use this mixin instead of static media query breakpoints. It applies styles
+// when the content grid has room for at least $cols columns, making layouts
+// adapt to the available column count rather than fixed viewport widths.
+// Usage: @include at-content-cols(6) { grid-column: span 6; }
+@mixin at-content-cols($cols) {
+  $min-width: calc(#{$cols} * #{$col-width-px} + #{$cols - 1} * #{$col-gap-px});
+
+  @container content-grid (inline-size >= #{$min-width}) {
+    @content;
+  }
+}
+
+// Like at-content-cols but applies only within an exclusive column-count range.
+// $min-cols: lower bound (inclusive); use 0 to match from the smallest size.
+// $max-cols: upper bound (exclusive).
+// Usage: @include at-content-cols-range(8, 12) { … }
+@mixin at-content-cols-range($min-cols, $max-cols) {
+  $max-width: calc(#{$max-cols} * #{$col-width-px} + #{$max-cols - 1} * #{$col-gap-px});
+
+  @if $min-cols == 0 {
+    @container content-grid (inline-size < #{$max-width}) {
+      @content;
+    }
+  } @else {
+    $min-width: calc(#{$min-cols} * #{$col-width-px} + #{$min-cols - 1} * #{$col-gap-px});
+
+    @container content-grid ((inline-size >= #{$min-width}) and (inline-size < #{$max-width})) {
+      @content;
+    }
+  }
+}
+
+// Use for elements outside .content (e.g. in .sidebar-inline-start).
+// Queries the outer .container when it is wide enough to give the content
+// area room for at least $cols columns.
+// Usage: @include at-outer-grid-cols(6) { display: inline-block; }
+@mixin at-outer-grid-cols($cols) {
+  $min-width: calc(2 * #{$side-col-width-px} + #{$cols + 1} * #{$col-gap-px} + #{$cols} * #{$col-width-px});
+
+  @container outer-grid (inline-size >= #{$min-width}) {
+    @content;
+  }
+}
+
+// Auto-fill centering grid with column tracks sized to $cols-per-track Nova columns.
+// Used for section wrappers and card grids that should center within the content area.
+@mixin nova-centering-grid($cols-per-track: 4) {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, --col-span($cols-per-track));
+  gap: var(--space-medium);
+  justify-content: center;
+  grid-column: 1 / -1;
+}
+
 // Adds transparency and a hover effect to card background.
 @mixin newtab-card-style {
   background: var(--newtab-background-card);
@@ -82,5 +148,71 @@
 
   &:hover {
     background: var(--newtab-background-color-secondary);
+  }
+}
+
+// Nova feature highlight gradient border, shared across highlight components.
+@mixin nova-feature-highlight-border {
+  --nova-highlight-border-gradient-start: light-dark(#B58CFF, #A67CE5);
+  --nova-highlight-border-gradient-end: light-dark(#FF8A5B, #764EDD);
+  --nova-highlight-shadow:
+    -10px -10px 28px rgba(231, 217, 255, 70%),
+    8px 8px 28px rgba(255, 211, 183, 70%),
+    0 3px 12px rgba(0, 0, 0, 4%),
+    0 0.375px 1px rgba(0, 0, 0, 1.5%);
+
+  border: var(--border-width) solid var(--border-color-transparent);
+  border-radius: var(--border-radius-large);
+  background:
+    linear-gradient(var(--background-color-box), var(--background-color-box)) padding-box,
+    linear-gradient(135deg, var(--nova-highlight-border-gradient-start), var(--nova-highlight-border-gradient-end)) border-box;
+  box-shadow: var(--nova-highlight-shadow);
+
+  @media (prefers-color-scheme: dark) {
+    --nova-highlight-shadow:
+      -10px -10px 28px rgba(99, 47, 200, 28%),
+      8px 8px 28px rgba(255, 138, 87, 24%),
+      0 3px 12px rgba(0, 0, 0, 32%),
+      0 0.375px 1.5px rgba(0, 0, 0, 16%);
+  }
+
+  @media (forced-colors: active) {
+    background: Canvas;
+  }
+}
+
+// Baseline styles for all widgets
+@mixin widget-base-style {
+  --widget-size-transition-duration: 180ms;
+  --widget-size-transition-easing: ease;
+
+  @include newtab-card-style;
+
+  padding: var(--space-medium);
+  border-radius: var(--border-radius-large);
+  box-shadow: var(--box-shadow-level-2);
+  color: var(--text-color);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  transition: height var(--widget-size-transition-duration) var(--widget-size-transition-easing);
+
+  &.small-widget,
+  &.medium-widget {
+    height: var(--newtab-card-height-small);
+  }
+
+  &.large-widget {
+    height: var(--newtab-card-height);
+  }
+
+  &:hover,
+  &:focus-within {
+    outline: 1px solid var(--border-color-deemphasized);
+    box-shadow: var(--card-box-shadow-hover);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
   }
 }

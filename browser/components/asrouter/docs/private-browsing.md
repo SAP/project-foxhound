@@ -13,7 +13,7 @@ Messages shown inside `about:privatebrowsing` (incognito) content page. This mes
 2. Open a new tab, in the search tab go to `about:asrouter`
 3. On the left navigation, click on `Private Browsing`
 4. This shows all example messages developed for `about:privatebrowsing` messaging surface
-5. You can directly modify the message in the text area with your changes or by pasting your custom message JSON. Ensure that all required properties are covered according to the [Private Browsing Schema](https://searchfox.org/mozilla-central/source/browser/components/asrouter/content-src/templates/PBNewtab/NewtabPromoMessage.schema.json)
+5. You can directly modify the message in the text area with your changes or by pasting your custom message JSON. Ensure that all required properties are covered according to the [Private Browsing Schema](https://searchfox.org/firefox-main/source/browser/components/asrouter/content-src/templates/PBNewtab/NewtabPromoMessage.schema.json)
 6. To view message in private browsing window, click the circle to select respective message. Then hit the blue `Open a Private Browsing Window` at the top of the screen. This opens new private window with promotion and info section updated with custom message.
 
 ![Circle](./selected-PB.png)
@@ -31,10 +31,6 @@ You can test any `privatebrowsing` custom message UI by creating an experiment. 
   "content": {
     "promoEnabled": true,
     "promoType": "VPN",
-    "infoEnabled": true,
-    "infoBody": "Nightly clears your search and browsing history",
-    "infoLinkText": "Click Here to Learn More",
-    "infoTitleEnabled": false,
     "promoLinkType": "button",
     "promoLinkText": "fluent:about-private-browsing-prominent-cta",
     "promoSectionStyle": "below-search",

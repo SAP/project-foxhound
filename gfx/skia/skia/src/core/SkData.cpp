@@ -11,7 +11,6 @@
 #include "include/core/SkStream.h"
 #include "include/private/base/SkAssert.h"
 #include "include/private/base/SkMalloc.h"
-#include "include/private/base/SkOnce.h"
 #include "src/core/SkOSFile.h"
 #include "src/core/SkStreamPriv.h"
 
@@ -125,10 +124,7 @@ void SkData::NoopReleaseProc(const void*, void*) {}
 ///////////////////////////////////////////////////////////////////////////////
 
 sk_sp<SkData> SkData::MakeEmpty() {
-    static SkOnce once;
-    static SkData* empty;
-
-    once([]{ empty = new SkData({}, nullptr, nullptr); });
+    static SkData* empty = new SkData({}, nullptr, nullptr);
     return sk_ref_sp(empty);
 }
 
@@ -215,7 +211,7 @@ sk_sp<SkData> SkData::MakeWithCString(const char cstr[]) {
 sk_sp<SkData> SkData::MakeFromStream(SkStream* stream, size_t size) {
     // reduce the chance of OOM by checking that the stream has enough bytes to read from before
     // allocating that potentially large buffer.
-    if (StreamRemainingLengthIsBelow(stream, size)) {
+    if (SkStreamPriv::RemainingLengthIsBelow(stream, size)) {
         return nullptr;
     }
     sk_sp<SkData> data(SkData::MakeUninitialized(size));

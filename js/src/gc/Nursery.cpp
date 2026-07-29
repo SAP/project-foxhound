@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sw=2 et tw=80:
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -821,37 +819,31 @@ void* js::Nursery::allocNurseryOrMallocBuffer(Zone* zone, Cell* owner,
   return buffer;
 }
 
-std::tuple<void*, bool> js::Nursery::allocateZeroedBuffer(Zone* zone,
-                                                          size_t nbytes,
-                                                          arena_id_t arena) {
-  MOZ_ASSERT(nbytes > 0);
-
-  if (nbytes <= MaxNurseryBufferSize) {
-    void* buffer = allocate(nbytes);
-    if (buffer) {
-      memset(buffer, 0, nbytes);
-      return {buffer, false};
-    }
-  }
-
-  void* buffer = zone->pod_arena_calloc<uint8_t>(arena, nbytes);
-  return {buffer, bool(buffer)};
-}
-
 void* js::Nursery::allocateZeroedBuffer(Cell* owner, size_t nbytes,
                                         arena_id_t arena) {
   MOZ_ASSERT(owner);
   MOZ_ASSERT(nbytes > 0);
+  MOZ_ASSERT(nbytes <= SIZE_MAX - gc::CellAlignBytes);
+  nbytes = RoundUp(nbytes, gc::CellAlignBytes);
 
-  if (!IsInsideNursery(owner)) {
-    return owner->asTenured().zone()->pod_arena_calloc<uint8_t>(arena, nbytes);
+  if (IsInsideNursery(owner) && nbytes <= MaxNurseryBufferSize) {
+    void* buffer = allocate(nbytes);
+    if (buffer) {
+      memset(buffer, 0, nbytes);
+      return buffer;
+    }
   }
-  auto [buffer, isMalloced] =
-      allocateZeroedBuffer(owner->nurseryZone(), nbytes, arena);
-  if (isMalloced && !registerMallocedBuffer(buffer, nbytes)) {
+
+  void* buffer = owner->zone()->pod_arena_calloc<uint8_t>(arena, nbytes);
+  if (!buffer) {
+    return nullptr;
+  }
+
+  if (IsInsideNursery(owner) && !registerMallocedBuffer(buffer, nbytes)) {
     js_free(buffer);
     return nullptr;
   }
+
   return buffer;
 }
 
@@ -1663,7 +1655,7 @@ void js::Nursery::traceRoots(AutoGCSession& session, TenuringTracer& mover) {
 
     // Create an empty store buffer on the stack and swap it with the main store
     // buffer, clearing it.
-    StoreBuffer sb(runtime());
+    StoreBuffer sb(gc);
     {
       AutoEnterOOMUnsafeRegion oomUnsafe;
       if (!sb.enable()) {
@@ -1755,7 +1747,7 @@ size_t js::Nursery::doPretenuring(JSRuntime* rt, JS::GCReason reason,
       }
       if (disableNurseryBigInts) {
         zone->nurseryBigIntsDisabled = true;
-        zonesWhereStringsDisabled++;
+        zonesWhereBigIntsDisabled++;
       }
       updateAllocFlagsForZone(zone);
     }
@@ -1951,9 +1943,8 @@ size_t Nursery::sizeOfMallocedBuffers(
   MOZ_ASSERT(fromSpace.mallocedBuffers.empty());
 
   size_t total = 0;
-  for (BufferSet::Range r = toSpace.mallocedBuffers.all(); !r.empty();
-       r.popFront()) {
-    total += mallocSizeOf(r.front());
+  for (auto iter = toSpace.mallocedBuffers.iter(); !iter.done(); iter.next()) {
+    total += mallocSizeOf(iter.get());
   }
   total += toSpace.mallocedBuffers.shallowSizeOfExcludingThis(mallocSizeOf);
 
@@ -2015,14 +2006,14 @@ void js::Nursery::sweepStringsWithBuffer() {
   ExtensibleStringBuffers buffers(std::move(extensibleStringBuffers_));
   MOZ_ASSERT(extensibleStringBuffers_.empty());
 
-  for (ExtensibleStringBuffers::Enum e(buffers); !e.empty(); e.popFront()) {
-    if (JSLinearString* dst = sweep(e.front().key(), e.front().value())) {
-      if (!extensibleStringBuffers_.putNew(dst, e.front().value())) {
+  for (auto iter = buffers.modIter(); !iter.done(); iter.next()) {
+    if (JSLinearString* dst = sweep(iter.get().key(), iter.get().value())) {
+      if (!extensibleStringBuffers_.putNew(dst, iter.get().value())) {
         oomUnsafe.crash("sweepStringsWithBuffer");
       }
       // Ensure mallocedBufferBytes includes the buffer size for
       // removeExtensibleStringBuffer.
-      addMallocedBufferBytes(e.front().value()->AllocationSize());
+      addMallocedBufferBytes(iter.get().value()->AllocationSize());
     }
   }
 }
@@ -2144,8 +2135,14 @@ void js::Nursery::poisonAndInitCurrentChunk() {
 void js::Nursery::setCurrentEnd() { toSpace.setCurrentEnd(this); }
 
 void js::Nursery::Space::setCurrentEnd(Nursery* nursery) {
+  size_t chunkBytesToUse = ChunkSize;
+
+  // To avoid problems with inline object elements abutting the end of a chunk,
+  // reduce the size used slightly. This wastes 8 bytes per chunk.
+  chunkBytesToUse -= gc::CellAlignBytes;
+
   currentEnd_ = uintptr_t(chunks_[currentChunk_]) +
-                std::min(nursery->capacity(), ChunkSize);
+                std::min(nursery->capacity(), chunkBytesToUse);
 }
 
 bool js::Nursery::allocateNextChunk(AutoLockGCBgAlloc& lock) {

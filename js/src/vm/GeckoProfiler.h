@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -116,19 +114,12 @@ class BaseScript;
 class GeckoProfilerThread;
 class ScriptSource;
 
-// The `ProfileStringMap` weakly holds its `BaseScript*` keys and owns its
-// string values. Entries are removed when the `BaseScript` is finalized; see
-// `GeckoProfiler::onScriptFinalized`.
-using ProfileStringMap = HashMap<BaseScript*, JS::UniqueChars,
-                                 DefaultHasher<BaseScript*>, SystemAllocPolicy>;
-
 using ProfilerScriptSourceSet =
     HashSet<RefPtr<ScriptSource>, PointerHasher<ScriptSource*>,
             SystemAllocPolicy>;
 
 class GeckoProfilerRuntime {
   JSRuntime* rt;
-  MainThreadData<ProfileStringMap> strings_;
   RWExclusiveData<ProfilerScriptSourceSet> scriptSources_;
   bool slowAssertions;
   uint32_t enabled_;
@@ -160,8 +151,6 @@ class GeckoProfilerRuntime {
   static JS::UniqueChars allocProfileString(JSContext* cx, BaseScript* script);
   const char* profileString(JSContext* cx, BaseScript* script);
 
-  void onScriptFinalized(BaseScript* script);
-
   void markEvent(
       const char* event, const char* details,
       JS::ProfilingCategoryPair jsPair = JS::ProfilingCategoryPair::JS);
@@ -181,9 +170,7 @@ class GeckoProfilerRuntime {
       const char* markerName, uint64_t flowId,
       JS::ProfilingCategoryPair jsPair = JS::ProfilingCategoryPair::JS);
 
-  ProfileStringMap& strings() { return strings_.ref(); }
-
-  /* meant to be used for testing, not recommended to call in normal code */
+  // Test interface. Don't call these in normal code.
   size_t stringsCount();
   void stringsReset();
 
@@ -197,21 +184,12 @@ class GeckoProfilerRuntime {
     return guard->put(scriptSource);
   }
 
-  js::ProfilerJSSources getProfilerScriptSources();
+  js::ProfilerJSSources getProfilerScriptSources(bool gatherSourceText);
 
   size_t scriptSourcesCount() { return scriptSources_.readLock()->count(); }
 
   const uint32_t* addressOfEnabled() const { return &enabled_; }
-
-  void fixupStringsMapAfterMovingGC();
-#ifdef JSGC_HASH_TABLE_CHECKS
-  void checkStringsMapAfterMovingGC();
-#endif
 };
-
-inline size_t GeckoProfilerRuntime::stringsCount() { return strings().count(); }
-
-inline void GeckoProfilerRuntime::stringsReset() { strings().clear(); }
 
 /*
  * This class is used in RunScript() to push the marker onto the sampling stack
@@ -300,7 +278,7 @@ class MOZ_RAII GeckoProfilerBaselineOSRMarker {
 
  private:
   GeckoProfilerThread* profiler;
-  mozilla::DebugOnly<uint32_t> spBefore_;
+  mozilla::DebugOnly<uint32_t> spBefore_ = 0;
 };
 
 } /* namespace js */

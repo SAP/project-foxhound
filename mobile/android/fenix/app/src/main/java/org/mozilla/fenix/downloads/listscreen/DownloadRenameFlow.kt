@@ -126,6 +126,8 @@ fun DownloadRenameDialog(
         fileNameState.text.contains("/") -> RenameFileError.InvalidFileName
         error is RenameFileError.NameAlreadyExists &&
                 error.proposedFileName == fileNameState.text -> error
+        error is RenameFileError.CaseOnlyNameChange &&
+            error.proposedFileName == fileNameState.text -> error
         else -> null
     }
 
@@ -167,8 +169,18 @@ fun DownloadRenameDialog(
     }
 }
 
+/**
+ * A text field component used within the [DownloadRenameDialog].
+ * It handles displaying the current file name, validation errors,
+ * and supporting text for character limits.
+ *
+ * @param fileNameState The current state of the text input including selection.
+ * @param onFileNameChange Callback for when the user edits the text.
+ * @param currentError The specific [RenameFileError] to display, if any.
+ * @param modifier Modifier for layout adjustments.
+ */
 @Composable
-private fun DownloadRenameDialogTextField(
+fun DownloadRenameDialogTextField(
     fileNameState: TextFieldValue,
     onFileNameChange: (TextFieldValue) -> Unit,
     currentError: RenameFileError?,
@@ -182,6 +194,8 @@ private fun DownloadRenameDialogTextField(
                 R.string.download_rename_error_exists_error,
                 currentError.proposedFileName,
             )
+        is RenameFileError.CaseOnlyNameChange ->
+            stringResource(R.string.download_rename_error_case_only_error)
         else -> null
     }
 

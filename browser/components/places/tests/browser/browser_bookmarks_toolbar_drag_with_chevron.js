@@ -6,10 +6,7 @@
 
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["browser.toolbars.bookmarks.visibility", "newtab"],
-      ["browser.urlbar.trustPanel.featureGate", false],
-    ],
+    set: [["browser.toolbars.bookmarks.visibility", "newtab"]],
   });
 
   info("Open new tab and bookmarks toolbar");
@@ -97,7 +94,15 @@ add_task(async function drop_on_chevron_from_identity_box() {
 
   info("Start DnD");
   let chevronMenu = document.getElementById("PlacesChevron");
-  let identityBox = document.getElementById("identity-box");
+  let siteInfoBox = document.getElementById("trust-icon-container");
+  await BrowserTestUtils.waitForCondition(
+    () => BrowserTestUtils.isVisible(siteInfoBox),
+    "Wait for trust icon to become visible"
+  );
+
+  let urlbar = document.getElementById("urlbar");
+  let urlbarRect = urlbar.getBoundingClientRect();
+  let siteInfoRect = siteInfoBox.getBoundingClientRect();
   let chevronPopup = document.getElementById("PlacesChevronPopup");
 
   let onChevronPopupShown = BrowserTestUtils.waitForPopupEvent(
@@ -105,7 +110,13 @@ add_task(async function drop_on_chevron_from_identity_box() {
     "shown"
   );
   await EventUtils.synthesizePlainDragAndDrop({
-    srcElement: identityBox,
+    srcElement: urlbar,
+    srcX: Math.round(
+      siteInfoRect.left - urlbarRect.left + siteInfoRect.width / 2
+    ),
+    srcY: Math.round(
+      siteInfoRect.top - urlbarRect.top + siteInfoRect.height / 2
+    ),
     destElement: chevronMenu,
   });
   await onChevronPopupShown;

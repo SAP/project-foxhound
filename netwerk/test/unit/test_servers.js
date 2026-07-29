@@ -172,10 +172,42 @@ add_task(async function test_http2() {
   equal(req.QueryInterface(Ci.nsIHttpChannel).responseStatus, 200);
   equal(req.QueryInterface(Ci.nsIHttpChannel).protocolVersion, "h2");
 
-  verifyGleanValues("Check HTTP/2 IPv4", {
-    metricKey: "http_2_ipv4",
+  let heEnabled = Services.prefs.getBoolPref(
+    "network.http.happy_eyeballs_enabled",
+    false
+  );
+  verifyGleanValues(heEnabled ? "Check HTTP/2 IPv6" : "Check HTTP/2 IPv4", {
+    metricKey: heEnabled ? "http_2_ipv6" : "http_2_ipv4",
     value: 1,
   });
+
+  await server.stop();
+});
+
+add_task(async function test_http2_custom_domain() {
+  const customDomain = "custom_domain.example";
+  Services.prefs.setCharPref("network.dns.localDomains", customDomain);
+  registerCleanupFunction(() => {
+    Services.prefs.clearUserPref("network.dns.localDomains");
+  });
+
+  let server = new NodeHTTP2Server();
+  await server.start(0, [customDomain]);
+  registerCleanupFunction(async () => {
+    await server.stop();
+  });
+
+  equal(server.domain(), customDomain);
+  equal(server.origin(), `https://${customDomain}:${server.port()}`);
+
+  await registerSimplePathHandler(server, "/test");
+  let chan = makeChan(`${server.origin()}/test`);
+  let req = await new Promise(resolve => {
+    chan.asyncOpen(new ChannelListener(resolve, null, CL_ALLOW_UNKNOWN_CL));
+  });
+  equal(req.status, Cr.NS_OK);
+  equal(req.QueryInterface(Ci.nsIHttpChannel).responseStatus, 200);
+  equal(req.QueryInterface(Ci.nsIHttpChannel).protocolVersion, "h2");
 
   await server.stop();
 });

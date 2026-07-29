@@ -64,9 +64,9 @@ export const CommonUtils = {
   },
 
   /**
-   * Adds an observer for an 'a11y-init-or-shutdown' event with a value of "1"
-   * which indicates that an accessibility service is initialized in the current
-   * process.
+   * Adds an observer for an 'a11y-init-or-shutdown' event with a value other
+   * than "0" which indicates that an accessibility service is initialized in
+   * the current process.
    */
   addAccServiceInitializedObserver() {
     const deferred = {};
@@ -75,10 +75,10 @@ export const CommonUtils = {
       deferred.reject = reject;
     });
     const observe = (subject, topic, data) => {
-      if (data === "1") {
+      if (data !== "0") {
         Services.obs.removeObserver(observe, "a11y-init-or-shutdown");
         deferred.resolve();
-      } else {
+      } else if (data === "0") {
         deferred.reject("Accessibility service is shutdown unexpectedly.");
       }
     };
@@ -109,7 +109,7 @@ export const CommonUtils = {
       if (data === "0") {
         Services.obs.removeObserver(observe, "a11y-init-or-shutdown");
         deferred.resolve();
-      } else {
+      } else if (!this._accServiceInitialized) {
         deferred.reject("Accessibility service is initialized unexpectedly.");
       }
     };

@@ -495,6 +495,7 @@ add_task(async function test_aboutwelcome_with_progress_bar() {
     set: [
       ["ui.systemUsesDarkTheme", 0],
       ["ui.prefersReducedMotion", 0],
+      ["ui.useAccessibilityTheme", 0],
     ],
   });
   let screens = [];

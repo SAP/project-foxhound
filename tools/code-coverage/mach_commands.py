@@ -6,7 +6,7 @@ import json
 import os
 import time
 import warnings
-from functools import lru_cache
+from functools import cache
 
 from mach.decorators import Command, CommandArgument
 from mozbuild.artifact_cache import ArtifactCache
@@ -18,7 +18,7 @@ ALL_STATUSES = FINISHED_STATUSES | {"unscheduled", "pending", "running"}
 STATUS_VALUE = {"exception": 1, "failed": 2, "completed": 3}
 
 
-@lru_cache(maxsize=None)
+@cache
 def _tc_client(service):
     return get_taskcluster_client(service)
 
@@ -58,7 +58,7 @@ def _get_tasks_in_group(group_id):
     return tasks
 
 
-@lru_cache(maxsize=None)
+@cache
 def _artifact_cache(cache_dir):
     return ArtifactCache(cache_dir)
 
@@ -206,7 +206,7 @@ def _generate_report(
     status = command_context.run_process(
         args=cmd,
         ensure_exit_code=False,
-        stderr_line_handler=lambda line: stderr_lines.append(line),
+        stderr_line_handler=stderr_lines.append,
     )
     if status != 0:
         stderr = "".join(stderr_lines)
@@ -287,6 +287,17 @@ def coverage_report(
     artifact_paths = _download_coverage_artifacts(
         task_id, suite, platform, cache_dir, suites_to_ignore
     )
+    if not artifact_paths:
+        target = (
+            f"{branch}@{revision}"
+            if branch and revision
+            else "the latest mozilla-central push"
+        )
+        print(
+            f"No code coverage artifacts found for {target}. "
+            "Ensure coverage tasks were scheduled in the push."
+        )
+        return 1
 
     grcov_path = grcov or bootstrap_toolchain("grcov/grcov")
     if not grcov_path:

@@ -9,6 +9,8 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   ActionSchemas: "resource://normandy/actions/schemas/index.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
+  ConfigSearchEngine:
+    "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
   ClientEnvironment: "resource://normandy/lib/ClientEnvironment.sys.mjs",
   Heartbeat: "resource://normandy/lib/Heartbeat.sys.mjs",
   NormandyUtils: "resource://normandy/lib/NormandyUtils.sys.mjs",
@@ -171,7 +173,8 @@ export class ShowHeartbeatAction extends BaseAction {
 
     const userId = lazy.ClientEnvironment.userId;
     const searchEngine = await lazy.SearchService.getDefault();
-    const searchEngineId = searchEngine.isConfigEngine ? searchEngine.id : null;
+    const searchEngineId =
+      searchEngine instanceof lazy.ConfigSearchEngine ? searchEngine.id : null;
     const args = {
       fxVersion: Services.appinfo.version,
       isDefaultBrowser: lazy.ShellService.isDefaultBrowser() ? 1 : 0,

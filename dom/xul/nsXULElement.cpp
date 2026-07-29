@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -104,6 +103,7 @@
 #include "nsIScriptContext.h"
 #include "nsISupportsUtils.h"
 #include "nsIURI.h"
+#include "nsIURIWithSizeOf.h"
 #include "nsIXPConnect.h"
 #include "nsMenuPopupFrame.h"
 #include "nsNodeInfoManager.h"
@@ -139,7 +139,7 @@ uint32_t nsXULPrototypeAttribute::gNumCacheFills;
 // nsXULElement
 //
 
-nsXULElement::nsXULElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+nsXULElement::nsXULElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : nsStyledElement(std::move(aNodeInfo)) {
   XUL_PROTOTYPE_ATTRIBUTE_METER(gNumElements);
 }
@@ -148,7 +148,7 @@ nsXULElement::~nsXULElement() = default;
 
 /* static */
 nsXULElement* NS_NewBasicXULElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo) {
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo) {
   RefPtr<mozilla::dom::NodeInfo> nodeInfo(std::move(aNodeInfo));
   auto* nim = nodeInfo->NodeInfoManager();
   return new (nim) nsXULElement(nodeInfo.forget());
@@ -156,7 +156,7 @@ nsXULElement* NS_NewBasicXULElement(
 
 /* static */
 nsXULElement* nsXULElement::Construct(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo) {
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo) {
   // NOTE: If you add elements here, you probably also want to change
   // mozilla::dom::binding_detail::HTMLConstructor in BindingUtils.cpp to take
   // them into account, otherwise you'll start getting "Illegal constructor"
@@ -241,7 +241,7 @@ already_AddRefed<Element> nsXULElement::CreateFromPrototype(
 }
 
 nsresult NS_NewXULElement(Element** aResult,
-                          already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+                          already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
                           FromParser aFromParser, nsAtom* aIsAtom,
                           mozilla::dom::CustomElementDefinition* aDefinition) {
   RefPtr<mozilla::dom::NodeInfo> nodeInfo = aNodeInfo;
@@ -262,7 +262,7 @@ nsresult NS_NewXULElement(Element** aResult,
 }
 
 void NS_TrustedNewXULElement(
-    Element** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo) {
+    Element** aResult, already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo) {
   RefPtr<mozilla::dom::NodeInfo> ni = aNodeInfo;
   MOZ_ASSERT(ni, "need nodeinfo for non-proto Create");
 
@@ -288,18 +288,11 @@ NS_INTERFACE_MAP_END_INHERITING(nsStyledElement)
 nsresult nsXULElement::Clone(mozilla::dom::NodeInfo* aNodeInfo,
                              nsINode** aResult) const {
   *aResult = nullptr;
-
-  RefPtr<mozilla::dom::NodeInfo> ni = aNodeInfo;
-  RefPtr<nsXULElement> element = Construct(ni.forget());
-
-  nsresult rv = const_cast<nsXULElement*>(this)->CopyInnerTo(
-      element, ReparseAttributes::No);
-  NS_ENSURE_SUCCESS(rv, rv);
-
+  RefPtr<nsXULElement> element = Construct(do_AddRef(aNodeInfo));
+  MOZ_TRY(const_cast<nsXULElement*>(this)->CopyInnerTo(element));
   // Note that we're _not_ copying mControllers.
-
   element.forget(aResult);
-  return rv;
+  return NS_OK;
 }
 
 //----------------------------------------------------------------------
@@ -539,7 +532,8 @@ nsresult nsXULElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   Document& doc = aContext.OwnerDoc();
   if (!IsInNativeAnonymousSubtree() && !doc.AllowXULXBL() &&
       !doc.HasWarnedAbout(DeprecatedOperations::eImportXULIntoContent)) {
-    nsContentUtils::AddScriptRunner(new XULInContentErrorReporter(doc));
+    nsContentUtils::AddScriptRunner(
+        MakeAndAddRef<XULInContentErrorReporter>(doc));
   }
 
 #ifdef DEBUG
@@ -1972,9 +1966,10 @@ void nsXULPrototypeScript::AddSizeOfExcludingThis(nsWindowSizes& aSizes,
   // strong references from elsewhere because the URI was created for this
   // object, in XULContentSinkImpl::OpenScript() or
   // nsXULPrototypeElement::Deserialize(). Only objects that created their own
-  // URI will call nsIURI::SizeOfIncludingThis().
+  // URI will call nsIURIWithSizeOf::SizeOfIncludingThis().
   if (mSrcURI) {
-    *aNodeSize += mSrcURI->SizeOfIncludingThis(aSizes.mState.mMallocSizeOf);
+    *aNodeSize += SizeOfIncludingThisIfURIWithSizeOf(
+        mSrcURI, aSizes.mState.mMallocSizeOf);
   }
 }
 

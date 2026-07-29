@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -24,7 +22,7 @@ RefPtr<MediaDataEncoder::InitPromise> FFmpegAudioEncoder<LIBAV_VER>::Init() {
   return InvokeAsync(mTaskQueue, __func__, [self = RefPtr(this)]() {
     MediaResult r = self->InitEncoder();
     if (NS_FAILED(r.Code())) {
-      FFMPEGV_LOG("%s", r.Description().get());
+      FFMPEGV_LOG("{}", r.Description().get());
       return InitPromise::CreateAndReject(r, __func__);
     }
     return InitPromise::CreateAndResolve(true, __func__);
@@ -111,7 +109,7 @@ MediaResult FFmpegAudioEncoder<LIBAV_VER>::InitEncoder() {
       mResampler.reset(resampler);
     } else {
       FFMPEG_LOG(
-          "Error creating resampler in FFmpegAudioEncoder %dHz -> %dHz (%dch)",
+          "Error creating resampler in FFmpegAudioEncoder {}Hz -> {}Hz ({}ch)",
           mInputSampleRate, mConfig.mSampleRate, mConfig.mNumberOfChannels);
     }
   }
@@ -145,11 +143,22 @@ MediaResult FFmpegAudioEncoder<LIBAV_VER>::InitEncoder() {
     if (mConfig.mBitrateMode == BitrateMode::Constant) {
       mLib->av_opt_set(mCodecContext->priv_data, "vbr", "off", 0);
     }
+    // ffmpeg's libopus wrapper defaults to mapping_family -1, which uses the
+    // Vorbis channel layout and caps at 8 channels. mapping_family 255 uses
+    // opus_multistream_surround_encoder_create with an arbitrary channel
+    // mapping, supporting up to 254 channels without reordering.
+    if (mConfig.mNumberOfChannels > 8) {
+      if (mLib->av_opt_set_int(mCodecContext->priv_data, "mapping_family", 255,
+                               0) < 0) {
+        return MediaResult(NS_ERROR_FAILURE,
+                           "Failed to set Opus mapping_family for >8ch"_ns);
+      }
+    }
     if (mConfig.mCodecSpecific.is<OpusSpecific>()) {
       const OpusSpecific& specific = mConfig.mCodecSpecific.as<OpusSpecific>();
       // This attribute maps directly to complexity
       mCodecContext->compression_level = specific.mComplexity;
-      FFMPEG_LOG("Opus complexity set to %d", specific.mComplexity);
+      FFMPEG_LOG("Opus complexity set to {}", specific.mComplexity);
       float frameDurationMs =
           AssertedCast<float>(specific.mFrameDuration) / 1000.f;
       if (mLib->av_opt_set_double(mCodecContext->priv_data, "frame_duration",
@@ -158,7 +167,7 @@ MediaResult FFmpegAudioEncoder<LIBAV_VER>::InitEncoder() {
             NS_ERROR_FAILURE,
             "Error setting the frame duration on Opus encoder"_ns);
       }
-      FFMPEG_LOG("Opus frame duration set to %0.2f", frameDurationMs);
+      FFMPEG_LOG("Opus frame duration set to {:0.2f}", frameDurationMs);
       if (specific.mPacketLossPerc) {
         if (mLib->av_opt_set_int(
                 mCodecContext->priv_data, "packet_loss",
@@ -170,7 +179,7 @@ MediaResult FFmpegAudioEncoder<LIBAV_VER>::InitEncoder() {
                   " on Opus encoder",
                   specific.mPacketLossPerc));
         }
-        FFMPEG_LOGV("Packet loss set to %d%% in Opus encoder",
+        FFMPEG_LOGV("Packet loss set to {}% in Opus encoder",
                     AssertedCast<int>(specific.mPacketLossPerc));
       }
       if (specific.mUseInBandFEC) {
@@ -219,8 +228,8 @@ MediaResult FFmpegAudioEncoder<LIBAV_VER>::InitEncoder() {
   mLib->av_dict_free(&options);
 
   FFMPEGA_LOG(
-      "%s has been initialized with sample-format: %d, bitrate: %" PRIi64
-      ", sample-rate: %d, channels: %d, time_base: %d/%d",
+      "{} has been initialized with sample-format: {}, bitrate: {}, "
+      "sample-rate: {}, channels: {}, time_base: {}/{}",
       mCodecName.get(), static_cast<int>(mCodecContext->sample_fmt),
       static_cast<int64_t>(mCodecContext->bit_rate), mCodecContext->sample_rate,
       mConfig.mNumberOfChannels, mCodecContext->time_base.num,
@@ -270,7 +279,7 @@ FFmpegAudioEncoder<LIBAV_VER>::EncodeOnePacket(Span<float> aSamples,
   // Set presentation timestamp and duration of the AVFrame.
 #  if LIBAVCODEC_VERSION_MAJOR >= 59
   mFrame->time_base =
-      AVRational{.num = 1, .den = static_cast<int>(mConfig.mSampleRate)};
+      AVRational{.num = 1, .den = AssertedCast<int>(mConfig.mSampleRate)};
 #  endif
   mFrame->pts = aPts.ToTicksAtRate(mConfig.mSampleRate);
 #  if LIBAVCODEC_VERSION_MAJOR >= 60
@@ -298,10 +307,9 @@ FFmpegAudioEncoder<LIBAV_VER>::EncodeOnePacket(Span<float> aSamples,
             aSamples.Length());
   } else {
     MOZ_ASSERT(mCodecContext->sample_fmt == AV_SAMPLE_FMT_FLTP);
-    for (uint32_t i = 0; i < mConfig.mNumberOfChannels; i++) {
-      DeinterleaveAndConvertBuffer(aSamples.data(), mFrame->nb_samples,
-                                   mConfig.mNumberOfChannels, mFrame->data);
-    }
+    DeinterleaveAndConvertBuffer(aSamples.data(), mFrame->nb_samples,
+                                 mConfig.mNumberOfChannels,
+                                 mFrame->extended_data);
   }
 
   // Now send the AVFrame to ffmpeg for encoding, same code for audio and video.
@@ -316,8 +324,8 @@ Result<MediaDataEncoder::EncodedData, MediaResult> FFmpegAudioEncoder<
 
   RefPtr<const AudioData> sample(aSample->As<AudioData>());
 
-  FFMPEG_LOG("Encoding %" PRIu32 " frames of audio at pts: %s",
-             sample->Frames(), sample->mTime.ToString().get());
+  FFMPEG_LOG("Encoding {} frames of audio at pts: {}", sample->Frames(),
+             sample->mTime.ToString().get());
 
   if ((!mResampler && sample->mRate != mConfig.mSampleRate) ||
       (mResampler &&
@@ -351,7 +359,7 @@ Result<MediaDataEncoder::EncodedData, MediaResult> FFmpegAudioEncoder<
   if (mResampler) {
     // Ensure that all input frames are consumed each time by oversizing the
     // output buffer.
-    int bufferLengthGuess = std::ceil(2. * static_cast<float>(audio.size()) *
+    int bufferLengthGuess = std::ceil(2. * AssertedCast<float>(audio.size()) *
                                       mConfig.mSampleRate / mInputSampleRate);
     mTempBuffer.SetLength(bufferLengthGuess);
     uint32_t inputFrames = audio.size() / mConfig.mNumberOfChannels;
@@ -378,8 +386,8 @@ Result<MediaDataEncoder::EncodedData, MediaResult> FFmpegAudioEncoder<
                           mConfig.mNumberOfChannels);
     media::TimeUnit pts = mPacketizer->Output(mTempBuffer.Elements());
     auto audio = Span(mTempBuffer.Elements(), mTempBuffer.Length());
-    FFMPEG_LOG("Encoding %" PRIu32 " frames, pts: %s",
-               mPacketizer->PacketSize(), pts.ToString().get());
+    FFMPEG_LOG("Encoding {} frames, pts: {}", mPacketizer->PacketSize(),
+               pts.ToString().get());
     auto encodeResult = EncodeOnePacket(audio, pts);
     if (encodeResult.isOk()) {
       output.AppendElements(std::move(encodeResult.unwrap()));
@@ -434,7 +442,7 @@ FFmpegAudioEncoder<LIBAV_VER>::ToMediaRawData(AVPacket* aPacket) {
 
   if (aPacket->size < mDtxThreshold) {
     FFMPEG_LOG(
-        "DTX enabled and packet is %d bytes (threshold %d), not returning.",
+        "DTX enabled and packet is {} bytes (threshold {}), not returning.",
         aPacket->size, mDtxThreshold);
     return RefPtr<MediaRawData>(nullptr);
   }
@@ -480,11 +488,11 @@ FFmpegAudioEncoder<LIBAV_VER>::ToMediaRawData(AVPacket* aPacket) {
 
   if (data->mExtraData) {
     FFMPEGA_LOG(
-        "FFmpegAudioEncoder out: [%s,%s] (%zu bytes, extradata %zu bytes)",
+        "FFmpegAudioEncoder out: [{},{}] ({} bytes, extradata {} bytes)",
         data->mTime.ToString().get(), data->mDuration.ToString().get(),
         data->Size(), data->mExtraData->Length());
   } else {
-    FFMPEGA_LOG("FFmpegAudioEncoder out: [%s,%s] (%zu bytes)",
+    FFMPEGA_LOG("FFmpegAudioEncoder out: [{},{}] ({} bytes)",
                 data->mTime.ToString().get(), data->mDuration.ToString().get(),
                 data->Size());
   }

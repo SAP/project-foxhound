@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 // This test file verifies various scenarios related to the data migration
@@ -27,22 +25,12 @@ const { ExtensionStorage } = ChromeUtils.importESModule(
 const { ExtensionStorageIDB } = ChromeUtils.importESModule(
   "resource://gre/modules/ExtensionStorageIDB.sys.mjs"
 );
-const { TelemetryController } = ChromeUtils.importESModule(
-  "resource://gre/modules/TelemetryController.sys.mjs"
-);
 
 const { promiseShutdownManager, promiseStartupManager } = AddonTestUtils;
 
-const { IDB_MIGRATED_PREF_BRANCH, IDB_MIGRATE_RESULT_HISTOGRAM } =
-  ExtensionStorageIDB;
-const CATEGORIES = ["success", "failure"];
+const { IDB_MIGRATED_PREF_BRANCH } = ExtensionStorageIDB;
 const LEAVE_STORAGE_PREF = "extensions.webextensions.keepStorageOnUninstall";
 const LEAVE_UUID_PREF = "extensions.webextensions.keepUuidOnUninstall";
-
-add_setup(async function setup() {
-  do_get_profile();
-  Services.fog.initializeFOG();
-});
 
 async function createExtensionJSONFileWithData(extensionId, data) {
   await ExtensionStorage.set(extensionId, data);
@@ -58,32 +46,14 @@ async function createExtensionJSONFileWithData(extensionId, data) {
   return { jsonFile, oldStorageFilename };
 }
 
-function clearMigrationHistogram() {
-  const histogram = Services.telemetry.getHistogramById(
-    IDB_MIGRATE_RESULT_HISTOGRAM
-  );
-  histogram.clear();
-  equal(
-    histogram.snapshot().sum,
-    0,
-    `No data recorded for histogram ${IDB_MIGRATE_RESULT_HISTOGRAM}`
-  );
-}
-
-function assertMigrationHistogramCount(category, expectedCount) {
-  const histogram = Services.telemetry.getHistogramById(
-    IDB_MIGRATE_RESULT_HISTOGRAM
-  );
-
-  equal(
-    histogram.snapshot().values[CATEGORIES.indexOf(category)],
+function assertMigrationGleanLabeledCounter(label, expectedCount) {
+  Assert.deepEqual(
+    Glean.extensionsData.migrateResultCount[label].testGetValue(),
     expectedCount,
-    `Got the expected count on category "${category}" for histogram ${IDB_MIGRATE_RESULT_HISTOGRAM}`
+    `Got the expected count on extensionData.migrateResultCount label "${label}"`
   );
 }
 
-// Note: for consistency with telemetry event format, this function also
-// expects the addon_id to be passed in the event.value property.
 function assertMigrateResultGleanEvents(expectedEvents) {
   let glean = Glean.extensionsData.migrateResult.testGetValue() ?? [];
   equal(glean.length, expectedEvents.length, "Correct number of events.");
@@ -91,7 +61,7 @@ function assertMigrateResultGleanEvents(expectedEvents) {
   expectedEvents.forEach((expected, i) =>
     Assert.deepEqual(
       glean[i].extra,
-      { addon_id: expected.value, ...expected.extra },
+      expected,
       "Correct addon_id and event extra properties."
     )
   );
@@ -99,25 +69,10 @@ function assertMigrateResultGleanEvents(expectedEvents) {
 }
 
 add_setup(async function setup() {
+  do_get_profile();
+  Services.fog.initializeFOG();
   Services.prefs.setBoolPref(ExtensionStorageIDB.BACKEND_ENABLED_PREF, true);
-
   await promiseStartupManager();
-
-  // Telemetry test setup needed to ensure that the builtin events are defined
-  // and they can be collected and verified.
-  await TelemetryController.testSetup();
-
-  // This is actually only needed on Android, because it does not properly support unified telemetry
-  // and so, if not enabled explicitly here, it would make these tests to fail when running on a
-  // non-Nightly build.
-  const oldCanRecordBase = Services.telemetry.canRecordBase;
-  Services.telemetry.canRecordBase = true;
-  registerCleanupFunction(() => {
-    Services.telemetry.canRecordBase = oldCanRecordBase;
-  });
-
-  // Clear any telemetry events collected so far.
-  Services.telemetry.clearEvents();
 });
 
 // Test that for newly installed extension the IDB backend is enabled without
@@ -146,6 +101,7 @@ add_task(async function test_no_migration_for_newly_installed_extensions() {
     },
   });
 
+  Services.fog.testResetFOG();
   await extension.startup();
   equal(
     ExtensionStorageIDB.isMigratedExtension(extension),
@@ -188,6 +144,7 @@ add_task(async function test_data_migration_on_keep_storage_on_uninstall() {
     },
   });
 
+  Services.fog.testResetFOG();
   await extension.startup();
   await extension.awaitMessage("storage-local-data-migrated");
   equal(
@@ -199,14 +156,11 @@ add_task(async function test_data_migration_on_keep_storage_on_uninstall() {
 
   // Verify that the expected telemetry has been recorded.
   let expected = {
-    method: "migrateResult",
-    value: EXTENSION_ID,
-    extra: {
-      backend: "IndexedDB",
-      data_migrated: "y",
-      has_jsonfile: "y",
-      has_olddata: "y",
-    },
+    addon_id: EXTENSION_ID,
+    backend: "IndexedDB",
+    data_migrated: "y",
+    has_jsonfile: "y",
+    has_olddata: "y",
   };
 
   assertMigrateResultGleanEvents([expected]);
@@ -260,8 +214,6 @@ add_task(async function test_storage_local_data_migration() {
     browser.test.sendMessage("storage-local-data-migrated");
   }
 
-  clearMigrationHistogram();
-
   let extensionDefinition = {
     useAddonManager: "temporary",
     manifest: {
@@ -278,6 +230,8 @@ add_task(async function test_storage_local_data_migration() {
 
   // Install the extension while the storage.local IDB backend is disabled.
   Services.prefs.setBoolPref(ExtensionStorageIDB.BACKEND_ENABLED_PREF, false);
+
+  Services.fog.testResetFOG();
   await extension.startup();
 
   ok(
@@ -332,19 +286,16 @@ add_task(async function test_storage_local_data_migration() {
     `Got the ${IDB_MIGRATED_PREF_BRANCH} preference set to true as expected`
   );
 
-  assertMigrationHistogramCount("success", 1);
-  assertMigrationHistogramCount("failure", 0);
+  assertMigrationGleanLabeledCounter("success", 1);
+  assertMigrationGleanLabeledCounter("failure", null);
 
   assertMigrateResultGleanEvents([
     {
-      method: "migrateResult",
-      value: EXTENSION_ID,
-      extra: {
-        backend: "IndexedDB",
-        data_migrated: "y",
-        has_jsonfile: "y",
-        has_olddata: "y",
-      },
+      addon_id: EXTENSION_ID,
+      backend: "IndexedDB",
+      data_migrated: "y",
+      has_jsonfile: "y",
+      has_olddata: "y",
     },
   ]);
 
@@ -365,10 +316,6 @@ add_task(async function test_storage_local_data_migration() {
   });
 
   await extension.awaitMessage("storage-local-data-migrated");
-
-  // The histogram values are unmodified.
-  assertMigrationHistogramCount("success", 1);
-  assertMigrationHistogramCount("failure", 0);
 
   // No new telemetry events recorded for the extension.
   assertMigrateResultGleanEvents([]);
@@ -423,6 +370,7 @@ add_task(async function test_extensionId_trimmed_in_telemetry_event() {
     startupReason: "APP_STARTUP",
   });
 
+  Services.fog.testResetFOG();
   await extension.startup();
 
   await extension.awaitMessage("storage-local-data-migrated");
@@ -437,14 +385,11 @@ add_task(async function test_extensionId_trimmed_in_telemetry_event() {
 
   assertMigrateResultGleanEvents([
     {
-      method: "migrateResult",
-      value: expectedTrimmedExtensionId,
-      extra: {
-        backend: "IndexedDB",
-        data_migrated: "y",
-        has_jsonfile: "y",
-        has_olddata: "y",
-      },
+      addon_id: expectedTrimmedExtensionId,
+      backend: "IndexedDB",
+      data_migrated: "y",
+      has_jsonfile: "y",
+      has_olddata: "y",
     },
   ]);
 
@@ -491,8 +436,6 @@ add_task(async function test_storage_local_corrupted_data_migration() {
     browser.test.sendMessage("storage-local-data-migrated-and-set");
   }
 
-  clearMigrationHistogram();
-
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       permissions: ["storage"],
@@ -508,6 +451,7 @@ add_task(async function test_storage_local_corrupted_data_migration() {
     startupReason: "APP_STARTUP",
   });
 
+  Services.fog.testResetFOG();
   await extension.startup();
 
   await extension.awaitMessage("storage-local-data-migrated-and-set");
@@ -542,19 +486,16 @@ add_task(async function test_storage_local_corrupted_data_migration() {
     `Got the ${IDB_MIGRATED_PREF_BRANCH} preference set to true as expected`
   );
 
-  assertMigrationHistogramCount("success", 1);
-  assertMigrationHistogramCount("failure", 0);
+  assertMigrationGleanLabeledCounter("success", 1);
+  assertMigrationGleanLabeledCounter("failure", null);
 
   assertMigrateResultGleanEvents([
     {
-      method: "migrateResult",
-      value: EXTENSION_ID,
-      extra: {
-        backend: "IndexedDB",
-        data_migrated: "y",
-        has_jsonfile: "y",
-        has_olddata: "n",
-      },
+      addon_id: EXTENSION_ID,
+      backend: "IndexedDB",
+      data_migrated: "y",
+      has_jsonfile: "y",
+      has_olddata: "n",
     },
   ]);
 
@@ -583,8 +524,6 @@ add_task(async function test_storage_local_data_migration_failure() {
     browser.test.sendMessage("storage-local-data-migrated-and-set");
   }
 
-  clearMigrationHistogram();
-
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       permissions: ["storage"],
@@ -600,6 +539,7 @@ add_task(async function test_storage_local_data_migration_failure() {
     startupReason: "APP_STARTUP",
   });
 
+  Services.fog.testResetFOG();
   await extension.startup();
 
   await extension.awaitMessage("storage-local-data-migrated-and-set");
@@ -620,24 +560,21 @@ add_task(async function test_storage_local_data_migration_failure() {
     "The old json storage should still be available if failed to be read"
   );
 
+  assertMigrationGleanLabeledCounter("success", null);
+  assertMigrationGleanLabeledCounter("failure", 1);
+
   await extension.unload();
 
   assertMigrateResultGleanEvents([
     {
-      method: "migrateResult",
-      value: EXTENSION_ID,
-      extra: {
-        backend: "JSONFile",
-        data_migrated: "n",
-        error_name: "DataCloneError",
-        has_jsonfile: "y",
-        has_olddata: "y",
-      },
+      addon_id: EXTENSION_ID,
+      backend: "JSONFile",
+      data_migrated: "n",
+      error_name: "DataCloneError",
+      has_jsonfile: "y",
+      has_olddata: "y",
     },
   ]);
-
-  assertMigrationHistogramCount("success", 0);
-  assertMigrationHistogramCount("failure", 1);
 });
 
 add_task(async function test_migration_aborted_on_shutdown() {
@@ -656,6 +593,7 @@ add_task(async function test_migration_aborted_on_shutdown() {
     startupReason: "APP_STARTUP",
   });
 
+  Services.fog.testResetFOG();
   await extension.startup();
 
   equal(
@@ -677,11 +615,9 @@ add_task(async function test_migration_aborted_on_shutdown() {
     "Expect migration to have been aborted"
   );
   let expected = {
-    value: EXTENSION_ID,
-    extra: {
-      backend: "JSONFile",
-      error_name: "DataMigrationAbortedError",
-    },
+    addon_id: EXTENSION_ID,
+    backend: "JSONFile",
+    error_name: "DataMigrationAbortedError",
   };
 
   assertMigrateResultGleanEvents([expected]);
@@ -692,7 +628,6 @@ add_task(async function test_storage_local_data_migration_clear_pref() {
   Services.prefs.clearUserPref(LEAVE_UUID_PREF);
   Services.prefs.clearUserPref(ExtensionStorageIDB.BACKEND_ENABLED_PREF);
   await promiseShutdownManager();
-  await TelemetryController.testShutdown();
 });
 
 add_task(async function setup_quota_manager_testing_prefs() {
@@ -745,6 +680,7 @@ async function test_quota_exceeded_while_migrating_data() {
     startupReason: "APP_STARTUP",
   });
 
+  Services.fog.testResetFOG();
   await extension.startup();
   await extension.awaitMessage("bg-page:ready");
 
@@ -758,11 +694,9 @@ async function test_quota_exceeded_while_migrating_data() {
   await extension.unload();
 
   let expected = {
-    value: EXT_ID,
-    extra: {
-      backend: "JSONFile",
-      error_name: "QuotaExceededError",
-    },
+    addon_id: EXT_ID,
+    backend: "JSONFile",
+    error_name: "QuotaExceededError",
   };
   assertMigrateResultGleanEvents([expected]);
 

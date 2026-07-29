@@ -53,7 +53,7 @@ add_task(async function testThisFirefoxWithoutLocalTab() {
 add_task(async function testThisFirefoxKeepDiscardedTab() {
   const targetTab = await addTab("https://example.com/");
   const blankTab = await addTab("about:blank");
-  targetTab.ownerGlobal.gBrowser.discardBrowser(targetTab);
+  targetTab.documentGlobal.gBrowser.discardBrowser(targetTab);
 
   const { document, tab, window } = await openAboutDebugging({
     enableLocalTabs: false,
@@ -89,7 +89,7 @@ add_task(async function testThisFirefoxWithXpinstallDisabled() {
 });
 
 async function checkThisFirefoxTargetPanes(doc, expectedTargetPanes) {
-  const win = doc.ownerGlobal;
+  const win = doc.documentGlobal;
   // Check that the selected sidebar item is "This Firefox"/"This Nightly"/...
   const selectedSidebarItem = doc.querySelector(".qa-sidebar-item-selected");
   ok(selectedSidebarItem, "An item is selected in the sidebar");

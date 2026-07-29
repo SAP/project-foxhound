@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /*
@@ -12,7 +10,6 @@
 #ifndef jsapi_h
 #define jsapi_h
 
-#include "mozilla/FloatingPoint.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Variant.h"
@@ -91,12 +88,7 @@ using StringVector = JS::GCVector<JSString*>;
 /************************************************************************/
 
 static MOZ_ALWAYS_INLINE JS::Value JS_NumberValue(double d) {
-  int32_t i;
-  d = JS::CanonicalizeNaN(d);
-  if (mozilla::NumberIsInt32(d, &i)) {
-    return JS::Int32Value(i);
-  }
-  return JS::DoubleValue(d);
+  return JS::NumberValue(d);
 }
 
 /************************************************************************/
@@ -917,14 +909,14 @@ class MOZ_RAII JS_PUBLIC_API AutoFilename {
   js::ScriptSource* ss_;
   mozilla::Variant<const char*, UniqueChars> filename_;
 
-  AutoFilename(const AutoFilename&) = delete;
-  AutoFilename& operator=(const AutoFilename&) = delete;
-
  public:
   AutoFilename()
       : ss_(nullptr), filename_(mozilla::AsVariant<const char*>(nullptr)) {}
 
   ~AutoFilename() { reset(); }
+
+  AutoFilename(const AutoFilename&) = delete;
+  AutoFilename& operator=(const AutoFilename&) = delete;
 
   void reset();
 

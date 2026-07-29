@@ -10,7 +10,7 @@ const { Preferences } = ChromeUtils.importESModule(
 );
 
 const SEARCH_TIMEOUT_MS = 100;
-const SEARCH_AUTO_MIN_CRARACTERS = 3;
+const SEARCH_AUTO_MIN_CHARACTERS = 3;
 
 const GETTERS_BY_PREF_TYPE = {
   [Ci.nsIPrefBranch.PREF_BOOL]: "getBoolPref",
@@ -510,7 +510,7 @@ function loadPrefs() {
   search.addEventListener("input", () => {
     // We call "disarm" to restart the timer at every input.
     gFilterPrefsTask.disarm();
-    if (search.value.trim().length < SEARCH_AUTO_MIN_CRARACTERS) {
+    if (search.value.trim().length < SEARCH_AUTO_MIN_CHARACTERS) {
       // Return immediately to the empty page if the search string is short.
       filterPrefs();
     } else {
@@ -604,7 +604,7 @@ function filterPrefs(options = {}) {
   gDeletedPrefs.clear();
 
   let searchName = gSearchInput.value.trim();
-  if (searchName.length < SEARCH_AUTO_MIN_CRARACTERS && !options.shortString) {
+  if (searchName.length < SEARCH_AUTO_MIN_CHARACTERS && !options.shortString) {
     searchName = "";
   }
 

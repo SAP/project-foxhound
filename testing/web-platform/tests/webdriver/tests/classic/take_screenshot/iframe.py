@@ -1,5 +1,5 @@
 import pytest
-from tests.support.asserts import assert_success
+from tests.support.classic.asserts import assert_success
 from tests.support.image import png_dimensions
 from tests.support.screenshot import (
     DEFAULT_CONTENT,

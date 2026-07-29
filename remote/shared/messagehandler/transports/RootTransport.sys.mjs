@@ -9,15 +9,15 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "chrome://remote/content/shared/messagehandler/MessageHandler.sys.mjs",
   error: "chrome://remote/content/shared/messagehandler/Errors.sys.mjs",
   isBrowsingContextCompatible:
-    "chrome://remote/content/shared/messagehandler/transports/BrowsingContextUtils.sys.mjs",
+    "chrome://remote/content/shared/BrowsingContextUtils.sys.mjs",
   isInitialDocument:
-    "chrome://remote/content/shared/messagehandler/transports/BrowsingContextUtils.sys.mjs",
+    "chrome://remote/content/shared/BrowsingContextUtils.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
   MessageHandlerFrameActor:
     "chrome://remote/content/shared/messagehandler/transports/js-window-actors/MessageHandlerFrameActor.sys.mjs",
   TabManager: "chrome://remote/content/shared/TabManager.sys.mjs",
   waitForCurrentWindowGlobal:
-    "chrome://remote/content/shared/messagehandler/transports/BrowsingContextUtils.sys.mjs",
+    "chrome://remote/content/shared/BrowsingContextUtils.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "logger", () => lazy.Log.get());

@@ -132,6 +132,7 @@ function renderChat() {
   const browserContainer = document.getElementById("browser-container");
   browser.setAttribute("disableglobalhistory", "true");
   browser.setAttribute("maychangeremoteness", "true");
+  browser.setAttribute("messagemanagergroup", "chatbot-browser");
   browser.setAttribute("nodefaultsrc", "true");
   browser.setAttribute("remote", "true");
   browser.setAttribute("type", "content");
@@ -409,6 +410,7 @@ function showOnboarding(length) {
         })),
         // Default to nothing selected
         selected: " ",
+        subtitle: { string_id: "genai-onboarding-choose-header" },
         type: "single-select",
       };
       // Insert provider tiles on the first screen

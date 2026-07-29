@@ -212,6 +212,12 @@ interface nsIUrlClassifierDBService : nsISupports
    * For testing purposes only.
    */
   void cleanRealTimeSimulatorCache();
+
+  /**
+   * Force-expire all cache entries in RealTimeRequestSimulator.
+   * For testing purposes only.
+   */
+  void expireRealTimeSimulatorCache();
 };
 
 /**

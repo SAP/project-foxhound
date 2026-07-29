@@ -14,7 +14,6 @@ import mozilla.components.support.test.robolectric.testContext
 import mozilla.telemetry.glean.testing.GleanTestRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Rule
@@ -27,6 +26,7 @@ import org.mockito.Mockito.`when`
 import org.mozilla.experiments.nimbus.NullVariables
 import org.robolectric.RobolectricTestRunner
 import java.util.UUID
+import kotlin.test.assertNotNull
 import mozilla.components.service.nimbus.GleanMetrics.Messaging as GleanMessaging
 
 @RunWith(RobolectricTestRunner::class)
@@ -200,7 +200,7 @@ class NimbusMessagingControllerTest {
         // Updated telemetry
         val clickedEvents = GleanMessaging.messageClicked.testGetValue()
         assertNotNull(clickedEvents)
-        val clickedEvent = clickedEvents!!.single()
+        val clickedEvent = clickedEvents.single()
         assertEquals(message.id, clickedEvent.extra!!["message_key"])
         assertEquals(uuid, clickedEvent.extra!!["action_uuid"])
 

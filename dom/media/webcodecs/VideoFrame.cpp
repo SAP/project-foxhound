@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -52,7 +50,7 @@ namespace mozilla::dom {
 #  undef LOG_INTERNAL
 #endif  // LOG_INTERNAL
 #define LOG_INTERNAL(level, msg, ...) \
-  MOZ_LOG(gWebCodecsLog, LogLevel::level, (msg, ##__VA_ARGS__))
+  MOZ_LOG_FMT(gWebCodecsLog, LogLevel::level, msg, ##__VA_ARGS__)
 
 #ifdef LOG
 #  undef LOG
@@ -1126,12 +1124,15 @@ static Result<Ok, nsCString> InitializeVisibleRectAndDisplaySize(
                     aDefaultVisibleRect.Width();
     double hScale = static_cast<double>(aDefaultDisplaySize.Height()) /
                     aDefaultVisibleRect.Height();
-    uint32_t w = static_cast<uint32_t>(round(wScale * aVisibleRect->Width()));
-    uint32_t h = static_cast<uint32_t>(round(hScale * aVisibleRect->Height()));
-    if (w == 0 || h == 0) {
-      return Err("Computed display size is zero in at least one dimension"_ns);
+    double wd = round(wScale * aVisibleRect->Width());
+    double hd = round(hScale * aVisibleRect->Height());
+    constexpr double kMax =
+        static_cast<double>(std::numeric_limits<int32_t>::max());
+    if (wd <= 0 || hd <= 0 || wd > kMax || hd > kMax) {
+      return Err("Computed display size is invalid"_ns);
     }
-    aDisplaySize.emplace(gfx::IntSize(w, h));
+    aDisplaySize.emplace(
+        gfx::IntSize(static_cast<int32_t>(wd), static_cast<int32_t>(hd)));
   }
   return Ok();
 }
@@ -1367,7 +1368,7 @@ VideoFrame::VideoFrame(nsIGlobalObject* aParent,
       mTimestamp(aTimestamp),
       mColorSpace(aColorSpace) {
   MOZ_ASSERT(mParent);
-  LOG("VideoFrame %p ctor", this);
+  LOG("VideoFrame {} ctor", fmt::ptr(this));
   mResource.emplace(
       Resource(aImage, aFormat.map([](const VideoPixelFormat& aPixelFormat) {
         return VideoFrame::Format(aPixelFormat);
@@ -1388,7 +1389,7 @@ VideoFrame::VideoFrame(nsIGlobalObject* aParent,
       mTimestamp(aData.mTimestamp),
       mColorSpace(aData.mColorSpace) {
   MOZ_ASSERT(mParent);
-  LOG("VideoFrame %p ctor (from serialized data)", this);
+  LOG("VideoFrame {} ctor (from serialized data)", fmt::ptr(this));
   mResource.emplace(Resource(
       aData.mImage, aData.mFormat.map([](const VideoPixelFormat& aPixelFormat) {
         return VideoFrame::Format(aPixelFormat);
@@ -1409,13 +1410,13 @@ VideoFrame::VideoFrame(const VideoFrame& aOther)
       mTimestamp(aOther.mTimestamp),
       mColorSpace(aOther.mColorSpace) {
   MOZ_ASSERT(mParent);
-  LOG("VideoFrame %p copy ctor", this);
+  LOG("VideoFrame {} copy ctor", fmt::ptr(this));
   StartAutoClose();
 }
 
 VideoFrame::~VideoFrame() {
   MOZ_ASSERT(IsClosed());
-  LOG("VideoFrame %p dtor", this);
+  LOG("VideoFrame {} dtor", fmt::ptr(this));
 }
 
 nsIGlobalObject* VideoFrame::GetParentObject() const {
@@ -2055,7 +2056,7 @@ already_AddRefed<VideoFrame> VideoFrame::Clone(ErrorResult& aRv) const {
 // https://w3c.github.io/webcodecs/#close-videoframe
 void VideoFrame::Close() {
   AssertIsOnOwningThread();
-  LOG("VideoFrame %p is closed", this);
+  LOG("VideoFrame {} is closed", fmt::ptr(this));
 
   mResource.reset();
   mCodedSize = gfx::IntSize();
@@ -2191,8 +2192,9 @@ already_AddRefed<VideoFrame> VideoFrame::ConvertToRGBFrame(
   auto r = ConvertToRGBAImage(mResource->mImage, aFormat, aColorSpace);
   if (r.isErr()) {
     MediaResult err = r.unwrapErr();
-    LOGE("VideoFrame %p, failed to convert image into %s format: %s", this,
-         dom::GetEnumString(aFormat).get(), err.Description().get());
+    LOGE("VideoFrame {}, failed to convert image into {} format: {}",
+         fmt::ptr(this), dom::GetEnumString(aFormat).get(),
+         err.Description().get());
     return nullptr;
   }
   const RefPtr<layers::Image> img = r.unwrap();
@@ -2212,21 +2214,21 @@ void VideoFrame::StartAutoClose() {
 
   mShutdownWatcher = media::ShutdownWatcher::Create(this);
   if (NS_WARN_IF(!mShutdownWatcher)) {
-    LOG("VideoFrame %p, cannot monitor resource release", this);
+    LOG("VideoFrame {}, cannot monitor resource release", fmt::ptr(this));
     Close();
     return;
   }
 
-  LOG("VideoFrame %p, start monitoring resource release, watcher %p", this,
-      mShutdownWatcher.get());
+  LOG("VideoFrame {}, start monitoring resource release, watcher {}",
+      fmt::ptr(this), fmt::ptr(mShutdownWatcher.get()));
 }
 
 void VideoFrame::StopAutoClose() {
   AssertIsOnOwningThread();
 
   if (mShutdownWatcher) {
-    LOG("VideoFrame %p, stop monitoring resource release, watcher %p", this,
-        mShutdownWatcher.get());
+    LOG("VideoFrame {}, stop monitoring resource release, watcher {}",
+        fmt::ptr(this), fmt::ptr(mShutdownWatcher.get()));
     mShutdownWatcher->Destroy();
     mShutdownWatcher = nullptr;
   }
@@ -2235,10 +2237,10 @@ void VideoFrame::StopAutoClose() {
 void VideoFrame::CloseIfNeeded() {
   AssertIsOnOwningThread();
 
-  LOG("VideoFrame %p, needs to close itself? %s", this,
+  LOG("VideoFrame {}, needs to close itself? {}", fmt::ptr(this),
       IsClosed() ? "no" : "yes");
   if (!IsClosed()) {
-    LOG("Close VideoFrame %p obligatorily", this);
+    LOG("Close VideoFrame {} obligatorily", fmt::ptr(this));
     Close();
   }
 }
@@ -2822,11 +2824,11 @@ bool VideoFrame::Resource::CopyTo(const Format::Plane& aPlane,
     return false;
   }
 
-  auto copyPlane = [&](const uint8_t* aPlaneData) {
+  auto copyPlane = [&](const uint8_t* aPlaneData, int32_t aSourceStride) {
     MOZ_ASSERT(aPlaneData);
 
     CheckedInt<size_t> offset(aRect.Y());
-    offset *= Stride(aPlane);
+    offset *= aSourceStride;
     offset += aRect.X() * mFormat->SampleBytes(aPlane);
     if (!offset.isValid()) {
       return false;
@@ -2841,37 +2843,38 @@ bool VideoFrame::Resource::CopyTo(const Format::Plane& aPlane,
     aPlaneData += offset.value();
     for (int32_t row = 0; row < aRect.Height(); ++row) {
       PodCopy(aPlaneDest.data(), aPlaneData, elementsBytes.value());
-      aPlaneData += Stride(aPlane);
+      aPlaneData += aSourceStride;
       // Spec asks to move `aDestinationStride` bytes instead of
-      // `Stride(aPlane)` forward.
+      // `aSourceStride` forward.
       aPlaneDest = aPlaneDest.From(aDestinationStride);
     }
     return true;
   };
 
   if (mImage->GetFormat() == ImageFormat::PLANAR_YCBCR) {
+    const auto* data = mImage->AsPlanarYCbCrImage()->GetData();
     switch (aPlane) {
       case Format::Plane::Y:
-        return copyPlane(mImage->AsPlanarYCbCrImage()->GetData()->mYChannel);
+        return copyPlane(data->mYChannel, data->mYStride);
       case Format::Plane::U:
-        return copyPlane(mImage->AsPlanarYCbCrImage()->GetData()->mCbChannel);
+        return copyPlane(data->mCbChannel, data->mCbCrStride);
       case Format::Plane::V:
-        return copyPlane(mImage->AsPlanarYCbCrImage()->GetData()->mCrChannel);
+        return copyPlane(data->mCrChannel, data->mCbCrStride);
       case Format::Plane::A:
         MOZ_ASSERT(mFormat->PixelFormat() == VideoPixelFormat::I420A);
-        MOZ_ASSERT(mImage->AsPlanarYCbCrImage()->GetData()->mAlpha);
-        return copyPlane(
-            mImage->AsPlanarYCbCrImage()->GetData()->mAlpha->mChannel);
+        MOZ_ASSERT(data->mAlpha);
+        return copyPlane(data->mAlpha->mChannel, data->mYStride);
     }
     MOZ_ASSERT_UNREACHABLE("invalid plane");
   }
 
   if (mImage->GetFormat() == ImageFormat::NV_IMAGE) {
+    const auto* data = mImage->AsNVImage()->GetData();
     switch (aPlane) {
       case Format::Plane::Y:
-        return copyPlane(mImage->AsNVImage()->GetData()->mYChannel);
+        return copyPlane(data->mYChannel, data->mYStride);
       case Format::Plane::UV:
-        return copyPlane(mImage->AsNVImage()->GetData()->mCbChannel);
+        return copyPlane(data->mCbChannel, data->mCbCrStride);
       case Format::Plane::V:
       case Format::Plane::A:
         MOZ_ASSERT_UNREACHABLE("invalid plane");
@@ -2912,6 +2915,14 @@ bool VideoFrame::Resource::CopyTo(const Format::Plane& aPlane,
     return false;
   }
 
+  const gfx::IntSize surfaceSize = dataSurface->GetSize();
+  if (NS_WARN_IF(aRect.X() < 0 || aRect.Y() < 0 ||
+                 aRect.XMost() > surfaceSize.Width() ||
+                 aRect.YMost() > surfaceSize.Height())) {
+    LOGE("Source surface is smaller than the requested copy rectangle");
+    return false;
+  }
+
   // The mImage's format can be different from mFormat (since Gecko prefers
   // BGRA). To get the data in the matched format, we create a temp buffer
   // holding the image data in that format and then copy them to `aDestination`.
@@ -2945,7 +2956,7 @@ bool VideoFrame::Resource::CopyTo(const Format::Plane& aPlane,
     return false;
   }
 
-  return copyPlane(tempMap.GetData());
+  return copyPlane(tempMap.GetData(), tempMap.GetStride());
 }
 
 #undef LOGW

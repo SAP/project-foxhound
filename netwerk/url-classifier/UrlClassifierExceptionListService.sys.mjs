@@ -12,6 +12,9 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 const COLLECTION_NAME = "url-classifier-exceptions";
 
+/**
+ * Tracks URL classifier exception list entries for a single named feature.
+ */
 class Feature {
   constructor(name, prefName) {
     this.name = name;

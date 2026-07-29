@@ -13,7 +13,7 @@
 edition = "2018"
 rust-version = "1.53"
 name = "thin-vec"
-version = "0.2.14"
+version = "0.2.16"
 authors = ["Aria Beingessner <a.beingessner@gmail.com>"]
 build = false
 autolib = false
@@ -21,13 +21,14 @@ autobins = false
 autoexamples = false
 autotests = false
 autobenches = false
-description = "A vec that takes up less space on the stack"
-homepage = "https://github.com/gankra/thin-vec"
+description = "A Vec that takes up less space on the stack."
+homepage = "https://github.com/mozilla/thin-vec"
 readme = "README.md"
-license = "MIT/Apache-2.0"
-repository = "https://github.com/gankra/thin-vec"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/mozilla/thin-vec"
 
 [features]
+const_new = []
 default = ["std"]
 gecko-ffi = []
 std = []
@@ -46,8 +47,8 @@ default-features = false
 version = "1.0"
 optional = true
 
-[dev-dependencies]
-serde_test = "1.0"
+[dev-dependencies.serde_test]
+version = "1.0"
 
 [lints.rust.unexpected_cfgs]
 level = "warn"

@@ -87,6 +87,13 @@ function PeerConnectionTest(options) {
     options.config_remote.bundlePolicy = "max-compat";
   }
 
+  if (!options.rtcpmux) {
+    // For tests that don't use rtcp-mux, we need to configure
+    // RTCPeerConnection to allow non-muxed.
+    options.config_local.rtcpMuxPolicy = "negotiate";
+    options.config_remote.rtcpMuxPolicy = "negotiate";
+  }
+
   if (iceServersArray.length) {
     if (!options.turn_disabled_local && !options.config_local.iceServers) {
       options.config_local.iceServers = iceServersArray;
@@ -530,8 +537,8 @@ PeerConnectionTest.prototype.updateChainSteps = function () {
     ]);
   }
   if (!this.testOptions.rtcpmux) {
-    this.chain.insertAfterEach("PC_LOCAL_CREATE_OFFER", [
-      PC_LOCAL_REMOVE_RTCPMUX_FROM_OFFER,
+    this.chain.insertAfterEach("PC_REMOTE_GET_OFFER", [
+      PC_REMOTE_REMOVE_RTCPMUX_FROM_OFFER,
     ]);
   }
   if (!this.testOptions.ssrc) {

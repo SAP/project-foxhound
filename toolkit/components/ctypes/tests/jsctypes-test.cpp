@@ -1,10 +1,8 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "jsctypes-test.h"
-#include <math.h>
 #include <stdarg.h>
 #include "typedefs.h"
 
@@ -286,6 +284,22 @@ void test_add_char_short_int_va_cdecl(uint32_t* result, ...) {
   *result += va_arg(list, PromotedTraits<char>::type);
   *result += va_arg(list, PromotedTraits<short>::type);
   *result += va_arg(list, PromotedTraits<int>::type);
+  va_end(list);
+}
+
+void test_add_uint8_uint16_va_cdecl(uint32_t* result, ...) {
+  va_list list;
+  va_start(list, result);
+  *result += (unsigned int)va_arg(list, int);
+  *result += (unsigned int)va_arg(list, int);
+  va_end(list);
+}
+
+void test_add_float_double_va_cdecl(double* result, ...) {
+  va_list list;
+  va_start(list, result);
+  *result += va_arg(list, double);
+  *result += va_arg(list, double);
   va_end(list);
 }
 

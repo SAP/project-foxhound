@@ -98,7 +98,7 @@
 }
 
 #downloadsSummary {
-  background: var(--arrowpanel-dimmed);
+  background: var(--panel-background-color-dimmed);
   border-top: 1px solid var(--panel-separator-color);
   /* Reserve the same space as the button and separator in download items. */
   padding-inline-end: 59px;

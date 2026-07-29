@@ -6,7 +6,7 @@
   file, You can obtain one at http://mozilla.org/MPL/2.0/.
 -->
 
-<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
   <string name="app_name_private_5">Ichinan %s</string>
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
@@ -31,10 +31,6 @@
   <string name="tab_search_hint">Kekanöx taq ruwi\'</string>
   <!-- Placeholder text shown in the search bar when using application search engines -->
   <string name="application_search_hint">Ketz\'ib\'äx tzij yekanöx</string>
-  <!-- No Open Tabs Message Description -->
-  <string name="no_open_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">Wawe\' xkeq\'alajin pe ri jaqäl taq ruwi\'.</string>
-  <!-- No Private Tabs Message Description -->
-  <string name="no_private_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">Wawe\' xkeq\'alajin pe ri ichinan taq ruwi\'.</string>
   <!-- The header text displayed on the private tabs page when no private tabs are open -->
   <string name="tab_manager_empty_private_tabs_page_header">Ichinan okem pa k\'amaya\'l</string>
   <!-- Tab tray multi select title in app bar. %1$d is the number of tabs selected -->
@@ -49,8 +45,6 @@
   <string name="tab_tray_select_collection">Ticha\' mol</string>
   <!-- Content description for close button while in multiselect mode in tab tray -->
   <string name="tab_tray_close_multiselect_content_description">Tel pa k\'ïy cha\'oj b\'anikil</string>
-  <!-- Content description for save to collection button while in multiselect mode in tab tray -->
-  <string name="tab_tray_collection_button_multiselect_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Keyak cha\'on taq ruwi\' pa mol</string>
   <!-- The action text displayed on the synced tabs page when the user is not logged into an account, prompting the user to sign into their account. When clicked, it takes the user to the account sign-in flow. -->
   <string name="tab_manager_empty_synced_tabs_page_sign_in_cta">Titikirisäx molojri\'ïl</string>
   <!--
@@ -64,7 +58,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">Tiyuj</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s b\'anon ruma Mozilla.</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s b\'anon ruma Mozilla.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Ch\'ob\'on taq tzij chi rij ri ichinan okem pa k\'amaya\'l</string>
   <!-- Text to be announced by the accessibility service to inform the user that the private browsing mode is currently active. -->
@@ -195,18 +189,12 @@
   <string name="browser_menu_extension_plus_icon_content_description_2">Titz\'aqatisäx %1$s</string>
   <!-- Browser menu button that opens account settings -->
   <string name="browser_menu_account_settings">Rutzijol rub\'i\' taqoya\'l</string>
-  <!-- Browser menu button that sends a user to help articles -->
-  <string name="browser_menu_help" tools:ignore="UnusedResources" moz:removedIn="149">To\'ïk</string>
-  <!-- Browser menu button that sends a to a the what's new article -->
-  <string name="browser_menu_whats_new" tools:ignore="UnusedResources" moz:removedIn="149">Achike natzijoj</string>
   <!-- Browser menu button that opens the settings menu -->
   <string name="browser_menu_settings">Nuk’ulem</string>
   <!-- Browser menu button that opens a user's library -->
   <string name="browser_menu_library">Wujb\'äl</string>
   <!-- Browser menu toggle that requests a desktop site -->
   <string name="browser_menu_desktop_site">Ruxaq ch\'atal</string>
-  <!-- Browser menu button that reopens a private tab as a regular tab -->
-  <string name="browser_menu_open_in_regular_tab" tools:ignore="UnusedResources" moz:removedIn="149">Tijaq pa jun choj ruwi\'</string>
   <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
   <string name="browser_menu_add_to_homescreen">Titz\'aqatisäx pa ri Rutikirib\'al ruwa</string>
   <!-- Content description (not visible, for screen readers etc.) for the Resync tabs button -->
@@ -230,11 +218,6 @@
     Browser menu text shown in custom tabs to indicate this is a Fenix tab
     %1$s is the name of the app (for example "Firefox").
   -->
-  <string name="browser_menu_powered_by" tools:ignore="UnusedResources" moz:removedIn="149">YA\'ON RUMA %1$s</string>
-  <!--
-    Browser menu text shown in custom tabs to indicate this is a Fenix tab
-    %1$s is the name of the app (for example "Firefox").
-  -->
   <string name="browser_menu_powered_by2">B\'anon ruma %1$s</string>
   <!-- Browser menu button to put the current page in reader mode -->
   <string name="browser_menu_read">Sik\'inem tz\'etoj</string>
@@ -242,14 +225,6 @@
   <string name="browser_menu_read_close">Titz\'apïx rutz\'etik sik\'inïk</string>
   <!-- Browser menu button to open the current page in an external app -->
   <string name="browser_menu_open_app_link">Tijaq pa Chokoy</string>
-  <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
-  <string name="browser_menu_customize_reader_view" tools:ignore="UnusedResources" moz:removedIn="149">Ke\'ichinäx rutz\'etoj sik\'inem</string>
-  <!-- Browser menu label for adding a bookmark -->
-  <string name="browser_menu_add" tools:ignore="UnusedResources" moz:removedIn="149">Titz\'aqatisäx</string>
-  <!-- Browser menu label for editing a bookmark -->
-  <string name="browser_menu_edit" tools:ignore="UnusedResources" moz:removedIn="149">Tinuk\'</string>
-  <!-- Button shown on the home page that opens the Customize home settings -->
-  <string name="browser_menu_customize_home_1" tools:ignore="UnusedResources" moz:removedIn="149">Tawichinaj ri ruxaq atikirib\'al</string>
   <!-- Browser menu label to sign in to sync on the device using Mozilla accounts -->
   <string name="browser_menu_sign_in">Titikirisäx molojri\'ïl</string>
   <!-- Browser menu label to sign back in to sync on the device when the user's account needs to be reauthenticated -->
@@ -275,17 +250,9 @@
   <!--
     Browser Toolbar
 
-    Content description for the Home screen button on the browser toolbar
+    Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
-  <string name="browser_toolbar_home">Rutikirib\'al ruwäch</string>
-  <!-- Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred. -->
   <string name="browser_toolbar_translate">Titzalq\'omïx ruxaq</string>
-  <!--
-    Content description (not visible, for screen readers etc.) for the translate page toolbar button that opens the translations dialog when the page is translated successfully.
-    %1$s is the name of the language that is displayed in the original page. (For example: English)
-    %2$s is the name of the language which the page was translated to. (For example: French)
-  -->
-  <string name="browser_toolbar_translated_successfully">Tzalq\'omin ruxaq %1$s pa %2$s.</string>
   <!--
     Locale Settings Fragment
 
@@ -296,9 +263,11 @@
   <string name="default_locale_text">Tokisäx ri ruch\'ab\'äl oyonib\'äl</string>
   <!-- Placeholder text shown in the search bar before a user enters text -->
   <string name="locale_search_hint">Tikanöx ch\'ab\'äl</string>
-  <!-- Button in the search view when shortcuts are displayed that takes a user to the search engine settings -->
-  <string name="search_shortcuts_engine_settings">Runuk\'ulem kanob\'äl</string>
-  <!-- Button in the search view that lets a user navigate to the site in their clipboard -->
+  <!--
+    Search Fragment
+
+    Button in the search view that lets a user navigate to the site in their clipboard
+  -->
   <string name="awesomebar_clipboard_title">Titz\'ajb\'äl ri ximonel pa ri molwuj</string>
   <!-- Button in the search suggestions onboarding that allows search suggestions in private sessions -->
   <string name="search_suggestions_onboarding_allow_button">Tiya\' q\'ij</string>
@@ -322,57 +291,6 @@
     Content description (not visible, for screen readers etc.): Close button for the home onboarding dialog
   -->
   <string name="onboarding_home_content_description_close_button">Titz\'apïx</string>
-  <!--
-    Juno first user onboarding flow experiment, strings are marked unused as they are only referenced by Nimbus experiments.
-
-    Description for learning more about our privacy notice.
-  -->
-  <string name="juno_onboarding_privacy_notice_text" tools:ignore="BrandUsage">Firefox ichinan rutzijol</string>
-  <!-- Title for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_title_nimbus_2">Niqa chi qawäch chi atqajikib\'an</string>
-  <!-- Description for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_description_nimbus_3">Ri qokik\'amaya\'l re majun ch\'akoj rojqan nito\'on chi ri taq ajk\'ay man katkojqaj pan ewäl chupam ri web.</string>
-  <!-- Text for the button to set firefox as default browser on the device -->
-  <string name="juno_onboarding_default_browser_positive_button" tools:ignore="UnusedResources">Tiya\' kan achi\'el kanob\'äl k\'o wi</string>
-  <!-- Text for the button dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_default_browser_negative_button" tools:ignore="UnusedResources">Wakami mani</string>
-  <!-- Title for sign in to sync screen. -->
-  <string name="juno_onboarding_sign_in_title_2">Kak\'oje\' pa ewan sik\'inem toq ye\'ajäl ri taq awokisaxel</string>
-  <!-- Text for the button to sign in to sync on the device -->
-  <string name="juno_onboarding_sign_in_positive_button" tools:ignore="UnusedResources">Titikirisäx molojri\'ïl</string>
-  <!-- Text for the button dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_sign_in_negative_button" tools:ignore="UnusedResources">Wakami mani</string>
-  <!--
-    Title for enable notification permission screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_enable_notifications_title_nimbus_2" tools:ignore="BrandUsage">Ri taq rutzijol yatkito\' yalan at jikil pa Firefox</string>
-  <!--
-    Description for enable notification permission screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_enable_notifications_description_nimbus_2" tools:ignore="BrandUsage">Jikil ke\'ataqa\' taq ruwi\' chi kikojol taq okisaxel chuqa\' ke\'awila\' ch\'aqa\' chik taq rusamajib\'al richinanem Firefox.</string>
-  <!-- Text for the button to request notification permission on the device -->
-  <string name="juno_onboarding_enable_notifications_positive_button" tools:ignore="UnusedResources">Ketzij taq rutzijol</string>
-  <!-- Text for the button dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_enable_notifications_negative_button" tools:ignore="UnusedResources">Wakami mani</string>
-  <!--
-    Title for add search widget screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_add_search_widget_title" tools:ignore="BrandUsage,UnusedResources">Tatojtob\'ej ri ruwidget rukanob\'äl Firefox</string>
-  <!--
-    Description for add search widget screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_add_search_widget_description" tools:ignore="BrandUsage,UnusedResources">Rik\'in ri Firefox pa ruwa atikirib\'al, chanin yatok pan awokik\'amaya\'l ri nuya\' ruq\'ij ri ichinanem chuqa\' yeruq\'ät ri taq ojqanela\' chi kikojol taq ruxaq.</string>
-  <!--
-    Text for the button to add search widget on the device used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_add_search_widget_positive_button" tools:ignore="BrandUsage,UnusedResources">Titz\'aqatisäx ruwidget Firefox</string>
-  <!-- Text for the button to dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_add_search_widget_negative_button" tools:ignore="UnusedResources">Wakami mani</string>
   <!-- Button text to submit a startup crash report -->
   <string name="startup_crash_positive">Titaq rutzijol sachoj</string>
   <!-- Button text to continue and not send a startup crash report -->
@@ -412,8 +330,6 @@
   <string name="preferences_category_general">Chijun</string>
   <!-- Preference category for all links about Fenix -->
   <string name="preferences_category_about">Tawetamaj qawäch</string>
-  <!-- Preference category for settings related to changing the default search engine -->
-  <string name="preferences_category_select_default_search_engine">Tacha\' jun</string>
   <!-- Preference for settings related to managing search shortcuts for the quick search menu -->
   <string name="preferences_manage_search_shortcuts_2">Ke\'asamajij cha\'el taq kanob\'äl</string>
   <!-- Summary for preference for settings related to managing search shortcuts for the quick search menu -->
@@ -510,7 +426,7 @@
   <!-- Preference for accessibility -->
   <string name="preferences_accessibility">Okel</string>
   <!-- Preference to override the Mozilla account server -->
-  <string name="preferences_override_account_server">Ichinan ruk\'u\'x rusamaj Mozilla account</string>
+  <string name="preferences_override_account_server" tools:ignore="BrandUsage">Ichinan ruk\'u\'x rusamaj Mozilla account</string>
   <!-- Preference to override the Sync token server -->
   <string name="preferences_override_sync_tokenserver">Ichinan ruk\'u\'x rusamaj Sync</string>
   <!-- Preference category for account information -->
@@ -524,7 +440,7 @@
   <!-- Preference for settings related to visual options -->
   <string name="preferences_customize">Tichinäx</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
-  <string name="preferences_account_default_name_2">Rub\'i\' rutaqoya\'l Mozilla</string>
+  <string name="preferences_account_default_name_2" tools:ignore="BrandUsage">Rub\'i\' rutaqoya\'l Mozilla</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
   <string name="preferences_account_sync_error">Tokisäx chik richin nitikirisäx chik ri ximoj</string>
   <!-- Preference for language -->
@@ -704,7 +620,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">Taq tijonïk</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">Taya\' q\'ij chi ri Mozilla nuyäk chuqa\' nub\'än taq tijonïk</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">Taya\' q\'ij chi ri Mozilla nuyäk chuqa\' nub\'än taq tijonïk</string>
   <!-- Preference for reconnecting to FxA sync -->
   <string name="preferences_sync_sign_in_to_reconnect">Titikirisäx molojri\'ïl richin nok chik</string>
   <!-- Preference for removing FxA account -->
@@ -743,8 +659,6 @@
   <string name="preference_gestures_website_pull_to_refresh">Tiqirirëx richin nik\'ex</string>
   <!-- Preference for using the dynamic toolbar -->
   <string name="preference_gestures_dynamic_toolbar">Taq\'axaj richin nawewaj ri ajkajtz\'ik</string>
-  <!-- Preference for showing the opened tabs by swiping up on the toolbar -->
-  <string name="preference_gestures_swipe_toolbar_show_tabs">Tiq\'axäx ri ajkatz\'ik ajsik richin yejaq taq ruwi\'</string>
   <!--
     Library
 
@@ -763,8 +677,6 @@
   <string name="library_desktop_bookmarks_unfiled">Ch\'aqa\' chik taq Yaketal</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Natab\'äl</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">K\'ak\'a\' ruwi\'</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Taq nuk\'ulem</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -868,28 +780,14 @@
   <string name="add_tab">Titz\'aqatisäx ruwi\'</string>
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">Titz\'aqatisäx ichinan ruwi\'</string>
-  <!-- Text for the new tab button to indicate adding a new private tab in the tab -->
-  <string name="tab_drawer_fab_content" tools:ignore="UnusedResources" moz:removedIn="149">Ichinan</string>
-  <!-- Text for the new tab button to indicate syncing command on the synced tabs page -->
-  <string name="tab_drawer_fab_sync" tools:ignore="UnusedResources" moz:removedIn="149">Tixim</string>
-  <!-- Text shown in the menu for sharing all tabs -->
-  <string name="tab_tray_menu_item_share" tools:ignore="UnusedResources" moz:removedIn="149">Kekomonïx ronojel taq ruwi\'</string>
   <!-- Text shown in the menu to view recently closed tabs -->
   <string name="tab_tray_menu_recently_closed">Taq ruwi\' nimakol ketz\'apïx</string>
-  <!-- Text shown in the tabs tray inactive tabs section -->
-  <string name="tab_tray_inactive_recently_closed" tools:ignore="UnusedResources" moz:removedIn="149">K\'a b\'a ketz\'apïx</string>
   <!-- Text shown in the menu to view account settings -->
   <string name="tab_tray_menu_account_settings">Kinuk\'ulem rub\'i\' taqoya\'l</string>
   <!-- Text shown in the menu to view tab settings -->
   <string name="tab_tray_menu_tab_settings">Kinuk\'ulem ruwi\'</string>
   <!-- Text shown in the menu for closing all tabs -->
   <string name="tab_tray_menu_item_close">Titz\'apïx ronojel ri taq ruwi\'</string>
-  <!-- Text shown in the multiselect menu for bookmarking selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_bookmark" tools:ignore="UnusedResources" moz:removedIn="149">Yaketal</string>
-  <!-- Text shown in the multiselect menu for closing selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_close" tools:ignore="UnusedResources" moz:removedIn="149">Titz\'apïx</string>
-  <!-- Content description for tabs tray multiselect share button -->
-  <string name="tab_tray_multiselect_share_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Kekomonïx cha\'on taq ruwi\'</string>
   <!-- Content description for tabs tray multiselect menu -->
   <string name="tab_tray_multiselect_menu_content_description">Cha\'on kik\'utsamaj ruwi\'</string>
   <!-- Content description (not visible, for screen readers etc.): Removes tab from collection button. Removes the selected tab from collection when pressed -->
@@ -961,7 +859,7 @@
   -->
   <string name="tab_crash_title_2">Takuyu\'. Man nitikïr ta nusamajij ri ruxaq ri %1$s.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">Titaq rutzijol sachoj chi re ri Mozilla</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">Titaq rutzijol sachoj chi re ri Mozilla</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">Titz\'apïx ruwi\'</string>
   <!-- Restore tab button text on the tab crash page -->
@@ -974,8 +872,6 @@
   <string name="edit_bookmark_snackbar_action">TINUK\'</string>
   <!-- Bookmark overflow menu edit button -->
   <string name="bookmark_menu_edit_button">Tinuk\'</string>
-  <!-- Bookmark overflow menu copy button -->
-  <string name="bookmark_menu_copy_button" tools:ignore="UnusedResources" moz:removedIn="150">Tiwachib\'ëx</string>
   <!-- Bookmark overflow menu share button -->
   <string name="bookmark_menu_share_button">Tikomonïx</string>
   <!-- Bookmark overflow menu open in new tab button -->
@@ -999,10 +895,6 @@
   <string name="edit_bookmark_folder_fragment_title">Tinuk\' Molyakb\'äl</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">MOLYAKWUJ</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">B\'I\'AJ</string>
   <!-- Bookmark select folder screen title -->
   <string name="bookmark_select_folder_fragment_label">Ticha\' molyakb\'äl</string>
   <!-- Bookmark editing error missing or improper URL -->
@@ -1012,8 +904,6 @@
     %1$s is the host part of the URL of the bookmark deleted, if any
   -->
   <string name="bookmark_deletion_snackbar_message">Xyuj %1$s</string>
-  <!-- Bookmark undo button for deletion snackbar action -->
-  <string name="bookmark_undo_deletion" tools:ignore="UnusedResources" moz:removedIn="150">TITZOLÏX</string>
   <!--
     Site Permissions
 
@@ -1108,8 +998,6 @@
   <string name="collections_header">Taq mol</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">Ruk\'utsamaj mol</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">Ke\'amolo\' ri naqa chawäch.\nKe\'atzob\'ajij ri junam taq kanoxïk, taq ruxaq chuqa\' ri taq ruwi\' richin anin yatok chi kipam.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">Kecha\' taq Ruwi\'</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -1221,22 +1109,6 @@
     The app name is in the text, due to limitations with localizing Nimbus experiments
   -->
   <string name="nimbus_notification_default_browser_text" tools:ignore="BrandUsage,UnusedResources">Tab\'ana\' chi ri Firefox nok ri nab\'ey awokik\'amaya\'l</string>
-  <!-- Title shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_title" tools:ignore="UnusedResources" moz:removedIn="150">Titojtob\'ëx ichinan okem</string>
-  <!--
-    Text shown in the notification that pops up to re-engage the user.
-    %1$s is a placeholder that will be replaced by the app name.
-  -->
-  <string name="notification_re_engagement_text" tools:ignore="UnusedResources" moz:removedIn="150">Katok pa k\'amaya\'l akuchi\' majun kuki o taq natab\'äl eyakon pa %1$s</string>
-  <!-- Title A shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_A_title" tools:ignore="UnusedResources" moz:removedIn="150">Majun etal taya\' kan toq yatok pa k\'amaya\'l</string>
-  <!--
-    Text A shown in the notification that pops up to re-engage the user.
-    %1$s is a placeholder that will be replaced by the app name.
-  -->
-  <string name="notification_re_engagement_A_text" tools:ignore="UnusedResources" moz:removedIn="150">Ri ichinan okem pa ruk\'amaya\'l %1$s majun nuyäk ri awetamab\'al.</string>
-  <!-- Title B shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_B_title" tools:ignore="UnusedResources" moz:removedIn="150">Tatikirisaj ri nab\'ey akanoxik</string>
   <!--
     Survey
 
@@ -1254,14 +1126,10 @@
     Text shown in snackbar when user closes a tab
   -->
   <string name="snackbar_tab_closed">Ruwi\' xtz\'apïx</string>
-  <!-- Text shown in snackbar when user closes all tabs -->
-  <string name="snackbar_tabs_closed">Taq ruwi\' xetz\'apïx</string>
   <!-- Text shown in snackbar when user adds a site to shortcuts -->
   <string name="snackbar_added_to_shortcuts">¡Xtz\'aqatisäx pa ruq\'a\'!</string>
   <!-- Text shown in snackbar when user closes a private tab -->
   <string name="snackbar_private_tab_closed">Ichinan ruwi\' xtz\'apïx</string>
-  <!-- Text shown in snackbar when user erases their private browsing data -->
-  <string name="snackbar_private_data_deleted">Xeyuj ri taq rutzij ichinan okem</string>
   <!-- Text shown in snackbar to undo deleting a tab, top site or collection -->
   <string name="snackbar_deleted_undo">TITZOLÏX</string>
   <!--
@@ -1324,8 +1192,6 @@
   <string name="preferences_delete_browsing_data_on_quit">Keyuj taq rutzij okem pa k\'amaya\'l toq nel</string>
   <!-- Summary for the Delete browsing data on quit preference. "Quit" translation should match delete_browsing_data_on_quit_action translation. -->
   <string name="preference_summary_delete_browsing_data_on_quit_2">Keyuj ri taq tzij okem pa k\'amaya\'l pa ruyonil toq xtacha\' \"Tel\" pa ri nïm k\'utsamajib\'äl</string>
-  <!-- Action item in menu for the Delete browsing data on quit feature -->
-  <string name="delete_browsing_data_on_quit_action" tools:ignore="UnusedResources" moz:removedIn="149">Tel</string>
   <!-- Title text of a delete browsing data dialog. -->
   <string name="delete_history_prompt_title">Rupajb\'al ramaj richin niyuj</string>
   <!-- Radio button in the delete browsing data dialog to delete history items for the last hour. -->
@@ -1388,7 +1254,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Runuk\'ulem Ojqanem</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Utzirisan Chajinïk chuwäch Ojqanem</string>
   <!-- Description of enhanced tracking protection. %s is the name of the app (for example "Firefox"). -->
   <string name="preference_enhanced_tracking_protection_explanation_2">%s yaruchajij chi kiwäch relik ojqanela\', ri nikoqaj ri nab\'än pa k\'amab\'ey.</string>
@@ -1762,18 +1632,10 @@
     the certificate authority that verified the ticket
   -->
   <string name="certificate_info_verified_by">Jikib\'an Ruma: %1$s</string>
-  <!-- Login overflow menu delete button -->
-  <string name="login_menu_delete_button" tools:ignore="UnusedResources" moz:removedIn="149">Tiyuj</string>
-  <!-- Login overflow menu edit button -->
-  <string name="login_menu_edit_button" tools:ignore="UnusedResources" moz:removedIn="149">Tinuk\'</string>
   <!-- Positive action of a dialog asking to delete -->
   <string name="dialog_delete_positive">Tiyuj</string>
   <!-- Negative action of a dialog asking to delete login -->
   <string name="dialog_delete_negative">Tiq\'at</string>
-  <!-- The editable text field for a login's password. -->
-  <string name="saved_login_password_description_2" tools:ignore="UnusedResources" moz:removedIn="149">Ruk\'ojlem nuk\'el rutz\'ib\'axik ewan tzij.</string>
-  <!-- The button description to save changes to an edited password. -->
-  <string name="save_changes_to_login_2" tools:ignore="UnusedResources" moz:removedIn="149">Keyak taq jaloj.</string>
   <!-- The page title for editing a saved password. -->
   <string name="edit_2">Tinuk\' ewan tzij</string>
   <!-- The page title for adding new password. -->
@@ -1860,8 +1722,6 @@
   <string name="other_default_search_engine_suggestion_header">Tikanöx pa %s</string>
   <!-- Default browser card text -->
   <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">Nub\'än kinuk\'ulem ximonel ajk\'amaya\'l taq ruxaq, taq taqoya\'l chuqa\' taq rutzijol richin yejaq pa ruyonil pa Firefox.</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">Tiyuj</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">Tipitz\' richin ch\'aqa\' rub\'anikil</string>
   <!-- Content description for the action bar "up" button -->
@@ -1878,12 +1738,8 @@
     Action label for elements that can be collapsed if interacting with them. Talkback will append this to say "Double tap to collapse".
   -->
   <string name="a11y_action_label_collapse">Tich\'utinarisäx</string>
-  <!-- Current state for elements that can be collapsed if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_collapsed">ch\'utinarisan</string>
   <!-- Action label for elements that can be expanded if interacting with them. Talkback will append this to say "Double tap to expand". -->
   <string name="a11y_action_label_expand">tirik\'</string>
-  <!-- Current state for elements that can be expanded if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_expanded">nimirisan</string>
   <!-- Translations feature -->
 
   <!-- TextField Design System Component -->

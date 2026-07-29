@@ -1,4 +1,3 @@
-/* vim:set ts=4 sw=2 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -63,6 +62,7 @@ void PendingTransactionQueue::InsertTransactionNormal(
   // does an insert-sort. It would be better to just append all elements and
   // then sort.
   InsertTransactionSorted(*infoArray, info, aInsertAsFirstForTheSamePriority);
+  ++mPendingQueueLength;
 }
 
 void PendingTransactionQueue::InsertTransactionSorted(
@@ -162,6 +162,8 @@ void PendingTransactionQueue::AppendPendingQForFocusedWindow(
   result.InsertElementsAt(result.Length(), infoArray->Elements(),
                           countToAppend);
   infoArray->RemoveElementsAt(0, countToAppend);
+  MOZ_ASSERT(mPendingQueueLength >= countToAppend);
+  mPendingQueueLength -= countToAppend;
 
   LOG(
       ("PendingTransactionQueue::AppendPendingQForFocusedWindow, "
@@ -192,6 +194,8 @@ void PendingTransactionQueue::AppendPendingQForNonFocusedWindows(
       ++totalCount;
     }
     entry.GetWeak()->RemoveElementsAt(0, count);
+    MOZ_ASSERT(mPendingQueueLength >= count);
+    mPendingQueueLength -= count;
 
     if (maxCount && totalCount == maxCount) {
       if (entry.GetWeak()->Length()) {
@@ -226,36 +230,25 @@ void PendingTransactionQueue::RemoveEmptyPendingQ() {
   }
 }
 
-size_t PendingTransactionQueue::PendingQueueLength() const {
+#ifdef DEBUG
+size_t PendingTransactionQueue::ComputePendingQueueLength() const {
   size_t length = 0;
   for (const auto& data : mPendingTransactionTable.Values()) {
     length += data->Length();
   }
-
   return length;
 }
+#endif
 
-bool PendingTransactionQueue::PendingQueueIsEmpty() const {
-  for (const auto& data : mPendingTransactionTable.Values()) {
-    if (!data->IsEmpty()) {
-      return false;
-    }
-  }
-  return true;
+void PendingTransactionQueue::OnPendingTransactionRemovedFromTable() {
+  MOZ_ASSERT(mPendingQueueLength > 0);
+  --mPendingQueueLength;
 }
 
 size_t PendingTransactionQueue::PendingQueueLengthForWindow(
     uint64_t windowId) const {
   auto* pendingQ = mPendingTransactionTable.Get(windowId);
   return (pendingQ) ? pendingQ->Length() : 0;
-}
-
-size_t PendingTransactionQueue::UrgentStartQueueLength() {
-  return mUrgentStartQ.Length();
-}
-
-bool PendingTransactionQueue::UrgentStartQueueIsEmpty() const {
-  return mUrgentStartQ.IsEmpty();
 }
 
 void PendingTransactionQueue::PrintPendingQ() {
@@ -294,8 +287,9 @@ void PendingTransactionQueue::CancelAllTransactions(nsresult reason) {
     data->Clear();
   }
   mPendingTransactionTable.Clear();
+  mPendingQueueLength = 0;
 
-  for (auto trans : toClose) {
+  for (const auto& trans : toClose) {
     LOG(("PendingTransactionQueue::CancelAllTransactions %p\n", trans.get()));
     trans->Close(reason);
   }

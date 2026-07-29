@@ -14,7 +14,11 @@ from taskgraph.util import json, taskcluster
 from taskgraph.util.taskcluster import _task_definitions_cache
 
 from gecko_taskgraph import actions
-from gecko_taskgraph.actions.util import combine_task_graph_files, relativize_datestamps
+from gecko_taskgraph.actions.util import (
+    combine_task_graph_files,
+    get_pushes_in_gap,
+    relativize_datestamps,
+)
 from gecko_taskgraph.decision import read_artifact
 
 TASK_DEF = {
@@ -174,6 +178,100 @@ def test_extract_applicable_action(
     )
     pprint(action, indent=2)
     assert is_subset(expected, action)
+
+
+def test_get_pushes_in_gap_finds_boundary(mocker):
+    """Stop early when a push with the label is found within first chunk."""
+    label = "raptor-browsertime-firefox-tp6"
+    parameters = {
+        "pushlog_id": "125",
+        "head_repository": "https://hg.mozilla.org/mozilla-central",
+        "project": "mozilla-central",
+    }
+
+    # pushes 100..124, boundary found at push 106 (has the label)
+    mocker.patch(
+        "gecko_taskgraph.actions.util.get_pushes",
+        return_value=[str(i) for i in range(100, 125)],
+    )
+
+    def fake_label_to_taskid(project, push_id):
+        if push_id == "106":
+            return {label: "task-abc"}
+        return {}
+
+    mocker.patch(
+        "gecko_taskgraph.actions.util.get_label_to_taskid",
+        side_effect=fake_label_to_taskid,
+    )
+
+    result = get_pushes_in_gap(parameters, label)
+
+    # only pushes after the boundary (107..124) should be in gap
+    assert result == [str(i) for i in range(107, 125)]
+
+
+def test_get_pushes_in_gap_no_boundary_found(mocker):
+    """Return all fetched pushes when no boundary is found within max depth."""
+    label = "raptor-browsertime-firefox-tp6"
+    parameters = {
+        "pushlog_id": "125",
+        "head_repository": "https://hg.mozilla.org/mozilla-central",
+        "project": "mozilla-central",
+    }
+
+    # 4 chunks of 25, none has the label
+    mocker.patch(
+        "gecko_taskgraph.actions.util.get_pushes",
+        side_effect=[
+            [str(i) for i in range(100, 125)],
+            [str(i) for i in range(75, 100)],
+            [str(i) for i in range(50, 75)],
+            [str(i) for i in range(25, 50)],
+        ],
+    )
+    mocker.patch(
+        "gecko_taskgraph.actions.util.get_label_to_taskid",
+        return_value={},
+    )
+
+    result = get_pushes_in_gap(parameters, label)
+
+    # all 100 pushes should be returned as gap
+    assert result == [str(i) for i in range(25, 125)]
+
+
+def test_get_pushes_in_gap_boundary_at_first_push(mocker):
+    """
+    Boundary found at the first searched push (124, newest push),
+    so no pushes are added to gap before returning
+    """
+    label = "raptor-browsertime-firefox-tp6"
+    parameters = {
+        "pushlog_id": "125",
+        "head_repository": "https://hg.mozilla.org/mozilla-central",
+        "project": "mozilla-central",
+    }
+
+    mocker.patch(
+        "gecko_taskgraph.actions.util.get_pushes",
+        return_value=[str(i) for i in range(100, 125)],
+    )
+
+    def _label_map(project, push_id):
+        if push_id == "124":
+            return {label: "task-abc"}
+        return {}
+
+    mocker.patch(
+        "gecko_taskgraph.actions.util.get_label_to_taskid",
+        side_effect=_label_map,
+    )
+
+    result = get_pushes_in_gap(parameters, label)
+
+    # boundary found first searched push at push 124, gap should be empty
+    assert result == []
 
 
 if __name__ == "__main__":

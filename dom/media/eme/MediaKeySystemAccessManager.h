@@ -103,7 +103,7 @@ class MediaKeySystemAccessManager final : public nsIObserver, public nsINamed {
  public:
   explicit MediaKeySystemAccessManager(nsPIDOMWindowInner* aWindow);
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(MediaKeySystemAccessManager,
                                            nsIObserver)
   NS_DECL_NSIOBSERVER

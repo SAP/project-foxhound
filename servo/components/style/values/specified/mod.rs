@@ -6,38 +6,33 @@
 //!
 //! TODO(emilio): Enhance docs.
 
-use super::computed::transform::DirectionVector;
 use super::computed::{Context, ToComputedValue};
 use super::generics::grid::ImplicitGridTracks as GenericImplicitGridTracks;
 use super::generics::grid::{GridLine as GenericGridLine, TrackBreadth as GenericTrackBreadth};
 use super::generics::grid::{TrackList as GenericTrackList, TrackSize as GenericTrackSize};
-use super::generics::transform::IsParallelTo;
-use super::generics::{self, GreaterThanOrEqualToOne, NonNegative};
-use super::{CSSFloat, CSSInteger};
+use super::generics::{self, NonNegative};
+use super::CSSFloat;
 use crate::context::QuirksMode;
 use crate::derives::*;
 use crate::parser::{Parse, ParserContext};
-use crate::values::specified::calc::CalcNode;
-use crate::values::{serialize_atom_identifier, serialize_number, AtomString};
-use crate::{Atom, Namespace, One, Prefix, Zero};
+use crate::values::specified::number::parse_number_with_clamping_mode;
+use crate::values::{computed, serialize_atom_identifier, AtomString};
+use crate::{Atom, Namespace, Prefix};
 use cssparser::{Parser, Token};
+use rustc_hash::FxHashMap;
 use std::fmt::{self, Write};
-use std::ops::Add;
 use style_traits::values::specified::AllowedNumericType;
-use style_traits::{
-    CssString, CssWriter, NumericValue, ParseError, SpecifiedValueInfo, StyleParseErrorKind, ToCss,
-    ToTyped, TypedValue, UnitValue,
-};
+use style_traits::{CssWriter, ParseError, StyleParseErrorKind, ToCss};
 
 pub use self::align::{ContentDistribution, ItemPlacement, JustifyItems, SelfAlignment};
-pub use self::angle::{AllowUnitlessZeroAngle, Angle};
+pub use self::angle::{AllowUnitlessZeroAngle, Angle, NoCalcAngle};
 pub use self::animation::{
     AnimationComposition, AnimationDirection, AnimationDuration, AnimationFillMode,
-    AnimationIterationCount, AnimationName, AnimationPlayState, AnimationTimeline, ScrollAxis,
-    TimelineName, TransitionBehavior, TransitionProperty, ViewTimelineInset, ViewTransitionClass,
-    ViewTransitionName,
+    AnimationIterationCount, AnimationName, AnimationPlayState, AnimationRangeEnd,
+    AnimationRangeStart, AnimationTimeline, ScrollAxis, TimelineName, TransitionBehavior,
+    TransitionProperty, ViewTimelineInset, ViewTransitionClass, ViewTransitionName,
 };
-pub use self::background::{BackgroundRepeat, BackgroundSize};
+pub use self::background::{BackgroundClip, BackgroundRepeat, BackgroundSize};
 pub use self::basic_shape::FillRule;
 pub use self::border::{
     BorderCornerRadius, BorderImageRepeat, BorderImageSideWidth, BorderImageSlice,
@@ -52,10 +47,12 @@ pub use self::box_::{
     ScrollSnapStop, ScrollSnapStrictness, ScrollSnapType, ScrollbarGutter, TouchAction, WillChange,
     WillChangeBits, WritingModeProperty, Zoom,
 };
+pub use self::calc::{CalcLengthPercentage, CalcNumeric};
 pub use self::color::{
     Color, ColorOrAuto, ColorPropertyValue, ColorScheme, ForcedColorAdjust, PrintColorAdjust,
 };
 pub use self::column::ColumnCount;
+pub use self::corner_shape::{CornerShape, CornerShapeRect, SuperellipseArg};
 pub use self::counters::{Content, ContentItem, CounterIncrement, CounterReset, CounterSet};
 pub use self::easing::TimingFunction;
 pub use self::effects::{BoxShadow, Filter, SimpleShadow};
@@ -70,39 +67,33 @@ pub use self::font::{FontVariantAlternates, FontWeight};
 pub use self::font::{FontVariantEastAsian, FontVariationSettings, LineHeight};
 pub use self::font::{MathDepth, MozScriptMinSize, MozScriptSizeMultiplier, XLang, XTextScale};
 pub use self::image::{EndingShape as GradientEndingShape, Gradient, Image, ImageRendering};
-pub use self::length::{AbsoluteLength, CalcLengthPercentage, CharacterWidth};
-pub use self::length::{FontRelativeLength, Length, LengthOrNumber, NonNegativeLengthOrNumber};
+pub use self::length::{Length, LengthOrNumber, LengthUnit, NonNegativeLengthOrNumber};
 pub use self::length::{LengthOrAuto, LengthPercentage, LengthPercentageOrAuto};
 pub use self::length::{Margin, MaxSize, Size};
-pub use self::length::{NoCalcLength, ViewportPercentageLength, ViewportVariant};
+pub use self::length::{NoCalcLength, ViewportVariant};
 pub use self::length::{
     NonNegativeLength, NonNegativeLengthPercentage, NonNegativeLengthPercentageOrAuto,
 };
 pub use self::list::ListStyleType;
 pub use self::list::Quotes;
 pub use self::motion::{OffsetPath, OffsetPosition, OffsetRotate};
+pub use self::number::{
+    GreaterThanOrEqualToOneNumber, Integer, NoCalcNumber, NonNegativeInteger, NonNegativeNumber,
+    Number, PositiveInteger,
+};
 pub use self::outline::OutlineStyle;
 pub use self::page::{PageName, PageOrientation, PageSize, PageSizeOrientation, PaperSize};
-pub use self::percentage::{NonNegativePercentage, Percentage};
-pub use self::position::AnchorFunction;
-pub use self::position::AnchorName;
-pub use self::position::AnchorNameIdent;
-pub use self::position::AnchorScope;
-pub use self::position::AnchorScopeKeyword;
-pub use self::position::AspectRatio;
-pub use self::position::Inset;
-pub use self::position::PositionAnchor;
-pub use self::position::PositionAnchorKeyword;
-pub use self::position::PositionTryFallbacks;
-pub use self::position::PositionTryOrder;
-pub use self::position::PositionVisibility;
-pub use self::position::{GridAutoFlow, GridTemplateAreas, Position, PositionOrAuto};
-pub use self::position::{MasonryAutoFlow, MasonryItemOrder, MasonryPlacement};
-pub use self::position::{PositionArea, PositionAreaKeyword};
-pub use self::position::{PositionComponent, ZIndex};
+pub use self::param::LinkParameters;
+pub use self::percentage::{NoCalcPercentage, NonNegativePercentage, Percentage};
+pub use self::position::{
+    AnchorFunction, AnchorName, AnchorNameIdent, AspectRatio, GridAutoFlow, GridTemplateAreas,
+    Inset, MasonryAutoFlow, MasonryItemOrder, MasonryPlacement, Position, PositionAnchor,
+    PositionAnchorKeyword, PositionArea, PositionAreaKeyword, PositionComponent, PositionOrAuto,
+    PositionTryFallbacks, PositionTryOrder, PositionVisibility, ScopedName, ZIndex,
+};
 pub use self::ratio::Ratio;
 pub use self::rect::NonNegativeLengthOrNumberRect;
-pub use self::resolution::Resolution;
+pub use self::resolution::{NoCalcResolution, Resolution};
 pub use self::svg::{DProperty, MozContextProperties};
 pub use self::svg::{SVGLength, SVGOpacity, SVGPaint};
 pub use self::svg::{SVGPaintOrder, SVGStrokeDashArray, SVGWidth, VectorEffect};
@@ -117,9 +108,10 @@ pub use self::text::{TextBoxEdge, TextBoxTrim};
 pub use self::text::{
     TextDecorationInset, TextDecorationLength, TextDecorationSkipInk, TextJustify, TextTransform,
 };
-pub use self::time::Time;
+pub use self::time::{NoCalcTime, Time};
 pub use self::transform::{Rotate, Scale, Transform};
 pub use self::transform::{TransformBox, TransformOrigin, TransformStyle, Translate};
+pub use self::tree_counting::TreeCountingFunction;
 #[cfg(feature = "gecko")]
 pub use self::ui::CursorImage;
 pub use self::ui::{
@@ -138,19 +130,23 @@ pub mod box_;
 pub mod calc;
 pub mod color;
 pub mod column;
+pub mod corner_shape;
 pub mod counters;
 pub mod easing;
 pub mod effects;
 pub mod flex;
 pub mod font;
+pub mod frequency;
 pub mod grid;
 pub mod image;
 pub mod intersection_observer;
 pub mod length;
 pub mod list;
 pub mod motion;
+pub mod number;
 pub mod outline;
 pub mod page;
+pub mod param;
 pub mod percentage;
 pub mod position;
 pub mod ratio;
@@ -163,13 +159,14 @@ pub mod table;
 pub mod text;
 pub mod time;
 pub mod transform;
+pub mod tree_counting;
 pub mod ui;
 pub mod url;
 
 /// <angle> | <percentage>
 /// https://drafts.csswg.org/css-values/#typedef-angle-percentage
 #[allow(missing_docs)]
-#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
 pub enum AngleOrPercentage {
     Percentage(Percentage),
     Angle(Angle),
@@ -207,284 +204,14 @@ impl Parse for AngleOrPercentage {
     }
 }
 
-/// Parse a `<number>` value, with a given clamping mode.
-fn parse_number_with_clamping_mode<'i, 't>(
-    context: &ParserContext,
-    input: &mut Parser<'i, 't>,
-    clamping_mode: AllowedNumericType,
-) -> Result<Number, ParseError<'i>> {
-    let location = input.current_source_location();
-    match *input.next()? {
-        Token::Number { value, .. } if clamping_mode.is_ok(context.parsing_mode, value) => {
-            Ok(Number {
-                value,
-                calc_clamping_mode: None,
-            })
-        },
-        Token::Function(ref name) => {
-            let function = CalcNode::math_function(context, name, location)?;
-            let value = CalcNode::parse_number(context, input, function)?;
-            Ok(Number {
-                value,
-                calc_clamping_mode: Some(clamping_mode),
-            })
-        },
-        ref t => Err(location.new_unexpected_token_error(t.clone())),
-    }
-}
-
-/// A CSS `<number>` specified value.
-///
-/// https://drafts.csswg.org/css-values-3/#number-value
-#[derive(Clone, Copy, Debug, MallocSizeOf, PartialOrd, ToShmem)]
-pub struct Number {
-    /// The numeric value itself.
-    value: CSSFloat,
-    /// If this number came from a calc() expression, this tells how clamping
-    /// should be done on the value.
-    calc_clamping_mode: Option<AllowedNumericType>,
-}
-
-impl Parse for Number {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
-        parse_number_with_clamping_mode(context, input, AllowedNumericType::All)
-    }
-}
-
-impl PartialEq<Number> for Number {
-    fn eq(&self, other: &Number) -> bool {
-        if self.calc_clamping_mode != other.calc_clamping_mode {
-            return false;
-        }
-
-        self.value == other.value || (self.value.is_nan() && other.value.is_nan())
-    }
-}
-
-impl Number {
-    /// Returns a new number with the value `val`.
-    #[inline]
-    fn new_with_clamping_mode(
-        value: CSSFloat,
-        calc_clamping_mode: Option<AllowedNumericType>,
-    ) -> Self {
-        Self {
-            value,
-            calc_clamping_mode,
-        }
-    }
-
-    /// Returns this percentage as a number.
-    pub fn to_percentage(&self) -> Percentage {
-        Percentage::new_with_clamping_mode(self.value, self.calc_clamping_mode)
-    }
-
-    /// Returns a new number with the value `val`.
-    #[inline]
-    pub fn new(val: CSSFloat) -> Self {
-        Self::new_with_clamping_mode(val, None)
-    }
-
-    /// Returns whether this number came from a `calc()` expression.
-    #[inline]
-    pub fn was_calc(&self) -> bool {
-        self.calc_clamping_mode.is_some()
-    }
-
-    /// Returns the numeric value, clamped if needed.
-    #[inline]
-    pub fn get(&self) -> f32 {
-        crate::values::normalize(
-            self.calc_clamping_mode
-                .map_or(self.value, |mode| mode.clamp(self.value)),
-        )
-        .min(f32::MAX)
-        .max(f32::MIN)
-    }
-
-    #[allow(missing_docs)]
-    pub fn parse_non_negative<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Number, ParseError<'i>> {
-        parse_number_with_clamping_mode(context, input, AllowedNumericType::NonNegative)
-    }
-
-    #[allow(missing_docs)]
-    pub fn parse_at_least_one<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Number, ParseError<'i>> {
-        parse_number_with_clamping_mode(context, input, AllowedNumericType::AtLeastOne)
-    }
-
-    /// Clamp to 1.0 if the value is over 1.0.
-    #[inline]
-    pub fn clamp_to_one(self) -> Self {
-        Number {
-            value: self.value.min(1.),
-            calc_clamping_mode: self.calc_clamping_mode,
-        }
-    }
-}
-
-impl ToComputedValue for Number {
-    type ComputedValue = CSSFloat;
-
-    #[inline]
-    fn to_computed_value(&self, _: &Context) -> CSSFloat {
-        self.get()
-    }
-
-    #[inline]
-    fn from_computed_value(computed: &CSSFloat) -> Self {
-        Number {
-            value: *computed,
-            calc_clamping_mode: None,
-        }
-    }
-}
-
-impl ToCss for Number {
-    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
-    where
-        W: Write,
-    {
-        serialize_number(self.value, self.calc_clamping_mode.is_some(), dest)
-    }
-}
-
-impl ToTyped for Number {
-    fn to_typed(&self) -> Option<TypedValue> {
-        let value = self.value;
-        let unit = CssString::from("number");
-        Some(TypedValue::Numeric(NumericValue::Unit(UnitValue {
-            value,
-            unit,
-        })))
-    }
-}
-
-impl IsParallelTo for (Number, Number, Number) {
-    fn is_parallel_to(&self, vector: &DirectionVector) -> bool {
-        use euclid::approxeq::ApproxEq;
-        // If a and b is parallel, the angle between them is 0deg, so
-        // a x b = |a|*|b|*sin(0)*n = 0 * n, |a x b| == 0.
-        let self_vector = DirectionVector::new(self.0.get(), self.1.get(), self.2.get());
-        self_vector
-            .cross(*vector)
-            .square_length()
-            .approx_eq(&0.0f32)
-    }
-}
-
-impl SpecifiedValueInfo for Number {}
-
-impl Add for Number {
-    type Output = Self;
-
-    fn add(self, other: Self) -> Self {
-        Self::new(self.get() + other.get())
-    }
-}
-
-impl Zero for Number {
-    #[inline]
-    fn zero() -> Self {
-        Self::new(0.)
-    }
-
-    #[inline]
-    fn is_zero(&self) -> bool {
-        self.get() == 0.
-    }
-}
-
-impl From<Number> for f32 {
-    #[inline]
-    fn from(n: Number) -> Self {
-        n.get()
-    }
-}
-
-impl From<Number> for f64 {
-    #[inline]
-    fn from(n: Number) -> Self {
-        n.get() as f64
-    }
-}
-
-/// A Number which is >= 0.0.
-pub type NonNegativeNumber = NonNegative<Number>;
-
-impl Parse for NonNegativeNumber {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
-        parse_number_with_clamping_mode(context, input, AllowedNumericType::NonNegative)
-            .map(NonNegative::<Number>)
-    }
-}
-
-impl One for NonNegativeNumber {
-    #[inline]
-    fn one() -> Self {
-        NonNegativeNumber::new(1.0)
-    }
-
-    #[inline]
-    fn is_one(&self) -> bool {
-        self.get() == 1.0
-    }
-}
-
-impl NonNegativeNumber {
-    /// Returns a new non-negative number with the value `val`.
-    pub fn new(val: CSSFloat) -> Self {
-        NonNegative::<Number>(Number::new(val.max(0.)))
-    }
-
-    /// Returns the numeric value.
-    #[inline]
-    pub fn get(&self) -> f32 {
-        self.0.get()
-    }
-}
-
-/// An Integer which is >= 0.
-pub type NonNegativeInteger = NonNegative<Integer>;
-
-impl Parse for NonNegativeInteger {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
-        Ok(NonNegative(Integer::parse_non_negative(context, input)?))
-    }
-}
-
-/// A Number which is >= 1.0.
-pub type GreaterThanOrEqualToOneNumber = GreaterThanOrEqualToOne<Number>;
-
-impl Parse for GreaterThanOrEqualToOneNumber {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
-        parse_number_with_clamping_mode(context, input, AllowedNumericType::AtLeastOne)
-            .map(GreaterThanOrEqualToOne::<Number>)
-    }
-}
-
 /// <number> | <percentage>
 ///
 /// Accepts only non-negative numbers.
+///
+/// TODO(Bug 2040559) - Convert this into a NumericUnion, instead of an enum over
+/// Number and Percentage. Both types are also NumericUnions of unitless floats.
 #[allow(missing_docs)]
-#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem, ToTyped)]
 pub enum NumberOrPercentage {
     Percentage(Percentage),
     Number(Number),
@@ -514,19 +241,48 @@ impl NumberOrPercentage {
     }
 
     /// Convert the number or the percentage to a number.
-    pub fn to_percentage(self) -> Percentage {
+    pub fn to_percentage(self) -> Option<Percentage> {
         match self {
-            Self::Percentage(p) => p,
+            Self::Percentage(p) => Some(p),
             Self::Number(n) => n.to_percentage(),
         }
     }
 
     /// Convert the number or the percentage to a number.
-    pub fn to_number(self) -> Number {
+    pub fn to_number(&self) -> Option<Number> {
         match self {
             Self::Percentage(p) => p.to_number(),
-            Self::Number(n) => n,
+            Self::Number(n) => Some(n.clone()),
         }
+    }
+
+    /// Gets a reference to the underlying percentage, or None if this is a number
+    pub fn as_percentage(&self) -> Option<&Percentage> {
+        match self {
+            NumberOrPercentage::Percentage(percentage) => Some(percentage),
+            _ => None,
+        }
+    }
+
+    /// If this is a non-calc percentage, replaces it with the equivalent
+    /// number; otherwise, returns the original value.
+    pub fn into_simplified_number(self) -> NumberOrPercentage {
+        match self.as_percentage().and_then(|p| p.get()) {
+            Some(p) => NumberOrPercentage::Number(Number::new(p)),
+            None => self,
+        }
+    }
+
+    /// Attempts to resolve this number or percentage to a computed value.
+    pub fn to_computed_value_without_context(&self) -> Result<computed::NumberOrPercentage, ()> {
+        Ok(match self {
+            NumberOrPercentage::Percentage(percentage) => computed::NumberOrPercentage::Percentage(
+                computed::Percentage(percentage.resolve().ok_or(())?),
+            ),
+            NumberOrPercentage::Number(number) => {
+                computed::NumberOrPercentage::Number(number.resolve().ok_or(())?)
+            },
+        })
     }
 }
 
@@ -567,33 +323,21 @@ impl Parse for NonNegativeNumberOrPercentage {
     }
 }
 
-/// The value of Opacity is <alpha-value>, which is "<number> | <percentage>".
-/// However, we serialize the specified value as number, so it's ok to store
-/// the Opacity as Number.
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    MallocSizeOf,
-    PartialEq,
-    PartialOrd,
-    SpecifiedValueInfo,
-    ToCss,
-    ToShmem,
-    ToTyped,
-)]
-pub struct Opacity(Number);
+/// A specified CSS `opacity`
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem, ToTyped)]
+pub struct Opacity(NumberOrPercentage);
 
 impl Parse for Opacity {
     /// Opacity accepts <number> | <percentage>, so we parse it as NumberOrPercentage,
-    /// and then convert into an Number if it's a Percentage.
-    /// https://drafts.csswg.org/cssom/#serializing-css-values
+    /// and then convert into an Number if it's a non-calc Percentage.
+    /// https://drafts.csswg.org/css-color-4/#serializing-opacity-values
     fn parse<'i, 't>(
         context: &ParserContext,
         input: &mut Parser<'i, 't>,
     ) -> Result<Self, ParseError<'i>> {
-        let number = NumberOrPercentage::parse(context, input)?.to_number();
-        Ok(Opacity(number))
+        Ok(Opacity(
+            NumberOrPercentage::parse(context, input)?.into_simplified_number(),
+        ))
     }
 }
 
@@ -602,10 +346,10 @@ impl ToComputedValue for Opacity {
 
     #[inline]
     fn to_computed_value(&self, context: &Context) -> CSSFloat {
-        let value = self.0.to_computed_value(context);
-        if context.for_smil_animation {
-            // SMIL expects to be able to interpolate between out-of-range
-            // opacity values.
+        let value = self.0.to_computed_value(context).value();
+        if context.for_animation {
+            // Type <number> and <percentage> should be able to interpolate
+            // out-of-range opacity values which benefits additive animation
             value
         } else {
             value.min(1.0).max(0.0)
@@ -614,171 +358,9 @@ impl ToComputedValue for Opacity {
 
     #[inline]
     fn from_computed_value(computed: &CSSFloat) -> Self {
-        Opacity(Number::from_computed_value(computed))
-    }
-}
-
-/// A specified `<integer>`, either a simple integer value or a calc expression.
-/// Note that a calc expression may not actually be an integer; it will be rounded
-/// at computed-value time.
-///
-/// <https://drafts.csswg.org/css-values/#integers>
-#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, PartialOrd, ToShmem, ToTyped)]
-pub enum Integer {
-    /// A literal integer value.
-    Literal(CSSInteger),
-    /// A calc expression, whose value will be rounded later if necessary.
-    Calc(CSSFloat),
-}
-
-impl Zero for Integer {
-    #[inline]
-    fn zero() -> Self {
-        Self::new(0)
-    }
-
-    #[inline]
-    fn is_zero(&self) -> bool {
-        *self == 0
-    }
-}
-
-impl One for Integer {
-    #[inline]
-    fn one() -> Self {
-        Self::new(1)
-    }
-
-    #[inline]
-    fn is_one(&self) -> bool {
-        *self == 1
-    }
-}
-
-impl PartialEq<i32> for Integer {
-    fn eq(&self, value: &i32) -> bool {
-        self.value() == *value
-    }
-}
-
-impl Integer {
-    /// Trivially constructs a new `Integer` value.
-    pub fn new(val: CSSInteger) -> Self {
-        Self::Literal(val)
-    }
-
-    /// Returns the (rounded) integer value associated with this value.
-    pub fn value(&self) -> CSSInteger {
-        match *self {
-            Self::Literal(i) => i,
-            Self::Calc(n) => (n + 0.5).floor() as CSSInteger,
-        }
-    }
-
-    /// Trivially constructs a new integer value from a `calc()` expression.
-    fn from_calc(val: CSSFloat) -> Self {
-        Self::Calc(val)
-    }
-}
-
-impl Parse for Integer {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
-        let location = input.current_source_location();
-        match *input.next()? {
-            Token::Number {
-                int_value: Some(v), ..
-            } => Ok(Integer::new(v)),
-            Token::Function(ref name) => {
-                let function = CalcNode::math_function(context, name, location)?;
-                let result = CalcNode::parse_number(context, input, function)?;
-                Ok(Integer::from_calc(result))
-            },
-            ref t => Err(location.new_unexpected_token_error(t.clone())),
-        }
-    }
-}
-
-impl Integer {
-    /// Parse an integer value which is at least `min`.
-    pub fn parse_with_minimum<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-        min: i32,
-    ) -> Result<Integer, ParseError<'i>> {
-        let value = Integer::parse(context, input)?;
-        // FIXME(emilio): The spec asks us to avoid rejecting it at parse
-        // time except until computed value time.
-        //
-        // It's not totally clear it's worth it though, and no other browser
-        // does this.
-        if value.value() < min {
-            return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
-        }
-        Ok(value)
-    }
-
-    /// Parse a non-negative integer.
-    pub fn parse_non_negative<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Integer, ParseError<'i>> {
-        Integer::parse_with_minimum(context, input, 0)
-    }
-
-    /// Parse a positive integer (>= 1).
-    pub fn parse_positive<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Integer, ParseError<'i>> {
-        Integer::parse_with_minimum(context, input, 1)
-    }
-}
-
-impl ToComputedValue for Integer {
-    type ComputedValue = i32;
-
-    #[inline]
-    fn to_computed_value(&self, _: &Context) -> i32 {
-        self.value()
-    }
-
-    #[inline]
-    fn from_computed_value(computed: &i32) -> Self {
-        Integer::new(*computed)
-    }
-}
-
-impl ToCss for Integer {
-    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
-    where
-        W: Write,
-    {
-        match *self {
-            Integer::Literal(i) => i.to_css(dest),
-            Integer::Calc(n) => {
-                dest.write_str("calc(")?;
-                n.to_css(dest)?;
-                dest.write_char(')')
-            },
-        }
-    }
-}
-
-impl SpecifiedValueInfo for Integer {}
-
-/// A wrapper of Integer, with value >= 1.
-pub type PositiveInteger = GreaterThanOrEqualToOne<Integer>;
-
-impl Parse for PositiveInteger {
-    #[inline]
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
-        Integer::parse_positive(context, input).map(GreaterThanOrEqualToOne)
+        Opacity(NumberOrPercentage::Number(Number::from_computed_value(
+            computed,
+        )))
     }
 }
 
@@ -898,6 +480,37 @@ impl AllowQuirks {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, MallocSizeOf, ToShmem)]
+/// A namespace wrapper to distinguish between valid variants
+pub enum ParsedNamespace {
+    /// Unregistered namespace
+    Unknown,
+    /// Registered namespace
+    Known(Namespace),
+}
+
+impl ParsedNamespace {
+    /// Parse a namespace prefix and resolve it to the correct
+    /// namespace URI.
+    pub fn parse<'i, 't>(
+        namespaces: &FxHashMap<Prefix, Namespace>,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        // We don't need to keep the prefix because different
+        // prefixes can resolve to the same id. Additionally,
+        // we also don't need it for serialization as substitution
+        // functions serialize from the direct css declaration.
+        parse_namespace(namespaces, input, /*allow_non_registered*/ true)
+            .map(|(_prefix, namespace)| namespace)
+    }
+}
+
+impl Default for ParsedNamespace {
+    fn default() -> Self {
+        Self::Known(Namespace::default())
+    }
+}
+
 /// An attr(...) rule
 ///
 /// `[namespace? `|`]? ident`
@@ -935,16 +548,13 @@ impl Parse for Attr {
     }
 }
 
-/// Get the Namespace for a given prefix from the namespace map.
-fn get_namespace_for_prefix(prefix: &Prefix, context: &ParserContext) -> Option<Namespace> {
-    context.namespaces.prefixes.get(prefix).cloned()
-}
-
 /// Try to parse a namespace and return it if parsed, or none if there was not one present
-fn parse_namespace<'i, 't>(
-    context: &ParserContext,
+pub fn parse_namespace<'i, 't>(
+    namespaces: &FxHashMap<Prefix, Namespace>,
     input: &mut Parser<'i, 't>,
-) -> Result<(Prefix, Namespace), ParseError<'i>> {
+    // TODO: Once general attr is enabled, we should remove this flag
+    allow_non_registered: bool,
+) -> Result<(Prefix, ParsedNamespace), ParseError<'i>> {
     let ns_prefix = match input.next()? {
         Token::Ident(ref prefix) => Some(Prefix::from(prefix.as_ref())),
         Token::Delim('|') => None,
@@ -956,13 +566,19 @@ fn parse_namespace<'i, 't>(
     }
 
     if let Some(prefix) = ns_prefix {
-        let ns = match get_namespace_for_prefix(&prefix, context) {
-            Some(ns) => ns,
-            None => return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError)),
+        let ns = match namespaces.get(&prefix).cloned() {
+            Some(ns) => ParsedNamespace::Known(ns),
+            None => {
+                if allow_non_registered {
+                    ParsedNamespace::Unknown
+                } else {
+                    return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+                }
+            },
         };
         Ok((prefix, ns))
     } else {
-        Ok((Prefix::default(), Namespace::default()))
+        Ok((Prefix::default(), ParsedNamespace::default()))
     }
 }
 
@@ -975,10 +591,19 @@ impl Attr {
     ) -> Result<Attr, ParseError<'i>> {
         // Syntax is `[namespace? '|']? ident [',' fallback]?`
         let namespace = input
-            .try_parse(|input| parse_namespace(context, input))
+            .try_parse(|input| {
+                parse_namespace(
+                    &context.namespaces.prefixes,
+                    input,
+                    /*allow_non_registered*/ false,
+                )
+            })
             .ok();
         let namespace_is_some = namespace.is_some();
         let (namespace_prefix, namespace_url) = namespace.unwrap_or_default();
+        let ParsedNamespace::Known(namespace_url) = namespace_url else {
+            unreachable!("Non-registered url not allowed (see parse namespace flag).")
+        };
 
         // If there is a namespace, ensure no whitespace following '|'
         let attribute = Atom::from(if namespace_is_some {

@@ -4,9 +4,6 @@
 
 //! Generic types for counters-related CSS values.
 
-#[cfg(feature = "servo")]
-use crate::computed_values::list_style_type::T as ListStyleType;
-#[cfg(feature = "gecko")]
 use crate::counter_style::CounterStyle;
 use crate::derives::*;
 use crate::values::specified::Attr;
@@ -76,6 +73,7 @@ where
     ToTyped,
 )]
 #[repr(transparent)]
+#[typed(todo_derive_fields)]
 pub struct GenericCounterIncrement<I>(#[css(field_bound)] pub GenericCounters<I>);
 pub use self::GenericCounterIncrement as CounterIncrement;
 
@@ -111,6 +109,7 @@ impl<I> Deref for CounterIncrement<I> {
     ToTyped,
 )]
 #[repr(transparent)]
+#[typed(todo_derive_fields)]
 pub struct GenericCounterSet<I>(#[css(field_bound)] pub GenericCounters<I>);
 pub use self::GenericCounterSet as CounterSet;
 
@@ -146,6 +145,7 @@ impl<I> Deref for CounterSet<I> {
     ToTyped,
 )]
 #[repr(transparent)]
+#[typed(todo_derive_fields)]
 pub struct GenericCounterReset<I>(#[css(field_bound)] pub GenericCounters<I>);
 pub use self::GenericCounterReset as CounterReset;
 
@@ -189,21 +189,8 @@ pub struct GenericCounters<I>(
 );
 pub use self::GenericCounters as Counters;
 
-#[cfg(feature = "servo")]
-type CounterStyleType = ListStyleType;
-
-#[cfg(feature = "gecko")]
-type CounterStyleType = CounterStyle;
-
-#[cfg(feature = "servo")]
 #[inline]
-fn is_decimal(counter_type: &CounterStyleType) -> bool {
-    *counter_type == ListStyleType::Decimal
-}
-
-#[cfg(feature = "gecko")]
-#[inline]
-fn is_decimal(counter_type: &CounterStyleType) -> bool {
+fn is_decimal(counter_type: &CounterStyle) -> bool {
     *counter_type == CounterStyle::decimal()
 }
 
@@ -258,6 +245,7 @@ where
     ToTyped,
 )]
 #[repr(u8)]
+#[typed(todo_derive_fields)]
 pub enum GenericContent<Image> {
     /// `normal` reserved keyword.
     Normal,
@@ -302,13 +290,13 @@ pub enum GenericContentItem<I> {
     String(crate::OwnedStr),
     /// `counter(name, style)`.
     #[css(comma, function)]
-    Counter(CustomIdent, #[css(skip_if = "is_decimal")] CounterStyleType),
+    Counter(CustomIdent, #[css(skip_if = "is_decimal")] CounterStyle),
     /// `counters(name, separator, style)`.
     #[css(comma, function)]
     Counters(
         CustomIdent,
         crate::OwnedStr,
-        #[css(skip_if = "is_decimal")] CounterStyleType,
+        #[css(skip_if = "is_decimal")] CounterStyle,
     ),
     /// `open-quote`.
     OpenQuote,

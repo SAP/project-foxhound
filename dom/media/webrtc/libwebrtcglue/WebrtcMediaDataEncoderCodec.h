@@ -5,6 +5,7 @@
 #ifndef WebrtcMediaDataEncoderCodec_h_
 #define WebrtcMediaDataEncoderCodec_h_
 
+#include "MediaCodecsSupport.h"
 #include "MediaConduitInterface.h"
 #include "MediaInfo.h"
 #include "MediaResult.h"
@@ -24,7 +25,8 @@ class WebrtcMediaDataEncoder : public RefCountedWebrtcVideoEncoder {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(WebrtcMediaDataEncoder, final);
 
-  static bool CanCreate(const webrtc::VideoCodecType aCodecType);
+  static media::EncodeSupportSet SupportsCodec(
+      const webrtc::VideoCodecType aCodecType);
 
   explicit WebrtcMediaDataEncoder(const webrtc::SdpVideoFormat& aFormat);
 
@@ -60,9 +62,28 @@ class WebrtcMediaDataEncoder : public RefCountedWebrtcVideoEncoder {
   const RefPtr<PEMFactory> mFactory;
   RefPtr<MediaDataEncoder> mEncoder;
 
-  Mutex mCallbackMutex MOZ_UNANNOTATED;  // Protects mCallback and mError.
-  webrtc::EncodedImageCallback* mCallback = nullptr;
-  MediaResult mError = NS_OK;
+  Mutex mCallbackMutex;
+  webrtc::EncodedImageCallback* mCallback MOZ_GUARDED_BY(mCallbackMutex) =
+      nullptr;
+  MediaResult mError MOZ_GUARDED_BY(mCallbackMutex) = NS_OK;
+
+  // Per-frame metadata captured before passing a frame to the underlying
+  // MediaDataEncoder, used to recover values that aren't derivable from
+  // the encoder output.
+  struct PendingFrame {
+    media::TimeUnit mTime;
+    uint32_t mRtpTimestamp = 0;
+  };
+  // Cap on in-flight metadata. Matches SimulcastEncoderAdapter's own
+  // pending_frames_ cap. When reached, the oldest entry is evicted rather
+  // than refusing new inputs so the encoder is never starved.
+  static constexpr size_t kMaxFramesInFlight = 15;
+  Mutex mPendingMutex;
+  // Ordered by mTime (libwebrtc upstream of Encode() guarantees unique
+  // input timestamps), so the encoder output can be matched and
+  // earlier-skipped inputs reported as drops.
+  AutoTArray<PendingFrame, kMaxFramesInFlight> mPendingFrames
+      MOZ_GUARDED_BY(mPendingMutex);
 
   VideoInfo mInfo;
   webrtc::CodecParameterMap mFormatParams;

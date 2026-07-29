@@ -125,6 +125,7 @@ add_setup(() => {
       "datareporting.policy.dataSubmissionPolicyAcceptedVersion"
     );
     Services.prefs.clearUserPref(TelemetryUtils.Preferences.BypassNotification);
+    Services.prefs.getDefaultBranch(null).deleteBranch("distribution.id");
     TelemetryReportingPolicy.testNotificationInProgress(false);
     TelemetryReportingPolicy.reset();
   });
@@ -372,30 +373,69 @@ add_task(
   }
 );
 
-add_task(skipIfNotBrowser(), async function test_modal_not_shown_on_linux() {
-  if (AppConstants.platform !== "linux") {
-    info("Skipping test on non-Linux platforms");
-    return;
+add_task(
+  skipIfNotBrowser(),
+  async function test_modal_not_shown_on_non_eligible_linux() {
+    if (AppConstants.platform !== "linux") {
+      info("Skipping test on non-Linux platforms");
+      return;
+    }
+
+    sinon.stub(Policy, "shouldEnableTOUAtRuntime").returns(false);
+    let modalStub = sinon.stub(Policy, "showModal").returns(true);
+
+    fakeResetAcceptedPolicy();
+    TelemetryReportingPolicy.reset();
+
+    let p = Policy.delayedSetup();
+    Policy.fakeSessionRestoreNotification();
+    await p;
+
+    Assert.equal(
+      modalStub.callCount,
+      0,
+      "showModal is not invoked on non-eligible (non-Mozilla Official) Linux"
+    );
+
+    sinon.restore();
+    fakeResetAcceptedPolicy();
   }
+);
 
-  let modalStub = sinon.stub(Policy, "showModal").returns(true);
+add_task(
+  skipIfNotBrowser(),
+  async function test_modal_shown_on_eligible_linux() {
+    if (AppConstants.platform !== "linux") {
+      info("Skipping test for non-Linux platform");
+      return;
+    }
 
-  fakeResetAcceptedPolicy();
-  TelemetryReportingPolicy.reset();
+    sinon.stub(Policy, "shouldEnableTOUAtRuntime").returns(true);
+    let modalStub = sinon.stub(Policy, "showModal").returns(true);
 
-  let p = Policy.delayedSetup();
-  Policy.fakeSessionRestoreNotification();
-  await p;
+    fakeResetAcceptedPolicy();
+    TelemetryReportingPolicy.reset();
+    await Policy.fakeSessionRestoreNotification();
 
-  Assert.equal(
-    modalStub.callCount,
-    0,
-    "showModal is not invoked on Linux by default"
-  );
+    let p = TelemetryReportingPolicy.ensureUserIsNotified();
+    fakeInteractWithModal();
+    await p;
 
-  sinon.restore();
-  fakeResetAcceptedPolicy();
-});
+    Assert.equal(
+      modalStub.callCount,
+      1,
+      "showModal is invoked for official Mozilla Linux distributions"
+    );
+
+    Assert.ok(
+      TelemetryReportingPolicy.userHasAcceptedTOU(),
+      "TOU is accepted after interacting with the modal on eligible Linux"
+    );
+
+    sinon.restore();
+    fakeResetAcceptedPolicy();
+  }
+);
 
 add_task(
   skipIfNotBrowser(),
@@ -751,13 +791,64 @@ add_task(
   }
 );
 
+// Regression test for Bug 1977258: AboutNewTab.init() must set the AS
+// telemetry pref default even when TOU has not yet been accepted, so that
+// about:welcome's first-screen impression is not dropped.
+add_task(
+  skipIfNotBrowser(),
+  async function test_as_telemetry_pref_set_before_tou_acceptance() {
+    const { AboutNewTab } = ChromeUtils.importESModule(
+      "resource:///modules/AboutNewTab.sys.mjs"
+    );
+    const ACTIVITY_STREAM_TELEMETRY_PREF =
+      "browser.newtabpage.activity-stream.telemetry";
+
+    // Reset any state so we can observe AboutNewTab.init() setting the pref.
+    AboutNewTab.uninit();
+    Services.prefs
+      .getDefaultBranch("")
+      .deleteBranch(ACTIVITY_STREAM_TELEMETRY_PREF);
+    Services.prefs.clearUserPref(ACTIVITY_STREAM_TELEMETRY_PREF);
+    Assert.equal(
+      Services.prefs.getPrefType(ACTIVITY_STREAM_TELEMETRY_PREF),
+      Services.prefs.PREF_INVALID,
+      "ActivityStream telemetry pref is unset before AboutNewTab.init()"
+    );
+
+    sinon.stub(Policy, "showModal").returns(true);
+    const doCleanup = await enrollInPreonboardingExperiment(999);
+    TelemetryReportingPolicy.reset();
+
+    try {
+      AboutNewTab.init();
+
+      Assert.equal(
+        Services.prefs
+          .getDefaultBranch("")
+          .getBoolPref(ACTIVITY_STREAM_TELEMETRY_PREF),
+        AppConstants.MOZILLA_OFFICIAL,
+        "ActivityStream telemetry pref default is set by AboutNewTab.init()"
+      );
+    } finally {
+      AboutNewTab.uninit();
+      Services.prefs
+        .getDefaultBranch("")
+        .deleteBranch(ACTIVITY_STREAM_TELEMETRY_PREF);
+      await doCleanup();
+      sinon.restore();
+    }
+  }
+);
+
 add_task(async function test_canUpload_unblocked_by_tou_accepted() {
+  // On non-Win/Mac platforms, TOU is disabled by default; stub
+  // shouldEnableTOUAtRuntime to enable TOU.
   if (AppConstants.platform === "linux") {
-    info("Skipping test for Linux where TOU flow is disabled by default");
-    return;
+    sinon.stub(Policy, "shouldEnableTOUAtRuntime").returns(true);
   }
 
   const cleanup = () => {
+    sinon.restore();
     Services.prefs.clearUserPref(TelemetryUtils.Preferences.BypassNotification);
     Services.prefs.clearUserPref("termsofuse.acceptedDate");
     Services.prefs.clearUserPref("termsofuse.acceptedVersion");
@@ -971,3 +1062,156 @@ add_task(
     await cleanup();
   }
 );
+
+add_task(
+  skipIfNotBrowser(),
+  async function test_linux_tou_eligible_blocks_upload_before_acceptance() {
+    Services.prefs.setBoolPref("browser.preonboarding.enabled", false);
+    Services.prefs.setBoolPref(TOU_BYPASS_NOTIFICATION_PREF, false);
+    Services.prefs.setBoolPref(
+      TelemetryUtils.Preferences.BypassNotification,
+      true
+    );
+    sinon.stub(Policy, "shouldEnableTOUAtRuntime").returns(true);
+    TelemetryReportingPolicy.reset();
+
+    Assert.ok(
+      !TelemetryReportingPolicy.canUpload(),
+      "TOU blocks upload for Mozilla Linux distro when not yet accepted"
+    );
+
+    sinon.restore();
+    Services.prefs.clearUserPref("browser.preonboarding.enabled");
+    Services.prefs.clearUserPref(TOU_BYPASS_NOTIFICATION_PREF);
+    Services.prefs.clearUserPref(TelemetryUtils.Preferences.BypassNotification);
+    TelemetryReportingPolicy.reset();
+  }
+);
+
+add_task(
+  skipIfNotBrowser(),
+  async function test_linux_tou_eligible_allows_upload_after_acceptance() {
+    Services.prefs.setBoolPref("browser.preonboarding.enabled", false);
+    Services.prefs.setBoolPref(TOU_BYPASS_NOTIFICATION_PREF, false);
+    Services.prefs.setBoolPref(
+      TelemetryUtils.Preferences.BypassNotification,
+      true
+    );
+    Services.prefs.setStringPref(TOU_ACCEPTED_DATE_PREF, String(Date.now()));
+    Services.prefs.setIntPref(TOU_ACCEPTED_VERSION_PREF, 4);
+    sinon.stub(Policy, "shouldEnableTOUAtRuntime").returns(true);
+    TelemetryReportingPolicy.reset();
+
+    Assert.ok(
+      TelemetryReportingPolicy.canUpload(),
+      "Upload allowed for Mozilla Linux distro after TOU is acepted"
+    );
+
+    sinon.restore();
+    Services.prefs.clearUserPref("browser.preonboarding.enabled");
+    Services.prefs.clearUserPref(TOU_BYPASS_NOTIFICATION_PREF);
+    Services.prefs.clearUserPref(TelemetryUtils.Preferences.BypassNotification);
+    fakeResetAcceptedPolicy();
+    TelemetryReportingPolicy.reset();
+  }
+);
+
+add_task(
+  skipIfNotBrowser(),
+  async function test_linux_non_mozilla_distro_upload_unblocked() {
+    Services.prefs.setBoolPref("browser.preonboarding.enabled", false);
+    Services.prefs.setBoolPref(
+      TelemetryUtils.Preferences.BypassNotification,
+      true
+    );
+    sinon.stub(Policy, "shouldEnableTOUAtRuntime").returns(false);
+    TelemetryReportingPolicy.reset();
+
+    Assert.ok(
+      TelemetryReportingPolicy.canUpload(),
+      "TOU should not block upload for non-Mozilla Linux distro"
+    );
+
+    sinon.restore();
+    Services.prefs.clearUserPref("browser.preonboarding.enabled");
+    Services.prefs.clearUserPref(TelemetryUtils.Preferences.BypassNotification);
+    TelemetryReportingPolicy.reset();
+  }
+);
+
+add_task(
+  skipIfNotBrowser(),
+  async function test_showModal_passes_browser_element_to_handleAction() {
+    const { BrowserWindowTracker } = ChromeUtils.importESModule(
+      "resource:///modules/BrowserWindowTracker.sys.mjs"
+    );
+    const { SpecialMessageActions } = ChromeUtils.importESModule(
+      "resource://messaging-system/lib/SpecialMessageActions.sys.mjs"
+    );
+
+    const browser = {};
+    const win = { gBrowser: { selectedBrowser: browser } };
+
+    sinon.stub(BrowserWindowTracker, "getTopWindow").returns(win);
+    const handleActionStub = sinon
+      .stub(SpecialMessageActions, "handleAction")
+      .resolves();
+
+    await Policy.showModal({
+      id: "TEST_MODAL",
+      screens: [{ id: "SCREEN_1" }],
+      requireAction: true,
+    });
+
+    Assert.equal(handleActionStub.callCount, 1, "handleAction called once");
+    Assert.strictEqual(
+      handleActionStub.firstCall.args[1],
+      browser,
+      "handleAction receives win.gBrowser.selectedBrowser"
+    );
+    Assert.notEqual(
+      handleActionStub.firstCall.args[1],
+      win,
+      "handleAction does not receive the chrome window"
+    );
+
+    sinon.restore();
+  }
+);
+
+add_task(async function test_shouldEnableTOUAtRuntime() {
+  const defaultBranch = Services.prefs.getDefaultBranch(null);
+
+  if (AppConstants.platform !== "linux") {
+    defaultBranch.setCharPref("distribution.id", "mozilla-official");
+    Assert.ok(
+      !Policy.shouldEnableTOUAtRuntime(),
+      "shouldEnableTOUAtRuntime() is always false on non-Linux platforms"
+    );
+    defaultBranch.deleteBranch("distribution.id");
+    return;
+  }
+
+  for (const [id, expected] of [
+    ["mozilla-official", true],
+    ["mozilla-flatpak", true],
+    ["mozilla-rpm", true],
+    ["mozilla-deb", true],
+    ["mozilla-EMEfree", true],
+    ["mozilla139", true],
+    ["canonical-002", false],
+    ["mint-001", false],
+    ["redhat", false],
+    ["fedora", false],
+    ["", false],
+  ]) {
+    defaultBranch.setCharPref("distribution.id", id);
+    Assert.equal(
+      Policy.shouldEnableTOUAtRuntime(),
+      expected,
+      `shouldEnableTOUAtRuntime() is ${expected} for distribution.id "${id}"`
+    );
+  }
+
+  defaultBranch.deleteBranch("distribution.id");
+});

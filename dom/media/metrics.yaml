@@ -92,11 +92,13 @@ media.playback:
     type: event
     description:
       The time that the media pipeline takes to load the first video frame.
+      Only recorded on pre-release builds (Nightly and Beta).
     metadata:
       tags:
         - 'Core :: Audio/Video: Playback'
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1882205
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2021157
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1882205
     data_sensitivity:
@@ -199,39 +201,138 @@ media.playback:
       - media-alerts@mozilla.com
     expires: never
 
-  decode_error:
-    type: event
+  unencrypted_sw_decode_error:
+    type: dual_labeled_counter
     description: >
-      Record the decode error details.
+      Count of decode errors for unencrypted software media playback,
+      keyed by codec and error name. Only fires when the decoder gives up
+      after exhausting retries. Does not cover encrypted (EME) playback; see
+      media.playback.encrypted_decode_error for that.
     metadata:
       tags:
         - 'Core :: Audio/Video: Playback'
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1929335
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2021157
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1929335
     data_sensitivity:
       - technical
     notification_emails:
       - media-alerts@mozilla.com
-    extra_keys:
-      mime_type:
-        description: The mime type of the media track when the error occurred.
-        type: string
-      error_name:
+    dual_labels:
+      key:
+        description: The codec mime type of the media track when the error occurred.
+        labels:
+          - video_avc
+          - video_av1
+          - video_vp9
+          - video_vp8
+          - video_hevc
+          - video_theora
+          - audio_mpeg
+          - audio_opus
+          - audio_flac
+          - audio_vorbis
+          - audio_wave
+          - audio_other
+          - video_other
+      category:
         description: The name of the error.
-        type: string
-      key_system:
-        description: >
-          The value indicates the key system in use when the error occurred. It
-          will be null if the error is related to non-EME playback.
-        type : string
-      decoder_name:
-        description: The name of the decoder when the error occurred.
-        type: string
-      is_hardware_accelerated:
-        description: True if the decoder used when the error occurred is a hardware decoder.
-        type: boolean
+        labels:
+          - decode_err
+          - fatal_err
+          - metadata_err
+          - demuxer_err
+          - crash
+          - unexpected_err
+          - oom_err
+          - other
+    expires: never
+
+  unencrypted_hw_decode_error:
+    type: dual_labeled_counter
+    description: >
+      Count of decode errors for unencrypted hardware-accelerated media
+      playback, keyed by codec and error name. Only fires when the decoder
+      gives up after exhausting retries. Tracked separately from software
+      errors to measure hw decoder failure rates and inform decisions on
+      whether to retain this probe long-term.
+    metadata:
+      tags:
+        - 'Core :: Audio/Video: Playback'
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2021157
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2021157
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - media-alerts@mozilla.com
+    dual_labels:
+      key:
+        description: The codec mime type of the media track when the error occurred.
+        labels:
+          - video_avc
+          - video_av1
+          - video_vp9
+          - video_vp8
+          - video_hevc
+          - video_theora
+          - audio_mpeg
+          - audio_opus
+          - audio_flac
+          - audio_vorbis
+          - audio_wave
+          - audio_other
+          - video_other
+      category:
+        description: The name of the error.
+        labels:
+          - decode_err
+          - fatal_err
+          - metadata_err
+          - demuxer_err
+          - crash
+          - unexpected_err
+          - oom_err
+          - other
+    expires: never
+
+  encrypted_decode_error:
+    type: dual_labeled_counter
+    description: >
+      Count of fatal decode errors for encrypted (EME) media playback, keyed
+      by codec and key system. Only fires when the decoder gives up after
+      exhausting retries.
+    metadata:
+      tags:
+        - 'Core :: Audio/Video: Playback'
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2021157
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2021157
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - media-alerts@mozilla.com
+    dual_labels:
+      key:
+        description: The codec mime type of the media track when the error occurred.
+        labels:
+          - video_avc
+          - video_av1
+          - video_vp9
+          - video_hevc
+          - audio_aac
+          - audio_other
+          - video_other
+      category:
+        description: The key system in use when the error occurred.
+        labels:
+          - widevine
+          - playready
+          - clearkey
     expires: never
 
 media.recorder:
@@ -398,32 +499,36 @@ media:
     telemetry_mirror: MEDIA_VIDEO_HD_HARDWARE_DECODING_SUPPORT
 
   error:
-    type: event
+    type: dual_labeled_counter
     description: >
-      Record the error details happened on a media element.
+      Count of errors surfaced on a media element, keyed by error type and
+      whether the playback is encrypted. Serves as a high-level signal for
+      all media error categories.
     metadata:
       tags:
         - 'Core :: Audio/Video: Playback'
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1929335
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2021157
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1929335
     data_sensitivity:
       - technical
     notification_emails:
       - media-alerts@mozilla.com
-    extra_keys:
-      error_type:
-        description: The error type defined in MediaError.webidl.
-        type: string
-      error_name:
-        description: The name of the internal error.
-        type: string
-      key_system:
-        description: >
-          The value indicates the key system in use when the error occurred. It
-          will be null if the error is related to non-EME playback.
-        type : string
+    dual_labels:
+      key:
+        description: The error type as defined by the HTML MediaError spec.
+        labels:
+          - abort_error
+          - network_error
+          - decode_error
+          - not_supported_error
+      category:
+        description: Whether the media playback is encrypted.
+        labels:
+          - encrypted
+          - non_encrypted
     expires: never
 
   video_play_time:

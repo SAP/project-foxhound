@@ -28,24 +28,43 @@ EOF
 # The resulting cmake works well enough for our use.
 patch -p1 <<'EOF'
 diff --git a/Source/CMakeLists.txt b/Source/CMakeLists.txt
-index c54da4408a..8408355c4a 100644
+index 44f87dba80..0ff5214dd9 100644
 --- a/Source/CMakeLists.txt
 +++ b/Source/CMakeLists.txt
-@@ -964,7 +964,6 @@ if(WIN32)
-
-     # Add a manifest file to executables on Windows to allow for
-     # GetVersion to work properly on Windows 8 and above.
--    target_sources(ManifestLib INTERFACE cmake.version.manifest)
+@@ -979,14 +979,6 @@ if(WIN32)
+         cmVSSolution.h
+         cmVSVersion.h
+       )
+-
+-    # Add a manifest file to executables on Windows to allow for
+-    # GetVersion to work properly on Windows 8 and above.
+-    if(MSVC)
+-      target_sources(ManifestLib INTERFACE cmake.version.manifest)
+-    else()
+-      target_sources(ManifestLib INTERFACE cmake.version.manifest.rc)
+-    endif()
    endif()
  endif()
 
+diff --git a/Source/kwsys/CMakeLists.txt b/Source/kwsys/CMakeLists.txt
+index 08494b9bf5..0dfcc0f63a 100644
+--- a/Source/kwsys/CMakeLists.txt
++++ b/Source/kwsys/CMakeLists.txt
+@@ -977,7 +977,6 @@ if(KWSYS_STANDALONE OR CMake_SOURCE_DIR)
+       )
+     add_executable(${KWSYS_NAMESPACE}TestsCxx
+       ${KWSYS_CXX_TEST_SRCS}
+-      test.manifest
+     )
+     set_property(TARGET ${KWSYS_NAMESPACE}TestsCxx PROPERTY C_CLANG_TIDY "")
+     set_property(TARGET ${KWSYS_NAMESPACE}TestsCxx PROPERTY CXX_CLANG_TIDY "")
 EOF
 
 # Work around https://github.com/llvm/llvm-project/issues/134237
 # Should be removable once we update to clang 21.
 patch -p1 <<'EOF'
 diff --git a/Modules/CMakeFindBinUtils.cmake b/Modules/CMakeFindBinUtils.cmake
-index 1948c63bad..cb4cefaa72 100644
+index 91543a6853..ea9627a0de 100644
 --- a/Modules/CMakeFindBinUtils.cmake
 +++ b/Modules/CMakeFindBinUtils.cmake
 @@ -87,9 +87,9 @@ if(("x${CMAKE_${_CMAKE_PROCESSING_LANGUAGE}_SIMULATE_ID}" STREQUAL "xMSVC" AND

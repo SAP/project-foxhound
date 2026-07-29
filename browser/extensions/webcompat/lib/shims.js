@@ -259,10 +259,13 @@ class Shim {
 
   async _allowRequestsInETP(alsoClearResourceCache) {
     let modified = false;
-    const matches = this.matches.map(m => m.patterns).flat();
-    if (matches.length) {
+    const matchEntries = this.matches.map(({ patterns, types }) => ({
+      patterns,
+      types,
+    }));
+    if (matchEntries.length) {
       // ensure requests shimmed in both PB and non-PB modes
-      await browser.trackingProtection.shim(this.id, matches);
+      await browser.trackingProtection.shim(this.id, matchEntries);
       modified = true;
     }
 
@@ -447,20 +450,29 @@ class Shim {
   }
 
   async clearUserOptIns(forPrivateMode) {
-    const optIns = await this.getApplicableOptIns();
+    // This method is called whenever any private browsing window is closed.
+    // Avoid performing unnecessary works, in order to keep the resource cache
+    // as much as possible.
     const activeHostOptIns = forPrivateMode
       ? this._pBModeHostOptIns
       : this._hostOptIns;
-    if (optIns.length) {
-      activeHostOptIns.clear();
-      await browser.trackingProtection.allow(
-        this.id,
-        optIns,
-        forPrivateMode,
-        Array.from(activeHostOptIns)
-      );
-      this.clearResourceCache();
+    if (!activeHostOptIns.length) {
+      return;
     }
+
+    const optIns = await this.getApplicableOptIns();
+    if (!optIns.length) {
+      return;
+    }
+
+    activeHostOptIns.clear();
+    await browser.trackingProtection.allow(
+      this.id,
+      optIns,
+      forPrivateMode,
+      Array.from(activeHostOptIns)
+    );
+    this.clearResourceCache();
   }
 
   clearResourceCache() {
@@ -765,7 +777,7 @@ class Shims {
       registerShimListener(
         browser.webRequest.onBeforeRequest,
         this._ensureShimForRequestOnTab.bind(this),
-        { urls, types: [type] },
+        { urls },
         ["blocking"]
       );
     }

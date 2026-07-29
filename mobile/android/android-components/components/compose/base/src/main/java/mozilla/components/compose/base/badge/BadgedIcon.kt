@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -71,6 +72,7 @@ private const val MAX_BADGE_COUNT_EXCEEDED = "\u221e"
 private val SYMBOL_VERTICAL_OFFSET = (-0.5).dp
 private val SMALL_BADGE_OFFSET = IntOffset(1, (-1))
 private val LARGE_BADGE_OFFSET = IntOffset(8, (-4))
+private const val MINIMUM_ICON_SIZE = 24
 
 /**
  * Badged icon.
@@ -110,6 +112,7 @@ fun BadgedIcon(
         Icon(
             painter = painter,
             contentDescription = contentDescription,
+            modifier = Modifier.sizeIn(minWidth = MINIMUM_ICON_SIZE.dp, minHeight = MINIMUM_ICON_SIZE.dp),
             tint = tint,
         )
     }

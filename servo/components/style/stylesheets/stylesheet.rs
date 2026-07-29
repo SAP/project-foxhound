@@ -4,8 +4,9 @@
 
 use crate::context::QuirksMode;
 use crate::derives::*;
+use crate::device::Device;
 use crate::error_reporting::{ContextualParseError, ParseErrorReporter};
-use crate::media_queries::{Device, MediaList};
+use crate::media_queries::MediaList;
 use crate::parser::ParserContext;
 use crate::shared_lock::{DeepCloneWithLock, Locked};
 use crate::shared_lock::{SharedRwLock, SharedRwLockReadGuard};
@@ -338,7 +339,19 @@ pub enum AllowImportRules {
 }
 
 impl SanitizationKind {
-    fn allows(self, rule: &CssRule) -> bool {
+    fn allows(self, rule: &CssRule, guard: &SharedRwLockReadGuard) -> bool {
+        if !self.allows_self(rule) {
+            return false;
+        }
+        for child in rule.children(guard) {
+            if !self.allows(child, guard) {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn allows_self(self, rule: &CssRule) -> bool {
         debug_assert_ne!(self, SanitizationKind::None);
         // NOTE(emilio): If this becomes more complex (not filtering just by
         // top-level rules), we should thread all the data through nested rules
@@ -358,7 +371,8 @@ impl SanitizationKind {
             // TODO(dshin): Same comment as Layer applies - shouldn't give away
             // something like display size - erring on the side of "safe" for now.
             CssRule::Scope(..) |
-            CssRule::StartingStyle(..) => false,
+            CssRule::StartingStyle(..) |
+            CssRule::AppearanceBase(..) => false,
 
             CssRule::FontFace(..) |
             CssRule::Namespace(..) |
@@ -372,7 +386,8 @@ impl SanitizationKind {
             CssRule::Property(..) |
             CssRule::FontFeatureValues(..) |
             CssRule::FontPaletteValues(..) |
-            CssRule::CounterStyle(..) => !is_standard,
+            CssRule::CounterStyle(..) |
+            CssRule::ViewTransition(..) => !is_standard,
         }
     }
 }
@@ -429,6 +444,7 @@ impl Stylesheet {
             /* namespaces = */ Default::default(),
             error_reporter,
             use_counters,
+            /* attr_taint */ Default::default(),
         );
 
         let mut rule_parser = TopLevelRuleParser {
@@ -454,7 +470,7 @@ impl Stylesheet {
                         // TODO(emilio, nesting): sanitize nested CSS rules, probably?
                         if let Some(ref mut data) = sanitization_data {
                             if let Some(ref rule) = iter.parser.rules.last() {
-                                if !data.kind.allows(rule) {
+                                if !data.kind.allows(rule, &shared_lock.read()) {
                                     iter.parser.rules.pop();
                                     continue;
                                 }

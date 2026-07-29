@@ -21,6 +21,55 @@ newtab-personalize-dialog-label =
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = زبانه‌های جدید
+
+## Firefox Home content
+
+home-prefs-firefox-logo-header =
+    .label = آرم { -brand-short-name }
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } ردیف
+           *[other] { $num } ردیف
+        }
+# Dropdown option shown when an extension replaces the contents of new windows or tabs.
+# Variables:
+#   $extension (string) - Name of the extension
+home-prefs-homepage-extension-option =
+    .label = افزونه ({ $extension })
+home-restore-defaults-srd =
+    .label = بازنشانی پیش‌فرض‌ها
+    .accesskey = R
+home-mode-choice-custom-srd =
+    .label = آدرس‌های سفارشی…
+home-mode-choice-blank-srd =
+    .label = صفحهٔ خالی
+home-prefs-shortcuts-header-srd =
+    .label = میان‌برها
+home-prefs-shortcuts-select =
+    .aria-label = میان‌برها
+home-prefs-shortcuts-by-option-sponsored-srd =
+    .label = میانبرهایی از حامیان مالی
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = محتوایی از حامیان مالی
+home-prefs-highlights-option-visited-pages-srd =
+    .label = صفحات بازدید شده
+home-prefs-highlights-options-bookmarks-srd =
+    .label = نشانک‌ها
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = جدیدترین بارگیری
+home-prefs-recent-activity-header-srd =
+    .label = فعالیت‌های اخیر
+home-prefs-recent-activity-select =
+    .aria-label = فعالیت‌های اخیر
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -46,7 +95,7 @@ newtab-search-box-input =
     .placeholder = جستجو در وب
     .aria-label = جستجو در وب
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = افزودن موتور جستجو
 newtab-topsites-add-shortcut-header = میانبر جدید
@@ -119,6 +168,8 @@ newtab-menu-save-to-pocket = ذخیره‌سازی در { -pocket-brand-name }
 newtab-menu-delete-pocket = حذف از { -pocket-brand-name }
 newtab-menu-archive-pocket = آرشیو در { -pocket-brand-name }
 newtab-menu-show-privacy-info = حامیان ما و حریم خصوصی شما
+# Context menu option to open a support page explaining the New Tab personalization features and privacy controls.
+newtab-menu-section-learn-more = بیشتر بدانید
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -254,9 +305,21 @@ newtab-error-fallback-refresh-link = برای تلاش مجدد صفحه را ن
 
 newtab-custom-shortcuts-title = میانبرها
 newtab-custom-shortcuts-subtitle = وب‌سایت‌هایی که ذخیره یا بازدید می‌کنید
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = میانبرها
     .description = وب‌سایت‌هایی که ذخیره یا بازدید می‌کنید
+newtab-custom-shortcuts-nova =
+    .label = میانبرها
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+            [one] { $num } ردیف
+           *[other] { $num } ردیف
+        }
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector =
@@ -281,6 +344,8 @@ newtab-custom-settings = مدیریت تنظیمات بیشتر
 
 newtab-wallpaper-title = کاغذدیواری‌ها
 newtab-wallpaper-reset = بازگرداندن به تنظیمات اولیه
+newtab-wallpaper-toggle-title =
+    .label = کاغذدیواری‌ها
 newtab-wallpaper-light-red-panda = پاندای قرمز
 newtab-wallpaper-light-mountain = کوه سفید
 newtab-wallpaper-light-sky = آسمانی با ابرهای بنفش و صورتی

@@ -1,18 +1,13 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "FuzzingInterface.h"
-#include "gtest/gtest.h"
-
-extern "C" {
 #include <csi_platform.h>
 
+#include "FuzzingInterface.h"
+#include "gtest/gtest.h"
 #include "stun_codec.h"
 #include "stun_msg.h"
-}
 
 int FuzzingInitStunParser(int* argc, char*** argv) { return 0; }
 

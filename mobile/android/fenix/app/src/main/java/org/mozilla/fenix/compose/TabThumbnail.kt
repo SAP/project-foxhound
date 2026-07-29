@@ -16,15 +16,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import mozilla.components.browser.state.state.TabSessionState
-import mozilla.components.browser.state.state.createTab
 import org.mozilla.fenix.theme.FirefoxTheme
 
 /**
  * Thumbnail belonging to a [tab]. If a thumbnail is not available, the favicon
  * will be displayed until the thumbnail is loaded.
  *
- * @param tab The given [TabSessionState] to render a thumbnail for.
+ * @param tabThumbnailImageData The tab information needed to render a thumbnail.
  * @param thumbnailSizePx Size of the thumbnail in pixels.
  * @param modifier [Modifier] used to draw the image content.
  * @param shape [Shape] to be applied to the thumbnail card.
@@ -35,7 +33,7 @@ import org.mozilla.fenix.theme.FirefoxTheme
  */
 @Composable
 fun TabThumbnail(
-    tab: TabSessionState,
+    tabThumbnailImageData: TabThumbnailImageData,
     thumbnailSizePx: Int,
     modifier: Modifier = Modifier,
     shape: Shape = CardDefaults.shape,
@@ -50,7 +48,7 @@ fun TabThumbnail(
         border = border,
     ) {
         ThumbnailImage(
-            tab = tab,
+            tabThumbnailImageData = tabThumbnailImageData,
             thumbnailSizePx = thumbnailSizePx,
             alignment = alignment,
             modifier = Modifier.fillMaxSize(),
@@ -64,7 +62,12 @@ fun TabThumbnail(
 private fun ThumbnailCardPreview() {
     FirefoxTheme {
         TabThumbnail(
-            tab = createTab(url = "www.mozilla.com", title = "Mozilla"),
+            tabThumbnailImageData = TabThumbnailImageData(
+                tabUrl = "www.mozilla.com",
+                tabId = "123",
+                tabIcon = null,
+                isPrivate = false,
+            ),
             thumbnailSizePx = 108,
             modifier = Modifier.size(108.dp, 80.dp),
         )

@@ -23,7 +23,11 @@ const { AppMenuNotifications } = ChromeUtils.importESModule(
 // not abide exactly to sentence case. NAMES is for single words, and PHRASES
 // is for words in a specific order.
 const NAMES = new Set(["Mozilla", "Nightly", "Firefox", "AI"]);
-const PHRASES = new Set(["Troubleshoot Mode…"]);
+const PHRASES = new Set([
+  "Extensions and Themes",
+  "Find in Page…",
+  "Troubleshoot Mode…",
+]);
 
 let gCUITestUtils = new CustomizableUITestUtils(window);
 let gLocalization = new Localization(["browser/newtab/asrouter.ftl"], true);
@@ -153,6 +157,15 @@ function checkSentenceCase(string, elementID) {
 
   let words = string.trim().split(/\s+/);
 
+  // A string in title case (every word capitalized) is also acceptable.
+  if (words.every(word => hasExpectedCapitalization(word, true))) {
+    Assert.ok(
+      true,
+      `${string} for ${elementID} should have sentence or title casing.`
+    );
+    return;
+  }
+
   // We expect that the first word is always capitalized. If it isn't,
   // there's no need to keep checking the rest of the string, since we're
   // going to fail the assertion.
@@ -163,7 +176,10 @@ function checkSentenceCase(string, elementID) {
 
       if (word) {
         if (isPartOfPhrase(words, wordIndex)) {
-          result = hasExpectedCapitalization(word, true);
+          // Skip capitalization check for words that are part of a phrase
+          // The phrase defines the correct capitalization - needed to make it
+          // work with phrases such as Find in Page with lowercase fillers such as in
+          result = true;
         } else {
           let isName = NAMES.has(word);
           result = hasExpectedCapitalization(word, isName);

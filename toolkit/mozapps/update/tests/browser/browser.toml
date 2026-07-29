@@ -71,6 +71,9 @@ tags = "os_integration"
 ["browser_aboutDialog_fc_check_unsupported.js"]
 
 ["browser_aboutDialog_fc_downloadAuto.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
 
 ["browser_aboutDialog_fc_downloadAuto_staging.js"]
 
@@ -145,6 +148,9 @@ tags = "os_integration"
 ["browser_aboutPrefs_fc_patch_partialBadSize.js"]
 
 ["browser_aboutPrefs_fc_patch_partialBadSize_complete.js"]
+skip-if = [
+  "os == 'win' && debug && standalone", # Bug 2028653
+]
 
 ["browser_aboutPrefs_fc_patch_partialBadSize_completeBadSize.js"]
 

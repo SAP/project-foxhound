@@ -80,20 +80,12 @@ task-defaults:
                     - ':components:{component}:publish'
                 default:
                     by-component:
-                        # No lintRelease on this task, gradle task isn't defined
-                        tooling-lint:
+                        tooling-(lint|detekt):
+                            # No android code in these components
                             - ':components:{component}:assemble'
-                            - ':components:{component}:assembleAndroidTest'
                             - ':components:{component}:test'
-                            - ':components:{component}:lint'
-                        # No testRelease on this task, gradle task isn't defined
-                        tooling-detekt:
-                            - ':components:{component}:assemble'
-                            - ':components:{component}:assembleAndroidTest'
-                            - ':components:{component}:test'
-                            - ':components:{component}:lintRelease'
-                        # No publish on these tasks
                         tooling-fetch-tests|samples-.*:
+                            # No publish of these components
                             - ':components:{component}:assemble'
                             - ':components:{component}:assembleAndroidTest'
                             - ':components:{component}:testRelease'

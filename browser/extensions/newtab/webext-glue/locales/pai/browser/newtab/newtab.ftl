@@ -13,7 +13,7 @@ newtab-search-box-search-button =
     .title = Ŕmee
     .aria-label = Ŕmee
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-url-label = URL
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,6 +11,7 @@ namespace gfx {
 RefPtr<SourceSurfaceD3D11> SourceSurfaceD3D11::Create(
     ID3D11Texture2D* aTexture, const uint32_t aArrayIndex,
     const gfx::ColorSpace2 aColorSpace, const gfx::ColorRange aColorRange,
+    const gfx::TransferFunction aTransferFunction,
     const Maybe<layers::CompositeProcessFencesHolderId> aFencesHolderId) {
   MOZ_ASSERT(aTexture);
 
@@ -32,13 +31,15 @@ RefPtr<SourceSurfaceD3D11> SourceSurfaceD3D11::Create(
 
   return MakeAndAddRef<SourceSurfaceD3D11>(
       SurfaceFormat::B8G8R8A8, IntSize(desc.Width, desc.Height), aTexture,
-      aArrayIndex, aColorSpace, aColorRange, aFencesHolderId);
+      aArrayIndex, aColorSpace, aColorRange, aTransferFunction,
+      aFencesHolderId);
 }
 
 SourceSurfaceD3D11::SourceSurfaceD3D11(
     const SurfaceFormat aFormat, const IntSize aSize, ID3D11Texture2D* aTexture,
     const uint32_t aArrayIndex, const gfx::ColorSpace2 aColorSpace,
     const gfx::ColorRange aColorRange,
+    const gfx::TransferFunction aTransferFunction,
     const Maybe<layers::CompositeProcessFencesHolderId> aFencesHolderId)
     : mFormat(aFormat),
       mSize(aSize),
@@ -46,6 +47,7 @@ SourceSurfaceD3D11::SourceSurfaceD3D11(
       mArrayIndex(aArrayIndex),
       mColorSpace(aColorSpace),
       mColorRange(aColorRange),
+      mTransferFunction(aTransferFunction),
       mFencesHolderId(aFencesHolderId) {}
 
 SourceSurfaceD3D11::~SourceSurfaceD3D11() {}
@@ -55,7 +57,7 @@ bool SourceSurfaceD3D11::IsValid() const { return true; }
 already_AddRefed<DataSourceSurface> SourceSurfaceD3D11::GetDataSurface() {
   RefPtr<DataSourceSurface> src =
       Factory::CreateBGRA8DataSourceSurfaceForD3D11Texture(
-          mTexture, mArrayIndex, mColorSpace, mColorRange);
+          mTexture, mArrayIndex, mColorSpace, mColorRange, mTransferFunction);
   return src.forget();
 }
 

@@ -36,6 +36,12 @@
         "required": ["key", "values"]
       }
     },
+    "filter_expression": {
+      "type": "string",
+      "title": "Filter Expression",
+      "description": "A JEXL to filter records",
+      "pattern": "^[a-zA-Z0-9-_=!\"{} .<>|&()]*$"
+    },
     "excludeParams": {
       "type": "array",
       "title": "Exclude Parameters",

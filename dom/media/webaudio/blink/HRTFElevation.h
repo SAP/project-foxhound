@@ -43,6 +43,9 @@ namespace WebCore {
 
 class HRTFElevation {
  public:
+  HRTFElevation(const HRTFElevation& other) = delete;
+  void operator=(const HRTFElevation& other) = delete;
+
   // Loads and returns an HRTFElevation with the given HRTF database subject
   // name and elevation from browser (or WebKit.framework) resources. Normally,
   // there will only be a single HRTF database set, but this API supports the
@@ -77,9 +80,6 @@ class HRTFElevation {
   size_t sizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
 
  private:
-  HRTFElevation(const HRTFElevation& other) = delete;
-  void operator=(const HRTFElevation& other) = delete;
-
   HRTFElevation(HRTFKernelList&& kernelListL, int elevation, float sampleRate)
       : m_kernelListL(std::move(kernelListL)),
         m_elevationAngle(elevation),

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -276,6 +274,7 @@ namespace jit {
   _(NewArrayObjectOptimzedFallback, js::NewArrayObjectOptimizedFallback)       \
   _(NewArrayOperation, js::NewArrayOperation)                                  \
   _(NewArrayWithShape, js::NewArrayWithShape)                                  \
+  _(NewDateObject, js::jit::NewDateObject)                                     \
   _(NewObjectOperation, js::NewObjectOperation)                                \
   _(NewPlainObjectBaselineFallback, js::NewPlainObjectBaselineFallback)        \
   _(NewPlainObjectOptimizedFallback, js::NewPlainObjectOptimizedFallback)      \
@@ -293,7 +292,6 @@ namespace jit {
   _(NumberToString, js::NumberToString<js::CanGC>)                             \
   _(ObjectCreateWithTemplate, js::ObjectCreateWithTemplate)                    \
   _(ObjectKeys, js::jit::ObjectKeys)                                           \
-  _(ObjectKeysLength, js::jit::ObjectKeysLength)                               \
   _(ObjectWithProtoOperation, js::ObjectWithProtoOperation)                    \
   _(OnDebuggerStatement, js::jit::OnDebuggerStatement)                         \
   _(ProxyGetProperty, js::ProxyGetProperty)                                    \
@@ -328,8 +326,6 @@ namespace jit {
   _(SetPropertyMegamorphicYesCache, js::jit::SetPropertyMegamorphic<true>)     \
   _(SetPropertySuper, js::SetPropertySuper)                                    \
   _(StartDynamicModuleImport, js::StartDynamicModuleImport)                    \
-  IF_SOURCE_PHASE_IMPORTS(                                                     \
-      _(StartDynamicModuleImportSource, js::StartDynamicModuleImportSource))   \
   _(StringBigIntGreaterThanOrEqual,                                            \
     js::jit::StringBigIntCompare<js::jit::ComparisonKind::GreaterThanOrEqual>) \
   _(StringBigIntLessThan,                                                      \

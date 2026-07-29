@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -136,7 +134,7 @@ class nsFrameLoader final : public nsStubMutationObserver,
 
   NS_INLINE_DECL_STATIC_IID(NS_FRAMELOADER_IID)
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(nsFrameLoader)
 
   NS_DECL_NSIMUTATIONOBSERVER_ATTRIBUTECHANGED
@@ -263,7 +261,7 @@ class nsFrameLoader final : public nsStubMutationObserver,
 
   bool IsNetworkCreated() const { return mNetworkCreated; }
 
-  nsIContent* GetParentObject() const;
+  nsISupports* GetParentObject() const;
 
   /**
    * MessageManagerCallback methods that we override.
@@ -443,7 +441,7 @@ class nsFrameLoader final : public nsStubMutationObserver,
    * If we are an IPC frame, set mRemoteFrame. Otherwise, create and
    * initialize mDocShell.
    */
-  nsresult MaybeCreateDocShell();
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult MaybeCreateDocShell();
   nsresult EnsureMessageManager();
   nsresult ReallyLoadFrameScripts();
   nsDocShell* GetDocShell() const { return mDocShell; }

@@ -19,6 +19,9 @@ internal fun dataChoicesReducer(state: DataChoicesState, action: DataChoicesActi
     is ChoiceAction.ReportOptionClicked -> {
         state.copy(selectedCrashOption = action.reportOption)
     }
+    is ChoiceAction.ScrolledToItem -> {
+        state.copy(itemToScrollTo = null)
+    }
     is SettingsLoaded ->
         state.copy(
             telemetryEnabled = action.telemetryEnabled,

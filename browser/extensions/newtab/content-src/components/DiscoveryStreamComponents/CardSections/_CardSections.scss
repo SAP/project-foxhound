@@ -1,4 +1,4 @@
-// Bug 1964453: Some styles here may appear duplicative — due to @includes and media queries, certain rules are intentionally overwritten rather than relying on cascade behavior.
+// Bug 1964453: Some styles here may appear duplicative — due to @includes, @container and media queries, certain rules are intentionally overwritten rather than relying on cascade behavior.
 
 @mixin section-card-small {
   grid-row: span 1;
@@ -7,10 +7,10 @@
 
   &.ds-card.sections-card-ui {
     padding: unset;
-    box-shadow: var(--box-shadow-card);
+    box-shadow: var(--card-box-shadow);
 
     &:hover {
-      box-shadow: var(--box-shadow-card-hover);
+      box-shadow: var(--card-box-shadow-hover);
     }
 
     &:not(.placeholder) .img-wrapper>.ds-image.img>img {
@@ -107,10 +107,10 @@
 
   &.ds-card.sections-card-ui {
     height: unset;
-    box-shadow: var(--box-shadow-card);
+    box-shadow: var(--card-box-shadow);
 
     &:hover {
-      box-shadow: var(--box-shadow-card-hover);
+      box-shadow: var(--card-box-shadow-hover);
     }
   }
 
@@ -157,13 +157,10 @@
       margin-block-end: unset;
       inset-inline-end: initial;
       min-height: 28px;
+      padding-inline-end: var(--space-xxlarge);
 
-      // .source-wrapper {
-      //   max-width: 285px;
-      // }
-
-      .source {
-        width: 217px;
+      .source-wrapper {
+        max-width: none;
       }
     }
 
@@ -198,13 +195,8 @@
   &:focus-within,
   &.active {
     .meta {
-      .source-wrapper {
-        max-width: 175px;
-      }
-
       .source-wrapper .source {
         display: block;
-        width: unset;
       }
     }
   }
@@ -216,7 +208,7 @@
     padding: 0;
   }
 
-  &:not(.placeholder) {
+  &:not(.placeholder, .ds-spoc-rectangle) {
     .img-wrapper>.ds-image.img>img {
       border-radius: var(--border-radius-large) var(--border-radius-large) 0 0;
     }
@@ -228,7 +220,7 @@
   grid-column: span 2;
 
   &.ds-card.sections-card-ui {
-    box-shadow: var(--box-shadow-card);
+    box-shadow: var(--card-box-shadow);
 
     @media ($break-point-layout-variant <=width < $break-point-widest),
       (min-width: $break-point-sections-variant) {
@@ -270,7 +262,7 @@
     }
 
     &:hover {
-      box-shadow: var(--box-shadow-card-hover);
+      box-shadow: var(--card-box-shadow-hover);
     }
   }
 
@@ -308,7 +300,7 @@
         .title {
           -webkit-line-clamp: 3;
           font-size: var(--font-size-large);
-          font-weight: var(--heading-font-weight);
+          font-weight: var(--font-weight-heading);
           margin-block: 0 var(--space-small);
         }
 
@@ -336,6 +328,7 @@
       }
     }
   }
+
 }
 
 .has-sections-grid .ds-outer-wrapper-breakpoint-override {
@@ -396,7 +389,7 @@
       width: auto;
 
       .body-wrapper {
-        width: 989px;
+        width: 975px;
       }
     }
 
@@ -406,7 +399,7 @@
       .body-wrapper {
         display: flex;
         flex-direction: column;
-        width: 1311px;
+        width: 1290px;
       }
 
       .ds-highlights .card-outer {
@@ -432,12 +425,13 @@
       justify-content: space-between;
       align-items: center;
       margin-block: var(--space-small) var(--space-medium);
+
     }
 
     .section-title {
       @include wallpaper-contrast-fix;
 
-      font-weight: var(--heading-font-weight);
+      font-weight: var(--font-weight-heading);
       font-size: var(--font-size-xlarge);
       color: var(--newtab-contextual-text-primary-color);
       margin-block: 0;
@@ -453,6 +447,13 @@
       color: var(--newtab-contextual-text-primary-color);
       margin-block: var(--space-xsmall) 0;
       font-size: var(--font-size-root);
+    }
+
+    // @nova-cleanup(remove-conditional): Remove .nova-enabled wrapper, make default
+    .nova-enabled & {
+      display: grid;
+      grid-template-columns: subgrid;
+      grid-column: 1 / -1;
     }
   }
 
@@ -498,6 +499,19 @@
   }
 }
 
+// @nova-cleanup(remove-conditional): Remove .nova-enabled wrapper, make default
+.nova-enabled .ds-section-wrapper .ds-section .section-heading {
+  grid-column: 1 / -1;
+
+  .section-title {
+    font-size: var(--font-size-heading-large);
+
+    @include at-content-cols(12) {
+      font-size: var(--font-size-heading-xlarge);
+    }
+  }
+}
+
 .ds-section-grid.ds-card-grid {
   grid-gap: var(--space-large);
   grid-template-columns: repeat(1, 300px);
@@ -515,213 +529,365 @@
   }
 
   @media (max-width: $break-point-layout-variant) {
-    @for $i from 0 through 16 {
-      .col-1-position-#{$i} {
-        order: $i;
-      }
-    }
-
-    .col-1-small {
-      @include section-card-small;
-    }
-
-    .col-1-medium {
-      @include section-card-medium;
-    }
-
-    .col-1-large {
-      @include section-card-large;
-    }
-
-    .col-1-show-excerpt {
-      .meta .info-wrap .excerpt {
-        display: block;
-      }
-    }
-
-    .col-1-hide-excerpt {
-      .meta .info-wrap .excerpt {
-        display: none;
-      }
-    }
-  }
-
-  @media ($break-point-layout-variant <= width < $break-point-widest) {
-    grid-template-columns: repeat(2, 300px);
-
-    @for $i from 0 through 16 {
-      .col-2-position-#{$i} {
-        order: $i;
-      }
-    }
-
-    .col-2-small {
-      @include section-card-small;
-    }
-
-    .col-2-medium {
-      @include section-card-medium;
-    }
-
-    .col-2-large {
-      @include section-card-large;
-    }
-
-    .col-2-show-excerpt {
-      .meta .info-wrap .excerpt {
-        display: block;
-      }
-    }
-
-    .col-2-hide-excerpt {
-      .meta .info-wrap .excerpt {
-        display: none;
-      }
-    }
-
-    .ds-image {
-      &.image-1,
-      &.image-3,
-      &.image-4 {
-        display: none;
+    &:not(.nova-enabled *) {
+      @for $i from 0 through 16 {
+        .col-1-position-#{$i} {
+          order: $i;
+        }
       }
 
-      &.image-2 {
-        display: block;
+      .col-1-small {
+        @include section-card-small;
+      }
+
+      .col-1-medium {
+        @include section-card-medium;
+      }
+
+      .col-1-large {
+        @include section-card-large;
+      }
+
+      .col-1-show-excerpt {
+        .meta .info-wrap .excerpt {
+          display: block;
+        }
+      }
+
+      .col-1-hide-excerpt {
+        .meta .info-wrap .excerpt {
+          display: none;
+        }
       }
     }
   }
 
   @media ($break-point-layout-variant <= width < $break-point-widest) {
-    .col-2-small {
-      .meta .info-wrap {
-        max-width: 150px;
+    &:not(.nova-enabled *) {
+      grid-template-columns: repeat(2, 300px);
+
+      @for $i from 0 through 16 {
+        .col-2-position-#{$i} {
+          order: $i;
+        }
       }
 
-      .meta .sections-card-footer {
-        max-width: 150px;
-        min-width: unset;
+      .col-2-small {
+        @include section-card-small;
+      }
+
+      .col-2-medium {
+        @include section-card-medium;
+      }
+
+      .col-2-large {
+        @include section-card-large;
+      }
+
+      .col-2-show-excerpt {
+        .meta .info-wrap .excerpt {
+          display: block;
+        }
+      }
+
+      .col-2-hide-excerpt {
+        .meta .info-wrap .excerpt {
+          display: none;
+        }
+      }
+
+      .ds-image {
+        &.image-1,
+        &.image-3,
+        &.image-4 {
+          display: none;
+        }
+
+        &.image-2 {
+          display: block;
+        }
+      }
+    }
+  }
+
+  @media ($break-point-layout-variant <= width < $break-point-widest) {
+    &:not(.nova-enabled *) {
+      .col-2-small {
+        .meta .info-wrap {
+          max-width: 150px;
+        }
+
+        .meta .sections-card-footer {
+          max-width: 150px;
+          min-width: unset;
+        }
       }
     }
   }
 
   @media ($break-point-widest <= width < $break-point-sections-variant) {
-    grid-template-columns: repeat(3, 300px);
-    gap: var(--space-large);
+    &:not(.nova-enabled *) {
+      grid-template-columns: repeat(3, 300px);
+      gap: var(--space-large);
 
-    @for $i from 0 through 16 {
-      .col-3-position-#{$i} {
-        order: $i;
-      }
-    }
-
-    .col-3-small {
-      @include section-card-small;
-    }
-
-    .col-3-medium {
-      @include section-card-medium;
-    }
-
-    .col-3-large {
-      @include section-card-large;
-    }
-
-    .col-3-show-excerpt {
-      .meta .info-wrap .excerpt {
-        display: block;
-      }
-    }
-
-    .col-3-hide-excerpt {
-      .meta .info-wrap .excerpt {
-        display: none;
-      }
-    }
-
-    .ds-image {
-      &.image-1,
-      &.image-2,
-      &.image-4 {
-        display: none;
+      @for $i from 0 through 16 {
+        .col-3-position-#{$i} {
+          order: $i;
+        }
       }
 
-      &.image-3 {
-        display: block;
+      .col-3-small {
+        @include section-card-small;
+      }
+
+      .col-3-medium {
+        @include section-card-medium;
+      }
+
+      .col-3-large {
+        @include section-card-large;
+      }
+
+      .col-3-show-excerpt {
+        .meta .info-wrap .excerpt {
+          display: block;
+        }
+      }
+
+      .col-3-hide-excerpt {
+        .meta .info-wrap .excerpt {
+          display: none;
+        }
+      }
+
+      .ds-image {
+        &.image-1,
+        &.image-2,
+        &.image-4 {
+          display: none;
+        }
+
+        &.image-3 {
+          display: block;
+        }
       }
     }
   }
 
   @media (min-width: $break-point-widest) {
-    .col-3-small {
-      .meta .info-wrap {
-        max-width: 150px;
-      }
-    }
-
-    .col-3-medium {
-      .meta .info-wrap {
-        max-width: unset;
-      }
-    }
-  }
-
-  @media (min-width: $break-point-sections-variant) {
-    grid-template-columns: repeat(4, 300px);
-
-    @for $i from 0 through 16 {
-      .col-4-position-#{$i} {
-        order: $i;
-      }
-    }
-
-    .col-4-small {
-      @include section-card-small;
-    }
-
-    .col-4-medium {
-      @include section-card-medium;
-    }
-
-    .col-4-large {
-      @include section-card-large;
-    }
-
-    .col-4-show-excerpt {
-      .meta .info-wrap .excerpt {
-        display: block;
-      }
-    }
-
-    .col-4-hide-excerpt {
-      .meta .info-wrap .excerpt {
-        display: none;
-      }
-    }
-
-    .ds-image {
-      &.image-1,
-      &.image-2,
-      &.image-3 {
-        display: none;
+    &:not(.nova-enabled *) {
+      .col-3-small {
+        .meta .info-wrap {
+          max-width: 150px;
+        }
       }
 
-      &.image-4 {
-        display: block;
+      .col-3-medium {
+        .meta .info-wrap {
+          max-width: unset;
+        }
       }
     }
   }
 
   @media (min-width: $break-point-sections-variant) {
-    .col-4-small {
-      .meta .info-wrap {
-        max-width: 150px;
+    &:not(.nova-enabled *) {
+      grid-template-columns: repeat(4, 300px);
+
+      @for $i from 0 through 16 {
+        .col-4-position-#{$i} {
+          order: $i;
+        }
       }
 
-      .meta .sections-card-footer {
-        max-width: 150px;
-        min-width: unset;
+      .col-4-small {
+        @include section-card-small;
+      }
+
+      .col-4-medium {
+        @include section-card-medium;
+      }
+
+      .col-4-large {
+        @include section-card-large;
+      }
+
+      .col-4-show-excerpt {
+        .meta .info-wrap .excerpt {
+          display: block;
+        }
+      }
+
+      .col-4-hide-excerpt {
+        .meta .info-wrap .excerpt {
+          display: none;
+        }
+      }
+
+      .ds-image {
+        &.image-1,
+        &.image-2,
+        &.image-3 {
+          display: none;
+        }
+
+        &.image-4 {
+          display: block;
+        }
       }
     }
+  }
+
+  @media (min-width: $break-point-sections-variant) {
+    &:not(.nova-enabled *) {
+      .col-4-small {
+        .meta .info-wrap {
+          max-width: 150px;
+        }
+
+        .meta .sections-card-footer {
+          max-width: 150px;
+          min-width: unset;
+        }
+      }
+    }
+  }
+
+  // @nova-cleanup(remove-conditional): Remove .nova-enabled wrapper, make default
+  .nova-enabled & {
+    grid-template-columns: subgrid;
+    grid-column: 1 / -1;
+    row-gap: var(--space-medium);
+    margin-block-end: var(--space-xlarge);
+
+    // Exclusive column-count ranges so that cards with multiple col-N-* classes
+    // (assigned by JS for all breakpoints simultaneously) only activate one set of
+    // mixin styles at a time, avoiding specificity conflicts between mixins.
+    @include at-content-cols-range(0, 8) {
+      --sections-col-count: 1;
+
+      @for $i from 0 through 16 {
+        .col-1-position-#{$i} { order: $i; }
+      }
+
+      .col-1-small {
+        @include section-card-small;
+      }
+
+      .col-1-medium {
+        @include section-card-medium;
+      }
+
+      .col-1-large {
+        @include section-card-medium;
+      }
+
+      .col-1-small,
+      .col-1-medium,
+      .col-1-large {
+        grid-column: span 1;
+      }
+    }
+
+    @include at-content-cols-range(8, 12) {
+      --sections-col-count: 2;
+
+      @for $i from 0 through 16 {
+        .col-2-position-#{$i} { order: $i; }
+      }
+
+      .col-2-small {
+        @include section-card-small;
+      }
+
+      .col-2-medium {
+        @include section-card-medium;
+      }
+
+      .col-2-large {
+        @include section-card-large;
+      }
+
+      .col-2-small,
+      .col-2-medium {
+        grid-column: span 1;
+      }
+
+      .col-2-large {
+        grid-column: span 2;
+      }
+
+      .ds-image.image-1, .ds-image.image-3, .ds-image.image-4 { display: none; }
+      .ds-image.image-2 { display: block; }
+    }
+
+    @include at-content-cols-range(12, 16) {
+      --sections-col-count: 3;
+
+      @for $i from 0 through 16 {
+        .col-3-position-#{$i} { order: $i; }
+      }
+
+      .col-3-small {
+        @include section-card-small;
+      }
+
+      .col-3-medium {
+        @include section-card-medium;
+      }
+
+      .col-3-large {
+        @include section-card-large;
+      }
+
+      .col-3-small,
+      .col-3-medium {
+        grid-column: span 1;
+      }
+
+      .col-3-large {
+        grid-column: span 2;
+      }
+
+      .ds-image.image-1, .ds-image.image-2, .ds-image.image-4 { display: none; }
+      .ds-image.image-3 { display: block; }
+    }
+
+    @include at-content-cols(16) {
+      --sections-col-count: 4;
+
+      @for $i from 0 through 16 {
+        .col-4-position-#{$i} { order: $i; }
+      }
+
+      .col-4-small {
+        @include section-card-small;
+      }
+
+      .col-4-medium {
+        @include section-card-medium;
+      }
+
+      .col-4-large {
+        @include section-card-large;
+      }
+
+      .col-4-small,
+      .col-4-medium {
+        grid-column: span 1;
+      }
+
+      .col-4-large {
+        grid-column: span 2;
+      }
+
+      .ds-image.image-1, .ds-image.image-2, .ds-image.image-3 { display: none; }
+      .ds-image.image-4 { display: block; }
+    }
+  }
+
+  // @nova-cleanup(remove-conditional): Remove .nova-enabled wrapper, make default
+  .nova-enabled .ds-section:last-child & {
+    margin-block-end: 0;
   }
 }

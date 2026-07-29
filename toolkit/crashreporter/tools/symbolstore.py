@@ -23,6 +23,7 @@
 
 import ctypes
 import errno
+import functools
 import os
 import platform
 import re
@@ -40,7 +41,6 @@ from mozbuild.generated_sources import (
     get_filename_with_digest,
     get_s3_region_and_bucket,
 )
-from mozbuild.util import memoize
 from mozpack import executables
 from mozpack.copier import FileRegistry
 from mozpack.manifests import InstallManifest, UnreadableInstallManifest
@@ -423,7 +423,7 @@ def make_file_mapping(install_manifests):
     return file_mapping
 
 
-@memoize
+@functools.cache
 def get_generated_file_s3_path(filename, rel_path, bucket):
     """Given a filename, return a path formatted similarly to
     GetVCSFilename but representing a file available in an s3 bucket."""

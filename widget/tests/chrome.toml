@@ -43,6 +43,9 @@ run-if = [
 ]
 
 ["test_bug517396.xhtml"]
+skip-if = [
+  "os == 'win' && standalone", # Bug 2026600
+]
 
 ["test_bug522217.xhtml"]
 tags = "fullscreen"
@@ -104,6 +107,9 @@ support-files = "file_test_clipboard_getDataSnapshot.js"
 
 ["test_composition_text_querycontent.xhtml"]
 support-files = ["window_composition_text_querycontent.xhtml"]
+skip-if = [
+  "os == 'linux' && display == 'x11' && opt && standalone", # Bug 2026600
+]
 
 ["test_ime_focus_with_multiple_contenteditable.html"]
 support-files = ["file_ime_state_test_helper.js"]
@@ -169,6 +175,11 @@ support-files = [
   "window_mouse_scroll_win_2.html",
 ]
 
+["test_native_anchored_menus.xhtml"]
+run-if = [
+  "os == 'mac'", # Cocoa widget test
+]
+
 ["test_native_context_menus.xhtml"]
 run-if = [
   "os == 'mac'", # Cocoa widget test
@@ -177,6 +188,11 @@ run-if = [
 ["test_native_key_bindings_mac.html"]
 run-if = [
   "os == 'mac'", # Cocoa widget test
+]
+
+["test_rtl_native_key_bindings_gtk.html"]
+run-if = [
+  "os == 'linux'", # GTK widget test
 ]
 
 ["test_native_menus.xhtml"]

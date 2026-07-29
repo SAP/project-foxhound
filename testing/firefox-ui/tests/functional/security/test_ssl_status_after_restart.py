@@ -15,12 +15,9 @@ class TestSSLStatusAfterRestart(WindowManagerMixin, MarionetteTestCase):
 
         # Set browser to restore previous session
         self.marionette.set_pref("browser.startup.page", 3)
-        # Disable rcwn to make cache behavior deterministic
-        self.marionette.set_pref("network.http.rcwn.enable", False)
 
     def tearDown(self):
         self.marionette.clear_pref("browser.startup.page")
-        self.marionette.clear_pref("network.http.rcwn.enable")
 
         super().tearDown()
 

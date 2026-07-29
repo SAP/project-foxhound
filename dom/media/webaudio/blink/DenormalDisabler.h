@@ -27,7 +27,6 @@
 
 #include <float.h>
 
-#include <cinttypes>
 #include <cmath>
 #include <cstring>
 

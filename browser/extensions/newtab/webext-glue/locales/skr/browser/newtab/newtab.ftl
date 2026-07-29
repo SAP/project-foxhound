@@ -18,6 +18,57 @@ newtab-personalize-dialog-label =
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = نویاں ٹیباں
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } قطار
+           *[other] { $num } قطاراں
+        }
+# Dropdown option shown when an extension replaces the contents of new windows or tabs.
+# Variables:
+#   $extension (string) - Name of the extension
+home-prefs-homepage-extension-option =
+    .label = ایکسٹنشن ({ $extension })
+home-restore-defaults-srd =
+    .label = ڈیفالٹس بحال کرو
+    .accesskey = R
+home-mode-choice-default-fx-srd =
+    .label = { -firefox-home-brand-name } (طے شدہ)
+home-mode-choice-custom-srd =
+    .label = مرضی دے URLs …
+home-mode-choice-blank-srd =
+    .label = خالی ورقہ
+home-prefs-shortcuts-header-srd =
+    .label = شارٹ کٹ
+home-prefs-shortcuts-select =
+    .aria-label = شارٹ کٹ
+home-prefs-shortcuts-by-option-sponsored-srd =
+    .label = سپانسر تھئے شارٹ کٹ
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = سپانسر تھیاں کہانیاں
+home-prefs-highlights-option-visited-pages-srd =
+    .label = دورہ کیتے ڳئے ورقے
+home-prefs-highlights-options-bookmarks-srd =
+    .label = نشانیاں
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = بالکل حالیہ ڈاؤن لوڈ
+home-prefs-recent-activity-header-srd =
+    .label = حالیہ سرگرمی
+home-prefs-recent-activity-select =
+    .aria-label = حالیہ سرگرمی
+home-prefs-weather-header-srd =
+    .label = موسم
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -43,7 +94,7 @@ newtab-search-box-input =
     .placeholder = ویب تے ڳولو
     .aria-label = ویب تے ڳولو
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = ڳولݨ انجݨ دا اضافہ کرو
 newtab-topsites-add-shortcut-header = نواں شارٹ کٹ
@@ -117,6 +168,8 @@ newtab-menu-delete-pocket = { -pocket-brand-name } کنوں مٹاؤ
 newtab-menu-archive-pocket = { -pocket-brand-name } وِچ سوگھا کرو
 newtab-menu-show-privacy-info = ساݙے سپانسر تے تہاݙی رازداری
 newtab-menu-about-fakespot = { -fakespot-brand-name } بارے
+# Context menu option to open a support page explaining the New Tab personalization features and privacy controls.
+newtab-menu-section-learn-more = ٻیا سِکھو
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -273,9 +326,21 @@ newtab-error-fallback-refresh-link = ولدا کوشش کرݨ کیتے ورقے 
 
 newtab-custom-shortcuts-title = شارٹ کٹ
 newtab-custom-shortcuts-subtitle = سائٹاں جہڑیاں تساں محفوظ کریندے یا ݙیہدے ہو
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = شارٹ کٹ
     .description = سائٹاں جہڑیاں تساں محفوظ کریندے یا ݙیہدے ہو
+newtab-custom-shortcuts-nova =
+    .label = شارٹ کٹ
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+            [one] { $num } قطار
+           *[other] { $num } قطاراں
+        }
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector =
@@ -286,9 +351,12 @@ newtab-custom-row-selector =
 newtab-custom-sponsored-sites = سپانسر تھئے شارٹ کٹ
 newtab-custom-pocket-title = { -pocket-brand-name } دی طرفوں سفارش کیتے ڳئے
 newtab-custom-pocket-subtitle = { -pocket-brand-name } دے ذریعے تیار تھئے غیر معمولی مواد، { -brand-product-name } ٹٻر دا حصہ
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be having a description under "Recommended stories" anymore
 newtab-custom-stories-toggle =
     .label = تجویز کردہ کہاݨیاں
     .description = { -brand-product-name }ٹَٻَّر دے ذریعے تیار کردہ غیر معمولی مواد
+newtab-recommended-stories-toggle =
+    .label = تجویز کردہ کہاݨیاں
 newtab-custom-pocket-sponsored = سپانسر تھیاں کہاݨیاں
 newtab-custom-pocket-show-recent-saves = حالیہ ہتھیکڑیاں ظاہر کرو
 newtab-custom-recent-title = حالیہ سرگرمی
@@ -303,6 +371,8 @@ newtab-custom-settings = ودھیک ترتیباں دا بندوبست کرو
 
 newtab-wallpaper-title = وال پیپرز
 newtab-wallpaper-reset = ڈیفالٹ تے مقرر کرو
+newtab-wallpaper-toggle-title =
+    .label = وال پیپرز
 newtab-wallpaper-light-red-panda = رتا پانڈا
 newtab-wallpaper-light-mountain = چٹی پہاڑی
 newtab-wallpaper-light-sky = ڄُمُّوں اَتے غُلابی بَدلاں دے نال اَسمان
@@ -318,6 +388,7 @@ newtab-wallpaper-dark-city = ڄَمُّوں رنگ دے شہر د امنظر
 
 ## Solid Colors
 
+#  (developer note): @nova-cleanup(remove-string): Remove old "Solid colors" string once Nova lands. The simplified "Colors" string will take over
 newtab-wallpaper-category-title-colors = ٹھوس رنگ
 newtab-wallpaper-blue = نیلا
 newtab-wallpaper-light-blue = پھکا نیلا

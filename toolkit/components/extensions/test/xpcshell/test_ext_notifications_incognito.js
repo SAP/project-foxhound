@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 const ALERTS_SERVICE_CONTRACT_ID = "@mozilla.org/alerts-service;1";
@@ -9,7 +7,7 @@ const createdAlerts = [];
 const mockAlertsService = {
   showAlert(alert, listener) {
     createdAlerts.push(alert);
-    listener.observe(null, "alertfinished", alert.cookie);
+    listener.observe(null, "alertfinished", null);
   },
 
   closeAlert() {
@@ -71,7 +69,7 @@ add_task(async function test_notification_privateBrowsing_flag() {
 
     Assert.equal(createdAlerts.length, 1, "expected one alert");
     let notification = createdAlerts.shift();
-    Assert.equal(notification.cookie, "notifid", "notification id");
+    Assert.equal(notification.name, "notifid", "notification id");
     Assert.equal(notification.title, "titl", "notification title");
     Assert.equal(notification.text, "msg", "notification text");
     Assert.equal(notification.inPrivateBrowsing, privateBrowsing, "pbm flag");

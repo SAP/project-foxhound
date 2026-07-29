@@ -8,7 +8,7 @@
 
 ## Code
 
-The source for `moz-multiline-editor` can be found under [browser/components/multilineeditor/](https://searchfox.org/mozilla-central/source/browser/components/multilineeditor)
+The source for `moz-multiline-editor` can be found under [browser/components/multilineeditor/](https://searchfox.org/firefox-main/source/browser/components/multilineeditor)
 
 ## How to use `moz-multiline-editor`
 
@@ -43,6 +43,14 @@ The editor can be set to be read-only using the `readonly` attribute, which prev
   readonly
   placeholder="This editor is read-only"
 ></moz-multiline-editor>
+```
+
+### Setting the `maxlength`
+
+The editor can limit the number of characters using the `maxlength` attribute.
+
+```html
+<moz-multiline-editor maxlength="100"></moz-multiline-editor>
 ```
 
 ### Programmatic access

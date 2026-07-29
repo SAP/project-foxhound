@@ -26,7 +26,6 @@ import mozilla.components.compose.base.annotation.FlexibleWindowPreview
 import mozilla.components.compose.base.button.OutlinedButton
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.list.SwitchListItem
-import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.PreviewThemeProvider
 import org.mozilla.fenix.theme.Theme
@@ -93,25 +92,6 @@ private fun ResetCfrTool(
             ) {
                 cfrToolsStore.dispatch(CfrToolsAction.ResetLastCFRTimestampButtonClicked)
             }
-        }
-
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(FirefoxTheme.layout.space.dynamic150),
-        ) {
-            CfrSectionTitle(
-                text = stringResource(R.string.debug_drawer_cfr_tools_homepage_cfr_title),
-            )
-
-            CfrToggle(
-                title = stringResource(R.string.debug_drawer_cfr_tools_homepage_searchbar_title),
-                description = stringResource(R.string.debug_drawer_cfr_tools_homepage_searchbar_description),
-                checked = cfrPreferences.homepageSearchBarShown,
-                enabled = FxNimbus.features.encourageSearchCfr.value().enabled,
-                onCfrToggle = {
-                    cfrToolsStore.dispatch(CfrToolsAction.HomepageSearchBarShownToggled)
-                },
-            )
         }
 
         Column(

@@ -85,7 +85,6 @@ class Rule {
     this.inherited = appliedStyle.inherited || null;
     this.pseudoElement = appliedStyle.pseudoElement || "";
     this.keyframes = appliedStyle.keyframes || null;
-    this.userAdded = appliedStyle.rule.userAdded;
 
     this.cssProperties = this.elementStyle.ruleView.cssProperties;
     this.inspector = this.elementStyle.ruleView.inspector;
@@ -96,35 +95,13 @@ class Rule {
     this.textProps = this.#getTextProperties();
     this.textProps = this.textProps.concat(this.#getDisabledProperties());
 
-    this.getUniqueSelector = this.getUniqueSelector.bind(this);
-    this.onStyleRuleFrontUpdated = this.onStyleRuleFrontUpdated.bind(this);
-
-    this.domRule.on("rule-updated", this.onStyleRuleFrontUpdated);
+    this.domRule.on("rule-updated", this.#onStyleRuleFrontUpdated);
   }
 
   destroy() {
-    this.domRule.off("rule-updated", this.onStyleRuleFrontUpdated);
+    this.domRule.off("rule-updated", this.#onStyleRuleFrontUpdated);
     this.compatibilityIssues = null;
     this.destroyed = true;
-  }
-
-  get declarations() {
-    return this.textProps;
-  }
-
-  get selector() {
-    return {
-      getUniqueSelector: this.getUniqueSelector,
-      matchedSelectorIndexes: this.matchedSelectorIndexes,
-      selectors: this.domRule.selectors,
-      selectorsSpecificity: this.domRule.selectorsSpecificity,
-      selectorWarnings: this.domRule.selectors,
-      selectorText: this.keyframes ? this.domRule.keyText : this.selectorText,
-    };
-  }
-
-  get sourceMapURLService() {
-    return this.inspector.toolbox.sourceMapURLService;
   }
 
   get title() {
@@ -196,6 +173,10 @@ class Rule {
     return CssLogic.l10n("rule.sourceElement");
   }
 
+  get selectorsSpecificity() {
+    return this.domRule.selectorsSpecificity;
+  }
+
   /**
    * The rule's stylesheet.
    */
@@ -257,27 +238,6 @@ class Rule {
    */
   getDeclaration(id) {
     return id ? this.textProps.find(textProp => textProp.id === id) : undefined;
-  }
-
-  /**
-   * Returns an unique selector for the CSS rule.
-   */
-  async getUniqueSelector() {
-    let selector = "";
-
-    if (this.domRule.selectors) {
-      // This is a style rule with a selector.
-      selector = this.domRule.selectors.join(", ");
-    } else if (this.inherited) {
-      // This is an inline style from an inherited rule. Need to resolve the unique
-      // selector from the node which rule this is inherited from.
-      selector = await this.inherited.getUniqueSelector();
-    } else {
-      // This is an inline style from the current node.
-      selector = await this.inspector.selection.nodeFront.getUniqueSelector();
-    }
-
-    return selector;
   }
 
   /**
@@ -514,41 +474,12 @@ class Rule {
     property.value = value;
     property.priority = priority;
 
+    this.elementStyle.ruleView.emitForTests("start-set-property-value");
+
     const index = this.textProps.indexOf(property);
     return this.applyProperties(modifications => {
       modifications.setProperty(index, property.name, value, priority);
     });
-  }
-
-  /**
-   * Just sets the value and priority of a property, in order to preview its
-   * effect on the content document.
-   *
-   * @param {TextProperty} property
-   *        The property which value will be previewed
-   * @param {string} value
-   *        The value to be used for the preview
-   * @param {string} priority
-   *        The property's priority (either "important" or an empty string).
-   * @return {Promise}
-   */
-  async previewPropertyValue(property, value, priority) {
-    this.elementStyle.ruleView.emitForTests("start-preview-property-value");
-    const modifications = this.domRule.startModifyingProperties(
-      this.inspector.panelWin,
-      this.cssProperties
-    );
-    modifications.setProperty(
-      this.textProps.indexOf(property),
-      property.name,
-      value,
-      priority
-    );
-    await modifications.apply();
-
-    // Ensure dispatching a ruleview-changed event
-    // also for previews
-    this.elementStyle.notifyChanged();
   }
 
   /**
@@ -591,7 +522,7 @@ class Rule {
    *
    * @param {StyleRuleFront} front
    */
-  onStyleRuleFrontUpdated(front) {
+  #onStyleRuleFrontUpdated = front => {
     // Overwritting this reference is not required, but it's here to avoid confusion.
     // Whenever an actor is passed over the protocol, either as a return value or as
     // payload on an event, the `form` of its corresponding front will be automatically
@@ -600,7 +531,7 @@ class Rule {
     // `this.domRule.declarations` will point to the latest state of declarations set
     // on the actor. Everything on `StyleRuleForm.form` will point to the latest state.
     this.domRule = front;
-  }
+  };
 
   /**
    * Get the list of TextProperties from the style. Needs
@@ -683,6 +614,16 @@ class Rule {
     const colorSchemeChanged =
       this.darkColorScheme !== appliedStyle.darkColorScheme;
     this.darkColorScheme = appliedStyle.darkColorScheme;
+
+    // The `domRule`'s StyleRule actor doesn't change (this.domRule == appliedStyle.rule)
+    // but the appliedStyle may object may update any of its other attributes.
+    // Here we may select two distinct elements, matching the same CSS Rule,
+    // but the inheritance may be different.
+    // (this is covered by browser_inspector_pseudoclass-lock.js)
+    if (appliedStyle.inherited != this.inherited) {
+      this.inherited = appliedStyle.inherited;
+      this.#inheritedSectionLabel = null;
+    }
 
     const newTextProps = this.#getTextProperties();
 

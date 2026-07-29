@@ -65,7 +65,7 @@ add_task(async function () {
 async function addContentLinkForIconUrl(url, browser) {
   let iconChanged = waitForFavicon(browser, url);
   info("Adding <link> to: " + url);
-  await ContentTask.spawn(browser, url, href => {
+  await SpecialPowers.spawn(browser, [url], href => {
     let doc = content.document;
     let head = doc.head;
     let link = doc.createElement("link");

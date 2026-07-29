@@ -30,7 +30,7 @@ import {
   shouldLogEventBreakpoints,
 } from "../../selectors/index";
 
-import DebuggerImage from "../shared/DebuggerImage";
+import DebuggerImage from "devtools/client/shared/components/DebuggerImage";
 import { prefs } from "../../utils/prefs";
 
 import Breakpoints from "./Breakpoints/index";

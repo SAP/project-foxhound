@@ -5,6 +5,7 @@
 #ifndef CacheFileChunk_h_
 #define CacheFileChunk_h_
 
+#include "CacheCrypto.h"
 #include "CacheFileIOManager.h"
 #include "CacheStorageService.h"
 #include "CacheHashUtils.h"
@@ -144,6 +145,12 @@ class CacheFileChunk final : public CacheFileIOListener,
   CacheHash::Hash16_t Hash() const;
   uint32_t DataSize() const;
 
+  // Marks this chunk's on-disk data as encrypted. Set by CacheFile before
+  // Read()/Write() for encrypted entries. The chunk's in-memory buffer always
+  // holds plaintext; on disk the block is [ciphertext][nonce][tag] at a
+  // physical offset that accounts for the per-chunk overhead.
+  void SetEncrypted();
+
   NS_IMETHOD OnFileOpened(CacheFileHandle* aHandle, nsresult aResult) override;
   NS_IMETHOD OnDataWritten(CacheFileHandle* aHandle, const char* aBuf,
                            nsresult aResult) override;
@@ -215,6 +222,17 @@ class CacheFileChunk final : public CacheFileIOListener,
 
   // Read handle that is used during writing the chunk to the disk.
   UniquePtr<CacheFileChunkReadHandle> mWritingStateHandle;
+
+  // Encryption state. mEncrypted is set via SetEncrypted() for entries whose
+  // data is encrypted at rest. mEncryptedReadBuf holds the on-disk block
+  // ([ciphertext][nonce][tag]) read from disk until it is decrypted into the
+  // chunk buffer in OnDataRead(). mEncryptedWriteBuf holds the on-disk block
+  // handed to the I/O manager during an async write (the chunk's own buffer
+  // keeps the plaintext) until OnDataWritten(). Both carry kBlockOverhead extra
+  // bytes beyond the plaintext length.
+  bool mEncrypted{false};
+  UniquePtr<uint8_t[]> mEncryptedReadBuf;
+  UniquePtr<uint8_t[]> mEncryptedWriteBuf;
 
   // Buffer that is used to read the chunk from the disk. It is allowed to write
   // a new data to chunk while we wait for the data from the disk. In this case

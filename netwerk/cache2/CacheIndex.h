@@ -64,12 +64,20 @@ using CacheIndexHeader = struct {
   // kTelemetryReportBytesLimit a telemetry report is sent and the counter is
   // reset.
   uint32_t mKBWritten;
+
+  // Whether the entries on disk are encrypted at rest (see
+  // browser.cache.disk.encryption.enabled). Stored so that a change to the
+  // encryption setting can be detected at startup: when it no longer matches
+  // the pref the whole cache is purged, since it would otherwise hold a mix of
+  // encrypted and plaintext entries.
+  uint32_t mIsEncrypted;
 };
 
 static_assert(sizeof(CacheIndexHeader::mVersion) +
                       sizeof(CacheIndexHeader::mTimeStamp) +
                       sizeof(CacheIndexHeader::mIsDirty) +
-                      sizeof(CacheIndexHeader::mKBWritten) ==
+                      sizeof(CacheIndexHeader::mKBWritten) +
+                      sizeof(CacheIndexHeader::mIsEncrypted) ==
                   sizeof(CacheIndexHeader),
               "Unexpected sizeof(CacheIndexHeader)!");
 
@@ -253,6 +261,14 @@ class CacheIndexEntry : public PLDHashEntryHdr {
     return !!(mRec->Get()->mFlags & kHasAltDataMask);
   }
 
+  void SetHasNoVarySearch(bool aVal) {
+    aVal ? mRec->Get()->mFlags |= kHasNoVarySearchMask
+         : mRec->Get()->mFlags &= ~kHasNoVarySearchMask;
+  }
+  bool HasNoVarySearch() const {
+    return !!(mRec->Get()->mFlags & kHasNoVarySearchMask);
+  }
+
   void SetOnStartTime(uint16_t aTime) { mRec->Get()->mOnStartTime = aTime; }
   uint16_t GetOnStartTime() const { return mRec->Get()->mOnStartTime; }
 
@@ -393,8 +409,12 @@ class CacheIndexEntry : public PLDHashEntryHdr {
   // Indicates that this entry is a dictionary
   static const uint32_t kDictionaryMask = 0x01000000;
 
-  // FileSize in kilobytes (max 16GB)
-  static const uint32_t kFileSizeMask = 0x00FFFFFF;
+  // Indicates that this entry has a No-Vary-Search response header stored
+  // in its metadata. Used to warm mNoVarySearchIndex on startup.
+  static const uint32_t kHasNoVarySearchMask = 0x00800000;
+
+  // FileSize in kilobytes (max 8GB)
+  static const uint32_t kFileSizeMask = 0x007FFFFF;
 
   RefPtr<CacheIndexRecordWrapper> mRec;
 };
@@ -896,10 +916,10 @@ class CacheIndex final : public CacheFileIOListener, public nsIRunnable {
   // Following methods perform writing of the index file.
   //
   // The index is written periodically, but not earlier than once in
-  // kMinDumpInterval and there must be at least kMinUnwrittenChanges
-  // differences between index on disk and in memory. Index is always first
-  // written to a temporary file and the old index file is replaced when the
-  // writing process succeeds.
+  // browser.cache.disk.index.min_dump_interval_ms and there must be at least
+  // browser.cache.disk.index.min_unwritten_changes differences between index on
+  // disk and in memory. Index is always first written to a temporary file and
+  // the old index file is replaced when the writing process succeeds.
   //
   // Starts writing of index when both limits (minimal delay between writes and
   // minimum number of changes in index) were exceeded.

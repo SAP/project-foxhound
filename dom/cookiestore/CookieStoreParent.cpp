@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +9,10 @@
 #include "mozilla/Components.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/dom/ProcessIsolation.h"
 #include "mozilla/ipc/BackgroundParent.h"
+#include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/URIUtils.h"  // for ParamTraits<nsIURI*>
 #include "mozilla/net/Cookie.h"
 #include "mozilla/net/CookieCommons.h"
@@ -83,20 +84,24 @@ mozilla::ipc::IPCResult CookieStoreParent::RecvGetRequest(
     const bool& aOnlyFirstMatch, GetRequestResolver&& aResolver) {
   AssertIsOnBackgroundThread();
 
-  InvokeAsync(GetMainThreadSerialEventTarget(), __func__,
-              [self = RefPtr(this), uri = aCookieURI.get(), aOriginAttributes,
-               aPartitionedOriginAttributes, aThirdPartyContext,
-               aPartitionForeign, aUsingStorageAccess, aIsOn3PCBExceptionList,
-               aMatchName, aName, aPath, aOnlyFirstMatch]() {
-                CopyableTArray<CookieStruct> results;
-                self->GetRequestOnMainThread(
-                    uri, aOriginAttributes, aPartitionedOriginAttributes,
-                    aThirdPartyContext, aPartitionForeign, aUsingStorageAccess,
-                    aIsOn3PCBExceptionList, aMatchName, aName, aPath,
-                    aOnlyFirstMatch, results);
-                return GetRequestPromise::CreateAndResolve(std::move(results),
-                                                           __func__);
-              })
+  RefPtr<ThreadsafeContentParentHandle> parent =
+      BackgroundParent::GetContentParentHandle(Manager());
+
+  InvokeAsync(
+      GetMainThreadSerialEventTarget(), __func__,
+      [self = RefPtr(this), parent = RefPtr(parent), uri = aCookieURI.get(),
+       aOriginAttributes, aPartitionedOriginAttributes, aThirdPartyContext,
+       aPartitionForeign, aUsingStorageAccess, aIsOn3PCBExceptionList,
+       aMatchName, aName, aPath, aOnlyFirstMatch]() {
+        CopyableTArray<CookieStruct> results;
+        self->GetRequestOnMainThread(
+            parent, uri, aOriginAttributes, aPartitionedOriginAttributes,
+            aThirdPartyContext, aPartitionForeign, aUsingStorageAccess,
+            aIsOn3PCBExceptionList, aMatchName, aName, aPath, aOnlyFirstMatch,
+            results);
+        return GetRequestPromise::CreateAndResolve(std::move(results),
+                                                   __func__);
+      })
       ->Then(GetCurrentSerialEventTarget(), __func__,
              [aResolver = std::move(aResolver)](
                  const GetRequestPromise::ResolveOrRejectValue& aResult) {
@@ -200,6 +205,19 @@ mozilla::ipc::IPCResult CookieStoreParent::RecvGetSubscriptionsRequest(
     GetSubscriptionsRequestResolver&& aResolver) {
   AssertIsOnBackgroundThread();
 
+  auto principalOrErr = PrincipalInfoToPrincipal(aPrincipalInfo);
+  if (principalOrErr.isErr()) {
+    return IPC_FAIL(this, "invalid PrincipalInfo");
+  }
+  nsCOMPtr<nsIPrincipal> principal = principalOrErr.unwrap();
+
+  RefPtr<ThreadsafeContentParentHandle> parent =
+      BackgroundParent::GetContentParentHandle(Manager());
+  if (parent && !ValidatePrincipalCouldPotentiallyBeLoadedBy(
+                    principal, parent->GetRemoteType(), {})) {
+    return IPC_FAIL(this, "principal not allowed for remote type");
+  }
+
   InvokeAsync(GetMainThreadSerialEventTarget(), __func__,
               [self = RefPtr(this), aPrincipalInfo, aScopeURL]() {
                 CookieStoreSubscriptionService* service =
@@ -236,6 +254,19 @@ mozilla::ipc::IPCResult CookieStoreParent::RecvSubscribeOrUnsubscribeRequest(
     const CopyableTArray<CookieSubscription>& aSubscriptions,
     bool aSubscription, SubscribeOrUnsubscribeRequestResolver&& aResolver) {
   AssertIsOnBackgroundThread();
+
+  auto principalOrErr = PrincipalInfoToPrincipal(aPrincipalInfo);
+  if (principalOrErr.isErr()) {
+    return IPC_FAIL(this, "invalid PrincipalInfo");
+  }
+  nsCOMPtr<nsIPrincipal> principal = principalOrErr.unwrap();
+
+  RefPtr<ThreadsafeContentParentHandle> parent =
+      BackgroundParent::GetContentParentHandle(Manager());
+  if (parent && !ValidatePrincipalCouldPotentiallyBeLoadedBy(
+                    principal, parent->GetRemoteType(), {})) {
+    return IPC_FAIL(this, "principal not allowed for remote type");
+  }
 
   InvokeAsync(GetMainThreadSerialEventTarget(), __func__,
               [self = RefPtr(this), aPrincipalInfo, aScopeURL, aSubscriptions,
@@ -274,7 +305,8 @@ mozilla::ipc::IPCResult CookieStoreParent::RecvClose() {
 }
 
 void CookieStoreParent::GetRequestOnMainThread(
-    const RefPtr<nsIURI> aCookieURI, const OriginAttributes& aOriginAttributes,
+    ThreadsafeContentParentHandle* aParent, const RefPtr<nsIURI> aCookieURI,
+    const OriginAttributes& aOriginAttributes,
     const Maybe<OriginAttributes>& aPartitionedOriginAttributes,
     bool aThirdPartyContext, bool aPartitionForeign, bool aUsingStorageAccess,
     bool aIsOn3PCBExceptionList, bool aMatchName, const nsAString& aName,
@@ -298,6 +330,10 @@ void CookieStoreParent::GetRequestOnMainThread(
     return;
   }
 
+  if (!CheckContentProcessSecurity(aParent, baseDomain, aOriginAttributes)) {
+    return;
+  }
+
   nsAutoCString hostName;
   rv = nsContentUtils::GetHostOrIPv6WithBrackets(aCookieURI, hostName);
   if (NS_FAILED(rv)) {
@@ -314,6 +350,9 @@ void CookieStoreParent::GetRequestOnMainThread(
   }
 
   nsTArray<CookieStruct> list;
+
+  bool hasBothPartitionedAndUnpartitioned =
+      aPartitionedOriginAttributes.isSome();
 
   for (const OriginAttributes& attrs : attrsList) {
     nsTArray<RefPtr<Cookie>> cookies;
@@ -339,6 +378,14 @@ void CookieStoreParent::GetRequestOnMainThread(
       }
 
       if (!net::CookieCommons::PathMatches(cookie->Path(), aPath)) {
+        continue;
+      }
+
+      // Skipping sending TCP cookies when the page has StorageAccess if
+      // configured so that CHIPS doesn't affect TCP.
+      if (!StaticPrefs::network_cookie_CHIPS_affectsTCP() &&
+          hasBothPartitionedAndUnpartitioned &&
+          !attrs.mPartitionKey.IsEmpty() && !cookie->RawIsPartitioned()) {
         continue;
       }
 
@@ -371,7 +418,7 @@ CookieStoreParent::SetReturnType CookieStoreParent::SetRequestOnMainThread(
   // By default, no notification should be expected.
   aWaitForNotification = false;
 
-  NS_ConvertUTF16toUTF8 domain(aDomain);
+  nsAutoCString domain = NS_ConvertUTF16toUTF8(aDomain);
   nsAutoCString domainWithDot;
 
   if (CookiePrefixes::Has(CookiePrefixes::eHttp, aName) ||
@@ -385,18 +432,30 @@ CookieStoreParent::SetReturnType CookieStoreParent::SetRequestOnMainThread(
     return eSilentFailure;
   }
 
-  // If aDomain is `domain.com` then domainWithDot will be `.domain.com`
-  // Otherwise, when aDomain is empty, domain and domainWithDot will both
-  // be the host of aCookieURI
-  if (!domain.IsEmpty()) {
-    MOZ_ASSERT(!domain.IsEmpty());
-    domainWithDot.Insert('.', 0);
-  } else {
-    domain.Truncate();
+  // Determine whether aCookieURI is hosted on something that requires an
+  // exact host match (IP literal, single-label host such as `localhost`, or
+  // a public suffix). The cookie service cannot store a domain cookie for
+  // those, so we must not prepend a leading dot.
+  nsCOMPtr<nsIEffectiveTLDService> etld =
+      mozilla::components::EffectiveTLD::Service();
+  nsAutoCString baseDomain;
+  bool requireHostMatch = false;
+  rv = CookieCommons::GetBaseDomain(etld, aCookieURI, baseDomain,
+                                    requireHostMatch);
+  if (NS_FAILED(rv)) {
+    return eSilentFailure;
+  }
+
+  // If aDomain is `domain.com` then domainWithDot will be `.domain.com`.
+  // When aDomain is empty, domain and domainWithDot both fall back to the
+  // host of aCookieURI (a host-only cookie).
+  if (domain.IsEmpty()) {
     rv = nsContentUtils::GetHostOrIPv6WithBrackets(aCookieURI, domain);
     if (NS_FAILED(rv)) {
       return eSilentFailure;
     }
+  } else if (!requireHostMatch) {
+    domainWithDot.Insert('.', 0);
   }
   domainWithDot.Append(domain);
 

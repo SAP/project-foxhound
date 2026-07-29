@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -56,29 +54,22 @@ Hash<NonCustomCSSPropertyId>(const NonCustomCSSPropertyId& aValue)
   return uint32_t(aValue);
 }
 
-} // namespace mozilla
 
 // The "descriptors" that can appear in a @font-face rule.
 // They have the syntax of properties but different value rules.
-enum nsCSSFontDesc {
-  eCSSFontDesc_UNKNOWN = -1,
-#define CSS_FONT_DESC(name_, method_) eCSSFontDesc_##method_,
-#include "nsCSSFontDescList.inc"
-#undef CSS_FONT_DESC
-  eCSSFontDesc_COUNT
+enum class FontFaceDescriptorId : uint8_t {
+$font_face_descriptors
 };
+
+constexpr size_t kFontFaceDescriptorCount = $font_face_descriptor_count;
 
 // The "descriptors" that can appear in a @counter-style rule.
 // They have the syntax of properties but different value rules.
-enum nsCSSCounterDesc {
-  eCSSCounterDesc_UNKNOWN = -1,
-#define CSS_COUNTER_DESC(name_, method_) eCSSCounterDesc_##method_,
-#include "nsCSSCounterDescList.inc"
-#undef CSS_COUNTER_DESC
-  eCSSCounterDesc_COUNT
+enum class CounterStyleDescriptorId : uint8_t {
+$counter_style_descriptors
 };
 
-namespace mozilla {
+constexpr size_t kCounterStyleDescriptorCount = $counter_style_descriptor_count;
 
 // FIXME: The underlying type of this enum should be uint8_t, but we can't do
 // that because of https://bugs.llvm.org/show_bug.cgi?id=44228.

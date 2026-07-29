@@ -350,41 +350,6 @@ async function reopenMenuSource(source, expectedMessage, win = window, taskFn) {
 }
 
 /**
- * Sets up stubs for ASRouter methods to simulate a scenario where a specific
- * menu message is made available via the ASRouter system.
- *
- * This function stubs:
- *  - `ASRouter.handleMessageRequest` to resolve the provided message.
- *  - `ASRouter.messagesEnabledInAutomation` to consider the message enabled for automation.
- *  - `ASRouter.getMessageById` to return the provided message when queried by its ID.
- *
- * After the provided task function `taskFn` is executed, it restores all the stubs.
- *
- * @param {SinonSandbox} sandbox - The Sinon sandbox used to create the stubs and ensure cleanup.
- * @param {object} message - The message object to be used in the stubs and passed for testing.
- * @param {function} taskFn - The function to be executed with the stubs in place.
- */
-async function withTestMessage(sandbox, message, taskFn) {
-  let handleMessageRequestStub = sandbox.stub(ASRouter, "handleMessageRequest");
-  handleMessageRequestStub.resolves([message]);
-
-  let messagesEnabledInAutomationStub = sandbox.stub(
-    ASRouter,
-    "messagesEnabledInAutomation"
-  );
-  messagesEnabledInAutomationStub.value([message.id]);
-
-  let getMessageByIdStub = sandbox.stub(ASRouter, "getMessageById");
-  getMessageByIdStub.withArgs(message.id).returns(message);
-
-  await taskFn(handleMessageRequestStub);
-
-  handleMessageRequestStub.restore();
-  messagesEnabledInAutomationStub.restore();
-  getMessageByIdStub.restore();
-}
-
-/**
  * A utility function to iterate all of the current menu message sources and
  * run some async function for each.
  *
@@ -487,6 +452,7 @@ add_task(async function test_trigger() {
         source: MenuMessage.SOURCES.APP_MENU,
         browserIsSelected: true,
         isAIWindow: false,
+        onThirdPartyPage: false,
       },
     }),
     "sendTriggerMessage was called when opening the AppMenu panel."
@@ -503,6 +469,7 @@ add_task(async function test_trigger() {
         source: MenuMessage.SOURCES.PXI_MENU,
         browserIsSelected: true,
         isAIWindow: false,
+        onThirdPartyPage: false,
       },
     }),
     "sendTriggerMessage was called when opening the PXI panel."
@@ -836,7 +803,7 @@ add_task(async function test_default_cta_does_not_replace_fxa_row() {
       defaultMsg,
       window,
       async (_msgEl, panel) => {
-        const view = panel.ownerGlobal.PanelUI.mainView;
+        const view = panel.documentGlobal.PanelUI.mainView;
         const separator = view.querySelector("#appMenu-fxa-separator");
         const fxaRow = view.querySelector("#appMenu-fxa-status2");
 

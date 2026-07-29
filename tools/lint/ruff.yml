@@ -5,6 +5,8 @@ ruff:
     exclude: []
     # The configure option is used by the build system
     extensions: ["configure", "py"]
+    # Lint Python inside dot-directories too (e.g. .agents, .claude skills).
+    find-dotfiles: true
     support-files:
         - "**/.ruff.toml"
         - "**/ruff.toml"

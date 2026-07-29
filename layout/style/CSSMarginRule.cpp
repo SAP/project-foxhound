@@ -1,12 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/CSSMarginRule.h"
 
-#include "mozilla/DeclarationBlock.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/dom/CSSMarginRuleBinding.h"
 
@@ -15,14 +12,10 @@ namespace mozilla::dom {
 // -- CSSMarginRuleDeclaration ---------------------------------------
 
 CSSMarginRuleDeclaration::CSSMarginRuleDeclaration(
-    already_AddRefed<StyleLockedDeclarationBlock> aDecls)
-    : mDecls(new DeclarationBlock(std::move(aDecls))) {
-  mDecls->SetOwningRule(Rule());
-}
+    already_AddRefed<Block> aDecls)
+    : mDecls(aDecls) {}
 
-CSSMarginRuleDeclaration::~CSSMarginRuleDeclaration() {
-  mDecls->SetOwningRule(nullptr);
-}
+CSSMarginRuleDeclaration::~CSSMarginRuleDeclaration() = default;
 
 // QueryInterface implementation for CSSMarginRuleDeclaration
 NS_INTERFACE_MAP_BEGIN(CSSMarginRuleDeclaration)
@@ -49,8 +42,9 @@ nsISupports* CSSMarginRuleDeclaration::GetParentObject() const {
   return Rule()->GetParentObject();
 }
 
-DeclarationBlock* CSSMarginRuleDeclaration::GetOrCreateCSSDeclaration(
-    Operation aOperation, DeclarationBlock** aCreated) {
+StyleLockedDeclarationBlock*
+CSSMarginRuleDeclaration::GetOrCreateCSSDeclaration(Operation aOperation,
+                                                    Block** aCreated) {
   if (aOperation != Operation::Read) {
     if (StyleSheet* sheet = Rule()->GetStyleSheet()) {
       sheet->WillDirty();
@@ -60,27 +54,19 @@ DeclarationBlock* CSSMarginRuleDeclaration::GetOrCreateCSSDeclaration(
 }
 
 void CSSMarginRuleDeclaration::SetRawAfterClone(
-    RefPtr<StyleLockedDeclarationBlock> aDeclarationBlock) {
-  mDecls->SetOwningRule(nullptr);
-  mDecls = new DeclarationBlock(aDeclarationBlock.forget());
-  mDecls->SetOwningRule(Rule());
+    RefPtr<Block> aDeclarationBlock) {
+  mDecls = std::move(aDeclarationBlock);
 }
 
 nsresult CSSMarginRuleDeclaration::SetCSSDeclaration(
-    DeclarationBlock* aDecl, MutationClosureData* aClosureData) {
+    Block* aDecl, MutationClosureData* aClosureData) {
   MOZ_ASSERT(aDecl, "must be non-null");
-  CSSMarginRule* rule = Rule();
-
   if (aDecl != mDecls) {
-    mDecls->SetOwningRule(nullptr);
-    RefPtr<DeclarationBlock> decls = aDecl;
     // TODO alaskanemily: bug 1890418 for implementing this and margin-rule
     // style properties in general.
     // Servo_MarginRule_SetStyle(rule->Raw(), decls->Raw());
-    mDecls = std::move(decls);
-    mDecls->SetOwningRule(rule);
+    mDecls = aDecl;
   }
-
   return NS_OK;
 }
 
@@ -124,7 +110,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(CSSMarginRule)
   //
   // Note that this has to happen before unlinking css::Rule.
   tmp->UnlinkDeclarationWrapper(tmp->mDecls);
-  tmp->mDecls.mDecls->SetOwningRule(nullptr);
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END_INHERITED(css::Rule)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(CSSMarginRule, css::Rule)

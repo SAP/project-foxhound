@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,7 +17,7 @@ namespace mozilla {
 #  undef LOG_INTERNAL
 #endif  // LOG_INTERNAL
 #define LOG_INTERNAL(level, msg, ...) \
-  MOZ_LOG(gWebCodecsLog, LogLevel::level, (msg, ##__VA_ARGS__))
+  MOZ_LOG_FMT(gWebCodecsLog, LogLevel::level, msg, ##__VA_ARGS__)
 
 #ifdef LOG
 #  undef LOG
@@ -49,11 +47,11 @@ EncoderAgent::EncoderAgent(WebCodecsId aId)
       mState(State::Unconfigured) {
   MOZ_ASSERT(mOwnerThread);
   MOZ_ASSERT(mPEMFactory);
-  LOG("EncoderAgent #%zu (%p) ctor", mId, this);
+  LOG("EncoderAgent #{} ({}) ctor", mId, fmt::ptr(this));
 }
 
 EncoderAgent::~EncoderAgent() {
-  LOG("EncoderAgent #%zu (%p) dtor", mId, this);
+  LOG("EncoderAgent #{} ({}) dtor", mId, fmt::ptr(this));
   MOZ_ASSERT(mState == State::Unconfigured, "encoder released in wrong state");
   MOZ_ASSERT(!mEncoder, "encoder must be shutdown");
 }
@@ -67,7 +65,8 @@ RefPtr<EncoderAgent::ConfigurePromise> EncoderAgent::Configure(
   MOZ_ASSERT(!mInitRequest.Exists());
 
   if (mState == State::Error) {
-    LOGE("EncoderAgent #%zu (%p) tried to configure in error state", mId, this);
+    LOGE("EncoderAgent #{} ({}) tried to configure in error state", mId,
+         fmt::ptr(this));
     return ConfigurePromise::CreateAndReject(
         MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
                     "Cannot configure in error state"),
@@ -78,7 +77,7 @@ RefPtr<EncoderAgent::ConfigurePromise> EncoderAgent::Configure(
   MOZ_ASSERT(!mEncoder);
   SetState(State::Configuring);
 
-  LOG("EncoderAgent #%zu (%p) is creating an encoder (%s)", mId, this,
+  LOG("EncoderAgent #{} ({}) is creating an encoder ({})", mId, fmt::ptr(this),
       mozilla::EnumValueToString(aConfig.mCodec));
 
   RefPtr<ConfigurePromise> p = mConfigurePromise.Ensure(__func__);
@@ -97,19 +96,19 @@ RefPtr<EncoderAgent::ConfigurePromise> EncoderAgent::Configure(
                          "configuration should have been rejected");
 
               LOGW(
-                  "EncoderAgent #%zu (%p) has been shut down. We need to shut "
+                  "EncoderAgent #{} ({}) has been shut down. We need to shut "
                   "the newly created encoder down",
-                  self->mId, self.get());
+                  self->mId, fmt::ptr(self.get()));
               aEncoder->Shutdown()->Then(
                   self->mOwnerThread, __func__,
                   [self](const ShutdownPromise::ResolveOrRejectValue& aValue) {
                     MOZ_ASSERT(self->mState == State::ShuttingDown);
 
                     LOGW(
-                        "EncoderAgent #%zu (%p), newly created encoder "
+                        "EncoderAgent #{} ({}), newly created encoder "
                         "shutdown "
-                        "has been %s",
-                        self->mId, self.get(),
+                        "has been {}",
+                        self->mId, fmt::ptr(self.get()),
                         aValue.IsResolve() ? "resolved" : "rejected");
 
                     self->SetState(State::Unconfigured);
@@ -121,25 +120,25 @@ RefPtr<EncoderAgent::ConfigurePromise> EncoderAgent::Configure(
             }
 
             self->mEncoder = aEncoder.forget();
-            LOG("EncoderAgent #%zu (%p) has created a encoder, now initialize "
+            LOG("EncoderAgent #{} ({}) has created a encoder, now initialize "
                 "it",
-                self->mId, self.get());
+                self->mId, fmt::ptr(self.get()));
             self->mEncoder->Init()
                 ->Then(
                     self->mOwnerThread, __func__,
                     [self]() {
                       self->mInitRequest.Complete();
-                      LOG("EncoderAgent #%zu (%p) has initialized the encoder",
-                          self->mId, self.get());
+                      LOG("EncoderAgent #{} ({}) has initialized the encoder",
+                          self->mId, fmt::ptr(self.get()));
                       self->SetState(State::Configured);
                       self->mConfigurePromise.Resolve(true, __func__);
                     },
                     [self](const MediaResult& aError) {
                       self->mInitRequest.Complete();
                       LOGE(
-                          "EncoderAgent #%zu (%p) failed to initialize the "
+                          "EncoderAgent #{} ({}) failed to initialize the "
                           "encoder",
-                          self->mId, self.get());
+                          self->mId, fmt::ptr(self.get()));
                       self->SetState(State::Error);
                       self->mConfigurePromise.Reject(aError, __func__);
                     })
@@ -147,8 +146,8 @@ RefPtr<EncoderAgent::ConfigurePromise> EncoderAgent::Configure(
           },
           [self = RefPtr{this}](const MediaResult& aError) {
             self->mCreateRequest.Complete();
-            LOGE("EncoderAgent #%zu (%p) failed to create a encoder", self->mId,
-                 self.get());
+            LOGE("EncoderAgent #{} ({}) failed to create a encoder", self->mId,
+                 fmt::ptr(self.get()));
 
             // If EncoderAgent has been shut down, we need to resolve the
             // shutdown promise.
@@ -158,9 +157,9 @@ RefPtr<EncoderAgent::ConfigurePromise> EncoderAgent::Configure(
                          "configuration should have been rejected");
 
               LOGW(
-                  "EncoderAgent #%zu (%p) has been shut down. Resolve the "
+                  "EncoderAgent #{} ({}) has been shut down. Resolve the "
                   "shutdown promise right away since encoder creation failed",
-                  self->mId, self.get());
+                  self->mId, fmt::ptr(self.get()));
 
               self->SetState(State::Unconfigured);
               self->mShutdownWhileCreationPromise.Resolve(true, __func__);
@@ -182,8 +181,8 @@ RefPtr<EncoderAgent::ReconfigurationPromise> EncoderAgent::Reconfigure(
   MOZ_ASSERT(mReconfigurationPromise.IsEmpty());
 
   if (mState == State::Error) {
-    LOGE("EncoderAgent #%zu (%p) tried to reconfigure in error state", mId,
-         this);
+    LOGE("EncoderAgent #{} ({}) tried to reconfigure in error state", mId,
+         fmt::ptr(this));
     return ReconfigurationPromise::CreateAndReject(
         MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
                     "Cannot reconfigure in error state"),
@@ -193,7 +192,8 @@ RefPtr<EncoderAgent::ReconfigurationPromise> EncoderAgent::Reconfigure(
   MOZ_ASSERT(mEncoder);
   SetState(State::Configuring);
 
-  LOG("EncoderAgent #%zu (%p) is reconfiguring its encoder (%s)", mId, this,
+  LOG("EncoderAgent #{} ({}) is reconfiguring its encoder ({})", mId,
+      fmt::ptr(this),
       NS_ConvertUTF16toUTF8(aConfigChanges->ToString().get()).get());
 
   RefPtr<ReconfigurationPromise> p = mReconfigurationPromise.Ensure(__func__);
@@ -203,15 +203,15 @@ RefPtr<EncoderAgent::ReconfigurationPromise> EncoderAgent::Reconfigure(
           mOwnerThread, __func__,
           [self = RefPtr{this}](bool) {
             self->mReconfigurationRequest.Complete();
-            LOGE("EncoderAgent #%zu (%p) reconfigure success", self->mId,
-                 self.get());
+            LOGE("EncoderAgent #{} ({}) reconfigure success", self->mId,
+                 fmt::ptr(self.get()));
             self->SetState(State::Configured);
             self->mReconfigurationPromise.Resolve(true, __func__);
           },
           [self = RefPtr{this}](const MediaResult& aError) {
             self->mReconfigurationRequest.Complete();
-            LOGE("EncoderAgent #%zu (%p) reconfigure failure", self->mId,
-                 self.get());
+            LOGE("EncoderAgent #{} ({}) reconfigure failure", self->mId,
+                 fmt::ptr(self.get()));
             // Not a a fatal error per se, the owner will deal with it.
             self->mReconfigurationPromise.Reject(aError, __func__);
           })
@@ -223,7 +223,7 @@ RefPtr<EncoderAgent::ReconfigurationPromise> EncoderAgent::Reconfigure(
 RefPtr<ShutdownPromise> EncoderAgent::Shutdown() {
   MOZ_ASSERT(mOwnerThread->IsOnCurrentThread());
 
-  LOG("EncoderAgent #%zu (%p) shutdown in %s state", mId, this,
+  LOG("EncoderAgent #{} ({}) shutdown in {} state", mId, fmt::ptr(this),
       EncoderAgent::EnumValueToString(mState));
 
   MOZ_ASSERT(mShutdownWhileCreationPromise.IsEmpty(),
@@ -241,10 +241,10 @@ RefPtr<ShutdownPromise> EncoderAgent::Shutdown() {
     MOZ_ASSERT(mState == State::Configuring);
 
     LOGW(
-        "EncoderAgent #%zu (%p) shutdown while the encoder creation for "
+        "EncoderAgent #{} ({}) shutdown while the encoder creation for "
         "configuration is in flight. Reject the configuration now and defer "
         "the shutdown until the created encoder has been shut down",
-        mId, this);
+        mId, fmt::ptr(this));
 
     // Reject the configuration in flight.
     mConfigurePromise.Reject(r, __func__);
@@ -257,7 +257,8 @@ RefPtr<ShutdownPromise> EncoderAgent::Shutdown() {
 
   // If encoder creation has been completed but failed, no encoder is set.
   if (!mEncoder) {
-    LOG("EncoderAgent #%zu (%p) shutdown without an active encoder", mId, this);
+    LOG("EncoderAgent #{} ({}) shutdown without an active encoder", mId,
+        fmt::ptr(this));
     MOZ_ASSERT(mState == State::Error);
     MOZ_ASSERT(!mInitRequest.Exists());
     MOZ_ASSERT(mConfigurePromise.IsEmpty());
@@ -304,7 +305,8 @@ RefPtr<EncoderAgent::EncodePromise> EncoderAgent::Encode(
   MOZ_ASSERT(!mEncodeRequest.Exists());
 
   if (mState == State::Error) {
-    LOGE("EncoderAgent #%zu (%p) tried to encode in error state", mId, this);
+    LOGE("EncoderAgent #{} ({}) tried to encode in error state", mId,
+         fmt::ptr(this));
     return EncodePromise::CreateAndReject(
         MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
                     "Cannot encode in error state"),
@@ -317,22 +319,22 @@ RefPtr<EncoderAgent::EncodePromise> EncoderAgent::Encode(
 
   RefPtr<EncodePromise> p = mEncodePromise.Ensure(__func__);
 
-  LOGV("EncoderAgent #%zu (%p) is encoding %zu samples", mId, this,
+  LOGV("EncoderAgent #{} ({}) is encoding {} samples", mId, fmt::ptr(this),
        aInputs.Length());
   mEncoder->Encode(std::move(aInputs))
       ->Then(
           mOwnerThread, __func__,
           [self = RefPtr{this}](MediaDataEncoder::EncodedData&& aData) {
             self->mEncodeRequest.Complete();
-            LOGV("EncoderAgent #%zu (%p) encode a batch successful", self->mId,
-                 self.get());
+            LOGV("EncoderAgent #{} ({}) encode a batch successful", self->mId,
+                 fmt::ptr(self.get()));
             self->SetState(State::Configured);
             self->mEncodePromise.Resolve(std::move(aData), __func__);
           },
           [self = RefPtr{this}](const MediaResult& aError) {
             self->mEncodeRequest.Complete();
-            LOGV("EncoderAgent #%zu (%p) failed to encode a batch", self->mId,
-                 self.get());
+            LOGV("EncoderAgent #{} ({}) failed to encode a batch", self->mId,
+                 fmt::ptr(self.get()));
             self->SetState(State::Error);
             self->mEncodePromise.Reject(aError, __func__);
           })
@@ -362,7 +364,7 @@ void EncoderAgent::Dry(MediaDataEncoder::EncodedData&& aPendingOutputs) {
   MOZ_ASSERT(!mDrainRequest.Exists());
   MOZ_ASSERT(mEncoder);
 
-  LOG("EncoderAgent #%zu (%p) is draining the encoder", mId, this);
+  LOG("EncoderAgent #{} ({}) is draining the encoder", mId, fmt::ptr(this));
   mEncoder->Drain()
       ->Then(
           mOwnerThread, __func__,
@@ -371,22 +373,24 @@ void EncoderAgent::Dry(MediaDataEncoder::EncodedData&& aPendingOutputs) {
             self->mDrainRequest.Complete();
 
             if (aData.IsEmpty()) {
-              LOG("EncoderAgent #%zu (%p) is dry now", self->mId, self.get());
+              LOG("EncoderAgent #{} ({}) is dry now", self->mId,
+                  fmt::ptr(self.get()));
               self->SetState(State::Configured);
               self->mDrainPromise.Resolve(std::move(outputs), __func__);
               return;
             }
 
-            LOG("EncoderAgent #%zu (%p) drained %zu encoder data. Keep "
+            LOG("EncoderAgent #{} ({}) drained {} encoder data. Keep "
                 "draining until dry",
-                self->mId, self.get(), aData.Length());
+                self->mId, fmt::ptr(self.get()), aData.Length());
             outputs.AppendElements(std::move(aData));
             self->Dry(std::move(outputs));
           },
           [self = RefPtr{this}](const MediaResult& aError) {
             self->mDrainRequest.Complete();
 
-            LOGE("EncoderAgent %p failed to drain encoder", self.get());
+            LOGE("EncoderAgent {} failed to drain encoder",
+                 fmt::ptr(self.get()));
             self->mDrainPromise.Reject(aError, __func__);
           })
       ->Track(mDrainRequest);
@@ -424,7 +428,7 @@ void EncoderAgent::SetState(State aState) {
   };
 
   DebugOnly<bool> isValid = validateStateTransition(mState, aState);
-  LOGV("EncoderAgent #%zu (%p) state change: %s -> %s", mId, this,
+  LOGV("EncoderAgent #{} ({}) state change: {} -> {}", mId, fmt::ptr(this),
        EncoderAgent::EnumValueToString(mState),
        EncoderAgent::EnumValueToString(aState));
   MOZ_ASSERT(isValid);

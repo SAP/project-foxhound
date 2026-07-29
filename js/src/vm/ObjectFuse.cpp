@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -74,8 +72,8 @@ void ObjectFuse::invalidateDependentIonScriptsForProperty(JSContext* cx,
 
 void ObjectFuse::invalidateAllDependentIonScripts(JSContext* cx,
                                                   const char* reason) {
-  for (auto r = dependencies_.all(); !r.empty(); r.popFront()) {
-    r.front().value().invalidateAndClear(cx, reason);
+  for (auto iter = dependencies_.iter(); !iter.done(); iter.next()) {
+    iter.get().value().invalidateAndClear(cx, reason);
   }
   dependencies_.clear();
 }
@@ -90,7 +88,10 @@ bool ObjectFuse::markPropertyConstant(PropertyInfo prop) {
   return true;
 }
 
-bool ObjectFuse::tryOptimizeConstantProperty(PropertyInfo prop) {
+bool ObjectFuse::tryOptimizeConstantProperty(PropertyKey key,
+                                             PropertyInfo prop) {
+  MOZ_RELEASE_ASSERT(ObjectFuse::tracksPropertyKey(key));
+
   if (MOZ_UNLIKELY(!generation_.isValid())) {
     return false;
   }
@@ -166,16 +167,6 @@ void ObjectFuse::handleTeleportingProtoMutation(JSContext* cx) {
   invalidateAllDependentIonScripts(cx, "proto mutation");
 }
 
-void ObjectFuse::handleObjectSwap(JSContext* cx) {
-  bumpGeneration();
-
-  // Reset state for all properties.
-  propertyStateLength_ = 0;
-  propertyStateBits_.reset();
-
-  invalidateAllDependentIonScripts(cx, "object swap");
-}
-
 void ObjectFuse::handleShadowedGlobalProperty(JSContext* cx,
                                               PropertyInfo prop) {
   if (isUntrackedProperty(prop)) {
@@ -206,14 +197,15 @@ size_t ObjectFuse::sizeOfIncludingThis(
     result += mallocSizeOf(propertyStateBits_.get());
   }
   result += dependencies_.shallowSizeOfExcludingThis(mallocSizeOf);
-  for (auto r = dependencies_.all(); !r.empty(); r.popFront()) {
-    result += r.front().value().sizeOfExcludingThis(mallocSizeOf);
+  for (auto iter = dependencies_.iter(); !iter.done(); iter.next()) {
+    result += iter.get().value().sizeOfExcludingThis(mallocSizeOf);
   }
   return result;
 }
 
 ObjectFuse* ObjectFuseMap::getOrCreate(JSContext* cx, NativeObject* obj) {
   MOZ_ASSERT(obj->hasObjectFuse());
+  MOZ_ASSERT(obj->zone() == zone_);
   auto p = objectFuses_.lookupForAdd(obj);
   if (!p) {
     auto fuse = MakeUnique<ObjectFuse>();
@@ -234,8 +226,8 @@ ObjectFuse* ObjectFuseMap::get(NativeObject* obj) {
 size_t ObjectFuseMap::sizeOfExcludingThis(
     mozilla::MallocSizeOf mallocSizeOf) const {
   size_t result = objectFuses_.sizeOfExcludingThis(mallocSizeOf);
-  for (auto r = objectFuses_.all(); !r.empty(); r.popFront()) {
-    result += r.front().value()->sizeOfIncludingThis(mallocSizeOf);
+  for (auto iter = objectFuses_.iter(); !iter.done(); iter.next()) {
+    result += iter.get().value()->sizeOfIncludingThis(mallocSizeOf);
   }
   return result;
 }

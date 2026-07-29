@@ -82,7 +82,7 @@ newtab-unit-tests-ccov:
     # coverage anyways.
     run-on-projects: ["mozilla-central"]
     # Note the lack of a "when" rule here. This is to avoid seeing fluctuating
-    # coverage on coverage.moz.tools / searchfox depending on whether the latest
+    # coverage on searchfox depending on whether the latest
     # push contained patches touching these files or not.
 
 messagingsystem-unit-tests:
@@ -157,7 +157,7 @@ messagingsystem-unit-tests-ccov:
     # coverage anyways.
     run-on-projects: ["mozilla-central"]
     # Note the lack of a "when" rule here. This is to avoid seeing fluctuating
-    # coverage on coverage.moz.tools / searchfox depending on whether the latest
+    # coverage on searchfox depending on whether the latest
     # push contained patches touching these files or not.
 
 devtools-tests:

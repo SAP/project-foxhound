@@ -19,15 +19,23 @@ for example - use `all_tests.py` instead.
 
 import logging
 from importlib import import_module
+from typing import Literal, Union
+from typing import Optional as TOptional
 
 from mozbuild.schedules import INCLUSIVE_COMPONENTS
 from taskgraph.transforms.base import TransformSequence
-from taskgraph.util.schema import LegacySchema, optionally_keyed_by, resolve_keyed_by
-from voluptuous import Any, Exclusive, Optional, Required
+from taskgraph.util.schema import (
+    Schema,
+    optionally_keyed_by,
+    resolve_keyed_by,
+)
 
-from gecko_taskgraph.optimize.schema import OptimizationSchema
-from gecko_taskgraph.transforms.job import job_description_schema
-from gecko_taskgraph.transforms.job.run_task import run_task_schema
+from gecko_taskgraph.optimize.schema import (
+    OptimizationSchema,
+)
+from gecko_taskgraph.transforms.job import JobDescriptionSchema
+from gecko_taskgraph.transforms.job.run_task import RunTaskSchema
+from gecko_taskgraph.transforms.test import linux_perf_platform_restrictions
 from gecko_taskgraph.transforms.test.other import get_mobile_project
 from gecko_taskgraph.util.chunking import manifest_loaders
 
@@ -44,37 +52,115 @@ transforms = TransformSequence()
 # See the warnings in taskcluster/docs/how-tos.rst
 #
 # *****WARNING*****
-test_description_schema = LegacySchema({
+class SuiteSchema(Schema, kw_only=True):
+    category: TOptional[str] = None
+    name: TOptional[  # type: ignore
+        optionally_keyed_by("variant", str, use_msgspec=True)
+    ] = None
+
+
+class MozharnessSchema(Schema, kw_only=True):
+    # the mozharness script used to run this task
+    script: optionally_keyed_by("test-platform", str, use_msgspec=True)  # type: ignore
+    # the config files required for the task
+    config: optionally_keyed_by("test-platform", list[str], use_msgspec=True)  # type: ignore
+    # mochitest flavor for mochitest runs
+    mochitest_flavor: TOptional[str] = None
+    # any additional actions to pass to the mozharness command
+    actions: TOptional[list[str]] = None
+    # additional command-line options for mozharness, beyond those
+    # automatically added
+    extra_options: optionally_keyed_by(  # type: ignore
+        "test-platform", "variant", "subtest", "app", list[str], use_msgspec=True
+    )
+    # the artifact name (including path) to test on the build task; this is
+    # generally set in a per-kind transformation
+    build_artifact_name: TOptional[str] = None
+    installer_url: TOptional[str] = None
+    # If not false, tooltool downloads will be enabled via relengAPIProxy
+    # for either just public files, or all files.  Not supported on Windows
+    tooltool_downloads: Union[bool, Literal["public", "internal"]] = False
+    # Add --blob-upload-branch=<project> mozharness parameter
+    include_blob_upload_branch: TOptional[bool] = None
+    # The setting for --download-symbols (if omitted, the option will not
+    # be passed to mozharness)
+    download_symbols: TOptional[Union[bool, Literal["ondemand"]]] = None
+    # If set, then MOZ_NODE_PATH=/usr/local/bin/node is included in the
+    # environment.  This is more than just a helpful path setting -- it
+    # causes xpcshell tests to start additional servers, and runs
+    # additional tests.
+    set_moz_node_path: bool = False
+    # If true, include chunking information in the command even if the number
+    # of chunks is 1
+    chunked: optionally_keyed_by("test-platform", bool, use_msgspec=True)  # type: ignore
+    requires_signed_builds: optionally_keyed_by(  # type: ignore
+        "test-platform", "variant", bool, use_msgspec=True
+    )
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self.download_symbols is False:
+            raise ValueError("download-symbols must be True or 'ondemand'")
+        if self.tooltool_downloads is True:
+            raise ValueError(
+                "tooltool-downloads must be False, 'public', or 'internal'"
+            )
+
+
+class DockerImageSchema(Schema, kw_only=True):
+    in_tree: TOptional[str] = None
+    indexed: TOptional[str] = None
+
+
+class TargetIndexSchema(Schema, kw_only=True):
+    index: str
+    name: str
+
+
+class TargetUpstreamTaskSchema(Schema, kw_only=True):
+    upstream_task: str
+    name: str
+
+
+class TestManifestsSchema(Schema, kw_only=True):
+    active: list[str]
+    skipped: list[str]
+
+
+class TestDescriptionSchema(Schema, kw_only=True):
     # description of the suite, for the task metadata
-    Required("description"): str,
+    description: str
     # test suite category and name
-    Optional("suite"): Any(
-        optionally_keyed_by("variant", str),
-        {
-            Optional("category"): str,
-            Optional("name"): optionally_keyed_by("variant", str),
-        },
-    ),
+    suite: TOptional[  # type: ignore
+        Union[
+            optionally_keyed_by("variant", str, use_msgspec=True),
+            SuiteSchema,
+        ]
+    ] = None
     # base work directory used to set up the task.
-    Optional("workdir"): optionally_keyed_by("test-platform", Any(str, "default")),
+    workdir: TOptional[  # type: ignore
+        optionally_keyed_by(
+            "test-platform", Union[str, Literal["default"]], use_msgspec=True
+        )
+    ] = None
     # the name by which this test suite is addressed in try syntax; defaults to
     # the test-name.  This will translate to the `unittest_try_name` or
     # `talos_try_name` attribute.
-    Optional("try-name"): str,
+    try_name: TOptional[str] = None
     # additional tags to mark up this type of test
-    Optional("tags"): {str: object},
+    tags: TOptional[dict[str, object]] = None
     # the symbol, or group(symbol), under which this task should appear in
     # treeherder.
-    Required("treeherder-symbol"): str,
+    treeherder_symbol: str
     # the value to place in task.extra.treeherder.machine.platform; ideally
     # this is the same as build-platform, and that is the default, but in
     # practice it's not always a match.
-    Optional("treeherder-machine-platform"): str,
+    treeherder_machine_platform: TOptional[str] = None
     # attributes to appear in the resulting task (later transforms will add the
     # common attributes)
-    Optional("attributes"): {str: object},
+    attributes: TOptional[dict[str, object]] = None
     # relative path (from config.path) to the file task was defined in
-    Optional("task-from"): str,
+    task_from: TOptional[str] = None
     # The `run_on_projects` attribute, defaulting to "all".  This dictates the
     # projects on which this task should be included in the target task set.
     # See the attributes documentation for details.
@@ -82,54 +168,77 @@ test_description_schema = LegacySchema({
     # Note that the special case 'built-projects', the default, uses the parent
     # build task's run-on-projects, meaning that tests run only on platforms
     # that are built.
-    Optional("run-on-projects"): optionally_keyed_by(
-        "app",
-        "subtest",
-        "test-platform",
-        "test-name",
-        "variant",
-        Any([str], "built-projects"),
-    ),
+    run_on_projects: TOptional[  # type: ignore
+        optionally_keyed_by(
+            "app",
+            "subtest",
+            "test-platform",
+            "test-name",
+            "variant",
+            Union[list[str], Literal["built-projects"]],
+            use_msgspec=True,
+        )
+    ] = None
     # Whether tasks should run on only a specific type of repository.
-    Optional("run-on-repo-type"): job_description_schema["run-on-repo-type"],
+    run_on_repo_type: TOptional[
+        JobDescriptionSchema.__annotations__["run_on_repo_type"]
+    ] = None  # type: ignore
     # Whether tasks should run on specified Git branches.
-    Optional("run-on-git-branches"): job_description_schema["run-on-git-branches"],
+    run_on_git_branches: TOptional[
+        JobDescriptionSchema.__annotations__["run_on_git_branches"]
+    ] = None  # type: ignore
     # When set only run on projects where the build would already be running.
     # This ensures tasks where this is True won't be the cause of the build
     # running on a project it otherwise wouldn't have.
-    Optional("built-projects-only"): bool,
+    built_projects_only: TOptional[bool] = None
     # the sheriffing tier for this task (default: set based on test platform)
-    Optional("tier"): optionally_keyed_by(
-        "test-platform", "variant", "app", "subtest", Any(int, "default")
-    ),
+    tier: TOptional[  # type: ignore
+        optionally_keyed_by(
+            "test-platform",
+            "variant",
+            "app",
+            "subtest",
+            Union[int, Literal["default"]],
+            use_msgspec=True,
+        )
+    ] = None
     # number of chunks to create for this task.  This can be keyed by test
     # platform by passing a dictionary in the `by-test-platform` key.  If the
     # test platform is not found, the key 'default' will be tried.
-    Required("chunks"): optionally_keyed_by(
-        "test-platform", "variant", Any(int, "dynamic")
-    ),
+    chunks: optionally_keyed_by(  # type: ignore
+        "test-platform", "variant", Union[int, Literal["dynamic"]], use_msgspec=True
+    )
+    default_chunks: TOptional[  # type: ignore
+        optionally_keyed_by("test-platform", "variant", int, use_msgspec=True)
+    ] = None
     # Timeout multiplier to apply to default test timeout values. Can be keyed
     # by test platform.
-    Optional("timeoutfactor"): optionally_keyed_by("test-platform", Any(int, float)),
+    timeoutfactor: TOptional[  # type: ignore
+        optionally_keyed_by("test-platform", Union[int, float], use_msgspec=True)
+    ] = None
     # Custom 'test_manifest_loader' to use, overriding the one configured in the
     # parameters. When 'null', no test chunking will be performed. Can also
     # be used to disable "manifest scheduling".
-    Optional("test-manifest-loader"): optionally_keyed_by(
-        "test-platform", Any(None, *list(manifest_loaders))
-    ),
+    test_manifest_loader: TOptional[  # type: ignore
+        optionally_keyed_by(
+            "test-platform",
+            TOptional[Union[Literal[tuple(manifest_loaders)]]],  # type: ignore
+            use_msgspec=True,
+        )
+    ] = None
     # the time (with unit) after which this task is deleted; default depends on
     # the branch (see below)
-    Optional("expires-after"): str,
+    expires_after: TOptional[str] = None
     # The different configurations that should be run against this task, defined
     # in the TEST_VARIANTS object in the variant.py transforms.
-    Optional("variants"): [str],
+    variants: TOptional[list[str]] = None
     # Whether to run this task without any variants applied.
-    Required("run-without-variant"): optionally_keyed_by("test-platform", bool),
+    run_without_variant: optionally_keyed_by("test-platform", bool, use_msgspec=True)  # type: ignore
     # The EC2 instance size to run these tests on.
-    Required("instance-size"): optionally_keyed_by(
+    instance_size: optionally_keyed_by(  # type: ignore
         "test-platform",
         "variant",
-        Any(
+        Literal[
             "default",
             "large-legacy",
             "large",
@@ -137,182 +246,157 @@ test_description_schema = LegacySchema({
             "xlarge",
             "xlarge-noscratch",
             "highcpu",
-        ),
-    ),
+        ],
+        use_msgspec=True,
+    )
     # type of virtualization or hardware required by test.
-    Required("virtualization"): optionally_keyed_by(
-        "test-platform", Any("virtual", "virtual-with-gpu", "hardware")
-    ),
+    virtualization: optionally_keyed_by(  # type: ignore
+        "test-platform",
+        Literal["virtual", "virtual-with-gpu", "hardware"],
+        use_msgspec=True,
+    )
     # Whether the task requires loopback audio or video (whatever that may mean
     # on the platform)
-    Required("loopback-audio"): bool,
-    Required("loopback-video"): bool,
+    loopback_audio: bool
+    loopback_video: bool
     # Whether the test can run using a software GL implementation on Linux
     # using the GL compositor. May not be used with "legacy" sized instances
     # due to poor LLVMPipe performance (bug 1296086).  Defaults to true for
     # unit tests on linux platforms and false otherwise
-    Optional("allow-software-gl-layers"): bool,
+    allow_software_gl_layers: TOptional[bool] = None
     # For tasks that will run in docker-worker, this is the
     # name of the docker image or in-tree docker image to run the task in.  If
     # in-tree, then a dependency will be created automatically.  This is
     # generally `desktop-test`, or an image that acts an awful lot like it.
-    Required("docker-image"): optionally_keyed_by(
+    docker_image: optionally_keyed_by(  # type: ignore
         "test-platform",
-        Any(
-            # a raw Docker image path (repo/image:tag)
-            str,
-            # an in-tree generated docker image (from `taskcluster/docker/<name>`)
-            {"in-tree": str},
-            # an indexed docker image
-            {"indexed": str},
-        ),
-    ),
+        Union[str, DockerImageSchema],
+        use_msgspec=True,
+    )
     # seconds of runtime after which the task will be killed.  Like 'chunks',
     # this can be keyed by test platform, but also variant.
-    Required("max-run-time"): optionally_keyed_by(
-        "test-platform", "subtest", "variant", "app", int
-    ),
+    max_run_time: optionally_keyed_by(  # type: ignore
+        "test-platform", "subtest", "variant", "app", int, use_msgspec=True
+    )
     # the exit status code that indicates the task should be retried
-    Optional("retry-exit-status"): [int],
+    retry_exit_status: TOptional[list[int]] = None
     # Whether to perform a gecko checkout.
-    Required("checkout"): bool,
+    checkout: bool
     # Wheter to perform a machine reboot after test is done
-    Optional("reboot"): Any(False, "always", "on-exception", "on-failure"),
+    reboot: TOptional[Union[bool, Literal["always", "on-exception", "on-failure"]]] = (
+        None
+    )
     # What to run
-    Required("mozharness"): {
-        # the mozharness script used to run this task
-        Required("script"): optionally_keyed_by("test-platform", str),
-        # the config files required for the task
-        Required("config"): optionally_keyed_by("test-platform", [str]),
-        # mochitest flavor for mochitest runs
-        Optional("mochitest-flavor"): str,
-        # any additional actions to pass to the mozharness command
-        Optional("actions"): [str],
-        # additional command-line options for mozharness, beyond those
-        # automatically added
-        Required("extra-options"): optionally_keyed_by(
-            "test-platform", "variant", "subtest", "app", [str]
-        ),
-        # the artifact name (including path) to test on the build task; this is
-        # generally set in a per-kind transformation
-        Optional("build-artifact-name"): str,
-        Optional("installer-url"): str,
-        # If not false, tooltool downloads will be enabled via relengAPIProxy
-        # for either just public files, or all files.  Not supported on Windows
-        Required("tooltool-downloads"): Any(
-            False,
-            "public",
-            "internal",
-        ),
-        # Add --blob-upload-branch=<project> mozharness parameter
-        Optional("include-blob-upload-branch"): bool,
-        # The setting for --download-symbols (if omitted, the option will not
-        # be passed to mozharness)
-        Optional("download-symbols"): Any(True, "ondemand"),
-        # If set, then MOZ_NODE_PATH=/usr/local/bin/node is included in the
-        # environment.  This is more than just a helpful path setting -- it
-        # causes xpcshell tests to start additional servers, and runs
-        # additional tests.
-        Required("set-moz-node-path"): bool,
-        # If true, include chunking information in the command even if the number
-        # of chunks is 1
-        Required("chunked"): optionally_keyed_by("test-platform", bool),
-        Required("requires-signed-builds"): optionally_keyed_by(
-            "test-platform", "variant", bool
-        ),
-    },
+    mozharness: MozharnessSchema
     # The set of test manifests to run.
-    Optional("test-manifests"): Any(
-        [str],
-        {"active": [str], "skipped": [str]},
-    ),
+    test_manifests: TOptional[Union[list[str], TestManifestsSchema]] = None
     # flag to determine if this is a confirm failure task
-    Optional("confirm-failure"): bool,
+    confirm_failure: TOptional[bool] = None
     # The current chunk (if chunking is enabled).
-    Optional("this-chunk"): int,
+    this_chunk: TOptional[int] = None
     # os user groups for test task workers; required scopes, will be
     # added automatically
-    Optional("os-groups"): optionally_keyed_by("test-platform", [str]),
-    Optional("run-as-administrator"): optionally_keyed_by("test-platform", bool),
+    os_groups: TOptional[  # type: ignore
+        optionally_keyed_by("test-platform", list[str], use_msgspec=True)
+    ] = None
+    run_as_administrator: TOptional[  # type: ignore
+        optionally_keyed_by("test-platform", bool, use_msgspec=True)
+    ] = None
     # -- values supplied by the task-generation infrastructure
     # the platform of the build this task is testing
-    Required("build-platform"): str,
+    build_platform: str
     # the label of the build task generating the materials to test
-    Required("build-label"): str,
+    build_label: str
     # the label of the signing task generating the materials to test.
     # Signed builds are used in xpcshell tests on Windows, for instance.
-    Optional("build-signing-label"): optionally_keyed_by("variant", str),
+    build_signing_label: TOptional[  # type: ignore
+        optionally_keyed_by("variant", str, use_msgspec=True)
+    ] = None
     # the build's attributes
-    Required("build-attributes"): {str: object},
+    build_attributes: dict[str, object]
     # the platform on which the tests will run
-    Required("test-platform"): str,
+    test_platform: str
     # limit the test-platforms (as defined in test-platforms.yml)
     # that the test will run on
-    Optional("limit-platforms"): optionally_keyed_by("app", "subtest", [str]),
+    limit_platforms: TOptional[  # type: ignore
+        optionally_keyed_by("app", "subtest", list[str], use_msgspec=True)
+    ] = None
     # the name of the test (the key in tests.yml)
-    Required("test-name"): str,
+    test_name: str
     # the product name, defaults to firefox
-    Optional("product"): str,
+    product: TOptional[str] = None
     # conditional files to determine when these tests should be run
-    Exclusive("when", "optimization"): {
-        Optional("files-changed"): [str],
-    },
+    # Exclusive("when", "optimization") — mutually exclusive with 'optimization' and 'schedules-component'
+    when: TOptional[dict[str, list[str]]] = None
     # Optimization to perform on this task during the optimization phase.
     # Optimizations are defined in taskcluster/gecko_taskgraph/optimize.py.
-    Exclusive("optimization", "optimization"): OptimizationSchema,
+    # Exclusive("optimization", "optimization") — mutually exclusive with 'when' and 'schedules-component'
+    optimization: TOptional[OptimizationSchema] = None
     # The SCHEDULES component for this task; this defaults to the suite
     # (not including the flavor) but can be overridden here.
-    Exclusive("schedules-component", "optimization"): Any(
-        str,
-        [str],
-    ),
-    Optional("worker-type"): optionally_keyed_by(
-        "test-platform",
-        "variant",
-        Any(str, None),
-    ),
-    Optional(
-        "require-signed-extensions",
-        description="Whether the build being tested requires extensions be signed.",
-    ): optionally_keyed_by("release-type", "test-platform", bool),
+    # Exclusive("schedules-component", "optimization") — mutually exclusive with 'when' and 'optimization'
+    schedules_component: TOptional[Union[str, list[str]]] = None
+    worker_type: TOptional[  # type: ignore
+        optionally_keyed_by(
+            "test-platform", "variant", TOptional[str], use_msgspec=True
+        )
+    ] = None
+    # Whether the build being tested requires extensions be signed.
+    require_signed_extensions: TOptional[  # type: ignore
+        optionally_keyed_by("release-type", "test-platform", bool, use_msgspec=True)
+    ] = None
     # The target name, specifying the build artifact to be tested.
     # If None or not specified, a transform sets the target based on OS:
     # target.dmg (Mac), target.apk (Android), target.tar.xz (Linux),
     # or target.zip (Windows).
-    Optional("target"): optionally_keyed_by(
-        "app",
-        "test-platform",
-        "variant",
-        Any(
-            str,
-            None,
-            {Required("index"): str, Required("name"): str},
-            {Required("upstream-task"): str, Required("name"): str},
-        ),
-    ),
+    target: TOptional[  # type: ignore
+        optionally_keyed_by(
+            "app",
+            "test-platform",
+            "variant",
+            Union[str, None, TargetIndexSchema, TargetUpstreamTaskSchema],
+            use_msgspec=True,
+        )
+    ] = None
     # A list of artifacts to install from 'fetch' tasks. Validation deferred
     # to 'job' transforms.
-    Optional("fetches"): object,
+    fetches: TOptional[object] = None
     # A list of extra dependencies
-    Optional("dependencies"): object,
+    dependencies: TOptional[object] = None
     # Raptor / browsertime specific keys, defer validation to 'raptor.py'
     # transform.
-    Optional("raptor"): object,
+    raptor: TOptional[object] = None
     # Raptor / browsertime specific keys that need to be here since 'raptor' schema
     # is evluated *before* test_description_schema
-    Optional("app"): str,
-    Optional("subtest"): str,
+    app: TOptional[str] = None
+    subtest: TOptional[str] = None
     # Define if a given task supports artifact builds or not, see bug 1695325.
-    Optional("supports-artifact-builds"): bool,
+    supports_artifact_builds: TOptional[bool] = None
     # Version of python used to run the task
-    Optional("use-python"): job_description_schema["use-python"],
+    use_python: TOptional[JobDescriptionSchema.__annotations__["use_python"]] = None  # type: ignore
     # Fetch uv binary and add it to PATH
-    Optional("use-uv"): bool,
+    use_uv: TOptional[bool] = None
     # Cache mounts / volumes to set up
-    Optional("use-caches"): optionally_keyed_by(
-        "test-platform", run_task_schema["use-caches"]
-    ),
-})
+    use_caches: TOptional[  # type: ignore
+        optionally_keyed_by(
+            "test-platform",
+            RunTaskSchema.__annotations__["use_caches"],
+            use_msgspec=True,
+        )
+    ] = None
+
+    def __post_init__(self):
+        super().__post_init__()
+        # Exclusive: optimization, when, schedules-component are mutually exclusive
+        exclusive_count = sum([
+            self.optimization is not None,
+            self.when is not None,
+            self.schedules_component is not None,
+        ])
+        if exclusive_count > 1:
+            raise ValueError(
+                "'optimization', 'when', and 'schedules-component' are mutually exclusive"
+            )
 
 
 @transforms.add
@@ -389,7 +473,7 @@ def set_defaults(config, tasks):
         yield task
 
 
-transforms.add_validate(test_description_schema)
+transforms.add_validate(TestDescriptionSchema)
 
 
 @transforms.add
@@ -469,6 +553,12 @@ def define_tags(config, tasks):
             tags.setdefault("test-variant", variant)
 
         yield task
+
+
+# Restrict most perf tests to Ubuntu 24.04, keeping only allowed exceptions on 18.04.
+transforms.add(linux_perf_platform_restrictions.restrict_tests_to_2404)
+# Apply platform restrictions for tests failing on Ubuntu 24.04.
+transforms.add(linux_perf_platform_restrictions.restrict_failing_tests_to_1804)
 
 
 @transforms.add

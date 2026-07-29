@@ -7,6 +7,7 @@
 const { l10n } = require("resource://devtools/shared/inspector/css-logic.js");
 const {
   PSEUDO_CLASSES,
+  ELEMENT_SPECIFIC_PSEUDO_CLASSES,
 } = require("resource://devtools/shared/css/constants.js");
 const {
   style: { ELEMENT_STYLE, PRES_HINTS },
@@ -130,6 +131,10 @@ class RuleEditor extends EventEmitter {
     if (this.#unsubscribeSourceMap) {
       this.#unsubscribeSourceMap();
     }
+
+    // Remove from the DOM so that CssRuleView can clear empty rule containers
+    this.element.remove();
+    this.element = null;
   }
 
   #sourceMapURLService;
@@ -166,6 +171,7 @@ class RuleEditor extends EventEmitter {
     this.element.dataset.ruleId = this.rule.domRule.actorID;
     this.element.setAttribute("uneditable", !this.isEditable);
     this.element.setAttribute("unmatched", this.rule.isUnmatched);
+    this.element.setAttribute("role", "article");
 
     // This is used by tests
     this.element._ruleEditor = this;
@@ -190,163 +196,7 @@ class RuleEditor extends EventEmitter {
       this.source.appendChild(sourceLabel);
     }
     this.#updateSourceLink();
-
-    if (this.rule.domRule.ancestorData.length) {
-      const ancestorsFrag = this.doc.createDocumentFragment();
-      this.rule.domRule.ancestorData.forEach((ancestorData, index) => {
-        const ancestorItem = this.doc.createElement("div");
-        ancestorItem.setAttribute("role", "listitem");
-        ancestorsFrag.append(ancestorItem);
-        ancestorItem.setAttribute("data-ancestor-index", index);
-        ancestorItem.classList.add("ruleview-rule-ancestor");
-        if (ancestorData.type) {
-          ancestorItem.classList.add(ancestorData.type);
-        }
-
-        // Indent each parent selector
-        if (index) {
-          createChild(ancestorItem, "span", {
-            class: "ruleview-rule-indent",
-            textContent: INDENT_STR.repeat(index),
-          });
-        }
-
-        const selectorContainer = createChild(ancestorItem, "span", {
-          class: "ruleview-rule-ancestor-selectorcontainer",
-        });
-
-        if (ancestorData.type == "container") {
-          ancestorItem.classList.add("container-query", "has-tooltip");
-
-          createChild(selectorContainer, "span", {
-            class: "container-query-declaration",
-            textContent: `@container${ancestorData.containerName ? " " + ancestorData.containerName : ""}`,
-          });
-
-          const jumpToNodeButton = createChild(selectorContainer, "button", {
-            class: "open-inspector",
-            title: l10n("rule.containerQuery.selectContainerButton.tooltip"),
-          });
-
-          let containerNodeFront;
-          const getNodeFront = async () => {
-            if (!containerNodeFront) {
-              const res = await this.rule.domRule.getQueryContainerForNode(
-                index,
-                this.rule.inherited ||
-                  this.ruleView.inspector.selection.nodeFront
-              );
-              containerNodeFront = res.node;
-            }
-            return containerNodeFront;
-          };
-
-          jumpToNodeButton.addEventListener("click", async () => {
-            const front = await getNodeFront();
-            if (!front) {
-              return;
-            }
-            this.ruleView.inspector.selection.setNodeFront(front);
-            await this.ruleView.inspector.highlighters.hideHighlighterType(
-              this.ruleView.inspector.highlighters.TYPES.BOXMODEL
-            );
-          });
-
-          ancestorItem.addEventListener("mouseenter", async () => {
-            const front = await getNodeFront();
-            if (!front) {
-              return;
-            }
-
-            await this.ruleView.inspector.highlighters.showHighlighterTypeForNode(
-              this.ruleView.inspector.highlighters.TYPES.BOXMODEL,
-              front
-            );
-          });
-          ancestorItem.addEventListener("mouseleave", async () => {
-            await this.ruleView.inspector.highlighters.hideHighlighterType(
-              this.ruleView.inspector.highlighters.TYPES.BOXMODEL
-            );
-          });
-
-          createChild(selectorContainer, "span", {
-            // Add a space between the container name (or @container if there's no name)
-            // and the query so the title, which is computed from the DOM, displays correctly.
-            textContent: " " + ancestorData.containerQuery,
-          });
-        } else if (ancestorData.type == "layer") {
-          selectorContainer.append(
-            this.doc.createTextNode(
-              `@layer${ancestorData.value ? " " + ancestorData.value : ""}`
-            )
-          );
-        } else if (ancestorData.type == "media") {
-          selectorContainer.append(
-            this.doc.createTextNode(`@media ${ancestorData.value}`)
-          );
-        } else if (ancestorData.type == "supports") {
-          selectorContainer.append(
-            this.doc.createTextNode(`@supports ${ancestorData.conditionText}`)
-          );
-        } else if (ancestorData.type == "import") {
-          selectorContainer.append(
-            this.doc.createTextNode(`@import ${ancestorData.value}`)
-          );
-        } else if (ancestorData.type == "scope") {
-          let text = `@scope`;
-          if (ancestorData.start) {
-            text += ` (${ancestorData.start})`;
-
-            if (ancestorData.end) {
-              text += ` to (${ancestorData.end})`;
-            }
-          }
-          selectorContainer.append(this.doc.createTextNode(text));
-        } else if (ancestorData.type == "starting-style") {
-          selectorContainer.append(this.doc.createTextNode(`@starting-style`));
-        } else if (ancestorData.selectors) {
-          ancestorData.selectors.forEach((selector, i) => {
-            if (i !== 0) {
-              createChild(selectorContainer, "span", {
-                class: "ruleview-selector-separator",
-                textContent: ", ",
-              });
-            }
-
-            const selectorEl = createChild(selectorContainer, "span", {
-              class: "ruleview-selector",
-              textContent: selector,
-            });
-
-            const warningsContainer = this.#createWarningsElementForSelector(
-              i,
-              ancestorData.selectorWarnings
-            );
-            if (warningsContainer) {
-              selectorEl.append(warningsContainer);
-            }
-          });
-        } else {
-          // We shouldn't get here as `type` should only match to what can be set in
-          // the StyleRuleActor form, but just in case, let's return an empty string.
-          console.warn("Unknown ancestor data type:", ancestorData.type);
-          return;
-        }
-
-        createChild(ancestorItem, "span", {
-          class: "ruleview-ancestor-ruleopen",
-          textContent: " {",
-        });
-      });
-
-      // We can't use a proper "ol" as it will mess with selection copy text,
-      // adding spaces on list item instead of the one we craft (.ruleview-rule-indent)
-      this.ancestorDataEl = createChild(this.element, "div", {
-        class: "ruleview-rule-ancestor-data theme-link",
-        role: "list",
-      });
-      this.ancestorDataEl.append(ancestorsFrag);
-    }
+    this.#createAncestorSelectors();
 
     this.ruleviewCodeEl = createChild(this.element, "div", {
       class: "ruleview-code",
@@ -492,6 +342,164 @@ class RuleEditor extends EventEmitter {
   }
 
   /**
+   * Create all the selector elements for the rule's parents rules
+   */
+  #createAncestorSelectors() {
+    if (!this.rule.domRule.ancestorData.length) {
+      return;
+    }
+
+    const ancestorsFrag = this.doc.createDocumentFragment();
+    this.rule.domRule.ancestorData.forEach((ancestorData, index) => {
+      const ancestorItem = this.doc.createElement("div");
+      ancestorItem.setAttribute("role", "listitem");
+      ancestorsFrag.append(ancestorItem);
+      ancestorItem.setAttribute("data-ancestor-index", index);
+      ancestorItem.classList.add("ruleview-rule-ancestor");
+      if (ancestorData.type) {
+        ancestorItem.classList.add(ancestorData.type);
+      }
+
+      // Indent each parent selector
+      if (index) {
+        createChild(ancestorItem, "span", {
+          class: "ruleview-rule-indent",
+          textContent: INDENT_STR.repeat(index),
+        });
+      }
+
+      const selectorContainer = createChild(ancestorItem, "span", {
+        class: "ruleview-rule-ancestor-selectorcontainer",
+      });
+
+      if (ancestorData.type == "container") {
+        this.#createAncestorContainerQuerySelector(
+          selectorContainer,
+          ancestorData
+        );
+      } else if (ancestorData.type == "layer") {
+        selectorContainer.append(
+          this.doc.createTextNode(
+            `@layer${ancestorData.value ? " " + ancestorData.value : ""}`
+          )
+        );
+      } else if (ancestorData.type == "media") {
+        selectorContainer.append(
+          this.doc.createTextNode(`@media ${ancestorData.value}`)
+        );
+      } else if (ancestorData.type == "supports") {
+        selectorContainer.append(
+          this.doc.createTextNode(`@supports ${ancestorData.conditionText}`)
+        );
+      } else if (ancestorData.type == "import") {
+        selectorContainer.append(
+          this.doc.createTextNode(`@import ${ancestorData.value}`)
+        );
+      } else if (ancestorData.type == "scope") {
+        let text = `@scope`;
+        if (ancestorData.start) {
+          text += ` (${ancestorData.start})`;
+
+          if (ancestorData.end) {
+            text += ` to (${ancestorData.end})`;
+          }
+        }
+        selectorContainer.append(this.doc.createTextNode(text));
+      } else if (ancestorData.type == "starting-style") {
+        selectorContainer.append(this.doc.createTextNode(`@starting-style`));
+      } else if (ancestorData.type == "appearance-base") {
+        selectorContainer.append(this.doc.createTextNode(`@appearance-base`));
+      } else if (ancestorData.selectors) {
+        ancestorData.selectors.forEach((selector, i) => {
+          if (i !== 0) {
+            createChild(selectorContainer, "span", {
+              class: "ruleview-selector-separator",
+              textContent: ", ",
+            });
+          }
+
+          const selectorEl = createChild(selectorContainer, "span", {
+            class: "ruleview-selector",
+            textContent: selector,
+          });
+
+          const warningsContainer = this.#createWarningsElementForSelector(
+            i,
+            ancestorData.selectorWarnings
+          );
+          if (warningsContainer) {
+            selectorEl.append(warningsContainer);
+          }
+        });
+      } else {
+        // We shouldn't get here as `type` should only match to what can be set in
+        // the StyleRuleActor form, but just in case, let's return an empty string.
+        console.warn("Unknown ancestor data type:", ancestorData.type);
+        return;
+      }
+
+      createChild(ancestorItem, "span", {
+        class: "ruleview-ancestor-ruleopen",
+        textContent: " {",
+      });
+    });
+
+    // We can't use a proper "ol" as it will mess with selection copy text,
+    // adding spaces on list item instead of the one we craft (.ruleview-rule-indent)
+    this.ancestorDataEl = createChild(this.element, "div", {
+      class: "ruleview-rule-ancestor-data",
+      role: "list",
+    });
+    this.ancestorDataEl.append(ancestorsFrag);
+  }
+
+  /**
+   * Create the selector for a given `@container` query rule
+   *
+   * @param {Element} selectorContainer: The container into which the container query selector
+   *        should be added.
+   * @param {object} containerQueryData
+   * @param {Array<object>} containerQueryData.conditions
+   */
+  #createAncestorContainerQuerySelector(selectorContainer, containerQueryData) {
+    const containerQueryEl = createChild(selectorContainer, "span", {
+      class: "container-query",
+    });
+    containerQueryEl.append("@container ");
+
+    for (
+      let conditionIndex = 0;
+      conditionIndex < containerQueryData.conditions.length;
+      conditionIndex++
+    ) {
+      const { containerName, containerQuery, hasContainer, matched } =
+        containerQueryData.conditions[conditionIndex];
+
+      const containerConditionEl = createChild(containerQueryEl, "span", {
+        class:
+          "container-condition has-tooltip" +
+          (!hasContainer || !matched ? " unmatched" : ""),
+        "data-condition-index": conditionIndex,
+      });
+
+      if (containerName) {
+        containerConditionEl.append(containerName);
+      }
+
+      // Add a space between the container name and the query so the title,
+      // which is computed from the DOM, displays correctly.
+      containerConditionEl.append((containerName ? " " : "") + containerQuery);
+
+      if (conditionIndex !== containerQueryData.conditions.length - 1) {
+        createChild(containerQueryEl, "span", {
+          class: "ruleview-selector-separator",
+          textContent: ", ",
+        });
+      }
+    }
+  }
+
+  /**
    * Returns the selector warnings element, or null if selector at selectorIndex
    * does not have any warning.
    *
@@ -571,7 +579,7 @@ class RuleEditor extends EventEmitter {
 
     const { inspector } = this.ruleView;
     if (Tools.styleEditor.isToolSupported(inspector.toolbox)) {
-      inspector.toolbox.viewSourceInStyleEditorByResource(
+      inspector.toolbox.viewStyleSourceByResource(
         this.rule.sheet,
         this.rule.ruleLine,
         this.rule.ruleColumn
@@ -955,13 +963,11 @@ class RuleEditor extends EventEmitter {
 
     let selectorContainerTitle;
     if (
-      typeof this.rule.selector.selectorsSpecificity?.[selectorIndex] !==
-      "undefined"
+      typeof this.rule.selectorsSpecificity?.[selectorIndex] !== "undefined"
     ) {
       // The specificity that we get from the platform is a single number that we
       // need to format into the common `(x,y,z)` specificity string.
-      const specificity =
-        this.rule.selector.selectorsSpecificity?.[selectorIndex];
+      const specificity = this.rule.selectorsSpecificity?.[selectorIndex];
       const a = Math.floor(specificity / (1024 * 1024));
       const b = Math.floor((specificity % (1024 * 1024)) / 1024);
       const c = specificity % 1024;
@@ -988,9 +994,10 @@ class RuleEditor extends EventEmitter {
           selectorClass = "ruleview-selector-element";
           break;
         case SELECTOR_PSEUDO_CLASS:
-          selectorClass = PSEUDO_CLASSES.some(
-            pseudo => selectorText.value === pseudo
-          )
+          selectorClass = [
+            ...PSEUDO_CLASSES,
+            ...Object.keys(ELEMENT_SPECIFIC_PSEUDO_CLASSES),
+          ].some(pseudo => selectorText.value === pseudo)
             ? "ruleview-selector-pseudo-class-lock"
             : "ruleview-selector-pseudo-class";
           break;
@@ -1276,7 +1283,10 @@ class RuleEditor extends EventEmitter {
 
       ruleProps.isUnmatched = !isMatching;
       const newRule = new Rule(elementStyle, ruleProps);
-      const editor = new RuleEditor(ruleView, newRule);
+      const editor = new RuleEditor(ruleView, newRule, {
+        elementsWithPendingClicks: new Set(),
+      });
+      newRule.editor = editor;
       const rules = elementStyle.rules;
 
       let newRuleIndex = applied.findIndex(r => r.rule == ruleProps.rule);
@@ -1306,6 +1316,9 @@ class RuleEditor extends EventEmitter {
       // element might be replaced).
       // Because of this, we need to handle setting the focus ourselves from here.
       editor.#moveSelectorFocus(direction);
+
+      // Destroy the current editor as it got replaced by the fresh instance
+      this.destroy();
     } catch (err) {
       this.isEditing = false;
       promiseWarn(err);

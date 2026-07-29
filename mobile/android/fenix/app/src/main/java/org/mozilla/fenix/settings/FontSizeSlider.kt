@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -120,7 +119,7 @@ private fun SampleText(fontSize: Float) {
             .wrapContentSize()
             .background(
                 color = MaterialTheme.colorScheme.secondaryContainer,
-                shape = RoundedCornerShape(28.dp),
+                shape = MaterialTheme.shapes.extraLarge,
             )
             .padding(16.dp),
     ) {
@@ -231,7 +230,7 @@ private fun Track(fraction: Float, isEnabled: Boolean) {
             .height(2.dp)
             .background(
                 MaterialTheme.colorScheme.surfaceContainerHighest,
-                RoundedCornerShape(12.dp),
+                MaterialTheme.shapes.medium,
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -250,7 +249,7 @@ private fun FilledTrack(fraction: Float, isEnabled: Boolean) {
             .height(2.dp)
             .background(
                 color = color,
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.medium,
             ),
     ) {}
 }

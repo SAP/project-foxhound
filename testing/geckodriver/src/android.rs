@@ -430,7 +430,7 @@ impl AndroidHandler {
         Ok(())
     }
 
-    pub fn launch(&self) -> Result<()> {
+    pub fn launch(&self) -> Result<u32> {
         // TODO: Remove the usage of intent arguments once Fennec is no longer
         // supported. Packages which are using GeckoView always read the arguments
         // via the YAML configuration file.
@@ -458,7 +458,7 @@ impl AndroidHandler {
                 &self.process.activity,
                 &intent_arguments,
             ) {
-                Ok(_) => break,
+                Ok(pid) => break Ok(pid),
                 Err(e) => {
                     n += 1;
                     if n < max_start_attempts
@@ -482,18 +482,6 @@ impl AndroidHandler {
                 }
             }
         }
-
-        Ok(())
-    }
-
-    pub fn push_as_file(&self, content: &[u8], path: &str) -> Result<String> {
-        let mut dest = self.test_root.clone();
-        dest.push(path);
-
-        let buffer = &mut io::Cursor::new(content);
-        self.process.device.push(buffer, &dest, 0o777)?;
-
-        Ok(dest.display().to_string())
     }
 
     pub fn force_stop(&self) -> Result<()> {

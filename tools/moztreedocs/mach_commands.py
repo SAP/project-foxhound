@@ -20,7 +20,7 @@ import sentry_sdk
 import yaml
 from mach.decorators import Command, CommandArgument, SubCommand
 from mach.registrar import Registrar
-from mozbuild.util import cpu_count, memoize
+from mozbuild.util import cpu_count
 from mozfile import load_source
 
 here = os.path.abspath(os.path.dirname(__file__))
@@ -149,7 +149,7 @@ def build_docs(
 
     from moztreedocs.package import create_tarball
 
-    unique_id = "%s/%s" % (project(), str(uuid.uuid1()))
+    unique_id = f"{project()}/{str(uuid.uuid1())}"
 
     outdir = outdir or os.path.join(command_context.topobjdir, "docs")
     savedir = os.path.join(outdir, fmt)
@@ -170,7 +170,7 @@ def build_docs(
         print(_dump_sphinx_backtrace())
         return die(
             "failed to generate documentation:\n"
-            "%s: could not find docs at this location" % path
+            f"{path}: could not find docs at this location"
         )
 
     if linkcheck:
@@ -187,11 +187,10 @@ def build_docs(
     if status != 0:
         print(_dump_sphinx_backtrace())
         return die(
-            "failed to generate documentation:\n"
-            "%s: sphinx return code %d" % (path, status)
+            f"failed to generate documentation:\n{path}: sphinx return code {status}"
         )
     else:
-        print("\nGenerated documentation:\n%s" % savedir)
+        print(f"\nGenerated documentation:\n{savedir}")
 
     if not disable_warnings_check:
         with open(os.path.join(DOC_ROOT, "config.yml")) as fh:
@@ -220,9 +219,9 @@ def build_docs(
             json.dump(manager().trees, fh)
 
     if archive:
-        archive_path = os.path.join(outdir, "%s.tar.gz" % project())
+        archive_path = os.path.join(outdir, f"{project()}.tar.gz")
         create_tarball(archive_path, savedir)
-        print("Archived to %s" % archive_path)
+        print(f"Archived to {archive_path}")
 
     if upload:
         _s3_upload(savedir, project(), unique_id, version())
@@ -239,7 +238,7 @@ def build_docs(
         host, port = http.split(":", 1)
         port = int(port)
     except ValueError:
-        return die("invalid address: %s" % http)
+        return die(f"invalid address: {http}")
 
     server = Server()
 
@@ -361,7 +360,7 @@ def toggle_no_autodoc():
     moztreedocs._SphinxManager.NO_AUTODOC = True
 
 
-@memoize
+@functools.cache
 def _read_project_properties():
     path = os.path.normpath(manager().conf_py_path)
     conf = load_source("doc_conf", path)
@@ -428,7 +427,7 @@ def _s3_upload(root, project, unique_id, version=None):
     files = list(distribution_files(root))
     key_prefixes = []
     if version:
-        key_prefixes.append("%s/%s" % (project, version))
+        key_prefixes.append(f"{project}/{version}")
 
     # Until we redirect / to main/latest, upload the main docs
     # to the root.
@@ -453,9 +452,10 @@ def _s3_upload(root, project, unique_id, version=None):
         if (version and prefix.endswith(version)) or prefix == unique_id:
             continue
 
-        if prefix:
-            prefix += "/"
-        all_redirects.update({prefix + k: prefix + v for k, v in redirects.items()})
+        redirect_prefix = prefix + "/" if prefix else ""
+        all_redirects.update({
+            redirect_prefix + k: redirect_prefix + v for k, v in redirects.items()
+        })
 
     print("Redirects currently staged")
     pprint(all_redirects, indent=1)
@@ -526,7 +526,7 @@ def show_reference_targets(command_context, fmt="html", outdir=None):
 
 
 def die(msg, exit_code=1):
-    msg = "%s %s: %s" % (sys.argv[0], sys.argv[1], msg)
+    msg = f"{sys.argv[0]} {sys.argv[1]}: {msg}"
     print(msg, file=sys.stderr)
     return exit_code
 

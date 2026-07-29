@@ -13,6 +13,7 @@ import posixpath
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -53,7 +54,7 @@ except ImportError as e:  # noqa
     Marionette = reraise_
 
 import reftestcommandline
-from output import OutputHandler, ReftestFormatter
+from output import OutputHandler
 
 here = os.path.abspath(os.path.dirname(__file__))
 
@@ -65,6 +66,16 @@ try:
 except ImportError:
     build_obj = None
     from multiprocessing import cpu_count
+
+
+def _get_available_port(preferred):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            s.bind(("127.0.0.1", preferred))
+        except OSError:
+            s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
 
 def categoriesToRegex(categoryList):
@@ -311,17 +322,8 @@ class RefTest:
         if self.log:
             return
 
-        mozlog.commandline.log_formatters["tbpl"] = (
-            ReftestFormatter,
-            "Reftest specific formatter for the"
-            "benefit of legacy log parsers and"
-            "tools such as the reftest analyzer",
-        )
-        fmt_options = {}
-        if not options.log_tbpl_level and os.environ.get("MOZ_REFTEST_VERBOSE"):
-            options.log_tbpl_level = fmt_options["level"] = "debug"
         self.log = mozlog.commandline.setup_logging(
-            "reftest harness", options, {"tbpl": sys.stdout}, fmt_options
+            "reftest harness", options, {"raw": sys.stdout}
         )
 
     def getGtkTheme(self):
@@ -707,21 +709,18 @@ class RefTest:
         perProcessArgs = [sys.argv[:] for i in range(0, totalJobs)]
 
         host = "localhost"
-        port = 2828
-        if options.marionette:
-            host, port = options.marionette.split(":")
 
         # First job is only needs-focus tests.  Remaining jobs are
         # non-needs-focus and chunked.
         perProcessArgs[0].insert(-1, "--focus-filter-mode=needs-focus")
         for chunkNumber, jobArgs in enumerate(perProcessArgs[1:], start=1):
+            port = _get_available_port(2828)
             jobArgs[-1:-1] = [
                 "--focus-filter-mode=non-needs-focus",
                 "--total-chunks=%d" % jobsWithoutFocus,
                 "--this-chunk=%d" % chunkNumber,
                 "--marionette=%s:%d" % (host, port),
             ]
-            port += 1
 
         for jobArgs in perProcessArgs:
             try:
@@ -933,6 +932,11 @@ class RefTest:
                 host, port = options.marionette.split(":")
                 marionette_args["host"] = host
                 marionette_args["port"] = int(port)
+            else:
+                marionette_port = _get_available_port(preferred=2828)
+                if marionette_port != 2828:
+                    marionette_args["port"] = marionette_port
+                    profile.set_preferences({"marionette.port": marionette_port})
 
             try:
                 marionette = Marionette(**marionette_args)
@@ -1106,10 +1110,13 @@ class RefTest:
                 )
                 return 1
 
+            manifest_id = tests[0]["manifestID"]
+            self.log.group_start(name=manifest_id)
             self.log.info(f"Running tests in {manifest}")
             self.currentManifest = manifest
             status = run(tests=tests)
             overall = overall or status
+            self.log.group_end(name=manifest_id)
         if status == -1:
             # we didn't run anything
             overall = 1

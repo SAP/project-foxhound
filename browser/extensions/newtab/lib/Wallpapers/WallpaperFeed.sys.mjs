@@ -2,11 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
-
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
-  BasePromiseWorker: "resource://gre/modules/PromiseWorker.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   Utils: "resource://services-settings/Utils.sys.mjs",
 });
@@ -33,17 +30,13 @@ const PREF_WALLPAPERS_CUSTOM_WALLPAPER_UUID =
 const PREF_SELECTED_WALLPAPER =
   "browser.newtabpage.activity-stream.newtabWallpapers.wallpaper";
 
+const PREF_WALLPAPERS_USER_ENABLED_MIGRATED =
+  "browser.newtabpage.activity-stream.newtabWallpapers.user.enabled.migrated";
+
 const RS_FALLBACK_BASE_URL =
   "https://firefox-settings-attachments.cdn.mozilla.net/";
 
 export class WallpaperFeed {
-  #customBackgroundObjectURL = null;
-
-  // @backward-compat { version 148 } This newtab train-hop compatibility
-  // shim can be removed once Firefox 148 makes it to the release channel.
-  #usesProtocolHandler =
-    Services.vc.compare(AppConstants.MOZ_APP_VERSION, "148.0a1") >= 0;
-
   constructor() {
     this.loaded = false;
     this.wallpaperClient = null;
@@ -71,20 +64,44 @@ export class WallpaperFeed {
     return lazy.RemoteSettings(...args);
   }
 
-  /**
-   * This thin wrapper around lazy.BasePromiseWorker makes it easier for us to write
-   * automated tests
-   */
-  BasePromiseWorker(...args) {
-    return new lazy.BasePromiseWorker(...args);
-  }
-
   async wallpaperSetup(isStartup = false) {
     const wallpapersEnabled = Services.prefs.getBoolPref(
       PREF_WALLPAPERS_ENABLED
     );
 
     if (wallpapersEnabled) {
+      // newtabWallpapers.user.enabled defaults to false, but users who already
+      // had a wallpaper selected before this pref was introduced should have
+      // it set to true so their wallpaper remains visible after updating.
+      //
+      // PREF_WALLPAPERS_USER_ENABLED_MIGRATED tracks whether this one-time
+      // check has already run. Without it, wallpaperSetup (which is called on
+      // startup and on Remote Settings sync) would re-run the check every time,
+      // undoing any explicit toggle-off the user makes.
+      //
+      // @backward-compat { version 152 }
+      // This migration block and PREF_WALLPAPERS_USER_ENABLED_MIGRATED can be
+      // removed once Firefox 152 is on Release, at which point all users will
+      // have run this migration.
+      if (
+        !Services.prefs.getBoolPref(
+          PREF_WALLPAPERS_USER_ENABLED_MIGRATED,
+          false
+        )
+      ) {
+        // Mark as done immediately so subsequent wallpaperSetup calls skip this.
+        Services.prefs.setBoolPref(PREF_WALLPAPERS_USER_ENABLED_MIGRATED, true);
+        const selectedWallpaper = Services.prefs.getStringPref(
+          PREF_SELECTED_WALLPAPER,
+          ""
+        );
+        if (selectedWallpaper) {
+          this.store.dispatch(
+            ac.SetPref("newtabWallpapers.user.enabled", true)
+          );
+        }
+      }
+
       if (!this.wallpaperClient) {
         // getting collection
         this.wallpaperClient = this.RemoteSettings(
@@ -111,15 +128,6 @@ export class WallpaperFeed {
   }
 
   async updateWallpapers(isStartup = false) {
-    // @backward-compat { version 148 } This newtab train-hop compatibility
-    // shim can be removed once Firefox 148 makes it to the release channel.
-    if (!this.#usesProtocolHandler) {
-      if (this.#customBackgroundObjectURL) {
-        URL.revokeObjectURL(this.#customBackgroundObjectURL);
-        this.#customBackgroundObjectURL = null;
-      }
-    }
-
     let uuid = Services.prefs.getStringPref(
       PREF_WALLPAPERS_CUSTOM_WALLPAPER_UUID,
       ""
@@ -131,43 +139,14 @@ export class WallpaperFeed {
     );
 
     if (uuid && selectedWallpaper === "custom") {
-      // @backward-compat { version 148 } This newtab train-hop compatibility
-      // shim can be removed once Firefox 148 makes it to the release channel.
-      if (this.#usesProtocolHandler) {
-        const wallpaperURI = this.getWallpaperURL(uuid);
+      const wallpaperURI = this.getWallpaperURL(uuid);
 
-        this.store.dispatch(
-          ac.BroadcastToContent({
-            type: at.WALLPAPERS_CUSTOM_SET,
-            data: wallpaperURI,
-          })
-        );
-      } else {
-        const wallpaperDir = PathUtils.join(PathUtils.profileDir, "wallpaper");
-        const filePath = PathUtils.join(wallpaperDir, uuid);
-
-        try {
-          let testFile = await IOUtils.getFile(filePath);
-
-          if (!testFile) {
-            throw new Error("File does not exist");
-          }
-
-          let imageFile = await File.createFromNsIFile(testFile);
-          this.#customBackgroundObjectURL = URL.createObjectURL(imageFile);
-
-          this.store.dispatch(
-            ac.BroadcastToContent({
-              type: at.WALLPAPERS_CUSTOM_SET,
-              data: this.#customBackgroundObjectURL,
-            })
-          );
-        } catch (error) {
-          console.warn(`Wallpaper file not found: ${error.message}`);
-          Services.prefs.clearUserPref(PREF_WALLPAPERS_CUSTOM_WALLPAPER_UUID);
-          return;
-        }
-      }
+      this.store.dispatch(
+        ac.BroadcastToContent({
+          type: at.WALLPAPERS_CUSTOM_SET,
+          data: wallpaperURI,
+        })
+      );
     } else {
       this.store.dispatch(
         ac.BroadcastToContent({
@@ -214,12 +193,27 @@ export class WallpaperFeed {
       }),
     ];
 
+    const CATEGORY_ORDER = [
+      "custom-wallpaper",
+      "firefox",
+      "abstracts",
+      "celestial",
+      "photographs",
+      "solid-colors",
+    ];
+
     const categories = [
       ...new Set(
         wallpapers.map(wallpaper => wallpaper.category).filter(Boolean)
       ),
       ...(customWallpaperEnabled ? ["custom-wallpaper"] : []), // Conditionally add custom wallpaper input
-    ];
+    ].sort((a, b) => {
+      const aIndex = CATEGORY_ORDER.indexOf(a);
+      const bIndex = CATEGORY_ORDER.indexOf(b);
+      const aOrder = aIndex === -1 ? CATEGORY_ORDER.length : aIndex;
+      const bOrder = bIndex === -1 ? CATEGORY_ORDER.length : bIndex;
+      return aOrder - bOrder;
+    });
 
     this.store.dispatch(
       ac.BroadcastToContent({
@@ -284,17 +278,16 @@ export class WallpaperFeed {
     );
   }
 
-  async wallpaperUpload(file) {
+  async wallpaperUpload(file, wallpaperTheme) {
+    if (!Blob.isInstance(file)) {
+      console.error("wallpaperUpload: file is not a Blob");
+      return null;
+    }
+    if (wallpaperTheme !== "dark" && wallpaperTheme !== "light") {
+      console.error("wallpaperUpload: invalid theme");
+      return null;
+    }
     try {
-      const customWallpaperThemeWorker = this.BasePromiseWorker(
-        "resource://newtab/lib/Wallpapers/WallpaperTheme.worker.mjs",
-        { type: "module" }
-      );
-      const wallpaperTheme = await customWallpaperThemeWorker.post(
-        "calculateTheme",
-        [file]
-      );
-      customWallpaperThemeWorker.terminate();
       const wallpaperDir = PathUtils.join(PathUtils.profileDir, "wallpaper");
 
       // create wallpaper directory if it does not exist
@@ -311,32 +304,14 @@ export class WallpaperFeed {
 
       await IOUtils.write(filePath, uint8Array, { tmpPath: `${filePath}.tmp` });
 
-      // @backward-compat { version 148 } This newtab train-hop compatibility
-      // shim can be removed once Firefox 148 makes it to the release channel.
-      if (this.#usesProtocolHandler) {
-        const wallpaperURI = this.getWallpaperURL(uuid);
+      const wallpaperURI = this.getWallpaperURL(uuid);
 
-        this.store.dispatch(
-          ac.BroadcastToContent({
-            type: at.WALLPAPERS_CUSTOM_SET,
-            data: wallpaperURI,
-          })
-        );
-      } else {
-        if (this.#customBackgroundObjectURL) {
-          URL.revokeObjectURL(this.#customBackgroundObjectURL);
-          this.#customBackgroundObjectURL = null;
-        }
-
-        this.#customBackgroundObjectURL = URL.createObjectURL(file);
-
-        this.store.dispatch(
-          ac.BroadcastToContent({
-            type: at.WALLPAPERS_CUSTOM_SET,
-            data: this.#customBackgroundObjectURL,
-          })
-        );
-      }
+      this.store.dispatch(
+        ac.BroadcastToContent({
+          type: at.WALLPAPERS_CUSTOM_SET,
+          data: wallpaperURI,
+        })
+      );
 
       this.store.dispatch(
         ac.SetPref("newtabWallpapers.customWallpaper.theme", wallpaperTheme)
@@ -390,10 +365,10 @@ export class WallpaperFeed {
         break;
       case at.PREF_CHANGED:
         if (
-          action.data.name ===
-            "newtabWallpapers.newtabWallpapers.customColor.enabled" ||
+          action.data.name === "newtabWallpapers.customColor.enabled" ||
           action.data.name === "newtabWallpapers.customWallpaper.enabled" ||
-          action.data.name === "newtabWallpapers.enabled"
+          action.data.name === "newtabWallpapers.enabled" ||
+          action.data.name === "nova.enabled"
         ) {
           this.wallpaperTeardown();
           await this.wallpaperSetup(false /* isStartup */);
@@ -409,7 +384,7 @@ export class WallpaperFeed {
         this.wallpaperSeenEvent();
         break;
       case at.WALLPAPER_UPLOAD:
-        this.wallpaperUpload(action.data.file);
+        this.wallpaperUpload(action.data.file, action.data.theme);
         break;
       case at.WALLPAPER_REMOVE_UPLOAD:
         await this.removeCustomWallpaper();

@@ -91,9 +91,7 @@ var gMoreFromMozillaPane = {
           id: "fxMobile",
           type: "link",
           label_string_id: "more-from-moz-learn-more-link",
-          actionURL: BrowserUtils.isChinaRepack()
-            ? "https://www.firefox.com.cn/browsers/mobile/"
-            : "https://www.mozilla.org/firefox/browsers/mobile/",
+          actionURL: "https://www.mozilla.org/firefox/browsers/mobile/",
         },
         qrcode: {
           title: {
@@ -106,9 +104,7 @@ var gMoreFromMozillaPane = {
             label: {
               string_id: "more-from-moz-qr-code-box-firefox-mobile-button",
             },
-            actionURL: BrowserUtils.isChinaRepack()
-              ? "https://www.firefox.com.cn/mobile/get-app/"
-              : "https://www.mozilla.org/firefox/mobile/get-app/?v=mfm",
+            actionURL: "https://www.mozilla.org/firefox/mobile/get-app/?v=mfm",
           },
         },
       },
@@ -221,7 +217,7 @@ var gMoreFromMozillaPane = {
           );
         } else {
           actionElement.addEventListener("click", function () {
-            let mainWindow = window.windowRoot.ownerGlobal;
+            let mainWindow = window.windowRoot.window;
             mainWindow.openTrustedLinkIn(
               gMoreFromMozillaPane.getURL(
                 product.button.actionURL,
@@ -245,18 +241,10 @@ var gMoreFromMozillaPane = {
         );
 
         let img = template.querySelector(".qr-code-box-image");
-        // Append QRCode image source by template. For CN region
-        // simple template, we want a CN specific QRCode
         img.src =
           product.qrcode.image_src_prefix +
           "-" +
           this.getTemplateName() +
-          `${
-            BrowserUtils.isChinaRepack() &&
-            this.getTemplateName().includes("simple")
-              ? "-cn"
-              : ""
-          }` +
           ".svg";
         // Add image a11y attributes
         document.l10n.setAttributes(

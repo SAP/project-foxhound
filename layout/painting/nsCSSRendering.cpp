@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,6 +26,7 @@
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/SVGImageContext.h"
 #include "mozilla/ScrollContainerFrame.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/css/ImageLoader.h"
 #include "mozilla/dom/DocumentInlines.h"
@@ -65,8 +64,6 @@ using namespace mozilla::gfx;
 using namespace mozilla::image;
 using mozilla::CSSSizeOrRatio;
 using mozilla::dom::Document;
-
-static int gFrameTreeLockCount = 0;
 
 // To avoid storing this data on nsInlineFrame (bloat) and to avoid
 // recalculating this for each frame in a continuation (perf), hold
@@ -265,8 +262,6 @@ struct InlineBackgroundData {
 
   void SetFrame(nsIFrame* aFrame) {
     MOZ_ASSERT(aFrame, "Need a frame");
-    NS_ASSERTION(gFrameTreeLockCount > 0,
-                 "Can't call this when frame tree is not locked");
 
     if (aFrame == mFrame) {
       return;
@@ -492,7 +487,8 @@ static bool GetRadii(nsIFrame* aForFrame, const nsStyleBorder& aBorder,
     haveRoundedCorners = aForFrame->GetBorderRadii(sz, sz, Sides(), aRadii);
   } else {
     haveRoundedCorners = nsIFrame::ComputeBorderRadii(
-        aBorder.mBorderRadius, frameSize, sz, Sides(), aRadii);
+        aBorder.mBorderRadius, aBorder.mCornerShape, frameSize, sz, Sides(),
+        aRadii);
   }
 
   return haveRoundedCorners;
@@ -601,6 +597,7 @@ void nsCSSRendering::ComputePixelRadii(const nsRectCornerRadii& aRadii,
     (*oBorderRadii)[corner] =
         LayoutDeviceSize::FromAppUnits(aRadii[corner], aAppUnitsPerPixel)
             .ToUnknownSize();
+    oBorderRadii->mShapeK[corner] = aRadii.mShapeK[corner];
   }
 }
 
@@ -1335,12 +1332,8 @@ ComputedStyle* nsCSSRendering::FindBackground(const nsIFrame* aForFrame) {
   return nullptr;
 }
 
-void nsCSSRendering::BeginFrameTreesLocked() { ++gFrameTreeLockCount; }
-
-void nsCSSRendering::EndFrameTreesLocked() {
-  NS_ASSERTION(gFrameTreeLockCount > 0, "Unbalanced EndFrameTreeLocked");
-  --gFrameTreeLockCount;
-  if (gFrameTreeLockCount == 0) {
+void nsCSSRendering::PresShellChanged() {
+  if (gInlineBGData) {
     gInlineBGData->Reset();
   }
 }
@@ -1833,7 +1826,7 @@ ImgDrawResult nsCSSRendering::PaintStyleImageLayer(const PaintBGParams& aParams,
     // a root, otherwise keep going in order to let the theme stuff
     // draw the background. The canvas really should be drawing the
     // bg, but there's no way to hook that up via css.
-    if (!aParams.frame->StyleDisplay()->HasAppearance()) {
+    if (!aParams.frame->StyleDisplay()->HasNativeAppearance()) {
       return ImgDrawResult::SUCCESS;
     }
 
@@ -1917,7 +1910,7 @@ ImgDrawResult nsCSSRendering::BuildWebRenderDisplayItemsForStyleImageLayer(
     // a root, otherwise keep going in order to let the theme stuff
     // draw the background. The canvas really should be drawing the
     // bg, but there's no way to hook that up via css.
-    if (!aParams.frame->StyleDisplay()->HasAppearance()) {
+    if (!aParams.frame->StyleDisplay()->HasNativeAppearance()) {
       return ImgDrawResult::SUCCESS;
     }
 
@@ -2021,38 +2014,36 @@ static StyleGeometryBox ComputeBoxValueForOrigin(nsIFrame* aForFrame,
   return aBox;
 }
 
+// Resolves a background-clip/mask-clip value into the geometry box it paints
+// against. The mapping for mask-clip is from
+// https://drafts.fxtf.org/css-masking/#the-mask-clip
 static StyleGeometryBox ComputeBoxValueForClip(const nsIFrame* aForFrame,
-                                               StyleGeometryBox aBox) {
-  // The mapping for mask-clip is from
-  // https://drafts.fxtf.org/css-masking/#the-mask-clip
-  if (aForFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT)) {
-    // For SVG elements without associated CSS layout box, the used values for
-    // content-box and padding-box compute to fill-box and for border-box and
-    // margin-box compute to stroke-box.
-    switch (aBox) {
-      case StyleGeometryBox::ContentBox:
-      case StyleGeometryBox::PaddingBox:
-        return StyleGeometryBox::FillBox;
-      case StyleGeometryBox::BorderBox:
-      case StyleGeometryBox::MarginBox:
-        return StyleGeometryBox::StrokeBox;
-      default:
-        return aBox;
-    }
+                                               StyleBackgroundClip aClip) {
+  // For SVG elements without an associated CSS layout box, content-box and
+  // padding-box compute to fill-box and border-box computes to stroke-box.
+  // For elements with an associated CSS layout box, fill-box computes to
+  // content-box and stroke-box and view-box compute to border-box.
+  const bool svg = aForFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT);
+  switch (aClip) {
+    case StyleBackgroundClip::ContentBox:
+    case StyleBackgroundClip::FillBox:
+      return svg ? StyleGeometryBox::FillBox : StyleGeometryBox::ContentBox;
+    case StyleBackgroundClip::PaddingBox:
+      return svg ? StyleGeometryBox::FillBox : StyleGeometryBox::PaddingBox;
+    case StyleBackgroundClip::BorderBox:
+    case StyleBackgroundClip::StrokeBox:
+      return svg ? StyleGeometryBox::StrokeBox : StyleGeometryBox::BorderBox;
+    case StyleBackgroundClip::ViewBox:
+      return svg ? StyleGeometryBox::ViewBox : StyleGeometryBox::BorderBox;
+    case StyleBackgroundClip::NoClip:
+      return StyleGeometryBox::NoClip;
+    case StyleBackgroundClip::Text:
+      return StyleGeometryBox::Text;
+    case StyleBackgroundClip::BorderArea:
+      return StyleGeometryBox::BorderArea;
   }
-
-  // For elements with associated CSS layout box, the used values for fill-box
-  // compute to content-box and for stroke-box and view-box compute to
-  // border-box.
-  switch (aBox) {
-    case StyleGeometryBox::FillBox:
-      return StyleGeometryBox::ContentBox;
-    case StyleGeometryBox::StrokeBox:
-    case StyleGeometryBox::ViewBox:
-      return StyleGeometryBox::BorderBox;
-    default:
-      return aBox;
-  }
+  MOZ_ASSERT_UNREACHABLE("Unknown background-clip/mask-clip value");
+  return StyleGeometryBox::BorderBox;
 }
 
 bool nsCSSRendering::ImageLayerClipState::IsValid() const {
@@ -2187,8 +2178,12 @@ void nsCSSRendering::GetImageLayerClip(
   MOZ_ASSERT(layerClip != StyleGeometryBox::MarginBox,
              "StyleGeometryBox::MarginBox rendering is not supported yet.\n");
 
+  // 'border-area' uses the border box (like 'border-box') for the outer clip;
+  // the padding box is then clipped out by the background display item itself
+  // (see PushBorderAreaClipOut / ClipBackgroundToBorderArea).
   if (layerClip != StyleGeometryBox::BorderBox &&
-      layerClip != StyleGeometryBox::Text) {
+      layerClip != StyleGeometryBox::Text &&
+      layerClip != StyleGeometryBox::BorderArea) {
     nsMargin border = aForFrame->GetUsedBorder();
     if (layerClip == StyleGeometryBox::MozAlmostPadding) {
       // Reduce |border| by 1px (device pixels) on all sides, if
@@ -2574,7 +2569,7 @@ ImgDrawResult nsCSSRendering::PaintStyleImageLayerWithSC(
       aParams.frame, aParams.borderArea, skipSides, &aBorder);
 
   ImgDrawResult result = ImgDrawResult::SUCCESS;
-  StyleGeometryBox currentBackgroundClip = StyleGeometryBox::BorderBox;
+  StyleBackgroundClip currentBackgroundClip = StyleBackgroundClip::BorderBox;
   const bool drawAllLayers = (aParams.layer < 0);
   uint32_t count = drawAllLayers
                        ? layers.mImageCount  // iterate all image layers.
@@ -4054,7 +4049,20 @@ void nsCSSRendering::PaintDecorationLine(
   NS_ASSERTION(aParams.style != StyleTextDecorationStyle::None,
                "aStyle is none");
 
-  Rect rect = ToRect(GetTextDecorationRectInternal(aParams.pt, aParams));
+  mozilla::layout::TextDrawTarget* textDrawer = nullptr;
+  if (aDrawTarget.GetBackendType() == BackendType::WEBRENDER_TEXT) {
+    textDrawer = static_cast<mozilla::layout::TextDrawTarget*>(&aDrawTarget);
+  }
+
+  // Under layout.disable-pixel-alignment, the WebRender text path device-snaps
+  // the decoration at frame time, so leave the geometry unsnapped here. Without
+  // that path (software / non-WebRender-text drawing such as drawSnapshot)
+  // there is no later snap, so pre-snap the geometry as usual (bug 2004666).
+  const bool snapToPixels =
+      !StaticPrefs::layout_disable_pixel_alignment() || !textDrawer;
+
+  Rect rect =
+      ToRect(GetTextDecorationRectInternal(aParams.pt, aParams, snapToPixels));
   if (rect.IsEmpty() || !rect.Intersects(aParams.dirtyRect)) {
     return;
   }
@@ -4465,7 +4473,9 @@ Rect nsCSSRendering::DecorationLineToPath(
 
   Rect path;  // To benefit from RVO, we return this from all return points
 
-  Rect rect = ToRect(GetTextDecorationRectInternal(aParams.pt, aParams));
+  Rect rect =
+      ToRect(GetTextDecorationRectInternal(aParams.pt, aParams,
+                                           /* aSnapToDevicePixels */ true));
   if (rect.IsEmpty() || !rect.Intersects(aParams.dirtyRect)) {
     return path;
   }
@@ -4503,7 +4513,8 @@ nsRect nsCSSRendering::GetTextDecorationRect(
   NS_ASSERTION(aParams.style != StyleTextDecorationStyle::None,
                "aStyle is none");
 
-  gfxRect rect = GetTextDecorationRectInternal(Point(0, 0), aParams);
+  gfxRect rect = GetTextDecorationRectInternal(Point(0, 0), aParams,
+                                               /* aSnapToDevicePixels */ true);
   // The rect values are already rounded to nearest device pixels.
   nsRect r;
   r.x = aPresContext->GfxUnitsToAppUnits(rect.X());
@@ -4514,7 +4525,8 @@ nsRect nsCSSRendering::GetTextDecorationRect(
 }
 
 gfxRect nsCSSRendering::GetTextDecorationRectInternal(
-    const Point& aPt, const DecorationRectParams& aParams) {
+    const Point& aPt, const DecorationRectParams& aParams,
+    bool aSnapToDevicePixels) {
   NS_ASSERTION(aParams.style <= StyleTextDecorationStyle::Wavy,
                "Invalid aStyle value");
 
@@ -4531,8 +4543,20 @@ gfxRect nsCSSRendering::GetTextDecorationRectInternal(
   // they will actually become top and bottom of the rendered line.
   // Similarly, aLineSize.width and .height are actually length and thickness
   // of the line, which runs horizontally or vertically according to aVertical.
-  const gfxFloat left = floor(iCoord + 0.5),
-                 right = floor(iCoord + aParams.lineSize.width + 0.5);
+  // With pixel alignment disabled, don't pre-snap the decoration's inline
+  // position when it will be device-snapped downstream by WebRender's
+  // frame-time pass (`aSnapToDevicePixels == false`): leaving it fractional
+  // lets that pass snap it against the live (post-sticky/scroll-normalization)
+  // transform. Pre-snapping here bakes in an integer local position that maps
+  // to a different world position as the spatial tree flips between paints, so
+  // the frame-time snap rounds it inconsistently and the line jitters
+  // (bug 2004666). When there is no such pass (software / non-WebRender-text
+  // drawing, e.g. drawSnapshot), the caller asks us to pre-snap as before.
+  const bool snapToPixels = aSnapToDevicePixels;
+  const gfxFloat left = snapToPixels ? floor(iCoord + 0.5) : iCoord,
+                 right = snapToPixels
+                             ? floor(iCoord + aParams.lineSize.width + 0.5)
+                             : iCoord + aParams.lineSize.width;
 
   // We compute |r| as if for a horizontal text run, and then swap vertical
   // and horizontal coordinates at the end if vertical was requested.
@@ -4600,7 +4624,8 @@ gfxRect nsCSSRendering::GetTextDecorationRectInternal(
     }
   }
 
-  gfxFloat baseline = floor(bCoord + aParams.ascent + 0.5);
+  gfxFloat baseline = snapToPixels ? floor(bCoord + aParams.ascent + 0.5)
+                                   : bCoord + aParams.ascent;
 
   // Calculate adjusted offset based on writing-mode/orientation and thickness
   // of decoration line. The input value aParams.offset is the nominal position

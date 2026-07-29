@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -343,6 +341,36 @@ static TelemetryFieldResult GetAndUpdatePreviousOSVersion(
   return oldOSVersion;
 }
 
+// This both retrieves a value from the registry and writes new data
+// (`currentIsPinned`) to the same value. If there is no value stored,
+// `currentIsPinned` is returned instead.
+//
+// The value we retrieve here will only be updated when we are sending a ping to
+// ensure that pings don't miss a pin state transition.
+static TelemetryFieldResult GetAndUpdatePreviousIsPinned(
+    const std::string& currentIsPinned) {
+  const wchar_t* registryValueName = L"PingCurrentIsPinned";
+
+  MaybeStringResult readResult =
+      RegistryGetValueString(IsPrefixed::Unprefixed, registryValueName);
+  if (readResult.isErr()) {
+    HRESULT hr = readResult.unwrapErr().AsHResult();
+    LOG_ERROR_MESSAGE(L"Unable to read registry: %#X", hr);
+    return TelemetryFieldResult(mozilla::WindowsError::FromHResult(hr));
+  }
+  mozilla::Maybe<std::string> maybeValue = readResult.unwrap();
+  std::string oldIsPinned = maybeValue.valueOr(currentIsPinned);
+
+  mozilla::WindowsErrorResult<mozilla::Ok> writeResult = RegistrySetValueString(
+      IsPrefixed::Unprefixed, registryValueName, currentIsPinned.c_str());
+  if (writeResult.isErr()) {
+    HRESULT hr = writeResult.unwrapErr().AsHResult();
+    LOG_ERROR_MESSAGE(L"Unable to write registry: %#X", hr);
+    return TelemetryFieldResult(mozilla::WindowsError::FromHResult(hr));
+  }
+  return oldIsPinned;
+}
+
 // If notifications actions occurred, we want to make sure a ping gets sent for
 // them. If we aren't sending a ping right now, we want to cache the ping values
 // for the next time the ping is sent.
@@ -451,7 +479,8 @@ HRESULT MaybeWritePreviousNotificationAction(
 HRESULT SendDefaultAgentPing(const DefaultBrowserInfo& browserInfo,
                              const DefaultPdfInfo& pdfInfo,
                              const NotificationActivities& activitiesPerformed,
-                             uint32_t daysSinceLastAppLaunch) {
+                             uint32_t daysSinceLastAppLaunch,
+                             const std::string& isTaskbarPinned) {
   std::string currentDefaultBrowser =
       GetStringForBrowser(browserInfo.currentDefaultBrowser);
   std::string currentDefaultPdf =
@@ -572,6 +601,19 @@ HRESULT SendDefaultAgentPing(const DefaultBrowserInfo& browserInfo,
 
     mozilla::glean::defaultagent::days_since_last_app_launch.Set(
         daysSinceLastAppLaunch);
+
+    TelemetryFieldResult previousIsPinnedResult =
+        GetAndUpdatePreviousIsPinned(isTaskbarPinned);
+    if (previousIsPinnedResult.isErr()) {
+      return previousIsPinnedResult.unwrapErr().AsHResult();
+    }
+    std::string prevIsTaskbarPinned = previousIsPinnedResult.unwrap();
+
+    mozilla::glean::system_pin::is_taskbar_pinned.Set(
+        nsDependentCString(isTaskbarPinned.c_str()));
+    mozilla::glean::system_pin::previous_is_taskbar_pinned.Set(
+        nsDependentCString(prevIsTaskbarPinned.c_str()));
+
     return SendDesktopTelemetryPing(
                currentDefaultBrowser, previousDefaultBrowser, currentDefaultPdf,
                osVersion, prevOSVersion, osLocale, notificationType,

@@ -1,6 +1,8 @@
 [DEFAULT]
 head = "head.js"
 
+["test_permmanager_browser_scoped.js"]
+
 ["test_permmanager_cleardata.js"]
 
 ["test_permmanager_default_pref.js"]
@@ -53,6 +55,8 @@ run-if = [
   "os != 'android'", # Android doesn't use places
 ]
 
+["test_permmanager_migrate_12-13.js"]
+
 ["test_permmanager_migrate_4-7.js"]
 run-if = [
   "os != 'android'", # Android doesn't use places
@@ -92,6 +96,7 @@ run-if = [
 ["test_permmanager_oa_strip.js"]
 
 ["test_permmanager_remote.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_permmanager_removeAllExceptTypes.js"]
 
@@ -114,3 +119,5 @@ run-if = [
 ["test_permmanager_site_scope.js"]
 
 ["test_permmanager_subdomains.js"]
+
+["test_permmanager_unused_expiration.js"]

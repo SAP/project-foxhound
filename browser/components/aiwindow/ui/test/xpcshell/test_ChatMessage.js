@@ -17,10 +17,23 @@ add_task(function test_ChatMessage_constructor_defaults() {
   });
 
   Assert.withSoftAssertions(function (soft) {
-    soft.equal(message.id.length, 12);
+    soft.equal(message.id.length, 36);
     soft.equal(message.revisionRootMessageId, message.id);
     soft.ok(!isNaN(message.createdDate));
     soft.ok(message.isActiveBranch);
+    soft.deepEqual(
+      message.webSearchQueries,
+      [],
+      "webSearchQueries",
+      "webSearchQueries should default to []"
+    );
+    soft.deepEqual(
+      message.webSearchQueries,
+      [],
+      "memoriesApplied",
+      "memoriesApplied should default to []"
+    );
+
     const nullFields = [
       "parentMessageId",
       "modelId",
@@ -29,8 +42,6 @@ add_task(function test_ChatMessage_constructor_defaults() {
       "convId",
       "memoriesEnabled",
       "memoriesFlagSource",
-      "memoriesApplied",
-      "webSearchQueries",
     ];
 
     nullFields.forEach(nullField => {

@@ -47,7 +47,7 @@ def is_backstop(
 
     # Backstops not used / supported on Github yet.
     if params["repository_type"] == "git":
-        return True
+        return False
 
     project = params["project"]
     if project in TRY_PROJECTS:
@@ -55,9 +55,7 @@ def is_backstop(
     if project not in integration_projects:
         return True
 
-    # This push was explicitly set to run nothing (e.g via DONTBUILD), so
-    # shouldn't be a backstop candidate.
-    if params["target_tasks_method"] == "nothing":
+    if params.get("dontbuild"):
         return False
 
     # Find the last backstop to compute push and time intervals.

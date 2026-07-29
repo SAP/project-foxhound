@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -40,7 +39,8 @@ class nsFilePickerProxy : public nsBaseFilePicker,
 
   // nsIFilePicker (less what's in nsBaseFilePicker)
   NS_IMETHOD Init(mozilla::dom::BrowsingContext* aBrowsingContext,
-                  const nsAString& aTitle, nsIFilePicker::Mode aMode) override;
+                  const nsAString& aTitle, nsIFilePicker::Mode aMode,
+                  nsISupports* aGlobal) override;
   NS_IMETHOD AppendFilter(const nsAString& aTitle,
                           const nsAString& aFilter) override;
   NS_IMETHOD GetCapture(nsIFilePicker::CaptureTarget* aCapture) override;

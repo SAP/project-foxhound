@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,7 +17,7 @@ namespace mozilla::dom {
 // Implementation
 
 SVGPolyElement::SVGPolyElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : SVGPolyElementBase(std::move(aNodeInfo)) {}
 
 already_AddRefed<DOMSVGPointList> SVGPolyElement::Points() {
@@ -54,21 +52,21 @@ void SVGPolyElement::GetMarkPoints(nsTArray<SVGMark>* aMarks) {
 
   float zoom = UserSpaceMetrics::GetZoom(this);
 
-  float px = points[0].mX * zoom, py = points[0].mY * zoom, prevAngle = 0.0f;
-  if (!(std::isfinite(px) && std::isfinite(py))) {
+  Point prevPos = points[0] * zoom;
+  float prevAngle = 0.0f;
+  if (!prevPos.IsFinite()) {
     return;
   }
 
-  aMarks->AppendElement(SVGMark(px, py, 0, SVGMark::Type::Start));
+  aMarks->AppendElement(SVGMark(prevPos, 0, SVGMark::Type::Start));
 
   for (uint32_t i = 1; i < points.Length(); ++i) {
-    float x = points[i].mX * zoom;
-    float y = points[i].mY * zoom;
-    if (!(std::isfinite(x) && std::isfinite(y))) {
+    gfx::Point pos = points[i] * zoom;
+    if (!pos.IsFinite()) {
       aMarks->Clear();
       return;
     }
-    float angle = std::atan2(y - py, x - px);
+    float angle = std::atan2(pos.y - prevPos.y, pos.x - prevPos.x);
 
     // Vertex marker.
     if (i == 1) {
@@ -78,11 +76,10 @@ void SVGPolyElement::GetMarkPoints(nsTArray<SVGMark>* aMarks) {
           SVGContentUtils::AngleBisect(prevAngle, angle);
     }
 
-    aMarks->AppendElement(SVGMark(x, y, 0, SVGMark::Type::Mid));
+    aMarks->AppendElement(SVGMark(pos, 0, SVGMark::Type::Mid));
 
     prevAngle = angle;
-    px = x;
-    py = y;
+    prevPos = pos;
   }
 
   aMarks->LastElement().angle = prevAngle;

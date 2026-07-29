@@ -35,6 +35,7 @@ test-manifest-toml:
         - '**/config.toml'
         - '**/empty.toml'
         - '**/generated-mochitest.toml'
+        - '**/generated-mochitest-*.toml'
         - '**/l10n.toml'
         - '**/labels.toml'
         - '**/pyproject.toml'

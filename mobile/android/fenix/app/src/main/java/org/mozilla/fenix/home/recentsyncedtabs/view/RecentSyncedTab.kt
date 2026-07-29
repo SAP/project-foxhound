@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -73,7 +72,7 @@ private const val THUMBNAIL_SIZE = 108
 @Composable
 fun RecentSyncedTab(
     tab: RecentSyncedTab?,
-    backgroundColor: Color = MaterialTheme.colorScheme.surfaceContainerLowest,
+    backgroundColor: Color = MaterialTheme.colorScheme.surfaceBright,
     buttonBackgroundColor: Color = ButtonDefaults.buttonColors().containerColor,
     buttonTextColor: Color = ButtonDefaults.buttonColors().contentColor,
     onRecentSyncedTabClick: (RecentSyncedTab) -> Unit,
@@ -94,7 +93,7 @@ fun RecentSyncedTab(
                 onClick = { tab?.let { onRecentSyncedTabClick(tab) } },
                 onLongClick = { isDropdownExpanded = true },
             ),
-        colors = CardDefaults.cardColors(containerColor = backgroundColor),
+        backgroundColor = backgroundColor,
     ) {
         Column(modifier = Modifier.padding(FirefoxTheme.layout.space.static200)) {
             Row(modifier = Modifier.height(IntrinsicSize.Min)) {
@@ -135,6 +134,7 @@ fun RecentSyncedTab(
                     } else {
                         Text(
                             text = tab.title.trimmed(),
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 14.sp,
                             overflow = TextOverflow.Ellipsis,
                             maxLines = 2,

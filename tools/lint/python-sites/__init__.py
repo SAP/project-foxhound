@@ -2,13 +2,18 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import re
 from pathlib import Path
 
 from mozlint import result
 from mozlint.pathutils import expand_exclusions
 
-mach_site_file = Path(__file__).parents[3] / "python" / "sites" / "mach.txt"
+repo_root = Path(__file__).parents[3]
+mach_site_file = repo_root / "python" / "sites" / "mach.txt"
+taskgraph_requirements_file = repo_root / "taskcluster" / "requirements.in"
 skip_prefixes = ("#", "requires-python:")
+
+TASKGRAPH_VERSION_RE = re.compile(r"taskcluster-taskgraph(?:\[.*?\])?==(\S+?)(?::|$)")
 
 
 def lint(paths, config, fix=None, **lintargs):
@@ -34,6 +39,8 @@ def lint(paths, config, fix=None, **lintargs):
                 )
                 results += redundant_spec_results
                 fixed += redundant_spec_fixed
+
+            results += check_taskgraph_version_sync(path, config)
 
             order_results, order_fixed = site_ordering(path, fix, config)
             results += order_results
@@ -119,9 +126,7 @@ def site_ordering(path: Path, fix: bool, config):
             new_lines = [first_line]
             for comments, spec in sorted_blocks:
                 new_lines.extend(comments)
-                if not spec.endswith("\n"):
-                    spec += "\n"
-                new_lines.append(spec)
+                new_lines.append(spec if spec.endswith("\n") else spec + "\n")
             path.write_text("".join(new_lines), newline="\n")
             fixed = 1
         else:
@@ -137,3 +142,37 @@ def site_ordering(path: Path, fix: bool, config):
             )
 
     return results, fixed
+
+
+def check_taskgraph_version_sync(site_path: Path, config):
+    results = []
+
+    site_version = site_lineno = None
+    for lineno, line in enumerate(site_path.read_text().splitlines(), start=1):
+        m = TASKGRAPH_VERSION_RE.search(line)
+        if m:
+            site_version, site_lineno = m.group(1), lineno
+            break
+
+    if not site_version:
+        return results
+
+    for line in taskgraph_requirements_file.read_text().splitlines():
+        m = TASKGRAPH_VERSION_RE.search(line)
+        if m and m.group(1) != site_version:
+            results.append(
+                result.from_config(
+                    config,
+                    path=str(site_path),
+                    message=(
+                        f"taskcluster-taskgraph version mismatch: "
+                        f"{site_path.name} has '{site_version}' but "
+                        f"taskcluster/requirements.in has '{m.group(1)}'."
+                    ),
+                    level="error",
+                    lineno=site_lineno,
+                )
+            )
+            break
+
+    return results

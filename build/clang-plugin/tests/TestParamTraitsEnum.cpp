@@ -32,11 +32,6 @@ enum class TypedClassEnum : uint32_t {
   TypedLast
 };
 
-enum class IsEnumCaseEnum {
-  IsEnumCaseFirst,
-  IsEnumCaseLast
-};
-
 enum class nsresult : uint32_t {
   NS_OK = 0
 };
@@ -63,11 +58,6 @@ struct ContiguousEnumSerializer
                    ContiguousEnumValidator<E, MinLegal, HighBound>>
 {};
 
-// Simplified ParamTraits_IsEnumCase from IPCMessageUtils.h (alternative to EnumSerializer)
-template <typename E>
-struct ParamTraits_IsEnumCase
-{};
-
 // Typical ParamTraits implementation that should be avoided
 template<>
 struct ParamTraits<ClassEnum> // expected-error {{Custom ParamTraits implementation for an enum type}} expected-note {{Please use a helper class for example ContiguousEnumSerializer}}
@@ -83,6 +73,17 @@ struct ParamTraits<TypedClassEnum> // expected-error {{Custom ParamTraits implem
 template<>
 struct ParamTraits<enum RawEnum> // expected-error {{Custom ParamTraits implementation for an enum type}} expected-note {{Please use a helper class for example ContiguousEnumSerializer}}
 {
+};
+
+// Make sure forward declarations are not flagged
+template <> struct ParamTraits<BadEnum>;
+
+struct SomeClass {
+  enum FooBar {};
+  enum class FooBarClass {};
+
+  friend struct ParamTraits<FooBar>;
+  friend struct ParamTraits<FooBarClass>;
 };
 
 template<>
@@ -113,12 +114,6 @@ struct ParamTraits<GoodEnum>
 : public ContiguousEnumSerializer<GoodEnum,
                                   GoodEnum::GoodFirst,
                                   GoodEnum::GoodLast>
-{};
-
-// ParamTraits_IsEnumCase is an alternative to EnumSerializer and should not be flagged
-template<>
-struct ParamTraits<IsEnumCaseEnum>
-: public ParamTraits_IsEnumCase<IsEnumCaseEnum>
 {};
 
 // nsresult has special handling via ParamTraitsMozilla and should be allowed

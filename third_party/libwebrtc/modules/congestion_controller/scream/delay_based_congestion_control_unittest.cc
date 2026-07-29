@@ -52,12 +52,11 @@ TEST(DelayBasedCongestionControlTest,
     DataRate send_rate = DataRate::KilobitsPerSec(100);
     TransportPacketsFeedback feedback =
         feedback_generator.ProcessUntilNextFeedback(send_rate, clock);
-    ASSERT_EQ(feedback.smoothed_rtt, TimeDelta::Millis(58));
 
     delay_controller.OnTransportPacketsFeedback(feedback);
+    EXPECT_EQ(delay_controller.rtt(), TimeDelta::Millis(58));
     EXPECT_EQ(delay_controller.queue_delay(), TimeDelta::Millis(0));
     EXPECT_FALSE(delay_controller.IsQueueDelayDetected());
-    EXPECT_FALSE(delay_controller.ShouldReduceReferenceWindow());
   }
 }
 
@@ -73,19 +72,15 @@ TEST(DelayBasedCongestionControlTest, QueueDelayIncreaseIfSendRateIsHigh) {
                          .link_capacity = DataRate::KilobitsPerSec(1000)},
   });
 
-  TimeDelta smoothed_rtt;
   for (int i = 0; i < 10; ++i) {
     // Send faster than link capacity to build a queue.
     DataRate send_rate = DataRate::KilobitsPerSec(2000);
     TransportPacketsFeedback feedback =
         feedback_generator.ProcessUntilNextFeedback(send_rate, clock);
     delay_controller.OnTransportPacketsFeedback(feedback);
-    smoothed_rtt = feedback.smoothed_rtt;
   }
   EXPECT_GT(delay_controller.queue_delay(), TimeDelta::Millis(50));
-  EXPECT_GT(smoothed_rtt, delay_controller.queue_delay());
   EXPECT_TRUE(delay_controller.IsQueueDelayDetected());
-  EXPECT_TRUE(delay_controller.ShouldReduceReferenceWindow());
 }
 
 TEST(DelayBasedCongestionControlTest, ReferenceWindowNotChangedOnLowDelay) {
@@ -108,10 +103,9 @@ TEST(DelayBasedCongestionControlTest, ReferenceWindowNotChangedOnLowDelay) {
   delay_controller.OnTransportPacketsFeedback(feedback);
 
   ASSERT_EQ(delay_controller.queue_delay(), TimeDelta::Millis(0));
-  EXPECT_EQ(
-      delay_controller.UpdateReferenceWindow(
-          ref_window, /*ref_window_mss_ratio=*/1.0, /*virtual_alpha_lim=*/1.0),
-      ref_window);
+  EXPECT_EQ(delay_controller.UpdateReferenceWindow(
+                ref_window, /*ref_window_mss_ratio=*/1.0),
+            ref_window);
 }
 
 TEST(DelayBasedCongestionControlTest, ReferenceWindowDecreasedOnHighDelay) {
@@ -134,11 +128,11 @@ TEST(DelayBasedCongestionControlTest, ReferenceWindowDecreasedOnHighDelay) {
     TransportPacketsFeedback feedback =
         feedback_generator.ProcessUntilNextFeedback(send_rate, clock);
     delay_controller.OnTransportPacketsFeedback(feedback);
-    smoothed_rtt = feedback.smoothed_rtt;
+    smoothed_rtt = delay_controller.rtt();
   }
   DataSize ref_window = send_rate * smoothed_rtt;
   DataSize updated_ref_window = delay_controller.UpdateReferenceWindow(
-      ref_window, /*ref_window_mss_ratio=*/1.0, /*virtual_alpha_lim=*/1.0);
+      ref_window, /*ref_window_mss_ratio=*/1.0);
   EXPECT_LT(updated_ref_window, 0.98 * ref_window);
   EXPECT_GE(updated_ref_window, 0.5 * ref_window);
 }
@@ -162,14 +156,189 @@ TEST(DelayBasedCongestionControlTest, ReferenceWindowNotLowerThanSetMin) {
     TransportPacketsFeedback feedback =
         feedback_generator.ProcessUntilNextFeedback(send_rate, clock);
     delay_controller.OnTransportPacketsFeedback(feedback);
-    smoothed_rtt = feedback.smoothed_rtt;
+    smoothed_rtt = delay_controller.rtt();
   }
   DataSize ref_window = send_rate * smoothed_rtt;
   // Despite the queue delay, the reference window will not be decreased to a
   // value that would cause the target rate to be below the minimum.
   DataSize updated_ref_window = delay_controller.UpdateReferenceWindow(
-      ref_window, /*ref_window_mss_ratio=*/1.0, /*virtual_alpha_lim=*/1.0);
+      ref_window, /*ref_window_mss_ratio=*/1.0);
   EXPECT_EQ(updated_ref_window, ref_window);
+}
+
+TEST(DelayBasedCongestionControlTest, ResetQueueDelay) {
+  SimulatedClock clock(Timestamp::Seconds(1'234));
+  Environment env = CreateTestEnvironment({.time = &clock});
+  DelayBasedCongestionControl delay_controller(
+      ScreamV2Parameters(env.field_trials()));
+  CcFeedbackGenerator feedback_generator({
+      .network_config = {.queue_delay_ms = 25,
+                         .link_capacity = DataRate::KilobitsPerSec(100)},
+  });
+
+  Timestamp start_time = clock.CurrentTime();
+  ASSERT_EQ(delay_controller.queue_delay(), TimeDelta::PlusInfinity());
+
+  // Overuse the link during 1s.
+  TimeDelta last_smoothed_rtt;
+  while (clock.CurrentTime() < start_time + TimeDelta::Seconds(1)) {
+    TransportPacketsFeedback feedback =
+        feedback_generator.ProcessUntilNextFeedback(
+            DataRate::KilobitsPerSec(150), clock);
+    delay_controller.OnTransportPacketsFeedback(feedback);
+    last_smoothed_rtt = delay_controller.rtt();
+  }
+  TimeDelta queue_delay_before_reset = delay_controller.queue_delay();
+  ASSERT_GT(queue_delay_before_reset, TimeDelta::Zero());
+  ASSERT_LT(queue_delay_before_reset, TimeDelta::PlusInfinity());
+
+  delay_controller.ResetQueueDelay();
+  ASSERT_EQ(delay_controller.queue_delay(), TimeDelta::PlusInfinity());
+
+  TransportPacketsFeedback feedback =
+      feedback_generator.ProcessUntilNextFeedback(DataRate::KilobitsPerSec(150),
+                                                  clock);
+  delay_controller.OnTransportPacketsFeedback(feedback);
+  // RTT is still increasing or equal to the last feedback.
+  EXPECT_GE(delay_controller.rtt(), last_smoothed_rtt);
+  // But queue delay should be lower.
+  EXPECT_LT(delay_controller.queue_delay(), queue_delay_before_reset);
+}
+
+TEST(DelayBasedCongestionControlTest,
+     IsQueueDrainedInTimeReturnFalseIfLongOverUse) {
+  SimulatedClock clock(Timestamp::Seconds(1'234));
+  Environment env = CreateTestEnvironment({.time = &clock});
+  DelayBasedCongestionControl delay_controller(
+      ScreamV2Parameters(env.field_trials()));
+  CcFeedbackGenerator feedback_generator({
+      .network_config = {.queue_delay_ms = 25,
+                         .link_capacity = DataRate::KilobitsPerSec(100)},
+  });
+
+  Timestamp start_time = clock.CurrentTime();
+  while (clock.CurrentTime() < start_time + TimeDelta::Seconds(30) &&
+         delay_controller.IsQueueDrainedInTime(clock.CurrentTime())) {
+    TransportPacketsFeedback feedback =
+        feedback_generator.ProcessUntilNextFeedback(
+            DataRate::KilobitsPerSec(150), clock);
+    delay_controller.OnTransportPacketsFeedback(feedback);
+  }
+  EXPECT_LT(clock.CurrentTime(), start_time + TimeDelta::Seconds(30));
+  EXPECT_GT(clock.CurrentTime(), start_time + TimeDelta::Seconds(10));
+  EXPECT_FALSE(delay_controller.IsQueueDrainedInTime(clock.CurrentTime()));
+}
+
+TEST(DelayBasedCongestionControlTest,
+     RefWindowScaleFactorDueToMinAverageQueueDelay) {
+  SimulatedClock clock(Timestamp::Seconds(1234));
+  Environment env = CreateTestEnvironment({.time = &clock});
+  ScreamV2Parameters params(env.field_trials());
+  DelayBasedCongestionControl delay_controller(params);
+
+  const TimeDelta kQueueDelyMinThreshold =
+      params.queue_delay_min_threshold.Get();
+
+  // Helper to establish queue delay.
+  // Assumes base delay is 100ms.
+  auto feed_packets = [&](TimeDelta qdelay, int count) {
+    for (int i = 0; i < count; ++i) {
+      clock.AdvanceTime(TimeDelta::Millis(10));
+      TransportPacketsFeedback msg;
+      msg.feedback_time = clock.CurrentTime();
+      PacketResult packet;
+      packet.receive_time = clock.CurrentTime();
+      packet.sent_packet.send_time =
+          clock.CurrentTime() - TimeDelta::Millis(100) - qdelay;
+      packet.sent_packet.sequence_number = i;
+      msg.packet_feedbacks.push_back(packet);
+      delay_controller.OnTransportPacketsFeedback(msg);
+    }
+  };
+
+  // Establish base delay (100ms) with qdelay=0.
+  feed_packets(TimeDelta::Zero(), 100);
+  EXPECT_DOUBLE_EQ(
+      delay_controller.ref_window_scale_factor_due_to_avg_min_delay(), 1.0);
+
+  // Drive queue delay to kQueueDelyMinThreshold.
+  feed_packets(kQueueDelyMinThreshold + TimeDelta::Millis(10), 250);
+  EXPECT_NEAR(delay_controller.ref_window_scale_factor_due_to_avg_min_delay(),
+              0.1, 0.01);
+
+  // Drive queue delay to `0.5 * kQueueDelyMinThreshold`.
+  // Expected: 0.1 + 1.2 * 0.5 = 0.7
+  feed_packets(kQueueDelyMinThreshold / 2, 250);
+  EXPECT_NEAR(delay_controller.ref_window_scale_factor_due_to_avg_min_delay(),
+              0.7, 0.01);
+
+  // Drive queue delay to `0.25 * kQueueDelyMinThreshold`.
+  // Expected: 0.1 + 1.2 * 0.75 = 1.0.
+  feed_packets(kQueueDelyMinThreshold / 4, 250);
+  EXPECT_NEAR(delay_controller.ref_window_scale_factor_due_to_avg_min_delay(),
+              1.0, 0.01);
+}
+
+TEST(DelayBasedCongestionControlTest,
+     RefWindowScaleFactorDueToLatencyDifference) {
+  SimulatedClock clock(Timestamp::Seconds(1234));
+  Environment env = CreateTestEnvironment({.time = &clock});
+  ScreamV2Parameters params(env.field_trials());
+  DelayBasedCongestionControl delay_controller(params);
+
+  const TimeDelta kLatencyThreshold = params.latency_diff_threshold.Get();
+
+  // Helper to establish latency differences within feedbacks.
+  // Assumes a base one-way delay of 100ms.
+  auto feed_packets = [&](TimeDelta latency_diff, int count) {
+    for (int i = 0; i < count; ++i) {
+      clock.AdvanceTime(TimeDelta::Millis(10));
+      TransportPacketsFeedback msg;
+      msg.feedback_time = clock.CurrentTime();
+
+      PacketResult packet1;
+      packet1.receive_time = clock.CurrentTime();
+      packet1.sent_packet.send_time =
+          clock.CurrentTime() - TimeDelta::Millis(100);
+      packet1.sent_packet.sequence_number = i * 2;
+
+      PacketResult packet2;
+      packet2.receive_time = clock.CurrentTime();
+      packet2.sent_packet.send_time =
+          clock.CurrentTime() - TimeDelta::Millis(100) - latency_diff;
+      packet2.sent_packet.sequence_number = i * 2 + 1;
+
+      msg.packet_feedbacks.push_back(packet1);
+      msg.packet_feedbacks.push_back(packet2);
+      delay_controller.OnTransportPacketsFeedback(msg);
+    }
+  };
+
+  // Establish 0 latency difference.
+  feed_packets(TimeDelta::Zero(), 100);
+  EXPECT_DOUBLE_EQ(
+      delay_controller.ref_window_scale_factor_due_to_latency_difference(),
+      1.0);
+
+  // Drive to `kLatencyThreshold`.
+  feed_packets(kLatencyThreshold + TimeDelta::Millis(10), 250);
+  EXPECT_NEAR(
+      delay_controller.ref_window_scale_factor_due_to_latency_difference(), 0.1,
+      0.01);
+
+  // Drive to `0.5 * kLatencyThreshold`.
+  // Expected: 0.1 + 1.2 * 0.5 = 0.7
+  feed_packets(kLatencyThreshold / 2, 250);
+  EXPECT_NEAR(
+      delay_controller.ref_window_scale_factor_due_to_latency_difference(), 0.7,
+      0.01);
+
+  // Drive to `0.25 * kLatencyThreshold`.
+  // Expected: 0.1 + 1.2 * 0.75 = 1.0.
+  feed_packets(kLatencyThreshold / 4, 250);
+  EXPECT_NEAR(
+      delay_controller.ref_window_scale_factor_due_to_latency_difference(), 1.0,
+      0.01);
 }
 
 // TODO: bugs.webrtc.org/447037083 - add tests for clock drift in feedback NTP

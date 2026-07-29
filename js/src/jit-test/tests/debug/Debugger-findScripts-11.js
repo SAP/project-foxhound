@@ -16,21 +16,21 @@ assertEq(dbg.findScripts({url:scriptname, line:3}).indexOf(ggw.script) != -1, fa
 assertEq(dbg.findScripts({url:scriptname, line:3}).indexOf(ghw.script) != -1, false);
 
 // Specifying a different url screens out scripts, even when global and line match.
-assertEq(dbg.findScripts({url:"xlerb", line:8}).indexOf(gfw.script) != -1, false);
-assertEq(dbg.findScripts({url:"xlerb", line:8}).indexOf(ggw.script) != -1, false);
-assertEq(dbg.findScripts({url:"xlerb", line:8}).indexOf(ghw.script) != -1, false);
+assertEq(dbg.findScripts({url:"xlerb", line:7}).indexOf(gfw.script) != -1, false);
+assertEq(dbg.findScripts({url:"xlerb", line:7}).indexOf(ggw.script) != -1, false);
+assertEq(dbg.findScripts({url:"xlerb", line:7}).indexOf(ghw.script) != -1, false);
 
 // A line number within a function selects that function's script.
-assertEq(dbg.findScripts({url:scriptname, line:8}).indexOf(gfw.script) != -1, true);
-assertEq(dbg.findScripts({url:scriptname, line:8}).indexOf(ggw.script) != -1, false);
-assertEq(dbg.findScripts({url:scriptname, line:8}).indexOf(ghw.script) != -1, false);
+assertEq(dbg.findScripts({url:scriptname, line:7}).indexOf(gfw.script) != -1, true);
+assertEq(dbg.findScripts({url:scriptname, line:7}).indexOf(ggw.script) != -1, false);
+assertEq(dbg.findScripts({url:scriptname, line:7}).indexOf(ghw.script) != -1, false);
 
 // A line number within a nested function selects all enclosing functions' scripts.
-assertEq(dbg.findScripts({url:scriptname, line:10}).indexOf(gfw.script) != -1, true);
-assertEq(dbg.findScripts({url:scriptname, line:10}).indexOf(ggw.script) != -1, true);
-assertEq(dbg.findScripts({url:scriptname, line:10}).indexOf(ghw.script) != -1, false);
+assertEq(dbg.findScripts({url:scriptname, line:9}).indexOf(gfw.script) != -1, true);
+assertEq(dbg.findScripts({url:scriptname, line:9}).indexOf(ggw.script) != -1, true);
+assertEq(dbg.findScripts({url:scriptname, line:9}).indexOf(ghw.script) != -1, false);
 
 // A line number in a non-nested function selects that function.
-assertEq(dbg.findScripts({url:scriptname, line:15}).indexOf(gfw.script) != -1, false);
-assertEq(dbg.findScripts({url:scriptname, line:15}).indexOf(ggw.script) != -1, false);
-assertEq(dbg.findScripts({url:scriptname, line:15}).indexOf(ghw.script) != -1, true);
+assertEq(dbg.findScripts({url:scriptname, line:14}).indexOf(gfw.script) != -1, false);
+assertEq(dbg.findScripts({url:scriptname, line:14}).indexOf(ggw.script) != -1, false);
+assertEq(dbg.findScripts({url:scriptname, line:14}).indexOf(ghw.script) != -1, true);

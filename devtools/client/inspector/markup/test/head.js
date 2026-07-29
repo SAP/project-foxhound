@@ -416,9 +416,17 @@ function checkFocusedAttribute(attrName, editMode) {
   is(dataAttr, attrName, attrName + " attribute editor is currently focused.");
   if (editMode) {
     // Using a multiline editor for attributes, the focused element should be a textarea.
-    is(focusedAttr.tagName, "textarea", attrName + "is in edit mode");
+    is(
+      focusedAttr.tagName.toLowerCase(),
+      "textarea",
+      attrName + "is in edit mode"
+    );
   } else {
-    is(focusedAttr.tagName, "span", attrName + "is not in edit mode");
+    is(
+      focusedAttr.tagName.toLowerCase(),
+      "span",
+      attrName + "is not in edit mode"
+    );
   }
 }
 

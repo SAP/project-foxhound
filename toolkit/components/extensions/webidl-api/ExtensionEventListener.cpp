@@ -1,4 +1,3 @@
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -261,6 +260,7 @@ NS_IMETHODIMP ExtensionEventListener::CallListener(
 
   // Convert args into a non-const sequence.
   dom::Sequence<JS::Value> args;
+  dom::SequenceRooter<JS::Value> argsRooter(aCx, &args);
   if (!args.AppendElements(aArgs, fallible)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }

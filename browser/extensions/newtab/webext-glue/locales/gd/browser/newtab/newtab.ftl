@@ -14,6 +14,57 @@ newtab-personalize-icon-label =
 newtab-personalize-dialog-label =
     .aria-label = Gnàthaich
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Tabaichean ùra
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } ràgh
+            [two] { $num } ràgh
+            [few] { $num } ràghan
+           *[other] { $num } ràgh
+        }
+# Dropdown option shown when an extension replaces the contents of new windows or tabs.
+# Variables:
+#   $extension (string) - Name of the extension
+home-prefs-homepage-extension-option =
+    .label = Extension ({ $extension })
+home-restore-defaults-srd =
+    .label = Aisig na bun-roghainnean
+    .accesskey = r
+home-mode-choice-default-fx-srd =
+    .label = { -firefox-home-brand-name } (bun-roghainn)
+home-mode-choice-custom-srd =
+    .label = URLaichean gnàthaichte...
+home-mode-choice-blank-srd =
+    .label = Duilleag bhàn
+home-prefs-shortcuts-header-srd =
+    .label = Ath-ghoiridean
+home-prefs-shortcuts-select =
+    .aria-label = Ath-ghoiridean
+home-prefs-shortcuts-by-option-sponsored-srd =
+    .label = Ath-ghoiridean sponsairichte
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Sgeulachdan sponsairichte
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Duilleagan air an do thadhail thu
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Comharran-lìn
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Air a luchdadh a-nuas o chionn goirid
+home-prefs-recent-activity-header-srd =
+    .label = Gnìomhachd o chionn goirid
+home-prefs-recent-activity-select =
+    .aria-label = Gnìomhachd o chionn goirid
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -39,7 +90,7 @@ newtab-search-box-input =
     .placeholder = Lorg air an lìon
     .aria-label = Lorg air an lìon
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Cuir einnsean-luirg ris
 newtab-topsites-add-shortcut-header = Ath-ghoirid ùr
@@ -244,9 +295,23 @@ newtab-error-fallback-refresh-link = Ath-nuadhaich an duilleag airson fheuchainn
 
 newtab-custom-shortcuts-title = Ath-ghoiridean
 newtab-custom-shortcuts-subtitle = Làraichean a shàbhail thu no a thadhail thu orra
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = Ath-ghoiridean
     .description = Làraichean a shàbhail thu no a thadhail thu orra
+newtab-custom-shortcuts-nova =
+    .label = Ath-ghoiridean
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+            [one] { $num } ràgh
+            [two] { $num } ràgh
+            [few] { $num } ràghan
+           *[other] { $num } ràgh
+        }
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector =

@@ -29,6 +29,7 @@
 #include <cstring>
 #include <memory>
 #include <optional>
+#include <utility>
 
 #include "absl/strings/string_view.h"
 #include "common_video/libyuv/include/webrtc_libyuv.h"
@@ -76,7 +77,9 @@ VideoType PipeWireRawFormatToVideoType(uint32_t id) {
 void PipeWireNode::PipeWireNodeDeleter::operator()(
     PipeWireNode* node) const noexcept {
   spa_hook_remove(&node->node_listener_);
+  spa_hook_remove(&node->proxy_listener_);
   pw_proxy_destroy(node->proxy_);
+  pw_node_info_free(node->info_);
 }
 
 // static
@@ -105,14 +108,26 @@ PipeWireNode::PipeWireNode(PipeWireSession* session,
       .param = OnNodeParam,
   };
 
-  pw_node_add_listener(reinterpret_cast<pw_node*>(proxy_), &node_listener_,
-                       &node_events, this);
+  pw_node_add_listener(reinterpret_cast<pw_node*>(proxy_), &node_listener_, &node_events, this);
+
+  static const pw_proxy_events proxy_events{
+      .version = PW_VERSION_PROXY_EVENTS,
+      .done = OnProxyDone,
+  };
+
+  pw_proxy_add_listener(proxy_, &proxy_listener_, &proxy_events, this);
 }
 
 // static
 RTC_NO_SANITIZE("cfi-icall")
 void PipeWireNode::OnNodeInfo(void* data, const pw_node_info* info) {
   PipeWireNode* that = static_cast<PipeWireNode*>(data);
+
+  that->info_ = pw_node_info_update(that->info_, info);
+  if (!that->info_)
+    return;
+
+  info = that->info_;
 
   if (info->change_mask & PW_NODE_CHANGE_MASK_PROPS) {
     const char* vid_str;
@@ -135,19 +150,20 @@ void PipeWireNode::OnNodeInfo(void* data, const pw_node_info* info) {
 
   if (info->change_mask & PW_NODE_CHANGE_MASK_PARAMS) {
     for (uint32_t i = 0; i < info->n_params; i++) {
+      if (info->params[i].user == 0)
+        continue;
+      info->params[i].user = 0;
+
       uint32_t id = info->params[i].id;
       if (id == SPA_PARAM_EnumFormat &&
           info->params[i].flags & SPA_PARAM_INFO_READ) {
-        RTC_LOG(LS_INFO)
-            << "Clearing existing capabilities before re-enumeration for "
-            << that->display_name_;
-        that->capabilities_.clear();
-        pw_node_enum_params(reinterpret_cast<pw_node*>(that->proxy_), 0, id, 0,
-                            UINT32_MAX, nullptr);
+        that->pending_capabilities_.clear();
+        pw_node_enum_params(reinterpret_cast<pw_node*>(that->proxy_), 0, id, 0, UINT32_MAX, nullptr);
+        that->sync_seq_ = pw_proxy_sync(that->proxy_, that->sync_seq_);
+        that->session_->PipeWireSync();
         break;
       }
     }
-    that->session_->PipeWireSync();
   }
 }
 
@@ -215,7 +231,18 @@ void PipeWireNode::OnNodeParam(void* data,
                       << cap.width << "x" << cap.height << "@" << cap.maxFPS
                       << ")";
 
-  that->capabilities_.push_back(cap);
+  that->pending_capabilities_.push_back(cap);
+}
+
+// static
+void PipeWireNode::OnProxyDone(void* data, int seq) {
+  PipeWireNode* that = static_cast<PipeWireNode*>(data);
+
+  if (seq != that->sync_seq_)
+    return;
+
+  that->capabilities_ = std::move(that->pending_capabilities_);
+  that->pending_capabilities_.clear();
 }
 
 // static
@@ -337,7 +364,7 @@ bool PipeWireSession::DeRegisterDeviceInfo(DeviceInfoPipeWire* device_info) {
 
 RTC_NO_SANITIZE("cfi-icall")
 bool PipeWireSession::StartPipeWire(int fd) {
-  pw_init(/*argc=*/nullptr, /*argv=*/nullptr);
+  pw_initializer_ = std::make_unique<PipeWireInitializer>();
 
   pw_main_loop_ = pw_thread_loop_new("pipewire-main-loop", nullptr);
 

@@ -9,12 +9,13 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.rules.ActivityScenarioRule
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
+import mockwebserver3.Dispatcher
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
+import mockwebserver3.RecordedRequest
 import mozilla.telemetry.glean.testing.GleanTestLocalServer
-import okhttp3.mockwebserver.Dispatcher
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
-import okhttp3.mockwebserver.RecordedRequest
 import org.json.JSONObject
+import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Ignore
@@ -44,11 +45,11 @@ fun decompressGZIP(data: ByteArray): String {
  * @return a [String] containing the body of the request.
  */
 fun RecordedRequest.getPlainBody(): String {
-    return if (this.getHeader("Content-Encoding") == "gzip") {
-        val bodyInBytes = this.body.readByteArray()
+    return if (this.headers["Content-Encoding"] == "gzip") {
+        val bodyInBytes = this.body!!.toByteArray()
         decompressGZIP(bodyInBytes)
     } else {
-        this.body.readUtf8()
+        this.body!!.utf8()
     }
 }
 
@@ -60,6 +61,11 @@ class BaselinePingTest {
 
     @get:Rule
     val gleanRule = GleanTestLocalServer(context, server.port)
+
+    @After
+    fun tearDown() {
+        server.close()
+    }
 
     private val context: Context
         get() = ApplicationProvider.getApplicationContext()
@@ -73,10 +79,10 @@ class BaselinePingTest {
         server.dispatcher =
             object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
-                    return MockResponse().setBody("OK")
+                    return MockResponse(body = "OK")
                 }
             }
-
+        server.start()
         return server
     }
 
@@ -89,7 +95,7 @@ class BaselinePingTest {
         do {
             attempts += 1
             val request = server.takeRequest(20L, TimeUnit.SECONDS)
-            val docType = request?.path?.split("/")?.get(3)
+            val docType = request?.target?.split("/")?.get(3)
             if (pingName == docType) {
                 val parsedPayload = JSONObject(request.getPlainBody())
                 if (pingReason == null) {

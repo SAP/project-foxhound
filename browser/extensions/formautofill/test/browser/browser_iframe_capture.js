@@ -23,7 +23,7 @@ const CAPTURE_FILL_VALUE = {
 };
 
 const CAPTURE_EXPECTED_RECORD = {
-  "cc-number": "************1111",
+  "cc-number": "••••••••••••1111",
   "cc-name": "John Doe",
   "cc-exp-month": 4,
   "cc-exp-year": new Date().getFullYear(),
@@ -37,7 +37,7 @@ const CAPTURE_FILL_VALUE_1 = {
 };
 
 const CAPTURE_EXPECTED_RECORD_1 = {
-  "cc-number": "***********0005",
+  "cc-number": "•••••••••••0005",
   "cc-name": "Timothy Berners-Lee",
   "cc-exp-month": 7,
   "cc-exp-year": new Date().getFullYear() - 1,
@@ -51,7 +51,7 @@ const CAPTURE_FILL_VALUE_2 = {
 };
 
 const CAPTURE_EXPECTED_RECORD_2 = {
-  "cc-number": "************4444",
+  "cc-number": "••••••••••••4444",
   "cc-name": "Jane Doe",
   "cc-exp-month": 12,
   "cc-exp-year": new Date().getFullYear() + 1,

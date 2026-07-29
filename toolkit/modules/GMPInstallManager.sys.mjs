@@ -371,15 +371,38 @@ GMPInstallManager.prototype = {
 
     // Now let's check the addons that we are configured to override to go
     // directly to the Chromium component update service.
-    try {
-      for (let gmpAddon of addons) {
-        if (
-          !GMPPrefs.getBool(
-            GMPPrefs.KEY_PLUGIN_FORCE_CHROMIUM_UPDATE,
-            false,
-            gmpAddon.id
-          )
-        ) {
+    await this.adjustForChromiumUpdateService(addons);
+
+    this._deferred.resolve({ addons });
+    delete this._deferred;
+    return deferredPromise;
+  },
+  /**
+   * Adjusts addon records based on the Chromium update service, if applicable.
+   * If not allowed for an addon, there is no change. If allowed but not forced,
+   * it will prefer the URL returned by the Chromium update service if and only
+   * if the version matches that from the balrog service. If allowed and forced,
+   * it will always use the Chromium update service URL and ignores the version
+   * and hash restrictions from balrog.
+   *
+   * @param addons
+   *        Array of GMPAddon to potentially adjust.
+   */
+  async adjustForChromiumUpdateService(addons) {
+    let log = getScopedLogger("GMPInstallManager.checkForAddons");
+    for (let gmpAddon of addons) {
+      try {
+        const forced = GMPPrefs.getBool(
+          GMPPrefs.KEY_PLUGIN_FORCE_CHROMIUM_UPDATE,
+          false,
+          gmpAddon.id
+        );
+        const allowed = GMPPrefs.getBool(
+          GMPPrefs.KEY_PLUGIN_ALLOW_CHROMIUM_UPDATE,
+          false,
+          gmpAddon.id
+        );
+        if (!allowed && !forced) {
           continue;
         }
 
@@ -411,34 +434,66 @@ GMPInstallManager.prototype = {
         }
 
         const version = versionMatch[1];
+        if (forced) {
+          // With a forced update, we just use whatever URL/version the
+          // service gives us.
+          gmpAddon.mirrorURLs = [];
+          gmpAddon.version = version;
+          gmpAddon.forcedChromiumUpdate = true;
+
+          // Delete these properties to avoid verifying the addon against our
+          // balrog configuration, which may or may not match.
+          delete gmpAddon.size;
+          delete gmpAddon.hashValue;
+          delete gmpAddon.hashFunction;
+        } else {
+          // While we prefer the URL given by the Chromium update service,
+          // the version must match what we were provisioned with on balrog.
+          if (gmpAddon.version !== version) {
+            log.warn(
+              "Skipping chromium update, expected version " +
+                gmpAddon.version +
+                ", got " +
+                version
+            );
+            continue;
+          }
+
+          // If the preferred URL is in the mirror list, make sure we remove
+          // it instead of trying twice.
+          gmpAddon.mirrorURLs = gmpAddon.mirrorURLs.filter(
+            url => url !== redirectUrl
+          );
+
+          // Only add the default URL to the mirror list if it is different
+          // from what the Chromium service gave us.
+          if (gmpAddon.URL !== redirectUrl) {
+            gmpAddon.mirrorURLs.unshift(gmpAddon.URL);
+          }
+        }
+
+        // Note that if we only prefer the Chromium update service URL but
+        // we aren't forcing it, we still verify the hash from balrog which
+        // makes this safe.
+        gmpAddon.URL = redirectUrl;
+
         log.info(
-          "Forcing " +
+          "Downloading " +
             gmpAddon.id +
-            " to version " +
+            " version " +
             version +
             " from chromium update " +
             redirectUrl
         );
-
-        // Update the addon with the final URL and the extracted version.
-        gmpAddon.URL = redirectUrl;
-        gmpAddon.mirrorURLs = [];
-        gmpAddon.version = version;
-        gmpAddon.usedChromiumUpdate = true;
-
-        // Delete these properties to avoid verifying the addon against our
-        // balrog configuration, which may or may not match.
-        delete gmpAddon.size;
-        delete gmpAddon.hash;
-        delete gmpAddon.hashFunction;
+      } catch (err) {
+        log.info(
+          "Failed to switch addon " +
+            gmpAddon.id +
+            " to Chromium update service: " +
+            err
+        );
       }
-    } catch (err) {
-      log.info("Failed to switch addons to Chromium update service: " + err);
     }
-
-    this._deferred.resolve({ addons });
-    delete this._deferred;
-    return deferredPromise;
   },
   /**
    * Installs the specified addon and calls a callback when done.
@@ -660,7 +715,7 @@ GMPInstallManager.prototype = {
 export function GMPAddon(addon) {
   let log = getScopedLogger("GMPAddon.constructor");
   this.usedFallback = false;
-  this.usedChromiumUpdate = false;
+  this.forcedChromiumUpdate = false;
   for (let name of Object.keys(addon)) {
     this[name] = addon[name];
   }
@@ -697,7 +752,7 @@ GMPAddon.prototype = {
       this.id &&
       this.URL &&
       this.version &&
-      (this.usedChromiumUpdate || (this.hashFunction && !!this.hashValue))
+      (this.forcedChromiumUpdate || (this.hashFunction && !!this.hashValue))
     );
   },
   get isInstalled() {
@@ -705,7 +760,7 @@ GMPAddon.prototype = {
       this.version &&
       GMPPrefs.getString(GMPPrefs.KEY_PLUGIN_VERSION, "", this.id) ===
         this.version &&
-      (this.usedChromiumUpdate ||
+      (this.forcedChromiumUpdate ||
         (!!this.hashValue &&
           GMPPrefs.getString(GMPPrefs.KEY_PLUGIN_HASHVALUE, "", this.id) ===
             this.hashValue))
@@ -840,7 +895,7 @@ GMPDownloader.prototype = {
               GMPPrefs.setString(GMPPrefs.KEY_PLUGIN_ABI, abi, gmpAddon.id);
               // We use the combination of the hash and version to ensure we are
               // up to date. Ignored if we used the Chromium update service directly.
-              if (!gmpAddon.usedChromiumUpdate) {
+              if (!gmpAddon.forcedChromiumUpdate) {
                 GMPPrefs.setString(
                   GMPPrefs.KEY_PLUGIN_HASHVALUE,
                   gmpAddon.hashValue,
@@ -898,5 +953,27 @@ GMPDownloader.prototype = {
         throw reason;
       }
     );
+  },
+};
+
+// For test use only.
+export const GMPInstallManagerTestUtils = {
+  /**
+   * Used to override ServiceRequest calls with a mock request.
+   *
+   * @param mockRequest The mocked ServiceRequest object.
+   * @param callback Method called with the overridden ServiceRequest. The override
+   *        is undone after the callback returns.
+   */
+  async overrideServiceRequest(mockRequest, callback) {
+    let originalServiceRequest = lazy.ServiceRequest;
+    lazy.ServiceRequest = function () {
+      return mockRequest;
+    };
+    try {
+      return await callback();
+    } finally {
+      lazy.ServiceRequest = originalServiceRequest;
+    }
   },
 };

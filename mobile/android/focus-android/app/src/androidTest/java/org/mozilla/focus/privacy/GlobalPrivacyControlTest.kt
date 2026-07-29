@@ -4,7 +4,6 @@
 package org.mozilla.focus.privacy
 
 import androidx.test.internal.runner.junit4.AndroidJUnit4ClassRunner
-import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -12,31 +11,29 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.focus.activity.robots.searchScreen
 import org.mozilla.focus.helpers.FeatureSettingsHelper
+import org.mozilla.focus.helpers.FocusTestRule
 import org.mozilla.focus.helpers.MainActivityFirstrunTestRule
-import org.mozilla.focus.helpers.MockWebServerHelper
 import org.mozilla.focus.helpers.TestAssetHelper.getStorageTestAsset
-import org.mozilla.focus.helpers.TestSetup
 import java.io.IOException
 
 /**
  * Test that Global Privacy Control is always enabled in Focus.
  */
 @RunWith(AndroidJUnit4ClassRunner::class)
-class GlobalPrivacyControlTest : TestSetup() {
-    private lateinit var webServer: MockWebServer
+class GlobalPrivacyControlTest {
 
     private val featureSettingsHelper = FeatureSettingsHelper()
+
+    @get:Rule(order = 0)
+    val focusTestRule: FocusTestRule = FocusTestRule()
+
+    private val webServerRule get() = focusTestRule.mockWebServerRule
 
     @get:Rule
     val mActivityTestRule = MainActivityFirstrunTestRule(showFirstRun = false)
 
     @Before
-    override fun setUp() {
-        super.setUp()
-        webServer = MockWebServer().apply {
-            dispatcher = MockWebServerHelper.AndroidAssetDispatcher()
-            start()
-        }
+    fun setUp() {
         featureSettingsHelper.setCfrForTrackingProtectionEnabled(false)
         featureSettingsHelper.setSearchWidgetDialogEnabled(false)
     }
@@ -44,15 +41,14 @@ class GlobalPrivacyControlTest : TestSetup() {
     @After
     fun tearDown() {
         try {
-            webServer.shutdown()
-        } catch (e: IOException) {
+            } catch (e: IOException) {
             throw AssertionError("Could not stop web server", e)
         }
     }
 
     @Test
     fun gpcTest() {
-        val storageStartUrl = webServer.getStorageTestAsset("global_privacy_control.html").url
+        val storageStartUrl = webServerRule.server.getStorageTestAsset("global_privacy_control.html").url
 
         searchScreen {
         }.loadPage(storageStartUrl) {

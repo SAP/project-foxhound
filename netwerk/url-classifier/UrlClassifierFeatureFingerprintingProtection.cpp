@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,13 +5,12 @@
 #include "UrlClassifierFeatureFingerprintingProtection.h"
 
 #include "mozilla/AntiTrackingUtils.h"
+#include "mozilla/net/ChannelClassifierUtils.h"
 #include "mozilla/net/UrlClassifierCommon.h"
-#include "ChannelClassifierService.h"
-#include "mozilla/StaticPrefs_privacy.h"
+#include "mozilla/ScopedPrefs.h"
 #include "nsNetUtil.h"
 #include "mozilla/StaticPtr.h"
 #include "nsIWebProgressListener.h"
-#include "nsIHttpChannelInternal.h"
 #include "nsIChannel.h"
 
 namespace mozilla {
@@ -90,7 +87,9 @@ UrlClassifierFeatureFingerprintingProtection::MaybeCreate(
       ("UrlClassifierFeatureFingerprintingProtection::MaybeCreate - channel %p",
        aChannel));
 
-  if (!StaticPrefs::privacy_trackingprotection_fingerprinting_enabled()) {
+  if (!ScopedPrefs::BoolPrefScoped(
+          ScopedPrefs::PRIVACY_TRACKINGPROTECTION_FINGERPRINTING_ENABLED,
+          aChannel)) {
     return nullptr;
   }
 
@@ -104,7 +103,7 @@ UrlClassifierFeatureFingerprintingProtection::MaybeCreate(
     return nullptr;
   }
 
-  if (UrlClassifierCommon::IsPassiveContent(aChannel)) {
+  if (ChannelClassifierUtils::IsPassiveContent(aChannel)) {
     return nullptr;
   }
 
@@ -143,7 +142,7 @@ UrlClassifierFeatureFingerprintingProtection::ProcessChannel(
   NS_ENSURE_ARG_POINTER(aChannel);
   NS_ENSURE_ARG_POINTER(aShouldContinue);
 
-  bool isAllowListed = UrlClassifierCommon::IsAllowListed(aChannel);
+  bool isAllowListed = ChannelClassifierUtils::IsAllowListed(aChannel);
 
   // This is a blocking feature.
   *aShouldContinue = isAllowListed;
@@ -164,43 +163,13 @@ UrlClassifierFeatureFingerprintingProtection::ProcessChannel(
   nsAutoCString list;
   UrlClassifierCommon::TablesToString(aList, list);
 
-  ChannelBlockDecision decision =
-      ChannelClassifierService::OnBeforeBlockChannel(aChannel, mName, list);
-  if (decision != ChannelBlockDecision::Blocked) {
-    uint32_t event =
-        decision == ChannelBlockDecision::Replaced
-            ? nsIWebProgressListener::STATE_REPLACED_FINGERPRINTING_CONTENT
-            : nsIWebProgressListener::STATE_ALLOWED_FINGERPRINTING_CONTENT;
-
-    // Need to set aBlocked to True if we replace the Fingerprinter with a shim,
-    //  since the shim is treated as a blocked event
-    if (event ==
-        nsIWebProgressListener::STATE_REPLACED_FINGERPRINTING_CONTENT) {
-      ContentBlockingNotifier::OnEvent(aChannel, event, true);
-    } else {
-      ContentBlockingNotifier::OnEvent(aChannel, event, false);
-    }
-
-    *aShouldContinue = true;
-    return NS_OK;
-  }
-
-  UrlClassifierCommon::SetBlockedContent(aChannel, NS_ERROR_FINGERPRINTING_URI,
-                                         list, ""_ns, ""_ns);
-
-  UC_LOG(
-      ("UrlClassifierFeatureFingerprintingProtection::ProcessChannel - "
-       "cancelling channel %p",
-       aChannel));
-
-  nsCOMPtr<nsIHttpChannelInternal> httpChannel = do_QueryInterface(aChannel);
-  if (httpChannel) {
-    (void)httpChannel->CancelByURLClassifier(NS_ERROR_FINGERPRINTING_URI);
-  } else {
-    (void)aChannel->Cancel(NS_ERROR_FINGERPRINTING_URI);
-  }
-
-  return NS_OK;
+  ChannelBlockDecision decision;
+  nsresult rv = ChannelClassifierUtils::MaybeBlockChannel(
+      aChannel, mName, list, NS_ERROR_FINGERPRINTING_URI,
+      nsIWebProgressListener::STATE_REPLACED_FINGERPRINTING_CONTENT,
+      nsIWebProgressListener::STATE_ALLOWED_FINGERPRINTING_CONTENT, &decision);
+  *aShouldContinue = (decision != ChannelBlockDecision::Blocked);
+  return rv;
 }
 
 NS_IMETHODIMP

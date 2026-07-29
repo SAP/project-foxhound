@@ -199,7 +199,10 @@ impl<'a> ErrorHelpers<'a> for ContextualParseError<'a> {
             | ContextualParseError::UnsupportedViewportDescriptorDeclaration(s, err)
             | ContextualParseError::UnsupportedCounterStyleDescriptorDeclaration(s, err)
             | ContextualParseError::InvalidMediaRule(s, err)
-            | ContextualParseError::UnsupportedValue(s, err) => (s.into(), err.kind),
+            | ContextualParseError::UnsupportedValue(s, err)
+            | ContextualParseError::UnsupportedViewTransitionDescriptor(s, err) => {
+                (s.into(), err.kind)
+            },
             ContextualParseError::NeverMatchingHostSelector(s)
             | ContextualParseError::InvalidCounterStyleWithoutSymbols(s)
             | ContextualParseError::InvalidCounterStyleNotEnoughSymbols(s) => (
@@ -462,6 +465,9 @@ impl<'a> ErrorHelpers<'a> for ContextualParseError<'a> {
                         (cstr!("PEDeclDropped"), Action::Nothing)
                     },
                 }
+            },
+            ContextualParseError::UnsupportedViewTransitionDescriptor(..) => {
+                (cstr!("PEUnknownVTDesc"), Action::Skip)
             },
         };
         (None, msg, action)

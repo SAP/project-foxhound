@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,6 +19,10 @@ template <class T>
 class CopyableTArray;
 
 namespace mozilla {
+
+namespace dom {
+class ShadowRoot;
+}
 
 class nsDisplayListBuilder;
 
@@ -236,8 +238,13 @@ class AnchorPosReferenceData {
 };
 
 struct LastSuccessfulPositionData {
-  RefPtr<const ComputedStyle> mStyle;
-  uint32_t mIndex = 0;
+  // The style + index of our last reflow.
+  RefPtr<const ComputedStyle> mLastStyle;
+  Maybe<uint32_t> mLastIndex;
+  // The "recorded" index that we start looking fallbacks from.
+  // https://drafts.csswg.org/css-anchor-position/#last-successful-recording
+  Maybe<uint32_t> mRecordedIndex;
+  // Whether we tried all fallbacks or not.
   bool mTriedAllFallbacks = false;
 };
 
@@ -314,11 +321,11 @@ struct AnchorPositioningUtils {
 
   static Maybe<nsRect> GetAnchorPosRect(
       const nsIFrame* aAbsoluteContainingBlock, const nsIFrame* aAnchor,
-      bool aCBRectIsvalid);
+      bool aCBRectIsValid);
 
   static Maybe<AnchorPosInfo> ResolveAnchorPosRect(
       const nsIFrame* aPositioned, const nsIFrame* aAbsoluteContainingBlock,
-      const ScopedNameRef& aAnchorName, bool aCBRectIsvalid,
+      const ScopedNameRef& aAnchorName, bool aCBRectIsValid,
       AnchorPosResolutionCache* aResolutionCache);
 
   static Maybe<nsSize> ResolveAnchorPosSize(
@@ -424,6 +431,10 @@ struct AnchorPositioningUtils {
    */
   static nsRect ReassembleAnchorRect(const nsIFrame* aAnchor,
                                      const nsIFrame* aContainingBlock);
+
+  // Helper to get shadow root for a property's tree scope
+  static const dom::ShadowRoot* GetShadowRootForTreeScope(
+      const dom::Element& aElement, const StyleCascadeLevel& aTreeScope);
 };
 
 }  // namespace mozilla

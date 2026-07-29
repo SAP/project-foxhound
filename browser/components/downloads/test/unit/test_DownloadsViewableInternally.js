@@ -7,6 +7,7 @@ const OCTET_MIME = "application/octet-stream";
 const XML_MIME = "text/xml";
 const SVG_MIME = "image/svg+xml";
 const AVIF_MIME = "image/avif";
+const JXL_MIME = "image/jxl";
 
 const { Integration } = ChromeUtils.importESModule(
   "resource://gre/modules/Integration.sys.mjs"
@@ -227,10 +228,48 @@ add_task(async function test_viewable_internally() {
   Assert.ok(!shouldView(OCTET_MIME, "exe"), ".exe shouldn't be accepted");
 });
 
+add_task(async function test_jxl_viewable_internally() {
+  // JXL is gated on image.jxl.enabled, first set it to false and then work
+  // through the scenarios to test.
+  Services.prefs.setBoolPref("image.jxl.enabled", false);
+  Services.prefs.setCharPref(PREF_ENABLED_TYPES, "jxl");
+  checkAll(JXL_MIME, "jxl", false);
+
+  // Enable JXL and verify it becomes viewable.
+  Services.prefs.setBoolPref("image.jxl.enabled", true);
+  checkAll(JXL_MIME, "jxl", true);
+
+  Assert.ok(shouldView(JXL_MIME), "image/jxl should be enabled by pref");
+  Assert.ok(
+    shouldView(OCTET_MIME, "jxl"),
+    ".jxl should be accepted by extension"
+  );
+  Assert.ok(
+    shouldView(OCTET_MIME, "JXL"),
+    ".jxl should be detected case-insensitively"
+  );
+
+  // Disable image.jxl.enabled and verify JXL is no longer viewable.
+  Services.prefs.setBoolPref("image.jxl.enabled", false);
+  checkAll(JXL_MIME, "jxl", false);
+  Assert.ok(!shouldView(JXL_MIME), "image/jxl should be disabled by pref");
+
+  // Re-enable and verify.
+  Services.prefs.setBoolPref("image.jxl.enabled", true);
+  checkAll(JXL_MIME, "jxl", true);
+
+  // Removing jxl from PREF_ENABLED_TYPES should disable it.
+  Services.prefs.setCharPref(PREF_ENABLED_TYPES, "");
+  checkAll(JXL_MIME, "jxl", false);
+
+  Services.prefs.clearUserPref("image.jxl.enabled");
+});
+
 registerCleanupFunction(() => {
   // Clear all types to remove any saved values
   Services.prefs.setCharPref(PREF_ENABLED_TYPES, "");
   // Reset to the defaults
   Services.prefs.clearUserPref(PREF_ENABLED_TYPES);
   Services.prefs.clearUserPref(PREF_SVG_DISABLED);
+  Services.prefs.clearUserPref("image.jxl.enabled");
 });

@@ -239,7 +239,7 @@ so you may wish to prefer `browser-chrome`-flavoured mochitests instead.
 
 If you wish to continue with `plain`-flavoured mochitests,
 you will need to use
-[`GleanTest.js`](https://searchfox.org/mozilla-central/source/testing/mochitest/tests/SimpleTest/GleanTest.js)
+[`GleanTest.js`](https://searchfox.org/firefox-main/source/testing/mochitest/tests/SimpleTest/GleanTest.js)
 to gain access to testing APIs.
 It doesn't support all the features, only the `testResetFOG`,
 `testFlushAllChildren` (as `flush`), and `testGetValue` functions.

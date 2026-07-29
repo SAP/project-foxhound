@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Google Inc.
+ * Copyright 2023 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,8 +8,10 @@
 #ifndef SkTypeface_Fontations_priv_DEFINED
 #define SkTypeface_Fontations_priv_DEFINED
 
+#include "include/core/SkFontArguments.h"
 #include "include/core/SkFontParameters.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkSpan.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkTypeface.h"
@@ -18,6 +20,7 @@
 #include "src/core/SkAdvancedTypefaceMetrics.h"
 #include "src/core/SkScalerContext.h"
 #include "src/ports/fontations/src/ffi.rs.h"
+#include "src/ports/SkTypeface_fontations_factory.h"
 
 #include <memory>
 
@@ -184,7 +187,7 @@ private:
 /** SkTypeface implementation based on Google Fonts Fontations Rust libraries. */
 class SkTypeface_Fontations : public SkTypeface {
 private:
-    SkTypeface_Fontations(sk_sp<SkData> fontData,
+    SkTypeface_Fontations(sk_sp<const SkData> fontData,
                           const SkFontStyle& style,
                           uint32_t ttcIndex,
                           rust::Box<fontations_ffi::BridgeFontRef>&& fontRef,
@@ -206,9 +209,9 @@ public:
         return SkSpan(reinterpret_cast<const SkColor*>(fPalette.data()), fPalette.size());
     }
 
-    static constexpr SkTypeface::FactoryId FactoryId = SkSetFourByteTag('f', 'n', 't', 'a');
+    static constexpr SkTypeface::FactoryId FactoryId = SkTypefaces::Fontations::FactoryId;
 
-    static sk_sp<SkTypeface> MakeFromData(sk_sp<SkData> fontData, const SkFontArguments&);
+    static sk_sp<SkTypeface> MakeFromData(sk_sp<const SkData> fontData, const SkFontArguments&);
     static sk_sp<SkTypeface> MakeFromStream(std::unique_ptr<SkStreamAsset>, const SkFontArguments&);
 
 protected:
@@ -239,7 +242,7 @@ protected:
     size_t onGetTableData(SkFontTableTag, size_t, size_t, void*) const override;
 
 private:
-    sk_sp<SkData> fFontData;
+    sk_sp<const SkData> fFontData;
     // Incoming ttc index requested when this typeface was instantiated from data.
     uint32_t fTtcIndex = 0;
     // fBridgeFontRef accesses the data in fFontData. fFontData needs to be kept around for the

@@ -87,6 +87,18 @@
           "properties": {
             "id": {
               "type": "string",
+              "enum": ["userBookmarkFolderActivity"]
+            }
+          },
+          "required": ["id"],
+          "additionalProperties": false,
+          "description": "Happens when the user either creates a new bookmark folder or saves a bookmark into a user-created folder. Does not fire for tag operations or while a private window is active."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
               "enum": ["frequentVisits"]
             },
             "params": {
@@ -269,6 +281,10 @@
                 "currentTabsOpen": {
                   "type": "integer",
                   "description": "The number of tabs open in the browser"
+                },
+                "actionSource": {
+                  "type": "string",
+                  "description": "Optional source attribution propagated from a tab marker (tab.smartWindowActionSource). Absent from context when no caller has tagged the tab."
                 }
               }
             }
@@ -445,6 +461,16 @@
             "id": {
               "type": "string",
               "enum": ["pageActionInUrlbar"]
+            },
+            "params": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Hosts to match against the current tab's host"
+            },
+            "patterns": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "URL patterns to match against the current tab's URL"
             }
           },
           "additionalProperties": false,
@@ -539,6 +565,18 @@
           "additionalProperties": false,
           "required": ["id"],
           "description": "Fires on close of the IP Protection Panel"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["ipProtectionBandwidthReset"]
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Fires when the IP protection bandwidth quota resets at the start of a new month"
         },
         {
           "type": "object",

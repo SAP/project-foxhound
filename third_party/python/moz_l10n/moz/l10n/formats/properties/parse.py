@@ -53,7 +53,9 @@ def esc_parse(match: Match[str]) -> str:
 def properties_parse(
     source: bytes | str,
     encoding: str = "utf-8",
+    *,
     parse_message: Callable[[str], Message] | None = None,
+    printf_placeholders: bool = False,
 ) -> Resource[Message]:
     """
     Parse a .properties file into a message resource.
@@ -68,6 +70,14 @@ def properties_parse(
     parser = PropertiesParser(source)
     entries: list[Entry[Message] | Comment] = []
     resource = Resource(Format.properties, [Section((), entries)])
+
+    if printf_placeholders:
+        if parse_message is not None:
+            msg = "Only one of parse_message and printf_placeholders may be set"
+            raise ValueError(msg)
+        parse_message = lambda source: PatternMessage(  # noqa: E731
+            list(parse_printf_pattern(source))
+        )
 
     start_line = 0
     comment = ""

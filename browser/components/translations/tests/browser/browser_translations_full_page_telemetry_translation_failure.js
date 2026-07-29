@@ -118,7 +118,6 @@ add_task(
           to_language: "en",
           auto_translate: false,
           document_language: "es",
-          top_preferred_language: "en-US",
           request_target: "full_page",
         },
       }
@@ -224,7 +223,6 @@ add_task(async function test_translations_telemetry_auto_translation_failure() {
         to_language: "en",
         auto_translate: true,
         document_language: "es",
-        top_preferred_language: "en-US",
         request_target: "full_page",
       },
     }

@@ -12,10 +12,10 @@ import mozilla.components.browser.engine.gecko.GeckoEngine
 import mozilla.components.support.ktx.util.writeString
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.test.assertNotNull
 
 /**
  * The test cases in this class restore actual browsing sessions taken from devices. If a test case
@@ -53,7 +53,7 @@ class RestoringBrowsingSessionsTest {
 
         assertNotNull(state)
 
-        assertEquals(2, state!!.tabs.size)
+        assertEquals(2, state.tabs.size)
         assertEquals("55a0b8ce-d2ef-4a19-b921-5d28fbe6906f", state.selectedTabId)
 
         val tab1 = state.tabs[0]
@@ -100,7 +100,7 @@ class RestoringBrowsingSessionsTest {
 
             assertNotNull(state)
 
-            assertEquals(4, state!!.tabs.size)
+            assertEquals(4, state.tabs.size)
             assertEquals("b1c1b5b1-3fea-4151-be11-e1989ff4e43c", state.selectedTabId)
 
             state.tabs[0].state.apply {
@@ -175,7 +175,7 @@ class RestoringBrowsingSessionsTest {
 
             assertNotNull(state)
 
-            assertEquals(2, state!!.tabs.size)
+            assertEquals(2, state.tabs.size)
             assertEquals("cbea9370-719e-47ef-931b-dee03f15761f", state.selectedTabId)
 
             state.tabs[0].state.apply {
@@ -226,7 +226,7 @@ class RestoringBrowsingSessionsTest {
 
             assertNotNull(state)
 
-            assertEquals(2, state!!.tabs.size)
+            assertEquals(2, state.tabs.size)
             assertEquals("7f4fd2c9-2bb1-4c23-a06c-7fbd2b78922f", state.selectedTabId)
 
             state.tabs[0].state.apply {
@@ -277,7 +277,7 @@ class RestoringBrowsingSessionsTest {
 
             assertNotNull(state)
 
-            assertEquals(2, state!!.tabs.size)
+            assertEquals(2, state.tabs.size)
             assertEquals("7f4fd2c9-2bb1-4c23-a06c-7fbd2b78922f", state.selectedTabId)
 
             state.tabs[0].state.apply {

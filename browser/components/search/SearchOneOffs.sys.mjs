@@ -43,7 +43,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 export class SearchOneOffs {
   constructor(container) {
     this.container = container;
-    this.window = container.ownerGlobal;
+    this.window = container.documentGlobal;
     this.document = container.ownerDocument;
 
     this.container.appendChild(
@@ -180,11 +180,11 @@ export class SearchOneOffs {
     }
     let engineInfo = await this.getEngineInfo();
     let oneOffCount = engineInfo.engines.length;
-    this._engineInfo.willHide =
+    engineInfo.willHide =
       !oneOffCount ||
       (oneOffCount == 1 &&
         engineInfo.engines[0].name == engineInfo.default.name);
-    return this._engineInfo.willHide;
+    return engineInfo.willHide;
   }
 
   /**
@@ -357,21 +357,19 @@ export class SearchOneOffs {
       return this._engineInfo;
     }
 
-    this._engineInfo = {};
+    let defaultEngine;
     if (lazy.PrivateBrowsingUtils.isWindowPrivate(this.window)) {
-      this._engineInfo.default = await lazy.SearchService.getDefaultPrivate();
+      defaultEngine = await lazy.SearchService.getDefaultPrivate();
     } else {
-      this._engineInfo.default = await lazy.SearchService.getDefault();
+      defaultEngine = await lazy.SearchService.getDefault();
     }
 
     let currentEngineNameToIgnore;
     if (!this.getAttribute("includecurrentengine")) {
-      currentEngineNameToIgnore = this._engineInfo.default.name;
+      currentEngineNameToIgnore = defaultEngine.name;
     }
 
-    this._engineInfo.engines = (
-      await lazy.SearchService.getVisibleEngines()
-    ).filter(e => {
+    let engines = (await lazy.SearchService.getVisibleEngines()).filter(e => {
       let name = e.name;
       return (
         (!currentEngineNameToIgnore || name != currentEngineNameToIgnore) &&
@@ -379,6 +377,7 @@ export class SearchOneOffs {
       );
     });
 
+    this._engineInfo = { default: defaultEngine, engines };
     return this._engineInfo;
   }
 

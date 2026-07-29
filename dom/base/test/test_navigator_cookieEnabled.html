@@ -15,7 +15,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1753586
 
   const BEHAVIOR_REJECT = 2;
   const BEHAVIOR_REJECT_TRACKER = 4;
-  const BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN = 5;
+  const BEHAVIOR_PARTITION_FOREIGN = 5;
 
   function behavior_to_string(behavior) {
     switch (behavior) {
@@ -23,8 +23,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1753586
         return "BEHAVIOR_REJECT";
         case BEHAVIOR_REJECT_TRACKER:
         return "BEHAVIOR_REJECT_TRACKER";
-        case BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN:
-          return "BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN";
+        case BEHAVIOR_PARTITION_FOREIGN:
+          return "BEHAVIOR_PARTITION_FOREIGN";
         default:
           throw new Error("unreachable");
     }
@@ -34,7 +34,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1753586
     { cookieBehavior: BEHAVIOR_REJECT, expect: false },
     { cookieBehavior: BEHAVIOR_REJECT_TRACKER, expect: true },
     {
-      cookieBehavior: BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+      cookieBehavior: BEHAVIOR_PARTITION_FOREIGN,
       expect: true,
     },
   ];

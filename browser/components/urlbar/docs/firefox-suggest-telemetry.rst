@@ -19,9 +19,7 @@ Firefox, see the toolkit :doc:`/toolkit/components/telemetry/index` document.
 Histograms
 ----------
 
-The following histograms are recorded for Firefox Suggest. For general
-information on histogram telemetry in Firefox, see the
-:doc:`/toolkit/components/telemetry/collection/histograms` document.
+The following histograms were once recorded for Firefox Suggest.
 
 FX_URLBAR_MERINO_LATENCY_MS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -157,9 +155,7 @@ Changelog
 Scalars
 -------
 
-The following scalars are recorded for Firefox Suggest. For general information
-on scalar telemetry in Firefox, see the
-:doc:`/toolkit/components/telemetry/collection/scalars` document.
+The following scalars are recorded for Firefox Suggest.
 
 browser.ui.interaction.preferences_paneSearch
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -923,9 +919,7 @@ Events
 ------
 
 The following Firefox Suggest events are recorded in the
-``contextservices.quicksuggest`` category. For general information on event
-telemetry in Firefox, see the
-:doc:`/toolkit/components/telemetry/collection/events` document.
+``contextservices.quicksuggest`` category.
 
 contextservices.quicksuggest.data_collect_toggled
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

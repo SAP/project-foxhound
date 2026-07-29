@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,7 @@
 #include "CookieStoreNotificationWatcher.h"
 
 #include "mozilla/Services.h"
+#include "mozilla/UniquePtrExtensions.h"
 #include "nsICookie.h"
 #include "nsICookieNotification.h"
 #include "nsIObserverService.h"
@@ -48,8 +47,8 @@ CookieStoreNotificationWatcher::Observe(nsISupports* aSubject,
   nsCOMPtr<nsICookieNotification> notification = do_QueryInterface(aSubject);
   NS_ENSURE_TRUE(notification, NS_ERROR_FAILURE);
 
-  nsID* operationID = nullptr;
-  nsresult rv = notification->GetOperationID(&operationID);
+  UniqueFreePtr<nsID> operationID;
+  nsresult rv = notification->GetOperationID(TempPtrToSetter(&operationID));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return NS_OK;
   }

@@ -54,6 +54,7 @@ legacy.telemetry:
       - 'captcha-detection'
       - 'health'
       - 'addons'
+      - 'new-profile'
 
   profile_group_id:
     type: uuid
@@ -1177,7 +1178,6 @@ browser.timings:
       - florian@mozilla.com
     expires: never
     unit: ms
-    telemetry_mirror: BROWSER_TIMINGS_LAST_SHUTDOWN
 
 onboarding_opt_out:
   # The `onboarding-opt-out` ping does not include any info sections, and

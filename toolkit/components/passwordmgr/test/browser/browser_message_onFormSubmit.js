@@ -28,7 +28,7 @@ add_task(async function test_login_save_disable() {
         "passwordmgr/test/browser/form_basic.html",
     },
     async function (browser) {
-      await SimpleTest.promiseFocus(browser.ownerGlobal);
+      await SimpleTest.promiseFocus(browser.documentGlobal);
       await changeContentFormValues(browser, {
         "#form-basic-username": "username",
         "#form-basic-password": "password",
@@ -59,7 +59,7 @@ add_task(async function test_login_save_enable() {
         "passwordmgr/test/browser/form_basic.html",
     },
     async function (browser) {
-      await SimpleTest.promiseFocus(browser.ownerGlobal);
+      await SimpleTest.promiseFocus(browser.documentGlobal);
 
       await changeContentFormValues(browser, {
         "#form-basic-username": "username",

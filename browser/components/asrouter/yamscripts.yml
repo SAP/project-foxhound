@@ -7,6 +7,7 @@ scripts:
   # bundle: Build all assets for ASRouter
   bundle:
     admin: webpack-cli --config webpack.asrouter-admin.config.js
+    multistage: webpack-cli --config webpack.asrouter-newtab-multistage.config.js
     css: sass content-src:content --no-source-map
 
   # watchmc:  Automatically rebuild when files are changed. NOTE: Includes sourcemaps, do not use for profiling/perf testing.

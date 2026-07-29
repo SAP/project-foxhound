@@ -1,0 +1,21 @@
+{
+  "label": "bankmandiri.co.id",
+  "bugs": {
+    "1899059": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.bankmandiri.co.id/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome"]
+    },
+    {
+      "platforms": ["android"],
+      "content_scripts": {
+        "js": ["define_minimal_window_chrome.js"]
+      }
+    }
+  ]
+}

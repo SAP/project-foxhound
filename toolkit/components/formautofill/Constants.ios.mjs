@@ -39,7 +39,7 @@ const IOS_DEFAULT_PREFERENCES = {
 };
 
 // Used Mimic the behavior of .getAutocompleteInfo()
-// List from: https://searchfox.org/mozilla-central/source/dom/base/AutocompleteFieldList.h#89-149
+// List from: https://searchfox.org/firefox-main/source/dom/base/AutocompleteFieldList.h#89-149
 // Also found here: https://developer.mozilla.org/en-US/docs/Web/HTML/Attributes/autocomplete
 const VALID_AUTOCOMPLETE_FIELDS = [
   "off",

@@ -1,0 +1,27 @@
+---
+root:
+  items:
+    -
+      type: "stacking-context"
+      transform: rotate-y(1)
+      transform-style: preserve-3d
+      items:
+        -
+          type: "stacking-context"
+          transform: translate(100, 100, 0)
+          transform-style: preserve-3d
+          items:
+            -
+              type: "stacking-context"
+              transform: rotate-x(60)
+              transform-style: preserve-3d
+              items:
+                -
+                  type: "stacking-context"
+                  transform: translate(0, 0, 200)
+                  transform-style: preserve-3d
+                  items:
+                    -
+                      bounds: [0, 0, 150, 150]
+                      type: rect
+                      color: green

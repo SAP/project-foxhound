@@ -9,6 +9,34 @@ newtab-page-title = Tab Barô
 newtab-settings-button =
     .title = Peuseusuwai Ôn Tab Barô droëneuh
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Tab barô
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label = { $num } baréh
+home-restore-defaults-srd =
+    .label = Peubalek Baku
+    .accesskey = P
+home-mode-choice-custom-srd =
+    .label = Atô URL...
+home-mode-choice-blank-srd =
+    .label = Laman sôh
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Kisah-kisah nyang diseuponsor
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Ônwèb nyang Disaweuë
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Peutanda
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Donlod Paléng Barô
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +44,7 @@ newtab-search-box-search-button =
     .title = Mita
     .aria-label = Mita
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Tamah Meusén Mita
 newtab-topsites-edit-topsites-header = Ubah Situih Paléng Ateuëh

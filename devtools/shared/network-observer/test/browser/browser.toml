@@ -8,6 +8,7 @@ support-files = [
   "doc_network-observer.html",
   "doc_network-observer.html^headers^",
   "gzipped.sjs",
+  "local-mode/*",
   "override.html",
   "override.js",
   "override_script_src_self.html",
@@ -21,6 +22,7 @@ support-files = [
 
 ["browser_networkobserver_auth_listener.js"]
 skip-if = [
+  "asan", # Disabled for frequent leaks.
   "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && debug", # Disabled for frequent leaks in Bug 1873571.
 ]
 
@@ -38,11 +40,13 @@ skip-if = [
 
 ["browser_networkobserver_invalid_constructor.js"]
 
+["browser_networkobserver_localMode.js"]
+
 ["browser_networkobserver_override.js"]
 
 ["browser_networkobserver_response_body_limit.js"]
 
 ["browser_networkobserver_serviceworker.js"]
-fail-if = [
+skip-if = [
   "true", # Disabled until Bug 1267119 and Bug 1246289
 ]

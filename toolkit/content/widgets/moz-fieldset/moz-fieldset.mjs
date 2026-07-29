@@ -29,6 +29,7 @@ const HEADING_LEVEL_TEMPLATES = {
  * @property {number} headingLevel - Render the legend in a heading of this level.
  * @property {boolean} disabled - Whether the fieldset and its children are disabled.
  * @property {string} iconSrc - The src for an optional icon.
+ * @property {"beta" | "new" | undefined} badge - Include a badge of this type with matching text.
  */
 export default class MozFieldset extends MozLitElement {
   static properties = {
@@ -40,6 +41,7 @@ export default class MozFieldset extends MozLitElement {
     headingLevel: { type: Number },
     disabled: { type: Boolean, reflect: true },
     iconSrc: { type: String },
+    badge: { type: String },
   };
 
   constructor() {
@@ -62,6 +64,9 @@ export default class MozFieldset extends MozLitElement {
 
     /**@type {string | undefined} */
     this.supportPage = undefined;
+
+    /**@type {"beta" | "new" | undefined} */
+    this.badge = undefined;
   }
 
   updated(changedProperties) {
@@ -128,7 +133,9 @@ export default class MozFieldset extends MozLitElement {
   legendTemplate() {
     let label =
       HEADING_LEVEL_TEMPLATES[this.headingLevel]?.(this.label) || this.label;
-    return html`<legend part="label">${this.iconTemplate()}${label}</legend>`;
+    return html`<legend part="label">
+      ${this.iconTemplate()}${label}${this.badgeTemplate()}
+    </legend>`;
   }
 
   iconTemplate() {
@@ -146,6 +153,13 @@ export default class MozFieldset extends MozLitElement {
         "text-box-trim-start": this.headingLevel >= 1 && this.headingLevel <= 3,
       })}
     />`;
+  }
+
+  badgeTemplate() {
+    if (!this.badge) {
+      return "";
+    }
+    return html`<moz-badge type=${this.badge}></moz-badge>`;
   }
 
   render() {

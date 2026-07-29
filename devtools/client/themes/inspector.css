@@ -44,6 +44,7 @@ window {
 
   /* the panel is not visible at first… */
   visibility: hidden;
+
   /* … only when it's being initialized */
   &.initialized {
     visibility: visible;
@@ -122,11 +123,11 @@ window {
 }
 
 #inspector-searchnavigation-button-prev::before {
-  background-image: url("chrome://devtools/content/debugger/images/arrow-up.svg");
+  background-image: url("chrome://devtools/content/shared/components/images/arrow-up.svg");
 }
 
 #inspector-searchnavigation-button-next::before {
-  background-image: url("chrome://devtools/content/debugger/images/arrow-down.svg");
+  background-image: url("chrome://devtools/content/shared/components/images/arrow-down.svg");
 }
 
 #inspector-searchlabel {

@@ -322,7 +322,7 @@ var Harness = {
           let popupnotificationID =
             event.view.PanelUI._getPopupId(notification);
           let popupnotification =
-            event.target.ownerGlobal.document.getElementById(
+            event.target.documentGlobal.document.getElementById(
               popupnotificationID
             );
           popupnotification?.button.click();

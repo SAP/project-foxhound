@@ -33,6 +33,7 @@ dependencies {
     testImplementation project(':components:support-test-fakes')
 
     testImplementation libs.androidx.test.junit
+    testImplementation libs.kotlin.test
     testImplementation libs.kotlinx.coroutines.test
     testImplementation libs.robolectric
 }

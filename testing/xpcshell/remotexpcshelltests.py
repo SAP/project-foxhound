@@ -625,6 +625,7 @@ class XPCShellRemote(xpcshell.XPCShellTests):
             "OCSPStaplingServer",
             "GenerateOCSPResponse",
             "SanctionsTestServer",
+            "ZeroRttAcceptServer",
         ]
         for fname in binaries:
             local = os.path.join(self.localBin, fname)

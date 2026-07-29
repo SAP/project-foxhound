@@ -15,8 +15,9 @@ namespace mozilla {
     return;                   \
   }
 
-#define LOG(msg, ...) \
-  EME_LOG("WMFCDMProxyCallback[%p]@%s: " msg, this, __func__, ##__VA_ARGS__)
+#define LOG(msg, ...)                                                   \
+  EME_LOG("WMFCDMProxyCallback[{}]@{}: " msg, fmt::ptr(this), __func__, \
+          ##__VA_ARGS__)
 
 WMFCDMProxyCallback::WMFCDMProxyCallback(WMFCDMProxy* aProxy) : mProxy(aProxy) {
   MOZ_ASSERT(NS_IsMainThread());
@@ -49,7 +50,7 @@ void WMFCDMProxyCallback::OnSessionKeyStatusesChange(
                 keyInfo.keyId(), keyStatuses.sessionId(),
                 dom::Optional<dom::MediaKeyStatus>(keyInfo.status()));
             keyStatusesChange |= statusChanged;
-            LOG("Session ID: %s, Key ID: %s, Status changed: %s",
+            LOG("Session ID: {}, Key ID: {}, Status changed: {}",
                 NS_ConvertUTF16toUTF8(keyStatuses.sessionId()).get(),
                 ToHexString(keyInfo.keyId()).get(),
                 statusChanged ? "true" : "false");

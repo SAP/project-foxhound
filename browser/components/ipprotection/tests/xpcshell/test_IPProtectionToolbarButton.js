@@ -91,13 +91,57 @@ add_task(function test_update_icon_status() {
     "Toolbaritem classlist should not include ipprotection-excluded"
   );
 
+  // IP Protection network error
+  // isNetworkError should take priority over active status
+  fakeToolbarButton.updateIconStatus(fakeToolbarItem, {
+    isActive: true,
+    isError: false,
+    isNetworkError: true,
+    isExcluded: false,
+  });
+
+  Assert.ok(
+    fakeToolbarItem.classList.contains("ipprotection-network-error"),
+    "Toolbaritem classlist should include ipprotection-network-error"
+  );
+  Assert.ok(
+    !fakeToolbarItem.classList.contains("ipprotection-error"),
+    "Toolbaritem classlist should not include ipprotection-error"
+  );
+  Assert.ok(
+    !fakeToolbarItem.classList.contains("ipprotection-on"),
+    "Toolbaritem classlist should not include ipprotection-on"
+  );
+
+  // Network error takes priority over generic error
+  fakeToolbarButton.updateIconStatus(fakeToolbarItem, {
+    isActive: false,
+    isError: true,
+    isNetworkError: true,
+    isExcluded: false,
+  });
+
+  Assert.ok(
+    fakeToolbarItem.classList.contains("ipprotection-network-error"),
+    "Toolbaritem classlist should include ipprotection-network-error"
+  );
+  Assert.ok(
+    !fakeToolbarItem.classList.contains("ipprotection-error"),
+    "Toolbaritem classlist should not include ipprotection-error when network error"
+  );
+
   // IP Protection is off
   fakeToolbarButton.updateIconStatus(fakeToolbarItem, {
     isActive: false,
     isError: false,
+    isNetworkError: false,
     isExcluded: false,
   });
 
+  Assert.ok(
+    !fakeToolbarItem.classList.contains("ipprotection-network-error"),
+    "Toolbaritem classlist should not include ipprotection-network-error"
+  );
   Assert.ok(
     !fakeToolbarItem.classList.contains("ipprotection-error"),
     "Toolbaritem classlist should not include ipprotection-error"

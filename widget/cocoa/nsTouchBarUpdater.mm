@@ -50,6 +50,7 @@ nsTouchBarUpdater::UpdateTouchBarInputs(
       TouchBarInput* convertedInput =
           [[TouchBarInput alloc] initWithXPCOM:input];
       [(nsTouchBar*)cocoaWin.touchBar updateItem:convertedInput];
+      [convertedInput release];
     }
   }
 

@@ -47,3 +47,6 @@ support-files = [
 ["test_toolbarbutton_ctrl_click.xhtml"]
 
 ["test_windowminmaxsize.xhtml"]
+skip-if = [
+  "os == 'linux' && display == 'x11' && opt && standalone", # Bug 2026600
+]

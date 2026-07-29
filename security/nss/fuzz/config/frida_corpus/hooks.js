@@ -21,6 +21,42 @@ if (DebugSymbol.findFunctionsNamed("SEC_ASN1DecodeItem_Util").length) {
   });
 }
 
+// --- dsau ---
+
+if (DebugSymbol.findFunctionsNamed("DSAU_DecodeDerSig").length) {
+  console.log("Attaching `DSAU_DecodeDerSig` interceptor...");
+  Interceptor.attach(DebugSymbol.fromName("DSAU_DecodeDerSig").address, {
+    onEnter: function (args) {
+      const secItem = args[0]; // { type(8), data(8), len(4) }
+
+      const len = secItem.add(8).add(8).readUInt();
+      const buf = secItem.add(8).readByteArray(len);
+
+      send({
+        func: "DSAU_DecodeDerSig",
+        data: new Uint8Array(buf),
+      });
+    },
+  });
+}
+
+if (DebugSymbol.findFunctionsNamed("DSAU_DecodeDerSigToLen").length) {
+  console.log("Attaching `DSAU_DecodeDerSigToLen` interceptor...");
+  Interceptor.attach(DebugSymbol.fromName("DSAU_DecodeDerSigToLen").address, {
+    onEnter: function (args) {
+      const secItem = args[0]; // { type(8), data(8), len(4) }
+
+      const len = secItem.add(8).add(8).readUInt();
+      const buf = secItem.add(8).readByteArray(len);
+
+      send({
+        func: "DSAU_DecodeDerSigToLen",
+        data: new Uint8Array(buf),
+      });
+    },
+  });
+}
+
 // --- certDN ---
 
 if (DebugSymbol.findFunctionsNamed("CERT_AsciiToName").length) {
@@ -144,6 +180,43 @@ if (DebugSymbol.findFunctionsNamed("NSS_CMSDecoder_Update").length) {
       const buf = args[1].readByteArray(len);
 
       send({ func: "NSS_CMSDecoder_Update", data: new Uint8Array(buf) });
+    },
+  });
+}
+
+// --- ec-derive ---
+
+if (DebugSymbol.findFunctionsNamed("PK11_PubDeriveWithKDF").length) {
+  console.log("Attaching `PK11_PubDeriveWithKDF` interceptor...");
+  Interceptor.attach(DebugSymbol.fromName("PK11_PubDeriveWithKDF").address, {
+    onEnter: function (args) {
+      // { arena(8), keyType(4), padding(4),
+      //   pkcs11Slot(8), pkcs11ID(8), u(296) }
+      const pubKey = args[1];
+
+      // Check that keyType is ecKey = 6.
+      const keyType = pubKey.add(8).readU32();
+      if (keyType !== 6) {
+        return;
+      }
+
+      // { DEREncodedParams(24), size(4), padding(4),
+      //   publicValue(24), encoding(4), padding(4) }
+      const u = pubKey.add(32);
+      const paramData = u.add(8).readPointer();
+      const paramLen = u.add(16).readUInt();
+      const pubData = u.add(40).readPointer();
+      const pubLen = u.add(48).readUInt();
+
+      if (paramLen === 0 || pubLen === 0) {
+        return;
+      }
+
+      const blob = new Uint8Array(paramLen + pubLen);
+      blob.set(new Uint8Array(paramData.readByteArray(paramLen)), 0);
+      blob.set(new Uint8Array(pubData.readByteArray(pubLen)), paramLen);
+
+      send({ func: "PK11_PubDeriveWithKDF", data: blob });
     },
   });
 }

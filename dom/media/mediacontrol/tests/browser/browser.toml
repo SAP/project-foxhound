@@ -1,12 +1,19 @@
 [DEFAULT]
 subsuite = "media-bc"
 tags = "mediacontrol"
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug", # Bug 2034604 - GMP async shutdown crash
+]
 support-files = [
   "file_autoplay.html",
   "file_audio_and_inaudible_media.html",
+  "file_audiocontext_iframe.html",
+  "file_audiosessiontype_audible.html",
+  "file_audiosessiontype_iframe.html",
   "file_empty_title.html",
   "file_error_media.html",
   "file_iframe_media.html",
+  "file_named_media_session.html",
   "file_main_frame_with_multiple_child_session_frames.html",
   "file_multiple_audible_media.html",
   "file_muted_autoplay.html",
@@ -14,6 +21,9 @@ support-files = [
   "file_non_autoplay.html",
   "file_non_eligible_media.html",
   "file_non_looping_media.html",
+  "file_speech_iframe.html",
+  "file_web_audio.html",
+  "file_web_speech.html",
   "head.js",
   "../../../test/gizmo.mp4",
   "../../../test/gizmo-noaudio.webm",
@@ -22,10 +32,22 @@ support-files = [
   "../../../../../toolkit/content/tests/browser/silentAudioTrack.webm",
 ]
 
+["browser_audiblechange_event.js"]
+
 ["browser_audio_focus_management.js"]
 skip-if = [
   "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1866742
 ]
+
+["browser_audiosession_state_transitions.js"]
+
+["browser_audiosessiontype_compute.js"]
+
+["browser_audiosessiontype_iframe.js"]
+
+["browser_audiosessiontype_navigation.js"]
+
+["browser_audiosessiontype_override.js"]
 
 ["browser_control_page_with_audible_and_inaudible_media.js"]
 
@@ -89,3 +111,7 @@ skip-if = [
 ["browser_stop_control_after_media_reaches_to_end.js"]
 
 ["browser_suspend_inactive_tab.js"]
+
+["browser_uncontrollable_audio_focus.js"]
+
+["browser_uncontrollable_iframe_preserves_active_session.js"]

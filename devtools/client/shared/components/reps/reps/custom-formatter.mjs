@@ -8,7 +8,6 @@ import PropTypes from "resource://devtools/client/shared/vendor/react-prop-types
 import {
   Component,
   createElement,
-  createFactory,
 } from "resource://devtools/client/shared/vendor/react.mjs";
 
 import { cleanupStyle } from "./rep-utils.mjs";
@@ -255,7 +254,8 @@ function supportsObject(grip) {
   return grip?.useCustomFormatter === true && Array.isArray(grip?.header);
 }
 
-const rep = createFactory(CustomFormatter);
+// Don't use createFactory as it's being deprecated
+const rep = (...args) => createElement(CustomFormatter, ...args);
 
 // Exports from this module
 export { rep, supportsObject };

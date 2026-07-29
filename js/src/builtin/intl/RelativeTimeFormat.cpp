@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -10,6 +8,7 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/intl/RelativeTimeFormat.h"
+#include "mozilla/UsingEnum.h"
 
 #include "builtin/intl/CommonFunctions.h"
 #include "builtin/intl/FormatBuffer.h"
@@ -18,7 +17,6 @@
 #include "builtin/intl/NumberFormat.h"
 #include "builtin/intl/Packed.h"
 #include "builtin/intl/ParameterNegotiation.h"
-#include "builtin/intl/UsingEnum.h"
 #include "gc/GCContext.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/Printer.h"
@@ -36,16 +34,7 @@ using namespace js::intl;
 /**************** RelativeTimeFormat *****************/
 
 const JSClassOps RelativeTimeFormatObject::classOps_ = {
-    nullptr,                             // addProperty
-    nullptr,                             // delProperty
-    nullptr,                             // enumerate
-    nullptr,                             // newEnumerate
-    nullptr,                             // resolve
-    nullptr,                             // mayResolve
-    RelativeTimeFormatObject::finalize,  // finalize
-    nullptr,                             // call
-    nullptr,                             // construct
-    nullptr,                             // trace
+    .finalize = RelativeTimeFormatObject::finalize,
 };
 
 const JSClass RelativeTimeFormatObject::class_ = {
@@ -160,11 +149,7 @@ void js::intl::RelativeTimeFormatObject::setOptions(
 
 static constexpr std::string_view RelativeTimeStyleToString(
     RelativeTimeFormatOptions::Style style) {
-#ifndef USING_ENUM
-  using enum RelativeTimeFormatOptions::Style;
-#else
-  USING_ENUM(RelativeTimeFormatOptions::Style, Long, Short, Narrow);
-#endif
+  MOZ_USING_ENUM(RelativeTimeFormatOptions::Style, Long, Short, Narrow);
   switch (style) {
     case Long:
       return "long";
@@ -178,11 +163,7 @@ static constexpr std::string_view RelativeTimeStyleToString(
 
 static constexpr std::string_view NumericToString(
     RelativeTimeFormatOptions::Numeric numeric) {
-#ifndef USING_ENUM
-  using enum RelativeTimeFormatOptions::Numeric;
-#else
-  USING_ENUM(RelativeTimeFormatOptions::Numeric, Always, Auto);
-#endif
+  MOZ_USING_ENUM(RelativeTimeFormatOptions::Numeric, Always, Auto);
   switch (numeric) {
     case Always:
       return "always";
@@ -220,17 +201,11 @@ static bool RelativeTimeFormat(JSContext* cx, unsigned argc, Value* vp) {
   // Step 3. (Inlined ResolveOptions)
 
   // ResolveOptions, step 1.
-  Rooted<LocalesList> requestedLocales(cx, cx);
-  if (!CanonicalizeLocaleList(cx, args.get(0), &requestedLocales)) {
+  auto* requestedLocales = CanonicalizeLocaleList(cx, args.get(0));
+  if (!requestedLocales) {
     return false;
   }
-
-  Rooted<ArrayObject*> requestedLocalesArray(
-      cx, LocalesListToArray(cx, requestedLocales));
-  if (!requestedLocalesArray) {
-    return false;
-  }
-  relativeTimeFormat->setRequestedLocales(requestedLocalesArray);
+  relativeTimeFormat->setRequestedLocales(requestedLocales);
 
   RelativeTimeFormatOptions rtfOptions{};
 
@@ -358,13 +333,31 @@ static bool ResolveLocale(
   }
   relativeTimeFormat->setLocale(locale);
 
-  auto nu = resolved.extension(UnicodeExtensionKey::NumberingSystem);
-  MOZ_ASSERT(nu, "resolved numbering system is non-null");
-  relativeTimeFormat->setNumberingSystem(nu);
+  if (auto nu = resolved.extension(UnicodeExtensionKey::NumberingSystem)) {
+    relativeTimeFormat->setNumberingSystem(nu);
+  } else {
+    relativeTimeFormat->setNumberingSystem(cx->names().default_);
+  }
 
   MOZ_ASSERT(relativeTimeFormat->isLocaleResolved(),
              "locale successfully resolved");
   return true;
+}
+
+static JSLinearString* ResolveNumberingSystem(
+    JSContext* cx, Handle<RelativeTimeFormatObject*> relativeTimeFormat) {
+  MOZ_ASSERT(relativeTimeFormat->isLocaleResolved());
+
+  auto* numberingSystem = relativeTimeFormat->getNumberingSystem();
+  if (numberingSystem == cx->names().default_) {
+    numberingSystem =
+        DefaultNumberingSystem(cx, relativeTimeFormat->getLocale());
+    if (!numberingSystem) {
+      return nullptr;
+    }
+    relativeTimeFormat->setNumberingSystem(numberingSystem);
+  }
+  return numberingSystem;
 }
 
 /**
@@ -379,10 +372,17 @@ static mozilla::intl::RelativeTimeFormat* NewRelativeTimeFormatter(
   auto rtfOptions = relativeTimeFormat->getOptions();
 
   // ICU expects numberingSystem as a Unicode locale extensions on locale.
+  //
+  // We don't add any Unicode extension keywords when the default values can be
+  // used, because ICU optimizes for this case.
 
   JS::RootedVector<UnicodeExtensionKeyword> keywords(cx);
-  if (!keywords.emplaceBack("nu", relativeTimeFormat->getNumberingSystem())) {
-    return nullptr;
+
+  auto* numberingSystem = relativeTimeFormat->getNumberingSystem();
+  if (numberingSystem != cx->names().default_) {
+    if (!keywords.emplaceBack("nu", numberingSystem)) {
+      return nullptr;
+    }
   }
 
   Rooted<JSLinearString*> localeStr(cx, relativeTimeFormat->getLocale());
@@ -475,13 +475,8 @@ static bool SingularRelativeTimeUnit(
 
 static auto ToNumberFormatUnit(
     mozilla::intl::RelativeTimeFormat::FormatUnit unit) {
-#ifndef USING_ENUM
-  using enum mozilla::intl::RelativeTimeFormat::FormatUnit;
-#else
-  USING_ENUM(mozilla::intl::RelativeTimeFormat::FormatUnit, Second, Minute,
-             Hour, Day, Week, Month, Quarter, Year);
-#endif
-
+  MOZ_USING_ENUM(mozilla::intl::RelativeTimeFormat::FormatUnit, Second, Minute,
+                 Hour, Day, Week, Month, Quarter, Year);
   switch (unit) {
     case Second:
       return NumberFormatUnit::Second;
@@ -685,9 +680,12 @@ static bool relativeTimeFormat_resolvedOptions(JSContext* cx,
     return false;
   }
 
-  if (!options.emplaceBack(
-          NameToId(cx->names().numberingSystem),
-          StringValue(relativeTimeFormat->getNumberingSystem()))) {
+  auto* numberingSystem = ResolveNumberingSystem(cx, relativeTimeFormat);
+  if (!numberingSystem) {
+    return false;
+  }
+  if (!options.emplaceBack(NameToId(cx->names().numberingSystem),
+                           StringValue(numberingSystem))) {
     return false;
   }
 

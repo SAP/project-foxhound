@@ -6,7 +6,7 @@ package org.mozilla.fenix.settings.doh
 
 import androidx.navigation.NavController
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import mozilla.components.support.test.mock
+import io.mockk.mockk
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -30,13 +30,13 @@ class DohSettingsStoreIntegrationTest {
 
     @Before
     fun setUp() {
-        navController = mock()
+        navController = mockk(relaxed = true)
 
         middleware = DohSettingsMiddleware(
             getNavController = { navController },
             getSettingsProvider = { settingsProvider },
-            getHomeActivity = { mock() },
-            exitDohSettings = { mock() },
+            openUrlInBrowser = { },
+            exitDohSettings = { },
         )
     }
 

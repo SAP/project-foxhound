@@ -27,10 +27,13 @@ add_task(async function test_recover_regular_profile_no_storeID_in_prefs() {
     PathUtils.tempDir,
     "PreferencesBackupResource-dest-regular-test"
   );
+  // Emulate profiles being disabled
+  Services.prefs.setBoolPref("browser.profiles.enabled", false);
+  Services.prefs.setBoolPref("browser.profiles.created", false);
 
   await createTestFiles(recoveryPath, [{ path: "prefs.js" }]);
 
-  sandbox.stub(lazy.SelectableProfileService, "currentProfile").value(null);
+  sandbox.stub(lazy.SelectableProfileService, "isEnabled").value(false);
 
   let postRecoveryEntry = await preferencesBackupResource.recover(
     { profilePath: "/some/original/path" },
@@ -44,12 +47,23 @@ add_task(async function test_recover_regular_profile_no_storeID_in_prefs() {
     PathUtils.join(destProfilePath, "prefs.js")
   );
   Assert.ok(
-    !prefsContent.includes(STORE_ID_PREF),
-    "prefs.js should not contain storeID when recovering into a regular profile"
+    prefsContent.includes('user_pref("browser.profiles.enabled", false);'),
+    "prefs.js should reset browser.profiles.enabled to false"
+  );
+  Assert.ok(
+    prefsContent.includes('user_pref("browser.profiles.created", false);'),
+    "prefs.js should reset browser.profiles.created to false"
+  );
+  Assert.ok(
+    prefsContent.includes('user_pref("toolkit.profiles.storeID", "");'),
+    "prefs.js should reset storeID to empty string"
   );
 
   await maybeRemovePath(recoveryPath);
   await maybeRemovePath(destProfilePath);
+  Services.prefs.clearUserPref("browser.profiles.enabled");
+  Services.prefs.clearUserPref("browser.profiles.created");
+
   sandbox.restore();
 });
 
@@ -70,6 +84,7 @@ add_task(async function test_recover_into_selectable_profile_writes_storeID() {
 
   const TEST_STORE_ID = "test-store-id-12345";
 
+  sandbox.stub(lazy.SelectableProfileService, "isEnabled").value(true);
   sandbox
     .stub(lazy.SelectableProfileService, "currentProfile")
     .value({ id: 1 });
@@ -139,6 +154,7 @@ add_task(async function test_recover_overwrites_stale_selectable_prefs() {
       `user_pref("some.user.pref", "user-value");\n`
   );
 
+  sandbox.stub(lazy.SelectableProfileService, "isEnabled").value(true);
   sandbox
     .stub(lazy.SelectableProfileService, "currentProfile")
     .value({ id: 1 });
@@ -263,6 +279,7 @@ add_task(async function test_recover_data_collection_prefs_most_restrictive() {
       `user_pref("app.shield.optoutstudies.enabled", true);\n`
   );
 
+  sandbox.stub(lazy.SelectableProfileService, "isEnabled").value(true);
   sandbox
     .stub(lazy.SelectableProfileService, "currentProfile")
     .value({ id: 1 });
@@ -328,3 +345,97 @@ add_task(async function test_recover_data_collection_prefs_most_restrictive() {
   await maybeRemovePath(destProfilePath);
   sandbox.restore();
 });
+
+add_task(
+  async function test_recover_non_selectable_overwrites_stale_selectable_prefs() {
+    let sandbox = sinon.createSandbox();
+    let preferencesBackupResource = new PreferencesBackupResource();
+
+    let recoveryPath = await IOUtils.createUniqueDirectory(
+      PathUtils.tempDir,
+      "PreferencesBackupResource-recover-non-selectable-stale-test"
+    );
+    let destProfilePath = await IOUtils.createUniqueDirectory(
+      PathUtils.tempDir,
+      "PreferencesBackupResource-dest-non-selectable-stale-test"
+    );
+
+    const STALE_STORE_ID = "stale-selectable-store-id";
+
+    await IOUtils.writeUTF8(
+      PathUtils.join(recoveryPath, "prefs.js"),
+      `user_pref("${STORE_ID_PREF}", "${STALE_STORE_ID}");\n` +
+        `user_pref("browser.profiles.enabled", true);\n` +
+        `user_pref("browser.profiles.created", true);\n` +
+        `user_pref("datareporting.dau.cachedUsageProfileGroupID", "stale-group-id");\n` +
+        `user_pref("some.user.pref", "user-value");\n`
+    );
+
+    // Emulate profiles being disabled
+    Services.prefs.setBoolPref("browser.profiles.enabled", false);
+    Services.prefs.setBoolPref("browser.profiles.created", false);
+
+    sandbox.stub(lazy.SelectableProfileService, "isEnabled").value(false);
+    sandbox.stub(lazy.SelectableProfileService, "currentProfile").value(null);
+
+    await preferencesBackupResource.recover(
+      { profilePath: "/some/original/path" },
+      recoveryPath,
+      destProfilePath
+    );
+
+    let prefsContent = await IOUtils.readUTF8(
+      PathUtils.join(destProfilePath, "prefs.js")
+    );
+
+    Assert.ok(
+      prefsContent.includes('user_pref("some.user.pref", "user-value");'),
+      "User prefs from backup should be preserved"
+    );
+
+    let staleStoreIndex = prefsContent.indexOf(
+      `user_pref("${STORE_ID_PREF}", "${STALE_STORE_ID}");`
+    );
+    let resetStoreIndex = prefsContent.indexOf(
+      `user_pref("${STORE_ID_PREF}", "");`
+    );
+    Assert.greater(
+      resetStoreIndex,
+      staleStoreIndex,
+      "Reset storeID should appear after the stale one so it takes precedence"
+    );
+
+    let staleEnabledIndex = prefsContent.indexOf(
+      'user_pref("browser.profiles.enabled", true);'
+    );
+    let resetEnabledIndex = prefsContent.indexOf(
+      'user_pref("browser.profiles.enabled", false);'
+    );
+    Assert.greater(
+      resetEnabledIndex,
+      staleEnabledIndex,
+      "Reset browser.profiles.enabled should appear after the stale one"
+    );
+
+    let staleCreatedIndex = prefsContent.indexOf(
+      'user_pref("browser.profiles.created", true);'
+    );
+    let resetCreatedIndex = prefsContent.indexOf(
+      'user_pref("browser.profiles.created", false);'
+    );
+    Assert.greater(
+      resetCreatedIndex,
+      staleCreatedIndex,
+      "Reset browser.profiles.created should appear after the stale one"
+    );
+
+    await maybeRemovePath(recoveryPath);
+    await maybeRemovePath(destProfilePath);
+
+    // Emulate profiles being disabled
+    Services.prefs.clearUserPref("browser.profiles.enabled");
+    Services.prefs.clearUserPref("browser.profiles.created");
+
+    sandbox.restore();
+  }
+);

@@ -139,7 +139,7 @@ test-info-xpcshell-timings-periodic:
         job-name: test-info-xpcshell-timings
     worker:
         docker-image: {in-tree: debian12-amd64-build}
-        max-run-time: 5400
+        max-run-time: 7200
         env:
             MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: system
     run-on-projects: []
@@ -186,7 +186,7 @@ test-info-mochitest-timings-periodic:
         job-name: test-info-mochitest-timings
     worker:
         docker-image: {in-tree: debian12-amd64-build}
-        max-run-time: 5400
+        max-run-time: 7200
         env:
             MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: system
     run-on-projects: []
@@ -248,3 +248,28 @@ test-info-manifest-timings-periodic:
             source taskcluster/scripts/misc/source-test-common.sh &&
             ./mach test-info manifest-timings --output-dir /builds/worker/artifacts/ &&
             python3 -m json.tool /builds/worker/artifacts/manifests-runtimes.json > /dev/null
+
+test-info-worker-data-periodic:
+    description: Generate worker pool activity data
+    treeherder:
+        symbol: test-info(worker-data-daily)
+        tier: 2
+    index:
+        product: source
+        job-name: test-info-worker-data
+    worker:
+        docker-image: {in-tree: debian12-amd64-build}
+        max-run-time: 1800
+        env:
+            MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: system
+    run-on-projects: []
+    fetches:
+        toolchain:
+            - linux64-node
+    use-python: "3.11"
+    run:
+        using: run-task
+        cwd: '{checkout}'
+        command: >-
+            source taskcluster/scripts/misc/source-test-common.sh &&
+            ./mach test-info worker-data --output-dir /builds/worker/artifacts/

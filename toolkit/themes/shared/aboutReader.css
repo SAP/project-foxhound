@@ -6,9 +6,7 @@
  * inadvertently match elements in the article content. */
 
 :root {
-  --grey-90-a10: rgba(12, 12, 13, 0.1);
-  --grey-90-a20: rgba(12, 12, 13, 0.2);
-  --grey-30: #d7d7db;
+  --gray-theme-background: var(--color-gray-30);
   --light-theme-background: #fff;
   --light-theme-foreground: rgb(21, 20, 26);
   --dark-theme-background: rgb(28, 27, 34);
@@ -30,9 +28,8 @@ body {
   --main-background: var(--light-theme-background);
   --main-foreground: var(--light-theme-foreground);
   --primary-color: rgb(0, 97, 224);
-  --toolbar-border: var(--grey-90-a20);
+  --toolbar-border: var(--color-black-alpha-20);
   --toolbar-transparent-border: transparent;
-  --toolbar-box-shadow: var(--grey-90-a10);
   --toolbar-button-background: transparent;
   --toolbar-button-background-hover: rgba(207, 207, 216, 0.66);
   --toolbar-button-foreground-hover: var(--icon-fill);
@@ -47,11 +44,11 @@ body {
   --popup-background: #fff;
   --popup-foreground: var(--main-foreground);
   --popup-border: rgba(0, 0, 0, 0.12);
-  --popup-line: var(--grey-30);
+  --popup-line: var(--gray-theme-background);
   --popup-shadow: rgba(49, 49, 49, 0.3);
   --popup-button-background: rgba(207, 207, 216, 0.33);
   --popup-button-foreground: var(--main-foreground);
-  --popup-button-selected-foreground: var(--color-gray-05);
+  --popup-button-selected-foreground: var(--color-gray-0);
   --popup-button-background-hover: var(--toolbar-button-background-hover);
   --popup-button-foreground-hover: var(--main-foreground);
   --popup-button-background-active: var(--toolbar-button-background-active);
@@ -89,7 +86,7 @@ body.sepia {
 
 body.gray {
   color-scheme: light;
-  --main-background: var(--grey-30);
+  --main-background: var(--gray-theme-background);
   --main-foreground: var(--light-theme-foreground);
   --toolbar-border: var(--main-foreground);
   --icon-fill: var(--main-foreground);
@@ -98,7 +95,6 @@ body.gray {
 body.dark,
 body.contrast {
   color-scheme: dark;
-  --toolbar-box-shadow: black;
   --toolbar-button-background-hover: rgb(82, 82, 94);
   --toolbar-button-background-active: rgb(91, 91, 102);
   --popup-background: rgb(66, 65, 77);
@@ -121,7 +117,7 @@ body.dark {
   --main-background: var(--dark-theme-background);
   --main-foreground: var(--dark-theme-foreground);
   --primary-color: rgb(0, 221, 255);
-  --toolbar-border: rgba(249, 249, 250, 0.2);
+  --toolbar-border: var(--color-white-alpha-20);
   --icon-fill: rgb(251, 251, 254);
 }
 
@@ -158,7 +154,6 @@ body.hcm {
   /* We need a true transparent but in HCM this would compute to an actual color,
      so select the page's background color instead: */
   --toolbar-transparent-border: Canvas;
-  --toolbar-box-shadow: Canvas;
   --toolbar-button-background: ButtonFace;
   --toolbar-button-background-hover: SelectedItem;
   --toolbar-button-foreground-hover: SelectedItemText;
@@ -330,7 +325,7 @@ blockquote {
   padding-block: 16px;
   border: 1px solid var(--toolbar-border);
   border-radius: var(--border-radius-small);
-  box-shadow: 0 2px 8px var(--toolbar-box-shadow);
+  box-shadow: var(--box-shadow-level-4);
 
   width: 32px; /* basic width, without padding/border */
 
@@ -377,7 +372,7 @@ blockquote {
   }
 
   .toolbar-container.scrolled > .toolbar:not(:hover, :focus-within) > .reader-controls:not(.dropdown-open) .toolbar-button {
-    opacity: 0.6;
+    opacity: var(--opacity-deemphasized);
   }
 
   .toolbar-container.transition-location {
@@ -499,7 +494,7 @@ button:disabled {
 
   h2 {
     font-size: var(--font-size-large);
-    font-weight: var(--heading-font-weight);
+    font-weight: var(--font-weight-heading);
     color: var(--popup-foreground);
     margin-block: var(--space-small);
   }
@@ -912,7 +907,7 @@ div[name="customtheme"] {
   }
 
   .gray-button:before {
-    background-color: var(--grey-30);
+    background-color: var(--gray-theme-background);
   }
 }
 

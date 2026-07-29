@@ -15,6 +15,11 @@ ChromeUtils.defineESModuleGetters(lazy, {
   LoginStore: "resource://gre/modules/LoginStore.sys.mjs",
 });
 
+ChromeUtils.defineLazyGetter(lazy, "logger", () => {
+  let logger = lazy.LoginHelper.createLogger("storage-json");
+  return logger;
+});
+
 const SYNCABLE_LOGIN_FIELDS = [
   // `nsILoginInfo` fields.
   "hostname",
@@ -47,6 +52,14 @@ function isFXAHost(login) {
 }
 
 export class LoginManagerStorage_json {
+  // Only the active backend fires storage-changed events to avoid duplicates
+  // when both JSON and Rust stores are initialized.
+  // Default is true (rust is inactive)
+  #isActive = true;
+  set isActive(v) {
+    this.#isActive = v;
+  }
+
   constructor() {
     this.__crypto = null; // nsILoginManagerCrypto service
     this.__decryptedPotentiallyVulnerablePasswords = null;
@@ -61,7 +74,8 @@ export class LoginManagerStorage_json {
     return this.__crypto;
   }
 
-  get _decryptedPotentiallyVulnerablePasswords() {
+  // Lazily decrypted cache of potentially vulnerable passwords.
+  get decryptedPotentiallyVulnerablePasswords() {
     if (!this.__decryptedPotentiallyVulnerablePasswords) {
       this._store.ensureDataReady();
       this.__decryptedPotentiallyVulnerablePasswords = [];
@@ -110,11 +124,11 @@ export class LoginManagerStorage_json {
 
       return (async () => {
         // Load the data asynchronously.
-        this.log(`Opening database at ${this._store.path}.`);
+        lazy.logger.log(`Opening database at ${this._store.path}.`);
         await this._store.load();
       })().catch(console.error);
     } catch (e) {
-      this.log(`Initialization failed ${e.name}.`);
+      lazy.logger.log(`Initialization failed ${e.name}.`);
       throw new Error("Initialization failed");
     }
   }
@@ -151,7 +165,7 @@ export class LoginManagerStorage_json {
       return raw ? this._crypto.decrypt(raw) : null;
     } catch (e) {
       if (e.result == Cr.NS_ERROR_FAILURE) {
-        this.log("Could not decrypt the syncID - returning null.");
+        lazy.logger.log("Could not decrypt the syncID - returning null.");
         return null;
       }
       // any other errors get re-thrown.
@@ -216,11 +230,8 @@ export class LoginManagerStorage_json {
 
   // Synchronuously stores encrypted login, returns login clone with upserted
   // uuid and updated timestamps
-  #addLogin(login) {
+  async #addLogin(login) {
     this._store.ensureDataReady();
-
-    // Throws if there are bogus values.
-    lazy.LoginHelper.checkLoginValues(login);
 
     // Clone the login, so we don't modify the caller's object.
     let loginClone = login.clone();
@@ -285,13 +296,14 @@ export class LoginManagerStorage_json {
       timeLastUsed: loginClone.timeLastUsed,
       timePasswordChanged: loginClone.timePasswordChanged,
       timesUsed: loginClone.timesUsed,
+      timeLastBreachAlertDismissed: loginClone.timeLastBreachAlertDismissed,
       syncCounter: loginClone.syncCounter,
       everSynced: loginClone.everSynced,
       encryptedUnknownFields: loginClone.unknownFields,
     });
     this._store.saveSoon();
 
-    Glean.pwmgr.numSavedPasswords.set(this.countLogins("", "", ""));
+    Glean.pwmgr.numSavedPasswords.set(await this.countLoginsAsync("", "", ""));
     return loginClone;
   }
 
@@ -323,7 +335,7 @@ export class LoginManagerStorage_json {
         }
       }
 
-      const resultLogin = this.#addLogin(encryptedLogin);
+      const resultLogin = await this.#addLogin(encryptedLogin);
 
       // restore unencrypted username and password for use in `addLogin` event
       // and return value
@@ -331,7 +343,9 @@ export class LoginManagerStorage_json {
       resultLogin.password = login.password;
 
       // Send a notification that a login was added.
-      lazy.LoginHelper.notifyStorageChanged("addLogin", resultLogin);
+      if (this.#isActive) {
+        lazy.LoginHelper.notifyStorageChanged("addLogin", resultLogin);
+      }
 
       resultLogins.push(resultLogin);
     }
@@ -339,7 +353,7 @@ export class LoginManagerStorage_json {
     return resultLogins;
   }
 
-  removeLogin(login, fromSync) {
+  async removeLoginAsync(login, fromSync) {
     this._store.ensureDataReady();
 
     let [idToDelete, storedLogin] = this._getIdForLogin(login);
@@ -349,14 +363,14 @@ export class LoginManagerStorage_json {
 
     let foundIndex = this._store.data.logins.findIndex(l => l.id == idToDelete);
     if (foundIndex != -1) {
-      let login = this._store.data.logins[foundIndex];
-      if (!login.deleted) {
+      let existingLogin = this._store.data.logins[foundIndex];
+      if (!existingLogin.deleted) {
         if (fromSync) {
-          this.#replaceLoginWithTombstone(login);
-        } else if (login.everSynced) {
+          this.#replaceLoginWithTombstone(existingLogin);
+        } else if (existingLogin.everSynced) {
           // The login has been synced, so mark it as deleted.
-          this.#incrementSyncCounter(login);
-          this.#replaceLoginWithTombstone(login);
+          this.#incrementSyncCounter(existingLogin);
+          this.#replaceLoginWithTombstone(existingLogin);
         } else {
           // The login was never synced, so just remove it from the data.
           this._store.data.logins.splice(foundIndex, 1);
@@ -366,17 +380,13 @@ export class LoginManagerStorage_json {
       }
     }
 
-    Glean.pwmgr.numSavedPasswords.set(this.countLogins("", "", ""));
-    lazy.LoginHelper.notifyStorageChanged("removeLogin", storedLogin);
+    Glean.pwmgr.numSavedPasswords.set(await this.countLoginsAsync("", "", ""));
+    if (this.#isActive) {
+      lazy.LoginHelper.notifyStorageChanged("removeLogin", storedLogin);
+    }
   }
 
-  async removeLoginAsync(login, fromSync) {
-    let result = this.removeLogin(login, fromSync);
-    // Emulate being async:
-    return Promise.resolve(result);
-  }
-
-  modifyLogin(oldLogin, newLoginData, fromSync) {
+  async modifyLoginAsync(oldLogin, newLoginData, fromSync) {
     this._store.ensureDataReady();
 
     let [idToModify, oldStoredLogin] = this._getIdForLogin(oldLogin);
@@ -399,16 +409,13 @@ export class LoginManagerStorage_json {
 
     // Look for an existing entry in case key properties changed.
     if (!newLogin.matches(oldLogin, true)) {
-      let loginData = {
-        origin: newLogin.origin,
-        formActionOrigin: newLogin.formActionOrigin,
-        httpRealm: newLogin.httpRealm,
-      };
-
-      let logins = this.searchLogins(
-        lazy.LoginHelper.newPropertyBag(loginData)
-      );
-
+      const matchData = {};
+      for (const field of ["origin", "formActionOrigin", "httpRealm"]) {
+        if (newLogin[field] !== "") {
+          matchData[field] = newLogin[field];
+        }
+      }
+      const logins = await this.searchLoginsAsync(matchData);
       let matchingLogin = logins.find(login => newLogin.matches(login, true));
       if (matchingLogin) {
         throw lazy.LoginHelper.createLoginAlreadyExistsError(
@@ -446,6 +453,8 @@ export class LoginManagerStorage_json {
         loginItem.timeLastUsed = newLogin.timeLastUsed;
         loginItem.timePasswordChanged = newLogin.timePasswordChanged;
         loginItem.timesUsed = newLogin.timesUsed;
+        loginItem.timeLastBreachAlertDismissed =
+          newLogin.timeLastBreachAlertDismissed;
         loginItem.encryptedUnknownFields = encUnknownFields;
         loginItem.syncCounter = newLogin.syncCounter;
         this._store.saveSoon();
@@ -453,16 +462,12 @@ export class LoginManagerStorage_json {
       }
     }
 
-    lazy.LoginHelper.notifyStorageChanged("modifyLogin", [
-      oldStoredLogin,
-      newLogin,
-    ]);
-  }
-
-  async modifyLoginAsync(oldLogin, newLoginData, fromSync) {
-    let result = this.modifyLogin(oldLogin, newLoginData, fromSync);
-    // Emulate being async:
-    return Promise.resolve(result);
+    if (this.#isActive) {
+      lazy.LoginHelper.notifyStorageChanged("modifyLogin", [
+        oldStoredLogin,
+        newLogin,
+      ]);
+    }
   }
 
   // Replace the login with a tombstone. It has a guid and sync-related properties,
@@ -486,37 +491,38 @@ export class LoginManagerStorage_json {
     delete login.encryptedUnknownFields;
   }
 
-  recordPasswordUse(login) {
+  async recordPasswordUseAsync(login) {
     // Update the lastUsed timestamp and increment the use count.
     let propBag = Cc["@mozilla.org/hash-property-bag;1"].createInstance(
       Ci.nsIWritablePropertyBag
     );
     propBag.setProperty("timeLastUsed", Date.now());
     propBag.setProperty("timesUsedIncrement", 1);
-    this.modifyLogin(login, propBag);
-  }
-
-  async recordPasswordUseAsync(login) {
-    let result = this.recordPasswordUse(login);
-    // Emulate being async:
-    return Promise.resolve(result);
+    this.modifyLoginAsync(login, propBag);
   }
 
   async recordBreachAlertDismissal(loginGUID) {
     this._store.ensureDataReady();
-    const dismissedBreachAlertsByLoginGUID =
-      this._store._data.dismissedBreachAlertsByLoginGUID;
-
-    dismissedBreachAlertsByLoginGUID[loginGUID] = {
-      timeBreachAlertDismissed: new Date().getTime(),
-    };
-
-    return this._store.saveSoon();
+    const login = this._store.data.logins.find(
+      l => l.guid === loginGUID && !l.deleted
+    );
+    if (login) {
+      login.timeLastBreachAlertDismissed = Date.now();
+      this._store.saveSoon();
+    }
   }
 
-  getBreachAlertDismissalsByLoginGUID() {
+  async getBreachAlertDismissalsByLoginGUID() {
     this._store.ensureDataReady();
-    return this._store._data.dismissedBreachAlertsByLoginGUID;
+    const result = {};
+    for (const login of this._store.data.logins) {
+      if (login.timeLastBreachAlertDismissed) {
+        result[login.guid] = {
+          timeBreachAlertDismissed: login.timeLastBreachAlertDismissed,
+        };
+      }
+    }
+    return result;
   }
 
   /**
@@ -537,61 +543,42 @@ export class LoginManagerStorage_json {
     return this.#decryptLogins(logins);
   }
 
-  async searchLoginsAsync(matchData, includeDeleted) {
-    this.log(`Searching for matching logins for origin ${matchData.origin}.`);
-    let result = this.searchLogins(
-      lazy.LoginHelper.newPropertyBag(matchData),
-      includeDeleted
-    );
-    // Emulate being async:
-    return Promise.resolve(result);
-  }
-
   /**
    * Public wrapper around _searchLogins to convert the nsIPropertyBag to a
    * JavaScript object and decrypt the results.
    *
    * @return {nsILoginInfo[]} which are decrypted.
    */
-  searchLogins(matchData, includeDeleted) {
+  async searchLoginsAsync(matchData, includeDeleted) {
+    lazy.logger.log(
+      `Searching for matching logins for origin ${matchData.origin}.`
+    );
     this._store.ensureDataReady();
 
     let realMatchData = {};
     let options = {};
 
-    matchData.QueryInterface(Ci.nsIPropertyBag2);
-    if (matchData.hasKey("guid")) {
-      // Enforce GUID-based filtering when available, since the origin of the
-      // login may not match the origin of the form in the case of scheme
-      // upgrades.
-      realMatchData = { guid: matchData.getProperty("guid") };
+    if ("guid" in matchData) {
+      realMatchData.guid = matchData.guid;
     } else {
-      // Convert nsIPropertyBag to normal JS object.
-      for (let prop of matchData.enumerator) {
-        switch (prop.name) {
-          // Some property names aren't field names but are special options to
-          // affect the search.
+      for (const name in matchData) {
+        switch (name) {
           case "acceptDifferentSubdomains":
           case "schemeUpgrades":
           case "acceptRelatedRealms":
-          case "relatedRealms": {
-            options[prop.name] = prop.value;
+          case "relatedRealms":
+            options[name] = matchData[name];
             break;
-          }
-          default: {
-            realMatchData[prop.name] = prop.value;
+          default:
+            realMatchData[name] = matchData[name];
             break;
-          }
         }
       }
     }
 
     let [logins] = this._searchLogins(realMatchData, includeDeleted, options);
 
-    // Decrypt entries found for the caller.
-    logins = this._decryptLogins(logins);
-
-    return logins;
+    return this._decryptLogins(logins);
   }
 
   /**
@@ -647,6 +634,8 @@ export class LoginManagerStorage_json {
         login.timesUsed = loginItem.timesUsed;
         login.syncCounter = loginItem.syncCounter;
         login.everSynced = loginItem.everSynced;
+        login.timeLastBreachAlertDismissed =
+          loginItem.timeLastBreachAlertDismissed;
 
         // Any unknown fields along for the ride
         login.unknownFields = loginItem.encryptedUnknownFields;
@@ -655,7 +644,7 @@ export class LoginManagerStorage_json {
       }
     }
 
-    this.log(
+    lazy.logger.log(
       `Returning ${foundLogins.length} logins for specified origin with options ${aOptions}`
     );
     return [foundLogins, foundIds];
@@ -667,14 +656,9 @@ export class LoginManagerStorage_json {
    * NOTE: You probably want removeAllUserFacingLogins instead of this function.
    *
    */
-  removeAllLogins() {
+  async removeAllLoginsAsync() {
     this.#removeLogins(false, true);
   }
-
-  async removeAllLoginsAsync() {
-    this.removeAllLogins();
-  }
-
   /**
    * Removes all user facing logins from storage. e.g. all logins except the FxA Sync key
    *
@@ -682,12 +666,8 @@ export class LoginManagerStorage_json {
    *
    * @param fullyRemove remove the logins rather than mark them deleted.
    */
-  removeAllUserFacingLogins(fullyRemove) {
-    this.#removeLogins(fullyRemove, false);
-  }
-
   async removeAllUserFacingLoginsAsync(fullyRemove) {
-    this.removeAllUserFacingLogins(fullyRemove);
+    this.#removeLogins(fullyRemove, false);
   }
 
   /**
@@ -699,7 +679,7 @@ export class LoginManagerStorage_json {
    */
   #removeLogins(fullyRemove, removeFXALogin = false) {
     this._store.ensureDataReady();
-    this.log("Removing all logins.");
+    lazy.logger.log("Removing all logins.");
 
     let removedLogins = [];
     let remainingLogins = [];
@@ -733,6 +713,8 @@ export class LoginManagerStorage_json {
         loginInfo.timesUsed = login.timesUsed;
         loginInfo.syncCounter = login.syncCounter;
         loginInfo.everSynced = login.everSynced;
+        loginInfo.timeLastBreachAlertDismissed =
+          login.timeLastBreachAlertDismissed;
 
         // Any unknown fields along for the ride
         loginInfo.unknownFields = login.encryptedUnknownFields;
@@ -750,33 +732,11 @@ export class LoginManagerStorage_json {
 
     this._store.data.potentiallyVulnerablePasswords = [];
     this.__decryptedPotentiallyVulnerablePasswords = null;
-    this._store.data.dismissedBreachAlertsByLoginGUID = {};
     this._store.saveSoon();
 
-    lazy.LoginHelper.notifyStorageChanged("removeAllLogins", removedLogins);
-  }
-
-  findLogins(origin, formActionOrigin, httpRealm) {
-    this._store.ensureDataReady();
-
-    let loginData = {
-      origin,
-      formActionOrigin,
-      httpRealm,
-    };
-    let matchData = {};
-    for (let field of ["origin", "formActionOrigin", "httpRealm"]) {
-      if (loginData[field] != "") {
-        matchData[field] = loginData[field];
-      }
+    if (this.#isActive) {
+      lazy.LoginHelper.notifyStorageChanged("removeAllLogins", removedLogins);
     }
-    let [logins] = this._searchLogins(matchData);
-
-    // Decrypt entries found for the caller.
-    logins = this._decryptLogins(logins);
-
-    this.log(`Returning ${logins.length} logins.`);
-    return logins;
   }
 
   /**
@@ -881,7 +841,7 @@ export class LoginManagerStorage_json {
     return true;
   }
 
-  countLogins(origin, formActionOrigin, httpRealm) {
+  async countLoginsAsync(origin, formActionOrigin, httpRealm) {
     this._store.ensureDataReady();
 
     let loginData = {
@@ -900,14 +860,15 @@ export class LoginManagerStorage_json {
       loginItem => !loginItem.deleted && this.#matchLogin(loginItem, matchData)
     );
 
-    this.log(`Counted ${foundLogins.length} logins.`);
+    lazy.logger.log(`Counted ${foundLogins.length} logins.`);
     return foundLogins.length;
   }
 
-  addPotentiallyVulnerablePassword(login) {
+  async addPotentiallyVulnerablePassword(login) {
     this._store.ensureDataReady();
     // this breached password is already stored
-    if (this.isPotentiallyVulnerablePassword(login)) {
+    // note this builds the __decryptedPotentiallyVulnerablePasswords structure
+    if (await this.isPotentiallyVulnerablePassword(login)) {
       return;
     }
     this.__decryptedPotentiallyVulnerablePasswords.push(login.password);
@@ -916,15 +877,30 @@ export class LoginManagerStorage_json {
       encryptedPassword: this._crypto.encrypt(login.password),
     });
     this._store.saveSoon();
+
+    if (this.#isActive) {
+      lazy.LoginHelper.notifyStorageChanged(
+        "addPotentiallyVulnerablePassword",
+        login
+      );
+    }
   }
 
-  isPotentiallyVulnerablePassword(login) {
-    return this._decryptedPotentiallyVulnerablePasswords.includes(
+  async isPotentiallyVulnerablePassword(login) {
+    return this.decryptedPotentiallyVulnerablePasswords.includes(
       login.password
     );
   }
 
-  clearAllPotentiallyVulnerablePasswords() {
+  async arePotentiallyVulnerablePasswords(logins) {
+    return logins
+      .filter(l =>
+        this.decryptedPotentiallyVulnerablePasswords.includes(l.password)
+      )
+      .map(l => l.guid);
+  }
+
+  async clearAllPotentiallyVulnerablePasswords() {
     this._store.ensureDataReady();
     if (!this._store.data.potentiallyVulnerablePasswords.length) {
       // No need to write to disk
@@ -933,6 +909,12 @@ export class LoginManagerStorage_json {
     this._store.data.potentiallyVulnerablePasswords = [];
     this._store.saveSoon();
     this.__decryptedPotentiallyVulnerablePasswords = null;
+
+    if (this.#isActive) {
+      lazy.LoginHelper.notifyStorageChanged(
+        "clearAllPotentiallyVulnerablePasswords"
+      );
+    }
   }
 
   get uiBusy() {
@@ -1062,7 +1044,7 @@ export class LoginManagerStorage_json {
             // If decryption failed (corrupt entry?), just return it as it is.
             // Rethrow other errors (like canceling entry of a primary pw)
             if (e.result == Cr.NS_ERROR_FAILURE) {
-              this.log(
+              lazy.logger.log(
                 `Could not decrypt login: ${
                   login.QueryInterface(Ci.nsILoginMetaInfo).guid
                 }.`
@@ -1196,7 +1178,7 @@ export class LoginManagerStorage_json {
         // This login has been changed or got deleted while we were
         // asynchronously reencrypting the logins. As we shoudn't overwrite it
         // and potentially loose the update, we will just skip it.
-        this.log(
+        lazy.logger.log(
           `Login ${
             oldLogin.guid
           } changed during migration and doesn't need to be updated.`
@@ -1252,8 +1234,3 @@ export class LoginManagerStorage_json {
     }
   }
 }
-
-ChromeUtils.defineLazyGetter(LoginManagerStorage_json.prototype, "log", () => {
-  let logger = lazy.LoginHelper.createLogger("Login storage");
-  return logger.log.bind(logger);
-});

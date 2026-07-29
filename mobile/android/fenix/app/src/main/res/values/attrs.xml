@@ -13,32 +13,34 @@
     <attr name="scrim" format="reference" />
 
     <!-- Action -->
-    <!-- Primary button, Snackbar, Floating action button -->
-    <attr name="actionPrimary" format="reference" />
     <!-- Primary button in a disabled state -->
     <attr name="actionPrimaryDisabled" format="reference" />
 
     <!-- Text -->
-    <!-- Primary text -->
-    <attr name="textPrimary" format="reference" />
-    <!-- Secondary text -->
-    <attr name="textSecondary" format="reference" />
-    <!-- Disabled text -->
-    <attr name="textDisabled" format="reference" />
-    <!-- Warning text -->
-    <attr name="textCritical" format="reference"/>
-    <!-- Small heading, Text link -->
-    <attr name="textAccent" format="reference" />
     <!-- Text Inverted/On Color -->
     <attr name="textOnColorPrimary" format="reference" />
-    <!-- Action Primary text -->
-    <attr name="textActionPrimary" format="reference" />
     <!-- Action Primary disabled text -->
     <attr name="textActionPrimaryDisabled" format="reference" />
 
     <!-- Icon -->
     <!-- Icon inverted (on color) -->
     <attr name="iconOnColor" format="reference" />
+
+    <!-- Material3 extended palettes -->
+    <attr name="colorInformation" format="reference" />
+    <attr name="colorOnInformation" format="reference" />
+    <attr name="colorInformationContainer" format="reference" />
+    <attr name="colorOnInformationContainer" format="reference" />
+    <attr name="colorSuccess" format="reference" />
+    <attr name="colorOnSuccess" format="reference" />
+    <attr name="colorWarning" format="reference" />
+    <attr name="colorOnWarning" format="reference" />
+    <attr name="colorWarningContainer" format="reference" />
+    <attr name="colorOnWarningContainer" format="reference" />
+    <attr name="colorSurfaceDimVariant" format="reference" />
+    <attr name="colorAutofillText" format="reference" />
+    <attr name="colorSelectedText" format="reference" />
+    <attr name="colorIconPrivate" format="reference" />
 
     <!-- Color palette attributes -->
     <attr name="accent" format="reference" />
@@ -54,6 +56,7 @@
     <attr name="fenixLogo" format="reference" />
     <attr name="fenixWordmarkText" format="reference" />
     <attr name="fenixWordmarkLogo" format="reference" />
+    <attr name="fenixWordmarkSportLogo" format="reference" />
     <attr name="toolbarStartGradient" format="reference"/>
     <attr name="toolbarCenterGradient" format="reference"/>
     <attr name="toolbarEndGradient" format="reference"/>

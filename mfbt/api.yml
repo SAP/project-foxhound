@@ -2,8 +2,6 @@
 
 Algorithm.h:
   functions:
-    - AllOf
-    - AnyOf
     - TransformIfAbortOnErr
     - TransformAbortOnErr
 
@@ -103,6 +101,7 @@ Attributes.h:
     - MOZ_LIFETIME_BOUND
     - MOZ_LIFETIME_CAPTURE_BY
     - MOZ_STANDALONE_DEBUG
+    - MOZ_NULL_AFTER_MOVE
     - MOZ_PUSH_DISABLE_NONTRIVIAL_UNION_WARNINGS
     - MOZ_POP_DISABLE_NONTRIVIAL_UNION_WARNINGS
     - MOZ_CAN_RUN_SCRIPT
@@ -146,11 +145,14 @@ Attributes.h:
     - MOZ_KNOWN_LIVE
     - MOZ_UNANNOTATED
     - MOZ_ANNOTATED
+    - MOZ_ENUM_SERIALIZER_ALLOW_SENTINEL_UPPER_BOUND
+    - MOZ_ENUM_SERIALIZER_ALLOW_MIN_MISMATCH
     - MOZ_FORMAT_PRINTF
     - MOZ_FORMAT_WPRINTF
     - MOZ_XPCOM_ABI
     - MOZ_EMPTY_BASES
     - MOZ_CAN_RUN_SCRIPT_BOUNDARY_LAMBDA
+    - MOZ_REINITIALIZES
 
 BinarySearch.h:
   functions:
@@ -275,10 +277,6 @@ DoublyLinkedList.h:
     - SafeDoublyLinkedList
 
 EndianUtils.h:
-  macros:
-    - MOZ_LITTLE_ENDIAN
-    - MOZ_BIG_ENDIAN
-
   functions:
     - byteswap
 
@@ -499,12 +497,6 @@ MacroForEach.h:
 MathAlgorithms.h:
   functions:
     - Abs
-    - CountLeadingZeroes32
-    - CountTrailingZeroes32
-    - CountPopulation32
-    - CountPopulation64
-    - CountLeadingZeroes64
-    - CountTrailingZeroes64
     - CeilingLog2
     - CeilingLog2Size
     - FindMostSignificantBit
@@ -513,8 +505,6 @@ MathAlgorithms.h:
     - RoundUpPow2
     - RotateLeft
     - RotateRight
-    - IsPowerOfTwo
-    - CountTrailingZeroes
     - GCD
 
 Maybe.h:

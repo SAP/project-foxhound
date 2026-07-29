@@ -4,16 +4,19 @@
 
 package org.mozilla.fenix.ui.efficiency.tests
 
+import org.junit.Ignore
 import org.junit.Test
 import org.mozilla.fenix.ui.efficiency.helpers.BaseTest
 
 class SettingsPasswordsTest : BaseTest() {
 
+    @Ignore("Covered by verifyNavigationReachability[1: SettingsPasswordsPage (TBD) — Navigation Reachability]")
     @Test
     fun verifySettingsPasswordsLoadsTest() {
         on.settingsPasswords.navigateToPage()
     }
 
+    @Ignore("Covered by verifyNavigationReachability[1: SettingsSavePasswordsPage (TBD) — Navigation Reachability]")
     @Test
     fun verifySettingsSavePasswordsSectionTest() {
         on.settingsSavePasswords.navigateToPage()

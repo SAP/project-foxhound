@@ -327,7 +327,7 @@ class EmulatedEndpointImpl : public EmulatedEndpoint {
   void Disable();
   bool Enabled() const;
 
-  const Network& network() const { return *network_.get(); }
+  const Network& network() const { return *network_; }
 
   EmulatedNetworkStats stats() const;
 
@@ -415,7 +415,7 @@ class FakePacketRoute : public EmulatedNetworkReceiverInterface {
         recv_addr_(route_->to->GetPeerLocalAddress(),
                    *route_->to->BindReceiver(0, this)) {}
 
-  ~FakePacketRoute() { route_->to->UnbindReceiver(recv_addr_.port()); }
+  ~FakePacketRoute() override { route_->to->UnbindReceiver(recv_addr_.port()); }
 
   void SendPacket(size_t size, FakePacketType packet) {
     RTC_CHECK_GE(size, sizeof(int));
@@ -427,9 +427,10 @@ class FakePacketRoute : public EmulatedNetworkReceiverInterface {
   }
 
   void OnPacketReceived(EmulatedIpPacket packet) override {
-    int packet_id = reinterpret_cast<const int*>(packet.data.data())[0];
-    action_(std::move(sent_[packet_id]), packet.arrival_time);
-    sent_.erase(packet_id);
+    int packet_id = *reinterpret_cast<const int*>(packet.data.data());
+    auto node_handle = sent_.extract(packet_id);
+    RTC_CHECK(!node_handle.empty());
+    action_(std::move(node_handle.mapped()), packet.arrival_time);
   }
 
  private:

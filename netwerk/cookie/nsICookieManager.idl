@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -224,6 +223,12 @@ interface nsICookieManager : nsISupports
    * and any host or domain cookies for "yahoo.com" and its subdomains would be
    * counted.
    *
+   * NOTE: this counts only cookies stored under the default OriginAttributes
+   * bucket (no userContextId, no partitionKey, etc.). Cookies set inside a
+   * container (non-zero userContextId) or under a partitionKey will NOT be
+   * counted. Callers asking "does this site have any cookies?" across all
+   * origin attributes should use hasCookiesForSite instead.
+   *
    * @param aHost
    *        the host string to search for, e.g. "google.com". this should consist
    *        of only the host portion of a URI. see @add for a description of
@@ -232,6 +237,26 @@ interface nsICookieManager : nsISupports
    * @return the number of cookies found.
    */
   unsigned long countCookiesFromHost(in AUTF8String aHost);
+
+  /**
+   * Greedily check whether any cookie exists for the site (base domain of
+   * 'aHost') whose OriginAttributes match aPattern. Returns as soon as a
+   * matching cookie is found. Unlike countCookiesFromHost, this iterates
+   * across all OriginAttributes buckets within the base domain, so it can
+   * see cookies stored in containers (userContextId), under a partitionKey,
+   * etc.
+   *
+   * @param aHost
+   *        the host string to search for, e.g. "google.com". This is reduced
+   *        to its base domain (eTLD+1) internally.
+   * @param aPattern
+   *        an OriginAttributesPattern in JSON format. Pass
+   *        '{"privateBrowsingId":0}' to exclude private-browsing cookies (the
+   *        common case for non-PB UI); pass '{}' to match any.
+   *
+   * @return true if at least one cookie matches, false otherwise.
+   */
+  boolean hasCookiesForSite(in AUTF8String aHost, in AString aPattern);
 
   /**
    * Returns an array of cookies that exist within the base domain of
@@ -330,6 +355,11 @@ interface nsICookieManager : nsISupports
 
   // Test getter to inspect remote exception list state.
   Array<ACString> testGet3PCBExceptions();
+
+  // Test-only: close and reopen the cookie database, simulating a profile
+  // change. Notifies "cookie-db-closed" and "cookie-db-read" as usual.
+  void testCloseCookieDB();
+  void testOpenCookieDB();
 
   /**
    * Helper to cap an expiry time using the network.cookie.maxageCap pref.

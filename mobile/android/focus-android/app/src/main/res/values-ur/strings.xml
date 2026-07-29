@@ -125,7 +125,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s آپ کو کنٹرول دیتی ہے </p>\n<p> اسکو نجی برائوزر کی طرح استعمال کریں:\n<ul>\n<li> اپلی کیشن میں ہی تلاش اور براؤز کریں </li>\n<li>ٹریکررٰ کو بلاک کریں (یا سٹینگوں کی تازہ کاری کر کے ٹریکررٰ کو اجازت دیں)۔ </li>\n<li> کوکیز کے ساتھ تلاش اور براؤزنگ سابقات کو بھی حذف کرنے کیلیے مٹائیں </li>\n</ul> </p>\n<p>%1$s کی پیداوار ہے۔ ھماری مہم ایک صحت مند کھلے انٹرنیٹ کو فروعٰ دینا ہے۔ Mozilla<br/>\n<a href=\"%2$s\"> مزید جانیے </a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s آپ کو کنٹرول دیتی ہے </p>\n<p> اسکو نجی برائوزر کی طرح استعمال کریں:\n<ul>\n<li> اپلی کیشن میں ہی تلاش اور براؤز کریں </li>\n<li>ٹریکررٰ کو بلاک کریں (یا سٹینگوں کی تازہ کاری کر کے ٹریکررٰ کو اجازت دیں)۔ </li>\n<li> کوکیز کے ساتھ تلاش اور براؤزنگ سابقات کو بھی حذف کرنے کیلیے مٹائیں </li>\n</ul> </p>\n<p>%1$s کی پیداوار ہے۔ ھماری مہم ایک صحت مند کھلے انٹرنیٹ کو فروعٰ دینا ہے۔ Mozilla<br/>\n<a href=\"%2$s\"> مزید جانیے </a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">رازداری اور سلامتی</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -199,7 +199,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">URL چسپاں یا داخل کریں</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">مثال کے طور پر: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">مثال کے طور پر: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">مثال: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -262,12 +262,12 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">%1$s و طےشدہ براؤزر بنائیں</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">استعمال شدہ کوائف ارسال کریں</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">مزید سیکھیں</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla صرف اس کو جمع کرنے کی کوشش کرتا ہے جو ہمیں ہر کسی کے لئے %1$s فراہم کرنے اور بہتر بنانے کی ضرورت ہے۔</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla صرف اس کو جمع کرنے کی کوشش کرتا ہے جو ہمیں ہر کسی کے لئے %1$s فراہم کرنے اور بہتر بنانے کی ضرورت ہے۔</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">رازداری کا نوٹس</string>
   <!-- In-app link (in settings) to Focus licensing information. -->
@@ -594,7 +594,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">ٹیب بند کر دیں</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">تباہی کی رپورٹ Mozilla کو ارسال کریں</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">تباہی کی رپورٹ Mozilla کو ارسال کریں</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

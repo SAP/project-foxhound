@@ -45,7 +45,6 @@ const DEFAULT_PROPS = {
   lastUpdated: Date.now(),
   selectedTopics: ["topic1", "topic2"],
   isFollowed: true,
-  firstVisibleTimestamp: Date.now() - 5000,
 };
 
 function WrapWithProvider({ children, state = INITIAL_STATE }) {

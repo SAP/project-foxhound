@@ -20,7 +20,7 @@ To enable clang-format on new directory, add the path to the include
 section in the :searchfox:`clang-format.yml <tools/lint/clang-format.yml>` file.
 
 While excludes: will work, this linter will read the ignore list from :searchfox:`.clang-format-ignore file <.clang-format-ignore>`
-at the root directory. This because it is also used by the ./mach clang-format -p command.
+at the root directory.
 
 Autofix
 -------

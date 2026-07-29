@@ -183,7 +183,7 @@ class CSSRegisteredPropertiesWatcher {
     // Ignore event if property was registered from a global different from the target global.
     if (
       this.#targetActor.ignoreSubFrames &&
-      event.target.ownerGlobal !== this.#targetActor.window
+      event.target.documentGlobal !== this.#targetActor.window
     ) {
       return;
     }

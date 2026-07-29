@@ -5,6 +5,7 @@
 loader: taskgraph.loader.transform:loader
 
 kind-dependencies:
+    - fetch
     - toolchain
     - instrumented-build
 
@@ -24,6 +25,9 @@ task-defaults:
         kind: build
         tier: 1
     use-python: default
+    fetches:
+        fetch:
+            - pgo-extended-corpus
 
 tasks:
     linux64-shippable/opt:
@@ -111,41 +115,41 @@ tasks:
             job-name: android-aarch64-profile
         treeherder:
             platform: android-aarch64-shippable/opt
-        worker-type: b-linux-kvm
+        worker-type: b-osx-arm64
         worker:
             chain-of-trust: true
             max-run-time: 2700
-            kvm: true  # for access to /dev/kvm for hw accel in the emulator
-            docker-image: {in-tree: ubuntu2404-test}
             env:
-                WORKING_DIR: "/builds/worker"
-                MOZHARNESS_PATH: "/builds/worker/checkouts/gecko/testing/mozharness"
-                PYTHON: "/builds/worker/checkouts/gecko/mach python"
+                WORKING_DIR: "/opt/worker/tasks"
+                PYTHONPATH: "testing/marionette/client:testing/mozbase/mozinfo:testing/mozbase/mozfile:testing/mozbase/mozhttpd:testing/mozbase/mozprofile:testing/mozbase/mozlog:testing/mozbase/mozdevice:testing/mozbase/moznetwork:testing/mozbase/mozprocess:testing/mozbase/mozsystemmonitor:third_party/python"
             artifacts:
                 - type: directory
                   name: public/build
-                  path: /builds/worker/artifacts/
+                  path: checkouts/gecko/artifacts/
         run:
-            using: mozharness
-            job-script: taskcluster/scripts/tester/test-linux.sh
-            script: android_emulator_pgo.py
-            tooltool-downloads: internal
-            options: [installer-path=/builds/worker/fetches/geckoview-test_runner.apk]
-            config:
-                - android/android_common.py
-                - android/android-aarch64-profile-generation.py
-                - android/android_pgo.py
+            using: run-task
+            checkout: true
+            cwd: '{checkout}'
+            command: >-
+                python3 testing/mozharness/scripts/android_emulator_pgo.py
+                --installer-path=$MOZ_FETCHES_DIR/geckoview-test_runner.apk
+                --config=android/android_common.py
+                --config=android/android-aarch64-profile-generation-macos.py
+                --config=android/android_pgo.py
         run-on-projects: ['release']
+        dependencies:
+            instrumented-build-android-aarch64-shippable/opt: instrumented-build-android-aarch64-shippable/opt
         fetches:
             toolchain:
-                - linux64-clang
-                - linux64-minidump-stackwalk
-                - linux64-hostutils
-                - android-sdk-linux
-                - linux64-embedded-uniffi-bindgen
-                - linux64-nimbus-fml
-                - android34-system-image-x86_64-linux
-                - android34-avd-x86_64-linux
+                - macosx64-aarch64-clang
+                - macosx64-aarch64-minidump-stackwalk
+                - android-sdk-macos
+                - android-avd-arm64-macos
+                - android-system-image-arm64-macos
+            instrumented-build-android-aarch64-shippable/opt:
+                - artifact: geckoview-test_runner.apk
+                  extract: false
+                - artifact: target.crashreporter-symbols.zip
 
     android-arm-shippable/opt:
         description: "Android ARM Profile Generation"
@@ -261,10 +265,10 @@ tasks:
             job-name: win64-aarch64-profile
         treeherder:
             platform: windows2012-aarch64-shippable/opt
-        worker-type: b-win-aarch64
+        worker-type: b-win-aarch64-25h2
         worker:
             chain-of-trust: true
-            max-run-time: 2400
+            max-run-time: 3600
             env:
                 UPLOAD_PATH: "artifacts"
             artifacts:

@@ -165,7 +165,10 @@ addAccessibleTask(
     // This iframe won't finish loading. Thus, it will get the stale state and
     // won't fire a document load complete event. We use the reorder event on
     // the iframe to know when the document has been created.
-    let reordered = waitForEvent(EVENT_REORDER, iframe);
+    let reordered = waitForEvent(
+      EVENT_REORDER,
+      event => event.accessible === iframe && event.accessible.firstChild
+    );
     await invokeContentTask(browser, [], () => {
       content.document.getElementById("iframe").src =
         `data:text/html,<html><body>hey</body></html>`;
@@ -174,7 +177,10 @@ addAccessibleTask(
     is(iframeDoc.name, null, "Doc should have 'null' name");
     testAbsentAttrs(iframeDoc, { "explicit-name": "true" });
 
-    reordered = waitForEvent(EVENT_REORDER, iframe);
+    reordered = waitForEvent(
+      EVENT_REORDER,
+      event => event.accessible === iframe && event.accessible.firstChild
+    );
     await invokeContentTask(browser, [], () => {
       content.document.getElementById("iframe").src =
         `data:text/html,<html><title>hello</title><body>hey</body></html>`;
@@ -321,4 +327,25 @@ addAccessibleTask(
     testName(noNameForm, null);
   },
   { chrome: true, topLevel: true }
+);
+
+/**
+ * Test the name of an HTML select which becomes the document element. This
+ * isn't something that anyone should actually do, but we still need to cope
+ * with it.
+ */
+addAccessibleTask(
+  `content`,
+  async function testSelectAtRoot(browser, docAcc) {
+    let changed = waitForEvent(EVENT_NAME_CHANGE, docAcc);
+    await invokeContentTask(browser, [], () => {
+      const a = content.document.createElement("select");
+      a.role = "application";
+      content.document.replaceChild(a, content.document.childNodes[1]);
+      content.document.title = "after";
+    });
+    await changed;
+    testName(docAcc, null);
+  },
+  { topLevel: true, chrome: true }
 );

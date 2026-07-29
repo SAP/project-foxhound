@@ -25,7 +25,6 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.dimensionResource
@@ -47,13 +46,14 @@ import mozilla.components.service.pocket.PocketStory.PocketRecommendedStory
 import mozilla.components.service.pocket.PocketStory.PocketSponsoredStory
 import mozilla.components.service.pocket.PocketStory.SponsoredContent
 import org.mozilla.fenix.R
+import org.mozilla.fenix.components.components
 import org.mozilla.fenix.compose.IMAGE_SIZE
 import org.mozilla.fenix.compose.ListItemTabSurface
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.home.fake.FakeHomepagePreview
 import org.mozilla.fenix.home.pocket.PocketRecommendedStoriesCategory
 import org.mozilla.fenix.home.ui.HomepageTestTag.HOMEPAGE_SPONSORED_STORY
 import org.mozilla.fenix.home.ui.HomepageTestTag.HOMEPAGE_STORY
+import org.mozilla.fenix.home.ui.HomepageTestTag.POCKET_STORIES
 import org.mozilla.fenix.theme.FirefoxTheme
 import kotlin.math.roundToInt
 
@@ -169,7 +169,7 @@ fun ContentRecommendationStory(
 fun Stories(
     @PreviewParameter(StoryProvider::class) stories: List<PocketStory>,
     contentPadding: Dp,
-    backgroundColor: Color = MaterialTheme.colorScheme.surfaceContainerLowest,
+    backgroundColor: Color = MaterialTheme.colorScheme.surfaceBright,
     onStoryShown: (PocketStory, Triple<Int, Int, Int>) -> Unit,
     onStoryClicked: (PocketStory, Triple<Int, Int, Int>) -> Unit,
 ) {
@@ -180,7 +180,7 @@ fun Stories(
             .padding(start = contentPadding, end = contentPadding)
             .semantics {
                 testTagsAsResourceId = true
-                testTag = "pocket.stories"
+                testTag = POCKET_STORIES
             },
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -231,7 +231,7 @@ fun Stories(
                                             dimensionResource(id = R.dimen.browser_toolbar_height).roundToPx()
                                         }
 
-                                    if (LocalContext.current.settings().shouldUseBottomToolbar) {
+                                    if (components.settings.shouldUseBottomToolbar) {
                                         bottom -= verticalOffset
                                     } else {
                                         top += verticalOffset

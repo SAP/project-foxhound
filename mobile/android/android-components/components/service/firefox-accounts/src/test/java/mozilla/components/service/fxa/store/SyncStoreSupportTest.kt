@@ -114,12 +114,10 @@ class SyncStoreSupportTest {
         val constellation = mock<DeviceConstellation>()
         val account = coMock<OAuthAccount> {
             whenever(deviceConstellation()).thenReturn(constellation)
-            whenever(getCurrentDeviceId()).thenReturn("id")
-            whenever(getSessionToken()).thenReturn("token")
             whenever(getProfile(eq(false))).thenReturn(profile)
         }
 
-        assertEquals(AccountState.NotAuthenticated, store.state.accountState)
+        assertEquals(AccountState.Unknown, store.state.accountState)
 
         accountObserver.onAuthenticated(account, AuthType.Existing)
         testDispatcher.scheduler.advanceUntilIdle()
@@ -129,8 +127,6 @@ class SyncStoreSupportTest {
             profile.email,
             profile.avatar,
             profile.displayName,
-            "id",
-            "token",
         )
         assertEquals(expected, store.state.account)
         assertEquals(AccountState.Authenticated, store.state.accountState)
@@ -147,7 +143,7 @@ class SyncStoreSupportTest {
         accountObserver.onAuthenticated(account, AuthType.Existing)
 
         assertNull(store.state.account)
-        assertEquals(AccountState.NotAuthenticated, store.state.accountState)
+        assertEquals(AccountState.Unknown, store.state.accountState)
     }
 
     @Test
@@ -167,7 +163,7 @@ class SyncStoreSupportTest {
 
     @Test
     fun `GIVEN account observer WHEN onAuthenticationProblems observed THEN account state is updated`() {
-        assertEquals(AccountState.NotAuthenticated, store.state.accountState)
+        assertEquals(AccountState.Unknown, store.state.accountState)
 
         accountObserver.onAuthenticationProblems()
 
@@ -177,7 +173,7 @@ class SyncStoreSupportTest {
     @Test
     fun `GIVEN account observer WHEN onFlowError observed THEN account state is updated`() {
         assertNull(store.state.account)
-        assertEquals(AccountState.NotAuthenticated, store.state.accountState)
+        assertEquals(AccountState.Unknown, store.state.accountState)
 
         accountObserver.onFlowError(AuthFlowError.FailedToBeginAuth)
 
@@ -188,7 +184,7 @@ class SyncStoreSupportTest {
     @Test
     fun `GIVEN account observer WHEN onProfileUpdated then update the account state`() {
         // Prerequisite is having a non-null account already.
-        store.dispatch(SyncAction.UpdateAccount(Account(null, null, null, null, null, null)))
+        store.dispatch(SyncAction.UpdateAccount(Account(null, null, null, null)))
 
         val profile = generateProfile()
         accountObserver.onProfileUpdated(profile)
@@ -203,18 +199,14 @@ class SyncStoreSupportTest {
     fun `GIVEN account observer WHEN onReady is triggered THEN do nothing`() = runTest(testDispatcher) {
         // `onReady` is too early for us (today) to try and get the auth status from the cached value.
         // See: https://bugzilla.mozilla.org/show_bug.cgi?id=1909779
-        val currentDeviceId = "id"
-        val sessionToken = "token"
         val constellation = mock<DeviceConstellation>()
         val authenticatedAccount = coMock<OAuthAccount> {
             whenever(deviceConstellation()).thenReturn(constellation)
-            whenever(getCurrentDeviceId()).thenReturn(currentDeviceId)
-            whenever(getSessionToken()).thenReturn(sessionToken)
         }
         val initialState = store.state.copy()
 
         assertNull(store.state.account)
-        assertEquals(AccountState.NotAuthenticated, store.state.accountState)
+        assertEquals(AccountState.Unknown, store.state.accountState)
 
         `when`(authenticatedAccount.checkAuthorizationStatus(eq(SCOPE_PROFILE))).thenReturn(false)
 
@@ -238,12 +230,12 @@ class SyncStoreSupportTest {
         }
 
         assertNull(store.state.account)
-        assertEquals(AccountState.NotAuthenticated, store.state.accountState)
+        assertEquals(AccountState.Unknown, store.state.accountState)
 
         accountObserver.onReady(account)
 
         assertNull(store.state.account)
-        assertEquals(AccountState.NotAuthenticated, store.state.accountState)
+        assertEquals(AccountState.Unknown, store.state.accountState)
     }
 
     @Test

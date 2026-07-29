@@ -10,6 +10,7 @@
 pub mod compare;
 pub mod quadtree;
 pub mod cached_surface;
+pub mod vert_buffer;
 
 use api::units::*;
 use crate::spatial_tree::{SpatialTree, SpatialNodeIndex};
@@ -120,10 +121,8 @@ pub enum PrimitiveCompareResult {
     Equal,
     /// Something in the PrimitiveDescriptor was different
     Descriptor,
-    /// The clip node content or spatial node changed
+    /// A clip corner changed (vert range values differ)
     Clip,
-    /// The value of the transform changed
-    Transform,
     /// An image dependency was dirty
     Image,
     /// The value of an opacity binding changed

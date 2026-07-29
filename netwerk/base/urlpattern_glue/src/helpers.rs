@@ -1,4 +1,3 @@
-/* -*- Mode: rust; rust-indent-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -41,13 +40,31 @@ pub fn init_from_string_and_base_url(
             None
         };
 
-        if let Ok(init) =
-            urlpattern::UrlPatternInit::parse_constructor_string::<regex::Regex>(&tmp, maybe_base)
-        {
+        if let Ok(init) = urlpattern::UrlPatternInit::parse_constructor_string::<SpiderMonkeyRegexp>(
+            &tmp, maybe_base,
+        ) {
             return Some(init.clone());
         }
     }
     None
+}
+
+pub fn parse_pattern_from_init(
+    init: urlpattern::UrlPatternInit,
+    options: UrlPatternOptions,
+    res: *mut UrlPatternGlue,
+) -> bool {
+    let options = urlpattern::UrlPatternOptions {
+        regex_syntax: RegexSyntax::EcmaScript,
+        ignore_case: options.ignore_case,
+    };
+    if let Ok(pattern) = quirks::parse_pattern_as_lib::<SpiderMonkeyRegexp>(init, options) {
+        unsafe {
+            *res = UrlPatternGlue(Box::into_raw(Box::new(pattern)) as *mut _);
+        }
+        return true;
+    }
+    false
 }
 
 pub fn maybe_to_option_string(m_str: &MaybeString) -> Option<String> {

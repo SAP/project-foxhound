@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -106,7 +104,9 @@ class RefMessageBody final {
 
 class RefMessageBodyService final {
  public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(RefMessageBodyService)
+  MozExternalRefCountType AddRef();
+  MozExternalRefCountType Release();
+  using HasThreadSafeRefCnt = std::true_type;
 
   static already_AddRefed<RefMessageBodyService> GetOrCreate();
 
@@ -123,6 +123,9 @@ class RefMessageBodyService final {
  private:
   explicit RefMessageBodyService(const StaticMutexAutoLock& aProofOfLock);
   ~RefMessageBodyService();
+
+ protected:
+  ::mozilla::ThreadSafeAutoRefCnt mRefCnt;
 
   static RefMessageBodyService* GetOrCreateInternal(
       const StaticMutexAutoLock& aProofOfLock);

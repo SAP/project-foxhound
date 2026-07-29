@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -162,8 +160,8 @@ void SubstitutingJARURI::Serialize(mozilla::ipc::URIParams& aParams) {
   URIParams source;
   URIParams resolved;
 
-  mSource->Serialize(source);
-  mResolved->Serialize(resolved);
+  SerializeURI(mSource, source);
+  SerializeURI(mResolved, resolved);
   params.source() = source;
   params.resolved() = resolved;
   aParams = params;
@@ -295,6 +293,8 @@ NS_INTERFACE_MAP_BEGIN(SubstitutingJARURI)
   NS_INTERFACE_MAP_ENTRY(nsIURL)
   NS_INTERFACE_MAP_ENTRY(nsIStandardURL)
   NS_INTERFACE_MAP_ENTRY(nsISerializable)
+  NS_INTERFACE_MAP_ENTRY(nsIIPCSerializableURI)
+  NS_INTERFACE_MAP_ENTRY(nsIURIWithSizeOf)
   if (aIID.Equals(kSubstitutingJARURIImplCID)) {
     foundInterface = static_cast<nsIURI*>(this);
   } else
@@ -303,7 +303,8 @@ NS_INTERFACE_MAP_BEGIN(SubstitutingJARURI)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_CI_INTERFACE_GETTER(SubstitutingJARURI, nsIURI, nsIJARURI, nsIURL,
-                            nsIStandardURL, nsISerializable)
+                            nsIStandardURL, nsISerializable,
+                            nsIIPCSerializableURI, nsIURIWithSizeOf)
 
 NS_IMPL_NSIURIMUTATOR_ISUPPORTS(SubstitutingJARURI::Mutator, nsIURISetters,
                                 nsIURIMutator, nsISerializable)

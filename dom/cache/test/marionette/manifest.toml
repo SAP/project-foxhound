@@ -1,5 +1,13 @@
 [DEFAULT]
-tags = "inc-origin-init"
+subsuite = "integration"
+tags = "inc-origin-init os_integration"
+# test_cacheapi_encryption_PBM asserts the PBM-specific encryption layer
+# (QuotaVFS) is the one writing ciphertext to disk. Enabling SQLite-level
+# obfsvfs encryption would layer a second cipher on top, breaking its
+# file-content checks. The marionette manifest schema requires manifest-wide
+# prefs, so we apply it to every test in this file -- harmless since the
+# production default is already false.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_cacheapi_encryption_PBM.py"]
 
@@ -7,4 +15,5 @@ tags = "inc-origin-init"
 skip-if = [
   "true", # Bug 2007259
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && ccov", # Bug 1937657
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && ccov", # Bug 1937657
 ]

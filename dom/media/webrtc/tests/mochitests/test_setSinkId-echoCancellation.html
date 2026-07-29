@@ -89,6 +89,7 @@ runTest(async () => {
     analyser.enableDebugCanvas();
     // Check for audio with AEC.
     await analyser.waitForAnalysisSuccess(array => {
+      // 200/255 is ~ -45dB in the range [-100dB, -30dB]
       return array[bin1] > 200 && array[bin2] > 200;
     });
 
@@ -99,7 +100,8 @@ runTest(async () => {
       noiseSuppression: false,
     });
     await analyser.waitForAnalysisSuccess(array => {
-      return !array.find(bin => bin > 50);
+      // 110/255 is ~ -70dB in the range [-100dB, -30dB]
+      return !array.find(bin => bin > 110);
     });
   } finally {
     await ac.close();

@@ -61,8 +61,11 @@ add_task(async function checkReturnToAboutHome() {
         info("Felt Privacy enabled - using net-error-card");
 
         await SpecialPowers.spawn(bc, [useFrame], async function (subFrame) {
-          const netErrorCard =
-            content.document.querySelector("net-error-card").wrappedJSObject;
+          const netErrorCard = await ContentTaskUtils.waitForCondition(
+            () =>
+              content.document.querySelector("net-error-card")?.wrappedJSObject,
+            "Waiting for net-error-card"
+          );
           await netErrorCard.getUpdateComplete();
           const returnButton = netErrorCard.returnButton;
 
@@ -729,7 +732,10 @@ add_task(async function testCertificateTransparency_feltPrivacyTrue() {
     const message = await SpecialPowers.spawn(bc, [], async function () {
       const doc = content.document;
 
-      const netErrorCard = doc.querySelector("net-error-card").wrappedJSObject;
+      const netErrorCard = await ContentTaskUtils.waitForCondition(
+        () => doc.querySelector("net-error-card")?.wrappedJSObject,
+        "Waiting for net-error-card"
+      );
       await netErrorCard.getUpdateComplete();
 
       netErrorCard.advancedButton.scrollIntoView();
@@ -829,17 +835,20 @@ async function assertNetErrorPage({
       bc,
       [expectedHostname, expectedErrorCode],
       async function (hostname, errorCode) {
-        const netErrorCard =
-          content.document.querySelector("net-error-card").wrappedJSObject;
+        const netErrorCard = await ContentTaskUtils.waitForCondition(
+          () =>
+            content.document.querySelector("net-error-card")?.wrappedJSObject,
+          "Waiting for net-error-card"
+        );
         await netErrorCard.getUpdateComplete();
 
         // Assert Error Card Basics
         Assert.ok(
-          netErrorCard.certErrorBodyTitle,
+          netErrorCard.errorTitle,
           "The error page title should exist."
         );
 
-        const shortDesc = netErrorCard.certErrorIntro;
+        const shortDesc = netErrorCard.errorIntro;
         const shortDescArgs = JSON.parse(shortDesc.dataset.l10nArgs);
         Assert.equal(
           shortDescArgs.hostname,
@@ -910,11 +919,12 @@ async function assertNetErrorPage({
         );
 
         certErrorCodeLink.scrollIntoView(true);
-        await EventUtils.synthesizeMouse(certErrorCodeLink, 2, 2, {}, content);
+        EventUtils.synthesizeMouse(certErrorCodeLink, 2, 2, {}, content);
         Assert.ok(
           netErrorCard.certErrorDebugInfoShowing,
           "The 'certErrorDebugInfoShowing' boolean should be toggled (to true) after Advance button click on assertAdvancedButton."
         );
+        await content.document.l10n.translateRoots();
         Assert.ok(netErrorCard.certErrorText, "Error Code Detail should exist");
 
         // Assert Site Certificate
@@ -1041,8 +1051,10 @@ async function assertViewSourceNetErrorPage({
   const loaded = BrowserTestUtils.browserLoaded(browser, false, expectedUrl);
 
   await SpecialPowers.spawn(browser, [], async function () {
-    const netErrorCard =
-      content.document.querySelector("net-error-card").wrappedJSObject;
+    const netErrorCard = await ContentTaskUtils.waitForCondition(
+      () => content.document.querySelector("net-error-card")?.wrappedJSObject,
+      "Waiting for net-error-card"
+    );
     await netErrorCard.getUpdateComplete();
     // Advanced button
     const advancedButton = netErrorCard.advancedButton;
@@ -1139,12 +1151,13 @@ add_task(async function checkReturnToPreviousPage_feltPrivacyToTrue() {
       true
     );
     await SpecialPowers.spawn(bc, [useFrame], async function () {
-      const netErrorCard =
-        content.document.querySelector("net-error-card").wrappedJSObject;
-      await netErrorCard.getUpdateComplete();
-      const returnButton = netErrorCard.returnButton;
-      returnButton.scrollIntoView(true);
-      EventUtils.synthesizeMouseAtCenter(returnButton, {}, content);
+      const netErrorCard = await ContentTaskUtils.waitForCondition(
+        () => content.document.querySelector("net-error-card")?.wrappedJSObject
+      );
+      const returnButton = await ContentTaskUtils.waitForCondition(
+        () => netErrorCard.returnButton
+      );
+      returnButton.click();
     });
     await pageShownPromise;
 
@@ -1218,15 +1231,14 @@ add_task(async function checkSandboxedIframe_feltPrivacyToTrue() {
 
   let bc = browser.browsingContext.children[0];
   await SpecialPowers.spawn(bc, [], async function () {
-    const netErrorCard =
-      content.document.querySelector("net-error-card").wrappedJSObject;
+    const netErrorCard = await ContentTaskUtils.waitForCondition(
+      () => content.document.querySelector("net-error-card")?.wrappedJSObject,
+      "Waiting for net-error-card"
+    );
     await netErrorCard.getUpdateComplete();
 
     // Assert Error Card Basics
-    Assert.ok(
-      netErrorCard.certErrorBodyTitle,
-      "The error page title should exist."
-    );
+    Assert.ok(netErrorCard.errorTitle, "The error page title should exist.");
     const advancedButton = netErrorCard.advancedButton;
     advancedButton.scrollIntoView(true);
     EventUtils.synthesizeMouseAtCenter(advancedButton, {}, content);

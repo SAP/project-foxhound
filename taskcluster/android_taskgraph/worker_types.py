@@ -2,38 +2,42 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from typing import Optional
 
+import msgspec
 from gecko_taskgraph.transforms.task import payload_builder
-from taskgraph.util.schema import taskref_or_string
-from voluptuous import Any, Optional, Required
+from taskgraph.util.schema import Schema, taskref_or_string_msgspec
 
 
-@payload_builder(
-    "scriptworker-beetmover",
-    schema={
-        Required("action"): str,
-        Required("version"): str,
-        Required("artifact-map"): [
-            {
-                Required("paths"): {
-                    Any(str): {
-                        Required("destinations"): [str],
-                    },
-                },
-                Required("taskId"): taskref_or_string,
-            }
-        ],
-        Required("beetmover-application-name"): str,
-        Required("bucket"): str,
-        Required("upstream-artifacts"): [
-            {
-                Required("taskId"): taskref_or_string,
-                Required("taskType"): str,
-                Required("paths"): [str],
-            }
-        ],
-    },
-)
+class ArtifactMapPathSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    destinations: list[str]
+
+
+class ArtifactMapEntrySchema(
+    msgspec.Struct, kw_only=True, rename="camel", forbid_unknown_fields=False
+):
+    task_id: taskref_or_string_msgspec
+    paths: dict[str, ArtifactMapPathSchema]
+
+
+class BeetmoverUpstreamArtifactSchema(
+    msgspec.Struct, kw_only=True, rename="camel", forbid_unknown_fields=False
+):
+    task_id: taskref_or_string_msgspec
+    task_type: str
+    paths: list[str]
+
+
+class ScriptworkerBeetmoverSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    action: str
+    version: str
+    artifact_map: list[ArtifactMapEntrySchema]
+    beetmover_application_name: str
+    bucket: str
+    upstream_artifacts: list[BeetmoverUpstreamArtifactSchema]
+
+
+@payload_builder("scriptworker-beetmover", schema=ScriptworkerBeetmoverSchema)
 def build_scriptworker_beetmover_payload(config, task, task_def):
     worker = task["worker"]
 
@@ -59,24 +63,25 @@ def build_scriptworker_beetmover_payload(config, task, task_def):
     ])
 
 
-@payload_builder(
-    "scriptworker-pushapk",
-    schema={
-        Required("upstream-artifacts"): [
-            {
-                Required("taskId"): taskref_or_string,
-                Required("taskType"): str,
-                Required("paths"): [str],
-            }
-        ],
-        Optional("certificate-alias"): str,
-        Optional("target-store"): str,
-        Required("channel"): str,
-        Required("commit"): bool,
-        Required("product"): str,
-        Required("dep"): bool,
-    },
-)
+class PushApkUpstreamArtifactSchema(
+    msgspec.Struct, kw_only=True, rename="camel", forbid_unknown_fields=False
+):
+    task_id: taskref_or_string_msgspec
+    task_type: str
+    paths: list[str]
+
+
+class ScriptworkerPushApkSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    upstream_artifacts: list[PushApkUpstreamArtifactSchema]
+    certificate_alias: Optional[str] = None
+    target_store: Optional[str] = None
+    channel: str
+    commit: bool
+    product: str
+    dep: bool
+
+
+@payload_builder("scriptworker-pushapk", schema=ScriptworkerPushApkSchema)
 def build_push_apk_payload(config, task, task_def):
     worker = task["worker"]
 
@@ -100,47 +105,3 @@ def build_push_apk_payload(config, task, task_def):
             scope_prefix, worker["product"], ":dep" if worker["dep"] else ""
         )
     )
-
-
-@payload_builder(
-    "scriptworker-tree",
-    schema={
-        Optional("upstream-artifacts"): [
-            {
-                Optional("taskId"): taskref_or_string,
-                Optional("taskType"): str,
-                Optional("paths"): [str],
-            }
-        ],
-        Required("bump"): bool,
-        Optional("bump-files"): [str],
-        Optional("push"): bool,
-        Optional("branch"): str,
-    },
-)
-def build_version_bump_payload(config, task, task_def):
-    worker = task["worker"]
-    task_def["tags"]["worker-implementation"] = "scriptworker"
-
-    scopes = task_def.setdefault("scopes", [])
-    scope_prefix = f"project:mobile:{config.params['project']}:treescript:action"
-    task_def["payload"] = {}
-
-    if worker["bump"]:
-        if not worker["bump-files"]:
-            raise Exception("Version Bump requested without bump-files")
-
-        bump_info = {}
-        bump_info["next_version"] = config.params["next_version"]
-        bump_info["files"] = worker["bump-files"]
-        task_def["payload"]["version_bump_info"] = bump_info
-        scopes.append(f"{scope_prefix}:version_bump")
-
-    if worker["push"]:
-        task_def["payload"]["push"] = True
-
-    if worker.get("force-dry-run"):
-        task_def["payload"]["dry_run"] = True
-
-    if worker.get("branch"):
-        task_def["payload"]["branch"] = worker["branch"]

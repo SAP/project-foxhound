@@ -120,6 +120,30 @@ describe("PrefsFeed", () => {
       testExperiment: { enabled: true },
     });
   });
+  it("should dispatch PREFS_INITIAL_VALUES with adsBackendConfig", () => {
+    const testObject = {
+      meta: { isRollout: false },
+      value: {
+        flags: {
+          feature1: true,
+        },
+      },
+    };
+    sandbox
+      .stub(global.NimbusFeatures.adsBackend, "getAllEnrollments")
+      .returns([testObject]);
+
+    feed.onAction({ type: at.INIT });
+
+    assert.equal(
+      feed.store.dispatch.firstCall.args[0].type,
+      at.PREFS_INITIAL_VALUES
+    );
+    const [{ data }] = feed.store.dispatch.firstCall.args;
+    assert.deepEqual(data.adsBackendConfig, {
+      feature1: true,
+    });
+  });
   it("should dispatch PREFS_INITIAL_VALUES with an empty object if no experiment is returned", () => {
     sandbox.stub(global.NimbusFeatures.newtab, "getAllVariables").returns(null);
     feed.onAction({ type: at.INIT });
@@ -203,6 +227,33 @@ describe("PrefsFeed", () => {
     assert.notCalled(feed.store.dispatch);
     feed.onPocketExperimentUpdated({}, "feature-rollout-loaded");
     assert.notCalled(feed.store.dispatch);
+  });
+  it("should set initialWallpaper when currentWallpaper is set and initialWallpaper is unset", () => {
+    sandbox
+      .stub(global.NimbusFeatures.pocketNewtab, "getAllVariables")
+      .returns({
+        currentWallpaper: "celestial",
+      });
+    feed.onPocketExperimentUpdated();
+    assert.calledWith(
+      feed._prefs.set,
+      "newtabWallpapers.initialWallpaper",
+      "celestial"
+    );
+  });
+  it("should not overwrite initialWallpaper if it is already set", () => {
+    FAKE_PREFS.set("newtabWallpapers.initialWallpaper", "celestial");
+    sandbox
+      .stub(global.NimbusFeatures.pocketNewtab, "getAllVariables")
+      .returns({
+        currentWallpaper: "celestial",
+      });
+    feed.onPocketExperimentUpdated();
+    assert.neverCalledWith(
+      feed._prefs.set,
+      "newtabWallpapers.initialWallpaper",
+      sinon.match.any
+    );
   });
   it("should send a PREF_CHANGED actions when onExperimentUpdated is called", () => {
     sandbox.stub(global.NimbusFeatures.newtab, "getAllVariables").returns({
@@ -398,6 +449,124 @@ describe("PrefsFeed", () => {
         })
       );
     });
+    it("should write trainhop widgets.weatherSize to the default branch", () => {
+      const setStringPref = sinon.spy();
+      ServicesStub.prefs.getDefaultBranch = sinon
+        .stub()
+        .returns({ setStringPref });
+      const enrollment = {
+        meta: { isRollout: false },
+        value: {
+          type: "widgets",
+          payload: { weatherSize: "large" },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([enrollment]);
+
+      feed.onTrainhopExperimentUpdated();
+
+      assert.calledWith(setStringPref, "widgets.weather.size", "large");
+    });
+
+    it("should write widgetsSettings default-enabled values to the default branch", () => {
+      const setBoolPref = sinon.spy();
+      ServicesStub.prefs.getDefaultBranch = sinon
+        .stub()
+        .returns({ setBoolPref });
+      const enrollment = {
+        meta: { isRollout: false },
+        value: {
+          type: "widgetsSettings",
+          payload: { listsEnabled: false, focusTimerEnabled: true },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([enrollment]);
+
+      feed.onTrainhopExperimentUpdated();
+
+      assert.calledWith(setBoolPref, "widgets.lists.enabled", false);
+      assert.calledWith(setBoolPref, "widgets.focusTimer.enabled", true);
+    });
+
+    it("should not write a widget default when its widgetsSettings key is absent", () => {
+      const setBoolPref = sinon.spy();
+      ServicesStub.prefs.getDefaultBranch = sinon
+        .stub()
+        .returns({ setBoolPref });
+      const enrollment = {
+        meta: { isRollout: false },
+        value: {
+          type: "widgetsSettings",
+          payload: { listsEnabled: false },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([enrollment]);
+
+      feed.onTrainhopExperimentUpdated();
+
+      assert.neverCalledWith(
+        setBoolPref,
+        "widgets.clocks.enabled",
+        sinon.match.any
+      );
+    });
+
+    it("should not write widgets.weather.size when weatherSize is missing", () => {
+      const setStringPref = sinon.spy();
+      ServicesStub.prefs.getDefaultBranch = sinon
+        .stub()
+        .returns({ setStringPref });
+      const enrollment = {
+        meta: { isRollout: false },
+        value: {
+          type: "widgets",
+          payload: { enabled: true },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([enrollment]);
+
+      feed.onTrainhopExperimentUpdated();
+
+      assert.neverCalledWith(
+        setStringPref,
+        "widgets.weather.size",
+        sinon.match.any
+      );
+    });
+
+    it("should not write widgets.weather.size when weatherSize is empty string", () => {
+      const setStringPref = sinon.spy();
+      ServicesStub.prefs.getDefaultBranch = sinon
+        .stub()
+        .returns({ setStringPref });
+      const enrollment = {
+        meta: { isRollout: false },
+        value: {
+          type: "widgets",
+          payload: { weatherSize: "" },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([enrollment]);
+
+      feed.onTrainhopExperimentUpdated();
+
+      assert.neverCalledWith(
+        setStringPref,
+        "widgets.weather.size",
+        sinon.match.any
+      );
+    });
+
     it("should dedupe multi-payload format with experiment taking precedence over rollout", () => {
       const rollout = {
         meta: {
@@ -454,6 +623,149 @@ describe("PrefsFeed", () => {
       );
     });
   });
+  describe("adsBackend", () => {
+    it("should send a PREF_CHANGED action when onAdsBackendUpdated is called", () => {
+      const testObject = {
+        meta: { isRollout: false },
+        value: {
+          flags: {
+            feature1: true,
+          },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.adsBackend, "getAllEnrollments")
+        .returns([testObject]);
+      feed.onAdsBackendUpdated();
+      assert.calledWith(
+        feed.store.dispatch,
+        ac.BroadcastToContent({
+          type: at.PREF_CHANGED,
+          data: {
+            name: "adsBackendConfig",
+            value: {
+              feature1: true,
+            },
+          },
+        })
+      );
+    });
+    it("should prefer experiments over rollouts for individual flags", () => {
+      const testObject1 = {
+        meta: { isRollout: false },
+        value: {
+          flags: {
+            feature1: true,
+          },
+        },
+      };
+      const testObject2 = {
+        meta: { isRollout: true },
+        value: {
+          flags: {
+            feature1: false,
+            feature2: true,
+          },
+        },
+      };
+      const testObject3 = {
+        meta: { isRollout: false },
+        value: {
+          flags: {
+            feature2: false,
+          },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.adsBackend, "getAllEnrollments")
+        .returns([testObject1, testObject2, testObject3]);
+      feed.onAdsBackendUpdated();
+      assert.calledWith(
+        feed.store.dispatch,
+        ac.BroadcastToContent({
+          type: at.PREF_CHANGED,
+          data: {
+            name: "adsBackendConfig",
+            value: {
+              feature1: true,
+              feature2: false,
+            },
+          },
+        })
+      );
+    });
+    it("should handle and merge multiple experiments and rollouts", () => {
+      const testObject1 = {
+        meta: { isRollout: false },
+        value: {
+          flags: {
+            feature1: true,
+            feature2: true,
+          },
+        },
+      };
+      const testObject2 = {
+        meta: { isRollout: true },
+        value: {
+          flags: {
+            feature1: false,
+          },
+        },
+      };
+      const testObject3 = {
+        meta: { isRollout: true },
+        value: {
+          flags: {
+            feature3: true,
+          },
+        },
+      };
+      const testObject4 = {
+        meta: { isRollout: false },
+        value: {
+          flags: {
+            feature3: false,
+            feature4: true,
+          },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.adsBackend, "getAllEnrollments")
+        .returns([testObject1, testObject2, testObject3, testObject4]);
+      feed.onAdsBackendUpdated();
+      assert.calledWith(
+        feed.store.dispatch,
+        ac.BroadcastToContent({
+          type: at.PREF_CHANGED,
+          data: {
+            name: "adsBackendConfig",
+            value: {
+              feature1: true,
+              feature2: true,
+              feature3: false,
+              feature4: true,
+            },
+          },
+        })
+      );
+    });
+    it("should handle no active experiments and rollouts", () => {
+      sandbox
+        .stub(global.NimbusFeatures.adsBackend, "getAllEnrollments")
+        .returns([]);
+      feed.onAdsBackendUpdated();
+      assert.calledWith(
+        feed.store.dispatch,
+        ac.BroadcastToContent({
+          type: at.PREF_CHANGED,
+          data: {
+            name: "adsBackendConfig",
+            value: {},
+          },
+        })
+      );
+    });
+  });
   it("should dispatch PREF_CHANGED when onWidgetsUpdated is called", () => {
     sandbox
       .stub(global.NimbusFeatures.newtabWidgets, "getAllVariables")
@@ -485,6 +797,7 @@ describe("PrefsFeed", () => {
     sandbox.spy(global.NimbusFeatures.pocketNewtab, "offUpdate");
     sandbox.spy(global.NimbusFeatures.newtab, "offUpdate");
     sandbox.spy(global.NimbusFeatures.newtabTrainhop, "offUpdate");
+    sandbox.spy(global.NimbusFeatures.adsBackend, "offUpdate");
     feed.removeListeners();
     assert.calledWith(
       global.NimbusFeatures.pocketNewtab.offUpdate,
@@ -497,6 +810,10 @@ describe("PrefsFeed", () => {
     assert.calledWith(
       global.NimbusFeatures.newtabTrainhop.offUpdate,
       feed.onTrainhopExperimentUpdated
+    );
+    assert.calledWith(
+      global.NimbusFeatures.adsBackend.offUpdate,
+      feed.onAdsBackendUpdated
     );
     assert.calledWith(
       ServicesStub.obs.removeObserver,

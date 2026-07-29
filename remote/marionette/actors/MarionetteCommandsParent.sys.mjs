@@ -206,6 +206,24 @@ export class MarionetteCommandsParent extends JSWindowActorParent {
     });
   }
 
+  async getAccessibilityPropertiesForAccessibilityNode(id) {
+    return this.sendQuery(
+      "MarionetteCommandsParent:getAccessibilityPropertiesForAccessibilityNode",
+      {
+        id,
+      }
+    );
+  }
+
+  async getAccessibilityPropertiesForElement(webEl) {
+    return this.sendQuery(
+      "MarionetteCommandsParent:getAccessibilityPropertiesForElement",
+      {
+        elem: webEl,
+      }
+    );
+  }
+
   async getActiveElement() {
     return this.sendQuery("MarionetteCommandsParent:getActiveElement");
   }
@@ -461,7 +479,6 @@ export function getMarionetteCommandsActorProxy(browsingContextFn) {
 export function registerCommandsActor(sessionId) {
   try {
     ChromeUtils.registerWindowActor("MarionetteCommands", {
-      kind: "JSWindowActor",
       parent: {
         esModuleURI:
           "chrome://remote/content/marionette/actors/MarionetteCommandsParent.sys.mjs",

@@ -35,13 +35,22 @@ moz-card {
   --card-gap: var(--space-small);
   --card-padding: 8px;
   --card-heading-padding-inline: 12px;
+  @media -moz-pref("browser.nova.enabled") {
+    --card-background-color: transparent;
+  }
 
   margin-block-start: var(--space-medium);
   box-shadow: none;
-  background-color: var(--sidebar-box-background);
   color: var(--sidebar-box-color);
   border: var(--sidebar-box-border);
-  border-radius: var(--border-radius-medium);
+  @media -moz-pref("browser.nova.enabled") {
+    --card-padding: 0;
+    border: none;
+
+    &::part(moz-card-heading-wrapper) {
+      padding-inline: 8px;
+    }
+  }
 
   &::part(summary) {
     padding-block: var(--space-medium);
@@ -72,8 +81,9 @@ moz-card {
   }
 
   .sidebar-panel-scrollable-content {
-    overflow-y: auto;
-    height: 100%;
+    overflow: hidden auto;
+    flex: 1;
+    min-height: 0;
     padding: var(--space-xsmall);
   }
 }

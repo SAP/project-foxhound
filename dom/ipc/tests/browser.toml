@@ -47,6 +47,8 @@ run-if = [
 ]
 skip-if = [
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug && msix", # Bug 1775837
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && debug && msix", # Bug 1775837
+  "os == 'win' && opt && standalone", # Bug 2028656
 ]
 
 ["browser_domainPolicy.js"]
@@ -66,7 +68,9 @@ skip-if = [
 skip-if = [
   "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # Bug 1971068
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1971068
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && opt", # Bug 1971068
   "os == 'win' && os_version == '11.26100' && arch == 'x86' && opt", # Bug 1971068
+  "os == 'win' && os_version == '11.26200' && arch == 'x86' && opt", # Bug 1971068
 ]
 
 ["browser_isactiveintab.js"]
@@ -74,6 +78,9 @@ skip-if = [
 ["browser_jsat_serialize.js"]
 
 ["browser_layers_unloaded_while_interruptingJS.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # Bug 1976484
+]
 
 ["browser_memory_distribution_telemetry.js"]
 skip-if = [

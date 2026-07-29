@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,6 +12,8 @@
 #include "SSLServerCertVerification.h"
 #include "nsNSSIOLayer.h"
 #include "nsISocketProvider.h"
+#include "mozilla/Components.h"
+#include "mozilla/psm/EnabledSignatureSchemes.h"
 
 extern mozilla::LazyLogModule gPIPNSSLog;
 
@@ -23,7 +22,22 @@ using namespace mozilla::pkix;
 namespace mozilla {
 namespace psm {
 
-VerifySSLServerCertParent::VerifySSLServerCertParent() {}
+namespace {
+
+SSLSignatureScheme FromIPCSignatureScheme(EnabledSignatureScheme aScheme) {
+  switch (aScheme) {
+#define CASE_IPC_TO_SSL_SCHEME(NAME, _) \
+  case EnabledSignatureScheme::NAME:    \
+    return NAME;
+    FOR_EACH_ENABLED_SIGNATURE_SCHEME(CASE_IPC_TO_SSL_SCHEME)
+#undef CASE_IPC_TO_SSL_SCHEME
+  }
+  MOZ_CRASH("Unexpected EnabledSignatureScheme value");
+}
+
+}  // namespace
+
+VerifySSLServerCertParent::VerifySSLServerCertParent() = default;
 
 void VerifySSLServerCertParent::OnVerifiedSSLServerCert(
     const nsTArray<ByteArray>& aBuiltCertChain,
@@ -117,6 +131,11 @@ bool VerifySSLServerCertParent::Dispatch(
     const uint32_t& aProviderFlags, const uint32_t& aCertVerifierFlags) {
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("VerifySSLServerCertParent::Dispatch"));
 
+  nsCOMPtr<nsIEventTarget> sts = components::SocketTransport::Service();
+  if (!sts) {
+    return false;
+  }
+
   mBackgroundThread = GetCurrentSerialEventTarget();
 
   nsTArray<nsTArray<uint8_t>> peerCertBytes;
@@ -138,20 +157,35 @@ bool VerifySSLServerCertParent::Dispatch(
   Maybe<DelegatedCredentialInfo> dcInfo;
   if (aDcInfo) {
     dcInfo.emplace();
-    dcInfo->scheme = static_cast<SSLSignatureScheme>(aDcInfo->scheme());
+    dcInfo->scheme = FromIPCSignatureScheme(aDcInfo->scheme());
     dcInfo->authKeyBits = aDcInfo->authKeyBits();
   }
 
-  RefPtr<IPCServerCertVerificationResult> resultTask =
-      new IPCServerCertVerificationResult(mBackgroundThread, this);
-  SECStatus status = SSLServerCertVerificationJob::Dispatch(
-      0, nullptr, std::move(peerCertBytes), aHostName, aPort, aOriginAttributes,
-      stapledOCSPResponse, sctsFromTLSExtension, dcInfo, aProviderFlags, Now(),
-      aCertVerifierFlags, resultTask);
+  RefPtr resultTask =
+      MakeRefPtr<IPCServerCertVerificationResult>(mBackgroundThread, this);
 
-  if (status != SECWouldBlock) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-            ("VerifySSLServerCertParent::Dispatch - dispatch failed"));
+  nsresult rv = sts->Dispatch(NS_NewRunnableFunction(
+      "VerifySSLServerCertParent::Dispatch",
+      [peerCertBytes = std::move(peerCertBytes),
+       hostName = nsCString(aHostName), aPort, aOriginAttributes,
+       stapledOCSPResponse = std::move(stapledOCSPResponse),
+       sctsFromTLSExtension = std::move(sctsFromTLSExtension),
+       dcInfo = std::move(dcInfo), aProviderFlags, aCertVerifierFlags,
+       resultTask = std::move(resultTask)]() mutable {
+        SECStatus status = SSLServerCertVerificationJob::Dispatch(
+            0, nullptr, std::move(peerCertBytes), hostName, aPort,
+            aOriginAttributes, stapledOCSPResponse, sctsFromTLSExtension,
+            dcInfo, aProviderFlags, Now(), aCertVerifierFlags, resultTask);
+        if (status != SECWouldBlock) {
+          MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+                  ("VerifySSLServerCertParent::Dispatch - "
+                   "SSLServerCertVerificationJob::Dispatch failed on STS"));
+        }
+      }));
+  if (NS_FAILED(rv)) {
+    MOZ_LOG(
+        gPIPNSSLog, LogLevel::Debug,
+        ("VerifySSLServerCertParent::Dispatch - failed to dispatch to STS"));
     return false;
   }
 

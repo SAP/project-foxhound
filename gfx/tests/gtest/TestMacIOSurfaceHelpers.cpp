@@ -42,7 +42,8 @@ static void TestBiPlanarMidGrayReadback(const IntSize& aYSize,
                                         ChromaSubsampling aSubsampling) {
   RefPtr<MacIOSurface> surface = MacIOSurface::CreateBiPlanarSurface(
       aYSize, aCbCrSize, aSubsampling, YUVColorSpace::BT709,
-      TransferFunction::BT709, ColorRange::FULL, ColorDepth::COLOR_10);
+      TransferFunction::BT709, ColorRange::FULL, ColorDepth::COLOR_10,
+      MacIOSurface::AllowAlpha::Yes);
   ASSERT_TRUE(surface);
 
   // Mid-gray in 10-bit full range: Y=Cb=Cr=512, stored in bits 15:6.
@@ -79,9 +80,9 @@ static void TestBiPlanarMidGrayReadback(const IntSize& aYSize,
 // produces the correct BGRA output via CreateSourceSurfaceFromMacIOSurface.
 TEST(MacIOSurfaceHelpers, P010Readback)
 {
-  ASSERT_NO_FATAL_FAILURE(TestBiPlanarMidGrayReadback(
-      IntSize(16, 16), IntSize(8, 8),
-      ChromaSubsampling::HALF_WIDTH_AND_HEIGHT));
+  ASSERT_NO_FATAL_FAILURE(
+      TestBiPlanarMidGrayReadback(IntSize(16, 16), IntSize(8, 8),
+                                  ChromaSubsampling::HALF_WIDTH_AND_HEIGHT));
 }
 
 // Tests that an NV16 (10-bit 4:2:2 biplanar) IOSurface filled with mid-gray

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -293,8 +291,8 @@ bool RDDProcessManager::CreateContentBridge(
   MOZ_ASSERT(NS_IsMainThread());
 
   if (NS_WARN_IF(!IsRDDProcessAlive())) {
-    MOZ_LOG(sPDMLog, LogLevel::Debug,
-            ("RDD shutdown before creating content bridge"));
+    MOZ_LOG_FMT(sPDMLog, LogLevel::Debug,
+                "RDD shutdown before creating content bridge");
     return false;
   }
 
@@ -305,8 +303,8 @@ bool RDDProcessManager::CreateContentBridge(
       mRDDChild->OtherEndpointProcInfo(), aOtherProcess, &parentPipe,
       &childPipe);
   if (NS_FAILED(rv)) {
-    MOZ_LOG(sPDMLog, LogLevel::Debug,
-            ("Could not create content remote decoder: %d", int(rv)));
+    MOZ_LOG_FMT(sPDMLog, LogLevel::Debug,
+                "Could not create content remote decoder: {}", int(rv));
     return false;
   }
 

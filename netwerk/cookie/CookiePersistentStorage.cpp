@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +9,10 @@
 #include "CookieService.h"
 #include "CookieValidation.h"
 
+#include "mozilla/Components.h"
+#include "mozilla/ErrorNames.h"
 #include "mozilla/FileUtils.h"
+#include "mozilla/ProfilerMarkers.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/glean/NetwerkMetrics.h"
 #include "mozilla/ScopeExit.h"
@@ -50,6 +52,9 @@ constexpr auto IDX_UPDATE_TIME_INUSEC = 13;
 
 namespace mozilla {
 namespace net {
+
+NS_IMPL_ISUPPORTS_INHERITED(CookiePersistentStorage, CookieStorage,
+                            nsIAsyncShutdownBlocker)
 
 namespace {
 
@@ -557,9 +562,10 @@ void CookiePersistentStorage::RemoveAllInternal() {
 }
 
 void CookiePersistentStorage::HandleCorruptDB() {
-  COOKIE_LOGSTRING(LogLevel::Debug,
-                   ("HandleCorruptDB(): CookieStorage %p has mCorruptFlag %u",
-                    this, mCorruptFlag));
+  COOKIE_LOGSTRING(
+      LogLevel::Debug,
+      ("HandleCorruptDB(): CookieStorage %p has mCorruptFlag %u", this,
+       static_cast<unsigned>(static_cast<CorruptFlag>(mCorruptFlag))));
 
   // Mark the database corrupt, so the close listener can begin reconstructing
   // it.
@@ -709,7 +715,10 @@ void CookiePersistentStorage::Close() {
 
   if (mDBConn) {
     // Asynchronously close the connection. We will null it below.
+    // The shutdown blocker will be removed in HandleDBClosed().
     mDBConn->AsyncClose(mCloseListener);
+  } else {
+    RemoveShutdownBlocker();
   }
 
   CleanupDBConnection();
@@ -842,6 +851,33 @@ void CookiePersistentStorage::DeleteFromDB(
   }
 }
 
+// nsIAsyncShutdownBlocker
+
+NS_IMETHODIMP
+CookiePersistentStorage::BlockShutdown(nsIAsyncShutdownClient* aClient) {
+  Close();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+CookiePersistentStorage::GetName(nsAString& aName) {
+  aName.AssignLiteral("CookiePersistentStorage: cookies.sqlite closing");
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+CookiePersistentStorage::GetState(nsIPropertyBag** aState) {
+  *aState = nullptr;
+  return NS_OK;
+}
+
+void CookiePersistentStorage::RemoveShutdownBlocker() {
+  if (mShutdownBarrier) {
+    mShutdownBarrier->RemoveBlocker(this);
+    mShutdownBarrier = nullptr;
+  }
+}
+
 void CookiePersistentStorage::Activate() {
   MOZ_ASSERT(!mThread, "already have a cookie thread");
 
@@ -866,6 +902,29 @@ void CookiePersistentStorage::Activate() {
   }
 
   mCookieFile->AppendNative(nsLiteralCString(COOKIES_FILE));
+
+  nsCOMPtr<nsIAsyncShutdownService> svc = components::AsyncShutdown::Service();
+  if (svc) {
+    nsCOMPtr<nsIAsyncShutdownClient> client;
+    svc->GetProfileBeforeChange(getter_AddRefs(client));
+    if (client) {
+      mShutdownBarrier = client;
+      client->AddBlocker(this, NS_LITERAL_STRING_FROM_CSTRING(__FILE__),
+                         __LINE__, u""_ns);
+    }
+  }
+
+  // Create the placeholder URI on the main thread before dispatching to the
+  // Cookie thread. NS_NewURI must not be called from background threads as it
+  // triggers XPCOM service initialization.
+  if (NS_FAILED(
+          NS_NewURI(getter_AddRefs(mPlaceholderURI), "https://example.com"))) {
+    MOZ_ASSERT_UNREACHABLE(
+        "Failed to create placeholder URI for cookie validation");
+    mInitializedDBConn = true;
+    mInitialized = true;
+    return;
+  }
 
   NS_ENSURE_SUCCESS_VOID(NS_NewNamedThread("Cookie", getter_AddRefs(mThread)));
 
@@ -960,7 +1019,17 @@ CookiePersistentStorage::OpenDBResult CookiePersistentStorage::TryInitDB(
     rv = mStorageService->OpenUnsharedDatabase(
         mCookieFile, mozIStorageService::CONNECTION_DEFAULT,
         getter_AddRefs(mSyncConn));
-    NS_ENSURE_SUCCESS(rv, RESULT_RETRY);
+    if (NS_FAILED(rv)) {
+      const char* errorName = mozilla::GetStaticErrorName(rv);
+      glean::network_cookies::open_error
+          .Get(nsDependentCString(errorName ? errorName : "unknown"))
+          .Add(1);
+      if (rv == NS_ERROR_FILE_NO_DEVICE_SPACE ||
+          rv == NS_ERROR_FILE_ACCESS_DENIED) {
+        return RESULT_FAILURE;
+      }
+      return RESULT_RETRY;
+    }
   }
 
   auto guard = MakeScopeExit([&] { mSyncConn = nullptr; });
@@ -1818,6 +1887,7 @@ void CookiePersistentStorage::HandleDBClosed() {
       if (os) {
         os->NotifyObservers(nullptr, "cookie-db-closed", nullptr);
       }
+      RemoveShutdownBlocker();
       break;
     }
     case CookiePersistentStorage::CLOSING_FOR_REBUILD: {
@@ -1843,6 +1913,7 @@ void CookiePersistentStorage::HandleDBClosed() {
       if (os) {
         os->NotifyObservers(nullptr, "cookie-db-closed", nullptr);
       }
+      RemoveShutdownBlocker();
       break;
     }
   }
@@ -1879,6 +1950,7 @@ CookiePersistentStorage::OpenDBResult CookiePersistentStorage::Read() {
     mReadArray.Clear();
   }
   mReadArray.SetCapacity(kMaxNumberOfCookies);
+  mCleanupArray.Clear();
 
   nsCString baseDomain;
   nsCString name;
@@ -1913,11 +1985,60 @@ CookiePersistentStorage::OpenDBResult CookiePersistentStorage::Read() {
     // that we don't support
     (void)attrs.PopulateFromSuffix(suffix);
 
-    CookieKey key(baseDomain, attrs);
+    UniquePtr<CookieStruct> cookieStruct = GetCookieFromRow(stmt);
+
+    // Filter cookies with newly invalid hostnames (e.g. legacy DB values that
+    // no longer pass URL parsing).
+    nsCOMPtr<nsIURI> validatedUri;
+    if (NS_FAILED(NS_MutateURI(mPlaceholderURI)
+                      .SetHost(host)
+                      .Finalize(validatedUri))) {
+      COOKIE_LOGSTRING(
+          LogLevel::Debug,
+          ("Read(): Queueing cookie with newly invalid hostname '%s' for "
+           "removal from DB",
+           host.get()));
+      CookieDomainTuple* cleanupTuple = mCleanupArray.AppendElement();
+      cleanupTuple->key = CookieKey(baseDomain, attrs);
+      cleanupTuple->originAttributes = attrs;
+      cleanupTuple->cookie = Cookie::Create(*cookieStruct, attrs);
+      continue;
+    }
+
+    // When the valueless_cookie pref is enabled, discard legacy nameless
+    // cookies (name="") that were stored under the old behavior.
+    // Under the new behavior these cookies are unreachable since new cookies
+    // without '=' are stored with the token as name, not value.
+    if (StaticPrefs::network_cookie_valueless_cookie() &&
+        cookieStruct->name().IsEmpty()) {
+      CookieDomainTuple* cleanupTuple = mCleanupArray.AppendElement();
+      cleanupTuple->key = CookieKey(baseDomain, attrs);
+      cleanupTuple->originAttributes = attrs;
+      cleanupTuple->cookie = Cookie::Create(*cookieStruct, attrs);
+      continue;
+    }
+
+    // Create the Cookie on the background thread. CreateValidated fixes up
+    // any timestamps in the DB that are far in the future.
+    RefPtr<Cookie> cookie = Cookie::CreateValidated(*cookieStruct, attrs);
+
+    // Clean up invalid first-party partitioned cookies without the
+    // 'Partitioned' attribute. Use Cookie::Create to preserve the original DB
+    // timestamps for the deletion query.
+    if (CookieCommons::IsFirstPartyPartitionedCookieWithoutCHIPS(
+            cookie, baseDomain, attrs)) {
+      CookieDomainTuple* cleanupTuple = mCleanupArray.AppendElement();
+      cleanupTuple->key = CookieKey(baseDomain, attrs);
+      cleanupTuple->originAttributes = attrs;
+      cleanupTuple->cookie = Cookie::Create(*cookieStruct, attrs);
+      continue;
+    }
+
+    MOZ_ASSERT(!cookie->IsSession());
     CookieDomainTuple* tuple = mReadArray.AppendElement();
-    tuple->key = std::move(key);
+    tuple->key = CookieKey(baseDomain, attrs);
     tuple->originAttributes = attrs;
-    tuple->cookie = GetCookieFromRow(stmt);
+    tuple->cookie = std::move(cookie);
   }
 
   COOKIE_LOGSTRING(LogLevel::Debug,
@@ -1964,55 +2085,50 @@ UniquePtr<CookieStruct> CookiePersistentStorage::GetCookieFromRow(
 void CookiePersistentStorage::EnsureInitialized() {
   MOZ_ASSERT(NS_IsMainThread());
 
-  bool isAccumulated = false;
+  TimeStamp startBlockTime;
 
   if (!mInitialized) {
-#ifndef ANDROID
-    TimeStamp startBlockTime = TimeStamp::Now();
-#endif
+    startBlockTime = TimeStamp::Now();
     MonitorAutoLock lock(mMonitor);
 
     while (!mInitialized) {
       mMonitor.Wait();
     }
-#ifndef ANDROID
-    TimeStamp endBlockTime = TimeStamp::Now();
-    mozilla::glean::networking::sqlite_cookies_block_main_thread
-        .AccumulateRawDuration(endBlockTime - startBlockTime);
-    mozilla::glean::networking::sqlite_cookies_time_to_block_main_thread
-        .AccumulateRawDuration(TimeDuration::Zero());
-#endif
-    isAccumulated = true;
   } else if (!mEndInitDBConn.IsNull()) {
     // We didn't block main thread, and here comes the first cookie request.
     // Collect how close we're going to block main thread.
-#ifndef ANDROID
     TimeStamp now = TimeStamp::Now();
     mozilla::glean::networking::sqlite_cookies_time_to_block_main_thread
         .AccumulateRawDuration(now - mEndInitDBConn);
-#endif
-    // Nullify the timestamp so wo don't accumulate this telemetry probe again.
+    PROFILER_MARKER_UNTYPED("sqlite_cookies_time_to_block_main_thread", NETWORK,
+                            MarkerTiming::Interval(mEndInitDBConn, now));
+    // Nullify the timestamp so we don't accumulate this telemetry probe again.
     mEndInitDBConn = TimeStamp();
-    isAccumulated = true;
-  } else if (!mInitializedDBConn) {
+    return;
+  } else if (mInitializedDBConn) {
+    // Already fully initialized; telemetry was recorded on a prior call.
+    return;
+  } else {
     // A request comes while we finished cookie thread task and InitDBConn is
-    // on the way from cookie thread to main thread. We're very close to block
-    // main thread.
-#ifndef ANDROID
-    mozilla::glean::networking::sqlite_cookies_time_to_block_main_thread
-        .AccumulateRawDuration(TimeDuration::Zero());
-#endif
-    isAccumulated = true;
+    // on the way from cookie thread to main thread. We run it synchronously
+    // below, blocking the main thread.
+    startBlockTime = TimeStamp::Now();
   }
 
-  if (!mInitializedDBConn) {
-    InitDBConn();
-    if (isAccumulated) {
-      // Nullify the timestamp so wo don't accumulate this telemetry probe
-      // again.
-      mEndInitDBConn = TimeStamp();
-    }
-  }
+  // Main thread is blocked: either we just waited on the monitor or the
+  // dispatched InitDBConn runnable hasn't fired yet. Run it synchronously
+  // (the dispatched runnable will no-op via InitDBConn's own guard) and
+  // record the full blocking duration.
+  InitDBConn();
+  mEndInitDBConn = TimeStamp();
+
+  TimeStamp endBlockTime = TimeStamp::Now();
+  mozilla::glean::networking::sqlite_cookies_block_main_thread
+      .AccumulateRawDuration(endBlockTime - startBlockTime);
+  mozilla::glean::networking::sqlite_cookies_time_to_block_main_thread
+      .AccumulateRawDuration(TimeDuration::Zero());
+  PROFILER_MARKER_UNTYPED("sqlite_cookies_block_main_thread", NETWORK,
+                          MarkerTiming::Interval(startBlockTime, endBlockTime));
 }
 
 void CookiePersistentStorage::InitDBConn() {
@@ -2025,59 +2141,31 @@ void CookiePersistentStorage::InitDBConn() {
     return;
   }
 
-  nsCOMPtr<nsIURI> dummyUri;
-  nsresult rv = NS_NewURI(getter_AddRefs(dummyUri), "https://example.com");
-  MOZ_ASSERT(NS_SUCCEEDED(rv));
+  TimeStamp startInitDBConn = TimeStamp::Now();
+  auto markerGuard = MakeScopeExit([&] {
+    PROFILER_MARKER_UNTYPED(
+        "CookiePersistentStorage::InitDBConn", NETWORK,
+        MarkerTiming::IntervalUntilNowFrom(startInitDBConn));
+  });
+
+  // Cookies rejected during Read() on the Cookie thread (invalid hostname or
+  // invalid CHIPS attribution) need to be removed from the DB now that the
+  // connection is ready. Cookies are already fully constructed.
   nsTArray<RefPtr<Cookie>> cleanupCookies;
+  for (auto& tuple : mCleanupArray) {
+    COOKIE_LOGSTRING(LogLevel::Debug,
+                     ("InitDBConn(): Removing invalid cookie from db: '%s'",
+                      tuple.cookie->Host().get()));
+    cleanupCookies.AppendElement(tuple.cookie);
+  }
+  mCleanupArray.Clear();
 
-  for (uint32_t i = 0; i < mReadArray.Length(); ++i) {
-    CookieDomainTuple& tuple = mReadArray[i];
-    MOZ_ASSERT(!tuple.cookie->isSession());
+  // Cookies are already created and validated on the Cookie background thread.
+  for (auto& tuple : mReadArray) {
+    MOZ_ASSERT(!tuple.cookie->IsSession());
 
-    // filter invalid non-ipv4 host ending in number from old db values
-    nsCOMPtr<nsIURIMutator> outMut;
-    nsCOMPtr<nsIURIMutator> dummyMut;
-    rv = dummyUri->Mutate(getter_AddRefs(dummyMut));
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
-    rv = dummyMut->SetHost(tuple.cookie->host(), getter_AddRefs(outMut));
-
-    if (NS_FAILED(rv)) {
-      COOKIE_LOGSTRING(LogLevel::Debug, ("Removing cookie from db with "
-                                         "newly invalid hostname: '%s'",
-                                         tuple.cookie->host().get()));
-      RefPtr<Cookie> cookie =
-          Cookie::Create(*tuple.cookie, tuple.originAttributes);
-      cleanupCookies.AppendElement(cookie);
-      continue;
-    }
-
-    // CreateValidated fixes up the creation and lastAccessed times.
-    // If the DB is corrupted and the timestaps are far away in the future
-    // we don't want the creation timestamp to update gLastCreationTimeInUSec
-    // as that would contaminate all the next creation times.
-    // We fix up these dates to not be later than the current time.
-    // The downside is that if the user sets the date far away in the past
-    // then back to the current date, those cookies will be stale,
-    // but if we don't fix their dates, those cookies might never be
-    // evicted.
-    RefPtr<Cookie> cookie =
-        Cookie::CreateValidated(*tuple.cookie, tuple.originAttributes);
-
-    // Clean up the invalid first-party partitioned cookies that don't have
-    // the 'partitioned' cookie attribution. This will also ensure that we don't
-    // read the cookie into memory.
-    if (CookieCommons::IsFirstPartyPartitionedCookieWithoutCHIPS(
-            cookie, tuple.key.mBaseDomain, tuple.key.mOriginAttributes)) {
-      // We cannot directly use the cookie after validation because the
-      // timestamps could be different from the cookies in DB. So, we need to
-      // create one from the cookie struct.
-      RefPtr<Cookie> invalidCookie =
-          Cookie::Create(*tuple.cookie, tuple.originAttributes);
-      cleanupCookies.AppendElement(invalidCookie);
-      continue;
-    }
-
-    AddCookieToList(tuple.key.mBaseDomain, tuple.key.mOriginAttributes, cookie);
+    AddCookieToList(tuple.key.mBaseDomain, tuple.key.mOriginAttributes,
+                    tuple.cookie);
   }
 
   if (NS_FAILED(InitDBConnInternal())) {
@@ -2120,12 +2208,14 @@ void CookiePersistentStorage::InitDBConn() {
     mReadArray.Clear();
   }
 
-  // Let's count the valid/invalid cookies when in idle.
-  nsCOMPtr<nsIRunnable> idleRunnable = NS_NewRunnableFunction(
-      "CookiePersistentStorage::RecordValidationTelemetry",
-      [self = RefPtr{this}]() { self->RecordValidationTelemetry(); });
-  (void)NS_DispatchToMainThreadQueue(do_AddRef(idleRunnable),
-                                     EventQueuePriority::Idle);
+  if (StaticPrefs::network_cookie_validation_lastEpoch() <
+      StaticPrefs::network_cookie_validation_epoch()) {
+    nsCOMPtr<nsIRunnable> idleRunnable = NS_NewRunnableFunction(
+        "CookiePersistentStorage::RecordValidationTelemetry",
+        [self = RefPtr{this}]() { self->RecordValidationTelemetry(); });
+    (void)NS_DispatchToMainThreadQueue(do_AddRef(idleRunnable),
+                                       EventQueuePriority::Idle);
+  }
 }
 
 nsresult CookiePersistentStorage::InitDBConnInternal() {
@@ -2403,6 +2493,8 @@ void CookiePersistentStorage::CollectCookieJarSizeData() {
       sumUnpartitioned);
 }
 
+// NOTE: if you modify this function and want it to run again on next startup
+// for existing profiles, bump network.cookie.validation.epoch.
 void CookiePersistentStorage::RecordValidationTelemetry() {
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -2491,6 +2583,13 @@ void CookiePersistentStorage::RecordValidationTelemetry() {
     RemoveCookie(data.mBaseDomain, data.mOriginAttributes, data.mCookie->Host(),
                  data.mCookie->Name(), data.mCookie->Path(),
                  /* is http: */ true, nullptr);
+  }
+
+  // Only mark this epoch as complete if no fixes were needed. If we did fix
+  // cookies, re-scan on next startup to confirm the database is now stable.
+  if (listToAdd.IsEmpty() && listToRemove.IsEmpty()) {
+    Preferences::SetUint("network.cookie.validation.lastEpoch",
+                         StaticPrefs::network_cookie_validation_epoch());
   }
 
   nsCOMPtr<nsIObserverService> os = services::GetObserverService();

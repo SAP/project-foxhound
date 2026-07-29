@@ -25,7 +25,6 @@ const { AppConstants } = ChromeUtils.importESModule(
 );
 ChromeUtils.defineESModuleGetters(this, {
   ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
-  Preferences: "resource://gre/modules/Preferences.sys.mjs",
 });
 
 const Telemetry = Services.telemetry;
@@ -172,8 +171,7 @@ var Settings = {
             var { EventDispatcher } = ChromeUtils.importESModule(
               "resource://gre/modules/Messaging.sys.mjs"
             );
-            EventDispatcher.instance.sendRequest({
-              type: "Settings:Show",
+            EventDispatcher.instance.sendRequest("Settings:Show", {
               resource: "preferences_privacy",
             });
           } else {
@@ -733,7 +731,7 @@ var SlowSQL = {
 
     let debugSlowSql =
       PingPicker.viewCurrentPingData &&
-      Preferences.get(PREF_DEBUG_SLOW_SQL, false);
+      Services.prefs.getBoolPref(PREF_DEBUG_SLOW_SQL, false);
     let slowSql = debugSlowSql ? Telemetry.debugSlowSQL : aPing.payload.slowSQL;
     if (!slowSql) {
       setHasData("slow-sql-section", false);
@@ -1905,7 +1903,10 @@ function setHasData(aSectionID, aHasData) {
  * Sets l10n attributes based on the Telemetry Server Owner pref.
  */
 function setupServerOwnerBranding() {
-  let serverOwner = Preferences.get(PREF_TELEMETRY_SERVER_OWNER, "Mozilla");
+  let serverOwner = Services.prefs.getStringPref(
+    PREF_TELEMETRY_SERVER_OWNER,
+    "Mozilla"
+  );
   const elements = [
     [document.getElementById("page-subtitle"), "about-telemetry-page-subtitle"],
   ];

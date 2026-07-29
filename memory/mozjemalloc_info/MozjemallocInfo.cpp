@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -33,19 +31,22 @@ int main() {
   printf("Quantum max:  %5zu\n", stats.quantum_max);
   printf("Sub-page max: %5zu\n", stats.page_size / 2);
   printf("Large max:    %5zuKiB\n", stats.large_max / 1024);
+  printf("Run header:   %5zu\n", stats.arena_run_header);
 
   printf("\n");
   printf("Run layout for each bin size\n");
   printf("----------------------------\n\n");
-  printf(" Size | Reg per run | Run size | Overhead\n");
-  printf("------|-------------|----------|----------\n");
+  printf(" Size | Reg per run | Run size | Overhead | Theoretical best \n");
+  printf("------|-------------|----------|----------|------------------\n");
   for (unsigned i = 0; i < num_bins; i++) {
     auto& bin = bin_stats[i];
     if (bin.size) {
-      printf("%5zu | %11zu | %5zuKiB | %7.2f%%\n", bin.size,
+      printf("%5zu | %11zu | %5zuKiB | %7.2f%% | %15.2f%%\n", bin.size,
              bin.regions_per_run, bin.bytes_per_run / 1024,
              float(bin.bytes_per_run - (bin.regions_per_run * bin.size)) *
-                 100.0f / float(bin.regions_per_run * bin.size));
+                 100.0f / float(bin.regions_per_run * bin.size),
+             // Each byte of overhead provides metadata for 8 regions.
+             100.0f / (8.0f * float(bin.size)));
     }
   }
 

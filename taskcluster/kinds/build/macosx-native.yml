@@ -93,7 +93,7 @@ macosx64-plain/debug:
             - sysroot-wasm32-wasi
             - onnxruntime-x86_64-apple-darwin
     optimization:
-        skip-unless-expanded: null
+        skip-unless-backstop: null
 
 macosx64-rusttests/opt:
     description: "MacOS X x64 Rust Tests Opt"

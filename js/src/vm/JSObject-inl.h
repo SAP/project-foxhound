@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -359,10 +357,11 @@ inline NativeObject* NewObjectWithGivenTaggedProtoAndAllocSite(
 namespace detail {
 
 template <typename T, NewObjectKind NewKind>
-inline T* NewObjectWithGivenTaggedProtoForKind(JSContext* cx,
-                                               Handle<TaggedProto> proto) {
-  JSObject* obj = NewObjectWithGivenTaggedProto<NewKind>(cx, &T::class_, proto,
-                                                         ObjectFlags());
+inline T* NewObjectWithGivenTaggedProtoForKind(
+    JSContext* cx, Handle<TaggedProto> proto,
+    ObjectFlags objFlags = ObjectFlags()) {
+  JSObject* obj =
+      NewObjectWithGivenTaggedProto<NewKind>(cx, &T::class_, proto, objFlags);
   return obj ? &obj->as<T>() : nullptr;
 }
 
@@ -397,15 +396,17 @@ inline NativeObject* NewTenuredObjectWithGivenProto(
 }
 
 template <typename T>
-inline T* NewObjectWithGivenProto(JSContext* cx, HandleObject proto) {
+inline T* NewObjectWithGivenProto(JSContext* cx, HandleObject proto,
+                                  ObjectFlags objFlags = ObjectFlags()) {
   return detail::NewObjectWithGivenTaggedProtoForKind<T, GenericObject>(
-      cx, AsTaggedProto(proto));
+      cx, AsTaggedProto(proto), objFlags);
 }
 
 template <typename T>
-inline T* NewTenuredObjectWithGivenProto(JSContext* cx, HandleObject proto) {
+inline T* NewTenuredObjectWithGivenProto(JSContext* cx, HandleObject proto,
+                                         ObjectFlags objFlags = ObjectFlags()) {
   return detail::NewObjectWithGivenTaggedProtoForKind<T, TenuredObject>(
-      cx, AsTaggedProto(proto));
+      cx, AsTaggedProto(proto), objFlags);
 }
 
 template <typename T>

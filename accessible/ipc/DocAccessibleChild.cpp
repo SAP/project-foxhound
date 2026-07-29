@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -46,7 +44,7 @@ void DocAccessibleChild::FlattenTree(LocalAccessible* aRoot,
 
 /* static */
 AccessibleData DocAccessibleChild::SerializeAcc(LocalAccessible* aAcc) {
-  uint32_t genericTypes = aAcc->mGenericTypes;
+  AccGenericType genericTypes = aAcc->GenericTypes();
   if (aAcc->ARIAHasNumericValue()) {
     // XXX: We need to do this because this requires a state check.
     genericTypes |= eNumericValue;
@@ -57,19 +55,16 @@ AccessibleData DocAccessibleChild::SerializeAcc(LocalAccessible* aAcc) {
   // push the cache again for moves.
   if (!aAcc->Document()->IsAccessibleBeingMoved(aAcc)) {
     fields = aAcc->BundleFieldsForCache(
-        nsAccessibilityService::GetActiveCacheDomains(),
-        CacheUpdateType::Initial);
+        aAcc->Document()->EffectiveCacheDomains(), CacheUpdateType::Initial);
     if (fields->Count() == 0) {
       fields = nullptr;
     }
   }
 
   return AccessibleData(aAcc->ID(), aAcc->NativeRole(),
-                        aAcc->LocalParent()->ID(),
-                        static_cast<int32_t>(aAcc->IndexInParent()),
-                        static_cast<AccType>(aAcc->mType),
-                        static_cast<AccGenericType>(genericTypes),
-                        aAcc->mRoleMapEntryIndex, fields);
+                        aAcc->LocalParent()->ID(), aAcc->IndexInParent(),
+                        aAcc->mType, genericTypes, aAcc->mRoleMapEntryIndex,
+                        fields);
 }
 
 void DocAccessibleChild::InsertIntoIpcTree(LocalAccessible* aChild,
@@ -88,11 +83,11 @@ void DocAccessibleChild::InsertIntoIpcTree(LocalAccessible* aChild,
       if (AppShutdown::IsShutdownImpending()) {
         return;
       }
-      // Note: std::move used on aSuppressShowEvent to force selection of the
+      // Note: bool(...) used on aSuppressShowEvent to force selection of the
       // ShowEventData constructor that takes all rvalue reference arguments.
       const uint32_t accCount = data.Length();
       PushMutationEventData(
-          ShowEventData{std::move(data), std::move(aSuppressShowEvent), false,
+          ShowEventData{std::move(data), bool(aSuppressShowEvent), false,
                         false},
           accCount);
 

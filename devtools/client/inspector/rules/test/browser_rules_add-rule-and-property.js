@@ -18,16 +18,7 @@ add_task(async function () {
   await addNewRuleAndDismissEditor(inspector, view, "#testid", 1);
 
   info("Adding a new property for this rule");
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
-
-  const onRuleViewChanged = view.once("ruleview-changed");
-  ruleEditor.addProperty("font-weight", "bold", "", true);
-  await onRuleViewChanged;
-
-  const textProps = ruleEditor.rule.textProps;
-  const prop = textProps[textProps.length - 1];
-  is(prop.name, "font-weight", "The last property name is font-weight");
-  is(prop.value, "bold", "The last property value is bold");
+  await addProperty(view, 1, "font-weight", "bold");
 
   info(
     "Add another rule to make sure we reuse the stylesheet we created the first time we added a rule"

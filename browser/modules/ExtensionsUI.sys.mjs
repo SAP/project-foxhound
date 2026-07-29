@@ -46,10 +46,12 @@ const DEFAULT_EXTENSION_ICON =
   "chrome://mozapps/skin/extensions/extensionGeneric.svg";
 
 function getTabBrowser(browser) {
-  while (browser.ownerGlobal.docShell.itemType !== Ci.nsIDocShell.typeChrome) {
-    browser = browser.ownerGlobal.docShell.chromeEventHandler;
+  while (
+    browser.documentGlobal.docShell.itemType !== Ci.nsIDocShell.typeChrome
+  ) {
+    browser = browser.documentGlobal.docShell.chromeEventHandler;
   }
-  let window = browser.ownerGlobal;
+  let window = browser.documentGlobal;
   let viewType = browser.getAttribute("webextension-view-type");
   if (viewType == "sidebar") {
     window = window.browsingContext.topChromeWindow;
@@ -142,7 +144,7 @@ export var ExtensionsUI = {
       shouldShowTechnicalAndInteractionCheckbox = false,
     } = {}
   ) {
-    let global = tabbrowser.selectedBrowser.ownerGlobal;
+    let global = tabbrowser.selectedBrowser.documentGlobal;
     return global.BrowserAddonUI.openAddonsMgr("addons://list/extension").then(
       aomWin => {
         let aomBrowser = aomWin.docShell.chromeEventHandler;
@@ -556,7 +558,7 @@ export var ExtensionsUI = {
         browser,
         "addon-webext-permissions",
         strings.header,
-        browser.ownerGlobal.gUnifiedExtensions.getPopupAnchorID(
+        browser.documentGlobal.gUnifiedExtensions.getPopupAnchorID(
           browser,
           window
         ),
@@ -788,7 +790,7 @@ export var ExtensionsUI = {
   originControlsMenu(popup, extensionId) {
     let policy = WebExtensionPolicy.getByID(extensionId);
 
-    let win = popup.ownerGlobal;
+    let win = popup.documentGlobal;
     let doc = popup.ownerDocument;
     let tab = win.gBrowser.selectedTab;
     let uri = tab.linkedBrowser?.currentURI;

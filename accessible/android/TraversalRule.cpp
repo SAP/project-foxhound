@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -176,6 +174,7 @@ uint16_t TraversalRule::ControlMatch(Accessible* aAccessible) {
     case roles::COMBOBOX:
     case roles::LISTBOX:
     case roles::ENTRY:
+    case roles::SEARCHBOX:
     case roles::PASSWORD_TEXT:
     case roles::PAGETAB:
     case roles::RADIOBUTTON:
@@ -269,6 +268,7 @@ uint16_t TraversalRule::DefaultMatch(Accessible* aAccessible) {
     case roles::RADIO_MENU_ITEM:
     case roles::TOGGLE_BUTTON:
     case roles::ENTRY:
+    case roles::SEARCHBOX:
     case roles::KEY:
     case roles::SLIDER:
     case roles::SPINBUTTON:

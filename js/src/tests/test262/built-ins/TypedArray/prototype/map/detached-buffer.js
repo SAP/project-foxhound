@@ -23,12 +23,12 @@ var callbackfn = function() {
   throw new Test262Error();
 };
 
-testWithTypedArrayConstructors(function(TA) {
-  var sample = new TA(1);
+testWithTypedArrayConstructors(function(TA, makeCtorArg) {
+  var sample = new TA(makeCtorArg(1));
   $DETACHBUFFER(sample.buffer);
   assert.throws(TypeError, function() {
     sample.map(callbackfn);
   });
-});
+}, null, null, ["immutable"]);
 
 reportCompare(0, 0);

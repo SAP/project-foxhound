@@ -9,6 +9,38 @@ newtab-page-title = Yañı İlmek
 newtab-settings-button =
     .title = Yañı İlmek saifeñizni Özelleştiriñiz
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Yañı ilmekler
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } satır
+           *[other] { $num } satır
+        }
+home-restore-defaults-srd =
+    .label = Ögbelgilemelerni Keri Tikle
+    .accesskey = b
+home-mode-choice-custom-srd =
+    .label = Özel URL'ler
+home-mode-choice-blank-srd =
+    .label = Boş saife
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Sponsorlı Hikâyeler
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Ziyaret etilgen saifeler
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Saifeimleri
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Eñ Deminki Endirme
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +48,7 @@ newtab-search-box-search-button =
     .title = Qıdır
     .aria-label = Qıdır
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-edit-topsites-header = Üst Saytnı Tahrir Et
 newtab-topsites-title-label = Serlevha

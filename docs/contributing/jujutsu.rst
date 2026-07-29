@@ -5,6 +5,12 @@ Jujutsu (``jj`` on the command-line) is a modern DVCS, that uses ``git``
 repositorie as its storage backend. It borrows extensively from Mercurial,
 but has many more features.
 
+.. note::
+
+   Jujutsu is an optional alternative to plain Git for managing your
+   patch stack. If you prefer Git, see :ref:`Working with stack of
+   patches Quick Reference`.
+
 .. contents:: Table of Contents
 
 Links and Resources
@@ -27,30 +33,24 @@ To get up and running with a fresh checkout, run the following commands
 
 ::
 
-   # Create a clone and enter the directory
-   jj git clone --colocate https://github.com/mozilla-firefox/firefox
-   cd firefox # Alternatively, if you have the Git clone already
-   jj git init --colocate
+   # Create a clone and enter the directory. Use one of the following
 
-   # Set up jujutsu revset aliases (which will affect e.g. the default `jj log` output)
-   jj config edit --repo
-   <edit>
-   [git]
-   fetch = ["origin"]
+   # (1) Fresh clone:
+   jj git clone https://github.com/mozilla-firefox/firefox
+   cd firefox
+   ./mach vcs-setup
 
-   [revset-aliases]
-   "trunk()" = "main@origin"
-   "immutable_heads()" = '''
-   builtin_immutable_heads()
-   | remote_bookmarks(exact:'autoland')
-   | remote_bookmarks(exact:'beta')
-   | remote_bookmarks(regex:'^esr\d+$')
-   | remote_bookmarks(exact:'release')
-   '''
-   </edit>
+   # (2) Or if you have a Git clone already:
+   ./mach vcs-setup --vcs=jj
+
+   # Set up jujutsu default configuration (which will affect e.g. the default `jj log` output)
+   ./mach vcs-setup
 
    # Track remote bookmarks (you can do this for the other bookmarks, too)
    jj bookmark track main@origin autoland@origin beta@origin release@origin
+
+   # To see the other untracked bookmarks on that remote:
+   jj bookmark list --remote origin -T 'if(!tracked && remote, name ++ "@" ++ remote ++ "\n")'
 
    # Move the working copy commit to bookmarks/central
    jj new main
@@ -67,7 +67,7 @@ staging), in jujutsu ``commits`` occur fairly frequently (basically any
 time there’s a change and you run ``jj``, which results in a snapshot).
 In this sense, ``commits`` can be considered literal snapshot/state
 commits, whereas ``changes`` are the user-friendly unit-of-work that
-developers are doing. ``changes`` have hashes that are alphabetic,
+developers are doing. ``changes`` have hashes that are alphabetic using the letters k..z,
 whereas ``commits`` have hashes which are the same as their git
 counterparts (sha1, represented as hex characters).
 
@@ -83,7 +83,7 @@ A `co-located repository
 <https://jj-vcs.github.io/jj/latest/git-compatibility/#co-located-jujutsugit-repos>`__
 allows running ``jj`` and ``git`` commands in the same repository rather than
 syncing changes between ``jj`` and ``git`` repositories to switch between the
-different tools.
+different tools. Recent versions of ``jj`` default to being co-located.
 
 Git commands can be useful because some features are not yet implemented in
 Jujutsu, such as ``git log`` and ``git rebase`` for `interactions with file
@@ -128,39 +128,6 @@ simple solution is to wrap the ``moz-phab`` command with a script like:
 
 You could instead make this a shell alias/function, if preferred.
 
-``mach try``
-~~~~~~~~~~~~
-
-``./mach try`` requires a clean working directory to push. When editing
-a change in Jujutsu, the changes will be moved to the index in Git.
-Therefore in order to push to try, you must start a new empty change on
-top of the change you want to push. E.g:
-
-::
-
-   $ jj new
-   $ ./mach try ...
-   $ jj prev --edit
-
-The following alias automates this so you can use ``jj try-push <args>``
-instead of ``./mach try <args>`` and it will create/remove a temporary
-empty change:
-
-::
-
-   [aliases]
-   try-push = ["util", "exec", "--", "bash", "-c", """
-   #!/usr/bin/env bash
-   set -euo pipefail
-   jj new --quiet
-   ./mach try $@ || true
-   jj prev --edit --quiet
-   """, ""]
-
-See also `Bug 1929372 - [mozversioncontrol] Add unofficial support for
-Jujutsu
-repositories <https://bugzilla.mozilla.org/show_bug.cgi?id=1929372>`__
-
 ``mach lint``
 ~~~~~~~~~~~~~
 
@@ -183,7 +150,7 @@ You want something like:
 
 ::
 
-   jj git fetch && jj rebase --skip-emptied -r 'mutable() & mine()' -d main
+   jj git fetch && jj rebase --skip-emptied -r 'mutable() & mine()' --onto main
 
 This will:
 
@@ -206,13 +173,19 @@ You can use any of:
 
 ::
 
-   jj abandon x
-   jj abandon x y
-   jj abandon x..z
-   jj abandon x::y
+   jj abandon x     # just revision ``x``
+   jj abandon x y   # revisions ``x`` and ``y``
+   jj abandon x..z  # revisions leading to z that have not been merged into x
+   jj abandon x::y  # revisions in the commit graph between x and y
 
-To abandon individual revision ``x``, both individual revisions ``x``
-and ``y``, or the range of commits from ``x`` to ``z``, respectively.
+``x::y`` is similar to ``x..y``. The main difference is that the former includes
+``x`` and the latter does not, but they are for different purposes. ``x..y`` has
+the same meaning as in git, where ``x`` and ``y`` are used to denote entire
+branches of work ending in ``x``/``y``. So ``main..y`` for example includes
+everything past the branch point from the ``main`` branch up to ``y``. The exact
+definition is "all ancestors of (aka all commits leading up to) ``y``) that are
+not also ancestors of `main`", or in brief: ``::y ~ ::x``. This is especially
+useful when ``main`` has advanced past the common ancestor with ``y``.
 
 When you’re dealing with temporary changes that you have not committed
 (“working directory changes”) this is also an easy way to revert those
@@ -239,3 +212,29 @@ Instead of scanning the file system, ``jj`` will (much like ``hg``\ ’s
 ``fsmonitor`` extension) use file system events to be notified about
 file changes, resulting in much shorter operation time, without having
 to disable the snapshotting mechanism.
+
+Working with multiple workspaces
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+By default, ``./mach vcs-setup`` configures ``snapshot.auto-update-stale = true``, which
+causes ``jj`` to automatically update a workspace’s working copy when it becomes
+stale. A workspace becomes stale when a commit it depends on is rewritten from
+another workspace, for example by rebasing, editing, or squashing. We recommend this
+default because some ``mach`` commands invoke ``jj`` and can fail, sometimes
+silently, if the working copy is stale.
+
+If you use multiple workspaces and want to control when each workspace picks up
+changes, for example to avoid triggering a slow rebuild after rebasing patches
+in bulk from another workspace, you can disable this per-workspace:
+
+::
+
+   jj config set --workspace snapshot.auto-update-stale false
+
+With auto-update disabled, most ``jj`` commands will refuse to run on a stale
+workspace until you manually update with ``jj workspace update-stale``. (Note
+that this is only relevant when you modify one workspace's ancestor from another
+workspace, which is what causes the former workspace to become stale. If you
+choose to be selecting with your rebases, edits, and squashes, such that you
+only touch the current workspace's ancestors, then you won't encounter stale
+workspaces very often.)

@@ -25,7 +25,6 @@ rtc_library("aec3") {
     "alignment_mixer.h",
     "api_call_jitter_metrics.cc",
     "api_call_jitter_metrics.h",
-    "block.h",
     "block_buffer.cc",
     "block_delay_buffer.cc",
     "block_delay_buffer.h",
@@ -76,8 +75,8 @@ rtc_library("aec3") {
     "matched_filter.cc",
     "matched_filter_lag_aggregator.cc",
     "matched_filter_lag_aggregator.h",
-    "moving_average.cc",
-    "moving_average.h",
+    "moving_average_spectrum.cc",
+    "moving_average_spectrum.h",
     "multi_channel_content_detector.cc",
     "multi_channel_content_detector.h",
     "nearend_detector.h",
@@ -134,6 +133,7 @@ rtc_library("aec3") {
   deps = [
     ":adaptive_fir_filter",
     ":adaptive_fir_filter_erl",
+    ":aec3_block",
     ":aec3_common",
     ":aec3_fft",
     ":fft_data",
@@ -143,13 +143,11 @@ rtc_library("aec3") {
     "..:apm_logging",
     "..:audio_buffer",
     "..:high_pass_filter",
-    "../../../api:array_view",
     "../../../api:field_trials_view",
     "../../../api/audio:aec3_config",
     "../../../api/audio:echo_control",
     "../../../api/audio:neural_residual_echo_estimator_api",
     "../../../api/environment",
-    "../../../common_audio:common_audio_c",
     "../../../rtc_base:checks",
     "../../../rtc_base:cpu_info",
     "../../../rtc_base:gtest_prod",
@@ -174,32 +172,33 @@ rtc_source_set("aec3_common") {
   sources = [ "aec3_common.h" ]
 }
 
+rtc_source_set("aec3_block") {
+  sources = [ "block.h" ]
+  deps = [ ":aec3_common" ]
+}
+
 rtc_source_set("aec3_fft") {
   sources = [ "aec3_fft.h" ]
   deps = [
     ":aec3_common",
     ":fft_data",
-    "../../../api:array_view",
     "../../../common_audio/third_party/ooura:fft_size_128",
     "../../../rtc_base:checks",
-    "../../../rtc_base/system:arch",
   ]
 }
 
 rtc_source_set("render_buffer") {
   sources = [
-    "block.h",
     "block_buffer.h",
     "fft_buffer.h",
     "render_buffer.h",
     "spectrum_buffer.h",
   ]
   deps = [
+    ":aec3_block",
     ":aec3_common",
     ":fft_data",
-    "../../../api:array_view",
     "../../../rtc_base:checks",
-    "../../../rtc_base/system:arch",
   ]
 }
 
@@ -211,7 +210,6 @@ rtc_source_set("adaptive_fir_filter") {
     ":fft_data",
     ":render_buffer",
     "..:apm_logging",
-    "../../../api:array_view",
     "../../../rtc_base/system:arch",
     "//third_party/abseil-cpp/absl/strings:string_view",
   ]
@@ -221,7 +219,6 @@ rtc_source_set("adaptive_fir_filter_erl") {
   sources = [ "adaptive_fir_filter_erl.h" ]
   deps = [
     ":aec3_common",
-    "../../../api:array_view",
     "../../../rtc_base/system:arch",
   ]
 }
@@ -230,8 +227,6 @@ rtc_source_set("matched_filter") {
   sources = [ "matched_filter.h" ]
   deps = [
     ":aec3_common",
-    "../../../api:array_view",
-    "../../../rtc_base:gtest_prod",
     "../../../rtc_base/system:arch",
   ]
 }
@@ -240,7 +235,6 @@ rtc_source_set("vector_math") {
   sources = [ "vector_math.h" ]
   deps = [
     ":aec3_common",
-    "../../../api:array_view",
     "../../../rtc_base:checks",
     "../../../rtc_base/system:arch",
   ]
@@ -250,7 +244,6 @@ rtc_source_set("fft_data") {
   sources = [ "fft_data.h" ]
   deps = [
     ":aec3_common",
-    "../../../api:array_view",
     "../../../rtc_base:checks",
     "../../../rtc_base/system:arch",
   ]
@@ -281,7 +274,6 @@ if (target_cpu == "x86" || target_cpu == "x64") {
       ":matched_filter",
       ":render_buffer",
       ":vector_math",
-      "../../../api:array_view",
       "../../../rtc_base:checks",
     ]
   }
@@ -307,6 +299,7 @@ if (rtc_include_tests) {
       ":adaptive_fir_filter",
       ":adaptive_fir_filter_erl",
       ":aec3",
+      ":aec3_block",
       ":aec3_common",
       ":aec3_fft",
       ":fft_data",
@@ -315,9 +308,7 @@ if (rtc_include_tests) {
       ":vector_math",
       "..:apm_logging",
       "..:audio_buffer",
-      "..:audio_processing",
       "..:high_pass_filter",
-      "../../../api:array_view",
       "../../../api:field_trials",
       "../../../api/audio:aec3_config",
       "../../../api/audio:echo_control",
@@ -326,14 +317,12 @@ if (rtc_include_tests) {
       "../../../api/environment:environment_factory",
       "../../../rtc_base:checks",
       "../../../rtc_base:cpu_info",
-      "../../../rtc_base:gunit_helpers",
       "../../../rtc_base:random",
       "../../../rtc_base:safe_minmax",
       "../../../rtc_base:stringutils",
       "../../../rtc_base/system:arch",
       "../../../system_wrappers:metrics",
       "../../../test:create_test_field_trials",
-      "../../../test:fileutils",
       "../../../test:test_support",
       "../utility:cascaded_biquad_filter",
     ]
@@ -370,7 +359,7 @@ if (rtc_include_tests) {
         "frame_blocker_unittest.cc",
         "matched_filter_lag_aggregator_unittest.cc",
         "matched_filter_unittest.cc",
-        "moving_average_unittest.cc",
+        "moving_average_spectrum_unittest.cc",
         "multi_channel_content_detector_unittest.cc",
         "refined_filter_update_gain_unittest.cc",
         "render_buffer_unittest.cc",

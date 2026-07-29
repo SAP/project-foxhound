@@ -14,8 +14,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from typing import Callable, Sequence
+from collections.abc import Iterator, Sequence
+from typing import Callable
 
 from ..formats import Format
 from ..formats.dtd.serialize import dtd_serialize
@@ -31,9 +31,7 @@ from ..model import Message, Resource
 android_serialize: (
     Callable[[Resource[str] | Resource[Message], bool], Iterator[str]] | None
 )
-xliff_serialize: (
-    Callable[[Resource[str] | Resource[Message], bool], Iterator[str]] | None
-)
+xliff_serialize: Callable[..., Iterator[str]] | None
 try:
     from ..formats.android.serialize import android_serialize
     from ..formats.xliff.serialize import xliff_serialize
@@ -45,8 +43,11 @@ except ImportError:
 def serialize_resource(
     resource: Resource[str] | Resource[Message],
     format: Format | None = None,
-    gettext_plurals: Sequence[str] | None = None,
     trim_comments: bool = False,
+    *,
+    fluent_escape_syntax: bool = True,
+    gettext_plurals: Sequence[str] | None = None,
+    xliff_source_entries: bool = False,
 ) -> Iterator[str]:
     """
     Serialize a Resource as its string representation.
@@ -62,7 +63,9 @@ def serialize_resource(
     if format == Format.dtd:
         return dtd_serialize(resource, trim_comments=trim_comments)
     elif format == Format.fluent:
-        return fluent_serialize(resource, trim_comments=trim_comments)
+        return fluent_serialize(
+            resource, escape_syntax=fluent_escape_syntax, trim_comments=trim_comments
+        )
     elif format == Format.gettext:
         return gettext_serialize(
             resource, plurals=gettext_plurals, trim_comments=trim_comments
@@ -80,6 +83,8 @@ def serialize_resource(
     elif format == Format.android and android_serialize is not None:
         return android_serialize(resource, trim_comments)
     elif format == Format.xliff and xliff_serialize is not None:
-        return xliff_serialize(resource, trim_comments)
+        return xliff_serialize(
+            resource, trim_comments, source_entries=xliff_source_entries
+        )
     else:
         raise ValueError(f"Unsupported resource format: {format or resource.format}")

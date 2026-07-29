@@ -17,12 +17,12 @@ ChromeUtils.defineESModuleGetters(this, {
 
 var profileDir = do_get_profile();
 
-const kSearchEngineID = "test_urifixup_search_engine";
+const kSearchEngineName = "test_urifixup_search_engine";
 const kSearchEngineURL = "https://www.example.org/?search={searchTerms}";
-const kPrivateSearchEngineID = "test_urifixup_search_engine_private";
+const kPrivateSearchEngineName = "test_urifixup_search_engine_private";
 const kPrivateSearchEngineURL =
   "https://www.example.org/?private={searchTerms}";
-const kPostSearchEngineID = "test_urifixup_search_engine_post";
+const kPostSearchEngineName = "test_urifixup_search_engine_post";
 const kPostSearchEngineURL = "https://www.example.org/";
 const kPostSearchEngineData = "q={searchTerms}";
 

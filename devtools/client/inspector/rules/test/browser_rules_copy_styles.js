@@ -17,7 +17,7 @@ add_task(async function () {
   const { inspector, view } = await openRuleView();
   await selectNode("#testid", inspector);
 
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
 
   const data = [
     {
@@ -113,7 +113,7 @@ add_task(async function () {
     },
     {
       desc: "Test Copy Rule with hidden unused variables",
-      node: getRuleViewRuleEditor(view, 2).rule.textProps[0].editor.nameSpan,
+      node: getRuleViewRuleEditorAt(view, 2).rule.textProps[0].editor.nameSpan,
       menuItemLabel: "styleinspector.contextmenu.copyRule",
       expectedPattern:
         ":where\\(#testid\\) {[\\r\\n]+" +
@@ -362,7 +362,7 @@ async function checkCopyStyle(
 }
 
 async function disableProperty(view, index) {
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
   const textProp = ruleEditor.rule.textProps[index];
   await togglePropStatus(view, textProp);
 }

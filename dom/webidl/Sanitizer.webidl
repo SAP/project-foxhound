@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -31,19 +30,29 @@ dictionary SanitizerElementNamespaceWithAttributes : SanitizerElementNamespace {
   sequence<SanitizerAttribute> removeAttributes;
 };
 
-typedef (DOMString or SanitizerElementNamespace) SanitizerElement;
-typedef (DOMString or SanitizerElementNamespaceWithAttributes) SanitizerElementWithAttributes;
-
 dictionary SanitizerAttributeNamespace {
   required DOMString name;
   DOMString? _namespace = null;
 };
+
+dictionary SanitizerProcessingInstruction {
+  required DOMString target;
+};
+
+typedef (DOMString or SanitizerElementNamespace) SanitizerElement;
+typedef (DOMString or SanitizerElementNamespaceWithAttributes) SanitizerElementWithAttributes;
+typedef (DOMString or SanitizerProcessingInstruction) SanitizerPI;
 typedef (DOMString or SanitizerAttributeNamespace) SanitizerAttribute;
 
 dictionary SanitizerConfig {
   sequence<SanitizerElementWithAttributes> elements;
   sequence<SanitizerElement> removeElements;
   sequence<SanitizerElement> replaceWithChildrenElements;
+
+  [Pref="dom.security.sanitizer.processing-instructions"]
+  sequence<SanitizerPI> processingInstructions;
+  [Pref="dom.security.sanitizer.processing-instructions"]
+  sequence<SanitizerPI> removeProcessingInstructions;
 
   sequence<SanitizerAttribute> attributes;
   sequence<SanitizerAttribute> removeAttributes;
@@ -64,6 +73,10 @@ interface Sanitizer {
   boolean allowElement(SanitizerElementWithAttributes element);
   boolean removeElement(SanitizerElement element);
   boolean replaceElementWithChildren(SanitizerElement element);
+  [Pref="dom.security.sanitizer.processing-instructions"]
+  boolean allowProcessingInstruction(SanitizerPI pi);
+  [Pref="dom.security.sanitizer.processing-instructions"]
+  boolean removeProcessingInstruction(SanitizerPI pi);
   boolean allowAttribute(SanitizerAttribute attribute);
   boolean removeAttribute(SanitizerAttribute attribute);
   boolean setComments(boolean allow);

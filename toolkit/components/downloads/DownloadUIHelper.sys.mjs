@@ -45,15 +45,25 @@ export var DownloadUIHelper = {
   },
 
   /**
-   * Open the given file as a file: URI in the active window
+   * Open the given file as a file: URI in the active window.
    *
-   * @param nsIFile file         The downloaded file
-   * @param options.chromeWindow Optional chrome window where we could open the file URI
-   * @param options.openWhere    String indicating how to open the URI.
-   *                             One of "window", "tab", "tabshifted"
-   * @param options.isPrivate    Open in private window or not
-   * @param options.browsingContextId BrowsingContext ID of the initiating document
-   * @param options.userContextId UserContextID of the initiating document
+   * @param {nsIFile} file
+   *        The downloaded file.
+   * @param {object} [options]
+   * @param {Window} [options.chromeWindow]
+   *        Optional chrome window where we could open the file URI.
+   * @param {string} [options.openWhere="tab"]
+   *        How to open the URI, one of "window", "tab", "tabshifted".
+   * @param {boolean} [options.isPrivate]
+   *        Open in a private window.
+   * @param {number} [options.browsingContextId=0]
+   *        BrowsingContext ID of the initiating document.
+   * @param {number} [options.userContextId=0]
+   *        UserContextID of the initiating document.
+   * @param {boolean} [options.openInBackgroundIfSwitchedBrowsingContext=false]
+   *        If true, open in the background when the browsing context that initiated
+   *        the download is no longer the active tab (i.e. the user switched tabs or
+   *        closed the source tab while the download was in progress).
    */
   loadFileIn(
     file,
@@ -63,6 +73,7 @@ export var DownloadUIHelper = {
       isPrivate,
       userContextId = 0,
       browsingContextId = 0,
+      openInBackgroundIfSwitchedBrowsingContext = false,
     } = {}
   ) {
     let fileURI = Services.io.newFileURI(file);
@@ -106,11 +117,23 @@ export var DownloadUIHelper = {
 
     // a browser window will have the helpers from utilityOverlay.js
     let browsingContext = browserWin?.BrowsingContext.get(browsingContextId);
+    let openerBrowser = browsingContext?.top?.embedderElement;
+
+    // Open in the background if the source tab is no longer the active one.
+    // Handle both the case where the user switched to a different tab or
+    // the source tab was closed. Not having a browsingContextId means no source
+    // context (e.g. Save As).
+    let inBackground =
+      openInBackgroundIfSwitchedBrowsingContext &&
+      !!browsingContextId &&
+      openerBrowser != browserWin.gBrowser.selectedBrowser;
+
     browserWin.openTrustedLinkIn(fileURI.spec, openWhere, {
       triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
       private: isPrivate,
       userContextId,
-      openerBrowser: browsingContext?.top?.embedderElement,
+      openerBrowser,
+      inBackground,
     });
   },
 };

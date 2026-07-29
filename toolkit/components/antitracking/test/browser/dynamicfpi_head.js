@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -42,7 +41,7 @@ this.DynamicFPIHelper = {
 
       await SpecialPowers.flushPrefEnv();
       await setCookieBehaviorPref(
-        BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+        BEHAVIOR_PARTITION_FOREIGN,
         runInPrivateWindow
       );
       await SpecialPowers.pushPrefEnv({
@@ -87,7 +86,7 @@ this.DynamicFPIHelper = {
       );
       is(
         browser.cookieJarSettings.cookieBehavior,
-        Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+        Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
         "The cookieJarSettings has the correct cookieBehavior"
       );
       is(

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,19 +13,20 @@ NS_IMPL_NS_NEW_HTML_ELEMENT(BR)
 
 namespace mozilla::dom {
 
-HTMLBRElement::HTMLBRElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+HTMLBRElement::HTMLBRElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : nsGenericHTMLElement(std::move(aNodeInfo)) {}
 
 HTMLBRElement::~HTMLBRElement() = default;
 
 NS_IMPL_ELEMENT_CLONE(HTMLBRElement)
 
+enum class ClearKeyword : uint8_t { Left = 1, Right, All, Both };
+
 static constexpr nsAttrValue::EnumTableEntry kClearTable[] = {
-    {"left", StyleClear::Left},
-    {"right", StyleClear::Right},
-    {"all", StyleClear::Both},
-    {"both", StyleClear::Both},
+    {"left", ClearKeyword::Left},
+    {"right", ClearKeyword::Right},
+    {"all", ClearKeyword::All},
+    {"both", ClearKeyword::Both},
 };
 
 bool HTMLBRElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
@@ -42,11 +41,28 @@ bool HTMLBRElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                                               aMaybeScriptedPrincipal, aResult);
 }
 
+static StyleClear ClearKeywordToStyleClear(ClearKeyword aAttrVal) {
+  switch (aAttrVal) {
+    case ClearKeyword::Left:
+      return StyleClear::Left;
+    case ClearKeyword::Right:
+      return StyleClear::Right;
+    case ClearKeyword::All:
+    case ClearKeyword::Both:
+      // clear=all and clear=both are aliases
+      return StyleClear::Both;
+  }
+  NS_WARNING("Invalid ClearKeyword value");
+  return StyleClear::None;
+}
+
 void HTMLBRElement::MapAttributesIntoRule(MappedDeclarationsBuilder& aBuilder) {
   if (!aBuilder.PropertyIsSet(eCSSProperty_clear)) {
     const nsAttrValue* value = aBuilder.GetAttr(nsGkAtoms::clear);
     if (value && value->Type() == nsAttrValue::eEnum) {
-      aBuilder.SetKeywordValue(eCSSProperty_clear, value->GetEnumValue());
+      ClearKeyword enumValue = static_cast<ClearKeyword>(value->GetEnumValue());
+      StyleClear styleClear = ClearKeywordToStyleClear(enumValue);
+      aBuilder.SetKeywordValue(eCSSProperty_clear, styleClear);
     }
   }
   nsGenericHTMLElement::MapCommonAttributesInto(aBuilder);

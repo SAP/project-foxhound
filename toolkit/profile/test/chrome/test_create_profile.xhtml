@@ -73,7 +73,7 @@ function createProfile(profileName) {
   // Filesystem precision is lower than Date precision.
   let lowerBound = Date.now() - 1000;
 
-  let profile = gProfileService.createProfile(null, profileName);
+  let profile = gProfileService.createProfile(null, profileName, "tests");
 
   // check that the directory was created
   isnot(profile, null, "Profile " + profileName + " created");
@@ -100,6 +100,7 @@ function createProfile(profileName) {
 
   let created = json.created;
   ok(created, "created is set");
+  is(json.source, "tests", "source is set");
 
   // Check against real clock time.
   checkBounds(lowerBound, created, upperBound);
@@ -110,7 +111,7 @@ function createProfile(profileName) {
   ok(!profileDir.exists(), "Profile dir was removed");
 
   // Create with non-null aRootDir
-  profile = gProfileService.createProfile(profileDir, profileName);
+  profile = gProfileService.createProfile(profileDir, profileName, "tests");
 
   let localProfileDir = profile.localDir;
   ok(gDefaultLocalProfileParent.contains(localProfileDir, false),

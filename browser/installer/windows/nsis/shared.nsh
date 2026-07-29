@@ -313,9 +313,9 @@ FunctionEnd
 
 
   ; Keep this list synchronized with
-  ; https://searchfox.org/mozilla-central/source/browser/installer/windows/msix/AppxManifest.xml.in.
+  ; https://searchfox.org/firefox-main/source/browser/installer/windows/msix/AppxManifest.xml.in.
   ; and `os.environment.launched_to_handle` and `os.environment.invoked_to_handle` telemetry in
-  ; https://searchfox.org/mozilla-central/source/browser/components/BrowserContentHandler.sys.mjs.
+  ; https://searchfox.org/firefox-main/source/browser/components/BrowserContentHandler.sys.mjs.
   ${AddAssociationIfNoneExist} ".oga" "FirefoxHTML$5"
   ${AddAssociationIfNoneExist} ".ogg" "FirefoxHTML$5"
   ${AddAssociationIfNoneExist} ".ogv" "FirefoxHTML$5"
@@ -1679,7 +1679,7 @@ FunctionEnd
   ; uninstalled.
 
   ; Do all of that twice, once for the local machine and once for the current user
-  
+
   ; Remove protocol handlers
   ClearErrors
   ReadRegStr $0 HKLM "Software\Classes\${_PROTOCOL}\DefaultIcon" ""

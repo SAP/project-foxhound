@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -164,15 +162,15 @@ class UnderlyingSinkAlgorithmsWrapper : public UnderlyingSinkAlgorithmsBase {
   }
 };
 
-class WritableStreamToOutput final : public UnderlyingSinkAlgorithmsWrapper,
-                                     public nsIOutputStreamCallback {
+class WritableStreamToOutputAlgorithms : public UnderlyingSinkAlgorithmsWrapper,
+                                         public nsIOutputStreamCallback {
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIOUTPUTSTREAMCALLBACK
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(WritableStreamToOutput,
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(WritableStreamToOutputAlgorithms,
                                            UnderlyingSinkAlgorithmsBase)
 
-  WritableStreamToOutput(nsIGlobalObject* aParent,
-                         nsIAsyncOutputStream* aOutput)
+  WritableStreamToOutputAlgorithms(nsIGlobalObject* aParent,
+                                   nsIAsyncOutputStream* aOutput)
       : mWritten(0), mParent(aParent), mOutput(aOutput) {}
 
   // Streams algorithms
@@ -189,9 +187,22 @@ class WritableStreamToOutput final : public UnderlyingSinkAlgorithmsWrapper,
 
   void ReleaseObjects() override;
 
- private:
-  ~WritableStreamToOutput() override = default;
+ protected:
+  ~WritableStreamToOutputAlgorithms() override = default;
 
+  nsIGlobalObject* GetParent() const { return mParent; }
+  void CloseOutput() {
+    if (mOutput) {
+      mOutput->Close();
+    }
+  }
+  void CloseOutputWithStatus(nsresult aReason) {
+    if (mOutput) {
+      mOutput->CloseWithStatus(aReason);
+    }
+  }
+
+ private:
   void ClearData() {
     mData = Nothing();
     mPromise = nullptr;

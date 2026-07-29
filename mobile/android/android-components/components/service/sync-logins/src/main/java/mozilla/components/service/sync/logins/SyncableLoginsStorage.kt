@@ -58,14 +58,6 @@ typealias SyncTelemetryPing = mozilla.appservices.sync15.SyncTelemetryPing
 typealias LoginsApiException = mozilla.appservices.logins.LoginsApiException
 
 /**
- * This indicates that the authentication information (e.g. the [SyncUnlockInfo])
- * provided to [AsyncLoginsStorage.sync] is invalid. This often indicates that it's
- * stale and should be refreshed with FxA (however, care should be taken not to
- * get into a loop refreshing this information).
- */
-typealias SyncAuthInvalidException = mozilla.appservices.logins.LoginsApiException.SyncAuthInvalid
-
-/**
  * This is thrown if `update()` is performed with a record whose GUID
  * does not exist.
  */
@@ -207,6 +199,18 @@ class SyncableLoginsStorage(
     @Throws(InvalidKey::class, InvalidRecordException::class, LoginsApiException::class)
     override suspend fun add(entry: LoginEntry) = withContext(coroutineContext) {
         getStorage().add(entry.toLoginEntry()).toLogin()
+    }
+
+    /**
+     * @throws [InvalidRecordException] if the record is invalid.
+     * @throws [InvalidKey] if the encryption key can't decrypt the login
+     * @throws [LoginsApiException] if the storage is locked, and on unexpected
+     *              errors (IO failure, rust panics, etc)
+     */
+    @Throws(InvalidKey::class, InvalidRecordException::class, LoginsApiException::class)
+    override suspend fun addMany(entries: List<LoginEntry>) = withContext(coroutineContext) {
+        val asEntries = entries.map { it.toLoginEntry() }
+        getStorage().addMany(asEntries).map { it.toLoginResult() }
     }
 
     /**

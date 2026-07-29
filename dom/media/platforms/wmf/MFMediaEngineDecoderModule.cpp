@@ -18,7 +18,7 @@
 namespace mozilla {
 
 #define LOG(msg, ...) \
-  MOZ_LOG(gMFMediaEngineLog, LogLevel::Debug, (msg, ##__VA_ARGS__))
+  MOZ_LOG_FMT(gMFMediaEngineLog, LogLevel::Debug, msg, ##__VA_ARGS__)
 
 /* static */
 void MFMediaEngineDecoderModule::Init() {
@@ -49,7 +49,7 @@ MFMediaEngineDecoderModule::CreateVideoDecoder(
   RefPtr<MFMediaEngineParent> mediaEngine =
       MFMediaEngineParent::GetMediaEngineById(*aParams.mMediaEngineId);
   if (!mediaEngine) {
-    LOG("Can't find media engine %" PRIu64 " for video decoder",
+    LOG("Can't find media engine {} for video decoder",
         *aParams.mMediaEngineId);
     return nullptr;
   }
@@ -69,7 +69,7 @@ MFMediaEngineDecoderModule::CreateAudioDecoder(
   RefPtr<MFMediaEngineParent> mediaEngine =
       MFMediaEngineParent::GetMediaEngineById(*aParams.mMediaEngineId);
   if (!mediaEngine) {
-    LOG("Can't find media engine %" PRIu64 " for audio decoder",
+    LOG("Can't find media engine {} for audio decoder",
         *aParams.mMediaEngineId);
     return nullptr;
   }
@@ -110,9 +110,9 @@ media::DecodeSupportSet MFMediaEngineDecoderModule::SupportInternal(
   if (type != WMFStreamType::Unknown) {
     supports = CanCreateMFTDecoder(type);
   }
-  MOZ_LOG(sPDMLog, LogLevel::Debug,
-          ("MFMediaEngine decoder %s requested type '%s'",
-           supports ? "supports" : "rejects", aParams.MimeType().get()));
+  MOZ_LOG_FMT(sPDMLog, LogLevel::Debug,
+              "MFMediaEngine decoder {} requested type '{}'",
+              supports ? "supports" : "rejects", aParams.MimeType().get());
   if (!supports) {
     return media::DecodeSupportSet{};
   }
@@ -155,12 +155,10 @@ static bool CreateMFTDecoderOnMTA(const WMFStreamType& aType) {
       }
       break;
     }
-#ifdef MOZ_AV1
     case WMFStreamType::AV1:
       result = SUCCEEDED(decoder->Create(MFT_CATEGORY_VIDEO_DECODER,
                                          MFVideoFormat_AV1, GUID_NULL));
       break;
-#endif
     case WMFStreamType::HEVC:
       if (StaticPrefs::media_hevc_enabled()) {
         result =

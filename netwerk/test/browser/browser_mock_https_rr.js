@@ -25,7 +25,7 @@ add_task(async function () {
     // The page should be upgraded to HTTPS.
     BrowserTestUtils.startLoadingURIString(browser, kTestURI);
     await loaded;
-    await ContentTask.spawn(browser, {}, async () => {
+    await SpecialPowers.spawn(browser, [], async () => {
       ok(
         content.document.location.href.startsWith("https://"),
         "Should be https"

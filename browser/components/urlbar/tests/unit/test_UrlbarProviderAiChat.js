@@ -151,7 +151,7 @@ add_task(async function test_startQuery() {
         {
           heuristic: false,
           type: UrlbarUtils.RESULT_TYPE.SEARCH,
-          suggestedIndex: undefined,
+          suggestedIndex: 1,
           query: "tell me a joke",
           icon,
           engine: engine.name,

@@ -296,7 +296,7 @@ typedef struct SMIMEListStr {
 } SMIMEList;
 
 static SMIMEList *smime_algorithm_list = NULL;
-static PZLock *algorithm_list_lock = NULL;
+static PRLock *algorithm_list_lock = NULL;
 static PRCallOnceType smime_init_arg = { 0 };
 
 /* return the number of algorithms in the list */
@@ -352,7 +352,7 @@ smime_list_grow(SMIMEList **list)
         size_t new_len = (*list)->space_len + SMIME_CHUNK_COUNT;
         new_space = (SECOidTag *)PORT_Realloc((*list)->tags,
                                               new_len * sizeof(SECOidTag));
-        if (new_space) {
+        if (new_space == NULL) {
             return SECFailure;
         }
         (*list)->tags = new_space;
@@ -436,7 +436,7 @@ smime_lock_algorithm_list(void)
 {
     PORT_Assert(algorithm_list_lock);
     if (algorithm_list_lock) {
-        PZ_Lock(algorithm_list_lock);
+        PR_Lock(algorithm_list_lock);
     }
     return;
 }
@@ -446,7 +446,7 @@ smime_unlock_algorithm_list(void)
 {
     PORT_Assert(algorithm_list_lock);
     if (algorithm_list_lock) {
-        PZ_Unlock(algorithm_list_lock);
+        PR_Unlock(algorithm_list_lock);
     }
     return;
 }
@@ -455,7 +455,7 @@ static SECStatus
 smime_shutdown(void *appData, void *nssData)
 {
     if (algorithm_list_lock) {
-        PZ_DestroyLock(algorithm_list_lock);
+        PR_DestroyLock(algorithm_list_lock);
         algorithm_list_lock = NULL;
     }
     smime_free_list(&smime_algorithm_list);
@@ -479,7 +479,7 @@ smime_init_once(void *arg)
         *error = PORT_GetError();
         return PR_FAILURE;
     }
-    algorithm_list_lock = PZ_NewLock(nssILockCache);
+    algorithm_list_lock = PR_NewLock();
     if (algorithm_list_lock == NULL) {
         *error = PORT_GetError();
         return PR_FAILURE;
@@ -545,7 +545,7 @@ smime_init_once(void *arg)
         goto loser;
     }
     legacy_prefs = PORT_ZNewArray(int, tagCount);
-    if (lengths == NULL) {
+    if (legacy_prefs == NULL) {
         *error = PORT_GetError();
         goto loser;
     }

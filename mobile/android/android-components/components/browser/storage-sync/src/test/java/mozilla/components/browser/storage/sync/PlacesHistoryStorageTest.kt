@@ -12,8 +12,6 @@ import androidx.work.WorkManager
 import androidx.work.testing.WorkManagerTestInitHelper
 import kotlinx.coroutines.test.runTest
 import mozilla.appservices.places.PlacesReaderConnection
-import mozilla.appservices.places.PlacesWriterConnection
-import mozilla.appservices.places.uniffi.InternalException
 import mozilla.appservices.places.uniffi.PlacesApiException
 import mozilla.appservices.places.uniffi.VisitObservation
 import mozilla.components.concept.storage.DocumentType
@@ -27,8 +25,6 @@ import mozilla.components.concept.storage.StorageMaintenanceWorker
 import mozilla.components.concept.storage.VisitType
 import mozilla.components.concept.storage.constraints
 import mozilla.components.concept.storage.periodicStorageWorkRequest
-import mozilla.components.concept.sync.SyncAuthInfo
-import mozilla.components.concept.sync.SyncStatus
 import mozilla.components.support.test.any
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
@@ -38,10 +34,8 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Ignore
 import org.junit.Test
@@ -52,6 +46,7 @@ import org.mockito.Mockito.verify
 import org.robolectric.annotation.Config
 import java.io.File
 import java.util.concurrent.TimeUnit
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class PlacesHistoryStorageTest {
@@ -659,215 +654,7 @@ class PlacesHistoryStorageTest {
         history.getSuggestions("Hello!", -1)
     }
 
-    // We can't test 'sync' stuff yet, since that exercises the network and we can't mock that out currently.
-    // Instead, we test that our wrappers act correctly.
     internal class MockingPlacesHistoryStorage(override val places: Connection) : PlacesHistoryStorage(testContext)
-
-    @Test
-    fun `storage passes through sync calls`() = runTest {
-        var passedAuthInfo: SyncAuthInfo? = null
-        val conn = object : Connection {
-            override fun reader(): PlacesReaderConnection {
-                fail()
-                return mock()
-            }
-
-            override fun newReader(): PlacesReaderConnection {
-                fail()
-                return mock()
-            }
-
-            override fun writer(): PlacesWriterConnection {
-                fail()
-                return mock()
-            }
-
-            override fun syncHistory(syncInfo: SyncAuthInfo) {
-                assertNull(passedAuthInfo)
-                passedAuthInfo = syncInfo
-            }
-
-            override fun syncBookmarks(syncInfo: SyncAuthInfo) {
-                fail()
-            }
-
-            override fun close() {
-                fail()
-            }
-
-            override fun registerWithSyncManager() {
-                fail()
-            }
-        }
-        val storage = MockingPlacesHistoryStorage(conn)
-
-        storage.sync(SyncAuthInfo("kid", "token", 123L, "key", "serverUrl"))
-
-        assertEquals("kid", passedAuthInfo!!.kid)
-        assertEquals("serverUrl", passedAuthInfo.tokenServerUrl)
-        assertEquals("token", passedAuthInfo.fxaAccessToken)
-        assertEquals(123L, passedAuthInfo.fxaAccessTokenExpiresAt)
-        assertEquals("key", passedAuthInfo.syncKey)
-    }
-
-    @Test
-    fun `storage passes through sync OK results`() = runTest {
-        val conn = object : Connection {
-            override fun reader(): PlacesReaderConnection {
-                fail()
-                return mock()
-            }
-
-            override fun newReader(): PlacesReaderConnection {
-                fail()
-                return mock()
-            }
-
-            override fun writer(): PlacesWriterConnection {
-                fail()
-                return mock()
-            }
-
-            override fun syncHistory(syncInfo: SyncAuthInfo) {}
-
-            override fun syncBookmarks(syncInfo: SyncAuthInfo) {}
-
-            override fun close() {
-                fail()
-            }
-
-            override fun registerWithSyncManager() {
-                fail()
-            }
-        }
-        val storage = MockingPlacesHistoryStorage(conn)
-
-        val result = storage.sync(SyncAuthInfo("kid", "token", 123L, "key", "serverUrl"))
-        assertEquals(SyncStatus.Ok, result)
-    }
-
-    @Test
-    fun `storage passes through sync exceptions`() = runTest {
-        // Can be any PlacesApiException
-        val exception = PlacesApiException.UrlParseFailed("test error")
-        val conn = object : Connection {
-            override fun reader(): PlacesReaderConnection {
-                fail()
-                return mock()
-            }
-
-            override fun newReader(): PlacesReaderConnection {
-                fail()
-                return mock()
-            }
-
-            override fun writer(): PlacesWriterConnection {
-                fail()
-                return mock()
-            }
-
-            override fun syncHistory(syncInfo: SyncAuthInfo) {
-                throw exception
-            }
-
-            override fun syncBookmarks(syncInfo: SyncAuthInfo) {
-                fail()
-            }
-
-            override fun close() {
-                fail()
-            }
-
-            override fun registerWithSyncManager() {
-                fail()
-            }
-        }
-        val storage = MockingPlacesHistoryStorage(conn)
-
-        val result = storage.sync(SyncAuthInfo("kid", "token", 123L, "key", "serverUrl"))
-
-        assertTrue(result is SyncStatus.Error)
-    }
-
-    @Test
-    fun `storage does not re-throw unexpected places exceptions`() = runTest {
-        val exception = PlacesApiException.UnexpectedPlacesException("unexpected exception")
-        val conn = object : Connection {
-            override fun reader(): PlacesReaderConnection {
-                fail()
-                return mock()
-            }
-
-            override fun newReader(): PlacesReaderConnection {
-                fail()
-                return mock()
-            }
-
-            override fun writer(): PlacesWriterConnection {
-                fail()
-                return mock()
-            }
-
-            override fun syncHistory(syncInfo: SyncAuthInfo) {
-                throw exception
-            }
-
-            override fun syncBookmarks(syncInfo: SyncAuthInfo) {
-                fail()
-            }
-
-            override fun close() {
-                fail()
-            }
-
-            override fun registerWithSyncManager() {
-                fail()
-            }
-        }
-        val storage = MockingPlacesHistoryStorage(conn)
-        val result = storage.sync(SyncAuthInfo("kid", "token", 123L, "key", "serverUrl"))
-        assertTrue(result is SyncStatus.Error)
-    }
-
-    @Test(expected = InternalException::class)
-    fun `storage re-throws sync panics`() = runTest {
-        val exception = InternalException("sync paniced")
-        val conn = object : Connection {
-            override fun reader(): PlacesReaderConnection {
-                fail()
-                return mock()
-            }
-
-            override fun newReader(): PlacesReaderConnection {
-                fail()
-                return mock()
-            }
-
-            override fun writer(): PlacesWriterConnection {
-                fail()
-                return mock()
-            }
-
-            override fun syncHistory(syncInfo: SyncAuthInfo) {
-                throw exception
-            }
-
-            override fun syncBookmarks(syncInfo: SyncAuthInfo) {
-                fail()
-            }
-
-            override fun close() {
-                fail()
-            }
-
-            override fun registerWithSyncManager() {
-                fail()
-            }
-        }
-        val storage = MockingPlacesHistoryStorage(conn)
-        storage.sync(SyncAuthInfo("kid", "token", 123L, "key", "serverUrl"))
-        fail()
-    }
 
     @Test
     fun `record and get latest history metadata by url`() = runTest {
@@ -883,7 +670,7 @@ class PlacesHistoryStorageTest {
 
         val dbMeta = history.getLatestHistoryMetadataForUrl(metaKey.url)
         assertNotNull(dbMeta)
-        assertHistoryMetadataRecord(metaKey, 5000, DocumentType.Regular, dbMeta!!)
+        assertHistoryMetadataRecord(metaKey, 5000, DocumentType.Regular, dbMeta)
     }
 
     @Test

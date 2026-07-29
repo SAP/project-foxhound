@@ -189,6 +189,7 @@ public:
     class SK_API ChildPtr {
     public:
         ChildPtr() = default;
+        // Intentionally don't declare these to be explicit for convenience.
         ChildPtr(sk_sp<SkShader> s) : fChild(std::move(s)) {}
         ChildPtr(sk_sp<SkColorFilter> cf) : fChild(std::move(cf)) {}
         ChildPtr(sk_sp<SkBlender> b) : fChild(std::move(b)) {}
@@ -323,8 +324,8 @@ private:
     uint32_t fStableKey = 0;
     SkString fName;
 
-    std::unique_ptr<SkSL::Program> fBaseProgram;
-    std::unique_ptr<SkSL::RP::Program> fRPProgram;
+    std::unique_ptr<const SkSL::Program> fBaseProgram;
+    std::unique_ptr<const SkSL::RP::Program> fRPProgram;
     mutable SkOnce fCompileRPProgramOnce;
     const SkSL::FunctionDefinition& fMain;
     std::vector<Uniform> fUniforms;
@@ -433,7 +434,8 @@ public:
             if (!fChild) {
                 SkDEBUGFAIL("Assigning to missing child");
             } else {
-                fOwner->fChildren[(size_t)fChild->index] = std::move(val);
+                fOwner->fChildren[(size_t)fChild->index] =
+                        SkRuntimeEffect::ChildPtr(std::move(val));
             }
             return *this;
         }

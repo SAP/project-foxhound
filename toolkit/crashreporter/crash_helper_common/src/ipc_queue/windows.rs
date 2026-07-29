@@ -50,7 +50,7 @@ impl IPCQueue {
         let port = unsafe {
             CreateIoCompletionPort(
                 /* FileHandle */ INVALID_HANDLE_VALUE,
-                /* ExistingCompletionPort */ 0,
+                /* ExistingCompletionPort */ std::ptr::null_mut(),
                 /* CompletionKey */ 0,
                 CONCURRENT_THREADS,
             ) as RawHandle
@@ -213,7 +213,7 @@ impl IPCQueue {
                     .operation
                     .take()
                     .expect("No pending receive operation");
-                let buffer = &operation.collect_recv();
+                let buffer = operation.collect_recv();
                 let header = Header::decode(buffer)?;
                 let payload = element.connector.recv(header.size);
                 match payload {

@@ -36,6 +36,7 @@ Utf16String crashtools_crashping_init(const Utf16String& data_dir,
                                       const Utf16String& app_id,
                                       const Utf16String* build_id,
                                       const Utf16String* display_version,
+                                      bool upload_enabled,
                                       crashtools_upload_fn upload_fn);
 Utf16String crashtools_analyze_minidump(const Utf16String& minidump_path,
                                         const Utf16String& extras_path,
@@ -43,6 +44,7 @@ Utf16String crashtools_analyze_minidump(const Utf16String& minidump_path,
 void crashtools_free_string(Utf16String result);
 
 void crashtools_send_ping(const Utf16String& extras);
+void crashtools_set_ping_collection_enabled(bool enabled);
 void crashtools_test_metric_values_before_next_send(
     void (*cb)(void* obj, const Utf16String& json), void (*drop)(void* obj),
     void* obj);
@@ -309,7 +311,7 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void*) {
 // The init Java static method which configures the data path and build id.
 JNIEXPORT void Java_mozilla_components_lib_crash_NativeCrashTools_nativeInit(
     JNIEnv* env, jclass clazz, jstring data_path, jstring app_id,
-    jstring build_id, jstring display_version) {
+    jstring build_id, jstring display_version, jboolean ping_upload_enabled) {
   LocalString data_str(env, data_path);
   LocalString app_id_str(env, app_id);
 
@@ -332,7 +334,8 @@ JNIEXPORT void Java_mozilla_components_lib_crash_NativeCrashTools_nativeInit(
 
   if (auto result = ForeignString(crashtools_crashping_init(
           data_str, app_id_str, build_id_str ? &*build_id_str : nullptr,
-          display_version_str ? &*display_version_str : nullptr, upload_fn))) {
+          display_version_str ? &*display_version_str : nullptr,
+          ping_upload_enabled, upload_fn))) {
     auto result_jstring = result.to_jstring(env);
     const char* utf8Chars = nullptr;
     if (!result_jstring ||
@@ -392,5 +395,11 @@ Java_mozilla_components_lib_crash_NativeCrashTools_nativeTestMetricValuesBeforeN
   }
   crashtools_test_metric_values_before_next_send(call_closure, drop_closure,
                                                  cb);
+}
+
+JNIEXPORT void
+Java_mozilla_components_lib_crash_NativeCrashTools_nativeSetPingCollectionEnabled(
+    JNIEnv* env, jobject obj, jboolean enabled) {
+  crashtools_set_ping_collection_enabled(enabled);
 }
 }

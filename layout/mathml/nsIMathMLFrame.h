@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -34,10 +32,6 @@ constexpr auto MathMLFrameTypeCount = size_t(MathMLFrameType::Unknown);
 // Bits used for the presentation flags -- these bits are set
 // in their relevant situation as they become available
 enum class MathMLPresentationFlag : uint8_t {
-  // This bit is used to emulate TeX rendering.
-  // Internal use only, cannot be set by the user with an attribute.
-  Compressed,
-
   // This bit is set if the frame will fire a vertical stretch
   // command on all its (non-empty) children.
   // Tags like <mrow> (or an inferred mrow), mpadded, etc, will fire a

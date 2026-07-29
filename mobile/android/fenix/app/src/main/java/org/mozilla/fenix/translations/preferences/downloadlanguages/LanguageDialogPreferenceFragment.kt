@@ -26,7 +26,6 @@ import mozilla.components.concept.engine.translate.ModelState
 import mozilla.components.concept.engine.translate.OperationLevel
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.runIfFragmentIsAttached
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.theme.FirefoxTheme
 
 /**
@@ -120,7 +119,7 @@ class LanguageDialogPreferenceFragment : DialogFragment() {
                         isCheckBoxEnabled = checkBoxEnabled,
                         onSavingModeStateChange = { checkBoxEnabled = it },
                         onConfirmDownload = {
-                            requireContext().settings().ignoreTranslationsDataSaverWarning =
+                            requireComponents.settings.ignoreTranslationsDataSaverWarning =
                                 checkBoxEnabled
 
                             if (args.itemType == DownloadLanguageItemTypePreference.AllLanguages) {

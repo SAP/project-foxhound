@@ -168,7 +168,7 @@
 
     filterButtons(node) {
       // if the node isn't visible, don't descend into it.
-      var cs = node.ownerGlobal.getComputedStyle(node);
+      var cs = node.documentGlobal.getComputedStyle(node);
       if (cs.visibility != "visible" || cs.display == "none") {
         return NodeFilter.FILTER_REJECT;
       }

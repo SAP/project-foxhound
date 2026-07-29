@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC.
+// Copyright 2019 Google LLC
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
 #include "src/pdf/SkPDFGraphicStackState.h"
@@ -98,7 +98,12 @@ static void apply_clip(const SkClipStack& stack, const SkRect& outerBounds, F fn
 }
 
 static void append_clip_path(const SkPath& clipPath, SkWStream* wStream) {
-    SkPDFUtils::EmitPath(clipPath, SkPaint::kFill_Style, wStream);
+    using SkPDFUtils::EmptyPath, SkPDFUtils::EmptyVerb;
+    if (!SkPDFUtils::EmitPath(clipPath, SkPaint::kFill_Style,
+                              EmptyPath::Preserve, EmptyVerb::Discard, wStream))
+    {
+        return;
+    }
     SkPathFillType clipFill = clipPath.getFillType();
     NOT_IMPLEMENTED(clipFill == SkPathFillType::kInverseEvenOdd, false);
     NOT_IMPLEMENTED(clipFill == SkPathFillType::kInverseWinding, false);

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -103,7 +102,7 @@ class CookieService final : public nsICookieService,
 
   nsICookieValidation::ValidationError SetCookiesFromIPC(
       const nsACString& aBaseDomain, const OriginAttributes& aAttrs,
-      nsIURI* aHostURI, bool aFromHttp, bool aIsThirdParty,
+      nsIURI* aHostURI, bool aIsThirdParty,
       const nsTArray<CookieStruct>& aCookies,
       dom::BrowsingContext* aBrowsingContext);
 
@@ -141,6 +140,13 @@ class CookieService final : public nsICookieService,
   // private browsing.
   RefPtr<CookieStorage> mPersistentStorage;
   RefPtr<CookieStorage> mPrivateStorage;
+
+  // Holds the real persistent storage after shutdown swap so it is not
+  // destroyed (and its in-memory cookie tree torn down) on the main thread
+  // during the critical shutdown window. Releases naturally with the service.
+  RefPtr<CookieStorage> mRetiredStorage;
+
+  void RetirePersistentStorageForShutdown();
 
  private:
   nsresult AddInternal(nsIURI* aCookieURI, const nsACString& aHost,

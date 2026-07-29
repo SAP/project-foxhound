@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -1344,7 +1342,7 @@ class nsTArray_Impl
   // See also SetLengthAndRetainStorage.
   // Make sure to call Compact() if needed to avoid keeping a huge array
   // around.
-  void ClearAndRetainStorage() {
+  MOZ_REINITIALIZES void ClearAndRetainStorage() {
     if (this->HasEmptyHeader()) {
       return;
     }
@@ -2093,7 +2091,8 @@ class nsTArray_Impl
   // @return True if the operation succeeded; false if we ran out of memory
  protected:
   template <typename ActualAlloc = Alloc>
-  typename ActualAlloc::ResultType SetCapacity(size_type aCapacity) {
+  MOZ_REINITIALIZES typename ActualAlloc::ResultType SetCapacity(
+      size_type aCapacity) {
     return ActualAlloc::Result(this->template EnsureCapacity<ActualAlloc>(
         aCapacity, sizeof(value_type)));
   }
@@ -2633,7 +2632,7 @@ class MOZ_GSL_OWNER nsTArray
   using typename base_type::size_type;
   using typename base_type::value_type;
 
-  constexpr nsTArray() {}
+  constexpr nsTArray() = default;
   explicit nsTArray(size_type aCapacity) : base_type(aCapacity) {}
   MOZ_IMPLICIT nsTArray(std::initializer_list<E> aIL) {
     AppendElements(aIL.begin(), aIL.size());

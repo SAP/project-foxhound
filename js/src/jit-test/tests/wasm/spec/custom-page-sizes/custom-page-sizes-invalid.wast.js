@@ -152,7 +152,7 @@ assert_unlinkable(
   () => instantiate(`(module
     (memory (import "m" "small-pages-memory") 0 (pagesize 65536))
   )`),
-  `memory types incompatible`,
+  `incompatible import type`,
 );
 
 // ./test/core/custom-page-sizes/custom-page-sizes-invalid.wast:110
@@ -160,5 +160,5 @@ assert_unlinkable(
   () => instantiate(`(module
     (memory (import "m" "large-pages-memory") 0 (pagesize 1))
   )`),
-  `memory types incompatible`,
+  `incompatible import type`,
 );

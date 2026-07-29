@@ -1,37 +1,11 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-// Tests common Places telemetry probes by faking the telemetry service.
-
-// Enable the collection (during test) for all products so even products
-// that don't collect the data will be able to run the test without failure.
-Services.prefs.setBoolPref(
-  "toolkit.telemetry.testing.overrideProductsCheck",
-  true
-);
+// Tests common Places telemetry probes.
 
 const { PlacesDBUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/PlacesDBUtils.sys.mjs"
 );
-
-const histograms = {
-  PLACES_PAGES_COUNT: val => Assert.equal(val, 1),
-  PLACES_BOOKMARKS_COUNT: val => Assert.equal(val, 1),
-  PLACES_TAGS_COUNT: val => Assert.equal(val, 1),
-  PLACES_KEYWORDS_COUNT: val => Assert.equal(val, 1),
-  PLACES_SORTED_BOOKMARKS_PERC: val => Assert.equal(val, 100),
-  PLACES_TAGGED_BOOKMARKS_PERC: val => Assert.equal(val, 100),
-  PLACES_DATABASE_FILESIZE_MB: val => Assert.greater(val, 0),
-  PLACES_DATABASE_FAVICONS_FILESIZE_MB: val => Assert.greater(val, 0),
-  PLACES_EXPIRATION_STEPS_TO_CLEAN2: val => Assert.greater(val, 1),
-  PLACES_IDLE_MAINTENANCE_TIME_MS: val => Assert.greater(val, 0),
-  PLACES_ANNOS_PAGES_COUNT: val => Assert.equal(val, 1),
-  PLACES_MAINTENANCE_DAYSFROMLAST: val => Assert.greaterOrEqual(val, 0),
-};
-
-const scalars = {
-  pages_need_frecency_recalculation: 1, // 1 bookmark is added causing recalc.
-};
 
 /**
  * Forces an expiration run.
@@ -71,6 +45,8 @@ function getExpirablePRTime(daysAgo = 7) {
 }
 
 add_task(async function test_execute() {
+  Services.fog.initializeFOG();
+
   // Put some trash in the database.
   let uri = Services.io.newURI("http://moz.org/");
 
@@ -118,7 +94,7 @@ add_task(async function test_execute() {
 
   for (let i = 0; i < 3; i++) {
     await PlacesTestUtils.addVisits({
-      uri: NetUtil.newURI("http://" + i + ".moz.org/"),
+      uri: Services.io.newURI("http://" + i + ".moz.org/"),
       visitDate: newTimeInMicroseconds(),
     });
   }
@@ -129,24 +105,20 @@ add_task(async function test_execute() {
   // Test idle probes.
   await PlacesDBUtils.maintenanceOnIdle();
 
-  for (let histogramId in histograms) {
-    info("checking histogram " + histogramId);
-    let validate = histograms[histogramId];
-    let snapshot = Services.telemetry.getHistogramById(histogramId).snapshot();
-    validate(snapshot.sum);
-    Assert.greater(
-      Object.values(snapshot.values).reduce((a, b) => a + b, 0),
-      0
-    );
-  }
-  for (let scalarName in scalars) {
-    let scalar = "places." + scalarName;
-    info("checking scalar " + scalar);
-    TelemetryTestUtils.assertScalar(
-      TelemetryTestUtils.getProcessScalars("parent"),
-      scalar,
-      scalars[scalarName],
-      "Verify scalar value matches"
-    );
-  }
+  Assert.equal(Glean.places.pagesCount.testGetValue().sum, 1);
+  Assert.equal(Glean.places.bookmarksCount.testGetValue().sum, 1);
+  Assert.equal(Glean.places.tagsCount.testGetValue().sum, 1);
+  Assert.equal(Glean.places.keywordsCount.testGetValue().sum, 1);
+  Assert.equal(Glean.places.sortedBookmarksPerc.testGetValue().sum, 100);
+  Assert.equal(Glean.places.taggedBookmarksPerc.testGetValue().sum, 100);
+  Assert.greater(Glean.places.databaseFilesize.testGetValue().sum, 0);
+  Assert.greater(Glean.places.databaseFaviconsFilesize.testGetValue().sum, 0);
+  Assert.greater(Glean.places.expirationStepsToClean.testGetValue().sum, 1);
+  Assert.greater(Glean.places.idleMaintenanceTime.testGetValue().sum, 0);
+  Assert.equal(Glean.places.annosPagesCount.testGetValue().sum, 1);
+  Assert.greaterOrEqual(
+    Glean.places.maintenanceDaysfromlast.testGetValue().sum,
+    0
+  );
+  Assert.equal(Glean.places.pagesNeedFrecencyRecalculation.testGetValue(), 1);
 });

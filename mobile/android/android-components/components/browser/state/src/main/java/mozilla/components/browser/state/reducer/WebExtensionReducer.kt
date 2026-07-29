@@ -5,6 +5,7 @@
 package mozilla.components.browser.state.reducer
 
 import mozilla.components.browser.state.action.WebExtensionAction
+import mozilla.components.browser.state.state.ActiveOptionsPage
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.SessionState
 import mozilla.components.browser.state.state.WebExtensionState
@@ -65,6 +66,28 @@ internal object WebExtensionReducer {
             is WebExtensionAction.UpdatePopupSessionAction -> {
                 state.updateWebExtensionState(action.extensionId) {
                     it.copy(popupSessionId = action.popupSessionId, popupSession = action.popupSession)
+                }
+            }
+            is WebExtensionAction.UpdateOptionsPageSessionAction -> {
+                if (state.extensions.values.any { it.activeOptionsPage != null }) {
+                    state
+                } else {
+                    state.updateWebExtensionState(action.extensionId) {
+                        it.copy(
+                            activeOptionsPage = ActiveOptionsPage(
+                                instanceId = action.optionsPageInstanceId,
+                                url = action.optionsPageUrl,
+                                name = action.extensionTranslatedName,
+                            ),
+                        )
+                    }
+                }
+            }
+            is WebExtensionAction.ClearOptionsPageSession -> {
+                state.updateWebExtensionState(action.extensionId) {
+                    it.copy(
+                        activeOptionsPage = null,
+                    )
                 }
             }
             is WebExtensionAction.UpdateTabBrowserAction -> {

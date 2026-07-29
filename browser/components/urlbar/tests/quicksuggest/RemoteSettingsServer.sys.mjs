@@ -321,10 +321,12 @@ export class RemoteSettingsServer {
                 body: {
                   metadata: {
                     bucket,
-                    signature: {
-                      signature: "",
-                      x5u: "",
-                    },
+                    signatures: [
+                      {
+                        signature: "",
+                        x5u: "",
+                      },
+                    ],
                   },
                   timestamp: this.#lastModified,
                   changes: records,

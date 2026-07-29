@@ -158,35 +158,42 @@ var testFrameInJSURI = function() {
   win.location.href = "javascript:document.open(); onload = opener.frameInJSURILoaded.bind(null, window); document.write('"+html+"');document.close();";
 };
 
-// test an iframe with X-FRAME-OPTIONS shouldn't be loaded in a cross-origin window,
+// test an iframe with X-FRAME-OPTIONS shouldn't be loaded in a data: URI iframe (cross-origin)
 var testFrameNotLoadedInDataURI = function() {
-  // In this case we load two iframes, one is sameorigin4, which will have X-FRAME-OPTIONS,
-  // the other is postmessage, which won't get the XFO header.
-  // And because now window is navigated to a data: URI, which is considered as cross origin,
-  // So win.onload won't be fired, so we use the iframe 'postmessage' to know the iframes
-  // have been loaded.
-  var html = `<iframe id="sameorigin4" src="http://mochi.test:8888/tests/dom/base/test/file_x-frame-options_page.sjs?testid=sameorigin4&xfo=sameorigin"></iframe>
-              <iframe id="postmessage" src="http://mochi.test:8888/tests/dom/base/test/file_x-frame-options_page.sjs?testid=postmessage"></iframe>`;
-  var win = window.open();
-  window.onmessage = function(evt) {
-    var iframe = SpecialPowers.wrap(win).document.getElementById("sameorigin4");
-    var test = iframe.contentDocument.getElementById("test");
-    ok(test == null, "frame under data: URL should have blocked.");
-    win.close();
+  // We create an iframe with a data: URI that contains an iframe with X-FRAME-OPTIONS: SAMEORIGIN.
+  // Since the data: URI has null origin (cross-origin), the inner iframe should be blocked.
+  var innerHtml = `<iframe id="sameorigin4" src="http://mochi.test:8888/tests/dom/base/test/file_x-frame-options_page.sjs?testid=sameorigin4&xfo=sameorigin"></iframe>`;
+  var outerFrame = document.createElement('iframe');
 
-    SimpleTest.finish();
+  outerFrame.onload = function() {
+    // XFO blocking is synchronous, so by the time outer frame loads, inner should be settled
+    var innerDoc = SpecialPowers.wrap(outerFrame).contentDocument;
+    var innerFrame = innerDoc.getElementById("sameorigin4");
+
+    // Inner frame should have its own onload/onerror, wait for it
+    function checkFrame() {
+      var test = innerFrame.contentDocument.getElementById("test");
+      ok(test == null, "frame under data: URL should have blocked.");
+      outerFrame.remove();
+      SimpleTest.finish();
+    }
+
+    // If inner frame already loaded (or was blocked), check now; otherwise wait
+    if (innerFrame.contentDocument.readyState === "complete") {
+      checkFrame();
+    } else {
+      innerFrame.onload = checkFrame;
+    }
   };
-  win.location.href = "data:text/html,"+html;
+
+  outerFrame.src = "data:text/html," + encodeURIComponent(innerHtml);
+  document.body.appendChild(outerFrame);
 };
 
 SimpleTest.waitForExplicitFinish();
 
 // load the test harness
-SpecialPowers.pushPrefEnv({
-  "set": [["security.data_uri.block_toplevel_data_uri_navigations", false],]
-}, function() {
-  document.getElementById("harness").src = "file_x-frame-options_main.html";
-});
+document.getElementById("harness").src = "file_x-frame-options_main.html";
 
 </script>
 </pre>

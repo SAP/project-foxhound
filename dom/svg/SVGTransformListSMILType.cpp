@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,7 +10,6 @@
 #include "SVGTransformList.h"
 #include "mozilla/SMILValue.h"
 #include "nsCRT.h"
-#include "nsMathUtils.h"
 
 using namespace mozilla::dom::SVGTransform_Binding;
 
@@ -63,21 +60,7 @@ bool SVGTransformListSMILType::IsEqual(const SMILValue& aLeft,
   const TransformArray& rightArr(
       *static_cast<const TransformArray*>(aRight.mU.mPtr));
 
-  // If array-lengths don't match, we're trivially non-equal.
-  if (leftArr.Length() != rightArr.Length()) {
-    return false;
-  }
-
-  // Array-lengths match -- check each array-entry for equality.
-  uint32_t length = leftArr.Length();  // == rightArr->Length(), if we get here
-  for (uint32_t i = 0; i < length; ++i) {
-    if (leftArr[i] != rightArr[i]) {
-      return false;
-    }
-  }
-
-  // Found no differences.
-  return true;
+  return leftArr == rightArr;
 }
 
 nsresult SVGTransformListSMILType::Add(SMILValue& aDest,
@@ -109,22 +92,22 @@ nsresult SVGTransformListSMILType::Add(SMILValue& aDest,
   const SVGTransformSMILData& srcTransform = srcTransforms[0];
   if (dstTransforms.IsEmpty()) {
     SVGTransformSMILData* result = dstTransforms.AppendElement(
-        SVGTransformSMILData(srcTransform.mTransformType), fallible);
+        SVGTransformSMILData(srcTransform.TransformType()), fallible);
     NS_ENSURE_TRUE(result, NS_ERROR_OUT_OF_MEMORY);
   }
   SVGTransformSMILData& dstTransform = dstTransforms[0];
 
   // The types must be the same
-  NS_ASSERTION(srcTransform.mTransformType == dstTransform.mTransformType,
+  NS_ASSERTION(srcTransform.TransformType() == dstTransform.TransformType(),
                "Trying to perform simple add of different transform types");
 
   // And it should be impossible that one of them is of matrix type
-  NS_ASSERTION(srcTransform.mTransformType != SVG_TRANSFORM_MATRIX,
+  NS_ASSERTION(srcTransform.TransformType() != SVG_TRANSFORM_MATRIX,
                "Trying to perform simple add with matrix transform");
 
   // Add the parameters
-  for (int i = 0; i <= 2; ++i) {
-    dstTransform.mParams[i] += srcTransform.mParams[i] * aCount;
+  for (size_t i = 0; i < SVGTransformSMILData::kNumSimpleParams; ++i) {
+    dstTransform[i] += srcTransform[i] * aCount;
   }
 
   return NS_OK;
@@ -186,39 +169,7 @@ nsresult SVGTransformListSMILType::ComputeDistance(const SMILValue& aFrom,
   NS_ASSERTION(toTransforms->Length() == 1,
                "Wrong number of elements in to value");
 
-  const SVGTransformSMILData& fromTransform = (*fromTransforms)[0];
-  const SVGTransformSMILData& toTransform = (*toTransforms)[0];
-  NS_ASSERTION(fromTransform.mTransformType == toTransform.mTransformType,
-               "Incompatible transform types to calculate distance between");
-
-  switch (fromTransform.mTransformType) {
-    // We adopt the SVGT1.2 notions of distance here
-    // See: http://www.w3.org/TR/SVGTiny12/animate.html#complexDistances
-    // (As discussed in bug #469040)
-    case SVG_TRANSFORM_TRANSLATE:
-    case SVG_TRANSFORM_SCALE: {
-      const float& a_tx = fromTransform.mParams[0];
-      const float& a_ty = fromTransform.mParams[1];
-      const float& b_tx = toTransform.mParams[0];
-      const float& b_ty = toTransform.mParams[1];
-      aDistance = NS_hypot(a_tx - b_tx, a_ty - b_ty);
-    } break;
-
-    case SVG_TRANSFORM_ROTATE:
-    case SVG_TRANSFORM_SKEWX:
-    case SVG_TRANSFORM_SKEWY: {
-      const float& a = fromTransform.mParams[0];
-      const float& b = toTransform.mParams[0];
-      aDistance = std::fabs(a - b);
-    } break;
-
-    default:
-      NS_ERROR("Got bad transform types for calculating distances");
-      aDistance = 1.0;
-      return NS_ERROR_FAILURE;
-  }
-
-  return NS_OK;
+  return (*fromTransforms)[0].Distance((*toTransforms)[0], aDistance);
 }
 
 nsresult SVGTransformListSMILType::Interpolate(const SMILValue& aStartVal,
@@ -242,7 +193,7 @@ nsresult SVGTransformListSMILType::Interpolate(const SMILValue& aStartVal,
 
   // The end point should never be a matrix transform
   const SVGTransformSMILData& endTransform = endTransforms[0];
-  NS_ASSERTION(endTransform.mTransformType != SVG_TRANSFORM_MATRIX,
+  NS_ASSERTION(endTransform.TransformType() != SVG_TRANSFORM_MATRIX,
                "End point for interpolation should not be a matrix transform");
 
   // If we have 0 or more than 1 transform in the start transform array then we
@@ -250,30 +201,27 @@ nsresult SVGTransformListSMILType::Interpolate(const SMILValue& aStartVal,
   // Likewise, even if there's only 1 transform in the start transform array
   // then if the type of the start transform doesn't match the end then we
   // can't interpolate and should just use 0, 0, 0
-  static float identityParams[3] = {0.f};
-  const float* startParams = nullptr;
+  bool transformed = false;
+  SVGTransformSMILData::SimpleParams newParams;
+
   if (startTransforms.Length() == 1) {
     const SVGTransformSMILData& startTransform = startTransforms[0];
-    if (startTransform.mTransformType == endTransform.mTransformType) {
-      startParams = startTransform.mParams;
+    if (startTransform.TransformType() == endTransform.TransformType()) {
+      for (size_t i = 0; i < newParams.size(); ++i) {
+        newParams[i] =
+            std::lerp(startTransform[i], endTransform[i], aUnitDistance);
+      }
+      transformed = true;
     }
   }
-  if (!startParams) {
-    startParams = identityParams;
-  }
-
-  const float* endParams = endTransform.mParams;
-
-  // Interpolate between the params
-  float newParams[3];
-  for (int i = 0; i <= 2; ++i) {
-    const float& a = startParams[i];
-    const float& b = endParams[i];
-    newParams[i] = static_cast<float>(a + (b - a) * aUnitDistance);
+  if (!transformed) {
+    for (size_t i = 0; i < newParams.size(); ++i) {
+      newParams[i] = endTransform[i] * aUnitDistance;
+    }
   }
 
   // Make the result
-  SVGTransformSMILData resultTransform(endTransform.mTransformType, newParams);
+  SVGTransformSMILData resultTransform(endTransform.TransformType(), newParams);
 
   // Clear the way for it in the result array
   TransformArray& dstTransforms =

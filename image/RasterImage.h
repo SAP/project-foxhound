@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,6 +16,7 @@
 #ifndef mozilla_image_RasterImage_h
 #define mozilla_image_RasterImage_h
 
+#include "mozilla/Atomics.h"
 #include "Image.h"
 #include "nsCOMPtr.h"
 #include "imgIContainer.h"
@@ -379,6 +379,8 @@ class RasterImage final : public ImageResource,
   // How many times we've decoded this image.
   // This is currently only used for statistics
   int32_t mDecodeCount;
+
+  Atomic<bool> mIsBeingDestroyed{false};
 
 #ifdef DEBUG
   uint32_t mFramesNotified;

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -95,7 +93,7 @@ SessionStoreChangeListener::HandleEvent(dom::Event* aEvent) {
     return NS_OK;
   }
 
-  nsIGlobalObject* global = target->GetOwnerGlobal();
+  nsIGlobalObject* global = target->GetRelevantGlobal();
   if (!global) {
     return NS_OK;
   }
@@ -119,14 +117,16 @@ SessionStoreChangeListener::HandleEvent(dom::Event* aEvent) {
     return NS_OK;
   }
 
-  nsAutoString eventType;
-  aEvent->GetType(eventType);
+  WidgetEvent* event = aEvent->WidgetEventPtr();
+  EventMessage eventMessage = event->mMessage;
 
-  if (eventType == kInput) {
+  if (eventMessage == eEditorInput ||
+      (eventMessage == eUnidentifiedEvent &&
+       event->mSpecifiedEventType == nsGkAtoms::oninput)) {
     RecordChange(windowContext, Change::Input);
-  } else if (eventType == kScroll) {
+  } else if (eventMessage == eMozVisualScroll) {
     RecordChange(windowContext, Change::Scroll);
-  } else if (eventType == kResize && browsingContext->IsTop()) {
+  } else if (eventMessage == eMozVisualResize && browsingContext->IsTop()) {
     RecordChange(windowContext, Change::Resize);
   }
   return NS_OK;

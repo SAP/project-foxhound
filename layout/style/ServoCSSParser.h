@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -42,6 +40,12 @@ struct StylePiecewiseLinearFunction;
 using StyleComputedTimingFunction =
     StyleTimingFunction<int32_t, float, StylePiecewiseLinearFunction>;
 
+template <typename LengthPercent>
+struct StyleGenericViewTimelineInset;
+struct StyleLengthPercentage;
+using StyleViewTimelineInset =
+    StyleGenericViewTimelineInset<StyleLengthPercentage>;
+
 namespace css {
 class Loader;
 }
@@ -61,6 +65,12 @@ class ServoCSSParser {
    * This includes Mozilla-specific keywords such as -moz-default-color.
    */
   static bool IsValidCSSColor(const nsACString& aValue);
+
+  /**
+   * Returns whether the specified string can be parsed as a valid CSS
+   * <image> value.
+   */
+  static bool IsValidCSSImage(const nsACString& aValue);
 
   /**
    * Computes an nscolor from the given CSS <color> value.
@@ -138,7 +148,7 @@ class ServoCSSParser {
       const StyleParsingMode& aParsingMode);
 
   /**
-   * Parse a animation timing function.
+   * Parse an animation timing function.
    *
    * @param aValue The specified value.
    * @param aResult The output timing function. (output)
@@ -146,6 +156,23 @@ class ServoCSSParser {
    */
   static bool ParseEasing(const nsACString& aValue,
                           StyleComputedTimingFunction& aResult);
+
+  /**
+   * Parse a view timeline inset, as the syntax of <view-timeline-inset>, and
+   * then compute it as StyleViewTimelineInset.
+   * https://drafts.csswg.org/scroll-animations-1/#view-timeline-inset
+   *
+   * @param aValue The specified value.
+   * @param aSubject The subject element of the view timeline.
+   * @param aStyle The style of the subject element.
+   * @param aRawData The style data of the document.
+   * @param aResult The output view timeline inset. (output)
+   * @return Whether the value was successfully parsed.
+   */
+  static bool ParseAndComputeViewTimelineInset(
+      const nsACString& aValue, const dom::Element* aSubject,
+      const ComputedStyle* aStyle, const StylePerDocumentStyleData* aRawData,
+      StyleViewTimelineInset& aResult);
 
   /**
    * Parse a specified transform list into a gfx matrix.

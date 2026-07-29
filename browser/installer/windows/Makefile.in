@@ -20,6 +20,7 @@ INSTALLER_FILES = \
   nsis/content/stub_common.css \
   nsis/content/stub_common.js \
   nsis/installer.nsi \
+  nsis/install_dir_helpers.nsh \
   nsis/installer_helpers.nsh \
   nsis/uninstaller.nsi \
   nsis/uninstaller_helpers.nsh \
@@ -30,8 +31,10 @@ INSTALLER_FILES = \
   nsis/shared.nsh \
   nsis/control_utils.nsh \
   nsis/postupdate_helper.nsh \
+  nsis/telemetry.nsh \
   nsis/test_stub.nsi \
-  nsis/get_installation_type.nsh \
+  nsis/test_telemetry.nsh \
+  nsis/desktop_launcher_helpers.nsh \
   stub.tag \
   $(NULL)
 

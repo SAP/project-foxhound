@@ -47,8 +47,9 @@ def generate(config, io, common_vars):
     requests += generate_brkitr_adaboost(config, io, common_vars)
     requests += generate_stringprep(config, io, common_vars)
     requests += generate_brkitr_dictionaries(config, io, common_vars)
-    requests += generate_normalization(config, io, common_vars)
-    requests += generate_coll_ucadata(config, io, common_vars)
+# We compile without collation and normalization.
+#    requests += generate_normalization(config, io, common_vars)
+#    requests += generate_coll_ucadata(config, io, common_vars)
     requests += generate_full_unicore_data(config, io, common_vars)
     requests += generate_unames(config, io, common_vars)
     requests += generate_misc(config, io, common_vars)

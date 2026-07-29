@@ -4,15 +4,16 @@
 
 pub mod gradient;
 pub mod box_shadow;
+pub mod repeat;
+pub mod image;
+pub mod cutout;
 
+use api::units::{LayoutVector2D, LayoutPoint};
 use api::{ColorF, units::DeviceRect};
 
-use crate::clip::{ClipIntern, ClipStore};
 use crate::frame_builder::FrameBuilderConfig;
-use crate::intern::DataStore;
-use crate::render_task_graph::{RenderTaskGraphBuilder, RenderTaskId};
-use crate::renderer::GpuBufferBuilder;
-use crate::scene::SceneProperties;
+use crate::render_task_graph::RenderTaskId;
+use crate::renderer::{BlendMode, GpuBufferBuilder};
 use crate::spatial_tree::SpatialTree;
 use crate::transform::TransformPalette;
 
@@ -23,12 +24,21 @@ use crate::transform::TransformPalette;
 pub enum PatternKind {
     ColorOrTexture = 0,
     Gradient = 1,
+    Repeat = 2,
 
-    Mask = 2,
+    Mask = 3,
+    BoxShadow = 4,
+    // Variants of ColorOrTexture that use a non-default sampler type
+    // (samplerExternalOES / __samplerExternal2DY2YEXT / sampler2DRect). The
+    // quad shader is compiled in matching per-kind variants; see
+    // ps_quad_textured.glsl.
+    TextureExternal = 5,
+    TextureExternalBT709 = 6,
+    TextureRect = 7,
     // When adding patterns, don't forget to update the NUM_PATTERNS constant.
 }
 
-pub const NUM_PATTERNS: u32 = 3;
+pub const NUM_PATTERNS: u32 = 8;
 
 impl PatternKind {
     pub fn from_u32(val: u32) -> Self {
@@ -75,39 +85,25 @@ impl PatternTextureInput {
 }
 
 pub struct PatternBuilderContext<'a> {
-    pub scene_properties: &'a SceneProperties,
     pub spatial_tree: &'a SpatialTree,
-    pub interned_clips: &'a DataStore<ClipIntern>,
     pub fb_config: &'a FrameBuilderConfig,
+    pub prim_origin: LayoutPoint,
 }
 
 pub struct PatternBuilderState<'a> {
     pub frame_gpu_data: &'a mut GpuBufferBuilder,
+    #[allow(unused)]
     pub transforms: &'a mut TransformPalette,
-    pub rg_builder: &'a mut RenderTaskGraphBuilder,
-    pub clip_store: &'a mut ClipStore,
 }
 
 pub trait PatternBuilder {
     fn build(
         &self,
-        _sub_rect: Option<DeviceRect>,
-        _ctx: &PatternBuilderContext,
-        _state: &mut PatternBuilderState,
+        sub_rect: Option<DeviceRect>,
+        offset: LayoutVector2D,
+        ctx: &PatternBuilderContext,
+        state: &mut PatternBuilderState,
     ) -> Pattern;
-
-    fn get_base_color(
-        &self,
-        _ctx: &PatternBuilderContext,
-    ) -> ColorF;
-
-    fn use_shared_pattern(
-        &self,
-    ) -> bool;
-
-    fn can_use_nine_patch(&self) -> bool {
-        true
-    }
 }
 
 #[cfg_attr(feature = "capture", derive(Serialize))]
@@ -118,28 +114,75 @@ pub struct Pattern {
     pub texture_input: PatternTextureInput,
     pub base_color: ColorF,
     pub is_opaque: bool,
+    pub blend_mode: BlendMode,
 }
 
 impl Pattern {
-    pub fn texture(task_id: RenderTaskId, color: ColorF) -> Self {
-        Pattern {
-            kind: PatternKind::ColorOrTexture,
-            shader_input: PatternShaderInput::default(),
-            texture_input: PatternTextureInput::new(task_id),
-            base_color: color,
-            // TODO(gw): We may want to add support to render tasks to query
-            //           if they are known to be opaque.
-            is_opaque: false,
-        }
-    }
-
     pub fn color(color: ColorF) -> Self {
         Pattern {
             kind: PatternKind::ColorOrTexture,
-            shader_input: PatternShaderInput::default(),
+            shader_input: PatternShaderInput(
+                TEXTURED_SHADER_MODE_COLOR,
+                0,
+            ),
             texture_input: PatternTextureInput::default(),
             base_color: color,
             is_opaque: color.a >= 1.0,
+            blend_mode: BlendMode::PremultipliedAlpha,
         }
+    }
+
+    pub fn texture(src_task: RenderTaskId, is_opaque: bool) -> Self {
+        Pattern {
+            kind: PatternKind::ColorOrTexture,
+            shader_input: PatternShaderInput(
+                TEXTURED_SHADER_MODE_TEXTURE,
+                TEXTURED_SHADER_MAP_TO_PRIMITIVE,
+            ),
+            texture_input: PatternTextureInput::new(src_task),
+            base_color: ColorF::WHITE,
+            is_opaque,
+            blend_mode: BlendMode::PremultipliedAlpha,
+        }
+    }
+
+    pub fn with_blend_mode(mut self, blend_mode: BlendMode) -> Self {
+        self.blend_mode = blend_mode;
+
+        self
+    }
+
+    pub fn with_base_color(mut self, color: ColorF) -> Self {
+        self.base_color = color;
+
+        self
+    }
+
+    pub fn as_render_task(&self) -> Option<RenderTaskId> {
+        if self.kind != PatternKind::ColorOrTexture || self.texture_input.task_id == RenderTaskId::INVALID {
+            return None;
+        }
+
+        Some(self.texture_input.task_id)
+    }
+}
+
+pub const TEXTURED_SHADER_MODE_COLOR: i32 = 0;
+pub const TEXTURED_SHADER_MODE_TEXTURE: i32 = 1;
+
+// In the texture mode, whether to map the texture to the primitive's local rect
+// or segment rect.
+pub const TEXTURED_SHADER_MAP_TO_PRIMITIVE: i32 = 0;
+pub const TEXTURED_SHADER_MAP_TO_SEGMENT: i32 = 1;
+
+impl PatternBuilder for ColorF {
+    fn build(
+        &self,
+        _sub_rect: Option<DeviceRect>,
+        _offset: LayoutVector2D,
+        _ctx: &PatternBuilderContext,
+        _state: &mut PatternBuilderState,
+    ) -> Pattern {
+        Pattern::color(*self)
     }
 }

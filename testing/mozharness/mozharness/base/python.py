@@ -835,6 +835,13 @@ class ResourceMonitoringMixin(PerfherderResourceOptionsMixin):
                 poll_interval=0.1, metadata=metadata
             )
             self._resource_monitor.start()
+
+            upload_dir = self.query_abs_dirs()["abs_blob_upload_dir"]
+            os.makedirs(upload_dir, exist_ok=True)
+            self._resource_profile_path = os.path.join(
+                upload_dir, "profile_resource-usage.json"
+            )
+            self._resource_monitor.start_streaming(self._resource_profile_path)
         except Exception:
             self.warning(
                 "Unable to start resource monitor: %s" % traceback.format_exc()
@@ -867,20 +874,24 @@ class ResourceMonitoringMixin(PerfherderResourceOptionsMixin):
         self._resource_monitor.stop(upload_dir=upload_dir)
         self._log_resource_usage()
 
-        # Upload a JSON file containing the raw resource data.
+        # Write the full profile to a temp file first, then rename over the
+        # streamed file. This way if serialization fails mid-write, the
+        # streamed JSON lines file is preserved.
+        tmp_path = self._resource_profile_path + ".tmp"
         try:
-            if not os.path.exists(upload_dir):
-                os.makedirs(upload_dir)
-            with open(
-                os.path.join(upload_dir, "profile_resource-usage.json"), "w"
-            ) as fh:
+            with open(tmp_path, "w") as fh:
                 json.dump(
                     self._resource_monitor.as_profile(),
                     fh,
                     separators=(",", ":"),
                 )
-        except (AttributeError, KeyError):
+            os.replace(tmp_path, self._resource_profile_path)
+        except Exception:
             self.exception("could not upload resource usage JSON", level=WARNING)
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
     def _log_resource_usage(self):
         # Delay import because not available until virtualenv is populated.

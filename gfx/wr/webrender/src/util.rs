@@ -264,79 +264,34 @@ impl ScaleOffset {
 
 
     pub fn map_rect<F, T>(&self, rect: &Box2D<f32, F>) -> Box2D<f32, T> {
-        // TODO(gw): The logic below can return an unexpected result if the supplied
-        //           rect is invalid (has size < 0). Since Gecko currently supplied
-        //           invalid rects in some cases, adding a max(0) here ensures that
-        //           mapping an invalid rect retains the property that rect.is_empty()
-        //           will return true (the mapped rect output will have size 0 instead
-        //           of a negative size). In future we could catch / assert / fix
-        //           these invalid rects earlier, and assert here instead.
+        let x0 = rect.min.x * self.scale.x + self.offset.x;
+        let y0 = rect.min.y * self.scale.y + self.offset.y;
+        // TODO: If the supplied rect is invalid (has size < 0) we must ensure that the
+        // returned rect has size zero else some tests fail. Using the max() of the min
+        // and max points ensures that is the case. In future we could catch / assert /
+        // fix these invalid rects earlier, and assert here instead.
+        let x1 = rect.min.x.max(rect.max.x) * self.scale.x + self.offset.x;
+        let y1 = rect.min.y.max(rect.max.y) * self.scale.y + self.offset.y;
 
-        let w = rect.width().max(0.0);
-        let h = rect.height().max(0.0);
-
-        let mut x0 = rect.min.x * self.scale.x + self.offset.x;
-        let mut y0 = rect.min.y * self.scale.y + self.offset.y;
-
-        let mut sx = w * self.scale.x;
-        let mut sy = h * self.scale.y;
-        // Handle negative scale. Previously, branchless float math was used to find the
-        // min / max vertices and size. However, that sequence of operations was producind
-        // additional floating point accuracy on android emulator builds, causing one test
-        // to fail an assert. Instead, we retain the same math as previously, and adjust
-        // the origin / size if required.
-
-        if self.scale.x < 0.0 {
-            x0 += sx;
-            sx = -sx;
-        }
-        if self.scale.y < 0.0 {
-            y0 += sy;
-            sy = -sy;
-        }
-
-        Box2D::from_origin_and_size(
-            Point2D::new(x0, y0),
-            Size2D::new(sx, sy),
+        Box2D::new(
+            Point2D::new(x0.min(x1), y0.min(y1)),
+            Point2D::new(x0.max(x1), y0.max(y1)),
         )
     }
 
     pub fn unmap_rect<F, T>(&self, rect: &Box2D<f32, F>) -> Box2D<f32, T> {
-        // TODO(gw): The logic below can return an unexpected result if the supplied
-        //           rect is invalid (has size < 0). Since Gecko currently supplied
-        //           invalid rects in some cases, adding a max(0) here ensures that
-        //           mapping an invalid rect retains the property that rect.is_empty()
-        //           will return true (the mapped rect output will have size 0 instead
-        //           of a negative size). In future we could catch / assert / fix
-        //           these invalid rects earlier, and assert here instead.
+        let x0 = (rect.min.x - self.offset.x) / self.scale.x;
+        let y0 = (rect.min.y - self.offset.y) / self.scale.y;
+        // TODO: If the supplied rect is invalid (has size < 0) we must ensure that the
+        // returned rect has size zero else some tests fail. Using the max() of the min
+        // and max points ensures that is the case. In future we could catch / assert /
+        // fix these invalid rects earlier, and assert here instead.
+        let x1 = (rect.min.x.max(rect.max.x) - self.offset.x) / self.scale.x;
+        let y1 = (rect.min.y.max(rect.max.y) - self.offset.y) / self.scale.y;
 
-        let w = rect.width().max(0.0);
-        let h = rect.height().max(0.0);
-
-        let mut x0 = (rect.min.x - self.offset.x) / self.scale.x;
-        let mut y0 = (rect.min.y - self.offset.y) / self.scale.y;
-
-        let mut sx = w / self.scale.x;
-        let mut sy = h / self.scale.y;
-
-        // Handle negative scale. Previously, branchless float math was used to find the
-        // min / max vertices and size. However, that sequence of operations was producind
-        // additional floating point accuracy on android emulator builds, causing one test
-        // to fail an assert. Instead, we retain the same math as previously, and adjust
-        // the origin / size if required.
-
-        if self.scale.x < 0.0 {
-            x0 += sx;
-            sx = -sx;
-        }
-        if self.scale.y < 0.0 {
-            y0 += sy;
-            sy = -sy;
-        }
-
-        Box2D::from_origin_and_size(
-            Point2D::new(x0, y0),
-            Size2D::new(sx, sy),
+        Box2D::new(
+            Point2D::new(x0.min(x1), y0.min(y1)),
+            Point2D::new(x0.max(x1), y0.max(y1)),
         )
     }
 
@@ -398,6 +353,18 @@ impl ScaleOffset {
             1.0,
         )
     }
+
+    pub fn is_identity(&self) -> bool {
+        self.scale.x == 1.0 &&
+        self.scale.y == 1.0 &&
+        self.offset.x == 0.0 &&
+        self.offset.y == 0.0
+    }
+
+    pub fn is_reflection(&self) -> bool {
+        self.scale.x < 0.0 ||
+        self.scale.y < 0.0
+    }
 }
 
 // TODO: Implement these in euclid!
@@ -415,6 +382,15 @@ pub trait MatrixHelpers<Src, Dst> {
     fn is_simple_translation(&self) -> bool;
     fn is_simple_2d_translation(&self) -> bool;
     fn is_2d_scale_translation(&self) -> bool;
+    /// If this transform is a rotation or reflection by a multiple of 90 degrees
+    /// (with unit scale, no z-coupling and no perspective), decompose it into a
+    /// `ScaleOffset` plus whether the x and y axes are swapped (the 90/270-degree
+    /// case, where the `ScaleOffset` applies after the swap). Returns `None`
+    /// otherwise. Such a transform keeps content on the same pixel grid, so a
+    /// rect can be snapped across it losslessly. Unlike
+    /// `preserves_2d_axis_alignment`, this also rejects perspective (`m34`) and
+    /// rescaling.
+    fn as_grid_aligned_rotation(&self) -> Option<(ScaleOffset, bool)>;
     /// Return the determinant of the 2D part of the matrix.
     fn determinant_2d(&self) -> f32;
     /// Turn Z transformation into identity. This is useful when crossing "flat"
@@ -536,6 +512,32 @@ impl<Src, Dst> MatrixHelpers<Src, Dst> for Transform3D<f32, Src, Dst> {
             self.m43.abs() < NEARLY_ZERO
     }
 
+    fn as_grid_aligned_rotation(&self) -> Option<(ScaleOffset, bool)> {
+        let is_zero = |v: f32| v.abs() < NEARLY_ZERO;
+        let is_one = |v: f32| (v - 1.0).abs() < NEARLY_ZERO;
+        let is_unit = |v: f32| (v.abs() - 1.0).abs() < NEARLY_ZERO;
+
+        // Must be a flat 2D transform: no z coupling and no perspective.
+        // Translation (m41, m42) is unconstrained; tz (m43) must be zero.
+        if !(is_zero(self.m13) && is_zero(self.m14) && is_zero(self.m23) && is_zero(self.m24) &&
+            is_zero(self.m31) && is_zero(self.m32) && is_one(self.m33) && is_zero(self.m34) &&
+            is_zero(self.m43) && is_one(self.m44)) {
+            return None;
+        }
+
+        // The remaining 2x2 must only rotate/flip by a right angle, never scale.
+        // A 0/180-degree rotation or axis flip (entries on the diagonal) maps to
+        // a `ScaleOffset` directly; a 90/270-degree rotation (entries off the
+        // diagonal) maps to the same `ScaleOffset` applied after swapping x and y.
+        if is_unit(self.m11) && is_unit(self.m22) && is_zero(self.m12) && is_zero(self.m21) {
+            Some((ScaleOffset::new(self.m11, self.m22, self.m41, self.m42), false))
+        } else if is_unit(self.m12) && is_unit(self.m21) && is_zero(self.m11) && is_zero(self.m22) {
+            Some((ScaleOffset::new(self.m21, self.m12, self.m41, self.m42), true))
+        } else {
+            None
+        }
+    }
+
     fn determinant_2d(&self) -> f32 {
         self.m11 * self.m22 - self.m12 * self.m21
     }
@@ -554,22 +556,6 @@ impl<Src, Dst> MatrixHelpers<Src, Dst> for Transform3D<f32, Src, Dst> {
             self.m21, self.m22, self.m23, self.m24,
             self.m31, self.m32, self.m33, self.m34,
             self.m41, self.m42, self.m43, self.m44,
-        )
-    }
-}
-
-pub trait PointHelpers<U>
-where
-    Self: Sized,
-{
-    fn snap(&self) -> Self;
-}
-
-impl<U> PointHelpers<U> for Point2D<f32, U> {
-    fn snap(&self) -> Self {
-        Point2D::new(
-            self.x.round(),
-            self.y.round(),
         )
     }
 }
@@ -706,7 +692,7 @@ use euclid::vec3;
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use euclid::default::{Point2D, Size2D, Transform3D};
+    use euclid::default::{Box2D, Point2D, Size2D, Transform3D};
     use euclid::{Angle, approxeq::ApproxEq};
     use std::f32::consts::PI;
     use crate::clip::{is_left_of_line, polygon_contains_point};
@@ -779,7 +765,7 @@ pub mod test {
         let xref = LayoutTransform::scale(1.0, -1.0, 1.0)
                         .pre_translate(LayoutVector3D::new(124.0, 38.0, 0.0));
         let so = ScaleOffset::from_transform(&xref).unwrap();
-        let local_rect = Box2D {
+        let local_rect = LayoutRect {
             min: LayoutPoint::new(50.0, -100.0),
             max: LayoutPoint::new(250.0, 300.0),
         };
@@ -954,6 +940,40 @@ pub mod test {
             assert_eq!(polygon_contains_point(&p_inside_twice, &rect, &poly_evenodd), false);
             assert_eq!(polygon_contains_point(&p_outside, &rect, &poly_evenodd), false);
         }
+    }
+
+    // Ensures that mapping or unmapping an input rect with negative size returns a rect
+    // with size 0, and the origin transformed as expected.
+    #[test]
+    fn map_unmap_negative_size() {
+        let scale_offset = ScaleOffset::new(2.0, 2.0, 1.0, 1.0);
+        let rect = Box2D::new(Point2D::new(5.0, 5.0), Point2D::new(0.0, 0.0));
+        let mapped_rect: Box2D<f32> = scale_offset.map_rect(&rect);
+        assert_eq!(mapped_rect, Box2D::new(Point2D::new(11.0, 11.0), Point2D::new(11.0, 11.0)));
+
+        let unmapped_rect: Box2D<f32> = scale_offset.unmap_rect(&rect);
+        assert_eq!(unmapped_rect, Box2D::new(Point2D::new(2.0, 2.0), Point2D::new(2.0, 2.0)));
+    }
+
+    // Ensures that mapping or unmapping two adjoining input rects returns two rects that
+    // are still adjoining.
+    #[test]
+    fn map_unmap_adjoining_rects() {
+        let so = ScaleOffset::new(0.3, 0.3, 0.0, 0.0);
+        let p1 = Point2D::new(15.0, 15.0);
+        let p2 = Point2D::new(45.0, 45.0);
+        let p3 = Point2D::new(75.0, 75.0);
+
+        let rect_1 = Box2D::new(p1, p2);
+        let rect_2 = Box2D::new(p2, p3);
+
+        let mapped_rect_1: Box2D<f32> = so.map_rect(&rect_1);
+        let mapped_rect_2: Box2D<f32> = so.map_rect(&rect_2);
+        assert_eq!(mapped_rect_1.max, mapped_rect_2.min);
+
+        let unmapped_rect_1: Box2D<f32> = so.unmap_rect(&rect_1);
+        let unmapped_rect_2: Box2D<f32> = so.unmap_rect(&rect_2);
+        assert_eq!(unmapped_rect_1.max, unmapped_rect_2.min);
     }
 }
 

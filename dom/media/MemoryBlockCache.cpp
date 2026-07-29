@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,8 +16,9 @@ namespace mozilla {
 
 #undef LOG
 LazyLogModule gMemoryBlockCacheLog("MemoryBlockCache");
-#define LOG(x, ...) \
-  MOZ_LOG(gMemoryBlockCacheLog, LogLevel::Debug, ("%p " x, this, ##__VA_ARGS__))
+#define LOG(x, ...)                                                           \
+  MOZ_LOG_FMT(gMemoryBlockCacheLog, LogLevel::Debug, "{} " x, fmt::ptr(this), \
+              ##__VA_ARGS__)
 
 // Combined sizes of all MemoryBlockCache buffers.
 // Initialized to 0 by non-local static initialization.
@@ -54,8 +53,8 @@ MemoryBlockCache::MemoryBlockCache(int64_t aContentLength)
 MemoryBlockCache::~MemoryBlockCache() {
   MOZ_ASSERT(gCombinedSizes >= mBuffer.Length());
   size_t sizes = static_cast<size_t>(gCombinedSizes -= mBuffer.Length());
-  LOG("~MemoryBlockCache() - destroying buffer of size %zu; combined sizes now "
-      "%zu",
+  LOG("~MemoryBlockCache() - destroying buffer of size {}; combined sizes now "
+      "{}",
       mBuffer.Length(), sizes);
 }
 
@@ -93,15 +92,15 @@ bool MemoryBlockCache::EnsureBufferCanContain(size_t aContentLength) {
             100);
     const size_t currentSizes = static_cast<size_t>(gCombinedSizes);
     if (currentSizes + extra > limit) {
-      LOG("EnsureBufferCanContain(%zu) - buffer size %zu, wanted + %zu = %zu;"
-          " combined sizes %zu + %zu > limit %zu",
+      LOG("EnsureBufferCanContain({}) - buffer size {}, wanted + {} = {};"
+          " combined sizes {} + {} > limit {}",
           aContentLength, initialLength, extra, desiredLength, currentSizes,
           extra, limit);
       return false;
     }
   }
   if (!mBuffer.SetLength(desiredLength, mozilla::fallible)) {
-    LOG("EnsureBufferCanContain(%zu) - buffer size %zu, wanted + %zu = %zu, "
+    LOG("EnsureBufferCanContain({}) - buffer size {}, wanted + {} = {}, "
         "allocation failed",
         aContentLength, initialLength, extra, desiredLength);
     return false;
@@ -116,8 +115,8 @@ bool MemoryBlockCache::EnsureBufferCanContain(size_t aContentLength) {
     mBuffer.SetLength(capacity);
   }
   const size_t newSizes = gCombinedSizes += (extra + extraCapacity);
-  LOG("EnsureBufferCanContain(%zu) - buffer size %zu + requested %zu + bonus "
-      "%zu = %zu; combined sizes %zu",
+  LOG("EnsureBufferCanContain({}) - buffer size {} + requested {} + bonus "
+      "{} = {}; combined sizes {}",
       aContentLength, initialLength, extra, extraCapacity, capacity, newSizes);
   mHasGrown = true;
   return true;

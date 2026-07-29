@@ -424,6 +424,7 @@ serp:
           `ad_popover`,
           `ad_sidebar`,
           `ad_sitelink`,
+          `ad_subframe`,
           `ad_uncategorized` (added in Firefox 129),
           `cookie_banner`,
           `incontent_searchbox`,
@@ -465,6 +466,7 @@ serp:
           `ad_popover`,
           `ad_sidebar`,
           `ad_sitelink`,
+          `ad_subframe`,
           `cookie_banner`,
           `refined_search_buttons`,
           `shopping_tab`.
@@ -472,7 +474,8 @@ serp:
           in August 2024 as a response to clients reporting an extra hidden ad
           and stopped being reported in telemetry with Firefox 131 as the
           version added the ability to categorize links but not report them in
-          telemetry.
+          telemetry. `ad_subframe` is used for providers where ads are served
+          in an iframe rather than as inline links.
         type: string
       ads_loaded:
         description: >
@@ -1954,6 +1957,21 @@ urlbar.searchmode:
       - fx-search-telemetry@mozilla.com
     expires: never
     telemetry_mirror: URLBAR_SEARCHMODE_KEYWORDOFFER
+
+  messaging_system:
+    type: labeled_counter
+    description: >
+      A keyed uint recording how many times the user entered a particular search mode
+      through the messaging system.
+    data_sensitivity:
+      - interaction
+    bugs:
+      - https://bugzil.la/2018806
+    data_reviews:
+      - https://bugzil.la/2018806
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    expires: never
 
   oneoff:
     type: labeled_counter

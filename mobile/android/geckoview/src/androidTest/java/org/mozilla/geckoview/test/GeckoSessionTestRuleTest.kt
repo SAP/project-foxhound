@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * Any copyright is dedicated to the Public Domain.
+/* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 package org.mozilla.geckoview.test
@@ -486,6 +485,27 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
         sessionRule.waitForPageStop()
 
         sessionRule.forCallbacksDuringWait(object : ScrollDelegate {})
+    }
+
+    @Test(expected = AssertionError::class)
+    fun forCallbacksDuringWait_enforcesAssertCalledOnBridgedOverride() {
+        // Regression test for bug 1948997: onLocationChange is reached through a
+        // synthetic bridge (its hasUserGesture param is a boxed Boolean in the
+        // Java interface), and the rule must still honor the annotation on the
+        // real override. count = 0 has to fail since the load fires it.
+        mainSession.loadTestPath(HELLO_HTML_PATH)
+        sessionRule.waitForPageStop()
+
+        sessionRule.forCallbacksDuringWait(object : NavigationDelegate {
+            @AssertCalled(count = 0)
+            override fun onLocationChange(
+                session: GeckoSession,
+                url: String?,
+                perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>,
+                hasUserGesture: Boolean,
+            ) {
+            }
+        })
     }
 
     @Test fun forCallbacksDuringWait_specificMethod() {

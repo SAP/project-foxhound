@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -60,11 +59,11 @@ struct BootstrapConfig {
  */
 class Bootstrap {
  protected:
-  Bootstrap() {}
+  Bootstrap() = default;
 
   // Because of allocator mismatches, code outside libxul shouldn't delete a
   // Bootstrap instance. Use Dispose().
-  virtual ~Bootstrap() {}
+  virtual ~Bootstrap() = default;
 
   /**
    * Destroy and deallocate this Bootstrap instance.
@@ -76,7 +75,7 @@ class Bootstrap {
    */
   class BootstrapDelete {
    public:
-    constexpr BootstrapDelete() {}
+    constexpr BootstrapDelete() = default;
     void operator()(Bootstrap* aPtr) const { aPtr->Dispose(); }
   };
 

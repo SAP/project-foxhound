@@ -61,8 +61,14 @@ xul|findbar {
 
 .findbar-textbox {
   appearance: none;
-  background-color: var(--input-bgcolor, var(--toolbar-field-background-color));
-  color: var(--input-color, var(--toolbar-field-color));
+  background-color: var(--input-text-background-color);
+  color: var(--input-text-color);
+
+  :root[lwtheme] & {
+    background-color: var(--toolbar-field-background-color);
+    color: var(--toolbar-field-text-color);
+  }
+
   border: 1px solid var(--input-border-color);
   border-radius: var(--border-radius-small);
   outline: none;
@@ -77,12 +83,12 @@ xul|findbar {
   }
 
   &:focus {
-    background-color: var(--toolbar-field-focus-background-color);
-    color: var(--toolbar-field-focus-color);
+    background-color: var(--toolbar-field-background-color-focus);
+    color: var(--toolbar-field-text-color-focus);
     border-color: transparent;
     outline: var(--focus-outline);
     outline-offset: var(--focus-outline-inset);
-    outline-color: var(--toolbar-field-focus-border-color);
+    outline-color: var(--toolbar-field-border-color-focus);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.23);
   }
 
@@ -123,15 +129,15 @@ xul|findbar {
   }
 
   &:not([disabled]):hover {
-    background-color: var(--toolbarbutton-hover-background, rgba(190, 190, 190, 0.2));
+    background-color: var(--toolbarbutton-background-color-hover, rgba(190, 190, 190, 0.2));
   }
 
   &:not([disabled]):hover:active {
-    background-color: var(--toolbarbutton-active-background, rgba(190, 190, 190, 0.4));
+    background-color: var(--toolbarbutton-background-color-active, rgba(190, 190, 190, 0.4));
   }
 
   &[disabled] > .toolbarbutton-icon {
-    opacity: var(--toolbarbutton-disabled-opacity);
+    opacity: var(--toolbarbutton-opacity-disabled);
   }
 }
 
@@ -182,11 +188,11 @@ xul|findbar {
   transition: opacity 150ms ease-in-out;
 
   &:hover {
-    background-color: var(--toolbarbutton-hover-background, rgba(190, 190, 190, 0.2));
+    background-color: var(--toolbarbutton-background-color-hover, rgba(190, 190, 190, 0.2));
     outline: none;
   }
 
   &:hover:active {
-    background-color: var(--toolbarbutton-active-background, rgba(190, 190, 190, 0.4));
+    background-color: var(--toolbarbutton-background-color-active, rgba(190, 190, 190, 0.4));
   }
 }

@@ -97,10 +97,12 @@ class FuzzyMatchedVideoEncoderFactory : public VideoEncoderFactory {
     return nullptr;
   }
 
+  using VideoEncoderFactory::QueryCodecSupport;
   CodecSupport QueryCodecSupport(
       const SdpVideoFormat& format,
-      std::optional<std::string> scalability_mode) const override {
-    return factory_.QueryCodecSupport(format, scalability_mode);
+      std::optional<std::string> scalability_mode,
+      std::optional<Resolution> resolution) const override {
+    return factory_.QueryCodecSupport(format, scalability_mode, resolution);
   }
 
  private:
@@ -114,15 +116,22 @@ class FuzzyMatchedVideoEncoderFactory : public VideoEncoderFactory {
 
 void PeerConnectionTestWrapper::Connect(PeerConnectionTestWrapper* caller,
                                         PeerConnectionTestWrapper* callee) {
-  caller->SignalOnIceCandidateReady.connect(
-      callee, &PeerConnectionTestWrapper::AddIceCandidate);
-  callee->SignalOnIceCandidateReady.connect(
-      caller, &PeerConnectionTestWrapper::AddIceCandidate);
-
-  caller->SignalOnSdpReady.connect(callee,
-                                   &PeerConnectionTestWrapper::ReceiveOfferSdp);
-  callee->SignalOnSdpReady.connect(
-      caller, &PeerConnectionTestWrapper::ReceiveAnswerSdp);
+  caller->SubscribeOnIceCandidateReady(
+      callee, [callee](const std::string& mid, int index,
+                       const std::string& candidate) {
+        callee->AddIceCandidate(mid, index, candidate);
+      });
+  callee->SubscribeOnIceCandidateReady(
+      caller, [caller](const std::string& mid, int index,
+                       const std::string& candidate) {
+        caller->AddIceCandidate(mid, index, candidate);
+      });
+  caller->SubscribeOnSdpReady(callee, [callee](const std::string& sdp) {
+    callee->ReceiveOfferSdp(sdp);
+  });
+  callee->SubscribeOnSdpReady(caller, [caller](const std::string& sdp) {
+    caller->ReceiveAnswerSdp(sdp);
+  });
 }
 
 void PeerConnectionTestWrapper::AwaitNegotiation(
@@ -302,8 +311,11 @@ void PeerConnectionTestWrapper::AwaitSetRemoteDescription(
 void PeerConnectionTestWrapper::ListenForRemoteIceCandidates(
     scoped_refptr<PeerConnectionTestWrapper> remote_wrapper) {
   remote_wrapper_ = remote_wrapper;
-  remote_wrapper_->SignalOnIceCandidateReady.connect(
-      this, &PeerConnectionTestWrapper::OnRemoteIceCandidate);
+  remote_wrapper_->SubscribeOnIceCandidateReady(
+      this,
+      [this](const std::string& mid, int index, const std::string& candidate) {
+        OnRemoteIceCandidate(mid, index, candidate);
+      });
 }
 
 void PeerConnectionTestWrapper::AwaitAddRemoteIceCandidates() {
@@ -351,13 +363,13 @@ void PeerConnectionTestWrapper::OnAddTrack(
 
 void PeerConnectionTestWrapper::OnIceCandidate(const IceCandidate* candidate) {
   std::string sdp = candidate->ToString();
-  SignalOnIceCandidateReady(candidate->sdp_mid(), candidate->sdp_mline_index(),
+  NotifyOnIceCandidateReady(candidate->sdp_mid(), candidate->sdp_mline_index(),
                             sdp);
 }
 
 void PeerConnectionTestWrapper::OnDataChannel(
     scoped_refptr<DataChannelInterface> data_channel) {
-  SignalOnDataChannel(data_channel.get());
+  NotifyOnDataChannel(data_channel.get());
 }
 
 void PeerConnectionTestWrapper::OnSuccess(SessionDescriptionInterface* desc) {
@@ -371,7 +383,7 @@ void PeerConnectionTestWrapper::OnSuccess(SessionDescriptionInterface* desc) {
 
   SetLocalDescription(desc->GetType(), sdp);
 
-  SignalOnSdpReady(sdp);
+  NotifyOnSdpReady(sdp);
 }
 
 void PeerConnectionTestWrapper::CreateOffer(
@@ -530,8 +542,8 @@ scoped_refptr<MediaStreamInterface> PeerConnectionTestWrapper::GetUserMedia(
   if (video) {
     // Set max frame rate to 10fps to reduce the risk of the tests to be flaky.
     FakePeriodicVideoSource::Config config;
-    config.frame_interval_ms = 100;
-    config.timestamp_offset_ms = env_.clock().TimeInMilliseconds();
+    config.frame_interval = TimeDelta::Millis(100);
+    config.timestamp_offset = env_.clock().CurrentTime();
     config.width = resolution.width;
     config.height = resolution.height;
 

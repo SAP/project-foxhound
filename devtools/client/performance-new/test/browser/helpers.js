@@ -167,7 +167,7 @@ async function makeSureProfilerPopupIsEnabled() {
       "> Waiting until the profiler button is added to the browser."
     );
 
-    await SimpleTest.promiseFocus(gBrowser.ownerGlobal);
+    await SimpleTest.promiseFocus(gBrowser.documentGlobal);
 
     registerCleanupFunction(() => {
       info(
@@ -233,7 +233,7 @@ async function _toggleOpenProfilerPopup(window) {
   const popupShown = waitForProfilerPopupEvent(window, "popupshown");
 
   info("> Trigger a click on the profiler button dropmarker.");
-  await EventUtils.synthesizeMouseAtCenter(profilerDropmarker, {}, window);
+  EventUtils.synthesizeMouseAtCenter(profilerDropmarker, {}, window);
 
   if (profilerDropmarker.getAttribute("open") !== "true") {
     throw new Error(

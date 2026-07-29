@@ -1,11 +1,12 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Cookie.h"
 #include "CookieCommons.h"
+#include "mozilla/HashFunctions.h"
 #include "CookieStorage.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/glean/NetwerkMetrics.h"
@@ -29,18 +30,38 @@ namespace net {
 // necessary to enforce ordering among cookies whose creation times would
 // otherwise overlap, since it's possible two cookies may be created at the
 // same time, or that the system clock isn't monotonic.
-static int64_t gLastCreationTimeInUSec;
+static Atomic<int64_t, SequentiallyConsistent> gLastCreationTimeInUSec;
+
+// static
+uint32_t Cookie::ComputeKeyHash(const nsACString& aName,
+                                const nsACString& aHost,
+                                const nsACString& aPath) {
+  return mozilla::AddToHash(mozilla::AddToHash(mozilla::HashString(aName),
+                                               mozilla::HashString(aHost)),
+                            mozilla::HashString(aPath));
+}
+
+Cookie::Cookie(const CookieStruct& aCookieData,
+               const OriginAttributes& aOriginAttributes)
+    : mData(aCookieData),
+      mOriginAttributes(aOriginAttributes),
+      mKeyHash(ComputeKeyHash(aCookieData.name(), aCookieData.host(),
+                              aCookieData.path())) {}
 
 int64_t Cookie::GenerateUniqueCreationTimeInUSec(int64_t aCreationTimeInUSec) {
-  // Check if the creation time given to us is greater than the running maximum
-  // (it should always be monotonically increasing).
-  if (aCreationTimeInUSec > gLastCreationTimeInUSec) {
-    gLastCreationTimeInUSec = aCreationTimeInUSec;
-    return aCreationTimeInUSec;
+  // Use a CAS loop to atomically advance gLastCreationTimeInUSec: if the
+  // proposed time is greater than the current maximum, try to store it;
+  // otherwise bump the maximum by one.  Retry on CAS failure (another thread
+  // raced ahead of us).
+  int64_t old = gLastCreationTimeInUSec;
+  while (true) {
+    int64_t desired =
+        (aCreationTimeInUSec > old) ? aCreationTimeInUSec : old + 1;
+    if (gLastCreationTimeInUSec.compareExchange(old, desired)) {
+      return desired;
+    }
+    old = gLastCreationTimeInUSec;
   }
-
-  // Make up our own.
-  return ++gLastCreationTimeInUSec;
 }
 
 already_AddRefed<Cookie> Cookie::Create(
@@ -51,8 +72,11 @@ already_AddRefed<Cookie> Cookie::Create(
 
   // If the creationTimeInUSec given to us is higher than the running maximum,
   // update our maximum.
-  if (cookie->mData.creationTimeInUSec() > gLastCreationTimeInUSec) {
-    gLastCreationTimeInUSec = cookie->mData.creationTimeInUSec();
+  int64_t creation = cookie->mData.creationTimeInUSec();
+  int64_t old = gLastCreationTimeInUSec;
+  while (creation > old) {
+    if (gLastCreationTimeInUSec.compareExchange(old, creation)) break;
+    old = gLastCreationTimeInUSec;
   }
 
   return cookie.forget();

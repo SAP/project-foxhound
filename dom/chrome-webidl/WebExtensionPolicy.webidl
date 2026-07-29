@@ -108,6 +108,27 @@ interface WebExtensionPolicy {
   attribute MatchPatternSet allowedOrigins;
 
   /**
+   * Whether access to the file scheme is allowed, independently of whether
+   * the extension's host permissions permit it.
+   * If false, file access is never allowed. If true, file access may be
+   * allowed if allowedOrigins contains `<all_urls>` or a `file:`-permission.
+   * The value may change at runtime through changes to permissions.
+   */
+  [Pure]
+  readonly attribute boolean fileSchemeAllowed;
+
+  /**
+   * An ordered list of guards matching URLs this extension can't access.
+   */
+  [Cached, Frozen, Pure]
+  attribute sequence<ExtensionGuardSet> guardSets;
+
+  /**
+   * Returns the source of the first matching guard or null if none.
+   */
+  ExtensionGuardSource? checkGuarded(URI uri);
+
+  /**
    * The set of content scripts active for this extension.
    */
   [Cached, Frozen, Pure]

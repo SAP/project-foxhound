@@ -10,6 +10,7 @@ import androidx.fragment.app.FragmentManager
 import io.mockk.MockKAnnotations
 import io.mockk.confirmVerified
 import io.mockk.impl.annotations.MockK
+import io.mockk.impl.annotations.RelaxedMockK
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.spyk
@@ -33,7 +34,7 @@ class StrictModeManagerTest {
     @MockK(relaxUnitFun = true)
     private lateinit var fragmentManager: FragmentManager
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var components: Components
 
     @Before

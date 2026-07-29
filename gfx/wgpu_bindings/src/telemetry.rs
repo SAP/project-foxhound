@@ -56,24 +56,24 @@ fn d3d12_expose_adapter(
         wgh::D3D12ExposeAdapterResult::ShaderModel6Requirement => "NONE:REQ_SM6",
         wgh::D3D12ExposeAdapterResult::Success(feature_level, shader_model) => {
             let feature_level = match feature_level {
-                wgh::dx12::FeatureLevel::_11_0 => "11_0",
-                wgh::dx12::FeatureLevel::_11_1 => "11_1",
-                wgh::dx12::FeatureLevel::_12_0 => "12_0",
-                wgh::dx12::FeatureLevel::_12_1 => "12_1",
-                wgh::dx12::FeatureLevel::_12_2 => "12_2",
+                wgh::dx12::FeatureLevel::V11_0 => "11_0",
+                wgh::dx12::FeatureLevel::V11_1 => "11_1",
+                wgh::dx12::FeatureLevel::V12_0 => "12_0",
+                wgh::dx12::FeatureLevel::V12_1 => "12_1",
+                wgh::dx12::FeatureLevel::V12_2 => "12_2",
             };
             let shader_model = match shader_model {
-                wgh::dx12::ShaderModel::_5_1 => "5.1",
-                wgh::dx12::ShaderModel::_6_0 => "6.0",
-                wgh::dx12::ShaderModel::_6_1 => "6.1",
-                wgh::dx12::ShaderModel::_6_2 => "6.2",
-                wgh::dx12::ShaderModel::_6_3 => "6.3",
-                wgh::dx12::ShaderModel::_6_4 => "6.4",
-                wgh::dx12::ShaderModel::_6_5 => "6.5",
-                wgh::dx12::ShaderModel::_6_6 => "6.6",
-                wgh::dx12::ShaderModel::_6_7 => "6.7",
-                wgh::dx12::ShaderModel::_6_8 => "6.8",
-                wgh::dx12::ShaderModel::_6_9 => "6.9",
+                wgh::dx12::ShaderModel::V5_1 => "5.1",
+                wgh::dx12::ShaderModel::V6_0 => "6.0",
+                wgh::dx12::ShaderModel::V6_1 => "6.1",
+                wgh::dx12::ShaderModel::V6_2 => "6.2",
+                wgh::dx12::ShaderModel::V6_3 => "6.3",
+                wgh::dx12::ShaderModel::V6_4 => "6.4",
+                wgh::dx12::ShaderModel::V6_5 => "6.5",
+                wgh::dx12::ShaderModel::V6_6 => "6.6",
+                wgh::dx12::ShaderModel::V6_7 => "6.7",
+                wgh::dx12::ShaderModel::V6_8 => "6.8",
+                wgh::dx12::ShaderModel::V6_9 => "6.9",
             };
             &format!("SOME:FL{feature_level}:SM{shader_model}")
         }

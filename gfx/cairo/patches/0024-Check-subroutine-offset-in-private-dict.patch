@@ -1,0 +1,25 @@
+From 844dae2fe4dc3132c64bea0f1aefef957086587c Mon Sep 17 00:00:00 2001
+From: Jonathan Kew <jkew@mozilla.com>
+Date: Wed, 22 Apr 2026 13:00:22 -0700
+Subject: [PATCH 24/29] Check subroutine offset in private dict
+
+---
+ src/cairo-cff-subset.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/cairo-cff-subset.c b/src/cairo-cff-subset.c
+index 8a7de0065..5a54c091a 100644
+--- a/src/cairo-cff-subset.c
++++ b/src/cairo-cff-subset.c
+@@ -930,6 +930,8 @@ cairo_cff_font_read_private_dict (cairo_cff_font_t   *font,
+     if (operand) {
+         decode_integer (operand, &offset);
+         p = ptr + offset;
++        if (unlikely (p < font->data || p > font->data_end))
++            return CAIRO_INT_STATUS_UNSUPPORTED;
+         status = cff_index_read (local_sub_index, &p, font->data_end);
+ 	if (unlikely (status))
+ 	    return status;
+-- 
+2.53.0
+

@@ -6,6 +6,10 @@
 
 /* import-globals-from http3_proxy_common.js */
 
+var { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
+
 add_setup(async function () {
   Services.prefs.setIntPref("network.http.speculative-parallel-limit", 0);
 
@@ -22,4 +26,25 @@ add_task(test_concurrent_http_connect_tunnels);
 // add_task(test_http_connect_stream_closure);
 add_task(test_connect_udp);
 add_task(test_http_connect_fallback);
-add_task(test_inner_connection_fallback);
+
+async function closeAllConnections() {
+  Services.obs.notifyObservers(null, "net:cancel-all-connections");
+  // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+  await new Promise(resolve => setTimeout(resolve, 1000));
+}
+
+add_task(async function test_http_connect_fallback() {
+  for (const ServerClass of [
+    NodeHTTPServer,
+    NodeHTTPSServer,
+    NodeHTTP2Server,
+  ]) {
+    info(`Running inner-connection fallback with ${ServerClass.name}`);
+    try {
+      await test_inner_connection_fallback(ServerClass);
+      info(`${ServerClass.name} passed`);
+    } finally {
+      await closeAllConnections();
+    }
+  }
+});

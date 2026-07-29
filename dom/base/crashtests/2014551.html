@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test case for bug 2014551</title></head>
+<body>
+<script>
+let iframeHTML = `<!DOCTYPE html>
+<html><head>
+<style>body{height:5000px;margin:0;padding:0;}</style>
+</head>
+<body>
+<script>
+document.addEventListener('MozScrolledAreaChanged', function(e) {
+  try {
+    history.replaceState(null, '', location.href.split('#')[0] + '#:~:text=nonexistent%20text%20number');
+  } catch(ex) {}
+  try {
+    history.replaceState(null, '', location.href.split('#')[0] + '#:~:text=another%20nonexistent');
+  } catch(ex) {}
+});
+<\/script>
+<div style="height:3000px;background:lightblue;">
+<p>Some text at the beginning of the iframe document content here padding</p>
+<p>This is the target text that the text directive should find in the iframe</p>
+<p>More text content after the target text to pad the document body here</p>
+</div>
+<div style="height:5000px;background:lightgreen;">More content to ensure large scrolled area for the document</div>
+</body></html>`;
+
+let blob = new Blob([iframeHTML], {type: 'text/html'});
+let url = URL.createObjectURL(blob);
+
+let iframe = document.createElement('iframe');
+iframe.style.cssText = 'width: 800px; height: 400px;';
+iframe.src = url + '#:~:text=target%20text';
+document.body.appendChild(iframe);
+</script>
+</body>
+</html>

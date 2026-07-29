@@ -1,0 +1,187 @@
+<!DOCTYPE HTML>
+<html>
+<!--
+Test that JXL images with a progressive codestream show their partial-decode
+states on screen as bytes arrive, not just the final image. Mirrors the
+gtest JXLProgressiveDecodingMatches in image/test/gtest/TestDecoders.cpp:
+the streaming SJS sends bytes in the same byte-count stages the gtest
+benchmarks use, and at each stage we verify that four sample pixels (the
+inside corners of a 4x4 grid in the test image) match the recorded
+expected values from the gtest. End-to-end this verifies that the partial
+flushes the gtest sees in raw surface bytes also reach the screen.
+-->
+<head>
+  <meta charset="utf-8">
+  <title>Test for JXL progressive decoding</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/WindowSnapshot.js"></script>
+  <script src="imgutils.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body onload="SimpleTest.waitForFocus(runTest)">
+<script>
+SimpleTest.waitForExplicitFinish();
+SimpleTest.requestFlakyTimeout("Slow poll to limit snapshotRect canvas churn");
+
+// Wait kPollDelayMs between snapshotRect calls so we don't overwelm test
+// verify android jobs that can hit oom if we do it every frame.
+const kPollDelayMs = 500;
+async function nextPollTick() {
+  await new Promise(r => setTimeout(r, kPollDelayMs));
+  await new Promise(requestAnimationFrame);
+}
+
+function getPixel(imgElement, x, y) {
+  let r = imgElement.getBoundingClientRect();
+  let canvas = snapshotRect(window, r);
+  let ctx = canvas.getContext("2d");
+  let data = ctx.getImageData(x, y, 1, 1).data;
+  return { r: data[0], g: data[1], b: data[2], a: data[3] };
+}
+
+// Sample points: inside corners of the 4x4 grid in progressive.jxl. Same
+// coordinates the gtest uses (kJxlGridSamplePoints).
+const samplePoints = [
+  { x: 127, y: 127 },
+  { x: 384, y: 127 },
+  { x: 127, y: 384 },
+  { x: 384, y: 384 },
+];
+
+// Expected RGB values per sample point at each stop. Translated from the
+// gtest's recorded BGRA benchmarks (image/test/gtest/TestDecoders.cpp,
+// JXLProgressiveDecodingMatches): gtest BGRAColor(b, g, r, 255) maps to
+// the canvas readback {r, g, b}.
+//
+// stops[i] is reached after the SJS releases the bytes for ?continue=i (or
+// for stops[0], the bytes the SJS writes before any continue signal).
+// stops[stops.length-1] is the entire file.
+const stops = [
+  {
+    label: "first flush (~400 bytes)",
+    samples: [
+      { r: 113, g: 101, b: 133 },
+      { r: 122, g: 133, b: 108 },
+      { r: 150, g: 124, b: 45 },
+      { r: 163, g: 119, b: 113 },
+    ],
+  },
+  {
+    label: "early refinement (~4300 bytes)",
+    samples: [
+      { r: 126, g: 98, b: 131 },
+      { r: 141, g: 132, b: 114 },
+      { r: 151, g: 129, b: 51 },
+      { r: 158, g: 106, b: 104 },
+    ],
+  },
+  {
+    label: "first big jump (~17400 bytes)",
+    samples: [
+      { r: 243, g: 97, b: 103 },
+      { r: 141, g: 132, b: 114 },
+      { r: 150, g: 129, b: 51 },
+      { r: 157, g: 105, b: 104 },
+    ],
+  },
+  {
+    label: "last big jump (~46100 bytes)",
+    samples: [
+      { r: 243, g: 97, b: 103 },
+      { r: 164, g: 10, b: 25 },
+      { r: 23, g: 89, b: 4 },
+      { r: 97, g: 88, b: 85 },
+    ],
+  },
+  {
+    label: "entire file",
+    samples: [
+      { r: 252, g: 95, b: 101 },
+      { r: 161, g: 0, b: 15 },
+      { r: 0, g: 80, b: 0 },
+      { r: 95, g: 95, b: 91 },
+    ],
+  },
+];
+
+const kColorTolerance = 1;
+const kStopDiagnosticDeadlineMs = 2 * 60 * 1000;
+
+function pixelsMatch(actual, expected) {
+  return (
+    Math.abs(actual.r - expected.r) <= kColorTolerance &&
+    Math.abs(actual.g - expected.g) <= kColorTolerance &&
+    Math.abs(actual.b - expected.b) <= kColorTolerance
+  );
+}
+
+async function waitForStop(img, stop) {
+  // Poll every animation frame until every sample point matches the
+  // recorded expected RGB. After kStopDiagnosticDeadlineMs without a match
+  // we record each non-matching point's expected/actual/delta once so that
+  // whoever has to update the recorded values has something concrete to
+  // work from. We then keep polling and let the harness time out the test
+  // as a whole.
+  let logged = false;
+  let deadline = performance.now() + kStopDiagnosticDeadlineMs;
+  while (true) {
+    await nextPollTick();
+    let pixels = samplePoints.map(p => getPixel(img, p.x, p.y));
+    let allMatch = pixels.every((px, i) => pixelsMatch(px, stop.samples[i]));
+    if (allMatch) {
+      ok(true, `${stop.label}: all samples match`);
+      return;
+    }
+    if (!logged && performance.now() >= deadline) {
+      logged = true;
+      for (let i = 0; i < samplePoints.length; i++) {
+        let p = samplePoints[i];
+        let a = pixels[i];
+        let e = stop.samples[i];
+        if (!pixelsMatch(a, e)) {
+          ok(false,
+            `${stop.label} (${p.x},${p.y}): expected=(${e.r},${e.g},${e.b}) ` +
+            `actual=(${a.r},${a.g},${a.b}) delta=(${a.r - e.r},${a.g - e.g},${a.b - e.b})`
+          );
+        }
+      }
+    }
+  }
+}
+
+async function runTest() {
+  clearAllImageCaches();
+  await SpecialPowers.pushPrefEnv({ set: [["image.jxl.enabled", true]] });
+
+  let img = document.createElement("img");
+  img.width = 512;
+  img.height = 512;
+
+  let imageLoaded = false;
+  let loadedPromise = new Promise(resolve => {
+    img.onload = () => { imageLoaded = true; resolve(); };
+  });
+
+  document.body.appendChild(img);
+  img.src = "sendprogressivejxl.sjs";
+
+  // Stop 0: the SJS writes the first chunk immediately; just wait for it.
+  await waitForStop(img, stops[0]);
+
+  // Subsequent stops: signal continue=N then wait for those samples. The
+  // final iteration's continue=stops.length tells the SJS to write the
+  // rest of the file and finish the response.
+  for (let i = 1; i < stops.length; i++) {
+    await fetch(`sendprogressivejxl.sjs?continue=${i}`);
+    await waitForStop(img, stops[i]);
+  }
+
+  await loadedPromise;
+  ok(imageLoaded, "image finished loading after all stops");
+
+  clearAllImageCaches();
+  SimpleTest.finish();
+}
+</script>
+</body>
+</html>

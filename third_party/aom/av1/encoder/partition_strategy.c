@@ -210,7 +210,6 @@ static void intra_mode_cnn_partition(const AV1_COMMON *const cm, MACROBLOCK *x,
                                                 bit_depth, &output)) {
         aom_internal_error(xd->error_info, AOM_CODEC_MEM_ERROR,
                            "Error allocating CNN data");
-        return;
       }
     } else {
       uint8_t *image[1] = { x->plane[AOM_PLANE_Y].src.buf - stride - 1 };
@@ -219,7 +218,6 @@ static void intra_mode_cnn_partition(const AV1_COMMON *const cm, MACROBLOCK *x,
                                          cnn_config, &thread_data, &output)) {
         aom_internal_error(xd->error_info, AOM_CODEC_MEM_ERROR,
                            "Error allocating CNN data");
-        return;
       }
     }
 
@@ -1590,16 +1588,29 @@ void av1_ml_predict_breakout(AV1_COMP *const cpi, const MACROBLOCK *const x,
   float rate_f = (float)AOMMIN(rd_stats->rate, INT_MAX);
   rate_f = ((float)x->rdmult / 128.0f / 512.0f / (float)(1 << num_pels_log2)) *
            rate_f;
-  features[feature_index++] = rate_f;
+  features[feature_index++] =
+      cpi->sf.part_sf.ml_partition_search_breakout_model_index
+          ? log1pf((float)rate_f)
+          : rate_f;
 
   const float dist_f =
       (float)(AOMMIN(rd_stats->dist, INT_MAX) >> num_pels_log2);
-  features[feature_index++] = dist_f;
+  features[feature_index++] =
+      cpi->sf.part_sf.ml_partition_search_breakout_model_index
+          ? log1pf((float)dist_f)
+          : dist_f;
 
-  features[feature_index++] = (float)pb_source_variance;
+  features[feature_index++] =
+      cpi->sf.part_sf.ml_partition_search_breakout_model_index
+          ? log1pf((float)pb_source_variance)
+          : (float)pb_source_variance;
 
   const int dc_q = (int)x->plane[0].dequant_QTX[0] >> (bit_depth - 8);
-  features[feature_index++] = (float)(dc_q * dc_q) / 256.0f;
+  features[feature_index++] =
+      cpi->sf.part_sf.ml_partition_search_breakout_model_index
+          ? log1pf((float)(dc_q * dc_q) / 256.0f)
+          : (float)(dc_q * dc_q) / 256.0f;
+
   assert(feature_index == FEATURES);
 
   if (cpi->sf.part_sf.ml_partition_search_breakout_model_index) {
@@ -1773,6 +1784,7 @@ void av1_prune_partitions_before_search(AV1_COMP *const cpi,
       av1_is_whole_blk_in_frame(blk_params, mi_params);
 
   if (try_intra_cnn_based_part_prune) {
+    assert(x->e_mbd.error_info->setjmp);
     intra_mode_cnn_partition(&cpi->common, x, x->part_search_info.quad_tree_idx,
                              cpi->sf.part_sf.intra_cnn_based_part_prune_level,
                              part_state);
@@ -1981,6 +1993,7 @@ void av1_prune_ab_partitions(AV1_COMP *cpi, const MACROBLOCK *x,
   // Pruning: pruning out some ab partitions using a DNN taking rd costs of
   // sub-blocks from previous basic partition types.
   if (cpi->sf.part_sf.ml_prune_partition && ext_partition_allowed &&
+      part_cfg->enable_ab_partitions &&
       part_state->partition_rect_allowed[HORZ] &&
       part_state->partition_rect_allowed[VERT]) {
     // TODO(huisu@google.com): x->source_variance may not be the current

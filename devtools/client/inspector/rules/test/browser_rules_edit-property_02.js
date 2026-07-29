@@ -29,7 +29,7 @@ add_task(async function () {
 });
 
 async function testEditProperty(inspector, ruleView) {
-  const idRule = getRuleViewRuleEditor(ruleView, 1).rule;
+  const idRule = getRuleViewRuleEditorAt(ruleView, 1).rule;
   const prop = getTextProperty(ruleView, 1, { "background-color": "blue" });
 
   let editor = await focusEditableField(ruleView, prop.editor.nameSpan);
@@ -78,7 +78,11 @@ async function testEditProperty(inspector, ruleView) {
   // Use sendChar() to pass each character as a string so that we can test
   // prop.editor.warning.hidden after each character.
   for (const ch of "red;") {
-    const onPreviewDone = ruleView.once("ruleview-changed");
+    // When pressing the last ";", there will be only a light property update
+    // whereas all other chars are going to trigger a more involved rule view update.
+    const onPreviewDone = ruleView.once(
+      ch == ";" ? "property-value-updated" : "ruleview-changed"
+    );
     EventUtils.sendChar(ch, ruleView.styleWindow);
     ruleView.debounce.flush();
     await onPreviewDone;

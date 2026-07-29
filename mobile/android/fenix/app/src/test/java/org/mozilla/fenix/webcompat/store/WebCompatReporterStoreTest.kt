@@ -7,11 +7,11 @@ package org.mozilla.fenix.webcompat.store
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class WebCompatReporterStoreTest {
@@ -203,5 +203,98 @@ class WebCompatReporterStoreTest {
 
         store.dispatch(WebCompatReporterAction.BackPressed)
         assertEquals(expected, store.state)
+    }
+
+    @Test
+    fun `WHEN EditUrlClicked is dispatched THEN showEditUrlDialog is true and editedUrl matches enteredUrl`() {
+        val store = WebCompatReporterStore(
+            initialState = WebCompatReporterState(
+                enteredUrl = "https://www.mozilla.org/",
+            ),
+        )
+
+        store.dispatch(WebCompatReporterAction.EditUrlClicked)
+
+        assertTrue(store.state.showEditUrlDialog)
+        assertEquals("https://www.mozilla.org/", store.state.editedUrl)
+    }
+
+    @Test
+    fun `WHEN EditUrlChanged is dispatched THEN editedUrl is updated`() {
+        val expectedUrl = "https://www.example.com/"
+
+        store.dispatch(WebCompatReporterAction.EditUrlChanged(newUrl = expectedUrl))
+
+        assertEquals(expectedUrl, store.state.editedUrl)
+    }
+
+    @Test
+    fun `WHEN DismissEditUrlDialog is dispatched THEN showEditUrlDialog is false`() {
+        val store = WebCompatReporterStore(
+            initialState = WebCompatReporterState(
+                showEditUrlDialog = true,
+                editedUrl = "https://www.new.com/",
+            ),
+        )
+
+        store.dispatch(WebCompatReporterAction.DismissEditUrlDialog)
+
+        assertFalse(store.state.showEditUrlDialog)
+        assertEquals("https://www.new.com/", store.state.editedUrl)
+    }
+
+    @Test
+    fun `WHEN SaveEditedUrlClicked is dispatched THEN dialog is hidden and enteredUrl is updated to editedUrl`() {
+        val store = WebCompatReporterStore(
+            initialState = WebCompatReporterState(
+                showEditUrlDialog = true,
+                enteredUrl = "https://www.old.com/",
+                editedUrl = "https://www.new.com/",
+            ),
+        )
+
+        store.dispatch(WebCompatReporterAction.SaveEditedUrlClicked)
+
+        assertFalse(store.state.showEditUrlDialog)
+        assertEquals("https://www.new.com/", store.state.enteredUrl)
+    }
+
+    @Test
+    fun `WHEN editedUrl is a valid network URL THEN the state should not have an input error`() {
+        val store = WebCompatReporterStore(
+            initialState = WebCompatReporterState(
+                editedUrl = "https://www.mozilla.org/",
+            ),
+        )
+
+        assertFalse(store.state.hasEditedUrlError)
+    }
+
+    @Test
+    fun `WHEN editedUrl is an invalid network URL THEN the state should have an input error`() {
+        val store = WebCompatReporterStore(
+            initialState = WebCompatReporterState(
+                editedUrl = "www.mozilla.org",
+            ),
+        )
+
+        assertTrue(store.state.hasEditedUrlError)
+    }
+
+    @Test
+    fun `WHEN the broken URL is updated with a URL containing a space THEN the state should have an input error`() {
+        store.dispatch(WebCompatReporterAction.BrokenSiteChanged(newUrl = "https://www.moz illa.org/"))
+        assertTrue(store.state.hasUrlTextError)
+    }
+
+    @Test
+    fun `WHEN editedUrl contains a space THEN the state should have an input error`() {
+        val store = WebCompatReporterStore(
+            initialState = WebCompatReporterState(
+                editedUrl = "https://www.example .com/",
+            ),
+        )
+
+        assertTrue(store.state.hasEditedUrlError)
     }
 }

@@ -71,7 +71,7 @@
   <!-- Button that opens the downloaded file when pressed. -->
   <string name="mozac_feature_downloads_button_open">Megnyitás</string>
   <!-- Button that restarts the download after a failed attempt. -->
-  <string name="mozac_feature_downloads_button_try_again">Próbálja újra</string>
+  <string name="mozac_feature_downloads_button_try_again">Újrapróbálkozás</string>
   <!-- Content description for close button -->
   <string name="mozac_feature_downloads_button_close">Bezárás</string>
   <!-- Title for the third party download app chooser dialog -->

@@ -13,6 +13,18 @@ const { TabStateFlusher } = ChromeUtils.importESModule(
   "resource:///modules/sessionstore/TabStateFlusher.sys.mjs"
 );
 
+function readClipboardText() {
+  let xferable = Cc["@mozilla.org/widget/transferable;1"].createInstance(
+    Ci.nsITransferable
+  );
+  xferable.init(null);
+  xferable.addDataFlavor("text/plain");
+  Services.clipboard.getData(xferable, Ci.nsIClipboard.kGlobalClipboard);
+  let data = {};
+  xferable.getTransferData("text/plain", data);
+  return data.value?.QueryInterface(Ci.nsISupportsString)?.data ?? "";
+}
+
 async function createTabGroupAndOpenEditPanel(tabs = [], label = "") {
   let tabgroupEditor = document.getElementById("tab-group-editor");
   let tabgroupPanel = tabgroupEditor.panel;
@@ -393,4 +405,72 @@ add_task(async function test_saveAndCloseGroup() {
 
   BrowserTestUtils.removeTab(tab);
   tabGroupSavedTrigger.uninit();
+});
+
+/**
+ * Tests that "Copy all links in group" copies the URLs of all tabs in the
+ * group to the clipboard.
+ */
+add_task(async function test_copyAllLinksInGroup() {
+  let tab1 = await addTab("https://example.com/1");
+  let tab2 = await addTab("https://example.com/2");
+  let { tabgroupEditor, group } = await createTabGroupAndOpenEditPanel(
+    [tab1, tab2],
+    "test_copyAllLinksInGroup"
+  );
+  let tabgroupPanel = tabgroupEditor.panel;
+
+  let copyAllLinksButton = tabgroupPanel.querySelector(
+    "#tabGroupEditor_copyAllLinks"
+  );
+  Assert.ok(copyAllLinksButton, "Copy all links button exists");
+
+  let panelHidden = BrowserTestUtils.waitForPopupEvent(tabgroupPanel, "hidden");
+  copyAllLinksButton.click();
+  await panelHidden;
+
+  let clipboardText = readClipboardText();
+
+  Assert.ok(
+    clipboardText.includes("https://example.com/1"),
+    "Clipboard contains first tab URL"
+  );
+  Assert.ok(
+    clipboardText.includes("https://example.com/2"),
+    "Clipboard contains second tab URL"
+  );
+
+  Services.clipboard.emptyClipboard(Ci.nsIClipboard.kGlobalClipboard);
+  await removeTabGroup(group);
+});
+
+/**
+ * Tests that "Copy all links in group" works with a single tab.
+ */
+add_task(async function test_copyAllLinksInGroup_singleTab() {
+  let tab = await addTab("https://example.com/single");
+  let { tabgroupEditor, group } = await createTabGroupAndOpenEditPanel(
+    [tab],
+    "test_copyAllLinksInGroup_singleTab"
+  );
+  let tabgroupPanel = tabgroupEditor.panel;
+
+  let copyAllLinksButton = tabgroupPanel.querySelector(
+    "#tabGroupEditor_copyAllLinks"
+  );
+  Assert.ok(!copyAllLinksButton.disabled, "Copy link button is enabled");
+
+  let panelHidden = BrowserTestUtils.waitForPopupEvent(tabgroupPanel, "hidden");
+  copyAllLinksButton.click();
+  await panelHidden;
+
+  let clipboardText = readClipboardText();
+
+  Assert.ok(
+    clipboardText.includes("https://example.com/single"),
+    "Clipboard contains the tab URL"
+  );
+
+  Services.clipboard.emptyClipboard(Ci.nsIClipboard.kGlobalClipboard);
+  await removeTabGroup(group);
 });

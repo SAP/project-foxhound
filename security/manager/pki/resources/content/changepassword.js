@@ -13,9 +13,7 @@ ChromeUtils.defineLazyGetter(
   () => new Localization(["security/pippki/pippki.ftl"], true)
 );
 
-var params;
 var token;
-var pw1;
 
 function doPrompt(messageL10nId) {
   let msg = l10n.formatValueSync(messageL10nId);
@@ -26,8 +24,7 @@ function onLoad() {
   document.getElementById("set_password").getButton("accept").disabled = true;
   document.addEventListener("dialogaccept", setPassword);
 
-  pw1 = document.getElementById("pw1");
-  pw1.addEventListener("input", () => {
+  document.getElementById("pw1").addEventListener("input", () => {
     setPasswordStrength();
     checkPasswords();
   });
@@ -37,8 +34,8 @@ function onLoad() {
     checkPasswords();
   });
 
-  params = window.arguments[0].QueryInterface(Ci.nsIDialogParamBlock);
-  token = params.objects.GetElementAt(0).QueryInterface(Ci.nsIPK11Token);
+  let params = window.arguments[0].QueryInterface(Ci.nsIDialogParamBlock);
+  token = params.objects.GetElementAt(0).QueryInterface(Ci.nsIPKCS11Token);
 
   document.l10n.setAttributes(
     document.getElementById("tokenName"),
@@ -52,100 +49,61 @@ function process() {
   let bundle = document.getElementById("pippki_bundle");
   let oldpwbox = document.getElementById("oldpw");
   let msgBox = document.getElementById("message");
-  // If the token is unitialized, don't use the old password box.
+  // If the token doesn't have a password, don't use the old password box.
   // Otherwise, do.
-  if ((token.needsLogin() && token.needsUserInit) || !token.needsLogin()) {
+  if (!token.hasPassword) {
     oldpwbox.hidden = true;
     msgBox.setAttribute("value", bundle.getString("password_not_set"));
     msgBox.hidden = false;
-
-    if (!token.needsLogin()) {
-      oldpwbox.setAttribute("inited", "empty");
-    } else {
-      oldpwbox.setAttribute("inited", "true");
-    }
-
     // Select first password field
     document.getElementById("pw1").focus();
   } else {
     // Select old password field
     oldpwbox.hidden = false;
     msgBox.hidden = true;
-    oldpwbox.setAttribute("inited", "false");
     oldpwbox.focus();
   }
-
-  // Return value 0 means "canceled"
-  params.SetInt(1, 0);
 
   checkPasswords();
 }
 
 function setPassword(event) {
-  var oldpwbox = document.getElementById("oldpw");
-  var initpw = oldpwbox.getAttribute("inited");
+  let oldpwbox = document.getElementById("oldpw");
+  let pw1 = document.getElementById("pw1");
+  if (pw1.value == "") {
+    const fipsUtils = Cc["@mozilla.org/security/fipsutils;1"].getService(
+      Ci.nsIFIPSUtils
+    );
+    if (fipsUtils.isFIPSEnabled) {
+      // empty passwords are not allowed in FIPS mode
+      doPrompt("pippki-pw-change2empty-in-fips-mode");
+      event.preventDefault();
+      return;
+    }
+  }
 
-  var success = false;
-
-  if (initpw == "false" || initpw == "empty") {
-    try {
-      var oldpw = "";
-      var passok = 0;
-
-      if (initpw == "empty") {
-        passok = 1;
-      } else {
-        oldpw = oldpwbox.value;
-        passok = token.checkPassword(oldpw);
-      }
-
-      if (passok) {
-        if (initpw == "empty" && pw1.value == "") {
-          // checkPasswords() should have prevented this path from being reached.
-        } else {
-          if (pw1.value == "") {
-            const fipsUtils = Cc[
-              "@mozilla.org/security/fipsutils;1"
-            ].getService(Ci.nsIFIPSUtils);
-            if (fipsUtils.isFIPSEnabled) {
-              // empty passwords are not allowed in FIPS mode
-              doPrompt("pippki-pw-change2empty-in-fips-mode");
-              passok = 0;
-            }
-          }
-          if (passok) {
-            token.changePassword(oldpw, pw1.value);
-            if (pw1.value == "") {
-              doPrompt("pippki-pw-erased-ok");
-            } else {
-              doPrompt("pippki-pw-change-ok");
-            }
-            success = true;
-          }
-        }
-      } else {
-        oldpwbox.focus();
-        oldpwbox.setAttribute("value", "");
-        doPrompt("pippki-incorrect-pw");
-      }
-    } catch (e) {
+  try {
+    token.changePassword(oldpwbox.value, pw1.value);
+    if (pw1.value == "") {
+      doPrompt("pippki-pw-erased-ok");
+    } else {
+      doPrompt("pippki-pw-change-ok");
+    }
+  } catch (e) {
+    let nssErrorsService = Cc["@mozilla.org/nss_errors_service;1"].getService(
+      Ci.nsINSSErrorsService
+    );
+    // SEC_ERROR_BASE + 15 = SEC_ERROR_BAD_PASSWORD
+    let badPasswordResult = nssErrorsService.getXPCOMFromNSSError(
+      Ci.nsINSSErrorsService.NSS_SEC_ERROR_BASE + 15
+    );
+    if (e.result == badPasswordResult) {
+      oldpwbox.focus();
+      oldpwbox.setAttribute("value", "");
+      doPrompt("pippki-incorrect-pw");
+    } else {
       doPrompt("pippki-failed-pw-change");
     }
-  } else {
-    token.initPassword(pw1.value);
-    if (pw1.value == "") {
-      doPrompt("pippki-pw-not-wanted");
-    }
-    success = true;
-  }
-
-  if (success && params) {
-    // Return value 1 means "successfully executed ok"
-    params.SetInt(1, 1);
-  }
-
-  // Terminate dialog
-  if (!success) {
     event.preventDefault();
   }
 }
@@ -200,21 +158,6 @@ function setPasswordStrength() {
 function checkPasswords() {
   let pw1 = document.getElementById("pw1").value;
   let pw2 = document.getElementById("pw2").value;
-
-  var oldpwbox = document.getElementById("oldpw");
-  if (oldpwbox) {
-    var initpw = oldpwbox.getAttribute("inited");
-
-    if (initpw == "empty" && pw1 == "") {
-      // The token has already been initialized, therefore this dialog
-      // was called with the intention to change the password.
-      // The token currently uses an empty password.
-      // We will not allow changing the password from empty to empty.
-      document.getElementById("set_password").getButton("accept").disabled =
-        true;
-      return;
-    }
-  }
 
   document.getElementById("set_password").getButton("accept").disabled =
     pw1 != pw2;

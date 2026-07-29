@@ -603,14 +603,6 @@ HandlerService.prototype = {
         name: handler.name,
         uriTemplate: handler.uriTemplate,
       };
-    } else if (handler instanceof Ci.nsIDBusHandlerApp) {
-      return {
-        name: handler.name,
-        service: handler.service,
-        method: handler.method,
-        objectPath: handler.objectPath,
-        dBusInterface: handler.dBusInterface,
-      };
     } else if (handler instanceof Ci.nsIGIOMimeApp) {
       return {
         name: handler.name,
@@ -652,14 +644,6 @@ HandlerService.prototype = {
         "@mozilla.org/uriloader/web-handler-app;1"
       ].createInstance(Ci.nsIWebHandlerApp);
       handlerApp.uriTemplate = handlerObj.uriTemplate;
-    } else if ("service" in handlerObj) {
-      handlerApp = Cc[
-        "@mozilla.org/uriloader/dbus-handler-app;1"
-      ].createInstance(Ci.nsIDBusHandlerApp);
-      handlerApp.service = handlerObj.service;
-      handlerApp.method = handlerObj.method;
-      handlerApp.objectPath = handlerObj.objectPath;
-      handlerApp.dBusInterface = handlerObj.dBusInterface;
     } else if ("command" in handlerObj && "@mozilla.org/gio-service;1" in Cc) {
       try {
         handlerApp = Cc["@mozilla.org/gio-service;1"]

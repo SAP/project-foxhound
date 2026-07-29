@@ -42,7 +42,7 @@ headless:
 a11y-checks:
     description: "{description} with accessibility checks enabled"
     component: "Core::Disability Access APIs"
-    expiration: "2026-03-01"
+    expiration: "2026-09-01"
     suffix: "a11y-checks"
     mozinfo: "a11y_checks"
     replace:
@@ -69,7 +69,7 @@ a11y-checks:
 aab:
     description: "{description} with aab test_runner"
     component: "GeckoView::General"
-    expiration: "2026-03-01"
+    expiration: "2026-09-01"
     when: &gv_e10s_filter
         $eval: '"android" in task["test-platform"]'
     suffix: "aab"
@@ -95,7 +95,7 @@ trainhop-release:
     component: "Firefox::New Tab Page"
     suffix: "trainhop-rel"
     mozinfo: "trainhop"
-    expiration: None
+    expiration: "never"
     merge:
         worker:
             env:
@@ -139,7 +139,7 @@ trainhop-beta:
     component: "Firefox::New Tab Page"
     suffix: "trainhop-beta"
     mozinfo: "trainhop"
-    expiration: None
+    expiration: "never"
     merge:
         worker:
             env:
@@ -179,10 +179,25 @@ trainhop-beta:
                     name: build/target.zip
 
 
+standalone:
+    description: "{description} with browser restart after each test to identify test dependencies"
+    component: "Testing::General"
+    expiration: "never"
+    suffix: "standalone"
+    treeherder-suffix: "sa"
+    mozinfo: "standalone"
+    replace:
+        optimization:
+            skip-unless-backstop: null
+    merge:
+        mozharness:
+            extra-options:
+                - "--restart-between-tests"
+
 geckoview-no-fission:
     description: "{description} without fission enabled"
     component: "GeckoView::General"
-    expiration: "2026-03-01"
+    expiration: "2026-09-01"
     when:
         <<: *gv_e10s_filter
     suffix: "nofis"
@@ -195,7 +210,7 @@ geckoview-no-fission:
 geckoview-fission:
     description: "{description} with fission enabled and default isolation strategy"
     component: "GeckoView::General"
-    expiration: "2026-03-01"
+    expiration: "2026-09-01"
     when:
         <<: *gv_e10s_filter
     suffix: "fis"
@@ -204,7 +219,7 @@ geckoview-fission:
 geckoview-fission-isolate-high-value:
     description: "{description} with fission enabled and isolation strategy isolateHighValue"
     component: "GeckoView::General"
-    expiration: "2026-03-01"
+    expiration: "2026-09-01"
     when:
         <<: *gv_e10s_filter
     suffix: "fis-hv"
@@ -217,7 +232,7 @@ geckoview-fission-isolate-high-value:
 no-fission:
     description: "{description} without fission enabled"
     component: "Core::DOM: Content Processes"
-    expiration: "2026-03-01"
+    expiration: "2026-09-01"
     suffix: "nofis"
     mozinfo: "fission"
     when:
@@ -233,7 +248,7 @@ no-fission:
 geckoview-zygote:
     description: "{description} with app Zygote preloading enabled"
     component: "GeckoView::General"
-    expiration: "2026-03-01"
+    expiration: "2026-09-01"
     suffix: "zygote"
     when:
         <<: *gv_e10s_filter
@@ -241,19 +256,6 @@ geckoview-zygote:
         mozharness:
             extra-options:
                 - "--enable-isolated-zygote-process"
-
-geckoview-no-fission-no-ship:
-    description: "{description} with fission disabled and ship disabled"
-    component: "GeckoView::General"
-    expiration: "2026-03-01"
-    suffix: "nofis-noship"
-    when:
-        <<: *gv_e10s_filter
-    merge:
-        mozharness:
-            extra-options:
-                - "--disable-fission"
-                - "--setpref=fission.disableSessionHistoryInParent=true"
 
 xorigin:
     description: "{description} with cross-origin"
@@ -269,12 +271,11 @@ xorigin:
         mozharness:
             extra-options:
                 - "--enable-xorigin-tests"
-                - "--setpref=privacy.partition.always_partition_third_party_non_cookie_storage=false"
 
 conditioned_profile:
     description: "{description} with conditioned profile"
     component: "Testing::General"
-    expiration: "2026-03-01"
+    expiration: "2026-09-01"
     suffix: "condprof"
     mozinfo: "condprof"
     when:
@@ -301,13 +302,11 @@ conditioned_profile:
         mozharness:
             extra-options:
                 - "--conditioned-profile"
-    replace:
-        chunks: 8
 
 socketprocess:
     description: "{description} with socket process enabled"
     component: "Core::Networking"
-    expiration: "2026-03-01"
+    expiration: "2026-09-01"
     suffix: "spi"
     mozinfo: "socketprocess_e10s"
     when:
@@ -324,7 +323,7 @@ socketprocess:
 webrender-dcomp-disabled:
     description: "{description} with dcomp disabled"
     component: "Core::Graphics: WebRender"
-    expiration: "2026-03-01"
+    expiration: "2026-09-01"
     suffix: "wr-dc0"
     when:
         $eval: '"windows1" in task["test-platform"]'
@@ -340,7 +339,7 @@ webrender-dcomp-disabled:
 webrender-dcomp-present:  # Default variant ends up like this.
     description: "{description} with dcomp present but not overlays"
     component: "Core::Graphics: WebRender"
-    expiration: "2026-03-01"
+    expiration: "2026-09-01"
     suffix: "wr-dc1-p"
     when:
         $eval: '"windows1" in task["test-platform"]'
@@ -356,7 +355,7 @@ webrender-dcomp-present:  # Default variant ends up like this.
 webrender-dcomp-overlays:
     description: "{description} with dcomp overlays but not compositing"
     component: "Core::Graphics: WebRender"
-    expiration: "2026-03-01"
+    expiration: "2026-09-01"
     suffix: "wr-dc2-o"
     when:
         $eval: '"windows1" in task["test-platform"]'
@@ -372,7 +371,7 @@ webrender-dcomp-overlays:
 webrender-dcomp-compositing:
     description: "{description} with dcomp compositing"
     component: "Core::Graphics: WebRender"
-    expiration: "2026-03-01"
+    expiration: "2026-09-01"
     suffix: "wr-dc3-c"
     when:
         $eval: '"windows1" in task["test-platform"]'
@@ -454,7 +453,12 @@ media-gpu:
                         "windows" in task["test-platform"]
                         && "hw" in task["test-platform"]
                     )
-                    || "macosx" in task["test-platform"] ||
+                    ||
+                    (
+                        "macosx" in task["test-platform"]
+                        && !("vms" in task["test-platform"])
+                    )
+                    ||
                     (
                         "android" in task["test-platform"]
                         && "hw" in task["test-platform"]
@@ -475,7 +479,7 @@ media-gpu:
 no-gpu-process:
     description: "{description} without a dedicated GPU process"
     component: "Core::Graphics"
-    expiration: "2026-01-15"
+    expiration: "2027-01-15"
     suffix: "nogpu"
     mozinfo: "nogpu"
     when:
@@ -510,11 +514,15 @@ msix:
                         || "debug" in task["test-platform"]
                     ) && !(
                         "asan" in task["test-platform"]
+                        || "artifact" in task["test-platform"]
                         || "ccov" in task["test-platform"]
                         || "devedition" in task["test-platform"]
                     )
                 '
     replace:
+        target:
+            by-test-platform:
+                windows11-64.*: target.installer.msix
         mozharness:
             extra-options:
                 - "--variant=msix"
@@ -523,7 +531,7 @@ msix:
 http3:
     description: "{description} with http3 server"
     component: "Core::Networking"
-    expiration: "2026-03-01"
+    expiration: "2026-09-01"
     suffix: "http3"
     mozinfo: "http3"
     when:
@@ -542,7 +550,7 @@ http3:
 http2:
     description: "{description} with http2 server"
     component: "Core::Networking"
-    expiration: "2026-03-01"
+    expiration: "2026-09-01"
     suffix: "http2"
     mozinfo: "http2"
     when:
@@ -583,7 +591,7 @@ draw-snapshot:
 async-event-dispatching:
     description: "{description} with async widget event dispatching"
     component: "Remote Protocol::Agent"
-    expiration: "2026-04-01"
+    expiration: "2026-10-01"
     suffix: "async"
     mozinfo: "remote_async"
     replace:
@@ -597,7 +605,7 @@ async-event-dispatching:
 vertical-tabs:
     description: "{description} limited to tests identified as being applicable to also run with vertical tabs enabled"
     component: "Firefox::Tabbed Browser"
-    expiration: "2026-11-01"
+    expiration: "never"
     suffix: "vt"
     mozinfo: "vertical_tab"
     merge:
@@ -612,7 +620,7 @@ vertical-tabs:
 inc-origin-init:
     description: "{description} limited to tests identified as being applicable to also run with incremental origin initialization enabled"
     component: "Core::Storage: Quota Manager"
-    expiration: "2026-05-01"
+    expiration: "2026-12-31"
     suffix: "ioi"
     mozinfo: "inc_origin_init"
     replace:
@@ -642,7 +650,7 @@ privatebrowsing:
 privatebrowsing-inc-origin-init:
     description: "{description} limited to tests identified as being applicable to also run in private browsing mode and with incremental origin initialization enabled"
     component: "Core::Storage: Quota Manager"
-    expiration: "2026-05-01"
+    expiration: "2026-12-31"
     suffix: "pb-ioi"
     replace:
         tier: 3
@@ -655,3 +663,15 @@ privatebrowsing-inc-origin-init:
         mozharness:
             extra-options:
                 - "--setpref=browser.privatebrowsing.autostart=true"
+
+nova:
+    description: "{description} with Nova enabled"
+    component: "Firefox::Theme"
+    expiration: "2026-12-31"
+    suffix: "nv"
+    replace:
+        tier: 3
+    merge:
+        mozharness:
+            extra-options:
+                - "--setpref=browser.nova.enabled=true"

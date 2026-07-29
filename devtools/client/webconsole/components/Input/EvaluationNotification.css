@@ -10,7 +10,7 @@
 
 .evaluation-notification.warning .evaluation-notification__icon {
   color: var(--theme-icon-warning-color);
-  background-image: url(chrome://devtools/content/debugger/images/sourcemap.svg);
+  background-image: url(chrome://devtools/content/shared/components/images/sourcemap.svg);
 }
 
 .evaluation-notification__icon {

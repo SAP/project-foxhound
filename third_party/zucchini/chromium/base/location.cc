@@ -31,15 +31,11 @@ constexpr size_t StrLen(const char* str) {
 constexpr size_t StrippedFilePathPrefixLength() {
   constexpr char path[] = __FILE__;
   // Only keep the file path starting from the src directory.
-#if defined(MOZ_ZUCCHINI)
-  constexpr char stripped[] = "third_party/zucchini/chromium/base/location.cc";
-#else
-#if defined(__clang__) && defined(_MSC_VER)
+#if defined(__clang__) && defined(_WIN32)
   constexpr char stripped[] = "base\\location.cc";
 #else
   constexpr char stripped[] = "base/location.cc";
 #endif
-#endif  // defined(MOZ_ZUCCHINI)
   constexpr size_t path_len = StrLen(path);
   constexpr size_t stripped_len = StrLen(stripped);
   static_assert(path_len >= stripped_len,
@@ -67,18 +63,13 @@ constexpr bool StrEndsWith(const char* name,
   return true;
 }
 
-#if defined(MOZ_ZUCCHINI)
-static_assert(StrEndsWith(__FILE__, kStrippedPrefixLength, "third_party/zucchini/chromium/base/location.cc"),
-              "The file name does not match the expected prefix format.");
-#else
-#if defined(__clang__) && defined(_MSC_VER)
+#if defined(__clang__) && defined(_WIN32)
 static_assert(StrEndsWith(__FILE__, kStrippedPrefixLength, "base\\location.cc"),
               "The file name does not match the expected prefix format.");
 #else
 static_assert(StrEndsWith(__FILE__, kStrippedPrefixLength, "base/location.cc"),
               "The file name does not match the expected prefix format.");
 #endif
-#endif  // defined(MOZ_ZUCCHINI)
 
 }  // namespace
 

@@ -2,132 +2,181 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from taskgraph.util.schema import LegacySchema, optionally_keyed_by
-from voluptuous import All, Any, Extra, Optional, Required
-from voluptuous.validators import Length
+from typing import Optional, Union
 
-graph_config_schema = LegacySchema({
+from taskgraph.util.schema import Schema, TaskPriority, optionally_keyed_by
+
+
+class TreeherderConfig(Schema, kw_only=True):
+    # Mapping of treeherder group symbols to descriptive names
+    group_names: dict[str, str]
+    # Mapping of head branch name to Treeherder project
+    branch_map: Optional[
+        optionally_keyed_by("project", dict[str, str], use_msgspec=True)
+    ] = None
+
+    def __post_init__(self):
+        for key, value in self.group_names.items():
+            if len(value) > 100:
+                raise ValueError(
+                    f"Treeherder group name for '{key}' exceeds 100 characters"
+                )
+
+
+class IndexConfig(Schema):
+    products: list[str]
+
+
+class TryConfig(Schema):
+    # We have a few platforms for which we want to do some "extra" builds, or at
+    # least build-ish things.  Sort of.  Anyway, these other things are implemented
+    # as different "platforms".  These do *not* automatically ride along with "-p
+    # all"
+    ridealong_builds: dict[str, list[str]]
+
+
+class ReleaseFlavor(Schema, kw_only=True):
+    product: str
+    target_tasks_method: str
+    rebuild_kinds: Optional[list[str]] = None
+    version_bump: Optional[bool] = None
+    partial_updates: Optional[bool] = None
+
+
+class ReleasePromotionConfig(Schema, kw_only=True):
+    products: list[str]
+    flavors: dict[str, ReleaseFlavor]
+    rebuild_kinds: Optional[list[str]] = None
+
+
+class ScriptworkerConfig(Schema):
+    # Prefix to add to scopes controlling scriptworkers
+    scope_prefix: str
+
+
+class PartnerUrlsConfig(Schema, kw_only=True):
+    release_partner_repack: optionally_keyed_by(
+        "release-product",
+        "release-level",
+        "release-type",
+        Optional[str],
+        use_msgspec=True,
+    )
+    release_eme_free_repack: optionally_keyed_by(
+        "release-product",
+        "release-level",
+        "release-type",
+        Optional[str],
+        use_msgspec=True,
+    )
+    release_partner_attribution: Optional[
+        optionally_keyed_by(
+            "release-product",
+            "release-level",
+            "release-type",
+            Optional[str],
+            use_msgspec=True,
+        )
+    ] = None
+
+
+class WorkerAlias(Schema, kw_only=True):
+    provisioner: optionally_keyed_by("level", str, use_msgspec=True)
+    implementation: str
+    os: str
+    worker_type: optionally_keyed_by(
+        "level",
+        "release-level",
+        "project",
+        str,
+        use_msgspec=True,
+    )
+
+
+class WorkersConfig(Schema):
+    aliases: dict[str, WorkerAlias]
+
+
+class HardenedSignConfigEntry(Schema, kw_only=True):
+    globs: list[str]
+    deep: Optional[bool] = None
+    runtime: Optional[bool] = None
+    force: Optional[bool] = None
+    requirements: Optional[
+        optionally_keyed_by(
+            "release-product",
+            "release-level",
+            str,
+            use_msgspec=True,
+        )
+    ] = None
+    entitlements: Optional[
+        optionally_keyed_by(
+            "build-platform",
+            "project",
+            str,
+            use_msgspec=True,
+        )
+    ] = None
+    only_if_milestone_is_nightly: Optional[bool] = None
+
+
+class MacSigningConfig(Schema, kw_only=True):
+    mac_requirements: optionally_keyed_by("platform", str, use_msgspec=True)
+    hardened_sign_config: optionally_keyed_by(
+        "hardened-signing-type",
+        list[HardenedSignConfigEntry],
+        use_msgspec=True,
+    )
+
+
+class RunConfig(Schema, kw_only=True):
+    use_caches: Optional[Union[bool, list[str]]] = None
+
+
+class RepositoryConfig(Schema, forbid_unknown_fields=False, kw_only=True):
+    name: str
+    project_regex: Optional[str] = None
+    ssh_secret_name: Optional[str] = None
+
+
+class TaskgraphConfig(Schema, kw_only=True):
+    # Python function to call to register extensions.
+    register: Optional[str] = None
+    decision_parameters: Optional[str] = None
+    run: Optional[RunConfig] = None
+    repositories: dict[str, RepositoryConfig]
+
+    def __post_init__(self):
+        if not self.repositories:
+            raise ValueError("'repositories' must have at least one entry")
+
+
+class GraphConfigSchema(Schema, kw_only=True):
     # The trust-domain for this graph.
     # (See https://firefox-source-docs.mozilla.org/taskcluster/taskcluster/taskgraph.html#taskgraph-trust-domain)  # noqa
-    Required("trust-domain"): str,
+    trust_domain: str
     # This specifes the prefix for repo parameters that refer to the project being built.
     # This selects between `head_rev` and `comm_head_rev` and related paramters.
     # (See http://firefox-source-docs.mozilla.org/taskcluster/taskcluster/parameters.html#push-information  # noqa
     # and http://firefox-source-docs.mozilla.org/taskcluster/taskcluster/parameters.html#comm-push-information)  # noqa
-    Required("project-repo-param-prefix"): str,
+    project_repo_param_prefix: str
     # This specifies the top level directory of the application being built.
     # ie. "browser/" for Firefox, "comm/mail/" for Thunderbird.
-    Required("product-dir"): str,
-    Required("treeherder"): {
-        # Mapping of treeherder group symbols to descriptive names
-        Required("group-names"): {str: Length(max=100)},
-        # Mapping of head branch name to Treeherder project
-        Optional("branch-map"): optionally_keyed_by(
-            "project",
-            {str: str},
-        ),
-    },
-    Required("index"): {Required("products"): [str]},
-    Required("try"): {
-        # We have a few platforms for which we want to do some "extra" builds, or at
-        # least build-ish things.  Sort of.  Anyway, these other things are implemented
-        # as different "platforms".  These do *not* automatically ride along with "-p
-        # all"
-        Required("ridealong-builds"): {str: [str]},
-    },
-    Required("release-promotion"): {
-        Required("products"): [str],
-        Required("flavors"): {
-            str: {
-                Required("product"): str,
-                Required("target-tasks-method"): str,
-                Optional("rebuild-kinds"): [str],
-                Optional("version-bump"): bool,
-                Optional("partial-updates"): bool,
-            }
-        },
-        Optional("rebuild-kinds"): [str],
-    },
-    Required("scriptworker"): {
-        # Prefix to add to scopes controlling scriptworkers
-        Required("scope-prefix"): str,
-    },
-    Required("task-priority"): optionally_keyed_by(
+    product_dir: str
+    treeherder: TreeherderConfig
+    index: IndexConfig
+    try_: TryConfig
+    release_promotion: ReleasePromotionConfig
+    scriptworker: ScriptworkerConfig
+    task_priority: optionally_keyed_by("project", TaskPriority, use_msgspec=True)
+    partner_urls: PartnerUrlsConfig
+    workers: WorkersConfig
+    mac_signing: MacSigningConfig
+    taskgraph: TaskgraphConfig
+    expiration_policy: optionally_keyed_by(
         "project",
-        Any(
-            "highest",
-            "very-high",
-            "high",
-            "medium",
-            "low",
-            "very-low",
-            "lowest",
-        ),
-    ),
-    Required("partner-urls"): {
-        Required("release-partner-repack"): optionally_keyed_by(
-            "release-product", "release-level", "release-type", Any(str, None)
-        ),
-        Optional("release-partner-attribution"): optionally_keyed_by(
-            "release-product", "release-level", "release-type", Any(str, None)
-        ),
-        Required("release-eme-free-repack"): optionally_keyed_by(
-            "release-product", "release-level", "release-type", Any(str, None)
-        ),
-    },
-    Required("workers"): {
-        Required("aliases"): {
-            str: {
-                Required("provisioner"): optionally_keyed_by("level", str),
-                Required("implementation"): str,
-                Required("os"): str,
-                Required("worker-type"): optionally_keyed_by(
-                    "level", "release-level", "project", str
-                ),
-            }
-        },
-    },
-    Required("mac-signing"): {
-        Required("mac-requirements"): optionally_keyed_by("platform", str),
-        Required("hardened-sign-config"): optionally_keyed_by(
-            "hardened-signing-type",
-            [
-                {
-                    Optional("deep"): bool,
-                    Optional("runtime"): bool,
-                    Optional("force"): bool,
-                    Optional("requirements"): optionally_keyed_by(
-                        "release-product", "release-level", str
-                    ),
-                    Optional("entitlements"): optionally_keyed_by(
-                        "build-platform", "project", str
-                    ),
-                    Required("globs"): [str],
-                    Optional("only-if-milestone-is-nightly"): bool,
-                }
-            ],
-        ),
-    },
-    Required("taskgraph"): {
-        Optional(
-            "register",
-            description="Python function to call to register extensions.",
-        ): str,
-        Optional("decision-parameters"): str,
-        Optional("run"): {
-            Optional("use-caches"): Any(bool, [str]),
-        },
-        Required("repositories"): All(
-            {
-                str: {
-                    Required("name"): str,
-                    Optional("project-regex"): str,
-                    Optional("ssh-secret-name"): str,
-                    Extra: str,
-                }
-            },
-            Length(min=1),
-        ),
-    },
-    Required("expiration-policy"): optionally_keyed_by("project", "level", {str: str}),
-})
+        "level",
+        dict[str, str],
+        use_msgspec=True,
+    )

@@ -6,7 +6,7 @@
   file, You can obtain one at http://mozilla.org/MPL/2.0/.
 -->
 
-<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
   <string name="app_name_private_5">Prywatny %s</string>
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
@@ -29,10 +29,6 @@
   <string name="tab_search_hint">Szukej po kartach</string>
   <!-- Placeholder text shown in the search bar when using application search engines -->
   <string name="application_search_hint">Wkludź szukane słowa</string>
-  <!-- No Open Tabs Message Description -->
-  <string name="no_open_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">Sam sie pokożōm twoje ôtwarte karty.</string>
-  <!-- No Private Tabs Message Description -->
-  <string name="no_private_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">Sam sie pokożōm twoje prywatne karty.</string>
   <!-- Tab tray multi select title in app bar. %1$d is the number of tabs selected -->
   <string name="tab_tray_multi_select_title">Ôbrane karty: %1$d</string>
   <!-- Label of button in create collection dialog for creating a new collection -->
@@ -43,10 +39,8 @@
   <string name="tab_tray_select_collection">Ôbier kolekcyjo</string>
   <!-- Content description for close button while in multiselect mode in tab tray -->
   <string name="tab_tray_close_multiselect_content_description">Wylyź ze trybu multiwyboru</string>
-  <!-- Content description for save to collection button while in multiselect mode in tab tray -->
-  <string name="tab_tray_collection_button_multiselect_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Spamiyntej ôbrane karty we kolekcyji</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s produkuje Mozilla.</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s produkuje Mozilla.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Czynste mity ô prywatnym przeglōndaniu</string>
   <!--
@@ -149,10 +143,6 @@
   <string name="browser_menu_extensions">Rozszyrzynia</string>
   <!-- Browser menu button that opens account settings -->
   <string name="browser_menu_account_settings">Infōrmacyje ô kōncie</string>
-  <!-- Browser menu button that sends a user to help articles -->
-  <string name="browser_menu_help" tools:ignore="UnusedResources" moz:removedIn="149">Pōmoc</string>
-  <!-- Browser menu button that sends a to a the what's new article -->
-  <string name="browser_menu_whats_new" tools:ignore="UnusedResources" moz:removedIn="149">Co je nowego</string>
   <!-- Browser menu button that opens the settings menu -->
   <string name="browser_menu_settings">Sztalōnki</string>
   <!-- Browser menu button that opens a user's library -->
@@ -178,11 +168,6 @@
     Browser menu text shown in custom tabs to indicate this is a Fenix tab
     %1$s is the name of the app (for example "Firefox").
   -->
-  <string name="browser_menu_powered_by" tools:ignore="UnusedResources" moz:removedIn="149">Funguje skuli %1$s</string>
-  <!--
-    Browser menu text shown in custom tabs to indicate this is a Fenix tab
-    %1$s is the name of the app (for example "Firefox").
-  -->
   <string name="browser_menu_powered_by2">Funguje skuli %1$s</string>
   <!-- Browser menu button to put the current page in reader mode -->
   <string name="browser_menu_read">Wyglōnd do czytanio</string>
@@ -190,22 +175,8 @@
   <string name="browser_menu_read_close">Zawrzij wyglōnd do czytanio</string>
   <!-- Browser menu button to open the current page in an external app -->
   <string name="browser_menu_open_app_link">Ôdewrzij w aplikacyji</string>
-  <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
-  <string name="browser_menu_customize_reader_view" tools:ignore="UnusedResources" moz:removedIn="149">Poukłodej se wyglōnd do czytanio</string>
-  <!-- Browser menu label for adding a bookmark -->
-  <string name="browser_menu_add" tools:ignore="UnusedResources" moz:removedIn="149">Przidej</string>
-  <!-- Browser menu label for editing a bookmark -->
-  <string name="browser_menu_edit" tools:ignore="UnusedResources" moz:removedIn="149">Edytuj</string>
-  <!-- Button shown on the home page that opens the Customize home settings -->
-  <string name="browser_menu_customize_home_1" tools:ignore="UnusedResources" moz:removedIn="149">Przipasuj dōmowo strōna</string>
   <!-- Browser menu label that navigates to the Password screen -->
   <string name="browser_menu_passwords">Hasła</string>
-  <!--
-    Browser Toolbar
-
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">Dōmowy ekran</string>
   <!--
     Locale Settings Fragment
 
@@ -216,9 +187,11 @@
   <string name="default_locale_text">Podug godki ôd masziny</string>
   <!-- Placeholder text shown in the search bar before a user enters text -->
   <string name="locale_search_hint">Szukej godki</string>
-  <!-- Button in the search view when shortcuts are displayed that takes a user to the search engine settings -->
-  <string name="search_shortcuts_engine_settings">Sztalōnki wyszukowarki</string>
-  <!-- Button in the search view that lets a user navigate to the site in their clipboard -->
+  <!--
+    Search Fragment
+
+    Button in the search view that lets a user navigate to the site in their clipboard
+  -->
   <string name="awesomebar_clipboard_title">Wraź link ze skrytki</string>
   <!-- Button in the search suggestions onboarding that allows search suggestions in private sessions -->
   <string name="search_suggestions_onboarding_allow_button">Przizwōl</string>
@@ -242,18 +215,6 @@
     Content description (not visible, for screen readers etc.): Close button for the home onboarding dialog
   -->
   <string name="onboarding_home_content_description_close_button">Zawrzij</string>
-  <!-- Text for the button to set firefox as default browser on the device -->
-  <string name="juno_onboarding_default_browser_positive_button" tools:ignore="UnusedResources">Nastow za bazowo przeglōndarka</string>
-  <!-- Text for the button dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_default_browser_negative_button" tools:ignore="UnusedResources">Niy teroz</string>
-  <!-- Text for the button to sign in to sync on the device -->
-  <string name="juno_onboarding_sign_in_positive_button" tools:ignore="UnusedResources">Wloguj sie</string>
-  <!-- Text for the button dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_sign_in_negative_button" tools:ignore="UnusedResources">Niy teroz</string>
-  <!-- Text for the button to request notification permission on the device -->
-  <string name="juno_onboarding_enable_notifications_positive_button" tools:ignore="UnusedResources">Załōncz powiadōmiynia</string>
-  <!-- Text for the button dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_enable_notifications_negative_button" tools:ignore="UnusedResources">Niy teroz</string>
   <!-- ==== Project "Nova" onboarding strings ==== -->
 
   <!-- ==== End of Project "Nova" onboarding strings ==== -->
@@ -280,8 +241,6 @@
   <string name="preferences_category_general">Ôgōlne</string>
   <!-- Preference category for all links about Fenix -->
   <string name="preferences_category_about">Ô aplikacyji</string>
-  <!-- Preference category for settings related to changing the default search engine -->
-  <string name="preferences_category_select_default_search_engine">Ôbier jedna</string>
   <!-- Summary for preference for settings related to managing search shortcuts for the quick search menu -->
   <string name="preferences_manage_search_shortcuts_summary">Zmiyniej wyszukowarki pokozane w menu wyszukowanio</string>
   <!-- Preference category for settings related to managing search shortcuts for the quick search menu -->
@@ -527,7 +486,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">Badania</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">Przizwolo Mozilli instalować i kludzić badania</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">Przizwolo Mozilli instalować i kludzić badania</string>
   <!-- Preference for reconnecting to FxA sync -->
   <string name="preferences_sync_sign_in_to_reconnect">Wloguj sie, coby zaś sie połōnczyć</string>
   <!-- Preference for removing FxA account -->
@@ -566,8 +525,6 @@
   <string name="preference_gestures_website_pull_to_refresh">Przeciōng, coby ôdświyżyć</string>
   <!-- Preference for using the dynamic toolbar -->
   <string name="preference_gestures_dynamic_toolbar">Skryj posek z noczyniami przi przesuwaniu</string>
-  <!-- Preference for showing the opened tabs by swiping up on the toolbar -->
-  <string name="preference_gestures_swipe_toolbar_show_tabs">Przeciōng posek z noczyniami, coby ôdewrzić karty</string>
   <!--
     Library
 
@@ -586,8 +543,6 @@
   <string name="library_desktop_bookmarks_unfiled">Inksze zokłodki</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Historyjo</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">Nowo karta</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Sztalōnki</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -704,28 +659,14 @@
   <string name="add_tab">Przidej karta</string>
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">Przidej prywatno karta</string>
-  <!-- Text for the new tab button to indicate adding a new private tab in the tab -->
-  <string name="tab_drawer_fab_content" tools:ignore="UnusedResources" moz:removedIn="149">Prywatno</string>
-  <!-- Text for the new tab button to indicate syncing command on the synced tabs page -->
-  <string name="tab_drawer_fab_sync" tools:ignore="UnusedResources" moz:removedIn="149">Synchrōnizacyjo</string>
-  <!-- Text shown in the menu for sharing all tabs -->
-  <string name="tab_tray_menu_item_share" tools:ignore="UnusedResources" moz:removedIn="149">Udostympnij wszyske karty</string>
   <!-- Text shown in the menu to view recently closed tabs -->
   <string name="tab_tray_menu_recently_closed">Niydowno zawarte karty</string>
-  <!-- Text shown in the tabs tray inactive tabs section -->
-  <string name="tab_tray_inactive_recently_closed" tools:ignore="UnusedResources" moz:removedIn="149">Niydowno zawarte</string>
   <!-- Text shown in the menu to view account settings -->
   <string name="tab_tray_menu_account_settings">Sztalōnki kōnta</string>
   <!-- Text shown in the menu to view tab settings -->
   <string name="tab_tray_menu_tab_settings">Sztalōnki kart</string>
   <!-- Text shown in the menu for closing all tabs -->
   <string name="tab_tray_menu_item_close">Zawrzij wszyske karty</string>
-  <!-- Text shown in the multiselect menu for bookmarking selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_bookmark" tools:ignore="UnusedResources" moz:removedIn="149">Przidej do zokłodek</string>
-  <!-- Text shown in the multiselect menu for closing selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_close" tools:ignore="UnusedResources" moz:removedIn="149">Zawrzij</string>
-  <!-- Content description for tabs tray multiselect share button -->
-  <string name="tab_tray_multiselect_share_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Udostympnij ôbrane karty</string>
   <!-- Content description for tabs tray multiselect menu -->
   <string name="tab_tray_multiselect_menu_content_description">Myni ôbranych kart</string>
   <!-- Content description (not visible, for screen readers etc.): Removes tab from collection button. Removes the selected tab from collection when pressed -->
@@ -797,7 +738,7 @@
   -->
   <string name="tab_crash_title_2">%1$s niy poradzi zaladować tyj strōny.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">Poślij Mozilli raport z awaryje</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">Poślij Mozilli raport z awaryje</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">Zawrzij karta</string>
   <!-- Restore tab button text on the tab crash page -->
@@ -810,8 +751,6 @@
   <string name="edit_bookmark_snackbar_action">EDYTUJ</string>
   <!-- Bookmark overflow menu edit button -->
   <string name="bookmark_menu_edit_button">Edytuj</string>
-  <!-- Bookmark overflow menu copy button -->
-  <string name="bookmark_menu_copy_button" tools:ignore="UnusedResources" moz:removedIn="150">Kopiuj</string>
   <!-- Bookmark overflow menu share button -->
   <string name="bookmark_menu_share_button">Udostympnij</string>
   <!-- Bookmark overflow menu open in new tab button -->
@@ -835,10 +774,6 @@
   <string name="edit_bookmark_folder_fragment_title">Edytuj katalog</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">KATALOG</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">MIANO</string>
   <!-- Bookmark select folder screen title -->
   <string name="bookmark_select_folder_fragment_label">Ôbier katalog</string>
   <!-- Bookmark editing error missing or improper URL -->
@@ -848,8 +783,6 @@
     %1$s is the host part of the URL of the bookmark deleted, if any
   -->
   <string name="bookmark_deletion_snackbar_message">Skasowane: %1$s</string>
-  <!-- Bookmark undo button for deletion snackbar action -->
-  <string name="bookmark_undo_deletion" tools:ignore="UnusedResources" moz:removedIn="150">COFNIJ AKCYJO</string>
   <!--
     Site Permissions
 
@@ -944,8 +877,6 @@
   <string name="collections_header">Kolekcyje</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">Myni kolekcyjōw</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">Zbiyrej rzeczy, ô kere stoisz.\nTrzimej społym podobne szukania, strōny a karty, coby niyskorzij mieć do nich snadniyjszy dostymp.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">Ôbier karty</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -1051,16 +982,12 @@
     The app name is in the text, due to limitations with localizing Nimbus experiments
   -->
   <string name="nimbus_notification_default_browser_text" tools:ignore="BrandUsage,UnusedResources">Nastow Firefox za bazowo przeglōndarka</string>
-  <!-- Title shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_title" tools:ignore="UnusedResources" moz:removedIn="150">Sprōbuj prywatnego przeglōndanio</string>
   <!--
     Snackbar
 
     Text shown in snackbar when user closes a tab
   -->
   <string name="snackbar_tab_closed">Karta je zawarto</string>
-  <!-- Text shown in snackbar when user closes all tabs -->
-  <string name="snackbar_tabs_closed">Karty sōm zawarte</string>
   <!-- Text shown in snackbar when user adds a site to shortcuts -->
   <string name="snackbar_added_to_shortcuts">Przidane do skrōtōw!</string>
   <!-- Text shown in snackbar when user closes a private tab -->
@@ -1119,8 +1046,6 @@
   <string name="preferences_delete_browsing_data_on_quit">Skasuj dane przeglōndanio przi zawiyraniu</string>
   <!-- Summary for the Delete browsing data on quit preference. "Quit" translation should match delete_browsing_data_on_quit_action translation. -->
   <string name="preference_summary_delete_browsing_data_on_quit_2">Autōmatycznie kasuje dane przeglōndanio, jak we głōwnym myni ôbieresz \"Skōńcz\"</string>
-  <!-- Action item in menu for the Delete browsing data on quit feature -->
-  <string name="delete_browsing_data_on_quit_action" tools:ignore="UnusedResources" moz:removedIn="149">Skōńcz</string>
   <!-- Title text of a delete browsing data dialog. -->
   <string name="delete_history_prompt_title">Czas do skasowanio</string>
   <!-- Body text of a delete browsing data dialog. -->
@@ -1185,7 +1110,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Sztalōnki ôchrōny</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Polepszōno ôchrōna ôd śledzynio</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Teroz z pōłnym ôchrōnōm cookies, naszōm nojsiylniyjszōm baryjerōm przeciw elymyntōm, co śledzōm miyndzy strōnami.</string>

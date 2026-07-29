@@ -7,12 +7,11 @@ Transform the beetmover-repackage-rpm task into an actual task description.
 
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
-from taskgraph.util.schema import LegacySchema
+from taskgraph.util.schema import Schema
 from taskgraph.util.treeherder import inherit_treeherder_from_dep, replace_group
-from voluptuous import Required
 
 from gecko_taskgraph.transforms.beetmover import craft_release_properties
-from gecko_taskgraph.transforms.task import task_description_schema
+from gecko_taskgraph.transforms.task import TaskDescriptionSchema
 from gecko_taskgraph.util.scriptworker import (
     generate_beetmover_artifact_map,
     generate_beetmover_upstream_artifacts,
@@ -22,16 +21,17 @@ from gecko_taskgraph.util.scriptworker import (
 
 transforms = TransformSequence()
 
-beetmover_description_schema = LegacySchema({
-    Required("attributes"): task_description_schema["attributes"],
-    Required("dependencies"): task_description_schema["dependencies"],
-    Required("label"): str,
-    Required("name"): str,
-    Required("shipping-phase"): task_description_schema["shipping-phase"],
-    Required("task-from"): task_description_schema["task-from"],
-})
 
-transforms.add_validate(beetmover_description_schema)
+class BeetmoverDescriptionSchema(Schema, kw_only=True):
+    attributes: TaskDescriptionSchema.__annotations__["attributes"]  # noqa: F821
+    dependencies: TaskDescriptionSchema.__annotations__["dependencies"]  # noqa: F821
+    label: str
+    name: str
+    shipping_phase: TaskDescriptionSchema.__annotations__["shipping_phase"]  # noqa: F821
+    task_from: TaskDescriptionSchema.__annotations__["task_from"]  # noqa: F821
+
+
+transforms.add_validate(BeetmoverDescriptionSchema)
 
 
 @transforms.add

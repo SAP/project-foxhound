@@ -641,137 +641,6 @@ async function test_http2_post_big(serverPort, origin = "localhost") {
   });
 }
 
-// When a http proxy is used alt-svc is disable. Therefore if withProxy is true,
-// try numberOfTries times to connect and make sure that alt-svc is not use and we never
-// connect to the HTTP/2 server.
-var altsvcClientListener = function (
-  finish,
-  httpserv,
-  httpserv2,
-  withProxy,
-  numberOfTries
-) {
-  this.finish = finish;
-  this.httpserv = httpserv;
-  this.httpserv2 = httpserv2;
-  this.withProxy = withProxy;
-  this.numberOfTries = numberOfTries;
-};
-
-altsvcClientListener.prototype = {
-  onStartRequest: function test_onStartR(request) {
-    Assert.equal(request.status, Cr.NS_OK);
-  },
-
-  onDataAvailable: function test_ODA(request, stream, offset, cnt) {
-    read_stream(stream, cnt);
-  },
-
-  onStopRequest: function test_onStopR(request) {
-    var isHttp2Connection = checkIsHttp2(
-      request.QueryInterface(Ci.nsIHttpChannel)
-    );
-    if (!isHttp2Connection) {
-      dump("/altsvc1 not over h2 yet - retry\n");
-      if (this.withProxy && this.numberOfTries == 0) {
-        request.QueryInterface(Ci.nsIProxiedChannel);
-        var httpProxyConnectResponseCode = request.httpProxyConnectResponseCode;
-        this.finish({ httpProxyConnectResponseCode });
-        return;
-      }
-      let chan = makeHTTPChannel(
-        `http://foo.example.com:${this.httpserv}/altsvc1`,
-        this.withProxy
-      ).QueryInterface(Ci.nsIHttpChannel);
-      // we use this header to tell the server to issue a altsvc frame for the
-      // speficied origin we will use in the next part of the test
-      chan.setRequestHeader(
-        "x-redirect-origin",
-        `http://foo.example.com:${this.httpserv2}`,
-        false
-      );
-      chan.loadFlags = Ci.nsIRequest.LOAD_BYPASS_CACHE;
-      chan.asyncOpen(
-        new altsvcClientListener(
-          this.finish,
-          this.httpserv,
-          this.httpserv2,
-          this.withProxy,
-          this.numberOfTries - 1
-        )
-      );
-    } else {
-      Assert.ok(isHttp2Connection);
-      let chan = makeHTTPChannel(
-        `http://foo.example.com:${this.httpserv2}/altsvc2`
-      ).QueryInterface(Ci.nsIHttpChannel);
-      chan.loadFlags = Ci.nsIRequest.LOAD_BYPASS_CACHE;
-      chan.asyncOpen(
-        new altsvcClientListener2(this.finish, this.httpserv, this.httpserv2)
-      );
-    }
-  },
-};
-
-var altsvcClientListener2 = function (finish, httpserv, httpserv2) {
-  this.finish = finish;
-  this.httpserv = httpserv;
-  this.httpserv2 = httpserv2;
-};
-
-altsvcClientListener2.prototype = {
-  onStartRequest: function test_onStartR(request) {
-    Assert.equal(request.status, Cr.NS_OK);
-  },
-
-  onDataAvailable: function test_ODA(request, stream, offset, cnt) {
-    read_stream(stream, cnt);
-  },
-
-  onStopRequest: function test_onStopR(request) {
-    var isHttp2Connection = checkIsHttp2(
-      request.QueryInterface(Ci.nsIHttpChannel)
-    );
-    if (!isHttp2Connection) {
-      dump("/altsvc2 not over h2 yet - retry\n");
-      var chan = makeHTTPChannel(
-        `http://foo.example.com:${this.httpserv2}/altsvc2`
-      ).QueryInterface(Ci.nsIHttpChannel);
-      chan.loadFlags = Ci.nsIRequest.LOAD_BYPASS_CACHE;
-      chan.asyncOpen(
-        new altsvcClientListener2(this.finish, this.httpserv, this.httpserv2)
-      );
-    } else {
-      Assert.ok(isHttp2Connection);
-      request.QueryInterface(Ci.nsIProxiedChannel);
-      var httpProxyConnectResponseCode = request.httpProxyConnectResponseCode;
-      this.finish({ httpProxyConnectResponseCode });
-    }
-  },
-};
-
-async function test_http2_altsvc(httpserv, httpserv2, withProxy) {
-  var chan = makeHTTPChannel(
-    `http://foo.example.com:${httpserv}/altsvc1`,
-    withProxy
-  ).QueryInterface(Ci.nsIHttpChannel);
-  return new Promise(resolve => {
-    var numberOfTries = 0;
-    if (withProxy) {
-      numberOfTries = 20;
-    }
-    chan.asyncOpen(
-      new altsvcClientListener(
-        resolve,
-        httpserv,
-        httpserv2,
-        withProxy,
-        numberOfTries
-      )
-    );
-  });
-}
-
 var WrongSuiteListener = function () {};
 
 WrongSuiteListener.prototype = new Http2CheckListener();
@@ -869,6 +738,18 @@ async function test_http2_h11required_session(
 
 async function test_http2_retry_rst(serverPort, origin = "localhost") {
   var chan = makeHTTPChannel(`https://${origin}:${serverPort}/rstonce`);
+  return new Promise(resolve => {
+    var listener = new Http2CheckListener();
+    listener.finish = resolve;
+    chan.asyncOpen(listener);
+  });
+}
+
+// Server resets the first H2 request with RST_STREAM CANCEL; the retry succeeds.
+async function test_http2_unknown_rst(serverPort, origin = "localhost") {
+  var chan = makeHTTPChannel(
+    `https://${origin}:${serverPort}/unknown_rst_once`
+  );
   return new Promise(resolve => {
     var listener = new Http2CheckListener();
     listener.finish = resolve;

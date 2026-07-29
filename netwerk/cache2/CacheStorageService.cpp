@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,7 +11,9 @@
 #include "CacheStorage.h"
 #include "CacheEntry.h"
 #include "CacheFileUtils.h"
+#include "mozilla/net/NoVarySearchUtils.h"
 
+#include "nsQueryObject.h"
 #include "ErrorList.h"
 #include "nsICacheStorageVisitor.h"
 #include "nsIObserverService.h"
@@ -111,7 +111,7 @@ CacheStorageService::CacheStorageService() {
   sSelf = this;
   sGlobalEntryTables = new GlobalEntryTables();
 
-  RegisterStrongMemoryReporter(this);
+  RegisterStrongMemoryReporter(do_AddRef(this));
 }
 
 CacheStorageService::~CacheStorageService() {
@@ -134,6 +134,15 @@ void CacheStorageService::Shutdown() {
   Dispatch(event);
 
 #ifdef NS_FREE_PERMANENT_DATA
+  // Clear pending callbacks on all entries before dropping them.
+  // Each pending Callback holds a RefPtr<CacheEntry> back to its owning
+  // entry, forming a prevent-release cycle that the destructor alone
+  // cannot break.
+  for (const auto& table : sGlobalEntryTables->Values()) {
+    for (const auto& entry : table->Values()) {
+      entry->ClearCallbacks();
+    }
+  }
   sGlobalEntryTables->Clear();
   delete sGlobalEntryTables;
 #endif
@@ -158,8 +167,16 @@ void CacheStorageService::ShutdownBackground() {
   }
 
 #ifdef NS_FREE_PERMANENT_DATA
-  Pool(MemoryPool::EType::DISK).mManagedEntries.clear();
-  Pool(MemoryPool::EType::MEMORY).mManagedEntries.clear();
+  // Properly unregister entries before clearing the lists to maintain
+  // the invariant that IsRegistered() reflects actual list membership.
+  // This prevents crashes if pending UNREGISTER operations run after shutdown.
+  RefPtr<CacheEntry> entry;
+  while ((entry = Pool(MemoryPool::EType::DISK).mManagedEntries.popFirst())) {
+    entry->SetRegistered(false);
+  }
+  while ((entry = Pool(MemoryPool::EType::MEMORY).mManagedEntries.popFirst())) {
+    entry->SetRegistered(false);
+  }
 #endif
 
   LOG(("CacheStorageService::ShutdownBackground - done"));
@@ -1186,6 +1203,39 @@ void CacheStorageService::MarkForcedValidEntryUse(nsACString const& aContextKey,
   mForcedValidEntries.InsertOrUpdate(aContextKey + aEntryKey, data);
 }
 
+// Registers a cache entry in the No-Vary-Search secondary index so that
+// future cache lookups for variant URLs can find it without scanning the
+// entire entry table.
+//
+// When a response carrying a No-Vary-Search header is stored, this method
+// is called to record the mapping:
+//   aBasePath (scheme://host:port/path) → aFullKey (the full cache entry key)
+//
+// On a subsequent exact-key cache miss, AddStorageEntry() consults this index
+// to find candidate entries sharing the same base path and checks each one for
+// URL equivalence under its stored NVS header
+// (see "equivalent modulo variation config",
+// https://www.ietf.org/archive/id/draft-ietf-httpbis-no-vary-search-05.html#section-6).
+//
+// Must be called with sLock NOT held; acquires sLock internally.
+void CacheStorageService::NoteNoVarySearchEntry(const nsACString& aContextKey,
+                                                const nsACString& aBasePath,
+                                                const nsACString& aFullKey) {
+  StaticMutexAutoLock lock(sLock);
+  CacheEntryTable* entries = sGlobalEntryTables->Get(aContextKey);
+  if (entries) {
+    entries->NoteNoVarySearchEntry(aBasePath, aFullKey);
+  }
+}
+
+void CacheStorageService::NoteNoVarySearchEntry(nsICacheEntry* aEntry,
+                                                nsIURI* aURI) {
+  RefPtr<CacheEntryHandle> handle = do_QueryObject(aEntry);
+  if (handle) {
+    handle->Entry()->NoteNoVarySearchEntry(aURI);
+  }
+}
+
 // Allows a cache entry to be loaded directly from cache without further
 // validation - see nsICacheEntry.idl for further details
 void CacheStorageService::ForceEntryValidFor(nsACString const& aContextKey,
@@ -1208,7 +1258,8 @@ void CacheStorageService::RemoveEntryForceValid(nsACString const& aContextKey,
   mozilla::MutexAutoLock lock(mForcedValidEntriesLock);
 
   LOG(("CacheStorageService::RemoveEntryForceValid context='%s' entryKey=%s",
-       aContextKey.BeginReading(), aEntryKey.BeginReading()));
+       PromiseFlatCString(aContextKey).get(),
+       PromiseFlatCString(aEntryKey).get()));
   mForcedValidEntries.Remove(aContextKey + aEntryKey);
 }
 
@@ -1589,7 +1640,7 @@ nsresult CacheStorageService::AddStorageEntry(
   NS_ENSURE_SUCCESS(rv, rv);
 
   LOG(("CacheStorageService::AddStorageEntry [entryKey=%s, contextKey=%s]",
-       entryKey.get(), aContextKey.BeginReading()));
+       entryKey.get(), PromiseFlatCString(aContextKey).get()));
 
   RefPtr<CacheEntry> entry;
   RefPtr<CacheEntryHandle> handle;
@@ -1606,7 +1657,7 @@ nsresult CacheStorageService::AddStorageEntry(
                 aContextKey,
                 [&aContextKey] {
                   LOG(("  new storage entries table for context '%s'",
-                       aContextKey.BeginReading()));
+                       PromiseFlatCString(aContextKey).get()));
                   return MakeUnique<CacheEntryTable>(
                       CacheEntryTable::ALL_ENTRIES);
                 })
@@ -1618,6 +1669,63 @@ nsresult CacheStorageService::AddStorageEntry(
         StaticPrefs::network_cache_bug1708673()) {
       return NS_ERROR_CACHE_KEY_NOT_FOUND;
     }
+
+    // No-Vary-Search secondary lookup on exact-key miss.
+    // Implements the "equivalent modulo variation config" algorithm:
+    // https://www.ietf.org/archive/id/draft-ietf-httpbis-no-vary-search-05.html#section-6
+    //
+    // On an exact-key miss, consult mNoVarySearchIndex to find cached entries
+    // that share the same base path (scheme://host:port/path) and carry a
+    // No-Vary-Search header. For each candidate, parse its stored NVS header
+    // and check whether the incoming URL is equivalent to the candidate URL
+    // under those NVS rules. The first matching candidate is used as the cache
+    // hit. OPEN_TRUNCATE is excluded because truncation always creates a new
+    // entry regardless of equivalence.
+    // TODO (bug 2042810): NS_NewURI calls here are needed because the cache
+    // stores URIs as strings (a legacy of bug 1271019, when nsIURI was not
+    // thread-safe). Threading nsIURI through the cache APIs would eliminate
+    // this reparsing.
+    if (StaticPrefs::network_cache_no_vary_search() && !entryExists &&
+        !(aFlags & nsICacheStorage::OPEN_TRUNCATE)) {
+      nsCOMPtr<nsIURI> incomingURI;
+      nsAutoCString basePath;
+      if (NS_SUCCEEDED(NS_NewURI(getter_AddRefs(incomingURI), aURI)) &&
+          NS_SUCCEEDED(ExtractNoVarySearchBasePath(incomingURI, basePath))) {
+        auto candidates = entries->mNoVarySearchIndex.Lookup(basePath);
+        if (candidates) {
+          for (const auto& fullKey : *candidates) {
+            RefPtr<CacheEntry> candidate;
+            if (!entries->Get(fullKey, getter_AddRefs(candidate))) {
+              continue;
+            }
+
+            nsAutoCString nvsVal;
+            candidate->GetMetaDataElement("no-vary-search",
+                                          getter_Copies(nvsVal));
+            if (nvsVal.IsEmpty()) {
+              continue;
+            }
+
+            nsAutoCString candidateSpec;
+            candidate->GetKey(candidateSpec);
+            nsCOMPtr<nsIURI> candidateURI;
+            if (NS_FAILED(
+                    NS_NewURI(getter_AddRefs(candidateURI), candidateSpec))) {
+              continue;
+            }
+
+            auto data = ParseNoVarySearchHeader(nvsVal);
+            if (URLsAreEquivalentModuloVariationConfig(incomingURI,
+                                                       candidateURI, data)) {
+              entry = candidate;
+              entryExists = true;
+              break;
+            }
+          }
+        }
+      }
+    }
+
     if (entryExists && (aFlags & nsICacheStorage::OPEN_COMPLETE_ONLY)) {
       bool ready = false;
       // We're looking for complete files, even if they're being revalidated
@@ -1697,7 +1805,8 @@ nsresult CacheStorageService::CheckStorageEntry(CacheStorage const* aStorage,
   }
 
   LOG(("CacheStorageService::CheckStorageEntry [uri=%s, eid=%s, contextKey=%s]",
-       aURI.BeginReading(), aIdExtension.BeginReading(), contextKey.get()));
+       PromiseFlatCString(aURI).get(), PromiseFlatCString(aIdExtension).get(),
+       contextKey.get()));
 
   {
     StaticMutexAutoLock lock(sLock);
@@ -1749,7 +1858,8 @@ nsresult CacheStorageService::GetCacheIndexEntryAttrs(
   LOG(
       ("CacheStorageService::GetCacheIndexEntryAttrs [uri=%s, eid=%s, "
        "contextKey=%s]",
-       aURI.BeginReading(), aIdExtension.BeginReading(), contextKey.get()));
+       PromiseFlatCString(aURI).get(), PromiseFlatCString(aIdExtension).get(),
+       contextKey.get()));
 
   nsAutoCString fileKey;
   rv = CacheEntry::HashingKey(contextKey, aIdExtension, aURI, fileKey);
@@ -1960,7 +2070,7 @@ nsresult CacheStorageService::DoomStorageEntries(
     const nsACString& aContextKey, nsILoadContextInfo* aContext,
     bool aDiskStorage, bool aPinned, nsICacheEntryDoomCallback* aCallback) {
   LOG(("CacheStorageService::DoomStorageEntries [context=%s]",
-       aContextKey.BeginReading()));
+       PromiseFlatCString(aContextKey).get()));
 
   sLock.AssertCurrentThreadOwns();
 
@@ -1970,7 +2080,8 @@ nsresult CacheStorageService::DoomStorageEntries(
   AppendMemoryStorageTag(memoryStorageID);
 
   if (aDiskStorage) {
-    LOG(("  dooming disk+memory storage of %s", aContextKey.BeginReading()));
+    LOG(("  dooming disk+memory storage of %s",
+         PromiseFlatCString(aContextKey).get()));
 
     // Walk one by one and remove entries according their pin status
     CacheEntryTable *diskEntries, *memoryEntries;
@@ -1995,7 +2106,8 @@ nsresult CacheStorageService::DoomStorageEntries(
       CacheFileIOManager::EvictByContext(aContext, aPinned, u""_ns);
     }
   } else {
-    LOG(("  dooming memory-only storage of %s", aContextKey.BeginReading()));
+    LOG(("  dooming memory-only storage of %s",
+         PromiseFlatCString(aContextKey).get()));
 
     // Remove the memory entries table from the global tables.
     // Since we store memory entries also in the disk entries table
@@ -2364,7 +2476,7 @@ CacheStorageService::CollectReports(nsIHandleReportCallback* aHandleReport,
               "explicit/network/cache2/%s-storage(%s)",
               table->Type() == CacheEntryTable::MEMORY_ONLY ? "memory" : "disk",
               aAnonymize ? "<anonymized>"
-                         : globalEntry.GetKey().BeginReading()),
+                         : PromiseFlatCString(globalEntry.GetKey()).get()),
           nsIMemoryReporter::KIND_HEAP, nsIMemoryReporter::UNITS_BYTES, size,
           "Memory used by the cache storage."_ns, aData);
     }

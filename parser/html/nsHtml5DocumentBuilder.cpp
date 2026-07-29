@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sw=2 et tw=78: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -91,7 +89,7 @@ void nsHtml5DocumentBuilder::SetDocumentMode(nsHtml5DocumentMode m) {
 
     nsContentUtils::ReportToConsole(
         nsIScriptError::warningFlag, "HTML_PARSER__DOCTYPE"_ns, mDocument,
-        nsContentUtils::eHTMLPARSER_PROPERTIES, errMsgId);
+        PropertiesFile::HTMLPARSER_PROPERTIES, errMsgId);
   }
 }
 

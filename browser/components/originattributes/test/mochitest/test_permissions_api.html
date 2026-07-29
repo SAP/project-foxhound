@@ -89,33 +89,23 @@
           });
         return Promise.all(promisesToQuery);
       },
-      promiseStateChanged(name, state) {
-        return aWindow.navigator.permissions
-          .query({ name })
-          .then(status => {
-            return new Promise( resolve => {
-              status.onchange = () => {
-                status.onchange = null;
-                is(status.state, state, `state changed for '${name}'`);
-                resolve();
-              };
-            });
-          },
-          () => ok(false, `query should not have rejected for '${name}'`));
-      },
-      testStatusOnChange() {
-        return new Promise((resolve) => {
-          SpecialPowers.popPermissions(() => {
-            const permission = "geolocation";
-            const promiseGranted = this.promiseStateChanged(permission, "granted");
-            this.setPermissions(ALLOW_ACTION);
-            promiseGranted.then(async () => {
-              const promisePrompt = this.promiseStateChanged(permission, "prompt");
-              await SpecialPowers.popPermissions();
-              return promisePrompt;
-            }).then(resolve);
-          });
+      promiseStateChanged(status, state) {
+        return new Promise(resolve => {
+          status.addEventListener("change", () => {
+            is(status.state, state, `state changed to '${state}'`);
+            resolve();
+          }, { once: true });
         });
+      },
+      async testStatusOnChange() {
+        await SpecialPowers.popPermissions();
+        const status = await aWindow.navigator.permissions.query({ name: "geolocation" });
+        const promiseGranted = this.promiseStateChanged(status, "granted");
+        this.setPermissions(ALLOW_ACTION);
+        await promiseGranted;
+        const promisePrompt = this.promiseStateChanged(status, "prompt");
+        await SpecialPowers.popPermissions();
+        await promisePrompt;
       },
       testInvalidQuery() {
         return aWindow.navigator.permissions

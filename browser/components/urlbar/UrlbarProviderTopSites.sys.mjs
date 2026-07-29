@@ -24,7 +24,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
   UrlbarProviderOpenTabs:
     "moz-src:///browser/components/urlbar/UrlbarProviderOpenTabs.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
   UrlbarSearchUtils:
     "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
 });
@@ -165,6 +165,7 @@ export class UrlbarProviderTopSites extends UrlbarProvider {
         title: link.label || link.title || link.hostname || "",
         favicon: link.smallFavicon || link.favicon || undefined,
         sendAttributionRequest: !!link.sendAttributionRequest,
+        lastVisitDate: link.lastVisitDate,
       };
       if (site.isSponsored) {
         let {
@@ -204,6 +205,7 @@ export class UrlbarProviderTopSites extends UrlbarProvider {
             icon: site.favicon,
             isPinned: site.isPinned,
             isSponsored: site.isSponsored,
+            lastVisit: site.lastVisitDate,
           };
 
           // Fuzzy match both the URL as-is, and the URL without ref, then

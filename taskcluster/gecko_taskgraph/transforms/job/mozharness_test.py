@@ -5,11 +5,11 @@
 
 import os
 import re
+from typing import Literal, Optional
 
 from taskgraph.util import json
-from taskgraph.util.schema import LegacySchema
+from taskgraph.util.schema import Schema
 from taskgraph.util.taskcluster import get_artifact_path
-from voluptuous import Extra, Optional, Required
 
 from gecko_taskgraph.transforms.job import configure_taskdesc_for_run, run_job_using
 from gecko_taskgraph.transforms.job.common import (
@@ -18,8 +18,7 @@ from gecko_taskgraph.transforms.job.common import (
     get_expiration,
     support_vcs_checkout,
 )
-from gecko_taskgraph.transforms.test import normpath, test_description_schema
-from gecko_taskgraph.util.attributes import is_try
+from gecko_taskgraph.transforms.test import TestDescriptionSchema, normpath
 from gecko_taskgraph.util.chunking import get_test_tags
 from gecko_taskgraph.util.perftest import is_external_browser
 
@@ -44,21 +43,23 @@ def get_variant(test_platform):
     return ""
 
 
-mozharness_test_run_schema = LegacySchema({
-    Required("using"): "mozharness-test",
-    Required("test"): {
-        Required("test-platform"): str,
-        Required("mozharness"): test_description_schema["mozharness"],
-        Required("docker-image"): test_description_schema["docker-image"],
-        Required("loopback-video"): test_description_schema["loopback-video"],
-        Required("loopback-audio"): test_description_schema["loopback-audio"],
-        Required("max-run-time"): test_description_schema["max-run-time"],
-        Optional("retry-exit-status"): test_description_schema["retry-exit-status"],
-        Extra: object,
-    },
+class MozharnessTestSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    test_platform: str
+    mozharness: TestDescriptionSchema.__annotations__["mozharness"]  # noqa: F821
+    docker_image: TestDescriptionSchema.__annotations__[
+        "docker_image"  # noqa: F821
+    ]
+    loopback_video: TestDescriptionSchema.__annotations__["loopback_video"]  # noqa: F821
+    loopback_audio: TestDescriptionSchema.__annotations__["loopback_audio"]  # noqa: F821
+    max_run_time: TestDescriptionSchema.__annotations__["max_run_time"]  # noqa: F821
+    retry_exit_status: TestDescriptionSchema.__annotations__["retry_exit_status"] = None
+
+
+class MozharnessTestRunSchema(Schema, kw_only=True):
+    using: Literal["mozharness-test"]
+    test: MozharnessTestSchema  # noqa: F821
     # Base work directory used to set up the task.
-    Optional("workdir"): str,
-})
+    workdir: Optional[str] = None
 
 
 def test_packages_url(taskdesc):
@@ -88,7 +89,7 @@ def installer_url(taskdesc):
     return f"<{upstream_task}/{mozharness['build-artifact-name']}>"
 
 
-@run_job_using("docker-worker", "mozharness-test", schema=mozharness_test_run_schema)
+@run_job_using("docker-worker", "mozharness-test", schema=MozharnessTestRunSchema)
 def mozharness_test_on_docker(config, job, taskdesc):
     run = job["run"]
     test = taskdesc["run"]["test"]
@@ -176,9 +177,6 @@ def mozharness_test_on_docker(config, job, taskdesc):
     if "actions" in mozharness:
         env["MOZHARNESS_ACTIONS"] = " ".join(mozharness["actions"])
 
-    if is_try(config.params):
-        env["TRY_COMMIT_MSG"] = config.params["message"]
-
     # handle some of the mozharness-specific options
     if test["reboot"]:
         raise Exception(
@@ -259,7 +257,7 @@ def mozharness_test_on_docker(config, job, taskdesc):
     configure_taskdesc_for_run(config, job, taskdesc, worker["implementation"])
 
 
-@run_job_using("generic-worker", "mozharness-test", schema=mozharness_test_run_schema)
+@run_job_using("generic-worker", "mozharness-test", schema=MozharnessTestRunSchema)
 def mozharness_test_on_generic_worker(config, job, taskdesc):
     test = taskdesc["run"]["test"]
     mozharness = test["mozharness"]
@@ -460,9 +458,6 @@ def mozharness_test_on_generic_worker(config, job, taskdesc):
 
     if test.get("timeoutfactor"):
         mh_command.append("--timeout-factor={}".format(test["timeoutfactor"]))
-
-    if is_try(config.params):
-        env["TRY_COMMIT_MSG"] = config.params["message"]
 
     worker["mounts"] = [
         {

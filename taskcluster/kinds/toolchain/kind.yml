@@ -28,6 +28,7 @@ task-defaults:
 tasks-from:
     - 7zz.yml
     - android.yml
+    - android-macos.yml
     - cargo-vet.yml
     - cabextract.yml
     - cbindgen.yml
@@ -51,16 +52,20 @@ tasks-from:
     - mingw.yml
     - minidump-stackwalk.yml
     - misc.yml
+    - mozcheck.yml
     - nasm.yml
     - nimbus-fml.yml
     - node.yml
     - onnx.yml
     - pkgconf.yml
+    - profiler-node-tools.yml
     - python.yml
     - python-wheels.yml
     - rust.yml
     - rust-size.yml
+    - samply.yml
     - sccache.yml
     - sysroot.yml
+    - upx.yml
     - uv.yml
     - dist-toolchains.yml

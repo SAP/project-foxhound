@@ -229,7 +229,8 @@ std::unique_ptr<AudioEncoder> CreateEncoder(CodecType codec_type,
       config.dtx_enabled = absl::GetFlag(FLAGS_dtx);
       config.fec_enabled = absl::GetFlag(FLAGS_fec);
       RTC_CHECK(config.IsOk());
-      return AudioEncoderOpus::MakeAudioEncoder(CreateEnvironment(), config,
+      return AudioEncoderOpus::MakeAudioEncoder(CreateEnvironment(),
+                                                std::move(config),
                                                 {.payload_type = payload_type});
     }
 
@@ -347,7 +348,7 @@ int RunRtpEncode(int argc, char* argv[]) {
 
   // Create and register the packetizer, which will write the packets to file.
   Packetizer packetizer(out_file, absl::GetFlag(FLAGS_ssrc), timestamp_rate_hz);
-  RTC_DCHECK_EQ(acm->RegisterTransportCallback(&packetizer), 0);
+  RTC_CHECK_EQ(acm->RegisterTransportCallback(&packetizer), 0);
 
   AudioFrame audio_frame;
   audio_frame.samples_per_channel_ =

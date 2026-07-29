@@ -2,12 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use crate::browser::{Browser, LocalBrowser, RemoteBrowser};
+use crate::browser::{Browser, BrowserStatus, LocalBrowser, RemoteBrowser};
 use crate::build;
 use crate::capabilities::{FirefoxCapabilities, FirefoxOptions, ProfileType};
 use crate::command::{
-    AddonInstallParameters, AddonPath, AddonUninstallParameters, GeckoContextParameters,
-    GeckoExtensionCommand, GeckoExtensionRoute,
+    AddonInstallParameters, GeckoContext, GeckoExtensionCommand, GeckoExtensionRoute,
 };
 use crate::logging;
 use marionette_rs::common::{
@@ -17,32 +16,37 @@ use marionette_rs::common::{
 use marionette_rs::marionette::AppStatus;
 use marionette_rs::message::{Command, Message, MessageId, Request};
 use marionette_rs::webdriver::{
+    AddonInstallParameters as MarionetteAddonInstallParameters,
+    AuthenticatorIdParameters as MarionetteAuthenticatorIdParameters,
     AuthenticatorParameters as MarionetteAuthenticatorParameters,
     AuthenticatorTransport as MarionetteAuthenticatorTransport,
-    Command as MarionetteWebDriverCommand, CredentialParameters as MarionetteCredentialParameters,
+    Command as MarionetteWebDriverCommand,
+    CredentialIdParameters as MarionetteCredentialIdParameters,
+    CredentialParameters as MarionetteCredentialParameters,
+    GeckoContext as MarionetteGeckoContext,
     GlobalPrivacyControlParameters as MarionetteGlobalPrivacyControlParameters,
+    Credentials as MarionetteCredentials,
     Keys as MarionetteKeys, Locator as MarionetteLocator, NewWindow as MarionetteNewWindow,
     PrintMargins as MarionettePrintMargins, PrintOrientation as MarionettePrintOrientation,
     PrintPage as MarionettePrintPage, PrintPageRange as MarionettePrintPageRange,
     PrintParameters as MarionettePrintParameters, ScreenshotOptions, Script as MarionetteScript,
     Selector as MarionetteSelector, SetPermissionDescriptor as MarionetteSetPermissionDescriptor,
     SetPermissionParameters as MarionetteSetPermissionParameters,
-    SetPermissionState as MarionetteSetPermissionState, Url as MarionetteUrl,
+    SetPermissionState as MarionetteSetPermissionState,
     UserVerificationParameters as MarionetteUserVerificationParameters,
-    WebAuthnProtocol as MarionetteWebAuthnProtocol, WindowRect as MarionetteWindowRect,
+    AuthenticatorProtocol as MarionetteAuthenticatorProtocol,
+    WindowRect as MarionetteWindowRect,
 };
 use mozdevice::AndroidStorageInput;
 use serde::de::{self, Deserialize, Deserializer};
-use serde::ser::{Serialize, Serializer};
 use serde_json::{Map, Value};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-use std::io::prelude::*;
 use std::io::Error as IoError;
-use std::io::ErrorKind;
 use std::io::Result as IoResult;
+use std::io::prelude::*;
 use std::net::{Shutdown, TcpListener, TcpStream};
-use std::path::{PathBuf};
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::thread;
 use std::time;
@@ -66,17 +70,16 @@ use webdriver::command::WebDriverCommand::{
 };
 use webdriver::command::{
     ActionsParameters, AddCookieParameters, AuthenticatorParameters, AuthenticatorTransport,
-    GetNamedCookieParameters, GetParameters, GlobalPrivacyControlParameters,
-    JavascriptCommandParameters, LocatorParameters, NewSessionParameters, NewWindowParameters,
-    PrintMargins, PrintOrientation, PrintPage, PrintPageRange, PrintParameters, SendKeysParameters,
-    SetPermissionDescriptor, SetPermissionParameters, SetPermissionState, SwitchToFrameParameters,
-    SwitchToWindowParameters, TimeoutsParameters, UserVerificationParameters, WebAuthnProtocol,
-    WindowRectParameters,
+    GetNamedCookieParameters, GlobalPrivacyControlParameters, JavascriptCommandParameters,
+    LocatorParameters, NewSessionParameters, NewWindowParameters, PrintMargins, PrintOrientation,
+    PrintPage, PrintPageRange, PrintParameters, SendKeysParameters, SetPermissionDescriptor,
+    SetPermissionParameters, SetPermissionState, SwitchToFrameParameters, SwitchToWindowParameters,
+    TimeoutsParameters, AuthenticatorProtocol, WindowRectParameters,
 };
 use webdriver::command::{WebDriverCommand, WebDriverMessage};
 use webdriver::common::{
-    Cookie, CredentialParameters, Date, FrameId, LocatorStrategy, ShadowRoot, WebElement,
-    ELEMENT_KEY, FRAME_KEY, SHADOW_KEY, WINDOW_KEY,
+    Cookie, Credentials, Date, ELEMENT_KEY, FRAME_KEY,
+    FrameId, LocatorStrategy, SHADOW_KEY, ShadowRoot, WebElement, WINDOW_KEY,
 };
 use webdriver::error::{ErrorStatus, WebDriverError, WebDriverResult};
 use webdriver::response::{
@@ -225,12 +228,11 @@ impl MarionetteHandler {
     }
 
     fn close_connection(&mut self, wait_for_shutdown: bool) {
-        if let Ok(connection) = self.connection.get_mut() {
-            if let Some(conn) = connection.take() {
-                if let Err(e) = conn.close(wait_for_shutdown) {
-                    error!("Failed to close browser connection: {}", e)
-                }
-            }
+        if let Ok(connection) = self.connection.get_mut()
+            && let Some(conn) = connection.take()
+            && let Err(e) = conn.close(wait_for_shutdown)
+        {
+            error!("Failed to close browser connection: {}", e)
         }
     }
 }
@@ -474,13 +476,13 @@ impl MarionetteSession {
             | TakeElementScreenshot(_)
             | GPCGetGlobalPrivacyControl
             | GPCSetGlobalPrivacyControl(_)
+            | WebAuthnAddCredential(_, _)
             | WebAuthnAddVirtualAuthenticator(_)
-            | WebAuthnRemoveVirtualAuthenticator
-            | WebAuthnAddCredential(_)
-            | WebAuthnGetCredentials
-            | WebAuthnRemoveCredential
-            | WebAuthnRemoveAllCredentials
-            | WebAuthnSetUserVerified(_) => {
+            | WebAuthnGetCredentials(_)
+            | WebAuthnRemoveAllCredentials(_)
+            | WebAuthnRemoveCredential(_, _)
+            | WebAuthnRemoveVirtualAuthenticator(_)
+            | WebAuthnSetUserVerified(_, _) => {
                 WebDriverResponse::Generic(resp.into_value_response(true)?)
             }
             GetTimeouts => {
@@ -781,49 +783,51 @@ impl MarionetteSession {
     }
 }
 
-fn try_convert_to_marionette_message(
+fn to_marionette_message(
     msg: &WebDriverMessage<GeckoExtensionRoute>,
+    capabilities: &Map<String, Value>,
     browser: &Browser,
-) -> WebDriverResult<Option<Command>> {
+) -> WebDriverResult<Command> {
     use self::GeckoExtensionCommand::*;
     use self::WebDriverCommand::*;
 
-    Ok(match msg.command {
-        AcceptAlert => Some(Command::WebDriver(MarionetteWebDriverCommand::AcceptAlert)),
-        AddCookie(ref x) => Some(Command::WebDriver(MarionetteWebDriverCommand::AddCookie(
+    match msg.command {
+        Status => panic!("Got status command that should already have been handled"),
+        AcceptAlert => Ok(Command::WebDriver(MarionetteWebDriverCommand::AcceptAlert)),
+        AddCookie(ref x) => Ok(Command::WebDriver(MarionetteWebDriverCommand::AddCookie(
             x.to_marionette()?,
         ))),
-        CloseWindow => Some(Command::WebDriver(MarionetteWebDriverCommand::CloseWindow)),
-        DeleteCookie(ref x) => Some(Command::WebDriver(
+        CloseWindow => Ok(Command::WebDriver(MarionetteWebDriverCommand::CloseWindow)),
+        DeleteCookie(ref x) => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::DeleteCookie(x.clone()),
         )),
-        DeleteCookies => Some(Command::WebDriver(
+        DeleteCookies => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::DeleteCookies,
         )),
         DeleteSession => match browser {
-            Browser::Local(_) | Browser::Remote(_) => Some(Command::Marionette(
+            Browser::Local(_) | Browser::Remote(_) => Ok(Command::Marionette(
                 marionette_rs::marionette::Command::DeleteSession {
                     flags: vec![AppStatus::eForceQuit],
                 },
             )),
-            Browser::Existing(_) => Some(Command::WebDriver(
+            Browser::Existing(_) => Ok(Command::WebDriver(
                 MarionetteWebDriverCommand::DeleteSession,
             )),
         },
-        DismissAlert => Some(Command::WebDriver(MarionetteWebDriverCommand::DismissAlert)),
-        ElementClear(ref e) => Some(Command::WebDriver(
+        DismissAlert => Ok(Command::WebDriver(MarionetteWebDriverCommand::DismissAlert)),
+        ElementClear(ref e) => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::ElementClear {
                 id: e.clone().to_string(),
             },
         )),
-        ElementClick(ref e) => Some(Command::WebDriver(
+        ElementClick(ref e) => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::ElementClick {
                 id: e.clone().to_string(),
             },
         )),
         ElementSendKeys(ref e, ref x) => {
             let keys = x.to_marionette()?;
-            Some(Command::WebDriver(
+            Ok(Command::WebDriver(
                 MarionetteWebDriverCommand::ElementSendKeys {
                     id: e.clone().to_string(),
                     text: keys.text.clone(),
@@ -831,21 +835,21 @@ fn try_convert_to_marionette_message(
                 },
             ))
         }
-        ExecuteAsyncScript(ref x) => Some(Command::WebDriver(
+        ExecuteAsyncScript(ref x) => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::ExecuteAsyncScript(x.to_marionette()?),
         )),
-        ExecuteScript(ref x) => Some(Command::WebDriver(
+        ExecuteScript(ref x) => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::ExecuteScript(x.to_marionette()?),
         )),
-        FindElement(ref x) => Some(Command::WebDriver(MarionetteWebDriverCommand::FindElement(
+        FindElement(ref x) => Ok(Command::WebDriver(MarionetteWebDriverCommand::FindElement(
             x.to_marionette()?,
         ))),
-        FindElements(ref x) => Some(Command::WebDriver(
+        FindElements(ref x) => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::FindElements(x.to_marionette()?),
         )),
         FindElementElement(ref e, ref x) => {
             let locator = x.to_marionette()?;
-            Some(Command::WebDriver(MarionetteWebDriverCommand::FindElement(
+            Ok(Command::WebDriver(MarionetteWebDriverCommand::FindElement(
                 MarionetteLocator {
                     element: Some(e.clone().to_string()),
                     using: locator.using,
@@ -855,7 +859,7 @@ fn try_convert_to_marionette_message(
         }
         FindElementElements(ref e, ref x) => {
             let locator = x.to_marionette()?;
-            Some(Command::WebDriver(
+            Ok(Command::WebDriver(
                 MarionetteWebDriverCommand::FindElements(MarionetteLocator {
                     element: Some(e.clone().to_string()),
                     using: locator.using,
@@ -865,7 +869,7 @@ fn try_convert_to_marionette_message(
         }
         FindShadowRootElement(ref s, ref x) => {
             let locator = x.to_marionette()?;
-            Some(Command::WebDriver(
+            Ok(Command::WebDriver(
                 MarionetteWebDriverCommand::FindShadowRootElement {
                     shadow_root: s.clone().to_string(),
                     using: locator.using,
@@ -875,7 +879,7 @@ fn try_convert_to_marionette_message(
         }
         FindShadowRootElements(ref s, ref x) => {
             let locator = x.to_marionette()?;
-            Some(Command::WebDriver(
+            Ok(Command::WebDriver(
                 MarionetteWebDriverCommand::FindShadowRootElements {
                     shadow_root: s.clone().to_string(),
                     using: locator.using.clone(),
@@ -883,159 +887,196 @@ fn try_convert_to_marionette_message(
                 },
             ))
         }
-        FullscreenWindow => Some(Command::WebDriver(
+        FullscreenWindow => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::FullscreenWindow,
         )),
-        Get(ref x) => Some(Command::WebDriver(MarionetteWebDriverCommand::Get(
-            x.to_marionette()?,
-        ))),
-        GetActiveElement => Some(Command::WebDriver(
+        Get(ref x) => Ok(Command::WebDriver(MarionetteWebDriverCommand::Get {
+            url: x.url.clone(),
+        })),
+        GetActiveElement => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::GetActiveElement,
         )),
-        GetAlertText => Some(Command::WebDriver(MarionetteWebDriverCommand::GetAlertText)),
-        GetComputedLabel(ref e) => Some(Command::WebDriver(
+        GetAlertText => Ok(Command::WebDriver(MarionetteWebDriverCommand::GetAlertText)),
+        GetComputedLabel(ref e) => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::GetComputedLabel {
                 id: e.clone().to_string(),
             },
         )),
-        GetComputedRole(ref e) => Some(Command::WebDriver(
+        GetComputedRole(ref e) => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::GetComputedRole {
                 id: e.clone().to_string(),
             },
         )),
         GetCookies | GetNamedCookie(_) => {
-            Some(Command::WebDriver(MarionetteWebDriverCommand::GetCookies))
+            Ok(Command::WebDriver(MarionetteWebDriverCommand::GetCookies))
         }
-        GetCSSValue(ref e, ref x) => Some(Command::WebDriver(
+        GetCSSValue(ref e, ref x) => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::GetCSSValue {
                 id: e.clone().to_string(),
                 property: x.clone(),
             },
         )),
-        GetCurrentUrl => Some(Command::WebDriver(
+        GetCurrentUrl => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::GetCurrentUrl,
         )),
-        GetElementAttribute(ref e, ref x) => Some(Command::WebDriver(
+        GetElementAttribute(ref e, ref x) => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::GetElementAttribute {
                 id: e.clone().to_string(),
                 name: x.clone(),
             },
         )),
-        GetElementProperty(ref e, ref x) => Some(Command::WebDriver(
+        GetElementProperty(ref e, ref x) => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::GetElementProperty {
                 id: e.clone().to_string(),
                 name: x.clone(),
             },
         )),
-        GetElementRect(ref e) => Some(Command::WebDriver(
+        GetElementRect(ref e) => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::GetElementRect {
                 id: e.clone().to_string(),
             },
         )),
-        GetElementTagName(ref e) => Some(Command::WebDriver(
+        GetElementTagName(ref e) => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::GetElementTagName {
                 id: e.clone().to_string(),
             },
         )),
-        GetElementText(ref e) => Some(Command::WebDriver(
+        GetElementText(ref e) => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::GetElementText {
                 id: e.clone().to_string(),
             },
         )),
-        GetPageSource => Some(Command::WebDriver(
+        GetPageSource => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::GetPageSource,
         )),
-        GetShadowRoot(ref e) => Some(Command::WebDriver(
+        GetShadowRoot(ref e) => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::GetShadowRoot {
                 id: e.clone().to_string(),
             },
         )),
-        GetTitle => Some(Command::WebDriver(MarionetteWebDriverCommand::GetTitle)),
-        GetWindowHandle => Some(Command::WebDriver(
+        GetTitle => Ok(Command::WebDriver(MarionetteWebDriverCommand::GetTitle)),
+        GetWindowHandle => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::GetWindowHandle,
         )),
-        GetWindowHandles => Some(Command::WebDriver(
+        GetWindowHandles => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::GetWindowHandles,
         )),
-        GetWindowRect => Some(Command::WebDriver(
+        GetWindowRect => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::GetWindowRect,
         )),
-        GetTimeouts => Some(Command::WebDriver(MarionetteWebDriverCommand::GetTimeouts)),
-        GoBack => Some(Command::WebDriver(MarionetteWebDriverCommand::GoBack)),
-        GoForward => Some(Command::WebDriver(MarionetteWebDriverCommand::GoForward)),
-        IsDisplayed(ref e) => Some(Command::WebDriver(
+        GetTimeouts => Ok(Command::WebDriver(MarionetteWebDriverCommand::GetTimeouts)),
+        GoBack => Ok(Command::WebDriver(MarionetteWebDriverCommand::GoBack)),
+        GoForward => Ok(Command::WebDriver(MarionetteWebDriverCommand::GoForward)),
+        IsDisplayed(ref e) => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::IsDisplayed {
                 id: e.clone().to_string(),
             },
         )),
-        IsEnabled(ref e) => Some(Command::WebDriver(MarionetteWebDriverCommand::IsEnabled {
+        IsEnabled(ref e) => Ok(Command::WebDriver(MarionetteWebDriverCommand::IsEnabled {
             id: e.clone().to_string(),
         })),
-        IsSelected(ref e) => Some(Command::WebDriver(MarionetteWebDriverCommand::IsSelected {
+        IsSelected(ref e) => Ok(Command::WebDriver(MarionetteWebDriverCommand::IsSelected {
             id: e.clone().to_string(),
         })),
-        MaximizeWindow => Some(Command::WebDriver(
+        MaximizeWindow => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::MaximizeWindow,
         )),
-        MinimizeWindow => Some(Command::WebDriver(
+        MinimizeWindow => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::MinimizeWindow,
         )),
-        NewWindow(ref x) => Some(Command::WebDriver(MarionetteWebDriverCommand::NewWindow(
+        NewSession(_) => {
+            let mut data = Map::new();
+            for (k, v) in capabilities.iter() {
+                data.insert(k.to_string(), serde_json::to_value(v)?);
+            }
+            Ok(Command::WebDriver(MarionetteWebDriverCommand::NewSession(
+                data,
+            )))
+        }
+        NewWindow(ref x) => Ok(Command::WebDriver(MarionetteWebDriverCommand::NewWindow(
             x.to_marionette()?,
         ))),
-        Print(ref x) => Some(Command::WebDriver(MarionetteWebDriverCommand::Print(
+        PerformActions(ref x) => Ok(Command::WebDriver(
+            MarionetteWebDriverCommand::PerformActions(x.to_marionette()?),
+        )),
+        Print(ref x) => Ok(Command::WebDriver(MarionetteWebDriverCommand::Print(
             x.to_marionette()?,
         ))),
-        GPCGetGlobalPrivacyControl => Some(Command::WebDriver(
+        GPCGetGlobalPrivacyControl => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::GPCGetGlobalPrivacyControl,
         )),
-        GPCSetGlobalPrivacyControl(ref x) => Some(Command::WebDriver(
+        GPCSetGlobalPrivacyControl(ref x) => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::GPCSetGlobalPrivacyControl(x.to_marionette()?),
         )),
-        WebAuthnAddVirtualAuthenticator(ref x) => Some(Command::WebDriver(
+        WebAuthnAddCredential(ref authenticator_id, ref x) => Ok(Command::WebDriver(
+            MarionetteWebDriverCommand::WebAuthnAddCredential(MarionetteCredentialParameters {
+                authenticator_id: authenticator_id.clone(),
+                credentials: x.to_marionette()?,
+            }),
+        )),
+        WebAuthnAddVirtualAuthenticator(ref x) => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::WebAuthnAddVirtualAuthenticator(x.to_marionette()?),
         )),
-        WebAuthnRemoveVirtualAuthenticator => Some(Command::WebDriver(
-            MarionetteWebDriverCommand::WebAuthnRemoveVirtualAuthenticator,
+        WebAuthnGetCredentials(ref authenticator_id) => Ok(Command::WebDriver(
+            MarionetteWebDriverCommand::WebAuthnGetCredentials(
+                MarionetteAuthenticatorIdParameters {
+                    authenticator_id: authenticator_id.clone(),
+                },
+            ),
         )),
-        WebAuthnAddCredential(ref x) => Some(Command::WebDriver(
-            MarionetteWebDriverCommand::WebAuthnAddCredential(x.to_marionette()?),
+        WebAuthnRemoveAllCredentials(ref authenticator_id) => Ok(Command::WebDriver(
+            MarionetteWebDriverCommand::WebAuthnRemoveAllCredentials(
+                MarionetteAuthenticatorIdParameters {
+                    authenticator_id: authenticator_id.clone(),
+                },
+            ),
         )),
-        WebAuthnGetCredentials => Some(Command::WebDriver(
-            MarionetteWebDriverCommand::WebAuthnGetCredentials,
+        WebAuthnRemoveCredential(ref authenticator_id, ref credential_id) => Ok(
+            Command::WebDriver(MarionetteWebDriverCommand::WebAuthnRemoveCredential(
+                MarionetteCredentialIdParameters {
+                    authenticator_id: authenticator_id.clone(),
+                    credential_id: credential_id.clone(),
+                },
+            )),
+        ),
+        WebAuthnRemoveVirtualAuthenticator(ref authenticator_id) => Ok(Command::WebDriver(
+            MarionetteWebDriverCommand::WebAuthnRemoveVirtualAuthenticator(
+                MarionetteAuthenticatorIdParameters {
+                    authenticator_id: authenticator_id.clone(),
+                },
+            ),
         )),
-        WebAuthnRemoveCredential => Some(Command::WebDriver(
-            MarionetteWebDriverCommand::WebAuthnRemoveCredential,
+        WebAuthnSetUserVerified(ref authenticator_id, ref x) => Ok(Command::WebDriver(
+            MarionetteWebDriverCommand::WebAuthnSetUserVerified(
+                MarionetteUserVerificationParameters {
+                    authenticator_id: authenticator_id.clone(),
+                    is_user_verified: x.is_user_verified,
+                },
+            ),
         )),
-        WebAuthnRemoveAllCredentials => Some(Command::WebDriver(
-            MarionetteWebDriverCommand::WebAuthnRemoveAllCredentials,
-        )),
-        WebAuthnSetUserVerified(ref x) => Some(Command::WebDriver(
-            MarionetteWebDriverCommand::WebAuthnSetUserVerified(x.to_marionette()?),
-        )),
-        Refresh => Some(Command::WebDriver(MarionetteWebDriverCommand::Refresh)),
-        ReleaseActions => Some(Command::WebDriver(
+        Refresh => Ok(Command::WebDriver(MarionetteWebDriverCommand::Refresh)),
+        ReleaseActions => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::ReleaseActions,
         )),
-        SendAlertText(ref x) => Some(Command::WebDriver(
+        SendAlertText(ref x) => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::SendAlertText(x.to_marionette()?),
         )),
-        SetPermission(ref x) => Some(Command::WebDriver(
+        SetPermission(ref x) => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::SetPermission(x.to_marionette()?),
         )),
-        SetTimeouts(ref x) => Some(Command::WebDriver(MarionetteWebDriverCommand::SetTimeouts(
+        SetTimeouts(ref x) => Ok(Command::WebDriver(MarionetteWebDriverCommand::SetTimeouts(
             x.to_marionette()?,
         ))),
-        SetWindowRect(ref x) => Some(Command::WebDriver(
+        SetWindowRect(ref x) => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::SetWindowRect(x.to_marionette()?),
         )),
-        SwitchToFrame(ref x) => Some(Command::WebDriver(
+        SwitchToFrame(ref x) => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::SwitchToFrame(x.to_marionette()?),
         )),
-        SwitchToParentFrame => Some(Command::WebDriver(
+        SwitchToParentFrame => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::SwitchToParentFrame,
         )),
-        SwitchToWindow(ref x) => Some(Command::WebDriver(
+        SwitchToWindow(ref x) => Ok(Command::WebDriver(
             MarionetteWebDriverCommand::SwitchToWindow(x.to_marionette()?),
         )),
         TakeElementScreenshot(ref e) => {
@@ -1044,7 +1085,7 @@ fn try_convert_to_marionette_message(
                 highlights: vec![],
                 full: false,
             };
-            Some(Command::WebDriver(
+            Ok(Command::WebDriver(
                 MarionetteWebDriverCommand::TakeScreenshot(screenshot),
             ))
         }
@@ -1054,7 +1095,7 @@ fn try_convert_to_marionette_message(
                 highlights: vec![],
                 full: false,
             };
-            Some(Command::WebDriver(
+            Ok(Command::WebDriver(
                 MarionetteWebDriverCommand::TakeScreenshot(screenshot),
             ))
         }
@@ -1064,102 +1105,39 @@ fn try_convert_to_marionette_message(
                 highlights: vec![],
                 full: true,
             };
-            Some(Command::WebDriver(
+            Ok(Command::WebDriver(
                 MarionetteWebDriverCommand::TakeScreenshot(screenshot),
             ))
         }
-        _ => None,
-    })
-}
-
-#[derive(Debug, PartialEq)]
-struct MarionetteCommand {
-    id: MessageId,
-    name: String,
-    params: Map<String, Value>,
-}
-
-impl Serialize for MarionetteCommand {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let data = (&0, &self.id, &self.name, &self.params);
-        data.serialize(serializer)
-    }
-}
-
-impl MarionetteCommand {
-    fn new(id: MessageId, name: String, params: Map<String, Value>) -> MarionetteCommand {
-        MarionetteCommand { id, name, params }
-    }
-
-    fn encode_msg<T>(msg: T) -> WebDriverResult<String>
-    where
-        T: serde::Serialize,
-    {
-        let data = serde_json::to_string(&msg)?;
-
-        Ok(format!("{}:{}", data.len(), data))
-    }
-
-    fn from_webdriver_message(
-        id: MessageId,
-        capabilities: &Map<String, Value>,
-        browser: &Browser,
-        msg: &WebDriverMessage<GeckoExtensionRoute>,
-    ) -> WebDriverResult<String> {
-        use self::GeckoExtensionCommand::*;
-
-        if let Some(cmd) = try_convert_to_marionette_message(msg, browser)? {
-            let req = Message::Incoming(Request(id, cmd));
-            MarionetteCommand::encode_msg(req)
-        } else {
-            let (opt_name, opt_parameters) = match msg.command {
-                Status => panic!("Got status command that should already have been handled"),
-                NewSession(_) => {
-                    let mut data = Map::new();
-                    for (k, v) in capabilities.iter() {
-                        data.insert(k.to_string(), serde_json::to_value(v)?);
-                    }
-
-                    (Some("WebDriver:NewSession"), Some(Ok(data)))
-                }
-                PerformActions(ref x) => {
-                    (Some("WebDriver:PerformActions"), Some(x.to_marionette()))
-                }
-                Extension(ref extension) => match extension {
-                    GetContext => (Some("Marionette:GetContext"), None),
-                    InstallAddon(x) => match x {
-                        AddonInstallParameters::AddonBase64(data) => {
-                            let addon = AddonPath {
-                                path: browser.create_file(&data.addon)?,
-                                temporary: data.temporary,
-                                allow_private_browsing: data.allow_private_browsing,
-                            };
-                            (Some("Addon:Install"), Some(addon.to_marionette()))
-                        }
-                        AddonInstallParameters::AddonPath(data) => {
-                            (Some("Addon:Install"), Some(data.to_marionette()))
-                        }
+        Extension(GetContext) => Ok(Command::WebDriver(MarionetteWebDriverCommand::GetContext)),
+        Extension(InstallAddon(ref x)) => match x {
+            AddonInstallParameters::AddonBase64(data) => Ok(Command::WebDriver(
+                MarionetteWebDriverCommand::AddonInstall(
+                    MarionetteAddonInstallParameters::AddonInstallBase64 {
+                        addon: data.addon.clone(),
+                        temporary: data.temporary,
+                        allow_private_browsing: data.allow_private_browsing,
                     },
-                    SetContext(x) => (Some("Marionette:SetContext"), Some(x.to_marionette())),
-                    UninstallAddon(x) => (Some("Addon:Uninstall"), Some(x.to_marionette())),
-                    _ => (None, None),
-                },
-                _ => (None, None),
-            };
-
-            let name = try_opt!(
-                opt_name,
-                ErrorStatus::UnsupportedOperation,
-                "Operation not supported"
-            );
-            let parameters = opt_parameters.unwrap_or_else(|| Ok(Map::new()))?;
-
-            let req = MarionetteCommand::new(id, name.into(), parameters);
-            MarionetteCommand::encode_msg(req)
+                ),
+            )),
+            AddonInstallParameters::AddonPath(data) => Ok(Command::WebDriver(
+                MarionetteWebDriverCommand::AddonInstall(
+                    MarionetteAddonInstallParameters::AddonInstallPath {
+                        path: data.path.clone(),
+                        temporary: data.temporary,
+                        allow_private_browsing: data.allow_private_browsing,
+                    },
+                ),
+            )),
+        },
+        Extension(SetContext(ref x)) => {
+            Ok(Command::WebDriver(MarionetteWebDriverCommand::SetContext {
+                value: x.context.to_marionette()?,
+            }))
         }
+        Extension(UninstallAddon(ref x)) => Ok(Command::WebDriver(
+            MarionetteWebDriverCommand::AddonUninstall { id: x.id.clone() },
+        )),
     }
 }
 
@@ -1285,13 +1263,15 @@ impl MarionetteConnection {
 
         loop {
             // immediately abort connection attempts if process disappears
-            if let Browser::Local(browser) = browser {
-                if let Some(status) = browser.check_status() {
-                    return Err(WebDriverError::new(
-                        ErrorStatus::UnknownError,
-                        format!("Process unexpectedly closed with status {}", status),
-                    ));
-                }
+            if let Some((pid, BrowserStatus::Exited(code))) = browser.check_status() {
+                let code_info = match code {
+                    Some(c) => format!("status {}", c),
+                    None => "unknown status".to_string(),
+                };
+                return Err(WebDriverError::new(
+                    ErrorStatus::UnknownError,
+                    format!("Process (pid={}) unexpectedly closed with {}", pid, code_info),
+                ));
             }
 
             let last_err;
@@ -1385,12 +1365,8 @@ impl MarionetteConnection {
         msg: &WebDriverMessage<GeckoExtensionRoute>,
     ) -> WebDriverResult<WebDriverResponse> {
         let id = self.session.next_command_id();
-        let enc_cmd = MarionetteCommand::from_webdriver_message(
-            id,
-            &self.session.capabilities,
-            &self.browser,
-            msg,
-        )?;
+        let cmd = to_marionette_message(msg, &self.session.capabilities, &self.browser)?;
+        let enc_cmd = Message::Incoming(Request(id, cmd)).encode()?;
         let resp_data = self.send(enc_cmd)?;
         let data: MarionetteResponse = serde_json::from_str(&resp_data)?;
 
@@ -1428,10 +1404,7 @@ impl MarionetteConnection {
             let num_read = stream.read(buf)?;
             let byte = match num_read {
                 0 => {
-                    return Err(IoError::new(
-                        ErrorKind::Other,
-                        "EOF reading marionette message",
-                    ))
+                    return Err(IoError::other("EOF reading marionette message"));
                 }
                 1 => buf[0],
                 _ => panic!("Expected one byte got more"),
@@ -1452,10 +1425,7 @@ impl MarionetteConnection {
         while total_read < bytes {
             let num_read = stream.read(buf)?;
             if num_read == 0 {
-                return Err(IoError::new(
-                    ErrorKind::Other,
-                    "EOF reading marionette message",
-                ));
+                return Err(IoError::other("EOF reading marionette message"));
             }
             total_read += num_read;
             for x in &buf[..num_read] {
@@ -1472,42 +1442,12 @@ trait ToMarionette<T> {
     fn to_marionette(&self) -> WebDriverResult<T>;
 }
 
-impl ToMarionette<Map<String, Value>> for AddonPath {
-    fn to_marionette(&self) -> WebDriverResult<Map<String, Value>> {
-        let mut data = Map::new();
-        data.insert("path".to_string(), serde_json::to_value(&self.path)?);
-        if self.temporary.is_some() {
-            data.insert(
-                "temporary".to_string(),
-                serde_json::to_value(self.temporary)?,
-            );
-        }
-        if self.allow_private_browsing.is_some() {
-            data.insert(
-                "allowPrivateBrowsing".to_string(),
-                serde_json::to_value(self.allow_private_browsing)?,
-            );
-        }
-        Ok(data)
-    }
-}
-
-impl ToMarionette<Map<String, Value>> for AddonUninstallParameters {
-    fn to_marionette(&self) -> WebDriverResult<Map<String, Value>> {
-        let mut data = Map::new();
-        data.insert("id".to_string(), Value::String(self.id.clone()));
-        Ok(data)
-    }
-}
-
-impl ToMarionette<Map<String, Value>> for GeckoContextParameters {
-    fn to_marionette(&self) -> WebDriverResult<Map<String, Value>> {
-        let mut data = Map::new();
-        data.insert(
-            "value".to_owned(),
-            serde_json::to_value(self.context.clone())?,
-        );
-        Ok(data)
+impl ToMarionette<MarionetteGeckoContext> for GeckoContext {
+    fn to_marionette(&self) -> WebDriverResult<MarionetteGeckoContext> {
+        Ok(match self {
+            GeckoContext::Chrome => MarionetteGeckoContext::Chrome,
+            GeckoContext::Content => MarionetteGeckoContext::Content,
+        })
     }
 }
 
@@ -1607,6 +1547,16 @@ impl ToMarionette<MarionetteAuthenticatorParameters> for AuthenticatorParameters
     }
 }
 
+impl ToMarionette<MarionetteAuthenticatorProtocol> for AuthenticatorProtocol {
+    fn to_marionette(&self) -> WebDriverResult<MarionetteAuthenticatorProtocol> {
+        Ok(match self {
+            AuthenticatorProtocol::Ctap1U2f => MarionetteAuthenticatorProtocol::Ctap1U2f,
+            AuthenticatorProtocol::Ctap2 => MarionetteAuthenticatorProtocol::Ctap2,
+            AuthenticatorProtocol::Ctap2_1 => MarionetteAuthenticatorProtocol::Ctap2_1,
+        })
+    }
+}
+
 impl ToMarionette<MarionetteAuthenticatorTransport> for AuthenticatorTransport {
     fn to_marionette(&self) -> WebDriverResult<MarionetteAuthenticatorTransport> {
         Ok(match self {
@@ -1620,41 +1570,25 @@ impl ToMarionette<MarionetteAuthenticatorTransport> for AuthenticatorTransport {
     }
 }
 
-impl ToMarionette<MarionetteCredentialParameters> for CredentialParameters {
-    fn to_marionette(&self) -> WebDriverResult<MarionetteCredentialParameters> {
-        Ok(MarionetteCredentialParameters {
+impl ToMarionette<MarionetteCredentials> for Credentials {
+    fn to_marionette(&self) -> WebDriverResult<MarionetteCredentials> {
+        Ok(MarionetteCredentials {
             credential_id: self.credential_id.clone(),
             is_resident_credential: self.is_resident_credential,
             rp_id: self.rp_id.clone(),
             private_key: self.private_key.clone(),
             user_handle: self.user_handle.clone(),
             sign_count: self.sign_count,
-        })
-    }
-}
-
-impl ToMarionette<MarionetteUserVerificationParameters> for UserVerificationParameters {
-    fn to_marionette(&self) -> WebDriverResult<MarionetteUserVerificationParameters> {
-        Ok(MarionetteUserVerificationParameters {
-            is_user_verified: self.is_user_verified,
-        })
-    }
-}
-
-impl ToMarionette<MarionetteWebAuthnProtocol> for WebAuthnProtocol {
-    fn to_marionette(&self) -> WebDriverResult<MarionetteWebAuthnProtocol> {
-        Ok(match self {
-            WebAuthnProtocol::Ctap1U2f => MarionetteWebAuthnProtocol::Ctap1U2f,
-            WebAuthnProtocol::Ctap2 => MarionetteWebAuthnProtocol::Ctap2,
-            WebAuthnProtocol::Ctap2_1 => MarionetteWebAuthnProtocol::Ctap2_1,
+            large_blob: self.large_blob.clone(),
         })
     }
 }
 
 impl ToMarionette<Map<String, Value>> for ActionsParameters {
     fn to_marionette(&self) -> WebDriverResult<Map<String, Value>> {
+        let value = serde_json::to_value(self)?;
         Ok(try_opt!(
-            serde_json::to_value(self)?.as_object(),
+            value.as_object(),
             ErrorStatus::UnknownError,
             "Expected an object"
         )
@@ -1688,20 +1622,13 @@ impl ToMarionette<MarionetteDate> for Date {
 
 impl ToMarionette<Map<String, Value>> for GetNamedCookieParameters {
     fn to_marionette(&self) -> WebDriverResult<Map<String, Value>> {
+        let value = serde_json::to_value(self)?;
         Ok(try_opt!(
-            serde_json::to_value(self)?.as_object(),
+            value.as_object(),
             ErrorStatus::UnknownError,
             "Expected an object"
         )
         .clone())
-    }
-}
-
-impl ToMarionette<MarionetteUrl> for GetParameters {
-    fn to_marionette(&self) -> WebDriverResult<MarionetteUrl> {
-        Ok(MarionetteUrl {
-            url: self.url.clone(),
-        })
     }
 }
 

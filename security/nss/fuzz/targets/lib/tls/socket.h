@@ -15,16 +15,16 @@ namespace TlsSocket {
 
 class DummyPrSocket : public DummyIOLayerMethods {
  public:
-  DummyPrSocket(const uint8_t *buf, size_t len) : buf_(buf), len_(len) {}
+  DummyPrSocket(const uint8_t* buf, size_t len) : mBuf(buf), mLen(len) {}
 
-  int32_t Read(PRFileDesc *fd, void *data, int32_t len) override;
-  int32_t Write(PRFileDesc *fd, const void *buf, int32_t length) override;
-  int32_t Recv(PRFileDesc *fd, void *buf, int32_t buflen, int32_t flags,
+  int32_t Read(PRFileDesc* fd, void* data, int32_t len) override;
+  int32_t Write(PRFileDesc* fd, const void* buf, int32_t length) override;
+  int32_t Recv(PRFileDesc* fd, void* buf, int32_t buflen, int32_t flags,
                PRIntervalTime to) override;
 
  private:
-  const uint8_t *buf_;
-  size_t len_;
+  const uint8_t* mBuf;
+  size_t mLen;
 };
 
 }  // namespace TlsSocket

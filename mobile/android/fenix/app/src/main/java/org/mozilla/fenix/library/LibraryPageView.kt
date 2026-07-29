@@ -11,6 +11,7 @@ import mozilla.components.support.ktx.android.content.getColorFromAttr
 import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.asActivity
 import org.mozilla.fenix.ext.setToolbarColors
+import androidx.appcompat.R as appcompatR
 import com.google.android.material.R as materialR
 import mozilla.components.ui.icons.R as iconsR
 
@@ -36,7 +37,7 @@ open class LibraryPageView(
         updateToolbar(
             title = title,
             foregroundColor = context.getColorFromAttr(materialR.attr.colorOnPrimary),
-            backgroundColor = context.getColorFromAttr(materialR.attr.colorPrimarySurface),
+            backgroundColor = context.getColorFromAttr(appcompatR.attr.colorPrimary),
         )
     }
 

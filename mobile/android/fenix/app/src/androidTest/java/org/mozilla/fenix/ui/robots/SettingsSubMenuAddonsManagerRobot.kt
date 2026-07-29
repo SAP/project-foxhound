@@ -8,6 +8,7 @@ package org.mozilla.fenix.ui.robots
 
 import android.util.Log
 import android.widget.RelativeLayout
+import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
@@ -15,7 +16,6 @@ import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeTestRule
-import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -51,7 +51,9 @@ import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectExists
 import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectIsGone
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
+import org.mozilla.fenix.helpers.MatcherHelper.itemWithDescription
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResId
+import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdAndDescription
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdContainingText
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithText
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
@@ -348,9 +350,16 @@ class SettingsSubMenuAddonsManagerRobot(private val composeTestRule: ComposeTest
             try {
                 recommendedExtensionTitle = getRecommendedExtensionTitle(composeTestRule)
                 waitForAppWindowToBeUpdated()
+                assertUIObjectExists(itemContainingText(recommendedExtensionTitle))
                 Log.i(TAG, "installRecommendedAddon: Trying to click addon: $recommendedExtensionTitle install button")
-                composeTestRule.onNodeWithContentDescription("Add $recommendedExtensionTitle", substring = true).performClick()
+                itemWithDescription("Add $recommendedExtensionTitle").click()
                 Log.i(TAG, "installRecommendedAddon: Clicked addon: $recommendedExtensionTitle install button")
+                assertUIObjectExists(
+                    itemWithResIdContainingText(
+                        "$packageName:id/allow_button",
+                        getStringResource(addonsR.string.mozac_feature_addons_permissions_dialog_add),
+                    ),
+                )
 
                 return recommendedExtensionTitle
             } catch (e: AssertionError) {
@@ -384,6 +393,10 @@ class SettingsSubMenuAddonsManagerRobot(private val composeTestRule: ComposeTest
             composeTestRule.onNodeWithText(getStringResource(R.string.browser_menu_manage_extensions), useUnmergedTree = true).assertIsNotDisplayed()
             Log.i(TAG, "verifyManageExtensionsButtonFromRedesignedMainMenu: Verified that the \"Manage extensions\" button is not displayed")
         }
+    }
+
+    fun verifyExtensionsButtonWithInstalledExtension(extensionTitle: String) {
+        assertUIObjectExists(itemWithResIdAndDescription("mainMenu.extensions", extensionTitle))
     }
 
     fun clickManageExtensionsButtonFromRedesignedMainMenu(composeTestRule: ComposeTestRule) {
@@ -468,8 +481,16 @@ class SettingsSubMenuAddonsManagerRobot(private val composeTestRule: ComposeTest
             return BrowserRobot.Transition(composeTestRule)
         }
 
+        @OptIn(ExperimentalTestApi::class)
         fun clickDiscoverMoreExtensionsButton(composeTestRule: ComposeTestRule, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
             Log.i(TAG, "clickDiscoverMoreExtensionsButton: Trying to click the \"Discover more extensions\" link")
+            mDevice.waitForIdle()
+            composeTestRule.waitUntil(waitingTimeLong) {
+                composeTestRule.onAllNodes(
+                    hasText(getStringResource(R.string.browser_menu_discover_more_extensions)),
+                    useUnmergedTree = true,
+                ).fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
+            }
             composeTestRule.onNode(hasText(getStringResource(R.string.browser_menu_discover_more_extensions)), useUnmergedTree = true).performClick()
             Log.i(TAG, "clickDiscoverMoreExtensionsButton: Clicked the \"Discover more extensions\" link")
 
@@ -497,11 +518,14 @@ class SettingsSubMenuAddonsManagerRobot(private val composeTestRule: ComposeTest
     }
 
     private fun allowPermissionToInstall() {
+        // PermissionsDialogFragment disables the "Add" button for ~1s after the dialog is shown.
+        Log.i(TAG, "allowPermissionToInstall: Waiting for the \"Add\" button to be enabled")
+        val allowButton = mDevice.wait(
+            Until.findObject(By.res("$packageName:id/allow_button").enabled(true)),
+            waitingTime,
+        )
         Log.i(TAG, "allowPermissionToInstall: Trying to click the \"Add\" button")
-        itemWithResIdContainingText(
-            "$packageName:id/allow_button",
-            getStringResource(addonsR.string.mozac_feature_addons_permissions_dialog_add),
-        ).click()
+        allowButton.click()
         Log.i(TAG, "allowPermissionToInstall: Clicked the \"Add\" button")
     }
 

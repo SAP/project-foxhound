@@ -428,7 +428,8 @@ exports.isNodeConnected = isNodeConnected;
  */
 function isTemplateElement(node) {
   return (
-    node.ownerGlobal && node.ownerGlobal.HTMLTemplateElement.isInstance(node)
+    node.documentGlobal &&
+    node.documentGlobal.HTMLTemplateElement.isInstance(node)
   );
 }
 exports.isTemplateElement = isTemplateElement;
@@ -651,7 +652,7 @@ function getUntransformedQuad(node, region = "border") {
   // Get the inverse transformation matrix for the node.
   const matrix = node.getTransformToViewport();
   const inverse = matrix.inverse();
-  const win = node.ownerGlobal;
+  const win = node.documentGlobal;
 
   // Get the adjusted quads for the node (including scroll offsets).
   const quads = getAdjustedQuads(win, node, region, {
@@ -784,7 +785,7 @@ function isRemoteBrowserElement(node) {
   return (
     ChromeUtils.getClassName(node) == "XULFrameElement" &&
     !node.childNodes.length &&
-    node.getAttribute("remote") == "true"
+    node.hasAttribute("remote")
   );
 }
 exports.isRemoteBrowserElement = isRemoteBrowserElement;

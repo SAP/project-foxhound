@@ -196,7 +196,8 @@ bool OpenSSLAdapter::CleanupSSL() {
 
 OpenSSLAdapter::OpenSSLAdapter(Socket* socket,
                                OpenSSLSessionCache* ssl_session_cache,
-                               SSLCertificateVerifier* ssl_cert_verifier)
+                               SSLCertificateVerifier* ssl_cert_verifier,
+                               bool dtls)
     : SSLAdapter(socket),
       ssl_session_cache_(ssl_session_cache),
       ssl_cert_verifier_(ssl_cert_verifier),
@@ -206,7 +207,7 @@ OpenSSLAdapter::OpenSSLAdapter(Socket* socket,
       ssl_write_needs_read_(false),
       ssl_(nullptr),
       ssl_ctx_(nullptr),
-      ssl_mode_(SSL_MODE_TLS),
+      ssl_mode_(dtls ? SSL_MODE_DTLS : SSL_MODE_TLS),
       ignore_bad_cert_(false),
       custom_cert_verifier_status_(false) {
   // If a factory is used, take a reference on the factory's SSL_CTX.
@@ -388,6 +389,7 @@ int OpenSSLAdapter::ContinueSSL() {
   // Clear the DTLS timer
   timer_.reset();
 
+  ERR_clear_error();
   int code = (role_ == SSL_CLIENT) ? SSL_connect(ssl_) : SSL_accept(ssl_);
   switch (SSL_get_error(ssl_, code)) {
     case SSL_ERROR_NONE:
@@ -473,6 +475,7 @@ int OpenSSLAdapter::DoSslWrite(const void* pv, size_t cb, int* error) {
   RTC_DCHECK(pending_data_.empty() || pv == pending_data_.data());
   RTC_DCHECK(error != nullptr);
 
+  ERR_clear_error();
   ssl_write_needs_read_ = false;
   int ret = SSL_write(ssl_, pv, checked_cast<int>(cb));
   *error = SSL_get_error(ssl_, ret);
@@ -605,6 +608,7 @@ int OpenSSLAdapter::Recv(void* pv, size_t cb, int64_t* timestamp) {
     return 0;
   }
 
+  ERR_clear_error();
   ssl_read_needs_write_ = false;
   int code = SSL_read(ssl_, pv, checked_cast<int>(cb));
   int error = SSL_get_error(ssl_, code);
@@ -787,8 +791,7 @@ void OpenSSLAdapter::SSLInfoCallback(const SSL* ssl, int where, int ret) {
     default:
       break;
   }
-  char buf[1024];
-  SimpleStringBuilder ss(buf);
+  StringBuilder ss;
   ss << SSL_state_string_long(ssl);
   if (ret == 0) {
     RTC_LOG(LS_ERROR) << "Error during " << ss.str() << "\n";

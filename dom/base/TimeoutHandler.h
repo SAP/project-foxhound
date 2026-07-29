@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,6 +23,10 @@ namespace mozilla::dom {
  */
 class TimeoutHandler : public nsISupports, public JSHolderBase {
  public:
+  TimeoutHandler(const TimeoutHandler&) = delete;
+  TimeoutHandler& operator=(const TimeoutHandler&) = delete;
+  TimeoutHandler& operator=(const TimeoutHandler&&) = delete;
+
   MOZ_CAN_RUN_SCRIPT virtual bool Call(const char* /* unused */);
   // Append a UTF-8 string to aOutString that describes the callback function,
   // for use in logging or profiler markers.
@@ -44,11 +46,6 @@ class TimeoutHandler : public nsISupports, public JSHolderBase {
   // filename, line number and JS language version string of the
   // caller of setTimeout()
   const JSCallingLocation mCaller = {};
-
- private:
-  TimeoutHandler(const TimeoutHandler&) = delete;
-  TimeoutHandler& operator=(const TimeoutHandler&) = delete;
-  TimeoutHandler& operator=(const TimeoutHandler&&) = delete;
 };
 
 class ScriptTimeoutHandler : public TimeoutHandler {

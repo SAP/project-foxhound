@@ -1193,7 +1193,7 @@ add_task(async function testExtensionControlledProxyConfig() {
   function assertConnectionSettingsMessage(doc, isControlled) {
     let settingControl = getSettingControl(
       CONNECTION_SETTINGS_SETTING_ID,
-      doc.ownerGlobal
+      doc.documentGlobal
     );
     Assert.ok(
       settingControl,
@@ -1214,7 +1214,7 @@ add_task(async function testExtensionControlledProxyConfig() {
   async function connectionSettingsMessagePromise(doc, isControlled) {
     let settingControl = getSettingControl(
       CONNECTION_SETTINGS_SETTING_ID,
-      doc.ownerGlobal
+      doc.documentGlobal
     );
     Assert.ok(
       settingControl,

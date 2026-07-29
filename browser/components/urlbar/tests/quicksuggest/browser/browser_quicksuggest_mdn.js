@@ -129,9 +129,9 @@ add_task(async function resultMenu_notInterested() {
   await QuickSuggestTestUtils.forceSync();
 });
 
-// Tests the "Not relevant" result menu dismissal command.
-add_task(async function resultMenu_notRelevant() {
-  let result = await doDismissTest("not_relevant");
+// Tests the "Dismiss" result menu dismissal command.
+add_task(async function resultMenu_dismiss() {
+  let result = await doDismissTest("dismiss");
 
   Assert.equal(UrlbarPrefs.get("suggest.mdn"), true);
   Assert.ok(

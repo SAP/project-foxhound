@@ -1,5 +1,10 @@
 "use strict";
 
+/**
+ * This tests the old searchbar. The new searchbar is tested in
+ * /browser/components/urlbar/tests/browser/searchbar/browser_searchbar_telemetry.js.
+ */
+
 const SCALAR_SEARCHBAR = "browser.engagement.navigation.searchbar";
 
 ChromeUtils.defineESModuleGetters(this, {
@@ -48,6 +53,10 @@ function clickSearchbarSuggestion(entryName, clickOptions = {}) {
 }
 
 add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.search.widget.new", false]],
+  });
+
   searchBar = await gCUITestUtils.addSearchBar();
   const url = getRootDirectory(gTestPath) + "telemetrySearchSuggestions.xml";
   suggestionEngine = await SearchTestUtils.installOpenSearchEngine({ url });

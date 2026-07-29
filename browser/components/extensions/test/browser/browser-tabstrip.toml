@@ -1,0 +1,64 @@
+[DEFAULT]
+skip-if = [
+	"debug && standalone", # TODO bug 2048260: Drop skip-if = standalone
+]
+tags = "webextensions"
+prefs = [
+  # We don't want to reset this at the end of the test, so that we don't have
+  # to spawn a new extension child process for each test unit.
+  "dom.ipc.keepProcessesAlive.extension=1",
+]
+support-files = [
+  "head.js",
+]
+
+["browser_ext_tabGroups.js"]
+
+["browser_ext_tabGroups_collapsed.js"]
+
+["browser_ext_tabGroups_move.js"]
+
+["browser_ext_tabGroups_move_event_order.js"]
+
+["browser_ext_tabGroups_move_onMoved.js"]
+
+["browser_ext_tabGroups_private.js"]
+
+["browser_ext_tabGroups_query.js"]
+
+["browser_ext_tabs_groupId.js"]
+
+["browser_ext_tabs_group_splitview.js"]
+
+["browser_ext_tabs_group_ungroup.js"]
+
+["browser_ext_tabs_group_windowId.js"]
+
+["browser_ext_tabs_move_array.js"]
+https_first_disabled = true
+
+["browser_ext_tabs_move_array_multiple_windows.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && ccov", # Bug 1786601
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && ccov", # Bug 1786601
+]
+
+["browser_ext_tabs_move_discarded.js"]
+
+["browser_ext_tabs_move_splitview.js"]
+
+["browser_ext_tabs_move_window.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
+
+["browser_ext_tabs_move_window_multiple.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
+
+["browser_ext_tabs_move_window_pinned.js"]
+
+["browser_ext_tabs_onUpdated_groupId.js"]
+
+["browser_ext_tabs_splitViewId.js"]

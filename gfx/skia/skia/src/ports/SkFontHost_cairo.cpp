@@ -20,10 +20,19 @@
 
 #include <cfloat>
 #include <cmath>
+#include <memory>
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include FT_OUTLINE_H
+#include FT_TRUETYPE_TABLES_H
+#include FT_TYPE1_TABLES_H
+
+#ifdef FT_FONT_FORMATS_H
+#include FT_FONT_FORMATS_H
+#else
+#include FT_XFREE86_H
+#endif
 
 // for FT_GlyphSlot_Embolden
 #ifdef FT_SYNTHESIS_H
@@ -172,14 +181,107 @@ static bool isAxisAligned(const SkScalerContextRec& rec) {
             bothZero(rec.fPost2x2[0][0], rec.fPost2x2[1][1]));
 }
 
+// Ported from SkFontHost_FreeType
+static bool canEmbed(FT_Face face) {
+    FT_UShort fsType = FT_Get_FSType_Flags(face);
+    return (fsType & (FT_FSTYPE_RESTRICTED_LICENSE_EMBEDDING |
+                      FT_FSTYPE_BITMAP_EMBEDDING_ONLY)) == 0;
+}
+
+static bool canSubset(FT_Face face) {
+    FT_UShort fsType = FT_Get_FSType_Flags(face);
+    return (fsType & FT_FSTYPE_NO_SUBSETTING) == 0;
+}
+
 class SkCairoFTTypeface : public SkTypeface {
 public:
-    std::unique_ptr<SkStreamAsset> onOpenStream(int*) const override { return nullptr; }
+    std::unique_ptr<SkStreamAsset> onOpenStream(int* ttcIndex) const override {
+        *ttcIndex = fFTFace->face_index & 0xFFFF;
+        if (fFTFace->stream->base) {
+            return SkMemoryStream::MakeCopy(fFTFace->stream->base, fFTFace->stream->size);
+        }
+        const char* filename = (const char*)fFTFace->stream->pathname.pointer;
+        if (filename) {
+            return SkStreamAsset::MakeFromFile(filename);
+        }
+        return nullptr;
+    }
 
     std::unique_ptr<SkAdvancedTypefaceMetrics> onGetAdvancedMetrics() const override
     {
-        SkDEBUGCODE(SkDebugf("SkCairoFTTypeface::onGetAdvancedMetrics unimplemented\n"));
-        return nullptr;
+        mozilla_LockSharedFTFace(fFTFaceContext, nullptr);
+        FT_Face face = fFTFace;
+        auto info = std::make_unique<SkAdvancedTypefaceMetrics>();
+        info->fPostScriptName = FT_Get_Postscript_Name(face);
+        info ->fType = [&]() {
+            // https://freetype.org/freetype2/docs/reference/ft2-font_formats.html
+            const char* format = FT_Get_X11_Font_Format(fFTFace);
+            if (!strcmp(format, "TrueType")) {
+                return SkAdvancedTypefaceMetrics::kTrueType_Font;
+            }
+            if (!strcmp(format, "Type 1")) {
+                return SkAdvancedTypefaceMetrics::kType1_Font;
+            }
+            if (!strcmp(format, "CID Type 1")) {
+                return SkAdvancedTypefaceMetrics::kType1CID_Font;
+            }
+            if (!strcmp(format, "CFF")) {
+                return SkAdvancedTypefaceMetrics::kCFF_Font;
+            }
+            return SkAdvancedTypefaceMetrics::kOther_Font;
+        }();
+        if (FT_HAS_MULTIPLE_MASTERS(face)) {
+            info->fFlags |= SkAdvancedTypefaceMetrics::kVariable_FontFlag;
+        }
+        if (!canEmbed(face)) {
+            info->fFlags |= SkAdvancedTypefaceMetrics::kNotEmbeddable_FontFlag;
+        }
+        if (!canSubset(face)) {
+            info->fFlags |= SkAdvancedTypefaceMetrics::kNotSubsettable_FontFlag;
+        }
+
+        info->fStyle = (SkAdvancedTypefaceMetrics::StyleFlags)0;
+        if (FT_IS_FIXED_WIDTH(face)) {
+            info->fStyle |= SkAdvancedTypefaceMetrics::kFixedPitch_Style;
+        }
+        if (face->style_flags & FT_STYLE_FLAG_ITALIC) {
+            info->fStyle |= SkAdvancedTypefaceMetrics::kItalic_Style;
+        }
+
+        PS_FontInfoRec psFontInfo;
+        TT_Postscript* postTable;
+        if (FT_Get_PS_Font_Info(face, &psFontInfo) == 0) {
+            info->fItalicAngle = psFontInfo.italic_angle;
+        } else if ((postTable = (TT_Postscript*)FT_Get_Sfnt_Table(face, ft_sfnt_post)) != nullptr) {
+            info->fItalicAngle = SkFixedFloorToInt(postTable->italicAngle);
+        } else {
+            info->fItalicAngle = 0;
+        }
+
+        info->fAscent = face->ascender;
+        info->fDescent = face->descender;
+
+        TT_PCLT* pcltTable;
+        TT_OS2* os2Table;
+        if ((pcltTable = (TT_PCLT*)FT_Get_Sfnt_Table(face, ft_sfnt_pclt)) != nullptr) {
+            info->fCapHeight = pcltTable->CapHeight;
+            uint8_t serif_style = pcltTable->SerifStyle & 0x3F;
+            if (2 <= serif_style && serif_style <= 6) {
+                info->fStyle |= SkAdvancedTypefaceMetrics::kSerif_Style;
+            } else if (9 <= serif_style && serif_style <= 12) {
+                info->fStyle |= SkAdvancedTypefaceMetrics::kScript_Style;
+            }
+        } else if (((os2Table = (TT_OS2*)FT_Get_Sfnt_Table(face, ft_sfnt_os2)) != nullptr) &&
+                   // sCapHeight is available only when version 2 or later.
+                   os2Table->version != 0xFFFF &&
+                   os2Table->version >= 2)
+        {
+            info->fCapHeight = os2Table->sCapHeight;
+        }
+        info->fBBox = SkIRect::MakeLTRB(face->bbox.xMin, face->bbox.yMax,
+                                        face->bbox.xMax, face->bbox.yMin);
+        mozilla_UnlockSharedFTFace(fFTFaceContext);
+        return info;
     }
 
     std::unique_ptr<SkScalerContext> onCreateScalerContext(const SkScalerContextEffects& effects, const SkDescriptor* desc) const override
@@ -202,9 +304,9 @@ public:
         }
 
 #ifndef SK_GAMMA_APPLY_TO_A8
-        // Don't apply any gamma so that we match cairo-ft's results.
-        // Only do this if not requesting gamma in build config.
-        rec->ignorePreBlend();
+        if (!isLCD(*rec)) {
+            rec->ignorePreBlend();
+        }
 #endif
     }
 
@@ -250,19 +352,65 @@ public:
         return false;
     }
 
-    int onGetTableTags(SkSpan<SkFontTableTag>) const override
+    int onGetTableTags(SkSpan<SkFontTableTag> tags) const override
     {
-        return 0;
+        mozilla_LockSharedFTFace(fFTFaceContext, nullptr);
+        FT_ULong tableCount = 0;
+        FT_Error error = FT_Sfnt_Table_Info(fFTFace, 0, nullptr, &tableCount);
+        if (!error) {
+            const size_t count = std::min<size_t>(tableCount, tags.size());
+            for (size_t i = 0; i < count; ++i) {
+                FT_ULong tag, length;
+                if (FT_Sfnt_Table_Info(fFTFace, i, &tag, &length)) {
+                    tableCount = 0;
+                    break;
+                }
+                tags[i] = static_cast<SkFontTableTag>(tag);
+            }
+        }
+        mozilla_UnlockSharedFTFace(fFTFaceContext);
+        return error ? 0 : tableCount;
     }
 
-    size_t onGetTableData(SkFontTableTag, size_t, size_t, void*) const override
+    size_t onGetTableData(SkFontTableTag tag, size_t offset, size_t length, void* data) const override
     {
-        return 0;
+        mozilla_LockSharedFTFace(fFTFaceContext, nullptr);
+        FT_ULong tableLength = 0;
+        FT_Error error = FT_Load_Sfnt_Table(fFTFace, tag, 0, nullptr, &tableLength);
+        size_t result = 0;
+        if (!error && offset <= tableLength) {
+            FT_ULong size = std::min((FT_ULong)length, tableLength - (FT_ULong)offset);
+            if (data) {
+                error = FT_Load_Sfnt_Table(fFTFace, tag, offset,
+                                           reinterpret_cast<FT_Byte*>(data), &size);
+            }
+            if (!error) {
+                result = size;
+            }
+        }
+        mozilla_UnlockSharedFTFace(fFTFaceContext);
+        return result;
     }
 
     void getPostScriptGlyphNames(SkString*) const override {}
 
-    void getGlyphToUnicodeMap(SkSpan<SkUnichar>) const override {}
+    void getGlyphToUnicodeMap(SkSpan<SkUnichar> dstArray) const override
+    {
+        mozilla_LockSharedFTFace(fFTFaceContext, nullptr);
+        const size_t numGlyphs = std::min(dstArray.size(), (size_t)fFTFace->num_glyphs);
+        if (numGlyphs > 0) {
+            sk_bzero(dstArray.data(), dstArray.size_bytes());
+            FT_UInt glyphIndex;
+            SkUnichar charCode = FT_Get_First_Char(fFTFace, &glyphIndex);
+            while (glyphIndex) {
+                if (glyphIndex < numGlyphs && dstArray[glyphIndex] == 0) {
+                    dstArray[glyphIndex] = charCode;
+                }
+                charCode = FT_Get_Next_Char(fFTFace, charCode, &glyphIndex);
+            }
+        }
+        mozilla_UnlockSharedFTFace(fFTFaceContext);
+    }
 
     int onGetVariationDesignPosition(SkSpan<SkFontArguments::VariationPosition::Coordinate>) const override
     {

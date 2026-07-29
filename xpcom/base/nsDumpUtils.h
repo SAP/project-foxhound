@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -123,7 +121,8 @@ class FifoWatcher : public FdWatcher {
   static mozilla::StaticRefPtr<FifoWatcher> sSingleton;
 
   explicit FifoWatcher(nsCString aPath)
-      : mDirPath(aPath), mFifoInfoLock("FifoWatcher.mFifoInfoLock") {}
+      : mDirPath(std::move(aPath)),
+        mFifoInfoLock("FifoWatcher.mFifoInfoLock") {}
 
   mozilla::Mutex mFifoInfoLock;  // protects mFifoInfo
   FifoInfoArray mFifoInfo MOZ_GUARDED_BY(mFifoInfoLock);

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -158,7 +156,7 @@ inline void NativeObject::initDenseElements(const Value* src, uint32_t count) {
   }
 #endif
 
-  memcpy(reinterpret_cast<Value*>(elements_), src, count * sizeof(Value));
+  memcpy(unbarrieredElements(), src, count * sizeof(Value));
   elementsRangePostWriteBarrier(0, count);
 }
 
@@ -170,7 +168,7 @@ inline void NativeObject::initDenseElements(IteratorProperty* src,
   MOZ_ASSERT(isExtensible());
 
   setDenseInitializedLength(count);
-  Value* elementsBase = reinterpret_cast<Value*>(elements_);
+  Value* elementsBase = unbarrieredElements();
   for (size_t i = 0; i < count; i++) {
     elementsBase[i].setString(src[i].asString());
   }
@@ -196,8 +194,7 @@ inline void NativeObject::initDenseElementRange(uint32_t destStart,
     checkStoredValue(vp[i]);
   }
 #endif
-  memcpy(reinterpret_cast<Value*>(elements_) + destStart, vp,
-         count * sizeof(Value));
+  memcpy(unbarrieredElements() + destStart, vp, count * sizeof(Value));
   elementsRangePostWriteBarrier(destStart, count);
 }
 
@@ -227,13 +224,14 @@ inline bool NativeObject::initDenseElementsFromRange(JSContext* cx, Iter begin,
 
   HeapSlot* sp = elements_;
   size_t slot = 0;
-  for (; begin != end; sp++, begin++) {
+  for (; begin != end; sp++, begin++, slot++) {
     Value v = *begin;
 #ifdef DEBUG
     checkStoredValue(v);
 #endif
-    sp->init(this, HeapSlot::Element, slot++, v);
+    sp->unbarrieredInit(v);
   }
+  elementsRangePostWriteBarrier(0, count);
   MOZ_ASSERT(slot == count);
 
   getElementsHeader()->initializedLength = count;
@@ -335,7 +333,7 @@ inline void NativeObject::reverseDenseElementsNoPreBarrier(uint32_t length) {
   MOZ_ASSERT(length > 1);
   MOZ_ASSERT(length <= getDenseInitializedLength());
 
-  Value* valLo = reinterpret_cast<Value*>(elements_);
+  Value* valLo = unbarrieredElements();
   Value* valHi = valLo + (length - 1);
   MOZ_ASSERT(valLo < valHi);
 
@@ -586,6 +584,21 @@ MOZ_ALWAYS_INLINE bool NativeObject::setShapeAndAddNewSlots(
   forEachSlotRangeUnchecked(oldSpan, newSpan, initRange);
 
   setShape(newShape);
+  return true;
+}
+
+MOZ_ALWAYS_INLINE bool NativeObject::canDoSetPropertyFastpath() const {
+  if (is<TypedArrayObject>()) {
+    return false;
+  }
+
+  const JSClass* clasp = getClass();
+  if (clasp->getAddProperty() || clasp->getResolve() ||
+      clasp->getOpsDefineProperty() || clasp->getOpsLookupProperty() ||
+      clasp->getOpsSetProperty() || hasUnpreservedWrapper()) {
+    return false;
+  }
+
   return true;
 }
 
@@ -887,10 +900,10 @@ inline bool IsPackedArray(JSObject* obj) {
   return true;
 }
 
-// Like AddDataProperty but optimized for plain objects. Plain objects don't
-// have an addProperty hook.
-MOZ_ALWAYS_INLINE bool AddDataPropertyToPlainObject(
-    JSContext* cx, Handle<PlainObject*> obj, HandleId id, HandleValue v,
+// Like AddDataProperty but eliding checks for add property hooks and
+// wrapper preservation.
+MOZ_ALWAYS_INLINE bool AddDataPropertyToNativeObjectNoHooks(
+    JSContext* cx, Handle<NativeObject*> obj, HandleId id, HandleValue v,
     uint32_t* resultSlot = nullptr) {
   MOZ_ASSERT(!id.isInt());
 
@@ -905,8 +918,7 @@ MOZ_ALWAYS_INLINE bool AddDataPropertyToPlainObject(
 
   obj->initSlot(*resultSlot, v);
 
-  MOZ_ASSERT(!obj->getClass()->getAddProperty());
-  MOZ_ASSERT(!obj->getClass()->preservesWrapper());
+  MOZ_ASSERT(obj->canDoSetPropertyFastpath());
   return true;
 }
 

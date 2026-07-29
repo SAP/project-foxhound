@@ -20,11 +20,11 @@ origin:
 
   # Human-readable identifier for this version/release
   # Generally "version NNN", "tag SSS", "bookmark SSS"
-  release: 12.3.2 (2026-01-24T14:09:52+02:00).
+  release: 14.2.0 (2026-04-20T05:10:48+02:00).
 
   # Revision to pull in
   # Must be a long or short commit SHA (long preferred)
-  revision: 12.3.2
+  revision: 14.2.0
 
   # The package's license, where possible using the mnemonic from
   # https://spdx.org/licenses/
@@ -57,6 +57,14 @@ vendoring:
 
   exclude:
     - "**"
+    - "src/hb-coretext*"
+    - "src/hb-directwrite*"
+    - "src/hb-gpu-paint.cc"
+    - "src/hb-harfrust.cc"
+    - "src/hb-kbts.cc"
+    - "src/hb-paint*.cc"
+    - "src/hb-raster*.cc"
+    - "src/hb-vector*.cc"
     - "src/test*"
     - src/hb-ucdn
 

@@ -34,7 +34,7 @@ class CustomReviewPromptNavigationMiddleware(
 
             CustomReviewPromptAction.LeaveFeedbackButtonClicked -> {
                 scope.launch {
-                    events.emit(CustomReviewPromptNavigationEvent.OpenNewTab(SupportUtils.ANDROID_SUPPORT_SUMO_URL))
+                    events.emit(CustomReviewPromptNavigationEvent.OpenInNewTab(SupportUtils.ANDROID_SUPPORT_SUMO_URL))
                     events.emit(CustomReviewPromptNavigationEvent.Dismiss)
                 }
             }
@@ -63,7 +63,7 @@ sealed class CustomReviewPromptNavigationEvent {
     data object OpenPlayStoreReviewPrompt : CustomReviewPromptNavigationEvent()
 
     /**
-     * Open the given [url] in a new tab.
+     * Open a [url] in a new tab.
      */
-    data class OpenNewTab(val url: String) : CustomReviewPromptNavigationEvent()
+    data class OpenInNewTab(val url: String) : CustomReviewPromptNavigationEvent()
 }

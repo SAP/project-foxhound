@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef SIPCCSDPMEDIASECTION_H_
-#define SIPCCSDPMEDIASECTION_H_
+#ifndef DOM_MEDIA_WEBRTC_SDP_SIPCCSDPMEDIASECTION_H_
+#define DOM_MEDIA_WEBRTC_SDP_SIPCCSDPMEDIASECTION_H_
 
 #include <map>
 
@@ -26,7 +24,7 @@ using InternalResults = SdpParser::InternalResults;
 
 class SipccSdpBandwidths final : public std::map<std::string, uint32_t> {
  public:
-  bool Load(sdp_t* sdp, uint16_t level, InternalResults& results);
+  bool Load(sdp_t* sdp, const uint16_t level, InternalResults& results);
   void Serialize(std::ostream& os) const;
 };
 
@@ -34,12 +32,12 @@ class SipccSdpMediaSection final : public SdpMediaSection {
   friend class SipccSdp;
 
  public:
-  ~SipccSdpMediaSection() {}
+  ~SipccSdpMediaSection() = default;
 
   virtual MediaType GetMediaType() const override { return mMediaType; }
 
   virtual unsigned int GetPort() const override;
-  virtual void SetPort(unsigned int port) override;
+  virtual void SetPort(const unsigned int port) override;
   virtual unsigned int GetPortCount() const override;
   virtual Protocol GetProtocol() const override;
   virtual const SdpConnection& GetConnection() const override;
@@ -52,16 +50,19 @@ class SipccSdpMediaSection final : public SdpMediaSection {
   virtual SdpDirectionAttribute GetDirectionAttribute() const override;
 
   virtual void AddCodec(const std::string& pt, const std::string& name,
-                        uint32_t clockrate, uint16_t channels) override;
+                        const uint32_t clockrate,
+                        const uint16_t channels) override;
   virtual void ClearCodecs() override;
 
-  virtual void AddDataChannel(const std::string& name, uint16_t port,
-                              uint16_t streams, uint32_t message_size) override;
+  virtual void AddDataChannel(const std::string& name, const uint16_t port,
+                              const uint16_t streams,
+                              const uint32_t message_size) override;
 
   virtual void Serialize(std::ostream&) const override;
 
  private:
-  SipccSdpMediaSection(size_t level, const SipccSdpAttributeList* sessionLevel)
+  SipccSdpMediaSection(const size_t level,
+                       const SipccSdpAttributeList* sessionLevel)
       : SdpMediaSection(level),
         mMediaType(static_cast<MediaType>(0)),
         mPort(0),
@@ -72,16 +73,16 @@ class SipccSdpMediaSection final : public SdpMediaSection {
   SipccSdpMediaSection(const SipccSdpMediaSection& aOrig,
                        const SipccSdpAttributeList* sessionLevel);
 
-  bool Load(sdp_t* sdp, uint16_t level, InternalResults& results);
+  bool Load(sdp_t* sdp, const uint16_t level, InternalResults& results);
   bool LoadConnection(sdp_t* sdp, uint16_t level, InternalResults& results);
-  bool LoadProtocol(sdp_t* sdp, uint16_t level, InternalResults& results);
-  bool LoadFormats(sdp_t* sdp, uint16_t level, InternalResults& results);
-  bool ValidateSimulcast(sdp_t* sdp, uint16_t level,
+  bool LoadProtocol(sdp_t* sdp, const uint16_t level, InternalResults& results);
+  bool LoadFormats(sdp_t* sdp, const uint16_t level, InternalResults& results);
+  bool ValidateSimulcast(sdp_t* sdp, const uint16_t level,
                          InternalResults& results) const;
   bool ValidateSimulcastVersions(
-      sdp_t* sdp, uint16_t level,
-      const SdpSimulcastAttribute::Versions& versions, sdp::Direction direction,
-      InternalResults& results) const;
+      sdp_t* sdp, const uint16_t level,
+      const SdpSimulcastAttribute::Versions& versions,
+      const sdp::Direction direction, InternalResults& results) const;
 
   // the following values are cached on first get
   MediaType mMediaType;

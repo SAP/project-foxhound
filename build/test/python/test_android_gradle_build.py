@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import sys
 import textwrap
 from collections import defaultdict
@@ -22,6 +23,93 @@ from mozprocess import ProcessHandler
 logger = logging.getLogger(__name__)
 
 
+def run_mach_with_config(mozconfig, argv, cwd=None, pop_moz_automation=False):
+    """Run mach with a specific mozconfig."""
+    env = os.environ.copy()
+    env["MOZCONFIG"] = str(mozconfig)
+    env["MACH_NO_TERMINAL_FOOTER"] = "1"
+    env["MACH_NO_WRITE_TIMES"] = "1"
+    if pop_moz_automation:
+        env.pop("MOZ_AUTOMATION", None)
+    if env.get("MOZ_AUTOMATION"):
+        env["MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE"] = "system"
+
+    output_lines = []
+
+    def pol(line):
+        logger.debug(line)
+        output_lines.append(line)
+
+    proc = ProcessHandler(
+        [sys.executable, "mach"] + argv,
+        env=env,
+        cwd=cwd or topsrcdir,
+        processOutputLine=pol,
+        universal_newlines=True,
+    )
+    proc.run()
+    proc.wait()
+    return proc.poll(), output_lines
+
+
+@pytest.fixture(scope="session")
+def run_mach(mozconfig):
+    """Fixture providing run_mach bound to the default mozconfig."""
+
+    def inner(argv, cwd=None):
+        return run_mach_with_config(mozconfig, argv, cwd=cwd)
+
+    return inner
+
+
+def run_gradle(mozconfig, args, use_config_cache=True, pop_moz_automation=False):
+    """Run mach Gradle with --debug flag.
+
+    Args:
+        mozconfig: Path to mozconfig file
+        args: List of Gradle arguments
+        use_config_cache: If False, passes --no-configuration-cache to disable
+            Gradle's configuration cache (useful for testing the local cache layer)
+        pop_moz_automation: If True, removes MOZ_AUTOMATION from the environment
+            (needed for testing local cache since it's disabled in automation)
+    """
+    extra_args = ["--debug"]
+    if not use_config_cache:
+        extra_args.append("--no-configuration-cache")
+    return run_mach_with_config(
+        mozconfig, ["gradle"] + args + extra_args, pop_moz_automation=pop_moz_automation
+    )
+
+
+def clear_local_cache():
+    """Clear the local topobjdir cache files."""
+    cache_dir = Path(topsrcdir) / ".gradle" / "mach-environment-cache"
+    if cache_dir.exists():
+        shutil.rmtree(cache_dir)
+
+
+def create_mozconfig(test_dir, name):
+    """Create a mozconfig and objdir pair for testing.
+
+    Returns (mozconfig_path, objdir_path) tuple.
+    """
+    objdir = test_dir / f"objdir-{name}"
+    mozconfig_path = test_dir / f"mozconfig-{name}"
+    mozconfig_path.parent.mkdir(parents=True, exist_ok=True)
+    mozconfig_path.write_text(
+        textwrap.dedent(
+            f"""
+                ac_add_options --enable-application=mobile/android
+                ac_add_options --enable-artifact-builds
+                ac_add_options --target=aarch64-linux-android
+                mk_add_options MOZ_OBJDIR="{objdir.as_posix()}"
+                export GRADLE_FLAGS="-PbuildMetrics -PbuildMetricsOutputDir={objdir.as_posix()}/gradle/build/metrics -PbuildMetricsFileSuffix=test"
+            """
+        )
+    )
+    return mozconfig_path, objdir
+
+
 @pytest.fixture(scope="session")
 def test_dir():
     return (
@@ -31,55 +119,34 @@ def test_dir():
 
 
 @pytest.fixture(scope="session")
-def objdir(test_dir):
-    return test_dir / "objdir"
+def primary_config(test_dir):
+    return create_mozconfig(test_dir, "primary")
 
 
 @pytest.fixture(scope="session")
-def mozconfig(test_dir, objdir):
-    mozconfig_path = test_dir / "mozconfig"
-    mozconfig_path.parent.mkdir(parents=True, exist_ok=True)
-    mozconfig_path.write_text(
-        textwrap.dedent(
-            f"""
-                ac_add_options --enable-application=mobile/android
-                ac_add_options --enable-artifact-builds
-                ac_add_options --target=arm
-                mk_add_options MOZ_OBJDIR="{objdir}"
-                export GRADLE_FLAGS="-PbuildMetrics -PbuildMetricsOutputDir={objdir}/gradle/build/metrics -PbuildMetricsFileSuffix=test"
-            """
-        )
-    )
+def secondary_config(test_dir):
+    return create_mozconfig(test_dir, "secondary")
+
+
+@pytest.fixture(scope="session")
+def objdir(primary_config):
+    _, objdir = primary_config
+    return objdir
+
+
+@pytest.fixture(scope="session")
+def mozconfig(primary_config):
+    mozconfig_path, _ = primary_config
     return mozconfig_path
 
 
-@pytest.fixture(scope="session")
-def run_mach(mozconfig):
-    def inner(argv, cwd=None):
-        env = os.environ.copy()
-        env["MOZCONFIG"] = str(mozconfig)
-        env["MACH_NO_TERMINAL_FOOTER"] = "1"
-        env["MACH_NO_WRITE_TIMES"] = "1"
+@pytest.fixture
+def clean_objdir(objdir):
+    """Clean objdir to ensure fresh state."""
+    if objdir.exists():
+        shutil.rmtree(objdir)
 
-        if os.environ.get("MOZ_AUTOMATION"):
-            env["MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE"] = "system"
-
-        def pol(line):
-            logger.debug(line)
-
-        proc = ProcessHandler(
-            [sys.executable, "mach"] + argv,
-            env=env,
-            cwd=cwd or topsrcdir,
-            processOutputLine=pol,
-            universal_newlines=True,
-        )
-        proc.run()
-        proc.wait()
-
-        return proc.poll(), proc.output
-
-    return inner
+    yield
 
 
 AARS = {
@@ -156,24 +223,8 @@ def assert_success(returncode, output):
         pytest.fail(f"Command failed with return code: {returncode}\n{final_output}")
 
 
-def assert_all_task_statuses(objdir, acceptable_statuses, always_executed_tasks=None):
+def assert_all_task_statuses(objdir, acceptable_statuses):
     """Asserts that all tasks in build metrics have acceptable statuses."""
-
-    if always_executed_tasks is None:
-        always_executed_tasks = [
-            ":machBuildFaster",
-            ":machStagePackage",
-            # Always executes because it depends on assets from ${topobjdir}/dist/geckoview/assets
-            # which get timestamps updated by the mach tasks above. Takes 0.000 seconds so not
-            # a performance issue, but will be resolved when mach tasks get proper Gradle dependencies.
-            ":geckoview:generateDebugAssets",
-            # Always executes because suppressUselessCastInSafeArgs sets `outputs.upToDateWhen { false }`.
-            # We could try using a marker file otherwise, but the task runtime is negligible and the added
-            # complexity doesn't seem worth it for what should only be a short-term workaround until Google
-            # fixes the upstream Navigation bug that led to it being added in the first place.
-            ":fenix:generateSafeArgsDebug",
-            ":fenix:suppressUselessCastInSafeArgs",
-        ]
 
     build_metrics = get_test_run_build_metrics(objdir)
     assert build_metrics is not None, "Build metrics JSON not found"
@@ -185,17 +236,12 @@ def assert_all_task_statuses(objdir, acceptable_statuses, always_executed_tasks=
         task_name = task.get("path")
         actual_status = task.get("status")
 
-        if task_name in always_executed_tasks:
-            assert actual_status == "EXECUTED", (
-                f"Task {task_name} should always execute, got '{actual_status}'"
-            )
-        else:
-            assert actual_status in acceptable_statuses, (
-                f"Task {task_name} had status '{actual_status}', expected one of {acceptable_statuses}"
-            )
+        assert actual_status in acceptable_statuses, (
+            f"Task {task_name} had status '{actual_status}', expected one of {acceptable_statuses}"
+        )
 
 
-def assert_ordered_task_outcomes(objdir, ordered_expected_task_statuses):
+def assert_ordered_task_outcomes(objdir, ordered_expected_task_statuses, output=None):
     """Takes a list of (task_name, expected_status) tuples and verifies that they appear
     in the build metrics in the same order with the expected statuses.
     """
@@ -223,6 +269,12 @@ def assert_ordered_task_outcomes(objdir, ordered_expected_task_statuses):
         f"Task execution order mismatch. Expected: {expected_order}, Got: {task_order}"
     )
 
+    def _format_output():
+        if not output:
+            return ""
+        lines = output if isinstance(output, list) else output.splitlines()
+        return "\n\nGradle output:\n" + "\n".join(lines)
+
     # Check statuses for each task
     task_lookup = {task.get("path"): task for task in metrics_tasks}
     for task_name, expected_status in ordered_expected_task_statuses:
@@ -230,15 +282,20 @@ def assert_ordered_task_outcomes(objdir, ordered_expected_task_statuses):
         actual_status = task_info.get("status")
         assert actual_status == expected_status, (
             f"Task {task_name} had status '{actual_status}', expected '{expected_status}'"
+            + _format_output()
         )
 
 
-def test_artifact_build(objdir, mozconfig, run_mach):
+def test_artifact_build(objdir, mozconfig, run_mach, clean_objdir):
     assert_success(*run_mach(["build"]))
     # Order matters, since `mach build stage-package` depends on the
     # outputs of `mach build faster`.
     assert_ordered_task_outcomes(
-        objdir, [(":machBuildFaster", "SKIPPED"), (":machStagePackage", "SKIPPED")]
+        objdir,
+        [
+            (":machBuildFaster", "SKIPPED"),
+            (":machStagePackage", "SKIPPED"),
+        ],
     )
 
     _, omnijar_hash_to = hashes(objdir, "assets/omni.ja")
@@ -249,7 +306,11 @@ def test_artifact_build(objdir, mozconfig, run_mach):
     # Order matters, since `mach build stage-package` depends on the
     # outputs of `mach build faster`.
     assert_ordered_task_outcomes(
-        objdir, [(":machBuildFaster", "EXECUTED"), (":machStagePackage", "EXECUTED")]
+        objdir,
+        [
+            (":machBuildFaster", "EXECUTED"),
+            (":machStagePackage", "EXECUTED"),
+        ],
     )
 
     _, omnijar_hash_to = hashes(objdir, "assets/omni.ja")
@@ -257,6 +318,111 @@ def test_artifact_build(objdir, mozconfig, run_mach):
     (omnijar_hash_new,) = omnijar_hash_to.values()
 
     assert omnijar_hash_orig == omnijar_hash_new
+
+
+def test_mach_tasks_up_to_date(objdir, mozconfig, run_mach):
+    """Test that mach Gradle tasks are correctly UP-TO-DATE or EXECUTED depending on what inputs change."""
+    mozconfig_path = Path(mozconfig)
+    original_content = mozconfig_path.read_text()
+    # This mozconfig edit must invalidate the tracked inputs of
+    # machConfigure, machBuildFaster, and machStagePackage so each
+    # downstream task actually has something to re-run. --target does
+    # that; a cosmetic mozconfig edit (e.g. an unused variable) would
+    # only force machConfigure to re-run. --enable-debug would also
+    # work, but debug toolchains aren't built on beta.
+    modified_content = original_content.replace(
+        "ac_add_options --target=aarch64-linux-android",
+        "ac_add_options --target=arm-linux-androideabi",
+    )
+    assert modified_content != original_content, (
+        "Expected to swap --target in mozconfig fixture content"
+    )
+    mozconfig_path.write_text(modified_content)
+    try:
+        assert_success(*run_mach(["build"]))
+
+        # First run, get to known state.
+        assert_success(*run_mach(["gradle", "machStagePackage"]))
+
+        # Second run, no changes, everything should be UP-TO-DATE
+        returncode, output = run_mach(["gradle", "machStagePackage", "--info"])
+        assert_success(returncode, output)
+        assert_ordered_task_outcomes(
+            objdir,
+            [
+                (":machConfigure", "UP-TO-DATE"),
+                (":machBuildFaster", "UP-TO-DATE"),
+                (":machStagePackage", "UP-TO-DATE"),
+            ],
+            output,
+        )
+
+        assets_dir = objdir / "dist" / "geckoview" / "assets"
+        if assets_dir.exists():
+            shutil.rmtree(assets_dir)
+
+        # Third run, remove outputs of machStagePackage, it should be EXECUTED
+        returncode, output = run_mach(["gradle", "machStagePackage", "--info"])
+        assert_success(returncode, output)
+        assert_ordered_task_outcomes(
+            objdir,
+            [
+                (":machConfigure", "UP-TO-DATE"),
+                (":machBuildFaster", "UP-TO-DATE"),
+                (":machStagePackage", "EXECUTED"),
+            ],
+            output,
+        )
+
+        mozconfig_path.write_text(original_content)
+
+        # Fourth run, mozconfig changed, everything should be EXECUTED
+        returncode, output = run_mach(["gradle", "machStagePackage", "--info"])
+        assert_success(returncode, output)
+        assert_ordered_task_outcomes(
+            objdir,
+            [
+                (":machConfigure", "EXECUTED"),
+                (":machBuildFaster", "EXECUTED"),
+                (":machStagePackage", "EXECUTED"),
+            ],
+            output,
+        )
+
+        # Fifth run, no changes. machConfigure is UP-TO-DATE, but machBuildFaster
+        # re-executes because its file inputs (from the backend deps file) were
+        # regenerated by machConfigure in the fourth run. The new file list is read
+        # at Gradle configuration time, so it differs from the fourth run's inputs.
+        returncode, output = run_mach(["gradle", "machStagePackage", "--info"])
+        assert_success(returncode, output)
+        assert_ordered_task_outcomes(
+            objdir,
+            [
+                (":machConfigure", "UP-TO-DATE"),
+                (":machBuildFaster", "EXECUTED"),
+                (":machStagePackage", "UP-TO-DATE"),
+            ],
+            output,
+        )
+
+        # Sixth run, everything should be UP-TO-DATE now
+        returncode, output = run_mach(["gradle", "machStagePackage", "--info"])
+        assert_success(returncode, output)
+        assert_ordered_task_outcomes(
+            objdir,
+            [
+                (":machConfigure", "UP-TO-DATE"),
+                (":machBuildFaster", "UP-TO-DATE"),
+                (":machStagePackage", "UP-TO-DATE"),
+            ],
+            output,
+        )
+    finally:
+        # Tests in this module share build state to avoid a full rebuild
+        # each time, so restore the mozconfig even on failure: otherwise
+        # a mid-test failure leaves the mozconfig mutated and breaks
+        # later tests.
+        mozconfig_path.write_text(original_content)
 
 
 def test_minify_fenix_incremental_build(objdir, mozconfig, run_mach):
@@ -331,6 +497,194 @@ def test_android_export(objdir, mozconfig, run_mach):
 
     assert_success(*run_mach(["android", "export"] + [str(f) for f in inputs]))
     assert_ordered_task_outcomes(objdir, [(":verifyGleanVersion", "UP-TO-DATE")])
+
+
+def test_mach_environment_configuration_cache(primary_config, secondary_config):
+    """Test that Gradle's configuration cache invalidates when objdir-determining inputs change."""
+
+    def get_config_cache_status(output):
+        for line in output:
+            if "Reusing configuration cache" in line:
+                return "reused"
+        return None
+
+    primary_mozconfig, primary_objdir = primary_config
+    secondary_mozconfig, secondary_objdir = secondary_config
+
+    assert_success(*run_mach_with_config(primary_mozconfig, ["build"]))
+    assert_success(*run_mach_with_config(secondary_mozconfig, ["build"]))
+
+    assert (primary_objdir / "config.status.json").exists(), (
+        f"{primary_objdir} should have config.status.json"
+    )
+    assert (secondary_objdir / "config.status.json").exists(), (
+        f"{secondary_objdir} should have config.status.json"
+    )
+
+    returncode, output = run_gradle(secondary_mozconfig, ["help"])
+    assert_success(returncode, output)
+
+    gradle_cache_dir = Path(topsrcdir) / ".gradle" / "configuration-cache"
+    if gradle_cache_dir.exists():
+        shutil.rmtree(gradle_cache_dir)
+
+    # First run, config cache miss
+    returncode, output = run_gradle(primary_mozconfig, ["help"])
+    assert_success(returncode, output)
+    assert get_config_cache_status(output) is None, (
+        "Config cache should not be reused on first run"
+    )
+
+    # Second run, same config, expect config cache reused
+    returncode, output = run_gradle(primary_mozconfig, ["help"])
+    assert_success(returncode, output)
+    config_status = get_config_cache_status(output)
+    assert config_status == "reused", (
+        f"Expected Gradle config cache 'reused' on second run, got '{config_status}'"
+    )
+
+    # Third run, switch to secondary mozconfig, expect config cache miss
+    returncode, output = run_gradle(secondary_mozconfig, ["help"])
+    assert_success(returncode, output)
+    assert get_config_cache_status(output) is None, (
+        "Config cache should be invalidated when MOZCONFIG changes"
+    )
+
+    # Fourth run, still secondary mozconfig, expect config cache reused
+    returncode, output = run_gradle(secondary_mozconfig, ["help"])
+    assert_success(returncode, output)
+    config_status = get_config_cache_status(output)
+    assert config_status == "reused", (
+        f"Expected config cache 'reused' on repeat run, got '{config_status}'"
+    )
+
+    original_content = secondary_mozconfig.read_text()
+    try:
+        # Modify mozconfig content to invalidate config cache
+        secondary_mozconfig.write_text(
+            original_content + "\n# config cache invalidation test\n"
+        )
+
+        # Fifth run, config cache miss due to content change
+        returncode, output = run_gradle(secondary_mozconfig, ["help"])
+        assert_success(returncode, output)
+        assert get_config_cache_status(output) is None, (
+            "Config cache should be invalidated when mozconfig content changes"
+        )
+
+        # Sixth run, no change, config cache reused
+        returncode, output = run_gradle(secondary_mozconfig, ["help"])
+        assert_success(returncode, output)
+        config_status = get_config_cache_status(output)
+        assert config_status == "reused", (
+            f"Expected config cache 'reused' after no changes, got '{config_status}'"
+        )
+    finally:
+        secondary_mozconfig.write_text(original_content)
+
+
+def test_mach_environment_local_topobjdir_cache(primary_config, secondary_config):
+    """Test that local topobjdir caching avoids running `./mach environment` unnecessarily."""
+
+    def get_local_cache_status(output):
+        for line in output:
+            if "topobjdir cache hit!" in line:
+                return "hit"
+            if "topobjdir cache miss!" in line:
+                return "miss"
+        return None
+
+    primary_mozconfig, primary_objdir = primary_config
+    secondary_mozconfig, secondary_objdir = secondary_config
+
+    assert_success(*run_mach_with_config(primary_mozconfig, ["build"]))
+    assert_success(*run_mach_with_config(secondary_mozconfig, ["build"]))
+    assert (primary_objdir / "config.status.json").exists()
+    assert (secondary_objdir / "config.status.json").exists()
+
+    local_cache_dir = Path(topsrcdir) / ".gradle" / "mach-environment-cache"
+
+    clear_local_cache()
+
+    # First run, local cache miss
+    returncode, output = run_gradle(
+        primary_mozconfig, ["help"], use_config_cache=False, pop_moz_automation=True
+    )
+    assert_success(returncode, output)
+    local_status = get_local_cache_status(output)
+    assert local_status == "miss", (
+        f"Expected local cache 'miss' on first run, got '{local_status}'"
+    )
+    assert local_cache_dir.exists(), "Local cache directory should be created"
+    assert (local_cache_dir / "inputs.sha256").exists(), (
+        "Cache hash file should be created"
+    )
+    assert (local_cache_dir / "topobjdir.txt").exists(), (
+        "topobjdir cache file should be created"
+    )
+
+    # Second run, same config, expect local cache hit
+    returncode, output = run_gradle(
+        primary_mozconfig, ["help"], use_config_cache=False, pop_moz_automation=True
+    )
+    assert_success(returncode, output)
+    local_status = get_local_cache_status(output)
+    assert local_status == "hit", (
+        f"Expected local cache 'hit' on second run, got '{local_status}'"
+    )
+
+    # Third run, switch to secondary mozconfig, expect local cache miss
+    returncode, output = run_gradle(
+        secondary_mozconfig, ["help"], use_config_cache=False, pop_moz_automation=True
+    )
+    assert_success(returncode, output)
+    local_status = get_local_cache_status(output)
+    assert local_status == "miss", (
+        f"Expected local cache 'miss' when switching mozconfig, got '{local_status}'"
+    )
+
+    # Fourth run, still secondary mozconfig, expect local cache hit
+    returncode, output = run_gradle(
+        secondary_mozconfig, ["help"], use_config_cache=False, pop_moz_automation=True
+    )
+    assert_success(returncode, output)
+    local_status = get_local_cache_status(output)
+    assert local_status == "hit", (
+        f"Expected local cache 'hit' on repeat with secondary, got '{local_status}'"
+    )
+
+    original_content = secondary_mozconfig.read_text()
+    try:
+        # Modify mozconfig content to invalidate local cache
+        secondary_mozconfig.write_text(original_content + "\n# local cache test\n")
+
+        # Fifth run, local cache miss due to content change
+        returncode, output = run_gradle(
+            secondary_mozconfig,
+            ["help"],
+            use_config_cache=False,
+            pop_moz_automation=True,
+        )
+        assert_success(returncode, output)
+        local_status = get_local_cache_status(output)
+        assert local_status == "miss", (
+            f"Expected local cache 'miss' after mozconfig change, got '{local_status}'"
+        )
+
+        # Sixth run, no change, local cache hit
+        returncode, output = run_gradle(
+            secondary_mozconfig,
+            ["help"],
+            use_config_cache=False,
+            pop_moz_automation=True,
+        )
+        assert_success(returncode, output)
+        local_status = get_local_cache_status(output)
+        assert local_status == "hit", (
+            f"Expected local cache 'hit' after no changes, got '{local_status}'"
+        )
+    finally:
+        secondary_mozconfig.write_text(original_content)
 
 
 if __name__ == "__main__":

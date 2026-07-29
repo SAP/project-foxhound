@@ -18,9 +18,11 @@ on:
 env:
   ALLOWED_TEAM: lando-github-pilot
   ALLOWED_PATHS: |
+    gradle/
     mobile/android/android-components
     mobile/android/fenix
     mobile/android/focus-android
+    taskcluster/config.yml
 
   GH_REPO: ${{ github.repository }}
   PR: ${{ github.event.pull_request.number }}
@@ -51,7 +53,7 @@ jobs:
           GH_ORG: ${{ github.repository_owner }}
           GH_TOKEN: ${{ steps.generate-lando-web-token.outputs.token }}
         run: |
-          if gh api "/orgs/${GH_ORG}/teams/${ALLOWED_TEAM}/memberships/${AUTHOR}" --silent 2>/dev/null; then
+          if gh api "/orgs/${GH_ORG}/teams/${ALLOWED_TEAM}/memberships/${AUTHOR}" --silent; then
             echo "is_member=true" >> $GITHUB_OUTPUT
           else
             echo "is_member=false" >> $GITHUB_OUTPUT

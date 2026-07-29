@@ -1,0 +1,15 @@
+{
+  "label": "clw.westminster.gov.uk",
+  "bugs": {
+    "2023905": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://clw.westminster.gov.uk/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,16 +23,7 @@ class VideoBridgeChild final : public PVideoBridgeChild,
   static void StartupForGPUProcess();
   static void Shutdown();
 
-  static VideoBridgeChild* GetSingleton();
-
-  // PVideoBridgeChild
-  PTextureChild* AllocPTextureChild(const SurfaceDescriptor& aSharedData,
-                                    ReadLockDescriptor& aReadLock,
-                                    const LayersBackend& aLayersBackend,
-                                    const TextureFlags& aFlags,
-                                    const dom::ContentParentId& aContentId,
-                                    const uint64_t& aSerial);
-  bool DeallocPTextureChild(PTextureChild* actor);
+  static RefPtr<VideoBridgeChild> GetSingleton();
 
   mozilla::ipc::IPCResult RecvPing(PingResolver&& aResolver);
 
@@ -46,17 +35,17 @@ class VideoBridgeChild final : public PVideoBridgeChild,
   bool DeallocShmem(mozilla::ipc::Shmem& aShmem) override;
 
   // TextureForwarder
-  PTextureChild* CreateTexture(
+  already_AddRefed<PTextureChild> CreateTexture(
       const SurfaceDescriptor& aSharedData, ReadLockDescriptor&& aReadLock,
       LayersBackend aLayersBackend, TextureFlags aFlags,
       const dom::ContentParentId& aContentId, uint64_t aSerial,
       wr::MaybeExternalImageId& aExternalImageId) override;
 
-  // ClientIPCAllocator
+  // LayersIPCChannel
   base::ProcessId GetParentPid() const override { return OtherPid(); }
   nsISerialEventTarget* GetThread() const override { return mThread; }
   void CancelWaitForNotifyNotUsed(uint64_t aTextureId) override {
-    MOZ_ASSERT(false, "NO RECYCLING HERE");
+    MOZ_ASSERT_UNREACHABLE("NO RECYCLING HERE");
   }
 
   // ISurfaceAllocator

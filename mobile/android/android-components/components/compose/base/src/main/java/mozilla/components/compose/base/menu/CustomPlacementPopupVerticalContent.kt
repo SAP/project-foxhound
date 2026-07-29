@@ -28,7 +28,7 @@ inline fun CustomPlacementPopup.CustomPlacementPopupVerticalContent(
 ) {
     Column(
         modifier = Modifier
-            .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+            .background(MaterialTheme.colorScheme.surfaceBright)
             .requiredWidthIn(min = 250.dp)
             .width(IntrinsicSize.Max)
             .verticalScroll(rememberScrollState()),

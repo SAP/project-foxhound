@@ -86,6 +86,7 @@ function verifyGleanValues(aDescription, aExpected) {
 }
 
 async function do_test(ip, expected, srcPort, dstPort) {
+  await Services.fog.testFlushAllChildren();
   Services.fog.testResetFOG();
 
   override.addIPOverride(DOMAIN, ip);

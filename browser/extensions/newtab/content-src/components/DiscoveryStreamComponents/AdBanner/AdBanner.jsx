@@ -14,27 +14,21 @@ const PREF_OHTTP_UNIFIED_ADS = "unifiedAds.ohttp.enabled";
 const PREF_REPORT_ADS_ENABLED = "discoverystream.reportAds.enabled";
 const PREF_PROMOCARD_ENABLED = "discoverystream.promoCard.enabled";
 const PREF_PROMOCARD_VISIBLE = "discoverystream.promoCard.visible";
+// @nova-cleanup(remove-pref): Remove PREF_NOVA_ENABLED
+const PREF_NOVA_ENABLED = "nova.enabled";
 
 /**
  * A new banner ad that appears between rows of stories: leaderboard or billboard size.
  *
  * @param spoc
  * @param dispatch
- * @param firstVisibleTimestamp
  * @param row
  * @param type
  * @param prefs
  * @returns {Element}
  * @class
  */
-export const AdBanner = ({
-  spoc,
-  dispatch,
-  firstVisibleTimestamp,
-  row,
-  type,
-  prefs,
-}) => {
+export const AdBanner = ({ spoc, dispatch, row, type, prefs }) => {
   const getDimensions = format => {
     switch (format) {
       case "leaderboard":
@@ -59,6 +53,8 @@ export const AdBanner = ({
     prefs[PREF_PROMOCARD_ENABLED] &&
     prefs[PREF_PROMOCARD_VISIBLE];
 
+  // @nova-cleanup(remove-conditional): Remove novaEnabled check
+  const novaEnabled = prefs[PREF_NOVA_ENABLED];
   const sectionsEnabled = prefs[PREF_SECTIONS_ENABLED];
   const ohttpEnabled = prefs[PREF_OHTTP_UNIFIED_ADS];
   const showAdReporting = prefs[PREF_REPORT_ADS_ENABLED];
@@ -79,8 +75,6 @@ export const AdBanner = ({
           card_type: "spoc",
           tile_id: spoc.id,
           ...(spoc.shim?.click ? { shim: spoc.shim.click } : {}),
-          fetchTimestamp: spoc.fetchTimestamp,
-          firstVisibleTimestamp,
           format: spoc.format,
           ...(sectionsEnabled
             ? {
@@ -115,7 +109,14 @@ export const AdBanner = ({
   }
 
   return (
-    <aside className={adBannerWrapperClassName} style={{ gridRow: clampedRow }}>
+    <aside
+      className={adBannerWrapperClassName}
+      // Omit gridRow for Nova sections to ensure correct keyboard focus order.
+      // @nova-cleanup(remove-conditional): Remove novaEnabled check, keep sectionsEnabled condition
+      style={
+        novaEnabled && sectionsEnabled ? undefined : { gridRow: clampedRow }
+      }
+    >
       <div className={`ad-banner-inner ${spoc.format}`}>
         <SafeAnchor
           className="ad-banner-link"
@@ -141,7 +142,6 @@ export const AdBanner = ({
               },
             ]}
             dispatch={dispatch}
-            firstVisibleTimestamp={firstVisibleTimestamp}
           />
           <div className="ad-banner-content">
             <img
@@ -167,6 +167,7 @@ export const AdBanner = ({
             type={type}
             showAdReporting={showAdReporting}
             toggleActive={toggleActive}
+            novaEnabled={novaEnabled}
           />
         </div>
       </div>

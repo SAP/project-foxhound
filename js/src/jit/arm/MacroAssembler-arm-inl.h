@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -382,10 +380,9 @@ void MacroAssembler::add64(Imm64 imm, Register64 dest) {
 
 CodeOffset MacroAssembler::sub32FromStackPtrWithPatch(Register dest) {
   ScratchRegisterScope scratch(*this);
-  CodeOffset offs = CodeOffset(currentOffset());
-  ma_movPatchable(Imm32(0), scratch, Always);
+  BufferOffset offset = ma_movPatchable(Imm32(0), scratch, Always);
   ma_sub(getStackPointer(), scratch, dest);
-  return offs;
+  return CodeOffset(offset.getOffset());
 }
 
 void MacroAssembler::patchSub32FromStackPtr(CodeOffset offset, Imm32 imm) {
@@ -1288,7 +1285,7 @@ void MacroAssembler::ctz64(Register64 src, Register64 dest) {
 }
 
 void MacroAssembler::popcnt32(Register input, Register output, Register tmp) {
-  // Equivalent to GCC output of mozilla::CountPopulation32()
+  // Equivalent to GCC output of std::popcount()
 
   ScratchRegisterScope scratch(*this);
 
@@ -2383,6 +2380,21 @@ void MacroAssembler::branchTestMagicImpl(Condition cond, const T& t,
 }
 
 void MacroAssembler::branchTestMagic(Condition cond, const Address& valaddr,
+                                     JSWhyMagic why, Label* label) {
+  MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
+
+  Label notMagic;
+  if (cond == Assembler::Equal) {
+    branchTestMagic(Assembler::NotEqual, valaddr, &notMagic);
+  } else {
+    branchTestMagic(Assembler::NotEqual, valaddr, label);
+  }
+
+  branch32(cond, ToPayload(valaddr), Imm32(why), label);
+  bind(&notMagic);
+}
+
+void MacroAssembler::branchTestMagic(Condition cond, const BaseIndex& valaddr,
                                      JSWhyMagic why, Label* label) {
   MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
 

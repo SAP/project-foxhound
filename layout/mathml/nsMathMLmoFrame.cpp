@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -754,8 +752,7 @@ nsMathMLmoFrame::Stretch(DrawTarget* aDrawTarget,
     // let the MathMLChar stretch itself...
     nsresult res = mMathMLChar.Stretch(
         this, aDrawTarget, fontSizeInflation, aStretchDirection, container,
-        charSize, stretchFlags,
-        StyleVisibility()->mDirection == StyleDirection::Rtl);
+        charSize, stretchFlags, GetWritingMode().IsBidiRTL());
     if (NS_FAILED(res)) {
       // gracefully handle cases where stretching the char failed (i.e.,
       // GetBoundingMetrics failed) clear our 'form' to behave as if the
@@ -861,7 +858,9 @@ nsMathMLmoFrame::Stretch(DrawTarget* aDrawTarget,
   // spacing, the outermost embellished container will take care of it.
 
   nscoord leadingSpace = 0, trailingSpace = 0;
-  if (!mFlags.Booleans().contains(OperatorBoolean::HasEmbellishAncestor)) {
+  if (!StaticPrefs::
+          mathml_lspace_rspace_for_child_spacing_during_mrow_layout_enabled() &&
+      !mFlags.Booleans().contains(OperatorBoolean::HasEmbellishAncestor)) {
     // Account the spacing if we are not an accent with explicit attributes
     if (!isAccent ||
         mFlags.Booleans().contains(OperatorBoolean::HasLSpaceAttribute)) {
@@ -882,9 +881,7 @@ nsMathMLmoFrame::Stretch(DrawTarget* aDrawTarget,
     aDesiredStretchSize.Width() = mBoundingMetrics.width;
     aDesiredStretchSize.mBoundingMetrics.width = mBoundingMetrics.width;
 
-    nscoord dx = StyleVisibility()->mDirection == StyleDirection::Rtl
-                     ? trailingSpace
-                     : leadingSpace;
+    nscoord dx = GetWritingMode().IsBidiRTL() ? trailingSpace : leadingSpace;
     mBoundingMetrics.leftBearing += dx;
     mBoundingMetrics.rightBearing += dx;
     aDesiredStretchSize.mBoundingMetrics.leftBearing += dx;
@@ -993,8 +990,7 @@ void nsMathMLmoFrame::Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
     nsresult rv = mMathMLChar.Stretch(
         this, aDrawTarget, nsLayoutUtils::FontSizeInflationFor(this),
         StretchDirection::Vertical, aDesiredSize.mBoundingMetrics, newMetrics,
-        MathMLStretchFlag::LargeOperator,
-        StyleVisibility()->mDirection == StyleDirection::Rtl);
+        MathMLStretchFlag::LargeOperator, GetWritingMode().IsBidiRTL());
 
     if (NS_FAILED(rv)) {
       // Just use the initial size
@@ -1059,16 +1055,21 @@ void nsMathMLmoFrame::GetIntrinsicISizeMetrics(gfxContext* aRenderingContext,
   // leadingSpace and trailingSpace are actually applied to the outermost
   // embellished container but for determining total intrinsic width it should
   // be safe to include it for the core here instead.
-  bool isRTL = StyleVisibility()->mDirection == StyleDirection::Rtl;
-  aDesiredSize.Width() +=
-      mEmbellishData.leadingSpace + mEmbellishData.trailingSpace;
+  nscoord leadingSpace = 0, trailingSpace = 0;
+  if (!StaticPrefs::
+          mathml_lspace_rspace_for_child_spacing_during_mrow_layout_enabled()) {
+    leadingSpace = mEmbellishData.leadingSpace;
+    trailingSpace = mEmbellishData.trailingSpace;
+  }
+  bool isRTL = GetWritingMode().IsBidiRTL();
+  aDesiredSize.Width() += leadingSpace + trailingSpace;
   aDesiredSize.mBoundingMetrics.width = aDesiredSize.Width();
   if (isRTL) {
-    aDesiredSize.mBoundingMetrics.leftBearing += mEmbellishData.trailingSpace;
-    aDesiredSize.mBoundingMetrics.rightBearing += mEmbellishData.trailingSpace;
+    aDesiredSize.mBoundingMetrics.leftBearing += trailingSpace;
+    aDesiredSize.mBoundingMetrics.rightBearing += trailingSpace;
   } else {
-    aDesiredSize.mBoundingMetrics.leftBearing += mEmbellishData.leadingSpace;
-    aDesiredSize.mBoundingMetrics.rightBearing += mEmbellishData.leadingSpace;
+    aDesiredSize.mBoundingMetrics.leftBearing += leadingSpace;
+    aDesiredSize.mBoundingMetrics.rightBearing += leadingSpace;
   }
 }
 
@@ -1109,4 +1110,19 @@ void nsMathMLmoFrame::DidSetComputedStyle(ComputedStyle* aOldStyle) {
 
 nscoord nsMathMLmoFrame::ItalicCorrection() {
   return UseMathMLChar() ? mMathMLChar.ItalicCorrection() : 0;
+}
+
+nscoord nsMathMLmoFrame::FixInterFrameSpacing(ReflowOutput& aDesiredSize) {
+  nscoord gap = nsMathMLContainerFrame::FixInterFrameSpacing(aDesiredSize);
+  if (!gap) {
+    return 0;
+  }
+
+  // Move the MathML character.
+  nsRect rect;
+  mMathMLChar.GetRect(rect);
+  rect.MoveBy(gap, 0);
+  mMathMLChar.SetRect(rect);
+
+  return gap;
 }

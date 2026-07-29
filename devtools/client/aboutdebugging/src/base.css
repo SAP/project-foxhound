@@ -259,7 +259,7 @@ h1 {
 */
 .alt-subheading {
   margin-block-start: calc(var(--base-unit) * 4);
-  font-weight: var(--heading-font-weight);
+  font-weight: var(--font-weight-heading);
   font-size: 1.14em;
   line-height: 1.4em; /* odd value - from common.inc.css */
 

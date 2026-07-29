@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,14 +6,10 @@
 #define mozilla_AnimationEventDispatcher_h
 
 #include "mozilla/AnimationComparator.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/ContentEvents.h"
 #include "mozilla/EventDispatcher.h"
-#include "mozilla/EventListenerManager.h"
 #include "mozilla/ProfilerMarkers.h"
 #include "mozilla/Variant.h"
-#include "mozilla/dom/AnimationPlaybackEvent.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/KeyframeEffect.h"
 #include "nsCycleCollectionParticipant.h"
@@ -172,64 +166,7 @@ struct AnimationEventInfo {
   bool IsWebAnimationEvent() const { return mData.is<WebAnimationData>(); }
 
   // TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230)
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY void Dispatch(nsPresContext* aPresContext) {
-    if (mData.is<WebAnimationData>()) {
-      const auto& data = mData.as<WebAnimationData>();
-      EventListenerManager* elm = mAnimation->GetExistingListenerManager();
-      if (!elm || !elm->HasListenersFor(data.mOnEvent)) {
-        return;
-      }
-
-      dom::AnimationPlaybackEventInit init;
-      init.mCurrentTime = data.mCurrentTime;
-      init.mTimelineTime = data.mTimelineTime;
-      MOZ_ASSERT(nsDependentAtomString(data.mOnEvent).Find(u"on"_ns) == 0,
-                 "mOnEvent atom should start with 'on'!");
-      RefPtr<dom::AnimationPlaybackEvent> event =
-          dom::AnimationPlaybackEvent::Constructor(
-              mAnimation, Substring(nsDependentAtomString(data.mOnEvent), 2),
-              init);
-      event->SetTrusted(true);
-      event->WidgetEventPtr()->AssignEventTime(
-          WidgetEventTime(data.mEventEnqueueTimeStamp));
-      RefPtr target = mAnimation;
-      EventDispatcher::DispatchDOMEvent(target, nullptr /* WidgetEvent */,
-                                        event, aPresContext,
-                                        nullptr /* nsEventStatus */);
-      return;
-    }
-
-    if (mData.is<CssTransitionData>()) {
-      const auto& data = mData.as<CssTransitionData>();
-      nsPIDOMWindowInner* win =
-          data.mTarget.mElement->OwnerDoc()->GetInnerWindow();
-      if (win && !win->HasTransitionEventListeners()) {
-        MOZ_ASSERT(data.mMessage == eTransitionStart ||
-                   data.mMessage == eTransitionRun ||
-                   data.mMessage == eTransitionEnd ||
-                   data.mMessage == eTransitionCancel);
-        return;
-      }
-
-      InternalTransitionEvent event(true, data.mMessage);
-      data.mProperty.ToString(event.mPropertyName);
-      event.mElapsedTime = data.mElapsedTime;
-      data.mTarget.mPseudoRequest.ToString(event.mPseudoElement);
-      event.AssignEventTime(WidgetEventTime(data.mEventEnqueueTimeStamp));
-      RefPtr target = data.mTarget.mElement;
-      EventDispatcher::Dispatch(target, aPresContext, &event);
-      return;
-    }
-
-    const auto& data = mData.as<CssAnimationData>();
-    InternalAnimationEvent event(true, data.mMessage);
-    data.mAnimationName->ToString(event.mAnimationName);
-    event.mElapsedTime = data.mElapsedTime;
-    data.mTarget.mPseudoRequest.ToString(event.mPseudoElement);
-    event.AssignEventTime(WidgetEventTime(data.mEventEnqueueTimeStamp));
-    RefPtr target = data.mTarget.mElement;
-    EventDispatcher::Dispatch(target, aPresContext, &event);
-  }
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void Dispatch(nsPresContext* aPresContext);
 };
 
 class AnimationEventDispatcher final {

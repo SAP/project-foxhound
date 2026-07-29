@@ -10,6 +10,10 @@
 
 #include "call/payload_type_picker.h"
 
+#include <string>
+
+#include "absl/strings/str_cat.h"
+#include "api/payload_type.h"
 #include "api/video_codecs/sdp_video_format.h"
 #include "call/payload_type.h"
 #include "media/base/codec.h"
@@ -93,7 +97,6 @@ TEST(PayloadTypePicker, RollbackAndCommit) {
   PayloadTypeRecorder recorder(picker);
   const PayloadType a_payload_type(123);
   const PayloadType b_payload_type(124);
-  const PayloadType not_a_payload_type(44);
 
   Codec a_codec = CreateVideoCodec(0, "vp8");
 
@@ -245,4 +248,23 @@ TEST(PayloadTypePicker, ChoosingH264Profiles) {
   EXPECT_THAT(pt_constrained, Ne(pt_high_1f));
   EXPECT_THAT(pt_high_1f, Eq(pt_high_2a));
 }
+
+TEST(PayloadTypePicker, AbslStringify) {
+  PayloadTypePicker picker;
+  Codec a_codec = CreateAudioCodec(-1, "lyra", 8000, 1);
+  Codec b_codec = CreateVideoCodec(-1, "vp8");
+
+  picker.AddMapping(47, a_codec);
+  picker.AddMapping(100, b_codec);
+
+  std::string s = absl::StrCat(picker);
+
+  EXPECT_THAT(s, testing::HasSubstr("Reserved:"));
+  EXPECT_THAT(s, testing::HasSubstr(" 47"));
+  EXPECT_THAT(s, testing::HasSubstr(" 100"));
+  EXPECT_THAT(s, testing::HasSubstr("Entries:"));
+  EXPECT_THAT(s, testing::HasSubstr("\n 47:[-1:audio/lyra/8000/1]"));
+  EXPECT_THAT(s, testing::HasSubstr("\n 100:[-1:video/vp8/90000/0]"));
+}
+
 }  // namespace webrtc

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -1971,10 +1969,12 @@ TimeDuration js::temporal::RoundTimeDuration(
 
 #ifdef DEBUG
 /**
- * Return true if the input is within the valid epoch nanoseconds limits with a
- * time zone offset applied, i.e. it's smaller than ±(8.64 × 10^21 + nsPerDay).
+ * Return true if the input is within the valid epoch nanoseconds limits for a
+ * date or date-time, i.e. it's larger-or-equal to -(8.64 × 10^21 + nsPerDay)
+ * and smaller than (8.64 × 10^21 + nsPerDay).
  */
-static bool IsValidLocalNanoseconds(const EpochNanoseconds& epochNanoseconds) {
+static bool IsValidPlainDateNanoseconds(
+    const EpochNanoseconds& epochNanoseconds) {
   MOZ_ASSERT(0 <= epochNanoseconds.nanoseconds &&
              epochNanoseconds.nanoseconds <= 999'999'999);
 
@@ -1985,7 +1985,7 @@ static bool IsValidLocalNanoseconds(const EpochNanoseconds& epochNanoseconds) {
   constexpr auto min = EpochNanoseconds::min() - oneDay;
   constexpr auto max = EpochNanoseconds::max() + oneDay;
 
-  return min < epochNanoseconds && epochNanoseconds < max;
+  return min <= epochNanoseconds && epochNanoseconds < max;
 }
 #endif
 
@@ -2051,8 +2051,9 @@ static bool ComputeNudgeWindow(JSContext* cx, const InternalDuration& duration,
                                bool additionalShift, NudgeWindow* result) {
   MOZ_ASSERT(IsValidDuration(duration));
   MOZ_ASSERT_IF(timeZone, IsValidEpochNanoseconds(originEpochNs));
-  MOZ_ASSERT_IF(!timeZone, IsValidLocalNanoseconds(originEpochNs));
-  MOZ_ASSERT(ISODateTimeWithinLimits(isoDateTime));
+  MOZ_ASSERT_IF(!timeZone, IsValidPlainDateNanoseconds(originEpochNs));
+  MOZ_ASSERT(IsValidISODateTime(isoDateTime));
+  MOZ_ASSERT(ISODateWithinLimits(isoDateTime.date));
   MOZ_ASSERT(unit <= TemporalUnit::Day);
 
   int32_t sign = InternalDurationSign(duration) < 0 ? -1 : 1;
@@ -2185,7 +2186,7 @@ static bool ComputeNudgeWindow(JSContext* cx, const InternalDuration& duration,
 
   // Steps 7-8.
   EpochNanoseconds startEpochNs;
-  if (r1 == 0) {
+  if (DateDurationSign(startDuration) == 0) {
     // Step 7.a.
     startEpochNs = originEpochNs;
   } else {
@@ -2198,7 +2199,8 @@ static bool ComputeNudgeWindow(JSContext* cx, const InternalDuration& duration,
 
     // Step 8.b.
     auto startDateTime = ISODateTime{start, isoDateTime.time};
-    MOZ_ASSERT(ISODateTimeWithinLimits(startDateTime));
+    MOZ_ASSERT(IsValidISODateTime(startDateTime));
+    MOZ_ASSERT(ISODateWithinLimits(startDateTime.date));
 
     // Steps 8.c-d.
     if (!timeZone) {
@@ -2223,7 +2225,8 @@ static bool ComputeNudgeWindow(JSContext* cx, const InternalDuration& duration,
 
   // Step 10.
   auto endDateTime = ISODateTime{end, isoDateTime.time};
-  MOZ_ASSERT(ISODateTimeWithinLimits(endDateTime));
+  MOZ_ASSERT(IsValidISODateTime(endDateTime));
+  MOZ_ASSERT(ISODateWithinLimits(endDateTime.date));
 
   // Steps 11-12.
   EpochNanoseconds endEpochNs;
@@ -2263,10 +2266,11 @@ static bool NudgeToCalendarUnit(
     TemporalRoundingMode roundingMode, DurationNudge* result) {
   MOZ_ASSERT(IsValidDuration(duration));
   MOZ_ASSERT_IF(timeZone, IsValidEpochNanoseconds(originEpochNs));
-  MOZ_ASSERT_IF(!timeZone, IsValidLocalNanoseconds(originEpochNs));
+  MOZ_ASSERT_IF(!timeZone, IsValidPlainDateNanoseconds(originEpochNs));
   MOZ_ASSERT_IF(timeZone, IsValidEpochNanoseconds(destEpochNs));
-  MOZ_ASSERT_IF(!timeZone, IsValidLocalNanoseconds(destEpochNs));
-  MOZ_ASSERT(ISODateTimeWithinLimits(isoDateTime));
+  MOZ_ASSERT_IF(!timeZone, IsValidPlainDateNanoseconds(destEpochNs));
+  MOZ_ASSERT(IsValidISODateTime(isoDateTime));
+  MOZ_ASSERT(ISODateWithinLimits(isoDateTime.date));
   MOZ_ASSERT(unit <= TemporalUnit::Day);
 
   int32_t sign = InternalDurationSign(duration) < 0 ? -1 : 1;
@@ -2574,7 +2578,7 @@ static DurationNudge NudgeToDayOrTime(const InternalDuration& duration,
                                       TemporalUnit smallestUnit,
                                       TemporalRoundingMode roundingMode) {
   MOZ_ASSERT(IsValidDuration(duration));
-  MOZ_ASSERT(IsValidLocalNanoseconds(destEpochNs));
+  MOZ_ASSERT(IsValidPlainDateNanoseconds(destEpochNs));
   MOZ_ASSERT(smallestUnit >= TemporalUnit::Day);
 
   // Step 1. (Inlined Add24HourDaysToTimeDuration)
@@ -2658,7 +2662,8 @@ static bool BubbleRelativeDuration(
     TemporalUnit smallestUnit, InternalDuration* result) {
   MOZ_ASSERT(IsValidDuration(duration));
   MOZ_ASSERT(IsValidDuration(nudge.duration));
-  MOZ_ASSERT(ISODateTimeWithinLimits(isoDateTime));
+  MOZ_ASSERT(IsValidISODateTime(isoDateTime));
+  MOZ_ASSERT(ISODateWithinLimits(isoDateTime.date));
   MOZ_ASSERT(smallestUnit <= TemporalUnit::Day);
 
   // Step 1. (Modified to use `<=` to return early.)
@@ -2719,10 +2724,11 @@ static bool BubbleRelativeDuration(
                            TemporalOverflow::Constrain, &end)) {
         return false;
       }
+      MOZ_ASSERT(ISODateWithinLimits(end));
 
       // Steps 6.b.v.
       auto endDateTime = ISODateTime{end, isoDateTime.time};
-      MOZ_ASSERT(ISODateTimeWithinLimits(endDateTime));
+      MOZ_ASSERT(IsValidISODateTime(endDateTime));
 
       // Steps 6.b.vi-vii.
       EpochNanoseconds endEpochNs;
@@ -2776,10 +2782,12 @@ bool js::temporal::RoundRelativeDuration(
     TemporalRoundingMode roundingMode, InternalDuration* result) {
   MOZ_ASSERT(IsValidDuration(duration));
   MOZ_ASSERT_IF(timeZone, IsValidEpochNanoseconds(originEpochNs));
-  MOZ_ASSERT_IF(!timeZone, IsValidLocalNanoseconds(originEpochNs));
+  MOZ_ASSERT_IF(!timeZone, IsValidPlainDateNanoseconds(originEpochNs));
   MOZ_ASSERT_IF(timeZone, IsValidEpochNanoseconds(destEpochNs));
-  MOZ_ASSERT_IF(!timeZone, IsValidLocalNanoseconds(destEpochNs));
-  MOZ_ASSERT(ISODateTimeWithinLimits(isoDateTime));
+  MOZ_ASSERT_IF(!timeZone, IsValidPlainDateNanoseconds(destEpochNs));
+  MOZ_ASSERT(IsValidISODateTime(isoDateTime));
+  MOZ_ASSERT(ISODateWithinLimits(isoDateTime.date));
+  MOZ_ASSERT_IF(timeZone, ISODateTimeWithinLimits(isoDateTime));
   MOZ_ASSERT(largestUnit <= smallestUnit);
 
   // Steps 1-3.
@@ -2841,9 +2849,9 @@ bool js::temporal::TotalRelativeDuration(
     JS::Handle<CalendarValue> calendar, TemporalUnit unit, double* result) {
   MOZ_ASSERT(IsValidDuration(duration));
   MOZ_ASSERT_IF(timeZone, IsValidEpochNanoseconds(originEpochNs));
-  MOZ_ASSERT_IF(!timeZone, IsValidLocalNanoseconds(originEpochNs));
+  MOZ_ASSERT_IF(!timeZone, IsValidPlainDateNanoseconds(originEpochNs));
   MOZ_ASSERT_IF(timeZone, IsValidEpochNanoseconds(destEpochNs));
-  MOZ_ASSERT_IF(!timeZone, IsValidLocalNanoseconds(destEpochNs));
+  MOZ_ASSERT_IF(!timeZone, IsValidPlainDateNanoseconds(destEpochNs));
   MOZ_ASSERT(ISODateTimeWithinLimits(isoDateTime));
   MOZ_ASSERT(unit <= TemporalUnit::Day);
   MOZ_ASSERT_IF(unit == TemporalUnit::Day, timeZone);
@@ -3716,7 +3724,13 @@ static bool Duration_round(JSContext* cx, const CallArgs& args) {
     // Step 28.c.
     auto calendar = plainRelativeTo.calendar();
 
-    // Step 28.d.
+    // Step 28.d. (Inlined AdjustDateDurationRecord)
+    if (std::abs(targetTime.days) > TimeDuration::max().toDays()) {
+      JS_ReportErrorNumberASCII(
+          cx, GetErrorMessage, nullptr,
+          JSMSG_TEMPORAL_DURATION_INVALID_NORMALIZED_TIME);
+      return false;
+    }
     auto dateDuration = DateDuration{
         internalDuration.date.years,
         internalDuration.date.months,
@@ -3930,7 +3944,13 @@ static bool Duration_total(JSContext* cx, const CallArgs& args) {
     // Step 13.c.
     auto calendar = plainRelativeTo.calendar();
 
-    // Step 13.d.
+    // Step 13.d. (Inlined AdjustDateDurationRecord)
+    if (std::abs(targetTime.days) > TimeDuration::max().toDays()) {
+      JS_ReportErrorNumberASCII(
+          cx, GetErrorMessage, nullptr,
+          JSMSG_TEMPORAL_DURATION_INVALID_NORMALIZED_TIME);
+      return false;
+    }
     auto dateDuration = DateDuration{
         internalDuration.date.years,
         internalDuration.date.months,

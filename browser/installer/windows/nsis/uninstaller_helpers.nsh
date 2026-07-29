@@ -5,7 +5,7 @@
 !ifndef UNINSTALLER_HELPERS_NSH
 !define UNINSTALLER_HELPERS_NSH
 
-!include get_installation_type.nsh
+!include desktop_launcher_helpers.nsh
 
 /**
  * Called from the uninstaller's .onInit function not to be confused with the
@@ -340,6 +340,18 @@
     ${EndIf}
   ${EndIf}
 
+  ${RemoveDeprecatedKeys}
+  ${Set32to64DidMigrateReg}
+
+  ${SetAppKeys}
+  ${FixClassKeys}
+  ${SetUninstallKeys}
+  ${If} $RegHive == "HKLM"
+    ${SetStartMenuInternet} HKLM
+  ${ElseIf} $RegHive == "HKCU"
+    ${SetStartMenuInternet} HKCU
+  ${EndIf}
+
   !ifdef DESKTOP_LAUNCHER_ENABLED
     Call OnUpdateDesktopLauncherHandler
   !endif
@@ -360,18 +372,6 @@
     SetShellVarContext all
   ${ElseIf} $RegHive == "HKCU"
     SetShellVarContext current
-  ${EndIf}
-
-  ${RemoveDeprecatedKeys}
-  ${Set32to64DidMigrateReg}
-
-  ${SetAppKeys}
-  ${FixClassKeys}
-  ${SetUninstallKeys}
-  ${If} $RegHive == "HKLM"
-    ${SetStartMenuInternet} HKLM
-  ${ElseIf} $RegHive == "HKCU"
-    ${SetStartMenuInternet} HKCU
   ${EndIf}
 
   ; Remove files that may be left behind by the application in the
@@ -491,10 +491,42 @@ ${RemoveDefaultBrowserAgentShortcut}
 Function OnUpdateDesktopLauncherHandler
   Push $0
   Push "$INSTDIR\installation_telemetry.json"
+  Call GetInstallationTelemetryFromMsi
+  Pop $0
+  ${IfNot} ${Errors}
+  ${AndIf} $0 == 1
+    Pop $0
+    Return
+  ${EndIf}
+
+  Push "$INSTDIR\installation_telemetry.json"
   Call GetInstallationType
   ; Pop the result from the stack into $0
   Pop $0
+  ${If} $0 == "full"
+    Push $1
+    Push "${UpdateChannel}"
+    Call IsUpdateChannelEsr
+    Pop $1
+    ${If} $1 == 1
+      Pop $1
+      Pop $0
+      ; Early return if the update channel is ESR
+      Return
+    ${EndIf}
+    Call ShouldInstallDesktopLauncher
+    Pop $1
+    ${If} $1 == 0
+      Pop $1
+      Pop $0
+      ; Early return if we should not install the Desktop Launcher
+      Return
+    ${EndIf}
+    Pop $1
+  ${EndIf}
+
   ${If} $0 == "stub"
+  ${OrIf} $0 == "full"
     ${If} $RegHive == "HKLM"
       SetShellVarContext all
       Call OnUpdateDesktopLauncher_HKLM
@@ -568,13 +600,22 @@ Function OnUpdateDesktopLauncher_HKCU
     Delete "$DESKTOP\${BrandShortName}.lnk"
     Call InstallDesktopLauncher
   ${ElseIf} $1 == "1"
-  ${OrIf} $3 == "1"
-    ; This block covers these two cases:
-    ; - If the elevated post-update script runs before the unelevated one, then it will have deleted the shortcut and set the UpdaterDeletedShortcut regkey.
-    ; - Or, if the unelevated script is running now befor the elevated one, then there will still be a shortcut in the shared location.
-    ; In either case, we need to install the desktop launcher now. It's the responsibility of the elevated post-update script to delete
-    ; the shared shortcut, and that is implemented in OnUpdateDesktopLauncher_HKLM
+    ; The elevated process during the two-process update already deleted the
+    ; shortcut on the Public Desktop by calling OnUpdateDesktopLauncher_HKLM
     Call InstallDesktopLauncher
+  ${ElseIf} $3 == "1"
+    ; In a single-process update, the elevated process never runs, so the
+    ; shortcut on the Public Desktop may not have been deleted because
+    ; OnUpdateDesktopLauncher_HKLM was never called
+    ; We try to delete it and only install the Desktop Launcher if that
+    ; succeeds, to avoid having both on the desktop
+    SetShellVarContext all
+    ClearErrors
+    Delete "$DESKTOP\${BrandShortName}.lnk"
+    SetShellVarContext current
+    ${IfNot} ${Errors}
+      Call InstallDesktopLauncher
+    ${EndIf}
   ${EndIf}
   Pop $3
   Pop $2

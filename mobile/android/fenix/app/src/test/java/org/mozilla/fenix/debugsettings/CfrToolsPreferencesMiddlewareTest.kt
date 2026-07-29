@@ -93,11 +93,6 @@ class CfrToolsPreferencesMiddlewareTest {
 
         preferenceUpdates.forEach {
             when (it.preferenceType) {
-                CfrPreferencesRepository.CfrPreference.HomepageSearchBar -> {
-                    val actual = middleware.mapRepoUpdateToStoreAction(it) as CfrToolsAction.HomepageSearchbarCfrLoaded
-                    val actualValue = !actual.newValue
-                    assertEquals(it.value, actualValue)
-                }
                 CfrPreferencesRepository.CfrPreference.TabAutoCloseBanner -> {
                     val actual = middleware.mapRepoUpdateToStoreAction(it) as CfrToolsAction.TabAutoCloseBannerCfrLoaded
                     val actualValue = !actual.newValue
@@ -114,48 +109,6 @@ class CfrToolsPreferencesMiddlewareTest {
                     assertEquals(it.value, actualValue)
                 }
             }
-        }
-    }
-
-    @Test
-    fun `GIVEN the homepage searchbar CFR should not be shown WHEN the toggle homepage searchbar CFR action is dispatched THEN its preference is set to should be shown`() {
-        val store = CfrToolsStore(
-            initialState = CfrToolsState(
-                homepageSearchBarShown = true,
-            ),
-            middlewares = listOf(
-                middleware,
-            ),
-        )
-        store.dispatch(CfrToolsAction.HomepageSearchBarShownToggled)
-        verify {
-            cfrPreferencesRepository.updateCfrPreference(
-                CfrPreferencesRepository.CfrPreferenceUpdate(
-                    preferenceType = CfrPreferencesRepository.CfrPreference.HomepageSearchBar,
-                    value = false,
-                ),
-            )
-        }
-    }
-
-    @Test
-    fun `GIVEN the homepage searchbar CFR should be shown WHEN the toggle homepage searchbar CFR action is dispatched THEN its preference is set to should not be shown`() {
-        val store = CfrToolsStore(
-            initialState = CfrToolsState(
-                homepageSearchBarShown = false,
-            ),
-            middlewares = listOf(
-                middleware,
-            ),
-        )
-        store.dispatch(CfrToolsAction.HomepageSearchBarShownToggled)
-        verify {
-            cfrPreferencesRepository.updateCfrPreference(
-                CfrPreferencesRepository.CfrPreferenceUpdate(
-                    preferenceType = CfrPreferencesRepository.CfrPreference.HomepageSearchBar,
-                    value = true,
-                ),
-            )
         }
     }
 

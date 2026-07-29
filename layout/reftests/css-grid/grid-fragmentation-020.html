@@ -45,7 +45,6 @@ span { background:lime; border:1px solid black; }
 .bb { border-bottom-width:6px; }
 x { display:block; height: 40px; }
 m { display:block; padding-top:1px; }
-.break-before { page-break-before:always; break-before:always; }
 .break-after { page-break-after:always; break-after:always; }
 .avoid-break { page-break-inside:avoid; break-inside:avoid; }
 
@@ -55,43 +54,7 @@ m { display:block; padding-top:1px; }
 
 <div class="columns" style="height:40px">
 <div style="background:grey">
-<div class="grid">
-<span class="break-before"></span>
-</div></div></div>
-
-<div class="columns" style="height:40px">
-<div style="background:grey">
 <div class="grid start">
-<span class="break-before"></span>
-</div></div></div>
-
-<div class="columns" style="height:40px">
-<div style="background:grey">
-<div class="grid">
-<span class="avoid-break"><x></x></span>
-</div></div></div>
-
-<div class="columns" style="height:40px">
-<div style="background:grey">
-<div class="grid start">
-<span class="avoid-break"><x></x></span>
-</div></div></div>
-
-<div class="columns" style="height:40px">
-<div style="background:grey"><m></m>
-<div class="grid">
-<span class="break-before"></span>
-</div></div></div>
-
-<div class="columns" style="height:40px">
-<div style="background:grey"><m></m>
-<div class="grid start">
-<span class="break-before"></span>
-</div></div></div>
-
-<div class="columns" style="height:40px">
-<div style="background:grey"><m></m>
-<div class="grid">
 <span class="avoid-break"><x></x></span>
 </div></div></div>
 
@@ -99,90 +62,6 @@ m { display:block; padding-top:1px; }
 <div style="background:grey"><m></m>
 <div class="grid start">
 <span class="avoid-break"><x></x></span>
-</div></div></div>
-
-<div class="columns" style="height:16px">
-<div style="background:grey">
-<div class="grid" style="height:10px">
-<span class="break-before"></span>
-</div></div></div>
-
-<div class="columns" style="height:16px">
-<div style="background:grey"><m></m>
-<div class="grid" style="height:10px">
-<span class="break-before"></span>
-</div></div></div>
-
-<div class="columns" style="height:10px">
-<div style="background:grey">
-<div class="grid" style="height:10px">
-<span class="break-before"></span>
-</div></div></div>
-
-<div class="columns" style="height:10px">
-<div style="background:grey"><m></m>
-<div class="grid" style="height:10px">
-<span class="break-before"></span>
-</div></div></div>
-
-<div class="columns" style="height:0px">
-<div style="background:grey">
-<div class="grid" style="height:10px">
-<span class="break-before"></span>
-</div></div></div>
-
-<div class="columns" style="height:0px; margin-top:20px">
-<div style="background:grey"><m></m>
-<div class="grid" style="height:10px;">
-<span class="break-before"></span>
-</div></div></div>
-
-<div class="columns no-border" style="height:0px; margin-top:20px">
-<div><m></m>
-<div class="grid" style="height:10px;grid-auto-rows: 0px;">
-<span class="break-before bb"></span>
-</div></div></div>
-
-<div class="columns no-border" style="height:0px; margin-top:20px">
-<div><m></m>
-<div class="grid" style="height:10px;grid-auto-rows: 0px;">
-<span class="break-before bb"></span>
-<span class="break-before bb"></span>
-</div></div></div>
-
-<div class="columns no-border" style="height:0px; margin-top:20px">
-<div><m></m>
-<div class="grid" style="height:1px;grid-auto-rows: 1px;">
-<span class="break-before bb"></span>
-</div></div></div>
-
-<div class="columns no-border" style="height:0px; margin-top:20px">
-<div><m></m>
-<div class="grid" style="height:1px;grid-auto-rows: 1px;">
-<span class="break-before bb"></span>
-<span class="break-before bb"></span>
-</div></div></div>
-
-<div class="columns no-border" style="height:0px; margin-top:20px">
-<div><m></m>
-<div class="grid" style="height:1px;grid-auto-rows: 11px;">
-<span class="break-before bb"></span>
-<span class="break-before bb"></span>
-</div></div></div>
-
-<div class="columns no-border" style="height:0px; margin-top:20px">
-<div><m></m>
-<div class="grid" style="height:1px;grid-auto-rows: 11px;">
-<span class="break-before bb" style="grid-row:span 2"></span>
-<span class="break-before bb"></span>
-</div></div></div>
-
-
-<div class="columns no-border" style="height:0px; margin-top:20px">
-<div><m></m>
-<div class="grid" style="height:1px;grid-auto-rows: 11px;">
-<span class="break-before bb"></span>
-<span class="break-before bb" style="grid-row:span 2"></span>
 </div></div></div>
 
 <!--

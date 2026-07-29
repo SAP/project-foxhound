@@ -1,4 +1,3 @@
-// -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,7 +26,6 @@ export const LoadURIDelegate = {
       (aTriggeringPrincipal.isNullPrincipal ? null : aTriggeringPrincipal.URI);
 
     const message = {
-      type: "GeckoView:OnLoadRequest",
       uri: aUri ? aUri.displaySpec : "",
       where: aWhere,
       flags: aFlags,
@@ -36,7 +34,10 @@ export const LoadURIDelegate = {
     };
 
     try {
-      return await aEventDispatcher.sendRequestForResult(message);
+      return await aEventDispatcher.sendRequestForResult(
+        "GeckoView:OnLoadRequest",
+        message
+      );
     } catch (e) {
       // There was an error or listener was not registered in GeckoSession,
       // treat as unhandled.

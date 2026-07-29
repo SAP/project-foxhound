@@ -150,8 +150,7 @@ export class GeckoViewProcessHangMonitor extends GeckoViewModule {
    * construct an information bundle
    */
   notifyReport(report) {
-    this.eventDispatcher.sendRequest({
-      type: "GeckoView:HangReport",
+    this.eventDispatcher.sendRequest("GeckoView:HangReport", {
       hangId: this._reportLookupIndex.get(report),
       scriptFileName: report.scriptFileName,
     });

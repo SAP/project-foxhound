@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl'))
-
 // Any combination returns "other" for "en-US".
 {
   let numbers = [0, 0.5, 1.2, 1.5, 1.7, -1, 1, "1", 123456789.123456789, Infinity, -Infinity];

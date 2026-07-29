@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -63,7 +62,7 @@ class WidgetRenderingContext;
 
 // Return Cocoa event's corresponding Carbon event.  Not initialized (on
 // synthetic events) until the OS actually "sends" the event.  This method
-// has been present in the same form since at least OS X 10.2.8.
+// has been present in the same form since at least macOS 10.2.8.
 - (EventRef)_eventRef;
 
 // stage From 10.10.3 for force touch event
@@ -78,7 +77,7 @@ class WidgetRenderingContext;
 // disappear, or to reappear (say if the window's style changes).  If
 // 'redisplay' is true, the entire titlebar (the window's top 22 pixels) is
 // marked as needing redisplay.  This method has been present in the same
-// format since at least OS X 10.5.
+// format since at least macOS 10.5.
 - (void)_tileTitlebarAndRedisplay:(BOOL)redisplay;
 
 // The following undocumented methods are used to work around bug 1069658,

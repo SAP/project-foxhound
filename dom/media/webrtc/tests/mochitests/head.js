@@ -417,7 +417,6 @@ function setupEnvironment() {
       ["media.getusermedia.screensharing.enabled", true],
       ["media.getusermedia.window.focus_source.enabled", false],
       ["media.recorder.audio_node.enabled", true],
-      ["media.peerconnection.ice.obfuscate_host_addresses", false],
       ["media.peerconnection.nat_simulator.filtering_type", ""],
       ["media.peerconnection.nat_simulator.mapping_type", ""],
       ["media.peerconnection.nat_simulator.block_tcp", false],
@@ -435,6 +434,23 @@ function setupEnvironment() {
       ["media.navigator.video.max_fr", 10],
       ["media.autoplay.default", Ci.nsIAutoplay.ALLOWED]
     );
+  }
+
+  const abi = SpecialPowers.XPCOMABI;
+  const os = SpecialPowers.OS;
+  dump(`OS: ${os}, ABI: ${abi}\n`);
+  if (os === "Darwin" && abi.includes("aarch64")) {
+    // TODO: Is there a way to detect whether we're in CI or not?
+    dump("Disabling webrtc mDNS\n");
+    defaultMochitestPrefs.set.push([
+      "media.peerconnection.ice.obfuscate_host_addresses",
+      false,
+    ]);
+  } else {
+    defaultMochitestPrefs.set.push([
+      "media.peerconnection.ice.obfuscate_host_addresses",
+      true,
+    ]);
   }
 
   // Platform codec prefs should be matched because fake H.264 GMP codec doesn't

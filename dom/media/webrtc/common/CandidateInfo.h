@@ -22,6 +22,14 @@ struct CandidateInfo {
   uint16_t mDefaultPortRtcp = 0;
 };
 
+struct IceCandidateErrorInfo {
+  std::string mAddress;
+  uint16_t mPort = 0;
+  std::string mUrl;
+  uint16_t mErrorCode = 0;
+  std::string mErrorText;
+};
+
 }  // namespace mozilla
 
 #endif  // CANDIDATE_INFO_H_

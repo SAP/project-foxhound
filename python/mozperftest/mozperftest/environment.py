@@ -59,7 +59,7 @@ class MachEnvironment(MachLogger):
         if res is marker:
             # trying with the name prefixed with the layer name
             if layer is not None and not name.startswith(layer.name):
-                name = "%s_%s" % (layer.name, name)
+                name = f"{layer.name}_{name}"
                 return self._mach_args.get(name, default)
             return default
         return res

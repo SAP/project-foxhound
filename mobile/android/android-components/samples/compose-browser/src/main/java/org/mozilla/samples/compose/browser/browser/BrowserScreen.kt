@@ -184,7 +184,7 @@ fun TabsTray(
 @Composable
 private fun Suggestions(
     url: String,
-    onSuggestionClicked: (AwesomeBar.Suggestion) -> Unit,
+    onSuggestionClicked: (AwesomeBar.SuggestionItem) -> Unit,
     onAutoComplete: (AwesomeBar.Suggestion) -> Unit,
 ) {
     val context = LocalContext.current

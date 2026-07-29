@@ -63,8 +63,9 @@ li:hover > hgroup > .stylesheet-more > h3 > .stylesheet-saveButton {
     pointer-events: all;
 
     &::before {
-      background-image: url(chrome://devtools/content/debugger/images/prettyPrint.svg);
+      background-image: url(chrome://devtools/content/shared/components/images/prettyPrint.svg);
     }
+
     &.pretty::before {
       -moz-context-properties: stroke;
       stroke: var(--theme-icon-checked-color);
@@ -145,7 +146,8 @@ li.error > .stylesheet-info > .stylesheet-more > .stylesheet-error-message {
 }
 
 .splitview-nav:focus {
-  outline: 0; /* focus ring is on the stylesheet name */
+  outline: 0;
+  /* focus ring is on the stylesheet name */
 }
 
 .splitview-nav > li {

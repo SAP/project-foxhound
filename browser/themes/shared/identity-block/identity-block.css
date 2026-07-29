@@ -4,12 +4,38 @@
 
 @namespace html url("http://www.w3.org/1999/xhtml");
 
-#identity-box {
-  margin-inline-end: var(--identity-box-margin-inline);
+#tracking-protection-icon-container,
+#identity-box,
+#trust-icon-container,
+#urlbar-label-box {
+  height: var(--urlbar-basic-component-size);
+}
 
+#identity-box {
   &[pageproxystate="invalid"] {
     pointer-events: none;
     -moz-user-focus: ignore;
+
+    #identity-icon-label {
+      display: none;
+    }
+
+    /* If the proxy state is invalid, but the urlbar is persisting search terms,
+       we still want the user to be able to interact with the permission box.
+       It will be visible. The identity-box wrapper itself stays out of the
+       tab order so keyboard users go straight to the next focusable element. */
+    #urlbar[persistsearchterms] & {
+      > #identity-permission-box {
+        pointer-events: auto;
+        -moz-user-focus: normal;
+      }
+
+      /* And don't show the identity icon box in this case,
+         just permissions indication */
+      > #identity-icon-box {
+        display: none;
+      }
+    }
   }
 }
 
@@ -22,17 +48,15 @@
   fill-opacity: var(--urlbar-icon-fill-opacity);
 }
 
-#identity-box[pageproxystate="invalid"] {
+#urlbar:not([persistsearchterms]) #identity-box[pageproxystate="invalid"] {
   > #identity-permission-box,
-  > #notification-popup-box,
-  #identity-icon-label {
+  > #notification-popup-box {
     display: none;
   }
 }
 
-/* stylelint-disable-next-line media-query-no-invalid */
 @media -moz-pref("browser.urlbar.searchModeSwitcher.featureGate") or -moz-pref("browser.urlbar.scotchBonnet.enableOverride") {
-  #identity-box[pageproxystate="invalid"] {
+  #urlbar:not([persistsearchterms]) #identity-box[pageproxystate="invalid"] {
     display: none;
   }
 }
@@ -49,16 +73,16 @@
   outline-offset: var(--toolbarbutton-outline-offset);
 
   &:hover:not([open="true"]) {
-    background-color: var(--urlbar-box-hover-bgcolor);
-    color: var(--urlbar-box-hover-text-color);
-    outline-color: var(--toolbarbutton-hover-outline-color);
+    background-color: var(--urlbar-box-background-color-hover);
+    color: var(--urlbar-box-text-color-hover);
+    outline-color: var(--toolbarbutton-outline-color-hover);
   }
 
   &:hover:active,
   &[open="true"] {
-    background-color: var(--urlbar-box-active-bgcolor);
-    color: var(--urlbar-box-hover-text-color);
-    outline-color: var(--toolbarbutton-active-outline-color);
+    background-color: var(--urlbar-box-background-color-active);
+    color: var(--urlbar-box-text-color-hover);
+    outline-color: var(--toolbarbutton-outline-color-active);
   }
 
   &:focus-visible {
@@ -72,22 +96,9 @@
   margin: 0;
 }
 
-#identity-box[pageproxystate="valid"]:is(.notSecureText, .chromeUI, .extensionPage),
-#urlbar-label-box {
-  margin-inline-end: 8px;
-  /* stylelint-disable-next-line media-query-no-invalid */
-  @media -moz-pref("browser.urlbar.searchModeSwitcher.featureGate") or -moz-pref("browser.urlbar.scotchBonnet.enableOverride") {
-    margin-inline-end: var(--urlbar-searchmodeswitcher-margin-inline-end);
-  }
-  /* stylelint-disable-next-line media-query-no-invalid */
-  @media -moz-pref("browser.urlbar.trustPanel.featureGate") {
-    margin-inline-end: 0;
-  }
-}
-
 #identity-box[pageproxystate="valid"]:is(.notSecureText, .chromeUI, .extensionPage) > .identity-box-button,
 #urlbar-label-box {
-  background-color: var(--urlbar-box-bgcolor);
+  background-color: var(--urlbar-box-background-color);
   color: var(--urlbar-box-text-color);
   padding-inline: 8px;
   border-radius: var(--urlbar-inner-border-radius);
@@ -96,19 +107,19 @@
 #urlbar[focused] {
   #identity-box[pageproxystate="valid"]:is(.notSecureText, .chromeUI, .extensionPage) > .identity-box-button:not(:hover, [open]),
   #urlbar-label-box {
-    background-color: var(--urlbar-box-focus-bgcolor);
+    background-color: var(--urlbar-box-background-color-focus);
   }
 }
 
 #identity-box[pageproxystate="valid"]:is(.notSecureText, .chromeUI, .extensionPage) > .identity-box-button {
   &:hover:not([open]) {
-    background-color: var(--urlbar-box-hover-bgcolor);
-    color: var(--urlbar-box-hover-text-color);
+    background-color: var(--urlbar-box-background-color-hover);
+    color: var(--urlbar-box-text-color-hover);
   }
 
   &:is(:hover:active, [open]) {
-    background-color: var(--urlbar-box-active-bgcolor);
-    color: var(--urlbar-box-hover-text-color);
+    background-color: var(--urlbar-box-background-color-active);
+    color: var(--urlbar-box-text-color-hover);
   }
 }
 
@@ -229,7 +240,6 @@
 }
 
 /* SHARING ICON */
-
 #webrtc-sharing-icon[sharing="camera"] {
   list-style-image: url("chrome://browser/skin/notification-icons/camera.svg");
 }
@@ -244,6 +254,14 @@
 
 #geo-sharing-icon[sharing] {
   list-style-image: url("chrome://browser/skin/notification-icons/geo.svg");
+  -moz-context-properties: fill;
+  fill: var(--icon-color-critical);
+}
+
+#serial-sharing-icon[sharing] {
+  list-style-image: url("chrome://browser/skin/notification-icons/serial.svg");
+  -moz-context-properties: fill;
+  fill: var(--icon-color-critical);
 }
 
 .sharing-icon:not([sharing]) {
@@ -252,7 +270,7 @@
 
 #webrtc-sharing-icon[sharing]:not([paused]) {
   -moz-context-properties: fill;
-  fill: rgb(224, 41, 29);
+  fill: var(--icon-color-critical);
 }
 
 /* TRACKING PROTECTION ICON */
@@ -295,42 +313,104 @@
   display: none;
 }
 
-/* stylelint-disable-next-line media-query-no-invalid */
 @media -moz-pref("browser.urlbar.trustPanel.featureGate") {
-  #tracking-protection-icon-container,
-  /* Keep displaying the moz-extension or chrome UI chicklet */
-  #identity-box[pageproxystate="valid"]:not(.chromeUI, .extensionPage) #identity-icon-box {
+  #tracking-protection-icon-container {
     display: none;
   }
 
-  .searchmode-switcher,
   #identity-box {
-    margin-inline-end: 0;
-  }
-
-  #urlbar-label-box,
-  .urlbar-input-box {
-    margin-inline-start: var(--identity-box-margin-inline);
+    /* Keep displaying the moz-extension or chrome UI chicklet */
+    &[pageproxystate="valid"]:not(.chromeUI, .extensionPage) {
+      #identity-icon-box {
+        display: none;
+      }
+    }
   }
 
   #trust-icon-container {
     padding-inline: var(--urlbar-icon-padding);
     border-radius: var(--urlbar-inner-border-radius);
     -moz-context-properties: fill, fill-opacity;
-    /* Height shouldn't need defined here but is failing wpt tests without.
-       Investigating in https://bugzilla.mozilla.org/show_bug.cgi?id=2004907 */
-    height: calc(16px + (2 * var(--urlbar-icon-padding)));
 
     /* The urlbar will show insecure or secure icon by default depending
        on the state of the connection, the further clauses may override that. */
     &:where(.insecure) {
       list-style-image: url(chrome://browser/skin/trust-icon-insecure.svg);
-      background-color: var(--urlbar-box-bgcolor);
+      background-color: var(--urlbar-box-background-color);
       color: var(--urlbar-box-text-color);
     }
 
     &.secure {
       list-style-image: url(chrome://browser/skin/trust-icon-active.svg);
+    }
+
+    &.breached {
+      /* position: relative is set on the container so that the absolutely-positioned
+        ::before and ::after pseudo-elements are anchored to it */
+      position: relative;
+      color: var(--icon-color-warning);
+      list-style-image: url(chrome://browser/skin/tracking-protection.svg);
+
+      &::before {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 22px;
+        height: 22px;
+        transform: translate(-50%, -50%) scale(1);
+        background: var(--background-color-warning);
+        border-radius: 100%;
+        z-index: 0;
+        pointer-events: none;
+        transform-origin: center;
+        opacity: 0;
+      }
+
+      &::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 16px;
+        height: 16px;
+        transform: translate(-50%, -50%);
+        background-image: url(chrome://browser/skin/trust-icon-warning.svg);
+        background-size: contain;
+        background-repeat: no-repeat;
+        background-position: center;
+        z-index: 2;
+        pointer-events: none;
+        opacity: 1;
+        /* Remove background after pulse */
+        background-color: transparent;
+      }
+
+      > #trust-icon {
+        /* position: relative is required for z-index to take effect on this element. */
+        position: relative;
+        z-index: 1;
+        border-radius: 50%;
+        opacity: 0;
+      }
+    }
+
+    &.breach-animating {
+      &::before {
+        animation: trust-icon-breach-pulse 1200ms ease-in-out 0s 1 forwards;
+      }
+
+      &::after {
+        opacity: 0;
+        animation:
+          trust-icon-breach-icon-appear 1200ms linear 0s 1 forwards,
+          trust-icon-breach-icon-pulse 1200ms ease-in-out 0s 1 forwards;
+      }
+
+      > #trust-icon {
+        opacity: 1;
+        animation: trust-icon-breach-image-hide 1200ms linear 0s 1 forwards;
+      }
     }
 
     &.inactive:not(.insecure) {
@@ -352,5 +432,69 @@
 
   #trust-icon-container:not(.insecure) > #trust-label {
     display: none;
+  }
+}
+
+/*
+ * Breach animation choreography (all animations run simultaneously for 1200ms):
+ *
+ * ::before  — warning circle background: pulses outward then fades away
+ * ::after   — warning icon: fades in and pulses in place (stays visible)
+ * #trust-icon — original icon: fades out to reveal the warning icon above it
+ *
+ * z-index layering: ::before (0) < #trust-icon (1) < ::after (2)
+ */
+
+/* The warning circle background: starts visible, scales outward, then fades out. */
+@keyframes trust-icon-breach-pulse {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.12);
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0;
+  }
+}
+
+/* The warning icon: fades in over the full duration. */
+@keyframes trust-icon-breach-icon-appear {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+/* The warning icon: pulses slightly in scale while remaining visible. */
+@keyframes trust-icon-breach-icon-pulse {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.1);
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+/* The original icon: fades out so the warning icon (::after) becomes visible. */
+@keyframes trust-icon-breach-image-hide {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
   }
 }

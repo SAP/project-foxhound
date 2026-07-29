@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -74,6 +72,9 @@ class DecodedStream : public MediaSink {
   void GetDebugInfo(dom::MediaSinkDebugInfo& aInfo) override;
 
   MediaEventSource<bool>& AudibleEvent() { return mAudibleEvent; }
+  MediaEventSource<void>& PlaybackRateFallbackEvent() {
+    return mPlaybackRateFallbackForwarder;
+  }
 
  protected:
   virtual ~DecodedStream();
@@ -129,6 +130,7 @@ class DecodedStream : public MediaSink {
   // True if the audio output should be configured to mDevice.
   const bool mShouldConfigAudioOutput;
   RefPtr<AudioDeviceInfo> mDevice;
+  bool mAudioOutputRegistered MOZ_GUARDED_BY(sMainThreadCapability) = false;
 
   media::NullableTimeUnit mStartTime;
   media::TimeUnit mLastOutputTime;
@@ -137,6 +139,7 @@ class DecodedStream : public MediaSink {
   bool mIsAudioDataAudible = false;
   Maybe<AudibilityMonitor> mAudibilityMonitor;
   MediaEventProducer<bool> mAudibleEvent;
+  MediaEventForwarder<void> mPlaybackRateFallbackForwarder;
 
   MediaQueue<AudioData>& mAudioQueue;
   MediaQueue<VideoData>& mVideoQueue;

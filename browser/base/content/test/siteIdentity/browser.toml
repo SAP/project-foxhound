@@ -19,6 +19,7 @@ support-files = ["open-self-from-frame.html"]
 ["browser_check_identity_state.js"]
 skip-if = [
   "os == 'win' && opt && msix", # Bug 1895285
+  "os == 'win' && debug", # Bug 1895285
 ]
 https_first_disabled = true
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -266,6 +264,54 @@ void SharedStyleSheetCache::Clear(
     sSingleton->ClearInProcess(aChrome, aPrincipal, aSchemelessSite, aPattern,
                                aURL);
   }
+}
+
+void SharedStyleSheetCache::GC() {
+  MOZ_ASSERT(mGCScheduled);
+  for (auto iter = mInlineSheets.Iter(); !iter.Done(); iter.Next()) {
+    for (auto subiter = iter.Data().Iter(); !subiter.Done(); subiter.Next()) {
+      subiter.Data().RemoveElementsBy([](InlineSheetEntry& aEntry) {
+        return aEntry.mSheet->HasUniqueInner();
+      });
+      if (subiter.Data().IsEmpty()) {
+        subiter.Remove();
+      }
+    }
+    if (iter.Data().IsEmpty()) {
+      iter.Remove();
+    }
+  }
+
+  for (auto iter = mComplete.Iter(); !iter.Done(); iter.Next()) {
+    if (iter.Data().mResource->HasUniqueInner()) {
+      iter.Remove();
+    }
+  }
+  mGCScheduled = false;
+}
+
+void SharedStyleSheetCache::DoScheduleGC() {
+  MOZ_ASSERT(!mGCScheduled);
+  if (!mGCTimer) {
+    mGCTimer = NS_NewTimer();
+  }
+  mGCScheduled = NS_SUCCEEDED(mGCTimer->InitWithNamedFuncCallback(
+      [](nsITimer*, void*) {
+        if (sSingleton) {
+          sSingleton->mGCScheduled =
+              NS_SUCCEEDED(NS_DispatchToCurrentThreadQueue(
+                  NS_NewRunnableFunction("SharedStyleSheetCache GC Idle",
+                                         [] {
+                                           if (sSingleton) {
+                                             sSingleton->GC();
+                                           }
+                                         }),
+                  EventQueuePriority::Idle));
+        }
+      },
+      nullptr, StaticPrefs::layout_css_stylesheet_cache_timeout_ms(),
+      nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY,
+      "SharedStyleSheetCache::GC timer"_ns));
 }
 
 }  // namespace mozilla

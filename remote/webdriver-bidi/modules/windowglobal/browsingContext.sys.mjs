@@ -45,7 +45,7 @@ class BrowsingContextModule extends WindowGlobalBiDiModule {
 
     // Set of event names which have active subscriptions.
     this.#subscribedEvents = new Set();
-    this.contextCreatedHandled = false;
+    this.#contextCreatedHandled = false;
   }
 
   destroy() {
@@ -306,7 +306,10 @@ class BrowsingContextModule extends WindowGlobalBiDiModule {
       });
     }
 
-    if (this.#subscribedEvents.has("browsingContext.domContentLoaded")) {
+    if (
+      this.#subscribedEvents.has("browsingContext.domContentLoaded") &&
+      this.#shouldSendLoadEvents(data.target)
+    ) {
       this.emitEvent(
         "browsingContext.domContentLoaded",
         this.#getNavigationInfo(data)
@@ -315,7 +318,10 @@ class BrowsingContextModule extends WindowGlobalBiDiModule {
   };
 
   #onLoad = (eventName, data) => {
-    if (this.#subscribedEvents.has("browsingContext.load")) {
+    if (
+      this.#subscribedEvents.has("browsingContext.load") &&
+      this.#shouldSendLoadEvents(data.target)
+    ) {
       this.emitEvent("browsingContext.load", this.#getNavigationInfo(data));
     }
   };
@@ -347,6 +353,11 @@ class BrowsingContextModule extends WindowGlobalBiDiModule {
     const height = Math.max(y_max - y_min, 0);
 
     return new DOMRect(x_min, y_min, width, height);
+  }
+
+  #shouldSendLoadEvents(target) {
+    // Do not emit the load events for the initial "about:blank" in top-level browsing contexts.
+    return !target.isInitialDocument || this.messageHandler.context.parent;
   }
 
   #startListening() {
@@ -433,6 +444,13 @@ class BrowsingContextModule extends WindowGlobalBiDiModule {
           if (!params.initial && !this.#contextCreatedHandled) {
             this.emitEvent("browsingContext.contextCreated", {
               context: this.messageHandler.context,
+            });
+
+            // This is an internal event used by the script module
+            // to ensure that "script.realmCreated" event is emitted
+            // after "browsingContext.contextCreated".
+            this.emitEvent("browsingContext._contextCreatedEmitted", {
+              browsingContext: this.messageHandler.context,
             });
           }
 
@@ -574,7 +592,7 @@ class BrowsingContextModule extends WindowGlobalBiDiModule {
 
     const contextNodes = [];
     if (startNodes === null) {
-      contextNodes.push(this.messageHandler.window.document.documentElement);
+      contextNodes.push(this.messageHandler.window.document);
     } else {
       for (const serializedStartNode of startNodes) {
         const startNode = this.deserialize(serializedStartNode, realm);

@@ -13,7 +13,7 @@ More information about this component including design, writing, and localizatio
 
 ## Code
 
-The source for `moz-checkbox` can be found under [toolkit/content/widgets/moz-checkbox/](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/moz-checkbox)
+The source for `moz-checkbox` can be found under [toolkit/content/widgets/moz-checkbox/](https://searchfox.org/firefox-main/source/toolkit/content/widgets/moz-checkbox)
 
 ## When to use `moz-checkbox`
 - Use `moz-checkbox` when you want to allow a user to select at least one option from a list.

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -24,6 +23,10 @@ class TextUpdater {
   static void Run(DocAccessible* aDocument, TextLeafAccessible* aTextLeaf,
                   const nsAString& aNewText);
 
+  TextUpdater() = delete;
+  TextUpdater(const TextUpdater&) = delete;
+  TextUpdater& operator=(const TextUpdater&) = delete;
+
  private:
   TextUpdater(DocAccessible* aDocument, TextLeafAccessible* aTextLeaf)
       : mDocument(aDocument),
@@ -44,11 +47,6 @@ class TextUpdater {
   void DoUpdate(const nsAString& aNewText, const nsAString& aOldText,
                 uint32_t aSkipStart);
 
- private:
-  TextUpdater();
-  TextUpdater(const TextUpdater&);
-  TextUpdater& operator=(const TextUpdater&);
-
   /**
    * Fire text change events based on difference between strings.
    */
@@ -61,7 +59,7 @@ class TextUpdater {
    */
   inline void FireInsertEvent(const nsAString& aText, uint32_t aAddlOffset,
                               nsTArray<RefPtr<AccEvent> >& aEvents) {
-    RefPtr<AccEvent> event = new AccTextChangeEvent(
+    auto event = MakeRefPtr<AccTextChangeEvent>(
         mHyperText, mTextOffset + aAddlOffset, aText, true);
     aEvents.AppendElement(event);
   }
@@ -71,7 +69,7 @@ class TextUpdater {
    */
   inline void FireDeleteEvent(const nsAString& aText, uint32_t aAddlOffset,
                               nsTArray<RefPtr<AccEvent> >& aEvents) {
-    RefPtr<AccEvent> event = new AccTextChangeEvent(
+    auto event = MakeRefPtr<AccTextChangeEvent>(
         mHyperText, mTextOffset + aAddlOffset, aText, false);
     aEvents.AppendElement(event);
   }

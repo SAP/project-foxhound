@@ -12,6 +12,8 @@ cargo-audit:
         - "Crate depends on a vulnerable version of time."
         # bug 1973225
         - "Crate depends on a vulnerable version of self_cell."
+        # bug 2052161
+        - "Crate depends on a vulnerable version of quick-xml."
     extensions:
         - lock
     setup: cargo-audit:setup

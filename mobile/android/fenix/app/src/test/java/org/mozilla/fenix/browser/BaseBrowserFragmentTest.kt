@@ -7,6 +7,7 @@ package org.mozilla.fenix.browser
 import android.content.Context
 import android.content.res.Configuration
 import android.view.View
+import android.view.ViewGroup
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.view.isVisible
 import io.mockk.Called
@@ -26,7 +27,6 @@ import mozilla.components.concept.engine.EngineView
 import mozilla.components.concept.engine.permission.SitePermissions
 import mozilla.components.feature.contextmenu.ContextMenuCandidate
 import mozilla.components.ui.widgets.VerticalSwipeRefreshLayout
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
@@ -34,12 +34,12 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.components.FindInPageIntegration
 import org.mozilla.fenix.components.toolbar.BottomToolbarContainerView
 import org.mozilla.fenix.components.toolbar.BrowserNavigationBar
-import org.mozilla.fenix.components.toolbar.BrowserToolbarView
+import org.mozilla.fenix.components.toolbar.BrowserToolbarComposable
 import org.mozilla.fenix.components.toolbar.ToolbarContainerView
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.utils.Settings
+import kotlin.test.assertNotNull
 
 class BaseBrowserFragmentTest {
     private lateinit var fragment: TestBaseBrowserFragment
@@ -47,6 +47,7 @@ class BaseBrowserFragmentTest {
     private lateinit var engineView: EngineView
     private lateinit var settings: Settings
     private lateinit var testContext: Context
+    lateinit var container: ViewGroup
 
     @Before
     fun setup() {
@@ -57,12 +58,13 @@ class BaseBrowserFragmentTest {
             every { isTabStripEnabled } returns false
         }
         testContext = mockk(relaxed = true)
+        container = mockk(relaxed = true)
 
         every {
             testContext.components.core.geckoRuntime.isInteractiveWidgetDefaultResizesVisual
         } returns false
         every { testContext.components.settings } returns settings
-        every { testContext.settings() } returns settings
+        every { testContext.components.settings } returns settings
         every { fragment.isAdded } returns true
         every { fragment.activity } returns mockk()
         every { fragment.context } returns testContext
@@ -187,7 +189,6 @@ class BaseBrowserFragmentTest {
         val download = DownloadState(
             url = "",
             sessionId = "1",
-            destinationDirectory = "/",
             directoryPath = "/",
         )
 
@@ -209,7 +210,6 @@ class BaseBrowserFragmentTest {
         val download = DownloadState(
             url = "",
             sessionId = "1",
-            destinationDirectory = "/",
             directoryPath = "/",
         )
 
@@ -231,7 +231,6 @@ class BaseBrowserFragmentTest {
         val download = DownloadState(
             url = "",
             sessionId = "2",
-            destinationDirectory = "/",
             directoryPath = "/",
         )
 
@@ -296,8 +295,8 @@ class BaseBrowserFragmentTest {
 
     @Test
     fun `WHEN isMicrosurveyEnabled and isExperimentationEnabled are true GIVEN a call to setupMicrosurvey THEN messagingFeature is initialized`() {
-        every { testContext.settings().isExperimentationEnabled } returns true
-        every { testContext.settings().microsurveyFeatureEnabled } returns true
+        every { testContext.components.settings.isExperimentationEnabled } returns true
+        every { testContext.components.settings.microsurveyFeatureEnabled } returns true
 
         assertNull(fragment.messagingFeatureMicrosurvey.get())
 
@@ -308,8 +307,8 @@ class BaseBrowserFragmentTest {
 
     @Test
     fun `WHEN isMicrosurveyEnabled and isExperimentationEnabled are false GIVEN a call to setupMicrosurvey THEN messagingFeature is not initialized`() {
-        every { testContext.settings().isExperimentationEnabled } returns false
-        every { testContext.settings().microsurveyFeatureEnabled } returns false
+        every { testContext.components.settings.isExperimentationEnabled } returns false
+        every { testContext.components.settings.microsurveyFeatureEnabled } returns false
 
         assertNull(fragment.messagingFeatureMicrosurvey.get())
 
@@ -320,8 +319,8 @@ class BaseBrowserFragmentTest {
 
     @Test
     fun `WHEN isMicrosurveyEnabled is true and isExperimentationEnabled false GIVEN a call to setupMicrosurvey THEN messagingFeature is not initialized`() {
-        every { testContext.settings().isExperimentationEnabled } returns false
-        every { testContext.settings().microsurveyFeatureEnabled } returns true
+        every { testContext.components.settings.isExperimentationEnabled } returns false
+        every { testContext.components.settings.microsurveyFeatureEnabled } returns true
 
         assertNull(fragment.messagingFeatureMicrosurvey.get())
 
@@ -332,8 +331,8 @@ class BaseBrowserFragmentTest {
 
     @Test
     fun `WHEN isMicrosurveyEnabled is false and isExperimentationEnabled true GIVEN a call to setupMicrosurvey THEN messagingFeature is not initialized`() {
-        every { testContext.settings().isExperimentationEnabled } returns true
-        every { testContext.settings().microsurveyFeatureEnabled } returns false
+        every { testContext.components.settings.isExperimentationEnabled } returns true
+        every { testContext.components.settings.microsurveyFeatureEnabled } returns false
 
         assertNull(fragment.messagingFeatureMicrosurvey.get())
 
@@ -599,18 +598,18 @@ class BaseBrowserFragmentTest {
 
     @Test
     fun `WHEN asked to expand the browser view THEN hide all toolbars and show only the browser view`() {
-        val browserToolbarView = mockk<BrowserToolbarView>(relaxed = true)
+        val browserToolbar = mockk<BrowserToolbarComposable>(relaxed = true)
         val toolbarContainerView = mockk<ToolbarContainerView>(relaxed = true)
         val bottomToolbarContainerView = mockk<BottomToolbarContainerView>()
         val browserNavigationBar = mockk<BrowserNavigationBar>(relaxed = true)
         every { bottomToolbarContainerView.toolbarContainerView } returns toolbarContainerView
-        fragment._browserToolbarView = browserToolbarView
+        fragment._browserToolbar = browserToolbar
         fragment._bottomToolbarContainerView = bottomToolbarContainerView
         fragment.browserNavigationBar = browserNavigationBar
 
         fragment.expandBrowserView()
 
-        verify { browserToolbarView.gone() }
+        verify { browserToolbar.gone() }
         verify { browserNavigationBar.gone() }
         verify { toolbarContainerView.collapse() }
         verify { toolbarContainerView.isVisible = false }
@@ -627,21 +626,21 @@ class BaseBrowserFragmentTest {
     fun `GIVEN toolbars should be visible WHEN asked to collapse the browser view THEN reinitialize the browser view and show the toolbars`() {
         fragment.webAppToolbarShouldBeVisible = true
         every { fragment.reinitializeEngineView() } just Runs
-        val browserToolbarView = mockk<BrowserToolbarView>(relaxed = true)
+        val browserToolbar = mockk<BrowserToolbarComposable>(relaxed = true)
         val toolbarContainerView = mockk<ToolbarContainerView>(relaxed = true)
         val bottomToolbarContainerView = mockk<BottomToolbarContainerView>()
         val browserNavigationBar = mockk<BrowserNavigationBar>(relaxed = true)
         every { bottomToolbarContainerView.toolbarContainerView } returns toolbarContainerView
-        fragment._browserToolbarView = browserToolbarView
+        fragment._browserToolbar = browserToolbar
         fragment._bottomToolbarContainerView = bottomToolbarContainerView
         fragment.browserNavigationBar = browserNavigationBar
 
         fragment.collapseBrowserView()
 
         verify { fragment.reinitializeEngineView() }
-        verify { browserToolbarView.visible() }
+        verify { browserToolbar.visible() }
         verify { toolbarContainerView.isVisible = true }
-        verify { browserToolbarView.expand() }
+        verify { browserToolbar.expand() }
         verify { toolbarContainerView.expand() }
     }
 
@@ -649,17 +648,17 @@ class BaseBrowserFragmentTest {
     fun `GIVEN toolbars should not be visible WHEN asked to collapse the browser view THEN don't do anything`() {
         fragment.webAppToolbarShouldBeVisible = false
         every { fragment.reinitializeEngineView() } just Runs
-        val browserToolbarView = mockk<BrowserToolbarView>(relaxed = true)
+        val browserToolbar = mockk<BrowserToolbarComposable>(relaxed = true)
         val toolbarContainerView = mockk<ToolbarContainerView>(relaxed = true)
         val bottomToolbarContainerView = mockk<BottomToolbarContainerView>()
         every { bottomToolbarContainerView.toolbarContainerView } returns toolbarContainerView
-        fragment._browserToolbarView = browserToolbarView
+        fragment._browserToolbar = browserToolbar
         fragment._bottomToolbarContainerView = bottomToolbarContainerView
 
         fragment.collapseBrowserView()
 
         verify(exactly = 0) { fragment.reinitializeEngineView() }
-        verify { browserToolbarView wasNot Called }
+        verify { browserToolbar wasNot Called }
         verify { toolbarContainerView wasNot Called }
     }
 
@@ -705,6 +704,87 @@ class BaseBrowserFragmentTest {
         fragment.reinitializeEngineView()
 
         verify { fragment.initializeEngineView(0, 0) }
+    }
+
+    @Test
+    fun `shouldAddBlackScreen returns true when all conditions are met`() {
+        every { testContext.components.settings.privateBrowsingModeLocked } returns true
+        every { testContext.components.appStore.state.mode.isPrivate } returns true
+        every { testContext.components.core.store.state } returns BrowserState(
+            systemPermissionRequestInProgress = true,
+        )
+        fragment.blackScreenOverlay = null
+
+        assertTrue(fragment.shouldAddBlackScreen())
+    }
+
+    @Test
+    fun `shouldAddBlackScreen returns false when private mode lock feature is off`() {
+        every { testContext.components.settings.privateBrowsingModeLocked } returns false
+        every { testContext.components.appStore.state.mode.isPrivate } returns true
+        every { testContext.components.core.store.state } returns BrowserState(
+            systemPermissionRequestInProgress = true,
+        )
+        fragment.blackScreenOverlay = null
+
+        assertFalse(fragment.shouldAddBlackScreen())
+    }
+
+    @Test
+    fun `shouldAddBlackScreen returns false when not in private mode`() {
+        every { testContext.components.settings.privateBrowsingModeLocked } returns true
+        every { testContext.components.appStore.state.mode.isPrivate } returns false
+        every { testContext.components.core.store.state } returns BrowserState(
+            systemPermissionRequestInProgress = true,
+        )
+        fragment.blackScreenOverlay = null
+
+        assertFalse(fragment.shouldAddBlackScreen())
+    }
+
+    @Test
+    fun `shouldAddBlackScreen returns false when permission request is not in progress`() {
+        every { testContext.components.settings.privateBrowsingModeLocked } returns true
+        every { testContext.components.appStore.state.mode.isPrivate } returns true
+        every { testContext.components.core.store.state } returns BrowserState(
+            systemPermissionRequestInProgress = false,
+        )
+        fragment.blackScreenOverlay = null
+
+        assertFalse(fragment.shouldAddBlackScreen())
+    }
+
+    @Test
+    fun `shouldAddBlackScreen returns false when black screen overlay already exists`() {
+        every { testContext.components.settings.privateBrowsingModeLocked } returns true
+        every { testContext.components.appStore.state.mode.isPrivate } returns true
+        every { testContext.components.core.store.state } returns BrowserState(
+            systemPermissionRequestInProgress = true,
+        )
+        fragment.blackScreenOverlay = mockk()
+
+        assertFalse(fragment.shouldAddBlackScreen())
+    }
+
+    @Test
+    fun `addBlackScreen adds black screen overlay and sets it`() {
+        assertNull(fragment.blackScreenOverlay)
+
+        fragment.addBlackScreen(container)
+
+        verify { container.addView(any()) }
+        assertNotNull(fragment.blackScreenOverlay)
+    }
+
+    @Test
+    fun `removeBlackScreen removes black screen overlay and nullifies it`() {
+        fragment.addBlackScreen(container)
+        assertNotNull(fragment.blackScreenOverlay)
+
+        fragment.removeBlackScreen(container)
+
+        verify { container.removeView(any()) }
+        assertNull(fragment.blackScreenOverlay)
     }
 }
 

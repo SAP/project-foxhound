@@ -7,7 +7,6 @@ package org.mozilla.fenix.emailmasks
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.telemetry.glean.private.RecordedEvent
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
@@ -20,6 +19,7 @@ import org.mozilla.fenix.settings.emailmasks.EmailMasksSystemAction
 import org.mozilla.fenix.settings.emailmasks.EmailMasksUserAction
 import org.mozilla.fenix.settings.emailmasks.middleware.EmailMasksTelemetryMiddleware
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class) // For gleanTestRule
 class EmailMasksTelemetryMiddlewareTest {
@@ -116,7 +116,7 @@ class EmailMasksTelemetryMiddlewareTest {
     ) {
         val snapshot = snapshotProvider()
         assertNotNull(snapshot)
-        assertEquals(1, snapshot!!.size)
+        assertEquals(1, snapshot.size)
 
         val event = snapshot.single()
         assertEquals(expectedName, event.name)
@@ -126,7 +126,7 @@ class EmailMasksTelemetryMiddlewareTest {
             assertNotNull(extras)
 
             extrasExpected.forEach { (key, value) ->
-                assertEquals(value, extras!![key])
+                assertEquals(value, extras[key])
             }
         }
     }

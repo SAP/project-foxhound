@@ -14,14 +14,15 @@
 #include <ctime>
 #include <map>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
-#include "api/array_view.h"
 #include "api/audio/audio_mixer.h"
 #include "api/audio_codecs/audio_decoder_factory.h"
 #include "api/audio_codecs/audio_format.h"
 #include "api/environment/environment.h"
+#include "api/field_trials_view.h"
 #include "api/neteq/default_neteq_factory.h"
 #include "api/neteq/neteq.h"
 #include "api/scoped_refptr.h"
@@ -40,6 +41,7 @@
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "modules/rtp_rtcp/source/rtp_rtcp_interface.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/experiments/struct_parameters_parser.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/synchronization/mutex.h"
 
@@ -47,9 +49,21 @@ namespace webrtc {
 
 namespace {
 
-NetEq::Config CreateNetEqConfig() {
+NetEq::Config CreateNetEqConfig(const Environment& env) {
   NetEq::Config config;
   config.enable_muted_state = true;
+
+  int max_packets_in_buffer = static_cast<int>(config.max_packets_in_buffer);
+
+  StructParametersParser::Create(                                //
+      "max_packets_in_buffer", &max_packets_in_buffer,           //
+      "max_delay_ms", &config.max_delay_ms,                      //
+      "min_delay_ms", &config.min_delay_ms,                      //
+      "enable_fast_accelerate", &config.enable_fast_accelerate)  //
+      ->Parse(env.field_trials().Lookup("WebRTC-VoIP-NetEqConfig"));
+
+  config.max_packets_in_buffer = static_cast<size_t>(max_packets_in_buffer);
+
   return config;
 }
 
@@ -66,7 +80,7 @@ AudioIngress::AudioIngress(const Environment& env,
       rtp_receive_statistics_(receive_statistics),
       rtp_rtcp_(rtp_rtcp),
       neteq_(DefaultNetEqFactory().Create(env,
-                                          CreateNetEqConfig(),
+                                          CreateNetEqConfig(env),
                                           decoder_factory)),
       ntp_estimator_(&env_.clock()) {}
 
@@ -78,9 +92,8 @@ AudioMixer::Source::AudioFrameInfo AudioIngress::GetAudioFrameWithInfo(
   // Get 10ms raw PCM data from the ACM.
   bool muted = false;
   {
-    MutexLock lock(&lock_);
-    if ((neteq_->GetAudio(audio_frame, &muted) != NetEq::kOK) ||
-        !resampler_helper_.MaybeResample(sampling_rate, audio_frame)) {
+    MutexLock lock(&neteq_mutex_);
+    if (neteq_->GetAudio(audio_frame, &muted) != NetEq::kOK) {
       RTC_DLOG(LS_ERROR) << "GetAudio() failed!";
       // In all likelihood, the audio in this frame is garbage. We return an
       // error so that the audio mixer module doesn't add it to the mix. As
@@ -89,6 +102,8 @@ AudioMixer::Source::AudioFrameInfo AudioIngress::GetAudioFrameWithInfo(
       return AudioMixer::Source::AudioFrameInfo::kError;
     }
   }
+
+  resampler_helper_.MaybeResample(sampling_rate, audio_frame);
 
   if (muted) {
     AudioFrameOperations::Mute(audio_frame);
@@ -121,6 +136,7 @@ AudioMixer::Source::AudioFrameInfo AudioIngress::GetAudioFrameWithInfo(
     }
     // For clock rate, default to the playout sampling rate if we haven't
     // received any packets yet.
+    MutexLock lock(&neteq_mutex_);
     std::optional<NetEq::DecoderFormat> decoder =
         neteq_->GetCurrentDecoderFormat();
     int clock_rate = decoder ? decoder->sdp_format.clockrate_hz
@@ -154,10 +170,11 @@ void AudioIngress::SetReceiveCodecs(
       receive_codec_info_[kv.first] = kv.second.clockrate_hz;
     }
   }
+  MutexLock lock(&neteq_mutex_);
   neteq_->SetCodecs(codecs);
 }
 
-void AudioIngress::ReceivedRTPPacket(ArrayView<const uint8_t> rtp_packet) {
+void AudioIngress::ReceivedRTPPacket(std::span<const uint8_t> rtp_packet) {
   RtpPacketReceived rtp_packet_received;
   rtp_packet_received.Parse(rtp_packet.data(), rtp_packet.size());
 
@@ -201,19 +218,20 @@ void AudioIngress::ReceivedRTPPacket(ArrayView<const uint8_t> rtp_packet) {
   const uint8_t* payload = rtp_packet_received.data() + header.headerLength;
   size_t payload_length = packet_length - header.headerLength;
   size_t payload_data_length = payload_length - header.paddingLength;
-  auto data_view = ArrayView<const uint8_t>(payload, payload_data_length);
+  auto data_view = std::span<const uint8_t>(payload, payload_data_length);
 
-  // Push the incoming payload (parsed and ready for decoding) into the ACM.
-  if (data_view.empty()) {
-    neteq_->InsertEmptyPacket(header);
-  } else if (neteq_->InsertPacket(header, data_view,
-                                  env_.clock().CurrentTime()) < 0) {
-    RTC_DLOG(LS_ERROR) << "ChannelReceive::OnReceivedPayloadData() unable to "
-                          "insert packet into NetEq";
+  // Push the incoming payload (parsed and ready for decoding) into NetEq.
+  if (!data_view.empty()) {
+    MutexLock lock(&neteq_mutex_);
+    if (neteq_->InsertPacket(header, data_view, env_.clock().CurrentTime()) <
+        0) {
+      RTC_DLOG(LS_ERROR) << "ChannelReceive::OnReceivedPayloadData() unable to "
+                            "insert packet into NetEq";
+    }
   }
 }
 
-void AudioIngress::ReceivedRTCPPacket(ArrayView<const uint8_t> rtcp_packet) {
+void AudioIngress::ReceivedRTCPPacket(std::span<const uint8_t> rtcp_packet) {
   rtcp::CommonHeader rtcp_header;
   if (rtcp_header.Parse(rtcp_packet.data(), rtcp_packet.size()) &&
       (rtcp_header.type() == rtcp::SenderReport::kPacketType ||
@@ -265,6 +283,7 @@ NetworkStatistics AudioIngress::GetNetworkStatistics() const {
   stats.meanWaitingTimeMs = -1;
   stats.maxWaitingTimeMs = 1;
 
+  MutexLock lock(&neteq_mutex_);
   NetEqNetworkStatistics neteq_stat = neteq_->CurrentNetworkStatistics();
   stats.currentBufferSize = neteq_stat.current_buffer_size_ms;
   stats.preferredBufferSize = neteq_stat.preferred_buffer_size_ms;
@@ -309,8 +328,14 @@ ChannelStatistics AudioIngress::GetChannelStatistics() {
   ChannelStatistics channel_stats;
 
   // Get clockrate for current decoder ahead of jitter calculation.
-  auto decoder = neteq_->GetCurrentDecoderFormat();
-  const uint32_t clockrate_hz = decoder ? decoder->sdp_format.clockrate_hz : 0;
+  uint32_t clockrate_hz = 0;
+  {
+    MutexLock lock(&neteq_mutex_);
+    auto decoder = neteq_->GetCurrentDecoderFormat();
+    if (decoder) {
+      clockrate_hz = decoder->sdp_format.clockrate_hz;
+    }
+  }
 
   StreamStatistician* statistician =
       rtp_receive_statistics_->GetStatistician(remote_ssrc_);
@@ -354,6 +379,10 @@ ChannelStatistics AudioIngress::GetChannelStatistics() {
   }
 
   return channel_stats;
+}
+
+NetEq::Config CreateNetEqConfigForTesting(const Environment& env) {
+  return CreateNetEqConfig(env);
 }
 
 }  // namespace webrtc

@@ -10,6 +10,10 @@ import { AIFeature } from "chrome://global/content/ml/AIFeature.sys.mjs";
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
+  AIWindow:
+    "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
+  AIWindowUI:
+    "moz-src:///browser/components/aiwindow/ui/modules/AIWindowUI.sys.mjs",
   ASRouterTargeting: "resource:///modules/asrouter/ASRouterTargeting.sys.mjs",
   ContentAnalysisUtils: "resource://gre/modules/ContentAnalysisUtils.sys.mjs",
   EveryWindow: "resource:///modules/EveryWindow.sys.mjs",
@@ -26,6 +30,7 @@ ChromeUtils.defineLazyGetter(
 const PREF_CHAT_ENABLED = "browser.ml.chat.enabled";
 const PREF_CHAT_PAGE = "browser.ml.chat.page";
 const PREF_CHAT_PROVIDER = "browser.ml.chat.provider";
+const PREF_AI_CONTROL_SIDEBAR_CHATBOT = "browser.ai.control.sidebarChatbot";
 
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
@@ -94,6 +99,11 @@ XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "chatShortcutsCustom",
   "browser.ml.chat.shortcuts.custom"
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "chatShortcutsSmartWindow",
+  "browser.ml.chat.shortcuts.smartwindow"
 );
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
@@ -372,7 +382,7 @@ export const GenAI = {
    */
   async addAskChatItems(browser, extraContext, itemAdder, entry, cleanup) {
     // Prepare context used for both targeting and handling prompts
-    const window = browser.ownerGlobal;
+    const window = browser.documentGlobal;
     const tab = window?.gBrowser?.getTabForBrowser(browser);
     const uri = browser.currentURI;
     const context = {
@@ -400,8 +410,13 @@ export const GenAI = {
    * Setup helpers and callbacks for ai shortcut button.
    *
    * @param {MozButton} aiActionButton instance for the browser window
+   * @param {string} iconSrc URL for the button icon
    */
-  initializeAIShortcut(aiActionButton) {
+  initializeAIShortcut(
+    aiActionButton,
+    iconSrc = "chrome://global/skin/icons/highlights.svg"
+  ) {
+    aiActionButton.iconSrc = iconSrc;
     if (aiActionButton.initialized) {
       return;
     }
@@ -428,7 +443,6 @@ export const GenAI = {
       chatShortcutsOptionsPanel.hidePopup();
       selectionShortcutActionPanel.hidePopup();
     };
-    aiActionButton.iconSrc = "chrome://global/skin/icons/highlights.svg";
     aiActionButton.setAttribute("type", buttonDefaultState);
     chatShortcutsOptionsPanel.addEventListener("popuphidden", () =>
       aiActionButton.setAttribute("type", buttonDefaultState)
@@ -480,6 +494,9 @@ export const GenAI = {
       const vbox = chatShortcutsOptionsPanel.querySelector("vbox");
       vbox.innerHTML = "";
 
+      const currentIsSmartWindow = lazy.AIWindow.isAIWindowActive(
+        document.defaultView
+      );
       const showWarning = this.isContextTooLong(aiActionButton.data.selection);
       const chatProvider = this.chatProviders.get(lazy.chatProvider);
 
@@ -501,11 +518,14 @@ export const GenAI = {
         return button;
       };
 
-      const browser = document.ownerGlobal.gBrowser.selectedBrowser;
+      const browser = document.documentGlobal.gBrowser.selectedBrowser;
       const context = await this.addAskChatItems(
         browser,
         aiActionButton.data,
         promptObj => {
+          if (currentIsSmartWindow && promptObj.id === "quiz") {
+            return null;
+          }
           const button = addItem();
           button.textContent = promptObj.label;
           return button;
@@ -517,13 +537,17 @@ export const GenAI = {
       // Add custom textarea box if configured
       if (lazy.chatShortcutsCustom) {
         const textAreaEl = vbox.appendChild(document.createElement("textarea"));
-        document.l10n.setAttributes(
-          textAreaEl,
-          chatProvider?.name
-            ? "genai-input-ask-provider"
-            : "genai-input-ask-generic",
-          { provider: chatProvider?.name }
-        );
+        let textAreaL10nId;
+        if (currentIsSmartWindow) {
+          textAreaL10nId = "genai-input-ask-smart-window";
+        } else if (chatProvider?.name) {
+          textAreaL10nId = "genai-input-ask-provider";
+        } else {
+          textAreaL10nId = "genai-input-ask-generic";
+        }
+        document.l10n.setAttributes(textAreaEl, textAreaL10nId, {
+          provider: chatProvider?.name,
+        });
 
         textAreaEl.className = "ask-chat-shortcuts-custom-prompt";
         textAreaEl.addEventListener("mouseover", () => textAreaEl.focus());
@@ -537,12 +561,14 @@ export const GenAI = {
         // For Content Analysis, we need to specify the URL that the data is being sent to.
         // In this case it's not the URL in the browsingContext (like it is in other cases),
         // but the URL of the chatProvider is close enough to where the content will eventually
-        // be sent.
-        lazy.ContentAnalysisUtils.setupContentAnalysisEventsForTextElement(
-          textAreaEl,
-          browser.browsingContext,
-          Services.io.newURI(lazy.chatProvider)
-        );
+        // be sent. Only applicable when an external provider is configured.
+        if (lazy.chatProvider) {
+          lazy.ContentAnalysisUtils.setupContentAnalysisEventsForTextElement(
+            textAreaEl,
+            browser.browsingContext,
+            Services.io.newURI(lazy.chatProvider)
+          );
+        }
 
         const resetHeight = () => {
           textAreaEl.style.height = "auto";
@@ -555,16 +581,18 @@ export const GenAI = {
         });
       }
 
-      // Allow hiding these shortcuts
-      vbox.appendChild(document.createXULElement("toolbarseparator"));
-      const hider = addItem();
-      document.l10n.setAttributes(hider, "genai-shortcuts-hide");
-      hider.addEventListener("command", () => {
-        Services.prefs.setBoolPref("browser.ml.chat.shortcuts", false);
-        Glean.genaiChatbot.shortcutsHideClick.record({
-          selection: aiActionButton.data.selection.length,
+      // Allow hiding these shortcuts (not shown in Smart Window)
+      if (!currentIsSmartWindow) {
+        vbox.appendChild(document.createXULElement("toolbarseparator"));
+        const hider = addItem();
+        document.l10n.setAttributes(hider, "genai-shortcuts-hide");
+        hider.addEventListener("command", () => {
+          Services.prefs.setBoolPref("browser.ml.chat.shortcuts", false);
+          Glean.genaiChatbot.shortcutsHideClick.record({
+            selection: aiActionButton.data.selection.length,
+          });
         });
-      });
+      }
 
       chatShortcutsOptionsPanel.openPopup(
         selectionShortcutActionPanel,
@@ -625,20 +653,30 @@ export const GenAI = {
   handleShortcutsMessage(name, data, browser) {
     const isInBrowserStack = browser?.closest(".browserStack");
 
+    const isSmartWindow =
+      browser && lazy.AIWindow.isAIWindowActive(browser.documentGlobal);
     if (
       !isInBrowserStack ||
       !browser ||
       this.ignoredInputs.has(data.inputType) ||
-      !lazy.chatShortcuts ||
-      !this.canShowChatEntrypoint
+      (isSmartWindow
+        ? !lazy.chatShortcutsSmartWindow
+        : !lazy.chatShortcuts || !this.canShowChatEntrypoint)
     ) {
       return;
     }
 
-    const window = browser.ownerGlobal;
+    const window = browser.documentGlobal;
     const { document, devicePixelRatio } = window;
     const aiActionButton = document.getElementById("ai-action-button");
-    this.initializeAIShortcut(aiActionButton);
+    if (isSmartWindow) {
+      this.initializeAIShortcut(
+        aiActionButton,
+        "chrome://browser/content/aiwindow/assets/new-chat.svg"
+      );
+    } else {
+      this.initializeAIShortcut(aiActionButton);
+    }
 
     switch (name) {
       case "GenAI:HideShortcuts":
@@ -727,9 +765,26 @@ export const GenAI = {
       contextTabs = null,
     } = contextMenu;
 
-    // DO NOT show menu when inside an extension panel
     const uri = browser.browsingContext?.currentURI.spec;
     if (uri?.startsWith("moz-extension:")) {
+      showItem(menu, false);
+      return;
+    }
+
+    // Popups don't have a sidebar, so don't show the menu.
+    // Also, it's not useful for most Document Picture-in-Picture API use-cases.
+    const isPopup = browser.documentGlobal.toolbar?.visible === false;
+    if (browser.browsingContext?.isDocumentPiP || isPopup) {
+      showItem(menu, false);
+      return;
+    }
+
+    const isSmartWindow = lazy.AIWindow.isAIWindowActive(
+      browser.documentGlobal.browsingContext?.topChromeWindow ??
+        browser.documentGlobal
+    );
+
+    if (isSmartWindow && !selectionInfo?.text) {
       showItem(menu, false);
       return;
     }
@@ -741,13 +796,18 @@ export const GenAI = {
       (lazy.chatProvider != "" || lazy.chatMenu) &&
       (!lazy.sidebarRevamp || lazy.sidebarTools.includes("aichat"));
 
+    const isSingleTab = contextTabs?.length === 1;
     let canShow = false;
     switch (source) {
       case "page":
-        canShow = this.canShowChatEntrypoint || isPageFeatureAllowed;
+        canShow = isSmartWindow
+          ? true
+          : this.canShowChatEntrypoint || isPageFeatureAllowed;
         break;
       case "tab":
-        canShow = isPageFeatureAllowed && contextTabs?.length === 1;
+        canShow = isSmartWindow
+          ? isSingleTab
+          : isPageFeatureAllowed && isSingleTab;
         break;
       case "tool":
         canShow = lazy.chatPage;
@@ -763,7 +823,9 @@ export const GenAI = {
 
     // Only "page" and "tab" contexts need a <menu> submenu
     if (source !== "tool") {
-      if (provider) {
+      if (isSmartWindow) {
+        doc.l10n.setAttributes(menu, "genai-menu-ask-smart-window");
+      } else if (provider) {
         doc.l10n.setAttributes(menu, "genai-menu-ask-provider-2", { provider });
       } else {
         doc.l10n.setAttributes(
@@ -796,6 +858,9 @@ export const GenAI = {
       browser,
       context,
       promptObj => {
+        if (isSmartWindow && promptObj.id === "quiz") {
+          return null;
+        }
         const { contentType, selection } = context;
         const item = addItem();
         item.setAttribute("label", promptObj.label);
@@ -821,7 +886,7 @@ export const GenAI = {
 
     // For page which currently only shows 1 prompt, make it less empty with an
     // Open or Choose options depending on provider
-    if (context.contentType == "page") {
+    if (!isSmartWindow && context.contentType == "page") {
       const openItem = addItem();
       if (provider) {
         doc.l10n.setAttributes(openItem, "genai-menu-open-provider", {
@@ -836,7 +901,7 @@ export const GenAI = {
         );
       }
       openItem.addEventListener("command", () => {
-        const window = browser.ownerGlobal;
+        const window = browser.documentGlobal;
         window.SidebarController.show("viewGenaiChatSidebar");
         Glean.genaiChatbot.contextmenuChoose.record({
           provider: this.getProviderId(),
@@ -844,7 +909,10 @@ export const GenAI = {
       });
     }
 
-    // Add remove provider option
+    // Add remove provider option — not applicable in Smart Window
+    if (isSmartWindow) {
+      return;
+    }
     const popup = source === "tool" ? menu : menu.menupopup;
     popup.appendChild(doc.createXULElement("menuseparator"));
     const removeItem = addItem();
@@ -1226,14 +1294,35 @@ export const GenAI = {
         selection: context.selection?.length ?? 0,
       });
     }
+    const win =
+      context.window?.browsingContext?.topChromeWindow ?? context.window;
     Glean.genaiChatbot.promptClick.record({
       content_type: context.contentType,
       prompt: promptObj.id ?? "custom",
       provider: this.getProviderId(),
       reader_mode: context.readerMode,
       selection: context.selection?.length ?? 0,
+      smart_window: lazy.AIWindow.isAIWindowActive(win),
       source: context.entry,
     });
+
+    // In Smart Window, send selected text with prompt label to the assistant
+    if (lazy.AIWindow.isAIWindowActive(win)) {
+      if (!lazy.AIWindowUI.isSidebarOpen(win)) {
+        const activeConversation = lazy.AIWindow.getActiveConversation(win);
+        await lazy.AIWindowUI.openSidebar(win, activeConversation ?? undefined);
+      }
+      const aiWindowEl = lazy.AIWindowUI._getSidebarAiWindow(win);
+      if (aiWindowEl) {
+        // TODO (Bug 2048401): Revisit prompt construction once Smart Window prompt definitions
+        // are finalized via Remote Settings.
+        const text = promptObj.label
+          ? `${promptObj.label}: ${context.selection}`
+          : `${promptObj.value}\n\n${context.selection}`;
+        aiWindowEl.submitChatMessage({ text, submitType: "shortcuts" });
+      }
+      return;
+    }
 
     // If no provider is configured, open sidebar and wait once for onboarding
     const { SidebarController } = context.window;
@@ -1318,15 +1407,26 @@ export const GenAI = {
     return "sidebar-chatbot";
   },
 
+  get hasDistinctEnabledState() {
+    // The sidebar chatbot has a distinct enabled state based on choosing a
+    // specific provider instead of using a single generic "Enabled" option.
+    return true;
+  },
+
   get isBlocked() {
     return !lazy.chatEnabled;
   },
 
   get isEnabled() {
-    return (lazy.chatEnabled && lazy.chatProvider != "") || lazy.chatPage;
+    return lazy.chatEnabled && lazy.chatProvider != "";
   },
 
   get isAllowed() {
+    return true;
+  },
+
+  get canRunOnDevice() {
+    // The sidebar chatbot has no known restrictions based on device hardware.
     return true;
   },
 
@@ -1338,8 +1438,11 @@ export const GenAI = {
     );
   },
 
-  async reset() {
-    Services.prefs.clearUserPref(PREF_CHAT_ENABLED);
+  async makeAvailable() {
+    // Set explicitly rather than clearing, so that a non-locked policy default
+    // of "blocked" does not prevent the user from switching back to "available".
+    Services.prefs.setStringPref(PREF_AI_CONTROL_SIDEBAR_CHATBOT, "available");
+    Services.prefs.setBoolPref(PREF_CHAT_ENABLED, true);
     Services.prefs.clearUserPref(PREF_CHAT_PAGE);
     Services.prefs.clearUserPref(PREF_CHAT_PROVIDER);
   },
@@ -1351,7 +1454,7 @@ export const GenAI = {
     // "available" unless it's set elsewhere.
   },
 
-  async disable() {
+  async block() {
     Services.prefs.setBoolPref(PREF_CHAT_ENABLED, false);
     Services.prefs.setBoolPref(PREF_CHAT_PAGE, false);
     Services.prefs.clearUserPref(PREF_CHAT_PROVIDER);

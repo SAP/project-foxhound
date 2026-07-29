@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -9,6 +7,7 @@
 #include "mozilla/DefineEnum.h"
 #include "mozilla/Result.h"
 #include "mozilla/Variant.h"
+#include "nsStringFwd.h"
 // Media Capabilities API spec validation check functions.
 // These functions are used as a first pass to filter out non-compliant
 // configurations according to the spec. Lower-level SW/HW compability checks
@@ -19,6 +18,9 @@
 // commit: b9d2f30c00c534ac44179f546bc60f421ce78070
 namespace mozilla {
 class ErrorResult;
+class MediaExtendedMIMEType;
+template <typename T>
+class Maybe;
 
 namespace dom {
 class Promise;
@@ -26,6 +28,8 @@ struct MediaDecodingConfiguration;
 struct MediaEncodingConfiguration;
 enum class MediaEncodingType : uint8_t;
 enum class MediaDecodingType : uint8_t;
+enum class ColorGamut : uint8_t;
+enum class TransferFunction : uint8_t;
 }  // namespace dom
 
 namespace mediacaps {
@@ -42,19 +46,33 @@ MOZ_DEFINE_ENUM_CLASS_WITH_TOSTRING(
 using MediaType = Variant<dom::MediaEncodingType, dom::MediaDecodingType>;
 using ValidationResult = mozilla::Result<mozilla::Ok, ValidationError>;
 
+struct BehaviorConfig;
+
+ValidationResult CheckMIMETypeSupport(
+    const MediaExtendedMIMEType& aMime,
+    const MediaType& aEncodingOrDecodingType,
+    const Maybe<dom::ColorGamut>& aColorGamut,
+    const Maybe<dom::TransferFunction>& aTransferFunction,
+    const BehaviorConfig& aBehavior);
+
 // https://w3c.github.io/media-capabilities/#mediaconfiguration
 ValidationResult IsValidMediaDecodingConfiguration(
-    const dom::MediaDecodingConfiguration& aConfig);
+    const dom::MediaDecodingConfiguration& aConfig,
+    const BehaviorConfig& aBehavior);
 
 // NOTE: No formal validation steps in the spec.
 //       Currently just calls IsValidMediaConfiguration.
 ValidationResult IsValidMediaEncodingConfiguration(
-    const dom::MediaEncodingConfiguration& aConfig);
+    const dom::MediaEncodingConfiguration& aConfig,
+    const BehaviorConfig& aBehavior);
 
 // Helpers which also convert the validation error to text
 void RejectWithValidationResult(dom::Promise* aPromise,
                                 const ValidationError aErr);
 void ThrowWithValidationResult(ErrorResult& aRv, const ValidationError aErr);
+
+// Used in MediaCapabilities.cpp WebRTC checks
+bool IsMediaTypeWebRTC(const MediaType& aType);
 }  // namespace mediacaps
 }  // namespace mozilla
 

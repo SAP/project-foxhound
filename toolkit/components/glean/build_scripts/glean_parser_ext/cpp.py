@@ -6,9 +6,10 @@
 Outputter to generate C++ code for metrics.
 """
 
+import functools
+
 import jinja2
 from glean_parser import metrics, util
-from mozbuild.util import memoize
 from util import generate_metric_ids, generate_ping_ids, get_metrics
 
 
@@ -104,7 +105,7 @@ def has_structure(all_objs) -> bool:
     return False
 
 
-@memoize
+@functools.cache
 def get_metrics_template(get_metric_id):
     return util.get_jinja2_template(
         "cpp.jinja2",

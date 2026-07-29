@@ -8,8 +8,8 @@
 
 namespace mozilla::dom {
 
-RemoteWorkerDebuggerManagerChild::RemoteWorkerDebuggerManagerChild() {}
+RemoteWorkerDebuggerManagerChild::RemoteWorkerDebuggerManagerChild() = default;
 
-RemoteWorkerDebuggerManagerChild::~RemoteWorkerDebuggerManagerChild() {}
+RemoteWorkerDebuggerManagerChild::~RemoteWorkerDebuggerManagerChild() = default;
 
 }  // end of namespace mozilla::dom

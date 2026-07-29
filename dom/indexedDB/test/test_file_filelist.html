@@ -130,9 +130,8 @@
       }
     }
 
-    // Two object store infos * two file lists * three items plus
-    // original file called randomFile
-    is(bufferCache.length, 13, "Correct length");
+    // Only randomFile is cached (see verifyBlobAsync documentation).
+    is(bufferCache.length, 1, "Correct length");
   }
 </script>
 <script type="text/javascript" src="file.js"></script>

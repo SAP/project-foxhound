@@ -8,8 +8,9 @@
 const ICONS = {
   active: "chrome://browser/skin/trust-icon-active.svg",
   insecure: "chrome://browser/skin/trust-icon-insecure.svg",
-  file: "chrome://global/skin/icons/page-portrait.svg",
+  warning: "chrome://browser/skin/trust-icon-warning.svg",
   secure: "chrome://global/skin/icons/security.svg",
+  secureCustomRoot: "chrome://global/skin/icons/security-custom-root.svg",
   broken: "chrome://global/skin/icons/security-broken.svg",
   failure: "chrome://global/skin/icons/info.svg",
 };
@@ -24,7 +25,7 @@ const TESTS = [
   {
     url: "https://example.com",
     icon: ICONS.active,
-    connectionIcon: ICONS.secure,
+    connectionIcon: ICONS.secureCustomRoot,
     descriptionSection: "trustpanel-header-enabled",
   },
   {
@@ -43,7 +44,7 @@ const TESTS = [
   },
   {
     url: "about:neterror",
-    icon: ICONS.active,
+    icon: ICONS.warning,
     connectionIcon: ICONS.failure,
     descriptionSection: "trustpanel-header-enabled",
   },
@@ -57,10 +58,6 @@ let fetchIconUrl = (doc, id) => {
 };
 
 add_task(async function () {
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.urlbar.trustPanel.featureGate", true]],
-  });
-
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       web_accessible_resources: ["test_page.html"],

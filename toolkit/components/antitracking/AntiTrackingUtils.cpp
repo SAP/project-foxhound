@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -32,6 +30,7 @@
 #include "nsNetUtil.h"
 #include "nsMixedContentBlocker.h"
 #include "nsPIDOMWindow.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsQueryObject.h"
 #include "nsRFPService.h"
 #include "nsSandboxFlags.h"
@@ -429,7 +428,7 @@ AntiTrackingUtils::GetStoragePermissionStateInParent(nsIChannel* aChannel) {
   int32_t cookieBehavior = cookieJarSettings->GetCookieBehavior();
 
   // We only need to check the storage permission if the cookie behavior is
-  // BEHAVIOR_REJECT_TRACKER, BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN or
+  // BEHAVIOR_REJECT_TRACKER, BEHAVIOR_PARTITION_FOREIGN or
   // BEHAVIOR_REJECT_FOREIGN with exceptions. Because ContentBlocking wouldn't
   // update or check the storage permission if the cookie behavior is not
   // belongs to these three.
@@ -792,7 +791,7 @@ uint64_t AntiTrackingUtils::GetTopLevelAntiTrackingWindowId(
     return 0;
   }
 
-  // Do not check BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN her because when
+  // Do not check BEHAVIOR_PARTITION_FOREIGN her because when
   // a third-party subresource is inside the main frame, we need to return the
   // top-level window id to partition its cookies correctly.
   uint32_t behavior = *winContext->GetCookieBehavior();
@@ -992,7 +991,7 @@ void AntiTrackingUtils::ComputeIsThirdPartyToTopWindow(nsIChannel* aChannel) {
   RefPtr<BrowsingContext> bc;
   loadInfo->GetBrowsingContext(getter_AddRefs(bc));
   if (!bc) {
-    bc = loadInfo->GetWorkerAssociatedBrowsingContext();
+    bc = loadInfo->GetAssociatedBrowsingContext();
   }
 
   nsCOMPtr<nsIURI> uri;

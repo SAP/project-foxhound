@@ -4,16 +4,19 @@
 
 package org.mozilla.fenix.ui.efficiency.tests
 
+import org.junit.Ignore
 import org.junit.Test
 import org.mozilla.fenix.ui.efficiency.helpers.BaseTest
 
 class SettingsSiteSettingsTest : BaseTest() {
 
+    @Ignore("Covered by verifyNavigationReachability[1: SettingsSiteSettingsPage (TBD) — Navigation Reachability]")
     @Test
     fun verifySiteSettingsSectionTest() {
         on.settingsSiteSettings.navigateToPage()
     }
 
+    @Ignore("Covered by verifyNavigationReachability[1: SettingsSiteSettingsExceptionsPage (TBD) — Navigation Reachability]")
     @Test
     fun verifySiteSettingsExceptionsSectionTest() {
         on.settingsSiteSettingsExceptions.navigateToPage()

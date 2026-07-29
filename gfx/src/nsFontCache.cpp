@@ -1,10 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsFontCache.h"
 
+#include "gfxFontUtils.h"
 #include "gfxTextRun.h"
 #include "mozilla/Services.h"
 #include "mozilla/ServoUtils.h"
@@ -93,15 +93,15 @@ already_AddRefed<nsFontMetrics> nsFontCache::GetMetricsFor(
 
   // It's not in the cache. Get font metrics and then cache them.
   // If the cache has reached its size limit, drop the older half of the
-  // entries; but if we're on a stylo thread (the usual case), we have
+  // entries; but if Servo traversal is running (the usual case), we have
   // to post a task back to the main thread to do the flush.
   if (n >= kMaxCacheEntries - 1 && !mFlushPending) {
-    if (NS_IsMainThread()) {
-      Flush(mFontMetrics.Length() - kMaxCacheEntries / 2);
-    } else {
+    if (gfxFontUtils::IsInServoTraversal()) {
       mFlushPending = true;
       nsCOMPtr<nsIRunnable> flushTask = new FlushFontMetricsTask(this);
       MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(flushTask));
+    } else {
+      Flush(mFontMetrics.Length() - kMaxCacheEntries / 2);
     }
   }
 

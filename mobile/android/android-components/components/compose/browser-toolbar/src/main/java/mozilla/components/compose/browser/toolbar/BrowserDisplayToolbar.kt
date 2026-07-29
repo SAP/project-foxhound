@@ -4,7 +4,6 @@
 
 package mozilla.components.compose.browser.toolbar
 
-import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.DividerDefaults
 import androidx.compose.material3.MaterialTheme
@@ -56,7 +55,6 @@ import mozilla.components.support.base.log.logger.Logger
  * See [MDN docs](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/browserAction).
  * @param onInteraction Callback for handling [BrowserToolbarEvent]s on user interactions.
  */
-@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 @Suppress("LongMethod")
 fun BrowserDisplayToolbar(

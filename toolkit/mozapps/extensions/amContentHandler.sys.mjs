@@ -2,15 +2,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/**
+ * Handles application/x-xpinstall navigation requests in the parent process,
+ * by initiating add-on installation.
+ */
+
 const XPI_CONTENT_TYPE = "application/x-xpinstall";
-const MSG_INSTALL_ADDON = "WebInstallerInstallAddonFromWebpage";
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-const lazy = {};
-
-XPCOMUtils.defineLazyServiceGetters(lazy, {
-  ThirdPartyUtil: ["@mozilla.org/thirdpartyutil;1", Ci.mozIThirdPartyUtil],
+const lazy = XPCOMUtils.declareLazy({
+  AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
+  ThirdPartyUtil: {
+    service: "@mozilla.org/thirdpartyutil;1",
+    iid: Ci.mozIThirdPartyUtil,
+  },
 });
 
 export function amContentHandler() {}
@@ -35,14 +41,28 @@ amContentHandler.prototype = {
       throw Components.Exception("", Cr.NS_ERROR_WONT_HANDLE_CONTENT);
     }
 
-    let uri = aRequest.URI;
+    const { loadInfo, URI: uri } = aRequest;
+    let { triggeringPrincipal } = loadInfo;
+    const browser = loadInfo.targetBrowsingContext.top.embedderElement;
+
+    if (
+      triggeringPrincipal.isSystemPrincipal &&
+      loadInfo.triggeringRemoteType
+    ) {
+      // Navigations from the system principal are expected to be triggered
+      // from the parent only; downgrade principal if from a content process.
+      triggeringPrincipal = Services.scriptSecurityManager.createNullPrincipal(
+        loadInfo.originAttributes
+      );
+    }
 
     // This check will allow a link to an xpi clicked by the user to trigger the
     // addon install flow, but prevents window.open or window.location from triggering
     // an addon install even when called from inside a event listener triggered by
     // user input.
     if (
-      !aRequest.loadInfo.hasValidUserGestureActivation &&
+      !triggeringPrincipal.isSystemPrincipal &&
+      !loadInfo.hasValidUserGestureActivation &&
       Services.prefs.getBoolPref("xpinstall.userActivation.required", true)
     ) {
       const error = Components.Exception(
@@ -57,14 +77,8 @@ amContentHandler.prototype = {
 
     aRequest.cancel(Cr.NS_BINDING_ABORTED);
 
-    let { loadInfo } = aRequest;
-    const { triggeringPrincipal } = loadInfo;
-
-    let browsingContext = loadInfo.targetBrowsingContext;
-
     let sourceHost;
     let sourceURL;
-
     try {
       sourceURL =
         triggeringPrincipal.spec != "" ? triggeringPrincipal.spec : undefined;
@@ -74,30 +88,42 @@ amContentHandler.prototype = {
       // an NS_ERROR_FAILURE when principal.host is accessed).
     }
 
-    let install = {
-      uri: uri.spec,
-      hash: null,
-      name: null,
-      icon: null,
-      mimetype: XPI_CONTENT_TYPE,
-      triggeringPrincipal,
-      callbackID: -1,
-      method: "link",
-      sourceHost,
-      sourceURL,
-      browsingContext,
-      hasCrossOriginAncestor: lazy.ThirdPartyUtil.isThirdPartyChannel(aRequest),
-    };
+    const hasCrossOriginAncestor =
+      lazy.ThirdPartyUtil.isThirdPartyChannel(aRequest);
 
-    Services.cpmm.sendAsyncMessage(MSG_INSTALL_ADDON, install);
+    const telemetryInfo = {
+      source: lazy.AddonManager.getInstallSourceFromHost(sourceHost),
+      sourceURL,
+      method: "link",
+    };
+    if (uri.scheme == "file") {
+      telemetryInfo.source = "file-url";
+      if (triggeringPrincipal.isSystemPrincipal) {
+        delete telemetryInfo.sourceURL; // delete - undefined anyway.
+        // Delete to distinguish between "link" and direct navigation.
+        delete telemetryInfo.method;
+      }
+    }
+
+    lazy.AddonManager.getInstallForURL(uri.spec, {
+      browser,
+      triggeringPrincipal,
+      telemetryInfo,
+      sendCookies: true,
+    }).then(install => {
+      if (!install) {
+        return;
+      }
+      lazy.AddonManager.installAddonFromWebpage(
+        XPI_CONTENT_TYPE,
+        browser,
+        triggeringPrincipal,
+        install,
+        { hasCrossOriginAncestor }
+      );
+    });
   },
 
   classID: Components.ID("{7beb3ba8-6ec3-41b4-b67c-da89b8518922}"),
   QueryInterface: ChromeUtils.generateQI(["nsIContentHandler"]),
-
-  log(aMsg) {
-    let msg = "amContentHandler.js: " + (aMsg.join ? aMsg.join("") : aMsg);
-    Services.console.logStringMessage(msg);
-    dump(msg + "\n");
-  },
 };

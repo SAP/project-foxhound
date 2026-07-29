@@ -13,9 +13,9 @@ import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
+import kotlin.test.assertNotNull
 
 class WebExtensionPopupObserverTest {
 
@@ -49,7 +49,7 @@ class WebExtensionPopupObserverTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertNotNull(extensionOpeningPopup)
-        assertEquals(extensionId, extensionOpeningPopup!!.id)
+        assertEquals(extensionId, extensionOpeningPopup.id)
         assertEquals(engineSession, extensionOpeningPopup.popupSession)
 
         // Verify that stopped feature does not observe and forward requests to open popup

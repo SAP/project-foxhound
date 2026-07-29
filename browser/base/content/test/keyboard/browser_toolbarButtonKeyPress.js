@@ -203,7 +203,7 @@ add_task(async function testSidebarsButtonPress() {
     await SpecialPowers.pushPrefEnv({
       set: [["sidebar.verticalTabs", true]],
     });
-    await SidebarController.initializeUIState({ launcherExpanded: false });
+    await SidebarController.updateUIState({ launcherExpanded: false });
   }
   let button = document.getElementById("sidebar-button");
   ok(!button.checked, "Sidebars button not checked at start of test");

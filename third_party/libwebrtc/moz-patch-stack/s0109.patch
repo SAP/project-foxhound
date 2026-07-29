@@ -1,40 +1,32 @@
-From: Andreas Pehrson <apehrson@mozilla.com>
-Date: Tue, 28 Jan 2025 21:45:00 +0000
-Subject: Bug 1938047 - Link adapted_video_track_source.cc and generate webrtc
- moz.build files. r=ng,webrtc-reviewers
+From: Michael Froman <mfroman@mozilla.com>
+Date: Thu, 10 Jul 2025 20:03:00 +0000
+Subject: Bug 1975060 - improve build file generation regarding x11 usage.
+ r=dbaker
 
-Differential Revision: https://phabricator.services.mozilla.com/D234863
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/b6dd815fc9d2df718a1b48b96f58f99c0cfb7e19
+Upstream will be removing use_x11. We override the use_x11 settings
+from within gn_processor.py anyway, so we can remove our hack in
+third_party/libwebrtc/webrtc.gni, and then make gn_processor.py modify
+ozone_platform_x11 rather than use_x11.
+
+Note: these changes produce identical moz.build files for libwebrtc
+and abseil-cpp.
+
+Differential Revision: https://phabricator.services.mozilla.com/D255713
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/c8cf67108972d5caefbfbb66146e26e5358493c2
 ---
- media/BUILD.gn | 11 -----------
- 1 file changed, 11 deletions(-)
+ webrtc.gni | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/media/BUILD.gn b/media/BUILD.gn
-index 2ea661f05d..8de0b01bc3 100644
---- a/media/BUILD.gn
-+++ b/media/BUILD.gn
-@@ -54,11 +54,6 @@ rtc_library("rtc_media_base") {
-     "base/video_broadcaster.h",  # Used downstream
-     "base/video_common.h",  # Used downstream
-   ]
--  if (build_with_mozilla) {
--    sources -= [
--      "base/adapted_video_track_source.h",
--    ]
--  }
-   deps = [
-     ":adapted_video_track_source",
-     ":codec",
-@@ -139,12 +134,6 @@ rtc_library("adapted_video_track_source") {
-     "base/adapted_video_track_source.cc",
-     "base/adapted_video_track_source.h",
-   ]
--  if (build_with_mozilla) {
--    sources -= [
--      "base/adapted_video_track_source.cc",
--      "base/adapted_video_track_source.h",
--    ]
--  }
-   deps = [
-     ":video_adapter",
-     ":video_broadcaster",
+diff --git a/webrtc.gni b/webrtc.gni
+index 366755e02f..d242bc314b 100644
+--- a/webrtc.gni
++++ b/webrtc.gni
+@@ -128,7 +128,7 @@ declare_args() {
+   rtc_build_tools = false
+ 
+   # Set this to false to skip building code that requires X11.
+-  rtc_use_x11 = use_x11
++  rtc_use_x11 = ozone_platform_x11
+ 
+   # Set this to use PipeWire on the Wayland display server.
+   # By default it's only enabled on desktop Linux (excludes ChromeOS) and

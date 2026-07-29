@@ -33,7 +33,6 @@ class HostRecordQueueTest : public ::testing::Test {
   void SetUp() override {}
 
   HostRecordQueue queue;
-  Mutex mMutex{"HostRecordQueueTest"};
   nsRefPtrHashtable<nsGenericHashKey<nsHostKey>, nsHostRecord> mDB;
 };
 
@@ -48,9 +47,9 @@ static RefPtr<nsHostRecord> CreateAndInsertMockRecord(
 TEST_F(HostRecordQueueTest, AddToEvictionQ_BelowMax) {
   RefPtr<nsHostRecord> rec = CreateAndInsertMockRecord(mDB, "A.com");
 
-  MutexAutoLock lock(mMutex);
+  MutexAutoLock lock(queue.mLock);
 
-  queue.AddToEvictionQ(rec.get(), 100, mDB, lock);
+  queue.AddToEvictionQ(rec.get(), 100, mDB);
 
   ASSERT_EQ(1u, queue.EvictionQSize());
   ASSERT_TRUE(rec->isInList());
@@ -68,15 +67,15 @@ TEST_F(HostRecordQueueTest, AddToEvictionQ_AtMax_EvictsOldest) {
   RefPtr<nsHostRecord> rec2 = CreateAndInsertMockRecord(mDB, "B.com");
   RefPtr<nsHostRecord> rec3 = CreateAndInsertMockRecord(mDB, "C.com");
 
-  MutexAutoLock lock(mMutex);
-  queue.AddToEvictionQ(rec1, MAX_ENTRIES, mDB, lock);
-  queue.AddToEvictionQ(rec2, MAX_ENTRIES, mDB, lock);
-  queue.AddToEvictionQ(rec3, MAX_ENTRIES, mDB, lock);
+  MutexAutoLock lock(queue.mLock);
+  queue.AddToEvictionQ(rec1, MAX_ENTRIES, mDB);
+  queue.AddToEvictionQ(rec2, MAX_ENTRIES, mDB);
+  queue.AddToEvictionQ(rec3, MAX_ENTRIES, mDB);
 
   ASSERT_EQ(MAX_ENTRIES, queue.EvictionQSize());
 
   RefPtr<nsHostRecord> rec4 = CreateAndInsertMockRecord(mDB, "New.com");
-  queue.AddToEvictionQ(rec4, MAX_ENTRIES, mDB, lock);
+  queue.AddToEvictionQ(rec4, MAX_ENTRIES, mDB);
 
   ASSERT_TRUE(rec2->isInList());
   ASSERT_TRUE(rec3->isInList());
@@ -97,17 +96,17 @@ TEST_F(HostRecordQueueTest, MoveToEvictionQueueTail) {
   RefPtr<nsHostRecord> rec2 = CreateAndInsertMockRecord(mDB, "B.com");
   RefPtr<nsHostRecord> rec3 = CreateAndInsertMockRecord(mDB, "C.com");
 
-  MutexAutoLock lock(mMutex);
-  queue.AddToEvictionQ(rec1, MAX_ENTRIES, mDB, lock);
-  queue.AddToEvictionQ(rec2, MAX_ENTRIES, mDB, lock);
-  queue.AddToEvictionQ(rec3, MAX_ENTRIES, mDB, lock);
+  MutexAutoLock lock(queue.mLock);
+  queue.AddToEvictionQ(rec1, MAX_ENTRIES, mDB);
+  queue.AddToEvictionQ(rec2, MAX_ENTRIES, mDB);
+  queue.AddToEvictionQ(rec3, MAX_ENTRIES, mDB);
 
   ASSERT_EQ(MAX_ENTRIES, queue.EvictionQSize());
 
-  queue.MoveToEvictionQueueTail(rec1, lock);
+  queue.MoveToEvictionQueueTail(rec1);
 
   RefPtr<nsHostRecord> rec4 = CreateAndInsertMockRecord(mDB, "New.com");
-  queue.AddToEvictionQ(rec4, MAX_ENTRIES, mDB, lock);
+  queue.AddToEvictionQ(rec4, MAX_ENTRIES, mDB);
 
   ASSERT_TRUE(rec1->isInList());
   ASSERT_TRUE(rec3->isInList());

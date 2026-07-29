@@ -26,10 +26,11 @@ kind-dependencies:
     - shippable-l10n-mac-signing
     - shippable-l10n-mac-notarization
     - repackage-signing-l10n
-    - partials
     - partials-signing
     - repackage-signing-msi
     - repackage-signing-shippable-l10n-msix
+    - repackage-pkg-notarization
+    - repackage-l10n-pkg-notarization
     - mar-signing
     - mar-signing-l10n
     - attribution
@@ -55,8 +56,6 @@ only-for-build-platforms:
     - win32-devedition/opt
     - win64-devedition/opt
     - win64-aarch64-devedition/opt
-    - linux64-asan-reporter-shippable/opt
-    - win64-asan-reporter-shippable/opt
 
 tasks:
     beetmover-repackage:

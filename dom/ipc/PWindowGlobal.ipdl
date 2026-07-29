@@ -1,20 +1,20 @@
-/* -*- Mode: C++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 8 -*- */
-/* vim: set sw=2 ts=8 et tw=80 ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+include "ipc/ErrorIPCUtils.h";
+include "ipc/MediaControlIPC.h";
 include "mozilla/dom/DocShellMessageUtils.h";
 include "mozilla/dom/IdentityCredentialSerializationHelpers.h";
 include "mozilla/dom/PermissionMessageUtils.h";
 include "mozilla/dom/SessionStoreMessageUtils.h";
-include "mozilla/ipc/TransportSecurityInfoUtils.h";
 include "mozilla/ipc/URIUtils.h";
 
 include protocol PBrowser;
 include protocol PInProcess;
 include protocol PBrowserBridge;
 include protocol PDigitalCredential;
+include protocol PSerialManager;
 include protocol PWebAuthnTransaction;
 include protocol PWebIdentity;
 
@@ -23,24 +23,29 @@ include ClientIPCTypes;
 include JSIPCValue;
 include NeckoChannelParams;
 include SessionStoreTypes;
+include ModelContextTypes;
 
 include "mozilla/layers/LayersMessageUtils.h";
 
 using mozilla::dom::JSActorMessageKind from "mozilla/dom/JSActor.h";
 using mozilla::gfx::IntRect from "mozilla/gfx/Rect.h";
+using mozilla::gfx::CrossProcessPaintFlags from "mozilla/gfx/CrossProcessPaint.h";
 [MoveOnly] using mozilla::gfx::PaintFragment from "mozilla/gfx/CrossProcessPaint.h";
 using nscolor from "nsColor.h";
 using mozilla::dom::XPCOMPermitUnloadAction from "nsIDocumentViewer.h";
 using mozilla::dom::TabId from "mozilla/dom/ipc/IdType.h";
 using mozilla::layers::LayersId from "mozilla/layers/LayersTypes.h";
-[RefCounted] using class nsITransportSecurityInfo from "nsITransportSecurityInfo.h";
 using mozilla::UseCounters from "mozilla/UseCounter.h";
 using mozilla::dom::MaybeDiscardedWindowContext from "mozilla/dom/WindowContext.h";
 [RefCounted] using mozilla::dom::SessionStoreRestoreData from "mozilla/dom/SessionStoreRestoreData.h";
+using mozilla::dom::AudioSessionType from "mozilla/dom/AudioSessionBinding.h";
+using mozilla::dom::AudioSessionState from "mozilla/dom/AudioSessionBinding.h";
 using mozilla::dom::CredentialMediationRequirement from "mozilla/dom/CredentialManagementBinding.h";
 using mozilla::dom::IdentityCredentialDisconnectOptions from "mozilla/dom/IdentityCredentialBinding.h";
 using mozilla::dom::IdentityCredentialRequestOptions from "mozilla/dom/IdentityCredentialBinding.h";
 using mozilla::dom::LoginStatus from "mozilla/dom/LoginStatusBinding.h";
+using mozilla::CopyableErrorResult from "mozilla/ErrorResult.h";
+[RefCounted] using mozilla::dom::ParentProcessChannelHandle from "mozilla/dom/ParentProcessChannelHandle.h";
 
 namespace mozilla {
 namespace dom {
@@ -69,6 +74,7 @@ async protocol PWindowGlobal
 {
   manager PBrowser or PInProcess;
   manages PDigitalCredential;
+  manages PSerialManager;
   manages PWebAuthnTransaction;
   manages PWebIdentity;
 
@@ -82,7 +88,7 @@ child:
                         TabId aTabId, LayersId aLayersId) returns (bool success);
 
   async DrawSnapshot(IntRect? aRect, float aScale, nscolor aBackgroundColor,
-                     uint32_t aFlags) returns (PaintFragment retval);
+                     CrossProcessPaintFlags aFlags) returns (PaintFragment retval);
 
   async DispatchSecurityPolicyViolation(nsString aViolationEventJSON,
                                         nsString aReportGroupName);
@@ -142,7 +148,8 @@ parent:
   // Update the title of the document in this WindowGlobal.
   [LazySend] async UpdateDocumentTitle(nsString aTitle);
 
-  [LazySend] async UpdateDocumentSecurityInfo(nullable nsITransportSecurityInfo aSecurityInfo);
+  [LazySend] async UpdateChannels(nullable ParentProcessChannelHandle aDocumentHandle,
+                                  nullable ParentProcessChannelHandle aFailedHandle);
 
   // Update the document's HTTPS-Only Mode flags in this WindowGlobal.
   [LazySend] async UpdateHttpsOnlyStatus(uint32_t aHttpsOnlyStatus);
@@ -207,7 +214,11 @@ parent:
 
   async SetDocumentDomain(nsIURI aDomain);
 
+  async SetSiteIntegrityProtected(nsIURI aSourceURI, uint64_t aMaxAge);
+
   async Destroy();
+
+  async AddCertException(bool aTemporary) returns(nsresult success);
 
   async ReloadWithHttpsOnlyException();
 
@@ -217,25 +228,35 @@ parent:
   async SetCookies(nsCString baseDomain,
                                       OriginAttributes attrs,
                                       nullable nsIURI host,
-                                      bool fromHttp,
                                       bool isThirdParty,
                                       CookieStruct[] cookies);
-
-  // Notify parent of storage access in the content process. This only happens
-  // once per window lifetime to avoid redundant IPC.
-  async OnInitialStorageAccess();
 
   // User activation notifications for BounceTrackingProtection.
   async RecordUserActivationForBTP();
 
+  // User interaction notification for permission expiry tracking.
+  async RecordUserInteractionForPermissions();
+
+  // The content-side `navigator.audioSession.type` setter routes here so the
+  // parent's MediaController can record the per-browsing-context override.
+  async NotifyAudioSessionTypeOverride(AudioSessionType aType);
+
   async PDigitalCredential();
+  async PSerialManager();
   async PWebAuthnTransaction();
   async PWebIdentity();
 
 child:
+  async NotifyAudioSessionStateChanged(AudioSessionState aState);
+
   async NotifyPermissionChange(nsCString type, uint32_t permission);
 
   async ProcessCloseRequest(MaybeDiscardedBrowsingContext aFocused);
+
+  async GetModelContextTools() returns (nsresult rv, IPCModelContextToolDefinition[] tools);
+
+  async InvokeModelContextTool(nsCString toolName, StructuredCloneData input)
+      returns (CopyableErrorResult rv, nullable StructuredCloneData output);
 };
 
 } // namespace dom

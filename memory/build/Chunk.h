@@ -7,8 +7,9 @@
 
 #include "mozilla/Atomics.h"
 
+#include "mozjemalloc_types.h"
+
 #include "RadixTree.h"
-#include "RedBlackTree.h"
 
 #include "mozilla/DoublyLinkedList.h"
 
@@ -27,8 +28,9 @@ enum ChunkType {
 
 // Each element of the chunk map corresponds to one page within the chunk.
 struct arena_chunk_map_t {
-  // Linkage for run trees. Used for arena_t's tree or available runs.
-  RedBlackTreeNode<arena_chunk_map_t> link;
+  // Linkage for run lists. Used for arena_t's available runs (see
+  // ArenaAvailRuns.h).
+  mozilla::DoublyLinkedListElement<arena_chunk_map_t> link;
 
   // Run address (or size) and various flags are stored together.  The bit
   // layout looks like (assuming 32-bit system):
@@ -126,8 +128,6 @@ struct arena_chunk_map_t {
 // CHUNK_MAP_DIRTY, _DECOMMITED _MADVISED and _FRESH are always mutually
 // exclusive.
 //
-// CHUNK_MAP_KEY is never used on real pages, only on lookup keys.
-//
 #define CHUNK_MAP_BUSY ((size_t)0x100U)
 #define CHUNK_MAP_FRESH ((size_t)0x80U)
 #define CHUNK_MAP_MADVISED ((size_t)0x40U)
@@ -139,7 +139,6 @@ struct arena_chunk_map_t {
 #define CHUNK_MAP_FRESH_MADVISED_DECOMMITTED_OR_BUSY              \
   (CHUNK_MAP_FRESH | CHUNK_MAP_MADVISED | CHUNK_MAP_DECOMMITTED | \
    CHUNK_MAP_BUSY)
-#define CHUNK_MAP_KEY ((size_t)0x10U)
 #define CHUNK_MAP_DIRTY ((size_t)0x08U)
 #define CHUNK_MAP_ZEROED ((size_t)0x04U)
 #define CHUNK_MAP_LARGE ((size_t)0x02U)
@@ -183,15 +182,36 @@ struct arena_chunk_t {
   bool IsEmpty();
 };
 
+namespace mozilla {
+struct DirtyChunkListTrait {
+  static DoublyLinkedListElement<arena_chunk_t>& Get(arena_chunk_t* aThis) {
+    return aThis->mChunksDirtyElim;
+  }
+
+  static const DoublyLinkedListElement<arena_chunk_t>& Get(
+      const arena_chunk_t* aThis) {
+    return aThis->mChunksDirtyElim;
+  }
+
+  using SearchKey = arena_chunk_t*;
+};
+}  // namespace mozilla
+
 [[nodiscard]] bool pages_commit(void* aAddr, size_t aSize);
 
 void pages_decommit(void* aAddr, size_t aSize);
 
 void chunks_init();
 
-void* chunk_alloc(size_t aSize, size_t aAlignment, bool aBase);
+void* base_chunk_alloc(size_t aSize, size_t aAlignment);
 
-void chunk_dealloc(void* aChunk, size_t aSize, ChunkType aType);
+void base_chunk_dealloc(void* aChunk, size_t aSize, ChunkType aType);
+
+void* arena_chunk_alloc(chunk_allocator_t* aChunkAllocator, size_t aSize,
+                        size_t aAlignment);
+
+void arena_chunk_dealloc(chunk_allocator_t* aChunkAllocator, void* aChunk,
+                         size_t aSize);
 #ifdef MOZ_DEBUG
 void chunk_assert_zero(void* aPtr, size_t aSize);
 #endif
@@ -199,6 +219,10 @@ void chunk_assert_zero(void* aPtr, size_t aSize);
 extern mozilla::Atomic<size_t> gRecycledSize;
 
 extern AddressRadixTree<(sizeof(void*) << 3) - LOG2(kChunkSize)> gChunkRTree;
+
+// Default chunk allocator for arena's that uses pages from anywhere in the
+// process address space.
+extern chunk_allocator_t gSystemChunkAllocator;
 
 enum ShouldCommit {
   // Reserve address space only, accessing the mapping will crash.
@@ -212,5 +236,7 @@ enum ShouldCommit {
 
 void* pages_mmap_aligned(size_t size, size_t alignment,
                          ShouldCommit should_commit);
+
+void pages_unmap(void* aAddr, size_t aSize);
 
 #endif /* ! CHUNK_H */

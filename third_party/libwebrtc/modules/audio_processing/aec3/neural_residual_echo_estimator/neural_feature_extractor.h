@@ -13,9 +13,10 @@
 
 #include <cstring>
 #include <memory>
+#include <span>
 #include <vector>
 
-#include "api/array_view.h"
+#include "modules/audio_processing/aec3/aec3_common.h"
 #include "third_party/pffft/src/pffft.h"
 
 namespace webrtc {
@@ -23,37 +24,74 @@ namespace webrtc {
 class FeatureExtractor {
  public:
   enum class ModelInputEnum {
-    kModelState = 0,
-    kMic = 1,
-    kLinearAecOutput = 2,
-    kAecRef = 3,
+    kMic = 0,
+    kLinearAecOutput = 1,
+    kAecRef = 2,
+    kModelState = 3,
     kNumInputs = 4
   };
   enum class ModelOutputEnum {
     kEchoMask = 0,
-    kModelState = 1,
-    kNumOutputs = 2
+    kUnboundedEchoMask = 1,
+    kModelState = 2,
+    kNumOutputs = 3
   };
 
   virtual ~FeatureExtractor() = default;
-  virtual void PushFeaturesToModelInput(std::vector<float>& frame,
-                                        ArrayView<float> model_input,
-                                        ModelInputEnum input_enum) = 0;
+
+  // Returns true if the feature extractor has enough data to produce a full
+  // set of features for the model input.
+  virtual bool ReadyForInference() const = 0;
+
+  // Buffers the frames for matching the expecting inference step size.
+  virtual void UpdateBuffers(
+      std::span<const std::span<const float, kBlockSize>> all_channels,
+      ModelInputEnum input_type) = 0;
+
+  // Uses the internal buffer data for producing the model input tensors.
+  virtual void PrepareModelInput(std::span<float> model_input,
+                                 ModelInputEnum input_type) = 0;
+
+  // Resets the internal state of the feature extractor.
+  virtual void Reset() = 0;
 };
 
 class TimeDomainFeatureExtractor : public FeatureExtractor {
-  void PushFeaturesToModelInput(std::vector<float>& frame,
-                                ArrayView<float> model_input,
-                                ModelInputEnum input_enum) override;
+ public:
+  explicit TimeDomainFeatureExtractor(int step_size);
+  ~TimeDomainFeatureExtractor() override;
+
+  void Reset() override;
+
+  bool ReadyForInference() const override;
+
+  void UpdateBuffers(
+      std::span<const std::span<const float, kBlockSize>> all_channels,
+      ModelInputEnum input_type) override;
+
+  void PrepareModelInput(std::span<float> model_input,
+                         ModelInputEnum input_type) override;
+
+ private:
+  const size_t step_size_;
+  std::vector<std::vector<float>> input_buffer_;
 };
 
 class FrequencyDomainFeatureExtractor : public FeatureExtractor {
  public:
   explicit FrequencyDomainFeatureExtractor(int step_size);
-  ~FrequencyDomainFeatureExtractor();
-  void PushFeaturesToModelInput(std::vector<float>& frame,
-                                ArrayView<float> model_input,
-                                ModelInputEnum input_enum) override;
+  ~FrequencyDomainFeatureExtractor() override;
+
+  void Reset() override;
+
+  bool ReadyForInference() const override;
+
+  void UpdateBuffers(
+      std::span<const std::span<const float, kBlockSize>> all_channels,
+      ModelInputEnum input_type) override;
+
+  void PrepareModelInput(std::span<float> model_input,
+                         ModelInputEnum input_type) override;
 
  private:
   class PffftState {
@@ -69,13 +107,22 @@ class FrequencyDomainFeatureExtractor : public FeatureExtractor {
    private:
     float* const data_;
   };
-  const int step_size_;
+
+  void ComputeAndAddPowerSpectra(std::span<const float> frame,
+                                 std::unique_ptr<PffftState>& pffft_state,
+                                 int number_channels,
+                                 std::span<float> power_spectra);
+
+  const size_t step_size_;
   const int frame_size_;
   const std::vector<float> sqrt_hanning_;
   float* const spectrum_;
   float* const work_;
   PFFFT_Setup* pffft_setup_;
-  std::vector<std::unique_ptr<PffftState>> pffft_states_;
+  // Indexed by [ModelInputEnum][channel].
+  std::vector<std::vector<std::unique_ptr<PffftState>>> pffft_states_;
+  // Indexed by [ModelInputEnum][channel][sample].
+  std::vector<std::vector<std::vector<float>>> input_buffer_;
 };
 
 }  // namespace webrtc

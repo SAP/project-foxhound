@@ -143,7 +143,6 @@ def generate_types_initializer(contents):
 @content_generator("h")
 def emit_header(annotations, _output_name):
     pingallowedlist = extract_crash_scope_list(annotations, "ping")
-    pingonlyallowedlist = extract_crash_scope_list(annotations, "ping-only")
     reportallowedlist = extract_crash_scope_list(annotations, "report")
     skiplist = extract_skiplist(annotations)
     typelist = extract_types(annotations)
@@ -152,9 +151,6 @@ def emit_header(annotations, _output_name):
         "enum": generate_enum(annotations),
         "strings": generate_strings(annotations),
         "pingallowedlist": generate_annotations_array_initializer(pingallowedlist),
-        "pingonlyallowedlist": generate_annotations_array_initializer(
-            pingonlyallowedlist
-        ),
         "reportallowedlist": generate_annotations_array_initializer(reportallowedlist),
         "skiplist": generate_skiplist_initializer(skiplist),
         "types": generate_types_initializer(typelist),
@@ -168,7 +164,8 @@ def emit_header(annotations, _output_name):
 
 def javadoc_sanitize(s):
     return (
-        s.replace("<", "&lt;")
+        s
+        .replace("<", "&lt;")
         .replace(">", "&gt;")
         .replace("@", "&#064;")
         # Kotlin supports nested comments, so change anything that looks like the start of a block comment.

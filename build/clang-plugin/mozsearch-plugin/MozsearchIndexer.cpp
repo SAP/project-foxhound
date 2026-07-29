@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,10 +26,8 @@
 
 #include <algorithm>
 #include <fstream>
-#include <iostream>
 #include <map>
 #include <memory>
-#include <sstream>
 #include <stack>
 #include <string>
 #include <unordered_set>
@@ -680,6 +677,23 @@ private:
     if (isa<FunctionDecl>(Decl) && cast<FunctionDecl>(Decl)->isExternC()) {
       return cast<FunctionDecl>(Decl)->getNameAsString();
     }
+
+#if CLANG_VERSION_MAJOR >= 21
+    // clang 21 (commit 6d00c4297f67) sets the DeclContext of lambdas inside
+    // requires-expression bodies to RequiresExprBodyDecl, but manglePrefix
+    // has no guard for it and crashes. Use a location-based name instead.
+    // Works around https://github.com/llvm/llvm-project/issues/200336
+    if (const CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(Decl)) {
+      if (MD->getParent()->isLambda()) {
+        for (const DeclContext *DC = MD->getParent()->getDeclContext(); DC;
+             DC = DC->getParent()) {
+          if (DC->isRequiresExprBody()) {
+            return std::string("L_") + mangleLocation(Decl->getLocation());
+          }
+        }
+      }
+    }
+#endif
 
     if (isa<FunctionDecl>(Decl) || isa<VarDecl>(Decl)) {
       const DeclContext *DC = Decl->getDeclContext();
@@ -1582,7 +1596,11 @@ public:
       QualType CanonicalFieldType = FieldType.getCanonicalType();
       LangOptions langOptions;
       PrintingPolicy Policy(langOptions);
+#if CLANG_VERSION_MAJOR >= 21
+      Policy.PrintAsCanonical = true;
+#else
       Policy.PrintCanonicalTypes = true;
+#endif
       J.attribute("type", typeToString(CanonicalFieldType, Policy));
 
       const TagDecl *tagDecl = CanonicalFieldType->getAsTagDecl();
@@ -1875,9 +1893,11 @@ public:
     // Also visit the spelling site.
     SourceLocation SpellingLoc = SM.getSpellingLoc(Loc);
     if (SpellingLoc != Loc) {
+      // NOTE: PeekRange, NestingRange, and ArgRanges come from the
+      //       macro expansion, which shouldn't be associated with the
+      //       symbols inside the macro.
       visitIdentifier(Kind, SyntaxKind, QualName, SpellingLoc, Symbol,
-                      MaybeType, TokenContext, Flags, PeekRange, NestingRange,
-                      ArgRanges);
+                      MaybeType, TokenContext, Flags);
     }
 
     SourceLocation ExpansionLoc = SM.getExpansionLoc(Loc);

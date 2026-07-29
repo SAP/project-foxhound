@@ -10,5 +10,5 @@
   <!-- Text for the positive action button, that will take the user to the settings page -->
   <string name="mozac_support_base_permissions_needed_positive_button">الانتقال إلى الإعدادات</string>
   <!-- Text for the negative action button to dismiss the dialog. -->
-  <string name="mozac_support_base_permissions_needed_negative_button">رفض</string>
+  <string name="mozac_support_base_permissions_needed_negative_button">أهمِل</string>
 </resources>

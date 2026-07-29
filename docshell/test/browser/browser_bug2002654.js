@@ -8,7 +8,7 @@ add_task(async function test_policy_container_and_csp_in_about_blank() {
     "about:blank"
   );
   try {
-    await ContentTask.spawn(tab.linkedBrowser, null, function () {
+    await SpecialPowers.spawn(tab.linkedBrowser, [], function () {
       let meta = content.document.createElement("meta");
       meta.httpEquiv = "Content-Security-Policy";
       meta.content = "script-src 'none'";

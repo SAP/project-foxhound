@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -88,19 +86,19 @@ WMFCDMCapabilites::GetCapabilities(
               }
               const MFCDMCapabilitiesIPDL& capabilities =
                   promiseRv.ResolveValue();
-              EME_LOG("capabilities: keySystem=%s (hw-secure=%d)",
+              EME_LOG("capabilities: keySystem={} (hw-secure={})",
                       NS_ConvertUTF16toUTF8(capabilities.keySystem()).get(),
                       capabilities.isHardwareDecryption());
               for (const auto& v : capabilities.videoCapabilities()) {
                 for (const auto& scheme : v.encryptionSchemes()) {
-                  EME_LOG("capabilities: video=%s, scheme=%s",
+                  EME_LOG("capabilities: video={}, scheme={}",
                           NS_ConvertUTF16toUTF8(v.contentType()).get(),
                           EnumValueToString(scheme));
                 }
               }
               for (const auto& a : capabilities.audioCapabilities()) {
                 for (const auto& scheme : a.encryptionSchemes()) {
-                  EME_LOG("capabilities: audio=%s, scheme=%s",
+                  EME_LOG("capabilities: audio={}, scheme={}",
                           NS_ConvertUTF16toUTF8(a.contentType()).get(),
                           EnumValueToString(scheme));
                 }

@@ -27,14 +27,7 @@ async def is_selection_different(client):
 
 
 @pytest.mark.asyncio
-@pytest.mark.with_interventions
-async def test_enabled(client):
+@pytest.mark.without_interventions
+async def test_regression(client):
     await client.navigate(URL)
     assert await is_selection_different(client)
-
-
-@pytest.mark.asyncio
-@pytest.mark.without_interventions
-async def test_disabled(client):
-    await client.navigate(URL)
-    assert not await is_selection_different(client)

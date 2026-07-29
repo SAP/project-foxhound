@@ -1,26 +1,52 @@
-From: Michael Froman <mfroman@mozilla.com>
-Date: Fri, 7 Feb 2025 15:53:00 -0600
-Subject: Bug 1942428 - (fix-882b32d00f) fix
- -Wtautological-unsigned-zero-compare in payload_type.h
+From: Michael Froman <mjfroman@mac.com>
+Date: Mon, 15 Sep 2025 14:53:58 -0500
+Subject: Bug 1973648 - move applicable libwebrtc changes to our new
+ libwebrtc_overrides location. r=ng
 
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/f3ed04250e9ec1b22731ac690eb66bc96ff894d6
+Differential Revision: https://phabricator.services.mozilla.com/D258499
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/19164e58323d59c1f66f7fcf671b8d0b6366f708
 ---
- call/payload_type.h | 4 ++++
- 1 file changed, 4 insertions(+)
+ call/call.h                      | 5 +++--
+ modules/desktop_capture/BUILD.gn | 5 +++++
+ 2 files changed, 8 insertions(+), 2 deletions(-)
 
-diff --git a/call/payload_type.h b/call/payload_type.h
-index d91da50fcc..a5e120417e 100644
---- a/call/payload_type.h
-+++ b/call/payload_type.h
-@@ -33,7 +33,11 @@ class PayloadType : public StrongAlias<class PayloadTypeTag, uint8_t> {
-     if (rtcp_mux && (id > 63 && id < 96)) {
-       return false;
+diff --git a/call/call.h b/call/call.h
+index 636c0f9737..e64b878e22 100644
+--- a/call/call.h
++++ b/call/call.h
+@@ -27,6 +27,7 @@
+ #include "api/video/video_stream_encoder_settings.h"
+ #include "call/audio_receive_stream.h"
+ #include "call/audio_send_stream.h"
++#include "call/call_basic_stats.h"
+ #include "call/call_config.h"
+ #include "call/flexfec_receive_stream.h"
+ #include "call/packet_receiver.h"
+@@ -62,9 +63,9 @@ class Call {
+     int64_t rtt_ms = -1;
+     std::optional<int64_t> ccfb_messages_received = std::nullopt;
+     flat_map<uint32_t, SentCongestionControllerFeedbackStats>
+-        sent_ccfb_stats_per_ssrc;
++      sent_ccfb_stats_per_ssrc;
+     flat_map<uint32_t, ReceivedCongestionControlFeedbackStats>
+-        received_ccfb_stats_per_ssrc;
++      received_ccfb_stats_per_ssrc;
+   };
+ 
+   static std::unique_ptr<Call> Create(CallConfig config);
+diff --git a/modules/desktop_capture/BUILD.gn b/modules/desktop_capture/BUILD.gn
+index b58c65f337..8c05aabb15 100644
+--- a/modules/desktop_capture/BUILD.gn
++++ b/modules/desktop_capture/BUILD.gn
+@@ -407,6 +407,11 @@ rtc_library("desktop_capture") {
+     ]
+     if (build_with_mozilla) {
+       libs -= [ "Xtst" ]
++      # Mozilla provides custom impl of x_error_trap.*
++      sources -= [
++        "linux/x11/x_error_trap.cc",
++        "linux/x11/x_error_trap.h",
++      ]
      }
-+#if defined(WEBRTC_MOZILLA_BUILD)
-+    return id <= 127; // id is unsigned, therefor always >= 0
-+#else
-     return id >= 0 && id <= 127;
-+#endif
    }
-   template <typename Sink>
-   friend void AbslStringify(Sink& sink, const PayloadType pt) {
+ 

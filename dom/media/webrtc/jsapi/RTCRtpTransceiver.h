@@ -276,7 +276,7 @@ class RTCRtpTransceiver : public nsISupports, public nsWrapperCache {
   // setCodecPreferences.
   std::vector<UniquePtr<JsepCodecDescription>> mPreferredCodecs;
   // Identifies if a preferred list and order of codecs is to be used.
-  // This is true if setCodecPreferences was called succesfully and passed
+  // This is true if setCodecPreferences was called successfully and passed
   // codecs (not empty).
   bool mPreferredCodecsInUse = false;
 };

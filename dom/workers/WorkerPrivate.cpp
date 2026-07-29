@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -58,6 +56,7 @@
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/Exceptions.h"
+#include "mozilla/dom/FeaturePolicyUtils.h"
 #include "mozilla/dom/FunctionBinding.h"
 #include "mozilla/dom/IndexedDatabaseManager.h"
 #include "mozilla/dom/JSExecutionManager.h"
@@ -65,6 +64,7 @@
 #include "mozilla/dom/MessageEventBinding.h"
 #include "mozilla/dom/MessagePort.h"
 #include "mozilla/dom/MessagePortBinding.h"
+#include "mozilla/dom/Navigator.h"
 #include "mozilla/dom/PRemoteWorkerDebuggerParent.h"
 #include "mozilla/dom/Performance.h"
 #include "mozilla/dom/PerformanceStorageWorker.h"
@@ -599,8 +599,7 @@ class ReportErrorToConsoleRunnable final : public WorkerParentThreadRunnable {
  public:
   // aWorkerPrivate is the worker thread we're on (or the main thread, if null)
   static void Report(WorkerPrivate* aWorkerPrivate, uint32_t aErrorFlags,
-                     const nsCString& aCategory,
-                     nsContentUtils::PropertiesFile aFile,
+                     const nsCString& aCategory, PropertiesFile aFile,
                      const nsCString& aMessageName,
                      const nsTArray<nsString>& aParams,
                      const mozilla::SourceLocation& aLocation) {
@@ -628,7 +627,7 @@ class ReportErrorToConsoleRunnable final : public WorkerParentThreadRunnable {
  private:
   ReportErrorToConsoleRunnable(WorkerPrivate* aWorkerPrivate,
                                uint32_t aErrorFlags, const nsCString& aCategory,
-                               nsContentUtils::PropertiesFile aFile,
+                               PropertiesFile aFile,
                                const nsCString& aMessageName,
                                const nsTArray<nsString>& aParams,
                                const mozilla::SourceLocation& aLocation)
@@ -659,7 +658,7 @@ class ReportErrorToConsoleRunnable final : public WorkerParentThreadRunnable {
 
   const uint32_t mErrorFlags;
   const nsCString mCategory;
-  const nsContentUtils::PropertiesFile mFile;
+  const PropertiesFile mFile;
   const nsCString mMessageName;
   const nsTArray<nsString> mParams;
   const mozilla::SourceLocation mLocation;
@@ -745,6 +744,22 @@ class UpdateContextOptionsRunnable final : public WorkerControlRunnable {
   }
 };
 
+class UpdateTimezoneOverrideRunnable final : public WorkerThreadRunnable {
+  nsString mTimezone;
+
+ public:
+  UpdateTimezoneOverrideRunnable(WorkerPrivate* aWorkerPrivate,
+                                 const nsAString& aTimezone)
+      : WorkerThreadRunnable("UpdateTimezoneOverrideRunnable"),
+        mTimezone(aTimezone) {}
+
+  virtual bool WorkerRun(JSContext* aCx,
+                         WorkerPrivate* aWorkerPrivate) override {
+    aWorkerPrivate->UpdateTimezoneOverrideInternal(aCx, mTimezone);
+    return true;
+  }
+};
+
 class UpdateLanguagesRunnable final : public WorkerThreadRunnable {
   nsTArray<nsString> mLanguages;
 
@@ -757,6 +772,26 @@ class UpdateLanguagesRunnable final : public WorkerThreadRunnable {
   virtual bool WorkerRun(JSContext* aCx,
                          WorkerPrivate* aWorkerPrivate) override {
     aWorkerPrivate->UpdateLanguagesInternal(mLanguages);
+    return true;
+  }
+};
+
+class UpdateLanguageOverrideRunnable final : public WorkerThreadRunnable {
+  nsCString mLanguageOverride;
+  CopyableTArray<nsString> mResolvedLanguages;
+
+ public:
+  UpdateLanguageOverrideRunnable(WorkerPrivate* aWorkerPrivate,
+                                 const nsACString& aLanguageOverride,
+                                 const nsTArray<nsString>& aResolvedLanguages)
+      : WorkerThreadRunnable("UpdateLanguageOverrideRunnable"),
+        mLanguageOverride(aLanguageOverride),
+        mResolvedLanguages(aResolvedLanguages) {}
+
+  virtual bool WorkerRun(JSContext* aCx,
+                         WorkerPrivate* aWorkerPrivate) override {
+    aWorkerPrivate->UpdateLanguageOverrideInternal(mLanguageOverride,
+                                                   mResolvedLanguages);
     return true;
   }
 };
@@ -1409,7 +1444,7 @@ nsresult WorkerPrivate::SetCsp(nsIContentSecurityPolicy* aCSP) {
   aCSP->EnsureEventTarget(mMainThreadEventTarget);
 
   mLoadInfo.mCSP = aCSP;
-  auto ctx = WorkerCSPContext::CreateFromCSP(aCSP);
+  auto ctx = OffThreadCSPContext::CreateFromCSP(aCSP);
   if (NS_WARN_IF(ctx.isErr())) {
     return ctx.unwrapErr();
   }
@@ -1477,7 +1512,7 @@ nsresult WorkerPrivate::SetCSPFromHeaderValues(
 
   mLoadInfo.mCSP = csp;
 
-  auto ctx = WorkerCSPContext::CreateFromCSP(csp);
+  auto ctx = OffThreadCSPContext::CreateFromCSP(csp);
   if (NS_WARN_IF(ctx.isErr())) {
     return ctx.unwrapErr();
   }
@@ -1495,15 +1530,23 @@ bool WorkerPrivate::IsFrozen() const {
   return mParentFrozen;
 }
 
-void WorkerPrivate::StoreCSPOnClient() {
+void WorkerPrivate::StorePolicyContainerArgsOnClient() {
   auto data = mWorkerThreadAccessible.Access();
   MOZ_ASSERT(data->mScope);
+  auto& clientSource = data->mScope->MutableClientSourceRef();
+
+  mozilla::ipc::PolicyContainerArgs policyContainerArgs;
+
   if (mLoadInfo.mCSPContext) {
-    mozilla::ipc::PolicyContainerArgs policyContainerArgs;
     policyContainerArgs.csp() = Some(mLoadInfo.mCSPContext->CSPInfo());
-    data->mScope->MutableClientSourceRef().SetPolicyContainerArgs(
-        policyContainerArgs);
   }
+
+  policyContainerArgs.ipAddressSpace() =
+      static_cast<nsILoadInfo::IPAddressSpace>(mLoadInfo.mIPAddressSpace);
+  // TODO(Bug 2017654): Check if integrity policy args need to be propagated
+  // to workers as well. Currently not set explicitly here.
+
+  clientSource.SetPolicyContainerArgs(policyContainerArgs);
 }
 
 void WorkerPrivate::UpdateReferrerInfoFromHeader(
@@ -2291,32 +2334,6 @@ void WorkerPrivate::PropagateStorageAccessPermissionGranted() {
   (void)NS_WARN_IF(!runnable->Dispatch(this));
 }
 
-void WorkerPrivate::NotifyStorageKeyUsed() {
-  AssertIsOnWorkerThread();
-
-  // Only notify once per global.
-  if (hasNotifiedStorageKeyUsed) {
-    return;
-  }
-  hasNotifiedStorageKeyUsed = true;
-
-  // Notify about storage access on the main thread.
-  RefPtr<StrongWorkerRef> strongRef =
-      StrongWorkerRef::Create(this, "WorkerPrivate::NotifyStorageKeyUsed");
-  if (!strongRef) {
-    return;
-  }
-  RefPtr<ThreadSafeWorkerRef> ref = new ThreadSafeWorkerRef(strongRef);
-  DispatchToMainThread(NS_NewRunnableFunction(
-      "WorkerPrivate::NotifyStorageKeyUsed", [ref = std::move(ref)] {
-        nsGlobalWindowInner* window =
-            nsGlobalWindowInner::Cast(ref->Private()->GetAncestorWindow());
-        if (window) {
-          window->MaybeNotifyStorageKeyUsed();
-        }
-      }));
-}
-
 bool WorkerPrivate::Close() {
   mMutex.AssertCurrentThreadOwns();
   if (mParentStatus < Closing) {
@@ -2368,6 +2385,29 @@ void WorkerPrivate::UpdateLanguages(const nsTArray<nsString>& aLanguages) {
       new UpdateLanguagesRunnable(this, aLanguages);
   if (!runnable->Dispatch(this)) {
     NS_WARNING("Failed to update worker languages!");
+  }
+}
+
+void WorkerPrivate::UpdateLanguageOverride(
+    const nsACString& aLanguageOverride,
+    const nsTArray<nsString>& aResolvedLanguages) {
+  AssertIsOnParentThread();
+
+  RefPtr<UpdateLanguageOverrideRunnable> runnable =
+      new UpdateLanguageOverrideRunnable(this, aLanguageOverride,
+                                         aResolvedLanguages);
+  if (!runnable->Dispatch(this)) {
+    NS_WARNING("Failed to update worker language override!");
+  }
+}
+
+void WorkerPrivate::UpdateTimezoneOverride(const nsAString& aTimezone) {
+  AssertIsOnParentThread();
+
+  RefPtr<UpdateTimezoneOverrideRunnable> runnable =
+      new UpdateTimezoneOverrideRunnable(this, aTimezone);
+  if (!runnable->Dispatch(this)) {
+    NS_WARNING("Failed to update worker timezone override!");
   }
 }
 
@@ -2881,17 +2921,21 @@ WorkerPrivate::WorkerPrivate(
       JS::RealmOptions& chromeRealmOptions = mJSSettings.chromeRealmOptions;
       JS::RealmOptions& contentRealmOptions = mJSSettings.contentRealmOptions;
 
+      const nsCString& languageOverride = mLoadInfo.mLanguageOverrideLocale;
+      const nsAString& timezoneOverride = mLoadInfo.mTimezoneOverride;
+
       xpc::InitGlobalObjectOptions(
           chromeRealmOptions, UsesSystemPrincipal(), mIsSecureContext,
           ShouldResistFingerprinting(RFPTarget::JSDateTimeUTC),
           ShouldResistFingerprinting(RFPTarget::JSMathFdlibm),
-          ShouldResistFingerprinting(RFPTarget::JSLocale), ""_ns, u""_ns);
+          ShouldResistFingerprinting(RFPTarget::JSLocale), languageOverride,
+          timezoneOverride);
       xpc::InitGlobalObjectOptions(
           contentRealmOptions, UsesSystemPrincipal(), mIsSecureContext,
           ShouldResistFingerprinting(RFPTarget::JSDateTimeUTC),
           ShouldResistFingerprinting(RFPTarget::JSMathFdlibm),
-          ShouldResistFingerprinting(RFPTarget::JSLocale), ""_ns, u""_ns);
-
+          ShouldResistFingerprinting(RFPTarget::JSLocale), languageOverride,
+          timezoneOverride);
       // Check if it's a privileged addon executing in order to allow access
       // to SharedArrayBuffer
       if (mLoadInfo.mPrincipal) {
@@ -3346,9 +3390,12 @@ nsresult WorkerPrivate::GetLoadInfo(
     loadInfo.mWindowID = aParent->WindowID();
     loadInfo.mAssociatedBrowsingContextID =
         aParent->AssociatedBrowsingContextID();
+    loadInfo.mLanguageOverrideLocale = aParent->GetLanguageOverrideLocale();
+    loadInfo.mLanguageOverride = aParent->GetLanguageOverride().Clone();
     loadInfo.mStorageAccess = aParent->StorageAccess();
     loadInfo.mUseRegularPrincipal = aParent->UseRegularPrincipal();
     loadInfo.mUsingStorageAccess = aParent->UsingStorageAccess();
+    loadInfo.mSerialAllowed = aParent->SerialAllowed();
     loadInfo.mCookieJarSettings = aParent->CookieJarSettings();
     if (loadInfo.mCookieJarSettings) {
       loadInfo.mCookieJarSettingsArgs = aParent->CookieJarSettingsArgs();
@@ -3364,6 +3411,8 @@ nsresult WorkerPrivate::GetLoadInfo(
     loadInfo.mParentController = aParent->GlobalScope()->GetController();
     loadInfo.mWatchedByDevTools = aParent->IsWatchedByDevTools();
     loadInfo.mIsOn3PCBExceptionList = aParent->IsOn3PCBExceptionList();
+    loadInfo.mIPAddressSpace = aParent->mLoadInfo.mIPAddressSpace;
+    loadInfo.mTimezoneOverride = aParent->TimezoneOverride();
   } else {
     AssertIsOnMainThread();
 
@@ -3503,15 +3552,34 @@ nsresult WorkerPrivate::GetLoadInfo(
       loadInfo.mWindowID = globalWindow->WindowID();
       loadInfo.mAssociatedBrowsingContextID =
           globalWindow->GetBrowsingContext()->Id();
+      const nsCString& languageOverride =
+          globalWindow->GetBrowsingContext()->Top()->GetLanguageOverride();
+      if (!languageOverride.IsEmpty()) {
+        loadInfo.mLanguageOverrideLocale = languageOverride;
+        Navigator::GetAcceptLanguages(loadInfo.mLanguageOverride,
+                                      &languageOverride);
+      }
+
+      // Inherit the document's IP address space for Local Network Access
+      // checks in workers.
+      if (document->GetPolicyContainer()) {
+        loadInfo.mIPAddressSpace = static_cast<uint16_t>(
+            PolicyContainer::Cast(document->GetPolicyContainer())
+                ->GetIPAddressSpace());
+      }
       loadInfo.mStorageAccess = StorageAllowedForWindow(globalWindow);
       loadInfo.mUseRegularPrincipal = document->UseRegularPrincipal();
       loadInfo.mUsingStorageAccess = document->UsingStorageAccess();
+      loadInfo.mSerialAllowed =
+          FeaturePolicyUtils::IsFeatureAllowed(document, u"serial"_ns);
       loadInfo.mShouldResistFingerprinting =
           document->ShouldResistFingerprinting(
               RFPTarget::IsAlwaysEnabledForPrecompute);
       loadInfo.mOverriddenFingerprintingSettings =
           document->GetOverriddenFingerprintingSettings();
       loadInfo.mIsOn3PCBExceptionList = document->IsOn3PCBExceptionList();
+      loadInfo.mTimezoneOverride =
+          browsingContext->Top()->GetTimezoneOverride();
 
       // This is an hack to deny the storage-access-permission for workers of
       // sub-iframes.
@@ -3911,6 +3979,37 @@ void WorkerPrivate::DoRunLoop(JSContext* aCx) {
 
       // If we're supposed to die then we should exit the loop.
       if (currentStatus == Killing) {
+        // Unfortunately WorkerRunnable/WorkerControlRunnable could be
+        // dispatched between the duration after processing ControlRunnables and
+        // before transistioning the Worker to "Killing." Generally, these
+        // runnables should be dispatched and executed with a StrongWorkerRef,
+        // such that the runnable's execution can be protected, and the
+        // corresponding resource of Worker are ensured to be alived in
+        // "Canceling" state. However, the existence of the StrongWorkerRef is
+        // not guaranteed, it could be released unexpectedly or even not held by
+        // the dispatcher. So once the Worker is in "Killing" state with pending
+        // runnables, these runnables should be cleaned first, then continuing
+        // the killing steps. The Worker has been in "Killing" already,
+        // runnables dispatching, syncLoop and WorkerRefs creating are
+        // forbidden, so the "continue" would only focus on the dispatched
+        // runnables.
+        {
+          MutexAutoLock lock(mMutex);
+          if (NS_HasPendingEvents(thread) || !mDebuggerQueue.IsEmpty()) {
+            continue;
+          }
+        }
+
+        // Status transition to "Killing" and no pending runnables, shutdown
+        // the StorageManager.
+        if (data->mScope) {
+          data->mScope->NoteShuttingDown();
+        }
+        if (mRemoteWorkerNonLifeCycleOpController) {
+          mRemoteWorkerNonLifeCycleOpController->TransistionStateToKilled();
+          mRemoteWorkerNonLifeCycleOpController = nullptr;
+        }
+
         // We are about to destroy worker, report all use counters.
         ReportUseCounters();
 
@@ -5807,16 +5906,9 @@ bool WorkerPrivate::NotifyInternal(WorkerStatus aStatus) {
     }
   }
 
-  // Status transistion to "Canceling"/"Killing", mark the scope as dying when
-  // "Canceling," or shutdown the StorageManager when "Killing."
-  if (aStatus >= Canceling) {
-    if (data->mScope) {
-      if (aStatus == Canceling) {
-        data->mScope->NoteTerminating();
-      } else {
-        data->mScope->NoteShuttingDown();
-      }
-    }
+  // Status transistion to "Canceling", mark the scope as dying.
+  if (aStatus == Canceling && data->mScope) {
+    data->mScope->NoteTerminating();
   }
 
   if (aStatus >= Closing) {
@@ -5836,8 +5928,8 @@ bool WorkerPrivate::NotifyInternal(WorkerStatus aStatus) {
     }
   }
 
-  if (aStatus == Closing && GlobalScope()) {
-    GlobalScope()->SetIsNotEligibleForMessaging();
+  if (aStatus == Closing && data->mScope) {
+    data->mScope->SetIsNotEligibleForMessaging();
   }
 
   // Let all our holders know the new status.
@@ -5849,15 +5941,9 @@ bool WorkerPrivate::NotifyInternal(WorkerStatus aStatus) {
     mRemoteWorkerNonLifeCycleOpController->TransistionStateToCanceled();
   }
 
-  if (aStatus == Killing && mRemoteWorkerNonLifeCycleOpController) {
-    mRemoteWorkerNonLifeCycleOpController->TransistionStateToKilled();
-    mRemoteWorkerNonLifeCycleOpController = nullptr;
-  }
-
   // If the worker script never ran, or failed to compile, we don't need to do
   // anything else.
-  WorkerGlobalScope* global = GlobalScope();
-  if (!global) {
+  if (!data->mScope) {
     if (aStatus == Canceling) {
       MOZ_ASSERT(!data->mCancelBeforeWorkerScopeConstructed);
       data->mCancelBeforeWorkerScopeConstructed.Flip();
@@ -5959,9 +6045,8 @@ void WorkerPrivate::ReportError(JSContext* aCx,
 
 // static
 void WorkerPrivate::ReportErrorToConsole(
-    uint32_t aErrorFlags, const nsCString& aCategory,
-    nsContentUtils::PropertiesFile aFile, const nsCString& aMessageName,
-    const nsTArray<nsString>& aParams,
+    uint32_t aErrorFlags, const nsCString& aCategory, PropertiesFile aFile,
+    const nsCString& aMessageName, const nsTArray<nsString>& aParams,
     const mozilla::SourceLocation& aLocation) {
   WorkerPrivate* wp = nullptr;
   if (!NS_IsMainThread()) {
@@ -6068,6 +6153,69 @@ void WorkerPrivate::UpdateContextOptionsInternal(
 
   for (uint32_t index = 0; index < data->mChildWorkers.Length(); index++) {
     data->mChildWorkers[index]->UpdateContextOptions(aContextOptions);
+  }
+}
+
+void WorkerPrivate::UpdateLanguageOverrideInternal(
+    const nsCString& aLanguageOverride,
+    const nsTArray<nsString>& aResolvedLanguages) {
+  mLoadInfo.mLanguageOverrideLocale = aLanguageOverride;
+  if (aLanguageOverride.IsEmpty()) {
+    mLoadInfo.mLanguageOverride.Clear();
+  } else {
+    mLoadInfo.mLanguageOverride = aResolvedLanguages.Clone();
+  }
+
+  WorkerGlobalScope* globalScope = GlobalScope();
+  if (globalScope) {
+    JSObject* global = globalScope->GetGlobalJSObject();
+    if (global) {
+      JS::Realm* realm = JS::GetObjectRealmOrNull(global);
+      if (realm) {
+        if (aLanguageOverride.IsEmpty()) {
+          JS::SetRealmLocaleOverride(realm, nullptr);
+        } else {
+          JS::SetRealmLocaleOverride(realm, aLanguageOverride.get());
+        }
+      }
+    }
+
+    if (RefPtr<WorkerNavigator> nav = globalScope->GetExistingNavigator()) {
+      nav->SetLanguages(aResolvedLanguages);
+    }
+  }
+
+  auto data = mWorkerThreadAccessible.Access();
+  for (uint32_t index = 0; index < data->mChildWorkers.Length(); index++) {
+    data->mChildWorkers[index]->UpdateLanguageOverride(aLanguageOverride,
+                                                       aResolvedLanguages);
+  }
+}
+
+void WorkerPrivate::UpdateTimezoneOverrideInternal(JSContext* aCx,
+                                                   const nsAString& aTimezone) {
+  auto data = mWorkerThreadAccessible.Access();
+
+  WorkerGlobalScope* globalScope = GlobalScope();
+  if (globalScope) {
+    JSObject* global = globalScope->GetGlobalJSObject();
+    if (global) {
+      JS::Realm* realm = JS::GetObjectRealmOrNull(global);
+      if (realm) {
+        if (aTimezone.IsEmpty()) {
+          JS::SetRealmTimezoneOverride(realm, nullptr);
+        } else {
+          JS::SetRealmTimezoneOverride(realm,
+                                       NS_ConvertUTF16toUTF8(aTimezone).get());
+        }
+      }
+    }
+  }
+
+  mLoadInfo.mTimezoneOverride = aTimezone;
+
+  for (uint32_t index = 0; index < data->mChildWorkers.Length(); index++) {
+    data->mChildWorkers[index]->UpdateTimezoneOverride(aTimezone);
   }
 }
 
@@ -6645,8 +6793,6 @@ void WorkerPrivate::EnsureOwnerEmbedderPolicy() {
 }
 
 nsIPrincipal* WorkerPrivate::GetEffectiveStoragePrincipal() const {
-  AssertIsOnWorkerThread();
-
   if (mLoadInfo.mUseRegularPrincipal) {
     return mLoadInfo.mPrincipal;
   }
@@ -6817,9 +6963,9 @@ FontVisibility WorkerPrivate::GetFontVisibility() const {
 
 void WorkerPrivate::ReportBlockedFontFamily(const nsCString& aMsg) const {
   MOZ_LOG(gFingerprinterDetection, mozilla::LogLevel::Info, ("%s", aMsg.get()));
-  nsContentUtils::ReportToConsoleNonLocalized(NS_ConvertUTF8toUTF16(aMsg),
-                                              nsIScriptError::warningFlag,
-                                              "Security"_ns, GetDocument());
+  nsContentUtils::ReportToConsoleByWindowID(NS_ConvertUTF8toUTF16(aMsg),
+                                            nsIScriptError::warningFlag,
+                                            "Security"_ns, WindowID());
 }
 
 bool WorkerPrivate::IsChrome() const { return IsChromeWorker(); }

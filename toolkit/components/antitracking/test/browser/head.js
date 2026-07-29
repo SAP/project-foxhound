@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -82,8 +81,8 @@ const BEHAVIOR_REJECT = Ci.nsICookieService.BEHAVIOR_REJECT;
 const BEHAVIOR_LIMIT_FOREIGN = Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN;
 const BEHAVIOR_REJECT_FOREIGN = Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN;
 const BEHAVIOR_REJECT_TRACKER = Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER;
-const BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN =
-  Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
+const BEHAVIOR_PARTITION_FOREIGN =
+  Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN;
 
 let originalRequestLongerTimeout = requestLongerTimeout;
 // eslint-disable-next-line no-global-assign

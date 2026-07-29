@@ -12,11 +12,8 @@ function testTurkishCaseMapping() {
   }
 }
 
-// JIT tests run with "en-US" by default. (Or "en-US-POSIX" for some Android tests.)
-assertEq(
-  getDefaultLocale() === "en-US" || getDefaultLocale() === "en-US-POSIX",
-  true
-);
+// JIT tests run with "en-US" by default.
+assertEq(getDefaultLocale() === "en-US", true);
 assertEq(getRealmLocale(), "en-US");
 
 // Ensure case mapping fuse is intact.
@@ -27,7 +24,7 @@ testDefaultCaseMapping();
 
 // Change runtime default locale. (Use three letter language code to cover canonicalization.)
 setDefaultLocale("fra-FR");
-assertEq(getDefaultLocale(), "fra-FR");
+assertEq(getDefaultLocale(), "fr-FR");
 assertEq(getRealmLocale(), "fr-FR");
 
 // Ensure case mapping fuse is still intact.
@@ -38,7 +35,7 @@ testDefaultCaseMapping();
 
 // Change runtime default locale.
 setDefaultLocale("tur-TR");
-assertEq(getDefaultLocale(), "tur-TR");
+assertEq(getDefaultLocale(), "tr-TR");
 assertEq(getRealmLocale(), "tr-TR");
 
 // Case mapping fuse is no longer intact.
@@ -48,7 +45,7 @@ testTurkishCaseMapping();
 
 // Reset default locale.
 setDefaultLocale("eng-US");
-assertEq(getDefaultLocale(), "eng-US");
+assertEq(getDefaultLocale(), "en-US");
 assertEq(getRealmLocale(), "en-US");
 
 // Fuse is still popped.

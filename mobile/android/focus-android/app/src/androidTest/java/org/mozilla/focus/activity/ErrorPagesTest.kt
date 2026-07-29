@@ -12,23 +12,25 @@ import org.junit.runner.RunWith
 import org.mozilla.focus.R
 import org.mozilla.focus.activity.robots.searchScreen
 import org.mozilla.focus.helpers.FeatureSettingsHelper
+import org.mozilla.focus.helpers.FocusTestRule
 import org.mozilla.focus.helpers.MainActivityFirstrunTestRule
 import org.mozilla.focus.helpers.TestHelper.getStringResource
 import org.mozilla.focus.helpers.TestHelper.setNetworkEnabled
-import org.mozilla.focus.helpers.TestSetup
 import mozilla.components.browser.errorpages.R as errorpagesR
 
 // This tests verify invalid URL and no network connection error pages
 @RunWith(AndroidJUnit4ClassRunner::class)
-class ErrorPagesTest : TestSetup() {
+class ErrorPagesTest {
     private val featureSettingsHelper = FeatureSettingsHelper()
+
+    @get:Rule(order = 0)
+    val focusTestRule: FocusTestRule = FocusTestRule()
 
     @get:Rule
     val mActivityTestRule = MainActivityFirstrunTestRule(showFirstRun = false)
 
     @Before
-    override fun setUp() {
-        super.setUp()
+    fun setUp() {
         featureSettingsHelper.setCfrForTrackingProtectionEnabled(false)
     }
 

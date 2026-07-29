@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,6 +11,11 @@
 #include "nsCOMPtr.h"
 #include "nsIReferrerInfo.h"
 #include "nsReadableUtils.h"
+
+namespace IPC {
+class MessageReader;
+class MessageWriter;
+}  // namespace IPC
 
 #define REFERRERINFO_CONTRACTID "@mozilla.org/referrer-info;1"
 // 041a129f-10ce-4bda-a60d-e027a26d5ed0
@@ -73,6 +76,10 @@ class ReferrerInfo : public nsIReferrerInfo {
 
   // create an exact copy of the ReferrerInfo
   already_AddRefed<ReferrerInfo> Clone() const;
+
+  void Serialize(IPC::MessageWriter* aWriter) const;
+  static bool Deserialize(IPC::MessageReader* aReader,
+                          RefPtr<nsIReferrerInfo>* aResult);
 
   // create an copy of the ReferrerInfo with new referrer policy
   already_AddRefed<ReferrerInfo> CloneWithNewPolicy(

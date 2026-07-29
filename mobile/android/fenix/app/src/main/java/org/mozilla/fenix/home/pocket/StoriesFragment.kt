@@ -18,6 +18,7 @@ import androidx.navigation.fragment.findNavController
 import kotlinx.coroutines.flow.map
 import org.mozilla.fenix.components.appstate.recommendations.ContentRecommendationsState
 import org.mozilla.fenix.components.components
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.home.pocket.controller.DefaultPocketStoriesController
 import org.mozilla.fenix.home.pocket.controller.PocketStoriesController
@@ -30,7 +31,7 @@ import java.lang.ref.WeakReference
 /**
  * A [Fragment] displaying the stories screen.
  */
-class StoriesFragment : Fragment() {
+class StoriesFragment : Fragment(), SystemInsetsPaddedFragment {
 
     private lateinit var interactor: PocketStoriesInteractor
     private lateinit var controller: PocketStoriesController
@@ -63,8 +64,11 @@ class StoriesFragment : Fragment() {
                 appStore.stateFlow.map { state -> state.recommendationState }
             }.collectAsState(initial = ContentRecommendationsState())
 
+            val entryPointExperimentEnabled = components.settings.privateModeAndStoriesEntryPointEnabled
+
             StoriesScreen(
                 state = storiesState,
+                entryPointExperimentEnabled = entryPointExperimentEnabled,
                 interactor = interactor,
                 onNavigationIconClick = {
                     this@StoriesFragment.findNavController().popBackStack()

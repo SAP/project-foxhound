@@ -186,23 +186,6 @@ private fun CollapsedFloatingActionButtonPreview() {
 
 @Preview
 @Composable
-private fun SurfaceExtendedFloatingActionButtonPreview() {
-    var expanded by remember { mutableStateOf(true) }
-
-    AcornTheme {
-        ExtendedFloatingActionButton(
-            label = "Surface",
-            icon = iconsR.drawable.mozac_ic_plus_24,
-            contentDescription = "content description",
-            onClick = { expanded = !expanded },
-            expanded = expanded,
-            colors = FloatingActionButtonDefaults.colorsSurface(),
-        )
-    }
-}
-
-@Preview
-@Composable
 private fun CustomExtendedFloatingActionButtonPreview() {
     var expanded by remember { mutableStateOf(true) }
 

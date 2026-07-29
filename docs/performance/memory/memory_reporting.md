@@ -2,22 +2,20 @@ tl;dr: You should read this document before writing a memory reporter. And pleas
 
 Mozilla code has infrastructure that lets different parts of the code report on their memory usage. This is most obviously used in about:memory and telemetry. This document describes things that you should know when writing a memory reporter.
 
-Memory Reporters
-================
+# Memory Reporters
 
 A memory reporter makes one or more memory measurements (a.k.a. reports).
 
 Each reporter implements a `collectReports` function which takes a `nsIMemoryReporterCallback` argument; for each measurement the reporter must pass in several values, including:
 
-*   a path (which identifies the report);
-*   an amount (the most important thing);
-*   a unit (most commonly bytes, but sometimes a unitless count or percentage);
-*   a description of what is measured.
+* a path (which identifies the report);
+* an amount (the most important thing);
+* a unit (most commonly bytes, but sometimes a unitless count or percentage);
+* a description of what is measured.
 
 See the [nsIMemoryReporter documentation](/en/XPCOM_Interface_Reference/nsIMemoryReporter) and [nsIMemoryReporter.idl](http://dxr.mozilla.org/mozilla-central/source/xpcom/base/nsIMemoryReporter.idl) for full details.
 
-Making Measurements
--------------------
+## Making Measurements
 
 `nsIMemoryReporter` provides the high-level interface for a memory reporter, but the heart of a memory reporter is the measurement of the "amount".
 
@@ -25,14 +23,14 @@ Making Measurements
 
 Memory reporters can be divided into the two following kinds.
 
-*   _Traversal-based_ reporters traverse one or more data structures and measure the size of all the allocated blocks in the data structure.
-*   _Counter-based_ reporters maintain a counter that is incremented on each relevant allocation and decremented on each relevant deallocation.
+* _Traversal-based_ reporters traverse one or more data structures and measure the size of all the allocated blocks in the data structure.
+* _Counter-based_ reporters maintain a counter that is incremented on each relevant allocation and decremented on each relevant deallocation.
 
 Traversal-based reporters are preferable, for the following reasons.
 
-*   They are less error-prone. We've had multiple bugs in the past with counter-based reporters.
-*   The cost of reporting isn't incurred unless the memory reporter is queried.
-*   They provide more information to DMD, which is a tool that helps keep about:memory's "heap-unclassified" number low. See below for more details.
+* They are less error-prone. We've had multiple bugs in the past with counter-based reporters.
+* The cost of reporting isn't incurred unless the memory reporter is queried.
+* They provide more information to DMD, which is a tool that helps keep about:memory's "heap-unclassified" number low. See below for more details.
 
 Sometimes counter-based reporters are unavoidable, particularly when writing memory reporters for third-party code that cannot be modified.
 
@@ -74,15 +72,15 @@ typedef size_t (*MallocSizeOf)(const void* p);
 Functions with this signature measure the size of `p` by asking the heap allocator how big it is (via `moz_malloc_usable_size`).
 All this is probably not what you'd expect, but the above functions have the following crucial features.
 
-*   They let you measure the `MyString` object itself or not as necessary. This is important because sometimes an object might be embedded in another object that is measured separately. And the names make it clear exactly what is being measured.
-*   On platforms that allow it, they count the actual memory in use, including "slop" bytes caused by the heap allocator rounding up request sizes (a.k.a. internal fragmentation). If slop bytes aren't measured they'll end up in about:memory's heap-unclassified entry, which is bad.
-*   The size is not computed analytically. For example, `sizeof` doesn't appear anywhere. This is a good thing, because computing sizes analytically doesn't count slop, and it is much more error-prone than using `moz_malloc_usable_size`.
-*   They are flexible and integrate well with DMD. The `aMallocSizeOf` parameter allows `mozilla::MallocSizeOf` functions with DMD-specific hooks to be passed in when they are used by memory reporters, but functions without such hooks (such as `moz_malloc_size_of`) can also be passed in when they are used in other circumstances.
+* They let you measure the `MyString` object itself or not as necessary. This is important because sometimes an object might be embedded in another object that is measured separately. And the names make it clear exactly what is being measured.
+* On platforms that allow it, they count the actual memory in use, including "slop" bytes caused by the heap allocator rounding up request sizes (a.k.a. internal fragmentation). If slop bytes aren't measured they'll end up in about:memory's heap-unclassified entry, which is bad.
+* The size is not computed analytically. For example, `sizeof` doesn't appear anywhere. This is a good thing, because computing sizes analytically doesn't count slop, and it is much more error-prone than using `moz_malloc_usable_size`.
+* They are flexible and integrate well with DMD. The `aMallocSizeOf` parameter allows `mozilla::MallocSizeOf` functions with DMD-specific hooks to be passed in when they are used by memory reporters, but functions without such hooks (such as `moz_malloc_size_of`) can also be passed in when they are used in other circumstances.
 
 Some other things to note.
 
-*   Please use `size_t` for the sizes in functions like this. Although `nsIMemoryReporter` uses `int64_t`, this is because (a) you can't use `size_t` in IDL, and (b) not every "amount" is a bytes measurement. So it's best to mostly use `size_t` and convert to `int64_t` as late as possible.
-*   You don't always need both `SizeOfExcludingThis` and `SizeOfIncludingThis`. Implement one or both as needed. If you have both, `SizeOfExcludingThis` is the interesting one; `SizeOfIncludingThis` always has the same basic form.
+* Please use `size_t` for the sizes in functions like this. Although `nsIMemoryReporter` uses `int64_t`, this is because (a) you can't use `size_t` in IDL, and (b) not every "amount" is a bytes measurement. So it's best to mostly use `size_t` and convert to `int64_t` as late as possible.
+* You don't always need both `SizeOfExcludingThis` and `SizeOfIncludingThis`. Implement one or both as needed. If you have both, `SizeOfExcludingThis` is the interesting one; `SizeOfIncludingThis` always has the same basic form.
 
 And here's how you'd write a memory reporter if there was a single global `MyString` object.
 
@@ -157,14 +155,14 @@ class D : public B
 
 Things to note about `SizeOfExcludingThis` when it is virtual.
 
-*   If `D` has data members that point to other objects, then `D::SizeOfExcludingThis` must override `B::SizeOfExcludingThis`. Otherwise, if we have a `B*` pointer that actually points to a `D` object, we'll end up calling `B::SizeOfExcludingThis` instead of `D::SizeOfExcludingThis`, and thus we'll fail to measure any objects that `D`'s fields point to. `D::SizeOfExcludingThis` must also call `B::SizeOfExcludingThis`, to ensure that any objects pointed to by fields inherited from `B` are measured.
-*   However, if `D` does not have any of its own fields that point to other objects, then `D::SizeOfExcludingThis` is not necessary.
-*   Alternatively, if `D` does have fields that point to other objects but you don't want to measure them because they're insignificant, then `D::SizeOfExcludingThis` is again not necessary. But it's a good idea to add a comment indicating this decision not to measure, and the names of the unmeasured fields. The obvious place for this comment is within `D`, but if `B` has many sub-classes like that, it might be easier to put the comment above `B::SizeOfIncludingThis`.
+* If `D` has data members that point to other objects, then `D::SizeOfExcludingThis` must override `B::SizeOfExcludingThis`. Otherwise, if we have a `B*` pointer that actually points to a `D` object, we'll end up calling `B::SizeOfExcludingThis` instead of `D::SizeOfExcludingThis`, and thus we'll fail to measure any objects that `D`'s fields point to. `D::SizeOfExcludingThis` must also call `B::SizeOfExcludingThis`, to ensure that any objects pointed to by fields inherited from `B` are measured.
+* However, if `D` does not have any of its own fields that point to other objects, then `D::SizeOfExcludingThis` is not necessary.
+* Alternatively, if `D` does have fields that point to other objects but you don't want to measure them because they're insignificant, then `D::SizeOfExcludingThis` is again not necessary. But it's a good idea to add a comment indicating this decision not to measure, and the names of the unmeasured fields. The obvious place for this comment is within `D`, but if `B` has many sub-classes like that, it might be easier to put the comment above `B::SizeOfIncludingThis`.
 
 Things to note about `SizeOfIncludingThis` when it is virtual.
 
-*   `D::SizeOfIncludingThis` is identical to `B::SizeOfIncludingThis`. You might think that `D` could just inherit `SizeOfIncludingThis` from `B`. In some cases this works, but there's a lot of C++ subtlety involving the `aMallocSizeOf(this)` and whether this actually points to the start of the allocated object or somewhere in its middle. This is doubly true if `D` features multiple inheritance. And if `aMallocSizeOf` is passed a pointer that doesn't point to the start of an object it will give bogus results or even crash. So, if in doubt, define `D::SizeOfIncludingThis` and you should be safe.
-*   The `override` annotations say that `D`'s methods override the corresponding methods in `B`. On supporting compilers it gets expanded to the override keyword. It helps prevent accidentally having small differences in the function signatures (e.g. forgetting a `const`) that prevent the overriding from happening.
+* `D::SizeOfIncludingThis` is identical to `B::SizeOfIncludingThis`. You might think that `D` could just inherit `SizeOfIncludingThis` from `B`. In some cases this works, but there's a lot of C++ subtlety involving the `aMallocSizeOf(this)` and whether this actually points to the start of the allocated object or somewhere in its middle. This is doubly true if `D` features multiple inheritance. And if `aMallocSizeOf` is passed a pointer that doesn't point to the start of an object it will give bogus results or even crash. So, if in doubt, define `D::SizeOfIncludingThis` and you should be safe.
+* The `override` annotations say that `D`'s methods override the corresponding methods in `B`. On supporting compilers it gets expanded to the override keyword. It helps prevent accidentally having small differences in the function signatures (e.g. forgetting a `const`) that prevent the overriding from happening.
 
 ### Other Considerations
 
@@ -225,14 +223,13 @@ Sometimes memory reporters are stand-alone objects, like the `MyStringReporter` 
 
 If you write a memory reporter, please get two people to review it: (a) someone who knows the data structures being measured, and (b) nnethercote, who can check for all the things covered by this document. Thanks!
 
-DMD
----
+## DMD
 
 DMD is a tool that detects two deficiencies with memory reporters.
 
-*   It identifies places in the code that allocate memory but do not have memory reporters for that memory. This helps drive about:memory's heap-unclassified number down.
-*   It detects certain defects in existing heap memory reporters: if non-heap memory is reported, or if a heap block is partially reported or double-reported.
+* It identifies places in the code that allocate memory but do not have memory reporters for that memory. This helps drive about:memory's heap-unclassified number down.
+* It detects certain defects in existing heap memory reporters: if non-heap memory is reported, or if a heap block is partially reported or double-reported.
 
 DMD is absolutely crucial; these things cannot be done without it. That's why the integration of DMD and memory reporters is so important and thus mentioned multiple times above.
 
-See [the instructions](/en-US/docs/Mozilla/Performance/DMD) on how to run DMD.
+See [the instructions](dmd.md) on how to run DMD.

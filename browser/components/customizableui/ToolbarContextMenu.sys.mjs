@@ -44,7 +44,7 @@ export var ToolbarContextMenu = {
    *   The toolbar-context-menu element for a window.
    */
   updateDownloadsAutoHide(popup) {
-    let { document, DownloadsButton } = popup.ownerGlobal;
+    let { document, DownloadsButton } = popup.documentGlobal;
     let checkbox = document.getElementById(
       "toolbar-context-autohide-downloads-button"
     );
@@ -85,7 +85,7 @@ export var ToolbarContextMenu = {
    *   The toolbar-context-menu element for a window.
    */
   updateDownloadsAlwaysOpenPanel(popup) {
-    let { document } = popup.ownerGlobal;
+    let { document } = popup.documentGlobal;
     let separator = document.getElementById(
       "toolbarDownloadsAnchorMenuSeparator"
     );
@@ -129,7 +129,7 @@ export var ToolbarContextMenu = {
   // eslint-disable-next-line complexity
   onViewToolbarsPopupShowing(aEvent, aInsertPoint) {
     var popup = aEvent.target;
-    let window = popup.ownerGlobal;
+    let window = popup.documentGlobal;
     let {
       document,
       BookmarkingUI,
@@ -375,7 +375,7 @@ export var ToolbarContextMenu = {
   _getUnwrappedTriggerNode(popup) {
     // Toolbar buttons are wrapped in customize mode. Unwrap if necessary.
     let { triggerNode } = popup;
-    let { gCustomizeMode } = popup.ownerGlobal;
+    let { gCustomizeMode } = popup.documentGlobal;
     if (triggerNode && gCustomizeMode.isWrappedToolbarItem(triggerNode)) {
       return triggerNode.firstElementChild;
     }
@@ -424,7 +424,7 @@ export var ToolbarContextMenu = {
     const isExtsButton = popup.triggerNode?.id === "unified-extensions-button";
     const isCustomizingExtsButton =
       popup.triggerNode?.id === "wrapper-unified-extensions-button";
-    const { gUnifiedExtensions } = popup.ownerGlobal;
+    const { gUnifiedExtensions } = popup.documentGlobal;
 
     const checkbox = popup.querySelector(
       "#toolbar-context-always-show-extensions-button"
@@ -528,7 +528,7 @@ export var ToolbarContextMenu = {
    *   Resolves when the extension has been removed.
    */
   async removeExtensionForContextAction(popup) {
-    let { BrowserAddonUI } = popup.ownerGlobal;
+    let { BrowserAddonUI } = popup.documentGlobal;
 
     let id = this._getExtensionId(popup);
     await BrowserAddonUI.removeAddon(id, "browserAction");
@@ -545,7 +545,7 @@ export var ToolbarContextMenu = {
    *   Resolves when the extension has been removed.
    */
   async reportExtensionForContextAction(popup, reportEntryPoint) {
-    let { BrowserAddonUI } = popup.ownerGlobal;
+    let { BrowserAddonUI } = popup.documentGlobal;
     let id = this._getExtensionId(popup);
     await BrowserAddonUI.reportAddon(id, reportEntryPoint);
   },
@@ -560,7 +560,7 @@ export var ToolbarContextMenu = {
    *   opened.
    */
   async openAboutAddonsForContextAction(popup) {
-    let { BrowserAddonUI } = popup.ownerGlobal;
+    let { BrowserAddonUI } = popup.documentGlobal;
     let id = this._getExtensionId(popup);
     await BrowserAddonUI.manageAddon(id, "browserAction");
   },

@@ -109,6 +109,7 @@ export class OpenAIPipeline {
       port,
       isDone,
       toolCalls,
+      usage,
     } = args;
     port?.postMessage({
       text: content,
@@ -123,6 +124,7 @@ export class OpenAIPipeline {
         requestId,
         tokens: [],
         ...(toolCalls ? { toolCalls } : {}),
+        ...(usage ? { usage } : {}),
       },
       type: Progress.ProgressType.INFERENCE,
       statusText: isDone
@@ -218,6 +220,7 @@ export class OpenAIPipeline {
     let streamOutput = "";
     let toolAcc = new Map();
     let sawToolCallsFinish = false;
+    let usage = null;
 
     for await (const chunk of stream) {
       const choice = chunk?.choices?.[0];
@@ -237,6 +240,10 @@ export class OpenAIPipeline {
 
       if (Array.isArray(delta.tool_calls) && delta.tool_calls.length) {
         toolAcc = this.#mergeToolDeltas(toolAcc, delta.tool_calls);
+      }
+
+      if (chunk?.usage) {
+        usage = chunk.usage;
       }
 
       // If the model signals it wants tools now
@@ -265,6 +272,7 @@ export class OpenAIPipeline {
       inferenceProgressCallback,
       port,
       isDone: true,
+      ...(usage ? { usage } : {}),
     });
 
     return {
@@ -339,11 +347,19 @@ export class OpenAIPipeline {
   ) {
     lazy.console.debug("Running OpenAI pipeline");
     try {
-      const { baseURL, apiKey, modelId, serviceType, extraHeaders, engineId } =
-        this.#options;
+      const {
+        baseURL,
+        apiKey,
+        modelId,
+        serviceType,
+        purpose,
+        extraHeaders,
+        engineId,
+      } = this.#options;
       const fxAccountToken = request.fxAccountToken
         ? request.fxAccountToken
         : null;
+      const chatId = request.chatId;
 
       const client = new OpenAIPipeline.OpenAILib.OpenAI({
         baseURL: baseURL ? baseURL : "http://localhost:11434/v1",
@@ -351,7 +367,9 @@ export class OpenAIPipeline {
         defaultHeaders: {
           ...extraHeaders,
           "service-type": serviceType || "ai",
+          purpose: purpose || "chat",
           "x-engine-id": engineId,
+          "chat-id": chatId,
         },
       });
       const stream = request.streamOptions?.enabled || false;
@@ -363,7 +381,9 @@ export class OpenAIPipeline {
         stream,
         tools,
       };
-
+      if (stream) {
+        completionParams.stream_options = { include_usage: true };
+      }
       const args = {
         client,
         completionParams,
@@ -384,6 +404,7 @@ export class OpenAIPipeline {
           text: "",
           requestId,
           tokens: [],
+          errorMessage: error.error,
         },
         type: Progress.ProgressType.INFERENCE,
         statusText: Progress.ProgressStatusText.DONE,

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -20,16 +18,7 @@ const JSClass ShapeListObject::class_ = {
 };
 
 const JSClassOps ShapeListObject::classOps_ = {
-    nullptr,                 // addProperty
-    nullptr,                 // delProperty
-    nullptr,                 // enumerate
-    nullptr,                 // newEnumerate
-    nullptr,                 // resolve
-    nullptr,                 // mayResolve
-    nullptr,                 // finalize
-    nullptr,                 // call
-    nullptr,                 // construct
-    ShapeListObject::trace,  // trace
+    .trace = ShapeListObject::trace,
 };
 
 /* static */ ShapeListObject* ShapeListObject::create(JSContext* cx) {
@@ -73,7 +62,7 @@ bool ShapeListObject::traceWeak(JSTracer* trc) {
   const HeapSlot* src = elements_;
   const HeapSlot* end = src + length;
   HeapSlot* dst = elements_;
-  while (src != end) {
+  while (src < end) {
     Shape* shape = static_cast<Shape*>(src->toPrivate());
     MOZ_ASSERT(shape->is<Shape>());
     if (TraceManuallyBarrieredWeakEdge(trc, &shape, "ShapeListObject shape")) {
@@ -102,16 +91,7 @@ const JSClass ShapeListWithOffsetsObject::class_ = {
 };
 
 const JSClassOps ShapeListWithOffsetsObject::classOps_ = {
-    nullptr,                            // addProperty
-    nullptr,                            // delProperty
-    nullptr,                            // enumerate
-    nullptr,                            // newEnumerate
-    nullptr,                            // resolve
-    nullptr,                            // mayResolve
-    nullptr,                            // finalize
-    nullptr,                            // call
-    nullptr,                            // construct
-    ShapeListWithOffsetsObject::trace,  // trace
+    .trace = ShapeListWithOffsetsObject::trace,
 };
 
 /* static */ ShapeListWithOffsetsObject* ShapeListWithOffsetsObject::create(
@@ -163,10 +143,12 @@ bool ShapeListWithOffsetsObject::traceWeak(JSTracer* trc) {
     return false;  // Object may be uninitialized.
   }
 
+  MOZ_RELEASE_ASSERT(length % 2 == 0, "elements must be shape/offset pairs");
+
   const HeapSlot* src = elements_;
   const HeapSlot* end = src + length;
   HeapSlot* dst = elements_;
-  while (src != end) {
+  while (src < end) {
     Shape* shape = static_cast<Shape*>(src[0].toPrivate());
     uint32_t offset = src[1].toPrivateUint32();
     MOZ_ASSERT(shape->is<Shape>());

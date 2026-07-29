@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s giúp bạn kiểm soát mọi thứ.</p>\n<p>Sử dụng nó như một trình duyệt riêng tư:\n<ul>\n<li>Tìm kiếm và duyệt ngay trong ứng dụng</li>\n<li>Chặn các trình theo dõi (hoặc cập nhật cài đặt để cho phép các trình theo dõi)</li>\n<li>Xóa cookie cũng như lịch sử tìm kiếm và duyệt web khi xong phiên làm việc</li>\n</ul> </p>\n<p>%1$s được sáng lập bởi Mozilla. Nhiệm vụ của chúng tôi là thúc đẩy một Internet lành mạnh, cởi mở.<br/>\n<a href=\"%2$s\">Tìm hiểu thêm</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s giúp bạn kiểm soát mọi thứ.</p>\n<p>Sử dụng nó như một trình duyệt riêng tư:\n<ul>\n<li>Tìm kiếm và duyệt ngay trong ứng dụng</li>\n<li>Chặn các trình theo dõi (hoặc cập nhật cài đặt để cho phép các trình theo dõi)</li>\n<li>Xóa cookie cũng như lịch sử tìm kiếm và duyệt web khi xong phiên làm việc</li>\n</ul> </p>\n<p>%1$s được sáng lập bởi Mozilla. Nhiệm vụ của chúng tôi là thúc đẩy một Internet lành mạnh, cởi mở.<br/>\n<a href=\"%2$s\">Tìm hiểu thêm</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Tìm hiểu thêm</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Dán hoặc nhập URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Ví dụ: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Ví dụ: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Ví dụ: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Đặt %1$s làm trình duyệt mặc định</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Gửi dữ liệu sử dụng</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Tìm hiểu thêm</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla chỉ thu thập những gì chúng tôi cần cung cấp và cải tiến %1$s cho tất cả mọi người.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla chỉ thu thập những gì chúng tôi cần cung cấp và cải tiến %1$s cho tất cả mọi người.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Ping sử dụng hàng ngày</string>
-  <string name="preference_daily_usage_ping_description">Điều này giúp Mozilla ước tính số người dùng đang hoạt động.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Điều này giúp Mozilla ước tính số người dùng đang hoạt động.</string>
   <string name="preference_daily_usage_ping_learn_more">Tìm hiểu thêm</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Chính sách riêng tư</string>
@@ -584,6 +584,21 @@
   <string name="security_popup_security_verified">Xác minh bởi: %1$s</string>
   <!-- Content Description of Security Icon in toolbar -->
   <string name="site_security_icon_content_description">Bảo mật trang web</string>
+  <!--
+    %1$s will be replaced with the organization for which the certificate
+    used by the site was issued. For example, the certificate in use by
+    the site https://eidas.ec.europa.eu/ was issued to "The European
+    Commission".
+  -->
+  <string name="qualified_identity">Chứng chỉ được cấp cho %1$s</string>
+  <!--
+    The European Union eIDAS Regulation specifies a type of certificate
+    called a "qualified website authentication certificate" (QWAC) and
+    requires that browsers identify and indicate such certificates. This
+    text was paraphrased from ETSI TS 119 411-5 V2.1.1 section 6.3 and
+    indicates that the website uses a QWAC.
+  -->
+  <string name="qualified_text">Được chứng nhận/đủ điều kiện theo quy định tại Quy định (EU) 2024/1183.</string>
   <string name="preference_autocomplete_duplicate_url_error">URL đã tồn tại</string>
   <!-- Label for the Find in page button -->
   <string name="find_in_page">Tìm trong trang</string>
@@ -814,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Đóng thẻ</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Gửi báo cáo lỗi đến Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Gửi báo cáo lỗi đến Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->
@@ -931,7 +946,7 @@
     This is the subtitle of promote search widget dialog. %1$s will get replaced with the name
     of the app (e.g. "Focus")
   -->
-  <string name="promote_search_widget_dialog_subtitle">Chúng tôi sẽ để bạn ở chế độ duyệt web riêng tư, nhưng hãy bắt đầu nhanh hơn vào lần sau với tiện ích %1$s trên màn hình chính của bạn.</string>
+  <string name="promote_search_widget_dialog_subtitle">Chúng tôi sẽ để bạn ở chế độ duyệt web riêng tư, nhưng hãy bắt đầu nhanh hơn vào lần sau với widget %1$s trên màn hình chính của bạn.</string>
   <!--
     This is te text from add search widget to home screen button .The button is located on
     promote search widget dialog.

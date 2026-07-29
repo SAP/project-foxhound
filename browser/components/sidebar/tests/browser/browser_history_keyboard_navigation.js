@@ -19,6 +19,7 @@ add_setup(async () => {
 registerCleanupFunction(() => {
   SidebarController.hide();
   cleanUpExtraTabs();
+  Services.prefs.clearUserPref("sidebar.history.sortOption");
 });
 
 add_task(async function test_navigation_sort_by_date() {
@@ -187,4 +188,67 @@ add_task(async function test_navigation_sort_by_last_visited() {
   let browser = gBrowser.selectedBrowser;
   EventUtils.synthesizeKey("KEY_Enter", {}, contentWindow);
   await BrowserTestUtils.browserLoaded(browser, false, URLs[1]);
+});
+
+add_task(async function test_arrow_navigation_keeps_headers_visible() {
+  info("Populate history with many sites to ensure scrollable content.");
+  const pageInfos = Array.from({ length: 30 }, (_, i) => ({
+    url: `https://site-${i}.example.com/`,
+    title: `Site ${i}`,
+    visits: [{ date: new Date() }],
+  }));
+  await PlacesUtils.history.insertMany(pageInfos);
+
+  info("Sort history by date and site.");
+  const {
+    menuButton,
+    _menu: menu,
+    _menuSortByDateSite: sortByDateSiteButton,
+  } = component;
+  const promiseMenuShown = BrowserTestUtils.waitForEvent(menu, "popupshown");
+  EventUtils.synthesizeMouseAtCenter(menuButton, {}, contentWindow);
+  await promiseMenuShown;
+  menu.activateItem(sortByDateSiteButton);
+
+  await BrowserTestUtils.waitForMutationCondition(
+    component.shadowRoot,
+    { childList: true, subtree: true },
+    () =>
+      component.shadowRoot.querySelectorAll(".nested-card").length >=
+      pageInfos.length
+  );
+
+  const scrollContainer = component.shadowRoot.querySelector(
+    ".sidebar-panel-scrollable-content"
+  );
+  Assert.greater(
+    scrollContainer.scrollHeight,
+    scrollContainer.clientHeight,
+    "Content should overflow the scroll container."
+  );
+
+  const firstDateCard = component.cards[0];
+  const siteCards = firstDateCard.querySelectorAll(".nested-card");
+  siteCards[0].summaryEl.focus();
+
+  info("Arrow down through collapsed headers within the first date group.");
+  for (let i = 1; i < siteCards.length; i++) {
+    await focusWithKeyboard(
+      siteCards[i].summaryEl,
+      "KEY_ArrowDown",
+      contentWindow
+    );
+    const rect = siteCards[i].summaryEl.getBoundingClientRect();
+    const containerRect = scrollContainer.getBoundingClientRect();
+    Assert.greaterOrEqual(
+      rect.top,
+      containerRect.top,
+      `Header ${i} top is within the visible scroll area.`
+    );
+    Assert.lessOrEqual(
+      rect.bottom,
+      containerRect.bottom,
+      `Header ${i} bottom is within the visible scroll area.`
+    );
+  }
 });

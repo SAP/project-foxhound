@@ -11,4 +11,16 @@
   <string name="mozac_browser_awesomebar_edit_suggestion">ទទួលយក និងកែសម្រួលការណែនាំ</string>
   <!-- Description for the button to remove the search suggestion from the displayed results. -->
   <string name="mozac_browser_awesomebar_remove_suggestion">លុបការណែនាំចេញ</string>
+  <!--
+    The description for the stock suggestion card when the stock is decreasing.
+    %s is a placeholder that will be replaced by the change percent value
+  -->
+  <string name="mozac_browser_awesomebar_stock_suggestion_decrease">បានធ្លាក់ចុះ %s ភាគរយ</string>
+  <!--
+    The description for the stock suggestion card when the stock is increasing.
+    %s is a placeholder that will be replaced by the change percent value
+  -->
+  <string name="mozac_browser_awesomebar_stock_suggestion_increase">កើនបាន %s ភាគរយ</string>
+  <!-- Description for the stock suggestion card when the stock is the same. -->
+  <string name="mozac_browser_awesomebar_stock_suggestion_no_change">គ្មានការផ្លាស់ប្ដូរ</string>
 </resources>

@@ -136,7 +136,7 @@ json.clone = function (value, nodeCache) {
 
     // Evaluation of code might take place in mutable sandboxes, which are
     // created to waive XRays by default. As such DOM nodes and windows
-    // have to be unwaived before accessing properties like "ownerGlobal"
+    // have to be unwaived before accessing properties like "documentGlobal"
     // is possible.
     //
     // Until bug 1743788 is fixed there might be the possibility that more

@@ -1,20 +1,16 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ChromiumCDMVideoDecoder.h"
 
+#include "AOMDecoder.h"
 #include "ChromiumCDMProxy.h"
 #include "GMPService.h"
 #include "GMPVideoDecoder.h"
 #include "MP4Decoder.h"
 #include "VPXDecoder.h"
 #include "content_decryption_module.h"
-#ifdef MOZ_AV1
-#  include "AOMDecoder.h"
-#endif
 
 namespace mozilla {
 
@@ -29,7 +25,7 @@ ChromiumCDMVideoDecoder::ChromiumCDMVideoDecoder(
 
 ChromiumCDMVideoDecoder::~ChromiumCDMVideoDecoder() = default;
 
-static uint32_t ToCDMH264Profile(uint8_t aProfile) {
+static cdm::VideoCodecProfile ToCDMH264Profile(uint8_t aProfile) {
   switch (aProfile) {
     case 66:
       return cdm::VideoCodecProfile::kH264ProfileBaseline;
@@ -49,8 +45,7 @@ static uint32_t ToCDMH264Profile(uint8_t aProfile) {
   return cdm::VideoCodecProfile::kUnknownVideoCodecProfile;
 }
 
-#ifdef MOZ_AV1
-static uint32_t ToCDMAV1Profile(uint8_t aProfile) {
+static cdm::VideoCodecProfile ToCDMAV1Profile(uint8_t aProfile) {
   switch (aProfile) {
     case 0:
       return cdm::VideoCodecProfile::kAv1ProfileMain;
@@ -62,7 +57,6 @@ static uint32_t ToCDMAV1Profile(uint8_t aProfile) {
       return cdm::VideoCodecProfile::kUnknownVideoCodecProfile;
   }
 }
-#endif
 
 RefPtr<MediaDataDecoder::InitPromise> ChromiumCDMVideoDecoder::Init() {
   if (!mCDMParent) {
@@ -79,7 +73,6 @@ RefPtr<MediaDataDecoder::InitPromise> ChromiumCDMVideoDecoder::Init() {
         ToCDMH264Profile(mConfig.mExtraData->SafeElementAt(1, 0));
     config.mExtraData() = mConfig.mExtraData->Clone();
     mConvertToAnnexB = true;
-#ifdef MOZ_AV1
   } else if (AOMDecoder::IsAV1(mConfig.mMimeType)) {
     AOMDecoder::AV1SequenceInfo seqInfo;
     MediaResult seqHdrResult;
@@ -88,7 +81,6 @@ RefPtr<MediaDataDecoder::InitPromise> ChromiumCDMVideoDecoder::Init() {
     config.mProfile() = NS_SUCCEEDED(seqHdrResult.Code())
                             ? ToCDMAV1Profile(seqInfo.mProfile)
                             : cdm::VideoCodecProfile::kUnknownVideoCodecProfile;
-#endif
   } else if (VPXDecoder::IsVP8(mConfig.mMimeType)) {
     config.mCodec() = cdm::VideoCodec::kCodecVp8;
     config.mProfile() = cdm::VideoCodecProfile::kProfileNotNeeded;
@@ -121,11 +113,14 @@ RefPtr<MediaDataDecoder::InitPromise> ChromiumCDMVideoDecoder::Init() {
   VideoInfo info = mConfig;
   RefPtr<layers::ImageContainer> imageContainer = mImageContainer;
   RefPtr<layers::KnowsCompositor> knowsCompositor = mKnowsCompositor;
-  return InvokeAsync(mGMPThread, __func__,
-                     [cdm, config, info, imageContainer, knowsCompositor]() {
-                       return cdm->InitializeVideoDecoder(
-                           config, info, imageContainer, knowsCompositor);
-                     });
+  return InvokeAsync(
+      mGMPThread, __func__,
+      [cdm = std::move(cdm), config = std::move(config), info = std::move(info),
+       imageContainer = std::move(imageContainer),
+       knowsCompositor = std::move(knowsCompositor)]() {
+        return cdm->InitializeVideoDecoder(config, info, imageContainer,
+                                           knowsCompositor);
+      });
 }
 
 nsCString ChromiumCDMVideoDecoder::GetDescriptionName() const {
@@ -136,11 +131,9 @@ nsCString ChromiumCDMVideoDecoder::GetCodecName() const {
   if (MP4Decoder::IsH264(mConfig.mMimeType)) {
     return "h264"_ns;
   }
-#ifdef MOZ_AV1
   if (AOMDecoder::IsAV1(mConfig.mMimeType)) {
     return "av1"_ns;
   }
-#endif
   if (VPXDecoder::IsVP8(mConfig.mMimeType)) {
     return "vp8"_ns;
   }

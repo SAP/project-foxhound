@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,10 +6,10 @@
 
 #include "mozilla/MappedDeclarationsBuilder.h"
 #include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/ContentList.h"
 #include "mozilla/dom/HTMLTableElement.h"
 #include "mozilla/dom/HTMLTableRowElementBinding.h"
 #include "nsAttrValueInlines.h"
-#include "nsContentList.h"
 #include "nsContentUtils.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(TableRow)
@@ -65,12 +63,12 @@ int32_t HTMLTableRowElement::RowIndex() const {
     return -1;
   }
 
-  nsIHTMLCollection* rows = table->Rows();
+  HTMLCollection* rows = table->Rows();
 
   uint32_t numRows = rows->Length();
 
   for (uint32_t i = 0; i < numRows; i++) {
-    if (rows->GetElementAt(i) == this) {
+    if (rows->Item(i) == this) {
       return i;
     }
   }
@@ -84,10 +82,10 @@ int32_t HTMLTableRowElement::SectionRowIndex() const {
     return -1;
   }
 
-  nsCOMPtr<nsIHTMLCollection> coll = section->Rows();
+  RefPtr<HTMLCollection> coll = section->Rows();
   uint32_t numRows = coll->Length();
   for (uint32_t i = 0; i < numRows; i++) {
-    if (coll->GetElementAt(i) == this) {
+    if (coll->Item(i) == this) {
       return i;
     }
   }
@@ -100,12 +98,12 @@ static bool IsCell(Element* aElement, int32_t aNamespaceID, nsAtom* aAtom,
   return aElement->IsAnyOfHTMLElements(nsGkAtoms::td, nsGkAtoms::th);
 }
 
-nsIHTMLCollection* HTMLTableRowElement::Cells() {
+HTMLCollection* HTMLTableRowElement::Cells() {
   if (!mCells) {
-    mCells = new nsContentList(this, IsCell,
-                               nullptr,  // destroy func
-                               nullptr,  // closure data
-                               false, nullptr, kNameSpaceID_XHTML, false);
+    mCells = new ContentList(this, IsCell,
+                             nullptr,  // destroy func
+                             nullptr,  // closure data
+                             false, nullptr, kNameSpaceID_XHTML, false);
   }
 
   return mCells;
@@ -119,7 +117,7 @@ already_AddRefed<nsGenericHTMLElement> HTMLTableRowElement::InsertCell(
   }
 
   // Make sure mCells is initialized.
-  nsIHTMLCollection* cells = Cells();
+  HTMLCollection* cells = Cells();
 
   NS_ASSERTION(mCells, "How did that happen?");
 
@@ -162,7 +160,7 @@ void HTMLTableRowElement::DeleteCell(int32_t aValue, ErrorResult& aError) {
     return;
   }
 
-  nsIHTMLCollection* cells = Cells();
+  HTMLCollection* cells = Cells();
 
   uint32_t refIndex;
   if (aValue == -1) {

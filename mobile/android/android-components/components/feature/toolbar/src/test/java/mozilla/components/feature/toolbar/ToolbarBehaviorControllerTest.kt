@@ -18,7 +18,6 @@ import mozilla.components.concept.toolbar.Toolbar
 import mozilla.components.support.test.middleware.CaptureActionsMiddleware
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -28,6 +27,7 @@ import org.mockito.Mockito.spy
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.robolectric.Shadows.shadowOf
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class ToolbarBehaviorControllerTest {

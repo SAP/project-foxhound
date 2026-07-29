@@ -26,7 +26,7 @@ private val FaviconShape = RoundedCornerShape(2.dp)
 /**
  * Basic tab list item used to display a Tab with its title, URL, and [Favicon] with an optional
  * close icon button at the end.
- * Use [TabListItem] for displaying a Tab with a thumbnail.
+ * Use [TabListTabItem] for displaying a Tab with a thumbnail.
  *
  * @param title The title of the tab.
  * @param url The url of the tab.

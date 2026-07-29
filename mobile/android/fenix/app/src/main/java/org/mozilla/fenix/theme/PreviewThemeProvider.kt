@@ -23,7 +23,13 @@ import androidx.compose.ui.tooling.preview.PreviewParameterProvider
  * ```
  */
 class PreviewThemeProvider : PreviewParameterProvider<Theme> {
-    override val values = Theme.entries.asSequence()
+    private val themes = Theme.entries
+
+    override val values = themes.asSequence()
+
+    override fun getDisplayName(index: Int): String {
+        return themes[index].name
+    }
 }
 
 /**
@@ -76,10 +82,27 @@ data class ThemedValue<T>(
  * ```
  *
  * @param baseValues The base values to be wrapped with each available theme.
+ * @param getDisplayName An optional function to provide a display name based either on the value
+ *        or its index in [baseValues].
  */
 abstract class ThemedValueProvider<T>(
     baseValues: Sequence<T>,
+    getDisplayName: (index: Int, value: T) -> String? = { _, _ -> null },
 ) : PreviewParameterProvider<ThemedValue<T>> {
+
+    /**
+     * @see [org.mozilla.fenix.theme.ThemedValueProvider]
+     * @param baseValues The base values to be wrapped with each available theme.
+     * @param displayNames An optional list of display names for [baseValues].
+     */
+    constructor(
+        baseValues: Sequence<T>,
+        displayNames: List<String?>,
+    ) : this(
+        baseValues,
+        { index, _ -> displayNames.getOrNull(index) },
+    )
+
     override val values: Sequence<ThemedValue<T>> =
         baseValues.flatMap { value ->
             Theme.entries.map { theme ->
@@ -89,4 +112,16 @@ abstract class ThemedValueProvider<T>(
                 )
             }
         }
+
+    private val displayNames = values
+        .mapIndexed { index, (theme, value) ->
+            val valueIndex = index / Theme.entries.size
+            val valueDisplayName = getDisplayName(valueIndex, value) ?: "$valueIndex"
+            "$valueDisplayName (${theme.name})"
+        }
+        .toList()
+
+    override fun getDisplayName(index: Int): String {
+        return displayNames[index]
+    }
 }

@@ -30,7 +30,7 @@ add_task(async function () {
   const tooltip = inspector.markup.eventDetailsTooltip;
   const onTooltipShown = tooltip.once("shown");
   eventTooltipBadge.focus();
-  EventUtils.synthesizeKey("VK_RETURN", {}, eventTooltipBadge.ownerGlobal);
+  EventUtils.synthesizeKey("VK_RETURN", {}, eventTooltipBadge.documentGlobal);
   await onTooltipShown;
   ok(true, "The tooltip is shown");
   is(
@@ -40,7 +40,7 @@ add_task(async function () {
   );
 
   const tooltipDoc = tooltip.panel.ownerDocument;
-  const tooltipWin = tooltip.panel.ownerGlobal;
+  const tooltipWin = tooltip.panel.documentGlobal;
   const tooltipContainerEl = tooltip.panel.querySelector(
     ".devtools-tooltip-events-container"
   );

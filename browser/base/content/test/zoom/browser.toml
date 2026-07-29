@@ -29,6 +29,9 @@ skip-if = [
 ]
 
 ["browser_keyboard_mousewheel_zoom_consistency.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2019466
+]
 
 ["browser_mousewheel_zoom.js"]
 https_first_disabled = true

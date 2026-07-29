@@ -116,7 +116,7 @@ pub enum RenderCommand {
     },
     SetVertexBuffer {
         slot: u32,
-        buffer_id: id::BufferId,
+        buffer_id: Option<id::BufferId>,
         offset: BufferAddress,
         size: Option<BufferSize>,
     },
@@ -254,7 +254,7 @@ pub extern "C" fn wgpu_recorded_render_pass_set_pipeline(
 pub extern "C" fn wgpu_recorded_render_pass_set_vertex_buffer(
     pass: &mut RecordedRenderPass,
     slot: u32,
-    buffer_id: id::BufferId,
+    buffer_id: Option<id::BufferId>,
     offset: BufferAddress,
     size: Option<&BufferSize>,
 ) {
@@ -709,11 +709,13 @@ pub fn replay_render_pass(
     src_pass: &RecordedRenderPass,
     error_buf: &mut crate::error::OwnedErrorBuffer,
 ) {
-    // Explicitly forbid `LoadOp::DontCare`, until wgpu#8780 is resolved.
+    // Explicitly forbid `LoadOp::DontCare`.
     //
     // Since `DontCare` is not part of WebGPU (and is unlikely to become so),
     // only a corrupted content process could ever produce such a render pass,
     // so it suffices for us to just crash here if we see it.
+    //
+    // This can be removed once https://github.com/gfx-rs/wgpu/issues/9436 is fixed.
     for attachment in &src_pass.color_attachments {
         if let Some(attachment) = attachment {
             assert!(!matches!(attachment.load_op, wgt::LoadOp::DontCare(_)));

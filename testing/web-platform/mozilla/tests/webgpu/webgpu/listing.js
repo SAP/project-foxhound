@@ -152,6 +152,15 @@ export const listing = [
       "operation",
       "command_buffer",
       "programmable",
+      "immediate"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "operation",
+      "command_buffer",
+      "programmable",
       "state_tracking"
     ]
   },
@@ -720,6 +729,15 @@ export const listing = [
       "validation",
       "capability_checks",
       "features",
+      "subgroup_size_control"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "features",
       "texture_component_swizzle"
     ]
   },
@@ -1134,6 +1152,13 @@ export const listing = [
     "file": [
       "api",
       "validation",
+      "dispatch"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
       "encoding",
       "beginComputePass"
     ]
@@ -1457,6 +1482,14 @@ export const listing = [
       "api",
       "validation",
       "non_filterable_texture"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "pipeline",
+      "immediates"
     ]
   },
   {
@@ -5684,6 +5717,14 @@ export const listing = [
       "validation",
       "extension",
       "readonly_and_readwrite_storage_textures"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "extension",
+      "subgroup_size_control"
     ]
   },
   {

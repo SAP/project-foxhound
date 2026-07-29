@@ -15,39 +15,36 @@
           src="../events.js"></script>
 
   <script type="application/javascript">
-    function changeMultipleElements() {
-      this.node1 = getNode("div1");
-      this.node2 = getNode("div2");
-
-      this.eventSeq = [
-        new textChangeChecker("div1", 0, 5, "hello", false, undefined, true),
-        new textChangeChecker("div2", 0, 5, "world", false, undefined, true),
-        new orderChecker(),
-        new textChangeChecker("div1", 0, 1, "a", true, undefined, true),
-        new textChangeChecker("div2", 0, 1, "b", true, undefined, true),
-      ];
-
-      this.invoke = function changeMultipleElements_invoke() {
-        this.node1.textContent = "a";
-        this.node2.textContent = "b";
-      };
-
-      this.getID = function changeMultipleElements_invoke_getID() {
-        return "Change the text content of multiple sibling divs";
+    function textChangeMatcher(aID, aText, aIsInserted) {
+      return e => {
+        if (!(e instanceof nsIAccessibleTextChangeEvent)) {
+          return false;
+        }
+        return (
+          e.accessible === getAccessible(aID) &&
+          e.modifiedText === aText &&
+          e.isInserted === aIsInserted
+        );
       };
     }
 
     // //////////////////////////////////////////////////////////////////////////
     // Do tests
-//    gA11yEventDumpToConsole = true; // debugging
 
-    var gQueue = null;
-    function doTests() {
-      gQueue = new eventQueue();
+    async function doTests() {
+      let removed1 = waitForEvent(EVENT_TEXT_REMOVED,
+                                  textChangeMatcher("div1", "hello", false));
+      let removed2 = waitForEvent(EVENT_TEXT_REMOVED,
+                                  textChangeMatcher("div2", "world", false));
+      let inserted1 = waitForEvent(EVENT_TEXT_INSERTED,
+                                   textChangeMatcher("div1", "a", true));
+      let inserted2 = waitForEvent(EVENT_TEXT_INSERTED,
+                                   textChangeMatcher("div2", "b", true));
+      getNode("div1").textContent = "a";
+      getNode("div2").textContent = "b";
+      await Promise.all([removed1, removed2, inserted1, inserted2]);
 
-      gQueue.push(new changeMultipleElements());
-
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

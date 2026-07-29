@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2008 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -222,7 +220,7 @@ void ChannelPosix::SetOtherPid(base::ProcessId other_pid) {
 bool ChannelPosix::ProcessIncomingMessages() {
   chan_cap_.NoteOnTarget();
 
-  struct msghdr msg = {0};
+  struct msghdr msg = {nullptr};
   struct iovec iov;
 
   msg.msg_iov = &iov;
@@ -266,7 +264,7 @@ bool ChannelPosix::ProcessIncomingMessages() {
     DCHECK(bytes_read);
 
     // a pointer to an array of |num_wire_fds| file descriptors from the read
-    const int* wire_fds = NULL;
+    const int* wire_fds = nullptr;
     unsigned num_wire_fds = 0;
 
     // walk the list of control messages and, if we find an array of file
@@ -415,7 +413,7 @@ bool ChannelPosix::ProcessIncomingMessages() {
 
       if (m.header()->num_handles) {
         // the message has file descriptors
-        const char* error = NULL;
+        const char* error = nullptr;
         if (m.header()->num_handles > num_fds - fds_i) {
           // the message has been completely received, but we didn't get
           // enough file descriptors.
@@ -533,7 +531,7 @@ bool ChannelPosix::ProcessOutgoingMessages() {
   while (!output_queue_.IsEmpty()) {
     Message* msg = output_queue_.FirstElement().get();
 
-    struct msghdr msgh = {0};
+    struct msghdr msgh = {nullptr};
 
     char cmsgBuf[kControlBufferSize];
 

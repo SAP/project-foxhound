@@ -572,7 +572,7 @@ Runtime detection
 
 Some tests will want to only execute certain portions on specific
 platforms. Use
-`AppConstants.sys.mjs <https://searchfox.org/mozilla-central/rev/5f0a7ca8968ac5cef8846e1d970ef178b8b76dcc/toolkit/modules/AppConstants.sys.mjs#158>`__
+:searchfox:`AppConstants.sys.mjs <mozilla-central/rev/5f0a7ca8968ac5cef8846e1d970ef178b8b76dcc:toolkit/modules/AppConstants.sys.mjs#158>`
 for determining the platform, for example:
 
 .. code:: js

@@ -13,6 +13,7 @@ import sys
 # load modules from parent dir
 sys.path.insert(1, os.path.dirname(sys.path[0]))
 
+from mozfile import load_source
 from mozharness.base.log import WARNING
 from mozharness.base.script import BaseScript, PreScriptAction
 from mozharness.mozilla.automation import TBPL_RETRY
@@ -327,10 +328,6 @@ class AndroidHardwareTest(
 
         cmd.extend([f"--tag={t}" for t in self.test_tags])
 
-        try_options, try_tests = self.try_args(self.test_suite)
-        if try_options:
-            cmd.extend(try_options)
-
         if user_paths:
             # reftest on android-hw uses a subset (reftest-qr) of tests,
             # but scheduling only knows about 'reftest'
@@ -351,7 +348,6 @@ class AndroidHardwareTest(
                 self.query_tests_args(
                     self.config["suite_definitions"][self.test_suite].get("tests"),
                     None,
-                    try_tests,
                 )
             )
 
@@ -498,6 +494,16 @@ class AndroidHardwareTest(
                     log_obj=self.log_obj,
                     error_list=[],
                 )
+
+                if "reftest" in suite_category:
+                    ref_formatter = load_source(
+                        "ReftestFormatter",
+                        os.path.join(
+                            self.query_abs_dirs()["abs_reftest_dir"], "output.py"
+                        ),
+                    )
+                    parser.formatter = ref_formatter.ReftestFormatter()
+
                 self.run_command(final_cmd, cwd=cwd, env=env, output_parser=parser)
                 tbpl_status, log_level, summary = parser.evaluate_parser(0, summary)
                 parser.append_tinderboxprint_line(self.test_suite)

@@ -212,7 +212,8 @@ std::vector<SdpVideoFormat> ObjCVideoEncoderFactory::GetImplementations()
 
 VideoEncoderFactory::CodecSupport ObjCVideoEncoderFactory::QueryCodecSupport(
     const SdpVideoFormat &format,
-    std::optional<std::string> scalability_mode) const {
+    std::optional<std::string> scalability_mode,
+    std::optional<Resolution> resolution) const {
   if ([encoder_factory_ respondsToSelector:@selector(queryCodecSupport:
                                                        scalabilityMode:)]) {
     RTC_OBJC_TYPE(RTCVideoCodecInfo) *info = [[RTC_OBJC_TYPE(RTCVideoCodecInfo)
@@ -229,7 +230,8 @@ VideoEncoderFactory::CodecSupport ObjCVideoEncoderFactory::QueryCodecSupport(
   }
 
   // Use default implementation.
-  return VideoEncoderFactory::QueryCodecSupport(format, scalability_mode);
+  return VideoEncoderFactory::QueryCodecSupport(
+      format, scalability_mode, resolution);
 }
 
 std::unique_ptr<VideoEncoder> ObjCVideoEncoderFactory::Create(
@@ -240,8 +242,17 @@ std::unique_ptr<VideoEncoder> ObjCVideoEncoderFactory::Create(
       [encoder_factory_ createEncoder:info];
   if ([encoder conformsToProtocol:@protocol(RTC_OBJC_TYPE(
                                       RTCNativeVideoEncoderBuilder))]) {
-    return
-        [((id<RTC_OBJC_TYPE(RTCNativeVideoEncoderBuilder)>)encoder) build:env];
+    id<RTC_OBJC_TYPE(RTCNativeVideoEncoderBuilder)> builder =
+        (id<RTC_OBJC_TYPE(RTCNativeVideoEncoderBuilder)>)encoder;
+    if ([builder respondsToSelector:@selector(buildWithEnvironment:format:)]) {
+      return [builder buildWithEnvironment:env format:format];
+    }
+    // TODO(webrtc:496700735): Remove `build:` fallback once upstream
+    // implementations have migrated to `buildWithEnvironment:format:`.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    return [builder build:env];
+#pragma clang diagnostic pop
   } else {
     return std::make_unique<ObjCVideoEncoder>(encoder);
   }

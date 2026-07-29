@@ -96,7 +96,7 @@ async function fetchStyleSheetText(styleSheet) {
     // Stylesheets using other protocols should use the content principal.
     const ownerNode = getStyleSheetOwnerNode(styleSheet);
     if (ownerNode) {
-      // eslint-disable-next-line mozilla/use-ownerGlobal
+      // eslint-disable-next-line mozilla/use-documentGlobal
       options.window = ownerNode.ownerDocument.defaultView;
       options.principal = ownerNode.ownerDocument.nodePrincipal;
     }

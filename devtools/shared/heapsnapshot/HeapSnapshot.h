@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -98,7 +97,7 @@ class HeapSnapshot final : public nsISupports, public nsWrapperCache {
  protected:
   nsCOMPtr<nsISupports> mParent;
 
-  virtual ~HeapSnapshot() {}
+  virtual ~HeapSnapshot() = default;
 
  public:
   // Create a `HeapSnapshot` from the given buffer that contains a serialized
@@ -170,7 +169,7 @@ class HeapSnapshot final : public nsISupports, public nsWrapperCache {
 // serializes it to disk, or memory, or a socket, etc.
 class CoreDumpWriter {
  public:
-  virtual ~CoreDumpWriter() {};
+  virtual ~CoreDumpWriter() = default;
 
   // Write the given bits of metadata we would like to associate with this core
   // dump.

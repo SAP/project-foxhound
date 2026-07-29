@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,11 +10,9 @@
 #include "nsIClassInfoImpl.h"
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
+#include "nsQueryObject.h"
 
 using namespace mozilla::dom;
-
-static NS_DEFINE_CID(kThisSimpleURIImplementationCID,
-                     NS_THIS_SIMPLEURI_IMPLEMENTATION_CID);
 
 NS_IMPL_ADDREF_INHERITED(BlobURL, mozilla::net::nsSimpleURI)
 NS_IMPL_RELEASE_INHERITED(BlobURL, mozilla::net::nsSimpleURI)
@@ -27,16 +23,16 @@ NS_IMPL_CLASSINFO(BlobURL, nullptr, nsIClassInfo::THREADSAFE,
 NS_IMPL_CI_INTERFACE_GETTER0(BlobURL)
 
 NS_INTERFACE_MAP_BEGIN(BlobURL)
-  if (aIID.Equals(kHOSTOBJECTURICID))
-    foundInterface = static_cast<nsIURI*>(this);
-  else if (aIID.Equals(kThisSimpleURIImplementationCID)) {
+  if (aIID.Equals(NS_GET_IID(nsSimpleURI))) {
     // Need to return explicitly here, because if we just set foundInterface
     // to null the NS_INTERFACE_MAP_END_INHERITING will end up calling into
-    // nsSimplURI::QueryInterface and finding something for this CID.
+    // nsSimpleURI::QueryInterface and finding something for this CID.
     *aInstancePtr = nullptr;
     return NS_NOINTERFACE;
-  } else
-    NS_IMPL_QUERY_CLASSINFO(BlobURL)
+  }
+
+  NS_IMPL_QUERY_CLASSINFO(BlobURL)
+  NS_INTERFACE_MAP_ENTRY_CONCRETE(BlobURL)
 NS_INTERFACE_MAP_END_INHERITING(mozilla::net::nsSimpleURI)
 
 BlobURL::BlobURL() : mRevoked(false) {}
@@ -56,6 +52,17 @@ nsresult BlobURL::ReadPrivate(nsIObjectInputStream* aStream) {
   rv = aStream->ReadBoolean(&mRevoked);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  // NOTE: We intentionally do not persist nullPrincipal here.
+  //
+  // The null principal would be meaningless if this blob URL was persisted into
+  // long-term storage (which is generally the use of `nsIObjectInputStream`).
+  // While there are currently limited legacy uses of `nsIObjectInputStream` for
+  // IPC, none which serialize a BlobURL should ever result in it being loaded.
+  //
+  // Not persisting any additional data here also avoids potential versioning
+  // issues if a Blob URL was ever serialized using nsIObjectInputStream into
+  // the user's profile.
+
   return NS_OK;
 }
 
@@ -67,11 +74,12 @@ BlobURL::Write(nsIObjectOutputStream* aStream) {
   rv = aStream->WriteBoolean(mRevoked);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  // NOTE: We intentionally do not persist nullPrincipal here. (see above)
+
   return NS_OK;
 }
 
-NS_IMETHODIMP_(void)
-BlobURL::Serialize(mozilla::ipc::URIParams& aParams) {
+void BlobURL::Serialize(mozilla::ipc::URIParams& aParams) {
   using namespace mozilla::ipc;
 
   HostObjectURIParams hostParams;
@@ -81,6 +89,8 @@ BlobURL::Serialize(mozilla::ipc::URIParams& aParams) {
   hostParams.simpleParams() = simpleParams;
 
   hostParams.revoked() = mRevoked;
+
+  hostParams.nullPrincipal() = mNullPrincipal;
 
   aParams = std::move(hostParams);
 }
@@ -99,7 +109,15 @@ bool BlobURL::Deserialize(const mozilla::ipc::URIParams& aParams) {
     return false;
   }
 
+  if (OriginPart() != "null"_ns && hostParams.nullPrincipal()) {
+    NS_ERROR("Received nullPrincipal for non-null BlobURL");
+    return false;
+  }
+
   mRevoked = hostParams.revoked();
+
+  mNullPrincipal = hostParams.nullPrincipal();
+
   return true;
 }
 
@@ -119,8 +137,7 @@ nsresult BlobURL::EqualsInternal(
     return NS_OK;
   }
 
-  RefPtr<BlobURL> otherUri;
-  aOther->QueryInterface(kHOSTOBJECTURICID, getter_AddRefs(otherUri));
+  RefPtr<BlobURL> otherUri = do_QueryObject(aOther);
   if (!otherUri) {
     *aResult = false;
     return NS_OK;

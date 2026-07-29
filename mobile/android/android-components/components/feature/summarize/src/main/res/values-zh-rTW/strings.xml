@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources>
+  <!-- Link text to learn more about downloading Gemini Nano -->
+  <string name="mozac_summarize_learn_more_link">更多資訊</string>
+  <!-- Title for the off-device shake summarization consent screen. Localization note: Asking if the user wants to use the shake gesture to summarize the page they are viewing. -->
+  <string name="mozac_summarize_shake_consent_off_device_title">要開啟搖晃手機摘要頁面內容功能嗎？</string>
+  <!-- Message for the off-device shake summarization consent screen. %1$s is 'Firefox' -->
+  <string name="mozac_summarize_shake_consent_off_device_message">只要搖晃手機，即可於幾秒內由 %1$s 摘要頁面內容。</string>
+  <!-- Button text for the off-device shake summarization consent screen approving shake consent. Localization note: "Continue" turns on the shake to summarize feature. -->
+  <string name="mozac_summarize_shake_consent_off_device_button_positive">繼續</string>
+  <!-- Button text for the off-device shake summarization consent screen denying shake consent. Localization note: "Not now" dismisses the request to turn on the shake to summarize feature. -->
+  <string name="mozac_summarize_shake_consent_off_device_negative_button">現在不要</string>
+  <!-- Title for the on-device shake summarization and download consent screen -->
+  <string name="mozac_summarize_shake_consent_on_device_title">摘要本頁內容</string>
+  <!-- Message for the on-device shake summarization and download consent screen. %s will be replaced by app name. -->
+  <string name="mozac_summarize_shake_consent_on_device_message">只要一次快速下載完成，%s 即可在搖晃手機後摘要頁面內容。</string>
+  <!-- Button text for the on-device shake summarization and download consent screen approving shake and download consent -->
+  <string name="mozac_summarize_shake_consent_on_device_button_positive">下載後即可進行摘要</string>
+  <!-- Button text for the on-device shake summarization and download consent screen denying shake and download consent -->
+  <string name="mozac_summarize_shake_consent_on_device_negative_button">現在不要</string>
+  <!-- Title for the download consent screen -->
+  <string name="mozac_summarize_download_consent_title">設定有隱私的摘要功能</string>
+  <!-- Message for the consent to download when using an on-device model. %s will be replaced by app name. -->
+  <string name="mozac_summarize_download_nano_consent_message">只要下載一次，即可讓 %s 在您的掌控之下摘要網頁內容。</string>
+  <!-- Button text for the consent to download an on-device model approving download consent -->
+  <string name="mozac_summarize_download_consent_button_positive">下載後即可進行摘要</string>
+  <!-- Button text for the consent to download an on-device model denying download consent -->
+  <string name="mozac_summarize_download_consent_button_negative">取消</string>
+  <!-- Title for the download in progress screen -->
+  <string name="mozac_summarize_download_progress_title">正在設定摘要功能</string>
+  <!-- Message to describe that a download is in progress using an on-device, private model -->
+  <string name="mozac_summarize_download_progress_message">下載一次即可進行有隱私的頁面摘要。</string>
+  <!-- Caption to describe the progress of the download. %1$.2f is bytes downloaded, %2$.2f is total bytes required for download to complete. -->
+  <string name="mozac_summarize_download_progress_caption">%1$.2f MB / %2$.2f MB</string>
+  <!-- Button text shown while a download is in progress to cancel the download -->
+  <string name="mozac_summarize_download_progress_button_negative">取消</string>
+  <!-- Title for the download error screen -->
+  <string name="mozac_summarize_download_error_title">錯誤</string>
+  <!-- Generic fallback message for the download error screen -->
+  <string name="mozac_summarize_download_error_fallback_message">未知錯誤</string>
+  <!-- Button for the download error screen to try again -->
+  <string name="mozac_summarize_download_error_positive_button">重試</string>
+  <!-- Button for the download error screen to cancel -->
+  <string name="mozac_summarize_download_error_negative_button">取消</string>
+  <!-- Title for the error screen when page is too long to summarize -->
+  <string name="mozac_summarize_content_too_long_error_title">頁面太長，無法摘要</string>
+  <!-- Title for the info error screen -->
+  <string name="mozac_summarize_info_error_title">目前無法摘要</string>
+  <!-- Generic fallback message for the info error screen -->
+  <string name="mozac_summarize_info_error_message">請稍後再試。</string>
+  <!-- Error code shown on long press of the error icon. %1$d is an error code. -->
+  <string name="mozac_summarize_info_error_code">錯誤碼：%1$d</string>
+  <!-- Loading text displayed while a page summary is being generated -->
+  <string name="mozac_feature_summarize_loading_title">摘要中…</string>
+  <!-- Content description for the settings icon button in the summarized view -->
+  <string name="mozac_summarize_settings_button_content_description">頁面摘要設定</string>
+  <!-- Title for the settings screen shown in the summarization bottom sheet -->
+  <string name="mozac_summarize_settings_title">頁面摘要</string>
+  <!-- Label for the summarize pages toggle in settings -->
+  <string name="mozac_summarize_settings_summarize_pages">摘要頁面內容</string>
+  <!-- Description for the summarize pages toggle -->
+  <string name="mozac_summarize_settings_summarize_pages_cloud">使用 AI 建立頁面摘要。頁面與摘要內容會保持隱私，永不儲存。</string>
+  <!-- Link text to learn more about page summaries in settings -->
+  <string name="mozac_summarize_settings_learn_more">更多資訊</string>
+  <!-- Section header for gesture settings -->
+  <string name="mozac_summarize_settings_gestures">手勢</string>
+  <!-- Label for the shake to summarize toggle in settings -->
+  <string name="mozac_summarize_settings_shake_to_summarize">搖晃裝置進行摘要</string>
+  <!-- Description for the shake to summarize toggle in settings -->
+  <string name="mozac_summarize_settings_shake_to_summarize_description">搖晃裝置，即可摘要頁面內容。</string>
+  <!-- Label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity">搖晃敏感度</string>
+  <!-- Description for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_description">在此調整要搖得多大力才觸發摘要功能。</string>
+  <!-- Low option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_low">低</string>
+  <!-- Medium option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_medium">中</string>
+  <!-- High option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_high">高</string>
+  <!-- Message for summary by model, %1$s is the name of the model that is being displayed -->
+  <string name="mozac_feature_summarize_summary_model">由 %1$s 提供的摘要內容</string>
+  <!-- Disclaimer message -->
+  <string name="mozac_feature_summarize_disclaimer_message">AI 可能會出錯</string>
+  <!-- Title for the page summary AI controllable feature -->
+  <string name="mozac_ai_controls_page_summary_title">頁面摘要</string>
+  <!-- Description for the page summary AI controllable feature -->
+  <string name="mozac_ai_controls_page_summary_description">永遠不會儲存頁面內容與摘要。</string>
+  <!-- Button text for the Error dismiss button on Shake to Summarize -->
+  <string name="mozac_summarize_error_dissmiss">知道了！</string>
+</resources>

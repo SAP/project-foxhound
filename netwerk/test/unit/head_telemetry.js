@@ -5,122 +5,153 @@
 
 "use strict";
 
-const { TelemetryTestUtils } = ChromeUtils.importESModule(
-  "resource://testing-common/TelemetryTestUtils.sys.mjs"
-);
-
 var HandshakeTelemetryHelpers = {
-  HISTOGRAMS: ["SSL_HANDSHAKE_RESULT", "SSL_TIME_UNTIL_READY"],
   FLAVORS: ["", "_FIRST_TRY", "_CONSERVATIVE", "_ECH", "_ECH_GREASE"],
 
-  /**
-   * Prints the Histogram to console.
-   *
-   * @param {*} name The identifier of the Histogram.
-   */
-  dumpHistogram(name) {
-    let values = Services.telemetry.getHistogramById(name).snapshot().values;
-    dump(`${name}: ${JSON.stringify(values)}\n`);
-  },
+  _baseline: null,
+  _fogInitialized: false,
 
   /**
-   * Counts the number of entries in the histogram, ignoring the bucket value.
-   * e.g. {0: 1, 1: 2, 3: 3} has 6 entries.
-   *
-   * @param {object} histObject The histogram to count the entries of.
-   * @returns The count of the number of entries in the histogram.
+   * Returns the Glean ssl_handshake.result_* metric for a given flavor.
    */
-  countHistogramEntries(histObject) {
-    Assert.ok(
-      !mozinfo.socketprocess_networking,
-      "Histograms don't populate on network process"
-    );
-    let count = 0;
-    let m = histObject.snapshot().values;
-    for (let k in m) {
-      count += m[k];
+  resultMetric(flavor) {
+    switch (flavor) {
+      case "":
+        return Glean.sslHandshake.result;
+      case "_FIRST_TRY":
+        return Glean.sslHandshake.resultFirstTry;
+      case "_CONSERVATIVE":
+        return Glean.sslHandshake.resultConservative;
+      case "_ECH":
+        return Glean.sslHandshake.resultEch;
+      case "_ECH_GREASE":
+        return Glean.sslHandshake.resultEchGrease;
+      default:
+        Assert.ok(false, `Unknown result flavor: ${flavor}`);
+        return null;
     }
-    return count;
   },
 
   /**
-   * Assert that the histogram index is the right value. It expects that
-   * other indexes are all zero.
-   *
-   * @param {object} histogram The histogram to check.
-   * @param {number} index The index to check against the expected value.
-   * @param {number} expected The expected value of the index.
+   * Returns the Glean ssl.time_until_ready_* metric for a given flavor.
    */
-  assertHistogramMap(histogram, expectedEntries) {
+  timingMetric(flavor) {
+    switch (flavor) {
+      case "":
+        return Glean.ssl.timeUntilReady;
+      case "_FIRST_TRY":
+        return Glean.ssl.timeUntilReadyFirstTry;
+      case "_CONSERVATIVE":
+        return Glean.ssl.timeUntilReadyConservative;
+      case "_ECH":
+        return Glean.ssl.timeUntilReadyEch;
+      case "_ECH_GREASE":
+        return Glean.ssl.timeUntilReadyEchGrease;
+      default:
+        Assert.ok(false, `Unknown timing flavor: ${flavor}`);
+        return null;
+    }
+  },
+
+  /**
+   * Computes the per-bucket difference between two distribution snapshots.
+   * Returns a values object containing only non-zero deltas.
+   */
+  _deltaValues(current, baseline) {
+    let result = {};
+    let currentValues = current?.values ?? {};
+    let baselineValues = baseline?.values ?? {};
+    let allKeys = new Set([
+      ...Object.keys(currentValues),
+      ...Object.keys(baselineValues),
+    ]);
+    for (let k of allKeys) {
+      let delta = (currentValues[k] ?? 0) - (baselineValues[k] ?? 0);
+      if (delta !== 0) {
+        result[k] = delta;
+      }
+    }
+    return result;
+  },
+
+  /**
+   * Returns a delta snapshot for a result metric since the last
+   * resetHistograms() call. The returned object has a .values property
+   * compatible with assertHistogramMap.
+   */
+  resultDelta(flavor) {
+    let current = this.resultMetric(flavor).testGetValue();
+    let baseline = this._baseline?.[`result${flavor}`];
+    return { values: this._deltaValues(current, baseline) };
+  },
+
+  /**
+   * Returns the delta sample count for a timing metric since the last
+   * resetHistograms() call.
+   */
+  timingDeltaCount(flavor) {
+    let current = this.timingMetric(flavor).testGetValue();
+    let baseline = this._baseline?.[`timing${flavor}`];
+    return (current?.count ?? 0) - (baseline?.count ?? 0);
+  },
+
+  /**
+   * Assert that the distribution values match expected entries exactly.
+   * All non-expected bucket entries must be zero.
+   *
+   * @param {object} snapshot A distribution snapshot with a .values property.
+   * @param {Map} expectedEntries Map of bucket index (string) to expected count.
+   */
+  assertHistogramMap(snapshot, expectedEntries) {
     Assert.ok(
       !mozinfo.socketprocess_networking,
-      "Histograms don't populate on network process"
+      "Metrics don't populate on network process"
     );
-    let snapshot = JSON.parse(JSON.stringify(histogram));
+    let values = JSON.parse(JSON.stringify(snapshot));
     for (let [Tk, Tv] of expectedEntries.entries()) {
       let found = false;
-      for (let [i, val] of Object.entries(snapshot.values)) {
+      for (let [i, val] of Object.entries(values.values)) {
         if (i == Tk) {
           found = true;
           Assert.equal(val, Tv, `expected counts should match at index ${i}`);
-          snapshot.values[i] = 0; // Reset the value
+          values.values[i] = 0; // Reset the value
         }
       }
       Assert.ok(found, `Should have found an entry at index ${Tk}`);
     }
-    for (let k in snapshot.values) {
+    for (let k in values.values) {
       Assert.equal(
-        snapshot.values[k],
+        values.values[k],
         0,
-        `Should NOT have found an entry at index ${k} of value ${snapshot.values[k]}`
+        `Should NOT have found an entry at index ${k} of value ${values.values[k]}`
       );
     }
   },
 
   /**
-   * Generates the pairwise concatonation of histograms and flavors.
-   *
-   * @param {Array} histogramList A subset of HISTOGRAMS.
-   * @param {Array} flavorList  A subset of FLAVORS.
-   * @returns {Array} Valid TLS Histogram identifiers
-   */
-  getHistogramNames(histogramList, flavorList) {
-    let output = [];
-    for (let h of histogramList) {
-      Assert.ok(this.HISTOGRAMS.includes(h), "Histogram name valid");
-      for (let f of flavorList) {
-        Assert.ok(this.FLAVORS.includes(f), "Histogram flavor valid");
-        output.push(h.concat(f));
-      }
-    }
-    return output;
-  },
-
-  /**
-   * getHistogramNames but mapped to Histogram objects.
-   */
-  getHistograms(histogramList, flavorList) {
-    return this.getHistogramNames(histogramList, flavorList).map(x =>
-      Services.telemetry.getHistogramById(x)
-    );
-  },
-
-  /**
-   * Clears TLS Handshake Histograms.
+   * Snapshots current metric values as a baseline. Subsequent check methods
+   * compare against this baseline, measuring only what changed.
    */
   resetHistograms() {
-    let allHistograms = this.getHistograms(this.HISTOGRAMS, this.FLAVORS);
-    for (let h of allHistograms) {
-      h.clear();
+    if (!this._fogInitialized) {
+      Services.fog.initializeFOG();
+      this._fogInitialized = true;
+    }
+    info("Snapshotting TLS handshake metric baseline");
+    this._baseline = {};
+    for (let f of this.FLAVORS) {
+      this._baseline[`result${f}`] = this.resultMetric(f).testGetValue();
+      this._baseline[`timing${f}`] = this.timingMetric(f).testGetValue();
     }
   },
 
   /**
-   * Checks that all TLS Handshake Histograms of a particular flavor have
-   * exactly resultCount entries for the resultCode and no other entries.
+   * Checks that all TLS Handshake metrics of a particular flavor have
+   * exactly resultCount new entries for the resultCode and no other new
+   * entries since the last resetHistograms() call.
    *
    * @param {Array} flavors An array of strings corresponding to which types
-   *                        of histograms should have entries. See
+   *                        of metrics should have entries. See
    *                        HandshakeTelemetryHelpers.FLAVORS.
    * @param {number} resultCode The expected result code, see sslerr.h. 0 is success, all others are errors.
    * @param {number} resultCount The number of handshake results expected.
@@ -128,30 +159,35 @@ var HandshakeTelemetryHelpers = {
   checkEntry(flavors, resultCode, resultCount) {
     Assert.ok(
       !mozinfo.socketprocess_networking,
-      "Histograms don't populate on network process"
+      "Metrics don't populate on network process"
     );
-    // SSL_HANDSHAKE_RESULT_{FLAVOR}
-    for (let h of this.getHistograms(["SSL_HANDSHAKE_RESULT"], flavors)) {
-      TelemetryTestUtils.assertHistogram(h, resultCode, resultCount);
+    for (let f of flavors) {
+      let delta = this.resultDelta(f);
+      info(
+        `checkEntry: result${f} expecting ${resultCount}x code ${resultCode}, ` +
+          `got delta: ${JSON.stringify(delta.values)}`
+      );
+      this.assertHistogramMap(
+        delta,
+        new Map([[String(resultCode), resultCount]])
+      );
     }
 
-    // SSL_TIME_UNTIL_READY_{FLAVOR} should only contain values if we expected success.
-    if (resultCode === 0) {
-      for (let h of this.getHistograms(["SSL_TIME_UNTIL_READY"], flavors)) {
-        Assert.strictEqual(
-          this.countHistogramEntries(h),
-          resultCount,
-          "Timing entry count correct"
-        );
-      }
-    } else {
-      for (let h of this.getHistograms(["SSL_TIME_UNTIL_READY"], flavors)) {
-        Assert.strictEqual(
-          this.countHistogramEntries(h),
-          0,
-          "No timing entries expected"
-        );
-      }
+    // Timing metrics should only contain values if we expected success.
+    for (let f of flavors) {
+      let deltaCount = this.timingDeltaCount(f);
+      let expectedCount = resultCode === 0 ? resultCount : 0;
+      info(
+        `checkEntry: timing${f} expecting delta count=${expectedCount}, ` +
+          `got delta count=${deltaCount}`
+      );
+      Assert.strictEqual(
+        deltaCount,
+        expectedCount,
+        resultCode === 0
+          ? "Timing entry count correct"
+          : "No timing entries expected"
+      );
     }
   },
 
@@ -160,14 +196,32 @@ var HandshakeTelemetryHelpers = {
   },
 
   checkEmpty(flavors) {
-    for (let h of this.getHistogramNames(this.HISTOGRAMS, flavors)) {
-      let hObj = Services.telemetry.getHistogramById(h);
+    for (let f of flavors) {
+      let resultDelta = this.resultDelta(f);
+      let resultDeltaCount = Object.values(resultDelta.values).reduce(
+        (a, b) => a + b,
+        0
+      );
+      info(
+        `checkEmpty: result${f} expecting no new entries, ` +
+          `got delta count=${resultDeltaCount}`
+      );
       Assert.strictEqual(
-        this.countHistogramEntries(hObj),
+        resultDeltaCount,
         0,
-        `No entries expected in ${h.name}. Contents: ${JSON.stringify(
-          hObj.snapshot()
+        `No new result entries expected for '${f}'. Delta: ${JSON.stringify(
+          resultDelta.values
         )}`
+      );
+      let timingDeltaCount = this.timingDeltaCount(f);
+      info(
+        `checkEmpty: timing${f} expecting no new entries, ` +
+          `got delta count=${timingDeltaCount}`
+      );
+      Assert.strictEqual(
+        timingDeltaCount,
+        0,
+        `No new timing entries expected for '${f}'.`
       );
     }
   },

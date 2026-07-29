@@ -155,7 +155,7 @@ async function waitForSubDialog(browser, url, state) {
     eventTarget = browser.tabContainer.ownerDocument.documentElement;
   } else {
     // Individual browser. Get its box:
-    let tabDialogBox = browser.ownerGlobal.gBrowser.getTabDialogBox(browser);
+    let tabDialogBox = browser.documentGlobal.gBrowser.getTabDialogBox(browser);
     eventTarget = tabDialogBox.getTabDialogManager()._dialogStack;
   }
 
@@ -478,7 +478,7 @@ async function navigateExternalProtoFromIframe(
                 () => link,
                 "wait for link to be present"
               );
-              await EventUtils.synthesizeMouseAtCenter(link, {}, content);
+              EventUtils.synthesizeMouseAtCenter(link, {}, content);
             }
           }
         );

@@ -1,25 +1,3 @@
-var conn = PlacesUtils.history.DBConnection;
-
-/**
- * Gets a single column value from either the places or historyvisits table.
- *
- * @param {string} table
- * @param {string} column
- * @param {string} url
- */
-function getColumn(table, column, url) {
-  var stmt = conn.createStatement(
-    `SELECT ${column} FROM ${table} WHERE url_hash = hash(:val) AND url = :val`
-  );
-  try {
-    stmt.params.val = url;
-    stmt.executeStep();
-    return stmt.row[column];
-  } finally {
-    stmt.finalize();
-  }
-}
-
 add_task(async function () {
   // Make sure titles are correctly saved for a URI with the proper
   // notifications.
@@ -42,9 +20,16 @@ add_task(async function () {
     "https://example.com/tests/toolkit/components/places/tests/browser/title2.html"
   );
   is(events[0].title, "Some title");
-  is(events[0].pageGuid, getColumn("moz_places", "guid", events[0].url));
+  is(
+    events[0].pageGuid,
+    await PlacesTestUtils.getDatabaseValue("moz_places", "guid", {
+      url: events[0].url,
+    })
+  );
 
-  const title = getColumn("moz_places", "title", events[0].url);
+  const title = await PlacesTestUtils.getDatabaseValue("moz_places", "title", {
+    url: events[0].url,
+  });
   is(title, events[0].title);
 
   gBrowser.removeCurrentTab();

@@ -332,11 +332,25 @@ class Bootstrapper:
         self.instance.auto_bootstrap(application, self.exclude)
         self.instance.install_toolchain_artifact("fix-stacks")
         self.instance.install_toolchain_artifact("minidump-stackwalk")
+        self.instance.install_toolchain_artifact("samply")
+        self.instance.install_toolchain_artifact("profiler-node-tools")
         if not self.instance.artifact_mode:
             self.instance.install_toolchain_artifact("clang-tools/clang-tidy")
             self.instance.ensure_sccache_packages()
         # Like 'ensure_browser_packages' or 'ensure_mobile_android_packages'
         getattr(self.instance, "ensure_%s_packages" % application)()
+
+    def check_agentic_tools(self):
+        if self.instance.no_interactive:
+            return
+
+        if not self.instance.cargo_tools_installed():
+            if not self.instance.prompt_yesno(
+                "Will you be using agentic coding tools to work on Firefox?"
+            ):
+                return
+
+        self.instance.ensure_cargo_tools()
 
     def check_code_submission(self, checkout_root: Path):
         if self.instance.no_interactive or which("moz-phab"):
@@ -346,7 +360,19 @@ class Bootstrapper:
             return
 
         mach_binary = checkout_root / "mach"
-        subprocess.check_call((sys.executable, str(mach_binary), "install-moz-phab"))
+        try:
+            subprocess.check_call((
+                sys.executable,
+                str(mach_binary),
+                "install-moz-phab",
+            ))
+        except subprocess.CalledProcessError as e:
+            print(
+                f"WARNING: './mach install-moz-phab' failed with exit code "
+                f"{e.returncode}. You can retry with './mach install-moz-phab "
+                f"--force'.",
+                file=sys.stderr,
+            )
 
     def bootstrap(self, settings):
         state_dir = Path(get_state_dir())
@@ -431,6 +457,8 @@ class Bootstrapper:
 
         if not self.instance.artifact_mode:
             self.instance.ensure_rust_modern()
+
+        self.check_agentic_tools()
 
         git = to_optional_path(which("git"))
 

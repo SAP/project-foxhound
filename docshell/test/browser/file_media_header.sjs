@@ -25,6 +25,11 @@ function handleRequest(request, response) {
         );
         return;
       }
+      case "imageOctetStream":
+        response.setStatusLine(request.httpVersion, 200, "OK");
+        response.setHeader("Content-Type", "application/octet-stream", false);
+        response.write("fake data");
+        return;
     }
   } else if (accept === "*/*") {
     switch (request.queryString) {

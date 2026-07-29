@@ -120,7 +120,7 @@ add_task(async function test_multi_action_set_pref_ordered_execution() {
   };
 
   Services.prefs.clearUserPref(`messaging-system-action.${TEST_MULTI_PREF}`);
-  let browser = gBrowser || { ownerGlobal: window };
+  let browser = gBrowser || { documentGlobal: window };
   let start = Date.now();
   await originalHandleAction(action, browser);
   let duration = Date.now() - start;

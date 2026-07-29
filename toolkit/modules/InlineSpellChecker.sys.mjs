@@ -254,7 +254,7 @@ InlineSpellChecker.prototype = {
     }
     // Notify change of dictionary, especially for Thunderbird,
     // which is otherwise not notified any more.
-    let view = this.mDictionaryMenu.ownerGlobal;
+    let view = this.mDictionaryMenu.documentGlobal;
     let spellcheckChangeEvent = new view.CustomEvent("spellcheck-changed", {
       detail: { dictionaries },
     });
@@ -516,7 +516,7 @@ export var SpellCheckHelper = {
     }
 
     if (!(flags & this.SPELLCHECKABLE)) {
-      var win = element.ownerGlobal;
+      var win = element.documentGlobal;
       if (win) {
         var isSpellcheckable = false;
         try {

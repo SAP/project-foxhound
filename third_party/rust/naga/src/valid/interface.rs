@@ -47,6 +47,12 @@ pub enum GlobalVariableError {
     InvalidImmediateType(#[source] ImmediateError),
     #[error("Task payload must not be zero-sized")]
     ZeroSizedTaskPayload,
+    #[error("Memory decorations (`@coherent`, `@volatile`) are only valid for variables in the `storage` address space")]
+    InvalidMemoryDecorationsAddressSpace,
+    #[error("`@coherent` requires the MEMORY_DECORATION_COHERENT capability")]
+    CoherentNotSupported,
+    #[error("`@volatile` requires the MEMORY_DECORATION_VOLATILE capability")]
+    VolatileNotSupported,
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -54,10 +60,11 @@ pub enum GlobalVariableError {
 pub enum VaryingError {
     #[error("The type {0:?} does not match the varying")]
     InvalidType(Handle<crate::Type>),
-    #[error("The type {0:?} cannot be used for user-defined entry point inputs or outputs")]
+    #[error(
+        "The type {0:?} cannot be used for user-defined entry point inputs or outputs. \
+        Only numeric scalars and vectors are allowed."
+    )]
     NotIOShareableType(Handle<crate::Type>),
-    #[error("Interpolation is not valid")]
-    InvalidInterpolation,
     #[error("Interpolation {0:?} is only valid for stage {1:?}")]
     InvalidInterpolationInStage(crate::Interpolation, crate::ShaderStage),
     #[error("Cannot combine {interpolation:?} interpolation with the {sampling:?} sample type")]
@@ -65,6 +72,8 @@ pub enum VaryingError {
         interpolation: crate::Interpolation,
         sampling: crate::Sampling,
     },
+    #[error("`@interpolate(flat) must be explicitly specified for integer I/O")]
+    InvalidInterpolationForInteger,
     #[error("Interpolation must be specified on vertex shader outputs and fragment shader inputs")]
     MissingInterpolation,
     #[error("Built-in {0:?} is not available at this stage")]
@@ -87,15 +96,23 @@ pub enum VaryingError {
     InvalidInputAttributeInStage(&'static str, crate::ShaderStage),
     #[error("The attribute {0:?} is not valid for stage {1:?}")]
     InvalidAttributeInStage(&'static str, crate::ShaderStage),
-    #[error("The `blend_src` attribute can only be used on location 0, only indices 0 and 1 are valid. Location was {location}, index was {blend_src}.")]
+    #[error("`@blend_src` can only be used at location 0, indices 0 and 1. Found `@location({location}) @blend_src({blend_src})`.")]
     InvalidBlendSrcIndex { location: u32, blend_src: u32 },
-    #[error("If `blend_src` is used, there must be exactly two outputs both with location 0, one with `blend_src(0)` and the other with `blend_src(1)`.")]
-    IncompleteBlendSrcUsage,
-    #[error("If `blend_src` is used, both outputs must have the same type. `blend_src(0)` has type {blend_src_0_type:?} and `blend_src(1)` has type {blend_src_1_type:?}.")]
+    #[error(
+        "`@blend_src` structure must specify two sources. \
+        Found `@blend_src({present_blend_src})` but not `@blend_src({absent_blend_src})`.",
+        absent_blend_src = if *present_blend_src == 0 { 1 } else { 0 },
+    )]
+    IncompleteBlendSrcUsage { present_blend_src: u32 },
+    #[error("Structure using `@blend_src` may not specify `@location` on any other members. Found a binding at `@location({location})`.")]
+    InvalidBlendSrcWithOtherBindings { location: u32 },
+    #[error("Both `@blend_src` structure members must have the same type. `blend_src(0)` has type {blend_src_0_type:?} and `blend_src(1)` has type {blend_src_1_type:?}.")]
     BlendSrcOutputTypeMismatch {
         blend_src_0_type: Handle<crate::Type>,
         blend_src_1_type: Handle<crate::Type>,
     },
+    #[error("`@blend_src` can only be used on struct members, not directly on entry point I/O")]
+    BlendSrcNotOnStructMember,
     #[error("Workgroup size is multi dimensional, `@builtin(subgroup_id)` and `@builtin(subgroup_invocation_id)` are not supported.")]
     InvalidMultiDimensionalSubgroupBuiltIn,
     #[error("The `@per_primitive` attribute can only be used in fragment shader inputs or mesh shader primitive outputs")]
@@ -104,6 +121,8 @@ pub enum VaryingError {
     MissingPerPrimitive,
     #[error("Per vertex fragment inputs must be an array of length 3.")]
     PerVertexNotArrayOfThree,
+    #[error("Per vertex can only have Center sampling or no sampling modifier")]
+    InvalidPerVertexSampling,
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -131,8 +150,6 @@ pub enum EntryPointError {
     Argument(u32, #[source] VaryingError),
     #[error(transparent)]
     Result(#[from] VaryingError),
-    #[error("Location {location} interpolation of an integer has to be flat")]
-    InvalidIntegerInterpolation { location: u32 },
     #[error(transparent)]
     Function(#[from] FunctionError),
     #[error("Capability {0:?} is not supported")]
@@ -170,6 +187,10 @@ pub enum EntryPointError {
     WrongMeshOutputAddressSpace,
     #[error("Task payload must be at least 4 bytes, but is {0} bytes")]
     TaskPayloadTooSmall(u32),
+    #[error("Only the `ray_generation`, `closest_hit`, and `any_hit` shader stages can access a global variable in the `ray_payload` address space")]
+    RayPayloadInInvalidStage(crate::ShaderStage),
+    #[error("Only the `closest_hit`, `any_hit`, and `miss` shader stages can access a global variable in the `incoming_ray_payload` address space")]
+    IncomingRayPayloadInInvalidStage(crate::ShaderStage),
 }
 
 fn storage_usage(access: crate::StorageAccess) -> GlobalUse {
@@ -199,7 +220,7 @@ struct VaryingContext<'a> {
     types: &'a UniqueArena<crate::Type>,
     type_info: &'a Vec<super::r#type::TypeInfo>,
     location_mask: &'a mut BitSet,
-    blend_src_mask: &'a mut BitSet,
+    dual_source_blending: Option<&'a mut bool>,
     built_ins: &'a mut crate::FastHashSet<crate::BuiltIn>,
     capabilities: Capabilities,
     flags: super::ValidationFlags,
@@ -237,9 +258,12 @@ impl VaryingContext<'_> {
                 self.built_ins.insert(canonical);
 
                 let required = match built_in {
-                    Bi::ClipDistance => Capabilities::CLIP_DISTANCE,
+                    Bi::ClipDistances => Capabilities::CLIP_DISTANCES,
                     Bi::CullDistance => Capabilities::CULL_DISTANCE,
-                    Bi::PrimitiveIndex => Capabilities::PRIMITIVE_INDEX,
+                    // Primitive index is allowed w/o any other extensions in any- and closest-hit shaders
+                    Bi::PrimitiveIndex if !matches!(ep.stage, St::AnyHit | St::ClosestHit) => {
+                        Capabilities::PRIMITIVE_INDEX
+                    }
                     Bi::Barycentric { .. } => Capabilities::SHADER_BARYCENTRICS,
                     Bi::ViewIndex => Capabilities::MULTIVIEW,
                     Bi::SampleIndex => Capabilities::MULTISAMPLED_SHADING,
@@ -247,6 +271,7 @@ impl VaryingContext<'_> {
                     | Bi::SubgroupId
                     | Bi::SubgroupSize
                     | Bi::SubgroupInvocationId => Capabilities::SUBGROUP,
+                    Bi::DrawIndex => Capabilities::DRAW_INDEX,
                     _ => Capabilities::empty(),
                 };
                 if !self.capabilities.contains(required) {
@@ -262,11 +287,16 @@ impl VaryingContext<'_> {
                 }
 
                 let (visible, type_good) = match built_in {
-                    Bi::BaseInstance | Bi::BaseVertex | Bi::InstanceIndex | Bi::VertexIndex => (
+                    Bi::BaseInstance | Bi::BaseVertex | Bi::VertexIndex => (
                         self.stage == St::Vertex && !self.output,
                         *ty_inner == Ti::Scalar(crate::Scalar::U32),
                     ),
-                    Bi::DrawID => (
+                    Bi::InstanceIndex => (
+                        matches!(self.stage, St::Vertex | St::AnyHit | St::ClosestHit)
+                            && !self.output,
+                        *ty_inner == Ti::Scalar(crate::Scalar::U32),
+                    ),
+                    Bi::DrawIndex => (
                         // Always allowed in task/vertex stage. Allowed in mesh stage if there is no task stage in the pipeline.
                         (self.stage == St::Vertex
                             || self.stage == St::Task
@@ -274,7 +304,7 @@ impl VaryingContext<'_> {
                             && !self.output,
                         *ty_inner == Ti::Scalar(crate::Scalar::U32),
                     ),
-                    Bi::ClipDistance | Bi::CullDistance => (
+                    Bi::ClipDistances | Bi::CullDistance => (
                         (self.stage == St::Vertex || self.stage == St::Mesh) && self.output,
                         match *ty_inner {
                             Ti::Array { base, size, .. } => {
@@ -304,6 +334,7 @@ impl VaryingContext<'_> {
                             St::Vertex | St::Mesh => self.output,
                             St::Fragment => !self.output,
                             St::Compute | St::Task => false,
+                            St::RayGeneration | St::AnyHit | St::ClosestHit | St::Miss => false,
                         },
                         *ty_inner
                             == Ti::Vector {
@@ -314,7 +345,11 @@ impl VaryingContext<'_> {
                     Bi::ViewIndex => (
                         match self.stage {
                             St::Vertex | St::Fragment | St::Task | St::Mesh => !self.output,
-                            St::Compute => false,
+                            St::Compute
+                            | St::RayGeneration
+                            | St::AnyHit
+                            | St::ClosestHit
+                            | St::Miss => false,
                         },
                         *ty_inner == Ti::Scalar(crate::Scalar::U32),
                     ),
@@ -327,7 +362,8 @@ impl VaryingContext<'_> {
                         *ty_inner == Ti::Scalar(crate::Scalar::BOOL),
                     ),
                     Bi::PrimitiveIndex => (
-                        (self.stage == St::Fragment && !self.output)
+                        (matches!(self.stage, St::Fragment | St::AnyHit | St::ClosestHit)
+                            && !self.output)
                             || (self.stage == St::Mesh
                                 && self.output
                                 && self.mesh_output_type == MeshOutputType::PrimitiveOutput),
@@ -371,7 +407,14 @@ impl VaryingContext<'_> {
                     ),
                     Bi::SubgroupSize | Bi::SubgroupInvocationId => (
                         match self.stage {
-                            St::Compute | St::Fragment | St::Task | St::Mesh => !self.output,
+                            St::Compute
+                            | St::Fragment
+                            | St::Task
+                            | St::Mesh
+                            | St::RayGeneration
+                            | St::AnyHit
+                            | St::ClosestHit
+                            | St::Miss => !self.output,
                             St::Vertex => false,
                         },
                         *ty_inner == Ti::Scalar(crate::Scalar::U32),
@@ -407,6 +450,193 @@ impl VaryingContext<'_> {
                                 size: Vs::Tri,
                                 scalar: crate::Scalar::U32,
                             },
+                    ),
+                    Bi::RayInvocationId => (
+                        match self.stage {
+                            St::Vertex | St::Fragment | St::Compute | St::Mesh | St::Task => false,
+                            St::RayGeneration | St::AnyHit | St::ClosestHit | St::Miss => true,
+                        },
+                        *ty_inner
+                            == Ti::Vector {
+                                size: Vs::Tri,
+                                scalar: crate::Scalar::U32,
+                            },
+                    ),
+                    Bi::NumRayInvocations => (
+                        match self.stage {
+                            St::Vertex | St::Fragment | St::Compute | St::Mesh | St::Task => false,
+                            St::RayGeneration | St::AnyHit | St::ClosestHit | St::Miss => true,
+                        },
+                        *ty_inner
+                            == Ti::Vector {
+                                size: Vs::Tri,
+                                scalar: crate::Scalar::U32,
+                            },
+                    ),
+                    Bi::InstanceCustomData => (
+                        match self.stage {
+                            St::RayGeneration
+                            | St::Miss
+                            | St::Vertex
+                            | St::Fragment
+                            | St::Compute
+                            | St::Mesh
+                            | St::Task => false,
+                            St::AnyHit | St::ClosestHit => true,
+                        },
+                        *ty_inner == Ti::Scalar(crate::Scalar::U32),
+                    ),
+                    Bi::GeometryIndex => (
+                        match self.stage {
+                            St::RayGeneration
+                            | St::Miss
+                            | St::Vertex
+                            | St::Fragment
+                            | St::Compute
+                            | St::Mesh
+                            | St::Task => false,
+                            St::AnyHit | St::ClosestHit => true,
+                        },
+                        *ty_inner == Ti::Scalar(crate::Scalar::U32),
+                    ),
+                    Bi::WorldRayOrigin => (
+                        match self.stage {
+                            St::RayGeneration
+                            | St::Vertex
+                            | St::Fragment
+                            | St::Compute
+                            | St::Mesh
+                            | St::Task => false,
+                            St::AnyHit | St::ClosestHit | St::Miss => true,
+                        },
+                        *ty_inner
+                            == Ti::Vector {
+                                size: Vs::Tri,
+                                scalar: crate::Scalar::F32,
+                            },
+                    ),
+                    Bi::WorldRayDirection => (
+                        match self.stage {
+                            St::RayGeneration
+                            | St::Vertex
+                            | St::Fragment
+                            | St::Compute
+                            | St::Mesh
+                            | St::Task => false,
+                            St::AnyHit | St::ClosestHit | St::Miss => true,
+                        },
+                        *ty_inner
+                            == Ti::Vector {
+                                size: Vs::Tri,
+                                scalar: crate::Scalar::F32,
+                            },
+                    ),
+                    Bi::ObjectRayOrigin => (
+                        match self.stage {
+                            St::RayGeneration
+                            | St::Miss
+                            | St::Vertex
+                            | St::Fragment
+                            | St::Compute
+                            | St::Mesh
+                            | St::Task => false,
+                            St::AnyHit | St::ClosestHit => true,
+                        },
+                        *ty_inner
+                            == Ti::Vector {
+                                size: Vs::Tri,
+                                scalar: crate::Scalar::F32,
+                            },
+                    ),
+                    Bi::ObjectRayDirection => (
+                        match self.stage {
+                            St::RayGeneration
+                            | St::Miss
+                            | St::Vertex
+                            | St::Fragment
+                            | St::Compute
+                            | St::Mesh
+                            | St::Task => false,
+                            St::AnyHit | St::ClosestHit => true,
+                        },
+                        *ty_inner
+                            == Ti::Vector {
+                                size: Vs::Tri,
+                                scalar: crate::Scalar::F32,
+                            },
+                    ),
+                    Bi::RayTmin => (
+                        match self.stage {
+                            St::RayGeneration
+                            | St::Vertex
+                            | St::Fragment
+                            | St::Compute
+                            | St::Mesh
+                            | St::Task => false,
+                            St::AnyHit | St::ClosestHit | St::Miss => true,
+                        },
+                        *ty_inner == Ti::Scalar(crate::Scalar::F32),
+                    ),
+                    Bi::RayTCurrentMax => (
+                        match self.stage {
+                            St::RayGeneration
+                            | St::Vertex
+                            | St::Fragment
+                            | St::Compute
+                            | St::Mesh
+                            | St::Task => false,
+                            St::AnyHit | St::ClosestHit | St::Miss => true,
+                        },
+                        *ty_inner == Ti::Scalar(crate::Scalar::F32),
+                    ),
+                    Bi::ObjectToWorld => (
+                        match self.stage {
+                            St::RayGeneration
+                            | St::Miss
+                            | St::Vertex
+                            | St::Fragment
+                            | St::Compute
+                            | St::Mesh
+                            | St::Task => false,
+                            St::AnyHit | St::ClosestHit => true,
+                        },
+                        *ty_inner
+                            == Ti::Matrix {
+                                columns: crate::VectorSize::Quad,
+                                rows: crate::VectorSize::Tri,
+                                scalar: crate::Scalar::F32,
+                            },
+                    ),
+                    Bi::WorldToObject => (
+                        match self.stage {
+                            St::RayGeneration
+                            | St::Miss
+                            | St::Vertex
+                            | St::Fragment
+                            | St::Compute
+                            | St::Mesh
+                            | St::Task => false,
+                            St::AnyHit | St::ClosestHit => true,
+                        },
+                        *ty_inner
+                            == Ti::Matrix {
+                                columns: crate::VectorSize::Quad,
+                                rows: crate::VectorSize::Tri,
+                                scalar: crate::Scalar::F32,
+                            },
+                    ),
+                    Bi::HitKind => (
+                        match self.stage {
+                            St::RayGeneration
+                            | St::Miss
+                            | St::Vertex
+                            | St::Fragment
+                            | St::Compute
+                            | St::Mesh
+                            | St::Task => false,
+                            St::AnyHit | St::ClosestHit => true,
+                        },
+                        *ty_inner == Ti::Scalar(crate::Scalar::U32),
                     ),
                     // Validated elsewhere, shouldn't be here
                     Bi::VertexCount | Bi::PrimitiveCount | Bi::Vertices | Bi::Primitives => {
@@ -463,6 +693,9 @@ impl VaryingContext<'_> {
                             Capabilities::PER_VERTEX,
                         ));
                     }
+                    if sampling.is_some_and(|e| e != crate::Sampling::Center) {
+                        return Err(VaryingError::InvalidPerVertexSampling);
+                    }
                 }
                 // If this is per-vertex, we change the type we validate to the inner type, otherwise we leave it be.
                 // This lets all validation be done on the inner type once we've ensured the per-vertex is array<T, 3>
@@ -502,38 +735,8 @@ impl VaryingContext<'_> {
                     return Err(VaryingError::InvalidPerPrimitive);
                 }
 
-                if let Some(blend_src) = blend_src {
-                    // `blend_src` is only valid if dual source blending was explicitly enabled,
-                    // see https://www.w3.org/TR/WGSL/#extension-dual_source_blending
-                    if !self
-                        .capabilities
-                        .contains(Capabilities::DUAL_SOURCE_BLENDING)
-                    {
-                        return Err(VaryingError::UnsupportedCapability(
-                            Capabilities::DUAL_SOURCE_BLENDING,
-                        ));
-                    }
-                    if self.stage != crate::ShaderStage::Fragment {
-                        return Err(VaryingError::InvalidAttributeInStage(
-                            "blend_src",
-                            self.stage,
-                        ));
-                    }
-                    if !self.output {
-                        return Err(VaryingError::InvalidInputAttributeInStage(
-                            "blend_src",
-                            self.stage,
-                        ));
-                    }
-                    if (blend_src != 0 && blend_src != 1) || location != 0 {
-                        return Err(VaryingError::InvalidBlendSrcIndex {
-                            location,
-                            blend_src,
-                        });
-                    }
-                    if !self.blend_src_mask.insert(blend_src as usize) {
-                        return Err(VaryingError::BindingCollisionBlendSrc { blend_src });
-                    }
+                if blend_src.is_some() {
+                    return Err(VaryingError::BlendSrcNotOnStructMember);
                 } else if !self.location_mask.insert(location as usize)
                     && self.flags.contains(super::ValidationFlags::BINDINGS)
                 {
@@ -568,7 +771,12 @@ impl VaryingContext<'_> {
                 let needs_interpolation = match self.stage {
                     crate::ShaderStage::Vertex => self.output,
                     crate::ShaderStage::Fragment => !self.output && !per_primitive,
-                    crate::ShaderStage::Compute | crate::ShaderStage::Task => false,
+                    crate::ShaderStage::Compute
+                    | crate::ShaderStage::Task
+                    | crate::ShaderStage::RayGeneration
+                    | crate::ShaderStage::AnyHit
+                    | crate::ShaderStage::ClosestHit
+                    | crate::ShaderStage::Miss => false,
                     crate::ShaderStage::Mesh => self.output,
                 };
 
@@ -588,18 +796,21 @@ impl VaryingContext<'_> {
                 if interpolation != Some(crate::Interpolation::PerVertex) {
                     match ty_inner.scalar_kind() {
                         Some(crate::ScalarKind::Float) => {
+                            // Default interpolation is applied in the front end.
                             if needs_interpolation && interpolation.is_none() {
                                 return Err(VaryingError::MissingInterpolation);
                             }
                         }
-                        Some(_) => {
+                        Some(crate::ScalarKind::Sint | crate::ScalarKind::Uint) => {
+                            // Integers do not have a default interpolation; `flat` must be
+                            // specified explicitly.
                             if needs_interpolation
                                 && interpolation != Some(crate::Interpolation::Flat)
                             {
-                                return Err(VaryingError::InvalidInterpolation);
+                                return Err(VaryingError::InvalidInterpolationForInteger);
                             }
                         }
-                        None => return Err(VaryingError::InvalidType(ty)),
+                        Some(_) | None => return Err(VaryingError::InvalidType(ty)),
                     }
                 }
             }
@@ -628,37 +839,51 @@ impl VaryingContext<'_> {
                     }
                 };
 
-                for (index, member) in members.iter().enumerate() {
-                    let span_context = self.types.get_span_context(ty);
-                    match member.binding {
-                        None => {
-                            if self.flags.contains(super::ValidationFlags::BINDINGS) {
-                                return Err(VaryingError::MemberMissingBinding(index as u32)
-                                    .with_span_context(span_context));
-                            }
-                        }
-                        Some(ref binding) => self
-                            .validate_impl(ep, member.ty, binding)
-                            .map_err(|e| e.with_span_context(span_context))?,
-                    }
-                }
-
-                if !self.blend_src_mask.is_empty() {
-                    let span_context = self.types.get_span_context(ty);
-
-                    // If there's any blend_src usage, it must apply to all members of which there must be exactly 2.
-                    if members.len() != 2 || self.blend_src_mask.len() != 2 {
+                if self.type_info[ty.index()]
+                    .flags
+                    .contains(super::TypeFlags::IO_SHAREABLE)
+                {
+                    // `@blend_src` is the only case where `IO_SHAREABLE` is set on a struct (as
+                    // opposed to members of a struct). The struct definition is validated during
+                    // type validation.
+                    if self.stage != crate::ShaderStage::Fragment {
                         return Err(
-                            VaryingError::IncompleteBlendSrcUsage.with_span_context(span_context)
+                            VaryingError::InvalidAttributeInStage("blend_src", self.stage)
+                                .with_span(),
                         );
                     }
-                    // Also, all members must have the same type.
-                    if members[0].ty != members[1].ty {
-                        return Err(VaryingError::BlendSrcOutputTypeMismatch {
-                            blend_src_0_type: members[0].ty,
-                            blend_src_1_type: members[1].ty,
+                    if !self.output {
+                        return Err(VaryingError::InvalidInputAttributeInStage(
+                            "blend_src",
+                            self.stage,
+                        )
+                        .with_span());
+                    }
+                    // Dual blend sources must always be at location 0.
+                    if !self.location_mask.insert(0)
+                        && self.flags.contains(super::ValidationFlags::BINDINGS)
+                    {
+                        return Err(VaryingError::BindingCollision { location: 0 }.with_span());
+                    }
+
+                    **self
+                        .dual_source_blending
+                        .as_mut()
+                        .expect("unexpected dual source blending") = true;
+                } else {
+                    for (index, member) in members.iter().enumerate() {
+                        let span_context = self.types.get_span_context(ty);
+                        match member.binding {
+                            None => {
+                                if self.flags.contains(super::ValidationFlags::BINDINGS) {
+                                    return Err(VaryingError::MemberMissingBinding(index as u32)
+                                        .with_span_context(span_context));
+                                }
+                            }
+                            Some(ref binding) => self
+                                .validate_impl(ep, member.ty, binding)
+                                .map_err(|e| e.with_span_context(span_context))?,
                         }
-                        .with_span_context(span_context));
                     }
                 }
                 Ok(())
@@ -744,7 +969,14 @@ impl super::Validator {
                             }
                         }
                         crate::TypeInner::AccelerationStructure { .. } => {
-                            return Err(GlobalVariableError::InvalidBindingArray(base));
+                            if !self
+                                .capabilities
+                                .contains(Capabilities::ACCELERATION_STRUCTURE_BINDING_ARRAY)
+                            {
+                                return Err(GlobalVariableError::UnsupportedCapability(
+                                    Capabilities::ACCELERATION_STRUCTURE_BINDING_ARRAY,
+                                ));
+                            }
                         }
                         crate::TypeInner::RayQuery { .. } => {
                             // This should have been rejected in `validate_type`.
@@ -868,6 +1100,17 @@ impl super::Validator {
                     false,
                 )
             }
+            crate::AddressSpace::RayPayload | crate::AddressSpace::IncomingRayPayload => {
+                if !self
+                    .capabilities
+                    .contains(Capabilities::RAY_TRACING_PIPELINE)
+                {
+                    return Err(GlobalVariableError::UnsupportedCapability(
+                        Capabilities::RAY_TRACING_PIPELINE,
+                    ));
+                }
+                (TypeFlags::DATA | TypeFlags::SIZED, false)
+            }
         };
 
         if !type_info.flags.contains(required_type_flags) {
@@ -889,6 +1132,30 @@ impl super::Validator {
             if ty.try_size(gctx) == Some(0) {
                 return Err(GlobalVariableError::ZeroSizedTaskPayload);
             }
+        }
+
+        if !var.memory_decorations.is_empty()
+            && !matches!(var.space, crate::AddressSpace::Storage { .. })
+        {
+            return Err(GlobalVariableError::InvalidMemoryDecorationsAddressSpace);
+        }
+        if var
+            .memory_decorations
+            .contains(crate::MemoryDecorations::COHERENT)
+            && !self
+                .capabilities
+                .contains(Capabilities::MEMORY_DECORATION_COHERENT)
+        {
+            return Err(GlobalVariableError::CoherentNotSupported);
+        }
+        if var
+            .memory_decorations
+            .contains(crate::MemoryDecorations::VOLATILE)
+            && !self
+                .capabilities
+                .contains(Capabilities::MEMORY_DECORATION_VOLATILE)
+        {
+            return Err(GlobalVariableError::VolatileNotSupported);
         }
 
         if let Some(init) = var.init {
@@ -932,7 +1199,7 @@ impl super::Validator {
             types: &module.types,
             type_info: &self.types,
             location_mask: &mut self.location_mask,
-            blend_src_mask: &mut self.blend_src_mask,
+            dual_source_blending: None,
             built_ins: &mut result_built_ins,
             capabilities: self.capabilities,
             flags: self.flags,
@@ -973,14 +1240,28 @@ impl super::Validator {
         module: &crate::Module,
         mod_info: &ModuleInfo,
     ) -> Result<FunctionInfo, WithSpan<EntryPointError>> {
-        if matches!(
-            ep.stage,
+        match ep.stage {
             crate::ShaderStage::Task | crate::ShaderStage::Mesh
-        ) && !self.capabilities.contains(Capabilities::MESH_SHADER)
-        {
-            return Err(
-                EntryPointError::UnsupportedCapability(Capabilities::MESH_SHADER).with_span(),
-            );
+                if !self.capabilities.contains(Capabilities::MESH_SHADER) =>
+            {
+                return Err(
+                    EntryPointError::UnsupportedCapability(Capabilities::MESH_SHADER).with_span(),
+                );
+            }
+            crate::ShaderStage::RayGeneration
+            | crate::ShaderStage::AnyHit
+            | crate::ShaderStage::ClosestHit
+            | crate::ShaderStage::Miss
+                if !self
+                    .capabilities
+                    .contains(Capabilities::RAY_TRACING_PIPELINE) =>
+            {
+                return Err(EntryPointError::UnsupportedCapability(
+                    Capabilities::RAY_TRACING_PIPELINE,
+                )
+                .with_span());
+            }
+            _ => {}
         }
         if ep.early_depth_test.is_some() {
             let required = Capabilities::EARLY_DEPTH_TEST;
@@ -1069,6 +1350,10 @@ impl super::Validator {
                 crate::ShaderStage::Compute => ShaderStages::COMPUTE,
                 crate::ShaderStage::Mesh => ShaderStages::MESH,
                 crate::ShaderStage::Task => ShaderStages::TASK,
+                crate::ShaderStage::RayGeneration => ShaderStages::RAY_GENERATION,
+                crate::ShaderStage::AnyHit => ShaderStages::ANY_HIT,
+                crate::ShaderStage::ClosestHit => ShaderStages::CLOSEST_HIT,
+                crate::ShaderStage::Miss => ShaderStages::MISS,
             };
 
             if !info.available_stages.contains(stage_bit) {
@@ -1076,7 +1361,7 @@ impl super::Validator {
             }
         }
 
-        self.location_mask.clear();
+        self.location_mask.make_empty();
         let mut argument_built_ins = crate::FastHashSet::default();
         // TODO: add span info to function arguments
         for (index, fa) in ep.function.arguments.iter().enumerate() {
@@ -1086,7 +1371,7 @@ impl super::Validator {
                 types: &module.types,
                 type_info: &self.types,
                 location_mask: &mut self.location_mask,
-                blend_src_mask: &mut self.blend_src_mask,
+                dual_source_blending: Some(&mut info.dual_source_blending),
                 built_ins: &mut argument_built_ins,
                 capabilities: self.capabilities,
                 flags: self.flags,
@@ -1097,7 +1382,7 @@ impl super::Validator {
                 .map_err_inner(|e| EntryPointError::Argument(index as u32, e).with_span())?;
         }
 
-        self.location_mask.clear();
+        self.location_mask.make_empty();
         if let Some(ref fr) = ep.function.result {
             let mut result_built_ins = crate::FastHashSet::default();
             let mut ctx = VaryingContext {
@@ -1106,7 +1391,7 @@ impl super::Validator {
                 types: &module.types,
                 type_info: &self.types,
                 location_mask: &mut self.location_mask,
-                blend_src_mask: &mut self.blend_src_mask,
+                dual_source_blending: Some(&mut info.dual_source_blending),
                 built_ins: &mut result_built_ins,
                 capabilities: self.capabilities,
                 flags: self.flags,
@@ -1125,15 +1410,14 @@ impl super::Validator {
             }
             // Task shaders must have a single `MeshTaskSize` output, and nothing else.
             if ep.stage == crate::ShaderStage::Task {
-                let ok = result_built_ins.contains(&crate::BuiltIn::MeshTaskSize)
-                    && result_built_ins.len() == 1
-                    && self.location_mask.is_empty();
+                let ok = module.types[fr.ty].inner
+                    == crate::TypeInner::Vector {
+                        size: crate::VectorSize::Tri,
+                        scalar: crate::Scalar::U32,
+                    };
                 if !ok {
                     return Err(EntryPointError::WrongTaskShaderEntryResult.with_span());
                 }
-            }
-            if !self.blend_src_mask.is_empty() {
-                info.dual_source_blending = true;
             }
         } else if ep.stage == crate::ShaderStage::Vertex {
             return Err(EntryPointError::MissingVertexOutputPosition.with_span());
@@ -1206,6 +1490,30 @@ impl super::Validator {
                         }
                 }
                 crate::AddressSpace::Immediate => GlobalUse::READ,
+                crate::AddressSpace::RayPayload => {
+                    if !matches!(
+                        ep.stage,
+                        crate::ShaderStage::RayGeneration
+                            | crate::ShaderStage::ClosestHit
+                            | crate::ShaderStage::Miss
+                    ) {
+                        return Err(EntryPointError::RayPayloadInInvalidStage(ep.stage)
+                            .with_span_handle(var_handle, &module.global_variables));
+                    }
+                    GlobalUse::READ | GlobalUse::QUERY | GlobalUse::WRITE
+                }
+                crate::AddressSpace::IncomingRayPayload => {
+                    if !matches!(
+                        ep.stage,
+                        crate::ShaderStage::AnyHit
+                            | crate::ShaderStage::ClosestHit
+                            | crate::ShaderStage::Miss
+                    ) {
+                        return Err(EntryPointError::IncomingRayPayloadInInvalidStage(ep.stage)
+                            .with_span_handle(var_handle, &module.global_variables));
+                    }
+                    GlobalUse::READ | GlobalUse::QUERY | GlobalUse::WRITE
+                }
             };
             if !allowed_usage.contains(usage) {
                 log::warn!("\tUsage error for: {var:?}");

@@ -19,6 +19,7 @@ use crate::shared_lock::{DeepCloneWithLock, SharedRwLock, SharedRwLockReadGuard}
 use crate::shared_lock::{Locked, ToCssWithGuard};
 use crate::stylesheets::rule_parser::VendorPrefix;
 use crate::stylesheets::{CssRuleType, StylesheetContents};
+use crate::values::specified::animation::TimelineRangeName;
 use crate::values::{serialize_percentage, KeyframesName};
 use cssparser::{
     parse_one_rule, AtRuleParser, DeclarationParser, Parser, ParserInput, ParserState,
@@ -70,7 +71,7 @@ impl KeyframesRule {
     /// <https://drafts.csswg.org/css-animations-1/#interface-csskeyframesrule-findrule>
     pub fn find_rule(&self, guard: &SharedRwLockReadGuard, selector: &str) -> Option<usize> {
         let mut input = ParserInput::new(selector);
-        if let Ok(selector) = Parser::new(&mut input).parse_entirely(KeyframeSelector::parse) {
+        if let Ok(selector) = Parser::new(&mut input).parse_entirely(KeyframeSelectors::parse) {
             for (i, keyframe) in self.keyframes.iter().enumerate().rev() {
                 if keyframe.read_with(guard).selector == selector {
                     return Some(i);
@@ -124,7 +125,6 @@ impl KeyframePercentage {
     /// Trivially constructs a new `KeyframePercentage`.
     #[inline]
     pub fn new(value: f32) -> KeyframePercentage {
-        debug_assert!(value >= 0. && value <= 1.);
         KeyframePercentage(value)
     }
 
@@ -146,29 +146,74 @@ impl KeyframePercentage {
     }
 }
 
-/// A keyframes selector is a list of percentages or from/to symbols, which are
-/// converted at parse time to percentages.
-#[derive(Clone, Debug, Eq, PartialEq, ToCss, ToShmem)]
-#[css(comma)]
-pub struct KeyframeSelector(#[css(iterable)] Vec<KeyframePercentage>);
+/// A single `<keyframe-selector>`:
+/// `<keyframe-selector> = from | to | <percentage [0,100]> | <timeline-range-name> <percentage>`
+/// It could be a percentage, from/to, or a timeline range name together with a percentage.
+/// https://drafts.csswg.org/scroll-animations-1/#named-range-keyframes
+#[derive(Clone, Copy, Debug, Eq, MallocSizeOf, PartialEq, ToCss, ToShmem)]
+pub struct KeyframeSelector {
+    /// The named timeline range name component of the selector. If it is omitted, we use
+    /// `TimelineRangeName::None`. Note that `TimelineRangeName::Normal` is not used for the
+    /// selector.
+    pub range_name: TimelineRangeName,
+    /// The percentage component of the selector. It is a percentage or a from/to symbol, which is
+    /// converted at parse time to percentage.
+    pub percentage: KeyframePercentage,
+}
 
 impl KeyframeSelector {
-    /// Return the list of percentages this selector contains.
-    #[inline]
-    pub fn percentages(&self) -> &[KeyframePercentage] {
-        &self.0
-    }
-
-    /// A dummy public function so we can write a unit test for this.
-    pub fn new_for_unit_testing(percentages: Vec<KeyframePercentage>) -> KeyframeSelector {
-        KeyframeSelector(percentages)
+    /// Returns Self as a percentage.
+    fn from_percentage(percentage: KeyframePercentage) -> Self {
+        debug_assert!(percentage.0 >= 0. && percentage.0 <= 1.);
+        KeyframeSelector {
+            range_name: TimelineRangeName::None,
+            percentage,
+        }
     }
 
     /// Parse a keyframe selector from CSS input.
     pub fn parse<'i, 't>(input: &mut Parser<'i, 't>) -> Result<Self, ParseError<'i>> {
+        // `from | to | <percentage [0,100]>`
+        if let Ok(percentage) = input.try_parse(KeyframePercentage::parse) {
+            return Ok(Self::from_percentage(percentage));
+        }
+
+        // We parse the the extension of keyframe selector for scroll-driven animation.
+        if !static_prefs::pref!("layout.css.scroll-driven-animations.enabled") {
+            let location = input.current_source_location();
+            return Err(location.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+        }
+
+        // `<timeline-range-name> <percentage>`
+        // Note that <percentage> could be out of [0,100].
+        Ok(Self {
+            range_name: TimelineRangeName::parse(input)?,
+            percentage: KeyframePercentage::new(input.expect_percentage()?),
+        })
+    }
+}
+
+/// A list of `<keyframe-selector>`s.
+#[derive(Clone, Debug, Eq, PartialEq, ToCss, ToShmem)]
+#[css(comma)]
+pub struct KeyframeSelectors(#[css(iterable)] Vec<KeyframeSelector>);
+
+impl KeyframeSelectors {
+    /// A dummy public function so we can write a unit test for this.
+    pub fn new_for_unit_testing(percentages: Vec<KeyframePercentage>) -> KeyframeSelectors {
+        KeyframeSelectors(
+            percentages
+                .into_iter()
+                .map(KeyframeSelector::from_percentage)
+                .collect(),
+        )
+    }
+
+    /// Parse the keyframe selectors from CSS input.
+    pub fn parse<'i, 't>(input: &mut Parser<'i, 't>) -> Result<Self, ParseError<'i>> {
         input
-            .parse_comma_separated(KeyframePercentage::parse)
-            .map(KeyframeSelector)
+            .parse_comma_separated(KeyframeSelector::parse)
+            .map(KeyframeSelectors)
     }
 }
 
@@ -176,7 +221,7 @@ impl KeyframeSelector {
 #[derive(Debug, ToShmem)]
 pub struct Keyframe {
     /// The selector this keyframe was specified from.
-    pub selector: KeyframeSelector,
+    pub selector: KeyframeSelectors,
 
     /// The declaration block that was declared inside this keyframe.
     ///
@@ -216,6 +261,7 @@ impl Keyframe {
             Cow::Borrowed(&*namespaces),
             None,
             None,
+            /* attr_taint */ Default::default(),
         );
         let mut input = ParserInput::new(css);
         let mut input = Parser::new(&mut input);
@@ -264,8 +310,8 @@ pub enum KeyframesStepValue {
 /// A single step from a keyframe animation.
 #[derive(Clone, Debug, MallocSizeOf)]
 pub struct KeyframesStep {
-    /// The percentage of the animation duration when this step starts.
-    pub start_percentage: KeyframePercentage,
+    /// The offset of the animation duration when this step starts.
+    pub start_offset: KeyframeSelector,
     /// Declarations that will determine the final style during the step, or
     /// `ComputedValues` if this is an autogenerated step.
     pub value: KeyframesStepValue,
@@ -284,7 +330,7 @@ pub struct KeyframesStep {
 impl KeyframesStep {
     #[inline]
     fn new(
-        start_percentage: KeyframePercentage,
+        start_offset: KeyframeSelector,
         value: KeyframesStepValue,
         guard: &SharedRwLockReadGuard,
     ) -> Self {
@@ -309,7 +355,7 @@ impl KeyframesStep {
         }
 
         KeyframesStep {
-            start_percentage,
+            start_offset,
             value,
             declared_timing_function,
             declared_composition,
@@ -392,8 +438,16 @@ impl KeyframesStep {
 /// It only takes into account animable properties.
 #[derive(Clone, Debug, MallocSizeOf)]
 pub struct KeyframesAnimation {
-    /// The difference steps of the animation.
+    /// The different steps of the animation.
     pub steps: Vec<KeyframesStep>,
+    /// The different steps of the animation. Those steps are only for keyframe selectors with
+    /// timeline range names. We intentionally use a different vector because it is unsorted and we
+    /// would like to maintain its specified order when grouping them. Also, per spec, the computed
+    /// order requires us to pull percentage-only keyframes to the front and sort them, so using a
+    /// separate vector makes it easier to group them to maintain the computed order.
+    /// https://drafts.csswg.org/css-animations-2/#keyframe-processing
+    /// https://github.com/w3c/csswg-drafts/issues/8507
+    pub steps_with_range_name: Vec<KeyframesStep>,
     /// The properties that change in this animation.
     pub properties_changed: PropertyDeclarationIdSet,
     /// Vendor prefix type the @keyframes has.
@@ -451,6 +505,7 @@ impl KeyframesAnimation {
     ) -> Self {
         let mut result = KeyframesAnimation {
             steps: vec![],
+            steps_with_range_name: vec![],
             properties_changed: PropertyDeclarationIdSet::default(),
             vendor_prefix,
         };
@@ -464,42 +519,62 @@ impl KeyframesAnimation {
             return result;
         }
 
+        // The steps with percentage only.
+        let mut steps = vec![];
+
         for keyframe in keyframes {
             let keyframe = keyframe.read_with(&guard);
-            for percentage in keyframe.selector.0.iter() {
-                result.steps.push(KeyframesStep::new(
-                    *percentage,
+            for selector in keyframe.selector.0.iter() {
+                let step = KeyframesStep::new(
+                    *selector,
                     KeyframesStepValue::Declarations {
                         block: keyframe.block.clone(),
                     },
                     guard,
-                ));
+                );
+
+                if !selector.range_name.is_none() {
+                    result.steps_with_range_name.push(step);
+                } else {
+                    steps.push(step);
+                }
             }
         }
 
-        // Sort by the start percentage, so we can easily find a frame.
-        result.steps.sort_by_key(|step| step.start_percentage);
+        // Sort by the percentage, so we can easily find a frame. Note that we only sort the
+        // keyframes with percentage since we have to maintain the order of keyframes with
+        // TimelineRange as specified.
+        steps.sort_by_key(|step| step.start_offset.percentage);
 
         // Prepend autogenerated keyframes if appropriate.
-        if result.steps[0].start_percentage.0 != 0. {
-            result.steps.insert(
+        //
+        // FIXME: Bug 2037642. For animation-timeline: none or auto, if all the keyframes use
+        // `<timeline-range-name>`, we shouldn't generate 0% and 100% keyframes. The better way is
+        // to fill the implicit keyframes lazily, in getKeyframes() or when using them, after they
+        // have `computedOffset` set.
+        //
+        // https://github.com/w3c/csswg-drafts/issues/13872
+        // https://drafts.csswg.org/css-animations-2/#keyframe-processing
+        if steps.is_empty() || steps[0].start_offset.percentage.0 != 0. {
+            steps.insert(
                 0,
                 KeyframesStep::new(
-                    KeyframePercentage::new(0.),
+                    KeyframeSelector::from_percentage(KeyframePercentage::new(0.)),
                     KeyframesStepValue::ComputedValues,
                     guard,
                 ),
             );
         }
 
-        if result.steps.last().unwrap().start_percentage.0 != 1. {
-            result.steps.push(KeyframesStep::new(
-                KeyframePercentage::new(1.),
+        if steps.last().unwrap().start_offset.percentage.0 != 1. {
+            steps.push(KeyframesStep::new(
+                KeyframeSelector::from_percentage(KeyframePercentage::new(1.)),
                 KeyframesStepValue::ComputedValues,
                 guard,
             ));
         }
 
+        result.steps = steps;
         result
     }
 }
@@ -544,7 +619,7 @@ impl<'a, 'b, 'i> DeclarationParser<'i> for KeyframeListParser<'a, 'b> {
 }
 
 impl<'a, 'b, 'i> QualifiedRuleParser<'i> for KeyframeListParser<'a, 'b> {
-    type Prelude = KeyframeSelector;
+    type Prelude = KeyframeSelectors;
     type QualifiedRule = Arc<Locked<Keyframe>>;
     type Error = StyleParseErrorKind<'i>;
 
@@ -553,7 +628,7 @@ impl<'a, 'b, 'i> QualifiedRuleParser<'i> for KeyframeListParser<'a, 'b> {
         input: &mut Parser<'i, 't>,
     ) -> Result<Self::Prelude, ParseError<'i>> {
         let start_position = input.position();
-        KeyframeSelector::parse(input).map_err(|e| {
+        KeyframeSelectors::parse(input).map_err(|e| {
             let location = e.location;
             let error = ContextualParseError::InvalidKeyframeRule(
                 input.slice_from(start_position),

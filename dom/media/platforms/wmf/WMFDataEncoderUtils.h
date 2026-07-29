@@ -15,17 +15,17 @@
 #include "mozilla/Logging.h"
 #include "mozilla/mscom/EnsureMTA.h"
 
-#define WMF_ENC_LOGD(arg, ...)                    \
-  MOZ_LOG(                                        \
-      mozilla::sPEMLog, mozilla::LogLevel::Debug, \
-      ("WMFMediaDataEncoder(0x%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
-#define WMF_ENC_LOGE(arg, ...)                    \
-  MOZ_LOG(                                        \
-      mozilla::sPEMLog, mozilla::LogLevel::Error, \
-      ("WMFMediaDataEncoder(0x%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
-#define WMF_ENC_SLOGE(arg, ...)                       \
-  MOZ_LOG(mozilla::sPEMLog, mozilla::LogLevel::Error, \
-          ("WMFMediaDataEncoder: %s" arg, __func__, ##__VA_ARGS__))
+#define WMF_ENC_LOGD(arg, ...)                                                 \
+  MOZ_LOG_FMT(mozilla::sPEMLog, mozilla::LogLevel::Debug,                      \
+              "WMFMediaDataEncoder(0x{})::{}: " arg, fmt::ptr(this), __func__, \
+              ##__VA_ARGS__)
+#define WMF_ENC_LOGE(arg, ...)                                                 \
+  MOZ_LOG_FMT(mozilla::sPEMLog, mozilla::LogLevel::Error,                      \
+              "WMFMediaDataEncoder(0x{})::{}: " arg, fmt::ptr(this), __func__, \
+              ##__VA_ARGS__)
+#define WMF_ENC_SLOGE(arg, ...)                           \
+  MOZ_LOG_FMT(mozilla::sPEMLog, mozilla::LogLevel::Error, \
+              "WMFMediaDataEncoder: {}" arg, __func__, ##__VA_ARGS__)
 
 namespace mozilla {
 

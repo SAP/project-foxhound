@@ -24,6 +24,7 @@ tasks-from:
     - android-l10n-lint.yml
     - android-detekt.yml
     - android-lint.yml
+    - android-gradle-plugins.yml
     - buildconfig.yml
     - clang.yml
     - doc.yml

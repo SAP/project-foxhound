@@ -6,7 +6,7 @@
   file, You can obtain one at http://mozilla.org/MPL/2.0/.
 -->
 
-<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
   <string name="app_name_private_5">Jeke %s</string>
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
@@ -29,10 +29,6 @@
   <string name="tab_search_hint">Betlerdi izlew</string>
   <!-- Placeholder text shown in the search bar when using application search engines -->
   <string name="application_search_hint">Izlew sózlerin kirgiziń</string>
-  <!-- No Open Tabs Message Description -->
-  <string name="no_open_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">Ashıq betlerińiz usı jerde kórsetiledi.</string>
-  <!-- No Private Tabs Message Description -->
-  <string name="no_private_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">Jeke betlerińiz usı jerde kórsetiledi.</string>
   <!-- Tab tray multi select title in app bar. %1$d is the number of tabs selected -->
   <string name="tab_tray_multi_select_title">%1$d tańlandı</string>
   <!-- Label of button in create collection dialog for creating a new collection -->
@@ -43,10 +39,8 @@
   <string name="tab_tray_select_collection">Toplamdı tańlań</string>
   <!-- Content description for close button while in multiselect mode in tab tray -->
   <string name="tab_tray_close_multiselect_content_description">Kóp tańlaw rejiminen shıǵıw</string>
-  <!-- Content description for save to collection button while in multiselect mode in tab tray -->
-  <string name="tab_tray_collection_button_multiselect_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Saylanǵan betlerdi toplamda saqlaw</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s Mozilla tárepinen islep shıǵılǵan.</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s Mozilla tárepinen islep shıǵılǵan.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Jeke kóriw haqqında tarqalǵan jalǵanlar</string>
   <!--
@@ -145,10 +139,6 @@
   <string name="browser_menu_stop">Toqtatıw</string>
   <!-- Browser menu button that opens account settings -->
   <string name="browser_menu_account_settings">Akkaunt maǵlıwmatı</string>
-  <!-- Browser menu button that sends a user to help articles -->
-  <string name="browser_menu_help" tools:ignore="UnusedResources" moz:removedIn="149">Járdem</string>
-  <!-- Browser menu button that sends a to a the what's new article -->
-  <string name="browser_menu_whats_new" tools:ignore="UnusedResources" moz:removedIn="149">Ne jańalıq</string>
   <!-- Browser menu button that opens the settings menu -->
   <string name="browser_menu_settings">Sazlawlar</string>
   <!-- Browser menu button that opens a user's library -->
@@ -174,11 +164,6 @@
     Browser menu text shown in custom tabs to indicate this is a Fenix tab
     %1$s is the name of the app (for example "Firefox").
   -->
-  <string name="browser_menu_powered_by" tools:ignore="UnusedResources" moz:removedIn="149">%1$s tárepinen islep shıǵıldı</string>
-  <!--
-    Browser menu text shown in custom tabs to indicate this is a Fenix tab
-    %1$s is the name of the app (for example "Firefox").
-  -->
   <string name="browser_menu_powered_by2">%1$s tárepinen islep shıǵıldı</string>
   <!-- Browser menu button to put the current page in reader mode -->
   <string name="browser_menu_read">Oqıw kórinisi</string>
@@ -186,20 +171,6 @@
   <string name="browser_menu_read_close">Oqıw kórinisin jabıw</string>
   <!-- Browser menu button to open the current page in an external app -->
   <string name="browser_menu_open_app_link">Baǵdarlamada ashıw</string>
-  <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
-  <string name="browser_menu_customize_reader_view" tools:ignore="UnusedResources" moz:removedIn="149">Oqıw kórinisin ózgertiw</string>
-  <!-- Browser menu label for adding a bookmark -->
-  <string name="browser_menu_add" tools:ignore="UnusedResources" moz:removedIn="149">Qosıw</string>
-  <!-- Browser menu label for editing a bookmark -->
-  <string name="browser_menu_edit" tools:ignore="UnusedResources" moz:removedIn="149">Ózgeris kirgiziw</string>
-  <!-- Button shown on the home page that opens the Customize home settings -->
-  <string name="browser_menu_customize_home_1" tools:ignore="UnusedResources" moz:removedIn="149">Bas betti ózgertiw</string>
-  <!--
-    Browser Toolbar
-
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">Tiykarǵı ekran</string>
   <!--
     Locale Settings Fragment
 
@@ -210,9 +181,11 @@
   <string name="default_locale_text">Qurılma tiline ámel etiń</string>
   <!-- Placeholder text shown in the search bar before a user enters text -->
   <string name="locale_search_hint">Tillerdi izlew</string>
-  <!-- Button in the search view when shortcuts are displayed that takes a user to the search engine settings -->
-  <string name="search_shortcuts_engine_settings">Izlew sisteması sazlawları</string>
-  <!-- Button in the search view that lets a user navigate to the site in their clipboard -->
+  <!--
+    Search Fragment
+
+    Button in the search view that lets a user navigate to the site in their clipboard
+  -->
   <string name="awesomebar_clipboard_title">Siltemeni almasıw buferinen qoyıw</string>
   <!-- Button in the search suggestions onboarding that allows search suggestions in private sessions -->
   <string name="search_suggestions_onboarding_allow_button">Ruqsat beriw</string>
@@ -236,18 +209,6 @@
     Content description (not visible, for screen readers etc.): Close button for the home onboarding dialog
   -->
   <string name="onboarding_home_content_description_close_button">Jabıw</string>
-  <!-- Text for the button to set firefox as default browser on the device -->
-  <string name="juno_onboarding_default_browser_positive_button" tools:ignore="UnusedResources">Tiykarǵi brauzer retinde ornatıw</string>
-  <!-- Text for the button dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_default_browser_negative_button" tools:ignore="UnusedResources">Házir emes</string>
-  <!-- Text for the button to sign in to sync on the device -->
-  <string name="juno_onboarding_sign_in_positive_button" tools:ignore="UnusedResources">Kiriw</string>
-  <!-- Text for the button dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_sign_in_negative_button" tools:ignore="UnusedResources">Házir emes</string>
-  <!-- Text for the button to request notification permission on the device -->
-  <string name="juno_onboarding_enable_notifications_positive_button" tools:ignore="UnusedResources">Xabarlamalardı qosıw</string>
-  <!-- Text for the button dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_enable_notifications_negative_button" tools:ignore="UnusedResources">Házir emes</string>
   <!-- ==== Project "Nova" onboarding strings ==== -->
 
   <!-- ==== End of Project "Nova" onboarding strings ==== -->
@@ -274,8 +235,6 @@
   <string name="preferences_category_general">Ulıwmalıq</string>
   <!-- Preference category for all links about Fenix -->
   <string name="preferences_category_about">Haqqında</string>
-  <!-- Preference category for settings related to changing the default search engine -->
-  <string name="preferences_category_select_default_search_engine">Tańlań</string>
   <!-- Preference for settings related to changing the default search engine -->
   <string name="preferences_default_search_engine">Standart izlew sısteması</string>
   <!-- Preference for settings related to Search -->
@@ -497,7 +456,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">Izertlewler</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">Mozillaǵa izleniwlerdi ornatıw hám júrgiziwge ruqsat beredi</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">Mozillaǵa izleniwlerdi ornatıw hám júrgiziwge ruqsat beredi</string>
   <!-- Preference for reconnecting to FxA sync -->
   <string name="preferences_sync_sign_in_to_reconnect">Qayta jalǵanıw ushın sistemaǵa kiriń</string>
   <!-- Preference for removing FxA account -->
@@ -536,8 +495,6 @@
   <string name="preference_gestures_website_pull_to_refresh">Jańalaw ushın tartıń</string>
   <!-- Preference for using the dynamic toolbar -->
   <string name="preference_gestures_dynamic_toolbar">Ásbaplar panelin jasırıw ushın aylandırıń</string>
-  <!-- Preference for showing the opened tabs by swiping up on the toolbar -->
-  <string name="preference_gestures_swipe_toolbar_show_tabs">Betlerdi ashıw ushın ásbaplar panelin joqarıǵa jıljıtıń</string>
   <!--
     Library
 
@@ -556,8 +513,6 @@
   <string name="library_desktop_bookmarks_unfiled">Basqa saylandılar</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Tariyx</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">Jańa bet</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Sazlawlar</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -674,28 +629,14 @@
   <string name="add_tab">Bet qosıw</string>
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">Jeke bet qosıw</string>
-  <!-- Text for the new tab button to indicate adding a new private tab in the tab -->
-  <string name="tab_drawer_fab_content" tools:ignore="UnusedResources" moz:removedIn="149">Jeke</string>
-  <!-- Text for the new tab button to indicate syncing command on the synced tabs page -->
-  <string name="tab_drawer_fab_sync" tools:ignore="UnusedResources" moz:removedIn="149">Sáykeslestiriw</string>
-  <!-- Text shown in the menu for sharing all tabs -->
-  <string name="tab_tray_menu_item_share" tools:ignore="UnusedResources" moz:removedIn="149">Barlıq betlerdi bólisiw</string>
   <!-- Text shown in the menu to view recently closed tabs -->
   <string name="tab_tray_menu_recently_closed">Jaqında jabılǵan betler</string>
-  <!-- Text shown in the tabs tray inactive tabs section -->
-  <string name="tab_tray_inactive_recently_closed" tools:ignore="UnusedResources" moz:removedIn="149">Jaqında jabıldı</string>
   <!-- Text shown in the menu to view account settings -->
   <string name="tab_tray_menu_account_settings">Akkaunt sazlawları</string>
   <!-- Text shown in the menu to view tab settings -->
   <string name="tab_tray_menu_tab_settings">Bet sazlawları</string>
   <!-- Text shown in the menu for closing all tabs -->
   <string name="tab_tray_menu_item_close">Barlıq betlerdi jabıw</string>
-  <!-- Text shown in the multiselect menu for bookmarking selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_bookmark" tools:ignore="UnusedResources" moz:removedIn="149">Saylandı</string>
-  <!-- Text shown in the multiselect menu for closing selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_close" tools:ignore="UnusedResources" moz:removedIn="149">Jabıw</string>
-  <!-- Content description for tabs tray multiselect share button -->
-  <string name="tab_tray_multiselect_share_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Saylanǵan betlerdi bólisiw</string>
   <!-- Content description for tabs tray multiselect menu -->
   <string name="tab_tray_multiselect_menu_content_description">Saylanǵan betler menyusi</string>
   <!-- Content description (not visible, for screen readers etc.): Removes tab from collection button. Removes the selected tab from collection when pressed -->
@@ -767,7 +708,7 @@
   -->
   <string name="tab_crash_title_2">Keshiresiz. %1$s bul betti júkley almaydı.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">Nasazlıq esabatın Mozillaǵa jiberiw</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">Nasazlıq esabatın Mozillaǵa jiberiw</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">Betti jabıw</string>
   <!-- Restore tab button text on the tab crash page -->
@@ -780,8 +721,6 @@
   <string name="edit_bookmark_snackbar_action">ÓZGERIS KIRGIZIW</string>
   <!-- Bookmark overflow menu edit button -->
   <string name="bookmark_menu_edit_button">Ózgeris kirgiziw</string>
-  <!-- Bookmark overflow menu copy button -->
-  <string name="bookmark_menu_copy_button" tools:ignore="UnusedResources" moz:removedIn="150">Kóshirip alıw</string>
   <!-- Bookmark overflow menu share button -->
   <string name="bookmark_menu_share_button">Bólisiw</string>
   <!-- Bookmark overflow menu open in new tab button -->
@@ -805,10 +744,6 @@
   <string name="edit_bookmark_folder_fragment_title">Papkaǵa ózgeris kirgiziw</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">PAPKA</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">ATAMASI</string>
   <!-- Bookmark select folder screen title -->
   <string name="bookmark_select_folder_fragment_label">Papkanı tańlaw</string>
   <!-- Bookmark editing error missing or improper URL -->
@@ -818,8 +753,6 @@
     %1$s is the host part of the URL of the bookmark deleted, if any
   -->
   <string name="bookmark_deletion_snackbar_message">%1$s óshirildi</string>
-  <!-- Bookmark undo button for deletion snackbar action -->
-  <string name="bookmark_undo_deletion" tools:ignore="UnusedResources" moz:removedIn="150">BIYKARLAW</string>
   <!--
     Site Permissions
 
@@ -914,8 +847,6 @@
   <string name="collections_header">Toplamlar</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">Toplam menyusi</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">Sizge áhmiyetli nárselerdi jıynań.\nKeleshekte tez kiriw ushın uqsas izlewlerdi, saytlardı hám betlerdi biriktiriń.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">Betlerdi tańlań</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -1014,13 +945,6 @@
     The app name is in the text, due to limitations with localizing Nimbus experiments
   -->
   <string name="nimbus_notification_default_browser_title" tools:ignore="BrandUsage,UnusedResources">Firefox — tez hám jeke</string>
-  <!-- Title shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_title" tools:ignore="UnusedResources" moz:removedIn="150">Jeke kóriwdi sınap kóriń</string>
-  <!--
-    Text shown in the notification that pops up to re-engage the user.
-    %1$s is a placeholder that will be replaced by the app name.
-  -->
-  <string name="notification_re_engagement_text" tools:ignore="UnusedResources" moz:removedIn="150">%1$sda saqlanǵan cookielarsız yamasa tariyxsız kóriw</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">Yaq, raxmet</string>
   <!--
@@ -1029,8 +953,6 @@
     Text shown in snackbar when user closes a tab
   -->
   <string name="snackbar_tab_closed">Bet jabıldı</string>
-  <!-- Text shown in snackbar when user closes all tabs -->
-  <string name="snackbar_tabs_closed">Betler jabıldı</string>
   <!-- Text shown in snackbar when user adds a site to shortcuts -->
   <string name="snackbar_added_to_shortcuts">Operativ buyrıqlarǵa qosıldı!</string>
   <!-- Text shown in snackbar when user closes a private tab -->
@@ -1089,8 +1011,6 @@
   <string name="preferences_delete_browsing_data_on_quit">Shıqqanda brauzer tariyxın óshiriw</string>
   <!-- Summary for the Delete browsing data on quit preference. "Quit" translation should match delete_browsing_data_on_quit_action translation. -->
   <string name="preference_summary_delete_browsing_data_on_quit_2">Tiykarǵı menyuden \"Shıǵıw\" túymesin tańlaǵanda, brauzer tariyxı avtomat tárizde óshiriledi</string>
-  <!-- Action item in menu for the Delete browsing data on quit feature -->
-  <string name="delete_browsing_data_on_quit_action" tools:ignore="UnusedResources" moz:removedIn="149">Shıǵıw</string>
   <!-- Title text of a delete browsing data dialog. -->
   <string name="delete_history_prompt_title">Óshiriw ushın waqıt aralıǵı</string>
   <!-- Radio button in the delete browsing data dialog to delete history items for the last hour. -->
@@ -1153,7 +1073,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Qorǵaw sazlawları</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Baqlawdan keńeytilgen qorǵanıw</string>
   <!-- Text displayed that links to website about enhanced tracking protection -->
   <string name="preference_enhanced_tracking_protection_explanation_learn_more">Tolıǵıraq úyreniw</string>
@@ -1493,10 +1417,6 @@
     the certificate authority that verified the ticket
   -->
   <string name="certificate_info_verified_by">Tastıyıqlawshı: %1$s</string>
-  <!-- Login overflow menu delete button -->
-  <string name="login_menu_delete_button" tools:ignore="UnusedResources" moz:removedIn="149">Óshiriw</string>
-  <!-- Login overflow menu edit button -->
-  <string name="login_menu_edit_button" tools:ignore="UnusedResources" moz:removedIn="149">Ózgeris kirgiziw</string>
   <!-- Positive action of a dialog asking to delete -->
   <string name="dialog_delete_positive">Óshiriw</string>
   <!-- Negative action of a dialog asking to delete login -->
@@ -1593,8 +1513,6 @@
   <string name="other_default_search_engine_suggestion_header">%s da izlew</string>
   <!-- Default browser card text -->
   <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">Saytlardaǵı, elektron xatlardaǵı hám xabarlardaǵı siltemelerdi Firefoxda avtomat tárizde ashılatuǵın etip sazlań.</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">Alıp taslaw</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">Kóbirek biliw ushın basıń</string>
   <!-- Content description for the action bar "up" button -->

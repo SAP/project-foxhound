@@ -47,6 +47,7 @@ tags = "os_integration"
 skip-if = [
   "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1929419
   "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1929419
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2019466
 ]
 
 ["test_image_recognition_zh.html"]
@@ -56,6 +57,7 @@ run-if = [
 tags = "os_integration"
 skip-if = [
   "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && xorigin", # Bug 1929419
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2034604
 ]
 
 ["test_mousecapture_area.html"]
@@ -66,7 +68,7 @@ tags = "os_integration"
 ["test_panel_list_shadow_node_anchor.html"]
 support-files = [
   "../../widgets/panel-list/panel-item.css",
-  "../../widgets/panel-list/panel-list.js",
+  "../../widgets/panel-list/panel-list.mjs",
   "../../widgets/panel-list/panel-list.css",
 ]
 
@@ -91,6 +93,7 @@ tags = "os_integration"
 ["test_videocontrols_audio_direction.html"]
 skip-if = [
   "xorigin", # Rendering of reftest videocontrols_direction-2a.html should not be different to the reference, fails/passes inconsistently
+  "standalone", # Bug 2026600
 ]
 
 ["test_videocontrols_clickToPlay_ariaLabel.html"]
@@ -134,6 +137,7 @@ skip-if = [
 skip-if = [
   "os == 'win'",
   "xorigin", # Rendering of reftest videocontrols_direction-2a.html should not be different to the reference, fails/passes inconsistently
+  "os == 'linux' && display == 'x11' && standalone", # Bug 1920614
 ]
 
 ["test_videocontrols_video_noaudio.html"]

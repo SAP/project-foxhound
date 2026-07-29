@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -85,7 +83,7 @@ static bool LanguagesMatch(const nsACString& a, const nsACString& b) {
 nsChromeRegistryChrome::nsChromeRegistryChrome()
     : mProfileLoaded(false), mDynamicRegistration(true) {}
 
-nsChromeRegistryChrome::~nsChromeRegistryChrome() {}
+nsChromeRegistryChrome::~nsChromeRegistryChrome() = default;
 
 nsresult nsChromeRegistryChrome::Init() {
   nsresult rv = nsChromeRegistry::Init();
@@ -175,7 +173,7 @@ nsresult nsChromeRegistryChrome::OverrideLocalePackage(
   nsresult rv = mozilla::Preferences::GetCString(PromiseFlatCString(pref).get(),
                                                  override);
   if (NS_SUCCEEDED(rv)) {
-    aOverride = override;
+    aOverride = std::move(override);
   } else {
     aOverride = aPackage;
   }
@@ -480,7 +478,7 @@ void nsChromeRegistryChrome::ManifestContent(ManifestProcessingContext& cx,
 
   nsDependentCString packageName(package);
   PackageEntry* entry = mPackagesHash.GetOrInsertNew(packageName);
-  entry->baseURI = resolved;
+  entry->baseURI = std::move(resolved);
   entry->flags = flags;
 
   if (mDynamicRegistration) {
@@ -601,7 +599,8 @@ void nsChromeRegistryChrome::ManifestOverride(ManifestProcessingContext& cx,
     SerializeURI(chromeuri, serializedChrome);
     SerializeURI(resolveduri, serializedOverride);
 
-    OverrideMapping override = {serializedChrome, serializedOverride};
+    OverrideMapping override = {std::move(serializedChrome),
+                                std::move(serializedOverride)};
     SendManifestEntry(override);
   }
 }

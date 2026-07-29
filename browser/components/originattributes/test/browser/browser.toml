@@ -63,7 +63,7 @@ support-files = [
   "window_redirect.html",
   "!/toolkit/content/tests/browser/common/mockTransfer.js",
 ]
-# We don't want to run tests using BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN
+# Bug 2038682: We don't want to run tests using BEHAVIOR_PARTITION_FOREIGN
 # (5 - aka Dynamic First Party Isolation) yet.
 prefs = ["network.cookie.cookieBehavior=4"]
 
@@ -74,6 +74,7 @@ prefs = ["network.cookie.cookieBehavior=4"]
 ["browser_cache.js"]
 skip-if = [
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && ccov",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && ccov",
 ]
 
 ["browser_cacheAPI.js"]

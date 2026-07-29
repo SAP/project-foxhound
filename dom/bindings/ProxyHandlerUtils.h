@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,7 +11,6 @@
 #include "js/String.h"  // JS::AtomToLinearString, JS::GetLinearString{CharAt,Length}
 #include "js/TypeDecls.h"
 #include "jsfriendapi.h"  // js::StringIsArrayIndex
-#include "mozilla/Likely.h"
 #include "mozilla/TextUtils.h"
 
 namespace mozilla::dom {
@@ -28,23 +25,23 @@ inline uint32_t GetArrayIndexFromId(JS::Handle<jsid> id) {
   // really needed?  I guess it is because StringIsArrayIndex is out of line...
   // as of now, use id.get() instead of id otherwise operands mismatch error
   // occurs.
-  if (MOZ_LIKELY(id.isInt())) {
+  if (id.isInt()) [[likely]] {
     return id.toInt();
   }
-  if (MOZ_LIKELY(id.get() == s_length_id)) {
+  if (id.get() == s_length_id) [[likely]] {
     return UINT32_MAX;
   }
-  if (MOZ_UNLIKELY(!id.isAtom())) {
+  if (!id.isAtom()) [[unlikely]] {
     return UINT32_MAX;
   }
 
   JSLinearString* str = JS::AtomToLinearString(id.toAtom());
-  if (MOZ_UNLIKELY(JS::GetLinearStringLength(str) == 0)) {
+  if (JS::GetLinearStringLength(str) == 0) [[unlikely]] {
     return UINT32_MAX;
   }
 
   char16_t firstChar = JS::GetLinearStringCharAt(str, 0);
-  if (MOZ_LIKELY(IsAsciiLowercaseAlpha(firstChar))) {
+  if (IsAsciiLowercaseAlpha(firstChar)) [[likely]] {
     return UINT32_MAX;
   }
 

@@ -232,7 +232,7 @@ add_task(async function testDialog() {
   );
 
   // Test if context menu works for inputs.
-  await EventUtils.synthesizeMouseAtCenter(
+  EventUtils.synthesizeMouseAtCenter(
     dialogWin.document.getElementById("engineName"),
     { type: "contextmenu", button: 2 },
     dialogWin

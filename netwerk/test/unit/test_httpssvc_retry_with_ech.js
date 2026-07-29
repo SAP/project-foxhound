@@ -308,10 +308,9 @@ add_task(async function testEchRetry() {
   checkSecurityInfo(chan, true, true);
   // Only check telemetry if network process is disabled.
   if (!mozinfo.socketprocess_networking) {
-    for (let hName of ["SSL_HANDSHAKE_RESULT", "SSL_HANDSHAKE_RESULT_ECH"]) {
-      let h = Services.telemetry.getHistogramById(hName);
+    for (let f of ["", "_ECH"]) {
       HandshakeTelemetryHelpers.assertHistogramMap(
-        h.snapshot(),
+        HandshakeTelemetryHelpers.resultDelta(f),
         new Map([
           ["0", 1],
           ["188", 1],
@@ -414,60 +413,60 @@ async function H3ECHTest(
   await checkEchTelemetry(expectedHistKey, expectedHistEntries);
 }
 
+const ECH_OUTCOME_LABELS = ["NONE", "GREASE", "REAL"];
+let _echOutcomeBaseline = {};
+
 function resetEchTelemetry() {
-  Services.telemetry.getKeyedHistogramById("HTTP3_ECH_OUTCOME").clear();
+  for (let label of ECH_OUTCOME_LABELS) {
+    _echOutcomeBaseline[label] = Glean.http3.echOutcome[label].testGetValue();
+  }
 }
 
-async function checkEchTelemetry(histKey, histEntries) {
+function _echOutcomeDelta(label) {
+  let current = Glean.http3.echOutcome[label].testGetValue();
+  let baseline = _echOutcomeBaseline[label];
+  let currentValues = current?.values ?? {};
+  let baselineValues = baseline?.values ?? {};
+  let result = {};
+  let allKeys = new Set([
+    ...Object.keys(currentValues),
+    ...Object.keys(baselineValues),
+  ]);
+  for (let k of allKeys) {
+    let delta = (currentValues[k] ?? 0) - (baselineValues[k] ?? 0);
+    if (delta !== 0) {
+      result[k] = delta;
+    }
+  }
+  return { values: result };
+}
+
+async function checkEchTelemetry(label, histEntries) {
   Services.obs.notifyObservers(null, "net:cancel-all-connections");
   /* eslint-disable mozilla/no-arbitrary-setTimeout */
   await new Promise(resolve => setTimeout(resolve, 1000));
-  let values = Services.telemetry
-    .getKeyedHistogramById("HTTP3_ECH_OUTCOME")
-    .snapshot()[histKey];
   if (!mozinfo.socketprocess_networking) {
-    HandshakeTelemetryHelpers.assertHistogramMap(values, histEntries);
+    HandshakeTelemetryHelpers.assertHistogramMap(
+      _echOutcomeDelta(label),
+      histEntries
+    );
   }
 }
 
 add_task(async function testH3WithNoEch() {
   Services.prefs.setBoolPref("security.tls.ech.grease_http3", false);
   Services.prefs.setIntPref("security.tls.ech.grease_probability", 0);
-  await H3ECHTest(
-    h3EchConfig,
-    "NONE",
-    new Map([
-      ["0", 1],
-      ["1", 0],
-    ]),
-    false
-  );
+  await H3ECHTest(h3EchConfig, "NONE", new Map([["0", 1]]), false);
 });
 
 add_task(async function testH3WithECH() {
-  await H3ECHTest(
-    h3EchConfig,
-    "REAL",
-    new Map([
-      ["0", 1],
-      ["1", 0],
-    ]),
-    true
-  );
+  await H3ECHTest(h3EchConfig, "REAL", new Map([["0", 1]]), true);
 });
 
 add_task(async function testH3WithGreaseEch() {
   Services.prefs.setBoolPref("security.tls.ech.grease_http3", true);
   Services.prefs.setIntPref("security.tls.ech.grease_probability", 100);
-  await H3ECHTest(
-    h3EchConfig,
-    "GREASE",
-    new Map([
-      ["0", 1],
-      ["1", 0],
-    ]),
-    false
-  );
+  await H3ECHTest(h3EchConfig, "GREASE", new Map([["0", 1]]), false);
 });
 
 add_task(async function testH3WithECHRetry() {

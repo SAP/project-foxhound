@@ -53,7 +53,7 @@ ClientAuthDialogService.prototype = {
     // alias of the certificate, or null if none was selected.
     if (AppConstants.platform == "android") {
       const prompt = new lazy.GeckoViewPrompter(
-        loadContext.topFrameElement.ownerGlobal
+        loadContext.topFrameElement.documentGlobal
       );
       let issuers = null;
       if (caNames.length) {
@@ -112,7 +112,7 @@ ClientAuthDialogService.prototype = {
     }
     // Otherwise, attempt to open a window-modal dialog on the window that at
     // least has the tab the load is occurring in.
-    let browserWindow = loadContext?.topFrameElement?.ownerGlobal;
+    let browserWindow = loadContext?.topFrameElement?.documentGlobal;
     // Failing that, open a window-modal dialog on the most recent window.
     if (!browserWindow?.gDialogBox) {
       browserWindow = Services.wm.getMostRecentBrowserWindow();

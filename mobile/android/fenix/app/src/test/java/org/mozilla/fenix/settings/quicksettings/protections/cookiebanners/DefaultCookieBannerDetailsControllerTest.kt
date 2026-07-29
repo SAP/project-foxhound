@@ -9,12 +9,11 @@ import androidx.fragment.app.Fragment
 import androidx.navigation.NavController
 import androidx.navigation.NavDirections
 import io.mockk.MockKAnnotations
-import io.mockk.Runs
 import io.mockk.coEvery
+import io.mockk.coJustRun
 import io.mockk.coVerifyOrder
 import io.mockk.every
-import io.mockk.impl.annotations.MockK
-import io.mockk.just
+import io.mockk.impl.annotations.RelaxedMockK
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.spyk
@@ -36,7 +35,6 @@ import mozilla.components.feature.session.TrackingProtectionUseCases
 import mozilla.components.lib.publicsuffixlist.PublicSuffixList
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Rule
@@ -45,28 +43,28 @@ import org.junit.runner.RunWith
 import org.mozilla.fenix.GleanMetrics.CookieBanners
 import org.mozilla.fenix.GleanMetrics.Pings
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.mozilla.fenix.trackingprotection.CookieBannerUIMode
 import org.mozilla.fenix.trackingprotection.ProtectionsAction
 import org.mozilla.fenix.trackingprotection.ProtectionsStore
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 internal class DefaultCookieBannerDetailsControllerTest {
 
     private lateinit var context: Context
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var navController: NavController
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var fragment: Fragment
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var sitePermissions: SitePermissions
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var cookieBannersStorage: CookieBannersStorage
 
     private lateinit var controller: DefaultCookieBannerDetailsController
@@ -75,16 +73,16 @@ internal class DefaultCookieBannerDetailsControllerTest {
 
     private lateinit var browserStore: BrowserStore
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var protectionsStore: ProtectionsStore
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var reload: SessionUseCases.ReloadUrlUseCase
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var engine: Engine
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var publicSuffixList: PublicSuffixList
 
     private val testDispatcher = StandardTestDispatcher()
@@ -135,7 +133,7 @@ internal class DefaultCookieBannerDetailsControllerTest {
 
     @Test
     fun `WHEN handleBackPressed is called THEN should call popBackStack and navigate`() = runTest(testDispatcher) {
-        every { context.settings().shouldUseCookieBannerPrivateMode } returns false
+        every { context.components.settings.shouldUseCookieBannerPrivateMode } returns false
         every { context.components.publicSuffixList } returns publicSuffixList
 
         controller.handleBackPressed()
@@ -181,7 +179,7 @@ internal class DefaultCookieBannerDetailsControllerTest {
 
             assertNull(CookieBanners.exceptionRemoved.testGetValue())
             every { protectionsStore.dispatch(any()) } returns mockk()
-            coEvery { controller.clearSiteData(any()) } just Runs
+            coJustRun { controller.clearSiteData(any()) }
 
             controller.handleTogglePressed(false)
 

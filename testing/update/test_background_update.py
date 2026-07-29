@@ -93,10 +93,12 @@ class TestBackgroundUpdate(MarionetteTestCase):
 
         # Check that there is a green badge on hamburger menu
         Wait(self.marionette, timeout=100).until(
-            lambda _: self.marionette.find_element(
-                By.ID, "PanelUI-menu-button"
-            ).get_attribute("badge-status")
-            == "update-available"
+            lambda _: (
+                self.marionette.find_element(
+                    By.ID, "PanelUI-menu-button"
+                ).get_attribute("badge-status")
+                == "update-available"
+            )
         )
 
         # Click the update button in hamburger menu to download the update

@@ -10,6 +10,7 @@ include PBackgroundSharedTypes;
 include "mozilla/dom/cache/IPCUtils.h";
 include "mozilla/dom/FetchIPCTypes.h";
 include "mozilla/ipc/TransportSecurityInfoUtils.h";
+include "mozilla/ipc/URIUtils.h";
 
 using mozilla::dom::HeadersGuardEnum from "mozilla/dom/HeadersBinding.h";
 using mozilla::dom::cache::Namespace from "mozilla/dom/cache/Types.h";
@@ -25,6 +26,7 @@ using nsContentPolicyType from "nsIContentPolicy.h";
 using struct nsID from "nsID.h";
 using nsILoadInfo::CrossOriginEmbedderPolicy from "nsILoadInfo.h";
 [RefCounted] using class nsITransportSecurityInfo from "nsITransportSecurityInfo.h";
+[RefCounted] using class nsIURI from "nsIURI.h";
 
 namespace mozilla {
 namespace dom {
@@ -76,7 +78,7 @@ struct CacheRequest
 struct CacheResponse
 {
   ResponseType type;
-  nsCString[] urlList;
+  nsIURI[] urlList;
   uint32_t status;
   nsCString statusText;
   HeadersEntry[] headers;

@@ -584,7 +584,7 @@ add_task(async function () {
   info(
     "Leading search-mode restriction tokens are removed from the search result."
   );
-  for (let token of UrlbarTokenizer.SEARCH_MODE_RESTRICT) {
+  for (let token of UrlbarShared.SEARCH_MODE_RESTRICT) {
     for (let spaces of TEST_SPACES) {
       query = token + spaces + "query";
       info("Testing: " + JSON.stringify({ query, spaces: codePoints(spaces) }));
@@ -597,7 +597,7 @@ add_task(async function () {
         query: expectedQuery,
         alias: token,
       };
-      if (token == UrlbarTokenizer.RESTRICT.SEARCH) {
+      if (token == UrlbarShared.RESTRICT_TOKENS.SEARCH) {
         payload.source = UrlbarUtils.RESULT_SOURCE.SEARCH;
         payload.engineName = SUGGESTIONS_ENGINE_NAME;
       }
@@ -612,7 +612,7 @@ add_task(async function () {
     "Leading search-mode restriction tokens are removed from the search result with keyword.enabled = false."
   );
   Services.prefs.setBoolPref("keyword.enabled", false);
-  for (let token of UrlbarTokenizer.SEARCH_MODE_RESTRICT) {
+  for (let token of UrlbarShared.SEARCH_MODE_RESTRICT) {
     for (let spaces of TEST_SPACES) {
       query = token + spaces + "query";
       info("Testing: " + JSON.stringify({ query, spaces: codePoints(spaces) }));
@@ -625,7 +625,7 @@ add_task(async function () {
         query: expectedQuery,
         alias: token,
       };
-      if (token == UrlbarTokenizer.RESTRICT.SEARCH) {
+      if (token == UrlbarShared.RESTRICT_TOKENS.SEARCH) {
         payload.source = UrlbarUtils.RESULT_SOURCE.SEARCH;
         payload.engineName = SUGGESTIONS_ENGINE_NAME;
       }
@@ -640,8 +640,8 @@ add_task(async function () {
   info(
     "Leading non-search-mode restriction tokens are not removed from the search result."
   );
-  for (let token of Object.values(UrlbarTokenizer.RESTRICT)) {
-    if (UrlbarTokenizer.SEARCH_MODE_RESTRICT.has(token)) {
+  for (let token of Object.values(UrlbarShared.RESTRICT_TOKENS)) {
+    if (UrlbarShared.SEARCH_MODE_RESTRICT.has(token)) {
       continue;
     }
     for (let spaces of TEST_SPACES) {

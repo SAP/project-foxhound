@@ -66,6 +66,17 @@ class WebIDLPool:
     def run(self, filenames):
         return list(self.executor.map(WebIDLPool._run, filenames))
 
+    def close(self):
+        shutdown = getattr(self.executor, "shutdown", None)
+        if shutdown is not None:
+            shutdown(wait=True)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
+
     @staticmethod
     def _init(GeneratorState):
         WebIDLPool.GeneratorState = GeneratorState
@@ -375,8 +386,8 @@ class WebIDLCodegenManager(LoggingMixin):
         # a) that `self' is serializable and b) that `self' is unchanged by
         # _generate_build_files_for_webidl(...)
         ordered_changed_inputs = sorted(changed_inputs)
-        pool = WebIDLPool(self, processes=processes)
-        generation_results = pool.run(ordered_changed_inputs)
+        with WebIDLPool(self, processes=processes) as pool:
+            generation_results = pool.run(ordered_changed_inputs)
 
         # Generate bindings from .webidl files.
         for filename, generation_result in zip(

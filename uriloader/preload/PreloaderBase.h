@@ -109,7 +109,7 @@ class PreloaderBase : public SupportsWeakPtr, public nsISupports {
         : mFlags(aFlags), mURI(aURI) {}
 
     uint32_t Flags() const { return mFlags; }
-    nsCString Spec() const;
+    already_AddRefed<nsIURI> URINoFragment() const;
     nsCString Fragment() const;
 
    private:

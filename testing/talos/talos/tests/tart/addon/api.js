@@ -50,7 +50,7 @@ this.tart = class extends ExtensionAPI {
   }
 
   receiveMessage({ target, data }) {
-    let win = target.ownerGlobal;
+    let win = target.documentGlobal;
     if (!this.loadedWindows.has(win)) {
       let { baseURI } = this.extension;
       Services.scriptloader.loadSubScript(

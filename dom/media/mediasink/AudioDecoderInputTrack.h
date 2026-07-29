@@ -5,6 +5,9 @@
 #ifndef AudioDecoderInputTrack_h
 #define AudioDecoderInputTrack_h
 
+#include <memory>
+#include <thread>
+
 #include "AudioSegment.h"
 #include "MediaEventSource.h"
 #include "MediaSegment.h"
@@ -102,6 +105,9 @@ class AudioDecoderInputTrack final : public ProcessedMediaTrack {
 
   MediaEventSource<int64_t>& OnOutput() { return mOnOutput; }
   MediaEventSource<void>& OnEnd() { return mOnEnd; }
+  MediaEventSource<void>& OnPlaybackRateFallback() {
+    return mOnPlaybackRateFallback;
+  }
 
   // Graph Thread API
   void DestroyImpl() override;
@@ -174,6 +180,7 @@ class AudioDecoderInputTrack final : public ProcessedMediaTrack {
   MediaEventProducer<int64_t> mOnOutput;
   // Notify when the track is ended.
   MediaEventProducer<void> mOnEnd;
+  MediaEventProducer<void> mOnPlaybackRateFallback;
 
   // These variables are ONLY used in the decoder thread.
   nsAutoRef<SpeexResamplerState> mResampler;
@@ -218,7 +225,7 @@ class AudioDecoderInputTrack final : public ProcessedMediaTrack {
   bool mSentAllData = false;
 
   // This is used to adjust the playback rate and pitch.
-  RLBoxSoundTouch* mTimeStretcher = nullptr;
+  std::unique_ptr<RLBoxSoundTouch> mTimeStretcher;
 
   // Buffers that would be used for the time stretching.
   AutoTArray<AudioDataValue, 2> mInterleavedBuffer;

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -138,8 +137,9 @@ class nsDocumentOpenInfo : public nsIThreadRetargetableStreamListener {
    * them together when we use a stream converter and don't know what the
    * converted content type is until the converter outputs OnStartRequest.
    */
-  virtual nsDocumentOpenInfo* Clone() {
-    return new nsDocumentOpenInfo(m_originalContext, mFlags, mURILoader);
+  virtual already_AddRefed<nsDocumentOpenInfo> Clone() {
+    return mozilla::MakeAndAddRef<nsDocumentOpenInfo>(m_originalContext, mFlags,
+                                                      mURILoader);
   }
 
   // nsIRequestObserver methods:

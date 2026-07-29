@@ -30,6 +30,8 @@ class BackupLegacyToSelectableTest(BackupTestBase):
         profile_name = self.register_profile_and_restart()
         self._cleanups.append({"profile_name": profile_name})
 
+        self.assert_profile_source("backup-legacy-source")
+
         self.set_prefs({
             "browser.profiles.enabled": False,
             "browser.profiles.created": False,
@@ -87,6 +89,7 @@ class BackupLegacyToSelectableTest(BackupTestBase):
         self.logger.info("Post-recovery complete")
 
         self.init_selectable_profile_service()
+        self.assert_profile_source("backup")
 
         store_id = self.get_store_id()
         self.assertEqual(

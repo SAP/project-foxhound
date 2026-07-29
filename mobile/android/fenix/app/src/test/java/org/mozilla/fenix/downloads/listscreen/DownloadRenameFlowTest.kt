@@ -5,7 +5,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
@@ -207,6 +207,28 @@ class DownloadRenameFlowTest {
             DownloadRenameDialog(
                 originalFileName = "file.pdf",
                 error = RenameFileError.NameAlreadyExists(proposedFileName = "file.pdf"),
+                fileNameState = fileNameState,
+                onFileNameChange = { fileNameState = it },
+                onConfirmSave = {},
+                onCancel = {},
+                onCannotRenameDismiss = {},
+            )
+        }
+
+        composeTestRule.waitForIdle()
+
+        composeTestRule
+            .onNodeWithTag(DownloadsListTestTag.RENAME_DIALOG_TEXT_FIELD)
+            .assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Error))
+    }
+
+    @Test
+    fun `GIVEN the rename dialog is shown WHEN proposed file name only differs by case THEN the field is in an error state`() {
+        var fileNameState = TextFieldValue("file.pdf")
+        composeTestRule.setContent {
+            DownloadRenameDialog(
+                originalFileName = "file.pdf",
+                error = RenameFileError.CaseOnlyNameChange(proposedFileName = "file.pdf"),
                 fileNameState = fileNameState,
                 onFileNameChange = { fileNameState = it },
                 onConfirmSave = {},

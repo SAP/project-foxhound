@@ -10,7 +10,7 @@ const { sinon } = ChromeUtils.importESModule(
 const NEW_VIDEO_ASPECT_RATIO = 1.334;
 
 async function switchVideoSource(browser, src) {
-  await ContentTask.spawn(browser, { src }, async ({ src }) => {
+  await SpecialPowers.spawn(browser, [{ src }], async ({ src }) => {
     let doc = content.document;
     let video = doc.getElementById("no-controls");
     video.src = src;

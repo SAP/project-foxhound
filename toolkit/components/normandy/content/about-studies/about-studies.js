@@ -113,6 +113,8 @@ class AboutStudies extends React.Component {
       return null;
     }
 
+    document.title = translations.pageTitle;
+
     return r(
       "div",
       { className: "about-studies-container main-content" },

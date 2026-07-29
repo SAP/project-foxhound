@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +9,7 @@
 #include "WindowsDefaultBrowser.h"
 
 #include "city.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WindowsVersion.h"
 #include "mozilla/WinHeaderOnlyUtils.h"
@@ -21,6 +21,7 @@
 #include <lm.h>
 #include <shellapi.h>
 #include <shlwapi.h>
+#include <uiautomation.h>
 #include <wchar.h>
 #include <windows.h>
 
@@ -201,4 +202,137 @@ bool LaunchModernSettingsDialogDefaultApps() {
     return SUCCEEDED(hr);
   }
   return true;
+}
+
+static void EnableFocusIndicators(HWND aWindow) {
+  ::PostMessageW(aWindow, WM_UPDATEUISTATE,
+                 MAKEWPARAM(UIS_CLEAR, UISF_HIDEFOCUS | UISF_HIDEACCEL), 0);
+}
+
+void FocusElement(HWND aWindow, const UIElement& aElement) {
+  EnableFocusIndicators(aWindow);
+  aElement->SetFocus();
+}
+
+static already_AddRefed<IUIAutomationElement> TryFindElementByAutomationId(
+    HWND aWindow, LPCWSTR aId) {
+  RefPtr<IUIAutomation> automation;
+  HRESULT hr{CoCreateInstance(CLSID_CUIAutomation, nullptr,
+                              CLSCTX_INPROC_SERVER, IID_IUIAutomation,
+                              getter_AddRefs(automation))};
+  if (FAILED(hr)) {
+    return nullptr;
+  }
+
+  RefPtr<IUIAutomationElement> window;
+  hr = automation->ElementFromHandle(aWindow, getter_AddRefs(window));
+  if (FAILED(hr)) {
+    return nullptr;
+  }
+
+  VARIANT value{};
+  value.vt = VT_BSTR;
+  value.bstrVal = SysAllocString(aId);
+  RefPtr<IUIAutomationCondition> propertyCondition;
+  hr = automation->CreatePropertyCondition(UIA_AutomationIdPropertyId, value,
+                                           getter_AddRefs(propertyCondition));
+  SysFreeString(value.bstrVal);
+  if (FAILED(hr)) {
+    return nullptr;
+  }
+
+  RefPtr<IUIAutomationElement> element;
+  hr = window->FindFirst(TreeScope_Descendants, propertyCondition,
+                         getter_AddRefs(element));
+  if (SUCCEEDED(hr) && element) {
+    return element.forget();
+  }
+
+  return nullptr;
+}
+
+static bool PathHasFilename(LPCWSTR aPath, LPCWSTR aFilename) {
+  LPCWSTR fileName{::wcsrchr(aPath, L'\\')};
+  fileName = fileName ? fileName + 1 : aPath;
+  return ::_wcsicmp(fileName, aFilename) == 0;
+}
+
+static bool IsSystemSettingsProcessByPid(DWORD aPid) {
+  nsAutoHandle process{
+      ::OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, aPid)};
+  if (!process) {
+    return false;
+  }
+
+  DWORD bufferLength{MAX_PATH};
+  auto buffer{mozilla::MakeUnique<wchar_t[]>(bufferLength)};
+  if (::QueryFullProcessImageNameW(process, 0, buffer.get(), &bufferLength)) {
+    LPCWSTR kProcessName{L"SystemSettings.exe"};
+    return PathHasFilename(buffer.get(), kProcessName);
+  }
+  return false;
+}
+
+static bool IsSystemSettingsProcessByHandle(HWND aHwnd) {
+  DWORD pid{0};
+  ::GetWindowThreadProcessId(aHwnd, &pid);
+  return IsSystemSettingsProcessByPid(pid);
+}
+
+static BOOL CALLBACK FindSystemSettingsChildProc(HWND aHwnd, LPARAM aLParam) {
+  if (IsSystemSettingsProcessByHandle(aHwnd)) {
+    *reinterpret_cast<bool*>(aLParam) = true;
+    return FALSE;
+  }
+  return TRUE;
+}
+
+static bool IsApplicationFrameWindow(HWND aHwnd) {
+  WCHAR className[MAX_PATH]{};
+  ::GetClassNameW(aHwnd, className, std::size(className));
+  LPCWSTR kClassName{L"ApplicationFrameWindow"};
+  return (wcscmp(className, kClassName) == 0);
+}
+
+static BOOL CALLBACK FindSystemSettingsProc(HWND aHwnd, LPARAM aLParam) {
+  // SystemSettings is hosted inside ApplicationFrameHost, so we first find
+  // the ApplicationFrameWindow and then check if SystemSettings is direct child
+  if (IsApplicationFrameWindow(aHwnd)) {
+    bool hasChild{false};
+    ::EnumChildWindows(aHwnd, FindSystemSettingsChildProc,
+                       reinterpret_cast<LPARAM>(&hasChild));
+    if (hasChild) {
+      *reinterpret_cast<HWND*>(aLParam) = aHwnd;
+      return FALSE;
+    }
+  }
+  return TRUE;
+}
+
+static HWND FindSystemSettingsWindow() {
+  HWND hwnd{nullptr};
+  ::EnumWindows(FindSystemSettingsProc, reinterpret_cast<LPARAM>(&hwnd));
+  return hwnd;
+}
+
+static UIWindowElement FindSetDefaultBrowserButtonByAutomationId(LPCWSTR aId) {
+  if (HWND window{FindSystemSettingsWindow()}) {
+    if (UIElement element{TryFindElementByAutomationId(window, aId)}) {
+      return {window, element};
+    }
+  }
+  return {};
+}
+
+static LPCWSTR GetSetDefaultBrowserButtonAutomationId() {
+  // clang-format off
+  LPCWSTR kWin11AutomationId{L"SystemSettings_DefaultApps_DefaultBrowserWithPinToStartAndTaskbarAction_Button"};
+  LPCWSTR kWin10AutomationId{L"SystemSettings_DefaultApps_Browser_Button"};
+  // clang-format on
+  return mozilla::IsWin11OrLater() ? kWin11AutomationId : kWin10AutomationId;
+}
+
+[[nodiscard]] UIWindowElement FindSetDefaultBrowserButton() {
+  LPCWSTR id{GetSetDefaultBrowserButtonAutomationId()};
+  return FindSetDefaultBrowserButtonByAutomationId(id);
 }

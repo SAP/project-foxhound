@@ -1,5 +1,5 @@
-// ownerGlobal isn't defined in content privileged windows.
-/* eslint-disable mozilla/use-ownerGlobal */
+// documentGlobal isn't defined in content privileged windows.
+/* eslint-disable mozilla/use-documentGlobal */
 
 // Utilities for synthesizing of native events.
 
@@ -2038,4 +2038,21 @@ async function getWindowProtocol() {
       return "";
     }
   });
+}
+
+// A utility function to synthesize a touch event in a way that a sequence of
+// such events triggeres a fast fling animation.
+async function synthesizeNativeTouchForFastFling(aTarget, aX, aY, aType) {
+  // We use `synthesizeNativeTouch` directly here since with
+  // `synthesizeNativeTouchSequences` we can't do fast fling because
+  // every time stamp difference of each touch event becomes smaller than
+  // `MIN_VELOCITY_SAMPLE_TIME` (50ms) on desktops.
+  await synthesizeNativeTouch(aTarget, aX, aY, aType);
+  // On Android if subsequent touch event don't happen within 40ms, any fast
+  // fling animation is never triggered.
+  // [1] https://searchfox.org/firefox-main/rev/6301b01791f9c98637ae8d5b7a81dd004d48d468/gfx/layers/apz/src/AndroidVelocityTracker.cpp#44-46
+  if (getPlatform() != "android") {
+    // Wait 50ms.
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
 }

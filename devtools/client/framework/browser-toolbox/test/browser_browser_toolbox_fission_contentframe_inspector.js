@@ -47,7 +47,7 @@ add_task(async function () {
 
     info("Select the test element nested in the remote iframe");
     const nodeFront = await selectNodeInFrames(
-      ['browser[remote="true"][test-tab]', "iframe", "#inside-iframe"],
+      ["browser[remote][test-tab]", "iframe", "#inside-iframe"],
       inspector
     );
 

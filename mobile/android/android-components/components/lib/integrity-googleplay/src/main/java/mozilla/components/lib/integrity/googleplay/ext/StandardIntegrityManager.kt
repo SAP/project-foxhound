@@ -9,7 +9,6 @@ import com.google.android.play.core.integrity.StandardIntegrityManager.PrepareIn
 import com.google.android.play.core.integrity.StandardIntegrityManager.StandardIntegrityTokenProvider
 import com.google.android.play.core.integrity.StandardIntegrityManager.StandardIntegrityTokenRequest
 import mozilla.components.concept.integrity.IntegrityToken
-import mozilla.components.lib.integrity.googleplay.GoogleProjectNumber
 import mozilla.components.lib.integrity.googleplay.RequestHashProvider
 import mozilla.components.lib.integrity.googleplay.TokenProvider
 import kotlin.coroutines.resume
@@ -31,10 +30,10 @@ internal suspend fun StandardIntegrityTokenProvider.request(requestHashProvider:
             .addOnFailureListener { continuation.resume(Result.failure(it)) }
     }
 
-internal suspend fun StandardIntegrityManager.prepare(cloudProjectNumber: GoogleProjectNumber.Valid) =
+internal suspend fun StandardIntegrityManager.prepare(cloudProjectNumber: Long) =
     suspendCoroutine { continuation ->
         val tokenRequest = PrepareIntegrityTokenRequest.builder()
-            .setCloudProjectNumber(cloudProjectNumber.value)
+            .setCloudProjectNumber(cloudProjectNumber)
             .build()
         prepareIntegrityToken(tokenRequest)
             .addOnSuccessListener { continuation.resume(Result.success(it.tokenProvider)) }

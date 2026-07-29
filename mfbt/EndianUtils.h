@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -69,42 +67,16 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/DebugOnly.h"
 
+#include <bit>
 #include <stdint.h>
 #include <string.h>
-
-#if defined(_MSC_VER)
-#  pragma intrinsic(_byteswap_ushort)
-#  pragma intrinsic(_byteswap_ulong)
-#  pragma intrinsic(_byteswap_uint64)
-#endif
-
-/*
- * Our supported compilers provide architecture-independent macros for this.
- * Yes, there are more than two values for __BYTE_ORDER__.
- *
- * FIXME: use std::endian once we move to C++20
- */
-#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && \
-    defined(__ORDER_BIG_ENDIAN__)
-#  if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-#    define MOZ_LITTLE_ENDIAN() 1
-#    define MOZ_BIG_ENDIAN() 0
-#  elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-#    define MOZ_LITTLE_ENDIAN() 0
-#    define MOZ_BIG_ENDIAN() 1
-#  else
-#    error "Can't handle mixed-endian architectures"
-#  endif
-#else
-#  error "Don't know how to determine endianness"
-#endif
 
 namespace mozilla {
 
 /* FIXME: move to std::byteswap with C++23
  */
 template <typename T>
-T byteswap(T n) {
+constexpr T byteswap(T n) {
   if constexpr (sizeof(T) == 2) {
     return __builtin_bswap16(n);
   } else if constexpr (sizeof(T) == 4) {
@@ -115,14 +87,6 @@ T byteswap(T n) {
 }
 
 namespace detail {
-
-enum Endianness { Little, Big };
-
-#if MOZ_BIG_ENDIAN()
-#  define MOZ_NATIVE_ENDIANNESS detail::Big
-#else
-#  define MOZ_NATIVE_ENDIANNESS detail::Little
-#endif
 
 class EndianUtils {
   /**
@@ -148,8 +112,8 @@ class EndianUtils {
    * Return |aValue| converted from SourceEndian encoding to DestEndian
    * encoding.
    */
-  template <Endianness SourceEndian, Endianness DestEndian, typename T>
-  static inline T maybeSwap(T aValue) {
+  template <std::endian SourceEndian, std::endian DestEndian, typename T>
+  static constexpr T maybeSwap(T aValue) {
     if constexpr (SourceEndian == DestEndian) {
       return aValue;
     }
@@ -160,7 +124,7 @@ class EndianUtils {
    * Convert |aCount| elements at |aPtr| from SourceEndian encoding to
    * DestEndian encoding.
    */
-  template <Endianness SourceEndian, Endianness DestEndian, typename T>
+  template <std::endian SourceEndian, std::endian DestEndian, typename T>
   static inline void maybeSwapInPlace(T* aPtr, size_t aCount) {
     assertAligned(aPtr);
 
@@ -176,7 +140,7 @@ class EndianUtils {
    * Write |aCount| elements to the unaligned address |aDest| in DestEndian
    * format, using elements found at |aSrc| in SourceEndian format.
    */
-  template <Endianness SourceEndian, Endianness DestEndian, typename T>
+  template <std::endian SourceEndian, std::endian DestEndian, typename T>
   static void copyAndSwapTo(void* aDest, const T* aSrc, size_t aCount) {
     assertNoOverlap(aDest, aSrc, aCount * sizeof(T));
     assertAligned(aSrc);
@@ -198,7 +162,7 @@ class EndianUtils {
    * Write |aCount| elements to |aDest| in DestEndian format, using elements
    * found at the unaligned address |aSrc| in SourceEndian format.
    */
-  template <Endianness SourceEndian, Endianness DestEndian, typename T>
+  template <std::endian SourceEndian, std::endian DestEndian, typename T>
   static void copyAndSwapFrom(T* aDest, const void* aSrc, size_t aCount) {
     assertNoOverlap(aDest, aSrc, aCount * sizeof(T));
     assertAligned(aDest);
@@ -218,7 +182,7 @@ class EndianUtils {
   }
 };
 
-template <Endianness ThisEndian>
+template <std::endian ThisEndian>
 class Endian : private EndianUtils {
  protected:
   /** Read a uint16_t in ThisEndian endianness from |aPtr| and return it. */
@@ -295,21 +259,21 @@ class Endian : private EndianUtils {
    * format for transmission.
    */
   template <typename T>
-  [[nodiscard]] static T swapToLittleEndian(T aValue) {
-    return maybeSwap<ThisEndian, Little>(aValue);
+  [[nodiscard]] static constexpr T swapToLittleEndian(T aValue) {
+    return maybeSwap<ThisEndian, std::endian::little>(aValue);
   }
 
   /*
    * Copies |aCount| values of type T starting at |aSrc| to |aDest|, converting
-   * them to little-endian format if ThisEndian is Big.  |aSrc| as a typed
-   * pointer must be aligned; |aDest| need not be.
+   * them to little-endian format if ThisEndian is std::endian::big.  |aSrc| as
+   * a typed pointer must be aligned; |aDest| need not be.
    *
    * As with memcpy, |aDest| and |aSrc| must not overlap.
    */
   template <typename T>
   static void copyAndSwapToLittleEndian(void* aDest, const T* aSrc,
                                         size_t aCount) {
-    copyAndSwapTo<ThisEndian, Little>(aDest, aSrc, aCount);
+    copyAndSwapTo<ThisEndian, std::endian::little>(aDest, aSrc, aCount);
   }
 
   /*
@@ -317,28 +281,28 @@ class Endian : private EndianUtils {
    */
   template <typename T>
   static void swapToLittleEndianInPlace(T* aPtr, size_t aCount) {
-    maybeSwapInPlace<ThisEndian, Little>(aPtr, aCount);
+    maybeSwapInPlace<ThisEndian, std::endian::little>(aPtr, aCount);
   }
 
   /*
    * Converts a value of type T to big-endian format.
    */
   template <typename T>
-  [[nodiscard]] static T swapToBigEndian(T aValue) {
-    return maybeSwap<ThisEndian, Big>(aValue);
+  [[nodiscard]] static constexpr T swapToBigEndian(T aValue) {
+    return maybeSwap<ThisEndian, std::endian::big>(aValue);
   }
 
   /*
    * Copies |aCount| values of type T starting at |aSrc| to |aDest|, converting
-   * them to big-endian format if ThisEndian is Little.  |aSrc| as a typed
-   * pointer must be aligned; |aDest| need not be.
+   * them to big-endian format if ThisEndian is std::endian::little.  |aSrc| as
+   * a typed pointer must be aligned; |aDest| need not be.
    *
    * As with memcpy, |aDest| and |aSrc| must not overlap.
    */
   template <typename T>
   static void copyAndSwapToBigEndian(void* aDest, const T* aSrc,
                                      size_t aCount) {
-    copyAndSwapTo<ThisEndian, Big>(aDest, aSrc, aCount);
+    copyAndSwapTo<ThisEndian, std::endian::big>(aDest, aSrc, aCount);
   }
 
   /*
@@ -346,7 +310,7 @@ class Endian : private EndianUtils {
    */
   template <typename T>
   static void swapToBigEndianInPlace(T* aPtr, size_t aCount) {
-    maybeSwapInPlace<ThisEndian, Big>(aPtr, aCount);
+    maybeSwapInPlace<ThisEndian, std::endian::big>(aPtr, aCount);
   }
 
   /*
@@ -355,7 +319,7 @@ class Endian : private EndianUtils {
    */
 
   template <typename T>
-  [[nodiscard]] static T swapToNetworkOrder(T aValue) {
+  [[nodiscard]] static constexpr T swapToNetworkOrder(T aValue) {
     return swapToBigEndian(aValue);
   }
 
@@ -374,21 +338,21 @@ class Endian : private EndianUtils {
    * Converts a value of type T from little-endian format.
    */
   template <typename T>
-  [[nodiscard]] static T swapFromLittleEndian(T aValue) {
-    return maybeSwap<Little, ThisEndian>(aValue);
+  [[nodiscard]] static constexpr T swapFromLittleEndian(T aValue) {
+    return maybeSwap<std::endian::little, ThisEndian>(aValue);
   }
 
   /*
    * Copies |aCount| values of type T starting at |aSrc| to |aDest|, converting
-   * them to little-endian format if ThisEndian is Big.  |aDest| as a typed
-   * pointer must be aligned; |aSrc| need not be.
+   * them to little-endian format if ThisEndian is std::endian::big.  |aDest| as
+   * a typed pointer must be aligned; |aSrc| need not be.
    *
    * As with memcpy, |aDest| and |aSrc| must not overlap.
    */
   template <typename T>
   static void copyAndSwapFromLittleEndian(T* aDest, const void* aSrc,
                                           size_t aCount) {
-    copyAndSwapFrom<Little, ThisEndian>(aDest, aSrc, aCount);
+    copyAndSwapFrom<std::endian::little, ThisEndian>(aDest, aSrc, aCount);
   }
 
   /*
@@ -396,28 +360,28 @@ class Endian : private EndianUtils {
    */
   template <typename T>
   static void swapFromLittleEndianInPlace(T* aPtr, size_t aCount) {
-    maybeSwapInPlace<Little, ThisEndian>(aPtr, aCount);
+    maybeSwapInPlace<std::endian::little, ThisEndian>(aPtr, aCount);
   }
 
   /*
    * Converts a value of type T from big-endian format.
    */
   template <typename T>
-  [[nodiscard]] static T swapFromBigEndian(T aValue) {
-    return maybeSwap<Big, ThisEndian>(aValue);
+  [[nodiscard]] static constexpr T swapFromBigEndian(T aValue) {
+    return maybeSwap<std::endian::big, ThisEndian>(aValue);
   }
 
   /*
    * Copies |aCount| values of type T starting at |aSrc| to |aDest|, converting
-   * them to big-endian format if ThisEndian is Little.  |aDest| as a typed
-   * pointer must be aligned; |aSrc| need not be.
+   * them to big-endian format if ThisEndian is std::endian::little.  |aDest| as
+   * a typed pointer must be aligned; |aSrc| need not be.
    *
    * As with memcpy, |aDest| and |aSrc| must not overlap.
    */
   template <typename T>
   static void copyAndSwapFromBigEndian(T* aDest, const void* aSrc,
                                        size_t aCount) {
-    copyAndSwapFrom<Big, ThisEndian>(aDest, aSrc, aCount);
+    copyAndSwapFrom<std::endian::big, ThisEndian>(aDest, aSrc, aCount);
   }
 
   /*
@@ -425,7 +389,7 @@ class Endian : private EndianUtils {
    */
   template <typename T>
   static void swapFromBigEndianInPlace(T* aPtr, size_t aCount) {
-    maybeSwapInPlace<Big, ThisEndian>(aPtr, aCount);
+    maybeSwapInPlace<std::endian::big, ThisEndian>(aPtr, aCount);
   }
 
   /*
@@ -433,7 +397,7 @@ class Endian : private EndianUtils {
    * in network code.
    */
   template <typename T>
-  [[nodiscard]] static T swapFromNetworkOrder(T aValue) {
+  [[nodiscard]] static constexpr T swapFromNetworkOrder(T aValue) {
     return swapFromBigEndian(aValue);
   }
 
@@ -457,7 +421,7 @@ class Endian : private EndianUtils {
   static T read(const void* aPtr) {
     T Val;
     memcpy(static_cast<void*>(&Val), aPtr, sizeof(T));
-    return maybeSwap<ThisEndian, MOZ_NATIVE_ENDIANNESS>(Val);
+    return maybeSwap<ThisEndian, std::endian::native>(Val);
   }
 
   /**
@@ -466,7 +430,7 @@ class Endian : private EndianUtils {
    */
   template <typename T>
   static void write(void* aPtr, T aValue) {
-    T tmp = maybeSwap<MOZ_NATIVE_ENDIANNESS, ThisEndian>(aValue);
+    T tmp = maybeSwap<std::endian::native, ThisEndian>(aValue);
     memcpy(aPtr, &tmp, sizeof(T));
   }
 
@@ -475,7 +439,7 @@ class Endian : private EndianUtils {
   void operator=(const Endian& aOther) = delete;
 };
 
-template <Endianness ThisEndian>
+template <std::endian ThisEndian>
 class EndianReadWrite : public Endian<ThisEndian> {
  private:
   typedef Endian<ThisEndian> super;
@@ -501,15 +465,16 @@ class EndianReadWrite : public Endian<ThisEndian> {
 
 } /* namespace detail */
 
-class LittleEndian final : public detail::EndianReadWrite<detail::Little> {};
+class LittleEndian final : public detail::EndianReadWrite<std::endian::little> {
+};
 
-class BigEndian final : public detail::EndianReadWrite<detail::Big> {};
+class BigEndian final : public detail::EndianReadWrite<std::endian::big> {};
 
 typedef BigEndian NetworkEndian;
 
-class NativeEndian final : public detail::Endian<MOZ_NATIVE_ENDIANNESS> {
+class NativeEndian final : public detail::Endian<std::endian::native> {
  private:
-  typedef detail::Endian<MOZ_NATIVE_ENDIANNESS> super;
+  typedef detail::Endian<std::endian::native> super;
 
  public:
   /*
@@ -542,8 +507,6 @@ class NativeEndian final : public detail::Endian<MOZ_NATIVE_ENDIANNESS> {
   using super::swapFromNetworkOrder;
   using super::swapFromNetworkOrderInPlace;
 };
-
-#undef MOZ_NATIVE_ENDIANNESS
 
 } /* namespace mozilla */
 

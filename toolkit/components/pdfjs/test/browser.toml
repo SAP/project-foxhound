@@ -33,12 +33,17 @@ run-if = [
   "!headless",
 ]
 
+["browser_pdfjs_csp.js"]
+
 ["browser_pdfjs_download_button.js"]
 
 ["browser_pdfjs_editing_contextmenu.js"]
 run-if = [
   "!headless", # the headless clipboard only recognizes unicode mime type
 ]
+
+["browser_pdfjs_pages_contextmenu.js"]
+support-files = ["file_pdfjs_numbered_pages.pdf"]
 
 ["browser_pdfjs_editing_telemetry.js"]
 
@@ -75,7 +80,9 @@ support-files = ["file_pdfjs_jp2_image.pdf"]
 ["browser_pdfjs_js.js"]
 support-files = ["file_pdfjs_js.pdf"]
 skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
   "tsan",
+  "os == 'linux' && debug && standalone", # Bug 2028655
 ]
 
 ["browser_pdfjs_load_telemetry.js"]
@@ -95,6 +102,9 @@ support-files = [
   "file_pdfjs_object_stream.pdf^headers^",
 ]
 
+["browser_pdfjs_organize_telemetry.js"]
+support-files = ["file_pdfjs_numbered_pages.pdf"]
+
 ["browser_pdfjs_octet_stream.js"]
 support-files = [
   "file_pdfjs_object_stream.pdf",
@@ -109,6 +119,13 @@ support-files = [
 support-files = ["pdf_response_link.sjs"]
 
 ["browser_pdfjs_rfp_exemption.js"]
+
+["browser_pdfjs_sandboxed_iframe.js"]
+support-files = [
+  "file_pdfjs_csp_sandbox_opener.html",
+  "file_pdfjs_csp_sandbox_opener.html^headers^",
+  "file_pdfjs_csp.sjs",
+]
 
 ["browser_pdfjs_saveas.js"]
 support-files = [

@@ -1,11 +1,3 @@
-# HG changeset patch
-# User Yannis Juglaret <yjuglaret@mozilla.com>
-# Date 1704300086 -3600
-#      Wed Jan 03 17:41:26 2024 +0100
-# Node ID c08c4330fa141f5c7f8fa646ce179969e98cfd60
-# Parent  4a7e58fdaac86befe272259c2f603e2229080a5b
-Bug 1851889 - Create the broker alive mutex during sandbox initialization. r=bobowen
-
 The sandbox IPC client/server communication protocol relies on a mutex
 that clients can use to check if the broker process is still alive; e.g.
 when a response takes more than one second to come. This mutex is owned
@@ -28,25 +20,25 @@ Therefore, this patch makes us create the broker alive mutex from the
 main thread, during sandbox initialization. This ensures that clients
 will not get disturbed by the death of the IPC launcher thread anymore.
 
-Differential Revision: https://phabricator.services.mozilla.com/D197423
-
 diff --git a/sandbox/win/src/broker_services.cc b/sandbox/win/src/broker_services.cc
+index c25d89928249..ef8758ef68cb 100644
 --- a/sandbox/win/src/broker_services.cc
 +++ b/sandbox/win/src/broker_services.cc
-@@ -293,6 +293,9 @@ ResultCode BrokerServicesBase::Init() {
-     return SBOX_ERROR_CANNOT_INIT_BROKERSERVICES;
-   }
+@@ -261,6 +261,9 @@ ResultCode BrokerServicesBase::Init(
+   if (job_port_.IsValid() || thread_pool_)
+     return SBOX_ERROR_UNEXPECTED_CALL;
  
 +  if (!SharedMemIPCServer::CreateBrokerAliveMutex())
 +    return SBOX_ERROR_CANNOT_INIT_BROKERSERVICES;
 +
-   params.release();
-   return SBOX_ALL_OK;
- }
+   job_port_.Set(::CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 0));
+   if (!job_port_.IsValid())
+     return SBOX_ERROR_CANNOT_INIT_BROKERSERVICES;
 diff --git a/sandbox/win/src/sharedmem_ipc_server.cc b/sandbox/win/src/sharedmem_ipc_server.cc
+index f8b98202036a..a86d44bb1abb 100644
 --- a/sandbox/win/src/sharedmem_ipc_server.cc
 +++ b/sandbox/win/src/sharedmem_ipc_server.cc
-@@ -24,6 +24,18 @@ volatile HANDLE g_alive_mutex = nullptr;
+@@ -26,6 +26,18 @@ volatile HANDLE g_alive_mutex = nullptr;
  
  namespace sandbox {
  
@@ -65,7 +57,7 @@ diff --git a/sandbox/win/src/sharedmem_ipc_server.cc b/sandbox/win/src/sharedmem
  SharedMemIPCServer::ServerControl::ServerControl() {}
  
  SharedMemIPCServer::ServerControl::~ServerControl() {}
-@@ -37,19 +49,7 @@ SharedMemIPCServer::SharedMemIPCServer(H
+@@ -39,19 +51,7 @@ SharedMemIPCServer::SharedMemIPCServer(HANDLE target_process,
        target_process_(target_process),
        target_process_id_(target_process_id),
        call_dispatcher_(dispatcher) {
@@ -87,9 +79,10 @@ diff --git a/sandbox/win/src/sharedmem_ipc_server.cc b/sandbox/win/src/sharedmem
  
  SharedMemIPCServer::~SharedMemIPCServer() {
 diff --git a/sandbox/win/src/sharedmem_ipc_server.h b/sandbox/win/src/sharedmem_ipc_server.h
+index 52603ae12506..270641c5e954 100644
 --- a/sandbox/win/src/sharedmem_ipc_server.h
 +++ b/sandbox/win/src/sharedmem_ipc_server.h
-@@ -60,6 +60,12 @@ class SharedMemIPCServer {
+@@ -64,6 +64,12 @@ class SharedMemIPCServer {
    // creates the kernels events used to signal the IPC.
    bool Init(void* shared_mem, uint32_t shared_size, uint32_t channel_size);
  

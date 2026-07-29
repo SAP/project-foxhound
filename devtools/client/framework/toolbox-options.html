@@ -72,6 +72,18 @@
               data-l10n-id="options-context-triggers-page-refresh-persists"
             ></span>
           </label>
+          <label data-l10n-id="options-show-comments-tooltip">
+            <input
+              type="checkbox"
+              data-pref="devtools.markup.showComments"
+              data-force-reload
+            />
+            <span data-l10n-id="options-show-comments-label"></span>
+            <span
+              class="option-secondary-label"
+              data-l10n-id="options-context-triggers-page-refresh-persists"
+            ></span>
+          </label>
           <label data-l10n-id="options-collapse-attrs-tooltip">
             <input
               type="checkbox"
@@ -185,6 +197,23 @@
             />
             <span data-l10n-id="options-screenshot-audio-label"></span>
           </label>
+        </fieldset>
+
+        <fieldset id="local-mode-options" class="options-groupbox">
+          <div
+            data-l10n-id="options-local-mode-only-work-locally"
+            class="hidden local-mode-only-work-locally"
+          ></div>
+          <label
+            data-l10n-id="options-local-mode-behavior"
+            class="local-mode-behavior"
+          ></label>
+          <legend data-l10n-id="options-local-mode-label"></legend>
+          <ul id="local-mode-mappings"></ul>
+          <button
+            data-l10n-id="options-local-mode-new-mapping"
+            class="devtools-button devtools-button-standalone local-mode-new-mapping"
+          ></button>
         </fieldset>
       </div>
 

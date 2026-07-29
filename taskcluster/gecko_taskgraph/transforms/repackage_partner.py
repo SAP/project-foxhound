@@ -6,17 +6,17 @@ Transform the repackage task into an actual task description.
 """
 
 import copy
+from typing import Optional
 
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
-from taskgraph.util.schema import LegacySchema, optionally_keyed_by, resolve_keyed_by
+from taskgraph.util.schema import Schema, optionally_keyed_by, resolve_keyed_by
 from taskgraph.util.taskcluster import get_artifact_prefix
-from voluptuous import Optional, Required
 
 from gecko_taskgraph.transforms.repackage import (
     PACKAGE_FORMATS as PACKAGE_FORMATS_VANILLA,
 )
-from gecko_taskgraph.transforms.task import task_description_schema
+from gecko_taskgraph.transforms.task import TaskDescriptionSchema
 from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
 from gecko_taskgraph.util.partners import get_partner_config_by_kind
 from gecko_taskgraph.util.platforms import archive_format, executable_extension
@@ -28,37 +28,40 @@ PACKAGE_FORMATS = copy.deepcopy(PACKAGE_FORMATS_VANILLA)
 PACKAGE_FORMATS["installer-stub"]["inputs"]["package"] = "target-stub{archive_format}"
 PACKAGE_FORMATS["installer-stub"]["args"].extend(["--package-name", "{package-name}"])
 
-packaging_description_schema = LegacySchema({
+
+class MozharnessSchema(Schema, kw_only=True):
+    # Config files passed to the mozharness script
+    config: optionally_keyed_by("build-platform", list[str], use_msgspec=True)  # type: ignore
+    # Additional paths to look for mozharness configs in. These should be
+    # relative to the base of the source checkout
+    config_paths: Optional[list[str]] = None
+    # if true, perform a checkout of a comm-central based branch inside the
+    # gecko checkout
+    comm_checkout: Optional[bool] = None
+
+
+class PackagingDescriptionSchema(Schema, kw_only=True):
     # unique label to describe this repackaging task
-    Optional("label"): str,
+    label: Optional[str] = None
     # Routes specific to this task, if defined
-    Optional("routes"): [str],
+    routes: Optional[list[str]] = None
     # passed through directly to the job description
-    Optional("extra"): task_description_schema["extra"],
+    extra: TaskDescriptionSchema.__annotations__["extra"] = None
     # Shipping product and phase
-    Optional("shipping-product"): task_description_schema["shipping-product"],
-    Optional("shipping-phase"): task_description_schema["shipping-phase"],
-    Required("package-formats"): optionally_keyed_by(
-        "build-platform", "build-type", [str]
-    ),
+    shipping_product: TaskDescriptionSchema.__annotations__["shipping_product"] = None
+    shipping_phase: TaskDescriptionSchema.__annotations__["shipping_phase"] = None
+    package_formats: optionally_keyed_by(
+        "build-platform", "build-type", list[str], use_msgspec=True
+    )  # type: ignore  # noqa: F821
     # All l10n jobs use mozharness
-    Required("mozharness"): {
-        # Config files passed to the mozharness script
-        Required("config"): optionally_keyed_by("build-platform", [str]),
-        # Additional paths to look for mozharness configs in. These should be
-        # relative to the base of the source checkout
-        Optional("config-paths"): [str],
-        # if true, perform a checkout of a comm-central based branch inside the
-        # gecko checkout
-        Optional("comm-checkout"): bool,
-    },
+    mozharness: MozharnessSchema  # noqa: F821
     # Override the default priority for the project
-    Optional("priority"): task_description_schema["priority"],
-    Optional("task-from"): task_description_schema["task-from"],
-    Optional("attributes"): task_description_schema["attributes"],
-    Optional("dependencies"): task_description_schema["dependencies"],
-    Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
-})
+    priority: TaskDescriptionSchema.__annotations__["priority"] = None
+    task_from: TaskDescriptionSchema.__annotations__["task_from"] = None
+    attributes: TaskDescriptionSchema.__annotations__["attributes"] = None
+    dependencies: TaskDescriptionSchema.__annotations__["dependencies"] = None
+    run_on_repo_type: TaskDescriptionSchema.__annotations__["run_on_repo_type"] = None
+
 
 transforms = TransformSequence()
 
@@ -71,7 +74,7 @@ def remove_name(config, jobs):
         yield job
 
 
-transforms.add_validate(packaging_description_schema)
+transforms.add_validate(PackagingDescriptionSchema)
 
 
 @transforms.add
@@ -232,6 +235,10 @@ def make_job_description(config, jobs):
                 "linux64-hfsplus",
                 "linux64-node",
             ])
+        elif build_platform.startswith("win"):
+            task.setdefault("fetches", {}).setdefault("toolchain", []).append(
+                "linux64-7zz"
+            )
         yield task
 
 

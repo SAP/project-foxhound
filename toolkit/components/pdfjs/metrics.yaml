@@ -966,3 +966,31 @@ pdfjs.comment:
           type: quantity
           description: >
             Number of deleted comments.
+
+pdfjs.organize:
+  action:
+    type: labeled_counter
+    labels:
+      - copy
+      - cut
+      - delete
+      - move
+      - paste
+      - export_selected
+      - save
+      - merge
+    description: >
+      Counts the number of times the user performs a page organization action
+      (copy, cut, delete, merge, move, paste), exports selected pages, or saves a PDF
+      modified through page organization.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2022481
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2030085
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2022481
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2030085
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - pdfjs-team@mozilla.com
+    expires: never

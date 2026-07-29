@@ -18,7 +18,7 @@ collected. There are three main criteria:
   objects that are used on a single thread. The main thread and DOM
   worker and worklet threads each have their own cycle collectors.
 
-If your class meets the first criteria but not the second, then
+If your class meets the first criterion but not the second, then
 whatever class uniquely owns it should be cycle collected, assuming
 that is refcounted, and this class should be traversed and unlinked as
 part of that.

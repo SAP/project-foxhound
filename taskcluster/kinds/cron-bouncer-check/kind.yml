@@ -5,6 +5,7 @@
 loader: taskgraph.loader.transform:loader
 
 transforms:
+    - taskgraph.transforms.task_context
     - gecko_taskgraph.transforms.bouncer_check:transforms
     - gecko_taskgraph.transforms.job:transforms
     - gecko_taskgraph.transforms.task:transforms
@@ -13,6 +14,14 @@ task-defaults:
     run-on-repo-type: [hg]
     name: bouncer-check
     description: bouncer check
+    task-context:
+        from-parameters:
+            project: project
+            release-type: release_type
+        substitution-fields:
+            - run.config
+            - run.product-field
+            - run.extra-config
     worker-type: b-linux
     worker:
         max-run-time: 1200
@@ -54,7 +63,7 @@ tasks:
                     mozilla-central: FIREFOX_NIGHTLY
                     mozilla-beta: LATEST_FIREFOX_RELEASED_DEVEL_VERSION
                     mozilla-release: LATEST_FIREFOX_VERSION
-                    mozilla-esr140: FIREFOX_ESR_NEXT
+                    mozilla-esr153: FIREFOX_ESR_NEXT
                     default: LATEST_FIREFOX_DEVEL_VERSION
             products-url: https://product-details.mozilla.org/1.0/firefox_versions.json
         treeherder:

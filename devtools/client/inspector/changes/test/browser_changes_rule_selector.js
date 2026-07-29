@@ -22,7 +22,7 @@ add_task(async function () {
   const panel = doc.querySelector("#sidebar-panel-changes");
 
   await selectNode("div", inspector);
-  const ruleEditor = getRuleViewRuleEditor(ruleView, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(ruleView, 1);
 
   info("Focusing the first rule's selector name in the Rule view");
   const editor = await focusEditableField(ruleView, ruleEditor.selectorText);

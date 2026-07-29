@@ -75,6 +75,14 @@
   list-style-image: url("chrome://browser/skin/synced-tabs.svg");
 }
 
+#send-tab-button {
+  list-style-image: url("chrome://browser/skin/send-tab-20.svg");
+
+  &:-moz-locale-dir(rtl) {
+    transform: scaleX(-1);
+  }
+}
+
 #characterencoding-button {
   list-style-image: url("chrome://browser/skin/characterEncoding.svg");
 }
@@ -194,21 +202,18 @@
 }
 
 #sidebar-button {
-  /* stylelint-disable-next-line media-query-no-invalid */
   @media not -moz-pref("sidebar.revamp") {
-    list-style-image: url("chrome://browser/skin/sidebars.svg");
+    list-style-image: url("chrome://browser/skin/sidebar-collapsed.svg");
 
     &:-moz-locale-dir(ltr)[sidebar-positionend],
     &:-moz-locale-dir(rtl):not([sidebar-positionend]) {
-      list-style-image: url("chrome://browser/skin/sidebars-right.svg");
+      list-style-image: url("chrome://browser/skin/sidebar-collapsed-right.svg");
     }
   }
 
-  /* stylelint-disable-next-line media-query-no-invalid */
   @media -moz-pref("sidebar.revamp") {
     list-style-image: url("chrome://browser/skin/sidebar-collapsed.svg");
 
-    /* stylelint-disable-next-line media-query-no-invalid */
     @media -moz-pref("sidebar.verticalTabs") {
       &:hover {
         list-style-image: url("chrome://browser/skin/sidebar-expanded.svg");
@@ -227,7 +232,6 @@
     &:-moz-locale-dir(rtl):not([sidebar-positionend]) {
       list-style-image: url("chrome://browser/skin/sidebar-collapsed-right.svg");
 
-      /* stylelint-disable-next-line media-query-no-invalid */
       @media -moz-pref("sidebar.verticalTabs") {
         &:hover {
           list-style-image: url("chrome://browser/skin/sidebar-expanded-right.svg");
@@ -318,20 +322,15 @@
 }
 
 #ipprotection-button {
-  list-style-image: url("chrome://browser/content/logos/ipprotection-off.svg");
+  list-style-image: url("chrome://browser/content/logos/ipprotection-states.svg#off");
   -moz-context-properties: fill, stroke, fill-opacity;
 
   &:is([overflowedItem="true"], [cui-areatype="panel"]) {
     list-style-image: url("chrome://browser/content/ipprotection/assets/states/ipprotection-off.svg");
-
-    > .toolbarbutton-icon {
-      width: var(--icon-size-small);
-      height: var(--icon-size-small);
-    }
   }
 
   &.ipprotection-on {
-    list-style-image: url("chrome://browser/content/logos/ipprotection-on.svg");
+    list-style-image: url("chrome://browser/content/logos/ipprotection-states.svg#on");
     stroke: var(--icon-color-success);
 
     &:is([overflowedItem="true"], [cui-areatype="panel"]) {
@@ -340,8 +339,18 @@
     }
   }
 
+  &.ipprotection-network-error {
+    list-style-image: url("chrome://browser/content/logos/ipprotection-states.svg#info");
+    stroke: var(--icon-color-information);
+
+    &:is([overflowedItem="true"], [cui-areatype="panel"]) {
+      list-style-image: url("chrome://global/skin/icons/info-filled.svg");
+      fill: var(--icon-color-information);
+    }
+  }
+
   &.ipprotection-error {
-    list-style-image: url("chrome://browser/content/logos/ipprotection-error.svg");
+    list-style-image: url("chrome://browser/content/logos/ipprotection-states.svg#error");
     stroke: var(--icon-color-critical);
 
     &:is([overflowedItem="true"], [cui-areatype="panel"]) {
@@ -351,7 +360,7 @@
   }
 
   &.ipprotection-excluded {
-    list-style-image: url("chrome://browser/content/logos/ipprotection-excluded.svg");
+    list-style-image: url("chrome://browser/content/logos/ipprotection-states.svg#excluded");
     stroke: var(--icon-color-success);
 
     &:is([overflowedItem="true"], [cui-areatype="panel"]) {
@@ -360,6 +369,19 @@
       stroke: var(--icon-color-success);
     }
   }
+
+  &.ipprotection-paused {
+    list-style-image: url("chrome://browser/content/logos/ipprotection-states.svg#paused");
+    fill: var(--icon-color);
+
+    &:is([overflowedItem="true"], [cui-areatype="panel"]) {
+      list-style-image: url("chrome://browser/content/ipprotection/assets/states/ipprotection-paused.svg");
+    }
+  }
+}
+
+#tab-groups-button {
+  list-style-image: url("chrome://browser/skin/tabbrowser/tab-groups.svg");
 }
 
 #taskbar-tabs-favicon {
@@ -386,10 +408,10 @@
   }
 }
 
-#smartwindow-ask-button {
+#smartwindow-ask-button-inner {
   list-style-image: url("chrome://browser/content/aiwindow/assets/ask-icon.svg");
 
-  &.sidebar-is-open {
+  &[aria-expanded="true"] {
     list-style-image: url("chrome://global/skin/icons/close.svg");
   }
 }

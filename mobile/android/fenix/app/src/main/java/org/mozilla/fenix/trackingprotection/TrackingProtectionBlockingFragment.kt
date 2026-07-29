@@ -12,7 +12,8 @@ import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.navArgs
 import org.mozilla.fenix.R
 import org.mozilla.fenix.databinding.FragmentTrackingProtectionBlockingBinding
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
+import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.showToolbar
 import org.mozilla.fenix.utils.Settings
 
@@ -25,11 +26,13 @@ import org.mozilla.fenix.utils.Settings
  * For example, in "Standard" mode, it shows a default set of blocked categories, while in
  * "Custom" mode, it reflects the user's specific choices.
  */
-class TrackingProtectionBlockingFragment : Fragment(R.layout.fragment_tracking_protection_blocking) {
+class TrackingProtectionBlockingFragment :
+    Fragment(R.layout.fragment_tracking_protection_blocking),
+    SystemInsetsPaddedFragment {
 
     private val args: TrackingProtectionBlockingFragmentArgs by navArgs()
 
-    internal var settingsProvider: () -> Settings = { requireContext().settings() }
+    internal var settingsProvider: () -> Settings = { requireComponents.settings }
     private val settings: Settings by lazy { settingsProvider() }
 
     @VisibleForTesting

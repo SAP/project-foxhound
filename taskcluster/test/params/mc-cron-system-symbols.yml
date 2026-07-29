@@ -20,7 +20,6 @@ head_rev: 7bc9f9c659dd5c04c341cef4f898cb08574d9cdd
 head_tag: ''
 hg_branch: default
 level: '3'
-message: ''
 moz_build_date: '20231121183118'
 next_version: null
 optimize_strategies: null
@@ -41,8 +40,6 @@ release_partners: []
 release_product: null
 release_type: nightly
 repository_type: hg
-required_signoffs: []
-signoff_urls: {}
 target_tasks_method: system_symbols
 tasks_for: cron
 test_manifest_loader: default

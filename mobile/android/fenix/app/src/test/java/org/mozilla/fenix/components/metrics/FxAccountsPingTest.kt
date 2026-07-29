@@ -38,8 +38,6 @@ internal class FxAccountsPingTest {
                 email = "email@email.com",
                 avatar = null,
                 displayName = "TempName",
-                currentDeviceId = null,
-                sessionToken = null,
             )
         val telemetryMiddleware = TelemetryMiddleware()
         syncStore = SyncStore(middleware = listOf(telemetryMiddleware))

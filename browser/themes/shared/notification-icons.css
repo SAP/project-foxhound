@@ -5,7 +5,7 @@
 @namespace html url("http://www.w3.org/1999/xhtml");
 
 #notification-popup-box {
-  height: calc(var(--urlbar-min-height) - 2 * var(--urlbar-container-border-padding));
+  height: var(--urlbar-basic-component-size);
   -moz-context-properties: fill, fill-opacity;
   fill: currentColor;
   fill-opacity: var(--urlbar-icon-fill-opacity);
@@ -93,7 +93,7 @@
   }
 }
 
-.localhost-icon {
+.loopback-network-icon {
   list-style-image: url(chrome://browser/skin/notification-icons/local-host.svg);
 
   &.blocked-permission-icon {
@@ -192,6 +192,10 @@
 
 .midi-icon {
   list-style-image: url(chrome://browser/skin/notification-icons/midi.svg);
+}
+
+.serial-icon {
+  list-style-image: url(chrome://browser/skin/notification-icons/serial.svg);
 }
 
 #canvas-notification-icon,

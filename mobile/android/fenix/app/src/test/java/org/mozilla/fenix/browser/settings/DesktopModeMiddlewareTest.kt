@@ -13,7 +13,6 @@ import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
@@ -22,6 +21,7 @@ import org.mozilla.fenix.GleanMetrics.DesktopMode
 import org.mozilla.fenix.browser.desktopmode.DesktopModeMiddleware
 import org.mozilla.fenix.browser.desktopmode.DesktopModeRepository
 import org.mozilla.fenix.helpers.FenixGleanTestRule
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class DesktopModeMiddlewareTest {
@@ -178,8 +178,8 @@ class DesktopModeMiddlewareTest {
         store.dispatch(DefaultDesktopModeAction.ToggleDesktopMode)
         testScheduler.advanceUntilIdle()
 
-        assertNotNull(DesktopMode.settingsAlwaysRequestDesktopSite.testGetValue())
-        val snapshot = DesktopMode.settingsAlwaysRequestDesktopSite.testGetValue()!!
+        val snapshot = DesktopMode.settingsAlwaysRequestDesktopSite.testGetValue()
+        assertNotNull(snapshot)
         assertEquals(1, snapshot.size)
         assertEquals("settings_always_request_desktop_site", snapshot.single().name)
     }

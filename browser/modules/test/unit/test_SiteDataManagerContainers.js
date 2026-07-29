@@ -147,3 +147,35 @@ add_task(async function testGetSitesByContainers() {
 
   await SiteDataTestUtils.clear();
 });
+
+// Regression test for Bug 2041131: SiteDataManager.hasSiteData must return
+// true when the only cookies for a host live inside a container. The shield
+// icon's "Clear cookies and site data" button is gated on this.
+add_task(async function testHasSiteDataForContainerCookies() {
+  Assert.equal(
+    await SiteDataManager.hasSiteData("www.example.com"),
+    false,
+    "hasSiteData returns false when no data exists"
+  );
+
+  SiteDataTestUtils.addToCookies({
+    origin: EXAMPLE_ORIGIN,
+    name: "container-only",
+    value: "v",
+    originAttributes: { userContextId: "1" },
+  });
+
+  Assert.equal(
+    await SiteDataManager.hasSiteData("www.example.com"),
+    true,
+    "hasSiteData finds cookies stored in a non-default container"
+  );
+
+  Assert.equal(
+    await SiteDataManager.hasSiteData("no-data.example"),
+    false,
+    "hasSiteData returns false for a host with no data"
+  );
+
+  await SiteDataTestUtils.clear();
+});

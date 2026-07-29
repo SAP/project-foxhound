@@ -4,7 +4,7 @@
 
 package org.mozilla.fenix.tabstray.redux.state
 
-import mozilla.components.browser.state.state.TabSessionState
+import org.mozilla.fenix.tabstray.data.TabsTrayItem
 
 /**
  * Value type that represents the state of the Tab Search feature.
@@ -14,10 +14,10 @@ import mozilla.components.browser.state.state.TabSessionState
  */
 data class TabSearchState(
     val query: String = "",
-    val searchResults: List<TabSessionState> = emptyList(),
+    val searchResults: List<TabsTrayItem> = emptyList(),
 ) {
     /**
-     * Gets whether or not to show there are no search results.
+     * Whether to show there are no search results.
      */
     val showNoResults: Boolean
         get() = query.isNotEmpty() && searchResults.isEmpty()

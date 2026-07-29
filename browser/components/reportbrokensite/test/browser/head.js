@@ -5,11 +5,6 @@ const { CustomizableUITestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/CustomizableUITestUtils.sys.mjs"
 );
 
-const { EnterprisePolicyTesting, PoliciesPrefTracker } =
-  ChromeUtils.importESModule(
-    "resource://testing-common/EnterprisePolicyTesting.sys.mjs"
-  );
-
 const { UrlClassifierTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/UrlClassifierTestUtils.sys.mjs"
 );
@@ -34,14 +29,22 @@ const LEARN_MORE_TEST_URL = `${SUMO_BASE_URL}report-broken-site`;
 
 const NEW_REPORT_ENDPOINT_TEST_URL = `${BASE_URL}sendMoreInfoTestEndpoint.html`;
 
+// The test-framework will crash if we try to open these URLs outside of private/strict mode
+// and wait for the given number of content-blocking events.
+const URLS_NEEDING_CONTENT_BLOCKING = {
+  [REPORTABLE_PAGE_URL3]: 3,
+};
+
 const PREFS = {
   DATAREPORTING_ENABLED: "datareporting.healthreport.uploadEnabled",
   REPORTER_ENABLED: "ui.new-webcompat-reporter.enabled",
   REASON: "ui.new-webcompat-reporter.reason-dropdown",
+  SCREENSHOTS: "ui.new-webcompat-reporter.screenshots.enabled",
   SEND_MORE_INFO: "ui.new-webcompat-reporter.send-more-info-link",
   NEW_REPORT_ENDPOINT: "ui.new-webcompat-reporter.new-report-endpoint",
   TOUCH_EVENTS: "dom.w3c_touch_events.enabled",
   USE_ACCESSIBILITY_THEME: "ui.useAccessibilityTheme",
+  PHISHING_REPORT_URL: "browser.safebrowsing.reportPhishURL",
 };
 
 function add_common_setup() {
@@ -120,36 +123,255 @@ function areObjectsEqual(actual, expected, path = "") {
   return result;
 }
 
-function clickAndAwait(toClick, evt, target) {
-  const menuPromise = BrowserTestUtils.waitForEvent(target, evt);
-  EventUtils.synthesizeMouseAtCenter(toClick, {}, window);
-  return menuPromise;
+function prettyElements(elems) {
+  elems = Array.isArray(elems) ? elems : [elems];
+  return elems
+    .map(e => {
+      let { id, className, nodeName } = e;
+      if (!nodeName) {
+        return e;
+      }
+      id = id ? `#${id}` : "";
+      className = className ? `.${className.split(" ").join(".")}` : "";
+      return `${nodeName}${id}${className}`;
+    })
+    .join(" and ");
 }
 
-async function openTab(url, win) {
-  const options = {
-    gBrowser:
-      win?.gBrowser ||
-      Services.wm.getMostRecentWindow("navigator:browser").gBrowser,
+async function waitForAllElems(elems, what, condition, msg) {
+  elems = Array.isArray(elems) ? elems : [elems];
+  const prettyElems = prettyElements(elems);
+  msg = msg ? `${msg}: ` : "";
+  msg = `${msg}waiting for ${prettyElems} to ${what}`;
+  info(msg);
+  try {
+    return await BrowserTestUtils.waitForCondition(
+      () => !elems.some(e => !condition(e)),
+      msg
+    );
+  } catch (err) {
+    ok(false, `${msg}: ${err}`);
+    throw err;
+  }
+}
+
+function getStyle(elem, style) {
+  return elem.documentGlobal.getComputedStyle(elem)[style];
+}
+
+function isOpaque(elems, msg) {
+  return waitForAllElems(
+    elems,
+    "have opacity:1",
+    e => getStyle(e, "opacity") == 1,
+    msg
+  );
+}
+
+function isTransparent(elems, msg) {
+  return waitForAllElems(
+    elems,
+    "have opacity:0",
+    e => getStyle(e, "opacity") == 0,
+    msg
+  );
+}
+
+function isDisplayed(elems, msg) {
+  return waitForAllElems(
+    elems,
+    "not have display:none",
+    e => getStyle(e, "display") != "none",
+    msg
+  );
+}
+
+function isNotDisplayed(elems, msg) {
+  return waitForAllElems(
+    elems,
+    "have display:none",
+    e => getStyle(e, "display") == "none",
+    msg
+  );
+}
+
+function isVisible(elems, msg) {
+  return waitForAllElems(
+    elems,
+    "be visible",
+    e => BrowserTestUtils.isVisible(e),
+    msg
+  );
+}
+
+function isNotVisible(elems, msg) {
+  return waitForAllElems(
+    elems,
+    "not be visible",
+    e => !BrowserTestUtils.isVisible(e),
+    msg
+  );
+}
+
+function isPressed(elems, msg) {
+  return waitForAllElems(elems, "be pressed", e => e.pressed, msg);
+}
+
+function isNotPressed(elems, msg) {
+  return waitForAllElems(elems, "not be pressed", e => !e.pressed, msg);
+}
+
+function isHidden(elems, msg) {
+  return waitForAllElems(elems, "be hidden", e => e.hidden, msg);
+}
+
+function isNotHidden(elems, msg) {
+  return waitForAllElems(elems, "not be hidden", e => !e.hidden, msg);
+}
+
+function isDisabled(elems, msg) {
+  return waitForAllElems(elems, "be disabled", e => e.disabled, msg);
+}
+
+function isNotDisabled(elems, msg) {
+  return waitForAllElems(elems, "not be disabled", e => !e.disabled, msg);
+}
+
+async function withNewTab(options, taskFn) {
+  if (typeof options == "string") {
+    options = {
+      url: options,
+      window: Services.wm.getMostRecentWindow("navigator:browser"),
+    };
+  }
+
+  let { url, window, private } = options;
+
+  const expectedContentBlockingEvents = URLS_NEEDING_CONTENT_BLOCKING[url];
+  private = expectedContentBlockingEvents ?? Boolean(private);
+
+  let closeWindowWhenDone = false;
+  if (!window || private !== window.browsingContext.usePrivateBrowsing) {
+    closeWindowWhenDone = true;
+    window = await BrowserTestUtils.openNewBrowserWindow({
+      private,
+    });
+  }
+
+  const expectedContentBlockedPromise = waitForContentBlockingEvent(
+    expectedContentBlockingEvents,
+    window
+  );
+  const tab = await BrowserTestUtils.openNewForegroundTab({
+    gBrowser: window.gBrowser,
     url,
-  };
-  return BrowserTestUtils.openNewForegroundTab(options);
+  });
+
+  await expectedContentBlockedPromise;
+
+  await taskFn(window, tab);
+
+  BrowserTestUtils.removeTab(tab);
+  if (closeWindowWhenDone) {
+    await BrowserTestUtils.closeWindow(window);
+  }
 }
 
-async function changeTab(tab, url) {
+async function navigateOnTab(tab, url) {
   BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, url);
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 }
 
-function closeTab(tab) {
-  BrowserTestUtils.removeTab(tab);
+// This is a clone of waitForEvent which times out and throws an exception
+// to keep things moving along in our tests.
+async function waitForEvent(
+  subject,
+  eventName,
+  capture,
+  checkFn,
+  wantsUntrusted,
+  msg
+) {
+  msg ??= `waiting for ${eventName} event on ${prettyElements(subject)}`;
+  info(msg);
+
+  const startTime = ChromeUtils.now();
+  const innerWindowId = subject.documentGlobal?.windowGlobalChild.innerWindowId;
+
+  // await the promise here so we see the actual stack trace, rather
+  // than the vague one a "promise rejection not handled" error gives,
+  // without having to try/catch everywhere in our tests.
+  return await new Promise((resolve, reject) => {
+    let timeout;
+    let removed = false;
+    function cleanup() {
+      if (timeout) {
+        (subject.documentGlobal ?? subject).clearTimeout(timeout);
+        timeout = null;
+      }
+      removed = true;
+      // Avoid keeping references to objects after the promise resolves.
+      subject = null;
+      checkFn = null;
+    }
+
+    function listener(event) {
+      try {
+        if (checkFn && !checkFn(event)) {
+          return;
+        }
+        subject.removeEventListener(eventName, listener, capture);
+        cleanup();
+        TestUtils.executeSoon(() => {
+          ChromeUtils.addProfilerMarker(
+            "BrowserTestUtils",
+            { startTime, category: "Test", innerWindowId },
+            "waitForEvent: " + eventName
+          );
+          resolve(event);
+        });
+      } catch (ex) {
+        try {
+          subject.removeEventListener(eventName, listener, capture);
+        } catch (ex2) {
+          // Maybe the provided object does not support removeEventListener.
+        }
+        cleanup();
+        TestUtils.executeSoon(() => reject(ex));
+      }
+    }
+
+    subject.addEventListener(eventName, listener, capture, wantsUntrusted);
+
+    timeout = (subject.documentGlobal ?? subject).setTimeout(() => {
+      subject.removeEventListener(eventName, listener, capture);
+      cleanup();
+      TestUtils.executeSoon(() => reject("timed out"));
+    }, 5000);
+
+    TestUtils.promiseTestFinished?.then(() => {
+      if (removed) {
+        return;
+      }
+
+      subject.removeEventListener(eventName, listener, capture);
+      let text = eventName + " listener";
+      if (subject.id) {
+        text += ` on #${subject.id}`;
+      }
+      text += " not removed before the end of test";
+      reject(text);
+      ChromeUtils.addProfilerMarker(
+        "BrowserTestUtils",
+        { startTime, category: "Test", innerWindowId },
+        "waitForEvent: " + text
+      );
+    });
+  });
 }
 
 function switchToWindow(win) {
-  const promises = [
-    BrowserTestUtils.waitForEvent(win, "focus"),
-    BrowserTestUtils.waitForEvent(win, "activate"),
-  ];
+  const promises = [waitForEvent(win, "focus"), waitForEvent(win, "activate")];
   win.focus();
   return Promise.all(promises);
 }
@@ -159,63 +381,36 @@ function isSelectedTab(win, tab) {
   is(selectedTab, tab);
 }
 
-async function setupPolicyEngineWithJson(json, customSchema) {
-  PoliciesPrefTracker.restoreDefaultValues();
-  if (typeof json != "object") {
-    let filePath = getTestFilePath(json ? json : "non-existing-file.json");
-    return EnterprisePolicyTesting.setupPolicyEngineWithJson(
-      filePath,
-      customSchema
-    );
-  }
-  return EnterprisePolicyTesting.setupPolicyEngineWithJson(json, customSchema);
-}
-
-async function ensureReportBrokenSiteDisabledByPolicy() {
-  await setupPolicyEngineWithJson({
-    policies: {
-      DisableFeedbackCommands: true,
-    },
-  });
-}
-
-registerCleanupFunction(async function resetPolicies() {
-  if (Services.policies.status != Ci.nsIEnterprisePolicies.INACTIVE) {
-    await setupPolicyEngineWithJson("");
-  }
-  EnterprisePolicyTesting.resetRunOnceState();
-  PoliciesPrefTracker.restoreDefaultValues();
-  PoliciesPrefTracker.stop();
-});
-
 function ensureReportBrokenSitePreffedOn() {
   Services.prefs.setBoolPref(PREFS.DATAREPORTING_ENABLED, true);
   Services.prefs.setBoolPref(PREFS.REPORTER_ENABLED, true);
-  ensureReasonDisabled();
 }
 
 function ensureReportBrokenSitePreffedOff() {
   Services.prefs.setBoolPref(PREFS.REPORTER_ENABLED, false);
 }
 
-function ensureSendMoreInfoEnabled() {
+function enableSendMoreInfo() {
   Services.prefs.setBoolPref(PREFS.SEND_MORE_INFO, true);
 }
 
-function ensureSendMoreInfoDisabled() {
+function disableSendMoreInfo() {
   Services.prefs.setBoolPref(PREFS.SEND_MORE_INFO, false);
 }
 
-function ensureReasonDisabled() {
-  Services.prefs.setIntPref(PREFS.REASON, 0);
+function enableScreenshots() {
+  Services.prefs.setBoolPref(PREFS.SCREENSHOTS, true);
 }
 
-function ensureReasonOptional() {
-  Services.prefs.setIntPref(PREFS.REASON, 1);
+function disableScreenshots() {
+  Services.prefs.setBoolPref(PREFS.SCREENSHOTS, false);
 }
 
-function ensureReasonRequired() {
-  Services.prefs.setIntPref(PREFS.REASON, 2);
+function ensureProtectionsPanelHidden(test) {
+  const { hidden } = document.getElementById(
+    "tracking-protection-icon-container"
+  );
+  ok(hidden, `Protections panel disabled ${test}`);
 }
 
 function isMenuItemEnabled(menuItem, itemDesc) {
@@ -236,6 +431,7 @@ function isMenuItemDisabled(menuItem, itemDesc) {
 }
 
 function waitForWebcompatComTab(gBrowser) {
+  info("waiting for a new tab to open to webcompat.com");
   return BrowserTestUtils.waitForNewTab(gBrowser, NEW_REPORT_ENDPOINT_TEST_URL);
 }
 
@@ -256,6 +452,10 @@ class ReportBrokenSiteHelper {
     return this.getViewNode("report-broken-site-popup-mainView");
   }
 
+  get detailsView() {
+    return this.getViewNode("report-broken-site-popup-detailsView");
+  }
+
   get previewView() {
     return this.getViewNode("report-broken-site-popup-previewView");
   }
@@ -272,67 +472,116 @@ class ReportBrokenSiteHelper {
     return this.openPanel?.hasAttribute("panelopen");
   }
 
-  async click(triggerMenuItem) {
-    const window = triggerMenuItem.ownerGlobal;
-    await EventUtils.synthesizeMouseAtCenter(triggerMenuItem, {}, window);
+  click(elem, options = {}) {
+    return new Promise(r => {
+      elem.scrollIntoView({ behavior: "instant" });
+      return EventUtils.synthesizeMouseAtCenter(elem, options, this.win, r);
+    });
   }
 
-  async open(triggerMenuItem) {
-    const shownPromise = BrowserTestUtils.waitForEvent(
-      this.mainView,
-      "ViewShown"
-    );
-    const focusPromise = BrowserTestUtils.waitForEvent(this.URLInput, "focus");
-    await this.click(triggerMenuItem);
-    await shownPromise;
-    await focusPromise;
-    await BrowserTestUtils.waitForCondition(
-      () => this.URLInput.selectionStart === 0
+  open(triggerMenuItem) {
+    return this.#clickAndWaitForViewToShowNoAsserts(
+      triggerMenuItem,
+      this.mainView
     );
   }
 
-  async #assertClickAndViewChanges(button, view, newView, newFocus) {
-    ok(view.closest("panel").hasAttribute("panelopen"), "Panel is open");
-    ok(BrowserTestUtils.isVisible(button), "Button is visible");
-    ok(!button.disabled, "Button is enabled");
+  async clickAndWaitForEvent(toClick, event, actualEventTarget) {
+    const wait = waitForEvent(
+      actualEventTarget ?? toClick,
+      event,
+      undefined,
+      undefined,
+      `clicking ${prettyElements(toClick)} and waiting for ${event} event on ${prettyElements(actualEventTarget ?? toClick)}`
+    );
+    await this.click(toClick);
+    await wait;
+  }
+
+  #assertCanClick(toClick) {
+    if (!this.visibleView) {
+      throw new Error(`can't click ${toClick}: no panel view is open/visible`);
+    }
+    if (!BrowserTestUtils.isVisible(toClick)) {
+      throw new Error(`can't click ${toClick}: is not visible`);
+    }
+    if (toClick.disabled) {
+      throw new Error(`can't click ${toClick}: is disabled`);
+    }
+  }
+
+  clickAndWaitForViewToHide(toClick, targetView = this.visibleView) {
+    info(
+      `clicking ${prettyElements(toClick)} and waiting for ${targetView.id} to hide`
+    );
+    this.#assertCanClick(toClick);
+    return this.clickAndWaitForEvent(toClick, "ViewHiding", targetView);
+  }
+
+  async clickAndWaitForViewToShow(toClick, targetView, targetFocus) {
+    info(
+      `clicking ${prettyElements(toClick)} and waiting for ${targetView.id} to show`
+    );
+    this.#assertCanClick(toClick);
+    return this.#clickAndWaitForViewToShowNoAsserts(
+      toClick,
+      targetView,
+      targetFocus
+    );
+  }
+
+  async #clickAndWaitForViewToShowNoAsserts(toClick, targetView, targetFocus) {
     const promises = [];
-    if (newView) {
-      if (newView.nodeName == "panel") {
-        promises.push(BrowserTestUtils.waitForEvent(newView, "popupshown"));
+    if (targetView) {
+      if (targetView.nodeName == "panel") {
+        promises.push(waitForEvent(targetView, "popupshown"));
       } else {
-        promises.push(BrowserTestUtils.waitForEvent(newView, "ViewShown"));
+        promises.push(this.waitForViewToShow(targetView));
       }
     } else {
-      promises.push(BrowserTestUtils.waitForEvent(view, "ViewHiding"));
+      promises.push(waitForEvent(this.visibleView, "ViewHiding"));
     }
-    if (newFocus) {
-      promises.push(BrowserTestUtils.waitForEvent(newFocus, "focus"));
+    if (targetFocus) {
+      promises.push(waitForEvent(targetFocus, "focus"));
     }
-    EventUtils.synthesizeMouseAtCenter(button, {}, this.win);
+    await this.click(toClick);
     await Promise.all(promises);
   }
 
-  async awaitPreviewViewOpened() {
-    await Promise.all([
-      BrowserTestUtils.waitForEvent(this.sentView, "ViewShown"),
-      BrowserTestUtils.waitForEvent(this.okayButton, "focus"),
-    ]);
+  clickSend() {
+    const promise = this.waitForViewToShow(this.sentView);
+    this.sendButton.click();
+    return promise;
   }
 
-  async awaitReportSentViewOpened() {
-    await Promise.all([
-      BrowserTestUtils.waitForEvent(this.sentView, "ViewShown"),
-      BrowserTestUtils.waitForEvent(this.okayButton, "focus"),
-    ]);
+  clickCancel() {
+    const promise = this.waitForViewToHide(this.visibleView);
+    this.cancelButton.click();
+    return promise;
   }
 
-  async clickSend() {
-    await this.#assertClickAndViewChanges(
-      this.sendButton,
-      this.mainView,
-      this.sentView,
-      this.okayButton
-    );
+  clickOkay() {
+    return this.clickAndWaitForViewToHide(this.okayButton, this.sentView);
+  }
+
+  clickPreview() {
+    const promise = this.waitForViewToShow(this.previewView);
+    this.previewButton.click();
+    return promise;
+  }
+
+  clickReason(reason) {
+    const selector = `#report-broken-site-popup-reason-${reason || "load"}`;
+    const button = this.mainView.querySelector(selector);
+    if (!button) {
+      throw new Error(
+        `No ${selector} button to click on in ${this.visibleView.id}`
+      );
+    }
+    if (!BrowserTestUtils.isVisible(button)) {
+      throw new Error(`${reason} button is not visible`);
+    }
+    return this.clickAndWaitForViewToShow(button, this.detailsView);
   }
 
   waitForSendMoreInfoTab() {
@@ -343,8 +592,10 @@ class ReportBrokenSiteHelper {
   }
 
   async clickSendMoreInfo() {
-    const newTabPromise = waitForWebcompatComTab(this.win.gBrowser);
-    EventUtils.synthesizeMouseAtCenter(this.sendMoreInfoLink, {}, this.win);
+    const { sendMoreInfoButton, win } = this;
+    const newTabPromise = waitForWebcompatComTab(win.gBrowser);
+    await isVisible(sendMoreInfoButton);
+    this.click(sendMoreInfoButton);
     const newTab = await newTabPromise;
     const receivedData = await SpecialPowers.spawn(
       newTab.linkedBrowser,
@@ -358,75 +609,105 @@ class ReportBrokenSiteHelper {
     return receivedData;
   }
 
-  async clickCancel() {
-    await this.#assertClickAndViewChanges(this.cancelButton, this.mainView);
+  async clickDeceptiveSiteReport() {
+    // change the target report URL to a local one so the test framework won't crash.
+    const originalURL = Services.prefs.getStringPref(PREFS.PHISHING_REPORT_URL);
+    const expectedURL = NEW_REPORT_ENDPOINT_TEST_URL + "?";
+    Services.prefs.setStringPref(PREFS.PHISHING_REPORT_URL, expectedURL);
+
+    const newTabPromise = BrowserTestUtils.waitForNewTab(this.win.gBrowser, u =>
+      u.startsWith(expectedURL)
+    );
+    const button = this.visibleView.querySelector(
+      "#report-broken-site-popup-reason-deceptive"
+    );
+    this.click(button);
+    await newTabPromise;
+    this.win.gBrowser.removeCurrentTab();
+
+    Services.prefs.setStringPref(PREFS.PHISHING_REPORT_URL, originalURL);
   }
 
-  async clickOkay() {
-    await this.#assertClickAndViewChanges(this.okayButton, this.sentView);
-  }
-
-  async clickPreview() {
-    await this.#assertClickAndViewChanges(
-      this.previewButton,
+  get visibleView() {
+    return [
       this.mainView,
-      this.previewView
-    );
+      this.detailsView,
+      this.previewView,
+      this.sentView,
+    ].filter(view => BrowserTestUtils.isVisible(view))[0];
   }
 
-  async clickPreviewBack() {
-    await this.#assertClickAndViewChanges(
-      this.previewBackButton,
-      this.sourceMenu.popup
-    );
+  get backButton() {
+    return this.visibleView.querySelector(".subviewbutton-back");
   }
 
   async clickBack() {
-    await this.#assertClickAndViewChanges(
-      this.backButton,
-      this.sourceMenu.popup
-    );
-  }
-
-  isBackButtonEnabled() {
-    ok(BrowserTestUtils.isVisible(this.backButton), "Back button is visible");
-    ok(!this.backButton.disabled, "Back button is enabled");
+    const { visibleView } = this;
+    let targetView;
+    if (visibleView == this.detailsView) {
+      targetView = this.mainView;
+    } else if (visibleView == this.previewView) {
+      targetView = this.detailsView;
+    } else if (visibleView == this.mainView) {
+      await this.clickAndWaitForViewToHide(this.backButton);
+      return;
+    } else {
+      throw new Error(
+        `Can't click back; not on a view with a back button: ${visibleView}`
+      );
+    }
+    await this.clickAndWaitForViewToShow(this.backButton, targetView);
   }
 
   close() {
     if (this.opened) {
       this.openPanel?.hidePopup(false);
     }
+    ViewState.get(this.win.document).reset();
     this.sourceMenu?.close();
   }
 
+  // Data getters
+  get url() {
+    return ViewState.get(this.win.document).url;
+  }
+
+  get reason() {
+    return ViewState.get(this.win.document).reason;
+  }
+
+  get description() {
+    return this.descriptionTextarea.value;
+  }
+
   // UI element getters
-  get URLInput() {
-    return this.getViewNode("report-broken-site-popup-url");
+  get urlInputs() {
+    return [
+      this.mainView.querySelector("url-input"),
+      this.detailsView.querySelector("url-input"),
+    ];
   }
 
-  get URLInvalidMessage() {
-    return this.getViewNode("report-broken-site-popup-invalid-url-msg");
+  get urlComponent() {
+    return this.visibleView.querySelector("url-input");
   }
 
-  get reasonInput() {
-    return this.getViewNode("report-broken-site-popup-reason");
+  get descriptionInvalidMessage() {
+    return this.visibleView.querySelector(
+      "#report-broken-site-details-description-error"
+    );
   }
 
-  get reasonDropdownPopup() {
-    return this.win.document.getElementById("ContentSelectDropdown").menupopup;
+  get progressionButtons() {
+    return [...this.visibleView.querySelectorAll(".progression")];
   }
 
-  get reasonRequiredMessage() {
-    return this.getViewNode("report-broken-site-popup-missing-reason-msg");
+  get reasonButtons() {
+    return [...this.mainView.querySelectorAll(".reason-button")];
   }
 
-  get reasonLabelRequired() {
-    return this.getViewNode("report-broken-site-popup-reason-label");
-  }
-
-  get reasonLabelOptional() {
-    return this.getViewNode("report-broken-site-popup-reason-optional-label");
+  get previewSummaries() {
+    return [...this.previewView.querySelectorAll("summary")];
   }
 
   get descriptionTextarea() {
@@ -437,34 +718,24 @@ class ReportBrokenSiteHelper {
     return this.getViewNode("report-broken-site-popup-learn-more-link");
   }
 
-  get sendMoreInfoLink() {
-    return this.getViewNode("report-broken-site-popup-send-more-info-link");
+  get screenshotToggle() {
+    return this.getViewNode("report-broken-site-popup-screenshot-toggle");
   }
 
-  get backButton() {
-    return this.mainView.querySelector(".subviewbutton-back");
+  get sendMoreInfoButton() {
+    return this.getViewNode("report-broken-site-popup-send-more-info-button");
   }
 
-  get previewBackButton() {
-    return this.previewView.querySelector(".subviewbutton-back");
-  }
-
-  get blockedTrackersCheckbox() {
-    return this.getViewNode(
-      "report-broken-site-popup-blocked-trackers-checkbox"
-    );
-  }
-
-  set blockedTrackersCheckbox(checked) {
-    this.blockedTrackersCheckbox.checked = checked;
+  get blockedTrackersToggle() {
+    return this.getViewNode("report-broken-site-popup-blocked-trackers-toggle");
   }
 
   get sendButton() {
-    return this.getViewNode("report-broken-site-popup-send-button");
+    return this.visibleView.querySelector(".send-button");
   }
 
   get cancelButton() {
-    return this.getViewNode("report-broken-site-popup-cancel-button");
+    return this.visibleView.querySelector(".cancel-button");
   }
 
   get okayButton() {
@@ -473,14 +744,6 @@ class ReportBrokenSiteHelper {
 
   get previewButton() {
     return this.getViewNode("report-broken-site-popup-preview-button");
-  }
-
-  get previewCancelButton() {
-    return this.getViewNode("report-broken-site-popup-preview-cancel-button");
-  }
-
-  get previewSendButton() {
-    return this.getViewNode("report-broken-site-popup-preview-send-button");
   }
 
   get previewItems() {
@@ -494,157 +757,98 @@ class ReportBrokenSiteHelper {
     input.dispatchEvent(
       new UIEvent("input", { bubbles: true, view: this.win })
     );
+    input.dispatchEvent(
+      new UIEvent("change", { bubbles: true, view: this.win })
+    );
   }
 
   setURL(value) {
-    this.#setInput(this.URLInput, value);
-  }
-
-  chooseReason(value) {
-    const item = this.getViewNode(`report-broken-site-popup-reason-${value}`);
-    this.reasonInput.selectedIndex = item.index;
-  }
-
-  dismissDropdownPopup() {
-    const popup = this.reasonDropdownPopup;
-    const menuPromise = BrowserTestUtils.waitForPopupEvent(popup, "hidden");
-    popup.hidePopup();
-    return menuPromise;
+    this.#setInput(this.urlComponent.input, value);
   }
 
   setDescription(value) {
     this.#setInput(this.descriptionTextarea, value);
   }
 
-  isURL(expected) {
-    is(this.URLInput.value, expected);
+  get hasScreenshot() {
+    return ViewState.get(this.win.document).noScreenshot;
   }
 
-  isURLInvalidMessageShown() {
-    ok(
-      BrowserTestUtils.isVisible(this.URLInvalidMessage),
-      "'Please enter a valid URL' message is shown"
+  get hasBlockedTrackers() {
+    const state = ViewState.get(this.win.document);
+    return URLS_NEEDING_CONTENT_BLOCKING[this.url] && !state.noBlockedTrackers;
+  }
+
+  get availableTabSpecificPreviewItems() {
+    const { hasBlockedTrackers, screenshot } = this;
+    return [...this.previewItems.querySelectorAll(".tab-specific-data")].filter(
+      i =>
+        (hasBlockedTrackers ||
+          !i.classList.contains("preview-blockedOrigins")) &&
+        (screenshot || !i.classList.contains("preview-screenshot"))
     );
   }
 
-  isURLInvalidMessageHidden() {
+  async reportData() {
+    const state = ViewState.get(this.win.document);
+    return await state.currentTabWebcompatDetailsPromise;
+  }
+
+  waitForViewToShow(view) {
+    return waitForEvent(view, "ViewShown");
+  }
+
+  waitForViewToHide(view) {
+    return waitForEvent(view, "ViewHiding");
+  }
+
+  set screenshot(dataURI) {
+    const state = ViewState.get(this.win.document);
+    state.screenshot = dataURI;
+  }
+
+  isProperlyReset() {
+    const { spec } = this.win.gBrowser.selectedBrowser.currentURI;
     ok(
-      !BrowserTestUtils.isVisible(this.URLInvalidMessage),
-      "'Please enter a valid URL' message is hidden"
+      !this.urlInputs.some(i => i.input && i.input.value != spec),
+      "URL inputs were properly reset"
     );
+    is(this.reason, "", "Reason was properly reset");
+    is(this.description, "", "Description was properly reset");
+    ok(!this.blockedTrackersToggle.pressed, "blocked trackers toggle is reset");
   }
 
-  isReasonNeededMessageShown() {
-    ok(
-      BrowserTestUtils.isVisible(this.reasonRequiredMessage),
-      "'Please choose a reason' message is shown"
-    );
-  }
-
-  isReasonNeededMessageHidden() {
-    ok(
-      !BrowserTestUtils.isVisible(this.reasonRequiredMessage),
-      "'Please choose a reason' message is hidden"
-    );
-  }
-
-  isSendButtonEnabled() {
-    ok(BrowserTestUtils.isVisible(this.sendButton), "Send button is visible");
-    ok(!this.sendButton.disabled, "Send button is enabled");
-  }
-
-  isSendButtonDisabled() {
-    ok(BrowserTestUtils.isVisible(this.sendButton), "Send button is visible");
-    ok(this.sendButton.disabled, "Send button is disabled");
-  }
-
-  isSendMoreInfoShown() {
-    ok(
-      BrowserTestUtils.isVisible(this.sendMoreInfoLink),
-      "send more info is shown"
-    );
-  }
-
-  isSendMoreInfoHidden() {
-    ok(
-      !BrowserTestUtils.isVisible(this.sendMoreInfoLink),
-      "send more info is hidden"
-    );
-  }
-
-  isSendMoreInfoShownOrHiddenAppropriately() {
-    if (Services.prefs.getBoolPref(PREFS.SEND_MORE_INFO)) {
-      this.isSendMoreInfoShown();
-    } else {
-      this.isSendMoreInfoHidden();
+  async pressKeyAndAwait(event, key, options = {}) {
+    if (!event.then) {
+      event = waitForEvent(
+        this.win,
+        event,
+        true,
+        undefined,
+        `pressing ${key} and waiting for ${event} event on window`
+      );
     }
+    await EventUtils.synthesizeKey(key, options, this.win);
+    return event;
   }
 
-  isReasonHidden() {
-    ok(
-      !BrowserTestUtils.isVisible(this.reasonInput),
-      "reason drop-down is hidden"
-    );
-    ok(
-      !BrowserTestUtils.isVisible(this.reasonLabelOptional),
-      "optional reason label is hidden"
-    );
-    ok(
-      !BrowserTestUtils.isVisible(this.reasonLabelRequired),
-      "required reason label is hidden"
-    );
+  async pressKeyAndGetFocus(key, options) {
+    return (await this.pressKeyAndAwait("focus", key, options)).target;
   }
 
-  isReasonRequired() {
-    ok(
-      BrowserTestUtils.isVisible(this.reasonInput),
-      "reason drop-down is shown"
-    );
-    ok(
-      !BrowserTestUtils.isVisible(this.reasonLabelOptional),
-      "optional reason label is hidden"
-    );
-    ok(
-      BrowserTestUtils.isVisible(this.reasonLabelRequired),
-      "required reason label is shown"
-    );
-  }
-
-  isReasonOptional() {
-    ok(
-      BrowserTestUtils.isVisible(this.reasonInput),
-      "reason drop-down is shown"
-    );
-    ok(
-      BrowserTestUtils.isVisible(this.reasonLabelOptional),
-      "optional reason label is shown"
-    );
-    ok(
-      !BrowserTestUtils.isVisible(this.reasonLabelRequired),
-      "required reason label is hidden"
-    );
-  }
-
-  isReasonShownOrHiddenAppropriately() {
-    const pref = Services.prefs.getIntPref(PREFS.REASON);
-    if (pref == 2) {
-      this.isReasonOptional();
-    } else if (pref == 1) {
-      this.isReasonOptional();
-    } else {
-      this.isReasonHidden();
-    }
-  }
-
-  isDescription(expected) {
-    return this.descriptionTextarea.value == expected;
-  }
-
-  isMainViewResetToCurrentTab() {
-    this.isURL(this.win.gBrowser.selectedBrowser.currentURI.spec);
-    this.isDescription("");
-    this.isReasonShownOrHiddenAppropriately();
-    this.isSendMoreInfoShownOrHiddenAppropriately();
+  async tabTo(match) {
+    const window = this.win;
+    const config = { window };
+    info(`Tabbing to ${match}`);
+    let initial = window.document.activeElement;
+    let candidate = initial;
+    do {
+      if (candidate.matches(match)) {
+        return candidate;
+      }
+      candidate = await this.pressKeyAndGetFocus("VK_TAB", config);
+    } while (candidate && candidate !== initial);
+    return undefined;
   }
 }
 
@@ -716,7 +920,7 @@ class MenuHelper {
     }
     isMenuItemEnabled(this.reportBrokenSite, this.menuDescription);
     const rbs = new ReportBrokenSiteHelper(this);
-    await rbs.click(this.reportBrokenSite);
+    rbs.click(this.reportBrokenSite);
     return rbs;
   }
 
@@ -726,17 +930,24 @@ class MenuHelper {
     }
     isMenuItemEnabled(this.reportBrokenSite, this.menuDescription);
     const rbs = new ReportBrokenSiteHelper(this);
+    const promise = rbs.waitForViewToShow(rbs.mainView);
     await rbs.open(this.reportBrokenSite);
+    await promise;
     return rbs;
   }
 
-  async openAndPrefillReportBrokenSite(url = null, description = "") {
+  async openReportBrokenSiteToDetailsPanel({
+    url,
+    reason = "load",
+    description,
+  } = {}) {
     let rbs = await this.openReportBrokenSite();
-    rbs.isMainViewResetToCurrentTab();
-    if (url) {
+    rbs.isProperlyReset();
+    if (url !== undefined) {
       rbs.setURL(url);
     }
-    if (description) {
+    await rbs.clickReason(reason);
+    if (description !== undefined) {
       rbs.setDescription(description);
     }
     return rbs;
@@ -789,13 +1000,14 @@ class HelpMenuHelper extends MenuHelper {
     // we can do to open its Report Broken Site panel is to force its DOM to be
     // prepared, and then soft-click the Report Broken Site menuitem to open it.
     await this.open();
-    const shownPromise = BrowserTestUtils.waitForEvent(
+    const shownPromise = waitForEvent(
       this.win,
       "ViewShown",
       true,
-      e => e.target.classList.contains("report-broken-site-view")
+      e => e.target.classList.contains("report-broken-site-view"),
+      `clicking Report Broken Site on ${this.menuDescription} and waiting for it to show`
     );
-    this.reportBrokenSite.click();
+    await this.reportBrokenSite.click();
     await shownPromise;
     return new ReportBrokenSiteHelper(this);
   }
@@ -808,7 +1020,13 @@ class HelpMenuHelper extends MenuHelper {
 
   async open() {
     const { helpMenu } = this;
-    const promise = BrowserTestUtils.waitForEvent(helpMenu, "popupshown");
+    const promise = waitForEvent(
+      helpMenu,
+      "popupshown",
+      undefined,
+      undefined,
+      `opening Report Broken Site on ${this.menuDescription} and waiting for it to show`
+    );
 
     // This event-faking method was copied from browser_title_case_menus.js.
     // We can't actually open the Help menu in testing, but this lets us
@@ -847,11 +1065,12 @@ class ProtectionsPanelHelper extends MenuHelper {
   }
 
   async open() {
-    const promise = BrowserTestUtils.waitForEvent(
+    const promise = waitForEvent(
       this.win,
       "popupshown",
       true,
-      e => e.target.id == "protections-popup"
+      e => e.target.id == "protections-popup",
+      `opening Report Broken Site on ${this.menuDescription} and waiting for it to show`
     );
     this.win.gProtectionsHandler.showProtectionsPopup();
     await promise;
@@ -877,36 +1096,6 @@ function HelpMenu(win = window) {
 
 function ProtectionsPanel(win = window) {
   return new ProtectionsPanelHelper(win);
-}
-
-function pressKeyAndAwait(event, key, config = {}) {
-  const win = config.window || window;
-  if (!event.then) {
-    event = BrowserTestUtils.waitForEvent(win, event, config.timeout || 200);
-  }
-  EventUtils.synthesizeKey(key, config, win);
-  return event;
-}
-
-async function pressKeyAndGetFocus(key, config = {}) {
-  return (await pressKeyAndAwait("focus", key, config)).target;
-}
-
-async function tabTo(match, win = window) {
-  const config = { window: win };
-  const { activeElement } = win.document;
-  if (activeElement?.matches(match)) {
-    return activeElement;
-  }
-  let initial = await pressKeyAndGetFocus("VK_TAB", config);
-  let target = initial;
-  do {
-    if (target.matches(match)) {
-      return target;
-    }
-    target = await pressKeyAndGetFocus("VK_TAB", config);
-  } while (target && target !== initial);
-  return undefined;
 }
 
 function filterFrameworkDetectorFails(ping, expected) {
@@ -942,10 +1131,14 @@ async function setupStrictETP() {
 }
 
 // copied from browser/base/content/test/protectionsUI/head.js
-function waitForContentBlockingEvent(numChanges = 1, win = null) {
+function waitForContentBlockingEvent(numChanges, win = null) {
+  if (!numChanges) {
+    return Promise.resolve();
+  }
   if (!win) {
     win = window;
   }
+  info(`Waiting for ${numChanges} content-blocking events`);
   return new Promise(resolve => {
     let n = 0;
     let listener = {

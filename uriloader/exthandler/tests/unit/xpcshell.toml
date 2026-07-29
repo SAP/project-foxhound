@@ -36,6 +36,11 @@ run-if = [
   "os == 'win'", # Windows only test
 ]
 
+["test_csv_mime_type_default.js"]
+run-if = [
+  "os == 'win'", # Windows only test
+]
+
 ["test_getTypeFromExtension_ext_to_type_mapping.js"]
 
 ["test_getTypeFromExtension_with_empty_Content_Type.js"]
@@ -56,6 +61,10 @@ fail-if = [
   "os == 'android'",
 ]
 support-files = ["handlers.json"]
+
+["test_launch_first_click_with_permission.js"]
+# ContentDispatchChooser is not built on Android (see toolkit/moz.build).
+skip-if = ["os == 'android'"]
 
 ["test_punycodeURIs.js"]
 skip-if = [

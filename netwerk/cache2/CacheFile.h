@@ -204,6 +204,10 @@ class MOZ_CAPABILITY("mutex") CacheFile final
 
   nsresult InitIndexEntry();
 
+  // Marks a new disk-backed entry as encrypted and assigns its stable per-file
+  // salt when disk cache encryption is enabled. No-op otherwise.
+  void SetupEncryption() MOZ_REQUIRES(this);
+
   bool mOpeningFile MOZ_GUARDED_BY(this){false};
   bool mReady MOZ_GUARDED_BY(this){false};
   bool mMemoryOnly MOZ_GUARDED_BY(this){false};

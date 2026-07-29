@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * Any copyright is dedicated to the Public Domain.
+/* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 package org.mozilla.geckoview.test
@@ -20,7 +19,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.hamcrest.Matchers.equalTo
 import org.hamcrest.Matchers.lessThanOrEqualTo
 import org.hamcrest.Matchers.notNullValue
-import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Assume.assumeThat
 import org.junit.Test
@@ -37,6 +35,7 @@ import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.WithDisplay
 import org.mozilla.geckoview.test.util.UiThreadUtils
 import kotlin.math.absoluteValue
 import kotlin.math.max
+import kotlin.test.assertIs
 
 private const val SCREEN_HEIGHT = 800
 private const val SCREEN_WIDTH = 800
@@ -159,7 +158,7 @@ class ScreenshotTest : BaseSessionTest() {
             var exceptionListenerCalled = false
             val result = display.capturePixels()
             result.exceptionally { error: Throwable ->
-                assertTrue(error is IllegalStateException)
+                assertIs<IllegalStateException>(error)
                 exceptionListenerCalled = true
                 result
             }.accept {
@@ -478,7 +477,7 @@ class ScreenshotTest : BaseSessionTest() {
             .capture()
             .exceptionally(
                 OnExceptionListener<Throwable> { error: Throwable ->
-                    assertTrue(error is OutOfMemoryError)
+                    assertIs<OutOfMemoryError>(error)
                     fromException(error)
                 },
             )

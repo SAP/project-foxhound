@@ -1,4 +1,4 @@
-// |jit-test| skip-if: !WasmHelpers.isSingleStepProfilingEnabled
+// |jit-test| skip-if: !wasmJSPromiseIntegrationEnabled() || !WasmHelpers.isSingleStepProfilingEnabled
 
 // Copy of wasm/import-export.js test with WebAssembly.promising
 
@@ -75,18 +75,64 @@
   enableGeckoProfiling();
   enableSingleStepProfiling();
 
-  // Test on suspendable stack.
+  // Test on cont stack.
   var f = WebAssembly.promising(i.foo);
   assertEq(await f(0), 42);
 
   const stacks = disableSingleStepProfiling();
-  WasmHelpers.assertEqImpreciseStacks(stacks,
-    ["", ">", "1,>", "<,1,>", "CreateSuspender,1,>", "<,1,>", "1,>", "<,1,>",
-     "CreatePromisingPromise,1,>", "<,1,>", "1,>", "<,1,>", "#ref.func function,1,>",
-     "<,1,>", "1,>", "<,1,>", "#update suspender state util,1,>", "<,1,>", "1,>",
-     "2,1,>", "4,2,1,>", "<,4,2,1,>", "4,2,1,>", "2,1,>", "<,2,1,>",
-     "SetPromisingPromiseResults,2,1,>", "<,2,1,>", "2,1,>", "1,>", "<,1,>",
-     "#update suspender state util,1,>", "<,1,>", "1,>", ">", ""]
+  WasmHelpers.assertEqImpreciseStacks(stacks, [
+    "",
+    ">",
+    "1,>",
+    "<,1,>",
+    "CreatePromise,1,>",
+    "<,1,>",
+    "1,>",
+    "<,1,>",
+    "GC postbarrier,1,>",
+    "<,1,>",
+    "1,>",
+    "<,1,>",
+    "GC postbarrier,1,>",
+    "<,1,>",
+    "1,>",
+    "<,1,>",
+    "#ref.func function,1,>",
+    "<,1,>",
+    "1,>",
+    "<,1,>",
+    "#cont.new function,1,>",
+    "<,1,>",
+    "1,>",
+    "1,1,>",
+    "1,>",
+    "2,1,>",
+    "<,2,1,>",
+    "GC postbarrier,2,1,>",
+    "<,2,1,>",
+    "2,1,>",
+    "<,2,1,>",
+    "GC postbarrier,2,1,>",
+    "<,2,1,>",
+    "2,1,>",
+    "4,2,1,>",
+    "<,4,2,1,>",
+    "4,2,1,>",
+    "2,1,>",
+    "<,2,1,>",
+    "ResolvePromiseWithResults,2,1,>",
+    "<,2,1,>",
+    "2,1,>",
+    "1,>",
+    ">",
+    "1,>",
+    "<,1,>",
+    "#cont.unwind function,1,>",
+    "<,1,>",
+    "1,>",
+    ">",
+    ""
+    ]
   );
 
   disableGeckoProfiling();

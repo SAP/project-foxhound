@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +7,7 @@
 // happens when calling these functions. They don't do much inspection of
 // profiler internals.
 
+#include "mozilla/ProfilerPlatformMacros.h"
 #include "mozilla/ProfilerThreadPlatformData.h"
 #include "mozilla/ProfilerThreadRegistration.h"
 #include "mozilla/ProfilerThreadRegistrationInfo.h"
@@ -28,41 +27,37 @@
 
 #include <thread>
 
-#if defined(_MSC_VER) || defined(__MINGW32__)
+#if defined(GP_OS_windows)
 #  include <processthreadsapi.h>
 #  include <realtimeapiset.h>
-#elif defined(__APPLE__)
+#elif defined(GP_OS_darwin)
 #  include <mach/thread_act.h>
 #endif
 
-#ifdef MOZ_GECKO_PROFILER
+#include "GeckoProfiler.h"
+#include "mozilla/ProfilerMarkerTypes.h"
+#include "mozilla/ProfilerMarkers.h"
+#include "NetworkMarker.h"
+#include "platform.h"
+#include "ProfileBuffer.h"
+#include "ProfilerControl.h"
 
-#  include "GeckoProfiler.h"
-#  include "mozilla/ProfilerMarkerTypes.h"
-#  include "mozilla/ProfilerMarkers.h"
-#  include "NetworkMarker.h"
-#  include "platform.h"
-#  include "ProfileBuffer.h"
-#  include "ProfilerControl.h"
+#include "js/Initialization.h"
+#include "js/Printf.h"
+#include "jsapi.h"
+#include "json/json.h"
+#include "mozilla/Atomics.h"
+#include "mozilla/DataMutex.h"
+#include "mozilla/ProfileBufferEntrySerializationGeckoExtensions.h"
+#include "mozilla/ProfileJSONWriter.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/net/HttpBaseChannel.h"
+#include "nsIChannelEventSink.h"
+#include "nsIThread.h"
+#include "nsThreadUtils.h"
 
-#  include "js/Initialization.h"
-#  include "js/Printf.h"
-#  include "jsapi.h"
-#  include "json/json.h"
-#  include "mozilla/Atomics.h"
-#  include "mozilla/DataMutex.h"
-#  include "mozilla/ProfileBufferEntrySerializationGeckoExtensions.h"
-#  include "mozilla/ProfileJSONWriter.h"
-#  include "mozilla/ScopeExit.h"
-#  include "mozilla/net/HttpBaseChannel.h"
-#  include "nsIChannelEventSink.h"
-#  include "nsIThread.h"
-#  include "nsThreadUtils.h"
-
-#  include <cstring>
-#  include <set>
-
-#endif  // MOZ_GECKO_PROFILER
+#include <cstring>
+#include <set>
 
 // Note: profiler_init() has already been called in XRE_main(), so we can't
 // test it here. Likewise for profiler_shutdown(), and AutoProfilerInit
@@ -143,9 +138,7 @@ TEST(GeckoProfiler, ThreadRegistrationInfo)
     EXPECT_NE(trInfoHere.Name(), "Here")
         << "ThreadRegistrationInfo should keep its own copy of the name";
     TimeStamp baseRegistrationTime;
-#ifdef MOZ_GECKO_PROFILER
     baseRegistrationTime = baseprofiler::detail::GetThreadRegistrationTime();
-#endif
     if (baseRegistrationTime) {
       EXPECT_EQ(trInfoHere.RegisterTime(), baseRegistrationTime);
     } else {
@@ -264,7 +257,7 @@ static void TestConstUnlockedConstReader(
   EXPECT_EQ(aData.Info().ThreadId(), aThreadId);
   EXPECT_FALSE(aData.Info().IsMainThread());
 
-#if (defined(_MSC_VER) || defined(__MINGW32__)) && defined(MOZ_GECKO_PROFILER)
+#if defined(GP_OS_windows)
   HANDLE threadHandle = aData.PlatformDataCRef().ProfiledThread();
   EXPECT_NE(threadHandle, nullptr);
   EXPECT_EQ(ProfilerThreadId::FromNumber(::GetThreadId(threadHandle)),
@@ -273,7 +266,7 @@ static void TestConstUnlockedConstReader(
   // work, but at least it shouldn't crash.
   ULONG64 cycles;
   (void)QueryThreadCycleTime(threadHandle, &cycles);
-#elif defined(__APPLE__) && defined(MOZ_GECKO_PROFILER)
+#elif defined(GP_OS_darwin)
   // Test calling thread_info, we cannot assume that it will always work, but at
   // least it shouldn't crash.
   thread_basic_info_data_t threadBasicInfo;
@@ -281,8 +274,7 @@ static void TestConstUnlockedConstReader(
   (void)thread_info(
       aData.PlatformDataCRef().ProfiledThread(), THREAD_BASIC_INFO,
       reinterpret_cast<thread_info_t>(&threadBasicInfo), &basicCount);
-#elif (defined(__linux__) || defined(__ANDROID__) || defined(__FreeBSD__)) && \
-    defined(MOZ_GECKO_PROFILER)
+#elif (defined(GP_OS_linux) || defined(GP_OS_android) || defined(GP_OS_freebsd))
   // Test calling GetClockId, we cannot assume that it will always work, but at
   // least it shouldn't crash.
   Maybe<clockid_t> maybeClockId = aData.PlatformDataCRef().GetClockId();
@@ -296,9 +288,16 @@ static void TestConstUnlockedConstReader(
   (void)aData.PlatformDataCRef();
 #endif
 
+#if defined(MOZ_ASAN)
+  // When ASan is enabled, onStackChar will be located on ASan's fake stack
+  // instead of the thread's native stack, thus interfering with the following
+  // check. See <https://bugzil.la/2040038>.
+  (void)aOnStackObject;
+#else
   EXPECT_GE(aData.StackTop(), aOnStackObject)
       << "StackTop should be at &onStackChar, or higher on some "
          "platforms";
+#endif  // defined(MOZ_ASAN)
 };
 
 static void TestConstUnlockedConstReaderAndAtomicRW(
@@ -1209,8 +1208,6 @@ TEST(GeckoProfiler, ThreadRegistration_RegistrationEdgeCases)
   EXPECT_GT(otherThreadReads, 0);
 }
 
-#ifdef MOZ_GECKO_PROFILER
-
 // Common JSON checks.
 
 // Check that the given JSON string include no JSON whitespace characters
@@ -1254,120 +1251,115 @@ void JSONWhitespaceCheck(const char* aOutput) {
 }
 
 // Does the GETTER return a non-null TYPE? (Non-critical)
-#  define EXPECT_HAS_JSON(GETTER, TYPE)              \
-    do {                                             \
-      if ((GETTER).isNull()) {                       \
-        EXPECT_FALSE((GETTER).isNull())              \
-            << #GETTER " doesn't exist or is null";  \
-      } else if (!(GETTER).is##TYPE()) {             \
-        EXPECT_TRUE((GETTER).is##TYPE())             \
-            << #GETTER " didn't return type " #TYPE; \
-      }                                              \
-    } while (false)
+#define EXPECT_HAS_JSON(GETTER, TYPE)                                         \
+  do {                                                                        \
+    if ((GETTER).isNull()) {                                                  \
+      EXPECT_FALSE((GETTER).isNull()) << #GETTER " doesn't exist or is null"; \
+    } else if (!(GETTER).is##TYPE()) {                                        \
+      EXPECT_TRUE((GETTER).is##TYPE())                                        \
+          << #GETTER " didn't return type " #TYPE;                            \
+    }                                                                         \
+  } while (false)
 
 // Does the GETTER return a non-null TYPE? (Critical)
-#  define ASSERT_HAS_JSON(GETTER, TYPE) \
-    do {                                \
-      ASSERT_FALSE((GETTER).isNull());  \
-      ASSERT_TRUE((GETTER).is##TYPE()); \
-    } while (false)
+#define ASSERT_HAS_JSON(GETTER, TYPE) \
+  do {                                \
+    ASSERT_FALSE((GETTER).isNull());  \
+    ASSERT_TRUE((GETTER).is##TYPE()); \
+  } while (false)
 
 // Does the GETTER return a non-null TYPE? (Critical)
 // If yes, store the reference to Json::Value into VARIABLE.
-#  define GET_JSON(VARIABLE, GETTER, TYPE) \
-    ASSERT_HAS_JSON(GETTER, TYPE);         \
-    const Json::Value& VARIABLE = (GETTER)
+#define GET_JSON(VARIABLE, GETTER, TYPE) \
+  ASSERT_HAS_JSON(GETTER, TYPE);         \
+  const Json::Value& VARIABLE = (GETTER)
 
 // Does the GETTER return a non-null TYPE? (Critical)
 // If yes, store the value as `const TYPE` into VARIABLE.
-#  define GET_JSON_VALUE(VARIABLE, GETTER, TYPE) \
-    ASSERT_HAS_JSON(GETTER, TYPE);               \
-    const auto VARIABLE = (GETTER).as##TYPE()
+#define GET_JSON_VALUE(VARIABLE, GETTER, TYPE) \
+  ASSERT_HAS_JSON(GETTER, TYPE);               \
+  const auto VARIABLE = (GETTER).as##TYPE()
 
 // Non-const GET_JSON_VALUE.
-#  define GET_JSON_MUTABLE_VALUE(VARIABLE, GETTER, TYPE) \
-    ASSERT_HAS_JSON(GETTER, TYPE);                       \
-    auto VARIABLE = (GETTER).as##TYPE()
+#define GET_JSON_MUTABLE_VALUE(VARIABLE, GETTER, TYPE) \
+  ASSERT_HAS_JSON(GETTER, TYPE);                       \
+  auto VARIABLE = (GETTER).as##TYPE()
 
 // Checks that the GETTER's value is present, is of the expected TYPE, and has
 // the expected VALUE. (Non-critical)
-#  define EXPECT_EQ_JSON(GETTER, TYPE, VALUE)        \
-    do {                                             \
-      if ((GETTER).isNull()) {                       \
-        EXPECT_FALSE((GETTER).isNull())              \
-            << #GETTER " doesn't exist or is null";  \
-      } else if (!(GETTER).is##TYPE()) {             \
-        EXPECT_TRUE((GETTER).is##TYPE())             \
-            << #GETTER " didn't return type " #TYPE; \
-      } else {                                       \
-        EXPECT_EQ((GETTER).as##TYPE(), (VALUE));     \
-      }                                              \
-    } while (false)
+#define EXPECT_EQ_JSON(GETTER, TYPE, VALUE)                                   \
+  do {                                                                        \
+    if ((GETTER).isNull()) {                                                  \
+      EXPECT_FALSE((GETTER).isNull()) << #GETTER " doesn't exist or is null"; \
+    } else if (!(GETTER).is##TYPE()) {                                        \
+      EXPECT_TRUE((GETTER).is##TYPE())                                        \
+          << #GETTER " didn't return type " #TYPE;                            \
+    } else {                                                                  \
+      EXPECT_EQ((GETTER).as##TYPE(), (VALUE));                                \
+    }                                                                         \
+  } while (false)
 
 // Checks that the GETTER's value is present, and is a valid index into the
 // STRINGTABLE array, pointing at the expected STRING.
-#  define EXPECT_EQ_STRINGTABLE(GETTER, STRINGTABLE, STRING)                 \
-    do {                                                                     \
-      if ((GETTER).isNull()) {                                               \
-        EXPECT_FALSE((GETTER).isNull())                                      \
-            << #GETTER " doesn't exist or is null";                          \
-      } else if (!(GETTER).isUInt()) {                                       \
-        EXPECT_TRUE((GETTER).isUInt()) << #GETTER " didn't return an index"; \
-      } else {                                                               \
-        EXPECT_LT((GETTER).asUInt(), (STRINGTABLE).size());                  \
-        EXPECT_EQ_JSON((STRINGTABLE)[(GETTER).asUInt()], String, (STRING));  \
-      }                                                                      \
-    } while (false)
+#define EXPECT_EQ_STRINGTABLE(GETTER, STRINGTABLE, STRING)                    \
+  do {                                                                        \
+    if ((GETTER).isNull()) {                                                  \
+      EXPECT_FALSE((GETTER).isNull()) << #GETTER " doesn't exist or is null"; \
+    } else if (!(GETTER).isUInt()) {                                          \
+      EXPECT_TRUE((GETTER).isUInt()) << #GETTER " didn't return an index";    \
+    } else {                                                                  \
+      EXPECT_LT((GETTER).asUInt(), (STRINGTABLE).size());                     \
+      EXPECT_EQ_JSON((STRINGTABLE)[(GETTER).asUInt()], String, (STRING));     \
+    }                                                                         \
+  } while (false)
 
-#  define EXPECT_JSON_ARRAY_CONTAINS(GETTER, TYPE, VALUE)                     \
-    do {                                                                      \
-      if ((GETTER).isNull()) {                                                \
-        EXPECT_FALSE((GETTER).isNull())                                       \
-            << #GETTER " doesn't exist or is null";                           \
-      } else if (!(GETTER).isArray()) {                                       \
-        EXPECT_TRUE((GETTER).is##TYPE()) << #GETTER " is not an array";       \
-      } else if (const Json::ArrayIndex size = (GETTER).size(); size == 0u) { \
-        EXPECT_NE(size, 0u) << #GETTER " is an empty array";                  \
-      } else {                                                                \
-        bool found = false;                                                   \
-        for (Json::ArrayIndex i = 0; i < size; ++i) {                         \
-          if (!(GETTER)[i].is##TYPE()) {                                      \
-            EXPECT_TRUE((GETTER)[i].is##TYPE())                               \
-                << #GETTER "[" << i << "] is not " #TYPE;                     \
-            break;                                                            \
-          }                                                                   \
-          if ((GETTER)[i].as##TYPE() == (VALUE)) {                            \
-            found = true;                                                     \
-            break;                                                            \
-          }                                                                   \
+#define EXPECT_JSON_ARRAY_CONTAINS(GETTER, TYPE, VALUE)                       \
+  do {                                                                        \
+    if ((GETTER).isNull()) {                                                  \
+      EXPECT_FALSE((GETTER).isNull()) << #GETTER " doesn't exist or is null"; \
+    } else if (!(GETTER).isArray()) {                                         \
+      EXPECT_TRUE((GETTER).is##TYPE()) << #GETTER " is not an array";         \
+    } else if (const Json::ArrayIndex size = (GETTER).size(); size == 0u) {   \
+      EXPECT_NE(size, 0u) << #GETTER " is an empty array";                    \
+    } else {                                                                  \
+      bool found = false;                                                     \
+      for (Json::ArrayIndex i = 0; i < size; ++i) {                           \
+        if (!(GETTER)[i].is##TYPE()) {                                        \
+          EXPECT_TRUE((GETTER)[i].is##TYPE())                                 \
+              << #GETTER "[" << i << "] is not " #TYPE;                       \
+          break;                                                              \
         }                                                                     \
-        EXPECT_TRUE(found) << #GETTER " doesn't contain " #VALUE;             \
+        if ((GETTER)[i].as##TYPE() == (VALUE)) {                              \
+          found = true;                                                       \
+          break;                                                              \
+        }                                                                     \
       }                                                                       \
-    } while (false)
+      EXPECT_TRUE(found) << #GETTER " doesn't contain " #VALUE;               \
+    }                                                                         \
+  } while (false)
 
-#  define EXPECT_JSON_ARRAY_EXCLUDES(GETTER, TYPE, VALUE)               \
-    do {                                                                \
-      if ((GETTER).isNull()) {                                          \
-        EXPECT_FALSE((GETTER).isNull())                                 \
-            << #GETTER " doesn't exist or is null";                     \
-      } else if (!(GETTER).isArray()) {                                 \
-        EXPECT_TRUE((GETTER).is##TYPE()) << #GETTER " is not an array"; \
-      } else {                                                          \
-        const Json::ArrayIndex size = (GETTER).size();                  \
-        for (Json::ArrayIndex i = 0; i < size; ++i) {                   \
-          if (!(GETTER)[i].is##TYPE()) {                                \
-            EXPECT_TRUE((GETTER)[i].is##TYPE())                         \
-                << #GETTER "[" << i << "] is not " #TYPE;               \
-            break;                                                      \
-          }                                                             \
-          if ((GETTER)[i].as##TYPE() == (VALUE)) {                      \
-            EXPECT_TRUE((GETTER)[i].as##TYPE() != (VALUE))              \
-                << #GETTER " contains " #VALUE;                         \
-            break;                                                      \
-          }                                                             \
-        }                                                               \
-      }                                                                 \
-    } while (false)
+#define EXPECT_JSON_ARRAY_EXCLUDES(GETTER, TYPE, VALUE)                       \
+  do {                                                                        \
+    if ((GETTER).isNull()) {                                                  \
+      EXPECT_FALSE((GETTER).isNull()) << #GETTER " doesn't exist or is null"; \
+    } else if (!(GETTER).isArray()) {                                         \
+      EXPECT_TRUE((GETTER).is##TYPE()) << #GETTER " is not an array";         \
+    } else {                                                                  \
+      const Json::ArrayIndex size = (GETTER).size();                          \
+      for (Json::ArrayIndex i = 0; i < size; ++i) {                           \
+        if (!(GETTER)[i].is##TYPE()) {                                        \
+          EXPECT_TRUE((GETTER)[i].is##TYPE())                                 \
+              << #GETTER "[" << i << "] is not " #TYPE;                       \
+          break;                                                              \
+        }                                                                     \
+        if ((GETTER)[i].as##TYPE() == (VALUE)) {                              \
+          EXPECT_TRUE((GETTER)[i].as##TYPE() != (VALUE))                      \
+              << #GETTER " contains " #VALUE;                                 \
+          break;                                                              \
+        }                                                                     \
+      }                                                                       \
+    }                                                                         \
+  } while (false)
 
 // Check that the given process root contains all the expected properties.
 static void JSONRootCheck(const Json::Value& aRoot,
@@ -1612,7 +1604,7 @@ TEST(GeckoProfiler, FeaturesAndParams)
     uint32_t features = ProfilerFeature::JS;
     const char* filters[] = {"GeckoMain", "Compositor"};
 
-#  define PROFILER_DEFAULT_DURATION 20 /* seconds, for tests only */
+#define PROFILER_DEFAULT_DURATION 20 /* seconds, for tests only */
     profiler_start(PROFILER_DEFAULT_ENTRIES, PROFILER_DEFAULT_INTERVAL,
                    features, filters, std::size(filters), 100,
                    Some(PROFILER_DEFAULT_DURATION));
@@ -1638,14 +1630,14 @@ TEST(GeckoProfiler, FeaturesAndParams)
 
     // Testing with some arbitrary buffer size (as could be provided by
     // external code), which we convert to the appropriate power of 2.
-    profiler_start(PowerOfTwo32(999999), 3, features, filters,
+    profiler_start(PowerOfTwo32(999999u), 3, features, filters,
                    std::size(filters), 123, Some(25.0));
 
     ASSERT_TRUE(profiler_is_active());
     ASSERT_TRUE(profiler_feature_active(ProfilerFeature::MainThreadIO));
     ASSERT_TRUE(profiler_feature_active(ProfilerFeature::IPCMessages));
 
-    ActiveParamsCheck(int(PowerOfTwo32(999999).Value()), 3, features, filters,
+    ActiveParamsCheck(int(PowerOfTwo32(999999u).Value()), 3, features, filters,
                       std::size(filters), 123, Some(25.0));
 
     profiler_stop();
@@ -1659,14 +1651,14 @@ TEST(GeckoProfiler, FeaturesAndParams)
         ProfilerFeature::MainThreadIO | ProfilerFeature::IPCMessages;
     const char* filters[] = {"GeckoMain", "Foo", "Bar"};
 
-    profiler_start(PowerOfTwo32(999999), 3, features, filters,
+    profiler_start(PowerOfTwo32(999999u), 3, features, filters,
                    std::size(filters), 0, Nothing());
 
     ASSERT_TRUE(profiler_is_active());
     ASSERT_TRUE(profiler_feature_active(ProfilerFeature::MainThreadIO));
     ASSERT_TRUE(profiler_feature_active(ProfilerFeature::IPCMessages));
 
-    ActiveParamsCheck(int(PowerOfTwo32(999999).Value()), 3, features, filters,
+    ActiveParamsCheck(int(PowerOfTwo32(999999u).Value()), 3, features, filters,
                       std::size(filters), 0, Nothing());
 
     profiler_stop();
@@ -1682,14 +1674,14 @@ TEST(GeckoProfiler, FeaturesAndParams)
     // Turn off tracing because it mucks with other features
     availableFeatures &= ~ProfilerFeature::Tracing;
 
-    profiler_start(PowerOfTwo32(88888), 10, availableFeatures, filters,
+    profiler_start(PowerOfTwo32(88888u), 10, availableFeatures, filters,
                    std::size(filters), 0, Some(15.0));
 
     ASSERT_TRUE(profiler_is_active());
     ASSERT_TRUE(profiler_feature_active(ProfilerFeature::MainThreadIO));
     ASSERT_TRUE(profiler_feature_active(ProfilerFeature::IPCMessages));
 
-    ActiveParamsCheck(PowerOfTwo32(88888).Value(), 10, availableFeatures,
+    ActiveParamsCheck(PowerOfTwo32(88888u).Value(), 10, availableFeatures,
                       filters, std::size(filters), 0, Some(15.0));
 
     // Don't call profiler_stop() here.
@@ -1702,8 +1694,8 @@ TEST(GeckoProfiler, FeaturesAndParams)
 
     // Second profiler_start() call in a row without an intervening
     // profiler_stop(); this will do an implicit profiler_stop() and restart.
-    profiler_start(PowerOfTwo32(0), 0, features, filters, std::size(filters), 0,
-                   Some(0.0));
+    profiler_start(PowerOfTwo32(0u), 0, features, filters, std::size(filters),
+                   0, Some(0.0));
 
     ASSERT_TRUE(profiler_is_active());
     ASSERT_TRUE(!profiler_feature_active(ProfilerFeature::MainThreadIO));
@@ -2356,6 +2348,27 @@ class MockClassOfService final : public nsIClassOfService {
 
 NS_IMPL_ISUPPORTS(MockClassOfService, nsIClassOfService)
 
+// BaseMarkerType-based marker with Format::UniqueString payload fields.
+// Must be at file scope since local structs cannot have static data members.
+struct GtestBaseMarkerTypeUniqueString
+    : public mozilla::BaseMarkerType<GtestBaseMarkerTypeUniqueString> {
+  static constexpr const char* Name = "markers-gtest-base-unique-string";
+  using MS = mozilla::MarkerSchema;
+  static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
+                                               MS::Location::MarkerTable};
+  static constexpr MS::PayloadField PayloadFields[] = {
+      {"uniqueField", MS::InputType::CString, "Unique Field",
+       MS::Format::UniqueString},
+      {"plainField", MS::InputType::CString, "Plain Field",
+       MS::Format::String}};
+  static void StreamJSONMarkerData(
+      mozilla::baseprofiler::SpliceableJSONWriter& aWriter,
+      const mozilla::ProfilerString8View& aUniqueText,
+      const mozilla::ProfilerString8View& aPlainText) {
+    StreamJSONMarkerDataImpl(aWriter, aUniqueText, aPlainText);
+  }
+};
+
 TEST(GeckoProfiler, Markers)
 {
   uint32_t features = ProfilerFeature::StackWalk;
@@ -2475,6 +2488,7 @@ TEST(GeckoProfiler, Markers)
       aWriter.UniqueStringProperty("unique text", aUniqueText);
       aWriter.UniqueStringProperty("unique text again", aUniqueText);
       aWriter.TimeProperty("time", aTime);
+      aWriter.StringProperty("color", "green");
     }
     static mozilla::MarkerSchema MarkerTypeDisplay() {
       // Note: This is an test function that is not intended to actually output
@@ -2489,6 +2503,7 @@ TEST(GeckoProfiler, Markers)
       schema.SetChartLabel("chart label");
       schema.SetTooltipLabel("tooltip label");
       schema.SetTableLabel("table label");
+      schema.SetColorField("color");
       // All data functions, all formats.
       schema.AddKeyFormat("key with url", MS::Format::Url);
       schema.AddKeyLabelFormat("key with label filePath", "label filePath",
@@ -2512,6 +2527,8 @@ TEST(GeckoProfiler, Markers)
       schema.AddKeyLabelFormat("key with label hidden", "label",
                                MS::Format::String, MS::PayloadFlags::Hidden);
       schema.AddKeyFormat("key hidden", MS::Format::String,
+                          MS::PayloadFlags::Hidden);
+      schema.AddKeyFormat("color", MS::Format::String,
                           MS::PayloadFlags::Hidden);
 
       return schema;
@@ -2552,6 +2569,11 @@ TEST(GeckoProfiler, Markers)
 
   // Make sure the compiler doesn't complain about this unused struct.
   (void)GtestUnusedMarker{};
+
+  EXPECT_TRUE(profiler_add_marker_impl(
+      "Gtest base marker type unique string", geckoprofiler::category::OTHER,
+      {}, GtestBaseMarkerTypeUniqueString{}, "gtest unique field value",
+      "gtest plain field value"));
 
   // Test PROFILER_MARKER_SIMPLE_PAYLOAD with various data types.
   int testInt = 42;
@@ -2910,6 +2932,7 @@ TEST(GeckoProfiler, Markers)
     S_FirstMarker,
     S_CustomMarker,
     S_SpecialMarker,
+    S_BaseMarkerTypeUniqueString,
     S_SimplePayload_int,
     S_SimplePayload_double,
     S_SimplePayload_bool,
@@ -3023,39 +3046,39 @@ TEST(GeckoProfiler, Markers)
               EXPECT_TRUE(marker[PHASE].asUInt() < 4);
               EXPECT_TRUE(marker[CATEGORY].isUInt());
 
-#  define EXPECT_TIMING_INSTANT                  \
-    EXPECT_NE(marker[START_TIME].asDouble(), 0); \
-    EXPECT_EQ(marker[END_TIME].asDouble(), 0);   \
-    EXPECT_EQ(marker[PHASE].asUInt(), PHASE_INSTANT);
-#  define EXPECT_TIMING_INTERVAL                 \
-    EXPECT_NE(marker[START_TIME].asDouble(), 0); \
-    EXPECT_NE(marker[END_TIME].asDouble(), 0);   \
-    EXPECT_EQ(marker[PHASE].asUInt(), PHASE_INTERVAL);
-#  define EXPECT_TIMING_START                    \
-    EXPECT_NE(marker[START_TIME].asDouble(), 0); \
-    EXPECT_EQ(marker[END_TIME].asDouble(), 0);   \
-    EXPECT_EQ(marker[PHASE].asUInt(), PHASE_START);
-#  define EXPECT_TIMING_END                      \
-    EXPECT_EQ(marker[START_TIME].asDouble(), 0); \
-    EXPECT_NE(marker[END_TIME].asDouble(), 0);   \
-    EXPECT_EQ(marker[PHASE].asUInt(), PHASE_END);
+#define EXPECT_TIMING_INSTANT                  \
+  EXPECT_NE(marker[START_TIME].asDouble(), 0); \
+  EXPECT_EQ(marker[END_TIME].asDouble(), 0);   \
+  EXPECT_EQ(marker[PHASE].asUInt(), PHASE_INSTANT);
+#define EXPECT_TIMING_INTERVAL                 \
+  EXPECT_NE(marker[START_TIME].asDouble(), 0); \
+  EXPECT_NE(marker[END_TIME].asDouble(), 0);   \
+  EXPECT_EQ(marker[PHASE].asUInt(), PHASE_INTERVAL);
+#define EXPECT_TIMING_START                    \
+  EXPECT_NE(marker[START_TIME].asDouble(), 0); \
+  EXPECT_EQ(marker[END_TIME].asDouble(), 0);   \
+  EXPECT_EQ(marker[PHASE].asUInt(), PHASE_START);
+#define EXPECT_TIMING_END                      \
+  EXPECT_EQ(marker[START_TIME].asDouble(), 0); \
+  EXPECT_NE(marker[END_TIME].asDouble(), 0);   \
+  EXPECT_EQ(marker[PHASE].asUInt(), PHASE_END);
 
-#  define EXPECT_TIMING_INSTANT_AT(t)            \
-    EXPECT_EQ(marker[START_TIME].asDouble(), t); \
-    EXPECT_EQ(marker[END_TIME].asDouble(), 0);   \
-    EXPECT_EQ(marker[PHASE].asUInt(), PHASE_INSTANT);
-#  define EXPECT_TIMING_INTERVAL_AT(start, end)      \
-    EXPECT_EQ(marker[START_TIME].asDouble(), start); \
-    EXPECT_EQ(marker[END_TIME].asDouble(), end);     \
-    EXPECT_EQ(marker[PHASE].asUInt(), PHASE_INTERVAL);
-#  define EXPECT_TIMING_START_AT(start)              \
-    EXPECT_EQ(marker[START_TIME].asDouble(), start); \
-    EXPECT_EQ(marker[END_TIME].asDouble(), 0);       \
-    EXPECT_EQ(marker[PHASE].asUInt(), PHASE_START);
-#  define EXPECT_TIMING_END_AT(end)              \
-    EXPECT_EQ(marker[START_TIME].asDouble(), 0); \
-    EXPECT_EQ(marker[END_TIME].asDouble(), end); \
-    EXPECT_EQ(marker[PHASE].asUInt(), PHASE_END);
+#define EXPECT_TIMING_INSTANT_AT(t)            \
+  EXPECT_EQ(marker[START_TIME].asDouble(), t); \
+  EXPECT_EQ(marker[END_TIME].asDouble(), 0);   \
+  EXPECT_EQ(marker[PHASE].asUInt(), PHASE_INSTANT);
+#define EXPECT_TIMING_INTERVAL_AT(start, end)      \
+  EXPECT_EQ(marker[START_TIME].asDouble(), start); \
+  EXPECT_EQ(marker[END_TIME].asDouble(), end);     \
+  EXPECT_EQ(marker[PHASE].asUInt(), PHASE_INTERVAL);
+#define EXPECT_TIMING_START_AT(start)              \
+  EXPECT_EQ(marker[START_TIME].asDouble(), start); \
+  EXPECT_EQ(marker[END_TIME].asDouble(), 0);       \
+  EXPECT_EQ(marker[PHASE].asUInt(), PHASE_START);
+#define EXPECT_TIMING_END_AT(end)              \
+  EXPECT_EQ(marker[START_TIME].asDouble(), 0); \
+  EXPECT_EQ(marker[END_TIME].asDouble(), end); \
+  EXPECT_EQ(marker[PHASE].asUInt(), PHASE_END);
 
               if (marker.size() == SIZE_WITHOUT_PAYLOAD) {
                 // root.threads[0].markers.data[i] is an array with 5 elements,
@@ -3075,12 +3098,12 @@ TEST(GeckoProfiler, Markers)
                   EXPECT_EQ(state, S_Markers2DefaultEmptyOptions);
                   state = State(S_Markers2DefaultEmptyOptions + 1);
 // TODO: Re-enable this when bug 1646714 lands, and check for stack.
-#  if 0
+#if 0
               } else if (nameString ==
                          "default-templated markers 2.0 with option") {
                 EXPECT_EQ(state, S_Markers2DefaultWithOptions);
                 state = State(S_Markers2DefaultWithOptions + 1);
-#  endif
+#endif
                 } else if (nameString ==
                            "explicitly-default-templated markers 2.0 with "
                            "empty "
@@ -3179,7 +3202,7 @@ TEST(GeckoProfiler, Markers)
                   EXPECT_EQ(state, S_CustomMarker);
                   state = State(S_CustomMarker + 1);
                   EXPECT_EQ(typeString, "markers-gtest");
-                  EXPECT_EQ(payload.size(), 1u + 9u);
+                  EXPECT_EQ(payload.size(), 1u + 10u);
                   EXPECT_TRUE(payload["null"].isNull());
                   EXPECT_EQ_JSON(payload["bool-false"], Bool, false);
                   EXPECT_EQ_JSON(payload["bool-true"], Bool, true);
@@ -3201,6 +3224,21 @@ TEST(GeckoProfiler, Markers)
                   state = State(S_SpecialMarker + 1);
                   EXPECT_EQ(typeString, "markers-gtest-special");
                   EXPECT_EQ(payload.size(), 1u) << "Only 'type' in the payload";
+
+                } else if (nameString ==
+                           "Gtest base marker type unique string") {
+                  EXPECT_EQ(state, S_BaseMarkerTypeUniqueString);
+                  state = State(S_BaseMarkerTypeUniqueString + 1);
+                  EXPECT_EQ(typeString, "markers-gtest-base-unique-string");
+                  // uniqueField should be stored as a unique-string index.
+                  ASSERT_TRUE(payload["uniqueField"].isUInt());
+                  auto uniqueIndex = payload["uniqueField"].asUInt();
+                  GET_JSON(uniqueValue, stringTable[uniqueIndex], String);
+                  ASSERT_TRUE(uniqueValue.isString());
+                  EXPECT_EQ(uniqueValue.asString(), "gtest unique field value");
+                  // plainField should be stored as a regular string.
+                  EXPECT_EQ_JSON(payload["plainField"], String,
+                                 "gtest plain field value");
 
                 } else if (nameString == "SimplePayload with int") {
                   EXPECT_EQ(state, S_SimplePayload_int);
@@ -3629,8 +3667,9 @@ TEST(GeckoProfiler, Markers)
             EXPECT_EQ_JSON(schema["chartLabel"], String, "chart label");
             EXPECT_EQ_JSON(schema["tooltipLabel"], String, "tooltip label");
             EXPECT_EQ_JSON(schema["tableLabel"], String, "table label");
+            EXPECT_EQ_JSON(schema["colorField"], String, "color");
 
-            ASSERT_EQ(data.size(), 18u);
+            ASSERT_EQ(data.size(), 19u);
 
             ASSERT_TRUE(data[0u].isObject());
             EXPECT_EQ_JSON(data[0u]["key"], String, "key with url");
@@ -3724,6 +3763,29 @@ TEST(GeckoProfiler, Markers)
             EXPECT_EQ_JSON(data[17u]["format"], String, "string");
             EXPECT_EQ_JSON(data[17u]["hidden"], Bool, true);
 
+            ASSERT_TRUE(data[18u].isObject());
+            EXPECT_EQ_JSON(data[18u]["key"], String, "color");
+            EXPECT_TRUE(data[18u]["label"].isNull());
+            EXPECT_EQ_JSON(data[18u]["format"], String, "string");
+            EXPECT_EQ_JSON(data[18u]["hidden"], Bool, true);
+
+          } else if (nameString == "markers-gtest-base-unique-string") {
+            EXPECT_EQ(display.size(), 2u);
+            EXPECT_EQ(display[0u].asString(), "marker-chart");
+            EXPECT_EQ(display[1u].asString(), "marker-table");
+
+            ASSERT_EQ(data.size(), 2u);
+
+            ASSERT_TRUE(data[0u].isObject());
+            EXPECT_EQ_JSON(data[0u]["key"], String, "uniqueField");
+            EXPECT_EQ_JSON(data[0u]["label"], String, "Unique Field");
+            EXPECT_EQ_JSON(data[0u]["format"], String, "unique-string");
+
+            ASSERT_TRUE(data[1u].isObject());
+            EXPECT_EQ_JSON(data[1u]["key"], String, "plainField");
+            EXPECT_EQ_JSON(data[1u]["label"], String, "Plain Field");
+            EXPECT_EQ_JSON(data[1u]["format"], String, "string");
+
           } else if (nameString == "markers-gtest-special") {
             EXPECT_EQ(display.size(), 0u);
             ASSERT_EQ(data.size(), 0u);
@@ -3799,10 +3861,10 @@ TEST(GeckoProfiler, Markers)
   profiler_stop();
 }
 
-#  define COUNTER_NAME "TestCounter"
-#  define COUNTER_DESCRIPTION "Test of counters in profiles"
-#  define COUNTER_NAME2 "Counter2"
-#  define COUNTER_DESCRIPTION2 "Second Test of counters in profiles"
+#define COUNTER_NAME "TestCounter"
+#define COUNTER_DESCRIPTION "Test of counters in profiles"
+#define COUNTER_NAME2 "Counter2"
+#define COUNTER_DESCRIPTION2 "Second Test of counters in profiles"
 
 PROFILER_DEFINE_COUNT_TOTAL(TestCounter, COUNTER_NAME, COUNTER_DESCRIPTION);
 PROFILER_DEFINE_COUNT_TOTAL(TestCounter2, COUNTER_NAME2, COUNTER_DESCRIPTION2);
@@ -4521,17 +4583,17 @@ TEST(GeckoProfiler, BaseProfilerHandOff)
 
 // Bug 1953108: Windows ASan builds frequently time out on
 // GeckoProfiler.FeatureCombinations.
-#  if !defined(XP_WIN) || !defined(MOZ_ASAN)
+#if !defined(XP_WIN) || !defined(MOZ_ASAN)
 
 static std::string_view GetFeatureName(uint32_t feature) {
   switch (feature) {
-#    define FEATURE_NAME(n_, str_, Name_, desc_) \
-      case ProfilerFeature::Name_:               \
-        return str_;
+#  define FEATURE_NAME(n_, str_, Name_, desc_) \
+    case ProfilerFeature::Name_:               \
+      return str_;
 
     PROFILER_FOR_EACH_FEATURE(FEATURE_NAME)
 
-#    undef FEATURE_NAME
+#  undef FEATURE_NAME
 
     default:
       return "?";
@@ -4612,7 +4674,7 @@ TEST(GeckoProfiler, FeatureCombinations)
   }
 }
 
-#  endif  // if !defined(XP_WIN) || !defined(MOZ_ASAN)
+#endif  // if !defined(XP_WIN) || !defined(MOZ_ASAN)
 
 static void CountCPUDeltas(const Json::Value& aThread, size_t& aOutSamplings,
                            uint64_t& aOutCPUDeltaSum) {
@@ -4711,7 +4773,7 @@ TEST(GeckoProfiler, CPUUsage)
             (testWithNoStackSampling ? ProfilerFeature::NoStackSampling : 0),
         filters, std::size(filters), 0);
     // Grab a few samples, each with a different label on the stack.
-#  define SAMPLE_LABEL_PREFIX "CPUUsage sample label "
+#define SAMPLE_LABEL_PREFIX "CPUUsage sample label "
     static constexpr const char* scSampleLabels[] = {
         SAMPLE_LABEL_PREFIX "0", SAMPLE_LABEL_PREFIX "1",
         SAMPLE_LABEL_PREFIX "2", SAMPLE_LABEL_PREFIX "3",
@@ -4764,16 +4826,16 @@ TEST(GeckoProfiler, CPUUsage)
         {
           EXPECT_EQ_JSON(sampleUnits["time"], String, "ms");
           EXPECT_EQ_JSON(sampleUnits["eventDelay"], String, "ms");
-#  if defined(GP_OS_windows) || defined(GP_OS_darwin) || \
-      defined(GP_OS_linux) || defined(GP_OS_android) || defined(GP_OS_freebsd)
+#if defined(GP_OS_windows) || defined(GP_OS_darwin) || defined(GP_OS_linux) || \
+    defined(GP_OS_android) || defined(GP_OS_freebsd)
           // Note: The exact string is not important here.
           EXPECT_TRUE(sampleUnits["threadCPUDelta"].isString())
               << "There should be a sampleUnits.threadCPUDelta on this "
                  "platform";
-#  else
+#else
         EXPECT_FALSE(sampleUnits.isMember("threadCPUDelta"))
             << "Unexpected sampleUnits.threadCPUDelta on this platform";;
-#  endif
+#endif
         }
       }
 
@@ -4838,16 +4900,16 @@ TEST(GeckoProfiler, CPUUsage)
               EXPECT_GE(stackLeaves.size(), scSampleLabelCount);
             }
 
-#  if defined(GP_OS_windows) || defined(GP_OS_darwin) || \
-      defined(GP_OS_linux) || defined(GP_OS_android) || defined(GP_OS_freebsd)
+#if defined(GP_OS_windows) || defined(GP_OS_darwin) || defined(GP_OS_linux) || \
+    defined(GP_OS_android) || defined(GP_OS_freebsd)
             EXPECT_GE(threadCPUDeltaCount, data.size() - 1u)
                 << "There should be 'threadCPUDelta' values in all but 1 "
                    "samples";
-#  else
+#else
           // All "threadCPUDelta" data should be absent or null on unsupported
           // platforms.
           EXPECT_EQ(threadCPUDeltaCount, 0u);
-#  endif
+#endif
           }
         } else if (name.asString() == "Idle test") {
           foundIdle = true;
@@ -4860,13 +4922,13 @@ TEST(GeckoProfiler, CPUUsage)
           } else {
             EXPECT_GE(samplings, scMinSamplings);
           }
-#  if !(defined(GP_OS_windows) || defined(GP_OS_darwin) || \
-        defined(GP_OS_linux) || defined(GP_OS_android) ||  \
-        defined(GP_OS_freebsd))
+#if !(defined(GP_OS_windows) || defined(GP_OS_darwin) || \
+      defined(GP_OS_linux) || defined(GP_OS_android) ||  \
+      defined(GP_OS_freebsd))
           // All "threadCPUDelta" data should be absent or null on unsupported
           // platforms.
           EXPECT_EQ(idleThreadCPUDeltaSum, 0u);
-#  endif
+#endif
         } else if (name.asString() == "Busy test") {
           foundBusy = true;
           size_t samplings;
@@ -4878,13 +4940,13 @@ TEST(GeckoProfiler, CPUUsage)
           } else {
             EXPECT_GE(samplings, scMinSamplings);
           }
-#  if !(defined(GP_OS_windows) || defined(GP_OS_darwin) || \
-        defined(GP_OS_linux) || defined(GP_OS_android) ||  \
-        defined(GP_OS_freebsd))
+#if !(defined(GP_OS_windows) || defined(GP_OS_darwin) || \
+      defined(GP_OS_linux) || defined(GP_OS_android) ||  \
+      defined(GP_OS_freebsd))
           // All "threadCPUDelta" data should be absent or null on unsupported
           // platforms.
           EXPECT_EQ(busyThreadCPUDeltaSum, 0u);
-#  endif
+#endif
         }
       }
 
@@ -5306,5 +5368,3 @@ TEST(GeckoProfiler, NoMarkerStacks)
 
   ASSERT_TRUE(!profiler_get_profile());
 }
-
-#endif  // MOZ_GECKO_PROFILER

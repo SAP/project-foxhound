@@ -43,8 +43,10 @@ internal object IconResourceComparator : Comparator<IconRequest.Resource> {
 @Suppress("MagicNumber")
 private fun IconRequest.Resource.Type.rank(): Int {
     return when (this) {
-        // An icon from our "tippy top" list should always be preferred
+        // An icon from our Merino Manifest or "tippy top" list should always be preferred.
+        IconRequest.Resource.Type.MERINO_MANIFEST -> 30
         IconRequest.Resource.Type.TIPPY_TOP -> 25
+
         IconRequest.Resource.Type.MANIFEST_ICON -> 20
         // We prefer touch icons because they tend to have a higher resolution than ordinary favicons.
         IconRequest.Resource.Type.APPLE_TOUCH_ICON -> 15

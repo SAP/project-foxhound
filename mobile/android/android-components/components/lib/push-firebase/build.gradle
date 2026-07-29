@@ -25,6 +25,7 @@ dependencies {
     testImplementation project(':components:support-test')
 
     testImplementation libs.androidx.test.core
+    testImplementation libs.kotlin.test
     testImplementation libs.kotlinx.coroutines.test
     testImplementation platform(libs.junit.bom)
     testImplementation libs.junit4

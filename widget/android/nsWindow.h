@@ -1,6 +1,4 @@
-/* -*- Mode: c++; c-basic-offset: 2; tab-width: 20; indent-tabs-mode: nil; -*-
- * vim: set sw=2 ts=4 expandtab:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -122,7 +120,7 @@ class nsWindow final : public nsIWidget {
   static mozilla::TimeStamp GetEventTimeStamp(int64_t aEventTime);
 
   void InitEvent(mozilla::WidgetGUIEvent& event,
-                 LayoutDeviceIntPoint* aPoint = 0);
+                 LayoutDeviceIntPoint* aPoint = nullptr);
 
   void UpdateOverscrollVelocity(const float aX, const float aY);
   void UpdateOverscrollOffset(const float aX, const float aY);
@@ -209,7 +207,7 @@ class nsWindow final : public nsIWidget {
       nsISynthesizedEventCallback* aCallback) override;
   nsresult SynthesizeNativeMouseEvent(
       LayoutDeviceIntPoint aPoint, NativeMouseMessage aNativeMessage,
-      mozilla::MouseButton aButton, nsIWidget::Modifiers aModifierFlags,
+      mozilla::MouseButton aButton, nsIWidget::NativeModifiers aModifierFlags,
       nsISynthesizedEventCallback* aCallback) override;
   nsresult SynthesizeNativeMouseMove(
       LayoutDeviceIntPoint aPoint,
@@ -255,6 +253,8 @@ class nsWindow final : public nsIWidget {
 
   void DoResize(double aX, double aY, double aWidth, double aHeight,
                 bool aRepaint);
+
+  void PerformHapticFeedback(mozilla::HapticFeedbackType aType) override;
 
  protected:
   void BringToFront();

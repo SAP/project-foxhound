@@ -1,6 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
-
 // Tests for `History.removeVisitsByFilter`, as implemented in History.sys.mjs
 
 "use strict";
@@ -36,7 +33,7 @@ add_task(async function test_removeVisitsByFilter() {
           Math.random();
     for (let i = 0; i < SAMPLE_SIZE; ++i) {
       let spec = getURL(i);
-      let uri = NetUtil.newURI(spec);
+      let uri = Services.io.newURI(spec);
       let jsDate = new Date(Number(referenceDate) + 3600 * 1000 * i);
       let dbDate = jsDate * 1000;
       let hasBookmark = bookmarkIndices.has(i);
@@ -206,14 +203,33 @@ add_task(async function test_removeVisitsByFilter() {
 
     // Make sure that we have eliminated exactly the entries we expected
     // to eliminate.
+    let db = await PlacesUtils.promiseDBConnection();
+    let visitSpecs = [...new Set(visits.map(v => v.uri.spec))];
+    let placesRows = await db.execute(
+      `SELECT url, id,
+        (SELECT count(*) FROM moz_historyvisits WHERE place_id = h.id) AS visit_count
+       FROM moz_places h
+       WHERE url IN (${visitSpecs.map(() => "?").join(",")})`,
+      visitSpecs
+    );
+    let visitCountBySpec = new Map(
+      placesRows.map(r => [
+        r.getResultByName("url"),
+        r.getResultByName("visit_count"),
+      ])
+    );
+    let pageIdBySpec = new Map(
+      placesRows.map(r => [r.getResultByName("url"), r.getResultByName("id")])
+    );
     for (let i = 0; i < visits.length; ++i) {
       let visit = visits[i];
+      let spec = visit.uri.spec;
       info("Controlling the results on visit " + i);
       let remainingVisitsForURI = remainingItems.filter(
-        v => visit.uri.spec == v.uri.spec
+        v => v.uri.spec == spec
       ).length;
       Assert.equal(
-        visits_in_database(visit.uri),
+        visitCountBySpec.get(spec) ?? 0,
         remainingVisitsForURI,
         "Visit is still present iff expected"
       );
@@ -226,13 +242,13 @@ add_task(async function test_removeVisitsByFilter() {
       }
       if (visit.test.hasBookmark || remainingVisitsForURI) {
         Assert.notEqual(
-          page_in_database(visit.uri),
+          pageIdBySpec.get(spec) ?? 0,
           0,
           "The page should still appear in the db"
         );
       } else {
         Assert.equal(
-          page_in_database(visit.uri),
+          pageIdBySpec.get(spec) ?? 0,
           0,
           "The page should have been removed from the db"
         );
@@ -375,7 +391,7 @@ add_task(async function test_error_cases() {
 });
 
 add_task(async function test_orphans() {
-  let uri = NetUtil.newURI("http://moz.org/");
+  let uri = Services.io.newURI("http://moz.org/");
   await PlacesTestUtils.addVisits({ uri });
   await PlacesTestUtils.setFaviconForPage(
     uri,

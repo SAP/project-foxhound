@@ -14,7 +14,7 @@
     @media (-moz-gtk-theme-family) {
       --tabs-navbar-separator-style: none;
       @media (prefers-color-scheme: light) {
-        --urlbar-box-bgcolor: #fafafa;
+        --urlbar-box-background-color: #fafafa;
       }
     }
   }
@@ -58,21 +58,11 @@
       -moz-default-appearance: -moz-window-decorations;
       appearance: auto;
 
-      #navigator-toolbox,
+      body,
       dialog::backdrop {
         border-top-left-radius: env(-moz-gtk-csd-titlebar-radius);
         border-top-right-radius: env(-moz-gtk-csd-titlebar-radius);
-      }
-
-      /* stylelint-disable-next-line media-query-no-invalid */
-      @media -moz-pref("widget.gtk.rounded-bottom-corners.enabled") {
-        #navigator-toolbox {
-          /* The body clip below covers this. */
-          border-radius: 0;
-        }
-
-        body,
-        dialog::backdrop {
+        @media -moz-pref("widget.gtk.rounded-bottom-corners.enabled") {
           /* Use an uniform clip to allow WebRender to optimize it better */
           border-radius: env(-moz-gtk-csd-titlebar-radius);
         }
@@ -156,7 +146,7 @@
 }
 
 /**
- * Override the --arrowpanel-padding so the background extends
+ * Override the --panel-padding so the background extends
  * to the sides and bottom of the panel.
  */
 #UITourTooltipButtons {
@@ -256,15 +246,15 @@
 
   @media (-moz-gtk-theme-family: breeze) {
     &:hover > .toolbarbutton-icon {
-      color: var(--toolbox-bgcolor);
-      background-color: var(--toolbox-textcolor);
+      color: var(--toolbox-background-color);
+      background-color: var(--toolbox-text-color);
       &:-moz-window-inactive {
-        color: var(--toolbox-bgcolor-inactive);
-        background-color: var(--toolbox-textcolor-inactive);
+        color: var(--toolbox-background-color-inactive);
+        background-color: var(--toolbox-text-color-inactive);
       }
     }
     &:hover:active > .toolbarbutton-icon {
-      background-color: color-mix(in srgb, var(--toolbox-textcolor) 50%, transparent);
+      background-color: color-mix(in srgb, var(--toolbox-text-color) 50%, transparent);
     }
     &.titlebar-close:hover > .toolbarbutton-icon {
       background-color: #ff98a2;

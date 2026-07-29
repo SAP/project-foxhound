@@ -22,9 +22,93 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1733878
       editor.rewrap(false);
       is(document.body.textContent, "", "Initial body check after rewrap");
 
-      document.body.innerHTML = "> hello world this_is_a_very_long_long_word_which_has_a_length_higher_than_the_max_column";
+      var longWord =
+        "this_is_a_very_long_long_word_which_has_a_length_higher_than_the_max_column";
+      document.body.innerHTML = `> hello world ${longWord}`;
       editor.rewrap(true);
-      is(document.body.innerText, "> hello world\n> this_is_a_very_long_long_word_which_has_a_length_higher_than_the_max_column", "Rewrapped");
+      is(document.body.innerText, `> hello world\n> ${longWord}`, "Rewrapped");
+
+      var defaultWrapColumn = 72;
+      var quoteLevel = defaultWrapColumn - 2;
+      document.body.textContent = `${">".repeat(quoteLevel)} ${longWord}`;
+      editor.rewrap(true);
+      is(
+        document.body.textContent,
+        `${">".repeat(quoteLevel)} ${longWord}`,
+        "Rewrapped deeply quoted long line"
+      );
+
+      var minimumUsefulBodyColumn = Math.max(16, defaultWrapColumn / 3);
+      var bodySegment = "abcdefghijklmnopqrstuvwx";
+      is(
+        bodySegment.length,
+        minimumUsefulBodyColumn,
+        "Sanity check for the deeply quoted wrapping test"
+      );
+      var breakableText = Array(4).fill(bodySegment).join(" ");
+      var deeplyQuotedPrefix = `${">".repeat(quoteLevel)} `;
+      document.body.textContent = `${">".repeat(quoteLevel)} ${breakableText}`;
+      editor.rewrap(true);
+      is(
+        document.body.innerText,
+        Array(4).fill(`${deeplyQuotedPrefix}${bodySegment}`).join("\n"),
+        "Rewrapped deeply quoted breakable text at the minimum useful body width"
+      );
+
+      var quoteLevelBeyondWrapColumn = defaultWrapColumn + 10;
+      var veryDeeplyQuotedPrefix =
+        `${">".repeat(quoteLevelBeyondWrapColumn)} `;
+      document.body.textContent =
+        `${veryDeeplyQuotedPrefix}${Array(3).fill(bodySegment).join(" ")}`;
+      editor.rewrap(true);
+      is(
+        document.body.innerText,
+        Array(3).fill(`${veryDeeplyQuotedPrefix}${bodySegment}`).join("\n"),
+        "Rewrapped quoted body at the minimum useful width when quote prefix exceeds wrap column"
+      );
+
+      document.body.textContent = `${veryDeeplyQuotedPrefix}${longWord}`;
+      editor.rewrap(true);
+      is(
+        document.body.textContent,
+        `${veryDeeplyQuotedPrefix}${longWord}`,
+        "Did not split an unbreakable word when quote prefix exceeds wrap column"
+      );
+
+      document.body.innerHTML =
+        `${deeplyQuotedPrefix}${bodySegment}<br>` +
+        `${deeplyQuotedPrefix}${bodySegment}`;
+      editor.rewrap(true);
+      is(
+        document.body.innerText,
+        Array(2).fill(`${deeplyQuotedPrefix}${bodySegment}`).join("\n"),
+        "Joined same-level quoted physical lines and wrapped at the minimum useful body width"
+      );
+
+      document.body.innerHTML = "&gt; one<br>&gt;<br>&gt; two";
+      editor.rewrap(true);
+      is(
+        document.body.innerText,
+        "> one\n> \n> two",
+        "Preserved blank quoted lines"
+      );
+
+      document.body.innerHTML = "&gt; one<br>&gt;&gt; two<br>&gt; three";
+      editor.rewrap(true);
+      is(
+        document.body.innerText,
+        "> one\n>> two\n> three",
+        "Preserved quote-level changes as line boundaries"
+      );
+
+      var longUnquotedLine = Array(30).fill("unquoted").join(" ");
+      document.body.textContent = longUnquotedLine;
+      editor.rewrap(true);
+      is(
+        document.body.textContent,
+        longUnquotedLine,
+        "Did not wrap unquoted lines"
+      );
 
       SimpleTest.finish();
     });

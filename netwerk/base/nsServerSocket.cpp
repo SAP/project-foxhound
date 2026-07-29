@@ -1,4 +1,3 @@
-/* vim:set ts=2 sw=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -146,7 +145,10 @@ void nsServerSocket::CreateClientTransport(PRFileDesc* aClientFD,
     return;
   }
 
-  mListener->OnSocketAccepted(this, trans);
+  nsCOMPtr<nsIServerSocketListener> listener = GetListener();
+  if (listener) {
+    listener->OnSocketAccepted(this, trans);
+  }
 }
 
 //-----------------------------------------------------------------------------
@@ -197,22 +199,19 @@ void nsServerSocket::OnSocketDetached(PRFileDesc* fd) {
     mFD = nullptr;
   }
 
-  if (mListener) {
-    mListener->OnStopListening(this, mCondition);
+  RefPtr<nsIServerSocketListener> listener;
+  {
+    MutexAutoLock lock(mLock);
+    listener = ToRefPtr(std::move(mListener));
+  }
 
-    // need to atomically clear mListener.  see our Close() method.
-    RefPtr<nsIServerSocketListener> listener = nullptr;
-    {
-      MutexAutoLock lock(mLock);
-      listener = ToRefPtr(std::move(mListener));
-    }
+  if (listener) {
+    listener->OnStopListening(this, mCondition);
 
     // XXX we need to proxy the release to the listener's target thread to work
     // around bug 337492.
-    if (listener) {
-      NS_ProxyRelease("nsServerSocket::mListener", mListenerTarget,
-                      listener.forget());
-    }
+    NS_ProxyRelease("nsServerSocket::mListener", mListenerTarget,
+                    listener.forget());
   }
 }
 
@@ -537,9 +536,9 @@ NS_IMETHODIMP
 nsServerSocket::AsyncListen(nsIServerSocketListener* aListener) {
   // ensuring mFD implies ensuring mLock
   NS_ENSURE_TRUE(mFD, NS_ERROR_NOT_INITIALIZED);
-  NS_ENSURE_TRUE(mListener == nullptr, NS_ERROR_IN_PROGRESS);
   {
     MutexAutoLock lock(mLock);
+    NS_ENSURE_TRUE(mListener == nullptr, NS_ERROR_IN_PROGRESS);
     mListener = new ServerSocketListenerProxy(aListener);
     mListenerTarget = GetCurrentSerialEventTarget();
   }

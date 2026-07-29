@@ -4,7 +4,6 @@
 
 package org.mozilla.focus.downloads
 
-import android.os.Environment
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.fetch.Client
 import mozilla.components.feature.downloads.AbstractFetchDownloadService
@@ -12,11 +11,16 @@ import mozilla.components.feature.downloads.DefaultPackageNameProvider
 import mozilla.components.feature.downloads.DownloadEstimator
 import mozilla.components.feature.downloads.FileSizeFormatter
 import mozilla.components.feature.downloads.PackageNameProvider
+import mozilla.components.feature.downloads.filewriter.DefaultDownloadFileWriter
+import mozilla.components.feature.downloads.filewriter.DownloadFileWriter
 import mozilla.components.support.base.android.NotificationsDelegate
 import mozilla.components.support.utils.DefaultDownloadFileUtils
 import mozilla.components.support.utils.DownloadFileUtils
 import org.mozilla.focus.ext.components
 
+/**
+ * Service for handling downloads using the fetch library.
+ */
 class DownloadService : AbstractFetchDownloadService() {
     override val httpClient: Client by lazy { components.client }
     override val store: BrowserStore by lazy { components.store }
@@ -27,11 +31,12 @@ class DownloadService : AbstractFetchDownloadService() {
     override val downloadFileUtils: DownloadFileUtils by lazy {
         DefaultDownloadFileUtils(
             context = applicationContext,
-            downloadLocation = {
-                Environment.getExternalStoragePublicDirectory(
-                    Environment.DIRECTORY_DOWNLOADS,
-                ).path
-            },
+        )
+    }
+    override val downloadFileWriter: DownloadFileWriter by lazy {
+        DefaultDownloadFileWriter(
+            context = applicationContext,
+            downloadFileUtils = downloadFileUtils,
         )
     }
 }

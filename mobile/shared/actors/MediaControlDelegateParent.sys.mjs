@@ -8,10 +8,10 @@ export class MediaControlDelegateParent extends GeckoViewActorParent {
   async receiveMessage({ name, data }) {
     switch (name) {
       case "GeckoView:MediaSession:Fullscreen": {
-        return this.eventDispatcher.sendRequestForResult({
-          ...data,
-          type: "GeckoView:MediaSession:Fullscreen",
-        });
+        return this.eventDispatcher.sendRequestForResult(
+          "GeckoView:MediaSession:Fullscreen",
+          data
+        );
       }
       default: {
         return super.receiveMessage({ name, data });

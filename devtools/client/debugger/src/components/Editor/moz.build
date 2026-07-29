@@ -1,4 +1,3 @@
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -19,7 +18,7 @@ CompiledModules(
     "index.js",
     "InlinePreview.js",
     "InlinePreviews.js",
-    "SearchInFileBar.js",
+    "FileSearch.js",
     "Tab.js",
     "Tabs.js",
     "TracePanel.js",

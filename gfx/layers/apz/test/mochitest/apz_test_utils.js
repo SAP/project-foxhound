@@ -249,7 +249,7 @@ function getLastContentDisplayportFor(
   aOptions = { expectPainted: true, popupElement: null }
 ) {
   var contentTestData = SpecialPowers.getDOMWindowUtils(
-    aOptions.popupElement ? aOptions.popupElement.ownerGlobal : window
+    aOptions.popupElement ? aOptions.popupElement.documentGlobal : window
   ).getContentAPZTestData(aOptions.popupElement);
   if (contentTestData == undefined) {
     ok(!aOptions.expectPainted, "expected to have apz test data (1)");
@@ -373,7 +373,7 @@ async function promiseApzFlushedRepaints(aPopupElement = null) {
   }
   await promiseAllPaintsDone();
   await promiseOnlyApzControllerFlushed(
-    aPopupElement ? aPopupElement.ownerGlobal : window,
+    aPopupElement ? aPopupElement.documentGlobal : window,
     aPopupElement
   );
   await promiseAllPaintsDone();
@@ -1223,7 +1223,7 @@ async function cancelScrollAnimation(aElement, aWindow = window) {
 
 function collectSampledScrollOffsets(aElement, aPopupElement = null) {
   const utils = SpecialPowers.getDOMWindowUtils(
-    aPopupElement ? aPopupElement.ownerGlobal : window
+    aPopupElement ? aPopupElement.documentGlobal : window
   );
   let data = utils.getCompositorAPZTestData(aPopupElement);
   let sampledResults = data.sampledResults;

@@ -18,6 +18,7 @@ remote.jar:
   content/shared/AsyncQueue.sys.mjs (shared/AsyncQueue.sys.mjs)
   content/shared/BiMap.sys.mjs (shared/BiMap.sys.mjs)
   content/shared/Browser.sys.mjs (shared/Browser.sys.mjs)
+  content/shared/BrowsingContextUtils.sys.mjs (shared/BrowsingContextUtils.sys.mjs)
   content/shared/Capture.sys.mjs (shared/Capture.sys.mjs)
   content/shared/ChallengeHeaderParser.sys.mjs (shared/ChallengeHeaderParser.sys.mjs)
   content/shared/DOM.sys.mjs (shared/DOM.sys.mjs)
@@ -85,7 +86,6 @@ remote.jar:
   content/shared/messagehandler/transports/js-window-actors/MessageHandlerFrameActor.sys.mjs (shared/messagehandler/transports/js-window-actors/MessageHandlerFrameActor.sys.mjs)
   content/shared/messagehandler/transports/js-window-actors/MessageHandlerFrameChild.sys.mjs (shared/messagehandler/transports/js-window-actors/MessageHandlerFrameChild.sys.mjs)
   content/shared/messagehandler/transports/js-window-actors/MessageHandlerFrameParent.sys.mjs (shared/messagehandler/transports/js-window-actors/MessageHandlerFrameParent.sys.mjs)
-  content/shared/messagehandler/transports/BrowsingContextUtils.sys.mjs (shared/messagehandler/transports/BrowsingContextUtils.sys.mjs)
   content/shared/messagehandler/transports/RootTransport.sys.mjs (shared/messagehandler/transports/RootTransport.sys.mjs)
 
   # shared modules (WebDriver HTTP / BiDi only)

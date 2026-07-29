@@ -1,14 +1,12 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/UnderlyingSourceCallbackHelpers.h"
 
+#include "ReadableByteStreamControllerAbstract.h"
 #include "StreamUtils.h"
 #include "js/experimental/TypedData.h"
-#include "mozilla/dom/ReadableByteStreamController.h"
 #include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/ReadableStreamDefaultController.h"
 #include "mozilla/dom/UnderlyingSourceBinding.h"
@@ -223,10 +221,10 @@ nsresult InputStreamHolder::AsyncWait(uint32_t aFlags, uint32_t aRequestedCount,
 NS_IMETHODIMP InputStreamHolder::OnInputStreamReady(
     nsIAsyncInputStream* aStream) {
   mAsyncWaitWorkerRef = nullptr;
-  mAsyncWaitAlgorithms = nullptr;
   // We may get called back after ::Shutdown()
-  if (mCallback) {
-    return mCallback->OnInputStreamReady(aStream);
+  if (RefPtr<InputToReadableStreamAlgorithms> callback =
+          mAsyncWaitAlgorithms.forget()) {
+    return callback->OnInputStreamReady(aStream);
   }
   return NS_ERROR_FAILURE;
 }
@@ -244,6 +242,12 @@ InputToReadableStreamAlgorithms::InputToReadableStreamAlgorithms(
       mInput(new InputStreamHolder(aStream->GetParentObject(), this, aInput)),
       mStream(aStream) {
   mInput->Init(aCx);
+}
+
+InputToReadableStreamAlgorithms::~InputToReadableStreamAlgorithms() {
+  if (mInput) {
+    mInput->Shutdown();
+  }
 }
 
 already_AddRefed<Promise> InputToReadableStreamAlgorithms::PullCallbackImpl(
@@ -449,8 +453,10 @@ void InputToReadableStreamAlgorithms::PullFromInputStream(JSContext* aCx,
     // But we do not use pullSize but use byteWritten here, since nsIInputStream
     // does not guarantee to read as much as it told in Available().
     MOZ_DIAGNOSTIC_ASSERT(pullSize == bytesWritten);
-    ReadableByteStreamControllerRespond(
-        aCx, MOZ_KnownLive(mStream->Controller()->AsByte()), bytesWritten, aRv);
+    RefPtr<ReadableByteStreamController> byteController(
+        mStream->Controller()->AsByte());
+    MOZ_ASSERT(byteController);
+    ReadableByteStreamControllerRespond(aCx, byteController, bytesWritten, aRv);
   }
   // Step 9. Otherwise,
   else {
@@ -484,8 +490,10 @@ void InputToReadableStreamAlgorithms::PullFromInputStream(JSContext* aCx,
 
     // Step 9.2. Perform ?
     // ReadableByteStreamControllerEnqueue(stream.[[controller]], view).
-    ReadableByteStreamControllerEnqueue(
-        aCx, MOZ_KnownLive(mStream->Controller()->AsByte()), view, aRv);
+    RefPtr<ReadableByteStreamController> byteController(
+        mStream->Controller()->AsByte());
+    MOZ_ASSERT(byteController);
+    ReadableByteStreamControllerEnqueue(aCx, byteController, view, aRv);
   }
 }
 

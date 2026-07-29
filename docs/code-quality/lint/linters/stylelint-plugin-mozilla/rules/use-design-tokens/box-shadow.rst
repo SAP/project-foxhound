@@ -28,13 +28,13 @@ Examples of correct token usage for this rule:
 .. code-block:: css
 
   .card {
-    box-shadow: var(--box-shadow-card);
+    box-shadow: var(--card-box-shadow);
   }
 
 .. code-block:: css
 
   .card-hover {
-    box-shadow: var(--box-shadow-card-hover);
+    box-shadow: var(--card-box-shadow-hover);
   }
 
 .. code-block:: css
@@ -64,13 +64,13 @@ Examples of correct token usage for this rule:
 .. code-block:: css
 
   .popup {
-    box-shadow: var(--box-shadow-popup);
+    box-shadow: var(--popup-box-shadow);
   }
 
 .. code-block:: css
 
   .tab {
-    box-shadow: var(--box-shadow-tab);
+    box-shadow: var(--tab-box-shadow);
   }
 
 The rule also allows these non-token values:

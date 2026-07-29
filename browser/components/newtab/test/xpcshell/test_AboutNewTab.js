@@ -23,6 +23,8 @@ const SEPARATE_PRIVILEGED_CONTENT_PROCESS_PREF =
   "browser.tabs.remote.separatePrivilegedContentProcess";
 const ACTIVITY_STREAM_DEBUG_PREF = "browser.newtabpage.activity-stream.debug";
 const SIMPLIFIED_WELCOME_ENABLED_PREF = "browser.aboutwelcome.enabled";
+const ACTIVITY_STREAM_TELEMETRY_PREF =
+  "browser.newtabpage.activity-stream.telemetry";
 
 function cleanup() {
   Services.prefs.clearUserPref(SEPARATE_PRIVILEGED_CONTENT_PROCESS_PREF);
@@ -96,6 +98,24 @@ add_task(async function test_as_initial_values() {
     AboutNewTab.activityStreamDebug,
     Services.prefs.getBoolPref(ACTIVITY_STREAM_DEBUG_PREF, false),
     ".activityStreamDebug should be set to the correct initial value"
+  );
+});
+
+// Bug 1977258 moved ActivityStream.init() behind TOU gate
+// which caused about:welcome's first-screen impression to be dropped
+// as it fires before TOU is accepted.
+add_task(function test_AStelemetry_set_early() {
+  Assert.notEqual(
+    Services.prefs.getPrefType(ACTIVITY_STREAM_TELEMETRY_PREF),
+    Services.prefs.PREF_INVALID,
+    " ActivityStream telemetry pref should be set after AboutNewTab.init()"
+  );
+  Assert.equal(
+    Services.prefs
+      .getDefaultBranch("")
+      .getBoolPref(ACTIVITY_STREAM_TELEMETRY_PREF),
+    AppConstants.MOZILLA_OFFICIAL,
+    " ActivityStream telemetry pref default should match MOZILLA_OFFICIAL"
   );
 });
 

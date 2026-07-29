@@ -46,7 +46,7 @@
 }
 
 #editBookmarkPanelContent > label:not(.editBMPanel_nameRow) {
-  padding-top: var(--arrowpanel-padding);
+  padding-top: var(--panel-padding);
 }
 
 #editBookmarkPanelContent > #editBMPanel_folderTreeRow,
@@ -65,7 +65,7 @@
 }
 
 #editBookmarkPanelContent {
-  padding: 0.8em var(--arrowpanel-padding) var(--arrowpanel-padding);
+  padding: 0.8em var(--panel-padding) var(--panel-padding);
 }
 
 #editBMPanel_selectionCount {
@@ -73,7 +73,7 @@
 }
 
 #editBookmarkPanelBottomContent {
-  padding: 0 var(--arrowpanel-padding) calc(var(--arrowpanel-padding) / 2);
+  padding: 0 var(--panel-padding) calc(var(--panel-padding) / 2);
 }
 
 #editBookmarkPanelBottomContent > checkbox {

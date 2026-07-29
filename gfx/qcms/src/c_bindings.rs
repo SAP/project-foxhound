@@ -512,3 +512,18 @@ pub use crate::iccread::qcms_profile_is_bogus;
 pub use crate::transform::{
     qcms_enable_iccv4, qcms_profile_precache_output_transform, qcms_transform_release,
 };
+
+/// Convert f16 RGBA to u8 RGBA, applying `transform`.
+///
+/// # Safety
+/// - `src` must point to a readable buffer of at least `num_pixels * 4` u16 (f16) values.
+/// - `dst` must point to a writable buffer of at least `num_pixels * 4` bytes.
+#[no_mangle]
+pub unsafe extern "C" fn qcms_transform_data_rgba_f16_to_rgba_u8(
+    transform: &qcms_transform,
+    src: *const u16,
+    dst: *mut u8,
+    num_pixels: usize,
+) {
+    crate::transform::transform_data_rgba_f16_to_rgba_u8(transform, src, dst, num_pixels);
+}

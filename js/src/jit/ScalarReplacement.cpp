@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -15,6 +13,7 @@
 #include "jit/WarpBuilderShared.h"
 #include "js/Vector.h"
 #include "vm/ArgumentsObject.h"
+#include "vm/DateObject.h"
 #include "vm/TypedArrayObject.h"
 
 #include "gc/ObjectKind-inl.h"
@@ -285,22 +284,16 @@ static bool IsObjectEscaped(MDefinition* ins, MInstruction* newObject,
         break;
 
       case MDefinition::Opcode::Slots: {
-#ifdef DEBUG
-        // Assert that MSlots are only used by MStoreDynamicSlot and
-        // MLoadDynamicSlot.
-        MSlots* ins = def->toSlots();
-        MOZ_ASSERT(ins->object() != 0);
-        for (MUseIterator i(ins->usesBegin()); i != ins->usesEnd(); i++) {
-          // toDefinition should normally never fail, since they don't get
-          // captured by resume points.
+        // Ensure MSlots is only used by MStoreDynamicSlot and MLoadDynamicSlot.
+        MSlots* slots = def->toSlots();
+        for (MUseIterator i(slots->usesBegin()); i != slots->usesEnd(); i++) {
           MDefinition* def = (*i)->consumer()->toDefinition();
-          MOZ_ASSERT(
-              def->op() == MDefinition::Opcode::StoreDynamicSlot ||
-              def->op() == MDefinition::Opcode::LoadDynamicSlot ||
-              def->op() == MDefinition::Opcode::StoreDynamicSlotFromOffset ||
-              def->op() == MDefinition::Opcode::LoadDynamicSlotFromOffset);
+          if (!def->isLoadDynamicSlot() && !def->isStoreDynamicSlot()) {
+            JitSpewDef(JitSpew_Escape, "is escaped by\n", def);
+            return true;
+          }
+          MOZ_ASSERT(def->indexOf(*i) == 0);
         }
-#endif
         break;
       }
 
@@ -1860,6 +1853,7 @@ class ArgumentsReplacer : public MDefinitionVisitorDefaultNoop {
   void visitGuardToClass(MGuardToClass* ins);
   void visitGuardProto(MGuardProto* ins);
   void visitGuardArgumentsObjectFlags(MGuardArgumentsObjectFlags* ins);
+  void visitGuardObjectHasSameRealm(MGuardObjectHasSameRealm* ins);
   void visitUnbox(MUnbox* ins);
   void visitGetArgumentsObjectArg(MGetArgumentsObjectArg* ins);
   void visitLoadArgumentsObjectArg(MLoadArgumentsObjectArg* ins);
@@ -1947,6 +1941,14 @@ bool ArgumentsReplacer::escapes(MInstruction* ins, bool guardedForMapped) {
         break;
       }
 
+      case MDefinition::Opcode::GuardObjectHasSameRealm: {
+        if (escapes(def->toInstruction(), guardedForMapped)) {
+          JitSpewDef(JitSpew_Escape, "is indirectly escaped by\n", def);
+          return true;
+        }
+        break;
+      }
+
       case MDefinition::Opcode::Unbox: {
         if (def->type() != MIRType::Object) {
           JitSpewDef(JitSpew_Escape, "has an invalid unbox\n", def);
@@ -1972,6 +1974,11 @@ bool ArgumentsReplacer::escapes(MInstruction* ins, bool guardedForMapped) {
       }
 
       case MDefinition::Opcode::ApplyArgsObj: {
+        // Forwarded formals are read via the CallObject.
+        if (args_->block()->info().anyFormalIsForwarded()) {
+          JitSpew(JitSpew_Escape, "has forwarded formal arguments\n");
+          return true;
+        }
         if (ins == def->toApplyArgsObj()->getThis()) {
           JitSpew(JitSpew_Escape, "is escaped as |this| arg of ApplyArgsObj\n");
           return true;
@@ -1980,14 +1987,21 @@ bool ArgumentsReplacer::escapes(MInstruction* ins, bool guardedForMapped) {
         break;
       }
 
+      case MDefinition::Opcode::ArgumentsSlice:
+      case MDefinition::Opcode::ArrayFromArgumentsObject:
+      case MDefinition::Opcode::LoadArgumentsObjectArg:
+      case MDefinition::Opcode::LoadArgumentsObjectArgHole:
+        // Forwarded formals are read via the CallObject.
+        if (args_->block()->info().anyFormalIsForwarded()) {
+          JitSpew(JitSpew_Escape, "has forwarded formal arguments\n");
+          return true;
+        }
+        break;
+
       // This is a replaceable consumer.
       case MDefinition::Opcode::ArgumentsObjectLength:
       case MDefinition::Opcode::GetArgumentsObjectArg:
-      case MDefinition::Opcode::LoadArgumentsObjectArg:
-      case MDefinition::Opcode::LoadArgumentsObjectArgHole:
       case MDefinition::Opcode::InArgumentsObjectArg:
-      case MDefinition::Opcode::ArrayFromArgumentsObject:
-      case MDefinition::Opcode::ArgumentsSlice:
         break;
 
       // This instruction is a no-op used to test that scalar replacement
@@ -2093,13 +2107,10 @@ void ArgumentsReplacer::visitGuardArgumentsObjectFlags(
   // property of the args object. We have already determined that the
   // args object doesn't escape, so its properties can't be mutated.
   //
-  // FORWARDED_ARGUMENTS_BIT is set if any mapped argument is closed
-  // over, which is an immutable property of the script. Because we
-  // are replacing the args object for a known script, we can check
-  // the flag once, which is done when we first attach the CacheIR,
-  // and rely on it.  (Note that this wouldn't be true if we didn't
-  // know the origin of args_, because it could be passed in from
-  // another function.)
+  // FORWARDED_ARGUMENTS_BIT is set if any mapped formal is closed
+  // over. When that's the case, escapes() returns true for any
+  // consumer that may read a forwarded formal, so the args object
+  // isn't replaced and we don't reach this point.
   uint32_t supportedBits = ArgumentsObject::LENGTH_OVERRIDDEN_BIT |
                            ArgumentsObject::ITERATOR_OVERRIDDEN_BIT |
                            ArgumentsObject::ELEMENT_OVERRIDDEN_BIT |
@@ -2110,6 +2121,23 @@ void ArgumentsReplacer::visitGuardArgumentsObjectFlags(
   MOZ_ASSERT_IF(ins->flags() & ArgumentsObject::FORWARDED_ARGUMENTS_BIT,
                 !args_->block()->info().anyFormalIsForwarded());
 #endif
+
+  // Replace the guard with the args object.
+  ins->replaceAllUsesWith(args_);
+
+  // Remove the guard.
+  ins->block()->discard(ins);
+}
+
+void ArgumentsReplacer::visitGuardObjectHasSameRealm(
+    MGuardObjectHasSameRealm* ins) {
+  // Skip guards on other objects.
+  if (ins->object() != args_) {
+    return;
+  }
+
+  // We can eliminate this guard because the arguments object is created in the
+  // script's realm and we don't inline cross-realm calls.
 
   // Replace the guard with the args object.
   ins->replaceAllUsesWith(args_);
@@ -3587,6 +3615,259 @@ void SubarrayReplacer::assertSuccess() const {
   MOZ_ASSERT(!subarray_->hasLiveDefUses());
 }
 
+static inline bool IsOptimizableNewDateObjectInstruction(MInstruction* ins) {
+  return ins->isNewDateObject();
+}
+
+class DateObjectReplacer : public MDefinitionVisitorDefaultNoop {
+ private:
+  const MIRGenerator* mir_;
+  MIRGraph& graph_;
+  MInstruction* dateObject_;
+
+  // Allow scalar replacement if a date component is read exactly once.
+  bool hasSeenDateComponent_ = false;
+
+  TempAllocator& alloc() { return graph_.alloc(); }
+
+  MNewDateObject* newDateObject() const {
+    return dateObject_->toNewDateObject();
+  }
+  auto* templateObject() const { return newDateObject()->templateObject(); }
+
+  void visitGuardShape(MGuardShape* ins);
+  void visitUnbox(MUnbox* ins);
+  void visitLoadFixedSlot(MLoadFixedSlot* ins);
+  void visitDateFillLocalTimeSlots(MDateFillLocalTimeSlots* ins);
+
+ public:
+  DateObjectReplacer(const MIRGenerator* mir, MIRGraph& graph,
+                     MInstruction* dateObject)
+      : mir_(mir), graph_(graph), dateObject_(dateObject) {
+    MOZ_ASSERT(IsOptimizableNewDateObjectInstruction(dateObject));
+  }
+
+  bool escapes(MInstruction* ins);
+  bool run();
+  void assertSuccess() const;
+};
+
+void DateObjectReplacer::visitUnbox(MUnbox* ins) {
+  // Skip unbox on other objects.
+  if (ins->input() != dateObject_) {
+    return;
+  }
+  MOZ_ASSERT(ins->type() == MIRType::Object);
+
+  // Replace the unbox with the date object.
+  ins->replaceAllUsesWith(dateObject_);
+
+  // Remove the unbox.
+  ins->block()->discard(ins);
+}
+
+void DateObjectReplacer::visitGuardShape(MGuardShape* ins) {
+  // Skip guards on other objects.
+  if (ins->object() != dateObject_) {
+    return;
+  }
+
+  // Replace the guard with the date object.
+  ins->replaceAllUsesWith(dateObject_);
+
+  // Remove the guard.
+  ins->block()->discard(ins);
+}
+
+void DateObjectReplacer::visitLoadFixedSlot(MLoadFixedSlot* ins) {
+  // Skip load on other objects.
+  if (ins->object() != dateObject_) {
+    return;
+  }
+
+  auto* utcTime = newDateObject()->utcTime();
+
+  MDefinition* replacement;
+  switch (ins->slot()) {
+    case DateObject::UTC_TIME_SLOT: {
+      // Replace load with the UTC time argument.
+      replacement = utcTime;
+      break;
+    }
+    case DateObject::LOCAL_YEAR_SLOT: {
+      auto* yearFromTime = MYearFromTime::New(alloc(), utcTime);
+      ins->block()->insertBefore(ins, yearFromTime);
+      replacement = yearFromTime;
+      break;
+    }
+    case DateObject::LOCAL_MONTH_SLOT: {
+      auto* monthFromTime = MMonthFromTime::New(alloc(), utcTime);
+      ins->block()->insertBefore(ins, monthFromTime);
+      replacement = monthFromTime;
+      break;
+    }
+    case DateObject::LOCAL_DATE_SLOT: {
+      auto* dateFromTime = MDateFromTime::New(alloc(), utcTime);
+      ins->block()->insertBefore(ins, dateFromTime);
+      replacement = dateFromTime;
+      break;
+    }
+    default:
+      MOZ_CRASH("unexpected slot");
+  }
+
+  // Replace the load.
+  ins->replaceAllUsesWith(replacement);
+
+  // Remove the load.
+  ins->block()->discard(ins);
+}
+
+void DateObjectReplacer::visitDateFillLocalTimeSlots(
+    MDateFillLocalTimeSlots* ins) {
+  // Skip fill on other objects.
+  if (ins->date() != dateObject_) {
+    return;
+  }
+
+  // Remove the fill without any replacement.
+  ins->block()->discard(ins);
+}
+
+// Returns false if the Date object does not escape.
+bool DateObjectReplacer::escapes(MInstruction* ins) {
+  MOZ_ASSERT(ins->type() == MIRType::Object);
+
+  JitSpewDef(JitSpew_Escape, "Check Date object\n", ins);
+  JitSpewIndent spewIndent(JitSpew_Escape);
+
+  // Check all uses to see whether they can be supported without allocating a
+  // DateObject.
+  for (MUseIterator i(ins->usesBegin()); i != ins->usesEnd(); i++) {
+    MNode* consumer = (*i)->consumer();
+
+    // If a resume point can observe this instruction, we can only optimize if
+    // it is recoverable.
+    if (consumer->isResumePoint()) {
+      if (!consumer->toResumePoint()->isRecoverableOperand(*i)) {
+        JitSpew(JitSpew_Escape, "Observable date object cannot be recovered");
+        return true;
+      }
+      continue;
+    }
+
+    MDefinition* def = consumer->toDefinition();
+    switch (def->op()) {
+      case MDefinition::Opcode::GuardShape: {
+        auto* guard = def->toGuardShape();
+        if (templateObject()->shape() != guard->shape()) {
+          JitSpewDef(JitSpew_Escape, "has a non-matching guard shape\n", def);
+          return true;
+        }
+        if (escapes(guard)) {
+          JitSpewDef(JitSpew_Escape, "is indirectly escaped by\n", def);
+          return true;
+        }
+        break;
+      }
+
+      case MDefinition::Opcode::Unbox: {
+        if (def->type() != MIRType::Object) {
+          JitSpewDef(JitSpew_Escape, "has an invalid unbox\n", def);
+          return true;
+        }
+        if (escapes(def->toInstruction())) {
+          JitSpewDef(JitSpew_Escape, "is indirectly escaped by\n", def);
+          return true;
+        }
+        break;
+      }
+
+      case MDefinition::Opcode::LoadFixedSlot: {
+        auto* load = def->toLoadFixedSlot();
+
+        switch (load->slot()) {
+          case DateObject::UTC_TIME_SLOT:
+            // We can replace loading the UTC time slot.
+            break;
+          case DateObject::LOCAL_YEAR_SLOT:
+          case DateObject::LOCAL_MONTH_SLOT:
+          case DateObject::LOCAL_DATE_SLOT:
+            // We can replace loading these date component slots. Only allow a
+            // single load, because it's probably more efficient to use the
+            // cached components in the Date object if multiple loads happen.
+            if (!hasSeenDateComponent_) {
+              hasSeenDateComponent_ = true;
+              break;
+            }
+            [[fallthrough]];
+          default:
+            JitSpew(JitSpew_Escape,
+                    "is escaped by unsupported LoadFixedSlot\n");
+            return true;
+        }
+        break;
+      }
+
+      // No-op for scalar replaced date objects.
+      case MDefinition::Opcode::DateFillLocalTimeSlots:
+        break;
+
+      // This instruction is a no-op used to test that scalar replacement is
+      // working as expected.
+      case MDefinition::Opcode::AssertRecoveredOnBailout:
+        break;
+
+      default:
+        JitSpewDef(JitSpew_Escape, "is escaped by\n", def);
+        return true;
+    }
+  }
+
+  JitSpew(JitSpew_Escape, "Date object is not escaped");
+  return false;
+}
+
+bool DateObjectReplacer::run() {
+  MBasicBlock* startBlock = dateObject_->block();
+
+  // Iterate over each basic block.
+  for (ReversePostorderIterator block = graph_.rpoBegin(startBlock);
+       block != graph_.rpoEnd(); block++) {
+    if (mir_->shouldCancel("Scalar replacement of new Date Objects")) {
+      return false;
+    }
+
+    // Iterates over phis and instructions.
+    // We do not have to visit resume points. Any resume points that capture the
+    // new Date object will be handled by the Sink pass.
+    for (MDefinitionIterator iter(*block); iter;) {
+      // Increment the iterator before visiting the instruction, as the visit
+      // function might discard itself from the basic block.
+      MDefinition* def = *iter++;
+      switch (def->op()) {
+#define MIR_OP(op)              \
+  case MDefinition::Opcode::op: \
+    visit##op(def->to##op());   \
+    break;
+        MIR_OPCODE_LIST(MIR_OP)
+#undef MIR_OP
+      }
+      if (!graph_.alloc().ensureBallast()) {
+        return false;
+      }
+    }
+  }
+
+  assertSuccess();
+  return true;
+}
+
+void DateObjectReplacer::assertSuccess() const {
+  MOZ_ASSERT(dateObject_->canRecoverOnBailout());
+  MOZ_ASSERT(!dateObject_->hasLiveDefUses());
+}
+
 // WebAssembly only supports scalar replacement of structs with only inline
 // data for now.
 static inline bool IsOptimizableWasmStructInstruction(MInstruction* ins) {
@@ -3601,7 +3882,7 @@ class WasmStructMemoryView : public MDefinitionVisitorDefaultNoop {
 
  private:
   TempAllocator& alloc_;
-  MInstruction* struct_;
+  MWasmNewStructObject* struct_;
   MConstant* undefinedVal_;
   MBasicBlock* startBlock_;
   BlockState* state_;
@@ -3609,7 +3890,7 @@ class WasmStructMemoryView : public MDefinitionVisitorDefaultNoop {
   bool oom_;
 
  public:
-  WasmStructMemoryView(TempAllocator& alloc, MInstruction* wasmStruct);
+  WasmStructMemoryView(TempAllocator& alloc, MWasmNewStructObject* wasmStruct);
 
   MBasicBlock* startingBlock();
   bool initStartingState(BlockState** pState);
@@ -3618,11 +3899,7 @@ class WasmStructMemoryView : public MDefinitionVisitorDefaultNoop {
   bool mergeIntoSuccessorState(MBasicBlock* curr, MBasicBlock* succ,
                                BlockState** pSuccState);
 
-#ifdef DEBUG
   void assertSuccess();
-#else
-  void assertSuccess() {}
-#endif
 
   bool oom() const { return oom_; }
 
@@ -3639,15 +3916,13 @@ void WasmStructMemoryView::setEntryBlockState(BlockState* state) {
   state_ = state;
 }
 
-#ifdef DEBUG
 void WasmStructMemoryView::assertSuccess() {
   // Make sure that the undefined value used as a placeholder is not used.
-  MOZ_ASSERT(!undefinedVal_->hasUses());
+  MOZ_RELEASE_ASSERT(!undefinedVal_->hasUses());
 
   // Make sure that the MWasmNewStruct instruction is not used anymore.
-  MOZ_ASSERT(!struct_->hasUses());
+  MOZ_RELEASE_ASSERT(!struct_->hasUses());
 }
-#endif
 
 MBasicBlock* WasmStructMemoryView::startingBlock() { return startBlock_; }
 
@@ -3659,7 +3934,7 @@ bool WasmStructMemoryView::initStartingState(BlockState** pState) {
   // Create a new block state and insert at it at the location of the new
   // struct.
   BlockState* state = BlockState::New(alloc_, struct_);
-  if (!state || !state->init()) {
+  if (!state) {
     return false;
   }
 
@@ -3747,7 +4022,63 @@ void WasmStructMemoryView::visitWasmLoadField(MWasmLoadField* ins) {
 
   MDefinition* value = state_->getField(ins->structFieldIndex().value());
 
-  // Replace load by the field value.
+  // Packed fields (i8/i16) require widening. Since we're eliding the load,
+  // insert MIR to apply the equivalent widening operation.
+  MWideningOp wideningOp = ins->wideningOp();
+  if (wideningOp != MWideningOp::None) {
+    // Widening only goes to Int32.
+    MOZ_ASSERT(ins->type() == MIRType::Int32);
+
+    MBasicBlock* block = ins->block();
+    switch (wideningOp) {
+      case MWideningOp::FromU8:
+      case MWideningOp::FromU16: {
+        int32_t maskVal = wideningOp == MWideningOp::FromU8 ? 0xFF : 0xFFFF;
+        auto* mask = MConstant::NewInt32(alloc_, maskVal);
+        if (!mask) {
+          oom_ = true;
+          return;
+        }
+        block->insertBefore(ins, mask);
+        auto* widened = MBitAnd::New(alloc_, value, mask, MIRType::Int32);
+        if (!widened) {
+          oom_ = true;
+          return;
+        }
+        block->insertBefore(ins, widened);
+        value = widened;
+        break;
+      }
+      case MWideningOp::FromS8:
+      case MWideningOp::FromS16: {
+        int32_t shiftAmount = wideningOp == MWideningOp::FromS8 ? 24 : 16;
+        auto* shift = MConstant::NewInt32(alloc_, shiftAmount);
+        if (!shift) {
+          oom_ = true;
+          return;
+        }
+        block->insertBefore(ins, shift);
+        auto* lsh = MLsh::New(alloc_, value, shift, MIRType::Int32);
+        if (!lsh) {
+          oom_ = true;
+          return;
+        }
+        block->insertBefore(ins, lsh);
+        auto* widened = MRsh::New(alloc_, lsh, shift, MIRType::Int32);
+        if (!widened) {
+          oom_ = true;
+          return;
+        }
+        block->insertBefore(ins, widened);
+        value = widened;
+        break;
+      }
+      default:
+        MOZ_CRASH("Unexpected widening op");
+    }
+  }
+
+  // Replace load by the (possibly widened) field value.
   ins->replaceAllUsesWith(value);
 
   // Remove original instruction.
@@ -3870,13 +4201,6 @@ static bool IsWasmStructEscaped(MDefinition* ins, MInstruction* newStruct) {
     }
   }
 
-  // We don't support defaultable structs for now.
-  if (newStruct->isWasmNewStructObject() &&
-      newStruct->toWasmNewStructObject()->zeroFields()) {
-    JitSpew(JitSpew_Escape, "Struct is created with new_default\n");
-    return true;
-  }
-
   // Check if the struct is escaped. If the object is not the first argument
   // of either a known Store / Load, then we consider it as escaped. This is a
   // cheap and conservative escape analysis.
@@ -3897,7 +4221,7 @@ static bool IsWasmStructEscaped(MDefinition* ins, MInstruction* newStruct) {
       }
       case MDefinition::Opcode::WasmStoreFieldRef: {
         // Escaped if it's stored into another struct.
-        if (def->toWasmStoreFieldRef()->value() == newStruct) {
+        if (def->toWasmStoreFieldRef()->value() == ins) {
           JitSpewDef(JitSpew_Escape, "is escaped by\n", def);
           return true;
         }
@@ -3940,7 +4264,7 @@ static bool IsWasmStructEscaped(MDefinition* ins, MInstruction* newStruct) {
     "Scalar Replacement of wasm structs";
 
 WasmStructMemoryView::WasmStructMemoryView(TempAllocator& alloc,
-                                           MInstruction* wasmStruct)
+                                           MWasmNewStructObject* wasmStruct)
     : alloc_(alloc),
       struct_(wasmStruct),
       undefinedVal_(nullptr),
@@ -3960,7 +4284,6 @@ class ObjectKeysReplacer : public GenericArrayReplacer {
 
   MObjectKeys* objectKeys() const { return arr_->toObjectKeys(); }
 
-  MDefinition* objectKeysLength(MInstruction* ins);
   void visitLength(MInstruction* ins, MDefinition* elements);
 
   void visitLoadElement(MLoadElement* ins);
@@ -4133,6 +4456,7 @@ bool ObjectKeysReplacer::run(MInstructionIterator& outerIterator) {
 
   objToIter_ = MObjectToIterator::New(alloc_, objectKeys()->object(), nullptr);
   objToIter_->setSkipRegistration(true);
+  objToIter_->stealResumePoint(arr_);
   arr_->block()->insertBefore(arr_, objToIter_);
 
   // Iterate over each basic block.
@@ -4167,7 +4491,28 @@ bool ObjectKeysReplacer::run(MInstructionIterator& outerIterator) {
 
   auto* forRecovery = MObjectKeysFromIterator::New(alloc_, objToIter_);
   arr_->block()->insertBefore(arr_, forRecovery);
-  forRecovery->stealResumePoint(arr_);
+
+  auto* nop = MNop::New(alloc_);
+  arr_->block()->insertBefore(arr_, nop);
+  if (!nop->copyResumePointFrom(alloc_, objToIter_)) {
+    return false;
+  }
+
+  {
+    // Use the PropertyIteratorObject in the resume point for the
+    // MObjectToIterator instruction. If this instruction calls a VM function
+    // that triggers an invalidation, we use ResumeMode::ResumeAfterObjectKeys
+    // to create the array from the iterator object when we bail out.
+    MResumePoint* rp = objToIter_->resumePoint();
+    size_t n = rp->numOperands() - 1;
+    for (size_t i = 0; i < n; i++) {
+      MOZ_RELEASE_ASSERT(rp->getOperand(i) != arr_);
+    }
+    MOZ_RELEASE_ASSERT(rp->getOperand(n) == arr_);
+    rp->replaceOperand(n, objToIter_);
+    MOZ_RELEASE_ASSERT(rp->mode() == ResumeMode::ResumeAfter);
+    rp->setMode(ResumeMode::ResumeAfterObjectKeys);
+  }
   arr_->replaceAllUsesWith(forRecovery);
 
   // We need to explicitly discard the instruction since it's marked as
@@ -4293,9 +4638,20 @@ bool ScalarReplacement(const MIRGenerator* mir, MIRGraph& graph) {
         continue;
       }
 
+      if (IsOptimizableNewDateObjectInstruction(*ins)) {
+        DateObjectReplacer replacer(mir, graph, *ins);
+        if (replacer.escapes(*ins)) {
+          continue;
+        }
+        if (!replacer.run()) {
+          return false;
+        }
+        continue;
+      }
+
       if (IsOptimizableWasmStructInstruction(*ins) &&
           !IsWasmStructEscaped(*ins, *ins)) {
-        WasmStructMemoryView view(graph.alloc(), *ins);
+        WasmStructMemoryView view(graph.alloc(), ins->toWasmNewStructObject());
         if (!replaceWasmStructs.run(view)) {
           return false;
         }

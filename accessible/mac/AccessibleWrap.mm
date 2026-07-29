@@ -1,9 +1,10 @@
 /* clang-format off */
-/* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#import <Cocoa/Cocoa.h>
 
 #include "DocAccessibleWrap.h"
 #include "nsObjCExceptions.h"
@@ -71,6 +72,20 @@ void AccessibleWrap::GetNativeInterface(void** aOutInterface) {
   *aOutInterface = static_cast<void*>(GetNativeObject());
 }
 
+NSView* AccessibleWrap::GetNativeWidget() {
+  if (nsIFrame* frame = GetFrame()) {
+    if (nsIWidget* widget = frame->GetOwnWidget()) {
+      NSView* nativeWidget = (NSView*)widget->GetNativeData(NS_NATIVE_WIDGET);
+      MOZ_ASSERT(nativeWidget || gfxPlatform::IsHeadless(),
+                 "Couldn't get the native NSView parent we need to connect the "
+                 "accessibility hierarchy!");
+      return nativeWidget;
+    }
+  }
+
+  return nil;
+}
+
 // overridden in subclasses to create the right kind of object. by default we
 // create a generic 'mozAccessible' node.
 Class AccessibleWrap::GetNativeType() {
@@ -92,7 +107,7 @@ Class AccessibleWrap::GetNativeType() {
     return [mozTableCellAccessible class];
   }
 
-  if (IsDoc()) {
+  if (IsDoc() && !IsRoot()) {
     return [MOXWebAreaAccessible class];
   }
 
@@ -138,6 +153,20 @@ nsresult AccessibleWrap::HandleAccEvent(AccEvent* aEvent) {
   if (eventType == nsIAccessibleEvent::EVENT_SHOW) {
     DocAccessibleWrap* doc = static_cast<DocAccessibleWrap*>(Document());
     doc->ProcessNewLiveRegions();
+
+    // Check if this shown-subtree has appeared within an existing live region.
+    // We do this by skipping the show root and checking its ancestor chain
+    // starting with its parent.
+    // We avoid the show root because if the entire live region has appeared
+    // at once, we should instead send AXLiveRegionCreated which is done
+    // in ProcessNewLiveRegions above.
+    for (LocalAccessible* container = aEvent->GetAccessible()->LocalParent();
+         container; container = container->LocalParent()) {
+      if (container->HasOwnContent() && IsLiveRegion(container->GetContent())) {
+        Document()->FireDelayedEvent(
+            nsIAccessibleEvent::EVENT_LIVE_REGION_CHANGED, container);
+      }
+    }
   }
 
   if (((eventType == nsIAccessibleEvent::EVENT_TEXT_INSERTED ||

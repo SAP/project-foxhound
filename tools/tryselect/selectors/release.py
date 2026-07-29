@@ -65,7 +65,14 @@ class ReleaseParser(BaseTryParser):
             {
                 "choices": TARGET_TASKS.keys(),
                 "default": "staging",
-                "help": "Which tasks to run on-push.",
+                "help": (
+                    "Which tasks to run on-push. "
+                    "'staging' (default): shippable build-phase tasks only (builds, signing, "
+                    "repackaging) — the minimal set before triggering a staging release via "
+                    "https://shipit.staging.mozilla-releng.net/. "
+                    "'release-sim': simulates a full release branch push including tests — "
+                    "used by sheriffs to check for branch-dependent test failures."
+                ),
             },
         ],
     ]

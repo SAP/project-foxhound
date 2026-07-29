@@ -48,6 +48,8 @@ find-menu appears in editor element which has had makeEditable() called but desi
       info("Starting test with browser '" + browserId + "'");
       gBrowser = document.getElementById(browserId);
       gFindBar.browser = gBrowser;
+      // TODO: Switch to SpecialPowers.spawn
+// eslint-disable-next-line mozilla/reject-contenttask-spawn
       let promise = ContentTask.spawn(gBrowser, [], async function() {
         return new Promise(resolve => {
           addEventListener("DOMContentLoaded", () => resolve(), { once: true });
@@ -59,6 +61,8 @@ find-menu appears in editor element which has had makeEditable() called but desi
     }
 
     async function onDocumentLoaded() {
+      // TODO: Switch to SpecialPowers.spawn
+// eslint-disable-next-line mozilla/reject-contenttask-spawn
       await ContentTask.spawn(gBrowser, [], async function() {
         var edsession = content.docShell.editingSession;
         edsession.makeWindowEditable(content, "html", false, true, false);
@@ -74,6 +78,8 @@ find-menu appears in editor element which has had makeEditable() called but desi
 
     async function enterStringIntoEditor(aString) {
       for (let i = 0; i < aString.length; i++) {
+        // TODO: Switch to SpecialPowers.spawn
+// eslint-disable-next-line mozilla/reject-contenttask-spawn
         await ContentTask.spawn(gBrowser, [{ charCode: aString.charCodeAt(i) }], async function(args) {
           let event = new content.window.KeyboardEvent("keypress", {
             bubbles: true,

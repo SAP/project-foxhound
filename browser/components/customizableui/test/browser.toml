@@ -9,6 +9,7 @@ prefs = [
   "browser.toolbars.share-button.enabled=true",
   "browser.urlbar.trustPanel.featureGate=false",
   "sidebar.revamp=false",
+  "browser.tabs.groups.alternateMenu=true",
 ]
 
 ["browser_1003588_no_specials_in_panel.js"]
@@ -47,6 +48,9 @@ skip-if = [
 ]
 
 ["browser_1880230_hideInNonPrivateBrowsing.js"]
+
+["browser_2041653_non_removable_overflow_reset.js"]
+tags = "overflowable-toolbar"
 
 ["browser_873501_handle_specials.js"]
 
@@ -170,6 +174,7 @@ skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && socketprocess_networking", # Bug 1775671
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt",
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug", # Bug 1775671
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && debug", # Bug 1775671
 ]
 
 ["browser_947987_removable_default.js"]
@@ -244,6 +249,7 @@ skip-if = [
 skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && swgl && verify-standalone",
   "os == 'win' && os_version == '11.26100' && arch == 'x86' && opt && verify-standalone",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86' && opt && verify-standalone",
 ]
 
 ["browser_995164_registerArea_during_customize_mode.js"]
@@ -287,6 +293,9 @@ skip-if = [
 ["browser_currentset_post_reset.js"]
 
 ["browser_customization_context_menus.js"]
+skip-if = [
+  "os == 'win' && standalone", # Bug 2028648
+]
 
 ["browser_customizemode_contextmenu_menubuttonstate.js"]
 
@@ -362,6 +371,8 @@ tags = "fullscreen"
 
 ["browser_panel_menulist.js"]
 
+["browser_panel_role_and_label.js"]
+
 ["browser_panel_toggle.js"]
 
 ["browser_proton_moreTools_panel.js"]
@@ -419,11 +430,16 @@ support-files = ["browser_shareurl.html"]
 ["browser_sidebar_toggle.js"]
 
 ["browser_switch_to_customize_mode.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
 
 ["browser_synced_tabs_menu.js"]
 fail-if = [
   "a11y_checks", # Bug 1854536 clicked #PanelUI-remotetabs-connect-device-button may not be focusable
 ]
+
+["browser_tab_groups_button.js"]
 
 ["browser_tabbar_big_widgets.js"]
 

@@ -94,6 +94,8 @@ support-files = [
 
 ["browser_fixed_ABA_partitionKey.js"]
 
+["browser_flushOnQuery.js"]
+
 ["browser_foreignWorker_eventSource.js"]
 support-files= [
   "eventsource_worker.js",
@@ -115,8 +117,6 @@ support-files= [
 ["browser_nimbus_3pcb.js"]
 
 ["browser_nimbus_etp_features.js"]
-
-["browser_nimbus_thirdPartyTrackerCookieBlocking.js"]
 
 ["browser_noStorageAccessAutoGrant_thirdPartyTracker.js"]
 
@@ -185,6 +185,8 @@ support-files = [
 
 ["browser_partitionkey_bloburl.js"]
 
+["browser_partitionkey_mediasourceurl.js"]
+
 ["browser_permissionInNormalWindows.js"]
 
 ["browser_permissionInPrivateWindows.js"]
@@ -198,6 +200,8 @@ skip-if = [
 support-files = ["referrer.sjs"]
 
 ["browser_sameSiteTrackerBlocking.js"]
+
+["browser_scopedTrackingProtection.js"]
 
 ["browser_script.js"]
 support-files = ["tracker.js"]
@@ -247,6 +251,9 @@ skip-if = [
 ["browser_staticPartition_network.js"]
 
 ["browser_staticPartition_saveAs.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
 support-files = [
   "file_saveAsImage.sjs",
   "file_saveAsVideo.sjs",
@@ -310,9 +317,6 @@ support-files = [
 ["browser_storageAccess_userActivation.js"]
 
 ["browser_subResources.js"]
-support-files = ["subResources.sjs"]
-
-["browser_subResourcesPartitioned.js"]
 support-files = ["subResources.sjs"]
 
 ["browser_thirdPartyChecks_sandboxed_context.js"]

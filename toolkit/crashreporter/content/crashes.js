@@ -31,8 +31,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 });
 
-const buildID = Services.appinfo.appBuildID;
-
 /**
  * Adds the crash reports with submission buttons and links
  * to the unsubmitted and submitted crash report lists.
@@ -60,7 +58,13 @@ function populateReportLists() {
     dateStyle: "short",
   });
   reports.forEach(report =>
-    addReportRow(report.pending, report.id, report.date, dateFormatter)
+    addReportRow(
+      report.pending,
+      report.ignored,
+      report.id,
+      report.date,
+      dateFormatter
+    )
   );
   showAppropriateSections();
 }
@@ -71,11 +75,12 @@ function populateReportLists() {
  * based on isPending.
  *
  * @param {boolean} isPending     whether the crash is up for submission
+ * @param {boolean} isIgnored     whether the crash has been ignored by the user
  * @param {string}  id            the unique id of the crash report
  * @param {Date}    date          either the date of crash or date of submission
  * @param {object}  dateFormatter formatter for presenting dates to users
  */
-function addReportRow(isPending, id, date, dateFormatter) {
+function addReportRow(isPending, isIgnored, id, date, dateFormatter) {
   const rowTemplate = document.getElementById("crashReportRow");
   const row = document
     .importNode(rowTemplate.content, true)
@@ -87,6 +92,9 @@ function addReportRow(isPending, id, date, dateFormatter) {
   cells[1].appendChild(document.createTextNode(dateFormatter.format(date)));
 
   if (isPending) {
+    if (isIgnored) {
+      row.classList.add("ignored");
+    }
     const buttonTemplate = document.getElementById("crashSubmitButton");
     const button = document
       .importNode(buttonTemplate.content, true)
@@ -155,7 +163,13 @@ function submitPendingReport(reportId, row, button, buttonText, dateFormatter) {
         const report = CrashReports.getReports().filter(
           report => report.id === remoteCrashID
         );
-        addReportRow(false, remoteCrashID, report.date, dateFormatter);
+        addReportRow(
+          false,
+          report.ignored,
+          remoteCrashID,
+          report.date,
+          dateFormatter
+        );
         showAppropriateSections();
         dispatchCustomEvent("CrashSubmitSucceeded");
       },
@@ -176,7 +190,7 @@ function submitPendingReport(reportId, row, button, buttonText, dateFormatter) {
 }
 
 /**
- * Deletes unsubmitted and old crash reports from the user's device.
+ * Deletes unsubmitted crash reports from the user's device.
  * Then, hides the list of unsubmitted crash reports.
  */
 async function clearUnsubmittedReports() {
@@ -189,7 +203,6 @@ async function clearUnsubmittedReports() {
   }
 
   await enqueueCleanup(() => cleanupFolder(CrashReports.pendingDir.path));
-  await enqueueCleanup(clearOldReports);
   document.getElementById("reportListUnsubmitted").classList.add("hidden");
 }
 
@@ -210,7 +223,7 @@ async function submitAllUnsubmittedReports() {
 }
 
 /**
- * Deletes submitted and old crash reports from the user's device.
+ * Deletes submitted crash reports from the user's device.
  * Then, hides the list of submitted crash reports.
  */
 async function clearSubmittedReports() {
@@ -228,27 +241,8 @@ async function clearSubmittedReports() {
       async entry => entry.name.startsWith("bp-") && entry.name.endsWith(".txt")
     )
   );
-  await enqueueCleanup(clearOldReports);
   document.getElementById("reportListSubmitted").classList.add("hidden");
   document.getElementById("noSubmittedReports").classList.remove("hidden");
-}
-
-/**
- * Deletes old crash reports from the user's device.
- */
-async function clearOldReports() {
-  const oneYearAgo = Date.now() - 31586000000;
-  await cleanupFolder(CrashReports.reportsDir.path, async entry => {
-    if (
-      !entry.name.startsWith("InstallTime") ||
-      entry.name == "InstallTime" + buildID
-    ) {
-      return false;
-    }
-
-    const stat = await IOUtils.stat(entry.path);
-    return stat.lastModified < oneYearAgo;
-  });
 }
 
 /**
@@ -270,9 +264,10 @@ async function cleanupFolder(path, filter) {
   try {
     children = await IOUtils.getChildren(path);
   } catch (e) {
-    if (DOMException.isInstance(e) || e.name !== "NotFoundError") {
+    if (!DOMException.isInstance(e) || e.name !== "NotFoundError") {
       throw e;
     }
+    return;
   }
 
   for (const childPath of children) {

@@ -53,7 +53,7 @@
 }
 
 .dbg-img.dbg-img-extension {
-  mask-image: url(chrome://devtools/content/debugger/images/sources/extension.svg);
+  mask-image: url(chrome://devtools/content/shared/components/images/extension.svg);
 }
 
 .dbg-img.dbg-img-immutable {

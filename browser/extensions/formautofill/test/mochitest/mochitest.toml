@@ -4,6 +4,7 @@ prefs = [
   "extensions.formautofill.creditCards.enabled=true",
   "extensions.formautofill.addresses.supported=on",
   "extensions.formautofill.addresses.enabled=true",
+  "extensions.formautofill.skipProgrammaticCheckForTests=true"
 ]
 skip-if = [
   "os == 'android'", # bug 1730213

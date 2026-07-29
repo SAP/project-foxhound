@@ -8,17 +8,17 @@
 
 <resources>
   <!-- The button that appears at the bottom of an error page. -->
-  <string name="mozac_browser_errorpages_page_refresh">Coba malih</string>
+  <string name="mozac_browser_errorpages_page_refresh">Ulangin Malih</string>
   <!-- The document title and heading of an error page shown when a website cannot be loaded for an unknown reason. -->
   <string name="mozac_browser_errorpages_generic_title">Pinunas Ragané Ten Prasida Puput</string>
   <!-- The error message shown when a website cannot be loaded for an unknown reason. -->
-  <string name="mozac_browser_errorpages_generic_message"><![CDATA[<p>Informasi tambahan indik pikobet puniki utawi galat sané mangkin durung kasedia.</p>]]></string>
+  <string name="mozac_browser_errorpages_generic_message"><![CDATA[<p>Informasi tambahan indik pikobet puniki sané mangkin durung kasedia.</p>]]></string>
   <!-- The document title and heading of the error page shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_ssl_title">Konéksi Aman Gagal</string>
+  <string name="mozac_browser_errorpages_security_ssl_title">Konéksi Aman Ten Mamargi</string>
   <!-- The error message shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_ssl_message"><![CDATA[<ul>\n<li>Kaca sané ragané coba cingak tan prasida katampilang mawinan kaaslian data sané katerima tan prasida kavérifikasi.</li>\n<li>Durus hubungin sané ngadruénang situs wéb antuk nganikain indik pikobet puniki.</li>\n</ul>]]></string>
+  <string name="mozac_browser_errorpages_security_ssl_message"><![CDATA[<ul>\n<li>Kaca sané coba cingak ragané ten prasida katampilang sawiréh kaaslian data sané katerima ten prasida kavérifikasi.</li>\n<li>Durus hubungin sané madué situs wéb antuk nganikain indik pikobet puniki.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website sends has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_title">Konéksi Aman Gagal</string>
+  <string name="mozac_browser_errorpages_security_bad_cert_title">Konéksi Aman Ten Mamargi</string>
   <!-- The error message shown when a website sends has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[<ul>\n<li>Puniki minab pikobet sareng setélan peladén, utawi minab wénten sané nyoba nuutin peladén.</li>\n<li>Pinaka ragané sampun maasil mahubung nuju peladén puniki sadurungné, galat minab abaan nyané ajebos, miwah ragané prasida nyoba malih nyanan.</li>\n</ul>]]></string>
   <!-- The text shown inside the advanced button used to expand the advanced options. It's only shown when a website has an invalid SSL certificate. -->

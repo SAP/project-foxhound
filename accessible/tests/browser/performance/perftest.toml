@@ -19,6 +19,15 @@ disabled = "Disabled as we want to run this only as perftest, not regular CI"
 ["browser_addManyNodes.js"]
 disabled = "Disabled as we want to run this only as perftest, not regular CI"
 
+["browser_bounds.js"]
+disabled = "Disabled as we want to run this only as perftest, not regular CI"
+
+["browser_displayContentsBounds.js"]
+disabled = "Disabled as we want to run this only as perftest, not regular CI"
+
+["browser_implicitRoleARIAExpanded.js"]
+disabled = "Disabled as we want to run this only as perftest, not regular CI"
+
 ["browser_reflowPseudoelements.js"]
 disabled = "Disabled as we want to run this only as perftest, not regular CI"
 

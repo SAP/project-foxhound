@@ -11,16 +11,17 @@
 #ifndef VIDEO_VIDEO_RECEIVE_STREAM2_H_
 #define VIDEO_VIDEO_RECEIVE_STREAM2_H_
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
-#include "api/array_view.h"
 #include "api/crypto/frame_decryptor_interface.h"
 #include "api/environment/environment.h"
 #include "api/frame_transformer_interface.h"
@@ -150,13 +151,9 @@ class VideoReceiveStream2
   }
 
   void SignalNetworkState(NetworkState state);
-  bool DeliverRtcp(ArrayView<const uint8_t> packet);
+  bool DeliverRtcp(std::span<const uint8_t> packet);
 
   void SetSync(Syncable* audio_syncable);
-
-  // Updates the `rtp_video_stream_receiver_`'s `local_ssrc` when the default
-  // sender has been created, changed or removed.
-  void SetLocalSsrc(uint32_t local_ssrc);
 
   // Implements webrtc::VideoReceiveStreamInterface.
   void Start() override;
@@ -258,7 +255,7 @@ class VideoReceiveStream2
   void UpdateHistograms();
   void CalculateCorruptionScore(
       const VideoFrame& frame,
-      const FrameInstrumentationData& frame_instrumentation_data,
+      FrameInstrumentationData frame_instrumentation_data,
       VideoContentType content_type) override;
 
   const Environment env_;
@@ -367,11 +364,23 @@ class VideoReceiveStream2
   std::vector<std::unique_ptr<EncodedFrame>> buffered_encoded_frames_
       RTC_GUARDED_BY(decode_sequence_checker_);
 
-  std::unique_ptr<FrameInstrumentationEvaluation> frame_evaluator_
-      RTC_GUARDED_BY(decode_callback_race_checker_);
+  std::unique_ptr<FrameInstrumentationEvaluation> frame_evaluator_;
 
   // Used to signal destruction to potentially pending tasks.
   ScopedTaskSafety task_safety_;
+
+  // A lower priority task queue used for tasks associated with decoding but
+  // that are not time critical and should not block the `decode_queue_`.
+  // Declared before the `decoder_queue_` so it's destroyed after, since the
+  // decoder queue might post tasks to this queue but not the other way around.
+  std::unique_ptr<TaskQueueBase, TaskQueueDeleter> post_decode_queue_;
+
+  // A counter used to keep track of the number of reference counted video
+  // frames and make sure this queue does not grow too long if the system is
+  // heavily loaded (the decode_queue_ has a higher priority and may run at a
+  // higher rate). Always incremented on the decoder callback sequence, but
+  // decremented on the post decode queue sequence.
+  std::atomic<int> pending_post_decode_frames_ = 0;
 
   // Defined last so they are destroyed before all other members, in particular
   // `decode_queue_` should be stopped before `decode_sequence_checker_` is

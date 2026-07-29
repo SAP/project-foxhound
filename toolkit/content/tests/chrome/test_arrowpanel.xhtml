@@ -44,7 +44,7 @@
      * We hardcode a panel padding here to avoid rounding issues caused by
      * using em unit padding, which is the default as of bug 1701920.
      */
-    --arrowpanel-padding: 16px;
+    --panel-padding: 16px;
     /**
      * Linux and windows have some negative margin-inline that can change the
      * overflow calculations
@@ -238,7 +238,7 @@ function checkPanelPosition(panel)
   let anchor = panel.anchorNode;
   let adj = 0, hwinpos = 0, vwinpos = 0;
   if (anchor.ownerDocument != document) {
-    var framerect = anchor.ownerGlobal.frameElement.getBoundingClientRect();
+    var framerect = anchor.documentGlobal.frameElement.getBoundingClientRect();
     hwinpos = framerect.left;
     vwinpos = framerect.top;
   }

@@ -9,6 +9,10 @@ support-files = [
 
 ["browser_target_configuration_command.js"]
 
+["browser_target_configuration_command_animations_playback_rate_multiplier.js"]
+
+["browser_target_configuration_command_animations_playback_rate_multiplier_root_actor.js"]
+
 ["browser_target_configuration_command_color_scheme.js"]
 skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298

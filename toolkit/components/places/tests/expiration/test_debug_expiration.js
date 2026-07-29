@@ -34,9 +34,9 @@ add_task(async function test_expire_orphans() {
   await promiseForceExpirationStep(0);
 
   // Check that visits survived.
-  Assert.equal(visits_in_database("http://page1.mozilla.org/"), 1);
-  Assert.equal(visits_in_database("http://page2.mozilla.org/"), 1);
-  Assert.ok(!page_in_database("http://page3.mozilla.org/"));
+  Assert.equal(await visits_in_database("http://page1.mozilla.org/"), 1);
+  Assert.equal(await visits_in_database("http://page2.mozilla.org/"), 1);
+  Assert.ok(!(await page_in_database("http://page3.mozilla.org/")));
 
   // Clean up.
   await PlacesUtils.history.clear();
@@ -64,9 +64,9 @@ add_task(async function test_expire_orphans_optionalarg() {
   await promiseForceExpirationStep();
 
   // Check that visits survived.
-  Assert.equal(visits_in_database("http://page1.mozilla.org/"), 1);
-  Assert.equal(visits_in_database("http://page2.mozilla.org/"), 1);
-  Assert.ok(!page_in_database("http://page3.mozilla.org/"));
+  Assert.equal(await visits_in_database("http://page1.mozilla.org/"), 1);
+  Assert.equal(await visits_in_database("http://page2.mozilla.org/"), 1);
+  Assert.ok(!(await page_in_database("http://page3.mozilla.org/")));
 
   // Clean up.
   await PlacesUtils.history.clear();
@@ -90,9 +90,9 @@ add_task(async function test_expire_limited() {
   await promiseForceExpirationStep(1);
 
   // Check that newer visit survived.
-  Assert.equal(visits_in_database("http://new.mozilla.org/"), 1);
+  Assert.equal(await visits_in_database("http://new.mozilla.org/"), 1);
   // Other visits should have been expired.
-  Assert.ok(!page_in_database("http://old.mozilla.org/"));
+  Assert.ok(!(await page_in_database("http://old.mozilla.org/")));
 
   // Clean up.
   await PlacesUtils.history.clear();
@@ -126,12 +126,12 @@ add_task(async function test_expire_visitcount_longurl() {
   await promiseForceExpirationStep(1);
 
   // Check that some visits survived.
-  Assert.equal(visits_in_database(longurl), 2);
+  Assert.equal(await visits_in_database(longurl), 2);
   // Check visit has been removed.
-  Assert.equal(visits_in_database(longurl2), 0);
+  Assert.equal(await visits_in_database(longurl2), 0);
 
   // Other visits should have been expired.
-  Assert.ok(!page_in_database("http://old.mozilla.org/"));
+  Assert.ok(!(await page_in_database("http://old.mozilla.org/")));
 
   // Clean up.
   await PlacesUtils.history.clear();
@@ -162,15 +162,15 @@ add_task(async function test_expire_limited_exoticurl() {
 
   // Check that some visits survived.
   Assert.equal(
-    visits_in_database("http://nonexpirable-download.mozilla.org/"),
+    await visits_in_database("http://nonexpirable-download.mozilla.org/"),
     1
   );
   // The visits are gone, the url is not yet, cause we limited the expiration
   // to one entry, and we already removed http://old.mozilla.org/.
   // The page normally would be expired by the next expiration run.
-  Assert.equal(visits_in_database("http://download.mozilla.org/"), 0);
+  Assert.equal(await visits_in_database("http://download.mozilla.org/"), 0);
   // Other visits should have been expired.
-  Assert.ok(!page_in_database("http://old.mozilla.org/"));
+  Assert.ok(!(await page_in_database("http://old.mozilla.org/")));
 
   // Clean up.
   await PlacesUtils.history.clear();
@@ -208,14 +208,14 @@ add_task(async function test_expire_exotic_hidden() {
   ];
   await PlacesTestUtils.addVisits(visits);
   for (let visit of visits) {
-    Assert.greater(visits_in_database(visit.uri), 0);
+    Assert.greater(await visits_in_database(visit.uri), 0);
   }
 
   await promiseForceExpirationStep(1);
 
   for (let visit of visits) {
     Assert.equal(
-      visits_in_database(visit.uri),
+      await visits_in_database(visit.uri),
       visit.expectedCount,
       `${visit.uri} should${
         visit.expectedCount == 0 ? " " : " not "
@@ -267,16 +267,16 @@ add_task(async function test_expire_unlimited() {
   await promiseForceExpirationStep(-1);
 
   // Check that some visits survived.
-  Assert.equal(visits_in_database("http://nonexpirable.mozilla.org/"), 1);
+  Assert.equal(await visits_in_database("http://nonexpirable.mozilla.org/"), 1);
   Assert.equal(
-    visits_in_database("http://nonexpirable-download.mozilla.org/"),
+    await visits_in_database("http://nonexpirable-download.mozilla.org/"),
     1
   );
-  Assert.equal(visits_in_database(longurl), 1);
+  Assert.equal(await visits_in_database(longurl), 1);
   // Other visits should have been expired.
-  Assert.ok(!page_in_database("http://old.mozilla.org/"));
-  Assert.ok(!page_in_database("http://download.mozilla.org/"));
-  Assert.ok(!page_in_database("http://new.mozilla.org/"));
+  Assert.ok(!(await page_in_database("http://old.mozilla.org/")));
+  Assert.ok(!(await page_in_database("http://download.mozilla.org/")));
+  Assert.ok(!(await page_in_database("http://new.mozilla.org/")));
 
   // Clean up.
   await PlacesUtils.history.clear();
@@ -454,7 +454,10 @@ add_task(async function test_expire_icons() {
 
   info("Check expiration");
   for (let entry of entries) {
-    Assert.ok(page_in_database(entry.page), `Page in database: ${entry.page}`);
+    Assert.ok(
+      await page_in_database(entry.page),
+      `Page in database: ${entry.page}`
+    );
 
     let favicon = await PlacesTestUtils.getFaviconForPage(entry.page);
     if (!entry.removed) {

@@ -658,13 +658,9 @@ export function handleRustResult(result, liftCallback, liftErrCallback) {
   }
 }
 
-export class UniFFIError {
+export class UniFFIError extends Error {
   constructor(message) {
-    this.message = message;
-  }
-
-  toString() {
-    return `UniFFIError: ${this.message}`;
+    super(message);
   }
 }
 
@@ -744,16 +740,16 @@ export class UniFFICallbackHandler {
    * @returns {obj} - Callback object
    */
   takeCallbackObj(handle) {
-    const callbackObj = this.#handleMap.get(handle).callbackObj;
-    if (UniFFIScaffolding.callbackHandleRelease(handle) == 0) {
-      this.#handleMap.delete(handle);
-    }
-    if (callbackObj === undefined) {
+    const entry = this.#handleMap.get(handle);
+    if (entry === undefined) {
       throw new UniFFIError(
         `${this.#name}: invalid callback handle id: ${handle}`
       );
     }
-    return callbackObj;
+    if (UniFFIScaffolding.callbackHandleRelease(handle) == 0) {
+      this.destroy(handle);
+    }
+    return entry.callbackObj;
   }
 
   /**
@@ -766,13 +762,13 @@ export class UniFFICallbackHandler {
    * @returns {obj} - Callback object
    */
   borrowCallbackObj(handle) {
-    const callbackObj = this.#handleMap.get(handle).callbackObj;
-    if (callbackObj === undefined) {
+    const entry = this.#handleMap.get(handle);
+    if (entry === undefined) {
       throw new UniFFIError(
         `${this.#name}: invalid callback handle id: ${handle}`
       );
     }
-    return callbackObj;
+    return entry.callbackObj;
   }
 
   /**
@@ -866,6 +862,7 @@ export class UniFFICallbackHandler {
    */
   destroy(handle) {
     this.#handleMap.delete(handle);
+    UniFFIScaffolding.callbackHandleFree(handle);
   }
 
   /**
@@ -885,9 +882,10 @@ export class UniFFICallbackHandler {
         console.error(
           `UniFFI Callback interface error during xpcom-shutdown: ${ex}`
         );
+        // See bug 2034905 for filename / fileName shenanigans.
         Cc["@mozilla.org/xpcom/debug;1"]
           .getService(Ci.nsIDebug2)
-          .abort(ex.filename, ex.lineNumber);
+          .abort(ex.filename || ex.fileName, ex.lineNumber);
       }
     }
   }

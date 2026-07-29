@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -42,7 +40,7 @@
 namespace mozilla {
 
 #define LOG(msg, ...) \
-  MOZ_LOG(gRemoteDecodeLog, LogLevel::Debug, (msg, ##__VA_ARGS__))
+  MOZ_LOG_FMT(gRemoteDecodeLog, LogLevel::Debug, msg, ##__VA_ARGS__)
 
 using namespace ipc;
 using namespace layers;
@@ -220,7 +218,8 @@ void RemoteMediaManagerParent::ActorDestroy(
   mThread = nullptr;
 }
 
-PRemoteDecoderParent* RemoteMediaManagerParent::AllocPRemoteDecoderParent(
+already_AddRefed<PRemoteDecoderParent>
+RemoteMediaManagerParent::AllocPRemoteDecoderParent(
     const RemoteDecoderInfoIPDL& aRemoteDecoderInfo,
     const CreateDecoderParams::OptionSet& aOptions,
     const Maybe<layers::TextureFactoryIdentifier>& aIdentifier,
@@ -236,14 +235,14 @@ PRemoteDecoderParent* RemoteMediaManagerParent::AllocPRemoteDecoderParent(
       RemoteDecoderInfoIPDL::TVideoDecoderInfoIPDL) {
     const VideoDecoderInfoIPDL& decoderInfo =
         aRemoteDecoderInfo.get_VideoDecoderInfoIPDL();
-    return new RemoteVideoDecoderParent(
+    return MakeAndAddRef<RemoteVideoDecoderParent>(
         this, decoderInfo.videoInfo(), decoderInfo.framerate(), aOptions,
         aIdentifier, sRemoteMediaManagerParentThread, decodeTaskQueue,
         aMediaEngineId, aTrackingId, cdm);
   }
 
   if (aRemoteDecoderInfo.type() == RemoteDecoderInfoIPDL::TAudioInfo) {
-    return new RemoteAudioDecoderParent(
+    return MakeAndAddRef<RemoteAudioDecoderParent>(
         this, aRemoteDecoderInfo.get_AudioInfo(), aOptions,
         sRemoteMediaManagerParentThread, decodeTaskQueue, aMediaEngineId, cdm);
   }
@@ -252,56 +251,36 @@ PRemoteDecoderParent* RemoteMediaManagerParent::AllocPRemoteDecoderParent(
   return nullptr;
 }
 
-bool RemoteMediaManagerParent::DeallocPRemoteDecoderParent(
-    PRemoteDecoderParent* actor) {
-  RemoteDecoderParent* parent = static_cast<RemoteDecoderParent*>(actor);
-  parent->Destroy();
-  return true;
-}
-
 already_AddRefed<PRemoteEncoderParent>
 RemoteMediaManagerParent::AllocPRemoteEncoderParent(
     const EncoderConfig& aConfig) {
   return MakeAndAddRef<RemoteMediaDataEncoderParent>(aConfig);
 }
 
-PMFMediaEngineParent* RemoteMediaManagerParent::AllocPMFMediaEngineParent() {
+already_AddRefed<PMFMediaEngineParent>
+RemoteMediaManagerParent::AllocPMFMediaEngineParent() {
 #ifdef MOZ_WMF_MEDIA_ENGINE
-  return new MFMediaEngineParent(this, sRemoteMediaManagerParentThread);
+  return MakeAndAddRef<MFMediaEngineParent>(this,
+                                            sRemoteMediaManagerParentThread);
 #else
   return nullptr;
 #endif
 }
 
-bool RemoteMediaManagerParent::DeallocPMFMediaEngineParent(
-    PMFMediaEngineParent* actor) {
-#ifdef MOZ_WMF_MEDIA_ENGINE
-  MFMediaEngineParent* parent = static_cast<MFMediaEngineParent*>(actor);
-  parent->Destroy();
-#endif
-  return true;
-}
-
-PMFCDMParent* RemoteMediaManagerParent::AllocPMFCDMParent(
+already_AddRefed<PMFCDMParent> RemoteMediaManagerParent::AllocPMFCDMParent(
     const nsAString& aKeySystem) {
 #ifdef MOZ_WMF_CDM
-  return new MFCDMParent(aKeySystem, this, sRemoteMediaManagerParentThread);
+  return MakeAndAddRef<MFCDMParent>(aKeySystem, this,
+                                    sRemoteMediaManagerParentThread);
 #else
   return nullptr;
 #endif
 }
 
-bool RemoteMediaManagerParent::DeallocPMFCDMParent(PMFCDMParent* actor) {
-#ifdef MOZ_WMF_CDM
-  static_cast<MFCDMParent*>(actor)->Destroy();
-#endif
-  return true;
-}
-
-PRemoteCDMParent* RemoteMediaManagerParent::AllocPRemoteCDMParent(
-    const nsAString& aKeySystem) {
+already_AddRefed<PRemoteCDMParent>
+RemoteMediaManagerParent::AllocPRemoteCDMParent(const nsAString& aKeySystem) {
 #ifdef MOZ_WIDGET_ANDROID
-  return new MediaDrmRemoteCDMParent(aKeySystem);
+  return MakeAndAddRef<MediaDrmRemoteCDMParent>(aKeySystem);
 #else
   return nullptr;
 #endif

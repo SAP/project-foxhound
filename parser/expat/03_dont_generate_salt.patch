@@ -1,37 +1,71 @@
 diff --git a/expat/lib/xmlparse.c b/expat/lib/xmlparse.c
 --- a/expat/lib/xmlparse.c
 +++ b/expat/lib/xmlparse.c
-@@ -1046,6 +1046,8 @@ static const XML_Char implicitContext[]
+@@ -115,6 +115,8 @@
+ #include "expat.h"
+ #include "siphash.h"
+ 
++/* BEGIN MOZILLA CHANGE (we already set a salt through XML_SetHashSalt16Bytes) */
++#if 0
+ #if defined(HAVE_ARC4RANDOM)
+ #  include "random_arc4random.h"
+ #endif /* defined(HAVE_ARC4RANDOM) */
+@@ -138,6 +140,8 @@
+ #if defined(_WIN32)
+ #  include "random_rand_s.h"
+ #endif /* defined(_WIN32) */
++#endif
++/* END MOZILLA CHANGE */
+ 
+ #if ! defined(HAVE_GETRANDOM) && ! defined(HAVE_SYSCALL_GETRANDOM)             \
+     && ! defined(HAVE_ARC4RANDOM_BUF) && ! defined(HAVE_ARC4RANDOM)            \
+@@ -1036,6 +1036,8 @@
         ASCII_s,     ASCII_p,     ASCII_a,      ASCII_c,      ASCII_e,
         '\0'};
  
-+/* BEGIN MOZILLA CHANGE (we already set a salt through XML_SetHashSalt) */
++/* BEGIN MOZILLA CHANGE (we already set a salt through XML_SetHashSalt16Bytes) */
 +#if 0
- /* To avoid warnings about unused functions: */
  #if ! defined(HAVE_ARC4RANDOM_BUF) && ! defined(HAVE_ARC4RANDOM)
  
-@@ -1210,9 +1212,13 @@ ENTROPY_DEBUG(const char *label, unsigned long entropy) {
-   }
-   return entropy;
+ static unsigned long
+@@ -1062,9 +1064,14 @@
  }
+ 
+ #endif /* ! defined(HAVE_ARC4RANDOM_BUF) && ! defined(HAVE_ARC4RANDOM) */
 +#endif
 +/* END MOZILLA CHANGE */
  
- static unsigned long
- generate_hash_secret_salt(XML_Parser parser) {
-+/* BEGIN MOZILLA CHANGE (we already set a salt through XML_SetHashSalt) */
+ static struct sipkey
+ ENTROPY_DEBUG(const char *label, struct sipkey entropy_128) {
++/* BEGIN MOZILLA CHANGE (we already set a salt through XML_SetHashSalt16Bytes) */
++  (void)label;
 +#if 0
-   unsigned long entropy;
-   (void)parser;
+   if (getDebugLevel("EXPAT_ENTROPY_DEBUG", 0) >= 1u) {
+     fprintf(stderr,
+             "expat: Entropy: %s --> [0x" EXPAT_FMT_LLX(
+@@ -1072,11 +1079,16 @@
+             label, (unsigned long long)entropy_128.k[0],
+             (unsigned long long)entropy_128.k[1]);
+   }
++#endif
++/* END MOZILLA CHANGE */
+   return entropy_128;
+ }
  
-@@ -1252,6 +1258,10 @@ generate_hash_secret_salt(XML_Parser parser) {
-                          entropy * (unsigned long)2305843009213693951ULL);
+ static struct sipkey
+ generate_hash_secret_salt(void) {
++/* BEGIN MOZILLA CHANGE (we already set a salt through XML_SetHashSalt16Bytes) */
++  abort();
++#if 0
+   struct sipkey entropy;
+ 
+   /* "Failproof" high quality providers: */
+@@ -1125,6 +1137,8 @@
+     return ENTROPY_DEBUG("fallback(8)", entropy);
    }
  #endif
-+#else
-+  abort();
 +#endif
 +/* END MOZILLA CHANGE */
  }
  
- static unsigned long
+ static enum XML_Error

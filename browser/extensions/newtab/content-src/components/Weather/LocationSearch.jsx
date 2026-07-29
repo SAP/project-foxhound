@@ -3,10 +3,10 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import React, { useEffect, useRef, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
+import { batch, useDispatch, useSelector } from "react-redux";
 import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
 
-function LocationSearch({ outerClassName }) {
+function LocationSearch({ outerClassName, onLocationSelected }) {
   // should be the location object from suggestedLocations
   const [selectedLocation, setSelectedLocation] = useState("");
   const suggestedLocations = useSelector(
@@ -15,6 +15,14 @@ function LocationSearch({ outerClassName }) {
   const locationSearchString = useSelector(
     state => state.Weather.locationSearchString
   );
+  const novaEnabled = useSelector(state => state.Prefs.values["nova.enabled"]);
+  const weatherOptIn = useSelector(
+    state => state.Prefs.values["system.showWeatherOptIn"]
+  );
+  const optInAccepted = useSelector(
+    state => state.Prefs.values["weather.optInAccepted"]
+  );
+  const showCurrentLocation = !weatherOptIn || optInAccepted;
 
   const [userInput, setUserInput] = useState(locationSearchString || "");
   const inputRef = useRef(null);
@@ -40,8 +48,9 @@ function LocationSearch({ outerClassName }) {
           data: false,
         })
       );
+      onLocationSelected?.();
     }
-  }, [selectedLocation, dispatch]);
+  }, [selectedLocation, dispatch, onLocationSelected]);
 
   // when component mounts, set focus to input
   useEffect(() => {
@@ -95,6 +104,15 @@ function LocationSearch({ outerClassName }) {
     }
   }
 
+  function handleUseCurrentLocation() {
+    batch(() => {
+      dispatch(ac.AlsoToMain({ type: at.WEATHER_USER_OPT_IN_LOCATION }));
+      dispatch(
+        ac.BroadcastToContent({ type: at.WEATHER_SEARCH_ACTIVE, data: false })
+      );
+    });
+  }
+
   return (
     <div className={`${outerClassName} location-search`}>
       <div className="location-input-wrapper">
@@ -107,9 +125,10 @@ function LocationSearch({ outerClassName }) {
           onChange={handleChange}
           value={userInput}
           onKeyDown={handleKeyDown}
+          className="location-input"
         />
         <moz-button
-          class="close-icon"
+          className="close-icon"
           type="icon ghost"
           size="small"
           iconSrc="chrome://global/skin/icons/close.svg"
@@ -124,6 +143,14 @@ function LocationSearch({ outerClassName }) {
           ))}
         </datalist>
       </div>
+      {showCurrentLocation && novaEnabled && (
+        <moz-button
+          data-l10n-id="newtab-weather-change-location-search-use-current"
+          type="icon ghost"
+          iconSrc="chrome://browser/skin/notification-icons/geo.svg"
+          onClick={handleUseCurrentLocation}
+        />
+      )}
     </div>
   );
 }

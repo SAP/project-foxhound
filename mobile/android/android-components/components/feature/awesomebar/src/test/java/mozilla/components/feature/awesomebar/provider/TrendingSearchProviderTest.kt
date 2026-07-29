@@ -8,6 +8,8 @@ import android.graphics.Bitmap
 import androidx.core.graphics.drawable.toBitmap
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.test.runTest
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.fetch.Client
 import mozilla.components.concept.fetch.Request
@@ -23,8 +25,6 @@ import mozilla.components.support.test.any
 import mozilla.components.support.test.eq
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -44,7 +44,7 @@ class TrendingSearchProviderTest {
     fun `GIVEN text is empty WHEN input is changed THEN provider returns suggestions based on search engine`() {
         runTest {
             val server = MockWebServer()
-            server.enqueue(MockResponse().setBody(GOOGLE_MOCK_RESPONSE))
+            server.enqueue(MockResponse(body = GOOGLE_MOCK_RESPONSE))
             server.start()
 
             val searchEngine = createSearchEngine(
@@ -103,7 +103,7 @@ class TrendingSearchProviderTest {
 
                 Mockito.verify(useCase).invoke(eq("firefox focus"), any(), any())
             } finally {
-                server.shutdown()
+                server.close()
             }
         }
     }
@@ -112,7 +112,7 @@ class TrendingSearchProviderTest {
     fun `GIVEN limit that is less than total number of results WHEN input is changed THEN provider returns suggestions within the limit`() {
         runTest {
             val server = MockWebServer()
-            server.enqueue(MockResponse().setBody(GOOGLE_MOCK_RESPONSE))
+            server.enqueue(MockResponse(body = GOOGLE_MOCK_RESPONSE))
             server.start()
 
             val searchEngine = createSearchEngine(
@@ -142,7 +142,7 @@ class TrendingSearchProviderTest {
                 assertEquals("firefox quantum", suggestions[2].title)
                 assertEquals("firefox update", suggestions[3].title)
             } finally {
-                server.shutdown()
+                server.close()
             }
         }
     }
@@ -161,7 +161,7 @@ class TrendingSearchProviderTest {
     fun `GIVEN no provider icon WHEN input is changed THEN provider should use engine icon by default`() {
         runTest {
             val server = MockWebServer()
-            server.enqueue(MockResponse().setBody(GOOGLE_MOCK_RESPONSE))
+            server.enqueue(MockResponse(body = GOOGLE_MOCK_RESPONSE))
             server.start()
 
             val engineIcon = getDeviceDesktopIcon()
@@ -186,7 +186,7 @@ class TrendingSearchProviderTest {
                 assertEquals(4, suggestions.size)
                 assertTrue(suggestions[0].icon?.sameAs(engineIcon)!!)
             } finally {
-                server.shutdown()
+                server.close()
             }
         }
     }
@@ -195,7 +195,7 @@ class TrendingSearchProviderTest {
     fun `GIVEN a provider icon WHEN input is changed THEN provider should use the given icon`() {
         runTest {
             val server = MockWebServer()
-            server.enqueue(MockResponse().setBody(GOOGLE_MOCK_RESPONSE))
+            server.enqueue(MockResponse(body = GOOGLE_MOCK_RESPONSE))
             server.start()
 
             val engineIcon = getDeviceDesktopIcon()
@@ -224,7 +224,7 @@ class TrendingSearchProviderTest {
                 assertEquals(4, suggestions.size)
                 assertTrue(suggestions[0].icon?.sameAs(paramIcon)!!)
             } finally {
-                server.shutdown()
+                server.close()
             }
         }
     }
@@ -256,7 +256,7 @@ class TrendingSearchProviderTest {
     fun `GIVEN fetch that returns an HTTP error WHEN input is changed THEN provider returns an empty list`() {
         runTest {
             val server = MockWebServer()
-            server.enqueue(MockResponse().setResponseCode(404).setBody("error"))
+            server.enqueue(MockResponse(code = 404, body = "error"))
             server.start()
 
             val searchEngine = createSearchEngine(
@@ -275,7 +275,7 @@ class TrendingSearchProviderTest {
                 val suggestions = provider.onInputChanged("")
                 assertEquals(0, suggestions.size)
             } finally {
-                server.shutdown()
+                server.close()
             }
         }
     }
@@ -284,7 +284,7 @@ class TrendingSearchProviderTest {
     fun `GIVEN fetch that throws an exception WHEN input is changed THEN provider returns an empty list`() {
         runTest {
             val server = MockWebServer()
-            server.enqueue(MockResponse().setBody(GOOGLE_MOCK_RESPONSE))
+            server.enqueue(MockResponse(body = GOOGLE_MOCK_RESPONSE))
             server.start()
 
             val searchEngine = createSearchEngine(
@@ -323,7 +323,7 @@ class TrendingSearchProviderTest {
     fun `GIVEN response has duplicate responses WHEN input is changed THEN provider returns only distinct suggestions`() {
         runTest {
             val server = MockWebServer()
-            server.enqueue(MockResponse().setBody(GOOGLE_MOCK_RESPONSE_WITH_DUPLICATES))
+            server.enqueue(MockResponse(body = GOOGLE_MOCK_RESPONSE_WITH_DUPLICATES))
             server.start()
 
             val searchEngine = createSearchEngine(
@@ -359,7 +359,7 @@ class TrendingSearchProviderTest {
                 assertEquals("firefox nightly", suggestions[8].title)
                 assertEquals("firefox clear cache", suggestions[9].title)
             } finally {
-                server.shutdown()
+                server.close()
             }
         }
     }
@@ -368,7 +368,7 @@ class TrendingSearchProviderTest {
     fun `WHEN input is changed THEN provider calls speculativeConnect for URL of highest scored suggestion`() {
         runTest {
             val server = MockWebServer()
-            server.enqueue(MockResponse().setBody(GOOGLE_MOCK_RESPONSE))
+            server.enqueue(MockResponse(body = GOOGLE_MOCK_RESPONSE))
             server.start()
             val engine: Engine = mock()
 
@@ -395,7 +395,7 @@ class TrendingSearchProviderTest {
                 Mockito.verify(engine, Mockito.times(1))
                     .speculativeConnect(server.url("/search?q=firefox").toString())
             } finally {
-                server.shutdown()
+                server.close()
             }
         }
     }

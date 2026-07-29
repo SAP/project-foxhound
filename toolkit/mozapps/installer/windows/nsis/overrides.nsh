@@ -78,7 +78,7 @@
   !verbose pop
 !macroend
 
-; Modified version of Locate from the NSIS File Functions Header v3.4 (it has 
+; Modified version of Locate from the NSIS File Functions Header v3.4 (it has
 ; the same version in earlier versions of NSIS even though it has changed) that
 ; is distributed with NSIS v2.46-Unicode. This version has the calls to
 ; SetDetailsPrint commented out.

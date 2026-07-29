@@ -14,11 +14,14 @@ android {
 }
 
 dependencies {
+    api libs.mockwebserver
+
     implementation libs.androidx.arch.core.common
     implementation libs.androidx.test.core
     implementation libs.androidx.test.espresso.core
     implementation libs.leakcanary.instrumentation
-    implementation libs.mockwebserver
+    implementation libs.okhttp
+    implementation libs.okio
 }
 
 apply from: '../../../common-config.gradle'

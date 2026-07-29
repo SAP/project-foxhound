@@ -13,10 +13,11 @@ Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/0744d68b8c944e699
 ---
  modules/rtp_rtcp/include/flexfec_receiver.h | 2 ++
  modules/rtp_rtcp/source/flexfec_receiver.cc | 2 ++
+ rtc_base/event_tracer.cc                    | 2 +-
  rtc_base/task_utils/repeating_task.h        | 4 ++--
  system_wrappers/include/clock.h             | 2 +-
  system_wrappers/source/clock.cc             | 2 +-
- 5 files changed, 8 insertions(+), 4 deletions(-)
+ 6 files changed, 9 insertions(+), 5 deletions(-)
 
 diff --git a/modules/rtp_rtcp/include/flexfec_receiver.h b/modules/rtp_rtcp/include/flexfec_receiver.h
 index a869c8ad41..b6a33882d1 100644
@@ -54,6 +55,19 @@ index bde365fe18..5df6b2a8af 100644
  
  FlexfecReceiver::FlexfecReceiver(
      Clock* clock,
+diff --git a/rtc_base/event_tracer.cc b/rtc_base/event_tracer.cc
+index dd8e293a06..0e6bca7a2c 100644
+--- a/rtc_base/event_tracer.cc
++++ b/rtc_base/event_tracer.cc
+@@ -121,7 +121,7 @@ class EventLogger final {
+  public:
+   explicit EventLogger(std::optional<Environment> env)
+       : env_(env),
+-        clock_(env.has_value() ? env->clock() : *Clock::GetRealTimeClock()) {}
++        clock_(env.has_value() ? env->clock() : *Clock::GetRealTimeClockRaw()) {}
+   ~EventLogger() { RTC_DCHECK(thread_checker_.IsCurrent()); }
+ 
+   void AddTraceEvent(const char* name,
 diff --git a/rtc_base/task_utils/repeating_task.h b/rtc_base/task_utils/repeating_task.h
 index 3f738fcebc..d9536b71be 100644
 --- a/rtc_base/task_utils/repeating_task.h
@@ -77,28 +91,28 @@ index 3f738fcebc..d9536b71be 100644
  
    // Stops future invocations of the repeating task closure. Can only be called
 diff --git a/system_wrappers/include/clock.h b/system_wrappers/include/clock.h
-index 5f1c665cfe..61af59782d 100644
+index 52457f3dcf..fd367cb238 100644
 --- a/system_wrappers/include/clock.h
 +++ b/system_wrappers/include/clock.h
-@@ -66,7 +66,7 @@ class RTC_EXPORT Clock {
+@@ -67,7 +67,7 @@ class RTC_EXPORT Clock {
    }
  
    // Returns an instance of the real-time system clock implementation.
--  static Clock* GetRealTimeClock();
-+  static Clock* GetRealTimeClockRaw();
+-  static Clock* absl_nonnull GetRealTimeClock();
++  static Clock* absl_nonnull GetRealTimeClockRaw();
  };
  
  class SimulatedClock : public Clock {
 diff --git a/system_wrappers/source/clock.cc b/system_wrappers/source/clock.cc
-index 9290d19f4d..8b69b25362 100644
+index cbfc652923..ec66661fa3 100644
 --- a/system_wrappers/source/clock.cc
 +++ b/system_wrappers/source/clock.cc
-@@ -62,7 +62,7 @@ class RealTimeClock : public Clock {
+@@ -63,7 +63,7 @@ class RealTimeClock : public Clock {
    }
  };
  
--Clock* Clock::GetRealTimeClock() {
-+Clock* Clock::GetRealTimeClockRaw() {
+-Clock* absl_nonnull Clock::GetRealTimeClock() {
++Clock* absl_nonnull Clock::GetRealTimeClockRaw() {
    static Clock* const clock = new RealTimeClock();
    return clock;
  }

@@ -208,8 +208,9 @@ TEST(MediaHardwareKeysEventSourceMacMediaCenter,
   changePositionHandler(event);
 
   ASSERT_TRUE(listener->IsKeyEqualTo(MediaControlKey::Seekto));
-  mozilla::Maybe<SeekDetails> seekDetails = listener->GetSeekDetails();
-  ASSERT_TRUE(seekDetails->mAbsolute->mSeekTime == seekPosition);
+  MediaControlActionParams actionParams =
+      listener->GetMediaControlActionParams();
+  ASSERT_TRUE(actionParams.mAbsolute->mSeekTime == seekPosition);
 
   MPRemoteCommandCenter* commandCenter =
       [MPRemoteCommandCenter sharedCommandCenter];

@@ -15,19 +15,19 @@ origin:
   # release, and upstream repo locations refer to the third party upstream,
   # Angle is vendored from a mozilla git repository that pulls from
   # upstream and mainntains local patches there.
-  release: commit ceec659ac60b0c8ee9d9c602ca1a878ec1d3a88f Fri Nov 4 13:35:51 2022 +0000
+  release: commit ceec659ac60b0c8ee9d9c602ca1a878ec1d3a88f Fri Nov 04 13:35:51 2022 +0000
   revision: ceec659ac60b0c8ee9d9c602ca1a878ec1d3a88f
 
   license: BSD-3-Clause
 
 updatebot:
-  maintainer-phab: jgilbert
-  maintainer-bz: jgilbert@mozilla.com
+  maintainer-phab: ahale
+  maintainer-bz: ahale@mozilla.com
   tasks:
     - type: commit-alert
       enabled: True
       branch: chromium/5359
-      needinfo: ["jgilbert@mozilla.com"]
+      needinfo: ["ahale@mozilla.com"]
 
 vendoring:
   url: https://chromium.googlesource.com/angle/angle

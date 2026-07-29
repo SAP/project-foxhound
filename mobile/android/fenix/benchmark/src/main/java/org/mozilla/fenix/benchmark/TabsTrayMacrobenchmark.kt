@@ -9,7 +9,7 @@ package org.mozilla.fenix.benchmark
  *   test-targets:
  *     - annotation org.mozilla.fenix.benchmark.TabsTrayMacrobenchmark
  *
- * Please remember to update [arm64-v8a-tabstray-macrobenchmark.yml](https://searchfox.org/mozilla-central/source/mobile/android/test_infra/flank-configs/fenix/arm64-v8a-macrobenchmark.yml)
+ * Please remember to update [arm64-v8a-tabstray-macrobenchmark.yml](https://searchfox.org/firefox-main/source/mobile/android/test_infra/flank-configs/fenix/arm64-v8a-macrobenchmark.yml)
  * and any other use of this annotation if its name or package is changed.
  */
 annotation class TabsTrayMacrobenchmark

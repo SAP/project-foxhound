@@ -230,7 +230,7 @@ silence a race while a fix is developed as well as to permanently silence a
        and think twice before attempting to suppress a race.
 
 The runtime Suppression list is directly baked into Firefox at compile-time and
-located at `build/sanitizers/TsanOptions.cpp <https://searchfox.org/mozilla-central/source/build/sanitizers/TsanOptions.cpp>`__.
+located at :searchfox:`build/sanitizers/TsanOptions.cpp`.
 
 .. warning::
        **Important**: When adding a suppression, always make sure to include

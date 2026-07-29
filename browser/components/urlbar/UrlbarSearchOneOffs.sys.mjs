@@ -13,7 +13,7 @@ const lazy = XPCOMUtils.declareLazy({
 
 /**
  * @import {LegacySearchOneOffButton} from "moz-src:///browser/components/search/SearchOneOffs.sys.mjs"
- * @import {UrlbarView} from "moz-src:///browser/components/urlbar/UrlbarView.sys.mjs"
+ * @import {UrlbarView} from "chrome://browser/content/urlbar/UrlbarView.mjs"
  */
 
 /**
@@ -27,7 +27,7 @@ export class UrlbarSearchOneOffs extends SearchOneOffs {
    *   The parent UrlbarView.
    */
   constructor(view) {
-    super(view.panel.querySelector(".search-one-offs"));
+    super(view.input.querySelector(".search-one-offs"));
     this.view = view;
     this.input = view.input;
     lazy.UrlbarPrefs.addObserver(this);
@@ -245,7 +245,7 @@ export class UrlbarSearchOneOffs extends SearchOneOffs {
         }
         if (!params?.inBackground) {
           this.input.window.gBrowser.selectedTab = newTab;
-          newTab.ownerGlobal.gURLBar.startQuery(startQueryParams);
+          newTab.documentGlobal.gURLBar.startQuery(startQueryParams);
         }
         break;
       }

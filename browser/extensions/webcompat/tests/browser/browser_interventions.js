@@ -58,11 +58,26 @@ const ValidResourceTypes = [
   "other",
 ];
 
+const ValidMetaViewportProps = [
+  "height",
+  "initial-scale",
+  "interactive-widget",
+  "maximum-scale",
+  "minimum-scale",
+  "user-scalable",
+  "viewport-fit",
+  "width",
+];
+
 function addon_url(path) {
   const uuid = WebExtensionPolicy.getByID(
     "webcompat@mozilla.org"
   ).mozExtensionHostname;
   return `moz-extension://${uuid}/${path}`;
+}
+
+function validate_path(path) {
+  return path.match(/[A-Za-z0-9._\-]/i);
 }
 
 async function check_path_exists(path) {
@@ -83,10 +98,69 @@ function check_valid_array(a, key, id) {
   return valid;
 }
 
-function validate_match_info(id, key, matches) {
+function check_special_content_script_info(source, name, valuesKey, id) {
+  if (!(name in source)) {
+    return [];
+  }
+  let value = source[name];
   ok(
-    Array.isArray(matches) && matches.length,
-    `${key} key exists and is an array with items for id ${id}`
+    typeof value == "object" && value !== null,
+    `${name} is a non-null object for id ${id}`
+  );
+  if (valuesKey in value) {
+    for (const prop of Object.keys(value)) {
+      ok(
+        ["all_frames", "match_origin_as_fallback", valuesKey].includes(prop),
+        `${prop} is an expected key for ${name} in id ${id}`
+      );
+    }
+    for (const prop of ["all_frames", "match_origin_as_fallback"]) {
+      ok(
+        !(prop in value) || value[prop] === true,
+        `${prop} is true or omitted for ${name} in id ${id}`
+      );
+    }
+    value = value[valuesKey];
+  }
+  return Array.isArray(value) ? value : [value];
+}
+
+function is_non_null_object(value, key, id) {
+  const passes = typeof value == "object" && value !== null;
+  ok(
+    passes,
+    `${JSON.stringify(value)} is a non-null object in ${key} for id ${id}`
+  );
+  return passes;
+}
+
+function is_non_empty_string(value, key, id) {
+  const passes = typeof value == "string" && value.trim().length;
+  ok(
+    passes,
+    `${JSON.stringify(value)} is a non-empty string in ${key} for id ${id}`
+  );
+  return passes;
+}
+
+function is_valid_css_selector(value, key, id) {
+  let passes = false;
+  try {
+    document.documentElement.matches(value);
+    passes = true;
+  } catch (_) {}
+  ok(
+    passes,
+    `${JSON.stringify(value)} is a non-empty string in ${key} for id ${id}`
+  );
+  return passes;
+}
+
+function validate_match_info(id, key, matches, excludes) {
+  ok(
+    (Array.isArray(matches) && matches.length) ||
+      (Array.isArray(excludes) && excludes.length),
+    `${key} or exludes_${key} exists, and are an array with items for id ${id}`
   );
 
   for (const match of matches) {
@@ -147,7 +221,7 @@ add_task(async function test_json_data() {
     );
   }
 
-  const json = await (await fetch(addon_url("data/interventions.json"))).json();
+  const json = await WebCompatExtension.allOriginalInterventions();
   const ids = new Set();
   for (const [id, config] of Object.entries(json)) {
     const { bugs, hidden, interventions, label } = config;
@@ -174,7 +248,11 @@ add_task(async function test_json_data() {
       `bugs key exists and has entries for id ${id}`
     );
     let hasBlocks = false;
-    for (const [bug, { issue, blocks, matches }] of Object.entries(bugs)) {
+    let hasMatchesOrBlocks = false;
+    for (const [
+      bug,
+      { issue, blocks, exclude_blocks, exclude_matches, matches },
+    ] of Object.entries(bugs)) {
       ok(
         typeof bug === "string" && bug == String(parseInt(bug)),
         `bug number is set properly for all bugs in id ${id}`
@@ -187,25 +265,42 @@ add_task(async function test_json_data() {
 
       ok(
         !interventions.find(i => i.content_scripts || i.ua_string) ||
-          (!!matches && Array.isArray(matches) && matches.length),
-        `matches key exists and is an array with items for id ${id}`
+          (!!matches && Array.isArray(matches) && matches.length) ||
+          (!!exclude_matches &&
+            Array.isArray(exclude_matches) &&
+            exclude_matches.length),
+        `matches or exclude_matches key exists and is an array with items for id ${id}`
       );
 
-      if (!matches && !blocks) {
-        ok(false, `no matches or blocks entries for id ${id}`);
+      if (matches || blocks) {
+        hasMatchesOrBlocks = true;
+      }
+
+      if (!matches && !exclude_matches && !blocks && !exclude_blocks) {
+        ok(
+          false,
+          `bug entry without any matches, exclude_matches, blocks, or exclude_blocks in id ${id}`
+        );
       }
 
       if (matches) {
-        validate_match_info(id, "matches", matches);
+        validate_match_info(id, "matches", matches, exclude_matches);
       }
       if (blocks) {
         hasBlocks = true;
-        validate_match_info(id, "blocks", blocks);
+        validate_match_info(id, "blocks", blocks, exclude_blocks);
       }
+    }
+    if (!hasMatchesOrBlocks) {
+      ok(false, `no matches or blocks for id ${id}`);
     }
 
     const non_custom_names = [
       "content_scripts",
+      "css",
+      "hide_alerts",
+      "hide_messages",
+      "modify_meta_viewport",
       "max_version",
       "min_version",
       "not_platforms",
@@ -256,6 +351,10 @@ add_task(async function test_json_data() {
       }
       let {
         content_scripts,
+        css,
+        hide_alerts,
+        hide_messages,
+        modify_meta_viewport,
         not_platforms,
         not_channels,
         only_channels,
@@ -323,7 +422,14 @@ add_task(async function test_json_data() {
         }
       }
       ok(
-        content_scripts || ua_string || custom_found || hasBlocks,
+        content_scripts ||
+          css ||
+          hide_alerts ||
+          hide_messages ||
+          modify_meta_viewport ||
+          ua_string ||
+          custom_found ||
+          hasBlocks,
         `Interventions or blocks are defined for id ${id}`
       );
       ok(
@@ -360,6 +466,76 @@ add_task(async function test_json_data() {
           );
         }
       }
+      for (const value of check_special_content_script_info(
+        intervention,
+        "css",
+        "which",
+        id
+      )) {
+        if (is_non_empty_string(value, "css", id)) {
+          // Note: the actual CSS in config.css is checked with mach lint in the python tests.
+          ok(config.css?.[value], `${value} is a CSS file listed on ${id}`);
+        }
+      }
+      for (const value of check_special_content_script_info(
+        intervention,
+        "hide_alerts",
+        "alerts",
+        id
+      )) {
+        is_non_empty_string(value, "hide_alerts", id);
+      }
+      for (const value of check_special_content_script_info(
+        intervention,
+        "hide_messages",
+        "messages",
+        id
+      )) {
+        if (is_non_null_object(value, "hide_messages", id)) {
+          is_non_empty_string(value.message, "message", id);
+          is_valid_css_selector(value.matches, "container", id);
+          if ("click_adjacent" in value) {
+            is_valid_css_selector(value.matches, "click_adjacent", id);
+          }
+        }
+      }
+      for (const values of check_special_content_script_info(
+        intervention,
+        "modify_meta_viewport",
+        "modify",
+        id
+      )) {
+        if (is_non_null_object(values, "modify_meta_viewport", id)) {
+          for (const [key, info] of Object.entries(values)) {
+            ok(
+              ValidMetaViewportProps.includes(key),
+              `${key} is a valid meta viewport content attribute in ${id}`
+            );
+            if (info === null) {
+              ok(
+                true,
+                `null is a valid value for deleting a meta viewport content attribute in ${id}`
+              );
+            } else if (typeof info == "string") {
+              ok(
+                ValidMetaViewportProps.includes(info),
+                `${info} is a valid meta viewport content attribute in ${id}`
+              );
+            } else if (is_non_null_object(info, "modify_meta_viewport", id)) {
+              is_non_empty_string(info.value, "value", id);
+              for (const flag of ["only_if_equals", "only_if_not_equals"]) {
+                if (flag in info) {
+                  is_non_empty_string(
+                    info[flag],
+                    "modify_meta_viewport content attribute value",
+                    id
+                  );
+                }
+              }
+            }
+          }
+        }
+      }
       if (content_scripts) {
         if ("all_frames" in content_scripts) {
           const all = content_scripts.all_frames;
@@ -389,9 +565,21 @@ add_task(async function test_json_data() {
             continue;
           }
           for (let path of paths) {
+            for (let special of [
+              "hide_alerts.js",
+              "hide_messages.js",
+              "modify_meta_viewport.js",
+              "log_console_message.js",
+            ]) {
+              ok(
+                !path.includes(special),
+                `${special} is not manually listed in content_scripts for id ${id}`
+              );
+            }
             if (!path.includes("/")) {
               path = `injections/${type}/${path}`;
             }
+            ok(validate_path(path), `${path} has no special characters`);
             ok(
               path.endsWith(`.${type}`),
               `${path} should be a ${type.toUpperCase()} file`

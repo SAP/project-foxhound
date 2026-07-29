@@ -6,6 +6,7 @@ pwd
 
 mkdir -p "/builds/worker/artifacts"
 
+export PATH="${PATH}:${MOZ_FETCHES_DIR}/7zz"
 DUMP_SYMS="${MOZ_FETCHES_DIR}/dump_syms/dump_syms"
 SYMBOL_STORE=$(mktemp -d -p "/builds/worker/")
 SYMBOL_CACHE=$(mktemp -d -p "/builds/worker/")

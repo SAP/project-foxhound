@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -117,7 +115,6 @@ nsresult JSEventHandler::HandleEvent(Event* aEvent) {
   if (mTypedHandler.Type() == TypedEventHandler::eOnError) {
     MOZ_ASSERT_IF(mEventName, mEventName == nsGkAtoms::onerror);
 
-    nsString errorMsg;
     nsCString file;
     EventOrString msgOrEvent;
     Optional<nsACString> fileName;
@@ -128,9 +125,7 @@ nsresult JSEventHandler::HandleEvent(Event* aEvent) {
     NS_ENSURE_TRUE(aEvent, NS_ERROR_UNEXPECTED);
     ErrorEvent* scriptEvent = aEvent->AsErrorEvent();
     if (scriptEvent) {
-      scriptEvent->GetMessage(errorMsg);
-      msgOrEvent.SetAsString().ShareOrDependUpon(errorMsg);
-
+      scriptEvent->GetMessage(msgOrEvent.SetAsString());
       scriptEvent->GetFilename(file);
       fileName = &file;
 

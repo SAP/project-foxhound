@@ -13,13 +13,13 @@ from taskgraph.transforms.task import payload_builders
 from taskgraph.util import docker, schema
 from taskgraph.util import taskcluster as tc_util
 
-from gecko_taskgraph.config import graph_config_schema
+from gecko_taskgraph.config import GraphConfigSchema
 
 GECKO = os.path.normpath(os.path.realpath(os.path.join(__file__, "..", "..", "..")))
 TEST_CONFIGS = os.path.join(GECKO, "taskcluster", "test_configs")
 
 # Overwrite Taskgraph's default graph_config_schema with a custom one.
-taskgraph_config.graph_config_schema = graph_config_schema
+taskgraph_config.graph_config_schema = GraphConfigSchema
 
 # Overwrite Taskgraph's RUN_TASK_SNIPPET to place the binaries in Gecko
 # specific locations.
@@ -74,6 +74,7 @@ def register(graph_config):
         target_tasks,  # trigger target task method registration
     )
     from gecko_taskgraph.parameters import register_parameters
+    from gecko_taskgraph import task_context  # noqa - trigger custom task-context registration
     from gecko_taskgraph.util import (
         dependencies,  # noqa - trigger group_by registration
     )

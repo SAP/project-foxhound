@@ -12,6 +12,7 @@ import org.mozilla.experiments.nimbus.NimbusAppInfo
 import org.mozilla.experiments.nimbus.NimbusDelegate
 import org.mozilla.experiments.nimbus.NimbusDeviceInfo
 import org.mozilla.experiments.nimbus.NimbusInterface
+import org.mozilla.experiments.nimbus.internal.GeckoPrefHandler
 import org.mozilla.experiments.nimbus.internal.NimbusServerSettings
 import org.mozilla.experiments.nimbus.internal.RecordedContext
 import org.mozilla.experiments.nimbus.Nimbus as ApplicationServicesNimbus
@@ -41,6 +42,7 @@ class Nimbus(
     deviceInfo: NimbusDeviceInfo = NimbusDeviceInfo.default(),
     delegate: NimbusDelegate = NimbusDelegate.default(),
     recordedContext: RecordedContext?,
+    geckoPrefHandler: GeckoPrefHandler? = null,
     private val observable: Observable<NimbusInterface.Observer> = ObserverRegistry(),
 ) : ApplicationServicesNimbus(
     context = context,
@@ -51,6 +53,7 @@ class Nimbus(
     delegate = delegate,
     observer = Observer(observable),
     recordedContext = recordedContext,
+    geckoPrefHandler = geckoPrefHandler,
 ),
     NimbusApi,
     Observable<NimbusInterface.Observer> by observable {

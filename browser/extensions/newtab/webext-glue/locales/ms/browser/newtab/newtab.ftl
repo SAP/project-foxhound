@@ -9,6 +9,34 @@ newtab-page-title = Tab Baru
 newtab-settings-button =
     .title = Sesuaikan halaman Tab Baru anda
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Tab baru
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label = { $num } baris
+home-restore-defaults-srd =
+    .label = Pulih Piawai
+    .accesskey = P
+home-mode-choice-custom-srd =
+    .label = URLs Penyesuaian...
+home-mode-choice-blank-srd =
+    .label = Halaman Kosong
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Kisah Tajaan
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Halaman Dilawati
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Tandabuku
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Muat Turun Terbaru
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +44,7 @@ newtab-search-box-search-button =
     .title = Cari
     .aria-label = Cari
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Tambah Enjin Carian
 newtab-topsites-edit-topsites-header = Edit Laman Teratas

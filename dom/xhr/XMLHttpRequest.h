@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -32,8 +30,7 @@ class XMLHttpRequest : public XMLHttpRequestEventTarget {
     constexpr EventType(const char* name, const char16_t* uname)
         : cStr(name), str(uname) {}
 
-    constexpr EventType(const EventType& other)
-        : cStr(other.cStr), str(other.str) {}
+    constexpr EventType(const EventType& other) = default;
 
     operator const nsDependentString() const { return nsDependentString(str); }
 
@@ -73,7 +70,7 @@ class XMLHttpRequest : public XMLHttpRequestEventTarget {
 #define DECL_EVENT(NAME) static constexpr EventType NAME{#NAME, u## #NAME};
 
 #define DECL_PROGRESSEVENT(NAME) \
-  static constexpr ProgressEventType NAME { #NAME, u## #NAME }
+  static constexpr ProgressEventType NAME{#NAME, u## #NAME}
 
 #define DECL_ERRORPROGRESSEVENT(NAME, ERR) \
   static constexpr ErrorProgressEventType NAME{#NAME, u## #NAME, ERR};

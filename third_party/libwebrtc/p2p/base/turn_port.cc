@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -23,7 +24,6 @@
 #include "absl/memory/memory.h"
 #include "absl/strings/match.h"
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/candidate.h"
 #include "api/local_network_access_permission.h"
 #include "api/packet_socket_factory.h"
@@ -56,7 +56,6 @@
 #include "rtc_base/ssl_certificate.h"
 #include "rtc_base/string_encode.h"
 #include "rtc_base/strings/string_builder.h"
-#include "rtc_base/third_party/sigslot/sigslot.h"
 #include "system_wrappers/include/metrics.h"
 
 namespace webrtc {
@@ -93,6 +92,8 @@ static int GetRelayPreference(ProtocolType proto) {
       return ICE_TYPE_PREFERENCE_RELAY_TCP;
     case PROTO_TLS:
       return ICE_TYPE_PREFERENCE_RELAY_TLS;
+    case PROTO_DTLS:
+      return ICE_TYPE_PREFERENCE_RELAY_DTLS;
     default:
       RTC_DCHECK(proto == PROTO_UDP);
       return ICE_TYPE_PREFERENCE_RELAY_UDP;
@@ -166,11 +167,11 @@ class TurnChannelBindRequest : public StunRequest {
 
 // Manages a "connection" to a remote destination. We will attempt to bring up
 // a channel for this remote destination to reduce the overhead of sending data.
-class TurnEntry : public sigslot::has_slots<> {
+class TurnEntry {
  public:
   enum BindState { STATE_UNBOUND, STATE_BINDING, STATE_BOUND };
   TurnEntry(TurnPort* port, Connection* conn, int channel_id);
-  ~TurnEntry() override;
+  ~TurnEntry();
 
   TurnPort* port() { return port_; }
 
@@ -198,8 +199,7 @@ class TurnEntry : public sigslot::has_slots<> {
   void SendChannelBindRequest(int delay);
   // Sends a packet to the given destination address.
   // This will wrap the packet in STUN if necessary.
-  int Send(const void* data,
-           size_t size,
+  int Send(std::span<const uint8_t> data,
            bool payload,
            const AsyncSocketPacketOptions& options);
 
@@ -245,8 +245,8 @@ TurnPort::TurnPort(const PortParametersRef& args,
       stun_dscp_value_(DSCP_NO_CHANGE),
       request_manager_(
           args.network_thread,
-          [this](const void* data, size_t size, StunRequest* request) {
-            OnSendStunPacket(data, size, request);
+          [this](std::span<const uint8_t> data, StunRequest* request) {
+            OnSendStunPacket(data, request);
           }),
       next_channel_number_(TURN_CHANNEL_NUMBER_START),
       state_(STATE_CONNECTING),
@@ -276,8 +276,8 @@ TurnPort::TurnPort(const PortParametersRef& args,
       stun_dscp_value_(DSCP_NO_CHANGE),
       request_manager_(
           args.network_thread,
-          [this](const void* data, size_t size, StunRequest* request) {
-            OnSendStunPacket(data, size, request);
+          [this](std::span<const uint8_t> data, StunRequest* request) {
+            OnSendStunPacket(data, request);
           }),
       next_channel_number_(TURN_CHANNEL_NUMBER_START),
       state_(STATE_CONNECTING),
@@ -296,8 +296,12 @@ TurnPort::~TurnPort() {
 
   entries_.clear();
 
-  if (socket_)
+  if (socket_) {
+    socket_->UnsubscribeSentPacket(this);
+    socket_->UnsubscribeReadyToSend(this);
+    socket_->UnsubscribeConnect(this);
     socket_->UnsubscribeCloseEvent(this);
+  }
 }
 
 void TurnPort::set_realm(absl::string_view realm) {
@@ -435,6 +439,23 @@ bool TurnPort::CreateTurnClientSocket() {
         env(), SocketAddress(Network()->GetBestIP(), 0), min_port(),
         max_port());
     socket_ = owned_socket_.get();
+  } else if (server_address_.proto == PROTO_DTLS) {
+    RTC_DCHECK(!SharedSocket());
+    int opts = PacketSocketFactory::OPT_STUN;
+    if (tls_cert_policy_ == TlsCertPolicy::TLS_CERT_POLICY_INSECURE_NO_CHECK) {
+      opts |= PacketSocketFactory::OPT_DTLS_INSECURE;
+    } else {
+      opts |= PacketSocketFactory::OPT_DTLS;
+    }
+    PacketSocketTcpOptions udp_options;
+    udp_options.opts = opts;
+    udp_options.tls_alpn_protocols = tls_alpn_protocols_;
+    udp_options.tls_elliptic_curves = tls_elliptic_curves_;
+    udp_options.tls_cert_verifier = tls_cert_verifier_;
+    owned_socket_ = socket_factory()->CreateClientUdpSocket(
+        env(), SocketAddress(Network()->GetBestIP(), 0),
+        server_address_.address, min_port(), max_port(), udp_options);
+    socket_ = owned_socket_.get();
   } else if (server_address_.proto == PROTO_TCP ||
              server_address_.proto == PROTO_TLS) {
     RTC_DCHECK(!SharedSocket());
@@ -480,16 +501,29 @@ bool TurnPort::CreateTurnClientSocket() {
         });
   }
 
-  socket_->SignalReadyToSend.connect(this, &TurnPort::OnReadyToSend);
+  socket_->SubscribeReadyToSend(
+      this, [this, flag = task_safety_.flag()](AsyncPacketSocket* socket) {
+        if (flag->alive()) {
+          OnReadyToSend(socket);
+        }
+      });
 
-  socket_->SignalSentPacket.connect(this, &TurnPort::OnSentPacket);
+  socket_->SubscribeSentPacket(
+      this, [this, flag = task_safety_.flag()](AsyncPacketSocket* socket,
+                                               const SentPacketInfo& info) {
+        if (flag->alive()) {
+          OnSentPacket(socket, info);
+        }
+      });
 
-  // TCP port is ready to send stun requests after the socket is connected,
-  // while UDP port is ready to do so once the socket is created.
+  // TCP and UDP with DTLS port is ready to send stun requests after the socket
+  // is connected, while pure UDP port is ready to do so once the socket is
+  // created.
   if (server_address_.proto == PROTO_TCP ||
-      server_address_.proto == PROTO_TLS) {
+      server_address_.proto == PROTO_TLS ||
+      server_address_.proto == PROTO_DTLS) {
     socket_->SubscribeConnect(
-        [this](AsyncPacketSocket* socket) { OnSocketConnect(socket); });
+        this, [this](AsyncPacketSocket* socket) { OnSocketConnect(socket); });
     socket_->SubscribeCloseEvent(
         this, [this](AsyncPacketSocket* s, int err) { OnSocketClose(s, err); });
   } else {
@@ -502,7 +536,8 @@ void TurnPort::OnSocketConnect(AsyncPacketSocket* socket) {
   // This slot should only be invoked if we're using a connection-oriented
   // protocol.
   RTC_DCHECK(server_address_.proto == PROTO_TCP ||
-             server_address_.proto == PROTO_TLS);
+             server_address_.proto == PROTO_TLS ||
+             server_address_.proto == PROTO_DTLS);
 
   // Do not use this port if the socket bound to an address not associated with
   // the desired network interface. This is seen in Chrome, where TCP sockets
@@ -556,7 +591,7 @@ void TurnPort::OnSocketConnect(AsyncPacketSocket* socket) {
 
   RTC_LOG(LS_INFO) << "TurnPort connected to "
                    << socket->GetRemoteAddress().ToSensitiveString()
-                   << " using tcp.";
+                   << " using tcp or dtls.";
   SendRequest(new TurnAllocateRequest(this), 0);
 }
 
@@ -675,8 +710,7 @@ int TurnPort::GetError() {
   return error_;
 }
 
-int TurnPort::SendTo(const void* data,
-                     size_t size,
+int TurnPort::SendTo(std::span<const uint8_t> data,
                      const SocketAddress& addr,
                      const AsyncSocketPacketOptions& options,
                      bool payload) {
@@ -692,7 +726,7 @@ int TurnPort::SendTo(const void* data,
   // Send the actual contents to the server using the usual mechanism.
   AsyncSocketPacketOptions modified_options(options);
   CopyPortInformationToPacketInfo(&modified_options.info_signaled_after_sent);
-  int sent = entry->Send(data, size, payload, modified_options);
+  int sent = entry->Send(data, payload, modified_options);
   if (sent <= 0) {
     error_ = socket_->GetError();
     return SOCKET_ERROR;
@@ -700,7 +734,7 @@ int TurnPort::SendTo(const void* data,
 
   // The caller of the function is expecting the number of user data bytes,
   // rather than the size of the packet.
-  return static_cast<int>(size);
+  return static_cast<int>(data.size());
 }
 
 bool TurnPort::CanHandleIncomingPacketsFrom(const SocketAddress& addr) const {
@@ -753,7 +787,7 @@ bool TurnPort::HandleIncomingPacket(AsyncPacketSocket* socket,
   // Check the message type, to see if is a Channel Data message.
   // The message will either be channel data, a TURN data indication, or
   // a response to a previous request.
-  uint16_t msg_type = GetBE16(packet.payload().data());
+  uint16_t msg_type = GetBE16(packet.payload());
   if (IsTurnChannelData(msg_type)) {
     HandleChannelData(msg_type, packet);
     return true;
@@ -784,7 +818,7 @@ void TurnPort::OnReadPacket(AsyncPacketSocket* socket,
 
 void TurnPort::OnSentPacket(AsyncPacketSocket* socket,
                             const SentPacketInfo& sent_packet) {
-  PortInterface::SignalSentPacket(sent_packet);
+  NotifySentPacket(sent_packet);
 }
 
 void TurnPort::OnReadyToSend(AsyncPacketSocket* socket) {
@@ -851,7 +885,8 @@ void TurnPort::ResolveTurnAddress(const SocketAddress& address) {
     // any).
     auto& result = resolver_->result();
     if (result.GetError() != 0 && (server_address_.proto == PROTO_TCP ||
-                                   server_address_.proto == PROTO_TLS)) {
+                                   server_address_.proto == PROTO_TLS ||
+                                   server_address_.proto == PROTO_DTLS)) {
       if (!CreateTurnClientSocket()) {
         OnAllocateError(STUN_ERROR_SERVER_NOT_REACHABLE,
                         "TURN host lookup received error.");
@@ -878,14 +913,13 @@ void TurnPort::ResolveTurnAddress(const SocketAddress& address) {
   resolver_->Start(address, Network()->family(), std::move(callback));
 }
 
-void TurnPort::OnSendStunPacket(const void* data,
-                                size_t size,
+void TurnPort::OnSendStunPacket(std::span<const uint8_t> data,
                                 StunRequest* request) {
   RTC_DCHECK(connected());
   AsyncSocketPacketOptions options(StunDscpValue());
   options.info_signaled_after_sent.packet_type = PacketType::kTurnMessage;
   CopyPortInformationToPacketInfo(&options.info_signaled_after_sent);
-  if (Send(data, size, options) < 0) {
+  if (Send(data, options) < 0) {
     RTC_LOG(LS_ERROR) << ToString() << ": Failed to send TURN message, error: "
                       << socket_->GetError();
   }
@@ -1002,10 +1036,11 @@ void TurnPort::TryAlternateServer() {
     // realm and nonce values.
     SendRequest(new TurnAllocateRequest(this), 0);
   } else {
-    // Since it's TCP, we have to delete the connected socket and reconnect
+    // Since it's not UDP, we have to delete the connected socket and reconnect
     // with the alternate server. PrepareAddress will send stun binding once
     // the new socket is connected.
-    RTC_DCHECK(server_address().proto == PROTO_TCP ||
+    RTC_DCHECK(server_address().proto == PROTO_DTLS ||
+               server_address().proto == PROTO_TCP ||
                server_address().proto == PROTO_TLS);
     RTC_DCHECK(!SharedSocket());
     owned_socket_ = nullptr;
@@ -1080,8 +1115,9 @@ void TurnPort::HandleChannelData(uint16_t channel_id,
   //   +-------------------------------+
 
   // Extract header fields from the message.
-  uint16_t len = GetBE16(packet.payload().data() + 2);
-  if (len > packet.payload().size() - TURN_CHANNEL_HEADER_SIZE) {
+  std::span<const uint8_t> payload = packet.payload();
+  uint16_t len = GetBE16(payload.subspan(2, 2));
+  if (len > payload.size() - TURN_CHANNEL_HEADER_SIZE) {
     RTC_LOG(LS_WARNING) << ToString()
                         << ": Received TURN channel data message with "
                            "incorrect length, len: "
@@ -1099,7 +1135,7 @@ void TurnPort::HandleChannelData(uint16_t channel_id,
     return;
   }
   ReceivedIpPacket unwrapped_packet = ReceivedIpPacket(
-      packet.payload().subview(TURN_CHANNEL_HEADER_SIZE, len), entry->address(),
+      payload.subspan(TURN_CHANNEL_HEADER_SIZE, len), entry->address(),
       packet.arrival_time(), packet.ecn(), packet.decryption_info());
   DispatchPacket(unwrapped_packet, PROTO_UDP);
 }
@@ -1163,10 +1199,10 @@ void TurnPort::AddRequestAuthInfo(StunMessage* msg) {
   RTC_DCHECK(success);
 }
 
-int TurnPort::Send(const void* data,
-                   size_t len,
+int TurnPort::Send(std::span<const uint8_t> data,
                    const AsyncSocketPacketOptions& options) {
-  return socket_->SendTo(data, len, server_address_.address, options);
+  return socket_->SendTo(data.data(), data.size(), server_address_.address,
+                         options);
 }
 
 void TurnPort::UpdateHash() {
@@ -1284,6 +1320,10 @@ std::string TurnPort::ReconstructServerUrl() {
     case PROTO_TLS:
       scheme = "turns";
       break;
+    case PROTO_DTLS:
+      scheme = "turns";
+      transport = "udp";
+      break;
     case PROTO_UDP:
       transport = "udp";
       break;
@@ -1305,14 +1345,14 @@ void TurnPort::TurnCustomizerMaybeModifyOutgoingStunMessage(
   turn_customizer_->MaybeModifyOutgoingStunMessage(this, message);
 }
 
-bool TurnPort::TurnCustomizerAllowChannelData(const void* data,
-                                              size_t size,
+bool TurnPort::TurnCustomizerAllowChannelData(std::span<const uint8_t> data,
                                               bool payload) {
   if (turn_customizer_ == nullptr) {
     return true;
   }
 
-  return turn_customizer_->AllowChannelData(this, data, size, payload);
+  return turn_customizer_->AllowChannelData(this, data.data(), data.size(),
+                                            payload);
 }
 
 void TurnPort::MaybeAddTurnLoggingId(StunMessage* msg) {
@@ -1334,12 +1374,12 @@ TurnAllocateRequest::TurnAllocateRequest(TurnPort* port)
       StunAttribute::CreateUInt32(STUN_ATTR_REQUESTED_TRANSPORT);
   transport_attr->SetValue(IPPROTO_UDP << 24);
   message->AddAttribute(std::move(transport_attr));
+  port_->MaybeAddTurnLoggingId(message);
   if (!port_->hash().empty()) {
     port_->AddRequestAuthInfo(message);
   } else {
     SetAuthenticationRequired(false);
   }
-  port_->MaybeAddTurnLoggingId(message);
   port_->TurnCustomizerMaybeModifyOutgoingStunMessage(message);
 }
 
@@ -1794,20 +1834,19 @@ void TurnEntry::SendChannelBindRequest(int delay) {
       new TurnChannelBindRequest(port_, this, channel_id_, ext_addr_), delay);
 }
 
-int TurnEntry::Send(const void* data,
-                    size_t size,
+int TurnEntry::Send(std::span<const uint8_t> data,
                     bool payload,
                     const AsyncSocketPacketOptions& options) {
   ByteBufferWriter buf;
   if (state_ != STATE_BOUND ||
-      !port_->TurnCustomizerAllowChannelData(data, size, payload)) {
+      !port_->TurnCustomizerAllowChannelData(data, payload)) {
     // If we haven't bound the channel yet, we have to use a Send Indication.
     // The turn_customizer_ can also make us use Send Indication.
     TurnMessage msg(TURN_SEND_INDICATION);
     msg.AddAttribute(std::make_unique<StunXorAddressAttribute>(
         STUN_ATTR_XOR_PEER_ADDRESS, ext_addr_));
     msg.AddAttribute(
-        std::make_unique<StunByteStringAttribute>(STUN_ATTR_DATA, data, size));
+        std::make_unique<StunByteStringAttribute>(STUN_ATTR_DATA, data));
 
     port_->TurnCustomizerMaybeModifyOutgoingStunMessage(&msg);
 
@@ -1822,14 +1861,13 @@ int TurnEntry::Send(const void* data,
   } else {
     // If the channel is bound, we can send the data as a Channel Message.
     buf.WriteUInt16(channel_id_);
-    buf.WriteUInt16(static_cast<uint16_t>(size));
-    buf.Write(
-        ArrayView<const uint8_t>(reinterpret_cast<const uint8_t*>(data), size));
+    buf.WriteUInt16(static_cast<uint16_t>(data.size()));
+    buf.Write(data);
   }
   AsyncSocketPacketOptions modified_options(options);
   modified_options.info_signaled_after_sent.turn_overhead_bytes =
-      buf.Length() - size;
-  return port_->Send(buf.Data(), buf.Length(), modified_options);
+      buf.Length() - data.size();
+  return port_->Send(buf.DataView(), modified_options);
 }
 
 void TurnEntry::OnCreatePermissionSuccess() {

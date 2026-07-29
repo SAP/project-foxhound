@@ -14,6 +14,48 @@ newtab-personalize-icon-label =
 newtab-personalize-dialog-label =
     .aria-label = Kohanda
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Uued kaardid
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } rida
+           *[other] { $num } rida
+        }
+home-restore-defaults-srd =
+    .label = Taasta vaikeväärtused
+    .accesskey = T
+home-mode-choice-custom-srd =
+    .label = kohandatud URLid…
+home-mode-choice-blank-srd =
+    .label = tühi leht
+home-prefs-shortcuts-header-srd =
+    .label = Otseteed
+home-prefs-shortcuts-select =
+    .aria-label = Otseteed
+home-prefs-shortcuts-by-option-sponsored-srd =
+    .label = Sponsitud otseteed
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Sponsitud postitused
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Külastatud lehed
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Järjehoidjad
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Viimane allalaadimine
+home-prefs-recent-activity-header-srd =
+    .label = Hiljutine tegevus
+home-prefs-recent-activity-select =
+    .aria-label = Hiljutine tegevus
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -39,7 +81,7 @@ newtab-search-box-input =
     .placeholder = Otsi veebist
     .aria-label = Otsi veebist
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Lisa otsingumootor
 newtab-topsites-add-shortcut-header = Uus otsetee
@@ -237,9 +279,21 @@ newtab-error-fallback-refresh-link = Uuesti proovimiseks laadi leht uuesti.
 
 newtab-custom-shortcuts-title = Otseteed
 newtab-custom-shortcuts-subtitle = Saidid, mida oled külastanud või mille oled salvestanud
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = Otseteed
     .description = Saidid, mida oled külastanud või mille oled salvestanud
+newtab-custom-shortcuts-nova =
+    .label = Otseteed
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+            [one] { $num } rida
+           *[other] { $num } rida
+        }
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector =

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -52,9 +50,9 @@
 #include "jit/Registers.h"
 #include "jit/RegisterSets.h"
 #include "jit/riscv64/Architecture-riscv64.h"
+#include "jit/riscv64/base/base-assembler-riscv.h"
+#include "jit/riscv64/base/base-riscv-i.h"
 #include "jit/riscv64/constant/Constant-riscv64.h"
-#include "jit/riscv64/extension/base-assembler-riscv.h"
-#include "jit/riscv64/extension/base-riscv-i.h"
 #include "jit/riscv64/extension/extension-riscv-a.h"
 #include "jit/riscv64/extension/extension-riscv-b.h"
 #include "jit/riscv64/extension/extension-riscv-c.h"
@@ -62,6 +60,9 @@
 #include "jit/riscv64/extension/extension-riscv-f.h"
 #include "jit/riscv64/extension/extension-riscv-m.h"
 #include "jit/riscv64/extension/extension-riscv-v.h"
+#include "jit/riscv64/extension/extension-riscv-zfa.h"
+#include "jit/riscv64/extension/extension-riscv-zfh.h"
+#include "jit/riscv64/extension/extension-riscv-zicond.h"
 #include "jit/riscv64/extension/extension-riscv-zicsr.h"
 #include "jit/riscv64/extension/extension-riscv-zifencei.h"
 #include "jit/riscv64/Register-riscv64.h"
@@ -72,22 +73,6 @@
 #include "wasm/WasmTypeDecls.h"
 namespace js {
 namespace jit {
-
-class RVFlags final {
- public:
-  static void Init();
-
-  static bool FlagsHaveBeenComputed() { return sComputed; }
-
-  static bool HasZbaExtension() { return sZbaExtension; }
-
-  static bool HasZbbExtension() { return sZbbExtension; }
-
- private:
-  static inline bool sZbaExtension = false;
-  static inline bool sZbbExtension = false;
-  static inline bool sComputed = false;
-};
 
 struct ScratchFloat32Scope : public AutoFloatRegisterScope {
   explicit ScratchFloat32Scope(MacroAssembler& masm)
@@ -117,7 +102,7 @@ static constexpr uint32_t JitStackAlignment = 16;
 static constexpr uint32_t JitStackValueAlignment =
     JitStackAlignment / sizeof(Value);
 static const uint32_t WasmStackAlignment = 16;
-static const uint32_t WasmTrapInstructionLength = 2 * sizeof(uint32_t);
+static const uint32_t WasmTrapInstructionLength = 2 * kInstrSize;
 // See comments in wasm::GenerateFunctionPrologue.  The difference between these
 // is the size of the largest callable prologue on the platform.
 static constexpr uint32_t WasmCheckedCallEntryOffset = 0u;
@@ -127,11 +112,18 @@ static const Scale ScalePointer = TimesEight;
 
 class Assembler;
 
-static constexpr int32_t SliceSize = 1024;
-
-typedef js::jit::AssemblerBufferWithConstantPools<
-    SliceSize, 4, Instruction, Assembler, NumShortBranchRangeTypes>
-    Buffer;
+using Buffer =
+    js::jit::AssemblerBufferWithConstantPools<Instruction, Assembler,
+                                              js::jit::AssemblerBufferSettings{
+                                                  .instSize = kInstrSize,
+                                                  .guardSize = 2,
+                                                  .headerSize = 2,
+                                                  .pcBias = 8,
+                                                  .alignFillInst = kNopByte,
+                                                  .nopFillInst = kNopByte,
+                                                  .numShortBranchRanges =
+                                                      NumShortBranchRangeTypes,
+                                              }>;
 
 class Assembler : public AssemblerShared,
                   public AssemblerRISCVI,
@@ -141,6 +133,9 @@ class Assembler : public AssemblerShared,
                   public AssemblerRISCVD,
                   public AssemblerRISCVM,
                   public AssemblerRISCVC,
+                  public AssemblerRISCVZfa,
+                  public AssemblerRISCVZfh,
+                  public AssemblerRISCVZicond,
                   public AssemblerRISCVZicsr,
                   public AssemblerRISCVZifencei {
   GeneralRegisterSet scratch_register_list_;
@@ -163,7 +158,11 @@ class Assembler : public AssemblerShared,
   CompactBufferWriter dataRelocations_;
   Buffer m_buffer;
   bool isFinished = false;
-  Instruction* editSrc(BufferOffset bo) { return m_buffer.getInst(bo); }
+
+  // Return the Instruction at a given byte offset.
+  Instruction* getInstructionAt(BufferOffset offset) {
+    return m_buffer.getInst(offset);
+  }
 
   struct RelativePatch {
     // the offset within the code buffer where the value is loaded that
@@ -202,9 +201,7 @@ class Assembler : public AssemblerShared,
 #ifdef JS_JITSPEW
         printer(nullptr),
 #endif
-        m_buffer(/*guardSize*/ 2, /*headerSize*/ 2, /*instBufferAlign*/ 8,
-                 /*poolMaxOffset*/ GetPoolMaxOffset(), /*pcBias*/ 8,
-                 /*alignFillInst*/ kNopByte, /*nopFillInst*/ kNopByte),
+        m_buffer(/*poolMaxOffset*/ GetPoolMaxOffset(), /*nopFill*/ 0),
         isFinished(false) {
   }
   static uint32_t NopFill;
@@ -221,10 +218,15 @@ class Assembler : public AssemblerShared,
     MOZ_ASSERT(!isFinished);
     isFinished = true;
   }
+
   void enterNoPool(size_t maxInst, size_t maxNewDeadlines = 0) {
     m_buffer.enterNoPool(maxInst, maxNewDeadlines);
   }
   void leaveNoPool() { m_buffer.leaveNoPool(); }
+
+  void enterNoNops() { m_buffer.enterNoNops(); }
+  void leaveNoNops() { m_buffer.leaveNoNops(); }
+
   bool swapBuffer(wasm::Bytes& bytes);
   // Size of the instruction stream, in bytes.
   size_t size() const;
@@ -297,12 +299,17 @@ class Assembler : public AssemblerShared,
   static void WritePoolGuard(BufferOffset branch, Instruction* inst,
                              BufferOffset dest);
   void processCodeLabels(uint8_t* rawCode);
-  BufferOffset nextOffset() { return m_buffer.nextOffset(); }
+
+  // Get the next usable buffer offset. Note that a constant pool may be placed
+  // here before the next instruction is emitted.
+  BufferOffset nextOffset() const { return m_buffer.nextOffset(); }
+
   // Get the buffer offset of the next inserted instruction. This may flush
-  // constant pools.
-  BufferOffset nextInstrOffset(int numInstr = 1) {
-    return m_buffer.nextInstrOffset(numInstr);
+  // constant pools and emit veneers.
+  BufferOffset nextInstrOffset(unsigned numInsts, unsigned numNewDeadlines) {
+    return m_buffer.nextInstrOffset(numInsts, numNewDeadlines);
   }
+
   void comment(const char* msg) { spew("; %s", msg); }
 
 #ifdef JS_JITSPEW
@@ -314,7 +321,6 @@ class Assembler : public AssemblerShared,
       va_end(va);
     }
   }
-
 #else
   MOZ_ALWAYS_INLINE void spew(const char* fmt, ...) MOZ_FORMAT_PRINTF(2, 3) {}
 #endif
@@ -378,43 +384,30 @@ class Assembler : public AssemblerShared,
 
   Register getStackPointer() const { return StackPointer; }
   void flushBuffer() {}
-  static int disassembleInstr(Instr instr, bool enable_spew = false);
-  int jumpChainTargetAt(BufferOffset pos, bool is_internal);
+#ifdef JS_DISASM_RISCV64
+  static int disassembleInstr(Instruction* instr, bool enable_spew = false);
+#endif /* JS_DISASM_RISCV64 */
+  int jumpChainTargetAt(BufferOffset pos);
   static int jumpChainTargetAt(Instruction* instruction, BufferOffset pos,
-                               bool is_internal,
                                Instruction* instruction2 = nullptr);
-  BufferOffset jumpChainGetNextLink(BufferOffset pos, bool is_internal);
-  uint32_t jumpChainUseNextLink(Label* label, bool is_internal);
-  static uint64_t jumpChainTargetAddressAt(Instruction* pos);
-  static void jumpChainSetTargetValueAt(Instruction* pc, uint64_t target);
+  BufferOffset jumpChainGetNextLink(BufferOffset pos);
+  uint32_t jumpChainUseNextLink(Label* label);
   // Returns true if the target was successfully assembled and spewed.
-  bool jumpChainPutTargetAt(BufferOffset pos, BufferOffset target_pos,
-                            bool trampoline = false);
+  bool jumpChainPutTargetAt(BufferOffset pos, BufferOffset target_pos);
   int32_t branchOffsetHelper(Label* L, OffsetSize bits);
   int32_t branchLongOffsetHelper(Label* L);
 
-  // Determines if Label is bound and near enough so that branch instruction
-  // can be used to reach it, instead of jump instruction.
-  bool is_near(Label* L);
-  bool is_near(Label* L, OffsetSize bits);
-  bool is_near_branch(Label* L);
+  void nopAlign(int m) { m_buffer.align(m); }
 
-  void nopAlign(int m) {
-    MOZ_ASSERT(m >= 4 && (m & (m - 1)) == 0);
-    while ((currentOffset() & (m - 1)) != 0) {
-      nop();
-    }
-  }
   virtual BufferOffset emit(Instr x) {
     MOZ_ASSERT(hasCreator());
     BufferOffset offset = m_buffer.putInt(x);
-#if defined(DEBUG) || defined(JS_JITSPEW)
-    if (!oom()) {
-      DEBUG_PRINTF(
-          "0x%" PRIx64 "(%" PRIxPTR "):",
-          (uint64_t)editSrc(BufferOffset(currentOffset() - sizeof(Instr))),
-          currentOffset() - sizeof(Instr));
-      disassembleInstr(x, JitSpewEnabled(JitSpew_Codegen));
+#if (defined(DEBUG) || defined(JS_JITSPEW)) && defined(JS_DISASM_RISCV64)
+    if (offset.assigned()) {
+      DEBUG_PRINTF("0x%" PRIx64 "(%x):", uint64_t(getInstructionAt(offset)),
+                   unsigned(offset.getOffset()));
+      disassembleInstr(getInstructionAt(offset),
+                       JitSpewEnabled(JitSpew_Codegen));
     }
 #endif
     return offset;
@@ -422,21 +415,13 @@ class Assembler : public AssemblerShared,
   virtual BufferOffset emit(ShortInstr x) { MOZ_CRASH(); }
   virtual BufferOffset emit(uint64_t x) { MOZ_CRASH(); }
   virtual BufferOffset emit(uint32_t x) {
-    DEBUG_PRINTF(
-        "0x%" PRIx64 "(%" PRIxPTR "): uint32_t: %" PRId32 "\n",
-        (uint64_t)editSrc(BufferOffset(currentOffset() - sizeof(Instr))),
-        currentOffset() - sizeof(Instr), x);
-    return m_buffer.putInt(x);
-  }
-
-  void instr_at_put(BufferOffset offset, Instr instr) {
-    DEBUG_PRINTF("\t[instr_at_put\n");
-    DEBUG_PRINTF("\t%p %d \n\t", editSrc(offset), offset.getOffset());
-    disassembleInstr(editSrc(offset)->InstructionBits());
-    DEBUG_PRINTF("\t");
-    *reinterpret_cast<Instr*>(editSrc(offset)) = instr;
-    disassembleInstr(editSrc(offset)->InstructionBits());
-    DEBUG_PRINTF("\t]\n");
+    BufferOffset offset = m_buffer.putInt(x);
+    if (offset.assigned()) {
+      DEBUG_PRINTF("0x%" PRIx64 "(%x): uint32_t: %" PRId32 "\n",
+                   uint64_t(getInstructionAt(offset)),
+                   unsigned(offset.getOffset()), x);
+    }
+    return offset;
   }
 
   static Condition InvertCondition(Condition);
@@ -454,7 +439,7 @@ class Assembler : public AssemblerShared,
 
   static void PatchWrite_NearCall(CodeLocationLabel start,
                                   CodeLocationLabel toCall) {
-    Instruction* inst = (Instruction*)start.raw();
+    Instruction* inst = Instruction::At(start.raw());
     uint8_t* dest = toCall.raw();
 
     // Overwrite whatever instruction used to be here with a call.
@@ -462,18 +447,16 @@ class Assembler : public AssemblerShared,
     // - Jump has to be the same size because of PatchWrite_NearCallSize.
     // - Return address has to be at the end of replaced block.
     // Short jump wouldn't be more efficient.
-    // WriteLoad64Instructions will emit 6 instrs to load a addr.
-    Assembler::WriteLoad64Instructions(inst, SavedScratchRegister,
-                                       (uint64_t)dest);
-    Instr jalr_ = JALR | (ra.code() << kRdShift) | (0x0 << kFunct3Shift) |
-                  (SavedScratchRegister.code() << kRs1Shift) |
-                  (0x0 << kImm12Shift);
-    *reinterpret_cast<Instr*>(inst + 6 * kInstrSize) = jalr_;
-  }
-  static void WriteLoad64Instructions(Instruction* inst0, Register reg,
-                                      uint64_t value);
 
-  static uint32_t PatchWrite_NearCallSize() { return 7 * sizeof(uint32_t); }
+    // WriteLiPtrInstructions writes 6 instructions to load an address.
+    Assembler::WriteLiPtrInstructions(inst, SavedScratchRegister,
+                                      uintptr_t(dest));
+
+    Instruction* jalr = (inst + 6 * kInstrSize);
+    jalr->SetIFormat(RO_JALR, ra.code(), SavedScratchRegister.code(), 0);
+  }
+
+  static uint32_t PatchWrite_NearCallSize() { return 7 * kInstrSize; }
 
   static void TraceJumpRelocations(JSTracer* trc, JitCode* code,
                                    CompactBufferReader& reader);
@@ -490,10 +473,10 @@ class Assembler : public AssemblerShared,
   void bind(CodeLabel* label) { label->target()->bind(currentOffset()); }
   uint32_t currentOffset() { return nextOffset().getOffset(); }
   void retarget(Label* label, Label* target);
-  static uint32_t NopSize() { return 4; }
+  static uint32_t NopSize() { return kInstrSize; }
 
-  static uint64_t GetPointer(uint8_t* instPtr) {
-    Instruction* inst = (Instruction*)instPtr;
+  static uintptr_t GetPointer(uint8_t* instPtr) {
+    Instruction* inst = Instruction::At(instPtr);
     return Assembler::ExtractLoad64Value(inst);
   }
 
@@ -512,6 +495,14 @@ class Assembler : public AssemblerShared,
 
   static bool HasZbbExtension() { return RVFlags::HasZbbExtension(); }
 
+  static bool HasZbsExtension() { return RVFlags::HasZbsExtension(); }
+
+  static bool HasZfhminExtension() { return RVFlags::HasZfhminExtension(); }
+
+  static bool HasZfaExtension() { return RVFlags::HasZfaExtension(); }
+
+  static bool HasZicondExtension() { return RVFlags::HasZicondExtension(); }
+
   void verifyHeapAccessDisassembly(uint32_t begin, uint32_t end,
                                    const Disassembler::HeapAccess& heapAccess) {
     MOZ_CRASH();
@@ -523,16 +514,14 @@ class Assembler : public AssemblerShared,
     return &scratch_register_list_;
   }
 
-  // As opposed to x86/x64 version, the data relocation has to be executed
-  // before to recover the pointer, and not after.
-  void writeDataRelocation(ImmGCPtr ptr) {
+  void writeDataRelocation(ImmGCPtr ptr, BufferOffset offset) {
     // Raw GC pointer relocations and Value relocations both end up in
     // TraceOneDataRelocation.
     if (ptr.value) {
       if (gc::IsInsideNursery(ptr.value)) {
         embedsNurseryPointers_ = true;
       }
-      dataRelocations_.writeUnsigned(nextOffset().getOffset());
+      dataRelocations_.writeUnsigned(offset.getOffset());
     }
   }
 
@@ -541,7 +530,7 @@ class Assembler : public AssemblerShared,
   void assertNoGCThings() const {
 #ifdef DEBUG
     MOZ_ASSERT(dataRelocations_.length() == 0);
-    for (auto& j : jumps_) {
+    for (const auto& j : jumps_) {
       MOZ_ASSERT(j.kind == RelocationKind::HARDCODED);
     }
 #endif
@@ -549,7 +538,6 @@ class Assembler : public AssemblerShared,
 
   // Assembler Pseudo Instructions (Tables 25.2, 25.3, RISC-V Unprivileged ISA)
   void break_(uint32_t code, bool break_as_stop = false);
-  void nop();
   void RV_li(Register rd, int64_t imm);
   static int RV_li_count(int64_t imm, bool is_get_temp_reg = false);
   void GeneralLi(Register rd, int64_t imm);
@@ -560,10 +548,14 @@ class Assembler : public AssemblerShared,
   static int RecursiveLiImplCount(int64_t imm);
   // Returns the number of instructions required to load the immediate
   static int li_estimate(int64_t imm, bool is_get_temp_reg = false);
+
   // Loads an immediate, always using 8 instructions, regardless of the value,
   // so that it can be modified later.
-  void li_constant(Register rd, int64_t imm);
-  void li_ptr(Register rd, int64_t imm);
+  BufferOffset li_constant(Register rd, int64_t imm);
+
+  // Loads an immediate, always using 6 instructions, regardless of the value,
+  // so that it can be modified later.
+  BufferOffset li_ptr(Register rd, int64_t imm);
 
   void SignExtendByte(Register rd, Register rs) {
     if (HasZbbExtension()) {
@@ -592,6 +584,36 @@ class Assembler : public AssemblerShared,
     slli(rd, rs, 32);
     srli(rd, rd, 32);
   }
+
+ protected:
+  // Load the value from the six instruction sequence starting at |instr|.
+  //
+  // Also see Assembler::li_ptr.
+  static uintptr_t LoadLiPtrInstructions(Instruction* instr);
+
+  // Updates the six instruction sequence to load |value| into a register.
+  //
+  // Also see Assembler::li_ptr.
+  static void UpdateLiPtrInstructions(Instruction* instr, uintptr_t value);
+
+  // Write the six instruction sequence to load |value| into |reg|.
+  //
+  // The instruction sequence at |instr| must either be an existing li_ptr
+  // immediate or a sequence of six nop instructions.
+  //
+  // Also see Assembler::li_ptr.
+  static void WriteLiPtrInstructions(Instruction* instr, Register reg,
+                                     uintptr_t value);
+
+  // Load the value from the eight instruction sequence starting at |instr|.
+  //
+  // Also see Assembler::li_constant.
+  static int64_t LoadLiConstantInstructions(Instruction* instr);
+
+  // Updates the eight instruction sequence to load |value| into a register.
+  //
+  // Also see Assembler::li_constant.
+  static void UpdateLiConstantInstructions(Instruction* instr, int64_t value);
 };
 
 class ABIArgGenerator : public ABIArgGeneratorShared {
@@ -609,26 +631,6 @@ class ABIArgGenerator : public ABIArgGeneratorShared {
   unsigned intRegIndex_;
   unsigned floatRegIndex_;
   ABIArg current_;
-};
-
-// Note that nested uses of these are allowed, but the inner calls must imply
-// an area of code which exists only inside the area of code implied by the
-// outermost call.  Otherwise AssemblerBufferWithConstantPools::enterNoPool
-// will assert.
-class BlockTrampolinePoolScope {
- public:
-  explicit BlockTrampolinePoolScope(Assembler* assem, size_t margin,
-                                    size_t maxBranches = 0)
-      : assem_(assem) {
-    assem_->enterNoPool(margin, maxBranches);
-  }
-  ~BlockTrampolinePoolScope() { assem_->leaveNoPool(); }
-
- private:
-  Assembler* assem_;
-  BlockTrampolinePoolScope() = delete;
-  BlockTrampolinePoolScope(const BlockTrampolinePoolScope&) = delete;
-  BlockTrampolinePoolScope& operator=(const BlockTrampolinePoolScope&) = delete;
 };
 
 class UseScratchRegisterScope {
@@ -652,29 +654,15 @@ class UseScratchRegisterScope {
   GeneralRegisterSet old_available_;
 };
 
-// Class Operand represents a shifter operand in data processing instructions.
+// Register or immediate operand.
 class Operand {
-  enum Tag { REG, FREG, MEM, IMM };
+  enum Tag { REG, IMM };
 
  public:
-  MOZ_IMPLICIT Operand(Register rm) : tag(REG), rm_(rm.code()) {}
-
-  explicit Operand(FloatRegister freg) : tag(FREG), rm_(freg.encoding()) {}
-
-  explicit Operand(Register base, Imm32 off)
-      : tag(MEM), rm_(base.code()), offset_(off.value) {}
-
-  explicit Operand(Register base, int32_t off)
-      : tag(MEM), rm_(base.code()), offset_(off) {}
-
-  explicit Operand(const Address& addr)
-      : tag(MEM), rm_(addr.base.code()), offset_(addr.offset) {}
-
+  explicit Operand(Register rm) : tag(REG), rm_(rm.code()) {}
   explicit Operand(int64_t immediate) : tag(IMM), value_(immediate) {}
 
   bool is_reg() const { return tag == REG; }
-  bool is_freg() const { return tag == FREG; }
-  bool is_mem() const { return tag == MEM; }
   bool is_imm() const { return tag == IMM; }
 
   int64_t immediate() const {
@@ -683,37 +671,14 @@ class Operand {
   }
 
   Register rm() const {
-    MOZ_ASSERT(is_reg() || is_mem());
-    return Register::FromCode(rm_);
-  }
-
-  int32_t offset() const {
-    MOZ_ASSERT(is_mem());
-    return offset_;
-  }
-
-  FloatRegister toFReg() const {
-    MOZ_ASSERT(is_freg());
-    return FloatRegister::FromCode(rm_);
-  }
-
-  Register toReg() const {
     MOZ_ASSERT(is_reg());
     return Register::FromCode(rm_);
-  }
-
-  Address toAddress() const {
-    MOZ_ASSERT(is_mem());
-    return Address(Register::FromCode(rm_), offset());
   }
 
  private:
   Tag tag;
   union {
-    struct {
-      uint32_t rm_;
-      int32_t offset_;
-    };
+    uint32_t rm_;    // valid if tag == REG
     int64_t value_;  // valid if tag == IMM
   };
 };
@@ -760,6 +725,41 @@ static inline bool GetTempRegForIntArg(uint32_t usedIntArgs,
   *out = CallTempNonArgRegs[usedIntArgs];
   return true;
 }
+
+// Forbids nop filling for testing purposes. Nestable, but nested calls have
+// no effect on the no-nops status; it is only the top level one that counts.
+class AutoForbidNops {
+  Assembler* asm_;
+
+ public:
+  explicit AutoForbidNops(Assembler* asm_) : asm_(asm_) { asm_->enterNoNops(); }
+  ~AutoForbidNops() { asm_->leaveNoNops(); }
+
+  AutoForbidNops(const AutoForbidNops&) = delete;
+  AutoForbidNops& operator=(const AutoForbidNops&) = delete;
+};
+
+// Forbids pool generation during a specified interval. Nestable, but nested
+// calls must imply a no-pool area of the assembler buffer that is completely
+// contained within the area implied by the outermost level call.
+class AutoForbidPoolsAndNops {
+  Assembler* asm_;
+
+ public:
+  explicit AutoForbidPoolsAndNops(Assembler* assem, size_t margin,
+                                  size_t maxBranches = 0)
+      : asm_(assem) {
+    asm_->enterNoPool(margin, maxBranches);
+    asm_->enterNoNops();
+  }
+  ~AutoForbidPoolsAndNops() {
+    asm_->leaveNoNops();
+    asm_->leaveNoPool();
+  }
+
+  AutoForbidPoolsAndNops(const AutoForbidPoolsAndNops&) = delete;
+  AutoForbidPoolsAndNops& operator=(const AutoForbidPoolsAndNops&) = delete;
+};
 
 }  // namespace jit
 }  // namespace js

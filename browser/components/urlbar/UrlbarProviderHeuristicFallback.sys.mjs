@@ -17,11 +17,10 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
   UrlbarSearchUtils:
     "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
-  UrlbarTokenizer:
-    "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
   UrlUtils: "resource://gre/modules/UrlUtils.sys.mjs",
 });
 
@@ -134,7 +133,7 @@ export class UrlbarProviderHeuristicFallback extends UrlbarProvider {
     // restriction token was typed.
     if (
       queryContext.restrictSource == UrlbarUtils.RESULT_SOURCE.SEARCH ||
-      lazy.UrlbarTokenizer.SEARCH_MODE_RESTRICT.has(
+      lazy.UrlbarShared.SEARCH_MODE_RESTRICT.has(
         queryContext.restrictToken?.value
       ) ||
       queryContext.searchMode
@@ -239,7 +238,7 @@ export class UrlbarProviderHeuristicFallback extends UrlbarProvider {
     }
 
     let firstToken = queryContext.tokens[0].value;
-    if (!lazy.UrlbarTokenizer.SEARCH_MODE_RESTRICT.has(firstToken)) {
+    if (!lazy.UrlbarShared.SEARCH_MODE_RESTRICT.has(firstToken)) {
       return null;
     }
 
@@ -315,7 +314,7 @@ export class UrlbarProviderHeuristicFallback extends UrlbarProvider {
     let query = queryContext.searchString;
     if (
       queryContext.tokens[0] &&
-      queryContext.tokens[0].value === lazy.UrlbarTokenizer.RESTRICT.SEARCH
+      queryContext.tokens[0].value === lazy.UrlbarShared.RESTRICT_TOKENS.SEARCH
     ) {
       query = UrlbarUtils.substringAfter(
         query,

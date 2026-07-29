@@ -55,15 +55,6 @@ TYPE_BITS = 5
 
 PING_INDEX_BITS = 16
 
-# Size of the PHF intermediate table.
-# This ensures the algorithm finds empty slots in the buckets
-# with the number of metrics we now have in-tree.
-# toolkit/components/telemetry uses 1024, some others 512.
-# FOG is bigger.
-# See https://bugzilla.mozilla.org/show_bug.cgi?id=1822477
-# And https://bugzilla.mozilla.org/show_bug.cgi?id=1923973
-PHF_SIZE = 2048
-
 
 def ping_entry(ping_id, ping_string_index):
     """
@@ -233,7 +224,7 @@ def write_metrics(
     # Create a lookup table for the metric categories only
     category_string_table = category_string_table.writeToString("gCategoryStringTable")
     category_map = [(bytearray(category, "ascii"), id) for (category, id) in categories]
-    name_phf = PerfectHash(category_map, PHF_SIZE)
+    name_phf = PerfectHash(category_map)
     category_by_name_lookup = name_phf.cxx_codegen(
         name="CategoryByNameLookup",
         entry_type="category_entry_t",
@@ -251,7 +242,7 @@ def write_metrics(
         (bytearray(metric_name, "ascii"), metric_id)
         for (metric_name, metric_id) in metric_id_mapping.items()
     ]
-    metric_phf = PerfectHash(metric_map, PHF_SIZE)
+    metric_phf = PerfectHash(metric_map)
     metric_by_name_lookup = metric_phf.cxx_codegen(
         name="MetricByNameLookup",
         entry_type="metric_entry_t",
@@ -323,7 +314,7 @@ def write_pings(objs, output_fd, template_filename, output_fd_h, template_filena
         for (ping_name, ping_entry) in pings.items()
     ]
     ping_string_table = ping_string_table.writeToString("gPingStringTable")
-    ping_phf = PerfectHash(ping_map, PHF_SIZE)
+    ping_phf = PerfectHash(ping_map)
     ping_by_name_lookup = ping_phf.cxx_codegen(
         name="PingByNameLookup",
         entry_type="ping_entry_t",

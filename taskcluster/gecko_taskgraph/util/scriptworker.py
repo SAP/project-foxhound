@@ -23,7 +23,6 @@ import os
 from datetime import datetime
 
 import jsone
-from mozbuild.util import memoize
 from taskgraph.util.copy import deepcopy
 from taskgraph.util.schema import resolve_keyed_by
 from taskgraph.util.taskcluster import get_artifact_prefix
@@ -68,13 +67,12 @@ SIGNING_SCOPE_ALIAS_TO_PROJECT = [
             "mozilla-beta",
             "mozilla-release",
             "mozilla-esr115",
-            "mozilla-esr128",
             "mozilla-esr140",
+            "mozilla-esr153",
             "comm-beta",
             "comm-release",
-            "comm-esr115",
-            "comm-esr128",
             "comm-esr140",
+            "comm-esr153",
         },
     ],
 ]
@@ -124,13 +122,12 @@ BEETMOVER_SCOPE_ALIAS_TO_PROJECT = [
             "mozilla-beta",
             "mozilla-release",
             "mozilla-esr115",
-            "mozilla-esr128",
             "mozilla-esr140",
+            "mozilla-esr153",
             "comm-beta",
             "comm-release",
-            "comm-esr115",
-            "comm-esr128",
             "comm-esr140",
+            "comm-esr153",
         },
     ],
 ]
@@ -232,17 +229,17 @@ BALROG_SCOPE_ALIAS_TO_PROJECT = [
         },
     ],
     [
-        "esr128",
-        {
-            "mozilla-esr128",
-            "comm-esr128",
-        },
-    ],
-    [
         "esr140",
         {
             "mozilla-esr140",
             "comm-esr140",
+        },
+    ],
+    [
+        "esr153",
+        {
+            "mozilla-esr153",
+            "comm-esr153",
         },
     ],
 ]
@@ -255,8 +252,8 @@ BALROG_SERVER_SCOPES = {
     "beta": "balrog:server:beta",
     "release": "balrog:server:release",
     "esr115": "balrog:server:esr",
-    "esr128": "balrog:server:esr",
     "esr140": "balrog:server:esr",
+    "esr153": "balrog:server:esr",
     "default": "balrog:server:dep",
 }
 
@@ -430,7 +427,7 @@ get_balrog_server_scope = functools.partial(
     alias_to_scope_map=BALROG_SERVER_SCOPES,
 )
 
-cached_load_yaml = memoize(load_yaml)
+cached_load_yaml = functools.cache(load_yaml)
 
 
 # release_config {{{1
@@ -531,11 +528,12 @@ def generate_beetmover_upstream_artifacts(
                 "from",
                 f"beetmover filename {filename}",
                 platform=platform,
+                level=str(config.params.get("level", "1")),
             )
             if dep not in map_config["mapping"][filename]["from"]:
                 continue
             if (
-                current_locale != "en-US"
+                current_locale not in ("en-US", "multi")
                 and not map_config["mapping"][filename]["all_locales"]
             ):
                 continue
@@ -681,19 +679,31 @@ def generate_beetmover_artifact_map(config, job, **kwargs):
     else:
         locales = map_config["default_locales"]
 
-    resolve_keyed_by(map_config, "bucket_paths", job["label"], platform=platform)
+    keyed_by_kwargs = {
+        "platform": platform,
+        "build-type": job["attributes"].get("build-type", ""),
+    }
+    resolve_keyed_by(map_config, "bucket_paths", job["label"], **keyed_by_kwargs)
+    resolve_keyed_by(map_config, "folder_prefix", job["label"], **keyed_by_kwargs)
 
     for locale, dep in sorted(itertools.product(locales, dependencies)):
         paths = dict()
         for filename in map_config["mapping"]:
             # Relevancy checks
             resolve_keyed_by(
-                map_config["mapping"][filename], "from", "blah", platform=platform
+                map_config["mapping"][filename],
+                "from",
+                "blah",
+                platform=platform,
+                level=str(config.params.get("level", "1")),
             )
             if dep not in map_config["mapping"][filename]["from"]:
                 # We don't get this file from this dependency.
                 continue
-            if locale != "en-US" and not map_config["mapping"][filename]["all_locales"]:
+            if (
+                locale not in ("en-US", "multi")
+                and not map_config["mapping"][filename]["all_locales"]
+            ):
                 # This locale either doesn't produce or shouldn't upload this file.
                 continue
             if (
@@ -794,6 +804,9 @@ def generate_beetmover_artifact_map(config, job, **kwargs):
             "upload_date": upload_date.strftime("%Y-%m-%d-%H-%M-%S"),
             "head_rev": config.params["head_rev"],
         })
+
+        if "folder_prefix" in map_config:
+            kwargs["folder_prefix"] = jsone.render(map_config["folder_prefix"], kwargs)
         kwargs.update(**platforms)
         paths = jsone.render(paths, kwargs)
         artifacts.append({

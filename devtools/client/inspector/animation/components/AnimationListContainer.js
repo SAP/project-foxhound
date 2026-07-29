@@ -87,7 +87,7 @@ class AnimationListContainer extends PureComponent {
     });
 
     this._animationListEl = current.querySelector(".animation-list");
-    const resizeObserver = new current.ownerGlobal.ResizeObserver(() => {
+    const resizeObserver = new current.documentGlobal.ResizeObserver(() => {
       this.updateDisplayableRange();
     });
     resizeObserver.observe(this._animationListEl);

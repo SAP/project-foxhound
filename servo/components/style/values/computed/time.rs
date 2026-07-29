@@ -5,14 +5,28 @@
 //! Computed time values.
 
 use crate::derives::*;
+use crate::typed_om::{NumericValue, ToTyped, TypedValue, UnitValue};
 use crate::values::CSSFloat;
 use crate::Zero;
 use std::fmt::{self, Write};
-use style_traits::{CssWriter, ToCss};
+use std::ops::AddAssign;
+use style_traits::{CssString, CssWriter, ToCss};
+use thin_vec::ThinVec;
 
 /// A computed `<time>` value.
-#[derive(Animate, Clone, Copy, Debug, MallocSizeOf, PartialEq, PartialOrd, ToResolvedValue)]
-#[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
+#[derive(
+    Animate,
+    Clone,
+    Copy,
+    Debug,
+    Deserialize,
+    MallocSizeOf,
+    PartialEq,
+    PartialOrd,
+    Serialize,
+    ToAnimatedZero,
+    ToResolvedValue,
+)]
 #[repr(C)]
 pub struct Time {
     seconds: CSSFloat,
@@ -41,6 +55,16 @@ impl ToCss for Time {
     }
 }
 
+impl ToTyped for Time {
+    fn to_typed(&self, dest: &mut ThinVec<TypedValue>) -> Result<(), ()> {
+        dest.push(TypedValue::Numeric(NumericValue::Unit(UnitValue {
+            value: self.seconds(),
+            unit: CssString::from("s"),
+        })));
+        Ok(())
+    }
+}
+
 impl Zero for Time {
     fn zero() -> Self {
         Self::from_seconds(0.0)
@@ -48,5 +72,11 @@ impl Zero for Time {
 
     fn is_zero(&self) -> bool {
         self.seconds == 0.
+    }
+}
+
+impl AddAssign for Time {
+    fn add_assign(&mut self, rhs: Self) {
+        self.seconds += rhs.seconds
     }
 }

@@ -47,4 +47,12 @@ class CertificateUtilsTest {
     fun `issuerOrganization returns null given null certificate`() {
         assertEquals(CertificateUtils.issuerOrganization(null), null)
     }
+
+    @Test
+    fun `subjectOrganization returns organization`() {
+        val mockCertificate = Mockito.mock(X509Certificate::class.java)
+        Mockito.`when`(mockCertificate.subjectDN).thenReturn(X500Principal("C=EX,O=Example Subject Organization,L=Example Locality,CN=Example"))
+        val expectedIssuerOrganization = "Example Subject Organization"
+        assertEquals(CertificateUtils.subjectOrganization(mockCertificate), expectedIssuerOrganization)
+    }
 }

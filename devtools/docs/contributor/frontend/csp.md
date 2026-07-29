@@ -4,11 +4,13 @@ The DevTools toolbox is loaded in an iframe pointing to about:devtools-toolbox. 
 # Current DevTools CSP
 
 The current policy for about:devtools-toolbox is:
+
 ```
 default-src chrome: resource:; img-src chrome: resource: data:; object-src 'none'
 ```
 
 This means:
+
 - `chrome://` and `resource://` are allowed for any resource
 - `chrome://` and `resource://` and `data://` are allowed for images
 
@@ -41,10 +43,11 @@ If it seems like the only solution is to update the CSP, get in touch with secur
 If the issue comes from test code, it should be possible to update the test to use a supported scheme. A typical issue might be trying to load an iframe inside of the toolbox with a data-uri. Instead, you can create an HTML support file and load it from either a chrome:// or a resource:// URL.
 
 In general once a support file is added you can access it via:
+
 - `https://example.com/browser/[path_to_file]`
 - or `chrome://mochitests/content/browser/[path_to_file]`
 
-For instance [devtools/client/aboutdebugging/test/browser/resources/service-workers/controlled-sw.html](https://searchfox.org/mozilla-central/source/devtools/client/aboutdebugging/test/browser/resources/service-workers/controlled-sw.html) is accessed in tests via `http://example.com/browser/devtools/client/aboutdebugging/test/browser/resources/service-workers/controlled-sw.html`.
+For instance [devtools/client/aboutdebugging/test/browser/resources/service-workers/controlled-sw.html](https://searchfox.org/firefox-main/source/devtools/client/aboutdebugging/test/browser/resources/service-workers/controlled-sw.html) is accessed in tests via `http://example.com/browser/devtools/client/aboutdebugging/test/browser/resources/service-workers/controlled-sw.html`.
 
 If you absolutely have to use an unsupported scheme, you can turn off CSPs for the test only. To do so, you need to temporarily update two preferences:
 

@@ -20,12 +20,13 @@ import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.ui.autocomplete.InlineAutocompleteEditText
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.CountDownLatch
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class EditToolbarTest {
@@ -59,7 +60,7 @@ class EditToolbarTest {
         latch.await()
 
         assertEquals("Hello", invokedWithParams!![0])
-        assertTrue(invokedWithParams[1] is AutocompleteDelegate)
+        assertIs<AutocompleteDelegate>(invokedWithParams[1])
     }
 
     @Test
@@ -82,7 +83,7 @@ class EditToolbarTest {
         // Serialize here for the sake of tests.
         latch.await()
         assertEquals("Test", invokedWithParams!![0])
-        assertTrue(invokedWithParams[1] is AutocompleteDelegate)
+        assertIs<AutocompleteDelegate>(invokedWithParams[1])
     }
 
     @Test
@@ -145,10 +146,10 @@ class EditToolbarTest {
             assertNull(fact.value)
 
             val metadata = fact.metadata
-            assertNotNull(metadata!!)
+            assertNotNull(metadata)
             assertEquals(1, metadata.size)
             assertTrue(metadata.contains("autocomplete"))
-            assertTrue(metadata["autocomplete"] is Boolean)
+            assertIs<Boolean>(metadata["autocomplete"])
             assertFalse(metadata["autocomplete"] as Boolean)
         }
     }
@@ -195,11 +196,11 @@ class EditToolbarTest {
             assertNull(factCommit.value)
 
             val metadata = factCommit.metadata
-            assertNotNull(metadata!!)
+            assertNotNull(metadata)
             assertEquals(2, metadata.size)
 
             assertTrue(metadata.contains("autocomplete"))
-            assertTrue(metadata["autocomplete"] is Boolean)
+            assertIs<Boolean>(metadata["autocomplete"])
             assertTrue(metadata["autocomplete"] as Boolean)
 
             assertTrue(metadata.contains("source"))

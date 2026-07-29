@@ -191,6 +191,7 @@ createStorageSpec({
 });
 
 types.addDictType("extensionobject", {
+  uniqueKey: "string",
   name: "nullable:string",
   value: "nullable:longstring",
   area: "string",

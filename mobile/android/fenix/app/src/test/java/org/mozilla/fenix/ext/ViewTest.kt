@@ -10,7 +10,7 @@ import android.widget.FrameLayout
 import io.mockk.MockKAnnotations
 import io.mockk.Runs
 import io.mockk.every
-import io.mockk.impl.annotations.MockK
+import io.mockk.impl.annotations.RelaxedMockK
 import io.mockk.just
 import io.mockk.slot
 import io.mockk.verify
@@ -24,9 +24,9 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class ViewTest {
 
-    @MockK(relaxed = true) private lateinit var view: View
+    @RelaxedMockK private lateinit var view: View
 
-    @MockK(relaxed = true) private lateinit var parent: FrameLayout
+    @RelaxedMockK private lateinit var parent: FrameLayout
 
     @Before
     fun setup() {

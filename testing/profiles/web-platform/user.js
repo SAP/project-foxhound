@@ -4,6 +4,9 @@
 
 // Base preferences file for web-platform-tests.
 /* globals user_pref */
+// Disable scroll axis lock, WebDriver should be able to scroll arbitrary
+// directions.
+user_pref("apz.axis_lock.mode", 0);
 // Don't use the new tab page but about:blank for opened tabs
 user_pref("browser.newtabpage.enabled", false);
 // Don't restore the last open set of tabs if the browser has crashed
@@ -94,6 +97,8 @@ user_pref("security.webauth.webauthn_enable_usbtoken", false);
 user_pref("security.webauthn.always_allow_direct_attestation", true);
 // Enable WebAuthn conditional mediation.
 user_pref("security.webauthn.enable_conditional_mediation", true);
+// Disable WebAuthn Related Origin Requests to prevent .well-known fetches to real hosts.
+user_pref("security.webauthn.related_origin_requests_mode", 0);
 // Disable captive portal service
 user_pref("network.captive-portal-service.enabled", false);
 // Enable http2 websockets support

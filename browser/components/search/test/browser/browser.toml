@@ -23,7 +23,9 @@ prefs = ["browser.search.widget.new=false"]
 support-files = ["test.html", "discovery.html", "426329.xml"]
 skip-if = [
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug", # Bug 1920926 and being removed in bug 2012951
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && debug", # Bug 1920926 and being removed in bug 2012951
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && asan", # Bug 1920926 and being removed in bug 2012951
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && asan", # Bug 1920926 and being removed in bug 2012951
 ]
 
 ["browser_addSearchEngineFromForm.js"]
@@ -56,7 +58,10 @@ support-files = [
 ["browser_contextmenu.js"]
 skip-if = [
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug", # Bug 1937944
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && debug", # Bug 1937944
 ]
+
+["browser_contextmenu_privateWindow.js"]
 
 ["browser_contextmenu_whereToOpenLink.js"]
 
@@ -107,6 +112,9 @@ skip-if = [
 ]
 
 ["browser_searchbar_openpopup.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200'", # Bug 2019745
+]
 
 ["browser_searchbar_results.js"]
 

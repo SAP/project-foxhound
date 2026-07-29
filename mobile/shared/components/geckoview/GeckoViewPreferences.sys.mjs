@@ -155,10 +155,10 @@ export const GeckoViewPreferences = {
   /** nsIObserver */
   observe(subject, topic, data) {
     if (topic == "nsPref:changed") {
-      lazy.EventDispatcher.instance.sendRequest({
-        type: "GeckoView:GeckoPreferences:Change",
-        data: this.getPreference(data),
-      });
+      lazy.EventDispatcher.instance.sendRequest(
+        "GeckoView:GeckoPreferences:Change",
+        { data: this.getPreference(data) }
+      );
     }
   },
 

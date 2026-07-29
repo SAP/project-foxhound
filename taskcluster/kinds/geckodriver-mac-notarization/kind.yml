@@ -6,9 +6,9 @@ loader: taskgraph.loader.transform:loader
 
 transforms:
     - taskgraph.transforms.from_deps
-    - gecko_taskgraph.transforms.mac_notarization
+    - gecko_taskgraph.transforms.filter_notarization
     - gecko_taskgraph.transforms.name_sanity
-    - gecko_taskgraph.transforms.geckodriver_mac_notarization
+    - gecko_taskgraph.transforms.mac_notarization
     - gecko_taskgraph.transforms.task
 
 kind-dependencies:
@@ -19,12 +19,12 @@ task-defaults:
 
 only-for-build-platforms:
     - macosx64-geckodriver/opt
-    - macosx64-aarch64-geckodriver/opt
 
 tasks:
     geckodriver-mac-notarization:
         from-deps:
             group-by: single-with-filters
+            copy-attributes: true
         worker-type: linux-signing
         treeherder:
             symbol: TM(gd-n)

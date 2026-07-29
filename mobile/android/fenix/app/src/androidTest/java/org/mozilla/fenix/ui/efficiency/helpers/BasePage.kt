@@ -6,15 +6,23 @@ package org.mozilla.fenix.ui.efficiency.helpers
 
 import android.util.Log
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasAnySibling
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.onAllNodesWithTag
-import androidx.compose.ui.test.onLast
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.ViewInteraction
@@ -22,13 +30,19 @@ import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.action.ViewActions.pressImeActionButton
 import androidx.test.espresso.action.ViewActions.typeText
 import androidx.test.espresso.assertion.ViewAssertions.matches
+import androidx.test.espresso.matcher.ViewMatchers.hasSibling
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
+import androidx.test.espresso.matcher.ViewMatchers.isDisplayingAtLeast
+import androidx.test.espresso.matcher.ViewMatchers.isEnabled
+import androidx.test.espresso.matcher.ViewMatchers.isNotSelected
+import androidx.test.espresso.matcher.ViewMatchers.isSelected
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
 import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiObject
 import androidx.test.uiautomator.UiSelector
+import org.hamcrest.CoreMatchers.not
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.packageName
@@ -56,6 +70,11 @@ abstract class BasePage(
 ) {
     abstract val pageName: String
 
+    companion object {
+        // Mirrors the minimum displayed-area Espresso's click() action requires before it will tap.
+        private const val CLICKABLE_VISIBILITY_PERCENT = 90
+    }
+
     // ------------------------------------------------------------
     // Small helpers to keep messages consistent and easy to scan
     // ------------------------------------------------------------
@@ -75,12 +94,12 @@ abstract class BasePage(
     // Navigation (STEP)
     // ------------------------------------------------------------
 
-    open fun navigateToPage(url: String = ""): BasePage {
+    open fun navigateToPage(url: String = "", forceNavigation: Boolean = false): BasePage {
         val rep = rep()
         rep?.startStep("nav_$pageName", "Attempting to Navigate to $pageName", 0)
 
         try {
-            if (mozIsOnPageNow()) {
+            if (!forceNavigation && mozIsOnPageNow()) {
                 PageStateTracker.currentPageName = pageName
                 rep?.endStep(success = true, message = "'$pageName' already loaded")
                 return this
@@ -103,10 +122,15 @@ abstract class BasePage(
             path.forEach { step ->
                 when (step) {
                     is NavigationStep.Click -> mozClick(step.selector)
+                    is NavigationStep.ClickIfPresent -> mozClickIfPresent(step.selector)
                     is NavigationStep.Swipe -> mozSwipeTo(step.selector, step.direction)
                     is NavigationStep.OpenNotificationsTray -> mozOpenNotificationsTray()
                     is NavigationStep.EnterText -> mozEnterText(url, step.selector)
                     is NavigationStep.PressEnter -> mozPressEnter(step.selector)
+                    is NavigationStep.PressBack -> {
+                        mDevice.pressBack()
+                        mDevice.waitForIdle()
+                    }
                 }
             }
 
@@ -128,7 +152,7 @@ abstract class BasePage(
     // Page readiness verification (CMD + LOC)
     // ------------------------------------------------------------
 
-    private fun mozWaitForPageToLoad(timeout: Long = 10_000, interval: Long = 500): Boolean {
+    private fun mozWaitForPageToLoad(timeout: Long = 10_000, interval: Long = 100): Boolean {
         val rep = rep()
         val requiredSelectors = mozGetSelectorsByGroup("requiredForPage")
         val deadline = System.currentTimeMillis() + timeout
@@ -207,6 +231,35 @@ abstract class BasePage(
         return this
     }
 
+    fun mozVerifyElementAbsent(selector: Selector): BasePage {
+        val rep = rep()
+        rep?.startCmd(safeId("verify_absent", selector.description), "Verifying '${selector.description}' is absent...", 1)
+        rep?.startLoc(safeId("loc", selector.description), "Attempting to locate '${selector.description}'...", 2)
+        val present = mozVerifyElement(selector, applyPreconditions = false)
+        rep?.endLoc(success = !present, message = if (!present) notFound(selector.description) else found(selector.description))
+        rep?.endCmd(success = !present, message = if (!present) "'${selector.description}' correctly absent" else "'${selector.description}' unexpectedly present")
+        if (present) throw AssertionError("Element '${selector.description}' was expected to be absent but is visible")
+        return this
+    }
+
+    fun mozVerify(selector: Selector, timeout: Long = 5_000, interval: Long = 500): BasePage {
+        val rep = rep()
+        rep?.startCmd(safeId("verify", selector.description), "Verifying '${selector.description}' is present...", 1)
+        val deadline = System.currentTimeMillis() + timeout
+        while (System.currentTimeMillis() < deadline) {
+            rep?.startLoc(safeId("loc", selector.description), "Attempting to locate '${selector.description}'...", 2)
+            val present = mozVerifyElement(selector, applyPreconditions = false)
+            rep?.endLoc(success = present, message = if (present) found(selector.description) else notFound(selector.description))
+            if (present) {
+                rep?.endCmd(success = true, message = "'${selector.description}' verified")
+                return this
+            }
+            android.os.SystemClock.sleep(interval)
+        }
+        rep?.endCmd(success = false, message = "'${selector.description}' not found after ${timeout}ms")
+        throw AssertionError("'${selector.description}' not found on screen after ${timeout}ms")
+    }
+
     // ------------------------------------------------------------
     // Interaction helpers (CMD + LOC)
     // ------------------------------------------------------------
@@ -231,6 +284,61 @@ abstract class BasePage(
                 is UiObject -> {
                     if (!element.exists()) throw AssertionError("UiObject does not exist for selector: ${selector.description}")
                     if (!element.click()) throw AssertionError("Failed to click UiObject for selector: ${selector.description}")
+                }
+                is SemanticsNodeInteraction -> {
+                    composeRule.waitForIdle()
+                    element.assertExists()
+                    element.assertIsDisplayed()
+                    element.performClick()
+                }
+                else -> throw AssertionError("Unsupported element type (${element::class.simpleName}) for selector: ${selector.description}")
+            }
+
+            rep?.endCmd(success = true, message = "Clicked '${selector.description}'")
+            return this
+        } catch (e: Throwable) {
+            rep?.endCmd(success = false, message = "Click '${selector.description}' failed: ${e.message ?: "exception"}")
+            throw e
+        }
+    }
+
+    /**
+     * Waits up to [timeout] ms for [selector] to appear, then clicks it if visible; silently
+     * skips if it never appears.
+     *
+     * Use this exclusively for UI that is genuinely optional by design (e.g. a one-time
+     * dialog that only appears on the first run). Never use it as a workaround for flaky
+     * selectors or timing issues — those should be fixed at the source.
+     */
+    fun mozClickIfPresent(selector: Selector, timeout: Long = 3_000, interval: Long = 200): BasePage {
+        val rep = rep()
+        rep?.startCmd(safeId("click_if_present", selector.description), "Attempting to click '${selector.description}' if present...", 1)
+
+        val deadline = System.currentTimeMillis() + timeout
+        var present = false
+        while (System.currentTimeMillis() < deadline) {
+            rep?.startLoc(safeId("loc", selector.description), "Attempting to locate '${selector.description}'...", 2)
+            present = mozVerifyElement(selector, applyPreconditions = false)
+            rep?.endLoc(success = present, message = if (present) found(selector.description) else notFound(selector.description))
+            if (present) break
+            android.os.SystemClock.sleep(interval)
+        }
+
+        if (!present) {
+            rep?.endCmdSkip(message = "'${selector.description}' not present after ${timeout}ms")
+            return this
+        }
+
+        val element = mozGetElement(selector) ?: run {
+            rep?.endCmdSkip(message = "'${selector.description}' vanished before click")
+            return this
+        }
+
+        try {
+            when (element) {
+                is ViewInteraction -> element.perform(click())
+                is UiObject -> {
+                    if (element.exists()) element.click()
                 }
                 is SemanticsNodeInteraction -> {
                     element.assertExists()
@@ -264,9 +372,11 @@ abstract class BasePage(
                 val element = mozGetElement(selector, applyPreconditions = applyPreconditions)
 
                 val isVisible = when (element) {
+                    // Espresso's click() rejects views displayed under CLICKABLE_VISIBILITY_PERCENT,
+                    // so stop swiping only once the element clears that bar.
                     is ViewInteraction -> try {
-                        element.check(matches(isDisplayed())); true
-                    } catch (_: Exception) {
+                        element.check(matches(isDisplayingAtLeast(CLICKABLE_VISIBILITY_PERCENT))); true
+                    } catch (_: Throwable) {
                         false
                     }
                     is UiObject -> element.exists()
@@ -397,6 +507,117 @@ abstract class BasePage(
         }
     }
 
+    fun mozVerifyElementIsSelected(selector: Selector, applyPreconditions: Boolean = true): Boolean {
+        val element = mozGetElement(selector, applyPreconditions = applyPreconditions)
+
+        return when (element) {
+            is ViewInteraction -> {
+                try {
+                    element.check(matches(isSelected())); true
+                } catch (_: Exception) {
+                    false
+                }
+            }
+            is UiObject -> element.isSelected()
+            is SemanticsNodeInteraction -> {
+                try {
+                    element.assertExists(); element.assertIsSelected(); true
+                } catch (_: AssertionError) {
+                    false
+                }
+            }
+            else -> false
+        }
+    }
+
+    fun mozVerifyElementIsNotSelected(selector: Selector, applyPreconditions: Boolean = true): Boolean {
+        val element = mozGetElement(selector, applyPreconditions = applyPreconditions)
+
+        return when (element) {
+            is ViewInteraction -> {
+                try {
+                    element.check(matches(isNotSelected())); true
+                } catch (_: Exception) {
+                    false
+                }
+            }
+            is UiObject -> element.isSelected.not()
+            is SemanticsNodeInteraction -> {
+                try {
+                    element.assertExists(); element.assertIsNotSelected(); true
+                } catch (_: AssertionError) {
+                    false
+                }
+            }
+            else -> false
+        }
+    }
+
+    fun mozVerifyElementIsEnabled(selector: Selector, applyPreconditions: Boolean = true): Boolean {
+        val element = mozGetElement(selector, applyPreconditions = applyPreconditions)
+
+        return when (element) {
+            is ViewInteraction -> {
+                try {
+                    element.check(matches(isEnabled())); true
+                } catch (_: Exception) {
+                    false
+                }
+            }
+            is UiObject -> element.isEnabled
+            is SemanticsNodeInteraction -> {
+                try {
+                    element.assertExists(); element.assertIsEnabled(); true
+                } catch (_: AssertionError) {
+                    false
+                }
+            }
+            else -> false
+        }
+    }
+
+    fun mozVerifyElementIsNotEnabled(selector: Selector, applyPreconditions: Boolean = true): Boolean {
+        val element = mozGetElement(selector, applyPreconditions = applyPreconditions)
+
+        return when (element) {
+            is ViewInteraction -> {
+                try {
+                    element.check(matches(not(isEnabled()))); true
+                } catch (_: Exception) {
+                    false
+                }
+            }
+            is UiObject -> element.isEnabled.not()
+            is SemanticsNodeInteraction -> {
+                try {
+                    element.assertExists(); element.assertIsNotEnabled(); true
+                } catch (_: AssertionError) {
+                    false
+                }
+            }
+            else -> false
+        }
+    }
+
+    fun mozVerifyElementHasSiblingWithText(selector: Selector, siblingText: String, applyPreconditions: Boolean = true): BasePage {
+        val element = mozGetElement(selector, applyPreconditions = applyPreconditions)
+            ?: throw AssertionError("Element not found for selector: ${selector.description} (${selector.strategy} -> ${selector.value})")
+
+        when (element) {
+            is ViewInteraction -> element.check(matches(hasSibling(withText(siblingText))))
+            is UiObject -> {
+                val sibling = element.getFromParent(UiSelector().text(siblingText))
+                if (!sibling.exists()) {
+                    throw AssertionError("'${selector.description}' has no sibling with text '$siblingText'")
+                }
+            }
+            is SemanticsNodeInteraction -> element.assert(hasAnySibling(hasText(siblingText)))
+            else -> throw AssertionError("Unsupported element type for selector: ${selector.description}")
+        }
+
+        return this
+    }
+
     // ------------------------------------------------------------
     // Element resolution + verification (LOC)
     // ------------------------------------------------------------
@@ -419,10 +640,10 @@ abstract class BasePage(
                     Log.i("mozGetElement", "Compose node not found for tag: ${selector.value}"); null
                 }
             }
-
-            SelectorStrategy.COMPOSE_ON_ALL_NODES_BY_TAG_ON_LAST -> {
+            // TODO: easier way to isolate parent/child/sibling elements, auto-selects sibilings or children on failure as a back-up
+            SelectorStrategy.COMPOSE_ON_ALL_NODES_BY_TAG_ON_FIRST -> {
                 try {
-                    composeRule.onAllNodesWithTag(selector.value).onLast()
+                    composeRule.onAllNodesWithTag(selector.value).onFirst()
                 } catch (_: Exception) {
                     Log.i("mozGetElement", "Compose node not found for tag: ${selector.value}"); null
                 }
@@ -444,6 +665,14 @@ abstract class BasePage(
                 }
             }
 
+            SelectorStrategy.COMPOSE_BY_CONTENT_DESCRIPTION_SUBSTRING -> {
+                try {
+                    composeRule.onNodeWithContentDescription(selector.value, substring = true)
+                } catch (_: Exception) {
+                    Log.i("mozGetElement", "Compose node not found for content description: ${selector.value}"); null
+                }
+            }
+
             SelectorStrategy.ESPRESSO_BY_ID -> {
                 val resId = selector.toResourceId()
                 if (resId == 0) {
@@ -456,15 +685,26 @@ abstract class BasePage(
 
             SelectorStrategy.ESPRESSO_BY_TEXT -> onView(withText(selector.value))
             SelectorStrategy.ESPRESSO_BY_CONTENT_DESC -> onView(withContentDescription(selector.value))
+            SelectorStrategy.ESPRESSO_BY_RES_NAME -> onView(androidx.test.espresso.matcher.ViewMatchers.withResourceName(org.hamcrest.Matchers.containsString(selector.value)))
 
             SelectorStrategy.UIAUTOMATOR2_BY_CLASS -> {
-                val obj = mDevice.findObject(UiSelector().className(selector.value))
-                if (!obj.exists()) null else obj
+                val obj = mDevice.findObject(By.clazz(selector.value))
+                if (obj == null) {
+                    Log.i("mozGetElement", "UIObject2 not found for res: ${selector.value}")
+                    null
+                } else {
+                    obj
+                }
             }
 
             SelectorStrategy.UIAUTOMATOR2_BY_TEXT -> {
-                val obj = mDevice.findObject(UiSelector().text(selector.value))
-                if (!obj.exists()) null else obj
+                val obj = mDevice.findObject(By.text(selector.value))
+                if (obj == null) {
+                    Log.i("mozGetElement", "UIObject2 not found for res: ${selector.value}")
+                    null
+                } else {
+                    obj
+                }
             }
 
             SelectorStrategy.UIAUTOMATOR2_BY_RES -> {
@@ -482,6 +722,11 @@ abstract class BasePage(
                 if (!obj.exists()) null else obj
             }
 
+            SelectorStrategy.UIAUTOMATOR_WITH_COMPOSE_TAG -> {
+                val obj = mDevice.findObject(UiSelector().resourceId(selector.value))
+                if (!obj.exists()) null else obj
+            }
+
             SelectorStrategy.UIAUTOMATOR_WITH_TEXT -> {
                 val obj = mDevice.findObject(UiSelector().text(selector.value))
                 if (!obj.exists()) null else obj
@@ -494,6 +739,16 @@ abstract class BasePage(
 
             SelectorStrategy.UIAUTOMATOR_WITH_DESCRIPTION_CONTAINS -> {
                 val obj = mDevice.findObject(UiSelector().descriptionContains(selector.value))
+                if (!obj.exists()) null else obj
+            }
+
+            SelectorStrategy.UIAUTOMATOR_WITH_RES_ID_AND_TEXT -> {
+                val textToMatch = selector.secondaryValue ?: ""
+
+                val fullResId = packageName + ":id/" + selector.value
+
+                val obj = mDevice.findObject(UiSelector().resourceId(fullResId).text(textToMatch))
+
                 if (!obj.exists()) null else obj
             }
         }
@@ -541,12 +796,44 @@ abstract class BasePage(
         }
     }
 
+    fun mozClear(selector: Selector): BasePage {
+        // TODO (I. RIOS 3/20/2026): pull out boiler plate setup in separate method
+        val rep = rep()
+        rep?.startCmd(safeId("clear_text", selector.description), "Attempting to clear text from '${selector.description}'...", 1)
+        rep?.startLoc(safeId("loc", selector.description), "Attempting to locate '${selector.description}'...", 2)
+
+        val element = mozGetElement(selector)
+        if (element == null) {
+            rep?.endLoc(success = false, message = notFound(selector.description))
+            rep?.endCmd(success = false, message = "Clear text failed: element not found ('${selector.description}')")
+            throw AssertionError("Element not found for selector: ${selector.description} (${selector.strategy} -> ${selector.value})")
+        } else {
+            rep?.endLoc(success = true, message = found(selector.description))
+        }
+
+        try {
+            when (element) {
+                is SemanticsNodeInteraction -> element.performTextClearance()
+                is ViewInteraction -> element.perform(androidx.test.espresso.action.ViewActions.clearText())
+                is UiObject -> element.clearTextField()
+                else -> throw AssertionError("Unsupported element type (${element::class.simpleName}) for selector: ${selector.description}")
+            }
+
+            rep?.endCmd(success = true, message = "Cleared text from '${selector.description}'")
+            return this
+        } catch (e: Throwable) {
+            rep?.endCmd(success = false, message = "Clear text failed for '${selector.description}': ${e.message ?: "exception"}")
+            throw AssertionError("Failed to clear text for selector: ${selector.description}", e)
+        }
+    }
+
+    fun mozClearAndEnterText(text: String, selector: Selector): BasePage {
+        mozClear(selector)
+        return mozEnterText(text, selector)
+    }
+
     private fun ensureReachable(selector: Selector) {
         val rep = rep()
-
-        // If it's already visible, skip swiping.
-        val visibleNow = mozVerifyElement(selector, applyPreconditions = false)
-        if (visibleNow) return
 
         if (requiresScroll(selector.groups)) {
             val dir = desiredSwipeDirection(selector.groups)

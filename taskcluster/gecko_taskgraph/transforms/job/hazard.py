@@ -5,8 +5,9 @@
 Support for running hazard jobs via dedicated scripts
 """
 
-from taskgraph.util.schema import LegacySchema
-from voluptuous import Any, Optional, Required
+from typing import Literal, Optional, Union
+
+from taskgraph.util.schema import Schema
 
 from gecko_taskgraph.transforms.job import configure_taskdesc_for_run, run_job_using
 from gecko_taskgraph.transforms.job.common import (
@@ -15,24 +16,24 @@ from gecko_taskgraph.transforms.job.common import (
     setup_secrets,
 )
 
-haz_run_schema = LegacySchema({
-    Required("using"): "hazard",
+
+class HazRunSchema(Schema, kw_only=True):
+    using: Literal["hazard"]
     # The command to run within the task image (passed through to the worker)
-    Required("command"): str,
+    command: str
     # The mozconfig to use; default in the script is used if omitted
-    Optional("mozconfig"): str,
+    mozconfig: Optional[str] = None
     # The set of secret names to which the task has access; these are prefixed
     # with `project/releng/gecko/{treeherder.kind}/level-{level}/`.   Setting
     # this will enable any worker features required and set the task's scopes
     # appropriately.  `true` here means ['*'], all secrets.  Not supported on
     # Windows
-    Optional("secrets"): Any(bool, [str]),
+    secrets: Optional[Union[bool, list[str]]] = None
     # Base work directory used to set up the task.
-    Optional("workdir"): str,
-})
+    workdir: Optional[str] = None
 
 
-@run_job_using("docker-worker", "hazard", schema=haz_run_schema)
+@run_job_using("docker-worker", "hazard", schema=HazRunSchema)
 def docker_worker_hazard(config, job, taskdesc):
     run = job["run"]
 

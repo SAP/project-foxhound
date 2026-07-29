@@ -1,0 +1,18 @@
+{
+  "label": "africanews.com",
+  "bugs": {
+    "1899930": {
+      "issue": "unsupported-warning",
+      "matches": ["*://www.africanews.com/*"]
+    }
+  },
+  "css": {
+    "hide_browser_notice": "#platform-detection-info { display: none !important; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "css": ["hide_browser_notice"]
+    }
+  ]
+}

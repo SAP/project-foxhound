@@ -150,7 +150,7 @@ add_task(async function test_edit_profile_custom_avatar_upload() {
   const mockAvatarFile = await createAvatarFile(avatarWidth, avatarHeight);
 
   const MockFilePicker = SpecialPowers.MockFilePicker;
-  MockFilePicker.init(window.browsingContext);
+  MockFilePicker.init();
   MockFilePicker.setFiles([mockAvatarFile]);
   MockFilePicker.returnValue = MockFilePicker.returnOK;
 
@@ -409,7 +409,7 @@ add_task(async function test_edit_profile_custom_avatar_crop() {
   const mockAvatarFile = await createAvatarFile(avatarWidth, avatarHeight);
 
   const MockFilePicker = SpecialPowers.MockFilePicker;
-  MockFilePicker.init(window.browsingContext);
+  MockFilePicker.init();
   MockFilePicker.setFiles([mockAvatarFile]);
   MockFilePicker.returnValue = MockFilePicker.returnOK;
 
@@ -638,7 +638,7 @@ add_task(async function test_edit_profile_custom_avatar_keyboard_crop() {
   const mockAvatarFile = await createAvatarFile(avatarWidth, avatarHeight);
 
   const MockFilePicker = SpecialPowers.MockFilePicker;
-  MockFilePicker.init(window.browsingContext);
+  MockFilePicker.init();
   MockFilePicker.setFiles([mockAvatarFile]);
   MockFilePicker.returnValue = MockFilePicker.returnOK;
 
@@ -895,7 +895,7 @@ add_task(async function test_edit_profile_custom_avatar_keyboard_crop() {
   const mockAvatarFile = await createAvatarFile(avatarWidth, avatarHeight);
 
   const MockFilePicker = SpecialPowers.MockFilePicker;
-  MockFilePicker.init(window.browsingContext);
+  MockFilePicker.init();
   MockFilePicker.setFiles([mockAvatarFile]);
   MockFilePicker.returnValue = MockFilePicker.returnOK;
 

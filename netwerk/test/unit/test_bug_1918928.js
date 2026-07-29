@@ -52,12 +52,15 @@ function channelOpenPromise(chan, flags) {
 }
 
 add_setup(async function setup() {
+  // We don't force waiting HTTPS RR in HE.
+  Services.prefs.setBoolPref("network.http.happy_eyeballs_enabled", false);
   trrServer = new TRRServer();
   await trrServer.start();
   h2Port = trrServer.port();
 
   trr_test_setup();
   registerCleanupFunction(async () => {
+    Services.prefs.clearUserPref("network.http.happy_eyeballs_enabled");
     trr_clear_prefs();
     if (trrServer) {
       await trrServer.stop();

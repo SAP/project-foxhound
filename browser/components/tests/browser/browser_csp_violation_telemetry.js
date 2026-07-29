@@ -5,7 +5,10 @@
 
 add_task(async function test_internal_page_telemetry() {
   await SpecialPowers.pushPrefEnv({
-    set: [["security.csp.testing.allow_internal_csp_violation", true]],
+    set: [
+      ["security.csp.testing.allow_internal_csp_violation", true],
+      ["security.chrome_baseline_csp.enabled", true],
+    ],
   });
 
   Services.fog.testResetFOG();
@@ -27,8 +30,13 @@ add_task(async function test_internal_page_telemetry() {
   });
 
   let testValue = Glean.security.cspViolationInternalPage.testGetValue();
-  is(testValue.length, 1, "Should have telemetry for one violation");
+  is(testValue.length, 2, "Should have telemetry for two violations");
+
   let extra = testValue[0].extra;
+  is(extra.baseline, "true", "first violation from baseline CSP");
+
+  extra = testValue[1].extra;
+  is(extra.baseline, "false", "second violation from custom CSP");
   is(extra.directive, "script-src-attr", "violation's `directive` is correct");
   is(extra.selftype, "chromeuri", "violation's `selftype` is correct");
   is(extra.selfdetails, ROBOTS_URL, "violation's `selfdetails` is correct");
@@ -43,7 +51,7 @@ add_task(async function test_internal_page_telemetry() {
     undefined,
     "violation's `blockeduridetails` is correct"
   );
-  is(extra.linenumber, "22", "violation's `linenumber` is correct");
+  is(extra.linenumber, "25", "violation's `linenumber` is correct");
   is(extra.columnnumber, "45", "violation's `columnnumber` is correct");
   is(extra.sample, "foobar()", "violation's sample is correct");
 

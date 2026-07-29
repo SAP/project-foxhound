@@ -35,7 +35,6 @@ def remove_attributes(config, jobs):
             "l10n_chunk",
             "mar-channel-id",
             "repackage_type",
-            "required_signoffs",
             "shippable",
             "signed",
             "stub-installer",

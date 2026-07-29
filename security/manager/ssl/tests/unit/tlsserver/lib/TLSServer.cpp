@@ -9,7 +9,6 @@
 #include <thread>
 #include <vector>
 #include <fstream>
-#include <iostream>
 #ifdef XP_WIN
 #  include <windows.h>
 #else
@@ -39,20 +38,14 @@ static const uint16_t LISTEN_PORT = 8443;
 
 SSLAntiReplayContext* antiReplay = nullptr;
 
+SSLAntiReplayContext* GetAntiReplayContext() { return antiReplay; }
+
 DebugLevel gDebugLevel = DEBUG_ERRORS;
 uint16_t gCallbackPort = 0;
 
 static const char kPEMBegin[] = "-----BEGIN ";
 static const char kPEMEnd[] = "-----END ";
 const char DEFAULT_CERT_NICKNAME[] = "default-ee";
-
-struct Connection {
-  PRFileDesc* mSocket;
-  char mByte;
-
-  explicit Connection(PRFileDesc* aSocket);
-  ~Connection();
-};
 
 Connection::Connection(PRFileDesc* aSocket) : mSocket(aSocket), mByte(0) {}
 
@@ -537,7 +530,8 @@ PidType ConvertPid(const char* pidStr) {
 }
 
 int StartServer(int argc, char* argv[], SSLSNISocketConfig sniSocketConfig,
-                void* sniSocketConfigArg, ServerConfigFunc configFunc) {
+                void* sniSocketConfigArg, ServerConfigFunc configFunc,
+                ConnectionHandlerFunc connectionHandler) {
   if (argc != 3) {
     fprintf(stderr, "usage: %s <NSS DB directory> <ppid>\n", argv[0]);
     return 1;
@@ -605,7 +599,13 @@ int StartServer(int argc, char* argv[], SSLSNISocketConfig sniSocketConfig,
     return 1;
   }
 
-  if (PR_Listen(serverSocket.get(), 1) != PR_SUCCESS) {
+  // Backlog of 1 is enough for tests that strictly open one conn at a
+  // time, but the HE 0-RTT race tests drive several overlapping TCP
+  // connects via a reverse proxy — with backlog=1 macOS silently
+  // drops the extras and the proxy retransmits the SYN, arriving
+  // after the server has already moved its TLS state forward on the
+  // accepted conn. A modest backlog is enough to absorb the race.
+  if (PR_Listen(serverSocket.get(), 32) != PR_SUCCESS) {
     PrintPRError("PR_Listen failed");
     return 1;
   }
@@ -713,7 +713,11 @@ int StartServer(int argc, char* argv[], SSLSNISocketConfig sniSocketConfig,
     PRNetAddr clientAddr;
     PRFileDesc* clientSocket =
         PR_Accept(serverSocket.get(), &clientAddr, PR_INTERVAL_NO_TIMEOUT);
-    HandleConnection(clientSocket, modelSocket);
+    if (connectionHandler) {
+      connectionHandler(clientSocket, modelSocket);
+    } else {
+      HandleConnection(clientSocket, modelSocket);
+    }
   }
 }
 

@@ -54,16 +54,16 @@
         "parameters": [{ "name": "domain", "type": "string" }]
       },
       {
-        "name": "isTesting",
+        "name": "isIPPActive",
         "type": "function",
-        "description": "Return whether we are running in testing mode.",
+        "description": "Return whether IPP connection is active.",
         "async": true,
         "parameters": []
       },
       {
-        "name": "isIPPActive",
+        "name": "getRegion",
         "type": "function",
-        "description": "Return whether IPP connection is active.",
+        "description": "Return the user's home region as an ISO 3166-1 alpha-2 code (uppercase), or null if unknown.",
         "async": true,
         "parameters": []
       },
@@ -78,6 +78,20 @@
         "name": "getDynamicWebRequestBreakages",
         "type": "function",
         "description": "Return dynamic webRequest breakages (pref: extensions.ippactivator.dynamicWebRequestBreakages).",
+        "async": true,
+        "parameters": []
+      },
+      {
+        "name": "getTabBreakagesUrl",
+        "type": "function",
+        "description": "Return the URL to fetch the base tab breakages from (pref: extensions.ippactivator.tabBreakagesUrl). Empty string means use the built-in file.",
+        "async": true,
+        "parameters": []
+      },
+      {
+        "name": "getWebRequestBreakagesUrl",
+        "type": "function",
+        "description": "Return the URL to fetch the base webRequest breakages from (pref: extensions.ippactivator.webrequestBreakagesUrl). Empty string means use the built-in file.",
         "async": true,
         "parameters": []
       },
@@ -112,11 +126,18 @@
       {
         "name": "onIPPActivated",
         "type": "function",
-        "description": "Fired when IPProtectionService dispatches 'IPProtectionService:Started'.",
+        "description": "Fired when IPProtectionService dispatches 'IPProtectionService:Started'. The listener receives the current active state.",
         "parameters": [
           {
             "name": "listener",
-            "type": "function"
+            "type": "function",
+            "parameters": [
+              {
+                "name": "active",
+                "type": "boolean",
+                "description": "Whether the IPP connection is currently active."
+              }
+            ]
           }
         ]
       },
@@ -150,6 +171,25 @@
           {
             "name": "listener",
             "type": "function"
+          }
+        ]
+      },
+      {
+        "name": "onRegionChanged",
+        "type": "function",
+        "description": "Fired when the user's home region changes (observer on 'browser-region-updated'). The listener receives the new region.",
+        "parameters": [
+          {
+            "name": "listener",
+            "type": "function",
+            "parameters": [
+              {
+                "name": "region",
+                "type": "string",
+                "optional": true,
+                "description": "The new home region as an ISO 3166-1 alpha-2 code (uppercase), or null if unknown."
+              }
+            ]
           }
         ]
       }

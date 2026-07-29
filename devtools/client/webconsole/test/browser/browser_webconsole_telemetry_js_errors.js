@@ -9,7 +9,6 @@ const TEST_URI = `data:text/html,<!DOCTYPE html><meta charset=utf8><script>docum
 
 add_task(async function () {
   Services.fog.testResetFOG();
-  startTelemetry();
 
   const hud = await openNewTabAndConsole(TEST_URI);
 

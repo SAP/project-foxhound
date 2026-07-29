@@ -51,7 +51,7 @@ index 57ff0688a3..7405c95911 100644
      // If the display configuraiton has changed then refresh capturer data
      // structures. Occasionally, the refresh and move handlers are lost when
 diff --git a/modules/desktop_capture/mouse_cursor_monitor_mac.mm b/modules/desktop_capture/mouse_cursor_monitor_mac.mm
-index 248a782762..6ed2c56706 100644
+index 3e6a6cb3c6..5b0406609f 100644
 --- a/modules/desktop_capture/mouse_cursor_monitor_mac.mm
 +++ b/modules/desktop_capture/mouse_cursor_monitor_mac.mm
 @@ -133,7 +133,8 @@ void MouseCursorMonitorMac::CaptureImage(float scale) {

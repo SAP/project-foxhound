@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +7,7 @@
 
 #include "mozilla/layers/CompositableForwarder.h"
 #include "mozilla/layers/PWebRenderBridgeChild.h"
+#include "nsHashKeys.h"
 
 namespace mozilla {
 
@@ -29,28 +28,6 @@ class CompositorBridgeChild;
 class StackingContextHelper;
 class TextureForwarder;
 class WebRenderLayerManager;
-
-template <class T>
-class ThreadSafeWeakPtrHashKey : public PLDHashEntryHdr {
- public:
-  typedef RefPtr<T> KeyType;
-  typedef const T* KeyTypePointer;
-
-  explicit ThreadSafeWeakPtrHashKey(KeyTypePointer aKey)
-      : mKey(do_AddRef(const_cast<T*>(aKey))) {}
-
-  KeyType GetKey() const { return do_AddRef(mKey); }
-  bool KeyEquals(KeyTypePointer aKey) const { return mKey == aKey; }
-
-  static KeyTypePointer KeyToPointer(const KeyType& aKey) { return aKey.get(); }
-  static PLDHashNumber HashKey(KeyTypePointer aKey) {
-    return NS_PTR_TO_UINT32(aKey) >> 2;
-  }
-  enum { ALLOW_MEMMOVE = true };
-
- private:
-  ThreadSafeWeakPtr<T> mKey;
-};
 
 typedef ThreadSafeWeakPtrHashKey<gfx::UnscaledFont> UnscaledFontHashKey;
 typedef ThreadSafeWeakPtrHashKey<gfx::ScaledFont> ScaledFontHashKey;
@@ -98,7 +75,7 @@ class WebRenderBridgeChild final : public PWebRenderBridgeChild,
   wr::PipelineId GetPipeline() { return mPipelineId; }
 
   // KnowsCompositor
-  TextureForwarder* GetTextureForwarder() override;
+  RefPtr<TextureForwarder> GetTextureForwarder() override;
   LayersIPCActor* GetLayersIPCActor() override;
   void SyncWithCompositor(
       const Maybe<uint64_t>& aWindowID = Nothing()) override;
@@ -117,7 +94,7 @@ class WebRenderBridgeChild final : public PWebRenderBridgeChild,
    * to be sent from the parent side.
    */
   void Destroy(bool aIsSync);
-  bool IPCOpen() const { return mIPCOpen && !mDestroyed; }
+  bool IPCOpen() const { return CanSend() && !mDestroyed; }
   bool GetSentDisplayList() const { return mSentDisplayList; }
   bool IsDestroyed() const { return mDestroyed; }
 
@@ -185,7 +162,7 @@ class WebRenderBridgeChild final : public PWebRenderBridgeChild,
   void DeallocResourceShmem(RefCountedShmem& aShm);
 
   void Capture();
-  void StartCaptureSequence(const nsCString& path, uint32_t aFlags);
+  void StartCaptureSequence(uint32_t aFlags);
   void StopCaptureSequence();
 
   bool SendEnsureConnected(TextureFactoryIdentifier* textureFactoryIdentifier,
@@ -230,17 +207,6 @@ class WebRenderBridgeChild final : public PWebRenderBridgeChild,
   mozilla::ipc::IPCResult RecvWrReleasedImages(
       nsTArray<wr::ExternalImageKeyPair>&& aPairs);
 
-  void AddIPDLReference() {
-    MOZ_ASSERT(mIPCOpen == false);
-    mIPCOpen = true;
-    AddRef();
-  }
-  void ReleaseIPDLReference() {
-    MOZ_ASSERT(mIPCOpen == true);
-    mIPCOpen = false;
-    Release();
-  }
-
   bool AddOpDestroy(const OpDestroy& aOp);
 
   nsTArray<OpDestroy> mDestroyedActors;
@@ -254,7 +220,6 @@ class WebRenderBridgeChild final : public PWebRenderBridgeChild,
   wr::PipelineId mPipelineId;
   WebRenderLayerManager* mManager;
 
-  bool mIPCOpen;
   bool mDestroyed;
   // True iff we have called SendSetDisplayList and haven't called
   // SendClearCachedResources since that call.

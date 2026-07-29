@@ -13,8 +13,8 @@ import mozilla.components.concept.fetch.Client
 import mozilla.components.concept.fetch.Request
 import mozilla.components.concept.fetch.Response
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Test
+import kotlin.test.assertNotNull
 
 class OnDeviceBrowserIconsTest {
     private val context: Context

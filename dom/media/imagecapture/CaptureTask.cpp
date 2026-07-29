@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -52,7 +50,7 @@ nsresult CaptureTask::TaskComplete(already_AddRefed<dom::BlobImpl> aBlobImpl,
   // one.
   RefPtr<dom::Blob> blob;
   if (blobImpl) {
-    blob = dom::Blob::Create(mImageCapture->GetOwnerGlobal(), blobImpl);
+    blob = dom::Blob::Create(mImageCapture->GetRelevantGlobal(), blobImpl);
     if (NS_WARN_IF(!blob)) {
       return NS_ERROR_FAILURE;
     }

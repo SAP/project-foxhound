@@ -5,7 +5,6 @@ URL = "https://app.kosmi.io"
 USERNAME_CSS = "input[placeholder='Username or Email']"
 PASSWORD_CSS = "input[placeholder='Password']"
 LOGIN_BUTTON_CSS = "[type=submit]"
-MY_ROOM_TEXT = "My room"
 SELECT_MEDIA_CSS = ".kosmi.mediabutton"
 HERO_CSS = "button i.linkify"
 LOCAL_FILE_CSS = "button i.file.video"
@@ -21,7 +20,7 @@ async def is_local_file_option_shown(client, credentials, platform):
     await client.stall(1)
     client.await_css(
         "button",
-        condition="elem.innerText.includes('Login with Email')",
+        condition="elem.innerText.includes('with Email')",
         is_displayed=True,
     ).click()
     client.await_css(USERNAME_CSS, is_displayed=True).send_keys(credentials["username"])
@@ -41,7 +40,7 @@ async def is_local_file_option_shown(client, credentials, platform):
             else:
                 client.await_css(
                     "button",
-                    condition="elem.firstChild?.nodeValue?.includes('My room')",
+                    condition="elem.innerText.includes('My room')",
                     is_displayed=True,
                     timeout=0.5,
                 ).click()
@@ -60,13 +59,31 @@ async def is_local_file_option_shown(client, credentials, platform):
     return client.find_css(LOCAL_FILE_CSS)
 
 
+@pytest.mark.only_firefox_versions(min=149)
+@pytest.mark.enable_standard_captureStream
 @pytest.mark.asyncio
 @pytest.mark.with_interventions
-async def test_enabled(client, credentials, platform):
+async def test_enabled_on_new_versions(client, credentials, platform):
     assert await is_local_file_option_shown(client, credentials, platform)
 
 
+@pytest.mark.only_firefox_versions(min=149)
+@pytest.mark.disable_standard_captureStream
 @pytest.mark.asyncio
 @pytest.mark.without_interventions
-async def test_disabled(client, credentials, platform):
+async def test_disabled_on_new_versions(client, credentials, platform):
+    assert not await is_local_file_option_shown(client, credentials, platform)
+
+
+@pytest.mark.only_firefox_versions(max=148)
+@pytest.mark.asyncio
+@pytest.mark.with_interventions
+async def test_enabled_on_old_versions(client, credentials, platform):
+    assert await is_local_file_option_shown(client, credentials, platform)
+
+
+@pytest.mark.only_firefox_versions(max=148)
+@pytest.mark.asyncio
+@pytest.mark.without_interventions
+async def test_disabled_on_old_versions(client, credentials, platform):
     assert not await is_local_file_option_shown(client, credentials, platform)

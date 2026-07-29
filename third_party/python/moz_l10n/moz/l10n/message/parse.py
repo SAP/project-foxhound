@@ -73,4 +73,4 @@ def parse_message(
     elif printf_placeholders:
         return PatternMessage(list(parse_printf_pattern(source)))
     else:
-        return PatternMessage([source])
+        return PatternMessage([source] if source else [])

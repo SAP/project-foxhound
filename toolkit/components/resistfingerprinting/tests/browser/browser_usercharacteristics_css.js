@@ -54,8 +54,8 @@ add_task(async function test_css_system_colors_and_fonts() {
 
         const colorValue = firstColorEntry[colorKeys[0]];
         Assert.ok(
-          /^[0-9A-F]{6}$/.test(colorValue),
-          "Color value should be in uppercase HEX format (e.g., FFFFFF)"
+          /^[0-9A-F]{8}$/.test(colorValue),
+          "Color value should be in uppercase RRGGBBAA HEX format (e.g., FFFFFFFF)"
         );
 
         info(`Collected ${colorsParsed.length} system colors`);

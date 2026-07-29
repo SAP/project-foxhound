@@ -1,6 +1,7 @@
 # This test environment is copied from "browser/components/tests/browser/whats_new_page/".
 
 [DEFAULT]
+tags = "urlbar"
 run-if = [
   "!msix", # Updater is disabled in MSIX builds
 ]

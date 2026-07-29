@@ -25,3 +25,4 @@ tasks-from:
     - updatebot.yml
     - onnxruntime.yml
     - onnxruntime-web-fetch.yml
+    - openh264.yml

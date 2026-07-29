@@ -88,12 +88,12 @@ async function assertMixedContentBlockingState(tabbrowser, states = {}) {
   }
 
   let { passiveLoaded, activeLoaded, activeBlocked } = states;
-  let { gIdentityHandler } = tabbrowser.ownerGlobal;
+  let { gIdentityHandler } = tabbrowser.documentGlobal;
   let doc = tabbrowser.ownerDocument;
   let identityBox = gIdentityHandler._identityBox;
   let classList = identityBox.classList;
   let identityIcon = doc.getElementById("identity-icon");
-  let identityIconImage = tabbrowser.ownerGlobal
+  let identityIconImage = tabbrowser.documentGlobal
     .getComputedStyle(identityIcon)
     .getPropertyValue("list-style-image");
 
@@ -203,7 +203,7 @@ async function assertMixedContentBlockingState(tabbrowser, states = {}) {
 
   // Make sure the identity popup has the correct mixedcontent states
   let promisePanelOpen = BrowserTestUtils.waitForEvent(
-    tabbrowser.ownerGlobal,
+    tabbrowser.documentGlobal,
     "popupshown",
     true,
     event => event.target == gIdentityHandler._identityPopup
@@ -252,14 +252,14 @@ async function assertMixedContentBlockingState(tabbrowser, states = {}) {
 
   // Make sure the correct icon is visible in the Control Center.
   // This logic is controlled with CSS, so this helps prevent regressions there.
-  let securityViewBG = tabbrowser.ownerGlobal
+  let securityViewBG = tabbrowser.documentGlobal
     .getComputedStyle(
       document
         .getElementById("identity-popup-securityView")
         .getElementsByClassName("identity-popup-security-connection")[0]
     )
     .getPropertyValue("list-style-image");
-  let securityContentBG = tabbrowser.ownerGlobal
+  let securityContentBG = tabbrowser.documentGlobal
     .getComputedStyle(
       document
         .getElementById("identity-popup-mainView")
@@ -283,12 +283,12 @@ async function assertMixedContentBlockingState(tabbrowser, states = {}) {
   if (stateSecure) {
     is(
       securityViewBG,
-      'url("chrome://global/skin/icons/security.svg")',
+      'url("chrome://global/skin/icons/security-custom-root.svg")',
       "CC using secure icon"
     );
     is(
       securityContentBG,
-      'url("chrome://global/skin/icons/security.svg")',
+      'url("chrome://global/skin/icons/security-custom-root.svg")',
       "CC using secure icon"
     );
   }
@@ -320,12 +320,12 @@ async function assertMixedContentBlockingState(tabbrowser, states = {}) {
       // There is a case here with weak ciphers, but no bc tests are handling this yet.
       is(
         securityViewBG,
-        'url("chrome://global/skin/icons/security.svg")',
+        'url("chrome://global/skin/icons/security-custom-root.svg")',
         "CC using degraded icon"
       );
       is(
         securityContentBG,
-        'url("chrome://global/skin/icons/security.svg")',
+        'url("chrome://global/skin/icons/security-custom-root.svg")',
         "CC using degraded icon"
       );
     }

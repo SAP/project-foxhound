@@ -143,11 +143,11 @@ testRule({
       description: "Using a custom variable should use a design token.",
     },
     {
-      code: ".a { border-radius: calc(var(--tab-border-radius) + 4px); }",
+      code: ".a { border-radius: calc(var(--custom-border-radius) + 4px); }",
       message: messages.rejected(
-        "calc(var(--tab-border-radius) + 4px)",
+        "calc(var(--custom-border-radius) + 4px)",
         ["border-radius"],
-        "calc(var(--tab-border-radius) + var(--border-radius-small))"
+        "calc(var(--custom-border-radius) + var(--border-radius-small))"
       ),
       description:
         "Using calc() with custom variables should use design tokens.",

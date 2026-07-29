@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -39,8 +37,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include <stdlib.h>
-
+#include <charconv>
 #include <iostream>
 
 #include "runnable_utils.h"
@@ -52,7 +49,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define USE_TURN
 
 // nICEr includes
-extern "C" {
 // clang-format off
 #include "nr_api.h"
 #include "transport_addr.h"
@@ -63,7 +59,6 @@ extern "C" {
 #include "stun_client_ctx.h"
 #include "turn_client_ctx.h"
 // clang-format on
-}
 
 #include "nricectx.h"
 
@@ -204,8 +199,17 @@ class TurnClient : public MtransportTest {
     std::string host = target.substr(4, offset - 4);
     std::string port = target.substr(offset + 1);
 
-    r = nr_str_port_to_transport_addr(host.c_str(), atoi(port.c_str()),
-                                      IPPROTO_UDP, &addr);
+    // Parse port string using from_chars
+    uint16_t port_val = 0;
+    auto res =
+        std::from_chars(port.data(), port.data() + port.size(), port_val, 10);
+
+    // Ensure conversion succeeded and reached the end of the string
+    ASSERT_EQ(res.ec, std::errc{});
+    ASSERT_EQ(res.ptr, port.data() + port.size());
+
+    r = nr_str_port_to_transport_addr(host.c_str(), port_val, IPPROTO_UDP,
+                                      &addr);
     ASSERT_EQ(0, r);
 
     r = nr_turn_client_ensure_perm(turn_ctx_, &addr);
@@ -284,8 +288,17 @@ class TurnClient : public MtransportTest {
     std::string host = target.substr(4, offset - 4);
     std::string port = target.substr(offset + 1);
 
-    r = nr_str_port_to_transport_addr(host.c_str(), atoi(port.c_str()),
-                                      IPPROTO_UDP, &addr);
+    // Parse port string using from_chars
+    uint16_t port_val = 0;
+    auto res =
+        std::from_chars(port.data(), port.data() + port.size(), port_val, 10);
+
+    // Ensure conversion succeeded and reached the end of the string
+    ASSERT_EQ(res.ec, std::errc{});
+    ASSERT_EQ(res.ptr, port.data() + port.size());
+
+    r = nr_str_port_to_transport_addr(host.c_str(), port_val, IPPROTO_UDP,
+                                      &addr);
     ASSERT_EQ(0, r);
 
     unsigned char test[100];

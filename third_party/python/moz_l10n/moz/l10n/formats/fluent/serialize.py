@@ -14,9 +14,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from re import compile, fullmatch
-from typing import Any, Iterator
+from typing import Any
 
 from fluent.syntax import FluentSerializer
 from fluent.syntax import ast as ftl
@@ -43,6 +43,8 @@ ws_at_end = compile(r"\s+$")
 
 def fluent_serialize(
     resource: (Resource[str] | Resource[Message]),
+    *,
+    escape_syntax: bool = True,
     serialize_metadata: Callable[[Metadata], str | None] | None = None,
     trim_comments: bool = False,
 ) -> Iterator[str]:
@@ -54,11 +56,19 @@ def fluent_serialize(
     Function names are upper-cased, and expressions using the `message` function
     are mapped to message and term references.
 
+    If `escape_syntax` is set to `False`,
+    syntax characters such as { and } in text elements are not escaped.
+
     Yields each entry and comment separately.
     If the resource includes any metadata, a `serialize_metadata` callable must be provided
     to map each field into a comment value, or to discard it by returning an empty value.
     """
-    ftl_ast = fluent_astify(resource, serialize_metadata, trim_comments)
+    ftl_ast = fluent_astify(
+        resource,
+        escape_syntax=escape_syntax,
+        serialize_metadata=serialize_metadata,
+        trim_comments=trim_comments,
+    )
     serializer = FluentSerializer()
     nl_prefix = 0
     for entry in ftl_ast.body:
@@ -69,6 +79,8 @@ def fluent_serialize(
 
 def fluent_astify(
     resource: (Resource[str] | Resource[Message]),
+    *,
+    escape_syntax: bool = True,
     serialize_metadata: Callable[[Metadata], str | None] | None = None,
     trim_comments: bool = False,
 ) -> ftl.Resource:
@@ -79,6 +91,9 @@ def fluent_astify(
 
     Function names are upper-cased, and annotations with the `message` function
     are mapped to message and term references.
+
+    If `escape_syntax` is set to `False`,
+    syntax characters such as { and } in text elements are not escaped.
 
     If the resource includes any metadata other than a string resource `info` value,
     a `serialize_metadata` callable must be provided
@@ -131,27 +146,63 @@ def fluent_astify(
                 if not trim_comments:
                     body.append(ftl.Comment(entry.comment))
             else:
-                body.append(fluent_astify_entry(entry, comment_str))
+                body.append(
+                    fluent_astify_entry(
+                        entry, comment_str=comment_str, escape_syntax=escape_syntax
+                    )
+                )
     return ftl.Resource(body)
 
 
+def fluent_serialize_entry(
+    entry: Entry[str | Message],
+    *,
+    comment_str: Callable[[Entry[Any]], str] | None = None,
+    escape_syntax: bool = True,
+) -> str:
+    """
+    Serialize an Entry as a Fluent FTL message or term.
+
+    Function names are upper-cased, and expressions using the `message` function
+    are mapped to message and term references.
+
+    If `escape_syntax` is set to `False`,
+    syntax characters such as { and } in text elements are not escaped.
+    """
+    ftl_entry = fluent_astify_entry(
+        entry, comment_str=comment_str, escape_syntax=escape_syntax
+    )
+    return FluentSerializer().serialize_entry(ftl_entry)
+
+
 def fluent_astify_entry(
-    entry: Entry[str | Message], comment_str: Callable[[Entry[Any]], str] | None = None
+    entry: Entry[str | Message],
+    *,
+    comment_str: Callable[[Entry[Any]], str] | None = None,
+    escape_syntax: bool = True,
 ) -> ftl.Message | ftl.Term:
     """
     Transform an Entry into a corresponding Fluent AST message or term.
 
     Function names are upper-cased, and expressions using the `message` function
     are mapped to message and term references.
+
+    If `escape_syntax` is set to `False`,
+    syntax characters such as { and } in text elements are not escaped.
     """
 
     if len(entry.id) != 1:
         raise ValueError(f"Unsupported message id: {entry.id}")
     id = entry.id[0]
     is_term = id.startswith("-")
-    value = fluent_astify_message(entry.value, esc_empty=is_term)
+    value = fluent_astify_message(
+        entry.value, escape_empty=is_term, escape_syntax=escape_syntax
+    )
     attributes = list(
-        ftl.Attribute(ftl.Identifier(key), fluent_astify_message(val, esc_empty=True))
+        ftl.Attribute(
+            ftl.Identifier(key),
+            fluent_astify_message(val, escape_empty=True, escape_syntax=escape_syntax),
+        )
         for key, val in entry.properties.items()
     )
     if comment_str is None:
@@ -171,8 +222,42 @@ def fluent_astify_entry(
         return ftl.Message(ftl.Identifier(id), value_, attributes, comment)
 
 
+def fluent_serialize_message(
+    message: str | Message | ftl.Pattern,
+    *,
+    escape_empty: bool = False,
+    escape_syntax: bool = True,
+) -> str:
+    """
+    Serialize a message as a Fluent pattern.
+
+    Function names are upper-cased, and expressions using the `message` function
+    are mapped to message and term references.
+
+    If `escape_empty` is set to `True`, a message that would serialize as an empty string
+    will instead be serialized as `{ "" }`.
+
+    If `escape_syntax` is set to `False`,
+    syntax characters such as { and } in text elements are not escaped.
+    """
+    pattern = (
+        message
+        if isinstance(message, ftl.Pattern)
+        else fluent_astify_message(
+            message, escape_empty=escape_empty, escape_syntax=escape_syntax
+        )
+    )
+    return "".join(
+        el.value if isinstance(el, ftl.TextElement) else serialize_expression(el)
+        for el in pattern.elements
+    )
+
+
 def fluent_astify_message(
-    message: str | Message, *, esc_empty: bool = False
+    message: str | Message,
+    *,
+    escape_empty: bool = False,
+    escape_syntax: bool = True,
 ) -> ftl.Pattern:
     """
     Transform a message into a corresponding Fluent AST pattern.
@@ -180,17 +265,20 @@ def fluent_astify_message(
     Function names are upper-cased, and expressions using the `message` function
     are mapped to message and term references.
 
-    If `esc_empty` is True, a Pattern that would serialize as an empty string
+    If `escape_empty` is set to `True`, a Pattern that would serialize as an empty string
     will instead be escaped as a StringLiteral.
+
+    If `escape_syntax` is set to `False`,
+    syntax characters such as { and } in text elements are not escaped.
     """
 
     if isinstance(message, (str, PatternMessage)):
         pattern = (
-            ftl.Pattern([ftl.TextElement(message)])
+            ftl.Pattern(text(message, escape_syntax))
             if isinstance(message, str)
-            else flat_pattern(message.declarations, message.pattern)
+            else flat_pattern(message.declarations, message.pattern, escape_syntax)
         )
-        if esc_empty and pattern_is_empty(pattern):
+        if escape_empty and pattern_is_empty(pattern):
             return valid_empty_pattern(pattern)
         return pattern
 
@@ -204,7 +292,7 @@ def fluent_astify_message(
     # We rely on the variants being in order, so that a variant with N keys
     # will be next to all other variants for which the first N-1 keys are equal.
     variants = [
-        (list(keys), flat_pattern(message.declarations, value))
+        (list(keys), flat_pattern(message.declarations, value, escape_syntax))
         for keys, value in message.variants.items()
     ]
 
@@ -242,19 +330,6 @@ def fluent_astify_message(
     return variants[0][1]
 
 
-def fluent_serialize_message(
-    message: str | Message | ftl.Pattern, *, esc_empty: bool = False
-) -> str:
-    if isinstance(message, (str, PatternMessage, SelectMessage)):
-        pattern = fluent_astify_message(message, esc_empty=esc_empty)
-    else:
-        pattern = message
-    return "".join(
-        el.value if isinstance(el, ftl.TextElement) else serialize_expression(el)
-        for el in pattern.elements
-    )
-
-
 def fallback_name(message: SelectMessage) -> str:
     """
     Try `other`, `other1`, `other2`, ... until a free one is found.
@@ -280,7 +355,9 @@ def variant_key(
         raise ValueError(f"Unsupported variant key: {kv}")
 
 
-def flat_pattern(decl: dict[str, Expression], pattern: Pattern) -> ftl.Pattern:
+def flat_pattern(
+    decl: dict[str, Expression], pattern: Pattern, escape_syntax: bool
+) -> ftl.Pattern:
     elements: list[ftl.TextElement | ftl.Placeable] = []
     last = len(pattern) - 1
     for idx, el in enumerate(pattern):
@@ -298,10 +375,10 @@ def flat_pattern(decl: dict[str, Expression], pattern: Pattern) -> ftl.Pattern:
                 if ws is not None:
                     ws_start = ws.start()
                     if ws_start > 0:
-                        elements.append(ftl.TextElement(el[:ws_start]))
+                        elements += text(el[:ws_start], escape_syntax)
                     elements.append(ftl.Placeable(value(decl, el[ws_start:])))
                     continue
-            elements.append(ftl.TextElement(el))
+            elements += text(el, escape_syntax)
         elif isinstance(el, Expression):
             elements.append(ftl.Placeable(expression(decl, el)))
         else:
@@ -319,11 +396,34 @@ def pattern_is_empty(pattern: ftl.Pattern) -> bool:
 def valid_empty_pattern(pattern: ftl.Pattern) -> ftl.Pattern:
     """
     Fluent patterns are not valid if they serialize to an empty string.
+
+    This is called only if `pattern_is_empty(pattern)` is `True`.
     """
-    text = "".join(
+    empty_text = "".join(
         el.value for el in pattern.elements if isinstance(el, ftl.TextElement)
     )
-    return ftl.Pattern([ftl.Placeable(value({}, text))])
+    return ftl.Pattern([ftl.Placeable(value({}, empty_text))])
+
+
+not_text = compile(r"[{}]+|\n *[*.[]")
+
+
+def text(source: str, escape_syntax: bool) -> list[ftl.TextElement | ftl.Placeable]:
+    if not escape_syntax:
+        return [ftl.TextElement(source)]
+    elements: list[ftl.TextElement | ftl.Placeable] = []
+    idx = 0
+    for m in not_text.finditer(source):
+        start = m.start()
+        esc = m[0].lstrip()
+        start += len(m[0]) - len(esc)
+        if start > idx:
+            elements.append(ftl.TextElement(source[idx:start]))
+        elements.append(ftl.Placeable(ftl.StringLiteral(esc)))
+        idx = m.end()
+    if idx < len(source):
+        elements.append(ftl.TextElement(source[idx:]))
+    return elements
 
 
 def expression(
@@ -386,6 +486,7 @@ def function_ref(
 
 # Non-printable ASCII C0 & C1 / Unicode Cc characters
 esc_cc = {n: f"\\u{n:04X}" for r in (range(0, 32), range(127, 160)) for n in r}
+esc_bs = compile(r'([\\"])')
 
 
 def value(
@@ -396,7 +497,7 @@ def value(
             float(val)
             return ftl.NumberLiteral(val)
         except Exception:
-            return ftl.StringLiteral(val.translate(esc_cc))
+            return ftl.StringLiteral(esc_bs.sub(r"\\\1", val).translate(esc_cc))
     elif val.name != decl_name and val.name in decl:
         return expression(decl, decl[val.name], val.name)
     else:

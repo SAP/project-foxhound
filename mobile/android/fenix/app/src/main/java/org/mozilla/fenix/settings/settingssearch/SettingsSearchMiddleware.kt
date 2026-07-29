@@ -19,14 +19,15 @@ import mozilla.components.lib.state.Store
  *
  * @param fenixSettingsIndexer [SettingsIndexer] to use for indexing and querying settings.
  * @param navController [NavController] used for navigation.
- * @param recentSettingsSearchesRepository [RecentSettingsSearchesRepository] used for storing recent searches.
+ * @param recentSettingsSearchesRepository Optional [RecentSettingsSearchesRepository] for storing recent searches.
+ *   When null, recent search tracking is disabled.
  * @param scope [CoroutineScope] used for running long running operations in background.
  * @param dispatcher [CoroutineDispatcher] to use for performing background tasks.
  */
 class SettingsSearchMiddleware(
     private val fenixSettingsIndexer: SettingsIndexer,
     private val navController: NavController,
-    private val recentSettingsSearchesRepository: RecentSettingsSearchesRepository,
+    private val recentSettingsSearchesRepository: RecentSettingsSearchesRepository? = null,
     private val scope: CoroutineScope,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : Middleware<SettingsSearchState, SettingsSearchAction> {
@@ -42,7 +43,9 @@ class SettingsSearchMiddleware(
                 scope.launch(dispatcher) {
                     fenixSettingsIndexer.indexAllSettings()
                 }
-                scope.launch { observeRecentSearches(store) }
+                if (recentSettingsSearchesRepository != null) {
+                    observeRecentSearches(store, recentSettingsSearchesRepository)
+                }
             }
             is SettingsSearchAction.SearchQueryUpdated -> {
                 next(action)
@@ -68,8 +71,10 @@ class SettingsSearchMiddleware(
                     putBoolean("search_in_progress", true)
                 }
                 val fragmentId = searchItem.preferenceFileInformation.fragmentId
-                scope.launch(dispatcher) {
-                    recentSettingsSearchesRepository.addRecentSearchItem(searchItem)
+                if (recentSettingsSearchesRepository != null) {
+                    scope.launch(dispatcher) {
+                        recentSettingsSearchesRepository.addRecentSearchItem(searchItem)
+                    }
                 }
                 scope.launch {
                     navController.navigate(fragmentId, bundle)
@@ -78,8 +83,10 @@ class SettingsSearchMiddleware(
             }
             is SettingsSearchAction.ClearRecentSearchesClicked -> {
                 next(action)
-                scope.launch(dispatcher) {
-                    recentSettingsSearchesRepository.clearRecentSearches()
+                if (recentSettingsSearchesRepository != null) {
+                    scope.launch(dispatcher) {
+                        recentSettingsSearchesRepository.clearRecentSearches()
+                    }
                 }
             }
             else -> {
@@ -93,10 +100,14 @@ class SettingsSearchMiddleware(
      * Observes the recent searches repository and updates the store when the list of recent searches changes.
      *
      * @param store The [SettingsSearchStore] to dispatch the updates to.
+     * @param repository The [RecentSettingsSearchesRepository] to observe.
      */
-    private fun observeRecentSearches(store: Store<SettingsSearchState, SettingsSearchAction>) {
+    private fun observeRecentSearches(
+        store: Store<SettingsSearchState, SettingsSearchAction>,
+        repository: RecentSettingsSearchesRepository,
+    ) {
         scope.launch {
-            recentSettingsSearchesRepository.recentSearches.collect { recents ->
+            repository.recentSearches.collect { recents ->
                 store.dispatch(SettingsSearchAction.RecentSearchesUpdated(recents))
             }
         }

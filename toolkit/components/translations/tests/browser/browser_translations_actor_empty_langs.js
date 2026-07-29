@@ -24,9 +24,9 @@ add_task(async function test_detected_language() {
   });
 
   async function getDetectedLanguagesFor(langTag) {
-    await ContentTask.spawn(
+    await SpecialPowers.spawn(
       tab.linkedBrowser,
-      { langTag },
+      [{ langTag }],
       function changeLanguage({ langTag }) {
         content.document.body.parentNode.setAttribute("lang", langTag);
       }

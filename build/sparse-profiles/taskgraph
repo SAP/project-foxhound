@@ -46,9 +46,7 @@ path:browser/components/asrouter/package.json
 path:browser/components/asrouter/package-lock.json
 path:tools/terser/package.json
 path:tools/terser/package-lock.json
-path:remote/test/puppeteer/package.json
-path:remote/test/puppeteer/package-lock.json
-path:remote/test/puppeteer/test/package.json
+path:remote/test/puppeteer/
 
 # for new-style try pushes
 path:try_task_config.json
@@ -82,6 +80,7 @@ path:config/milestone.txt
 path:gradle/
 path:mobile/android/config/
 glob:**/*.gradle
+glob:**/*.gradle.kts
 glob:**/gradle.properties
 
 # for action-task building
@@ -105,6 +104,9 @@ path:third_party/abseil-cpp/
 path:third_party/googletest/
 path:third_party/zucchini/
 path:tools/zucchini/
+
+# for the marannon toolchain task + update-verify docker image
+path:tools/update-verify/
 
 # for the minidump-stackwalk toolchain task
 path:toolkit/crashreporter

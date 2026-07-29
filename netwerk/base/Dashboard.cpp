@@ -10,7 +10,9 @@
 #include "mozilla/net/HttpInfo.h"
 #include "mozilla/net/HTTPSSVC.h"
 #include "mozilla/net/SocketProcessParent.h"
+#include "AlternateServices.h"
 #include "nsHttp.h"
+#include "nsHttpHandler.h"
 #include "nsICancelable.h"
 #include "nsIDNSListener.h"
 #include "nsIDNSService.h"
@@ -155,20 +157,6 @@ class ConnectionData : public nsITransportEventSink,
 
 NS_IMPL_ISUPPORTS(ConnectionData, nsITransportEventSink, nsITimerCallback,
                   nsINamed)
-
-class RcwnData : public nsISupports {
-  virtual ~RcwnData() = default;
-
- public:
-  NS_DECL_THREADSAFE_ISUPPORTS
-
-  RcwnData() = default;
-
-  nsMainThreadPtrHandle<nsINetDashboardCallback> mCallback;
-  nsIEventTarget* mEventTarget{nullptr};
-};
-
-NS_IMPL_ISUPPORTS0(RcwnData)
 
 NS_IMETHODIMP
 ConnectionData::OnTransportStatus(nsITransport* aTransport, nsresult aStatus,
@@ -528,7 +516,7 @@ Dashboard::RequestSockets(nsINetDashboardCallback* aCallback) {
                   socketData),
               NS_DISPATCH_NORMAL);
         },
-        [self](const mozilla::ipc::ResponseRejectReason) {});
+        [](const mozilla::ipc::ResponseRejectReason) {});
     return NS_OK;
   }
 
@@ -579,6 +567,8 @@ nsresult Dashboard::GetSockets(SocketData* aSocketData) {
     CopyASCIItoUTF16(socketData->mData[i].type, mSocket.mType);
     mSocket.mSent = (double)socketData->mData[i].sent;
     mSocket.mReceived = (double)socketData->mData[i].received;
+    CopyASCIItoUTF16(socketData->mData[i].originAttributesSuffix,
+                     mSocket.mOriginAttributesSuffix);
     dict.mSent += socketData->mData[i].sent;
     dict.mReceived += socketData->mData[i].received;
   }
@@ -618,14 +608,19 @@ Dashboard::RequestHttpConnections(nsINetDashboardCallback* aCallback) {
                   &Dashboard::GetHttpConnections, httpData),
               NS_DISPATCH_NORMAL);
         },
-        [self](const mozilla::ipc::ResponseRejectReason) {});
+        [](const mozilla::ipc::ResponseRejectReason) {});
     return NS_OK;
   }
 
-  gSocketTransportService->Dispatch(NewRunnableMethod<RefPtr<HttpData>>(
-                                        "net::Dashboard::GetHttpDispatch", this,
-                                        &Dashboard::GetHttpDispatch, httpData),
-                                    NS_DISPATCH_NORMAL);
+  nsCOMPtr<nsIEventTarget> target;
+  nsresult rv = gHttpHandler->GetSocketThreadTarget(getter_AddRefs(target));
+  if (NS_FAILED(rv) || !target) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  target->Dispatch(NewRunnableMethod<RefPtr<HttpData>>(
+                       "net::Dashboard::GetHttpDispatch", this,
+                       &Dashboard::GetHttpDispatch, httpData),
+                   NS_DISPATCH_NORMAL);
   return NS_OK;
 }
 
@@ -665,6 +660,8 @@ nsresult Dashboard::GetHttpConnections(HttpData* aHttpData) {
     connection.mPort = httpData->mData[i].port;
     CopyASCIItoUTF16(httpData->mData[i].httpVersion, connection.mHttpVersion);
     connection.mSsl = httpData->mData[i].ssl;
+    CopyASCIItoUTF16(httpData->mData[i].originAttributesSuffix,
+                     connection.mOriginAttributesSuffix);
 
     connection.mActive.Construct();
     connection.mIdle.Construct();
@@ -739,15 +736,19 @@ Dashboard::RequestHttp3ConnectionStats(nsINetDashboardCallback* aCallback) {
                   &Dashboard::GetHttp3ConnectionStats, data),
               NS_DISPATCH_NORMAL);
         },
-        [self](const mozilla::ipc::ResponseRejectReason) {});
+        [](const mozilla::ipc::ResponseRejectReason) {});
     return NS_OK;
   }
 
-  gSocketTransportService->Dispatch(
-      NewRunnableMethod<RefPtr<Http3ConnectionStatsData>>(
-          "net::Dashboard::GetHttp3ConnectionStatsDispatch", this,
-          &Dashboard::GetHttp3ConnectionStatsDispatch, data),
-      NS_DISPATCH_NORMAL);
+  nsCOMPtr<nsIEventTarget> target;
+  nsresult rv = gHttpHandler->GetSocketThreadTarget(getter_AddRefs(target));
+  if (NS_FAILED(rv) || !target) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  target->Dispatch(NewRunnableMethod<RefPtr<Http3ConnectionStatsData>>(
+                       "net::Dashboard::GetHttp3ConnectionStatsDispatch", this,
+                       &Dashboard::GetHttp3ConnectionStatsDispatch, data),
+                   NS_DISPATCH_NORMAL);
   return NS_OK;
 }
 
@@ -987,7 +988,7 @@ Dashboard::RequestDNSInfo(nsINetDashboardCallback* aCallback) {
                   &Dashboard::GetDNSCacheEntries, dnsData),
               NS_DISPATCH_NORMAL);
         },
-        [self](const mozilla::ipc::ResponseRejectReason) {});
+        [](const mozilla::ipc::ResponseRejectReason) {});
     return NS_OK;
   }
 
@@ -1117,61 +1118,6 @@ Dashboard::RequestDNSHTTPSRRLookup(const nsACString& aHost,
       nsIDNSService::RESOLVE_DEFAULT_FLAGS, nullptr, helper.get(),
       NS_GetCurrentThread(), attrs, getter_AddRefs(helper->mCancel));
   return rv;
-}
-
-NS_IMETHODIMP
-Dashboard::RequestRcwnStats(nsINetDashboardCallback* aCallback) {
-  RefPtr<RcwnData> rcwnData = new RcwnData();
-  rcwnData->mEventTarget = GetCurrentSerialEventTarget();
-  rcwnData->mCallback = new nsMainThreadPtrHolder<nsINetDashboardCallback>(
-      "nsINetDashboardCallback", aCallback, true);
-
-  return rcwnData->mEventTarget->Dispatch(
-      NewRunnableMethod<RefPtr<RcwnData>>("net::Dashboard::GetRcwnData", this,
-                                          &Dashboard::GetRcwnData, rcwnData),
-      NS_DISPATCH_NORMAL);
-}
-
-nsresult Dashboard::GetRcwnData(RcwnData* aData) {
-  AutoSafeJSContext cx;
-  mozilla::dom::RcwnStatus dict;
-
-  dict.mTotalNetworkRequests = gIOService->GetTotalRequestNumber();
-  dict.mRcwnCacheWonCount = gIOService->GetCacheWonRequestNumber();
-  dict.mRcwnNetWonCount = gIOService->GetNetWonRequestNumber();
-
-  uint32_t cacheSlow, cacheNotSlow;
-  CacheFileUtils::CachePerfStats::GetSlowStats(&cacheSlow, &cacheNotSlow);
-  dict.mCacheSlowCount = cacheSlow;
-  dict.mCacheNotSlowCount = cacheNotSlow;
-
-  dict.mPerfStats.Construct();
-  Sequence<mozilla::dom::RcwnPerfStats>& perfStats = dict.mPerfStats.Value();
-  uint32_t length = CacheFileUtils::CachePerfStats::LAST;
-  if (!perfStats.SetCapacity(length, fallible)) {
-    JS_ReportOutOfMemory(cx);
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
-  for (uint32_t i = 0; i < length; i++) {
-    CacheFileUtils::CachePerfStats::EDataType perfType =
-        static_cast<CacheFileUtils::CachePerfStats::EDataType>(i);
-    dom::RcwnPerfStats& elem = *perfStats.AppendElement(fallible);
-    elem.mAvgShort =
-        CacheFileUtils::CachePerfStats::GetAverage(perfType, false);
-    elem.mAvgLong = CacheFileUtils::CachePerfStats::GetAverage(perfType, true);
-    elem.mStddevLong =
-        CacheFileUtils::CachePerfStats::GetStdDev(perfType, true);
-  }
-
-  JS::Rooted<JS::Value> val(cx);
-  if (!ToJSValue(cx, dict, &val)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  aData->mCallback->OnDashboardDataAvailable(val);
-
-  return NS_OK;
 }
 
 void HttpConnInfo::SetHTTPProtocolVersion(HttpVersion pv) {
@@ -1321,6 +1267,67 @@ static void GetErrorString(nsresult rv, nsAString& errorString) {
   nsAutoCString errorCString;
   mozilla::GetErrorName(rv, errorCString);
   CopyUTF8toUTF16(errorCString, errorString);
+}
+
+NS_IMETHODIMP
+Dashboard::RequestAltSvcCache(nsINetDashboardCallback* aCallback) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  AutoSafeJSContext cx;
+  mozilla::dom::AltSvcCacheDict dict;
+  dict.mEntries.Construct();
+  Sequence<mozilla::dom::AltSvcMappingElement>& entries = dict.mEntries.Value();
+
+  if (!gHttpHandler) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  AltSvcCache* cache = gHttpHandler->AltServiceCache();
+  if (cache && cache->GetStoragePtr()) {
+    nsTArray<RefPtr<nsIDataStorageItem>> items;
+    nsresult rv = cache->GetStoragePtr()->GetAll(items);
+    if (NS_SUCCEEDED(rv)) {
+      int32_t epoch = cache->StorageEpoch();
+      for (const auto& item : items) {
+        nsAutoCString value;
+        rv = item->GetValue(value);
+        if (NS_FAILED(rv)) {
+          continue;
+        }
+
+        RefPtr<AltSvcMapping> mapping =
+            new AltSvcMapping(cache->GetStoragePtr(), epoch, value);
+        if (mapping->OriginHost().IsEmpty()) {
+          continue;
+        }
+
+        dom::AltSvcMappingElement* entry = entries.AppendElement(fallible);
+        if (!entry) {
+          JS_ReportOutOfMemory(cx);
+          return NS_ERROR_OUT_OF_MEMORY;
+        }
+
+        CopyASCIItoUTF16(mapping->OriginHost(), entry->mOriginHost);
+        entry->mOriginPort = mapping->OriginPort();
+        CopyASCIItoUTF16(mapping->AlternateHost(), entry->mAlternateHost);
+        entry->mAlternatePort = mapping->AlternatePort();
+        CopyASCIItoUTF16(mapping->NPNToken(), entry->mAlpn);
+        entry->mHttps = mapping->HTTPS();
+        entry->mValidated = mapping->Validated();
+        entry->mTtl = mapping->TTL();
+        nsAutoCString suffix;
+        mapping->GetOriginAttributes().CreateSuffix(suffix);
+        entry->mOriginAttributesSuffix = NS_ConvertUTF8toUTF16(suffix);
+      }
+    }
+  }
+
+  JS::Rooted<JS::Value> val(cx);
+  if (!ToJSValue(cx, dict, &val)) {
+    return NS_ERROR_FAILURE;
+  }
+  aCallback->OnDashboardDataAvailable(val);
+
+  return NS_OK;
 }
 
 }  // namespace net

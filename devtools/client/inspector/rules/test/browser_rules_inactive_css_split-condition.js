@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -26,5 +25,10 @@ add_task(async function () {
 
   await checkDeclarationIsActive(view, 1, { gap: "1em" });
   await toggleDeclaration(view, 2, { display: "grid" });
-  await checkDeclarationIsInactive(view, 1, { gap: "1em" });
+  await checkDeclarationIsInactive(
+    view,
+    1,
+    { gap: "1em" },
+    "inactive-css-not-grid-or-flex-container-or-multicol-container"
+  );
 });

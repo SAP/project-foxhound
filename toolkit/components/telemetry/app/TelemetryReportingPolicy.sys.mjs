@@ -79,6 +79,19 @@ export var Policy = {
     return TelemetryReportingPolicyImpl._showModal(data);
   },
   delayedSetup: async () => TelemetryReportingPolicyImpl._delayedSetup(),
+  // Windows and macOS are enabled through the default pref value in firefox.js
+  // and don't need a runtime opt in. Otherwise, TOU is only supported on
+  // official Mozilla Linux distributions. All other platforms are excluded both
+  // by the pref default in firefox.js and by this explicit Linux gate.
+  shouldEnableTOUAtRuntime: () => {
+    return (
+      AppConstants.platform === "linux" &&
+      Services.prefs
+        .getDefaultBranch(null)
+        .getCharPref("distribution.id", "")
+        .startsWith("mozilla")
+    );
+  },
 };
 
 /**
@@ -138,7 +151,7 @@ export var TelemetryReportingPolicy = {
    * It is dispatched when:
    *   1. The user accepts the Terms of Use (ToU), or
    *   2. The user has previously accepted the ToU, or
-   *   2. The user is not eligible to see the ToU. Example local builds and temporarily Linux.
+   *   2. The user is not eligible to see the ToU. Example local builds and non-official Linux distributions.
    */
   TELEMETRY_TOU_ACCEPTED_OR_INELIGIBLE: "telemetry-tou-accepted-or-ineligible",
   // Make this value accessible on TelemetryReportingPolicy
@@ -1259,6 +1272,10 @@ var TelemetryReportingPolicyImpl = {
     }
     this._nimbusVariables = lazy.NimbusFeatures.preonboarding.getAllVariables();
 
+    if (Policy.shouldEnableTOUAtRuntime()) {
+      this._nimbusVariables.enabled = null;
+    }
+
     if (this._nimbusVariables.enabled === null) {
       const preonboardingMessage =
         lazy.OnboardingMessageProvider.getPreonboardingMessages().find(
@@ -1341,7 +1358,7 @@ var TelemetryReportingPolicyImpl = {
       },
     };
 
-    SpecialMessageActions.handleAction(config, win);
+    SpecialMessageActions.handleAction(config, win.gBrowser.selectedBrowser);
     this._notificationInProgress = true;
 
     return true;

@@ -46,7 +46,7 @@ add_task(async function () {
       waitForLoad: true,
     },
     async function (browser) {
-      let loadedElements = await ContentTask.spawn(
+      let loadedElements = await SpecialPowers.spawn(
         browser,
         [],
         async function () {

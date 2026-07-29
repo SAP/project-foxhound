@@ -73,14 +73,12 @@ def add_notifications(config, jobs):
                 ])
 
             # Customize the email subject to include release name and build number
-            job.setdefault("extra", {}).update({
-                "notify": {
-                    "email": {
-                        "subject": subject,
-                    }
-                }
-            })
+            email_payload = {"subject": subject}
             if message:
-                job["extra"]["notify"]["email"]["content"] = message
+                email_payload["content"] = message
+            if "link" in notifications:
+                email_payload["link"] = notifications["link"]
+
+            job.setdefault("extra", {}).update({"notify": {"email": email_payload}})
 
         yield job

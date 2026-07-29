@@ -562,7 +562,6 @@ add_heuristic_tests([
       `,
     expectedResult: [
       {
-        invalid: true,
         default: {
           reason: "autocomplete",
         },
@@ -583,7 +582,6 @@ add_heuristic_tests([
       `,
     expectedResult: [
       {
-        invalid: true,
         default: {
           reason: "autocomplete",
           addressType: "shipping",

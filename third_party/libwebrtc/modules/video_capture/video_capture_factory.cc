@@ -20,7 +20,7 @@ namespace webrtc {
 scoped_refptr<VideoCaptureModule> VideoCaptureFactory::Create(
     [[maybe_unused]] const char* deviceUniqueIdUTF8) {
   return videocapturemodule::VideoCaptureImpl::Create(
-      Clock::GetRealTimeClockRaw(), deviceUniqueIdUTF8);
+      Clock::GetRealTimeClockOnlyUseForRelativeTime(), deviceUniqueIdUTF8);
 }
 
 scoped_refptr<VideoCaptureModule> VideoCaptureFactory::Create(
@@ -32,7 +32,7 @@ scoped_refptr<VideoCaptureModule> VideoCaptureFactory::Create(
   return nullptr;
 #else
   return videocapturemodule::VideoCaptureImpl::Create(
-      Clock::GetRealTimeClockRaw(), options, deviceUniqueIdUTF8);
+      Clock::GetRealTimeClockOnlyUseForRelativeTime(), options, deviceUniqueIdUTF8);
 #endif
 }
 

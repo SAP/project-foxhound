@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -1140,6 +1138,28 @@ class TestInterface : public nsISupports, public nsWrapperCache {
       const StringOrMaybeSharedArrayBuffer& foo);
   void passAllowSharedInt8ArrayOrInt16Array(
       const MaybeSharedInt8ArrayOrMaybeSharedInt16Array&);
+
+  void SetAllowLargeArrayBufferView(const ArrayBufferView&);
+  void GetAllowLargeArrayBufferView(JSContext*, JS::MutableHandle<JSObject*>);
+  void SetAllowLargeNullableArrayBufferView(const Nullable<ArrayBufferView>&);
+  void GetAllowLargeNullableArrayBufferView(JSContext*,
+                                            JS::MutableHandle<JSObject*>);
+  void SetAllowLargeArrayBuffer(const ArrayBuffer&);
+  void GetAllowLargeArrayBuffer(JSContext*, JS::MutableHandle<JSObject*>);
+  void SetAllowLargeNullableArrayBuffer(const Nullable<ArrayBuffer>&);
+  void GetAllowLargeNullableArrayBuffer(JSContext*,
+                                        JS::MutableHandle<JSObject*>);
+
+  void PassAllowLargeArrayBufferView(const ArrayBufferView&);
+  void PassAllowLargeNullableArrayBufferView(const Nullable<ArrayBufferView>&);
+  void PassAllowLargeArrayBuffer(const ArrayBuffer&);
+  void PassAllowLargeNullableArrayBuffer(const Nullable<ArrayBuffer>&);
+  void PassUnionAllowLargeArrayBuffer(const StringOrAllowLargeArrayBuffer& foo);
+
+  void SetAllowSharedAllowLargeArrayBufferView(const ArrayBufferView&);
+  void GetAllowSharedAllowLargeArrayBufferView(JSContext*,
+                                               JS::MutableHandle<JSObject*>);
+  void PassAllowSharedAllowLargeArrayBufferView(const ArrayBufferView&);
 
   void GetReflectedHTMLAttributeReturningFrozenArray(
       bool*, Nullable<nsTArray<RefPtr<Element>>>&) const;

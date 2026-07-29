@@ -25,6 +25,8 @@ import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
@@ -45,7 +47,6 @@ import org.mozilla.fenix.databinding.FragmentTrackingProtectionBinding
 import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.ext.openToBrowser
 import org.mozilla.fenix.ext.requireComponents
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.settings.SupportUtils
 import com.google.android.material.R as materialR
 
@@ -100,7 +101,7 @@ class TrackingProtectionPanelDialogFragment : AppCompatDialogFragment(), UserInt
             )
         }
         trackingProtectionInteractor = TrackingProtectionPanelInteractor(
-            context = requireContext(),
+            components = requireComponents,
             fragment = this,
             store = protectionsStore,
             scope = viewLifecycleOwner.lifecycleScope,
@@ -116,7 +117,7 @@ class TrackingProtectionPanelDialogFragment : AppCompatDialogFragment(), UserInt
         trackingProtectionView =
             TrackingProtectionPanelView(
                 containerView = binding.fragmentTp,
-                settings = requireContext().settings(),
+                settings = requireComponents.settings,
                 interactor = trackingProtectionInteractor,
             )
         tab?.let { updateTrackers(it) }
@@ -140,8 +141,8 @@ class TrackingProtectionPanelDialogFragment : AppCompatDialogFragment(), UserInt
         super.onViewCreated(view, savedInstanceState)
         val store = requireComponents.core.store
 
-        observeUrlChange(store)
-        observeTrackersChange(store)
+        observeUrlChange(store, mainDispatcher = Dispatchers.Main)
+        observeTrackersChange(store, mainDispatcher = Dispatchers.Main)
         protectionsStore.observe(view) {
             viewLifecycleOwner.lifecycleScope.launch {
                 withStarted {
@@ -219,8 +220,8 @@ class TrackingProtectionPanelDialogFragment : AppCompatDialogFragment(), UserInt
     }
 
     @VisibleForTesting
-    internal fun observeUrlChange(store: BrowserStore) {
-        consumeFlow(store) { flow ->
+    internal fun observeUrlChange(store: BrowserStore, mainDispatcher: CoroutineDispatcher) {
+        consumeFlow(store, mainDispatcher = mainDispatcher) { flow ->
             flow.mapNotNull { state ->
                 state.findTabOrCustomTab(provideCurrentTabId())
             }.distinctUntilChangedBy { tab -> tab.content.url }
@@ -234,8 +235,8 @@ class TrackingProtectionPanelDialogFragment : AppCompatDialogFragment(), UserInt
     internal fun provideCurrentTabId(): String = args.sessionId
 
     @VisibleForTesting
-    internal fun observeTrackersChange(store: BrowserStore) {
-        consumeFlow(store) { flow ->
+    internal fun observeTrackersChange(store: BrowserStore, mainDispatcher: CoroutineDispatcher) {
+        consumeFlow(store, mainDispatcher = mainDispatcher) { flow ->
             flow.mapNotNull { state ->
                 state.findTabOrCustomTab(provideCurrentTabId())
             }.ifAnyChanged { tab ->

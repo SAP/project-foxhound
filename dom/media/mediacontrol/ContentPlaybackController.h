@@ -49,12 +49,15 @@ class MOZ_STACK_CLASS ContentPlaybackController {
   void SkipAd();
   void Stop();
   void SeekTo(double aSeekTime, bool aFastSeek);
+  void SetVolume(double aVolume);
+  void Mute();
+  void Unmute();
 
  private:
   void NotifyContentMediaControlKeyReceiver(
-      MediaControlKey aKey, Maybe<SeekDetails> aDetails = Nothing());
+      MediaControlKey aKey, const MediaControlActionParams& aParams = {});
   void NotifyMediaSession(MediaSessionAction aAction);
-  void NotifyMediaSession(const MediaSessionActionDetails& aDetails);
+  void NotifyMediaSession(const MediaSessionActionDetails& aParams);
   void NotifyMediaSessionWhenActionIsSupported(MediaSessionAction aAction);
   bool IsMediaSessionActionSupported(MediaSessionAction aAction) const;
   Maybe<uint64_t> GetActiveMediaSessionId() const;

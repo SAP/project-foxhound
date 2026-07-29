@@ -11,21 +11,21 @@ suites:
         tests:
             ARES6: >
                 - contact: :jandem and SpiderMonkey Team
-                - source: `ARES-6 <https://searchfox.org/mozilla-central/source/third_party/webkit/PerformanceTests/ARES-6>`__
+                - source: `ARES-6 <https://searchfox.org/firefox-main/source/third_party/webkit/PerformanceTests/ARES-6>`__
                 - type: `Page load`_
                 - data: 6 cycles of the entire benchmark
-                    * `geometric mean <https://searchfox.org/mozilla-central/source/testing/talos/talos/output.py#259>`__ self reported from the benchmark
+                    * `geometric mean <https://searchfox.org/firefox-main/source/testing/talos/talos/output.py#259>`__ self reported from the benchmark
                 - **Lower is better**
                 - unit: geometric mean / benchmark score
             JetStream: >
                 - contact: :jandem and SpiderMonkey Team
-                - source: `jetstream.manifest <https://searchfox.org/mozilla-central/source/testing/talos/talos/tests/jetstream/jetstream.manifest>`__ and jetstream.zip from tooltool
+                - source: `jetstream.manifest <https://searchfox.org/firefox-main/source/testing/talos/talos/tests/jetstream/jetstream.manifest>`__ and jetstream.zip from tooltool
                 - type: `Page load`_
                 - measuring: JavaScript performance
                 - reporting: geometric mean from the benchmark
                 - data: internal benchmark
                     * suite: `geometric
-                        mean <https://searchfox.org/mozilla-central/source/testing/talos/talos/output.py#259>`__
+                        mean <https://searchfox.org/firefox-main/source/testing/talos/talos/output.py#259>`__
                         provided by the benchmark
                 - description:
                       | This is the `JetStream <http://browserbench.org/JetStream/in-depth.html>`__
@@ -424,7 +424,7 @@ suites:
                     * 35;complicated.netmonitor.close.DAMP;1042.98;920.21;928.19;940.38;950.25;1043.61;1078.16;1077.38;1132.91;1095.05;1176.31;1256.83;1143.14;1234.61;1248.97;1242.29;1378.63;1312.74;1371.48;1373.15;1544.55;1422.51;1549.48;1616.55;1506.58
             displaylist_mutate: >
                 - contact: :miko and gfx
-                - source: `displaylist_mutate.html <https://searchfox.org/mozilla-central/source/testing/talos/talos/tests/layout/benchmarks/displaylist_mutate.html>`__
+                - source: `displaylist_mutate.html <https://searchfox.org/firefox-main/source/testing/talos/talos/tests/layout/benchmarks/displaylist_mutate.html>`__
                 - type: `Page load`_
                 - data: we load the displaylist_mutate.html page five times, measuring pageload each time, generating 5 data points.
                 - summarization:
@@ -583,7 +583,7 @@ suites:
                     * 13;stanford-crypto-sha256-iterative;86;85;83;84;86;85;85;86;83;83
             motionmark_animometer: >
                 - contact: :b0bh00d, :jeffm, and gfx
-                - source: `source <https://searchfox.org/mozilla-central/source/third_party/webkit/PerformanceTests/MotionMark>`__ `manifests <https://searchfox.org/mozilla-central/source/testing/talos/talos/tests/motionmark>`__
+                - source: `source <https://searchfox.org/firefox-main/source/third_party/webkit/PerformanceTests/MotionMark>`__ `manifests <https://searchfox.org/firefox-main/source/testing/talos/talos/tests/motionmark>`__
                 - type: `Page load`_
                 - measuring: benchmark measuring the time to animate complex scenes
                 - summarization:
@@ -595,7 +595,7 @@ suites:
                 - contact: :jrmuizel and graphics(gfx) team
             motionmark_webgl: >
                 - contact: :jgilbert and gfx
-                - source: `source <https://searchfox.org/mozilla-central/source/third_party/webkit/PerformanceTests/MotionMark>`__ `manifest <https://searchfox.org/mozilla-central/source/testing/talos/talos/tests/motionmark/webgl.manifest>`__
+                - source: `source <https://searchfox.org/firefox-main/source/third_party/webkit/PerformanceTests/MotionMark>`__ `manifest <https://searchfox.org/firefox-main/source/testing/talos/talos/tests/motionmark/webgl.manifest>`__
                 - type: `Page load`_
                 - measuring: Draw call performance in WebGL
                 - summarization:
@@ -686,7 +686,7 @@ suites:
                     * 86.72500000000001;95.665;100.67;101.095;94.32;91.87
             rasterflood_gradient: >
                 - contact: :jrmuizel, :jimm, and gfx
-                - source: `rasterflood_gradient.html <https://searchfox.org/mozilla-central/source/testing/talos/talos/tests/gfx/benchmarks/rasterflood_gradient.html>`__
+                - source: `rasterflood_gradient.html <https://searchfox.org/firefox-main/source/testing/talos/talos/tests/gfx/benchmarks/rasterflood_gradient.html>`__
                 - type: `Page load`_
                 - data: we load the rasterflood_gradient.html page ten times, computing a score each time, generating 10 data points.
                 - summarization:
@@ -707,7 +707,7 @@ suites:
                       will affect this benchmark.
             rasterflood_svg: >
                 - contact: :jrmuizel, :jimm, and gfx
-                - source: `rasterflood_svg.html <https://searchfox.org/mozilla-central/source/testing/talos/talos/tests/gfx/benchmarks/rasterflood_svg.html>`__
+                - source: `rasterflood_svg.html <https://searchfox.org/firefox-main/source/testing/talos/talos/tests/gfx/benchmarks/rasterflood_svg.html>`__
                 - type: `Page load`_
                 - data: we load the rasterflood_svg.html page ten times, measuring pageload each time, generating 10 data points.
                 - summarization:
@@ -1189,6 +1189,8 @@ suites:
                     * downscale.html;10.676522633744854;10.82;10.79;10.41;10.75;10.91;10.52;10.61;10.50;10.55;10.80;10.17;10.68;10.41;10.42;10.41;10.58;10.28;10.56;10.66;10.68;10.47;10.60;10.61;10.26
                     * 4;iframe.svg;13.82;14.87;14.78;14.35;14.73;14.50;14.15;14.46;14.80;14.48;15.10;14.93;14.77;14.52;14.08;15.01;14.58;14.52;15.23;14.35;14.72;14.28;14.30;14.27;14.96
                     * 5;reader.htm;10.72;10.62;10.23;10.48;10.42;10.64;10.40;10.40;10.14;10.60;10.51;10.36;10.57;10.41;10.52;10.75;10.19;10.72;10.44;9.75;10.49;10.07;10.54;10.46;10.44
+            tscrollx_paint_skip: >
+                - TODO: Add a description. See this bug: https://bugzilla.mozilla.org/show_bug.cgi?id=2036344
             tsvg_static: >
                 - contact: :jwatt, :dholbert
                 - source: `svg_static <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/tests/svg_static/>`__

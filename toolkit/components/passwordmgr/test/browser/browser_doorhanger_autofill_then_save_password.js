@@ -78,11 +78,11 @@ async function test_save_change({
         "passwordmgr/test/browser/form_basic.html",
     },
     async function (browser) {
-      await SimpleTest.promiseFocus(browser.ownerGlobal);
+      await SimpleTest.promiseFocus(browser.documentGlobal);
 
-      await ContentTask.spawn(
+      await SpecialPowers.spawn(
         browser,
-        { oldUsername, oldPassword },
+        [{ oldUsername, oldPassword }],
         async function awaitAutofill({ oldUsername, oldPassword }) {
           await ContentTaskUtils.waitForCondition(
             () =>
@@ -130,9 +130,9 @@ async function test_save_change({
           .map(action => action.setPassword)
           .find(username => !!username) ?? oldPassword;
 
-      await ContentTask.spawn(
+      await SpecialPowers.spawn(
         browser,
-        { expectedUsername, expectedPassword },
+        [{ expectedUsername, expectedPassword }],
         async function awaitAutofill({ expectedUsername, expectedPassword }) {
           info("Validating updated fields");
           Assert.equal(

@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 // Any copyright is dedicated to the Public Domain.
 // http://creativecommons.org/publicdomain/zero/1.0/
 "use strict";
@@ -80,10 +79,7 @@ add_task(async function test_pkcs11_module() {
   ok(testClientCertificate, "test module should expose rsa client certificate");
 
   // Check that listing the slots for the test module works.
-  let testModuleSlotNames = Array.from(
-    testModule.listSlots(),
-    slot => slot.name
-  );
+  let testModuleSlotNames = Array.from(testModule.slots, slot => slot.name);
   testModuleSlotNames.sort();
   const expectedSlotNames = [
     "Empty PKCS11 Slot",

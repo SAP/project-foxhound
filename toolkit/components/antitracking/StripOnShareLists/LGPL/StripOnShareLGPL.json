@@ -94,7 +94,7 @@
     ]
   },
   "youtube": {
-    "queryParams": ["si", "feature", "kw", "pp"],
+    "queryParams": ["si", "is", "feature", "kw", "pp"],
     "origins": ["www.youtube.com", "youtube.com", "m.youtube.com", "youtu.be"]
   },
   "carousell": {

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -102,9 +101,7 @@ const char* ToChar(EventMessage aEventMessage);
  * Event class IDs
  */
 
-using EventClassIDType = uint8_t;
-
-enum EventClassID : EventClassIDType {
+enum EventClassID : uint8_t {
 // The event class name will be:
 //   eBasicEventClass for WidgetEvent
 //   eFooEventClass for WidgetFooEvent or InternalFooEvent
@@ -115,10 +112,19 @@ enum EventClassID : EventClassIDType {
 
 #undef NS_EVENT_CLASS
 #undef NS_ROOT_EVENT_CLASS
-  eEventClassID_MaxValue
+  eEventClassUninitialized,
 };
 
 const char* ToChar(EventClassID aEventClassID);
+
+/**
+ * Return true if aMessage is a valid EventMessage value for aClassID when an
+ * event is read from another process.  This is used to reject events whose
+ * mMessage/mClass combination is inconsistent and therefore likely tampered
+ * with by a compromised content process.
+ */
+[[nodiscard]] bool IsValidMessageForIPC(EventMessage aMessage,
+                                        EventClassID aClassID);
 
 typedef uint16_t Modifiers;
 

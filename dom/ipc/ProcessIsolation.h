@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,6 +27,13 @@ constexpr nsLiteralCString kHighValueHasSavedLoginPermission =
     "highValueHasSavedLogin"_ns;
 constexpr nsLiteralCString kHighValueIsLoggedInPermission =
     "highValueIsLoggedIn"_ns;
+
+/**
+ * Given a specific set of BrowsingContext origin attributes, get a shared "web"
+ * process which should be used for loading shared content.
+ */
+nsCString SharedWebRemoteType(const OriginAttributes& aAttrs,
+                              bool aDisableJit = false);
 
 // NavigationIsolationOptions is passed through the methods to store the state
 // of the possible process and/or browsing context change.
@@ -76,6 +81,20 @@ struct WorkerIsolationOptions {
 Result<WorkerIsolationOptions, nsresult> IsolationOptionsForWorker(
     nsIPrincipal* aPrincipal, WorkerKind aWorkerKind,
     const nsACString& aCurrentRemoteType, bool aUseRemoteSubframes);
+
+/**
+ * Given a URI being loaded, and some relevant context, predict what remote type
+ * the load will complete in. The preferred remote type will be used in cases
+ * where the process to load in would otherwise be ambiguous, such as when
+ * loading documents like `about:blank`.
+ *
+ * This should generally only be used for opening new tabs as requested by
+ * frontend JS, and should not be used as part of navigation. The remote types
+ * selected by this method are not used to enforce security invariants.
+ */
+Result<nsCString, nsresult> PredictRemoteTypeForURI(
+    nsIURI* aURI, const OriginAttributes& aOriginAttributes,
+    const nsACString& aPreferredRemoteType, bool aUseRemoteSubframes);
 
 /**
  * Adds a `highValue` permission to the permissions database, and make loads of

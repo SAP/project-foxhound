@@ -155,6 +155,10 @@ export class MessageHandlerFrameParent extends JSWindowActorParent {
 
   async #handleSendCommandMessage(messageData) {
     const { sessionId, command } = messageData;
+
+    // Flag the command as coming from windowglobal modules / content processes.
+    command.fromContentProcess = true;
+
     const messageHandler =
       lazy.RootMessageHandlerRegistry.getExistingMessageHandler(sessionId);
     try {

@@ -1,7 +1,7 @@
 "use strict";
 
 const BOUNDARY = "boundary";
-const JSON = `Content-Type: application/vnd.mozilla.json.view
+const JSON_DATA = `Content-Type: application/vnd.mozilla.json.view
 
 { "hello": "world" }`;
 
@@ -22,7 +22,7 @@ async function handleRequest(request, response) {
   response.setStatusLine(request.httpVersion, "200", "OK");
 
   response.write(`--${BOUNDARY}\n`);
-  response.write(`${JSON}\n`);
+  response.write(`${JSON_DATA}\n`);
   response.write(`--${BOUNDARY}\n`);
 
   await sleep(1000);

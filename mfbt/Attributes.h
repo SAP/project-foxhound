@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +6,10 @@
 
 #ifndef mozilla_Attributes_h
 #define mozilla_Attributes_h
+
+#ifdef __cplusplus
+#  include <version>  // IWYU pragma: keep(__GLIBCXX__ lookup)
+#endif
 
 /*
  * MOZ_ALWAYS_INLINE is a macro which expands to tell the compiler that the
@@ -485,6 +487,37 @@
 #endif
 
 /**
+ * MOZ_REINITIALIZES tells static analyser that a call to the associated
+ * method leave it in an initialized state, typically after a std::move.
+ */
+#if defined(__clang__) && defined(__has_cpp_attribute)
+#  if __has_cpp_attribute(clang::reinitializes)
+#    define MOZ_REINITIALIZES [[clang::reinitializes]]
+#  else
+#    define MOZ_REINITIALIZES /* nothing */
+#  endif
+#else
+#  define MOZ_REINITIALIZES /* nothing */
+#endif
+
+/**
+ * MOZ_NULL_AFTER_MOVE indicates that the associated type behaves as
+ * std::unique_ptr once being moved, i.e. it's considered empty/null, and only
+ * calls to opererator*(), operator-> and operator[]() are reported by static
+ * analysis as invalid use-after-move.
+ *
+ * See:
+ * https://clang.llvm.org/extra/clang-tidy/checks/bugprone/use-after-move.html#use
+ */
+#if defined(__clang__)
+#  define MOZ_NULL_AFTER_MOVE                                  \
+    [[clang::annotate("clang-tidy", "bugprone-use-after-move", \
+                      "null_after_move")]]
+#else
+#  define MOZ_NULL_AFTER_MOVE /* nothing */
+#endif
+
+/**
  * MOZ_STANDALONE_DEBUG causes complete debug information to be emitted
  * for a record type when clang would otherwise try to elide some of it.
  * This helps certain third party debugging tools introspect types.
@@ -741,6 +774,11 @@
  *
  *   Use of this annotation is discouraged when a strong reference or one of
  *   the above two annotations can be used instead.
+ * MOZ_NON_TERMINATED_STRING: Applies to function declarations.  Indicates that
+ *   the return value is a character pointer that is not null-terminated.
+ *   Makes it a compile time error to pass the return value of such a function
+ *   as an argument to a printf-like function (one annotated with
+ *   MOZ_FORMAT_PRINTF), since printf %s expects null-terminated input.
  * MOZ_NO_ADDREF_RELEASE_ON_RETURN: Applies to function declarations.  Makes it
  *   a compile time error to call AddRef or Release on the return value of a
  *   function.  This is intended to be used with operator->() of our smart
@@ -810,6 +848,16 @@
  *   indicate that is has been looked at, but it did not need any
  *   MOZ_GUARDED_BY()/REQUIRES()/etc (and thus static analysis knows it can
  * ignore this Mutex/Monitor/etc)
+ * MOZ_ENUM_SERIALIZER_ALLOW_SENTINEL_UPPER_BOUND: Applies to ParamTraits
+ *   specializations that inherit from ContiguousEnumSerializerInclusive.
+ *   Suppresses the EnumSerializer checker warning about including a sentinel
+ *   enumerator (e.g. one named *_END, *Count, *Invalid) as a valid serialized
+ *   value. Use only when the sentinel is genuinely a valid value to send.
+ * MOZ_ENUM_SERIALIZER_ALLOW_MIN_MISMATCH: Applies to ParamTraits
+ *   specializations that inherit from ContiguousEnumSerializer[Inclusive].
+ *   Suppresses the EnumSerializer checker warning about the min template
+ *   argument not matching the first (lowest-valued) enumerator. Use when
+ *   deliberately excluding lower enumerators from being serialized.
  */
 
 // gcc emits a nuisance warning -Wignored-attributes because attributes do not
@@ -869,6 +917,8 @@
 #    define MOZ_OWNING_REF __attribute__((annotate("moz_owning_ref")))
 #    define MOZ_NON_OWNING_REF __attribute__((annotate("moz_non_owning_ref")))
 #    define MOZ_UNSAFE_REF(reason) __attribute__((annotate("moz_unsafe_ref")))
+#    define MOZ_NON_TERMINATED_STRING \
+      __attribute__((annotate("moz_non_terminated_string")))
 #    define MOZ_NO_ADDREF_RELEASE_ON_RETURN \
       __attribute__((annotate("moz_no_addref_release_on_return")))
 #    define MOZ_NEEDS_NO_VTABLE_TYPE \
@@ -887,6 +937,11 @@
 #    define MOZ_INIT_OUTSIDE_CTOR
 #    define MOZ_IS_CLASS_INIT
 #    define MOZ_NON_PARAM __attribute__((annotate("moz_non_param")))
+#    define MOZ_ENUM_SERIALIZER_ALLOW_SENTINEL_UPPER_BOUND \
+      __attribute__((                                      \
+          annotate("moz_enum_serializer_allow_sentinel_upper_bound")))
+#    define MOZ_ENUM_SERIALIZER_ALLOW_MIN_MISMATCH \
+      __attribute__((annotate("moz_enum_serializer_allow_min_mismatch")))
 #    define MOZ_REQUIRED_BASE_METHOD \
       __attribute__((annotate("moz_required_base_method")))
 #    define MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG \
@@ -905,6 +960,16 @@
 #      define MOZ_ANNOTATED   /* nothing */
 #      define MOZ_RUNINIT     /* nothing */
 #      define MOZ_GLOBINIT    /* nothing */
+#    endif
+
+/*
+ * Should be constinit per C++20 standard, but we sometimes link with an older
+ * libstdc++
+ */
+#    if defined(__GLIBCXX__) && (__GLIBCXX__ <= 20230707)
+#      define MOZ_GLIBCXX_CONSTINIT MOZ_RUNINIT
+#    else
+#      define MOZ_GLIBCXX_CONSTINIT constinit
 #    endif
 
 /*
@@ -928,6 +993,8 @@
 #    define MOZ_STATIC_CLASS                                /* nothing */
 #    define MOZ_RUNINIT                                     /* nothing */
 #    define MOZ_GLOBINIT                                    /* nothing */
+#    define MOZ_GLIBCXX_CONSTINIT                           /* nothing */
+#    define MOZ_RELEASE_CONSTINIT                           /* nothing */
 #    define MOZ_STATIC_LOCAL_CLASS                          /* nothing */
 #    define MOZ_STACK_CLASS                                 /* nothing */
 #    define MOZ_NONHEAP_CLASS                               /* nothing */
@@ -945,6 +1012,7 @@
 #    define MOZ_OWNING_REF                                  /* nothing */
 #    define MOZ_NON_OWNING_REF                              /* nothing */
 #    define MOZ_UNSAFE_REF(reason)                          /* nothing */
+#    define MOZ_NON_TERMINATED_STRING                       /* nothing */
 #    define MOZ_NO_ADDREF_RELEASE_ON_RETURN                 /* nothing */
 #    define MOZ_NEEDS_NO_VTABLE_TYPE                        /* nothing */
 #    define MOZ_NON_MEMMOVABLE                              /* nothing */
@@ -955,6 +1023,8 @@
 #    define MOZ_INIT_OUTSIDE_CTOR                           /* nothing */
 #    define MOZ_IS_CLASS_INIT                               /* nothing */
 #    define MOZ_NON_PARAM                                   /* nothing */
+#    define MOZ_ENUM_SERIALIZER_ALLOW_SENTINEL_UPPER_BOUND  /* nothing */
+#    define MOZ_ENUM_SERIALIZER_ALLOW_MIN_MISMATCH          /* nothing */
 #    define MOZ_NON_AUTOABLE                                /* nothing */
 #    define MOZ_REQUIRED_BASE_METHOD                        /* nothing */
 #    define MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG      /* nothing */

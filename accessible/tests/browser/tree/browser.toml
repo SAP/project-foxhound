@@ -44,6 +44,9 @@ skip-if = [
 ["browser_searchbar.js"]
 
 ["browser_select.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2034604
+]
 
 ["browser_shadowdom.js"]
 

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright 2019 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -235,6 +233,14 @@ struct StackMap final {
     return calcBitmapNumElems(header.numMappedWords) * sizeof(bitmap[0]);
   }
 
+  inline uint32_t numMappedWords() const { return header.numMappedWords; }
+
+#ifdef JS_JITSPEW
+  // Dumps a summary of the stackmap to the JitSpew_Codegen channel.
+  // `codeOffset` is the intended assembler buffer offset for the map.
+  void show(uint32_t codeOffset) const;
+#endif
+
  private:
   static constexpr uint32_t bitsPerMappedWord = 2;
   static constexpr uint32_t mappedWordsPerBitmapElem =
@@ -351,6 +357,11 @@ class StackMaps {
 
   // Add a finalized stack map with a given code offset.
   [[nodiscard]] bool add(uint32_t codeOffset, StackMap* map) {
+#ifdef JS_JITSPEW
+    if (JitSpewEnabled(jit::JitSpew_Codegen)) {
+      map->show(codeOffset);
+    }
+#endif
     MOZ_ASSERT(!createdButNotFinalized_);
     MOZ_ASSERT(stackMaps_.contains(map));
     return codeOffsetToStackMap_.put(codeOffset, map);
@@ -550,7 +561,7 @@ void EmitWasmPreBarrierGuard(jit::MacroAssembler& masm, jit::Register instance,
 
 // Before storing a GC pointer value in memory, call out-of-line prebarrier
 // code. This assumes `PreBarrierReg` contains the address that will be
-// updated. On ARM64 it also assums that x28 (the PseudoStackPointer) has the
+// updated. On ARM64 it also assums that x20 (the PseudoStackPointer) has the
 // same value as SP.  `PreBarrierReg` is preserved by the barrier function.
 // Will clobber `scratch`.
 //
@@ -567,6 +578,25 @@ void EmitWasmPreBarrierCallImmediate(jit::MacroAssembler& masm,
 void EmitWasmPreBarrierCallIndex(jit::MacroAssembler& masm,
                                  jit::Register instance, jit::Register scratch1,
                                  jit::Register scratch2, jit::BaseIndex addr);
+
+#ifdef ENABLE_WASM_JSPI
+
+// Before resuming a continuation, jump to a 'resume barrier' if an incremental
+// GC is happening.
+void EmitWasmResumeBarrierGuard(jit::MacroAssembler& masm,
+                                jit::Register instance, jit::Register scratch,
+                                jit::Label* enterBarrier);
+
+// Call the 'resume barrier' for a continuation. This will clobber all
+// registers except for `instance`. `instance` must be InstanceReg.
+//
+// See [SMDOC] Wasm Stack Switching in WasmStacks.cpp for more information.
+//
+// This will immediately trace the continuation stack if it hasn't been already.
+void EmitWasmResumeBarrier(jit::MacroAssembler& masm, jit::Register instance,
+                           jit::Register cont);
+
+#endif  // ENABLE_WASM_JSPI
 
 // After storing a GC pointer value in memory, skip to `skipBarrier` if a
 // postbarrier is not needed.  If the location being set is in an

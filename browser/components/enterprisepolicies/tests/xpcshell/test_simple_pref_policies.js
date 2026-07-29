@@ -631,9 +631,37 @@ const POLICIES_TESTS = [
       },
     },
     lockedPrefs: {
-      "browser.newtabpage.activity-stream.feeds.system.topstories": false,
       "browser.newtabpage.activity-stream.feeds.section.topstories": false,
       "browser.newtabpage.activity-stream.showSponsored": false,
+    },
+  },
+
+  // POLICY: FirefoxHome (Weather sets both the legacy and Nova prefs)
+  {
+    policies: {
+      FirefoxHome: {
+        Weather: false,
+        Locked: true,
+      },
+    },
+    lockedPrefs: {
+      "browser.newtabpage.activity-stream.showWeather": false,
+      "browser.newtabpage.activity-stream.widgets.weather.enabled": false,
+    },
+  },
+
+  // POLICY: FirefoxHome (locking both sponsored settings locks the parent
+  // "Support Firefox" toggle to their combined value)
+  {
+    policies: {
+      FirefoxHome: {
+        SponsoredTopSites: false,
+        SponsoredStories: false,
+        Locked: true,
+      },
+    },
+    lockedPrefs: {
+      "browser.newtabpage.activity-stream.showSponsoredCheckboxes": false,
     },
   },
 
@@ -1058,6 +1086,33 @@ const POLICIES_TESTS = [
 
   {
     policies: {
+      Cookies: {
+        Behavior: "reject-tracker",
+        BehaviorPrivateBrowsing: "partition-foreign",
+        Locked: true,
+      },
+    },
+    lockedPrefs: {
+      "network.cookie.cookieBehavior": 4,
+      "network.cookie.cookieBehavior.pbmode": 5,
+    },
+  },
+  {
+    policies: {
+      Cookies: {
+        Behavior: "partition-foreign",
+        BehaviorPrivateBrowsing: "accept",
+        Locked: true,
+      },
+    },
+    lockedPrefs: {
+      "network.cookie.cookieBehavior": 5,
+      "network.cookie.cookieBehavior.pbmode": 0,
+    },
+  },
+
+  {
+    policies: {
       UseSystemPrintDialog: true,
     },
     lockedPrefs: {
@@ -1221,6 +1276,78 @@ const POLICIES_TESTS = [
     },
     lockedPrefs: {
       "security.webauthn.always_allow_direct_attestation": true,
+    },
+  },
+
+  // POLICY: XSLTEnabled
+  {
+    policies: {
+      XSLTEnabled: true,
+    },
+    lockedPrefs: {
+      "dom.xslt.enabled": true,
+    },
+  },
+  {
+    policies: {
+      XSLTEnabled: false,
+    },
+    lockedPrefs: {
+      "dom.xslt.enabled": false,
+    },
+  },
+
+  // AIControls - all features locked via Default.Locked
+  {
+    policies: {
+      AIControls: {
+        Default: { Value: "blocked", Locked: true },
+        Translations: { Value: "available" },
+        PDFAltText: { Value: "available" },
+        SmartTabGroups: { Value: "blocked" },
+        LinkPreviewKeyPoints: { Value: "available" },
+        SidebarChatbot: { Value: "blocked" },
+      },
+    },
+    lockedPrefs: {
+      "browser.ai.control.default": "blocked",
+      "browser.ai.control.translations": "available",
+      "browser.translations.enable": true,
+      "browser.ai.control.pdfjsAltText": "available",
+      "pdfjs.enableAltText": true,
+      "browser.ai.control.smartTabGroups": "blocked",
+      "browser.tabs.groups.smart.userEnabled": false,
+      "browser.ai.control.linkPreviewKeyPoints": "available",
+      "browser.ml.linkPreview.enabled": true,
+      "browser.ai.control.sidebarChatbot": "blocked",
+      "browser.ml.chat.enabled": false,
+      "browser.ml.chat.page": false,
+    },
+  },
+
+  // AIControls - per-feature locked override
+  {
+    policies: {
+      AIControls: {
+        Default: { Value: "blocked", Locked: true },
+        Translations: { Value: "available", Locked: false },
+      },
+    },
+    lockedPrefs: {
+      "browser.ai.control.default": "blocked",
+      "browser.ai.control.pdfjsAltText": "blocked",
+      "pdfjs.enableAltText": false,
+      "browser.ai.control.smartTabGroups": "blocked",
+      "browser.tabs.groups.smart.userEnabled": false,
+      "browser.ai.control.linkPreviewKeyPoints": "blocked",
+      "browser.ml.linkPreview.enabled": false,
+      "browser.ai.control.sidebarChatbot": "blocked",
+      "browser.ml.chat.enabled": false,
+      "browser.ml.chat.page": false,
+    },
+    unlockedPrefs: {
+      "browser.ai.control.translations": "available",
+      "browser.translations.enable": true,
     },
   },
 

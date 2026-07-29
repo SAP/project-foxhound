@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +9,7 @@
 
 #include "mozilla/Assertions.h"
 
-#include <cinttypes>
+#include <cstdint>
 #include <cmath>
 #include <limits>
 #include <type_traits>
@@ -21,7 +19,7 @@
 #endif
 
 #ifdef DEBUG
-#  include "fmt/format.h"
+#  include "fmt/format.h"  // IWYU pragma: keep(for fmt::)
 #  include <cstdio>
 #endif
 
@@ -50,7 +48,9 @@ namespace mozilla {
  */
 template <typename To, typename From>
 inline void BitwiseCast(const From aFrom, To* aResult) {
-  // FIXME: use std::bit_cast once we move to C++20
+  // FIXME: Use std::bit_cast for the value returning version once we move to
+  // C++20 and minimum GCC to 11. The outparam version can't use std::bit_cast
+  // because of the x87 stack issue described above.
 #if defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 11)
   *aResult = __builtin_bit_cast(To, aFrom);
 #else

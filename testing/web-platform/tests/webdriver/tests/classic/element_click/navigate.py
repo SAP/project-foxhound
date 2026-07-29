@@ -1,8 +1,8 @@
 import pytest
 from webdriver import error
 
-from tests.support.asserts import assert_success
-from tests.support.helpers import wait_for_new_handle
+from tests.support.classic.asserts import assert_success
+from tests.support.classic.helpers import wait_for_new_handle
 from tests.support.sync import Poll
 
 

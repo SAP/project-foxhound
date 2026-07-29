@@ -378,6 +378,103 @@
         await assertVisibilityChanges(group, true);
       });
 
+      add_task(async function testConfigHiddenDynamic() {
+        const SETTING = "setting-hidden-test";
+        Preferences.addSetting({
+          id: SETTING,
+          get: () => true,
+        });
+
+        let config = {
+          l10nId: GROUP_L10N_ID,
+          items: [{ l10nId: LABEL_L10N_ID, id: SETTING }],
+        };
+
+        let result = await renderTemplate(config);
+        let group = result.querySelector("setting-group");
+        ok(group, "setting-group is created");
+        ok(
+          BrowserTestUtils.isVisible(group),
+          "Group should be visible initially"
+        );
+        ok(
+          !group.hasAttribute("data-hidden-from-search"),
+          "Group should not be hidden from search initially"
+        );
+
+        config = {
+          l10nId: GROUP_L10N_ID,
+          items: [{ l10nId: LABEL_L10N_ID, id: SETTING }],
+          hidden: true,
+        };
+        result = await renderTemplate(config);
+        group = result.querySelector("setting-group");
+        ok(
+          BrowserTestUtils.isHidden(group),
+          "Group should be hidden when config.hidden is true"
+        );
+
+        config = {
+          l10nId: GROUP_L10N_ID,
+          items: [{ l10nId: LABEL_L10N_ID, id: SETTING }],
+          hidden: false,
+        };
+        result = await renderTemplate(config);
+        group = result.querySelector("setting-group");
+        ok(
+          BrowserTestUtils.isVisible(group),
+          "Group should be visible when config.hidden is false"
+        );
+
+        config = {
+          l10nId: GROUP_L10N_ID,
+          items: [{ l10nId: LABEL_L10N_ID, id: SETTING }],
+          hiddenFromSearch: true,
+        };
+        result = await renderTemplate(config);
+        group = result.querySelector("setting-group");
+        ok(
+          BrowserTestUtils.isVisible(group),
+          "Group should still be visible when only hiddenFromSearch is true"
+        );
+        is(
+          group.getAttribute("data-hidden-from-search"),
+          "true",
+          "Group should be hidden from search when config.hiddenFromSearch is true"
+        );
+
+        config = {
+          l10nId: GROUP_L10N_ID,
+          items: [{ l10nId: LABEL_L10N_ID, id: SETTING }],
+          hiddenFromSearch: false,
+        };
+        result = await renderTemplate(config);
+        group = result.querySelector("setting-group");
+        ok(
+          BrowserTestUtils.isVisible(group),
+          "Group should be visible when config.hiddenFromSearch is false"
+        );
+        ok(
+          !group.hasAttribute("data-hidden-from-search"),
+          "Group should not be hidden from search when config.hiddenFromSearch is false"
+        );
+
+        config = {
+          l10nId: GROUP_L10N_ID,
+          items: [{ l10nId: LABEL_L10N_ID, id: SETTING }],
+        };
+        group.config = config;
+        await group.updateComplete;
+        ok(
+          BrowserTestUtils.isVisible(group),
+          "Group should become visible when config.hidden becomes undefined"
+        );
+        ok(
+          !group.hasAttribute("data-hidden-from-search"),
+          "Group should not be hidden from search when config.hiddenFromSearch becomes undefined"
+        );
+      });
+
       add_task(async function testCommonControlProperties() {
         const SETTING = "setting-control-support-link";
         Preferences.addSetting({

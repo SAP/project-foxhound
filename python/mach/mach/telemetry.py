@@ -2,26 +2,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import configparser
 import importlib.util
 import os
-import subprocess
 import sys
-import urllib.parse as urllib_parse
 from pathlib import Path
-from textwrap import dedent
-
-import requests
-from mozbuild.base import BuildEnvironmentNotFoundException, MozbuildObject
-from mozbuild.telemetry import filter_args
-from mozfile import json
-from mozversioncontrol import InvalidRepoPath, get_repository_object
-
-from mach.config import ConfigSettings
-from mach.settings import MachSettings
-from mach.site import MozSiteMetadata
-from mach.telemetry_interface import GleanTelemetry, NoopTelemetry
-from mach.util import get_state_dir
 
 MACH_METRICS_PATH = (Path(__file__) / ".." / ".." / "metrics.yaml").resolve()
 SITE_DIR = (Path(__file__) / ".." / ".." / ".." / "sites").resolve()
@@ -35,6 +19,10 @@ def create_telemetry_from_environment(settings):
     to optimistically set telemetry data without needing to specifically handle the
     case where the current system doesn't support it.
     """
+
+    from mach.site import MozSiteMetadata
+    from mach.telemetry_interface import GleanTelemetry, NoopTelemetry
+    from mach.util import get_state_dir
 
     active_metadata = MozSiteMetadata.from_runtime()
     mach_sites = [site_path.stem for site_path in SITE_DIR.glob("*.txt")]
@@ -64,9 +52,11 @@ def create_telemetry_from_environment(settings):
 
 
 def report_invocation_metrics(telemetry, command):
+    from mozbuild.base import BuildEnvironmentNotFoundException, MozbuildObject
+    from mozbuild.telemetry import filter_args
+
     metrics = telemetry.metrics(MACH_METRICS_PATH)
     metrics.mach.command.set(command)
-    metrics.mach.duration.start()
 
     try:
         instance = MozbuildObject.from_environment()
@@ -106,6 +96,10 @@ def arcrc_path():
 
 
 def resolve_setting_from_arcconfig(topsrcdir: Path, setting):
+    import subprocess
+
+    from mozfile import json
+
     git_path = topsrcdir / ".git"
     if git_path.is_file():
         git_path = subprocess.check_output(
@@ -132,6 +126,11 @@ def resolve_setting_from_arcconfig(topsrcdir: Path, setting):
 
 
 def resolve_is_employee_by_credentials(topsrcdir: Path):
+    import urllib.parse as urllib_parse
+
+    import requests
+    from mozfile import json
+
     try:
         phabricator_uri = resolve_setting_from_arcconfig(topsrcdir, "phabricator.uri")
 
@@ -142,7 +141,8 @@ def resolve_is_employee_by_credentials(topsrcdir: Path):
             arcrc = json.load(arcrc_file)
 
         phabricator_token = (
-            arcrc.get("hosts", {})
+            arcrc
+            .get("hosts", {})
             .get(urllib_parse.urljoin(phabricator_uri, "api/"), {})
             .get("token")
         )
@@ -169,6 +169,8 @@ def resolve_is_employee_by_credentials(topsrcdir: Path):
 
 
 def resolve_is_employee_by_vcs(topsrcdir: Path):
+    from mozversioncontrol import InvalidRepoPath, get_repository_object
+
     try:
         vcs = get_repository_object(str(topsrcdir))
     except InvalidRepoPath:
@@ -212,6 +214,11 @@ def resolve_is_employee(topsrcdir: Path, state_dir: Path, settings):
 
 def record_is_employee_telemetry_setting(settings, state_dir, is_employee):
     """Records the is_employee field in the settings file."""
+    import configparser
+
+    from mach.config import ConfigSettings
+    from mach.settings import MachSettings
+
     settings_path = Path(state_dir) / "machrc"
     file_settings = ConfigSettings()
     file_settings.register_provider(MachSettings)
@@ -240,6 +247,11 @@ def record_telemetry_settings(
     state_dir: Path,
     is_enabled,
 ):
+    import configparser
+
+    from mach.config import ConfigSettings
+    from mach.settings import MachSettings
+
     # We want to update the user's machrc file. However, the main settings object
     # contains config from "$topsrcdir/machrc" (if it exists) which we don't want
     # to accidentally include. So, we have to create a brand new mozbuild-specific
@@ -277,6 +289,8 @@ If you have questions, please ask in #build on Matrix:
 
 
 def print_telemetry_message_employee():
+    from textwrap import dedent
+
     message_template = dedent(
         """
     %s
@@ -289,6 +303,8 @@ def print_telemetry_message_employee():
 
 
 def prompt_telemetry_message_contributor():
+    from textwrap import dedent
+
     while True:
         prompt = (
             dedent(

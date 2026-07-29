@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -98,7 +96,8 @@ bool js::temporal::WrapCalendarValue(JSContext* cx,
  */
 static constexpr bool IsISOLeapYear(int32_t year) {
   // Steps 1-5.
-  return (year % 4 == 0) && ((year % 100 != 0) || (year % 400 == 0));
+  int32_t d = (year % 100 != 0) ? 4 : 16;
+  return (year & (d - 1)) == 0;
 }
 
 /**
@@ -156,7 +155,7 @@ static int32_t WeekDay(int32_t day) {
  * ISODayOfWeek ( isoDate )
  */
 static int32_t ISODayOfWeek(const ISODate& isoDate) {
-  MOZ_ASSERT(ISODateWithinLimits(isoDate));
+  MOZ_ASSERT(IsValidISODate(isoDate));
 
   // Step 1.
   int32_t day = MakeDay(isoDate);
@@ -182,7 +181,7 @@ static constexpr auto FirstDayOfMonth(int32_t year) {
  * ISODayOfYear ( isoDate )
  */
 static int32_t ISODayOfYear(const ISODate& isoDate) {
-  MOZ_ASSERT(ISODateWithinLimits(isoDate));
+  MOZ_ASSERT(IsValidISODate(isoDate));
 
   const auto& [year, month, day] = isoDate;
 
@@ -247,7 +246,7 @@ static int64_t MakeTime(const Time& time) {
  * 21.4.1.12 MakeDay ( year, month, date )
  */
 int32_t js::temporal::MakeDay(const ISODate& date) {
-  MOZ_ASSERT(ISODateWithinLimits(date));
+  MOZ_ASSERT(IsValidISODate(date));
 
   return DayFromYear(date.year) + ISODayOfYear(date) - 1;
 }
@@ -256,7 +255,7 @@ int32_t js::temporal::MakeDay(const ISODate& date) {
  * 21.4.1.13 MakeDate ( day, time )
  */
 int64_t js::temporal::MakeDate(const ISODateTime& dateTime) {
-  MOZ_ASSERT(ISODateTimeWithinLimits(dateTime));
+  MOZ_ASSERT(IsValidISODateTime(dateTime));
 
   // Step 1 (Not applicable).
 
@@ -277,7 +276,7 @@ struct YearWeek final {
  * ISOWeekOfYear ( isoDate )
  */
 static YearWeek ISOWeekOfYear(const ISODate& isoDate) {
-  MOZ_ASSERT(ISODateWithinLimits(isoDate));
+  MOZ_ASSERT(IsValidISODate(isoDate));
 
   // Step 1.
   int32_t year = isoDate.year;
@@ -1082,97 +1081,13 @@ static UniqueICU4XDate CreateDateFrom(JSContext* cx, CalendarId calendarId,
       return date;
     }
 
+    case CalendarId::Chinese:
     case CalendarId::Dangi:
-    case CalendarId::Chinese: {
+    case CalendarId::Hebrew: {
       static_assert(CalendarHasLeapMonths(CalendarId::Chinese));
       static_assert(CalendarMonthsPerYear(CalendarId::Chinese) == 13);
       static_assert(CalendarHasLeapMonths(CalendarId::Dangi));
       static_assert(CalendarMonthsPerYear(CalendarId::Dangi) == 13);
-
-      MOZ_ASSERT(1 <= month && month <= 13);
-
-      // Create date with month number replaced by month-code.
-      auto monthCode = MonthCode{std::min(month, 12)};
-      auto date = CreateDateFromCodes(cx, calendarId, calendar, eraYear,
-                                      monthCode, day, overflow);
-      if (!date) {
-        return nullptr;
-      }
-
-      // If the ordinal month of |date| matches the input month, no additional
-      // changes are necessary and we can directly return |date|.
-      int32_t ordinal = OrdinalMonth(date.get());
-      if (ordinal == month) {
-        return date;
-      }
-
-      // Otherwise we need to handle three cases:
-      // 1. The input year contains a leap month and we need to adjust the
-      //    month-code.
-      // 2. The thirteenth month of a year without leap months was requested.
-      // 3. The thirteenth month of a year with leap months was requested.
-      if (ordinal > month) {
-        MOZ_ASSERT(1 < month && month <= 12);
-
-        // This case can only happen in leap years.
-        MOZ_ASSERT(MonthsInYear(date.get()) == 13);
-
-        // Leap months can occur after any month in the Chinese calendar.
-        //
-        // Example when the fourth month is a leap month between M03 and M04.
-        //
-        // Month code:     M01  M02  M03  M03L  M04  M05  M06 ...
-        // Ordinal month:  1    2    3    4     5    6    7
-
-        // The month can be off by exactly one.
-        MOZ_ASSERT((ordinal - month) == 1);
-
-        // First try the case when the previous month isn't a leap month. This
-        // case can only occur when |month > 2|, because otherwise we know that
-        // "M01L" is the correct answer.
-        if (month > 2) {
-          auto previousMonthCode = MonthCode{month - 1};
-          date = CreateDateFromCodes(cx, calendarId, calendar, eraYear,
-                                     previousMonthCode, day, overflow);
-          if (!date) {
-            return nullptr;
-          }
-
-          int32_t ordinal = OrdinalMonth(date.get());
-          if (ordinal == month) {
-            return date;
-          }
-        }
-
-        // Fall-through when the previous month is a leap month.
-      } else {
-        MOZ_ASSERT(month == 13);
-        MOZ_ASSERT(ordinal == 12);
-
-        // Years with leap months contain thirteen months.
-        if (MonthsInYear(date.get()) != 13) {
-          if (overflow == TemporalOverflow::Reject) {
-            ReportCalendarFieldOverflow(cx, "month", month);
-            return nullptr;
-          }
-          return date;
-        }
-
-        // Fall-through to return leap month "M12L" at the end of the year.
-      }
-
-      // Finally handle the case when the previous month is a leap month.
-      auto leapMonthCode = MonthCode{month - 1, /* isLeapMonth= */ true};
-      date = CreateDateFromCodes(cx, calendarId, calendar, eraYear,
-                                 leapMonthCode, day, overflow);
-      if (!date) {
-        return nullptr;
-      }
-      MOZ_ASSERT(OrdinalMonth(date.get()) == month, "unexpected ordinal month");
-      return date;
-    }
-
-    case CalendarId::Hebrew: {
       static_assert(CalendarHasLeapMonths(CalendarId::Hebrew));
       static_assert(CalendarMonthsPerYear(CalendarId::Hebrew) == 13);
 
@@ -1181,30 +1096,24 @@ static UniqueICU4XDate CreateDateFrom(JSContext* cx, CalendarId calendarId,
       // Constrain |day| when overflow is "reject" to avoid rejecting too large
       // day values in CreateDateFromCodes.
       //
-      // For example when month = 10 and day = 30 and the input year is a leap
-      // year. We first try month code "M10", but since "M10" can have at most
-      // 29 days, we need to constrain the days value before calling
-      // CreateDateFromCodes.
+      // For example in the Hebrew calendar, when month = 10 and day = 30 and
+      // the input year is a leap year. We first try month code "M10", but since
+      // "M10" can have at most 29 days, we need to constrain the days value
+      // before calling CreateDateFromCodes.
       int32_t constrainedDay = day;
       if (overflow == TemporalOverflow::Reject) {
-        constexpr auto daysInMonth = CalendarDaysInMonth(CalendarId::Hebrew);
+        auto daysInMonth = CalendarDaysInMonth(calendarId);
         if (day > daysInMonth.first && day <= daysInMonth.second) {
           constrainedDay = daysInMonth.first;
         }
       }
 
-      // Create date with month number replaced by month-code.
-      auto monthCode = MonthCode{std::min(month, 12)};
-      auto date = CreateDateFromCodes(cx, calendarId, calendar, eraYear,
-                                      monthCode, constrainedDay, overflow);
-      if (!date) {
-        return nullptr;
-      }
+      // Return after a date with a matching ordinal month was found, but the
+      // date was constructed using a constrained day.
+      auto returnForOrdinalMonthMatch = [&](auto date,
+                                            auto monthCode) -> UniqueICU4XDate {
+        MOZ_ASSERT(OrdinalMonth(date.get()) == month);
 
-      // If the ordinal month of |date| matches the input month, no additional
-      // changes are necessary and we can directly return |date|.
-      int32_t ordinal = OrdinalMonth(date.get());
-      if (ordinal == month) {
         // If |day| was constrained, check if the actual input days value
         // exceeds the number of days in the resolved month.
         if (constrainedDay < day) {
@@ -1218,41 +1127,126 @@ static UniqueICU4XDate CreateDateFrom(JSContext* cx, CalendarId calendarId,
                                      monthCode, day, overflow);
         }
         return date;
+      };
+
+      // Create date with month number replaced by month-code.
+      auto monthCode = MonthCode{std::min(month, 12)};
+      auto date = CreateDateFromCodes(cx, calendarId, calendar, eraYear,
+                                      monthCode, constrainedDay, overflow);
+      if (!date) {
+        return nullptr;
       }
 
-      // Otherwise we need to handle two cases:
-      // 1. The input year contains a leap month and we need to adjust the
-      //    month-code.
-      // 2. The thirteenth month of a year without leap months was requested.
-      if (ordinal > month) {
-        MOZ_ASSERT(1 < month && month <= 12);
+      // If the ordinal month of |date| matches the input month, no additional
+      // changes are necessary and we can directly return |date|.
+      int32_t ordinal = OrdinalMonth(date.get());
+      if (ordinal == month) {
+        return returnForOrdinalMonthMatch(std::move(date), monthCode);
+      }
 
-        // This case can only happen in leap years.
-        MOZ_ASSERT(MonthsInYear(date.get()) == 13);
+      // Otherwise adjust the month code according to the calendar.
+      MonthCode adjustedMonthCode{};
+      if (calendarId == CalendarId::Hebrew) {
+        // We need to handle two cases:
+        // 1. The input year contains a leap month and we need to adjust the
+        //    month-code.
+        // 2. The thirteenth month of a year without leap months was requested.
+        if (ordinal > month) {
+          MOZ_ASSERT(1 < month && month <= 12);
 
-        // Leap months can occur between M05 and M06 in the Hebrew calendar.
-        //
-        // Month code:     M01  M02  M03  M04  M05  M05L  M06 ...
-        // Ordinal month:  1    2    3    4    5    6     7
+          // This case can only happen in leap years.
+          MOZ_ASSERT(MonthsInYear(date.get()) == 13);
 
-        // The month can be off by exactly one.
-        MOZ_ASSERT((ordinal - month) == 1);
-      } else {
-        MOZ_ASSERT(month == 13);
-        MOZ_ASSERT(ordinal == 12);
+          // Leap months can occur between M05 and M06 in the Hebrew calendar.
+          //
+          // Month code:     M01  M02  M03  M04  M05  M05L  M06 ...
+          // Ordinal month:  1    2    3    4    5    6     7
 
-        if (overflow == TemporalOverflow::Reject) {
-          ReportCalendarFieldOverflow(cx, "month", month);
-          return nullptr;
+          // The month can be off by exactly one.
+          MOZ_ASSERT((ordinal - month) == 1);
+        } else {
+          MOZ_ASSERT(month == 13);
+          MOZ_ASSERT(ordinal == 12);
+          MOZ_ASSERT(MonthsInYear(date.get()) != 13);
+          MOZ_ASSERT(day == constrainedDay ||
+                     overflow == TemporalOverflow::Reject);
+
+          if (overflow == TemporalOverflow::Reject) {
+            ReportCalendarFieldOverflow(cx, "month", month);
+            return nullptr;
+          }
+          return date;
         }
-        return date;
+
+        // The previous month is the leap month Adar I iff |month| is six.
+        bool isLeapMonth = month == 6;
+        adjustedMonthCode = MonthCode{month - 1, isLeapMonth};
+      } else {
+        // We need to handle three cases:
+        // 1. The input year contains a leap month and we need to adjust the
+        //    month-code.
+        // 2. The thirteenth month of a year without leap months was requested.
+        // 3. The thirteenth month of a year with leap months was requested.
+        if (ordinal > month) {
+          MOZ_ASSERT(1 < month && month <= 12);
+
+          // This case can only happen in leap years.
+          MOZ_ASSERT(MonthsInYear(date.get()) == 13);
+
+          // Leap months can occur after any month in the Chinese calendar.
+          //
+          // Example when the fourth month is a leap month between M03 and M04.
+          //
+          // Month code:     M01  M02  M03  M03L  M04  M05  M06 ...
+          // Ordinal month:  1    2    3    4     5    6    7
+
+          // The month can be off by exactly one.
+          MOZ_ASSERT((ordinal - month) == 1);
+
+          // First try the case when the previous month isn't a leap month. This
+          // case can only occur when |month > 2|, because otherwise we know
+          // that "M01L" is the correct answer.
+          if (month > 2) {
+            auto previousMonthCode = MonthCode{month - 1};
+            date = CreateDateFromCodes(cx, calendarId, calendar, eraYear,
+                                       previousMonthCode, constrainedDay,
+                                       overflow);
+            if (!date) {
+              return nullptr;
+            }
+
+            int32_t ordinal = OrdinalMonth(date.get());
+            if (ordinal == month) {
+              return returnForOrdinalMonthMatch(std::move(date),
+                                                previousMonthCode);
+            }
+          }
+
+          // Fall-through when the previous month is a leap month.
+        } else {
+          MOZ_ASSERT(month == 13);
+          MOZ_ASSERT(ordinal == 12);
+          MOZ_ASSERT(day == constrainedDay ||
+                     overflow == TemporalOverflow::Reject);
+
+          // Years with leap months contain thirteen months.
+          if (MonthsInYear(date.get()) != 13) {
+            if (overflow == TemporalOverflow::Reject) {
+              ReportCalendarFieldOverflow(cx, "month", month);
+              return nullptr;
+            }
+            return date;
+          }
+
+          // Fall-through to return leap month "M12L" at the end of the year.
+        }
+
+        // Finally handle the case when the previous month is a leap month.
+        adjustedMonthCode = MonthCode{month - 1, /* isLeapMonth= */ true};
       }
 
-      // The previous month is the leap month Adar I iff |month| is six.
-      bool isLeapMonth = month == 6;
-      auto previousMonthCode = MonthCode{month - 1, isLeapMonth};
       date = CreateDateFromCodes(cx, calendarId, calendar, eraYear,
-                                 previousMonthCode, day, overflow);
+                                 adjustedMonthCode, day, overflow);
       if (!date) {
         return nullptr;
       }
@@ -2181,18 +2175,6 @@ static bool NonISOMonthDayToISOReferenceDate(JSContext* cx, CalendarId calendar,
   } else {
     MOZ_ASSERT(monthCode != MonthCode{});
 
-    if (calendar == CalendarId::Chinese || calendar == CalendarId::Dangi) {
-      int32_t referenceYear =
-          EastAsianCalendarReferenceISOYear(calendar, monthCode, day);
-      if (referenceYear == 0) {
-        if (overflow == TemporalOverflow::Reject) {
-          ReportCalendarFieldOverflow(cx, "day", day);
-          return false;
-        }
-        monthCode = MonthCode{monthCode.ordinal()};
-      }
-    }
-
     // Constrain `day` to maximum possible day of the input month.
     int32_t maxDaysInMonth = CalendarDaysInMonth(calendar, monthCode).second;
     if (overflow == TemporalOverflow::Constrain) {
@@ -2204,6 +2186,18 @@ static bool NonISOMonthDayToISOReferenceDate(JSContext* cx, CalendarId calendar,
         ReportCalendarFieldOverflow(cx, "day", day);
         return false;
       }
+    }
+  }
+
+  if (calendar == CalendarId::Chinese || calendar == CalendarId::Dangi) {
+    int32_t referenceYear =
+        EastAsianCalendarReferenceISOYear(calendar, monthCode, day);
+    if (referenceYear == 0) {
+      if (overflow == TemporalOverflow::Reject) {
+        ReportCalendarFieldOverflow(cx, "day", day);
+        return false;
+      }
+      monthCode = MonthCode{monthCode.ordinal()};
     }
   }
 
@@ -2246,13 +2240,8 @@ static bool NonISOMonthDayToISOReferenceDate(JSContext* cx, CalendarId calendar,
 
   *result = ToISODate(date.get());
 
-  // FIXME: spec bug - missing handling for reference years when input fields
-  // have a year component:
-  // https://github.com/tc39/proposal-intl-era-monthcode/issues/113
   MOZ_ASSERT_IF(
-      (calendar == CalendarId::Chinese || calendar == CalendarId::Dangi) &&
-          !(fields.has(CalendarField::Year) ||
-            fields.has(CalendarField::EraYear)),
+      calendar == CalendarId::Chinese || calendar == CalendarId::Dangi,
       result->year ==
           EastAsianCalendarReferenceISOYear(calendar, monthCode, day));
   return true;
@@ -3874,7 +3863,7 @@ static bool DifferenceNonISODateWithLeapMonth(
     months += sign;
     constrainedDate = intermediateDate;
   }
-  MOZ_ASSERT(std::abs(months) < CalendarMonthsPerYear(calendarId));
+  MOZ_ASSERT(std::abs(months) <= CalendarMonthsPerYear(calendarId));
 
   // Convert years to months if necessary.
   if (largestUnit == TemporalUnit::Month && years != 0) {

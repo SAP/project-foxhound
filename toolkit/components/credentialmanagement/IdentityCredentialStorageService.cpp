@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -649,7 +647,9 @@ NS_IMETHODIMP IdentityCredentialStorageService::SetState(
   nsCString credentialID(aCredentialID);
   mBackgroundThread->Dispatch(
       NS_NewRunnableFunction("IdentityCredentialStorageService::Init",
-                             [self, rpPrincipal, idpPrincipal, credentialID,
+                             [self, rpPrincipal = std::move(rpPrincipal),
+                              idpPrincipal = std::move(idpPrincipal),
+                              credentialID = std::move(credentialID),
                               aRegistered, aAllowLogout]() {
                                nsresult rv = UpsertData(
                                    self->mDiskDatabaseConnection, rpPrincipal,
@@ -740,7 +740,9 @@ NS_IMETHODIMP IdentityCredentialStorageService::Delete(
   nsCString credentialID(aCredentialID);
   mBackgroundThread->Dispatch(
       NS_NewRunnableFunction("IdentityCredentialStorageService::Init",
-                             [self, rpPrincipal, idpPrincipal, credentialID]() {
+                             [self, rpPrincipal = std::move(rpPrincipal),
+                              idpPrincipal = std::move(idpPrincipal),
+                              credentialID = std::move(credentialID)]() {
                                nsresult rv = DeleteData(
                                    self->mDiskDatabaseConnection, rpPrincipal,
                                    idpPrincipal, credentialID);
@@ -879,7 +881,7 @@ IdentityCredentialStorageService::DeleteFromOriginAttributesPattern(
   mBackgroundThread->Dispatch(
       NS_NewRunnableFunction(
           "IdentityCredentialStorageService::Init",
-          [self, oaPattern]() {
+          [self, oaPattern = std::move(oaPattern)]() {
             nsresult rv = DeleteDataFromOriginAttributesPattern(
                 self->mDiskDatabaseConnection, oaPattern);
             self->DecrementPendingWrites();
@@ -951,7 +953,7 @@ NS_IMETHODIMP IdentityCredentialStorageService::DeleteFromBaseDomain(
   nsCString baseDomain(aBaseDomain);
   mBackgroundThread->Dispatch(
       NS_NewRunnableFunction("IdentityCredentialStorageService::Init",
-                             [self, baseDomain]() {
+                             [self, baseDomain = std::move(baseDomain)]() {
                                nsresult rv = DeleteDataFromBaseDomain(
                                    self->mDiskDatabaseConnection, baseDomain);
                                self->DecrementPendingWrites();

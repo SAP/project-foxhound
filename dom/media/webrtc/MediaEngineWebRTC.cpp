@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,7 +24,8 @@
 #define FAKE_ONDEVICECHANGE_EVENT_PERIOD_IN_MS 500
 
 static mozilla::LazyLogModule sGetUserMediaLog("GetUserMedia");
-#define LOG(args) MOZ_LOG(sGetUserMediaLog, mozilla::LogLevel::Debug, args)
+#define LOG(...) \
+  MOZ_LOG_FMT(sGetUserMediaLog, mozilla::LogLevel::Debug, __VA_ARGS__)
 
 namespace mozilla {
 
@@ -35,7 +34,7 @@ using camera::CamerasChild;
 using camera::GetChildAndCall;
 using dom::MediaSourceEnum;
 
-CubebDeviceEnumerator* GetEnumerator() {
+already_AddRefed<CubebDeviceEnumerator> GetEnumerator() {
   return CubebDeviceEnumerator::GetInstance();
 }
 
@@ -46,12 +45,13 @@ MediaEngineWebRTC::MediaEngineWebRTC() {
       &CamerasChild::ConnectDeviceListChangeListener<MediaEngineWebRTC>,
       &mCameraListChangeListener, AbstractThread::MainThread(), this,
       &MediaEngineWebRTC::DeviceListChanged);
+  RefPtr<CubebDeviceEnumerator> enumerator = GetEnumerator();
   mMicrophoneListChangeListener =
-      GetEnumerator()->OnAudioInputDeviceListChange().Connect(
+      enumerator->OnAudioInputDeviceListChange().Connect(
           AbstractThread::MainThread(), this,
           &MediaEngineWebRTC::DeviceListChanged);
   mSpeakerListChangeListener =
-      GetEnumerator()->OnAudioOutputDeviceListChange().Connect(
+      enumerator->OnAudioOutputDeviceListChange().Connect(
           AbstractThread::MainThread(), this,
           &MediaEngineWebRTC::DeviceListChanged);
 }
@@ -125,23 +125,23 @@ void MediaEngineWebRTC::EnumerateVideoDevices(
                             deviceName, sizeof(deviceName), uniqueId,
                             sizeof(uniqueId), &scarySource);
     if (error) {
-      LOG(("camera:GetCaptureDevice: Failed %d", error));
+      LOG("camera:GetCaptureDevice: Failed {}", error);
       continue;
     }
 #ifdef DEBUG
-    LOG(("  Capture Device Index %d, Name %s", i, deviceName));
+    LOG("  Capture Device Index {}, Name {}", i, deviceName);
 
     webrtc::CaptureCapability cap;
     int numCaps = GetChildAndCall(&CamerasChild::NumberOfCapabilities,
                                   capEngine, uniqueId);
-    LOG(("Number of Capabilities %d", numCaps));
+    LOG("Number of Capabilities {}", numCaps);
     for (int j = 0; j < numCaps; j++) {
       if (GetChildAndCall(&CamerasChild::GetCaptureCapability, capEngine,
                           uniqueId, j, &cap) != 0) {
         break;
       }
-      LOG(("type=%d width=%d height=%d maxFPS=%d",
-           static_cast<int>(cap.videoType), cap.width, cap.height, cap.maxFPS));
+      LOG("type={} width={} height={} maxFPS={}",
+          static_cast<int>(cap.videoType), cap.width, cap.height, cap.maxFPS);
     }
 #endif
 
@@ -163,8 +163,9 @@ void MediaEngineWebRTC::EnumerateMicrophoneDevices(
     nsTArray<RefPtr<MediaDevice>>* aDevices) {
   AssertIsOnOwningThread();
 
+  RefPtr<CubebDeviceEnumerator> enumerator = GetEnumerator();
   RefPtr<const AudioDeviceSet> devices =
-      GetEnumerator()->EnumerateAudioInputDevices();
+      enumerator->EnumerateAudioInputDevices();
 
   DebugOnly<bool> foundPreferredDevice = false;
 
@@ -172,10 +173,10 @@ void MediaEngineWebRTC::EnumerateMicrophoneDevices(
 #ifndef ANDROID
     MOZ_ASSERT(deviceInfo->DeviceID());
 #endif
-    LOG(("Cubeb device: type 0x%x, state 0x%x, name %s, id %p",
-         deviceInfo->Type(), deviceInfo->State(),
-         NS_ConvertUTF16toUTF8(deviceInfo->Name()).get(),
-         deviceInfo->DeviceID()));
+    LOG("Cubeb device: type 0x{:x}, state 0x{:x}, name {}, id {}",
+        deviceInfo->Type(), deviceInfo->State(),
+        NS_ConvertUTF16toUTF8(deviceInfo->Name()).get(),
+        fmt::ptr(deviceInfo->DeviceID()));
 
     if (deviceInfo->State() == CUBEB_DEVICE_STATE_ENABLED) {
       MOZ_ASSERT(deviceInfo->Type() == CUBEB_DEVICE_TYPE_INPUT);
@@ -208,17 +209,18 @@ void MediaEngineWebRTC::EnumerateSpeakerDevices(
     nsTArray<RefPtr<MediaDevice>>* aDevices) {
   AssertIsOnOwningThread();
 
+  RefPtr<CubebDeviceEnumerator> enumerator = GetEnumerator();
   RefPtr<const AudioDeviceSet> devices =
-      GetEnumerator()->EnumerateAudioOutputDevices();
+      enumerator->EnumerateAudioOutputDevices();
 
 #ifndef XP_WIN
   DebugOnly<bool> preferredDeviceFound = false;
 #endif
   for (const auto& deviceInfo : *devices) {
-    LOG(("Cubeb device: type 0x%x, state 0x%x, name %s, id %p",
-         deviceInfo->Type(), deviceInfo->State(),
-         NS_ConvertUTF16toUTF8(deviceInfo->Name()).get(),
-         deviceInfo->DeviceID()));
+    LOG("Cubeb device: type 0x{:x}, state 0x{:x}, name {}, id {}",
+        deviceInfo->Type(), deviceInfo->State(),
+        NS_ConvertUTF16toUTF8(deviceInfo->Name()).get(),
+        fmt::ptr(deviceInfo->DeviceID()));
     if (deviceInfo->State() == CUBEB_DEVICE_STATE_ENABLED) {
       MOZ_ASSERT(deviceInfo->Type() == CUBEB_DEVICE_TYPE_OUTPUT);
       nsString uuid(deviceInfo->Name());
@@ -286,13 +288,13 @@ RefPtr<MediaEngineSource> MediaEngineWebRTC::CreateSource(
     const MediaDevice* aMediaDevice) {
   MOZ_ASSERT(aMediaDevice->mEngine == this);
   if (MediaEngineSource::IsVideo(aMediaDevice->mMediaSource)) {
-    return new MediaEngineRemoteVideoSource(aMediaDevice);
+    return MakeRefPtr<MediaEngineRemoteVideoSource>(aMediaDevice);
   }
   switch (aMediaDevice->mMediaSource) {
     case MediaSourceEnum::AudioCapture:
-      return new MediaEngineWebRTCAudioCaptureSource(aMediaDevice);
+      return MakeRefPtr<MediaEngineWebRTCAudioCaptureSource>(aMediaDevice);
     case MediaSourceEnum::Microphone:
-      return new MediaEngineWebRTCMicrophoneSource(aMediaDevice);
+      return MakeRefPtr<MediaEngineWebRTCMicrophoneSource>(aMediaDevice);
     default:
       MOZ_CRASH("Unsupported source type");
       return nullptr;
@@ -324,7 +326,7 @@ void MediaEngineWebRTC::Shutdown() {
   mMicrophoneListChangeListener.DisconnectIfExists();
   mSpeakerListChangeListener.DisconnectIfExists();
 
-  LOG(("%s", __FUNCTION__));
+  LOG("{}", __FUNCTION__);
   mozilla::camera::Shutdown();
 }
 

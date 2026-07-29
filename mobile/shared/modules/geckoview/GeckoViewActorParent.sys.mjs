@@ -21,7 +21,7 @@ export class GeckoViewActorParent extends JSWindowActorParent {
     if (!browsingContext.isContent && browsingContext.window) {
       return browsingContext.window;
     }
-    return this.browser?.ownerGlobal;
+    return this.browser?.documentGlobal;
   }
 
   get eventDispatcher() {

@@ -202,9 +202,9 @@ export const IntentClassifier = {
         return "chat";
       }
       const engine = await this._createEngine({
+        backend: "onnx-native",
         featureId: "smart-intent",
         modelId: "mozilla/mobilebert-query-intent-detection",
-        modelRevision: "v0.3.0",
         taskName: "text-classification",
       });
       const threshold = 0.8;

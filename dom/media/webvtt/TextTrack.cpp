@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 et tw=78: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,12 +17,12 @@
 
 extern mozilla::LazyLogModule gTextTrackLog;
 
-#define WEBVTT_LOG(msg, ...)              \
-  MOZ_LOG(gTextTrackLog, LogLevel::Debug, \
-          ("TextTrack=%p, " msg, this, ##__VA_ARGS__))
-#define WEBVTT_LOGV(msg, ...)               \
-  MOZ_LOG(gTextTrackLog, LogLevel::Verbose, \
-          ("TextTrack=%p, " msg, this, ##__VA_ARGS__))
+#define WEBVTT_LOG(msg, ...)                                        \
+  MOZ_LOG_FMT(gTextTrackLog, LogLevel::Debug, "TextTrack={}, " msg, \
+              fmt::ptr(this), ##__VA_ARGS__)
+#define WEBVTT_LOGV(msg, ...)                                         \
+  MOZ_LOG_FMT(gTextTrackLog, LogLevel::Verbose, "TextTrack={}, " msg, \
+              fmt::ptr(this), ##__VA_ARGS__)
 
 namespace mozilla::dom {
 
@@ -83,10 +81,11 @@ JSObject* TextTrack::WrapObject(JSContext* aCx,
 }
 
 void TextTrack::SetMode(TextTrackMode aValue) {
+  RefPtr<TextTrack> kungFuDeathGrip = this;
   if (mMode == aValue) {
     return;
   }
-  WEBVTT_LOG("Set mode=%s for track kind %s", GetEnumString(aValue).get(),
+  WEBVTT_LOG("Set mode={} for track kind {}", GetEnumString(aValue).get(),
              GetEnumString(mKind).get());
   mMode = aValue;
 
@@ -124,7 +123,8 @@ void TextTrack::GetId(nsAString& aId) const {
 }
 
 void TextTrack::AddCue(TextTrackCue& aCue) {
-  WEBVTT_LOG("AddCue %p [%f:%f]", &aCue, aCue.StartTime(), aCue.EndTime());
+  WEBVTT_LOG("AddCue {} [{}:{}]", fmt::ptr(&aCue), aCue.StartTime(),
+             aCue.EndTime());
   TextTrack* oldTextTrack = aCue.GetTrack();
   if (oldTextTrack) {
     ErrorResult dummy;
@@ -139,7 +139,7 @@ void TextTrack::AddCue(TextTrackCue& aCue) {
 }
 
 void TextTrack::RemoveCue(TextTrackCue& aCue, ErrorResult& aRv) {
-  WEBVTT_LOG("RemoveCue %p", &aCue);
+  WEBVTT_LOG("RemoveCue {}", fmt::ptr(&aCue));
   // Bug1304948, check the aCue belongs to the TextTrack.
   mCueList->RemoveCue(aCue, aRv);
   if (aRv.Failed()) {
@@ -183,7 +183,7 @@ void TextTrack::GetActiveCueArray(nsTArray<RefPtr<TextTrackCue>>& aCues) {
 TextTrackReadyState TextTrack::ReadyState() const { return mReadyState; }
 
 void TextTrack::SetReadyState(TextTrackReadyState aState) {
-  WEBVTT_LOG("SetReadyState=%s", EnumValueToString(aState));
+  WEBVTT_LOG("SetReadyState={}", EnumValueToString(aState));
   mReadyState = aState;
   HTMLMediaElement* mediaElement = GetMediaElement();
   if (mediaElement && (mReadyState == TextTrackReadyState::Loaded ||
@@ -211,7 +211,7 @@ void TextTrack::SetCuesInactive() {
 }
 
 void TextTrack::NotifyCueUpdated(TextTrackCue* aCue) {
-  WEBVTT_LOG("NotifyCueUpdated, cue=%p", aCue);
+  WEBVTT_LOG("NotifyCueUpdated, cue={}", fmt::ptr(aCue));
   mCueList->NotifyCueUpdated(aCue);
   HTMLMediaElement* mediaElement = GetMediaElement();
   if (mediaElement) {
@@ -265,14 +265,14 @@ void TextTrack::NotifyCueActiveStateChanged(TextTrackCue* aCue) {
   MOZ_ASSERT(aCue);
   if (aCue->GetActive()) {
     MOZ_ASSERT(!mActiveCueList->IsCueExist(aCue));
-    WEBVTT_LOG("NotifyCueActiveStateChanged, add cue %p to the active list",
-               aCue);
+    WEBVTT_LOG("NotifyCueActiveStateChanged, add cue {} to the active list",
+               fmt::ptr(aCue));
     mActiveCueList->AddCue(*aCue);
   } else {
     MOZ_ASSERT(mActiveCueList->IsCueExist(aCue));
     WEBVTT_LOG(
-        "NotifyCueActiveStateChanged, remove cue %p from the active list",
-        aCue);
+        "NotifyCueActiveStateChanged, remove cue {} from the active list",
+        fmt::ptr(aCue));
     mActiveCueList->RemoveCue(*aCue);
   }
 }
@@ -323,8 +323,8 @@ void TextTrack::GetOverlappingCurrentOtherAndMissCues(
     double cueStart = cue->StartTime();
     double cueEnd = cue->EndTime();
     if (cueStart <= playbackTime && cueEnd > playbackTime) {
-      WEBVTT_LOG("Add cue %p [%f:%f] to current cue list", cue, cueStart,
-                 cueEnd);
+      WEBVTT_LOG("Add cue {} [{}:{}] to current cue list", fmt::ptr(cue),
+                 cueStart, cueEnd);
       aCurrentCues->AddCue(cue);
     } else {
       // As the spec doesn't have a restriction for the negative duration, it
@@ -336,9 +336,9 @@ void TextTrack::GetOverlappingCurrentOtherAndMissCues(
         // current time interval.
         if (intervalStart <= cueStart && cueStart < intervalEnd) {
           WEBVTT_LOG(
-              "[Negative duration] Add cue %p [%f:%f] to other cues and "
+              "[Negative duration] Add cue {} [{}:{}] to other cues and "
               "missing cues list",
-              cue, cueStart, cueEnd);
+              fmt::ptr(cue), cueStart, cueEnd);
           aOtherCues->AddCue(cue);
           aMissCues->AddCue(cue);
         }
@@ -348,11 +348,12 @@ void TextTrack::GetOverlappingCurrentOtherAndMissCues(
       if (cueEnd < intervalStart || cueStart > intervalEnd) {
         continue;
       }
-      WEBVTT_LOG("Add cue %p [%f:%f] to other cue list", cue, cueStart, cueEnd);
+      WEBVTT_LOG("Add cue {} [{}:{}] to other cue list", fmt::ptr(cue),
+                 cueStart, cueEnd);
       aOtherCues->AddCue(cue);
       if (aLastTime && cueStart >= *aLastTime && cueEnd <= playbackTime) {
-        WEBVTT_LOG("Add cue %p [%f:%f] to missing cues list", cue, cueStart,
-                   cueEnd);
+        WEBVTT_LOG("Add cue {} [{}:{}] to missing cues list", fmt::ptr(cue),
+                   cueStart, cueEnd);
         aMissCues->AddCue(cue);
       }
     }

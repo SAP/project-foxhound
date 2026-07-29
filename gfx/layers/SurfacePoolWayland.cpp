@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nullptr; c-basic-offset: 2
- * -*- This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
+/* License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/layers/SurfacePoolWayland.h"
 
 #include "GLBlitHelper.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
+#include "mozilla/webrender/RenderThread.h"
 
 #ifdef MOZ_LOGGING
 #  undef LOG
@@ -59,6 +58,7 @@ void SurfacePoolWayland::ForEachEntry(F aFn) {
 }
 
 void SurfacePoolWayland::DestroyGLResourcesForContext(GLContext* aGL) {
+  MOZ_ASSERT(wr::RenderThread::IsInRenderThread());
   MutexAutoLock lock(mMutex);
 
   ForEachEntry([&](SurfacePoolEntry& entry) {
@@ -191,21 +191,46 @@ void SurfacePoolWayland::EnforcePoolSizeLimit() {
 }
 
 void SurfacePoolWayland::CollectPendingSurfaces() {
-  MutexAutoLock lock(mMutex);
-  mPendingEntries.RemoveElementsBy([&](auto& entry) {
+  // Move pending entries to a local array so we can check each surface's
+  // IsAttached() without holding mMutex. This is safe because:
+  // - Only this method removes from mPendingEntries, and it runs on a single
+  //   thread (the render thread), so no concurrent removals can occur.
+  // - ReturnBufferToPool() may append new entries while mMutex is released;
+  //   those are merged back in the final lock section below and will be picked
+  //   up by the next run.
+  // - DestroyGLResourcesForContext() also runs on the render thread, so it
+  //   cannot race with this method.
+  MOZ_ASSERT(wr::RenderThread::IsInRenderThread());
+  nsTArray<SurfacePoolEntry> pendingEntries;
+  {
+    MutexAutoLock lock(mMutex);
+    pendingEntries = std::move(mPendingEntries);
+  }
+
+  nsTArray<SurfacePoolEntry> stillPending(pendingEntries.Length());
+  nsTArray<SurfacePoolEntry> nowAvailable;
+
+  for (auto& entry : pendingEntries) {
     widget::WaylandSurfaceLock lock(entry.mWaylandSurface);
     LOGVERBOSE(
         "SurfacePoolWayland::CollectPendingSurfaces() [%p] attached [%d]",
         entry.mWaylandBuffer.get(), entry.mWaylandBuffer->IsAttached(lock));
     if (!entry.mWaylandBuffer->IsAttached(lock)) {
-      mAvailableEntries.AppendElement(std::move(entry));
-      return true;
+      nowAvailable.AppendElement(std::move(entry));
+    } else {
+      stillPending.AppendElement(std::move(entry));
     }
-    return false;
-  });
-  LOGVERBOSE("SurfacePoolWayland::CollectPendingSurfaces() U[%d] P[%d] A[%d]",
-             (int)mInUseEntries.size(), (int)mPendingEntries.Length(),
-             (int)mAvailableEntries.Length());
+  }
+
+  {
+    MutexAutoLock lock(mMutex);
+    stillPending.AppendElements(std::move(mPendingEntries));
+    mPendingEntries = std::move(stillPending);
+    mAvailableEntries.AppendElements(std::move(nowAvailable));
+    LOGVERBOSE("SurfacePoolWayland::CollectPendingSurfaces() U[%d] P[%d] A[%d]",
+               (int)mInUseEntries.size(), (int)mPendingEntries.Length(),
+               (int)mAvailableEntries.Length());
+  }
 }
 
 Maybe<GLuint> SurfacePoolWayland::GetFramebufferForBuffer(

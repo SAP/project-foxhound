@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,6 +19,10 @@
 #include "nsThreadUtils.h"
 
 namespace mozilla::widget::filedialog {
+
+// The default Windows thread stack size of 1Mb may not be enough for some
+// DLLs that are added to the file dialog by 3rd party apps.  Try 4Mb.
+const size_t kWindowsFileDialogStackSize = 4 * 1024 * 1024;
 
 const char* Error::KindName(Error::Kind kind) {
   switch (kind) {
@@ -358,8 +360,9 @@ RefPtr<Promise<Res>> SpawnFileDialogThread(const char (&where)[N],
 
   RefPtr<nsIThread> thread;
   {
-    nsresult rv = NS_NewNamedThread("File Dialog", getter_AddRefs(thread),
-                                    nullptr, {.isUiThread = true});
+    nsresult rv = NS_NewNamedThread(
+        "File Dialog", getter_AddRefs(thread), nullptr,
+        {.stackSize = kWindowsFileDialogStackSize, .isUiThread = true});
     if (NS_FAILED(rv)) {
       return Promise<Res>::CreateAndReject(
           MOZ_FD_LOCAL_ERROR("NS_NewNamedThread", (HRESULT)rv), where);

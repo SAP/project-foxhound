@@ -12,14 +12,28 @@ async function before({ pushPrefs }) {
       enabled: true,
     }),
   ]);
+  // @nova-cleanup(remove-pref): Remove this return block; delete the novaEnabled parameter
+  // from test_render_hardcoded_topsites and remove the selector branch — always use
+  // "section[data-section-id='topsites']"
+  return {
+    novaEnabled: Services.prefs.getBoolPref(
+      "browser.newtabpage.activity-stream.nova.enabled",
+      false
+    ),
+  };
 }
 
 test_newtab({
   before,
-  test: async function test_render_hardcoded_topsites() {
+  test: async function test_render_hardcoded_topsites({ novaEnabled }) {
+    // @nova-cleanup(remove-conditional): Remove this branch; always use
+    // "section[data-section-id='topsites']"
+    const selector = novaEnabled
+      ? "section[data-section-id='topsites']"
+      : ".ds-top-sites";
     const topSites = await ContentTaskUtils.waitForCondition(() =>
-      content.document.querySelector(".ds-top-sites")
+      content.document.querySelector(selector)
     );
-    ok(topSites, "Got the discovery stream top sites section");
+    ok(topSites, "Got the top sites section");
   },
 });

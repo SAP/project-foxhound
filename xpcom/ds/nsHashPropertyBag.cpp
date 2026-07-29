@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -269,7 +267,7 @@ nsresult nsGetProperty::operator()(const nsIID& aIID,
     rv = mPropBag->GetPropertyAsInterface(mPropName, aIID, aInstancePtr);
   } else {
     rv = NS_ERROR_NULL_POINTER;
-    *aInstancePtr = 0;
+    *aInstancePtr = nullptr;
   }
 
   if (mErrorPtr) {
@@ -317,8 +315,8 @@ class ProxyHashtableDestructor final : public mozilla::Runnable {
 
 nsHashPropertyBag::~nsHashPropertyBag() {
   if (!NS_IsMainThread()) {
-    RefPtr<ProxyHashtableDestructor> runnable =
-        new ProxyHashtableDestructor(std::move(mPropertyHash));
+    RefPtr runnable =
+        MakeRefPtr<ProxyHashtableDestructor>(std::move(mPropertyHash));
     MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(runnable));
   }
 }

@@ -47,22 +47,32 @@ async function withManageAddressesPage(taskFn) {
   );
 }
 
-add_task(async function test_manageAddresses_initial_state() {
+add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.settings-redesign.enabled", true]],
+    set: [
+      ["browser.settings-redesign.enabled", true],
+      ["extensions.formautofill.addresses.enabled", true],
+    ],
   });
 
   await clearAddresses();
+});
 
+add_task(async function test_manageAddresses_initial_state() {
   await withManageAddressesPage(async browser => {
     await SpecialPowers.spawn(browser, [SELECTORS], async selectors => {
+      await ContentTaskUtils.waitForCondition(() => {
+        const addBtn = content.document.querySelector(selectors.add);
+        return addBtn && !addBtn.disabled;
+      }, "Add button never became enabled");
+
       const records = content.document.querySelectorAll(selectors.records);
       const addBtn = content.document.querySelector(selectors.add);
       const editBtn = content.document.querySelectorAll(selectors.edit);
       const deleteBtn = content.document.querySelectorAll(selectors.delete);
 
       is(records.length, 0, "No addresses initially");
-      ok(!addBtn.disabled, "Add enabled");
+      ok(!addBtn.disabled, "Add button enabled");
       is(
         editBtn.length,
         0,
@@ -78,12 +88,6 @@ add_task(async function test_manageAddresses_initial_state() {
 });
 
 add_task(async function test_remove_single_and_multiple_addresses() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.settings-redesign.enabled", true]],
-  });
-
-  await clearAddresses();
-
   await addAddresses(TEST_ADDRESSES.slice(0, 3));
 
   await withManageAddressesPage(async browser => {
@@ -143,12 +147,6 @@ add_task(async function test_remove_single_and_multiple_addresses() {
 });
 
 add_task(async function test_manageAddresses_watches_storage_changes() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.settings-redesign.enabled", true]],
-  });
-
-  await clearAddresses();
-
   await withManageAddressesPage(async browser => {
     await SpecialPowers.spawn(browser, [SELECTORS], async selectors => {
       let records = content.document.querySelectorAll(selectors.records);

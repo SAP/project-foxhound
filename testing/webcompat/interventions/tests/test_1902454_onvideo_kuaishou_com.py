@@ -37,4 +37,4 @@ async def test_disabled(client):
 @pytest.mark.without_interventions
 async def test_mobile_still_unsupported(client):
     await client.navigate(URL, wait="none")
-    assert client.await_text(MOBILE_UNSUPPORTED_TEXT)
+    assert client.await_text(MOBILE_UNSUPPORTED_TEXT, timeout=30)

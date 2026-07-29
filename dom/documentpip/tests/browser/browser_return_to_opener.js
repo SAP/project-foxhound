@@ -7,7 +7,7 @@ add_task(async function test_click_return_to_opener_button() {
   // Open PiP and switch to another tab in the same window
   // Request a small window to avoid timeouts from the other window not getting visible.
   const [tab, chromePiP] = await newTabWithPiP({ width: 100, height: 100 });
-  const win = tab.ownerGlobal;
+  const win = tab.documentGlobal;
   const tab2 = await BrowserTestUtils.openNewForegroundTab({
     gBrowser,
     opening: "https://example.org",

@@ -48,4 +48,19 @@ object BrowserToolbarTestTags {
      * Useful for entering text to search or an URL to load.
      */
     const val ADDRESSBAR_SEARCH_BOX = "ADDRESSBAR_SEARCH_BOX"
+
+    /**
+     * Test tag for the toolbar while in "edit" mode.
+     */
+    const val ADDRESSBAR_EDIT_MODE = "ADDRESSBAR_EDIT_MODE"
+
+    /**
+     * Test tag for the horizontal divider.
+     */
+    const val ADDRESSBAR_EDIT_MODE_HORIZONTAL_DIVIDER = "ADDRESSBAR_EDIT_MODE_HORIZONTAL_DIVIDER"
+
+    /**
+     * Test tag for the navigation bar.
+     */
+    const val NAVIGATION_BAR = "navigation_bar"
 }

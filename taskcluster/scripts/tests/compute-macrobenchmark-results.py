@@ -100,6 +100,7 @@ def format_output_content(results):
                         "lowerIsBetter": False,
                         "value": value,
                         "unit": "count",
+                        "shouldAlert": False,
                     }
                     subtests.append(subtest)
                 else:
@@ -108,6 +109,7 @@ def format_output_content(results):
                         "lowerIsBetter": True,
                         "value": value,
                         "unit": "ms",
+                        "shouldAlert": True,
                     }
                     subtests.append(subtest)
 

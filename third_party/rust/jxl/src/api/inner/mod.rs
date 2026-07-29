@@ -6,11 +6,12 @@
 #[cfg(test)]
 use crate::api::FrameCallback;
 use crate::{
-    api::JxlFrameHeader,
+    api::{JxlFrameHeader, VisibleFrameInfo, VisibleFrameSeekTarget},
     error::{Error, Result},
 };
 
 use super::{JxlBasicInfo, JxlColorProfile, JxlDecoderOptions, JxlPixelFormat};
+use crate::container::frame_index::FrameIndexBox;
 use box_parser::BoxParser;
 use codestream_parser::CodestreamParser;
 
@@ -46,7 +47,11 @@ impl JxlDecoderInner {
     }
 
     /// Obtains the image's basic information, if available.
+    ///
+    /// Keep this aligned with typed `WithImageInfo` transitions: image info is
+    /// not observable until the embedded profile has been parsed.
     pub fn basic_info(&self) -> Option<&JxlBasicInfo> {
+        self.codestream_parser.embedded_color_profile.as_ref()?;
         self.codestream_parser.basic_info.as_ref()
     }
 
@@ -67,6 +72,7 @@ impl JxlDecoderInner {
             return Err(Error::ICCOutputNoCMS);
         }
         self.codestream_parser.output_color_profile = Some(profile);
+        self.codestream_parser.output_color_profile_set_by_user = true;
         Ok(())
     }
 
@@ -75,7 +81,10 @@ impl JxlDecoderInner {
     }
 
     pub fn set_pixel_format(&mut self, pixel_format: JxlPixelFormat) {
+        // TODO(veluca): return an error if we are asking for both planar and
+        // interleaved-in-color alpha.
         self.codestream_parser.pixel_format = Some(pixel_format);
+        self.codestream_parser.update_default_output_color_profile();
     }
 
     pub fn frame_header(&self) -> Option<JxlFrameHeader> {
@@ -131,8 +140,68 @@ impl JxlDecoderInner {
         self.codestream_parser.has_more_frames
     }
 
+    /// Returns the parsed frame index box, if the file contained one.
+    pub fn frame_index(&self) -> Option<&FrameIndexBox> {
+        self.box_parser.frame_index.as_ref()
+    }
+
+    /// Returns visible frame info entries collected during parsing.
+    pub fn scanned_frames(&self) -> &[VisibleFrameInfo] {
+        &self.codestream_parser.scanned_frames
+    }
+
+    /// Resets frame-level state to prepare for decoding a new frame.
+    ///
+    /// Preserves image-level state (file header, decoder state including
+    /// reference frames, color profiles, pixel format). Clears frame header,
+    /// TOC, section buffers, and restores the box parser to the correct
+    /// state so the next `process()` call parses a new frame header.
+    ///
+    /// The `seek_target` comes from `VisibleFrameInfo::seek_target`. It tells
+    /// the decoder which container box position to seek to and how many visible
+    /// frames to skip before the target frame. The caller must provide raw file
+    /// input starting from `seek_target.decode_start_file_offset`.
+    ///
+    /// After seeking the first time, scanned frame information will no longer
+    /// be updated. If you seek before having completed decoding once, the scanned
+    /// frames might be incomplete.
+    pub fn start_new_frame(&mut self, seek_target: VisibleFrameSeekTarget) {
+        self.box_parser
+            .reset_for_codestream_seek(seek_target.remaining_in_box);
+        self.codestream_parser
+            .start_new_frame(seek_target.visible_frames_to_skip);
+    }
+
     #[cfg(test)]
     pub(crate) fn set_use_simple_pipeline(&mut self, u: bool) {
         self.codestream_parser.set_use_simple_pipeline(u);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::JxlDecoderInner;
+    use crate::api::JxlDecoderOptions;
+
+    #[test]
+    fn basic_info_not_visible_before_embedded_profile() {
+        let data = std::fs::read("resources/test/conformance_test_images/cmyk_layers.jxl").unwrap();
+        let mut decoder = JxlDecoderInner::new(JxlDecoderOptions::default());
+
+        for chunk in data.chunks(64) {
+            let mut input = chunk;
+            let _ = decoder.process(&mut input, None);
+
+            if decoder.embedded_color_profile().is_none() {
+                assert!(decoder.basic_info().is_none());
+            }
+
+            if decoder.basic_info().is_some() {
+                assert!(decoder.embedded_color_profile().is_some());
+                return;
+            }
+        }
+
+        panic!("failed to reach image-info state while parsing cmyk_layers.jxl");
     }
 }

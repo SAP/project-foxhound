@@ -50,16 +50,41 @@ add_task(async function test_mathml_metrics() {
           );
         }
 
-        // Test mathml_diag_font_family metric
+        // Test mathml_diag_font_family metric. The metric should record
+        // the resolved MATH-table font, not the literal CSS "math" generic
+        // value that getComputedStyle returned previously. Windows is the
+        // only desktop platform that ships a MATH font in the default
+        // install (Cambria Math); on macOS Ventura+ we expect "STIX Two
+        // Math" but earlier macOS releases and Android instead produce the
+        // "(no MATH font)" sentinel. Linux varies by installed packages.
         info("Testing mathml_diag_font_family metric...");
         const fontFamily =
           Glean.characteristics.mathmlDiagFontFamily.testGetValue();
         Assert.notEqual(
           fontFamily,
+          null,
+          "mathml_diag_font_family should be collected"
+        );
+        Assert.notEqual(
+          fontFamily,
           "",
           "mathml_diag_font_family should not be empty"
         );
+        Assert.notEqual(
+          fontFamily,
+          "math",
+          "mathml_diag_font_family should report the resolved MATH-table " +
+            "font, not the literal CSS 'math' generic value"
+        );
         info(`MathML font family: ${fontFamily}`);
+
+        if (AppConstants.platform === "win") {
+          Assert.equal(
+            fontFamily,
+            "Cambria Math",
+            "Windows is expected to resolve MathML to Cambria Math"
+          );
+        }
 
         info("All MathML metric tests passed!");
       },

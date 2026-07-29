@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +6,7 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 const lazy = XPCOMUtils.declareLazy({
+  ExtensionDocumentId: "resource://gre/modules/ExtensionDocumentId.sys.mjs",
   ExtensionProcessScript:
     "resource://gre/modules/ExtensionProcessScript.sys.mjs",
   ExtensionTelemetry: "resource://gre/modules/ExtensionTelemetry.sys.mjs",
@@ -358,9 +357,10 @@ class Script {
    * @param {WebExtensionContentScript|object} matcher
    *        An object with a "matchesWindowGlobal" method and content script
    *        execution details. This is usually a plain WebExtensionContentScript
-   *        except when the script is run via `tabs.executeScript` or
-   *        `scripting.executeScript`. In this case, the object may have some
-   *        extra properties: wantReturnValue, removeCSS
+   *        except when the script is run via `tabs.executeScript`,
+   *        `scripting.executeScript` or `userScripts.execute`. In this case,
+   *        the object may have some extra properties: wantReturnValue, removeCSS
+   *        and jsExecuteScriptSources
    */
   constructor(extension, matcher) {
     this.scriptType = "content_script";
@@ -370,8 +370,7 @@ class Script {
     this.runAt = this.matcher.runAt;
     this.world = this.matcher.world;
     this.js = this.matcher.jsPaths;
-    this.jsCode = null; // tabs/scripting.executeScript + ISOLATED world.
-    this.jsCodeCompiledScript = null; // scripting.executeScript + MAIN world.
+
     this.css = this.matcher.cssPaths.slice();
     this.cssCodeHash = null;
 
@@ -392,13 +391,15 @@ class Script {
         : extension.staticScripts;
     }
 
+    // If set jsDynamicScripts takes precedence over js.
+    // Requires scriptCache and world to be set.
+    /** @type {Array<Promise<PrecompiledScript> & {script?: PrecompiledScript}>} */
+    this.jsDynamicScripts = this.matcher.jsExecuteScriptSources?.map(s =>
+      this.#compileScriptSource(s)
+    );
+
     /** @type {WeakSet<Document>} A set of documents injected into. */
     this.injectedInto = new WeakSet();
-
-    if (matcher.wantReturnValue) {
-      this.compileScripts();
-      this.loadCSS();
-    }
   }
 
   get requiresCleanup() {
@@ -421,17 +422,19 @@ class Script {
     this.cssCodeCache.addCSSCode(this.cssCodeHash, cssCode);
   }
 
-  addJSCode(jsCode) {
-    if (!jsCode) {
-      return;
+  #compileScriptSource(source) {
+    const { file, code } = source;
+    if (file) {
+      return this.scriptCache.get(file);
     }
+    // else code property must be defined
     if (this.world === "MAIN") {
       // To support the scripting.executeScript API, we would like to execute a
       // string in the context of the web page in #injectIntoMainWorld().
       // To do so without being blocked by the web page's CSP, we convert
-      // jsCode to a PrecompiledScript, which is then executed by the logic
+      // code to a PrecompiledScript, which is then executed by the logic
       // that is usually used for file-based execution.
-      const dataUrl = `data:text/javascript,${encodeURIComponent(jsCode)}`;
+      const dataUrl = `data:text/javascript,${encodeURIComponent(code)}`;
       const options = {
         hasReturnValue: this.matcher.wantReturnValue,
         // Redact the file name to hide actual script content from web pages.
@@ -441,15 +444,35 @@ class Script {
       // Note: this logic is similar to this.scriptCaches.get(...), but we are
       // not using scriptCaches because we don't want the URL to be cached.
       /** @type {Promise<PrecompiledScript> & {script?: PrecompiledScript}} */
-      let promised = ChromeUtils.compileScript(dataUrl, options);
-      promised.then(script => {
-        promised.script = script;
+      const promisedScript = ChromeUtils.compileScript(dataUrl, options);
+      promisedScript.then(script => {
+        promisedScript.script = script;
       });
-      this.jsCodeCompiledScript = promised;
-    } else {
-      // this.world === "ISOLATED".
-      this.jsCode = jsCode;
+      return promisedScript;
     }
+    // else this.world === "ISOLATED" || "USER_SCRIPT".
+    /** @type {PrecompiledScript} */
+    const precompiledScriptImitation = {
+      hasReturnValue: this.matcher.wantReturnValue,
+      // TODO bug 1651557: Use dynamic name to improve debugger experience.
+      url: "<anonymous code>",
+      // This implements reportExceptions=false. The true value is not
+      // implemented because we only take this code path for executeScript,
+      // which sets reportExceptions=false.
+      executeInGlobal(global) {
+        return Cu.evalInSandbox(
+          code,
+          global,
+          "latest",
+          // TODO bug 1651557: Use dynamic name to improve debugger experience.
+          "sandbox eval code",
+          1
+        );
+      },
+    };
+    const promisedScript = Promise.resolve(precompiledScriptImitation);
+    promisedScript.script = precompiledScriptImitation;
+    return promisedScript;
   }
 
   compileScripts() {
@@ -492,6 +515,7 @@ class Script {
     this.injectedInto.add(window.document);
 
     let context = this.extension.getContext(window);
+    // executeScript are not logged here, but by callAndLog
     for (let script of this.matcher.jsPaths) {
       context.logActivity(this.scriptType, script, {
         url: window.location.href,
@@ -684,17 +708,6 @@ class Script {
       result = script.executeInGlobal(context.cloneScope, { reportExceptions });
     }
 
-    if (this.jsCode) {
-      result = Cu.evalInSandbox(
-        this.jsCode,
-        context.cloneScope,
-        "latest",
-        // TODO bug 1651557: Use dynamic name to improve debugger experience.
-        "sandbox eval code",
-        1
-      );
-    }
-
     return result;
   }
 
@@ -713,9 +726,6 @@ class Script {
       result = script.executeInGlobal(sandbox, { reportExceptions });
     }
 
-    // NOTE: if userScripts.execute() is implemented (bug 1930776), we may have
-    // to account for this.jsCode here (via addJSCode).
-
     return result;
   }
 
@@ -731,12 +741,6 @@ class Script {
       });
     }
 
-    // Note: string-based code execution (=our implementation of func+args in
-    // scripting.executeScript) is not handled here, because we compile it in
-    // addJSCode() and include it in the scripts array via getCompiledScripts().
-    // We cannot use context.contentWindow.eval() here because the web page's
-    // CSP may block it.
-
     return result;
   }
 
@@ -751,10 +755,7 @@ class Script {
    * @returns {PrecompiledScript[] | Promise<PrecompiledScript[]>}
    */
   getCompiledScripts(context) {
-    let scriptPromises = this.compileScripts();
-    if (this.jsCodeCompiledScript) {
-      scriptPromises.push(this.jsCodeCompiledScript);
-    }
+    let scriptPromises = this.jsDynamicScripts ?? this.compileScripts();
     let scripts = scriptPromises.map(promise => promise.script);
 
     // If not all scripts are already available in the cache, block
@@ -1456,28 +1457,24 @@ export var ExtensionContent = {
     let policy = WebExtensionPolicy.getByID(options.extensionId);
     // `WebExtensionContentScript` uses `MozDocumentMatcher::Matches` to ensure
     // that a script can be run in a document. That requires either `frameId`
-    // or `allFrames` to be set. When `frameIds` (plural) is used, we force
-    // `allFrames` to be `true` in order to match any frame. This is OK because
-    // `executeInWin()` below looks up the window for the given `frameIds`
-    // immediately before `script.injectInto()`. Due to this, we won't run
-    // scripts in windows with non-matching `frameId`, despite `allFrames`
-    // being set to `true`.
-    if (options.frameIds) {
-      options.allFrames = true;
-    }
+    // or `allFrames` to be set. queryContent in the parent sets the `windows`
+    // parameter to specify the frames to inject into, potentially multiple,
+    // which we check below before calling script.injectInto. Therefore we can
+    // safely set `allFrames=true` (which is needed to run in subframes).
+    options.allFrames = true;
     let matcher = new WebExtensionContentScript(policy, options);
 
     Object.assign(matcher, {
       wantReturnValue: options.wantReturnValue,
       removeCSS: options.removeCSS,
+      // Scripts (file or code) that should be executed must be passed via
+      // options.jsExecuteScriptSources.
+      // Any file paths passed via options.js are ignored.
+      jsExecuteScriptSources: options.jsExecuteScriptSources,
     });
     let script = contentScripts.get(matcher);
-
-    if (options.jsCode) {
-      script.addJSCode(options.jsCode);
-      delete options.jsCode;
-    }
-
+    // preload any css files
+    script.loadCSS();
     // Add the cssCode to the script, so that it can be converted into a cached URL.
     await script.addCSSCode(options.cssCode);
     delete options.cssCode;
@@ -1489,6 +1486,7 @@ export var ExtensionContent = {
 
         return {
           frameId: bc.parent ? bc.id : 0,
+          innerId,
           // Disable exception reporting directly to the console
           // in order to pass the exceptions back to the callsite.
           promise: script.injectInto(bc.window, false),
@@ -1499,17 +1497,18 @@ export var ExtensionContent = {
     let promisesWithFrameIds = windows.map(executeInWin).filter(obj => obj);
 
     let result = await Promise.all(
-      promisesWithFrameIds.map(async ({ frameId, promise }) => {
+      promisesWithFrameIds.map(async ({ frameId, innerId, promise }) => {
         if (!options.returnResultsWithFrameIds) {
           return promise;
         }
 
+        const documentId = lazy.ExtensionDocumentId.getDocumentId(innerId);
         try {
           const result = await promise;
 
-          return { frameId, result };
+          return { frameId, documentId, result };
         } catch (error) {
-          return { frameId, error };
+          return { frameId, documentId, error };
         }
       })
     ).catch(
@@ -1522,8 +1521,13 @@ export var ExtensionContent = {
       // Check if the result can be structured-cloned before sending back.
       return Cu.cloneInto(result, this);
     } catch (e) {
-      let path = options.jsPaths.slice(-1)[0] ?? "<anonymous code>";
+      // Cloning errors are usually attributed to the last script.
+      // TODO bug 2041680: path is sometimes incorrect.
+      let path =
+        options.jsExecuteScriptSources.at(-1)?.file ?? "<anonymous code>";
       let message = `Script '${path}' result is non-structured-clonable data`;
+      // TODO bug 2041680: consider cloning individually for
+      // scripting.executeScript and userScripts.execute
       return Promise.reject({ message, fileName: path });
     }
   },

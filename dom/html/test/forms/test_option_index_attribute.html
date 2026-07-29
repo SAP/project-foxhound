@@ -67,7 +67,7 @@ is(o.index, 5, "option inside a select have an index");
 select.removeChild(select.options[0]);
 is(o.index, 4, "option inside a select have an index");
 
-select.insertBefore(o, select.options[0]);
+select.insertBefore(o, select.firstElementChild);
 is(o.index, 0, "option inside a select have an index");
 
 </script>

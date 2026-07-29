@@ -28,7 +28,7 @@ add_task(async function () {
 async function testModifyPropertyValueFilter(inspector, view) {
   await setSearchFilter(view, SEARCH);
 
-  const rule = getRuleViewRuleEditor(view, 1).rule;
+  const rule = getRuleViewRuleEditorAt(view, 1).rule;
   const propEditor = getTextProperty(view, 1, { margin: "4px" }).editor;
   const computed = propEditor.computed;
   const editor = await focusEditableField(view, propEditor.valueSpan);

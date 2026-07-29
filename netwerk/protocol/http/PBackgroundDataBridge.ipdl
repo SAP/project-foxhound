@@ -16,7 +16,6 @@ async protocol PBackgroundDataBridge
 {
 child:
   async OnTransportAndData(uint64_t  offset,
-                           uint32_t  count,
                            nsCString data,
                            TimeStamp onDataAvailableStart);
 

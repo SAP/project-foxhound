@@ -73,7 +73,7 @@ async function resetToolsHeight() {
 }
 
 add_task(async function test_resize_of_tools() {
-  await SidebarController.initializeUIState({
+  await SidebarController.updateUIState({
     launcherExpanded: false,
   });
 
@@ -122,7 +122,7 @@ add_task(async function test_resize_of_tools() {
 });
 
 add_task(async function test_overflow_menu() {
-  await SidebarController.initializeUIState({
+  await SidebarController.updateUIState({
     launcherExpanded: false,
   });
 
@@ -194,7 +194,7 @@ add_task(async function test_overflow_menu() {
 });
 
 add_task(async function test_overflow_menu_with_keyboard() {
-  await SidebarController.initializeUIState({
+  await SidebarController.updateUIState({
     launcherExpanded: false,
   });
 

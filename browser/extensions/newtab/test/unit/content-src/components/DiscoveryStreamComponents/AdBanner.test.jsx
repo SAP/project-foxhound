@@ -11,7 +11,6 @@ const DEFAULT_PROPS = {
     "discoverystream.sections.enabled": false,
   },
   type: "foo",
-  firstVisibleTimestamp: new Date("March 21, 2024 10:11:12").getTime(),
   row: 3,
   spoc: {
     format: "billboard",
@@ -145,9 +144,6 @@ describe("Discovery Stream <AdBanner>", () => {
         value: {
           card_type: "spoc",
           tile_id: DEFAULT_PROPS.spoc.id,
-
-          fetchTimestamp: DEFAULT_PROPS.spoc.fetchTimestamp,
-          firstVisibleTimestamp: DEFAULT_PROPS.firstVisibleTimestamp,
           format: DEFAULT_PROPS.spoc.format,
         },
       })

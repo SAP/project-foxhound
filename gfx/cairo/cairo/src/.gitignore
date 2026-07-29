@@ -10,7 +10,6 @@ Makefile.am.features
 *.lo
 *.loT
 *.pc
-cairo-features.h
 cairo-supported-features.h
 cairo.def
 *.i

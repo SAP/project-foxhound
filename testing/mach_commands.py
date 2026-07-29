@@ -110,6 +110,13 @@ def get_test_parser():
         "'quick' (fewer tests with highest confidence to be related). "
         "Default: quick",
     )
+    parser.add_argument(
+        "--repeat",
+        type=int,
+        default=None,
+        help="Number of times to repeat the test(s). Passed through to the "
+        "underlying test harness.",
+    )
     add_logging_group(parser)
     return parser
 
@@ -421,6 +428,11 @@ def test(command_context, what, extra_args, **log_args):
     if log_args.get("auto"):
         from itertools import chain
 
+        # The packages required by gecko_taskgraph are only available in the taskgraph virtualenv.
+        # We only switch to it here to avoid network access unless --auto is used.
+        command_context._virtualenv_name = "taskgraph"
+        command_context.activate_virtualenv()
+
         from gecko_taskgraph.util.bugbug import patch_schedules
         from mozversioncontrol.factory import get_specific_repository_object
 
@@ -479,6 +491,10 @@ def test(command_context, what, extra_args, **log_args):
             extra_args.append(extra_args_debugger_notation)
         else:
             extra_args = [extra_args_debugger_notation]
+
+    if repeat := log_args.get("repeat"):
+        extra_args = extra_args or []
+        extra_args.append(f"--repeat={repeat}")
 
     # Create shared logger
     format_args = {"level": command_context._mach_context.settings["test"]["level"]}
@@ -564,7 +580,7 @@ def run_cppunit_test(command_context, **params):
 
     log = params.get("log")
     if not log:
-        log = commandline.setup_logging("cppunittest", {}, {"tbpl": sys.stdout})
+        log = commandline.setup_logging("cppunittest", {}, {"mach": sys.stdout})
 
     # See if we have crash symbols
     symbols_path = os.path.join(command_context.distdir, "crashreporter-symbols")
@@ -1382,20 +1398,17 @@ def run_migration_tests(command_context, test_paths=None, **kwargs):
     from test_fluent_migrations import fmt
 
     rv = 0
+    report = []
     with_context = []
     for to_test in test_paths:
         try:
             context = fmt.inspect_migration(to_test)
             for issue in context["issues"]:
-                command_context.log(
+                report.append((
                     logging.ERROR,
-                    "fluent-migration-test",
-                    {
-                        "error": issue["msg"],
-                        "file": to_test,
-                    },
+                    {"error": issue["msg"], "file": to_test},
                     "ERROR in {file}: {error}",
-                )
+                ))
             if context["issues"]:
                 continue
             with_context.append({
@@ -1403,16 +1416,16 @@ def run_migration_tests(command_context, test_paths=None, **kwargs):
                 "references": context["references"],
             })
         except Exception as e:
-            command_context.log(
+            report.append((
                 logging.ERROR,
-                "fluent-migration-test",
                 {"error": str(e), "file": to_test},
                 "ERROR in {file}: {error}",
-            )
+            ))
             rv |= 1
     obj_dir, repo_dir = fmt.prepare_directories(command_context)
     for context in with_context:
-        rv |= fmt.test_migration(command_context, obj_dir, repo_dir, **context)
+        rv |= fmt.test_migration(command_context, obj_dir, repo_dir, report, **context)
+    fmt.render_report(report)
     return rv
 
 
@@ -1462,6 +1475,47 @@ def test_info_manifest_timings(command_context, output_dir):
         process = subprocess.Popen(
             cmd,
             cwd=runtimes_dir,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+
+        for line_ in process.stdout:
+            line = line_.rstrip()
+            print(line)
+
+            if line:
+                monitor.record_event(line)
+
+        return_code = process.wait()
+        if return_code != 0:
+            raise subprocess.CalledProcessError(return_code, cmd)
+
+
+@SubCommand(
+    "test-info",
+    "worker-data",
+    description="Collect worker pool activity data from STMO.",
+)
+@CommandArgument("--output-dir", help="Path to output directory.")
+def test_info_worker_data(command_context, output_dir):
+    with resource_monitor_profile(command_context, output_dir) as monitor:
+        workers_dir = os.path.join(command_context.topsrcdir, "testing", "workers")
+        script_path = os.path.join(workers_dir, "fetch-worker-data.js")
+
+        node_binary, _ = find_node_executable()
+        cmd = [node_binary, script_path]
+
+        if output_dir:
+            cmd.extend(["--output-dir", os.path.abspath(output_dir)])
+
+        print(f"Running: {' '.join(cmd)}")
+        print(f"Working directory: {workers_dir}")
+
+        process = subprocess.Popen(
+            cmd,
+            cwd=workers_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,

@@ -10,15 +10,12 @@ import androidx.annotation.RequiresApi
 import androidx.benchmark.macro.junit4.BaselineProfileRule
 import org.junit.Rule
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.junit.runners.Parameterized
-import org.mozilla.fenix.benchmark.utils.EXTRA_COMPOSABLE_TOOLBAR
 import org.mozilla.fenix.benchmark.utils.FENIX_HOME_DEEP_LINK
 import org.mozilla.fenix.benchmark.utils.HtmlAsset
 import org.mozilla.fenix.benchmark.utils.MockWebServerRule
-import org.mozilla.fenix.benchmark.utils.ParameterizedToolbarsTest
 import org.mozilla.fenix.benchmark.utils.TARGET_PACKAGE
 import org.mozilla.fenix.benchmark.utils.closeAllTabs
+import org.mozilla.fenix.benchmark.utils.completeOnboarding
 import org.mozilla.fenix.benchmark.utils.enterSearchMode
 import org.mozilla.fenix.benchmark.utils.loadSite
 import org.mozilla.fenix.benchmark.utils.openNewTabOnTabsTray
@@ -50,11 +47,8 @@ import org.mozilla.fenix.benchmark.utils.url
  * When using this class to generate a baseline profile, only API 33+ or rooted API 28+ are supported.
  */
 @RequiresApi(Build.VERSION_CODES.P)
-@RunWith(Parameterized::class)
 @BaselineProfileGenerator
-class SwitchTabsBaselineProfileGenerator(
-    private val useComposableToolbar: Boolean,
-): ParameterizedToolbarsTest() {
+class SwitchTabsBaselineProfileGenerator {
 
     @get:Rule
     val rule = BaselineProfileRule()
@@ -68,23 +62,23 @@ class SwitchTabsBaselineProfileGenerator(
             packageName = TARGET_PACKAGE,
         ) {
             val intent = Intent(Intent.ACTION_VIEW, FENIX_HOME_DEEP_LINK)
-                .putExtra(EXTRA_COMPOSABLE_TOOLBAR, useComposableToolbar)
             intent.setPackage(packageName)
 
             startActivityAndWait(intent = intent)
+            device.completeOnboarding()
 
-            device.enterSearchMode(useComposableToolbar)
+            device.enterSearchMode()
             val simpleHtmlUrl = mockRule.url(HtmlAsset.SIMPLE)
-            device.loadSite(url = simpleHtmlUrl, useComposableToolbar)
+            device.loadSite(url = simpleHtmlUrl)
 
-            device.openTabsTray(useComposableToolbar)
+            device.openTabsTray()
             device.openNewTabOnTabsTray()
-            device.loadSite(url = mockRule.url(HtmlAsset.LONG), useComposableToolbar)
+            device.loadSite(url = mockRule.url(HtmlAsset.LONG))
 
-            device.openTabsTray(useComposableToolbar)
+            device.openTabsTray()
             device.switchTabs(siteName = HtmlAsset.SIMPLE.title, newTabUrl = simpleHtmlUrl)
 
-            device.openTabsTray(useComposableToolbar)
+            device.openTabsTray()
             device.closeAllTabs()
         }
     }

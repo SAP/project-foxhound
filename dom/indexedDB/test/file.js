@@ -102,8 +102,10 @@ function verifyBlobProperties(blob1, blob2, fileId) {
  * blob2, and the given fileId. Additionally, if blob2 is a File, the names
  * of two blobs must be equal.
  *
- * Note: Unlike the generator based verifyBlob routine, verifyBlobAsync uses
- * bufferCache for both blob1 and blob2 arguments.
+ * Note: verifyBlobAsync uses bufferCache only for blob2. Callers consistently
+ * use blob1 for the actual Blob value read back from IndexedDB and blob2 for
+ * the expected/reference Blob. Caching blob1 would therefore provide little
+ * benefit, since those values are typically not reused in later calls.
  *
  * @param {Blob} blob1 actual Blob value
  * @param {Blob} blob2 Blob with expected properties
@@ -143,19 +145,32 @@ async function verifyBlobAsync(blob1, blob2, fileId) {
     });
   };
 
-  if (!buffer1) {
-    buffer1 = await getBuffer(blob1);
-    bufferCache.push({ blob: blob1, buffer: buffer1 });
-  }
-
   if (!buffer2) {
     buffer2 = await getBuffer(blob2);
     bufferCache.push({ blob: blob2, buffer: buffer2 });
   }
 
+  buffer1 = await getBuffer(blob1);
+
   verifyBuffers(buffer1, buffer2);
 }
 
+/**
+ * verifyBlob checks that blob1 has the same size, type and buffer as blob2,
+ * and the given fileId. Additionally, if blob2 is a File, the names of the
+ * two blobs must be equal.
+ *
+ * Note: verifyBlob uses bufferCache only for blob2. Callers consistently use
+ * blob1 for the actual Blob value read back from IndexedDB and blob2 for the
+ * expected/reference Blob. Caching blob1 would therefore provide little
+ * benefit, since those values are typically not reused in later calls.
+ *
+ * @param {Blob} blob1 actual Blob value
+ * @param {Blob} blob2 Blob with expected properties
+ * @param {number} fileId expected id
+ * @param {Function=} blobReadHandler optional callback invoked after both blobs
+ *     have been read and compared
+ */
 function verifyBlob(blob1, blob2, fileId, blobReadHandler) {
   verifyBlobProperties(blob1, blob2, fileId);
 
@@ -253,7 +268,7 @@ function grabFileUsageAndContinueHandler(request) {
 
 function getCurrentUsage(usageHandler) {
   let qms = SpecialPowers.Services.qms;
-  let principal = SpecialPowers.wrap(document).nodePrincipal;
+  let principal = SpecialPowers.wrap(document).effectiveStoragePrincipal;
   let cb = SpecialPowers.wrapCallback(usageHandler);
   qms.getUsageForPrincipal(principal, cb);
 }

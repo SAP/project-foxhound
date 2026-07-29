@@ -29,13 +29,13 @@ task-defaults:
               name: public/code-review/mozlint.json
               path: /builds/worker/mozlint.json
             - name: public/android/geckoview/api.txt
-              path: /builds/worker/checkouts/gecko/obj-firefox/gradle/build/mobile/android/geckoview/intermediates/javac/debug/api.txt
+              path: /builds/worker/checkouts/gecko/obj-firefox/gradle/build/mobile/android/geckoview/apilint/debug/api.txt
               type: file
             - name: public/android/geckoview/api.txt.map
-              path: /builds/worker/checkouts/gecko/obj-firefox/gradle/build/mobile/android/geckoview/intermediates/javac/debug/api.txt.map
+              path: /builds/worker/checkouts/gecko/obj-firefox/gradle/build/mobile/android/geckoview/apilint/debug/api.txt.map
               type: file
             - name: public/android/geckoview/apilint-result.json
-              path: /builds/worker/checkouts/gecko/obj-firefox/gradle/build/mobile/android/geckoview/intermediates/javac/debug/apilint-result.json
+              path: /builds/worker/checkouts/gecko/obj-firefox/gradle/build/mobile/android/geckoview/apilint/debug/apilint-result.json
               type: file
             - name: public/android/geckoview/javadoc-results.json
               path: /builds/worker/checkouts/gecko/obj-firefox/gradle/build/mobile/android/geckoview/reports/javadoc-results-debug.json
@@ -72,7 +72,7 @@ task-defaults:
 
 lints:
     treeherder:
-        symbol: A(lints)
+        symbol: android(lints)
     run:
         command: >
             ln -s $MOZ_FETCHES_DIR/android-gradle-dependencies $GECKO_PATH &&
@@ -111,7 +111,7 @@ lints:
 
 fenix:
     treeherder:
-        symbol: A(fenix-lints)
+        symbol: android(fenix-lints)
     run:
         command: >
             ln -s $MOZ_FETCHES_DIR/android-gradle-dependencies $GECKO_PATH &&
@@ -138,7 +138,7 @@ fenix:
 
 focus:
     treeherder:
-        symbol: A(focus-lints)
+        symbol: android(focus-lints)
     run:
         command: >
             ln -s $MOZ_FETCHES_DIR/android-gradle-dependencies $GECKO_PATH &&
@@ -165,7 +165,7 @@ focus:
 
 android-components:
     treeherder:
-        symbol: A(ac-lints)
+        symbol: android(ac-lints)
     run:
         command: >
             ln -s $MOZ_FETCHES_DIR/android-gradle-dependencies $GECKO_PATH &&

@@ -5,6 +5,10 @@
     "test": "node --test --test-reporter=./reporters/mozilla-format.mjs tests/**"
   },
   "license": "MPL-2.0",
+  "dependencies": {
+    "@csstools/css-parser-algorithms": "3.0.4",
+    "@csstools/media-query-list-parser": "4.0.2"
+  },
   "devDependencies": {
     "postcss-value-parser": "4.2.0",
     "stylelint-test-rule-node": "0.4.0"

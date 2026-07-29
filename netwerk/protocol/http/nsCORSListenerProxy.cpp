@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,7 +23,6 @@
 #include "nsServiceManagerUtils.h"
 #include "nsMimeTypes.h"
 #include "nsStringStream.h"
-#include "nsGkAtoms.h"
 #include "nsWhitespaceTokenizer.h"
 #include "nsIChannelEventSink.h"
 #include "nsIDNSRecord.h"
@@ -106,7 +103,7 @@ static void LogBlockedRequest(nsIRequest* aRequest, const char* aProperty,
   }
   NS_ConvertUTF8toUTF16 specUTF16(spec);
   rv = nsContentUtils::FormatLocalizedString(
-      nsContentUtils::eSECURITY_PROPERTIES, aProperty, params, blockedMessage);
+      PropertiesFile::SECURITY_PROPERTIES, aProperty, params, blockedMessage);
 
   if (NS_FAILED(rv)) {
     NS_WARNING("Failed to log blocked cross-site request (no formalizedStr");
@@ -356,26 +353,38 @@ bool CORSCacheEntry::CheckDNSCache() {
     return false;
   }
 
-  nsCOMPtr<nsIDNSRecord> record;
-  nsresult rv = dns->ResolveNative(host, nsIDNSService::RESOLVE_OFFLINE, mOA,
-                                   getter_AddRefs(record));
-  if (NS_FAILED(rv) || !record) {
-    return false;
+  // Happy Eyeballs resolves each address family separately, so the host may be
+  // cached only as per-family (AF_INET/AF_INET6) records with no AF_UNSPEC
+  // entry. Check each family: the cached preflight is still valid as long as a
+  // matching DNS entry exists and none was updated after the preflight was
+  // created.
+  const nsIDNSService::DNSFlags familyFlags[] = {
+      nsIDNSService::RESOLVE_DEFAULT_FLAGS,  // AF_UNSPEC
+      nsIDNSService::RESOLVE_DISABLE_IPV6,   // AF_INET
+      nsIDNSService::RESOLVE_DISABLE_IPV4,   // AF_INET6
+  };
+
+  bool foundRecord = false;
+  for (const auto& flags : familyFlags) {
+    nsCOMPtr<nsIDNSRecord> record;
+    nsresult rv =
+        dns->ResolveNative(host, nsIDNSService::RESOLVE_OFFLINE | flags, mOA,
+                           getter_AddRefs(record));
+    nsCOMPtr<nsIDNSAddrRecord> addrRec = do_QueryInterface(record);
+    if (NS_FAILED(rv) || !addrRec) {
+      continue;
+    }
+
+    foundRecord = true;
+    TimeStamp lastUpdate;
+    (void)addrRec->GetLastUpdate(&lastUpdate);
+    if (lastUpdate > mCreationTime) {
+      // The DNS result was re-resolved after the preflight was cached.
+      return false;
+    }
   }
 
-  nsCOMPtr<nsIDNSAddrRecord> addrRec = do_QueryInterface(record);
-  if (!addrRec) {
-    return false;
-  }
-
-  TimeStamp lastUpdate;
-  (void)addrRec->GetLastUpdate(&lastUpdate);
-
-  if (lastUpdate > mCreationTime) {
-    return false;
-  }
-
-  return true;
+  return foundRecord;
 }
 
 bool CORSCacheEntry::CheckRequest(const nsCString& aMethod,

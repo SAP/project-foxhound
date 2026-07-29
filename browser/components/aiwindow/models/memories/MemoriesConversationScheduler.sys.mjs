@@ -10,6 +10,9 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "moz-src:///browser/components/aiwindow/models/memories/MemoriesManager.sys.mjs",
   getRecentChats:
     "moz-src:///browser/components/aiwindow/models/memories/MemoriesChatSource.sys.mjs",
+  CONVERSATION:
+    "moz-src:///browser/components/aiwindow/models/memories/MemoriesConstants.sys.mjs",
+  openAIEngine: "moz-src:///browser/components/aiwindow/models/Utils.sys.mjs",
 });
 ChromeUtils.defineLazyGetter(lazy, "console", function () {
   return console.createInstance({
@@ -40,12 +43,19 @@ export class MemoriesConversationScheduler {
   #intervalHandle = 0;
   #destroyed = false;
   #running = false;
+  // Earliest time we'll attempt a run again after a budget-exceeded failure.
+  // In-memory only: a browser restart resets this.
+  #backoffUntilMs = 0;
 
   /** @type {MemoriesConversationScheduler | null} */
   static #instance = null;
 
   static maybeInit() {
-    if (!lazy.MemoriesManager.shouldEnableMemoriesSchedulers()) {
+    if (
+      !lazy.MemoriesManager.shouldEnableMemoriesFromSchedulers(
+        lazy.CONVERSATION
+      )
+    ) {
       return null;
     }
     if (!this.#instance) {
@@ -94,9 +104,13 @@ export class MemoriesConversationScheduler {
     }
 
     // Re-check gating conditions on every tick (AIWindow may have closed, prefs may have changed).
-    if (!lazy.MemoriesManager.shouldEnableMemoriesSchedulers()) {
+    if (
+      !lazy.MemoriesManager.shouldEnableMemoriesFromSchedulers(
+        lazy.CONVERSATION
+      )
+    ) {
       lazy.console.debug(
-        "Memories schedulers no longer enabled; stopping conversation scheduler."
+        "Memories from conversation scheduler no longer enabled; stopping conversation scheduler."
       );
       this.destroy();
       // Also clear singleton so it can be re-initialized later when conditions become true again.
@@ -107,6 +121,16 @@ export class MemoriesConversationScheduler {
     if (this.#running) {
       lazy.console.debug(
         "Skipping run because a previous run is still in progress."
+      );
+      return;
+    }
+
+    if (this.#backoffUntilMs && Date.now() < this.#backoffUntilMs) {
+      const remainingMin = Math.ceil(
+        (this.#backoffUntilMs - Date.now()) / (60 * 1000)
+      );
+      lazy.console.debug(
+        `In budget-exceeded backoff for another ${remainingMin}m; skipping.`
       );
       return;
     }
@@ -151,11 +175,22 @@ export class MemoriesConversationScheduler {
       // Generate memories
       await lazy.MemoriesManager.generateMemoriesFromConversationHistory();
     } catch (error) {
-      lazy.console.error("Failed to generate conversation memories", error);
+      if (lazy.openAIEngine.is429Error(error)) {
+        this.#backoffUntilMs = Date.now() + MEMORIES_SCHEDULER_COOLDOWN_MS;
+        lazy.console.warn(
+          `Rate limited (HTTP 429); deferring next conversation memories run by ${Math.floor(
+            MEMORIES_SCHEDULER_COOLDOWN_MS / (60 * 60 * 1000)
+          )}h.`
+        );
+      } else {
+        lazy.console.error("Failed to generate conversation memories", error);
+      }
     } finally {
       if (
         !this.#destroyed &&
-        lazy.MemoriesManager.shouldEnableMemoriesSchedulers()
+        lazy.MemoriesManager.shouldEnableMemoriesFromSchedulers(
+          lazy.CONVERSATION
+        )
       ) {
         this.#startInterval();
       }
@@ -172,5 +207,15 @@ export class MemoriesConversationScheduler {
 
   async runNowForTesting() {
     await this.#onInterval();
+  }
+
+  /**
+   * Testing helper: set the backoff deadline (ms since epoch).
+   * Pass 0 to clear the backoff window. Not used in production code.
+   *
+   * @param {number} untilMs
+   */
+  setBackoffUntilMsForTesting(untilMs) {
+    this.#backoffUntilMs = untilMs;
   }
 }

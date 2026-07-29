@@ -25,7 +25,6 @@ task-defaults:
 only-for-build-platforms:
     - linux64-shippable/opt
     - linux64-devedition/opt
-    - linux64-asan-reporter-shippable/opt
     - linux64/opt
     - linux64-aarch64-shippable/opt
     - linux64-aarch64-devedition/opt
@@ -34,6 +33,7 @@ only-for-build-platforms:
     - macosx64-devedition/opt
     - macosx64/opt
     - macosx64/debug
+    - macosx64-aarch64/opt
     - macosx64-aarch64/debug
     - win32-shippable/opt
     - win32-devedition/opt
@@ -43,7 +43,6 @@ only-for-build-platforms:
     - win64-aarch64-shippable/opt
     - win64-aarch64-devedition/opt
     - win64/opt
-    - win64-asan-reporter-shippable/opt
 
 tasks:
     repackage:
@@ -95,6 +94,7 @@ tasks:
                 win64\b.*: [mar, installer]
         fetches:
             toolchain:
+                - linux64-7zz
                 - linux64-mar-tools
                 - linux64-zucchini-bin
                 - linux64-upx

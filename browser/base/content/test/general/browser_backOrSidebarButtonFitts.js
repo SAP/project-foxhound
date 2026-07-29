@@ -8,7 +8,7 @@ async function test_back_button(x, y) {
     // eslint-disable-next-line @microsoft/sdl/no-insecure-url
     "http://example.org/browser/browser/base/content/test/general/dummy_page.html";
   await BrowserTestUtils.openNewForegroundTab(gBrowser, firstLocation);
-  await ContentTask.spawn(gBrowser.selectedBrowser, {}, async function () {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {
     // Mark the first entry as having been interacted with.
     content.document.notifyUserGestureActivation();
     content.history.pushState("page2", "page2", "page2");
@@ -31,12 +31,12 @@ async function test_back_button(x, y) {
 
 async function test_sidebar_button(x, y) {
   // If the first button is the sidebar, check initial sidebar state
-  let sidebarMain = document.getElementById("sidebar-main");
-  let initialSidebarHiddenState = sidebarMain.hidden;
+  let sidebarContainer = document.getElementById("sidebar-container");
+  let initialSidebarHiddenState = sidebarContainer.hidden;
 
   EventUtils.synthesizeMouseAtPoint(x, y, {}, window);
   is(
-    sidebarMain.hidden,
+    sidebarContainer.hidden,
     !initialSidebarHiddenState,
     "Clicking the first pixel should toggle the sidebar"
   );
@@ -44,7 +44,7 @@ async function test_sidebar_button(x, y) {
   // Ensure sidebar is put back into original state for following tests
   EventUtils.synthesizeMouseAtPoint(x, y, {}, window);
   is(
-    sidebarMain.hidden,
+    sidebarContainer.hidden,
     initialSidebarHiddenState,
     "Clicking the first pixel should toggle the sidebar"
   );

@@ -41,7 +41,7 @@ import mozilla.components.compose.base.snackbar.displaySnackbar
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.SnackbarBehavior
 import org.mozilla.fenix.compose.core.Action
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.theme.FirefoxTheme
 import com.google.android.material.snackbar.Snackbar as MaterialSnackbar
 
@@ -94,7 +94,7 @@ class Snackbar private constructor(
             val contentView = ComposeView(context = parent.context)
             val callback = SnackbarAnimationCallback(contentView)
             val durationOrAccessibleDuration =
-                if (parent.context.settings().accessibilityServicesEnabled &&
+                if (parent.context.components.settings.accessibilityServicesEnabled &&
                     LENGTH_ACCESSIBLE > snackbarState.durationMs
                 ) {
                     LENGTH_ACCESSIBLE
@@ -137,8 +137,9 @@ class Snackbar private constructor(
                     (parent.layoutParams as? CoordinatorLayout.LayoutParams)?.apply {
                         behavior = SnackbarBehavior<FrameLayout>(
                             context = snackBarParentView.context,
-                            toolbarPosition = snackBarParentView.context.settings().toolbarPosition,
-                            shouldUseExpandedToolbar = snackBarParentView.context.settings().shouldUseExpandedToolbar,
+                            toolbarPosition = snackBarParentView.context.components.settings.toolbarPosition,
+                            shouldUseExpandedToolbar =
+                                snackBarParentView.context.components.settings.shouldUseExpandedToolbar,
                         )
                     }
                 }

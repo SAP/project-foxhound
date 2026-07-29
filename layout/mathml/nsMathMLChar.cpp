@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,7 @@
 #include "nsMathMLChar.h"
 
 #include <algorithm>
+#include <numeric>
 
 #include "gfxContext.h"
 #include "gfxMathTable.h"
@@ -16,7 +15,6 @@
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/MathAlgorithms.h"
-#include "mozilla/Preferences.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticPrefs_mathml.h"
 #include "mozilla/UniquePtr.h"
@@ -211,11 +209,11 @@ class nsUnicodeTable final : public nsGlyphTable {
       DrawTarget* aDrawTarget, int32_t aAppUnitsPerDevPixel,
       gfxFontGroup* aFontGroup, const nsGlyphCode& aGlyph) override;
 
- private:
   // Not available for the heap!
   void* operator new(size_t) = delete;
   void* operator new[](size_t) = delete;
 
+ private:
   struct UnicodeConstructionComparator {
     int operator()(const UnicodeConstruction& aValue) const {
       if (mTarget < aValue[0]) {
@@ -783,8 +781,7 @@ bool nsMathMLChar::StretchEnumContext::TryVariants(
 
   // start at size = 1 (size = 0 is the char at its normal size), except for
   // rtlm fonts since they might have a character there.
-  int32_t size =
-      (StaticPrefs::mathml_rtl_operator_mirroring_enabled() && aRtl) ? 0 : 1;
+  int32_t size = aRtl ? 0 : 1;
   nsGlyphCode ch;
   nscoord displayOperatorMinHeight = 0;
   if (largeopOnly) {
@@ -935,17 +932,15 @@ bool nsMathMLChar::StretchEnumContext::TryParts(
   // come from the same font.
   if (aGlyphTable->IsUnicodeTable()) {
     gfxFont* unicodeFont = nullptr;
-    for (int32_t i = 0; i < 4; i++) {
-      if (!textRun[i]) {
+    for (const auto& i : textRun) {
+      if (!i) {
         continue;
       }
-      if (textRun[i]->GetLength() != 1 ||
-          textRun[i]->GetCharacterGlyphs()[0].IsMissing()) {
+      if (i->GetLength() != 1 || i->GetCharacterGlyphs()[0].IsMissing()) {
         return false;
       }
       uint32_t numGlyphRuns;
-      const gfxTextRun::GlyphRun* glyphRuns =
-          textRun[i]->GetGlyphRuns(&numGlyphRuns);
+      const gfxTextRun::GlyphRun* glyphRuns = i->GetGlyphRuns(&numGlyphRuns);
       if (numGlyphRuns != 1) {
         return false;
       }
@@ -1156,6 +1151,19 @@ static void InsertMathFallbacks(StyleFontFamilyList& aFamilyList,
   aFamilyList = StyleFontFamilyList::WithNames(std::move(mergedList));
 }
 
+// Characters that are mirrorable with RTLM but shouldn't be mirrored with a
+// scale fallback as that would change semantics.
+//
+// 0x2231: Clockwise Integral.
+// 0x2232: Clockwise Contour Integral.
+// 0x2233: Anticlockwise Contour Integral.
+// 0x2A11: Anticlockwise Integration.
+// 0x2A17: Integral with Leftwards Arrow with Hook.
+bool CanBeMirroredWithScaleFallback(uint32_t ch) {
+  return ch != 0x2231 && ch != 0x2232 && ch != 0x2233 && ch != 0x2A11 &&
+         ch != 0x2A17;
+}
+
 nsresult nsMathMLChar::StretchInternal(
     nsIFrame* aForFrame, DrawTarget* aDrawTarget, float aFontSizeInflation,
     StretchDirection& aStretchDirection,
@@ -1197,6 +1205,12 @@ nsresult nsMathMLChar::StretchInternal(
       mMirroringMethod = MirroringMethod::ScaleFallback;
     }
   }
+
+  if (mMirroringMethod == MirroringMethod::ScaleFallback &&
+      !CanBeMirroredWithScaleFallback(mData.First())) {
+    mMirroringMethod = MirroringMethod::None;
+  }
+
   if (mMirroringMethod == MirroringMethod::Glyph ||
       mMirroringMethod == MirroringMethod::Character) {
     flags |= gfx::ShapedTextFlags::TEXT_IS_RTL;
@@ -1362,7 +1376,7 @@ nsresult nsMathMLChar::StretchInternal(
   }
 
   // If the scale_stretchy_operators option is disabled, we are done.
-  if (!Preferences::GetBool("mathml.scale_stretchy_operators.enabled", true)) {
+  if (!StaticPrefs::mathml_scale_stretchy_operators_enabled()) {
     return NS_OK;
   }
 
@@ -1455,9 +1469,6 @@ nsresult nsMathMLChar::Stretch(nsIFrame* aForFrame, DrawTarget* aDrawTarget,
   mMirroringMethod = [&] {
     if (!aRTL || !nsMathMLOperators::IsMirrorableOperator(mData)) {
       return MirroringMethod::None;
-    }
-    if (!StaticPrefs::mathml_rtl_operator_mirroring_enabled()) {
-      return MirroringMethod::ScaleFallback;
     }
     // Character level mirroring (always supported)
     if (nsMathMLOperators::GetMirroredOperator(mData) != mData) {
@@ -1776,7 +1787,7 @@ nsresult nsMathMLChar::PaintVertically(nsPresContext* aPresContext,
     } else if (2 == i) {  // bottom
       dy = aRect.y + aRect.height - bm.descent;
     } else {  // middle
-      dy = aRect.y + bm.ascent + (aRect.height - (bm.ascent + bm.descent)) / 2;
+      dy = aRect.y + std::midpoint(bm.ascent, aRect.height - bm.descent);
     }
     // _cairo_scaled_font_show_glyphs snaps origins to device pixels.
     // Do this now so that we can get the other dimensions right.
@@ -1801,7 +1812,7 @@ nsresult nsMathMLChar::PaintVertically(nsPresContext* aPresContext,
   // If there are overlaps, then join at the mid point
   for (i = 0; i < 2; ++i) {
     if (end[i] > start[i + 1]) {
-      end[i] = (end[i] + start[i + 1]) / 2;
+      end[i] = std::midpoint(end[i], start[i + 1]);
       start[i + 1] = end[i];
     }
   }
@@ -1975,7 +1986,7 @@ nsresult nsMathMLChar::PaintHorizontally(nsPresContext* aPresContext,
   // If there are overlaps, then join at the mid point
   for (i = 0; i < 2; ++i) {
     if (end[i] > start[i + 1]) {
-      end[i] = (end[i] + start[i + 1]) / 2;
+      end[i] = std::midpoint(end[i], start[i + 1]);
       start[i + 1] = end[i];
     }
   }

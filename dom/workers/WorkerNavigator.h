@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -34,6 +32,7 @@ class MediaCapabilities;
 class LockManager;
 class Permissions;
 class ServiceWorkerContainer;
+class Serial;
 
 namespace network {
 class Connection;
@@ -51,6 +50,7 @@ class WorkerNavigator final : public nsWrapperCache {
   RefPtr<dom::LockManager> mLocks;
   RefPtr<dom::Permissions> mPermissions;
   RefPtr<ServiceWorkerContainer> mServiceWorkerContainer;
+  RefPtr<dom::Serial> mSerial;
   bool mOnline;
 
   WorkerNavigator(const NavigatorProperties& aProperties, bool aOnline);
@@ -122,6 +122,8 @@ class WorkerNavigator final : public nsWrapperCache {
   dom::Permissions* Permissions();
 
   already_AddRefed<ServiceWorkerContainer> ServiceWorker();
+
+  dom::Serial* Serial();
 };
 
 }  // namespace dom

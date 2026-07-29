@@ -7,7 +7,7 @@ const TEST_URL =
   "https://example.org/document-builder.sjs?html=<input type='file'>";
 
 const MockFilePicker = SpecialPowers.MockFilePicker;
-MockFilePicker.init(window.browsingContext);
+MockFilePicker.init();
 
 add_task(async _ => {
   registerCleanupFunction(() => MockFilePicker.cleanup());

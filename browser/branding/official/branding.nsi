@@ -12,7 +12,7 @@
 !define BrandFullName         "Mozilla Firefox"
 !define CompanyName           "Mozilla Corporation"
 !define URLInfoAbout          "https://www.mozilla.org"
-!define URLUpdateInfo         "https://www.mozilla.org/firefox/${AppVersion}/releasenotes"
+!define URLUpdateInfo         "https://www.firefox.com/firefox/${AppVersion}/releasenotes"
 !define HelpLink              "https://support.mozilla.org"
 
 ; The OFFICIAL define is a workaround to support different urls for Release and

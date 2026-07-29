@@ -1,4 +1,3 @@
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -57,8 +56,12 @@ class BufferMediaResource
       return NS_ERROR_FAILURE;
     }
 
-    uint32_t bytes = std::min(mLength - static_cast<uint32_t>(aOffset), aCount);
-    memcpy(aBuffer, mBuffer + aOffset, bytes);
+    if (AssertedCast<uint64_t>(aOffset) + AssertedCast<uint64_t>(aCount) >
+        mLength) {
+      return NS_ERROR_FAILURE;
+    }
+
+    memcpy(aBuffer, mBuffer + aOffset, aCount);
     return NS_OK;
   }
 

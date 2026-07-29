@@ -3,6 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
+import functools
 import hashlib
 import os
 import pathlib
@@ -10,7 +11,6 @@ import sys
 import time
 
 import requests
-from mozbuild.util import memoize
 from taskgraph import create
 from taskgraph.util import json
 from taskgraph.util.taskcluster import requests_retry_session
@@ -48,7 +48,7 @@ class BugbugTimeoutException(Exception):
     pass
 
 
-@memoize
+@functools.cache
 def get_session():
     s = requests.Session()
     s.headers.update({"X-API-KEY": "gecko-taskgraph"})
@@ -98,7 +98,7 @@ def _write_perfherder_data(lower_is_better):
             json.dump(perfherder_data, f)
 
 
-@memoize
+@functools.cache
 def push_schedules(branch, rev):
     # Noop if we're in test-action-callback
     if create.testing:
@@ -150,7 +150,7 @@ def push_schedules(branch, rev):
     return data
 
 
-@memoize
+@functools.cache
 def patch_schedules(base_rev, patch_content, mode="quick"):
     """Query BugBug API with a patch to get test recommendations.
 

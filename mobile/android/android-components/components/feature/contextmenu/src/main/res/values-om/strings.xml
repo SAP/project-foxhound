@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources>
+  <!-- Text for context menu item to open the link in a new tab. -->
+  <string name="mozac_feature_contextmenu_open_link_in_new_tab">Cancala haaraa keessatti liinkii banaa</string>
+  <!-- Text for context menu item to open the link in a private tab. -->
+  <string name="mozac_feature_contextmenu_open_link_in_private_tab">Liinkii cancala dhuunfaa keessatti banaa</string>
+  <!-- Text for context menu item to open the image in a new tab. -->
+  <string name="mozac_feature_contextmenu_open_image_in_new_tab">Fakkii cancala haaraa keessatti banaa</string>
+  <!-- Text for context menu item to save / download the link. -->
+  <string name="mozac_feature_contextmenu_download_link">Liinkii buufannaa</string>
+  <!-- Text for context menu item to share the link with an other app. -->
+  <string name="mozac_feature_contextmenu_share_link">Liinkii qoodi</string>
+  <!-- Text for context menu item to share the image with an other app. -->
+  <string name="mozac_feature_contextmenu_share_image">Suura qoodi</string>
+  <!-- Text for context menu item to copy the link to the clipboard. -->
+  <string name="mozac_feature_contextmenu_copy_link">Liinkii waraabuu</string>
+  <!-- Text for context menu item to copy the link text to the clipboard. -->
+  <string name="mozac_feature_contextmenu_copy_link_text">Arfii liinkii waraabi</string>
+  <!-- Text for context menu item to copy the URL pointing to the image to the clipboard. -->
+  <string name="mozac_feature_contextmenu_copy_image_location">Bakka fakkii waraabi</string>
+  <!-- Text for context menu item to save / download the image. -->
+  <string name="mozac_feature_contextmenu_save_image">Fakkii olkaa\'i</string>
+  <!-- Text for context menu item to copy the image to the clipboard. -->
+  <string name="mozac_feature_contextmenu_copy_image">Fakkii waraabi</string>
+  <!-- Text for context menu item to save / download the file. -->
+  <string name="mozac_feature_contextmenu_save_file_to_device">Faayila gara meeshaatti saagi</string>
+  <!-- Text for confirmation "snackbar" shown after opening a link in a new tab. -->
+  <string name="mozac_feature_contextmenu_snackbar_new_tab_opened">Cancalli haaraan baname</string>
+  <!-- Text for confirmation "snackbar" shown after opening a link in a new private tab. -->
+  <string name="mozac_feature_contextmenu_snackbar_new_private_tab_opened">Cancalli dhuunfaa haaraan baname</string>
+  <!-- Text for confirmation "snackbar" shown after copying a link or image URL to the clipboard. -->
+  <string name="mozac_feature_contextmenu_snackbar_link_copied">Liinkii gara kiliipboorditti waraabameera</string>
+  <!-- Text for confirmation "snackbar" shown after copying a link text to the clipboard. -->
+  <string name="mozac_feature_contextmenu_snackbar_link_text_copied">Barruu gara gabatee muraatti waraabame walitti hidhuu</string>
+  <!-- Action shown in a "snacbkar" after opening a new/private tab. Clicking this action will switch to the newly opened tab. -->
+  <string name="mozac_feature_contextmenu_snackbar_action_switch">Jijjiiruu</string>
+  <!-- Text for context menu item to open the link in an external app. -->
+  <string name="mozac_feature_contextmenu_open_link_in_external_app">Appii alaa keessatti liinkii banaa</string>
+  <!-- Text for context menu item to share the email with another app. -->
+  <string name="mozac_feature_contextmenu_share_email_address">Teessoo imeelii qoodaa</string>
+  <!-- Text for context menu item to copy the email address to the clipboard. -->
+  <string name="mozac_feature_contextmenu_copy_email_address">Teessoo imeelii waraabi</string>
+  <!-- Text for confirmation "snackbar" shown after copying a email address to the clipboard. -->
+  <string name="mozac_feature_contextmenu_snackbar_email_address_copied">Teessoon iimeelii gara gabatee kiliippiitti waraabame</string>
+  <!-- Text for context menu item to add to a contact. -->
+  <string name="mozac_feature_contextmenu_add_to_contact">Kuusqunnamtii irratti dabali</string>
+  <!-- Action shown in a text selection context menu. This will prompt a search using the selected text. -->
+  <string name="mozac_selection_context_menu_search_2">Barbaadi</string>
+  <!-- Action shown in a text selection context menu. This will prompt a search in a private tab using the selected text -->
+  <string name="mozac_selection_context_menu_search_privately_2">Barbaacha Dhuunfaa</string>
+  <!-- Action shown in a text selection context menu. This will prompt a share of the selected text. -->
+  <string name="mozac_selection_context_menu_share">Qooduu</string>
+  <!-- Action shown in a text selection context menu. This will prompt a new email from the selected text. -->
+  <string name="mozac_selection_context_menu_email">Imeelii</string>
+  <!-- Action shown in a text selection context menu. This will prompt a new call from the selected text. -->
+  <string name="mozac_selection_context_menu_call">Bilbili</string>
+</resources>

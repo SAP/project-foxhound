@@ -70,6 +70,36 @@ export const CERT_ERRORS = [
     hasNoUserFix: true,
   },
   {
+    id: "SEC_ERROR_CA_CERT_INVALID",
+    errorCode: "SEC_ERROR_CA_CERT_INVALID",
+    category: "cert",
+    introContent: {
+      dataL10nId: "fp-certerror-intro",
+      dataL10nArgs: { hostname: null },
+    },
+    buttons: {
+      showTryAgain: false,
+      showGoBack: true,
+      showAdvanced: true,
+      showAddException: true,
+    },
+    advanced: {
+      whyDangerous: {
+        dataL10nId: "fp-certerror-invalid-cert-why-dangerous",
+        dataL10nArgs: { hostname: null },
+      },
+      whatCanYouDo: {
+        dataL10nId: "fp-certerror-untrusted-issuer-what-can-you-do-body",
+      },
+      learnMore: {
+        dataL10nId: "fp-learn-more-about-cert-issues",
+        supportPage: "connection-not-secure",
+      },
+      showViewCertificate: true,
+    },
+    hasNoUserFix: true,
+  },
+  {
     id: "SEC_ERROR_EXPIRED_CERTIFICATE",
     errorCode: "SEC_ERROR_EXPIRED_CERTIFICATE",
     category: "cert",
@@ -147,6 +177,7 @@ export const CERT_ERRORS = [
       showDateTime: true,
     },
     hasNoUserFix: false,
+    checkClockSkew: true,
   },
   {
     id: "SEC_ERROR_REVOKED_CERTIFICATE",
@@ -493,6 +524,33 @@ export const CERT_ERRORS = [
         supportPage: "connection-not-secure",
       },
       showViewCertificate: true,
+    },
+    hasNoUserFix: false,
+  },
+  // This does not correspond to a real NSS error code. It is a virtual error
+  // that may appear in place of certain errors that have checkClockSkew: true,
+  // when clock skew is detected at runtime.
+  {
+    id: "CLOCK_SKEW_ERROR",
+    category: "cert",
+    bodyTitleL10nId: "clockSkewError-title",
+    introContent: {
+      dataL10nId: "fp-certerror-clock-skew-intro",
+      dataL10nArgs: { hostname: null, now: null },
+    },
+    buttons: {
+      showTryAgain: true,
+      showGoBack: false,
+      showAdvanced: false,
+      showAddException: false,
+    },
+    advanced: null,
+    customNetError: {
+      titleL10nId: "clockSkewError-title",
+      whatCanYouDoL10nId: "fp-certerror-clock-skew-what-can-you-do-body",
+      whatCanYouDoL10nArgs: { now: null },
+      learnMoreL10nId: "fp-learn-more-about-time-related-errors",
+      learnMoreSupportPage: "time-errors",
     },
     hasNoUserFix: false,
   },

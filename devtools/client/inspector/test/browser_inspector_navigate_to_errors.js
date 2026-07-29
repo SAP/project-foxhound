@@ -36,7 +36,7 @@ add_task(async function () {
     "Inspector actor is no longer able to reach previous page DOM node"
   );
 
-  let errorSelector = "#netErrorIntro";
+  let errorSelector = "#error-intro";
   let hasNetErrorNode = await getNodeFront(errorSelector, inspector);
   if (!hasNetErrorNode) {
     errorSelector = "#errorShortDesc";

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -73,6 +72,23 @@ void WebGL2Context::CopyBufferSubData(GLenum readTarget, GLenum writeTarget,
   const ScopedLazyBind writeBind(gl, writeTarget, writeBuffer);
   gl->fCopyBufferSubData(readTarget, writeTarget, readOffset, writeOffset,
                          size);
+
+  // Update the destination index cache if needed.
+  if (writeBuffer->mIndexCache) {
+    MOZ_ASSERT(readBuffer->mIndexCache);
+    if (readBuffer->mIndexCache) {
+      // The read and write ranges have been validated above by
+      // fnValidateOffsetSize. If allocated, the size of mIndexCache is always
+      // mByteLength.
+      const auto* src =
+          static_cast<const uint8_t*>(readBuffer->mIndexCache.get()) +
+          readOffset;
+      auto* dst =
+          static_cast<uint8_t*>(writeBuffer->mIndexCache.get()) + writeOffset;
+      memcpy(dst, src, size);
+    }
+    writeBuffer->InvalidateCacheRange(writeOffset, size);
+  }
 
   writeBuffer->ResetLastUpdateFenceId();
 }

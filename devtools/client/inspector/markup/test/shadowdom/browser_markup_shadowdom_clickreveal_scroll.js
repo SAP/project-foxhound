@@ -82,7 +82,7 @@ add_task(async function () {
 });
 
 function isScrolledOut(element) {
-  const win = element.ownerGlobal;
+  const win = element.documentGlobal;
   const rect = element.getBoundingClientRect();
   return rect.top < 0 || rect.top + rect.height > win.innerHeight;
 }

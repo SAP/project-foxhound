@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -242,9 +240,9 @@ already_AddRefed<AudioBuffer> AudioBuffer::Create(
     AudioChunk&& aInitialContents) {
   AudioChunk initialContents = aInitialContents;
   ErrorResult rv;
-  RefPtr<AudioBuffer> buffer =
-      new AudioBuffer(aWindow, initialContents.ChannelCount(),
-                      initialContents.mDuration, aSampleRate, rv);
+  RefPtr<AudioBuffer> buffer = new AudioBuffer(
+      aWindow, initialContents.ChannelCount(),
+      AssertedCast<uint32_t>(initialContents.mDuration), aSampleRate, rv);
   if (rv.Failed()) {
     return nullptr;
   }

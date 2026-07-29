@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -697,8 +695,7 @@ class Operand {
   }
 };
 
-static constexpr int32_t SliceSize = 1024;
-typedef js::jit::AssemblerBuffer<SliceSize, Instruction> MIPSBuffer;
+typedef js::jit::AssemblerBuffer<Instruction> MIPSBuffer;
 
 class MIPSBufferWithExecutableCopy : public MIPSBuffer {
  public:
@@ -706,21 +703,12 @@ class MIPSBufferWithExecutableCopy : public MIPSBuffer {
     if (this->oom()) {
       return;
     }
-
-    for (Slice* cur = head; cur != nullptr; cur = cur->getNext()) {
-      memcpy(buffer, &cur->instructions, cur->length());
-      buffer += cur->length();
-    }
+    memcpy(buffer, this->data(), this->size());
   }
 
   bool appendRawCode(const uint8_t* code, size_t numBytes) {
     if (this->oom()) {
       return false;
-    }
-    while (numBytes > SliceSize) {
-      this->putBytes(SliceSize, code);
-      numBytes -= SliceSize;
-      code += SliceSize;
     }
     this->putBytes(numBytes, code);
     return !this->oom();

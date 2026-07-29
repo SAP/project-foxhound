@@ -1,6 +1,3 @@
-
-/* vim: set sw=2 ts=8 et tw=80 : */
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,23 +9,14 @@
 #include "mozilla/net/HttpChannelChild.h"
 #include "mozilla/net/ChildDNSService.h"
 #include "mozilla/net/CookieServiceChild.h"
-#ifdef MOZ_WIDGET_GTK
-#  include "mozilla/net/GIOChannelChild.h"
-#endif
 #include "mozilla/net/WebSocketChannelChild.h"
 #include "mozilla/net/WebSocketEventListenerChild.h"
 #include "mozilla/net/DNSRequestChild.h"
 #include "mozilla/net/IPCTransportProvider.h"
 #include "mozilla/dom/network/TCPSocketChild.h"
-#include "mozilla/dom/network/TCPServerSocketChild.h"
-#include "mozilla/dom/network/UDPSocketChild.h"
 #include "mozilla/net/AltDataOutputStreamChild.h"
 #include "mozilla/net/CacheEntryWriteHandleChild.h"
 #include "mozilla/net/SocketProcessBridgeChild.h"
-#ifdef MOZ_WEBRTC
-#  include "mozilla/net/StunAddrsRequestChild.h"
-#  include "mozilla/net/WebrtcTCPSocketChild.h"
-#endif
 
 #include "SerializedLoadContext.h"
 #include "nsGlobalWindowInner.h"
@@ -40,9 +28,7 @@
 #include "nsNetUtil.h"
 #include "SimpleChannel.h"
 
-using mozilla::dom::TCPServerSocketChild;
 using mozilla::dom::TCPSocketChild;
-using mozilla::dom::UDPSocketChild;
 
 namespace mozilla {
 namespace net {
@@ -73,41 +59,6 @@ void NeckoChild::InitNeckoChild() {
     gNeckoChild = cpc->SendPNeckoConstructor(child);
     NS_ASSERTION(gNeckoChild, "PNecko Protocol init failed!");
   }
-}
-
-PStunAddrsRequestChild* NeckoChild::AllocPStunAddrsRequestChild() {
-  // We don't allocate here: instead we always use IPDL constructor that takes
-  // an existing object
-  MOZ_ASSERT_UNREACHABLE(
-      "AllocPStunAddrsRequestChild should not be called "
-      "on child");
-  return nullptr;
-}
-
-bool NeckoChild::DeallocPStunAddrsRequestChild(PStunAddrsRequestChild* aActor) {
-#ifdef MOZ_WEBRTC
-  StunAddrsRequestChild* p = static_cast<StunAddrsRequestChild*>(aActor);
-  p->ReleaseIPDLReference();
-#endif
-  return true;
-}
-
-PWebrtcTCPSocketChild* NeckoChild::AllocPWebrtcTCPSocketChild(
-    const Maybe<TabId>& tabId) {
-  // We don't allocate here: instead we always use IPDL constructor that takes
-  // an existing object
-  MOZ_ASSERT_UNREACHABLE(
-      "AllocPWebrtcTCPSocketChild should not be called on"
-      " child");
-  return nullptr;
-}
-
-bool NeckoChild::DeallocPWebrtcTCPSocketChild(PWebrtcTCPSocketChild* aActor) {
-#ifdef MOZ_WEBRTC
-  WebrtcTCPSocketChild* child = static_cast<WebrtcTCPSocketChild*>(aActor);
-  child->ReleaseIPDLReference();
-#endif
-  return true;
 }
 
 PCacheEntryWriteHandleChild* NeckoChild::AllocPCacheEntryWriteHandleChild(
@@ -143,24 +94,6 @@ bool NeckoChild::DeallocPAltDataOutputStreamChild(
   child->ReleaseIPDLReference();
   return true;
 }
-
-#ifdef MOZ_WIDGET_GTK
-PGIOChannelChild* NeckoChild::AllocPGIOChannelChild(
-    PBrowserChild* aBrowser, const SerializedLoadContext& aSerialized,
-    const GIOChannelCreationArgs& aOpenArgs) {
-  // We don't allocate here: see GIOChannelChild::AsyncOpen()
-  MOZ_CRASH("AllocPGIOChannelChild should not be called");
-  return nullptr;
-}
-
-bool NeckoChild::DeallocPGIOChannelChild(PGIOChannelChild* channel) {
-  MOZ_ASSERT(IsNeckoChild(), "DeallocPGIOChannelChild called by non-child!");
-
-  GIOChannelChild* child = static_cast<GIOChannelChild*>(channel);
-  child->ReleaseIPDLReference();
-  return true;
-}
-#endif
 
 PCookieServiceChild* NeckoChild::AllocPCookieServiceChild() {
   // We don't allocate here: see CookieService::GetSingleton()
@@ -214,31 +147,6 @@ PTCPSocketChild* NeckoChild::AllocPTCPSocketChild(const nsAString& host,
 
 bool NeckoChild::DeallocPTCPSocketChild(PTCPSocketChild* child) {
   TCPSocketChild* p = static_cast<TCPSocketChild*>(child);
-  p->ReleaseIPDLReference();
-  return true;
-}
-
-PTCPServerSocketChild* NeckoChild::AllocPTCPServerSocketChild(
-    const uint16_t& aLocalPort, const uint16_t& aBacklog,
-    const bool& aUseArrayBuffers) {
-  MOZ_ASSERT_UNREACHABLE("AllocPTCPServerSocket should not be called");
-  return nullptr;
-}
-
-bool NeckoChild::DeallocPTCPServerSocketChild(PTCPServerSocketChild* child) {
-  TCPServerSocketChild* p = static_cast<TCPServerSocketChild*>(child);
-  p->ReleaseIPDLReference();
-  return true;
-}
-
-PUDPSocketChild* NeckoChild::AllocPUDPSocketChild(nsIPrincipal* aPrincipal,
-                                                  const nsACString& aFilter) {
-  MOZ_ASSERT_UNREACHABLE("AllocPUDPSocket should not be called");
-  return nullptr;
-}
-
-bool NeckoChild::DeallocPUDPSocketChild(PUDPSocketChild* child) {
-  UDPSocketChild* p = static_cast<UDPSocketChild*>(child);
   p->ReleaseIPDLReference();
   return true;
 }

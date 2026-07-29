@@ -132,6 +132,13 @@ data class IconRequest(
             TIPPY_TOP,
 
             /**
+             * An icon found in Mozilla's Merino Manifest list.
+             *
+             * https://merino.services.mozilla.com/api/v1/manifest
+             */
+            MERINO_MANIFEST,
+
+            /**
              * A Web App Manifest image.
              *
              * https://developer.mozilla.org/en-US/docs/Web/Manifest/icons

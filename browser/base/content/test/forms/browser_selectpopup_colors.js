@@ -621,7 +621,7 @@ add_task(
     let options = {
       skipSelectColorTest: true,
       waitForComputedStyle: {
-        property: "--panel-color",
+        property: "--panel-text-color",
         value: "rgb(255, 0, 0)",
       },
     };
@@ -688,7 +688,7 @@ add_task(
       selectColor: "rgb(128, 0, 128)",
       selectBgColor: kDefaultSelectStyles.backgroundColor,
       waitForComputedStyle: {
-        property: "--panel-color",
+        property: "--panel-text-color",
         value: "rgb(128, 0, 128)",
       },
       leaveOpen: true,

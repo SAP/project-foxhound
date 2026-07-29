@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<head>
+  <meta charset=utf-8>
+  <title>Test the 2nd import map should be accepted.</title>
+</head>
+<body onload='testLoaded()'>
+<script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+
+<script>
+// eslint-disable-next-line no-unused-vars
+let gotMsg = false;
+let console = Cc["@mozilla.org/consoleservice;1"].getService(Ci.nsIConsoleService);
+let listener = {
+  QueryInterface: ChromeUtils.generateQI(["nsIConsoleListener"]),
+  observe(msg) {
+    info("console message:" + msg);
+    ok(msg.logLevel == Ci.nsIConsoleMessage.warn, "log level should be 'warn'.");
+    console.unregisterListener(this);
+    gotMsg = true;
+  }
+};
+console.registerListener(listener);
+</script>
+
+<script type="importmap" onerror='importMapError1()'>
+{
+  "imports": {
+    "./export.mjs": "./module_simpleExport.mjs"
+  }
+}
+</script>
+
+<!--
+The 2nd import map:
+The first entry "./module_simpleExport.mjs" will be ignored due to conflict with
+the first import map.
+The second entry will be merged.
+-->
+<script type="importmap" onerror='importMapError2()'>
+{
+  "imports": {
+    "./export.mjs": "./module_simpleExport_2.mjs",
+    "simple": "./module_simpleExport.mjs"
+  }
+}
+</script>
+
+<script>
+  /* global gotMsg */
+  SimpleTest.waitForExplicitFinish();
+
+  let hasError = false;
+  // eslint-disable-next-line no-unused-vars
+  function importMapError1() {
+    ok(false, "The first import map should be accepted.");
+  }
+  // eslint-disable-next-line no-unused-vars
+  function importMapError2() {
+    hasError = true;
+  }
+
+  // eslint-disable-next-line no-unused-vars
+  function testLoaded() {
+    import("./export.mjs").then((ns) => {
+      ok(ns.x == 42, 'Check export.mjs imported value result: ' + ns.x);
+      ok(!hasError, "onerror of the 2nd import map shouldn't be called.");
+
+      // There should be a warning for the conflict in the 2nd import map.
+      ok(gotMsg, "Should have got the console warning.");
+      return import("simple");
+    }).then((ns) => {
+      ok(ns.x == 42, 'Check simple imported value result: ' + ns.x);
+    }).catch((e) => {
+      ok(false, "throws " + e);
+    }).then(() => {
+      SimpleTest.finish();
+    });
+  }
+</script>
+</body>

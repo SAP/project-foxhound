@@ -19,7 +19,7 @@ gcloud:
     - model: java
       version: 30
       locale: en_US
-    - model: frankel
+    - model: m2q
       version: 36
       locale: en_US
 

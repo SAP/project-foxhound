@@ -6,7 +6,6 @@
 //! https://drafts.csswg.org/css-easing/#timing-functions
 
 use crate::derives::*;
-use crate::parser::ParserContext;
 
 /// A generic easing function.
 #[derive(
@@ -17,6 +16,7 @@ use crate::parser::ParserContext;
     SpecifiedValueInfo,
     ToCss,
     ToShmem,
+    ToTyped,
     Serialize,
     Deserialize,
 )]
@@ -28,6 +28,7 @@ pub enum TimingFunction<Integer, Number, LinearStops> {
     /// `cubic-bezier(<number>, <number>, <number>, <number>)`
     #[allow(missing_docs)]
     #[css(comma, function)]
+    #[typed(skip)]
     CubicBezier {
         x1: Number,
         y1: Number,
@@ -37,12 +38,14 @@ pub enum TimingFunction<Integer, Number, LinearStops> {
     /// `step-start | step-end | steps(<integer>, [ <step-position> ]?)`
     /// `<step-position> = jump-start | jump-end | jump-none | jump-both | start | end`
     #[css(comma, function)]
+    #[typed(skip)]
     #[value_info(other_values = "step-start,step-end")]
     Steps(Integer, #[css(skip_if = "is_end")] StepPosition),
     /// linear([<linear-stop>]#)
     /// <linear-stop> = <output> && <linear-stop-length>?
     /// <linear-stop-length> = <percentage>{1, 2}
     #[css(function = "linear")]
+    #[typed(skip)]
     LinearFunction(LinearStops),
 }
 
@@ -60,6 +63,7 @@ pub enum TimingFunction<Integer, Number, LinearStops> {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
     Serialize,
     Deserialize,
 )]
@@ -82,16 +86,6 @@ pub enum BeforeFlag {
     Set,
 }
 
-#[cfg(feature = "gecko")]
-fn step_position_jump_enabled(_context: &ParserContext) -> bool {
-    true
-}
-
-#[cfg(feature = "servo")]
-fn step_position_jump_enabled(_context: &ParserContext) -> bool {
-    false
-}
-
 #[allow(missing_docs)]
 #[derive(
     Clone,
@@ -110,13 +104,9 @@ fn step_position_jump_enabled(_context: &ParserContext) -> bool {
 )]
 #[repr(u8)]
 pub enum StepPosition {
-    #[parse(condition = "step_position_jump_enabled")]
     JumpStart,
-    #[parse(condition = "step_position_jump_enabled")]
     JumpEnd,
-    #[parse(condition = "step_position_jump_enabled")]
     JumpNone,
-    #[parse(condition = "step_position_jump_enabled")]
     JumpBoth,
     Start,
     End,

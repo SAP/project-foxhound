@@ -294,10 +294,15 @@ async function waitForMigrationWizard() {
     window,
     "MigrationWizard:Ready"
   );
-  await BrowserTestUtils.waitForLocationChange(
-    gBrowser,
-    "about:preferences#general"
-  );
+  // The Settings Redesign LegacyPaneMappings shim routes "general-migrate"
+  // to the sync pane, so accept either location for the migration entry.
+  const expectedUri = Services.prefs.getBoolPref(
+    "browser.settings-redesign.enabled",
+    false
+  )
+    ? "about:preferences#sync"
+    : "about:preferences#general";
+  await BrowserTestUtils.waitForLocationChange(gBrowser, expectedUri);
   return wizardReadyPromise;
 }
 

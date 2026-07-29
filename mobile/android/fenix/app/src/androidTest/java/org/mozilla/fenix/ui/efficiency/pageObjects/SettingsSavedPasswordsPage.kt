@@ -10,10 +10,10 @@ import org.mozilla.fenix.ui.efficiency.helpers.BasePage
 import org.mozilla.fenix.ui.efficiency.helpers.Selector
 import org.mozilla.fenix.ui.efficiency.navigation.NavigationRegistry
 import org.mozilla.fenix.ui.efficiency.navigation.NavigationStep
+import org.mozilla.fenix.ui.efficiency.selectors.BrowserPageSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.HomeSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.MainMenuSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.SettingsPasswordsSelectors
-import org.mozilla.fenix.ui.efficiency.selectors.SettingsSavePasswordsSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.SettingsSavedPasswordsSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.SettingsSelectors
 
@@ -29,7 +29,7 @@ class SettingsSavedPasswordsPage(composeRule: AndroidComposeTestRule<HomeActivit
                 NavigationStep.Click(MainMenuSelectors.SETTINGS_BUTTON),
                 NavigationStep.Click(SettingsSelectors.PASSWORDS_BUTTON),
                 NavigationStep.Click(SettingsPasswordsSelectors.SAVED_PASSWORDS_OPTION),
-                NavigationStep.Click(SettingsSavedPasswordsSelectors.LATER_DIALOG_BUTTON),
+                NavigationStep.ClickIfPresent(SettingsSavedPasswordsSelectors.LOGINS_SECURITY_DIALOG_LATER_BUTTON),
             ),
         )
 
@@ -39,12 +39,32 @@ class SettingsSavedPasswordsPage(composeRule: AndroidComposeTestRule<HomeActivit
             steps = listOf(
                 NavigationStep.Click(HomeSelectors.MAIN_MENU_BUTTON),
                 NavigationStep.Click(MainMenuSelectors.PASSWORDS_BUTTON),
-                NavigationStep.Click(SettingsSavedPasswordsSelectors.LATER_DIALOG_BUTTON),
+                NavigationStep.ClickIfPresent(SettingsSavedPasswordsSelectors.LOGINS_SECURITY_DIALOG_LATER_BUTTON),
+            ),
+        )
+
+        NavigationRegistry.register(
+            from = "BrowserPage",
+            to = pageName,
+            steps = listOf(
+                NavigationStep.Click(BrowserPageSelectors.MAIN_MENU_BUTTON),
+                NavigationStep.Click(MainMenuSelectors.PASSWORDS_BUTTON),
+                NavigationStep.ClickIfPresent(SettingsSavedPasswordsSelectors.LOGINS_SECURITY_DIALOG_LATER_BUTTON),
+            ),
+        )
+
+        NavigationRegistry.register(
+            from = pageName,
+            to = "BrowserPage",
+            steps = listOf(
+                NavigationStep.Click(SettingsSavedPasswordsSelectors.GO_BACK_BUTTON),
+                NavigationStep.ClickIfPresent(SettingsPasswordsSelectors.GO_BACK_BUTTON),
+                NavigationStep.ClickIfPresent(SettingsSelectors.GO_BACK_BUTTON),
             ),
         )
     }
 
     override fun mozGetSelectorsByGroup(group: String): List<Selector> {
-        return SettingsSavePasswordsSelectors.all.filter { it.groups.contains(group) }
+        return SettingsSavedPasswordsSelectors.all.filter { it.groups.contains(group) }
     }
 }

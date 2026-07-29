@@ -35,7 +35,7 @@ add_task(async function () {
   );
   SpecialPowers.setBoolPref("browser.download.useDownloadDir", false);
   const { MockFilePicker } = SpecialPowers;
-  MockFilePicker.init(window.browsingContext);
+  MockFilePicker.init();
   MockFilePicker.returnValue = MockFilePicker.returnCancel;
 
   for (const kind of Object.keys(contentTypes)) {
@@ -92,7 +92,7 @@ function testType(isValid, type, params = "") {
       is(count, 3, "There must be expected number of rows");
     },
     function (err) {
-      is(err, "Error: The JSON Viewer did not load.");
+      is(err.message, "The JSON Viewer did not load.");
       ok(
         !isValid,
         "The JSON Viewer should only not load for invalid content types."

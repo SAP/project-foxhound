@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -771,9 +769,10 @@ nsresult BackgroundFileSaver::ExtractSignatureInfo(const nsAString& filePath) {
   }
 #ifdef XP_WIN
   // Setup the file to check.
+  const nsString flatFilePath(filePath);
   WINTRUST_FILE_INFO fileToCheck = {0};
   fileToCheck.cbStruct = sizeof(WINTRUST_FILE_INFO);
-  fileToCheck.pcwszFilePath = filePath.Data();
+  fileToCheck.pcwszFilePath = flatFilePath.get();
   fileToCheck.hFile = nullptr;
   fileToCheck.pgKnownSubject = nullptr;
 

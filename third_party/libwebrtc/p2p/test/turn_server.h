@@ -16,11 +16,11 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <span>
 #include <string>
 #include <utility>
 
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/environment/environment.h"
 #include "api/packet_socket_factory.h"
 #include "api/sequence_checker.h"
@@ -39,7 +39,6 @@
 #include "rtc_base/socket.h"
 #include "rtc_base/socket_address.h"
 #include "rtc_base/ssl_adapter.h"
-#include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
@@ -98,7 +97,7 @@ class TurnServerAllocation final {
   std::string ToString() const;
 
   void HandleTurnMessage(const TurnMessage* msg, EcnMarking ecn);
-  void HandleChannelData(ArrayView<const uint8_t> payload, EcnMarking ecn);
+  void HandleChannelData(std::span<const uint8_t> payload, EcnMarking ecn);
 
  private:
   struct Channel {
@@ -177,7 +176,7 @@ class TurnRedirectInterface {
 class StunMessageObserver {
  public:
   virtual void ReceivedMessage(const TurnMessage* msg) = 0;
-  virtual void ReceivedChannelData(ArrayView<const uint8_t> payload) = 0;
+  virtual void ReceivedChannelData(std::span<const uint8_t> payload) = 0;
   virtual ~StunMessageObserver() {}
 };
 
@@ -185,13 +184,13 @@ class StunMessageObserver {
 // AddInternalServerSocket, and a factory to create external sockets via
 // SetExternalSocketFactory, and it's ready to go.
 // Not yet wired up: TCP support.
-class TurnServer : public sigslot::has_slots<> {
+class TurnServer {
  public:
   typedef std::map<TurnServerConnection, std::unique_ptr<TurnServerAllocation>>
       AllocationMap;
 
   TurnServer(const Environment& env, TaskQueueBase* thread);
-  ~TurnServer() override;
+  virtual ~TurnServer();
 
   // Gets/sets the realm value to use for the server.
   const std::string& realm() const {
@@ -291,7 +290,7 @@ class TurnServer : public sigslot::has_slots<> {
   void OnInternalSocketClose(AsyncPacketSocket* socket, int err);
 
   void HandleStunMessage(TurnServerConnection* conn,
-                         ArrayView<const uint8_t> payload,
+                         std::span<const uint8_t> payload,
                          EcnMarking ecn) RTC_RUN_ON(thread_);
   void HandleBindingRequest(TurnServerConnection* conn, const StunMessage* msg)
       RTC_RUN_ON(thread_);

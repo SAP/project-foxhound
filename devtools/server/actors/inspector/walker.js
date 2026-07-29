@@ -45,12 +45,10 @@ loader.lazyRequireGetter(
 loader.lazyRequireGetter(
   this,
   [
-    "allAnonymousContentTreeWalkerFilter",
     "findGridParentContainerForNode",
     "isNodeDead",
-    "noAnonymousContentTreeWalkerFilter",
     "nodeDocument",
-    "standardTreeWalkerFilter",
+    "getTreeWalkerFilter",
   ],
   "resource://devtools/server/actors/inspector/utils.js",
   true
@@ -197,6 +195,7 @@ class WalkerActor extends Actor {
    *        The top-level Actor for this tab.
    * @param {object} options
    *        - {Boolean} showAllAnonymousContent: Show all native anonymous content
+   *        - {Boolean} showComments: Show comment nodes
    */
   constructor(conn, targetActor, options) {
     super(conn, walkerSpec);
@@ -220,10 +219,20 @@ class WalkerActor extends Actor {
     this.overflowCausingElementsMap = new Map();
 
     this.showAllAnonymousContent = options.showAllAnonymousContent;
-    // Allow native anonymous content (like <video> controls) if preffed on
-    this.documentWalkerFilter = this.showAllAnonymousContent
-      ? allAnonymousContentTreeWalkerFilter
-      : standardTreeWalkerFilter;
+    this.showComments = options.showComments;
+    this.documentWalkerFilter = getTreeWalkerFilter({
+      // Allow native anonymous content (like <video> controls) if preffed on
+      includeNativeAnonymousContent: this.showAllAnonymousContent,
+      includePseudoElements: true,
+      // Allow comment nodes if preffed on
+      includeComments: this.showComments,
+    });
+    this.noAnonymousContentDocumentWalkerFilter = getTreeWalkerFilter({
+      includeNativeAnonymousContent: false,
+      includePseudoElements: false,
+      // Allow comment nodes if preffed on
+      includeComments: this.showComments,
+    });
 
     this.walkerSearch = new WalkerSearch(this);
 
@@ -1447,7 +1456,7 @@ class WalkerActor extends Actor {
       return;
     }
 
-    loadSheet(node.rawNode.ownerGlobal, HELPER_SHEET);
+    loadSheet(node.rawNode.documentGlobal, HELPER_SHEET);
     node.rawNode.classList.add(HIDDEN_CLASS);
   }
 
@@ -2117,7 +2126,7 @@ class WalkerActor extends Actor {
     const nextWalkerSibling = this._getNextTraversalSibling(targetNode);
 
     const walker = new DocumentWalker(targetNode, this.rootWin, {
-      filter: noAnonymousContentTreeWalkerFilter,
+      filter: this.noAnonymousContentDocumentWalkerFilter,
       skipTo: SKIP_TO_SIBLING,
     });
 
@@ -2128,7 +2137,7 @@ class WalkerActor extends Actor {
 
   _getNextTraversalSibling(targetNode) {
     const walker = new DocumentWalker(targetNode, this.rootWin, {
-      filter: noAnonymousContentTreeWalkerFilter,
+      filter: this.noAnonymousContentDocumentWalkerFilter,
       skipTo: SKIP_TO_SIBLING,
     });
 

@@ -34,7 +34,7 @@ import mozilla.components.support.ktx.android.content.longPreference
 import mozilla.components.support.ktx.android.content.stringPreference
 import mozilla.components.support.ktx.android.content.stringSetPreference
 import mozilla.components.support.locale.LocaleManager
-import mozilla.components.support.utils.BrowsersCache
+import mozilla.components.support.utils.Browsers
 import mozilla.components.support.utils.ext.PackageManagerCompatHelper
 import mozilla.components.support.utils.ext.packageManagerCompatHelper
 import org.mozilla.experiments.nimbus.NimbusEventStore
@@ -47,7 +47,6 @@ import org.mozilla.fenix.autofill.address.RegionAddressFeatureGate
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.components.settings.counterPreference
 import org.mozilla.fenix.components.settings.featureFlagBooleanPreference
-import org.mozilla.fenix.components.settings.lazyBooleanPreference
 import org.mozilla.fenix.components.settings.lazyFeatureFlagBooleanPreference
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.debugsettings.addresses.EmptyAddressesDebugRegionRepository
@@ -72,12 +71,13 @@ import org.mozilla.fenix.settings.sitepermissions.AUTOPLAY_BLOCK_ALL
 import org.mozilla.fenix.settings.sitepermissions.AUTOPLAY_BLOCK_AUDIBLE
 import org.mozilla.fenix.tabstray.DefaultTabManagementFeatureHelper
 import org.mozilla.fenix.termsofuse.TOU_VERSION
-import org.mozilla.fenix.termsofuse.getApplicationInstalledTime
+import org.mozilla.fenix.utils.Settings.Companion.LONGFOX_PEEK_ANIMATION_MAX_SHOWS
 import org.mozilla.fenix.wallpapers.Wallpaper
 import java.security.InvalidParameterException
 import java.util.concurrent.TimeUnit.MILLISECONDS
 
 private const val AUTOPLAY_USER_SETTING = "AUTOPLAY_USER_SETTING"
+private const val MAX_ANIMATION_FOREGROUND = 5
 
 /**
  * A simple wrapper for SharedPreferences that makes reading preference a little bit easier.
@@ -92,6 +92,7 @@ class Settings(
     private val appContext: Context,
     private val packageName: String = appContext.packageName,
     private val packageManagerCompatHelper: PackageManagerCompatHelper = appContext.packageManagerCompatHelper,
+    @Suppress("unused")
     private val isBenchmarkBuild: Boolean = BuildConfig.IS_BENCHMARK_BUILD,
 ) : PreferencesHolder {
     companion object {
@@ -101,6 +102,9 @@ class Settings(
         private const val ASK_TO_ALLOW_INT = 1
         private const val ALLOWED_INT = 2
         private const val INACTIVE_TAB_MINIMUM_TO_SHOW_AUTO_CLOSE_DIALOG = 20
+
+        const val LONGFOX_PEEK_ANIMATION_MAX_SHOWS = 5
+        const val LONGFOX_PEEK_ANIMATION_LAUNCH_INTERVAL = 3
 
         const val THIRTY_SECONDS_MS = 30 * 1000L
         const val FOUR_HOURS_MS = 60 * 60 * 4 * 1000L
@@ -199,6 +203,7 @@ class Settings(
     /**
      * Indicates if the stories homescreen section should be shown.
      */
+    @Suppress("DEPRECATION")
     var showPocketRecommendationsFeature by lazyFeatureFlagBooleanPreference(
         appContext.getPreferenceKey(R.string.pref_key_pocket_homescreen_recommendations),
         featureFlag = ContentRecommendationsFeatureHelper.isContentRecommendationsFeatureEnabled(appContext),
@@ -214,12 +219,6 @@ class Settings(
         persistDefaultIfNotExists = true,
     )
 
-    val toolbarSimpleShortcut: String
-        get() = when (shouldShowToolbarCustomization) {
-            true -> toolbarSimpleShortcutKey
-            false -> ShortcutType.NEW_TAB.value
-        }
-
     /**
      * Indicates what expanded toolbar shortcut key is currently selected.
      */
@@ -229,15 +228,10 @@ class Settings(
         persistDefaultIfNotExists = true,
     )
 
-    val toolbarExpandedShortcut: String
-        get() = when (shouldShowToolbarCustomization) {
-            true -> toolbarExpandedShortcutKey
-            false -> ShortcutType.BOOKMARK.value
-        }
-
     /**
      * Indicates if the Pocket recommendations homescreen section should also show sponsored stories.
      */
+    @Suppress("DEPRECATION")
     val showPocketSponsoredStories by lazyFeatureFlagBooleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_pocket_sponsored_stories),
         defaultValue = { homescreenSections[HomeScreenSection.POCKET_SPONSORED_STORIES] == true },
@@ -271,19 +265,27 @@ class Settings(
         get() = FxNimbus.features.firefoxJpGuideDefaultSite.value().enabled
 
     /**
-     * Indicates whether or not the homepage header should be shown.
-     */
-    var showHomepageHeader by booleanPreference(
-        appContext.getPreferenceKey(R.string.pref_key_enable_homepage_header),
-        default = { homescreenSections[HomeScreenSection.HEADER] == true },
-    )
-
-    /**
      * Indicates whether or not top sites should be shown on the home screen.
      */
     var showTopSitesFeature by booleanPreference(
         appContext.getPreferenceKey(R.string.pref_key_show_top_sites),
         default = { homescreenSections[HomeScreenSection.TOP_SITES] == true },
+    )
+
+    /**
+     * Indicates whether or not the privacy report should be shown on the home screen.
+     */
+    var showPrivacyReportFeature by booleanPreference(
+        appContext.getPreferenceKey(R.string.pref_key_privacy_report),
+        default = { homescreenSections[HomeScreenSection.PRIVACY_REPORT] == true },
+    )
+
+    /**
+     * Indicates whether or not the privacy report should be shown in the tab manager.
+     */
+    var showPrivacyReportInTabManager by booleanPreference(
+        appContext.getPreferenceKey(R.string.pref_key_privacy_report_tab_manager),
+        default = true,
     )
 
     private val homescreenSections: Map<HomeScreenSection, Boolean>
@@ -306,6 +308,12 @@ class Settings(
      */
     val showHomepageRecentlyVisitedSectionToggle: Boolean
         get() = !enableHomepageSearchBar
+
+    /**
+     * Indicates whether or not the homepage should use edge to edge background
+     */
+    val enableHomepageEdgeToEdgeBackgroundFeature: Boolean
+        get() = FxNimbus.features.homescreenEdgeToEdgeBackground.value().enabled
 
     var numberOfAppLaunches by intPreference(
         appContext.getPreferenceKey(R.string.pref_key_times_app_opened),
@@ -367,6 +375,16 @@ class Settings(
     val canShowCfr: Boolean
         get() = (System.currentTimeMillis() - lastCfrShownTimeInMillis) > THREE_DAYS_MS
 
+    val cfrPopupsEnabled by booleanPreference(
+        appContext.getPreferenceKey(R.string.pref_cfr_popups_enabled),
+        default = { FxNimbus.features.enablePopups.value().cfrPopupsEnabled },
+    )
+
+    val inAppMessagesEnabled by booleanPreference(
+        appContext.getPreferenceKey(R.string.pref_in_app_messages_enabled),
+        default = { FxNimbus.features.enablePopups.value().inAppMessagesEnabled },
+    )
+
     var forceEnableZoom by booleanPreference(
         appContext.getPreferenceKey(R.string.pref_key_accessibility_force_enable_zoom),
         default = false,
@@ -427,6 +445,41 @@ class Settings(
         default = "",
     )
 
+    var isUserMetaAttributed by booleanPreference(
+        appContext.getPreferenceKey(R.string.pref_key_is_user_meta_attributed),
+        default = false,
+    )
+
+    var isUserTikTokAttributed by booleanPreference(
+        appContext.getPreferenceKey(R.string.pref_key_is_user_tiktok_attributed),
+        default = false,
+    )
+
+    var isUserRedditAttributed by booleanPreference(
+        appContext.getPreferenceKey(R.string.pref_key_is_user_reddit_attributed),
+        default = false,
+    )
+
+    var isUserXTwitterAttributed by booleanPreference(
+        appContext.getPreferenceKey(R.string.pref_key_is_user_x_twitter_attributed),
+        default = false,
+    )
+
+    var rtamoAddonDownloadUrl by stringPreference(
+        appContext.getPreferenceKey(R.string.pref_key_rtamo_addon_download_url),
+        default = "",
+    )
+
+    var rtamoAddonImageUrl by stringPreference(
+        appContext.getPreferenceKey(R.string.pref_key_rtamo_addon_image_url),
+        default = "",
+    )
+
+    var rtamoAddonName by stringPreference(
+        appContext.getPreferenceKey(R.string.pref_key_rtamo_addon_name),
+        default = "",
+    )
+
     var contileContextId by stringPreference(
         appContext.getPreferenceKey(R.string.pref_key_contile_context_id),
         default = { TopSites.contextId.generateAndSet().toString() },
@@ -435,7 +488,11 @@ class Settings(
 
     var currentWallpaperName by stringPreference(
         appContext.getPreferenceKey(R.string.pref_key_current_wallpaper),
-        default = Wallpaper.Default.name,
+        default = if (enableHomepageEdgeToEdgeBackgroundFeature) {
+            Wallpaper.EdgeToEdge.name
+        } else {
+            Wallpaper.Default.name
+        },
     )
 
     /**
@@ -506,11 +563,6 @@ class Settings(
         default = false,
     )
 
-    val appIconSelection by booleanPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_app_icon_selection_enabled),
-        default = { FxNimbus.features.appIconSelection.value().enabled },
-    )
-
     var privateBrowsingLockedFeatureEnabled by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_private_browsing_locked_enabled),
         default = { FxNimbus.features.privateBrowsingLock.value().enabled },
@@ -528,7 +580,7 @@ class Settings(
 
     var shouldShowMenuBanner by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_show_menu_banner),
-        default = { FxNimbus.features.menuRedesign.value().menuBanner },
+        default = true,
     )
 
     var defaultSearchEngineName by stringPreference(
@@ -544,11 +596,6 @@ class Settings(
     var installPwaOpened by booleanPreference(
         appContext.getPreferenceKey(R.string.pref_key_install_pwa_opened),
         default = false,
-    )
-
-    var showCollectionsPlaceholderOnHome by booleanPreference(
-        appContext.getPreferenceKey(R.string.pref_key_show_collections_placeholder_home),
-        default = true,
     )
 
     val isCrashReportingEnabled: Boolean
@@ -720,9 +767,9 @@ class Settings(
      * Rollouts are completely decoupled from telemetry and experiments, so users
      * can receive feature updates regardless of their telemetry or experiment settings.
      */
-    var isRolloutsEnabled by lazyBooleanPreference(
+    var isRolloutsEnabled by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_rollouts),
-        defaultValue = { appContext.components.nimbus.sdk.rolloutParticipation },
+        default = { appContext.components.nimbus.sdk.rolloutParticipation },
     )
 
     /**
@@ -794,11 +841,6 @@ class Settings(
         default = true,
     )
 
-    val shouldShowSearchShortcuts by booleanPreference(
-        appContext.getPreferenceKey(R.string.pref_key_show_search_engine_shortcuts),
-        default = false,
-    )
-
     var gridTabView by booleanPreference(
         appContext.getPreferenceKey(R.string.pref_key_tab_view_grid),
         default = true,
@@ -862,6 +904,19 @@ class Settings(
         default = 0L,
     )
 
+    /**
+     * Indicates the last time when the user was interacting with the [HomeFragment],
+     * This is useful to determine if the user has to start on the [HomeFragment]
+     * or it should go directly to the [BrowserFragment].
+     *
+     * This value defaults to 0L because we want to know if the user never had any interaction
+     * with the [HomeFragment]
+     */
+    var lastHomeActivity by longPreference(
+        appContext.getPreferenceKey(R.string.pref_key_last_home_activity_time),
+        default = 0L,
+    )
+
     private val openingScreenDefault: OpeningScreenOption
         get() = FxNimbus.features.homepageOpeningScreenDefault.value().defaultOption
 
@@ -896,7 +951,7 @@ class Settings(
      */
     var isLnaBlockingEnabled by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_enable_lna_blocking_enabled),
-        default = Config.channel.isNightlyOrDebug,
+        default = { FxNimbus.features.lnaBlocking.value().blocking || Config.channel.isNightlyOrDebug },
     )
 
     /**
@@ -904,7 +959,7 @@ class Settings(
      */
     var isLnaTrackerBlockingEnabled by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_enable_lna_tracker_blocking_enabled),
-        default = false,
+        default = { FxNimbus.features.lnaBlocking.value().blockTrackers },
     )
 
     /**
@@ -916,7 +971,7 @@ class Settings(
      */
     var isLnaFeatureEnabled by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_enable_lna_feature_enabled),
-        default = Config.channel.isNightlyOrDebug,
+        default = { FxNimbus.features.lnaBlocking.value().enabled || Config.channel.isNightlyOrDebug },
     )
 
     /**
@@ -940,10 +995,22 @@ class Settings(
      */
     fun shouldStartOnHome(): Boolean {
         return when {
-            openHomepageAfterFourHoursOfInactivity -> timeNowInMillis() - lastBrowseActivity >= FOUR_HOURS_MS
-            alwaysOpenTheHomepageWhenOpeningTheApp -> true
-            alwaysOpenTheLastTabWhenOpeningTheApp -> false
-            else -> false
+            openHomepageAfterFourHoursOfInactivity -> {
+                timeNowInMillis() - lastBrowseActivity >= FOUR_HOURS_MS
+            }
+            alwaysOpenTheHomepageWhenOpeningTheApp -> {
+                true
+            }
+            alwaysOpenTheLastTabWhenOpeningTheApp -> {
+                if (lastHomeActivity > lastBrowseActivity) {
+                    true
+                } else {
+                    false
+                }
+            }
+            else -> {
+                false
+            }
         }
     }
 
@@ -1060,6 +1127,34 @@ class Settings(
             }
         }
 
+    /**
+     * Get the display string for the current remote settings server setting
+     */
+    fun getRemoteSettingsServerString(): String =
+        when (remoteSettingsServer) {
+            appContext.getString(R.string.remote_settings_server_prod) -> {
+                appContext.getString(R.string.preferences_remote_settings_server_prod_label)
+            }
+            appContext.getString(R.string.remote_settings_server_stage) -> {
+                appContext.getString(R.string.preferences_remote_settings_server_stage_label)
+            }
+            appContext.getString(R.string.remote_settings_server_dev) -> {
+                appContext.getString(R.string.preferences_remote_settings_server_dev_label)
+            }
+            appContext.getString(R.string.remote_settings_server_prod_v2) -> {
+                appContext.getString(R.string.preferences_remote_settings_server_prod_label_v2)
+            }
+            appContext.getString(R.string.remote_settings_server_stage_v2) -> {
+                appContext.getString(R.string.preferences_remote_settings_server_stage_label_v2)
+            }
+            appContext.getString(R.string.remote_settings_server_dev_v2) -> {
+                appContext.getString(R.string.preferences_remote_settings_server_dev_label_v2)
+            }
+            else -> {
+                appContext.getString(R.string.preferences_remote_settings_server_prod_label)
+            }
+        }
+
     var shouldUseDarkTheme by booleanPreference(
         appContext.getPreferenceKey(R.string.pref_key_dark_theme),
         default = false,
@@ -1138,43 +1233,8 @@ class Settings(
      * G5+).
      */
     fun isDefaultBrowserBlocking(): Boolean {
-        val browsers = BrowsersCache.all(appContext)
-        return browsers.isDefaultBrowser
+        return Browsers.isDefaultBrowser(appContext)
     }
-
-    var reEngagementNotificationShown by booleanPreference(
-        appContext.getPreferenceKey(R.string.pref_key_re_engagement_notification_shown),
-        default = false,
-    )
-
-    /**
-     * Check if we should set the re-engagement notification.
-     */
-    fun shouldSetReEngagementNotification(): Boolean {
-        return numberOfAppLaunches <= 1 && !reEngagementNotificationShown
-    }
-
-    /**
-     * Check if we should show the re-engagement notification.
-     */
-    fun shouldShowReEngagementNotification(): Boolean {
-        return !reEngagementNotificationShown && !isDefaultBrowserBlocking()
-    }
-
-    /**
-     * Indicates if the re-engagement notification feature is enabled
-     */
-    var reEngagementNotificationEnabled by booleanPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_re_engagement_notification_enabled),
-        default = { FxNimbus.features.reEngagementNotification.value().enabled },
-    )
-
-    /**
-     * Indicates if the re-engagement notification feature is enabled
-     */
-    val reEngagementNotificationType: Int
-        get() =
-            FxNimbus.features.reEngagementNotification.value().type
 
     val shouldUseAutoBatteryTheme by booleanPreference(
         appContext.getPreferenceKey(R.string.pref_key_auto_battery_theme),
@@ -1243,9 +1303,9 @@ class Settings(
         true,
     )
 
-    val useProductionRemoteSettingsServer by booleanPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_remote_server_prod),
-        default = true,
+    var remoteSettingsServer by stringPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_remote_settings_server),
+        default = appContext.getString(R.string.remote_settings_server_prod),
     )
 
     /**
@@ -1393,21 +1453,69 @@ class Settings(
         default = true,
     )
 
+    /**
+     * Defines the user's preferred behavior when deleting a downloaded file.
+     *
+     * This enum class represents the different actions that can be taken when a user
+     * initiates a deletion for a download entry in the app. The preference is stored
+     * as an integer and can be retrieved or updated via the `deleteDownloadBehavior` setting.
+     *
+     * @property value The integer value associated with each behavior.
+     */
+    enum class DeleteDownloadBehavior(val value: Int) {
+        /**
+         * Deletes the file from the device's storage.
+         */
+        DELETE_FROM_DEVICE(0),
+
+        /**
+         * Only removes the download entry from the app's history, leaving the file on the device.
+         */
+        REMOVE_FROM_HISTORY(1),
+
+        /**
+         * Prompts the user to choose between deleting from the device or removing from history each time.
+         */
+        ASK_WHEN_DELETING(2),
+        ;
+
+        companion object {
+            /**
+             * Converts an integer value into its corresponding [DeleteDownloadBehavior] enum constant.
+             *
+             * If the integer does not match any known value, it defaults to [ASK_WHEN_DELETING].
+             *
+             * @param value The integer to convert.
+             * @return The matching [DeleteDownloadBehavior] or the default.
+             */
+            fun fromInt(value: Int) = entries.firstOrNull { it.value == value } ?: ASK_WHEN_DELETING
+        }
+    }
+
+    var deleteDownloadBehavior: DeleteDownloadBehavior
+        get() = DeleteDownloadBehavior.fromInt(
+            preferences.getInt(
+                appContext.getString(R.string.pref_key_downloads_delete_behavior_v2),
+                DeleteDownloadBehavior.ASK_WHEN_DELETING.value,
+            ),
+        )
+        set(value) = preferences.edit {
+            putInt(
+                appContext.getString(R.string.pref_key_downloads_delete_behavior_v2),
+                value.value,
+            )
+        }
+
     var shouldUseBottomToolbar by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_toolbar_bottom),
-        default = false,
+        default = { FxNimbus.features.defaultBottomToolbar.value().enabled },
         persistDefaultIfNotExists = true,
     )
 
     var shouldUseExpandedToolbar by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_toolbar_expanded),
-        default = false,
+        default = { FxNimbus.features.defaultExpandedToolbar.value().enabled },
         persistDefaultIfNotExists = true,
-    )
-
-    var shouldShowToolbarCustomization by booleanPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_enable_toolbar_customization),
-        default = { FxNimbus.features.toolbarRedesignOption.value().showCustomization },
     )
 
     val toolbarPosition: ToolbarPosition
@@ -1571,7 +1679,7 @@ class Settings(
 
     val shouldShowPwaCfr: Boolean
         get() {
-            if (!canShowCfr) return false
+            if (!canShowCfr || !inAppMessagesEnabled || continuousOnboardingFeatureEnabled) return false
             // We only want to show this on the 3rd time a user visits a site
             if (userNeedsToVisitInstallableSites) return false
 
@@ -1733,8 +1841,7 @@ class Settings(
     )
 
     /**
-     * Used in [SearchDialogFragment.kt], [SearchFragment.kt] (deprecated), and [PairFragment.kt]
-     * to see if we need to check for camera permissions before using the QR code scanner.
+     * Tracks whether we need to check for camera permissions before using the QR code scanner.
      */
     var shouldShowCameraPermissionPrompt by booleanPreference(
         appContext.getPreferenceKey(R.string.pref_key_camera_permissions_needed),
@@ -1949,19 +2056,29 @@ class Settings(
         default = true,
     )
 
-    var isSettingsSearchEnabled by booleanPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_allow_settings_search),
-        default = { FxNimbus.features.settingsSearch.value().enabled },
-    )
-
     var isSearchOptimizationEnabled by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_search_optimization_feature),
         default = { FxNimbus.features.searchOptimizationOption.value().enabled },
     )
 
+    var shouldShowSearchOptimizationCards by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_search_optimization_cards),
+        default = { isSearchOptimizationEnabled },
+    )
+
     var shouldShowSearchOptimizationStockCard by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_search_optimization_stocks),
         default = { FxNimbus.features.searchOptimizationOption.value().showStocksCard },
+    )
+
+    var shouldShowSearchOptimizationFlightCard by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_search_optimization_flights),
+        default = { FxNimbus.features.searchOptimizationOption.value().showFlightsCard },
+    )
+
+    var shouldShowSearchOptimizationSportCard by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_search_optimization_sports),
+        default = { FxNimbus.features.searchOptimizationOption.value().showSportsCard },
     )
 
     var isTabStripEnabled by booleanPreference(
@@ -1984,15 +2101,22 @@ class Settings(
         default = true,
     )
 
+    var isSwipeToolbarToShowTabsEnabled by booleanPreference(
+        appContext.getPreferenceKey(R.string.pref_key_swipe_toolbar_show_tabs),
+        default = true,
+    )
+
     /**
      * Address Sync feature.
      */
+    @Suppress("DEPRECATION")
     var isAddressSyncEnabled by featureFlagBooleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_enable_address_sync),
         defaultValue = true,
         featureFlag = isAddressFeatureEnabled(appContext),
     )
 
+    @Suppress("DEPRECATION")
     var addressFeature by featureFlagBooleanPreference(
         appContext.getPreferenceKey(R.string.pref_key_show_address_feature),
         defaultValue = true,
@@ -2047,16 +2171,6 @@ class Settings(
     )
 
     /**
-     * Stores the user choice from the "Autofill" settings for whether
-     * credit cards should be synced across devices or not, when the user is authenticated.
-     * If set to `true`, then the credit cards will be synced across devices.
-     */
-    var shouldSyncCreditCardsAcrossDevices by booleanPreference(
-        appContext.getPreferenceKey(R.string.pref_key_credit_cards_sync_cards_across_devices),
-        default = false,
-    )
-
-    /**
      * Stores the user choice from the "Autofill Addresses" settings for whether
      * save and autofill addresses should be enabled or not.
      * If set to `true` when the user focuses on address fields in a webpage an Android prompt is shown,
@@ -2068,27 +2182,12 @@ class Settings(
     )
 
     /**
-     * Stores the user choice from the "Autofill" settings for whether
-     * addresses should be synced across devices or not, when the user is authenticated.
-     * If set to `true`, then the addresses will be synced across devices.
-     */
-    var shouldSyncAddressesAcrossDevices by booleanPreference(
-        appContext.getPreferenceKey(R.string.pref_key_addresses_sync_cards_across_devices),
-        default = false,
-    )
-
-    /**
      * Indicates if the Contile functionality should be visible.
      */
     var showContileFeature by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_enable_contile),
         default = true,
     )
-
-    /**
-     * Indicates if the Unified Search feature should be visible.
-     */
-    val showUnifiedSearchFeature = true
 
     /**
      * Blocklist used to filter items from the home screen that have previously been removed.
@@ -2101,17 +2200,14 @@ class Settings(
     /**
      * Returns whether onboarding should be shown to the user.
      *
-     * @param featureEnabled Boolean to indicate whether the feature is enabled.
      * @param hasUserBeenOnboarded Boolean to indicate whether the user has been onboarded.
-     * @param isLauncherIntent Boolean to indicate whether the app was launched on tapping on the
-     * app icon.
+     * @param featureEnabled Boolean to indicate whether the feature is enabled.
      */
     fun shouldShowOnboarding(
-        featureEnabled: Boolean = onboardingFeatureEnabled,
         hasUserBeenOnboarded: Boolean,
-        isLauncherIntent: Boolean,
+        featureEnabled: Boolean = onboardingFeatureEnabled,
     ): Boolean {
-        val shouldShowByDefaultConditions = featureEnabled && !hasUserBeenOnboarded && isLauncherIntent
+        val shouldShowByDefaultConditions = featureEnabled && !hasUserBeenOnboarded
 
         val shouldShow = shouldShowByDefaultConditions || enablePersistentOnboarding
 
@@ -2140,11 +2236,43 @@ class Settings(
     var onboardingFeatureEnabled = FeatureFlags.onboardingFeatureEnabled
 
     /**
-     * Indicates if the onboarding redesign should be used.
+     * The completion timestamp of the initial onboarding flow.
      */
-    var useOnboardingRedesign by booleanPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_use_onboarding_redesign),
-        default = { FxNimbus.features.junoOnboarding.value().useOnboardingRedesign },
+    var onboardingCompletedTimestamp: Long by longPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_onboarding_completed_timestamp),
+        default = -1L,
+    )
+
+    /**
+     * Indicates if the continuous onboarding feature is enabled.
+     */
+    var continuousOnboardingFeatureEnabled by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_continuous_onboarding_enabled),
+        default = { FxNimbus.features.continuousOnboarding.value().enabled },
+    )
+
+    /**
+     * The completion timestamp of the second day of continuous onboarding.
+     */
+    var secondDayOnboardingCompletedTimestamp by longPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_continuous_onboarding_day_two_completed_timestamp),
+        default = -1L,
+    )
+
+    /**
+     * The completion timestamp of the third day of continuous onboarding.
+     */
+    var thirdDayOnboardingCompletedTimestamp by longPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_continuous_onboarding_day_three_completed_timestamp),
+        default = -1L,
+    )
+
+    /**
+     * The completion timestamp of the seventh day of continuous onboarding.
+     */
+    var seventhDayOnboardingCompletedTimestamp by longPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_continuous_onboarding_day_seven_completed_timestamp),
+        default = -1L,
     )
 
     /**
@@ -2155,30 +2283,9 @@ class Settings(
         default = true,
     )
 
-    var shouldUseComposableToolbar by booleanPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_enable_composable_toolbar),
-        default = { FxNimbus.features.composableToolbar.value().enabled },
-    )
-
     var shouldUseMinimalBottomToolbarWhenEnteringText by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_use_minimal_bottom_toolbar_while_entering_text),
         default = { FxNimbus.features.minimalAddressbar.value().atBottomWhileEnteringText },
-    )
-
-    /**
-     * Indicates if the user has access to the toolbar redesign option in settings.
-     */
-    var toolbarRedesignEnabled by booleanPreference(
-        appContext.getPreferenceKey(R.string.pref_key_enable_toolbar_redesign),
-        default = { FxNimbus.features.toolbarRedesignOption.value().showOptions },
-    )
-
-    /**
-     * Indicates if the search bar CFR should be displayed to the user.
-     */
-    var shouldShowSearchBarCFR by booleanPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_should_searchbar_cfr),
-        default = false,
     )
 
     /**
@@ -2195,15 +2302,6 @@ class Settings(
     var shouldShowMenuCFR by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_menu_cfr),
         default = false,
-    )
-
-    /**
-     * Indicates if the toolbar CFR was displayed to the user.
-     */
-    var hasSeenBrowserToolbarCFR by booleanPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_toolbar_cfr),
-        default = Config.channel.isReleaseOrBeta || isBenchmarkBuild,
-        persistDefaultIfNotExists = true,
     )
 
     /**
@@ -2287,7 +2385,7 @@ class Settings(
         default = false,
     )
 
-    var usageTimeGrowthData by longPreference(
+    var firstDayUsageTimeGrowthData by longPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_growth_usage_time),
         default = -1,
     )
@@ -2327,16 +2425,8 @@ class Settings(
      * Indicates if the Homepage Search Bar is enabled.
      */
     var enableHomepageSearchBar by booleanPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_enable_homepage_searchbar),
-        default = { FxNimbus.features.homepageSearchBar.value().enabled },
-    )
-
-    /**
-     * Indicates if the Homepage "Discover more" stories is enabled.
-     */
-    var enableDiscoverMoreStories by booleanPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_enable_discover_more_stories),
-        default = FeatureFlags.DISCOVER_MORE_STORIES,
+        key = appContext.getPreferenceKey(R.string.pref_key_enable_homepage_searchbar2),
+        default = false,
     )
 
     /**
@@ -2356,11 +2446,19 @@ class Settings(
     )
 
     /**
-     * Indicates if Browser Mode Toggle is enabled.
+     * Indicates if the top sites pager layout is enabled.
      */
-    var enableBrowserModeToggle by booleanPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_enable_browser_mode_toggle),
-        default = { FxNimbus.features.browserModeToggle.value().enabled },
+    var topSitesPager by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_top_sites_pager),
+        default = false,
+    )
+
+    /**
+     * Indicates if Add Shortcuts improvement is enabled.
+     */
+    var enableAddShortcutsImprovement by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_enable_add_shortcuts_improvement),
+        default = { FxNimbus.features.addShortcutsImprovement.value().enabled },
     )
 
     /**
@@ -2372,11 +2470,100 @@ class Settings(
     )
 
     /**
+     * Indicates if the Merino Manifest is enabled.
+     */
+    var enableMerinoManifest by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_enable_merino_manifest),
+        default = { FxNimbus.features.merinoManifest.value().enabled },
+    )
+
+    /**
      * Indicates if the Unified Trust Panel is enabled.
      */
     var enableUnifiedTrustPanel by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_enable_unified_trust_panel),
-        default = { FxNimbus.features.unifiedTrustPanel.value().enabled },
+        default = true,
+    )
+
+    /**
+     * Indicates if Homepage Sports Widget is enabled.
+     */
+    var enableHomepageSportsWidget by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_enable_homepage_sports_widget),
+        default = { FxNimbus.features.homepageSportsWidget.value().enabled },
+    )
+
+    /**
+     * Nimbus override: when true, treat the user as being within one week of the World Cup
+     * kickoff regardless of the device date. The natural date-based check still applies when
+     * false (the default).
+     */
+    val forceOneWeekToWorldCup: Boolean
+        get() = FxNimbus.features.homepageSportsWidget.value().forceOneWeekToWorldCup
+
+    /**
+     * Nimbus-controlled minimum interval, in seconds, between Sports Widget fetches.
+     * Backed by the `fetch-throttle-seconds` variable (default 60s). Read at construction
+     * time of [org.mozilla.fenix.home.sports.SportsWidgetMiddleware]; Nimbus updates take
+     * effect on the next app launch.
+     */
+    val sportsWidgetFetchThrottleSeconds: Int
+        get() = FxNimbus.features.homepageSportsWidget.value().fetchThrottleSeconds
+
+    /**
+     * Debug-only: when true, the Homepage Sports Widget calls the GCP-hosted mock World
+     * Cup server instead of production Merino. Combined with [mockWorldCupServerSession],
+     * the device hits the mock's `<session-id>/api/v1/wcs/...` routes so QA can simulate
+     * any tournament state ahead of kickoff.
+     */
+    var useMockWorldCupServer by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_use_mock_world_cup_server),
+        default = false,
+    )
+
+    /**
+     * Debug-only: session prefix issued by the mock server's UI (e.g. `jolly-narwhal-39`).
+     * Required when [useMockWorldCupServer] is true.
+     */
+    var mockWorldCupServerSession by stringPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_mock_world_cup_server_session),
+        default = "",
+    )
+
+    /**
+     * Indicates if the Homepage Sports Widget should be visible on the homepage.
+     * This is the user-controlled visibility toggle, independent of the
+     * [enableHomepageSportsWidget] feature flag.
+     */
+    var showHomepageSportsWidget by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_show_homepage_sports_widget),
+        default = true,
+    )
+
+    /**
+     * Indicates if the Homepage Countdown Widget should be visible on the homepage.
+     * This is independent of the [enableHomepageSportsWidget] feature flag and [showHomepageSportsWidget] setting.
+     */
+    var showHomepageCountdownWidget by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_show_homepage_countdown_widget),
+        default = true,
+    )
+
+    /**
+     * The set of ISO codes of the user's selected countries to follow for the sports widget.
+     */
+    var sportsSelectedCountries by stringSetPreference(
+        appContext.getPreferenceKey(R.string.pref_key_sports_selected_countries),
+        default = setOf(),
+    )
+
+    /**
+     * Whether the user has dismissed the sports widget "Follow your team" card via the
+     * "Skip" action. When true, the "Follow your team" card is not shown again.
+     */
+    var hasSkippedSportsFollowTeam by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_sports_has_skipped_follow_team),
+        default = false,
     )
 
     /**
@@ -2393,19 +2580,6 @@ class Settings(
     var numFontListSent by intPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_num_font_list_sent),
         default = 0,
-    )
-
-    /**
-     * Indicates how many days in the first week user opened the app.
-     */
-    val growthEarlyUseCount = counterPreference(
-        appContext.getPreferenceKey(R.string.pref_key_growth_early_browse_count),
-        maxCount = 3,
-    )
-
-    var growthEarlyUseCountLastIncrement by longPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_growth_early_browse_count_last_increment),
-        default = 0L,
     )
 
     /**
@@ -2429,6 +2603,7 @@ class Settings(
     /**
      * Indicates if Firefox Suggest is enabled.
      */
+    @Suppress("DEPRECATION")
     var enableFxSuggest by lazyFeatureFlagBooleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_enable_fxsuggest),
         defaultValue = { FxNimbus.features.fxSuggest.value().enabled },
@@ -2453,6 +2628,7 @@ class Settings(
      * Indicates if the user has chosen to show sponsored search suggestions in the awesomebar.
      * The default value is computed lazily, and based on whether Firefox Suggest is enabled.
      */
+    @Suppress("DEPRECATION")
     var showSponsoredSuggestions by lazyFeatureFlagBooleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_show_sponsored_suggestions),
         defaultValue = { enableFxSuggest },
@@ -2464,6 +2640,7 @@ class Settings(
      * awesomebar. The default value is computed lazily, and based on whether Firefox Suggest
      * is enabled.
      */
+    @Suppress("DEPRECATION")
     var showNonSponsoredSuggestions by lazyFeatureFlagBooleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_show_nonsponsored_suggestions),
         defaultValue = { enableFxSuggest },
@@ -2516,22 +2693,18 @@ class Settings(
      * Returns the height of the browser toolbar height.
      */
     val browserToolbarHeight: Int
-        get() = appContext.pixelSizeFor(
-            when (shouldUseComposableToolbar) {
-                true -> {
-                    val isTallWindow = appContext.resources.configuration.screenHeightDp > TALL_SCREEN_HEIGHT_DP
-                    val isWideWindow = appContext.resources.configuration.screenWidthDp > WIDE_SCREEN_WIDTH_DP
-                    when (
-                        toolbarPosition == ToolbarPosition.BOTTOM && shouldUseExpandedToolbar &&
-                                isTallWindow && !isWideWindow
-                    ) {
-                        true -> R.dimen.composable_browser_toolbar_height_small
-                        false -> R.dimen.composable_browser_toolbar_height
-                    }
-                }
-                false -> R.dimen.browser_toolbar_height
-            },
-        )
+        get() {
+            val isTallWindow = appContext.resources.configuration.screenHeightDp > TALL_SCREEN_HEIGHT_DP
+            val isWideWindow = appContext.resources.configuration.screenWidthDp > WIDE_SCREEN_WIDTH_DP
+            val isBottomExpandedOnTallNarrowWindow = toolbarPosition == ToolbarPosition.BOTTOM &&
+                shouldUseExpandedToolbar && isTallWindow && !isWideWindow
+            val dimen = if (isBottomExpandedOnTallNarrowWindow) {
+                R.dimen.composable_browser_toolbar_height_small
+            } else {
+                R.dimen.composable_browser_toolbar_height
+            }
+            return appContext.pixelSizeFor(dimen)
+        }
 
     /**
      * Indicates if the microsurvey feature is enabled.
@@ -2542,11 +2715,98 @@ class Settings(
     )
 
     /**
-     * Indicates if the Shake to Summarize feature is enabled.
+     * Nimbus controlled feature flag that Indicates if the Shake to Summarize feature should be
+     * enabled
      */
-    var shakeToSummarizeFeatureEnabled by booleanPreference(
+    var shakeToSummarizeFeatureFlagEnabled by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_enable_shake_to_summarize),
-        default = Config.channel.isDebug,
+        default = { FxNimbus.features.shakeToSummarize.value().enabled },
+    )
+
+    var aiControlsFeatureFlagEnabled by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_enable_ai_controls),
+        default = true,
+    )
+
+    /**
+     * Feature flag that indicates if the Import Bookmarks feature is enabled.
+     */
+    var importBookmarksFeatureFlagEnabled by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_enable_import_bookmarks),
+        default = { FxNimbus.features.importBookmarks.value().enabled },
+    )
+
+    /**
+     * Persists IPProtection state set through Secret Settings.
+     *
+     * `true` makes the IPProtection UI elements visible across the app, while `false` hides them.
+     */
+    var isIPProtectionEnabled by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_enable_ip_protection),
+        default = false,
+    )
+
+    /**
+     * Indicates if the user has already toggled the VPN on.
+     */
+    var hasAlreadyUsedVpn by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_has_used_ip_protection),
+        default = false,
+    )
+
+    /**
+     * Indicates if the IPProtection onboarding bottom sheet has been already shown to the user.
+     *
+     * `true` makes the IPProtection bottom sheet appear, while `false` ensures the user does not see
+     * the bottom sheet again. This is only shown to the user once and
+     * if they dismiss it in anyway (e.g. tap on "Not now" or "Get started") then they will never see it again.
+     */
+    var hasShownIPProtectionPrompt by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_has_shown_ip_protection_prompt),
+        default = false,
+    )
+
+    /**
+     * Indicates if the IPProtection feature is available for the user.
+     *
+     * The flag is backed by a Nimbus `ip-protection` feature, with an option to override it through secret settings.
+     */
+    val isIPProtectionAvailable: Boolean
+        get() = FxNimbus.features.ipProtection.value().enabled || isIPProtectionEnabled
+
+    /**
+     * Tracks how many times the summarize menu item has been shown.
+     * Used to control highlight/badge visibility for feature discovery.
+     */
+    val shakeToSummarizeMenuItemExposureCount = counterPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_summarize_highlight_menu_item_exposure_count),
+        maxCount = 2,
+    )
+
+    /**
+     * Tracks how many times the user has interacted with the more menu item.
+     * Used to control highlight/badge visibility for feature discovery.
+     */
+    val shakeToSummarizeMoreMenuItemInteractionCount = counterPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_summarize_highlight_more_item_interaction_count),
+        maxCount = 1,
+    )
+
+    /**
+     * Tracks how many times the user has interacted with the toolbar menu entry point.
+     * Used to control highlight/badge visibility for feature discovery.
+     */
+    val shakeToSummarizeToolbarInteractionCount = counterPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_summarize_highlight_toolbar_interaction_count),
+        maxCount = 1,
+    )
+
+    /**
+     * Tracks if the user has been shown the shake to summarize toolbar CFR
+     */
+    var shakeToSummarizeToolbarCfrShown by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_summarize_toolbar_cfr_shown),
+        default = false,
     )
 
     /**
@@ -2587,6 +2847,14 @@ class Settings(
     var coldStartsBetweenSetAsDefaultPrompts by intPreference(
         appContext.getPreferenceKey(R.string.pref_key_app_cold_start_count),
         default = 0,
+    )
+
+    /**
+     * Feature flag that indicates if the Import Passwords feature is enabled.
+     */
+    var importPasswordsFeatureFlagEnabled by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_enable_import_passwords),
+        default = Config.channel.isDebug,
     )
 
     /**
@@ -2833,11 +3101,79 @@ class Settings(
     )
 
     /**
-     * Whether the Tab Search feature is enabled.
+     * Whether the private mode and stories entry point experiment is enabled.
      */
-    var tabSearchEnabled by booleanPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_tab_search),
-        default = { DefaultTabManagementFeatureHelper.tabSearchEnabled },
+    var privateModeAndStoriesEntryPointEnabled by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_private_mode_and_stories_entry_point),
+        default = { FxNimbus.features.privateModeAndStoriesEntryPoint.value().enabled },
+    )
+
+    /**
+     * The number of times the app has been brought to the foreground since the news button
+     * animation was last shown.
+     */
+    var newsButtonForegroundCount by intPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_news_button_foreground_count),
+        default = 0,
+    )
+
+    /**
+     * The timestamp in milliseconds when the news button animation was last shown.
+     */
+    var newsButtonAnimationLastShownMillis by longPreference(
+        appContext.getPreferenceKey(R.string.pref_key_news_button_animation_last_shown),
+        default = 0L,
+    )
+
+    /**
+     * Increments [newsButtonForegroundCount] up to a maximum of 5.
+     */
+    fun incrementNewsButtonForegroundCount() {
+        if (newsButtonForegroundCount < MAX_ANIMATION_FOREGROUND) {
+            newsButtonForegroundCount++
+        }
+    }
+
+    /**
+     * Returns whether the news button animation should be shown. The animation is shown every
+     * 5 foreground visits and at most once per week.
+     */
+    fun shouldShowNewsButtonAnimation(): Boolean {
+        return (newsButtonForegroundCount % MAX_ANIMATION_FOREGROUND == 0) &&
+            (System.currentTimeMillis() - newsButtonAnimationLastShownMillis >= ONE_WEEK_MS)
+    }
+
+    /**
+     * Records that the news button animation has been shown by updating the last shown timestamp
+     * and resetting [newsButtonForegroundCount].
+     */
+    fun recordNewsButtonAnimationShown() {
+        newsButtonAnimationLastShownMillis = System.currentTimeMillis()
+        newsButtonForegroundCount = 0
+    }
+
+    /**
+     * Whether the Tab Groups feature is enabled.
+     */
+    var tabGroupsEnabled by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_tab_groups),
+        default = { DefaultTabManagementFeatureHelper.tabGroupsEnabled },
+    )
+
+    /**
+     * Whether drag and drop is enabled for the Tab Groups feature.
+     */
+    var tabGroupsDragAndDropEnabled by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_tab_groups_drag_and_drop),
+        default = { DefaultTabManagementFeatureHelper.tabGroupsDragAndDropEnabled },
+    )
+
+    /**
+     * Whether onboarding is enabled for the Tab Groups feature.
+     */
+    var tabGroupsOnboardingEnabled by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_tab_groups_onboarding),
+        default = { DefaultTabManagementFeatureHelper.tabGroupsOnboardingEnabled },
     )
 
     /**
@@ -2847,6 +3183,65 @@ class Settings(
         key = appContext.getPreferenceKey(R.string.pref_key_native_share_sheet),
         default = { FxNimbus.features.nativeShareSheet.value().enabled },
     )
+
+    var googleLensIntegrationEnabled by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_google_lens_integration),
+        default = { FxNimbus.features.googleLensIntegration.value().enabled },
+    )
+
+    /**
+     * User preference (local only) controlling whether the Google Lens integration is active
+     * when [googleLensIntegrationEnabled] is on. When false, the standard QR scanner is used
+     * and the "Open with Google Lens" image context menu entry is hidden.
+     */
+    var googleLensIntegrationUserEnabled by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_google_lens_integration_user_enabled),
+        default = true,
+    )
+
+    /**
+     * Whether the voice search entry point is shown in the display-mode browser toolbar.
+     */
+    var showVoiceSearchInDisplayToolbar by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_show_voice_search_in_display_toolbar),
+        default = { FxNimbus.features.voiceSearchInDisplayMode.value().enabled },
+    )
+
+    /**
+     * Whether Longfox is enabled.
+     */
+    var longfoxEnabled by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_enable_longfox),
+        default = { FxNimbus.features.longfox.value().enabled },
+    )
+
+    /**
+     * Number of times the app has been foregrounded (cold start or returned from background).
+     * Used to gate the longfox peek animation.
+     */
+    var appLaunchCount by intPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_app_launch_count),
+        default = 0,
+    )
+
+    /**
+     * Number of times the longfox peek animation has been shown on the homepage.
+     * Capped at [LONGFOX_PEEK_ANIMATION_MAX_SHOWS]; once reached the animation is no longer shown.
+     */
+    var longfoxPeekAnimationShownCount by intPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_longfox_peek_animation_shown_count),
+        default = 0,
+    )
+
+    /**
+     * Returns true when the longfox peek animation should be armed for the current
+     * app foreground: feature enabled, not yet reached the show cap, and on every Nth launch.
+     */
+    fun shouldShowLongfoxPeekAnimationThisTime(): Boolean =
+        longfoxEnabled &&
+            longfoxPeekAnimationShownCount < LONGFOX_PEEK_ANIMATION_MAX_SHOWS &&
+            appLaunchCount > 0 &&
+            appLaunchCount % LONGFOX_PEEK_ANIMATION_LAUNCH_INTERVAL == 0
 
     /**
      * Indicates whether the app should automatically clean up downloaded files.
@@ -2860,5 +3255,13 @@ class Settings(
     var downloadsDefaultLocation by stringPreference(
         appContext.getPreferenceKey(R.string.pref_key_downloads_default_location),
         default = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).path,
+    )
+
+    /**
+     * Whether WebCompat Reporter enhancements is enabled.Í
+     */
+    var webCompatReporterEnhancementsEnabled by booleanPreference(
+        appContext.getPreferenceKey(R.string.pref_key_webcompat_reporter_enhancements),
+        default = { FxNimbus.features.webcompatReporterEnhancements.value().enabled },
     )
 }

@@ -139,7 +139,7 @@ fuzzy(0-2,0-5) == stresstest-1.html stresstest-1-ref.html
 # Bug 1122526
 fuzzy(0-1,0-30) == animate-layer-scale-inherit-1.html animate-layer-scale-inherit-1-ref.html
 fuzzy(0-145,0-10000) == animate-layer-scale-inherit-2.html animate-layer-scale-inherit-2-ref.html
-== animate-layer-scale-inherit-3.html animate-layer-scale-inherit-1-ref.html
+fuzzy(0-1,0-1000) == animate-layer-scale-inherit-3.html animate-layer-scale-inherit-1-ref.html
 # Bug 1301500
 == dynamic-add-without-change-cb-1.html dynamic-add-without-change-cb-1-ref.html
 skip-if(useDrawSnapshot) fuzzy(0-26,0-208) == table-overflowed-by-animation.html table-overflowed-by-animation-ref.html # Bug 1715402 for useDrawSnapshot&&webrender

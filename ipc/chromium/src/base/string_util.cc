@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -70,7 +68,7 @@ bool StringToNumber(const typename StringToNumberTraits::string_type& input,
   typedef StringToNumberTraits traits;
 
   errno = 0;  // Thread-safe?  It is on at least Mac, Linux, and Windows.
-  typename traits::string_type::value_type* endptr = NULL;
+  typename traits::string_type::value_type* endptr = nullptr;
   typename traits::value_type value =
       traits::convert_func(input.c_str(), &endptr);
   *output = value;
@@ -113,7 +111,7 @@ class String16ToLongTraits {
     return wcstol(str, endptr, kBase);
 #else
     std::string ascii_string = UTF16ToASCII(string16(str));
-    char* ascii_end = NULL;
+    char* ascii_end = nullptr;
     value_type ret = strtol(ascii_string.c_str(), &ascii_end, kBase);
     if (ascii_string.c_str() + ascii_string.length() == ascii_end) {
       *endptr =
@@ -156,7 +154,7 @@ class String16ToInt64Traits {
     return _wcstoi64(str, endptr, kBase);
 #else  // assume XP_UNIX
     std::string ascii_string = UTF16ToASCII(string16(str));
-    char* ascii_end = NULL;
+    char* ascii_end = nullptr;
     value_type ret = strtoll(ascii_string.c_str(), &ascii_end, kBase);
     if (ascii_string.c_str() + ascii_string.length() == ascii_end) {
       *endptr =

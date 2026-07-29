@@ -59,9 +59,8 @@ void RtpLogger::LogPacket(const MediaPacket& packet, bool input,
     for (size_t i = 0; i < packet.len(); ++i) {
       ss << " " << std::setw(2) << (int)packet.data()[i];
     }
-    MOZ_LOG(gRtpLoggerLog, LogLevel::Debug,
-            ("%s %s|>> %s", desc.c_str(),
-             (isRtp ? "RTP_PACKET" : "RTCP_PACKET"), ss.str().c_str()));
+    MOZ_LOG_FMT(gRtpLoggerLog, LogLevel::Debug, "{} {}|>> {}", desc.c_str(),
+                (isRtp ? "RTP_PACKET" : "RTCP_PACKET"), ss.str().c_str());
   }
 }
 

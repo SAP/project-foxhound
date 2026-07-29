@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -353,10 +351,25 @@ class DoublyLinkedList final {
   Iterator find(const T& aElm) const { return std::find(begin(), end(), aElm); }
 
   /**
+   * Returns an iterator referencing the element with the same address as the
+   * given element. Useful for membership tests.
+   */
+  Iterator find(const T* aNeedle) const {
+    return std::find_if(begin(), end(),
+                        [aNeedle](const T& elm) { return &elm == aNeedle; });
+  }
+
+  /**
    * Returns whether the given element is in the list. Note that this uses
    * T::operator==, not pointer comparison.
    */
   bool contains(const T& aElm) const { return find(aElm) != Iterator(); }
+
+  /**
+   * Returns whether the given element is in the list. Note that this uses
+   * pointer comparison.
+   */
+  bool contains(const T* aElm) const { return find(aElm) != Iterator(); }
 
   /**
    * Returns whether the given element might be in the list. Note that this
@@ -400,6 +413,23 @@ class DoublyLinkedList final {
         return false;
       }
     }
+    return true;
+  }
+
+  /**
+   * Returns true if the entire list is well formed.
+   */
+  bool ListIsWellFormed() const {
+    // If either mHead or mTail is null then both must be null.
+    if ((mHead == nullptr) && (mTail == mHead)) {
+      return true;
+    } else if (mTail == nullptr) {
+      return false;
+    }
+
+    std::all_of(begin(), end(),
+                [this](const T& elem) { return ElementIsLinkedWell(&elem); });
+
     return true;
   }
 };

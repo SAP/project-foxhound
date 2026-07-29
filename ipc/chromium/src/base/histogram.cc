@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -10,8 +8,6 @@
 // See header file for details and examples.
 
 #include "base/histogram.h"
-
-#include <math.h>
 
 #include <string>
 
@@ -90,7 +86,7 @@ Histogram* Histogram::FactoryGet(Sample minimum, Sample maximum,
                                  size_t bucket_count, Flags flags,
                                  const int* buckets) {
   DCHECK(buckets);
-  Histogram* histogram(NULL);
+  Histogram* histogram(nullptr);
 
   // Defensive code.
   if (minimum < 1) minimum = 1;
@@ -350,8 +346,8 @@ uint32_t Histogram::Crc32(uint32_t sum, Histogram::Sample range) {
       unsigned char bytes[sizeof(Histogram::Sample)];
     } converter;
     converter.range = range;
-    for (size_t i = 0; i < sizeof(converter); ++i)
-      sum = kCrcTable[(sum & 0xff) ^ converter.bytes[i]] ^ (sum >> 8);
+    for (unsigned char byte : converter.bytes)
+      sum = kCrcTable[(sum & 0xff) ^ byte] ^ (sum >> 8);
   } else {
     // Use hash techniques provided in ReallyFastHash, except we don't care
     // about "avalanching" (which would worsten the hash, and add collisions),
@@ -432,7 +428,7 @@ LinearHistogram::~LinearHistogram() = default;
 Histogram* LinearHistogram::FactoryGet(Sample minimum, Sample maximum,
                                        size_t bucket_count, Flags flags,
                                        const int* buckets) {
-  Histogram* histogram(NULL);
+  Histogram* histogram(nullptr);
 
   if (minimum < 1) minimum = 1;
   if (maximum > kSampleType_MAX - 1) maximum = kSampleType_MAX - 1;
@@ -498,7 +494,7 @@ bool LinearHistogram::PrintEmptyBucket(size_t index) const {
 //------------------------------------------------------------------------------
 
 Histogram* BooleanHistogram::FactoryGet(Flags flags, const int* buckets) {
-  Histogram* histogram(NULL);
+  Histogram* histogram(nullptr);
 
   BooleanHistogram* tentative_histogram = new BooleanHistogram();
   tentative_histogram->InitializeBucketRangeFromData(buckets);

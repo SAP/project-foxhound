@@ -71,9 +71,6 @@ add_task(async function testAboutDebugging() {
   let win = await loadInitialView("extension");
 
   let aboutAddonsTab = gBrowser.selectedTab;
-  let debugAddonsBtn = win.document.querySelector(
-    '#page-options [action="debug-addons"]'
-  );
 
   // Verify the about:debugging is loaded.
   info(`Check about:debugging loads`);
@@ -82,7 +79,7 @@ add_task(async function testAboutDebugging() {
     "about:debugging#/runtime/this-firefox",
     true
   );
-  debugAddonsBtn.click();
+  await triggerPageOptionsAction(win, "debug-addons");
   await loaded;
   let aboutDebuggingTab = gBrowser.selectedTab;
   const { AboutDebugging } = aboutDebuggingTab.linkedBrowser.contentWindow;
@@ -99,7 +96,7 @@ add_task(async function testAboutDebugging() {
   let switched = TestUtils.waitForCondition(
     () => gBrowser.selectedTab == aboutDebuggingTab
   );
-  debugAddonsBtn.click();
+  await triggerPageOptionsAction(win, "debug-addons");
   await switched;
   await waitForRequestsToSettle(AboutDebugging.store);
 
@@ -114,7 +111,7 @@ add_task(async function testAboutDebugging() {
   switched = TestUtils.waitForCondition(
     () => gBrowser.selectedTab == aboutDebuggingTab
   );
-  debugAddonsBtn.click();
+  await triggerPageOptionsAction(win, "debug-addons");
   await switched;
 
   info("Wait until any new about:debugging request did settle");

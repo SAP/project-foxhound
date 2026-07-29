@@ -15,7 +15,8 @@ path = "src/main.rs"
 base64 = "0.22.1"
 env_logger = { version = "0.10", optional = true, default-features = false }
 gleam = { workspace = true }
-glutin = "0.28"
+glutin = { version = "0.32", default-features = false }
+glutin-winit = "0.5"
 clap = { version = "3.1", features = ["yaml"] }
 glsl-lang = { version = "0.2", features = ["lexer-v2-full"] }
 log = "0.4"
@@ -27,7 +28,7 @@ osmesa-sys = { version = "0.1.2", optional = true }
 osmesa-src = { version = "0.2", git = "https://github.com/servo/osmesa-src", optional = true }
 webrender = { path = "../webrender", features = ["capture", "replay", "png", "profiler", "dynamic_freetype", "leak_checks"] }
 webrender_build = { path = "../webrender_build" }
-winit = "0.26"
+winit = "0.30"
 serde = { version = "1.0", features = ["derive"] }
 semver = "1.0.12"
 swgl = { path = "../swgl", optional = true }
@@ -54,7 +55,8 @@ mozangle = { version = "0.5.2", features = ["egl"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 libc = "0.2"
-ndk-glue = "0.5"
+android-activity = { version = "0.6", features = ["native-activity"] }
+android_logger = "0.14"
 
 [target.'cfg(all(unix, not(target_os = "android")))'.dependencies]
 font-loader = "0.11"
@@ -68,8 +70,8 @@ opengles_version_minor = 0
 
 [package.metadata.android.sdk]
 # keep it in sync with android-sdk-version in android-sdk.configure
-target_sdk_version = 36
-min_sdk_version = 18
+target_sdk_version = 37
+min_sdk_version = 26
 
 [package.metadata.android.application]
 label = "Wrench"

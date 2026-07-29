@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -114,11 +112,9 @@ void TransactionBuilder::RemovePipeline(PipelineId aPipelineId) {
 void TransactionBuilder::SetDisplayList(
     Epoch aEpoch, wr::WrPipelineId pipeline_id,
     wr::BuiltDisplayListDescriptor dl_descriptor,
-    wr::Vec<uint8_t>& dl_items_data, wr::Vec<uint8_t>& dl_cache_data,
-    wr::Vec<uint8_t>& dl_spatial_tree) {
+    wr::Vec<uint8_t>& dl_items_data, wr::Vec<uint8_t>& dl_spatial_tree) {
   wr_transaction_set_display_list(mTxn, aEpoch, pipeline_id, dl_descriptor,
-                                  &dl_items_data.inner, &dl_cache_data.inner,
-                                  &dl_spatial_tree.inner);
+                                  &dl_items_data.inner, &dl_spatial_tree.inner);
 }
 
 void TransactionBuilder::ClearDisplayList(Epoch aEpoch,
@@ -221,7 +217,7 @@ RefPtr<WebRenderAPI::CreatePromise> WebRenderAPI::Create(
             RenderCompositor::Create(std::move(aWidget), error);
         if (!compositor) {
           if (!error.IsEmpty()) {
-            gfxCriticalNote << error.BeginReading();
+            gfxCriticalNote << error.get();
           }
           return CreatePromise::CreateAndReject(error, __func__);
         }
@@ -705,10 +701,6 @@ void WebRenderAPI::Readback(const TimeStamp& aStartTime, gfx::IntSize size,
 
 void WebRenderAPI::ClearAllCaches() { wr_api_clear_all_caches(mDocHandle); }
 
-void WebRenderAPI::EnableNativeCompositor(bool aEnable) {
-  wr_api_enable_native_compositor(mDocHandle, aEnable);
-}
-
 void WebRenderAPI::SetBatchingLookback(uint32_t aCount) {
   wr_api_set_batching_lookback(mDocHandle, aCount);
 }
@@ -878,23 +870,20 @@ bool WebRenderAPI::CheckAndClearDidRasterize() {
 void WebRenderAPI::Capture() {
   // see CaptureBits
   // SCENE | FRAME | TILE_CACHE
-  uint8_t bits = 15;                // TODO: get from JavaScript
-  const char* path = "wr-capture";  // TODO: get from JavaScript
+  uint8_t bits = 15;  // TODO: get from JavaScript
   const char* revision =
       gAppData ? (const char*)gAppData->sourceRevision : nullptr;
-  wr_api_capture(mDocHandle, path, revision, bits);
+  wr_api_capture(mDocHandle, revision, bits);
 }
 
-void WebRenderAPI::StartCaptureSequence(const nsACString& aPath,
-                                        uint32_t aFlags) {
+void WebRenderAPI::StartCaptureSequence(uint32_t aFlags) {
   if (mCaptureSequence) {
     wr_api_stop_capture_sequence(mDocHandle);
   }
   const char* revision =
       gAppData ? (const char*)gAppData->sourceRevision : nullptr;
 
-  wr_api_start_capture_sequence(mDocHandle, PromiseFlatCString(aPath).get(),
-                                revision, aFlags);
+  wr_api_start_capture_sequence(mDocHandle, revision, aFlags);
 
   mCaptureSequence = true;
 }
@@ -1187,14 +1176,9 @@ DisplayListBuilder::DisplayListBuilder(PipelineId aId,
     : mCurrentSpaceAndClipChain(wr::RootScrollNodeWithChain()),
       mActiveFixedPosTracker(nullptr),
       mPipelineId(aId),
-      mBackend(aBackend),
-      mDisplayItemCache(nullptr) {
+      mBackend(aBackend) {
   MOZ_COUNT_CTOR(DisplayListBuilder);
   mWrState = wr_state_new(aId);
-
-  if (mDisplayItemCache && mDisplayItemCache->IsEnabled()) {
-    mDisplayItemCache->SetPipelineId(aId);
-  }
 }
 
 DisplayListBuilder::~DisplayListBuilder() {
@@ -1216,46 +1200,33 @@ void DisplayListBuilder::DumpSerializedDisplayList() {
   wr_dump_serialized_display_list(mWrState);
 }
 
-void DisplayListBuilder::Begin(layers::DisplayItemCache* aCache) {
+void DisplayListBuilder::Begin() {
   wr_api_begin_builder(mWrState);
 
-  mScrollIds.clear();
   mASRToSpatialIdMap.clear();
   mCurrentSpaceAndClipChain = wr::RootScrollNodeWithChain();
   mCachedTextDT = nullptr;
   mCachedContext = nullptr;
   mActiveFixedPosTracker = nullptr;
-  mDisplayItemCache = aCache;
-  mCurrentCacheSlot = Nothing();
 }
 
 void DisplayListBuilder::End(BuiltDisplayList& aOutDisplayList) {
-  wr_api_end_builder(
-      mWrState, &aOutDisplayList.dl_desc, &aOutDisplayList.dl_items.inner,
-      &aOutDisplayList.dl_cache.inner, &aOutDisplayList.dl_spatial_tree.inner);
-
-  mDisplayItemCache = nullptr;
+  wr_api_end_builder(mWrState, &aOutDisplayList.dl_desc,
+                     &aOutDisplayList.dl_items.inner,
+                     &aOutDisplayList.dl_spatial_tree.inner);
 }
 
 void DisplayListBuilder::End(layers::DisplayListData& aOutTransaction) {
-  if (mDisplayItemCache && mDisplayItemCache->IsEnabled()) {
-    wr_dp_set_cache_size(mWrState, mDisplayItemCache->CurrentSize());
-  }
-
-  wr::VecU8 dlItems, dlCache, dlSpatialTree;
+  wr::VecU8 dlItems, dlSpatialTree;
   wr_api_end_builder(mWrState, &aOutTransaction.mDLDesc, &dlItems.inner,
-                     &dlCache.inner, &dlSpatialTree.inner);
+                     &dlSpatialTree.inner);
   aOutTransaction.mDLItems.emplace(dlItems.inner.data, dlItems.inner.length,
                                    dlItems.inner.capacity);
-  aOutTransaction.mDLCache.emplace(dlCache.inner.data, dlCache.inner.length,
-                                   dlCache.inner.capacity);
   aOutTransaction.mDLSpatialTree.emplace(dlSpatialTree.inner.data,
                                          dlSpatialTree.inner.length,
                                          dlSpatialTree.inner.capacity);
   dlItems.inner.capacity = 0;
   dlItems.inner.data = nullptr;
-  dlCache.inner.capacity = 0;
-  dlCache.inner.data = nullptr;
   dlSpatialTree.inner.capacity = 0;
   dlSpatialTree.inner.data = nullptr;
 }
@@ -1268,6 +1239,21 @@ Maybe<wr::WrSpatialId> DisplayListBuilder::PushStackingContext(
       ToString(aBounds).c_str(),
       aParams.mTransformPtr ? ToString(*aParams.mTransformPtr).c_str() : "none",
       aParams.animation ? aParams.animation->id : 0);
+
+  // Diagnostics for bug 2031107: validate FFI inputs before crossing into
+  // Rust to distinguish C++-side invariant violations from corruption that
+  // occurs inside the Rust frame.
+  MOZ_ASSERT(mWrState);
+  MOZ_DIAGNOSTIC_ASSERT(aParams.mFilters.Length() < 1024);
+  MOZ_DIAGNOSTIC_ASSERT(aParams.mFilterDatas.Length() < 1024);
+  MOZ_DIAGNOSTIC_ASSERT(
+      reinterpret_cast<uintptr_t>(aParams.mFilters.Elements()) %
+          alignof(wr::FilterOp) ==
+      0);
+  MOZ_DIAGNOSTIC_ASSERT(
+      reinterpret_cast<uintptr_t>(aParams.mFilterDatas.Elements()) %
+          alignof(wr::WrFilterData) ==
+      0);
 
   auto spatialId = wr_dp_push_stacking_context(
       mWrState, aBounds, mCurrentSpaceAndClipChain.space, &aParams,
@@ -1285,8 +1271,6 @@ void DisplayListBuilder::PopStackingContext(bool aIsReferenceFrame) {
 
 wr::WrClipChainId DisplayListBuilder::DefineClipChain(
     Span<const wr::WrClipId> aClips, const Maybe<wr::WrClipChainId>& aParent) {
-  CancelGroup();
-
   const uint64_t* parent = aParent ? &aParent->id : nullptr;
   uint64_t clipchainId = wr_dp_define_clipchain(
       mWrState, parent, aClips.Elements(), aClips.Length());
@@ -1307,8 +1291,6 @@ wr::WrClipChainId DisplayListBuilder::DefineClipChain(
 wr::WrClipId DisplayListBuilder::DefineImageMaskClip(
     const wr::ImageMask& aMask, const nsTArray<wr::LayoutPoint>& aPoints,
     wr::FillRule aFillRule) {
-  CancelGroup();
-
   WrClipId clipId = wr_dp_define_image_mask_clip_with_parent_clip_chain(
       mWrState, mCurrentSpaceAndClipChain.space, aMask, aPoints.Elements(),
       aPoints.Length(), aFillRule);
@@ -1318,8 +1300,6 @@ wr::WrClipId DisplayListBuilder::DefineImageMaskClip(
 
 wr::WrClipId DisplayListBuilder::DefineRoundedRectClip(
     Maybe<wr::WrSpatialId> aSpace, const wr::ComplexClipRegion& aComplex) {
-  CancelGroup();
-
   WrClipId clipId;
   if (aSpace) {
     clipId = wr_dp_define_rounded_rect_clip(mWrState, *aSpace, aComplex);
@@ -1333,8 +1313,6 @@ wr::WrClipId DisplayListBuilder::DefineRoundedRectClip(
 
 wr::WrClipId DisplayListBuilder::DefineRectClip(Maybe<wr::WrSpatialId> aSpace,
                                                 wr::LayoutRect aClipRect) {
-  CancelGroup();
-
   WrClipId clipId;
   if (aSpace) {
     clipId = wr_dp_define_rect_clip(mWrState, *aSpace, aClipRect);
@@ -1353,12 +1331,12 @@ wr::WrSpatialId DisplayListBuilder::DefineStickyFrame(
     const float* aBottomMargin, const float* aLeftMargin,
     const StickyOffsetBounds& aVerticalBounds,
     const StickyOffsetBounds& aHorizontalBounds,
-    const wr::LayoutVector2D& aAppliedOffset, wr::SpatialTreeItemKey aKey,
+    const wr::LayoutVector2D& aAppliedOffset,
     const WrAnimationProperty* aAnimation) {
   auto spatialId = wr_dp_define_sticky_frame(
       mWrState, aParentSpatialId.valueOr(mCurrentSpaceAndClipChain.space),
       aContentRect, aTopMargin, aRightMargin, aBottomMargin, aLeftMargin,
-      aVerticalBounds, aHorizontalBounds, aAppliedOffset, aKey, aAnimation);
+      aVerticalBounds, aHorizontalBounds, aAppliedOffset, aAnimation);
 
   mASRToSpatialIdMap.emplace(aStickyAsr, spatialId);
 
@@ -1375,23 +1353,12 @@ wr::WrSpatialId DisplayListBuilder::DefineStickyFrame(
   return spatialId;
 }
 
-Maybe<wr::WrSpatialId> DisplayListBuilder::GetScrollIdForDefinedScrollLayer(
-    layers::ScrollableLayerGuid::ViewID aViewId) const {
-  if (aViewId == layers::ScrollableLayerGuid::NULL_SCROLL_ID) {
+Maybe<wr::WrSpatialId> DisplayListBuilder::GetSpatialIdForDefinedLayer(
+    const ActiveScrolledRoot* aASR) const {
+  if (aASR == nullptr) {
     return Some(wr::RootScrollNode());
   }
 
-  auto it = mScrollIds.find(aViewId);
-  if (it == mScrollIds.end()) {
-    return Nothing();
-  }
-
-  return Some(it->second);
-}
-
-Maybe<wr::WrSpatialId> DisplayListBuilder::GetSpatialIdForDefinedStickyLayer(
-    const ActiveScrolledRoot* aASR) const {
-  MOZ_ASSERT(aASR->mKind == ActiveScrolledRoot::ASRKind::Sticky);
   auto it = mASRToSpatialIdMap.find(aASR);
   if (it == mASRToSpatialIdMap.end()) {
     return Nothing();
@@ -1401,14 +1368,14 @@ Maybe<wr::WrSpatialId> DisplayListBuilder::GetSpatialIdForDefinedStickyLayer(
 }
 
 wr::WrSpatialId DisplayListBuilder::DefineScrollLayer(
+    const ActiveScrolledRoot* aAsr,
     const layers::ScrollableLayerGuid::ViewID& aViewId,
     const Maybe<wr::WrSpatialId>& aParent, const wr::LayoutRect& aContentRect,
     const wr::LayoutRect& aClipRect, const wr::LayoutVector2D& aScrollOffset,
     wr::APZScrollGeneration aScrollOffsetGeneration,
-    wr::HasScrollLinkedEffect aHasScrollLinkedEffect,
-    wr::SpatialTreeItemKey aKey) {
-  auto it = mScrollIds.find(aViewId);
-  if (it != mScrollIds.end()) {
+    wr::HasScrollLinkedEffect aHasScrollLinkedEffect) {
+  auto it = mASRToSpatialIdMap.find(aAsr);
+  if (it != mASRToSpatialIdMap.end()) {
     return it->second;
   }
 
@@ -1417,8 +1384,8 @@ wr::WrSpatialId DisplayListBuilder::DefineScrollLayer(
 
   auto space = wr_dp_define_scroll_layer(
       mWrState, aViewId, aParent ? aParent.ptr() : &defaultParent, aContentRect,
-      aClipRect, aScrollOffset, aScrollOffsetGeneration, aHasScrollLinkedEffect,
-      aKey);
+      aClipRect, aScrollOffset, aScrollOffsetGeneration,
+      aHasScrollLinkedEffect);
 
   WRDL_LOG("DefineScrollLayer id=%" PRIu64
            "/%zu p=%s co=%s cl=%s generation=%s hasScrollLinkedEffect=%s\n",
@@ -1428,7 +1395,7 @@ wr::WrSpatialId DisplayListBuilder::DefineScrollLayer(
            ToString(aScrollOffsetGeneration).c_str(),
            ToString(aHasScrollLinkedEffect).c_str());
 
-  mScrollIds[aViewId] = space;
+  mASRToSpatialIdMap[aAsr] = space;
   return space;
 }
 
@@ -1464,7 +1431,8 @@ void DisplayListBuilder::PushRoundedRect(const wr::LayoutRect& aBounds,
   float h = aBounds.width() * 0.6f;
   float v = aBounds.height() * 0.6f;
   wr::LayoutSideOffsets widths = {v, h, v, h};
-  wr::BorderRadius radii = {{h, v}, {h, v}, {h, v}, {h, v}};
+  wr::BorderRadius radii = {{h, v}, {h, v}, {h, v}, {h, v},
+                            1.0f,   1.0f,   1.0f,   1.0f};
 
   // Anti-aliased borders are required for rounded borders.
   wr_dp_push_border(mWrState, aBounds, aClip, aIsBackfaceVisible,
@@ -1779,67 +1747,6 @@ void DisplayListBuilder::PushBoxShadow(
 
 void DisplayListBuilder::PushDebug(uint32_t aVal) {
   wr_dp_push_debug(mWrState, aVal);
-}
-
-void DisplayListBuilder::StartGroup(nsPaintedDisplayItem* aItem) {
-  if (!mDisplayItemCache || mDisplayItemCache->IsFull()) {
-    return;
-  }
-
-  MOZ_ASSERT(!mCurrentCacheSlot);
-  mCurrentCacheSlot = mDisplayItemCache->AssignSlot(aItem);
-
-  if (mCurrentCacheSlot) {
-    wr_dp_start_item_group(mWrState);
-  }
-}
-
-void DisplayListBuilder::CancelGroup(const bool aDiscard) {
-  if (!mDisplayItemCache || !mCurrentCacheSlot) {
-    return;
-  }
-
-  wr_dp_cancel_item_group(mWrState, aDiscard);
-  mCurrentCacheSlot = Nothing();
-}
-
-void DisplayListBuilder::FinishGroup() {
-  if (!mDisplayItemCache || !mCurrentCacheSlot) {
-    return;
-  }
-
-  MOZ_ASSERT(mCurrentCacheSlot);
-
-  if (wr_dp_finish_item_group(mWrState, mCurrentCacheSlot.ref())) {
-    mDisplayItemCache->MarkSlotOccupied(mCurrentCacheSlot.ref(),
-                                        CurrentSpaceAndClipChain());
-    mDisplayItemCache->Stats().AddCached();
-  }
-
-  mCurrentCacheSlot = Nothing();
-}
-
-bool DisplayListBuilder::ReuseItem(nsPaintedDisplayItem* aItem) {
-  if (!mDisplayItemCache) {
-    return false;
-  }
-
-  mDisplayItemCache->Stats().AddTotal();
-
-  if (mDisplayItemCache->IsEmpty()) {
-    return false;
-  }
-
-  Maybe<uint16_t> slot =
-      mDisplayItemCache->CanReuseItem(aItem, CurrentSpaceAndClipChain());
-
-  if (slot) {
-    mDisplayItemCache->Stats().AddReused();
-    wr_dp_push_reuse_items(mWrState, slot.ref());
-    return true;
-  }
-
-  return false;
 }
 
 Maybe<layers::ScrollableLayerGuid::ViewID>

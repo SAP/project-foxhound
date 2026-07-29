@@ -100,13 +100,13 @@ def update_nspr_or_nss(tag, depfile, destination, hgpath):
     if os.path.exists(permanent_patch_dir):
         shutil.move(permanent_patch_dir, temporary_patch_dir)
     # now update the destination
-    print("reverting to HG version of %s to get its blank line state" % depfile)
+    print(f"reverting to HG version of {depfile} to get its blank line state")
     check_call_noisy([options.hg, "revert", depfile])
     old_state = get_trailing_blank_line_state(depfile)
-    print("old state of %s is: %s" % (depfile, old_state))
+    print(f"old state of {depfile} is: {old_state}")
     do_hg_replace(destination, hgpath, tag, HG_EXCLUSIONS, options.hg)
     new_state = get_trailing_blank_line_state(depfile)
-    print("new state of %s is: %s" % (depfile, new_state))
+    print(f"new state of {depfile} is: {new_state}")
     if old_state == new_state:
         print("toggling blank line in: ", depfile)
         toggle_trailing_blank_line(depfile)

@@ -10,7 +10,6 @@ import io.mockk.MockKAnnotations
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
@@ -20,7 +19,6 @@ import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.compose.snackbar.Snackbar
 import org.mozilla.fenix.compose.snackbar.SnackbarFactory
 
-@OptIn(ExperimentalCoroutinesApi::class)
 class StandardSnackbarErrorBindingTest {
 
     private val testDispatcher = StandardTestDispatcher()

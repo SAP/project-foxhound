@@ -3,8 +3,10 @@
 
 // Test opening toolboxes against a tab and its popup
 
-const TEST_URL = "data:text/html,test for debugging popups";
-const POPUP_URL = "data:text/html,popup";
+const TEST_URL =
+  "https://example.com/browser/devtools/client/framework/test/doc_popups_debugging.html";
+const POPUP_URL =
+  "https://example.com/browser/devtools/client/framework/test/doc_popups_debugging_popup.html";
 
 const POPUP_DEBUG_PREF = "devtools.popups.debug";
 

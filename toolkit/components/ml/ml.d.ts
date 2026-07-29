@@ -41,6 +41,8 @@ export type EngineRequests = EnsureAllFeatures<{
   "smart-intent": UntypedEngineRequest;
   "smart-tab-embedding": UntypedEngineRequest;
   "smart-tab-topic": UntypedEngineRequest;
+  "formfill-classification": UntypedEngineRequest;
+  chat: UntypedEngineRequest;
 
   "suggest-intent-classification": {
     /**
@@ -79,6 +81,7 @@ export type EngineFeatureIds =
   | "smart-intent"
   | "smart-tab-embedding"
   | "smart-tab-topic"
+  | "formfill-classification"
   | "suggest-intent-classification"
   | "suggest-NER";
 
@@ -107,6 +110,7 @@ export type EngineCreateOptions = EnsureAllFeatures<{
   "smart-intent": BasicEngineOptions;
   "smart-tab-embedding": BasicEngineOptions;
   "smart-tab-topic": BasicEngineOptions;
+  "formfill-classification": BasicEngineOptions;
   "suggest-intent-classification": BasicEngineOptions;
   "suggest-NER": BasicEngineOptions;
 }>;
@@ -132,6 +136,11 @@ type UntypedEngineResponse = {
   resourcesAfter: ResourceMeasurement;
 };
 
+type ChatEngineResponse = {
+  finalOutput: string;
+  metrics: unknown;
+} & UntypedEngineResponse;
+
 /**
  * Base metrics common to all pipeline runs.
  */
@@ -153,12 +162,14 @@ interface ClassificationMetrics extends BaseMetrics {
 
 export type EngineResponses = EnsureAllFeatures<{
   "about-inference": UntypedEngineResponse;
+  chat: ChatEngineResponse;
   "link-preview": UntypedEngineResponse;
   "pdfjs-alt-text": UntypedEngineResponse;
   "simple-text-embedder": UntypedEngineResponse;
   "smart-intent": UntypedEngineResponse;
   "smart-tab-embedding": UntypedEngineResponse;
   "smart-tab-topic": UntypedEngineResponse;
+  "formfill-classification": UntypedEngineResponse;
   "suggest-intent-classification": Array<{
     label: string;
     score: number;
@@ -294,6 +305,11 @@ export interface ChunkResponse {
     id: string;
     function: { name: string; arguments: any[] };
   }>;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
 }
 
 export type TypedArray =

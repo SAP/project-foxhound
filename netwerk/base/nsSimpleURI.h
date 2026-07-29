@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,7 +5,9 @@
 #ifndef nsSimpleURI_h_
 #define nsSimpleURI_h_
 
+#include "nsIIPCSerializableURI.h"
 #include "nsIURI.h"
+#include "nsIURIWithSizeOf.h"
 #include "nsISerializable.h"
 #include "nsString.h"
 #include "nsIClassInfo.h"
@@ -23,17 +24,21 @@ namespace net {
    0x470b,                                    \
    {0xb9, 0xb9, 0x9f, 0xd9, 0x46, 0x2b, 0x5e, 0x19}}
 
-class nsSimpleURI : public nsIURI, public nsISerializable {
+class nsSimpleURI : public nsIURI,
+                    public nsISerializable,
+                    public nsIIPCSerializableURI,
+                    public nsIURIWithSizeOf {
  protected:
   nsSimpleURI() = default;
   virtual ~nsSimpleURI() = default;
 
  public:
+  NS_INLINE_DECL_STATIC_IID(NS_THIS_SIMPLEURI_IMPLEMENTATION_CID)
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIURI
   NS_DECL_NSISERIALIZABLE
-
-  static already_AddRefed<nsSimpleURI> From(nsIURI* aURI);
+  NS_DECL_NSIIPCSERIALIZABLEURI
+  NS_DECL_NSIURIWITHSIZEOF
 
   // nsSimpleURI methods:
 

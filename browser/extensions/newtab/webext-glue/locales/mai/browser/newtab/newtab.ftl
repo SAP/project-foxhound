@@ -9,6 +9,25 @@ newtab-page-title = नव टैब
 newtab-settings-button =
     .title = अपन नव टैब पृष्ठ पसंदीदा बनाउ
 
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } पंक्ति
+           *[other] { $num } पंक्ति सभ
+        }
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = स्पोंसर कएल स्टोरी
+home-prefs-highlights-option-visited-pages-srd =
+    .label = विजिट कएल पेज
+home-prefs-highlights-options-bookmarks-srd =
+    .label = पुस्तकचिह्न
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = हालुक डाउनलोड
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +35,7 @@ newtab-search-box-search-button =
     .title = खोज
     .aria-label = खोज
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-edit-topsites-header = टॉप साइट संपादित करू
 newtab-topsites-title-label = शीर्षक

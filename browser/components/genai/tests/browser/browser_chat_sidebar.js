@@ -383,3 +383,39 @@ add_task(async function test_sidebar_browser_focus() {
   Assert.equal(document.activeElement, sidebar, "Sidebar is focused");
   await SidebarController.hide();
 });
+
+/**
+ * Check that WebExtension content scripts can be injected into the chatbot browser
+ */
+add_task(async function test_webext_content_script_in_chat_sidebar() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.ml.chat.provider", TEST_CHAT_PROVIDER_URL]],
+  });
+
+  const extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      content_scripts: [
+        {
+          matches: ["<all_urls>"],
+          js: ["content.js"],
+        },
+      ],
+    },
+    files: {
+      "content.js": `browser.test.sendMessage("injected", document.URL);`,
+    },
+  });
+
+  await extension.startup();
+  await SidebarController.show("viewGenaiChatSidebar");
+
+  const url = await extension.awaitMessage("injected");
+  Assert.equal(
+    url,
+    TEST_CHAT_PROVIDER_URL,
+    "WebExtension content script injected into chatbot browser"
+  );
+
+  await SidebarController.hide();
+  await extension.unload();
+});

@@ -12,6 +12,7 @@ import mozilla.components.concept.storage.BookmarkInfo
 import mozilla.components.concept.storage.BookmarkNode
 import mozilla.components.concept.storage.BookmarkNodeType
 import mozilla.components.concept.storage.BookmarksStorage
+import mozilla.components.concept.storage.bookmarks.InsertableBookmarkTreeRoot
 import mozilla.components.support.ktx.android.net.sameHostWithoutMobileSubdomainAs
 import mozilla.components.support.test.any
 import mozilla.components.support.test.eq
@@ -333,6 +334,11 @@ class BookmarksStorageSuggestionProviderTest {
 
         override fun cancelReads(nextQuery: String) {
             // no-op
+        }
+
+        override suspend fun insertTree(tree: InsertableBookmarkTreeRoot): Result<String> {
+            // "Not needed for the test"
+            throw NotImplementedError()
         }
     }
 }

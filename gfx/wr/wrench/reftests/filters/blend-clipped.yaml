@@ -80,7 +80,7 @@ pipelines:
                         "content-size": [1887, 239]
                       - type: clip-chain
                         id: 15
-                        clips: [3, 4, 5]
+                        clips: [4, 5]
                       -
                         bounds: [0, 0, 1887, 239]
                         "clip-rect": [0, 0, 1887, 239]

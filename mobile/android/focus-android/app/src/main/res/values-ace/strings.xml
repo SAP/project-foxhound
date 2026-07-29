@@ -149,7 +149,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s peuduek droeneuh lam keumudoe.</p>\n<p>Ngui sibagoe browser rahsia:\n<ul>\n<li>Mita ngön lop lam aplikasi</li>\n<li>Tham ureueng seutöt (atawa pubarô seuneuatô keu peuidin ureueng seutöt)</li>\n<li>Lhi keu sampôh cookies lagèe riwayat mita ngön seumeulop</li>\n</ul> </p>\n<p>%1$s geupeugöt lé Mozilla. Misi kamoe nakeuh keu meusatoh internet nyang sihat ngön teuhah.<br/>\n<a href=\"%2$s\">Learn more</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s peuduek droeneuh lam keumudoe.</p>\n<p>Ngui sibagoe browser rahsia:\n<ul>\n<li>Mita ngön lop lam aplikasi</li>\n<li>Tham ureueng seutöt (atawa pubarô seuneuatô keu peuidin ureueng seutöt)</li>\n<li>Lhi keu sampôh cookies lagèe riwayat mita ngön seumeulop</li>\n</ul> </p>\n<p>%1$s geupeugöt lé Mozilla. Misi kamoe nakeuh keu meusatoh internet nyang sihat ngön teuhah.<br/>\n<a href=\"%2$s\">Learn more</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Privasi &amp; Keuamanan</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -242,7 +242,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Tipèk atawa pasoe URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Miseue: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Miseue: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Miseue: miseue.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -314,12 +314,12 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Peujeuet %1$s browser teutap</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Peuét data teungui</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Meurunoë lom</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla geuôseuha keu geupeusaho nyang geupeureulèe mantöng keu geuseudiya dan geupeujroh %1$s keu bandum ureueng.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla geuôseuha keu geupeusaho nyang geupeureulèe mantöng keu geuseudiya dan geupeujroh %1$s keu bandum ureueng.</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Reusam Privasi</string>
   <!-- In-app link (in settings) to Focus licensing information. -->

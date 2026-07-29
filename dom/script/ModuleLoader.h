@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,6 +9,7 @@
 #include "js/loader/ModuleLoaderBase.h"
 #include "mozilla/dom/ScriptLoadRequestType.h"
 
+class nsIGlobalObject;
 class nsIURI;
 
 namespace JS {
@@ -95,10 +94,19 @@ class ModuleLoader final : public JS::loader::ModuleLoaderBase {
   nsresult CompileCssModule(JSContext* aCx, JS::CompileOptions& aOptions,
                             ModuleLoadRequest* aRequest,
                             JS::MutableHandle<JSObject*> aModuleOut);
+  nsresult CreateTextModule(JSContext* aCx, JS::CompileOptions& aOptions,
+                            ModuleLoadRequest* aRequest,
+                            JS::MutableHandle<JSObject*> aModuleOut);
 
  private:
   const Kind mKind;
 };
+
+// Creates an ESM with a default CSSStyleSheet export from a
+// CSS source string.
+nsresult CreateCssModule(JSContext* aCx, nsIGlobalObject* aGlobal,
+                         const nsACString& aSource, nsIURI* aBaseURI,
+                         JS::MutableHandle<JSObject*> aModuleOut);
 
 }  // namespace mozilla::dom
 

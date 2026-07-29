@@ -1486,6 +1486,8 @@ class RequestDetails {
       this.initiatorURI &&
       this.type !== "main_frame" &&
       this.type !== "sub_frame" &&
+      // The fourth parameter (aAllowFilePermission) being true is explained at
+      // ChannelWrapper::Matches, see bug 1887869 and bug 1621935 for context.
       !policy.canAccessURI(this.initiatorURI, false, true, true)
     ) {
       // Host permissions for the initiator is required except for navigation

@@ -4,6 +4,9 @@ ChromeUtils.defineESModuleGetters(this, {
   sinon: "resource://testing-common/Sinon.sys.mjs",
 });
 
+const PREF_SYSTEM_SHORTCUTS_PERSONALIZATION =
+  "discoverystream.shortcuts.personalization.enabled";
+
 add_task(async function test_weightedSampleTopSites_no_guid_last() {
   // Ranker are utilities we are testing
   const Ranker = ChromeUtils.importESModule(
@@ -38,6 +41,7 @@ add_task(async function test_weightedSampleTopSites_no_guid_last() {
     trainhopConfig: {
       smartShortcuts: {
         // fset: "custom", // uncomment iff your build defines a "custom" fset you want to use
+        enabled: true,
         eta: 0,
         click_bonus: 10,
         positive_prior: 1,
@@ -56,6 +60,267 @@ add_task(async function test_weightedSampleTopSites_no_guid_last() {
     result[result.length - 1].url,
     "no-guid.com",
     "top-site without GUID is last"
+  );
+
+  sandbox.restore();
+});
+
+add_task(
+  async function test_rankTopSites_uses_local_defaults_without_trainhop() {
+    const Ranker = ChromeUtils.importESModule(
+      "resource://newtab/lib/SmartShortcutsRanker/RankShortcuts.mjs"
+    );
+    const provider = new Ranker.RankShortcutsProvider();
+    const { NewTabUtils } = ChromeUtils.importESModule(
+      "resource://gre/modules/NewTabUtils.sys.mjs"
+    );
+
+    await NewTabUtils.init();
+
+    const sandbox = sinon.createSandbox();
+    let weightedInput;
+
+    sandbox
+      .stub(NewTabUtils.activityStreamProvider, "executePlacesQuery")
+      .resolves([
+        ["a", 0, 0],
+        ["b", 0, 0],
+      ]);
+    sandbox.stub(provider, "getLatestInteractions").resolves({});
+    sandbox.stub(provider, "fetchRefreFeatures").resolves({
+      rece: { a: 10, b: 1 },
+      freq: null,
+      refre: null,
+      unid: null,
+    });
+    sandbox.stub(provider.sc_obj, "get").resolves({});
+    sandbox.stub(provider.sc_obj, "set").resolves();
+    provider._rankShortcutsWorker = {
+      post(method, args) {
+        const [input] = args;
+        if (method === "updateWeights") {
+          return input.weights;
+        }
+        if (method === "weightedSampleTopSites") {
+          weightedInput = input;
+          return {
+            norms: {},
+            score_map: {
+              a: { final: 2, frec: 1, rece: 1, bias: 1 },
+              b: { final: 1, frec: 0, rece: 0, bias: 1 },
+            },
+          };
+        }
+        throw new Error(`unexpected worker method: ${method}`);
+      },
+    };
+
+    const out = await provider.rankTopSites(
+      [
+        { url: "https://no-guid.com" },
+        { guid: "a", url: "https://a.com", frecency: 10 },
+        { guid: "b", url: "https://b.com", frecency: 1 },
+      ],
+      {
+        [PREF_SYSTEM_SHORTCUTS_PERSONALIZATION]: true,
+      },
+      { isStartup: true }
+    );
+
+    Assert.deepEqual(
+      weightedInput.features,
+      ["frec", "rece"],
+      "built-in feature defaults are used without trainhop config"
+    );
+    Assert.equal(
+      weightedInput.weights.frec,
+      0.7,
+      "frec uses the built-in default"
+    );
+    Assert.equal(
+      weightedInput.weights.rece,
+      0.3,
+      "rece uses the built-in default"
+    );
+    Assert.ok(
+      !Object.hasOwn(weightedInput.weights, "bias"),
+      "bias weight is omitted when bias is not in the default feature set"
+    );
+    Assert.equal(
+      out[0].guid,
+      "a",
+      "ranking still runs without trainhop config"
+    );
+    Assert.equal(
+      out[out.length - 1].url,
+      "https://no-guid.com",
+      "no-guid item stays last"
+    );
+
+    sandbox.restore();
+  }
+);
+
+add_task(async function test_rankTopSites_remote_false_overrides_local_pref() {
+  const Ranker = ChromeUtils.importESModule(
+    "resource://newtab/lib/SmartShortcutsRanker/RankShortcuts.mjs"
+  );
+  const provider = new Ranker.RankShortcutsProvider();
+  const input = [{ guid: "a", url: "https://a.com", frecency: 10 }];
+
+  const out = await provider.rankTopSites(
+    input,
+    {
+      [PREF_SYSTEM_SHORTCUTS_PERSONALIZATION]: true,
+      trainhopConfig: { smartShortcuts: { enabled: false } },
+    },
+    { isStartup: true }
+  );
+
+  Assert.equal(out, input, "explicit remote false skips ranking");
+});
+
+add_task(
+  async function test_rankTopSites_partial_trainhop_falls_back_to_local_pref() {
+    const Ranker = ChromeUtils.importESModule(
+      "resource://newtab/lib/SmartShortcutsRanker/RankShortcuts.mjs"
+    );
+    const provider = new Ranker.RankShortcutsProvider();
+    const sandbox = sinon.createSandbox();
+
+    sandbox.stub(provider, "getLatestInteractions").resolves({});
+    sandbox.stub(provider, "fetchRefreFeatures").resolves({
+      rece: { a: 10, b: 1 },
+      freq: null,
+      refre: null,
+      unid: null,
+    });
+    sandbox.stub(provider.sc_obj, "get").resolves({});
+    sandbox.stub(provider.sc_obj, "set").resolves();
+    provider._rankShortcutsWorker = {
+      post(method, args) {
+        const [input] = args;
+        if (method === "updateWeights") {
+          return input.weights;
+        }
+        if (method === "weightedSampleTopSites") {
+          return {
+            norms: {},
+            score_map: {
+              a: { final: 2, frec: 1, rece: 1, bias: 1 },
+              b: { final: 1, frec: 0, rece: 0, bias: 1 },
+            },
+          };
+        }
+        throw new Error(`unexpected worker method: ${method}`);
+      },
+    };
+
+    const { NewTabUtils } = ChromeUtils.importESModule(
+      "resource://gre/modules/NewTabUtils.sys.mjs"
+    );
+    await NewTabUtils.init();
+    sandbox
+      .stub(NewTabUtils.activityStreamProvider, "executePlacesQuery")
+      .resolves([
+        ["a", 0, 0],
+        ["b", 0, 0],
+      ]);
+
+    const out = await provider.rankTopSites(
+      [
+        { guid: "a", url: "https://a.com", frecency: 10 },
+        { guid: "b", url: "https://b.com", frecency: 1 },
+      ],
+      {
+        [PREF_SYSTEM_SHORTCUTS_PERSONALIZATION]: true,
+        trainhopConfig: { smartShortcuts: {} },
+      },
+      { isStartup: true }
+    );
+
+    Assert.equal(
+      out[0].guid,
+      "a",
+      "partial trainhop config falls back to local defaults"
+    );
+
+    sandbox.restore();
+  }
+);
+
+add_task(async function test_rankTopSites_uses_trainhop_tau() {
+  const Ranker = ChromeUtils.importESModule(
+    "resource://newtab/lib/SmartShortcutsRanker/RankShortcuts.mjs"
+  );
+  const provider = new Ranker.RankShortcutsProvider();
+  const { NewTabUtils } = ChromeUtils.importESModule(
+    "resource://gre/modules/NewTabUtils.sys.mjs"
+  );
+
+  await NewTabUtils.init();
+
+  const sandbox = sinon.createSandbox();
+  let weightedInput;
+
+  sandbox
+    .stub(NewTabUtils.activityStreamProvider, "executePlacesQuery")
+    .resolves([
+      ["a", 0, 0],
+      ["b", 0, 0],
+    ]);
+  sandbox.stub(provider, "getLatestInteractions").resolves({});
+  sandbox.stub(provider, "getHourlySeasonalityData").resolves({
+    pvec: Array(24).fill(1 / 24),
+    hists: {
+      a: Array(24).fill(1),
+      b: Array(24).fill(1),
+    },
+  });
+  sandbox.stub(provider.sc_obj, "get").resolves({});
+  sandbox.stub(provider.sc_obj, "set").resolves();
+  provider._rankShortcutsWorker = {
+    post(method, args) {
+      const [input] = args;
+      if (method === "updateWeights") {
+        return input.weights;
+      }
+      if (method === "weightedSampleTopSites") {
+        weightedInput = input;
+        return {
+          norms: {},
+          score_map: {
+            a: { final: 2, hour: 1 },
+            b: { final: 1, hour: 0 },
+          },
+        };
+      }
+      throw new Error(`unexpected worker method: ${method}`);
+    },
+  };
+
+  await provider.rankTopSites(
+    [
+      { guid: "a", url: "https://a.com", frecency: 10 },
+      { guid: "b", url: "https://b.com", frecency: 1 },
+    ],
+    {
+      trainhopConfig: {
+        smartShortcuts: {
+          enabled: true,
+          features: ["hour"],
+          hour_weight: 100,
+          tau: 37,
+        },
+      },
+    },
+    { isStartup: true }
+  );
+
+  Assert.equal(
+    weightedInput.tau,
+    37,
+    "seasonality tau is taken from trainhop config"
   );
 
   sandbox.restore();
@@ -932,6 +1197,7 @@ add_task(async function test_rankTopSites_sql_pipeline_happy_path() {
     trainhopConfig: {
       smartShortcuts: {
         // fset: "custom", // uncomment iff your build defines a "custom" fset you want to use
+        enabled: true,
         eta: 0,
         click_bonus: 10,
         positive_prior: 1,
@@ -1135,13 +1401,15 @@ add_task(async function test_weightedSampleTopSites_ctr_basic() {
     "resource://newtab/lib/SmartShortcutsRanker/RankShortcutsWorkerClass.mjs"
   );
 
-  // g1: 9/10 → .909; g2: 1/10 → .1; g3: 0/0 → smoothed to (0+1)/(0+1)=1
-  // After normalization, g3 should be highest, then g1, then g2.
+  // g1: (9+1)/(10+1+1) = .833; g2: (1+1)/(10+1+1) = .167;
+  // g3: (0+1)/(0+1+1) = .5. After normalization, g1 > g3 > g2.
   const input = {
     features: ["ctr", "bias"],
     guid: ["g1", "g2", "g3"],
     clicks: [9, 1, 0],
     impressions: [10, 10, 0],
+    alpha: 1,
+    beta: 1,
     norms: { ctr: null },
     weights: { ctr: 1, bias: 0 },
   };
@@ -1152,13 +1420,13 @@ add_task(async function test_weightedSampleTopSites_ctr_basic() {
   Assert.ok(out && out.score_map && out.norms, "returns {score_map, norms}");
   Assert.ok(out.norms.ctr, "returns ctr norms");
 
-  // ordering by normalized ctr (highest to lowest): g3 > g1 > g2
+  // ordering by normalized ctr (highest to lowest): g1 > g3 > g2
   const s1 = out.score_map.g1.ctr;
   const s2 = out.score_map.g2.ctr;
   const s3 = out.score_map.g3.ctr;
 
-  Assert.greater(s3, s1, "g3 (1.0 smoothed) > g1 (~0.909)");
-  Assert.greater(s1, s2, "g1 (~0.909) > g2 (0.1)");
+  Assert.greater(s1, s3, "g1 (.833) > g3 (.5)");
+  Assert.greater(s3, s2, "g3 (.5) > g2 (.167)");
 
   // finals reflect ctr weight only
   Assert.equal(out.score_map.g1.final, s1, "final equals ctr (g1)");
@@ -1167,20 +1435,51 @@ add_task(async function test_weightedSampleTopSites_ctr_basic() {
 });
 
 //
-// 2) CTR smoothing edge cases: zero impressions produce finite values
+// 2) CTR defaults to legacy +1/+1 smoothing when priors are omitted
+//
+add_task(
+  async function test_weightedSampleTopSites_ctr_defaults_missing_priors() {
+    const Worker = ChromeUtils.importESModule(
+      "resource://newtab/lib/SmartShortcutsRanker/RankShortcutsWorkerClass.mjs"
+    );
+
+    const input = {
+      features: ["ctr"],
+      guid: ["g1", "g2", "g3"],
+      clicks: [9, 1, 0],
+      impressions: [10, 10, 0],
+      norms: { ctr: null },
+      weights: { ctr: 1 },
+    };
+
+    const out = await Worker.weightedSampleTopSites(input);
+
+    const s1 = out.score_map.g1.ctr;
+    const s2 = out.score_map.g2.ctr;
+    const s3 = out.score_map.g3.ctr;
+
+    Assert.greater(s1, s3, "missing priors default to g1 > g3");
+    Assert.greater(s3, s2, "missing priors default to g3 > g2");
+  }
+);
+
+//
+// 3) CTR smoothing edge cases: zero impressions produce finite values
 //
 add_task(async function test_weightedSampleTopSites_ctr_smoothing_zero_imps() {
   const Worker = ChromeUtils.importESModule(
     "resource://newtab/lib/SmartShortcutsRanker/RankShortcutsWorkerClass.mjs"
   );
 
-  // gA: clicks=0, imps=0 → (0+1)/(0+1)=1.0
-  // gB: clicks=5, imps=0 → (5+1)/(0+1)=6.0  (still finite, larger than 1.0)
+  // gA: (0+1)/(0+1+1) = .5
+  // gB: (5+1)/(0+1+1) = 3.0
   const input = {
     features: ["ctr"],
     guid: ["gA", "gB"],
     clicks: [0, 5],
     impressions: [0, 0],
+    alpha: 1,
+    beta: 1,
     norms: { ctr: null },
     weights: { ctr: 1 },
   };
@@ -1198,7 +1497,38 @@ add_task(async function test_weightedSampleTopSites_ctr_smoothing_zero_imps() {
 });
 
 //
-// 3) CTR running norm: prior norm influences (mean,var) and persists
+// 4) CTR with zero priors: non-finite raw CTRs are clamped to zero
+//
+add_task(
+  async function test_weightedSampleTopSites_ctr_nonfinite_clamped_to_zero() {
+    const Worker = ChromeUtils.importESModule(
+      "resource://newtab/lib/SmartShortcutsRanker/RankShortcutsWorkerClass.mjs"
+    );
+
+    const input = {
+      features: ["ctr"],
+      guid: ["gA", "gB"],
+      clicks: [0, 5],
+      impressions: [0, 0],
+      alpha: 0,
+      beta: 0,
+      norms: { ctr: null },
+      weights: { ctr: 1 },
+    };
+
+    const out = await Worker.weightedSampleTopSites(input);
+
+    const a = out.score_map.gA.ctr;
+    const b = out.score_map.gB.ctr;
+
+    Assert.ok(Number.isFinite(a) && Number.isFinite(b), "scores stay finite");
+    Assert.equal(a, 0, "0/0 CTR is clamped to zero");
+    Assert.equal(b, 0, "infinite CTR is clamped to zero");
+  }
+);
+
+//
+// 5) CTR running norm: prior norm influences (mean,var) and persists
 //
 add_task(async function test_weightedSampleTopSites_ctr_with_prior_norm() {
   const Worker = ChromeUtils.importESModule(
@@ -1210,7 +1540,9 @@ add_task(async function test_weightedSampleTopSites_ctr_with_prior_norm() {
     features: ["ctr"],
     guid: ["x", "y"],
     clicks: [3, 0],
-    impressions: [10, 10], // raw ctr: x=.364, y=.091 → with +1 smoothing: (.3~) but ordering same
+    impressions: [10, 10], // raw ctr: x=(3+1)/(10+1+1), y=(0+1)/(10+1+1)
+    alpha: 1,
+    beta: 1,
     norms: { ctr: prior },
     weights: { ctr: 1 },
   };
@@ -1510,6 +1842,7 @@ function prefsFor(features, extra = {}) {
   return {
     trainhopConfig: {
       smartShortcuts: {
+        enabled: true,
         features,
         // make training a no-op for determinism
         eta: 0,
@@ -1795,4 +2128,194 @@ add_task(function test_roundNum_precision_and_edge_cases() {
     sentinel,
     "roundNum returns non-number inputs unchanged"
   );
+});
+
+add_task(function test_gateRuntimeConfigByEngagement_gates_below_thresholds() {
+  const { gateRuntimeConfigByEngagement } = ChromeUtils.importESModule(
+    "resource://newtab/lib/SmartShortcutsRanker/RankShortcuts.mjs"
+  );
+
+  const runtimeConfig = {
+    eta: 0.003,
+    weights: { thom: 0.4, frec: 0.6, bias: 1 },
+  };
+  const gated = gateRuntimeConfigByEngagement(
+    runtimeConfig,
+    {
+      min_exp_clicks: 3,
+      min_exp_impressions: 10,
+    },
+    {
+      clicks: [1, 1],
+      impressions: [5, 4],
+    }
+  );
+
+  Assert.equal(gated.eta, 0, "eta is disabled below the thresholds");
+  Assert.equal(gated.weights.thom, 0, "thom is disabled below the thresholds");
+  Assert.equal(
+    gated.weights.frec,
+    runtimeConfig.weights.frec,
+    "other weights are preserved"
+  );
+  Assert.equal(runtimeConfig.eta, 0.003, "input eta is not mutated");
+  Assert.equal(
+    runtimeConfig.weights.thom,
+    0.4,
+    "input weights are not mutated"
+  );
+});
+
+add_task(
+  function test_gateRuntimeConfigByEngagement_preserves_values_at_threshold() {
+    const { gateRuntimeConfigByEngagement } = ChromeUtils.importESModule(
+      "resource://newtab/lib/SmartShortcutsRanker/RankShortcuts.mjs"
+    );
+
+    const runtimeConfig = {
+      eta: 0.0025,
+      weights: { thom: 0.25, frec: 0.75 },
+    };
+    const gated = gateRuntimeConfigByEngagement(
+      runtimeConfig,
+      {
+        min_exp_clicks: 2,
+        min_exp_impressions: 7,
+      },
+      {
+        clicks: [1, 1],
+        impressions: [3, 4],
+      }
+    );
+
+    Assert.strictEqual(
+      gated,
+      runtimeConfig,
+      "runtime config stays unchanged once both thresholds are met"
+    );
+  }
+);
+
+add_task(function test_gateRuntimeConfigByEngagement_defaults_and_noop_cases() {
+  const { gateRuntimeConfigByEngagement } = ChromeUtils.importESModule(
+    "resource://newtab/lib/SmartShortcutsRanker/RankShortcuts.mjs"
+  );
+
+  Assert.strictEqual(
+    gateRuntimeConfigByEngagement(
+      { weights: { frec: 1 } },
+      {},
+      { clicks: [1], impressions: [1] }
+    ).weights.frec,
+    1,
+    "weight sets without thom are left alone"
+  );
+
+  const noGatingTargets = { click_bonus: 1 };
+  Assert.strictEqual(
+    gateRuntimeConfigByEngagement(noGatingTargets),
+    noGatingTargets,
+    "configs without eta or weights are left alone"
+  );
+
+  const gated = gateRuntimeConfigByEngagement({
+    eta: 0.1,
+    weights: { thom: 0.5, frec: 0.5 },
+  });
+  Assert.equal(gated.eta, 0, "default thresholds gate eta");
+  Assert.equal(gated.weights.thom, 0, "default thresholds gate thom");
+});
+
+add_task(async function test_rankTopSites_gates_runtime_thom_weight_and_eta() {
+  const Ranker = ChromeUtils.importESModule(
+    "resource://newtab/lib/SmartShortcutsRanker/RankShortcuts.mjs"
+  );
+  const provider = new Ranker.RankShortcutsProvider();
+  const { NewTabUtils } = ChromeUtils.importESModule(
+    "resource://gre/modules/NewTabUtils.sys.mjs"
+  );
+
+  await NewTabUtils.init();
+
+  const sandbox = sinon.createSandbox();
+  let weightedInput;
+  let updateInput;
+  const learnedWeights = { thom: 0.4, frec: 0.6, bias: 1 };
+  const initialCache = {
+    weights: { ...learnedWeights },
+    init_weights: { ...learnedWeights },
+    score_map: {
+      a: { final: 0, thom: 0, frec: 0 },
+      b: { final: 0, thom: 0, frec: 0 },
+    },
+    norms: null,
+  };
+
+  sandbox
+    .stub(NewTabUtils.activityStreamProvider, "executePlacesQuery")
+    .resolves([
+      ["a", 1, 80],
+      ["b", 0, 80],
+    ]);
+  sandbox.stub(provider, "getLatestInteractions").resolves({});
+  sandbox.stub(provider.sc_obj, "get").resolves(initialCache);
+  const setStub = sandbox.stub(provider.sc_obj, "set").resolves();
+  provider._rankShortcutsWorker = {
+    post(method, args) {
+      const [input] = args;
+      if (method === "updateWeights") {
+        updateInput = input;
+        return { ...input.weights, ...learnedWeights };
+      }
+      if (method === "weightedSampleTopSites") {
+        weightedInput = input;
+        return {
+          norms: {},
+          score_map: {
+            a: { final: 2, thom: 1, frec: 1 },
+            b: { final: 1, thom: 0, frec: 0 },
+          },
+        };
+      }
+      throw new Error(`unexpected worker method: ${method}`);
+    },
+  };
+
+  await provider.rankTopSites(
+    [
+      { guid: "a", url: "https://a.com", frecency: 10 },
+      { guid: "b", url: "https://b.com", frecency: 1 },
+    ],
+    {
+      trainhopConfig: {
+        smartShortcuts: {
+          enabled: true,
+          features: ["thom", "frec", "bias"],
+          thom_weight: 40,
+          frec_weight: 60,
+          bias_weight: 100,
+          min_exp_clicks: 2,
+          min_exp_impressions: 200,
+          eta: 30,
+          click_bonus: 10,
+        },
+      },
+    },
+    { isStartup: true }
+  );
+
+  Assert.equal(updateInput.eta, 0, "learning receives gated eta");
+  Assert.equal(weightedInput.weights.thom, 0, "ranking receives gated thom");
+  Assert.equal(
+    weightedInput.weights.frec,
+    learnedWeights.frec,
+    "non-thom ranking weights are preserved"
+  );
+  Assert.equal(
+    setStub.getCalls().find(call => call.args[0] === "weights").args[1].thom,
+    learnedWeights.thom,
+    "stored weights keep the learned thom value"
+  );
+
+  sandbox.restore();
 });

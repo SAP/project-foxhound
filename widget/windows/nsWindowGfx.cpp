@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -159,7 +158,7 @@ bool nsWindow::OnPaint() {
     return true;
   }
 
-  WindowRenderer* renderer = GetWindowRenderer();
+  RefPtr renderer = GetWindowRenderer();
   KnowsCompositor* knowsCompositor = renderer->AsKnowsCompositor();
   WebRenderLayerManager* layerManager = renderer->AsWebRender();
   const bool isFallback =
@@ -195,7 +194,7 @@ bool nsWindow::OnPaint() {
   Maybe<FallbackPaintContext> fallback;
   if (isFallback) {
     uint32_t flags = isTransparent ? gfxWindowsSurface::FLAG_IS_TRANSPARENT : 0;
-    RefPtr<gfxASurface> targetSurface = new gfxWindowsSurface(hDC, flags);
+    auto targetSurface = MakeRefPtr<gfxWindowsSurface>(hDC, flags);
     RECT paintRect;
     ::GetClientRect(mWnd, &paintRect);
     RefPtr<DrawTarget> dt = gfxPlatform::CreateDrawTargetForSurface(

@@ -226,3 +226,11 @@ css-selector-warning-unconstrained-has = This selector uses unconstrained <stron
 
 # :scope should not be translated
 css-selector-warning-sibling-combinator-after-scope = Sibling selectors after <strong>:scope</strong> will never match anything
+
+## In the Rule View we display a tooltip when a @container condition is hovered.
+## We want to show a specific message if the condition doesn't match a container for the
+## currently selected element
+## Variables:
+##   $name (string) - The condition name.
+
+css-selector-container-query-condition-no-container = No container ‘{ $name }’ found

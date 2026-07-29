@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -24,9 +22,9 @@ class MOZ_STACK_CLASS gfxVarsCollectUpdates;
 #define GFX_VARS_LIST(_)                                           \
   /* C++ Name,                  Data Type,        Default Value */ \
   _(AllowEglRbab, bool, true)                                      \
+  _(AllowWebGL, bool, true)                                        \
   _(AllowWebgl2, bool, true)                                       \
   _(AllowWebglAccelAngle, bool, true)                              \
-  _(AllowWebglOop, bool, true)                                     \
   _(BrowserTabsRemoteAutostart, bool, false)                       \
   _(ContentBackend, BackendType, BackendType::NONE)                \
   _(SoftwareBackend, BackendType, BackendType::NONE)               \
@@ -99,6 +97,7 @@ class MOZ_STACK_CLASS gfxVarsCollectUpdates;
   _(UseAV1HwEncode, bool, false)                                   \
   _(UseH264HwDecode, bool, false)                                  \
   _(UseH264HwEncode, bool, false)                                  \
+  _(HasWebrtcH264Hw, bool, false)                                  \
   _(UseHEVCHwDecode, bool, false)                                  \
   _(UseHEVCHwEncode, bool, false)                                  \
   _(HwDecodedVideoZeroCopy, bool, false)                           \
@@ -120,8 +119,8 @@ class MOZ_STACK_CLASS gfxVarsCollectUpdates;
   _(AllowGLNorm16Textures, bool, false)                            \
   _(WebRenderLayerCompositorDCompTexture, bool, false)             \
   _(WebRenderOverlayHDR, bool, false)                              \
-  _(UseWebRenderDCompositionTextureOverlayWin, bool, false)
-
+  _(UseWebRenderDCompositionTextureOverlayWin, bool, false)        \
+  _(VideoHDR, bool, false)                                         \
 /* Add new entries above this line. */
 
 // Some graphics settings are computed on the UI process and must be
@@ -223,6 +222,15 @@ class gfxVars final {
     }
 
     void SetListener(const std::function<void()>& aListener) {
+      // Each gfxVar exposes a single-slot listener: a second registration
+      // would silently overwrite the first, breaking whatever consumer the
+      // first listener belonged to. Catch an accidental second consumer in
+      // diagnostic builds (debug / Nightly) rather than producing silent
+      // misbehaviour. If a future use case legitimately needs more than one
+      // listener per variable, change this storage to a list.
+      MOZ_DIAGNOSTIC_ASSERT(!mListener,
+                            "gfxVar already has a listener; only one "
+                            "consumer is supported per variable.");
       mListener = aListener;
     }
 

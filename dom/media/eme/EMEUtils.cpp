@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -193,7 +191,7 @@ void MFCDMCapabilitiesIPDLToKeySystemConfig(
   }
   aKeySystemConfig.mPersistentState = aCDMConfig.persistentState();
   aKeySystemConfig.mDistinctiveIdentifier = aCDMConfig.distinctiveID();
-  EME_LOG("New Capabilities=%s",
+  EME_LOG("New Capabilities={}",
           NS_ConvertUTF16toUTF8(aKeySystemConfig.GetDebugInfo()).get());
 }
 #endif
@@ -244,7 +242,7 @@ void DeprecationWarningLog(const dom::Document* aDocument,
   if (!aDocument || !aMsgName) {
     return;
   }
-  EME_LOG("DeprecationWarning Logging deprecation warning '%s' to WebConsole.",
+  EME_LOG("DeprecationWarning Logging deprecation warning '{}' to WebConsole.",
           aMsgName);
   nsTHashMap<nsCharPtrHashKey, bool> warnings;
   warnings.InsertOrUpdate(aMsgName, true);
@@ -252,7 +250,7 @@ void DeprecationWarningLog(const dom::Document* aDocument,
   nsString& uri = *params.AppendElement();
   (void)aDocument->GetDocumentURI(uri);
   nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "Media"_ns,
-                                  aDocument, nsContentUtils::eDOM_PROPERTIES,
+                                  aDocument, PropertiesFile::DOM_PROPERTIES,
                                   aMsgName, params);
 }
 

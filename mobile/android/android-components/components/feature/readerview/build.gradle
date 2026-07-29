@@ -1,6 +1,9 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+import static org.mozilla.conventions.BuildConfigKt.updateExtensionVersion
+
 plugins {
     alias(libs.plugins.dependency.analysis)
 }
@@ -13,7 +16,7 @@ android {
 }
 
 tasks.register("updateBuiltInExtensionVersion", Copy) { task ->
-    updateExtensionVersion(task, 'src/main/assets/extensions/readerview')
+    updateExtensionVersion(task, 'src/main/assets/extensions/readerview', rootProject.ext.config.componentsVersion)
 }
 
 // Make sure DAGP asset-source exploding happens after ExtensionVersion tasks
@@ -40,6 +43,7 @@ dependencies {
 
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
+    testImplementation libs.kotlin.test
     testImplementation libs.kotlinx.coroutines.test
     testImplementation libs.robolectric
 }

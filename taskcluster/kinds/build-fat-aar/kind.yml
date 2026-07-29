@@ -74,10 +74,10 @@ task-defaults:
         secrets: true
         mozconfig-variant:
             by-release-type:
-                beta: beta
-                release: release
-                esr.*: release
-                default: nightly
+                beta: beta-fat-aar
+                release: release-fat-aar
+                esr.*: release-fat-aar
+                default: nightly-fat-aar
         tooltool-downloads: internal
         # Note: These settings are only honored by nightly (i.e. shipping) builds
         update-channel:
@@ -152,6 +152,7 @@ tasks:
         worker:
             env:
                 PERFHERDER_EXTRA_OPTIONS: android-geckoview-fat-aar-nightly
+                MOZ_ARTIFACT_TASK: {task-reference: '<armeabi-v7a>'}
         run:
             actions: [get-secrets, build, multi-l10n]
             config:
@@ -172,7 +173,6 @@ tasks:
             disable-push-apk: true
             maven_packages:
                 - geckoview
-                - geckoview-exoplayer2
         shipping-phase: build
         shipping-product: fennec
         index:
@@ -189,6 +189,7 @@ tasks:
         worker:
             env:
                 PERFHERDER_EXTRA_OPTIONS: android-geckoview-fat-aar-nightly-lite
+                MOZ_ARTIFACT_TASK: {task-reference: '<armeabi-v7a>'}
         run:
             actions: [get-secrets, build, multi-l10n]
             config:

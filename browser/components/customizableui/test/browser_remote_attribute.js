@@ -23,11 +23,7 @@ add_task(async function check_remote_attribute() {
   await pocketPanelShown;
 
   let pocketPanel = document.getElementById("customizationui-widget-panel");
-  is(
-    pocketPanel.getAttribute("remote"),
-    "true",
-    "Pocket panel has remote attribute"
-  );
+  ok(pocketPanel.hasAttribute("remote"), "Pocket panel has remote attribute");
 
   // Close panel and cleanup.
   let pocketPanelHidden = popupHidden(pocketPanel);
@@ -58,9 +54,8 @@ add_task(async function check_remote_attribute_overflow() {
   pocketButton.click();
   await BrowserTestUtils.waitForEvent(win.document, "ViewShown");
 
-  is(
-    overflowPanel.getAttribute("remote"),
-    "true",
+  ok(
+    overflowPanel.hasAttribute("remote"),
     "Pocket overflow panel has remote attribute"
   );
 

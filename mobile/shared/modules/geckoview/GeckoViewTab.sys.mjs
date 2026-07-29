@@ -31,7 +31,7 @@ class Tab {
   }
 
   get userContextId() {
-    return this.browser.ownerGlobal.moduleManager.settings
+    return this.browser.documentGlobal.moduleManager.settings
       .unsafeSessionContextId;
   }
 }
@@ -77,10 +77,12 @@ export const GeckoViewTabBridge = {
     debug`openOptionsPage for extensionId ${extensionId}`;
 
     try {
-      await lazy.EventDispatcher.instance.sendRequestForResult({
-        type: "GeckoView:WebExtension:OpenOptionsPage",
-        extensionId,
-      });
+      await lazy.EventDispatcher.instance.sendRequestForResult(
+        "GeckoView:WebExtension:OpenOptionsPage",
+        {
+          extensionId,
+        }
+      );
     } catch (errorMessage) {
       // The error message coming from GeckoView is about :OpenOptionsPage not
       // being registered so we need to have one that's extension friendly
@@ -132,8 +134,8 @@ export const GeckoViewTabBridge = {
     let didOpenSession = false;
     try {
       didOpenSession = await lazy.EventDispatcher.instance.sendRequestForResult(
+        "GeckoView:WebExtension:NewTab",
         {
-          type: "GeckoView:WebExtension:NewTab",
           extensionId,
           createProperties,
           newSessionId,
@@ -170,10 +172,12 @@ export const GeckoViewTabBridge = {
    */
   async closeTab({ window, extensionId } = {}) {
     try {
-      await window.WindowEventDispatcher.sendRequestForResult({
-        type: "GeckoView:WebExtension:CloseTab",
-        extensionId,
-      });
+      await window.WindowEventDispatcher.sendRequestForResult(
+        "GeckoView:WebExtension:CloseTab",
+        {
+          extensionId,
+        }
+      );
     } catch (errorMessage) {
       throw new ExtensionError(errorMessage);
     }
@@ -181,11 +185,13 @@ export const GeckoViewTabBridge = {
 
   async updateTab({ window, extensionId, updateProperties } = {}) {
     try {
-      await window.WindowEventDispatcher.sendRequestForResult({
-        type: "GeckoView:WebExtension:UpdateTab",
-        extensionId,
-        updateProperties,
-      });
+      await window.WindowEventDispatcher.sendRequestForResult(
+        "GeckoView:WebExtension:UpdateTab",
+        {
+          extensionId,
+          updateProperties,
+        }
+      );
     } catch (errorMessage) {
       throw new ExtensionError(errorMessage);
     }
@@ -215,10 +221,8 @@ export class GeckoViewTab extends GeckoViewModule {
         break;
       }
       case "GeckoView:FlushSessionState": {
-        if (Services.appinfo.sessionHistoryInParent) {
-          if (this.browser && this.browser.frameLoader) {
-            this.browser.frameLoader.requestTabStateFlush();
-          }
+        if (this.browser && this.browser.frameLoader) {
+          this.browser.frameLoader.requestTabStateFlush();
         }
         break;
       }

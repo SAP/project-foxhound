@@ -15,7 +15,7 @@ add_task(async function test_tools_prefs() {
   );
 
   // Open customize sidebar
-  await toggleSidebarPanel(win, "viewCustomizeSidebar");
+  await SidebarTestUtils.showPanel(win, "viewCustomizeSidebar");
 
   // Set tools
   let customizeDocument = win.SidebarController.browser.contentDocument;
@@ -74,7 +74,7 @@ add_task(async function test_tools_prefs() {
   const newSidebar = newWin.document.querySelector("sidebar-main");
 
   // toggle open the sidebar launcher to check which tools are visible
-  await ensureSidebarLauncherIsVisible(newWin);
+  await SidebarTestUtils.ensureLauncherVisible(newWin);
 
   info("Waiting for customize button to be present");
   await BrowserTestUtils.waitForMutationCondition(
@@ -85,7 +85,7 @@ add_task(async function test_tools_prefs() {
 
   // TO DO: opening the customize category can be removed once bug 1898613 is resolved.
   // Open customize sidebar
-  await toggleSidebarPanel(newWin, "viewCustomizeSidebar");
+  await SidebarTestUtils.showPanel(newWin, "viewCustomizeSidebar");
 
   let newCustomizeDocument = newWin.SidebarController.browser.contentDocument;
   let newCustomizeComponent =
@@ -130,7 +130,7 @@ add_task(async function test_tool_pref_change() {
   await sidebar.updateComplete;
 
   // Ensure the sidebar is visible so toolButtons are in the DOM
-  await ensureSidebarLauncherIsVisible();
+  await SidebarTestUtils.ensureLauncherVisible(window);
 
   const origCount = sidebar.toolButtons.length;
   is(origCount, 1, "Expected number of initial tools");
@@ -156,7 +156,8 @@ add_task(async function test_tool_pref_change() {
  */
 add_task(async function test_flip_revamp_pref() {
   const win = await BrowserTestUtils.openNewBrowserWindow();
-  await waitForTabstripOrientation("horizontal", win);
+  await SidebarTestUtils.waitForTabstripOrientation(win, "horizontal");
+
   const { sidebarMain, sidebarContainer } = win.SidebarController;
 
   let verticalTabs = win.document.querySelector("#vertical-tabs");
@@ -165,10 +166,10 @@ add_task(async function test_flip_revamp_pref() {
     "Vertical tabs slot is not visible initially"
   );
   // Open history sidebar
-  await toggleSidebarPanel(win, "viewHistorySidebar");
+  await SidebarTestUtils.showPanel(win, "viewHistorySidebar");
 
   await SpecialPowers.pushPrefEnv({ set: [[VERTICAL_TABS_PREF, true]] });
-  await waitForTabstripOrientation("vertical", win);
+  await SidebarTestUtils.waitForTabstripOrientation(win, "vertical");
   ok(BrowserTestUtils.isVisible(verticalTabs), "Vertical tabs slot is visible");
   ok(
     BrowserTestUtils.isVisible(sidebarMain),
@@ -185,7 +186,7 @@ add_task(async function test_flip_revamp_pref() {
   );
 
   await SpecialPowers.pushPrefEnv({ set: [["sidebar.revamp", false]] });
-  await waitForTabstripOrientation("horizontal", win);
+  await SidebarTestUtils.waitForTabstripOrientation(win, "horizontal");
 
   info("Waiting for sidebar container to be visible");
   await BrowserTestUtils.waitForMutationCondition(
@@ -231,7 +232,7 @@ add_task(async function test_flip_revamp_pref() {
  * Check that panels can stay open when flipping sidebar.revamp
  */
 add_task(async function test_flip_revamp_pref_with_panel() {
-  await toggleSidebarPanel(window, "viewGenaiChatSidebar");
+  await SidebarTestUtils.showPanel(window, "viewGenaiChatSidebar");
   ok(SidebarController.isOpen, "panel open with revamp");
 
   await SpecialPowers.pushPrefEnv({

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +6,6 @@
 #define DOM_SVG_DOMSVGPOINT_H_
 
 #include "DOMSVGPointList.h"
-#include "SVGPoint.h"
 #include "mozilla/dom/SVGSVGElement.h"
 #include "mozilla/gfx/2D.h"
 #include "nsCycleCollectionParticipant.h"
@@ -64,12 +61,12 @@ class DOMSVGPoint final : public nsWrapperCache {
         mIsTranslatePoint(false),
         mIsInTearoffTable(false) {
     // In this case we own mVal
-    mVal = new SVGPoint(aPt.x, aPt.y);
+    mVal = new Point(aPt);
   }
 
  private:
   // The translate of an SVGSVGElement
-  DOMSVGPoint(SVGPoint* aPt, SVGSVGElement* aSVGSVGElement)
+  DOMSVGPoint(Point* aPt, SVGSVGElement* aSVGSVGElement)
       : mVal(aPt),
         mOwner(ToSupports(aSVGSVGElement)),
         mListIndex(0),
@@ -84,7 +81,7 @@ class DOMSVGPoint final : public nsWrapperCache {
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(DOMSVGPoint)
 
   static already_AddRefed<DOMSVGPoint> GetTranslateTearOff(
-      SVGPoint* aVal, SVGSVGElement* aSVGSVGElement);
+      Point* aVal, SVGSVGElement* aSVGSVGElement);
 
   bool IsInList() const { return HasOwner() && !IsTranslatePoint(); }
 
@@ -116,7 +113,10 @@ class DOMSVGPoint final : public nsWrapperCache {
   }
 
   /// This method is called to notify this object that its list index changed.
-  void UpdateListIndex(uint32_t aListIndex) { mListIndex = aListIndex; }
+  void UpdateListIndex(uint32_t aListIndex) {
+    MOZ_RELEASE_ASSERT(aListIndex <= MaxListIndex());
+    mListIndex = aListIndex;
+  }
 
   /**
    * This method is called to notify this DOM object that it is about to be
@@ -126,7 +126,7 @@ class DOMSVGPoint final : public nsWrapperCache {
    */
   void RemovingFromList();
 
-  SVGPoint ToSVGPoint() { return InternalItem(); }
+  Point ToPoint() { return InternalItem(); }
 
   // WebIDL
   float X();
@@ -147,7 +147,9 @@ class DOMSVGPoint final : public nsWrapperCache {
   JSObject* WrapObject(JSContext* cx,
                        JS::Handle<JSObject*> aGivenProto) override;
 
-  DOMSVGPoint* Copy() { return new DOMSVGPoint(InternalItem()); }
+  already_AddRefed<DOMSVGPoint> Copy() {
+    return MakeAndAddRef<DOMSVGPoint>(InternalItem());
+  }
 
  private:
 #ifdef DEBUG
@@ -167,9 +169,9 @@ class DOMSVGPoint final : public nsWrapperCache {
    * Get a reference to the internal SVGPoint list item that this DOM wrapper
    * object currently wraps.
    */
-  SVGPoint& InternalItem();
+  Point& InternalItem();
 
-  SVGPoint* mVal;              // If mIsTranslatePoint is true, the element owns
+  Point* mVal;                 // If mIsTranslatePoint is true, the element owns
                                // the value. Otherwise we do.
   RefPtr<nsISupports> mOwner;  // If mIsTranslatePoint is true, this is an
                                // SVGSVGElement, if we're unowned it's null, or

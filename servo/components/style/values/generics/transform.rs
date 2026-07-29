@@ -5,17 +5,25 @@
 //! Generic types for CSS values that are related to transformations.
 
 use crate::derives::*;
+use crate::typed_om::{
+    KeywordValue, MatrixComponent, NumericValue, PerspectiveComponent, PerspectiveValue,
+    RotateComponent, ScaleComponent, SkewComponent, ToTyped, TransformComponent,
+    TranslateComponent, TypedValue,
+};
 use crate::values::computed::length::Length as ComputedLength;
 use crate::values::computed::length::LengthPercentage as ComputedLengthPercentage;
+use crate::values::computed::transform::Matrix3D as ComputedMatrix3D;
 use crate::values::specified::angle::Angle as SpecifiedAngle;
 use crate::values::specified::length::Length as SpecifiedLength;
 use crate::values::specified::length::LengthPercentage as SpecifiedLengthPercentage;
+use crate::values::specified::number::Number as SpecifiedNumber;
 use crate::values::{computed, CSSFloat};
-use crate::{Zero, ZeroNoPercent};
+use crate::{One, Zero, ZeroNoPercent};
 use euclid::default::{Rect, Transform3D};
 use std::fmt::{self, Write};
 use std::ops::Neg;
-use style_traits::{CssWriter, ToCss};
+use style_traits::{CssString, CssWriter, ToCss};
+use thin_vec::ThinVec;
 
 /// A generic 2D transformation matrix.
 #[allow(missing_docs)]
@@ -76,28 +84,32 @@ pub struct GenericMatrix3D<T> {
 pub use self::GenericMatrix3D as Matrix3D;
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
-impl<T: Into<f64>> From<Matrix<T>> for Transform3D<f64> {
+impl<T: ToFloat> TryFrom<Matrix<T>> for Transform3D<f64> {
+    type Error = ();
+
     #[inline]
-    fn from(m: Matrix<T>) -> Self {
-        Transform3D::new(
-            m.a.into(), m.b.into(), 0.0, 0.0,
-            m.c.into(), m.d.into(), 0.0, 0.0,
+    fn try_from(m: Matrix<T>) -> Result<Self, Self::Error> {
+        Ok(Transform3D::new(
+            m.a.to_f64()?, m.b.to_f64()?, 0.0, 0.0,
+            m.c.to_f64()?, m.d.to_f64()?, 0.0, 0.0,
             0.0,        0.0,        1.0, 0.0,
-            m.e.into(), m.f.into(), 0.0, 1.0,
-        )
+            m.e.to_f64()?, m.f.to_f64()?, 0.0, 1.0,
+        ))
     }
 }
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
-impl<T: Into<f64>> From<Matrix3D<T>> for Transform3D<f64> {
+impl<T: ToFloat> TryFrom<Matrix3D<T>> for Transform3D<f64> {
+    type Error = ();
+
     #[inline]
-    fn from(m: Matrix3D<T>) -> Self {
-        Transform3D::new(
-            m.m11.into(), m.m12.into(), m.m13.into(), m.m14.into(),
-            m.m21.into(), m.m22.into(), m.m23.into(), m.m24.into(),
-            m.m31.into(), m.m32.into(), m.m33.into(), m.m34.into(),
-            m.m41.into(), m.m42.into(), m.m43.into(), m.m44.into(),
-        )
+    fn try_from(m: Matrix3D<T>) -> Result<Self, Self::Error> {
+        Ok(Transform3D::new(
+            m.m11.to_f64()?, m.m12.to_f64()?, m.m13.to_f64()?, m.m14.to_f64()?,
+            m.m21.to_f64()?, m.m22.to_f64()?, m.m23.to_f64()?, m.m24.to_f64()?,
+            m.m31.to_f64()?, m.m32.to_f64()?, m.m33.to_f64()?, m.m34.to_f64()?,
+            m.m41.to_f64()?, m.m42.to_f64()?, m.m43.to_f64()?, m.m44.to_f64()?,
+        ))
     }
 }
 
@@ -120,6 +132,7 @@ impl<T: Into<f64>> From<Matrix3D<T>> for Transform3D<f64> {
     ToTyped,
 )]
 #[repr(C)]
+#[typed(todo_derive_fields)]
 pub struct GenericTransformOrigin<H, V, Depth> {
     /// The horizontal origin.
     pub horizontal: H,
@@ -161,6 +174,7 @@ fn is_same<N: PartialEq>(x: &N, y: &N) -> bool {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C, u8)]
 pub enum GenericPerspectiveFunction<L> {
@@ -311,6 +325,170 @@ where
 
 pub use self::GenericTransformOperation as TransformOperation;
 
+/// Converts a transform operation into a transform component.
+pub trait ToTransformComponent {
+    /// Attempt to convert `self` into a transform component.
+    ///
+    /// Implementations append the resulting component to `dest`. Returning
+    /// `Err(())` indicates that the transform operation cannot currently be
+    /// represented as a transform component.
+    fn to_transform_component(&self, _dest: &mut ThinVec<TransformComponent>) -> Result<(), ()>;
+}
+
+impl<Angle, Number, Length, Integer, LengthPercentage> ToTransformComponent
+    for TransformOperation<Angle, Number, Length, Integer, LengthPercentage>
+where
+    Angle: Zero + ToTyped,
+    Number: PartialEq + ToFloat + ToTyped,
+    Length: ToTyped,
+    LengthPercentage: Zero + ToTyped + ZeroNoPercent,
+{
+    fn to_transform_component(&self, dest: &mut ThinVec<TransformComponent>) -> Result<(), ()> {
+        use self::TransformOperation::*;
+
+        // https://drafts.css-houdini.org/css-typed-om-1/#reify-a-transform-function
+        let component = match *self {
+            Matrix(ref m) => TransformComponent::Matrix(MatrixComponent {
+                #[cfg_attr(rustfmt, rustfmt_skip)]
+                matrix: ComputedMatrix3D {
+                    m11: m.a.to_f32()?, m12: m.b.to_f32()?, m13: 0.0, m14: 0.0,
+                    m21: m.c.to_f32()?, m22: m.d.to_f32()?, m23: 0.0, m24: 0.0,
+                    m31: 0.0, m32: 0.0, m33: 1.0, m34: 0.0,
+                    m41: m.e.to_f32()?, m42: m.f.to_f32()?, m43: 0.0, m44: 1.0,
+                },
+                is_2d: true,
+            }),
+            Matrix3D(ref m) => TransformComponent::Matrix(MatrixComponent {
+                #[cfg_attr(rustfmt, rustfmt_skip)]
+                matrix: ComputedMatrix3D {
+                    m11: m.m11.to_f32()?, m12: m.m12.to_f32()?, m13: m.m13.to_f32()?, m14: m.m14.to_f32()?,
+                    m21: m.m21.to_f32()?, m22: m.m22.to_f32()?, m23: m.m23.to_f32()?, m24: m.m24.to_f32()?,
+                    m31: m.m31.to_f32()?, m32: m.m32.to_f32()?, m33: m.m33.to_f32()?, m34: m.m34.to_f32()?,
+                    m41: m.m41.to_f32()?, m42: m.m42.to_f32()?, m43: m.m43.to_f32()?, m44: m.m44.to_f32()?,
+                },
+                is_2d: false,
+            }),
+            Skew(ref theta_x, ref theta_y) => TransformComponent::Skew(SkewComponent {
+                ax: theta_x.to_numeric_value().ok_or(())?,
+                ay: theta_y.to_numeric_value().ok_or(())?,
+            }),
+            SkewX(ref theta) => TransformComponent::SkewX(theta.to_numeric_value().ok_or(())?),
+            SkewY(ref theta) => TransformComponent::SkewY(theta.to_numeric_value().ok_or(())?),
+            Translate(ref tx, ref ty) => TransformComponent::Translate(TranslateComponent {
+                x: tx.to_numeric_value().ok_or(())?,
+                y: ty.to_numeric_value().ok_or(())?,
+                z: NumericValue::zero_px(),
+                is_2d: true,
+            }),
+            TranslateX(ref t) => TransformComponent::Translate(TranslateComponent {
+                x: t.to_numeric_value().ok_or(())?,
+                y: NumericValue::zero_px(),
+                z: NumericValue::zero_px(),
+                is_2d: true,
+            }),
+            TranslateY(ref t) => TransformComponent::Translate(TranslateComponent {
+                x: NumericValue::zero_px(),
+                y: t.to_numeric_value().ok_or(())?,
+                z: NumericValue::zero_px(),
+                is_2d: true,
+            }),
+            TranslateZ(ref t) => TransformComponent::Translate(TranslateComponent {
+                x: NumericValue::zero_px(),
+                y: NumericValue::zero_px(),
+                z: t.to_numeric_value().ok_or(())?,
+                is_2d: false,
+            }),
+            Translate3D(ref tx, ref ty, ref tz) => {
+                TransformComponent::Translate(TranslateComponent {
+                    x: tx.to_numeric_value().ok_or(())?,
+                    y: ty.to_numeric_value().ok_or(())?,
+                    z: tz.to_numeric_value().ok_or(())?,
+                    is_2d: false,
+                })
+            },
+            Scale(ref sx, ref sy) => TransformComponent::Scale(ScaleComponent {
+                x: sx.to_numeric_value().ok_or(())?,
+                y: sy.to_numeric_value().ok_or(())?,
+                z: NumericValue::one(),
+                is_2d: true,
+            }),
+            ScaleX(ref s) => TransformComponent::Scale(ScaleComponent {
+                x: s.to_numeric_value().ok_or(())?,
+                y: NumericValue::one(),
+                z: NumericValue::one(),
+                is_2d: true,
+            }),
+            ScaleY(ref s) => TransformComponent::Scale(ScaleComponent {
+                x: NumericValue::one(),
+                y: s.to_numeric_value().ok_or(())?,
+                z: NumericValue::one(),
+                is_2d: true,
+            }),
+            ScaleZ(ref s) => TransformComponent::Scale(ScaleComponent {
+                x: NumericValue::one(),
+                y: NumericValue::one(),
+                z: s.to_numeric_value().ok_or(())?,
+                is_2d: false,
+            }),
+            Scale3D(ref sx, ref sy, ref sz) => TransformComponent::Scale(ScaleComponent {
+                x: sx.to_numeric_value().ok_or(())?,
+                y: sy.to_numeric_value().ok_or(())?,
+                z: sz.to_numeric_value().ok_or(())?,
+                is_2d: false,
+            }),
+            Rotate(ref theta) => TransformComponent::Rotate(RotateComponent {
+                angle: theta.to_numeric_value().ok_or(())?,
+                x: NumericValue::zero(),
+                y: NumericValue::zero(),
+                z: NumericValue::one(),
+                is_2d: true,
+            }),
+            RotateX(ref theta) => TransformComponent::Rotate(RotateComponent {
+                angle: theta.to_numeric_value().ok_or(())?,
+                x: NumericValue::one(),
+                y: NumericValue::zero(),
+                z: NumericValue::zero(),
+                is_2d: false,
+            }),
+            RotateY(ref theta) => TransformComponent::Rotate(RotateComponent {
+                angle: theta.to_numeric_value().ok_or(())?,
+                x: NumericValue::zero(),
+                y: NumericValue::one(),
+                z: NumericValue::zero(),
+                is_2d: false,
+            }),
+            RotateZ(ref theta) => TransformComponent::Rotate(RotateComponent {
+                angle: theta.to_numeric_value().ok_or(())?,
+                x: NumericValue::zero(),
+                y: NumericValue::zero(),
+                z: NumericValue::one(),
+                is_2d: false,
+            }),
+            Rotate3D(ref ax, ref ay, ref az, ref theta) => {
+                TransformComponent::Rotate(RotateComponent {
+                    angle: theta.to_numeric_value().ok_or(())?,
+                    x: ax.to_numeric_value().ok_or(())?,
+                    y: ay.to_numeric_value().ok_or(())?,
+                    z: az.to_numeric_value().ok_or(())?,
+                    is_2d: false,
+                })
+            },
+            Perspective(ref p) => {
+                let length = match p.to_typed_value().ok_or(())? {
+                    TypedValue::Numeric(value) => PerspectiveValue::Numeric(value),
+                    TypedValue::Keyword(value) => PerspectiveValue::Keyword(value),
+                    _ => return Err(()),
+                };
+                TransformComponent::Perspective(PerspectiveComponent { length })
+            },
+            _ => return Err(()),
+        };
+
+        dest.push(component);
+        Ok(())
+    }
+}
+
 #[derive(
     Clone,
     Debug,
@@ -324,13 +502,32 @@ pub use self::GenericTransformOperation as TransformOperation;
     ToCss,
     ToResolvedValue,
     ToShmem,
-    ToTyped,
 )]
 #[repr(C)]
 /// A value of the `transform` property
 pub struct GenericTransform<T>(#[css(if_empty = "none", iterable)] pub crate::OwnedSlice<T>);
 
 pub use self::GenericTransform as Transform;
+
+impl<T: ToTransformComponent> ToTyped for Transform<T> {
+    fn to_typed(&self, dest: &mut ThinVec<TypedValue>) -> Result<(), ()> {
+        if self.0.is_empty() {
+            dest.push(TypedValue::Keyword(KeywordValue(CssString::from("none"))));
+            return Ok(());
+        }
+
+        // https://drafts.css-houdini.org/css-typed-om-1/#reify-a-transform-list
+        let mut values = ThinVec::new();
+
+        let ops: &[T] = &self.0;
+        for item in ops {
+            item.to_transform_component(&mut values)?;
+        }
+
+        dest.push(TypedValue::Transform(values));
+        Ok(())
+    }
+}
 
 impl<Angle, Number, Length, Integer, LengthPercentage>
     TransformOperation<Angle, Number, Length, Integer, LengthPercentage>
@@ -381,10 +578,7 @@ impl ToAbsoluteLength for SpecifiedLength {
     // if there is relative length.
     #[inline]
     fn to_pixel_length(&self, _containing_len: Option<ComputedLength>) -> Result<CSSFloat, ()> {
-        match *self {
-            SpecifiedLength::NoCalc(len) => len.to_computed_pixel_length_without_context(),
-            SpecifiedLength::Calc(ref calc) => calc.to_computed_pixel_length_without_context(),
-        }
+        self.to_computed_pixel_length_without_context()
     }
 }
 
@@ -435,28 +629,62 @@ pub trait ToMatrix {
 /// A little helper to deal with both specified and computed angles.
 pub trait ToRadians {
     /// Return the radians value as a 64-bit floating point value.
-    fn radians64(&self) -> f64;
+    fn radians64(&self) -> Result<f64, ()>;
 }
 
 impl ToRadians for computed::angle::Angle {
     #[inline]
-    fn radians64(&self) -> f64 {
-        computed::angle::Angle::radians64(self)
+    fn radians64(&self) -> Result<f64, ()> {
+        Ok(computed::angle::Angle::radians64(self))
     }
 }
 
 impl ToRadians for SpecifiedAngle {
     #[inline]
-    fn radians64(&self) -> f64 {
-        computed::angle::Angle::from_degrees(self.degrees()).radians64()
+    fn radians64(&self) -> Result<f64, ()> {
+        let degrees = self.degrees().ok_or(())?;
+        Ok(computed::angle::Angle::from_degrees(degrees).radians64())
+    }
+}
+
+/// Convert a number type into a float.
+pub trait ToFloat {
+    /// Return the number as an f32, or Err(()) if the conversion is not possible.
+    fn to_f32(&self) -> Result<f32, ()>;
+
+    /// Return the number as an f64, or Err(()) if the conversion is not possible.
+    fn to_f64(&self) -> Result<f64, ()>;
+}
+
+impl ToFloat for SpecifiedNumber {
+    #[inline]
+    fn to_f32(&self) -> Result<f32, ()> {
+        self.resolve().ok_or(())
+    }
+
+    #[inline]
+    fn to_f64(&self) -> Result<f64, ()> {
+        self.resolve().map(|v| v as f64).ok_or(())
+    }
+}
+
+impl ToFloat for computed::Number {
+    #[inline]
+    fn to_f32(&self) -> Result<f32, ()> {
+        Ok(*self)
+    }
+
+    #[inline]
+    fn to_f64(&self) -> Result<f64, ()> {
+        Ok(*self as f64)
     }
 }
 
 impl<Angle, Number, Length, Integer, LoP> ToMatrix
     for TransformOperation<Angle, Number, Length, Integer, LoP>
 where
-    Angle: Zero + ToRadians + Copy,
-    Number: PartialEq + Copy + Into<f32> + Into<f64>,
+    Angle: Zero + ToRadians + Clone,
+    Number: PartialEq + Clone + ToFloat + ToFloat,
     Length: ToAbsoluteLength,
     LoP: Zero + ToAbsoluteLength + ZeroNoPercent,
 {
@@ -484,10 +712,14 @@ where
         let reference_width = reference_box.map(|v| v.size.width);
         let reference_height = reference_box.map(|v| v.size.height);
         let matrix = match *self {
-            Rotate3D(ax, ay, az, theta) => {
-                let theta = theta.radians64();
-                let (ax, ay, az, theta) =
-                    get_normalized_vector_and_angle(ax.into(), ay.into(), az.into(), theta);
+            Rotate3D(ref ax, ref ay, ref az, ref theta) => {
+                let theta = theta.radians64()?;
+                let (ax, ay, az, theta) = get_normalized_vector_and_angle(
+                    ax.to_f32()?,
+                    ay.to_f32()?,
+                    az.to_f32()?,
+                    theta,
+                );
                 Transform3D::rotation(
                     ax as f64,
                     ay as f64,
@@ -495,16 +727,16 @@ where
                     euclid::Angle::radians(theta),
                 )
             },
-            RotateX(theta) => {
-                let theta = euclid::Angle::radians(theta.radians64());
+            RotateX(ref theta) => {
+                let theta = euclid::Angle::radians(theta.radians64()?);
                 Transform3D::rotation(1., 0., 0., theta)
             },
-            RotateY(theta) => {
-                let theta = euclid::Angle::radians(theta.radians64());
+            RotateY(ref theta) => {
+                let theta = euclid::Angle::radians(theta.radians64()?);
                 Transform3D::rotation(0., 1., 0., theta)
             },
-            RotateZ(theta) | Rotate(theta) => {
-                let theta = euclid::Angle::radians(theta.radians64());
+            RotateZ(ref theta) | Rotate(ref theta) => {
+                let theta = euclid::Angle::radians(theta.radians64()?);
                 Transform3D::rotation(0., 0., 1., theta)
             },
             Perspective(ref p) => {
@@ -514,11 +746,13 @@ where
                 };
                 create_perspective_matrix(px).cast()
             },
-            Scale3D(sx, sy, sz) => Transform3D::scale(sx.into(), sy.into(), sz.into()),
-            Scale(sx, sy) => Transform3D::scale(sx.into(), sy.into(), 1.),
-            ScaleX(s) => Transform3D::scale(s.into(), 1., 1.),
-            ScaleY(s) => Transform3D::scale(1., s.into(), 1.),
-            ScaleZ(s) => Transform3D::scale(1., 1., s.into()),
+            Scale3D(ref sx, ref sy, ref sz) => {
+                Transform3D::scale(sx.to_f64()?, sy.to_f64()?, sz.to_f64()?)
+            },
+            Scale(ref sx, ref sy) => Transform3D::scale(sx.to_f64()?, sy.to_f64()?, 1.),
+            ScaleX(ref s) => Transform3D::scale(s.to_f64()?, 1., 1.),
+            ScaleY(ref s) => Transform3D::scale(1., s.to_f64()?, 1.),
+            ScaleZ(ref s) => Transform3D::scale(1., 1., s.to_f64()?),
             Translate3D(ref tx, ref ty, ref tz) => {
                 let tx = tx.to_pixel_length(reference_width)? as f64;
                 let ty = ty.to_pixel_length(reference_height)? as f64;
@@ -538,20 +772,20 @@ where
                 Transform3D::translation(0., t, 0.)
             },
             TranslateZ(ref z) => Transform3D::translation(0., 0., z.to_pixel_length(None)? as f64),
-            Skew(theta_x, theta_y) => Transform3D::skew(
-                euclid::Angle::radians(theta_x.radians64()),
-                euclid::Angle::radians(theta_y.radians64()),
+            Skew(ref theta_x, ref theta_y) => Transform3D::skew(
+                euclid::Angle::radians(theta_x.radians64()?),
+                euclid::Angle::radians(theta_y.radians64()?),
             ),
-            SkewX(theta) => Transform3D::skew(
-                euclid::Angle::radians(theta.radians64()),
+            SkewX(ref theta) => Transform3D::skew(
+                euclid::Angle::radians(theta.radians64()?),
                 euclid::Angle::radians(0.),
             ),
-            SkewY(theta) => Transform3D::skew(
+            SkewY(ref theta) => Transform3D::skew(
                 euclid::Angle::radians(0.),
-                euclid::Angle::radians(theta.radians64()),
+                euclid::Angle::radians(theta.radians64()?),
             ),
-            Matrix3D(m) => m.into(),
-            Matrix(m) => m.into(),
+            Matrix3D(ref m) => m.clone().try_into()?,
+            Matrix(ref m) => m.clone().try_into()?,
             InterpolateMatrix { .. } | AccumulateMatrix { .. } => {
                 // TODO: Convert InterpolateMatrix/AccumulateMatrix into a valid Transform3D by
                 // the reference box and do interpolation on these two Transform3D matrices.
@@ -687,6 +921,7 @@ pub fn get_normalized_vector_and_angle<T: Zero>(
     ToTyped,
 )]
 #[repr(C, u8)]
+#[typed(todo_derive_fields)]
 /// A value of the `Rotate` property
 ///
 /// <https://drafts.csswg.org/css-transforms-2/#individual-transforms>
@@ -710,8 +945,8 @@ pub trait IsParallelTo {
 
 impl<Number, Angle> ToCss for Rotate<Number, Angle>
 where
-    Number: Copy + PartialOrd + ToCss + Zero,
-    Angle: Copy + Neg<Output = Angle> + ToCss + Zero,
+    Number: Clone + PartialOrd + ToCss + Zero,
+    Angle: Clone + Neg<Output = Angle> + ToCss + Zero,
     (Number, Number, Number): IsParallelTo,
 {
     fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
@@ -722,7 +957,7 @@ where
         match *self {
             Rotate::None => dest.write_str("none"),
             Rotate::Rotate(ref angle) => angle.to_css(dest),
-            Rotate::Rotate3D(x, y, z, angle) => {
+            Rotate::Rotate3D(ref x, ref y, ref z, ref angle) => {
                 // If the axis is parallel with the x or y axes, it must serialize as the
                 // appropriate keyword. If a rotation about the z axis (that is, in 2D) is
                 // specified, the property must serialize as just an <angle>.
@@ -731,31 +966,43 @@ where
                 // direction, we need to negate the angle to maintain the correct meaning.
                 //
                 // https://drafts.csswg.org/css-transforms-2/#individual-transform-serialization
-                let v = (x, y, z);
-                let (axis, angle) = if x.is_zero() && y.is_zero() && z.is_zero() {
+                let v = (x.clone(), y.clone(), z.clone());
+                let (axis, angle) = if v.0.is_zero() && v.1.is_zero() && v.2.is_zero() {
                     // The zero length vector is parallel to every other vector, so
                     // is_parallel_to() returns true for it. However, it is definitely different
                     // from x axis, y axis, or z axis, and it's meaningless to perform a rotation
                     // using that direction vector. So we *have* to serialize it using that same
                     // vector - we can't simplify to some theoretically parallel axis-aligned
                     // vector.
-                    (None, angle)
+                    (None, angle.clone())
                 } else if v.is_parallel_to(&DirectionVector::new(1., 0., 0.)) {
                     (
                         Some("x "),
-                        if v.0 < Number::zero() { -angle } else { angle },
+                        if v.0 < Number::zero() {
+                            -angle.clone()
+                        } else {
+                            angle.clone()
+                        },
                     )
                 } else if v.is_parallel_to(&DirectionVector::new(0., 1., 0.)) {
                     (
                         Some("y "),
-                        if v.1 < Number::zero() { -angle } else { angle },
+                        if v.1 < Number::zero() {
+                            -angle.clone()
+                        } else {
+                            angle.clone()
+                        },
                     )
                 } else if v.is_parallel_to(&DirectionVector::new(0., 0., 1.)) {
                     // When we're parallel to the z-axis, we can just serialize the angle.
-                    let angle = if v.2 < Number::zero() { -angle } else { angle };
+                    let angle = if v.2 < Number::zero() {
+                        -angle.clone()
+                    } else {
+                        angle.clone()
+                    };
                     return angle.to_css(dest);
                 } else {
-                    (None, angle)
+                    (None, angle.clone())
                 };
                 match axis {
                     Some(a) => dest.write_str(a)?,
@@ -805,26 +1052,24 @@ pub use self::GenericScale as Scale;
 
 impl<Number> ToCss for Scale<Number>
 where
-    Number: ToCss + PartialEq + Copy,
-    f32: From<Number>,
+    Number: ToCss + PartialEq + Clone + ToFloat,
 {
     fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
     where
         W: fmt::Write,
-        f32: From<Number>,
     {
         match *self {
             Scale::None => dest.write_str("none"),
             Scale::Scale(ref x, ref y, ref z) => {
                 x.to_css(dest)?;
 
-                let is_3d = f32::from(*z) != 1.0;
-                if is_3d || x != y {
+                let serialize_z = z.to_f32() != Ok(1.0);
+                if serialize_z || x != y {
                     dest.write_char(' ')?;
                     y.to_css(dest)?;
                 }
 
-                if is_3d {
+                if serialize_z {
                     dest.write_char(' ')?;
                     z.to_css(dest)?;
                 }

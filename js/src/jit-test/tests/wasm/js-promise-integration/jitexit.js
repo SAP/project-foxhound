@@ -1,3 +1,5 @@
+// |jit-test| skip-if: !wasmJSPromiseIntegrationEnabled()
+
 // Copy of wasm/import-export.js test with WebAssembly.promising
 
 (async function testImportJitExit() {
@@ -70,7 +72,7 @@
   assertEq(i.foo(0), 42);
   assertEq(i.foo(1337), 0);
 
-  // Test on suspendable stack.
+  // Test on cont stack.
   var f = WebAssembly.promising(i.foo);
   assertEq(await f(0), 42);
 

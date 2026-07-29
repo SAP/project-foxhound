@@ -1,0 +1,42 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test MessagePort.postMessage during eStateEntangling with Atomics.wait (Bug 2022378)</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<pre id="test">
+<script type="application/javascript">
+
+SimpleTest.waitForExplicitFinish();
+SimpleTest.requestFlakyTimeout(
+  "Need a timeout to detect if the message never arrives due to the bug"
+);
+
+const { port1, port2 } = new MessageChannel();
+
+const worker = new Worker("worker_messageChannel_atomics_wait.js");
+
+let timeoutId = setTimeout(function() {
+  ok(false, "Timed out waiting for message - postMessage during eStateEntangling likely stuck");
+  worker.terminate();
+  SimpleTest.finish();
+}, 10000);
+
+port1.onmessage = function(event) {
+  clearTimeout(timeoutId);
+  is(event.data.foo, "bar", "Received expected message from worker via transferred port");
+  worker.terminate();
+  SimpleTest.finish();
+};
+
+// Transfer port2 to the worker. The worker will immediately call
+// port.postMessage() then block with Atomics.wait().
+worker.postMessage({ port: port2 }, [port2]);
+
+</script>
+</pre>
+</body>
+</html>

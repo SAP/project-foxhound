@@ -5,7 +5,6 @@
 package org.mozilla.fenix.benchmark
 
 import android.content.Intent
-import android.net.Uri
 import androidx.benchmark.macro.BaselineProfileMode
 import androidx.benchmark.macro.CompilationMode
 import androidx.benchmark.macro.StartupMode
@@ -13,15 +12,12 @@ import androidx.benchmark.macro.StartupTimingMetric
 import androidx.benchmark.macro.junit4.MacrobenchmarkRule
 import org.junit.Rule
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.junit.runners.Parameterized
-import org.mozilla.fenix.benchmark.utils.EXTRA_COMPOSABLE_TOOLBAR
 import org.mozilla.fenix.benchmark.utils.FENIX_HOME_DEEP_LINK
 import org.mozilla.fenix.benchmark.utils.HtmlAsset
 import org.mozilla.fenix.benchmark.utils.MockWebServerRule
-import org.mozilla.fenix.benchmark.utils.ParameterizedToolbarsTest
 import org.mozilla.fenix.benchmark.utils.TARGET_PACKAGE
 import org.mozilla.fenix.benchmark.utils.closeTab
+import org.mozilla.fenix.benchmark.utils.completeOnboarding
 import org.mozilla.fenix.benchmark.utils.dismissWallpaperOnboarding
 import org.mozilla.fenix.benchmark.utils.isWallpaperOnboardingShown
 import org.mozilla.fenix.benchmark.utils.loadSite
@@ -54,11 +50,8 @@ import org.mozilla.fenix.benchmark.utils.url
  * For more information, see the [Macrobenchmark documentation](https://d.android.com/macrobenchmark#create-macrobenchmark)
  * and the [instrumentation arguments documentation](https://d.android.com/topic/performance/benchmarking/macrobenchmark-instrumentation-args).
  **/
-@RunWith(Parameterized::class)
 @BaselineProfileMacrobenchmark
-class BaselineProfilesPrivateBrowsingBenchmark(
-    private val useComposableToolbar: Boolean,
-) : ParameterizedToolbarsTest() {
+class BaselineProfilesPrivateBrowsingBenchmark {
 
     @get:Rule
     val benchmarkRule = MacrobenchmarkRule()
@@ -86,20 +79,20 @@ class BaselineProfilesPrivateBrowsingBenchmark(
             },
         ) {
             val intent = Intent(Intent.ACTION_VIEW, FENIX_HOME_DEEP_LINK)
-                .putExtra(EXTRA_COMPOSABLE_TOOLBAR, useComposableToolbar)
 
             startActivityAndWait(intent = intent)
+            device.completeOnboarding()
 
             if (device.isWallpaperOnboardingShown()) {
                 device.dismissWallpaperOnboarding()
             }
 
-            device.openTabsTray(useComposableToolbar)
+            device.openTabsTray()
             device.openNewPrivateTabOnTabsTray()
             val url = mockRule.url(HtmlAsset.SIMPLE)
-            device.loadSite(url = url, useComposableToolbar)
+            device.loadSite(url = url)
 
-            device.openTabsTray(useComposableToolbar)
+            device.openTabsTray()
             device.closeTab(siteName = HtmlAsset.SIMPLE.title, siteUrl = url)
 
             killProcess()

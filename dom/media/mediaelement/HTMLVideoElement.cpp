@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +6,7 @@
 
 #include "mozilla/AppShutdown.h"
 #include "mozilla/AsyncEventDispatcher.h"
+#include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/HTMLVideoElementBinding.h"
 #ifdef MOZ_WEBRTC
 #  include "mozilla/dom/RTCStatsReport.h"
@@ -24,7 +23,14 @@
 #include "VideoOutput.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "mozilla/dom/FeaturePolicyUtils.h"
 #include "mozilla/dom/Performance.h"
+#include "mozilla/dom/PictureInPictureEvent.h"
+#include "mozilla/dom/PictureInPictureEventBinding.h"
+#include "mozilla/dom/PictureInPictureService.h"
+#include "mozilla/dom/PictureInPictureWindow.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/TimeRanges.h"
 #include "mozilla/dom/VideoPlaybackQuality.h"
 #include "mozilla/dom/VideoStreamTrack.h"
@@ -43,12 +49,12 @@
 #include "prlock.h"
 
 extern mozilla::LazyLogModule gMediaElementLog;
-#define LOG(msg, ...)                        \
-  MOZ_LOG(gMediaElementLog, LogLevel::Debug, \
-          ("HTMLVideoElement=%p, " msg, this, ##__VA_ARGS__))
+#define LOG(msg, ...)                                                         \
+  MOZ_LOG_FMT(gMediaElementLog, LogLevel::Debug, "HTMLVideoElement={}, " msg, \
+              fmt::ptr(this), ##__VA_ARGS__)
 
 nsGenericHTMLElement* NS_NewHTMLVideoElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
     mozilla::dom::FromParser aFromParser) {
   RefPtr<mozilla::dom::NodeInfo> nodeInfo(aNodeInfo);
   auto* nim = nodeInfo->NodeInfoManager();
@@ -119,8 +125,8 @@ nsresult HTMLVideoElement::CopyInnerTo(Element* aDest) {
     // output buffers from a decoder while print preview is open.
     RefPtr<gfx::DataSourceSurface> dstSurface(CopyImage(images[0].mImage));
     if (!dstSurface) {
-      MOZ_LOG(gMediaElementLog, LogLevel::Error,
-              ("failed to copy video image"));
+      MOZ_LOG_FMT(gMediaElementLog, LogLevel::Error,
+                  "failed to copy video image");
       return rv;
     }
     RefPtr<layers::SourceSurfaceImage> dstImage =
@@ -143,6 +149,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(HTMLVideoElement)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mVisualCloneTarget)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mVisualCloneTargetPromise)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mVisualCloneSource)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mPictureInPictureWindow)
   tmp->mSecondaryVideoOutput = nullptr;
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END_INHERITED(HTMLMediaElement)
 
@@ -152,9 +159,10 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(HTMLVideoElement,
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mVisualCloneTarget)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mVisualCloneTargetPromise)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mVisualCloneSource)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPictureInPictureWindow)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-HTMLVideoElement::HTMLVideoElement(already_AddRefed<NodeInfo>&& aNodeInfo)
+HTMLVideoElement::HTMLVideoElement(already_AddRefed<NodeInfo> aNodeInfo)
     : HTMLMediaElement(std::move(aNodeInfo)),
       mVideoWatchManager(this, AbstractThread::MainThread()) {
   DecoderDoctorLogger::LogConstruction(this);
@@ -237,6 +245,23 @@ bool HTMLVideoElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
 
   return HTMLMediaElement::ParseAttribute(aNamespaceID, aAttribute, aValue,
                                           aMaybeScriptedPrincipal, aResult);
+}
+
+void HTMLVideoElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                                    const nsAttrValue* aValue,
+                                    const nsAttrValue* aOldValue,
+                                    nsIPrincipal* aMaybeScriptedPrincipal,
+                                    bool aNotify) {
+  if (aNameSpaceID == kNameSpaceID_None &&
+      aName == nsGkAtoms::disablepictureinpicture && aValue) {
+    if (OwnerDoc()->GetPictureInPictureElementInternal() == this) {
+      PictureInPictureService::DispatchExitPictureInPictureRunnable(
+          /* aPromise */ nullptr, this);
+    }
+  }
+
+  HTMLMediaElement::AfterSetAttr(aNameSpaceID, aName, aValue, aOldValue,
+                                 aMaybeScriptedPrincipal, aNotify);
 }
 
 void HTMLVideoElement::MapAttributesIntoRule(
@@ -519,14 +544,9 @@ void HTMLVideoElement::ReleaseVideoWakeLockIfExists() {
 bool HTMLVideoElement::SetVisualCloneTarget(
     RefPtr<HTMLVideoElement> aVisualCloneTarget,
     RefPtr<Promise> aVisualCloneTargetPromise) {
-  MOZ_DIAGNOSTIC_ASSERT(
-      !aVisualCloneTarget || aVisualCloneTarget->IsInComposedDoc(),
-      "Can't set the clone target to a disconnected video "
-      "element.");
   MOZ_DIAGNOSTIC_ASSERT(!mVisualCloneSource,
                         "Can't clone a video element that is already a clone.");
-  if (!aVisualCloneTarget ||
-      (aVisualCloneTarget->IsInComposedDoc() && !mVisualCloneSource)) {
+  if (!aVisualCloneTarget || !mVisualCloneSource) {
     mVisualCloneTarget = std::move(aVisualCloneTarget);
     mVisualCloneTargetPromise = std::move(aVisualCloneTargetPromise);
     return true;
@@ -536,15 +556,10 @@ bool HTMLVideoElement::SetVisualCloneTarget(
 
 bool HTMLVideoElement::SetVisualCloneSource(
     RefPtr<HTMLVideoElement> aVisualCloneSource) {
-  MOZ_DIAGNOSTIC_ASSERT(
-      !aVisualCloneSource || aVisualCloneSource->IsInComposedDoc(),
-      "Can't set the clone source to a disconnected video "
-      "element.");
   MOZ_DIAGNOSTIC_ASSERT(!mVisualCloneTarget,
                         "Can't clone a video element that is already a "
                         "clone.");
-  if (!aVisualCloneSource ||
-      (aVisualCloneSource->IsInComposedDoc() && !mVisualCloneTarget)) {
+  if (!aVisualCloneSource || !mVisualCloneTarget) {
     mVisualCloneSource = std::move(aVisualCloneSource);
     return true;
   }
@@ -607,11 +622,9 @@ double HTMLVideoElement::TotalPlayTime() const {
 
 already_AddRefed<Promise> HTMLVideoElement::CloneElementVisually(
     HTMLVideoElement& aTargetVideo, ErrorResult& aRv) {
-  MOZ_ASSERT(IsInComposedDoc(),
-             "Can't clone a video that's not bound to a DOM tree.");
   MOZ_ASSERT(aTargetVideo.IsInComposedDoc(),
              "Can't clone to a video that's not bound to a DOM tree.");
-  if (!IsInComposedDoc() || !aTargetVideo.IsInComposedDoc()) {
+  if (!aTargetVideo.IsInComposedDoc()) {
     aRv.Throw(NS_ERROR_UNEXPECTED);
     return nullptr;
   }
@@ -713,9 +726,12 @@ void HTMLVideoElement::EndCloningVisually() {
 
   UpdateMediaControlAfterPictureInPictureModeChanged();
 
-  if (IsInComposedDoc() && !StaticPrefs::media_cloneElementVisually_testing()) {
+  if (IsInComposedDoc() && OwnerDoc()->IsCurrentActiveDocument() &&
+      !StaticPrefs::media_cloneElementVisually_testing()) {
     NotifyUAWidgetSetupOrChange();
   }
+
+  ClosePictureInPictureWindowAndFireEvent();
 }
 
 void HTMLVideoElement::OnSecondaryVideoContainerInstalled(
@@ -975,6 +991,135 @@ void HTMLVideoElement::CancelVideoFrameCallback(uint32_t aHandle) {
   if (mVideoFrameRequestManager.Cancel(aHandle) && !HasPendingCallbacks()) {
     NotifyDecoderActivityChanges();
   }
+}
+
+void HTMLVideoElement::ClosePictureInPictureWindowAndFireEvent() {
+  // If this is not GetPictureInPictureElementInternal, then
+  // we did cloned this video using our native feature.
+  if (OwnerDoc()->GetPictureInPictureElementInternal() != this) {
+    return;
+  }
+
+  // TODO: address PIP spec. so that "Unset pictureInPictureElement" is done
+  // before firing event as this can trigger script to run.
+  // https://w3c.github.io/picture-in-picture/#exit-pip
+  // 4. Unset pictureInPictureElement.
+  OwnerDoc()->SetPictureInPictureElement(nullptr);
+  if (RefPtr<PictureInPictureWindow> pipWindow =
+          std::move(mPictureInPictureWindow)) {
+    pipWindow->Close();
+  }
+}
+
+// https://w3c.github.io/picture-in-picture/#dom-htmlvideoelement-requestpictureinpicture
+already_AddRefed<Promise> HTMLVideoElement::RequestPictureInPicture(
+    ErrorResult& aRv) {
+  PictureInPictureService::EnsureInit();
+  // 9. Let p be a new promise created in this’s relevant realm.
+  RefPtr<Promise> p = Promise::Create(GetRelevantGlobal(), aRv);
+  if (!p) {
+    return nullptr;
+  }
+
+  // 1. If Picture-in-Picture support is false, return a promise rejected with
+  // NotSupportedError DOMException.
+  if (!PictureInPictureWindow::PictureInPictureEnabled()) {
+    p->MaybeRejectWithNotSupportedError("Picture-In-Picture is not enabled");
+    return p.forget();
+  }
+
+  // 2. If this’s node document is not allowed to use the policy-controlled
+  // feature named "picture-in-picture", reject p with a SecurityError
+  // exception and return p.
+  if (!FeaturePolicyUtils::IsFeatureAllowed(OwnerDoc(),
+                                            u"picture-in-picture"_ns)) {
+    p->MaybeRejectWithSecurityError(
+        "Permissions policy: picture-in-picture not allowed");
+    return p.forget();
+  }
+
+  // 3. If this’s readyState attribute is HAVE_NOTHING, reject p with an
+  // InvalidStateError exception and return p.
+  if (ReadyState() == HTMLMediaElement_Binding::HAVE_NOTHING) {
+    p->MaybeRejectWithInvalidStateError("Video readyState is HAVE_NOTHING");
+    return p.forget();
+  }
+
+  // 4. If this has no video track, reject p with an InvalidStateError
+  // exception and return p.
+  if (!HasVideo()) {
+    p->MaybeRejectWithInvalidStateError("Video element has no video track");
+    return p.forget();
+  }
+
+  // 5. If this’s disablePictureInPicture is true, the user agent MAY reject p
+  // with an InvalidStateError exception and return p.
+  if (DisablePictureInPicture()) {
+    p->MaybeRejectWithInvalidStateError(
+        "Picture-in-Picture is disabled on this video");
+    return p.forget();
+  }
+
+  // 6. If pictureInPictureElement is null:
+  // 6.1. If this’s relevant global object does not have a transient
+  // activation reject p with a NotAllowedError exception and return p.
+  // 6.2. Consume user activation given this’s relevant global object.
+  Document* doc = OwnerDoc();
+  const Element* pictureInPictureElement =
+      doc->GetPictureInPictureElementInternal();
+  if (!pictureInPictureElement &&
+      !doc->ConsumeTransientUserGestureActivation()) {
+    p->MaybeRejectWithNotAllowedError(
+        "Picture-in-Picture requires user activation");
+    return p.forget();
+  }
+
+  // 7. If this is pictureInPictureElement:
+  if (this == pictureInPictureElement) {
+    // 1. Return a promise resolved with with the Picture-in-Picture window
+    // associated with pictureInPictureElement.
+    auto pipWindow = mPictureInPictureWindow;
+    p->MaybeResolve(pipWindow);
+    return p.forget();
+  }
+
+  // 8. Let global be this’s relevant global object.
+  // 9. Return promise, and run the remaining steps in parallel:
+  NS_DispatchToMainThread(NS_NewRunnableFunction(
+      __func__, [promise = RefPtr{p},
+                 video = RefPtr{this}]() MOZ_CAN_RUN_SCRIPT_BOUNDARY {
+        PictureInPictureService::OpenPictureInPictureWindow(promise, video);
+      }));
+  return p.forget();
+}
+
+// Picture-in-Picture event handlers
+EventHandlerNonNull* HTMLVideoElement::GetOnenterpictureinpicture() {
+  return EventTarget::GetEventHandler(nsGkAtoms::onenterpictureinpicture);
+}
+
+void HTMLVideoElement::SetOnenterpictureinpicture(
+    EventHandlerNonNull* aCallback) {
+  EventTarget::SetEventHandler(nsGkAtoms::onenterpictureinpicture, aCallback);
+}
+
+EventHandlerNonNull* HTMLVideoElement::GetOnleavepictureinpicture() {
+  return EventTarget::GetEventHandler(nsGkAtoms::onleavepictureinpicture);
+}
+
+void HTMLVideoElement::SetOnleavepictureinpicture(
+    EventHandlerNonNull* aCallback) {
+  EventTarget::SetEventHandler(nsGkAtoms::onleavepictureinpicture, aCallback);
+}
+
+void HTMLVideoElement::SetAssociatedPictureInPictureWindow(
+    PictureInPictureWindow* aWindow) {
+  mPictureInPictureWindow = aWindow;
+}
+
+PictureInPictureWindow* HTMLVideoElement::GetAssociatedPictureInPictureWindow()
+    const {
+  return mPictureInPictureWindow;
 }
 
 }  // namespace mozilla::dom

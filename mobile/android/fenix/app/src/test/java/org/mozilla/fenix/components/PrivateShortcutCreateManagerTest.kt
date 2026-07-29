@@ -14,7 +14,6 @@ import io.mockk.slot
 import io.mockk.verify
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -23,6 +22,7 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.home.intent.StartSearchIntentProcessor
 import org.mozilla.fenix.utils.IntentUtils
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 class PrivateShortcutCreateManagerTest {
@@ -110,14 +110,14 @@ class PrivateShortcutCreateManagerTest {
             Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK,
             intent.flags,
         )
-        assertNotNull("Intent component should not be null", intent.component)
+        assertNotNull(intent.component, "Intent component should not be null")
         assertEquals(
             "Intent component should target HomeActivity",
             HomeActivity::class.qualifiedName,
             intent.component?.className,
         )
 
-        assertNotNull("Intent extras should not be null", intent.extras)
+        assertNotNull(intent.extras, "Intent extras should not be null")
         assertEquals(
             "Extra PRIVATE_BROWSING_MODE should be true",
             true,

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,7 +28,9 @@
 #include "nsIWeakReferenceUtils.h"
 #include "nsQueryObject.h"
 
+#include "nsGlobalWindowOuter.h"
 #include "nsPIDOMWindow.h"
+#include "nsPIDOMWindowInlines.h"
 
 #include "nsIStringBundle.h"
 
@@ -115,7 +116,7 @@ nsresult nsDocLoader::SetDocLoaderParent(nsDocLoader* aParent) {
 }
 
 nsresult nsDocLoader::Init() {
-  RefPtr<net::nsLoadGroup> loadGroup = new net::nsLoadGroup();
+  RefPtr loadGroup = MakeRefPtr<net::nsLoadGroup>();
   nsresult rv = loadGroup->Init();
   if (NS_FAILED(rv)) return rv;
 
@@ -131,7 +132,7 @@ nsresult nsDocLoader::Init() {
 
 nsresult nsDocLoader::InitWithBrowsingContext(
     BrowsingContext* aBrowsingContext) {
-  RefPtr<net::nsLoadGroup> loadGroup = new net::nsLoadGroup();
+  RefPtr loadGroup = MakeRefPtr<net::nsLoadGroup>();
   if (!aBrowsingContext->GetRequestContextId()) {
     return NS_ERROR_NOT_AVAILABLE;
   }

@@ -1,5 +1,3 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -52,6 +50,8 @@ if not CONFIG["MOZ_CODE_COVERAGE"]:
         # dom_fragmentdirectives depends on nsstring which has Gecko FFI symbols.
         # The tests don't use these symbols, but Windows linker pulls them in anyway.
         RUST_TESTS += ["dom_fragmentdirectives"]
+        # ssl_tokens_cache also depends on nsstring for the same reason.
+        RUST_TESTS += ["ssl_tokens_cache"]
 
 # Code coverage builds time out when executing the crashping tests on windows
 # (see bug 2010162), and it's more consistent to simply disable for all

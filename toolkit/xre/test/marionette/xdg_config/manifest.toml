@@ -1,4 +1,5 @@
 [DEFAULT]
+subsuite = "integration"
 
 ["test_xdg_config_legacy_existing.py"]
 run-if = [

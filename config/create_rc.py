@@ -285,7 +285,7 @@ def generate_module_rc():
         include = ""
 
     # Set the identity field for the Limited Access Feature
-    # Must match the tokens used in Win11LimitedAccessFeatures.cpp
+    # Must match the Product Name used in limited_access_features.rs
     lafidentity = "MozillaFirefox"
     # lafidentity = "FirefoxBeta"
     # lafidentity = "FirefoxNightly"

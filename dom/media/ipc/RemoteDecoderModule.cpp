@@ -1,13 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "RemoteDecoderModule.h"
 
-#ifdef MOZ_AV1
-#  include "AOMDecoder.h"
-#endif
+#include "AOMDecoder.h"
 #include "RemoteAudioDecoder.h"
 #include "RemoteMediaDataDecoder.h"
 #include "RemoteMediaManagerChild.h"
@@ -81,10 +77,10 @@ media::DecodeSupportSet RemoteDecoderModule::Supports(
     supports = false;
   }
 #endif
-  MOZ_LOG(
-      sPDMLog, LogLevel::Debug,
-      ("Sandbox %s decoder %s requested type %s", RemoteMediaInToStr(mLocation),
-       supports ? "supports" : "rejects", aParams.MimeType().get()));
+  MOZ_LOG_FMT(sPDMLog, LogLevel::Debug,
+              "Sandbox {} decoder {} requested type {}",
+              RemoteMediaInToStr(mLocation), supports ? "supports" : "rejects",
+              aParams.MimeType().get());
   if (supports) {
     // TODO: Note that we do not yet distinguish between SW/HW decode support.
     //       Will be done in bug 1754239.

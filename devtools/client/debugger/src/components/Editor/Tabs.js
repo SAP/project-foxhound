@@ -28,7 +28,7 @@ import actions from "../../actions/index";
 import Tab from "./Tab";
 import { PaneToggleButton } from "../shared/Button/index";
 import Dropdown from "../shared/Dropdown";
-import DebuggerImage from "../shared/DebuggerImage";
+import DebuggerImage from "devtools/client/shared/components/DebuggerImage";
 import CommandBar from "../SecondaryPanes/CommandBar";
 
 const { debounce } = require("resource://devtools/shared/debounce.js");

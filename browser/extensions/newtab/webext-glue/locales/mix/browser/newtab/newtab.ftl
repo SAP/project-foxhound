@@ -9,6 +9,28 @@ newtab-page-title = Xikua tsàa
 newtab-settings-button =
     .title = Sa'a nixi kunu koo pagina kitsau
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Xikua tsa'a
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label = { $num } fila
+home-restore-defaults-srd =
+    .label = Nchiko tana ntsikai
+    .accesskey = N
+home-mode-choice-custom-srd =
+    .label = Nixi kunu URLs…
+home-mode-choice-blank-srd =
+    .label = Página yaa
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Páginas ntsinu
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +38,7 @@ newtab-search-box-search-button =
     .title = Nduku
     .aria-label = Nduku
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Chika'a ñaa nduku
 newtab-topsites-edit-topsites-header = Sama sitio popular

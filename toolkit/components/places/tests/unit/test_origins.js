@@ -1302,7 +1302,7 @@ add_task(async function moreOriginFrecencyStats() {
   let bookmark = await PlacesUtils.bookmarks.insert({
     parentGuid: PlacesUtils.bookmarks.unfiledGuid,
     title: "A bookmark",
-    url: NetUtil.newURI("http://example.com/1"),
+    url: Services.io.newURI("http://example.com/1"),
   });
   await checkDB([
     [

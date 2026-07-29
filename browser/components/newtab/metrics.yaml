@@ -100,7 +100,7 @@ newtab:
       Recorded when newtab UI is opened via `about:newtab` or `about:home` or
       `about:welcome` and has been made visible (see `visibility_event_rcvd_ts`
       in
-      [detect-user-session-start.js](https://searchfox.org/mozilla-central/source/browser/components/newtab/content-src/lib/detect-user-session-start.js)).
+      [detect-user-session-start.js](https://searchfox.org/firefox-main/source/browser/components/newtab/content-src/lib/detect-user-session-start.js)).
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1766887
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1786670
@@ -741,6 +741,26 @@ newtab:
     send_in_pings:
       - newtab
 
+  sections_learn_more:
+    type: event
+    description: >
+      Recorded when the "Learn more" option in the sections context menu
+      is clicked.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2034869
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2034869
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - ini@mozilla.com
+      - sdowne@mozilla.com
+    expires: never
+    extra_keys:
+      newtab_visit_id: *newtab_visit_id
+    send_in_pings:
+      - newtab
+
   inline_selection_impression:
     type: event
     description: >
@@ -1192,7 +1212,7 @@ newtab:
         type: string
       widget_size: &widget_size
         description: >
-          Size of widget (e.g., mini, small, medium).
+          Size of widget (e.g., small, medium, large).
         type: string
     send_in_pings:
       - newtab
@@ -1303,12 +1323,31 @@ newtab:
       widget_size: *widget_size
       action_type:
         description: >
-          Type of container action. (hide_all, toggle_maximize)
+          Type of container action. (hide_all, change_size_all,
+          change_row_visibility, feedback)
         type: string
       action_value:
         description: >
           Optional value for the action.
         type: string
+    send_in_pings:
+      - newtab
+
+  widgets_enabled_list:
+    type: string_list
+    description: >
+      The list of widget telemetry names currently enabled by the user.
+      Recorded at startup and whenever a widget is enabled or disabled.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2015530
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2015530
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - mcrawford@mozilla.com
+    expires: never
+    lifetime: application
     send_in_pings:
       - newtab
 
@@ -2188,67 +2227,6 @@ pocket:
         - newtab
 
 
-  shim:
-    type: text
-    lifetime: ping
-    description: |
-      Opaque partner identifier for a given ad impression or engagement action,
-      unique per market and region.
-      Pocket
-      [proxies requests to ad partners](https://github.com/Pocket/proxy-server/)
-      and provides them solely with market, region, and action to generate these
-      shims. Thus, though the contents of this field are obscure, they cannot
-      identify clients.
-      At time of writing this information is a comma-separated trio.
-      The first item is an index into the proxy server's list of acceptable http
-      endpoints for contacting the ad service. The second item is a
-      several-hundred-byte base64-encoded JSON-encoded struct with fields for,
-      amongst other things, market and region. The third is unknown, but appears
-      to be a signature or checksum.
-      This shim should not be sent with the client_id.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1862670
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1862670
-    data_sensitivity:
-      - stored_content # Required for text type, and to encourage scrutiny
-    notification_emails:
-      - chutten@mozilla.com
-      - najiang@mozilla.com
-    expires: never
-    send_in_pings:
-      - spoc
-
-  fetch_timestamp:
-    type: datetime
-    lifetime: ping
-    description: |
-      Timestamp of when the spoc was fetched by the client
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1887655
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1887655
-    notification_emails:
-      - dmueller@mozilla.com
-    expires: never
-    send_in_pings:
-      - spoc
-
-  newtab_creation_timestamp:
-    type: datetime
-    lifetime: ping
-    description: |
-      Timestamp of when this instance of the newtab was first visible to the user.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1887655
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1887655
-    notification_emails:
-      - dmueller@mozilla.com
-    expires: never
-    send_in_pings:
-      - spoc
-
 newtab_content:
 
   experiment_name:
@@ -2887,123 +2865,6 @@ newtab_content:
       position: *topsite_position
     send_in_pings:
       - newtab-content
-
-top_sites: # Replacement for PingCentre "topsites-impression|click" pings.
-  ping_type:
-    type: string
-    description: >
-      The ping's type. In other situations might be designated by an event's
-      name or an interaction field. E.g. "topsites-impression",
-      "topsites-click".
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - najiang@mozilla.com
-    expires: never
-    send_in_pings:
-      - top-sites
-
-  position:
-    type: quantity
-    unit: topsite position
-    description: >
-      The position (1-based) of the topsites item being interatcted with.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - najiang@mozilla.com
-    expires: never
-    send_in_pings:
-      - top-sites
-
-  source:
-    type: string
-    description: >
-      The source of the interaction. Always set to "newtab".
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - najiang@mozilla.com
-    expires: never
-    send_in_pings:
-      - top-sites
-
-  tile_id:
-    type: string
-    description: >
-      String-encoded number for the tile's sponsored tile id.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - najiang@mozilla.com
-    expires: never
-    send_in_pings:
-      - top-sites
-
-  reporting_url:
-    type: url
-    description: >
-      The url to report this interaction to.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_sensitivity:
-      - web_activity
-    notification_emails:
-      - najiang@mozilla.com
-    expires: never
-    send_in_pings:
-      - top-sites
-
-  advertiser:
-    type: string
-    description: >
-      The name of the advertiser providing the sponsored TopSite.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_sensitivity:
-      - interaction
-      - web_activity
-    notification_emails:
-      - najiang@mozilla.com
-    expires: never
-    send_in_pings:
-      - top-sites
-
-  context_id:
-    type: uuid
-    description: >
-      An identifier to identify users for Contextual Services user interaction pings.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_sensitivity:
-      - technical
-    notification_emails:
-      - najiang@mozilla.com
-    expires: never
-    send_in_pings:
-      - top-sites
 
 activity_stream:
   end_session:

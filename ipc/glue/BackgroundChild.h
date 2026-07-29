@@ -1,11 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef mozilla_ipc_backgroundchild_h_
 #define mozilla_ipc_backgroundchild_h_
+
+#include "mozilla/dom/ProcessIsolation.h"
 
 class nsIEventTarget;
 
@@ -62,6 +62,17 @@ class BackgroundChild final {
 
   // See above.
   static void InitContentStarter(mozilla::dom::ContentChild* aContent);
+
+  // Helpers for doing ValidatePrincipal checks within the content process.
+  //
+  // These can be called from any thread, and validate the given principal
+  // against the process's current remote type.
+  static bool ValidatePrincipal(
+      nsIPrincipal* aPrincipal,
+      const EnumSet<dom::ValidatePrincipalOptions>& aOptions);
+  static bool ValidatePrincipalInfo(
+      const PrincipalInfo& aPrincipalInfo,
+      const EnumSet<dom::ValidatePrincipalOptions>& aOptions);
 
  private:
   // Only called by this class's friends.

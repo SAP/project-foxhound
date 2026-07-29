@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -101,13 +99,13 @@ inline bool ToJSValue(JSContext* aCx, uint64_t aArgument,
   return true;
 }
 
-// accept floating point types
+// Accept floating point types.
 inline bool ToJSValue(JSContext* aCx, float aArgument,
                       JS::MutableHandle<JS::Value> aValue) {
   // Make sure we're called in a compartment
   MOZ_ASSERT(JS::CurrentGlobalOrNull(aCx));
 
-  aValue.setNumber(aArgument);
+  aValue.set(JS_NumberValue(double(aArgument)));
   return true;
 }
 

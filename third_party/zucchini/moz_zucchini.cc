@@ -18,17 +18,72 @@
 #include "components/zucchini/zucchini_apply.h"
 
 #include <cstdio>
+#include <limits>
+#include <new>
+#include <string>
 
 #if BUILDFLAG(IS_WIN)
+// Get EXCEPTION_* constants defined with DWORD type
+#  include <ntstatus.h>
+
 #  include "components/zucchini/exception_filter_helper_win.h"
 
 #  include <io.h>
-#  include <ntstatus.h>
 #endif  // BUILDFLAG(IS_WIN)
 
 namespace zucchini::mozilla {
 
-LogFunctionPtr gLogFunction = nullptr;
+#ifdef ENABLE_TESTS
+// Helpers for crash recovery tests.
+
+static TestOptions gTestOptions;
+
+void SetTestOptions(const TestOptions& aTestOptions) {
+  gTestOptions = aTestOptions;
+}
+
+// Test-only log to prove stack unwinding reaches local destructors when we
+// recover from a fault originating from inside zucchini.
+class ScopedDestructorMarker {
+ public:
+  ScopedDestructorMarker() = default;
+
+  ~ScopedDestructorMarker() {
+    if (!gTestOptions.logDestructorMarker) {
+      return;
+    }
+
+    LOG(ERROR) << "MOZ_TEST_ZUCCHINI_DTOR_MARKER";
+  }
+};
+
+// Test-only OOM injection used by updater tests to verify that a thrown
+// bad_alloc is translated into kStatusOutOfMemory.
+static void MaybeTriggerTestBadAlloc() {
+  if (!gTestOptions.triggerBadAlloc) {
+    return;
+  }
+
+  // This allocation is expected to throw std::bad_alloc. volatile prevents
+  // the compiler from optimizing it away. If it somehow succeeded, CHECK(false)
+  // ensures the test fails visibly rather than silently passing.
+  void* volatile allocation = ::operator new(std::numeric_limits<size_t>::max());
+  (void)allocation;
+  CHECK(false);
+}
+
+// Test-only CHECK() injection used by updater tests to verify that deliberate
+// crash paths are converted into kStatusFatal.
+static void MaybeTriggerTestCheckFailure() {
+  if (!gTestOptions.triggerCheckFailure) {
+    return;
+  }
+
+  CHECK(false);
+}
+#endif  // ENABLE_TESTS
+
+static LogFunctionPtr gLogFunction = nullptr;
 
 bool LogMessageHandler(int aSeverity, const char* aFile, int aLine,
                        size_t aMessageStart, const std::string& aStr) {
@@ -76,6 +131,7 @@ class MappedPatchImpl {
   EnsemblePatchReader mPatchReader;
 #if BUILDFLAG(IS_WIN)
   ExceptionFilterHelper mExceptionFilterHelper;
+  DWORD mLastExceptionCode = 0;
 #endif  // BUILDFLAG(IS_WIN)
 };
 
@@ -87,20 +143,74 @@ MappedPatch::~MappedPatch() { delete mImpl; }
 #  if !defined(HAVE_SEH_EXCEPTIONS) || !HAVE_SEH_EXCEPTIONS
 #    error Compiler support for SEH is required to build zucchini on Windows.
 #  endif
+
+static constexpr DWORD kMsvcCppExceptionCode = 0xE06D7363;
+
+// SEH filter for exceptions raised within zucchini code. Without this,
+// recoverable exceptions would crash the updater before it can write
+// update.status, causing SERVICE_STILL_APPLYING_ON_FAILURE errors.
+//
+// We only catch exceptions where the process state is known to be sound:
+// - EXCEPTION_IN_PAGE_ERROR on mapped ranges (I/O failure, process healthy)
+// - EXCEPTION_BREAKPOINT/EXCEPTION_ILLEGAL_INSTRUCTION (deliberate crash from
+//   Chromium CHECK via ImmediateCrash, data validation failure)
+// - 0xE06D7363 (MSVC C++ exception: std::bad_alloc from non-fallible
+//   allocations in zucchini's disassembler. Neither zucchini nor its base shim
+//   contain any explicit throw, so bad_alloc is the only possible C++ exception
+//   observed here. On Windows, operator new allocation failure still surfaces
+//   through SEH with this exception code.)
+//
+// Exceptions indicating corrupt process state (EXCEPTION_ACCESS_VIOLATION,
+// EXCEPTION_STACK_OVERFLOW, etc.) are left unhandled so the process crashes
+// as expected.
+static int FilterZucchiniException(
+    EXCEPTION_RECORD* aExceptionRecord,
+    ExceptionFilterHelper& aPageErrorHelper,
+    DWORD& aOutExceptionCode) {
+  aOutExceptionCode = aExceptionRecord->ExceptionCode;
+
+  // Check if this is a page error on our mapped ranges. This populates
+  // nt_status/is_write for the handler to use in its diagnostic message.
+  int pageResult = aPageErrorHelper.FilterPageError(aExceptionRecord);
+  if (pageResult == EXCEPTION_EXECUTE_HANDLER) {
+    return EXCEPTION_EXECUTE_HANDLER;
+  }
+
+  if (aOutExceptionCode == EXCEPTION_BREAKPOINT ||
+      aOutExceptionCode == EXCEPTION_ILLEGAL_INSTRUCTION ||
+      aOutExceptionCode ==
+          kMsvcCppExceptionCode /* MSVC C++ exception (std::bad_alloc) */) {
+    return EXCEPTION_EXECUTE_HANDLER;
+  }
+
+  return EXCEPTION_CONTINUE_SEARCH;
+}
+
 #  define BEGIN_TRY_EXCEPT() __try {
 #  define END_TRY_EXCEPT()                                                 \
     }                                                                      \
-    __except (mImpl->mExceptionFilterHelper.FilterPageError(               \
-        GetExceptionInformation()->ExceptionRecord)) {                     \
-      LOG(ERROR) << "EXCEPTION_IN_PAGE_ERROR while "                       \
-                 << (mImpl->mExceptionFilterHelper.is_write()              \
-                         ? "writing to"                                    \
-                         : "reading from")                                 \
-                 << " mapped files; NTSTATUS = "                           \
-                 << mImpl->mExceptionFilterHelper.nt_status();             \
-      return mImpl->mExceptionFilterHelper.nt_status() == STATUS_DISK_FULL \
-                 ? status::kStatusDiskFull                                 \
-                 : status::kStatusIoError;                                 \
+    __except (FilterZucchiniException(                                     \
+        GetExceptionInformation()->ExceptionRecord,                        \
+        mImpl->mExceptionFilterHelper, mImpl->mLastExceptionCode)) {       \
+      if (mImpl->mLastExceptionCode == EXCEPTION_IN_PAGE_ERROR) {          \
+        LOG(ERROR) << "EXCEPTION_IN_PAGE_ERROR while "                     \
+                   << (mImpl->mExceptionFilterHelper.is_write()            \
+                           ? "writing to"                                  \
+                           : "reading from")                               \
+                   << " mapped files; NTSTATUS = "                         \
+                   << mImpl->mExceptionFilterHelper.nt_status();           \
+        return mImpl->mExceptionFilterHelper.nt_status() ==                \
+                       STATUS_DISK_FULL                                    \
+                   ? status::kStatusDiskFull                               \
+                   : status::kStatusIoError;                               \
+      }                                                                    \
+      if (mImpl->mLastExceptionCode == kMsvcCppExceptionCode) {            \
+        return status::kStatusOutOfMemory;                                 \
+      }                                                                    \
+      LOG(ERROR) << "CHECK failure (exception 0x" << std::hex              \
+                 << mImpl->mLastExceptionCode                              \
+                 << ") caught in zucchini; this is a bug.";                \
+      return status::kStatusFatal;                                         \
     }
 #else
 #  define BEGIN_TRY_EXCEPT()
@@ -120,6 +230,9 @@ status::Code MappedPatch::Load(FILE* aPatchFile, uint32_t* aSourceSize,
   auto& fileReader = *mImpl->mFileReader;
   if (fileReader.HasError()) {
     LOG(ERROR) << "Error with patch file: " << fileReader.error();
+    if (fileReader.error_is_oom()) {
+      return status::kStatusOutOfMemory;
+    }
     return status::kStatusFileReadError;
   }
 #if BUILDFLAG(IS_WIN)
@@ -127,6 +240,12 @@ status::Code MappedPatch::Load(FILE* aPatchFile, uint32_t* aSourceSize,
       {fileReader.data(), fileReader.length()});
 #endif
   BEGIN_TRY_EXCEPT()
+#ifdef ENABLE_TESTS
+  ScopedDestructorMarker destructorTester;
+  MaybeTriggerTestBadAlloc();
+  MaybeTriggerTestCheckFailure();
+#endif  // ENABLE_TESTS
+
   BufferSource source(fileReader.region());
   auto& patchReader = mImpl->mPatchReader;
   if (!patchReader.Initialize(&source)) {
@@ -161,6 +280,9 @@ status::Code MappedPatch::ApplyUnsafe(const uint8_t* aCheckedOldImage,
                              /*keep*/ true);
   if (mappedNew.HasError()) {
     LOG(ERROR) << "Error with new file: " << mappedNew.error();
+    if (mappedNew.error_is_oom()) {
+      return status::kStatusOutOfMemory;
+    }
     return status::kStatusFileWriteError;
   }
 

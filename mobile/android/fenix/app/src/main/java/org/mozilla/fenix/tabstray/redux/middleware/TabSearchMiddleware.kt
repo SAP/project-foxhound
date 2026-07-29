@@ -7,14 +7,13 @@ package org.mozilla.fenix.tabstray.redux.middleware
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import mozilla.components.browser.state.state.TabSessionState
-import mozilla.components.concept.engine.utils.ABOUT_HOME_URL
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.Store
-import org.mozilla.fenix.tabstray.Page
-import org.mozilla.fenix.tabstray.TabSearchAction
-import org.mozilla.fenix.tabstray.TabsTrayAction
-import org.mozilla.fenix.tabstray.TabsTrayState
+import org.mozilla.fenix.tabstray.data.TabsTrayItem
+import org.mozilla.fenix.tabstray.redux.action.TabSearchAction
+import org.mozilla.fenix.tabstray.redux.action.TabsTrayAction
+import org.mozilla.fenix.tabstray.redux.state.Page
+import org.mozilla.fenix.tabstray.redux.state.TabsTrayState
 
 /**
  * [Middleware] that reacts to [TabSearchAction.SearchQueryChanged].
@@ -37,9 +36,14 @@ class TabSearchMiddleware(
         when (action) {
             is TabSearchAction.SearchQueryChanged -> {
                 scope.launch {
-                    val tabs = when (store.state.selectedPage) {
-                        Page.NormalTabs -> store.state.normalTabs + store.state.inactiveTabs
-                        Page.PrivateTabs -> store.state.privateTabs
+                    val state = store.state
+                    val items = when (state.selectedPage) {
+                        Page.NormalTabs -> {
+                            state.normalTabsState.items + state.inactiveTabs.tabs
+                        }
+                        Page.PrivateTabs -> {
+                            state.privateBrowsing.tabs
+                        }
                         else -> emptyList()
                     }
 
@@ -48,10 +52,18 @@ class TabSearchMiddleware(
                     val filteredTabs = if (query.isBlank()) {
                         emptyList()
                     } else {
+                        val allTabs = items.flatMap { item ->
+                            when (item) {
+                                is TabsTrayItem.Tab -> listOf(item)
+                                is TabsTrayItem.TabGroup -> item.tabs
+                            }
+                        }
+
                         val (matchingHomepage, matchingNonHomepage) =
-                            tabs.filter { it.contains(text = query) }
+                            allTabs
+                                .filter { it.contains(text = query) }
                                 .sortedByDescending { it.lastAccess }
-                                .partition { it.isHomepage() }
+                                .partition { it.isHomepageItem }
 
                         // If the results contain homepages, only display one homepage result
                         val homeTab = matchingHomepage.take(1)
@@ -67,13 +79,5 @@ class TabSearchMiddleware(
 
             else -> {} // no-op
         }
-    }
-
-    private fun TabSessionState.contains(text: String): Boolean {
-        return content.url.contains(text, ignoreCase = true) || content.title.contains(text, ignoreCase = true)
-    }
-
-    private fun TabSessionState.isHomepage(): Boolean {
-        return content.url.equals(ABOUT_HOME_URL, ignoreCase = true)
     }
 }

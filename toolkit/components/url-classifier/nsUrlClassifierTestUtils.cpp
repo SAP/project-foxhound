@@ -59,11 +59,11 @@ nsUrlClassifierTestUtils::MakeUpdateResponseV5(const nsACString& aName,
   riceDelta->set_entries_count(0);
 
   std::string s;
-  response.SerializeToString(&s);
+  (void)response.SerializeToString(&s);
 
   nsCString out(s.c_str(), s.size());
 
-  aResponse = out;
+  aResponse = std::move(out);
 
   return NS_OK;
 }
@@ -103,11 +103,11 @@ nsUrlClassifierTestUtils::MakeUpdateResponseV5_32b(const nsACString& aName,
   riceDelta->set_entries_count(0);
 
   std::string s;
-  response.SerializeToString(&s);
+  (void)response.SerializeToString(&s);
 
   nsCString out(s.c_str(), s.size());
 
-  aResponse = out;
+  aResponse = std::move(out);
 
   return NS_OK;
 }
@@ -137,11 +137,11 @@ nsUrlClassifierTestUtils::MakeFindFullHashResponseV5(
   duration->set_nanos(0);
 
   std::string s;
-  response.SerializeToString(&s);
+  (void)response.SerializeToString(&s);
 
   nsCString out(s.c_str(), s.size());
 
-  aResponse = out;
+  aResponse = std::move(out);
 
   return NS_OK;
 }

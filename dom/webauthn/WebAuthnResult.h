@@ -80,8 +80,10 @@ class WebAuthnRegisterResult final : public nsIWebAuthnRegisterResult {
       mTransports.AppendElement(
           jni::String::LocalRef(transports->GetElement(i))->ToString());
     }
-    mAuthenticatorAttachment =
-        Some(aResponse->AuthenticatorAttachment()->ToString());
+    if (aResponse->AuthenticatorAttachment()) {
+      mAuthenticatorAttachment =
+          Some(aResponse->AuthenticatorAttachment()->ToString());
+    }
     if (aResponse->CredProps()) {
       mCredPropsRk = Some(java::sdk::Boolean::Ref::From(aResponse->CredProps())
                               ->BooleanValue());
@@ -297,8 +299,10 @@ class WebAuthnSignResult final : public nsIWebAuthnSignResult {
         reinterpret_cast<uint8_t*>(
             aResponse->UserHandle()->GetElements().Elements()),
         aResponse->UserHandle()->Length());
-    mAuthenticatorAttachment =
-        Some(aResponse->AuthenticatorAttachment()->ToString());
+    if (aResponse->AuthenticatorAttachment()) {
+      mAuthenticatorAttachment =
+          Some(aResponse->AuthenticatorAttachment()->ToString());
+    }
     if (aResponse->PrfFirst() && aResponse->PrfFirst()->Length() > 0) {
       mPrfFirst.emplace();
       mPrfFirst->AppendElements(

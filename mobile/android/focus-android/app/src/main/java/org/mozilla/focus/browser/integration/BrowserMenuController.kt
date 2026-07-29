@@ -23,41 +23,36 @@ import org.mozilla.focus.state.AppStore
 import org.mozilla.focus.state.Screen
 
 /**
+ * Data class holding the callback functions for actions triggered from the browser menu.
+ */
+data class BrowserMenuCallbacks(
+    val shareCallback: () -> Unit,
+    val requestDesktopCallback: (isChecked: Boolean) -> Unit,
+    val addToHomeScreenCallback: () -> Unit,
+    val showFindInPageCallback: () -> Unit,
+    val openInCallback: () -> Unit,
+    val openInBrowser: () -> Unit,
+    val showShortcutAddedSnackBar: () -> Unit,
+)
+
+/**
  * Manages the interactions and logic for the browser menu.
- *
- * This controller handles actions such as navigation (back, forward, reload, stop),
- * sharing, finding text on the page, managing desktop view, adding to home screen,
- * opening content in other apps, and managing shortcuts (top sites).
- * It also records telemetry for these actions.
  *
  * @param sessionUseCases Use cases for managing browser sessions.
  * @param appStore The main application store for dispatching actions.
  * @param store The browser store for accessing session state.
  * @param topSitesUseCases Use cases for managing top sites (shortcuts).
  * @param currentTabId The ID of the currently active tab.
- * @param shareCallback Callback function to invoke when the share action is triggered.
- * @param requestDesktopCallback Callback function to invoke when the request desktop site action is triggered.
- * @param addToHomeScreenCallback Callback function to invoke when the add to home screen action is triggered.
- * @param showFindInPageCallback Callback function to invoke when the find in page action is triggered.
- * @param openInCallback Callback function to invoke when the open in app action is triggered.
- * @param openInBrowser Callback function to invoke when the open in browser action is triggered (for custom tabs).
- * @param showShortcutAddedSnackBar Callback function to display a snackbar when a shortcut is added.
+ * @param callbacks Callbacks for browser menu actions.
  * @param coroutineScope The coroutine scope for launching asynchronous operations.
  */
-@Suppress("LongParameterList")
 class BrowserMenuController(
     private val sessionUseCases: SessionUseCases,
     private val appStore: AppStore,
     private val store: BrowserStore,
     private val topSitesUseCases: TopSitesUseCases,
     private val currentTabId: String,
-    private val shareCallback: () -> Unit,
-    private val requestDesktopCallback: (isChecked: Boolean) -> Unit,
-    private val addToHomeScreenCallback: () -> Unit,
-    private val showFindInPageCallback: () -> Unit,
-    private val openInCallback: () -> Unit,
-    private val openInBrowser: () -> Unit,
-    private val showShortcutAddedSnackBar: () -> Unit,
+    private val callbacks: BrowserMenuCallbacks,
     private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.IO),
 ) {
     @VisibleForTesting
@@ -107,18 +102,19 @@ class BrowserMenuController(
             is ToolbarMenu.Item.Stop, ToolbarMenu.CustomTabItem.Stop -> sessionUseCases.stopLoading(
                 currentTabId,
             )
-            is ToolbarMenu.Item.Share -> shareCallback()
-            is ToolbarMenu.Item.FindInPage, ToolbarMenu.CustomTabItem.FindInPage -> showFindInPageCallback()
+            is ToolbarMenu.Item.Share -> callbacks.shareCallback()
+            is ToolbarMenu.Item.FindInPage, ToolbarMenu.CustomTabItem.FindInPage -> callbacks.showFindInPageCallback()
             is ToolbarMenu.Item.AddToShortcuts -> {
                 addToShortcuts()
-                showShortcutAddedSnackBar()
+                callbacks.showShortcutAddedSnackBar()
             }
             is ToolbarMenu.Item.RemoveFromShortcuts -> removeFromShortcuts()
-            is ToolbarMenu.Item.RequestDesktop -> requestDesktopCallback(item.isChecked)
-            is ToolbarMenu.CustomTabItem.RequestDesktop -> requestDesktopCallback(item.isChecked)
-            is ToolbarMenu.Item.AddToHomeScreen, ToolbarMenu.CustomTabItem.AddToHomeScreen -> addToHomeScreenCallback()
-            is ToolbarMenu.CustomTabItem.OpenInBrowser -> openInBrowser()
-            is ToolbarMenu.Item.OpenInApp, ToolbarMenu.CustomTabItem.OpenInApp -> openInCallback()
+            is ToolbarMenu.Item.RequestDesktop -> callbacks.requestDesktopCallback(item.isChecked)
+            is ToolbarMenu.CustomTabItem.RequestDesktop -> callbacks.requestDesktopCallback(item.isChecked)
+            is ToolbarMenu.Item.AddToHomeScreen, ToolbarMenu.CustomTabItem.AddToHomeScreen ->
+                callbacks.addToHomeScreenCallback()
+            is ToolbarMenu.CustomTabItem.OpenInBrowser -> callbacks.openInBrowser()
+            is ToolbarMenu.Item.OpenInApp, ToolbarMenu.CustomTabItem.OpenInApp -> callbacks.openInCallback()
             is ToolbarMenu.Item.Settings -> appStore.dispatch(AppAction.OpenSettings(page = Screen.Settings.Page.Start))
         }
     }

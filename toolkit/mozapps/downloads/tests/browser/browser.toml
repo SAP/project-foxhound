@@ -10,12 +10,14 @@ support-files = [
 ["browser_save_wrongextension.js"]
 skip-if = [
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt && verify-standalone",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && opt && verify-standalone",
 ]
 
 ["browser_unknownContentType_blob.js"]
 
 ["browser_unknownContentType_delayedbutton.js"]
 skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1747285
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan && fission", # Bug 1747285
 ]

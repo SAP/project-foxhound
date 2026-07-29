@@ -232,7 +232,7 @@
             let scrollAmount = event.screenY <= popupRect.top ? -1 : 1;
             this.scrollBox.scrollByIndex(scrollAmount, true);
 
-            let win = this.ownerGlobal;
+            let win = this.documentGlobal;
             this._scrollTimer = win.setInterval(() => {
               this.scrollBox.scrollByIndex(scrollAmount, true);
             }, this.AUTOSCROLL_INTERVAL);
@@ -254,7 +254,7 @@
 
     _clearScrollTimer() {
       if (this._scrollTimer) {
-        this.ownerGlobal.clearInterval(this._scrollTimer);
+        this.documentGlobal.clearInterval(this._scrollTimer);
         this._scrollTimer = 0;
       }
     }

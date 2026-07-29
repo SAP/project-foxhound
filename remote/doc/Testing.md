@@ -122,5 +122,5 @@ But you can also schedule tests by selecting relevant jobs yourself:
 [exclusive tests]: https://mochajs.org/#exclusive-tests
 [track progress]: https://puppeteer.github.io/ispuppeteerfirefoxready/
 [try preset]: /tools/try/presets
-[TestExpectations.json]: https://searchfox.org/mozilla-central/source/remote/test/puppeteer/test/TestExpectations.json
-[CanaryTestExpectations.json]: https://searchfox.org/mozilla-central/source/remote/test/puppeteer/test/CanaryTestExpectations.json
+[TestExpectations.json]: https://searchfox.org/firefox-main/source/remote/test/puppeteer/test/TestExpectations.json
+[CanaryTestExpectations.json]: https://searchfox.org/firefox-main/source/remote/test/puppeteer/test/CanaryTestExpectations.json

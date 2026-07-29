@@ -12,6 +12,9 @@ support-files = [
 ]
 
 ["browser_fullscreen-api-keys.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
 
 ["browser_fullscreen-bug-1798219.js"]
 skip-if = [

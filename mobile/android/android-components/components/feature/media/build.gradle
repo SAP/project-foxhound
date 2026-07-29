@@ -37,6 +37,7 @@ dependencies {
     testRuntimeOnly libs.junit.platform.launcher
     testRuntimeOnly libs.junit.vintage
     testImplementation libs.kotlin.reflect
+    testImplementation libs.kotlin.test
     testImplementation libs.kotlinx.coroutines.test
     testImplementation libs.robolectric
 }

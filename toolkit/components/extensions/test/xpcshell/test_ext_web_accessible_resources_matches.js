@@ -11,6 +11,10 @@ const IMAGE_ARRAYBUFFER = Uint8Array.from(image, byte =>
   byte.charCodeAt(0)
 ).buffer;
 
+const FILE_DUMMY_URL = Services.io.newFileURI(
+  do_get_file("data/dummy_page.html")
+).spec;
+
 add_task(async function test_web_accessible_resources_matching() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
@@ -514,6 +518,147 @@ add_task(async function test_web_accessible_resources_empty_matches() {
     ExtensionTestUtils.fetch("http://example.com", fileURL),
     e => e?.message === "NetworkError when attempting to fetch resource.",
     "empty matches[] = not web-accessible"
+  );
+  await extension.unload();
+});
+
+add_task(async function test_web_accessible_resources_from_null_principal() {
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      manifest_version: 3,
+      web_accessible_resources: [
+        {
+          resources: ["/matches_all_urls.txt"],
+          matches: ["<all_urls>"],
+        },
+        {
+          resources: ["/matches_http(s).txt"],
+          matches: ["*://*/*"],
+        },
+        {
+          resources: ["/restricted_host.txt"],
+          matches: ["http://example.com/*"],
+        },
+        {
+          resources: ["/restricted_path.txt"],
+          matches: ["*://*/*-*"],
+          // ^ Although Chrome disallows non-wildcard paths, we support them.
+        },
+      ],
+    },
+    files: {
+      "matches_all_urls.txt": "some content",
+      "matches_http(s).txt": "some content",
+      "restricted.txt": "restricted content",
+    },
+  });
+
+  await extension.startup();
+
+  let page = await ExtensionTestUtils.loadContentPage(
+    "http://example.com/data/"
+  );
+
+  // A sandboxed iframe runs with a null (opaque) principal. Verify that it can
+  // fetch a resource whose matches includes "<all_urls>" but cannot fetch one
+  // whose matches only covers specific hosts or paths.
+  await page.spawn([`moz-extension://${extension.uuid}`], async extBaseUrl => {
+    const fetchFromSandboxedFrame = resourceUrl =>
+      new Promise(resolve => {
+        let iframe = this.content.document.createElement("iframe");
+        iframe.setAttribute("sandbox", "allow-scripts");
+        iframe.srcdoc = `<script>fetch("${resourceUrl}").then(()=>parent.postMessage(true,"*")).catch(()=>parent.postMessage(false,"*"))</script>`;
+        this.content.addEventListener("message", e => resolve(e.data), {
+          once: true,
+        });
+        this.content.document.body.appendChild(iframe);
+      });
+
+    Assert.ok(
+      await fetchFromSandboxedFrame(`${extBaseUrl}/matches_all_urls.txt`),
+      "sandboxed iframe should load resource with <all_urls> matches"
+    );
+
+    Assert.ok(
+      await fetchFromSandboxedFrame(`${extBaseUrl}/matches_http(s).txt`),
+      "sandboxed iframe should load resource with *://*/* matches"
+    );
+
+    // In theory, if we look at the precursor of the null principal, we might
+    // see example.com and accept the request. But that is not what is
+    // implemented, so we reject the request:
+    Assert.ok(
+      !(await fetchFromSandboxedFrame(`${extBaseUrl}/restricted_host.txt`)),
+      "sandboxed iframe should not load resource with specific host matches"
+    );
+
+    // Although the match pattern matches any path containing "-", it does not
+    // match "moz-nullprincipal:{299c2c90-16d8-467e-b52f-b91d9ee59e3d}" because
+    // we only check path wildcards when the scheme is matched.
+    Assert.ok(
+      !(await fetchFromSandboxedFrame(`${extBaseUrl}/restricted_path.txt`)),
+      "sandboxed iframe should not load resource with specific path matches"
+    );
+  });
+
+  await page.close();
+  await extension.unload();
+});
+
+add_task(async function test_web_accessible_resources_from_file_principal() {
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      manifest_version: 3,
+      web_accessible_resources: [
+        {
+          resources: ["/matches_all_urls.txt"],
+          matches: ["<all_urls>"],
+        },
+        {
+          resources: ["/matches_file.txt"],
+          matches: ["file://*/*"],
+        },
+        {
+          resources: ["/matches_http(s).txt"],
+          matches: ["*://*/*"],
+        },
+      ],
+    },
+    files: {
+      "matches_all_urls.txt": "some content",
+      "matches_file.txt": "some content",
+      "matches_http(s).txt": "some content",
+    },
+  });
+
+  await extension.startup();
+
+  async function checkFileCanFetch(url) {
+    try {
+      let res = await ExtensionTestUtils.fetch(FILE_DUMMY_URL, url);
+      Assert.equal(res, "some content", `Response for: ${url}`);
+      return true;
+    } catch (e) {
+      Assert.equal(
+        e.message,
+        "NetworkError when attempting to fetch resource.",
+        `Error for: ${url}`
+      );
+    }
+  }
+
+  const extBaseUrl = `moz-extension://${extension.uuid}`;
+  Assert.ok(
+    await checkFileCanFetch(`${extBaseUrl}/matches_all_urls.txt`),
+    "file:-origin can fetch resource for <all_urls>"
+  );
+  Assert.ok(
+    await checkFileCanFetch(`${extBaseUrl}/matches_file.txt`),
+    "file:-origin can fetch resource for file://*/*"
+  );
+  Assert.ok(
+    !(await checkFileCanFetch(`${extBaseUrl}/matches_http(s).txt`)),
+    "file:-origin cannot fetch resource for *://*/*"
   );
   await extension.unload();
 });

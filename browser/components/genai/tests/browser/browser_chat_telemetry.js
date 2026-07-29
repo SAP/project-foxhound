@@ -5,15 +5,11 @@ const { GenAI } = ChromeUtils.importESModule(
   "resource:///modules/GenAI.sys.mjs"
 );
 
-registerCleanupFunction(() => {
+// Schedule reset to the initial sidebar state after the test.
+SidebarTestUtils.restoreStateAtCleanup(window);
+
+registerCleanupFunction(async () => {
   Services.prefs.clearUserPref("sidebar.old-sidebar.has-used");
-  // Ensure sidebar is hidden after each test:
-  if (!document.getElementById("sidebar-box").hidden) {
-    info(
-      `Sidebar ${SidebarController.currentID} was left open, closing it in cleanup function`
-    );
-    SidebarController.hide({ dismissPanel: true });
-  }
 });
 
 /**
@@ -82,11 +78,6 @@ add_task(async function test_default_telemetry() {
   Assert.equal(events[1].extra.reason, "unload", "Page unloaded");
   Assert.equal(events[1].extra.version, sidebarVersion, "Correct version");
 
-  Assert.equal(
-    Glean.genaiChatbot.experimentCheckboxClick.testGetValue(),
-    null,
-    "No experiment events"
-  );
   Assert.equal(
     Glean.genaiChatbot.providerChange.testGetValue(),
     null,
@@ -177,6 +168,7 @@ add_task(async function test_summarize_telemetry() {
     "Reader mode is false for about:blank"
   );
   Assert.equal(events[0].extra.selection, "0", "Has selection length");
+  Assert.equal(events[0].extra.smart_window, "false", "Not smart window");
   Assert.equal(events[0].extra.source, "test_entry", "Correct source");
 
   SidebarController.hide({ dismissPanel: true });

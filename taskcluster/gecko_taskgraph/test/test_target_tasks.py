@@ -475,5 +475,92 @@ def test_filters(name, params, expected):
     assert func(**params) is expected
 
 
+def _os_integration_params(**overrides):
+    params = {
+        "project": "mozilla-central",
+        "tasks_for": "cron",
+        "target_tasks_method": "os-integration",
+        "try_mode": None,
+        "repository_type": "hg",
+        "hg_branch": "default",
+        "level": "3",
+    }
+    params.update(overrides)
+    return params
+
+
+def _snap_test_task(
+    label,
+    *,
+    snap_test_type="basic",
+    snap_test_release="2404",
+    primary_dependency_label=None,
+    run_on_projects=None,
+):
+    if primary_dependency_label is None:
+        primary_dependency_label = f"snap-upstream-build-{label.split('-', 5)[5]}"
+
+    if run_on_projects is None:
+        run_on_projects = ["all"]
+
+    return Task(
+        kind="snap-upstream-test",
+        label=label,
+        attributes={
+            "kind": "snap-upstream-test",
+            "snap_test_type": snap_test_type,
+            "snap_test_release": snap_test_release,
+            "primary-dependency-label": primary_dependency_label,
+            "cron": True,
+            "run_on_projects": run_on_projects,
+        },
+        task={},
+    )
+
+
+def test_os_integration_includes_snap_basic_2404():
+    """target_tasks_os_integration must surface snap-upstream-test basic-2404 on m-c cron.
+
+    Guards against regressions in either the kind allow-list in target_tasks.py
+    or the attrmatch entry in os-integration.yml; see bug 1941642.
+    """
+    tasks = {
+        "snap-upstream-test-basic-2404-amd64-nightly/opt": _snap_test_task(
+            "snap-upstream-test-basic-2404-amd64-nightly/opt"
+        ),
+        "snap-upstream-test-basic-2404-amd64-local/opt": _snap_test_task(
+            "snap-upstream-test-basic-2404-amd64-local/opt"
+        ),
+        "snap-upstream-test-basic-2404-amd64-nightly/debug": _snap_test_task(
+            "snap-upstream-test-basic-2404-amd64-nightly/debug"
+        ),
+        "snap-upstream-test-basic-2404-amd64-beta/opt": _snap_test_task(
+            "snap-upstream-test-basic-2404-amd64-beta/opt"
+        ),
+        "snap-upstream-test-qa-2404-amd64-nightly/opt": _snap_test_task(
+            "snap-upstream-test-qa-2404-amd64-nightly/opt", snap_test_type="qa"
+        ),
+        "snap-upstream-test-basic-2204-amd64-nightly/opt": _snap_test_task(
+            "snap-upstream-test-basic-2204-amd64-nightly/opt", snap_test_release="2204"
+        ),
+        "snap-upstream-test-basic-2404-amd64-try-only/opt": _snap_test_task(
+            "snap-upstream-test-basic-2404-amd64-try-only/opt",
+            run_on_projects=["try"],
+        ),
+    }
+    graph = TaskGraph(tasks, Graph(nodes=set(tasks), edges=set()))
+
+    method = get_method("os-integration")
+    selected = set(method(graph, _os_integration_params(), {}))
+
+    assert "snap-upstream-test-basic-2404-amd64-nightly/opt" in selected
+    assert "snap-upstream-test-basic-2404-amd64-local/opt" not in selected
+    assert "snap-upstream-test-basic-2404-amd64-nightly/debug" not in selected
+    assert "snap-upstream-test-basic-2404-amd64-beta/opt" not in selected
+    assert "snap-upstream-test-qa-2404-amd64-nightly/opt" not in selected
+    assert "snap-upstream-test-basic-2204-amd64-nightly/opt" not in selected
+    assert "snap-upstream-test-basic-2404-amd64-try-only/opt" not in selected
+
+
 if __name__ == "__main__":
     main()

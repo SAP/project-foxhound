@@ -16,10 +16,16 @@ customkeys-conflict-confirm = This key is already assigned to { $conflict }. Do 
 
 customkeys-reset-all-confirm = Are you sure you wish to reset all keyboard shortcuts to their defaults?
 
+customkeys-file-duplicate-tab = Duplicate Tab
+customkeys-file-focus-search = Focus the Search Bar
 customkeys-history-reopen-tab = Reopen Last Closed Tab
 customkeys-history-reopen-window = Reopen Last Closed window
 customkeys-sidebar-toggle = Toggle Sidebar
+customkeys-view-bookmarks-toolbar = Toggle Bookmarks Toolbar
 customkeys-view-picture-in-picture = Picture-in-Picture
+customkeys-view-add-split-view = Add Split View
+# Separate is a verb
+customkeys-view-separate-split-view = Separate Split View
 customkeys-dev-tools = Web Developer Tools
 customkeys-dev-inspector = DOM and Style Inspector
 customkeys-dev-webconsole = Web Console
@@ -40,6 +46,21 @@ customkeys-nav-home = Home
 customkeys-nav-reload = Reload
 customkeys-nav-reload-skip-cache = Reload (Override Cache)
 customkeys-nav-stop = Stop
+
+customkeys-nav-select-tab-1 = Go to Tab 1
+customkeys-nav-select-tab-2 = Go to Tab 2
+customkeys-nav-select-tab-3 = Go to Tab 3
+customkeys-nav-select-tab-4 = Go to Tab 4
+customkeys-nav-select-tab-5 = Go to Tab 5
+customkeys-nav-select-tab-6 = Go to Tab 6
+customkeys-nav-select-tab-7 = Go to Tab 7
+customkeys-nav-select-tab-8 = Go to Tab 8
+customkeys-nav-select-last-tab = Go to Last Tab
+customkeys-nav-toggle-mute = Mute/Unmute Audio
+
+customkeys-edit-find-previous = Find Previous
+
+customkeys-tools-screenshot = Take a Screenshot
 
 customkeys-caution-message = This feature is experimental and may not work as expected.
 

@@ -3,6 +3,8 @@ tags = "devtools"
 subsuite = "devtools"
 support-files = [
   "reload/*",
+  "local-mode/index.html",
+  "local-mode/folder/test.html",
   "browser_toolbox_options_disable_js.html",
   "browser_toolbox_options_disable_js_iframe.html",
   "browser_toolbox_options_disable_cache.sjs",
@@ -44,7 +46,6 @@ support-files = [
   "!/devtools/client/debugger/test/mochitest/shared-head.js",
   "!/devtools/client/inspector/test/shared-head.js",
   "!/devtools/client/shared/test/shared-head.js",
-  "!/devtools/client/shared/test/telemetry-test-helpers.js",
   "!/devtools/client/webconsole/test/browser/shared-head.js",
 ]
 prefs = ["security.allow_unsafe_parent_loads=true"] # This is far from ideal. Bug 1565279 covers removing this pref flip.
@@ -54,6 +55,7 @@ prefs = ["security.allow_unsafe_parent_loads=true"] # This is far from ideal. Bu
 skip-if = [
   "debug", # no point in running on both opt and debug, and will likely intermittently timeout on debug, Bug 1598726
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && ccov",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && ccov",
 ]
 
 ["../../../../browser/base/content/test/static/browser_parsable_css.js"]
@@ -114,6 +116,7 @@ skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan", # Bug 1966872
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # Bug 1966872
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && asan", # Bug 1966872
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && asan", # Bug 1966872
 ]
 
 ["browser_target_cached-front.js"]
@@ -194,7 +197,12 @@ run-if = [
   "os != 'win'", # Content process killing throws on Window
 ]
 
+["browser_toolbox_measure_button_highlighter_destroy.js"]
+
 ["browser_toolbox_meatball.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2034604
+]
 
 ["browser_toolbox_options.js"]
 
@@ -218,11 +226,19 @@ skip-if = [
 
 ["browser_toolbox_options_frames_button.js"]
 
+["browser_toolbox_options_local_mode.js"]
+
+["browser_toolbox_options_local_mode_notice.js"]
+
 ["browser_toolbox_options_multiple_tabs.js"]
 
 ["browser_toolbox_options_panel_toggle.js"]
 
 ["browser_toolbox_popups_debugging.js"]
+support-files = [
+  "doc_popups_debugging.html",
+  "doc_popups_debugging_popup.html",
+]
 
 ["browser_toolbox_races.js"]
 
@@ -246,6 +262,9 @@ disabled = "Bug 962258"
 ["browser_toolbox_show_toolbox_tool_ready.js"]
 
 ["browser_toolbox_split_console.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 2021290
+]
 
 ["browser_toolbox_tabsswitch_shortcuts.js"]
 

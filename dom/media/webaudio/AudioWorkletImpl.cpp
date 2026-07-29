@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -78,19 +76,15 @@ nsresult AudioWorkletImpl::SendControlMessage(
 }
 
 void AudioWorkletImpl::OnAddModuleStarted() const {
-#ifdef MOZ_GECKO_PROFILER
   profiler_add_marker(ProfilerStringView("AudioWorklet.addModule"),
                       geckoprofiler::category::MEDIA_RT,
                       {MarkerTiming::IntervalStart()});
-#endif
 }
 
 void AudioWorkletImpl::OnAddModulePromiseSettled() const {
-#ifdef MOZ_GECKO_PROFILER
   profiler_add_marker(ProfilerStringView("AudioWorklet.addModule"),
                       geckoprofiler::category::MEDIA_RT,
                       {MarkerTiming::IntervalEnd()});
-#endif
 }
 
 already_AddRefed<dom::WorkletGlobalScope>

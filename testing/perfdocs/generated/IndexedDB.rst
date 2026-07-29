@@ -57,7 +57,7 @@ How to add more tests?
 * Generated files:
 
   * Run ``./mach lint --warnings --outgoing --fix`` to regenerate the documentation and task files, and warn about omissions
-  * Running ``./mach lint -l perfdocs --fix .`` may also be needed
+  * Running ``./mach perfdocs --generate`` may also be needed
 
 * Testing:
 

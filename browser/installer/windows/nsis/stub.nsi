@@ -1,3 +1,6 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
 Unicode true
 
 OutFile "setup-stub.exe"
@@ -145,6 +148,7 @@ Function .onInit
   ClearErrors
   ${GetOptions} "$0" "/UAC:" $1
   ${If} ${Errors}
+    Call EnsureSingleInstance
     ClearErrors
     ${GetOptions} "$0" "/Prompt" $1
     ${IfNot} ${Errors}
@@ -157,6 +161,17 @@ Function .onInit
     ${EndIf}
   ${EndIf}
   Call CommonOnInit
+FunctionEnd
+
+Function EnsureSingleInstance
+  StrCpy $R0 "Mozilla${BrandFullNameInternal}StubInstallerMutex"
+  System::Call 'kernel32::CreateMutexW(i 0, i 0, w "$R0") i.s ?e'
+  Pop $R0  ; GetLastError
+  Pop $R1  ; Mutex handle
+  ${If} $R0 == 183 ; ERROR_ALREADY_EXISTS
+    System::Call 'kernel32::CloseHandle(i $R1)'
+    Quit
+  ${EndIf}
 FunctionEnd
 
 Function .onUserAbort

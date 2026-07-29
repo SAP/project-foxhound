@@ -9,6 +9,38 @@ newtab-page-title = Rakïj ñanj nakàa
 newtab-settings-button =
     .title = Naduna dàj garan' ruhuât riña ñanj nakàa
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Rakïj ñanj nakàa
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num }dukuáan
+           *[other] { $num }ga'ì dukuáan
+        }
+home-restore-defaults-srd =
+    .label = Nagi'io' ru'ua nìanj
+    .accesskey = R
+home-mode-choice-custom-srd =
+    .label = Nagi'iaj mu'ù nej URL...
+home-mode-choice-blank-srd =
+    .label = Ñanj gatsìi
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Nej sa du'uej
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Nej ñanj ngà' ni'io'
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Sa raj sun nichrò' doj
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Hiàj naduninj ma
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +48,7 @@ newtab-search-box-search-button =
     .title = Nana'uì'
     .aria-label = Nana'uì'
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Nutò' a'ngô sa ruguñu'unj ñù' nana'uì'
 newtab-topsites-edit-topsites-header = Nagi'io' sitio yitïnj in

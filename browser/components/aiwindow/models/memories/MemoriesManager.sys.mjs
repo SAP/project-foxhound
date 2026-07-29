@@ -12,19 +12,23 @@ import {
 } from "moz-src:///browser/components/aiwindow/models/memories/MemoriesHistorySource.sys.mjs";
 import { getRecentChats } from "./MemoriesChatSource.sys.mjs";
 import {
-  DEFAULT_ENGINE_ID,
   MODEL_FEATURES,
   openAIEngine,
   renderPrompt,
-  SERVICE_TYPES,
 } from "moz-src:///browser/components/aiwindow/models/Utils.sys.mjs";
+import {
+  loadCallContext,
+  loadPrompt,
+} from "moz-src:///browser/components/aiwindow/models/PromptLoader.sys.mjs";
+
 import { MemoryStore } from "moz-src:///browser/components/aiwindow/services/MemoryStore.sys.mjs";
 import {
   CATEGORIES,
   INTENTS,
   HISTORY as SOURCE_HISTORY,
   CONVERSATION as SOURCE_CONVERSATION,
-  PREF_GENERATE_MEMORIES,
+  PREF_GENERATE_MEMORIES_FROM_HISTORY,
+  PREF_GENERATE_MEMORIES_FROM_CONVERSATION,
 } from "moz-src:///browser/components/aiwindow/models/memories/MemoriesConstants.sys.mjs";
 import {
   getFormattedMemoryAttributeList,
@@ -57,6 +61,8 @@ const DEFAULT_CHAT_HALF_LIFE_DAYS_FULL_RESULTS = 7;
 
 const LAST_HISTORY_MEMORY_TS_ATTRIBUTE = "last_history_memory_ts";
 const LAST_CONVERSATION_MEMORY_TS_ATTRIBUTE = "last_chat_memory_ts";
+
+const PREF_FIRSTRUN_HAS_COMPLETED = "browser.smartwindow.firstrun.hasCompleted";
 /**
  * MemoriesManager class
  */
@@ -82,12 +88,17 @@ export class MemoriesManager {
    * @returns {Promise<openAIEngine>}  openAIEngine instance
    */
   static async ensureOpenAIEngineForGeneration() {
-    const buildFresh = () => {
-      this.#openAIEngineGenerationPromise = openAIEngine.build(
-        MODEL_FEATURES.MEMORIES_INITIAL_GENERATION_SYSTEM,
-        `${DEFAULT_ENGINE_ID}-memories-generation`,
-        SERVICE_TYPES.MEMORIES
+    const buildFresh = async () => {
+      const callContext = await loadCallContext(
+        MODEL_FEATURES.MEMORIES_INITIAL_GENERATION_SYSTEM
       );
+      this.#openAIEngineGenerationPromise = openAIEngine.build({
+        model: callContext.model,
+        serviceType: callContext.serviceType,
+        purpose: callContext.purpose,
+        flowId: null,
+        feature: MODEL_FEATURES.MEMORIES_INITIAL_GENERATION_SYSTEM,
+      });
       return this.#openAIEngineGenerationPromise;
     };
 
@@ -118,12 +129,17 @@ export class MemoriesManager {
    * @returns {Promise<openAIEngine>}  openAIEngine instance
    */
   static async ensureOpenAIEngineForUsage() {
-    const buildFresh = () => {
-      this.#openAIEngineUsagePromise = openAIEngine.build(
-        MODEL_FEATURES.MEMORIES_MESSAGE_CLASSIFICATION_SYSTEM,
-        `${DEFAULT_ENGINE_ID}-memories-usage`,
-        SERVICE_TYPES.MEMORIES
+    const buildFresh = async () => {
+      const callContext = await loadCallContext(
+        MODEL_FEATURES.MEMORIES_MESSAGE_CLASSIFICATION_SYSTEM
       );
+      this.#openAIEngineUsagePromise = openAIEngine.build({
+        model: callContext.model,
+        serviceType: callContext.serviceType,
+        purpose: callContext.purpose,
+        flowId: null,
+        feature: MODEL_FEATURES.MEMORIES_MESSAGE_CLASSIFICATION_SYSTEM,
+      });
       return this.#openAIEngineUsagePromise;
     };
 
@@ -399,7 +415,7 @@ export class MemoriesManager {
    * Retrieves memories by ID.
    * This is a quick-access wrapper around MemoryStore.getMemories() specifically requiring the memoryIds option.
    *
-   * @param {Array<string>} memoryIds   List of memory IDs
+   * @param {Set<string>} memoryIds   Set of memory IDs
    * @returns {Promise<Array<Map<{
    *  memory_summary: string,
    *  category: string,
@@ -454,7 +470,10 @@ export class MemoriesManager {
 
     if (Array.isArray(generatedMemories)) {
       for (const memoryPartial of generatedMemories) {
-        const stored = await MemoryStore.addMemory(memoryPartial);
+        const stored = await MemoryStore.addMemory({
+          ...memoryPartial,
+          source,
+        });
         persistedMemories.push(stored);
       }
     }
@@ -514,11 +533,13 @@ export class MemoriesManager {
    * Hard deletion permenantly removes the memory from storage entirely. This method should be used
    * by UI to allow users to delete memories they no longer want stored.
    *
-   * @param {string} memoryId        ID of the memory to hard-delete
-   * @returns {Promise<boolean>}      True if the memory was found and deleted, false otherwise
+   * @param {string} memoryId       ID of the memory to hard-delete
+   * @param {string} trigger        What was the trigger (assistant, settings, other)
+   * @param {number|null} inUse     Number of memories still applied to the message after removal, or null if not triggered by assistant
+   * @returns {Promise<boolean>}    True if the memory was found and deleted, false otherwise
    */
-  static async hardDeleteMemoryById(memoryId) {
-    return await MemoryStore.hardDeleteMemory(memoryId);
+  static async hardDeleteMemoryById(memoryId, trigger, inUse) {
+    return await MemoryStore.hardDeleteMemory(memoryId, trigger, inUse);
   }
 
   /**
@@ -529,10 +550,10 @@ export class MemoriesManager {
    */
   static async memoryClassifyMessage(message) {
     const engine = await this.ensureOpenAIEngineForUsage();
-    const systemPrompt = await engine.loadPrompt(
+    const { prompt: systemPrompt } = await loadPrompt(
       MODEL_FEATURES.MEMORIES_MESSAGE_CLASSIFICATION_SYSTEM
     );
-    const userPromptTemplate = await engine.loadPrompt(
+    const { prompt: userPromptTemplate } = await loadPrompt(
       MODEL_FEATURES.MEMORIES_MESSAGE_CLASSIFICATION_USER
     );
     const userPrompt = await renderPrompt(userPromptTemplate, {
@@ -616,7 +637,7 @@ export class MemoriesManager {
   static async getRelevantMemories(
     message,
     topK = 5,
-    similarityThreshold = 0.3
+    similarityThreshold = 0.22
   ) {
     const memories = await MemoriesManager.getAllMemories();
 
@@ -626,10 +647,7 @@ export class MemoriesManager {
 
     // Lazy initialize embeddings generator
     if (!this.#embeddingsGenerator) {
-      this.#embeddingsGenerator = new EmbeddingsGenerator({
-        backend: "onnx-native",
-        embeddingSize: 384,
-      });
+      this.#embeddingsGenerator = EmbeddingsGenerator.forGeneral();
     }
 
     // Re-embed memories only if cache is invalid
@@ -671,25 +689,54 @@ export class MemoriesManager {
   }
 
   /**
-   * Helper returns true if memories generation should be enabled.
+   * Helper returns true if memories generation from sources (either browsing history / conversation)
+   * should be enabled.
    *
    * Gating logic for all schedulers:
    * - browser.smartwindow.enabled pref
-   * - memories-specific pref
+   * - memories-from-source specific pref (history / conversation)
+   * - ToS consent
+   * - browser.smartwindow.firstrun.hasCompleted pref
    * - and whether any AIWindow is currently active
    *
    * If window APIs are not available (or throw), this falls back to false.
+   *
+   * @param {string} source - either SOURCE_HISTORY or SOURCE_CONVERSATION.
+   * @return {boolean}
    */
-  static shouldEnableMemoriesSchedulers() {
+  static shouldEnableMemoriesFromSchedulers(source) {
     // Pref checks
     const aiWindowEnabled = AIWindow.isAIWindowEnabled();
-    const memoriesEnabled = Services.prefs.getBoolPref(
-      PREF_GENERATE_MEMORIES,
-      false
-    );
+    let memoriesEnabled;
+    if (source === SOURCE_HISTORY) {
+      memoriesEnabled = Services.prefs.getBoolPref(
+        PREF_GENERATE_MEMORIES_FROM_HISTORY,
+        false
+      );
+    } else if (source === SOURCE_CONVERSATION) {
+      memoriesEnabled = Services.prefs.getBoolPref(
+        PREF_GENERATE_MEMORIES_FROM_CONVERSATION,
+        false
+      );
+    } else {
+      throw new TypeError(
+        `Invalid source passed to shouldEnableMemoriesFromSchedulers: ${source}`
+      );
+    }
+
     const hasConsent = AIWindowAccountAuth.hasToSConsent;
 
-    if (!aiWindowEnabled || !memoriesEnabled || !hasConsent) {
+    const hasFirstrunCompleted = Services.prefs.getBoolPref(
+      PREF_FIRSTRUN_HAS_COMPLETED,
+      false
+    );
+
+    if (
+      !aiWindowEnabled ||
+      !memoriesEnabled ||
+      !hasConsent ||
+      !hasFirstrunCompleted
+    ) {
       return false;
     }
 

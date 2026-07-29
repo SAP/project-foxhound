@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +6,7 @@
 #include "SocketProcessLogging.h"
 
 #include "base/task.h"
+#include "SSLTokensCache.h"
 #include "InputChannelThrottleQueueChild.h"
 #include "HttpInfo.h"
 #include "HttpTransactionChild.h"
@@ -27,6 +27,7 @@
 #include "mozilla/net/ProxyAutoConfigChild.h"
 #include "mozilla/net/SocketProcessBackgroundChild.h"
 #include "mozilla/net/TRRServiceChild.h"
+#include "mozilla/net/AppleFastDatapathProbe.h"
 #include "mozilla/ipc/ProcessUtils.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/RemoteLazyInputStreamChild.h"
@@ -66,10 +67,6 @@
 #endif
 
 #include "ChildProfilerController.h"
-
-#ifdef MOZ_WEBRTC
-#  include "mozilla/net/WebrtcTCPSocketChild.h"
-#endif
 
 #if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
 #  include "mozilla/SandboxTestingChild.h"
@@ -296,6 +293,22 @@ mozilla::ipc::IPCResult SocketProcessChild::RecvInit(
       aAttributes.mIsReadyForBackgroundProcessing());
 #endif  // defined(XP_WIN)
 
+#if defined(XP_MACOSX) || defined(XP_IOS)
+  if (aAttributes.mAppleFastDatapathProbeAllowed()) {
+    NS_DispatchBackgroundTask(
+        NS_NewRunnableFunction("net::AppleFastDatapathProbe", []() {
+          bool result = InitAppleFastDatapathProbe();
+          NS_DispatchToMainThread(NS_NewRunnableFunction(
+              "net::AppleFastDatapathProbeResult", [result]() {
+                if (SocketProcessChild* child =
+                        SocketProcessChild::GetSingleton()) {
+                  (void)child->SendAppleFastDatapathProbeResult(result);
+                }
+              }));
+        }));
+  }
+#endif  // defined(XP_MACOSX) || defined(XP_IOS)
+
   return IPC_OK();
 }
 
@@ -400,25 +413,6 @@ void SocketProcessChild::DestroySocketProcessBridgeParent(ProcessId aId) {
   MOZ_ASSERT(NS_IsMainThread());
 
   mSocketProcessBridgeParentMap.Remove(aId);
-}
-
-PWebrtcTCPSocketChild* SocketProcessChild::AllocPWebrtcTCPSocketChild(
-    const Maybe<TabId>& tabId) {
-  // We don't allocate here: instead we always use IPDL constructor that takes
-  // an existing object
-  MOZ_ASSERT_UNREACHABLE(
-      "AllocPWebrtcTCPSocketChild should not be called on"
-      " socket child");
-  return nullptr;
-}
-
-bool SocketProcessChild::DeallocPWebrtcTCPSocketChild(
-    PWebrtcTCPSocketChild* aActor) {
-#ifdef MOZ_WEBRTC
-  WebrtcTCPSocketChild* child = static_cast<WebrtcTCPSocketChild*>(aActor);
-  child->ReleaseIPDLReference();
-#endif
-  return true;
 }
 
 already_AddRefed<PHttpTransactionChild>
@@ -768,6 +762,18 @@ mozilla::ipc::IPCResult SocketProcessChild::RecvRecheckDNS() {
 mozilla::ipc::IPCResult SocketProcessChild::RecvFlushFOGData(
     FlushFOGDataResolver&& aResolver) {
   glean::FlushFOGData(std::move(aResolver));
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult SocketProcessChild::RecvLoadSSLTokensCache(
+    ByteBuf&& aBuf) {
+  SSLTokensCache::DeserializeFromIPCAsync(std::move(aBuf));
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult SocketProcessChild::RecvFlushSSLTokensCache(
+    FlushSSLTokensCacheResolver&& aResolver) {
+  aResolver(mozilla::ipc::ByteBufFrom(SSLTokensCache::SerializeForIPC()));
   return IPC_OK();
 }
 

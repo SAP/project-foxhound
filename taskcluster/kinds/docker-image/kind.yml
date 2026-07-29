@@ -235,7 +235,7 @@ tasks:
             - deb12-valgrind
     lint:
         symbol: I(lnt)
-        parent: debian12-base
+        parent: debian13-base
     # Neither the debian12-raw nor the debian12-packages images can have
     # packages dependencies.
     debian12-raw:

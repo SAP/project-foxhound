@@ -4,7 +4,7 @@
 
 "use strict";
 
-const SPECIALVALUES = new Set(["initial", "inherit", "unset"]);
+const SPECIALVALUES = new Set(InspectorUtils.getCSSWideKeywords());
 
 const {
   InspectorCSSParserWrapper,

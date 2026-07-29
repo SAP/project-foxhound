@@ -12,7 +12,11 @@ import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import mozilla.components.ExperimentalAndroidComponentsApi
 import mozilla.components.concept.fetch.Client
+import mozilla.components.feature.ipprotection.store.IPProtectionStore
+import mozilla.components.feature.ipprotection.store.state.EligibilityStatus
+import mozilla.components.feature.ipprotection.store.state.IPProtectionState
 import mozilla.components.service.fxa.manager.FxaAccountManager
 import mozilla.components.service.fxrelay.eligibility.Eligible
 import mozilla.components.service.fxrelay.eligibility.Ineligible
@@ -21,7 +25,6 @@ import mozilla.components.service.fxrelay.eligibility.RelayState
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -29,12 +32,11 @@ import org.junit.runner.RunWith
 import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.getPreferenceKey
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.utils.Settings
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import java.io.IOException
-
+import kotlin.test.assertNotNull
 @RunWith(RobolectricTestRunner::class)
 class SettingsFragmentTest {
     private val settingsFragment = SettingsFragment()
@@ -80,7 +82,7 @@ class SettingsFragmentTest {
             true,
         )
         assertNotNull(preferenceAmoCollectionOverride)
-        assertFalse(preferenceAmoCollectionOverride!!.isVisible)
+        assertFalse(preferenceAmoCollectionOverride.isVisible)
 
         val settings: Settings = mockk(relaxed = true)
         every { settings.showSecretDebugMenuThisSession } returns true
@@ -109,7 +111,7 @@ class SettingsFragmentTest {
 
         settingsFragment.setupInstallAddonFromFilePreference(mockk(relaxed = true))
         assertNotNull(preference)
-        assertFalse(preference!!.isVisible)
+        assertFalse(preference.isVisible)
 
         val settings: Settings = mockk(relaxed = true)
 
@@ -139,7 +141,7 @@ class SettingsFragmentTest {
             true,
         )
         assertNotNull(preferenceAmoCollectionOverride)
-        assertFalse(preferenceAmoCollectionOverride!!.isVisible)
+        assertFalse(preferenceAmoCollectionOverride.isVisible)
 
         val settings: Settings = mockk(relaxed = true)
         every { settings.showSecretDebugMenuThisSession } returns false
@@ -181,7 +183,7 @@ class SettingsFragmentTest {
             false,
         )
         assertNotNull(preferenceAmoCollectionOverride)
-        assertFalse(preferenceAmoCollectionOverride!!.isVisible)
+        assertFalse(preferenceAmoCollectionOverride.isVisible)
 
         every { settings.showSecretDebugMenuThisSession } returns true
         every { settings.amoCollectionOverrideConfigured() } returns true
@@ -225,14 +227,14 @@ class SettingsFragmentTest {
         val homepagePreference = settingsFragment.requirePreference<Preference>(
             R.string.pref_key_home,
         )
-        every { testContext.settings().alwaysOpenTheHomepageWhenOpeningTheApp } returns false
-        every { testContext.settings().openHomepageAfterFourHoursOfInactivity } returns true
-        every { testContext.settings().alwaysOpenTheLastTabWhenOpeningTheApp } returns false
+        every { testContext.components.settings.alwaysOpenTheHomepageWhenOpeningTheApp } returns false
+        every { testContext.components.settings.openHomepageAfterFourHoursOfInactivity } returns true
+        every { testContext.components.settings.alwaysOpenTheLastTabWhenOpeningTheApp } returns false
         assertTrue(homepagePreference.summary.isNullOrEmpty())
         val summary =
             testContext.getString(R.string.opening_screen_after_four_hours_of_inactivity_summary)
 
-        settingsFragment.setupHomepagePreference(testContext.settings())
+        settingsFragment.setupHomepagePreference(testContext.components.settings)
 
         assertEquals(summary, homepagePreference.summary)
     }
@@ -242,13 +244,13 @@ class SettingsFragmentTest {
         val homepagePreference = settingsFragment.requirePreference<Preference>(
             R.string.pref_key_home,
         )
-        every { testContext.settings().alwaysOpenTheHomepageWhenOpeningTheApp } returns false
-        every { testContext.settings().openHomepageAfterFourHoursOfInactivity } returns false
-        every { testContext.settings().alwaysOpenTheLastTabWhenOpeningTheApp } returns true
+        every { testContext.components.settings.alwaysOpenTheHomepageWhenOpeningTheApp } returns false
+        every { testContext.components.settings.openHomepageAfterFourHoursOfInactivity } returns false
+        every { testContext.components.settings.alwaysOpenTheLastTabWhenOpeningTheApp } returns true
         assertTrue(homepagePreference.summary.isNullOrEmpty())
         val summary = testContext.getString(R.string.opening_screen_last_tab_summary)
 
-        settingsFragment.setupHomepagePreference(testContext.settings())
+        settingsFragment.setupHomepagePreference(testContext.components.settings)
 
         assertEquals(summary, homepagePreference.summary)
     }
@@ -258,13 +260,13 @@ class SettingsFragmentTest {
         val homepagePreference = settingsFragment.requirePreference<Preference>(
             R.string.pref_key_home,
         )
-        every { testContext.settings().alwaysOpenTheHomepageWhenOpeningTheApp } returns true
-        every { testContext.settings().openHomepageAfterFourHoursOfInactivity } returns false
-        every { testContext.settings().alwaysOpenTheLastTabWhenOpeningTheApp } returns false
+        every { testContext.components.settings.alwaysOpenTheHomepageWhenOpeningTheApp } returns true
+        every { testContext.components.settings.openHomepageAfterFourHoursOfInactivity } returns false
+        every { testContext.components.settings.alwaysOpenTheLastTabWhenOpeningTheApp } returns false
         assertTrue(homepagePreference.summary.isNullOrEmpty())
         val summary = testContext.getString(R.string.opening_screen_homepage_summary)
 
-        settingsFragment.setupHomepagePreference(testContext.settings())
+        settingsFragment.setupHomepagePreference(testContext.components.settings)
 
         assertEquals(summary, homepagePreference.summary)
     }
@@ -288,14 +290,14 @@ class SettingsFragmentTest {
         val trackingProtectionPreference = settingsFragment.requirePreference<Preference>(
             R.string.pref_key_tracking_protection_settings,
         )
-        every { testContext.settings().shouldUseTrackingProtection } returns true
-        every { testContext.settings().useStandardTrackingProtection } returns false
-        every { testContext.settings().useStrictTrackingProtection } returns false
-        every { testContext.settings().useCustomTrackingProtection } returns true
+        every { testContext.components.settings.shouldUseTrackingProtection } returns true
+        every { testContext.components.settings.useStandardTrackingProtection } returns false
+        every { testContext.components.settings.useStrictTrackingProtection } returns false
+        every { testContext.components.settings.useCustomTrackingProtection } returns true
         assertTrue(trackingProtectionPreference.summary.isNullOrEmpty())
         val summary = testContext.getString(R.string.tracking_protection_custom)
 
-        settingsFragment.setupTrackingProtectionPreference(testContext.settings())
+        settingsFragment.setupTrackingProtectionPreference(testContext.components.settings)
 
         assertEquals(summary, trackingProtectionPreference.summary)
     }
@@ -305,14 +307,14 @@ class SettingsFragmentTest {
         val trackingProtectionPreference = settingsFragment.requirePreference<Preference>(
             R.string.pref_key_tracking_protection_settings,
         )
-        every { testContext.settings().shouldUseTrackingProtection } returns true
-        every { testContext.settings().useStandardTrackingProtection } returns false
-        every { testContext.settings().useStrictTrackingProtection } returns true
-        every { testContext.settings().useCustomTrackingProtection } returns false
+        every { testContext.components.settings.shouldUseTrackingProtection } returns true
+        every { testContext.components.settings.useStandardTrackingProtection } returns false
+        every { testContext.components.settings.useStrictTrackingProtection } returns true
+        every { testContext.components.settings.useCustomTrackingProtection } returns false
         assertTrue(trackingProtectionPreference.summary.isNullOrEmpty())
         val summary = testContext.getString(R.string.tracking_protection_strict)
 
-        settingsFragment.setupTrackingProtectionPreference(testContext.settings())
+        settingsFragment.setupTrackingProtectionPreference(testContext.components.settings)
 
         assertEquals(summary, trackingProtectionPreference.summary)
     }
@@ -322,14 +324,14 @@ class SettingsFragmentTest {
         val trackingProtectionPreference = settingsFragment.requirePreference<Preference>(
             R.string.pref_key_tracking_protection_settings,
         )
-        every { testContext.settings().shouldUseTrackingProtection } returns true
-        every { testContext.settings().useStandardTrackingProtection } returns true
-        every { testContext.settings().useStrictTrackingProtection } returns false
-        every { testContext.settings().useCustomTrackingProtection } returns false
+        every { testContext.components.settings.shouldUseTrackingProtection } returns true
+        every { testContext.components.settings.useStandardTrackingProtection } returns true
+        every { testContext.components.settings.useStrictTrackingProtection } returns false
+        every { testContext.components.settings.useCustomTrackingProtection } returns false
         assertTrue(trackingProtectionPreference.summary.isNullOrEmpty())
         val summary = testContext.getString(R.string.tracking_protection_standard)
 
-        settingsFragment.setupTrackingProtectionPreference(testContext.settings())
+        settingsFragment.setupTrackingProtectionPreference(testContext.components.settings)
 
         assertEquals(summary, trackingProtectionPreference.summary)
     }
@@ -339,11 +341,11 @@ class SettingsFragmentTest {
         val trackingProtectionPreference = settingsFragment.requirePreference<Preference>(
             R.string.pref_key_tracking_protection_settings,
         )
-        every { testContext.settings().shouldUseTrackingProtection } returns false
+        every { testContext.components.settings.shouldUseTrackingProtection } returns false
         assertTrue(trackingProtectionPreference.summary.isNullOrEmpty())
         val summary = testContext.getString(R.string.tracking_protection_off)
 
-        settingsFragment.setupTrackingProtectionPreference(testContext.settings())
+        settingsFragment.setupTrackingProtectionPreference(testContext.components.settings)
 
         assertEquals(summary, trackingProtectionPreference.summary)
     }
@@ -353,13 +355,13 @@ class SettingsFragmentTest {
         val httpsOnlyPreference = settingsFragment.findPreference<Preference>(
             settingsFragment.getPreferenceKey(R.string.pref_key_https_only_settings),
         )!!
-        every { testContext.settings().shouldUseHttpsOnly } returns true
-        every { testContext.settings().shouldUseHttpsOnlyInPrivateTabsOnly } returns true
-        every { testContext.settings().shouldUseHttpsOnlyInAllTabs } returns false
+        every { testContext.components.settings.shouldUseHttpsOnly } returns true
+        every { testContext.components.settings.shouldUseHttpsOnlyInPrivateTabsOnly } returns true
+        every { testContext.components.settings.shouldUseHttpsOnlyInAllTabs } returns false
         assertTrue(httpsOnlyPreference.summary.isNullOrEmpty())
         val summary = testContext.getString(R.string.preferences_https_only_on_private)
 
-        settingsFragment.setupHttpsOnlyPreferences(testContext.settings())
+        settingsFragment.setupHttpsOnlyPreferences(testContext.components.settings)
 
         assertEquals(summary, httpsOnlyPreference.summary)
     }
@@ -369,13 +371,13 @@ class SettingsFragmentTest {
         val httpsOnlyPreference = settingsFragment.findPreference<Preference>(
             settingsFragment.getPreferenceKey(R.string.pref_key_https_only_settings),
         )!!
-        every { testContext.settings().shouldUseHttpsOnly } returns true
-        every { testContext.settings().shouldUseHttpsOnlyInAllTabs } returns true
-        every { testContext.settings().shouldUseHttpsOnlyInPrivateTabsOnly } returns false
+        every { testContext.components.settings.shouldUseHttpsOnly } returns true
+        every { testContext.components.settings.shouldUseHttpsOnlyInAllTabs } returns true
+        every { testContext.components.settings.shouldUseHttpsOnlyInPrivateTabsOnly } returns false
         assertTrue(httpsOnlyPreference.summary.isNullOrEmpty())
         val summary = testContext.getString(R.string.preferences_https_only_on_all)
 
-        settingsFragment.setupHttpsOnlyPreferences(testContext.settings())
+        settingsFragment.setupHttpsOnlyPreferences(testContext.components.settings)
 
         assertEquals(summary, httpsOnlyPreference.summary)
     }
@@ -385,11 +387,11 @@ class SettingsFragmentTest {
         val httpsOnlyPreference = settingsFragment.findPreference<Preference>(
             settingsFragment.getPreferenceKey(R.string.pref_key_https_only_settings),
         )!!
-        every { testContext.settings().shouldUseHttpsOnly } returns false
+        every { testContext.components.settings.shouldUseHttpsOnly } returns false
         assertTrue(httpsOnlyPreference.summary.isNullOrEmpty())
         val summary = testContext.getString(R.string.preferences_https_only_off)
 
-        settingsFragment.setupHttpsOnlyPreferences(testContext.settings())
+        settingsFragment.setupHttpsOnlyPreferences(testContext.components.settings)
 
         assertEquals(summary, httpsOnlyPreference.summary)
     }
@@ -419,10 +421,10 @@ class SettingsFragmentTest {
         val preference = settingsFragment.requirePreference<Preference>(
             R.string.pref_key_email_masks,
         )
-        every { testContext.settings().isEmailMaskFeatureEnabled } returns true
+        every { testContext.components.settings.isEmailMaskFeatureEnabled } returns true
         every { testContext.components.relayEligibilityStore } returns RelayEligibilityStore(RelayState(Eligible.Premium))
 
-        settingsFragment.setupEmailMaskPreference(testContext.settings(), testContext.components)
+        settingsFragment.setupEmailMaskPreference(testContext.components.settings, testContext.components)
 
         assertTrue(preference.isVisible)
     }
@@ -432,10 +434,10 @@ class SettingsFragmentTest {
         val preference = settingsFragment.requirePreference<Preference>(
             R.string.pref_key_email_masks,
         )
-        every { testContext.settings().isEmailMaskFeatureEnabled } returns true
+        every { testContext.components.settings.isEmailMaskFeatureEnabled } returns true
         every { testContext.components.relayEligibilityStore } returns RelayEligibilityStore(RelayState(Ineligible.FirefoxAccountNotLoggedIn))
 
-        settingsFragment.setupEmailMaskPreference(testContext.settings(), testContext.components)
+        settingsFragment.setupEmailMaskPreference(testContext.components.settings, testContext.components)
 
         assertFalse(preference.isVisible)
     }
@@ -445,10 +447,10 @@ class SettingsFragmentTest {
         val preference = settingsFragment.requirePreference<Preference>(
             R.string.pref_key_email_masks,
         )
-        every { testContext.settings().isEmailMaskFeatureEnabled } returns false
+        every { testContext.components.settings.isEmailMaskFeatureEnabled } returns false
         every { testContext.components.relayEligibilityStore } returns RelayEligibilityStore(RelayState(Eligible.Premium))
 
-        settingsFragment.setupEmailMaskPreference(testContext.settings(), testContext.components)
+        settingsFragment.setupEmailMaskPreference(testContext.components.settings, testContext.components)
 
         assertFalse(preference.isVisible)
     }
@@ -458,10 +460,42 @@ class SettingsFragmentTest {
         val preference = settingsFragment.requirePreference<Preference>(
             R.string.pref_key_email_masks,
         )
-        every { testContext.settings().isEmailMaskFeatureEnabled } returns false
+        every { testContext.components.settings.isEmailMaskFeatureEnabled } returns false
         every { testContext.components.relayEligibilityStore } returns RelayEligibilityStore(RelayState(Ineligible.FirefoxAccountNotLoggedIn))
 
-        settingsFragment.setupEmailMaskPreference(testContext.settings(), testContext.components)
+        settingsFragment.setupEmailMaskPreference(testContext.components.settings, testContext.components)
+
+        assertFalse(preference.isVisible)
+    }
+
+    @OptIn(ExperimentalAndroidComponentsApi::class)
+    @Test
+    fun `WHEN ip protection feature is available for the user THEN preference is visible`() {
+        val preference = settingsFragment.requirePreference<Preference>(
+            R.string.pref_key_ip_protection_settings,
+        )
+
+        settingsFragment.setupIPProtectionPreferences(
+            ipProtectionStore = IPProtectionStore(
+                initialState = IPProtectionState(EligibilityStatus.Eligible),
+            ),
+        )
+
+        assertTrue(preference.isVisible)
+    }
+
+    @OptIn(ExperimentalAndroidComponentsApi::class)
+    @Test
+    fun `WHEN ip protection feature is not available for the user THEN preference is hidden`() {
+        val preference = settingsFragment.requirePreference<Preference>(
+            R.string.pref_key_ip_protection_settings,
+        )
+
+        settingsFragment.setupIPProtectionPreferences(
+            ipProtectionStore = IPProtectionStore(
+                initialState = IPProtectionState(EligibilityStatus.UnsupportedRegion),
+            ),
+        )
 
         assertFalse(preference.isVisible)
     }

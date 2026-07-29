@@ -10,12 +10,6 @@ registerCleanupFunction(async function asyncCleanup() {
   await resetCustomization();
 });
 
-add_setup(async function () {
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.search.widget.new", false]],
-  });
-});
-
 // Default state no longer overflows at minimum window width (bug 1960002).
 // Add buttons to trigger overflow, resize to a small window, resize back,
 // shouldn't change state.

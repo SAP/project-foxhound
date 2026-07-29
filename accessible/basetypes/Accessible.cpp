@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,18 +24,18 @@ using namespace mozilla;
 using namespace mozilla::a11y;
 
 Accessible::Accessible()
-    : mType(static_cast<uint32_t>(0)),
+    : mType(eNoType),
       mGenericTypes(static_cast<uint32_t>(0)),
       mRoleMapEntryIndex(aria::NO_ROLE_MAP_ENTRY_INDEX) {}
 
 Accessible::Accessible(AccType aType, AccGenericType aGenericTypes,
                        uint8_t aRoleMapEntryIndex)
-    : mType(static_cast<uint32_t>(aType)),
+    : mType(aType),
       mGenericTypes(static_cast<uint32_t>(aGenericTypes)),
       mRoleMapEntryIndex(aRoleMapEntryIndex) {}
 
 void Accessible::StaticAsserts() const {
-  static_assert(eLastAccType <= (1 << kTypeBits) - 1,
+  static_assert(kHighestAccType <= (1 << kTypeBits) - 1,
                 "Accessible::mType was oversized by eLastAccType!");
   static_assert(
       eLastAccGenericType <= (1 << kGenericTypesBits) - 1,
@@ -392,24 +391,10 @@ int32_t Accessible::GetLevel(bool aFast) const {
       }
     }
   } else if (role == roles::HEADING) {
-    nsAtom* tagName = TagName();
-    if (tagName == nsGkAtoms::h1) {
-      return 1;
-    }
-    if (tagName == nsGkAtoms::h2) {
-      return 2;
-    }
-    if (tagName == nsGkAtoms::h3) {
-      return 3;
-    }
-    if (tagName == nsGkAtoms::h4) {
-      return 4;
-    }
-    if (tagName == nsGkAtoms::h5) {
-      return 5;
-    }
-    if (tagName == nsGkAtoms::h6) {
-      return 6;
+    const uint8_t level = HeadingLevel();
+    if (level) {
+      MOZ_ASSERT(level > 0 && level <= 9);
+      return level;
     }
 
     const nsRoleMapEntry* ariaRole = this->ARIARoleMap();
@@ -938,43 +923,13 @@ role Accessible::ARIATransformRole(role aRole) const {
              : accRole == roles::GROUPING ? AncestorSearchOption::Continue
                                           : AncestorSearchOption::NotFound;
     });
-    if (!listbox) {
-      // Orphaned option outside the context of a listbox.
-      return NativeRole();
-    }
-
-    if (listbox->Role() == roles::COMBOBOX_LIST) {
+    if (listbox && listbox->Role() == roles::COMBOBOX_LIST) {
       return roles::COMBOBOX_OPTION;
     }
   } else if (aRole == roles::MENUITEM) {
     // Menuitem has a submenu.
     if (ARIAAttrValueIs(nsGkAtoms::aria_haspopup, nsGkAtoms::_true)) {
       return roles::PARENT_MENUITEM;
-    }
-
-    // Orphaned menuitem outside the context of a menu/menubar.
-    const Accessible* menu = FindAncestorIf([](const Accessible& aAcc) {
-      const role accRole = aAcc.Role();
-      return (accRole == roles::MENUBAR || accRole == roles::MENUPOPUP)
-                 ? AncestorSearchOption::Found
-             : accRole == roles::GROUPING ? AncestorSearchOption::Continue
-                                          : AncestorSearchOption::NotFound;
-    });
-    if (!menu) {
-      return NativeRole();
-    }
-  } else if (aRole == roles::RADIO_MENU_ITEM ||
-             aRole == roles::CHECK_MENU_ITEM) {
-    // Orphaned radio/checkbox menuitem outside the context of a menu/menubar.
-    const Accessible* menu = FindAncestorIf([](const Accessible& aAcc) {
-      const role accRole = aAcc.Role();
-      return (accRole == roles::MENUBAR || accRole == roles::MENUPOPUP)
-                 ? AncestorSearchOption::Found
-             : accRole == roles::GROUPING ? AncestorSearchOption::Continue
-                                          : AncestorSearchOption::NotFound;
-    });
-    if (!menu) {
-      return NativeRole();
     }
   } else if (aRole == roles::CELL) {
     // A cell inside an ancestor table element that has a grid role needs a
@@ -983,63 +938,6 @@ role Accessible::ARIATransformRole(role aRole) const {
     const Accessible* table = nsAccUtils::TableFor(this);
     if (table && table->IsARIARole(nsGkAtoms::grid)) {
       return roles::GRID_CELL;
-    }
-  } else if (aRole == roles::ROW) {
-    // Orphaned rows outside the context of a table.
-    const Accessible* table = nsAccUtils::TableFor(this);
-    if (!table) {
-      return NativeRole();
-    }
-  } else if (aRole == roles::ROWGROUP) {
-    // Orphaned rowgroups outside the context of a table.
-    const Accessible* table = FindAncestorIf([](const Accessible& aAcc) {
-      return aAcc.IsTable() ? AncestorSearchOption::Found
-                            : AncestorSearchOption::NotFound;
-    });
-    if (!table) {
-      return NativeRole();
-    }
-  } else if (aRole == roles::GRID_CELL || aRole == roles::ROWHEADER ||
-             aRole == roles::COLUMNHEADER) {
-    // Orphaned gridcell/rowheader/columnheader outside the context of a row.
-    const Accessible* row = FindAncestorIf([](const Accessible& aAcc) {
-      return aAcc.IsTableRow() ? AncestorSearchOption::Found
-                               : AncestorSearchOption::NotFound;
-    });
-    if (!row) {
-      return NativeRole();
-    }
-  } else if (aRole == roles::LISTITEM) {
-    // doc-biblioentry and doc-endnote should not be treated as listitems.
-    const nsRoleMapEntry* roleMapEntry = ARIARoleMap();
-    if (!roleMapEntry || (roleMapEntry->roleAtom != nsGkAtoms::docBiblioentry &&
-                          roleMapEntry->roleAtom != nsGkAtoms::docEndnote)) {
-      // Orphaned listitem outside the context of a list.
-      const Accessible* list = FindAncestorIf([](const Accessible& aAcc) {
-        return aAcc.IsList() ? AncestorSearchOption::Found
-                             : AncestorSearchOption::Continue;
-      });
-      if (!list) {
-        return NativeRole();
-      }
-    }
-  } else if (aRole == roles::PAGETAB) {
-    // Orphaned tab outside the context of a tablist.
-    const Accessible* tablist = FindAncestorIf([](const Accessible& aAcc) {
-      return aAcc.Role() == roles::PAGETABLIST ? AncestorSearchOption::Found
-                                               : AncestorSearchOption::NotFound;
-    });
-    if (!tablist) {
-      return NativeRole();
-    }
-  } else if (aRole == roles::OUTLINEITEM) {
-    // Orphaned treeitem outside the context of a tree.
-    const Accessible* tree = FindAncestorIf([](const Accessible& aAcc) {
-      return aAcc.Role() == roles::OUTLINE ? AncestorSearchOption::Found
-                                           : AncestorSearchOption::Continue;
-    });
-    if (!tree) {
-      return NativeRole();
     }
   }
 

@@ -8,15 +8,15 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   IPPExceptionsManager:
-    "moz-src:///browser/components/ipprotection/IPPExceptionsManager.sys.mjs",
+    "moz-src:///toolkit/components/ipprotection/IPPExceptionsManager.sys.mjs",
   IPPProxyManager:
-    "moz-src:///browser/components/ipprotection/IPPProxyManager.sys.mjs",
+    "moz-src:///toolkit/components/ipprotection/IPPProxyManager.sys.mjs",
   IPProtectionService:
-    "moz-src:///browser/components/ipprotection/IPProtectionService.sys.mjs",
+    "moz-src:///toolkit/components/ipprotection/IPProtectionService.sys.mjs",
 });
 
 const { ERRORS } = ChromeUtils.importESModule(
-  "chrome://browser/content/ipprotection/ipprotection-constants.mjs"
+  "moz-src:///toolkit/components/ipprotection/IPPProxyManager.sys.mjs"
 );
 
 async function resetStateToObj(content, originalState) {
@@ -56,8 +56,7 @@ add_task(async function user_start_and_stop() {
   Assert.ok(content, "Panel content should be present");
 
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: true,
+    isReady: true,
   });
   IPProtectionService.updateState();
   await content.updateComplete;
@@ -123,8 +122,7 @@ add_task(async function start_in_private_browsing() {
   await putServerInRemoteSettings();
 
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: true,
+    isReady: true,
   });
   IPProtectionService.updateState();
 
@@ -192,7 +190,6 @@ add_task(async function click_upgrade_button() {
 
   Assert.ok(content, "Panel content should be present");
 
-  content.state.isSignedOut = false;
   content.state.paused = true;
   content.requestUpdate();
   await content.updateComplete;
@@ -272,8 +269,7 @@ add_task(async function stop_on_shutdown() {
   Assert.ok(content, "Panel content should be present");
 
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: true,
+    isReady: true,
   });
   IPProtectionService.updateState();
   await content.updateComplete;
@@ -470,8 +466,7 @@ add_task(async function test_exclusion_added() {
  */
 add_task(async function test_get_started() {
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: false,
+    isReady: false,
   });
   IPProtectionService.updateState();
   await openPanel();
@@ -504,8 +499,7 @@ add_task(async function test_get_started() {
  */
 add_task(async function test_enrollment() {
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: false,
+    isReady: false,
   });
   IPProtectionService.updateState();
 

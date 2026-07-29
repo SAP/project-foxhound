@@ -354,7 +354,7 @@ C/C++ practices
 ---------------
 
 -  **Have you checked for compiler warnings?** Warnings often point to
-   real bugs. `Many of them <https://searchfox.org/mozilla-central/source/build/moz.configure/warnings.configure>`__
+   real bugs. :searchfox:`Many of them <build/moz.configure/warnings.configure>`
    are enabled by default in the build system.
 -  In C++ code, use ``nullptr`` for pointers. In C code, using ``NULL``
    or ``0`` is allowed.
@@ -491,8 +491,6 @@ included in a large number of translation units.
 
    .. code-block:: cpp
 
-      /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-      /* vim: set ts=8 sts=2 et sw=2 tw=80: */
       /* This Source Code Form is subject to the terms of the Mozilla Public
       * License, v. 2.0. If a copy of the MPL was not distributed with this file,
       * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -528,8 +526,6 @@ An example header file based on these rules (with some extra comments):
 
 .. code-block:: cpp
 
-   /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-   /* vim: set ts=8 sts=2 et sw=2 tw=80: */
    /* This Source Code Form is subject to the terms of the Mozilla Public
    * License, v. 2.0. If a copy of the MPL was not distributed with this file,
    * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -586,8 +582,6 @@ Corresponding implementation file:
 
 .. code-block:: cpp
 
-   /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-   /* vim: set ts=8 sts=2 et sw=2 tw=80: */
    /* This Source Code Form is subject to the terms of the Mozilla Public
    * License, v. 2.0. If a copy of the MPL was not distributed with this file,
    * You can obtain one at http://mozilla.org/MPL/2.0/. */

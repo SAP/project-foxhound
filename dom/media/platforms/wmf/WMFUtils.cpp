@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,9 +10,7 @@
 #include <shlwapi.h>
 #include <stdint.h>
 
-#ifdef MOZ_AV1
-#  include "AOMDecoder.h"
-#endif
+#include "AOMDecoder.h"
 #include "MP4Decoder.h"
 #include "VPXDecoder.h"
 #include "VideoUtils.h"
@@ -71,11 +67,9 @@ WMFStreamType GetStreamTypeFromMimeType(const nsCString& aMimeType) {
   if (VPXDecoder::IsVP9(aMimeType)) {
     return WMFStreamType::VP9;
   }
-#ifdef MOZ_AV1
   if (AOMDecoder::IsAV1(aMimeType)) {
     return WMFStreamType::AV1;
   }
-#endif
   if (MP4Decoder::IsHEVC(aMimeType)) {
     return WMFStreamType::HEVC;
   }
@@ -355,11 +349,9 @@ GUID VideoMimeTypeToMediaFoundationSubtype(const nsACString& aMimeType) {
   if (VPXDecoder::IsVP9(aMimeType)) {
     return MFVideoFormat_VP90;
   }
-#ifdef MOZ_AV1
   if (AOMDecoder::IsAV1(aMimeType)) {
     return MFVideoFormat_AV1;
   }
-#endif
   if (MP4Decoder::IsHEVC(aMimeType)) {
     return MFVideoFormat_HEVC;
   }
@@ -516,7 +508,10 @@ HRESULT
 MediaFoundationInitializer::MFShutdown() {
   ENSURE_FUNCTION_PTR(MFShutdown, Mfplat.dll)
   HRESULT hr = E_FAIL;
-  mozilla::mscom::EnsureMTA([&]() -> void { hr = (MFShutdownPtr)(); });
+  mozilla::mscom::EnsureMTA([&]() -> void {
+    StaticMutexAutoLock lock(sMFTEnumShutdownMutex);
+    hr = (MFShutdownPtr)();
+  });
   return hr;
 }
 
@@ -581,6 +576,7 @@ MFTEnumEx(GUID guidCategory, UINT32 Flags,
           const MFT_REGISTER_TYPE_INFO* pOutputType,
           IMFActivate*** pppMFTActivate, UINT32* pnumMFTActivate) {
   ENSURE_FUNCTION_PTR(MFTEnumEx, mfplat.dll)
+  StaticMutexAutoLock lock(sMFTEnumShutdownMutex);
   return (MFTEnumExPtr)(guidCategory, Flags, pInputType, pOutputType,
                         pppMFTActivate, pnumMFTActivate);
 }

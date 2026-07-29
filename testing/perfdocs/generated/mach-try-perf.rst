@@ -14,84 +14,97 @@ The tool is built to be conservative about the number of tests to run, so if you
 
     $ ./mach try perf --help
 
-    optional arguments:
+    usage: mach [global arguments] try perf [command arguments]
+
+    Global Arguments:
+      -v, --verbose         Print verbose output.
+      -q, --quiet           Don't print as much output.
+      -l FILENAME, --log-file FILENAME
+                            Filename to write log data to.
+      --log-interval        Prefix log line with interval from last message rather than relative time. Note that this is NOT
+                            execution time if there are parallel operations.
+      --no-interactive      Automatically selects the default option on any interactive prompts. If the output is not a
+                            terminal, then --no-interactive is assumed.
+      --log-no-times        Do not prefix log lines with times. By default, mach will prefix each output line with the time
+                            since command start.
+      -h, --help            Show this help message.
+      --debug-command       Start a Python debugger when command is dispatched.
+      --profile-command     Capture a Python profile of the mach process as command is dispatched.
+      --settings FILENAME   Path to settings file.
+
+    options:
       -h, --help            show this help message and exit
+
     perf arguments:
-      --show-all            Show all available tasks. Alternatively, --full may be used.
-      --chrome              Show tests available for Chrome-based browsers (disabled by
-                            default).
-      --custom-car          Show tests available for Custom Chromium-as-Release (disabled by
-                            default)
+      --show-all, --full, --all-tasks
+                            Show all available tasks. Alternatively, --full may be used.
+      --chrome              Show tests available for Chrome-based browsers (disabled by default).
+      --custom-car          Show tests available for Custom Chromium-as-Release (disabled by default)
       --safari              Show tests available for Safari (disabled by default).
-      --safari-tp           Show tests available for Safari Technology Preview(disabled by
-                            default).
-      --live-sites          Run tasks with live sites (if possible). You can also use the
-                            `live-sites` variant.
-      --profile             Run tasks with profiling (if possible). You can also use the
-                            `profiling` variant.
+      --safari-tp           Show tests available for Safari Technology Preview(disabled by default).
+      --live-sites          Run tasks with live sites (if possible). You can also use the `live-sites` variant.
+      --profile             Run tasks with profiling (if possible). You can also use the `profiling` variant.
       --single-run          Run tasks without a comparison
       -q QUERY, --query QUERY
-                            Query to run in either the perf-category selector, or the fuzzy
-                            selector if --show-all/--full is provided.
+                            Query to run in either the perf-category selector, or the fuzzy selector if --show-all/--full is
+                            provided.
       --browsertime-upload-apk BROWSERTIME_UPLOAD_APK
-                            Path to an APK to upload. Note that this will replace the APK
-                            installed in all Android Performance tests. If the Activity,
-                            Binary Path, or Intents required change at all relative to the
-                            existing GeckoView, and Fenix tasks, then you will need to make
-                            fixes in the associated taskcluster files (e.g.
-                            taskcluster/kinds/browsertime/mobile.yml). Alternatively, set
-                            MOZ_FIREFOX_ANDROID_APK_OUTPUT to a path to an APK, and then run
-                            the command with --browsertime-upload-apk firefox-android. This
-                            option will only copy the APK for browsertime, see --mozperftest-
-                            upload-apk to upload APKs for startup tests.
+                            Path to an APK to upload. Note that this will replace the APK installed in all Android Performance
+                            tests. If the Activity, Binary Path, or Intents required change at all relative to the existing
+                            GeckoView, and Fenix tasks, then you will need to make fixes in the associated taskcluster files
+                            (e.g. taskcluster/kinds/browsertime/mobile.yml). Alternatively, set MOZ_FIREFOX_ANDROID_APK_OUTPUT
+                            to a path to an APK, and then run the command with --browsertime-upload-apk firefox-android. This
+                            option will only copy the APK for browsertime, see --mozperftest-upload-apk to upload APKs for
+                            startup tests.
       --mozperftest-upload-apk MOZPERFTEST_UPLOAD_APK
-                            See --browsertime-upload-apk. This option does the same thing
-                            except it's for mozperftest tests such as the startup ones. Note
-                            that those tests only exist through --show-all/--full as they aren't
+                            See --browsertime-upload-apk. This option does the same thing except it's for mozperftest tests
+                            such as the startup ones. Note that those tests only exist through --show-all/--full as they aren't
                             contained in any existing categories.
       --detect-changes      Adds a task that detects performance changes using MWU.
       --comparator COMPARATOR
-                            Either a path to a file to setup a custom comparison, or a builtin
-                            name. See the Firefox source docs for mach try perf for examples
-                            of how to build your own, along with the interface.
-      --comparator-args [ARG=VALUE [ARG=VALUE ...]]
-                            Arguments provided to the base, and new revision setup stages of
-                            the comparator.
-      --variants [ [ ...]]  Select variants to display in the selector from: fission,
-                            bytecode-cached, live-sites, profiling, swr
-      --platforms [ [ ...]]
-                            Select specific platforms to target.
-                            Available platforms: android-a55, android, windows,
-                            linux, macosx, desktop
-      --apps [ [ ...]]      Select specific applications to target from: firefox, chrome,
-                            geckoview, fenix, chrome-m, safari, safari-tp, custom-car, cstm-
-                            car-m
+                            Either a path to a file to setup a custom comparison, or a builtin name. See the Firefox source
+                            docs for mach try perf for examples of how to build your own, along with the interface.
+      --comparator-args [ARG=VALUE ...]
+                            Arguments provided to the base, and new revision setup stages of the comparator.
+      --variants [ ...]     Select variants to display in the selector from: fission, bytecode-cached, live-sites, profiling,
+                            swr
+      --platforms [ ...]    Select specific platforms to target. Available platforms: android-a55, android, windows, linux,
+                            macosx, desktop
+      --apps [ ...]         Select specific applications to target from: firefox, chrome, geckoview, fenix, chrome-m, safari,
+                            safari-tp, custom-car, cstm-car-m
       --clear-cache         Deletes the try_perf_revision_cache file
-      --alert ALERT         Run all tests that produced this alert summary ID based on the
-                            alert summary table in either the alerts view or the regression
-                            bug. The comparison that is produced will be based on the base
-                            revision in your local repository (i.e. the base revision your
-                            patches, if any, are based on). If only specific tests need to
-                            run, use --tests to specify them (e.g. --tests webaudio).
-      --extra-args [ [ ...]]
-                            Set the extra args (e.x, --extra-args verbose post-startup-
-                            delay=1)
-      --non-pgo             Use opt/non-pgo builds instead of shippable/pgo builds. Setting
-                            this flag will result in faster try runs.
-      --tests [TESTS [TESTS ...]], -t [TESTS [TESTS ...]]
-                            Select from all tasks that run these specific tests (e.g. amazon, or
-                            speedometer3).
+      --alert ALERT         Run all tests that produced this alert summary ID based on the alert summary table in either the
+                            alerts view or the regression bug. The comparison that is produced will be based on the base
+                            revision in your local repository (i.e. the base revision your patches, if any, are based on). If
+                            only specific tests need to run, use --tests to specify them (e.g. --tests webaudio).
+      --extra-args [ ...]   Set the extra args (e.x, --extra-args verbose post-startup-delay=1)
+      --non-pgo             Use opt/non-pgo builds instead of shippable/pgo builds. Setting this flag will result in faster try
+                            runs.
+      --tests [TESTS ...], -t [TESTS ...]
+                            Select from all tasks that run these specific tests (e.g. amazon, or speedometer3).
+
+    push arguments:
+      -m [MESSAGE], --message [MESSAGE]
+                            Use the specified commit message, or create it in your $EDITOR if blank. Defaults to computed
+                            message.
+      --closed-tree         Push despite a closed try tree
+      --push-to-vcs         Submit changes directly to VCS instead of Lando. Set `MACH_TRY_PUSH_TO_VCS=1` in the environment to
+                            force this.
+      --stage-changes       Locally stage changes created by this command but do not push to try.
+      --no-push             Do not push to try as a result of running this command (if specified this command will only print
+                            calculated task selection info and not change files).
 
     task configuration arguments:
       --artifact            Force artifact builds where possible.
       --no-artifact         Disable artifact builds even if being used locally.
       --browsertime         Use browsertime during Raptor tasks.
+      --build-car           Force rebuild of custom-car toolchains instead of reusing mozilla-central artifacts.
       --disable-pgo         Don't run PGO builds
-      --env ENV             Set an environment variable, of the form FOO=BAR. Can
-                            be passed in multiple times.
-      --gecko-profile       Create and upload a gecko profile during talos/raptor
-                            tasks. Copy paste the parameters used in this profiling
-                            run directly from about:profiling in Nightly.
+      --env ENV             Set an environment variable, of the form FOO=BAR. Can be passed in multiple times.
+      --record              Get a screen recording of the tests where possible.
+      --profiler            Enable the profiler by setting MOZ_PROFILER_STARTUP=1.
+      --gecko-profile       Create and upload a gecko profile during talos/raptor tasks. Copy paste the parameters used in this
+                            profiling run directly from about:profiling in Nightly.
       --gecko-profile-interval GECKO_PROFILE_INTERVAL
                             How frequently to take samples (ms)
       --gecko-profile-entries GECKO_PROFILE_ENTRIES
@@ -100,10 +113,12 @@ The tool is built to be conservative about the number of tests to run, so if you
                             Set the features enabled for the profiler.
       --gecko-profile-threads GECKO_PROFILE_THREADS
                             Comma-separated list of threads to sample.
-      paths                 Run tasks containing tests under the specified
-                            path(s).
-      --rebuild [1-20]      Rebuild all selected tasks the specified number of
-                            times.
+      --native-profiling    Use OS-native profilers (Simpleperf for Android and xperf for Windows) when running tests. Only
+                            available in raptor-browsertime tests at the moment.
+      paths                 Run tasks containing tests under the specified path(s).
+      --allow-testfile-path
+                            Opt in to pass a specific testfile path (ie not only a folder)
+      --rebuild [1-20]      Rebuild all selected tasks the specified number of times.
 
 
 
@@ -341,7 +356,7 @@ In the future, this section will be populated dynamically. If you are wondering 
 Adding a New Category
 ---------------------
 
-It's very easy to add a new category if needed, and you can do so by modifying the `PerfParser categories attribute here <https://searchfox.org/mozilla-central/source/tools/tryselect/selectors/perf.py#179>`_. The following is an example of a complex category that gives a good idea of what you have available::
+It's very easy to add a new category if needed, and you can do so by modifying the :searchfox:`PerfParser categories attribute here <tools/tryselect/selectors/perf.py#179>`. The following is an example of a complex category that gives a good idea of what you have available::
 
      "Resource Usage": {
          "query": {

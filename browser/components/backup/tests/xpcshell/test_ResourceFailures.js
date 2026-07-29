@@ -6,6 +6,7 @@ https://creativecommons.org/publicdomain/zero/1.0/ */
 ChromeUtils.defineESModuleGetters(this, {
   BackupError: "resource:///modules/backup/BackupError.mjs",
   ERRORS: "chrome://browser/content/backup/backup-constants.mjs",
+  RESTORE_STEPS: "chrome://browser/content/backup/backup-constants.mjs",
   AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
 });
 
@@ -18,6 +19,8 @@ add_setup(function () {
  * the complete recover process to error out.
  */
 add_task(async function testResourceFailure() {
+  Services.fog.testResetFOG();
+
   let sandbox = sinon.createSandbox();
   registerCleanupFunction(() => {
     sandbox.restore();
@@ -89,6 +92,9 @@ add_task(async function testResourceFailure() {
     "createBackupTestRecoveredProfile"
   );
 
+  await bs.loadBackupFileInfo(backupFilePath);
+  const restoreID = bs.state.restoreID;
+
   await Assert.rejects(
     bs.recoverFromBackupArchive(
       backupFilePath,
@@ -103,6 +109,29 @@ add_task(async function testResourceFailure() {
 
   // Since we fail on backupResource2, backupResource1 should never be called
   sinon.assert.notCalled(FakeBackupResource1.prototype.recover);
+
+  let events = Glean.browserBackup.restoreFailed.testGetValue();
+  Assert.equal(events.length, 1, "Should have one restore failed event");
+  Assert.equal(
+    events[0].extra.restore_id,
+    restoreID,
+    "Restore failure event should have correct restore_id"
+  );
+  Assert.equal(
+    events[0].extra.error_type,
+    "RECOVERY_FAILED",
+    "Restore failure event should have RECOVERY_FAILED error_type"
+  );
+  Assert.equal(
+    events[0].extra.error_detail,
+    "fake2",
+    "Restore failure event should have the failed resource key"
+  );
+  Assert.equal(
+    events[0].extra.restore_step,
+    "RECOVER_RESOURCE:fake2",
+    "Restore failure event should have resource-specific restore_step"
+  );
 
   // Ideally, we should be removing any left over data when we fail.
   // The current behavior does not do this, so let's clear the paths

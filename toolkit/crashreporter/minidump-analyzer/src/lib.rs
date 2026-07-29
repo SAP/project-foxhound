@@ -92,14 +92,11 @@ impl<'a> MinidumpAnalyzer<'a> {
         let used_modules = get_used_modules(&call_stacks, proc.main_module());
 
         // Set the `StackTraces` field in the extra JSON data.
-        extra_json["StackTraces"] = json!({
-            "status": call_stack_status(&call_stacks),
-            "crash_info": {
-                "type": crash_type,
-                "address": format!("{crash_address:#x}"),
-                "crashing_thread": crashing_thread_idx
-                // TODO: "assertion" when there's no crash indicator
-            },
+        let mut stack_traces = json!({
+            "error": call_stack_error(&call_stacks),
+            "crash_type": crash_type,
+            "crash_address": format!("{crash_address:#x}"),
+            "crash_thread": crashing_thread_idx,
             "main_module": proc.main_module().and_then(|m| module_index(&used_modules, m)),
             "modules": used_modules.iter().map(|module| {
                 let code_file = module.code_file();
@@ -110,8 +107,8 @@ impl<'a> MinidumpAnalyzer<'a> {
                 }
 
                 json!({
-                    "base_addr": format!("{:#x}", module.base_address()),
-                    "end_addr": format!("{:#x}", module.base_address() + module.size()),
+                    "base_address": format!("{:#x}", module.base_address()),
+                    "end_address": format!("{:#x}", module.base_address() + module.size()),
                     "filename": file_name_str(code_file_path),
                     "code_id": module.code_identifier().as_ref().map(|id| id.as_str()),
                     // `debug_file` may be a file path with additional components; we just want the
@@ -125,8 +122,8 @@ impl<'a> MinidumpAnalyzer<'a> {
                 let code_file = module.code_file();
                 let code_file_path: &std::path::Path = code_file.as_ref().as_ref();
                 json!({
-                    "base_addr": format!("{:#x}", module.base_address()),
-                    "end_addr": format!("{:#x}", module.base_address() + module.size()),
+                    "base_address": format!("{:#x}", module.base_address()),
+                    "end_address": format!("{:#x}", module.base_address() + module.size()),
                     "filename": code_file_path.file_name().map(|s| s.to_string_lossy()),
                     "code_id": module.code_identifier().as_ref().map(|id| id.as_str()),
                 })
@@ -136,7 +133,8 @@ impl<'a> MinidumpAnalyzer<'a> {
 
         // StackTraces should not have null values (upstream processing expects the values to be
         // omitted).
-        remove_nulls(&mut extra_json["StackTraces"]);
+        remove_nulls(&mut stack_traces);
+        extra_json["StackTraces"] = serde_json::to_string(&stack_traces).unwrap().into();
 
         let module_signature_info = proc.module_signature_info();
         if !module_signature_info.is_null() {
@@ -536,26 +534,19 @@ fn call_stack_to_json(call_stack: &CallStack, modules: &[&MinidumpModule]) -> Js
     })
 }
 
-fn call_stack_status(stacks: &[CallStack]) -> JsonValue {
-    let mut error_string = String::new();
-
+fn call_stack_error(stacks: &[CallStack]) -> Option<String> {
     for (_i, s) in stacks.iter().enumerate() {
         match s.info {
             CallStackInfo::Ok | CallStackInfo::DumpThreadSkipped => (),
             CallStackInfo::UnsupportedCpu => {
                 // If the CPU is unsupported, it ought to be the same error for every thread.
-                error_string = "unsupported cpu".into();
-                break;
+                return Some("unsupported cpu".into());
             }
             // We ignore these errors as they are permissible wrt the overall status.
             CallStackInfo::MissingContext | CallStackInfo::MissingMemory => (),
         }
     }
-    if error_string.is_empty() {
-        "OK".into()
-    } else {
-        error_string.into()
-    }
+    None
 }
 
 /// Remove all object entries which have null values.

@@ -49,27 +49,20 @@ add_task(async function test_unconfigured_initial_state() {
     );
 
     // Test telemetry for signing into Firefox Accounts.
-    await clearAllParentTelemetryEvents();
+    Services.fog.testResetFOG();
     EventUtils.synthesizeMouseAtCenter(
-      emptyState.querySelector(`button[data-action="sign-in"]`),
+      emptyState.querySelector(`moz-button[data-action="sign-in"]`).buttonEl,
       {},
       browser.contentWindow
     );
-    await TestUtils.waitForCondition(
-      () =>
-        Services.telemetry.snapshotEvents(
-          Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS
-        ).parent?.length >= 1,
-      "Waiting for fxa_continue firefoxview telemetry event.",
-      200,
-      100
+    Assert.equal(
+      1,
+      Glean.firefoxviewNext.fxaContinueSync.testGetValue().length,
+      "Expected one fxa_continue event."
     );
-    TelemetryTestUtils.assertEvents(
-      [["firefoxview_next", "fxa_continue", "sync"]],
-      { category: "firefoxview_next" },
-      { clear: true, process: "parent" }
+    await BrowserTestUtils.removeTab(
+      browser.documentGlobal.gBrowser.selectedTab
     );
-    await BrowserTestUtils.removeTab(browser.ownerGlobal.gBrowser.selectedTab);
   });
   await tearDown(sandbox);
 });
@@ -96,7 +89,10 @@ add_task(async function test_signed_in() {
     let syncedTabsComponent = document.querySelector(
       "view-syncedtabs:not([slot=syncedtabs])"
     );
-    await TestUtils.waitForCondition(() => syncedTabsComponent.fullyUpdated);
+    await TestUtils.waitForCondition(
+      () => syncedTabsComponent.fullyUpdated,
+      "Waiting for the synced tabs component to be fully updated"
+    );
     let emptyState =
       syncedTabsComponent.shadowRoot.querySelector("fxview-empty-state");
     ok(
@@ -140,25 +136,16 @@ add_task(async function test_signed_in() {
 
     await openFirefoxViewTab(window);
     // Test telemetry for adding a device.
-    await clearAllParentTelemetryEvents();
+    Services.fog.testResetFOG();
     EventUtils.synthesizeMouseAtCenter(
-      emptyState.querySelector(`button[data-action="add-device"]`),
+      emptyState.querySelector(`moz-button[data-action="add-device"]`).buttonEl,
       {},
       browser.contentWindow
     );
-    await TestUtils.waitForCondition(
-      () =>
-        Services.telemetry.snapshotEvents(
-          Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS
-        ).parent?.length >= 1,
-      "Waiting for fxa_mobile firefoxview telemetry event.",
-      200,
-      100
-    );
-    TelemetryTestUtils.assertEvents(
-      [["firefoxview_next", "fxa_mobile", "sync"]],
-      { category: "firefoxview_next" },
-      { clear: true, process: "parent" }
+    Assert.equal(
+      1,
+      Glean.firefoxviewNext.fxaMobileSync.testGetValue().length,
+      "Expected one fxa_continue event."
     );
     // clean up extra tabs
     while (gBrowser.tabs.length > 1) {
@@ -197,7 +184,10 @@ add_task(async function test_no_synced_tabs() {
     let syncedTabsComponent = document.querySelector(
       "view-syncedtabs:not([slot=syncedtabs])"
     );
-    await TestUtils.waitForCondition(() => syncedTabsComponent.fullyUpdated);
+    await TestUtils.waitForCondition(
+      () => syncedTabsComponent.fullyUpdated,
+      "Waiting for the synced tabs component to be fully updated"
+    );
     let emptyState =
       syncedTabsComponent.shadowRoot.querySelector("fxview-empty-state");
     ok(
@@ -237,7 +227,10 @@ add_task(async function test_no_error_for_two_desktop() {
     let syncedTabsComponent = document.querySelector(
       "view-syncedtabs:not([slot=syncedtabs])"
     );
-    await TestUtils.waitForCondition(() => syncedTabsComponent.fullyUpdated);
+    await TestUtils.waitForCondition(
+      () => syncedTabsComponent.fullyUpdated,
+      "Waiting for the synced tabs component to be fully updated"
+    );
     let emptyState =
       syncedTabsComponent.shadowRoot.querySelector("fxview-empty-state");
     is(emptyState, null, "No empty state should be shown");
@@ -281,7 +274,10 @@ add_task(async function test_empty_state() {
     let syncedTabsComponent = document.querySelector(
       "view-syncedtabs:not([slot=syncedtabs])"
     );
-    await TestUtils.waitForCondition(() => syncedTabsComponent.fullyUpdated);
+    await TestUtils.waitForCondition(
+      () => syncedTabsComponent.fullyUpdated,
+      "Waiting for the synced tabs component to be fully updated"
+    );
     let noTabs = syncedTabsComponent.shadowRoot.querySelectorAll(".notabs");
     is(noTabs.length, 2, "Should be 2 empty devices");
 
@@ -329,7 +325,10 @@ add_task(async function test_tabs() {
     let syncedTabsComponent = document.querySelector(
       "view-syncedtabs:not([slot=syncedtabs])"
     );
-    await TestUtils.waitForCondition(() => syncedTabsComponent.fullyUpdated);
+    await TestUtils.waitForCondition(
+      () => syncedTabsComponent.fullyUpdated,
+      "Waiting for the synced tabs component to be fully updated"
+    );
 
     let headers =
       syncedTabsComponent.shadowRoot.querySelectorAll("h3[slot=header]");
@@ -347,7 +346,7 @@ add_task(async function test_tabs() {
     let tabLists = syncedTabsComponent.tabLists;
     await TestUtils.waitForCondition(() => {
       return tabLists[0].rowEls.length;
-    });
+    }, "Waiting for the first synced tab list to have row elements");
     let tabRow1 = tabLists[0].rowEls;
     ok(
       tabRow1[0].shadowRoot.textContent.includes,
@@ -361,30 +360,11 @@ add_task(async function test_tabs() {
     ok(tabRow1[1].shadowRoot.textContent.includes, "The Times");
 
     // Test telemetry for opening a tab.
-    await clearAllParentTelemetryEvents();
+    Services.fog.testResetFOG();
     EventUtils.synthesizeMouseAtCenter(tabRow1[0], {}, browser.contentWindow);
-    await TestUtils.waitForCondition(
-      () =>
-        Services.telemetry.snapshotEvents(
-          Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS
-        ).parent?.length >= 1,
-      "Waiting for synced_tabs firefoxview telemetry event.",
-      200,
-      100
-    );
-    TelemetryTestUtils.assertEvents(
-      [
-        [
-          "firefoxview_next",
-          "synced_tabs",
-          "tabs",
-          null,
-          { page: "syncedtabs" },
-        ],
-      ],
-      { category: "firefoxview_next" },
-      { clear: true, process: "parent" }
-    );
+    const syncEvents = Glean.firefoxviewNext.syncedTabsTabs.testGetValue();
+    Assert.equal(1, syncEvents.length, "Expected one synced_tabs event.");
+    Assert.deepEqual({ page: "syncedtabs" }, syncEvents[0].extra);
   });
   await tearDown(sandbox);
 });
@@ -417,7 +397,10 @@ add_task(async function test_empty_desktop_same_name() {
     let syncedTabsComponent = document.querySelector(
       "view-syncedtabs:not([slot=syncedtabs])"
     );
-    await TestUtils.waitForCondition(() => syncedTabsComponent.fullyUpdated);
+    await TestUtils.waitForCondition(
+      () => syncedTabsComponent.fullyUpdated,
+      "Waiting for the synced tabs component to be fully updated"
+    );
     let noTabs = syncedTabsComponent.shadowRoot.querySelectorAll(".notabs");
     is(noTabs.length, 1, "Should be 1 empty devices");
 
@@ -465,7 +448,10 @@ add_task(async function test_empty_desktop_same_name_three() {
     let syncedTabsComponent = document.querySelector(
       "view-syncedtabs:not([slot=syncedtabs])"
     );
-    await TestUtils.waitForCondition(() => syncedTabsComponent.fullyUpdated);
+    await TestUtils.waitForCondition(
+      () => syncedTabsComponent.fullyUpdated,
+      "Waiting for the synced tabs component to be fully updated"
+    );
     let noTabs = syncedTabsComponent.shadowRoot.querySelectorAll(".notabs");
     is(noTabs.length, 2, "Should be 2 empty devices");
 
@@ -508,7 +494,10 @@ add_task(async function search_synced_tabs() {
     let syncedTabsComponent = document.querySelector(
       "view-syncedtabs:not([slot=syncedtabs])"
     );
-    await TestUtils.waitForCondition(() => syncedTabsComponent.fullyUpdated);
+    await TestUtils.waitForCondition(
+      () => syncedTabsComponent.fullyUpdated,
+      "Waiting for the synced tabs component to be fully updated"
+    );
 
     is(syncedTabsComponent.cardEls.length, 2, "There are two device cards.");
     await TestUtils.waitForCondition(
@@ -559,13 +548,9 @@ add_task(async function search_synced_tabs() {
     );
 
     info("Clear the search query.");
-    let inputChildren = SpecialPowers.InspectorUtils.getChildrenForNode(
-      syncedTabsComponent.searchTextbox.inputEl,
-      true,
-      false
+    let clearButton = SpecialPowers.getInputButton(
+      syncedTabsComponent.searchTextbox.inputEl
     );
-    info(`INPUT CHILDREN: ${inputChildren}`);
-    let clearButton = inputChildren.find(e => e.localName == "button");
     info(`CLEAR BUTTON: ${clearButton}`);
     EventUtils.synthesizeMouseAtCenter(clearButton, {}, content);
     await TestUtils.waitForCondition(
@@ -629,12 +614,9 @@ add_task(async function search_synced_tabs() {
     );
 
     info("Clear the search query.");
-    inputChildren = SpecialPowers.InspectorUtils.getChildrenForNode(
-      syncedTabsComponent.searchTextbox.inputEl,
-      true,
-      false
+    clearButton = SpecialPowers.getInputButton(
+      syncedTabsComponent.searchTextbox.inputEl
     );
-    clearButton = inputChildren.find(e => e.localName == "button");
     EventUtils.synthesizeMouseAtCenter(clearButton, {}, content);
     await TestUtils.waitForCondition(
       () => syncedTabsComponent.fullyUpdated,
@@ -783,8 +765,10 @@ add_task(async function search_synced_tabs_recent_browsing() {
     );
 
     info("Click the Show All link.");
-    const showAllLink = await TestUtils.waitForCondition(() =>
-      slot.shadowRoot.querySelector("[data-l10n-id='firefoxview-show-all']")
+    const showAllLink = await TestUtils.waitForCondition(
+      () =>
+        slot.shadowRoot.querySelector("[data-l10n-id='firefoxview-show-all']"),
+      "The show all link to be available in the slot's shadow root"
     );
     is(showAllLink.role, "link", "The show all control is a link.");
     EventUtils.synthesizeMouseAtCenter(showAllLink, {}, content);
@@ -1023,9 +1007,13 @@ add_task(async function test_tab_sync_enabled() {
     );
 
     const actionButton = syncedTabsComponent.emptyState?.querySelector(
-      "button[data-action=sync-tabs-disabled]"
+      "moz-button[data-action=sync-tabs-disabled]"
     );
-    EventUtils.synthesizeMouseAtCenter(actionButton, {}, browser.contentWindow);
+    EventUtils.synthesizeMouseAtCenter(
+      actionButton.buttonEl,
+      {},
+      browser.contentWindow
+    );
     await TestUtils.waitForCondition(
       () => syncedTabsComponent.fullyUpdated,
       "Synced tabs component is fully updated."

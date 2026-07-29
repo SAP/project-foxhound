@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=4 et :
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -118,7 +115,7 @@ class ProducerView {
   template <typename T>
   bool WriteFromRange(const Range<const T>& src) {
     static_assert(BytesAlwaysValidT<T>::value);
-    if (MOZ_LIKELY(mOk)) {
+    if (mOk) [[likely]] {
       mOk &= mProducer->WriteFromRange(src);
     }
     return mOk;
@@ -172,9 +169,9 @@ class ConsumerView {
 
     const auto dest = AsRange(destBegin, destEnd);
     const auto view = ReadRange<T>(dest.length());
-    if (MOZ_LIKELY(view)) {
+    if (view) [[likely]] {
       const auto byteSize = ByteSize(dest);
-      if (MOZ_LIKELY(byteSize)) {
+      if (byteSize) [[likely]] {
         memcpy(dest.begin().get(), view->begin().get(), byteSize);
       }
     }
@@ -185,7 +182,9 @@ class ConsumerView {
   template <typename T>
   inline Maybe<Range<const T>> ReadRange(const size_t elemCount) {
     static_assert(BytesAlwaysValidT<T>::value);
-    if (MOZ_UNLIKELY(!mOk)) return {};
+    if (!mOk) [[unlikely]] {
+      return {};
+    }
     const auto view = mConsumer->template ReadRange<T>(elemCount);
     mOk &= bool(view);
     return view;
@@ -253,29 +252,6 @@ struct QueueParamTraits<bool> {
       *aArg = temp ? true : false;
     }
     return aConsumerView.Ok();
-  }
-};
-
-// ---------------------------------------------------------------
-
-template <class T>
-struct QueueParamTraits_IsEnumCase {
-  template <typename ProducerView>
-  static bool Write(ProducerView& aProducerView, const T& aArg) {
-    MOZ_ASSERT(IsEnumCase(aArg));
-    const auto shadow = static_cast<std::underlying_type_t<T>>(aArg);
-    aProducerView.WriteParam(shadow);
-    return true;
-  }
-
-  template <typename ConsumerView>
-  static bool Read(ConsumerView& aConsumerView, T* aArg) {
-    auto shadow = std::underlying_type_t<T>{};
-    aConsumerView.ReadParam(&shadow);
-    const auto e = AsEnumCase<T>(shadow);
-    if (!e) return false;
-    *aArg = *e;
-    return true;
   }
 };
 

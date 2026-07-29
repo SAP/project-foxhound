@@ -9,16 +9,16 @@ TaskQueue is (but not vice versa).
 Differential Revision: https://phabricator.services.mozilla.com/D180736
 Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/62e71a2f745c4b98d5ee7ce9e6386aa1b657be9b
 ---
- .../rtp_video_stream_receiver_frame_transformer_delegate.cc   | 2 +-
- .../rtp_video_stream_receiver_frame_transformer_delegate.h    | 4 ++--
- video/rtp_video_stream_receiver2.cc                           | 2 +-
- 3 files changed, 4 insertions(+), 4 deletions(-)
+ .../rtp_video_stream_receiver_frame_transformer_delegate.cc     | 2 +-
+ .../rtp_video_stream_receiver_frame_transformer_delegate.h      | 2 +-
+ video/rtp_video_stream_receiver2.cc                             | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
 
 diff --git a/modules/rtp_rtcp/source/rtp_video_stream_receiver_frame_transformer_delegate.cc b/modules/rtp_rtcp/source/rtp_video_stream_receiver_frame_transformer_delegate.cc
-index 7b5f480aa1..b3a77c197f 100644
+index 8950ec4baa..fb11c73c29 100644
 --- a/modules/rtp_rtcp/source/rtp_video_stream_receiver_frame_transformer_delegate.cc
 +++ b/modules/rtp_rtcp/source/rtp_video_stream_receiver_frame_transformer_delegate.cc
-@@ -138,7 +138,7 @@ RtpVideoStreamReceiverFrameTransformerDelegate::
+@@ -135,7 +135,7 @@ RtpVideoStreamReceiverFrameTransformerDelegate::
          RtpVideoFrameReceiver* receiver,
          Clock* clock,
          scoped_refptr<FrameTransformerInterface> frame_transformer,
@@ -28,10 +28,10 @@ index 7b5f480aa1..b3a77c197f 100644
      : receiver_(receiver),
        frame_transformer_(std::move(frame_transformer)),
 diff --git a/modules/rtp_rtcp/source/rtp_video_stream_receiver_frame_transformer_delegate.h b/modules/rtp_rtcp/source/rtp_video_stream_receiver_frame_transformer_delegate.h
-index 1e6678b4ee..1ed48c08d7 100644
+index fa6ccf8773..7cd379eff3 100644
 --- a/modules/rtp_rtcp/source/rtp_video_stream_receiver_frame_transformer_delegate.h
 +++ b/modules/rtp_rtcp/source/rtp_video_stream_receiver_frame_transformer_delegate.h
-@@ -44,7 +44,7 @@ class RtpVideoStreamReceiverFrameTransformerDelegate
+@@ -45,7 +45,7 @@ class RtpVideoStreamReceiverFrameTransformerDelegate
        RtpVideoFrameReceiver* receiver,
        Clock* clock,
        scoped_refptr<FrameTransformerInterface> frame_transformer,
@@ -40,20 +40,11 @@ index 1e6678b4ee..1ed48c08d7 100644
        uint32_t ssrc);
  
    void Init();
-@@ -74,7 +74,7 @@ class RtpVideoStreamReceiverFrameTransformerDelegate
-   RtpVideoFrameReceiver* receiver_ RTC_GUARDED_BY(network_sequence_checker_);
-   scoped_refptr<FrameTransformerInterface> frame_transformer_
-       RTC_GUARDED_BY(network_sequence_checker_);
--  Thread* const network_thread_;
-+  TaskQueueBase* const network_thread_;
-   const uint32_t ssrc_;
-   Clock* const clock_;
-   bool short_circuit_ RTC_GUARDED_BY(network_sequence_checker_) = false;
 diff --git a/video/rtp_video_stream_receiver2.cc b/video/rtp_video_stream_receiver2.cc
-index cb7070ecda..5249f6aed3 100644
+index 86c6a785c0..9bbff9a156 100644
 --- a/video/rtp_video_stream_receiver2.cc
 +++ b/video/rtp_video_stream_receiver2.cc
-@@ -381,7 +381,7 @@ RtpVideoStreamReceiver2::RtpVideoStreamReceiver2(
+@@ -385,7 +385,7 @@ RtpVideoStreamReceiver2::RtpVideoStreamReceiver2(
      frame_transformer_delegate_ =
          make_ref_counted<RtpVideoStreamReceiverFrameTransformerDelegate>(
              this, &env_.clock(), std::move(frame_transformer),

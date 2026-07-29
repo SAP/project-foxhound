@@ -16,7 +16,7 @@ Usage: $(basename "$0") [-p product]
            # --skip-clone as well).
            [--use-git]
            # One (or more) of the following actions must be specified.
-           --hsts | --hpkp | --remote-settings | --suffix-list | --mobile-experiments | --ct-logs
+           --hsts | --hpkp | --remote-settings | --suffix-list | --mobile-experiments | --mobile-merino-manifest | --ct-logs
            -b branch
            # The name of top source directory to use for the repository clone.
            [-t topsrcdir]
@@ -44,6 +44,7 @@ DO_HPKP=false
 DO_REMOTE_SETTINGS=false
 DO_SUFFIX_LIST=false
 DO_MOBILE_EXPERIMENTS=false
+DO_MOBILE_MERINO_MANIFEST=false
 DO_CT_LOGS=false
 
 CLONE_REPO=true
@@ -71,6 +72,7 @@ while [ $# -gt 0 ]; do
     --remote-settings) DO_REMOTE_SETTINGS=true ;;
     --suffix-list) DO_SUFFIX_LIST=true ;;
     --mobile-experiments) DO_MOBILE_EXPERIMENTS=true ;;
+    --mobile-merino-manifest) DO_MOBILE_MERINO_MANIFEST=true ;;
     --ct-logs) DO_CT_LOGS=true ;;
     --skip-clone) CLONE_REPO=false ;;
     --skip-push) SKIP_PUSH=true ;;
@@ -93,9 +95,9 @@ if [ "${BRANCH}" == "" ]; then
 fi
 
 # Must choose at least one update action.
-if [ "$DO_HSTS" == "false" ] && [ "$DO_HPKP" == "false" ] && [ "$DO_REMOTE_SETTINGS" == "false" ] && [ "$DO_SUFFIX_LIST" == "false" ] && [ "$DO_MOBILE_EXPERIMENTS" == false ] && [ "$DO_CT_LOGS" == false ]
+if [ "$DO_HSTS" == "false" ] && [ "$DO_HPKP" == "false" ] && [ "$DO_REMOTE_SETTINGS" == "false" ] && [ "$DO_SUFFIX_LIST" == "false" ] && [ "$DO_MOBILE_EXPERIMENTS" == false ] && [ "$DO_MOBILE_MERINO_MANIFEST" == false ] && [ "$DO_CT_LOGS" == false ]
 then
-  echo "Error: you must specify at least one action from: --hsts, --hpkp, --remote-settings, or --suffix-list" >&2
+  echo "Error: you must specify at least one action from: --hsts, --hpkp, --remote-settings, --suffix-list, --mobile-experiments, --mobile-merino-manifest, or --ct-logs" >&2
   usage
   exit 13
 fi
@@ -181,6 +183,9 @@ EXPERIMENTER_URL="https://experimenter.services.mozilla.com/api/v6/experiments-f
 FENIX_INITIAL_EXPERIMENTS="mobile/android/fenix/app/src/main/res/raw/initial_experiments.json"
 FOCUS_INITIAL_EXPERIMENTS="mobile/android/focus-android/app/src/main/res/raw/initial_experiments.json"
 MOBILE_EXPERIMENTS_UPDATED=false
+
+MOBILE_MERINO_MANIFEST_UPDATE_SCRIPT="${SCRIPTDIR}/update_mobile_merino_manifest.py"
+MOBILE_MERINO_MANIFEST_UPDATED=false
 
 CT_LOG_UPDATE_SCRIPT="${SCRIPTDIR}/getCTKnownLogs.py"
 
@@ -551,6 +556,17 @@ function compare_mobile_experiments() {
   fi
 }
 
+function update_mobile_merino_manifest() {
+  echo "INFO: Updating mobile merino manifest..."
+  "${TOPSRCDIR}"/mach python "${MOBILE_MERINO_MANIFEST_UPDATE_SCRIPT}"
+  status=$?
+
+  if [ $status -gt 1 ]; then
+    exit 70
+  fi
+  return $status
+}
+
 function update_ct_logs() {
   echo "INFO: Updating CT logs..."
   "${TOPSRCDIR}"/mach python "${CT_LOG_UPDATE_SCRIPT}"
@@ -688,12 +704,18 @@ if [ "${DO_MOBILE_EXPERIMENTS}" == "true" ]; then
     MOBILE_EXPERIMENTS_UPDATED=true
   fi
 fi
+if [ "${DO_MOBILE_MERINO_MANIFEST}" == "true" ]; then
+  if update_mobile_merino_manifest
+  then
+    MOBILE_MERINO_MANIFEST_UPDATED=true
+  fi
+fi
 if [ "${DO_CT_LOGS}" == "true" ]; then
   update_ct_logs
 fi
 
 
-if [ "${HSTS_UPDATED}" == "false" ] && [ "${HPKP_UPDATED}" == "false" ] && [ "${REMOTE_SETTINGS_UPDATED}" == "false" ] && [ "${SUFFIX_LIST_UPDATED}" == "false" ] && [ "${MOBILE_EXPERIMENTS_UPDATED}" == "false" ] && [ "${DO_CT_LOGS}" == "false" ]; then
+if [ "${HSTS_UPDATED}" == "false" ] && [ "${HPKP_UPDATED}" == "false" ] && [ "${REMOTE_SETTINGS_UPDATED}" == "false" ] && [ "${SUFFIX_LIST_UPDATED}" == "false" ] && [ "${MOBILE_EXPERIMENTS_UPDATED}" == "false" ] && [ "${MOBILE_MERINO_MANIFEST_UPDATED}" == "false" ] && [ "${DO_CT_LOGS}" == "false" ]; then
   echo "INFO: no updates required. Exiting."
   exit 0
 else
@@ -731,6 +753,13 @@ if [ "${MOBILE_EXPERIMENTS_UPDATED}" == "true" ]
 then
   stage_mobile_experiments_files
   COMMIT_MESSAGE="${COMMIT_MESSAGE} mobile-experiments"
+fi
+
+if [ "${MOBILE_MERINO_MANIFEST_UPDATED}" == "true" ]
+then
+  # Merino manifest file is already updated in-place in the tree, 
+  # so there's no need to stage them.
+  COMMIT_MESSAGE="${COMMIT_MESSAGE} mobile-merino-manifest"
 fi
 
 if [ "${DO_CT_LOGS}" == "true" ]

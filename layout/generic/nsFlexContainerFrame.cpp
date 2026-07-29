@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,6 +14,7 @@
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/Logging.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ReflowInput.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/WritingModes.h"
 #include "nsBlockFrame.h"
@@ -969,7 +968,8 @@ class nsFlexContainerFrame::FlexLine final {
   explicit FlexLine(nscoord aMainGapSize) : mMainGapSize(aMainGapSize) {}
 
   nscoord SumOfGaps() const {
-    return NumItems() > 0 ? (NumItems() - 1) * mMainGapSize : 0;
+    return mNumNonCollapsedItems ? (mNumNonCollapsedItems - 1) * mMainGapSize
+                                 : 0;
   }
 
   // Returns the sum of our FlexItems' outer hypothetical main sizes plus the
@@ -1017,14 +1017,17 @@ class nsFlexContainerFrame::FlexLine final {
       mNumFrozenItems++;
     }
 
+    // If the item added was not the first non-collapsed item in the line,
+    // we add in any gap space as needed.
+    if (!lastItem.IsStrut()) {
+      if (mNumNonCollapsedItems) {
+        mTotalOuterHypotheticalMainSize += mMainGapSize;
+      }
+      mNumNonCollapsedItems++;
+    }
+
     mTotalItemMBP += lastItem.MarginBorderPaddingSizeInMainAxis();
     mTotalOuterHypotheticalMainSize += lastItem.OuterMainSize();
-
-    // If the item added was not the first item in the line, we add in any gap
-    // space as needed.
-    if (NumItems() >= 2) {
-      mTotalOuterHypotheticalMainSize += mMainGapSize;
-    }
   }
 
   // Computes the cross-size and baseline position of this FlexLine, based on
@@ -1115,6 +1118,8 @@ class nsFlexContainerFrame::FlexLine final {
   // Mostly used for optimization purposes, e.g. to bail out early from loops
   // when we can tell they have nothing left to do.
   uint32_t mNumFrozenItems = 0;
+  // Number of items that are not collapsed.
+  uint32_t mNumNonCollapsedItems = 0;
 
   // Sum of margin/border/padding for the FlexItems in this FlexLine.
   nscoord mTotalItemMBP = 0;
@@ -2997,8 +3002,8 @@ void nsFlexContainerFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     BuildDisplayListForChild(aBuilder, childFrame, childLists, flags);
   }
 
-  if (GetPrevInFlow()) {
-    DisplayPushedAbsoluteFrames(aBuilder, tempLists);
+  if (GetPrevInFlow() || GetNextInFlow()) {
+    DisplayAbsoluteFramesNotBuiltByPlaceholder(aBuilder, tempLists);
   }
 
   tempLists.MoveTo(aLists);
@@ -4537,7 +4542,13 @@ void FlexLine::PositionItemsInMainAxis(
     nscoord aContentBoxMainSize, const FlexboxAxisTracker& aAxisTracker) {
   MainAxisPositionTracker mainAxisPosnTracker(
       aAxisTracker, this, aJustifyContent, aContentBoxMainSize);
+  bool hadItemBefore = false;
   for (FlexItem& item : Items()) {
+    const bool strut = item.IsStrut();
+    if (hadItemBefore && !strut) {
+      mainAxisPosnTracker.TraverseGap(mMainGapSize);
+    }
+
     nscoord itemMainBorderBoxSize =
         item.MainSize() + item.BorderPaddingSizeInMainAxis();
 
@@ -4554,9 +4565,7 @@ void FlexLine::PositionItemsInMainAxis(
     mainAxisPosnTracker.ExitChildFrame(itemMainBorderBoxSize);
     mainAxisPosnTracker.ExitMargin(item.Margin());
     mainAxisPosnTracker.TraversePackingSpace();
-    if (&item != &Items().LastElement()) {
-      mainAxisPosnTracker.TraverseGap(mMainGapSize);
-    }
+    hadItemBefore |= !strut;
   }
 }
 
@@ -4625,6 +4634,8 @@ void nsFlexContainerFrame::Reflow(nsPresContext* aPresContext,
                                   ReflowOutput& aReflowOutput,
                                   const ReflowInput& aReflowInput,
                                   nsReflowStatus& aStatus) {
+  NormalizeChildLists();
+
   if (IsHiddenByContentVisibilityOfInFlowParentForLayout()) {
     return;
   }
@@ -4643,8 +4654,6 @@ void nsFlexContainerFrame::Reflow(nsPresContext* aPresContext,
   if (IsFrameTreeTooDeep(aReflowInput, aReflowOutput, aStatus)) {
     return;
   }
-
-  NormalizeChildLists();
 
 #ifdef DEBUG
   mDidPushItemsBitMayLie = false;
@@ -4972,7 +4981,9 @@ void nsFlexContainerFrame::UnionInFlowChildOverflow(
     if (useMozBoxCollapseBehavior && f->StyleVisibility()->IsCollapse()) {
       continue;
     }
-    ConsiderChildOverflow(aOverflowAreas, f, aAsIfScrolled);
+    ConsiderChildOverflow(aOverflowAreas, f,
+                          aAsIfScrolled ? OverflowAreaUnionFlags::AsIfScrolled
+                                        : OverflowAreaUnionFlags::None);
     if (!isScrolledContent) {
       continue;
     }
@@ -6491,8 +6502,6 @@ nscoord nsFlexContainerFrame::ComputeIntrinsicISize(
                                                     NS_UNCONSTRAINEDSIZE);
   }
 
-  const bool useMozBoxCollapseBehavior =
-      StyleVisibility()->UseLegacyCollapseBehavior();
   const bool isSingleLine = IsSingleLine(this, stylePos);
   const auto flexWM = GetWritingMode();
 
@@ -6506,10 +6515,8 @@ nscoord nsFlexContainerFrame::ComputeIntrinsicISize(
       continue;
     }
 
-    if (useMozBoxCollapseBehavior &&
-        childFrame->StyleVisibility()->IsCollapse()) {
-      // If we're using legacy "visibility:collapse" behavior, then we don't
-      // care about the sizes of any collapsed children.
+    if (childFrame->StyleVisibility()->IsCollapse()) {
+      // If we're collapsed, we don't take space in the main axis.
       continue;
     }
 

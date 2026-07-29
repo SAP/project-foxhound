@@ -22,8 +22,10 @@ import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.view.forEach
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.cancelChildren
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import mozilla.components.browser.toolbar.display.DisplayToolbar
 import mozilla.components.browser.toolbar.edit.EditToolbar
@@ -602,22 +604,32 @@ class BrowserToolbar @JvmOverloads constructor(
 
 /**
  * Wraps [filter] execution in a coroutine context, cancelling prior executions on every invocation.
- * [coroutineContext] must be of type that doesn't propagate cancellation of its children upwards.
+ * [externalScope] must be of type that doesn't propagate cancellation of its children upwards.
  */
 class AsyncFilterListener(
     private val urlView: AutocompleteView,
-    override val coroutineContext: CoroutineContext,
+    externalScope: CoroutineScope,
     private val filter: suspend (String, AutocompleteDelegate) -> Unit,
     private val uiContext: CoroutineContext = Dispatchers.Main,
-) : OnFilterListener, CoroutineScope {
-    override fun invoke(text: String) {
-        // We got a new input, so whatever past autocomplete queries we still have running are
-        // irrelevant. We cancel them, but do not depend on cancellation to take place.
-        coroutineContext.cancelChildren()
+) : OnFilterListener, AutoCloseable {
+    private val queryChannel = Channel<String>(capacity = Channel.BUFFERED)
 
-        CoroutineScope(coroutineContext).launch {
-            filter(text, AsyncAutocompleteDelegate(urlView, this, uiContext))
+    private val job = externalScope.launch {
+        queryChannel.receiveAsFlow().collectLatest { text ->
+            if (text.isBlank()) return@collectLatest
+            coroutineScope {
+                filter(text, AsyncAutocompleteDelegate(urlView, this, uiContext))
+            }
         }
+    }
+
+    override fun invoke(text: String) {
+        queryChannel.trySend(text)
+    }
+
+    override fun close() {
+        queryChannel.close()
+        job.cancel()
     }
 }
 
@@ -627,21 +639,15 @@ class AsyncFilterListener(
  */
 private class AsyncAutocompleteDelegate(
     private val urlView: AutocompleteView,
-    private val parentScope: CoroutineScope,
-    override val coroutineContext: CoroutineContext,
+    private val delegateScope: CoroutineScope,
+    private val uiContext: CoroutineContext,
     private val logger: Logger = Logger("AsyncAutocompleteDelegate"),
-) : AutocompleteDelegate, CoroutineScope {
+) : AutocompleteDelegate {
     override fun applyAutocompleteResult(result: AutocompleteResult, onApplied: () -> Unit) {
-        // Bail out if we were cancelled already.
-        if (!parentScope.isActive) {
-            logger.debug("Autocomplete request cancelled. Discarding results.")
-            return
-        }
-
-        // Process results on the UI dispatcher.
-        CoroutineScope(coroutineContext).launch {
-            // Ignore this result if the query is stale.
-            if (result.input == urlView.originalText.lowercase()) {
+        // We use the scope provided by the listener. If the listener moves to a new query,
+        // this scope is cancelled, and this 'launch' will not execute.
+        delegateScope.launch(uiContext) {
+            if (isResultValid(result.input)) {
                 urlView.applyAutocompleteResult(
                     InlineAutocompleteEditText.AutocompleteResult(
                         text = result.text,
@@ -651,26 +657,23 @@ private class AsyncAutocompleteDelegate(
                 )
                 onApplied()
             } else {
-                logger.debug("Discarding stale autocomplete result.")
+                logger.debug("Discarding stale autocomplete result for: ${result.input}")
             }
         }
     }
 
     override fun noAutocompleteResult(input: String) {
-        // Bail out if we were cancelled already.
-        if (!parentScope.isActive) {
-            logger.debug("Autocomplete request cancelled. Discarding 'noAutocompleteResult'.")
-            return
-        }
-
-        // Process results on the UI thread.
-        CoroutineScope(coroutineContext).launch {
-            // Ignore this result if the query is stale.
-            if (input == urlView.originalText) {
+        delegateScope.launch(uiContext) {
+            if (isResultValid(input)) {
                 urlView.noAutocompleteResult()
             } else {
-                logger.debug("Discarding stale lack of autocomplete results.")
+                logger.debug("Discarding stale 'no result' for: $input")
             }
         }
+    }
+
+    private fun isResultValid(input: String): Boolean {
+        // Use ignoreCase = true to stay consistent across both methods
+        return input.equals(urlView.originalText, ignoreCase = true)
     }
 }

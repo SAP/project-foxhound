@@ -8,30 +8,34 @@
 }
 
 .chat-assistant-error {
+  color: var(--assistant-error-color);
   margin-block: var(--space-xlarge) 0;
 }
 
 .chat-assistant-error__header {
-  color: var(--assistant-error-color);
   font-size: var(--font-size-root);
   font-weight: var(--font-weight-semibold);
   margin-block: 0;
 }
 
 .chat-assistant-error__body {
-  color: var(--assistant-error-color);
   margin-block: var(--space-small) 0;
 }
 
 .chat-assistant-error__button {
-  --button-background-color: color-mix(in srgb, var(--color-violet-0) 87%, transparent);
-  --button-border: 1px solid var(--color-white);
   --button-border-radius: var(--border-radius-circle);
+  --button-font-weight: var(--font-weight);
+  --button-min-height-small: var(--size-item-large);
   --button-padding: var(--space-small) var(--space-medium);
-  --button-text-color: var(--color-violet-90);
+
+  @media not (forced-colors) {
+    --button-background-color-ghost: color-mix(in srgb, var(--color-violet-0) 87%, transparent);
+    --button-border-color-ghost: var(--color-white);
+    --button-text-color-ghost: var(--color-violet-90);
+  }
 
   &::part(button) {
     box-shadow: var(--assistant-box-shadow);
-    margin-block: var(--space-medium) 0;
+    margin-block: var(--space-large) 0;
   }
 }

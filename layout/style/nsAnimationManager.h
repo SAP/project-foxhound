@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,6 +25,10 @@ struct PseudoStyleRequest;
 class nsAnimationManager final
     : public mozilla::CommonAnimationManager<mozilla::dom::CSSAnimation> {
  public:
+  using TimelineNamesToAnimationMap =
+      nsTHashMap<RefPtr<const nsAtom>,
+                 nsTArray<RefPtr<mozilla::dom::CSSAnimation>>>;
+
   explicit nsAnimationManager(nsPresContext* aPresContext)
       : mozilla::CommonAnimationManager<mozilla::dom::CSSAnimation>(
             aPresContext) {}
@@ -46,9 +48,17 @@ class nsAnimationManager final
                         const mozilla::PseudoStyleRequest& aPseudoRequest,
                         const mozilla::ComputedStyle* aComputedValues);
 
+  void RemoveNamedTimelineAnimation(const nsAtom* aName,
+                                    mozilla::dom::CSSAnimation* aAnimation);
+
+  void UpdateNamedTimelineAnimations(
+      const nsTArray<RefPtr<const nsAtom>>& aChanged);
+  void UpdateAllNamedTimelineAnimations();
+
   // Utility function to walk through |aIter| to find the Keyframe with
   // matching offset and timing function but stopping as soon as the offset
-  // differs from |aOffset| (i.e. it assumes a sorted iterator).
+  // differs from |aOffset| (i.e. it assumes a sorted iterator for double
+  // offsets). For TimelineRangeOffset, see the comments in the loop.
   //
   // If a matching Keyframe is found,
   //   Returns true and sets |aIndex| to the index of the matching Keyframe
@@ -61,15 +71,35 @@ class nsAnimationManager final
   //   Keyframe.
   template <class IterType>
   static bool FindMatchingKeyframe(
-      IterType&& aIter, double aOffset,
+      IterType&& aIter, const mozilla::Keyframe::OffsetType& aOffset,
       const mozilla::StyleComputedTimingFunction& aTimingFunctionToMatch,
       mozilla::dom::CompositeOperationOrAuto aCompositionToMatch,
       size_t& aIndex) {
     aIndex = 0;
     for (mozilla::Keyframe& keyframe : aIter) {
       if (keyframe.mOffset.value() != aOffset) {
-        break;
+        // There is an assumption that we handle keyframes with double offsets
+        // first, and they are in sorted order. So when we are searching for a
+        // double offset and the offset is different from the current
+        // |keyframe|, it must be a non-existing Keyframe.
+        if (aOffset.IsPercentageOffset()) {
+          break;
+        }
+
+        // There is an assumption that we handle keyframes with
+        // TimelineRangeOffset after we insert all the keyframes with double
+        // offsets, and the Keyframe with TimelineRangeOffset should be put
+        // after the Keyframes with double offsets. In this case, we search for
+        // the TimelineRangeOffset in the reversed order of Keyframes.
+        // Therefore, if current |keyframe| is is double offset, |offset| must
+        // not exist.
+        if (keyframe.mOffset->IsPercentageOffset()) {
+          break;
+        }
+        ++aIndex;
+        continue;
       }
+
       const bool matches = [&] {
         if (keyframe.mComposite != aCompositionToMatch) {
           return false;
@@ -98,6 +128,13 @@ class nsAnimationManager final
   // contain names which are currently referenced, so that it is usable for
   // style invalidation.
   nsTHashSet<RefPtr<nsAtom>> mMaybeReferencedAnimations;
+  // Animations that refer to a timeline by name. This is necessary for
+  // invalidating such animations, because the timeline referred to by
+  // that name for the animation target may change.
+  // Note that only scroll and view timelines can be named.
+  // Also note that we represent `animation-timeline: none` as a named
+  // timeline with an empty name, which is not tracked in this hashmap.
+  TimelineNamesToAnimationMap mAnimationsWithNamedTimeline;
 
   void DoUpdateAnimations(const mozilla::NonOwningAnimationTarget& aTarget,
                           const nsStyleUIReset& aStyle,

@@ -4,10 +4,6 @@
   <title>Tests for GetAssertion for W3C Web Authentication</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="u2futil.js"></script>
-  <script type="text/javascript" src="pkijs/common.js"></script>
-  <script type="text/javascript" src="pkijs/asn1.js"></script>
-  <script type="text/javascript" src="pkijs/x509_schema.js"></script>
-  <script type="text/javascript" src="pkijs/x509_simpl.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -48,6 +44,7 @@
     add_task(test_credential_protection_policy_uv_optional_with_list);
     add_task(test_credential_protection_policy_uv_required);
     add_task(test_unsupported_mediation_requirements);
+    add_task(test_get_with_multiple_prf_evalByCredential);
 
     function requestGetAssertion(params) {
       return navigator.credentials.get(params);
@@ -298,6 +295,42 @@
         .catch(arrivingHereIsGood);
 
       setUserVerified(authenticatorId, true)
+    }
+
+    async function test_get_with_multiple_prf_evalByCredential() {
+      let makeCredential = async () => {
+        let publicKey = {
+          rp: {id: document.domain, name: "none"},
+          user: {id: crypto.getRandomValues(new Uint8Array(8)), name: "user", displayName: "user"},
+          challenge: crypto.getRandomValues(new Uint8Array(16)),
+          pubKeyCredParams: [{type: "public-key", alg: cose_alg_ECDSA_w_SHA256}],
+          extensions: {prf: {}},
+        };
+        return navigator.credentials.create({publicKey});
+      };
+
+      let cred1 = await makeCredential();
+      let cred2 = await makeCredential();
+
+      let assertionRequest = {
+        publicKey: {
+          challenge: crypto.getRandomValues(new Uint8Array(16)),
+          allowCredentials: [
+            {type: "public-key", id: cred1.rawId},
+            {type: "public-key", id: cred2.rawId},
+          ],
+          extensions: {
+            prf: {
+              evalByCredential: {
+                [cred1.id]: {first: new Uint8Array([1, 2, 3]).buffer},
+                [cred2.id]: {first: new Uint8Array([4, 5, 6]).buffer},
+              },
+            },
+          },
+        },
+      };
+      let result = await navigator.credentials.get(assertionRequest);
+      ok(result instanceof PublicKeyCredential, "get with two evalByCredential entries should succeed");
     }
 
     async function test_unsupported_mediation_requirements() {

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -133,7 +131,7 @@ inline already_AddRefed<T>&& dont_AddRef(
  *
  * See |class nsGetInterface| for an example.
  */
-class MOZ_STACK_CLASS nsCOMPtr_helper {
+class MOZ_STACK_CLASS MOZ_NULL_AFTER_MOVE nsCOMPtr_helper {
  public:
   virtual nsresult NS_FASTCALL operator()(const nsIID&, void**) const = 0;
 };
@@ -1169,5 +1167,8 @@ struct outparam_as_pointer<nsGetterAddRefs<T>> {
   using type = T**;
 };
 }  // namespace mozilla::detail
+
+template <typename T>
+struct fmt::formatter<nsCOMPtr<T>> : fmt::ostream_formatter {};
 
 #endif  // !defined(nsCOMPtr_h_)

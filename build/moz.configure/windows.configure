@@ -1,48 +1,13 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-option(
-    "--with-windows-version",
-    nargs=1,
-    default="603",
-    help="Windows SDK version to target. Win 8.1 (603) is currently "
-    "the minimum supported version",
-)
 
+@depends("WINDOWSSDKDIR", winsysroot, target.abi, host.abi)
+def windows_sdk_dir(windows_sdk_dir, winsysroot, target_windows_abi, host_windows_abi):
+    if windows_sdk_dir:
+        return windows_sdk_dir
 
-@depends("--with-windows-version")
-@imports(_from="__builtin__", _import="ValueError")
-def valid_windows_version(value):
-    if not value:
-        die("Cannot build with --without-windows-version")
-    try:
-        version = int(value[0], 16)
-        if version in (0x603,):
-            return version
-    except ValueError:
-        pass
-
-    die("Invalid value for --with-windows-version (%s)", value[0])
-
-
-option(env="WINDOWSSDKDIR", nargs=1, help="Directory containing the Windows SDK")
-
-
-@depends(
-    "WINDOWSSDKDIR", "WINSYSROOT", winsysroot, target_windows_abi, host_windows_abi
-)
-def windows_sdk_dir(
-    value, winsysroot_env, winsysroot, target_windows_abi, host_windows_abi
-):
-    if value:
-        if winsysroot_env:
-            die("WINDOWSSDKDIR and WINSYSROOT cannot be set together.")
-        if winsysroot:
-            die("WINDOWSSDKDIR cannot be set when using the bootstrapped WINSYSROOT")
-        return value
     if target_windows_abi != "msvc" and host_windows_abi != "msvc":
         return ()
 
@@ -59,30 +24,6 @@ def windows_sdk_dir(
     )
 
 
-@imports("glob")
-def get_sdk_dirs(sdk, subdir):
-    def get_dirs_containing(sdk, stem, subdir):
-        return [
-            os.path.dirname(p) for p in glob.glob(os.path.join(sdk, stem, "*", subdir))
-        ]
-
-    def categorize(dirs):
-        return {os.path.basename(d): d for d in dirs}
-
-    include_dirs = categorize(get_dirs_containing(sdk, "Include", subdir))
-    lib_dirs = categorize(get_dirs_containing(sdk, "Lib", subdir))
-
-    valid_versions = sorted(set(include_dirs) & set(lib_dirs), reverse=True)
-    return [
-        namespace(
-            path=sdk,
-            lib=lib_dirs[vv],
-            include=include_dirs[vv],
-        )
-        for vv in valid_versions
-    ]
-
-
 @imports(_from="mozshellutil", _import="quote")
 def valid_windows_sdk_dir_result(value):
     if value:
@@ -90,8 +31,8 @@ def valid_windows_sdk_dir_result(value):
 
 
 @depends(
-    target_windows_abi,
-    host_windows_abi,
+    target.abi,
+    host.abi,
     windows_sdk_dir,
     valid_windows_version,
     "WINDOWSSDKDIR",
@@ -174,7 +115,7 @@ def valid_ucrt_sdk_dir_result(value):
         return "%s in %s" % (value.version, quote(value.path))
 
 
-@depends(windows_sdk_dir, "WINDOWSSDKDIR", target_windows_abi, host_windows_abi)
+@depends(windows_sdk_dir, "WINDOWSSDKDIR", target.abi, host.abi)
 @checking("for Universal CRT SDK", valid_ucrt_sdk_dir_result)
 @imports("os")
 @imports(_import="mozpack.path", _as="mozpath")
@@ -257,31 +198,6 @@ def valid_ucrt_sdk_dir(
         lib=sdk.lib,
         version=version,
     )
-
-
-@depends(target_windows_abi, host_windows_abi, vc_toolchain_search_path)
-@imports("os")
-def vc_path(target_windows_abi, host_windows_abi, vc_toolchain_search_path):
-    if target_windows_abi != "msvc" and host_windows_abi != "msvc":
-        return
-
-    # In clang-cl builds, we need the headers and libraries from an MSVC installation.
-    vc_program = find_program("cl.exe", paths=vc_toolchain_search_path)
-    if not vc_program:
-        die("Cannot find a Visual C++ install for e.g. ATL headers.")
-
-    result = os.path.dirname(vc_program)
-    while True:
-        next, p = os.path.split(result)
-        if next == result:
-            die(
-                "Cannot determine the Visual C++ directory the compiler (%s) "
-                "is in" % vc_program
-            )
-        result = next
-        if p.lower() == "bin":
-            break
-    return os.path.normpath(result)
 
 
 @depends(vc_path, valid_windows_sdk_dir, valid_ucrt_sdk_dir)
@@ -578,6 +494,38 @@ set_define("WINVER", depends(WINVER)(lambda WINVER: f"0x{WINVER}"))
 set_define("_WIN32_WINNT", depends(WINVER)(lambda WINVER: f"0x{WINVER}"))
 set_define("_WIN32_IE", "0x0A00")
 
+
+# Default linker stack-size flag for Windows EXEs.
+@depends(target.cpu, moz_debug)
+def win32_exe_default_ldflags(cpu, debug):
+    if cpu != "x86":
+        # Normal operation on 64-bit Windows needs 2 MB of stack. (Bug 582910)
+        # ASAN requires 6 MB of stack.
+        # Setting the stack to 8 MB to match the capability of other systems
+        # to deal with frame construction for unreasonably deep DOM trees
+        # with worst-case styling. This uses address space unnecessarily for
+        # non-main threads, but that should be tolerable on 64-bit systems.
+        # (Bug 256180)
+        return ["-STACK:8388608"]
+    if debug:
+        # In debug builds, layout code has extra logging helpers on the stack,
+        # which can go over the 1.5MB limit on some deeply-nested crashtests.
+        return ["-STACK:2097152"]
+    # Since this setting affects the default stack size for non-main
+    # threads, too, to avoid burning the address space, increase only
+    # 512 KB over the default. Just enough to be able to deal with
+    # reasonable styling applied to DOM trees whose depth is near what
+    # Blink's HTML parser can output, esp.
+    # layout/base/crashtests/507119.html (Bug 256180)
+    return ["-STACK:1572864"]
+
+
+# The mingw linker takes GCC-compatible driver syntax, so wrap each flag.
+@depends(win32_exe_default_ldflags)
+def win32_exe_default_ldflags_mingw(flags):
+    return ["-Wl,-Xlink=" + f for f in flags]
+
+
 with only_when(depends(c_compiler)(lambda c: c.type == "clang-cl")):
     set_config("MSVC_C_RUNTIME_DLL", "vcruntime140.dll")
     set_config(
@@ -609,6 +557,8 @@ with only_when(depends(c_compiler)(lambda c: c.type == "clang-cl")):
         "WIN32_GUI_EXE_LDFLAGS",
         ["-SUBSYSTEM:WINDOWS,{}".format(win32_subsystem_version())],
     )
+
+    set_config("WIN32_EXE_DEFAULT_LDFLAGS", win32_exe_default_ldflags)
 
     add_flag("-Gy")
     add_flag("-Zc:inline")
@@ -642,6 +592,8 @@ with only_when(target_is_windows & depends(c_compiler)(lambda c: c.type != "clan
 
     set_config("WIN32_CONSOLE_EXE_LDFLAGS", ["-mconsole"])
     set_config("WIN32_GUI_EXE_LDFLAGS", ["-mwindows"])
+
+    set_config("WIN32_EXE_DEFAULT_LDFLAGS", win32_exe_default_ldflags_mingw)
 
     # Silence problematic clang warnings
     add_flag("-Wno-incompatible-ms-struct", compiler=cxx_compiler)

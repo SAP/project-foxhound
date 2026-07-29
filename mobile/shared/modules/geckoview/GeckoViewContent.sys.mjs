@@ -309,14 +309,12 @@ export class GeckoViewContent extends GeckoViewModule {
         if (this.browser.hasAttribute("primary")) {
           return;
         }
-        this.eventDispatcher.sendRequest({
-          type: "GeckoView:FocusRequest",
-        });
+        this.eventDispatcher.sendRequest("GeckoView:FocusRequest");
         aEvent.preventDefault();
         break;
       case "MozDOMFullscreen:Entered":
         if (this.browser == aEvent.target) {
-          const chromeWindow = this.browser.ownerGlobal;
+          const chromeWindow = this.browser.documentGlobal;
           const requestOrigin =
             chromeWindow.browsingContext?.fullscreenRequestOrigin?.get();
           if (!requestOrigin) {
@@ -332,8 +330,7 @@ export class GeckoViewContent extends GeckoViewModule {
         this.#sendExitDOMFullScreenEvent();
         break;
       case "pagetitlechanged":
-        this.eventDispatcher.sendRequest({
-          type: "GeckoView:PageTitleChanged",
+        this.eventDispatcher.sendRequest("GeckoView:PageTitleChanged", {
           title: this.browser.contentTitle,
         });
         break;
@@ -343,27 +340,22 @@ export class GeckoViewContent extends GeckoViewModule {
         // here Gecko will close it immediately.
         aEvent.preventDefault();
 
-        this.eventDispatcher.sendRequest({
-          type: "GeckoView:DOMWindowClose",
-        });
+        this.eventDispatcher.sendRequest("GeckoView:DOMWindowClose");
         break;
       case "pageinfo":
         if (aEvent.detail.previewImageURL) {
-          this.eventDispatcher.sendRequest({
-            type: "GeckoView:PreviewImage",
+          this.eventDispatcher.sendRequest("GeckoView:PreviewImage", {
             previewImageUrl: aEvent.detail.previewImageURL,
           });
         }
         break;
       case "cookiebannerdetected":
-        this.eventDispatcher.sendRequest({
-          type: "GeckoView:CookieBannerEvent:Detected",
-        });
+        this.eventDispatcher.sendRequest(
+          "GeckoView:CookieBannerEvent:Detected"
+        );
         break;
       case "cookiebannerhandled":
-        this.eventDispatcher.sendRequest({
-          type: "GeckoView:CookieBannerEvent:Handled",
-        });
+        this.eventDispatcher.sendRequest("GeckoView:CookieBannerEvent:Handled");
         break;
     }
   }
@@ -381,13 +373,9 @@ export class GeckoViewContent extends GeckoViewModule {
         }
         this.window.setTimeout(() => {
           if (this._contentCrashed) {
-            this.eventDispatcher.sendRequest({
-              type: "GeckoView:ContentCrash",
-            });
+            this.eventDispatcher.sendRequest("GeckoView:ContentCrash");
           } else {
-            this.eventDispatcher.sendRequest({
-              type: "GeckoView:ContentKill",
-            });
+            this.eventDispatcher.sendRequest("GeckoView:ContentKill");
           }
         }, 250);
         break;

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,7 +13,7 @@
 #include "mozilla/UniquePtr.h"
 
 #define LOG(msg, ...) \
-  MOZ_LOG(gMediaDemuxerLog, LogLevel::Debug, msg, ##__VA_ARGS__)
+  MOZ_LOG_FMT(gMediaDemuxerLog, LogLevel::Debug, msg, ##__VA_ARGS__)
 #define ADTSLOG(msg, ...) \
   DDMOZ_LOG(gMediaDemuxerLog, LogLevel::Debug, msg, ##__VA_ARGS__)
 #define ADTSLOGV(msg, ...) \
@@ -112,7 +110,15 @@ bool ADTSTrackDemuxer::Init() {
   mInfo->mRate = mSamplesPerSecond;
   mInfo->mChannels = mChannels;
   mInfo->mBitDepth = 16;
-  mInfo->mDuration = Duration();
+  // If the resource length isn't known yet, Duration() returns Infinity. We
+  // don't want that latched into mInfo, because MediaFormatReader would then
+  // populate mInfo.mMetadataDuration with Infinity and the state machine's
+  // OnMetadataRead would clobber any finite duration BufferedRangeUpdated
+  // produces from buffered ranges. See bug 2035059.
+  if (auto duration = Duration();
+      duration.IsValid() && !duration.IsInfinite()) {
+    mInfo->mDuration = duration;
+  }
 
   // AAC Specific information
   mInfo->mMimeType = "audio/mp4a-latm";
@@ -312,7 +318,8 @@ TimeUnit ADTSTrackDemuxer::Duration(int64_t aNumFrames) const {
     return TimeUnit::Invalid();
   }
 
-  return TimeUnit(aNumFrames * mSamplesPerFrame, mSamplesPerSecond);
+  return TimeUnit(CheckedInt64(aNumFrames) * mSamplesPerFrame,
+                  mSamplesPerSecond);
 }
 
 const ADTS::Frame& ADTSTrackDemuxer::FindNextFrame(
@@ -550,7 +557,7 @@ uint32_t ADTSTrackDemuxer::Read(uint8_t* aBuffer, int64_t aOffset,
   if (mInfo && streamLen > 0) {
     int64_t max = streamLen > aOffset ? streamLen - aOffset : 0;
     // Prevent blocking reads after successful initialization.
-    aSize = std::min<int32_t>(aSize, AssertedCast<int32_t>(max));
+    aSize = static_cast<int32_t>(std::min(static_cast<int64_t>(aSize), max));
   }
 
   uint32_t read = 0;

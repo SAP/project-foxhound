@@ -11,9 +11,9 @@ import mozilla.components.concept.fetch.Headers.Names.CONTENT_DISPOSITION
 import mozilla.components.concept.fetch.Headers.Names.CONTENT_LENGTH
 import mozilla.components.concept.fetch.Headers.Names.CONTENT_TYPE
 import mozilla.components.concept.fetch.Headers.Names.E_TAG
-import mozilla.components.support.ktx.kotlin.decode
 import mozilla.components.support.ktx.kotlin.sanitizeFileName
 import mozilla.components.support.utils.DownloadFileUtils
+import mozilla.components.support.utils.ext.decodeIfNeeded
 import java.io.InputStream
 import java.net.URLConnection
 
@@ -53,7 +53,7 @@ internal fun DownloadState.withResponse(
         fileName
     }
     return copy(
-        fileName = newFileName?.decode()?.sanitizeFileName(),
+        fileName = newFileName?.decodeIfNeeded()?.sanitizeFileName(),
         contentType = contentType,
         contentLength = contentLength ?: headers[CONTENT_LENGTH]?.toLongOrNull(),
         etag = headers[E_TAG],

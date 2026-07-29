@@ -9,7 +9,7 @@ import { DiscoveryStreamFeed } from "lib/DiscoveryStreamFeed.sys.mjs";
 import { reducers } from "common/Reducers.sys.mjs";
 
 import { PersistentCache } from "lib/PersistentCache.sys.mjs";
-import { SectionsLayoutManager } from "lib/SectionsLayoutManager.sys.mjs";
+import { SectionsLayoutManager } from "lib/SectionsLayoutFeed.sys.mjs";
 
 const CONFIG_PREF_NAME = "discoverystream.config";
 const ENDPOINTS_PREF_NAME = "discoverystream.endpoints";
@@ -162,11 +162,6 @@ describe("DiscoveryStreamFeed", () => {
 
   describe("#fetchFromEndpoint", () => {
     beforeEach(() => {
-      feed._prefCache = {
-        config: {
-          api_key_pref: "",
-        },
-      };
       fetchStub.resolves({
         json: () => Promise.resolve("hi"),
         ok: true,
@@ -443,16 +438,6 @@ describe("DiscoveryStreamFeed", () => {
         DEFAULT_ROW_COUNT * DEFAULT_COLUMN_COUNT
       );
     });
-    it("should use new spocs endpoint if in the config", async () => {
-      feed.config.spocs_endpoint = "https://spocs.getpocket.com/spocs2";
-
-      await feed.loadLayout(feed.store.dispatch);
-
-      assert.equal(
-        feed.store.getState().DiscoveryStream.spocs.spocs_endpoint,
-        "https://spocs.getpocket.com/spocs2"
-      );
-    });
     it("should use local basic layout with FF pref hardcoded_basic_layout", async () => {
       feed.store = createStore(combineReducers(reducers), {
         Prefs: {
@@ -692,11 +677,6 @@ describe("DiscoveryStreamFeed", () => {
     it("should send feed update events with new feed data", async () => {
       sandbox.stub(feed.cache, "get").returns(Promise.resolve(fakeCache));
       sandbox.spy(feed.store, "dispatch");
-      feed._prefCache = {
-        config: {
-          api_key_pref: "",
-        },
-      };
 
       await feed.loadComponentFeeds(feed.store.dispatch);
 
@@ -789,12 +769,6 @@ describe("DiscoveryStreamFeed", () => {
 
   describe("#loadSpocs", () => {
     beforeEach(() => {
-      feed._prefCache = {
-        config: {
-          api_key_pref: "",
-        },
-      };
-
       sandbox.stub(feed, "getPlacements").returns([{ name: "spocs" }]);
       Object.defineProperty(feed, "showSponsoredStories", { get: () => true });
     });
@@ -890,7 +864,7 @@ describe("DiscoveryStreamFeed", () => {
             title: "",
             sponsor: "",
             sponsored_by_override: undefined,
-            items: [{ id: "data", score: 1, fetchTimestamp: loadTimestamp }],
+            items: [{ id: "data", score: 1 }],
           },
         },
         lastUpdated: loadTimestamp,
@@ -900,7 +874,7 @@ describe("DiscoveryStreamFeed", () => {
 
       assert.deepEqual(
         feed.store.getState().DiscoveryStream.spocs.data.spocs.items[0],
-        { id: "data", score: 1, fetchTimestamp: loadTimestamp }
+        { id: "data", score: 1 }
       );
     });
     it("should normalizeSpocsItems for older spoc data", async () => {
@@ -914,7 +888,7 @@ describe("DiscoveryStreamFeed", () => {
 
       assert.deepEqual(
         feed.store.getState().DiscoveryStream.spocs.data.spocs.items[0],
-        { id: "data", score: 1, fetchTimestamp: 0 }
+        { id: "data", score: 1 }
       );
     });
     it("should return expected data if normalizeSpocsItems returns no spoc data", async () => {
@@ -944,7 +918,7 @@ describe("DiscoveryStreamFeed", () => {
           context: "",
           sponsor: "",
           sponsored_by_override: undefined,
-          items: [{ id: "data", score: 1, fetchTimestamp: 0 }],
+          items: [{ id: "data", score: 1 }],
         },
         placement2: {
           title: "",
@@ -982,7 +956,7 @@ describe("DiscoveryStreamFeed", () => {
           context: "context",
           sponsor: "",
           sponsored_by_override: undefined,
-          items: [{ id: "data", score: 1, fetchTimestamp: 0 }],
+          items: [{ id: "data", score: 1 }],
         },
       });
     });
@@ -1031,6 +1005,101 @@ describe("DiscoveryStreamFeed", () => {
       assert.equal(
         feed.fetchFromEndpoint.secondCall.args[1].headers.get("X-Geo-Location"),
         "geo_location"
+      );
+    });
+    it("should fetch ads with empty flags if adsBackend flags are empty", async () => {
+      feed.store = createStore(combineReducers(reducers), {
+        Prefs: {
+          values: {
+            "unifiedAds.endpoint": "unifiedAdEndpoint/",
+            "unifiedAds.blockedAds": "",
+            "unifiedAds.spocs.enabled": true,
+            "discoverystream.placements.spocs": "newtab_stories_1",
+            "discoverystream.placements.spocs.counts": "1",
+            "unifiedAds.ohttp.enabled": true,
+          },
+        },
+      });
+
+      sandbox.stub(feed, "fetchFromEndpoint").resolves({
+        newtab_stories_1: [
+          {
+            format: "spoc",
+            title: "ad title",
+          },
+        ],
+      });
+
+      await feed.loadSpocs(feed.store.dispatch);
+
+      assert.equal(
+        feed.fetchFromEndpoint.secondCall.args[0],
+        "unifiedAdEndpoint/v1/ads"
+      );
+      assert.equal(
+        feed.fetchFromEndpoint.secondCall.args[1].body,
+        JSON.stringify({
+          context_id: "ContextId",
+          flags: {},
+          placements: [
+            {
+              placement: "newtab_stories_1",
+              count: 1,
+            },
+          ],
+          blocks: [""],
+        })
+      );
+    });
+    it("should fetch ads with adsBackend flags", async () => {
+      feed.store = createStore(combineReducers(reducers), {
+        Prefs: {
+          values: {
+            "unifiedAds.endpoint": "unifiedAdEndpoint/",
+            "unifiedAds.blockedAds": "",
+            "unifiedAds.spocs.enabled": true,
+            "discoverystream.placements.spocs": "newtab_stories_1",
+            "discoverystream.placements.spocs.counts": "1",
+            "unifiedAds.ohttp.enabled": true,
+            adsBackendConfig: {
+              feature1: true,
+              feature2: false,
+            },
+          },
+        },
+      });
+
+      sandbox.stub(feed, "fetchFromEndpoint").resolves({
+        newtab_stories_1: [
+          {
+            format: "spoc",
+            title: "ad title",
+          },
+        ],
+      });
+
+      await feed.loadSpocs(feed.store.dispatch);
+
+      assert.equal(
+        feed.fetchFromEndpoint.secondCall.args[0],
+        "unifiedAdEndpoint/v1/ads"
+      );
+      assert.equal(
+        feed.fetchFromEndpoint.secondCall.args[1].body,
+        JSON.stringify({
+          context_id: "ContextId",
+          flags: {
+            feature1: true,
+            feature2: false,
+          },
+          placements: [
+            {
+              placement: "newtab_stories_1",
+              count: 1,
+            },
+          ],
+          blocks: [""],
+        })
       );
     });
   });
@@ -2373,6 +2442,17 @@ describe("DiscoveryStreamFeed", () => {
     });
   });
 
+  describe("#onAction: DISCOVERY_STREAM_DEV_REFRESH_CACHE", () => {
+    it("should clear the cache with DISCOVERY_STREAM_DEV_REFRESH_CACHE", async () => {
+      sandbox.stub(feed.cache, "set").returns(Promise.resolve());
+
+      sandbox.stub(feed, "resetCache").returns(Promise.resolve());
+      await feed.onAction({ type: at.DISCOVERY_STREAM_DEV_REFRESH_CACHE });
+
+      assert.calledOnce(feed.resetCache);
+    });
+  });
+
   describe("#onAction: DISCOVERY_STREAM_DEV_SYSTEM_TICK", () => {
     it("should refresh if DiscoveryStream has been loaded at least once and a cache has expired", async () => {
       sandbox.stub(feed.cache, "set").resolves();
@@ -2743,6 +2823,36 @@ describe("DiscoveryStreamFeed", () => {
     });
   });
 
+  describe("#topicSelectionMaybeLaterEvent", () => {
+    it("should use 3-day timeout for new profiles (age <= 1 day)", async () => {
+      sandbox.stub(feed, "retreiveProfileAge").resolves(0.5);
+      sandbox.spy(feed.store, "dispatch");
+      await feed.topicSelectionMaybeLaterEvent();
+      const day = 24 * 60 * 60 * 1000;
+      assert.calledWith(
+        feed.store.dispatch,
+        ac.SetPref(
+          "discoverystream.topicSelection.onboarding.displayTimeout",
+          3 * day
+        )
+      );
+    });
+
+    it("should use 7-day timeout for older profiles (age > 1 day)", async () => {
+      sandbox.stub(feed, "retreiveProfileAge").resolves(5);
+      sandbox.spy(feed.store, "dispatch");
+      await feed.topicSelectionMaybeLaterEvent();
+      const day = 24 * 60 * 60 * 1000;
+      assert.calledWith(
+        feed.store.dispatch,
+        ac.SetPref(
+          "discoverystream.topicSelection.onboarding.displayTimeout",
+          7 * day
+        )
+      );
+    });
+  });
+
   describe("new proxy feed", () => {
     beforeEach(() => {
       sandbox.stub(global.Region, "home").get(() => "DE");
@@ -2899,6 +3009,8 @@ describe("DiscoveryStreamFeed", () => {
               receivedRank: 1,
               layout: "cards",
               iab: "iab-category",
+              allowAds: true,
+              followable: true,
               visible: true,
             },
           ],
@@ -2947,12 +3059,150 @@ describe("DiscoveryStreamFeed", () => {
       // Use JSON comparison because deepEqual will error with incorrect property order message
       assert.equal(JSON.stringify(feedData), JSON.stringify(expectedData));
     });
+    it("should include allowAds and followable in section objects", async () => {
+      setPref("discoverystream.sections.enabled", true);
+      const fakeCache = {};
+      sandbox.stub(feed.cache, "get").returns(Promise.resolve(fakeCache));
+      sandbox.stub(feed, "rotate").callsFake(val => val);
+      sandbox
+        .stub(feed, "scoreItemsInferred")
+        .callsFake(val => ({ data: val, filtered: [], personalized: false }));
+      sandbox.stub(feed, "fetchFromEndpoint").resolves({
+        recommendedAt: 0,
+        surfaceId: "NEW_TAB_EN_US",
+        data: [],
+        feeds: {
+          "section-1": {
+            title: "Section 1",
+            subtitle: "",
+            receivedFeedRank: 1,
+            layout: "cards",
+            iab: null,
+            isInitiallyVisible: true,
+            allowAds: false,
+            followable: true,
+            recommendations: [],
+          },
+        },
+      });
+
+      const feedData = await feed.getComponentFeed("url");
+      const [section] = feedData.data.sections;
+      assert.equal(section.allowAds, false);
+      assert.equal(section.followable, true);
+    });
+    it("should default allowAds and followable to true when absent", async () => {
+      setPref("discoverystream.sections.enabled", true);
+      const fakeCache = {};
+      sandbox.stub(feed.cache, "get").returns(Promise.resolve(fakeCache));
+      sandbox.stub(feed, "rotate").callsFake(val => val);
+      sandbox
+        .stub(feed, "scoreItemsInferred")
+        .callsFake(val => ({ data: val, filtered: [], personalized: false }));
+      sandbox.stub(feed, "fetchFromEndpoint").resolves({
+        recommendedAt: 0,
+        surfaceId: "NEW_TAB_EN_US",
+        data: [],
+        feeds: {
+          "section-1": {
+            title: "Section 1",
+            subtitle: "",
+            receivedFeedRank: 1,
+            layout: "cards",
+            iab: null,
+            isInitiallyVisible: true,
+            recommendations: [],
+          },
+        },
+      });
+
+      const feedData = await feed.getComponentFeed("url");
+      const [section] = feedData.data.sections;
+      assert.equal(section.allowAds, true);
+      assert.equal(section.followable, true);
+    });
+    it("should default allowAds and followable to true when null", async () => {
+      setPref("discoverystream.sections.enabled", true);
+      const fakeCache = {};
+      sandbox.stub(feed.cache, "get").returns(Promise.resolve(fakeCache));
+      sandbox.stub(feed, "rotate").callsFake(val => val);
+      sandbox
+        .stub(feed, "scoreItemsInferred")
+        .callsFake(val => ({ data: val, filtered: [], personalized: false }));
+      sandbox.stub(feed, "fetchFromEndpoint").resolves({
+        recommendedAt: 0,
+        surfaceId: "NEW_TAB_EN_US",
+        data: [],
+        feeds: {
+          "section-1": {
+            title: "Section 1",
+            subtitle: "",
+            receivedFeedRank: 1,
+            layout: "cards",
+            iab: null,
+            isInitiallyVisible: true,
+            allowAds: null,
+            followable: null,
+            recommendations: [],
+          },
+        },
+      });
+
+      const feedData = await feed.getComponentFeed("url");
+      const [section] = feedData.data.sections;
+      assert.equal(section.allowAds, true);
+      assert.equal(section.followable, true);
+    });
+    it("should include followable in interestPicker.sections", async () => {
+      setPref("discoverystream.sections.enabled", true);
+      const fakeCache = {};
+      sandbox.stub(feed.cache, "get").returns(Promise.resolve(fakeCache));
+      sandbox.stub(feed, "rotate").callsFake(val => val);
+      sandbox
+        .stub(feed, "scoreItemsInferred")
+        .callsFake(val => ({ data: val, filtered: [], personalized: false }));
+      sandbox.stub(feed, "fetchFromEndpoint").resolves({
+        recommendedAt: 0,
+        surfaceId: "NEW_TAB_EN_US",
+        data: [],
+        feeds: {
+          "section-1": {
+            title: "Section 1",
+            subtitle: "",
+            receivedFeedRank: 1,
+            layout: "cards",
+            iab: null,
+            isInitiallyVisible: true,
+            followable: false,
+            recommendations: [],
+          },
+        },
+        interestPicker: {
+          sections: [{ sectionId: "section-1" }],
+        },
+      });
+
+      const feedData = await feed.getComponentFeed("url");
+      const [pickerSection] = feedData.data.interestPicker.sections;
+      assert.equal(pickerSection.sectionId, "section-1");
+      assert.equal(pickerSection.title, "Section 1");
+      assert.equal(pickerSection.followable, false);
+    });
 
     describe("client layout for sections", () => {
       beforeEach(() => {
         setPref("discoverystream.sections.enabled", true);
         setPref("discoverystream.sections.layout", "");
         globals.set("SectionsLayoutManager", SectionsLayoutManager);
+        feed.store.dispatch({
+          type: at.SECTIONS_LAYOUT_UPDATE,
+          data: {
+            configs: {
+              "daily-briefing": { name: "daily-briefing" },
+              "7-double-row-2-ad": { name: "7-double-row-2-ad" },
+            },
+          },
+        });
         const fakeCache = {};
         sandbox.stub(feed.cache, "get").returns(Promise.resolve(fakeCache));
         sandbox.stub(feed, "rotate").callsFake(val => val);
@@ -3065,15 +3315,15 @@ describe("DiscoveryStreamFeed", () => {
           "Second section should use default layout (config only has one entry)"
         );
       });
-      it("should fallback to 7-double-row-2-ad when sectionLayoutConfig layout name does not exist", async () => {
+      it("should fallback to default layout by index when sectionLayoutConfig layout name does not exist", async () => {
         setPref("discoverystream.sections.layout", "non-existent-layout");
         setPref("discoverystream.sections.clientLayout.enabled", true);
         const feedData = await feed.getComponentFeed("url");
 
         assert.equal(
           feedData.data.sections[0].layout.name,
-          "7-double-row-2-ad",
-          "First section should fallback to 7-double-row-2-ad"
+          "6-small-medium-1-ad",
+          "First section should fallback to first default layout"
         );
       });
       it("should apply multiple layouts from sectionLayoutConfig", async () => {

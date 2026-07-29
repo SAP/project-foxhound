@@ -38,7 +38,7 @@ export var UnitTestObjs = {
 export function allowAndroidEmulatorLoopback() {
    
 const result = UniFFIScaffolding.callSync(
-    149, // uniffi_viaduct_fn_func_allow_android_emulator_loopback
+    148, // uniffi_viaduct_fn_func_allow_android_emulator_loopback
 )
 return handleRustResult(
     result,
@@ -56,7 +56,7 @@ export function initBackend(
    
 FfiConverterTypeBackend.checkType(backend);
 const result = UniFFIScaffolding.callSync(
-    150, // uniffi_viaduct_fn_func_init_backend
+    149, // uniffi_viaduct_fn_func_init_backend
     FfiConverterTypeBackend.lower(backend),
 )
 return handleRustResult(
@@ -78,7 +78,7 @@ export function setGlobalDefaultUserAgent(
    
 FfiConverterString.checkType(userAgent);
 const result = UniFFIScaffolding.callSync(
-    151, // uniffi_viaduct_fn_func_set_global_default_user_agent
+    150, // uniffi_viaduct_fn_func_set_global_default_user_agent
     FfiConverterString.lower(userAgent),
 )
 return handleRustResult(
@@ -1293,7 +1293,7 @@ export class BackendImpl extends Backend {
         FfiConverterTypeRequest.checkType(request);
         FfiConverterTypeClientSettings.checkType(settings);
         const result = await UniFFIScaffolding.callAsync(
-            152, // uniffi_viaduct_fn_method_backend_send_request
+            151, // uniffi_viaduct_fn_method_backend_send_request
             FfiConverterTypeBackend.lowerReceiver(this),
             FfiConverterTypeRequest.lower(request),
             FfiConverterTypeClientSettings.lower(settings),

@@ -1,5 +1,4 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -129,9 +128,15 @@ interface nsIGfxInfo : nsISupports
    */
   enum FeatureType : uint8_t {
     FEATURE_INVALID = 0,
-#define GFXINFO_FEATURE(id, name, pref) FEATURE_##id,
+#define GFXINFO_FEATURE(id, pref) FEATURE_##id,
+#define GFXINFO_FEATURE_RETIRED(id, pref) FEATURE_##id,
+#define GFXINFO_FEATURE_ALLOWLIST(id, pref) FEATURE_##id,
+#define GFXINFO_FEATURE_MISMATCHED(id, name, pref) FEATURE_##id,
 #include "mozilla/widget/GfxInfoFeatureDefs.inc"
 #undef GFXINFO_FEATURE
+#undef GFXINFO_FEATURE_RETIRED
+#undef GFXINFO_FEATURE_ALLOWLIST
+#undef GFXINFO_FEATURE_MISMATCHED
     FEATURE_COUNT,
     /* This must be the first value after INVALID/ALL/OPTIONAL. */
     FEATURE_START = FEATURE_DIRECT3D_9_LAYERS

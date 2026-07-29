@@ -3,6 +3,10 @@
 
 "use strict";
 
+const { RunSearch } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/aiwindow/models/Tools.sys.mjs"
+);
+
 /**
  * Test that run_search tool calls work end-to-end from the AI window.
  *
@@ -32,25 +36,77 @@ async function dispatchSmartbarCommit(browser, value, action) {
   });
 }
 
-// Fullpage run_search: the tool navigates the tab away, then the post-tool
-// handoff in Chat.sys.mjs opens the sidebar to continue streaming.
+async function assertSidebarSmartbarFocused(win, message) {
+  const sidebarBrowser = win.document.getElementById("ai-window-browser");
+  await TestUtils.waitForCondition(() => {
+    const focusedElement = Services.focus.focusedElement;
+    return (
+      focusedElement === sidebarBrowser ||
+      focusedElement?.ownerDocument === sidebarBrowser.contentDocument
+    );
+  }, `${message}: wait for sidebar browser focus`);
+
+  await SpecialPowers.spawn(sidebarBrowser, [message], async msg => {
+    const aiWindowElement = content.document.querySelector("ai-window");
+    const smartbar = await ContentTaskUtils.waitForCondition(
+      () => aiWindowElement.shadowRoot?.querySelector("#ai-window-smartbar"),
+      `${msg}: wait for Smartbar`
+    );
+    // Smartbar lives in ai-window's shadow root, so document.activeElement
+    // returns the AI-WINDOW shadow host. Pierce one boundary to confirm
+    // focus actually landed on the smartbar's input field.
+    await ContentTaskUtils.waitForCondition(
+      () => smartbar.contains(aiWindowElement.shadowRoot.activeElement),
+      `${msg}: wait for Smartbar focus`
+    );
+    Assert.ok(
+      smartbar.contains(aiWindowElement.shadowRoot.activeElement),
+      `${msg}: Smartbar should contain shadow active element`
+    );
+  });
+}
+
+async function preloadAndCloseSidebar(win, aiTab) {
+  const preloadTab = await BrowserTestUtils.openNewForegroundTab(
+    win.gBrowser,
+    "https://example.com/"
+  );
+
+  await AIWindowUI.openSidebar(win);
+  await assertSidebarSmartbarFocused(win, "Preloaded sidebar");
+  AIWindowUI.closeSidebar(win, "test");
+
+  await BrowserTestUtils.removeTab(preloadTab);
+  win.gBrowser.selectedTab = aiTab;
+}
+
+// Fullpage run_search from a new AI tab: the tool navigates the tab away, then
+// the post-tool handoff in Chat.sys.mjs opens the sidebar to continue streaming.
 add_task(async function test_run_search_fullpage_opens_sidebar() {
   const sb = sinon.createSandbox();
 
   try {
-    // Stub run_search to navigate the browser away (like the real
-    // RunSearch does) so the original browsingContext becomes stale.
+    // Stub run_search to move the full-page conversation to the sidebar and
+    // navigate the browser away, like the real RunSearch does, so the original
+    // browsingContext becomes stale.
     const runSearchStub = sb
-      .stub(Chat.toolMap, "run_search")
-      .callsFake(async (_params, ctx) => {
-        const browser = ctx.browsingContext.embedderElement;
+      .stub(RunSearch, "runSearch")
+      .callsFake(async (_params, browsingContext) => {
+        const browser = browsingContext.embedderElement;
+        const win = browsingContext.topChromeWindow;
+        const tab = win.gBrowser.getTabForBrowser(browser);
+        await AIWindow.moveConversationToSidebar(win, tab);
         BrowserTestUtils.startLoadingURIString(
           browser,
           "https://example.com/search_results"
         );
         await BrowserTestUtils.browserLoaded(browser);
+        browser.focus();
+        await AIWindow.focusSidebar(win);
+        await assertSidebarSmartbarFocused(win, "Search completed handoff");
         return "Mock search results";
       });
+    let gotToolResultRequest = false;
 
     await withServer(
       {
@@ -59,11 +115,21 @@ add_task(async function test_run_search_fullpage_opens_sidebar() {
           args: JSON.stringify({ query: "test search query" }),
         },
         followupChunks: ["Here are your search results."],
+        onRequest(body) {
+          const messages = Array.isArray(body.messages) ? body.messages : [];
+          if (messages.some(m => m && m.role === "tool")) {
+            gotToolResultRequest = true;
+          }
+        },
       },
       async () => {
         const win = await openAIWindow();
-        const browser = win.gBrowser.selectedBrowser;
-        await BrowserTestUtils.browserLoaded(browser, false, AIWINDOW_URL);
+        const tab = await BrowserTestUtils.openNewForegroundTab(
+          win.gBrowser,
+          AIWINDOW_URL
+        );
+        const browser = tab.linkedBrowser;
+        await preloadAndCloseSidebar(win, tab);
 
         await dispatchSmartbarCommit(
           browser,
@@ -84,11 +150,48 @@ add_task(async function test_run_search_fullpage_opens_sidebar() {
           "Sidebar should open after fullpage run_search handoff"
         );
 
+        await TestUtils.waitForCondition(
+          () => gotToolResultRequest,
+          "Server should receive follow-up request with tool results"
+        );
+
+        await assertSidebarSmartbarFocused(win, "Full-page search handoff");
+
         await BrowserTestUtils.closeWindow(win);
       }
     );
   } finally {
     sb.restore();
+  }
+});
+
+// Bug 2037648: when the assistant kicks off a search, the load must not steal
+// keyboard focus into the loaded search results.
+add_task(async function test_run_search_skips_search_load_focus() {
+  const sb = sinon.createSandbox();
+  let win;
+  try {
+    const loadSearchStub = sb.stub(SearchUIUtils, "loadSearch").resolves();
+
+    win = await openAIWindow();
+    await AIWindow.performSearch("flights SFO to Boston", win);
+
+    Assert.ok(
+      loadSearchStub.calledOnce,
+      "SearchUIUtils.loadSearch should be invoked once"
+    );
+    const args = loadSearchStub.firstCall.args[0];
+    Assert.strictEqual(
+      args.avoidBrowserFocus,
+      true,
+      "Search hand-off must skip focusing the loaded search results browser"
+    );
+    Assert.equal(args.where, "current", "Should load in the current tab");
+  } finally {
+    sb.restore();
+    if (win) {
+      await BrowserTestUtils.closeWindow(win);
+    }
   }
 });
 
@@ -103,16 +206,16 @@ add_task(
 
     try {
       const runSearchStub = sb
-        .stub(Chat.toolMap, "run_search")
-        .callsFake(async (_params, ctx) => {
-          const ctxBrowser = ctx.browsingContext.embedderElement;
+        .stub(RunSearch, "runSearch")
+        .callsFake(async (_params, browsingContext) => {
+          const ctxBrowser = browsingContext.embedderElement;
           Assert.notEqual(
             ctxBrowser.id,
             "ai-window-browser",
             "browsingContext should be a tab browser, not the sidebar browser"
           );
           Assert.ok(
-            ctxBrowser.ownerGlobal.gBrowser.getTabForBrowser(ctxBrowser),
+            ctxBrowser.documentGlobal.gBrowser.getTabForBrowser(ctxBrowser),
             "browsingContext embedderElement should belong to a tab"
           );
           BrowserTestUtils.startLoadingURIString(
@@ -144,8 +247,6 @@ add_task(
         },
         async () => {
           const win = await openAIWindow();
-          const browser = win.gBrowser.selectedBrowser;
-          await BrowserTestUtils.browserLoaded(browser, false, AIWINDOW_URL);
 
           // Open a content tab so there's a real tab adjacent to the sidebar.
           const tab = await BrowserTestUtils.openNewForegroundTab(

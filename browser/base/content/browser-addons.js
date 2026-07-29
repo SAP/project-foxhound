@@ -1,5 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -373,7 +372,7 @@ customElements.define(
         domainItem.textContent = domain;
         domainsList.appendChild(domainItem);
       }
-      const { DocumentFragment } = this.ownerGlobal;
+      const { DocumentFragment } = this.documentGlobal;
       const fragment = new DocumentFragment();
       fragment.append(label);
       fragment.append(domainsList);
@@ -1000,7 +999,7 @@ function removeNotificationOnEnd(notification, installs) {
   }
 }
 
-function buildNotificationAction(msg, callback) {
+function buildNotificationAction(msg, callback, options = {}) {
   let label = "";
   let accessKey = "";
   for (let { name, value } of msg.attributes) {
@@ -1013,7 +1012,11 @@ function buildNotificationAction(msg, callback) {
         break;
     }
   }
-  return { label, accessKey, callback };
+  const action = { label, accessKey, callback };
+  if (options.disableSecurityDelay) {
+    action.disableSecurityDelay = true;
+  }
+  return action;
 }
 
 var gXPInstallObserver = {
@@ -1174,7 +1177,9 @@ var gXPInstallObserver = {
       "addon-install-cancel-button",
     ]);
     const action = buildNotificationAction(acceptMsg, acceptInstallation);
-    const secondaryAction = buildNotificationAction(cancelMsg, () => {});
+    const secondaryAction = buildNotificationAction(cancelMsg, () => {}, {
+      disableSecurityDelay: true,
+    });
 
     if (height) {
       notification.style.minHeight = height + "px";
@@ -1230,7 +1235,7 @@ var gXPInstallObserver = {
       PopupNotifications.getNotification(id, browser)
     ).filter(notification => notification != null);
 
-    PopupNotifications.remove(notifications, true);
+    PopupNotifications.remove(notifications, /* withoutUserResponse = */ true);
 
     return !!notifications.length;
   },
@@ -1303,7 +1308,11 @@ var gXPInstallObserver = {
           action = buildNotificationAction(disabledMsg, () => {
             Services.prefs.setBoolPref("xpinstall.enabled", true);
           });
-          secondaryActions = [buildNotificationAction(cancelMsg, () => {})];
+          secondaryActions = [
+            buildNotificationAction(cancelMsg, () => {}, {
+              disableSecurityDelay: true,
+            }),
+          ];
         }
 
         PopupNotifications.show(
@@ -1479,18 +1488,31 @@ var gXPInstallObserver = {
         };
 
         const declineActions = [
-          buildNotificationAction(dontAllowMsg, cancelInstallation),
-          buildNotificationAction(neverAllowMsg, neverAllowCallback),
+          buildNotificationAction(dontAllowMsg, cancelInstallation, {
+            disableSecurityDelay: true,
+          }),
+          buildNotificationAction(neverAllowMsg, neverAllowCallback, {
+            disableSecurityDelay: true,
+          }),
         ];
 
         if (isSitePermissionAddon) {
           // Restrict this to site permission add-ons for now pending a decision
           // from product about how to approach this for extensions.
+          const permissionType =
+            installInfo.installs[0].addon.sitePermissions?.[0];
           declineActions.push(
-            buildNotificationAction(neverAllowAndReportMsg, () => {
-              AMTelemetry.recordSuspiciousSiteEvent({ displayURI });
-              neverAllowCallback();
-            })
+            buildNotificationAction(
+              neverAllowAndReportMsg,
+              () => {
+                AMTelemetry.recordSuspiciousSiteEvent({
+                  displayURI,
+                  permissionType,
+                });
+                neverAllowCallback();
+              },
+              { disableSecurityDelay: true }
+            )
           );
         }
 
@@ -1541,13 +1563,17 @@ var gXPInstallObserver = {
         const action = buildNotificationAction(acceptMsg, () => {});
         action.disabled = true;
 
-        const secondaryAction = buildNotificationAction(cancelMsg, () => {
-          for (let install of installInfo.installs) {
-            if (install.state != AddonManager.STATE_CANCELLED) {
-              install.cancel();
+        const secondaryAction = buildNotificationAction(
+          cancelMsg,
+          () => {
+            for (let install of installInfo.installs) {
+              if (install.state != AddonManager.STATE_CANCELLED) {
+                install.cancel();
+              }
             }
-          }
-        });
+          },
+          { disableSecurityDelay: true }
+        );
 
         let notification = PopupNotifications.show(
           browser,
@@ -3023,7 +3049,7 @@ var gUnifiedExtensions = {
   onWidgetOverflow(aNode) {
     // We register a CUI listener for each window so we make sure that we
     // handle the event for the right window here.
-    if (window !== aNode.ownerGlobal) {
+    if (window !== aNode.documentGlobal) {
       return;
     }
 
@@ -3033,7 +3059,7 @@ var gUnifiedExtensions = {
   onWidgetUnderflow(aNode) {
     // We register a CUI listener for each window so we make sure that we
     // handle the event for the right window here.
-    if (window !== aNode.ownerGlobal) {
+    if (window !== aNode.documentGlobal) {
       return;
     }
 
@@ -3043,7 +3069,7 @@ var gUnifiedExtensions = {
   onAreaNodeRegistered(aArea, aContainer) {
     // We register a CUI listener for each window so we make sure that we
     // handle the event for the right window here.
-    if (window !== aContainer.ownerGlobal) {
+    if (window !== aContainer.documentGlobal) {
       return;
     }
 
@@ -3226,8 +3252,8 @@ var gUnifiedExtensions = {
       } else {
         BrowserAddonUI.openAddonsMgr("addons://list/extension");
       }
-      // Close panel.
-      this.togglePanel();
+      // The panel closes automatically when the `<moz-button>` is pressed since
+      // the `closepanel` attribute was not set to `none`.
     });
 
     return discoverButton;

@@ -4,8 +4,8 @@ skip-if(Android) load 1849271.html
 skip-if(Android) load 1864475.html
 skip-if(Android) load 1881079.html
 skip-if(Android) load 1889831.html
-skip-if(Android) pref(media.ffmpeg.encoder.enabled,true) load 1891117.html
-skip-if(Android) pref(media.ffmpeg.encoder.enabled,true) load 1897631.html
+skip-if(Android) load 1891117.html
+skip-if(Android) load 1897631.html
 skip-if(Android) load 1902555.html
 skip-if(Android) load 1905399.html
 skip-if(Android) load 1907438.html
@@ -21,3 +21,7 @@ skip-if(Android) load 2013957.html
 skip-if(Android) load 2014836.html
 skip-if(Android) load 2014892.html
 skip-if(Android) load 2017470.html
+skip-if(Android) load 2017491.html
+skip-if(Android) load 2021420.html
+skip-if(Android) load 2021184.html
+skip-if(Android) load 2045057.html

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,15 +8,15 @@
 
 #include "mozilla/psm/PKCS11ModuleChild.h"
 
+#include "PKCS11ModuleDB.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "nsDebugImpl.h"
-
-#include <chrono>
-#include <thread>
+#include "NSSCertDBTrustDomain.h"
 
 namespace mozilla::psm {
 
-nsresult PKCS11ModuleChild::Start(Endpoint<PPKCS11ModuleChild>&& aEndpoint) {
+nsresult PKCS11ModuleChild::Start(Endpoint<PPKCS11ModuleChild>&& aEndpoint,
+                                  nsCString&& aProfilePath) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(!mTaskQueue);
 
@@ -31,23 +30,48 @@ nsresult PKCS11ModuleChild::Start(Endpoint<PPKCS11ModuleChild>&& aEndpoint) {
 
   rv = mTaskQueue->Dispatch(NS_NewRunnableFunction(
       "PKCS11ModuleChild::StartBind",
-      [self = RefPtr{this}, endpoint = std::move(aEndpoint)]() mutable {
+      [self = RefPtr{this}, endpoint = std::move(aEndpoint),
+       profilePath = std::move(aProfilePath)]() mutable {
+        if (profilePath.IsEmpty()) {
+          NS_WARNING(
+              "no profile path for utility process: loading PKCS#11 modules "
+              "will fail");
+        } else {
+          SECStatus srv = InitializeNSS(profilePath, NSSDBConfig::ReadWrite,
+                                        PKCS11DBConfig::LoadModules);
+          if (srv != SECSuccess) {
+            NS_WARNING(
+                "could not load NSS in utility process: loading PKCS#11 "
+                "modules will fail");
+          }
+        }
         MOZ_ALWAYS_TRUE(endpoint.Bind(self));
       }));
   return rv;
 }
 
-ipc::IPCResult PKCS11ModuleChild::RecvLoadModule(
-    nsString&& aModule, LoadModuleResolver&& aResolver) {
-  if (aModule != u"MySecretModule"_ns) {
-    aResolver(NS_ERROR_NOT_IMPLEMENTED);
-    return IPC_OK();
-  }
+ipc::IPCResult PKCS11ModuleChild::RecvAddModule(nsCString&& aModuleName,
+                                                nsCString&& aLibraryPath,
+                                                uint32_t aMechanismFlags,
+                                                uint32_t aCipherFlags,
+                                                AddModuleResolver&& aResolver) {
+  aResolver(PKCS11ModuleDB::DoAddModule(aModuleName, aLibraryPath,
+                                        aMechanismFlags, aCipherFlags));
+  return IPC_OK();
+}
 
-  // Simulate a long but successful load
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-  aResolver(NS_OK);
+ipc::IPCResult PKCS11ModuleChild::RecvDeleteModule(
+    nsCString&& aModuleName, DeleteModuleResolver&& aResolver) {
+  aResolver(PKCS11ModuleDB::DoDeleteModule(aModuleName));
+  return IPC_OK();
+}
 
+ipc::IPCResult PKCS11ModuleChild::RecvListModules(
+    ListModulesResolver&& aResolver) {
+  nsTArray<ModuleInfo> modules;
+  nsresult rv = PKCS11ModuleDB::DoListModules(modules);
+  using Type = std::tuple<const nsresult&, nsTArray<ModuleInfo>&&>;
+  aResolver(Type(rv, std::move(modules)));
   return IPC_OK();
 }
 

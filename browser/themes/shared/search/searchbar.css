@@ -79,7 +79,7 @@
   margin-block: 0;
   padding: 0;
   color: inherit;
-  border-radius: var(--toolbarbutton-border-radius);
+  border-radius: var(--urlbar-border-radius);
 }
 
 @media (-moz-platform: windows) {
@@ -91,13 +91,13 @@
 /* We don't handle `:active` because it doesn't work on the search or settings
    buttons due to event.preventDefault() in SearchOneOffs._on_mousedown(). */
 .searchbar-engine-one-off-item:not([selected]):hover {
-  background-color: var(--urlbarView-hover-background);
+  background-color: var(--urlbarview-background-color-hover);
   color: inherit;
 }
 
 .searchbar-engine-one-off-item[selected] {
-  background-color: var(--urlbarView-highlight-background);
-  color: var(--urlbarView-highlight-color);
+  background-color: var(--urlbarview-background-color-selected);
+  color: var(--urlbarview-text-color-selected);
 }
 
 .searchbar-engine-one-off-item > .button-box > .button-text {
@@ -120,7 +120,7 @@
 }
 
 .search-panel-tree > .autocomplete-richlistitem:hover {
-  background-color: var(--urlbarView-hover-background);
+  background-color: var(--urlbarview-background-color-hover);
 }
 
 .search-panel-tree > .autocomplete-richlistitem > .ac-type-icon {
@@ -146,7 +146,7 @@
   margin: var(--panel-separator-margin);
   padding: 0;
   border: 0;
-  border-top: 1px solid var(--urlbarView-separator-color);
+  border-top: 1px solid var(--urlbarview-separator-color);
   color: inherit;
 }
 
@@ -169,7 +169,7 @@
 
 @media (-moz-platform: windows) {
   #PopupSearchAutoComplete {
-    --panel-border-radius: var(--arrowpanel-border-radius);
+    --panel-border-radius: inherit;
   }
 }
 

@@ -13,7 +13,7 @@ from .base import (get_free_port,
 from ..executors.executormarionette import (MarionetteTestharnessExecutor,  # noqa: F401
                                             MarionetteRefTestExecutorAndroid,  # noqa: F401
                                             MarionetteCrashtestExecutor,  # noqa: F401
-                                            MarionetteWdspecExecutor)  # noqa: F401
+                                            MarionettePytestExecutor)  # noqa: F401
 from .base import (Browser,
                    ExecutorBrowser)
 from .firefox import (get_timeout_multiplier,  # noqa: F401
@@ -21,7 +21,7 @@ from .firefox import (get_timeout_multiplier,  # noqa: F401
                       run_info_extras as fx_run_info_extras,
                       update_properties,  # noqa: F401
                       executor_kwargs as fx_executor_kwargs,  # noqa: F401
-                      FirefoxWdSpecBrowser,
+                      FirefoxPytestBrowser,
                       ProfileCreator as FirefoxProfileCreator)
 
 
@@ -32,7 +32,8 @@ __wptrunner__ = {"product": "firefox_android",
                  "executor": {"testharness": "MarionetteTestharnessExecutor",
                               "reftest": "MarionetteRefTestExecutorAndroid",
                               "crashtest": "MarionetteCrashtestExecutor",
-                              "wdspec": "MarionetteWdspecExecutor"},
+                              "wdspec": "MarionettePytestExecutor",
+                              "test262": "MarionetteTestharnessExecutor"},
                  "browser_kwargs": "browser_kwargs",
                  "executor_kwargs": "executor_kwargs",
                  "env_extras": "env_extras",
@@ -167,14 +168,7 @@ class ProfileCreator(FirefoxProfileCreator):
 
     @staticmethod
     def default_prefs():
-        # Until the test harness can understand default pref values,
-        # (https://bugzilla.mozilla.org/show_bug.cgi?id=1577912) this value
-        # should by synchronized with the default pref value indicated in
-        # StaticPrefList.yaml.
-        #
-        # Currently for automation, the pref defaults to false (but can be
-        # overridden with --setpref).
-        return {"fission.disableSessionHistoryInParent": False}
+        return {}
 
     def _get_required_prefs(self):
         return {
@@ -404,7 +398,7 @@ class FirefoxAndroidBrowser(Browser):
             return False
 
 
-class FirefoxAndroidWdSpecBrowser(FirefoxWdSpecBrowser):
+class FirefoxAndroidWdSpecBrowser(FirefoxPytestBrowser):
     def __init__(self, logger, config=None, device_serial=None, adb_binary=None, **kwargs):
 
         if "profile_creator_cls" not in kwargs:

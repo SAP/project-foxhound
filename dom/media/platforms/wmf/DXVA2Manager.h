@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -65,6 +63,7 @@ class DXVA2Manager {
                                    gfx::ColorRange aColorRange,
                                    gfx::ColorDepth aColorDepth,
                                    gfx::TransferFunction aTransferFunction,
+                                   const Maybe<gfx::HDRMetadata>& aHDRMetadata,
                                    uint32_t aWidth, uint32_t aHeight) {
     return S_OK;
   }
@@ -73,6 +72,7 @@ class DXVA2Manager {
                                    gfx::ColorRange aColorRange,
                                    gfx::ColorDepth aColorDepth,
                                    gfx::TransferFunction aTransferFunction,
+                                   const Maybe<gfx::HDRMetadata>& aHDRMetadata,
                                    uint32_t aWidth, uint32_t aHeight) {
     // Not implemented!
     MOZ_CRASH("ConfigureForSize not implemented on this manager.");

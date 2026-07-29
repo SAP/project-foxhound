@@ -30,7 +30,7 @@ described by number 1 below.
 
 1. When the user opens the Firefox Browser, the code starts to build the browser
    UI components. During this startup phase, we have various systems making
-   calls to the ``SearchService``. E.g. `browser.js <https://searchfox.org/mozilla-central/rev/cb6f8d7b1f1782b9d4b2ee7312de1dcc284aaf06/browser/base/content/browser.js#3797>`_
+   calls to the ``SearchService``. E.g. :searchfox:`browser.js <mozilla-central/rev/cb6f8d7b1f1782b9d4b2ee7312de1dcc284aaf06:browser/base/content/browser.js#3797>`
    calls ``SearchService.getDefault`` to fetch the default Search Engine.
 
 2. The ``SearchService`` needs information from ``System Add-ons``,
@@ -38,8 +38,8 @@ described by number 1 below.
    the right order and to return the list of engines to its callers.
 
    a) First, the ``SearchService`` makes a request for the search configuration.
-   ``SearchService`` calls `SearchEngineSelector.fetchEngineConfiguration <https://searchfox.org/mozilla-central/rev/cb6f8d7b1f1782b9d4b2ee7312de1dcc284aaf06/toolkit/components/search/SearchService.sys.mjs#2247>`_
-   which makes a call to `Remote Settings <https://searchfox.org/mozilla-central/rev/cb6f8d7b1f1782b9d4b2ee7312de1dcc284aaf06/toolkit/components/search/SearchEngineSelector.sys.mjs#129>`_
+   ``SearchService`` calls :searchfox:`SearchEngineSelector.fetchEngineConfiguration <mozilla-central/rev/cb6f8d7b1f1782b9d4b2ee7312de1dcc284aaf06:toolkit/components/search/SearchService.sys.mjs#2247>`
+   which makes a call to :searchfox:`Remote Settings <mozilla-central/rev/cb6f8d7b1f1782b9d4b2ee7312de1dcc284aaf06:toolkit/components/search/SearchEngineSelector.sys.mjs#129>`
    for the search configuration. Remote Settings does not fetch the search
    configuration from the remote database on startup. Instead Remote Settings
    tries to load the :searchfox:`search configuration dump file <services/settings/dumps/main/search-config.json>`
@@ -48,18 +48,18 @@ described by number 1 below.
    remote database when necessary. By connecting after startup, it avoids
    a potential network request that could delay startup.
 
-   b) Second, the ``SearchService`` `fetches a JSON file <https://searchfox.org/mozilla-central/rev/cb6f8d7b1f1782b9d4b2ee7312de1dcc284aaf06/toolkit/components/search/SearchService.sys.mjs#1296-1297>`_
-   from the `SearchSettings <https://searchfox.org/mozilla-central/source/toolkit/components/search/SearchSettings.sys.mjs>`_.
+   b) Second, the ``SearchService`` :searchfox:`fetches a JSON file <mozilla-central/rev/cb6f8d7b1f1782b9d4b2ee7312de1dcc284aaf06:toolkit/components/search/SearchService.sys.mjs#1296-1297>`
+   from the :searchfox:`SearchSettings <toolkit/components/search/SearchSettings.sys.mjs>`.
    This JSON file contains Search Engine metadata that is saved on the user's
    computer. It's information that helps the ``SearchService`` remember the
    user's custom settings for the Search Engines.
 
-   c) Third, the `System Add-ons <https://searchfox.org/mozilla-central/rev/cb6f8d7b1f1782b9d4b2ee7312de1dcc284aaf06/browser/components/extensions/parent/ext-chrome-settings-overrides.js#536>`_
+   c) Third, the :searchfox:`System Add-ons <mozilla-central/rev/cb6f8d7b1f1782b9d4b2ee7312de1dcc284aaf06:browser/components/extensions/parent/ext-chrome-settings-overrides.js#536>`
    passes the extension data to the ``SearchService``. At this point, the
    ``SearchService`` only installs user installed search extensions. For the
-   Application Provided engines we create those when ``SearchService`` calls `_makeEngineFromConfig <https://searchfox.org/mozilla-central/rev/3002762e41363de8ee9ca80196d55e79651bcb6b/toolkit/components/search/SearchService.sys.mjs#3421-3440>`_.
+   Application Provided engines we create those when ``SearchService`` calls :searchfox:`_makeEngineFromConfig <mozilla-central/rev/3002762e41363de8ee9ca80196d55e79651bcb6b:toolkit/components/search/SearchService.sys.mjs#3421-3440>`.
    Then ``_makeEngineFromConfig`` will create a new ``AddonSearchEngine``.
-   When the `AddonSearchEngine.init <https://searchfox.org/mozilla-central/rev/3002762e41363de8ee9ca80196d55e79651bcb6b/toolkit/components/search/AddonSearchEngine.sys.mjs#83-87,89>`_
+   When the :searchfox:`AddonSearchEngine.init <mozilla-central/rev/3002762e41363de8ee9ca80196d55e79651bcb6b:toolkit/components/search/AddonSearchEngine.sys.mjs#83-87,89>`
    method is called, it combines both the extension and search configuration
    data to create the correct engine for the user based on locale, region and
    other information.

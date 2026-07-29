@@ -10,6 +10,23 @@ $tags:
   - 'Core :: Security: PSM'
 
 cert_verifier:
+  crlite_not_covered_cert_age:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      The age of a certificate (in milliseconds) when it is not covered by
+      CRLite, measured as the time between the most recent SCT timestamp and
+      the validation time.
+    data_sensitivity:
+      - technical
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2022068
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2022068
+    notification_emails:
+      - jschanck@mozilla.com
+    expires: never
+
   crlite_status:
     type: labeled_counter
     description: >

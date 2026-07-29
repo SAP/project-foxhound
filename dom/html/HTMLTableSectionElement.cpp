@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -33,10 +31,10 @@ NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(HTMLTableSectionElement,
 
 NS_IMPL_ELEMENT_CLONE(HTMLTableSectionElement)
 
-nsIHTMLCollection* HTMLTableSectionElement::Rows() {
+HTMLCollection* HTMLTableSectionElement::Rows() {
   if (!mRows) {
-    mRows = new nsContentList(this, mNodeInfo->NamespaceID(), nsGkAtoms::tr,
-                              nsGkAtoms::tr, false);
+    mRows = new ContentList(this, mNodeInfo->NamespaceID(), nsGkAtoms::tr,
+                            nsGkAtoms::tr, false);
   }
 
   return mRows;
@@ -49,7 +47,7 @@ already_AddRefed<nsGenericHTMLElement> HTMLTableSectionElement::InsertRow(
     return nullptr;
   }
 
-  nsIHTMLCollection* rows = Rows();
+  HTMLCollection* rows = Rows();
 
   uint32_t rowCount = rows->Length();
   if (aIndex > (int32_t)rowCount) {
@@ -86,7 +84,7 @@ void HTMLTableSectionElement::DeleteRow(int32_t aValue, ErrorResult& aError) {
     return;
   }
 
-  nsIHTMLCollection* rows = Rows();
+  HTMLCollection* rows = Rows();
 
   uint32_t refIndex;
   if (aValue == -1) {

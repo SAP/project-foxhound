@@ -1,5 +1,4 @@
-/* -*- Mode: Groovy; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -15,53 +14,49 @@ def hasCompileArtifacts() {
         || System.getenv("MOZ_CHROME_MULTILOCALE") // Multi-locale packaging.
 }
 
-ext.configureVariantWithGeckoBinaries = { variant ->
-    if (hasCompileArtifacts()) {
-        // Local (read, not 'official') builds want to reflect developer changes to
-        // the omnijar sources, and (when compiling) to reflect developer changes to
-        // the native binaries.  To do this, the Gradle build calls out to the
-        // moz.build system, which can be re-entrant.  Official builds are driven by
-        // the moz.build system and should never be re-entrant in this way.
-        def assetGenTask = tasks.findByName("generate${variant.name.capitalize()}Assets")
-        def jniLibFoldersTask = tasks.findByName("merge${variant.name.capitalize()}JniLibFolders")
-        if (!mozconfig.substs.MOZILLA_OFFICIAL && !mozconfig.substs.ENABLE_MOZSEARCH_PLUGIN) {
-            assetGenTask.dependsOn rootProject.machStagePackage
-            jniLibFoldersTask.dependsOn rootProject.machStagePackage
+ext.configureVariantWithGeckoBinaries = { variantName ->
+    // Local (read, not 'official') builds want to reflect developer changes to
+    // the omnijar sources, and (when compiling) to reflect developer changes to
+    // the native binaries.  To do this, the Gradle build calls out to the
+    // moz.build system, which can be re-entrant.  Official builds are driven by
+    // the moz.build system and should never be re-entrant in this way.
+    if (hasCompileArtifacts() && !mozconfig.substs.MOZILLA_OFFICIAL && !mozconfig.substs.ENABLE_MOZSEARCH_PLUGIN) {
+        // `onVariants` runs before AGP creates these tasks, so defer the wiring with `configureEach`.
+        ["generate${variantName.capitalize()}Assets", "merge${variantName.capitalize()}JniLibFolders"].each { taskName ->
+            tasks.matching { it.name == taskName }.configureEach {
+                dependsOn rootProject.machStagePackage
+            }
         }
     }
 }
 
-ext.configureLibraryVariantWithJNIWrappers = { variant, module ->
+ext.configureLibraryVariantWithJNIWrappers = { variantName, javacClasspath, module ->
     // BundleLibRuntime prepares the library for further processing to be
     // incorporated in an app. We use this version to create the JNI wrappers.
-    def jarTask = tasks["bundleLibRuntimeToJar${variant.name.capitalize()}"]
-    def bundleJar = jarTask.outputs.files.find({ it.name == 'classes.jar' })
+    def jarTask = tasks.named("bundleLibRuntimeToJar${variantName.capitalize()}")
+    def bundleJar = jarTask.map { it.outputs.files.find({ f -> f.name == 'classes.jar' }) }
 
     def annotationProcessorsJarTask = project(':annotations').jar
-
-    def classpathFilesProvider = variant.javaCompileProvider.flatMap { javaCompileTask ->
-        project.provider { javaCompileTask.classpath.files }
-    }
 
     def wrapperTask
     if (System.env.IS_LANGUAGE_REPACK == '1') {
         // Single-locale l10n repacks set `IS_LANGUAGE_REPACK=1` and don't
         // really have a build environment.
-        wrapperTask = tasks.register("generateJNIWrappersFor${module}${variant.name.capitalize()}")
+        wrapperTask = tasks.register("generateJNIWrappersFor${module}${variantName.capitalize()}")
     } else {
-        wrapperTask = tasks.register("generateJNIWrappersFor${module}${variant.name.capitalize()}", JavaExec) {
+        wrapperTask = tasks.register("generateJNIWrappersFor${module}${variantName.capitalize()}", JavaExec) {
             classpath annotationProcessorsJarTask.archiveFile
-        
+
             // Configure the classpath at evaluation-time, not at
             // configuration-time: see above comment.
             doFirst {
-                classpath classpathFilesProvider.get()
+                classpath javacClasspath
             }
 
             mainClass = 'org.mozilla.gecko.annotationProcessors.AnnotationProcessor'
             args module
-            args bundleJar
-            
+            args bundleJar.get()
+
             workingDir "${topobjdir}/widget/android"
 
             inputs.file(bundleJar)

@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s nuya\' ronojel pan aq\'a\'.</p>\n<p>Tawokisaj achi\'el jun ichinan okik\'amaya\'l:\n<ul>\n<li>Tikanöx chuqa\' tokisäx ri chokoy</li>\n<li>Keq\'at ojqanela\' (o kek\'ex taq cha\'oj richin niya\' q\'ij chi ke ri ojqanela\')</li>\n<li>Tiyuj richin yeyuj el taq kaxlawey chuqa\' runatab\'al kanoxïk chuqa\' okem pa k\'amaya\'l</li>\n</ul> </p>\n<p>%1$s Xsamajin ruma ri Mozilla. Ri taqel qataqanem ja ri niqayäk qak\'u\'x richin jun jaqäl chuqa\' raxinäq k\'amaya\'l.<br/>\n<a href=\"%2$s\">Tetamäx ch\'aqa\' chik</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s nuya\' ronojel pan aq\'a\'.</p>\n<p>Tawokisaj achi\'el jun ichinan okik\'amaya\'l:\n<ul>\n<li>Tikanöx chuqa\' tokisäx ri chokoy</li>\n<li>Keq\'at ojqanela\' (o kek\'ex taq cha\'oj richin niya\' q\'ij chi ke ri ojqanela\')</li>\n<li>Tiyuj richin yeyuj el taq kaxlawey chuqa\' runatab\'al kanoxïk chuqa\' okem pa k\'amaya\'l</li>\n</ul> </p>\n<p>%1$s Xsamajin ruma ri Mozilla. Ri taqel qataqanem ja ri niqayäk qak\'u\'x richin jun jaqäl chuqa\' raxinäq k\'amaya\'l.<br/>\n<a href=\"%2$s\">Tetamäx ch\'aqa\' chik</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Tetamäx ch\'aqa\' chik</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Titz\'ajb\'äx o titz\'ib\'äx URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Tz\'eteb\'äl: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Tz\'eteb\'äl: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Rutz\'etb\'al: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Ticha\' %1$s richin okik\'amaya\'l k\'o wi</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Ketaq taq tzij richin ye\'okisäx</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Tetamäx ch\'aqa\' chik</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Ri Mozilla nutïj ruq\'ij chi numöl ri niqajo\' niqataluj chuqa\' niqutzilaj %1$s k\'atzinel chi qe qonojel.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Ri Mozilla nutïj ruq\'ij chi numöl ri niqajo\' niqataluj chuqa\' niqutzilaj %1$s k\'atzinel chi qe qonojel.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Ping nokisäx ronojel q\'ij</string>
-  <string name="preference_daily_usage_ping_description">Re re\' nuto\' ri Mozilla richin nitikïr yerajilaj taq ruwinaq yetajin.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Re re\' nuto\' ri Mozilla richin nitikïr yerajilaj taq ruwinaq yetajin.</string>
   <string name="preference_daily_usage_ping_learn_more">Tetamäx ch\'aqa\' chik</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Rutzijol Ichinanem</string>
@@ -562,6 +562,8 @@
   <string name="tabs_tray_action_erase">Tiyuj runatab\'al okem pa k\'amaya\'l</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">Ketz\'apïx ri ch\'aqa\' chik taq ruwi\'</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">Titz\'aqatisäx k\'ak\'a\' ruwi\'</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -582,6 +584,21 @@
   <string name="security_popup_security_verified">Jikib\'an ruma: %1$s</string>
   <!-- Content Description of Security Icon in toolbar -->
   <string name="site_security_icon_content_description">Rujikomal Ruxaq K\'amaya\'l</string>
+  <!--
+    %1$s will be replaced with the organization for which the certificate
+    used by the site was issued. For example, the certificate in use by
+    the site https://eidas.ec.europa.eu/ was issued to "The European
+    Commission".
+  -->
+  <string name="qualified_identity">Iqitzijib\'äl talun richin %1$s</string>
+  <!--
+    The European Union eIDAS Regulation specifies a type of certificate
+    called a "qualified website authentication certificate" (QWAC) and
+    requires that browsers identify and indicate such certificates. This
+    text was paraphrased from ETSI TS 119 411-5 V2.1.1 section 6.3 and
+    indicates that the website uses a QWAC.
+  -->
+  <string name="qualified_text">Rojqan taq ajowaxïk ejikib\'an pa ri Rutaqonem (EU) 2024/1183.</string>
   <string name="preference_autocomplete_duplicate_url_error">K\'o chik ri URL</string>
   <!-- Label for the Find in page button -->
   <string name="find_in_page">Tikanöx pa Ruxaq</string>
@@ -812,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Titz\'apïx Ruwi\'</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Titaq rutzijol sachoj chi re Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Titaq rutzijol sachoj chi re Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->
@@ -880,7 +897,7 @@
   <!-- The document title and heading of the error page shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_title">Man ütz ta okem</string>
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Rik\'in jub\'a\' jun ruk\'ayewal ri runuk\'ulem ruk\'u\'x samaj, o chuqa\' k\'o ri tajin nik\'exo ri ruk\'u\'x samaj. <br/><br/> We at jikïl chi atokinäq chik ütz pa re ruk\'u\'x samaj re\', to ri sachoj xa xe jun ti mej xtub\'än.]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Rik\'in jub\'a\' jun ruk\'ayewal ri runuk\'ulem ruk\'u\'x samaj, o chuqa\' k\'o ri tajin nik\'exo ri ruk\'u\'x samaj. <br/><br/>\nWe at jikïl chi atokinäq chik ütz pa re ruk\'u\'x samaj re\', to ri sachoj xa xe jun ti mej xtub\'än.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Rik\'in jub\'a\' k\'o noxk\'ob\'en ri ruxaq ruma ri\' yak\'oje\' pa k\'ayewal pe k\'a nasamajij el.</label> <br><br>\n<label>%1$s man nukuqub\'a\' ta ruk\'u\'x chi rij <b>%2$s</b> ruma man etaman ta ruwäch ri xya\'o ri iqitzijob\'al, ri iqitzijob\'al ruyon juch\'un o ri ruk\'u\'x samaj man yerutäq ta ri nik\'aj ütz taq iqitizjob\'al.</label>]]></string>
   <!--

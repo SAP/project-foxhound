@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -9,12 +7,13 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <string_view>
 
+#include "js/GCVector.h"
 #include "js/ProtoKey.h"
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
 #include "js/Utility.h"
+#include "util/LanguageId.h"
 
 namespace mozilla::intl {
 enum class ICUError : uint8_t;
@@ -22,6 +21,10 @@ enum class ICUError : uint8_t;
 
 namespace JS {
 class CallArgs;
+}
+
+namespace js {
+class ArrayObject;
 }
 
 namespace js::intl {
@@ -55,7 +58,9 @@ extern void ReportInternalError(JSContext* cx, mozilla::intl::ICUError error);
  * an implementation, and that en-GB is more representative of the English used
  * in other locales.
  */
-static constexpr std::string_view LastDitchLocale() { return "en-GB"; }
+static constexpr LanguageId LastDitchLocale() {
+  return LanguageId::fromValidBcp49("en-GB");
+}
 
 extern JS::UniqueChars EncodeLocale(JSContext* cx, JSString* locale);
 
@@ -63,6 +68,14 @@ extern JS::UniqueChars EncodeLocale(JSContext* cx, JSString* locale);
 // our uses of ICU string functions, below and elsewhere, will try to fill the
 // buffer's entire inline capacity before growing it and heap-allocating.
 constexpr size_t INITIAL_CHAR_BUFFER_SIZE = 32;
+
+using StringList = JS::GCVector<JSLinearString*>;
+
+/**
+ * Create a sorted array from a list of strings.
+ */
+ArrayObject* CreateSortedArrayFromList(JSContext* cx,
+                                       JS::MutableHandle<StringList> list);
 
 void AddICUCellMemory(JSObject* obj, size_t nbytes);
 

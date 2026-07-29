@@ -72,7 +72,7 @@ add_task(
   {
     skip_if: () => AppConstants.MOZ_SYSTEM_NSS,
   },
-  async function testRetryMlkem768x25519() {
+  async function testMlkem768x25519NoX25519Fallback() {
     const retryDomain = "mlkem768x25519-net-interrupt.example.com";
 
     Services.prefs.setBoolPref("security.tls.enable_kyber", true);
@@ -84,29 +84,23 @@ add_task(
     // ssl_grp_ec_curve25519 = 29
     let countOfMlkem = handlerCount("/callback/4588");
     let countOfX25519 = handlerCount("/callback/29");
-    let countOfPrEndOfFileError =
-      await Glean.tls.xyberIntoleranceReason.PR_END_OF_FILE_ERROR.testGetValue();
 
     let chan = makeChan(`https://${retryDomain}:8443`);
-    let [, buf] = await channelOpenPromise(chan, CL_ALLOW_UNKNOWN_CL);
-    ok(buf);
-    // The server will make a mlkem768x25519 callback for the initial request, and
-    // then an x25519 callback for the retry. Both callback counts should
-    // increment by one.
-    equal(
+    let [req] = await channelOpenPromise(chan, CL_EXPECT_FAILURE);
+    // PR_END_OF_FILE_ERROR maps to NS_ERROR_NET_RESET, so the transaction retries.
+    equal(req.status, Cr.NS_ERROR_NET_RESET);
+    // At least one mlkem attempt was made (may be more due to retries).
+    Assert.greater(
       handlerCount("/callback/4588"),
-      countOfMlkem + 1,
+      countOfMlkem,
       "negotiated mlkem768x25519"
     );
-    equal(handlerCount("/callback/29"), countOfX25519 + 1, "negotiated x25519");
-    if (!mozinfo.socketprocess_networking) {
-      // Bug 1824574
-      equal(
-        countOfPrEndOfFileError + 1,
-        await Glean.tls.xyberIntoleranceReason.PR_END_OF_FILE_ERROR.testGetValue(),
-        "PR_END_OF_FILE_ERROR telemetry accumulated"
-      );
-    }
+    // x25519 was never negotiated across the original attempt or any retry.
+    equal(
+      handlerCount("/callback/29"),
+      countOfX25519,
+      "did not negotiate x25519"
+    );
   }
 );
 
@@ -114,7 +108,7 @@ add_task(
   {
     skip_if: () => AppConstants.MOZ_SYSTEM_NSS,
   },
-  async function testNoRetryMlkem768x25519() {
+  async function testNoRetryMlkem768x25519HandshakeFailed() {
     const retryDomain = "mlkem768x25519-alert-after-server-hello.example.com";
 
     Services.prefs.setBoolPref("security.tls.enable_kyber", true);

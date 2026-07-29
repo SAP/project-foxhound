@@ -83,6 +83,8 @@ support-files = [
 
 ["test_blackboxing-08.js"]
 
+["test_blackboxing-09.js"]
+
 ["test_breakpoint-01.js"]
 
 ["test_breakpoint-03.js"]

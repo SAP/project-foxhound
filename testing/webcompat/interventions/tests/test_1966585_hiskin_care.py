@@ -6,7 +6,7 @@ IFRAME_CSS = "iframe[src*='booking-v3.hiskin.care']"
 
 async def is_frame_visible(client):
     await client.navigate(URL, wait="none")
-    frame = client.await_css(IFRAME_CSS, is_displayed=True)
+    frame = client.await_css(IFRAME_CSS, timeout=30, is_displayed=True)
     return client.execute_script("return arguments[0].clientHeight > 0", frame)
 
 

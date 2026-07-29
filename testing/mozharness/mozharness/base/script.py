@@ -27,6 +27,7 @@ import stat
 import subprocess
 import sys
 import tarfile
+import tempfile
 import threading
 import time
 import traceback
@@ -1786,33 +1787,33 @@ class ScriptMixin(PlatformMixin):
         if isinstance(command, list):
             self.info("Copy/paste: %s" % subprocess.list2cmdline(command))
         # This could potentially return something?
-        tmp_stdout = None
-        tmp_stderr = None
-        tmp_stdout_filename = "%s_stdout" % tmpfile_base_path
-        tmp_stderr_filename = "%s_stderr" % tmpfile_base_path
         if success_codes is None:
             success_codes = [0]
 
-        # TODO probably some more elegant solution than 2 similar passes
         try:
-            tmp_stdout = open(tmp_stdout_filename, "w")
+            tmp_stdout_fd, tmp_stdout_filename = tempfile.mkstemp(
+                suffix="_stdout", prefix=tmpfile_base_path + "_"
+            )
         except OSError:
             level = ERROR
             if halt_on_failure:
                 level = FATAL
             self.log(
-                "Can't open %s for writing!" % tmp_stdout_filename + self.exception(),
+                "Can't open stdout tmpfile for writing!" + self.exception(),
                 level=level,
             )
             return None
         try:
-            tmp_stderr = open(tmp_stderr_filename, "w")
+            tmp_stderr_fd, tmp_stderr_filename = tempfile.mkstemp(
+                suffix="_stderr", prefix=tmpfile_base_path + "_"
+            )
         except OSError:
+            os.close(tmp_stdout_fd)
             level = ERROR
             if halt_on_failure:
                 level = FATAL
             self.log(
-                "Can't open %s for writing!" % tmp_stderr_filename + self.exception(),
+                "Can't open stderr tmpfile for writing!" + self.exception(),
                 level=level,
             )
             return None
@@ -1823,9 +1824,9 @@ class ScriptMixin(PlatformMixin):
         p = subprocess.Popen(
             command,
             shell=shell,
-            stdout=tmp_stdout,
+            stdout=tmp_stdout_fd,
             cwd=cwd,
-            stderr=tmp_stderr,
+            stderr=tmp_stderr_fd,
             env=env,
             bufsize=0,
         )
@@ -1836,8 +1837,11 @@ class ScriptMixin(PlatformMixin):
             level=DEBUG,
         )
         p.wait()
-        tmp_stdout.close()
-        tmp_stderr.close()
+        for fd in (tmp_stdout_fd, tmp_stderr_fd):
+            try:
+                os.close(fd)
+            except OSError:
+                pass
         return_level = DEBUG
         output = None
         if return_type == "output" or not silent:

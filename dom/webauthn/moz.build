@@ -1,11 +1,13 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 with Files("**"):
     BUG_COMPONENT = ("Core", "DOM: Web Authentication")
+
+EXTRA_JS_MODULES += [
+    "WebAuthnRelatedOriginFetcher.sys.mjs",
+]
 
 IPDL_SOURCES += ["PWebAuthnTransaction.ipdl"]
 
@@ -17,6 +19,7 @@ XPIDL_SOURCES += [
     "nsIWebAuthnArgs.idl",
     "nsIWebAuthnAttObj.idl",
     "nsIWebAuthnPromise.idl",
+    "nsIWebAuthnRelatedOriginFetcher.idl",
     "nsIWebAuthnResult.idl",
     "nsIWebAuthnService.idl",
 ]
@@ -60,6 +63,7 @@ FINAL_LIBRARY = "xul"
 LOCAL_INCLUDES += [
     "/dom/base",
     "/dom/crypto",
+    "/js/xpconnect/src",
     "/security/manager/ssl",
     "/third_party/rust",
 ]

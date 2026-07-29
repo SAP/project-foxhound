@@ -26,7 +26,6 @@ add_setup(async function setup() {
 
   Services.prefs.setBoolPref("network.http.http3.enable", true);
   Services.prefs.setIntPref("network.http.speculative-parallel-limit", 6);
-  Services.prefs.setBoolPref("network.http.altsvc.oe", true);
 
   // Set to allow the cert presented by our H2 server
   do_get_profile();
@@ -41,7 +40,6 @@ registerCleanupFunction(async () => {
   Services.prefs.clearUserPref("network.http.http3.enable");
   Services.prefs.clearUserPref("network.dns.localDomains");
   Services.prefs.clearUserPref("network.http.speculative-parallel-limit");
-  Services.prefs.clearUserPref("network.http.altsvc.oe");
 });
 
 function makeChan(url) {

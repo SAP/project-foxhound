@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Nested Iframe Container</title>
+</head>
+<body>
+<h2>Same-Origin Middle Iframe (example.com)</h2>
+<div id="nested-container"></div>
+
+<script type="text/javascript">
+  // Pass rand parameter to nested iframe
+  const params = new URLSearchParams(location.search);
+  const rand = params.get("rand");
+
+  if (rand) {
+    const container = document.getElementById("nested-container");
+    const iframe = document.createElement("iframe");
+    iframe.id = "nested-iframe";
+    iframe.src = `https://example.org/browser/netwerk/test/browser/lna_feature_policy_iframe_cross_origin.html?rand=${rand}`;
+    container.appendChild(iframe);
+  }
+</script>
+</body>
+</html>

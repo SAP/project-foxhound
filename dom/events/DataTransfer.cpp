@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,6 +12,7 @@
 #include "mozilla/Span.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/dom/AutoSuppressEventHandlingAndSuspend.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/DOMStringList.h"
@@ -49,6 +48,7 @@
 #include "nsISupportsPrimitives.h"
 #include "nsIXPConnect.h"
 #include "nsNetUtil.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsPresContext.h"
 #include "nsQueryObject.h"
 #include "nsReadableUtils.h"
@@ -370,6 +370,7 @@ DataTransfer::WaitForClipboardDataSnapshotAndCreate(
     return nullptr;
   }
 
+  AutoSuppressEventHandlingAndSuspend autoSuppress(bc->Group());
   if (!SpinEventLoopUntil(
           "DataTransfer::WaitForClipboardDataSnapshotAndCreate"_ns,
           [&]() { return callback->IsComplete(); })) {
@@ -863,7 +864,7 @@ void DataTransfer::GetExternalClipboardFormats(const bool& aPlainTextOnly,
     if (rv == NS_ERROR_CONTENT_BLOCKED) {
       // Use the empty snapshot created in
       // GetClipboardDataSnapshotWithContentAnalysisSync()
-      mClipboardDataSnapshot = clipboardDataSnapshot;
+      mClipboardDataSnapshot = std::move(clipboardDataSnapshot);
     }
     return;
   }
@@ -878,7 +879,7 @@ void DataTransfer::GetExternalClipboardFormats(const bool& aPlainTextOnly,
     }
   }
 
-  mClipboardDataSnapshot = clipboardDataSnapshot;
+  mClipboardDataSnapshot = std::move(clipboardDataSnapshot);
 }
 
 /* static */
@@ -1467,7 +1468,7 @@ already_AddRefed<nsIGlobalObject> DataTransfer::GetGlobal() const {
   nsCOMPtr<nsIGlobalObject> global;
   // This is annoying, but DataTransfer may have various things as parent.
   if (nsCOMPtr<EventTarget> target = do_QueryInterface(mParent)) {
-    global = target->GetOwnerGlobal();
+    global = target->GetRelevantGlobal();
   } else if (RefPtr<Event> event = do_QueryObject(mParent)) {
     global = event->GetParentObject();
   }

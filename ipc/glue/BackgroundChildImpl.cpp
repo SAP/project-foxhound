@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -281,18 +279,6 @@ dom::PFileCreatorChild* BackgroundChildImpl::AllocPFileCreatorChild(
 
 bool BackgroundChildImpl::DeallocPFileCreatorChild(PFileCreatorChild* aActor) {
   delete static_cast<dom::FileCreatorChild*>(aActor);
-  return true;
-}
-
-PUDPSocketChild* BackgroundChildImpl::AllocPUDPSocketChild(
-    const Maybe<PrincipalInfo>& aPrincipalInfo, const nsACString& aFilter) {
-  MOZ_CRASH("AllocPUDPSocket should not be called");
-  return nullptr;
-}
-
-bool BackgroundChildImpl::DeallocPUDPSocketChild(PUDPSocketChild* child) {
-  UDPSocketChild* p = static_cast<UDPSocketChild*>(child);
-  p->ReleaseIPDLReference();
   return true;
 }
 

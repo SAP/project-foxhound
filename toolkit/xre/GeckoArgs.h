@@ -10,7 +10,6 @@
 #include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/ipc/SharedMemoryHandle.h"
 
-#include <cctype>
 #include <charconv>
 #include <climits>
 #include <string>
@@ -237,6 +236,7 @@ static CommandLineArg<uint64_t> sSandboxingKind{"-sandboxingKind",
                                                 "sandboxingkind"};
 
 static CommandLineArg<bool> sSafeMode{"-safeMode", "safemode"};
+static CommandLineArg<bool> sDisableJit{"-disableJit", "disablejit"};
 
 static CommandLineArg<bool> sIsForBrowser{"-isForBrowser", "isforbrowser"};
 static CommandLineArg<bool> sNotForBrowser{"-notForBrowser", "notforbrowser"};
@@ -260,6 +260,8 @@ static CommandLineArg<UniqueMachReceiveRight> sCrashHelperRecv{
 static CommandLineArg<UniqueFileHandle> sCrashHelper{"-crashHelper",
                                                      "crashhelper"};
 #endif  // XP_DARWIN
+static CommandLineArg<uint64_t> sCrashHelperPid{"-crashHelperPid",
+                                                "crashhelperpid"};
 
 #if defined(XP_WIN)
 #  if defined(MOZ_SANDBOX)

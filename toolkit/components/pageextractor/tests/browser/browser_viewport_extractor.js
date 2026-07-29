@@ -4,7 +4,8 @@
 "use strict";
 
 add_task(async function test_viewport_extraction() {
-  const { actor, cleanup, tab } = await html`
+  const { html } = await MLTestUtils.serveHTMLInTab({ browser: gBrowser });
+  const { getPageExtractor, cleanup, tab } = await html`
     <style>
       body {
         margin: 0;
@@ -19,6 +20,8 @@ add_task(async function test_viewport_extraction() {
     <div class="page" id="page-2">Viewport page 2</div>
     <div class="page" id="page-3">Viewport page 3</div>
   `;
+
+  const actor = getPageExtractor();
 
   is(
     (await actor.getText({ justViewport: true })).text,

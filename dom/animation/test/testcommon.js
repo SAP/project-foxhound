@@ -481,7 +481,7 @@ async function waitForAnimationReadyToRestyle(aAnimation) {
   // coincide perfectly with the start time of the animation.  In this case no
   // restyling is needed in the frame so we have to wait one more frame.
   if (animationStartsRightNow(aAnimation)) {
-    await waitForNextFrame(aAnimation.ownerGlobal);
+    await waitForNextFrame(aAnimation.documentGlobal);
   }
 }
 

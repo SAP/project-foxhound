@@ -56,6 +56,15 @@ const PingServer = {
     return this._httpServer.identity.primaryHost;
   },
 
+  // The server's URL using the IPv4 loopback address explicitly rather than
+  // "localhost". Tests that point Telemetry at a stopped server should use this
+  // so the connection is refused immediately: "localhost" may resolve to ::1
+  // first and stall on the connection timeout (notably on Windows), making each
+  // failing ping send take several seconds.
+  get ipv4URL() {
+    return "http://127.0.0.1:" + this.port;
+  },
+
   get started() {
     return this._started;
   },

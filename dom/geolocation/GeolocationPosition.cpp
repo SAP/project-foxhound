@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -49,8 +47,6 @@ nsGeoPositionCoords::nsGeoPositionCoords(double aLat, double aLong, double aAlt,
   MOZ_ASSERT(EqualOrBothNaN(mHeading, aHeading));
   MOZ_ASSERT(EqualOrBothNaN(mSpeed, aSpeed));
 }
-
-nsGeoPositionCoords::~nsGeoPositionCoords() = default;
 
 NS_INTERFACE_MAP_BEGIN(nsGeoPositionCoords)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDOMGeoPositionCoords)

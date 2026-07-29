@@ -102,7 +102,7 @@ SubDialog.prototype = {
   },
 
   get _window() {
-    return this._overlay?.ownerGlobal;
+    return this._overlay?.documentGlobal;
   },
 
   updateTitle(aEvent) {
@@ -762,7 +762,7 @@ SubDialog.prototype = {
       aEvent.preventDefault();
       aEvent.stopImmediatePropagation();
 
-      let parentWin = this._window.docShell.chromeEventHandler.ownerGlobal;
+      let parentWin = this._window.docShell.chromeEventHandler.documentGlobal;
       if (forward) {
         fm.moveFocus(parentWin, null, fm.MOVEFOCUS_FIRST, fm.FLAG_BYKEY);
       } else {

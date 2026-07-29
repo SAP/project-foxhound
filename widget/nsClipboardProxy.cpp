@@ -106,6 +106,90 @@ nsClipboardProxy::GetData(nsITransferable* aTransferable,
       aTransferable, false /* aFilterUnknownFlavors */);
 }
 
+NS_IMETHODIMP
+nsClipboardProxy::GetDataIfSmallerThan(
+    nsITransferable* aTransferable, uint64_t aThreshold,
+    nsIClipboard::ClipboardType aWhichClipboard, WindowContext* aWindowContext,
+    JSContext* aJSContext, Promise** aPromise) {
+  MOZ_DIAGNOSTIC_ASSERT(aWindowContext && aWindowContext->IsInProcess());
+
+  if (aWindowContext->IsDiscarded()) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  nsIGlobalObject* global = xpc::CurrentNativeGlobal(aJSContext);
+  if (!global) {
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  RefPtr<Promise> promise = Promise::Create(global, IgnoreErrors());
+  if (!promise) {
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  auto guard = MakeScopeExit([&]() { promise.forget(aPromise); });
+
+  nsCOMPtr<nsITransferable> transferable = aTransferable;
+  auto resolver = [promise,
+                   transferable](const IPCTransferableDataOrError& result) {
+    if (result.type() == IPCTransferableDataOrError::Tnsresult) {
+      if (result.get_nsresult() == NS_ERROR_CLIPBOARD_TOO_BIG) {
+        promise->MaybeResolve(false);
+      } else {
+        promise->MaybeReject(result.get_nsresult());
+      }
+      return;
+    }
+
+    const auto& ipcData = result.get_IPCTransferableData();
+    nsresult rv = nsContentUtils::IPCTransferableDataToTransferable(
+        ipcData, false, transferable, false);
+
+    if (NS_FAILED(rv)) {
+      promise->MaybeReject(rv);
+      return;
+    }
+
+    promise->MaybeResolve(true);
+  };
+  auto rejecter = [promise](mozilla::ipc::ResponseRejectReason) {
+    promise->MaybeReject(NS_ERROR_FAILURE);
+  };
+
+  nsTArray<nsCString> types;
+  aTransferable->FlavorsTransferableCanImport(types);
+
+  if (MOZ_UNLIKELY(nsIContentAnalysis::MightBeActive())) {
+    RefPtr<ClipboardContentAnalysisChild> child =
+        ClipboardContentAnalysisChild::GetOrCreate();
+    if (!child) {
+      promise->MaybeReject(NS_ERROR_UNEXPECTED);
+      return NS_OK;
+    }
+    child->SendGetClipboardDataIfSmallerThan(
+        std::move(types), aThreshold, aWhichClipboard,
+        aWindowContext->InnerWindowId(), std::move(resolver),
+        std::move(rejecter));
+  } else {
+    auto* child = ContentChild::GetSingleton();
+    child->SendGetClipboardDataIfSmallerThan(
+        std::move(types), aThreshold, aWhichClipboard, aWindowContext,
+        std::move(resolver), std::move(rejecter));
+  }
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsClipboardProxy::GetDataIfSmallerThanNative(
+    nsITransferable* aTransferable, uint64_t aThreshold,
+    ClipboardType aWhichClipboard,
+    mozilla::dom::WindowContext* aWindowContext) {
+  MOZ_ASSERT_UNREACHABLE(
+      "getDataIfSmallerThanNative should only be called in the parent process");
+  return NS_ERROR_NOT_AVAILABLE;
+}
+
 namespace {
 
 class ClipboardDataSnapshotProxy final : public nsIClipboardDataSnapshot {

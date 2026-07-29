@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -639,6 +637,33 @@ static MOZ_ALWAYS_INLINE T* js_pod_realloc(T* prior, size_t oldSize,
                                            size_t newSize) {
   return js_pod_arena_realloc<T>(js::MallocArena, prior, oldSize, newSize);
 }
+
+// Prevent implicit narrowing: reject integer types wider than size_t, for all
+// allocation functions
+template <class T, std::integral N>
+  requires(sizeof(N) > sizeof(size_t))
+static T* js_pod_arena_malloc(arena_id_t arena, N numElems) = delete;
+
+template <class T, std::integral N>
+  requires(sizeof(N) > sizeof(size_t))
+static T* js_pod_malloc(N numElems) = delete;
+
+template <class T, std::integral N>
+  requires(sizeof(N) > sizeof(size_t))
+static T* js_pod_arena_calloc(arena_id_t arena, N numElems) = delete;
+
+template <class T, std::integral N>
+  requires(sizeof(N) > sizeof(size_t))
+static T* js_pod_calloc(N numElems) = delete;
+
+template <class T, std::integral N>
+  requires(sizeof(N) > sizeof(size_t))
+static T* js_pod_arena_realloc(arena_id_t arena, T* prior, N oldSize,
+                               N newSize) = delete;
+
+template <class T, std::integral N>
+  requires(sizeof(N) > sizeof(size_t))
+static T* js_pod_realloc(T* prior, N oldSize, N newSize) = delete;
 
 namespace JS {
 

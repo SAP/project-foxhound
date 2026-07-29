@@ -8,8 +8,16 @@
 #include "MFMediaEngineExtra.h"
 #include "ipc/EnumSerializer.h"
 #include "mozilla/Logging.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/ProfilerMarkerTypes.h"
+#include "mozilla/gfx/Types.h"
 #include "nsPrintfCString.h"
+
+// MFVideoTransFunc_HLG was added in the Windows SDK 10.0.15063. Define it
+// here for older SDK versions.
+#ifndef MFVideoTransFunc_HLG
+#  define MFVideoTransFunc_HLG static_cast<MFVideoTransferFunction>(16)
+#endif
 
 namespace mozilla {
 
@@ -21,11 +29,12 @@ using MFMediaEngineEvent = MF_MEDIA_ENGINE_EVENT;
 // https://docs.microsoft.com/en-us/windows/win32/api/mfmediaengine/ne-mfmediaengine-mf_media_engine_err
 using MFMediaEngineError = MF_MEDIA_ENGINE_ERR;
 
-#define LOG_AND_WARNING(msg, ...)                                \
-  do {                                                           \
-    NS_WARNING(nsPrintfCString(msg, rv).get());                  \
-    MOZ_LOG(gMFMediaEngineLog, LogLevel::Debug,                  \
-            ("%s:%d, " msg, __FILE__, __LINE__, ##__VA_ARGS__)); \
+#define LOG_AND_WARNING(msg, ...)                                          \
+  do {                                                                     \
+    nsPrintfCString _logStr(msg, ##__VA_ARGS__);                           \
+    NS_WARNING(_logStr.get());                                             \
+    MOZ_LOG_FMT(gMFMediaEngineLog, LogLevel::Debug, "{}:{}, {}", __FILE__, \
+                __LINE__, _logStr.get());                                  \
   } while (false)
 
 #ifndef LOG_IF_FAILED
@@ -81,8 +90,8 @@ using MFMediaEngineError = MF_MEDIA_ENGINE_ERR;
         if (FAILED(rv)) {                                                    \
           LOG_AND_WARNING(#class " failed to shutdown, rv=%lx", rv);         \
         } else {                                                             \
-          MOZ_LOG(gMFMediaEngineLog, LogLevel::Verbose,                      \
-                  ((#class " shutdowned successfully")));                    \
+          MOZ_LOG_FMT(gMFMediaEngineLog, LogLevel::Verbose,                  \
+                      #class " shutdowned successfully");                    \
         }                                                                    \
         pShutdown->Release();                                                \
       } else {                                                               \
@@ -104,6 +113,10 @@ using MFMediaEngineError = MF_MEDIA_ENGINE_ERR;
 inline constexpr HRESULT DRM_E_TEE_INVALID_HWDRM_STATE =
     static_cast<HRESULT>(0x8004CD12);
 
+// AMD-specific hardware DRM state error (active display security failure).
+inline constexpr HRESULT DRM_OEM_E_ASD_ACTIVE_DISPLAY_FAIL =
+    static_cast<HRESULT>(0x8004CD00);
+
 // PlayReady CDM failed to create a decryptor for the stream. This typically
 // occurs when the system lacks hardware DRM support, such as a Trusted
 // Execution Environment (TEE) or secure video path. Most common when the
@@ -111,6 +124,15 @@ inline constexpr HRESULT DRM_E_TEE_INVALID_HWDRM_STATE =
 // or necessary hardware capability (e.g., most VMs).
 inline constexpr HRESULT MSPR_E_NO_DECRYPTOR_AVAILABLE =
     static_cast<HRESULT>(0x8004B895);
+
+// Hardware DRM is not supported on this system (e.g. no TEE, no secure video
+// path). Semantically equivalent to MSPR_E_NO_DECRYPTOR_AVAILABLE — triggers
+// SL3000→SL2000 fallback. mferror.h defines this as a macro on systems where
+// it ships with the SDK; guard against redefinition.
+#  ifndef MF_E_HARDWARE_DRM_UNSUPPORTED
+inline constexpr HRESULT MF_E_HARDWARE_DRM_UNSUPPORTED =
+    static_cast<HRESULT>(0xC00D3706);
+#  endif
 #endif
 
 const char* MediaEventTypeToStr(MediaEventType aType);
@@ -120,6 +142,8 @@ const char* GUIDToStr(GUID aGUID);
 const char* MFVideoRotationFormatToStr(MFVideoRotationFormat aFormat);
 const char* MFVideoTransferFunctionToStr(MFVideoTransferFunction aFunc);
 const char* MFVideoPrimariesToStr(MFVideoPrimaries aPrimaries);
+MFVideoTransferFunction ToMFVideoTransFunc(
+    const Maybe<gfx::TransferFunction>& aTransferFunction);
 void ByteArrayFromGUID(REFGUID aGuidIn, nsTArray<uint8_t>& aByteArrayOut);
 void GUIDFromByteArray(const nsTArray<uint8_t>& aByteArrayIn, GUID& aGuidOut);
 BSTR CreateBSTRFromConstChar(const char* aNarrowStr);
@@ -197,13 +221,20 @@ struct ParamTraits<mozilla::MFMediaEngineError>
           mozilla::MFMediaEngineError::MF_MEDIA_ENGINE_ERR_ABORTED,
           mozilla::MFMediaEngineError::MF_MEDIA_ENGINE_ERR_ENCRYPTED> {};
 
+struct MFMediaEngineEventValidator {
+  using IntegralType = std::underlying_type_t<mozilla::MFMediaEngineEvent>;
+
+  static bool IsLegalValue(const IntegralType e) {
+    // This enum is non-contiguous and the valid values could be changed by
+    // Microsoft.
+    return true;
+  }
+};
+
 template <>
 struct ParamTraits<mozilla::MFMediaEngineEvent>
-    : public ContiguousEnumSerializerInclusive<
-          mozilla::MFMediaEngineEvent,
-          mozilla::MFMediaEngineEvent::MF_MEDIA_ENGINE_EVENT_LOADSTART,
-          mozilla::MFMediaEngineEvent::
-              MF_MEDIA_ENGINE_EVENT_AUDIOENDPOINTCHANGE> {};
+    : public EnumSerializer<mozilla::MFMediaEngineEvent,
+                            MFMediaEngineEventValidator> {};
 
 }  // namespace IPC
 

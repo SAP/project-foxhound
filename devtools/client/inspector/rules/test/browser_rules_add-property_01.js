@@ -40,7 +40,7 @@ add_task(async function () {
   );
 
   info("Check that the expander gets shown again after we're done editing");
-  const onEditingCancelled = view.once("ruleview-changed");
+  const onEditingCancelled = view.once("property-value-updated");
   EventUtils.sendKey("ESCAPE", view.styleWindow);
   await onEditingCancelled;
   ok(

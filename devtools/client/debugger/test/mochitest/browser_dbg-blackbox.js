@@ -172,6 +172,22 @@ add_task(async function testBlackBoxOnToolboxRestart() {
   assertNotPaused(dbg2);
 });
 
+add_task(async function testBlackBoxRangeColumns() {
+  const dbg = await initDebugger("doc-command-click.html", "simple4.js");
+  await selectSource(dbg, "simple4.js");
+
+  await selectEditorLinesAndOpenContextMenu(dbg, { startLine: 8, endLine: 8 });
+  const action = await selectBlackBoxContextMenuItem(dbg, "blackbox-line");
+
+  const range = action.ranges[0];
+  is(range.start.column, 0, "start column is 0");
+  is(
+    range.end.column,
+    '  console.log("Hello!");'.length,
+    "end column includes leading indentation"
+  );
+});
+
 async function testBlackBoxSource(dbg, source) {
   info("Start testing blackboxing the whole source");
 

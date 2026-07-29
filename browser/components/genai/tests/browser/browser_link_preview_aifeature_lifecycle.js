@@ -46,6 +46,12 @@ add_task(async function test_aifeature_enable() {
     true,
     "enable() should set optin pref to true"
   );
+
+  is(
+    LinkPreview.aiControlState,
+    "enabled",
+    "enable() should set the AI Controls state to enabled"
+  );
 });
 
 /**
@@ -62,7 +68,7 @@ add_task(async function test_aifeature_disable() {
     ],
   });
 
-  await LinkPreview.disable();
+  await LinkPreview.block();
 
   is(
     Services.prefs.getBoolPref("browser.ml.linkPreview.enabled"),
@@ -74,6 +80,14 @@ add_task(async function test_aifeature_disable() {
     false,
     "disable() should set optin pref to false"
   );
+  is(LinkPreview.isBlocked, true, "block() should set the blocked state");
+
+  is(
+    LinkPreview.aiControlState,
+    "blocked",
+    "block() should set the AI Controls state to blocked"
+  );
+
   is(
     uninstallStub.callCount,
     1,
@@ -115,16 +129,16 @@ add_task(async function test_aifeature_reset() {
     ],
   });
 
-  await LinkPreview.reset();
+  await LinkPreview.makeAvailable();
 
-  // Check that all user values are cleared
-  ok(
-    !Services.prefs.prefHasUserValue("browser.ml.linkPreview.enabled"),
-    "reset() should clear enabled pref"
+  is(
+    Services.prefs.getBoolPref("browser.ml.linkPreview.enabled"),
+    true,
+    "makeAvailable() should set enabled pref to true"
   );
   ok(
     !Services.prefs.prefHasUserValue("browser.ml.linkPreview.optin"),
-    "reset() should clear optin pref"
+    "makeAvailable() should clear the optin user pref"
   );
   ok(
     !Services.prefs.prefHasUserValue("browser.ml.linkPreview.collapsed"),
@@ -342,43 +356,25 @@ add_task(async function test_aifeature_isAllowed_policy_disabled() {
  */
 add_task(async function test_aifeature_isBlocked() {
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.ml.linkPreview.optin", true]],
+    set: [
+      ["browser.ml.linkPreview.enabled", true],
+      ["browser.ml.linkPreview.optin", false],
+    ],
   });
-
-  const regionStub = sinon
-    .stub(LinkPreview, "_isRegionSupported")
-    .returns(true);
-  const localeStub = sinon
-    .stub(LinkPreview, "_isLocaleSupported")
-    .returns(true);
 
   is(
     LinkPreview.isBlocked,
     false,
-    "isBlocked should be false when canShowKeyPoints is true"
+    "isBlocked should be false when the feature is available"
   );
 
-  is(
-    LinkPreview.isBlocked,
-    !LinkPreview.canShowKeyPoints,
-    "isBlocked should be inverse of canShowKeyPoints"
-  );
-
-  localeStub.restore();
-  regionStub.restore();
-
-  // Now test when blocked
-  const localeStub2 = sinon
-    .stub(LinkPreview, "_isLocaleSupported")
-    .returns(false);
+  Services.prefs.setBoolPref("browser.ml.linkPreview.enabled", false);
 
   is(
     LinkPreview.isBlocked,
     true,
-    "isBlocked should be true when canShowKeyPoints is false"
+    "isBlocked should be true when the feature is disabled"
   );
-
-  localeStub2.restore();
 });
 
 /**
@@ -403,7 +399,7 @@ add_task(async function test_aifeature_disable_enable_workflow() {
   is(uninstallStub.callCount, 0, "uninstall not called during enable");
 
   // Disable the feature
-  await LinkPreview.disable();
+  await LinkPreview.block();
 
   is(LinkPreview.isEnabled, false, "feature disabled after calling disable()");
   is(uninstallStub.callCount, 1, "uninstall called once during disable");
@@ -433,7 +429,7 @@ add_task(async function test_aifeature_disable_calls_uninstall() {
     ],
   });
 
-  await LinkPreview.disable();
+  await LinkPreview.block();
 
   is(
     uninstallStub.callCount,
@@ -458,7 +454,7 @@ add_task(async function test_aifeature_reset_calls_uninstall() {
     ],
   });
 
-  await LinkPreview.reset();
+  await LinkPreview.makeAvailable();
 
   is(
     uninstallStub.callCount,
@@ -512,7 +508,7 @@ add_task(async function test_aifeature_sequential_enable_disable() {
   await LinkPreview.enable();
   is(LinkPreview.isEnabled, true, "Should be enabled after enable()");
 
-  await LinkPreview.disable();
+  await LinkPreview.block();
   is(LinkPreview.isEnabled, false, "Should be disabled after disable()");
 
   await LinkPreview.enable();

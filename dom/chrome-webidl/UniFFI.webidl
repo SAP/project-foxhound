@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -137,4 +136,10 @@ namespace UniFFIScaffolding {
   // reference count.  If `0`, then the map entry for the JS object is removed.
   unsigned long callbackHandleRelease(unsigned long long handle);
 
+  // Free a callback interface handle
+  //
+  // This frees the underlying memory for the callback interface handle.  It should only be called
+  // when there's no chance of using the handle anymore.  In particular, only call it once the JS
+  // map entry is removed.
+  undefined callbackHandleFree(unsigned long long handle);
 };

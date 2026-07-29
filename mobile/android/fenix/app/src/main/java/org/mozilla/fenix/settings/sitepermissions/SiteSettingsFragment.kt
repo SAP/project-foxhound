@@ -10,27 +10,28 @@ import androidx.navigation.fragment.navArgs
 import androidx.preference.Preference
 import androidx.preference.Preference.OnPreferenceClickListener
 import androidx.preference.PreferenceFragmentCompat
-import androidx.preference.SwitchPreference
+import androidx.preference.SwitchPreferenceCompat
 import com.google.android.material.color.MaterialColors
 import mozilla.components.browser.state.action.DefaultDesktopModeAction
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.Autoplay
 import org.mozilla.fenix.R
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.getPreferenceKey
 import org.mozilla.fenix.ext.navigateWithBreadcrumb
 import org.mozilla.fenix.ext.requireComponents
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.showToolbar
 import org.mozilla.fenix.settings.PhoneFeature
 import org.mozilla.fenix.settings.requirePreference
+import org.mozilla.fenix.settings.scrollToPreferenceWithHighlight
 import com.google.android.material.R as materialR
 
 /**
  * Screen for managing settings related to site permissions and content defaults.
  */
 @SuppressWarnings("TooManyFunctions")
-class SiteSettingsFragment : PreferenceFragmentCompat() {
+class SiteSettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFragment {
 
     val args by navArgs<SiteSettingsFragmentArgs>()
 
@@ -46,7 +47,7 @@ class SiteSettingsFragment : PreferenceFragmentCompat() {
         showToolbar(getString(R.string.preferences_site_settings))
         setupPreferences()
         args.preferenceToScrollTo?.let {
-            scrollToPreference(it)
+            scrollToPreferenceWithHighlight(it)
         }
     }
 
@@ -56,7 +57,7 @@ class SiteSettingsFragment : PreferenceFragmentCompat() {
     }
 
     private fun bindDesktopMode() {
-        requirePreference<SwitchPreference>(R.string.pref_key_desktop_browsing).apply {
+        requirePreference<SwitchPreferenceCompat>(R.string.pref_key_desktop_browsing).apply {
             icon?.setTint(
                 MaterialColors.getColor(
                     requireContext(),
@@ -91,7 +92,7 @@ class SiteSettingsFragment : PreferenceFragmentCompat() {
             // not need to be bound
             .filter { it != PhoneFeature.AUTOPLAY_INAUDIBLE }
             .excludeFeatures(
-                condition = { !requireContext().settings().isLnaFeatureEnabled },
+                condition = { !requireComponents.settings.isLnaFeatureEnabled },
                 features = setOf(
                     PhoneFeature.LOCAL_DEVICE_ACCESS,
                     PhoneFeature.LOCAL_NETWORK_ACCESS,
@@ -102,7 +103,7 @@ class SiteSettingsFragment : PreferenceFragmentCompat() {
 
     private fun initPhoneFeature(phoneFeature: PhoneFeature) {
         val context = requireContext()
-        val settings = context.settings()
+        val settings = context.components.settings
 
         val preference = requirePreference<Preference>(phoneFeature.getPreferenceId())
         preference.summary = phoneFeature.getActionLabel(context, settings = settings)

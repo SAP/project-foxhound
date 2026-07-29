@@ -70,8 +70,10 @@ TEST(IntlNumberFormat, SignificantDigits)
 TEST(IntlNumberFormat, Currency)
 {
   NumberFormatOptions options;
+  options.mStyle = NumberFormatOptions::Style::Currency;
   options.mCurrency =
-      Some(std::make_pair("MXN", NumberFormatOptions::CurrencyDisplay::Symbol));
+      Some(std::make_tuple("MXN", NumberFormatOptions::CurrencyDisplay::Symbol,
+                           NumberFormatOptions::CurrencySign::Standard));
   UniquePtr<NumberFormat> nf =
       NumberFormat::TryCreate("es-MX", options).unwrap();
   TestBuffer<char> buf8;
@@ -88,6 +90,7 @@ TEST(IntlNumberFormat, Currency)
 TEST(IntlNumberFormat, Unit)
 {
   NumberFormatOptions options;
+  options.mStyle = NumberFormatOptions::Style::Unit;
   options.mUnit = Some(std::make_pair("meter-per-second",
                                       NumberFormatOptions::UnitDisplay::Long));
   UniquePtr<NumberFormat> nf =
@@ -208,20 +211,18 @@ TEST(IntlNumberFormat, FormatToParts)
 
 TEST(IntlNumberFormat, GetAvailableLocales)
 {
-  using namespace std::literals;
-
   int32_t english = 0;
   int32_t german = 0;
   int32_t chinese = 0;
 
   // Since this list is dependent on ICU, and may change between upgrades, only
   // test a subset of the available locales.
-  for (const char* locale : NumberFormat::GetAvailableLocales()) {
-    if (locale == "en"sv) {
+  for (mozilla::Span<const char> locale : NumberFormat::GetAvailableLocales()) {
+    if (locale == mozilla::MakeStringSpan("en")) {
       english++;
-    } else if (locale == "de"sv) {
+    } else if (locale == mozilla::MakeStringSpan("de")) {
       german++;
-    } else if (locale == "zh"sv) {
+    } else if (locale == mozilla::MakeStringSpan("zh")) {
       chinese++;
     }
   }

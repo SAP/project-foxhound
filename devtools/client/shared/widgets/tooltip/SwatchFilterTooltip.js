@@ -102,11 +102,22 @@ class SwatchFilterTooltip extends SwatchBasedEditorTooltip {
    * @param {object} options
    *        options to pass to the output parser, with
    *          the option |filterSwatch| set.
+   * @param {node|undefined} previousSwatchEl
+   *        @see SwatchBasedEditorTooltip.addSwatch
    */
-  addSwatch(swatchEl, callbacks, parser, options) {
-    super.addSwatch(swatchEl, callbacks);
+  addSwatch(swatchEl, callbacks, parser, options, previousSwatchEl) {
+    super.addSwatch(swatchEl, callbacks, previousSwatchEl);
     this._parser = parser;
     this._options = options;
+
+    // If we are updating an already rendered and visible swatch,
+    // update the current filter value DOM reference to the new DOM element.
+    if (
+      previousSwatchEl &&
+      this.currentFilterValue == previousSwatchEl.nextSibling
+    ) {
+      this.currentFilterValue = swatchEl.nextSibling;
+    }
   }
 }
 

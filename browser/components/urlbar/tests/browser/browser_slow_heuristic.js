@@ -5,6 +5,11 @@
 
 "use strict";
 
+const { UrlbarEventBufferer } = ChromeUtils.importESModule(
+  "chrome://browser/content/urlbar/UrlbarEventBufferer.mjs",
+  { global: "current" }
+);
+
 add_task(async function test_slow_heuristic() {
   // Must be between chunkResultsDelayMs and DEFERRING_TIMEOUT_MS
   let timeout = 150;

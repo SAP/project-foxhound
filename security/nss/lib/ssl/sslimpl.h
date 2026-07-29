@@ -23,7 +23,6 @@
 #include "ssl3prot.h"
 #include "hasht.h"
 #include "cryptohi.h"
-#include "nssilock.h"
 #include "pkcs11t.h"
 #if defined(XP_UNIX)
 #include "unistd.h"
@@ -778,6 +777,8 @@ typedef struct SSL3HandshakeStateStr {
                                            * on server.*/
     PRBool helloRetry;                    /* True if HelloRetryRequest has been sent
                                            * or received. */
+    PRBool dtlsReceivedHVR;               /* True if a DTLS HelloVerifyRequest was
+                                           * received. */
     PRBool receivedCcs;                   /* A server received ChangeCipherSpec
                                            * before the handshake started. */
     PRBool rejectCcs;                     /* Excessive ChangeCipherSpecs are rejected. */
@@ -1129,22 +1130,22 @@ struct sslSocketStr {
     PRIntervalTime wTimeout; /* timeout for NSPR I/O */
     PRIntervalTime cTimeout; /* timeout for NSPR I/O */
 
-    PZLock *recvLock; /* lock against multiple reader threads. */
-    PZLock *sendLock; /* lock against multiple sender threads. */
+    PRLock *recvLock; /* lock against multiple reader threads. */
+    PRLock *sendLock; /* lock against multiple sender threads. */
 
-    PZMonitor *recvBufLock; /* locks low level recv buffers. */
-    PZMonitor *xmitBufLock; /* locks low level xmit buffers. */
+    PRMonitor *recvBufLock; /* locks low level recv buffers. */
+    PRMonitor *xmitBufLock; /* locks low level xmit buffers. */
 
     /* Only one thread may operate on the socket until the initial handshake
     ** is complete.  This Monitor ensures that.  Since SSL2 handshake is
     ** only done once, this is also effectively the SSL2 handshake lock.
     */
-    PZMonitor *firstHandshakeLock;
+    PRMonitor *firstHandshakeLock;
 
     /* This monitor protects the ssl3 handshake state machine data.
     ** Only one thread (reader or writer) may be in the ssl3 handshake state
     ** machine at any time.  */
-    PZMonitor *ssl3HandshakeLock;
+    PRMonitor *ssl3HandshakeLock;
 
     /* reader/writer lock, protects the secret data needed to encrypt and MAC
     ** outgoing records, and to decrypt and MAC check incoming ciphertext
@@ -1226,7 +1227,7 @@ extern char ssl_debug;
 extern char ssl_trace;
 extern FILE *ssl_trace_iob;
 extern FILE *ssl_keylog_iob;
-extern PZLock *ssl_keylog_lock;
+extern PRLock *ssl_keylog_lock;
 static const PRUint32 ssl_ticket_lifetime = 2 * 24 * 60 * 60; // 2 days.
 
 extern const char *const ssl3_cipherName[];
@@ -1393,16 +1394,16 @@ void ssl_ClearPRCList(PRCList *list, void (*f)(void *));
 
 #define SSL_LOCK_READER(ss) \
     if (ss->recvLock)       \
-    PZ_Lock(ss->recvLock)
+    PR_Lock(ss->recvLock)
 #define SSL_UNLOCK_READER(ss) \
     if (ss->recvLock)         \
-    PZ_Unlock(ss->recvLock)
+    PR_Unlock(ss->recvLock)
 #define SSL_LOCK_WRITER(ss) \
     if (ss->sendLock)       \
-    PZ_Lock(ss->sendLock)
+    PR_Lock(ss->sendLock)
 #define SSL_UNLOCK_WRITER(ss) \
     if (ss->sendLock)         \
-    PZ_Unlock(ss->sendLock)
+    PR_Unlock(ss->sendLock)
 
 PRBool ssl_HaveRecvBufLock(sslSocket *ss);
 PRBool ssl_HaveXmitBufLock(sslSocket *ss);
@@ -1660,7 +1661,7 @@ extern tlsSignOrVerifyContext tls_CreateSignOrVerifyContext(
 SECStatus tls_SignOrVerifyUpdate(tlsSignOrVerifyContext ctx,
                                  const unsigned char *buf, int len);
 SECStatus tls_SignOrVerifyEnd(tlsSignOrVerifyContext ctx, SECItem *sig);
-void tls_DestroySignOrVerifyContext(tlsSignOrVerifyContext ctx);
+void tls_DestroySignOrVerifyContext(tlsSignOrVerifyContext *ctx);
 
 extern SECStatus ssl3_CacheWrappedSecret(sslSocket *ss, sslSessionID *sid,
                                          PK11SymKey *secret);

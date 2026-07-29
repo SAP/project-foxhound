@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -998,9 +996,10 @@ FutexWaiterListHead::~FutexWaiterListHead() {
     // a thread is waiting, and that thread must have a reference to the shared
     // array buffer it's waiting on, so that buffer can't be freed.
 
+    FutexWaiterListNode* next = iter->next();
     AsyncFutexWaiter* removedWaiter =
         RemoveAsyncWaiter(iter->toWaiter()->asAsync(), lock);
-    iter = iter->next();
+    iter = next;
 
     if (removedWaiter->hasTimeout() &&
         !removedWaiter->timeoutTask()->cleared(lock)) {

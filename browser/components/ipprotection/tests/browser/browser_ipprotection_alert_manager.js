@@ -29,8 +29,7 @@ DEFAULT_EXPERIMENT = null;
 add_task(async function test_ipprotectionPrompts() {
   IPProtectionAlertManager.init();
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: true,
+    isReady: true,
     canEnroll: true,
   });
 
@@ -189,8 +188,7 @@ add_task(async function test_ipprotectionPrompts() {
 add_task(async function test_continueWithoutVPN() {
   IPProtectionAlertManager.init();
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: true,
+    isReady: true,
     canEnroll: true,
   });
   let cleanupAlpha = await setupExperiment({ enabled: true, variant: "alpha" });
@@ -274,8 +272,7 @@ add_task(async function test_continueWithoutVPN() {
 add_task(async function test_closeAllTabs() {
   IPProtectionAlertManager.init();
   setupService({
-    isSignedIn: true,
-    isEnrolledAndEntitled: true,
+    isReady: true,
     canEnroll: true,
   });
   let cleanupAlpha = await setupExperiment({ enabled: true, variant: "alpha" });
@@ -370,8 +367,7 @@ add_task(
 
     IPProtectionAlertManager.init();
     setupService({
-      isSignedIn: true,
-      isEnrolledAndEntitled: true,
+      isReady: true,
       canEnroll: true,
     });
 
@@ -441,8 +437,7 @@ add_task(
 
     IPProtectionAlertManager.init();
     setupService({
-      isSignedIn: true,
-      isEnrolledAndEntitled: true,
+      isReady: true,
       canEnroll: true,
     });
 

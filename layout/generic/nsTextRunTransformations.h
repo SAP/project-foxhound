@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,12 +34,12 @@ struct nsTransformedCharStyle final {
   bool mExplicitLanguage;
   bool mForceNonFullWidth = false;
   bool mMaskPassword = false;
-
- private:
-  ~nsTransformedCharStyle() = default;
   nsTransformedCharStyle(const nsTransformedCharStyle& aOther) = delete;
   nsTransformedCharStyle& operator=(const nsTransformedCharStyle& aOther) =
       delete;
+
+ private:
+  ~nsTransformedCharStyle() = default;
 };
 
 class nsTransformingTextRunFactory {
@@ -83,10 +81,12 @@ class nsCaseTransformTextRunFactory : public nsTransformingTextRunFactory {
   // Takes ownership of aInnerTransformTextRunFactory
   nsCaseTransformTextRunFactory(mozilla::UniquePtr<nsTransformingTextRunFactory>
                                     aInnerTransformingTextRunFactory,
-                                bool aAllUppercase, char16_t aMaskChar)
+                                bool aAllUppercase, bool aUseCapitalEsZet,
+                                char16_t aMaskChar)
       : mInnerTransformingTextRunFactory(
             std::move(aInnerTransformingTextRunFactory)),
         mAllUppercase(aAllUppercase),
+        mUseCapitalEsZet(aUseCapitalEsZet),
         mMaskChar(aMaskChar) {}
 
   virtual void RebuildTextRun(nsTransformedTextRun* aTextRun,
@@ -121,8 +121,9 @@ class nsCaseTransformTextRunFactory : public nsTransformingTextRunFactory {
   static bool TransformString(
       const nsAString& aString, nsString& aConvertedString,
       const mozilla::Maybe<mozilla::StyleTextTransform>& aGlobalTransform,
-      char16_t aMaskChar, bool aCaseTransformsOnly, const nsAtom* aLanguage,
-      nsTArray<bool>& aCharsToMergeArray, nsTArray<bool>& aDeletedCharsArray,
+      char16_t aMaskChar, bool aCaseTransformsOnly, bool aUseCapitalEsZet,
+      const nsAtom* aLanguage, nsTArray<bool>& aCharsToMergeArray,
+      nsTArray<bool>& aDeletedCharsArray,
       const nsTransformedTextRun* aTextRun = nullptr,
       uint32_t aOffsetInTextRun = 0,
       nsTArray<uint8_t>* aCanBreakBeforeArray = nullptr,
@@ -132,6 +133,7 @@ class nsCaseTransformTextRunFactory : public nsTransformingTextRunFactory {
   mozilla::UniquePtr<nsTransformingTextRunFactory>
       mInnerTransformingTextRunFactory;
   bool mAllUppercase;
+  bool mUseCapitalEsZet;
   char16_t mMaskChar;
 };
 

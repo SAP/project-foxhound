@@ -10,6 +10,6 @@ features: [TypedArray]
 
 testWithTypedArrayConstructors(function(TA) {
   assert.sameValue(TA.prototype.hasOwnProperty("lastIndexOf"), false);
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

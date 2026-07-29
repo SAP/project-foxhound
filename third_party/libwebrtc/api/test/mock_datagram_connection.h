@@ -12,13 +12,15 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
+#include <type_traits>
 
 #include "absl/functional/any_invocable.h"
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/candidate.h"
 #include "api/datagram_connection.h"
 #include "p2p/base/transport_description.h"
+#include "rtc_base/ref_counted_object.h"
 #include "test/gmock.h"
 
 namespace webrtc {
@@ -41,16 +43,20 @@ class MockDatagramConnection : public DatagramConnection {
                size_t digest_len,
                DatagramConnection::SSLRole ssl_role),
               (override));
-  MOCK_METHOD(bool, SendPacket, (ArrayView<const uint8_t> data), (override));
   MOCK_METHOD(void,
-              SendPacket,
-              (ArrayView<const uint8_t> data, PacketSendParameters params),
+              SendPackets,
+              (std::span<PacketSendParameters> packets),
               (override));
   MOCK_METHOD(void,
               Terminate,
               (absl::AnyInvocable<void()> terminate_complete_callback),
               (override));
+  MOCK_METHOD(absl::string_view, IceUsernameFragment, (), (override));
+  MOCK_METHOD(absl::string_view, IcePassword, (), (override));
 };
+
+static_assert(!std::is_abstract_v<RefCountedObject<MockDatagramConnection>>,
+              "");
 
 }  // namespace webrtc
 

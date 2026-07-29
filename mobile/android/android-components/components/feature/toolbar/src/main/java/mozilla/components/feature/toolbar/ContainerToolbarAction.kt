@@ -57,18 +57,18 @@ class ContainerToolbarAction(
 
         return when (container.icon) {
             Icon.FINGERPRINT -> loadAndTintDrawable(context, iconsR.drawable.mozac_ic_fingerprinter_24, tint)
-            Icon.BRIEFCASE -> loadAndTintDrawable(context, iconsR.drawable.mozac_ic_briefcase, tint)
-            Icon.DOLLAR -> loadAndTintDrawable(context, iconsR.drawable.mozac_ic_dollar, tint)
-            Icon.CART -> loadAndTintDrawable(context, iconsR.drawable.mozac_ic_cart, tint)
-            Icon.CIRCLE -> loadAndTintDrawable(context, iconsR.drawable.mozac_ic_circle, tint)
-            Icon.GIFT -> loadAndTintDrawable(context, iconsR.drawable.mozac_ic_gift, tint)
-            Icon.VACATION -> loadAndTintDrawable(context, iconsR.drawable.mozac_ic_vacation, tint)
-            Icon.FOOD -> loadAndTintDrawable(context, iconsR.drawable.mozac_ic_food, tint)
-            Icon.FRUIT -> loadAndTintDrawable(context, iconsR.drawable.mozac_ic_fruit, tint)
-            Icon.PET -> loadAndTintDrawable(context, iconsR.drawable.mozac_ic_pet, tint)
-            Icon.TREE -> loadAndTintDrawable(context, iconsR.drawable.mozac_ic_tree, tint)
-            Icon.CHILL -> loadAndTintDrawable(context, iconsR.drawable.mozac_ic_chill, tint)
-            Icon.FENCE -> loadAndTintDrawable(context, iconsR.drawable.mozac_ic_fence, tint)
+            Icon.BRIEFCASE -> loadAndTintDrawable(context, R.drawable.mozac_feature_toolbar_ic_briefcase, tint)
+            Icon.DOLLAR -> loadAndTintDrawable(context, R.drawable.mozac_feature_toolbar_ic_dollar, tint)
+            Icon.CART -> loadAndTintDrawable(context, R.drawable.mozac_feature_toolbar_ic_cart, tint)
+            Icon.CIRCLE -> loadAndTintDrawable(context, R.drawable.mozac_feature_toolbar_ic_circle, tint)
+            Icon.GIFT -> loadAndTintDrawable(context, R.drawable.mozac_feature_toolbar_ic_gift, tint)
+            Icon.VACATION -> loadAndTintDrawable(context, R.drawable.mozac_feature_toolbar_ic_vacation, tint)
+            Icon.FOOD -> loadAndTintDrawable(context, R.drawable.mozac_feature_toolbar_ic_food, tint)
+            Icon.FRUIT -> loadAndTintDrawable(context, R.drawable.mozac_feature_toolbar_ic_fruit, tint)
+            Icon.PET -> loadAndTintDrawable(context, R.drawable.mozac_feature_toolbar_ic_pet, tint)
+            Icon.TREE -> loadAndTintDrawable(context, R.drawable.mozac_feature_toolbar_ic_tree, tint)
+            Icon.CHILL -> loadAndTintDrawable(context, R.drawable.mozac_feature_toolbar_ic_chill, tint)
+            Icon.FENCE -> loadAndTintDrawable(context, R.drawable.mozac_feature_toolbar_ic_fence, tint)
         }
     }
 

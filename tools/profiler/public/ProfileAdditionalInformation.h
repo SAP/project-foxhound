@@ -30,16 +30,16 @@ struct ParamTraits;
 
 namespace mozilla {
 
-// Entry pairing UUID strings with JS source data for WebChannel requests
+// Entry pairing ID strings with JS source data for WebChannel requests
 struct JSSourceEntry {
-  nsCString uuid;
+  nsCString id;
   ProfilerJSSourceData sourceData;
 
   JSSourceEntry() = default;
-  JSSourceEntry(nsCString&& aUuid, ProfilerJSSourceData&& aSourceData)
-      : uuid(std::move(aUuid)), sourceData(std::move(aSourceData)) {}
+  JSSourceEntry(nsCString&& aId, ProfilerJSSourceData&& aSourceData)
+      : id(std::move(aId)), sourceData(std::move(aSourceData)) {}
 
-  size_t SizeOf() const { return uuid.Length() + sourceData.SizeOf(); }
+  size_t SizeOf() const { return id.Length() + sourceData.SizeOf(); }
 };
 
 // This structure contains additional information gathered while generating the
@@ -84,7 +84,7 @@ struct ProfileGenerationAdditionalInformation {
   friend IPC::ParamTraits<mozilla::ProfileGenerationAdditionalInformation>;
 
  private:
-  JSString* CreateJSStringFromSourceData(
+  JSString* MaybeCreateJSStringFromSourceData(
       JSContext* aCx, const ProfilerJSSourceData& aSourceData) const;
 
   SharedLibraryInfo mSharedLibraries;
@@ -128,6 +128,14 @@ namespace IPC {
 template <>
 struct ParamTraits<mozilla::ProfileGenerationAdditionalInformation> {
   typedef mozilla::ProfileGenerationAdditionalInformation paramType;
+
+  static void Write(MessageWriter* aWriter, const paramType& aParam);
+  static bool Read(MessageReader* aReader, paramType* aResult);
+};
+
+template <>
+struct ParamTraits<mozilla::ProfileAndAdditionalInformation> {
+  typedef mozilla::ProfileAndAdditionalInformation paramType;
 
   static void Write(MessageWriter* aWriter, const paramType& aParam);
   static bool Read(MessageReader* aReader, paramType* aResult);

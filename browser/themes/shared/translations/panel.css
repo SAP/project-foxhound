@@ -13,13 +13,13 @@
 
 .translations-panel-header {
   text-align: initial;
-  padding: var(--arrowpanel-padding);
+  padding: var(--panel-padding);
   padding-bottom: 0;
 }
 
 #full-page-translations-panel-intro {
   line-height: 1.6;
-  margin-block-end: var(--arrowpanel-padding);
+  margin-block-end: var(--panel-padding);
 }
 
 .translations-panel-settings-gear-icon > image {
@@ -28,12 +28,12 @@
 }
 
 .translations-panel-content {
-  padding: var(--arrowpanel-padding);
+  padding: var(--panel-padding);
   padding-block-end: 8px;
 }
 
 #full-page-translations-panel-lang-selection > label {
-  margin-block: var(--arrowpanel-padding) 6px;
+  margin-block: var(--panel-padding) 6px;
 }
 
 /* The default styling is to dim the default, but here override it so that it still uses
@@ -94,7 +94,7 @@
 
 .select-translations-panel-content {
   margin-block: var(--space-xsmall);
-  padding-inline: var(--arrowpanel-padding);
+  padding-inline: var(--panel-padding);
 }
 
 #select-translations-panel-header-row {

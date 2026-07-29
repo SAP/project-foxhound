@@ -1,0 +1,24 @@
+<!DOCTYPE HTML>
+<html>
+<!--
+This page is opened as a popup in xorigin mode by test_storage_copied.html.
+It embeds file_storage_copied.html in an iframe from the test origin so it
+runs in the same storage partition as the test, then relays the result to
+the opener.
+-->
+<body>Wrapper!</body>
+<script>
+  let params = new URLSearchParams(location.search);
+  let origin = params.get("origin");
+  let iframe = document.createElement("iframe");
+  let path = location.pathname.replace(
+    "file_storage_copied_xorigin_wrapper.html", "file_storage_copied.html");
+  iframe.src = origin + path;
+  window.addEventListener("message", function(event) {
+    if (window.opener) {
+      window.opener.postMessage(event.data, "*");
+    }
+  });
+  document.body.appendChild(iframe);
+</script>
+</html>

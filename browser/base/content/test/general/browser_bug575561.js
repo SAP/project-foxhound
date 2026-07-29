@@ -7,11 +7,6 @@ const TEST_URL =
 add_task(async function () {
   SimpleTest.requestCompleteLog();
 
-  // allow top level data: URI navigations, otherwise clicking data: link fails
-  await SpecialPowers.pushPrefEnv({
-    set: [["security.data_uri.block_toplevel_data_uri_navigations", false]],
-  });
-
   // Pinned: Link to the same domain should not open a new tab
   // Tests link to http://example.com/browser/browser/base/content/test/general/dummy_page.html
   await testLink(0, true, false);
@@ -38,10 +33,6 @@ add_task(async function () {
   // Pinned: Link to the same domain (with www prefix) should not open a new tab
   // Tests link to http://www.example.com/browser/browser/base/content/test/general/dummy_page.html
   await testLink(4, true, false);
-
-  // Pinned: Link to a data: URI should not open a new tab
-  // Tests link to data:text/html,<!DOCTYPE html><html><body>Another Page</body></html>
-  await testLink(5, true, false);
 
   // Pinned: Link to an about: URI should not open a new tab
   // Tests link to about:blank
@@ -100,8 +91,8 @@ async function testLink(
   } else {
     href = await SpecialPowers.spawn(
       browser,
-      [[testSubFrame, aLinkIndexOrFunction]],
-      function ([subFrame, index]) {
+      [testSubFrame, aLinkIndexOrFunction],
+      function (subFrame, index) {
         let doc = subFrame
           ? content.document.querySelector("iframe").contentDocument
           : content.document;

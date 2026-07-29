@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -598,7 +597,7 @@ nsAutoCompleteController::HandleKeyNavigation(uint32_t aKey, bool* _retval) {
           if (pos > 0) {
             inputValue.Right(suggestedValue, inputValue.Length() - pos - 4);
           } else {
-            suggestedValue = inputValue;
+            suggestedValue = std::move(inputValue);
           }
 
           if (value.Equals(suggestedValue, nsCaseInsensitiveStringComparator)) {
@@ -1150,7 +1149,7 @@ nsresult nsAutoCompleteController::EnterMatch(bool aIsPopupSelection,
         nsAutoString finalValue;
         GetResultValueAt(mCompletedSelectionIndex, true, finalValue);
         if (!inputValue.Equals(finalValue)) {
-          value = finalValue;
+          value = std::move(finalValue);
         }
       }
     } else if (shouldComplete) {
@@ -1161,7 +1160,7 @@ nsresult nsAutoCompleteController::EnterMatch(bool aIsPopupSelection,
       // association of the result with the autocompleted text.
       nsAutoString defaultIndexValue;
       if (NS_SUCCEEDED(GetFinalDefaultCompleteValue(defaultIndexValue)))
-        value = defaultIndexValue;
+        value = std::move(defaultIndexValue);
     }
 
     if (forceComplete && value.IsEmpty() && shouldComplete) {
@@ -1180,7 +1179,7 @@ nsresult nsAutoCompleteController::EnterMatch(bool aIsPopupSelection,
       if (pos > 0) {
         inputValue.Right(suggestedValue, inputValue.Length() - pos - 4);
       } else {
-        suggestedValue = inputValue;
+        suggestedValue = std::move(inputValue);
       }
 
       for (uint32_t i = 0; i < mResults.Length(); ++i) {
@@ -1195,7 +1194,7 @@ nsresult nsAutoCompleteController::EnterMatch(bool aIsPopupSelection,
                                       nsCaseInsensitiveStringComparator)) {
               nsAutoString finalMatchValue;
               result->GetFinalCompleteValueAt(j, finalMatchValue);
-              value = finalMatchValue;
+              value = std::move(finalMatchValue);
               break;
             }
           }
@@ -1521,9 +1520,9 @@ nsresult nsAutoCompleteController::GetDefaultCompleteValue(int32_t aResultIndex,
     // Use what the user has typed so far.
     casedResultValue.Append(
         Substring(resultValue, mSearchString.Length(), resultValue.Length()));
-    _retval = casedResultValue;
+    _retval = std::move(casedResultValue);
   } else
-    _retval = resultValue;
+    _retval = std::move(resultValue);
 
   return NS_OK;
 }
@@ -1547,7 +1546,7 @@ nsresult nsAutoCompleteController::GetFinalDefaultCompleteValue(
   nsAutoString finalCompleteValue;
   rv = result->GetFinalCompleteValueAt(defaultIndex, finalCompleteValue);
   if (NS_SUCCEEDED(rv)) {
-    _retval = finalCompleteValue;
+    _retval = std::move(finalCompleteValue);
   }
 
   return NS_OK;

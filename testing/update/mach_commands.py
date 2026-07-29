@@ -35,7 +35,7 @@ class ReleaseType(Enum):
 
 STAGING_POLICY_PAYLOAD = {
     "policies": {
-        "AppUpdateURL": "https://stage.balrog.nonprod.cloudops.mozgcp.net/update/6/Firefox/%VERSION%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%SYSTEM_CAPABILITIES%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/update.xml"
+        "AppUpdateURL": "https://stage.balrog.nonprod.webservices.mozgcp.net/update/6/Firefox/%VERSION%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%SYSTEM_CAPABILITIES%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/update.xml"
     }
 }
 
@@ -316,7 +316,7 @@ def get_binary_path(config: UpdateTestConfig, **kwargs) -> str:
             policy_path = fx_path / "Contents" / "Resources" / "distribution"
         else:
             raise ValueError("Invalid OS.")
-        makedirs(policy_path)
+        makedirs(policy_path, exist_ok=True)
         policy_loc = policy_path / "policies.json"
         print(f"Creating {policy_loc}...")
         with policy_loc.open("w") as fh:

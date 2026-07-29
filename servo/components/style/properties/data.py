@@ -59,6 +59,10 @@ PRIORITARY_PROPERTIES = set(
         "zoom",
         # Line height lengths depend on this.
         "line-height",
+        # appearance and -moz-default-appearance control whether
+        # @appearance-base rules apply.
+        "-moz-default-appearance",
+        "appearance",
     ]
 )
 
@@ -149,8 +153,8 @@ def to_camel_case_lower(ident):
 
 
 # https://drafts.csswg.org/cssom/#css-property-to-idl-attribute
-def to_idl_name(ident):
-    return re.sub("-([a-z])", lambda m: m.group(1).upper(), ident)
+def to_idl_name(name):
+    return re.sub("-([a-z])", lambda m: m.group(1).upper(), name)
 
 
 def parse_aliases(value):
@@ -512,7 +516,10 @@ class Longhand(Property):
             return False
         # TODO: Get this from SpecifiedValueInfo or so instead; see bug 1887627.
         return self.predefined_type in {
+            "BorderSideWidth",
             "BorderSpacing",
+            "BoxShadow",
+            "Filter",
             "FontSize",
             "Inset",
             "Length",
@@ -522,11 +529,13 @@ class Longhand(Property):
             "LineHeight",
             "LineWidth",
             "MaxSize",
+            "Margin",
             "NonNegativeLength",
             "NonNegativeLengthOrAuto",
             "NonNegativeLengthOrNumber",
             "NonNegativeLengthOrNumberRect",
             "NonNegativeLengthPercentage",
+            "NonNegativeLengthPercentageOrAuto",
             "NonNegativeLengthPercentageOrNormal",
             "Position",
             "PositionOrAuto",
@@ -559,7 +568,6 @@ class Longhand(Property):
                 "AnimationDirection",
                 "AnimationFillMode",
                 "AnimationPlayState",
-                "AspectRatio",
                 "BaselineSource",
                 "BreakBetween",
                 "BreakWithin",
@@ -568,7 +576,6 @@ class Longhand(Property):
                 "BorderStyle",
                 "table::CaptionSide",
                 "Clear",
-                "ColumnCount",
                 "Contain",
                 "ContentVisibility",
                 "ContainerType",
@@ -577,21 +584,14 @@ class Longhand(Property):
                 "FillRule",
                 "Float",
                 "FontLanguageOverride",
-                "FontSizeAdjust",
-                "FontStretch",
-                "FontStyle",
                 "FontSynthesis",
                 "FontSynthesisStyle",
                 "FontVariantEastAsian",
                 "FontVariantLigatures",
                 "FontVariantNumeric",
-                "FontWeight",
-                "GreaterThanOrEqualToOneNumber",
                 "GridAutoFlow",
                 "ImageRendering",
                 "Inert",
-                "InitialLetter",
-                "Integer",
                 "PositionArea",
                 "PositionAreaKeyword",
                 "PositionProperty",
@@ -600,26 +600,20 @@ class Longhand(Property):
                 "SelfAlignment",
                 "JustifyItems",
                 "LineBreak",
-                "LineClamp",
                 "MasonryAutoFlow",
                 "MozTheme",
                 "BoolInteger",
                 "text::MozControlCharacterVisibility",
-                "MathDepth",
                 "MozScriptMinSize",
                 "MozScriptSizeMultiplier",
                 "TransformBox",
                 "TextDecorationSkipInk",
-                "NonNegativeNumber",
-                "OffsetRotate",
-                "Opacity",
                 "OutlineStyle",
                 "Overflow",
                 "OverflowAnchor",
                 "OverflowWrap",
                 "OverscrollBehavior",
                 "PageOrientation",
-                "Percentage",
                 "PointerEvents",
                 "PositionTryOrder",
                 "PositionVisibility",
@@ -627,7 +621,6 @@ class Longhand(Property):
                 "ForcedColorAdjust",
                 "Resize",
                 "RubyPosition",
-                "SVGOpacity",
                 "SVGPaintOrder",
                 "ScrollbarGutter",
                 "ScrollSnapAlign",
@@ -654,8 +647,6 @@ class Longhand(Property):
                 "WritingModeProperty",
                 "XSpan",
                 "XTextScale",
-                "ZIndex",
-                "Zoom",
             }
         if self.name == "overflow-y":
             return True
@@ -800,6 +791,17 @@ class StyleStruct(object):
         self.document_dependent = self.gecko_name in ["Font", "Visibility", "Text"]
 
 
+class Descriptor(object):
+    def __init__(self, name, type, parser=None, gecko_pref=None, ignore_malloc_size_of=None):
+        self.name = name
+        self.type = type
+        self.parser = parser
+        self.gecko_pref = gecko_pref
+        self.ignore_malloc_size_of = ignore_malloc_size_of
+        self.ident = to_rust_ident(name)
+        self.camel_case = to_camel_case(name)
+
+
 class PropertiesData(object):
     def __init__(self, engine):
         self.engine = engine
@@ -933,6 +935,11 @@ class PropertiesData(object):
             self.declare_shorthand(name, **args)
         self.declare_all_shorthand()
 
+        self.font_face_descriptors = self._load_descriptors("font_face_descriptors.toml")
+        self.counter_style_descriptors = self._load_descriptors("counter_style_descriptors.toml")
+        self.property_descriptors = self._load_descriptors("property_descriptors.toml")
+        self.view_transition_descriptors = self._load_descriptors("view_transition_descriptors.toml")
+
 
     def declare_all_shorthand(self):
         # We don't define the 'all' shorthand using the regular helpers:shorthand
@@ -979,6 +986,11 @@ class PropertiesData(object):
             spec="https://drafts.csswg.org/css-cascade-3/#all-shorthand"
         )
 
+
+    def _load_descriptors(self, filename):
+        path = os.path.join(os.path.dirname(__file__), filename)
+        data = toml.loads(open(path).read())
+        return [Descriptor(name, **args) for name, args in data.items()]
 
     def style_struct_by_name_lower(self, name):
         for s in self.style_structs:
@@ -1211,6 +1223,8 @@ class PropertyRestrictions:
             props.add(p)
         # ::placeholder can't be SVG text
         props -= PropertyRestrictions.svg_text_properties()
+        # Historically ::placeholder's line-height was !important in the UA sheet.
+        props.remove("line-height")
 
         return props
 
@@ -1239,6 +1253,7 @@ class PropertyRestrictions:
                 "unicode-bidi",
                 "-moz-osx-font-smoothing",
             ]
+            + PropertyRestrictions.shorthand(data, "animation-range")
             + PropertyRestrictions.shorthand(data, "text-wrap")
             + PropertyRestrictions.shorthand(data, "white-space")
             + PropertyRestrictions.spec(data, "css-fonts")

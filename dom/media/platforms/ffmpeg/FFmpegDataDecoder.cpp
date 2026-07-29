@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,6 +15,7 @@
 #include "FFmpegLog.h"
 #include "FFmpegUtils.h"
 #include "VideoUtils.h"
+#include "mozilla/CheckedInt.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/TaskQueue.h"
 #include "prsystem.h"
@@ -67,29 +66,42 @@ FFmpegDataDecoder<LIBAV_VER>::~FFmpegDataDecoder() {
   }
 }
 
+MediaResult FFmpegDataDecoder<LIBAV_VER>::AssignCodecContextExtraData(
+    const MediaByteBuffer* aBuffer) {
+  MOZ_ASSERT(mCodecContext);
+  MOZ_ASSERT(aBuffer);
+
+  CheckedInt<int> extradataSize(aBuffer->Length());
+  if (!extradataSize.isValid()) {
+    return MediaResult(
+        NS_ERROR_DOM_MEDIA_OVERFLOW_ERR,
+        RESULT_DETAIL("ffmpeg extradata size %zu exceeds INT_MAX",
+                      aBuffer->Length()));
+  }
+  // FFmpeg may use SIMD instructions to access the data which reads the
+  // data in 32 bytes block. Must ensure we have enough data to read.
+  const uint32_t padding_size =
+#if LIBAVCODEC_VERSION_MAJOR >= 58
+      AV_INPUT_BUFFER_PADDING_SIZE;
+#else
+      FF_INPUT_BUFFER_PADDING_SIZE;
+#endif
+  mCodecContext->extradata =
+      static_cast<uint8_t*>(mLib->av_mallocz(aBuffer->Length() + padding_size));
+  if (!mCodecContext->extradata) {
+    return MediaResult(NS_ERROR_OUT_OF_MEMORY,
+                       RESULT_DETAIL("Couldn't init ffmpeg extradata"));
+  }
+  mCodecContext->extradata_size = extradataSize.value();
+  memcpy(mCodecContext->extradata, aBuffer->Elements(), aBuffer->Length());
+  return NS_OK;
+}
+
 MediaResult FFmpegDataDecoder<LIBAV_VER>::AllocateExtraData() {
   if (mExtraData) {
-    mCodecContext->extradata_size = mExtraData->Length();
-    // FFmpeg may use SIMD instructions to access the data which reads the
-    // data in 32 bytes block. Must ensure we have enough data to read.
-    uint32_t padding_size =
-#if LIBAVCODEC_VERSION_MAJOR >= 58
-        AV_INPUT_BUFFER_PADDING_SIZE;
-#else
-        FF_INPUT_BUFFER_PADDING_SIZE;
-#endif
-    mCodecContext->extradata = static_cast<uint8_t*>(
-        mLib->av_malloc(mExtraData->Length() + padding_size));
-    if (!mCodecContext->extradata) {
-      return MediaResult(NS_ERROR_OUT_OF_MEMORY,
-                         RESULT_DETAIL("Couldn't init ffmpeg extradata"));
-    }
-    memcpy(mCodecContext->extradata, mExtraData->Elements(),
-           mExtraData->Length());
-  } else {
-    mCodecContext->extradata_size = 0;
+    return AssignCodecContextExtraData(mExtraData);
   }
-
+  mCodecContext->extradata_size = 0;
   return NS_OK;
 }
 
@@ -101,7 +113,8 @@ MediaResult FFmpegDataDecoder<LIBAV_VER>::InitSWDecoder(
 
   AVCodec* codec = FindSoftwareAVCodec(mLib, mCodecID);
   if (!codec) {
-    FFMPEG_LOG("  couldn't find ffmpeg decoder for codec id %d", mCodecID);
+    FFMPEG_LOG("  couldn't find ffmpeg decoder for codec id {}",
+               static_cast<int>(mCodecID));
     return MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
                        RESULT_DETAIL("unable to find codec"));
   }
@@ -149,8 +162,8 @@ MediaResult FFmpegDataDecoder<LIBAV_VER>::MaybeAttachCryptoInfo(
   aPacket->moz_crypto_info_addref = CryptoInfoAddRef;
   aPacket->moz_crypto_info_release = CryptoInfoRelease;
 
-  FFMPEG_LOG("  encrypted packet, ndk_crypto_info=%p",
-             aPacket->moz_ndk_crypto_info);
+  FFMPEG_LOG("  encrypted packet, ndk_crypto_info={}",
+             fmt::ptr(aPacket->moz_ndk_crypto_info));
   return NS_OK;
 }
 
@@ -178,7 +191,8 @@ MediaResult FFmpegDataDecoder<LIBAV_VER>::MaybeAttachCDM() {
                        RESULT_DETAIL("missing AMediaCrypto from CDM"));
   }
 
-  FFMPEG_LOG("  attached CDM, ndk_crypto=%p", mCodecContext->moz_ndk_crypto);
+  FFMPEG_LOG("  attached CDM, ndk_crypto={}",
+             fmt::ptr(mCodecContext->moz_ndk_crypto));
   return NS_OK;
 }
 
@@ -195,12 +209,12 @@ void FFmpegDataDecoder<LIBAV_VER>::MaybeDetachCDM() {
 
 MediaResult FFmpegDataDecoder<LIBAV_VER>::InitDecoder(AVCodec* aCodec,
                                                       AVDictionary** aOptions) {
-  FFMPEG_LOG("  codec %s : %s", aCodec->name, aCodec->long_name);
+  FFMPEG_LOG("  codec {} : {}", aCodec->name, aCodec->long_name);
 
   StaticMutexAutoLock mon(sMutex);
 
   if (!(mCodecContext = mLib->avcodec_alloc_context3(aCodec))) {
-    FFMPEG_LOG("  couldn't allocate ffmpeg context for codec %s", aCodec->name);
+    FFMPEG_LOG("  couldn't allocate ffmpeg context for codec {}", aCodec->name);
     return MediaResult(NS_ERROR_OUT_OF_MEMORY,
                        RESULT_DETAIL("Couldn't init ffmpeg context"));
   }
@@ -215,9 +229,19 @@ MediaResult FFmpegDataDecoder<LIBAV_VER>::InitDecoder(AVCodec* aCodec,
   mCodecContext->opaque = this;
 
   InitCodecContext();
+  // Mirror Firefox's existing video dimension policy (IsValidVideoRegion,
+  // applied at WebMDemuxer and the WMF wrappers) into ffvpx via the
+  // documented max_pixels AVOption. Bitstream-driven dimension changes
+  // are otherwise gated only by max_pixels' INT_MAX default and would
+  // accept the VP8 14-bit field maximum (16383x16383).
+#if LIBAVCODEC_VERSION_MAJOR >= 58
+  if (mCodecContext->codec_type == AVMEDIA_TYPE_VIDEO) {
+    mCodecContext->max_pixels = MAX_VIDEO_WIDTH * MAX_VIDEO_HEIGHT;
+  }
+#endif
   MediaResult ret = AllocateExtraData();
   if (NS_FAILED(ret)) {
-    FFMPEG_LOG("  couldn't allocate ffmpeg extra data for codec %s",
+    FFMPEG_LOG("  couldn't allocate ffmpeg extra data for codec {}",
                aCodec->name);
     ReleaseCodecContext();
     return ret;
@@ -239,7 +263,7 @@ MediaResult FFmpegDataDecoder<LIBAV_VER>::InitDecoder(AVCodec* aCodec,
 
   if (mLib->avcodec_open2(mCodecContext, aCodec, aOptions) < 0) {
     ReleaseCodecContext();
-    FFMPEG_LOG("  Couldn't open avcodec for %s", aCodec->name);
+    FFMPEG_LOG("  Couldn't open avcodec for {}", aCodec->name);
     return MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
                        RESULT_DETAIL("Couldn't open avcodec"));
   }
@@ -298,7 +322,7 @@ MediaResult FFmpegDataDecoder<LIBAV_VER>::DoDecode(
   MOZ_ASSERT(mTaskQueue->IsOnCurrentThread());
 
   uint8_t* inputData = const_cast<uint8_t*>(aSample->Data());
-  size_t inputSize = aSample->Size();
+  int inputSize = AssertedCast<int>(aSample->Size());
 
   mLastInputDts = aSample->mTimecode;
 
@@ -313,7 +337,7 @@ MediaResult FFmpegDataDecoder<LIBAV_VER>::DoDecode(
           mCodecParser, mCodecContext, &data, &size, inputData, inputSize,
           aSample->mTime.ToMicroseconds(), aSample->mTimecode.ToMicroseconds(),
           aSample->mOffset);
-      if (size_t(len) > inputSize) {
+      if (len > inputSize) {
         return NS_ERROR_DOM_MEDIA_DECODE_ERR;
       }
       if (size) {
@@ -480,12 +504,12 @@ void FFmpegDataDecoder<LIBAV_VER>::ReleaseFrame() {
       continue;
     }
 
-    FFMPEGV_LOG("Using preferred software codec %s", codec->name);
+    FFMPEGV_LOG("Using preferred software codec {}", codec->name);
     return codec;
   }
 
   if (fallbackCodec) {
-    FFMPEGV_LOG("Using fallback software codec %s", fallbackCodec->name);
+    FFMPEGV_LOG("Using fallback software codec {}", fallbackCodec->name);
   }
   return fallbackCodec;
 #else
@@ -501,7 +525,7 @@ void FFmpegDataDecoder<LIBAV_VER>::ReleaseFrame() {
       return nullptr;
     }
 
-    FFMPEGV_LOG("Using preferred software codec %s", codec->name);
+    FFMPEGV_LOG("Using preferred software codec {}", codec->name);
   }
   return codec;
 #endif
@@ -544,12 +568,12 @@ void FFmpegDataDecoder<LIBAV_VER>::ReleaseFrame() {
       continue;
     }
 
-    FFMPEGV_LOG("Using preferred hardware codec %s", codec->name);
+    FFMPEGV_LOG("Using preferred hardware codec {}", codec->name);
     return codec;
   }
 
   if (fallbackCodec) {
-    FFMPEGV_LOG("Using fallback hardware codec %s", fallbackCodec->name);
+    FFMPEGV_LOG("Using fallback hardware codec {}", fallbackCodec->name);
   }
   return nullptr;
 }

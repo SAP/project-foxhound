@@ -5,7 +5,7 @@
 /*
  * Bug 1983388 - Ensure focus isn't lost when navigating categories via keyboard.
  * By checking that there are no elements in the document with an ID that is the
- * same value as the category values, focus will not move from the richlistbox.
+ * same value as the category values, focus will not move from the nav.
  * */
 add_task(async function test_no_category_values_as_markup_ids() {
   await openPreferencesViaOpenPreferencesAPI("paneGeneral", {
@@ -14,9 +14,11 @@ add_task(async function test_no_category_values_as_markup_ids() {
 
   let categories = gBrowser.contentDocument.getElementById("categories");
 
-  let categoryValues = categories.itemChildren.map(elem => {
+  let categoryValues = [
+    ...categories.querySelectorAll("moz-page-nav-button[view]"),
+  ].map(elem => {
     return gBrowser.contentWindow.internalPrefCategoryNameToFriendlyName(
-      elem.value
+      elem.getAttribute("view")
     );
   });
 

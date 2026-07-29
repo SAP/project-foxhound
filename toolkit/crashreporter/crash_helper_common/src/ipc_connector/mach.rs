@@ -26,7 +26,7 @@ use crate::{
     messages::{self, Message, MessageError},
     platform::{
         mach::{mach_msg_send, AsRawPort, MachMessageWrapper, ReceiveRight, SendRight},
-        OwnedRight, PlatformError,
+        MachPortRight, PlatformError,
     },
     ProcessHandle,
 };
@@ -59,7 +59,7 @@ unsafe extern "C" {
 
 const MACH_NOTIFY_NO_SENDERS: c_int = 0o106;
 
-pub type AncillaryData = OwnedRight;
+pub type AncillaryData = MachPortRight;
 pub const CONNECTOR_ANCILLARY_DATA_LEN: usize = 2;
 
 #[repr(C)]
@@ -91,10 +91,10 @@ impl IPCConnector {
         ancillary_data: [AncillaryData; CONNECTOR_ANCILLARY_DATA_LEN],
     ) -> Result<IPCConnector, IPCError> {
         let mut iter = ancillary_data.into_iter();
-        let OwnedRight::Send(send) = iter.next().unwrap() else {
+        let MachPortRight::Send(send) = iter.next().unwrap() else {
             return Err(IPCError::InvalidAncillary);
         };
-        let OwnedRight::Receive(recv) = iter.next().unwrap() else {
+        let MachPortRight::Receive(recv) = iter.next().unwrap() else {
             return Err(IPCError::InvalidAncillary);
         };
 
@@ -276,7 +276,10 @@ impl IPCConnector {
     }
 
     pub fn into_ancillary(self) -> [AncillaryData; CONNECTOR_ANCILLARY_DATA_LEN] {
-        [OwnedRight::Send(self.send), OwnedRight::Receive(self.recv)]
+        [
+            MachPortRight::Send(self.send),
+            MachPortRight::Receive(self.recv),
+        ]
     }
 
     pub fn into_raw_connector(self) -> RawIPCConnector {
@@ -302,9 +305,10 @@ impl IPCConnector {
     {
         let expected_payload_len = message.payload_size();
         let expected_ancillary_len = message.ancillary_data_len();
-        self.send(&message.header(), vec![])
+        let (header, payload, ancillary_data) = message.encode();
+
+        self.send(&header, vec![])
             .map_err(IPCError::TransmissionFailure)?;
-        let (payload, ancillary_data) = message.into_payload();
         assert!(payload.len() == expected_payload_len);
         assert!(ancillary_data.len() == expected_ancillary_len);
         self.send(&payload, ancillary_data)
@@ -322,7 +326,7 @@ impl IPCConnector {
         }
 
         let (data, ancillary_data) = self.recv(header.size)?;
-        T::decode(&data, ancillary_data).map_err(IPCError::from)
+        T::decode(data, ancillary_data).map_err(IPCError::from)
     }
 
     // This is a blocking send operation
@@ -343,12 +347,15 @@ impl IPCConnector {
 
         for (i, right) in rights.into_iter().enumerate() {
             descriptors[i] = match right {
-                OwnedRight::Receive(recv) => mach_msg_port_descriptor_t::new(
+                MachPortRight::Receive(recv) => mach_msg_port_descriptor_t::new(
                     recv.into_raw_port(),
                     MACH_MSG_TYPE_MOVE_RECEIVE,
                 ),
-                OwnedRight::Send(send) => {
+                MachPortRight::Send(send) => {
                     mach_msg_port_descriptor_t::new(send.into_raw_port(), MACH_MSG_TYPE_MOVE_SEND)
+                }
+                MachPortRight::SendRef(send_ref) => {
+                    mach_msg_port_descriptor_t::new(send_ref.as_raw_port(), MACH_MSG_TYPE_COPY_SEND)
                 }
             };
         }
@@ -358,7 +365,7 @@ impl IPCConnector {
 
     pub(crate) fn recv_header(&self) -> Result<messages::Header, IPCError> {
         let (header, _) = self.recv(messages::HEADER_SIZE)?;
-        messages::Header::decode(&header).map_err(IPCError::BadMessage)
+        messages::Header::decode(header).map_err(IPCError::BadMessage)
     }
 
     // This is a blocking receive
@@ -380,15 +387,15 @@ impl IPCConnector {
             let right = match descriptor.disposition as u32 {
                 MACH_MSG_TYPE_MOVE_RECEIVE => {
                     // SAFETY: This disposition denotes that this is a valid receive right
-                    OwnedRight::Receive(unsafe { ReceiveRight::from_raw_port(name) })
+                    MachPortRight::Receive(unsafe { ReceiveRight::from_raw_port(name) })
                 }
                 MACH_MSG_TYPE_MOVE_SEND => {
                     // SAFETY: This disposition denotes that this is a valid send right
-                    OwnedRight::Send(unsafe { SendRight::from_raw_port(name) })
+                    MachPortRight::Send(unsafe { SendRight::from_raw_port(name) })
                 }
                 MACH_MSG_TYPE_COPY_SEND => {
                     // SAFETY: This disposition denotes that this is a valid send right
-                    OwnedRight::Send(unsafe { SendRight::from_raw_port(name) })
+                    MachPortRight::Send(unsafe { SendRight::from_raw_port(name) })
                 }
                 _ => return Err(IPCError::InvalidAncillary),
             };

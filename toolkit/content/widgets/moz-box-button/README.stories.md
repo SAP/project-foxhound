@@ -10,7 +10,7 @@
 
 ## Code
 
-The source for `moz-box-button` can be found under [toolkit/content/widgets/moz-box-button/](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/moz-box-button)
+The source for `moz-box-button` can be found under [toolkit/content/widgets/moz-box-button/](https://searchfox.org/firefox-main/source/toolkit/content/widgets/moz-box-button)
 
 ## How to use `moz-box-button`
 

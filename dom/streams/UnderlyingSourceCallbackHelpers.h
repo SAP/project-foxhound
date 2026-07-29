@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -63,6 +61,12 @@ class UnderlyingSourceAlgorithmsBase : public nsISupports {
   // overhead, if this readable stream is a wrapper of a native stream.
   // Currently used by Fetch helper functions e.g. new Response(stream).text()
   virtual nsIInputStream* MaybeGetInputStreamIfUnread() { return nullptr; }
+
+  // Replaces the underlying input stream of an unread native stream. Used by
+  // Fetch's clone() to repoint a body's ReadableStream at a freshly cloned
+  // input stream without disturbing the stream or changing its identity. No-op
+  // for non-native streams. Must only be called on a non-disturbed stream.
+  virtual void SetInputStreamIfUnread(nsIInputStream* aInput) {}
 
   // https://streams.spec.whatwg.org/#other-specs-rs-create
   // By "native" we mean "instances initialized via the above set up or set up
@@ -225,7 +229,7 @@ class InputStreamHolder final : public nsIInputStreamCallback,
 
 // Using this class means you are also passing the lifetime control of your
 // nsIAsyncInputStream, as it will be closed when this class tears down.
-class InputToReadableStreamAlgorithms final
+class InputToReadableStreamAlgorithms
     : public UnderlyingSourceAlgorithmsWrapper,
       public nsIInputStreamCallback,
       public SupportsWeakPtr {
@@ -247,12 +251,8 @@ class InputToReadableStreamAlgorithms final
 
   nsIInputStream* MaybeGetInputStreamIfUnread() override;
 
- private:
-  ~InputToReadableStreamAlgorithms() {
-    if (mInput) {
-      mInput->Shutdown();
-    }
-  }
+ protected:
+  ~InputToReadableStreamAlgorithms();
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void CloseAndReleaseObjects(
       JSContext* aCx, ReadableStream* aStream);
@@ -316,6 +316,13 @@ class NonAsyncInputToReadableStreamAlgorithms
   nsIInputStream* MaybeGetInputStreamIfUnread() override {
     MOZ_ASSERT(mInput, "Should be only called on non-disturbed streams");
     return mInput;
+  }
+
+  void SetInputStreamIfUnread(nsIInputStream* aInput) override {
+    MOZ_ASSERT(mInput, "Should be only called on non-disturbed streams");
+    MOZ_ASSERT(!mAsyncAlgorithms,
+               "Should be only called before the stream is read");
+    mInput = aInput;
   }
 
  private:

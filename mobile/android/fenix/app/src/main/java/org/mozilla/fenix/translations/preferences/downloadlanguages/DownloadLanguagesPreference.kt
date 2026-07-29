@@ -44,6 +44,10 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
+import mozilla.components.compose.base.InfoCard
+import mozilla.components.compose.base.InfoType
+import mozilla.components.compose.base.LinkText
+import mozilla.components.compose.base.LinkTextState
 import mozilla.components.concept.engine.translate.Language
 import mozilla.components.concept.engine.translate.LanguageModel
 import mozilla.components.concept.engine.translate.ModelState
@@ -51,10 +55,7 @@ import mozilla.components.concept.engine.translate.TranslationError
 import mozilla.components.feature.downloads.DefaultFileSizeFormatter
 import mozilla.components.feature.downloads.FileSizeFormatter
 import org.mozilla.fenix.R
-import org.mozilla.fenix.compose.InfoCard
-import org.mozilla.fenix.compose.InfoType
-import org.mozilla.fenix.compose.LinkText
-import org.mozilla.fenix.compose.LinkTextState
+import org.mozilla.fenix.compose.settings.SettingsSectionHeader
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.PreviewThemeProvider
 import org.mozilla.fenix.theme.Theme
@@ -253,16 +254,13 @@ private fun shouldShowDownloadLanguagesHeader(
 
 @Composable
 private fun DownloadLanguagesHeader(title: String) {
-    Text(
+    SettingsSectionHeader(
         text = title,
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 72.dp, end = 16.dp)
-            .semantics { heading() }
             .defaultMinSize(minHeight = 36.dp)
             .wrapContentHeight(),
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        style = FirefoxTheme.typography.headline8,
     )
 }
 

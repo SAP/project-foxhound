@@ -14,7 +14,7 @@ const {
 const TIME_FORMAT_MAX_DURATION_IN_MS = 4000;
 
 /**
- * TimeScale object holds the total duration, start time and end time and zero position
+ * TimeScale object holds the total duration, start time, end time and zero position
  * time information for all animations which should be displayed, and is used to calculate
  * the displayed area for each animation.
  */
@@ -129,7 +129,7 @@ class TimeScale {
 
   /**
    * Return end time of given animation.
-   * This time does not include playbackRate and cratedTime.
+   * This time does not include playbackRate and createdTime.
    * Also, if the animation has infinite iterations, this returns Infinity.
    *
    * @param {object} animation

@@ -34,49 +34,49 @@ XULMAP_TYPE(toolbar, XULToolbarAccessible)
 XULMAP_TYPE(toolbarbutton, XULToolbarButtonAccessible)
 
 XULMAP(description,
-       [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
+       [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
          if (aElement->ClassList()->Contains(u"tooltip-label"_ns)) {
            // FIXME(emilio): Why this special case?
            return nullptr;
          }
 
-         return new XULLabelAccessible(aElement, aContext->Document());
+         return MakeAndAddRef<XULLabelAccessible>(aElement, aContext->Document());
        })
 
 XULMAP(tooltip,
-       [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-         return new XULTooltipAccessible(aElement, aContext->Document());
+       [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
+         return MakeAndAddRef<XULTooltipAccessible>(aElement, aContext->Document());
        })
 
 XULMAP(label,
-       [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
+       [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
          if (aElement->ClassList()->Contains(u"text-link"_ns)) {
-           return new XULLinkAccessible(aElement, aContext->Document());
+           return MakeAndAddRef<XULLinkAccessible>(aElement, aContext->Document());
          }
-         return new XULLabelAccessible(aElement, aContext->Document());
+         return MakeAndAddRef<XULLabelAccessible>(aElement, aContext->Document());
        })
 
 XULMAP(image,
-       [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
+       [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
          // Don't include nameless images in accessible tree.
          if (!aElement->HasAttr(nsGkAtoms::tooltiptext)) {
            return nullptr;
          }
 
-         return new ImageAccessible(aElement, aContext->Document());
+         return MakeAndAddRef<ImageAccessible>(aElement, aContext->Document());
        })
 
 XULMAP(menulist,
-       [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
+       [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
          nsAutoString domID;
          if (nsCoreUtils::GetID(aElement, domID)) {
            if (domID.Equals(u"ContentSelectDropdown"_ns)) {
-             return new XULContentSelectDropdownAccessible(
+             return MakeAndAddRef<XULContentSelectDropdownAccessible>(
                  aElement, aContext->Document());
            }
          }
 
-         return new XULComboboxAccessible(aElement, aContext->Document());
+         return MakeAndAddRef<XULComboboxAccessible>(aElement, aContext->Document());
        })
 
 XULMAP(menupopup, [](Element* aElement, LocalAccessible* aContext) {
@@ -84,7 +84,7 @@ XULMAP(menupopup, [](Element* aElement, LocalAccessible* aContext) {
 })
 
 XULMAP(panel,
-       [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
+       [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
          static const Element::AttrValuesArray sIgnoreTypeVals[] = {
              nsGkAtoms::autocomplete_richlistbox, nsGkAtoms::autocomplete,
              nullptr};
@@ -94,17 +94,16 @@ XULMAP(panel,
            return nullptr;
          }
 
-         if (aElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::noautofocus,
-                                   nsGkAtoms::_true, eCaseMatters)) {
-           return new XULAlertAccessible(aElement, aContext->Document());
+         if (aElement->GetBoolAttr(nsGkAtoms::noautofocus)) {
+           return MakeAndAddRef<XULAlertAccessible>(aElement, aContext->Document());
          }
 
-         return new EnumRoleAccessible<roles::PANE>(aElement,
+         return MakeAndAddRef<EnumRoleAccessible<roles::PANE>>(aElement,
                                                     aContext->Document());
        })
 
 XULMAP(tree,
-       [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
+       [](Element* aElement, LocalAccessible* aContext) -> already_AddRefed<LocalAccessible> {
          nsIContent* child =
              nsTreeUtils::GetDescendantChild(aElement, nsGkAtoms::treechildren);
          if (!child) return nullptr;
@@ -117,11 +116,11 @@ XULMAP(tree,
 
          // Outline of list accessible.
          if (count == 1) {
-           return new XULTreeAccessible(aElement, aContext->Document(),
+           return MakeAndAddRef<XULTreeAccessible>(aElement, aContext->Document(),
                                         treeFrame);
          }
 
          // Table or tree table accessible.
-         return new XULTreeGridAccessible(aElement, aContext->Document(),
+         return MakeAndAddRef<XULTreeGridAccessible>(aElement, aContext->Document(),
                                           treeFrame);
        })

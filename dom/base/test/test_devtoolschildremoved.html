@@ -11,8 +11,6 @@
 
 SimpleTest.waitForExplicitFinish();
 SimpleTest.waitForFocus(async () => {
-  await SpecialPowers.pushPrefEnv({ set: [["dom.movebefore.enabled", true]] });
-
   // Unlock devtoolschildremoved events.
   SpecialPowers.wrap(document).devToolsWatchingDOMMutations = true;
   SimpleTest.registerCleanupFunction(() => {

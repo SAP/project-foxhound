@@ -32,76 +32,49 @@ origin:
   license-file: "LICENSE"
 
   # Automatically managed by vendor process
-  release: 3e3e15e6c861ef4492aa4e1b87551949b9a0d587 (2026-02-10T00:52:21Z).
-  revision: 3e3e15e6c861ef4492aa4e1b87551949b9a0d587
+  release: 06c391e81c367d1059d601c812f379875d7ef0a3 (2026-05-13T00:07:27Z).
+  revision: 06c391e81c367d1059d601c812f379875d7ef0a3
 
 vendoring:
   # Canonical repository is on GitHub
   url: https://github.com/mozilla/application-services
   source-hosting: github
-
   # While we are vendoring from the external repository use the 'third_party'
   # folder. When application-services eventually moves entirely in tree we will
   # stop vendoring and it will live in a new home (with history import).
+  # We now vendor most of application-services - enough to experiment with
+  # building it in tree, grabbing everything we know we will need in that future.
+  # We do however exclude things we know will not survive the transtion.
   vendor-directory: third_party/application-services
-
-  # To maintain consistency with existing application-services workflow, we
-  # only import the same files that were previously vendored for desktop
-  # builds. This will be gradually relaxed as we approach monorepo migration.
   exclude:
-    # Ignore directories other than components/
+    - Cargo.lock
+    - Cargo.toml
+    - CHANGELOG.md
+    - CODE_OF_CONDUCT.md
+    - README.md
+    - COPYRIGHT
+    - version.txt
+    - clippy.toml
+    - gradlew
+    - gradlew.bat
+    - build.gradle
+    - gradle.properties
+    - proguard-rules-consumer-jna.pro
+    - install-nimbus-cli.sh
+    - rust-toolchain.toml
     - .cargo/**
     - .circleci/**
     - .github/**
     - .vscode/**
-    - automation/**
-    - build-scripts/**
-    - docs/**
-    - examples/**
     - gradle/**
-    - libs/**
-    - megazords/**
+    - docs/shared/**
+    # need a story for these generated deps - bug 1963617
+    - DEPENDENCIES.md
+    - megazords/full/android/dependency-licenses.xml
+    - megazords/full/DEPENDENCIES.md
+    - megazords/ios-rust/DEPENDENCIES.md
+    - megazords/ios-rust/focus/DEPENDENCIES.md
+    # don't need anything from taskcluster.
     - taskcluster/**
-    - testing/**
-    - tools/**
-
-    # Ignore loose files not otherwise listed in includes
-    - "*"
-    - components/*
-
-    # Ignore components that are not used on desktop
-    - components/ads-client/**
-    - components/as-ohttp-client/**
-    - components/autofill/**
-    - components/crashtest/**
-    - components/example/**
-    - components/fxa-client/**
-    - components/merino/**
-    - components/nimbus/**
-    - components/places/**
-    - components/push/**
-    - components/relay/**
-    - components/suggest/suggest-bench/**
-    - components/support/nimbus-cli/**
-    - components/support/nimbus-fml/**
-    - components/support/rand_rccrypto/**
-    - components/support/rate-limiter/**
-    - components/support/restmail-client/**
-    - components/support/rust-log-forwarder/**
-    - components/support/text-table/**
-    - components/support/find-places-db/**
-    - components/support/viaduct-dev/**
-    - components/support/viaduct-hyper/**
-    - components/support/viaduct-reqwest/**
-    - components/sync_manager/**
-
-    # Ignore directories we wouldn't publish with crate
-    - components/**/android/**
-    - components/**/ios/**
-
-    # Exclusions within specific components
-    - components/support/error/tests/**
-    - components/webext-storage/ffi/**
-
-  include:
-    - LICENSE
+    # hacks which only make sense in app-services.
+    - monorepo-hacks/**

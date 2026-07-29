@@ -23,9 +23,9 @@
 #include "api/test/mock_async_dns_resolver.h"
 #include "api/test/mock_local_network_access_permission.h"
 #include "api/test/rtc_error_matchers.h"
+#include "api/units/timestamp.h"
 #include "p2p/base/port.h"
 #include "p2p/base/port_allocator.h"
-#include "p2p/base/port_interface.h"
 #include "p2p/base/stun_port.h"
 #include "p2p/base/turn_port.h"
 #include "p2p/client/relay_port_factory_interface.h"
@@ -33,17 +33,16 @@
 #include "p2p/test/test_stun_server.h"
 #include "p2p/test/test_turn_server.h"
 #include "p2p/test/turn_server.h"
-#include "rtc_base/fake_clock.h"
+#include "rtc_base/net_helper.h"
 #include "rtc_base/net_helpers.h"
 #include "rtc_base/network.h"
 #include "rtc_base/socket.h"
 #include "rtc_base/socket_address.h"
-#include "rtc_base/third_party/sigslot/sigslot.h"
-#include "rtc_base/thread.h"
 #include "rtc_base/virtual_socket_server.h"
 #include "test/create_test_environment.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
+#include "test/time_controller/simulated_time_controller.h"
 #include "test/wait_until.h"
 
 namespace webrtc {
@@ -71,8 +70,7 @@ enum ServerType { kStun, kTurn };
 
 // Class to test LocalNetworkAccess integration with STUN and TURN ports.
 class LocalNetworkAccessPortTest
-    : public sigslot::has_slots<>,
-      public ::testing::TestWithParam<
+    : public ::testing::TestWithParam<
           std::tuple<ServerType, absl::string_view, LnaFakeResult>> {
  public:
   LocalNetworkAccessPortTest() {
@@ -80,8 +78,9 @@ class LocalNetworkAccessPortTest
 
     switch (server_type()) {
       case kStun:
-        stun_server_ = TestStunServer::Create(env_, {server_address(), 5000},
-                                              ss_, thread_);
+        stun_server_ =
+            TestStunServer::Create(env_, {server_address(), 5000}, ss_,
+                                   *time_controller_.GetMainThread());
         break;
       case kTurn:
         turn_server_.AddInternalSocket({server_address(), 5000}, PROTO_UDP);
@@ -120,7 +119,7 @@ class LocalNetworkAccessPortTest
     ProtocolAddress proto_server_address({server_address, 5000}, PROTO_UDP);
     CreateRelayPortArgs args = {
         .env = env_,
-        .network_thread = &thread_,
+        .network_thread = time_controller_.GetMainThread(),
         .socket_factory = &socket_factory_,
         .network = &network_,
         .server_address = &proto_server_address,
@@ -135,8 +134,9 @@ class LocalNetworkAccessPortTest
     // port_ready_ or port_error_ becomes true. If neither happens, the test
     // will fail after a timeout.
     turn_port->SubscribePortComplete(
-        [this](Port* port) { OnPortComplete(port); });
-    turn_port->SubscribePortError([this](Port* port) { OnPortError(port); });
+        this, [this](Port* port) { OnPortComplete(port); });
+    turn_port->SubscribePortError(this,
+                                  [this](Port* port) { OnPortError(port); });
 
     return turn_port;
   }
@@ -146,7 +146,7 @@ class LocalNetworkAccessPortTest
       LocalNetworkAccessPermissionFactoryInterface& lna_permission_factory) {
     Port::PortParametersRef params = {
         .env = env_,
-        .network_thread = &thread_,
+        .network_thread = time_controller_.GetMainThread(),
         .socket_factory = &socket_factory_,
         .network = &network_,
         .ice_username_fragment = kIceUfrag,
@@ -157,8 +157,9 @@ class LocalNetworkAccessPortTest
     auto stun_port = StunPort::Create(
         params, 0, 0, {SocketAddress(server_address, 5000)}, std::nullopt);
     stun_port->SubscribePortComplete(
-        [this](Port* port) { OnPortComplete(port); });
-    stun_port->SubscribePortError([this](Port* port) { OnPortError(port); });
+        this, [this](Port* port) { OnPortComplete(port); });
+    stun_port->SubscribePortError(this,
+                                  [this](Port* port) { OnPortError(port); });
 
     return stun_port;
   }
@@ -187,10 +188,10 @@ class LocalNetworkAccessPortTest
   bool port_ready_ = false;
   bool port_error_ = false;
 
-  ScopedFakeClock fake_clock_;
-  const Environment env_ = CreateTestEnvironment();
   VirtualSocketServer ss_;
-  AutoSocketServerThread thread_{&ss_};
+  GlobalSimulatedTimeController time_controller_{Timestamp::Micros(1234567),
+                                                 &ss_};
+  const Environment env_ = CreateTestEnvironment({.time = &time_controller_});
   MockDnsResolvingPacketSocketFactory socket_factory_{&ss_};
 
   const bool is_using_ipv6_{SocketAddress(server_address(), 5000).family() ==
@@ -199,8 +200,8 @@ class LocalNetworkAccessPortTest
                                                     : kLocalAddr};
   Network network_{"unittest", "unittest", local_address_.ipaddr(), 32};
 
-  TestTurnServer turn_server_{env_, &thread_, &ss_, kTurnUdpIntAddr,
-                              kTurnUdpExtAddr};
+  TestTurnServer turn_server_{env_, time_controller_.GetMainThread(), &ss_,
+                              kTurnUdpIntAddr, kTurnUdpExtAddr};
   TestStunServer::StunServerPtr stun_server_;
 };
 
@@ -265,13 +266,13 @@ TEST_P(LocalNetworkAccessPortTest, ResolvedAddress) {
   if (lna_fake_result() == LnaFakeResult::kPermissionNotNeeded ||
       lna_fake_result() == LnaFakeResult::kPermissionGranted) {
     EXPECT_THAT(WaitUntil([&] { return port_ready_; }, IsTrue(),
-                          {.clock = &fake_clock_}),
+                          {.clock = &time_controller_}),
                 IsRtcOk());
     EXPECT_EQ(1u, port->Candidates().size());
     EXPECT_NE(SOCKET_ERROR, port->GetError());
   } else {
     EXPECT_THAT(WaitUntil([&] { return port_error_; }, IsTrue(),
-                          {.clock = &fake_clock_}),
+                          {.clock = &time_controller_}),
                 IsRtcOk());
     EXPECT_EQ(0u, port->Candidates().size());
     EXPECT_NE(SOCKET_ERROR, port->GetError());
@@ -288,13 +289,13 @@ TEST_P(LocalNetworkAccessPortTest, UnresolvedAddress) {
   if (lna_fake_result() == LnaFakeResult::kPermissionNotNeeded ||
       lna_fake_result() == LnaFakeResult::kPermissionGranted) {
     EXPECT_THAT(WaitUntil([&] { return port_ready_; }, IsTrue(),
-                          {.clock = &fake_clock_}),
+                          {.clock = &time_controller_}),
                 IsRtcOk());
     EXPECT_EQ(1u, port->Candidates().size());
     EXPECT_NE(SOCKET_ERROR, port->GetError());
   } else {
     EXPECT_THAT(WaitUntil([&] { return port_error_; }, IsTrue(),
-                          {.clock = &fake_clock_}),
+                          {.clock = &time_controller_}),
                 IsRtcOk());
     EXPECT_EQ(0u, port->Candidates().size());
     EXPECT_NE(SOCKET_ERROR, port->GetError());

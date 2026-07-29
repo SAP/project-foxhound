@@ -127,6 +127,10 @@ function getObjectInspector(
     defaultRep: REPS.Grip,
     createElement: serviceContainer?.createElement,
     mayUseCustomFormatter: true,
+    showGlobalNode:
+      !!serviceContainer?.isBrowserConsoleOrBrowserToolbox ||
+      (frontOrPrimitiveGrip?.targetFront &&
+        !frontOrPrimitiveGrip.targetFront.isTopLevel),
     ...override,
   };
 

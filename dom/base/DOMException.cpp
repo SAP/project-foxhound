@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -96,13 +94,11 @@ static void NSResultToNameAndMessage(nsresult aNSResult, nsCString& aName,
   aName.Truncate();
   aMessage.Truncate();
   *aCode = 0;
-  for (uint32_t idx = 0; idx < std::size(sDOMErrorMsgMap); idx++) {
-    if (aNSResult == sDOMErrorMsgMap[idx].mNSResult) {
-      aName.Rebind(sDOMErrorMsgMap[idx].mName,
-                   strlen(sDOMErrorMsgMap[idx].mName));
-      aMessage.Rebind(sDOMErrorMsgMap[idx].mMessage,
-                      strlen(sDOMErrorMsgMap[idx].mMessage));
-      *aCode = sDOMErrorMsgMap[idx].mCode;
+  for (const auto& entry : sDOMErrorMsgMap) {
+    if (aNSResult == entry.mNSResult) {
+      aName.Rebind(entry.mName, strlen(entry.mName));
+      aMessage.Rebind(entry.mMessage, strlen(entry.mMessage));
+      *aCode = entry.mCode;
       return;
     }
   }
@@ -120,8 +116,8 @@ nsresult NS_GetNameAndMessageForDOMNSResult(nsresult aNSResult,
   NSResultToNameAndMessage(aNSResult, name, message, &code);
 
   if (!name.IsEmpty() && !message.IsEmpty()) {
-    aName = name;
-    aMessage = message;
+    aName = std::move(name);
+    aMessage = std::move(message);
     if (aCode) {
       *aCode = code;
     }
@@ -358,10 +354,10 @@ already_AddRefed<DOMException> DOMException::Constructor(
 
   if (aName.WasPassed()) {
     CopyUTF16toUTF8(aName.Value(), name);
-    for (uint32_t idx = 0; idx < std::size(sDOMErrorMsgMap); idx++) {
-      if (name.EqualsASCII(sDOMErrorMsgMap[idx].mName)) {
-        exceptionResult = sDOMErrorMsgMap[idx].mNSResult;
-        exceptionCode = sDOMErrorMsgMap[idx].mCode;
+    for (const auto& entry : sDOMErrorMsgMap) {
+      if (name.EqualsASCII(entry.mName)) {
+        exceptionResult = entry.mNSResult;
+        exceptionCode = entry.mCode;
         break;
       }
     }

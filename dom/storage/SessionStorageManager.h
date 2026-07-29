@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +6,7 @@
 #define mozilla_dom_SessionStorageManager_h
 
 #include "StorageObserver.h"
+#include "ipc/EnumSerializer.h"
 #include "mozilla/dom/FlippedOnce.h"
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/ipc/PBackgroundParent.h"
@@ -292,5 +291,16 @@ class BackgroundSessionStorageManager final : public SessionStorageManagerBase {
 
 }  // namespace dom
 }  // namespace mozilla
+
+namespace IPC {
+
+template <>
+struct ParamTraits<mozilla::dom::DomainMatchingMode>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::dom::DomainMatchingMode,
+          mozilla::dom::DomainMatchingMode::PREFIX_MATCH,
+          mozilla::dom::DomainMatchingMode::EXACT_MATCH> {};
+
+}  // namespace IPC
 
 #endif  // mozilla_dom_SessionStorageManager_h

@@ -1,4 +1,11 @@
 #!/bin/bash
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# This script uses the yq command from https://github.com/kislyuk/yq.
+# There is another yq (https://github.com/mikefarah/yq) with incompatible
+# interface.
 
 set -ex
 
@@ -12,53 +19,62 @@ else
 fi
 for f in $files; do
     base=$(basename "$f" .yml)
-    repo=${base%%-*}
+    prefix=${base%%-*}
     action=${base#*-}
+    trust_domain=gecko
     # remove people's email addresses
     filter='.owner="user@example.com"'
 
-    case $repo in
+    case $prefix in
         mc)
-            repo=mozilla-central
+            path=mozilla-central
             ;;
         mb)
-            repo=mozilla-beta
+            path=mozilla-beta
             ;;
         mr)
-            repo=mozilla-release
+            path=mozilla-release
             ;;
         me)
             version=$(curl -s https://product-details.mozilla.org/1.0/firefox_versions.json | jq -r  .FIREFOX_ESR)
             version=${version%%.*}
-            repo=mozilla-esr${version}
+            path=mozilla-esr${version}
             # unset enable_always_target to fall back to the default, to avoid
             # generating a broken graph with esr115 params
             filter="$filter | del(.enable_always_target)"
             ;;
         autoland)
+            path=autoland
+            ;;
+        em)
+            trust_domain=enterprise
+            path=enterprise-firefox.branch.enterprise-main
+            ;;
+        github)
+            continue
             ;;
         try)
             continue
             ;;
         *)
-            echo unknown repo $repo >&2
+            echo unknown prefix $prefix >&2
             exit 1
             ;;
     esac
 
     case $action in
         onpush)
-            task=gecko.v2.${repo}.latest.taskgraph.decision
+            task=${trust_domain}.v2.${path}.latest.taskgraph.decision
             service=index
             # find a non-DONTBUILD push
             while :; do
                 params=$(curl -f -L ${TASKCLUSTER_ROOT_URL}/api/${service}/v1/task/${task}/artifacts/public%2Fparameters.yml)
                 method=$(echo "$params" | yq -r .target_tasks_method)
-                if [ $method != nothing ]; then
+                pushlog_id=$(echo "$params" | yq -r .pushlog_id)
+                if [ "$method" != nothing ] || [ "$pushlog_id" -eq 0 ]; then
                     break
                 fi
-                pushlog_id=$(echo "$params" | yq -r .pushlog_id)
-                task=gecko.v2.${repo}.pushlog-id.$((pushlog_id - 1)).decision
+                task=${trust_domain}.v2.${path}.pushlog-id.$((pushlog_id - 1)).decision
             done
             ;;
         onpush-geckoview)
@@ -67,19 +83,19 @@ for f in $files; do
             ;;
         cron-*)
             task=${action#cron-}
-            task=gecko.v2.${repo}.latest.taskgraph.decision-${task}
+            task=${trust_domain}.v2.${path}.latest.taskgraph.decision-${task}
             service=index
             ;;
         nightly-all)
-            task=gecko.v2.${repo}.latest.taskgraph.decision-nightly-all
+            task=${trust_domain}.v2.${path}.latest.taskgraph.decision-nightly-all
             service=index
             ;;
         android-nightly)
-            task=gecko.v2.${repo}.latest.taskgraph.decision-nightly-android
+            task=${trust_domain}.v2.${path}.latest.taskgraph.decision-nightly-android
             service=index
             ;;
         desktop-nightly)
-            task=gecko.v2.${repo}.latest.taskgraph.decision-nightly-desktop
+            task=${trust_domain}.v2.${path}.latest.taskgraph.decision-nightly-desktop
             service=index
             ;;
         push*|promote*|ship*)
@@ -119,7 +135,7 @@ for f in $files; do
                     ;;
             esac
             # grab the action task id from the latest release where this phase wasn't skipped
-            task=$(curl -s "https://shipitapi-public.services.mozilla.com/releases?product=${product}&branch=releases/${repo}&status=shipped" | \
+            task=$(curl -s "https://shipitapi-public.services.mozilla.com/releases?product=${product}&branch=releases/${path}&status=shipped" | \
                 jq -r "map(.phases[] | select(.name == "'"'"$phase"'"'" and (.skipped | not)))[-1].actionTaskId")
             service=queue
             ;;
@@ -133,5 +149,5 @@ for f in $files; do
             ;;
     esac
 
-    curl -f -L ${TASKCLUSTER_ROOT_URL}/api/${service}/v1/task/${task}/artifacts/public%2Fparameters.yml | yq -oy "$filter" > "${f}"
+    curl -f -L ${TASKCLUSTER_ROOT_URL}/api/${service}/v1/task/${task}/artifacts/public%2Fparameters.yml | yq -y "$filter" > "${f}"
 done

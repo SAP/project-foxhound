@@ -24,18 +24,16 @@
 #include "api/scoped_refptr.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/transport/bitrate_settings.h"
+#include "api/video/video_stream_encoder_settings.h"
 #include "call/audio_receive_stream.h"
 #include "call/audio_send_stream.h"
-#include "call/call_basic_stats.h"
 #include "call/call_config.h"
 #include "call/flexfec_receive_stream.h"
 #include "call/packet_receiver.h"
-#include "call/payload_type.h"
 #include "call/rtp_transport_controller_send_interface.h"
 #include "call/video_receive_stream.h"
 #include "call/video_send_stream.h"
 #include "modules/congestion_controller/rtp/congestion_controller_feedback_stats.h"
-#include "rtc_base/checks.h"
 #include "rtc_base/containers/flat_map.h"
 #include "rtc_base/network/sent_packet.h"
 #include "video/config/video_encoder_config.h"
@@ -54,7 +52,20 @@ namespace webrtc {
 
 class Call {
  public:
-  using Stats = CallBasicStats;
+  struct Stats {
+    std::string ToString(int64_t time_ms) const;
+
+    int send_bandwidth_bps = 0;       // Estimated available send bandwidth.
+    int max_padding_bitrate_bps = 0;  // Cumulative configured max padding.
+    int recv_bandwidth_bps = 0;       // Estimated available receive bandwidth.
+    int64_t pacer_delay_ms = 0;
+    int64_t rtt_ms = -1;
+    std::optional<int64_t> ccfb_messages_received = std::nullopt;
+    flat_map<uint32_t, SentCongestionControllerFeedbackStats>
+      sent_ccfb_stats_per_ssrc;
+    flat_map<uint32_t, ReceivedCongestionControlFeedbackStats>
+      received_ccfb_stats_per_ssrc;
+  };
 
   static std::unique_ptr<Call> Create(CallConfig config);
 
@@ -70,11 +81,14 @@ class Call {
 
   virtual VideoSendStream* CreateVideoSendStream(
       VideoSendStream::Config config,
-      VideoEncoderConfig encoder_config) = 0;
+      VideoEncoderConfig encoder_config,
+      EncoderSwitchRequestCallback encoder_switch_request_callback =
+          nullptr) = 0;
   virtual VideoSendStream* CreateVideoSendStream(
       VideoSendStream::Config config,
       VideoEncoderConfig encoder_config,
-      std::unique_ptr<FecController> fec_controller);
+      EncoderSwitchRequestCallback encoder_switch_request_callback,
+      std::unique_ptr<FecController> fec_controller) = 0;
   virtual void DestroyVideoSendStream(VideoSendStream* send_stream) = 0;
 
   virtual VideoReceiveStreamInterface* CreateVideoReceiveStream(
@@ -107,18 +121,6 @@ class Call {
   // remove this method interface.
   virtual RtpTransportControllerSendInterface* GetTransportControllerSend() = 0;
 
-  // A class that keeps track of payload types on the transport(s), and
-  // suggests new ones when needed.
-  virtual PayloadTypeSuggester* GetPayloadTypeSuggester() {
-    // TODO: https://issues.webrtc.org/360058654 - make pure virtual
-    RTC_CHECK_NOTREACHED();
-    return nullptr;
-  }
-  virtual void SetPayloadTypeSuggester(PayloadTypeSuggester* /* suggester */) {
-    // TODO: https://issues.webrtc.org/360058654 - make pure virtual
-    RTC_CHECK_NOTREACHED();
-  }
-
   // Returns the call statistics, such as estimated send and receive bandwidth,
   // pacing delay, etc.
   virtual Stats GetStats() const = 0;
@@ -131,15 +133,6 @@ class Call {
 
   virtual void OnAudioTransportOverheadChanged(
       int transport_overhead_per_packet) = 0;
-
-  // Called when a receive stream's local ssrc has changed and association with
-  // send streams needs to be updated.
-  virtual void OnLocalSsrcUpdated(AudioReceiveStreamInterface& stream,
-                                  uint32_t local_ssrc) = 0;
-  virtual void OnLocalSsrcUpdated(VideoReceiveStreamInterface& stream,
-                                  uint32_t local_ssrc) = 0;
-  virtual void OnLocalSsrcUpdated(FlexfecReceiveStream& stream,
-                                  uint32_t local_ssrc) = 0;
 
   virtual void OnUpdateSyncGroup(AudioReceiveStreamInterface& stream,
                                  absl::string_view sync_group) = 0;

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -833,13 +831,13 @@ void SVGImageFrame::NotifySVGChanged(ChangeFlags aFlags) {
 }
 
 SVGBBox SVGImageFrame::GetBBoxContribution(const Matrix& aToBBoxUserspace,
-                                           uint32_t aFlags) {
+                                           SVGBBoxFlags aFlags) {
   if (aToBBoxUserspace.IsSingular()) {
     // XXX ReportToConsole
     return {};
   }
 
-  if ((aFlags & SVGUtils::eForGetClientRects) &&
+  if (aFlags.contains(SVGBBoxFlag::ForGetClientRects) &&
       aToBBoxUserspace.PreservesAxisAlignedRectangles()) {
     if (!mRect.IsEmpty()) {
       Rect rect = NSRectToRect(mRect, AppUnitsPerCSSPixel());
@@ -850,7 +848,13 @@ SVGBBox SVGImageFrame::GetBBoxContribution(const Matrix& aToBBoxUserspace,
 
   auto* element = static_cast<SVGImageElement*>(GetContent());
 
-  return element->GeometryBounds(aToBBoxUserspace);
+  Rect rect = element->GeometryBounds(aToBBoxUserspace);
+
+  if (aFlags.contains(SVGBBoxFlag::DisregardCSSZoom)) {
+    rect.Scale(1 / Style()->EffectiveZoom().ToFloat());
+  }
+
+  return rect;
 }
 
 //----------------------------------------------------------------------

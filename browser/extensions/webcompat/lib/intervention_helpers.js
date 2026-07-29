@@ -208,19 +208,420 @@ const GOOGLE_TLDS = [
   "co.zw",
 ];
 
+class MatchPatternCache {
+  static #cache = new Map();
+
+  static get(patternString) {
+    let instance = MatchPatternCache.#cache.get(patternString);
+    if (!instance) {
+      instance = browser.matchPatterns.getMatcher([patternString]);
+      MatchPatternCache.#cache.set(patternString, instance);
+    }
+    return instance;
+  }
+}
+
+// This class lets us build the fewest number of content scripts for a given
+// intervention, since one may have bits that are dynamically enabled/disabled,
+// and it's safe to merge the list of JS and CSS files into one content script
+// as long as their metadata like all_frames are consistent, and listed in the
+// same order in case they somehow depend on being loaded in a specific order.
+
+class ContentScriptRegistrationsBuilder {
+  #regs = new Map();
+
+  add(fileType, contentScriptDescriptor = {}) {
+    const paths = contentScriptDescriptor[fileType];
+    if (!paths?.length) {
+      return;
+    }
+
+    const {
+      all_frames = false,
+      isolated = false,
+      match_origin_as_fallback = false,
+      run_at = "document_start",
+    } = contentScriptDescriptor;
+
+    // We track whether the metadata we need to build the registrations later
+    // right in the keys we use to prevent making superfluous content scripts
+    // (since we can enable JS/CSS conditionally based on prefs/etc, so it's
+    // useful to minimize the number of scripts for performance's sake).
+    const key = JSON.stringify({
+      all_frames,
+      isolated,
+      match_origin_as_fallback,
+      run_at,
+    });
+
+    // Note: we can update these to use Map.getOrInsert() once ESR 140 is EOL.
+    if (!this.#regs.has(key)) {
+      this.#regs.set(key, new Map());
+    }
+    if (!this.#regs.get(key).has(fileType)) {
+      this.#regs.get(key).set(fileType, new Set());
+    }
+
+    const filePaths = this.#regs.get(key).get(fileType);
+    paths.forEach(path =>
+      filePaths.add(
+        path.includes("/") ? path : `injections/${fileType}/${path}`
+      )
+    );
+  }
+
+  build(label, matches, excludeMatches) {
+    const regs = [];
+    for (const [config, fileTypes] of this.#regs) {
+      const reg = {};
+
+      const { all_frames, isolated, match_origin_as_fallback, run_at } =
+        JSON.parse(config);
+
+      // The registration's ID is based on this data, so we only specify
+      // the non-default values to make them easier to parse at a glance.
+      if (all_frames) {
+        reg.allFrames = true;
+      }
+      if (!isolated) {
+        reg.world = "MAIN";
+      }
+      if (run_at != "document_idle") {
+        reg.runAt = run_at;
+      }
+      if (match_origin_as_fallback) {
+        reg.matchOriginAsFallback = true;
+      }
+      if (matches?.length) {
+        reg.matches = matches;
+      }
+      if (excludeMatches?.length) {
+        reg.excludeMatches = excludeMatches;
+      }
+      for (const [fileType, pathSet] of fileTypes) {
+        reg[fileType] = [...pathSet];
+      }
+      reg.id = `webcompat intervention for ${label}: ${JSON.stringify(reg)}`;
+      reg.persistAcrossSessions = true;
+      regs.push(reg);
+    }
+
+    return regs;
+  }
+}
+
+// These are helper classes for handling the special JSON keys that use special
+// isolated content scripts which need metadata sent to them when they load.
+// These scripts need special handling, and should not be manually listed in
+// the JS files of a content_script, so we filter them out in the event that an
+// update (remote or via the browser console) accidentally specifies them. We
+// then re-add them with the appropriate metadata if we they are truly needed.
+
+class AbstractSpecialContentScriptKey {
+  static jsonKey;
+  static valuesKey;
+  static metadataKey;
+  static scriptFilename;
+
+  constructor() {
+    this.values = [];
+    this.needed_on_all_frames = false;
+    this.must_match_origin_as_fallback = false;
+  }
+
+  filterSelfFromJS(contentScriptDefinition) {
+    if (contentScriptDefinition?.content_scripts?.js) {
+      contentScriptDefinition.content_scripts.js =
+        contentScriptDefinition.content_scripts.js.filter(
+          s => !s.includes(this.constructor.scriptFilename)
+        );
+    }
+  }
+
+  isUsedBy(intervention) {
+    return this.constructor.jsonKey in intervention;
+  }
+
+  foldIn(contentScriptDefinition) {
+    const specialKeyData = contentScriptDefinition[this.constructor.jsonKey];
+    if (!specialKeyData) {
+      return;
+    }
+
+    const { all_frames, match_origin_as_fallback } = contentScriptDefinition;
+
+    this.needed_on_all_frames ||= all_frames || specialKeyData.all_frames;
+    this.must_match_origin_as_fallback ||=
+      match_origin_as_fallback || specialKeyData.match_origin_as_fallback;
+
+    // For the key's data, we can specify just the values, or the values plus metadata like all_frames.
+    this.values.push(
+      specialKeyData[this.constructor.valuesKey] ?? specialKeyData
+    );
+  }
+
+  get needed() {
+    return this.values.length;
+  }
+
+  addRegs(_regsBuilder) {}
+
+  addToMetadata(metadata) {
+    if (this.needed) {
+      metadata[this.constructor.metadataKey] = this.values.flat();
+    }
+  }
+}
+
+// hide_alerts.js requires the list of strings to match to know which
+// alerts to prevent. It hides any early alerts until it knows which
+// should not be blocked, and then alerts only those.
+
+class HideAlertsKey extends AbstractSpecialContentScriptKey {
+  static jsonKey = "hide_alerts";
+  static valuesKey = "alerts";
+  static metadataKey = "alertsToHide";
+  static scriptFilename = "hide_alerts.js";
+
+  addRegs(regsBuilder) {
+    if (this.needed) {
+      regsBuilder.add("js", {
+        js: [this.constructor.scriptFilename],
+        run_at: "document_start",
+        all_frames: this.needed_on_all_frames,
+        match_origin_as_fallback: this.must_match_origin_as_fallback,
+      });
+      regsBuilder.add("js", {
+        js: [this.constructor.scriptFilename],
+        isolated: true,
+        run_at: "document_start",
+        all_frames: this.needed_on_all_frames,
+        match_origin_as_fallback: this.must_match_origin_as_fallback,
+      });
+    }
+  }
+}
+
+// hide_messages.js needs to know which CSS elements to hide if they have
+// certain innertext. It can also click on related elements rather than
+// hiding elements, in case special handlers must be triggered.
+
+class HideMessagesKey extends AbstractSpecialContentScriptKey {
+  static jsonKey = "hide_messages";
+  static valuesKey = "messages";
+  static metadataKey = "messagesToHide";
+  static scriptFilename = "hide_messages.js";
+
+  addRegs(regsBuilder) {
+    if (this.needed) {
+      regsBuilder.add("js", {
+        js: [this.constructor.scriptFilename],
+        isolated: true,
+        run_at: "document_start",
+        all_frames: this.needed_on_all_frames,
+        match_origin_as_fallback: this.must_match_origin_as_fallback,
+      });
+    }
+  }
+}
+
+// modify_meta_viewport.js needs to know which parts of the meta viewport
+// tag to alter, and how. It can add, change, or remove bits of the content
+// attribute, optionally only if the page provided specific values (or didn't).
+
+class ModifyMetaViewportKey extends AbstractSpecialContentScriptKey {
+  static jsonKey = "modify_meta_viewport";
+  static valuesKey = "modify";
+  static metadataKey = "metaViewportChanges";
+  static scriptFilename = "modify_meta_viewport.js";
+
+  addRegs(regsBuilder) {
+    if (this.needed) {
+      regsBuilder.add("js", {
+        js: [this.constructor.scriptFilename],
+        isolated: true,
+        run_at: "document_start",
+        all_frames: this.needed_on_all_frames,
+        match_origin_as_fallback: this.must_match_origin_as_fallback,
+      });
+    }
+  }
+
+  addToMetadata(metadata) {
+    if (this.needed) {
+      metadata[this.constructor.metadataKey] = Object.assign(
+        {},
+        ...this.values
+      );
+    }
+  }
+}
+
+// log_console_message.js is a special script which is automatically added
+// to the list of JS to run if any of the other JS files in a content_script
+// may need it (assumed to be non-special ones without a trailing "bug" in
+// their filename). It requires knowledge of which bug-number to log to the
+// console for the given site origin that it is being run on.
+
+class ConsoleLoggingScript extends AbstractSpecialContentScriptKey {
+  static metadataKey = "bugsByMatchPattern";
+  static scriptFilename = "log_console_message.js";
+
+  #foundScriptsRequiringUs = false;
+
+  get needed() {
+    return this.#foundScriptsRequiringUs;
+  }
+
+  isUsedBy(_intervention) {
+    // Not specified directly in the JSON config, but per content_script section.
+    return false;
+  }
+
+  foldIn(contentScriptDefinition, noConsoleMessage) {
+    // We always include log_console_message.js if any scripts which might use it
+    // are being included (which do not start with the string "bug").
+    const { content_scripts } = contentScriptDefinition;
+    if (
+      !noConsoleMessage &&
+      content_scripts?.js?.filter(
+        path => !path.startsWith("bug") && !path.includes("/bug")
+      ).length
+    ) {
+      this.#foundScriptsRequiringUs = true;
+
+      const { all_frames, match_origin_as_fallback } = content_scripts;
+      this.needed_on_all_frames ||= all_frames;
+      this.must_match_origin_as_fallback ||= match_origin_as_fallback;
+    }
+  }
+
+  addRegs(regsBuilder) {
+    if (this.needed) {
+      regsBuilder.add("js", {
+        js: [this.constructor.scriptFilename],
+        isolated: true,
+        run_at: "document_idle",
+        all_frames: this.needed_on_all_frames,
+        match_origin_as_fallback: this.must_match_origin_as_fallback,
+      });
+    }
+  }
+
+  addToMetadata(metadata, interventionConfig) {
+    if (this.needed) {
+      const bugsByMatchPattern = [];
+      for (const [bug, info] of Object.entries(interventionConfig.bugs)) {
+        for (const pattern of info.matches || []) {
+          bugsByMatchPattern.push([MatchPatternCache.get(pattern), bug]);
+        }
+      }
+      metadata[this.constructor.metadataKey] = bugsByMatchPattern;
+    }
+  }
+}
+
+class InjectCSSKey extends AbstractSpecialContentScriptKey {
+  static jsonKey = "css";
+  static valuesKey = "which";
+  static metadataKey = "cssToInject";
+  static scriptFilename = "inject_css.js";
+
+  addRegs(regsBuilder) {
+    if (this.needed) {
+      regsBuilder.add("js", {
+        js: [this.constructor.scriptFilename],
+        isolated: true,
+        run_at: "document_start",
+        all_frames: this.needed_on_all_frames,
+        match_origin_as_fallback: this.must_match_origin_as_fallback,
+      });
+    }
+  }
+
+  addToMetadata(metadata, interventionConfig) {
+    if (this.needed) {
+      const sheets = interventionConfig.css;
+      const whichSheets = [...new Set(this.values.flat())];
+      metadata[this.constructor.metadataKey] = whichSheets
+        .map(name => sheets[name] ?? "")
+        .join("\n");
+    }
+  }
+}
+
+// This class encapsulates and manages all of the content scripts keys at once.
+
+class SpecialContentScriptKeys {
+  static #classes = [
+    HideAlertsKey,
+    HideMessagesKey,
+    InjectCSSKey,
+    ModifyMetaViewportKey,
+    ConsoleLoggingScript,
+  ];
+
+  static get metadataKeys() {
+    return SpecialContentScriptKeys.#classes.map(c => c.metadataKey);
+  }
+
+  #keys;
+
+  constructor() {
+    this.#keys = SpecialContentScriptKeys.#classes.map(c => new c());
+  }
+
+  areAnyUsedBy(intervention) {
+    return this.#keys.some(key => key.isUsedBy(intervention));
+  }
+
+  filterFromContentScriptsSection(contentScriptDefinition) {
+    for (const specialKey of this.#keys) {
+      specialKey.filterSelfFromJS(contentScriptDefinition);
+    }
+  }
+
+  foldIn(content_scripts, noConsoleMessage) {
+    for (const specialKey of this.#keys) {
+      specialKey.foldIn(content_scripts, noConsoleMessage);
+    }
+  }
+
+  addRegs(regsBuilder) {
+    for (const specialKey of this.#keys) {
+      specialKey.addRegs(regsBuilder);
+    }
+  }
+
+  getNeededMetadata(config) {
+    if (!this.#keys.some(key => key.needed)) {
+      return undefined;
+    }
+
+    const metadata = {};
+    for (const specialKey of this.#keys) {
+      specialKey.addToMetadata(metadata, config);
+    }
+    return metadata;
+  }
+}
+
 var InterventionHelpers = {
   skip_if_functions: {
-    getWeekInfo_defined: () => {
-      return !!Intl?.Locale?.prototype?.getWeekInfo;
-    },
     InstallTrigger_defined: () => {
       return "InstallTrigger" in window;
     },
     InstallTrigger_undefined: () => {
       return !("InstallTrigger" in window);
     },
-    text_event_supported: () => {
-      return !!window.TextEvent;
+    relaxed_name_validation_rules: () => {
+      const n = document.createElement("div");
+      try {
+        n.setAttribute(",", "");
+      } catch (_) {
+        return false;
+      }
+      return true;
     },
   },
 
@@ -309,7 +710,8 @@ var InterventionHelpers = {
     intervention,
     firefoxVersion,
     firefoxChannel,
-    customFunctionNames
+    customFunctionNames,
+    isForceEnabled
   ) {
     const {
       bug,
@@ -320,6 +722,27 @@ var InterventionHelpers = {
       skip_if,
       ua_string,
     } = intervention;
+
+    if (ua_string) {
+      for (let ua of Array.isArray(ua_string) ? ua_string : [ua_string]) {
+        if (!InterventionHelpers.ua_change_functions[ua.change ?? ua]) {
+          return `unknown UA string helper ${ua.change ?? ua} (webcompat addon may be too old)`;
+        }
+      }
+    }
+
+    const missingFn = InterventionHelpers.isMissingCustomFunctions(
+      intervention,
+      customFunctionNames
+    );
+    if (missingFn) {
+      return `needed function ${missingFn} unavailable (webcompat addon may be too old)`;
+    }
+
+    if (isForceEnabled) {
+      return undefined;
+    }
+
     if (firefoxChannel) {
       if (only_channels && !only_channels.includes(firefoxChannel)) {
         return `not for Firefox ${firefoxChannel}`;
@@ -340,13 +763,6 @@ var InterventionHelpers = {
         }
       } else if (Math.floor(firefoxVersion) > max_version) {
         return `only for Firefox ${max_version} or older`;
-      }
-    }
-    if (ua_string) {
-      for (let ua of Array.isArray(ua_string) ? ua_string : [ua_string]) {
-        if (!InterventionHelpers.ua_change_functions[ua.change ?? ua]) {
-          return `unknown UA string helper ${ua.change ?? ua} (webcompat addon may be too old)`;
-        }
       }
     }
     if (skip_if) {
@@ -375,23 +791,19 @@ var InterventionHelpers = {
       return "unneeded on this platform";
     }
 
-    const missingFn = InterventionHelpers.isMissingCustomFunctions(
-      intervention,
-      customFunctionNames
-    );
-    if (missingFn) {
-      return `needed function ${missingFn} unavailable (webcompat addon may be too old)`;
-    }
-
     return undefined;
   },
 
   nonCustomInterventionKeys: Object.freeze(
     new Set([
       "content_scripts",
+      "css",
       "enabled",
+      "hide_alerts",
+      "hide_messages",
       "max_version",
       "min_version",
+      "modify_meta_viewport",
       "not_platforms",
       "platforms",
       "not_channels",

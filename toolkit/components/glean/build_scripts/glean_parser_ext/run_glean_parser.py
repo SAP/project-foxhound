@@ -2,6 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import functools
 import os
 import pickle
 import sys
@@ -17,7 +18,7 @@ from glean_parser import lint, metrics, parser, translate, util
 from glean_parser.lint import METRIC_CHECKS, CheckType, GlinterNit
 from glean_parser.pings import Ping
 from metrics_header_names import convert_yaml_path_to_header_name
-from mozbuild.util import FileAvoidWrite, memoize
+from mozbuild.util import FileAvoidWrite
 from util import generate_metric_ids
 
 import js
@@ -47,7 +48,7 @@ METRIC_CHECKS["GIFFT_NON_PING_LIFETIME"] = (
 )
 
 
-@memoize
+@functools.cache
 def get_deps():
     # Any imported python module is added as a dep automatically,
     # so we only need the index and the templates.

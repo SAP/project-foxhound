@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,7 +19,6 @@
 #include "mozilla/Result.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsGkAtoms.h"
 #include "nsISupports.h"
 #include "nsWrapperCache.h"
 
@@ -55,9 +53,7 @@ class WebAccessibleResource final {
            (IsHostMatch(aURI) || IsExtensionMatch(aURI));
   }
 
-  bool IsHostMatch(const URLInfo& aURI) {
-    return mMatches && mMatches->Matches(aURI);
-  }
+  bool IsHostMatch(const URLInfo& aURI);
 
   bool IsExtensionMatch(const URLInfo& aURI);
 
@@ -130,6 +126,8 @@ class WebExtensionPolicyCore final {
     mPermissions = std::move(newPermissions);
   }
 
+  bool FileSchemeAllowed() const;
+
   bool CanAccessURI(const URLInfo& aURI, bool aExplicit = false,
                     bool aCheckRestricted = true,
                     bool aAllowFilePermission = false) const;
@@ -145,6 +143,9 @@ class WebExtensionPolicyCore final {
 
   bool QuarantinedFromDoc(const DocInfo& aDoc) const;
   bool QuarantinedFromURI(const URLInfo& aURI) const MOZ_EXCLUDES(mLock);
+
+  Maybe<dom::ExtensionGuardSource> CheckGuarded(const URLInfo& aURI) const
+      MOZ_EXCLUDES(mLock);
 
   bool HasRecommendedState() const MOZ_EXCLUDES(mLock) {
     AutoReadLock lock(mLock);
@@ -210,6 +211,7 @@ class WebExtensionPolicyCore final {
   bool mHasRecommendedState MOZ_GUARDED_BY(mLock);
   RefPtr<AtomSet> mPermissions MOZ_GUARDED_BY(mLock);
   RefPtr<MatchPatternSetCore> mHostPermissions MOZ_GUARDED_BY(mLock);
+  nsTArray<RefPtr<ExtensionGuardSetCore>> mGuardSets MOZ_GUARDED_BY(mLock);
 };
 
 class WebExtensionPolicy final : public nsISupports, public nsWrapperCache {
@@ -322,12 +324,26 @@ class WebExtensionPolicy final : public nsISupports, public nsWrapperCache {
   }
   void SetAllowedOrigins(MatchPatternSet& aAllowedOrigins);
 
+  void GetGuardSets(nsTArray<RefPtr<ExtensionGuardSet>>& aResult) const;
+  void SetGuardSets(const nsTArray<OwningNonNull<ExtensionGuardSet>>& aLists);
+
+  dom::Nullable<dom::ExtensionGuardSource> CheckGuarded(
+      const URLInfo& aURI) const {
+    const auto result = mCore->CheckGuarded(aURI);
+    if (result.isSome()) {
+      return dom::Nullable<dom::ExtensionGuardSource>(result.ref());
+    }
+    return {};
+  }
+
   void GetPermissions(nsTArray<nsString>& aResult) const {
     mCore->GetPermissions(aResult);
   }
   void SetPermissions(const nsTArray<nsString>& aPermissions) {
     mCore->SetPermissions(aPermissions);
   }
+
+  bool FileSchemeAllowed() const { return mCore->FileSchemeAllowed(); }
 
   bool IgnoreQuarantine() const { return mCore->IgnoreQuarantine(); }
   void SetIgnoreQuarantine(bool aIgnore);
@@ -427,6 +443,9 @@ class WebExtensionPolicy final : public nsISupports, public nsWrapperCache {
   // NOTE: This is a mirror of the object in `mCore`, except with the
   // non-threadsafe wrapper.
   RefPtr<MatchPatternSet> mHostPermissions;
+
+  // NOTE: mirrors mCore->mGuardSets with non-threadsafe wrappers.
+  nsTArray<RefPtr<ExtensionGuardSet>> mGuardSets;
 
   dom::Nullable<nsTArray<nsString>> mBackgroundScripts;
 

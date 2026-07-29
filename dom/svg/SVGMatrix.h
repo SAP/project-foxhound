@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -103,7 +101,7 @@ class SVGMatrix final : public nsWrapperCache {
   ~SVGMatrix() = default;
 
   const gfxMatrix& GetMatrix() const {
-    return mTransform ? mTransform->Matrixgfx() : mMatrix;
+    return mTransform ? mTransform->Transform().GetMatrix() : mMatrix;
   }
 
   void SetMatrix(const gfxMatrix& aMatrix) {

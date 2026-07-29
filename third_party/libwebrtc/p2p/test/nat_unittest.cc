@@ -32,11 +32,11 @@
 #include "rtc_base/socket_factory.h"
 #include "rtc_base/socket_server.h"
 #include "rtc_base/test_client.h"
-#include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/virtual_socket_server.h"
 #include "test/create_test_environment.h"
 #include "test/gtest.h"
+#include "test/run_loop.h"
 #include "test/wait_until.h"
 
 namespace webrtc {
@@ -232,13 +232,13 @@ bool TestConnectivity(const SocketAddress& src, const IPAddress& dst) {
 }
 
 void TestPhysicalInternal(const SocketAddress& int_addr) {
-  AutoThread main_thread;
+  test::RunLoop main_thread;
   PhysicalSocketServer socket_server;
   const Environment env = CreateTestEnvironment();
   BasicNetworkManager network_manager(env, &socket_server);
   network_manager.StartUpdating();
   // Process pending messages so the network list is updated.
-  Thread::Current()->ProcessMessages(0);
+  main_thread.Flush();
 
   std::vector<const Network*> networks = network_manager.GetNetworks();
   std::erase_if(networks, [](const Network* network) {
@@ -302,7 +302,7 @@ class TestVirtualSocketServer : public VirtualSocketServer {
 }  // namespace
 
 void TestVirtualInternal(int family) {
-  AutoThread main_thread;
+  test::RunLoop main_thread;
   const Environment env = CreateTestEnvironment();
   std::unique_ptr<TestVirtualSocketServer> int_vss(
       new TestVirtualSocketServer());
@@ -333,7 +333,7 @@ TEST(NatTest, TestVirtualIPv6) {
   }
 }
 
-class NatTcpTest : public ::testing::Test, public sigslot::has_slots<> {
+class NatTcpTest : public ::testing::Test {
  public:
   NatTcpTest()
       : env_(CreateTestEnvironment()),
@@ -367,9 +367,10 @@ class NatTcpTest : public ::testing::Test, public sigslot::has_slots<> {
   void OnCloseEvent(Socket* socket, int error) {}
 
   void ConnectEvents() {
-    server_->SignalReadEvent.connect(this, &NatTcpTest::OnAcceptEvent);
+    server_->SubscribeReadEvent(
+        this, [this](Socket* socket) { OnAcceptEvent(socket); });
     client_->SubscribeConnectEvent(
-        [this](Socket* socket) { OnConnectEvent(socket); });
+        this, [this](Socket* socket) { OnConnectEvent(socket); });
   }
 
   const Environment env_;

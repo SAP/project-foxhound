@@ -9,6 +9,23 @@ newtab-page-title = ಹೊಸ ಹಾಳೆ
 newtab-settings-button =
     .title = ಹೊಸ ಹಾಳೆಯ ಪುಟವನ್ನು ಅಗತ್ಯಾನುಗುಣಗೊಳಿಸಿ
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = ಹೊಸ ಟ್ಯಾಬ್ ಗಳು
+
+## Firefox Home content
+
+home-mode-choice-blank-srd =
+    .label = ಖಾಲಿ ಪುಟ
+home-prefs-highlights-option-visited-pages-srd =
+    .label = ಭೇಟಿಕೊಟ್ಟ ಪುಟಗಳು
+home-prefs-highlights-options-bookmarks-srd =
+    .label = ಪುಟಗುರುತುಗಳು
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = ತೀರಾ ಇತ್ತೀಚಿನ ಡೌನ್ಲೋಡ್
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +33,7 @@ newtab-search-box-search-button =
     .title = ಹುಡುಕು
     .aria-label = ಹುಡುಕು
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-edit-topsites-header = ಅಗ್ರ ತಾಣಗಳನ್ನು ಸಂಪಾದಿಸಿ
 newtab-topsites-title-label = ಶೀರ್ಷಿಕೆ

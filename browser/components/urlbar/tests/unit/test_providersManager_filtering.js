@@ -71,7 +71,7 @@ add_task(async function test_filtering_restriction_token() {
     }),
   ];
   let provider = registerBasicTestProvider(matches);
-  let context = createContext(`foo ${UrlbarTokenizer.RESTRICT.OPENPAGE}`, {
+  let context = createContext(`foo ${UrlbarShared.RESTRICT_TOKENS.OPENPAGE}`, {
     providers: [provider.name],
   });
   let controller = UrlbarTestUtils.newMockController();
@@ -109,9 +109,10 @@ add_task(async function test_filter_javascript() {
   Assert.deepEqual(context.results, [match]);
 
   info("Except when the user explicitly starts the search with javascript:");
-  context = createContext(`javascript: ${UrlbarTokenizer.RESTRICT.HISTORY}`, {
-    providers: [provider.name],
-  });
+  context = createContext(
+    `javascript: ${UrlbarShared.RESTRICT_TOKENS.HISTORY}`,
+    { providers: [provider.name] }
+  );
   promise = promiseControllerNotification(controller, "onQueryResults");
   await controller.startQuery(context, controller);
   await promise;
@@ -326,7 +327,7 @@ add_task(async function test_nofilter_restrict() {
     ["OPENPAGE", { source: "TABS", pref: "openpage" }],
     ["SEARCH", { source: "SEARCH", pref: "searches" }],
   ]);
-  for (let [type, token] of Object.entries(UrlbarTokenizer.RESTRICT)) {
+  for (let [type, token] of Object.entries(UrlbarShared.RESTRICT_TOKENS)) {
     let properties = typeToPropertiesMap.get(type);
     if (!properties) {
       continue;

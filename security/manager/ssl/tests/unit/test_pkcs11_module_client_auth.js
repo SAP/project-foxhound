@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 // Any copyright is dedicated to the Public Domain.
 // http://creativecommons.org/publicdomain/zero/1.0/
 "use strict";
@@ -12,29 +11,63 @@ const gCertDB = Cc["@mozilla.org/security/x509certdb;1"].getService(
   Ci.nsIX509CertDB
 );
 
-var gPrompt = {
-  QueryInterface: ChromeUtils.generateQI(["nsIPrompt"]),
+// Create a windowless browser before mocking nsIWindowWatcher so that
+// createWindowlessBrowser uses the real watcher service. We hand its Window
+// out from the mock's activeWindow getter so the C++ caller takes the
+// "if (activeWindow) { openDialog(...) }" branch and the dialog-open
+// assertions in openWindow below actually run.
+let gWindowlessBrowser = Services.appShell.createWindowlessBrowser(false);
+let gSystemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
+gWindowlessBrowser.docShell.createAboutBlankDocumentViewer(
+  gSystemPrincipal,
+  gSystemPrincipal
+);
 
-  // This intentionally does not use arrow function syntax to avoid an issue
-  // where in the context of the arrow function, |this != gPrompt| due to
-  // how objects get wrapped when going across xpcom boundaries.
-  alert(_title, text) {
-    const EXPECTED_PROMPT_TEXT =
-      "Please authenticate to the token “Test PKCS11 Tokeñ 2 Label”. How to do so depends on the token (for example, using a fingerprint reader or entering a code with a keypad).";
-    equal(text, EXPECTED_PROMPT_TEXT, "expecting alert() to be called");
+// Mock nsIWindowWatcher. The protected-auth path opens
+// chrome://pippki/content/protectedAuth.xhtml via nsNSSDialogHelper, which
+// forwards to nsIWindowWatcher::OpenWindow. We hand out a real Window from
+// activeWindow so the C++ caller takes the dialog-open branch, then
+// intercept openWindow to validate the URL and dialog args, and fire
+// pk11-protected-auth-complete with the dialog's unique promptId.
+var gWindowWatcher = {
+  get activeWindow() {
+    return gWindowlessBrowser.document.defaultView;
   },
-
-  promptPassword() {
-    ok(false, "not expecting promptPassword() to be called");
+  getNewPrompter: () => {
+    ok(false, "not expecting getNewPrompter() to be called");
+    return null;
   },
+  openWindow(_parent, url, _name, _features, args) {
+    equal(
+      url,
+      "chrome://pippki/content/protectedAuth.xhtml",
+      "expected protected-auth dialog URL"
+    );
+    let bag = args.QueryInterface(Ci.nsIWritablePropertyBag2);
+    equal(
+      bag.getPropertyAsAString("tokenName"),
+      "Test PKCS11 Tokeñ 2 Label",
+      "expected token name in dialog args"
+    );
+    let promptId = bag.getPropertyAsAString("promptId");
+    Services.obs.notifyObservers(
+      null,
+      "pk11-protected-auth-complete",
+      promptId
+    );
+    return null;
+  },
+  QueryInterface: ChromeUtils.generateQI(["nsIWindowWatcher"]),
 };
 
-const gPromptFactory = {
-  QueryInterface: ChromeUtils.generateQI(["nsIPromptFactory"]),
-  getPrompt: () => gPrompt,
-};
-
-MockRegistrar.register("@mozilla.org/prompter;1", gPromptFactory);
+let watcherCID = MockRegistrar.register(
+  "@mozilla.org/embedcomp/window-watcher;1",
+  gWindowWatcher
+);
+registerCleanupFunction(() => {
+  MockRegistrar.unregister(watcherCID);
+  gWindowlessBrowser.close();
+});
 
 // Replace the UI dialog that prompts the user to pick a client certificate.
 const gClientAuthDialogService = {

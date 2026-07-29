@@ -21,5 +21,6 @@ TemporalHelpers.assertPlainDateTime(plainDateTime.with({ day: 8, hour: 10, year:
   2006, 1, "M01", 8, 10, 42, 58, 0, 0, 0,
   "only the properties that are present and defined in the plain object are copied"
 );
+// See options-empty.js for {} and () => {}
 
 reportCompare(0, 0);

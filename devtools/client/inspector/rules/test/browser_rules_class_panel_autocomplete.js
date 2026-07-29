@@ -83,7 +83,7 @@ add_task(async function () {
   // Modify the content page and assert that the new class is displayed in the
   // autocomplete if the user types a new letter.
   const onNewMutation = inspector.inspectorFront.walker.once("new-mutations");
-  await ContentTask.spawn(gBrowser.selectedBrowser, null, async function () {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {
     content.document.body.classList.add("auto-body-added-by-script");
   });
   await onNewMutation;

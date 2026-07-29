@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -32,9 +31,7 @@ uint64_t GetLimit(const ffi::WGPULimits& limits, const Limit limit) {
     case Limit::MaxBindGroups:
       return limits.max_bind_groups;
     case Limit::MaxBindGroupsPlusVertexBuffers:
-      // Not in ffi::WGPULimits, so synthesize:
-      return GetLimit(limits, Limit::MaxBindGroups) +
-             GetLimit(limits, Limit::MaxVertexBuffers);
+      return limits.max_bind_groups_plus_vertex_buffers;
     case Limit::MaxBindingsPerBindGroup:
       return limits.max_bindings_per_bind_group;
     case Limit::MaxDynamicUniformBuffersPerPipelineLayout:
@@ -45,8 +42,16 @@ uint64_t GetLimit(const ffi::WGPULimits& limits, const Limit limit) {
       return limits.max_sampled_textures_per_shader_stage;
     case Limit::MaxSamplersPerShaderStage:
       return limits.max_samplers_per_shader_stage;
+    // TODO(bug 2006720): `In*Stage` limits are not in ffi::WGPULimits; report
+    // the per-stage limit instead.
+    case Limit::MaxStorageBuffersInVertexStage:
+    case Limit::MaxStorageBuffersInFragmentStage:
     case Limit::MaxStorageBuffersPerShaderStage:
       return limits.max_storage_buffers_per_shader_stage;
+    // TODO(bug 2006720): `In*Stage` limits are not in ffi::WGPULimits; report
+    // the per-stage limit instead.
+    case Limit::MaxStorageTexturesInVertexStage:
+    case Limit::MaxStorageTexturesInFragmentStage:
     case Limit::MaxStorageTexturesPerShaderStage:
       return limits.max_storage_textures_per_shader_stage;
     case Limit::MaxUniformBuffersPerShaderStage:
@@ -68,11 +73,11 @@ uint64_t GetLimit(const ffi::WGPULimits& limits, const Limit limit) {
     case Limit::MaxVertexBufferArrayStride:
       return limits.max_vertex_buffer_array_stride;
     case Limit::MaxInterStageShaderVariables:
-      return 16;  // From the spec. (not in ffi::WGPULimits)
+      return limits.max_inter_stage_shader_variables;
     case Limit::MaxColorAttachments:
-      return 8;  // From the spec. (not in ffi::WGPULimits)
+      return limits.max_color_attachments;
     case Limit::MaxColorAttachmentBytesPerSample:
-      return 32;  // From the spec. (not in ffi::WGPULimits)
+      return limits.max_color_attachment_bytes_per_sample;
     case Limit::MaxComputeWorkgroupStorageSize:
       return limits.max_compute_workgroup_storage_size;
     case Limit::MaxComputeInvocationsPerWorkgroup:
@@ -90,105 +95,108 @@ uint64_t GetLimit(const ffi::WGPULimits& limits, const Limit limit) {
 }
 
 void SetLimit(ffi::WGPULimits* const limits, const Limit limit,
-              const double val) {
-  const auto autoVal = LazyAssertedCast(static_cast<uint64_t>(val));
+              const uint64_t val) {
   switch (limit) {
     case Limit::MaxTextureDimension1D:
-      limits->max_texture_dimension_1d = autoVal;
+      limits->max_texture_dimension_1d = val;
       return;
     case Limit::MaxTextureDimension2D:
-      limits->max_texture_dimension_2d = autoVal;
+      limits->max_texture_dimension_2d = val;
       return;
     case Limit::MaxTextureDimension3D:
-      limits->max_texture_dimension_3d = autoVal;
+      limits->max_texture_dimension_3d = val;
       return;
     case Limit::MaxTextureArrayLayers:
-      limits->max_texture_array_layers = autoVal;
+      limits->max_texture_array_layers = val;
       return;
     case Limit::MaxBindGroups:
-      limits->max_bind_groups = autoVal;
+      limits->max_bind_groups = val;
       return;
     case Limit::MaxBindGroupsPlusVertexBuffers:
-      // Not in ffi::WGPULimits, and we're allowed to give back better
-      // limits than requested.
+      limits->max_bind_groups_plus_vertex_buffers = val;
       return;
     case Limit::MaxBindingsPerBindGroup:
-      limits->max_bindings_per_bind_group = autoVal;
+      limits->max_bindings_per_bind_group = val;
       return;
     case Limit::MaxDynamicUniformBuffersPerPipelineLayout:
-      limits->max_dynamic_uniform_buffers_per_pipeline_layout = autoVal;
+      limits->max_dynamic_uniform_buffers_per_pipeline_layout = val;
       return;
     case Limit::MaxDynamicStorageBuffersPerPipelineLayout:
-      limits->max_dynamic_storage_buffers_per_pipeline_layout = autoVal;
+      limits->max_dynamic_storage_buffers_per_pipeline_layout = val;
       return;
     case Limit::MaxSampledTexturesPerShaderStage:
-      limits->max_sampled_textures_per_shader_stage = autoVal;
+      limits->max_sampled_textures_per_shader_stage = val;
       return;
     case Limit::MaxSamplersPerShaderStage:
-      limits->max_samplers_per_shader_stage = autoVal;
+      limits->max_samplers_per_shader_stage = val;
+      return;
+    case Limit::MaxStorageBuffersInVertexStage:
+    case Limit::MaxStorageBuffersInFragmentStage:
+      // TODO(bug 2006720): Not in ffi::WGPULimits.
       return;
     case Limit::MaxStorageBuffersPerShaderStage:
-      limits->max_storage_buffers_per_shader_stage = autoVal;
+      limits->max_storage_buffers_per_shader_stage = val;
+      return;
+    case Limit::MaxStorageTexturesInVertexStage:
+    case Limit::MaxStorageTexturesInFragmentStage:
+      // TODO(bug 2006720): Not in ffi::WGPULimits.
       return;
     case Limit::MaxStorageTexturesPerShaderStage:
-      limits->max_storage_textures_per_shader_stage = autoVal;
+      limits->max_storage_textures_per_shader_stage = val;
       return;
     case Limit::MaxUniformBuffersPerShaderStage:
-      limits->max_uniform_buffers_per_shader_stage = autoVal;
+      limits->max_uniform_buffers_per_shader_stage = val;
       return;
     case Limit::MaxUniformBufferBindingSize:
-      limits->max_uniform_buffer_binding_size = autoVal;
+      limits->max_uniform_buffer_binding_size = val;
       return;
     case Limit::MaxStorageBufferBindingSize:
-      limits->max_storage_buffer_binding_size = autoVal;
+      limits->max_storage_buffer_binding_size = val;
       return;
     case Limit::MinUniformBufferOffsetAlignment:
-      limits->min_uniform_buffer_offset_alignment = autoVal;
+      limits->min_uniform_buffer_offset_alignment = val;
       return;
     case Limit::MinStorageBufferOffsetAlignment:
-      limits->min_storage_buffer_offset_alignment = autoVal;
+      limits->min_storage_buffer_offset_alignment = val;
       return;
     case Limit::MaxVertexBuffers:
-      limits->max_vertex_buffers = autoVal;
+      limits->max_vertex_buffers = val;
       return;
     case Limit::MaxBufferSize:
-      limits->max_buffer_size = autoVal;
+      limits->max_buffer_size = val;
       return;
     case Limit::MaxVertexAttributes:
-      limits->max_vertex_attributes = autoVal;
+      limits->max_vertex_attributes = val;
       return;
     case Limit::MaxVertexBufferArrayStride:
-      limits->max_vertex_buffer_array_stride = autoVal;
+      limits->max_vertex_buffer_array_stride = val;
       return;
     case Limit::MaxInterStageShaderVariables:
-      // Not in ffi::WGPULimits, and we're allowed to give back better
-      // limits than requested.
+      limits->max_inter_stage_shader_variables = val;
       return;
     case Limit::MaxColorAttachments:
-      // Not in ffi::WGPULimits, and we're allowed to give back better
-      // limits than requested.
+      limits->max_color_attachments = val;
       return;
     case Limit::MaxColorAttachmentBytesPerSample:
-      // Not in ffi::WGPULimits, and we're allowed to give back better
-      // limits than requested.
+      limits->max_color_attachment_bytes_per_sample = val;
       return;
     case Limit::MaxComputeWorkgroupStorageSize:
-      limits->max_compute_workgroup_storage_size = autoVal;
+      limits->max_compute_workgroup_storage_size = val;
       return;
     case Limit::MaxComputeInvocationsPerWorkgroup:
-      limits->max_compute_invocations_per_workgroup = autoVal;
+      limits->max_compute_invocations_per_workgroup = val;
       return;
     case Limit::MaxComputeWorkgroupSizeX:
-      limits->max_compute_workgroup_size_x = autoVal;
+      limits->max_compute_workgroup_size_x = val;
       return;
     case Limit::MaxComputeWorkgroupSizeY:
-      limits->max_compute_workgroup_size_y = autoVal;
+      limits->max_compute_workgroup_size_y = val;
       return;
     case Limit::MaxComputeWorkgroupSizeZ:
-      limits->max_compute_workgroup_size_z = autoVal;
+      limits->max_compute_workgroup_size_z = val;
       return;
     case Limit::MaxComputeWorkgroupsPerDimension:
-      limits->max_compute_workgroups_per_dimension = autoVal;
+      limits->max_compute_workgroups_per_dimension = val;
       return;
   }
   MOZ_CRASH("Bad Limit");

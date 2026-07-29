@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -171,6 +170,8 @@ class HTMLEditor final : public EditorBase,
 
   bool IsEmpty() const final;
 
+  dom::EditContext* GetEditContext() const final;
+
   bool CanPaste(nsIClipboard::ClipboardType aClipboardType) const final;
   using EditorBase::CanPaste;
 
@@ -207,7 +208,30 @@ class HTMLEditor final : public EditorBase,
       const final;
   MOZ_CAN_RUN_SCRIPT nsresult
   OnFocus(const nsINode& aOriginalEventTargetNode) final;
-  nsresult OnBlur(const dom::EventTarget* aEventTarget) final;
+  MOZ_CAN_RUN_SCRIPT void PostHandleFocusEvent(
+      const nsINode& aFocusEventTargetNode) final;
+  MOZ_CAN_RUN_SCRIPT nsresult
+  OnBlur(const dom::EventTarget* aEventTarget) final;
+
+  /**
+   * Called when eFocus event of aNode will be dispatched to the DOM.
+   * Note that aNode is the original target of eFocus (i.e., may be the target
+   * in a shadow). However, aNode may not be editable. E.g., <a href> element
+   * outside contenteditable. Therefore, even when this method is called,
+   * HTMLEditor won't get focus.
+   */
+  MOZ_CAN_RUN_SCRIPT static void WillFocusNode(PresShell& aPresShell,
+                                               nsINode* aNode);
+
+  /**
+   * Called when eFocus event of aNode will be dispatched to the DOM.
+   * Note that aNode is the original target of eBlur (i.e., may be the target
+   * in a shadow). However, aNode may not be editable. E.g., <a href> element
+   * outside contenteditable. Therefore, even when this method is called,
+   * HTMLEditor may not have focus.
+   */
+  MOZ_CAN_RUN_SCRIPT static void WillBlurNode(PresShell& aPresShell,
+                                              nsINode* aNode);
 
   /**
    * Called when aDocument or aElement becomes editable without focus change.
@@ -739,8 +763,8 @@ class HTMLEditor final : public EditorBase,
    * @parem aNodeInserted  Return the node which was inserted.
    */
   MOZ_CAN_RUN_SCRIPT  // USED_BY_COMM_CENTRAL
-      nsresult
-      InsertAsQuotation(const nsAString& aQuotedText, nsINode** aNodeInserted);
+      nsresult InsertAsQuotation(const nsAString& aQuotedText,
+                                 nsINode** aNodeInserted);
 
   MOZ_CAN_RUN_SCRIPT nsresult InsertHTMLAsAction(
       const nsAString& aInString, nsIPrincipal* aPrincipal = nullptr);
@@ -1638,7 +1662,7 @@ class HTMLEditor final : public EditorBase,
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<CreateLineBreakResult, nsresult>
   InsertPaddingBRElementToMakeEmptyLineVisibleIfNeeded(
-      const EditorDOMPoint& aPointToInsert);
+      const EditorDOMPoint& aPointToInsert, const Element& aEditingHost);
 
   /**
    * Insert a padding <br> if aPoint is in an empty block.
@@ -1946,21 +1970,24 @@ class HTMLEditor final : public EditorBase,
    *                            style, this method will set `style` attribute to
    *                            moving node or creating new <span> element.
    * @param aRemoveIfCommentNode
-   *                            If yes, this removes a comment node instead of
-   *                            moving it to the destination.  Note that this
-   *                            does not remove comment nodes in moving nodes
-   *                            because it requires additional scan.
+   *                            If yes, this removes invisible nodes such as
+   *                            comment nodes, empty inline containers (even if
+   *                            it has border, etc) instead of moving it to the
+   *                            destination.  Note that this does not remove
+   *                            invisible descendants in containers which have
+   *                            visible nodes because it requires additional
+   *                            scan.
    */
   enum class PreserveWhiteSpaceStyle { No, Yes };
   friend std::ostream& operator<<(
       std::ostream& aStream,
       const PreserveWhiteSpaceStyle aPreserveWhiteSpaceStyle);
-  enum class RemoveIfCommentNode { No, Yes };
+  enum class RemoveIfInvisibleNode { No, Yes };
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<MoveNodeResult, nsresult>
   MoveNodeOrChildrenWithTransaction(
       nsIContent& aContentToMove, const EditorDOMPoint& aPointToInsert,
       PreserveWhiteSpaceStyle aPreserveWhiteSpaceStyle,
-      RemoveIfCommentNode aRemoveIfCommentNode);
+      RemoveIfInvisibleNode aRemoveIfInvisibleNode);
 
   /**
    * CanMoveNodeOrChildren() returns true if
@@ -1986,16 +2013,19 @@ class HTMLEditor final : public EditorBase,
    *                            style, this method will set `style` attribute to
    *                            moving node or creating new <span> element.
    * @param aRemoveIfCommentNode
-   *                            If yes, this removes a comment node instead of
-   *                            moving it to the destination.  Note that this
-   *                            does not remove comment nodes in moving nodes
-   *                            because it requires additional scan.
+   *                            If yes, this removes invisible nodes such as
+   *                            comment nodes, empty inline containers (even if
+   *                            it has border, etc) instead of moving it to the
+   *                            destination.  Note that this does not remove
+   *                            invisible descendants in containers which have
+   *                            visible nodes because it requires additional
+   *                            scan.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<MoveNodeResult, nsresult>
   MoveChildrenWithTransaction(Element& aElement,
                               const EditorDOMPoint& aPointToInsert,
                               PreserveWhiteSpaceStyle aPreserveWhiteSpaceStyle,
-                              RemoveIfCommentNode aRemoveIfCommentNode);
+                              RemoveIfInvisibleNode aRemoveIfInvisibleNode);
 
   /**
    * CanMoveChildren() returns true if `MoveChildrenWithTransaction()` can move
@@ -3396,21 +3426,41 @@ class HTMLEditor final : public EditorBase,
   MOZ_CAN_RUN_SCRIPT Result<EditorDOMPoint, nsresult> PrepareToInsertLineBreak(
       LineBreakType aLineBreakType, const EditorDOMPoint& aPointToInsert);
 
+  enum class PreservePreformattedLineBreak : bool { No, Yes };
+
   /**
    * If unnecessary line break is there immediately after aPoint, this deletes
    * the line break.  Note that unnecessary line break means that the line break
    * is a padding line break for empty line immediately before a block boundary
    * and it's not a placeholder of ancestor inline elements.
    *
-   * @param aNextOrAfterModifiedPoint   If you inserted something, this should
-   *                                    be next point or after the inserted
-   *                                    content.
-   *                                    If you deleted something, this should be
-   *                                    end of the deleted range.
+   * @param aNextOrAfterModifiedPoint
+   *                            If you inserted something, this should be next
+   *                            point or after the inserted content. If you
+   *                            deleted something, this should be end of the
+   *                            deleted range.
+   * @param aPreservePreformattedLineBreak
+   *                            Whether this method should preserve preformatted
+   *                            linefeed or not. If "Yes", this will delete only
+   *                            when the unnecessary line break is a <br>.
+   * @param aPaddingForEmptyBlock
+   *                            Treat the line break for empty block is
+   *                            unnecessary or not. If this is set to
+   *                            "Unnecessary", preformatted line break will be
+   *                            deleted if it's a padding for empty block and
+   *                            aPreservePreformattedLineBreak is "Yes".
+   *                            This should be "Significant" if you use this
+   *                            after handling the edit action. So, you can use
+   *                            "Unnecessary" only when you are calling this
+   *                            before handling the edit action.
+   * @param aEditingHost        The editing host containing
+   *                            aNextOrAfterModifiedPoint.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
   EnsureNoFollowingUnnecessaryLineBreak(
-      const EditorDOMPoint& aNextOrAfterModifiedPoint);
+      const EditorDOMPoint& aNextOrAfterModifiedPoint,
+      PreservePreformattedLineBreak aPreservePreformattedLineBreak,
+      PaddingForEmptyBlock aPaddingForEmptyBlock, const Element& aEditingHost);
 
   /**
    * IndentAsSubAction() indents the content around Selection.
@@ -3460,7 +3510,8 @@ class HTMLEditor final : public EditorBase,
   template <size_t N>
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult SetInlinePropertiesAroundRanges(
       AutoClonedRangeArray& aRanges,
-      const AutoTArray<EditorInlineStyleAndValue, N>& aStylesToSet);
+      const AutoTArray<EditorInlineStyleAndValue, N>& aStylesToSet,
+      const Element& aEditingHost);
 
   /**
    * RemoveInlinePropertiesAsSubAction() removes specified styles from
@@ -3937,6 +3988,10 @@ class HTMLEditor final : public EditorBase,
       nsIPrincipal* aSourcePrincipal, const EditorDOMPoint& aDroppedAt,
       DeleteSelectedContent aDeleteSelectedContent,
       const Element& aEditingHost);
+
+  MOZ_CAN_RUN_SCRIPT nsresult InsertURLAsLinkInternal(
+      const nsAString& aURL, const EditorDOMPoint& aPointToInsert,
+      DeleteSelectedContent aDeleteSelectedContent);
 
   static HavePrivateHTMLFlavor DataTransferOrClipboardHasPrivateHTMLFlavor(
       DataTransfer* aDataTransfer, nsIClipboard* clipboard);

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -143,11 +141,12 @@ nsresult SyncModuleLoader::StartFetch(ModuleLoadRequest* aRequest) {
   }
 
   JSContext* cx = jsapi.cx();
-  JS::RootedScript script(cx);
+
+  JS::RootedObject module(cx);
   nsresult rv =
-      mozJSModuleLoader::LoadSingleModuleScript(this, cx, aRequest, &script);
+      mozJSModuleLoader::LoadSingleModule(this, cx, aRequest, &module);
   MOZ_ASSERT_IF(jsapi.HasException(), NS_FAILED(rv));
-  MOZ_ASSERT(bool(script) == NS_SUCCEEDED(rv));
+  MOZ_ASSERT(bool(module) == NS_SUCCEEDED(rv));
 
   // Check for failure to load script source and abort.
   bool threwException = jsapi.HasException();
@@ -189,9 +188,9 @@ nsresult SyncModuleLoader::StartFetch(ModuleLoadRequest* aRequest) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
   }
-  if (script) {
-    context->mScript.init(cx);
-    context->mScript = script;
+  if (module) {
+    context->mModule.init(cx);
+    context->mModule = module;
   }
 
   if (!aRequest->IsDynamicImport()) {
@@ -208,9 +207,9 @@ nsresult SyncModuleLoader::CompileFetchedModule(
   // Compilation already happened in StartFetch. Report the result here.
   SyncLoadContext* context = aRequest->GetSyncLoadContext();
   nsresult rv = context->mRv;
-  if (context->mScript) {
-    aModuleOut.set(JS::GetModuleObject(context->mScript));
-    context->mScript = nullptr;
+  if (context->mModule) {
+    aModuleOut.set(context->mModule);
+    context->mModule = nullptr;
   }
   if (NS_FAILED(rv)) {
     JS_SetPendingException(aCx, context->mExceptionValue);

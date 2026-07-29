@@ -95,7 +95,7 @@ tls13_CopyEchConfigs(PRCList *oConfigs, PRCList *configs)
     for (PRCList *cur_p = PR_LIST_HEAD(oConfigs);
          cur_p != oConfigs;
          cur_p = PR_NEXT_LINK(cur_p)) {
-        config = (sslEchConfig *)PR_LIST_TAIL(oConfigs);
+        config = (sslEchConfig *)cur_p;
         newConfig = PORT_ZNew(sslEchConfig);
         if (!newConfig) {
             goto loser;
@@ -2474,7 +2474,7 @@ tls13_MaybeHandleEchSignal(sslSocket *ss, const PRUint8 *sh, PRUint32 shLen, PRB
             PORT_SetError(SSL_ERROR_BAD_2ND_CLIENT_HELLO);
             return SECFailure;
         }
-        ss->xtnData.negotiated[ss->xtnData.numNegotiated++] = ssl_tls13_encrypted_client_hello_xtn;
+        ssl3_RecordExtensionNegotiated(ss, &ss->xtnData, ssl_tls13_encrypted_client_hello_xtn);
 
         /* Only overwrite client_random with client_inner_random if CHInner was
          *  succesfully used for handshake (NOT if HRR is received). */

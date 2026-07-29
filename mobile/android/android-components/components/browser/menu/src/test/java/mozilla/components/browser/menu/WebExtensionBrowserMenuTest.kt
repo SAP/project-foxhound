@@ -11,6 +11,8 @@ import android.widget.Button
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.menu.WebExtensionBrowserMenu.Companion.getOrUpdateWebExtensionMenuItems
 import mozilla.components.browser.menu.WebExtensionBrowserMenu.Companion.webExtensionBrowserActions
 import mozilla.components.browser.menu.WebExtensionBrowserMenu.Companion.webExtensionPageActions
@@ -28,23 +30,19 @@ import mozilla.components.concept.engine.webextension.WebExtensionPageAction
 import mozilla.components.support.base.facts.processor.CollectionProcessor
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
 import mozilla.components.support.test.whenever
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.coroutines.ContinuationInterceptor
+import kotlin.test.assertNotNull
 import mozilla.components.support.base.facts.Action as FactsAction
 
 @RunWith(AndroidJUnit4::class)
 class WebExtensionBrowserMenuTest {
-
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
 
     @Before
     fun setup() {
@@ -53,7 +51,7 @@ class WebExtensionBrowserMenuTest {
     }
 
     @Test
-    fun `actions are only updated when the menu is shown`() {
+    fun `actions are only updated when the menu is shown`() = runTest {
         webExtensionBrowserActions.clear()
         val browserAction = WebExtensionBrowserAction("browser_action", true, mock(), "", 0, 0) {}
         val pageAction = WebExtensionPageAction("browser_action", true, mock(), "", 0, 0) {}
@@ -80,10 +78,15 @@ class WebExtensionBrowserMenuTest {
         )
 
         val adapter = BrowserMenuAdapter(testContext, items)
-        val menu = WebExtensionBrowserMenu(adapter, store)
+        val menu = WebExtensionBrowserMenu(
+            adapter,
+            store,
+            coroutineContext[ContinuationInterceptor] as CoroutineDispatcher,
+        )
 
         val anchor = Button(testContext)
         val popup = menu.show(anchor)
+        testScheduler.advanceUntilIdle()
 
         assertNotNull(popup)
 

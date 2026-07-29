@@ -6,13 +6,13 @@ package mozilla.components.browser.engine.gecko.autofill
 import mozilla.components.concept.engine.autofill.AddressStructure
 import mozilla.components.concept.engine.autofill.UnexpectedNullError
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.geckoview.Autocomplete
 import org.mozilla.geckoview.GeckoResult
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.shadows.ShadowLooper
+import kotlin.test.assertIs
 
 @RunWith(RobolectricTestRunner::class)
 class RuntimeAddressStructureAccessorTest {
@@ -87,7 +87,7 @@ class RuntimeAddressStructureAccessorTest {
         )
 
         ShadowLooper.idleMainLooper()
-        assertTrue("Throwable should be UnexpectedNullError", throwable is UnexpectedNullError)
+        assertIs<UnexpectedNullError>(throwable, "Throwable should be UnexpectedNullError")
     }
 
     @Test
@@ -104,6 +104,6 @@ class RuntimeAddressStructureAccessorTest {
         )
 
         ShadowLooper.idleMainLooper()
-        assertTrue("Throwable should be IllegalStateException", throwable is IllegalStateException)
+        assertIs<IllegalStateException>(throwable, "Throwable should be IllegalStateException")
     }
 }

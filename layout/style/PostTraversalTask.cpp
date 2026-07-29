@@ -1,14 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PostTraversalTask.h"
 
-#include "ServoStyleSet.h"
-#include "gfxPlatformFontList.h"
-#include "gfxTextRun.h"
 #include "mozilla/dom/FontFace.h"
 #include "mozilla/dom/FontFaceSet.h"
 #include "mozilla/dom/FontFaceSetImpl.h"
@@ -18,40 +13,28 @@ namespace mozilla {
 
 using namespace dom;
 
+PostTraversalTask::~PostTraversalTask() {
+  if (!mTarget) {
+    return;
+  }
+  switch (mType) {
+    case Type::DispatchLoadingEventAndReplaceReadyPromise:
+      static_cast<dom::FontFaceSetImpl*>(mTarget)->Release();
+      break;
+    case Type::LoadFontEntry:
+      static_cast<gfxUserFontEntry*>(mTarget)->Release();
+      break;
+  }
+}
+
 void PostTraversalTask::Run() {
   switch (mType) {
-    case Type::ResolveFontFaceLoadedPromise:
-      static_cast<FontFace*>(mTarget)->MaybeResolve();
-      break;
-
-    case Type::RejectFontFaceLoadedPromise:
-      static_cast<FontFace*>(mTarget)->MaybeReject(mResult.extract(),
-                                                   std::move(mMessage));
-      break;
-
     case Type::DispatchLoadingEventAndReplaceReadyPromise:
-      static_cast<FontFaceSet*>(mTarget)
+      static_cast<dom::FontFaceSetImpl*>(mTarget)
           ->DispatchLoadingEventAndReplaceReadyPromise();
       break;
-
-    case Type::DispatchFontFaceSetCheckLoadingFinishedAfterDelay:
-      static_cast<FontFaceSetImpl*>(mTarget)
-          ->DispatchCheckLoadingFinishedAfterDelay();
-      break;
-
     case Type::LoadFontEntry:
       static_cast<gfxUserFontEntry*>(mTarget)->ContinueLoad();
-      break;
-
-    case Type::InitializeFamily:
-      (void)gfxPlatformFontList::PlatformFontList()->InitializeFamily(
-          static_cast<fontlist::Family*>(mTarget));
-      break;
-
-    case Type::FontInfoUpdate:
-      if (auto* pc = static_cast<ServoStyleSet*>(mTarget)->GetPresContext()) {
-        pc->ForceReflowForFontInfoUpdateFromStyle();
-      }
       break;
   }
 }

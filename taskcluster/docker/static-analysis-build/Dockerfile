@@ -27,7 +27,6 @@ RUN apt-get update && \
       nasm \
       opam \
       patch \
-      p7zip-full \
       procps \
       python3-dev \
       rsync \

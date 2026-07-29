@@ -10,6 +10,13 @@ const { SearchUtils } = ChromeUtils.importESModule(
   "moz-src:///toolkit/components/search/SearchUtils.sys.mjs"
 );
 
+const WALLPAPER_TYPE_PREF =
+  "browser.newtabpage.activity-stream.newtabWallpapers.wallpaper";
+const CUSTOM_WALLPAPER_UUID_PREF =
+  "browser.newtabpage.activity-stream.newtabWallpapers.customWallpaper.uuid";
+const CUSTOM_WALLPAPER_FOLDER = "wallpaper";
+const FAKE_CUSTOM_WALLPAPER_UUID = "decafbad-0cd1-0cd2-0cd3-decafbad1000";
+
 /**
  * Test that the measure method correctly collects the disk-sizes of things that
  * the PreferencesBackupResource is meant to back up.
@@ -33,6 +40,10 @@ add_task(async function test_measure() {
     { path: ["chrome", "userChrome.css"], sizeInKB: 5 },
     { path: ["chrome", "userContent.css"], sizeInKB: 5 },
     { path: ["chrome", "css", "mockStyles.css"], sizeInKB: 5 },
+    {
+      path: [CUSTOM_WALLPAPER_FOLDER, FAKE_CUSTOM_WALLPAPER_UUID],
+      sizeInKB: 5,
+    },
   ];
 
   await createTestFiles(tempDir, mockFiles);
@@ -42,14 +53,7 @@ add_task(async function test_measure() {
   await preferencesBackupResource.measure(tempDir);
 
   let measurement = Glean.browserBackup.preferencesSize.testGetValue();
-  let scalars = TelemetryTestUtils.getProcessScalars("parent", false, false);
 
-  TelemetryTestUtils.assertScalar(
-    scalars,
-    "browser.backup.preferences_size",
-    measurement,
-    "Glean and telemetry measurements for preferences data should be equal"
-  );
   Assert.equal(
     measurement,
     EXPECTED_PREFERENCES_KILOBYTES_SIZE,
@@ -86,8 +90,26 @@ add_task(async function test_backup() {
     { path: ["chrome", "userChrome.css"] },
     { path: ["chrome", "userContent.css"] },
     { path: ["chrome", "childFolder", "someOtherStylesheet.css"] },
+    {
+      path: [CUSTOM_WALLPAPER_FOLDER, FAKE_CUSTOM_WALLPAPER_UUID],
+    },
   ];
   await createTestFiles(sourcePath, simpleCopyFiles);
+
+  const skippedCopyFiles = [
+    // We should not back this one up, since the customWallpaper.uuid pref will
+    // not be set to it.
+    {
+      path: [CUSTOM_WALLPAPER_FOLDER, "some-other-file"],
+    },
+  ];
+  await createTestFiles(sourcePath, skippedCopyFiles);
+
+  Services.prefs.setStringPref(WALLPAPER_TYPE_PREF, "custom");
+  Services.prefs.setStringPref(
+    CUSTOM_WALLPAPER_UUID_PREF,
+    FAKE_CUSTOM_WALLPAPER_UUID
+  );
 
   // We have no need to test that Sqlite.sys.mjs's backup method is working -
   // this is something that is tested in Sqlite's own tests. We can just make
@@ -105,12 +127,13 @@ add_task(async function test_backup() {
   );
   Assert.deepEqual(
     manifestEntry,
-    { profilePath: sourcePath },
-    "PreferencesBackupResource.backup should return the original profile path " +
+    { profileDirName: PathUtils.filename(sourcePath) },
+    "PreferencesBackupResource.backup should return the profile directory name " +
       "in its ManifestEntry"
   );
 
   await assertFilesExist(stagingPath, simpleCopyFiles);
+  await assertFilesDoNotExist(stagingPath, skippedCopyFiles);
 
   Assert.ok(
     fakeConnection.backup.notCalled,
@@ -188,6 +211,7 @@ add_task(async function test_recover() {
     { path: ["chrome", "userChrome.css"] },
     { path: ["chrome", "userContent.css"] },
     { path: ["chrome", "childFolder", "someOtherStylesheet.css"] },
+    { path: [CUSTOM_WALLPAPER_FOLDER, FAKE_CUSTOM_WALLPAPER_UUID] },
   ];
   await createTestFiles(recoveryPath, simpleCopyFiles);
 
@@ -244,11 +268,11 @@ add_task(async function test_recover() {
     .onCall(5)
     .returns(EXPECTED_HASH);
 
-  const PRETEND_ORIGINAL_PATH = "some/original/path";
+  const PRETEND_ORIGINAL_DIR_NAME = "some-profile-dir";
 
   // The backup method is expected to have returned a null ManifestEntry
   let postRecoveryEntry = await preferencesBackupResource.recover(
-    { profilePath: PRETEND_ORIGINAL_PATH },
+    { profileDirName: PRETEND_ORIGINAL_DIR_NAME },
     recoveryPath,
     destProfilePath
   );
@@ -277,40 +301,42 @@ add_task(async function test_recover() {
     6,
     "SearchUtils.getVerificationHash was called the right number of times."
   );
+  let destDirName = PathUtils.filename(destProfilePath);
+
   Assert.ok(
     SearchUtils.getVerificationHash
       .getCall(0)
-      .calledWith(TEST_SEARCH_ENGINE_LOAD_PATH, PRETEND_ORIGINAL_PATH),
+      .calledWith(TEST_SEARCH_ENGINE_LOAD_PATH, PRETEND_ORIGINAL_DIR_NAME),
     "SearchUtils.getVerificationHash first call called with the right arguments."
   );
   Assert.ok(
     SearchUtils.getVerificationHash
       .getCall(1)
-      .calledWith(TEST_SEARCH_ENGINE_LOAD_PATH, destProfilePath),
+      .calledWith(TEST_SEARCH_ENGINE_LOAD_PATH, destDirName),
     "SearchUtils.getVerificationHash second call called with the right arguments."
   );
   Assert.ok(
     SearchUtils.getVerificationHash
       .getCall(2)
-      .calledWith(TEST_DEFAULT_ENGINE_ID, PRETEND_ORIGINAL_PATH),
+      .calledWith(TEST_DEFAULT_ENGINE_ID, PRETEND_ORIGINAL_DIR_NAME),
     "SearchUtils.getVerificationHash third call called with the right arguments."
   );
   Assert.ok(
     SearchUtils.getVerificationHash
       .getCall(3)
-      .calledWith(TEST_DEFAULT_ENGINE_ID, destProfilePath),
+      .calledWith(TEST_DEFAULT_ENGINE_ID, destDirName),
     "SearchUtils.getVerificationHash fourth call called with the right arguments."
   );
   Assert.ok(
     SearchUtils.getVerificationHash
       .getCall(4)
-      .calledWith(TEST_PRIVATE_DEFAULT_ENGINE_ID, PRETEND_ORIGINAL_PATH),
+      .calledWith(TEST_PRIVATE_DEFAULT_ENGINE_ID, PRETEND_ORIGINAL_DIR_NAME),
     "SearchUtils.getVerificationHash fifth call called with the right arguments."
   );
   Assert.ok(
     SearchUtils.getVerificationHash
       .getCall(5)
-      .calledWith(TEST_PRIVATE_DEFAULT_ENGINE_ID, destProfilePath),
+      .calledWith(TEST_PRIVATE_DEFAULT_ENGINE_ID, destDirName),
     "SearchUtils.getVerificationHash sixth call called with the right arguments."
   );
 
@@ -337,6 +363,119 @@ add_task(async function test_recover() {
     recoveredSearchPrefs.metaData.privateDefaultEngineIdHash,
     EXPECTED_HASH,
     "The expected hash was written for the private default engine."
+  );
+
+  await maybeRemovePath(recoveryPath);
+  await maybeRemovePath(destProfilePath);
+  sandbox.restore();
+});
+
+/**
+ * Test that recover() correctly handles old-format manifests that store a
+ * full profilePath instead of profileDirName. This exercises the cross-platform
+ * fallback: a Unix-style macOS path must be parseable on Windows (and vice
+ * versa) without calling PathUtils.filename(), which only understands
+ * native-platform separators.
+ */
+add_task(async function test_recover_legacy_profilePath_cross_platform() {
+  let sandbox = sinon.createSandbox();
+  let preferencesBackupResource = new PreferencesBackupResource();
+  let recoveryPath = await IOUtils.createUniqueDirectory(
+    PathUtils.tempDir,
+    "PreferencesBackupResource-recovery-test"
+  );
+  let destProfilePath = await IOUtils.createUniqueDirectory(
+    PathUtils.tempDir,
+    "PreferencesBackupResource-test-profile"
+  );
+
+  const simpleCopyFiles = [{ path: "prefs.js" }];
+  await createTestFiles(recoveryPath, simpleCopyFiles);
+
+  const TEST_SEARCH_ENGINE_LOAD_PATH = "some/path/on/disk";
+  const TEST_SEARCH_ENGINE_LOAD_PATH_HASH = "some pre-existing hash";
+  const TEST_DEFAULT_ENGINE_ID = "bugle";
+  const TEST_DEFAULT_ENGINE_ID_HASH = "default engine original hash";
+  const TEST_PRIVATE_DEFAULT_ENGINE_ID = "goose";
+  const TEST_PRIVATE_DEFAULT_ENGINE_ID_HASH =
+    "private default engine original hash";
+
+  let fakeSearchPrefs = {
+    metaData: {
+      defaultEngineId: TEST_DEFAULT_ENGINE_ID,
+      defaultEngineIdHash: TEST_DEFAULT_ENGINE_ID_HASH,
+      privateDefaultEngineId: TEST_PRIVATE_DEFAULT_ENGINE_ID,
+      privateDefaultEngineIdHash: TEST_PRIVATE_DEFAULT_ENGINE_ID_HASH,
+    },
+    engines: [
+      {
+        _loadPath: TEST_SEARCH_ENGINE_LOAD_PATH,
+        _metaData: { loadPathHash: TEST_SEARCH_ENGINE_LOAD_PATH_HASH },
+      },
+    ],
+  };
+
+  const SEARCH_PREFS_FILENAME = "search.json.mozlz4";
+  await IOUtils.writeJSON(
+    PathUtils.join(recoveryPath, SEARCH_PREFS_FILENAME),
+    fakeSearchPrefs,
+    { compress: true }
+  );
+
+  // Simulate a backup created on macOS: full Unix-style profilePath, no
+  // profileDirName. The leaf "co5b6bfs.some-profile" must be extracted with
+  // a cross-platform split rather than PathUtils.filename().
+  const LEGACY_UNIX_PROFILE_PATH =
+    "/Users/someone/Library/Application Support/Firefox/Profiles/co5b6bfs.some-profile";
+  const EXPECTED_DIR_NAME = "co5b6bfs.some-profile";
+
+  const EXPECTED_HASH = "newly generated hash";
+  sandbox
+    .stub(SearchUtils, "getVerificationHash")
+    .onCall(0)
+    .returns(TEST_SEARCH_ENGINE_LOAD_PATH_HASH)
+    .onCall(1)
+    .returns(EXPECTED_HASH)
+    .onCall(2)
+    .returns(TEST_DEFAULT_ENGINE_ID_HASH)
+    .onCall(3)
+    .returns(EXPECTED_HASH)
+    .onCall(4)
+    .returns(TEST_PRIVATE_DEFAULT_ENGINE_ID_HASH)
+    .onCall(5)
+    .returns(EXPECTED_HASH);
+
+  let postRecoveryEntry = await preferencesBackupResource.recover(
+    { profilePath: LEGACY_UNIX_PROFILE_PATH },
+    recoveryPath,
+    destProfilePath
+  );
+  Assert.equal(
+    postRecoveryEntry,
+    null,
+    "PreferencesBackupResource.recover should return null as its post recovery entry"
+  );
+
+  // The fallback must extract just the leaf name from the Unix path and pass
+  // it to getVerificationHash — not the full path and not a Windows parse
+  // of a Unix path.
+  Assert.ok(
+    SearchUtils.getVerificationHash
+      .getCall(0)
+      .calledWith(TEST_SEARCH_ENGINE_LOAD_PATH, EXPECTED_DIR_NAME),
+    "getVerificationHash called with Unix path leaf name, not the full path"
+  );
+  Assert.ok(
+    SearchUtils.getVerificationHash
+      .getCall(2)
+      .calledWith(TEST_DEFAULT_ENGINE_ID, EXPECTED_DIR_NAME),
+    "getVerificationHash called with Unix path leaf name for default engine"
+  );
+  Assert.ok(
+    SearchUtils.getVerificationHash
+      .getCall(4)
+      .calledWith(TEST_PRIVATE_DEFAULT_ENGINE_ID, EXPECTED_DIR_NAME),
+    "getVerificationHash called with Unix path leaf name for private default engine"
   );
 
   await maybeRemovePath(recoveryPath);

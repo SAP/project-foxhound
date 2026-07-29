@@ -70,32 +70,21 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=509055
       dump("Got second hashchange.  Spinning event loop.\n");
       yield undefined;
 
-      let sheTitle = "";
-      if (!SpecialPowers.Services.appinfo.sessionHistoryInParent) {
-        var sh = SpecialPowers.wrap(popup)
-                              .docShell
-                              .QueryInterface(SpecialPowers.Ci.nsIWebNavigation)
-                              .sessionHistory;
-
-        // Get the title of the inner popup's current SHEntry
-        sheTitle = sh.legacySHistory.getEntryAtIndex(sh.index).title;
-      } else {
-        let chromeScript = SpecialPowers.loadChromeScript(() => {
-          addMessageListener("getTitle", browsingContext => {
-            // eslint-disable-next-line no-shadow
-            let sh = browsingContext.sessionHistory;
-            let title = sh.getEntryAtIndex(sh.index).title;
-            sendAsyncMessage("title", title);
-          });
+      let chromeScript = SpecialPowers.loadChromeScript(() => {
+        addMessageListener("getTitle", browsingContext => {
+          // eslint-disable-next-line no-shadow
+          let sh = browsingContext.sessionHistory;
+          let title = sh.getEntryAtIndex(sh.index).title;
+          sendAsyncMessage("title", title);
         });
+      });
 
-        let p = chromeScript.promiseOneMessage("title");
-        let browsingContext = SpecialPowers.wrap(popup)
-                                           .docShell.browsingContext;
-        chromeScript.sendAsyncMessage("getTitle", browsingContext);
-        sheTitle = await p;
-        chromeScript.destroy();
-      }
+      let p = chromeScript.promiseOneMessage("title");
+      let browsingContext = SpecialPowers.wrap(popup)
+                                         .docShell.browsingContext;
+      chromeScript.sendAsyncMessage("getTitle", browsingContext);
+      let sheTitle = await p;
+      chromeScript.destroy();
       is(sheTitle, "Changed", "SHEntry's title should change when we change.");
 
       popup.close();

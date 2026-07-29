@@ -9,6 +9,39 @@ newtab-page-title = Jauna cilne
 newtab-settings-button =
     .title = Īstateit sovu jaunas cilnes lopu
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Jaunas cilnes
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [zero] { $num } rindu
+            [one] { $num } rinda
+           *[other] { $num } rindas
+        }
+home-restore-defaults-srd =
+    .label = Atjaunōt iz nūkluseitū
+    .accesskey = A
+home-mode-choice-custom-srd =
+    .label = Muni URL…
+home-mode-choice-blank-srd =
+    .label = Tukša lopa
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Sponsorāti roksti
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Apmaklātōs lopys
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Grōmotzeimes
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Nasanōs lejupīlōdes
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +49,7 @@ newtab-search-box-search-button =
     .title = Mekleit
     .aria-label = Mekleit
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Davīnōt mekleitōji
 newtab-topsites-edit-topsites-header = Maineit lopu topā

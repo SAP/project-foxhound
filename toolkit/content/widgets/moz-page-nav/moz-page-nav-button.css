@@ -14,10 +14,12 @@
   --page-nav-button-padding: var(--space-small) var(--space-medium);
   --page-nav-button-border-color-hover: var(--button-border-color-ghost-hover);
   --page-nav-button-border-color-active: var(--button-border-color-ghost-active);
+  --page-nav-button-indicator-color: var(--color-accent-primary);
+  --page-nav-button-indicator-width: var(--dimension-4);
 
   border-radius: var(--border-radius-small);
 
-  @media (max-width: 52rem) {
+  @media (max-width: 950px) {
     --page-nav-button-padding: var(--space-small);
   }
 }
@@ -28,7 +30,7 @@
 }
 
 :host([iconsrc]) {
-  @media (max-width: 52rem) {
+  @media (max-width: 950px) {
     width: var(--button-size-icon);
   }
 }
@@ -57,7 +59,7 @@ button {
   }
 
   @media (prefers-contrast) {
-    border: 1px solid var(--page-nav-border-color);
+    border: 1px solid var(--page-nav-border-color, var(--border-color-transparent));
   }
 }
 
@@ -85,7 +87,7 @@ button {
   }
 
   &[selected] {
-    color: var(--color-accent-primary);
+    color: var(--page-nav-button-indicator-color);
     background-color: var(--page-nav-button-background-color-selected);
     font-weight: var(--font-weight-semibold);
 
@@ -94,7 +96,7 @@ button {
     }
 
     &::before {
-      background-color: var(--color-accent-primary);
+      background-color: var(--page-nav-button-indicator-color);
     }
   }
 
@@ -104,7 +106,7 @@ button {
     position: absolute;
     inset-block: 0;
     inset-inline-start: 0;
-    width: 4px;
+    width: var(--page-nav-button-indicator-width);
     background-color: transparent;
     border-start-start-radius: var(--page-nav-button-border-radius);
     border-end-start-radius: var(--page-nav-button-border-radius);
@@ -135,7 +137,7 @@ slot {
   padding-inline-start: 0;
   user-select: none;
 
-  @media (max-width: 52rem) {
+  @media (max-width: 950px) {
     display: inline-block;
     overflow: hidden;
     text-overflow: ellipsis;

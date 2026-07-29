@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,7 @@
 #include "PolicyContainer.h"
 
 #include "mozilla/dom/IntegrityPolicy.h"
+#include "mozilla/dom/IntegrityPolicyWAICT.h"
 #include "mozilla/dom/nsCSPContext.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "nsIClassInfoImpl.h"
@@ -16,42 +15,37 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 
+PolicyContainer::PolicyContainer() = default;
 PolicyContainer::~PolicyContainer() = default;
 
-constexpr static uint32_t kPolicyContainerSerializationVersion = 1;
+constexpr static uint32_t kPolicyContainerSerializationVersion = 2;
 
 NS_IMETHODIMP
 PolicyContainer::Read(nsIObjectInputStream* aStream) {
-  // Currently, we don't care about the version, but we might in the future.
   uint32_t version = 0;
-  nsresult rv = aStream->Read32(&version);
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(aStream->Read32(&version));
 
-  if (version != kPolicyContainerSerializationVersion) {
+  if (version < 1 || version > kPolicyContainerSerializationVersion) {
     return NS_ERROR_FAILURE;
   }
 
-  auto ReadOptionalCSPObject = [aStream](nsISupports** aOutCSP) {
+  auto ReadOptionalCSPObject = [aStream](nsISupports** aOutCSP) -> nsresult {
     bool nonnull = false;
-    nsresult rv = aStream->ReadBoolean(&nonnull);
-    NS_ENSURE_SUCCESS(rv, rv);
+    MOZ_TRY(aStream->ReadBoolean(&nonnull));
 
     if (nonnull) {
       nsCID cid;
-      rv = aStream->ReadID(&cid);
-      NS_ENSURE_SUCCESS(rv, rv);
+      MOZ_TRY(aStream->ReadID(&cid));
       MOZ_ASSERT(cid.Equals(nsCSPContext::GetCID()),
                  "Expected nsCSPContext CID");
 
       nsIID iid;
-      rv = aStream->ReadID(&iid);
-      NS_ENSURE_SUCCESS(rv, rv);
+      MOZ_TRY(aStream->ReadID(&iid));
       MOZ_ASSERT(iid.Equals(NS_GET_IID(nsIContentSecurityPolicy)),
                  "Expected nsIContentSecurityPolicy IID");
 
       RefPtr<nsCSPContext> csp = new nsCSPContext();
-      rv = csp->PolicyContainerRead(aStream);
-      NS_ENSURE_SUCCESS(rv, rv);
+      MOZ_TRY(csp->PolicyContainerRead(aStream));
       csp.forget(aOutCSP);
     }
 
@@ -59,28 +53,37 @@ PolicyContainer::Read(nsIObjectInputStream* aStream) {
   };
 
   nsCOMPtr<nsISupports> csp;
-  rv = ReadOptionalCSPObject(getter_AddRefs(csp));
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(ReadOptionalCSPObject(getter_AddRefs(csp)));
   mCSP = do_QueryInterface(csp);
 
   nsCOMPtr<nsISupports> integrityPolicy;
-  rv = NS_ReadOptionalObject(aStream, true, getter_AddRefs(integrityPolicy));
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(
+      NS_ReadOptionalObject(aStream, true, getter_AddRefs(integrityPolicy)));
   mIntegrityPolicy = do_QueryInterface(integrityPolicy);
+
+  if (version >= 2) {
+    uint16_t ipAS = 0;
+    MOZ_TRY(aStream->Read16(&ipAS));
+    mIPAddressSpace = static_cast<nsILoadInfo::IPAddressSpace>(ipAS);
+  }
+
   return NS_OK;
 }
 
 NS_IMETHODIMP
 PolicyContainer::Write(nsIObjectOutputStream* aStream) {
-  aStream->Write32(kPolicyContainerSerializationVersion);
+  MOZ_TRY(aStream->Write32(kPolicyContainerSerializationVersion));
 
-  nsresult rv = NS_WriteOptionalCompoundObject(
-      aStream, mCSP, NS_GET_IID(nsIContentSecurityPolicy), true);
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(NS_WriteOptionalCompoundObject(
+      aStream, mCSP, NS_GET_IID(nsIContentSecurityPolicy), true));
 
-  rv = NS_WriteOptionalCompoundObject(aStream, mIntegrityPolicy,
-                                      NS_GET_IID(nsIIntegrityPolicy), true);
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(NS_WriteOptionalCompoundObject(aStream, mIntegrityPolicy,
+                                         NS_GET_IID(nsIIntegrityPolicy), true));
+
+  // TODO(Bug 2017654): (De)Serialize the WAICT state as part of the
+  // Policy-Container
+
+  MOZ_TRY(aStream->Write16(static_cast<uint16_t>(mIPAddressSpace)));
 
   return NS_OK;
 }
@@ -103,6 +106,8 @@ void PolicyContainer::ToArgs(const PolicyContainer* aPolicy,
                             integrityPolicyArgs);
     aArgs.integrityPolicy() = Some(integrityPolicyArgs);
   }
+
+  aArgs.ipAddressSpace() = aPolicy->mIPAddressSpace;
 }
 
 void PolicyContainer::FromArgs(const mozilla::ipc::PolicyContainerArgs& aArgs,
@@ -122,6 +127,8 @@ void PolicyContainer::FromArgs(const mozilla::ipc::PolicyContainerArgs& aArgs,
                               getter_AddRefs(integrityPolicy));
     policy->SetIntegrityPolicy(integrityPolicy);
   }
+
+  policy->SetIPAddressSpace(aArgs.ipAddressSpace());
 
   policy.forget(aPolicy);
 }
@@ -144,6 +151,8 @@ void PolicyContainer::InitFromOther(PolicyContainer* aOther) {
         IntegrityPolicy::Cast(aOther->mIntegrityPolicy));
     mIntegrityPolicy = integrityPolicy;
   }
+
+  mIPAddressSpace = aOther->mIPAddressSpace;
 }
 
 NS_IMETHODIMP PolicyContainer::InitFromCSP(nsIContentSecurityPolicy* aCSP) {
@@ -173,6 +182,12 @@ bool PolicyContainer::Equals(const PolicyContainer* aContainer,
           IntegrityPolicy::Cast(aOtherContainer->mIntegrityPolicy))) {
     return false;
   }
+
+  if (aContainer->mIPAddressSpace != aOtherContainer->mIPAddressSpace) {
+    return false;
+  }
+
+  // TODO(Bug 2017654): Handle equality for WAICT.
 
   return true;
 }
@@ -207,6 +222,33 @@ nsIIntegrityPolicy* PolicyContainer::GetIntegrityPolicy(
     return nullptr;
   }
   return PolicyContainer::Cast(aPolicyContainer)->GetIntegrityPolicy();
+}
+
+// == WAICT Integrity Policy ==
+void PolicyContainer::SetIntegrityPolicyWAICT(IntegrityPolicyWAICT* aPolicy) {
+  mIntegrityPolicyWAICT = aPolicy;
+}
+
+IntegrityPolicyWAICT* PolicyContainer::GetIntegrityPolicyWAICT() const {
+  return mIntegrityPolicyWAICT;
+}
+
+IntegrityPolicyWAICT* PolicyContainer::GetIntegrityPolicyWAICT(
+    const nsIPolicyContainer* aPolicyContainer) {
+  if (!aPolicyContainer) {
+    return nullptr;
+  }
+  return PolicyContainer::Cast(aPolicyContainer)->GetIntegrityPolicyWAICT();
+}
+
+// == IP Address Space ==
+nsILoadInfo::IPAddressSpace PolicyContainer::GetIPAddressSpace() const {
+  return mIPAddressSpace;
+}
+
+void PolicyContainer::SetIPAddressSpace(
+    nsILoadInfo::IPAddressSpace aIPAddressSpace) {
+  mIPAddressSpace = aIPAddressSpace;
 }
 
 NS_IMETHODIMP PolicyContainer::GetCsp(nsIContentSecurityPolicy** aCsp) {

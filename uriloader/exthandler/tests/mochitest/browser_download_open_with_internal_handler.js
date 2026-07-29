@@ -23,7 +23,7 @@ const HandlerSvc = Cc["@mozilla.org/uriloader/handler-service;1"].getService(
 );
 
 let MockFilePicker = SpecialPowers.MockFilePicker;
-MockFilePicker.init(window.browsingContext);
+MockFilePicker.init();
 
 function waitForAcceptButtonToGetEnabled(doc) {
   let dialog = doc.querySelector("#unknownContentType");
@@ -159,7 +159,7 @@ add_task(async function test_check_open_with_internal_handler() {
       "pdf.js should be opened in an adjacent tab"
     );
 
-    await ContentTask.spawn(newTab.linkedBrowser, null, async () => {
+    await SpecialPowers.spawn(newTab.linkedBrowser, [], async () => {
       await ContentTaskUtils.waitForCondition(
         () => content.document.readyState == "complete"
       );
@@ -448,7 +448,7 @@ add_task(async function test_check_open_with_external_then_internal() {
     info("waiting for new tab to open");
     let newTab = await newTabPromise;
 
-    await ContentTask.spawn(newTab.linkedBrowser, null, async () => {
+    await SpecialPowers.spawn(newTab.linkedBrowser, [], async () => {
       await ContentTaskUtils.waitForCondition(
         () => content.document.readyState == "complete"
       );
@@ -774,15 +774,11 @@ add_task(async function test_check_open_with_internal_handler_noask() {
           "Loaded PDF uri has the correct scheme"
         );
 
-        // intentionally don't bother checking session history without ship to
-        // keep complexity down.
-        if (Services.appinfo.sessionHistoryInParent) {
-          let shistory = browser.browsingContext.sessionHistory;
-          is(shistory.count, 1, "should a single shentry");
-          is(shistory.index, 0, "should be on the first entry");
-          let shentry = shistory.getEntryAtIndex(shistory.index);
-          is(shentry.URI.spec, TEST_PATH + "blank.html");
-        }
+        let shistory = browser.browsingContext.sessionHistory;
+        is(shistory.count, 1, "should a single shentry");
+        is(shistory.index, 0, "should be on the first entry");
+        let shentry = shistory.getEntryAtIndex(shistory.index);
+        is(shentry.URI.spec, TEST_PATH + "blank.html");
 
         await SpecialPowers.spawn(
           browser,

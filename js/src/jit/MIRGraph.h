@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -948,6 +946,48 @@ void MBasicBlock::add(MInstruction* ins) {
   graph().allocDefinitionId(ins);
   instructions_.pushBack(ins);
 }
+
+void AssertBasicGraphCoherency(MIRGraph& graph, bool force = false);
+
+void AssertGraphCoherency(MIRGraph& graph, bool force = false);
+
+void AssertExtendedGraphCoherency(MIRGraph& graph,
+                                  bool underValueNumberer = false,
+                                  bool force = false);
+
+class CompileInfo;
+
+// Debug printing.  When `showDetails` is `true`, extra details are shown.
+// Also, in that case, these routines will show an integer base-26 hashed
+// version of pointers.  This helps avoid ambiguities resulting from use of IDs
+// for MBasicBlocks and MDefinitions.  Be aware the hashed pointers are not
+// guaranteed to be unique, although collisions are very unlikely.
+
+// Dump `p`, hashed, to `out`.
+void DumpHashedPointer(GenericPrinter& out, const void* p);
+
+// Dump the ID and possibly the pointer hash of `def`, to `out`.
+void DumpMIRDefinitionID(GenericPrinter& out, const MDefinition* def,
+                         bool showDetails = false);
+// Dump an MDefinition to `out`.
+void DumpMIRDefinition(GenericPrinter& out, const MDefinition* def,
+                       bool showDetails = false);
+
+// Dump the ID and possibly the pointer hash of `block`, to `out`.
+void DumpMIRBlockID(GenericPrinter& out, const MBasicBlock* block,
+                    bool showDetails = false);
+// Dump an MBasicBlock to `out`.
+void DumpMIRBlock(GenericPrinter& out, MBasicBlock* block,
+                  bool showDetails = false);
+
+// Dump an entire MIRGraph to `out`.
+void DumpMIRGraph(GenericPrinter& out, MIRGraph& graph,
+                  bool showDetails = false);
+
+// Legacy entry point for DumpMIRGraph.
+void DumpMIRExpressions(GenericPrinter& out, MIRGraph& graph,
+                        const CompileInfo& info, const char* phase,
+                        bool showDetails = false);
 
 }  // namespace jit
 }  // namespace js

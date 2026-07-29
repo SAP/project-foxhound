@@ -1,14 +1,16 @@
 import pytest
 
 URL = "https://chaturbate.com/"
+POPUP_CSS = ".SearchOnboarding"
 AGREE_CSS = "#close_entrance_terms"
-FIRST_ROOM_CSS = "a.room_thumbnail_container[href]"
+FIRST_ROOM_CSS = "a[data-room][href]"
 FS_CSS = "[data-testid='mobile-fullscreen-button']"
 VID_CSS = ".videoPlayerDiv"
 
 
 async def is_requestFullscreen_called(client):
     await client.navigate(URL)
+    client.hide_elements(POPUP_CSS)
     client.await_css(AGREE_CSS, is_displayed=True, timeout=30).click()
     client.await_css(FIRST_ROOM_CSS, is_displayed=True).click()
     vid = client.await_css(VID_CSS, is_displayed=True)

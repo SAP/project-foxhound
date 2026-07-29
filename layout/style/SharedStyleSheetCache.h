@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,19 +10,12 @@
 
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/SharedSubResourceCache.h"
+#include "mozilla/StyleSheet.h"
 #include "mozilla/css/Loader.h"
 #include "nsIMemoryReporter.h"
 #include "nsIObserver.h"
 
 namespace mozilla {
-
-class StyleSheet;
-class SheetLoadDataHashKey;
-
-namespace css {
-class SheetLoadData;
-class Loader;
-}  // namespace css
 
 struct SharedStyleSheetCacheTraits {
   using Loader = css::Loader;
@@ -106,13 +97,25 @@ class SharedStyleSheetCache final
 
  protected:
   void InsertIfNeeded(css::SheetLoadData&);
+  bool ShouldIgnoreMemoryPressure() override { return false; }
+  void DoScheduleGC();
+  void GC();
+
   nsTHashMap<PrincipalHashKey,
              nsTHashMap<nsStringHashKey, InlineSheetCandidates>>
       mInlineSheets;
-
-  bool ShouldIgnoreMemoryPressure() override { return false; }
+  nsCOMPtr<nsITimer> mGCTimer;
+  bool mGCScheduled : 1 = false;
 
   ~SharedStyleSheetCache();
+
+ public:
+  static void ScheduleGC() {
+    if (!sSingleton || sSingleton->mGCScheduled) {
+      return;
+    }
+    sSingleton->DoScheduleGC();
+  }
 };
 
 }  // namespace mozilla

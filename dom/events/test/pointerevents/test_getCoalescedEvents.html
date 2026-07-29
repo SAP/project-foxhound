@@ -58,8 +58,13 @@ SimpleTest.waitForFocus(async () => {
         return false;
       }
 
+      let totalMovementX = 0, totalMovementY = 0;
       for (let i = 0; i < length; ++i) {
         let coalescedEvent = ev.getCoalescedEvents()[i];
+
+        totalMovementX += coalescedEvent.movementX;
+        totalMovementY += coalescedEvent.movementY;
+
         isnot(coalescedEvent.timeStamp, 0, "getCoalescedEvents()[" + i + "].timeStamp");
         is(coalescedEvent.type, "pointermove", "getCoalescedEvents()[" + i + "].type");
         is(coalescedEvent.pointerId, ev.pointerId, "getCoalescedEvents()[" + i + "].pointerId");
@@ -95,6 +100,8 @@ SimpleTest.waitForFocus(async () => {
         ok((coalescedEvent.clientX <= x+2) && (coalescedEvent.clientX >= x-2), "getCoalescedEvents()[" + i + "].clientX");
         ok((coalescedEvent.clientY <= y+2) && (coalescedEvent.clientY >= y-2), "getCoalescedEvents()[" + i + "].clientY");
       }
+      is(totalMovementX, ev.movementX, "Coalesced event movementX's should add up to event's movementX");
+      is(totalMovementY, ev.movementY, "Coalesced event movementY's should add up to event's movementY");
       resolve();
     }, { once: true });
   });
@@ -107,20 +114,21 @@ SimpleTest.waitForFocus(async () => {
   } catch (e) {}
   info(`target0.getBoundingClientRect()={${target0.getBoundingClientRect().x}, ${target0.getBoundingClientRect().y}}`);
 
+  target0.addEventListener("pointerup", (ev) => {
+    SimpleTest.finish();
+  }, { once: true });
+
   info("Synthesizing mouse moves....");
   synthesizeMouse(target0, 5, 5, {type: "mousemove"});
   synthesizeMouse(target0, 10, 10, {type: "mousemove"});
   synthesizeMouse(target0, 15, 15, {type: "mousemove"});
   synthesizeMouse(target0, 20, 20, {type: "mousemove"});
-  utils.restoreNormalRefresh();
-  await waitForPointerMove;
-
-  target0.addEventListener("pointerup", (ev) => {
-    SimpleTest.finish();
-  }, { once: true });
 
   info("Synthesizing a click....");
   synthesizeMouse(target0, 20, 20, {});
+
+  await waitForPointerMove;
+  utils.restoreNormalRefresh();
 });
 
 </script>

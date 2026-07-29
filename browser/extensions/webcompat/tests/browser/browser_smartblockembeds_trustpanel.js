@@ -7,7 +7,6 @@ add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["test.wait300msAfterTabSwitch", true],
-      ["browser.urlbar.trustPanel.featureGate", true],
       // Extend clickjacking delay for test because timer expiry can happen before we
       // check the toggle is disabled (especially in chaos mode).
       [SEC_DELAY_PREF, 1000],
@@ -70,7 +69,7 @@ add_task(async function test_smartblock_embed_replaced() {
   );
 
   // Click to toggle to unblock embed and wait for script to finish
-  await EventUtils.synthesizeMouseAtCenter(blockedEmbedToggle.buttonEl, {});
+  EventUtils.synthesizeMouseAtCenter(blockedEmbedToggle.buttonEl, {});
 
   await embedScriptFinished;
 
@@ -87,7 +86,7 @@ add_task(async function test_smartblock_embed_replaced() {
 
   await openProtectionsPanel(window);
 
-  await EventUtils.synthesizeMouseAtCenter(
+  EventUtils.synthesizeMouseAtCenter(
     document.getElementById("trustpanel-blocker-see-all"),
     {}
   );

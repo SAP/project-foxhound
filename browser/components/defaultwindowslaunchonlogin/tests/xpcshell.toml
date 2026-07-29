@@ -1,0 +1,8 @@
+[DEFAULT]
+skip-if = [
+    "os != 'win'",
+]
+
+firefox-appdir = "browser"
+
+["test_DefaultWindowsLaunchOnLogin.js"]

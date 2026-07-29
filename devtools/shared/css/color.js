@@ -6,11 +6,9 @@
 
 const COLOR_UNIT_PREF = "devtools.defaultColorUnit";
 const SPECIALVALUES = new Set([
+  ...InspectorUtils.getCSSWideKeywords(),
   "currentcolor",
-  "initial",
-  "inherit",
   "transparent",
-  "unset",
 ]);
 
 /**
@@ -83,6 +81,10 @@ class CssColor {
   #currentFormat;
   // A lower-cased copy of |authored|.
   #lowerCased = null;
+
+  get authored() {
+    return this.#authored;
+  }
 
   get hasAlpha() {
     if (!this.valid) {

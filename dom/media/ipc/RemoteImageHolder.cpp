@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -78,13 +76,36 @@ already_AddRefed<Image> RemoteImageHolder::DeserializeImage(
   if (sdBuffer.desc().type() == BufferDescriptor::TYCbCrDescriptor) {
     const YCbCrDescriptor& descriptor = sdBuffer.desc().get_YCbCrDescriptor();
 
-    size_t descriptorSize = ImageDataSerializer::ComputeYCbCrBufferSize(
+    Maybe<size_t> descriptorSize = ImageDataSerializer::ComputeYCbCrBufferSize(
         descriptor.display(), descriptor.ySize(), descriptor.yStride(),
         descriptor.cbCrSize(), descriptor.cbCrStride(), descriptor.yOffset(),
         descriptor.cbOffset(), descriptor.crOffset(), descriptor.colorDepth(),
         descriptor.chromaSubsampling());
-    if (NS_WARN_IF(descriptorSize == 0 || descriptorSize > bufferSize)) {
-      MOZ_ASSERT_UNREACHABLE("Buffer too small to fit descriptor!");
+    if (NS_WARN_IF(descriptorSize.isNothing() ||
+                   descriptorSize.value() > bufferSize)) {
+      // Skip assertion during gtests.
+      if (!PR_GetEnv("MOZ_RUN_GTEST")) {
+        MOZ_ASSERT_UNREACHABLE("Buffer too small to fit descriptor!");
+      }
+      return nullptr;
+    }
+
+    if (!IntRect(IntPoint(), descriptor.ySize())
+             .Contains(descriptor.display())) {
+      if (!PR_GetEnv("MOZ_RUN_GTEST")) {
+        MOZ_ASSERT_UNREACHABLE(
+            "YCbCr display rect exceeds Y plane dimensions!");
+      }
+      return nullptr;
+    }
+
+    auto croppedCbCr = ImageDataSerializer::GetCroppedCbCrSize(descriptor);
+    if (croppedCbCr.width > descriptor.cbCrSize().width ||
+        croppedCbCr.height > descriptor.cbCrSize().height) {
+      if (!PR_GetEnv("MOZ_RUN_GTEST")) {
+        MOZ_ASSERT_UNREACHABLE(
+            "YCbCr chroma dimensions exceed CbCr plane size!");
+      }
       return nullptr;
     }
 
@@ -116,19 +137,25 @@ already_AddRefed<Image> RemoteImageHolder::DeserializeImage(
   if (sdBuffer.desc().type() == BufferDescriptor::TRGBDescriptor) {
     const RGBDescriptor& descriptor = sdBuffer.desc().get_RGBDescriptor();
 
-    size_t descriptorSize = ImageDataSerializer::ComputeRGBBufferSize(
+    Maybe<size_t> descriptorSize = ImageDataSerializer::ComputeRGBBufferSize(
         descriptor.size(), descriptor.format());
-    if (NS_WARN_IF(descriptorSize == 0 || descriptorSize > bufferSize)) {
+    if (NS_WARN_IF(descriptorSize.isNothing() ||
+                   descriptorSize.value() > bufferSize)) {
       MOZ_ASSERT_UNREACHABLE("Buffer too small to fit descriptor!");
       return nullptr;
     }
 
     auto stride = ImageDataSerializer::ComputeRGBStride(
         descriptor.format(), descriptor.size().width);
+    if (stride.isNothing()) {
+      MOZ_ASSERT_UNREACHABLE("Invalid RBG stride!");
+      return nullptr;
+    }
+
     auto surface = MakeRefPtr<SourceSurfaceAlignedRawData>();
     if (NS_WARN_IF(!surface->Init(descriptor.size(), descriptor.format(),
                                   /* aClearMem */ false, /* aClearValue */ 0,
-                                  stride))) {
+                                  stride.value()))) {
       return nullptr;
     }
 
@@ -137,7 +164,7 @@ already_AddRefed<Image> RemoteImageHolder::DeserializeImage(
       return nullptr;
     }
 
-    if (NS_WARN_IF(!SwizzleData(buffer, stride, descriptor.format(),
+    if (NS_WARN_IF(!SwizzleData(buffer, stride.value(), descriptor.format(),
                                 map.GetData(), map.GetStride(),
                                 descriptor.format(), descriptor.size()))) {
       return nullptr;

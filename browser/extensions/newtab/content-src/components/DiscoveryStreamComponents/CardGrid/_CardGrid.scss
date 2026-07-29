@@ -207,6 +207,20 @@
   }
 }
 
+// @nova-cleanup(remove-conditional): Remove when sections are always enabled.
+// ds-header spans 1/-1 of ds-card-grid-container's auto-fill tracks.
+.nova-enabled .content .ds-card-grid-container .ds-header {
+  grid-column: 1 / -1;
+}
+
+// @nova-cleanup(remove-conditional): Remove when sections are always enabled.
+// ds-card-grid uses subgrid to inherit those tracks without restating the column definition.
+.nova-enabled .content .ds-card-grid-container .ds-card-grid {
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  row-gap: var(--space-xlarge);
+}
+
 .ds-layout {
   .ds-sub-header {
     margin-block-start: var(--space-xlarge);

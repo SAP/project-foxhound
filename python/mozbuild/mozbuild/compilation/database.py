@@ -193,6 +193,8 @@ class CompileDBBackend(CommonBackend):
     ):
         for f in unified_source_mapping:
             self._build_db_line(bindings_dir, None, self.environment, f[0], ".cpp")
+        for f in global_define_files:
+            self._build_db_line(bindings_dir, None, self.environment, f, ".cpp")
 
     COMPILERS = {
         ".c": "CC",

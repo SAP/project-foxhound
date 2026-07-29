@@ -253,11 +253,20 @@ class InspectorCommand {
     // Since this is only used for re-setting a selection after a page reloads, we can
     // put a timeout, in case there's an iframe that would take too much time to load,
     // and prevent the markup view to be populated.
-    const onTimeout = new Promise(res =>
-      setTimeout(res, timeoutInMs * getSystemInfo().timeoutMultiplier)
-    ).then(() => null);
+    let timeoutId;
+    const onTimeout = new Promise(res => {
+      timeoutId = setTimeout(
+        res,
+        timeoutInMs * getSystemInfo().timeoutMultiplier
+      );
+    }).then(() => null);
     const onQuerySelectors = querySelectors(rootNodeFront);
-    return Promise.race([onTimeout, onQuerySelectors]);
+    const result = await Promise.race([onTimeout, onQuerySelectors]);
+
+    // Make sure to clear the timeout in case onQuerySelectors resolved first.
+    clearTimeout(timeoutId);
+
+    return result;
   }
 
   /**

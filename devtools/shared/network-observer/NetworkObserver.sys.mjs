@@ -29,6 +29,8 @@ ChromeUtils.defineESModuleGetters(
       "resource://devtools/shared/network-observer/NetworkAuthListener.sys.mjs",
     NetworkHelper:
       "resource://devtools/shared/network-observer/NetworkHelper.sys.mjs",
+    NetworkLocalMode:
+      "resource://devtools/shared/network-observer/NetworkLocalMode.sys.mjs",
     NetworkOverride:
       "resource://devtools/shared/network-observer/NetworkOverride.sys.mjs",
     NetworkResponseListener:
@@ -128,6 +130,16 @@ export class NetworkObserver {
    * This will replace the content of some request with the content of local files.
    */
   #overrides = new Map();
+
+  /**
+   * Dictionary of all origins (string) mapped to a local folder, defined
+   * by its absolute path (string).
+   * Typically:
+   *   {
+   *     "firefox.localhost": "/home/me/hello-world",
+   *   }
+   */
+  #localModeMappings = {};
 
   /**
    * Used by NetworkHelper.parseSecurityInfo to skip decoding known certificates.
@@ -410,8 +422,9 @@ export class NetworkObserver {
       const httpActivity = this.#createOrGetActivityObject(channel);
       this.#createNetworkEvent(httpActivity);
 
-      // Handle overrides in http-on-before-connect because we need to redirect
+      // Handle both local mode and overrides in http-on-before-connect because we need to redirect
       // the request to the override before reaching the server.
+      this.#checkForLocalModeHook(httpActivity);
       this.#checkForContentOverride(httpActivity);
     }
   );
@@ -466,6 +479,21 @@ export class NetworkObserver {
       }
     }
   );
+
+  /**
+   * Check if the current channel matches any of local mode origins.
+   */
+  async #checkForLocalModeHook(httpActivity) {
+    const channel = httpActivity.channel;
+    const localFolderPath = this.#localModeMappings[channel.URI.host];
+
+    // Only intercept requests matching a local mode host name
+    if (!localFolderPath) {
+      return;
+    }
+
+    lazy.NetworkLocalMode.interceptChannelWithPath(channel, localFolderPath);
+  }
 
   /**
    * Check if the current channel has its content being overriden
@@ -1173,6 +1201,43 @@ export class NetworkObserver {
     this.#overrides.delete(url);
 
     ChromeUtils.clearResourceCache({ url });
+  }
+
+  /**
+   * Update the list of all local mode mappings.
+   * This is a dictionary where keys are origins (string)
+   * which are mapped to a local folder absolute path (string).
+   *   {
+   *     "firefox.localhost": "/home/me/hello-world",
+   *   }
+   *
+   * @param {object} mappings
+   */
+  setLocalModeMappings(mappings) {
+    // Unicode hostnames are converted into ASCII with "punycode"
+    // Given that Necko APIs are exposing ASCII hostnames, convert any unicode host
+    // into ASCII from here so that client/frontend can use unicode and not have
+    // to think about this implementation detail.
+    // For example: "ʂ.com" is converted into "xn--yoa.com"
+    const asciiMappings = {};
+    for (const origin in mappings) {
+      asciiMappings[new URL("https://" + origin).host] = mappings[origin];
+    }
+    this.#localModeMappings = asciiMappings;
+
+    // Clear in-memory cache, so that the subsequent requests aren't fetched
+    // from the http cache and issue plain new http requests that can be intercepted
+    // by the NetworkObserver logic to provide new content from a new local folder.
+    for (const origin in asciiMappings) {
+      const uri = Services.io.newURI("https://" + origin);
+      const principal = Services.scriptSecurityManager.createContentPrincipal(
+        uri,
+        {}
+      );
+      ChromeUtils.clearResourceCache({
+        principal,
+      });
+    }
   }
 
   /**

@@ -15,9 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -34,14 +32,12 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.theme.surfaceDimVariant
+import mozilla.components.compose.base.button.IconButton
 import org.mozilla.fenix.R
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.PreviewThemeProvider
 import org.mozilla.fenix.theme.Theme
 import mozilla.components.ui.icons.R as iconsR
-
-private val ROUNDED_CORNER_SHAPE = RoundedCornerShape(28.dp)
 
 /**
  * A full-width banner shown in the menu prompting the user to set Firefox as their default browser.
@@ -67,8 +63,8 @@ fun MenuBanner(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = ROUNDED_CORNER_SHAPE,
-        color = MaterialTheme.colorScheme.surfaceDimVariant,
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceBright,
     ) {
         Box {
             Row {
@@ -110,6 +106,7 @@ fun MenuBanner(
 
             IconButton(
                 onClick = onDismiss,
+                contentDescription = stringResource(id = R.string.browser_menu_default_banner_dismiss_promotion),
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .size(48.dp)
@@ -117,7 +114,7 @@ fun MenuBanner(
             ) {
                 Icon(
                     painter = painterResource(id = iconsR.drawable.mozac_ic_cross_20),
-                    contentDescription = stringResource(id = R.string.browser_menu_default_banner_dismiss_promotion),
+                    contentDescription = null,
                     modifier = Modifier
                         .padding(top = 8.dp, end = 12.dp)
                         .align(Alignment.TopEnd),

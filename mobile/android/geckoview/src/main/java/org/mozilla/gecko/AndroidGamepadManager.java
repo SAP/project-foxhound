@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -11,6 +10,7 @@ import android.util.SparseArray;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import androidx.annotation.UiThread;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Timer;
@@ -156,6 +156,7 @@ public class AndroidGamepadManager {
         });
   }
 
+  @UiThread
   /* package */ static void doStart(final Context context) {
     ThreadUtils.assertOnUiThread();
     if (!sStarted) {
@@ -176,6 +177,7 @@ public class AndroidGamepadManager {
         });
   }
 
+  @UiThread
   /* package */ static void doStop(final Context context) {
     ThreadUtils.assertOnUiThread();
     if (sStarted) {
@@ -186,6 +188,7 @@ public class AndroidGamepadManager {
     }
   }
 
+  @UiThread
   /* package */ static void handleGamepadAdded(final int deviceId, final byte[] gamepadHandle) {
     ThreadUtils.assertOnUiThread();
     if (!sStarted) {
@@ -235,6 +238,7 @@ public class AndroidGamepadManager {
     }
   }
 
+  @UiThread
   public static boolean handleMotionEvent(final MotionEvent ev) {
     ThreadUtils.assertOnUiThread();
     if (!sStarted) {
@@ -288,6 +292,7 @@ public class AndroidGamepadManager {
     return true;
   }
 
+  @UiThread
   public static boolean handleKeyEvent(final KeyEvent ev) {
     ThreadUtils.assertOnUiThread();
     if (!sStarted) {
@@ -358,6 +363,10 @@ public class AndroidGamepadManager {
   private static void addGamepad(final InputDevice device) {
     sPendingGamepads.put(device.getId(), new ArrayList<KeyEvent>());
     final byte[] gamepadId = nativeAddGamepad(device.getName());
+    if (gamepadId == null) {
+      // This might be race condition. GamepadPlatformService has gone away.
+      return;
+    }
     ThreadUtils.runOnUiThread(
         new Runnable() {
           @Override

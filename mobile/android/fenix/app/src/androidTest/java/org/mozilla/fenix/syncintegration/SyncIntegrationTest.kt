@@ -6,53 +6,36 @@ package org.mozilla.fenix.syncintegration
 
 import android.os.SystemClock.sleep
 import android.widget.EditText
-import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.espresso.matcher.ViewMatchers.withText
-import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
-import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiSelector
 import androidx.test.uiautomator.Until
-import okhttp3.mockwebserver.MockWebServer
 import org.hamcrest.Matchers.allOf
-import org.junit.After
-import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.R
 import org.mozilla.fenix.customannotations.SmokeTest
-import org.mozilla.fenix.helpers.AndroidAssetDispatcher
+import org.mozilla.fenix.helpers.FenixTestRule
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.TestAssetHelper
+import org.mozilla.fenix.helpers.TestHelper
 import org.mozilla.fenix.helpers.ext.waitNotNull
 import org.mozilla.fenix.ui.robots.accountSettings
 import org.mozilla.fenix.ui.robots.homeScreen
 import org.mozilla.fenix.ui.robots.settingsSubMenuLoginsAndPassword
+import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidComposeTestRuleV2
 
 @Suppress("RECEIVER_NULLABILITY_MISMATCH_BASED_ON_JAVA_ANNOTATIONS")
 class SyncIntegrationTest {
-    private lateinit var mDevice: UiDevice
-    private lateinit var mockWebServer: MockWebServer
+
+    @get:Rule(order = 0)
+    val fenixTestRule: FenixTestRule = FenixTestRule()
 
     @get:Rule
-    val composeTestRule = AndroidComposeTestRule(HomeActivityIntentTestRule()) { it.activity }
-
-    @Before
-    fun setUp() {
-        mDevice = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
-        mockWebServer = MockWebServer().apply {
-            dispatcher = AndroidAssetDispatcher()
-            start()
-        }
-    }
-
-    @After
-    fun tearDown() {
-        mockWebServer.shutdown()
-    }
+    val composeTestRule = AndroidComposeTestRuleV2(HomeActivityIntentTestRule()) { it.activity }
 
     // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/352905
     // History item Desktop -> Fenix
@@ -62,7 +45,7 @@ class SyncIntegrationTest {
         tapReturnToPreviousApp()
         // Let's wait until homescreen is shown to go to three dot menu
         TestAssetHelper.waitingTime
-        mDevice.waitNotNull(Until.findObjects(By.res("org.mozilla.fenix.debug:id/counter_root")))
+        TestHelper.mDevice.waitNotNull(Until.findObjects(By.res("org.mozilla.fenix.debug:id/counter_root")))
         homeScreen(composeTestRule) {
         }.openThreeDotMenu {
         }.clickHistoryButton {
@@ -87,7 +70,7 @@ class SyncIntegrationTest {
     @Test
     fun manageAccountSettingsTest() {
         signInFxSync()
-        mDevice.waitNotNull(Until.findObjects(By.text("Account")), TestAssetHelper.waitingTime)
+        TestHelper.mDevice.waitNotNull(Until.findObjects(By.text("Account")), TestAssetHelper.waitingTime)
 
         goToAccountSettings()
         // This function to be added to the robot once the status of checkboxes can be checked
@@ -101,7 +84,7 @@ class SyncIntegrationTest {
             verifySignOutButton()
             verifyDeviceName()
         }.disconnectAccount {
-            mDevice.waitNotNull(Until.findObjects(By.text("Settings")), TestAssetHelper.waitingTime)
+            TestHelper.mDevice.waitNotNull(Until.findObjects(By.text("Settings")), TestAssetHelper.waitingTime)
             verifySettingsView()
         }
     }
@@ -141,7 +124,7 @@ class SyncIntegrationTest {
 
     // Useful functions for the tests
     fun typeEmail() {
-        val emailInput = mDevice.findObject(
+        val emailInput = TestHelper.mDevice.findObject(
             UiSelector()
                 .instance(0)
                 .className(EditText::class.java),
@@ -153,12 +136,12 @@ class SyncIntegrationTest {
     }
 
     fun tapOnContinueButton() {
-        val continueButton = mDevice.findObject(By.res("submit-btn"))
+        val continueButton = TestHelper.mDevice.findObject(By.res("submit-btn"))
         continueButton.clickAndWait(Until.newWindow(), TestAssetHelper.waitingTime)
     }
 
     fun typePassword() {
-        val passwordInput = mDevice.findObject(
+        val passwordInput = TestHelper.mDevice.findObject(
             UiSelector()
                 .instance(0)
                 .className(EditText::class.java),
@@ -169,31 +152,31 @@ class SyncIntegrationTest {
     }
 
     fun tapOnSignIn() {
-        mDevice.waitNotNull(Until.findObjects(By.text("Sign in")))
+        TestHelper.mDevice.waitNotNull(Until.findObjects(By.text("Sign in")))
         // Let's tap on enter, sometimes depending on the device the sign in button is
         // hidden by the keyboard
-        mDevice.pressEnter()
+        TestHelper.mDevice.pressEnter()
     }
 
     fun historyAfterSyncIsShown() {
-        mDevice.waitNotNull(Until.findObjects(By.text("http://www.example.com/")), TestAssetHelper.waitingTime)
+        TestHelper.mDevice.waitNotNull(Until.findObjects(By.text("http://www.example.com/")), TestAssetHelper.waitingTime)
     }
 
     fun bookmarkAfterSyncIsShown() {
-        val bookmarkEntry = mDevice.findObject(By.text("Example Domain"))
+        val bookmarkEntry = TestHelper.mDevice.findObject(By.text("Example Domain"))
         bookmarkEntry.isEnabled()
     }
 
     fun tapReturnToPreviousApp() {
-        mDevice.waitNotNull(Until.findObjects(By.text("Save")), TestAssetHelper.waitingTime)
-        mDevice.waitNotNull(Until.findObjects(By.text("Settings")), TestAssetHelper.waitingTime)
+        TestHelper.mDevice.waitNotNull(Until.findObjects(By.text("Save")), TestAssetHelper.waitingTime)
+        TestHelper.mDevice.waitNotNull(Until.findObjects(By.text("Settings")), TestAssetHelper.waitingTime)
 
         // Wait until the Settings shows the account synced
-        mDevice.waitNotNull(Until.findObjects(By.text("Account")), TestAssetHelper.waitingTime)
-        mDevice.waitNotNull(Until.findObjects(By.res("org.mozilla.fenix.debug:id/email")), TestAssetHelper.waitingTime)
+        TestHelper.mDevice.waitNotNull(Until.findObjects(By.text("Account")), TestAssetHelper.waitingTime)
+        TestHelper.mDevice.waitNotNull(Until.findObjects(By.res("org.mozilla.fenix.debug:id/email")), TestAssetHelper.waitingTime)
         TestAssetHelper.waitingTime
         // Go to Homescreen
-        mDevice.pressBack()
+        TestHelper.mDevice.pressBack()
     }
 
     fun signInFxSync() {
@@ -213,7 +196,7 @@ class SyncIntegrationTest {
 
     fun goToAccountSettings() {
         enterAccountSettings()
-        mDevice.waitNotNull(Until.findObjects(By.text("Device name")), TestAssetHelper.waitingTime)
+        TestHelper.mDevice.waitNotNull(Until.findObjects(By.text("Device name")), TestAssetHelper.waitingTime)
     }
 }
 

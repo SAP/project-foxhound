@@ -44,7 +44,6 @@ class AccessibleFront extends FrontClassWithSpec(accessibleSpec) {
   get role() {
     return this._form.role;
   }
-
   get name() {
     return this._form.name;
   }
@@ -87,6 +86,10 @@ class AccessibleFront extends FrontClassWithSpec(accessibleSpec) {
 
   get checks() {
     return this._form.checks;
+  }
+
+  get level() {
+    return this._form.level;
   }
 
   form(form) {

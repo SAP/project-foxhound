@@ -129,8 +129,16 @@ JAR_digest_file(char *filename, JAR_Digest *dig)
     PK11_DigestBegin(sha1);
 
     while (1) {
-        if ((num = JAR_FREAD(fp, buf, FILECHUNQ)) == 0)
+        num = JAR_FREAD(fp, buf, FILECHUNQ);
+        if (num == 0)
             break;
+        if (num < 0) {
+            PK11_DestroyContext(md5, PR_TRUE);
+            PK11_DestroyContext(sha1, PR_TRUE);
+            PORT_Free(buf);
+            JAR_FCLOSE(fp);
+            return JAR_ERR_GENERAL;
+        }
 
         PK11_DigestOp(md5, buf, num);
         PK11_DigestOp(sha1, buf, num);
@@ -207,6 +215,10 @@ jar_create_pk7(CERTCertDBHandle *certdb, void *keydb, CERTCertificate *cert,
         int nb = JAR_FREAD(infp, buffer, sizeof buffer);
         if (nb == 0) { /* eof */
             break;
+        }
+        if (nb < 0) {
+            (*hashObj->destroy)(hashcx, PR_TRUE);
+            return JAR_ERR_GENERAL;
         }
         (*hashObj->update)(hashcx, buffer, nb);
     }

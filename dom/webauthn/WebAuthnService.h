@@ -6,7 +6,7 @@
 #define mozilla_dom_WebAuthnService_h_
 
 #include "AuthrsBridge_ffi.h"
-#include "mozilla/DataMutex.h"
+#include "WebAuthnArgs.h"
 #include "mozilla/StaticPrefs_security.h"
 #include "mozilla/dom/WebAuthnPromiseHolder.h"
 #include "nsIWebAuthnService.h"
@@ -32,8 +32,7 @@ class WebAuthnService final : public nsIWebAuthnService {
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIWEBAUTHNSERVICE
 
-  WebAuthnService()
-      : mTransactionState(Nothing(), "WebAuthnService::mTransactionState") {
+  WebAuthnService() {
     (void)authrs_service_constructor(getter_AddRefs(mAuthrsService));
 #if defined(XP_WIN)
     if (WinWebAuthnService::AreWebAuthNApisAvailable()) {
@@ -65,13 +64,29 @@ class WebAuthnService final : public nsIWebAuthnService {
     Maybe<nsCOMPtr<nsIWebAuthnRegisterResult>> registerResult;
     MozPromiseRequestHolder<WebAuthnRegisterPromise> childRegisterRequest;
   };
-  using TransactionStateMutex = DataMutex<Maybe<TransactionState>>;
-  TransactionStateMutex mTransactionState;
+
+  struct ConditionalGet {
+    uint64_t transactionId;
+    uint64_t browsingContextId;
+    nsCOMPtr<nsIWebAuthnSignArgs> signArgs;
+    nsCOMPtr<nsIWebAuthnSignPromise> signPromise;
+  };
+
+  // Main thread only:
+  // The current modal operation.
+  Maybe<TransactionState> mActiveTransaction;
+  // Pending conditional (autofill) GetAssertion requests, at most one per
+  // tab.
+  nsTArray<ConditionalGet> mConditionalGets;
 
   void ShowAttestationConsentPrompt(const nsString& aOrigin,
                                     uint64_t aTransactionId,
                                     uint64_t aBrowsingContextId);
-  void ResetLocked(const TransactionStateMutex::AutoLock& aGuard);
+  void RejectActiveRegisterPromise();
+  void ResetActiveTransaction();
+  Maybe<ConditionalGet> TakeConditionalByTid(uint64_t aTransactionId);
+  nsresult DispatchConditionalGetAssertion(const ConditionalGet& aPending,
+                                           nsIWebAuthnSignArgs* aArgs);
 
   nsIWebAuthnService* DefaultService() {
     if (StaticPrefs::security_webauth_webauthn_enable_softtoken()) {
@@ -80,14 +95,18 @@ class WebAuthnService final : public nsIWebAuthnService {
     return mPlatformService;
   }
 
+  // Returns the authrs_bridge service. This is the default service on some
+  // platforms, and it is used as a fallback to workaround platform specific
+  // bugs on others. It is also used for all commands related to the WebDriver
+  // Virtual Authenticator extension.
   nsIWebAuthnService* AuthrsService() { return mAuthrsService; }
 
-  nsIWebAuthnService* SelectedService() {
-    auto guard = mTransactionState.Lock();
-    if (guard->isSome()) {
-      return guard->ref().service;
-    }
-    return DefaultService();
+  // Returns the service backing the current active transaction. The caller is
+  // responsible for ensuring that there is an active transaction.
+  nsIWebAuthnService* ActiveService() {
+    MOZ_ASSERT(NS_IsMainThread());
+    MOZ_ASSERT(mActiveTransaction.isSome());
+    return mActiveTransaction.ref().service;
   }
 
   nsCOMPtr<nsIWebAuthnService> mAuthrsService;

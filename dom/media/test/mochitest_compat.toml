@@ -796,7 +796,6 @@ skip-if = [
 # that make the test fail.
 skip-if = [
   "os == 'android' && !is_emulator", # Bug 1860492
-  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && wmfme", # Bug 1889375
 ]
 
 ["test_constants.html"]
@@ -822,9 +821,6 @@ skip-if = [
 ["test_defaultMuted.html"]
 
 ["test_delay_load.html"]
-skip-if = [
-  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 1889376
-]
 
 ["test_duration_after_error.html"]
 
@@ -900,6 +896,7 @@ skip-if = [
 ["test_mozHasAudio.html"]
 skip-if = [
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug && wmfme && verify-standalone",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && debug && wmfme && verify-standalone",
 ]
 
 ["test_mp3_with_multiple_ID3v2.html"]
@@ -1006,6 +1003,9 @@ skip-if = [
 ["test_readyState.html"]
 
 ["test_referer.html"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && debug && wmfme", # Bug 2019640
+]
 
 ["test_reset_src.html"]
 

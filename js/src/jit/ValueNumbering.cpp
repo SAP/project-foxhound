@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "jit/ValueNumbering.h"
 
+#include "jit/BranchPruning.h"
 #include "jit/IonAnalysis.h"
 #include "jit/JitSpewer.h"
 #include "jit/MIRGenerator.h"
@@ -161,8 +160,10 @@ static void ReplaceAllUsesWith(MDefinition* from, MDefinition* to) {
   // solution. Does it make sense to find the common ref type between `(field
   // i31ref)` and `(field structref)`, potentially? Not really, but since
   // struct.get will trap on a null input anyway, it doesn't really matter.
-  to->setWasmRefType(wasm::MaybeRefType::greatestLowerBound(from->wasmRefType(),
-                                                            to->wasmRefType()));
+  wasm::MaybeRefType glb = wasm::MaybeRefType::greatestLowerBound(
+      from->wasmRefType(), to->wasmRefType());
+  MOZ_RELEASE_ASSERT(glb.isNothing() || glb.value().isInhabitable());
+  to->setWasmRefType(glb);
 
   // We don't need the extra setting of ImplicitlyUsed flags that the regular
   // replaceAllUsesWith does because we do it ourselves.
@@ -216,7 +217,7 @@ static bool BlockHasInterestingDefs(MBasicBlock* block) {
 // which look potentially interesting to GVN.
 static bool ScanDominatorsForDefs(MBasicBlock* block) {
   for (MBasicBlock* i = block;;) {
-    if (BlockHasInterestingDefs(block)) {
+    if (BlockHasInterestingDefs(i)) {
       return true;
     }
 
@@ -793,20 +794,19 @@ bool ValueNumberer::visitDefinition(MDefinition* def) {
       return false;
     }
 
+    wasm::MaybeRefType glb = wasm::MaybeRefType::greatestLowerBound(
+        def->wasmRefType(), sim->wasmRefType());
+    if (glb.isSome() && !glb.value().isInhabitable()) {
+      return true;
+    }
+
     bool isNewInstruction = sim->block() == nullptr;
 
     // If |sim| doesn't belong to a block, insert it next to |def|.
     if (isNewInstruction) {
 #ifdef DEBUG
-      if (sim->isObjectKeysLength() && def->isArrayLength()) {
-        // /!\ Exception: MArrayLength::foldsTo replaces a sequence of
-        // instructions containing an effectful instruction by an effectful
-        // instruction.
-      } else {
-        // Otherwise, a new |sim| node mustn't be effectful when |def| wasn't
-        // effectful.
-        MOZ_ASSERT_IF(sim->isEffectful(), def->isEffectful());
-      }
+      // A new |sim| node mustn't be effectful when |def| wasn't effectful.
+      MOZ_ASSERT_IF(sim->isEffectful(), def->isEffectful());
 #endif
 
       // If both instructions are effectful, |sim| must have stolen the resume
@@ -894,6 +894,12 @@ bool ValueNumberer::visitDefinition(MDefinition* def) {
   if (rep != def) {
     if (rep == nullptr) {
       return false;
+    }
+
+    wasm::MaybeRefType glb = wasm::MaybeRefType::greatestLowerBound(
+        def->wasmRefType(), rep->wasmRefType());
+    if (glb.isSome() && !glb.value().isInhabitable()) {
+      return true;
     }
 
     if (rep->isPhi()) {

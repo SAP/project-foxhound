@@ -289,10 +289,8 @@ add_task(async function test_simulation_cache() {
 
   await BrowserTestUtils.removeTab(tab);
 
-  // Wait for cache to expire.
-  info("Waiting for cache to expire");
-  /* eslint-disable mozilla/no-arbitrary-setTimeout */
-  await new Promise(resolve => setTimeout(resolve, 2000));
+  // Force-expire all cache entries.
+  UrlClassifierTestUtils.expireRealTimeSimulatorCache();
 
   // Third request should be sent again after cache expiry.
   resultPromise = waitForSimulationResult();
@@ -316,4 +314,110 @@ add_task(async function test_simulation_cache() {
 
   await BrowserTestUtils.removeTab(tab);
   UrlClassifierTestUtils.cleanupTestV5Entry();
+});
+
+// Test that the negative cache skips requests for previously-missed full hashes.
+add_task(async function test_negative_cache() {
+  info("Testing negative cache behavior");
+
+  UrlClassifierTestUtils.cleanRealTimeSimulatorCache();
+
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.safebrowsing.realTime.simulation.negativeCacheEnabled", true],
+      ["browser.safebrowsing.realTime.simulation.negativeCacheTTLSec", 1],
+      ["browser.safebrowsing.realTime.simulation.hitProbability", 0],
+    ],
+  });
+
+  await UrlClassifierTestUtils.addTestV5Entry();
+
+  // First request should be sent (nothing in negative cache yet).
+  let resultPromise = waitForSimulationResult();
+  let tab = BrowserTestUtils.addTab(gBrowser, TEST_URL);
+  let result = await resultPromise;
+
+  ok(result.wouldSendRequest, "First request should be sent");
+  Assert.greater(
+    result.requestBytes,
+    0,
+    "Request bytes should be greater than 0"
+  );
+
+  await BrowserTestUtils.removeTab(tab);
+
+  // Second request should be skipped due to negative cache.
+  resultPromise = waitForSimulationResult();
+  tab = BrowserTestUtils.addTab(gBrowser, TEST_URL);
+  result = await resultPromise;
+
+  ok(
+    !result.wouldSendRequest,
+    "Second request should be skipped by negative cache"
+  );
+  is(result.requestBytes, 0, "No request bytes for negative cache hit");
+  is(result.responseBytes, 0, "No response bytes for negative cache hit");
+
+  await BrowserTestUtils.removeTab(tab);
+
+  // Force-expire all cache entries.
+  UrlClassifierTestUtils.expireRealTimeSimulatorCache();
+
+  // Third request should be sent again after negative cache expiry.
+  resultPromise = waitForSimulationResult();
+  tab = BrowserTestUtils.addTab(gBrowser, TEST_URL);
+  result = await resultPromise;
+
+  ok(
+    result.wouldSendRequest,
+    "Third request should be sent after negative cache expiry"
+  );
+  Assert.greater(
+    result.requestBytes,
+    0,
+    "Request bytes should be greater than 0 after expiry"
+  );
+
+  await BrowserTestUtils.removeTab(tab);
+  UrlClassifierTestUtils.cleanupTestV5Entry();
+  await SpecialPowers.popPrefEnv();
+});
+
+// Test that the negative cache is not used when the pref is disabled.
+add_task(async function test_negative_cache_disabled() {
+  info("Testing negative cache is not used when disabled");
+
+  UrlClassifierTestUtils.cleanRealTimeSimulatorCache();
+
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.safebrowsing.realTime.simulation.negativeCacheEnabled", false],
+      ["browser.safebrowsing.realTime.simulation.hitProbability", 0],
+    ],
+  });
+
+  await UrlClassifierTestUtils.addTestV5Entry();
+
+  // First request should be sent.
+  let resultPromise = waitForSimulationResult();
+  let tab = BrowserTestUtils.addTab(gBrowser, TEST_URL);
+  let result = await resultPromise;
+
+  ok(result.wouldSendRequest, "First request should be sent");
+
+  await BrowserTestUtils.removeTab(tab);
+
+  // Second request should also be sent (negative cache disabled).
+  resultPromise = waitForSimulationResult();
+  tab = BrowserTestUtils.addTab(gBrowser, TEST_URL);
+  result = await resultPromise;
+
+  ok(
+    result.wouldSendRequest,
+    "Second request should still be sent when negative cache is disabled"
+  );
+
+  await BrowserTestUtils.removeTab(tab);
+  UrlClassifierTestUtils.cleanupTestV5Entry();
+  await SpecialPowers.popPrefEnv();
 });

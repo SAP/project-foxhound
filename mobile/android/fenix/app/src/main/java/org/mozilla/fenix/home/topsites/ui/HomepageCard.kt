@@ -6,7 +6,6 @@ package org.mozilla.fenix.home.topsites.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardColors
 import androidx.compose.material3.CardDefaults
@@ -18,12 +17,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
 
-private val homepageCardRadius = 16.dp
-private val homepageCardImageRadius = 12.dp
 private val cardElevation = 6.dp
 
-private val homepageCardShape = RoundedCornerShape(homepageCardRadius)
-val homepageCardImageShape = RoundedCornerShape(homepageCardImageRadius)
+private val homepageCardShape: Shape
+    @Composable
+    get() = MaterialTheme.shapes.large
+
+val homepageCardImageShape: Shape
+    @Composable
+    get() = MaterialTheme.shapes.medium
 
 /**
  * Card for use on the homepage, with the default style including a border and rounded corner shape.

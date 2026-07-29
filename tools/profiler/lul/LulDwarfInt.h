@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
-
 // Copyright (c) 2008, 2010 Google Inc. All Rights Reserved.
 //
 // Redistribution and use in source and binary forms, with or without

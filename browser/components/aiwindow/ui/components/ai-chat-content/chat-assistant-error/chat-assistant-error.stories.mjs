@@ -9,9 +9,8 @@ export default {
   title: "Domain-specific UI Widgets/AI Window/Chat Assistant Error",
   component: "chat-assistant-error",
   argTypes: {
-    errorStatus: {
-      control: "select",
-      options: [400, 413, 429, 500],
+    error: {
+      control: "object",
     },
     actionButton: {
       control: "object",
@@ -22,21 +21,20 @@ export default {
   },
   parameters: {
     fluent: `
-smartwindow-assistant-error-generic-header = We could not proceed with your request, please try again.
-smartwindow-assistant-error-budget-header = You’ve hit the maximum number of interactions allowed in a single day. Your access will reset at midnight ET.
-smartwindow-assistant-error-budget-body = You can still search and navigate in Smart Window but chat functionality will be limited.
-smartwindow-assistant-error-long-message-header = This chat has reached the maximum length. Clear the chat or start a new conversation to continue.
-smartwindow-assistant-error-connection-header = Connection was lost or unsuccessful. Check your connection and try again.
-smartwindow-retry-btn = Retry
-smartwindow-switch-btn = Switch to Classic Window
-smartwindow-clear-btn = Clear chat
+smartwindow-assistant-error-generic-header = Something went wrong. Please try again.
+smartwindow-assistant-error-budget-header = You’ve reached today’s chat limit.
+smartwindow-assistant-error-budget-body = You can still browse in this window. Chat will be available again after midnight ET.
+smartwindow-assistant-error-many-requests-header = Please wait a moment and try again. Too many messages were sent in a short time.
+smartwindow-assistant-error-max-length-header = It’s time to start a new chat. This one’s reached its length limit.
+smartwindow-retry-btn = Try Again
+smartwindow-clear-btn = New chat
     `,
   },
 };
 
-const Template = ({ errorStatus, errorText, actionButton }) => html`
+const Template = ({ error, errorText, actionButton }) => html`
   <chat-assistant-error
-    .errorStatus=${errorStatus}
+    .error=${error}
     .errorText=${errorText}
     .actionButton=${actionButton}
   ></chat-assistant-error>
@@ -44,41 +42,47 @@ const Template = ({ errorStatus, errorText, actionButton }) => html`
 
 export const Default = Template.bind({});
 Default.args = {
-  errorStatus: 400,
+  error: {
+    error: "generic error message that is not a number",
+  },
   errorText: {
     header: "smartwindow-assistant-error-generic-header",
   },
-  actionButton: null,
+  actionButton: {
+    label: "smartwindow-retry-btn",
+  },
 };
 
 export const Budget = Template.bind({});
 Budget.args = {
-  errorStatus: 429,
+  error: {
+    error: 1,
+  },
   errorText: {
     header: "smartwindow-assistant-error-budget-header",
     body: "smartwindow-assistant-error-budget-body",
   },
-  actionButton: {
-    label: "smartwindow-switch-btn",
+};
+
+export const ManyRequests = Template.bind({});
+ManyRequests.args = {
+  error: {
+    error: 2,
+  },
+  errorText: {
+    header: "smartwindow-assistant-error-many-requests-header",
   },
 };
 
-export const Long = Template.bind({});
-Long.args = {
-  errorStatus: 413,
-  errorText: {
-    header: "smartwindow-assistant-error-long-message-header",
+export const MaxLength = Template.bind({});
+MaxLength.args = {
+  error: {
+    error: 3,
   },
-  actionButton: null,
-};
-
-export const Connection = Template.bind({});
-Connection.args = {
-  errorStatus: 500,
   errorText: {
-    header: "smartwindow-assistant-error-connection-header",
+    header: "smartwindow-assistant-error-max-length-header",
   },
   actionButton: {
-    label: "smartwindow-retry-btn",
+    label: "smartwindow-clear-btn",
   },
 };

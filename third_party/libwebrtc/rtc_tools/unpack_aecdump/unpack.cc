@@ -97,6 +97,12 @@ ABSL_FLAG(bool,
     fprintf(settings_file, "  " #field_name ": %f\n", msg.field_name()); \
   }
 
+#define PRINT_CONFIG_STRING(field_name)               \
+  if (msg.has_##field_name()) {                       \
+    fprintf(settings_file, "  " #field_name ": %s\n", \
+            msg.field_name().c_str());                \
+  }
+
 namespace webrtc {
 
 using audioproc::Event;
@@ -218,7 +224,7 @@ class RuntimeSettingWriter {
     if (file_ == nullptr) {
       StringBuilder file_name;
       file_name << setting_name_ << frame_offset_ << ".txt";
-      file_ = OpenFile(file_name.str(), "wb");
+      file_ = OpenFile(file_name.Release(), "wb");
     }
 
     // Time in the current WAV file, in seconds.
@@ -299,7 +305,7 @@ std::string GetWavFileIndex(int init_index, int frame_count) {
   } else {
     suffix << frame_count;
   }
-  return suffix.str();
+  return suffix.Release();
 }
 
 }  // namespace
@@ -338,7 +344,7 @@ int do_main(int argc, char* argv[]) {
   StringBuilder callorder_raw_name;
   callorder_raw_name << absl::GetFlag(FLAGS_callorder_file) << ".char";
   FILE* callorder_char_file = WritingCallOrderFile()
-                                  ? OpenFile(callorder_raw_name.str(), "wb")
+                                  ? OpenFile(callorder_raw_name.Release(), "wb")
                                   : nullptr;
   FILE* settings_file = OpenFile(absl::GetFlag(FLAGS_settings_file), "wb");
 
@@ -507,9 +513,6 @@ int do_main(int argc, char* argv[]) {
       PRINT_CONFIG(aec_drift_compensation_enabled);
       PRINT_CONFIG(aec_extended_filter_enabled);
       PRINT_CONFIG(aec_suppression_level);
-      PRINT_CONFIG(aecm_enabled);
-      PRINT_CONFIG(aecm_comfort_noise_enabled);
-      PRINT_CONFIG(aecm_routing_mode);
       PRINT_CONFIG(agc_enabled);
       PRINT_CONFIG(agc_mode);
       PRINT_CONFIG(agc_limiter_enabled);
@@ -520,11 +523,9 @@ int do_main(int argc, char* argv[]) {
       PRINT_CONFIG(transient_suppression_enabled);
       PRINT_CONFIG(pre_amplifier_enabled);
       PRINT_CONFIG_FLOAT(pre_amplifier_fixed_gain_factor);
+      PRINT_CONFIG_STRING(experiments_description);
+      PRINT_CONFIG_STRING(api_config_string);
 
-      if (msg.has_experiments_description()) {
-        fprintf(settings_file, "  experiments_description: %s\n",
-                msg.experiments_description().c_str());
-      }
     } else if (event_msg.type() == Event::INIT) {
       if (!event_msg.has_init()) {
         printf("Corrupt input file: Init missing.\n");
@@ -578,21 +579,21 @@ int do_main(int argc, char* argv[]) {
         StringBuilder reverse_name;
         reverse_name << absl::GetFlag(FLAGS_reverse_file) << suffix << ".wav";
         reverse_wav_file.reset(new WavWriter(
-            reverse_name.str(), reverse_sample_rate, num_reverse_channels));
+            reverse_name.Release(), reverse_sample_rate, num_reverse_channels));
         StringBuilder input_name;
         input_name << absl::GetFlag(FLAGS_input_file) << suffix << ".wav";
-        input_wav_file.reset(new WavWriter(input_name.str(), input_sample_rate,
-                                           num_input_channels));
+        input_wav_file.reset(new WavWriter(
+            input_name.Release(), input_sample_rate, num_input_channels));
         StringBuilder output_name;
         output_name << absl::GetFlag(FLAGS_output_file) << suffix << ".wav";
         output_wav_file.reset(new WavWriter(
-            output_name.str(), output_sample_rate, num_output_channels));
+            output_name.Release(), output_sample_rate, num_output_channels));
 
         if (WritingCallOrderFile()) {
           StringBuilder callorder_name;
           callorder_name << absl::GetFlag(FLAGS_callorder_file) << suffix
                          << ".char";
-          callorder_char_file = OpenFile(callorder_name.str(), "wb");
+          callorder_char_file = OpenFile(callorder_name.Release(), "wb");
         }
 
         if (WritingRuntimeSettingFiles()) {

@@ -8,7 +8,6 @@ import re
 # ruff linter deprecates List, Tuple required for Python 3.8 compatibility
 from typing import Callable, Dict, List, Optional, Tuple  # noqa UP035
 
-from mozinfo.platforminfo import android_api_to_os_version
 from tomlkit.items import Array, Table
 from tomlkit.toml_document import TOMLDocument
 
@@ -351,6 +350,8 @@ def idiomatic_condition(cond: str, condition: str) -> TupleOptStrListStr:
 
     # Handle special cases
     if android_version is not None:
+        from mozinfo.platforminfo import android_api_to_os_version
+
         v = android_api_to_os_version(android_version)
         if os is None:
             os = "android"

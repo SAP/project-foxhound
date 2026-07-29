@@ -249,6 +249,78 @@ assert_invalid(
 );
 
 // ./test/core/gc/type-subtyping.wast:229
+assert_invalid(
+  () => instantiate(`(module (func (param (ref null nofunc)) (result (ref null none)) (local.get 0)))`),
+  `type mismatch`,
+);
+
+// ./test/core/gc/type-subtyping.wast:233
+assert_invalid(
+  () => instantiate(`(module (func (param (ref null nofunc)) (result (ref null any)) (local.get 0)))`),
+  `type mismatch`,
+);
+
+// ./test/core/gc/type-subtyping.wast:237
+assert_invalid(
+  () => instantiate(`(module (func (param (ref null none)) (result (ref null nofunc)) (local.get 0)))`),
+  `type mismatch`,
+);
+
+// ./test/core/gc/type-subtyping.wast:241
+assert_invalid(
+  () => instantiate(`(module (func (param (ref null none)) (result (ref null func)) (local.get 0)))`),
+  `type mismatch`,
+);
+
+// ./test/core/gc/type-subtyping.wast:246
+assert_invalid(
+  () => instantiate(`(module (func (param (ref null none)) (result (ref null noextern)) (local.get 0)))`),
+  `type mismatch`,
+);
+
+// ./test/core/gc/type-subtyping.wast:250
+assert_invalid(
+  () => instantiate(`(module (func (param (ref null none)) (result (ref null extern)) (local.get 0)))`),
+  `type mismatch`,
+);
+
+// ./test/core/gc/type-subtyping.wast:254
+assert_invalid(
+  () => instantiate(`(module (func (param (ref null noextern)) (result (ref null none)) (local.get 0)))`),
+  `type mismatch`,
+);
+
+// ./test/core/gc/type-subtyping.wast:258
+assert_invalid(
+  () => instantiate(`(module (func (param (ref null noextern)) (result (ref null any)) (local.get 0)))`),
+  `type mismatch`,
+);
+
+// ./test/core/gc/type-subtyping.wast:263
+assert_invalid(
+  () => instantiate(`(module (func (param (ref null nofunc)) (result (ref null noextern)) (local.get 0)))`),
+  `type mismatch`,
+);
+
+// ./test/core/gc/type-subtyping.wast:267
+assert_invalid(
+  () => instantiate(`(module (func (param (ref null nofunc)) (result (ref null extern)) (local.get 0)))`),
+  `type mismatch`,
+);
+
+// ./test/core/gc/type-subtyping.wast:271
+assert_invalid(
+  () => instantiate(`(module (func (param (ref null noextern)) (result (ref null nofunc)) (local.get 0)))`),
+  `type mismatch`,
+);
+
+// ./test/core/gc/type-subtyping.wast:275
+assert_invalid(
+  () => instantiate(`(module (func (param (ref null noextern)) (result (ref null func)) (local.get 0)))`),
+  `type mismatch`,
+);
+
+// ./test/core/gc/type-subtyping.wast:283
 let $14 = instantiate(`(module
   (type \$t0 (sub (func (result (ref null func)))))
   (rec (type \$t1 (sub \$t0 (func (result (ref null \$t1))))))
@@ -303,28 +375,28 @@ let $14 = instantiate(`(module
   )
 )`);
 
-// ./test/core/gc/type-subtyping.wast:282
+// ./test/core/gc/type-subtyping.wast:336
 assert_return(() => invoke($14, `run`, []), []);
 
-// ./test/core/gc/type-subtyping.wast:283
+// ./test/core/gc/type-subtyping.wast:337
 assert_trap(() => invoke($14, `fail1`, []), `indirect call type mismatch`);
 
-// ./test/core/gc/type-subtyping.wast:284
+// ./test/core/gc/type-subtyping.wast:338
 assert_trap(() => invoke($14, `fail2`, []), `indirect call type mismatch`);
 
-// ./test/core/gc/type-subtyping.wast:285
+// ./test/core/gc/type-subtyping.wast:339
 assert_trap(() => invoke($14, `fail3`, []), `indirect call type mismatch`);
 
-// ./test/core/gc/type-subtyping.wast:286
+// ./test/core/gc/type-subtyping.wast:340
 assert_trap(() => invoke($14, `fail4`, []), `cast failure`);
 
-// ./test/core/gc/type-subtyping.wast:287
+// ./test/core/gc/type-subtyping.wast:341
 assert_trap(() => invoke($14, `fail5`, []), `cast failure`);
 
-// ./test/core/gc/type-subtyping.wast:288
+// ./test/core/gc/type-subtyping.wast:342
 assert_trap(() => invoke($14, `fail6`, []), `cast failure`);
 
-// ./test/core/gc/type-subtyping.wast:290
+// ./test/core/gc/type-subtyping.wast:344
 let $15 = instantiate(`(module
   (type \$t1 (sub (func)))
   (type \$t2 (sub final (func)))
@@ -350,19 +422,19 @@ let $15 = instantiate(`(module
   )
 )`);
 
-// ./test/core/gc/type-subtyping.wast:314
+// ./test/core/gc/type-subtyping.wast:368
 assert_trap(() => invoke($15, `fail1`, []), `indirect call type mismatch`);
 
-// ./test/core/gc/type-subtyping.wast:315
+// ./test/core/gc/type-subtyping.wast:369
 assert_trap(() => invoke($15, `fail2`, []), `indirect call type mismatch`);
 
-// ./test/core/gc/type-subtyping.wast:316
+// ./test/core/gc/type-subtyping.wast:370
 assert_trap(() => invoke($15, `fail3`, []), `cast failure`);
 
-// ./test/core/gc/type-subtyping.wast:317
+// ./test/core/gc/type-subtyping.wast:371
 assert_trap(() => invoke($15, `fail4`, []), `cast failure`);
 
-// ./test/core/gc/type-subtyping.wast:319
+// ./test/core/gc/type-subtyping.wast:373
 let $16 = instantiate(`(module
   (type \$t1 (sub (func)))
   (type \$t2 (sub \$t1 (func)))
@@ -389,16 +461,16 @@ let $16 = instantiate(`(module
   )
 )`);
 
-// ./test/core/gc/type-subtyping.wast:344
+// ./test/core/gc/type-subtyping.wast:398
 assert_return(() => invoke($16, `run`, []), []);
 
-// ./test/core/gc/type-subtyping.wast:345
+// ./test/core/gc/type-subtyping.wast:399
 assert_trap(() => invoke($16, `fail1`, []), `indirect call type mismatch`);
 
-// ./test/core/gc/type-subtyping.wast:346
+// ./test/core/gc/type-subtyping.wast:400
 assert_trap(() => invoke($16, `fail2`, []), `indirect call type mismatch`);
 
-// ./test/core/gc/type-subtyping.wast:348
+// ./test/core/gc/type-subtyping.wast:402
 let $17 = instantiate(`(module
   (rec (type \$f1 (sub (func))) (type (struct (field (ref \$f1)))))
   (rec (type \$f2 (sub (func))) (type (struct (field (ref \$f2)))))
@@ -410,10 +482,10 @@ let $17 = instantiate(`(module
   )
 )`);
 
-// ./test/core/gc/type-subtyping.wast:358
+// ./test/core/gc/type-subtyping.wast:412
 assert_return(() => invoke($17, `run`, []), [value("i32", 1)]);
 
-// ./test/core/gc/type-subtyping.wast:360
+// ./test/core/gc/type-subtyping.wast:414
 let $18 = instantiate(`(module
   (rec (type \$f1 (sub (func))) (type \$s1 (sub (struct (field (ref \$f1))))))
   (rec (type \$f2 (sub (func))) (type \$s2 (sub (struct (field (ref \$f2))))))
@@ -431,10 +503,10 @@ let $18 = instantiate(`(module
   )
 )`);
 
-// ./test/core/gc/type-subtyping.wast:376
+// ./test/core/gc/type-subtyping.wast:430
 assert_return(() => invoke($18, `run`, []), [value("i32", 1)]);
 
-// ./test/core/gc/type-subtyping.wast:378
+// ./test/core/gc/type-subtyping.wast:432
 let $19 = instantiate(`(module
   (rec (type \$f1 (sub (func))) (type (struct (field (ref \$f1)))))
   (rec (type \$f2 (sub (func))) (type (struct (field (ref \$f1)))))
@@ -446,10 +518,10 @@ let $19 = instantiate(`(module
   )
 )`);
 
-// ./test/core/gc/type-subtyping.wast:388
+// ./test/core/gc/type-subtyping.wast:442
 assert_return(() => invoke($19, `run`, []), [value("i32", 0)]);
 
-// ./test/core/gc/type-subtyping.wast:390
+// ./test/core/gc/type-subtyping.wast:444
 let $20 = instantiate(`(module
   (rec (type \$f1 (sub (func))) (type (struct (field (ref \$f1)))))
   (rec (type \$f2 (sub (func))) (type (struct (field (ref \$f2)))))
@@ -460,10 +532,10 @@ let $20 = instantiate(`(module
   )
 )`);
 
-// ./test/core/gc/type-subtyping.wast:399
+// ./test/core/gc/type-subtyping.wast:453
 assert_return(() => invoke($20, `run`, []), [value("i32", 1)]);
 
-// ./test/core/gc/type-subtyping.wast:401
+// ./test/core/gc/type-subtyping.wast:455
 let $21 = instantiate(`(module
   (rec (type \$f1 (sub (func))) (type \$s1 (sub (struct (field (ref \$f1))))))
   (rec (type \$f2 (sub (func))) (type \$s2 (sub (struct (field (ref \$f2))))))
@@ -483,10 +555,10 @@ let $21 = instantiate(`(module
   )
 )`);
 
-// ./test/core/gc/type-subtyping.wast:419
+// ./test/core/gc/type-subtyping.wast:473
 assert_return(() => invoke($21, `run`, []), [value("i32", 1), value("i32", 1)]);
 
-// ./test/core/gc/type-subtyping.wast:422
+// ./test/core/gc/type-subtyping.wast:476
 let $22 = instantiate(`(module
   (rec (type \$f11 (sub (func (result (ref func))))) (type \$f12 (sub \$f11 (func (result (ref \$f11))))))
   (rec (type \$f21 (sub (func (result (ref func))))) (type \$f22 (sub \$f21 (func (result (ref \$f21))))))
@@ -500,13 +572,13 @@ let $22 = instantiate(`(module
   )
 )`);
 
-// ./test/core/gc/type-subtyping.wast:434
+// ./test/core/gc/type-subtyping.wast:488
 assert_return(
   () => invoke($22, `run`, []),
   [value("i32", 1), value("i32", 1), value("i32", 1), value("i32", 1)],
 );
 
-// ./test/core/gc/type-subtyping.wast:438
+// ./test/core/gc/type-subtyping.wast:492
 let $23 = instantiate(`(module
   (rec (type \$f11 (sub (func (result (ref func))))) (type \$f12 (sub \$f11 (func (result (ref \$f11))))))
   (rec (type \$f21 (sub (func (result (ref func))))) (type \$f22 (sub \$f21 (func (result (ref \$f21))))))
@@ -526,7 +598,7 @@ let $23 = instantiate(`(module
   )
 )`);
 
-// ./test/core/gc/type-subtyping.wast:456
+// ./test/core/gc/type-subtyping.wast:510
 assert_return(
   () => invoke($23, `run`, []),
   [
@@ -541,7 +613,7 @@ assert_return(
   ],
 );
 
-// ./test/core/gc/type-subtyping.wast:461
+// ./test/core/gc/type-subtyping.wast:515
 let $24 = instantiate(`(module
   (rec (type \$f11 (sub (func))) (type \$f12 (sub \$f11 (func))))
   (rec (type \$f21 (sub (func))) (type \$f22 (sub \$f11 (func))))
@@ -551,10 +623,10 @@ let $24 = instantiate(`(module
   )
 )`);
 
-// ./test/core/gc/type-subtyping.wast:469
+// ./test/core/gc/type-subtyping.wast:523
 assert_return(() => invoke($24, `run`, []), [value("i32", 0)]);
 
-// ./test/core/gc/type-subtyping.wast:471
+// ./test/core/gc/type-subtyping.wast:525
 let $25 = instantiate(`(module
   (rec (type \$f01 (sub (func))) (type \$f02 (sub \$f01 (func))))
   (rec (type \$f11 (sub (func))) (type \$f12 (sub \$f01 (func))))
@@ -565,10 +637,10 @@ let $25 = instantiate(`(module
   )
 )`);
 
-// ./test/core/gc/type-subtyping.wast:480
+// ./test/core/gc/type-subtyping.wast:534
 assert_return(() => invoke($25, `run`, []), [value("i32", 0)]);
 
-// ./test/core/gc/type-subtyping.wast:486
+// ./test/core/gc/type-subtyping.wast:540
 let $26 = instantiate(`(module
   (type \$t0 (sub (func (result (ref null func)))))
   (rec (type \$t1 (sub \$t0 (func (result (ref null \$t1))))))
@@ -579,10 +651,10 @@ let $26 = instantiate(`(module
   (func (export "f2") (type \$t2) (ref.null \$t2))
 )`);
 
-// ./test/core/gc/type-subtyping.wast:495
+// ./test/core/gc/type-subtyping.wast:549
 register($26, `M`);
 
-// ./test/core/gc/type-subtyping.wast:497
+// ./test/core/gc/type-subtyping.wast:551
 let $27 = instantiate(`(module
   (type \$t0 (sub (func (result (ref null func)))))
   (rec (type \$t1 (sub \$t0 (func (result (ref null \$t1))))))
@@ -596,7 +668,7 @@ let $27 = instantiate(`(module
   (func (import "M" "f2") (type \$t2))
 )`);
 
-// ./test/core/gc/type-subtyping.wast:510
+// ./test/core/gc/type-subtyping.wast:564
 assert_unlinkable(
   () => instantiate(`(module
     (type \$t0 (sub (func (result (ref null func)))))
@@ -607,7 +679,7 @@ assert_unlinkable(
   `incompatible import type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:520
+// ./test/core/gc/type-subtyping.wast:574
 assert_unlinkable(
   () => instantiate(`(module
     (type \$t0 (sub (func (result (ref null func)))))
@@ -618,7 +690,7 @@ assert_unlinkable(
   `incompatible import type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:530
+// ./test/core/gc/type-subtyping.wast:584
 assert_unlinkable(
   () => instantiate(`(module
     (type \$t0 (sub (func (result (ref null func)))))
@@ -629,7 +701,7 @@ assert_unlinkable(
   `incompatible import type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:540
+// ./test/core/gc/type-subtyping.wast:594
 let $28 = instantiate(`(module
   (type \$t1 (sub (func)))
   (type \$t2 (sub final (func)))
@@ -637,10 +709,10 @@ let $28 = instantiate(`(module
   (func (export "f2") (type \$t2))
 )`);
 
-// ./test/core/gc/type-subtyping.wast:546
+// ./test/core/gc/type-subtyping.wast:600
 register($28, `M2`);
 
-// ./test/core/gc/type-subtyping.wast:548
+// ./test/core/gc/type-subtyping.wast:602
 assert_unlinkable(
   () => instantiate(`(module
     (type \$t1 (sub (func)))
@@ -650,7 +722,7 @@ assert_unlinkable(
   `incompatible import type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:556
+// ./test/core/gc/type-subtyping.wast:610
 assert_unlinkable(
   () => instantiate(`(module
     (type \$t1 (sub (func)))
@@ -660,24 +732,24 @@ assert_unlinkable(
   `incompatible import type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:566
+// ./test/core/gc/type-subtyping.wast:620
 let $29 = instantiate(`(module
   (rec (type \$f2 (sub (func))) (type (struct (field (ref \$f2)))))
   (rec (type \$g2 (sub \$f2 (func))) (type (struct)))
   (func (export "g") (type \$g2))
 )`);
 
-// ./test/core/gc/type-subtyping.wast:571
+// ./test/core/gc/type-subtyping.wast:625
 register($29, `M3`);
 
-// ./test/core/gc/type-subtyping.wast:572
+// ./test/core/gc/type-subtyping.wast:626
 let $30 = instantiate(`(module
   (rec (type \$f1 (sub (func))) (type (struct (field (ref \$f1)))))
   (rec (type \$g1 (sub \$f1 (func))) (type (struct)))
   (func (import "M3" "g") (type \$g1))
 )`);
 
-// ./test/core/gc/type-subtyping.wast:578
+// ./test/core/gc/type-subtyping.wast:632
 let $31 = instantiate(`(module
   (rec (type \$f1 (sub (func))) (type \$s1 (sub (struct (field (ref \$f1))))))
   (rec (type \$f2 (sub (func))) (type \$s2 (sub (struct (field (ref \$f2))))))
@@ -688,10 +760,10 @@ let $31 = instantiate(`(module
   (func (export "g") (type \$g2))
 )`);
 
-// ./test/core/gc/type-subtyping.wast:587
+// ./test/core/gc/type-subtyping.wast:641
 register($31, `M4`);
 
-// ./test/core/gc/type-subtyping.wast:588
+// ./test/core/gc/type-subtyping.wast:642
 let $32 = instantiate(`(module
   (rec (type \$f1 (sub (func))) (type \$s1 (sub (struct (field (ref \$f1))))))
   (rec (type \$f2 (sub (func))) (type \$s2 (sub (struct (field (ref \$f2))))))
@@ -702,7 +774,7 @@ let $32 = instantiate(`(module
   (func (import "M4" "g") (type \$g1))
 )`);
 
-// ./test/core/gc/type-subtyping.wast:598
+// ./test/core/gc/type-subtyping.wast:652
 let $33 = instantiate(`(module
   (rec (type \$f1 (sub (func))) (type (struct (field (ref \$f1)))))
   (rec (type \$f2 (sub (func))) (type (struct (field (ref \$f1)))))
@@ -710,10 +782,10 @@ let $33 = instantiate(`(module
   (func (export "g") (type \$g2))
 )`);
 
-// ./test/core/gc/type-subtyping.wast:604
+// ./test/core/gc/type-subtyping.wast:658
 register($33, `M5`);
 
-// ./test/core/gc/type-subtyping.wast:605
+// ./test/core/gc/type-subtyping.wast:659
 assert_unlinkable(
   () => instantiate(`(module
     (rec (type \$f1 (sub (func))) (type (struct (field (ref \$f1)))))
@@ -723,7 +795,7 @@ assert_unlinkable(
   `incompatible import type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:614
+// ./test/core/gc/type-subtyping.wast:668
 let $34 = instantiate(`(module
   (rec (type \$f1 (sub (func))) (type (struct (field (ref \$f1)))))
   (rec (type \$f2 (sub (func))) (type (struct (field (ref \$f2)))))
@@ -731,10 +803,10 @@ let $34 = instantiate(`(module
   (func (export "g") (type \$g))
 )`);
 
-// ./test/core/gc/type-subtyping.wast:620
+// ./test/core/gc/type-subtyping.wast:674
 register($34, `M6`);
 
-// ./test/core/gc/type-subtyping.wast:621
+// ./test/core/gc/type-subtyping.wast:675
 let $35 = instantiate(`(module
   (rec (type \$f1 (sub (func))) (type (struct (field (ref \$f1)))))
   (rec (type \$f2 (sub (func))) (type (struct (field (ref \$f2)))))
@@ -742,7 +814,7 @@ let $35 = instantiate(`(module
   (func (import "M6" "g") (type \$f1))
 )`);
 
-// ./test/core/gc/type-subtyping.wast:628
+// ./test/core/gc/type-subtyping.wast:682
 let $36 = instantiate(`(module
   (rec (type \$f1 (sub (func))) (type \$s1 (sub (struct (field (ref \$f1))))))
   (rec (type \$f2 (sub (func))) (type \$s2 (sub (struct (field (ref \$f2))))))
@@ -754,10 +826,10 @@ let $36 = instantiate(`(module
   (func (export "h") (type \$h))
 )`);
 
-// ./test/core/gc/type-subtyping.wast:638
+// ./test/core/gc/type-subtyping.wast:692
 register($36, `M7`);
 
-// ./test/core/gc/type-subtyping.wast:639
+// ./test/core/gc/type-subtyping.wast:693
 let $37 = instantiate(`(module
   (rec (type \$f1 (sub (func))) (type \$s1 (sub (struct (field (ref \$f1))))))
   (rec (type \$f2 (sub (func))) (type \$s2 (sub (struct (field (ref \$f2))))))
@@ -770,7 +842,7 @@ let $37 = instantiate(`(module
   (func (import "M7" "h") (type \$g1))
 )`);
 
-// ./test/core/gc/type-subtyping.wast:652
+// ./test/core/gc/type-subtyping.wast:706
 let $38 = instantiate(`(module
   (rec (type \$f11 (sub (func (result (ref func))))) (type \$f12 (sub \$f11 (func (result (ref \$f11))))))
   (rec (type \$f21 (sub (func (result (ref func))))) (type \$f22 (sub \$f21 (func (result (ref \$f21))))))
@@ -778,10 +850,10 @@ let $38 = instantiate(`(module
   (func (export "f12") (type \$f12) (unreachable))
 )`);
 
-// ./test/core/gc/type-subtyping.wast:658
+// ./test/core/gc/type-subtyping.wast:712
 register($38, `M8`);
 
-// ./test/core/gc/type-subtyping.wast:659
+// ./test/core/gc/type-subtyping.wast:713
 let $39 = instantiate(`(module
   (rec (type \$f11 (sub (func (result (ref func))))) (type \$f12 (sub \$f11 (func (result (ref \$f11))))))
   (rec (type \$f21 (sub (func (result (ref func))))) (type \$f22 (sub \$f21 (func (result (ref \$f21))))))
@@ -791,7 +863,7 @@ let $39 = instantiate(`(module
   (func (import "M8" "f12") (type \$f22))
 )`);
 
-// ./test/core/gc/type-subtyping.wast:668
+// ./test/core/gc/type-subtyping.wast:722
 let $40 = instantiate(`(module
   (rec (type \$f11 (sub (func (result (ref func))))) (type \$f12 (sub \$f11 (func (result (ref \$f11))))))
   (rec (type \$f21 (sub (func (result (ref func))))) (type \$f22 (sub \$f21 (func (result (ref \$f21))))))
@@ -801,10 +873,10 @@ let $40 = instantiate(`(module
   (func (export "g12") (type \$g12) (unreachable))
 )`);
 
-// ./test/core/gc/type-subtyping.wast:676
+// ./test/core/gc/type-subtyping.wast:730
 register($40, `M9`);
 
-// ./test/core/gc/type-subtyping.wast:677
+// ./test/core/gc/type-subtyping.wast:731
 let $41 = instantiate(`(module
   (rec (type \$f11 (sub (func (result (ref func))))) (type \$f12 (sub \$f11 (func (result (ref \$f11))))))
   (rec (type \$f21 (sub (func (result (ref func))))) (type \$f22 (sub \$f21 (func (result (ref \$f21))))))
@@ -820,17 +892,17 @@ let $41 = instantiate(`(module
   (func (import "M9" "g12") (type \$g22))
 )`);
 
-// ./test/core/gc/type-subtyping.wast:692
+// ./test/core/gc/type-subtyping.wast:746
 let $42 = instantiate(`(module
   (rec (type \$f11 (sub (func))) (type \$f12 (sub \$f11 (func))))
   (rec (type \$f21 (sub (func))) (type \$f22 (sub \$f11 (func))))
   (func (export "f") (type \$f21))
 )`);
 
-// ./test/core/gc/type-subtyping.wast:697
+// ./test/core/gc/type-subtyping.wast:751
 register($42, `M10`);
 
-// ./test/core/gc/type-subtyping.wast:698
+// ./test/core/gc/type-subtyping.wast:752
 assert_unlinkable(
   () => instantiate(`(module
     (rec (type \$f11 (sub (func))) (type \$f12 (sub \$f11 (func))))
@@ -839,7 +911,7 @@ assert_unlinkable(
   `incompatible import type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:706
+// ./test/core/gc/type-subtyping.wast:760
 let $43 = instantiate(`(module
   (rec (type \$f01 (sub (func))) (type \$f02 (sub \$f01 (func))))
   (rec (type \$f11 (sub (func))) (type \$f12 (sub \$f01 (func))))
@@ -847,10 +919,10 @@ let $43 = instantiate(`(module
   (func (export "f") (type \$f21))
 )`);
 
-// ./test/core/gc/type-subtyping.wast:712
+// ./test/core/gc/type-subtyping.wast:766
 register($43, `M11`);
 
-// ./test/core/gc/type-subtyping.wast:713
+// ./test/core/gc/type-subtyping.wast:767
 assert_unlinkable(
   () => instantiate(`(module
     (rec (type \$f01 (sub (func))) (type \$f02 (sub \$f01 (func))))
@@ -860,7 +932,7 @@ assert_unlinkable(
   `incompatible import type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:726
+// ./test/core/gc/type-subtyping.wast:780
 assert_invalid(
   () => instantiate(`(module
     (type \$t (func))
@@ -869,7 +941,7 @@ assert_invalid(
   `sub type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:734
+// ./test/core/gc/type-subtyping.wast:788
 assert_invalid(
   () => instantiate(`(module
     (type \$t (struct))
@@ -878,7 +950,7 @@ assert_invalid(
   `sub type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:742
+// ./test/core/gc/type-subtyping.wast:796
 assert_invalid(
   () => instantiate(`(module
     (type \$t (sub final (func)))
@@ -887,7 +959,7 @@ assert_invalid(
   `sub type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:750
+// ./test/core/gc/type-subtyping.wast:804
 assert_invalid(
   () => instantiate(`(module
     (type \$t (sub (func)))
@@ -897,7 +969,7 @@ assert_invalid(
   `sub type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:763
+// ./test/core/gc/type-subtyping.wast:816
 assert_invalid(
   () => instantiate(`(module
     (type \$a0 (sub (array i32)))
@@ -906,7 +978,7 @@ assert_invalid(
   `sub type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:771
+// ./test/core/gc/type-subtyping.wast:824
 assert_invalid(
   () => instantiate(`(module
     (type \$f0 (sub (func (param i32) (result i32))))
@@ -915,7 +987,7 @@ assert_invalid(
   `sub type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:779
+// ./test/core/gc/type-subtyping.wast:832
 assert_invalid(
   () => instantiate(`(module
     (type \$s0 (sub (struct)))
@@ -924,7 +996,7 @@ assert_invalid(
   `sub type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:787
+// ./test/core/gc/type-subtyping.wast:840
 assert_invalid(
   () => instantiate(`(module
     (type \$f0 (sub (func (param i32) (result i32))))
@@ -933,7 +1005,7 @@ assert_invalid(
   `sub type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:795
+// ./test/core/gc/type-subtyping.wast:848
 assert_invalid(
   () => instantiate(`(module
     (type \$s0 (sub (struct)))
@@ -942,7 +1014,7 @@ assert_invalid(
   `sub type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:803
+// ./test/core/gc/type-subtyping.wast:856
 assert_invalid(
   () => instantiate(`(module
     (type \$a0 (sub (array i32)))
@@ -951,7 +1023,7 @@ assert_invalid(
   `sub type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:811
+// ./test/core/gc/type-subtyping.wast:864
 assert_invalid(
   () => instantiate(`(module
     (type \$a0 (sub (array i32)))
@@ -960,7 +1032,7 @@ assert_invalid(
   `sub type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:819
+// ./test/core/gc/type-subtyping.wast:872
 assert_invalid(
   () => instantiate(`(module
     (type \$s0 (sub (struct (field i32))))
@@ -969,7 +1041,7 @@ assert_invalid(
   `sub type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:827
+// ./test/core/gc/type-subtyping.wast:880
 assert_invalid(
   () => instantiate(`(module
     (type \$a (sub (array (ref none))))
@@ -978,7 +1050,7 @@ assert_invalid(
   `sub type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:835
+// ./test/core/gc/type-subtyping.wast:888
 assert_invalid(
   () => instantiate(`(module
     (type \$a (sub (array (mut (ref any)))))
@@ -987,7 +1059,7 @@ assert_invalid(
   `sub type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:843
+// ./test/core/gc/type-subtyping.wast:896
 assert_invalid(
   () => instantiate(`(module
     (type \$a (sub (array (mut (ref any)))))
@@ -996,7 +1068,7 @@ assert_invalid(
   `sub type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:851
+// ./test/core/gc/type-subtyping.wast:904
 assert_invalid(
   () => instantiate(`(module
     (type \$a (sub (array (ref any))))
@@ -1005,7 +1077,7 @@ assert_invalid(
   `sub type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:859
+// ./test/core/gc/type-subtyping.wast:912
 assert_invalid(
   () => instantiate(`(module
     (type \$a (sub (struct (field (ref none)))))
@@ -1014,7 +1086,7 @@ assert_invalid(
   `sub type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:867
+// ./test/core/gc/type-subtyping.wast:920
 assert_invalid(
   () => instantiate(`(module
     (type \$a (sub (struct (field (mut (ref any))))))
@@ -1023,7 +1095,7 @@ assert_invalid(
   `sub type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:875
+// ./test/core/gc/type-subtyping.wast:928
 assert_invalid(
   () => instantiate(`(module
     (type \$a (sub (struct (field (mut (ref any))))))
@@ -1032,7 +1104,7 @@ assert_invalid(
   `sub type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:883
+// ./test/core/gc/type-subtyping.wast:936
 assert_invalid(
   () => instantiate(`(module
     (type \$a (sub (struct (field (ref any)))))
@@ -1041,7 +1113,7 @@ assert_invalid(
   `sub type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:891
+// ./test/core/gc/type-subtyping.wast:944
 assert_invalid(
   () => instantiate(`(module
     (type \$f0 (sub (func)))
@@ -1050,7 +1122,7 @@ assert_invalid(
   `sub type`,
 );
 
-// ./test/core/gc/type-subtyping.wast:901
+// ./test/core/gc/type-subtyping.wast:954
 let $44 = instantiate(`(module
   (type \$t1 (sub (func (result f32))))
   (type \$t2 (sub \$t1 (func (result f32))))
@@ -1068,20 +1140,20 @@ let $44 = instantiate(`(module
   (func (export "f6") (type \$t6) (f32.const 0))
 )`);
 
-// ./test/core/gc/type-subtyping.wast:918
+// ./test/core/gc/type-subtyping.wast:971
 assert_return(() => invoke($44, `f1`, []), [value("f32", 0)]);
 
-// ./test/core/gc/type-subtyping.wast:919
+// ./test/core/gc/type-subtyping.wast:972
 assert_return(() => invoke($44, `f2`, []), [value("f32", 0)]);
 
-// ./test/core/gc/type-subtyping.wast:920
+// ./test/core/gc/type-subtyping.wast:973
 assert_return(() => invoke($44, `f3`, []), [value("f32", 0)]);
 
-// ./test/core/gc/type-subtyping.wast:921
+// ./test/core/gc/type-subtyping.wast:974
 assert_return(() => invoke($44, `f4`, []), [value("f32", 0)]);
 
-// ./test/core/gc/type-subtyping.wast:922
+// ./test/core/gc/type-subtyping.wast:975
 assert_return(() => invoke($44, `f5`, []), [value("f32", 0)]);
 
-// ./test/core/gc/type-subtyping.wast:923
+// ./test/core/gc/type-subtyping.wast:976
 assert_return(() => invoke($44, `f6`, []), [value("f32", 0)]);

@@ -4,8 +4,8 @@
 
 import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
 import { MIN_RICH_FAVICON_SIZE, TOP_SITES_SOURCE } from "./TopSitesConstants";
-import { CollapsibleSection } from "content-src/components/CollapsibleSection/CollapsibleSection";
 import { ComponentPerfTimer } from "content-src/components/ComponentPerfTimer/ComponentPerfTimer";
+import { ErrorBoundary } from "content-src/components/ErrorBoundary/ErrorBoundary";
 import { connect } from "react-redux";
 import { ModalOverlayWrapper } from "content-src/components/ModalOverlay/ModalOverlay";
 import React from "react";
@@ -13,6 +13,9 @@ import { SearchShortcutsForm } from "./SearchShortcutsForm";
 import { TOP_SITES_MAX_SITES_PER_ROW } from "common/Reducers.sys.mjs";
 import { TopSiteForm } from "./TopSiteForm";
 import { TopSiteList } from "./TopSite";
+
+// @nova-cleanup(remove-pref): Remove once classic path is gone
+const PREF_NOVA_ENABLED = "nova.enabled";
 
 function topSiteIconType(link) {
   if (link.customScreenshotURL) {
@@ -49,6 +52,15 @@ function countTopSitesIconsTypes(topSites) {
     rich_icon: 0,
     no_image: 0,
   });
+}
+
+function getTopSiteGridCols(fallback) {
+  const grid = globalThis.document?.querySelector(".top-sites-list");
+  if (!grid) {
+    return fallback;
+  }
+  return globalThis.getComputedStyle(grid).gridTemplateColumns.split(" ")
+    .length;
 }
 
 export class _TopSites extends React.PureComponent {
@@ -88,12 +100,20 @@ export class _TopSites extends React.PureComponent {
    * Return the TopSites that are visible based on prefs and window width.
    */
   _getVisibleTopSites() {
-    // We hide 2 sites per row when not in the wide layout.
-    let sitesPerRow = TOP_SITES_MAX_SITES_PER_ROW;
-    // $break-point-widest = 1072px (from _variables.scss)
-    if (!globalThis.matchMedia(`(min-width: 1072px)`).matches) {
-      sitesPerRow -= 2;
+    const novaEnabled = this.props.Prefs.values[PREF_NOVA_ENABLED];
+    let sitesPerRow = this.props.TopSitesMaxSitesPerRow;
+
+    if (novaEnabled) {
+      sitesPerRow = getTopSiteGridCols(sitesPerRow);
+    } else if (!globalThis.matchMedia("(min-width: 1072px)").matches) {
+      sitesPerRow = 6;
+    } else if (
+      sitesPerRow > 8 &&
+      !globalThis.matchMedia("(min-width: 1374px)").matches
+    ) {
+      sitesPerRow = 8;
     }
+
     return this.props.TopSites.rows.slice(
       0,
       this.props.TopSitesRows * sitesPerRow
@@ -131,7 +151,6 @@ export class _TopSites extends React.PureComponent {
   render() {
     const { props } = this;
     const { editForm, showSearchShortcutsForm } = props.TopSites;
-    const extraMenuOptions = ["AddTopSite"];
     let visibleTopSites;
     const colors = props.Prefs.values["newNewtabExperience.colors"];
 
@@ -140,80 +159,75 @@ export class _TopSites extends React.PureComponent {
       visibleTopSites = this._getVisibleTopSites()?.length;
     }
 
-    if (props.Prefs.values["improvesearch.topSiteSearchShortcuts"]) {
-      extraMenuOptions.push("AddSearchShortcut");
-    }
-
     return (
       <ComponentPerfTimer
         id="topsites"
         initialized={props.TopSites.initialized}
         dispatch={props.dispatch}
       >
-        <CollapsibleSection
-          className="top-sites"
-          id="topsites"
-          title={props.title || { id: "newtab-section-header-topsites" }}
-          hideTitle={true}
-          extraMenuOptions={extraMenuOptions}
-          showPrefName="feeds.topsites"
-          eventSource={TOP_SITES_SOURCE}
-          collapsed={false}
-          isFixed={props.isFixed}
-          isFirst={props.isFirst}
-          isLast={props.isLast}
-          dispatch={props.dispatch}
-        >
-          <TopSiteList
-            TopSites={props.TopSites}
-            TopSitesRows={props.TopSitesRows}
-            dispatch={props.dispatch}
-            topSiteIconType={topSiteIconType}
-            colors={colors}
-            visibleTopSites={visibleTopSites}
-          />
-          <div className="edit-topsites-wrapper">
-            {editForm && (
-              <div className="edit-topsites">
-                <ModalOverlayWrapper
-                  unstyled={true}
-                  onClose={this.onEditFormClose}
-                  innerClassName="modal"
-                >
-                  <TopSiteForm
-                    site={props.TopSites.rows[editForm.index]}
+        <section className="top-sites" data-section-id="topsites">
+          {/* nova-cleanup: Can be removed once classic path is gone since Nova wraps TopSites in ErrorBoundary in Base.jsx */}
+          <ErrorBoundary className="section-body-fallback">
+            <TopSiteList
+              TopSites={props.TopSites}
+              TopSitesRows={props.TopSitesRows}
+              topSitesMaxSitesPerRow={props.TopSitesMaxSitesPerRow}
+              dispatch={props.dispatch}
+              topSiteIconType={topSiteIconType}
+              colors={colors}
+              visibleTopSites={visibleTopSites}
+            />
+            <div className="edit-topsites-wrapper">
+              {editForm && (
+                <div className="edit-topsites">
+                  <ModalOverlayWrapper
+                    unstyled={true}
                     onClose={this.onEditFormClose}
-                    dispatch={this.props.dispatch}
-                    {...editForm}
-                  />
-                </ModalOverlayWrapper>
-              </div>
-            )}
-            {showSearchShortcutsForm && (
-              <div className="edit-search-shortcuts">
-                <ModalOverlayWrapper
-                  unstyled={true}
-                  onClose={this.onSearchShortcutsFormClose}
-                  innerClassName="modal"
-                >
-                  <SearchShortcutsForm
-                    TopSites={props.TopSites}
+                    innerClassName="modal"
+                    headerId="top-site-form-title"
+                  >
+                    <TopSiteForm
+                      site={props.TopSites.rows[editForm.index]}
+                      onClose={this.onEditFormClose}
+                      dispatch={this.props.dispatch}
+                      {...editForm}
+                    />
+                  </ModalOverlayWrapper>
+                </div>
+              )}
+              {showSearchShortcutsForm && (
+                <div className="edit-search-shortcuts">
+                  <ModalOverlayWrapper
+                    unstyled={true}
                     onClose={this.onSearchShortcutsFormClose}
-                    dispatch={this.props.dispatch}
-                  />
-                </ModalOverlayWrapper>
-              </div>
-            )}
-          </div>
-        </CollapsibleSection>
+                    innerClassName="modal"
+                  >
+                    <SearchShortcutsForm
+                      TopSites={props.TopSites}
+                      onClose={this.onSearchShortcutsFormClose}
+                      dispatch={this.props.dispatch}
+                    />
+                  </ModalOverlayWrapper>
+                </div>
+              )}
+            </div>
+          </ErrorBoundary>
+        </section>
       </ComponentPerfTimer>
     );
   }
 }
 
-export const TopSites = connect(state => ({
-  App: state.App,
-  TopSites: state.TopSites,
-  Prefs: state.Prefs,
-  TopSitesRows: state.Prefs.values.topSitesRows,
-}))(_TopSites);
+export const TopSites = connect(state => {
+  const prefs = state.Prefs.values;
+  return {
+    App: state.App,
+    TopSites: state.TopSites,
+    Prefs: state.Prefs,
+    TopSitesRows: prefs.topSitesRows,
+    TopSitesMaxSitesPerRow:
+      prefs.trainhopConfig?.topSites?.maxSitesPerRow ??
+      prefs.topSitesMaxSitesPerRow ??
+      TOP_SITES_MAX_SITES_PER_ROW,
+  };
+})(_TopSites);

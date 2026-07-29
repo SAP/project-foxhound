@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -11,6 +9,7 @@
 #include "mozilla/MaybeOneOf.h"
 #include "mozilla/ScopeExit.h"
 
+#include <bit>
 #include <type_traits>
 #include <utility>
 
@@ -1329,9 +1328,9 @@ void jit::TraceCacheIRStub(JSTracer* trc, T* stub,
       }
       case Type::WeakObject:
         if (ShouldTraceWeakEdgeInStub<T>(trc)) {
-          TraceNullableEdge(
-              trc, &stubInfo->getStubField<T, Type::WeakObject>(stub, offset),
-              "cacheir-weak-object");
+          TraceEdge(trc,
+                    &stubInfo->getStubField<T, Type::WeakObject>(stub, offset),
+                    "cacheir-weak-object");
         }
         break;
       case Type::Symbol:
@@ -1344,7 +1343,7 @@ void jit::TraceCacheIRStub(JSTracer* trc, T* stub,
         break;
       case Type::WeakBaseScript:
         if (ShouldTraceWeakEdgeInStub<T>(trc)) {
-          TraceNullableEdge(
+          TraceEdge(
               trc,
               &stubInfo->getStubField<T, Type::WeakBaseScript>(stub, offset),
               "cacheir-weak-script");
@@ -1396,7 +1395,7 @@ bool jit::TraceWeakCacheIRStub(JSTracer* trc, T* stub,
 
   // Trace all fields before returning because this stub can be traced again
   // later through TraceBaselineStubFrame.
-  bool isDead = false;
+  bool anyDead = false;
 
   uint32_t field = 0;
   size_t offset = 0;
@@ -1406,42 +1405,46 @@ bool jit::TraceWeakCacheIRStub(JSTracer* trc, T* stub,
       case Type::WeakShape: {
         WeakHeapPtr<Shape*>& shapeField =
             stubInfo->getStubField<T, Type::WeakShape>(stub, offset);
-        auto r = TraceWeakEdge(trc, &shapeField, "cacheir-weak-shape");
-        if (r.isDead()) {
-          isDead = true;
+        bool isLive =
+            TraceOrClearWeakEdge(trc, &shapeField, "cacheir-weak-shape");
+        if (!isLive) {
+          anyDead = true;
         }
         break;
       }
       case Type::WeakObject: {
         WeakHeapPtr<JSObject*>& objectField =
             stubInfo->getStubField<T, Type::WeakObject>(stub, offset);
-        auto r = TraceWeakEdge(trc, &objectField, "cacheir-weak-object");
-        if (r.isDead()) {
-          isDead = true;
+        bool isLive =
+            TraceOrClearWeakEdge(trc, &objectField, "cacheir-weak-object");
+        if (!isLive) {
+          anyDead = true;
         }
         break;
       }
       case Type::WeakBaseScript: {
         WeakHeapPtr<BaseScript*>& scriptField =
             stubInfo->getStubField<T, Type::WeakBaseScript>(stub, offset);
-        auto r = TraceWeakEdge(trc, &scriptField, "cacheir-weak-script");
-        if (r.isDead()) {
-          isDead = true;
+        bool isLive =
+            TraceOrClearWeakEdge(trc, &scriptField, "cacheir-weak-script");
+        if (!isLive) {
+          anyDead = true;
         }
         break;
       }
       case Type::WeakValue: {
         WeakHeapPtr<Value>& valueField =
             stubInfo->getStubField<T, Type::WeakValue>(stub, offset);
-        auto r = TraceWeakEdge(trc, &valueField, "cacheir-weak-value");
-        if (r.isDead()) {
-          isDead = true;
+        bool isLive =
+            TraceOrClearWeakEdge(trc, &valueField, "cacheir-weak-value");
+        if (!isLive) {
+          anyDead = true;
         }
         break;
       }
       case Type::Limit:
         // Done.
-        return !isDead;
+        return !anyDead;
       case Type::RawInt32:
       case Type::RawPointer:
       case Type::ICScript:
@@ -1501,7 +1504,10 @@ bool CacheIRWriter::stubDataEqualsIgnoringShapeAndOffset(
     if (offset == shapeFieldOffset) {
       // Don't compare shapeField.
     } else if (offsetFieldOffset.isSome() && offset == *offsetFieldOffset) {
-      // Skip offsetField, the "FromOffset" variant doesn't have this.
+      // Skip offsetField, the "FromOffset" variant doesn't have this. Assert
+      // the offset field is the last stub field: if that ever changes, we
+      // should make sure we handle trailing fields correctly.
+      MOZ_RELEASE_ASSERT(&field == &stubFields_.back());
       continue;
     } else {
       if (field.sizeIsWord()) {
@@ -1795,6 +1801,25 @@ bool CacheIRCompiler::emitGuardIsUndefined(ValOperandId inputId) {
   }
 
   masm.branchTestUndefined(Assembler::NotEqual, input, failure->label());
+  return true;
+}
+
+bool CacheIRCompiler::emitGuardIsNotObject(ValOperandId inputId) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+
+  JSValueType knownType = allocator.knownType(inputId);
+  if (knownType != JSVAL_TYPE_UNKNOWN && knownType != JSVAL_TYPE_OBJECT) {
+    return true;
+  }
+
+  ValueOperand input = allocator.useValueRegister(masm, inputId);
+
+  FailurePath* failure;
+  if (!addFailurePath(&failure)) {
+    return false;
+  }
+
+  masm.branchTestObject(Assembler::Equal, input, failure->label());
   return true;
 }
 
@@ -2493,9 +2518,8 @@ bool CacheIRCompiler::emitLoadScriptedProxyHandler(ObjOperandId resultId,
     return false;
   }
 
-  masm.loadPtr(Address(obj, ProxyObject::offsetOfReservedSlots()), output);
-  Address handlerAddr(output, js::detail::ProxyReservedSlots::offsetOfSlot(
-                                  ScriptedProxyHandler::HANDLER_EXTRA));
+  Address handlerAddr(obj, ProxyObject::offsetOfReservedSlot(
+                               ScriptedProxyHandler::HANDLER_EXTRA));
   masm.fallibleUnboxObject(handlerAddr, output, failure->label());
 
   return true;
@@ -2746,22 +2770,6 @@ bool CacheIRCompiler::emitGuardIsNotArrayBufferMaybeShared(ObjOperandId objId) {
   }
 
   masm.branchIfIsArrayBufferMaybeShared(obj, scratch, failure->label());
-  return true;
-}
-
-bool CacheIRCompiler::emitGuardIsTypedArray(ObjOperandId objId) {
-  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
-
-  Register obj = allocator.useRegister(masm, objId);
-  AutoScratchRegister scratch(allocator, masm);
-
-  FailurePath* failure;
-  if (!addFailurePath(&failure)) {
-    return false;
-  }
-
-  masm.loadObjClassUnsafe(obj, scratch);
-  masm.branchIfClassIsNotTypedArray(scratch, failure->label());
   return true;
 }
 
@@ -3020,7 +3028,7 @@ bool CacheIRCompiler::emitStringToAtom(StringOperandId stringId) {
 
   Label done, vmCall;
   masm.branchTest32(Assembler::NonZero, Address(str, JSString::offsetOfFlags()),
-                    Imm32(JSString::ATOM_BIT), &done);
+                    Imm32(StringFlags::ATOM_BIT), &done);
 
   masm.tryFastAtomize(str, scratch, str, &vmCall);
   masm.jump(&done);
@@ -3135,10 +3143,7 @@ bool CacheIRCompiler::emitLoadWrapperTarget(ObjOperandId objId,
     return false;
   }
 
-  masm.loadPtr(Address(obj, ProxyObject::offsetOfReservedSlots()), reg);
-
-  Address targetAddr(reg,
-                     js::detail::ProxyReservedSlots::offsetOfPrivateSlot());
+  Address targetAddr(obj, ProxyObject::offsetOfPrivateSlot());
   if (fallible) {
     masm.fallibleUnboxObject(targetAddr, reg, failure->label());
   } else {
@@ -3167,11 +3172,7 @@ bool CacheIRCompiler::emitLoadDOMExpandoValue(ObjOperandId objId,
   Register obj = allocator.useRegister(masm, objId);
   ValueOperand val = allocator.defineValueRegister(masm, resultId);
 
-  masm.loadPtr(Address(obj, ProxyObject::offsetOfReservedSlots()),
-               val.scratchReg());
-  masm.loadValue(Address(val.scratchReg(),
-                         js::detail::ProxyReservedSlots::offsetOfPrivateSlot()),
-                 val);
+  masm.loadValue(Address(obj, ProxyObject::offsetOfPrivateSlot()), val);
   return true;
 }
 
@@ -3182,10 +3183,7 @@ bool CacheIRCompiler::emitLoadDOMExpandoValueIgnoreGeneration(
   ValueOperand output = allocator.defineValueRegister(masm, resultId);
 
   // Determine the expando's Address.
-  Register scratch = output.scratchReg();
-  masm.loadPtr(Address(obj, ProxyObject::offsetOfReservedSlots()), scratch);
-  Address expandoAddr(scratch,
-                      js::detail::ProxyReservedSlots::offsetOfPrivateSlot());
+  Address expandoAddr(obj, ProxyObject::offsetOfPrivateSlot());
 
 #ifdef DEBUG
   // Private values are stored as doubles, so assert we have a double.
@@ -3196,6 +3194,7 @@ bool CacheIRCompiler::emitLoadDOMExpandoValueIgnoreGeneration(
 #endif
 
   // Load the ExpandoAndGeneration* from the PrivateValue.
+  Register scratch = output.scratchReg();
   masm.loadPrivate(expandoAddr, scratch);
 
   // Load expandoAndGeneration->expando into the output Value register.
@@ -4704,6 +4703,49 @@ bool CacheIRCompiler::emitSpecializedBindFunctionResult(
   return true;
 }
 
+static void CallLinearizeString(MacroAssembler& masm, Register str,
+                                Register result,
+                                const LiveRegisterSet& volatileRegs,
+                                Label* fail) {
+  masm.PushRegsInMask(volatileRegs);
+
+  using Fn = JSLinearString* (*)(JSString*);
+  masm.setupUnalignedABICall(result);
+  masm.passABIArg(str);
+  masm.callWithABI<Fn, js::jit::LinearizeForCharAccessPure>();
+  masm.storeCallPointerResult(result);
+
+  LiveRegisterSet ignore;
+  ignore.add(result);
+  masm.PopRegsInMaskIgnore(volatileRegs, ignore);
+
+  masm.branchTestPtr(Assembler::Zero, result, result, fail);
+}
+
+bool CacheIRCompiler::emitLinearizeString(StringOperandId strId,
+                                          StringOperandId resultId) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  Register str = allocator.useRegister(masm, strId);
+  Register result = allocator.defineRegister(masm, resultId);
+
+  FailurePath* failure;
+  if (!addFailurePath(&failure)) {
+    return false;
+  }
+
+  Label done;
+  masm.movePtr(str, result);
+
+  masm.branchIfNotRope(str, &done);
+  {
+    LiveRegisterSet volatileRegs = liveVolatileRegs();
+    CallLinearizeString(masm, str, result, volatileRegs, failure->label());
+  }
+
+  masm.bind(&done);
+  return true;
+}
+
 bool CacheIRCompiler::emitLinearizeForCharAccess(StringOperandId strId,
                                                  Int32OperandId indexId,
                                                  StringOperandId resultId) {
@@ -4728,19 +4770,7 @@ bool CacheIRCompiler::emitLinearizeForCharAccess(StringOperandId strId,
   masm.branchIfCanLoadStringChar(str, index, scratch, &done);
   {
     LiveRegisterSet volatileRegs = liveVolatileRegs();
-    masm.PushRegsInMask(volatileRegs);
-
-    using Fn = JSLinearString* (*)(JSString*);
-    masm.setupUnalignedABICall(scratch);
-    masm.passABIArg(str);
-    masm.callWithABI<Fn, js::jit::LinearizeForCharAccessPure>();
-    masm.storeCallPointerResult(result);
-
-    LiveRegisterSet ignore;
-    ignore.add(result);
-    masm.PopRegsInMaskIgnore(volatileRegs, ignore);
-
-    masm.branchTestPtr(Assembler::Zero, result, result, failure->label());
+    CallLinearizeString(masm, str, result, volatileRegs, failure->label());
   }
 
   masm.bind(&done);
@@ -4771,19 +4801,7 @@ bool CacheIRCompiler::emitLinearizeForCodePointAccess(
   masm.branchIfCanLoadStringCodePoint(str, index, scratch1, scratch2, &done);
   {
     LiveRegisterSet volatileRegs = liveVolatileRegs();
-    masm.PushRegsInMask(volatileRegs);
-
-    using Fn = JSLinearString* (*)(JSString*);
-    masm.setupUnalignedABICall(scratch1);
-    masm.passABIArg(str);
-    masm.callWithABI<Fn, js::jit::LinearizeForCharAccessPure>();
-    masm.storeCallPointerResult(result);
-
-    LiveRegisterSet ignore;
-    ignore.add(result);
-    masm.PopRegsInMaskIgnore(volatileRegs, ignore);
-
-    masm.branchTestPtr(Assembler::Zero, result, result, failure->label());
+    CallLinearizeString(masm, str, result, volatileRegs, failure->label());
   }
 
   masm.bind(&done);
@@ -5253,7 +5271,8 @@ bool CacheIRCompiler::emitLoadDenseElementResult(ObjOperandId objId,
 
   // If we did not check the packed flag, we must check for a hole value.
   if (!expectPackedElements) {
-    masm.branchTestMagic(Assembler::Equal, element, failure->label());
+    masm.branchTestMagic(Assembler::Equal, element, JS_ELEMENTS_HOLE,
+                         failure->label());
   }
 
   masm.loadTypedOrValue(element, output);
@@ -5308,7 +5327,7 @@ bool CacheIRCompiler::emitGuardIndexIsNotDenseElement(ObjOperandId objId,
   masm.spectreBoundsCheck32(index, capacity, spectreScratch, &notDense);
 
   BaseValueIndex element(scratch, index);
-  masm.branchTestMagic(Assembler::Equal, element, &notDense);
+  masm.branchTestMagic(Assembler::Equal, element, JS_ELEMENTS_HOLE, &notDense);
 
   masm.jump(failure->label());
 
@@ -5388,21 +5407,21 @@ bool CacheIRCompiler::emitGuardXrayExpandoShapeAndDefaultProto(
     return false;
   }
 
-  masm.loadPtr(Address(obj, ProxyObject::offsetOfReservedSlots()), scratch);
-  Address holderAddress(scratch,
-                        sizeof(Value) * GetXrayJitInfo()->xrayHolderSlot);
+  // Load the Xray wrapper's holder object in |scratch|.
+  Address holderAddress(
+      obj, ProxyObject::offsetOfReservedSlot(GetXrayJitInfo()->xrayHolderSlot));
+  masm.fallibleUnboxObject(holderAddress, scratch, failure->label());
+
+  // Load the holder's expando object in |scratch|.
   Address expandoAddress(scratch, NativeObject::getFixedSlotOffset(
                                       GetXrayJitInfo()->holderExpandoSlot));
-
-  masm.fallibleUnboxObject(holderAddress, scratch, failure->label());
   masm.fallibleUnboxObject(expandoAddress, scratch, failure->label());
 
-  // Unwrap the expando before checking its shape.
-  masm.loadPtr(Address(scratch, ProxyObject::offsetOfReservedSlots()), scratch);
-  masm.unboxObject(
-      Address(scratch, js::detail::ProxyReservedSlots::offsetOfPrivateSlot()),
-      scratch);
+  // Unwrap the expando in |scratch| before checking its shape.
+  masm.unboxObject(Address(scratch, ProxyObject::offsetOfPrivateSlot()),
+                   scratch);
 
+  // Check the shape of the unwrapped expando object.
   emitLoadStubField(shapeWrapper, scratch2);
   LoadShapeWrapperContents(masm, scratch2, scratch2, failure->label());
   masm.branchTestObjShape(Assembler::NotEqual, scratch, scratch2, scratch3,
@@ -5427,17 +5446,18 @@ bool CacheIRCompiler::emitGuardXrayNoExpando(ObjOperandId objId) {
     return false;
   }
 
-  masm.loadPtr(Address(obj, ProxyObject::offsetOfReservedSlots()), scratch);
-  Address holderAddress(scratch,
-                        sizeof(Value) * GetXrayJitInfo()->xrayHolderSlot);
-  Address expandoAddress(scratch, NativeObject::getFixedSlotOffset(
-                                      GetXrayJitInfo()->holderExpandoSlot));
-
+  // Load the Xray wrapper's holder object in |scratch|.
+  Address holderAddress(
+      obj, ProxyObject::offsetOfReservedSlot(GetXrayJitInfo()->xrayHolderSlot));
   Label done;
   masm.fallibleUnboxObject(holderAddress, scratch, &done);
-  masm.branchTestObject(Assembler::Equal, expandoAddress, failure->label());
-  masm.bind(&done);
 
+  // Ensure the holder does not have an expando object.
+  Address expandoAddress(scratch, NativeObject::getFixedSlotOffset(
+                                      GetXrayJitInfo()->holderExpandoSlot));
+  masm.branchTestObject(Assembler::Equal, expandoAddress, failure->label());
+
+  masm.bind(&done);
   return true;
 }
 
@@ -5606,7 +5626,8 @@ bool CacheIRCompiler::emitLoadDenseElementHoleResult(ObjOperandId objId,
   // Load the value.
   Label done;
   masm.loadValue(BaseObjectElementIndex(scratch1, index), output.valueReg());
-  masm.branchTestMagic(Assembler::NotEqual, output.valueReg(), &done);
+  masm.branchTestMagicValue(Assembler::NotEqual, output.valueReg(),
+                            JS_ELEMENTS_HOLE, &done);
 
   // Load undefined for the hole.
   masm.bind(&hole);
@@ -5675,7 +5696,8 @@ bool CacheIRCompiler::emitLoadDenseElementExistsResult(ObjOperandId objId,
 
   // Hole check.
   BaseObjectElementIndex element(scratch, index);
-  masm.branchTestMagic(Assembler::Equal, element, failure->label());
+  masm.branchTestMagic(Assembler::Equal, element, JS_ELEMENTS_HOLE,
+                       failure->label());
 
   EmitStoreBoolean(masm, true, output);
   return true;
@@ -5708,7 +5730,7 @@ bool CacheIRCompiler::emitLoadDenseElementHoleExistsResult(
   // Load value and replace with true.
   Label done;
   BaseObjectElementIndex element(scratch, index);
-  masm.branchTestMagic(Assembler::Equal, element, &hole);
+  masm.branchTestMagic(Assembler::Equal, element, JS_ELEMENTS_HOLE, &hole);
   EmitStoreBoolean(masm, true, output);
   masm.jump(&done);
 
@@ -7295,7 +7317,8 @@ bool CacheIRCompiler::emitStoreDenseElement(ObjOperandId objId,
                       Imm32(ObjectElements::NON_PACKED), failure->label());
   } else {
     // Hole check.
-    masm.branchTestMagic(Assembler::Equal, element, failure->label());
+    masm.branchTestMagic(Assembler::Equal, element, JS_ELEMENTS_HOLE,
+                         failure->label());
   }
 
   // Perform the store.
@@ -7877,6 +7900,15 @@ void CacheIRCompiler::emitDataViewBoundsCheck(ArrayBufferViewKind viewKind,
   }
 }
 
+template <typename T>
+static void BranchIfNativeEndian(MacroAssembler& masm, T value, Label* label) {
+  if constexpr (std::endian::native == std::endian::little) {
+    masm.branch32(Assembler::NotEqual, value, Imm32(0), label);
+  } else {
+    masm.branch32(Assembler::Equal, value, Imm32(0), label);
+  }
+}
+
 bool CacheIRCompiler::emitLoadDataViewValueResult(
     ObjOperandId objId, IntPtrOperandId offsetId,
     BooleanOperandId littleEndianId, Scalar::Type elementType,
@@ -7953,8 +7985,7 @@ bool CacheIRCompiler::emitLoadDataViewValueResult(
   // Swap the bytes in the loaded value.
   if (byteSize > 1) {
     Label skip;
-    masm.branch32(MOZ_LITTLE_ENDIAN() ? Assembler::NotEqual : Assembler::Equal,
-                  littleEndian, Imm32(0), &skip);
+    BranchIfNativeEndian(masm, littleEndian, &skip);
 
     switch (elementType) {
       case Scalar::Int16:
@@ -8241,11 +8272,9 @@ bool CacheIRCompiler::emitStoreDataViewValueResult(
   // Swap the bytes in the loaded value.
   Label skip;
   if (pushedLittleEndian) {
-    masm.branch32(MOZ_LITTLE_ENDIAN() ? Assembler::NotEqual : Assembler::Equal,
-                  Address(masm.getStackPointer(), 0), Imm32(0), &skip);
+    BranchIfNativeEndian(masm, Address(masm.getStackPointer(), 0), &skip);
   } else {
-    masm.branch32(MOZ_LITTLE_ENDIAN() ? Assembler::NotEqual : Assembler::Equal,
-                  littleEndian, Imm32(0), &skip);
+    BranchIfNativeEndian(masm, littleEndian, &skip);
   }
   switch (elementType) {
     case Scalar::Int16:
@@ -11678,6 +11707,94 @@ bool CacheIRCompiler::emitDateSecondsFromSecondsIntoYearResult(
   return true;
 }
 
+bool CacheIRCompiler::emitDateNow(NumberOperandId resultId) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+
+  ValueOperand output = allocator.defineValueRegister(masm, resultId);
+  AutoScratchRegister scratch(allocator, masm);
+  AutoScratchFloatRegister scratchFloat(this);
+
+  LiveRegisterSet volatileRegs = liveVolatileRegs();
+  volatileRegs.takeUnchecked(scratchFloat);
+  masm.PushRegsInMask(volatileRegs);
+
+  using Fn = double (*)(JSContext* cx);
+  masm.setupUnalignedABICall(scratch);
+  masm.loadJSContext(scratch);
+  masm.passABIArg(scratch);
+  masm.callWithABI<Fn, jit::DateNow>(ABIType::Float64);
+  masm.storeCallFloatResult(scratchFloat);
+
+  masm.PopRegsInMask(volatileRegs);
+
+  masm.boxDouble(scratchFloat, output, scratchFloat);
+  return true;
+}
+
+bool CacheIRCompiler::emitDateParse(StringOperandId strId,
+                                    NumberOperandId resultId) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+
+  Register str = allocator.useRegister(masm, strId);
+  ValueOperand output = allocator.defineValueRegister(masm, resultId);
+  AutoScratchRegister scratch(allocator, masm);
+  AutoAvailableFloatRegister scratchFloat(*this, FloatReg0);
+
+  LiveRegisterSet volatileRegs = liveVolatileRegs();
+  volatileRegs.takeUnchecked(scratchFloat);
+  masm.PushRegsInMask(volatileRegs);
+
+  using Fn = double (*)(JSContext* cx, const JSString*);
+  masm.setupUnalignedABICall(scratch);
+  masm.loadJSContext(scratch);
+  masm.passABIArg(scratch);
+  masm.passABIArg(str);
+  masm.callWithABI<Fn, jit::DateParse>(ABIType::Float64);
+  masm.storeCallFloatResult(scratchFloat);
+
+  masm.PopRegsInMask(volatileRegs);
+
+  masm.boxDouble(scratchFloat, output, scratchFloat);
+  return true;
+}
+
+bool CacheIRCompiler::emitTimeClip(NumberOperandId timeId,
+                                   NumberOperandId resultId) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+
+  ValueOperand output = allocator.defineValueRegister(masm, resultId);
+  AutoAvailableFloatRegister scratchFloat0(*this, FloatReg0);
+  AutoAvailableFloatRegister scratchFloat1(*this, FloatReg1);
+
+  allocator.ensureDoubleRegister(masm, timeId, scratchFloat0);
+
+  if (Assembler::HasRoundInstruction(RoundingMode::TowardsZero)) {
+    masm.timeClip(scratchFloat0, scratchFloat1);
+  } else {
+    LiveRegisterSet liveRegs = liveVolatileRegs();
+    masm.timeClip(scratchFloat0, scratchFloat1, output.scratchReg(), liveRegs);
+  }
+  masm.boxDouble(scratchFloat1, output, scratchFloat1);
+  return true;
+}
+
+bool CacheIRCompiler::emitNewDateObjectResult(uint32_t templateObjectOffset,
+                                              NumberOperandId utcTimeId) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+
+  AutoCallVM callvm(masm, this, allocator);
+
+  AutoAvailableFloatRegister scratchFloat(*this, FloatReg0);
+  allocator.ensureDoubleRegister(masm, utcTimeId, scratchFloat);
+
+  callvm.prepare();
+  masm.Push(scratchFloat);
+
+  using Fn = JSObject* (*)(JSContext*, double);
+  callvm.call<Fn, jit::NewDateObject>();
+  return true;
+}
+
 bool CacheIRCompiler::emitArrayFromArgumentsObjectResult(ObjOperandId objId,
                                                          uint32_t shapeOffset) {
   JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
@@ -11988,6 +12105,8 @@ bool CacheIRCompiler::emitFuzzilliHashResult(ValOperandId valId) {
   return true;
 }
 #endif
+
+bool CacheIRCompiler::emitPblReturn() { MOZ_CRASH("Unsupported pseudo-op"); }
 
 template <typename Fn, Fn fn>
 void CacheIRCompiler::callVM(MacroAssembler& masm) {

@@ -56,24 +56,6 @@ struct ParamTraits<mozilla::net::IPCTypeRecord> {
 };
 
 template <>
-struct ParamTraits<mozilla::Nothing> {
-  typedef mozilla::Nothing paramType;
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    bool isSome = false;
-    WriteParam(aWriter, isSome);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    bool isSome;
-    if (!ReadParam(aReader, &isSome)) {
-      return false;
-    }
-    *aResult = mozilla::Nothing();
-    return true;
-  }
-};
-
-template <>
 struct ParamTraits<mozilla::net::SVCB> {
   typedef mozilla::net::SVCB paramType;
   static void Write(MessageWriter* aWriter, const paramType& aParam) {

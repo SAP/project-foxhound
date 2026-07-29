@@ -63,6 +63,9 @@ bool DecodeBase64(const string& aEncoded, vector<uint8_t>& aOutDecoded) {
   if (!Decode6Bit(encoded)) {
     return false;
   }
+  if (encoded.size() < 2) {
+    return false;
+  }
 
   // The number of bytes we haven't yet filled in the current byte, mod 8.
   int shift = 0;

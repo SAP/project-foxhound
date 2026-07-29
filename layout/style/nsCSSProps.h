@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,6 +15,7 @@
 #include "NonCustomCSSPropertyId.h"
 #include "mozilla/CSSEnabledState.h"
 #include "mozilla/CSSPropFlags.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/UseCounter.h"
 #include "nsString.h"
@@ -79,7 +78,10 @@ class nsCSSProps {
   }
 
   // Same but for @font-face descriptors
-  static nsCSSFontDesc LookupFontDesc(const nsACString&);
+  static mozilla::Maybe<mozilla::FontFaceDescriptorId> LookupFontDesc(
+      const nsACString&);
+  static mozilla::Maybe<mozilla::CounterStyleDescriptorId>
+  LookupCounterStyleDesc(const nsACString&);
 
   // The relevant invariants are asserted in Document.cpp
   static mozilla::UseCounter UseCounterFor(NonCustomCSSPropertyId aProperty) {
@@ -100,8 +102,8 @@ class nsCSSProps {
     return nsDependentCSubstring(reinterpret_cast<const char*>(chars), len);
   }
 
-  static const nsCString& GetStringValue(nsCSSFontDesc aFontDesc);
-  static const nsCString& GetStringValue(nsCSSCounterDesc aCounterDesc);
+  static const nsCString& GetStringValue(mozilla::FontFaceDescriptorId);
+  static const nsCString& GetStringValue(mozilla::CounterStyleDescriptorId);
 
   static Flags PropFlags(NonCustomCSSPropertyId);
   static bool PropHasFlags(NonCustomCSSPropertyId aProperty, Flags aFlags) {
@@ -218,6 +220,17 @@ class nsCSSProps {
     const char* mPref;
   };
   static const PropertyPref kPropertyPrefTable[];
+
+  template <typename Id>
+  struct DescriptorTableEntry {
+    Id mId;
+    nsLiteralCString mName;
+  };
+
+  static const DescriptorTableEntry<mozilla::FontFaceDescriptorId>
+      kFontFaceDescs[mozilla::kFontFaceDescriptorCount];
+  static const DescriptorTableEntry<mozilla::CounterStyleDescriptorId>
+      kCounterStyleDescs[mozilla::kCounterStyleDescriptorCount];
 
 // Storing the enabledstate_ value in an NonCustomCSSPropertyId variable is a
 // small hack to avoid needing a separate variable declaration for its real type

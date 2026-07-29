@@ -19,6 +19,9 @@ import org.mozilla.focus.GleanMetrics.SearchWidget
 import org.mozilla.focus.activity.MainActivity
 import org.mozilla.focus.ui.theme.FocusTheme
 
+/**
+ * Utility class for search widget related operations.
+ */
 object SearchWidgetUtils {
 
     private fun addSearchWidgetToHomeScreen(activity: Activity) {

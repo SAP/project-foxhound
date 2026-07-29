@@ -16,11 +16,11 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/dtls_transport_interface.h"
 #include "api/environment/environment.h"
 #include "api/field_trials_view.h"
@@ -63,7 +63,7 @@ class DcSctpTransport : public SctpTransportInternal,
   // SctpTransportInternal
   void SetOnConnectedCallback(std::function<void()> callback) override;
   void SetDataChannelSink(DataChannelSink* sink) override;
-  void SetDtlsTransport(DtlsTransportInternal* transport) override;
+  DtlsTransportInternal* dtls_transport() const override;
   bool Start(const SctpOptions& options) override;
   bool OpenStream(int sid, PriorityValue priority) override;
   bool ResetStream(int sid) override;
@@ -77,14 +77,13 @@ class DcSctpTransport : public SctpTransportInternal,
   size_t buffered_amount(int sid) const override;
   size_t buffered_amount_low_threshold(int sid) const override;
   void SetBufferedAmountLowThreshold(int sid, size_t bytes) override;
-  void set_debug_name_for_testing(const char* debug_name) override;
 
   static std::vector<uint8_t> GenerateConnectionToken(const Environment& env);
 
  private:
   // dcsctp::DcSctpSocketCallbacks
   dcsctp::SendPacketStatus SendPacketWithStatus(
-      ArrayView<const uint8_t> data) override;
+      std::span<const uint8_t> data) override;
   std::unique_ptr<dcsctp::Timeout> CreateTimeout(
       TaskQueueBase::DelayPrecision precision) override;
   dcsctp::TimeMs TimeMillis() override;
@@ -97,12 +96,12 @@ class DcSctpTransport : public SctpTransportInternal,
   void OnConnected() override;
   void OnClosed() override;
   void OnConnectionRestarted() override;
-  void OnStreamsResetFailed(ArrayView<const dcsctp::StreamID> outgoing_streams,
+  void OnStreamsResetFailed(std::span<const dcsctp::StreamID> outgoing_streams,
                             absl::string_view reason) override;
   void OnStreamsResetPerformed(
-      ArrayView<const dcsctp::StreamID> outgoing_streams) override;
+      std::span<const dcsctp::StreamID> outgoing_streams) override;
   void OnIncomingStreamsReset(
-      ArrayView<const dcsctp::StreamID> incoming_streams) override;
+      std::span<const dcsctp::StreamID> incoming_streams) override;
 
   // Transport callbacks
   void ConnectTransportSignals();
@@ -114,15 +113,15 @@ class DcSctpTransport : public SctpTransportInternal,
                             DtlsTransportState);
   void MaybeConnectSocket();
 
-  Thread* network_thread_;
-  DtlsTransportInternal* transport_;
-  Environment env_;
+  Thread* const network_thread_;
+  DtlsTransportInternal* const transport_;
+  const Environment env_;
   Random random_;
 
-  std::unique_ptr<dcsctp::DcSctpSocketFactory> socket_factory_;
+  const std::unique_ptr<dcsctp::DcSctpSocketFactory> socket_factory_;
   dcsctp::TaskQueueTimeoutFactory task_queue_timeout_factory_;
   std::unique_ptr<dcsctp::DcSctpSocketInterface> socket_;
-  std::string debug_name_ = "DcSctpTransport";
+  const std::string debug_name_;
   CopyOnWriteBuffer receive_buffer_;
 
   // Used to keep track of the state of data channels.
@@ -149,6 +148,9 @@ class DcSctpTransport : public SctpTransportInternal,
   bool ready_to_send_data_ RTC_GUARDED_BY(network_thread_) = false;
   std::function<void()> on_connected_callback_ RTC_GUARDED_BY(network_thread_);
   DataChannelSink* data_channel_sink_ RTC_GUARDED_BY(network_thread_) = nullptr;
+
+  std::optional<std::vector<uint8_t>> local_init_;
+  std::optional<std::vector<uint8_t>> remote_init_;
 
   static dcsctp::DcSctpOptions CreateDcSctpOptions(
       const SctpOptions& options,

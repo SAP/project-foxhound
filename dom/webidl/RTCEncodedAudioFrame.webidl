@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -7,11 +6,9 @@
  * https://w3c.github.io/webrtc-encoded-transform
  */
 
-dictionary RTCEncodedAudioFrameMetadata {
-    unsigned long synchronizationSource;
-    octet payloadType;
-    sequence<unsigned long> contributingSources;
+dictionary RTCEncodedAudioFrameMetadata : RTCEncodedFrameMetadata{
     short sequenceNumber;
+    double audioLevel;
 };
 
 dictionary RTCEncodedAudioFrameOptions {
@@ -26,7 +23,7 @@ dictionary RTCEncodedAudioFrameOptions {
 interface RTCEncodedAudioFrame {
     [Throws]
     constructor(RTCEncodedAudioFrame originalFrame, optional RTCEncodedAudioFrameOptions options = {});
-    readonly attribute unsigned long timestamp;
+    readonly attribute unsigned long timestamp;    // legacy name of metadata rtpTimestamp
     attribute ArrayBuffer data;
     RTCEncodedAudioFrameMetadata getMetadata();
 };

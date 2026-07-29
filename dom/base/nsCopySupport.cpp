@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -349,11 +347,8 @@ nsresult nsCopySupport::EncodeDocumentWithContextAndPutToClipboard(
     bool aWithRubyAnnotation, UpdateClipboard aUpdateClipboard /* = Yes */) {
   NS_ENSURE_TRUE(aDoc, NS_ERROR_NULL_POINTER);
 
-  uint32_t additionalFlags = nsIDocumentEncoder::SkipInvisibleContent;
-
-  if (StaticPrefs::dom_shadowdom_selection_across_boundary_enabled()) {
-    additionalFlags |= nsIDocumentEncoder::AllowCrossShadowBoundary;
-  }
+  uint32_t additionalFlags = nsIDocumentEncoder::SkipInvisibleContent |
+                             nsIDocumentEncoder::AllowCrossShadowBoundary;
 
   if (aWithRubyAnnotation) {
     additionalFlags |= nsIDocumentEncoder::OutputRubyAnnotation;
@@ -410,11 +405,8 @@ nsresult nsCopySupport::GetTransferableForSelection(
   NS_ENSURE_TRUE(aDoc, NS_ERROR_NULL_POINTER);
   NS_ENSURE_TRUE(aTransferable, NS_ERROR_NULL_POINTER);
 
-  const uint32_t additionalFlags =
-      StaticPrefs::dom_shadowdom_selection_across_boundary_enabled()
-          ? nsIDocumentEncoder::SkipInvisibleContent |
-                nsIDocumentEncoder::AllowCrossShadowBoundary
-          : nsIDocumentEncoder::SkipInvisibleContent;
+  const uint32_t additionalFlags = nsIDocumentEncoder::SkipInvisibleContent |
+                                   nsIDocumentEncoder::AllowCrossShadowBoundary;
 
   return EncodeDocumentWithContextAndCreateTransferable(
       *aDoc, aSel, additionalFlags, aTransferable);

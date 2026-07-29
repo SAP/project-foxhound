@@ -43,10 +43,8 @@ class BrowserPrefObserverIntegration(
     ) {
         engine.registerPrefForObservation(
             pref,
-            onSuccess = {
-                onSuccess
-            },
-            onError = { onError },
+            onSuccess = onSuccess,
+            onError = onError,
         )
     }
 
@@ -65,10 +63,8 @@ class BrowserPrefObserverIntegration(
     ) {
         engine.registerPrefsForObservation(
             prefs,
-            onSuccess = {
-                onSuccess
-            },
-            onError = { onError },
+            onSuccess = onSuccess,
+            onError = onError,
         )
     }
 
@@ -87,10 +83,8 @@ class BrowserPrefObserverIntegration(
     ) {
         engine.unregisterPrefForObservation(
             pref,
-            onSuccess = {
-                onSuccess
-            },
-            onError = { onError },
+            onSuccess = onSuccess,
+            onError = onError,
         )
     }
 
@@ -110,10 +104,8 @@ class BrowserPrefObserverIntegration(
     ) {
         engine.unregisterPrefsForObservation(
             prefs,
-            onSuccess = {
-                onSuccess
-            },
-            onError = { onError },
+            onSuccess = onSuccess,
+            onError = onError,
         )
     }
 

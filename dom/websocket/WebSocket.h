@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -41,6 +39,9 @@ class WebSocket final : public DOMEventTargetHelper {
   enum { CONNECTING = 0, OPEN = 1, CLOSING = 2, CLOSED = 3 };
 
  public:
+  WebSocket(const WebSocket& x) = delete;  // prevent bad usage
+  WebSocket& operator=(const WebSocket& x) = delete;
+
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(WebSocket, DOMEventTargetHelper)
   virtual bool IsCertainlyAliveForCC() const override;
@@ -150,9 +151,6 @@ class WebSocket final : public DOMEventTargetHelper {
   void DontKeepAliveAnyMore();
 
  private:
-  WebSocket(const WebSocket& x) = delete;  // prevent bad usage
-  WebSocket& operator=(const WebSocket& x) = delete;
-
   void Send(nsIInputStream* aMsgStream, const nsACString& aMsgString,
             uint32_t aMsgLength, bool aIsBinary, ErrorResult& aRv);
 

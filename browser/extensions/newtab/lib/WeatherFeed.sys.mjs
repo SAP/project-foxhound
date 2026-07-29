@@ -18,6 +18,15 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 ChromeUtils.defineLazyGetter(lazy, "MerinoClient", () => {
+  // @backward-compat { version 151 }
+  // Bug 2018111 - TemporaryMerinoClientShim backports fetchWeatherReport() and
+  // fetchHourlyForecasts() with endpoint URL support. Remove this block
+  // and use MerinoClient directly once Firefox 151 ships to release.
+  if (Services.vc.compare(AppConstants.MOZ_APP_VERSION, "151.0a1") < 0) {
+    return ChromeUtils.importESModule(
+      "resource://newtab/lib/TemporaryMerinoClientShim.sys.mjs"
+    ).TemporaryMerinoClientShim;
+  }
   try {
     return ChromeUtils.importESModule(
       "moz-src:///browser/components/urlbar/MerinoClient.sys.mjs"
@@ -57,6 +66,8 @@ const MERINO_CLIENT_KEY = "HNT_WEATHER_FEED";
 const PREF_WEATHER_QUERY = "weather.query";
 const PREF_SHOW_WEATHER = "showWeather";
 const PREF_SYSTEM_SHOW_WEATHER = "system.showWeather";
+const PREF_NOVA_ENABLED = "nova.enabled";
+const PREF_WIDGETS_WEATHER_ENABLED = "widgets.weather.enabled";
 
 /**
  * A feature that periodically fetches weather suggestions from Merino for HNT.
@@ -66,6 +77,7 @@ export class WeatherFeed {
     this.loaded = false;
     this.merino = null;
     this.suggestions = [];
+    this.hourlyForecasts = [];
     this.lastUpdated = null;
     this.locationData = {};
     this.fetchTimer = null;
@@ -86,13 +98,17 @@ export class WeatherFeed {
   async resetWeather() {
     await this.resetCache();
     this.suggestions = [];
+    this.hourlyForecasts = [];
     this.lastUpdated = null;
     this.loaded = false;
   }
 
   isEnabled() {
     const { values } = this.store.getState().Prefs;
-    const userValue = values[PREF_SHOW_WEATHER];
+    // @nova-cleanup(remove-conditional): Remove PREF_NOVA_ENABLED conditional; replace userValue with values[PREF_WIDGETS_WEATHER_ENABLED] directly
+    const userValue = values[PREF_NOVA_ENABLED]
+      ? values[PREF_WIDGETS_WEATHER_ENABLED]
+      : values[PREF_SHOW_WEATHER];
     const systemValue = values[PREF_SYSTEM_SHOW_WEATHER];
     const experimentValue = values.trainhopConfig?.weather?.enabled || false;
     return userValue && (systemValue || experimentValue);
@@ -111,6 +127,7 @@ export class WeatherFeed {
     this.clearTimeout(this.retryTimer);
     this.merino = null;
     this.suggestions = null;
+    this.hourlyForecasts = null;
     this.fetchTimer = 0;
     this.retryTimer = 0;
   }
@@ -124,21 +141,17 @@ export class WeatherFeed {
       this.merino = await this.MerinoClient(MERINO_CLIENT_KEY);
     }
 
-    // @backward-compat { version 149 }
-    // MerinoClient.fetchWeather() was introduced in 149 Nightly.
-    // The fetchHelperUntil_149() does not use the function.
-    if (Services.vc.compare(AppConstants.MOZ_APP_VERSION, "149.0a1") >= 0) {
-      this.suggestions = await this._fetchHelper();
-    } else {
-      this.suggestions = await this._fetchHelperUntil_149();
-    }
+    const { suggestions, hourlyForecasts } = await this._fetchHelper();
+    this.suggestions = suggestions;
+    this.hourlyForecasts = hourlyForecasts;
 
-    if (this.suggestions.length) {
+    if (this.suggestions.length || this.hourlyForecasts.length) {
       const hasLocationData =
         !this.store.getState().Prefs.values[PREF_WEATHER_QUERY];
       this.lastUpdated = this.Date().now();
       await this.cache.set("weather", {
         suggestions: this.suggestions,
+        hourlyForecasts: this.hourlyForecasts,
         lastUpdated: this.lastUpdated,
       });
 
@@ -153,7 +166,6 @@ export class WeatherFeed {
         await this.cache.set("locationData", this.locationData);
       }
     }
-
     this.update();
   }
 
@@ -173,6 +185,7 @@ export class WeatherFeed {
       await this.fetch(isStartup);
     } else if (!this.lastUpdated) {
       this.suggestions = weather.suggestions;
+      this.hourlyForecasts = weather.hourlyForecasts || [];
       this.lastUpdated = weather.lastUpdated;
       this.update();
     }
@@ -185,6 +198,7 @@ export class WeatherFeed {
         type: at.WEATHER_UPDATE,
         data: {
           suggestions: this.suggestions,
+          hourlyForecasts: this.hourlyForecasts,
           lastUpdated: this.lastUpdated,
           locationData: this.locationData,
         },
@@ -209,26 +223,11 @@ export class WeatherFeed {
     const query = this.store.getState().Weather.locationSearchString;
     let data;
 
-    // @backward-compat { version 149 }
-    // MerinoClient.autoCompleteWeatherLocation() was introduced in 149 Nightly.
-    if (Services.vc.compare(AppConstants.MOZ_APP_VERSION, "149.0a1") >= 0) {
-      data = await this.merino.autoCompleteWeatherLocation({
-        query,
-        source: "newtab",
-        timeoutMs: 7000,
-      });
-    } else {
-      let response = await this.merino.fetch({
-        query: query || "",
-        providers: MERINO_PROVIDER,
-        timeoutMs: 7000,
-        otherParams: {
-          request_type: "location",
-          source: "newtab",
-        },
-      });
-      data = response?.[0];
-    }
+    data = await this.merino.autoCompleteWeatherLocation({
+      query,
+      source: "newtab",
+      timeoutMs: 7000,
+    });
 
     if (data?.locations.length) {
       this.store.dispatch(
@@ -245,7 +244,9 @@ export class WeatherFeed {
       case PREF_WEATHER_QUERY:
         await this.fetch();
         break;
+      // @nova-cleanup(remove-conditional): Remove case PREF_SHOW_WEATHER; keep only PREF_WIDGETS_WEATHER_ENABLED
       case PREF_SHOW_WEATHER:
+      case PREF_WIDGETS_WEATHER_ENABLED:
       case PREF_SYSTEM_SHOW_WEATHER:
       case "trainhopConfig": {
         const enabled = this.isEnabled();
@@ -253,6 +254,15 @@ export class WeatherFeed {
           await this.loadWeather();
         } else if (!enabled && this.loaded) {
           await this.resetWeather();
+        }
+        break;
+      }
+      case "weather.display":
+      case "widgets.system.weatherForecast.enabled":
+      case "widgets.system.weather.enabled":
+      case "widgets.weather.size": {
+        if (!this.hourlyForecasts?.length) {
+          await this.fetch();
         }
         break;
       }
@@ -296,12 +306,12 @@ export class WeatherFeed {
       case at.WEATHER_LOCATION_DATA_UPDATE: {
         // check that data is formatted correctly before adding to cache
         if (action.data.city) {
+          this.locationData = action.data;
           await this.cache.set("locationData", {
             city: action.data.city,
             adminName: action.data.adminName,
             country: action.data.country,
           });
-          this.locationData = action.data;
         }
 
         // Remove static weather data once location has been set
@@ -354,91 +364,95 @@ export class WeatherFeed {
         // we want to ensure if it was called later after a teardown,
         // we don't throw. If we throw, we end up in another retry.
         if (!this.merino) {
-          return [];
+          return { suggestions: [], hourlyForecasts: [] };
         }
-        const result = await this.merino.fetchWeather({
-          source: "newtab",
-          locationName,
-          timeoutMs: 7000,
-        });
-        return result ? [result] : [];
+
+        // Resolve geolocation once before the parallel fetch so both
+        // fetchWeatherReport() and fetchHourlyForecasts() share the same
+        // result, avoiding concurrent Merino requests that can result in a race condition.
+        let city;
+        let country;
+        let region;
+        if (!locationName) {
+          const geolocation = await lazy.GeolocationUtils.geolocation();
+          if (!geolocation) {
+            return { suggestions: [], hourlyForecasts: [] };
+          }
+          country = geolocation.country_code;
+          region =
+            geolocation.region_code || geolocation.region || geolocation.city;
+          city = geolocation.city || geolocation.region;
+          if (!country || !region || !city) {
+            return { suggestions: [], hourlyForecasts: [] };
+          }
+        }
+
+        const { values } = this.store.getState().Prefs;
+
+        // Hourly forecasts are only needed for medium/large widget sizes. The
+        // condition checks all the ways the forecast widget can be enabled:
+        //   - Nova path: weather.display is "detailed" AND the forecast feature
+        //     is system-enabled (via pref or trainhopConfig)
+        //   - Pre-Nova / trainhop path: the basic weather widget is enabled
+        //     directly via system pref or trainhopConfig
+        // The size guard short-circuits for "small" (sidebar) regardless of the
+        // other flags, since that variant never shows hourly data.
+        const weatherForecastWidgetEnabled =
+          values["widgets.weather.size"] !== "small" &&
+          ((values["weather.display"] === "detailed" &&
+            (values["widgets.system.weatherForecast.enabled"] ||
+              values.trainhopConfig?.widgets?.weatherForecastEnabled)) ||
+            values["widgets.system.weather.enabled"] ||
+            values.trainhopConfig?.widgets?.weatherEnabled);
+
+        // @backward-compat { version 151 }
+        // Read endpoint URLs from trainhopConfig or ActivityStream prefs so
+        // they can be configured without a tree change. Remove once shipped;
+        // MerinoClient will have the endpoints defined via UrlbarPrefs.
+        const reportEndpointUrl =
+          values.trainhopConfig?.weather?.reportEndpoint ||
+          values["weather.reportEndpoint"];
+        const hourlyEndpointUrl =
+          values.trainhopConfig?.weather?.hourlyEndpoint ||
+          values["weather.hourlyEndpoint"];
+
+        const [reportResult, hourlyResult] = await Promise.all([
+          this.merino.fetchWeatherReport({
+            source: "newtab",
+            locationName,
+            city,
+            region,
+            country,
+            timeoutMs: 7000,
+            endpointUrl: reportEndpointUrl,
+          }),
+          weatherForecastWidgetEnabled
+            ? // When locationName is set, city/region/country are unresolved
+              // from geolocation and need to be populated in the fetch URL.
+              // Fall back to this.locationData so the hourly endpoint can
+              // resolve the selected location.
+              this.merino
+                .fetchHourlyForecasts({
+                  source: "newtab",
+                  locationName,
+                  city: city || this.locationData?.city,
+                  region: region || this.locationData?.adminName?.id,
+                  country: country || this.locationData?.country?.id,
+                  endpointUrl: hourlyEndpointUrl,
+                })
+                .catch(() => null)
+            : Promise.resolve(null),
+        ]);
+
+        return {
+          suggestions: reportResult ? [reportResult] : [],
+          hourlyForecasts: hourlyResult ?? [],
+        };
       } catch (e) {
         // If we get an error, we try again in 1 minute,
         // and give up if we try more than maxRetries number of times.
         if (retry >= maxRetries) {
-          return [];
-        }
-        await new Promise(res => {
-          // store the timeout so it can be cancelled elsewhere
-          this.retryTimer = this.setTimeout(() => {
-            this.retryTimer = null; // cleanup once it fires
-            res();
-          }, RETRY_DELAY_MS);
-        });
-        return attempt(retry + 1);
-      }
-    };
-
-    // results from the API or empty array
-    return await attempt();
-  }
-
-  /**
-   * @backward-compat { version 149 }
-   *
-   * MerinoClient.fetchWeather() was introduced in 149 Nightly.
-   * This function does not use it.
-   */
-  async _fetchHelperUntil_149(maxRetries = 1, queryOverride = null) {
-    this.restartFetchTimer();
-
-    const weatherQuery = this.store.getState().Prefs.values[PREF_WEATHER_QUERY];
-    const query = queryOverride ?? weatherQuery ?? "";
-    const otherParams = {
-      request_type: "weather",
-      source: "newtab",
-    };
-
-    if (!query) {
-      let geolocation = await lazy.GeolocationUtils.geolocation();
-      if (!geolocation) {
-        return [];
-      }
-
-      const country = geolocation.country_code;
-      // Adding geolocation.city as an option for region to count for city-states (i.e. Singapore)
-      const region =
-        geolocation.region_code || geolocation.region || geolocation.city;
-      const city = geolocation.city || geolocation.region;
-
-      // Merino requires all three parameters (city, region, country) when query is not provided
-      if (!country || !region || !city) {
-        return [];
-      }
-
-      otherParams.country = country;
-      otherParams.region = region;
-      otherParams.city = city;
-    }
-    const attempt = async (retry = 0) => {
-      try {
-        // Because this can happen after a timeout,
-        // we want to ensure if it was called later after a teardown,
-        // we don't throw. If we throw, we end up in another retry.
-        if (!this.merino) {
-          return [];
-        }
-        return await this.merino.fetch({
-          query,
-          providers: MERINO_PROVIDER,
-          timeoutMs: 7000,
-          otherParams,
-        });
-      } catch (e) {
-        // If we get an error, we try again in 1 minute,
-        // and give up if we try more than maxRetries number of times.
-        if (retry >= maxRetries) {
-          return [];
+          return { suggestions: [], hourlyForecasts: [] };
         }
         await new Promise(res => {
           // store the timeout so it can be cancelled elsewhere
@@ -496,11 +510,8 @@ export class WeatherFeed {
  * Creating a thin wrapper around external tools.
  * This makes it easier for us to write automated tests that simulate responses.
  */
-WeatherFeed.prototype.MerinoClient = (...args) => {
-  return new lazy.MerinoClient({
-    allowOhttp: true,
-    ...args,
-  });
+WeatherFeed.prototype.MerinoClient = name => {
+  return new lazy.MerinoClient(name, { allowOhttp: false });
 };
 WeatherFeed.prototype.PersistentCache = (...args) => {
   return new lazy.PersistentCache(...args);

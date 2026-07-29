@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,8 +10,6 @@
 #include "mozilla/ServoTypes.h"
 #include "mozilla/dom/DocGroup.h"
 #include "nsDOMCSSDeclaration.h"
-
-struct RawServoUnlockedDeclarationBlock;
 
 namespace mozilla {
 
@@ -39,8 +35,8 @@ class nsDOMCSSAttributeDeclaration final : public nsDOMCSSDeclaration {
   NS_DECL_CYCLE_COLLECTION_SKIPPABLE_WRAPPERCACHE_CLASS_AMBIGUOUS(
       nsDOMCSSAttributeDeclaration, nsICSSDeclaration)
 
-  mozilla::DeclarationBlock* GetOrCreateCSSDeclaration(
-      Operation aOperation, mozilla::DeclarationBlock** aCreated) final;
+  Block* GetOrCreateCSSDeclaration(Operation aOperation,
+                                   Block** aCreated) final;
 
   nsDOMCSSDeclaration::ParsingEnvironment GetParsingEnvironment(
       nsIPrincipal* aSubjectPrincipal) const final;
@@ -86,8 +82,7 @@ class nsDOMCSSAttributeDeclaration final : public nsDOMCSSDeclaration {
   ~nsDOMCSSAttributeDeclaration();
 
   nsresult SetCSSDeclaration(
-      mozilla::DeclarationBlock* aDecl,
-      mozilla::MutationClosureData* aClosureData) override;
+      Block* aDecl, mozilla::MutationClosureData* aClosureData) override;
   mozilla::dom::Document* DocToUpdate() final;
 
   RefPtr<Element> mElement;

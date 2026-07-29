@@ -9,6 +9,7 @@ import mozilla.components.browser.state.search.SearchEngine
 import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.concept.storage.BookmarkNode
 import mozilla.components.concept.storage.BookmarkNodeType
+import mozilla.components.feature.protection.dashboard.TrackersBlockedCategory
 import mozilla.components.lib.crash.Crash.NativeCodeCrash
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -16,9 +17,12 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mozilla.fenix.components.appstate.AppAction.AddNonFatalCrash
+import org.mozilla.fenix.components.appstate.AppAction.BlockedTrackersAction.UpdateTrackersBlockedCount
+import org.mozilla.fenix.components.appstate.AppAction.BlockedTrackersAction.UpdateTrackersBlockedThisWeek
 import org.mozilla.fenix.components.appstate.AppAction.RemoveAllNonFatalCrashes
 import org.mozilla.fenix.components.appstate.AppAction.RemoveNonFatalCrash
 import org.mozilla.fenix.components.appstate.AppAction.UpdateInactiveExpanded
+import org.mozilla.fenix.components.appstate.blockedtrackers.BlockedTrackersState
 import org.mozilla.fenix.components.appstate.search.SearchState
 import org.mozilla.fenix.components.appstate.search.SelectedSearchEngine
 import org.mozilla.fenix.components.appstate.snackbar.SnackbarState
@@ -322,7 +326,6 @@ class AppStoreReducerTest {
             contentLength = 5242880,
             status = DownloadState.Status.DOWNLOADING,
             directoryPath = "downloads",
-            destinationDirectory = "Environment.DIRECTORY_MUSIC",
             private = true,
             createdTime = 33,
             etag = "etag",
@@ -344,6 +347,32 @@ class AppStoreReducerTest {
     }
 
     @Test
+    fun `WHEN an update for the total count of blocked trackers is dispatched THEN update the state value`() {
+        val initialState = AppState()
+        val newValue = 999
+
+        val finalState = AppStoreReducer.reduce(initialState, UpdateTrackersBlockedCount(newValue))
+
+        assertEquals(newValue, finalState.blockedTrackersState.trackersBlockedCount)
+    }
+
+    @Test
+    fun `WHEN an update for the blocked trackers categories is dispatches THEN update the state value`() {
+        val initialState = AppState(
+            blockedTrackersState = BlockedTrackersState(
+                trackersBlockedCount = 3,
+                trackersBlockedThisWeek = listOf(mockk()),
+            ),
+        )
+        val newValue = listOf<TrackersBlockedCategory>(mockk(), mockk())
+
+        val finalState = AppStoreReducer.reduce(initialState, UpdateTrackersBlockedThisWeek(newValue))
+
+        assertEquals(newValue, finalState.blockedTrackersState.trackersBlockedThisWeek)
+        assertEquals(3, finalState.blockedTrackersState.trackersBlockedCount)
+    }
+
+    @Test
     fun `WHEN can not open file action is dispatched THEN snackbar state is updated`() {
         val initialState = AppState()
 
@@ -355,7 +384,6 @@ class AppStoreReducerTest {
             contentLength = 5242880,
             status = DownloadState.Status.DOWNLOADING,
             directoryPath = "downloads",
-            destinationDirectory = "Environment.DIRECTORY_MUSIC",
             private = true,
             createdTime = 33,
             etag = "etag",

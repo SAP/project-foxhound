@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,6 +9,7 @@
 #include "ImageTypes.h"  // for ImageFormat, etc
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"      // for MOZ_ASSERT_HELPER2
+#include "mozilla/DataMutex.h"       // for DataMutex
 #include "mozilla/Mutex.h"           // for Mutex
 #include "mozilla/RecursiveMutex.h"  // for RecursiveMutex, etc
 #include "mozilla/ThreadSafeWeakPtr.h"
@@ -26,6 +25,7 @@
 #include "nsISupportsImpl.h"  // for Image::Release, etc
 #include "nsTArray.h"         // for nsTArray
 #include "nsThreadUtils.h"    // for NS_IsMainThread
+#include "nsProxyRelease.h"   // for NS_ReleaseOnMainThread
 #include "mozilla/Atomics.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/EnumeratedArray.h"
@@ -215,6 +215,46 @@ class Image {
   bool mIsDRM;
 
   static mozilla::Atomic<int32_t> sSerialCounter;
+};
+
+/**
+ * A thread-safe, lazily-populated cache of an Image's rasterized surface.
+ */
+class CachedSurface final {
+ public:
+  CachedSurface() : mSurface("layers::CachedSurface") {}
+
+  ~CachedSurface() {
+    // The surface may have been created off the main thread, but like the rest
+    // of the gfx surface machinery it must be released on the main thread.
+    RefPtr<gfx::DataSourceSurface> surface;
+    {
+      auto guard = mSurface.Lock();
+      surface = guard->forget();
+    }
+    NS_ReleaseOnMainThread("layers::CachedSurface", surface.forget());
+  }
+
+  // Returns the cached surface, or nullptr if nothing has been cached yet.
+  already_AddRefed<gfx::DataSourceSurface> Get() {
+    auto guard = mSurface.Lock();
+    RefPtr<gfx::DataSourceSurface> surface = *guard;
+    return surface.forget();
+  }
+
+  // Stores aSurface unless another thread has already cached one. The caller
+  // may keep using its own surface regardless: both are equivalent
+  // rasterizations of the same image, and keeping the first one avoids dropping
+  // a surface that a concurrent caller may already have handed out.
+  void Set(gfx::DataSourceSurface* aSurface) {
+    auto guard = mSurface.Lock();
+    if (!*guard) {
+      *guard = aSurface;
+    }
+  }
+
+ private:
+  mozilla::DataMutex<RefPtr<gfx::DataSourceSurface>> mSurface;
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(Image::BuildSdbFlags)
@@ -773,6 +813,7 @@ struct PlanarYCbCrData {
   gfx::YUVColorSpace mYUVColorSpace = gfx::YUVColorSpace::Default;
   gfx::ColorSpace2 mColorPrimaries = gfx::ColorSpace2::UNKNOWN;
   gfx::TransferFunction mTransferFunction = gfx::TransferFunction::BT709;
+  Maybe<gfx::HDRMetadata> mHDRMetadata;
   gfx::ColorRange mColorRange = gfx::ColorRange::LIMITED;
   gfx::ChromaSubsampling mChromaSubsampling = gfx::ChromaSubsampling::FULL;
 
@@ -912,7 +953,7 @@ class PlanarYCbCrImage : public Image {
   gfx::IntSize mSize;
   gfx::ColorDepth mColorDepth = gfx::ColorDepth::COLOR_8;
   gfxImageFormat mOffscreenFormat;
-  RefPtr<gfx::DataSourceSurface> mSourceSurface;
+  CachedSurface mSourceSurface;
   uint32_t mBufferSize;
 };
 
@@ -975,7 +1016,7 @@ class NVImage final : public Image {
   uint32_t mBufferSize;
   gfx::IntSize mSize;
   Data mData;
-  RefPtr<gfx::DataSourceSurface> mSourceSurface;
+  CachedSurface mSourceSurface;
 };
 
 /**

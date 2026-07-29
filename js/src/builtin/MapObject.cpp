@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -38,7 +36,7 @@ using mozilla::NumberEqualsInt32;
 
 /*** HashableValue **********************************************************/
 
-static PreBarriered<Value> NormalizeDoubleValue(double d) {
+static Value NormalizeDoubleValue(double d) {
   int32_t i;
   if (NumberEqualsInt32(d, &i)) {
     // Normalize int32_t-valued doubles to int32_t for faster hashing and
@@ -129,16 +127,7 @@ bool HashableValue::equals(const HashableValue& other) const {
 namespace {} /* anonymous namespace */
 
 static const JSClassOps MapIteratorObjectClassOps = {
-    nullptr,                      // addProperty
-    nullptr,                      // delProperty
-    nullptr,                      // enumerate
-    nullptr,                      // newEnumerate
-    nullptr,                      // resolve
-    nullptr,                      // mayResolve
-    MapIteratorObject::finalize,  // finalize
-    nullptr,                      // call
-    nullptr,                      // construct
-    nullptr,                      // trace
+    .finalize = MapIteratorObject::finalize,
 };
 
 static const ClassExtension MapIteratorObjectClassExtension = {
@@ -330,16 +319,7 @@ static_assert(sizeof(MapObject::Table::Entry) ==
               sizeof(MapObject::PreBarrieredTable::Entry));
 
 const JSClassOps MapObject::classOps_ = {
-    nullptr,  // addProperty
-    nullptr,  // delProperty
-    nullptr,  // enumerate
-    nullptr,  // newEnumerate
-    nullptr,  // resolve
-    nullptr,  // mayResolve
-    nullptr,  // finalize
-    nullptr,  // call
-    nullptr,  // construct
-    trace,    // trace
+    .trace = trace,
 };
 
 const ClassSpec MapObject::classSpec_ = {
@@ -702,7 +682,7 @@ void MapObject::clearNurseryIteratorsBeforeMinorGC() {
 
 /* static */
 MapObject* MapObject::sweepAfterMinorGC(JS::GCContext* gcx, MapObject* mapobj) {
-  Nursery& nursery = gcx->runtime()->gc.nursery();
+  Nursery& nursery = gcx->gcRuntime()->nursery();
   bool wasInCollectedRegion = nursery.inCollectedRegion(mapobj);
   if (wasInCollectedRegion && !IsForwarded(mapobj)) {
     // This MapObject is dead.
@@ -1046,16 +1026,7 @@ void MapObject::clear(JSContext* cx) {
 /*** SetIterator ************************************************************/
 
 static const JSClassOps SetIteratorObjectClassOps = {
-    nullptr,                      // addProperty
-    nullptr,                      // delProperty
-    nullptr,                      // enumerate
-    nullptr,                      // newEnumerate
-    nullptr,                      // resolve
-    nullptr,                      // mayResolve
-    SetIteratorObject::finalize,  // finalize
-    nullptr,                      // call
-    nullptr,                      // construct
-    nullptr,                      // trace
+    .finalize = SetIteratorObject::finalize,
 };
 
 static const ClassExtension SetIteratorObjectClassExtension = {
@@ -1203,16 +1174,7 @@ JSObject* SetIteratorObject::createResult(JSContext* cx) {
 /*** Set ********************************************************************/
 
 const JSClassOps SetObject::classOps_ = {
-    nullptr,  // addProperty
-    nullptr,  // delProperty
-    nullptr,  // enumerate
-    nullptr,  // newEnumerate
-    nullptr,  // resolve
-    nullptr,  // mayResolve
-    nullptr,  // finalize
-    nullptr,  // call
-    nullptr,  // construct
-    trace,    // trace
+    .trace = trace,
 };
 
 const ClassSpec SetObject::classSpec_ = {
@@ -1434,7 +1396,7 @@ void SetObject::clearNurseryIteratorsBeforeMinorGC() {
 
 /* static */
 SetObject* SetObject::sweepAfterMinorGC(JS::GCContext* gcx, SetObject* setobj) {
-  Nursery& nursery = gcx->runtime()->gc.nursery();
+  Nursery& nursery = gcx->gcRuntime()->nursery();
   bool wasInCollectedRegion = nursery.inCollectedRegion(setobj);
   if (wasInCollectedRegion && !IsForwarded(setobj)) {
     // This SetObject is dead.
@@ -1486,9 +1448,6 @@ bool SetObject::tryOptimizeCtorWithIterable(JSContext* cx,
   // Fast path for `new Set(set)`.
   if (IsSetObjectWithDefaultIterator(iterable, cx)) {
     auto* iterableSet = &iterable->as<SetObject>();
-    if (!IsSetObjectWithDefaultIterator(iterableSet, cx)) {
-      return true;
-    }
     auto addEntry = [cx, this](auto& entry) {
       return addHashableValue(cx, entry);
     };

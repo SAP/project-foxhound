@@ -1,10 +1,10 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 
 #include "RTCStatsIdGenerator.h"
+
+#include <type_traits>
 
 #include "RTCStatsReport.h"
 #include "WebrtcGlobal.h"
@@ -18,10 +18,18 @@ RTCStatsIdGenerator::RTCStatsIdGenerator()
 void RTCStatsIdGenerator::RewriteIds(
     nsTArray<UniquePtr<dom::RTCStatsCollection>> aFromStats,
     dom::RTCStatsCollection* aIntoReport) {
-  // Rewrite an Optional id
-  auto rewriteId = [&](dom::Optional<nsString>& id) {
-    if (id.WasPassed()) {
-      id.Value() = Id(id.Value());
+  // Rewrite an id, whether it's Optional<nsString> (non-required webidl
+  // member) or a plain nsString (required webidl member).
+  auto rewriteId = [&](auto& id) {
+    using T = std::decay_t<decltype(id)>;
+    if constexpr (std::is_same_v<T, dom::Optional<nsString>>) {
+      if (id.WasPassed()) {
+        id.Value() = Id(id.Value());
+      }
+    } else {
+      if (!id.IsEmpty()) {
+        id = Id(id);
+      }
     }
   };
 
@@ -40,28 +48,32 @@ void RTCStatsIdGenerator::RewriteIds(
   dom::FlattenStats(std::move(aFromStats), stats.get());
 
   using S = dom::RTCStats;
+  using CS = dom::RTCCodecStats;
+  using ICS = dom::RTCIceCandidateStats;
   using ICPS = dom::RTCIceCandidatePairStats;
   using RSS = dom::RTCRtpStreamStats;
   using IRSS = dom::RTCInboundRtpStreamStats;
   using ORSS = dom::RTCOutboundRtpStreamStats;
   using RIRSS = dom::RTCRemoteInboundRtpStreamStats;
   using RORSS = dom::RTCRemoteOutboundRtpStreamStats;
+  using TS = dom::RTCTransportStats;
 
-  rewriteIds(stats->mIceCandidatePairStats, &S::mId, &ICPS::mLocalCandidateId,
-             &ICPS::mRemoteCandidateId);
-  rewriteIds(stats->mIceCandidateStats, &S::mId);
-  rewriteIds(stats->mInboundRtpStreamStats, &S::mId, &IRSS::mRemoteId,
-             &RSS::mCodecId);
-  rewriteIds(stats->mOutboundRtpStreamStats, &S::mId, &ORSS::mRemoteId,
-             &RSS::mCodecId);
-  rewriteIds(stats->mRemoteInboundRtpStreamStats, &S::mId, &RIRSS::mLocalId,
-             &RSS::mCodecId);
-  rewriteIds(stats->mRemoteOutboundRtpStreamStats, &S::mId, &RORSS::mLocalId,
-             &RSS::mCodecId);
-  rewriteIds(stats->mCodecStats, &S::mId);
+  rewriteIds(stats->mIceCandidatePairStats, &S::mId, &ICPS::mTransportId,
+             &ICPS::mLocalCandidateId, &ICPS::mRemoteCandidateId);
+  rewriteIds(stats->mIceCandidateStats, &S::mId, &ICS::mTransportId);
+  rewriteIds(stats->mInboundRtpStreamStats, &S::mId, &RSS::mTransportId,
+             &IRSS::mRemoteId, &RSS::mCodecId);
+  rewriteIds(stats->mOutboundRtpStreamStats, &S::mId, &RSS::mTransportId,
+             &ORSS::mRemoteId, &RSS::mCodecId);
+  rewriteIds(stats->mRemoteInboundRtpStreamStats, &S::mId, &RSS::mTransportId,
+             &RIRSS::mLocalId, &RSS::mCodecId);
+  rewriteIds(stats->mRemoteOutboundRtpStreamStats, &S::mId, &RSS::mTransportId,
+             &RORSS::mLocalId, &RSS::mCodecId);
+  rewriteIds(stats->mCodecStats, &S::mId, &CS::mTransportId);
   rewriteIds(stats->mRtpContributingSourceStats, &S::mId);
-  rewriteIds(stats->mTrickledIceCandidateStats, &S::mId);
+  rewriteIds(stats->mTrickledIceCandidateStats, &S::mId, &ICS::mTransportId);
   rewriteIds(stats->mDataChannelStats, &S::mId);
+  rewriteIds(stats->mTransportStats, &S::mId, &TS::mSelectedCandidatePairId);
 
   dom::MergeStats(std::move(stats), aIntoReport);
 }

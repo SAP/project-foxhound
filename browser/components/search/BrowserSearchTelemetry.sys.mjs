@@ -5,6 +5,8 @@
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = XPCOMUtils.declareLazy({
+  ConfigSearchEngine:
+    "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
   ContextId: "moz-src:///browser/modules/ContextId.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   SearchSERPTelemetry:
@@ -79,7 +81,7 @@ class BrowserSearchTelemetryHandler {
    */
   shouldRecordSearchCount(browser) {
     return (
-      !lazy.PrivateBrowsingUtils.isWindowPrivate(browser.ownerGlobal) ||
+      !lazy.PrivateBrowsingUtils.isWindowPrivate(browser.documentGlobal) ||
       !Services.prefs.getBoolPref("browser.engagement.search_counts.pbm", false)
     );
   }
@@ -195,7 +197,7 @@ class BrowserSearchTelemetryHandler {
         // above KNOWN_SEARCH_SOURCES.
         if (
           details.alias &&
-          engine.isConfigEngine &&
+          engine instanceof lazy.ConfigSearchEngine &&
           engine.aliases.includes(details.alias)
         ) {
           // This is a keyword search using a config engine.
@@ -225,7 +227,8 @@ class BrowserSearchTelemetryHandler {
 
       Glean.sap.counts.record({
         source,
-        provider_id: engine.isConfigEngine ? engine.id : "other",
+        provider_id:
+          engine instanceof lazy.ConfigSearchEngine ? engine.id : "other",
         provider_name: engine.name,
         // If no code is reported, we must returned undefined, Glean will then
         // not report the field.
@@ -281,7 +284,8 @@ class BrowserSearchTelemetryHandler {
   recordSearchForm(engine, source) {
     Glean.sap.searchFormCounts.record({
       source,
-      provider_id: engine.isConfigEngine ? engine.id : "other",
+      provider_id:
+        engine instanceof lazy.ConfigSearchEngine ? engine.id : "other",
     });
   }
 
@@ -308,7 +312,7 @@ class BrowserSearchTelemetryHandler {
     }
 
     let name = source.replace(/_([a-z])/g, (m, p) => p.toUpperCase());
-    let label = engine?.isConfigEngine ? engine.id : "none";
+    let label = engine instanceof lazy.ConfigSearchEngine ? engine.id : "none";
     Glean.sapImpressionCounts[name][label].add(1);
   }
 

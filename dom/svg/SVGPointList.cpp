@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,10 +23,10 @@ void SVGPointList::GetValueAsString(nsAString& aValue) const {
   char16_t buf[50];
   uint32_t last = mItems.Length() - 1;
   for (uint32_t i = 0; i < mItems.Length(); ++i) {
-    // Would like to use aValue.AppendPrintf("%f,%f", item.mX, item.mY),
+    // Would like to use aValue.AppendPrintf("%f,%f", item.X(), item.Y()),
     // but it's not possible to always avoid trailing zeros.
     nsTextFormatter::snprintf(buf, std::size(buf), u"%g,%g",
-                              double(mItems[i].mX), double(mItems[i].mY));
+                              double(mItems[i].X()), double(mItems[i].Y()));
     // We ignore OOM, since it's not useful for us to return an error.
     aValue.Append(buf);
     if (i != last) {
@@ -38,14 +36,8 @@ void SVGPointList::GetValueAsString(nsAString& aValue) const {
 }
 
 nsresult SVGPointList::SetValueFromString(const nsAString& aValue) {
-  // The spec says that the list is parsed and accepted up to the first error
-  // encountered, so we must call CopyFrom even if an error occurs. We still
-  // want to throw any error code from setAttribute if there's a problem
-  // though, so we must take care to return any error code.
-
-  nsresult rv = NS_OK;
-
   SVGPointList temp;
+  bool oddNumberOfValues = false;
 
   nsCharSeparatedTokenizerTemplate<nsContentUtils::IsHTMLWhitespace,
                                    nsTokenizerFlags::SeparatorOptional>
@@ -58,38 +50,36 @@ nsresult SVGPointList::SetValueFromString(const nsAString& aValue) {
     token.BeginReading(iter);
     token.EndReading(end);
 
-    float x;
+    float x, y;
     if (!SVGContentUtils::ParseNumber(iter, end, x)) {
-      rv = NS_ERROR_DOM_SYNTAX_ERR;
-      break;
+      return NS_ERROR_DOM_SYNTAX_ERR;
     }
 
-    float y;
     if (iter == end) {
-      if (!tokenizer.hasMoreTokens() ||
-          !SVGContentUtils::ParseNumber(tokenizer.nextToken(), y)) {
-        rv = NS_ERROR_DOM_SYNTAX_ERR;
-        break;
+      if (tokenizer.hasMoreTokens()) {
+        if (!SVGContentUtils::ParseNumber(tokenizer.nextToken(), y)) {
+          return NS_ERROR_DOM_SYNTAX_ERR;
+        }
+        temp.AppendItem(Point(x, y));
+      } else {
+        // Drop the last odd co-ordinate and use the rest.
+        oddNumberOfValues = true;
       }
     } else {
       // It's possible for the token to be 10-30 which has
       // no separator but needs to be parsed as 10, -30
       const nsAString& leftOver = Substring(iter, end);
       if (leftOver[0] != '-' || !SVGContentUtils::ParseNumber(leftOver, y)) {
-        rv = NS_ERROR_DOM_SYNTAX_ERR;
-        break;
+        return NS_ERROR_DOM_SYNTAX_ERR;
       }
+      temp.AppendItem(Point(x, y));
     }
-    temp.AppendItem(SVGPoint(x, y));
   }
-  if (tokenizer.separatorAfterCurrentToken()) {
-    rv = NS_ERROR_DOM_SYNTAX_ERR;  // trailing comma
+  if (!oddNumberOfValues && tokenizer.separatorAfterCurrentToken()) {
+    return NS_ERROR_DOM_SYNTAX_ERR;  // trailing comma
   }
-  nsresult rv2 = CopyFrom(temp);
-  if (NS_FAILED(rv2)) {
-    return rv2;  // prioritize OOM error code over syntax errors
-  }
-  return rv;
+  mItems = std::move(temp.mItems);
+  return NS_OK;
 }
 
 }  // namespace mozilla

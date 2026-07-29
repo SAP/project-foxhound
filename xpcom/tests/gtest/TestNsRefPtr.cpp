@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -69,7 +68,7 @@ MozExternalRefCountType Foo::Release() {
 nsresult Foo::QueryInterface(const nsIID& aIID, void** aResult) {
   ++total_queries_;
 
-  nsISupports* rawPtr = 0;
+  nsISupports* rawPtr = nullptr;
   nsresult status = NS_OK;
 
   if (aIID.Equals(NS_GET_IID(Foo)))
@@ -150,7 +149,7 @@ Bar::~Bar() { ++total_destructions_; }
 nsresult Bar::QueryInterface(const nsID& aIID, void** aResult) {
   ++total_queries_;
 
-  nsISupports* rawPtr = 0;
+  nsISupports* rawPtr = nullptr;
   nsresult status = NS_OK;
 
   if (aIID.Equals(NS_GET_IID(Bar)))

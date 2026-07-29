@@ -27,6 +27,16 @@ window.RPMGetFormatURLPref = () => {
   /* NOOP */
 };
 
+// Stub chrome-only globals so modules that touch them at top level (e.g.
+// XPCOMUtils.declareLazy for prefs) can still be evaluated in Storybook.
+window.ChromeUtils = {
+  importESModule: () => ({
+    XPCOMUtils: {
+      declareLazy: () => ({}),
+    },
+  }),
+};
+
 /**
  * Function to automatically import reusable components into all stories. This
  * helps ensure that components composed of multiple `moz-` elements will render
@@ -49,7 +59,7 @@ function importReusableComponents() {
   });
 
   // Manually import the two components that don't follow our naming conventions.
-  import("toolkit/content/widgets/panel-list/panel-list.js");
+  import("toolkit/content/widgets/panel-list/panel-list.mjs");
   import("toolkit/content/widgets/named-deck.js");
 }
 importReusableComponents();

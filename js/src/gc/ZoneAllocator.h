@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -385,12 +383,11 @@ class BufferAllocPolicy : public AllocPolicyBase {
   }
 
   template <typename T>
-  inline void traceOwnedAlloc(JSTracer* trc, gc::Cell* maybeOwner, T** bufferp,
-                              const char* name) {
+  inline void traceOwnedAlloc(JSTracer* trc, T** bufferp, const char* name) {
     MOZ_ASSERT(bufferp);
     MOZ_ASSERT(*bufferp);
     void** ptrp = reinterpret_cast<void**>(bufferp);
-    gc::TraceBufferEdgeInternal(trc, zone, maybeOwner, ptrp, name);
+    gc::TraceBufferEdgeInternal(trc, ptrp, name);
   }
 
   size_t getAllocSize(void* ptr, mozilla::MallocSizeOf mallocSizeOf) {

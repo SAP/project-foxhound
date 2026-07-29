@@ -17,13 +17,13 @@ import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.utils.CreditCardNetworkType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.GleanMetrics.CreditCards
 import org.mozilla.fenix.helpers.FenixGleanTestRule
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class CreditCardEditorStoreTest {

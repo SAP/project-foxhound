@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -34,6 +32,7 @@ namespace gc {
 
 class Arena;
 class ArenaCellSet;
+class GCRuntime;
 
 /*
  * BufferableRef represents an abstract reference for use in the generational
@@ -139,7 +138,6 @@ class StoreBuffer {
   struct WholeCellBuffer {
     UniquePtr<LifoAlloc> storage_;
     size_t maxSize_ = 0;
-    ArenaCellSet* sweepHead_ = nullptr;
     const Cell* last_ = nullptr;
 
     WholeCellBuffer() = default;
@@ -350,6 +348,8 @@ class StoreBuffer {
       uint32_t end = std::max(start_ + count_, other.start_ + other.count_);
       start_ = std::min(start_, other.start_);
       count_ = end - start_;
+      MOZ_ASSERT(count_ > 0);
+      MOZ_ASSERT(start_ + count_ > start_);
     }
 
     bool maybeInRememberedSet(const Nursery& n) const {
@@ -464,7 +464,7 @@ class StoreBuffer {
   WholeCellBuffer bufferWholeCell;
   GenericBuffer bufferGeneric;
 
-  JSRuntime* runtime_;
+  GCRuntime* gc_;
   Nursery& nursery_;
   size_t entryCount_;
   double entryScaling_;
@@ -477,7 +477,7 @@ class StoreBuffer {
 #endif
 
  public:
-  explicit StoreBuffer(JSRuntime* rt);
+  explicit StoreBuffer(GCRuntime* gc);
 
   StoreBuffer(const StoreBuffer& other) = delete;
   StoreBuffer& operator=(const StoreBuffer& other) = delete;
@@ -603,7 +603,8 @@ class StoreBuffer {
 class ArenaCellSet {
   friend class StoreBuffer;
 
-  using ArenaCellBits = BitArray<MaxArenaCellIndex>;
+  // Use a 32 bit word to make it easier to access ArenaCellBits from JIT code.
+  using ArenaCellBits = BitArray<MaxArenaCellIndex, uint32_t>;
 
   // The arena this relates to.
   Arena* arena = nullptr;
@@ -627,7 +628,6 @@ class ArenaCellSet {
  public:
   using WordT = ArenaCellBits::WordT;
   static constexpr size_t BitsPerWord = ArenaCellBits::bitsPerElement;
-  static constexpr size_t NumWords = ArenaCellBits::numSlots;
 
   explicit ArenaCellSet(Arena* arena);
 
@@ -647,12 +647,8 @@ class ArenaCellSet {
 
   WordT getWord(size_t wordIndex) const { return bits.getWord(wordIndex); }
 
-  void setWord(size_t wordIndex, WordT value) {
-    bits.setWord(wordIndex, value);
-  }
-
   // Sweep this set, returning whether it also needs to be swept later.
-  bool trace(TenuringTracer& mover);
+  void trace(TenuringTracer& mover);
 
   // Sentinel object used for all empty sets.
   //
@@ -661,15 +657,16 @@ class ArenaCellSet {
   static ArenaCellSet Empty;
 
   static size_t getCellIndex(const TenuredCell* cell);
-  static void getWordIndexAndMask(size_t cellIndex, size_t* wordp,
-                                  uint32_t* maskp);
+  static std::pair<size_t, uint32_t> getWordIndexAndMask(size_t cellIndex);
 
   // Attempt to trigger a minor GC if free space in the nursery (where these
   // objects are allocated) falls below this threshold.
   static const size_t NurseryFreeThresholdBytes = 64 * 1024;
 
   static size_t offsetOfArena() { return offsetof(ArenaCellSet, arena); }
-  static size_t offsetOfBits() { return offsetof(ArenaCellSet, bits); }
+  static size_t offsetOfBits() {
+    return offsetof(ArenaCellSet, bits) + ArenaCellBits::offsetOfMap();
+  }
 };
 
 // Post-write barrier implementation for GC cells.

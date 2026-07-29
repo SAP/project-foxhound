@@ -37,6 +37,7 @@
 #include "encode.h"
 #include "hwconfig.h"
 #include "fffjni.h"
+#include "jni.h"
 #include "mediacodec.h"
 #include "mediacodec_wrapper.h"
 #include "mediacodecdec_common.h"
@@ -95,6 +96,13 @@ typedef struct MediaCodecEncContext {
     AVCond output_cond;
     int encode_status;
     AVFifo *async_output;
+
+    int qp_i_min;
+    int qp_p_min;
+    int qp_b_min;
+    int qp_i_max;
+    int qp_p_max;
+    int qp_b_max;
 } MediaCodecEncContext;
 
 enum {
@@ -351,6 +359,39 @@ static void mediacodec_uninit_async_state(AVCodecContext *avctx)
 
 static int mediacodec_generate_extradata(AVCodecContext *avctx);
 
+static void mediacodec_set_qp_range(AVCodecContext *avctx,
+                                    FFAMediaFormat *format)
+{
+    MediaCodecEncContext *s = avctx->priv_data;
+
+    // Handle common options in AVCodecContext first.
+    if (avctx->qmin >= 0) {
+        ff_AMediaFormat_setInt32(format, "video-qp-i-min", avctx->qmin);
+        ff_AMediaFormat_setInt32(format, "video-qp-p-min", avctx->qmin);
+        ff_AMediaFormat_setInt32(format, "video-qp-b-min", avctx->qmin);
+    }
+
+    if (avctx->qmax >= 0) {
+        ff_AMediaFormat_setInt32(format, "video-qp-i-max", avctx->qmax);
+        ff_AMediaFormat_setInt32(format, "video-qp-p-max", avctx->qmax);
+        ff_AMediaFormat_setInt32(format, "video-qp-b-max", avctx->qmax);
+    }
+
+    if (s->qp_i_min >= 0)
+        ff_AMediaFormat_setInt32(format, "video-qp-i-min", s->qp_i_min);
+    if (s->qp_p_min >= 0)
+        ff_AMediaFormat_setInt32(format, "video-qp-p-min", s->qp_p_min);
+    if (s->qp_b_min >= 0)
+        ff_AMediaFormat_setInt32(format, "video-qp-b-min", s->qp_b_min);
+
+    if (s->qp_i_max >= 0)
+        ff_AMediaFormat_setInt32(format, "video-qp-i-max", s->qp_i_max);
+    if (s->qp_p_max >= 0)
+        ff_AMediaFormat_setInt32(format, "video-qp-p-max", s->qp_p_max);
+    if (s->qp_b_max >= 0)
+        ff_AMediaFormat_setInt32(format, "video-qp-b-max", s->qp_b_max);
+}
+
 static av_cold int mediacodec_init(AVCodecContext *avctx)
 {
     const char *codec_mime = NULL;
@@ -484,6 +525,8 @@ static av_cold int mediacodec_init(AVCodecContext *avctx)
         if (s->bitrate_mode == BITRATE_MODE_CQ && avctx->global_quality > 0)
             ff_AMediaFormat_setInt32(format, "quality", avctx->global_quality);
     }
+    mediacodec_set_qp_range(avctx, format);
+
     // frame-rate and i-frame-interval are required to configure codec
     if (avctx->framerate.num >= avctx->framerate.den && avctx->framerate.den > 0) {
         s->fps = avctx->framerate.num / avctx->framerate.den;
@@ -788,9 +831,11 @@ static int mediacodec_send(AVCodecContext *avctx,
 
         if (frame->pict_type == AV_PICTURE_TYPE_I) {
             FFAMediaFormat *format = ff_AMediaFormat_new(s->use_ndk_codec);
-            ff_AMediaFormat_setInt32(format, "request-sync", 0);
-            ff_AMediaCodec_setParameters(codec, format);
-            ff_AMediaFormat_delete(format);
+            if (format) {
+                ff_AMediaFormat_setInt32(format, "request-sync", 0);
+                ff_AMediaCodec_setParameters(codec, format);
+                ff_AMediaFormat_delete(format);
+            }
         }
     } else {
         flags |= ff_AMediaCodec_getBufferFlagEndOfStream(codec);
@@ -996,6 +1041,12 @@ static const AVCodecHWConfigInternal *const mediacodec_hw_configs[] = {
     NULL
 };
 
+static const FFCodecDefault mediacodec_defaults[] = {
+    {"qmin", "-1"},
+    {"qmax", "-1"},
+    {NULL},
+};
+
 #define OFFSET(x) offsetof(MediaCodecEncContext, x)
 #define VE AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM
 #define COMMON_OPTION                                                                                       \
@@ -1019,7 +1070,20 @@ static const AVCodecHWConfigInternal *const mediacodec_hw_configs[] = {
                     "since most of Android devices don't output B frames by default.",                      \
                     OFFSET(pts_as_dts), AV_OPT_TYPE_BOOL, {.i64 = -1}, -1, 1, VE },                         \
     { "operating_rate", "The desired operating rate that the codec will need to operate at, zero for unspecified",    \
-            OFFSET(operating_rate), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, VE },                                          \
+                    OFFSET(operating_rate), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, VE },                  \
+    { "qp_i_min", "minimum quantization parameter for I frame",                                             \
+                    OFFSET(qp_i_min), AV_OPT_TYPE_INT, {.i64 = -1}, -1, INT_MAX, VE },                      \
+    { "qp_p_min", "minimum quantization parameter for P frame",                                             \
+                    OFFSET(qp_p_min), AV_OPT_TYPE_INT, {.i64 = -1}, -1, INT_MAX, VE },                      \
+    { "qp_b_min", "minimum quantization parameter for B frame",                                             \
+                    OFFSET(qp_b_min), AV_OPT_TYPE_INT, {.i64 = -1}, -1, INT_MAX, VE },                      \
+    { "qp_i_max", "maximum quantization parameter for I frame",                                             \
+                    OFFSET(qp_i_max), AV_OPT_TYPE_INT, {.i64 = -1}, -1, INT_MAX, VE },                      \
+    { "qp_p_max", "maximum quantization parameter for P frame",                                             \
+                    OFFSET(qp_p_max), AV_OPT_TYPE_INT, {.i64 = -1}, -1, INT_MAX, VE },                      \
+    { "qp_b_max", "maximum quantization parameter for B frame",                                             \
+                    OFFSET(qp_b_max), AV_OPT_TYPE_INT, {.i64 = -1}, -1, INT_MAX, VE },                      \
+
 
 #define MEDIACODEC_ENCODER_CLASS(name)              \
 static const AVClass name ## _mediacodec_class = {  \
@@ -1040,8 +1104,9 @@ const FFCodec ff_ ## short_name ## _mediacodec_encoder = {              \
                         AV_CODEC_CAP_HARDWARE |                         \
                         AV_CODEC_CAP_ENCODER_FLUSH,                     \
     .priv_data_size   = sizeof(MediaCodecEncContext),                   \
-    .p.pix_fmts       = avc_pix_fmts,                                   \
+    CODEC_PIXFMTS_ARRAY(avc_pix_fmts),                                  \
     .color_ranges   = AVCOL_RANGE_MPEG | AVCOL_RANGE_JPEG,              \
+    .defaults         = mediacodec_defaults,                            \
     .init             = mediacodec_init,                                \
     FF_CODEC_RECEIVE_PACKET_CB(mediacodec_encode),                      \
     .close            = mediacodec_close,                               \
@@ -1297,7 +1362,7 @@ static const AVOption vp9_options[] = {
                 0, AV_OPT_TYPE_CONST, { .i64 = VP9Level52 },  0, 0, VE,  .unit = "level" },
     { "6",     "Level 6",
                 0, AV_OPT_TYPE_CONST, { .i64 = VP9Level6  },  0, 0, VE,  .unit = "level" },
-    { "6.1",   "Level 4.1",
+    { "6.1",   "Level 6.1",
                 0, AV_OPT_TYPE_CONST, { .i64 = VP9Level61 },  0, 0, VE,  .unit = "level" },
     { "6.2",   "Level 6.2",
                 0, AV_OPT_TYPE_CONST, { .i64 = VP9Level62 },  0, 0, VE,  .unit = "level" },

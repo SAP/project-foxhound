@@ -2,9 +2,33 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/** @import * from "../../types/tabnotes.ts" */
+
 const { TabNotes } = ChromeUtils.importESModule(
   "moz-src:///browser/components/tabnotes/TabNotes.sys.mjs"
 );
+
+/**
+ * @param {string} url
+ * @returns {Promise<MozTabbrowserTab>}
+ */
+async function addTab(url) {
+  const tab = BrowserTestUtils.addTab(gBrowser, url);
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, url);
+  return tab;
+}
+
+/**
+ * @param {MozTabbrowserTab} tab
+ * @returns {Promise<void>}
+ */
+function createNote(tab) {
+  let tabNoteCreated = BrowserTestUtils.waitForEvent(tab, "TabNote:Created");
+  return Promise.all([
+    tabNoteCreated,
+    TabNotes.set(tab, `Test note text: ${tab.canonicalUrl}`),
+  ]);
+}
 
 /**
  * @param {Node} triggerNode
@@ -12,7 +36,7 @@ const { TabNotes } = ChromeUtils.importESModule(
  * @returns {Promise<XULMenuElement|XULPopupElement>}
  */
 async function getContextMenu(triggerNode, contextMenuId) {
-  let win = triggerNode.ownerGlobal;
+  let win = triggerNode.documentGlobal;
   triggerNode.scrollIntoView({ behavior: "instant" });
   const contextMenu = win.document.getElementById(contextMenuId);
   const contextMenuShown = BrowserTestUtils.waitForPopupEvent(
@@ -105,4 +129,38 @@ function tabNoteIndicatorDisappears(tab) {
     { attributeFilter: ["tab-note"] },
     () => !tab.hasTabNote
   );
+}
+
+/**
+ * @param {MozTabbrowserTab} tab
+ * @returns {Promise<boolean>}
+ *   Whether `tab` has a tab note.
+ */
+async function tabNoteDetermined(tab) {
+  /** @type {Promise<TabNoteDeterminedEvent>} */
+  let event = BrowserTestUtils.waitForEvent(tab, "TabNote:Determined");
+  return (await event).detail.hasTabNote;
+}
+
+/**
+ * On a full page load, `TabNote:Determined` will fire on both `DOMContentLoaded`
+ * and `pageshow` in sequence, so we need to wait for both to fire.
+ *
+ * @param {MozTabbrowserTab} tab
+ * @returns {Promise<boolean>}
+ *   Whether `tab` has a tab note.
+ */
+async function tabNoteDeterminedFullPageLoad(tab) {
+  let count = 0;
+  /** @type {Promise<TabNoteDeterminedEvent>} */
+  let event = BrowserTestUtils.waitForEvent(
+    tab,
+    "TabNote:Determined",
+    false,
+    () => {
+      count += 1;
+      return count == 2;
+    }
+  );
+  return (await event).detail.hasTabNote;
 }

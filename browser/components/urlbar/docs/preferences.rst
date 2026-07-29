@@ -99,11 +99,6 @@ browser.urlbar.autoFill.adaptiveHistory.useCountThreshold (float, default: 1.0)
   Threshold for use count of input history that we handle as adaptive history
   autofill. If the use count is this value or more, it will be a candidate.
 
-browser.urlbar.autoFill.stddevMultiplier (float, default: 0.0)
-  Affects the frecency threshold of the autofill algorithm.  The threshold is
-  the mean of all origin frecencies, plus one standard deviation multiplied by
-  this value.
-
 browser.urlbar.ctrlCanonizesURLs (boolean, default: true)
   Whether using `ctrl` or `command` when hitting return/enter in the URL bar
   should add prefix 'www.' and suffix `Services.locale.urlFixupSuffix` to the

@@ -1,0 +1,137 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl1-core"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/conformance/extensions/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_conformance__extensions__angle-instanced-arrays-out-of-bounds.html"]
+
+["test_conformance__extensions__angle-instanced-arrays.html"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+]
+
+["test_conformance__extensions__ext-blend-minmax.html"]
+
+["test_conformance__extensions__ext-clip-control.html"]
+
+["test_conformance__extensions__ext-color-buffer-half-float.html"]
+
+["test_conformance__extensions__ext-depth-clamp.html"]
+
+["test_conformance__extensions__ext-disjoint-timer-query.html"]
+
+["test_conformance__extensions__ext-float-blend.html"]
+
+["test_conformance__extensions__ext-frag-depth.html"]
+
+["test_conformance__extensions__ext-polygon-offset-clamp.html"]
+
+["test_conformance__extensions__ext-sRGB.html"]
+
+["test_conformance__extensions__ext-shader-texture-lod.html"]
+
+["test_conformance__extensions__ext-texture-compression-bptc.html"]
+
+["test_conformance__extensions__ext-texture-compression-rgtc.html"]
+
+["test_conformance__extensions__ext-texture-filter-anisotropic.html"]
+
+["test_conformance__extensions__ext-texture-mirror-clamp-to-edge.html"]
+
+["test_conformance__extensions__get-extension.html"]
+
+["test_conformance__extensions__khr-parallel-shader-compile.html"]
+
+["test_conformance__extensions__oes-element-index-uint.html"]
+
+["test_conformance__extensions__oes-fbo-render-mipmap.html"]
+
+["test_conformance__extensions__oes-standard-derivatives.html"]
+
+["test_conformance__extensions__oes-texture-float-linear.html"]
+
+["test_conformance__extensions__oes-texture-float-with-canvas.html"]
+
+["test_conformance__extensions__oes-texture-float-with-image-data.html"]
+
+["test_conformance__extensions__oes-texture-float-with-image.html"]
+
+["test_conformance__extensions__oes-texture-float-with-video.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
+
+["test_conformance__extensions__oes-texture-float.html"]
+
+["test_conformance__extensions__oes-texture-half-float-linear.html"]
+
+["test_conformance__extensions__oes-texture-half-float-with-canvas.html"]
+
+["test_conformance__extensions__oes-texture-half-float-with-image-data.html"]
+
+["test_conformance__extensions__oes-texture-half-float-with-image.html"]
+
+["test_conformance__extensions__oes-texture-half-float-with-video.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
+
+["test_conformance__extensions__oes-texture-half-float.html"]
+
+["test_conformance__extensions__oes-vertex-array-object-bufferData.html"]
+
+["test_conformance__extensions__oes-vertex-array-object.html"]
+
+["test_conformance__extensions__s3tc-and-rgtc.html"]
+
+["test_conformance__extensions__webgl-blend-func-extended.html"]
+
+["test_conformance__extensions__webgl-compressed-texture-astc.html"]
+
+["test_conformance__extensions__webgl-compressed-texture-etc.html"]
+
+["test_conformance__extensions__webgl-compressed-texture-etc1.html"]
+
+["test_conformance__extensions__webgl-compressed-texture-pvrtc.html"]
+
+["test_conformance__extensions__webgl-compressed-texture-s3tc-srgb.html"]
+
+["test_conformance__extensions__webgl-compressed-texture-size-limit.html"]
+
+["test_conformance__extensions__webgl-debug-renderer-info.html"]
+
+["test_conformance__extensions__webgl-debug-shaders.html"]
+
+["test_conformance__extensions__webgl-depth-texture.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
+
+["test_conformance__extensions__webgl-draw-buffers-broadcast-return.html"]
+
+["test_conformance__extensions__webgl-draw-buffers-framebuffer-unsupported.html"]
+
+["test_conformance__extensions__webgl-draw-buffers-max-draw-buffers.html"]
+
+["test_conformance__extensions__webgl-draw-buffers.html"]
+
+["test_conformance__extensions__webgl-multi-draw.html"]
+
+["test_conformance__extensions__webgl-polygon-mode.html"]

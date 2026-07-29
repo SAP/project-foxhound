@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -286,7 +284,7 @@ class ScriptLoadContext : public JS::loader::LoadContextBase,
   bool mInCompilingList;  // True if we are in mOffThreadCompilingRequests.
   bool mWasCompiledOMT;   // True if the script has been compiled off main
                           // thread.
-  // Set on scripts and top level modules.
+  // Set on preloading scripts or modules.
   bool mIsPreload;
 
   // For preload requests, we defer reporting errors to the console until the

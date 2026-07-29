@@ -227,18 +227,24 @@ class Searchfox(ReferenceRole):
 
         See :searchfox:`firefox-beta:browser/base/content/browser-places.js`
         for more details.
+
+    To pin to a specific revision, include ``/rev/<sha>`` in the source:
+
+        See :searchfox:`firefox-main/rev/<sha>:browser/components/BrowserGlue.sys.mjs#42`
+        for more details.
     """
 
     def run(self):
-        base = "https://searchfox.org/{source}/source/{path}"
-
         if ":" in self.target:
             source, path = self.target.split(":", 1)
         else:
             source = "firefox-main"
             path = self.target
 
-        url = base.format(source=source, path=path)
+        if "/rev/" not in source:
+            source = f"{source}/source"
+
+        url = f"https://searchfox.org/{source}/{path}"
 
         if self.has_explicit_title:
             title = self.title

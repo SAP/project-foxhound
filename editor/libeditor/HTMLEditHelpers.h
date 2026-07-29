@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -1037,12 +1036,12 @@ class MOZ_RAII DOMSubtreeIterator final : public DOMIterator {
  public:
   explicit DOMSubtreeIterator();
   virtual ~DOMSubtreeIterator() = default;
+  explicit DOMSubtreeIterator(nsINode& aNode) = delete;
 
   nsresult Init(nsRange& aRange);
 
  private:
   ContentSubtreeIterator mSubtreeIter;
-  explicit DOMSubtreeIterator(nsINode& aNode) = delete;
 };
 
 /******************************************************************************
@@ -1391,7 +1390,7 @@ struct MOZ_STACK_CLASS EditorInlineStyleAndValue : public EditorInlineStyle {
   EditorInlineStyleAndValue(nsStaticAtom& aHTMLProperty,
                             RefPtr<nsAtom>&& aAttribute, nsString&& aValue)
       : EditorInlineStyle(aHTMLProperty, std::move(aAttribute), HasValue::Yes),
-        mAttributeValue(aValue) {}
+        mAttributeValue(std::move(aValue)) {}
 
   [[nodiscard]] static EditorInlineStyleAndValue ToInvert(
       const EditorInlineStyle& aStyle) {

@@ -1,6 +1,7 @@
 # Accessibility Review
 
 ## Introduction
+
 At Mozilla, accessibility is a fundamental part of our mission to ensure the
 internet is "open and accessible to all," helping to empower people, regardless
 of their abilities, to contribute to the common good. Accessibility Review is a
@@ -9,13 +10,15 @@ changes to ensure they are accessible to and inclusive of people with
 disabilities.
 
 ## Do I Need Accessibility Review?
+
 You should consider requesting accessibility review if you aren't certain
 whether your change is accessible to people with disabilities. Accessibility
 review is optional, but it is strongly encouraged if you are introducing new
 user interface or are significantly redesigning existing user interface.
-Review should be requested both on the design side _and_ on the engineering side.
+Review should be requested both on the design side *and* on the engineering side.
 
 ## When Should I Request Accessibility Review?
+
 Generally, it's best to request accessibility review as early as possible, even
 during the product requirements or UI design stage. Particularly for more
 complex user interfaces, accessibility is much easier when incorporated into the
@@ -36,6 +39,7 @@ This is the same date as the Manual QA Request deadline.
 :::
 
 ## Requesting Design Review
+
 Design review should be requested using the Accessibility Review Request
 workflow in the #accessibility slack channel. To access this workflow, click on
 the workflow link in the #accessibility slack channel header or in the links
@@ -51,6 +55,7 @@ Role annotations help screen readers and other assistive technologies identify t
 Where possible, we should rely on SVG's and PNG's for image content to increase adaptability.
 
 ## Requesting Engineering Review
+
 For an engineering-focused review, you submit a review request by setting the a11y-review flag to "requested"
 on a bug in Bugzilla and filling in the template that appears in the comment
 field. For features spanning several bugs, you may wish to file a new, dedicated
@@ -60,35 +65,40 @@ need to submit the bug and then edit it to set the flag.
 
 During the review process, the accessibility team will modify the a11y-review
 flag:
+
 - **assigned**: The review has been triaged by the team and an engineer has been assigned
-    to the review. If the flag has been set on a bug filed specifically for the purposes
-    of review (i.e., the bug does not have additional engineering work attached, and the bug is not a meta bug) the review assignee will assign the bug to themselves.
-    Otherwise, they'll comment on the bug so you know who they are :)
+  to the review. If the flag has been set on a bug filed specifically for the purposes
+  of review (i.e., the bug does not have additional engineering work attached, and the bug is not a meta bug) the review assignee will assign the bug to themselves.
+  Otherwise, they'll comment on the bug so you know who they are :)
 - **passed**: Either no changes are required, or some changes are required but the
-    accessibility team does not believe it is necessary to review or verify
-    those changes prior to shipping. Generally, a review will not be passed if
-    there are outstanding s2 or certain high impact s3 accessibility defects
-    which should block the feature or change from shipping. However, despite
-    their high severity, some s2 defects are trivial to fix (e.g. missing
-    accessibility labels), so the accessibility team may elect to pass the
-    review on the condition that these are fixed promptly.
+  accessibility team does not believe it is necessary to review or verify
+  those changes prior to shipping. Generally, a review will not be passed if
+  there are outstanding s2 or certain high impact s3 accessibility defects
+  which should block the feature or change from shipping. However, despite
+  their high severity, some s2 defects are trivial to fix (e.g. missing
+  accessibility labels), so the accessibility team may elect to pass the
+  review on the condition that these are fixed promptly.
 - **changes required**: Changes are required and the accessibility team will
-    need to review or verify those changes before determining whether the
-    accessibility of the feature or change is acceptable for shipping. It is
-    the responsibility of the requesting engineering team to re-request
-    accessibility review once changes are made to address the accessibility
-    team's initial round of feedback.
+  need to review or verify those changes before determining whether the
+  accessibility of the feature or change is acceptable for shipping. It is
+  the responsibility of the requesting engineering team to re-request
+  accessibility review once changes are made to address the accessibility
+  team's initial round of feedback.
 
 ## Phabricator Review Group
+
 There is also an
 [accessibility-frontend-reviewers](https://phabricator.services.mozilla.com/tag/accessibility-frontend-reviewers/)
 group on Phabricator. This should generally only be used if:
 
 1. The patch is a change requested as part of an accessibility review as
-    described above; or
+   described above; or
 2. There is a very specific aspect of accessibility implemented in the patch and
-    you would like the accessibility team to confirm whether it has been
-    implemented correctly.
+   you would like the accessibility team to confirm whether it has been
+   implemented correctly.
+
+We recommend using the automated review tool described below before submitting
+to the review group.
 
 If you would instead like the accessibility team to assess **whether a feature
 or change is sufficiently accessible**, please request an accessibility
@@ -96,12 +106,35 @@ or change is sufficiently accessible**, please request an accessibility
 will not have sufficient context or understanding of the change or how to test
 it, which is necessary to thoroughly assess its accessibility.
 
+## Automated Accessibility Review Skill
+
+The accessibility team maintains a frontend accessibility review skill for
+Claude Code and other LLM agents, available in the Firefox repository. You can
+invoke it via `/accessibility-frontend-review` in your LLM environment.
+
+This skill accepts either a Phabricator patch reference (URL or `D####`) or a
+local changeset, and performs static analysis to catch common issues before
+review. Specifically, it checks for:
+
+- Inappropriate ARIA roles
+- Missing required ARIA states or properties
+- Missing labels that screen reader users depend on
+- High Contrast Mode (HCM) coverage and design token usage, with recommendations
+  for improvements
+
+**This skill does not perform live, automated testing with assistive
+technologies (ATs).** It is a supplement to, not a replacement for, a full
+accessibility review. You should continue to test your patches with ATs on your
+own machine, and to request accessibility engineering review for features or
+changes involving UI or UX work.
+
 ## Questions?
+
 If you have any questions, please don't hesitate to contact the Accessibility
 team:
 
-* \#accessibility on
+- \#accessibility on
   [Matrix](https://matrix.to/#/!jmuErVonajdNMbgdeY:mozilla.org?via=mozilla.org&via=matrix.org)
   or [Slack](https://mozilla.slack.com/archives/C4E0W8B8E)
-* Email: accessibility@mozilla.com
-* Please avoid reaching out to individual team members directly -- containing review requests and questions in these channels helps us balance our workload. Thank you!
+- Email: <accessibility@mozilla.com>
+- Please avoid reaching out to individual team members directly -- containing review requests and questions in these channels helps us balance our workload. Thank you!

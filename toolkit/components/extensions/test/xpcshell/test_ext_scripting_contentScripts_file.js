@@ -4,6 +4,11 @@ const FILE_DUMMY_URL = Services.io.newFileURI(
   do_get_file("data/dummy_page.html")
 ).spec;
 
+Services.prefs.setBoolPref(
+  "extensions.webextensions.fileSchemeAccess.requireOptIn",
+  false
+);
+
 // ExtensionContent.sys.mjs needs to know when it's running from xpcshell, to use
 // the right timeout for content scripts executed at document_idle.
 ExtensionTestUtils.mockAppInfo();

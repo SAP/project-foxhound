@@ -36,7 +36,7 @@ add_task(async function () {
   info("Check that simple click does not open a tab");
   const onTabOpened = once(gBrowser.tabContainer, "TabOpen");
   const onTimeout = wait(1000).then(() => "TIMEOUT");
-  EventUtils.synthesizeMouseAtCenter(linkEl, {}, linkEl.ownerGlobal);
+  EventUtils.synthesizeMouseAtCenter(linkEl, {}, linkEl.documentGlobal);
   const res = await Promise.race([onTabOpened, onTimeout]);
   is(res, "TIMEOUT", "Tab was not opened on simple click");
 

@@ -328,7 +328,14 @@ export var SiteDataManager = {
    * @returns {boolean} whether the site has any data associated with it
    */
   async hasSiteData(asciiHost) {
-    if (Services.cookies.countCookiesFromHost(asciiHost)) {
+    // Search across all OriginAttributes (containers, partition keys, …) but
+    // exclude private-browsing cookies — non-PB UI shouldn't surface PB state.
+    if (
+      Services.cookies.hasCookiesForSite(
+        asciiHost,
+        JSON.stringify({ privateBrowsingId: 0 })
+      )
+    ) {
       return true;
     }
 

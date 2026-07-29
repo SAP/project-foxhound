@@ -15,12 +15,12 @@
 #include <cstdio>
 #include <ostream>
 #include <set>
+#include <span>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/numerics/samples_stats_counter.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/strings/string_builder.h"
@@ -49,7 +49,7 @@ std::string UnitWithDirection(absl::string_view units,
 
 std::vector<SamplesStatsCounter::StatsSample> GetSortedSamples(
     const SamplesStatsCounter& counter) {
-  ArrayView<const SamplesStatsCounter::StatsSample> view =
+  std::span<const SamplesStatsCounter::StatsSample> view =
       counter.GetTimedSamples();
   std::vector<SamplesStatsCounter::StatsSample> out(view.begin(), view.end());
   std::stable_sort(out.begin(), out.end(),
@@ -90,9 +90,10 @@ class PlottableCounterPrinter {
                   const SamplesStatsCounter& counter,
                   absl::string_view units) {
     MutexLock lock(&mutex_);
-    plottable_counters_.push_back({std::string(graph_name),
-                                   std::string(trace_name), counter,
-                                   std::string(units)});
+    plottable_counters_.push_back({.graph_name = std::string(graph_name),
+                                   .trace_name = std::string(trace_name),
+                                   .counter = counter,
+                                   .units = std::string(units)});
   }
 
   void Print(const std::vector<std::string>& desired_graphs_raw) const {
@@ -181,7 +182,7 @@ class ResultsLinePrinter {
 
   void PrintResultList(absl::string_view graph_name,
                        absl::string_view trace_name,
-                       const ArrayView<const double> values,
+                       const std::span<const double> values,
                        absl::string_view units,
                        const bool important,
                        test::ImproveDirection improve_direction) {
@@ -338,7 +339,7 @@ void PrintResultMeanAndError(absl::string_view measurement,
 void PrintResultList(absl::string_view measurement,
                      absl::string_view modifier,
                      absl::string_view trace,
-                     const ArrayView<const double> values,
+                     const std::span<const double> values,
                      absl::string_view units,
                      bool important,
                      ImproveDirection improve_direction) {

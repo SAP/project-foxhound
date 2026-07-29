@@ -4,6 +4,7 @@
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   SyncedTabsController: "resource:///modules/SyncedTabsController.sys.mjs",
 });
 
@@ -24,6 +25,8 @@ import {
 } from "./helpers.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://browser/content/firefoxview/syncedtabs-tab-list.mjs";
+// eslint-disable-next-line import/no-unassigned-import
+import "chrome://global/content/elements/moz-button.mjs";
 
 const UI_OPEN_STATE = "browser.tabs.firefox-view.ui-state.tab-pickup.open";
 
@@ -148,14 +151,15 @@ class SyncedTabsInView extends ViewPage {
         mainImageUrl=${ifDefined(mainImageUrl)}
         id="empty-container"
       >
-        <button
+        <moz-button
           class="primary"
+          type="primary"
           slot="primary-action"
           ?hidden=${!buttonLabel}
           data-l10n-id=${ifDefined(buttonLabel)}
           data-action=${action}
           @click=${e => this.controller.handleEvent(e)}
-        ></button>
+        ></moz-button>
       </fxview-empty-state>
     `;
   }
@@ -204,6 +208,7 @@ class SyncedTabsInView extends ViewPage {
           @click=${this.openInNewPrivateWindow}
           data-l10n-id="fxviewtabrow-open-in-private-window"
           data-l10n-attrs="accesskey"
+          ?hidden=${!lazy.PrivateBrowsingUtils.enabled}
         ></panel-item>
         <hr />
         <panel-item
@@ -404,21 +409,12 @@ class SyncedTabsInView extends ViewPage {
             ${when(
               this.controller.currentSetupStateIndex === 4,
               () => html`
-                <button
-                  class="small-button"
+                <moz-button
+                  iconSrc="chrome://global/skin/icons/plus.svg"
+                  data-l10n-id="firefoxview-syncedtabs-connect-another-device"
                   data-action="add-device"
                   @click=${e => this.controller.handleEvent(e)}
-                >
-                  <img
-                    class="icon"
-                    role="presentation"
-                    src="chrome://global/skin/icons/plus.svg"
-                    alt="plus sign"
-                  /><span
-                    data-l10n-id="firefoxview-syncedtabs-connect-another-device"
-                    data-action="add-device"
-                  ></span>
-                </button>
+                ></moz-button>
               `
             )}
           </div>

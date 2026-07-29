@@ -97,6 +97,41 @@ export const PKIX_ERRORS = [
       showViewCertificate: true,
     },
     hasNoUserFix: false,
+    checkClockSkew: true,
+  },
+  {
+    id: "MOZILLA_PKIX_ERROR_NOT_YET_VALID_ISSUER_CERTIFICATE",
+    errorCode: "MOZILLA_PKIX_ERROR_NOT_YET_VALID_ISSUER_CERTIFICATE",
+    category: "cert",
+    introContent: {
+      dataL10nId: "fp-certerror-intro",
+      dataL10nArgs: { hostname: null },
+    },
+    buttons: {
+      showTryAgain: false,
+      showGoBack: true,
+      showAdvanced: true,
+      showAddException: true,
+    },
+    advanced: {
+      whyDangerous: {
+        dataL10nId: "fp-certerror-pkix-not-yet-valid-why-dangerous-body",
+        dataL10nArgs: {
+          date: l10nArgValues => l10nArgValues.errorInfo.validNotBefore,
+        },
+      },
+      whatCanYouDo: {
+        dataL10nId: "fp-certerror-pkix-not-yet-valid-what-can-you-do-body",
+        dataL10nArgs: { date: null },
+      },
+      learnMore: {
+        dataL10nId: "fp-learn-more-about-time-related-errors",
+        supportPage: "time-errors",
+      },
+      showViewCertificate: true,
+    },
+    hasNoUserFix: false,
+    checkClockSkew: true,
   },
   // NSS/PKIX errors with no user fix
   {

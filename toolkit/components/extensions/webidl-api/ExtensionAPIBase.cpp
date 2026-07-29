@@ -1,4 +1,3 @@
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -82,7 +81,7 @@ void ChromeCompatCallbackHandler::ReportUncheckedLastError(
 
   RefPtr<ConsoleReportCollector> reporter = new ConsoleReportCollector();
   reporter->AddConsoleReport(nsIScriptError::errorFlag, "content javascript"_ns,
-                             nsContentUtils::eDOM_PROPERTIES, sourceSpec, line,
+                             PropertiesFile::DOM_PROPERTIES, sourceSpec, line,
                              column, "WebExtensionUncheckedLastError"_ns,
                              params);
 
@@ -138,14 +137,22 @@ void ExtensionAPIBase::CallWebExtMethod(JSContext* aCx,
   }
 }
 
-void ExtensionAPIBase::CallWebExtMethodReturnsString(
+void ExtensionAPIBase::CallWebExtMethodReturnsStringInternal(
     JSContext* aCx, const nsAString& aApiMethod,
-    const dom::Sequence<JS::Value>& aArgs, nsAString& aRetVal,
-    ErrorResult& aRv) {
+    const dom::Sequence<JS::Value>& aArgs, const bool aRetOptional,
+    nsAString& aRetVal, ErrorResult& aRv) {
   JS::Rooted<JS::Value> retval(aCx);
   auto request = CallSyncFunction(aApiMethod);
   request->Run(GetGlobalObject(), aCx, aArgs, &retval, aRv);
   if (aRv.Failed()) {
+    return;
+  }
+
+  if (aRetOptional && retval.isNullOrUndefined()) {
+    // FunctionEntry in Schemas.sys.mjs accepts null and undefined as return
+    // values for optional types. WebIDL does not distinguish them for types
+    // marked optional (?), both map to null.
+    aRetVal.SetIsVoid(true);
     return;
   }
 
@@ -154,14 +161,45 @@ void ExtensionAPIBase::CallWebExtMethodReturnsString(
     return;
   }
 
-  nsAutoJSString str;
-  if (!str.init(aCx, retval.toString())) {
+  if (!AssignJSString(aCx, aRetVal, retval.toString())) {
     JS_ClearPendingException(aCx);
     ThrowUnexpectedError(aCx, aRv);
     return;
   }
+}
 
-  aRetVal = str;
+void ExtensionAPIBase::CallWebExtMethodReturnsString(
+    JSContext* aCx, const nsAString& aApiMethod,
+    const dom::Sequence<JS::Value>& aArgs, nsAString& aRetVal,
+    ErrorResult& aRv) {
+  CallWebExtMethodReturnsStringInternal(aCx, aApiMethod, aArgs, false, aRetVal,
+                                        aRv);
+}
+
+void ExtensionAPIBase::CallWebExtMethodReturnsOptionalString(
+    JSContext* aCx, const nsAString& aApiMethod,
+    const dom::Sequence<JS::Value>& aArgs, nsAString& aRetVal,
+    ErrorResult& aRv) {
+  CallWebExtMethodReturnsStringInternal(aCx, aApiMethod, aArgs, true, aRetVal,
+                                        aRv);
+}
+
+bool ExtensionAPIBase::CallWebExtMethodReturnsBoolean(
+    JSContext* aCx, const nsAString& aApiMethod,
+    const dom::Sequence<JS::Value>& aArgs, ErrorResult& aRv) {
+  JS::Rooted<JS::Value> retval(aCx);
+  auto request = CallSyncFunction(aApiMethod);
+  request->Run(GetGlobalObject(), aCx, aArgs, &retval, aRv);
+  if (aRv.Failed()) {
+    return false;
+  }
+
+  if (NS_WARN_IF(!retval.isBoolean())) {
+    ThrowUnexpectedError(aCx, aRv);
+    return false;
+  }
+
+  return JS::ToBoolean(retval);
 }
 
 already_AddRefed<ExtensionPort> ExtensionAPIBase::CallWebExtMethodReturnsPort(
@@ -241,6 +279,7 @@ void ExtensionAPIBase::CallWebExtMethodAsyncAmbiguous(
   auto lastElement =
       aArgs.IsEmpty() ? JS::UndefinedValue() : aArgs.LastElement();
   dom::Sequence<JS::Value> callArgs(aArgs);
+  dom::SequenceRooter<JS::Value> callArgsRooter(aCx, &callArgs);
   if (lastElement.isObject() && JS::IsCallable(&lastElement.toObject())) {
     JS::Rooted<JSObject*> tempRoot(aCx, &lastElement.toObject());
     JS::Rooted<JSObject*> tempGlobalRoot(aCx, JS::CurrentGlobalOrNull(aCx));
@@ -276,12 +315,10 @@ void ExtensionAPIBase::GetWebExtPropertyAsString(const nsString& aPropertyName,
     NS_WARNING("GetWebExtPropertyAsString failure");
     return;
   }
-  nsAutoJSString strRetval;
-  if (!retval.isString() || !strRetval.init(cx, retval)) {
+  if (!retval.isString() || !AssignJSString(cx, aRetval, retval.toString())) {
     NS_WARNING("GetWebExtPropertyAsString got a non string result");
     return;
   }
-  aRetval.SetKnownLiveString(strRetval);
 }
 
 void ExtensionAPIBase::GetWebExtPropertyAsJSValue(

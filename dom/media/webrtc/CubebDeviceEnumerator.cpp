@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,7 +27,7 @@ static StaticRefPtr<CubebDeviceEnumerator> sInstance;
 static StaticMutex sInstanceMutex MOZ_UNANNOTATED;
 
 /* static */
-CubebDeviceEnumerator* CubebDeviceEnumerator::GetInstance() {
+already_AddRefed<CubebDeviceEnumerator> CubebDeviceEnumerator::GetInstance() {
   StaticMutexAutoLock lock(sInstanceMutex);
   if (!sInstance) {
     sInstance = new CubebDeviceEnumerator();
@@ -48,7 +46,7 @@ CubebDeviceEnumerator* CubebDeviceEnumerator::GetInstance() {
     }();
     (void)clearOnShutdownSetup;
   }
-  return sInstance.get();
+  return do_AddRef(sInstance);
 }
 
 CubebDeviceEnumerator::CubebDeviceEnumerator()
@@ -213,7 +211,7 @@ static int GetDevicePriority(const RefPtr<AudioDeviceInfo>& device) {
 }
 
 static RefPtr<AudioDeviceSet> GetDeviceCollection(Side aSide) {
-  RefPtr set = new AudioDeviceSet();
+  RefPtr set = MakeRefPtr<AudioDeviceSet>();
   RefPtr<CubebHandle> handle = GetCubeb();
   if (handle) {
     cubeb_device_collection collection = {nullptr, 0};
@@ -229,7 +227,7 @@ static RefPtr<AudioDeviceSet> GetDeviceCollection(Side aSide) {
           if (device.max_channels == 0) {
             continue;
           }
-          RefPtr<AudioDeviceInfo> info = new AudioDeviceInfo(
+          RefPtr info = MakeRefPtr<AudioDeviceInfo>(
               device.devid, NS_ConvertUTF8toUTF16(device.friendly_name),
               NS_ConvertUTF8toUTF16(device.group_id),
               NS_ConvertUTF8toUTF16(device.vendor_name),
@@ -279,7 +277,7 @@ RefPtr<const AudioDeviceSet> CubebDeviceEnumerator::EnumerateAudioDevices(
   }
 
   if (!GetCubeb()) {
-    return new AudioDeviceSet();
+    return MakeRefPtr<AudioDeviceSet>();
   }
   if (!manualInvalidation) {
     MutexAutoLock lock(mMutex);
@@ -302,13 +300,13 @@ RefPtr<const AudioDeviceSet> CubebDeviceEnumerator::EnumerateAudioDevices(
     channels = 2;
     name = u"Default audio output device"_ns;
   }
-  RefPtr devices = new AudioDeviceSet();
+  RefPtr devices = MakeRefPtr<AudioDeviceSet>();
   // Bug 1473346: enumerating devices is not supported on Android in cubeb,
   // simply state that there is a single sink, that it is the default, and has
   // a single channel. All the other values are made up and are not to be used.
   // Bug 1660391: we can't use fluent here yet to get localized strings, so
   // those are hard-coded en_US strings for now.
-  RefPtr<AudioDeviceInfo> info = new AudioDeviceInfo(
+  RefPtr info = MakeRefPtr<AudioDeviceInfo>(
       nullptr, name, u""_ns, u""_ns, type, CUBEB_DEVICE_STATE_ENABLED,
       CUBEB_DEVICE_PREF_ALL, CUBEB_DEVICE_FMT_ALL, CUBEB_DEVICE_FMT_S16NE,
       channels, 44100, 44100, 44100, 441, 128);

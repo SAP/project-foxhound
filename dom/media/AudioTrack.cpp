@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 et tw=78: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,11 +11,11 @@
 
 namespace mozilla::dom {
 
-AudioTrack::AudioTrack(nsIGlobalObject* aOwnerGlobal, const nsAString& aId,
+AudioTrack::AudioTrack(nsIGlobalObject* aRelevantGlobal, const nsAString& aId,
                        const nsAString& aKind, const nsAString& aLabel,
                        const nsAString& aLanguage, bool aEnabled,
                        AudioStreamTrack* aStreamTrack)
-    : MediaTrack(aOwnerGlobal, aId, aKind, aLabel, aLanguage),
+    : MediaTrack(aRelevantGlobal, aId, aKind, aLabel, aLanguage),
       mEnabled(aEnabled),
       mAudioStreamTrack(aStreamTrack) {}
 

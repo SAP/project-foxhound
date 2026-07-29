@@ -8,707 +8,47 @@
 
 "use strict";
 
-ChromeUtils.defineESModuleGetters(this, {
-  AmpMatchingStrategy:
-    "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustSuggest.sys.mjs",
-  AmpSuggestions:
-    "moz-src:///browser/components/urlbar/private/AmpSuggestions.sys.mjs",
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
   SuggestBackendRust:
     "moz-src:///browser/components/urlbar/private/SuggestBackendRust.sys.mjs",
-  SuggestionProvider:
-    "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustSuggest.sys.mjs",
 });
-
-const SPONSORED_SEARCH_STRING = "amp";
-const NONSPONSORED_SEARCH_STRING = "wikipedia";
-const SPONSORED_AND_NONSPONSORED_SEARCH_STRING = "sponsored and non-sponsored";
-
-const HTTP_SEARCH_STRING = "http prefix";
-const HTTPS_SEARCH_STRING = "https prefix";
-const PREFIX_SUGGESTIONS_STRIPPED_URL = "example.com/prefix-test";
-
-const ONE_CHAR_SEARCH_STRINGS = ["x", "x ", " x", " x "];
-
-const { TIMESTAMP_TEMPLATE, TIMESTAMP_LENGTH } = AmpSuggestions;
-const TIMESTAMP_SEARCH_STRING = "timestamp";
-const TIMESTAMP_SUGGESTION_URL = `http://example.com/timestamp-${TIMESTAMP_TEMPLATE}`;
-const TIMESTAMP_SUGGESTION_CLICK_URL = `http://click.reporting.test.com/timestamp-${TIMESTAMP_TEMPLATE}-foo`;
-
-const REMOTE_SETTINGS_RESULTS = [
-  QuickSuggestTestUtils.ampRemoteSettings({
-    keywords: [
-      SPONSORED_SEARCH_STRING,
-      SPONSORED_AND_NONSPONSORED_SEARCH_STRING,
-    ],
-  }),
-  QuickSuggestTestUtils.wikipediaRemoteSettings({
-    keywords: [
-      NONSPONSORED_SEARCH_STRING,
-      SPONSORED_AND_NONSPONSORED_SEARCH_STRING,
-    ],
-  }),
-  {
-    id: 3,
-    url: "http://" + PREFIX_SUGGESTIONS_STRIPPED_URL,
-    title: "HTTP Suggestion",
-    keywords: [HTTP_SEARCH_STRING],
-    full_keywords: [[HTTP_SEARCH_STRING, 1]],
-    click_url: "http://example.com/http-click",
-    impression_url: "http://example.com/http-impression",
-    advertiser: "HttpAdvertiser",
-    iab_category: "22 - Shopping",
-    icon: "1234",
-    serp_categories: [2],
-  },
-  {
-    id: 4,
-    url: "https://" + PREFIX_SUGGESTIONS_STRIPPED_URL,
-    title: "https suggestion",
-    keywords: [HTTPS_SEARCH_STRING],
-    full_keywords: [[HTTPS_SEARCH_STRING, 1]],
-    click_url: "http://click.reporting.test.com/prefix",
-    impression_url: "http://impression.reporting.test.com/prefix",
-    advertiser: "TestAdvertiserPrefix",
-    iab_category: "22 - Shopping",
-    icon: "1234",
-  },
-  {
-    id: 5,
-    url: TIMESTAMP_SUGGESTION_URL,
-    title: "Timestamp suggestion",
-    keywords: [TIMESTAMP_SEARCH_STRING],
-    full_keywords: [[TIMESTAMP_SEARCH_STRING, 1]],
-    click_url: TIMESTAMP_SUGGESTION_CLICK_URL,
-    impression_url: "http://impression.reporting.test.com/timestamp",
-    advertiser: "TestAdvertiserTimestamp",
-    iab_category: "22 - Shopping",
-    icon: "1234",
-  },
-  QuickSuggestTestUtils.ampRemoteSettings({
-    keywords: [...ONE_CHAR_SEARCH_STRINGS, "12", "a longer keyword"],
-    title: "Suggestion with 1-char keyword",
-    url: "http://example.com/1-char-keyword",
-  }),
-  QuickSuggestTestUtils.ampRemoteSettings({
-    keywords: [
-      "amp full key",
-      "amp full keyw",
-      "amp full keywo",
-      "amp full keywor",
-      "amp full keyword",
-      "xyz",
-    ],
-    full_keywords: [
-      ["amp full keyword", 5],
-      ["xyz", 1],
-    ],
-    title: "AMP suggestion with full keyword and prefix keywords",
-    url: "https://example.com/amp-full-keyword",
-  }),
-  QuickSuggestTestUtils.wikipediaRemoteSettings({
-    keywords: [
-      "wikipedia full key",
-      "wikipedia full keyw",
-      "wikipedia full keywo",
-      "wikipedia full keywor",
-      "wikipedia full keyword",
-    ],
-    full_keywords: [["wikipedia full keyword", 5]],
-    title: "Wikipedia suggestion with full keyword and prefix keywords",
-    url: "https://example.com/wikipedia-full-keyword",
-  }),
-];
-
-const MERINO_SUGGESTIONS = [
-  {
-    title: "Amp Suggestion",
-    url: "https://example.com/amp",
-    provider: "adm",
-    is_sponsored: true,
-    score: 0.31,
-    icon: "https://example.com/amp-icon",
-    iab_category: "22 - Shopping",
-    block_id: 1,
-    full_keyword: "amp",
-    advertiser: "Amp",
-    impression_url: "https://example.com/amp-impression",
-    click_url: "https://example.com/amp-click",
-  },
-  {
-    title: "Wikipedia Suggestion",
-    url: "https://example.com/wikipedia",
-    is_sponsored: false,
-    score: 0.23,
-    description: "description",
-    icon: "https://example.com/wikipedia-icon",
-    full_keyword: "wikipedia",
-    advertiser: "dynamic-wikipedia",
-    block_id: 0,
-    provider: "wikipedia",
-    categories: [6], // Education
-  },
-];
-
-let gMaxResultsSuggestionsCount;
-
-function expectedSponsoredPriorityResult() {
-  return {
-    ...QuickSuggestTestUtils.ampResult(),
-    isBestMatch: true,
-    suggestedIndex: 1,
-    isSuggestedIndexRelativeToGroup: false,
-  };
-}
-
-function expectedHttpResult() {
-  let suggestion = REMOTE_SETTINGS_RESULTS[2];
-  return QuickSuggestTestUtils.ampResult({
-    keyword: HTTP_SEARCH_STRING,
-    title: suggestion.title,
-    url: suggestion.url,
-    originalUrl: suggestion.url,
-    impressionUrl: suggestion.impression_url,
-    clickUrl: suggestion.click_url,
-    blockId: suggestion.id,
-    advertiser: suggestion.advertiser,
-    categories: suggestion.serp_categories,
-    suggestedIndex: -1,
-  });
-}
-
-function expectedHttpsResult() {
-  let suggestion = REMOTE_SETTINGS_RESULTS[3];
-  return QuickSuggestTestUtils.ampResult({
-    keyword: HTTPS_SEARCH_STRING,
-    title: suggestion.title,
-    url: suggestion.url,
-    originalUrl: suggestion.url,
-    impressionUrl: suggestion.impression_url,
-    clickUrl: suggestion.click_url,
-    blockId: suggestion.id,
-    advertiser: suggestion.advertiser,
-    suggestedIndex: -1,
-  });
-}
 
 add_setup(async function init() {
-  // Add a bunch of suggestions that have the same keyword so we can verify the
-  // provider respects its `queryContext.maxResults` cap when adding results.
-  let maxResults = UrlbarPrefs.get("maxRichResults");
-  Assert.greater(maxResults, 0, "This test expects maxRichResults to be > 0");
-  gMaxResultsSuggestionsCount = 2 * maxResults;
-  for (let i = 0; i < gMaxResultsSuggestionsCount; i++) {
-    REMOTE_SETTINGS_RESULTS.push(
-      QuickSuggestTestUtils.ampRemoteSettings({
-        keywords: ["maxresults"],
-        title: "maxresults " + i,
-        url: "https://example.com/maxresults/" + i,
-      })
-    );
-  }
-
-  // Install a default test engine.
-  let engine = await addTestSuggestionsEngine();
-  await SearchService.setDefault(engine, SearchService.CHANGE_REASON.UNKNOWN);
-
-  UrlbarPrefs.set("quicksuggest.ampTopPickCharThreshold", 0);
-
+  UrlbarPrefs.set("maxRichResults", 10);
   await QuickSuggestTestUtils.ensureQuickSuggestInit();
-  await resetRemoteSettingsData();
 });
 
-add_task(async function offline_telemetryType_amp() {
-  Assert.equal(
-    QuickSuggest.getFeature("AmpSuggestions").getSuggestionTelemetryType({
-      source: "rust",
-    }),
-    "adm_sponsored",
-    "Telemetry type should be 'adm_sponsored'"
-  );
-});
-
-add_task(async function offline_telemetryType_wikipedia() {
-  Assert.equal(
-    QuickSuggest.getFeature("WikipediaSuggestions").getSuggestionTelemetryType({
-      source: "rust",
-    }),
-    "adm_nonsponsored",
-    "Telemetry type should be 'adm_nonsponsored'"
-  );
-});
-
-add_task(async function online_telemetryType_amp() {
-  Assert.equal(
-    QuickSuggest.getFeature("AmpSuggestions").getSuggestionTelemetryType({
-      source: "merino",
-    }),
-    "adm_sponsored",
-    "Telemetry type should be 'adm_sponsored'"
-  );
-});
-
-add_task(async function online_telemetryType_wikipedia() {
-  Assert.equal(
-    QuickSuggest.getFeature("WikipediaSuggestions").getSuggestionTelemetryType({
-      source: "merino",
-    }),
-    "wikipedia",
-    "Telemetry type should be 'wikipedia'"
-  );
-});
-
-// Tests with both `all` and sponsored enabled with a sponsored search string.
-// Sponsored suggestions should be matched.
-add_task(async function allEnabled_sponsoredEnabled_sponsoredSearch() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  await QuickSuggestTestUtils.forceSync();
-
-  let context = createContext(SPONSORED_SEARCH_STRING, {
-    providers: [UrlbarProviderQuickSuggest.name],
-    isPrivate: false,
-  });
-  await check_results({
-    context,
-    matches: [QuickSuggestTestUtils.ampResult({ suggestedIndex: -1 })],
-  });
-});
-
-// Tests with both `all` and sponsored enabled with a non-sponsored search
-// string. Non-sponsored suggestions should be matched.
-add_task(async function allEnabled_sponsoredEnabled_nonsponsoredSearch() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  await QuickSuggestTestUtils.forceSync();
-
-  let context = createContext(NONSPONSORED_SEARCH_STRING, {
-    providers: [UrlbarProviderQuickSuggest.name],
-    isPrivate: false,
-  });
-  await check_results({
-    context,
-    matches: [QuickSuggestTestUtils.wikipediaResult()],
-  });
-});
-
-// Tests with both `all` and sponsored enabled with a search string that doesn't
-// match anything.
-add_task(async function allEnabled_sponsoredEnabled_nonmatchingSearch() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  await QuickSuggestTestUtils.forceSync();
-
-  let context = createContext("this doesn't match anything", {
-    providers: [UrlbarProviderQuickSuggest.name],
-    isPrivate: false,
-  });
-  await check_results({ context, matches: [] });
-});
-
-// Tests with `all` enabled and sponsored disabled with a sponsored search
-// string. No suggestions should be matched.
-add_task(async function allEnabled_sponsoredDisabled_sponsoredSearch() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", false);
-  await QuickSuggestTestUtils.forceSync();
-
-  let context = createContext(SPONSORED_SEARCH_STRING, {
-    providers: [UrlbarProviderQuickSuggest.name],
-    isPrivate: false,
-  });
-  await check_results({ context, matches: [] });
-});
-
-// Tests with `all` enabled and sponsored disabled with a non-sponsored search
-// string. Non-sponsored suggestions should be matched.
-add_task(async function allEnabled_sponsoredDisabled_nonsponsoredSearch() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", false);
-  await QuickSuggestTestUtils.forceSync();
-
-  let context = createContext(NONSPONSORED_SEARCH_STRING, {
-    providers: [UrlbarProviderQuickSuggest.name],
-    isPrivate: false,
-  });
-  await check_results({
-    context,
-    matches: [QuickSuggestTestUtils.wikipediaResult()],
-  });
-});
-
-// Tests with `all` disabled and sponsored enabled with a sponsored search
-// string. No suggestions should be matched. The settings UI does not make this
-// case possible, but the prefs are independent, so it's technically possible.
-add_task(async function allDisabled_sponsoredEnabled_sponsoredSearch() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", false);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  await QuickSuggestTestUtils.forceSync();
-
-  let context = createContext(SPONSORED_SEARCH_STRING, {
-    providers: [UrlbarProviderQuickSuggest.name],
-    isPrivate: false,
-  });
-  await check_results({ context, matches: [] });
-});
-
-// Tests with `all` disabled and sponsored enabled with a non-sponsored search
-// string. No suggestions should be matched. The settings UI does not make this
-// case possible, but the prefs are independent, so it's technically possible.
-add_task(async function allDisabled_sponsoredEnabled_nonsponsoredSearch() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", false);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  await QuickSuggestTestUtils.forceSync();
-
-  let context = createContext(NONSPONSORED_SEARCH_STRING, {
-    providers: [UrlbarProviderQuickSuggest.name],
-    isPrivate: false,
-  });
-  await check_results({ context, matches: [] });
-});
-
-// Tests with both `all` and sponsored disabled with a sponsored search string.
-// No suggestions should be matched.
-add_task(async function allDisabled_sponsoredDisabled_sponsoredSearch() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", false);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", false);
-  await QuickSuggestTestUtils.forceSync();
-
-  let context = createContext(SPONSORED_SEARCH_STRING, {
-    providers: [UrlbarProviderQuickSuggest.name],
-    isPrivate: false,
-  });
-  await check_results({ context, matches: [] });
-});
-
-// Tests with both `all` and sponsored disabled with a non-sponsored search
-// string. No suggestions should be matched.
-add_task(async function allDisabled_sponsoredDisabled_nonsponsoredSearch() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", false);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", false);
-  await QuickSuggestTestUtils.forceSync();
-
-  let context = createContext(NONSPONSORED_SEARCH_STRING, {
-    providers: [UrlbarProviderQuickSuggest.name],
-    isPrivate: false,
-  });
-  await check_results({ context, matches: [] });
-});
-
-// Search string matching should be case insensitive and ignore leading spaces.
-add_task(async function caseInsensitiveAndLeadingSpaces() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  await QuickSuggestTestUtils.forceSync();
-
-  let context = createContext("  " + SPONSORED_SEARCH_STRING.toUpperCase(), {
-    providers: [UrlbarProviderQuickSuggest.name],
-    isPrivate: false,
-  });
-  await check_results({
-    context,
-    matches: [QuickSuggestTestUtils.ampResult({ suggestedIndex: -1 })],
-  });
-});
-
-// The provider should not be active for search strings that are empty or
-// contain only spaces.
-add_task(async function emptySearchStringsAndSpaces() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  await QuickSuggestTestUtils.forceSync();
-
-  let searchStrings = ["", " ", "  ", "              "];
-  for (let str of searchStrings) {
-    let msg = JSON.stringify(str) + ` (length = ${str.length})`;
-    info("Testing search string: " + msg);
-
-    let context = createContext(str, {
-      providers: [UrlbarProviderQuickSuggest.name],
-      isPrivate: false,
-    });
-    await check_results({
-      context,
-      matches: [],
-    });
-    let providersManager = ProvidersManager.getInstanceForSap("urlbar");
-    Assert.ok(
-      !(await providersManager
-        .getProvider(UrlbarProviderQuickSuggest.name)
-        .isActive(context)),
-      "Provider should not be active for search string: " + msg
-    );
-  }
-});
-
-// Results should be returned even when `browser.search.suggest.enabled` is
-// false.
-add_task(async function browser_search_suggest_disabled() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  UrlbarPrefs.set("browser.search.suggest.enabled", false);
-  await QuickSuggestTestUtils.forceSync();
-
-  let context = createContext(SPONSORED_SEARCH_STRING, {
-    providers: [UrlbarProviderQuickSuggest.name],
-    isPrivate: false,
-  });
-  await check_results({
-    context,
-    matches: [QuickSuggestTestUtils.ampResult({ suggestedIndex: -1 })],
-  });
-
-  UrlbarPrefs.clear("browser.search.suggest.enabled");
-});
-
-// Results should be returned even when `browser.urlbar.suggest.searches` is
-// false.
-add_task(async function browser_suggest_searches_disabled() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  UrlbarPrefs.set("suggest.searches", false);
-  await QuickSuggestTestUtils.forceSync();
-
-  let context = createContext(SPONSORED_SEARCH_STRING, {
-    providers: [UrlbarProviderQuickSuggest.name],
-    isPrivate: false,
-  });
-  await check_results({
-    context,
-    matches: [QuickSuggestTestUtils.ampResult({ suggestedIndex: -1 })],
-  });
-
-  UrlbarPrefs.clear("suggest.searches");
-});
-
-// Neither sponsored nor non-sponsored results should appear in private contexts
-// even when suggestions in private windows are enabled.
-add_task(async function privateContext() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  await QuickSuggestTestUtils.forceSync();
-
-  for (let privateSuggestionsEnabled of [true, false]) {
-    UrlbarPrefs.set(
-      "browser.search.suggest.enabled.private",
-      privateSuggestionsEnabled
-    );
-    let context = createContext(SPONSORED_SEARCH_STRING, {
-      providers: [UrlbarProviderQuickSuggest.name],
-      isPrivate: true,
-    });
-    await check_results({
-      context,
-      matches: [],
-    });
-  }
-
-  UrlbarPrefs.clear("browser.search.suggest.enabled.private");
-});
-
-// When search suggestions come before general results and the only general
-// result is a quick suggest result, it should come last.
-add_task(async function suggestionsBeforeGeneral_only() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  UrlbarPrefs.set("browser.search.suggest.enabled", true);
-  UrlbarPrefs.set("suggest.searches", true);
-  UrlbarPrefs.set("showSearchSuggestionsFirst", true);
-  await QuickSuggestTestUtils.forceSync();
-
-  let context = createContext(SPONSORED_SEARCH_STRING, { isPrivate: false });
-  await check_results({
-    context,
-    matches: [
-      makeSearchResult(context, {
-        heuristic: true,
-        query: SPONSORED_SEARCH_STRING,
-        engineName: SearchService.defaultEngine.name,
-      }),
-      makeSearchResult(context, {
-        query: SPONSORED_SEARCH_STRING,
-        suggestion: SPONSORED_SEARCH_STRING + " foo",
-        engineName: SearchService.defaultEngine.name,
-      }),
-      makeSearchResult(context, {
-        query: SPONSORED_SEARCH_STRING,
-        suggestion: SPONSORED_SEARCH_STRING + " bar",
-        engineName: SearchService.defaultEngine.name,
-      }),
-      QuickSuggestTestUtils.ampResult(),
-    ],
-  });
-
-  UrlbarPrefs.clear("browser.search.suggest.enabled");
-  UrlbarPrefs.clear("suggest.searches");
-  UrlbarPrefs.clear("showSearchSuggestionsFirst");
-});
-
-// When search suggestions come before general results and there are other
-// general results besides quick suggest, the quick suggest result should come
-// last.
-add_task(async function suggestionsBeforeGeneral_others() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  UrlbarPrefs.set("browser.search.suggest.enabled", true);
-  UrlbarPrefs.set("suggest.searches", true);
-  UrlbarPrefs.set("showSearchSuggestionsFirst", true);
-  await QuickSuggestTestUtils.forceSync();
-
-  let context = createContext(SPONSORED_SEARCH_STRING, { isPrivate: false });
-
-  // Add some history that will match our query below.
-  let maxResults = UrlbarPrefs.get("maxRichResults");
-  let historyResults = [];
-  for (let i = 0; i < maxResults; i++) {
-    let url = "http://example.com/" + SPONSORED_SEARCH_STRING + i;
-    historyResults.push(
-      makeVisitResult(context, {
-        uri: url,
-        title: "test visit for " + url,
-      })
-    );
-    await PlacesTestUtils.addVisits(url);
-  }
-  historyResults = historyResults.reverse().slice(0, historyResults.length - 4);
-
-  await check_results({
-    context,
-    matches: [
-      makeSearchResult(context, {
-        heuristic: true,
-        query: SPONSORED_SEARCH_STRING,
-        engineName: SearchService.defaultEngine.name,
-      }),
-      makeSearchResult(context, {
-        query: SPONSORED_SEARCH_STRING,
-        suggestion: SPONSORED_SEARCH_STRING + " foo",
-        engineName: SearchService.defaultEngine.name,
-      }),
-      makeSearchResult(context, {
-        query: SPONSORED_SEARCH_STRING,
-        suggestion: SPONSORED_SEARCH_STRING + " bar",
-        engineName: SearchService.defaultEngine.name,
-      }),
-      QuickSuggestTestUtils.ampResult(),
-      ...historyResults,
-    ],
-  });
-
-  UrlbarPrefs.clear("browser.search.suggest.enabled");
-  UrlbarPrefs.clear("suggest.searches");
-  UrlbarPrefs.clear("showSearchSuggestionsFirst");
-  await PlacesUtils.history.clear();
-});
-
-// When general results come before search suggestions and the only general
-// result is a quick suggest result, it should come before suggestions.
-add_task(async function generalBeforeSuggestions_only() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  UrlbarPrefs.set("browser.search.suggest.enabled", true);
-  UrlbarPrefs.set("suggest.searches", true);
-  UrlbarPrefs.set("showSearchSuggestionsFirst", false);
-  await QuickSuggestTestUtils.forceSync();
-
-  let context = createContext(SPONSORED_SEARCH_STRING, { isPrivate: false });
-  await check_results({
-    context,
-    matches: [
-      makeSearchResult(context, {
-        heuristic: true,
-        query: SPONSORED_SEARCH_STRING,
-        engineName: SearchService.defaultEngine.name,
-      }),
-      QuickSuggestTestUtils.ampResult({ suggestedIndex: -1 }),
-      makeSearchResult(context, {
-        query: SPONSORED_SEARCH_STRING,
-        suggestion: SPONSORED_SEARCH_STRING + " foo",
-        engineName: SearchService.defaultEngine.name,
-      }),
-      makeSearchResult(context, {
-        query: SPONSORED_SEARCH_STRING,
-        suggestion: SPONSORED_SEARCH_STRING + " bar",
-        engineName: SearchService.defaultEngine.name,
-      }),
-    ],
-  });
-
-  UrlbarPrefs.clear("browser.search.suggest.enabled");
-  UrlbarPrefs.clear("suggest.searches");
-  UrlbarPrefs.clear("showSearchSuggestionsFirst");
-});
-
-// When general results come before search suggestions and there are other
-// general results besides quick suggest, the quick suggest result should be the
-// last general result.
-add_task(async function generalBeforeSuggestions_others() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  UrlbarPrefs.set("browser.search.suggest.enabled", true);
-  UrlbarPrefs.set("suggest.searches", true);
-  UrlbarPrefs.set("showSearchSuggestionsFirst", false);
-  await QuickSuggestTestUtils.forceSync();
-
-  let context = createContext(SPONSORED_SEARCH_STRING, { isPrivate: false });
-
-  // Add some history that will match our query below.
-  let maxResults = UrlbarPrefs.get("maxRichResults");
-  let historyResults = [];
-  for (let i = 0; i < maxResults; i++) {
-    let url = "http://example.com/" + SPONSORED_SEARCH_STRING + i;
-    historyResults.push(
-      makeVisitResult(context, {
-        uri: url,
-        title: "test visit for " + url,
-      })
-    );
-    await PlacesTestUtils.addVisits(url);
-  }
-  historyResults = historyResults.reverse().slice(0, historyResults.length - 4);
-
-  await check_results({
-    context,
-    matches: [
-      makeSearchResult(context, {
-        heuristic: true,
-        query: SPONSORED_SEARCH_STRING,
-        engineName: SearchService.defaultEngine.name,
-      }),
-      ...historyResults,
-      QuickSuggestTestUtils.ampResult({ suggestedIndex: -1 }),
-      makeSearchResult(context, {
-        query: SPONSORED_SEARCH_STRING,
-        suggestion: SPONSORED_SEARCH_STRING + " foo",
-        engineName: SearchService.defaultEngine.name,
-      }),
-      makeSearchResult(context, {
-        query: SPONSORED_SEARCH_STRING,
-        suggestion: SPONSORED_SEARCH_STRING + " bar",
-        engineName: SearchService.defaultEngine.name,
-      }),
-    ],
-  });
-
-  UrlbarPrefs.clear("browser.search.suggest.enabled");
-  UrlbarPrefs.clear("suggest.searches");
-  UrlbarPrefs.clear("showSearchSuggestionsFirst");
-  await PlacesUtils.history.clear();
-});
-
-// The provider should not add more than `queryContext.maxResults` results.
 add_task(async function maxResults() {
   UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
   await QuickSuggestTestUtils.forceSync();
 
-  let searchString = "maxresults";
-  let suggestions = await QuickSuggest.rustBackend.query(searchString);
+  let attachment = [];
+  for (let i = 0; i < 2 * UrlbarPrefs.get("maxRichResults"); i++) {
+    attachment.push(
+      QuickSuggestTestUtils.ampRemoteSettings({
+        title: "test " + i,
+        url: "https://example.com/test/" + i,
+      })
+    );
+  }
+
+  await QuickSuggestTestUtils.setRemoteSettingsRecords([
+    {
+      collection: QuickSuggestTestUtils.RS_COLLECTION.AMP,
+      type: QuickSuggestTestUtils.RS_TYPE.AMP,
+      attachment,
+    },
+  ]);
+
+  let suggestions = await QuickSuggest.rustBackend.query("amp");
   Assert.equal(
     suggestions.length,
-    gMaxResultsSuggestionsCount,
+    attachment.length,
     "The backend should return all matching suggestions"
   );
 
-  let context = createContext(searchString, {
+  let context = createContext("amp", {
     providers: [UrlbarProviderQuickSuggest.name],
     isPrivate: false,
   });
@@ -728,9 +68,8 @@ add_task(async function maxResults() {
     context,
     matches: [
       QuickSuggestTestUtils.ampResult({
-        keyword: "maxresults",
-        title: "maxresults 0",
-        url: "https://example.com/maxresults/0",
+        title: "test 0",
+        url: "https://example.com/test/0",
         suggestedIndex: -1,
       }),
     ],
@@ -756,137 +95,92 @@ add_task(async function maxResults() {
   sandbox.restore();
 });
 
-// When the Suggest provider adds more than one result and they are not hidden
-// exposures, the muxer should add the first one to the final results list and
-// discard the rest, and the discarded results should not prevent the muxer from
-// adding other non-Suggest results.
-add_task(async function manySuggestResults_visible() {
-  await doManySuggestResultsTest({
-    expectedSuggestResults: [
-      QuickSuggestTestUtils.ampResult({
-        keyword: "maxresults",
-        title: "maxresults 0",
-        url: "https://example.com/maxresults/0",
-        suggestedIndex: -1,
-      }),
-    ],
-    expectedOtherResultsCount: UrlbarPrefs.get("maxRichResults") - 1,
-  });
-});
-
-// When the Suggest provider adds more than one result and they are hidden
-// exposures, the muxer should add up to `queryContext.maxResults` of them to
-// the final results list, and they should not prevent the muxer from adding
-// other non-Suggest results.
-add_task(async function manySuggestResults_hiddenExposures() {
-  UrlbarPrefs.set("exposureResults", "rust_adm_sponsored");
-  UrlbarPrefs.set("showExposureResults", false);
-
-  // Build the list of expected Suggest results.
-  let results = [];
-  let maxResults = UrlbarPrefs.get("maxRichResults");
-  let suggestResultsCount = Math.min(gMaxResultsSuggestionsCount, maxResults);
-  for (let i = 0; i < suggestResultsCount; i++) {
-    let index = maxResults - 1 - i;
-    results.push({
-      ...QuickSuggestTestUtils.ampResult({
-        keyword: "maxresults",
-        title: "maxresults " + index,
-        url: "https://example.com/maxresults/" + index,
-        suggestedIndex: -1,
-      }),
-      exposureTelemetry: UrlbarUtils.EXPOSURE_TELEMETRY.HIDDEN,
-    });
-  }
-
-  await doManySuggestResultsTest({
-    expectedSuggestResults: results,
-    expectedOtherResultsCount: maxResults,
-  });
-
-  UrlbarPrefs.clear("exposureResults");
-  UrlbarPrefs.clear("showExposureResults");
-});
-
-async function doManySuggestResultsTest({
-  expectedSuggestResults,
-  expectedOtherResultsCount,
-}) {
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  await QuickSuggestTestUtils.forceSync();
-
-  // Make sure many Suggest suggestions match the search string.
-  let searchString = "maxresults";
-  let suggestions = await QuickSuggest.rustBackend.query(searchString);
-  Assert.equal(
-    suggestions.length,
-    gMaxResultsSuggestionsCount,
-    "Sanity check: The backend should return all matching suggestions"
-  );
-  Assert.greater(
-    suggestions.length,
-    1,
-    "Sanity check: There should be more than 1 matching suggestion"
-  );
-
-  // Register a test provider that adds a bunch of history results.
-  let otherResults = [];
-  let maxResults = UrlbarPrefs.get("maxRichResults");
-  for (let i = 0; i < maxResults; i++) {
-    otherResults.push(
-      new UrlbarResult({
-        type: UrlbarUtils.RESULT_TYPE.URL,
-        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
-        payload: { url: "http://example.com/history/" + i },
+add_task(async function manySuggestResults() {
+  let attachment = [];
+  for (let i = 0; i < UrlbarPrefs.get("maxRichResults"); i++) {
+    attachment.push(
+      QuickSuggestTestUtils.ampRemoteSettings({
+        url: "https://example.com/" + i,
       })
     );
   }
 
-  let provider = new UrlbarTestUtils.TestProvider({ results: otherResults });
-  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
-  providersManager.registerProvider(provider);
+  let additionals = [];
+  for (let i = 0; i < UrlbarPrefs.get("maxRichResults"); i++) {
+    additionals.push(
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.URL,
+        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+        payload: { url: "http://example.org/" + i },
+      })
+    );
+  }
 
-  // Do a search that matches all the Suggest suggestions and the test
-  // provider's results. The Suggest suggestion(s) should be first since its
-  // `suggestedIndex` is 0.
-  await check_results({
-    context: createContext(searchString, {
-      providers: [UrlbarProviderQuickSuggest.name, provider.name],
-      isPrivate: false,
-    }),
-    matches: [
-      ...otherResults.slice(0, expectedOtherResultsCount),
-      ...expectedSuggestResults,
+  await doResultCheckTest({
+    env: {
+      prefs: [
+        ["suggest.quicksuggest.all", true],
+        ["suggest.quicksuggest.sponsored", true],
+      ],
+      remoteSettingRecords: [
+        {
+          collection: QuickSuggestTestUtils.RS_COLLECTION.AMP,
+          type: QuickSuggestTestUtils.RS_TYPE.AMP,
+          attachment,
+        },
+      ],
+      additionalProvider: {
+        name: "additionalProvider",
+        results: additionals,
+      },
+    },
+    tests: [
+      {
+        // When the Suggest provider adds more than one result and they are not hidden
+        // exposures, the muxer should add the first one to the final results list and
+        // discard the rest, and the discarded results should not prevent the muxer from
+        // adding other non-Suggest results.
+        context: createContext("amp", {
+          providers: [UrlbarProviderQuickSuggest.name, "additionalProvider"],
+          isPrivate: false,
+        }),
+        expected: [
+          ...additionals.slice(0, additionals.length - 1),
+          QuickSuggestTestUtils.ampResult({
+            url: "https://example.com/0",
+            suggestedIndex: -1,
+          }),
+        ],
+      },
+      {
+        // When the Suggest provider adds more than one result and they are hidden
+        // exposures, the muxer should add up to `queryContext.maxResults` of them to
+        // the final results list, and they should not prevent the muxer from adding
+        // other non-Suggest results.
+        prefs: [
+          ["exposureResults", "rust_adm_sponsored"],
+          ["showExposureResults", false],
+        ],
+        context: createContext("amp", {
+          providers: [UrlbarProviderQuickSuggest.name, "additionalProvider"],
+          isPrivate: false,
+        }),
+        expected: [
+          ...additionals,
+          ...attachment
+            .map(record =>
+              Object.assign(
+                QuickSuggestTestUtils.ampResult({
+                  url: record.url,
+                  suggestedIndex: -1,
+                }),
+                { exposureTelemetry: UrlbarUtils.EXPOSURE_TELEMETRY.HIDDEN }
+              )
+            )
+            .reverse(),
+        ],
+      },
     ],
-  });
-
-  providersManager.unregisterProvider(provider);
-}
-
-add_task(async function dedupeAgainstURL_samePrefix() {
-  await doDedupeAgainstURLTest({
-    searchString: HTTP_SEARCH_STRING,
-    expectedQuickSuggestResult: expectedHttpResult(),
-    otherPrefix: "http://",
-    expectOther: false,
-  });
-});
-
-add_task(async function dedupeAgainstURL_higherPrefix() {
-  await doDedupeAgainstURLTest({
-    searchString: HTTPS_SEARCH_STRING,
-    expectedQuickSuggestResult: expectedHttpsResult(),
-    otherPrefix: "http://",
-    expectOther: false,
-  });
-});
-
-add_task(async function dedupeAgainstURL_lowerPrefix() {
-  await doDedupeAgainstURLTest({
-    searchString: HTTP_SEARCH_STRING,
-    expectedQuickSuggestResult: expectedHttpResult(),
-    otherPrefix: "https://",
-    expectOther: true,
   });
 });
 
@@ -897,620 +191,121 @@ add_task(async function dedupeAgainstURL_lowerPrefix() {
  * discarded when their prefix rank is lower than the prefix rank of the quick
  * suggest. They should not be discarded when their prefix rank is higher, and
  * in that case both results should be included.
- *
- * This function adds a visit to the URL formed by the given `otherPrefix` and
- * `PREFIX_SUGGESTIONS_STRIPPED_URL`. The visit's title will be set to the given
- * `searchString` so that both the visit and the quick suggest will match it.
- *
- * @param {object} options
- *   Options object.
- * @param {string} options.searchString
- *   The search string that should trigger one of the mock prefix-test quick
- *   suggest results.
- * @param {object} options.expectedQuickSuggestResult
- *   The expected quick suggest result.
- * @param {string} options.otherPrefix
- *   The visit will be created with a URL with this prefix, e.g., "http://".
- * @param {boolean} options.expectOther
- *   Whether the visit result should appear in the final results.
  */
-async function doDedupeAgainstURLTest({
-  searchString,
-  expectedQuickSuggestResult,
-  otherPrefix,
-  expectOther,
-}) {
-  // Disable search suggestions. This means the expected suggestedIndex for
-  // sponsored suggestions will now be -1. We assume expectedQuickSuggestResult
-  // is sponsored, so set its suggestedIndex now.
-  UrlbarPrefs.set("suggest.searches", false);
-  expectedQuickSuggestResult.suggestedIndex = -1;
+add_task(async function dedupeAgainstURL_prefix() {
+  const HTTP_QUERY = "http prefix";
+  const HTTP_URL = "http://example.com/prefix-test";
+  const httpContext = createContext(HTTP_QUERY, { isPrivate: false });
 
-  // Add a visit that will match our query below.
-  let otherURL = otherPrefix + PREFIX_SUGGESTIONS_STRIPPED_URL;
-  await PlacesTestUtils.addVisits({ uri: otherURL, title: searchString });
+  const HTTPS_QUERY = "https prefix";
+  const HTTPS_URL = "https://example.com/prefix-test";
+  const httpsContext = createContext(HTTPS_QUERY, { isPrivate: false });
 
-  // First, do a search with quick suggest disabled to make sure the search
-  // string matches the visit.
-  info("Doing first query");
-  UrlbarPrefs.set("suggest.quicksuggest.all", false);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", false);
-  let context = createContext(searchString, { isPrivate: false });
-  await check_results({
-    context,
-    matches: [
-      makeSearchResult(context, {
-        heuristic: true,
-        query: searchString,
-        engineName: SearchService.defaultEngine.name,
-      }),
-      makeVisitResult(context, {
-        uri: otherURL,
-        title: searchString,
-      }),
+  await doResultCheckTest({
+    env: {
+      prefs: [
+        ["suggest.searches", false],
+        ["quicksuggest.ampTopPickCharThreshold", 0],
+      ],
+      remoteSettingRecords: [
+        {
+          collection: QuickSuggestTestUtils.RS_COLLECTION.AMP,
+          type: QuickSuggestTestUtils.RS_TYPE.AMP,
+          attachment: [
+            QuickSuggestTestUtils.ampRemoteSettings({
+              url: HTTP_URL,
+              keywords: [HTTP_QUERY],
+            }),
+            QuickSuggestTestUtils.ampRemoteSettings({
+              url: HTTPS_URL,
+              keywords: [HTTPS_QUERY],
+            }),
+          ],
+        },
+      ],
+    },
+    tests: [
+      {
+        description:
+          "History and Suggest results have same prefix: Suggest should be shown instead of history",
+        prefs: [
+          ["suggest.quicksuggest.all", true],
+          ["suggest.quicksuggest.sponsored", true],
+        ],
+        histories: [{ uri: HTTP_URL, title: HTTP_QUERY }],
+        context: httpContext,
+        expected: [
+          makeSearchResult(httpContext, {
+            heuristic: true,
+            query: HTTP_QUERY,
+            engineName: SearchService.defaultEngine.name,
+          }),
+          QuickSuggestTestUtils.ampResult({
+            url: HTTP_URL,
+            keyword: HTTP_QUERY,
+            suggestedIndex: -1,
+          }),
+        ],
+      },
+      {
+        description:
+          "Suggest result has a higher prefix than history: Suggest should be shown instead of history",
+        prefs: [
+          ["suggest.quicksuggest.all", true],
+          ["suggest.quicksuggest.sponsored", true],
+        ],
+        histories: [{ uri: HTTP_URL, title: HTTP_QUERY }],
+        context: httpsContext,
+        expected: [
+          makeSearchResult(httpsContext, {
+            heuristic: true,
+            query: HTTPS_QUERY,
+            engineName: SearchService.defaultEngine.name,
+          }),
+          QuickSuggestTestUtils.ampResult({
+            url: HTTPS_URL,
+            keyword: HTTPS_QUERY,
+            suggestedIndex: -1,
+          }),
+        ],
+      },
+      {
+        description:
+          "History result has a higher prefix than Suggest: Both results should be shown",
+        prefs: [
+          ["suggest.quicksuggest.all", true],
+          ["suggest.quicksuggest.sponsored", true],
+        ],
+        histories: [{ uri: HTTPS_URL, title: HTTPS_QUERY }],
+        context: httpContext,
+        expected: [
+          makeSearchResult(httpContext, {
+            heuristic: true,
+            query: HTTP_QUERY,
+            engineName: SearchService.defaultEngine.name,
+          }),
+          makeVisitResult(httpsContext, {
+            uri: HTTPS_URL,
+            title: HTTPS_QUERY,
+          }),
+          QuickSuggestTestUtils.ampResult({
+            url: HTTP_URL,
+            keyword: HTTP_QUERY,
+            suggestedIndex: -1,
+          }),
+        ],
+      },
     ],
   });
-
-  // Now do another search with quick suggest enabled.
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  await QuickSuggestTestUtils.forceSync();
-
-  context = createContext(searchString, { isPrivate: false });
-
-  let expectedResults = [
-    makeSearchResult(context, {
-      heuristic: true,
-      query: searchString,
-      engineName: SearchService.defaultEngine.name,
-    }),
-  ];
-
-  if (expectOther) {
-    expectedResults.push(
-      makeVisitResult(context, {
-        uri: otherURL,
-        title: searchString,
-      })
-    );
-  }
-
-  // The expected result is last since its expected suggestedIndex is -1.
-  expectedResults.push(expectedQuickSuggestResult);
-
-  info("Doing second query");
-  await check_results({ context, matches: expectedResults });
-
-  UrlbarPrefs.clear("suggest.quicksuggest.all");
-  UrlbarPrefs.clear("suggest.quicksuggest.sponsored");
-  await QuickSuggestTestUtils.forceSync();
-
-  UrlbarPrefs.clear("suggest.searches");
-  await PlacesUtils.history.clear();
-}
-
-// Timestamp templates in URLs should be replaced with real timestamps.
-add_task(async function timestamps() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  await QuickSuggestTestUtils.forceSync();
-
-  // Do a search.
-  let context = createContext(TIMESTAMP_SEARCH_STRING, {
-    providers: [UrlbarProviderQuickSuggest.name],
-    isPrivate: false,
-  });
-  let controller = UrlbarTestUtils.newMockController();
-  await controller.startQuery(context);
-
-  // Should be one quick suggest result.
-  Assert.equal(context.results.length, 1, "One result returned");
-  let result = context.results[0];
-
-  QuickSuggestTestUtils.assertTimestampsReplaced(result, {
-    url: TIMESTAMP_SUGGESTION_URL,
-    sponsoredClickUrl: TIMESTAMP_SUGGESTION_CLICK_URL,
-  });
 });
-
-// Real quick suggest URLs include a timestamp template that
-// UrlbarProviderQuickSuggest fills in when it fetches suggestions. When the
-// user picks a quick suggest, its URL with its particular timestamp is added to
-// history. If the user triggers the quick suggest again later, its new
-// timestamp may be different from the one in the user's history. In that case,
-// the two URLs should be treated as dupes and only the quick suggest should be
-// shown, not the URL from history.
-add_task(async function dedupeAgainstURL_timestamps() {
-  // Disable search suggestions. This means the expected suggestedIndex for
-  // sponsored suggestions will now be -1.
-  UrlbarPrefs.set("suggest.searches", false);
-
-  // Add a visit that will match the query below and dupe the quick suggest.
-  let dupeURL = TIMESTAMP_SUGGESTION_URL.replace(
-    TIMESTAMP_TEMPLATE,
-    "2013051113"
-  );
-
-  // Add other visits that will match the query and almost dupe the quick
-  // suggest but not quite because they have invalid timestamps.
-  let badTimestamps = [
-    // not numeric digits
-    "x".repeat(TIMESTAMP_LENGTH),
-    // too few digits
-    "5".repeat(TIMESTAMP_LENGTH - 1),
-    // empty string, too few digits
-    "",
-  ];
-  let badTimestampURLs = badTimestamps.map(str =>
-    TIMESTAMP_SUGGESTION_URL.replace(TIMESTAMP_TEMPLATE, str)
-  );
-
-  await PlacesTestUtils.addVisits(
-    [dupeURL, ...badTimestampURLs].map(uri => ({
-      uri,
-      title: TIMESTAMP_SEARCH_STRING,
-      transition: PlacesUtils.history.TRANSITION_TYPED,
-    }))
-  );
-
-  // First, do a search with quick suggest disabled to make sure the search
-  // string matches all the other URLs.
-  info("Doing first query");
-  UrlbarPrefs.set("suggest.quicksuggest.all", false);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", false);
-  let context = createContext(TIMESTAMP_SEARCH_STRING, { isPrivate: false });
-
-  let expectedHeuristic = makeSearchResult(context, {
-    heuristic: true,
-    query: TIMESTAMP_SEARCH_STRING,
-    engineName: SearchService.defaultEngine.name,
-  });
-  let expectedDupeResult = makeVisitResult(context, {
-    uri: dupeURL,
-    title: TIMESTAMP_SEARCH_STRING,
-  });
-  let expectedBadTimestampResults = [...badTimestampURLs].reverse().map(uri =>
-    makeVisitResult(context, {
-      uri,
-      title: TIMESTAMP_SEARCH_STRING,
-    })
-  );
-
-  await check_results({
-    context,
-    matches: [
-      expectedHeuristic,
-      ...expectedBadTimestampResults,
-      expectedDupeResult,
-    ],
-  });
-
-  // Now do another search with quick suggest enabled.
-  info("Doing second query");
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  await QuickSuggestTestUtils.forceSync();
-  context = createContext(TIMESTAMP_SEARCH_STRING, { isPrivate: false });
-
-  let expectedQuickSuggest = QuickSuggestTestUtils.ampResult({
-    originalUrl: TIMESTAMP_SUGGESTION_URL,
-    keyword: TIMESTAMP_SEARCH_STRING,
-    title: "Timestamp suggestion",
-    impressionUrl: "http://impression.reporting.test.com/timestamp",
-    blockId: 5,
-    advertiser: "TestAdvertiserTimestamp",
-    iabCategory: "22 - Shopping",
-    // suggestedIndex is -1 since search suggestions are disabled.
-    suggestedIndex: -1,
-  });
-
-  let expectedResults = [expectedHeuristic, ...expectedBadTimestampResults];
-
-  const QUICK_SUGGEST_INDEX = expectedResults.length;
-  expectedResults.push(expectedQuickSuggest);
-
-  let controller = UrlbarTestUtils.newMockController();
-  await controller.startQuery(context);
-  info("Actual results: " + JSON.stringify(context.results));
-
-  Assert.equal(
-    context.results.length,
-    expectedResults.length,
-    "Found the expected number of results"
-  );
-
-  function getPayload(result, { ignore = [] } = {}) {
-    ignore.push("suggestionObject");
-    let payload = {};
-    for (let [key, value] of Object.entries(result.payload)) {
-      if (value !== undefined && !ignore.includes(key)) {
-        payload[key] = value;
-      }
-    }
-    return payload;
-  }
-
-  // Check actual vs. expected result properties.
-  for (let i = 0; i < expectedResults.length; i++) {
-    let actual = context.results[i];
-    let expected = expectedResults[i];
-    info(
-      `Comparing results at index ${i}:` +
-        " actual=" +
-        JSON.stringify(actual) +
-        " expected=" +
-        JSON.stringify(expected)
-    );
-    Assert.equal(
-      actual.type,
-      expected.type,
-      `result.type at result index ${i}`
-    );
-    Assert.equal(
-      actual.source,
-      expected.source,
-      `result.source at result index ${i}`
-    );
-    Assert.equal(
-      actual.heuristic,
-      expected.heuristic,
-      `result.heuristic at result index ${i}`
-    );
-
-    // Check payloads except for the quick suggest.
-    if (i != QUICK_SUGGEST_INDEX) {
-      Assert.deepEqual(
-        getPayload(context.results[i], { ignore: ["frecency", "lastVisit"] }),
-        getPayload(expectedResults[i], { ignore: ["frecency", "lastVisit"] }),
-        "Payload at index " + i
-      );
-    }
-  }
-
-  // Check the quick suggest's payload excluding the timestamp-related
-  // properties.
-  let actualQuickSuggest = context.results[QUICK_SUGGEST_INDEX];
-  let ignore = ["sponsoredClickUrl", "url", "urlTimestampIndex"];
-  Assert.deepEqual(
-    getPayload(actualQuickSuggest, { ignore }),
-    getPayload(expectedQuickSuggest, { ignore }),
-    "Quick suggest payload excluding timestamp-related keys"
-  );
-
-  // Now check the timestamps in the payload.
-  QuickSuggestTestUtils.assertTimestampsReplaced(actualQuickSuggest, {
-    url: TIMESTAMP_SUGGESTION_URL,
-    sponsoredClickUrl: TIMESTAMP_SUGGESTION_CLICK_URL,
-  });
-
-  // Clean up.
-  UrlbarPrefs.clear("suggest.quicksuggest.all");
-  UrlbarPrefs.clear("suggest.quicksuggest.sponsored");
-  await QuickSuggestTestUtils.forceSync();
-
-  UrlbarPrefs.clear("suggest.searches");
-  await PlacesUtils.history.clear();
-});
-
-add_task(async function show_less_frequently() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  UrlbarPrefs.set("amp.showLessFrequentlyCount", 0);
-  UrlbarPrefs.set("amp.minKeywordLength", 0);
-
-  await QuickSuggestTestUtils.setConfig({
-    show_less_frequently_cap: 3,
-  });
-
-  let remoteSetting = REMOTE_SETTINGS_RESULTS[6];
-  let result = QuickSuggestTestUtils.ampResult({
-    title: remoteSetting.title,
-    url: remoteSetting.url,
-    fullKeyword: remoteSetting.full_keywords[0][0],
-    suggestedIndex: -1,
-  });
-
-  const testData = [
-    {
-      input: "amp full key",
-      before: {
-        canShowLessFrequently: true,
-        showLessFrequentlyCount: 0,
-        minKeywordLength: 0,
-      },
-      after: {
-        canShowLessFrequently: true,
-        showLessFrequentlyCount: 1,
-        minKeywordLength: 13,
-      },
-    },
-    {
-      input: "amp full keywor",
-      before: {
-        canShowLessFrequently: true,
-        showLessFrequentlyCount: 1,
-        minKeywordLength: 13,
-      },
-      after: {
-        canShowLessFrequently: true,
-        showLessFrequentlyCount: 2,
-        minKeywordLength: 16,
-      },
-    },
-    {
-      input: "amp full keyword",
-      before: {
-        canShowLessFrequently: true,
-        showLessFrequentlyCount: 2,
-        minKeywordLength: 16,
-      },
-      after: {
-        canShowLessFrequently: false,
-        showLessFrequentlyCount: 3,
-        minKeywordLength: 17,
-      },
-    },
-  ];
-
-  for (let { input, before, after } of testData) {
-    let feature = QuickSuggest.getFeature("AmpSuggestions");
-
-    await check_results({
-      context: createContext(input, {
-        providers: [UrlbarProviderQuickSuggest.name],
-        isPrivate: false,
-      }),
-      matches: [result],
-    });
-
-    Assert.equal(
-      UrlbarPrefs.get("amp.minKeywordLength"),
-      before.minKeywordLength
-    );
-    Assert.equal(feature.canShowLessFrequently, before.canShowLessFrequently);
-    Assert.equal(
-      feature.showLessFrequentlyCount,
-      before.showLessFrequentlyCount
-    );
-
-    triggerCommand({
-      result,
-      feature,
-      command: "show_less_frequently",
-      searchString: input,
-    });
-
-    Assert.equal(
-      UrlbarPrefs.get("amp.minKeywordLength"),
-      after.minKeywordLength
-    );
-    Assert.equal(feature.canShowLessFrequently, after.canShowLessFrequently);
-    Assert.equal(
-      feature.showLessFrequentlyCount,
-      after.showLessFrequentlyCount
-    );
-
-    await check_results({
-      context: createContext(input, {
-        providers: [UrlbarProviderQuickSuggest.name],
-        isPrivate: false,
-      }),
-      matches: [],
-    });
-  }
-
-  UrlbarPrefs.clear("amp.showLessFrequentlyCount");
-  UrlbarPrefs.clear("amp.minKeywordLength");
-  await QuickSuggestTestUtils.setConfig(QuickSuggestTestUtils.DEFAULT_CONFIG);
-});
-
-// Tests `UrlbarResult` dismissal.
-add_task(async function dismissResult() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  await QuickSuggestTestUtils.forceSync();
-
-  let tests = [
-    // [suggestion, expected result]
-    [
-      REMOTE_SETTINGS_RESULTS[0],
-      QuickSuggestTestUtils.ampResult({ suggestedIndex: -1 }),
-    ],
-    [REMOTE_SETTINGS_RESULTS[1], QuickSuggestTestUtils.wikipediaResult()],
-    [REMOTE_SETTINGS_RESULTS[2], expectedHttpResult()],
-    [REMOTE_SETTINGS_RESULTS[3], expectedHttpsResult()],
-  ];
-
-  for (let [suggestion, expectedResult] of tests) {
-    info("Testing suggestion: " + JSON.stringify(suggestion));
-
-    // Do a search to get a real `UrlbarResult` created for the suggestion.
-    let context = createContext(suggestion.keywords[0], {
-      providers: [UrlbarProviderQuickSuggest.name],
-      isPrivate: false,
-    });
-    await check_results({
-      context,
-      matches: [expectedResult],
-    });
-
-    // Dismiss it.
-    await QuickSuggest.dismissResult(context.results[0]);
-    Assert.ok(
-      await QuickSuggest.isResultDismissed(context.results[0]),
-      "isResultDismissed should return true"
-    );
-    Assert.ok(
-      await QuickSuggest.canClearDismissedSuggestions(),
-      "canClearDismissedSuggestions should return true"
-    );
-
-    // Do another search. The result shouldn't be added.
-    await check_results({
-      context: createContext(suggestion.keywords[0], {
-        providers: [UrlbarProviderQuickSuggest.name],
-        isPrivate: false,
-      }),
-      matches: [],
-    });
-
-    await QuickSuggest.clearDismissedSuggestions();
-    Assert.ok(
-      !(await QuickSuggest.isResultDismissed(context.results[0])),
-      "isResultDismissed should return false"
-    );
-    Assert.ok(
-      !(await QuickSuggest.canClearDismissedSuggestions()),
-      "canClearDismissedSuggestions should return false"
-    );
-  }
-});
-
-// Tests dismissing a `UrlbarResult` whose URL has a timestamp template.
-add_task(async function dismissResultWithTimestamp() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  await QuickSuggestTestUtils.forceSync();
-
-  // Do a search.
-  let context = createContext(TIMESTAMP_SEARCH_STRING, {
-    providers: [UrlbarProviderQuickSuggest.name],
-    isPrivate: false,
-  });
-  let controller = UrlbarTestUtils.newMockController();
-  await controller.startQuery(context);
-
-  // Should be one quick suggest result.
-  Assert.equal(context.results.length, 1, "One result returned");
-  let result = context.results[0];
-
-  QuickSuggestTestUtils.assertTimestampsReplaced(result, {
-    url: TIMESTAMP_SUGGESTION_URL,
-    sponsoredClickUrl: TIMESTAMP_SUGGESTION_CLICK_URL,
-  });
-
-  Assert.ok(result.payload.originalUrl, "The actual result has an originalUrl");
-  Assert.equal(
-    result.payload.originalUrl,
-    REMOTE_SETTINGS_RESULTS[4].url,
-    "The actual result's originalUrl should be the raw suggestion URL with a timestamp template"
-  );
-
-  // Dismiss the result.
-  await QuickSuggest.dismissResult(result);
-  Assert.ok(
-    await QuickSuggest.isResultDismissed(result),
-    "isResultDismissed should return true"
-  );
-  Assert.ok(
-    await QuickSuggest.canClearDismissedSuggestions(),
-    "canClearDismissedSuggestions should return true"
-  );
-
-  // Do another search. The result shouldn't be added.
-  await check_results({
-    context: createContext(TIMESTAMP_SEARCH_STRING, {
-      providers: [UrlbarProviderQuickSuggest.name],
-      isPrivate: false,
-    }),
-    matches: [],
-  });
-
-  await QuickSuggest.clearDismissedSuggestions();
-  Assert.ok(
-    !(await QuickSuggest.isResultDismissed(context.results[0])),
-    "isResultDismissed should return false"
-  );
-  Assert.ok(
-    !(await QuickSuggest.canClearDismissedSuggestions()),
-    "canClearDismissedSuggestions should return false"
-  );
-});
-
-add_task(async function sponsoredPriority_normal() {
-  await doSponsoredPriorityTest({
-    searchWord: SPONSORED_SEARCH_STRING,
-    remoteSettingsData: [REMOTE_SETTINGS_RESULTS[0]],
-    expectedMatches: [expectedSponsoredPriorityResult()],
-  });
-});
-
-add_task(async function sponsoredPriority_nonsponsoredSuggestion() {
-  // Not affect to except sponsored suggestion.
-  await doSponsoredPriorityTest({
-    searchWord: NONSPONSORED_SEARCH_STRING,
-    remoteSettingsData: [REMOTE_SETTINGS_RESULTS[1]],
-    expectedMatches: [QuickSuggestTestUtils.wikipediaResult()],
-  });
-});
-
-add_task(async function sponsoredPriority_sponsoredIndex() {
-  await doSponsoredPriorityTest({
-    nimbusSettings: { quickSuggestSponsoredIndex: 2 },
-    searchWord: SPONSORED_SEARCH_STRING,
-    remoteSettingsData: [REMOTE_SETTINGS_RESULTS[0]],
-    expectedMatches: [expectedSponsoredPriorityResult()],
-  });
-});
-
-async function doSponsoredPriorityTest({
-  remoteSettingsConfig = {},
-  nimbusSettings = {},
-  searchWord,
-  remoteSettingsData,
-  expectedMatches,
-}) {
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  await QuickSuggestTestUtils.forceSync();
-
-  const cleanUpNimbusEnable = await UrlbarTestUtils.initNimbusFeature({
-    ...nimbusSettings,
-    quickSuggestSponsoredPriority: true,
-  });
-
-  await resetRemoteSettingsData(remoteSettingsData);
-  await QuickSuggestTestUtils.setConfig(remoteSettingsConfig);
-
-  await check_results({
-    context: createContext(searchWord, {
-      providers: [UrlbarProviderQuickSuggest.name],
-      isPrivate: false,
-    }),
-    matches: expectedMatches,
-  });
-
-  await cleanUpNimbusEnable();
-  await resetRemoteSettingsData();
-  await QuickSuggestTestUtils.setConfig(QuickSuggestTestUtils.DEFAULT_CONFIG);
-}
 
 // When a Suggest best match and a tab-to-search (TTS) are shown in the same
 // search, both will have a `suggestedIndex` value of 1. The TTS should appear
 // first.
 add_task(async function tabToSearch() {
-  // We'll use a sponsored priority result as the best match result. Different
-  // types of Suggest results can appear as best matches, and they all should
-  // have the same behavior.
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  await QuickSuggestTestUtils.forceSync();
-  UrlbarPrefs.set("suggest.quickactions", false);
-
-  Services.prefs.setBoolPref(
-    "browser.urlbar.quicksuggest.sponsoredPriority",
-    true
-  );
-
-  // Disable tab-to-search onboarding results so we get a regular TTS result,
-  // which we can test a little more easily with `makeSearchResult()`.
-  UrlbarPrefs.set("tabToSearch.onboard.interactionsLeft", 0);
-
-  // Disable search suggestions so we don't need to expect them below.
-  Services.prefs.setBoolPref("browser.search.suggest.enabled", false);
-
   // Install a test engine. The main part of its domain name needs to match the
   // best match result too so we can trigger both its TTS and the best match.
-  let engineURL = `https://foo.${SPONSORED_SEARCH_STRING}.com/`;
+  let engineURL = `https://foo.amp.com/`;
   let extension = await SearchTestUtils.installSearchExtension(
     {
       name: "Test",
@@ -1520,78 +315,83 @@ add_task(async function tabToSearch() {
   );
   let engine = SearchService.getEngineByName("Test");
 
-  // Also need to add a visit to trigger TTS.
-  await PlacesTestUtils.addVisits({
-    url: engineURL,
-    transition: PlacesUtils.history.TRANSITION_TYPED,
-  });
-
-  let context = createContext(SPONSORED_SEARCH_STRING, {
-    isPrivate: false,
-  });
-  await check_results({
-    context,
-    matches: [
-      // search heuristic
-      makeSearchResult(context, {
-        engineName: SearchService.defaultEngine.name,
-        engineIconUri: await SearchService.defaultEngine.getIconURL(),
-        heuristic: true,
-      }),
-      // tab to search
-      makeSearchResult(context, {
-        engineName: engine.name,
-        engineIconUri: UrlbarUtils.ICON.SEARCH_GLASS,
-        searchUrlDomainWithoutSuffix: UrlbarUtils.stripPublicSuffixFromHost(
-          engine.searchUrlDomain
-        ),
-        providesSearchMode: true,
-        query: "",
-        providerName: "UrlbarProviderTabToSearch",
-        satisfiesAutofillThreshold: true,
-      }),
-      // Suggest best match
-      expectedSponsoredPriorityResult(),
-      // visit
-      makeVisitResult(context, {
-        uri: engineURL,
-        title: `test visit for ${engineURL}`,
-      }),
+  let context = createContext("amp", { isPrivate: false });
+  await doResultCheckTest({
+    env: {
+      remoteSettingRecords: [
+        {
+          collection: QuickSuggestTestUtils.RS_COLLECTION.AMP,
+          type: QuickSuggestTestUtils.RS_TYPE.AMP,
+          attachment: [QuickSuggestTestUtils.ampRemoteSettings()],
+        },
+      ],
+    },
+    tests: [
+      {
+        prefs: [
+          // We'll use a sponsored priority result as the best match result.
+          // Different types of Suggest results can appear as best matches, and
+          // they all should have the same behavior.
+          ["suggest.quicksuggest.all", true],
+          ["suggest.quicksuggest.sponsored", true],
+          ["suggest.quickactions", false],
+          // Disable tab-to-search onboarding results so we get a regular TTS
+          // result, which we can test a little more easily with
+          // `makeSearchResult()`.
+          ["tabToSearch.onboard.interactionsLeft", 0],
+          // Disable search suggestions so we don't need to expect them below.
+          ["browser.search.suggest.enabled", false],
+        ],
+        nimbus: {
+          quickSuggestSponsoredPriority: true,
+        },
+        histories: [
+          { uri: engineURL, transition: PlacesUtils.history.TRANSITION_TYPED },
+        ],
+        context,
+        expected: [
+          // search heuristic
+          makeSearchResult(context, {
+            engineName: SearchService.defaultEngine.name,
+            engineIconUri: await SearchService.defaultEngine.getIconURL(),
+            heuristic: true,
+          }),
+          // tab to search
+          makeSearchResult(context, {
+            engineName: engine.name,
+            engineIconUri: UrlbarUtils.ICON.SEARCH_GLASS,
+            searchUrlDomainWithoutSuffix: UrlbarUtils.stripPublicSuffixFromHost(
+              engine.searchUrlDomain
+            ),
+            providesSearchMode: true,
+            query: "",
+            providerName: "UrlbarProviderTabToSearch",
+            satisfiesAutofillThreshold: true,
+          }),
+          // Suggest best match
+          QuickSuggestTestUtils.ampResult({
+            isBestMatch: true,
+            suggestedIndex: 1,
+            isSuggestedIndexRelativeToGroup: false,
+          }),
+          // visit
+          makeVisitResult(context, {
+            uri: engineURL,
+            title: `test visit for ${engineURL}`,
+          }),
+        ],
+      },
     ],
   });
 
-  await cleanupPlaces();
   await extension.unload();
-
-  UrlbarPrefs.clear("tabToSearch.onboard.interactionsLeft");
-  UrlbarPrefs.clear("suggest.quickactions");
-  Services.prefs.clearUserPref("browser.search.suggest.enabled");
-  Services.prefs.clearUserPref("browser.urlbar.quicksuggest.sponsoredPriority");
 });
 
-// When a Suggest best match and a global action are shown in the same
-// search, both will have a `suggestedIndex` value of 1. The global action should
-// appear first.
+// When a Suggest best match and a global action are shown in the same search,
+// both will have a `suggestedIndex` value of 1. The global action should appear
+// first.
 add_task(async function globalAction() {
-  // We'll use a sponsored priority result as the best match result. Different
-  // types of Suggest results can appear as best matches, and they all should
-  // have the same behavior.
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  await QuickSuggestTestUtils.forceSync();
-
-  Services.prefs.setBoolPref(
-    "browser.urlbar.quicksuggest.sponsoredPriority",
-    true
-  );
-
-  // Disable search suggestions so we don't need to expect them below.
-  Services.prefs.setBoolPref("browser.search.suggest.enabled", false);
-
-  // Set prefs to prevent quick actions onboarding label from showing.
-  UrlbarPrefs.set("quickactions.timesToShowOnboardingLabel", 3);
-  UrlbarPrefs.set("quickactions.timesShownOnboardingLabel", 3);
-
-  let engineURL = `https://example.com/`;
+  let engineURL = "https://example.com/";
   let extension = await SearchTestUtils.installSearchExtension(
     {
       name: "Amp",
@@ -1599,634 +399,76 @@ add_task(async function globalAction() {
     },
     { skipUnload: true }
   );
-
   await PlacesTestUtils.addVisits(engineURL);
 
-  let context = createContext(SPONSORED_SEARCH_STRING, {
-    isPrivate: false,
-  });
-
-  await check_results({
-    context,
-    matches: [
-      // search heuristic
-      makeSearchResult(context, {
-        engineName: SearchService.defaultEngine.name,
-        engineIconUri: await SearchService.defaultEngine.getIconURL(),
-        heuristic: true,
-      }),
-
-      // "Search with engine" global action.
-      makeGlobalActionsResult({
-        actionsResults: [
-          {
-            providerName: "ActionsProviderContextualSearch",
-          },
-        ],
-        query: "",
-        input: "",
-        inputLength: context.searchString.length,
-        showOnboardingLabel: false,
-      }),
-
-      // Suggest best match
-      expectedSponsoredPriorityResult(),
-
-      // visit
-      makeVisitResult(context, {
-        uri: engineURL,
-        title: `test visit for ${engineURL}`,
-      }),
-    ],
-  });
-
-  await cleanupPlaces();
-  await extension.unload();
-
-  UrlbarPrefs.clear("quickactions.timesToShowOnboardingLabel");
-  UrlbarPrefs.clear("quickactions.timesShownOnboardingLabel");
-  Services.prefs.clearUserPref("browser.search.suggest.enabled");
-  Services.prefs.clearUserPref("browser.urlbar.quicksuggest.sponsoredPriority");
-});
-
-// The `Amp` and `Wikipedia` Rust providers should be passed to the Rust
-// component when querying depending on whether sponsored and non-sponsored
-// suggestions are enabled.
-add_task(async function rustProviders() {
-  await doRustProvidersTests({
-    searchString: SPONSORED_AND_NONSPONSORED_SEARCH_STRING,
+  let context = createContext("amp", { isPrivate: false });
+  await doResultCheckTest({
+    env: {
+      remoteSettingRecords: [
+        {
+          collection: QuickSuggestTestUtils.RS_COLLECTION.AMP,
+          type: QuickSuggestTestUtils.RS_TYPE.AMP,
+          attachment: [QuickSuggestTestUtils.ampRemoteSettings()],
+        },
+      ],
+    },
     tests: [
       {
-        prefs: {
-          "suggest.quicksuggest.all": true,
-          "suggest.quicksuggest.sponsored": true,
-        },
-        expectedUrls: [
-          "https://example.com/amp",
-          "https://example.com/wikipedia",
+        prefs: [
+          // We'll use a sponsored priority result as the best match result.
+          // Different types of Suggest results can appear as best matches, and
+          // they all should
+          // have the same behavior.
+          ["suggest.quicksuggest.all", true],
+          ["suggest.quicksuggest.sponsored", true],
+          // Disable search suggestions so we don't need to expect them below.
+          ["browser.search.suggest.enabled", false],
+          // Set prefs to prevent quick actions onboarding label from showing.
+          ["quickactions.timesToShowOnboardingLabel", 3],
+          ["quickactions.timesShownOnboardingLabel", 3],
         ],
-      },
-      {
-        prefs: {
-          "suggest.quicksuggest.all": true,
-          "suggest.quicksuggest.sponsored": false,
+        nimbus: {
+          quickSuggestSponsoredPriority: true,
         },
-        expectedUrls: ["https://example.com/wikipedia"],
-      },
-      {
-        prefs: {
-          "suggest.quicksuggest.all": false,
-          "suggest.quicksuggest.sponsored": true,
-        },
-        expectedUrls: [],
-      },
-      {
-        prefs: {
-          "suggest.quicksuggest.all": false,
-          "suggest.quicksuggest.sponsored": false,
-        },
-        expectedUrls: [],
+        histories: [engineURL],
+        context,
+        expected: [
+          // search heuristic
+          makeSearchResult(context, {
+            engineName: SearchService.defaultEngine.name,
+            engineIconUri: await SearchService.defaultEngine.getIconURL(),
+            heuristic: true,
+          }),
+          // "Search with engine" global action.
+          makeGlobalActionsResult({
+            actionsResults: [
+              {
+                providerName: "ActionsProviderContextualSearch",
+              },
+            ],
+            query: "",
+            input: "",
+            inputLength: context.searchString.length,
+            showOnboardingLabel: false,
+          }),
+          // Suggest best match
+          QuickSuggestTestUtils.ampResult({
+            isBestMatch: true,
+            suggestedIndex: 1,
+            isSuggestedIndexRelativeToGroup: false,
+          }),
+          // visit
+          makeVisitResult(context, {
+            uri: engineURL,
+            title: `test visit for ${engineURL}`,
+          }),
+        ],
       },
     ],
   });
+
+  await extension.unload();
 });
-
-// Tests the keyword/search-string-length threshold. Keywords/search strings
-// must be at least two characters long to be matched.
-add_task(async function keywordLengthThreshold() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  await QuickSuggestTestUtils.forceSync();
-
-  let tests = [
-    ...ONE_CHAR_SEARCH_STRINGS.map(keyword => ({ keyword, expected: false })),
-    { keyword: "12", expected: true },
-    { keyword: "a longer keyword", expected: true },
-  ];
-
-  for (let { keyword, expected } of tests) {
-    await check_results({
-      context: createContext(keyword, {
-        providers: [UrlbarProviderQuickSuggest.name],
-        isPrivate: false,
-      }),
-      matches: !expected
-        ? []
-        : [
-            QuickSuggestTestUtils.ampResult({
-              keyword,
-              title: "Suggestion with 1-char keyword",
-              url: "http://example.com/1-char-keyword",
-              originalUrl: "http://example.com/1-char-keyword",
-              suggestedIndex: -1,
-            }),
-          ],
-    });
-  }
-});
-
-// AMP should be a top pick when `quicksuggest.ampTopPickCharThreshold` is
-// non-zero and the query length meets the threshold; otherwise it should not be
-// a top pick. It shouldn't matter whether the query is one of the suggestion's
-// full keywords.
-add_task(async function ampTopPickCharThreshold() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  await QuickSuggestTestUtils.forceSync();
-
-  UrlbarPrefs.set(
-    "quicksuggest.ampTopPickCharThreshold",
-    "amp full keywo".length
-  );
-
-  let tests = [
-    // No top pick: Matches an AMP suggestion but the query is shorter than the
-    // threshold.
-    { keyword: "amp full key", amp: true, isTopPick: false },
-    { keyword: "amp full keyw", amp: true, isTopPick: false },
-    { keyword: "                 amp full key", amp: true, isTopPick: false },
-    { keyword: "                 amp full keyw", amp: true, isTopPick: false },
-
-    // Top pick: Matches an AMP suggestion and the query meets the threshold.
-    { keyword: "amp full keywo", amp: true, isTopPick: true },
-    { keyword: "amp full keywor", amp: true, isTopPick: true },
-    { keyword: "amp full keyword", amp: true, isTopPick: true },
-    { keyword: "AmP FuLl KeYwOrD", amp: true, isTopPick: true },
-    { keyword: "               amp full keywo", amp: true, isTopPick: true },
-    { keyword: "               amp full keywor", amp: true, isTopPick: true },
-    { keyword: "               amp full keyword", amp: true, isTopPick: true },
-    { keyword: "               AmP FuLl KeYwOrD", amp: true, isTopPick: true },
-
-    // No top pick: Matches an AMP suggestion but the query is shorter than the
-    // threshold. It doesn't matter that the query is equal to the suggestion's
-    // full keyword.
-    { keyword: "xyz", fullKeyword: "xyz", amp: true, isTopPick: false },
-    { keyword: "XyZ", fullKeyword: "xyz", amp: true, isTopPick: false },
-    {
-      keyword: "                            xyz",
-      fullKeyword: "xyz",
-      amp: true,
-      isTopPick: false,
-    },
-    {
-      keyword: "                            XyZ",
-      fullKeyword: "xyz",
-      amp: true,
-      isTopPick: false,
-    },
-
-    // No top pick: Matches a Wikipedia suggestion and some queries meet the
-    // threshold, but Wikipedia should not be top pick.
-    { keyword: "wikipedia full key", isTopPick: false },
-    { keyword: "wikipedia full keyw", isTopPick: false },
-    { keyword: "wikipedia full keywo", isTopPick: false },
-    { keyword: "wikipedia full keywor", isTopPick: false },
-    { keyword: "wikipedia full keyword", isTopPick: false },
-
-    // No match: These shouldn't match anything at all since they have extra
-    // spaces at the end, but they're included for completeness.
-    { keyword: "                 amp full key   ", noMatch: true },
-    { keyword: "                 amp full keyw   ", noMatch: true },
-    { keyword: "               amp full keywo   ", noMatch: true },
-    { keyword: "               amp full keywor   ", noMatch: true },
-    { keyword: "               amp full keyword   ", noMatch: true },
-    { keyword: "               AmP FuLl KeYwOrD   ", noMatch: true },
-    { keyword: "                            xyz   ", noMatch: true },
-    { keyword: "                            XyZ   ", noMatch: true },
-  ];
-
-  for (let { keyword, fullKeyword, amp, isTopPick, noMatch } of tests) {
-    fullKeyword ??= amp ? "amp full keyword" : "wikipedia full keyword";
-    info(
-      "Running subtest: " +
-        JSON.stringify({ keyword, fullKeyword, amp, isTopPick })
-    );
-
-    let expectedResult;
-    if (!noMatch) {
-      if (!amp) {
-        expectedResult = QuickSuggestTestUtils.wikipediaResult({
-          keyword,
-          fullKeyword,
-          title: "Wikipedia suggestion with full keyword and prefix keywords",
-          url: "https://example.com/wikipedia-full-keyword",
-        });
-      } else if (isTopPick) {
-        expectedResult = QuickSuggestTestUtils.ampResult({
-          keyword,
-          fullKeyword,
-          title: "AMP suggestion with full keyword and prefix keywords",
-          url: "https://example.com/amp-full-keyword",
-          suggestedIndex: 1,
-          isSuggestedIndexRelativeToGroup: false,
-          isBestMatch: true,
-        });
-      } else {
-        expectedResult = QuickSuggestTestUtils.ampResult({
-          suggestedIndex: -1,
-          keyword,
-          fullKeyword,
-          title: "AMP suggestion with full keyword and prefix keywords",
-          url: "https://example.com/amp-full-keyword",
-        });
-      }
-    }
-
-    await check_results({
-      context: createContext(keyword, {
-        providers: [UrlbarProviderQuickSuggest.name],
-        isPrivate: false,
-      }),
-      matches: expectedResult ? [expectedResult] : [],
-    });
-  }
-
-  UrlbarPrefs.clear("quicksuggest.ampTopPickCharThreshold");
-});
-
-// AMP should not be shown as a top pick when the threshold is zero.
-add_task(async function ampTopPickCharThreshold_zero() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  await QuickSuggestTestUtils.forceSync();
-
-  UrlbarPrefs.set("quicksuggest.ampTopPickCharThreshold", 0);
-
-  let tests = [
-    { keyword: "amp full key", amp: true },
-    { keyword: "amp full keyw", amp: true },
-    { keyword: "amp full keywo", amp: true },
-    { keyword: "amp full keywor", amp: true },
-    { keyword: "amp full keyword", amp: true },
-    { keyword: "AmP FuLl KeYwOrD", amp: true },
-    { keyword: "xyz", fullKeyword: "xyz", amp: true },
-    { keyword: "XyZ", fullKeyword: "xyz", amp: true },
-    { keyword: "wikipedia full key" },
-    { keyword: "wikipedia full keyw" },
-    { keyword: "wikipedia full keywo" },
-    { keyword: "wikipedia full keywor" },
-    { keyword: "wikipedia full keyword" },
-  ];
-
-  for (let { keyword, fullKeyword, amp } of tests) {
-    fullKeyword ??= amp ? "amp full keyword" : "wikipedia full keyword";
-    info("Running subtest: " + JSON.stringify({ keyword, fullKeyword, amp }));
-
-    let expectedResult;
-    if (!amp) {
-      expectedResult = QuickSuggestTestUtils.wikipediaResult({
-        keyword,
-        fullKeyword,
-        title: "Wikipedia suggestion with full keyword and prefix keywords",
-        url: "https://example.com/wikipedia-full-keyword",
-      });
-    } else {
-      expectedResult = QuickSuggestTestUtils.ampResult({
-        keyword,
-        fullKeyword,
-        title: "AMP suggestion with full keyword and prefix keywords",
-        url: "https://example.com/amp-full-keyword",
-        suggestedIndex: -1,
-      });
-    }
-
-    await check_results({
-      context: createContext(keyword, {
-        providers: [UrlbarProviderQuickSuggest.name],
-        isPrivate: false,
-      }),
-      matches: [expectedResult],
-    });
-  }
-
-  UrlbarPrefs.clear("quicksuggest.ampTopPickCharThreshold");
-});
-
-// Tests `ampMatchingStrategy`.
-add_task(async function ampMatchingStrategy() {
-  UrlbarPrefs.set("suggest.quicksuggest.all", true);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-  await QuickSuggestTestUtils.forceSync();
-
-  // Test each strategy in `AmpMatchingStrategy`. There are only a few.
-  for (let [key, value] of Object.entries(AmpMatchingStrategy)) {
-    await doAmpMatchingStrategyTest({ key, value });
-
-    // Reset back to the default strategy just to make sure that works.
-    await doAmpMatchingStrategyTest({
-      key: "(default)",
-      value: 0,
-    });
-  }
-
-  // Test an invalid strategy integer value. The default strategy should
-  // actually be used. First we need to set a valid non-default strategy.
-  await doAmpMatchingStrategyTest({
-    key: "FTS_AGAINST_TITLE",
-    value: AmpMatchingStrategy.FTS_AGAINST_TITLE,
-  });
-  await doAmpMatchingStrategyTest({
-    key: "(invalid)",
-    value: 99,
-    expectedStrategy: 0,
-  });
-
-  Services.prefs.clearUserPref(
-    "browser.urlbar.quicksuggest.ampMatchingStrategy"
-  );
-  await QuickSuggestTestUtils.forceSync();
-});
-
-async function doAmpMatchingStrategyTest({
-  key,
-  value,
-  expectedStrategy = value,
-}) {
-  info("Doing ampMatchingStrategy test: " + JSON.stringify({ key, value }));
-
-  let sandbox = sinon.createSandbox();
-  let ingestSpy = sandbox.spy(QuickSuggest.rustBackend._test_store, "ingest");
-
-  // Set the strategy. It should trigger ingest. (Assuming it's different from
-  // the current strategy. If it's not, ingest won't happen.)
-  Services.prefs.setIntPref(
-    "browser.urlbar.quicksuggest.ampMatchingStrategy",
-    value
-  );
-
-  let ingestCall = await TestUtils.waitForCondition(() => {
-    return ingestSpy.getCalls().find(call => {
-      let ingestConstraints = call.args[0];
-      return ingestConstraints?.providers[0] == SuggestionProvider.AMP;
-    });
-  }, "Waiting for ingest() to be called with Amp provider");
-
-  // Check the provider constraints in the ingest constraints.
-  let { providerConstraints } = ingestCall.args[0];
-  if (!expectedStrategy) {
-    Assert.ok(
-      !providerConstraints,
-      "ingest() should not have been called with provider constraints"
-    );
-  } else {
-    Assert.ok(
-      providerConstraints,
-      "ingest() should have been called with provider constraints"
-    );
-    Assert.strictEqual(
-      providerConstraints.ampAlternativeMatching,
-      expectedStrategy,
-      "ampAlternativeMatching should have been set"
-    );
-  }
-
-  // Now do a query to make sure it also uses the correct provider constraints.
-  // No need to use `check_results()`. We only need to trigger a query, and
-  // checking the right results unnecessarily complicates things.
-  let querySpy = sandbox.spy(
-    QuickSuggest.rustBackend._test_store,
-    "queryWithMetrics"
-  );
-
-  let controller = UrlbarTestUtils.newMockController();
-  await controller.startQuery(
-    createContext(SPONSORED_SEARCH_STRING, {
-      providers: [UrlbarProviderQuickSuggest.name],
-      isPrivate: false,
-    })
-  );
-
-  let queryCalls = querySpy.getCalls();
-  Assert.equal(queryCalls.length, 1, "query() should have been called once");
-
-  let query = queryCalls[0].args[0];
-  Assert.ok(query, "query() should have been called with a query object");
-  Assert.ok(
-    query.providerConstraints,
-    "query() should have been called with provider constraints"
-  );
-
-  if (!expectedStrategy) {
-    Assert.strictEqual(
-      query.providerConstraints.ampAlternativeMatching,
-      null,
-      "ampAlternativeMatching should not have been set on query provider constraints"
-    );
-  } else {
-    Assert.strictEqual(
-      query.providerConstraints.ampAlternativeMatching,
-      expectedStrategy,
-      "ampAlternativeMatching should have been set on query provider constraints"
-    );
-  }
-
-  sandbox.restore();
-}
-
-add_task(async function offline_amp_disabled() {
-  for (let pref of [
-    "suggest.quicksuggest.all",
-    "suggest.quicksuggest.sponsored",
-    "amp.featureGate",
-    "suggest.amp",
-  ]) {
-    info("Testing with pref: " + pref);
-
-    UrlbarPrefs.set("suggest.quicksuggest.all", true);
-    UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-    await QuickSuggestTestUtils.forceSync();
-
-    // First make sure we can match an AMP suggestion.
-    await check_results({
-      context: createContext(SPONSORED_SEARCH_STRING, {
-        providers: [UrlbarProviderQuickSuggest.name],
-        isPrivate: false,
-      }),
-      matches: [QuickSuggestTestUtils.ampResult({ suggestedIndex: -1 })],
-    });
-
-    // Now disable the pref and try again.
-    UrlbarPrefs.set(pref, false);
-    await QuickSuggestTestUtils.forceSync();
-
-    await check_results({
-      context: createContext(SPONSORED_SEARCH_STRING, {
-        providers: [UrlbarProviderQuickSuggest.name],
-        isPrivate: false,
-      }),
-      matches: [],
-    });
-
-    UrlbarPrefs.clear(pref);
-  }
-
-  await QuickSuggestTestUtils.forceSync();
-});
-
-add_task(async function offline_wikipedia_disabled() {
-  for (let pref of [
-    "suggest.quicksuggest.all",
-    "wikipedia.featureGate",
-    "suggest.wikipedia",
-  ]) {
-    info("Testing with pref: " + pref);
-
-    UrlbarPrefs.set("suggest.quicksuggest.all", true);
-    UrlbarPrefs.set("suggest.quicksuggest.sponsored", false);
-    await QuickSuggestTestUtils.forceSync();
-
-    // First make sure we can match a Wikipedia suggestion.
-    await check_results({
-      context: createContext(NONSPONSORED_SEARCH_STRING, {
-        providers: [UrlbarProviderQuickSuggest.name],
-        isPrivate: false,
-      }),
-      matches: [QuickSuggestTestUtils.wikipediaResult()],
-    });
-
-    // Now disable the pref and try again.
-    UrlbarPrefs.set(pref, false);
-    await QuickSuggestTestUtils.forceSync();
-
-    await check_results({
-      context: createContext(NONSPONSORED_SEARCH_STRING, {
-        providers: [UrlbarProviderQuickSuggest.name],
-        isPrivate: false,
-      }),
-      matches: [],
-    });
-
-    UrlbarPrefs.clear(pref);
-  }
-
-  await QuickSuggestTestUtils.forceSync();
-});
-
-add_task(async function online_amp_disabled() {
-  await doMerinoTest(async () => {
-    for (let pref of [
-      "suggest.quicksuggest.all",
-      "suggest.quicksuggest.sponsored",
-      "amp.featureGate",
-      "suggest.amp",
-    ]) {
-      info("Testing with pref: " + pref);
-
-      UrlbarPrefs.set("suggest.quicksuggest.all", true);
-      UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
-      await QuickSuggestTestUtils.forceSync();
-
-      // First make sure we can match an AMP suggestion.
-      await check_results({
-        context: createContext("test", {
-          providers: [UrlbarProviderQuickSuggest.name],
-          isPrivate: false,
-        }),
-        matches: [
-          QuickSuggestTestUtils.ampResult({
-            source: "merino",
-            provider: "adm",
-            icon: "https://example.com/amp-icon",
-            iabCategory: "22 - Shopping",
-            requestId: "request_id",
-            suggestedIndex: -1,
-          }),
-        ],
-      });
-
-      // Now disable the pref and try again.
-      UrlbarPrefs.set(pref, false);
-      await QuickSuggestTestUtils.forceSync();
-
-      // Unless the pref was `all`, the Wikipedia Merino suggestion should now
-      // be matched.
-      let expected =
-        pref == "suggest.quicksuggest.all"
-          ? []
-          : [
-              QuickSuggestTestUtils.wikipediaResult({
-                source: "merino",
-                provider: "wikipedia",
-                telemetryType: "wikipedia",
-                icon: "https://example.com/wikipedia-icon",
-              }),
-            ];
-      await check_results({
-        context: createContext("test", {
-          providers: [UrlbarProviderQuickSuggest.name],
-          isPrivate: false,
-        }),
-        matches: expected,
-      });
-
-      UrlbarPrefs.clear(pref);
-    }
-
-    await QuickSuggestTestUtils.forceSync();
-  });
-});
-
-add_task(async function online_wikipedia_disabled() {
-  await doMerinoTest(async () => {
-    for (let pref of [
-      "suggest.quicksuggest.all",
-      "wikipedia.featureGate",
-      "suggest.wikipedia",
-    ]) {
-      info("Testing with pref: " + pref);
-
-      UrlbarPrefs.set("suggest.quicksuggest.all", true);
-      UrlbarPrefs.set("suggest.quicksuggest.sponsored", false);
-      await QuickSuggestTestUtils.forceSync();
-
-      // First make sure we can match a Wikipedia suggestion.
-      await check_results({
-        context: createContext("test", {
-          providers: [UrlbarProviderQuickSuggest.name],
-          isPrivate: false,
-        }),
-        matches: [
-          QuickSuggestTestUtils.wikipediaResult({
-            source: "merino",
-            provider: "wikipedia",
-            telemetryType: "wikipedia",
-            icon: "https://example.com/wikipedia-icon",
-          }),
-        ],
-      });
-
-      // Now disable the pref and try again.
-      UrlbarPrefs.set(pref, false);
-      await QuickSuggestTestUtils.forceSync();
-
-      await check_results({
-        context: createContext("test", {
-          providers: [UrlbarProviderQuickSuggest.name],
-          isPrivate: false,
-        }),
-        matches: [],
-      });
-
-      UrlbarPrefs.clear(pref);
-    }
-
-    await QuickSuggestTestUtils.forceSync();
-  });
-});
-
-async function doMerinoTest(callback) {
-  UrlbarPrefs.set("quicksuggest.online.available", true);
-  UrlbarPrefs.set("quicksuggest.online.enabled", true);
-  await MerinoTestUtils.server.start();
-
-  MerinoTestUtils.server.response.body.suggestions = MERINO_SUGGESTIONS;
-
-  await callback();
-
-  await MerinoTestUtils.server.stop();
-  UrlbarPrefs.clear("quicksuggest.online.available");
-  UrlbarPrefs.clear("quicksuggest.online.enabled");
-}
 
 add_task(async function mergeRustProviderConstraints() {
   let tests = [
@@ -2477,7 +719,10 @@ add_task(async function mergeRustProviderConstraints() {
       [b, a],
     ]) {
       info("Doing test: " + JSON.stringify({ first, second }));
-      let actual = SuggestBackendRust.mergeProviderConstraints(first, second);
+      let actual = lazy.SuggestBackendRust.mergeProviderConstraints(
+        first,
+        second
+      );
       Assert.deepEqual(
         actual,
         expected,
@@ -2486,19 +731,3 @@ add_task(async function mergeRustProviderConstraints() {
     }
   }
 });
-
-async function resetRemoteSettingsData(data = REMOTE_SETTINGS_RESULTS) {
-  let isAmp = suggestion => suggestion.iab_category == "22 - Shopping";
-  await QuickSuggestTestUtils.setRemoteSettingsRecords([
-    {
-      collection: QuickSuggestTestUtils.RS_COLLECTION.AMP,
-      type: QuickSuggestTestUtils.RS_TYPE.AMP,
-      attachment: data.filter(isAmp),
-    },
-    {
-      collection: QuickSuggestTestUtils.RS_COLLECTION.OTHER,
-      type: QuickSuggestTestUtils.RS_TYPE.WIKIPEDIA,
-      attachment: data.filter(s => !isAmp(s)),
-    },
-  ]);
-}

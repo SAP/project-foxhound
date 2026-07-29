@@ -35,7 +35,7 @@ NitGenerator = Generator["GlinterNit", None, None]
 
 
 def noop(*args):
-    """ A noop `LintGenerator`. Never yields a GlinterNit."""
+    """A noop `LintGenerator`. Never yields a GlinterNit."""
     return
     yield
 
@@ -307,8 +307,12 @@ def check_event_on_non_events_ping(
     An event metric should usually go on the `events` ping or a custom ping,
     not on a builtin ping.
     """
-    disallowed_pings = set(pings.RESERVED_PING_NAMES) - {"default", "events"} | {"health"}
-    if metric.type == "event" and any([ping in disallowed_pings for ping in metric.send_in_pings]):
+    disallowed_pings = set(pings.RESERVED_PING_NAMES) - {"default", "events"} | {
+        "health"
+    }
+    if metric.type == "event" and any(
+        [ping in disallowed_pings for ping in metric.send_in_pings]
+    ):
         yield (
             "An event metric should usually go on the `events` ping or a custom ping, "
             + "not on a builtin ping."
@@ -709,7 +713,11 @@ def lint_metrics(
 
             for check_name, (check_func, check_type) in METRIC_CHECKS.items():
                 new_nits = list(check_func(metric, parser_config))
-                if check_unused_lints and check_name in metric.no_lint and not len(new_nits):
+                if (
+                    check_unused_lints
+                    and check_name in metric.no_lint
+                    and not len(new_nits)
+                ):
                     nits.append(
                         GlinterNit(
                             "UNUSED_NO_LINT",

@@ -19,13 +19,16 @@ prefs = [
   "accessibility.ariaNotify.enabled=true",
   "dom.text_fragments.enabled=true",
   # Required for the eval in invokeContentTask in shared-head.js
-  "security.allow_eval_with_system_principal=true"
+  "security.allow_eval_with_system_principal=true",
+  "accessibility.force_disabled=-1"
 ]
 
 ["browser_announcement.js"]
 
 ["browser_app.js"]
 https_first_disabled = true
+
+["browser_braille.js"]
 
 ["browser_aria_busy.js"]
 
@@ -53,6 +56,8 @@ skip-if = [
 ["browser_bounds.js"]
 
 ["browser_combobox.js"]
+
+["browser_confirmation_hint.js"]
 
 ["browser_custom_actions.js"]
 

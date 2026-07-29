@@ -10,7 +10,10 @@ import { GeckoViewModule } from "resource://gre/modules/GeckoViewModule.sys.mjs"
 export class GeckoViewPageExtractor extends GeckoViewModule {
   onInit() {
     debug`onInit`;
-    this.registerListener(["GeckoView:PageExtractor:GetTextContent"]);
+    this.registerListener([
+      "GeckoView:PageExtractor:GetTextContent",
+      "GeckoView:PageExtractor:GetPageMetadata",
+    ]);
   }
 
   async onEvent(aEvent, aData, aCallback) {
@@ -19,7 +22,7 @@ export class GeckoViewPageExtractor extends GeckoViewModule {
       case "GeckoView:PageExtractor:GetTextContent": {
         try {
           await this.getActor("PageExtractor")
-            .getText()
+            .getText(aData ?? {})
             .then(
               result => {
                 aCallback.onSuccess({
@@ -31,6 +34,29 @@ export class GeckoViewPageExtractor extends GeckoViewModule {
             );
         } catch (error) {
           aCallback.onError(`Unable to get text from PageExtractor: ${error}`);
+        }
+        break;
+      }
+      case "GeckoView:PageExtractor:GetPageMetadata": {
+        try {
+          await this.getActor("PageExtractor")
+            .getPageMetadata()
+            .then(
+              result => {
+                aCallback.onSuccess({
+                  structuredDataTypes: result.structuredDataTypes,
+                  wordCount: result.wordCount,
+                  language: result.language,
+                  isReaderable: result.isReaderable,
+                });
+              },
+              error =>
+                aCallback.onError(`Could not get page metadata: ${error}`)
+            );
+        } catch (error) {
+          aCallback.onError(
+            `Unable to get page metadata from PageExtractor: ${error}`
+          );
         }
         break;
       }

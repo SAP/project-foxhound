@@ -13,10 +13,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <utility>
 
 #include "absl/functional/any_invocable.h"
-#include "api/array_view.h"
 #include "api/sequence_checker.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/system/no_unique_address.h"
@@ -74,10 +74,10 @@ class RTC_EXPORT StreamInterface {
   //  SR_EOS: the end-of-stream has been reached, or the stream is in the
   //    SS_CLOSED state.
 
-  virtual StreamResult Read(ArrayView<uint8_t> buffer,
+  virtual StreamResult Read(std::span<uint8_t> buffer,
                             size_t& read,
                             int& error) = 0;
-  virtual StreamResult Write(ArrayView<const uint8_t> data,
+  virtual StreamResult Write(std::span<const uint8_t> data,
                              size_t& written,
                              int& error) = 0;
 
@@ -102,21 +102,6 @@ class RTC_EXPORT StreamInterface {
 
   // Return true if flush is successful.
   virtual bool Flush();
-
-  //
-  // CONVENIENCE METHODS
-  //
-  // These methods are implemented in terms of other methods, for convenience.
-  //
-
-  // WriteAll is a helper function which repeatedly calls Write until all the
-  // data is written, or something other than SR_SUCCESS is returned.  Note that
-  // unlike Write, the argument 'written' is always set, and may be non-zero
-  // on results other than SR_SUCCESS.  The remaining arguments have the
-  // same semantics as Write.
-  StreamResult WriteAll(ArrayView<const uint8_t> data,
-                        size_t& written,
-                        int& error);
 
  protected:
   StreamInterface();

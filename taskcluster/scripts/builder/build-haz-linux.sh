@@ -93,16 +93,20 @@ function grab_artifacts () {
         shopt -s nullglob
         set +e
         local important
-        important=(refs.txt unnecessary.txt hazards.txt gcFunctions.txt allFunctions.txt heapWriteHazards.txt rootingHazards.json hazards.html)
+        important=(refs.txt unnecessary.txt hazards.txt gcFunctions.txt rootingHazards.json)
+        uncompressed=(hazards.html)
 
         # Bundle up the less important but still useful intermediate outputs,
         # just to cut down on the clutter in treeherder's Job Details pane.
-        tar -acvf "${artifacts}/hazardIntermediates.tar.xz" --exclude-from <(IFS=$'\n'; echo "${important[*]}") *.txt *.lst build_xgill.log
+        tar -cvf "${artifacts}/hazardIntermediates.tar.zst" -I 'zstd -T0 -c -9' --exclude-from <(IFS=$'\n'; echo "${important[*]}"; echo "${uncompressed[*]}") *.txt *.lst *.json build_xgill.log
 
         # Upload the important outputs individually, so that they will be
         # visible in Job Details and accessible to automated jobs.
         for f in "${important[@]}"; do
-            gzip -9 -c "$f" > "${artifacts}/$f.gz"
+            [ -s "$f" ] && zstd -T0 -c -9 "$f" > "${artifacts}/$f.zst"
+        done
+        for f in "${uncompressed[@]}"; do
+            [ -s "$f" ] && cp "$f" "${artifacts}/$f"
         done
 
         # Check whether the user requested .xdb file upload in the top commit comment
@@ -112,7 +116,7 @@ function grab_artifacts () {
 
         if [ -n "$HAZ_UPLOAD_XDBS" ]; then
             for f in *.xdb; do
-                xz -c "$f" > "${artifacts}/$f.bz2"
+                zstd -T0 -9 -c "$f" > "${artifacts}/$f.zst"
             done
         fi
     )

@@ -3,7 +3,6 @@
 
 import io.gitlab.arturbosch.detekt.Detekt
 import io.gitlab.arturbosch.detekt.DetektCreateBaselineTask
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 buildscript {
     repositories {
@@ -31,91 +30,8 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
-allprojects {
-    ext {
-        gleanVersion = libs.versions.glean.get()
-    }
-
-    tasks.withType(KotlinCompile).configureEach {
-        compilerOptions.allWarningsAsErrors = true
-    }
-}
-
-subprojects {
-    afterEvaluate {
-        if (it.hasProperty('kotlin')) {
-            kotlin {
-                jvmToolchain(config.jvmTargetCompatibility)
-            }
-        }
-
-        if (it.hasProperty('android')) {
-            android {
-                buildToolsVersion gradle.mozconfig.substs.ANDROID_BUILD_TOOLS_VERSION
-            }
-        }
-    }
-
-    project.configurations.configureEach {
-        // Dependencies can't depend on a different major version of Glean than A-C itself.
-        resolutionStrategy.eachDependency { details ->
-            if (details.requested.group == 'org.mozilla.telemetry'
-                    && details.requested.name.contains('glean') ) {
-                def requested = details.requested.version.tokenize(".")
-                    def defined = project.ext.gleanVersion.tokenize(".")
-                    // Check the major version
-                    if (requested[0] != defined[0]) {
-                        throw new AssertionError("Cannot resolve to a single Glean version. Requested: ${details.requested.version}, A-C uses: ${project.ext.gleanVersion}")
-                    } else {
-                        // Enforce that all (transitive) dependencies are using the defined Glean version
-                        details.useVersion project.ext.gleanVersion
-                    }
-            }
-        }
-
-        resolutionStrategy.capabilitiesResolution.withCapability("org.mozilla.telemetry:glean-native") {
-            def toBeSelected = candidates.find { it.id instanceof ModuleComponentIdentifier && it.id.module.contains('geckoview') }
-            if (toBeSelected != null) {
-                select(toBeSelected)
-            }
-            because 'use GeckoView Glean instead of standalone Glean'
-        }
-    }
-
-    tasks.withType(KotlinCompile).configureEach { task ->
-        // Translate Kotlin messages like "w: ..." and "e: ..." into
-        // "...: warning: ..." and "...: error: ...", to make Treeherder understand.
-        def listener = {
-
-            if (it.startsWith("e: warnings found")) {
-                return
-            }
-
-            if (it.startsWith('w: ') || it.startsWith('e: ')) {
-                def matches = (it =~ /([ew]): (.+):(\d+):(\d+) (.*)/)
-                if (!matches) {
-                    task.logger.quiet "kotlinc message format has changed!"
-                    if (it.startsWith('w: ')) {
-                        // For warnings, don't continue because we don't want to throw an
-                        // exception. For errors, we want the exception so that the new error
-                        // message format gets translated properly.
-                        return
-                    }
-                }
-                def (_, type, file, line, column, message) = matches[0]
-                type = (type == 'w') ? 'warning' : 'error'
-                // Use logger.lifecycle, which does not go through stderr again.
-                task.logger.lifecycle "$file:$line:$column: $type: $message"
-            }
-        } as StandardOutputListener
-
-        doFirst {
-            logging.addStandardErrorListener(listener)
-        }
-        doLast {
-            logging.removeStandardErrorListener(listener)
-        }
-    }
+mozilla {
+    ktlintSourcePaths = ["app/src/**/*.kt", "!**/build/**/*.kt"]
 }
 
 tasks.register('clean', Delete) {
@@ -188,48 +104,12 @@ tasks.withType(DetektCreateBaselineTask).configureEach() {
     exclude "**/tmp/**"
 }
 
-configurations {
-    ktlint
-}
-
 dependencies {
-    ktlint(libs.ktlint) {
-        attributes {
-            attribute(Bundling.BUNDLING_ATTRIBUTE, getObjects().named(Bundling, Bundling.EXTERNAL))
-        }
-    }
     detekt project(":components:tooling-detekt")
     detekt project(":mozilla-detekt-rules")
     detekt libs.detekt.cli
 }
 
-tasks.register('ktlint', JavaExec) {
-    group = "verification"
-    description = "Check Kotlin code style."
-    classpath = configurations.ktlint
-    mainClass.set("com.pinterest.ktlint.Main")
-    args "app/src/**/*.kt"
-    args "!**/build/**/*.kt"
-    args "--reporter=json,output=build/reports/ktlint/ktlint.json"
-    args "--reporter=plain"
-}
-
-tasks.register('ktlintFormat', JavaExec) {
-    description = "Fix Kotlin code style deviations."
-    classpath = configurations.ktlint
-    mainClass.set("com.pinterest.ktlint.Main")
-    args "-F"
-    args "app/src/**/*.kt"
-    args "!**/build/**/*.kt"
-    args "--reporter=json,output=build/reports/ktlint/ktlintFormat.json"
-    args "--reporter=plain"
-    jvmArgs("--add-opens", "java.base/java.lang=ALL-UNNAMED")
-}
-
-tasks.withType(Detekt.class).configureEach {
-    exclude("**/resources/**")
-    exclude("**/tmp/**")
-}
 
 tasks.register("listRepositories") {
     def reposData = project.provider {

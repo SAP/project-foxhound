@@ -21,6 +21,7 @@ sealed interface DownloadListItem
  * @property url The full url to the content that should be downloaded
  * @property fileName File name of the download item
  * @property filePath Full path of the download item
+ * @property directoryPath The URI or file path of the directory where the file is stored.
  * @property displayedShortUrl The shortened url of the download item
  * @property contentType The type of file the download is
  * @property status The download status of the item
@@ -32,6 +33,7 @@ data class FileItem(
     val url: String,
     val fileName: String?,
     val filePath: String,
+    val directoryPath: String,
     val displayedShortUrl: String,
     val contentType: String?,
     val status: Status,

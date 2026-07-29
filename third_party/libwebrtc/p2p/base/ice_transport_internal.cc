@@ -19,9 +19,10 @@
 #include "api/candidate.h"
 #include "api/peer_connection_interface.h"
 #include "api/rtc_error.h"
+#include "api/task_queue/task_queue_base.h"
 #include "api/units/time_delta.h"
 #include "p2p/base/p2p_constants.h"
-#include "p2p/base/transport_description.h"
+#include "p2p/base/packet_transport_internal.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/net_helper.h"
 
@@ -235,22 +236,10 @@ RTCError IceConfig::IsValid() const {
   return RTCError::OK();
 }
 
-IceTransportInternal::IceTransportInternal()
-    : role_conflict_trampoline_(this),
-      ice_transport_state_changed_trampoline_(this),
-      destroyed_trampoline_(this) {}
+IceTransportInternal::IceTransportInternal(TaskQueueBase* attached_queue)
+    : PacketTransportInternal(attached_queue) {}
 
 IceTransportInternal::~IceTransportInternal() = default;
-
-void IceTransportInternal::SetIceCredentials(absl::string_view ice_ufrag,
-                                             absl::string_view ice_pwd) {
-  SetIceParameters(IceParameters(ice_ufrag, ice_pwd, false));
-}
-
-void IceTransportInternal::SetRemoteIceCredentials(absl::string_view ice_ufrag,
-                                                   absl::string_view ice_pwd) {
-  SetRemoteIceParameters(IceParameters(ice_ufrag, ice_pwd, false));
-}
 
 void IceTransportInternal::AddGatheringStateCallback(
     const void* removal_tag,
@@ -267,28 +256,33 @@ void IceTransportInternal::SubscribeCandidateGathered(
         callback) {
   candidate_gathered_callbacks_.AddReceiver(std::move(callback));
 }
+void IceTransportInternal::SubscribeCandidateGathered(
+    void* tag,
+    absl::AnyInvocable<void(IceTransportInternal*, const Candidate&)>
+        callback) {
+  candidate_gathered_callbacks_.AddReceiver(tag, std::move(callback));
+}
 
 void IceTransportInternal::SubscribeRoleConflict(
     absl::AnyInvocable<void(IceTransportInternal*)> callback) {
-  role_conflict_trampoline_.Subscribe(std::move(callback));
+  role_conflict_callbacks_.AddReceiver(std::move(callback));
+}
+
+void IceTransportInternal::SubscribeRoleConflict(
+    void* tag,
+    absl::AnyInvocable<void(IceTransportInternal*)> callback) {
+  role_conflict_callbacks_.AddReceiver(tag, std::move(callback));
 }
 
 void IceTransportInternal::SubscribeIceTransportStateChanged(
     absl::AnyInvocable<void(IceTransportInternal*)> callback) {
-  ice_transport_state_changed_trampoline_.Subscribe(std::move(callback));
+  ice_transport_state_changed_callbacks_.AddReceiver(std::move(callback));
 }
 
-void IceTransportInternal::SubscribeDestroyed(
-    absl::AnyInvocable<void(IceTransportInternal*)> callback) {
-  destroyed_trampoline_.Subscribe(std::move(callback));
-}
-void IceTransportInternal::SubscribeDestroyed(
+void IceTransportInternal::SubscribeIceTransportStateChanged(
     void* tag,
     absl::AnyInvocable<void(IceTransportInternal*)> callback) {
-  destroyed_trampoline_.Subscribe(tag, std::move(callback));
-}
-void IceTransportInternal::UnsubscribeDestroyed(void* tag) {
-  destroyed_trampoline_.Unsubscribe(tag);
+  ice_transport_state_changed_callbacks_.AddReceiver(tag, std::move(callback));
 }
 
 }  // namespace webrtc

@@ -28,7 +28,8 @@ hg_exclude = "devtools/client/debugger/bin/module-manifest.json"
 
 print("Run `hg status devtools/`")
 status = (
-    subprocess.check_output(["hg", "status", "-n", "devtools/", "-X", hg_exclude])
+    subprocess
+    .check_output(["hg", "status", "-n", "devtools/", "-X", hg_exclude])
     .decode("utf-8")
     .split("\n")
 )

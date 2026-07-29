@@ -7,9 +7,9 @@
  * Test for memory leaks from loading the smart window page.
  */
 add_task(async function test_smart_window_leaks() {
-  AIWindow.toggleAIWindow(window, true);
   await BrowserTestUtils.withNewTab({ url: AIWINDOW_URL, gBrowser }, () => {
+    AIWindow.toggleAIWindow(window, true);
     Assert.ok(true, "It's a test");
+    AIWindow.toggleAIWindow(window, false);
   });
-  AIWindow.toggleAIWindow(window, false);
 });

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -172,6 +170,7 @@ class FontFaceSetImpl : public nsISupports, public gfxUserFontSet {
                                      ErrorResult& aRv);
 
   virtual void DispatchCheckLoadingFinishedAfterDelay();
+  void DispatchLoadingEventAndReplaceReadyPromise();
 
  protected:
   ~FontFaceSetImpl() override;
@@ -201,7 +200,7 @@ class FontFaceSetImpl : public nsISupports, public gfxUserFontSet {
    */
   void CheckLoadingFinishedAfterDelay();
 
-  void OnLoadingStarted();
+  void OnLoadingStarted() { DispatchLoadingEventAndReplaceReadyPromise(); }
   void OnLoadingFinished();
 
   // Note: if you add new cycle collected objects to FontFaceRecord,

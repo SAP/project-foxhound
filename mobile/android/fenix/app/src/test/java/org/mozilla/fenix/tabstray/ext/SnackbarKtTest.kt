@@ -10,7 +10,6 @@ import io.mockk.every
 import io.mockk.mockk
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -23,6 +22,7 @@ import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.helpers.MockkRetryTestRule
 import org.mozilla.fenix.utils.Settings
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertIs
 
 @RunWith(RobolectricTestRunner::class)
 class SnackbarKtTest {
@@ -48,7 +48,7 @@ class SnackbarKtTest {
         )
 
         val behavior = (container.layoutParams as? CoordinatorLayout.LayoutParams)?.behavior
-        assertTrue(behavior is SnackbarBehavior)
-        assertEquals(ToolbarPosition.BOTTOM, (behavior as? SnackbarBehavior)?.toolbarPosition)
+        assertIs<SnackbarBehavior<*>>(behavior)
+        assertEquals(ToolbarPosition.BOTTOM, behavior.toolbarPosition)
     }
 }

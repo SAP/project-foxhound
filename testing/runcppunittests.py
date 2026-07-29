@@ -369,9 +369,7 @@ def main():
             file=sys.stderr,
         )
         sys.exit(1)
-    log = mozlog.commandline.setup_logging(
-        "cppunittests", options, {"tbpl": sys.stdout}
-    )
+    log = mozlog.commandline.setup_logging("cppunittests", options, {"raw": sys.stdout})
     try:
         result = run_test_harness(options, args)
     except Exception as e:

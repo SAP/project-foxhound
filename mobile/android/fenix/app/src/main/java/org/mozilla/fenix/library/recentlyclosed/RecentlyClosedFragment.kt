@@ -29,17 +29,23 @@ import org.mozilla.fenix.GleanMetrics.RecentlyClosedTabs
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.databinding.FragmentRecentlyClosedTabsBinding
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.openToBrowser
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.setTextColor
 import org.mozilla.fenix.ext.showToolbar
 import org.mozilla.fenix.library.LibraryPageFragment
+import androidx.appcompat.R as appcompatR
 
+/**
+ * Screen showing all recently closed tabs.
+ */
 @Suppress("TooManyFunctions")
 class RecentlyClosedFragment :
     LibraryPageFragment<RecoverableTab>(),
     UserInteractionHandler,
-    MenuProvider {
+    MenuProvider,
+    SystemInsetsPaddedFragment {
     private lateinit var recentlyClosedFragmentStore: RecentlyClosedFragmentStore
     private var _recentlyClosedFragmentView: RecentlyClosedFragmentView? = null
     private val recentlyClosedFragmentView: RecentlyClosedFragmentView
@@ -58,7 +64,7 @@ class RecentlyClosedFragment :
             inflater.inflate(R.menu.history_select_multi, menu)
             menu.findItem(R.id.delete_history_multi_select)?.let { deleteItem ->
                 deleteItem.title = SpannableString(deleteItem.title)
-                    .apply { setTextColor(requireContext(), R.attr.textCritical) }
+                    .apply { setTextColor(requireContext(), appcompatR.attr.colorError) }
             }
         } else {
             inflater.inflate(R.menu.library_menu, menu)
@@ -119,6 +125,7 @@ class RecentlyClosedFragment :
             recentlyClosedStore = recentlyClosedFragmentStore,
             tabsUseCases = requireComponents.useCases.tabsUseCases,
             recentlyClosedTabsStorage = requireComponents.core.recentlyClosedTabsStorage.value,
+            shareUseCases = requireComponents.useCases.shareUseCases,
             lifecycleScope = lifecycleScope,
             openToBrowser = { url -> openItem(url) },
         )

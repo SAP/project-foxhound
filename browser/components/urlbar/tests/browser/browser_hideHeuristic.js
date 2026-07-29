@@ -272,7 +272,7 @@ add_task(async function fallback_searchRestrictionToken() {
       await withEngine({ makeDefault: true }, async () => {
         // Do a search with `?` and check the hidden heuristic result.
         let heuristic = await search({
-          value: UrlbarTokenizer.RESTRICT.SEARCH + " foo",
+          value: UrlbarShared.RESTRICT_TOKENS.SEARCH + " foo",
           expectedGroup: UrlbarUtils.RESULT_GROUP.HEURISTIC_FALLBACK,
         });
         Assert.equal(

@@ -64,6 +64,13 @@ class PlaceholderMessage extends MozLitElement {
     ></a>`;
   }
 
+  imageTemplate() {
+    if (!this.imageSrc) {
+      return "";
+    }
+    return html`<img src=${this.imageSrc} role="presentation" />`;
+  }
+
   render() {
     return html`
       <link
@@ -76,7 +83,7 @@ class PlaceholderMessage extends MozLitElement {
       />
       <moz-box-item>
         <div class="placeholder-container">
-          <img src=${this.imageSrc} role="presentation" />
+          ${this.imageTemplate()}
           <div class="text-container">
             ${this.labelTemplate()} ${this.descriptionTemplate()}
           </div>

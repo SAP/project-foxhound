@@ -7,7 +7,7 @@ Protocol Buffers (protobuf) source is available at:
 This code is covered under the BSD license (see LICENSE). Documentation is
 available at https://developers.google.com/protocol-buffers/.
 
-The tree's current version of the protobuf library is 21.6.
+The tree's current version of the protobuf library is 35.0.
 
 We do not include the protobuf tests or the protoc compiler.
 
@@ -19,7 +19,7 @@ We do not include the protobuf tests or the protoc compiler.
 the protobuf repository. Only vendor releases from trusted sources and review
 the vendored content carefully.
 
-1. Decide the protobuf release version you want to vendor (for example, `v21.6`).
+1. Decide the protobuf release version you want to vendor (for example, `v35.0`).
 
 2. From the Gecko top source directory, use the standard moz.yaml vendoring workflow
    to re-vendor protobuf. Options are documented in `toolkit/components/protobuf/moz.yaml`.
@@ -29,7 +29,7 @@ the vendored content carefully.
    Run:
 
 ```bash
-mach vendor toolkit/components/protobuf/moz.yaml -r v21.6 --patch-mode none
+mach vendor toolkit/components/protobuf/moz.yaml -r v35.0 --patch-mode none
 ```
 
    and then apply local patches:
@@ -38,10 +38,10 @@ mach vendor toolkit/components/protobuf/moz.yaml -r v21.6 --patch-mode none
 mach vendor toolkit/components/protobuf/moz.yaml --patch-mode only
 ```
 
-   Where `-r v21.6` specifies the protobuf version.
+   Where `-r v35.0` specifies the protobuf version.
 
    Vendoring automatically regenerates all `.pb.cc` and `.pb.h` files specified
-   in `scripts/regenerate_cpp_files.py`.
+   in `scripts/generate_files.py`.
 
 3. Update the moz.build to export the new set of headers and add any new .cc
    files to the unified sources and remove old ones. Note that we only

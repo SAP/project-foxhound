@@ -12,6 +12,8 @@ import mozilla.components.concept.engine.translate.TranslationSupport
 /**
  * Value type that represents the state of the translations engine within a [BrowserState].
  *
+ * @property isTranslationsEnabled Whether the translations feature is enabled and should be shown
+ * to the user.
  * @property isEngineSupported Whether the translations engine supports the device architecture.
  * @property offerTranslation Whether to offer translations or not to the user.
  * @property supportedLanguages Set of languages the translation engine supports.
@@ -23,6 +25,7 @@ import mozilla.components.concept.engine.translate.TranslationSupport
  * See [TranslationsState.translationError] for session level errors.
  */
 data class TranslationsBrowserState(
+    val isTranslationsEnabled: Boolean = true,
     val isEngineSupported: Boolean? = null,
     val offerTranslation: Boolean? = null,
     val supportedLanguages: TranslationSupport? = null,

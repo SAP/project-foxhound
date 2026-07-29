@@ -1,20 +1,26 @@
 .weather-forecast-widget {
   @include newtab-card-style;
 
-  grid-column: span 1;
-  width: var(--newtab-card-width-medium);
-
-  // Match the new card width if sections are enabled
-  .has-sections-grid & {
-    width: var(--newtab-card-width-medium);
-  }
-
+  position: relative;
+  text-decoration: none;
   border-radius: var(--border-radius-large);
   padding: var(--space-medium);
-  height: var(--newtab-card-height);
+  box-shadow: var(--card-box-shadow);
   display: flex;
   flex-direction: column;
-  box-shadow: var(--box-shadow-card);
+
+  // Classic layout (when Nova is disabled)
+  // @nova-cleanup(remove-conditional): Remove classic fixed-width/height styles after Nova ships
+  .classic-enabled & {
+    grid-column: span 1;
+    width: var(--newtab-card-grid-layout-width);
+    height: var(--newtab-card-height);
+
+    // Match the new card width if sections are enabled
+    .has-sections-grid & {
+      width: var(--newtab-card-width-medium);
+    }
+  }
 
   --weather-sunny-background-color: light-dark(var(--color-yellow-0), var(--color-yellow-90));
   --weather-cloudy-background-color: light-dark(var(--color-gray-20), var(--color-gray-80));
@@ -32,7 +38,7 @@
       width: 100%;
     }
 
-    h3 {
+    h2 {
       margin-block: 0;
       font-weight: var(--font-weight);
       font-size: var(--font-size-root);
@@ -47,10 +53,36 @@
     }
   }
 
+  .forecast-anchor {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    border-radius: var(--border-radius-large);
+    text-decoration: none;
+  }
+
   // Make sure context menu is only visible as you hover over the Weather Forecast widget
   .weather-forecast-context-menu-wrapper {
+    position: relative;
+    z-index: 1;
     opacity: 0;
     pointer-events: none;
+  }
+
+  &:hover {
+    background: var(--newtab-background-card);
+
+    .sponsored-text {
+      visibility: visible;
+    }
+  }
+
+  &:hover,
+  &:focus-within {
+    .full-forecast {
+      text-decoration: underline;
+      color: var(--newtab-primary-action-background);
+    }
   }
 
   &:hover,
@@ -72,7 +104,7 @@
 
 
   .current-weather-wrapper,
-  &.small-widget .forecast-row-items > li:first-of-type {
+  &.is-small .forecast-row-items > li:first-of-type {
     // Setting background color based on temperature icon
     &:has(.iconId1, .iconId2, .iconId3, .iconId4, .iconId5, .iconId6, .iconId33) {
       background-color: var(--weather-sunny-background-color);
@@ -92,6 +124,25 @@
 
     &:has(.iconId30) {
       background-color: var(--weather-hot-background-color);
+    }
+  }
+
+  &.forecast-error-state {
+    .full-forecast {
+      display: none;
+    }
+  }
+
+  .forecast-error {
+    display: flex;
+    align-items: center;
+    flex-direction: column;
+    justify-content: space-evenly;
+    margin-block-start: auto;
+
+    p {
+      font-size: var(--font-size-small);
+      color: var(--text-color-deemphasized);
     }
   }
 
@@ -280,7 +331,7 @@ hr {
   .forecast-row-items {
     list-style: none;
     display: flex;
-    justify-content: space-between;
+    justify-content: center;
     padding: 0;
     margin-block: var(--space-xxsmall);
 
@@ -312,19 +363,37 @@ hr {
   justify-content: space-between;
   margin-block-start: auto;
 
-  a {
-    font-size: var(--font-size-small);
-  }
-
   span {
     font-size: var(--font-size-xsmall);
+  }
+
+  .sponsored-text {
+    visibility: hidden;
+  }
+
+  .full-forecast {
+    position: relative;
+    z-index: 1;
+    font-size: var(--font-size-xsmall);
+    text-decoration: none;
+    color: inherit;
   }
 }
 
 // Styles for the small version of Weather Forecast widget
-.small-widget {
+.weather-forecast-widget.is-small {
   height: 100%;
   padding: var(--space-small);
+
+  .forecast-error {
+    flex-direction: row;
+    justify-content: flex-start;
+
+    span {
+      margin-inline-end: var(--space-small);
+    }
+
+  }
 
   .forecast-row-items {
     li {
@@ -334,6 +403,10 @@ hr {
 
   .forecast-footer {
     margin-block-start: auto;
+
+    .full-forecast {
+      display: none;
+    }
   }
 
   &:has(.location-search) {

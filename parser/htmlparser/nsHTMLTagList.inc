@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -157,6 +156,7 @@ HTML_TAG(script, Script, Script)
 HTML_HTMLELEMENT_TAG(search)
 HTML_HTMLELEMENT_TAG(section)
 HTML_TAG(select, Select, Select)
+HTML_TAG(selectedcontent, SelectedContent, SelectedContent)
 HTML_HTMLELEMENT_TAG(small)
 HTML_TAG(slot, Slot, Slot)
 HTML_TAG(source, Source, Source)

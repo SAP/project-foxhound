@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -380,8 +379,8 @@ static bool HasColorAndAlpha(const WebGLTexelFormat format) {
 }
 
 bool TexUnpackBlob::ConvertIfNeeded(
-    const WebGLContext* const webgl, const uint32_t rowLength,
-    const uint32_t rowCount, WebGLTexelFormat srcFormat,
+    const WebGLContext* const webgl, const size_t rowLength,
+    const size_t rowCount, WebGLTexelFormat srcFormat,
     const uint8_t* const srcBegin, const ptrdiff_t srcStride,
     WebGLTexelFormat dstFormat, const ptrdiff_t dstStride,
     const uint8_t** const out_begin,
@@ -458,7 +457,7 @@ bool TexUnpackBlob::ConvertIfNeeded(
 
   ////
 
-  const auto dstTotalBytes = CheckedUint32(rowCount) * dstStride;
+  const auto dstTotalBytes = CheckedInt<size_t>(rowCount) * dstStride;
   if (!dstTotalBytes.isValid()) {
     webgl->ErrorOutOfMemory("Calculation failed.");
     return false;
@@ -1103,19 +1102,19 @@ bool TexUnpackSurface::TexOrSubImage(bool isSubImage, bool needsRespec,
       MOZ_ASSERT(data.type() == layers::MemoryOrShmem::TShmem);
       const auto& shmem = data.get_Shmem();
       size_t shmemSize = shmem.Size<uint8_t>();
-      int32_t stride = layers::ImageDataSerializer::GetRGBStride(rgb);
-      if (stride <= 0) {
+      auto stride = layers::ImageDataSerializer::GetRGBStride(rgb);
+      if (stride.isNothing()) {
         gfxCriticalError() << "TexUnpackSurface failed to get rgb stride";
         return false;
       }
-      size_t bufSize = layers::ImageDataSerializer::ComputeRGBBufferSize(
+      Maybe<size_t> bufSize = layers::ImageDataSerializer::ComputeRGBBufferSize(
           rgb.size(), rgb.format());
-      if (!bufSize || bufSize > shmemSize) {
+      if (bufSize.isNothing() || bufSize.value() > shmemSize) {
         gfxCriticalError() << "TexUnpackSurface failed to get rgb buffer size";
         return false;
       }
       surf = gfx::Factory::CreateWrappingDataSourceSurface(
-          shmem.get<uint8_t>(), stride, rgb.size(), rgb.format());
+          shmem.get<uint8_t>(), stride.value(), rgb.size(), rgb.format());
     } else if (SDIsNullRemoteDecoder(sd)) {
       const auto& sdrd = sd.get_SurfaceDescriptorGPUVideo()
                              .get_SurfaceDescriptorRemoteDecoder();
@@ -1143,7 +1142,8 @@ bool TexUnpackSurface::TexOrSubImage(bool isSubImage, bool needsRespec,
         gfxCriticalNote << "TexUnpackSurface failed to get ExternalImage";
         return false;
       }
-    } else if (AllowBlitSd(webgl, mDesc.imageTarget, level,
+    } else if (webgl->IsUploadableSdType(sd) &&
+               AllowBlitSd(webgl, mDesc.imageTarget, level,
                            {xOffset, yOffset, zOffset}, dui->internalFormat,
                            dstPI, false, true, true, true) &&
                BlitSd(sd, isSubImage, needsRespec, tex, level, dui, xOffset,

@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -126,7 +125,7 @@ private fun WallpaperGroupHeading(
     if (collection.name == Wallpaper.CLASSIC_FIREFOX_COLLECTION) {
         Text(
             text = stringResource(R.string.wallpaper_classic_title, stringResource(R.string.firefox)),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = MaterialTheme.colorScheme.onSurface,
             style = FirefoxTheme.typography.subtitle2,
         )
     } else {
@@ -148,7 +147,7 @@ private fun WallpaperGroupHeading(
         ) {
             Text(
                 text = stringResource(R.string.wallpaper_artist_series_title),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.onSurface,
                 style = FirefoxTheme.typography.subtitle2,
             )
 
@@ -274,7 +273,7 @@ private fun WallpaperThumbnailItem(
                 .aspectRatio(aspectRatio)
                 .debouncedClickable { onSelect(wallpaper) }
                 .then(contentDescriptionModifier),
-            shape = RoundedCornerShape(size = FirefoxTheme.layout.corner.large),
+            shape = MaterialTheme.shapes.small,
             border = border,
             shadowElevation = FirefoxTheme.layout.elevation.level2,
         ) {
@@ -313,7 +312,7 @@ private fun WallpaperThumbnailItem(
 
 @Composable
 private fun Modifier.edgeToEdgeGradientConditional(predicate: () -> Boolean): Modifier =
-    thenConditional(
+    this.thenConditional(
         Modifier.background(
             brush =
                 Brush.verticalGradient(

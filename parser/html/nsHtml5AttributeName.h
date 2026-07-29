@@ -91,6 +91,53 @@ class nsHtml5AttributeName {
   inline static nsHtml5AttributeName* nameByBuffer(char16_t* buf,
                                                    int32_t length,
                                                    nsHtml5AtomTable* interner) {
+    if (length == 5) {
+      if (nsHtml5Portability::bufferStartsWithLiteralAssumeSufficientLength(
+              buf, u"class")) {
+        return nsHtml5AttributeName::ATTR_CLASS;
+      }
+      if (nsHtml5Portability::bufferStartsWithLiteralAssumeSufficientLength(
+              buf, u"value")) {
+        return nsHtml5AttributeName::ATTR_VALUE;
+      }
+    } else if (length > 5) {
+      if (nsHtml5Portability::bufferStartsWithLiteralAssumeSufficientLength(
+              buf, u"data-")) {
+        if (length == 7 &&
+            nsHtml5Portability::
+                bufferStartsWithLiteralAtOffsetAssumeSufficientLength(
+                    buf, u"id", 5)) {
+          return nsHtml5AttributeName::ATTR_DATA_ID;
+        }
+        if (length == 13 &&
+            nsHtml5Portability::
+                bufferStartsWithLiteralAtOffsetAssumeSufficientLength(
+                    buf, u"priority", 5)) {
+          return nsHtml5AttributeName::ATTR_DATA_PRIORITY;
+        }
+        return nullptr;
+      }
+      if (length == 7) {
+        if (nsHtml5Portability::bufferStartsWithLiteralAssumeSufficientLength(
+                buf, u"checked")) {
+          return nsHtml5AttributeName::ATTR_CHECKED;
+        }
+      }
+    } else if (length == 4) {
+      if (nsHtml5Portability::bufferStartsWithLiteralAssumeSufficientLength(
+              buf, u"type")) {
+        return nsHtml5AttributeName::ATTR_TYPE;
+      }
+      if (nsHtml5Portability::bufferStartsWithLiteralAssumeSufficientLength(
+              buf, u"href")) {
+        return nsHtml5AttributeName::ATTR_HREF;
+      }
+    } else if (length == 2) {
+      if (nsHtml5Portability::bufferStartsWithLiteralAssumeSufficientLength(
+              buf, u"id")) {
+        return nsHtml5AttributeName::ATTR_ID;
+      }
+    }
     uint32_t hash = nsHtml5AttributeName::bufToHash(buf, length);
     jArray<int32_t, int32_t> hashes;
     hashes = nsHtml5AttributeName::ATTRIBUTE_HASHES;
@@ -152,12 +199,15 @@ class nsHtml5AttributeName {
   jInlineArray<nsAtom*, 3> local;
   jInlineArray<nsStaticAtom*, 3> prefix;
   bool custom;
+  bool useAtom;
   nsHtml5AttributeName(int32_t* uri, nsStaticAtom* html, nsStaticAtom* mathml,
-                       nsStaticAtom* svg, nsStaticAtom** prefix);
+                       nsStaticAtom* svg, nsStaticAtom** prefix, bool useAtom);
 
  public:
   nsHtml5AttributeName();
   inline bool isInterned() { return !custom; }
+
+  inline bool isUseAtom() { return useAtom; }
 
   inline void setNameForNonInterned(nsAtom* name) {
     MOZ_ASSERT(custom);
@@ -173,6 +223,14 @@ class nsHtml5AttributeName {
   nsAtom* getLocal(int32_t mode);
   nsStaticAtom* getPrefix(int32_t mode);
   bool equalsAnother(nsHtml5AttributeName* another);
+  static nsHtml5AttributeName* ATTR_DATA_ID;
+  static nsHtml5AttributeName* ATTR_DATA_PRIORITY;
+  static nsHtml5AttributeName* ATTR_CLASS;
+  static nsHtml5AttributeName* ATTR_VALUE;
+  static nsHtml5AttributeName* ATTR_CHECKED;
+  static nsHtml5AttributeName* ATTR_TYPE;
+  static nsHtml5AttributeName* ATTR_HREF;
+  static nsHtml5AttributeName* ATTR_ID;
   static nsHtml5AttributeName* ATTR_ALT;
   static nsHtml5AttributeName* ATTR_DIR;
   static nsHtml5AttributeName* ATTR_DUR;
@@ -216,14 +274,17 @@ class nsHtml5AttributeName {
   static nsHtml5AttributeName* ATTR_ARIA_HIDDEN;
   static nsHtml5AttributeName* ATTR_ARIA_SECRET;
   static nsHtml5AttributeName* ATTR_ARIA_POSINSET;
+  static nsHtml5AttributeName* ATTR_ARIA_ERRORMESSAGE;
   static nsHtml5AttributeName* ATTR_ARIA_ATOMIC;
   static nsHtml5AttributeName* ATTR_ARIA_INVALID;
   static nsHtml5AttributeName* ATTR_ARIA_TEMPLATEID;
   static nsHtml5AttributeName* ATTR_ARIA_VALUEMIN;
   static nsHtml5AttributeName* ATTR_ARIA_MULTISELECTABLE;
+  static nsHtml5AttributeName* ATTR_ARIA_DETAILS;
   static nsHtml5AttributeName* ATTR_ARIA_CONTROLS;
   static nsHtml5AttributeName* ATTR_ARIA_MULTILINE;
   static nsHtml5AttributeName* ATTR_ARIA_READONLY;
+  static nsHtml5AttributeName* ATTR_ARIA_ACTIONS;
   static nsHtml5AttributeName* ATTR_ARIA_OWNS;
   static nsHtml5AttributeName* ATTR_ARIA_ACTIVEDESCENDANT;
   static nsHtml5AttributeName* ATTR_ARIA_RELEVANT;
@@ -261,8 +322,8 @@ class nsHtml5AttributeName {
   static nsHtml5AttributeName* ATTR_ENABLE_BACKGROUND;
   static nsHtml5AttributeName* ATTR_ONDBLCLICK;
   static nsHtml5AttributeName* ATTR_ONABORT;
+  static nsHtml5AttributeName* ATTR_BLOCKING;
   static nsHtml5AttributeName* ATTR_CALCMODE;
-  static nsHtml5AttributeName* ATTR_CHECKED;
   static nsHtml5AttributeName* ATTR_FENCE;
   static nsHtml5AttributeName* ATTR_FETCHPRIORITY;
   static nsHtml5AttributeName* ATTR_NONCE;
@@ -273,7 +334,6 @@ class nsHtml5AttributeName {
   static nsHtml5AttributeName* ATTR_SPECULAREXPONENT;
   static nsHtml5AttributeName* ATTR_SPECULARCONSTANT;
   static nsHtml5AttributeName* ATTR_BORDER;
-  static nsHtml5AttributeName* ATTR_ID;
   static nsHtml5AttributeName* ATTR_GRADIENTTRANSFORM;
   static nsHtml5AttributeName* ATTR_GRADIENTUNITS;
   static nsHtml5AttributeName* ATTR_HIDDEN;
@@ -287,8 +347,10 @@ class nsHtml5AttributeName {
   static nsHtml5AttributeName* ATTR_SHADOWROOTCLONABLE;
   static nsHtml5AttributeName* ATTR_SHADOWROOTSERIALIZABLE;
   static nsHtml5AttributeName* ATTR_SRCDOC;
+  static nsHtml5AttributeName* ATTR_SHADOWROOTSLOTASSIGNMENT;
   static nsHtml5AttributeName* ATTR_STDDEVIATION;
   static nsHtml5AttributeName* ATTR_SANDBOX;
+  static nsHtml5AttributeName* ATTR_SHADOWROOTCUSTOMELEMENTREGISTRY;
   static nsHtml5AttributeName* ATTR_SHADOWROOTDELEGATESFOCUS;
   static nsHtml5AttributeName* ATTR_WORD_SPACING;
   static nsHtml5AttributeName* ATTR_ACCENTUNDER;
@@ -357,9 +419,7 @@ class nsHtml5AttributeName {
   static nsHtml5AttributeName* ATTR_SPREADMETHOD;
   static nsHtml5AttributeName* ATTR_SELECTION;
   static nsHtml5AttributeName* ATTR_SIZE;
-  static nsHtml5AttributeName* ATTR_TYPE;
   static nsHtml5AttributeName* ATTR_DIFFUSECONSTANT;
-  static nsHtml5AttributeName* ATTR_HREF;
   static nsHtml5AttributeName* ATTR_HREFLANG;
   static nsHtml5AttributeName* ATTR_ONAFTERPRINT;
   static nsHtml5AttributeName* ATTR_PROFILE;
@@ -481,6 +541,7 @@ class nsHtml5AttributeName {
   static nsHtml5AttributeName* ATTR_STANDBY;
   static nsHtml5AttributeName* ATTR_TRANSFORM_ORIGIN;
   static nsHtml5AttributeName* ATTR_TRANSFORM;
+  static nsHtml5AttributeName* ATTR_TRANSLATE;
   static nsHtml5AttributeName* ATTR_VLINK;
   static nsHtml5AttributeName* ATTR_WHEN;
   static nsHtml5AttributeName* ATTR_XLINK_HREF;
@@ -525,6 +586,7 @@ class nsHtml5AttributeName {
   static nsHtml5AttributeName* ATTR_ONMOUSEOUT;
   static nsHtml5AttributeName* ATTR_ONFOCUSOUT;
   static nsHtml5AttributeName* ATTR_ONMOUSEDOWN;
+  static nsHtml5AttributeName* ATTR_POPOVERTARGET;
   static nsHtml5AttributeName* ATTR_TO;
   static nsHtml5AttributeName* ATTR_RQUOTE;
   static nsHtml5AttributeName* ATTR_STROKE_LINECAP;
@@ -592,7 +654,6 @@ class nsHtml5AttributeName {
   static nsHtml5AttributeName* ATTR_CURSOR;
   static nsHtml5AttributeName* ATTR_CLOSURE;
   static nsHtml5AttributeName* ATTR_CLOSE;
-  static nsHtml5AttributeName* ATTR_CLASS;
   static nsHtml5AttributeName* ATTR_IS;
   static nsHtml5AttributeName* ATTR_KEYSYSTEM;
   static nsHtml5AttributeName* ATTR_KEYSPLINES;
@@ -638,6 +699,7 @@ class nsHtml5AttributeName {
   static nsHtml5AttributeName* ATTR_POSTER;
   static nsHtml5AttributeName* ATTR_PATTERNTRANSFORM;
   static nsHtml5AttributeName* ATTR_PATTERN;
+  static nsHtml5AttributeName* ATTR_PART;
   static nsHtml5AttributeName* ATTR_PATTERNUNITS;
   static nsHtml5AttributeName* ATTR_PATTERNCONTENTUNITS;
   static nsHtml5AttributeName* ATTR_RESTART;
@@ -666,7 +728,6 @@ class nsHtml5AttributeName {
   static nsHtml5AttributeName* ATTR_REQUIREDEXTENSIONS;
   static nsHtml5AttributeName* ATTR_VALUES;
   static nsHtml5AttributeName* ATTR_VALUETYPE;
-  static nsHtml5AttributeName* ATTR_VALUE;
   static nsHtml5AttributeName* ATTR_ELEVATION;
   static nsHtml5AttributeName* ATTR_VIEWTARGET;
   static nsHtml5AttributeName* ATTR_VIEWBOX;

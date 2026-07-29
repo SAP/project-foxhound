@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -202,11 +200,22 @@ class GLBlitHelper final {
 
  public:
   static std::optional<color::ColorProfileDesc> ToColorProfileDesc(
-      gfx::ColorSpace2);
+      gfx::ColorSpace2, gfx::TransferFunction tf);
+
+  struct CSTF : DeriveCmpOpMembers<CSTF> {
+    gfx::ColorSpace2 cs;
+    gfx::TransferFunction tf;
+
+    auto Members() const { return std::tie(cs, tf); }
+
+    MOZ_MIXIN_DERIVE_CMP_OPS_BY_MEMBERS(CSTF)
+
+    struct Hasher : mozilla::StdHashMembers<CSTF> {};
+  };
 
   struct ColorLutKey : DeriveCmpOpMembers<ColorLutKey> {
-    std::variant<gfx::ColorSpace2, gfx::YUVRangedColorSpace> src;
-    gfx::ColorSpace2 dst;
+    std::variant<CSTF, gfx::YUVRangedColorSpace> src;
+    CSTF dst;
 
     auto Members() const { return std::tie(src, dst); }
 
@@ -368,5 +377,9 @@ extern const char* const kFragMixin_AlphaOne;
 
 }  // namespace gl
 }  // namespace mozilla
+
+template <>
+struct std::hash<mozilla::gl::GLBlitHelper::CSTF>
+    : mozilla::gl::GLBlitHelper::CSTF::Hasher {};
 
 #endif  // GLBLITHELPER_H_

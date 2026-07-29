@@ -22,7 +22,7 @@ addRDMTask(TEST_URL, async function ({ ui }) {
     });
 
     const touchStartPromise = ContentTaskUtils.waitForEvent(span, "touchstart");
-    await EventUtils.synthesizeMouseAtCenter(
+    EventUtils.synthesizeMouseAtCenter(
       span,
       { type: "mousedown", isSynthesized: false },
       content
@@ -39,7 +39,7 @@ addRDMTask(TEST_URL, async function ({ ui }) {
       `span's background color should be rgb(0, 128, 0): got ${bg}`
     );
 
-    await EventUtils.synthesizeMouseAtCenter(
+    EventUtils.synthesizeMouseAtCenter(
       span,
       { type: "mouseup", isSynthesized: false },
       content

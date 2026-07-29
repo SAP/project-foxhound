@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=4 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +7,7 @@
 
 #include "mozilla/intl/UnicodeProperties.h"
 
+#include "mozilla/Assertions.h"
 #include "mozilla/Span.h"
 #include "nsBidiUtils.h"
 #include "nsUGenCategory.h"
@@ -117,7 +116,40 @@ inline bool IsDefaultIgnorable(uint32_t aCh) {
       aCh, intl::UnicodeProperties::BinaryProperty::DefaultIgnorableCodePoint);
 }
 
+namespace detail {
+static inline bool Is8BitPotentialEmojiCodepoint(uint32_t aCh) {
+  return aCh - '0' <= '9' - '0' || aCh == '#' || aCh == '*' || aCh == 0x00A9 ||
+         aCh == 0x00AE;
+}
+}  // namespace detail
+
 inline EmojiPresentation GetEmojiPresentation(uint32_t aCh) {
+  // The only characters below U+2000 with any emoji properties:
+  // 0023          ; Emoji                # E0.0   [1] hash sign
+  // 002A          ; Emoji                # E0.0   [1] asterisk
+  // 0030..0039    ; Emoji                # E0.0  [10] digit zero..digit nine
+  // 00A9          ; Emoji                # E0.6   [1] copyright
+  // 00AE          ; Emoji                # E0.6   [1] registered
+  if (detail::Is8BitPotentialEmojiCodepoint(aCh)) {
+    MOZ_ASSERT(intl::UnicodeProperties::HasBinaryProperty(
+        aCh, intl::UnicodeProperties::BinaryProperty::Emoji));
+    MOZ_ASSERT(!intl::UnicodeProperties::HasBinaryProperty(
+        aCh, intl::UnicodeProperties::BinaryProperty::EmojiPresentation));
+    return TextDefault;
+  }
+
+  if (aCh < 0x2000) {
+    return TextOnly;
+  }
+
+  // There are no characters with emoji properties from the CJK Compatibility
+  // block at U+3300 until the Mah-Jong tiles at U+1F000.
+  if (aCh - 0x3300 < 0x1F000 - 0x3300) {
+    MOZ_ASSERT(!intl::UnicodeProperties::HasBinaryProperty(
+        aCh, intl::UnicodeProperties::BinaryProperty::Emoji));
+    return TextOnly;
+  }
+
   if (!intl::UnicodeProperties::HasBinaryProperty(
           aCh, intl::UnicodeProperties::BinaryProperty::Emoji)) {
     return TextOnly;
@@ -128,6 +160,17 @@ inline EmojiPresentation GetEmojiPresentation(uint32_t aCh) {
     return EmojiDefault;
   }
   return TextDefault;
+}
+
+// For 16-bit callers who don't care about decoding surrogates first.
+inline EmojiPresentation GetEmojiPresentation(char16_t aCh) {
+  return IS_SURROGATE(aCh) ? TextOnly : GetEmojiPresentation((uint32_t)aCh);
+}
+
+// Reduced version of GetEmojiPresentation that handles only 8-bit character
+// codes, for use by 8-bit gfxFontGroup::ComputeRanges fast-path.
+inline EmojiPresentation GetEmojiPresentation(uint8_t aCh) {
+  return detail::Is8BitPotentialEmojiCodepoint(aCh) ? TextDefault : TextOnly;
 }
 
 // returns the simplified Gen Category as defined in nsUGenCategory

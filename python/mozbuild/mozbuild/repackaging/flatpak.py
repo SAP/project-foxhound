@@ -66,8 +66,10 @@ def _render_template(source, dest, variables):
     if source.endswith(".in"):
         with open(source) as f:
             template = Template(f.read())
-        with open(dest[:-3], "w") as f:
+        dest_templated = dest[:-3]
+        with open(dest_templated, "w") as f:
             f.write(template.substitute(variables))
+        shutil.copymode(source, dest_templated)
     else:
         shutil.copy(source, dest)
 
@@ -145,10 +147,14 @@ def repackage_flatpak(
 
         application_ini_data = application_ini_data_from_directory(str(lib_dir))
         variables = get_build_variables(application_ini_data, arch, version)
+
+        flatpak_basename = flatpak_name.split(".")[-1]
         variables.update({
             "FREEDESKTOP_VERSION": FREEDESKTOP_VERSION,
             "FIREFOX_BASEAPP_CHANNEL": FIREFOX_BASEAPP_CHANNEL,
             "FLATPAK_BRANCH": flatpak_branch,
+            "FLATPAK_BASENAME": flatpak_basename,
+            "FLATPAK_NAME": flatpak_name,
             "DATE": variables["TIMESTAMP"].strftime("%Y-%m-%d"),
             # Override PKG_NAME since we use branches for beta vs release
             "PKG_NAME": product,
@@ -259,8 +265,7 @@ def repackage_flatpak(
                 "--talk-name=org.a11y.Bus",
                 "--talk-name=org.gtk.vfs.*",
                 "--own-name=org.mpris.MediaPlayer2.firefox.*",
-                "--own-name=org.mozilla.firefox.*",
-                "--own-name=org.mozilla.firefox_beta.*",
+                f"--own-name={flatpak_name}.*",
                 "--command=firefox",
             ],
             cwd=tmpdir,

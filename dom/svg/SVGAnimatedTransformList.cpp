@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -158,6 +156,28 @@ std::unique_ptr<SMILAttr> SVGAnimatedTransformList::ToSMILAttr(
   return std::make_unique<SMILAnimatedTransformList>(this, aSVGElement);
 }
 
+static uint16_t ToTransformType(const nsAtom* aTransformType) {
+  if (aTransformType == nsGkAtoms::translate) {
+    return SVG_TRANSFORM_TRANSLATE;
+  }
+  if (aTransformType == nsGkAtoms::scale) {
+    return SVG_TRANSFORM_SCALE;
+  }
+  if (aTransformType == nsGkAtoms::rotate) {
+    return SVG_TRANSFORM_ROTATE;
+  }
+  if (aTransformType == nsGkAtoms::skewX) {
+    return SVG_TRANSFORM_SKEWX;
+  }
+  if (aTransformType == nsGkAtoms::skewY) {
+    return SVG_TRANSFORM_SKEWY;
+  }
+  if (aTransformType == nsGkAtoms::matrix) {
+    return SVG_TRANSFORM_MATRIX;
+  }
+  return SVG_TRANSFORM_UNKNOWN;
+}
+
 nsresult SVGAnimatedTransformList::SMILAnimatedTransformList::ValueFromString(
     const nsAString& aStr, const dom::SVGAnimationElement* aSrcElement,
     SMILValue& aValue, bool& aPreventCachingOfSandwich) const {
@@ -166,7 +186,7 @@ nsresult SVGAnimatedTransformList::SMILAnimatedTransformList::ValueFromString(
              "aValue should have been cleared before calling ValueFromString");
 
   const nsAttrValue* typeAttr = aSrcElement->GetParsedAttr(nsGkAtoms::type);
-  const nsAtom* transformType = nsGkAtoms::translate;  // default val
+  uint16_t transformType = SVG_TRANSFORM_TRANSLATE;  // default val
   if (typeAttr) {
     if (typeAttr->Type() != nsAttrValue::eAtom) {
       // Recognized values of |type| are parsed as an atom -- so if we have
@@ -174,7 +194,7 @@ nsresult SVGAnimatedTransformList::SMILAnimatedTransformList::ValueFromString(
       // invalid.
       return NS_ERROR_FAILURE;
     }
-    transformType = typeAttr->GetAtomValue();
+    transformType = ToTransformType(typeAttr->GetAtomValue());
   }
 
   ParseValue(aStr, transformType, aValue);
@@ -182,46 +202,51 @@ nsresult SVGAnimatedTransformList::SMILAnimatedTransformList::ValueFromString(
 }
 
 void SVGAnimatedTransformList::SMILAnimatedTransformList::ParseValue(
-    const nsAString& aSpec, const nsAtom* aTransformType, SMILValue& aResult) {
+    const nsAString& aSpec, uint16_t aTransformType, SMILValue& aResult) {
   MOZ_ASSERT(aResult.IsNull(), "Unexpected type for SMIL value");
 
-  static_assert(SVGTransformSMILData::NUM_SIMPLE_PARAMS == 3,
+  static_assert(SVGTransformSMILData::kNumSimpleParams == 3,
                 "SVGSMILTransform constructor should be expecting array "
                 "with 3 params");
 
-  float params[3] = {0.f};
-  int32_t numParsed = ParseParameterList(aSpec, params, 3);
-  uint16_t transformType;
+  SVGTransformSMILData::SimpleParams params = {0.f};
+  int32_t numParsed = ParseParameterList(aSpec, params);
 
-  if (aTransformType == nsGkAtoms::translate) {
-    // tx [ty=0]
-    if (numParsed != 1 && numParsed != 2) return;
-    transformType = SVG_TRANSFORM_TRANSLATE;
-  } else if (aTransformType == nsGkAtoms::scale) {
-    // sx [sy=sx]
-    if (numParsed != 1 && numParsed != 2) return;
-    if (numParsed == 1) {
-      params[1] = params[0];
-    }
-    transformType = SVG_TRANSFORM_SCALE;
-  } else if (aTransformType == nsGkAtoms::rotate) {
-    // r [cx=0 cy=0]
-    if (numParsed != 1 && numParsed != 3) return;
-    transformType = SVG_TRANSFORM_ROTATE;
-  } else if (aTransformType == nsGkAtoms::skewX) {
-    // x-angle
-    if (numParsed != 1) return;
-    transformType = SVG_TRANSFORM_SKEWX;
-  } else if (aTransformType == nsGkAtoms::skewY) {
-    // y-angle
-    if (numParsed != 1) return;
-    transformType = SVG_TRANSFORM_SKEWY;
-  } else {
-    return;
+  switch (aTransformType) {
+    case SVG_TRANSFORM_TRANSLATE:
+      // tx [ty=0]
+      if (numParsed != 1 && numParsed != 2) {
+        return;
+      }
+      break;
+    case SVG_TRANSFORM_SCALE:
+      // sx [sy=sx]
+      if (numParsed != 1 && numParsed != 2) {
+        return;
+      }
+      if (numParsed == 1) {
+        params[1] = params[0];
+      }
+      break;
+    case SVG_TRANSFORM_ROTATE:
+      // r [cx=0 cy=0]
+      if (numParsed != 1 && numParsed != 3) {
+        return;
+      }
+      break;
+    case SVG_TRANSFORM_SKEWX:
+    case SVG_TRANSFORM_SKEWY:
+      // x-angle or y-angle
+      if (numParsed != 1) {
+        return;
+      }
+      break;
+    default:
+      return;
   }
 
   SMILValue val(SVGTransformListSMILType::Singleton());
-  SVGTransformSMILData transform(transformType, params);
+  SVGTransformSMILData transform(aTransformType, params);
   if (NS_FAILED(SVGTransformListSMILType::AppendTransform(transform, val))) {
     return;  // OOM
   }
@@ -231,8 +256,8 @@ void SVGAnimatedTransformList::SMILAnimatedTransformList::ParseValue(
 }
 
 int32_t SVGAnimatedTransformList::SMILAnimatedTransformList::ParseParameterList(
-    const nsAString& aSpec, float* aVars, int32_t aNVars) {
-  int numArgsFound = 0;
+    const nsAString& aSpec, SVGTransformSMILData::SimpleParams& aParams) {
+  size_t numArgsFound = 0;
 
   for (const auto& token :
        nsCharSeparatedTokenizerTemplate<nsContentUtils::IsHTMLWhitespace,
@@ -243,8 +268,8 @@ int32_t SVGAnimatedTransformList::SMILAnimatedTransformList::ParseParameterList(
     if (!SVGContentUtils::ParseNumber(token, f)) {
       return -1;
     }
-    if (numArgsFound < aNVars) {
-      aVars[numArgsFound] = f;
+    if (numArgsFound < aParams.size()) {
+      aParams[numArgsFound] = f;
     }
     numArgsFound++;
   }

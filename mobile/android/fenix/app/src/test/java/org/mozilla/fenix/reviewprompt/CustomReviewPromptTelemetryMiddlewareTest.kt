@@ -7,7 +7,6 @@ package org.mozilla.fenix.reviewprompt
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.telemetry.glean.private.RecordedEvent
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
@@ -15,6 +14,7 @@ import org.junit.runner.RunWith
 import org.mozilla.fenix.GleanMetrics.CustomReviewPrompt
 import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class) // For gleanTestRule
 class CustomReviewPromptTelemetryMiddlewareTest {
@@ -111,7 +111,7 @@ class CustomReviewPromptTelemetryMiddlewareTest {
     ) {
         val snapshot = snapshotProvider()
         assertNotNull(snapshot)
-        assertEquals(1, snapshot!!.size)
+        assertEquals(1, snapshot.size)
         assertEquals(expectedName, snapshot.single().name)
     }
 }

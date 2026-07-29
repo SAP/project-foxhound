@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -35,9 +34,6 @@ namespace mozilla {
 
 class ClientWebGLExtensionBase;
 class HostWebGLContext;
-
-template <typename MethodT, MethodT Method>
-size_t IdByMethod();
 
 namespace dom {
 class OwningHTMLCanvasElementOrOffscreenCanvas;
@@ -182,8 +178,7 @@ class ContextGenerationInfo final {
 
 // -
 
-// In the cross process case, the WebGL actor's ownership relationship looks
-// like this:
+// The WebGL actor's ownership relationship looks like this:
 // ---------------------------------------------------------------------
 // | ClientWebGLContext -> WebGLChild -> WebGLParent -> HostWebGLContext
 // ---------------------------------------------------------------------
@@ -197,7 +192,6 @@ struct NotLostData final : public SupportsWeakPtr, RefCounted<NotLostData> {
   webgl::InitContextResult info;
 
   RefPtr<mozilla::dom::WebGLChild> outOfProcess;
-  std::unique_ptr<HostWebGLContext> inProcess;
 
   webgl::ContextGenerationInfo state;
   std::array<RefPtr<ClientWebGLExtensionBase>,
@@ -244,7 +238,9 @@ class ObjectJS {
   // The workhorse:
   bool ValidateUsable(const ClientWebGLContext& context,
                       const char* const argName) const {
-    if (MOZ_LIKELY(IsUsable(context))) return true;
+    if (IsUsable(context)) [[likely]] {
+      return true;
+    }
     WarnInvalidUse(context, argName);
     return false;
   }
@@ -608,9 +604,10 @@ class WebGLVertexArrayJS final : public nsWrapperCache, public webgl::ObjectJS {
 
 ////////////////////////////////////
 
-using Float32ListU = dom::MaybeSharedFloat32ArrayOrUnrestrictedFloatSequence;
-using Int32ListU = dom::MaybeSharedInt32ArrayOrLongSequence;
-using Uint32ListU = dom::MaybeSharedUint32ArrayOrUnsignedLongSequence;
+using Float32ListU =
+    dom::AllowLargeMaybeSharedFloat32ArrayOrUnrestrictedFloatSequence;
+using Int32ListU = dom::AllowLargeMaybeSharedInt32ArrayOrLongSequence;
+using Uint32ListU = dom::AllowLargeMaybeSharedUint32ArrayOrUnsignedLongSequence;
 
 template <typename Converter, typename T>
 inline bool ConvertSequence(const dom::Sequence<T>& sequence,
@@ -625,7 +622,7 @@ inline bool ConvertSequence(const dom::Sequence<T>& sequence,
 template <typename Converter>
 inline bool Convert(const Float32ListU& list, Converter&& converter) {
   if (list.IsFloat32Array()) {
-    return list.GetAsFloat32Array().ProcessData(
+    return list.GetAsFloat32Array().ProcessData<true>(
         std::forward<Converter>(converter));
   }
 
@@ -636,7 +633,7 @@ inline bool Convert(const Float32ListU& list, Converter&& converter) {
 template <typename Converter>
 inline bool Convert(const Int32ListU& list, Converter&& converter) {
   if (list.IsInt32Array()) {
-    return list.GetAsInt32Array().ProcessData(
+    return list.GetAsInt32Array().ProcessData<true>(
         std::forward<Converter>(converter));
   }
 
@@ -647,7 +644,7 @@ inline bool Convert(const Int32ListU& list, Converter&& converter) {
 template <typename Converter>
 inline bool Convert(const Uint32ListU& list, Converter&& converter) {
   if (list.IsUint32Array()) {
-    return list.GetAsUint32Array().ProcessData(
+    return list.GetAsUint32Array().ProcessData<true>(
         std::forward<Converter>(converter));
   }
 
@@ -747,7 +744,7 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
 
   // ----------------------------- Lifetime and DOM ---------------------------
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(ClientWebGLContext)
 
   JSObject* WrapObject(JSContext* cx,
@@ -780,6 +777,8 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
   mutable webgl::LossStatus mLossStatus = webgl::LossStatus::Ready;
   mutable bool mAwaitingRestore = false;
   mutable webgl::ObjectId mLastId = 0;
+  // Buffer to accumulate JS warnings until it is safe to flush them.
+  mutable std::vector<std::string>* mDeferJsWarnings = nullptr;
 
  public:
   webgl::ObjectId NextId() const { return mLastId += 1; }
@@ -949,7 +948,7 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
   }
 
   bool ValidateNonNegative(const char* argName, int64_t val) const {
-    if (MOZ_UNLIKELY(val < 0)) {
+    if (val < 0) [[unlikely]] {
       EnqueueError(LOCAL_GL_INVALID_VALUE, "`%s` must be non-negative.",
                    argName);
       return false;
@@ -1122,7 +1121,9 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
   mutable bool mAutoFlushPending = false;
 
   void AutoEnqueueFlush() const {
-    if (MOZ_LIKELY(mAutoFlushPending)) return;
+    if (mAutoFlushPending) [[likely]] {
+      return;
+    }
     mAutoFlushPending = true;
 
     const auto DeferredFlush = [weak =
@@ -2349,13 +2350,12 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
   // The cross-process communication mechanism
   // -------------------------------------------------------------------------
  protected:
-  // If we are running WebGL in this process then call the HostWebGLContext
-  // method directly.  Otherwise, dispatch over IPC.
+  // Dispatches over IPC.
   template <typename MethodType, MethodType method, typename... CallerArgs>
   void Run(const CallerArgs&... args) const {
-    const auto id = IdByMethod<MethodType, method>();
+    const auto info = WebGLMethodInfo::Get<MethodType, method>();
     auto noNoGc = std::optional<JS::AutoCheckCannotGC>{};
-    Run_WithDestArgTypes_ConstnessHelper(std::move(noNoGc), method, id,
+    Run_WithDestArgTypes_ConstnessHelper(std::move(noNoGc), method, info,
                                          args...);
   }
 
@@ -2364,9 +2364,10 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
   template <typename MethodType, MethodType method, typename... CallerArgs>
   void RunWithGCData(JS::AutoCheckCannotGC&& aNoGC,
                      const CallerArgs&... aArgs) const {
-    const auto id = IdByMethod<MethodType, method>();
+    const auto info = WebGLMethodInfo::Get<MethodType, method>();
     auto noGc = std::optional<JS::AutoCheckCannotGC>{std::move(aNoGC)};
-    Run_WithDestArgTypes_ConstnessHelper(std::move(noGc), method, id, aArgs...);
+    Run_WithDestArgTypes_ConstnessHelper(std::move(noGc), method, info,
+                                         aArgs...);
   }
 
   // Because we're trying to explicitly pull `DestArgs` via `method`, we have
@@ -2374,23 +2375,25 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
   template <typename... DestArgs>
   void Run_WithDestArgTypes_ConstnessHelper(
       std::optional<JS::AutoCheckCannotGC>&& noGc,
-      void (HostWebGLContext::*method)(DestArgs...), const size_t id,
+      void (HostWebGLContext::*method)(DestArgs...), const WebGLMethodInfo info,
       const std::remove_reference_t<std::remove_const_t<DestArgs>>&... args)
       const {
-    Run_WithDestArgTypes(std::move(noGc), method, id, args...);
+    Run_WithDestArgTypes(std::move(noGc), method, info, args...);
   }
   template <typename... DestArgs>
   void Run_WithDestArgTypes_ConstnessHelper(
       std::optional<JS::AutoCheckCannotGC>&& noGc,
-      void (HostWebGLContext::*method)(DestArgs...) const, const size_t id,
+      void (HostWebGLContext::*method)(DestArgs...) const,
+      const WebGLMethodInfo info,
       const std::remove_reference_t<std::remove_const_t<DestArgs>>&... args)
       const {
-    Run_WithDestArgTypes(std::move(noGc), method, id, args...);
+    Run_WithDestArgTypes(std::move(noGc), method, info, args...);
   }
 
   template <typename MethodT, typename... DestArgs>
   void Run_WithDestArgTypes(std::optional<JS::AutoCheckCannotGC>&&, MethodT,
-                            const size_t id, const DestArgs&...) const;
+                            const WebGLMethodInfo info,
+                            const DestArgs&...) const;
 
   // -------------------------------------------------------------------------
   // Helpers for DOM operations, composition, actors, etc

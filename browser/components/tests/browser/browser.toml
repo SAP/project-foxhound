@@ -28,6 +28,9 @@ reason = "test depends on update channel"
 
 ["browser_contentpermissionprompt.js"]
 
+["browser_csp_baseline.js"]
+skip-if = ["debug"] # Loading a page without a custom CSP asserts in debug
+
 ["browser_csp_blocks.js"]
 
 ["browser_csp_module.js"]
@@ -40,6 +43,9 @@ support-files = ["file_csp_module.sys.mjs"]
 ["browser_default_browser_prompt.js"]
 
 ["browser_default_webprotocol_handler_mailto.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
 run-if = [
   "os == 'win'",
 ]
@@ -66,6 +72,11 @@ run-if = [
 ["browser_quit_shortcut_warning.js"]
 
 ["browser_startup_homepage.js"]
+
+["browser_telemetry_activation.js"]
+run-if = [
+  "os == 'win'",
+]
 
 ["browser_to_handle_telemetry.js"]
 run-if = [

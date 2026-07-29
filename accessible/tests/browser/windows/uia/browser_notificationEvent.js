@@ -12,7 +12,7 @@ const NotificationProcessing_ImportantAll = 0;
 const NotificationProcessing_All = 2;
 /* eslint-enable camelcase */
 
-addUiaTask(
+addAccessibleTask(
   `
 <button id="button"></button>
 <main id="main"><p id="p">abc</p></main>
@@ -70,7 +70,5 @@ addUiaTask(
     await waitForUiaEvent();
     ok(true, "Got Notification event on button");
     is(await runPython(`event.displayString`), "d", "displayString correct");
-  },
-  // The IA2 -> UIA proxy doesn't support Notification events.
-  { uiaEnabled: true, uiaDisabled: false }
+  }
 );

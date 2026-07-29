@@ -15,8 +15,6 @@ async function openFooterInAIWindow() {
   const win = await openAIWindow();
   const browser = win.gBrowser.selectedBrowser;
 
-  await BrowserTestUtils.browserLoaded(browser, false, AIWINDOW_URL);
-
   return { win, browser };
 }
 

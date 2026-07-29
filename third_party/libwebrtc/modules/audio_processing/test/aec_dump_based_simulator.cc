@@ -19,7 +19,6 @@
 #include <iostream>
 #include <memory>
 #include <optional>
-#include <sstream>  // no-presubmit-check TODO(webrtc:8982)
 #include <string>
 #include <utility>
 
@@ -29,13 +28,11 @@
 #include "common_audio/channel_buffer.h"
 #include "common_audio/wav_file.h"
 #include "modules/audio_processing/debug.pb.h"
-#include "modules/audio_processing/echo_control_mobile_impl.h"
 #include "modules/audio_processing/test/aec_dump_based_simulator.h"
 #include "modules/audio_processing/test/audio_processing_simulator.h"
 #include "modules/audio_processing/test/protobuf_utils.h"
 #include "modules/audio_processing/test/test_utils.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
 
 namespace webrtc {
@@ -79,18 +76,6 @@ bool VerifyFloatBitExactness(const audioproc::Stream& msg,
     }
   }
   return true;
-}
-
-// Selectively reads the next proto-buf message from dump-file or string input.
-// Returns a bool indicating whether a new message was available.
-bool ReadNextMessage(bool use_dump_file,
-                     FILE* dump_input_file,
-                     std::stringstream& input,
-                     audioproc::Event& event_msg) {
-  if (use_dump_file) {
-    return ReadMessageFromFile(dump_input_file, &event_msg);
-  }
-  return ReadMessageFromString(&input, &event_msg);
 }
 
 }  // namespace
@@ -258,19 +243,12 @@ void AecDumpBasedSimulator::Process() {
         CheckedDivExact(sample_rate_hz, kChunksPerSecond), 1));
   }
 
-  const bool use_dump_file = !settings_.aec_dump_input_string.has_value();
-  std::stringstream input;
-  if (use_dump_file) {
-    dump_input_file_ =
-        OpenFile(settings_.aec_dump_input_filename->c_str(), "rb");
-  } else {
-    input << settings_.aec_dump_input_string.value();
-  }
+  dump_input_file_ = OpenFile(settings_.aec_dump_input_filename->c_str(), "rb");
 
   audioproc::Event event_msg;
   int capture_frames_since_init = 0;
   int init_index = 0;
-  while (ReadNextMessage(use_dump_file, dump_input_file_, input, event_msg)) {
+  while (ReadMessageFromFile(dump_input_file_, &event_msg)) {
     SelectivelyToggleDataDumping(init_index, capture_frames_since_init);
     HandleEvent(event_msg, capture_frames_since_init, init_index);
 
@@ -283,28 +261,19 @@ void AecDumpBasedSimulator::Process() {
               *settings_.init_to_process >= init_index);
   }
 
-  if (use_dump_file) {
-    fclose(dump_input_file_);
-  }
+  fclose(dump_input_file_);
 
   DetachAecDump();
 }
 
 void AecDumpBasedSimulator::Analyze() {
-  const bool use_dump_file = !settings_.aec_dump_input_string.has_value();
-  std::stringstream input;
-  if (use_dump_file) {
-    dump_input_file_ =
-        OpenFile(settings_.aec_dump_input_filename->c_str(), "rb");
-  } else {
-    input << settings_.aec_dump_input_string.value();
-  }
+  dump_input_file_ = OpenFile(settings_.aec_dump_input_filename->c_str(), "rb");
 
   audioproc::Event event_msg;
   int num_capture_frames = 0;
   int num_render_frames = 0;
   int init_index = 0;
-  while (ReadNextMessage(use_dump_file, dump_input_file_, input, event_msg)) {
+  while (ReadMessageFromFile(dump_input_file_, &event_msg)) {
     if (event_msg.type() == audioproc::Event::INIT) {
       ++init_index;
       constexpr float kNumFramesPerSecond = 100.f;
@@ -325,9 +294,7 @@ void AecDumpBasedSimulator::Analyze() {
     }
   }
 
-  if (use_dump_file) {
-    fclose(dump_input_file_);
-  }
+  fclose(dump_input_file_);
 }
 
 void AecDumpBasedSimulator::HandleEvent(const audioproc::Event& event_msg,
@@ -382,29 +349,6 @@ void AecDumpBasedSimulator::HandleMessage(const audioproc::Config& msg) {
         std::cout << " aec_enabled: " << (enable ? "true" : "false")
                   << std::endl;
       }
-    }
-
-    if (msg.has_aecm_enabled() || settings_.use_aecm) {
-      bool enable =
-          settings_.use_aecm ? *settings_.use_aecm : msg.aecm_enabled();
-      apm_config.echo_canceller.enabled |= enable;
-      apm_config.echo_canceller.mobile_mode = enable;
-      if (settings_.use_verbose_logging) {
-        std::cout << " aecm_enabled: " << (enable ? "true" : "false")
-                  << std::endl;
-      }
-    }
-
-    if (msg.has_aecm_comfort_noise_enabled() &&
-        msg.aecm_comfort_noise_enabled()) {
-      RTC_LOG(LS_ERROR) << "Ignoring deprecated setting: AECM comfort noise";
-    }
-
-    if (msg.has_aecm_routing_mode() &&
-        static_cast<EchoControlMobileImpl::RoutingMode>(
-            msg.aecm_routing_mode()) != EchoControlMobileImpl::kSpeakerphone) {
-      RTC_LOG(LS_ERROR) << "Ignoring deprecated setting: AECM routing mode: "
-                        << msg.aecm_routing_mode();
     }
 
     if (msg.has_agc_enabled() || settings_.use_agc) {

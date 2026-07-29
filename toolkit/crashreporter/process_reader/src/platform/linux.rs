@@ -26,8 +26,8 @@ use goblin::elf::note::Note;
 use scroll::ctx::TryFromCtx;
 
 use libc::{
-    c_int, c_long, c_void, pid_t, ptrace, waitpid, EINTR, PTRACE_ATTACH, PTRACE_DETACH,
-    PTRACE_PEEKDATA, __WALL,
+    c_int, c_long, c_void, pid_t, ptrace, waitpid, __WALL, EINTR, PTRACE_ATTACH, PTRACE_DETACH,
+    PTRACE_PEEKDATA,
 };
 
 impl ProcessReader {

@@ -25,13 +25,8 @@ add_task(async function test_all() {
     "already-enrolled-opt-in",
     { featureId: "nimbus-qa-2" },
     {
-      isRollout: true,
       isFirefoxLabsOptIn: true,
-      firefoxLabsTitle: "title",
-      firefoxLabsDescription: "description",
-      firefoxLabsDescriptionLinks: null,
-      firefoxLabsGroup: "group",
-      requiresRestart: false,
+      isRollout: true,
     }
   );
 
@@ -39,14 +34,9 @@ add_task(async function test_all() {
     "preexisting-paused",
     { featureId: "no-feature-firefox-desktop" },
     {
-      isRollout: true,
       isEnrollmentPaused: true,
       isFirefoxLabsOptIn: true,
-      firefoxLabsTitle: "true",
-      firefoxLabsDescription: "description",
-      firefoxLabsDescriptionLinks: null,
-      firefoxLabsGroup: "group",
-      requiresRestart: false,
+      isRollout: true,
     }
   );
 
@@ -61,61 +51,44 @@ add_task(async function test_all() {
     }),
     experiments: [
       NimbusTestUtils.factories.recipe("opt-in-rollout", {
+        isFirefoxLabsOptIn: true,
         isRollout: true,
+      }),
+      {
+        ...NimbusTestUtils.factories.recipe("opt-in-experiment", {
+          branches: [
+            {
+              ...NimbusTestUtils.factories.recipe.branches[0],
+              firefoxLabsTitle: "title",
+            },
+          ],
+        }),
         isFirefoxLabsOptIn: true,
         firefoxLabsTitle: "title",
         firefoxLabsDescription: "description",
         firefoxLabsDescriptionLinks: null,
         firefoxLabsGroup: "group",
         requiresRestart: false,
-      }),
-      NimbusTestUtils.factories.recipe("opt-in-experiment", {
-        branches: [
-          {
-            ...NimbusTestUtils.factories.recipe.branches[0],
-            firefoxLabsTitle: "title",
-          },
-        ],
-        isFirefoxLabsOptIn: true,
-        firefoxLabsTitle: "title",
-        firefoxLabsDescription: "description",
-        firefoxLabsDescriptionLinks: null,
-        firefoxLabsGroup: "group",
-        requiresRestart: false,
-      }),
+      },
       NimbusTestUtils.factories.recipe("targeting-fail", {
-        targeting: "false",
-        isRollout: true,
         isFirefoxLabsOptIn: true,
-        firefoxLabsTitle: "title",
-        firefoxLabsDescription: "description",
-        firefoxLabsDescriptionLinks: null,
-        firefoxLabsGroup: "group",
-        requiresRestart: false,
+        isRollout: true,
+        targeting: "false",
       }),
       NimbusTestUtils.factories.recipe("bucketing-fail", {
         bucketConfig: {
           ...NimbusTestUtils.factories.recipe.bucketConfig,
           count: 0,
         },
-        isRollout: true,
         isFirefoxLabsOptIn: true,
-        firefoxLabsTitle: "title",
-        firefoxLabsDescription: "description",
-        firefoxLabsDescriptionLinks: null,
-        firefoxLabsGroup: "group",
-        requiresRestart: false,
+        isRollout: true,
       }),
       NimbusTestUtils.factories.recipe.withFeatureConfig(
         "feature-does-not-exist",
         { featureId: "bogus" },
         {
           isFirefoxLabsOptIn: true,
-          firefoxLabsTitle: "title",
-          firefoxLabsDescription: "description",
-          firefoxLabsDescriptionLinks: null,
-          firefoxLabsGroup: "group",
-          requiresRestart: false,
+          isRollout: true,
         }
       ),
       NimbusTestUtils.factories.recipe.withFeatureConfig(
@@ -135,14 +108,9 @@ add_task(async function test_all() {
         "paused",
         { featureId: "no-feature-firefox-desktop" },
         {
-          isRollout: true,
           isEnrollmentPaused: true,
           isFirefoxLabsOptIn: true,
-          firefoxLabsTitle: "title",
-          firefoxLabsDescription: "description",
-          firefoxLabsDescriptionLinks: null,
-          firefoxLabsGroup: "group",
-          requiresRestart: false,
+          isRollout: true,
         }
       ),
       preexisting, // Prevent unenrollment.
@@ -180,25 +148,12 @@ add_task(async function test_all() {
 });
 
 add_task(async function test_enroll() {
-  Services.fog.applyServerKnobsConfig(
-    JSON.stringify({
-      metrics_enabled: {
-        "nimbus_events.enrollment_status": true,
-      },
-    })
-  );
-
   const recipe = NimbusTestUtils.factories.recipe.withFeatureConfig(
     "opt-in",
     { featureId: "nimbus-qa-1" },
     {
       isRollout: true,
       isFirefoxLabsOptIn: true,
-      firefoxLabsTitle: "placeholder",
-      firefoxLabsDescription: "placeholder",
-      firefoxLabsDescriptionLinks: null,
-      firefoxLabsGroup: "placeholder",
-      requiresRestart: false,
     }
   );
 
@@ -267,11 +222,6 @@ add_task(async function test_enroll() {
 add_task(async function test_reenroll() {
   const recipe = NimbusTestUtils.factories.recipe("opt-in", {
     isFirefoxLabsOptIn: true,
-    firefoxLabsTitle: "placeholder",
-    firefoxLabsDescription: "placeholder",
-    firefoxLabsDescriptionLinks: null,
-    firefoxLabsGroup: "placeholder",
-    requiresRestart: false,
     isRollout: true,
   });
 
@@ -317,14 +267,6 @@ add_task(async function test_reenroll() {
 });
 
 add_task(async function test_unenroll() {
-  Services.fog.applyServerKnobsConfig(
-    JSON.stringify({
-      metrics_enabled: {
-        "nimbus_events.enrollment_status": true,
-      },
-    })
-  );
-
   const { manager, cleanup } = await setupTest({
     experiments: [
       NimbusTestUtils.factories.recipe.withFeatureConfig(
@@ -338,11 +280,6 @@ add_task(async function test_unenroll() {
         {
           isRollout: true,
           isFirefoxLabsOptIn: true,
-          firefoxLabsTitle: "title",
-          firefoxLabsDescription: "description",
-          firefoxLabsDescriptionLinks: null,
-          firefoxLabsGroup: "group",
-          requiresRestart: false,
         }
       ),
     ],
@@ -409,11 +346,6 @@ add_task(async function test_reenroll_quickly() {
         {
           isRollout: true,
           isFirefoxLabsOptIn: true,
-          firefoxLabsTitle: "title",
-          firefoxLabsDescription: "description",
-          firefoxLabsDescriptionLinks: null,
-          firefoxLabsGroup: "group",
-          requiresRestart: false,
         }
       ),
     ],

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -112,7 +110,7 @@ typedef NTSTATUS(NTAPI* NtQueryFullAttributesFileFn)(
 // resolved with the first entry (best case), and 32 entries cover >95% of
 // cases, reducing the average `Filename()` cost by 5-10x.
 using HandleToFilenameCache = mozilla::SmallArrayLRUCache<HANDLE, nsString, 32>;
-MOZ_RUNINIT static mozilla::UniquePtr<HandleToFilenameCache>
+constinit static mozilla::UniquePtr<HandleToFilenameCache>
     sHandleToFilenameCache;
 
 /**

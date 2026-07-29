@@ -16,7 +16,6 @@ import mozilla.components.service.fxrelay.eligibility.RelayPlanTier
 import mozilla.components.service.fxrelay.ext.asEmailMask
 import mozilla.components.service.fxrelay.ext.freeLimitReached
 import mozilla.components.support.base.log.logger.Logger
-import mozilla.components.support.ktx.kotlin.extractHostUrl
 
 private const val RELAY_SCOPE_URL = "https://identity.mozilla.com/apps/relay"
 private const val RELAY_BASE_URL = "https://relay.firefox.com"
@@ -42,14 +41,14 @@ interface FxRelay {
     /**
      * Creates a new email mask with the specified data, otherwise, falls back to using an existing one.
      *
-     * @param generatedFor The website for which the address is generated.
-     * @param description Optional description of the email address.
+     * @param generatedForHostUrl The host URL of the website for which the address is generated.
+     * @param descriptionHostUrl Optional host URL used as the description of the email address.
      *
      * @return the newly created email mask or `null` if the operation fails.
      */
     suspend fun createEmailMask(
-        generatedFor: String = "",
-        description: String = "",
+        generatedForHostUrl: String = "",
+        descriptionHostUrl: String = "",
     ): EmailMask?
 }
 
@@ -149,19 +148,17 @@ internal class FxRelayImpl(
     }
 
     override suspend fun createEmailMask(
-        generatedFor: String,
-        description: String,
+        generatedForHostUrl: String,
+        descriptionHostUrl: String,
     ): EmailMask? = withContext(Dispatchers.IO) {
         handleRelayExceptions(
             RelayOperation.CREATE_ADDRESS,
             { null },
         ) {
             try {
-                val extractedGeneratedFor = generatedFor.extractHostUrl()
-                val extractedDescription = description.extractHostUrl()
                 val address = getOrCreateClient().createAddress(
-                    description = extractedDescription,
-                    generatedFor = extractedGeneratedFor,
+                    description = descriptionHostUrl,
+                    generatedFor = generatedForHostUrl,
                     usedOn = "", // always empty string for now until we can surface this property correctly.
                 )
 

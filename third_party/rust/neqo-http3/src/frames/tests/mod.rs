@@ -5,12 +5,12 @@
 // except according to those terms.
 
 use neqo_common::Encoder;
-use neqo_crypto::AuthenticationStatus;
 use neqo_transport::StreamType;
+use nss::AuthenticationStatus;
 use test_fixture::{default_client, default_server, now};
 
 use crate::frames::{
-    reader::FrameDecoder, FrameReader, HFrame, StreamReaderConnectionWrapper, WebTransportFrame,
+    FrameReader, HFrame, StreamReaderConnectionWrapper, WebTransportFrame, reader::FrameDecoder,
 };
 
 pub fn enc_dec<T: FrameDecoder<T>>(d: &Encoder, st: &str, remaining: usize) -> T {

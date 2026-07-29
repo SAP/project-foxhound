@@ -136,16 +136,6 @@
 
       this.allTabs[0].label = this.emptyTabTitle;
 
-      // Hide the secondary text for locales where it is unsupported due to size constraints.
-      const language = Services.locale.appLocaleAsBCP47;
-      const unsupportedLocales = Services.prefs.getCharPref(
-        "browser.tabs.secondaryTextUnsupportedLocales"
-      );
-      this.toggleAttribute(
-        "secondarytext-unsupported",
-        unsupportedLocales.split(",").includes(language.split("-")[0])
-      );
-
       this.newTabButton.setAttribute(
         "aria-label",
         DynamicShortcutTooltip.getText("tabs-newtab-button")
@@ -1367,7 +1357,11 @@
           let rect = ele => {
             return window.windowUtils.getBoundsWithoutFlushing(ele);
           };
-          let tab = this.visibleTabs[gBrowser.pinnedTabCount];
+          // See bug 2007766, we need to find the first tab that isn't
+          // inside a split view, because those can be narrower than the threshold.
+          let tab = this.visibleTabs
+            .slice(gBrowser.pinnedTabCount)
+            .find(t => !t.splitview);
           if (tab && rect(tab).width <= this._tabClipWidth) {
             this.setAttribute("closebuttons", "activetab");
           } else {

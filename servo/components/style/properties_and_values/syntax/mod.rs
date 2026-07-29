@@ -104,7 +104,7 @@ impl Descriptor {
     fn try_parse_multiplier<'i>(input: &mut CSSParser<'i, '_>) -> Option<Multiplier> {
         input
             .try_parse(|input| {
-                let next = input.next().map_err(|_| ())?;
+                let next = input.next_including_whitespace().map_err(|_| ())?;
                 match next {
                     Token::Delim('+') => Ok(Multiplier::Space),
                     Token::Delim('#') => Ok(Multiplier::Comma),
@@ -119,10 +119,10 @@ impl Descriptor {
     ) -> Result<ComponentName, ParseError> {
         if input.try_parse(|input| input.expect_delim('<')).is_ok() {
             let name = Self::parse_component_data_type_name(input)?;
-            input
-                .expect_delim('>')
-                .map_err(|_| ParseError::UnclosedDataTypeName)?;
-            Ok(ComponentName::DataType(name))
+            match input.next_including_whitespace() {
+                Ok(&Token::Delim('>')) => Ok(ComponentName::DataType(name)),
+                _ => Err(ParseError::UnclosedDataTypeName),
+            }
         } else {
             input.try_parse(|input| {
                 let name = CustomIdent::parse(input, &[]).map_err(|_| ParseError::InvalidName)?;
@@ -134,11 +134,11 @@ impl Descriptor {
     fn parse_component_data_type_name<'i>(
         input: &mut CSSParser<'i, '_>,
     ) -> Result<DataType, ParseError> {
-        input
-            .expect_ident()
-            .ok()
-            .and_then(|n| DataType::from_str(n))
-            .ok_or(ParseError::UnknownDataTypeName)
+        let ty = match input.next_including_whitespace() {
+            Ok(Token::Ident(name)) => DataType::from_str(name),
+            _ => None,
+        };
+        ty.ok_or(ParseError::UnknownDataTypeName)
     }
 
     /// Parse a syntax descriptor.
@@ -335,24 +335,6 @@ struct Parser<'a> {
     output: &'a mut Vec<Component>,
 }
 
-/// <https://drafts.csswg.org/css-syntax-3/#letter>
-fn is_letter(byte: u8) -> bool {
-    match byte {
-        b'A'..=b'Z' | b'a'..=b'z' => true,
-        _ => false,
-    }
-}
-
-/// <https://drafts.csswg.org/css-syntax-3/#non-ascii-code-point>
-fn is_non_ascii(byte: u8) -> bool {
-    byte >= 0x80
-}
-
-/// <https://drafts.csswg.org/css-syntax-3/#name-start-code-point>
-fn is_name_start(byte: u8) -> bool {
-    is_letter(byte) || is_non_ascii(byte) || byte == b'_'
-}
-
 impl<'a> Parser<'a> {
     fn new(input: &'a str, output: &'a mut Vec<Component>) -> Self {
         Self {
@@ -425,10 +407,6 @@ impl<'a> Parser<'a> {
         if b == b'<' {
             self.position += 1;
             return Ok(ComponentName::DataType(self.parse_data_type_name()?));
-        }
-
-        if b != b'\\' && !is_name_start(b) {
-            return Err(ParseError::InvalidNameStart);
         }
 
         let input = &self.input[self.position..];

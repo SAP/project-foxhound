@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -50,6 +48,7 @@ class Shmem;
 namespace wr {
 class DisplayListBuilder;
 class TransactionBuilder;
+class RenderTextureHost;
 }  // namespace wr
 
 namespace layers {
@@ -395,9 +394,9 @@ enum class TextureHostType : int8_t {
  * lifetime. This means that the lifetime of the underlying shared data
  * matches the lifetime of the TextureClient/Host pair. It also means
  * TextureClient/Host do not implement double buffering, which is the
- * reponsibility of the compositable (which would use two Texture pairs).
+ * responsibility of the compositable (which would use two Texture pairs).
  *
- * The Lock/Unlock mecanism here mirrors Lock/Unlock in TextureClient.
+ * The Lock/Unlock mechanism here mirrors Lock/Unlock in TextureClient.
  *
  */
 class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
@@ -446,6 +445,16 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
    * Apple's YCBCR_422 is R8G8B8X8.
    */
   virtual gfx::SurfaceFormat GetReadFormat() const { return GetFormat(); }
+
+  /**
+   * Return the transfer function used for reading the texture, this makes the
+   * difference between SDR content and HDR content. For YUV textures this is
+   * one of BT709, PQ (HDR), HLG (HDR), for RGB textures this can be SRGB, BT709
+   * PQ (HDR), HLG (HDR), or LINEAR.
+   */
+  virtual gfx::TransferFunction GetTransferFunction() const {
+    return gfx::TransferFunction::SRGB;
+  }
 
   virtual gfx::YUVColorSpace GetYUVColorSpace() const {
     return gfx::YUVColorSpace::Identity;
@@ -534,17 +543,12 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
    * are for use with the managing IPDL protocols only (so that they can
    * implement AllocPTextureParent and DeallocPTextureParent).
    */
-  static PTextureParent* CreateIPDLActor(
+  static already_AddRefed<PTextureParent> CreateIPDLActor(
       HostIPCAllocator* aAllocator, const SurfaceDescriptor& aSharedData,
       ReadLockDescriptor&& aDescriptor, LayersBackend aLayersBackend,
       TextureFlags aFlags, const dom::ContentParentId& aContentId,
       uint64_t aSerial, const wr::MaybeExternalImageId& aExternalImageId);
   static bool DestroyIPDLActor(PTextureParent* actor);
-
-  /**
-   * Destroy the TextureChild/Parent pair.
-   */
-  static bool SendDeleteIPDLActor(PTextureParent* actor);
 
   static void ReceivedDestroy(PTextureParent* actor);
 
@@ -758,7 +762,7 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
   void CallNotifyNotUsed();
 
   TextureHostType mTextureHostType;
-  PTextureParent* mActor;
+  RefPtr<TextureParent> mActor;
   RefPtr<TextureReadLock> mReadLock;
   TextureFlags mFlags;
   int mCompositableCount;
@@ -797,6 +801,7 @@ class BufferTextureHost : public TextureHost {
   virtual ~BufferTextureHost();
 
   virtual uint8_t* GetBuffer() const = 0;
+  virtual uint16_t* GetBuffer16() const = 0;
 
   virtual size_t GetBufferSize() const = 0;
 
@@ -814,6 +819,8 @@ class BufferTextureHost : public TextureHost {
   gfx::SurfaceFormat GetFormat() const override;
 
   gfx::YUVColorSpace GetYUVColorSpace() const override;
+
+  gfx::TransferFunction GetTransferFunction() const override;
 
   gfx::ColorDepth GetColorDepth() const override;
 
@@ -850,9 +857,14 @@ class BufferTextureHost : public TextureHost {
                         const Range<wr::ImageKey>& aImageKeys,
                         PushDisplayItemFlagSet aFlags) override;
 
+  bool IsYCbCr() const;
+
   uint8_t* GetYChannel();
   uint8_t* GetCbChannel();
   uint8_t* GetCrChannel();
+  uint16_t* GetYChannel16();
+  uint16_t* GetCbChannel16();
+  uint16_t* GetCrChannel16();
   int32_t GetYStride() const;
   int32_t GetCbCrStride() const;
 
@@ -889,6 +901,7 @@ class ShmemTextureHost : public BufferTextureHost {
   void ForgetSharedData() override;
 
   uint8_t* GetBuffer() const override;
+  uint16_t* GetBuffer16() const override;
 
   size_t GetBufferSize() const override;
 
@@ -898,9 +911,25 @@ class ShmemTextureHost : public BufferTextureHost {
 
   ShmemTextureHost* AsShmemTextureHost() override { return this; }
 
+  void OnRenderTextureCreated(wr::RenderTextureHost* aRenderTexture);
+
  protected:
-  UniquePtr<mozilla::ipc::Shmem> mShmem;
+  class ShmemDeallocRunnable final : public Runnable {
+   public:
+    ShmemDeallocRunnable(ISurfaceAllocator* aDeallocator,
+                         UniquePtr<mozilla::ipc::Shmem>&& aShmem);
+    NS_IMETHOD Run() override;
+    mozilla::ipc::Shmem* GetShmem() { return mShmem.get(); }
+
+   protected:
+    virtual ~ShmemDeallocRunnable();
+
+    RefPtr<ISurfaceAllocator> mDeallocator;
+    UniquePtr<mozilla::ipc::Shmem> mShmem;
+  };
+
   RefPtr<ISurfaceAllocator> mDeallocator;
+  RefPtr<ShmemDeallocRunnable> mShmemDeallocRunnable;
 };
 
 /**
@@ -923,6 +952,7 @@ class MemoryTextureHost : public BufferTextureHost {
   void ForgetSharedData() override;
 
   uint8_t* GetBuffer() const override;
+  uint16_t* GetBuffer16() const override;
 
   size_t GetBufferSize() const override;
 

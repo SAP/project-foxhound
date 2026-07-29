@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/WritableStream.h"
-
 #include "StreamUtils.h"
+#include "WritableStreamAbstract.h"
+#include "WritableStreamDefaultControllerAbstract.h"
+#include "WritableStreamDefaultWriterAbstract.h"
 #include "js/Array.h"
 #include "js/PropertyAndElement.h"
 #include "js/TypeDecls.h"
@@ -25,8 +24,6 @@
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/UnderlyingSinkBinding.h"
 #include "mozilla/dom/WritableStreamBinding.h"
-#include "mozilla/dom/WritableStreamDefaultController.h"
-#include "mozilla/dom/WritableStreamDefaultWriter.h"
 #include "nsCOMPtr.h"
 #include "nsIGlobalObject.h"
 #include "nsISupports.h"
@@ -76,6 +73,16 @@ WritableStream::~WritableStream() {
 JSObject* WritableStream::WrapObject(JSContext* aCx,
                                      JS::Handle<JSObject*> aGivenProto) {
   return WritableStream_Binding::Wrap(aCx, this, aGivenProto);
+}
+
+void WritableStream::GetStoredError(JSContext* aCx,
+                                    JS::MutableHandle<JS::Value> aStoredError,
+                                    ErrorResult& aRv) const {
+  aStoredError.set(mStoredError);
+  if (!JS_WrapValue(aCx, aStoredError)) {
+    aStoredError.setUndefined();
+    aRv.StealExceptionFromJSContext(aCx);
+  }
 }
 
 // https://streams.spec.whatwg.org/#writable-stream-deal-with-rejection
@@ -139,6 +146,10 @@ void WritableStream::FinishErroring(JSContext* aCx, ErrorResult& aRv) {
   // Step 9. Let abortRequest be stream.[[pendingAbortRequest]].
   RefPtr<Promise> abortPromise = mPendingAbortRequestPromise;
   JS::Rooted<JS::Value> abortReason(aCx, mPendingAbortRequestReason);
+  if (!JS_WrapValue(aCx, &abortReason)) {
+    aRv.StealExceptionFromJSContext(aCx);
+    return;
+  }
   bool abortWasAlreadyErroring = mPendingAbortRequestWasAlreadyErroring;
 
   // Step 10. Set stream.[[pendingAbortRequest]] to undefined.
@@ -803,6 +814,15 @@ void WritableStream::ErrorNative(JSContext* aCx, JS::Handle<JS::Value> aError,
   // mController is set outside of the constructor
   WritableStreamDefaultControllerErrorIfNeeded(aCx, MOZ_KnownLive(mController),
                                                aError, aRv);
+}
+
+// https://streams.spec.whatwg.org/#writablestream-error
+// To abort a WritableStream stream with reason, return !
+// WritableStreamAbort(stream, reason). The return value will be a promise that
+// either fulfills with undefined, or rejects with a failure reason.
+already_AddRefed<Promise> WritableStream::AbortNative(
+    JSContext* aCx, JS::Handle<JS::Value> aReason, ErrorResult& aRv) {
+  return WritableStreamAbort(aCx, this, aReason, aRv);
 }
 
 }  // namespace mozilla::dom

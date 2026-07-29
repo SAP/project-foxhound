@@ -14,11 +14,9 @@ let gLoadingHits = 0;
 add_task(async function () {
   do_get_profile();
 
-  info("Disable rcwn and accept all");
-  Services.prefs.setBoolPref("network.http.rcwn.enabled", false);
   Services.prefs.setIntPref(
     "network.cookie.cookieBehavior",
-    Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN
+    Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN
   );
 
   const server = CookieXPCShellUtils.createServer({

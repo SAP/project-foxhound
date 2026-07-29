@@ -201,7 +201,6 @@ function getOrderedResource(resource) {
     totalTime: resource.totalTime,
     securityState: resource.securityState,
     responseCache: resource.responseCache,
-    isRacing: resource.isRacing,
   };
 }
 

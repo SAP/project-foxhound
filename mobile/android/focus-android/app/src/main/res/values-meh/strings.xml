@@ -155,7 +155,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s taji kajinu.</p>\n<p>Ni´ima kua iin nuu nánuku yu´u:\n<ul>\n<li>Nánuku jee kaka nuu ka̱a̱ ya´a</li>\n<li>Chiyu´u daa a nita no´o (a xíín kaji kuvi kuntadaja noo´o)</li>\n<li>Xina saa kuvi naá cokies jii daa tu´un nnánukunu</li>\n</ul> </p>\n<p>%1$s kuviji iin nsa´a Mozilla. Nukudani iin internet vii jee va´a.<br/>\n<a href=\"%2$s\">Ka´vi ku´eka</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s taji kajinu.</p>\n<p>Ni´ima kua iin nuu nánuku yu´u:\n<ul>\n<li>Nánuku jee kaka nuu ka̱a̱ ya´a</li>\n<li>Chiyu´u daa a nita no´o (a xíín kaji kuvi kuntadaja noo´o)</li>\n<li>Xina saa kuvi naá cokies jii daa tu´un nnánukunu</li>\n</ul> </p>\n<p>%1$s kuviji iin nsa´a Mozilla. Nukudani iin internet vii jee va´a.<br/>\n<a href=\"%2$s\">Ka´vi ku´eka</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Privacidad jii seguridad</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -248,7 +248,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Tee a xíín chu´un URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Kua: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Kua: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Kua: nakuvi.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -320,15 +320,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Sá´á %1$s navegador xinañu´u ya´a</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Chu´uichí datos a ni´í</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Ka´vi kue´eka</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla nake´e sani daa a íyo tiñu jee jia´a va´a %1$s nuu kuaiyo daa yo.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla nake´e sani daa a íyo tiñu jee jia´a va´a %1$s nuu kuaiyo daa yo.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Ping a ni\'i ntaka kivɨ</string>
-  <string name="preference_daily_usage_ping_description">Ya\'a chinei Mozilla kuni naja ñivɨ ni\'i ya\'a.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Ya\'a chinei Mozilla kuni naja ñivɨ ni\'i ya\'a.</string>
   <string name="preference_daily_usage_ping_learn_more">Ka´vi kue´eka</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Tutu xítu</string>
@@ -783,7 +783,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Nakasɨ pestaña</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Chu´un ichi saa tivu ya´a nuu Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Chu´un ichi saa tivu ya´a nuu Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

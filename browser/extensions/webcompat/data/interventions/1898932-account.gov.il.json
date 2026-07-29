@@ -1,0 +1,15 @@
+{
+  "label": "account.gov.il",
+  "bugs": {
+    "1898932": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://account.gov.il/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome", "add_Firefox_as_Gecko"]
+    }
+  ]
+}

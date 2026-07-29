@@ -1439,7 +1439,7 @@ class Skipfails:
     def resolve_failure_filename(self, path: str, kind: str, manifest: str) -> str:
         filename = DEF
         if kind == Kind.TOML:
-            filename = self.get_filename_in_manifest(manifest.split(":")[-1], path)
+            filename = self.get_filename_in_manifest(manifest.rsplit(":", 1)[-1], path)
         elif kind == Kind.WPT:
             filename = os.path.basename(path)
         elif kind == Kind.LIST:
@@ -1489,7 +1489,7 @@ class Skipfails:
         a boolean (indicating if the basename has been handled in the manifest)
         """
 
-        path: str = path.split(":")[-1]
+        path: str = path.rsplit(":", 1)[-1]
         self.info(f"\n\n===== Skip failure in manifest: {manifest} =====")
         self.info(f"    path: {path}")
         self.info(f"    label: {label}")
@@ -1966,7 +1966,7 @@ class Skipfails:
             elif tsan:
                 skip_if += "ThreadSanitizer"
             # See implicit VARIANT_DEFAULTS in
-            # https://searchfox.org/mozilla-central/source/layout/tools/reftest/manifest.sys.mjs#30
+            # https://searchfox.org/firefox-main/source/layout/tools/reftest/manifest.sys.mjs#30
             no_fission = "!fission" not in runtimes
             snapshot = "snapshot" in runtimes
             swgl = "swgl" in runtimes
@@ -2036,7 +2036,8 @@ class Skipfails:
                     if not self.platform_permutations:
                         self._fetch_platform_permutations()
                     permutations = (
-                        self.platform_permutations.get(manifest, {})
+                        self.platform_permutations
+                        .get(manifest, {})
                         .get(os, {})
                         .get(os_version, {})
                         .get(arch, None)

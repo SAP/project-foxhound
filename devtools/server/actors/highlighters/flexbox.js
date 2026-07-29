@@ -930,7 +930,7 @@ function getFlexData(container) {
 function getRectFromFlexItemValues(item, container) {
   const rect = item.frameRect;
   const domRect = new DOMRect(rect.x, rect.y, rect.width, rect.height);
-  const win = container.ownerGlobal;
+  const win = container.documentGlobal;
   const style = win.getComputedStyle(container);
   const borderLeftWidth = parseInt(style.borderLeftWidth, 10) || 0;
   const borderTopWidth = parseInt(style.borderTopWidth, 10) || 0;

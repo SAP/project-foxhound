@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -41,8 +40,6 @@ import org.mozilla.fenix.theme.PreviewThemeProvider
 import org.mozilla.fenix.theme.Theme
 import mozilla.components.ui.icons.R as iconsR
 
-private val shape = RoundedCornerShape(8.dp)
-
 /**
  * The microsurvey content UI to hold question and answer data.
  *
@@ -58,13 +55,13 @@ fun MicrosurveyContent(
     question: String,
     answers: List<String>,
     @DrawableRes icon: Int = iconsR.drawable.mozac_ic_print_24,
-    backgroundColor: Color = MaterialTheme.colorScheme.surfaceContainerLowest,
+    backgroundColor: Color = MaterialTheme.colorScheme.surfaceBright,
     selectedAnswer: String? = null,
     onSelectionChange: (String) -> Unit,
 ) {
     Card(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shape = shape,
+        shape = MaterialTheme.shapes.small,
         colors = CardDefaults.cardColors(containerColor = backgroundColor),
         modifier = Modifier
             .wrapContentHeight()

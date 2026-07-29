@@ -4,8 +4,6 @@
 
 package org.mozilla.fenix.ui.efficiency.selectors
 
-import org.mozilla.fenix.R
-import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
 import org.mozilla.fenix.ui.efficiency.helpers.Selector
 import org.mozilla.fenix.ui.efficiency.helpers.SelectorStrategy
 
@@ -47,21 +45,21 @@ object SettingsAboutSelectors {
     )
 
     val KNOW_YOUR_RIGHTS_BUTTON = Selector(
-        strategy = SelectorStrategy.UIAUTOMATOR2_BY_TEXT,
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
         value = "Know your rights",
         description = "The Know your rights Button",
         groups = listOf("Know your rights", "aboutFirefox", "knowYourRights"),
     )
 
     val LICENSING_INFORMATION_BUTTON = Selector(
-        strategy = SelectorStrategy.UIAUTOMATOR2_BY_TEXT,
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
         value = "Licensing information",
         description = "The Licensing Information Button",
         groups = listOf("requiresScroll", "aboutFirefox", "licensingInformation"),
     )
 
     val LIBRARIES_THAT_WE_USE_BUTTON = Selector(
-        strategy = SelectorStrategy.UIAUTOMATOR2_BY_TEXT,
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
         value = "Libraries that we use",
         description = "The Libraries that we use Button",
         groups = listOf("requiresScroll", "aboutFirefox", "librariesThatWeUse"),

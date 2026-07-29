@@ -29,7 +29,6 @@ devtools.inspector:
       - gl@mozilla.com
       - mbalfanz@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_INSPECTOR_THREE_PANE_ENABLED
 
   node_selection_count:
     type: counter
@@ -47,7 +46,6 @@ devtools.inspector:
       - devtools-telemetry-alerts@mozilla.com
       - mbalfanz@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_INSPECTOR_NODE_SELECTION_COUNT
 
   new_root_to_reload_delay:
     type: timing_distribution
@@ -69,7 +67,6 @@ devtools.inspector:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_INSPECTOR_NEW_ROOT_TO_RELOAD_DELAY_MS
 
   number_of_css_grids_in_a_page:
     type: custom_distribution
@@ -91,7 +88,6 @@ devtools.inspector:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_NUMBER_OF_CSS_GRIDS_IN_A_PAGE
 
   fonteditor_font_type_displayed:
     type: labeled_counter
@@ -112,7 +108,6 @@ devtools.inspector:
       - devtools-telemetry-alerts@mozilla.com
       - mbalfanz@mozilla.com
     expires: never
-    telemetry_mirror: h#DEVTOOLS_FONTEDITOR_FONT_TYPE_DISPLAYED
 
 devtools.layout.flexboxhighlighter:
   opened:
@@ -129,7 +124,6 @@ devtools.layout.flexboxhighlighter:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_LAYOUT_FLEXBOXHIGHLIGHTER_OPENED
 
 devtools.markup.flexboxhighlighter:
   opened:
@@ -146,7 +140,6 @@ devtools.markup.flexboxhighlighter:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_MARKUP_FLEXBOXHIGHLIGHTER_OPENED
 
 devtools.rules.flexboxhighlighter:
   opened:
@@ -163,7 +156,6 @@ devtools.rules.flexboxhighlighter:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_RULES_FLEXBOXHIGHLIGHTER_OPENED
 
 devtools.markup.gridinspector:
   opened:
@@ -180,7 +172,6 @@ devtools.markup.gridinspector:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_MARKUP_GRIDINSPECTOR_OPENED
 
 devtools.rules.gridinspector:
   opened:
@@ -197,7 +188,6 @@ devtools.rules.gridinspector:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_RULES_GRIDINSPECTOR_OPENED
 
 devtools.grid.gridinspector:
   opened:
@@ -214,7 +204,6 @@ devtools.grid.gridinspector:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_GRID_GRIDINSPECTOR_OPENED
 
 devtools.shadowdom:
   shadow_root_displayed:
@@ -234,7 +223,6 @@ devtools.shadowdom:
       - devtools-telemetry-alerts@mozilla.com
       - jdescottes@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_SHADOWDOM_SHADOW_ROOT_DISPLAYED
 
   shadow_root_expanded:
     type: boolean
@@ -252,7 +240,6 @@ devtools.shadowdom:
       - devtools-telemetry-alerts@mozilla.com
       - jdescottes@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_SHADOWDOM_SHADOW_ROOT_EXPANDED
 
   reveal_link_clicked:
     type: boolean
@@ -271,7 +258,6 @@ devtools.shadowdom:
       - devtools-telemetry-alerts@mozilla.com
       - jdescottes@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_SHADOWDOM_REVEAL_LINK_CLICKED
 
 devtools.tooltip:
   shown:
@@ -289,7 +275,6 @@ devtools.tooltip:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_TOOLTIP_SHOWN
 
 devtools.markup.scrollable.badge:
   clicked:
@@ -305,4 +290,3 @@ devtools.markup.scrollable.badge:
     notification_emails:
       - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_MARKUP_SCROLLABLE_BADGE_CLICKED

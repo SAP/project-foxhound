@@ -126,7 +126,7 @@ iconSrc: figma.boolean("Show icon", {
 }),
 ```
 
-For example, we need to work around the Figma "State" enumeration to ensure that [moz-checkbox](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/moz-checkbox/moz-checkbox.figma.ts) is disabled correctly in the generated code snippet:
+For example, we need to work around the Figma "State" enumeration to ensure that [moz-checkbox](https://searchfox.org/firefox-main/source/toolkit/content/widgets/moz-checkbox/moz-checkbox.figma.ts) is disabled correctly in the generated code snippet:
 
 ```javascript
 // Figma State=Disabled will set disabled:true on the generated code snippet

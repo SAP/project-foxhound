@@ -9,6 +9,7 @@ import com.google.mlkit.genai.common.DownloadCallback
 import com.google.mlkit.genai.common.DownloadStatus
 import com.google.mlkit.genai.common.GenAiException
 import com.google.mlkit.genai.common.StreamingCallback
+import com.google.mlkit.genai.prompt.Caches
 import com.google.mlkit.genai.prompt.Candidate
 import com.google.mlkit.genai.prompt.CountTokensResponse
 import com.google.mlkit.genai.prompt.GenerateContentRequest
@@ -102,15 +103,29 @@ internal class FakeGenerativeModel(
         TODO("Not yet implemented")
     }
 
+    override suspend fun generateContent(
+        prompt: String,
+        streamingCallback: StreamingCallback,
+    ): GenerateContentResponse {
+        TODO("Not yet implemented")
+    }
+
     override fun generateContentStream(request: GenerateContentRequest): Flow<GenerateContentResponse> {
         TODO("Not yet implemented")
     }
 
-    override suspend fun clearCaches() {
+    override suspend fun isCachingFeatureAvailable(): Boolean {
         TODO("Not yet implemented")
     }
 
-    override fun clearCachesForFutures(): ListenableFuture<Void> {
+    override val caches: Caches
+        get() = TODO("Not yet implemented")
+
+    override suspend fun clearImplicitCaches() {
+        TODO("Not yet implemented")
+    }
+
+    override fun clearImplicitCachesForFutures(): ListenableFuture<Void> {
         TODO("Not yet implemented")
     }
 

@@ -4,50 +4,59 @@
 
 
 from shlex import quote as shell_quote
+from typing import Literal, Optional, Union
 
 from gecko_taskgraph.transforms.job import configure_taskdesc_for_run, run_job_using
 from taskgraph.util import path
-from taskgraph.util.schema import LegacySchema, taskref_or_string
-from voluptuous import Any, Optional, Required
+from taskgraph.util.schema import Schema, taskref_or_string_msgspec
 
-secret_schema = {
-    Required("name"): str,
-    Required("path"): str,
-    Required("key"): str,
-    Optional("json"): bool,
-    Optional("decode"): bool,
-}
 
-dummy_secret_schema = {
-    Required("content"): str,
-    Required("path"): str,
-    Optional("json"): bool,
-}
+class SecretSchema(Schema, kw_only=True):
+    name: str
+    path: str
+    key: str
+    json: Optional[bool] = None
+    decode: Optional[bool] = None
 
-gradlew_schema = LegacySchema({
-    Required("using"): "gradlew",
-    Optional("pre-gradlew"): [[str]],
-    Required("gradlew"): [str],
-    Optional("post-gradlew"): [[str]],
+
+class DummySecretSchema(Schema, kw_only=True):
+    content: str
+    path: str
+    json: Optional[bool] = None
+
+
+class GradlewSchema(Schema, kw_only=True):
+    using: Literal["gradlew"]
+    pre_gradlew: Optional[list[list[str]]] = None
+    gradlew: list[str]
+    post_gradlew: Optional[list[list[str]]] = None
     # Base work directory used to set up the task.
-    Required("workdir"): str,
-    Optional("use-caches"): Any(bool, [str]),
-    Optional("secrets"): [secret_schema],
-    Optional("dummy-secrets"): [dummy_secret_schema],
-})
-
-run_commands_schema = LegacySchema({
-    Required("using"): "run-commands",
-    Optional("pre-commands"): [[str]],
-    Required("commands"): [[taskref_or_string]],
-    Required("workdir"): str,
-    Optional("use-caches"): Any(bool, [str]),
-    Optional("secrets"): [secret_schema],
-    Optional("dummy-secrets"): [dummy_secret_schema],
-})
+    workdir: str
+    use_caches: Optional[Union[bool, list[str]]] = None
+    secrets: Optional[list[SecretSchema]] = None
+    dummy_secrets: Optional[list[DummySecretSchema]] = None
 
 
-@run_job_using("docker-worker", "run-commands", schema=run_commands_schema)
+class MachGradleSchema(Schema, kw_only=True):
+    using: Literal["mach-gradle"]
+    gradle_project: str
+    gradle_args: list[str]
+    mach_build_exports: Optional[bool] = None
+    workdir: Optional[str] = None
+    use_caches: Optional[Union[bool, list[str]]] = None
+
+
+class RunCommandsSchema(Schema, kw_only=True):
+    using: Literal["run-commands"]
+    pre_commands: Optional[list[list[str]]] = None
+    commands: list[list[taskref_or_string_msgspec]]
+    workdir: str
+    use_caches: Optional[Union[bool, list[str]]] = None
+    secrets: Optional[list[SecretSchema]] = None
+    dummy_secrets: Optional[list[DummySecretSchema]] = None
+
+
+@run_job_using("docker-worker", "run-commands", schema=RunCommandsSchema)
 def configure_run_commands_schema(config, job, taskdesc):
     run = job["run"]
     pre_commands = run.pop("pre-commands", [])
@@ -67,7 +76,7 @@ def configure_run_commands_schema(config, job, taskdesc):
     configure_taskdesc_for_run(config, job, taskdesc, job["worker"]["implementation"])
 
 
-@run_job_using("docker-worker", "gradlew", schema=gradlew_schema)
+@run_job_using("docker-worker", "gradlew", schema=GradlewSchema)
 def configure_gradlew(config, job, taskdesc):
     run = job["run"]
     worker = taskdesc["worker"] = job["worker"]
@@ -107,6 +116,39 @@ def configure_gradlew(config, job, taskdesc):
         "/builds/worker/checkouts/gecko/taskcluster/scripts/builder/build-android.sh"
     )
     _inject_secrets_scopes(run, taskdesc)
+    _set_run_task_attributes(job)
+    configure_taskdesc_for_run(config, job, taskdesc, job["worker"]["implementation"])
+
+
+@run_job_using("docker-worker", "mach-gradle", schema=MachGradleSchema)
+def configure_mach_gradle(config, job, taskdesc):
+    run = job["run"]
+    worker = taskdesc["worker"] = job["worker"]
+
+    fetches_dir = "/builds/worker/fetches"
+    topsrc_dir = "/builds/worker/checkouts/gecko"
+    worker.setdefault("env", {}).update({
+        "ANDROID_SDK_ROOT": path.join(fetches_dir, "android-sdk-linux"),
+        "GRADLE_USER_HOME": path.join(
+            topsrc_dir, "mobile/android/gradle/dotgradle-offline"
+        ),
+        "MOZ_BUILD_DATE": config.params["moz_build_date"],
+    })
+    worker["env"].setdefault(
+        "MOZCONFIG",
+        path.join(
+            topsrc_dir,
+            "mobile/android/config/mozconfigs/android-arm/nightly-android-lints",
+        ),
+    )
+
+    worker["env"].update({
+        "GRADLE_PROJECT": run.pop("gradle-project"),
+        "GRADLE_ARGS": " ".join(run.pop("gradle-args")),
+    })
+    if run.pop("mach-build-exports", False):
+        worker["env"]["MACH_BUILD_EXPORTS"] = "1"
+    run["command"] = path.join(topsrc_dir, "taskcluster/scripts/builder/mach-gradle.sh")
     _set_run_task_attributes(job)
     configure_taskdesc_for_run(config, job, taskdesc, job["worker"]["implementation"])
 

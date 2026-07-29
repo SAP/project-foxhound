@@ -113,5 +113,8 @@ object ConsoleLogger {
         line(color, "ERR", "✖", level, msg)
     }
 
+    fun skip(type: TimedReporter.Type, level: Int, msg: String) =
+        line("\u001B[38;5;244m", "SKIP", "⊘", level, msg)
+
     fun info(level: Int, msg: String) = line(CYAN, "INFO", "•", level, msg)
 }

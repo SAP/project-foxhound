@@ -39,7 +39,7 @@ add_task(async function () {
   watchedResources.length = 0;
 
   info("Trigger an error in the page");
-  await ContentTask.spawn(tab.linkedBrowser, [], function frameScript() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], function frameScript() {
     const document = content.document;
     const scriptEl = document.createElement("script");
     scriptEl.textContent = `document.unknownFunction()`;

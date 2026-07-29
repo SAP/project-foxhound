@@ -4,6 +4,9 @@
 
 #include "nsIShellService.idl"
 
+interface nsIINIParserWriter;
+interface mozIDOMWindowProxy;
+
 [scriptable, uuid(2ce5c803-edcd-443d-98eb-ceba86d02d13)]
 interface nsIGNOMEShellService : nsIShellService
 {
@@ -23,4 +26,67 @@ interface nsIGNOMEShellService : nsIShellService
 
   AUTF8String getGSettingsString(in AUTF8String aScheme, in AUTF8String aKey);
   void setGSettingsString(in AUTF8String aScheme, in AUTF8String aKey, in AUTF8String aValue);
+
+  /**
+   * Gets the command name that was used to start the browser.
+   *
+   * @returns the value of argv[0].
+   */
+  ACString getArgv0();
+
+  /**
+   * Gets the program name from GLib, which is used as the default window
+   * class. This will often be identical to the app remotingName, but can be
+   * overridden with the '--name' command line argument.
+   *
+   * @returns the result of g_get_prgname.
+   */
+  ACString getGlibPrgname();
+
+  /**
+   * Used for the return value of getDesktopEntryStatus. 'ABSENT' indicates the
+   * desktop file doesn't exist (or does but is marked Hidden=); 'INVISIBLE'
+   * indicates the desktop file exists, but will not be shown (e.g. via
+   * NoDisplay=); 'VISIBLE' indicates that it does exist and will be shown.
+   */
+  cenum DesktopEntryStatus : 8 {
+    DESKTOP_ENTRY_ABSENT = 0,
+    DESKTOP_ENTRY_INVISIBLE = 1,
+    DESKTOP_ENTRY_VISIBLE = 2,
+  };
+
+  /**
+   * Determines whether the named desktop entry exists and is visible,
+   * returning a status intended for telemetry.
+   *
+   * Note that this could be inaccurate if you're running under Flatpak or
+   * Snap. From JavaScript, you can detect that with nsGIOService.
+   *
+   * @param aEntryId The ID of the desktop entry; this should end with
+   *        '.desktop'.
+   * @returns The current status of the desktop entry.
+   */
+  nsIGNOMEShellService_DesktopEntryStatus getDesktopEntryStatus(in AUTF8String aEntryId);
+
+  /**
+   * Uses the Dynamic Launcher portal to install a desktop entry for this user.
+   *
+   * @param aEntryId The ID of the desktop entry; if this were being installed
+   *        manually, this would be the filename before ".desktop".
+   * @param aDesktopEntry The content of the desktop entry. Note that the
+   *        'Name' and 'Icon' fields may be overridden by the user.
+   * @param aWindow The window to use as the owner of the dialog (if any).
+   * @returns A promise resolved when the user has completed the installation.
+   */
+  [implicit_jscontext]
+  Promise requestInstallDynamicLauncher(in AUTF8String aEntryId, in nsIINIParserWriter aDesktopEntry, in mozIDOMWindowProxy aWindow);
+
+  /**
+   * Uses the Dynamic Launcher portal to remove a desktop entry for this user.
+   *
+   * @param aEntryId The ID that the desktop entry was installed with.
+   * @returns A promise that resolves when uninstallation is complete.
+   */
+  [implicit_jscontext]
+  Promise requestUninstallDynamicLauncher(in AUTF8String aEntryId);
 };

@@ -86,6 +86,11 @@ extern "C" {
 #define NESTEGG_VIDEO_STEREO_TOP_BOTTOM 3 /**< Track is top-bottom stereo video.  Left first. */
 #define NESTEGG_VIDEO_STEREO_RIGHT_LEFT 11 /**< Track is side-by-side stereo video.  Right first. */
 
+#define NESTEGG_VIDEO_PROJECTION_RECTANGULAR     0 /**< Track uses rectangular projection type. */
+#define NESTEGG_VIDEO_PROJECTION_EQUIRECTANGULAR 1 /**< Track uses equirectangular projection type. */
+#define NESTEGG_VIDEO_PROJECTION_CUBEMAP         2 /**< Track uses cubemap projection type. */
+#define NESTEGG_VIDEO_PROJECTION_MESH            3 /**< Track uses mesh projection type. */
+
 #define NESTEGG_SEEK_SET 0 /**< Seek offset relative to beginning of stream. */
 #define NESTEGG_SEEK_CUR 1 /**< Seek offset relative to current position in stream. */
 #define NESTEGG_SEEK_END 2 /**< Seek offset relative to end of stream. */
@@ -111,16 +116,20 @@ extern "C" {
 typedef struct nestegg nestegg;               /**< Opaque handle referencing the stream state. */
 typedef struct nestegg_packet nestegg_packet; /**< Opaque handle referencing a packet of data. */
 
-/** User supplied IO context. */
+/** User supplied IO context.
+    Callers must supply #read, #seek, and #tell.
+    Reads are served through an internal buffer, reducing callback
+    overhead.  #read permits short reads, returning the number of bytes
+    actually read. */
 typedef struct {
-  /** User supplied read callback.
+  /** User supplied read callback.  Short reads are permitted.
       @param buffer   Buffer to read data into.
-      @param length   Length of supplied buffer in bytes.
+      @param length   Maximum number of bytes to read.
       @param userdata The #userdata supplied by the user.
-      @retval  1 Read succeeded.
+      @returns Number of bytes read.
       @retval  0 End of stream.
       @retval -1 Error. */
-  int (* read)(void * buffer, size_t length, void * userdata);
+  int64_t (* read)(void * buffer, size_t length, void * userdata);
 
   /** User supplied seek callback.
       @param offset   Offset within the stream to seek to.
@@ -180,6 +189,20 @@ typedef struct {
                                               NaN means element not present. */
   double luminance_min;                  /**< Minimum luminance in cd/m2.
                                               NaN means element not present. */
+  unsigned int max_cll;                  /**< Maximum Content Light Level in cd/m2.
+                                              0 means element not present. */
+  unsigned int max_fall;                 /**< Maximum Frame-Average Light Level in cd/m2.
+                                              0 means element not present. */
+  unsigned int projection_type;          /**< Projection type.  One of #NESTEGG_VIDEO_PROJECTION_RECTANGULAR,
+                                              #NESTEGG_VIDEO_PROJECTION_EQUIRECTANGULAR,
+                                              #NESTEGG_VIDEO_PROJECTION_CUBEMAP, or
+                                              #NESTEGG_VIDEO_PROJECTION_MESH. */
+  double projection_pose_yaw;            /**< Specifies a yaw rotation to the projection.
+                                              Value represents a clockwise rotation, in degrees, around the up vector. */
+  double projection_pose_pitch;          /**< Specifies a pitch rotation to the projection.
+                                              Value represents a counter-clockwise rotation, in degrees, around the right vector. */
+  double projection_pose_roll;           /**< Specifies a roll rotation to the projection.
+                                              Value represents a counter-clockwise rotation, in degrees, around the forward vector. */
 } nestegg_video_params;
 
 /** Parameters specific to an audio track. */
@@ -511,6 +534,16 @@ int nestegg_packet_offsets(nestegg_packet * packet,
     @retval -1 Error. */
 int nestegg_packet_reference_block(nestegg_packet * packet,
                                    int64_t * reference_block);
+
+/** Query the logical stream position after a packet has been fully read.
+    For SimpleBlock packets this is the end of the block; for BlockGroup
+    packets this is the end of the entire group including any
+    BlockDuration, ReferenceBlock, and BlockAdditions elements.
+    @param packet     Packet initialized by #nestegg_read_packet.
+    @param end_offset Storage for the queried offset.
+    @retval  0 Success.
+    @retval -1 Error. */
+int nestegg_packet_end_offset(nestegg_packet * packet, int64_t * end_offset);
 
 /** Query the presence of cues.
     @param context  Stream context initialized by #nestegg_init.

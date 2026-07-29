@@ -71,6 +71,26 @@ def which(name):
 def validate_clone_dest(dest: Path):
     dest = dest.resolve()
 
+    if WINDOWS:
+        # Keep in sync with the path length checks in configure.py.
+        WIN32_MAX_PATH = 260
+        LONGEST_KNOWN_OBJDIR_RELATIVE_PATH = 170
+        DEFAULT_OBJDIR_NAME_LEN = 28  # /obj-x86_64-pc-windows-msvc/
+        max_srcdir_len = (
+            WIN32_MAX_PATH
+            - LONGEST_KNOWN_OBJDIR_RELATIVE_PATH
+            - DEFAULT_OBJDIR_NAME_LEN
+        )
+        dest_len = len(str(dest))
+        if dest_len > max_srcdir_len:
+            print(
+                f"ERROR! Destination path ({dest}) is {dest_len} characters, "
+                f"which exceeds the Windows limit of {max_srcdir_len}. "
+                f"This will cause build failures due to path length restrictions.\n"
+                f"Please choose a shorter path (e.g. D:\\mozilla-source\\firefox)."
+            )
+            return None
+
     if not dest.exists():
         return dest
 

@@ -1,0 +1,23 @@
+{
+  "label": "La Personnelle and Desjardins General insurance",
+  "bugs": {
+    "1902477": {
+      "issue": "blocked-content",
+      "matches": ["*://*.thepersonal.com/*"]
+    },
+    "1902478": {
+      "issue": "blocked-content",
+      "matches": ["*://*.lapersonnelle.com/*"]
+    },
+    "1902483": {
+      "issue": "blocked-content",
+      "matches": ["*://*.desjardinsgeneralinsurance.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

@@ -23,11 +23,14 @@ ChromeUtils.defineESModuleGetters(this, {
   UrlbarController:
     "moz-src:///browser/components/urlbar/UrlbarController.sys.mjs",
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
   UrlbarProviderOpenTabs:
     "moz-src:///browser/components/urlbar/UrlbarProviderOpenTabs.sys.mjs",
+  UrlbarProviderSearchSuggestions:
+    "moz-src:///browser/components/urlbar/UrlbarProviderSearchSuggestions.sys.mjs",
   ProvidersManager:
     "moz-src:///browser/components/urlbar/UrlbarProvidersManager.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
   UrlbarTokenizer:
     "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
@@ -807,8 +810,10 @@ function makeSearchResult(
   }
 
   if (isRichSuggestion) {
-    payload.icon =
-      "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
+    payload.icon = UrlbarUtils.getRemoteIconUrl(
+      "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==",
+      UrlbarProviderSearchSuggestions.RICH_ICON_SIZE
+    );
     payload.description = "description";
   }
 
@@ -843,6 +848,8 @@ function makeSearchResult(
  *   check which provider offered a result unless this option is specified.
  * @param {number} [options.source]
  *   The source of the result
+ * @param {boolean} [options.isAutofillFallback]
+ *   Whether it's a result of being a fallback for the autofill result.
  * @returns {UrlbarResult}
  */
 function makeVisitResult(
@@ -855,6 +862,7 @@ function makeVisitResult(
     tags = [],
     heuristic = false,
     source = UrlbarUtils.RESULT_SOURCE.HISTORY,
+    isAutofillFallback = false,
   }
 ) {
   let payload = {
@@ -888,6 +896,10 @@ function makeVisitResult(
 
   if (!heuristic && tags) {
     payload.tags = tags;
+  }
+
+  if (isAutofillFallback) {
+    payload.isAutofillFallback = true;
   }
 
   return new UrlbarResult({
@@ -976,7 +988,8 @@ function makeGlobalActionsResult({
  *   The value that would be filled if the autofill result was confirmed.
  *   Has no effect if `autofilled` is not specified.
  * @param {object} [options.conditionalPayloadProperties]
- *   An object mapping payload property names to objects { optional, ignore }.
+ *   An object mapping payload property names to objects
+ *   { optional, ignore, custom }.
  *   See the code below.
  * @param {Array} options.matches
  *   An array of UrlbarResults.
@@ -1093,11 +1106,17 @@ async function check_results({
 
   for (let i = 0; i < matches.length; i++) {
     let actual = context.results[i];
+
+    let actualJsonable = { payload: actual.payload };
+    for (let key of Object.keys(propertiesToCheck)) {
+      actualJsonable[key] = actual[key];
+    }
+
     let expected = matches[i];
     info(
       `Comparing results at index ${i}:` +
         " actual=" +
-        JSON.stringify(actual) +
+        JSON.stringify(actualJsonable) +
         " expected=" +
         JSON.stringify(expected)
     );
@@ -1148,6 +1167,11 @@ async function check_results({
           continue;
         }
 
+        if (condition?.custom?.(i, actual)) {
+          // The custom assertion consumed this assertion.
+          continue;
+        }
+
         Assert.deepEqual(
           actual.payload[key],
           expected.payload[key],
@@ -1156,6 +1180,30 @@ async function check_results({
       }
     }
   }
+}
+
+/**
+ * Reads a single column from moz_origins for the origin that matches the url.
+ *
+ * @param {string} url
+ *   A URL whose origin row should be looked up.
+ * @param {string} column
+ *   The column name to read from moz_origins.
+ */
+async function getOriginColumn(url, column) {
+  let db = await PlacesUtils.promiseDBConnection();
+  let rows = await db.executeCached(
+    `SELECT o.${column}
+     FROM moz_origins o
+     JOIN moz_places h ON h.origin_id = o.id
+     WHERE h.url_hash = hash(:url) AND h.url = :url
+     LIMIT 1`,
+    { url }
+  );
+  if (!rows.length) {
+    return undefined;
+  }
+  return rows[0].getResultByIndex(0);
 }
 
 /**

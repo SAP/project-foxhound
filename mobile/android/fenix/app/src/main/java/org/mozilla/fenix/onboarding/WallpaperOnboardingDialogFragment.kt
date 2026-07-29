@@ -13,8 +13,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.fragment.compose.content
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import com.google.android.material.bottomsheet.BottomSheetBehavior
@@ -31,7 +30,6 @@ import org.mozilla.fenix.compose.snackbar.Snackbar
 import org.mozilla.fenix.compose.snackbar.SnackbarState
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.requireComponents
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.settings.wallpaper.getWallpapersForOnboarding
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.wallpapers.Wallpaper
@@ -81,7 +79,7 @@ class WallpaperOnboardingDialogFragment : BottomSheetDialogFragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        requireContext().settings().showWallpaperOnboarding = false
+        requireComponents.settings.showWallpaperOnboarding = false
         Wallpapers.onboardingOpened.record(NoExtras())
     }
 
@@ -89,11 +87,9 @@ class WallpaperOnboardingDialogFragment : BottomSheetDialogFragment() {
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?,
-    ): View = ComposeView(requireContext()).apply {
-        this@WallpaperOnboardingDialogFragment.dialog?.setCanceledOnTouchOutside(true)
-
-        setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-        setContent {
+    ): View {
+        dialog?.setCanceledOnTouchOutside(true)
+        return content {
             FirefoxTheme {
                 val wallpapers = appStore.observeAsComposableState { state ->
                     state.wallpaperState.availableWallpapers.getWallpapersForOnboarding()
@@ -167,8 +163,5 @@ class WallpaperOnboardingDialogFragment : BottomSheetDialogFragment() {
 
         // The desired amount of seasonal wallpapers inside of the selector.
         const val SEASONAL_WALLPAPERS_COUNT = 3
-
-        // The desired amount of seasonal wallpapers inside of the selector.
-        const val CLASSIC_WALLPAPERS_COUNT = 2
     }
 }

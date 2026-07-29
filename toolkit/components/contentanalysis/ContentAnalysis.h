@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,7 +20,6 @@
 #include "nsTHashSet.h"
 #include "nsTStringHasher.h"
 
-#include <atomic>
 #include <regex>
 
 #ifdef XP_WIN
@@ -100,6 +97,10 @@ class ContentAnalysisRequest final : public nsIContentAnalysisRequest {
                          nsCOMPtr<nsIURI> aUrl, nsString aPrinterName,
                          Reason aReason,
                          dom::WindowGlobalParent* aWindowGlobalParent);
+
+  ContentAnalysisRequest(const ContentAnalysisRequest&) = delete;
+  ContentAnalysisRequest& operator=(ContentAnalysisRequest&) = delete;
+
   static nsresult GetFileDigest(const nsAString& aFilePath,
                                 nsCString& aDigestString);
 
@@ -110,14 +111,11 @@ class ContentAnalysisRequest final : public nsIContentAnalysisRequest {
   virtual ~ContentAnalysisRequest();
   ContentAnalysisRequest() = default;
 
-  ContentAnalysisRequest(const ContentAnalysisRequest&) = delete;
-  ContentAnalysisRequest& operator=(ContentAnalysisRequest&) = delete;
+  // See nsIContentAnalysisRequest for values
+  AnalysisType mAnalysisType = AnalysisType::eUnspecified;
 
   // See nsIContentAnalysisRequest for values
-  AnalysisType mAnalysisType;
-
-  // See nsIContentAnalysisRequest for values
-  Reason mReason;
+  Reason mReason = Reason::eUnknown;
 
   RefPtr<nsITransferable> mTransferable;
   RefPtr<dom::DataTransfer> mDataTransfer;
@@ -153,7 +151,7 @@ class ContentAnalysisRequest final : public nsIContentAnalysisRequest {
   int64_t mUserActionRequestsCount = 1;
 
   // Type of text to display, see nsIContentAnalysisRequest for values
-  OperationType mOperationTypeForDisplay;
+  OperationType mOperationTypeForDisplay = OperationType::eClipboard;
 
   // File name to display if mOperationTypeForDisplay is
   // eUpload or eDownload.
@@ -200,6 +198,9 @@ class ContentAnalysis final : public nsIContentAnalysis,
   NS_DECL_NSIOBSERVER
 
   ContentAnalysis();
+
+  ContentAnalysis(const ContentAnalysis&) = delete;
+  ContentAnalysis& operator=(ContentAnalysis&) = delete;
 
 #if defined(XP_WIN)
   struct PrintAllowedResult final {
@@ -288,9 +289,6 @@ class ContentAnalysis final : public nsIContentAnalysis,
 
  private:
   virtual ~ContentAnalysis();
-  // Remove unneeded copy constructor/assignment
-  ContentAnalysis(const ContentAnalysis&) = delete;
-  ContentAnalysis& operator=(ContentAnalysis&) = delete;
   // Only call this through CreateClientIfNecessary(), as it provides
   // synchronization to avoid doing this multiple times at once.
   nsresult CreateContentAnalysisClient(nsCString&& aPipePathName,
@@ -418,7 +416,7 @@ class ContentAnalysis final : public nsIContentAnalysis,
     nsCString mUserActionId;
 
     // Number of CA requests remaining for this transaction.
-    size_t mNumCARequestsRemaining;
+    size_t mNumCARequestsRemaining = 0;
 
     // True if we have issued a response for these requests.
     bool mResponded = false;
@@ -536,12 +534,12 @@ class ContentAnalysisResponse final : public nsIContentAnalysisResponse,
   void SetIsSyntheticResponse(bool aIsSyntheticResponse) {
     mIsSyntheticResponse = aIsSyntheticResponse;
   }
-
- private:
-  virtual ~ContentAnalysisResponse() = default;
   // Remove unneeded copy constructor/assignment
   ContentAnalysisResponse(const ContentAnalysisResponse&) = delete;
   ContentAnalysisResponse& operator=(ContentAnalysisResponse&) = delete;
+
+ private:
+  virtual ~ContentAnalysisResponse() = default;
   explicit ContentAnalysisResponse(
       content_analysis::sdk::ContentAnalysisResponse&& aResponse,
       const nsCString& aUserActionId);

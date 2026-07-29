@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,7 +25,7 @@ class ChromiumCDMCallback {
                                          bool aSuccessful) = 0;
 
   virtual void ResolvePromiseWithKeyStatus(uint32_t aPromiseId,
-                                           uint32_t aKeyStatus) = 0;
+                                           cdm::KeyStatus aKeyStatus) = 0;
 
   virtual void ResolvePromise(uint32_t aPromiseId) = 0;
 
@@ -34,7 +33,7 @@ class ChromiumCDMCallback {
                              const nsCString& aErrorMessage) = 0;
 
   virtual void SessionMessage(const nsACString& aSessionId,
-                              uint32_t aMessageType,
+                              cdm::MessageType aMessageType,
                               nsTArray<uint8_t>&& aMessage) = 0;
 
   virtual void SessionKeysChange(

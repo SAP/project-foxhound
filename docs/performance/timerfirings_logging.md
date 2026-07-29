@@ -32,21 +32,21 @@ The following sample shows the basics of this output.
 
 Each line has the following information.
 
--   The first two values identify the thread. This is not especially
-    useful.
--   The next value is the process ID (pid). This is useful in a
-    multi-process scenario.
--   Next is the timer kind, one of `fn` (function), `iface` (interface)
-    or `obs` (observer), which are the three kinds of timers that Gecko
-    supports.
--   Then comes the function kind, one of `ONE_SHOT` (a single-use
-    timer), `SLACK` or `PRECISE` (repeating timers of differing
-    precision).
--   Then comes the timer period, measured in milliseconds.
--   Finally there is the identifying information for the timer. Function
-    timers have an informative label. Interface and observer timers only
-    have an address, which is less useful, but they are uncommon enough
-    that this usually doesn\'t matter much.
+- The first two values identify the thread. This is not especially
+  useful.
+- The next value is the process ID (pid). This is useful in a
+  multi-process scenario.
+- Next is the timer kind, one of `fn` (function), `iface` (interface)
+  or `obs` (observer), which are the three kinds of timers that Gecko
+  supports.
+- Then comes the function kind, one of `ONE_SHOT` (a single-use
+  timer), `SLACK` or `PRECISE` (repeating timers of differing
+  precision).
+- Then comes the timer period, measured in milliseconds.
+- Finally there is the identifying information for the timer. Function
+  timers have an informative label. Interface and observer timers only
+  have an address, which is less useful, but they are uncommon enough
+  that this usually doesn\'t matter much.
 
 The above example shows only timers from C++ within Gecko. There are
 also timers for `setTimer` or `setInterval` calls in JavaScript code, as

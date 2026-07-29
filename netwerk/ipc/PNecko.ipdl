@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 ft=cpp : */
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,9 +7,6 @@ include protocol PHttpChannel;
 include protocol PCacheEntryWriteHandle;
 include protocol PCookieService;
 include protocol PBrowser;
-#ifdef MOZ_WIDGET_GTK
-include protocol PGIOChannel;
-#endif
 #ifdef MOZ_WIDGET_ANDROID
 include protocol PGeckoViewContentChannel;
 #endif
@@ -46,6 +40,13 @@ using nsIDNSService::DNSFlags from "nsIDNSService.h";
 namespace mozilla {
 namespace net {
 
+struct HTMLDNSPrefetchArgs {
+  nsString hostname;
+  bool isHttps;
+  OriginAttributes originAttributes;
+  DNSFlags flags;
+};
+
 //-------------------------------------------------------------------
 [NestedUpTo=inside_cpow] sync protocol PNecko
 {
@@ -59,9 +60,6 @@ namespace net {
   manages PTCPServerSocket;
   manages PUDPSocket;
   manages PDNSRequest;
-#ifdef MOZ_WIDGET_GTK
-  manages PGIOChannel;
-#endif
 #ifdef MOZ_WIDGET_ANDROID
   manages PGeckoViewContentChannel;
 #endif
@@ -101,6 +99,7 @@ parent:
                            bool anonymous);
   async HTMLDNSPrefetch(nsString hostname, bool isHttps,
                         OriginAttributes originAttributes, DNSFlags flags);
+  async HTMLDNSPrefetchBatch(HTMLDNSPrefetchArgs[] prefetches);
   async CancelHTMLDNSPrefetch(nsString hostname, bool isHttps,
                               OriginAttributes originAttributes,
                               DNSFlags flags, nsresult reason);
@@ -110,10 +109,6 @@ parent:
    * specialized nsIParentChannel handling.
    */
   async ConnectBaseChannel(uint32_t channelId);
-
-#ifdef MOZ_WIDGET_GTK
-  async PGIOChannel(nullable PBrowser browser, SerializedLoadContext loadContext, GIOChannelCreationArgs args);
-#endif
 
 #ifdef MOZ_WIDGET_ANDROID
   async PGeckoViewContentChannel(nullable PBrowser browser,

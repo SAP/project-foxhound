@@ -8,7 +8,9 @@ import androidx.annotation.VisibleForTesting
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.coroutineScope
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
@@ -48,7 +50,6 @@ import org.mozilla.fenix.components.search.BOOKMARKS_SEARCH_ENGINE_ID
 import org.mozilla.fenix.components.search.HISTORY_SEARCH_ENGINE_ID
 import org.mozilla.fenix.components.search.TABS_SEARCH_ENGINE_ID
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.ext.navigateSafe
 import org.mozilla.fenix.ext.telemetryName
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.search.SearchFragmentAction.Init
@@ -118,7 +119,7 @@ class FenixSearchMiddleware(
                 store.dispatch(
                     SearchFragmentAction.UpdateSearchState(
                         browserStore.state.search,
-                        true,
+                        isPrivate = browsingModeManager.mode.isPrivate,
                     ),
                 )
             }
@@ -170,7 +171,12 @@ class FenixSearchMiddleware(
 
             is SuggestionSelected -> {
                 action.suggestion.editSuggestion?.let {
-                    toolbarStore.dispatch(BrowserEditToolbarAction.SearchQueryUpdated(BrowserToolbarQuery(it)))
+                    toolbarStore.dispatch(
+                        BrowserEditToolbarAction.SearchQueryUpdated(
+                            query = BrowserToolbarQuery(it),
+                            isQueryPrefilled = true,
+                        ),
+                    )
                 }
             }
 
@@ -234,7 +240,7 @@ class FenixSearchMiddleware(
                 (searchStartedForCurrentUrl || FxNimbus.features.searchSuggestionsOnHomepage.value().enabled)
         }
         val shouldShowSearchSuggestions = with(store.state) {
-            ((url != query && query.isNotBlank()) || showSearchShortcuts)
+            url != query && query.isNotBlank()
         }
         val shouldShowSuggestions = shouldShowTrendingSearches || shouldShowSearchSuggestions
 
@@ -243,7 +249,7 @@ class FenixSearchMiddleware(
         val showPrivatePrompt = with(store.state) {
             !settings.showSearchSuggestionsInPrivateOnboardingFinished &&
                     browsingModeManager.mode.isPrivate &&
-                    !isSearchSuggestionsFeatureEnabled() && !showSearchShortcuts &&
+                    !isSearchSuggestionsFeatureEnabled() &&
                     query.isNotBlank() && url != query
         }
 
@@ -261,12 +267,7 @@ class FenixSearchMiddleware(
         val suggestionsProvidersBuilder = suggestionsProvidersBuilder ?: return
         store.dispatch(
             SearchProvidersUpdated(
-                buildList {
-                    if (store.state.showSearchShortcuts) {
-                        add(suggestionsProvidersBuilder.shortcutsEnginePickerProvider)
-                    }
-                    addAll((suggestionsProvidersBuilder.getProvidersToAdd(store.state.toSearchProviderState())))
-                },
+                suggestionsProvidersBuilder.getProvidersToAdd(store.state.toSearchProviderState()).toList(),
             ),
         )
     }
@@ -279,6 +280,7 @@ class FenixSearchMiddleware(
 
         return SearchSuggestionsProvidersBuilder(
             components = uiContext.components,
+            scope = ProcessLifecycleOwner.get().lifecycleScope,
             browsingModeManager = browsingModeManager,
             includeSelectedTab = store.state.tabId == null,
             loadUrlUseCase = loadUrlUseCase(store),
@@ -289,9 +291,7 @@ class FenixSearchMiddleware(
                 DefaultSearchEngineProvider(uiContext.components.core.store),
             ),
             suggestionIconProvider = DefaultSuggestionIconProvider(uiContext),
-            onSearchEngineShortcutSelected = ::handleSearchEngineSuggestionClicked,
             onSearchEngineSuggestionSelected = ::handleSearchEngineSuggestionClicked,
-            onSearchEngineSettingsClicked = { handleClickSearchEngineSettings() },
         )
     }
 
@@ -462,13 +462,6 @@ class FenixSearchMiddleware(
 
     private fun handleSearchEngineSuggestionClicked(searchEngine: SearchEngine) {
         appStore.dispatch(SearchEngineSelected(searchEngine, true))
-    }
-
-    @VisibleForTesting
-    internal fun handleClickSearchEngineSettings() {
-        val directions = SearchDialogFragmentDirections.actionGlobalSearchEngineFragment()
-        navController.navigateSafe(R.id.searchDialogFragment, directions)
-        browserStore.dispatch(AwesomeBarAction.EngagementFinished(abandoned = true))
     }
 
     private inline fun <S : State, A : MVIAction> Store<S, A>.observeWhileActive(

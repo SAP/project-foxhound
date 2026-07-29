@@ -8,8 +8,8 @@ use api::{ColorF, LineOrientation, BorderStyle};
 use crate::batch::{AlphaBatchBuilder, AlphaBatchContainer, BatchTextures};
 use crate::batch::{ClipBatcher, BatchBuilder, INVALID_SEGMENT_INDEX, ClipMaskInstanceList};
 use crate::render_task::{SubTask, RectangleClipSubTask, ImageClipSubTask};
-use crate::command_buffer::CommandBufferList;
-use crate::pattern::{PatternKind, PatternShaderInput};
+use crate::command_buffer::{CommandBufferList, QuadFlags};
+use crate::pattern::{Pattern, PatternKind, PatternShaderInput};
 use crate::segment::EdgeMask;
 use crate::spatial_tree::SpatialTree;
 use crate::clip::ClipStore;
@@ -24,11 +24,7 @@ use crate::tile_cache::{SliceId, TileCacheInstance};
 use crate::transform::TransformPalette;
 use crate::quad;
 use crate::prim_store::{PrimitiveInstance, PrimitiveStore, PrimitiveScratchBuffer};
-use crate::prim_store::gradient::{
-    FastLinearGradientInstance, LinearGradientInstance, RadialGradientInstance,
-    ConicGradientInstance,
-};
-use crate::renderer::{GpuBufferAddress, GpuBufferBuilder};
+use crate::renderer::{BlendMode, GpuBufferAddress, GpuBufferBuilder};
 use crate::render_backend::DataStores;
 use crate::render_task::{RenderTaskKind, RenderTaskAddress};
 use crate::render_task::{RenderTask, ScalingTask, SVGFEFilterTask};
@@ -174,10 +170,6 @@ pub struct RenderTarget {
     pub border_segments_complex: FrameVec<BorderInstance>,
     pub border_segments_solid: FrameVec<BorderInstance>,
     pub line_decorations: FrameVec<LineDecorationJob>,
-    pub fast_linear_gradients: FrameVec<FastLinearGradientInstance>,
-    pub linear_gradients: FrameVec<LinearGradientInstance>,
-    pub radial_gradients: FrameVec<RadialGradientInstance>,
-    pub conic_gradients: FrameVec<ConicGradientInstance>,
 
     pub clip_batcher: ClipBatcher,
 
@@ -239,6 +231,11 @@ impl RenderTarget {
                 FastHashMap::default(),
                 FastHashMap::default(),
                 FastHashMap::default(),
+                FastHashMap::default(),
+                FastHashMap::default(),
+                FastHashMap::default(),
+                FastHashMap::default(),
+                FastHashMap::default(),
             ],
             prim_instances_with_scissor: FastHashMap::default(),
             clip_masks: ClipMaskInstanceList::new(memory),
@@ -247,10 +244,6 @@ impl RenderTarget {
             border_segments_solid: memory.new_vec(),
             clears: memory.new_vec(),
             line_decorations: memory.new_vec(),
-            fast_linear_gradients: memory.new_vec(),
-            linear_gradients: memory.new_vec(),
-            radial_gradients: memory.new_vec(),
-            conic_gradients: memory.new_vec(),
         }
     }
 
@@ -364,6 +357,14 @@ impl RenderTarget {
 
         match task.kind {
             RenderTaskKind::Prim(ref info) => {
+                // If the transform is not axis aligned, we may not be covering all of the
+                // pixels in the render task, so we need to clear it.
+                if !info.transform_id.is_2d_axis_aligned() {
+                    self.clears.push((target_rect, ColorF::TRANSPARENT));
+                }
+                // Note: For single-primitive tasks like this we always want to disable blending
+                // and overwrite whatever pixel data is in the target, even if the primitive is
+                // note entirely opaque. This is why we unconditionally set the opaque quad flag.
                 let render_task_address = task_id.into();
                 quad::add_to_batch(
                     info.pattern,
@@ -371,11 +372,12 @@ impl RenderTarget {
                     render_task_address,
                     info.transform_id,
                     info.prim_address_f,
-                    info.quad_flags,
+                    info.quad_flags | QuadFlags::IS_OPAQUE,
                     info.edge_flags,
                     INVALID_SEGMENT_INDEX as u8,
                     info.texture_input,
                     ZBufferId(0),
+                    BlendMode::None, // This parameter is ignored
                     render_tasks,
                     gpu_buffer_builder,
                     |key, instance| {
@@ -455,7 +457,6 @@ impl RenderTarget {
                 let clear_to_one = self.clip_batcher.add(
                     task_info.clip_node_range,
                     task_info.root_spatial_node_index,
-                    render_tasks,
                     clip_store,
                     transforms,
                     task_info.actual_rect,
@@ -534,18 +535,6 @@ impl RenderTarget {
                         self.border_segments_complex.push(instance);
                     }
                 }
-            }
-            RenderTaskKind::FastLinearGradient(ref task_info) => {
-                self.fast_linear_gradients.push(task_info.to_instance(&target_rect));
-            }
-            RenderTaskKind::LinearGradient(ref task_info) => {
-                self.linear_gradients.push(task_info.to_instance(&target_rect));
-            }
-            RenderTaskKind::RadialGradient(ref task_info) => {
-                self.radial_gradients.push(task_info.to_instance(&target_rect));
-            }
-            RenderTaskKind::ConicGradient(ref task_info) => {
-                self.conic_gradients.push(task_info.to_instance(&target_rect));
             }
             RenderTaskKind::Image(..) |
             RenderTaskKind::Cached(..) |
@@ -893,6 +882,7 @@ fn add_rect_clip_task_to_batch(
         INVALID_SEGMENT_INDEX as u8,
         RenderTaskId::INVALID,
         ZBufferId(0),
+        BlendMode::None, // This parameter is ignored.
         render_tasks,
         gpu_buffers,
         |_, prim| {
@@ -941,9 +931,11 @@ fn add_image_clip_task_to_batch(
     // input.
     let segment_index = 0;
 
+    let pattern = Pattern::texture(task.src_task, false);
+
     quad::add_to_batch(
-        PatternKind::ColorOrTexture,
-        PatternShaderInput::default(),
+        pattern.kind,
+        pattern.shader_input,
         masked_task_address,
         task.quad_transform_id,
         task.quad_address,
@@ -952,6 +944,7 @@ fn add_image_clip_task_to_batch(
         segment_index,
         task.src_task,
         ZBufferId(0),
+        BlendMode::None, // This parameter is ignored.
         render_tasks,
         gpu_buffers,
         |_, prim| {

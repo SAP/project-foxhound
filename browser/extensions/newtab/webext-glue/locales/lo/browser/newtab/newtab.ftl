@@ -16,6 +16,46 @@ newtab-personalize-dialog-label =
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = ແທັບໃຫມ່
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label = { $num } ແຖວ
+home-restore-defaults-srd =
+    .label = ກູ້ຄືນຄ່າເລີ່ມຕົ້ນ
+    .accesskey = ກ
+home-mode-choice-default-fx-srd =
+    .label = { -firefox-home-brand-name } (ຄ່າເລີ່ມຕົ້ນ)
+home-mode-choice-custom-srd =
+    .label = URLs ທີ່ກຳນົດເອງ…
+home-mode-choice-blank-srd =
+    .label = ຫນ້າເປົ່າ
+home-prefs-shortcuts-header-srd =
+    .label = ທາງລັດ
+home-prefs-shortcuts-select =
+    .aria-label = ທາງລັດ
+home-prefs-shortcuts-by-option-sponsored-srd =
+    .label = ທາງລັດສະປອນເຊີ
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = ເລື່ອງລາວທີ່ໄດ້ຮັບການສະຫນັບສະຫນູນ
+home-prefs-highlights-option-visited-pages-srd =
+    .label = ຫນ້າທີ່ເຂົ້າໄປເບິ່ງແລ້ວ
+home-prefs-highlights-options-bookmarks-srd =
+    .label = ບຸກມາກ
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = ການດາວໂຫລດລ່າສຸດ
+home-prefs-recent-activity-header-srd =
+    .label = ກິດ​ຈະ​ກໍາ​ທີ່​ຜ່ານ​ມາ
+home-prefs-recent-activity-select =
+    .aria-label = ກິດ​ຈະ​ກໍາ​ທີ່​ຜ່ານ​ມາ
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -41,7 +81,7 @@ newtab-search-box-input =
     .placeholder = ຄົ້ນຫາເວັບໄຊທ
     .aria-label = ຄົ້ນຫາເວັບໄຊທ
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = ເພີ່ມ Search Engine
 newtab-topsites-add-shortcut-header = ທາງລັດໃໝ່
@@ -240,9 +280,17 @@ newtab-error-fallback-refresh-link = ຟື້ນຟູໜ້າເພື່ອ�
 
 newtab-custom-shortcuts-title = ທາງລັດ
 newtab-custom-shortcuts-subtitle = ເວັບໄຊທທີ່ທ່ານໄດ້ບັນທຶກໄວ້ ຫລື ເຂົ້າໄປເບິງມາ
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = ທາງລັດ
     .description = ເວັບໄຊທທີ່ທ່ານໄດ້ບັນທຶກໄວ້ ຫລື ເຂົ້າໄປເບິງມາ
+newtab-custom-shortcuts-nova =
+    .label = ທາງລັດ
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label = { $num } ແຖວ
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector = { $num } ແຖວ

@@ -5,7 +5,13 @@
 #include "mozilla/ScopeExit.h"
 #include "mozilla/UniquePtr.h"
 
+#include "gc/GCParallelTask.h"
+#include "gc/GCRuntime.h"
+#include "js/Vector.h"
 #include "jsapi-tests/tests.h"
+
+using namespace js;
+using namespace js::gc;
 
 static unsigned gSliceCallbackCount = 0;
 static bool gSawAllSliceCallbacks;
@@ -275,3 +281,40 @@ BEGIN_TEST(testGCTree) {
   return true;
 }
 END_TEST(testGCTree)
+
+class TestTask : public GCParallelTask {
+ public:
+  explicit TestTask(GCRuntime* gc)
+      : GCParallelTask(gc, gcstats::PhaseKind::NONE) {}
+  void run(AutoLockHelperThreadState& lock) override { runCount++; }
+  size_t runCount = 0;
+};
+
+BEGIN_TEST(testGCParallelTaskRunsOnce) {
+  constexpr size_t TaskCount = 12;
+
+  GCRuntime* gc = &cx->runtime()->gc;
+  Vector<TestTask, 0, SystemAllocPolicy> tasks;
+  CHECK(tasks.reserve(TaskCount));
+  for (size_t i = 0; i < TaskCount; i++) {
+    MOZ_ALWAYS_TRUE(tasks.emplaceBack(gc));
+  }
+
+  for (size_t count = 0; count < TaskCount; count++) {
+    fprintf(stderr, "Run %zu\n", count);
+    AutoLockHelperThreadState lock;
+    for (size_t i = 0; i < count; i++) {
+      tasks[i].runCount = 0;
+      tasks[i].startOrRunIfIdle(lock);  // May queue the task.
+      tasks[i].startOrRunIfIdle(lock);  // Shouldn't re-run queued task.
+    }
+
+    for (size_t i = 0; i < count; i++) {
+      tasks[i].joinWithLockHeld(lock);
+      CHECK(tasks[i].runCount == 1);
+    }
+  }
+
+  return true;
+}
+END_TEST(testGCParallelTaskRunsOnce)

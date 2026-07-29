@@ -14,7 +14,7 @@ from taskgraph.util.schema import resolve_keyed_by
 from typing_extensions import final
 
 from gecko_taskgraph import GECKO
-from gecko_taskgraph.util.attributes import is_try, task_name
+from gecko_taskgraph.util.attributes import task_name
 
 
 @final
@@ -136,7 +136,7 @@ def set_task_configuration(config, tasks):
                         this_task["run"]["command"] + f" --esr-version {esr_version}"
                     )
 
-            if is_try(config.params):
+            if config.params["level"] == "1":
                 this_task["run"]["command"] = (
                     this_task["run"]["command"] + " --use-balrog-staging"
                 )

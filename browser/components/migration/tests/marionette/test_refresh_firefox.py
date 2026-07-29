@@ -256,7 +256,7 @@ class TestFirefoxRefresh(MarionetteTestCase):
             });
             savePromises.push(Promise.allSettled([groupSaved, groupRemoved]));
           }
-          TabStateFlusher.flushWindow(gBrowser.ownerGlobal).then(() => {
+          TabStateFlusher.flushWindow(gBrowser.documentGlobal).then(() => {
             groups.forEach(group => {
               group.saveAndClose();
             })
@@ -389,7 +389,7 @@ class TestFirefoxRefresh(MarionetteTestCase):
         self.assertEqual(
             formFieldResultCount,
             1,
-            "Should have exactly 1 entry for this field, got %d" % formFieldResultCount,
+            f"Should have exactly 1 entry for this field, got {formFieldResultCount}",
         )
         if formFieldResultCount == 1:
             self.assertEqual(formFieldResults[0]["value"], self._formHistoryValue)
@@ -424,7 +424,7 @@ class TestFirefoxRefresh(MarionetteTestCase):
         self.assertEqual(
             formAutofillAddressCount,
             1,
-            "Should have exactly 1 saved address, got %d" % formAutofillAddressCount,
+            f"Should have exactly 1 saved address, got {formAutofillAddressCount}",
         )
         if formAutofillAddressCount == 1:
             self.assertEqual(
@@ -583,6 +583,18 @@ class TestFirefoxRefresh(MarionetteTestCase):
         )
         self.assertTrue(refreshPromptDisabled)
 
+    def checkProfileSource(self, expected_source):
+        result = self.runAsyncCode(
+            """
+            let resolve = arguments[arguments.length - 1]
+            let { ProfileAge } = ChromeUtils.importESModule(
+              "resource://gre/modules/ProfileAge.sys.mjs"
+            );
+            ProfileAge().then(age => age.source).then(resolve)
+            """
+        )
+        self.assertEqual(result, expected_source)
+
     def checkProfile(self, has_migrated=False, expect_sync_user=True):
         self.checkPassword()
         self.checkBookmarkInMenu()
@@ -592,6 +604,7 @@ class TestFirefoxRefresh(MarionetteTestCase):
         self.checkCookie()
         self.checkFxA()
         self.checkSync(expect_sync_user)
+        self.checkProfileSource("reset" if has_migrated else "pre-reset")
         if has_migrated:
             self.checkBookmarkToolbarVisibility()
             self.checkSession()
@@ -599,6 +612,7 @@ class TestFirefoxRefresh(MarionetteTestCase):
             self.checkRefreshPromptDisabled()
 
     def createProfileData(self):
+        self.setProfileSource()
         self.savePassword()
         self.createBookmarkInMenu()
         self.createBookmarksOnToolbar()
@@ -609,6 +623,21 @@ class TestFirefoxRefresh(MarionetteTestCase):
         self.createSession()
         self.createFxa()
         self.createSync()
+
+    def setProfileSource(self):
+        self.runAsyncCode(
+            """
+            let resolve = arguments[arguments.length - 1];
+            let { ProfileAge } = ChromeUtils.importESModule(
+              "resource://gre/modules/ProfileAge.sys.mjs"
+            );
+
+            ProfileAge().then(times => {
+              times._times.source = "pre-reset";
+              return times.writeTimes();
+            }).then(resolve).catch(console.error);
+            """
+        )
 
     def setUpScriptData(self):
         self.marionette.set_context(self.marionette.CONTEXT_CHROME)
@@ -700,7 +729,7 @@ class TestFirefoxRefresh(MarionetteTestCase):
           // Ensure the current (temporary) profile is in profiles.ini:
           let profD = Services.dirsvc.get("ProfD", Ci.nsIFile);
           let profileName = arguments[1];
-          let myProfile = global.profSvc.createProfile(profD, profileName);
+          let myProfile = global.profSvc.createProfile(profD, profileName, "pre-reset");
           global.profSvc.flush()
 
           // Now add the reset parameters:
@@ -793,3 +822,192 @@ class TestFirefoxRefresh(MarionetteTestCase):
 
         self.checkFxA()
         self.checkSync(False)
+
+
+class TestSelectableProfileFirefoxRefresh(TestFirefoxRefresh):
+    def runAsync(self, script, *args, **kwargs):
+        wrappedScript = """
+            let args = Array.from(arguments);
+            let outerResolve = args.pop();
+            (async () => {
+                try {
+                    let fn = async () => {
+
+            """
+        wrappedScript += f"{script}"
+        wrappedScript += """
+
+                    };
+                    let innerResults = await fn(args);
+                    if (!Array.isArray(innerResults)) {
+                        innerResults = [innerResults];
+                    }
+                    innerResults.unshift("OK");
+                    return innerResults;
+                } catch(ex) {
+                    return ["ERROR", ex.name, ex.message, ex.stack];
+                }
+            })().then(outerResolve);
+        """
+
+        results = self.runAsyncCode(wrappedScript, *args, **kwargs)
+        self.assertEqual("OK", results[0], "something went wrong: " + str(results))
+        del results[0]
+        return results
+
+    def check_selectable_profile_service(self):
+        pref_value = self.runCode(
+            """
+            return Services.prefs.getStringPref("toolkit.profiles.storeID", null);
+        """,
+            script_args=(self.marionette.instance.profile.profile,),
+        )
+
+        self.assertEqual(pref_value, self.storeID)
+
+        [profile_path, profile_name, storeID, profile_count, profile_id] = (
+            self.runAsync(
+                """
+                let profileCount = (await SelectableProfileService.getAllProfiles()).length;
+                let profile = SelectableProfileService.currentProfile;
+
+                return [profile.path, profile.name, SelectableProfileService.storeID, profileCount, profile.id];
+            """,
+                script_args=(self.marionette.instance.profile.profile,),
+            )
+        )
+
+        self.assertNotEqual(
+            profile_path, self.profile_path
+        )  # The path should be different after migration
+        self.assertEqual(profile_name, self.profile_name)
+        self.assertEqual(storeID, self.storeID)
+        self.assertEqual(profile_count, self.profile_count)
+        self.assertEqual(profile_id, self.profile_id)
+
+    def doReset(self):
+        profileName = "marionette-test-profile-" + str(int(time.time() * 1000))
+        cleanup = PendingCleanup(profileName)
+
+        self.runCode(
+            """
+          // Ensure the current (temporary) profile is in profiles.ini:
+          let profD = Services.dirsvc.get("ProfD", Ci.nsIFile);
+          let profileName = arguments[1];
+          let myProfile = global.profSvc.createProfile(profD, profileName, "pre-reset");
+          global.profSvc.flush()
+
+          // Now add the reset parameters:
+          let prefsToKeep = Array.from(Services.prefs.getChildList("marionette."));
+          // Add all the modified preferences set from geckoinstance.py to avoid
+          // non-local connections.
+          prefsToKeep = prefsToKeep.concat(JSON.parse(
+              Services.env.get("MOZ_MARIONETTE_REQUIRED_PREFS")));
+          let prefObj = {};
+          for (let pref of prefsToKeep) {
+            prefObj[pref] = global.Preferences.get(pref);
+          }
+          Services.env.set("MOZ_MARIONETTE_PREF_STATE_ACROSS_RESTARTS", JSON.stringify(prefObj));
+        """,
+            script_args=(
+                self.marionette.instance.profile.profile,
+                profileName,
+            ),
+        )
+        # restart so we can create some profiles
+        self.marionette.restart(clean=False, in_app=True)
+
+        [profile_path, profile_name, storeID, profile_count, profile_id] = (
+            self.runAsync(
+                """
+                let newProfile = await SelectableProfileService.createNewProfile(false, null, "tests");
+
+                let profileCount = (await SelectableProfileService.getAllProfiles()).length;
+
+                let profile = SelectableProfileService.currentProfile;
+
+                return [profile.path, profile.name, SelectableProfileService.storeID, profileCount, profile.id];
+        """,
+                script_args=(self.marionette.instance.profile.profile,),
+            )
+        )
+
+        self.profile_path = profile_path
+        self.profile_name = profile_name
+        self.storeID = storeID
+        self.profile_count = profile_count
+        self.profile_id = profile_id
+
+        self.runCode(
+            """
+          Services.env.set("SELECTABLE_PROFILE_RESET_PATH", SelectableProfileService?.currentProfile.path);
+          Services.env.set("SELECTABLE_PROFILE_RESET_STORE_ID", SelectableProfileService?.storeID);
+          Services.env.set("MOZ_RESET_PROFILE_RESTART", "1");
+          Services.env.set("XRE_PROFILE_PATH", arguments[0]);
+        """,
+            script_args=(
+                self.marionette.instance.profile.profile,
+                profileName,
+            ),
+        )
+
+        profileLeafName = os.path.basename(
+            os.path.normpath(self.marionette.instance.profile.profile)
+        )
+
+        # Now restart the browser to get it reset:
+        self.marionette.restart(clean=False, in_app=True)
+        self.setUpScriptData()
+
+        # Determine the new profile path (we'll need to remove it when we're done)
+        [cleanup.reset_profile_path, cleanup.reset_profile_local_path] = self.runCode(
+            """
+          let profD = Services.dirsvc.get("ProfD", Ci.nsIFile);
+          let localD = Services.dirsvc.get("ProfLD", Ci.nsIFile);
+          return [profD.path, localD.path];
+        """
+        )
+
+        # Determine the backup path
+        cleanup.desktop_backup_path = self.runCode(
+            """
+          let container;
+          try {
+            container = Services.dirsvc.get("Desk", Ci.nsIFile);
+          } catch (ex) {
+            container = Services.dirsvc.get("Home", Ci.nsIFile);
+          }
+          let bundle = Services.strings.createBundle("chrome://mozapps/locale/profile/profileSelection.properties");
+          let dirName = bundle.formatStringFromName("resetBackupDirectory", [Services.appinfo.name]);
+          container.append(dirName);
+          container.append(arguments[0]);
+          return container.path;
+        """,  # NOQA: E501
+            script_args=(profileLeafName,),
+        )
+
+        self.assertTrue(
+            os.path.isdir(cleanup.reset_profile_path),
+            "Reset profile path should be present",
+        )
+        self.assertTrue(
+            os.path.isdir(cleanup.desktop_backup_path),
+            "Backup profile path should be present",
+        )
+        self.assertIn(cleanup.profile_name_to_remove, cleanup.reset_profile_path)
+        return cleanup
+
+    def checkProfile(self, has_migrated=False, expect_sync_user=True):
+        self.checkPassword()
+        self.checkBookmarkInMenu()
+        self.checkHistory()
+        self.checkFormHistory()
+        self.checkFormAutofill()
+        self.checkCookie()
+        self.checkFxA()
+        self.checkSync(expect_sync_user)
+        if has_migrated:
+            self.checkBookmarkToolbarVisibility()
+            self.checkSession()
+            self.checkStartupMigrationStateCleared()
+            self.checkRefreshPromptDisabled()

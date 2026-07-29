@@ -15,12 +15,14 @@
 #include <cstring>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/dtls_transport_interface.h"
+#include "api/ice_transport_interface.h"
 #include "api/rtc_error.h"
 #include "api/scoped_refptr.h"
 #include "p2p/base/ice_transport_internal.h"
@@ -48,11 +50,13 @@ namespace webrtc {
 // sending packets.
 class FakeDtlsTransport : public DtlsTransportInternal {
  public:
-  explicit FakeDtlsTransport(FakeIceTransport* ice_transport)
-      : ice_transport_(ice_transport),
-        transport_name_(ice_transport->transport_name()),
-        component_(ice_transport->component()),
-        dtls_fingerprint_("", nullptr) {
+  explicit FakeDtlsTransport(scoped_refptr<IceTransportInterface> ice_transport)
+      : ice_transport_ref_(std::move(ice_transport)),
+        ice_transport_(static_cast<FakeIceTransportInternal*>(
+            ice_transport_ref_->internal())),
+        transport_name_(ice_transport_->transport_name()),
+        component_(ice_transport_->component()),
+        dtls_fingerprint_("", std::span<const uint8_t>()) {
     RTC_DCHECK(ice_transport_);
     ice_transport_->RegisterReceivedPacketCallback(
         this, [&](PacketTransportInternal* transport,
@@ -64,12 +68,12 @@ class FakeDtlsTransport : public DtlsTransportInternal {
           OnNetworkRouteChanged(network_route);
         });
   }
-
-  explicit FakeDtlsTransport(std::unique_ptr<FakeIceTransport> ice)
-      : owned_ice_transport_(std::move(ice)),
+  explicit FakeDtlsTransport(std::unique_ptr<FakeIceTransportInternal> ice)
+      : DtlsTransportInternal(ice->network_thread()),
+        owned_ice_transport_(std::move(ice)),
         transport_name_(owned_ice_transport_->transport_name()),
         component_(owned_ice_transport_->component()),
-        dtls_fingerprint_("", ArrayView<const uint8_t>()) {
+        dtls_fingerprint_("", std::span<const uint8_t>()) {
     ice_transport_ = owned_ice_transport_.get();
     ice_transport_->RegisterReceivedPacketCallback(
         this, [&](PacketTransportInternal* transport,
@@ -85,14 +89,15 @@ class FakeDtlsTransport : public DtlsTransportInternal {
   // If this constructor is called, a new fake ICE transport will be created,
   // and this FakeDtlsTransport will take the ownership.
   FakeDtlsTransport(const std::string& name, int component)
-      : FakeDtlsTransport(std::make_unique<FakeIceTransport>(name, component)) {
-  }
+      : FakeDtlsTransport(
+            std::make_unique<FakeIceTransportInternal>(name, component)) {}
   FakeDtlsTransport(const std::string& name,
                     int component,
                     Thread* network_thread)
-      : FakeDtlsTransport(std::make_unique<FakeIceTransport>(name,
-                                                             component,
-                                                             network_thread)) {}
+      : FakeDtlsTransport(
+            std::make_unique<FakeIceTransportInternal>(name,
+                                                       component,
+                                                       network_thread)) {}
 
   ~FakeDtlsTransport() override {
     if (dest_ && dest_->dest_ == this) {
@@ -102,7 +107,7 @@ class FakeDtlsTransport : public DtlsTransportInternal {
   }
 
   // Get inner fake ICE transport.
-  FakeIceTransport* fake_ice_transport() { return ice_transport_; }
+  FakeIceTransportInternal* fake_ice_transport() { return ice_transport_; }
 
   // If async, will send packets by "Post"-ing to message queue instead of
   // synchronously "Send"-ing.
@@ -143,17 +148,20 @@ class FakeDtlsTransport : public DtlsTransportInternal {
         do_dtls_ = false;
         RTC_LOG(LS_INFO) << "FakeDtlsTransport is not doing DTLS";
       }
-      SetWritable(true);
-      if (!asymmetric) {
-        dest->SetDestination(this, true);
-      }
       // If the `dtls_role_` is unset, set it to SSL_CLIENT by default.
       if (!dtls_role_) {
         dtls_role_ = std::move(SSL_CLIENT);
       }
       SetDtlsState(DtlsTransportState::kConnected);
+      // Now mark as writable. This triggers callbacks that might check the
+      // dtls state and/or role, so do this after setting that state.
+      SetWritable(true);
+      if (!asymmetric) {
+        dest->SetDestination(this, true);
+      }
       ice_transport_->SetDestination(
-          static_cast<FakeIceTransport*>(dest->ice_transport()), asymmetric);
+          static_cast<FakeIceTransportInternal*>(dest->ice_transport()),
+          asymmetric);
     } else {
       // Simulates loss of connectivity, by asymmetrically forgetting dest_.
       dest_ = nullptr;
@@ -170,7 +178,7 @@ class FakeDtlsTransport : public DtlsTransportInternal {
   RTCError SetRemoteParameters(absl::string_view alg,
                                const uint8_t* digest,
                                size_t digest_len,
-                               std::optional<SSLRole> role) {
+                               std::optional<SSLRole> role) override {
     if (role) {
       SetDtlsRole(*role);
     }
@@ -180,7 +188,7 @@ class FakeDtlsTransport : public DtlsTransportInternal {
   bool SetRemoteFingerprint(absl::string_view alg,
                             const uint8_t* digest,
                             size_t digest_len) {
-    dtls_fingerprint_ = SSLFingerprint(alg, MakeArrayView(digest, digest_len));
+    dtls_fingerprint_ = SSLFingerprint(alg, std::span(digest, digest_len));
     return true;
   }
   bool SetDtlsRole(SSLRole role) override {
@@ -236,9 +244,6 @@ class FakeDtlsTransport : public DtlsTransportInternal {
     return "FakeTlsCipherSuite";
   }
   uint16_t GetSslPeerSignatureAlgorithm() const override { return 0; }
-  scoped_refptr<RTCCertificate> GetLocalCertificate() const override {
-    return local_cert_;
-  }
   std::unique_ptr<SSLCertChain> GetRemoteSSLCertChain() const override {
     if (!remote_cert_) {
       return nullptr;
@@ -249,6 +254,24 @@ class FakeDtlsTransport : public DtlsTransportInternal {
       ZeroOnFreeBuffer<uint8_t>& keying_material) override {
     if (do_dtls_) {
       std::memset(keying_material.data(), 0xff, keying_material.size());
+    }
+    return do_dtls_;
+  }
+  bool AppendSrtpKeyingMaterial(
+      ZeroOnFreeBuffer<uint8_t>& keying_material) override {
+    if (do_dtls_) {
+      int crypto_suite;
+      if (!GetSrtpCryptoSuite(&crypto_suite)) {
+        return false;
+      }
+      int key_len;
+      int salt_len;
+      if (!GetSrtpKeyAndSaltLengths(crypto_suite, &key_len, &salt_len)) {
+        return false;
+      }
+      size_t data_size = 2 * key_len + 2 * salt_len;
+      std::vector<uint8_t> data(data_size, 0xff);
+      keying_material.AppendData(data);
     }
     return do_dtls_;
   }
@@ -316,8 +339,9 @@ class FakeDtlsTransport : public DtlsTransportInternal {
     NotifyNetworkRouteChanged(network_route);
   }
 
-  FakeIceTransport* ice_transport_;
-  std::unique_ptr<FakeIceTransport> owned_ice_transport_;
+  scoped_refptr<IceTransportInterface> ice_transport_ref_;
+  FakeIceTransportInternal* ice_transport_;
+  std::unique_ptr<FakeIceTransportInternal> owned_ice_transport_;
   std::string transport_name_;
   int component_;
   FakeDtlsTransport* dest_ = nullptr;

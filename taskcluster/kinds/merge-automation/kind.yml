@@ -41,17 +41,17 @@ tasks:
                             main-to-beta: staging-firefox-beta
                             early-to-late-beta: staging-firefox-beta
                             beta-to-release: staging-firefox-release
-                            release-to-esr: staging-firefox-esr140
+                            release-to-esr: staging-firefox-esr153
                             bump-main: staging-firefox-main
-                            bump-esr140: staging-firefox-esr140
+                            bump-esr153: staging-firefox-esr153
                     default:
                         by-behavior:
                             main-to-beta: firefox-beta
                             early-to-late-beta: firefox-beta
                             beta-to-release: firefox-release
-                            release-to-esr: firefox-esr140
+                            release-to-esr: firefox-esr153
                             bump-main: firefox-main
-                            bump-esr140: firefox-esr140
+                            bump-esr153: firefox-esr153
             dontbuild: false
             actions:
                 by-behavior:
@@ -86,7 +86,7 @@ tasks:
                                     - '"version": "{next_major_version}.0.0"'
                               end-tag: 'FIREFOX_NIGHTLY_{major_version}_END'
                               to-branch: 'main'
-                    bump-esr140:
+                    bump-esr153:
                         - esr-bump:
                               fetch-version-from: "browser/config/version.txt"
                               version-files:
@@ -97,7 +97,7 @@ tasks:
                                   - filename: "browser/config/version_display.txt"
                                     version-bump: "minor"
                                     new-suffix: "esr"
-                              to-branch: 'esr140'
+                              to-branch: 'esr153'
                     early-to-late-beta:
                         - early-to-late-beta:
                               fetch-version-from: "browser/config/version.txt"
@@ -218,9 +218,9 @@ tasks:
                               replacements:
                                   - - .arcconfig
                                     - FIREFOXRELEASE
-                                    - FIREFOXESRONEFOURZERO
+                                    - FIREFOXESRONEFIVETHREE
                               end-tag: "FIREFOX_ESR_{major_version}_BASE"
-                              to-branch: 'esr140'
+                              to-branch: 'esr153'
         run-on-projects: []
         expiration-policy: long
         extra:

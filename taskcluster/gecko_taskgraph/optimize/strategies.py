@@ -4,11 +4,11 @@
 
 
 import datetime
+import functools
 import logging
 
 import mozpack.path as mozpath
 from mozbuild.base import MozbuildObject
-from mozbuild.util import memoize
 from taskgraph.optimize.base import OptimizationStrategy, register_strategy
 from taskgraph.optimize.strategies import IndexSearch
 from taskgraph.util.parameterization import resolve_timestamps
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 @register_strategy("skip-unless-schedules")
 class SkipUnlessSchedules(OptimizationStrategy):
-    @memoize
+    @functools.cache
     def scheduled_by_push(self, files_changed):
         mbo = MozbuildObject.from_environment()
         # the decision task has a sparse checkout, so, mozbuild_reader will use
@@ -53,7 +53,7 @@ class SkipUnlessHasRelevantTests(OptimizationStrategy):
     in child directories of a modified file.
     """
 
-    @memoize
+    @functools.cache
     def get_changed_dirs(self, files_changed):
         changed = map(mozpath.dirname, files_changed)
         # Filter out empty directories (from files modified in the root).

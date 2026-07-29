@@ -452,6 +452,29 @@ pub extern "C" fn jog_load_jogfile(jogfile_path: &nsAString) -> bool {
             return false;
         }
     };
+
+    jog_register_jogfile(j)
+}
+
+/// Parse the given string as though it were a jogfile's contents
+/// and register those pings and metrics.
+/// Returns true if we successfully parsed the jogfile. Does not mean
+/// all or any metrics and pings successfully registered,
+/// just that serde managed to deserialize it into metrics and pings and we tried to register them all.
+#[no_mangle]
+pub extern "C" fn jog_load_jogfile_str(jogfile_contents: &nsCString) -> bool {
+    let j: Jogfile = match serde_json::from_str(&jogfile_contents.to_utf8()) {
+        Ok(j) => j,
+        Err(e) => {
+            log::error!("Boo, couldn't parse jogfile contents because of: {:?}", e);
+            return false;
+        }
+    };
+
+    jog_register_jogfile(j)
+}
+
+fn jog_register_jogfile(j: Jogfile) -> bool {
     log::trace!("Loaded jogfile. Registering metrics+pings.");
     for (category, metrics) in j.metrics.into_iter() {
         for metric in metrics.into_iter() {

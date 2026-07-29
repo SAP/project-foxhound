@@ -550,6 +550,17 @@ addAccessibleTask(
     <span id="aria_treeitem" role="treeitem"></span>
     <span id="aria_treeitem_mixed" role="tREEITEm"></span>
   </div>
+  <div role="listbox">
+    <span id="listOption" role="option"></span>
+  </div>
+  <div role="combobox">
+    <div role="listbox">
+      <span id="comboOption1" role="option"></span>
+      <div role="group">
+        <span id="comboOption2" role="option"></span>
+      </div>
+    </div>
+  </div>
 
   <!-- roles transformed by ARIA state attributes -->
   <button aria-pressed="true" id="togglebutton"></button>
@@ -587,6 +598,9 @@ addAccessibleTask(
     testRole(getAcc("aria_tab_mixed"), ROLE_PAGETAB);
     testRole(getAcc("aria_treeitem"), ROLE_OUTLINEITEM);
     testRole(getAcc("aria_treeitem_mixed"), ROLE_OUTLINEITEM);
+    testRole(getAcc("listOption"), ROLE_OPTION);
+    testRole(getAcc("comboOption1"), ROLE_COMBOBOX_OPTION);
+    testRole(getAcc("comboOption2"), ROLE_COMBOBOX_OPTION);
 
     // roles transformed by ARIA state attributes
     testRole(getAcc("togglebutton"), ROLE_TOGGLE_BUTTON);
@@ -723,33 +737,49 @@ addAccessibleTask(
 );
 
 /**
- * Test re-parented list item's role gets recomputed.
+ * Test re-parented option's role gets recomputed.
  */
 addAccessibleTask(
-  `<div role="list" id="aria-list">
-  </div>
-  <div role="listitem" id="aria-listitem">Bananas</div>`,
-  async function testListItemRelocation(browser, accDoc) {
+  `<div role="combobox"><div id="listbox" role="listbox"></div></div>
+  <div role="option" id="option">Bananas</div>`,
+  async function testRelocation(browser, accDoc) {
     is(
-      findAccessibleChildByID(accDoc, "aria-listitem").role,
-      ROLE_SECTION,
-      "List item in list should have section role"
+      findAccessibleChildByID(accDoc, "option").role,
+      ROLE_OPTION,
+      "option outside of combobox should have option role"
     );
 
-    let evt = waitForEvent(EVENT_INNER_REORDER, "aria-list");
-    await invokeSetAttribute(
-      browser,
-      "aria-list",
-      "aria-owns",
-      "aria-listitem"
-    );
+    let evt = waitForEvent(EVENT_INNER_REORDER, "listbox");
+    await invokeSetAttribute(browser, "listbox", "aria-owns", "option");
     await evt;
 
     is(
-      findAccessibleChildByID(accDoc, "aria-listitem").role,
-      ROLE_LISTITEM,
-      "List item in list should have listitem role"
+      findAccessibleChildByID(accDoc, "option").role,
+      ROLE_COMBOBOX_OPTION,
+      "option in combobox should have combobox option role"
     );
+  },
+  { chrome: true, topLevel: true }
+);
+
+/**
+ * Test that a menuitem outside of a menu still gets a role of menuitem.
+ * Strictly speaking, this is an authoring error, but the spec allows browsers
+ * to expose the role regardless. Unfortunately, some sites rely on this,
+ * including Google Docs, so this test ensures we don't regress those.
+ */
+addAccessibleTask(
+  `
+<div role="menubar">
+  <div role="menuitem" aria-owns="child"></div>
+</div>
+<div role="menu">
+  <div id="child" role="menuitem">child</div>
+</div>
+  `,
+  async function testOrphanedMenuitem(browser, docAcc) {
+    const child = findAccessibleChildByID(docAcc, "child");
+    testRole(child, ROLE_MENUITEM);
   },
   { chrome: true, topLevel: true }
 );

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /*
@@ -39,6 +37,7 @@
 #include "frontend/FrontendContext.h"  // AutoReportFrontendContext
 #include "gc/GC.h"
 #include "gc/GCContext.h"
+#include "gc/GCRuntime.h"
 #include "gc/Marking.h"
 #include "gc/PublicIterators.h"
 #include "jit/JitSpewer.h"
@@ -447,12 +446,12 @@ JS_PUBLIC_API const char* JS_GetImplementationVersion(void) {
 
 JS_PUBLIC_API void JS_SetDestroyZoneCallback(JSContext* cx,
                                              JSDestroyZoneCallback callback) {
-  cx->runtime()->destroyZoneCallback = callback;
+  cx->runtime()->gc.setDestroyZoneCallback(callback);
 }
 
 JS_PUBLIC_API void JS_SetDestroyCompartmentCallback(
     JSContext* cx, JSDestroyCompartmentCallback callback) {
-  cx->runtime()->destroyCompartmentCallback = callback;
+  cx->runtime()->gc.setDestroyCompartmentCallback(callback);
 }
 
 JS_PUBLIC_API void JS_SetSizeOfIncludingThisCompartmentCallback(
@@ -590,6 +589,8 @@ static void ReleaseAssertObjectHasNoWrappers(JSContext* cx,
       MOZ_CRASH("wrapper found for target object");
     }
   }
+  MOZ_RELEASE_ASSERT(
+      !gc::GCRuntime::isFinalizationObserverTarget(ObjectValue(*target)));
 }
 
 /*
@@ -597,14 +598,11 @@ static void ReleaseAssertObjectHasNoWrappers(JSContext* cx,
  *
  * Not for beginners or the squeamish.
  *
- * Sometimes a web spec requires us to transplant an object from one
- * compartment to another, like when a DOM node is inserted into a document in
- * another window and thus gets "adopted". We cannot literally change the
+ * Sometimes we need to transplant an object from one compartment to another,
+ * for example during navigation when the WindowProxy moves into the new
+ * Window's compartment. We cannot literally change the
  * `.compartment()` of a `JSObject`; that would break the compartment
  * invariants. However, as usual, we have a workaround using wrappers.
- *
- * Of all the wrapper-based workarounds we do, it's safe to say this is the
- * most spectacular and questionable.
  *
  * `JS_TransplantObject(cx, origobj, target)` changes `origobj` into a
  * simulacrum of `target`, using highly esoteric means. To JS code, the effect
@@ -616,12 +614,7 @@ static void ReleaseAssertObjectHasNoWrappers(JSContext* cx,
  * Thus, to "transplant" an object from one compartment to another:
  *
  * 1.  Let `origobj` be the object that you want to move. First, create a
- *     clone of it, `target`, in the destination compartment.
- *
- *     In our DOM adoption example, `target` will be a Node of the same type as
- *     `origobj`, same content, but in the adopting document.  We're not done
- *     yet: the spec for DOM adoption requires that `origobj.ownerDocument`
- *     actually change. All we've done so far is make a copy.
+ *     replacement for it, `target`, in the destination compartment.
  *
  * 2.  Call `JS_TransplantObject(cx, origobj, target)`. This typically turns
  *     `origobj` into a wrapper for `target`, so that any JS code that has a
@@ -630,14 +623,10 @@ static void ReleaseAssertObjectHasNoWrappers(JSContext* cx,
  *     changed into wrappers for `target`, extending the illusion to those
  *     compartments as well.
  *
- * During navigation, we use the above technique to transplant the WindowProxy
- * into the new Window's compartment.
- *
  * A few rules:
  *
- * -   `origobj` and `target` must be two distinct objects of the same
- *     `JSClass`.  Some classes may not support transplantation; WindowProxy
- *     objects and DOM nodes are OK.
+ * -   `origobj` and `target` must be two distinct proxy objects with two
+ *     reserved slots (SwappableProxyReservedSlots).
  *
  * -   `target` should be created specifically to be passed to this function.
  *     There must be no existing cross-compartment wrappers for it; ideally
@@ -653,19 +642,21 @@ static void ReleaseAssertObjectHasNoWrappers(JSContext* cx,
  *
  * We don't have a good way to recover from failure in this function, so
  * we intentionally crash instead.
+ *
+ * Historically, transplantation also supported native (non-proxy) objects such
+ * as DOM nodes, but fortunately this is no longer the case.
  */
 
 static void CheckTransplantObject(JSObject* obj) {
-#ifdef DEBUG
-  MOZ_ASSERT(!obj->is<CrossCompartmentWrapperObject>());
+  MOZ_RELEASE_ASSERT(obj->is<ProxyObject>());
+  MOZ_RELEASE_ASSERT(!obj->is<CrossCompartmentWrapperObject>());
   JS::AssertCellIsNotGray(obj);
-#endif
 }
 
 JS_PUBLIC_API JSObject* JS_TransplantObject(JSContext* cx, HandleObject origobj,
                                             HandleObject target) {
   AssertHeapIsIdle();
-  MOZ_ASSERT(origobj != target);
+  MOZ_RELEASE_ASSERT(origobj != target);
   CheckTransplantObject(origobj);
   CheckTransplantObject(target);
   ReleaseAssertObjectHasNoWrappers(cx, target);
@@ -687,7 +678,8 @@ JS_PUBLIC_API JSObject* JS_TransplantObject(JSContext* cx, HandleObject origobj,
     // destination's cross compartment map and that the same
     // object will continue to work.
     AutoRealm ar(cx, origobj);
-    JSObject::swap(cx, origobj, target, oomUnsafe);
+    ProxyObject::swap(cx, origobj.as<ProxyObject>(), target.as<ProxyObject>(),
+                      oomUnsafe);
     newIdentity = origobj;
   } else if (ObjectWrapperMap::Ptr p = destination->lookupWrapper(origobj)) {
     // There might already be a wrapper for the original object in
@@ -701,7 +693,8 @@ JS_PUBLIC_API JSObject* JS_TransplantObject(JSContext* cx, HandleObject origobj,
     NukeCrossCompartmentWrapper(cx, newIdentity);
 
     AutoRealm ar(cx, newIdentity);
-    JSObject::swap(cx, newIdentity, target, oomUnsafe);
+    ProxyObject::swap(cx, newIdentity.as<ProxyObject>(),
+                      target.as<ProxyObject>(), oomUnsafe);
   } else {
     // Otherwise, we use |target| for the new identity object.
     newIdentity = target;
@@ -718,6 +711,14 @@ JS_PUBLIC_API JSObject* JS_TransplantObject(JSContext* cx, HandleObject origobj,
 
   // Lastly, update the original object to point to the new one.
   if (origobj->compartment() != destination) {
+    // If origobj is a weak ref or finalization registry target, relocate the
+    // map entries to newIdentity before the swap turns origobj into a CCW.
+    gc::GCRuntime* gc = &cx->runtime()->gc;
+    if (!gc->relocateFinalizationObserverTarget(ObjectValue(*origobj),
+                                                ObjectValue(*newIdentity))) {
+      oomUnsafe.crash("JS_TransplantObject finalization observer relocation");
+    }
+
     RootedObject newIdentityWrapper(cx, newIdentity);
     AutoRealm ar(cx, origobj);
     if (!JS_WrapObject(cx, &newIdentityWrapper)) {
@@ -725,8 +726,11 @@ JS_PUBLIC_API JSObject* JS_TransplantObject(JSContext* cx, HandleObject origobj,
                          cx->isThrowingOverRecursed());
       oomUnsafe.crash("JS_TransplantObject");
     }
-    MOZ_ASSERT(Wrapper::wrappedObject(newIdentityWrapper) == newIdentity);
-    JSObject::swap(cx, origobj, newIdentityWrapper, oomUnsafe);
+    MOZ_RELEASE_ASSERT(newIdentityWrapper->is<WrapperObject>());
+    MOZ_RELEASE_ASSERT(Wrapper::wrappedObject(newIdentityWrapper) ==
+                       newIdentity);
+    ProxyObject::swap(cx, origobj.as<ProxyObject>(),
+                      newIdentityWrapper.as<ProxyObject>(), oomUnsafe);
     if (origobj->compartment()->lookupWrapper(newIdentity)) {
       MOZ_ASSERT(origobj->is<CrossCompartmentWrapperObject>());
       if (!origobj->compartment()->putWrapper(cx, newIdentity, origobj)) {
@@ -764,13 +768,15 @@ JS_PUBLIC_API void js::RemapRemoteWindowProxies(
     oomUnsafe.crash("js::RemapRemoteWindowProxies");
   }
 
-  RootedObject targetCompartmentProxy(cx);
+  RootedTuple<ProxyObject*, JSObject*, JSObject*> roots(cx);
+  RootedField<ProxyObject*> targetCompartmentProxy(roots);
   JS::RootedVector<JSObject*> otherProxies(cx);
 
   // Use the callback to find remote proxies in all compartments that match
   // whatever criteria callback uses.
+  RootedField<JSObject*, 1> remoteProxy(roots);
   for (CompartmentsIter c(cx->runtime()); !c.done(); c.next()) {
-    RootedObject remoteProxy(cx, callback->getObjectToTransplant(c));
+    remoteProxy = callback->getObjectToTransplant(c);
     if (!remoteProxy) {
       continue;
     }
@@ -786,7 +792,7 @@ JS_PUBLIC_API void js::RemapRemoteWindowProxies(
     js::NukeNonCCWProxy(cx, remoteProxy);
 
     if (remoteProxy->compartment() == target->compartment()) {
-      targetCompartmentProxy = remoteProxy;
+      targetCompartmentProxy = &remoteProxy->as<ProxyObject>();
     } else if (!otherProxies.append(remoteProxy)) {
       oomUnsafe.crash("js::RemapRemoteWindowProxies");
     }
@@ -798,12 +804,14 @@ JS_PUBLIC_API void js::RemapRemoteWindowProxies(
   // correctly before we start wrapping it into other compartments.
   if (targetCompartmentProxy) {
     AutoRealm ar(cx, targetCompartmentProxy);
-    JSObject::swap(cx, targetCompartmentProxy, target, oomUnsafe);
+    Rooted<ProxyObject*> targetProxy(cx, &target->as<ProxyObject>());
+    ProxyObject::swap(cx, targetCompartmentProxy, targetProxy, oomUnsafe);
     target.set(targetCompartmentProxy);
   }
 
+  RootedField<JSObject*, 2> deadWrapper(roots);
   for (JSObject*& obj : otherProxies) {
-    RootedObject deadWrapper(cx, obj);
+    deadWrapper = obj;
     js::RemapDeadWrapper(cx, deadWrapper, target);
   }
 }
@@ -1275,8 +1283,9 @@ JS_PUBLIC_API void JS::RemoveAssociatedMemory(JSObject* obj, size_t nbytes,
     return;
   }
 
-  GCContext* gcx = obj->runtimeFromMainThread()->gcContext();
-  gcx->removeCellMemory(obj, nbytes, js::MemoryUse(use));
+  GCContext* gcx = MaybeGetGCContext();
+  obj->zoneFromAnyThread()->removeCellMemory(obj, nbytes, js::MemoryUse(use),
+                                             gcx && gcx->isFinalizing());
 }
 
 #undef JS_AddRoot
@@ -1404,7 +1413,11 @@ JS_PUBLIC_API void JS_RemoveWeakPointerCompartmentCallback(
 
 JS_PUBLIC_API bool JS_UpdateWeakPointerAfterGC(JSTracer* trc,
                                                JS::Heap<JSObject*>* objp) {
-  return TraceWeakEdge(trc, objp);
+  bool result = TraceWeakEdge(trc, objp);
+  if (!result) {
+    objp->unbarrieredSet(nullptr);
+  }
+  return result;
 }
 
 JS_PUBLIC_API bool JS_UpdateWeakPointerAfterGCUnbarriered(JSTracer* trc,
@@ -1817,6 +1830,15 @@ JS::RealmBehaviors& JS::RealmBehaviors::setTimeZoneOverride(
   return *this;
 }
 
+void JS::RealmBehaviors::copyOverrideStrings() {
+  if (localeOverride_) {
+    setLocaleOverride(localeOverride_->chars());
+  }
+  if (timeZoneOverride_) {
+    setTimeZoneOverride(timeZoneOverride_->chars());
+  }
+}
+
 const JS::RealmBehaviors& JS::RealmBehaviorsRef(JS::Realm* realm) {
   return realm->behaviors();
 }
@@ -1877,16 +1899,10 @@ JS_PUBLIC_API void JS_GlobalObjectTraceHook(JSTracer* trc, JSObject* global) {
 }
 
 const JSClassOps JS::DefaultGlobalClassOps = {
-    nullptr,                         // addProperty
-    nullptr,                         // delProperty
-    nullptr,                         // enumerate
-    JS_NewEnumerateStandardClasses,  // newEnumerate
-    JS_ResolveStandardClass,         // resolve
-    JS_MayResolveStandardClass,      // mayResolve
-    nullptr,                         // finalize
-    nullptr,                         // call
-    nullptr,                         // construct
-    JS_GlobalObjectTraceHook,        // trace
+    .newEnumerate = JS_NewEnumerateStandardClasses,
+    .resolve = JS_ResolveStandardClass,
+    .mayResolve = JS_MayResolveStandardClass,
+    .trace = JS_GlobalObjectTraceHook,
 };
 
 JS_PUBLIC_API void JS_FireOnNewGlobalObject(JSContext* cx,
@@ -2222,20 +2238,15 @@ JS_PUBLIC_API void JS_SetAllNonReservedSlotsToUndefined(JS::HandleObject obj) {
 
 JS_PUBLIC_API void JS_SetReservedSlot(JSObject* obj, uint32_t index,
                                       const Value& value) {
-  // Note: we don't use setReservedSlot so that this also works on swappable DOM
-  // objects. See NativeObject::getReservedSlotRef comment.
-  NativeObject& nobj = obj->as<NativeObject>();
   MOZ_ASSERT(index < JSCLASS_RESERVED_SLOTS(obj->getClass()));
-  nobj.setSlot(index, value);
+  obj->as<NativeObject>().setReservedSlot(index, value);
 }
 
 JS_PUBLIC_API void JS_InitReservedSlot(JSObject* obj, uint32_t index, void* ptr,
                                        size_t nbytes, JS::MemoryUse use) {
-  // Note: we don't use InitReservedSlot so that this also works on swappable
-  // DOM objects. See NativeObject::getReservedSlotRef comment.
   MOZ_ASSERT(index < JSCLASS_RESERVED_SLOTS(obj->getClass()));
   AddCellMemory(obj, nbytes, js::MemoryUse(use));
-  obj->as<NativeObject>().initSlot(index, PrivateValue(ptr));
+  obj->as<NativeObject>().initReservedSlot(index, PrivateValue(ptr));
 }
 
 JS_PUBLIC_API bool JS::IsMapObject(JSContext* cx, JS::HandleObject obj,
@@ -2652,6 +2663,22 @@ JS::InstantiateOptions::InstantiateOptions() {
   }
 }
 
+#ifdef DEBUG
+void JS::InstantiateOptions::assertDefault() const {
+  MOZ_ASSERT(skipFilenameValidation == false);
+  MOZ_ASSERT(hideScriptFromDebugger == false);
+  MOZ_ASSERT(deferDebugMetadata == false);
+  if (coverage::IsLCovEnabled()) {
+    MOZ_ASSERT(eagerDelazificationStrategy_ ==
+               DelazificationOption::ParseEverythingEagerly);
+  } else {
+    MOZ_ASSERT(eagerDelazificationStrategy_ ==
+               DelazificationOption::OnDemandOnly);
+  }
+  MOZ_ASSERT(eagerBaselineStrategy_ == EagerBaselineOption::None);
+}
+#endif
+
 CompileOptions& CompileOptions::setIntroductionInfoToCaller(
     JSContext* cx, const char* introductionType,
     MutableHandle<JSScript*> introductionScript) {
@@ -3040,6 +3067,36 @@ JS_PUBLIC_API bool JS::RejectPromise(JSContext* cx, JS::HandleObject promiseObj,
   return ResolveOrRejectPromise(cx, promiseObj, rejectionValue, true);
 }
 
+#ifdef NIGHTLY_BUILD
+JS_PUBLIC_API bool JS::SafeResolve(JSContext* cx, JS::HandleObject promiseObj,
+                                   JS::HandleValue resolutionValue) {
+  AssertHeapIsIdle();
+  CHECK_THREAD(cx);
+  cx->check(promiseObj, resolutionValue);
+
+  // This is basically ResolveOrRejectPromise and could be extracted
+  // in the future.
+  mozilla::Maybe<AutoRealm> ar;
+  Rooted<PromiseObject*> promise(cx);
+  RootedValue resolution(cx, resolutionValue);
+  if (IsWrapper(promiseObj)) {
+    promise = promiseObj->maybeUnwrapAs<PromiseObject>();
+    if (!promise) {
+      ReportAccessDenied(cx);
+      return false;
+    }
+    ar.emplace(cx, promise);
+    if (!cx->compartment()->wrap(cx, &resolution)) {
+      return false;
+    }
+  } else {
+    promise = promiseObj.as<PromiseObject>();
+  }
+
+  return js::SafeResolvePromise(cx, promise, resolution);
+}
+#endif  // NIGHTLY_BUILD
+
 JS_PUBLIC_API JSObject* JS::CallOriginalPromiseThen(
     JSContext* cx, JS::HandleObject promiseObj, JS::HandleObject onFulfilled,
     JS::HandleObject onRejected) {
@@ -3099,7 +3156,7 @@ JS_PUBLIC_API bool JS::AddPromiseReactionsIgnoringUnhandledRejection(
 }
 
 JS_PUBLIC_API JS::PromiseUserInputEventHandlingState
-JS::GetPromiseUserInputEventHandlingState(JS::HandleObject promiseObj_) {
+JS::GetPromiseUserInputEventHandlingState(JSObject* promiseObj_) {
   PromiseObject* promise = promiseObj_->maybeUnwrapIf<PromiseObject>();
   if (!promise) {
     return JS::PromiseUserInputEventHandlingState::DontCare;
@@ -4063,11 +4120,9 @@ JS_PUBLIC_API bool JS_SetDefaultLocale(JSRuntime* rt, const char* locale) {
 
 JS_PUBLIC_API UniqueChars JS_GetDefaultLocale(JSContext* cx) {
   AssertHeapIsIdle();
-  if (const char* locale = cx->runtime()->getDefaultLocale()) {
-    return DuplicateString(cx, locale);
-  }
 
-  return nullptr;
+  auto locale = cx->runtime()->getDefaultLocale().toString();
+  return DuplicateString(cx, locale.data(), locale.length());
 }
 
 JS_PUBLIC_API void JS_ResetDefaultLocale(JSRuntime* rt) {

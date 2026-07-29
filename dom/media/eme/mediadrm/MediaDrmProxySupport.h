@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,16 +21,17 @@ enum MediaDrmSessionType {
 
 #ifndef MDRMN_LOG
 LogModule* GetMDRMNLog();
-#  define MDRMN_LOG(x, ...)                          \
-    MOZ_LOG(GetMDRMNLog(), mozilla::LogLevel::Debug, \
-            ("[MediaDrmProxySupport][%s]" x, __FUNCTION__, ##__VA_ARGS__))
+#  define MDRMN_LOG(x, ...)                              \
+    MOZ_LOG_FMT(GetMDRMNLog(), mozilla::LogLevel::Debug, \
+                "[MediaDrmProxySupport][{}]" x, __FUNCTION__, ##__VA_ARGS__)
 #endif
 
 class MediaDrmCDMCallbackProxy;
 
 class MediaDrmProxySupport final {
  public:
-  explicit MediaDrmProxySupport(const nsAString& aKeySystem);
+  MediaDrmProxySupport(const nsAString& aKeySystem,
+                       const nsACString& aOriginID);
   ~MediaDrmProxySupport();
 
   /*

@@ -82,8 +82,6 @@ firefox-suggest-command-dont-show-this =
   .label = Don’t show this
 firefox-suggest-command-dont-show-mdn =
   .label = Don’t show { -mdn-brand-short-name } suggestions
-firefox-suggest-command-not-relevant =
-  .label = Not relevant
 firefox-suggest-command-not-interested =
   .label = Not interested
 firefox-suggest-command-dont-show-this-suggestion =
@@ -321,10 +319,15 @@ urlbar-result-aria-group-flight-status =
 # 2" means the game is taking place at Team 2's home venue, and we say Team 1 is
 # the "away" team and Team 2 is the "home" team. If your language doesn't have a
 # similar phrase, use your equivalent of "vs." or even just "and".
+
+# This string is shown for a scheduled future game. Please list $homeTeam before
+# $awayTeam so that the ordering of teams in the string matches the ordering of
+# the team icons in the suggestion UI. Without violating the team ordering,
+# please use your language's equivalent of "vs". "and" is another option.
 # Variables:
-#   $awayTeam (string) - Name of the visting team.
 #   $homeTeam (string) - Name of the home team.
-urlbar-result-sports-team-names = { $awayTeam } at { $homeTeam }
+#   $awayTeam (string) - Name of the visiting team.
+urlbar-result-sports-team-names = { $homeTeam } vs { $awayTeam }
 
 # This string is shown when the game is today, in the near future, or in the
 # recent past.

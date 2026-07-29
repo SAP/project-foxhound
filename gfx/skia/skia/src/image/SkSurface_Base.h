@@ -170,6 +170,12 @@ public:
     // from SkSurface_Base).
     virtual sk_sp<const SkCapabilities> onCapabilities();
 
+    /**
+     * If capturing, signals to the capture manager and capture canvas to break off the recording
+     * SkPicture into a new SkPicture.
+     */
+    void createCaptureBreakpoint();
+
     inline SkCanvas* getCachedCanvas();
     inline sk_sp<SkImage> refCachedImage();
 
@@ -201,15 +207,15 @@ private:
 SkCanvas* SkSurface_Base::getCachedCanvas() {
     if (nullptr == fCachedCanvas) {
         fOwnedBaseCanvas = std::unique_ptr<SkCanvas>(this->onNewCanvas());
-
+        if (fOwnedBaseCanvas) {
+            fOwnedBaseCanvas->setSurfaceBase(this);
+        }
+        // Try to wrap base canvas in capture wrapper
         if (this->baseRecorder()) {
             fCachedCanvas = this->baseRecorder()->makeCaptureCanvas(fOwnedBaseCanvas.get());
         }
         if (!fCachedCanvas) {
             fCachedCanvas = fOwnedBaseCanvas.get();
-        }
-        if (fCachedCanvas) {
-            fCachedCanvas->setSurfaceBase(this);
         }
     }
     return fCachedCanvas;
@@ -219,6 +225,7 @@ sk_sp<SkImage> SkSurface_Base::refCachedImage() {
     if (fCachedImage) {
         return fCachedImage;
     }
+    this->createCaptureBreakpoint();
 
     fCachedImage = this->onNewImageSnapshot();
 

@@ -27,23 +27,24 @@ private fun reducer(state: LabsState, action: LabsAction): LabsState {
     return when (action) {
         is LabsAction.InitAction,
         is LabsAction.RestartApplication,
+        is LabsAction.ShareFeedbackClicked,
             -> state
 
-        is LabsAction.UpdateFeatures -> state.copy(
-            labsFeatures = action.features,
+        is LabsAction.UpdateLabsItems -> state.copy(
+            labsItems = action.items,
         )
 
         is LabsAction.RestoreDefaults -> state.copy(
-            labsFeatures = state.labsFeatures.map {
-                it.copy(enabled = false)
+            labsItems = state.labsItems.map {
+                it.copy(enrolled = false)
             },
             dialogState = DialogState.Closed,
         )
 
-        is LabsAction.ToggleFeature -> state.copy(
-            labsFeatures = state.labsFeatures.map {
-                if (it.key == action.feature.key) {
-                    it.copy(enabled = !it.enabled)
+        is LabsAction.ToggleLabsItem -> state.copy(
+            labsItems = state.labsItems.map {
+                if (it.slug == action.item.slug) {
+                    it.copy(enrolled = !it.enrolled)
                 } else {
                     it
                 }
@@ -51,8 +52,8 @@ private fun reducer(state: LabsState, action: LabsAction): LabsState {
             dialogState = DialogState.Closed,
         )
 
-        is LabsAction.ShowToggleFeatureDialog -> state.copy(
-            dialogState = DialogState.ToggleFeature(action.feature),
+        is LabsAction.ShowToggleLabsItemDialog -> state.copy(
+            dialogState = DialogState.ToggleLabsItem(action.item),
         )
 
         is LabsAction.ShowRestoreDefaultsDialog -> state.copy(

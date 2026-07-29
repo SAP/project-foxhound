@@ -4,12 +4,12 @@
 
 package org.mozilla.fenix.home.setup.store
 
+import io.mockk.mockk
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertNotNull
 import junit.framework.TestCase.assertNull
 import junit.framework.TestCase.assertTrue
 import mozilla.components.lib.state.Store
-import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.telemetry.glean.testing.GleanTestRule
 import org.junit.Before
@@ -22,6 +22,7 @@ import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.components.appstate.setup.checklist.ChecklistItem
 import org.robolectric.RobolectricTestRunner
+import mozilla.components.ui.icons.R as iconsR
 
 @RunWith(RobolectricTestRunner::class)
 class SetupChecklistTelemetryMiddlewareTest {
@@ -140,11 +141,11 @@ class SetupChecklistTelemetryMiddlewareTest {
         val task = ChecklistItem.Task(
             type = type,
             title = R.string.setup_checklist_task_default_browser,
-            icon = R.drawable.ic_addons_extensions,
+            icon = iconsR.drawable.mozac_ic_extension_24,
             isCompleted = false,
         )
 
-        val store = mock<Store<AppState, AppAction>>()
+        val store = mockk<Store<AppState, AppAction>>()
         middleware.invoke(
             store = store,
             next = {},

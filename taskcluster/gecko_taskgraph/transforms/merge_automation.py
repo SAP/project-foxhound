@@ -66,6 +66,17 @@ def add_payload_config(config, tasks):
         assert len(worker["actions"][0].keys()) == 1
         action_name = list(worker["actions"][0].keys())[0]
 
+        # TODO: make these required when all callers are passing them
+        if "to-revision" in merge_config:
+            worker["actions"][0][action_name]["to-revision"] = merge_config[
+                "to-revision"
+            ]
+
+        if "from-revision" in merge_config:
+            worker["actions"][0][action_name]["from-revision"] = merge_config[
+                "from-revision"
+            ]
+
         # Override defaults, useful for testing.
         for field in [
             "from-repo",

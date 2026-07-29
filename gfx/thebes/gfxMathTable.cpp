@@ -83,10 +83,6 @@ void gfxMathTable::ClearCache() const {
 
 void gfxMathTable::UpdateMathVariantCache(uint32_t aGlyphID, bool aVertical,
                                           bool aRTL) const {
-  if (!StaticPrefs::mathml_rtl_operator_mirroring_enabled()) {
-    aRTL = false;
-  }
-
   if (aGlyphID == mMathVariantCache.glyphID &&
       aVertical == mMathVariantCache.vertical &&
       aRTL == mMathVariantCache.isRTL)
@@ -125,7 +121,7 @@ void gfxMathTable::UpdateMathVariantCache(uint32_t aGlyphID, bool aVertical,
   count = std::size(parts);
   unsigned int offset = 0;
   if (hb_ot_math_get_glyph_assembly(mHBFont, aGlyphID, direction, offset,
-                                    &count, parts, NULL) > std::size(parts))
+                                    &count, parts, nullptr) > std::size(parts))
     return;                // Not supported: Too many pieces.
   if (count <= 0) return;  // Not supported: No pieces.
 

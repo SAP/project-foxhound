@@ -24,15 +24,12 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "jstypes.h"
-
-#ifdef JS_SIMULATOR_ARM64
-
 #include "jit/arm64/vixl/Simulator-vixl.h"
 
 #include <cmath>
 #include <string.h>
 
+#include "jstypes.h"
 #include "jit/AtomicOperations.h"
 
 namespace vixl {
@@ -4496,5 +4493,3 @@ void Simulator::DoPrintf(const Instruction* instr) {
 }
 
 }  // namespace vixl
-
-#endif  // JS_SIMULATOR_ARM64

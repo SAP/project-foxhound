@@ -5,7 +5,7 @@
 
 // When a transition finishes, no "removed" event is sent because it may still
 // be used, but when it restarts again (transitions back), then a new
-// AnimationPlayerFront should be sent, and the old one should be removed.
+// AnimationFront should be sent, and the old one should be removed.
 
 add_task(async function () {
   const { target, walker, animations } = await initAnimationsFrontForUrl(

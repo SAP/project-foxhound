@@ -5,14 +5,15 @@
 Transform the beetmover task into an actual task description.
 """
 
+from typing import Optional
+
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
-from taskgraph.util.schema import LegacySchema
+from taskgraph.util.schema import Schema
 from taskgraph.util.taskcluster import get_artifact_prefix
-from voluptuous import Optional, Required
 
 from gecko_taskgraph.transforms.beetmover import craft_release_properties
-from gecko_taskgraph.transforms.task import task_description_schema
+from gecko_taskgraph.transforms.task import TaskDescriptionSchema
 from gecko_taskgraph.util.attributes import (
     copy_attributes_from_dependent_job,
 )
@@ -24,27 +25,28 @@ from gecko_taskgraph.util.scriptworker import (
     get_beetmover_bucket_scope,
 )
 
-beetmover_description_schema = LegacySchema({
+
+class BeetmoverDescriptionSchema(Schema, kw_only=True):
     # from the loader:
-    Optional("task-from"): str,
-    Optional("name"): str,
+    task_from: Optional[str] = None
+    name: Optional[str] = None
     # from the from_deps transforms:
-    Optional("attributes"): task_description_schema["attributes"],
-    Optional("dependencies"): task_description_schema["dependencies"],
+    attributes: TaskDescriptionSchema.__annotations__["attributes"] = None
+    dependencies: TaskDescriptionSchema.__annotations__["dependencies"] = None
     # depname is used in taskref's to identify the taskID of the unsigned things
-    Required("depname", default="build"): str,
+    depname: str = "build"
     # unique label to describe this beetmover task, defaults to {dep.label}-beetmover
-    Optional("label"): str,
-    Required("partner-path"): str,
-    Optional("extra"): object,
-    Required("shipping-phase"): task_description_schema["shipping-phase"],
-    Optional("shipping-product"): task_description_schema["shipping-product"],
-    Optional("priority"): task_description_schema["priority"],
-    Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
-})
+    label: Optional[str] = None
+    partner_path: str
+    extra: Optional[object] = None
+    shipping_phase: TaskDescriptionSchema.__annotations__["shipping_phase"]  # noqa: F821
+    shipping_product: TaskDescriptionSchema.__annotations__["shipping_product"] = None
+    priority: TaskDescriptionSchema.__annotations__["priority"] = None
+    run_on_repo_type: TaskDescriptionSchema.__annotations__["run_on_repo_type"] = None
+
 
 transforms = TransformSequence()
-transforms.add_validate(beetmover_description_schema)
+transforms.add_validate(BeetmoverDescriptionSchema)
 transforms.add(apply_partner_priority)
 
 

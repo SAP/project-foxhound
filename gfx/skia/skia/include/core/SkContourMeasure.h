@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -48,7 +48,7 @@ public:
     [[nodiscard]] bool getMatrix(SkScalar distance, SkMatrix* matrix,
                                  MatrixFlags flags = kGetPosAndTan_MatrixFlag) const;
 
-    /** Given a start and stop distance, return in dst the intervening segment(s).
+    /** Given a start and stop distance, append to dst the intervening segment(s).
      If the segment is zero-length, return false, else return true.
      startD and stopD are pinned to legal values (0..getLength()). If startD > stopD
      then return false (and leave dst untouched).
@@ -56,10 +56,6 @@ public:
      */
     [[nodiscard]] bool getSegment(SkScalar startD, SkScalar stopD, SkPathBuilder* dst,
                                   bool startWithMoveTo) const;
-#ifdef SK_SUPPORT_MUTABLE_PATHEFFECT
-    [[nodiscard]] bool getSegment(SkScalar startD, SkScalar stopD, SkPath* dst,
-                                  bool startWithMoveTo) const;
-#endif
 
     /** Return true if the contour is closed()
      */

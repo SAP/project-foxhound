@@ -37,7 +37,7 @@ import actions from "../../actions/index";
 
 // Components
 import SourcesTreeItem from "./SourcesTreeItem";
-import DebuggerImage from "../shared/DebuggerImage";
+import DebuggerImage from "devtools/client/shared/components/DebuggerImage";
 
 const classnames = require("resource://devtools/client/shared/classnames.js");
 const Tree = require("resource://devtools/client/shared/components/Tree.js");

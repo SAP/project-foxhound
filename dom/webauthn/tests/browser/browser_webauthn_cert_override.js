@@ -59,7 +59,7 @@ async function test_webauthn_with_cert_override({
         const netErrorCard =
           doc.querySelector("net-error-card").wrappedJSObject;
         await netErrorCard.getUpdateComplete();
-        await EventUtils.synthesizeMouseAtCenter(
+        EventUtils.synthesizeMouseAtCenter(
           netErrorCard.advancedButton,
           {},
           content

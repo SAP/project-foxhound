@@ -64,7 +64,7 @@ module.exports = {
    */
   parseFontVariationAxes(string) {
     let axes = {};
-    const keywords = ["initial", "normal", "inherit", "unset"];
+    const keywords = ["normal", ...InspectorUtils.getCSSWideKeywords()];
 
     if (!string || keywords.includes(string.trim())) {
       return axes;
@@ -90,23 +90,5 @@ module.exports = {
     }, {});
 
     return axes;
-  },
-
-  /**
-   * Limit the decimal count of a number. Unlike Number.toFixed(),
-   * this function does not pad with extra zeros. If the input is not a number,
-   * the function throws an error.
-   *
-   * @param {number} number
-   * @param {number} decimals
-   *        Decimal count in the output number. Default to one decimal.
-   * @return {number}
-   */
-  toFixed(number, decimals = 1) {
-    if (typeof number !== "number") {
-      throw new Error(`Input: "${number}" is not a number.`);
-    }
-
-    return Math.floor(number * Math.pow(10, decimals)) / Math.pow(10, decimals);
   },
 };

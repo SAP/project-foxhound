@@ -3,8 +3,11 @@
 # Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
 
 [DEFAULT]
+subsuite = "%%SUBSUITE%%"
 %%DEFAULT_ERRATA%%
 
-support-files = %%SUPPORT_FILES%%
+support-files = [
+%%SUPPORT_FILES%%
+]
 
 %%MANIFEST_TESTS%%

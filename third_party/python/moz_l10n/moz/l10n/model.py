@@ -16,9 +16,10 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Dict, Generic, List, Literal, Tuple, TypeVar, Union
+from typing import Generic, Literal, TypeVar, Union
 
 from .formats import Format
+from .util.normalize import _normalize_declarations, _normalize_pattern
 
 __all__ = [
     "CatchallKey",
@@ -42,6 +43,9 @@ __all__ = [
 class VariableRef:
     name: str
 
+    def __repr__(self) -> str:
+        return f"VariableRef({self.name!r})"
+
 
 @dataclass
 class Expression:
@@ -56,6 +60,26 @@ class Expression:
     options: dict[str, str | VariableRef] = field(default_factory=dict)
     attributes: dict[str, str | Literal[True]] = field(default_factory=dict)
 
+    def variable_refs(self) -> Iterator[VariableRef]:
+        """
+        VariableRef values in this Expression
+        """
+        if isinstance(self.arg, VariableRef):
+            yield self.arg
+        for opt in self.options.values():
+            if isinstance(opt, VariableRef):
+                yield opt
+
+    def __repr__(self) -> str:
+        body = [repr(self.arg)]
+        if self.function:
+            body.append(f"function={self.function!r}")
+        if self.options:
+            body.append(f"options={self.options!r}")
+        if self.attributes:
+            body.append(f"attributes={self.attributes!r}")
+        return f"Expression({','.join(body)})"
+
 
 @dataclass
 class Markup:
@@ -64,8 +88,24 @@ class Markup:
     options: dict[str, str | VariableRef] = field(default_factory=dict)
     attributes: dict[str, str | Literal[True]] = field(default_factory=dict)
 
+    def variable_refs(self) -> Iterator[VariableRef]:
+        """
+        VariableRef values in this Markup
+        """
+        for opt in self.options.values():
+            if isinstance(opt, VariableRef):
+                yield opt
 
-Pattern = List[Union[str, Expression, Markup]]
+    def __repr__(self) -> str:
+        body = [repr(self.kind), repr(self.name)]
+        if self.options:
+            body.append(f"options={self.options!r}")
+        if self.attributes:
+            body.append(f"attributes={self.attributes!r}")
+        return f"Expression({','.join(body)})"
+
+
+Pattern = list[Union[str, Expression, Markup]]
 """
 A linear sequence of text and placeholders corresponding to potential output of a message.
 
@@ -89,6 +129,27 @@ class PatternMessage:
         """
         return all(el == "" for el in self.pattern)
 
+    def normalize(self) -> PatternMessage:
+        """
+        Drop unused declarations,
+        join adjacent literal elements,
+        and drop empty literal elements.
+
+        Mutates this PatternMessage.
+        """
+        var_refs: set[str] = set()
+        _normalize_pattern(self.pattern, var_refs)
+        _normalize_declarations(self, var_refs)
+        return self
+
+    def __repr__(self) -> str:
+        body = (
+            f"declarations={self.declarations!r},pattern={self.pattern!r}"
+            if self.declarations
+            else repr(self.pattern)
+        )
+        return f"PatternMessage({body})"
+
 
 @dataclass
 class CatchallKey:
@@ -106,6 +167,9 @@ class CatchallKey:
     def __str__(self) -> str:
         return self.value or ""
 
+    def __repr__(self) -> str:
+        return f"CatchallKey({self.value!r})"
+
 
 @dataclass
 class SelectMessage:
@@ -115,7 +179,7 @@ class SelectMessage:
 
     declarations: dict[str, Expression]
     selectors: tuple[VariableRef, ...]
-    variants: Dict[Tuple[Union[str, CatchallKey], ...], Pattern]
+    variants: dict[tuple[str | CatchallKey, ...], Pattern]
 
     def is_empty(self) -> bool:
         """
@@ -124,6 +188,20 @@ class SelectMessage:
         return all(
             all(el == "" for el in pattern) for pattern in self.variants.values()
         )
+
+    def normalize(self) -> SelectMessage:
+        """
+        Drop unused declarations,
+        join adjacent literal elements,
+        and drop empty literal elements in all patterns.
+
+        Mutates this SelectMessage.
+        """
+        var_refs = set(sel.name for sel in self.selectors)
+        for pattern in self.variants.values():
+            _normalize_pattern(pattern, var_refs)
+        _normalize_declarations(self, var_refs)
+        return self
 
     def selector_expressions(self) -> tuple[Expression, ...]:
         return tuple(self.declarations[var.name] for var in self.selectors)
@@ -159,6 +237,10 @@ class LinePos:
     The line one past the end of the entry or section header.
     """
 
+    def __repr__(self) -> str:
+        body = [repr(self.start), repr(self.key), repr(self.value), repr(self.end)]
+        return f"LinePos({','.join(body)})"
+
 
 @dataclass
 class Metadata:
@@ -184,6 +266,9 @@ class Metadata:
     Values have all their character \\escapes processed.
     """
 
+    def __repr__(self) -> str:
+        return f"Metadata({self.key!r},{self.value!r})"
+
 
 @dataclass
 class Comment:
@@ -204,20 +289,65 @@ class Comment:
     available for some formats.
     """
 
+    def __repr__(self) -> str:
+        body = [repr(self.comment)]
+        if self.linepos:
+            body.append(f"linepos={self.linepos!r}")
+        return f"Comment({','.join(body)})"
+
 
 V_co = TypeVar("V_co", bound=Union[Message, str], covariant=True)
 """
 The Message value type.
 """
 
-Id = Tuple[str, ...]
+Id = tuple[str, ...]
 """
 An entry or section identifier.
 """
 
 
+class _WithMeta:
+    meta: list[Metadata]
+
+    def get_meta(self, key: str) -> str | None:
+        """
+        Get the value of the first metadata entry with a matching `key`, if any.
+        """
+        return next((m.value for m in self.meta if m.key == key), None)
+
+    def has_meta(self, key: str, value: str | None = None) -> bool:
+        """
+        Returns True if any metadata entry has a matching `key`
+        and, if not `None`, a matching `value`.
+        """
+        return any(
+            m.key == key and (value is None or m.value == value) for m in self.meta
+        )
+
+    def set_meta(self, key: str, value: str) -> None:
+        """
+        Set the value of the first metadata entry with a matching `key`,
+        or add a new metadata entry if no matching entry exists.
+        """
+        prev = next((m for m in self.meta if m.key == key), None)
+        if prev is None:
+            self.meta.append(Metadata(key, value))
+        else:
+            prev.value = value
+
+    def del_meta(self, key: str) -> int:
+        """
+        Remove metadata entries with a matching `key`.
+        Returns the number of removed entries.
+        """
+        n = len(self.meta)
+        self.meta = [m for m in self.meta if m.key != key]
+        return n - len(self.meta)
+
+
 @dataclass
-class Entry(Generic[V_co]):
+class Entry(Generic[V_co], _WithMeta):
     """
     A message entry.
 
@@ -275,15 +405,25 @@ class Entry(Generic[V_co]):
     available for some formats.
     """
 
-    def get_meta(self, key: str) -> str | None:
-        """
-        First metadata entry with a matching `key`, if any.
-        """
-        return next((m.value for m in self.meta if m.key == key), None)
+    def __repr__(self) -> str:
+        body = [repr(self.id)]
+        if self.comment or self.meta:
+            if self.comment:
+                body.append(f"comment={self.comment!r}")
+            if self.meta:
+                body.append(f"meta={self.meta!r}")
+            body.append(f"value={self.value!r}")
+        else:
+            body.append(repr(self.value))
+        if self.properties:
+            body.append(f"properties={self.properties!r}")
+        if self.linepos:
+            body.append(f"linepos={self.linepos!r}")
+        return f"Entry({','.join(body)})"
 
 
 @dataclass
-class Section(Generic[V_co]):
+class Section(Generic[V_co], _WithMeta):
     """
     A section of a resource.
 
@@ -337,15 +477,23 @@ class Section(Generic[V_co]):
     available for some formats.
     """
 
-    def get_meta(self, key: str) -> str | None:
-        """
-        First metadata entry with a matching `key`, if any.
-        """
-        return next((m.value for m in self.meta if m.key == key), None)
+    def __repr__(self) -> str:
+        body = [repr(self.id)]
+        if self.comment or self.meta:
+            if self.comment:
+                body.append(f"comment={self.comment!r}")
+            if self.meta:
+                body.append(f"meta={self.meta!r}")
+            body.append(f"entries={self.entries!r}")
+        else:
+            body.append(repr(self.entries))
+        if self.linepos:
+            body.append(f"linepos={self.linepos!r}")
+        return f"Section({','.join(body)})"
 
 
 @dataclass
-class Resource(Generic[V_co]):
+class Resource(Generic[V_co], _WithMeta):
     """
     A message resource.
 
@@ -392,8 +540,14 @@ class Resource(Generic[V_co]):
             if isinstance(entry, Entry)
         )
 
-    def get_meta(self, key: str) -> str | None:
-        """
-        First metadata entry with a matching `key`, if any.
-        """
-        return next((m.value for m in self.meta if m.key == key), None)
+    def __repr__(self) -> str:
+        body = [f"Format.{self.format.name}" if self.format else "None"]
+        if self.comment or self.meta:
+            if self.comment:
+                body.append(f"comment={self.comment!r}")
+            if self.meta:
+                body.append(f"meta={self.meta!r}")
+            body.append(f"sections={self.sections!r}")
+        else:
+            body.append(repr(self.sections))
+        return f"Resource({','.join(body)})"

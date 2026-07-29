@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,7 +19,15 @@ const override = Cc["@mozilla.org/network/native-dns-override;1"].getService(
 let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
   Ci.nsIX509CertDB
 );
-addCertFromFile(certdb, "http2-ca.pem", "CTu,u,u");
+
+add_setup(async function setup() {
+  addCertFromFile(certdb, "http2-ca.pem", "CTu,u,u");
+  // HE3 doesn't support connection coalescing yet.
+  Services.prefs.setBoolPref("network.http.happy_eyeballs_enabled", false);
+  registerCleanupFunction(async () => {
+    Services.prefs.clearUserPref("network.http.happy_eyeballs_enabled");
+  });
+});
 
 async function createServer() {
   let server = new NodeHTTP2Server();

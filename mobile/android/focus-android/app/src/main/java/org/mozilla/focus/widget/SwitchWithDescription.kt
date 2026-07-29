@@ -15,6 +15,9 @@ import org.mozilla.focus.R
 import org.mozilla.focus.databinding.SwitchWithDescriptionBinding
 import mozilla.components.ui.icons.R as iconsR
 
+/**
+ * A custom view that displays a switch with a title and a description.
+ */
 class SwitchWithDescription @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,

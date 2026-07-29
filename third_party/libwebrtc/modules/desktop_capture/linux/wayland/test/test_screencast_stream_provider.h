@@ -16,11 +16,15 @@
 #include <spa/utils/hook.h>
 
 #include <cstdint>
+#include <memory>
 
 #include "modules/desktop_capture/linux/wayland/screencast_stream_utils.h"
 #include "modules/desktop_capture/rgba_color.h"
+#include "modules/portal/pipewire_utils.h"
 
 namespace webrtc {
+
+class EglDmaBuf;
 
 class TestScreenCastStreamProvider {
  public:
@@ -37,7 +41,13 @@ class TestScreenCastStreamProvider {
     virtual ~Observer() = default;
   };
 
-  enum FrameDefect { None, EmptyData, CorruptedData, CorruptedMetadata };
+  enum FrameDefect {
+    None,
+    EmptyData,
+    CorruptedData,
+    CorruptedMetadata,
+    InvalidStride
+  };
 
   explicit TestScreenCastStreamProvider(Observer* observer,
                                         uint32_t width,
@@ -46,6 +56,7 @@ class TestScreenCastStreamProvider {
 
   uint32_t PipeWireNodeId();
 
+  void MarkModifierFailed(uint64_t modifier);
   void RecordFrame(RgbaColor rgba_color, FrameDefect frame_defect = None);
   void StartStreaming();
   void StopStreaming();
@@ -61,6 +72,7 @@ class TestScreenCastStreamProvider {
   uint32_t pw_node_id_ = 0;
 
   // PipeWire types
+  std::unique_ptr<PipeWireInitializer> pw_initializer_;
   struct pw_context* pw_context_ = nullptr;
   struct pw_core* pw_core_ = nullptr;
   struct pw_stream* pw_stream_ = nullptr;
@@ -73,7 +85,11 @@ class TestScreenCastStreamProvider {
   pw_core_events pw_core_events_ = {};
   pw_stream_events pw_stream_events_ = {};
 
-  struct spa_video_info_raw spa_video_format_;
+  struct spa_video_info_raw spa_video_format_ = {};
+  uint64_t modifier_ = 0;
+
+  // Test EGL DMA-BUF for testing
+  std::unique_ptr<EglDmaBuf> egl_dmabuf_;
 
   // PipeWire callbacks
   static void OnCoreError(void* data,

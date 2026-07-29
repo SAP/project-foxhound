@@ -1,5 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -16,7 +15,7 @@
     "about:privatebrowsing":
       "chrome://browser/skin/privatebrowsing/favicon.svg",
     "chrome://browser/content/aiwindow/aiWindow.html":
-      "chrome://global/skin/icons/highlights.svg",
+      "chrome://browser/skin/smart-window-simplified.svg",
   };
 
   const {
@@ -93,7 +92,94 @@
     return totalMemoryUsage;
   }
 
+  // Used for links dropped on browser content areas. Can be called with a null
+  // event argument when dropping links in the content process.
+  // handleDroppedLink has the following 2 overloads:
+  //   handleDroppedLink(tabbrowser, browser, event, url, name, triggeringPrincipal)
+  //   handleDroppedLink(tabbrowser, browser, event, links, triggeringPrincipal)
+  async function handleDroppedLink(
+    tabbrowser,
+    browser,
+    event,
+    urlOrLinks,
+    nameOrTriggeringPrincipal,
+    triggeringPrincipal
+  ) {
+    // If links are dropped in content process, event.preventDefault() should be
+    // called in the content process. Otherwise, we do it here.
+    if (event) {
+      // Keep the event from being handled by the dragDrop listeners
+      // built-in to gecko if they happen to be above us.
+      event.preventDefault();
+    }
+    let links;
+    if (Array.isArray(urlOrLinks)) {
+      links = urlOrLinks;
+      triggeringPrincipal = nameOrTriggeringPrincipal;
+    } else {
+      links = [{ url: urlOrLinks, nameOrTriggeringPrincipal, type: "" }];
+    }
+
+    let lastLocationChange = browser.lastLocationChange;
+
+    let userContextId = browser.getAttribute("usercontextid");
+
+    // event is null if links are dropped in content process.
+    // inBackground should be false, as it's loading into current browser.
+    let inBackground = false;
+    if (event) {
+      inBackground = Services.prefs.getBoolPref(
+        "browser.tabs.loadInBackground"
+      );
+      if (event.shiftKey) {
+        inBackground = !inBackground;
+      }
+    }
+
+    if (
+      links.length >=
+      Services.prefs.getIntPref("browser.tabs.maxOpenBeforeWarn")
+    ) {
+      // Sync dialog cannot be used inside drop event handler.
+      let answer = await tabbrowser.OpenInTabsUtils.promiseConfirmOpenInTabs(
+        links.length,
+        window
+      );
+      if (!answer) {
+        return;
+      }
+    }
+
+    let urls = [];
+    let postDatas = [];
+    for (let link of links) {
+      let data = await UrlbarUtils.getShortcutOrURIAndPostData(link.url);
+      urls.push(data.url);
+      postDatas.push(data.postData);
+    }
+    if (lastLocationChange == browser.lastLocationChange) {
+      tabbrowser.loadTabs(urls, {
+        inBackground,
+        replace: true,
+        allowThirdPartyFixup: false,
+        postDatas,
+        userContextId,
+        targetTab: tabbrowser.getTabForBrowser(browser),
+        triggeringPrincipal,
+      });
+    }
+  }
+
   window.Tabbrowser = class {
+    static create(window) {
+      window.gBrowser = new window.Tabbrowser();
+      window.gBrowser.init();
+    }
+
+    static destroy(window) {
+      window.gBrowser.destroy();
+    }
+
     init() {
       this.tabContainer = document.getElementById("tabbrowser-tabs");
       this.tabGroupMenu = document.getElementById("tab-group-editor");
@@ -109,6 +195,8 @@
         ASRouter: "resource:///modules/asrouter/ASRouter.sys.mjs",
         AsyncTabSwitcher:
           "moz-src:///browser/components/tabbrowser/AsyncTabSwitcher.sys.mjs",
+        OpenInTabsUtils:
+          "moz-src:///browser/components/tabbrowser/OpenInTabsUtils.sys.mjs",
         PictureInPicture: "resource://gre/modules/PictureInPicture.sys.mjs",
         SmartTabGroupingManager:
           "moz-src:///browser/components/tabbrowser/SmartTabGrouping.sys.mjs",
@@ -121,9 +209,11 @@
         TaskbarTabsUtils:
           "resource:///modules/taskbartabs/TaskbarTabsUtils.sys.mjs",
         TaskbarTabs: "resource:///modules/taskbartabs/TaskbarTabs.sys.mjs",
+        UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
         UrlbarProviderOpenTabs:
           "moz-src:///browser/components/urlbar/UrlbarProviderOpenTabs.sys.mjs",
         FaviconUtils: "moz-src:///toolkit/modules/FaviconUtils.sys.mjs",
+        KeyboardLockUtils: "resource://gre/modules/KeyboardLockUtils.sys.mjs",
       });
       ChromeUtils.defineLazyGetter(this, "tabLocalization", () => {
         return new Localization(
@@ -223,6 +313,14 @@
         .addEventListener("change", this);
 
       this.tabContainer.init();
+
+      this._defaultDropLinkHandler = function (...args) {
+        // The droppedLinkHandler gets invoked with `this` being the browser
+        // element on which the drop took place.
+        let browser = this;
+        let tabbrowser = browser.getTabBrowser();
+        handleDroppedLink(tabbrowser, browser, ...args);
+      };
       this._setupInitialBrowserAndTab();
 
       if (
@@ -244,7 +342,7 @@
       this._initialized = true;
     }
 
-    ownerGlobal = window;
+    documentGlobal = window;
 
     ownerDocument = document;
 
@@ -258,25 +356,23 @@
       ALL_DUPLICATES: 7,
     };
 
-    _lastRelatedTabMap = new WeakMap();
+    #lastRelatedTabMap = new WeakMap();
 
-    mProgressListeners = [];
+    #progressListeners = [];
 
-    mTabsProgressListeners = [];
+    #tabsProgressListeners = [];
 
-    _tabListeners = new Map();
+    #tabListeners = new Map();
 
-    _tabFilters = new Map();
+    #tabFilters = new Map();
 
     _isBusy = false;
 
     _awaitingToggleCaretBrowsingPrompt = false;
 
-    _previewMode = false;
+    #previewMode = false;
 
     _lastFindValue = "";
-
-    _contentWaitingCount = 0;
 
     _tabLayerCache = [];
 
@@ -285,7 +381,7 @@
     /**
      * Binding from browser to tab
      */
-    _tabForBrowser = new WeakMap();
+    #tabForBrowser = new WeakMap();
 
     /**
      * `_createLazyBrowser` will define properties on the unbound lazy browser
@@ -296,7 +392,7 @@
      * provides the names of properties that may be called while the browser
      * is in its unbound (lazy) state.
      */
-    _browserBindingProperties = [
+    #browserBindingProperties = [
       "canGoBack",
       "canGoForward",
       "goBack",
@@ -347,25 +443,25 @@
 
     _multiSelectedTabsSet = new WeakSet();
 
-    _lastMultiSelectedTabRef = null;
+    #lastMultiSelectedTabRef = null;
 
-    _clearMultiSelectionLocked = false;
+    #clearMultiSelectionLocked = false;
 
-    _clearMultiSelectionLockedOnce = false;
+    #clearMultiSelectionLockedOnce = false;
 
-    _multiSelectChangeStarted = false;
+    #multiSelectChangeStarted = false;
 
-    _multiSelectChangeAdditions = new Set();
+    #multiSelectChangeAdditions = new Set();
 
-    _multiSelectChangeRemovals = new Set();
+    #multiSelectChangeRemovals = new Set();
 
-    _multiSelectChangeSelected = false;
+    #multiSelectChangeSelected = false;
 
     /**
      * Tab close requests are ignored if the window is closing anyway,
      * e.g. when holding Ctrl+W.
      */
-    _windowIsClosing = false;
+    #windowIsClosing = false;
 
     preloadedBrowser = null;
 
@@ -424,14 +520,10 @@
 
     _switcher = null;
 
-    _soundPlayingAttrRemovalTimer = 0;
-
-    _hoverTabTimer = null;
-
     /**
      * @type {Array<{count: number, uris: [string, string], timestamp: number}>}
      */
-    _tabSelectTimestamps = [];
+    #tabSelectTimestamps = [];
 
     get tabs() {
       return this.tabContainer.allTabs;
@@ -570,14 +662,27 @@
         userContextId = parseInt(tabArgument.getAttribute("usercontextid"), 10);
       }
 
+      if (openWindowInfo) {
+        userContextId = openWindowInfo.originAttributes.userContextId;
+      }
+
+      let remoteTypeOptions = { window, userContextId };
+      if (triggeringRemoteType) {
+        // NOTE: We intentionally don't allow setting preferredRemoteType to
+        // NOT_REMOTE (null), as we don't want to choose the parent process.
+        remoteTypeOptions.preferredRemoteType = triggeringRemoteType;
+      }
+
       if (tabArgument && tabArgument.linkedBrowser) {
         remoteType = tabArgument.linkedBrowser.remoteType;
         initialBrowsingContextGroupId =
           tabArgument.linkedBrowser.browsingContext?.group.id;
       } else if (openWindowInfo) {
-        userContextId = openWindowInfo.originAttributes.userContextId;
         if (openWindowInfo.isRemote) {
-          remoteType = triggeringRemoteType ?? E10SUtils.DEFAULT_REMOTE_TYPE;
+          remoteType = ChromeUtils.predictRemoteTypeForURI(
+            null,
+            remoteTypeOptions
+          );
         } else {
           remoteType = E10SUtils.NOT_REMOTE;
         }
@@ -588,17 +693,9 @@
         }
 
         if (uriToLoad && typeof uriToLoad == "string") {
-          let oa = E10SUtils.predictOriginAttributes({
-            window,
-            userContextId,
-          });
-          remoteType = E10SUtils.getRemoteTypeForURI(
+          remoteType = ChromeUtils.predictRemoteTypeForURI(
             uriToLoad,
-            gMultiProcessBrowser,
-            gFissionBrowser,
-            triggeringRemoteType ?? E10SUtils.DEFAULT_REMOTE_TYPE,
-            null,
-            oa
+            remoteTypeOptions
           );
         } else {
           // If we reach here, we don't have the url to load. This means that
@@ -632,7 +729,7 @@
       if (gBrowserAllowScriptsToCloseInitialTabs) {
         browser.setAttribute("allowscriptstoclose", "true");
       }
-      browser.droppedLinkHandler = handleDroppedLink;
+      browser.droppedLinkHandler = this._defaultDropLinkHandler;
       browser.loadURI = URILoadingWrapper.loadURI.bind(
         URILoadingWrapper,
         browser
@@ -648,9 +745,13 @@
         let firstURI = Array.isArray(uriToLoad) ? uriToLoad[0] : uriToLoad;
 
         if (!this._allowTransparentBrowser) {
+          // firstURI may be a Promise (uriToLoadPromise still resolving while
+          // SessionStore restores) or empty; only build a URI from a real
+          // string, otherwise default to transparent like the no-URI case.
           browser.toggleAttribute(
             "transparent",
             !firstURI ||
+              typeof firstURI != "string" ||
               AIWindow.isAIWindowContentPage(Services.io.newURI(firstURI))
           );
         }
@@ -674,8 +775,9 @@
         tab.setAttribute("usercontextid", userContextId);
         ContextualIdentityService.setTabStyle(tab);
       }
+      updateUserContextUIIndicator();
 
-      this._tabForBrowser.set(browser, tab);
+      this.#tabForBrowser.set(browser, tab);
 
       this.appendStatusPanel();
 
@@ -689,8 +791,8 @@
         "@mozilla.org/appshell/component/browser-status-filter;1"
       ].createInstance(Ci.nsIWebProgress);
       filter.addProgressListener(tabListener, Ci.nsIWebProgress.NOTIFY_ALL);
-      this._tabListeners.set(tab, tabListener);
-      this._tabFilters.set(tab, filter);
+      this.#tabListeners.set(tab, tabListener);
+      this.#tabFilters.set(tab, filter);
       browser.webProgress.addProgressListener(
         filter,
         Ci.nsIWebProgress.NOTIFY_ALL
@@ -725,8 +827,91 @@
       return this.selectedBrowser.reload();
     }
 
-    reloadWithFlags(aFlags) {
-      return this.selectedBrowser.reloadWithFlags(aFlags);
+    reloadWithFlags(reloadFlags) {
+      const unchangedRemoteness = [];
+
+      for (const tab of this.selectedTabs) {
+        const browser = tab.linkedBrowser;
+        const url = browser.currentURI;
+        const urlSpec = url.spec;
+        // We need to cache the content principal here because the browser will be
+        // reconstructed when the remoteness changes and the content prinicpal will
+        // be cleared after reconstruction.
+        const principal = tab.linkedBrowser.contentPrincipal;
+        if (this.updateBrowserRemotenessByURL(browser, urlSpec)) {
+          // If the remoteness has changed, the new browser doesn't have any
+          // information of what was loaded before, so we need to load the previous
+          // URL again.
+          if (tab.linkedPanel) {
+            loadBrowserURI(browser, url, principal);
+          } else {
+            // Shift to fully loaded browser and make
+            // sure load handler is instantiated.
+            tab.addEventListener(
+              "SSTabRestoring",
+              () => loadBrowserURI(browser, url, principal),
+              { once: true }
+            );
+            this._insertBrowser(tab);
+          }
+        } else {
+          unchangedRemoteness.push(tab);
+        }
+      }
+
+      if (!unchangedRemoteness.length) {
+        return;
+      }
+
+      // Reset temporary permissions on the remaining tabs to reload.
+      // This is done here because we only want to reset
+      // permissions on user reload.
+      for (const tab of unchangedRemoteness) {
+        SitePermissions.clearTemporaryBlockPermissions(tab.linkedBrowser);
+        // Also reset DOS mitigations for the basic auth prompt on reload.
+        delete tab.linkedBrowser.authPromptAbuseCounter;
+      }
+      gIdentityHandler.hidePopup();
+      gPermissionPanel.hidePopup();
+
+      if (document.hasValidTransientUserGestureActivation) {
+        reloadFlags |= Ci.nsIWebNavigation.LOAD_FLAGS_USER_ACTIVATION;
+      }
+
+      for (const tab of unchangedRemoteness) {
+        ReducedProtectionNotification.markUserReload(tab.linkedBrowser);
+        reloadBrowser(tab);
+      }
+
+      function reloadBrowser(tab) {
+        if (tab.linkedPanel) {
+          const { browsingContext } = tab.linkedBrowser;
+          const { sessionHistory } = browsingContext;
+          if (sessionHistory) {
+            sessionHistory.reload(reloadFlags);
+          } else {
+            browsingContext.reload(reloadFlags);
+          }
+        } else {
+          // Shift to fully loaded browser and make
+          // sure load handler is instantiated.
+          tab.addEventListener(
+            "SSTabRestoring",
+            () => tab.linkedBrowser.browsingContext.reload(reloadFlags),
+            {
+              once: true,
+            }
+          );
+          gBrowser._insertBrowser(tab);
+        }
+      }
+
+      function loadBrowserURI(browser, url, principal) {
+        browser.loadURI(url, {
+          loadFlags: reloadFlags,
+          triggeringPrincipal: principal,
+        });
+      }
     }
 
     stop() {
@@ -985,12 +1170,12 @@
       let currentTab = this.selectedTab;
       try {
         // Suppress focus, ownership and selected tab changes
-        this._previewMode = true;
+        this.#previewMode = true;
         this.selectedTab = aTab;
         aCallback();
       } finally {
         this.selectedTab = currentTab;
-        this._previewMode = false;
+        this.#previewMode = false;
       }
     }
 
@@ -1009,7 +1194,7 @@
     }
 
     getTabForBrowser(aBrowser) {
-      return this._tabForBrowser.get(aBrowser);
+      return this.#tabForBrowser.get(aBrowser);
     }
 
     getPanel(aBrowser) {
@@ -1033,7 +1218,7 @@
       return this._tabNotificationDeck;
     }
 
-    _nextNotificationBoxId = 0;
+    #nextNotificationBoxId = 0;
     getNotificationBox(aBrowser) {
       let browser = aBrowser || this.selectedBrowser;
       if (!browser._notificationBox) {
@@ -1041,15 +1226,46 @@
           element.setAttribute("notificationside", "top");
           element.setAttribute(
             "name",
-            `tab-notification-box-${this._nextNotificationBoxId++}`
+            `tab-notification-box-${this.#nextNotificationBoxId++}`
           );
-          this.getTabNotificationDeck().append(element);
-          if (browser == this.selectedBrowser) {
-            this._updateVisibleNotificationBox(browser);
-          }
+          this.#insertNotificationBox(browser, element);
         }, this._notificationEnableDelay);
       }
       return browser._notificationBox;
+    }
+
+    /**
+     * Insert a notification box into the correct container.
+     *
+     * In Split View, notifications go into the panel's browserContainer
+     * so they appear only in that panel.
+     *
+     * Otherwise, they go into the shared tab notification deck.
+     *
+     * @param {MozBrowser} browser
+     * @param {Element} box
+     *   The notification box.
+     */
+    #insertNotificationBox(browser, box) {
+      if (this.#isBrowserInActiveSplitView(browser)) {
+        let browserContainer = this.getBrowserContainer(browser);
+        if (box.parentNode === browserContainer) {
+          // Notification box is already in the container.
+          return;
+        }
+        let browserStack = browserContainer.querySelector(".browserStack");
+        browserContainer.insertBefore(box, browserStack);
+        return;
+      }
+      this.getTabNotificationDeck().append(box);
+      if (browser == this.selectedBrowser) {
+        this._updateVisibleNotificationBox(browser);
+      }
+    }
+
+    #isBrowserInActiveSplitView(browser) {
+      let tab = this.getTabForBrowser(browser);
+      return this.#activeSplitView && tab?.splitview === this.#activeSplitView;
     }
 
     readNotificationBox(aBrowser) {
@@ -1063,6 +1279,13 @@
         return;
       }
       let notificationBox = this.readNotificationBox(aBrowser);
+      if (
+        notificationBox?._stack &&
+        notificationBox._stack.parentNode !== this.getTabNotificationDeck()
+      ) {
+        // Notification box is not in the deck (e.g. in a Split View panel).
+        return;
+      }
       this.getTabNotificationDeck().selectedViewName = notificationBox
         ? notificationBox.stack.getAttribute("name")
         : "";
@@ -1115,13 +1338,13 @@
       aBrowser = aBrowser || this.selectedBrowser;
 
       if (aCallGlobalListeners && aBrowser == this.selectedBrowser) {
-        callListeners(this.mProgressListeners, aArguments);
+        callListeners(this.#progressListeners, aArguments);
       }
 
       if (aCallTabsListeners) {
         aArguments.unshift(aBrowser);
 
-        callListeners(this.mTabsProgressListeners, aArguments);
+        callListeners(this.#tabsProgressListeners, aArguments);
       }
 
       return rv;
@@ -1411,6 +1634,7 @@
 
       let profileIdentifier =
         SelectableProfileService?.isEnabled &&
+        SelectableProfileService.getCachedProfileCount() > 1 &&
         SelectableProfileService.currentProfile?.name.replace(/\0/g, "");
       // Note that empty/falsy bits get filtered below.
 
@@ -1478,17 +1702,17 @@
       let oldTab = this.selectedTab;
 
       // Preview mode should not reset the owner
-      if (!this._previewMode && !oldTab.selected) {
+      if (!this.#previewMode && !oldTab.selected) {
         oldTab.owner = null;
       }
 
-      let lastRelatedTab = this._lastRelatedTabMap.get(oldTab);
+      let lastRelatedTab = this.#lastRelatedTabMap.get(oldTab);
       if (lastRelatedTab) {
         if (!lastRelatedTab.selected) {
           lastRelatedTab.owner = null;
         }
       }
-      this._lastRelatedTabMap = new WeakMap();
+      this.#lastRelatedTabMap = new WeakMap();
 
       if (!gMultiProcessBrowser) {
         oldBrowser.removeAttribute("primary");
@@ -1551,28 +1775,28 @@
         );
       }
 
-      let listener = this._tabListeners.get(newTab);
-      if (listener && listener.mStateFlags) {
+      let listener = this.#tabListeners.get(newTab);
+      if (listener && listener._stateFlags) {
         this._callProgressListeners(
           null,
           "onUpdateCurrentBrowser",
           [
-            listener.mStateFlags,
-            listener.mStatus,
-            listener.mMessage,
-            listener.mTotalProgress,
+            listener._stateFlags,
+            listener._status,
+            listener._message,
+            listener._totalProgress,
           ],
           true,
           false
         );
       }
 
-      if (!this._previewMode) {
+      if (!this.#previewMode) {
         newTab.recordTimeFromUnloadToReload();
         newTab.updateLastAccessed();
         oldTab.updateLastAccessed();
         // if this is the foreground window, update the last-seen timestamps.
-        if (this.ownerGlobal == BrowserWindowTracker.getTopWindow()) {
+        if (this.documentGlobal == BrowserWindowTracker.getTopWindow()) {
           newTab.updateLastSeenActive();
           oldTab.updateLastSeenActive();
         }
@@ -1638,7 +1862,7 @@
       // TabSelect events are suppressed during preview mode to avoid confusing extensions and other bits of code
       // that might rely upon the other changes suppressed.
       // Focus is suppressed in the event that the main browser window is minimized - focusing a tab would restore the window
-      if (!this._previewMode) {
+      if (!this.#previewMode) {
         // We've selected the new tab, so go ahead and notify listeners.
         let event = new CustomEvent("TabSelect", {
           bubbles: true,
@@ -1656,9 +1880,9 @@
         this._tabAttrModified(newTab, ["selected"]);
 
         this._startMultiSelectChange();
-        this._multiSelectChangeSelected = true;
+        this.#multiSelectChangeSelected = true;
         this.clearMultiSelectedTabs();
-        if (this._multiSelectChangeAdditions.size) {
+        if (this.#multiSelectChangeAdditions.size) {
           // Some tab has been multiselected just before switching tabs.
           // The tab that was selected at that point should also be multiselected.
           this.addToMultiSelectedTabs(oldTab);
@@ -1727,12 +1951,12 @@
       }
 
       // Only look at entries from the last minute
-      this._tabSelectTimestamps = this._tabSelectTimestamps.filter(
+      this.#tabSelectTimestamps = this.#tabSelectTimestamps.filter(
         entry => now - entry.timestamp < ONE_MINUTE_MS
       );
 
       const sortedUris = [oldTabSpec, newTabSpec].sort();
-      const existingEntry = this._tabSelectTimestamps.find(
+      const existingEntry = this.#tabSelectTimestamps.find(
         entry =>
           entry.uris[0] === sortedUris[0] && entry.uris[1] === sortedUris[1]
       );
@@ -1749,12 +1973,12 @@
               currentTabsOpen: gBrowser.visibleTabs.length,
             },
           });
-          this._tabSelectTimestamps = this._tabSelectTimestamps.filter(
+          this.#tabSelectTimestamps = this.#tabSelectTimestamps.filter(
             entry => entry !== existingEntry
           );
         }
       } else {
-        this._tabSelectTimestamps.push({
+        this.#tabSelectTimestamps.push({
           timestamp: now,
           uris: sortedUris,
           count: 1,
@@ -1763,7 +1987,7 @@
     }
 
     _adjustFocusBeforeTabSwitch(oldTab, newTab) {
-      if (this._previewMode) {
+      if (this.#previewMode) {
         return;
       }
 
@@ -2018,7 +2242,7 @@
       }
     }
 
-    _dataURLRegEx = /^data:[^,]+;base64,/i;
+    #dataURLRegEx = /^data:[^,]+;base64,/i;
 
     // Regex to test if a string (potential tab label) consists of only non-
     // printable characters. We consider Unicode categories Separator
@@ -2033,7 +2257,7 @@
     // We also ignore combining marks, as in the absence of a printable base
     // character they are unlikely to be usefully rendered, and may well be
     // clipped away entirely.
-    _nonPrintingRegEx =
+    #nonPrintingRegEx =
       /^[\p{Z}\p{C}\p{M}\u{115f}\u{1160}\u{2800}\u{3164}\u{ffa0}]*$/u;
 
     setTabTitle(aTab) {
@@ -2062,7 +2286,7 @@
 
       // If the title contains only non-printing characters (or only combining
       // marks, but no base character for them), we won't use it.
-      if (this._nonPrintingRegEx.test(title)) {
+      if (this.#nonPrintingRegEx.test(title)) {
         title = "";
       }
 
@@ -2081,7 +2305,7 @@
 
         if (title && !isBlankPageURL(title)) {
           isURL = true;
-          if (title.length <= 500 || !this._dataURLRegEx.test(title)) {
+          if (title.length <= 500 || !this.#dataURLRegEx.test(title)) {
             // Try to unescape not-ASCII URIs using the current character set.
             try {
               let characterSet = browser.characterSet;
@@ -2111,7 +2335,7 @@
     }
 
     _setTabLabel(aTab, aLabel, { beforeTabOpen, isContentTitle, isURL } = {}) {
-      if (!aLabel || aLabel.includes("about:reader?")) {
+      if (!aLabel || (isURL && /^about:reader\?url=/.test(aLabel))) {
         return false;
       }
 
@@ -2122,7 +2346,7 @@
       // we need the trailing characters for display. But a base64-encoded
       // data-URI is plain ASCII, so this is OK for tab-title display.
       // (See bug 1408854.)
-      if (isURL && aLabel.length > 500 && this._dataURLRegEx.test(aLabel)) {
+      if (isURL && aLabel.length > 500 && this.#dataURLRegEx.test(aLabel)) {
         aLabel = aLabel.substring(0, 500) + "\u2026";
       }
 
@@ -2193,6 +2417,7 @@
         policyContainer,
         userContextId,
         fromExternal,
+        newWindowLoad,
       } = {}
     ) {
       if (!aURIs.length) {
@@ -2260,6 +2485,9 @@
         if (fromExternal) {
           loadFlags |= LOAD_FLAGS_FROM_EXTERNAL;
         }
+        if (newWindowLoad) {
+          browser.initiatedFromNonWebControlled = true;
+        }
         try {
           browser.fixupAndLoadURIString(aURIs[0], {
             loadFlags,
@@ -2325,7 +2553,7 @@
     }
 
     updateBrowserRemoteness(aBrowser, { newFrameloader, remoteType } = {}) {
-      let isRemote = aBrowser.getAttribute("remote") == "true";
+      let isRemote = aBrowser.hasAttribute("remote");
 
       // We have to be careful with this here, as the "no remote type" is null,
       // not a string. Make sure to check only for undefined, since null is
@@ -2362,8 +2590,8 @@
       tab.dispatchEvent(evt);
 
       // Unhook our progress listener.
-      let filter = this._tabFilters.get(tab);
-      let listener = this._tabListeners.get(tab);
+      let filter = this.#tabFilters.get(tab);
+      let listener = this.#tabListeners.get(tab);
       // We should always have a filter, but if we fail to create a content
       // process when creating a new tab, we can end up here trying to switch
       // remoteness to load about:tabcrashed, without a filter/listener.
@@ -2375,7 +2603,6 @@
       // We'll be creating a new listener, so destroy the old one.
       listener?.destroy();
 
-      let oldDroppedLinkHandler = aBrowser.droppedLinkHandler;
       let oldUserTypedValue = aBrowser.userTypedValue;
       let hadStartedLoad = aBrowser.didStartLoadSinceLastUserTyping();
 
@@ -2388,7 +2615,7 @@
         aBrowser.setAttribute("remote", "true");
         aBrowser.setAttribute("remoteType", remoteType);
       } else {
-        aBrowser.setAttribute("remote", "false");
+        aBrowser.removeAttribute("remote");
         aBrowser.removeAttribute("remoteType");
       }
 
@@ -2407,8 +2634,6 @@
         aBrowser.urlbarChangeTracker.startedLoad();
       }
 
-      aBrowser.droppedLinkHandler = oldDroppedLinkHandler;
-
       // This shouldn't really be necessary, however, this has the side effect
       // of sending MozLayerTreeReady / MozLayerTreeCleared events for remote
       // frames, which the tab switcher depends on.
@@ -2420,12 +2645,12 @@
       // since tab progress listeners have logic for handling the initial about:blank
       // load
       listener = new TabProgressListener(tab, aBrowser, true, false);
-      this._tabListeners.set(tab, listener);
+      this.#tabListeners.set(tab, listener);
       if (!filter) {
         filter = Cc[
           "@mozilla.org/appshell/component/browser-status-filter;1"
         ].createInstance(Ci.nsIWebProgress);
-        this._tabFilters.set(tab, filter);
+        this.#tabFilters.set(tab, filter);
       }
       filter.addProgressListener(listener, Ci.nsIWebProgress.NOTIFY_ALL);
 
@@ -2486,16 +2711,11 @@
 
       let oldRemoteType = aBrowser.remoteType;
 
-      let oa = E10SUtils.predictOriginAttributes({ browser: aBrowser });
-
-      aOptions.remoteType = E10SUtils.getRemoteTypeForURI(
-        aURL,
-        gMultiProcessBrowser,
-        gFissionBrowser,
-        oldRemoteType,
-        aBrowser.currentURI,
-        oa
-      );
+      aOptions.remoteType = ChromeUtils.predictRemoteTypeForURI(aURL, {
+        window,
+        userContextId: aBrowser.getAttribute("usercontextid") ?? 0,
+        preferredRemoteType: oldRemoteType,
+      });
 
       // If this URL can't load in the current browser then flip it to the
       // correct type.
@@ -2622,7 +2842,7 @@
     _createLazyBrowser(aTab) {
       let browser = aTab.linkedBrowser;
 
-      let names = this._browserBindingProperties;
+      let names = this.#browserBindingProperties;
 
       for (let i = 0; i < names.length; i++) {
         let name = names[i];
@@ -2660,7 +2880,7 @@
             getter = () => () => this;
             break;
           case "isRemoteBrowser":
-            getter = () => browser.getAttribute("remote") == "true";
+            getter = () => browser.hasAttribute("remote");
             break;
           case "permitUnload":
             getter = () => () => ({ permitUnload: true });
@@ -2684,25 +2904,10 @@
             getter = () => {
               let url =
                 SessionStore.getLazyTabValue(aTab, "url") || "about:blank";
-              // Avoid recreating the same nsIURI object over and over again...
-              let uri;
-              if (browser._cachedCurrentURI) {
-                uri = browser._cachedCurrentURI;
-              } else {
-                uri = browser._cachedCurrentURI = Services.io.newURI(url);
-              }
-              let oa = E10SUtils.predictOriginAttributes({
-                browser,
+              return ChromeUtils.predictRemoteTypeForURI(url, {
+                window,
                 userContextId: aTab.getAttribute("usercontextid"),
               });
-              return E10SUtils.getRemoteTypeForURI(
-                url,
-                gMultiProcessBrowser,
-                gFissionBrowser,
-                undefined,
-                uri,
-                oa
-              );
             };
             break;
           case "userTypedValue":
@@ -2747,8 +2952,8 @@
       let browser = aTab.linkedBrowser;
 
       // If browser is a lazy browser, delete the substitute properties.
-      if (this._browserBindingProperties[0] in browser) {
-        for (let name of this._browserBindingProperties) {
+      if (this.#browserBindingProperties[0] in browser) {
+        for (let name of this.#browserBindingProperties) {
           delete browser[name];
         }
       }
@@ -2788,10 +2993,10 @@
         filter,
         Ci.nsIWebProgress.NOTIFY_ALL
       );
-      this._tabListeners.set(aTab, tabListener);
-      this._tabFilters.set(aTab, filter);
+      this.#tabListeners.set(aTab, tabListener);
+      this.#tabFilters.set(aTab, filter);
 
-      browser.droppedLinkHandler = handleDroppedLink;
+      browser.droppedLinkHandler = this._defaultDropLinkHandler;
       browser.loadURI = URILoadingWrapper.loadURI.bind(
         URILoadingWrapper,
         browser
@@ -2856,7 +3061,7 @@
         !aTab ||
         aTab.selected ||
         aTab.closing ||
-        this._windowIsClosing ||
+        this.#windowIsClosing ||
         !browser.isConnected ||
         !browser.isRemoteBrowser ||
         !browser.permitUnload(action).permitUnload
@@ -2882,7 +3087,7 @@
       // doesn't have to be complete (and we want to be sure not to
       // fire the beforeunload event). Calling TabStateFlusher.flush()
       // and then not unloading the browser is fine.
-      if (aTab.closing || this._windowIsClosing || !browser.isRemoteBrowser) {
+      if (aTab.closing || this.#windowIsClosing || !browser.isRemoteBrowser) {
         return;
       }
 
@@ -2924,14 +3129,14 @@
       }
 
       // Remove the tab's filter and progress listener.
-      let filter = this._tabFilters.get(aTab);
-      let listener = this._tabListeners.get(aTab);
+      let filter = this.#tabFilters.get(aTab);
+      let listener = this.#tabListeners.get(aTab);
       browser.webProgress.removeProgressListener(filter);
       filter.removeProgressListener(listener);
       listener.destroy();
 
-      this._tabListeners.delete(aTab);
-      this._tabFilters.delete(aTab);
+      this.#tabListeners.delete(aTab);
+      this.#tabFilters.delete(aTab);
 
       // Reset the findbar and remove it if it is attached to the tab.
       if (aTab._findBar) {
@@ -3269,8 +3474,8 @@
         console.error(e);
         t?.remove();
         if (t?.linkedBrowser) {
-          this._tabFilters.delete(t);
-          this._tabListeners.delete(t);
+          this.#tabFilters.delete(t);
+          this.#tabListeners.delete(t);
           this.getPanel(t.linkedBrowser).remove();
         }
         return null;
@@ -3470,63 +3675,10 @@
     }
 
     /**
-     * Removes all tabs from a split view wrapper. This also removes the split view wrapper component
-     *
-     * @param {MozTabSplitViewWrapper} [splitView]
-     *   The split view to remove.
-     * @param {string} [trigger]
-     *   The trigger method for ending the split view. Used for telemetry.
-     *   Valid values: "menu_separate", "icon_separate", "icon_close", "tab_close", "footer_separate".
-     */
-    unsplitTabs(splitview, trigger = null) {
-      if (!splitview) {
-        return;
-      }
-
-      // Record telemetry for split view end
-      if (trigger) {
-        const tab_layout = this.tabContainer.verticalMode
-          ? "vertical"
-          : "horizontal";
-
-        Glean.splitview.end.record({
-          tab_layout,
-          trigger,
-        });
-      }
-
-      // If the split view has about:opentabs open, remove that tab
-      // otherwise unsplit the tabs
-      let aboutOpenTabs = splitview.tabs.filter(
-        tab => tab?.linkedBrowser?.currentURI?.spec === "about:opentabs"
-      );
-
-      if (!aboutOpenTabs.length) {
-        gBrowser.setIsSplitViewActive(false, splitview.tabs);
-
-        for (let i = splitview.tabs.length - 1; i >= 0; i--) {
-          this.#handleTabMove(splitview.tabs[i], () =>
-            gBrowser.tabContainer.insertBefore(
-              splitview.tabs[i],
-              splitview.nextElementSibling
-            )
-          );
-        }
-
-        splitview.remove();
-      } else {
-        aboutOpenTabs.forEach(aboutOpenTab => {
-          // Note: removeTab triggers #observeTabChanges in tabsplitview.js,
-          // which will call unsplitTabs() again.
-          gBrowser.removeTab(aboutOpenTab);
-        });
-      }
-    }
-
-    /**
      * Show the list of tabs <browsers> that are part of a split view.
      *
      * @param {MozTabbrowserTab[]} tabs
+     * @param {boolean} isActive
      */
     showSplitViewPanels(tabs) {
       const panels = [];
@@ -3537,33 +3689,10 @@
           tab.linkedBrowser.docShellIsActive = true;
           panels.push(tab.linkedPanel);
         }
+        const panelEl = document.getElementById(tab.linkedPanel);
+        panelEl?.classList.toggle("split-view-panel-active", true);
       }
-      this.setIsSplitViewActive(true, tabs);
       this.tabpanels.splitViewPanels = panels;
-    }
-
-    /**
-     * Hide the list of tabs <browsers> that are part of a split view.
-     *
-     * @param {MozTabbrowserTab[]} tabs
-     */
-    hideSplitViewPanels(tabs) {
-      for (const tab of tabs) {
-        this.tabpanels.removePanelFromSplitView(tab.linkedPanel);
-      }
-    }
-
-    /**
-     * Toggle split view active attribute
-     *
-     * @param {boolean} isActive
-     * @param {MozTabbrowserTab[]} tabs
-     */
-    setIsSplitViewActive(isActive, tabs) {
-      for (const tab of tabs) {
-        this.tabpanels.setSplitViewPanelActive(isActive, tab.linkedPanel);
-      }
-      this.tabpanels.setSplitViewActive(!!gBrowser.selectedTab.splitview);
     }
 
     /**
@@ -3844,7 +3973,8 @@
       group.removedByAdoption = true;
       group.saveOnWindowClose = false;
 
-      let oldSelectedTab = selectTab && group.ownerGlobal.gBrowser.selectedTab;
+      let oldSelectedTab =
+        selectTab && group.documentGlobal.gBrowser.selectedTab;
       let newTabs = [];
       let adoptedTab;
       let splitview;
@@ -3852,9 +3982,10 @@
       // bug1969925 adopting a tab group will cause the window to close if it
       // is the only thing on the tab strip
       // In this case, the `TabUngrouped` event will not fire, so we have to do it manually
-      let noOtherTabsInWindow = group.ownerGlobal.gBrowser.nonHiddenTabs.every(
-        t => t.group == group
-      );
+      let noOtherTabsInWindow =
+        group.documentGlobal.gBrowser.nonHiddenTabs.every(
+          t => t.group == group
+        );
 
       // We dispatch this event in a separate for loop because the tab extension API
       // expects event.detail to be a tab.
@@ -3913,12 +4044,8 @@
       }
 
       let oldSelectedTab =
-        selectTab && container.ownerGlobal.gBrowser.selectedTab;
+        selectTab && container.documentGlobal.gBrowser.selectedTab;
       let newTabs = [];
-
-      if (typeof elementIndex == "number") {
-        tabIndex = this.#elementIndexToTabIndex(elementIndex);
-      }
 
       // When tabs are adopted across windows, they exit the tab split of the
       // source window, moved to the new window, and finally moved into a split
@@ -3929,11 +4056,14 @@
       for (let tab of container.tabs) {
         tab.removedByAdoption = true;
         let adoptedTab = this.adoptTab(tab, {
-          tabIndex,
           selectTab: tab === oldSelectedTab,
+          tabIndex,
+          elementIndex,
         });
         adoptedTab.addedByAdoption = true;
         newTabs.push(adoptedTab);
+        // Put next tab after current one.
+        elementIndex = undefined;
         tabIndex = adoptedTab._tPos + 1;
       }
 
@@ -4123,8 +4253,6 @@
 
       let { userContextId } = tab;
 
-      var oa = E10SUtils.predictOriginAttributes({ window, userContextId });
-
       // If URI is about:blank and we don't have a preferred remote type,
       // then we need to use the referrer, if we have one, to get the
       // correct remote type for the new tab.
@@ -4134,26 +4262,19 @@
         referrerInfo &&
         referrerInfo.originalReferrer
       ) {
-        preferredRemoteType = E10SUtils.getRemoteTypeForURI(
-          referrerInfo.originalReferrer.spec,
-          gMultiProcessBrowser,
-          gFissionBrowser,
-          E10SUtils.DEFAULT_REMOTE_TYPE,
-          null,
-          oa
+        preferredRemoteType = ChromeUtils.predictRemoteTypeForURI(
+          referrerInfo.originalReferrer,
+          { window, userContextId }
         );
       }
 
       let remoteType = forceNotRemote
         ? E10SUtils.NOT_REMOTE
-        : E10SUtils.getRemoteTypeForURI(
-            uriString,
-            gMultiProcessBrowser,
-            gFissionBrowser,
+        : ChromeUtils.predictRemoteTypeForURI(uriString, {
+            window,
+            userContextId,
             preferredRemoteType,
-            null,
-            oa
-          );
+          });
 
       let b,
         usingPreloadedContent = false;
@@ -4181,7 +4302,7 @@
 
       tab.linkedBrowser = b;
 
-      this._tabForBrowser.set(b, tab);
+      this.#tabForBrowser.set(b, tab);
       tab.permanentKey = b.permanentKey;
       tab._browserParams = {
         uriIsAboutBlank,
@@ -4402,14 +4523,10 @@
             url = tabData.entries[activeIndex].url;
           }
 
-          let preferredRemoteType = E10SUtils.getRemoteTypeForURI(
-            url,
-            gMultiProcessBrowser,
-            gFissionBrowser,
-            E10SUtils.DEFAULT_REMOTE_TYPE,
-            null,
-            E10SUtils.predictOriginAttributes({ window, userContextId })
-          );
+          let preferredRemoteType = ChromeUtils.predictRemoteTypeForURI(url, {
+            window,
+            userContextId,
+          });
 
           // If we're creating a lazy browser, let tabbrowser know the future
           // URI because progress listeners won't get onLocationChange
@@ -4733,7 +4850,7 @@
             Services.prefs.getBoolPref("browser.tabs.insertAfterCurrent"))
         ) {
           let lastRelatedTab =
-            openerTab && this._lastRelatedTabMap.get(openerTab);
+            openerTab && this.#lastRelatedTabMap.get(openerTab);
           let previousTab = lastRelatedTab || openerTab || this.selectedTab;
           if (!tabGroup) {
             tabGroup = previousTab.group;
@@ -4763,7 +4880,7 @@
           }
           // Always set related map if opener exists.
           if (openerTab) {
-            this._lastRelatedTabMap.set(openerTab, tab);
+            this.#lastRelatedTabMap.set(openerTab, tab);
           }
         }
       }
@@ -5158,7 +5275,7 @@
      * @param {boolean} options.animate
      *   Whether or not to animate closing.
      * @param {boolean} options.suppressWarnAboutClosingWindow
-     *   This will supress the warning about closing a window with the last tab.
+     *   This will suppress the warning about closing a window with the last tab.
      * @param {boolean} options.skipPermitUnload
      *   Skips the before unload checks for the tabs. Only set this to true when
      *   using it in tandem with `runBeforeUnloadForTabs`.
@@ -5369,7 +5486,7 @@
      * @param {boolean} [options.animate]
      *   Whether or not to animate closing, defaults to true.
      * @param {boolean} [options.suppressWarnAboutClosingWindow]
-     *   This will supress the warning about closing a window with the last tab.
+     *   This will suppress the warning about closing a window with the last tab.
      * @param {boolean} [options.skipPermitUnload]
      *   Skips the before unload checks for the tabs. Only set this to true when
      *   using it in tandem with `runBeforeUnloadForTabs`.
@@ -5414,9 +5531,9 @@
       if (!skipSessionStore) {
         SessionStore.resetLastClosedTabCount(window);
       }
-      this._clearMultiSelectionLocked = true;
+      this.#clearMultiSelectionLocked = true;
 
-      // Guarantee that _clearMultiSelectionLocked lock gets released.
+      // Guarantee that #clearMultiSelectionLocked lock gets released.
       try {
         // If selection includes entire groups, we might want to save them
         if (!skipGroupCheck) {
@@ -5490,7 +5607,7 @@
         console.error(e);
       }
 
-      this._clearMultiSelectionLocked = false;
+      this.#clearMultiSelectionLocked = false;
       this._avoidSingleSelectedTab();
     }
 
@@ -5657,7 +5774,7 @@
         telemetrySource,
       } = {}
     ) {
-      if (aTab.closing || this._windowIsClosing) {
+      if (aTab.closing || this.#windowIsClosing) {
         return false;
       }
 
@@ -5734,7 +5851,7 @@
         if (closeWindow && closeWindowFastpath && !this._removingTabs.size) {
           // This call actually closes the window, unless the user
           // cancels the operation.  We are finished here in both cases.
-          this._windowIsClosing = window.closeWindow(
+          this.#windowIsClosing = window.closeWindow(
             true,
             window.warnAboutClosingWindow,
             "close-last-tab"
@@ -5750,13 +5867,13 @@
       if (closeWindow && adoptedByTab) {
         // Remove the tab's filter and progress listener to avoid leaking.
         if (aTab.linkedPanel) {
-          const filter = this._tabFilters.get(aTab);
+          const filter = this.#tabFilters.get(aTab);
           browser.webProgress.removeProgressListener(filter);
-          const listener = this._tabListeners.get(aTab);
+          const listener = this.#tabListeners.get(aTab);
           filter.removeProgressListener(listener);
           listener.destroy();
-          this._tabListeners.delete(aTab);
-          this._tabFilters.delete(aTab);
+          this.#tabListeners.delete(aTab);
+          this.#tabFilters.delete(aTab);
         }
         return true;
       }
@@ -5836,11 +5953,11 @@
         }
 
         // Remove the tab's filter and progress listener.
-        const filter = this._tabFilters.get(aTab);
+        const filter = this.#tabFilters.get(aTab);
 
         browser.webProgress.removeProgressListener(filter);
 
-        const listener = this._tabListeners.get(aTab);
+        const listener = this.#tabListeners.get(aTab);
         filter.removeProgressListener(listener);
         listener.destroy();
       }
@@ -5870,14 +5987,14 @@
       var [aCloseWindow, aNewTab] = aTab._endRemoveArgs;
       aTab._endRemoveArgs = null;
 
-      if (this._windowIsClosing) {
+      if (this.#windowIsClosing) {
         aCloseWindow = false;
         aNewTab = false;
       }
 
       this.tabAnimationsInProgress--;
 
-      this._lastRelatedTabMap = new WeakMap();
+      this.#lastRelatedTabMap = new WeakMap();
 
       // update the UI early for responsiveness
       aTab.collapsed = true;
@@ -5886,19 +6003,19 @@
       this._removingTabs.delete(aTab);
 
       if (aCloseWindow) {
-        this._windowIsClosing = true;
+        this.#windowIsClosing = true;
         for (let tab of this._removingTabs) {
           this._endRemoveTab(tab);
         }
-      } else if (!this._windowIsClosing) {
+      } else if (!this.#windowIsClosing) {
         if (aNewTab) {
           gURLBar.select();
         }
       }
 
       // We're going to remove the tab and the browser now.
-      this._tabFilters.delete(aTab);
-      this._tabListeners.delete(aTab);
+      this.#tabFilters.delete(aTab);
+      this.#tabListeners.delete(aTab);
 
       var browser = this.getBrowserForTab(aTab);
 
@@ -5923,7 +6040,7 @@
         this.tabs[i]._tPos = i;
       }
 
-      if (!this._windowIsClosing) {
+      if (!this.#windowIsClosing) {
         // update tab close buttons state
         this.tabContainer._updateCloseButtons();
 
@@ -5963,7 +6080,7 @@
 
       // Release the browser in case something is erroneously holding a
       // reference to the tab after its removal.
-      this._tabForBrowser.delete(aTab.linkedBrowser);
+      this.#tabForBrowser.delete(aTab.linkedBrowser);
       aTab.linkedBrowser = null;
 
       panel.remove();
@@ -5985,7 +6102,7 @@
       }
 
       if (aCloseWindow) {
-        this._windowIsClosing = closeWindow(
+        this.#windowIsClosing = closeWindow(
           true,
           window.warnAboutClosingWindow,
           "close-last-tab"
@@ -6224,14 +6341,14 @@
       // and vice versa.
       if (
         PrivateBrowsingUtils.isWindowPrivate(window) !=
-        PrivateBrowsingUtils.isWindowPrivate(aOtherTab.ownerGlobal)
+        PrivateBrowsingUtils.isWindowPrivate(aOtherTab.documentGlobal)
       ) {
         return false;
       }
 
       // Do not allow transfering a useRemoteSubframes tab to a
       // non-useRemoteSubframes window and vice versa.
-      if (gFissionBrowser != aOtherTab.ownerGlobal.gFissionBrowser) {
+      if (gFissionBrowser != aOtherTab.documentGlobal.gFissionBrowser) {
         return false;
       }
 
@@ -6252,13 +6369,13 @@
       }
 
       // That's gBrowser for the other window, not the tab's browser!
-      var remoteBrowser = aOtherTab.ownerGlobal.gBrowser;
+      var remoteBrowser = aOtherTab.documentGlobal.gBrowser;
       var isPending = aOtherTab.hasAttribute("pending");
 
-      let otherTabListener = remoteBrowser._tabListeners.get(aOtherTab);
+      let otherTabListener = remoteBrowser._getTabProgressListener(aOtherTab);
       let stateFlags = 0;
       if (otherTabListener) {
-        stateFlags = otherTabListener.mStateFlags;
+        stateFlags = otherTabListener._stateFlags;
       }
 
       // Expedite the removal of the icon if it was already scheduled.
@@ -6286,7 +6403,7 @@
       // about:blank being painted.
       let [closeWindow] = aOtherTab._endRemoveArgs;
       if (closeWindow) {
-        let win = aOtherTab.ownerGlobal;
+        let win = aOtherTab.documentGlobal;
         win.windowUtils.suppressAnimation(true);
         // Only suppressing window animations isn't enough to avoid
         // an empty content area being painted.
@@ -6344,7 +6461,7 @@
         ourBrowser.isDistinctProductPageVisit = true;
       }
 
-      SitePermissions.copyTemporaryPermissions(otherBrowser, ourBrowser);
+      let srcBrowserId = otherBrowser.browserId;
 
       // Add a reference to the original registeredOpenURI to the closing
       // tab so that events operating on the tab before close can reference it.
@@ -6382,6 +6499,12 @@
         this._swapBrowserDocShells(aOurTab, otherBrowser, stateFlags);
       }
 
+      SitePermissions.copyTemporaryPermissions(
+        srcBrowserId,
+        otherBrowser,
+        ourBrowser
+      );
+
       // Unregister the previously opened URI
       if (otherBrowser.registeredOpenURI) {
         let userContextId = otherBrowser.getAttribute("usercontextid") || 0;
@@ -6413,7 +6536,7 @@
 
       // Finish tearing down the tab that's going away.
       if (closeWindow) {
-        aOtherTab.ownerGlobal.close();
+        aOtherTab.documentGlobal.close();
       } else {
         remoteBrowser._endRemoveTab(aOtherTab);
       }
@@ -6433,13 +6556,31 @@
       return true;
     }
 
+    // The progress listener and filter Maps are #-private, but tab swapping
+    // reaches across windows: each window evaluates this script separately, so
+    // another window's gBrowser is an instance of a different Tabbrowser class
+    // and its private fields can't be read directly. These thin accessors run
+    // in the owning window's realization, so callers can route through them
+    // (e.g. otherWindowGBrowser._getTabProgressListener(tab)).
+    _getTabProgressListener(aTab) {
+      return this.#tabListeners.get(aTab);
+    }
+
+    _getTabProgressFilter(aTab) {
+      return this.#tabFilters.get(aTab);
+    }
+
+    _setTabProgressListener(aTab, aListener) {
+      this.#tabListeners.set(aTab, aListener);
+    }
+
     swapBrowsers(aOurTab, aOtherTab) {
       let otherBrowser = aOtherTab.linkedBrowser;
       let otherTabBrowser = otherBrowser.getTabBrowser();
 
       // We aren't closing the other tab so, we also need to swap its tablisteners.
-      let filter = otherTabBrowser._tabFilters.get(aOtherTab);
-      let tabListener = otherTabBrowser._tabListeners.get(aOtherTab);
+      let filter = otherTabBrowser._getTabProgressFilter(aOtherTab);
+      let tabListener = otherTabBrowser._getTabProgressListener(aOtherTab);
       otherBrowser.webProgress.removeProgressListener(filter);
       filter.removeProgressListener(tabListener);
 
@@ -6447,13 +6588,13 @@
       this._swapBrowserDocShells(aOurTab, otherBrowser);
 
       // Restore the listeners for the swapped in tab.
-      tabListener = new otherTabBrowser.ownerGlobal.TabProgressListener(
+      tabListener = new otherTabBrowser.documentGlobal.TabProgressListener(
         aOtherTab,
         otherBrowser,
         false,
         false
       );
-      otherTabBrowser._tabListeners.set(aOtherTab, tabListener);
+      otherTabBrowser._setTabProgressListener(aOtherTab, tabListener);
 
       const notifyAll = Ci.nsIWebProgress.NOTIFY_ALL;
       filter.addProgressListener(tabListener, notifyAll);
@@ -6465,8 +6606,8 @@
       this._insertBrowser(aOurTab);
 
       // Unhook our progress listener
-      const filter = this._tabFilters.get(aOurTab);
-      let tabListener = this._tabListeners.get(aOurTab);
+      const filter = this.#tabFilters.get(aOurTab);
+      let tabListener = this.#tabListeners.get(aOurTab);
       let ourBrowser = this.getBrowserForTab(aOurTab);
       ourBrowser.webProgress.removeProgressListener(filter);
       filter.removeProgressListener(tabListener);
@@ -6474,7 +6615,7 @@
       // Make sure to unregister any open URIs.
       this._swapRegisteredOpenURIs(ourBrowser, aOtherBrowser);
 
-      let remoteBrowser = aOtherBrowser.ownerGlobal.gBrowser;
+      let remoteBrowser = aOtherBrowser.documentGlobal.gBrowser;
 
       // If switcher is active, it will intercept swap events and
       // react as needed.
@@ -6520,7 +6661,7 @@
         false,
         aStateFlags
       );
-      this._tabListeners.set(aOurTab, tabListener);
+      this.#tabListeners.set(aOurTab, tabListener);
 
       const notifyAll = Ci.nsIWebProgress.NOTIFY_ALL;
       filter.addProgressListener(tabListener, notifyAll);
@@ -6577,21 +6718,21 @@
         );
       }
 
-      this.mProgressListeners.push(aListener);
+      this.#progressListeners.push(aListener);
     }
 
     removeProgressListener(aListener) {
-      this.mProgressListeners = this.mProgressListeners.filter(
+      this.#progressListeners = this.#progressListeners.filter(
         l => l != aListener
       );
     }
 
     addTabsProgressListener(aListener) {
-      this.mTabsProgressListeners.push(aListener);
+      this.#tabsProgressListeners.push(aListener);
     }
 
     removeTabsProgressListener(aListener) {
-      this.mTabsProgressListeners = this.mTabsProgressListeners.filter(
+      this.#tabsProgressListeners = this.#tabsProgressListeners.filter(
         l => l != aListener
       );
     }
@@ -6930,6 +7071,23 @@
       if (element.splitview) {
         element = element.splitview;
       }
+      // When moving backwards, placing an element at tabIndex works trivially.
+      // When moving forwards to a higher tabIndex, we need to increase the
+      // index to account for the fact that the act of moving (multiple) tabs
+      // causes all following tabs to have a decreased index.
+      let movingForwards = false;
+      if (this.isTab(element)) {
+        movingForwards = tabIndex > element._tPos;
+      } else {
+        // tab group or split view (mutually exclusive with being pinned).
+        let tabsInElement = element.tabs;
+        movingForwards = tabIndex > tabsInElement[0]._tPos;
+        if (movingForwards) {
+          // -1 because element will be *after* tabIndex instead of at it.
+          tabIndex += tabsInElement.length - 1;
+          tabIndex = Math.min(tabIndex, this.tabs.length);
+        }
+      }
       this.#handleTabMove(
         element,
         () => {
@@ -6939,15 +7097,14 @@
           }
           if (neighbor?.splitview) {
             neighbor = neighbor.splitview;
-          }
-          let useAfter = false;
-          if (this.isTab(element)) {
-            useAfter = neighbor && tabIndex > element._tPos;
-          } else if (this.isSplitViewWrapper(element)) {
-            useAfter = neighbor && tabIndex >= this.tabs.length - 1;
+            if (neighbor === element) {
+              // Already inside the same split view, don't move.
+              // If you want to swap tabs, use splitview.reverseTabs() instead.
+              return;
+            }
           }
 
-          if (useAfter) {
+          if (movingForwards && neighbor) {
             neighbor.after(element);
           } else {
             this.tabContainer.insertBefore(element, neighbor);
@@ -7257,6 +7414,11 @@
       }
     }
 
+    /** public API to the below private method */
+    handleTabMove(element, moveActionCallback, metricsContext) {
+      this.#handleTabMove(element, moveActionCallback, metricsContext);
+    }
+
     /**
      * @param {MozTabbrowserTab|MozTabbrowserTabGroup|MozTabSplitViewWrapper} element
      * @param {function():void} moveActionCallback
@@ -7264,7 +7426,8 @@
      */
     #handleTabMove(element, moveActionCallback, metricsContext) {
       let tabs;
-      if (this.isTab(element) && element.splitview) {
+      // TODO bug 2024173: consider removing element.splitview check.
+      if (this.isTab(element) && element.splitview?.shouldMoveAllTabsAtOnce) {
         tabs = element.splitview.tabs;
       } else if (this.isTab(element)) {
         tabs = [element];
@@ -7284,15 +7447,15 @@
       // Clear tabs cache after moving nodes because the order of tabs may have
       // changed.
       this.tabContainer._invalidateCachedTabs();
-      this._lastRelatedTabMap = new WeakMap();
+      this.#lastRelatedTabMap = new WeakMap();
       this._updateTabsAfterInsert();
 
       if (wasFocused) {
         this.selectedTab.focus();
       }
 
-      // When a tab group with multiple tabs is moved forwards, emit TabMove in
-      // the reverse order, so that the index in previousTabState values are
+      // When multiple tabs are moved forwards (tab group, split view), reverse
+      // the order of TabMove, so that the index in previousTabState values are
       // still accurate until the event is dispatched. If we were to start with
       // the front tab, then logically that tab moves, and all following tabs
       // would shift, which would invalidate the index in previousTabState.
@@ -7556,8 +7719,8 @@
       aTab.setAttribute("aria-selected", "true");
       this._multiSelectedTabsSet.add(aTab);
       this._startMultiSelectChange();
-      if (!this._multiSelectChangeRemovals.delete(aTab)) {
-        this._multiSelectChangeAdditions.add(aTab);
+      if (!this.#multiSelectChangeRemovals.delete(aTab)) {
+        this.#multiSelectChangeAdditions.add(aTab);
       }
     }
 
@@ -7605,16 +7768,16 @@
       aTab.removeAttribute("aria-selected");
       this._multiSelectedTabsSet.delete(aTab);
       this._startMultiSelectChange();
-      if (!this._multiSelectChangeAdditions.delete(aTab)) {
-        this._multiSelectChangeRemovals.add(aTab);
+      if (!this.#multiSelectChangeAdditions.delete(aTab)) {
+        this.#multiSelectChangeRemovals.add(aTab);
       }
     }
 
     clearMultiSelectedTabs() {
-      if (this._clearMultiSelectionLocked) {
-        if (this._clearMultiSelectionLockedOnce) {
-          this._clearMultiSelectionLockedOnce = false;
-          this._clearMultiSelectionLocked = false;
+      if (this.#clearMultiSelectionLocked) {
+        if (this.#clearMultiSelectionLockedOnce) {
+          this.#clearMultiSelectionLockedOnce = false;
+          this.#clearMultiSelectionLocked = false;
         }
         return;
       }
@@ -7626,7 +7789,7 @@
       for (let tab of this.selectedTabs) {
         this.removeFromMultiSelectedTabs(tab);
       }
-      this._lastMultiSelectedTabRef = null;
+      this.#lastMultiSelectedTabRef = null;
     }
 
     selectAllTabs() {
@@ -7645,13 +7808,13 @@
     }
 
     lockClearMultiSelectionOnce() {
-      this._clearMultiSelectionLockedOnce = true;
-      this._clearMultiSelectionLocked = true;
+      this.#clearMultiSelectionLockedOnce = true;
+      this.#clearMultiSelectionLocked = true;
     }
 
     unlockClearMultiSelection() {
-      this._clearMultiSelectionLockedOnce = false;
-      this._clearMultiSelectionLocked = false;
+      this.#clearMultiSelectionLockedOnce = false;
+      this.#clearMultiSelectionLocked = false;
     }
 
     /**
@@ -7687,9 +7850,9 @@
     }
 
     _switchToNextMultiSelectedTab() {
-      this._clearMultiSelectionLocked = true;
+      this.#clearMultiSelectionLocked = true;
 
-      // Guarantee that _clearMultiSelectionLocked lock gets released.
+      // Guarantee that #clearMultiSelectionLocked lock gets released.
       try {
         let lastMultiSelectedTab = this.lastMultiSelectedTab;
         if (!lastMultiSelectedTab.selected) {
@@ -7704,7 +7867,7 @@
         console.error(e);
       }
 
-      this._clearMultiSelectionLocked = false;
+      this.#clearMultiSelectionLocked = false;
     }
 
     set selectedTabs(tabs) {
@@ -7755,8 +7918,8 @@
     }
 
     get lastMultiSelectedTab() {
-      let tab = this._lastMultiSelectedTabRef
-        ? this._lastMultiSelectedTabRef.get()
+      let tab = this.#lastMultiSelectedTabRef
+        ? this.#lastMultiSelectedTabRef.get()
         : null;
       if (tab && tab.isConnected && this._multiSelectedTabsSet.has(tab)) {
         return tab;
@@ -7767,7 +7930,7 @@
     }
 
     set lastMultiSelectedTab(aTab) {
-      this._lastMultiSelectedTabRef = Cu.getWeakReference(aTab);
+      this.#lastMultiSelectedTabRef = Cu.getWeakReference(aTab);
     }
 
     _mayTabBeMultiselected(aTab) {
@@ -7775,8 +7938,8 @@
     }
 
     _startMultiSelectChange() {
-      if (!this._multiSelectChangeStarted) {
-        this._multiSelectChangeStarted = true;
+      if (!this.#multiSelectChangeStarted) {
+        this.#multiSelectChangeStarted = true;
         Promise.resolve().then(() => this._endMultiSelectChange());
       }
     }
@@ -7784,14 +7947,14 @@
     _endMultiSelectChange() {
       let noticeable = false;
       let { selectedTab } = this;
-      if (this._multiSelectChangeAdditions.size) {
+      if (this.#multiSelectChangeAdditions.size) {
         if (!selectedTab.multiselected) {
           this.addToMultiSelectedTabs(selectedTab);
         }
         noticeable = true;
       }
-      if (this._multiSelectChangeRemovals.size) {
-        if (this._multiSelectChangeRemovals.has(selectedTab)) {
+      if (this.#multiSelectChangeRemovals.size) {
+        if (this.#multiSelectChangeRemovals.has(selectedTab)) {
           this._switchToNextMultiSelectedTab();
         }
         this._avoidSingleSelectedTab();
@@ -7799,14 +7962,14 @@
       }
       if (noticeable) {
         this._updateMultiselectedTabCloseButtonTooltip(
-          this._multiSelectChangeRemovals
+          this.#multiSelectChangeRemovals
         );
       }
-      this._multiSelectChangeStarted = false;
-      if (noticeable || this._multiSelectChangeSelected) {
-        this._multiSelectChangeSelected = false;
-        this._multiSelectChangeAdditions.clear();
-        this._multiSelectChangeRemovals.clear();
+      this.#multiSelectChangeStarted = false;
+      if (noticeable || this.#multiSelectChangeSelected) {
+        this.#multiSelectChangeSelected = false;
+        this.#multiSelectChangeAdditions.clear();
+        this.#multiSelectChangeRemovals.clear();
         this.dispatchEvent(
           new CustomEvent("TabMultiSelect", { bubbles: true })
         );
@@ -7929,15 +8092,23 @@
         return;
       }
 
-      // Skip if chrome code has cancelled this:
-      if (aEvent.defaultPreventedByChrome) {
+      // Skip if chrome code has cancelled this or keyboard lock prevented
+      if (aEvent.defaultPrevented) {
+        return;
+      }
+
+      // We only want to request reply if this is an actual action.
+      const action = ShortcutUtils.getSystemActionForEvent(aEvent);
+      if (
+        action != null &&
+        this.KeyboardLockUtils.mustWaitForKeyboardLockRequestedReply(aEvent)
+      ) {
         return;
       }
 
       // Don't check if the event was already consumed because tab
       // navigation should always work for better user experience.
-
-      switch (ShortcutUtils.getSystemActionForEvent(aEvent)) {
+      switch (action) {
         case ShortcutUtils.TOGGLE_CARET_BROWSING:
           this._maybeRequestReplyFromRemoteContent(aEvent);
           return;
@@ -8146,11 +8317,31 @@
 
     on_TabSplitViewActivate(aEvent) {
       this.#activeSplitView = aEvent.detail.splitview;
+      this.#moveSplitViewNotificationBoxes(aEvent.detail.tabs);
     }
 
     on_TabSplitViewDeactivate(aEvent) {
       if (this.#activeSplitView === aEvent.detail.splitview) {
         this.#activeSplitView = null;
+      }
+      this.#moveSplitViewNotificationBoxes(aEvent.detail.tabs);
+    }
+
+    /**
+     * Move existing notification boxes into or out of Split View
+     * panel containers.
+     *
+     * @param {MozTabbrowserTab[]} tabs
+     */
+    #moveSplitViewNotificationBoxes(tabs) {
+      for (const tab of tabs) {
+        let notificationBox = this.readNotificationBox(tab.linkedBrowser);
+        if (notificationBox?._stack) {
+          this.#insertNotificationBox(
+            tab.linkedBrowser,
+            notificationBox._stack
+          );
+        }
       }
     }
 
@@ -8425,18 +8616,18 @@
           delete browser.registeredOpenURI;
         }
 
-        let filter = this._tabFilters.get(tab);
+        let filter = this.#tabFilters.get(tab);
         if (filter) {
           browser.webProgress.removeProgressListener(filter);
 
-          let listener = this._tabListeners.get(tab);
+          let listener = this.#tabListeners.get(tab);
           if (listener) {
             filter.removeProgressListener(listener);
             listener.destroy();
           }
 
-          this._tabFilters.delete(tab);
-          this._tabListeners.delete(tab);
+          this.#tabFilters.delete(tab);
+          this.#tabListeners.delete(tab);
         }
       }
 
@@ -8819,17 +9010,16 @@
         tab.dispatchEvent(evt);
 
         // Unhook our progress listener.
-        let filter = this._tabFilters.get(tab);
-        let oldListener = this._tabListeners.get(tab);
+        let filter = this.#tabFilters.get(tab);
+        let oldListener = this.#tabListeners.get(tab);
         browser.webProgress.removeProgressListener(filter);
         filter.removeProgressListener(oldListener);
-        let stateFlags = oldListener.mStateFlags;
-        let requestCount = oldListener.mRequestCount;
+        let stateFlags = oldListener._stateFlags;
+        let requestCount = oldListener._requestCount;
 
         // We'll be creating a new listener, so destroy the old one.
         oldListener.destroy();
 
-        let oldDroppedLinkHandler = browser.droppedLinkHandler;
         let oldUserTypedValue = browser.userTypedValue;
         let hadStartedLoad = browser.didStartLoadSinceLastUserTyping();
 
@@ -8838,8 +9028,6 @@
           if (hadStartedLoad) {
             browser.urlbarChangeTracker.startedLoad();
           }
-
-          browser.droppedLinkHandler = oldDroppedLinkHandler;
 
           // This shouldn't really be necessary, however, this has the side effect
           // of sending MozLayerTreeReady / MozLayerTreeCleared events for remote
@@ -8859,7 +9047,7 @@
             stateFlags,
             requestCount
           );
-          this._tabListeners.set(tab, listener);
+          this.#tabListeners.set(tab, listener);
           filter.addProgressListener(listener, Ci.nsIWebProgress.NOTIFY_ALL);
 
           // Restore the progress listener.
@@ -8944,13 +9132,13 @@
     }
 
     setSuccessor(aTab, successorTab) {
-      if (aTab.ownerGlobal != window) {
+      if (aTab.documentGlobal != window) {
         throw new Error("Cannot set the successor of another window's tab");
       }
       if (successorTab == aTab) {
         successorTab = null;
       }
-      if (successorTab && successorTab.ownerGlobal != window) {
+      if (successorTab && successorTab.documentGlobal != window) {
         throw new Error("Cannot set the successor to another window's tab");
       }
       if (aTab.successor) {
@@ -8995,7 +9183,7 @@
     }
 
     clearRelatedTabs() {
-      this._lastRelatedTabMap = new WeakMap();
+      this.#lastRelatedTabMap = new WeakMap();
     }
   };
 
@@ -9012,10 +9200,10 @@
       aOrigRequestCount
     ) {
       let stateFlags = aOrigStateFlags || 0;
-      // Initialize mStateFlags to non-zero e.g. when creating a progress
+      // Initialize _stateFlags to non-zero e.g. when creating a progress
       // listener for preloaded browsers as there was no progress listener
       // around when the content started loading. If the content didn't
-      // quite finish loading yet, mStateFlags will very soon be overridden
+      // quite finish loading yet, _stateFlags will very soon be overridden
       // with the correct value and end up at STATE_STOP again.
       if (aWasPreloadedBrowser) {
         stateFlags =
@@ -9023,32 +9211,32 @@
           Ci.nsIWebProgressListener.STATE_IS_REQUEST;
       }
 
-      this.mTab = aTab;
-      this.mBrowser = aBrowser;
-      this.mBlank = aStartsBlank;
+      this._tab = aTab;
+      this._browser = aBrowser;
+      this._blank = aStartsBlank;
 
       // cache flags for correct status UI update after tab switching
-      this.mStateFlags = stateFlags;
-      this.mStatus = 0;
-      this.mMessage = "";
-      this.mTotalProgress = 0;
+      this._stateFlags = stateFlags;
+      this._status = 0;
+      this._message = "";
+      this._totalProgress = 0;
 
       // count of open requests (should always be 0 or 1)
-      this.mRequestCount = aOrigRequestCount || 0;
+      this._requestCount = aOrigRequestCount || 0;
     }
 
     destroy() {
-      delete this.mTab;
-      delete this.mBrowser;
+      delete this._tab;
+      delete this._browser;
     }
 
     _callProgressListeners(...args) {
-      args.unshift(this.mBrowser);
+      args.unshift(this._browser);
       return gBrowser._callProgressListeners.apply(gBrowser, args);
     }
 
     _shouldShowProgress(aRequest) {
-      if (this.mBlank) {
+      if (this._blank) {
         return false;
       }
 
@@ -9065,7 +9253,7 @@
     }
 
     _isForInitialAboutBlank(aWebProgress, aStateFlags, aLocation) {
-      if (!this.mBlank || !aWebProgress.isTopLevel) {
+      if (!this._blank || !aWebProgress.isTopLevel) {
         return false;
       }
 
@@ -9073,7 +9261,7 @@
       // must be the initial "stop" for the initial about:blank document.
       if (
         aStateFlags & Ci.nsIWebProgressListener.STATE_STOP &&
-        this.mRequestCount == 0 &&
+        this._requestCount == 0 &&
         !aLocation
       ) {
         return true;
@@ -9091,7 +9279,7 @@
       aCurTotalProgress,
       aMaxTotalProgress
     ) {
-      this.mTotalProgress = aMaxTotalProgress
+      this._totalProgress = aMaxTotalProgress
         ? aCurTotalProgress / aMaxTotalProgress
         : 0;
 
@@ -9099,9 +9287,9 @@
         return;
       }
 
-      if (this.mTotalProgress && this.mTab.hasAttribute("busy")) {
-        this.mTab.setAttribute("progress", "true");
-        gBrowser._tabAttrModified(this.mTab, ["progress"]);
+      if (this._totalProgress && this._tab.hasAttribute("busy")) {
+        this._tab.setAttribute("progress", "true");
+        gBrowser._tabAttrModified(this._tab, ["progress"]);
       }
 
       this._callProgressListeners("onProgressChange", [
@@ -9162,13 +9350,13 @@
         (ignoreBlank &&
           aStateFlags & STATE_STOP &&
           aStateFlags & STATE_IS_NETWORK) ||
-        (!ignoreBlank && this.mBlank)
+        (!ignoreBlank && this._blank)
       ) {
-        this.mBlank = false;
+        this._blank = false;
       }
 
       if (aStateFlags & STATE_START && aStateFlags & STATE_IS_NETWORK) {
-        this.mRequestCount++;
+        this._requestCount++;
 
         if (aWebProgress.isTopLevel) {
           // Need to use originalLocation rather than location because things
@@ -9179,10 +9367,10 @@
               originalLocation &&
               gInitialPages.includes(originalLocation.spec) &&
               originalLocation != "about:blank" &&
-              this.mBrowser.initialPageLoadedFromUserAction !=
+              this._browser.initialPageLoadedFromUserAction !=
                 originalLocation.spec &&
-              this.mBrowser.currentURI &&
-              this.mBrowser.currentURI.spec == "about:blank"
+              this._browser.currentURI &&
+              this._browser.currentURI.spec == "about:blank"
             )
           ) {
             // Indicating that we started a load will allow the location
@@ -9196,7 +9384,7 @@
             // page in the browser is about:blank (indicating it is a newly
             // created or re-created browser, e.g. because it just switched
             // remoteness or is a new tab/window).
-            this.mBrowser.urlbarChangeTracker.startedLoad();
+            this._browser.urlbarChangeTracker.startedLoad();
 
             // To improve the user experience and perceived performance when
             // opening links in new tabs, we show the url and tab title sooner,
@@ -9204,26 +9392,28 @@
             // thus there's no session history and the load starts from a
             // non-web-controlled blank page.
             if (
-              this.mBrowser.browsingContext.sessionHistory?.count === 0 &&
-              BrowserUIUtils.checkEmptyPageOrigin(
-                this.mBrowser,
-                originalLocation
-              )
+              this._browser.browsingContext.sessionHistory?.count === 0 &&
+              (this._browser.initiatedFromNonWebControlled ||
+                BrowserUIUtils.checkEmptyPageOrigin(
+                  this._browser,
+                  originalLocation
+                ))
             ) {
-              gBrowser.setInitialTabTitle(this.mTab, originalLocation.spec, {
+              gBrowser.setInitialTabTitle(this._tab, originalLocation.spec, {
                 isURL: true,
               });
 
-              this.mBrowser.browsingContext.nonWebControlledBlankURI =
+              this._browser.browsingContext.nonWebControlledLoadingURI =
                 originalLocation;
-              if (this.mTab.selected && !gBrowser.userTypedValue) {
+              if (this._tab.selected && !gBrowser.userTypedValue) {
                 gURLBar.setURI();
               }
             }
           }
-          delete this.mBrowser.initialPageLoadedFromUserAction;
+          delete this._browser.initialPageLoadedFromUserAction;
+          delete this._browser.initiatedFromNonWebControlled;
           // If the browser is loading it must not be crashed anymore
-          this.mTab.removeAttribute("crashed");
+          this._tab.removeAttribute("crashed");
         }
 
         if (this._shouldShowProgress(aRequest)) {
@@ -9232,23 +9422,23 @@
             aWebProgress &&
             aWebProgress.isTopLevel
           ) {
-            this.mTab.setAttribute("busy", "true");
-            gBrowser._tabAttrModified(this.mTab, ["busy"]);
-            this.mTab._notselectedsinceload = !this.mTab.selected;
+            this._tab.setAttribute("busy", "true");
+            gBrowser._tabAttrModified(this._tab, ["busy"]);
+            this._tab._notselectedsinceload = !this._tab.selected;
           }
 
-          if (this.mTab.selected) {
+          if (this._tab.selected) {
             gBrowser._isBusy = true;
           }
         }
       } else if (aStateFlags & STATE_STOP && aStateFlags & STATE_IS_NETWORK) {
         // since we (try to) only handle STATE_STOP of the last request,
         // the count of open requests should now be 0
-        this.mRequestCount = 0;
+        this._requestCount = 0;
 
         let modifiedAttrs = [];
-        if (this.mTab.hasAttribute("busy")) {
-          this.mTab.removeAttribute("busy");
+        if (this._tab.hasAttribute("busy")) {
+          this._tab.removeAttribute("busy");
           modifiedAttrs.push("busy");
 
           // Only animate the "burst" indicating the page has loaded if
@@ -9260,29 +9450,29 @@
             !gBrowser.tabAnimationsInProgress &&
             !gReduceMotion
           ) {
-            if (this.mTab._notselectedsinceload) {
-              this.mTab.setAttribute("notselectedsinceload", "true");
+            if (this._tab._notselectedsinceload) {
+              this._tab.setAttribute("notselectedsinceload", "true");
             } else {
-              this.mTab.removeAttribute("notselectedsinceload");
+              this._tab.removeAttribute("notselectedsinceload");
             }
 
-            this.mTab.setAttribute("bursting", "true");
+            this._tab.setAttribute("bursting", "true");
           }
         }
 
-        if (this.mTab.hasAttribute("progress")) {
-          this.mTab.removeAttribute("progress");
+        if (this._tab.hasAttribute("progress")) {
+          this._tab.removeAttribute("progress");
           modifiedAttrs.push("progress");
         }
 
         if (aWebProgress.isTopLevel) {
           let isSuccessful = Components.isSuccessCode(aStatus);
-          if (!isSuccessful && !this.mTab.isEmpty) {
+          if (!isSuccessful && !this._tab.isEmpty) {
             // Restore the current document's location in case the
             // request was stopped (possibly from a content script)
             // before the location changed.
 
-            this.mBrowser.userTypedValue = null;
+            this._browser.userTypedValue = null;
             // When SHIP is enabled and a load gets cancelled due to another one
             // starting, the error is NS_BINDING_CANCELLED_OLD_LOAD.
             // When these prefs are not enabled, the error is different and
@@ -9294,16 +9484,16 @@
             // by default.
             // Bug 1725716 has been filed to consider removing isNavigating
             // field alltogether.
-            let isNavigating = this.mBrowser.isNavigating;
+            let isNavigating = this._browser.isNavigating;
             if (
-              this.mTab.selected &&
+              this._tab.selected &&
               aStatus != Cr.NS_BINDING_CANCELLED_OLD_LOAD &&
               !isNavigating
             ) {
               gURLBar.setURI();
             }
           } else if (isSuccessful) {
-            this.mBrowser.urlbarChangeTracker.finishedLoad();
+            this._browser.urlbarChangeTracker.finishedLoad();
           }
         }
 
@@ -9313,31 +9503,31 @@
         // known defaults. Note we use the original URL since about:newtab
         // redirects to a prerendered page.
         const shouldRemoveFavicon =
-          !this.mBrowser.mIconURL &&
+          !this._browser.mIconURL &&
           !ignoreBlank &&
           !(originalLocation.spec in FAVICON_DEFAULTS);
-        if (shouldRemoveFavicon && this.mTab.hasAttribute("image")) {
-          this.mTab.removeAttribute("image");
+        if (shouldRemoveFavicon && this._tab.hasAttribute("image")) {
+          this._tab.removeAttribute("image");
           modifiedAttrs.push("image");
         } else if (!shouldRemoveFavicon) {
           // Bug 1804166: Allow new tabs to set the favicon correctly if the
           // new tabs behavior is set to open a blank page.
-          // This is a no-op unless this.mBrowser.documentURI is in
+          // This is a no-op unless this._browser.documentURI is in
           // FAVICON_DEFAULTS.
-          gBrowser.setDefaultIcon(this.mTab, this.mBrowser.documentURI);
+          gBrowser.setDefaultIcon(this._tab, this._browser.documentURI);
         }
 
         // For keyword URIs clear the user typed value since they will be changed into real URIs
         if (location.scheme == "keyword") {
-          this.mBrowser.userTypedValue = null;
+          this._browser.userTypedValue = null;
         }
 
-        if (this.mTab.selected) {
+        if (this._tab.selected) {
           gBrowser._isBusy = false;
         }
 
         if (modifiedAttrs.length) {
-          gBrowser._tabAttrModified(this.mTab, modifiedAttrs);
+          gBrowser._tabAttrModified(this._tab, modifiedAttrs);
         }
       }
 
@@ -9365,11 +9555,11 @@
 
       if (aStateFlags & (STATE_START | STATE_STOP)) {
         // reset cached temporary values at beginning and end
-        this.mMessage = "";
-        this.mTotalProgress = 0;
+        this._message = "";
+        this._totalProgress = 0;
       }
-      this.mStateFlags = aStateFlags;
-      this.mStatus = aStatus;
+      this._stateFlags = aStateFlags;
+      this._status = aStatus;
     }
     /* eslint-enable complexity */
 
@@ -9399,12 +9589,12 @@
         // Finally, we do insert the URL if this is a same-document navigation
         // and the user cleared the URL manually.
         if (
-          this.mBrowser.didStartLoadSinceLastUserTyping() ||
+          this._browser.didStartLoadSinceLastUserTyping() ||
           (isErrorPage && aLocation.spec != "about:blank") ||
-          (isSameDocument && this.mBrowser.isNavigating) ||
-          (isSameDocument && !this.mBrowser.userTypedValue)
+          (isSameDocument && this._browser.isNavigating) ||
+          (isSameDocument && !this._browser.userTypedValue)
         ) {
-          this.mBrowser.userTypedValue = null;
+          this._browser.userTypedValue = null;
         }
 
         // If the tab has been set to "busy" outside the stateChange
@@ -9413,27 +9603,27 @@
         // isn't any (STATE_IS_NETWORK & STATE_STOP) state to cause busy
         // attribute being removed. In this case we should remove the
         // attribute here.
-        if (isErrorPage && this.mTab.hasAttribute("busy")) {
-          this.mTab.removeAttribute("busy");
-          gBrowser._tabAttrModified(this.mTab, ["busy"]);
+        if (isErrorPage && this._tab.hasAttribute("busy")) {
+          this._tab.removeAttribute("busy");
+          gBrowser._tabAttrModified(this._tab, ["busy"]);
         }
 
         if (!isSameDocument) {
           // If the browser was playing audio, we should remove the playing state.
-          if (this.mTab.hasAttribute("soundplaying")) {
-            clearTimeout(this.mTab._soundPlayingAttrRemovalTimer);
-            this.mTab._soundPlayingAttrRemovalTimer = 0;
-            this.mTab.removeAttribute("soundplaying");
-            gBrowser._tabAttrModified(this.mTab, ["soundplaying"]);
+          if (this._tab.hasAttribute("soundplaying")) {
+            clearTimeout(this._tab._soundPlayingAttrRemovalTimer);
+            this._tab._soundPlayingAttrRemovalTimer = 0;
+            this._tab.removeAttribute("soundplaying");
+            gBrowser._tabAttrModified(this._tab, ["soundplaying"]);
           }
 
           // If the browser was previously muted, we should restore the muted state.
-          if (this.mTab.hasAttribute("muted")) {
-            this.mTab.linkedBrowser.mute();
+          if (this._tab.hasAttribute("muted")) {
+            this._tab.linkedBrowser.mute();
           }
 
-          if (gBrowser.isFindBarInitialized(this.mTab)) {
-            let findBar = gBrowser.getCachedFindBar(this.mTab);
+          if (gBrowser.isFindBarInitialized(this._tab)) {
+            let findBar = gBrowser.getCachedFindBar(this._tab);
 
             // Close the Find toolbar if we're in old-style TAF mode
             if (findBar.findMode != findBar.FIND_NORMAL) {
@@ -9446,7 +9636,7 @@
           // context, see https://bugzilla.mozilla.org/show_bug.cgi?id=585653
           // and https://github.com/whatwg/html/issues/2174
           if (!isReload) {
-            gBrowser.setTabTitle(this.mTab);
+            gBrowser.setTabTitle(this._tab);
           }
 
           // Don't clear the favicon if this tab is in the pending
@@ -9457,18 +9647,18 @@
           // if onLocationChange was triggered by a pushState or a
           // replaceState (bug 550565) or a hash change (bug 408415).
           if (
-            !this.mTab.hasAttribute("pending") &&
-            !this.mTab.hasAttribute("customizemode") &&
+            !this._tab.hasAttribute("pending") &&
+            !this._tab.hasAttribute("customizemode") &&
             aWebProgress.isLoadingDocument
           ) {
             // Removing the tab's image here causes flickering, wait until the
             // load is complete.
-            this.mBrowser.mIconURL = null;
+            this._browser.mIconURL = null;
           }
 
           if (!isReload && aWebProgress.isLoadingDocument) {
             let triggerer = gBrowser._getTriggeringPrincipalFromHistory(
-              this.mBrowser
+              this._browser
             );
             // Typing a url, searching or clicking a bookmark will load a new
             // document that is no longer tied to a navigation from the previous
@@ -9484,11 +9674,11 @@
             aRequest instanceof Ci.nsIChannel &&
             !isBlankPageURL(aRequest.originalURI.spec)
           ) {
-            this.mBrowser.originalURI = aRequest.originalURI;
+            this._browser.originalURI = aRequest.originalURI;
           }
 
           if (!gBrowser._allowTransparentBrowser) {
-            this.mBrowser.toggleAttribute(
+            this._browser.toggleAttribute(
               "transparent",
               AIWindow.isAIWindowActive(window) &&
                 AIWindow.isAIWindowContentPage(aLocation)
@@ -9496,44 +9686,44 @@
           }
         }
 
-        let userContextId = this.mBrowser.getAttribute("usercontextid") || 0;
-        if (this.mBrowser.registeredOpenURI) {
-          let uri = this.mBrowser.registeredOpenURI;
+        let userContextId = this._browser.getAttribute("usercontextid") || 0;
+        if (this._browser.registeredOpenURI) {
+          let uri = this._browser.registeredOpenURI;
           gBrowser.UrlbarProviderOpenTabs.unregisterOpenTab(
             uri.spec,
             userContextId,
-            this.mTab.group?.id,
+            this._tab.group?.id,
             PrivateBrowsingUtils.isWindowPrivate(window)
           );
-          delete this.mBrowser.registeredOpenURI;
+          delete this._browser.registeredOpenURI;
         }
         if (!isBlankPageURL(aLocation.spec)) {
           gBrowser.UrlbarProviderOpenTabs.registerOpenTab(
             aLocation.spec,
             userContextId,
-            this.mTab.group?.id,
+            this._tab.group?.id,
             PrivateBrowsingUtils.isWindowPrivate(window)
           );
-          this.mBrowser.registeredOpenURI = aLocation;
+          this._browser.registeredOpenURI = aLocation;
 
           // Record telemetry for URI loads in split view
-          if (this.mTab.splitview && aLocation.spec !== "about:opentabs") {
-            const index = this.mTab.splitview.tabs.indexOf(this.mTab);
+          if (this._tab.splitview && aLocation.spec !== "about:opentabs") {
+            const index = this._tab.splitview.tabs.indexOf(this._tab);
             const label = String(index + 1); // 0 -> "1" (LTR left), 1 -> "2" (LTR right)
             Glean.splitview.uriCount[label].add(1);
           }
         }
 
-        if (this.mTab != gBrowser.selectedTab) {
-          let tabCacheIndex = gBrowser._tabLayerCache.indexOf(this.mTab);
+        if (this._tab != gBrowser.selectedTab) {
+          let tabCacheIndex = gBrowser._tabLayerCache.indexOf(this._tab);
           if (tabCacheIndex != -1) {
             gBrowser._tabLayerCache.splice(tabCacheIndex, 1);
-            gBrowser._getSwitcher().cleanUpTabAfterEviction(this.mTab);
+            gBrowser._getSwitcher().cleanUpTabAfterEviction(this._tab);
           }
         }
       }
 
-      if (!this.mBlank || this.mBrowser.hasContentOpener) {
+      if (!this._blank || this._browser.hasContentOpener) {
         this._callProgressListeners("onLocationChange", [
           aWebProgress,
           aRequest,
@@ -9553,13 +9743,13 @@
       }
 
       if (topLevel) {
-        this.mBrowser.lastURI = aLocation;
-        this.mBrowser.lastLocationChange = Date.now();
+        this._browser.lastURI = aLocation;
+        this._browser.lastLocationChange = Date.now();
       }
     }
 
     onStatusChange(aWebProgress, aRequest, aStatus, aMessage) {
-      if (this.mBlank) {
+      if (this._blank) {
         return;
       }
 
@@ -9570,7 +9760,7 @@
         aMessage,
       ]);
 
-      this.mMessage = aMessage;
+      this._message = aMessage;
     }
 
     onSecurityChange(aWebProgress, aRequest, aState) {
@@ -9662,44 +9852,6 @@
       return null;
     },
 
-    /**
-     * Handles URIs when we want to deal with them in chrome code rather than pass
-     * them down to a content browser. This can avoid unnecessary process switching
-     * for the browser.
-     *
-     * @param aBrowser the browser that is attempting to load the URI
-     * @param aUri the nsIURI that is being loaded
-     * @returns true if the URI is handled, otherwise false
-     */
-    _handleUriInChrome(aBrowser, aUri) {
-      if (aUri.scheme == "file") {
-        try {
-          let mimeType = Cc["@mozilla.org/mime;1"]
-            .getService(Ci.nsIMIMEService)
-            .getTypeFromURI(aUri);
-          if (mimeType == "application/x-xpinstall") {
-            let systemPrincipal =
-              Services.scriptSecurityManager.getSystemPrincipal();
-            AddonManager.getInstallForURL(aUri.spec, {
-              telemetryInfo: { source: "file-url" },
-            }).then(install => {
-              AddonManager.installAddonFromWebpage(
-                mimeType,
-                aBrowser,
-                systemPrincipal,
-                install
-              );
-            });
-            return true;
-          }
-        } catch (e) {
-          return false;
-        }
-      }
-
-      return false;
-    },
-
     _updateTriggerMetadataForLoad(
       browser,
       uriString,
@@ -9772,11 +9924,6 @@
       if (!uri) {
         // Note: this may return null if we can't make a URI out of the input.
         uri = this._fixupURIString(browser, uriString, loadURIOptions);
-      }
-
-      if (uri && this._handleUriInChrome(browser, uri)) {
-        // If we've handled the URI in chrome, then just return here.
-        return;
       }
 
       this._updateTriggerMetadataForLoad(
@@ -9999,13 +10146,6 @@ var TabBarVisibility = {
       "browser-titlebar",
       CustomTitlebar.enabled && hideTabsToolbar
     );
-
-    document
-      .getElementById("browser")
-      .classList.toggle(
-        "browser-toolbox-background",
-        CustomTitlebar.enabled && hasVerticalTabs
-      );
 
     if (
       hideTabsToolbar == tabsToolbar.collapsed &&
@@ -10270,7 +10410,7 @@ var TabContextMenu = {
     }
 
     let contextAddNote = document.getElementById("context_addNote");
-    let contextUpdateNote = document.getElementById("context_updateNote");
+    let contextEditNote = document.getElementById("context_editNote");
     if (gBrowser._tabNotesEnabled) {
       // Tab notes behaviour is disabled if a user has a selection of tabs that
       // contains more than one canonical URL.
@@ -10282,7 +10422,7 @@ var TabContextMenu = {
 
       contextAddNote.disabled =
         multiselectingDiverseUrls || !this.TabNotes.isEligible(this.contextTab);
-      contextUpdateNote.disabled = multiselectingDiverseUrls;
+      contextEditNote.disabled = multiselectingDiverseUrls;
 
       this.removeNewBadge(contextAddNote);
       if (
@@ -10293,11 +10433,11 @@ var TabContextMenu = {
 
       this.TabNotes.has(this.contextTab).then(hasNote => {
         contextAddNote.hidden = hasNote;
-        contextUpdateNote.hidden = !hasNote;
+        contextEditNote.hidden = !hasNote;
       });
     } else {
       contextAddNote.hidden = true;
-      contextUpdateNote.hidden = true;
+      contextEditNote.hidden = true;
     }
 
     // Split View
@@ -10311,9 +10451,14 @@ var TabContextMenu = {
     let contextSeparateSplitView = document.getElementById(
       "context_separateSplitView"
     );
+    let contextReverseSplitView = document.getElementById(
+      "context_reverseSplitView"
+    );
     let hasSplitViewTab = this.contextTabs.some(tab => tab.splitview);
     contextMoveTabToNewSplitView.hidden = !splitViewEnabled || hasSplitViewTab;
     contextSeparateSplitView.hidden = !splitViewEnabled || !hasSplitViewTab;
+    contextReverseSplitView.hidden =
+      !splitViewEnabled || !hasSplitViewTab || this.multiselected;
     if (splitViewEnabled) {
       contextMoveTabToNewSplitView.removeAttribute("data-l10n-id");
       contextMoveTabToNewSplitView.setAttribute(
@@ -10332,8 +10477,12 @@ var TabContextMenu = {
         pinnedTabs.length ||
         customizeTabs.length;
 
-      this.addNewBadge(contextMoveTabToNewSplitView);
-      this.addNewBadge(contextSeparateSplitView);
+      this.removeNewBadge(contextMoveTabToNewSplitView);
+      this.removeNewBadge(contextSeparateSplitView);
+      if (!Services.prefs.getBoolPref("browser.tabs.splitview.hasUsed", true)) {
+        this.addNewBadge(contextMoveTabToNewSplitView);
+        this.addNewBadge(contextSeparateSplitView);
+      }
     }
 
     // Only one of Reload_Tab/Reload_Selected_Tabs should be visible.
@@ -10365,15 +10514,19 @@ var TabContextMenu = {
     );
 
     // Only one of pin/unpin/multiselect-pin/multiselect-unpin should be visible
+    let hasAboutOpenTabsTab = this.contextTabs.some(
+      t => t.linkedBrowser.currentURI.spec === "about:opentabs"
+    );
     let contextPinTab = document.getElementById("context_pinTab");
-    contextPinTab.hidden = this.contextTab.pinned || this.multiselected;
+    contextPinTab.hidden =
+      this.contextTab.pinned || this.multiselected || hasAboutOpenTabsTab;
     let contextUnpinTab = document.getElementById("context_unpinTab");
     contextUnpinTab.hidden = !this.contextTab.pinned || this.multiselected;
     let contextPinSelectedTabs = document.getElementById(
       "context_pinSelectedTabs"
     );
     contextPinSelectedTabs.hidden =
-      this.contextTab.pinned || !this.multiselected;
+      this.contextTab.pinned || !this.multiselected || hasAboutOpenTabsTab;
     let contextUnpinSelectedTabs = document.getElementById(
       "context_unpinSelectedTabs"
     );
@@ -10418,16 +10571,28 @@ var TabContextMenu = {
       let sibling = gBrowser.tabContainer.findNextTab(lastTabToMove);
       isLastPinnedTab = !sibling || !sibling.pinned;
     }
+
+    let isSplit = !!this.contextTab.splitview;
+    let firstInSplit = isSplit ? this.contextTab.splitview.tabs[0] : null;
+    let lastInSplit = isSplit ? this.contextTab.splitview.tabs.at(-1) : null;
+    let splitAtEnd = isSplit && lastInSplit === lastVisibleTab;
     contextMoveTabToEnd.disabled =
-      (lastTabToMove == lastVisibleTab || isLastPinnedTab) &&
+      (lastTabToMove === lastVisibleTab || isLastPinnedTab || splitAtEnd) &&
       !lastTabToMove.group &&
       allSelectedTabsAdjacent;
+
     let contextMoveTabToStart = document.getElementById("context_moveToStart");
     let isFirstTab =
       !this.contextTabs[0].group &&
-      (this.contextTabs[0] == visibleOrCollapsedTabs[0] ||
-        this.contextTabs[0] == visibleOrCollapsedTabs[gBrowser.pinnedTabCount]);
-    contextMoveTabToStart.disabled = isFirstTab && allSelectedTabsAdjacent;
+      (this.contextTabs[0] === visibleOrCollapsedTabs[0] ||
+        this.contextTabs[0] ===
+          visibleOrCollapsedTabs[gBrowser.pinnedTabCount]);
+    let splitAtStart =
+      isSplit &&
+      (firstInSplit === visibleOrCollapsedTabs[0] ||
+        firstInSplit === visibleOrCollapsedTabs[gBrowser.pinnedTabCount]);
+    contextMoveTabToStart.disabled =
+      (isFirstTab || splitAtStart) && allSelectedTabsAdjacent;
 
     document.getElementById("context_openTabInWindow").disabled =
       this.contextTab.hasAttribute("customizemode");
@@ -10510,6 +10675,19 @@ var TabContextMenu = {
     );
     bookmarkMultiSelectedTabs.hidden = !this.multiselected;
 
+    let contentSharingShareTabs = document.getElementById(
+      "context_shareSelectedTabs"
+    );
+
+    const hideContentSharing =
+      !this.multiselected || !ContentSharingUtils.isEnabled;
+    contentSharingShareTabs.hidden = hideContentSharing;
+    document.getElementById("context_shareSelectedTabsSeparator").hidden =
+      hideContentSharing;
+    if (!contentSharingShareTabs.hidden) {
+      this.addNewBadge(contentSharingShareTabs);
+    }
+
     let toggleMute = document.getElementById("context_toggleMuteTab");
     let toggleMultiSelectMute = document.getElementById(
       "context_toggleMuteSelectedTabs"
@@ -10548,8 +10726,9 @@ var TabContextMenu = {
       PrivateBrowsingUtils.isWindowPrivate(window);
     reopenInContainer.disabled = this.contextTab.hidden;
 
-    SharingUtils.updateShareURLMenuItem(
+    SharingUtils.ensureShareMenu(
       this.contextTab.linkedBrowser,
+      this.multiselected ? this.contextTabs.map(t => t.linkedBrowser) : null,
       document.getElementById("context_moveTabOptions")
     );
   },
@@ -10582,6 +10761,10 @@ var TabContextMenu = {
     item.style.setProperty(
       "--tab-group-color-pale",
       `var(--tab-group-color-${group.color}-pale)`
+    );
+    item.style.setProperty(
+      "--tab-group-background-color",
+      `var(--tab-group-${group.color})`
     );
 
     return item;
@@ -10783,7 +10966,7 @@ var TabContextMenu = {
         gBrowser.TabMetrics.METRIC_SOURCE.TAB_MENU
       )
     );
-    group.ownerGlobal.focus();
+    group.documentGlobal.focus();
   },
 
   addTabsToSavedGroup(groupId) {
@@ -10817,18 +11000,14 @@ var TabContextMenu = {
     });
   },
 
-  ungroupTabs() {
-    for (let i = this.contextTabs.length - 1; i >= 0; i--) {
-      gBrowser.ungroupTab(this.contextTabs[i]);
-    }
-  },
-
-  ungroupSplitViews() {
+  ungroupTabsAndSplitViews() {
     let splitViews = new Set();
     for (const tab of this.contextTabs) {
-      if (!splitViews.has(tab.splitview)) {
+      if (tab.splitview && !splitViews.has(tab.splitview)) {
         splitViews.add(tab.splitview);
         gBrowser.ungroupSplitView(tab.splitview);
+      } else if (!tab.splitview) {
+        gBrowser.ungroupTab(tab);
       }
     }
   },
@@ -10871,9 +11050,11 @@ var TabContextMenu = {
     const splitviews = new Set(
       this.contextTabs.map(tab => tab.splitview).filter(Boolean)
     );
-    splitviews.forEach(splitview =>
-      gBrowser.unsplitTabs(splitview, "menu_separate")
-    );
+    splitviews.forEach(splitview => splitview.unsplitTabs("menu_separate"));
+  },
+
+  reverseSplitView() {
+    this.contextTab.splitview?.reverseTabs("menu");
   },
 
   /**
@@ -10893,14 +11074,6 @@ var TabContextMenu = {
   removeNewBadge(menuItem) {
     menuItem.removeAttribute("badge");
     menuItem.classList.remove("badge-new");
-  },
-
-  deleteTabNotes() {
-    for (let tab of this.contextTabs) {
-      this.TabNotes.delete(tab, {
-        telemetrySource: this.TabNotes.TELEMETRY_SOURCE.TAB_CONTEXT_MENU,
-      });
-    }
   },
 };
 

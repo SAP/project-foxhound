@@ -16,11 +16,11 @@ import mozilla.components.service.fxa.manager.FxaAccountManager
 import mozilla.components.support.base.feature.LifecycleAwareFeature
 import mozilla.components.support.base.observer.Observable
 import mozilla.components.support.base.observer.ObserverRegistry
-import org.mozilla.fenix.ext.settings
-import org.mozilla.fenix.tabstray.TabsTrayAction
-import org.mozilla.fenix.tabstray.TabsTrayStore
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.tabstray.ext.toComposeList
 import org.mozilla.fenix.tabstray.ext.toSyncedTabsListItem
+import org.mozilla.fenix.tabstray.redux.action.TabsTrayAction
+import org.mozilla.fenix.tabstray.redux.store.TabsTrayStore
 
 /**
  * TabsTrayFragment delegate to handle all layout updates needed to display synced tabs and any errors.
@@ -85,7 +85,7 @@ class SyncedTabsIntegration(
     }
 
     override fun startLoading() {
-        if (!store.state.syncing) {
+        if (!store.state.sync.isSyncing) {
             store.dispatch(TabsTrayAction.SyncNow)
         }
     }
@@ -99,7 +99,7 @@ class SyncedTabsIntegration(
             TabsTrayAction.UpdateSyncedTabs(
                 syncedTabs.toComposeList(
                     buildSet {
-                        if (context.settings().enableCloseSyncedTabs) {
+                        if (context.components.settings.enableCloseSyncedTabs) {
                             add(SyncedTabsListSupportedFeature.CLOSE_TABS)
                         }
                     },

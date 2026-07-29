@@ -112,11 +112,14 @@ export var Utils = {
    */
   log,
 
-  get shouldSkipRemoteActivityDueToTests() {
-    return (
+  get shouldSkipRemoteActivity() {
+    if (
       (lazy.isRunningTests || Cu.isInAutomation) &&
       this.SERVER_URL == "data:,#remote-settings-dummy/v1"
-    );
+    ) {
+      return true;
+    }
+    return Services.policies?.isAllowed("remoteSettings") === false;
   },
 
   get CERT_CHAIN_ROOT_IDENTIFIER() {

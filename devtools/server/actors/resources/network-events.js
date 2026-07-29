@@ -70,7 +70,9 @@ class NetworkEventWatcher {
     // Boolean to know if we keep previous document network events or not.
     this.persist = false;
     this.listener = new lazy.NetworkObserver({
-      decodeResponseBodies: true,
+      // The responses will be decoded lazily when the Response details are
+      // requested by the UI.
+      decodeResponseBodies: false,
       responseBodyLimit: lazy.responseBodyLimit,
       ignoreChannelFunction: this.shouldIgnoreChannel.bind(this),
       onNetworkEvent: this.onNetworkEvent.bind(this),
@@ -194,6 +196,10 @@ class NetworkEventWatcher {
 
   removeOverride(url) {
     this.listener.removeOverride(url);
+  }
+
+  setLocalModeMappings(mappings) {
+    this.listener.setLocalModeMappings(mappings);
   }
 
   /**
@@ -363,6 +369,9 @@ class NetworkEventWatcher {
         resourceUpdates.mimeType = updateResource.mimeType;
         resourceUpdates.waitingTime = updateResource.waitingTime;
         resourceUpdates.isResolvedByTRR = updateResource.isResolvedByTRR;
+        if (Number.isInteger(updateResource.priority)) {
+          resourceUpdates.priority = updateResource.priority;
+        }
         resourceUpdates.proxyHttpVersion = updateResource.proxyHttpVersion;
         resourceUpdates.proxyStatus = updateResource.proxyStatus;
         resourceUpdates.proxyStatusText = updateResource.proxyStatusText;
@@ -381,20 +390,24 @@ class NetworkEventWatcher {
 
         break;
       case NETWORK_EVENT_TYPES.RESPONSE_CONTENT:
-        resourceUpdates.contentSize = updateResource.contentSize;
+        if (updateResource.contentSize !== undefined) {
+          resourceUpdates.contentSize = updateResource.contentSize;
+        }
         resourceUpdates.transferredSize = updateResource.transferredSize;
         resourceUpdates.mimeType = updateResource.mimeType;
         break;
       case NETWORK_EVENT_TYPES.RESPONSE_CONTENT_COMPLETE:
         resourceUpdates.extension = updateResource.extension;
         resourceUpdates.blockedReason = updateResource.blockedReason;
+        if (Number.isInteger(updateResource.priority)) {
+          resourceUpdates.priority = updateResource.priority;
+        }
         break;
       case NETWORK_EVENT_TYPES.EVENT_TIMINGS:
         resourceUpdates.totalTime = updateResource.totalTime;
         break;
       case NETWORK_EVENT_TYPES.SECURITY_INFO:
         resourceUpdates.securityState = updateResource.state;
-        resourceUpdates.isRacing = updateResource.isRacing;
         break;
     }
 
@@ -418,6 +431,7 @@ class NetworkEventWatcher {
     }
 
     if (
+      updateResource.updateType == NETWORK_EVENT_TYPES.REQUEST_POSTDATA ||
       updateResource.updateType == NETWORK_EVENT_TYPES.RESPONSE_START ||
       updateResource.updateType == NETWORK_EVENT_TYPES.RESPONSE_CONTENT ||
       isResponseComplete

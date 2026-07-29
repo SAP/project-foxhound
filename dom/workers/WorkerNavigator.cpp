@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,6 +13,7 @@
 #include "mozilla/dom/MediaCapabilities.h"
 #include "mozilla/dom/Navigator.h"
 #include "mozilla/dom/Permissions.h"
+#include "mozilla/dom/Serial.h"
 #include "mozilla/dom/ServiceWorkerContainer.h"
 #include "mozilla/dom/StorageManager.h"
 #include "mozilla/dom/WorkerCommon.h"
@@ -52,6 +51,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(WorkerNavigator)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mLocks)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPermissions)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mServiceWorkerContainer)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSerial)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 WorkerNavigator::WorkerNavigator(const NavigatorProperties& aProperties,
@@ -65,8 +65,13 @@ already_AddRefed<WorkerNavigator> WorkerNavigator::Create(bool aOnLine) {
   RuntimeService* rts = RuntimeService::GetService();
   MOZ_ASSERT(rts);
 
-  const RuntimeService::NavigatorProperties& properties =
+  RuntimeService::NavigatorProperties properties =
       rts->GetNavigatorProperties();
+
+  WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
+  if (workerPrivate && !workerPrivate->GetLanguageOverride().IsEmpty()) {
+    properties.mLanguages = workerPrivate->GetLanguageOverride().Clone();
+  }
 
   RefPtr<WorkerNavigator> navigator = new WorkerNavigator(properties, aOnLine);
 
@@ -93,6 +98,11 @@ void WorkerNavigator::Invalidate() {
   mPermissions = nullptr;
 
   mServiceWorkerContainer = nullptr;
+
+  if (mSerial) {
+    mSerial->Shutdown();
+    mSerial = nullptr;
+  }
 }
 
 JSObject* WorkerNavigator::WrapObject(JSContext* aCx,
@@ -116,6 +126,7 @@ bool WorkerNavigator::GlobalPrivacyControl() const {
 }
 
 void WorkerNavigator::SetLanguages(const nsTArray<nsString>& aLanguages) {
+  WorkerNavigator_Binding::ClearCachedLanguageValue(this);
   WorkerNavigator_Binding::ClearCachedLanguagesValue(this);
   mProperties.mLanguages = aLanguages.Clone();
 }
@@ -237,8 +248,6 @@ StorageManager* WorkerNavigator::Storage() {
     MOZ_ASSERT(global);
 
     mStorageManager = new StorageManager(global);
-
-    workerPrivate->NotifyStorageKeyUsed();
   }
 
   return mStorageManager;
@@ -320,6 +329,20 @@ already_AddRefed<ServiceWorkerContainer> WorkerNavigator::ServiceWorker() {
 
   RefPtr<ServiceWorkerContainer> ref = mServiceWorkerContainer;
   return ref.forget();
+}
+
+dom::Serial* WorkerNavigator::Serial() {
+  if (!mSerial) {
+    WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
+    MOZ_ASSERT(workerPrivate);
+
+    nsIGlobalObject* global = workerPrivate->GlobalScope();
+    MOZ_ASSERT(global);
+
+    mSerial = MakeRefPtr<dom::Serial>(global);
+  }
+
+  return mSerial;
 }
 
 }  // namespace mozilla::dom

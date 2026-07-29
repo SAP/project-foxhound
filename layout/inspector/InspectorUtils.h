@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -8,24 +6,31 @@
 #ifndef mozilla_dom_InspectorUtils_h
 #define mozilla_dom_InspectorUtils_h
 
-#include "mozilla/dom/InspectorUtilsBinding.h"
-#include "nsLayoutUtils.h"
+#include "Units.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/dom/InspectorUtilsBindingFwd.h"
+#include "nsTArray.h"
 
 class nsAtom;
 class nsINode;
-class nsINodeList;
 class nsRange;
 
 namespace mozilla {
+class ErrorResult;
 class StyleSheet;
 namespace css {
 class Rule;
 }  // namespace css
 namespace dom {
+class BrowsingContext;
+enum class InspectorPropertyType : uint8_t;
 class CharacterData;
 class Document;
 class Element;
+class GlobalObject;
 class InspectorFontFace;
+class NodeList;
+class OwningCSSRuleOrInspectorDeclaration;
 }  // namespace dom
 }  // namespace mozilla
 
@@ -102,6 +107,10 @@ class InspectorUtils {
                                       nsTArray<nsString>& aResult,
                                       ErrorResult& aRv);
 
+  // Get a list of all the CSS wide keywords.
+  static void GetCSSWideKeywords(GlobalObject& aGlobal,
+                                 nsTArray<nsString>& aResult);
+
   // Utilities for working with CSS colors
   static void RgbToColorName(GlobalObject& aGlobal, uint8_t aR, uint8_t aG,
                              uint8_t aB, nsACString& aResult);
@@ -133,6 +142,10 @@ class InspectorUtils {
   // Check whether a given color is a valid CSS color.
   static bool IsValidCSSColor(GlobalObject& aGlobal,
                               const nsACString& aColorString);
+
+  // Check whether a given string is a valid CSS <image> value.
+  static bool IsValidCSSImage(GlobalObject& aGlobal,
+                              const nsACString& aImageString);
 
   // Utilities for obtaining information about a CSS property.
 
@@ -213,7 +226,7 @@ class InspectorUtils {
                                uint32_t aMaxRanges,  // max number of ranges to
                                                      // record for each face
                                bool aSkipCollapsedWhitespace,
-                               nsLayoutUtils::UsedFontFaceList& aResult,
+                               nsTArray<UniquePtr<InspectorFontFace>>& aResult,
                                ErrorResult& aRv);
 
   /**
@@ -248,7 +261,7 @@ class InspectorUtils {
                                  Nullable<nsTArray<uint32_t>>& aResult);
 
   MOZ_CAN_RUN_SCRIPT
-  static already_AddRefed<nsINodeList> GetOverflowingChildrenOfElement(
+  static already_AddRefed<NodeList> GetOverflowingChildrenOfElement(
       GlobalObject& aGlobal, Element& element);
 
   /**
@@ -316,6 +329,14 @@ class InspectorUtils {
   static uint16_t GetGridContainerType(GlobalObject&, Element&);
   static void GetAnchorFor(GlobalObject&, Element&, const nsAString& aName,
                            Nullable<InspectorAnchorElement>&);
+  static void GetAnchorNamesFor(GlobalObject& aGlobal, Element&,
+                                nsTArray<nsString>& aResult);
+  static void GetComputationStepsSupportedCSSFunctions(
+      GlobalObject& aGlobal, nsTArray<nsCString>& aResult);
+  static void GetComputationSteps(GlobalObject& aGlobal,
+                                  const nsAString& aExpression, Element&,
+                                  const nsAString& aPseudo,
+                                  nsTArray<nsString>& aResult);
 };
 
 }  // namespace mozilla::dom

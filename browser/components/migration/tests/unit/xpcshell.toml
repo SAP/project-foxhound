@@ -72,27 +72,17 @@ run-if = [
 ["test_Chrome_permissions.js"]
 
 ["test_Edge_db_migration.js"]
+prefs = ["browser.migrate.edge.enabled=true"]
+
 run-if = [
   "os == 'win'",
 ]
 
 ["test_Edge_registry_migration.js"]
+prefs = ["browser.migrate.edge.enabled=true"]
+
 run-if = [
   "os == 'win'",
-]
-
-["test_IE_bookmarks.js"]
-run-if = [
-  "os == 'win' && arch == 'x86_64'", # bug 1392396
-]
-
-["test_IE_history.js"]
-requesttimeoutfactor = 2  # Slow on condprof
-run-if = [
-  "os == 'win'",
-]
-skip-if = [
-  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && msix", # Bug 1807928
 ]
 
 ["test_MigrationUtils_timedRetry.js"]

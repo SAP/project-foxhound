@@ -25,8 +25,6 @@
  */
 
 const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
-const { dumpn, dumpv } = DevToolsUtils;
-const flags = require("resource://devtools/shared/flags.js");
 const StreamUtils = require("resource://devtools/shared/transport/stream-utils.js");
 
 DevToolsUtils.defineLazyGetter(this, "unicodeConverter", () => {
@@ -36,6 +34,11 @@ DevToolsUtils.defineLazyGetter(this, "unicodeConverter", () => {
   ].createInstance(Ci.nsIScriptableUnicodeConverter);
   unicodeConverter.charset = "UTF-8";
   return unicodeConverter;
+});
+
+const logger = console.createInstance({
+  prefix: "devtools_rdp",
+  maxLogLevel: "Warn",
 });
 
 // The transport's previous check ensured the header length did not exceed 20
@@ -129,7 +132,7 @@ class JSONPacket extends Packet {
       return null;
     }
 
-    dumpv("Header matches JSON packet");
+    logger.debug("Header matches JSON packet");
     const packet = new JSONPacket(transport);
     packet.length = +match[1];
     return packet;
@@ -154,7 +157,7 @@ class JSONPacket extends Packet {
   }
 
   read(stream, scriptableStream) {
-    dumpv("Reading JSON packet");
+    logger.debug("Reading JSON packet");
 
     // Read in more packet data.
     this._readData(stream, scriptableStream);
@@ -177,8 +180,7 @@ class JSONPacket extends Packet {
         " - " +
         e.stack +
         ")";
-      console.error(msg);
-      dumpn(msg);
+      logger.error(msg);
       return;
     }
 
@@ -186,8 +188,8 @@ class JSONPacket extends Packet {
   }
 
   _readData(stream, scriptableStream) {
-    if (flags.wantVerbose) {
-      dumpv(
+    if (logger.shouldLog("Debug")) {
+      logger.debug(
         "Reading JSON data: _l: " +
           this.length +
           " dL: " +
@@ -205,7 +207,7 @@ class JSONPacket extends Packet {
   }
 
   write(stream) {
-    dumpv("Writing JSON packet");
+    logger.debug("Writing JSON packet");
 
     if (this._outgoing === undefined) {
       // Format the serialized packet to a buffer
@@ -276,7 +278,7 @@ class BulkPacket extends Packet {
       return null;
     }
 
-    dumpv("Header matches bulk packet");
+    logger.debug("Header matches bulk packet");
     const packet = new BulkPacket(transport);
     packet.header = {
       actor: match[1],
@@ -289,7 +291,7 @@ class BulkPacket extends Packet {
   static HEADER_PATTERN = /^bulk ([^: ]+) ([^: ]+) (\d+):$/;
 
   read(stream) {
-    dumpv("Reading bulk packet, handing off input stream");
+    logger.debug("Reading bulk packet, handing off input stream");
 
     // Temporarily pause monitoring of the input stream
     this._transport.pauseIncoming();
@@ -300,7 +302,7 @@ class BulkPacket extends Packet {
         type: this.type,
         length: this.length,
         copyTo: output => {
-          dumpv("CT length: " + this.length);
+          logger.debug("CT length: " + this.length);
           const copying = StreamUtils.copyStream(stream, output, this.length);
           resolve(copying);
           return copying;
@@ -311,7 +313,7 @@ class BulkPacket extends Packet {
               `In copyToBuffer, the output buffer needs to have the same length as the data to read. ${outputBuffer.byteLength} !== ${this.length}`
             );
           }
-          dumpv("CT length: " + this.length);
+          logger.debug("CT length: " + this.length);
           const copying = StreamUtils.copyAsyncStreamToArrayBuffer(
             stream,
             outputBuffer
@@ -324,7 +326,7 @@ class BulkPacket extends Packet {
       });
       // Await the result of reading from the stream
     }).then(() => {
-      dumpv("onReadDone called, ending bulk mode");
+      logger.debug("onReadDone called, ending bulk mode");
       this._done = true;
       this._transport.resumeIncoming();
     }, this._transport.close);
@@ -336,10 +338,10 @@ class BulkPacket extends Packet {
   }
 
   write(stream) {
-    dumpv("Writing bulk packet");
+    logger.debug("Writing bulk packet");
 
     if (this._outgoingHeader === undefined) {
-      dumpv("Serializing bulk packet header");
+      logger.debug("Serializing bulk packet header");
       // Format the serialized packet header to a buffer
       this._outgoingHeader =
         "bulk " + this.actor + " " + this.type + " " + this.length + ":";
@@ -347,7 +349,7 @@ class BulkPacket extends Packet {
 
     // Write the header, or whatever's left of it to write.
     if (this._outgoingHeader.length) {
-      dumpv("Writing bulk packet header");
+      logger.debug("Writing bulk packet header");
       const written = stream.write(
         this._outgoingHeader,
         this._outgoingHeader.length
@@ -356,7 +358,7 @@ class BulkPacket extends Packet {
       return;
     }
 
-    dumpv("Handing off output stream");
+    logger.debug("Handing off output stream");
 
     // Temporarily pause the monitoring of the output stream
     this._transport.pauseOutgoing();
@@ -364,7 +366,7 @@ class BulkPacket extends Packet {
     new Promise(resolve => {
       this._readyForWriting.resolve({
         copyFrom: input => {
-          dumpv("CF length: " + this.length);
+          logger.debug("CF length: " + this.length);
           const copying = StreamUtils.copyStream(input, stream, this.length);
           resolve(copying);
           return copying;
@@ -375,7 +377,7 @@ class BulkPacket extends Packet {
               `In copyFromBuffer, the input buffer needs to have the same length as the data to write. ${inputBuffer.byteLength} !== ${this.length}`
             );
           }
-          dumpv("CF length: " + this.length);
+          logger.debug("CF length: " + this.length);
           const copying = StreamUtils.copyArrayBufferToAsyncStream(
             inputBuffer,
             stream
@@ -388,7 +390,7 @@ class BulkPacket extends Packet {
       });
       // Await the result of writing to the stream
     }).then(() => {
-      dumpv("onWriteDone called, ending bulk mode");
+      logger.debug("onWriteDone called, ending bulk mode");
       this._done = true;
       this._transport.resumeOutgoing();
     }, this._transport.close);

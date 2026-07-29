@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -45,12 +43,12 @@ async function task_add_visit(aURI, aVisitType) {
 
   // Get the place id
   if (visitId > 0) {
-    let sql = "SELECT place_id FROM moz_historyvisits WHERE id = ?1";
-    let stmt = DBConn().createStatement(sql);
-    stmt.bindByIndex(0, visitId);
-    Assert.ok(stmt.executeStep());
-    let placeId = stmt.getInt64(0);
-    stmt.finalize();
+    const placeId = await PlacesTestUtils.getDatabaseValue(
+      "moz_historyvisits",
+      "place_id",
+      { id: visitId }
+    );
+    Assert.notStrictEqual(placeId, undefined, "Should have a result");
     Assert.greater(placeId, 0);
     return placeId;
   }

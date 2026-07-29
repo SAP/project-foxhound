@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -313,8 +311,9 @@ using FieldSetterType = typename GetFieldSetterType<T>::SetterArg;
    * of the field is equal to size Size will be present. We use SizedField to  \
    * remove fields of the wrong size. */                                       \
   template <size_t Size>                                                       \
-  struct Fields : eachfield(MOZ_DECL_SYNCED_FIELD_INHERIT)                     \
-                      syncedcontext::Empty<SYNCED_FIELD_COUNT, Size>{};        \
+  struct MOZ_EMPTY_BASES Fields                                                \
+      : eachfield(MOZ_DECL_SYNCED_FIELD_INHERIT)                               \
+            syncedcontext::Empty<SYNCED_FIELD_COUNT, Size>{};                  \
                                                                                \
   /* Struct containing the data for all synced fields as members. We filter    \
    * sizes to lay out fields of size 1, then 2, then 4 and last 8 or greater.  \

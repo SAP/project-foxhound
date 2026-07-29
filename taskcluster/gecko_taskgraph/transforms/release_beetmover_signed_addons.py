@@ -7,19 +7,16 @@ Transform the beetmover task into an actual task description.
 
 import copy
 import logging
+from typing import Optional
 
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
-from taskgraph.util.schema import LegacySchema, optionally_keyed_by, resolve_keyed_by
+from taskgraph.util.schema import Schema
 from taskgraph.util.treeherder import inherit_treeherder_from_dep
-from voluptuous import Optional, Required
 
 from gecko_taskgraph.transforms.beetmover import craft_release_properties
-from gecko_taskgraph.transforms.task import task_description_schema
-from gecko_taskgraph.util.attributes import (
-    copy_attributes_from_dependent_job,
-    release_level,
-)
+from gecko_taskgraph.transforms.task import TaskDescriptionSchema
+from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
 from gecko_taskgraph.util.scriptworker import (
     generate_beetmover_artifact_map,
     generate_beetmover_upstream_artifacts,
@@ -33,25 +30,24 @@ logger = logging.getLogger(__name__)
 transforms = TransformSequence()
 
 
-beetmover_description_schema = LegacySchema({
+class BeetmoverDescriptionSchema(Schema, kw_only=True):
     # attributes is used for enabling artifact-map by declarative artifacts
-    Required("attributes"): {str: object},
+    attributes: TaskDescriptionSchema.__annotations__["attributes"]  # noqa: F821
     # unique label to describe this beetmover task, defaults to {dep.label}-beetmover
-    Optional("label"): str,
+    label: Optional[str] = None
     # treeherder is allowed here to override any defaults we use for beetmover.  See
     # taskcluster/gecko_taskgraph/transforms/task.py for the schema details, and the
     # below transforms for defaults of various values.
-    Optional("treeherder"): task_description_schema["treeherder"],
-    Required("description"): str,
-    Required("worker-type"): optionally_keyed_by("release-level", str),
-    Required("run-on-projects"): [],
+    treeherder: TaskDescriptionSchema.__annotations__["treeherder"] = None
+    description: str
+    worker_type: str
+    run_on_projects: TaskDescriptionSchema.__annotations__["run_on_projects"]  # noqa: F821
     # locale is passed only for l10n beetmoving
-    Optional("locale"): str,
-    Optional("shipping-phase"): task_description_schema["shipping-phase"],
-    Optional("task-from"): task_description_schema["task-from"],
-    Optional("dependencies"): task_description_schema["dependencies"],
-    Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
-})
+    locale: Optional[str] = None
+    shipping_phase: TaskDescriptionSchema.__annotations__["shipping_phase"] = None
+    task_from: TaskDescriptionSchema.__annotations__["task_from"] = None
+    dependencies: TaskDescriptionSchema.__annotations__["dependencies"] = None
+    run_on_repo_type: TaskDescriptionSchema.__annotations__["run_on_repo_type"] = None
 
 
 @transforms.add
@@ -62,24 +58,7 @@ def remove_name(config, jobs):
         yield job
 
 
-transforms.add_validate(beetmover_description_schema)
-
-
-@transforms.add
-def resolve_keys(config, jobs):
-    for job in jobs:
-        for field in ("worker-type", "attributes.artifact_map"):
-            resolve_keyed_by(
-                job,
-                field,
-                item_name=job["label"],
-                **{
-                    "release-level": release_level(config.params),
-                    "release-type": config.params["release_type"],
-                    "project": config.params["project"],
-                },
-            )
-        yield job
+transforms.add_validate(BeetmoverDescriptionSchema)
 
 
 @transforms.add

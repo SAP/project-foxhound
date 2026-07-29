@@ -10,3 +10,5 @@ skip-if = [
 ]
 
 ["test_bug1272623.html"]
+
+["test_personal_dictionary.html"]

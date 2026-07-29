@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +7,10 @@
 
 #include "PerformanceRecorder.h"
 #include "ipc/EnumSerializer.h"
+
+namespace webrtc {
+enum class VideoType;
+}  // namespace webrtc
 
 namespace mozilla::camera {
 
@@ -40,6 +42,10 @@ enum class CamerasAccessStatus {
 TrackingId::Source CaptureEngineToTrackingSourceStr(
     const CaptureEngine& aEngine);
 
+struct WebrtcVideoTypeValidator {
+  using IntegralType = std::underlying_type_t<webrtc::VideoType>;
+  static bool IsLegalValue(const IntegralType aValue);
+};
 }  // namespace mozilla::camera
 
 namespace IPC {
@@ -56,6 +62,11 @@ struct ParamTraits<mozilla::camera::CamerasAccessStatus>
           mozilla::camera::CamerasAccessStatus,
           mozilla::camera::CamerasAccessStatus::Granted,
           mozilla::camera::CamerasAccessStatus::Error> {};
+
+template <>
+struct ParamTraits<webrtc::VideoType>
+    : EnumSerializer<webrtc::VideoType,
+                     mozilla::camera::WebrtcVideoTypeValidator> {};
 }  // namespace IPC
 
 #endif  // mozilla_CamerasTypes_h

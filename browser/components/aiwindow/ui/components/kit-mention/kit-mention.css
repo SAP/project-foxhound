@@ -1,0 +1,39 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:host {
+  pointer-events: none;
+}
+
+:host([variant="sidebar"]) {
+  block-size: auto;
+  bottom: 0;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  inline-size: 180px;
+  inset-inline-start: var(--space-large);
+  position: absolute;
+}
+
+:host([variant="fullpage"]) {
+  --kit-mention-inline-size: 180px;
+  block-size: auto;
+  bottom: 0;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  inline-size: var(--kit-mention-inline-size);
+  inset-inline-start: max(var(--space-large), calc((100vw - var(--smartwindow-content-max-width)) / 4 - var(--kit-mention-inline-size) / 2));
+  position: fixed;
+  z-index: 2;
+}
+
+img {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :host {
+    display: none;
+  }
+}

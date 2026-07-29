@@ -1,0 +1,43 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Defines shared by every moz.build that compiles libjpeg sources.
+# Defining something in a moz.build file does not keep it defined for
+# moz.build files in subdirectories, so each one needs to include this.
+# In particular, MOZ_WITH_SIMD is consumed by jconfig.h / jconfigint.h
+# to enable WITH_SIMD, which gates the SIMD dispatch in jdcolor.c,
+# jdmerge.c, jdsample.c that the bit-depth wrapper sources include.
+
+if CONFIG['LIBJPEG_TURBO_HAVE_VLD1_S16_X3']:
+    DEFINES['HAVE_VLD1_S16_X3'] = True
+
+if CONFIG['LIBJPEG_TURBO_HAVE_VLD1_U16_X2']:
+    DEFINES['HAVE_VLD1_U16_X2'] = True
+
+if CONFIG['LIBJPEG_TURBO_HAVE_VLD1Q_U8_X4']:
+    DEFINES['HAVE_VLD1Q_U8_X4'] = True
+
+if CONFIG['LIBJPEG_TURBO_NEON_INTRINSICS']:
+    DEFINES['NEON_INTRINSICS'] = True
+
+if CONFIG['LIBJPEG_TURBO_USE_NASM']:
+    USE_NASM = True
+
+if CONFIG['LIBJPEG_TURBO_SIMD_FLAGS'] or CONFIG['TARGET_CPU'].startswith('ppc'):
+    DEFINES['MOZ_WITH_SIMD'] = 1
+
+# ASFLAGS only affects assembly (.asm/.S) compilation, not .c files, and
+# does not propagate to subdirs. It is a no-op for moz.build directories
+# that don't list any assembly SOURCES (e.g. src/wrapper/), but is kept
+# here so any moz.build that does compile asm picks up the right flags
+# and include paths.
+ASFLAGS += CONFIG['LIBJPEG_TURBO_SIMD_FLAGS']
+
+# Make sure the x86 & x86-64 ASM files can see the necessary includes.
+if CONFIG['TARGET_CPU'] == 'x86':
+    ASFLAGS += ['-I%s/media/libjpeg/simd/nasm/' % TOPSRCDIR]
+    ASFLAGS += ['-I%s/media/libjpeg/simd/i386/' % TOPSRCDIR]
+if CONFIG['TARGET_CPU'] == 'x86_64':
+    ASFLAGS += ['-I%s/media/libjpeg/simd/nasm/' % TOPSRCDIR]
+    ASFLAGS += ['-I%s/media/libjpeg/simd/x86_64/' % TOPSRCDIR]

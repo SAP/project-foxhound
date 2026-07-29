@@ -1,5 +1,4 @@
-/* -*- Mode: IDL; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -124,14 +123,10 @@ interface nsIDocShell : nsIDocShellTreeItem
 
   /**
    * Notify the associated content viewer and all child docshells that they are
-   * about to be hidden.  If |isUnload| is true, then the document is being
-   * unloaded and all dynamic subframe history entries are removed as well.
-   *
-   * @param isUnload
-   *        True to fire the unload event in addition to the pagehide event,
-   *        and remove all dynamic subframe history entries.
+   * about to be hidden.  The document is being unloaded and all dynamic
+   * subframe history entries are removed as well.
    */
-  [noscript] void firePageHideNotification(in boolean isUnload);
+  [noscript] void firePageHideNotification();
 
   /**
    * Presentation context for the currently loaded document.  This may be null.
@@ -343,24 +338,6 @@ interface nsIDocShell : nsIDocShellTreeItem
    */
   void resumeRefreshURIs();
 
-  /**
-   * Begin firing WebProgressListener notifications for restoring a page
-   * presentation. |viewer| is the content viewer whose document we are
-   * starting to load.  If null, it defaults to the docshell's current content
-   * viewer, creating one if necessary.  |top| should be true for the toplevel
-   * docshell that is being restored; it will be set to false when this method
-   * is called for child docshells.  This method will post an event to
-   * complete the simulated load after returning to the event loop.
-   */
-  void beginRestore(in nsIDocumentViewer viewer, in boolean top);
-
-  /**
-   * Finish firing WebProgressListener notifications and DOM events for
-   * restoring a page presentation.  This should only be called via
-   * beginRestore().
-   */
-  void finishRestore();
-
   void clearCachedUserAgent();
 
   void clearCachedPlatform();
@@ -454,9 +431,10 @@ interface nsIDocShell : nsIDocShellTreeItem
    *        document.
    * @param aPolicyContainer the policyContainer to use for the new document.
    */
-  void createAboutBlankDocumentViewer(in nsIPrincipal aPrincipal,
-                                     in nsIPrincipal aPartitionedPrincipal,
-                                     [optional] in nsIPolicyContainer aPolicyContainer);
+  [can_run_script] void createAboutBlankDocumentViewer(
+    in nsIPrincipal aPrincipal,
+    in nsIPrincipal aPartitionedPrincipal,
+    [optional] in nsIPolicyContainer aPolicyContainer);
 
   /**
    * Upon getting, returns the canonical encoding label of the document
@@ -563,11 +541,6 @@ interface nsIDocShell : nsIDocShellTreeItem
    *                                  creating the editor.
    */
   void makeEditable(in boolean inWaitForUriLoad);
-
-  /**
-   * Returns false for mLSHE, true for mOSHE
-   */
-  boolean getCurrentSHEntry(out nsISHEntry aEntry);
 
   /**
     * Cherry picked parts of nsIController.

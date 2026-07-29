@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -45,13 +46,20 @@ import mozilla.components.ui.icons.R as iconsR
 /**
  * Rectangular shape with all corners rounded used to display a collapsed collection.
  */
-private val collapsedCollectionShape = RoundedCornerShape(8.dp)
+private val collapsedCollectionShape: Shape
+    @Composable
+    get() = MaterialTheme.shapes.small
 
 /**
  * Rectangular shape with only the top corners rounded used to display an expanded collection with other views
  * placed immediately below this which can be shown immediately next to it, with no visible separation.
  */
-private val expandedCollectionShape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)
+private val expandedCollectionShape: Shape
+    @Composable
+    get() = MaterialTheme.shapes.small.copy(
+        bottomStart = CornerSize(0.dp),
+        bottomEnd = CornerSize(0.dp),
+    )
 
 /**
  * Displays an individual [TabCollection].
@@ -87,7 +95,7 @@ fun Collection(
             )
             .height(48.dp),
         shape = if (isExpanded) expandedCollectionShape else collapsedCollectionShape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceBright),
         elevation = CardDefaults.cardElevation(defaultElevation = 5.dp),
     ) {
         Row(

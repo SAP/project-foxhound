@@ -13,7 +13,14 @@ support-files = [
 
 ["browser_document_command_paste_contextmenu.js"]
 skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
   "headless", # bug 1989339
+]
+
+["browser_document_command_paste_contextmenu_event_loop.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+  "os == 'linux' && debug && artifact", # bug 1945658
 ]
 
 ["browser_document_command_paste_contextmenu_ext.js"]

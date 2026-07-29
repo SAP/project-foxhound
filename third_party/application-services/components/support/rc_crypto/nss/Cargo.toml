@@ -1,5 +1,5 @@
 [package]
-name = "nss"
+name = "nss-as"
 version = "0.1.0"
 authors = ["Sync Team <sync-team@mozilla.com>"]
 edition = "2021"
@@ -19,6 +19,5 @@ once_cell = { version = "1.20.2", optional = true }
 
 [features]
 default = []
-gecko = ["nss_sys/gecko"]
 keydb = ["dep:once_cell"]
 backtrace = ["error-support/backtrace"]

@@ -217,7 +217,7 @@ body {
 
 .deck .sync-state.selected {
   display: unset;
-  opacity: 100;
+  opacity: 1;
 }
 
 .deck .syncIllustration,

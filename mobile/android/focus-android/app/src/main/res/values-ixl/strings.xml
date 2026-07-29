@@ -155,7 +155,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ni taq’ teq’ol isuuchil.</p>\n<p>B’anb’e u chukb’al uva’ eetz kuxhtu’:\n<ul>\n<li>Chuka as ti kuxh u aplicación la atin kat axh</li>\n<li>La majpu ivatz unq’a chukunaal (moj la b’anax tuche’ aq’al uva’ la uch tok u chukunaal)</li>\n<li>Sojsa aq’al uva’ la eesa-el u cookies as unq’a vee’ chukeltu ve’te’</li>\n</ul> </p>\n<p>%1$s a’ u Mozilla kat aq’on. U qitz’ab’al nisa’ taq’at Internet b’a’n as jajlukan unpajte.<br/>\n<a href=\"%2$s\">Ootzi unka’te</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ni taq’ teq’ol isuuchil.</p>\n<p>B’anb’e u chukb’al uva’ eetz kuxhtu’:\n<ul>\n<li>Chuka as ti kuxh u aplicación la atin kat axh</li>\n<li>La majpu ivatz unq’a chukunaal (moj la b’anax tuche’ aq’al uva’ la uch tok u chukunaal)</li>\n<li>Sojsa aq’al uva’ la eesa-el u cookies as unq’a vee’ chukeltu ve’te’</li>\n</ul> </p>\n<p>%1$s a’ u Mozilla kat aq’on. U qitz’ab’al nisa’ taq’at Internet b’a’n as jajlukan unpajte.<br/>\n<a href=\"%2$s\">Ootzi unka’te</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Ye\'xhib\'il unka\'te la ootzin as tii tatine\'</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -248,7 +248,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Aq\'o\'ke\' moj okso\'k u URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">K\'uchuvatz: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">K\'uchuvatz: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">K\'uchuvatz: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -320,12 +320,12 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Palsa pal va navegador tu %1$s</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Aq\'ven unq\'a vee\' uve\' b\'anb\'emal ve\'t s-a\'n</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">La ootzil nimal</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">U Mozilla a\' chit u b\'a\'ne\' ni chuke\' aq\'al uva\' acha\'v chit u %1$se\' la ib\'ane\'.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">U Mozilla a\' chit u b\'a\'ne\' ni chuke\' aq\'al uva\' acha\'v chit u %1$se\' la ib\'ane\'.</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Aviso de privacidad</string>
   <!-- In-app link (in settings) to Focus licensing information. -->
@@ -779,7 +779,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Jup u ilb’al tetze’</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">La aalb’en tu Mozilla ti’ unq’a vee’ ni Yáñez’</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">La aalb’en tu Mozilla ti’ unq’a vee’ ni Yáñez’</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

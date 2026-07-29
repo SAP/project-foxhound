@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,12 +27,13 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
+import mozilla.components.compose.base.LinkText
+import mozilla.components.compose.base.LinkTextState
 import mozilla.components.lib.state.Store
 import org.mozilla.fenix.R
-import org.mozilla.fenix.compose.LinkText
-import org.mozilla.fenix.compose.LinkTextState
 import org.mozilla.fenix.compose.list.SwitchListItem
 import org.mozilla.fenix.theme.FirefoxTheme
+import mozilla.components.ui.icons.R as iconsR
 
 @Composable
 internal fun EmailMasksSettingsScreen(
@@ -112,7 +112,7 @@ private fun ManageEmailMasksRow(
             modifier = Modifier.weight(1f),
         )
         Icon(
-            painter = painterResource(R.drawable.ic_open_in_new),
+            painter = painterResource(iconsR.drawable.mozac_ic_external_link_24),
             contentDescription = null,
         )
     }
@@ -123,25 +123,27 @@ private fun LearnMoreLink(
     learnMoreText: String,
     onLearnMoreClicked: () -> Unit,
 ) {
-    val learnMoreState = LinkTextState(
-        text = learnMoreText,
-        url = "",
-        onClick = {
-            onLearnMoreClicked()
-        },
-    )
-
-    ListItem(
-        modifier = Modifier.clickable(onClick = { onLearnMoreClicked() }),
-        headlineContent = {
-            LinkText(
-                text = learnMoreText,
-                linkTextStates = listOf(learnMoreState),
-                linkTextDecoration = TextDecoration.Underline,
-                shouldApplyAccessibleSize = true,
-            )
-        },
-    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = { onLearnMoreClicked() })
+            .padding(horizontal = FirefoxTheme.layout.space.dynamic200),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val learnMoreState = LinkTextState(
+            text = learnMoreText,
+            url = "",
+            onClick = {
+                onLearnMoreClicked()
+            },
+        )
+        LinkText(
+            text = learnMoreText,
+            linkTextStates = listOf(learnMoreState),
+            linkTextDecoration = TextDecoration.Underline,
+            shouldApplyAccessibleSize = true,
+        )
+    }
 }
 
 @PreviewLightDark

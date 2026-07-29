@@ -55,6 +55,11 @@ known_errors = [
     },
     {
         # Triggered as soon as anything tries to use shortcut keys.
+        # Bug 1936426 to reconsider warning as we want ctrl-alt-u for open tabs.
+        "message": "viewOpenTabsSidebarKb",
+    },
+    {
+        # Triggered as soon as anything tries to use shortcut keys.
         # Bug 1936426 to reconsider warning as we want ctrl-z / ctrl-alt-z
         # for sidebar.
         "message": "toggleSidebarKb",

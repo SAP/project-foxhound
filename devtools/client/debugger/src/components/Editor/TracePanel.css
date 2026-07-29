@@ -18,7 +18,7 @@
   position: relative;
 
   background: var(--theme-toolbar-background);
-  background-image: url("chrome://devtools/content/debugger/images/trace.svg");
+  background-image: url("chrome://devtools/content/shared/components/images/trace.svg");
   background-size: 1.25em;
   background-repeat: no-repeat;
   background-position: 0.5em;
@@ -39,6 +39,7 @@
       color: var(--theme-selection-color);
       background-color: var(--theme-selection-background);
     }
+
     ² &:focus {
       outline: var(--theme-focus-outline);
       outline-offset: -2px;

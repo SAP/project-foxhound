@@ -67,8 +67,8 @@ async function testTranslate(config) {
     await mouse.down(x, y, selector);
     await mouse.move(x + dx, y + dy, selector);
     await mouse.up(x + dx, y + dy, selector);
-    await reflowContentPage();
     await onShapeChangeApplied;
+    await reflowContentPage();
 
     let newBB = await getBoundingBoxInPx({ selector, ...config });
     isnot(newBB.center[0], x, `${selector} translated on y axis`);
@@ -81,8 +81,8 @@ async function testTranslate(config) {
     await mouse.down(x + dx, y + dy, selector);
     await mouse.move(x, y, selector);
     await mouse.up(x, y, selector);
-    await reflowContentPage();
     await onShapeChangeApplied;
+    await reflowContentPage();
 
     newBB = await getBoundingBoxInPx({ selector, ...config });
     is(newBB.center[0], x, `${selector} translated back on x axis`);

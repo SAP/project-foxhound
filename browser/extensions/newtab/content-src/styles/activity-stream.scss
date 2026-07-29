@@ -39,10 +39,7 @@ body {
   background-image:
     var(--newtab-wallpaper, ''),
     linear-gradient(to right, var(--newtab-wallpaper-color, ''), var(--newtab-wallpaper-color, ''));
-}
-
-.no-scroll {
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 h1,
@@ -134,6 +131,14 @@ input {
   }
 }
 
+// The panel list custom element is still loading when the page first paints,
+// so its menu items, which should stay hidden until opened, briefly show. Hide
+// it until the element has loaded. We cannot fix this inside the component,
+// since that fix would be delayed by the same loading.
+panel-list:not(:defined) {
+  display: none;
+}
+
 panel-item::part(button) {
   padding-inline-start: var(--space-medium);
 }
@@ -152,6 +157,7 @@ panel-item::part(button) {
 @import '../components/ActivationWindowMessage/ActivationWindowMessage';
 @import '../components/A11yLinkButton/A11yLinkButton';
 @import '../components/Base/Base';
+@import '../components/Base/Grid';
 @import '../components/ErrorBoundary/ErrorBoundary';
 @import '../components/Logo/Logo';
 @import '../components/TopSites/TopSites';
@@ -173,8 +179,16 @@ panel-item::part(button) {
 
 // Widget Components
 @import '../components/Widgets/Widgets';
+@import '../components/Widgets/WidgetWrapper';
+@import '../components/Widgets/WidgetCelebration';
 @import '../components/Widgets/Lists/Lists';
 @import '../components/Widgets/FocusTimer/FocusTimer';
+@import '../components/Widgets/SportsWidget/SportsWidget';
+@import '../components/Widgets/SportsWidget/SportsMatchRow';
+@import '../components/Widgets/SportsWidget/WatchLiveModal';
+@import '../components/Widgets/SportsWidget/LivePagination';
+@import '../components/Widgets/Weather/Weather';
+@import '../components/Widgets/Clocks/Clocks';
 @import '../components/Widgets/WeatherForecast/WeatherForecast';
 
 // Discovery Stream Components
@@ -198,6 +212,9 @@ panel-item::part(button) {
 @import '../components/DiscoveryStreamComponents/FeatureHighlight/FollowSectionButtonHighlight';
 @import '../components/DiscoveryStreamComponents/FeatureHighlight/WallpaperFeatureHighlight';
 @import '../components/DiscoveryStreamComponents/FeatureHighlight/ShortcutFeatureHighlight';
+@import '../components/DiscoveryStreamComponents/FeatureHighlight/WidgetsRowFeatureHighlight';
+@import '../components/DiscoveryStreamComponents/FeatureHighlight/OMCHighlightBody';
+@import '../components/DiscoveryStreamComponents/FeatureHighlight/OMCHighlightPopover';
 @import '../components/DiscoveryStreamComponents/TopicSelection/TopicSelection';
 @import '../components/DiscoveryStreamComponents/AdBanner/AdBanner';
 @import '../components/DiscoveryStreamComponents/AdBannerContextMenu/AdBannerContextMenu';
@@ -207,5 +224,13 @@ panel-item::part(button) {
 @import '../components/DiscoveryStreamComponents/InterestPicker/InterestPicker';
 @import '../components/DiscoveryStreamComponents/ReportContent/ReportContent';
 @import '../components/DiscoveryStreamComponents/PersonalizedCard/PersonalizedCard';
+@import '../components/MessageWrapper/MessageWrapper';
+
+// Nova Component Styles
+// @nova-cleanup(merge-styles): After ship, remove the CSS swap in AboutNewTabChild.sys.mjs
+@import './nova/tokens';
+@import './nova/TopSites';
+@import './nova/CardSections';
+@import './nova/DSCard';
 
 // stylelint-enable no-invalid-position-at-import-rule

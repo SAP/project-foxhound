@@ -4,6 +4,8 @@
 
 package mozilla.components.feature.session
 
+import android.os.Build
+import android.view.HapticFeedbackConstants
 import android.view.View
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import kotlinx.coroutines.CoroutineDispatcher
@@ -95,6 +97,9 @@ class SwipeRefreshFeature(
      * Called when a swipe gesture triggers a refresh.
      */
     override fun onRefresh() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            swipeRefreshLayout.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+        }
         onRefreshCallback?.invoke()
         store.state.findTabOrCustomTabOrSelectedTab(tabId)?.let { tab ->
             reloadUrlUseCase(tab.id)

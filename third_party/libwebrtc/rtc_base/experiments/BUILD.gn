@@ -32,13 +32,13 @@ rtc_library("field_trial_parser") {
     "struct_parameters_parser.h",
   ]
   deps = [
+    "..:checks",
+    "..:logging",
+    "..:safe_conversions",
+    "..:stringutils",
     "../../api/units:data_rate",
     "../../api/units:data_size",
     "../../api/units:time_delta",
-    "../../rtc_base:checks",
-    "../../rtc_base:logging",
-    "../../rtc_base:safe_conversions",
-    "../../rtc_base:stringutils",
     "//third_party/abseil-cpp/absl/memory",
     "//third_party/abseil-cpp/absl/strings",
     "//third_party/abseil-cpp/absl/strings:string_view",
@@ -63,12 +63,12 @@ rtc_library("quality_scaling_experiment") {
     "quality_scaling_experiment.h",
   ]
   deps = [
+    ":field_trial_parser",
     "..:checks",
     "..:logging",
     "../../api:field_trials_view",
     "../../api/video:video_frame",
     "../../api/video_codecs:video_codecs_api",
-    "../../rtc_base/experiments:field_trial_parser",
     "//third_party/abseil-cpp/absl/strings",
   ]
 }
@@ -122,11 +122,8 @@ rtc_library("rate_control_settings") {
   deps = [
     ":field_trial_parser",
     "..:logging",
-    "..:safe_conversions",
     "../../api:field_trials_view",
     "../../api/units:data_size",
-    "../../api/video_codecs:video_codecs_api",
-    "../../video/config:encoder_config",
     "//third_party/abseil-cpp/absl/strings",
   ]
 }
@@ -149,11 +146,11 @@ rtc_library("min_video_bitrate_experiment") {
   ]
   deps = [
     ":field_trial_parser",
+    "..:checks",
+    "..:logging",
     "../../api:field_trials_view",
     "../../api/units:data_rate",
     "../../api/video:video_frame",
-    "../../rtc_base:checks",
-    "../../rtc_base:logging",
   ]
 }
 
@@ -166,7 +163,6 @@ rtc_library("psnr_experiment") {
     ":field_trial_parser",
     "..:logging",
     "../../api:field_trials_view",
-    "../../api/environment",
     "../../api/units:time_delta",
     "//third_party/abseil-cpp/absl/strings",
   ]
@@ -182,8 +178,20 @@ rtc_library("encoder_speed_experiment") {
     "../../api:field_trials_view",
     "../../api/video:video_frame",
     "../../api/video_codecs:video_codecs_api",
-    "../../rtc_base/containers:flat_map",
     "//third_party/abseil-cpp/absl/strings",
+  ]
+}
+
+rtc_library("corruption_detection_frame_selector_settings") {
+  sources = [
+    "corruption_detection_frame_selector_settings.cc",
+    "corruption_detection_frame_selector_settings.h",
+  ]
+  deps = [
+    ":field_trial_parser",
+    "..:logging",
+    "../../api:field_trials_view",
+    "../../api/units:time_delta",
   ]
 }
 
@@ -193,6 +201,7 @@ if (rtc_include_tests && !build_with_chromium) {
 
     sources = [
       "balanced_degradation_settings_unittest.cc",
+      "corruption_detection_frame_selector_settings_unittest.cc",
       "encoder_info_settings_unittest.cc",
       "encoder_speed_experiment_unittest.cc",
       "field_trial_list_unittest.cc",
@@ -209,6 +218,7 @@ if (rtc_include_tests && !build_with_chromium) {
     ]
     deps = [
       ":balanced_degradation_settings",
+      ":corruption_detection_frame_selector_settings",
       ":encoder_info_settings",
       ":encoder_speed_experiment",
       ":field_trial_parser",
@@ -219,7 +229,6 @@ if (rtc_include_tests && !build_with_chromium) {
       ":quality_scaler_settings",
       ":quality_scaling_experiment",
       ":rate_control_settings",
-      "..:gunit_helpers",
       "../../api:field_trials",
       "../../api:field_trials_view",
       "../../api/units:data_rate",
@@ -227,9 +236,7 @@ if (rtc_include_tests && !build_with_chromium) {
       "../../api/units:time_delta",
       "../../api/video:video_frame",
       "../../api/video_codecs:video_codecs_api",
-      "../../test:create_test_field_trials",
       "../../test:test_support",
-      "../../video/config:encoder_config",
       "//third_party/abseil-cpp/absl/strings:string_view",
     ]
   }

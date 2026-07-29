@@ -11,7 +11,7 @@ import android.view.View.VISIBLE
 import android.widget.ImageView
 import androidx.preference.PreferenceViewHolder
 import org.mozilla.fenix.R
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.components
 
 const val SIMPLE_TOOLBAR_TYPE = "simple"
 
@@ -22,19 +22,27 @@ internal class ToolbarSimpleShortcutPreference @JvmOverloads constructor(
 
     override val options: List<ShortcutOption> = simpleShortcutOptions
 
-    override fun readSelectedKey(): String = context.settings().toolbarSimpleShortcutKey
+    /**
+     * Optional callback for when a new shortcut option is selected.
+     */
+    var optionChangedListener: ((ShortcutOption?) -> Unit)? = null
+
+    override fun readSelectedKey(): String = context.components.settings.toolbarSimpleShortcutKey
 
     override fun writeSelectedKey(key: String) {
-        context.settings().toolbarSimpleShortcutKey = key
+        context.components.settings.toolbarSimpleShortcutKey = key
+        optionChangedListener?.invoke((options.firstOrNull { it.key.value == key }))
     }
 
     override fun getToolbarType(): String = SIMPLE_TOOLBAR_TYPE
 
     override fun getSelectedIconImageView(holder: PreferenceViewHolder): ImageView {
         val simplePreview = holder.findViewById(R.id.toolbar_simple_shortcut_preview)
+        val simpleNoShortcutPreview = holder.findViewById(R.id.toolbar_simple_no_shortcut_preview)
         val expandedPreview = holder.findViewById(R.id.toolbar_expanded_shortcut_preview)
 
         simplePreview.visibility = VISIBLE
+        simpleNoShortcutPreview.visibility = GONE
         expandedPreview.visibility = GONE
 
         return simplePreview.findViewById(R.id.selected_simple_shortcut_icon)

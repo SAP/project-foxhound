@@ -12,7 +12,6 @@ ChromeUtils.defineESModuleGetters(this, {
   EngineURL: "moz-src:///toolkit/components/search/SearchEngine.sys.mjs",
   ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
   NimbusTestUtils: "resource://testing-common/NimbusTestUtils.sys.mjs",
-  Preferences: "resource://gre/modules/Preferences.sys.mjs",
 });
 
 // Expected source and action recorded by `BrowserSearchTelemetry`.
@@ -405,11 +404,10 @@ async function doNimbusExposureTest({
 }) {
   // The `visualSearchEnabled` variable sets this pref on the default branch.
   // Get the original value to make sure it's properly reset on unenrollment.
-  let defaults = new Preferences({
-    branch: "browser.search.visualSearch.featureGate",
-    defaultBranch: true,
-  });
-  let originalDefault = defaults.get("");
+  let defaults = Services.prefs.getDefaultBranch(
+    "browser.search.visualSearch.featureGate"
+  );
+  let originalDefault = defaults.getBoolPref("");
 
   await ExperimentAPI.ready();
   Services.fog.testResetFOG();
@@ -470,9 +468,9 @@ async function doNimbusExposureTest({
 
   await doExperimentCleanup();
 
-  defaults.set("", originalDefault);
+  defaults.setBoolPref("", originalDefault);
   Assert.strictEqual(
-    defaults.get(""),
+    defaults.getBoolPref(""),
     originalDefault,
     "The original default pref value should be restored"
   );

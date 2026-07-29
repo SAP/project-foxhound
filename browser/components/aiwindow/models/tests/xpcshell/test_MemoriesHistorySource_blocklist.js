@@ -24,18 +24,23 @@ add_task(async function test_getRecentHistory_filters_blocked_titles() {
     matchAnywhere: () => false,
   });
 
-  await PlacesUtils.history.insertMany([
+  const now = Date.now();
+  const seeded = [
     {
       url: "https://example.com/a",
       title: "hello blockme world",
-      visits: [{ date: new Date() }],
+      visits: [{ date: new Date(now - 1 * 60 * 1000) }],
     },
     {
       url: "https://example.com/b",
       title: "hello normal world",
-      visits: [{ date: new Date() }],
+      visits: [{ date: new Date(now - 2 * 60 * 1000) }],
     },
-  ]);
+  ];
+  await PlacesUtils.history.insertMany(seeded);
+  for (const { url, visits } of seeded) {
+    await insertPlacesMetadata(url, visits[0].date.getTime());
+  }
 
   const rows = await getRecentHistory({ sinceMicros: 0, maxResults: 50 });
 

@@ -9,11 +9,6 @@
 // import statement).
 
 // eslint-disable-next-line mozilla/use-static-import
-const { XPCOMUtils } = ChromeUtils.importESModule(
-  "resource://gre/modules/XPCOMUtils.sys.mjs"
-);
-
-// eslint-disable-next-line mozilla/use-static-import
 const { MESSAGE_TYPE_HASH: msg } = ChromeUtils.importESModule(
   "resource:///modules/asrouter/ActorConstants.mjs"
 );
@@ -47,12 +42,6 @@ export const PREF_IMPRESSION_ID =
 export class ASRouterTelemetry {
   constructor() {
     this._impressionId = this.getOrCreateImpressionId();
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "telemetryEnabled",
-      "browser.newtabpage.activity-stream.telemetry",
-      false
-    );
   }
 
   get telemetryClientId() {
@@ -83,8 +72,8 @@ export class ASRouterTelemetry {
   }
 
   /**
-   * Create a ping for AS router event. The client_id is set to "n/a" by default,
-   * different component can override this by its own telemetry collection policy.
+   * Create a ping for an ASRouter event and apply the appropriate policy based
+   * on the messaging surface.
    */
   async createASRouterEvent(action) {
     let event = {
@@ -114,6 +103,12 @@ export class ASRouterTelemetry {
         break;
       case "menu_message_user_event":
         event = await this.applyMenuMessagePolicy(event);
+        break;
+      case "smart_window_promo_user_event":
+        event = await this.applySmartWindowPromoPolicy(event);
+        break;
+      case "action_only_user_event":
+        event = await this.applyActionOnlyPolicy(event);
         break;
       case "asrouter_undesired_event":
         event = this.applyUndesiredEventPolicy(event);
@@ -191,31 +186,30 @@ export class ASRouterTelemetry {
     return { ping, pingType: "menu" };
   }
 
-  /**
-   * Per Bug 1484035, Moments metrics comply with following policies:
-   * 1). In release, it collects impression_id, and treats bucket_id as message_id
-   * 2). In prerelease, it collects client_id and message_id
-   * 3). In shield experiments conducted in release, it collects client_id and message_id
-   */
+  async applySmartWindowPromoPolicy(ping) {
+    ping.client_id = await this.telemetryClientId;
+    ping.browser_session_id = lazy.browserSessionId;
+    delete ping.action;
+    return { ping, pingType: "smart_window_promo" };
+  }
+
   async applyMomentsPolicy(ping) {
-    if (
-      lazy.UpdateUtils.getUpdateChannel(true) === "release" &&
-      !this.isInCFRCohort
-    ) {
-      ping.message_id = "n/a";
-      ping.impression_id = this._impressionId;
-    } else {
-      ping.client_id = await this.telemetryClientId;
-    }
+    ping.client_id = await this.telemetryClientId;
+    ping.browser_session_id = lazy.browserSessionId;
     delete ping.action;
     return { ping, pingType: "moments" };
+  }
+
+  async applyActionOnlyPolicy(ping) {
+    ping.client_id = await this.telemetryClientId;
+    ping.browser_session_id = lazy.browserSessionId;
+    delete ping.action;
+    return { ping, pingType: "action_only" };
   }
 
   async applyNewtabMessagePolicy(ping) {
     ping.client_id = await this.telemetryClientId;
     ping.browser_session_id = lazy.browserSessionId;
-    ping.addon_version = Services.appinfo.appBuildID;
-    ping.locale = Services.locale.appLocaleAsBCP47;
     delete ping.action;
     return { ping, pingType: "newtab_message" };
   }
@@ -233,10 +227,7 @@ export class ASRouterTelemetry {
       return;
     }
 
-    // Now that the action has become a ping, we can echo it to Glean.
-    if (this.telemetryEnabled) {
-      lazy.Telemetry.parseAndSubmitPing({ ...ping, pingType });
-    }
+    lazy.Telemetry.parseAndSubmitPing({ ...ping, pingType });
   }
 
   /**
@@ -270,6 +261,10 @@ export class ASRouterTelemetry {
       case msg.MENU_MESSAGE_TELEMETRY:
       // Intentional fall-through
       case msg.NEWTAB_MESSAGE_TELEMETRY:
+      // Intentional fall-through
+      case msg.SMART_WINDOW_PROMO_TELEMETRY:
+      // Intentional fall-through
+      case msg.ACTION_ONLY_TELEMETRY:
       // Intentional fall-through
       case msg.AS_ROUTER_TELEMETRY_USER_EVENT:
         this.handleASRouterUserEvent(action);

@@ -9,7 +9,7 @@ import android.os.Build
 import androidx.core.app.NotificationManagerCompat
 import mozilla.components.service.nimbus.messaging.JexlAttributeProvider
 import mozilla.components.support.base.ext.areNotificationsEnabledSafe
-import mozilla.components.support.utils.BrowsersCache
+import mozilla.components.support.utils.Browsers
 import org.json.JSONObject
 import org.mozilla.fenix.components.metrics.UTMParams.Companion.UTM_CAMPAIGN
 import org.mozilla.fenix.components.metrics.UTMParams.Companion.UTM_CONTENT
@@ -17,7 +17,6 @@ import org.mozilla.fenix.components.metrics.UTMParams.Companion.UTM_MEDIUM
 import org.mozilla.fenix.components.metrics.UTMParams.Companion.UTM_SOURCE
 import org.mozilla.fenix.components.metrics.UTMParams.Companion.UTM_TERM
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.utils.isLargeScreenSize
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -46,7 +45,7 @@ object CustomAttributeProvider : JexlAttributeProvider {
      * first-run experiments. These target attributes will only become active after the second startup.
      */
     fun getCustomTargetingAttributes(context: Context): JSONObject {
-        val settings = context.settings()
+        val settings = context.components.settings
         val isFirstRun = settings.isFirstNimbusRun
         return JSONObject(
             mapOf(
@@ -78,10 +77,10 @@ object CustomAttributeProvider : JexlAttributeProvider {
      */
     override fun getCustomAttributes(context: Context): JSONObject {
         val now = Calendar.getInstance()
-        val settings = context.settings()
+        val settings = context.components.settings
         return JSONObject(
             mapOf(
-                "is_default_browser" to BrowsersCache.all(context).isDefaultBrowser,
+                "is_default_browser" to Browsers.isDefaultBrowser(context),
                 "date_string" to formatter.format(now.time),
                 "number_of_app_launches" to settings.numberOfAppLaunches,
                 "adjust_campaign" to settings.adjustCampaignId,

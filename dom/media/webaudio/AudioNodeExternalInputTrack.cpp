@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,9 +16,10 @@ namespace mozilla {
 
 extern LazyLogModule gMediaDecoderLog;
 
-#define LOG(msg, ...)                        \
-  MOZ_LOG(gMediaDecoderLog, LogLevel::Debug, \
-          ("AudioNodeExternalInputTrack=%p " msg, this, ##__VA_ARGS__))
+#define LOG(msg, ...)                                                \
+  MOZ_LOG_FMT(gMediaDecoderLog, LogLevel::Debug,                     \
+              "AudioNodeExternalInputTrack={} " msg, fmt::ptr(this), \
+              ##__VA_ARGS__)
 
 AudioNodeExternalInputTrack::AudioNodeExternalInputTrack(
     AudioNodeEngine* aEngine, TrackRate aSampleRate)
@@ -233,9 +233,9 @@ bool AudioNodeExternalInputTrack::IsEnabled() {
 
 void AudioNodeExternalInputTrack::SetVolume(float aVolume) {
   MOZ_ASSERT(NS_IsMainThread());
-  LOG("Set volume %f", aVolume);
+  LOG("Set volume {}", aVolume);
   QueueControlMessageWithNoShutdown([self = RefPtr{this}, this, aVolume] {
-    LOG("Apply volume %f", aVolume);
+    LOG("Apply volume {}", aVolume);
     mVolume = aVolume;
   });
 }

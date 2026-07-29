@@ -1,6 +1,3 @@
-/* -*- js-indent-level: 2; tab-width: 2; indent-tabs-mode: nil -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
-
 // Generally gTestPath should be set by the harness.
 /* global gTestPath */
 
@@ -1018,7 +1015,7 @@ SimpleTest.promiseFocus = async function (
 
     browser =
       browsingContext == aObject ? aObject.top.embedderElement : aObject;
-    windowToFocus = browser.ownerGlobal;
+    windowToFocus = browser.documentGlobal;
   }
 
   if (!windowToFocus.document.hasFocus()) {
@@ -2058,21 +2055,21 @@ window.onerror = function simpletestOnerror(
   // a test failure.  See bug 652494.
   var isExpected = !!SimpleTest._expectingUncaughtException;
   var message = (isExpected ? "expected " : "") + "uncaught exception";
-  var error = errorMsg + " at ";
+  var stack;
   try {
-    error += originalException.stack;
+    stack = originalException.stack;
   } catch (e) {
     // At least use the url+line+column we were given
-    error += url + ":" + lineNumber + ":" + columnNumber;
+    stack = url + ":" + lineNumber + ":" + columnNumber;
   }
   if (!SimpleTest._ignoringAllUncaughtExceptions) {
     // Don't log if SimpleTest.finish() is already called, it would cause failures
     if (!SimpleTest._alreadyFinished) {
-      SimpleTest.record(isExpected, message, error);
+      SimpleTest.record(isExpected, message, errorMsg, stack);
     }
     SimpleTest._expectingUncaughtException = false;
   } else {
-    SimpleTest.todo(false, message + ": " + error);
+    SimpleTest.todo(false, message + ": " + errorMsg + " at " + stack);
   }
   // There is no Components.stack.caller to log. (See bug 511888.)
 

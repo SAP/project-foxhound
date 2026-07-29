@@ -8,12 +8,13 @@ import android.content.Intent
 import androidx.core.net.toUri
 import mozilla.components.lib.crash.CrashReporter
 import mozilla.components.lib.crash.ui.AbstractCrashListFragment
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.components
 
 /**
  * Fragment showing the list of past crashes.
  */
-class CrashListFragment : AbstractCrashListFragment() {
+class CrashListFragment : AbstractCrashListFragment(), SystemInsetsPaddedFragment {
     override val reporter: CrashReporter by lazy { requireContext().components.analytics.crashReporter }
 
     override fun onCrashServiceSelected(url: String) {

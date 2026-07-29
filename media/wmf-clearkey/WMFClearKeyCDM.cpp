@@ -4,8 +4,9 @@
 
 #include "WMFClearKeyCDM.h"
 
-#include <Mferror.h>
+#include <mferror.h>
 #include <mfapi.h>
+#include <mutex>
 #include <oleauto.h>
 #include <windows.h>
 #include <windows.media.h>
@@ -14,6 +15,7 @@
 #include "WMFClearKeySession.h"
 #include "WMFDecryptedBlock.h"
 #include "WMFPMPServer.h"
+#include "nss.h"
 
 using Microsoft::WRL::ComPtr;
 using Microsoft::WRL::MakeAndInitialize;
@@ -79,12 +81,23 @@ MF_MEDIAKEYSESSION_MESSAGETYPE ToMFMessageType(cdm::MessageType aMessageType) {
 
 namespace mozilla {
 
-HRESULT WMFClearKeyCDM::RuntimeClassInitialize(IPropertyStore* aProperties) {
-  ENTRY_LOG();
-  // A workaround in order to create an in-process PMP server regardless of the
-  // system's HWDRM capability. As accoriding to Microsoft, only PlayReady is
-  // supported for the in-process PMP so we pretend ourselves as a PlayReady
-  // CDM for the PMP server.
+// MF's PMP infrastructure is process-wide by design: all CDMs are expected
+// to share one protected environment, the same way hardware DRM uses a
+// single mfpmp.exe per application rather than one per media element.
+static HRESULT GetOrCreateSharedPMPServer(
+    Microsoft::WRL::ComPtr<WMFPMPServer>& aOut) {
+  static std::mutex sMutex;
+  static Microsoft::WRL::ComPtr<WMFPMPServer> sServer;
+
+  std::lock_guard<std::mutex> lock(sMutex);
+  if (sServer) {
+    aOut = sServer;
+    return S_OK;
+  }
+  // A workaround in order to create an in-process PMP server regardless of
+  // the system's HWDRM capability. As accoriding to Microsoft, only PlayReady
+  // is supported for the in-process PMP so we pretend ourselves as a
+  // PlayReady CDM for the PMP server.
   ComPtr<ABI::Windows::Foundation::Collections::IPropertySet> propertyPmp;
   RETURN_IF_FAILED(Windows::Foundation::ActivateInstance(
       Microsoft::WRL::Wrappers::HStringReference(
@@ -97,10 +110,19 @@ HRESULT WMFClearKeyCDM::RuntimeClassInitialize(IPropertyStore* aProperties) {
   RETURN_IF_FAILED(AddBoolToPropertySet(
       propertyPmp.Get(), L"Windows.Media.Protection.UseHardwareProtectionLayer",
       TRUE));
-  RETURN_IF_FAILED((MakeAndInitialize<
-                    WMFPMPServer,
-                    ABI::Windows::Media::Protection::IMediaProtectionPMPServer>(
-      &mPMPServer, propertyPmp.Get())));
+  Microsoft::WRL::ComPtr<WMFPMPServer> server;
+  RETURN_IF_FAILED(MakeAndInitialize<WMFPMPServer>(&server, propertyPmp.Get()));
+  sServer = server;
+  aOut = std::move(server);
+  return S_OK;
+}
+
+HRESULT WMFClearKeyCDM::RuntimeClassInitialize(IPropertyStore* aProperties) {
+  ENTRY_LOG();
+  if (NSS_NoDB_Init(nullptr) != SECSuccess) {
+    ENTRY_LOG_ARGS("NSS_NoDB_Init failed");
+    return E_FAIL;
+  }
 
   mSessionManager = new SessionManagerWrapper(this);
   return S_OK;
@@ -169,15 +191,13 @@ STDMETHODIMP WMFClearKeyCDM::GetService(REFGUID aGuidService, REFIID aRiid,
     ENTRY_LOG_ARGS("unsupported guid!");
     return MF_E_UNSUPPORTED_SERVICE;
   }
-  if (!mPMPServer) {
-    ENTRY_LOG_ARGS("no PMP server!");
-    return MF_INVALID_STATE_ERR;
-  }
+  ComPtr<WMFPMPServer> pmpServer;
+  RETURN_IF_FAILED(GetOrCreateSharedPMPServer(pmpServer));
   if (aRiid == ABI::Windows::Media::Protection::IID_IMediaProtectionPMPServer) {
-    RETURN_IF_FAILED(mPMPServer.CopyTo(aRiid, aPpvObject));
+    RETURN_IF_FAILED(pmpServer.CopyTo(aRiid, aPpvObject));
   } else {
     ComPtr<IMFGetService> getService;
-    RETURN_IF_FAILED(mPMPServer.As(&getService));
+    RETURN_IF_FAILED(pmpServer.As(&getService));
     RETURN_IF_FAILED(getService->GetService(MF_PMP_SERVICE, aRiid, aPpvObject));
   }
   return S_OK;

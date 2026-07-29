@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -238,8 +236,13 @@ if CONFIG["MOZ_ARTIFACT_BUILDS"]:
         flags=glean_parser_flags,
         inputs=["!metrics_yamls.cached", "!pings_yamls.cached"],
     )
-    # Once generated, it needs to be placed in GreD so it can be found.
-    FINAL_TARGET_FILES += ["!jogfile.json"]
+    # Once generated, it needs to be placed somewhere it can be found.
+    if CONFIG["MOZ_WIDGET_TOOLKIT"] == "android":
+        # Needs to go into its own folder for Gradle's `assets {}`.
+        FINAL_TARGET_FILES.assets_jog += ["!jogfile.json"]
+    else:
+        # Ends up in GreD.
+        FINAL_TARGET_FILES += ["!jogfile.json"]
 
 if CONFIG["MOZ_GLEAN_INTERESTING_METRICS_FILES"]:
     GeneratedFile(

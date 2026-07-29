@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,11 +13,19 @@
 namespace mozilla::gmp {
 
 GMPVideoEncoderChild::GMPVideoEncoderChild(GMPContentChild* aPlugin)
-    : mPlugin(aPlugin), mVideoEncoder(nullptr), mVideoHost(this) {
+    : mPlugin(aPlugin), mVideoEncoder(nullptr) {
   MOZ_ASSERT(mPlugin);
 }
 
-GMPVideoEncoderChild::~GMPVideoEncoderChild() = default;
+GMPVideoEncoderChild::~GMPVideoEncoderChild() {
+  // Since any outstanding synchronous runnables require a strong reference to
+  // ourselves, we know that when we are freed, they must have all successfully
+  // dispatched. As such, it should now be safe to free the plugin and join with
+  // the worker thread.
+  if (mVideoEncoder) {
+    mVideoEncoder->EncodingComplete();
+  }
+}
 
 bool GMPVideoEncoderChild::MgrIsOnOwningThread() const {
   return !mPlugin || mPlugin->GMPMessageLoop() == MessageLoop::current();
@@ -29,8 +36,6 @@ void GMPVideoEncoderChild::Init(GMPVideoEncoder* aEncoder) {
              "Cannot initialize video encoder child without a video encoder!");
   mVideoEncoder = aEncoder;
 }
-
-GMPVideoHostImpl& GMPVideoEncoderChild::Host() { return mVideoHost; }
 
 void GMPVideoEncoderChild::Encoded(GMPVideoEncodedFrame* aEncodedFrame,
                                    const uint8_t* aCodecSpecificInfo,
@@ -44,11 +49,9 @@ void GMPVideoEncoderChild::Encoded(GMPVideoEncodedFrame* aEncodedFrame,
 
   auto ef = static_cast<GMPVideoEncodedFrameImpl*>(aEncodedFrame);
 
-  if (GMPSharedMemManager* memMgr = mVideoHost.SharedMemMgr()) {
-    ipc::Shmem inputShmem;
-    if (memMgr->MgrTakeShmem(GMPSharedMemClass::Decoded, &inputShmem)) {
-      (void)SendReturnShmem(std::move(inputShmem));
-    }
+  ipc::Shmem inputShmem;
+  if (MgrTakeShmem(GMPSharedMemClass::Decoded, &inputShmem)) {
+    (void)SendReturnShmem(std::move(inputShmem));
   }
 
   nsTArray<uint8_t> codecSpecific;
@@ -113,12 +116,7 @@ mozilla::ipc::IPCResult GMPVideoEncoderChild::RecvInitEncode(
 
 mozilla::ipc::IPCResult GMPVideoEncoderChild::RecvGiveShmem(
     ipc::Shmem&& aOutputShmem) {
-  if (GMPSharedMemManager* memMgr = mVideoHost.SharedMemMgr()) {
-    memMgr->MgrGiveShmem(GMPSharedMemClass::Encoded, std::move(aOutputShmem));
-  } else {
-    DeallocShmem(aOutputShmem);
-  }
-
+  MgrGiveShmem(GMPSharedMemClass::Encoded, std::move(aOutputShmem));
   return IPC_OK();
 }
 
@@ -131,10 +129,16 @@ mozilla::ipc::IPCResult GMPVideoEncoderChild::RecvEncode(
     return IPC_FAIL(this, "!mVideoDecoder");
   }
 
+  if (!GMPVideoi420FrameImpl::CheckFrameData(aInputFrame,
+                                             aInputShmem.Size<uint8_t>())) {
+    DeallocShmem(aInputShmem);
+    return IPC_FAIL(this, "invalid i420 frame data");
+  }
+
   // The `this` destroyed callback outlives the frame, because `mVideoEncoder`
   // is responsible for destroying the frame, and we outlive `mVideoEncoder`.
-  auto* f = new GMPVideoi420FrameImpl(aInputFrame, std::move(aInputShmem),
-                                      &mVideoHost, HostReportPolicy::Destroyed);
+  auto* f = new GMPVideoi420FrameImpl(aInputFrame, std::move(aInputShmem), this,
+                                      HostReportPolicy::Destroyed);
 
   // Ignore any return code. It is OK for this to fail without killing the
   // process.
@@ -185,25 +189,10 @@ mozilla::ipc::IPCResult GMPVideoEncoderChild::RecvSetPeriodicKeyFrames(
 }
 
 void GMPVideoEncoderChild::ActorDestroy(ActorDestroyReason why) {
-  // If there are no decoded frames, then we know that OpenH264 has destroyed
-  // any outstanding references to its pending encode frames. This means it
-  // should be safe to destroy the encoder since there should not be any pending
-  // sync callbacks.
-  if (!SpinPendingGmpEventsUntil(
-          [&]() -> bool { return mVideoHost.IsDecodedFramesEmpty(); },
-          StaticPrefs::media_gmp_coder_shutdown_timeout_ms())) {
-    NS_WARNING("Timed out waiting for synchronous events!");
-  }
-
-  if (mVideoEncoder) {
-    // Ignore any return code. It is OK for this to fail without killing the
-    // process.
-    mVideoEncoder->EncodingComplete();
-    mVideoEncoder = nullptr;
-  }
-
-  mVideoHost.DoneWithAPI();
-
+  // We don't destroy the video encoder from the plugin here because there may
+  // be outstanding synchronous runnables. They hold a strong reference to
+  // ourselves, so we can wait for our destructor to be called first.
+  MgrPurgeShmems();
   mPlugin = nullptr;
 }
 

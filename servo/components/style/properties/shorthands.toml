@@ -360,7 +360,7 @@ spec = "https://drafts.csswg.org/css-transitions/#propdef-transition"
 extra_prefixes = ["moz:layout.css.prefixes.transitions", "webkit"]
 
 [animation]
-sub_properties = ["animation-name", "animation-duration", "animation-timing-function", "animation-delay", "animation-iteration-count", "animation-direction", "animation-fill-mode", "animation-play-state", "animation-timeline"]
+sub_properties = ["animation-name", "animation-duration", "animation-timing-function", "animation-delay", "animation-iteration-count", "animation-direction", "animation-fill-mode", "animation-play-state", "animation-timeline", "animation-range-start", "animation-range-end"]
 spec = "https://drafts.csswg.org/css-animations/#propdef-animation"
 extra_prefixes = ["moz:layout.css.prefixes.animations", "webkit"]
 rule_types_allowed = ["style"]
@@ -377,6 +377,12 @@ sub_properties = ["view-timeline-name", "view-timeline-axis"]
 spec = "https://drafts.csswg.org/scroll-animations-1/#view-timeline-shorthand"
 gecko_pref = "layout.css.scroll-driven-animations.enabled"
 
+[animation-range]
+engine = "gecko"
+sub_properties = ["animation-range-start", "animation-range-end"]
+spec = "https://drafts.csswg.org/scroll-animations-1/#animation-range"
+gecko_pref = "layout.css.scroll-driven-animations.enabled"
+
 [list-style]
 sub_properties = ["list-style-position", "list-style-image", "list-style-type"]
 spec = "https://drafts.csswg.org/css-lists/#propdef-list-style"
@@ -386,21 +392,83 @@ sub_properties = ["background-position-x", "background-position-y"]
 spec = "https://drafts.csswg.org/css-backgrounds-4/#the-background-position"
 
 [mask]
-engine = "gecko"
 sub_properties = ["mask-mode", "mask-repeat", "mask-clip", "mask-origin", "mask-composite", "mask-position-x", "mask-position-y", "mask-size", "mask-image"]
 spec = "https://drafts.fxtf.org/css-masking/#propdef-mask"
 extra_prefixes = ["webkit"]
+servo_pref = "layout.unimplemented"
 
 [mask-position]
-engine = "gecko"
 sub_properties = ["mask-position-x", "mask-position-y"]
 spec = "https://drafts.csswg.org/css-masks-4/#the-mask-position"
 extra_prefixes = ["webkit"]
+servo_pref = "layout.unimplemented"
 
 [border-radius]
 sub_properties = ["border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius", "border-bottom-left-radius"]
 spec = "https://drafts.csswg.org/css-backgrounds/#border-radius"
 extra_prefixes = ["webkit"]
+
+[corner-shape]
+sub_properties = ["corner-top-left-shape", "corner-top-right-shape", "corner-bottom-right-shape", "corner-bottom-left-shape"]
+spec = "https://drafts.csswg.org/css-borders-4/#propdef-corner-shape"
+gecko_pref = "layout.css.corner-shape.enabled"
+servo_pref = "layout.unimplemented"
+
+[corner-top-shape]
+sub_properties = ["corner-top-left-shape", "corner-top-right-shape"]
+spec = "https://drafts.csswg.org/css-borders-4/#propdef-corner-top-shape"
+gecko_pref = "layout.css.corner-shape.enabled"
+servo_pref = "layout.unimplemented"
+kind = "two_properties"
+
+[corner-right-shape]
+sub_properties = ["corner-top-right-shape", "corner-bottom-right-shape"]
+spec = "https://drafts.csswg.org/css-borders-4/#propdef-corner-right-shape"
+gecko_pref = "layout.css.corner-shape.enabled"
+servo_pref = "layout.unimplemented"
+kind = "two_properties"
+
+[corner-bottom-shape]
+sub_properties = ["corner-bottom-left-shape", "corner-bottom-right-shape"]
+spec = "https://drafts.csswg.org/css-borders-4/#propdef-corner-bottom-shape"
+gecko_pref = "layout.css.corner-shape.enabled"
+servo_pref = "layout.unimplemented"
+kind = "two_properties"
+
+[corner-left-shape]
+sub_properties = ["corner-top-left-shape", "corner-bottom-left-shape"]
+spec = "https://drafts.csswg.org/css-borders-4/#propdef-corner-left-shape"
+gecko_pref = "layout.css.corner-shape.enabled"
+servo_pref = "layout.unimplemented"
+kind = "two_properties"
+
+[corner-block-start-shape]
+sub_properties = ["corner-start-start-shape", "corner-start-end-shape"]
+spec = "https://drafts.csswg.org/css-borders-4/#propdef-corner-block-start-shape"
+gecko_pref = "layout.css.corner-shape.enabled"
+servo_pref = "layout.unimplemented"
+kind = "two_properties"
+
+[corner-block-end-shape]
+sub_properties = ["corner-end-start-shape", "corner-end-end-shape"]
+spec = "https://drafts.csswg.org/css-borders-4/#propdef-corner-block-end-shape"
+gecko_pref = "layout.css.corner-shape.enabled"
+servo_pref = "layout.unimplemented"
+kind = "two_properties"
+
+[corner-inline-start-shape]
+sub_properties = ["corner-start-start-shape", "corner-end-start-shape"]
+spec = "https://drafts.csswg.org/css-borders-4/#propdef-corner-inline-start-shape"
+gecko_pref = "layout.css.corner-shape.enabled"
+servo_pref = "layout.unimplemented"
+kind = "two_properties"
+
+[corner-inline-end-shape]
+sub_properties = ["corner-start-end-shape", "corner-end-end-shape"]
+spec = "https://drafts.csswg.org/css-borders-4/#propdef-corner-inline-end-shape"
+gecko_pref = "layout.css.corner-shape.enabled"
+servo_pref = "layout.unimplemented"
+kind = "two_properties"
 
 [outline]
 sub_properties = ["outline-color", "outline-style", "outline-width"]
@@ -426,32 +494,32 @@ spec = "https://drafts.csswg.org/css-text-decor/#propdef-text-decoration"
 sub_properties = [
   "font-style",
   "font-variant-caps",
+  "font-variant-east-asian",
+  "font-variant-ligatures",
+  "font-variant-numeric",
+  "font-variant-position",
   "font-weight",
   "font-stretch",
   "font-size",
   "line-height",
   "font-family",
   "font-optical-sizing",
-  "font-variation-settings"
+  "font-variation-settings",
+  "font-kerning",
+  "font-feature-settings",
 ]
 extra_gecko_sub_properties = [
   "font-size-adjust",
-  "font-kerning",
   "font-variant-alternates",
-  "font-variant-east-asian",
   "font-variant-emoji",
-  "font-variant-ligatures",
-  "font-variant-numeric",
-  "font-variant-position",
-  "font-language-override",
-  "font-feature-settings"
+  "font-language-override"
 ]
 spec = "https://drafts.csswg.org/css-fonts-3/#propdef-font"
 derive_value_info = false
 
 [font-variant]
-sub_properties = ["font-variant-caps"]
-extra_gecko_sub_properties = ["font-variant-alternates", "font-variant-east-asian", "font-variant-emoji", "font-variant-ligatures", "font-variant-numeric", "font-variant-position"]
+sub_properties = ["font-variant-caps", "font-variant-east-asian", "font-variant-ligatures", "font-variant-numeric", "font-variant-position"]
+extra_gecko_sub_properties = ["font-variant-alternates", "font-variant-emoji"]
 spec = "https://drafts.csswg.org/css-fonts-3/#propdef-font-variant"
 
 [font-synthesis]

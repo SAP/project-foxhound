@@ -1,4 +1,3 @@
-/* vim:set ts=2 sw=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -42,7 +41,7 @@ class nsServerSocket : public nsASocketHandler, public nsIServerSocket {
  protected:
   virtual ~nsServerSocket();
   PRFileDesc* mFD{nullptr};
-  nsCOMPtr<nsIServerSocketListener> mListener;
+  nsCOMPtr<nsIServerSocketListener> mListener MOZ_GUARDED_BY(mLock);
 
  private:
   void OnMsgClose();
@@ -54,8 +53,24 @@ class nsServerSocket : public nsASocketHandler, public nsIServerSocket {
   nsresult InitWithAddressInternal(const PRNetAddr* aAddr, int32_t aBackLog,
                                    bool aDualStack = false);
 
+ protected:
+  // Returns true if AsyncListen() has already been called. Subclasses should
+  // call this before modifying options that must be set before listening
+  // begins.
+  bool HasListener() {
+    MutexAutoLock lock(mLock);
+    return mListener != nullptr;
+  }
+
+  // Atomically copies and returns the current listener.
+  already_AddRefed<nsIServerSocketListener> GetListener() {
+    MutexAutoLock lock(mLock);
+    return do_AddRef(mListener.get());
+  }
+
+ private:
   // lock protects access to mListener; so it is not cleared while being used.
-  mozilla::Mutex mLock MOZ_UNANNOTATED{"nsServerSocket.mLock"};
+  mozilla::Mutex mLock{"nsServerSocket.mLock"};
   PRNetAddr mAddr = {.raw = {0, {0}}};
   nsCOMPtr<nsIEventTarget> mListenerTarget;
   bool mAttached{false};

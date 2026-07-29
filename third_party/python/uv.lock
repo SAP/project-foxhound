@@ -1,6 +1,10 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.9"
+resolution-markers = [
+    "python_full_version >= '3.10'",
+    "python_full_version < '3.10'",
+]
 
 [[package]]
 name = "aiohappyeyeballs"
@@ -383,16 +387,16 @@ wheels = [
 
 [[package]]
 name = "compare-locales"
-version = "9.0.4"
+version = "9.0.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fluent-syntax" },
     { name = "six" },
     { name = "toml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e0/56/b0307642caae7fe5276b529852ba3c5436d4f61b97319874d0a5393365a9/compare_locales-9.0.4.tar.gz", hash = "sha256:73d0d384aefa0bc96f5fd8521c08c8bb89b16a37316701323a77960accabd551", size = 58373, upload-time = "2024-07-01T08:30:45.545Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/99/d6/1437ec990438908eb8766cc4cb68a4e8e0a0fa3cec9a73861e7b383de706/compare_locales-9.0.5.tar.gz", hash = "sha256:82f2177552666d0f7af1ccc2940a8d562f345ce3a2e64f1b67853d457ea8ae33", size = 59092, upload-time = "2026-05-30T06:21:42.865Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/39/51/7e5b671298d1486e2041898e050d8a7c2aa2df1dea8c61b7be578994e69a/compare_locales-9.0.4-py3-none-any.whl", hash = "sha256:933d2b6e20f460d3ac2d3176295684505a42085b25e6c31944fcafbaf52f1cc0", size = 75469, upload-time = "2024-07-01T08:30:43.72Z" },
+    { url = "https://files.pythonhosted.org/packages/ce/22/299da0a35e0acca9164db72cb811a7dd8827b86e9cb890cbee8807799268/compare_locales-9.0.5-py3-none-any.whl", hash = "sha256:40eaa40fe9290996f5972fa83bc4f9f1e580a6e2ea06087e636e77378d8ed168", size = 76275, upload-time = "2026-05-30T06:21:41.519Z" },
 ]
 
 [[package]]
@@ -402,6 +406,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f3/95/b66a0ca09c5ec9509d8729e0510e4b078d2451c5e33f47bd6fc33c01517c/cookies-2.2.1.tar.gz", hash = "sha256:d6b698788cae4cfa4e62ef8643a9ca332b79bd96cb314294b864ae8d7eb3ee8e", size = 40704, upload-time = "2014-09-27T02:36:46.434Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/6a/60/557f84aa2db629e5124aa05408b975b1b5d0e1cec16cde0bfa06aae097d3/cookies-2.2.1-py2.py3-none-any.whl", hash = "sha256:15bee753002dff684987b8df8c235288eb8d45f8191ae056254812dfd42c81d3", size = 44423, upload-time = "2014-09-27T02:36:49.417Z" },
+]
+
+[[package]]
+name = "diskarzhan"
+version = "0.1.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyyaml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f2/9d/cdba4636277393e04f7a12a26df63f8ca068807c0bfb357d2f50f95430fa/diskarzhan-0.1.6.tar.gz", hash = "sha256:4ccc84e467979f53798e330462e814d061511ec33127ac0806e62c502f75b464", size = 27432, upload-time = "2026-04-22T12:34:54.822Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e2/f8/e253aa37c3ade9c059cf87142591c6d7031774ce5bd2f6eb1cf269725e3f/diskarzhan-0.1.6-py3-none-any.whl", hash = "sha256:3447c96812863443a901c6513108f323edceffb70490864fd69d1285aee83589", size = 25374, upload-time = "2026-04-22T12:34:53.224Z" },
 ]
 
 [[package]]
@@ -439,15 +455,6 @@ name = "esprima"
 version = "4.0.1"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/cc/a1/50fccd68a12bcfc27adfc9969c090286670a9109a0259f3f70943390b721/esprima-4.0.1.tar.gz", hash = "sha256:08db1a876d3c2910db9cfaeb83108193af5411fc3a3a66ebefacd390d21323ee", size = 47021, upload-time = "2018-08-24T13:59:11.374Z" }
-
-[[package]]
-name = "filelock"
-version = "3.18.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/0a/10/c23352565a6544bdc5353e0b15fc1c563352101f30e24bf500207a54df9a/filelock-3.18.0.tar.gz", hash = "sha256:adbc88eabb99d2fec8c9c1b229b171f18afa655400173ddc653d5d01501fb9f2", size = 18075, upload-time = "2025-03-14T07:11:40.47Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/4d/36/2a115987e2d8c300a974597416d9de88f2444426de9571f4b59b2cca3acc/filelock-3.18.0-py3-none-any.whl", hash = "sha256:c401f4f8377c4464e6db25fff06205fd89bdd83b65eb0488ed1b160f780e21de", size = 16215, upload-time = "2025-03-14T07:11:39.145Z" },
-]
 
 [[package]]
 name = "fluent-migrate"
@@ -605,7 +612,7 @@ wheels = [
 
 [[package]]
 name = "glean-parser"
-version = "18.2.0"
+version = "19.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
@@ -615,9 +622,9 @@ dependencies = [
     { name = "platformdirs" },
     { name = "pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c2/f8/8a1c5241824779d85a58e0a5ee7ab7edb66282e01e5a5540dc790dfd68a8/glean_parser-18.2.0.tar.gz", hash = "sha256:5432ce64bf47329dfe4a6b7e404d539ccb06d99fddeb7deeed745491fbd5b7e7", size = 128916, upload-time = "2025-12-15T11:05:32.943Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/52/d9/589b508051295d59b0fd5cba48776b3903685356a523d9898901bc41e663/glean_parser-19.1.0.tar.gz", hash = "sha256:498399ea5da2f022ffb1ae71a958d1810e61c4f280401fe20ae00888902890ea", size = 129791, upload-time = "2026-05-12T09:39:51.416Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/08/19/ba2cce32e4b2b71c9b5a10d568e6c07eb143e11e157ac2591db71c24b0ee/glean_parser-18.2.0-py3-none-any.whl", hash = "sha256:870db77d6c6112eba34fcd6035395ff38d2f516d7a9bc57ce0951828ee7c7fc2", size = 117484, upload-time = "2025-12-15T11:05:31.561Z" },
+    { url = "https://files.pythonhosted.org/packages/75/0b/21d9cea980336c3573c6e2216f89802f5098e037d07fdb9c868fcf0aa8e9/glean_parser-19.1.0-py3-none-any.whl", hash = "sha256:981e53fbfe17f837445640970fb0a99381d56381c790cebea6eaa27c30e9f209", size = 119538, upload-time = "2026-05-12T09:39:49.822Z" },
 ]
 
 [[package]]
@@ -721,6 +728,18 @@ wheels = [
 ]
 
 [[package]]
+name = "markdown-it-py"
+version = "3.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mdurl" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/38/71/3b932df36c1a044d397a1f92d1cf91ee0a503d91e470cbd670aa66b07ed0/markdown-it-py-3.0.0.tar.gz", hash = "sha256:e3f60a94fa066dc52ec76661e37c851cb232d92f9886b15cb560aaada2df8feb", size = 74596, upload-time = "2023-06-03T06:41:14.443Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/42/d7/1ec15b46af6af88f19b8e5ffea08fa375d433c998b8a7639e76935c14f1f/markdown_it_py-3.0.0-py3-none-any.whl", hash = "sha256:355216845c60bd96232cd8d8c40e8f9765cc86f46880e43a8fd22dc1a1a8cab1", size = 87528, upload-time = "2023-06-03T06:41:11.019Z" },
+]
+
+[[package]]
 name = "markupsafe"
 version = "3.0.2"
 source = { registry = "https://pypi.org/simple" }
@@ -789,6 +808,15 @@ wheels = [
 ]
 
 [[package]]
+name = "mdurl"
+version = "0.1.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d6/54/cfe61301667036ec958cb99bd3efefba235e65cdeb9c84d24a8293ba1d90/mdurl-0.1.2.tar.gz", hash = "sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba", size = 8729, upload-time = "2022-08-14T12:40:10.846Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl", hash = "sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8", size = 9979, upload-time = "2022-08-14T12:40:09.779Z" },
+]
+
+[[package]]
 name = "mohawk"
 version = "1.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -802,7 +830,7 @@ wheels = [
 
 [[package]]
 name = "moz-l10n"
-version = "0.9.0"
+version = "0.11.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fluent-syntax" },
@@ -811,9 +839,9 @@ dependencies = [
     { name = "polib" },
     { name = "tomli", marker = "python_full_version < '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0f/2a/7167dfbf28e66e0cd6663508613aafa1eeed1b5b14fedf767e4ccde8b369/moz_l10n-0.9.0.tar.gz", hash = "sha256:cb435e0bb4f1cf85c8417c21f7cc90f8e4404e869a7fa1f5b828a42ee3ae37db", size = 84525, upload-time = "2025-07-21T09:19:17.768Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c7/09/829fbd5d7eca3b755dcafd99dea275fb0d1abe3f60e5acf82580ad9cefba/moz_l10n-0.11.3.tar.gz", hash = "sha256:f6e65ee6249b104161dcaf43f8a6b65da6c93d88206fcbdce4986993a03bd77a", size = 109136, upload-time = "2026-06-03T17:33:53.591Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2b/95/301d7a6757cd66711d5fa29ee36cba2af65656027695f102e4324a84a134/moz_l10n-0.9.0-py3-none-any.whl", hash = "sha256:664474d284b1484c471d53544e0213458fe4e4ad3d12b4b7a3fdf57057a5e9ab", size = 115982, upload-time = "2025-07-21T09:19:16.148Z" },
+    { url = "https://files.pythonhosted.org/packages/15/8a/255016660281d3bd7ba9e388e4c8b35f0d797dbf957ac32998f7c1d7fb0e/moz_l10n-0.11.3-py3-none-any.whl", hash = "sha256:30b2d81aac683fe1c6c8ce17131c177fb10f8bed38f426872da3f52ffa4c1bdf", size = 135160, upload-time = "2026-06-03T17:33:54.768Z" },
 ]
 
 [[package]]
@@ -843,10 +871,10 @@ dependencies = [
     { name = "colorama" },
     { name = "compare-locales" },
     { name = "cookies" },
+    { name = "diskarzhan" },
     { name = "distro" },
     { name = "ecdsa" },
     { name = "esprima" },
-    { name = "filelock" },
     { name = "fluent-migrate" },
     { name = "fluent-syntax" },
     { name = "glean-parser" },
@@ -856,6 +884,7 @@ dependencies = [
     { name = "jsonschema" },
     { name = "looseversion" },
     { name = "mako" },
+    { name = "markdown-it-py" },
     { name = "moz-l10n" },
     { name = "mozilla-repo-urls" },
     { name = "mozilla-version" },
@@ -874,6 +903,7 @@ dependencies = [
     { name = "requests" },
     { name = "requests-unixsocket" },
     { name = "responses" },
+    { name = "rich" },
     { name = "rsa" },
     { name = "sentry-sdk" },
     { name = "setuptools" },
@@ -903,22 +933,23 @@ requires-dist = [
     { name = "colorama", specifier = "==0.4.6" },
     { name = "compare-locales", specifier = "~=9.0" },
     { name = "cookies", specifier = "==2.2.1" },
+    { name = "diskarzhan", specifier = "==0.1.6" },
     { name = "distro", specifier = "~=1.8" },
     { name = "ecdsa", specifier = "==0.19.1" },
     { name = "esprima", specifier = "==4.0.1" },
-    { name = "filelock", specifier = "~=3.6" },
     { name = "fluent-migrate", specifier = "~=0.13" },
     { name = "fluent-syntax", specifier = "==0.19.0" },
-    { name = "glean-parser", specifier = "==18.2.0" },
+    { name = "glean-parser", specifier = "==19.1.0" },
     { name = "importlib-metadata", specifier = "~=8.0" },
     { name = "jinja2", specifier = "==3.1.6" },
     { name = "json-e", specifier = "~=4.5" },
     { name = "jsonschema", specifier = "==4.17.3" },
     { name = "looseversion", specifier = "~=1.0" },
     { name = "mako", specifier = "~=1.3" },
-    { name = "moz-l10n", specifier = "~=0.9.0" },
+    { name = "markdown-it-py", specifier = "==3.0.0" },
+    { name = "moz-l10n", specifier = "~=0.11.3" },
     { name = "mozilla-repo-urls", specifier = "==0.1.1" },
-    { name = "mozilla-version", specifier = "~=4.1" },
+    { name = "mozilla-version", specifier = "~=5.1" },
     { name = "multidict", specifier = "~=6.7" },
     { name = "packaging", specifier = "~=25.0" },
     { name = "pathspec", specifier = "~=0.9" },
@@ -934,6 +965,7 @@ requires-dist = [
     { name = "requests", specifier = "~=2.32" },
     { name = "requests-unixsocket", specifier = "~=0.2" },
     { name = "responses", specifier = "~=0.10" },
+    { name = "rich", specifier = ">=15.0.0" },
     { name = "rsa", specifier = "~=4.9" },
     { name = "sentry-sdk", specifier = "~=2.0" },
     { name = "setuptools", specifier = "==75.3.1" },
@@ -953,14 +985,14 @@ requires-dist = [
 
 [[package]]
 name = "mozilla-version"
-version = "4.1.0"
+version = "5.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "attrs" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c2/91/a67deea35ec3a0c80bfa0142e72fc779d96544814067e99f39d78d90b754/mozilla_version-4.1.0.tar.gz", hash = "sha256:f32f6f5607c345bb4db0aba0077511b196cba80af70c83cfe606a913a478f7e8", size = 62685, upload-time = "2025-05-02T12:48:19.615Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/36/7c/c23a10f59db273ed3f0dc078a1b1263e9f9126c4e36af86021e5bfaf9e24/mozilla_version-5.1.0.tar.gz", hash = "sha256:b09d56f0d7e66fa2ff3df5ad1299df456afd8a63e6c2b9521a94b4616a6cb1e8", size = 99616, upload-time = "2026-06-17T09:58:57.812Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/83/d9/671361f42a55d8369d29bbb07ada1e884cc079c1e265ab5a826e2091cadb/mozilla_version-4.1.0-py3-none-any.whl", hash = "sha256:816b0cd03456105f49ad8661e47934e66118f84ddae38c4193082f297396a7ed", size = 132224, upload-time = "2025-05-02T12:48:17.819Z" },
+    { url = "https://files.pythonhosted.org/packages/e9/aa/cdf061be6b68f245c9405c17b899802b1ccc40eb77200579608936c14b33/mozilla_version-5.1.0-py3-none-any.whl", hash = "sha256:2e8de52712c3fbefac7f42f69319a664c6ba01d6e97bf07d5353a65ed34de94b", size = 44415, upload-time = "2026-06-17T09:58:56.595Z" },
 ]
 
 [[package]]
@@ -1315,6 +1347,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pygments"
+version = "2.20.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c3/b2/bc9c9196916376152d655522fdcebac55e66de6603a76a02bca1b6414f6c/pygments-2.20.0.tar.gz", hash = "sha256:6757cd03768053ff99f3039c1a36d6c0aa0b263438fcab17520b30a303a82b5f", size = 4955991, upload-time = "2026-03-29T13:29:33.898Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f4/7e/a72dd26f3b0f4f2bf1dd8923c85f7ceb43172af56d63c7383eb62b332364/pygments-2.20.0-py3-none-any.whl", hash = "sha256:81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176", size = 1231151, upload-time = "2026-03-29T13:29:30.038Z" },
+]
+
+[[package]]
 name = "pylru"
 version = "1.2.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1504,6 +1545,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/81/7e/2345ac3299bd62bd7163216702bbc88976c099cfceba5b889f2a457727a1/responses-0.25.7.tar.gz", hash = "sha256:8ebae11405d7a5df79ab6fd54277f6f2bc29b2d002d0dd2d5c632594d1ddcedb", size = 79203, upload-time = "2025-03-11T15:36:16.624Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e4/fc/1d20b64fa90e81e4fa0a34c9b0240a6cfb1326b7e06d18a5432a9917c316/responses-0.25.7-py3-none-any.whl", hash = "sha256:92ca17416c90fe6b35921f52179bff29332076bb32694c0df02dcac2c6bc043c", size = 34732, upload-time = "2025-03-11T15:36:14.589Z" },
+]
+
+[[package]]
+name = "rich"
+version = "15.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "markdown-it-py" },
+    { name = "pygments" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c0/8f/0722ca900cc807c13a6a0c696dacf35430f72e0ec571c4275d2371fca3e9/rich-15.0.0.tar.gz", hash = "sha256:edd07a4824c6b40189fb7ac9bc4c52536e9780fbbfbddf6f1e2502c31b068c36", size = 230680, upload-time = "2026-04-12T08:24:00.75Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/82/3b/64d4899d73f91ba49a8c18a8ff3f0ea8f1c1d75481760df8c68ef5235bf5/rich-15.0.0-py3-none-any.whl", hash = "sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb", size = 310654, upload-time = "2026-04-12T08:24:02.83Z" },
 ]
 
 [[package]]

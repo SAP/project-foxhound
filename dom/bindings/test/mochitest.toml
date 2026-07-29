@@ -4,6 +4,7 @@ support-files = [
   "file_bug775543.html",
   "file_document_location_set_via_xray.html",
   "file_dom_xrays.html",
+  "file_dummy.html",
   "file_proxies_via_xray.html",
   "forOf_iframe.html",
   "!/js/xpconnect/tests/mochitest/file_empty.html",

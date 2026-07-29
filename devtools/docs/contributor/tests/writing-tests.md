@@ -94,7 +94,7 @@ Each panel in DevTools has its own test directory with its own `head.js`, so you
 
 For example, the head.js files in the `markupview` and `styleinspector` test folders contain these useful functions and constants:
 
-* Base URLs for support files: `TEST_URL_ROOT`. This avoids having to duplicate the http://example.com/browser/browser/devtools/styleinspector/ URL fragment in all tests,
+* Base URLs for support files: `TEST_URL_ROOT`. This avoids having to duplicate the <http://example.com/browser/browser/devtools/styleinspector/> URL fragment in all tests,
 * `waitForExplicitFinish()` is called in `head.js` once and for all<!--TODO: what does this even mean?-->. All tests are asynchronous, so there's no need to call it again in each and every test,
 * `auto-cleanup`: the toolbox is closed automatically and all tabs are closed,
 * `tab addTab(url)`
@@ -106,7 +106,7 @@ For example, the head.js files in the `markupview` and `styleinspector` test fol
 
 ## Shared head.js file
 
-A [shared-head.js](https://searchfox.org/mozilla-central/source/devtools/client/shared/test/shared-head.js) file has been introduced to avoid duplicating code in various `head.js` files.
+A [shared-head.js](https://searchfox.org/firefox-main/source/devtools/client/shared/test/shared-head.js) file has been introduced to avoid duplicating code in various `head.js` files.
 
 It's important to know whether or not the `shared.js` in your test directory already imports `shared-head.js` (look for a <code>Services.scriptloader.loadSubScript</code> call), as common helpers in `shared-head.js` might be useful for your test.
 
@@ -122,7 +122,7 @@ One of the direct consequences of E10S on tests is that you cannot retrieve and 
 
 So when creating a new test, if this test needs to access the content page in any way, you can use [the message manager or JSActors](https://firefox-source-docs.mozilla.org/dom/ipc/jsactors.html) to communicate with a script loaded in the content process to do things for you instead of accessing objects in the page directly.
 
-You can use the helper `ContentTask.spawn()` for this. See [this list of DevTools tests that use that helper for examples](https://searchfox.org/mozilla-central/search?q=ContentTask.spawn%28&path=devtools%2Fclient).
+You can use the helper `SpecialPowers.spawn()` for this. See [this list of DevTools tests that use that helper for examples](https://searchfox.org/mozilla-central/search?q=SpecialPowers.spawn%28&path=devtools%2Fclient).
 
 Note that a lot of tests only need to access the DevTools UI anyway, and don't need to interact with the content process at all. Since the UI lives in the same process as the test, you won't need to use the message manager to access it.
 
@@ -227,11 +227,11 @@ In some cases, you may want to extract some common code from your test to use it
 * If this is very common code that all tests could use, then add it to `devtools/client/shared/test/shared-head.js`.
 * If this is common code specific to a given tool, then add it to the corresponding `head.js` file.
 * If it isn't common enough to live in `head.js`, then it may be a good idea to create a helper file to avoid duplication anyway. Here's how to create a helper file:
- * Create a new file in your test director. The naming convention should be `helper_<description_of_the_helper>.js`
- * Add it to the `browser.toml` `support-files` section, making sure it is sorted alphabetically
- * Load the helper file in the tests
- * `browser/devtools/markupview/test/head.js` has a handy `loadHelperScript(fileName)` function that you can use.
- * The file will be loaded in the test global scope, so any global function or variables it defines will be available (just like `head.js`).
- * Use the special ESLint comment `/* import-globals-from helper_file.js */` to prevent ESLint errors for undefined variables.
+* Create a new file in your test director. The naming convention should be `helper_<description_of_the_helper>.js`
+* Add it to the `browser.toml` `support-files` section, making sure it is sorted alphabetically
+* Load the helper file in the tests
+* `browser/devtools/markupview/test/head.js` has a handy `loadHelperScript(fileName)` function that you can use.
+* The file will be loaded in the test global scope, so any global function or variables it defines will be available (just like `head.js`).
+* Use the special ESLint comment `/* import-globals-from helper_file.js */` to prevent ESLint errors for undefined variables.
 
 In all cases, new helper functions should be properly commented with an jsdoc comment block.

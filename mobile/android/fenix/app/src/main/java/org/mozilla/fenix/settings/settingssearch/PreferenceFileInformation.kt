@@ -78,7 +78,7 @@ sealed class PreferenceFileInformation(
      */
     object DownloadsSettingsPreferences : PreferenceFileInformation(
         xmlResourceId = R.xml.downloads_settings_preferences,
-        topBreadcrumbResourceId = R.string.preferences_downloads,
+        topBreadcrumbResourceId = R.string.preferences_downloads_2,
         categoryHeaderResourceId = R.string.preferences_category_advanced,
         fragmentId = R.id.openDownloadsSettingsFragment,
     )
@@ -161,5 +161,59 @@ sealed class PreferenceFileInformation(
         topBreadcrumbResourceId = R.string.preference_enhanced_tracking_protection,
         categoryHeaderResourceId = R.string.preferences_category_privacy_security,
         fragmentId = R.id.trackingProtectionFragment,
+    )
+
+    /**
+     * Represents the Secret Settings screen.
+     */
+    object SecretSettingsPreferences : PreferenceFileInformation(
+        xmlResourceId = R.xml.secret_settings_preferences,
+        topBreadcrumbResourceId = R.string.preferences_debug_settings,
+        categoryHeaderResourceId = R.string.preferences_debug_settings,
+        fragmentId = R.id.secretSettingsPreference,
+    )
+
+    /**
+     * Represents the "Data Collection" settings screen.
+     * This screen is Compose-based and has no backing XML preference file.
+     */
+    object DataChoicesPreferences : PreferenceFileInformation(
+        xmlResourceId = R.id.dataChoicesFragment,
+        topBreadcrumbResourceId = R.string.preferences_data_collection,
+        categoryHeaderResourceId = R.string.preferences_category_privacy_security,
+        fragmentId = R.id.dataChoicesFragment,
+    )
+
+    /**
+     * Represents the "AI Controls" settings screen.
+     * This screen is Compose-based and has no backing XML preference file.
+     */
+    object AIControlsPreferences : PreferenceFileInformation(
+        xmlResourceId = R.id.aiControlsFragment,
+        topBreadcrumbResourceId = R.string.preferences_ai_controls,
+        categoryHeaderResourceId = R.string.preferences_category_general,
+        fragmentId = R.id.aiControlsFragment,
+    )
+
+    /**
+     * Represents the "Page summaries" settings screen.
+     * This screen is compose-based and has no backing XML preference file.
+     */
+    object PageSummariesPreferences : PreferenceFileInformation(
+        xmlResourceId = R.id.pageSummariesSettingsFragment,
+        topBreadcrumbResourceId = R.string.preferences_page_summaries,
+        categoryHeaderResourceId = R.string.preferences_category_general,
+        fragmentId = R.id.pageSummariesSettingsFragment,
+    )
+
+    /**
+     * Represents the "Firefox Labs" settings screen.
+     * This screen is Compose-based and has no backing XML preference file.
+     */
+    object FirefoxLabsPreferences : PreferenceFileInformation(
+        xmlResourceId = R.id.firefoxLabsFragment,
+        topBreadcrumbResourceId = R.string.settings_title,
+        categoryHeaderResourceId = R.string.preferences_category_advanced,
+        fragmentId = R.id.firefoxLabsFragment,
     )
 }

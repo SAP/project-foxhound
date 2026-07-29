@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -46,12 +44,6 @@ class ChildSHistory : public nsISupports, public nsWrapperCache {
 
   void SetBrowsingContext(BrowsingContext* aBrowsingContext);
 
-  // Create or destroy the session history implementation in the child process.
-  // This can be removed once session history is stored exclusively in the
-  // parent process.
-  void SetIsInProcess(bool aIsInProcess);
-  bool IsInProcess() { return !!mHistory; }
-
   int32_t Count();
   int32_t Index();
 
@@ -93,17 +85,6 @@ class ChildSHistory : public nsISupports, public nsWrapperCache {
                ErrorResult& aRv);
 
   void RemovePendingHistoryNavigations();
-
-  /**
-   * Evicts all content viewers within the current process.
-   */
-  void EvictLocalDocumentViewers();
-
-  // GetLegacySHistory and LegacySHistory have been deprecated. Don't
-  // use these, but instead handle the interaction with nsISHistory in
-  // the parent process.
-  nsISHistory* GetLegacySHistory(ErrorResult& aError);
-  nsISHistory* LegacySHistory();
 
   void SetIndexAndLength(uint32_t aIndex, uint32_t aLength,
                          const nsID& aChangeId);

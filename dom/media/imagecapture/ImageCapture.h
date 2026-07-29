@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,7 +14,7 @@ namespace mozilla {
 #ifndef IC_LOG
 LogModule* GetICLog();
 #  define IC_LOG(...) \
-    MOZ_LOG(GetICLog(), mozilla::LogLevel::Debug, (__VA_ARGS__))
+    MOZ_LOG_FMT(GetICLog(), mozilla::LogLevel::Debug, __VA_ARGS__)
 #endif
 
 namespace dom {
@@ -60,7 +58,7 @@ class ImageCapture final : public DOMEventTargetHelper {
   }
 
   // ImageCapture class members
-  nsIGlobalObject* GetParentObject() const { return GetOwnerGlobal(); }
+  nsIGlobalObject* GetParentObject() const { return GetRelevantGlobal(); }
 
   static already_AddRefed<ImageCapture> Constructor(const GlobalObject& aGlobal,
                                                     MediaStreamTrack& aTrack,

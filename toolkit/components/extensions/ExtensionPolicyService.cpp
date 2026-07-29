@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -35,6 +34,7 @@
 #include "nsNetUtil.h"
 #include "nsPrintfCString.h"
 #include "nsPIDOMWindow.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsXULAppAPI.h"
 #include "nsQueryObject.h"
 
@@ -364,12 +364,14 @@ already_AddRefed<Promise> ExtensionPolicyService::ExecuteContentScripts(
 }
 
 // Use browser's MessageManagerGroup to decide if we care about it, to inject
-// extension APIs or content scripts.  Tabs use "browsers", and all custom
+// extension APIs or content scripts.  Tabs use "browsers", all custom
 // extension browsers use "webext-browsers", including popups & sidebars,
-// background & options pages, and xpcshell tests.
+// background & options pages, and xpcshell tests, and chatbot sidebar browsers
+// use "chatbot-browser".
 static bool IsTabOrExtensionBrowser(dom::BrowsingContext* aBC) {
   const auto& group = aBC->Top()->GetMessageManagerGroup();
-  bool rv = group == u"browsers"_ns || group == u"webext-browsers"_ns;
+  bool rv = group == u"browsers"_ns || group == u"webext-browsers"_ns ||
+            group == u"chatbot-browser"_ns;
 
 #ifdef MOZ_THUNDERBIRD
   // ...unless it's Thunderbird, which has extra groups for unrelated reasons.
@@ -732,7 +734,7 @@ nsresult ExtensionPolicyService::GetGeneratedBackgroundPageUrl(
 
     url.Append(NS_EscapeURL(html, esc_Minimal, escaped));
 
-    aResult = url;
+    aResult = std::move(url);
     return NS_OK;
   }
   return NS_ERROR_INVALID_ARG;

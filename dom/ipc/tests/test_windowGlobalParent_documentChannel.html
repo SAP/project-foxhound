@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Check that document nsIChannels are preserved to the WindowGlobalParent</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+
+<!-- test cases loaded in iframes -->
+<iframe name="blank"></iframe>
+<iframe name="non-initial-blank" src="/document-builder.sjs?html=loading"></iframe>
+<iframe name="srcdoc" srcdoc="srcdoc"></iframe>
+<iframe name="javascript" src="javascript:'javascript'"></iframe>
+<iframe name="same-site" src="/document-builder.sjs?html=same-site"></iframe>
+<iframe name="cross-site" src="https://example.com/document-builder.sjs?html=cross-site"></iframe>
+<iframe name="self-signed" src="https://self-signed.example.com/document-builder.sjs?html=self-signed"></iframe>
+<iframe name="same-site-xfo" src="/document-builder.sjs?html=same-site-xfo&headers=X-Frame-Options:DENY"></iframe>
+<iframe name="cross-site-xfo" src="https://example.com/document-builder.sjs?html=same-site-xfo&headers=X-Frame-Options:DENY"></iframe>
+<iframe name="data" src="data:text/html,data"></iframe>
+<iframe name="pdf" src="file_pdf.pdf"></iframe>
+<iframe name="same-site-sandbox" src="/document-builder.sjs?html=same-site-sandbox" sandbox></iframe>
+<iframe name="cross-site-sandbox" src="https://example.com/document-builder.sjs?html=same-site-sandbox" sandbox></iframe>
+<object name="object-same-site" data="/document-builder.sjs?html=object-same-site">same-site fallback</object>
+<object name="object-cross-site" data="https://example.com/document-builder.sjs?html=object-same-site">cross-site fallback</object>
+<object name="object-pdf" data="file_pdf.pdf">pdf fallback</object>
+
+<script>
+add_task(async function() {
+  const { AppConstants } = SpecialPowers.ChromeUtils.importESModule(
+    "resource://gre/modules/AppConstants.sys.mjs"
+  );
+
+  // These subframes will not have a channel on the parent side, due to the load
+  // being completed entirely within the content process without actually
+  // consulting DocumentLoadListener.
+  const expectNoParentChannel = ["blank", "javascript"];
+
+  // NOTE: self-signed certificates load the `about:certerror` page instead of
+  // `about:neterror`. This is not an error page which exists on Android, so the
+  // non-intercepted error page load will fail, and no document load will occur.
+  if (AppConstants.MOZ_GECKOVIEW) {
+    expectNoParentChannel.push("self-signed");
+  }
+
+  // Navigate the `non-initial-blank` frame back to about:blank.
+  let nonInitialBlank = document.querySelector("[name=non-initial-blank]");
+  let loadPromise = new Promise(resolve => {
+    nonInitialBlank.addEventListener("load", resolve, { once: true });
+  });
+  nonInitialBlank.contentWindow.location = "about:blank";
+  await loadPromise;
+
+  // Wait for all frames to have their documentChannel populated.
+  // Cross-origin error frame loads dont block the embedder load event, meaning
+  // that it is possible for the error page from e.g. cross-site-xfo to not have
+  // loaded yet. Wait until that's ready.
+  await SimpleTest.promiseWaitForCondition(
+    () =>
+      SpecialPowers.spawnChrome(
+        [expectNoParentChannel],
+        toSkip =>
+          browsingContext.children
+            .filter(child => !toSkip.includes(child.name))
+            .every(child => child.currentWindowGlobal.documentChannel)
+      ),
+    "All frames have their documentChannel populated"
+  );
+
+  // Query the parent process for some channel information.
+  let parentChanInfos = await SpecialPowers.spawnChrome([], () => {
+    let chanInfo = {};
+    for (let child of browsingContext.children) {
+      let chan = child.currentWindowGlobal.documentChannel;
+      let failed = child.currentWindowGlobal.failedChannel;
+      chanInfo[child.name] = {
+        document: chan && {
+          URI: chan.URI?.spec,
+          originalURI: chan.originalURI?.spec,
+          origin: Services.scriptSecurityManager.getChannelResultPrincipal(chan).origin,
+        },
+        failed: failed && {
+          URI: failed.URI?.spec,
+          originalURI: failed.originalURI?.spec,
+          origin: Services.scriptSecurityManager.getChannelResultPrincipal(failed).origin,
+        },
+      };
+    }
+    return chanInfo;
+  });
+
+  info(`parentChanInfos: ${JSON.stringify(parentChanInfos, null, 2)}`);
+
+  // Confirm that we actually have no parent channel for the channels which have
+  // `expectNoParentChannel` set.
+  for (let name of expectNoParentChannel) {
+    is(
+      parentChanInfos[name].document, null,
+      `unexpected parent document channel for ${name}`
+    );
+    is(
+      parentChanInfos[name].failed, null,
+      `expected parent failed channel for ${name}`
+    );
+  }
+
+  // Also query the content process for the same channel information.
+  let childChanInfos = {};
+  for (let child of SpecialPowers.wrap(window).browsingContext.children) {
+    childChanInfos[child.name] = await SpecialPowers.spawn(child, [], () => {
+      let chan = docShell.currentDocumentChannel;
+      let failed = docShell.failedChannel;
+      return {
+        document: chan && {
+          URI: chan.URI?.spec,
+          originalURI: chan.originalURI?.spec,
+          origin: Services.scriptSecurityManager.getChannelResultPrincipal(chan).origin,
+        },
+        failed: failed && {
+          URI: failed.URI?.spec,
+          originalURI: failed.originalURI?.spec,
+          origin: Services.scriptSecurityManager.getChannelResultPrincipal(failed).origin,
+        },
+      };
+    });
+  }
+
+  info(`childChanInfos: ${JSON.stringify(childChanInfos, null, 2)}`);
+
+  // The two should match, with some exceptions:
+  function noteDifference(path, expected) {
+    let desc = path.join(".");
+    let last = path.pop();
+    let innerParent = path.reduce((c, k) => c[k], parentChanInfos);
+    let innerChild = path.reduce((c, k) => c[k], childChanInfos);
+
+    if (typeof expected === "function") {
+      // NOTE: There is no isNotDeeply, and only use is on a string.
+      isnot(innerParent[last], innerChild[last], "These values should be different");
+      isnot(typeof innerParent[last], "object", "don't use on objects");
+      isnot(typeof innerChild[last], "object", "don't use on objects");
+      expected(innerParent[last], "parent");
+      expected(innerChild[last], "child");
+    } else {
+      isDeeply(
+        innerParent[last], expected.parent,
+        `parent.${desc}: ${JSON.stringify(innerParent[last])} == ${JSON.stringify(expected.parent)}`
+      );
+      isDeeply(
+        innerChild[last], expected.child,
+        `child.${desc}: ${JSON.stringify(innerChild[last])} == ${JSON.stringify(expected.child)}`
+      );
+    }
+    innerParent[last] = null;
+    innerChild[last] = null;
+  }
+
+  let expectedOrigin = location.origin;
+
+  // The channel for the initial "about:blank" document is not routed through
+  // DocumentLoadListener, so is not available in the parent process.
+  noteDifference(["blank", "document"], {
+    parent: null,
+    child: {
+      URI: "about:blank",
+      originalURI: "about:blank",
+      origin: expectedOrigin,
+    },
+  });
+
+  // The channel for a javascript URI which evaluates to a string is not routed
+  // through DocumentLoadListener, so is not available in the parent process.
+  noteDifference(["javascript", "document"], {
+    parent: null,
+    child: {
+      URI: "javascript:'javascript'",
+      originalURI: "javascript:'javascript'",
+      origin: expectedOrigin,
+    },
+  });
+
+  // The response principal of the response channel for PDFs is overridden
+  // within content, as the actual response document is rendered with the
+  // PDF.js stream converter.
+  noteDifference(["pdf", "document", "origin"], {
+    parent: expectedOrigin,
+    child: "resource://pdf.js",
+  });
+  noteDifference(["object-pdf", "document", "origin"], {
+    parent: expectedOrigin,
+    child: "resource://pdf.js",
+  });
+
+  // Data URIs have a null principal which varies between calls to
+  // `getChannelResultPrincipal`.
+  noteDifference(["data", "document", "origin"], (origin, side) => {
+    ok(origin.startsWith("moz-nullprincipal:"), `${side} origin is a null principal`);
+    ok(origin.endsWith(`?${expectedOrigin}`), `${side} precursor is as-expected`);
+  });
+
+  // Compare all remaining state between the two processes.
+  isDeeply(
+    parentChanInfos, childChanInfos,
+    "All remaining state from the child should be reflected in the parent",
+  );
+});
+</script>
+</body>
+</html>

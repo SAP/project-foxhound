@@ -22,6 +22,9 @@ import mozilla.components.support.ktx.util.URLStringUtils
 import mozilla.components.support.utils.ext.getParcelableCompat
 import org.mozilla.focus.R
 
+/**
+ * A custom preference for manually adding a search engine.
+ */
 class ManualAddSearchEnginePreference(context: Context, attrs: AttributeSet) :
     Preference(context, attrs) {
     private var engineNameEditText: EditText? = null
@@ -78,6 +81,9 @@ class ManualAddSearchEnginePreference(context: Context, attrs: AttributeSet) :
         }
     }
 
+    /**
+     * Validates the [engineName] and shows an error message if it's invalid or already exists in [existingEngines].
+     */
     fun validateEngineNameAndShowError(engineName: String, existingEngines: List<SearchEngine>): Boolean {
         val errorMessage = when {
             TextUtils.isEmpty(engineName) ->
@@ -93,6 +99,9 @@ class ManualAddSearchEnginePreference(context: Context, attrs: AttributeSet) :
         return errorMessage == null
     }
 
+    /**
+     * Validates the [searchQuery] and shows an error message if it's invalid.
+     */
     fun validateSearchQueryAndShowError(searchQuery: String): Boolean {
         val errorMessage = when {
             TextUtils.isEmpty(searchQuery) -> context.getString(R.string.search_add_error_empty_search)
@@ -104,10 +113,16 @@ class ManualAddSearchEnginePreference(context: Context, attrs: AttributeSet) :
         return errorMessage == null
     }
 
+    /**
+     * Sets the error text for the search query input field.
+     */
     fun setSearchQueryErrorText(err: String) {
         searchQueryErrorLayout?.error = err
     }
 
+    /**
+     * Sets whether the progress view should be shown.
+     */
     fun setProgressViewShown(isShown: Boolean) {
         progressView?.isVisible = isShown
     }

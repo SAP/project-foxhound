@@ -7,8 +7,6 @@ http://creativecommons.org/publicdomain/zero/1.0/
 // This must be loaded in the remote process for this test to be useful
 const TEST_URL = "https://example.com/browser/netwerk/test/browser/dummy.html";
 
-const expectedRemote = gMultiProcessBrowser ? "true" : "";
-
 const resProtocol = Cc[
   "@mozilla.org/network/protocol;1?name=resource"
 ].getService(Ci.nsIResProtocolHandler);
@@ -53,7 +51,7 @@ function remoteResolveURI(uri) {
 var restart = async function () {
   let browser = gBrowser.selectedBrowser;
   // If the tab isn't remote this would crash the main process so skip it
-  if (browser.getAttribute("remote") != "true") {
+  if (!browser.hasAttribute("remote")) {
     return browser;
   }
 
@@ -63,8 +61,8 @@ var restart = async function () {
 
   await BrowserTestUtils.browserLoaded(browser);
   is(
-    browser.getAttribute("remote"),
-    expectedRemote,
+    browser.hasAttribute("remote"),
+    gMultiProcessBrowser,
     "Browser should be in the right process"
   );
   return browser;
@@ -76,8 +74,8 @@ add_task(async function () {
 
   // This must be loaded in the remote process for this test to be useful
   is(
-    gBrowser.selectedBrowser.getAttribute("remote"),
-    expectedRemote,
+    gBrowser.selectedBrowser.hasAttribute("remote"),
+    gMultiProcessBrowser,
     "Browser should be in the right process"
   );
 

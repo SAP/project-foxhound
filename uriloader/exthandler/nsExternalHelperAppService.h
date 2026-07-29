@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -314,7 +313,8 @@ class nsExternalAppHandler final : public nsIStreamListener,
                        mozilla::dom::BrowsingContext* aBrowsingContext,
                        nsIInterfaceRequestor* aWindowContext,
                        nsExternalHelperAppService* aExtProtSvc,
-                       const nsAString& aSuggestedFileName, uint32_t aReason,
+                       const nsAString& aSuggestedFileName,
+                       nsIHelperAppLauncherDialog::reason aReason,
                        bool aForceSave);
 
   /**
@@ -408,7 +408,7 @@ class nsExternalAppHandler final : public nsIStreamListener,
    * reason the dialog was shown (unknown content type, server requested it,
    * etc).
    */
-  uint32_t mReason;
+  nsIHelperAppLauncherDialog::reason mReason;
 
   /**
    * Indicates if the nsContentSecurityUtils rate this download as

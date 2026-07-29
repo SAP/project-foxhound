@@ -5,7 +5,6 @@
 import logging
 
 from taskgraph.transforms.base import TransformSequence
-from taskgraph.util.schema import resolve_keyed_by
 
 logger = logging.getLogger(__name__)
 
@@ -16,19 +15,6 @@ transforms = TransformSequence()
 @transforms.add
 def make_task_worker(config, jobs):
     for job in jobs:
-        resolve_keyed_by(
-            job, "worker-type", item_name=job["name"], project=config.params["project"]
-        )
-        resolve_keyed_by(
-            job, "scopes", item_name=job["name"], project=config.params["project"]
-        )
-        resolve_keyed_by(
-            job,
-            "bouncer-products",
-            item_name=job["name"],
-            project=config.params["project"],
-        )
-
         job["worker"]["bouncer-products"] = job["bouncer-products"]
 
         del job["bouncer-products"]

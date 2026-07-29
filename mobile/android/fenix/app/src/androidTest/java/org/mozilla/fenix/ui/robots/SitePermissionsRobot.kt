@@ -35,6 +35,7 @@ class SitePermissionsRobot(private val composeTestRule: ComposeTestRule) {
             browserScreen(composeTestRule) {
             }.openThreeDotMenu {
             }.clickRefreshButton {
+                waitForPageToLoad()
             }.clickStartMicrophoneButton {
                 assertUIObjectExists(itemWithText("Allow $host to use your microphone?"))
                 assertItemTextEquals(denyPagePermissionButton(), expectedText = "Don’t allow")
@@ -53,6 +54,7 @@ class SitePermissionsRobot(private val composeTestRule: ComposeTestRule) {
             browserScreen(composeTestRule) {
             }.openThreeDotMenu {
             }.clickRefreshButton {
+                waitForPageToLoad()
             }.clickStartCameraButton {
                 assertUIObjectExists(itemWithText("Allow $host to use your camera?"))
                 assertItemTextEquals(denyPagePermissionButton(), expectedText = "Don’t allow")
@@ -77,6 +79,7 @@ class SitePermissionsRobot(private val composeTestRule: ComposeTestRule) {
             browserScreen(composeTestRule) {
             }.openThreeDotMenu {
             }.clickRefreshButton {
+                waitForPageToLoad()
             }.clickGetLocationButton {
                 assertUIObjectExists(itemWithText("Allow $host to use your location?"))
                 assertItemTextEquals(denyPagePermissionButton(), expectedText = "Don’t allow")
@@ -102,6 +105,7 @@ class SitePermissionsRobot(private val composeTestRule: ComposeTestRule) {
                 browserScreen(composeTestRule) {
                 }.openThreeDotMenu {
                 }.clickRefreshButton {
+                    waitForPageToLoad()
                 }.clickOpenNotificationButton {
                     assertUIObjectExists(itemWithText("Allow $host to send notifications?"))
                     assertItemTextEquals(denyPagePermissionButton(), expectedText = "Never")
@@ -125,6 +129,7 @@ class SitePermissionsRobot(private val composeTestRule: ComposeTestRule) {
             browserScreen(composeTestRule) {
             }.openThreeDotMenu {
             }.clickRefreshButton {
+                waitForPageToLoad()
             }.clickRequestPersistentStorageAccessButton {
                 assertUIObjectExists(itemWithText("Allow $host to store data in persistent storage?"))
                 assertItemTextEquals(denyPagePermissionButton(), expectedText = "Don’t allow")
@@ -143,6 +148,7 @@ class SitePermissionsRobot(private val composeTestRule: ComposeTestRule) {
             browserScreen(composeTestRule) {
             }.openThreeDotMenu {
             }.clickRefreshButton {
+                waitForPageToLoad()
             }.clickRequestDRMControlledContentAccessButton {
                 assertUIObjectExists(itemWithText("Allow $host to play DRM-controlled content?"))
                 assertItemTextEquals(denyPagePermissionButton(), expectedText = "Don’t allow")

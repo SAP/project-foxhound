@@ -38,12 +38,14 @@ dependencies {
 
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
+    testImplementation libs.kotlin.test
     testImplementation libs.kotlinx.coroutines.test
     testImplementation libs.robolectric
 
     androidTestImplementation libs.androidx.test.core
     androidTestImplementation libs.androidx.test.rules
     androidTestImplementation libs.androidx.test.runner
+    androidTestImplementation libs.kotlin.test
 }
 
 apply from: '../../../common-config.gradle'

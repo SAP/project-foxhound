@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -38,6 +36,8 @@ namespace gfx {
   _(DMABUF, Feature, "DMABUF")                                               \
   _(WINDOW_OCCLUSION, Feature, "WINDOW_OCCLUSION")                           \
   _(HARDWARE_VIDEO_DECODING, Feature, "Hardware video decoding")             \
+  _(HARDWARE_VIDEO_DECODING_VULKAN, Feature,                                 \
+    "Hardware video decoding (Vulkan)")                                      \
   _(HARDWARE_VIDEO_ENCODING, Feature, "Hardware video encoding")             \
   _(VIDEO_HARDWARE_OVERLAY, Feature, "hardware decoded video overlay")       \
   _(VIDEO_SOFTWARE_OVERLAY, Feature, "software decoded video overlay")       \
@@ -62,6 +62,8 @@ namespace gfx {
   _(GL_NORM16_TEXTURES, Feature, "OpenGL normalized 16-bit texture formats") \
   _(WEBGPU_EXTERNAL_TEXTURE, Feature, "WebGPU external textures")            \
   _(MESA_THREADING, Feature, "Mesa glthread enabled")                        \
+  _(WEBGL, Feature, "WebGL")                                                 \
+  _(VIDEO_HDR, Feature, "HDR video supported")                               \
   /* Add new entries above this comment */
 
 enum class Feature : uint32_t {

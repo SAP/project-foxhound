@@ -7,7 +7,6 @@ package org.mozilla.fenix.components.menu.compose
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -26,9 +25,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.tooling.preview.PreviewLightDark
-import androidx.compose.ui.unit.dp
 import mozilla.components.compose.base.modifier.animateRotation
-import mozilla.components.compose.base.theme.surfaceDimVariant
 import mozilla.components.feature.addons.Addon
 import mozilla.components.feature.addons.ui.displayName
 import mozilla.components.feature.addons.ui.summary
@@ -76,9 +73,9 @@ internal fun AddonMenuItem(
             url = addon.iconUrl,
             modifier = Modifier
                 .testTag(RECOMMENDED_ADDON_ITEM)
-                .clip(shape = RoundedCornerShape(4.dp))
+                .clip(shape = MaterialTheme.shapes.extraSmall)
                 .background(
-                    color = MaterialTheme.colorScheme.surfaceDimVariant,
+                    color = MaterialTheme.colorScheme.surfaceBright,
                 )
                 .semantics {
                     role = Role.Button

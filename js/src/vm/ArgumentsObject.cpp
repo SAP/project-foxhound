@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -11,10 +9,10 @@
 
 #include <algorithm>
 
+#include "ds/BitArray.h"
 #include "gc/GCContext.h"
 #include "jit/CalleeToken.h"
 #include "jit/JitFrames.h"
-#include "util/BitArray.h"
 #include "vm/GlobalObject.h"
 #include "vm/Stack.h"
 
@@ -28,7 +26,8 @@ using namespace js;
 
 /* static */
 size_t RareArgumentsData::bytesRequired(size_t numActuals) {
-  size_t extraBytes = NumWordsForBitArrayOfLength(numActuals) * sizeof(size_t);
+  size_t extraBytes =
+      BitArray::NumWordsForLength(numActuals) * sizeof(BitArray::WordT);
   return offsetof(RareArgumentsData, deletedBits_) + extraBytes;
 }
 
@@ -862,6 +861,12 @@ bool MappedArgumentsObject::obj_defineProperty(JSContext* cx, HandleObject obj,
     }
   }
 
+  // Ensure the arguments object has RareArgumentsData so that step 8 is
+  // infallible.
+  if (isMapped && !argsobj->getOrCreateRareData(cx)) {
+    return false;
+  }
+
   // Step 6. NativeDefineProperty will lookup [[Value]] for us.
   if (defineMapped) {
     if (!DefineMappedIndex(cx, argsobj, id, &newArgDesc, result)) {
@@ -882,17 +887,15 @@ bool MappedArgumentsObject::obj_defineProperty(JSContext* cx, HandleObject obj,
   if (isMapped) {
     unsigned arg = unsigned(id.toInt());
     if (desc.isAccessorDescriptor()) {
-      if (!argsobj->markElementDeleted(cx, arg)) {
-        return false;
-      }
+      bool ok = argsobj->markElementDeleted(cx, arg);
+      MOZ_RELEASE_ASSERT(ok, "shouldn't fail after getOrCreateRareData");
     } else {
       if (desc.hasValue()) {
         argsobj->setElement(arg, desc.value());
       }
       if (desc.hasWritable() && !desc.writable()) {
-        if (!argsobj->markElementDeleted(cx, arg)) {
-          return false;
-        }
+        bool ok = argsobj->markElementDeleted(cx, arg);
+        MOZ_RELEASE_ASSERT(ok, "shouldn't fail after getOrCreateRareData");
       }
     }
   }
@@ -938,7 +941,7 @@ bool js::UnmappedArgSetter(JSContext* cx, HandleObject obj, HandleId id,
 
   if (id.isInt()) {
     unsigned arg = unsigned(id.toInt());
-    if (arg < argsobj->initialLength()) {
+    if (argsobj->isElement(arg)) {
       argsobj->setElement(arg, v);
       return result.succeed();
     }
@@ -1051,9 +1054,9 @@ void ArgumentsObject::trace(JSTracer* trc, JSObject* obj) {
   ArgumentsData* buffer = argsobj.data();
   ArgumentsData* copiedBuffer = buffer;
   if (buffer) {
-    TraceBufferEdge(trc, obj, &buffer, "ArgumentsData");
+    TraceBufferEdge(trc, &buffer, "ArgumentsData");
     if (buffer->rareData) {
-      TraceBufferEdge(trc, obj, &buffer->rareData, "RareArgumentsData");
+      TraceBufferEdge(trc, &buffer->rareData, "RareArgumentsData");
     }
     if (buffer != copiedBuffer) {
       argsobj.setFixedSlot(DATA_SLOT, PrivateValue(buffer));
@@ -1122,16 +1125,11 @@ size_t ArgumentsObject::sizeOfData() const {
  * arguments object.
  */
 const JSClassOps MappedArgumentsObject::classOps_ = {
-    nullptr,                               // addProperty
-    ArgumentsObject::obj_delProperty,      // delProperty
-    MappedArgumentsObject::obj_enumerate,  // enumerate
-    nullptr,                               // newEnumerate
-    MappedArgumentsObject::obj_resolve,    // resolve
-    ArgumentsObject::obj_mayResolve,       // mayResolve
-    nullptr,                               // finalize
-    nullptr,                               // call
-    nullptr,                               // construct
-    ArgumentsObject::trace,                // trace
+    .delProperty = ArgumentsObject::obj_delProperty,
+    .enumerate = MappedArgumentsObject::obj_enumerate,
+    .resolve = MappedArgumentsObject::obj_resolve,
+    .mayResolve = ArgumentsObject::obj_mayResolve,
+    .trace = ArgumentsObject::trace,
 };
 
 const js::ClassExtension MappedArgumentsObject::classExt_ = {
@@ -1166,16 +1164,11 @@ const JSClass MappedArgumentsObject::class_ = {
  * it is represented by a different class while sharing some functionality.
  */
 const JSClassOps UnmappedArgumentsObject::classOps_ = {
-    nullptr,                                 // addProperty
-    ArgumentsObject::obj_delProperty,        // delProperty
-    UnmappedArgumentsObject::obj_enumerate,  // enumerate
-    nullptr,                                 // newEnumerate
-    UnmappedArgumentsObject::obj_resolve,    // resolve
-    ArgumentsObject::obj_mayResolve,         // mayResolve
-    nullptr,                                 // finalize
-    nullptr,                                 // call
-    nullptr,                                 // construct
-    ArgumentsObject::trace,                  // trace
+    .delProperty = ArgumentsObject::obj_delProperty,
+    .enumerate = UnmappedArgumentsObject::obj_enumerate,
+    .resolve = UnmappedArgumentsObject::obj_resolve,
+    .mayResolve = ArgumentsObject::obj_mayResolve,
+    .trace = ArgumentsObject::trace,
 };
 
 const js::ClassExtension UnmappedArgumentsObject::classExt_ = {

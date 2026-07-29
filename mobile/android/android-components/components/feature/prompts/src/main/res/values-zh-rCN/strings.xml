@@ -69,6 +69,12 @@
   <string name="mozac_feature_prompts_before_unload_stay">留下</string>
   <!-- Leave button of the dialog shown when a user is leaving a website and there is still data not saved yet, this indicates that the user wants to leave in the website. -->
   <string name="mozac_feature_prompts_before_unload_leave">离开</string>
+  <!-- Message shown when a site wants to create a passkey for a related domain. %1$s is the requesting site, %2$s is the related domain the passkey is for. -->
+  <string name="webauthn_related_origin_create_message">%1$s 想为 %2$s 创建通行密钥。</string>
+  <!-- Message shown when a site wants to use a passkey from a related domain. %1$s is the requesting site, %2$s is the related domain the passkey is for. -->
+  <string name="webauthn_related_origin_use_message">%1$s 想使用 %2$s 的通行密钥。</string>
+  <!-- Continue button label for WebAuthn related origin prompt. -->
+  <string name="webauthn_continue">继续</string>
   <!-- Title of the month chooser dialog. -->
   <string name="mozac_feature_prompts_set_month">选择月份</string>
   <!-- January (short description), used on the month chooser dialog. -->
@@ -166,6 +172,8 @@
   <string name="mozac_feature_prompts_collapse_address_content_description_2">折叠保存的地址</string>
   <!-- Text for the manage addresses button. -->
   <string name="mozac_feature_prompts_manage_address">管理地址</string>
+  <!-- Text for the title of a save address dialog. -->
+  <string name="mozac_feature_prompts_save_address_prompt_title">保存地址？</string>
   <!--
     Federated Credential Management prompts
 

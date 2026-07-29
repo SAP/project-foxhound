@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "PerfStats.h"
+#include "mozilla/PerfStats.h"
 #include "nsAppRunner.h"
+#include "nsTArray.h"
 #include <string_view>
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
@@ -27,13 +26,8 @@ static const char* const sMetricNames[] = {
 #undef METRIC_NAME
         "Invalid"};
 
-Atomic<PerfStats::MetricMask, MemoryOrdering::Relaxed>
-    PerfStats::sCollectionMask{0};
-StaticMutex PerfStats::sMutex;
-StaticAutoPtr<PerfStats> PerfStats::sSingleton;
-
 void PerfStats::SetCollectionMask(MetricMask aMask) {
-  sCollectionMask = aMask;
+  detail::sPerfStatsCollectionMask = aMask;
   GetSingleton()->ResetCollection();
 
   if (!XRE_IsParentProcess()) {
@@ -58,7 +52,22 @@ void PerfStats::SetCollectionMask(MetricMask aMask) {
   }
 }
 
-PerfStats::MetricMask PerfStats::GetCollectionMask() { return sCollectionMask; }
+PerfStats::MetricMask PerfStats::GetCollectionMask() {
+  return detail::sPerfStatsCollectionMask;
+}
+
+RefPtr<PerfStats::PerfStatsPromise> PerfStats::CollectPerfStatsJSON() {
+  return GetSingleton()->CollectPerfStatsJSONInternal();
+}
+
+std::string PerfStats::CollectLocalPerfStatsJSON() {
+  return GetSingleton()->CollectLocalPerfStatsJSONInternal();
+}
+
+void PerfStats::StorePerfStats(dom::ContentParent* aParent,
+                               const std::string& aPerfStats) {
+  GetSingleton()->StorePerfStatsInternal(aParent, aPerfStats);
+}
 
 PerfStats::MetricMask PerfStats::GetFeatureMask(const char* aMetricName) {
   for (int i = 0; i < static_cast<int>(Metric::Max); i++) {
@@ -68,55 +77,6 @@ PerfStats::MetricMask PerfStats::GetFeatureMask(const char* aMetricName) {
   }
 
   return 0;
-}
-
-PerfStats* PerfStats::GetSingleton() {
-  if (!sSingleton) {
-    sSingleton = new PerfStats;
-  }
-
-  return sSingleton.get();
-}
-
-void PerfStats::RecordMeasurementStartInternal(Metric aMetric) {
-  StaticMutexAutoLock lock(sMutex);
-
-  GetSingleton()->mRecordedStarts[static_cast<size_t>(aMetric)] =
-      TimeStamp::Now();
-}
-
-void PerfStats::RecordMeasurementEndInternal(Metric aMetric) {
-  StaticMutexAutoLock lock(sMutex);
-
-  MOZ_ASSERT(sSingleton);
-
-  sSingleton->mRecordedTimes[static_cast<size_t>(aMetric)] +=
-      (TimeStamp::Now() -
-       sSingleton->mRecordedStarts[static_cast<MetricMask>(aMetric)])
-          .ToMilliseconds();
-  sSingleton->mRecordedCounts[static_cast<MetricMask>(aMetric)]++;
-}
-
-void PerfStats::RecordMeasurementInternal(Metric aMetric,
-                                          TimeDuration aDuration) {
-  StaticMutexAutoLock lock(sMutex);
-
-  PerfStats* singleton = GetSingleton();
-
-  singleton->mRecordedTimes[static_cast<MetricMask>(aMetric)] +=
-      aDuration.ToMilliseconds();
-  singleton->mRecordedCounts[static_cast<MetricMask>(aMetric)]++;
-}
-
-void PerfStats::RecordMeasurementCounterInternal(
-    Metric aMetric, MetricCounter aIncrementAmount) {
-  StaticMutexAutoLock lock(sMutex);
-
-  PerfStats* singleton = GetSingleton();
-
-  singleton->mRecordedTimes[static_cast<MetricMask>(aMetric)] +=
-      double(aIncrementAmount);
-  singleton->mRecordedCounts[static_cast<MetricMask>(aMetric)]++;
 }
 
 void AppendJSONStringAsProperty(nsCString& aDest, const char* aPropertyName,
@@ -188,7 +148,7 @@ struct PerfStatsCollector {
   ~PerfStatsCollector() {
     writer.EndArray();
     writer.End();
-    promise.Resolve(string, __func__);
+    promise.Resolve(std::string(string.Data(), string.Length()), __func__);
   }
   nsCString string;
   JSONWriter writer;
@@ -197,32 +157,35 @@ struct PerfStatsCollector {
 
 void PerfStats::ResetCollection() {
   for (MetricMask i = 0; i < static_cast<MetricMask>(Metric::Max); i++) {
-    if (!(sCollectionMask & 1 << i)) {
+    if (!(detail::sPerfStatsCollectionMask & MetricMask(1) << i)) {
       continue;
     }
 
-    mRecordedTimes[i] = 0;
+    mRecordedTimes[i] = 0.0;
     mRecordedCounts[i] = 0;
   }
 
-  mStoredPerfStats.Clear();
+  mStoredPerfStats.clear();
 }
 
 void PerfStats::StorePerfStatsInternal(dom::ContentParent* aParent,
-                                       const nsACString& aPerfStats) {
+                                       const std::string& aPerfStats) {
   nsCString jsonString;
   JSONStringRefWriteFunc jw(jsonString);
   JSONWriter w(jw);
 
   // To generate correct JSON here we don't call start and end. That causes
   // this to use Single Line mode, sadly.
-  WriteContentParent(jsonString, w, aPerfStats, aParent);
+  WriteContentParent(jsonString, w,
+                     nsCString(aPerfStats.c_str(), aPerfStats.length()),
+                     aParent);
 
-  mStoredPerfStats.AppendElement(jsonString);
+  mStoredPerfStats.push_back(
+      std::string(jsonString.Data(), jsonString.Length()));
 }
 
 auto PerfStats::CollectPerfStatsJSONInternal() -> RefPtr<PerfStatsPromise> {
-  if (!PerfStats::sCollectionMask) {
+  if (!detail::sPerfStatsCollectionMask) {
     return PerfStatsPromise::CreateAndReject(false, __func__);
   }
 
@@ -243,17 +206,19 @@ auto PerfStats::CollectPerfStatsJSONInternal() -> RefPtr<PerfStatsPromise> {
       w.StartObjectElement();
       {
         w.StringProperty("type", "parent");
-        AppendJSONStringAsProperty(collector->string, "perfstats",
-                                   CollectLocalPerfStatsJSONInternal());
+        auto localStats = CollectLocalPerfStatsJSONInternal();
+        AppendJSONStringAsProperty(
+            collector->string, "perfstats",
+            nsCString(localStats.c_str(), localStats.length()));
       }
       w.EndObject();
 
       // Append any processes that closed earlier.
-      for (nsCString& string : mStoredPerfStats) {
+      for (const std::string& string : mStoredPerfStats) {
         w.StartObjectElement();
         // This trick makes indentation even more messed up than it already
         // was. However it produces technically correct JSON.
-        collector->string.Append(string);
+        collector->string.Append(string.c_str(), string.length());
         w.EndObject();
       }
       // We do not clear this, we only clear stored perfstats when the mask is
@@ -270,8 +235,10 @@ auto PerfStats::CollectPerfStatsJSONInternal() -> RefPtr<PerfStatsPromise> {
 
       if (gpuChild) {
         gpuChild->SendCollectPerfStatsJSON(
-            [collector, gpuChild = RefPtr{gpuChild}](const nsCString& aString) {
-              collector->AppendPerfStats(aString, gpuChild);
+            [collector,
+             gpuChild = RefPtr{gpuChild}](const std::string& aString) {
+              collector->AppendPerfStats(
+                  nsCString(aString.c_str(), aString.length()), gpuChild);
             },
             // The only feasible errors here are if something goes wrong in the
             // the bridge, we choose to ignore those.
@@ -293,19 +260,15 @@ auto PerfStats::CollectPerfStatsJSONInternal() -> RefPtr<PerfStatsPromise> {
   return collector->promise.Ensure(__func__);
 }
 
-nsCString PerfStats::CollectLocalPerfStatsJSONInternal() {
-  StaticMutexAutoLock lock(PerfStats::sMutex);
-
-  nsCString jsonString;
-
-  JSONStringRefWriteFunc jw(jsonString);
+std::string PerfStats::CollectLocalPerfStatsJSONInternal() {
+  JSONStringWriteFunc<nsCString> jw;
   JSONWriter w(jw);
   w.Start();
   {
     w.StartArrayProperty("metrics");
     {
       for (MetricMask i = 0; i < static_cast<MetricMask>(Metric::Max); i++) {
-        if (!(sCollectionMask & (1 << i))) {
+        if (!(detail::sPerfStatsCollectionMask & (MetricMask(1) << i))) {
           continue;
         }
 
@@ -323,7 +286,8 @@ nsCString PerfStats::CollectLocalPerfStatsJSONInternal() {
   }
   w.End();
 
-  return jsonString;
+  const nsCString& s = jw.StringCRef();
+  return std::string(s.Data(), s.Length());
 }
 
 }  // namespace mozilla

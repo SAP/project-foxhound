@@ -304,6 +304,55 @@ add_task(async function test_ml_engine_reuse_same() {
 });
 
 /**
+ * Tests that engines are reused when only per-request metadata differs.
+ * Telemetry and lifetime fields (featureId, flowId, timeoutMS) must not
+ * cause engine replacement, or concurrent callers would interrupt each
+ * other's in-flight streams.
+ */
+add_task(async function test_ml_engine_reuse_metadata_differs() {
+  const { cleanup, remoteClients } = await setup();
+
+  const engineInstance = await createEngine({
+    taskName: "moz-echo",
+    engineId: "echo-metadata",
+    featureId: "test-feature",
+    flowId: "flow-1",
+    timeoutMS: 1000,
+  });
+  const inferencePromise = engineInstance.run({ data: "This gets echoed." });
+  await remoteClients["ml-onnx-runtime"].resolvePendingDownloads(1);
+  Assert.equal(
+    (await inferencePromise).output.echo,
+    "This gets echoed.",
+    "First inference completes."
+  );
+
+  const engineInstance2 = await createEngine({
+    taskName: "moz-echo",
+    engineId: "echo-metadata",
+    featureId: "test-feature",
+    flowId: "flow-2",
+    timeoutMS: 5000,
+  });
+  is(
+    engineInstance,
+    engineInstance2,
+    "Engine is reused when only per-request metadata differs."
+  );
+
+  const inferencePromise2 = engineInstance2.run({ data: "Echoed again." });
+  await remoteClients["ml-onnx-runtime"].resolvePendingDownloads(1);
+  Assert.equal(
+    (await inferencePromise2).output.echo,
+    "Echoed again.",
+    "Second inference completes on the reused engine."
+  );
+
+  await EngineProcess.destroyMLEngine();
+  await cleanup();
+});
+
+/**
  * Tests that we can have two competing engines
  */
 add_task(async function test_ml_two_engines() {
@@ -378,7 +427,7 @@ add_task(async function test_ml_dupe_engines() {
   let engineInstance2 = await createEngine({
     taskName: "moz-echo",
     engineId: "engine1",
-    timeoutMS: 2000, // that makes the options different
+    numThreads: 2, // engine-identity change forces re-creation
   });
   const inferencePromise2 = engineInstance2.run({ data: "This gets echoed." });
   await remoteClients["ml-onnx-runtime"].resolvePendingDownloads(1);
@@ -502,6 +551,7 @@ add_task(async function test_ml_engine_get_status_by_engine_id() {
         apiKey: null,
         extraHeaders: null,
         serviceType: null,
+        purpose: null,
       },
     },
   };
@@ -521,3 +571,64 @@ add_task(async function test_ml_engine_get_status_by_engine_id() {
 
   await cleanup();
 });
+
+add_task(
+  async function test_deletePreviousModelRevisions_cleans_stale_revision() {
+    const { cleanup } = await setup();
+
+    const mlEngineParent = await EngineProcess.getMLEngineParent();
+
+    const FAKE_HUB =
+      "chrome://mochitests/content/browser/toolkit/components/ml/tests/browser/data";
+    const FAKE_URL_TEMPLATE = "{model}/resolve/{revision}";
+    const TASK_NAME = "regress-2038342-task";
+
+    await mlEngineParent.getModelFile({
+      engineId: "regress-2038342",
+      taskName: TASK_NAME,
+      url: `${FAKE_HUB}/acme/bert/resolve/main/config.json`,
+      rootUrl: FAKE_HUB,
+      urlTemplate: FAKE_URL_TEMPLATE,
+      featureId: TASK_NAME,
+      sessionId: "regress-2038342-session",
+    });
+
+    const hub = mlEngineParent.modelHub;
+    ok(hub, "ModelHub is initialized after getModelFile");
+    const hostname = new URL(FAKE_HUB).hostname;
+    const modelWithHostname = `${hostname}/acme/bert`;
+
+    await hub.cache.put({
+      taskName: TASK_NAME,
+      model: modelWithHostname,
+      revision: "stale-revision",
+      file: "config.json",
+      data: new Blob(["stale-payload"]),
+      headers: { ETag: "STALE_ETAG" },
+    });
+
+    const stalePre = await hub.cache.getFile({
+      model: modelWithHostname,
+      revision: "stale-revision",
+      file: "config.json",
+    });
+    Assert.notEqual(stalePre, null, "Stale revision exists before cleanup");
+
+    await mlEngineParent.deletePreviousModelRevisions();
+
+    const stalePost = await hub.cache.getFile({
+      model: modelWithHostname,
+      revision: "stale-revision",
+      file: "config.json",
+    });
+    Assert.equal(
+      stalePost,
+      null,
+      "Stale revision must be deleted by deletePreviousModelRevisions"
+    );
+
+    await hub.cache.dispose();
+    await EngineProcess.destroyMLEngine();
+    await cleanup();
+  }
+);

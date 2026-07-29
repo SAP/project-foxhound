@@ -471,7 +471,7 @@ add_task(async function test_updateRecipes_simpleFeatureInvalidAfterUpdate() {
   await cleanup();
 });
 
-async function test_updateRecipes_invalidFeatureAfterUpdate() {
+add_task(async function test_updateRecipes_invalidFeatureAfterUpdate() {
   const featureConfig = { featureId: "bogus", value: {} };
 
   const { manager, cleanup } = await setupTest({
@@ -523,15 +523,6 @@ async function test_updateRecipes_invalidFeatureAfterUpdate() {
   );
 
   await cleanup();
-}
-
-add_task(test_updateRecipes_invalidFeatureAfterUpdate);
-add_task(async function test_updateRecipes_invalidFeatureAfterUpdate_db() {
-  const resetNimbusEnrollmentPrefs = NimbusTestUtils.enableNimbusEnrollments({
-    read: true,
-  });
-  await test_updateRecipes_invalidFeatureAfterUpdate();
-  resetNimbusEnrollmentPrefs();
 });
 
 add_task(async function test_updateRecipes_validationTelemetry() {
@@ -1592,22 +1583,12 @@ add_task(async function test_updateRecipesClearsOptIns() {
   const recipes = [
     NimbusTestUtils.factories.recipe("opt-in-1", {
       isFirefoxLabsOptIn: true,
-      firefoxLabsTitle: "opt-in-1-title",
-      firefoxLabsDescription: "opt-in-1-desc",
-      firefoxLabsDescriptionLinks: null,
-      firefoxLabsGroup: "group",
-      requiresRestart: false,
       isRollout: true,
       targeting: "true",
       publishedDate: new Date(now).toISOString(),
     }),
     NimbusTestUtils.factories.recipe("opt-in-2", {
       isFirefoxLabsOptIn: true,
-      firefoxLabsTitle: "opt-in-2-title",
-      firefoxLabsDescription: "opt-in-2-desc",
-      firefoxLabsDescriptionLinks: null,
-      firefoxLabsGroup: "group",
-      requiresRestart: false,
       isRollout: true,
       targeting: "false",
       publishedDate: new Date(now + 10000).toISOString(),
@@ -1619,11 +1600,44 @@ add_task(async function test_updateRecipesClearsOptIns() {
 
   await loader.updateRecipes();
 
-  Assert.deepEqual(manager.optInRecipes, recipes);
+  const expectedLabs = recipes.map(recipe => ({ recipe, source: "rs-loader" }));
+  const forceEnroll = NimbusTestUtils.factories.recipe("force-enroll", {
+    isFirefoxLabsOptIn: true,
+    isRollout: true,
+    targeting: "true",
+    publishedDate: new Date(now + 20000).toISOString(),
+  });
+
+  Assert.ok(manager.registerOptIn(forceEnroll, "force-enrollment"));
+  expectedLabs.push({ recipe: forceEnroll, source: "force-enrollment" });
+
+  Assert.deepEqual(manager.optIns, expectedLabs);
 
   await loader.updateRecipes();
 
-  Assert.deepEqual(manager.optInRecipes, recipes);
+  Assert.deepEqual(
+    manager.optIns.toSorted(orderByRecipePublishedDate),
+    expectedLabs
+  );
+
+  recipes.splice(1, 1);
+  expectedLabs.splice(1, 1);
+
+  await loader.updateRecipes();
+
+  Assert.deepEqual(
+    manager.optIns.toSorted(orderByRecipePublishedDate),
+    expectedLabs
+  );
+
+  recipes.splice(0, 1);
+  expectedLabs.splice(0, 1);
+
+  await loader.updateRecipes();
+  Assert.deepEqual(
+    manager.optIns.toSorted(orderByRecipePublishedDate),
+    expectedLabs
+  );
 
   await cleanup();
 });
@@ -1631,33 +1645,20 @@ add_task(async function test_updateRecipesClearsOptIns() {
 add_task(async function test_updateRecipes_optInsStayEnrolled() {
   info("testing opt-ins stay enrolled after update");
 
-  const recipe = NimbusTestUtils.factories.recipe("opt-in", {
-    branches: [
-      {
-        ...NimbusTestUtils.factories.recipe.branches[0],
-        slug: "branch-0",
-        firefoxLabsTitle: "branch-0-title",
-      },
-      {
-        ...NimbusTestUtils.factories.recipe.branches[1],
-        slug: "branch-1",
-        firefoxLabsTitle: "branch-1-title",
-      },
-    ],
-    targeting: "true",
-    isFirefoxLabsOptIn: true,
-    firefoxLabsTitle: "opt-in-title",
-    firefoxLabsDescription: "opt-in-desc",
-    firefoxLabsDescriptionLinks: null,
-    firefoxLabsGroup: "group",
-    requiresRestart: false,
-  });
+  const recipe = NimbusTestUtils.factories.recipe.withFeatureConfig(
+    "opt-in",
+    { featureId: "no-feature-firefox-desktop" },
+    {
+      isFirefoxLabsOptIn: true,
+      isRollout: true,
+    }
+  );
 
   const { loader, manager, cleanup } = await setupTest({
     experiments: [recipe],
   });
 
-  await manager.enroll(recipe, "rs-loader", { branchSlug: "branch-0" });
+  await manager.enroll(recipe, "rs-loader", { branchSlug: "control" });
   Assert.ok(manager.store.get("opt-in")?.active, "Opt-in was enrolled");
 
   await loader.updateRecipes();
@@ -1671,33 +1672,20 @@ add_task(async function test_updateRecipes_optInsStayEnrolled() {
 add_task(async function test_updateRecipes_optInsUnerollOnFalseTargeting() {
   info("testing opt-ins unenroll after targeting becomes false");
 
-  const recipe = NimbusTestUtils.factories.recipe("opt-in", {
-    branches: [
-      {
-        ...NimbusTestUtils.factories.recipe.branches[0],
-        slug: "branch-0",
-        firefoxLabsTitle: "branch-0-title",
-      },
-      {
-        ...NimbusTestUtils.factories.recipe.branches[1],
-        slug: "branch-1",
-        firefoxLabsTitle: "branch-1-title",
-      },
-    ],
-    targeting: "true",
-    isFirefoxLabsOptIn: true,
-    firefoxLabsTitle: "opt-in-title",
-    firefoxLabsDescription: "opt-in-desc",
-    firefoxLabsDescriptionLinks: null,
-    firefoxLabsGroup: "group",
-    requiresRestart: false,
-  });
+  const recipe = NimbusTestUtils.factories.recipe.withFeatureConfig(
+    "opt-in",
+    { featureId: "no-feature-firefox-desktop" },
+    {
+      isFirefoxLabsOptIn: true,
+      isRollout: true,
+    }
+  );
 
   const { loader, manager, cleanup } = await setupTest({
     experiments: [recipe],
   });
 
-  await manager.enroll(recipe, "rs-loader", { branchSlug: "branch-0" });
+  await manager.enroll(recipe, "rs-loader", { branchSlug: "control" });
   Assert.ok(manager.store.get("opt-in")?.active, "Opt-in was enrolled");
 
   recipe.targeting = "false";
@@ -1710,28 +1698,20 @@ add_task(async function test_updateRecipes_optInsUnerollOnFalseTargeting() {
 add_task(async function test_updateRecipes_bucketingCausesOptInUnenrollments() {
   info("testing opt-in rollouts unenroll after if bucketing changes");
 
-  const recipe = NimbusTestUtils.factories.recipe("opt-in", {
-    branches: [
-      {
-        ...NimbusTestUtils.factories.recipe.branches[0],
-        slug: "branch-0",
-      },
-    ],
-    targeting: "true",
-    isFirefoxLabsOptIn: true,
-    isRollout: true,
-    firefoxLabsTitle: "opt-in-title",
-    firefoxLabsDescription: "opt-in-desc",
-    firefoxLabsDescriptionLinks: null,
-    firefoxLabsGroup: "group",
-    requiresRestart: false,
-  });
+  const recipe = NimbusTestUtils.factories.recipe.withFeatureConfig(
+    "opt-in",
+    { featureId: "no-feature-firefox-desktop" },
+    {
+      isFirefoxLabsOptIn: true,
+      isRollout: true,
+    }
+  );
 
   const { loader, manager, cleanup } = await setupTest({
     experiments: [recipe],
   });
 
-  await manager.enroll(recipe, "rs-loader", { branchSlug: "branch-0" });
+  await manager.enroll(recipe, "rs-loader", { branchSlug: "control" });
   Assert.ok(manager.store.get("opt-in")?.active, "Opt-in was enrolled");
 
   recipe.bucketConfig.count = 0;
@@ -1745,29 +1725,20 @@ add_task(async function test_updateRecipes_reEnrollRolloutOptin() {
   info(
     "testing opt-in rollouts do not re-enroll automatically if bucketing changes"
   );
-
-  const recipe = NimbusTestUtils.factories.recipe("opt-in", {
-    branches: [
-      {
-        ...NimbusTestUtils.factories.recipe.branches[0],
-        slug: "branch-0",
-      },
-    ],
-    targeting: "true",
-    isFirefoxLabsOptIn: true,
-    isRollout: true,
-    firefoxLabsTitle: "opt-in-title",
-    firefoxLabsDescription: "opt-in-desc",
-    firefoxLabsDescriptionLinks: null,
-    firefoxLabsGroup: "group",
-    requiresRestart: false,
-  });
+  const recipe = NimbusTestUtils.factories.recipe.withFeatureConfig(
+    "opt-in",
+    { featureId: "no-feature-firefox-desktop" },
+    {
+      isFirefoxLabsOptIn: true,
+      isRollout: true,
+    }
+  );
 
   const { loader, manager, cleanup } = await setupTest({
     experiments: [recipe],
   });
 
-  await manager.enroll(recipe, "rs-loader", { branchSlug: "branch-0" });
+  await manager.enroll(recipe, "rs-loader", { branchSlug: "control" });
   Assert.ok(manager.store.get("opt-in")?.active, "Opt-in was enrolled");
 
   recipe.bucketConfig.count = 0;
@@ -1782,14 +1753,6 @@ add_task(async function test_updateRecipes_reEnrollRolloutOptin() {
 });
 
 add_task(async function test_updateRecipes_enrollmentStatus_telemetry() {
-  Services.fog.applyServerKnobsConfig(
-    JSON.stringify({
-      metrics_enabled: {
-        "nimbus_events.enrollment_status": true,
-      },
-    })
-  );
-
   // Create a feature for each experiment so that they aren't competing.
   const features = [
     new ExperimentFeature("test-feature-0", { variables: {} }),
@@ -2005,14 +1968,6 @@ add_task(async function test_updateRecipes_enrollmentStatus_telemetry() {
 });
 
 add_task(async function test_updateRecipes_enrollmentStatus_notEnrolled() {
-  Services.fog.applyServerKnobsConfig(
-    JSON.stringify({
-      metrics_enabled: {
-        "nimbus_events.enrollment_status": true,
-      },
-    })
-  );
-
   const features = [
     new ExperimentFeature("test-feature-0", { variables: {} }),
     new ExperimentFeature("test-feature-1", { variables: {} }),
@@ -2132,14 +2087,6 @@ async function doEnrollmentStatusOptOutTest(
   expectedEvents,
   expectedEnrollments
 ) {
-  Services.fog.applyServerKnobsConfig(
-    JSON.stringify({
-      metrics_enabled: {
-        "nimbus_events.enrollment_status": true,
-      },
-    })
-  );
-
   const recipes = [
     NimbusTestUtils.factories.recipe.withFeatureConfig("previous-experiment", {
       featureId: "no-feature-firefox-desktop",
@@ -2553,14 +2500,6 @@ add_task(async function testUnenrolledInAnotherProfileBeforeUpdate() {
     profileId: otherProfileId2,
   });
 
-  Services.fog.applyServerKnobsConfig(
-    JSON.stringify({
-      metrics_enabled: {
-        "nimbus_events.enrollment_status": true,
-      },
-    })
-  );
-
   const resetEnrollmentPrefs = await NimbusTestUtils.enableNimbusEnrollments({
     read: true,
     sync: true,
@@ -2715,14 +2654,6 @@ add_task(async function testUnenrolledInAnotherProfileBetweenUpdates() {
     extra: { active: false },
     profileId: otherProfileId2,
   });
-
-  Services.fog.applyServerKnobsConfig(
-    JSON.stringify({
-      metrics_enabled: {
-        "nimbus_events.enrollment_status": true,
-      },
-    })
-  );
 
   await GleanPings.nimbusTargetingContext.testSubmission(
     () => {
@@ -3491,6 +3422,163 @@ add_task(async function test_remoteSettingsSyncError_nullLastModified() {
       },
     ],
     "Submitted failure telemetry"
+  );
+
+  await cleanup();
+});
+
+add_task(async function testUpdateRecipesOnlyFeatureIds() {
+  const recipeA = NimbusTestUtils.factories.recipe.withFeatureConfig(
+    "previous-recipe",
+    { featureId: "no-feature-firefox-desktop" }
+  );
+
+  const recipeB = NimbusTestUtils.factories.recipe.withFeatureConfig(
+    "new-recipe",
+    { featureId: "testFeature" }
+  );
+
+  const { cleanup, loader, manager } = await setupTest({
+    experiments: [recipeA],
+  });
+
+  Assert.ok(
+    manager.store.get(recipeA.slug)?.active,
+    "Enrolled in previous-recipe"
+  );
+
+  // recipeB becomes published.
+  loader.remoteSettingsClients.experiments.get.resolves([recipeA, recipeB]);
+
+  // We look only for testFeature recipes. recipeA should stay enrolled and
+  // recipeB should be newly enrolled.
+  await loader.updateRecipes("test", {
+    onlyFeatureIds: new Set(["testFeature"]),
+  });
+
+  Assert.ok(
+    manager.store.get(recipeA.slug).active,
+    "Still enrolled in recipeA"
+  );
+  Assert.ok(manager.store.get(recipeB.slug)?.active, "Enrolled in recipeB");
+
+  // We update only feature "unknown", which does not find any nor does it
+  // affect current enrollments.
+  await loader.updateRecipes("test", { onlyFeatureIds: new Set("unknown") });
+
+  Assert.ok(
+    manager.store.get(recipeA.slug).active,
+    "Still enrolled in recipeA"
+  );
+  Assert.ok(
+    manager.store.get(recipeB.slug).active,
+    "Still enrolled in recipeB"
+  );
+
+  // recipeA becomes unpublished.
+  loader.remoteSettingsClients.experiments.get.resolves([recipeB]);
+
+  // We update only testFeature and so recipeA does not unenroll.
+  await loader.updateRecipes("test", {
+    onlyFeatureIds: new Set(["testFeature"]),
+  });
+
+  Assert.ok(
+    manager.store.get(recipeA.slug).active,
+    "Still enrolled in recipeA"
+  );
+  Assert.ok(
+    manager.store.get(recipeB.slug).active,
+    "Still enrolled in recipeB"
+  );
+
+  // recipeB becomes unpublished.
+  loader.remoteSettingsClients.experiments.get.resolves([]);
+
+  // We update only no-feature-firefox-desktop. recipeA unenrolls but recipeB stays enrolled.
+  await loader.updateRecipes("test", {
+    onlyFeatureIds: new Set(["no-feature-firefox-desktop"]),
+  });
+  {
+    const enrollment = manager.store.get(recipeA.slug);
+    Assert.ok(!enrollment.active, "No longer enrolled in recipeA");
+    Assert.equal(enrollment.unenrollReason, "recipe-not-seen");
+
+    Assert.ok(
+      manager.store.get(recipeB.slug).active,
+      "Still enrolled in recipeB"
+    );
+  }
+
+  // Finally a regular update unenrolls recipeB.
+  await loader.updateRecipes("test");
+  Assert.ok(
+    !manager.store.get(recipeB.slug).active,
+    "No longer enrolled in recipeB"
+  );
+
+  await cleanup();
+});
+
+add_task(async function testUpdateRecipesOnlyFeatureIdsLabs() {
+  const now = new Date().getTime();
+  const experiments = [
+    NimbusTestUtils.factories.recipe.withFeatureConfig(
+      "no-feature-firefox-desktop",
+      { featureId: "no-feature-firefox-desktop" },
+      {
+        isFirefoxLabsOptIn: true,
+        firefoxLabsTitle: "opt-in-1-title",
+        firefoxLabsDescription: "opt-in-1-desc",
+        firefoxLabsDescriptionLinks: null,
+        firefoxLabsGroup: "group",
+        requiresRestart: false,
+        isRollout: true,
+        targeting: "true",
+        publishedDate: new Date(now).toISOString(),
+      }
+    ),
+    NimbusTestUtils.factories.recipe.withFeatureConfig(
+      "updated-separately",
+      { featureId: "updated-separately" },
+      {
+        isFirefoxLabsOptIn: true,
+        firefoxLabsTitle: "opt-in-2-title",
+        firefoxLabsDescription: "opt-in-2-desc",
+        firefoxLabsDescriptionLinks: null,
+        firefoxLabsGroup: "group",
+        requiresRestart: false,
+        isRollout: true,
+        targeting: "false",
+        publishedDate: new Date(now - 10000).toISOString(),
+      }
+    ),
+  ];
+
+  const features = [
+    new ExperimentFeature("updated-separately", {
+      isEarlyStartup: false,
+      variables: {},
+    }),
+  ];
+
+  const { cleanup, manager, loader } = await NimbusTestUtils.setupTest({
+    experiments,
+    features,
+  });
+
+  Assert.deepEqual(
+    manager.optIns.toSorted(orderByRecipePublishedDate).map(r => r.recipe.slug),
+    ["updated-separately", "no-feature-firefox-desktop"]
+  );
+
+  await loader.updateRecipes("test", {
+    onlyFeatureIds: new Set(["updated-separately"]),
+  });
+
+  Assert.deepEqual(
+    manager.optIns.toSorted(orderByRecipePublishedDate).map(r => r.recipe.slug),
+    ["updated-separately", "no-feature-firefox-desktop"]
   );
 
   await cleanup();

@@ -21,6 +21,8 @@ ChromeUtils.defineESModuleGetters(this, {
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
 });
 
+const STATIC_MENUITEM_COUNT = 7;
+
 var gEditItemOverlay = {
   // Array of PlacesTransactions accumulated by internal changes. It can be used
   // to wait for completion.
@@ -544,12 +546,18 @@ var gEditItemOverlay = {
   async _initFolderMenuList(aSelectedFolderGuid) {
     // clean up first
     var menupopup = this._folderMenuList.menupopup;
-    while (menupopup.children.length > 6) {
+    while (menupopup.children.length > STATIC_MENUITEM_COUNT) {
       menupopup.removeChild(menupopup.lastElementChild);
     }
 
+    // The mobile root should always be hidden unless it is selected.
+    let mobileItem = this._element("mobileRootItem");
+    mobileItem.hidden = true;
+
     // Build the static list
     if (!this._staticFoldersListBuilt) {
+      mobileItem.label = PlacesUtils.getString("MobileBookmarksFolderTitle");
+      mobileItem.folderGuid = PlacesUtils.bookmarks.mobileGuid;
       let unfiledItem = this._element("unfiledRootItem");
       unfiledItem.label = PlacesUtils.getString("OtherBookmarksFolderTitle");
       unfiledItem.folderGuid = PlacesUtils.bookmarks.unfiledGuid;
@@ -609,7 +617,8 @@ var gEditItemOverlay = {
     this._folderMenuListListenerAdded = true;
 
     // Hide the folders-separator if no folder is annotated as recently-used
-    this._element("foldersSeparator").hidden = menupopup.children.length <= 6;
+    this._element("foldersSeparator").hidden =
+      menupopup.children.length <= STATIC_MENUITEM_COUNT;
     this._folderMenuList.disabled = this.readOnly;
   },
 
@@ -906,11 +915,14 @@ var gEditItemOverlay = {
       item => item.folderGuid === aFolderGuid
     );
     if (menuItem !== undefined) {
+      menuItem.hidden = false;
       return menuItem;
     }
 
-    // 3 special folders + separator + folder-items-count limit
-    if (menupopup.children.length == 4 + PlacesUIUtils.maxRecentFolders) {
+    if (
+      menupopup.children.length ==
+      STATIC_MENUITEM_COUNT + PlacesUIUtils.maxRecentFolders
+    ) {
       menupopup.removeChild(menupopup.lastElementChild);
     }
 
@@ -925,16 +937,29 @@ var gEditItemOverlay = {
     }
 
     if (aEvent.target.id == "editBMPanel_chooseFolderMenuItem") {
-      // reset the selection back to where it was and expand the tree
-      // (this menu-item is hidden when the tree is already visible
+      // Restore the current parent-folder selection before opening the tree.
+      // "Choose Folder" is only visible while the tree is collapsed.
       let item = this._getFolderMenuItem(
         this._bookmarkState._originalState.parentGuid,
         this._bookmarkState._originalState.title
       );
       this._folderMenuList.selectedItem = item;
-      // XXXmano HACK: setTimeout 100, otherwise focus goes back to the
-      // menulist right away
-      setTimeout(() => this.toggleFolderTreeVisibility(), 100);
+      // Only activate "Choose Folder" for explicit user interaction (click or
+      // Enter from the open popup), not arrow-key cycling. On non-native
+      // menus the popup is "hiding" only for explicit selection; on native
+      // menus (macOS) arrow keys never trigger this command path at all.
+      const menupopup = this._folderMenuList.menupopup;
+      if (menupopup.state == "hiding" || menupopup.isNativeMenu) {
+        if (menupopup.state == "closed") {
+          this.toggleFolderTreeVisibility();
+        } else {
+          menupopup.addEventListener(
+            "popuphidden",
+            () => this.toggleFolderTreeVisibility(),
+            { once: true }
+          );
+        }
+      }
       return;
     }
 

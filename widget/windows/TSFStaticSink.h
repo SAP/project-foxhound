@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -101,15 +100,17 @@ class TSFStaticSink final : public ITfInputProcessorProfileActivationSink {
 
   static bool GetActiveTIPNameForTelemetry(nsAString& aName);
 
-  static bool IsMSChangJieOrMSQuickActive();
-  static bool IsMSPinyinOrMSWubiActive();
-  static bool IsMSJapaneseIMEActive();
-  static bool IsGoogleJapaneseInputActive();
-  static bool IsATOKActive();
+  [[nodiscard]] static bool IsMSChangJieOrMSQuickActive();
+  [[nodiscard]] static bool IsMSPinyinOrMSWubiActive();
+  [[nodiscard]] static bool IsMSJapaneseIMEActive();
+  [[nodiscard]] static bool IsGoogleJapaneseInputActive();
+  [[nodiscard]] static bool IsATOKActive();
+  [[nodiscard]] static bool IsSogouActive();
+  [[nodiscard]] static bool IsWeChatIMEActive();
 
   // Note that ATOK 2011 - 2016 refers native caret position for deciding its
   // popup window position.
-  static bool IsATOKReferringNativeCaretActive();
+  [[nodiscard]] static bool IsATOKReferringNativeCaretActive();
 
  private:
   static void EnsureInstance() {

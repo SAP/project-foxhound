@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -51,11 +49,8 @@ using mozilla::dom::PushNotifier;
   {0x2fc2d3e3, 0x020f, 0x404e, {0xb0, 0x6a, 0x6e, 0xcf, 0x3e, 0xa2, 0x33, 0x4a}}
 
 #include "nsNetCID.h"
-#include "nsScriptSecurityManager.h"
-#if defined(MOZ_WIDGET_ANDROID)
-#  include "nsHapticFeedback.h"
-#endif
 #include "nsParserUtils.h"
+#include "nsScriptSecurityManager.h"
 
 class nsIDocumentLoaderFactory;
 

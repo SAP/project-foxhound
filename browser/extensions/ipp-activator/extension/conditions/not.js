@@ -2,30 +2,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* global ConditionBase */
+/* global ConditionBaseWithSub */
 
 /**
  * NOT condition
  */
-class ConditionNot extends ConditionBase {
-  #condition;
-
+class ConditionNot extends ConditionBaseWithSub {
   constructor(factory, desc) {
-    super(factory, desc);
-    this.#condition = desc?.condition ? factory.create(desc.condition) : null;
-  }
-
-  async init() {
-    if (this.#condition) {
-      await this.#condition.init();
-    }
+    super(factory, desc, desc.condition ? [desc.condition] : []);
   }
 
   check() {
-    if (!this.#condition) {
+    if (!this.conditions.length) {
       return true;
     }
-    return !this.#condition.check();
+    return !this.conditions[0].check();
   }
 }
 

@@ -140,11 +140,11 @@ class TabViewHolder(
     private fun bindNewTabItem(drawable: Int, addNewTab: () -> Unit) {
         binding.sessionItem.setBackgroundResource(drawable)
 
-        AppCompatResources.getDrawable(binding.root.context, iconsR.drawable.mozac_ic_tab_new)?.intrinsicWidth ?: 0
+        AppCompatResources.getDrawable(binding.root.context, R.drawable.ic_tab_new)?.intrinsicWidth ?: 0
 
         binding.sessionTitle.apply {
             text = binding.root.context.getString(R.string.tabs_tray_action_add_new_tab)
-            setCompoundDrawablesWithIntrinsicBounds(iconsR.drawable.mozac_ic_tab_new, 0, 0, 0)
+            setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_tab_new, 0, 0, 0)
 
             setOnClickListener {
                 addNewTab.invoke()

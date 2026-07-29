@@ -36,8 +36,10 @@ class FindInPageIntegrationTest {
     private val appStore: AppStore = mockk(relaxed = true)
     private val findInPageBar: FindInPageBar = mockk(relaxed = true)
     private val engine: EngineView = mockk(relaxed = true)
-    private val toolbarsHideCallback: () -> Unit = mockk(relaxed = true)
-    private val toolbarsResetCallback: () -> Unit = mockk(relaxed = true)
+    private var toolbarsHideCallbackCount = 0
+    private val toolbarsHideCallback: () -> Unit = { toolbarsHideCallbackCount++ }
+    private var toolbarsResetCallbackCount = 0
+    private val toolbarsResetCallback: () -> Unit = { toolbarsResetCallbackCount++ }
     private val engineView: FrameLayout = mockk(relaxed = true)
     private val engineViewLayoutParams
         get() = engineView.layoutParams as FrameLayout.LayoutParams
@@ -54,7 +56,7 @@ class FindInPageIntegrationTest {
         integration.launch()
 
         assertEquals(true, integration.isFeatureActive)
-        verify { toolbarsHideCallback.invoke() }
+        assertEquals(1, toolbarsHideCallbackCount)
         verify { findInPageBar.isVisible = true }
         verify { findInPageBar.layoutParams.height = findInPageHeight }
         assertEquals(findInPageHeight, engineViewLayoutParams.bottomMargin)
@@ -73,7 +75,7 @@ class FindInPageIntegrationTest {
         integration.launch()
 
         assertEquals(true, integration.isFeatureActive)
-        verify { toolbarsHideCallback.invoke() }
+        assertEquals(1, toolbarsHideCallbackCount)
         verify { findInPageBar.isVisible = true }
         verify { findInPageBar.layoutParams.height = findInPageHeight }
         assertEquals(findInPageHeight, engineViewLayoutParams.bottomMargin)
@@ -89,7 +91,7 @@ class FindInPageIntegrationTest {
         assertEquals(false, integration.isFeatureActive)
         verify { appStore.dispatch(FindInPageAction.FindInPageDismissed) }
         verify { findInPageBar.isVisible = false }
-        verify { toolbarsResetCallback.invoke() }
+        assertEquals(1, toolbarsResetCallbackCount)
         assertEquals(0, engineViewLayoutParams.bottomMargin)
     }
 

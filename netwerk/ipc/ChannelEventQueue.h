@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set sw=2 ts=8 et tw=80 :
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,7 +23,8 @@ namespace net {
 class ChannelEvent {
  public:
   MOZ_COUNTED_DEFAULT_CTOR(ChannelEvent)
-  MOZ_COUNTED_DTOR_VIRTUAL(ChannelEvent) virtual void Run() = 0;
+  MOZ_COUNTED_DTOR_VIRTUAL(ChannelEvent)
+  virtual void Run() = 0;
   virtual already_AddRefed<nsIEventTarget> GetEventTarget() = 0;
 };
 
@@ -123,10 +121,10 @@ class ChannelEventQueue final {
   // Puts IPDL-generated channel event into queue, to be run later
   // automatically when EndForcedQueueing and/or Resume is called.
   //
-  // @param aCallback - the ChannelEvent
+  // @param aChannelEvent - the ChannelEvent
   // @param aAssertionWhenNotQueued - this optional param will be used in an
   //   assertion when the event is executed directly.
-  inline void RunOrEnqueue(ChannelEvent* aCallback,
+  inline void RunOrEnqueue(UniquePtr<ChannelEvent> aChannelEvent,
                            bool aAssertionWhenNotQueued = false);
 
   // Append ChannelEvent in front of the event queue.
@@ -154,6 +152,11 @@ class ChannelEventQueue final {
   void NotifyReleasingOwner() {
     MutexAutoLock lock(mMutex);
     mOwner = nullptr;
+  }
+
+  void DiscardQueuedEvents() {
+    MutexAutoLock lock(mMutex);
+    mEventQueue.Clear();
   }
 
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
@@ -204,16 +207,13 @@ class ChannelEventQueue final {
   friend class AutoEventEnqueuer;
 };
 
-inline void ChannelEventQueue::RunOrEnqueue(ChannelEvent* aCallback,
-                                            bool aAssertionWhenNotQueued) {
-  MOZ_ASSERT(aCallback);
+inline void ChannelEventQueue::RunOrEnqueue(
+    UniquePtr<ChannelEvent> aChannelEvent, bool aAssertionWhenNotQueued) {
+  MOZ_ASSERT(aChannelEvent);
   // Events execution could be a destruction of the channel (and our own
   // destructor) unless we make sure its refcount doesn't drop to 0 while this
   // method is running.
   nsCOMPtr<nsISupports> kungFuDeathGrip;
-
-  // To avoid leaks.
-  UniquePtr<ChannelEvent> event(aCallback);
 
   // To guarantee that the running event and all the events generated within
   // it will be finished before events on other threads.
@@ -233,12 +233,12 @@ inline void ChannelEventQueue::RunOrEnqueue(ChannelEvent* aCallback,
     // d. queue is non-empty (pending events on remote thread targets)
     if (enqueue) {
       PROFILER_MARKER("ChannelEventQueue::Enqueue", NETWORK, {}, FlowMarker,
-                      Flow::FromPointer(event.get()));
-      mEventQueue.AppendElement(std::move(event));
+                      Flow::FromPointer(aChannelEvent.get()));
+      mEventQueue.AppendElement(std::move(aChannelEvent));
       return;
     }
 
-    nsCOMPtr<nsIEventTarget> target = event->GetEventTarget();
+    nsCOMPtr<nsIEventTarget> target = aChannelEvent->GetEventTarget();
     MOZ_ASSERT(target);
 
     bool isCurrentThread = false;
@@ -259,9 +259,9 @@ inline void ChannelEventQueue::RunOrEnqueue(ChannelEvent* aCallback,
       SuspendInternal();
 
       PROFILER_MARKER("ChannelEventQueue::Enqueue", NETWORK, {}, FlowMarker,
-                      Flow::FromPointer(event.get()));
+                      Flow::FromPointer(aChannelEvent.get()));
 
-      mEventQueue.AppendElement(std::move(event));
+      mEventQueue.AppendElement(std::move(aChannelEvent));
       ResumeInternal();
       return;
     }
@@ -269,10 +269,10 @@ inline void ChannelEventQueue::RunOrEnqueue(ChannelEvent* aCallback,
 
   MOZ_RELEASE_ASSERT(!aAssertionWhenNotQueued);
   AUTO_PROFILER_TERMINATING_FLOW_MARKER("ChannelEvent", OTHER,
-                                        Flow::FromPointer(event.get()));
+                                        Flow::FromPointer(aChannelEvent.get()));
   // execute the event synchronously if we are not queuing it and
   // the target thread is the current thread
-  event->Run();
+  aChannelEvent->Run();
 }
 
 inline void ChannelEventQueue::StartForcedQueueing() {

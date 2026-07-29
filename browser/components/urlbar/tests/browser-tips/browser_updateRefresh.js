@@ -4,7 +4,7 @@
 // Checks the UPDATE_REFRESH tip.
 //
 // The update parts of this test are adapted from:
-// https://searchfox.org/mozilla-central/source/toolkit/mozapps/update/tests/browser/browser_aboutDialog_fc_check_noUpdate.js
+// https://searchfox.org/firefox-main/source/toolkit/mozapps/update/tests/browser/browser_aboutDialog_fc_check_noUpdate.js
 
 "use strict";
 
@@ -28,7 +28,7 @@ add_task(async function test() {
     set: [["browser.urlbar.suggest.quickactions", false]],
   });
 
-  makeProfileResettable();
+  await makeProfileResettable();
 
   // Set up the "no updates" update state.
   await initUpdate(params);

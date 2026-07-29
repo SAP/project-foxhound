@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -356,7 +355,7 @@ already_AddRefed<Cookie> CookieCommons::CreateCookieFromDocument(
   bool mustBePartitioned =
       isForeignAndNotAddon &&
       aDocument->CookieJarSettings()->GetCookieBehavior() ==
-          nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN &&
+          nsICookieService::BEHAVIOR_PARTITION_FOREIGN &&
       !aDocument->UsingStorageAccess();
 
   // If we are here, we have been already accepted by the anti-tracking.
@@ -901,7 +900,7 @@ CookieCommons::CheckGlobalAndRetrieveCookiePrincipals(
           workerPrivate->GetPartitionedPrincipal();
       if (partitionedPrincipal && !partitionedPrincipal->OriginAttributesRef()
                                        .mPartitionKey.IsEmpty()) {
-        cookiePartitionedPrincipal = partitionedPrincipal;
+        cookiePartitionedPrincipal = std::move(partitionedPrincipal);
       }
     }
   } else {

@@ -13,9 +13,9 @@
 #include "nsThreadUtils.h"
 
 #undef LOG
-#define LOG(msg, ...)                        \
-  MOZ_LOG(gMediaControlLog, LogLevel::Debug, \
-          ("AudioFocusManager=%p, " msg, this, ##__VA_ARGS__))
+#define LOG(msg, ...)                                                          \
+  MOZ_LOG_FMT(gMediaControlLog, LogLevel::Debug, "AudioFocusManager={}, " msg, \
+              fmt::ptr(this), ##__VA_ARGS__)
 
 namespace mozilla::dom {
 
@@ -25,7 +25,7 @@ void AudioFocusManager::RequestAudioFocus(IMediaController* aController) {
     return;
   }
   ClearFocusControllersIfNeeded();
-  LOG("Controller %" PRId64 " grants audio focus", aController->Id());
+  LOG("Controller {} grants audio focus", aController->Id());
   mOwningFocusControllers.AppendElement(aController);
 }
 
@@ -34,7 +34,7 @@ void AudioFocusManager::RevokeAudioFocus(IMediaController* aController) {
   if (!mOwningFocusControllers.Contains(aController)) {
     return;
   }
-  LOG("Controller %" PRId64 " loses audio focus", aController->Id());
+  LOG("Controller {} loses audio focus", aController->Id());
   mOwningFocusControllers.RemoveElement(aController);
 }
 
@@ -46,7 +46,7 @@ void AudioFocusManager::ClearFocusControllersIfNeeded() {
   }
 
   for (auto& controller : mOwningFocusControllers) {
-    LOG("Controller %" PRId64 " loses audio focus in audio competitition",
+    LOG("Controller {} loses audio focus in audio competitition",
         controller->Id());
     controller->Stop();
   }

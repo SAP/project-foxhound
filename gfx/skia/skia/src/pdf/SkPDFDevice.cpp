@@ -101,15 +101,16 @@ SkPDFDevice::MarkedContentManager::MarkedContentManager(SkPDFDocument* document,
     : fDoc(document)
     , fOut(out)
     , fCurrentlyActiveMark()
-    , fNextMarksElemId(0)
     , fCurrentMarksElemId(0)
-    , fMadeMarks(false)
+    , fNextMarksElemId(0)
+    , fStructParentsKey()
 {}
 
 SkPDFDevice::MarkedContentManager::~MarkedContentManager() {
     // This does not close the last open mark, that is done in SkPDFDevice::content.
-    SkASSERT(fNextMarksElemId == 0);
-};
+    // The value of fNextMarksElemId should still be whatever the user set it to.
+    SkASSERT(!this->hasActiveMark());
+}
 
 void SkPDFDevice::MarkedContentManager::setNextMarksElemId(int nextMarksElemId) {
     fNextMarksElemId = nextMarksElemId;
@@ -127,7 +128,7 @@ void SkPDFDevice::MarkedContentManager::beginMark() {
         fCurrentMarksElemId = 0;
     }
     if (fNextMarksElemId) {
-        fCurrentlyActiveMark = fDoc->createMarkForElemId(fNextMarksElemId);
+        fCurrentlyActiveMark = fDoc->createMarkForElemId(fNextMarksElemId, fStructParentsKey);
         if (fCurrentlyActiveMark) {
             // Begin this mark
             SkPDFUnion::Name(fCurrentlyActiveMark.structType()).emitObject(fOut);
@@ -135,7 +136,6 @@ void SkPDFDevice::MarkedContentManager::beginMark() {
             fOut->writeDecAsText(fCurrentlyActiveMark.mcid());
             fOut->writeText(" >>BDC\n");
             fCurrentMarksElemId = fCurrentlyActiveMark.elemId();
-            fMadeMarks = true;
         } else if (SkPDF::NodeID::BackgroundArtifact <= fNextMarksElemId &&
                    fNextMarksElemId <= SkPDF::NodeID::OtherArtifact &&
                    fDoc->hasCurrentPage())
@@ -399,11 +399,16 @@ private:
 
 SkPDFDevice::SkPDFDevice(SkISize pageSize, SkPDFDocument* doc, const SkMatrix& transform)
         : SkClipStackDevice(SkImageInfo::MakeUnknown(pageSize.width(), pageSize.height()),
-                            SkSurfaceProps())
+                            SkSurfaceProps(SkSurfaceProps::kPreservesTransparentDraws_Flag,
+                                           kUnknown_SkPixelGeometry))
         , fInitialTransform(transform)
         , fMarkManager(doc, &fContent)
         , fDocument(doc) {
     SkASSERT(!pageSize.isEmpty());
+}
+
+sk_sp<SkPDFDevice> SkPDFDevice::makeCongruentDevice() {
+    return sk_make_sp<SkPDFDevice>(this->size(), fDocument);
 }
 
 SkPDFDevice::~SkPDFDevice() = default;
@@ -413,6 +418,7 @@ void SkPDFDevice::reset() {
     fXObjectResources.reset();
     fShaderResources.reset();
     fFontResources.reset();
+    fMarkManager.reset();
     fContent.reset();
     fActiveStackState = SkPDFGraphicStackState();
 }
@@ -479,7 +485,7 @@ void SkPDFDevice::drawPaint(const SkPaint& srcPaint) {
     if (newPaint.getShader()) {
         newPaint.setShader(newPaint.getShader()->makeWithLocalMatrix(this->localToDevice()));
     }
-    this->internalDrawPath(this->cs(), SkMatrix::I(), SkPath::Rect(bbox), newPaint, true);
+    this->internalDrawPath(this->cs(), SkMatrix::I(), SkPath::Rect(bbox), newPaint);
 }
 
 void SkPDFDevice::drawPoints(SkCanvas::PointMode mode,
@@ -577,19 +583,19 @@ void SkPDFDevice::drawPoints(SkCanvas::PointMode mode,
 void SkPDFDevice::drawRect(const SkRect& rect, const SkPaint& paint) {
     SkRect r = rect;
     r.sort();
-    this->internalDrawPath(this->cs(), this->localToDevice(), SkPath::Rect(r), paint, true);
+    this->internalDrawPath(this->cs(), this->localToDevice(), SkPath::Rect(r), paint);
 }
 
 void SkPDFDevice::drawRRect(const SkRRect& rrect, const SkPaint& paint) {
-    this->internalDrawPath(this->cs(), this->localToDevice(), SkPath::RRect(rrect), paint, true);
+    this->internalDrawPath(this->cs(), this->localToDevice(), SkPath::RRect(rrect), paint);
 }
 
 void SkPDFDevice::drawOval(const SkRect& oval, const SkPaint& paint) {
-    this->internalDrawPath(this->cs(), this->localToDevice(), SkPath::Oval(oval), paint, true);
+    this->internalDrawPath(this->cs(), this->localToDevice(), SkPath::Oval(oval), paint);
 }
 
-void SkPDFDevice::drawPath(const SkPath& path, const SkPaint& paint, bool pathIsMutable) {
-    this->internalDrawPath(this->cs(), this->localToDevice(), path, paint, pathIsMutable);
+void SkPDFDevice::drawPath(const SkPath& path, const SkPaint& paint) {
+    this->internalDrawPath(this->cs(), this->localToDevice(), path, paint);
 }
 
 void SkPDFDevice::internalDrawPathWithFilter(const SkClipStack& clipStack,
@@ -604,11 +610,14 @@ void SkPDFDevice::internalDrawPathWithFilter(const SkClipStack& clipStack,
                                      ? SkStrokeRec::kFill_InitStyle
                                      : SkStrokeRec::kHairline_InitStyle;
     builder.transform(ctm);
-    SkPathRaw pathRaw = SkPathPriv::Raw(builder);
+    const auto pathRaw = SkPathPriv::Raw(builder, SkResolveConvexity::kYes);
+    if (!pathRaw) {
+        return;
+    }
 
     SkIRect bounds = clipStack.bounds(this->bounds()).roundOut();
     SkMaskBuilder sourceMask;
-    if (!skcpu::DrawToMask(pathRaw,
+    if (!skcpu::DrawToMask(*pathRaw,
                            bounds,
                            paint->getMaskFilter(),
                            &SkMatrix::I(),
@@ -643,7 +652,7 @@ void SkPDFDevice::internalDrawPathWithFilter(const SkClipStack& clipStack,
             maskDevice->makeFormXObjectFromDevice(dstMaskBounds, true), false,
             SkPDFGraphicState::kLuminosity_SMaskMode, fDocument), content.stream());
     SkPDFUtils::AppendRectangle(SkRect::Make(dstMaskBounds), content.stream());
-    SkPDFUtils::PaintPath(SkPaint::kFill_Style, pathRaw.fillType(), content.stream());
+    SkPDFUtils::PaintPath(SkPaint::kFill_Style, pathRaw->fillType(), content.stream());
     this->clearMaskOnGraphicState(content.stream());
 }
 
@@ -665,14 +674,12 @@ void SkPDFDevice::clearMaskOnGraphicState(SkDynamicMemoryWStream* contentStream)
 void SkPDFDevice::internalDrawPath(const SkClipStack& clipStack,
                                    const SkMatrix& ctm,
                                    const SkPath& origPath,
-                                   const SkPaint& srcPaint,
-                                   bool pathIsMutable) {
+                                   const SkPaint& srcPaint) {
     if (clipStack.isEmpty(this->bounds())) {
         return;
     }
     SkTCopyOnFirstWrite<SkPaint> paint(clean_paint(srcPaint));
-    SkPath modifiedPath;
-    SkPath* pathPtr = const_cast<SkPath*>(&origPath);
+    SkPath modifiedPath = origPath;
 
     if (paint->getMaskFilter()) {
         this->internalDrawPathWithFilter(clipStack, ctm, origPath, *paint);
@@ -686,7 +693,7 @@ void SkPDFDevice::internalDrawPath(const SkClipStack& clipStack,
             return;
         }
         SkPathBuilder builder;
-        if (skpathutils::FillPathWithPaint(*pathPtr, *paint, &builder)) {
+        if (skpathutils::FillPathWithPaint(modifiedPath, *paint, &builder)) {
             set_style(&paint, SkPaint::kFill_Style);
         } else {
             set_style(&paint, SkPaint::kStroke_Style);
@@ -695,21 +702,14 @@ void SkPDFDevice::internalDrawPath(const SkClipStack& clipStack,
             }
         }
         modifiedPath = builder.detach();
-        pathPtr = &modifiedPath;
-        pathIsMutable = true;
         paint.writable()->setPathEffect(nullptr);
     }
 
-    if (this->handleInversePath(*pathPtr, *paint, pathIsMutable)) {
+    if (this->handleInversePath(modifiedPath, *paint)) {
         return;
     }
     if (matrix.getType() & SkMatrix::kPerspective_Mask) {
-        if (!pathIsMutable) {
-            modifiedPath = origPath;
-            pathPtr = &modifiedPath;
-            pathIsMutable = true;
-        }
-        *pathPtr = pathPtr->makeTransform(matrix);
+        modifiedPath = modifiedPath.makeTransform(matrix);
         if (paint->getShader()) {
             transform_shader(paint.writable(), matrix);
         }
@@ -728,20 +728,24 @@ void SkPDFDevice::internalDrawPath(const SkClipStack& clipStack,
         // The path does not already have localToDevice / ctm / matrix applied.
         pageXform.preConcat(matrix);
 
-        SkRect pathBounds = pathPtr->computeTightBounds();
+        SkRect pathBounds = modifiedPath.computeTightBounds();
         pageXform.mapRect(&pathBounds);
         fMarkManager.accumulate({pathBounds.fLeft, pathBounds.fBottom}); // y-up
     }
     constexpr SkScalar kToleranceScale = 0.0625f;  // smaller = better conics (circles).
     SkScalar matrixScale = matrix.mapRadius(1.0f);
     SkScalar tolerance = matrixScale > 0.0f ? kToleranceScale / matrixScale : kToleranceScale;
-    bool consumeDegeratePathSegments =
+    bool discardEmptyVerbs =
            paint->getStyle() == SkPaint::kFill_Style ||
            (paint->getStrokeCap() != SkPaint::kRound_Cap &&
             paint->getStrokeCap() != SkPaint::kSquare_Cap);
-    SkPDFUtils::EmitPath(*pathPtr, paint->getStyle(), consumeDegeratePathSegments, content.stream(),
-                         tolerance);
-    SkPDFUtils::PaintPath(paint->getStyle(), pathPtr->getFillType(), content.stream());
+    using SkPDFUtils::EmptyPath, SkPDFUtils::EmptyVerb;
+    if (SkPDFUtils::EmitPath(modifiedPath, paint->getStyle(), EmptyPath::Discard,
+                             discardEmptyVerbs ? EmptyVerb::Discard : EmptyVerb::Preserve,
+                             content.stream(), tolerance))
+    {
+        SkPDFUtils::PaintPath(paint->getStyle(), modifiedPath.getFillType(), content.stream());
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -889,7 +893,7 @@ void SkPDFDevice::drawGlyphRunAsPath(
                       rec->fPos += 1; // move to the next glyph's position
                   }, &rec);
     this->internalDrawPath(this->cs(), this->localToDevice(),
-                           rec.fBuilder.detach(), runPaint, true);
+                           rec.fBuilder.detach(), runPaint);
 
     SkFont transparentFont = glyphRun.font();
     transparentFont.setEmbolden(false); // Stop Recursion
@@ -1175,6 +1179,7 @@ std::unique_ptr<SkStreamAsset> SkPDFDevice::content() {
 
     // Implicitly close any still active marked-content sequence.
     // Must do this before fContent is written to buffer.
+    int elemId = fMarkManager.elemId();
     fMarkManager.setNextMarksElemId(0);
     fMarkManager.beginMark();
 
@@ -1190,6 +1195,10 @@ std::unique_ptr<SkStreamAsset> SkPDFDevice::content() {
         buffer.writeText("Q\n");
     }
     fNeedsExtraSave = false;
+
+    // Subsequent use of this SkPDFDevice is still associated with the current structure element.
+    fMarkManager.setNextMarksElemId(elemId);
+
     return std::unique_ptr<SkStreamAsset>(buffer.detachAsStream());
 }
 
@@ -1200,9 +1209,7 @@ std::unique_ptr<SkStreamAsset> SkPDFDevice::content() {
  * either as a (incorrect) fallback or because the path was not inverse
  * in the first place.
  */
-bool SkPDFDevice::handleInversePath(const SkPath& origPath,
-                                    const SkPaint& srcPaint,
-                                    bool pathIsMutable) {
+bool SkPDFDevice::handleInversePath(const SkPath& origPath, const SkPaint& srcPaint) {
     // Assume the caller has already applied the path effect.
     SkASSERT(!srcPaint.getPathEffect());
 
@@ -1215,8 +1222,7 @@ bool SkPDFDevice::handleInversePath(const SkPath& origPath,
     }
 
     SkTCopyOnFirstWrite<SkPaint> paint(srcPaint);
-    SkPath modifiedPath;
-    const SkPath* pathPtr = &origPath;
+    SkPath modifiedPath = origPath;
 
     // Merge stroking operations into final path.
     if (SkPaint::kStroke_Style == paint->getStyle() ||
@@ -1225,7 +1231,6 @@ bool SkPDFDevice::handleInversePath(const SkPath& origPath,
         SkPathBuilder builder;
         bool doFillPath = skpathutils::FillPathWithPaint(origPath, *paint, &builder);
         modifiedPath = builder.detach();
-        pathPtr = &modifiedPath;
 
         if (doFillPath) {
             SkPaint* modifiedPaint = paint.writable();
@@ -1234,21 +1239,21 @@ bool SkPDFDevice::handleInversePath(const SkPath& origPath,
         } else {
             // Hairline strokes are rendered non-inverted.
             modifiedPath.toggleInverseFillType();
-            this->internalDrawPath(this->cs(), this->localToDevice(), modifiedPath, *paint, true);
+            this->internalDrawPath(this->cs(), this->localToDevice(), modifiedPath, *paint);
             return true;
         }
     }
 
     // Clip is in device space. Transform path and shader into device space.
     SkRect bounds = this->cs().bounds(this->bounds());
-    modifiedPath = pathPtr->makeTransform(this->localToDevice());
+    modifiedPath = modifiedPath.makeTransform(this->localToDevice());
     if (!calculate_inverse_path(bounds, modifiedPath, &modifiedPath)) {
         return false;
     }
     if (paint->getShader()) {
         paint.writable()->setShader(paint->getShader()->makeWithLocalMatrix(this->localToDevice()));
     }
-    this->internalDrawPath(this->cs(), SkMatrix::I(), modifiedPath, *paint, true);
+    this->internalDrawPath(this->cs(), SkMatrix::I(), modifiedPath, *paint);
     return true;
 }
 
@@ -1263,6 +1268,7 @@ SkPDFIndirectReference SkPDFDevice::makeFormXObjectFromDevice(SkIRect bounds, bo
 
     SkPDFIndirectReference xobject =
         SkPDFMakeFormXObject(fDocument, this->content(),
+                             fMarkManager.structParentsKey(),
                              SkPDFMakeArray(bounds.left(), bounds.top(),
                                             bounds.right(), bounds.bottom()),
                              this->makeResourceDict(), inverseTransform, colorSpace);
@@ -1521,7 +1527,7 @@ void SkPDFDevice::finishContentEntry(const SkClipStack* clipStack,
             SkClipStack empty;
             SkPDFDevice shapeDev(this->size(), fDocument, fInitialTransform);
             shapeDev.internalDrawPath(clipStack ? *clipStack : empty,
-                                      SkMatrix::I(), *shape, filledPaint, true);
+                                      SkMatrix::I(), *shape, filledPaint);
             this->drawFormXObjectWithMask(dst, shapeDev.makeFormXObjectFromDevice(),
                                           SkBlendMode::kSrcOver, true);
         } else {
@@ -1723,7 +1729,7 @@ void SkPDFDevice::internalDrawImageRect(SkKeyedImage imageSubset,
         paint.writable()->setShader(imageSubset.image()->makeShader(SkSamplingOptions(),
                                                                     transform));
         SkPath path = SkPath::Rect(dst); // handles non-integral clipping.
-        this->internalDrawPath(this->cs(), this->localToDevice(), path, *paint, true);
+        this->internalDrawPath(this->cs(), this->localToDevice(), path, *paint);
         return;
     }
     transform.postConcat(ctm);
@@ -1893,9 +1899,10 @@ void SkPDFDevice::drawDevice(SkDevice* device, const SkSamplingOptions& sampling
         return;
     }
     // This XObject may contain its own marks, which are hidden if emitted inside an outer mark.
-    // If it does have its own marks we need to pause the current mark and then re-set it after.
+    // If it does have its own marks any current mark is paused and then re-set after.
+    // If it does not have its own marks it will be part of the content of the current mark.
     int currentStructElemId = fMarkManager.elemId();
-    if (pdfDevice->fMarkManager.madeMarks()) {
+    if (pdfDevice->fMarkManager.structParentsKey()) {
         fMarkManager.setNextMarksElemId(0);
         fMarkManager.beginMark();
     }

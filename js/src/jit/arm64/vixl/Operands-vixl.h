@@ -405,10 +405,10 @@ class MemOperand {
   MemOperand(Register base, const Operand& offset, AddrMode addrmode = Offset);
 
   // Adapter constructors using C++11 delegating.
-  // TODO: If sp == kSPRegInternalCode, the xzr check isn't necessary.
   explicit MemOperand(js::jit::Address addr)
     : MemOperand(IsHiddenSP(addr.base) ? sp : Register(AsRegister(addr.base), 64),
                  (ptrdiff_t)addr.offset) {
+    VIXL_ASSERT(addr.base.code != js::jit::Registers::xzr);
   }
 
   const Register& GetBaseRegister() const { return base_; }

@@ -100,7 +100,19 @@ class SwatchColorPickerTooltip extends SwatchBasedEditorTooltip {
     this.tooltip.container.addEventListener("keydown", this._onTooltipKeydown);
   }
 
-  static COLOR_MODIFYING_FUNCTIONS = new Set(["color-mix", "contrast-color"]);
+  static COLOR_MODIFYING_FUNCTIONS = new Set([
+    "color-mix",
+    "contrast-color",
+    // color functions can take a relative color after `from`
+    "color",
+    "hsl",
+    "hwb",
+    "lab",
+    "lch",
+    "oklab",
+    "oklch",
+    "rgb",
+  ]);
 
   /**
    * Fill the tooltip with a new instance of the spectrum color picker widget

@@ -24,7 +24,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.GleanMetrics.Metrics
 import org.mozilla.fenix.R
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.mozilla.fenix.utils.Settings
 import org.mozilla.gecko.search.SearchWidgetProvider
@@ -140,7 +140,7 @@ class SearchWidgetProviderTest {
     fun `GIVEN voice search is disabled WHEN createVoiceSearchIntent is called THEN it returns null`() {
         val widgetProvider = SearchWidgetProvider()
         val context: Context = mockk {
-            every { settings().shouldShowVoiceSearch } returns false
+            every { components.settings.shouldShowVoiceSearch } returns false
         }
 
         val result = widgetProvider.createVoiceSearchIntent(context)
@@ -192,7 +192,7 @@ class SearchWidgetProviderTest {
     @Test
     fun `WHEN the search widget is added on homescreen THEN record telemetry and persist that the widget is installed`() {
         val settings = Settings(testContext)
-        every { testContext.settings() } returns settings
+        every { testContext.components.settings } returns settings
         val widgetProvider = SearchWidgetProvider()
         assertFalse(settings.searchWidgetInstalled)
 
@@ -205,26 +205,26 @@ class SearchWidgetProviderTest {
     @Test
     fun `WHEN the search widget is removed from the homescreen THEN record telemetry and persist that the widget is uninstalled`() {
         val settings = Settings(testContext)
-        every { testContext.settings() } returns settings
+        every { testContext.components.settings } returns settings
         val widgetProvider = SearchWidgetProvider()
         settings.searchWidgetInstalled = true
 
         widgetProvider.onDisabled(testContext)
 
-        assertFalse(testContext.settings().searchWidgetInstalled)
+        assertFalse(testContext.components.settings.searchWidgetInstalled)
         assertEquals(false, Metrics.searchWidgetInstalled.testGetValue())
     }
 
     @Test
     fun `GIVEN not knowing search widget is installed WHEN a widget is updated THEN record telemetry and persist that the widget is installed`() {
         val settings = Settings(testContext)
-        every { testContext.settings() } returns settings
+        every { testContext.components.settings } returns settings
         val widgetProvider = SearchWidgetProvider()
         assertFalse(settings.searchWidgetInstalled)
 
         widgetProvider.onUpdate(testContext, mockk(), intArrayOf())
 
-        assertTrue(testContext.settings().searchWidgetInstalled)
+        assertTrue(testContext.components.settings.searchWidgetInstalled)
         assertEquals(true, Metrics.searchWidgetInstalled.testGetValue())
     }
 }

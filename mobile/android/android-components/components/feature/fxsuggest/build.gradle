@@ -4,6 +4,15 @@
 
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
+buildscript {
+    repositories {
+        gradle.configureMavenRepositories(delegate)
+    }
+    dependencies {
+        classpath libs.kotlin.serialization
+    }
+}
+
 plugins {
     alias(libs.plugins.dependency.analysis)
     alias(libs.plugins.python.envs.plugin)
@@ -12,6 +21,7 @@ plugins {
 
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
+apply plugin: 'kotlinx-serialization'
 
 android {
     namespace = 'mozilla.components.feature.fxsuggest'
@@ -22,6 +32,7 @@ dependencies {
 
     implementation project(':components:browser-state')
     implementation project(':components:concept-awesomebar')
+    implementation project(':components:concept-base')
     implementation project(':components:concept-engine')
     implementation project(':components:feature-session')
     implementation project(':components:service-nimbus')
@@ -31,9 +42,17 @@ dependencies {
     implementation project(':components:support-ktx')
 
     implementation ComponentsDependencies.mozilla_appservices_errorsupport
+    implementation (ComponentsDependencies.mozilla_appservices_httpconfig) {
+        // Override the version of concept-fetch that A-S depends on,
+        // since we want to replace it with our own.
+        exclude group: 'org.mozilla.components', module: 'concept-fetch'
+    }
+    implementation ComponentsDependencies.mozilla_appservices_merino
     implementation ComponentsDependencies.mozilla_appservices_suggest
     implementation libs.androidx.work.runtime
     implementation libs.kotlinx.coroutines
+    implementation libs.kotlinx.serialization.json
+    implementation project(':components:concept-fetch')
 
     testImplementation project(':components:support-test')
 
@@ -42,6 +61,7 @@ dependencies {
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
     testImplementation libs.androidx.work.testing
+    testImplementation libs.kotlin.test
     testImplementation libs.kotlinx.coroutines.test
     testImplementation libs.robolectric
 }

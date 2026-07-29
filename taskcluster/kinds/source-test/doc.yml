@@ -15,7 +15,6 @@ generate:
         symbol: doc(generate)
         kind: test
         tier: 1
-    run-on-repo-type: [hg]
     run-on-projects: ['trunk']
     worker-type: b-linux-medium
     worker:

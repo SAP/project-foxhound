@@ -104,6 +104,7 @@ body {
 }
 
 .cm-s-mozilla .cm-variable,
+.cm-editor .tok-keyword:has(+ .tok-punctuation):not(.tok-number ~ .tok-keyword),
 :is(.cm-editor, .cm-highlighted) .tok-variableName2 {
   color: var(--purple-60);
 }
@@ -115,6 +116,7 @@ body {
 .theme-fg-color3,
 /* ------- cm6 ------- */
 .cm-editor .tok-typeName,
+.cm-editor .tok-punctuation + .tok-propertyName,
 /* ------------------- */
 .cm-s-mozilla .cm-tag,
 .cm-s-mozilla .cm-header,

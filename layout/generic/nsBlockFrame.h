@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -42,11 +40,13 @@ enum class LineReflowStatus {
 };
 
 class nsBlockInFlowLineIterator;
+class nsLineLayout;
 namespace mozilla {
 class BlockReflowState;
 class PresShell;
 class ServoRestyleState;
 class ServoStyleSet;
+
 }  // namespace mozilla
 
 /**
@@ -530,8 +530,18 @@ class nsBlockFrame : public nsContainerFrame {
            IsComboboxControlFrame();
   }
 
+  bool IsTextInput() const {
+    return Style()->GetPseudoType() ==
+               mozilla::PseudoStyleType::MozScrolledContent &&
+           mParent->IsTextInputFrame();
+  }
+
+  bool IsSingleLineTextInput() const {
+    return IsTextInput() && mContent->IsHTMLElement(nsGkAtoms::input);
+  }
+
   bool IsButtonLike() const {
-    if (mContent->IsHTMLElement(nsGkAtoms::button)) {
+    if (mContent->IsAnyOfHTMLElements(nsGkAtoms::button)) {
       // NOTE(emilio): We need the IsAnonBox check to deal with things like the
       // :-moz-anonymous-item of a <button> with display: grid. We don't want
       // that to e.g. center its contents. But we do want the scrolled-content
@@ -543,10 +553,16 @@ class nsBlockFrame : public nsContainerFrame {
     return IsButtonControlFrame();
   }
 
+  bool IsButtonOrTextInput() const { return IsButtonLike() || IsTextInput(); }
+
   /** Returns the effective align-content of this frame */
   mozilla::StyleAlignFlags EffectiveAlignContent() const {
     if (IsButtonLike()) {
       return mozilla::StyleAlignFlags::CENTER;
+    }
+    if (IsSingleLineTextInput()) {
+      return mozilla::StyleAlignFlags::CENTER |
+             mozilla::StyleAlignFlags::UNSAFE;
     }
     return StylePosition()->mAlignContent.primary;
   }
@@ -738,6 +754,47 @@ class nsBlockFrame : public nsContainerFrame {
    */
   void ReflowPushedFloats(BlockReflowState& aState,
                           mozilla::OverflowAreas& aOverflowAreas);
+
+  /**
+   * Reflow absolutely positioned descendants of inline frames that serve as
+   * absolute containing blocks in our lines. Must be called after we reflow all
+   * the lines.
+   */
+  void ReflowAbsoluteDescendantsInInlineFrame(nsPresContext* aPresContext,
+                                              const ReflowInput& aReflowInput,
+                                              ReflowOutput& aReflowOutput,
+                                              nsReflowStatus& aStatus);
+
+  /**
+   * Helper for ReflowAbsoluteDescendantsInInlineFrame(). Recursively visit
+   * every inline frame reachable from aFrame via its principal child list, and
+   * call ReflowAbsoluteFramesInInlineFrame() on each. Update aFrame's overflow
+   * areas with the accumulated overflow areas.
+   *
+   * @return accumulated overflow areas from abspos descendants visited under
+   *         aFrame, in aFrame's coordinate space. Or if no abspos descendants
+   *         were visited, return Nothing().
+   */
+  mozilla::Maybe<mozilla::OverflowAreas>
+  WalkInlineDescendantsToReflowAbsoluteFrames(nsIFrame* aFrame,
+                                              nsPresContext* aPresContext,
+                                              const ReflowInput& aReflowInput,
+                                              nsReflowStatus& aStatus);
+
+  /**
+   * Helper for WalkInlineDescendantsToReflowAbsoluteFrames(). Reflow the
+   * absolutely positioned frames if aInlineFrame is an absolute containing
+   * block.
+   *
+   * @param aInlineFrame inline-level frame that forms the absolute containing
+   *        block.
+   * @return overflow areas from aInlineFrame's abspos kids, in
+   *         aInlineFrame's coordinate space. Or if no abspos descendants were
+   *         visited, return Nothing().
+   */
+  mozilla::Maybe<mozilla::OverflowAreas> ReflowAbsoluteFramesInInlineFrame(
+      nsInlineFrame* aInlineFrame, nsPresContext* aPresContext,
+      const ReflowInput& aReflowInput, nsReflowStatus& aStatus);
 
   /**
    * Find any trailing BR clear from the last line of this block (or from its

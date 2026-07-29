@@ -29,6 +29,12 @@ class CacheFileLock;
 // nsICacheStorageService.pinningCacheStorage.)
 static const uint32_t kCacheEntryIsPinned = 1 << 0;
 
+// Whether the entry's data chunks and metadata are encrypted at rest.
+// Orthogonal to the metadata version: a v4 entry may be unencrypted (e.g.
+// written while the feature pref was off). The decision is fixed when the file
+// is created.
+static const uint32_t kCacheEntryIsEncrypted = 1 << 1;
+
 // By multiplying with the current half-life we convert the frecency
 // to time independent of half-life value.  The range fits 32bits.
 // When decay time changes on next run of the browser, we convert
@@ -39,7 +45,14 @@ static const uint32_t kCacheEntryIsPinned = 1 << 0;
 #define INT2FRECENCY(aInt) \
   ((double)(aInt) / (double)CacheObserver::HalfLifeSeconds())
 
-#define kCacheEntryVersion 3
+// Version history:
+//   1: original format (no mFlags).
+//   2: added mFlags.
+//   3: added alternative-data support.
+//   4: at-rest encryption. The header layout is unchanged from v3; an encrypted
+//      entry's metadata is encrypted as a whole block and the trailing offset
+//      carries the encryption flag (see CacheFileMetadata.cpp).
+#define kCacheEntryVersion 4
 
 #pragma pack(push)
 #pragma pack(1)
@@ -106,9 +119,7 @@ class CacheFileMetadataHeader {
     static_assert(
         (sizeof(mVersion) + sizeof(mFetchCount) + sizeof(mLastFetched) +
          sizeof(mLastModified) + sizeof(mFrecency) + sizeof(mExpirationTime) +
-         sizeof(mKeySize)) +
-                sizeof(mFlags) ==
-            sizeof(CacheFileMetadataHeader),
+         sizeof(mKeySize) + sizeof(mFlags)) == sizeof(CacheFileMetadataHeader),
         "Unexpected sizeof(CacheFileMetadataHeader)!");
   }
 };
@@ -157,6 +168,13 @@ class CacheFileMetadata final : public CacheFileIOListener,
     return mOriginAttributes;
   }
   bool Pinned() const { return !!(mMetaHdr.mFlags & kCacheEntryIsPinned); }
+  bool IsEncrypted() const {
+    return !!(mMetaHdr.mFlags & kCacheEntryIsEncrypted);
+  }
+  // Marks the entry as encrypted. Called once when a fresh entry is created
+  // with encryption enabled. The per-block nonce/tag are produced when the
+  // metadata and chunks are written, so no key material is stored here.
+  void SetEncrypted() { AddFlags(kCacheEntryIsEncrypted); }
 
   const char* GetElement(const char* aKey);
   void HandleCorruptMetaData() const;
@@ -209,8 +227,18 @@ class CacheFileMetadata final : public CacheFileIOListener,
  private:
   virtual ~CacheFileMetadata();
 
-  nsresult ParseMetadata(uint32_t aMetaOffset, uint32_t aBufOffset,
-                         bool aHaveKey);
+  // Strips the trailing offset word(s) and, for an encrypted entry, decrypts
+  // the metadata block, leaving mBuf holding exactly the plaintext content
+  // [hash32][hashes][header][key][elements] (mBufSize updated to match).
+  // aBlockOffset is where the block starts within mBuf, aTrailerWords the
+  // number of trailing offset words (1 for old single-offset entries, 2 for the
+  // current [version][offset|flag] trailer).
+  nsresult NormalizeMetadataBuf(uint32_t aBlockOffset, uint32_t aTrailerWords,
+                                bool aEncrypted);
+  // Parses the (already decrypted, trailer-stripped) metadata content in mBuf.
+  // Encryption is handled entirely by NormalizeMetadataBuf before this is
+  // called.
+  nsresult ParseMetadata(uint32_t aLogicalDataSize, bool aHaveKey);
   nsresult CheckElements(const char* aBuf, uint32_t aSize);
   nsresult EnsureBuffer(uint32_t aSize);
   nsresult ParseKey(const nsACString& aKey);

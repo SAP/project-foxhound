@@ -21,12 +21,12 @@ import java.util.EnumSet
  *
  * This detector aims to enforce best practices for managing coroutine dispatchers in tests.
  * Directly manipulating `Dispatchers.setMain` can lead to brittle and hard-to-maintain tests.
- * Instead, it encourages the use of JUnit TestRules (like `MainCoroutineRule` or custom rules)
- * to provide a consistent and manageable way to configure the main dispatcher for testing purposes.
+ * Instead, it encourages injecting dispatchers into components, allowing tests to provide
+ * a `TestDispatcher` or a controlled dispatcher without modifying global state.
  *
  * The detector specifically looks for `UCallExpression` nodes where the method name is `setMain`
- * and the receiver is `kotlinx.coroutines.Dispatchers`. It only operates on files identified
- * as test files (based on their path containing `/src/test/` or `/src/androidTest/`).
+ * or `resetMain` and the receiver is `kotlinx.coroutines.test`. It only operates on files
+ * identified as test files (based on their path containing `/src/test/` or `/src/androidTest/`).
  */
 class NoDispatchersSetMainDetector : Detector(), SourceCodeScanner {
 
@@ -45,10 +45,11 @@ class NoDispatchersSetMainDetector : Detector(), SourceCodeScanner {
             id = "NoDispatchersSetMainInTests",
             briefDescription = "Prohibits `Dispatchers.setMain` in test files",
             explanation = """
-                Using `Dispatchers.setMain` directly within test methods can lead to complex and hard-to-manage test setups.
-                It's preferable to use a JUnit TestRule (e.g., `MainCoroutineRule`, `MainLooperTestRule` or a custom local rule)
-                to handle main dispatcher configuration. See their documentation for details on how to set up these rules, and when to use them.
-                This promotes consistency and simplifies test code.
+                Using `Dispatchers.setMain` directly within test methods can lead to complex and hard-to-manage test setups
+                due to global state manipulation.
+                It's preferable to use dependency injection to provide dispatchers to your components.
+                In tests, you can then pass a `StandardTestDispatcher` or `UnconfinedTestDispatcher` directly
+                to the component being tested. This promotes better isolation and simplifies test code.
             """.trimIndent(),
             category = Category.CORRECTNESS,
             priority = 6,
@@ -76,8 +77,7 @@ class NoDispatchersSetMainDetector : Detector(), SourceCodeScanner {
                 node,
                 context.getLocation(node),
                 "Avoid using 'Dispatchers.$methodName' directly in tests. " +
-                    "Use a TestRule (e.g., MainCoroutineRule or a local rule) " +
-                    "for managing dispatchers.",
+                    "Inject dispatchers into your components instead to allow testing with a TestDispatcher.",
             )
             return
         }

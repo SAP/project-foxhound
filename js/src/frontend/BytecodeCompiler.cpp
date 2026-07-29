@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -350,21 +348,6 @@ template <typename Unit>
 
   assertException.reset();
   return true;
-}
-
-template <typename Unit>
-static already_AddRefed<CompilationStencil>
-CompileGlobalScriptToStencilWithInputImpl(
-    JSContext* maybeCx, FrontendContext* fc, js::LifoAlloc& tempLifoAlloc,
-    CompilationInput& input, ScopeBindingCache* scopeCache,
-    JS::SourceText<Unit>& srcBuf, ScopeKind scopeKind) {
-  RefPtr<CompilationStencil> stencil;
-  if (!CompileGlobalScriptToStencilAndMaybeInstantiate(
-          maybeCx, fc, tempLifoAlloc, input, scopeCache, srcBuf, scopeKind,
-          NoExtraBindings, getter_AddRefs(stencil), NoGCOutput)) {
-    return nullptr;
-  }
-  return stencil.forget();
 }
 
 already_AddRefed<CompilationStencil>
@@ -880,8 +863,8 @@ static bool UsesExtraBindings(GlobalSharedContext* globalsc,
       continue;
     }
 
-    for (auto r = usedNameMap.all(); !r.empty(); r.popFront()) {
-      const auto& item = r.front();
+    for (auto iter = usedNameMap.iter(); !iter.done(); iter.next()) {
+      const auto& item = iter.get();
       const auto& name = item.key();
       if (bindingInfo.nameIndex != name) {
         continue;
@@ -1337,6 +1320,10 @@ ModuleObject* frontend::CompileModule(JSContext* cx, FrontendContext* fc,
 
 static bool InstantiateLazyFunction(JSContext* cx, CompilationInput& input,
                                     const CompilationStencil& stencil) {
+  MOZ_ASSERT(
+      input.options.eagerBaselineStrategy() == JS::EagerBaselineOption::None,
+      "No current support for eager baseline during delazifications.");
+
   mozilla::DebugOnly<uint32_t> lazyFlags =
       static_cast<uint32_t>(input.immutableFlags());
 

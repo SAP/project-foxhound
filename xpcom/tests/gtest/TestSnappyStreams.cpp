@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,6 +12,8 @@
 #include "nsString.h"
 #include "nsStringStream.h"
 #include "nsTArray.h"
+
+#include "snappy/snappy.h"
 
 namespace {
 
@@ -184,4 +184,26 @@ TEST(SnappyStream, UncompressCorruptCompressedDataContent)
       "\x00\x25\x00\x00This is not a valid compressed stream";
   static const uint32_t dataLength = (sizeof(data) / sizeof(const char)) - 1;
   TestUncompressCorrupt(data, dataLength);
+}
+
+TEST(SnappyStream, UncompressCorruptCompressDataLengthTooLarge)
+{
+  uint32_t compressedBufferLength =
+      mozilla::detail::SnappyFrameUtils::MaxCompressedBufferLength(
+          snappy::kBlockSize);
+  uint32_t badLength = compressedBufferLength * 2;
+
+  std::vector<char> data;
+  static const char streamIdentifier[] = "\xff\x06\x00\x00sNaPpY";
+  data.assign(std::begin(streamIdentifier), std::end(streamIdentifier) - 1);
+  data.push_back(0);
+  data.push_back(static_cast<char>(badLength));  // little-endian
+  data.push_back(static_cast<char>(badLength >> 8));
+  data.push_back(static_cast<char>(badLength >> 16));
+
+  // Ensure there is actually enough data in the buffer to read
+  // badLength bytes.
+  data.resize(data.size() + badLength, 'X');
+
+  TestUncompressCorrupt(data.data(), data.size());
 }

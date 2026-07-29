@@ -7,11 +7,10 @@ Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/99b99cca6b7b2c2eb
 ---
  modules/video_capture/video_capture_impl.h          | 6 ++++--
  rtc_base/system/warn_current_thread_is_deadlocked.h | 2 +-
- sdk/android/api/org/webrtc/VideoCodecInfo.java      | 2 +-
- 3 files changed, 6 insertions(+), 4 deletions(-)
+ 2 files changed, 5 insertions(+), 3 deletions(-)
 
 diff --git a/modules/video_capture/video_capture_impl.h b/modules/video_capture/video_capture_impl.h
-index 573532bdad..da85692fc4 100644
+index 80d961c84c..3e77b262c7 100644
 --- a/modules/video_capture/video_capture_impl.h
 +++ b/modules/video_capture/video_capture_impl.h
 @@ -98,6 +98,10 @@ class RTC_EXPORT VideoCaptureImpl : public VideoCaptureModule {
@@ -47,16 +46,3 @@ index 4a0ba9dc09..eac12022ed 100644
  void WarnThatTheCurrentThreadIsProbablyDeadlocked();
  #else
  inline void WarnThatTheCurrentThreadIsProbablyDeadlocked() {}
-diff --git a/sdk/android/api/org/webrtc/VideoCodecInfo.java b/sdk/android/api/org/webrtc/VideoCodecInfo.java
-index 4f97cf74cf..363be347b5 100644
---- a/sdk/android/api/org/webrtc/VideoCodecInfo.java
-+++ b/sdk/android/api/org/webrtc/VideoCodecInfo.java
-@@ -80,7 +80,7 @@ public class VideoCodecInfo {
-   }
- 
-   @CalledByNative
--  Map getParams() {
-+  Map<String, String> getParams() {
-     return params;
-   }
- }

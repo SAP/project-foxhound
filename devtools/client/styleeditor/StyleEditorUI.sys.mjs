@@ -43,6 +43,8 @@ loader.lazyRequireGetter(
 ChromeUtils.defineESModuleGetters(lazy, {
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
   NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
+  LocalModeMappings:
+    "resource://devtools/client/framework/LocalModeMappings.sys.mjs",
 });
 loader.lazyRequireGetter(
   lazy,
@@ -851,11 +853,11 @@ export class StyleEditorUI extends EventEmitter {
     this.#copyUrlItem.hidden = !this.#contextMenuStyleSheet;
 
     if (this.#contextMenuStyleSheet) {
-      this.#openLinkNewTabItem.setAttribute(
+      this.#openLinkNewTabItem.toggleAttribute(
         "disabled",
         !this.#contextMenuStyleSheet.href
       );
-      this.#copyUrlItem.setAttribute(
+      this.#copyUrlItem.toggleAttribute(
         "disabled",
         !this.#contextMenuStyleSheet.href
       );
@@ -1630,6 +1632,14 @@ export class StyleEditorUI extends EventEmitter {
         const savedFile = this.savedLocations[identifier];
         if (savedFile) {
           file = savedFile;
+        }
+      }
+      // Check if this file relates to a Local Mode mapping
+      // so that we can save directly to the local file
+      if (!file && resource.href) {
+        const path = lazy.LocalModeMappings.getLocalFileForURL(resource.href);
+        if (path) {
+          file = new lazy.FileUtils.File(path);
         }
       }
       resource.file = file;

@@ -5,7 +5,9 @@
 package mozilla.components.support.ktx.android.content
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.app.ActivityManager
+import android.app.Application.getProcessName
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -14,6 +16,7 @@ import android.content.Intent
 import android.content.Intent.ACTION_DIAL
 import android.content.Intent.ACTION_SEND
 import android.content.Intent.ACTION_SENDTO
+import android.content.Intent.EXTRA_CHOOSER_CUSTOM_ACTIONS
 import android.content.Intent.EXTRA_EMAIL
 import android.content.Intent.EXTRA_STREAM
 import android.content.Intent.EXTRA_SUBJECT
@@ -21,15 +24,16 @@ import android.content.Intent.EXTRA_TEXT
 import android.content.Intent.FLAG_ACTIVITY_NEW_DOCUMENT
 import android.content.Intent.FLAG_ACTIVITY_NEW_TASK
 import android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+import android.content.Intent.createChooser
 import android.content.pm.PackageManager
 import android.content.pm.PackageManager.PERMISSION_GRANTED
 import android.hardware.camera2.CameraManager
 import android.net.Uri
-import android.os.Build
 import android.os.Build.VERSION.SDK_INT
 import android.os.Build.VERSION_CODES
 import android.os.Process
 import android.provider.ContactsContract
+import android.service.chooser.ChooserAction
 import android.util.TypedValue
 import android.view.accessibility.AccessibilityManager
 import androidx.annotation.AttrRes
@@ -132,6 +136,42 @@ fun Context.share(text: String, subject: String = getString(R.string.mozac_suppo
 /**
  * Shares content via [ACTION_SEND] intent.
  *
+ * @param text the data to be shared [EXTRA_TEXT]
+ * @param subject of the intent [EXTRA_SUBJECT]
+ * @param actions Custom list of [ChooserAction] to be added to the share intent.
+ * @return true it is able to share false otherwise.
+ */
+@RequiresApi(VERSION_CODES.UPSIDE_DOWN_CAKE)
+fun Context.shareWithChooserActions(
+    text: String,
+    subject: String = getString(R.string.mozac_support_ktx_share_dialog_title),
+    actions: Array<ChooserAction>,
+): Boolean {
+    return try {
+        val intent = Intent(ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(EXTRA_SUBJECT, subject)
+            putExtra(EXTRA_TEXT, text)
+        }
+        val shareIntent = intent.createChooserExcludingCurrentApp(
+            this,
+            getString(R.string.mozac_support_ktx_menu_share_with),
+        )
+        shareIntent.putExtra(EXTRA_CHOOSER_CUSTOM_ACTIONS, actions)
+        if (this !is Activity) {
+            shareIntent.addFlags(FLAG_ACTIVITY_NEW_TASK)
+        }
+        startActivity(shareIntent)
+        true
+    } catch (e: ActivityNotFoundException) {
+        Log.log(Log.Priority.WARN, message = "No activity to share to found", throwable = e, tag = "share")
+        false
+    }
+}
+
+/**
+ * Shares content via [ACTION_SEND] intent.
+ *
  * @param filePath Path of the copied file.
  * @param contentType Content type (MIME type) to indicate the media type of the resource.
  * @param subject of the intent [EXTRA_SUBJECT]
@@ -164,6 +204,19 @@ fun Context.shareLocalPdf(
 ): Boolean = shareMedia(filePath.toUri(), contentType, subject, message)
 
 /**
+ * Shares a file using a content URI via [ACTION_SEND] intent.
+ *
+ * @param contentUri URI of the file to share.
+ * @param contentType Content type (MIME type) to indicate the media type of the resource.
+ *
+ * @return true if the share intent was successfully started, false otherwise.
+ */
+fun Context.shareFile(
+    contentUri: Uri,
+    contentType: String?,
+): Boolean = shareMedia(contentUri = contentUri, contentType = contentType)
+
+/**
  * Shares content via [ACTION_SEND] intent.
  *
  * @param contentUri URI of the file to share.
@@ -191,13 +244,13 @@ internal fun Context.shareMedia(
         if (message != null) {
             putExtra(EXTRA_TEXT, message)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (SDK_INT >= VERSION_CODES.Q) {
             // Android Q allows us to show a thumbnail preview of the file to be shared.
             clipData = ClipData.newRawUri(contentUri.toString(), contentUri)
         }
     }
 
-    val shareIntent = Intent.createChooser(intent, getString(R.string.mozac_support_ktx_menu_share_with)).apply {
+    val shareIntent = createChooser(intent, getString(R.string.mozac_support_ktx_menu_share_with)).apply {
         flags = FLAG_ACTIVITY_NEW_TASK or FLAG_GRANT_READ_URI_PERMISSION
     }
 
@@ -254,7 +307,7 @@ fun Context.email(
         val intent = Intent(ACTION_SENDTO, "mailto:$address".toUri())
         intent.putExtra(EXTRA_SUBJECT, subject)
 
-        val emailIntent = Intent.createChooser(
+        val emailIntent = createChooser(
             intent,
             getString(R.string.mozac_support_ktx_menu_email_with),
         ).apply {
@@ -285,7 +338,7 @@ fun Context.call(
         val intent = Intent(ACTION_DIAL, "tel:$phoneNumber".toUri())
         intent.putExtra(EXTRA_SUBJECT, subject)
 
-        val callIntent = Intent.createChooser(
+        val callIntent = createChooser(
             intent,
             getString(R.string.mozac_support_ktx_menu_call_with),
         ).apply {
@@ -346,17 +399,21 @@ internal var isMainProcess: Boolean? = null
 fun Context.isMainProcess(): Boolean {
     if (isMainProcess != null) return isMainProcess as Boolean
 
-    val pid = Process.myPid()
-    val activityManager: ActivityManager? = getSystemService()
+    if (SDK_INT >= VERSION_CODES.P) {
+        isMainProcess = !getProcessName().contains(":")
+        return isMainProcess as Boolean
+    } else {
+        val pid = Process.myPid()
+        val activityManager: ActivityManager? = getSystemService()
 
-    // SDK document says isIsolated is available since API 28, but it is actually available on older versions.
-    isMainProcess =
-        !android.os.Process.isIsolated() &&
-        activityManager?.runningAppProcesses.orEmpty().any { processInfo ->
-            processInfo.pid == pid && processInfo.processName == packageName
-        }
-
-    return isMainProcess as Boolean
+        // SDK document says isIsolated is available since API 28, but it is actually available on older versions.
+        isMainProcess =
+            !Process.isIsolated() &&
+                activityManager?.runningAppProcesses.orEmpty().any { processInfo ->
+                    processInfo.pid == pid && processInfo.processName == packageName
+                }
+        return isMainProcess as Boolean
+    }
 }
 
 /**

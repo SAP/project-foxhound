@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -255,6 +253,7 @@ class MediaDecoderStateMachine
   void OnVideoPopped(const RefPtr<VideoData>& aSample);
 
   void AudioAudibleChanged(bool aAudible);
+  void OnPlaybackRateFallback();
 
   void SetPlaybackRate(double aPlaybackRate) override;
   void SetCanPlayThrough(bool aCanPlayThrough) override {
@@ -315,7 +314,7 @@ class MediaDecoderStateMachine
   // Called on the state machine thread.
   void UpdatePlaybackPositionPeriodically();
 
-  MediaSink* CreateAudioSink();
+  already_AddRefed<MediaSink> CreateAudioSink();
 
   // Always create mediasink which contains an AudioSink or DecodedStream
   // inside.
@@ -489,6 +488,7 @@ class MediaDecoderStateMachine
   MediaEventListener mAudioQueueListener;
   MediaEventListener mVideoQueueListener;
   MediaEventListener mAudibleListener;
+  MediaEventListener mPlaybackRateFallbackListener;
   MediaEventListener mOnMediaNotSeekable;
 
   const bool mIsMSE;

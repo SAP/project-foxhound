@@ -1,0 +1,19 @@
+{
+  "label": "ogcrush.com",
+  "bugs": {
+    "2011819": {
+      "issue": "broken-scrolling",
+      "matches": ["*://www.ogcrush.ogcrush.com/*"]
+    }
+  },
+  "css": {
+    "fix_slick_slide_height": ".slick-slide { height: fit-content; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "max_version": 150,
+      "css": ["fix_slick_slide_height"]
+    }
+  ]
+}

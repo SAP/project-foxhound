@@ -51,6 +51,10 @@ let hasStripOnShare = Services.prefs.getBoolPref(
 let hasContainers =
   Services.prefs.getBoolPref("privacy.userContext.enabled") &&
   ContextualIdentityService.getPublicIdentities().length;
+let hasSplitViews = Services.prefs.getBoolPref(
+  "browser.tabs.splitView.enabled",
+  false
+);
 
 const hasSelectTranslations =
   Services.prefs.getBoolPref("browser.translations.enable") &&
@@ -104,6 +108,7 @@ add_task(async function test_xul_text_link_label() {
     [
       "context-openlinkintab",
       true,
+      ...(hasSplitViews ? ["context-openlinkinsplitview", true] : []),
       ...(hasContainers ? ["context-openlinkinusercontext-menu", true] : []),
       // We need a blank entry here because the containers submenu is
       // dynamically generated with no ids.
@@ -123,6 +128,13 @@ add_task(async function test_xul_text_link_label() {
       "context-copylink",
       true,
       ...(hasStripOnShare ? ["context-stripOnShareLink", false] : []),
+      "---",
+      null,
+      "context-sendlinktodevice",
+      true,
+      // This entry will be blank because the submenu is dynamically generated.
+      [],
+      null,
       "---",
       null,
       "context-searchselect",
@@ -200,12 +212,20 @@ add_task(async function test_plaintext() {
     null,
     "context-viewsource",
     true,
+    "---",
+    null,
+    "context-sendpagetodevice",
+    true,
+    // This entry will be blank because the submenu is dynamically generated.
+    [],
+    null,
   ]);
 });
 
 const kLinkItems = [
   "context-openlinkintab",
   true,
+  ...(hasSplitViews ? ["context-openlinkinsplitview", true] : []),
   ...(hasContainers ? ["context-openlinkinusercontext-menu", true] : []),
   // We need a blank entry here because the containers submenu is
   // dynamically generated with no ids.
@@ -225,6 +245,13 @@ const kLinkItems = [
   "context-copylink",
   true,
   ...(hasStripOnShare ? ["context-stripOnShareLink", false] : []),
+  "---",
+  null,
+  "context-sendlinktodevice",
+  true,
+  // This entry will be blank because the submenu is dynamically generated.
+  [],
+  null,
   "---",
   null,
   "context-searchselect",
@@ -279,6 +306,7 @@ add_task(async function test_linkpreviewcommand() {
     [
       "context-openlinkintab",
       true,
+      ...(hasSplitViews ? ["context-openlinkinsplitview", true] : []),
       ...(hasContainers ? ["context-openlinkinusercontext-menu", true] : []),
       // We need a blank entry here because the containers submenu is
       // dynamically generated with no ids.
@@ -298,6 +326,13 @@ add_task(async function test_linkpreviewcommand() {
       "context-copylink",
       true,
       ...(hasStripOnShare ? ["context-stripOnShareLink", false] : []),
+      "---",
+      null,
+      "context-sendlinktodevice",
+      true,
+      // This entry will be blank because the submenu is dynamically generated.
+      [],
+      null,
       "---",
       null,
       "context-searchselect",
@@ -326,6 +361,7 @@ add_task(async function test_linkpreviewcommand_disabled() {
     [
       "context-openlinkintab",
       true,
+      ...(hasSplitViews ? ["context-openlinkinsplitview", true] : []),
       ...(hasContainers ? ["context-openlinkinusercontext-menu", true] : []),
       // We need a blank entry here because the containers submenu is
       // dynamically generated with no ids.
@@ -344,6 +380,13 @@ add_task(async function test_linkpreviewcommand_disabled() {
       "context-copylink",
       true,
       ...(hasStripOnShare ? ["context-stripOnShareLink", false] : []),
+      "---",
+      null,
+      "context-sendlinktodevice",
+      true,
+      // This entry will be blank because the submenu is dynamically generated.
+      [],
+      null,
       "---",
       null,
       "context-searchselect",
@@ -390,6 +433,13 @@ add_task(async function test_linkpreviewcommand_not_on_text() {
       null,
       "context-viewsource",
       true,
+      "---",
+      null,
+      "context-sendpagetodevice",
+      true,
+      // This entry will be blank because the submenu is dynamically generated.
+      [],
+      null,
     ],
     {
       awaitOnMenuBuilt: {
@@ -526,6 +576,12 @@ add_task(async function test_canvas() {
       true,
       "context-saveimage",
       true,
+      "context-copyimage-contents",
+      true,
+      "---",
+      null,
+      "context-setDesktopBackground",
+      true,
       "---",
       null,
       "context-selectall",
@@ -647,6 +703,76 @@ add_task(async function test_video_ok() {
       "---",
       null,
       "context-viewvideo",
+      true,
+      "---",
+      null,
+      "context-video-saveimage",
+      true,
+      "context-savevideo",
+      true,
+      "context-copyvideourl",
+      true,
+      "context-sendvideo",
+      true,
+      "---",
+      null,
+      "context-take-screenshot",
+      true,
+      "---",
+      null,
+      ...askChatMenu,
+    ],
+    {
+      awaitOnMenuBuilt: {
+        id: "context-ask-chat",
+      },
+    }
+  );
+
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function test_video_with_overlay() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["media.videocontrols.picture-in-picture.enabled", true],
+      ["media.contextmenu.video-overlay-detection", true],
+    ],
+  });
+
+  await test_contextmenu(
+    "#test-video-overlay",
+    [
+      "context-media-play",
+      true,
+      "context-media-mute",
+      true,
+      "context-media-playbackrate",
+      null,
+      [
+        "context-media-playbackrate-050x",
+        true,
+        "context-media-playbackrate-100x",
+        true,
+        "context-media-playbackrate-125x",
+        true,
+        "context-media-playbackrate-150x",
+        true,
+        "context-media-playbackrate-200x",
+        true,
+      ],
+      null,
+      "context-media-loop",
+      true,
+      "context-video-fullscreen",
+      true,
+      "context-media-hidecontrols",
+      true,
+      "---",
+      null,
+      "context-viewvideo",
+      true,
+      "context-video-pictureinpicture",
       true,
       "---",
       null,
@@ -1033,6 +1159,13 @@ add_task(async function test_iframe() {
       null,
       "context-viewsource",
       true,
+      "---",
+      null,
+      "context-sendpagetodevice",
+      true,
+      // This entry will be blank because the submenu is dynamically generated.
+      [],
+      null,
     ],
     {
       awaitOnMenuBuilt: {
@@ -1423,6 +1556,13 @@ add_task(async function test_pdf_viewer_in_iframe() {
       null,
       "context-viewsource",
       true,
+      "---",
+      null,
+      "context-sendpagetodevice",
+      true,
+      // This entry will be blank because the submenu is dynamically generated.
+      [],
+      null,
     ],
     {
       shiftkey: true,
@@ -1626,6 +1766,13 @@ add_task(async function test_dom_full_screen() {
     null,
     "context-viewsource",
     true,
+    "---",
+    null,
+    "context-sendpagetodevice",
+    true,
+    // This entry will be blank because the submenu is dynamically generated.
+    [],
+    null,
   ]);
   if (AppConstants.platform == "macosx") {
     // Put the bookmarks item next to save page:
@@ -1668,6 +1815,9 @@ add_task(async function test_dom_full_screen() {
         gBrowser.selectedBrowser,
         [],
         async function () {
+          if (!content.document.fullscreenElement) {
+            return;
+          }
           let win = content.document.defaultView;
           let awaitFullScreenChange = ContentTaskUtils.waitForEvent(
             win,
@@ -1723,6 +1873,13 @@ add_task(async function test_pagemenu2() {
       null,
       "context-viewsource",
       true,
+      "---",
+      null,
+      "context-sendpagetodevice",
+      true,
+      // This entry will be blank because the submenu is dynamically generated.
+      [],
+      null,
     ],
     {
       shiftkey: true,
@@ -1835,6 +1992,7 @@ add_task(async function test_select_text_link() {
       true,
       "context-openlinkintab",
       true,
+      ...(hasSplitViews ? ["context-openlinkinsplitview", true] : []),
       ...(hasContainers ? ["context-openlinkinusercontext-menu", true] : []),
       // We need a blank entry here because the containers submenu is
       // dynamically generated with no ids.
@@ -1852,6 +2010,13 @@ add_task(async function test_select_text_link() {
       "context-savelink",
       true,
       ...(hasStripOnShare ? ["context-stripOnShareLink", false] : []),
+      "---",
+      null,
+      "context-sendlinktodevice",
+      true,
+      // This entry will be blank because the submenu is dynamically generated.
+      [],
+      null,
       "---",
       null,
       "context-copy",
@@ -1908,6 +2073,7 @@ add_task(async function test_imagelink() {
     [
       "context-openlinkintab",
       true,
+      ...(hasSplitViews ? ["context-openlinkinsplitview", true] : []),
       ...(hasContainers ? ["context-openlinkinusercontext-menu", true] : []),
       // We need a blank entry here because the containers submenu is
       // dynamically generated with no ids.
@@ -1927,6 +2093,13 @@ add_task(async function test_imagelink() {
       "context-copylink",
       true,
       ...(hasStripOnShare ? ["context-stripOnShareLink", false] : []),
+      "---",
+      null,
+      "context-sendlinktodevice",
+      true,
+      // This entry will be blank because the submenu is dynamically generated.
+      [],
+      null,
       "---",
       null,
       "context-viewimage",
@@ -1983,7 +2156,9 @@ add_task(async function test_select_input_text() {
     ].concat(LOGIN_FILL_ITEMS),
     {
       *preCheckContextMenuFn() {
-        yield ContentTask.spawn(gBrowser.selectedBrowser, null, function*() {
+        yield SpecialPowers.spawn(
+          gBrowser.selectedBrowser,
+          [], function*() {
           let doc = content.document;
           let win = doc.defaultView;
           win.getSelection().removeAllRanges();
@@ -2019,7 +2194,9 @@ add_task(async function test_select_input_text_password() {
     ].concat(LOGIN_FILL_ITEMS),
     {
       *preCheckContextMenuFn() {
-        yield ContentTask.spawn(gBrowser.selectedBrowser, null, function*() {
+        yield SpecialPowers.spawn(
+          gBrowser.selectedBrowser,
+          [], function*() {
           let doc = content.document;
           let win = doc.defaultView;
           win.getSelection().removeAllRanges();
@@ -2028,7 +2205,9 @@ add_task(async function test_select_input_text_password() {
         });
       },
       *postCheckContextMenuFn() {
-        yield ContentTask.spawn(gBrowser.selectedBrowser, null, function*() {
+        yield SpecialPowers.spawn(
+          gBrowser.selectedBrowser,
+          [], function*() {
           let win = content.document.defaultView;
           win.getSelection().removeAllRanges();
         });
@@ -2122,6 +2301,13 @@ add_task(async function test_srcdoc() {
       null,
       "context-viewsource",
       true,
+      "---",
+      null,
+      "context-sendpagetodevice",
+      true,
+      // This entry will be blank because the submenu is dynamically generated.
+      [],
+      null,
     ],
     {
       awaitOnMenuBuilt: {
@@ -2155,6 +2341,7 @@ add_task(async function test_svg_link() {
     [
       "context-openlinkintab",
       true,
+      ...(hasSplitViews ? ["context-openlinkinsplitview", true] : []),
       ...(hasContainers ? ["context-openlinkinusercontext-menu", true] : []),
       // We need a blank entry here because the containers submenu is
       // dynamically generated with no ids.
@@ -2174,6 +2361,13 @@ add_task(async function test_svg_link() {
       "context-copylink",
       true,
       ...(hasStripOnShare ? ["context-stripOnShareLink", false] : []),
+      "---",
+      null,
+      "context-sendlinktodevice",
+      true,
+      // This entry will be blank because the submenu is dynamically generated.
+      [],
+      null,
       "---",
       null,
       "context-searchselect",
@@ -2194,6 +2388,7 @@ add_task(async function test_svg_link() {
     [
       "context-openlinkintab",
       true,
+      ...(hasSplitViews ? ["context-openlinkinsplitview", true] : []),
       ...(hasContainers ? ["context-openlinkinusercontext-menu", true] : []),
       // We need a blank entry here because the containers submenu is
       // dynamically generated with no ids.
@@ -2213,6 +2408,13 @@ add_task(async function test_svg_link() {
       "context-copylink",
       true,
       ...(hasStripOnShare ? ["context-stripOnShareLink", false] : []),
+      "---",
+      null,
+      "context-sendlinktodevice",
+      true,
+      // This entry will be blank because the submenu is dynamically generated.
+      [],
+      null,
       "---",
       null,
       "context-searchselect",
@@ -2233,6 +2435,7 @@ add_task(async function test_svg_link() {
     [
       "context-openlinkintab",
       true,
+      ...(hasSplitViews ? ["context-openlinkinsplitview", true] : []),
       ...(hasContainers ? ["context-openlinkinusercontext-menu", true] : []),
       // We need a blank entry here because the containers submenu is
       // dynamically generated with no ids.
@@ -2252,6 +2455,13 @@ add_task(async function test_svg_link() {
       "context-copylink",
       true,
       ...(hasStripOnShare ? ["context-stripOnShareLink", false] : []),
+      "---",
+      null,
+      "context-sendlinktodevice",
+      true,
+      // This entry will be blank because the submenu is dynamically generated.
+      [],
+      null,
       "---",
       null,
       "context-searchselect",
@@ -2274,6 +2484,7 @@ add_task(async function test_svg_relative_link() {
     [
       "context-openlinkintab",
       true,
+      ...(hasSplitViews ? ["context-openlinkinsplitview", true] : []),
       ...(hasContainers ? ["context-openlinkinusercontext-menu", true] : []),
       // We need a blank entry here because the containers submenu is
       // dynamically generated with no ids.
@@ -2293,6 +2504,13 @@ add_task(async function test_svg_relative_link() {
       "context-copylink",
       true,
       ...(hasStripOnShare ? ["context-stripOnShareLink", false] : []),
+      "---",
+      null,
+      "context-sendlinktodevice",
+      true,
+      // This entry will be blank because the submenu is dynamically generated.
+      [],
+      null,
       "---",
       null,
       "context-searchselect",
@@ -2313,6 +2531,7 @@ add_task(async function test_svg_relative_link() {
     [
       "context-openlinkintab",
       true,
+      ...(hasSplitViews ? ["context-openlinkinsplitview", true] : []),
       ...(hasContainers ? ["context-openlinkinusercontext-menu", true] : []),
       // We need a blank entry here because the containers submenu is
       // dynamically generated with no ids.
@@ -2332,6 +2551,13 @@ add_task(async function test_svg_relative_link() {
       "context-copylink",
       true,
       ...(hasStripOnShare ? ["context-stripOnShareLink", false] : []),
+      "---",
+      null,
+      "context-sendlinktodevice",
+      true,
+      // This entry will be blank because the submenu is dynamically generated.
+      [],
+      null,
       "---",
       null,
       "context-searchselect",
@@ -2352,6 +2578,7 @@ add_task(async function test_svg_relative_link() {
     [
       "context-openlinkintab",
       true,
+      ...(hasSplitViews ? ["context-openlinkinsplitview", true] : []),
       ...(hasContainers ? ["context-openlinkinusercontext-menu", true] : []),
       // We need a blank entry here because the containers submenu is
       // dynamically generated with no ids.
@@ -2373,6 +2600,13 @@ add_task(async function test_svg_relative_link() {
       ...(hasStripOnShare ? ["context-stripOnShareLink", false] : []),
       "---",
       null,
+      "context-sendlinktodevice",
+      true,
+      // This entry will be blank because the submenu is dynamically generated.
+      [],
+      null,
+      "---",
+      null,
       "context-searchselect",
       true,
       "context-searchselect-private",
@@ -2385,6 +2619,41 @@ add_task(async function test_svg_relative_link() {
       },
     }
   );
+});
+
+add_task(async function test_mathml_link() {
+  await test_contextmenu(
+    "#mathml-with-link > a",
+    [
+      ...kLinkItems,
+      ...(hasSelectTranslations ? ["context-translate-selection", true] : []),
+      ...askChatMenu,
+    ],
+    {
+      awaitOnMenuBuilt: {
+        id: "context-ask-chat",
+      },
+    }
+  );
+  if (
+    !Services.prefs.getBoolPref(
+      "mathml.href_link_on_non_anchor_element.disabled"
+    )
+  ) {
+    await test_contextmenu(
+      "#deprecated-mathml-with-link > mrow",
+      [
+        ...kLinkItems,
+        ...(hasSelectTranslations ? ["context-translate-selection", true] : []),
+        ...askChatMenu,
+      ],
+      {
+        awaitOnMenuBuilt: {
+          id: "context-ask-chat",
+        },
+      }
+    );
+  }
 });
 
 add_task(async function test_background_image() {
@@ -2412,6 +2681,13 @@ add_task(async function test_background_image() {
     null,
     "context-viewsource",
     true,
+    "---",
+    null,
+    "context-sendpagetodevice",
+    true,
+    // This entry will be blank because the submenu is dynamically generated.
+    [],
+    null,
   ];
   if (AppConstants.platform == "macosx") {
     // Back/fwd/(stop|reload) and their separator go before the image items,
@@ -2438,6 +2714,7 @@ add_task(async function test_background_image() {
     [
       "context-openlinkintab",
       true,
+      ...(hasSplitViews ? ["context-openlinkinsplitview", true] : []),
       ...(hasContainers ? ["context-openlinkinusercontext-menu", true] : []),
       // We need a blank entry here because the containers submenu is
       // dynamically generated with no ids.
@@ -2552,6 +2829,7 @@ add_task(async function test_strip_on_share_on_secure_about_page() {
     [
       "context-openlinkintab",
       true,
+      ...(hasSplitViews ? ["context-openlinkinsplitview", true] : []),
       ...(hasContainers ? ["context-openlinkinusercontext-menu", true] : []),
       // We need a blank entry here because the containers submenu is
       // dynamically generated with no ids.
@@ -2570,6 +2848,13 @@ add_task(async function test_strip_on_share_on_secure_about_page() {
       true,
       "context-copylink",
       true,
+      "---",
+      null,
+      "context-sendlinktodevice",
+      true,
+      // This entry will be blank because the submenu is dynamically generated.
+      [],
+      null,
       "---",
       null,
       "context-searchselect",

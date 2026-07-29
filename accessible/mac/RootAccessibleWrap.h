@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,26 +12,9 @@
 #include "RootAccessible.h"
 
 namespace mozilla {
-
-class PresShell;
-
 namespace a11y {
 
-/**
- * Mac specific functionality for the node at a root of the accessibility
- * tree: see the RootAccessible superclass for further details.
- */
-class RootAccessibleWrap : public RootAccessible {
- public:
-  RootAccessibleWrap(dom::Document* aDocument, PresShell* aPresShell);
-  virtual ~RootAccessibleWrap();
-
-  Class GetNativeType();
-
-  // let's our native accessible get in touch with the
-  // native cocoa view that is our accessible parent.
-  void GetNativeWidget(void** aOutView);
-};
+typedef RootAccessible RootAccessibleWrap;
 
 }  // namespace a11y
 }  // namespace mozilla

@@ -5,7 +5,7 @@
 const MIN_SELECTION_SIZE = 48;
 
 /**
- * This class is copied from https://searchfox.org/mozilla-central/source/browser/components/screenshots/overlayHelpers.mjs
+ * This class is copied from https://searchfox.org/firefox-main/source/browser/components/screenshots/overlayHelpers.mjs
  * with some slight modifications such as forcing the region to be a square.
  * Bug 1974999: Actually import and use the screenshots Region class.
  * The class holds references to each side the of region.

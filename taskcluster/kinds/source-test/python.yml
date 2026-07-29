@@ -12,7 +12,7 @@ task-defaults:
         by-platform:
             linux2404-64.*: t-linux-docker-amd
             macosx1470-64.*: t-osx-1400-r8
-            windows11-64.*: win11-64-24h2-source
+            windows11-64.*: win11-64-25h2-source
     worker:
         by-platform:
             linux2404-64.*:
@@ -36,7 +36,6 @@ task-defaults:
     treeherder:
         kind: test
         tier: 1
-    run-on-repo-type: [hg]
     run:
         using: mach
         use-caches: [checkout, pip, uv]
@@ -105,6 +104,7 @@ marionette-harness:
         subsuite: marionette-harness
     when:
         files-changed:
+            - 'testing/marionette/client/**'
             - 'testing/marionette/harness/**'
             - 'testing/mozbase/mozlog/mozlog/**'
             - 'testing/mozbase/mozlog/setup.py'
@@ -214,12 +214,15 @@ mozlint:
                 linux2404-64/opt:
                     - linux64-node
                     - linux64-rust
+                    - linux64-mozcheck
                 macosx1470-64/opt:
                     - macosx64-node
                     - macosx64-rust
+                    - macosx64-mozcheck
                 windows11-64/opt:
                     - win64-node
                     - win64-rust
+                    - win64-mozcheck
         clang-tidy:
             - artifact: clang-tidy.tar.zst
               dest: clang-tools
@@ -374,6 +377,19 @@ tryselect:
             - 'taskcluster/requirements.txt'
             - 'tools/tryselect/**'
 
+update-packaging:
+    description: tools/update-packaging unit tests
+    platform:
+        - linux2404-64/opt
+    treeherder:
+        symbol: update-packaging
+    run:
+        using: python-test
+        subsuite: update-packaging
+    when:
+        files-changed:
+            - 'tools/update-packaging/**'
+
 mozbuild:
     matrix:
         python: ['3.9', '3.11']
@@ -416,6 +432,22 @@ mozbuild:
             - 'python/mozversioncontrol/**'
             - 'testing/mozbase/**'
             - 'testing/xpcshell/xpcshellcommandline.py'
+
+coverage:
+    description: code coverage unit tests
+    treeherder:
+        symbol: cov
+        tier: 2
+    run:
+        using: python-test
+        subsuite: coverage
+    fetches:
+        toolchain:
+            - linux64-grcov
+    when:
+        files-changed:
+            - 'python/mach/mach/command_util.py'
+            - 'tools/code-coverage/**'
 
 mozperftest:
     description: mozperftest unit tests
@@ -595,6 +627,8 @@ telemetry-python:
     when:
         files-changed:
             - 'toolkit/components/telemetry/**'
+            - '**/*metrics.yaml'
+            - '**/pings.yaml'
 
 verify-decision:
     description: verifications on Decision task output

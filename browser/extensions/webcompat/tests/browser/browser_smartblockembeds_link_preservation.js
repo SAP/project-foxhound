@@ -86,7 +86,7 @@ add_task(async function test_smartblock_preserves_links_and_text() {
   ok(preservedContent.found, "Preserved content container should exist");
   is(
     preservedContent.headerText,
-    "Content from blocked embed:",
+    "Content from blocked embed",
     "Explanatory header should be present"
   );
   is(

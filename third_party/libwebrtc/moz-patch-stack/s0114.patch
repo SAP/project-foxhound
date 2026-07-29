@@ -1,63 +1,41 @@
-From: Jan Grulich <jgrulich@redhat.com>
-Date: Mon, 14 Apr 2025 16:37:00 +0000
-Subject: Bug 1954903 - Update libwebrtc GN configs r=webrtc-reviewers,mjf
+From: Michael Froman <mfroman@mozilla.com>
+Date: Thu, 11 Sep 2025 14:17:00 -0500
+Subject: Bug 1988042 - add BSD support to new version of libwebrtc's
+ cpu_info.cc r?ng!
 
-Update GN config files for the special handling in gn_processor.py for
-gbm, drm and PipeWire libraries.
-
-Also remove libwebrtc/third_party/[gbm,drm,pipewire] libs for which we
-now have a special handling in gn_processor.py.
-
-Differential Revision: https://phabricator.services.mozilla.com/D242101
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/506d4efaf2dc29472623beff64cc2bd0d5555afd
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/e3b37acb8816aefb9134a68cafad8c7d5e145179
 ---
- modules/desktop_capture/BUILD.gn | 4 ++++
- modules/portal/BUILD.gn          | 4 +---
- modules/video_capture/BUILD.gn   | 2 +-
- 3 files changed, 6 insertions(+), 4 deletions(-)
+ rtc_base/cpu_info.cc | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
 
-diff --git a/modules/desktop_capture/BUILD.gn b/modules/desktop_capture/BUILD.gn
-index f501b517fd..0a6ccf4011 100644
---- a/modules/desktop_capture/BUILD.gn
-+++ b/modules/desktop_capture/BUILD.gn
-@@ -557,6 +557,10 @@ rtc_library("desktop_capture") {
-       "../../rtc_base:sanitizer",
-       "../portal",
-     ]
-+
-+    if (build_with_mozilla) {
-+      defines += [ "WEBRTC_USE_PIPEWIRE" ]
-+    }
-   }
+diff --git a/rtc_base/cpu_info.cc b/rtc_base/cpu_info.cc
+index 0c6a76fcad..ec74055c26 100644
+--- a/rtc_base/cpu_info.cc
++++ b/rtc_base/cpu_info.cc
+@@ -29,14 +29,14 @@
+ #include <unistd.h>
+ #elif defined(WEBRTC_FUCHSIA)
+ #include <zircon/syscalls.h>
+-#elif defined(WEBRTC_LINUX)
++#elif defined(WEBRTC_LINUX) || defined(WEBRTC_BSD)
+ #include <unistd.h>
+ #endif  // WEBRTC_LINUX
  
-   if (rtc_enable_win_wgc) {
-diff --git a/modules/portal/BUILD.gn b/modules/portal/BUILD.gn
-index 72972d18e1..70b4739ad0 100644
---- a/modules/portal/BUILD.gn
-+++ b/modules/portal/BUILD.gn
-@@ -139,11 +139,9 @@ if (!build_with_mozilla) {
-       deps -= [ ":pipewire_stubs" ]
-       defines -= [ "WEBRTC_DLOPEN_PIPEWIRE" ]
-       public_deps = [
--        "../../third_party/pipewire",
--        "../../third_party/drm",
--        "../../third_party/gbm",
-         "../../third_party/libepoxy"
-       ]
-+      defines += [ "WEBRTC_USE_PIPEWIRE" ]
-     }
-   }
- }
-diff --git a/modules/video_capture/BUILD.gn b/modules/video_capture/BUILD.gn
-index 83c1b21260..e32e3ab37e 100644
---- a/modules/video_capture/BUILD.gn
-+++ b/modules/video_capture/BUILD.gn
-@@ -118,7 +118,7 @@ if (!build_with_chromium || is_linux || is_chromeos) {
-         ]
-         if (build_with_mozilla) {
-           configs -= [ "../portal:pipewire_base" ]
--          public_deps = [ "../../third_party/pipewire" ]
-+          defines = [ "WEBRTC_USE_PIPEWIRE" ]
-         }
-       }
-     }
+ #if defined(WEBRTC_ARCH_X86_FAMILY) && defined(_MSC_VER)
+ #include <intrin.h>
+ #endif
+-#if defined(WEBRTC_ARCH_ARM_FAMILY) && defined(WEBRTC_LINUX)
++#if defined(WEBRTC_ARCH_ARM_FAMILY) && (defined(WEBRTC_LINUX) || defined(WEBRTC_BSD))
+ #include <asm/hwcap.h>
+ #include <sys/auxv.h>
+ #endif
+@@ -176,6 +176,9 @@ bool Supports(ISA instruction_set_architecture) {
+   if (instruction_set_architecture == ISA::kNeon) {
+ #if defined(WEBRTC_ANDROID)
+     return 0 != (android_getCpuFeatures() & ANDROID_CPU_ARM_FEATURE_NEON);
++#elif defined(WEBRTC_BSD)
++    // OpenBSD does not have getauxval() and does not have /proc reading
++    return false;
+ #elif defined(WEBRTC_LINUX)
+     uint64_t hwcap = 0;
+     hwcap = getauxval(AT_HWCAP);

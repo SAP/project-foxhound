@@ -35,32 +35,18 @@ async function testSelectorHighlight(view, selector) {
   ok(isShown, "The selector highlighter was shown");
 }
 
-async function testEditSelector(inspector, view, name) {
+async function testEditSelector(inspector, view, newSelector) {
   info("Test editing existing selector fields");
 
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
 
-  info("Focusing an existing selector name in the rule-view");
-  const editor = await focusEditableField(view, ruleEditor.selectorText);
-
-  is(
-    inplaceEditor(ruleEditor.selectorText),
-    editor,
-    "The selector editor got focused"
-  );
-
-  const onRuleViewChanged = view.once("ruleview-changed");
   const { waitForHighlighterTypeHidden } = getHighlighterTestHelpers(inspector);
   const onSelectorHighlighterHidden = waitForHighlighterTypeHidden(
     inspector.highlighters.TYPES.SELECTOR
   );
 
-  info("Entering a new selector name and committing");
-  editor.input.value = name;
-  EventUtils.synthesizeKey("KEY_Enter");
+  await editSelectorForRuleEditor(view, ruleEditor, newSelector);
 
-  info("Waiting for Rules view to update");
-  await onRuleViewChanged;
   await onSelectorHighlighterHidden;
   const highlighter = inspector.highlighters.getActiveHighlighter(
     inspector.highlighters.TYPES.SELECTOR

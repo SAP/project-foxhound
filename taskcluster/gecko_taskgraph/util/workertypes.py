@@ -2,7 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from mozbuild.util import memoize
+import functools
+
 from taskgraph.util.attributes import keymatch
 from taskgraph.util.keyed_by import evaluate_keyed_by
 
@@ -18,7 +19,7 @@ WORKER_TYPES = {
 }
 
 
-@memoize
+@functools.cache
 def _get(graph_config, alias, level, release_level, project):
     """Get the configuration for this worker_type alias: {provisioner,
     worker-type, implementation, os}"""

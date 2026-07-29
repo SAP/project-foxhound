@@ -17,6 +17,7 @@
   <script type="application/javascript" src="docshell_helpers.js" />
   <script type="application/javascript"><![CDATA[
     Services.prefs.setBoolPref("browser.navigation.requireUserInteraction", false);
+    Services.prefs.setBoolPref("dom.security.framebusting_intervention.enabled", false);
 
     var gBrowser;
 
@@ -173,12 +174,13 @@
       //  Check that navigation is not blocked after a document is restored
       //  from bfcache
       
+      var test7TargetURL = "http://mochi.test:8888/chrome/docshell/test/chrome/generic.html";
       var test7Doc = "data:text/html,<html><head><title>test7</title>" +
                       "</head><body>" +
                       "<iframe src='data:text/html," +
                         "<html><head><title>test7-nested1</title></head>" +
                         "<body>test7-nested1<br/>" +
-                        "<a href=\"data:text/plain,aaa\" target=\"_top\">" +
+                        "<a href=\"" + test7TargetURL + "\" target=\"_top\">" +
                           "Click me, hit back, click me again</a>" +
                         "</body></html>'>" +
                       "</iframe>" +
@@ -219,8 +221,8 @@
       clickIframeLink();
       await clicked;
 
-      is(gBrowser.currentURI.spec, "data:text/plain,aaa",
-         "Navigation is blocked when clicking link");
+      is(gBrowser.currentURI.spec, test7TargetURL,
+         "Navigation succeeds when clicking link");
       
       await promisePageNavigation({
         back: true,
@@ -241,10 +243,11 @@
       clickIframeLink();
       await clicked;
 
-      is(gBrowser.currentURI.spec, "data:text/plain,aaa",
-         "Navigation is blocked when clicking link");
+      is(gBrowser.currentURI.spec, test7TargetURL,
+         "Navigation succeeds when clicking link");
 
       Services.prefs.clearUserPref("browser.navigation.requireUserInteraction");
+      Services.prefs.clearUserPref("dom.security.framebusting_intervention.enabled");
       finish();
     }
   ]]></script>

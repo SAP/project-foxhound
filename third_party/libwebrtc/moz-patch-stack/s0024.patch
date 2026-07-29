@@ -16,7 +16,7 @@ Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/b5acbf536c46a66c9
  2 files changed, 15 insertions(+), 5 deletions(-)
 
 diff --git a/modules/video_capture/linux/device_info_v4l2.cc b/modules/video_capture/linux/device_info_v4l2.cc
-index 5c228772ab..05205a6138 100644
+index f831ea37ab..0b9c92f00c 100644
 --- a/modules/video_capture/linux/device_info_v4l2.cc
 +++ b/modules/video_capture/linux/device_info_v4l2.cc
 @@ -220,8 +220,7 @@ uint32_t DeviceInfoV4l2::NumberOfDevices() {

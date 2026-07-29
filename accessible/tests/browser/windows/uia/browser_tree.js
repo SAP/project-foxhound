@@ -13,16 +13,13 @@ async function testIsControl(pyVar, isControl) {
   }
 }
 
-addUiaTask(
+addAccessibleTask(
   `
 <p id="p">paragraph</p>
 <div id="div">div</div>
-<!-- The spans are because the UIA -> IA2 proxy seems to remove a single text
-   leaf child from even the raw tree.
-  -->
-<a id="link" href="#">link<span> </span>></a>
-<h1 id="h1">h1<span> </span></h1>
-<h1 id="h1WithDiv"><div>h1 with div<span> </span></div></h1>
+<a id="link" href="#">link</a>
+<h1 id="h1">h1</h1>
+<h1 id="h1WithDiv"><div>h1 with div</div></h1>
 <input id="range" type="range">
 <div onclick=";" id="clickable">clickable</div>
 <div id="editable" contenteditable>editable</div>
@@ -52,10 +49,6 @@ addUiaTask(
     await testIsControl("editable", true);
     await assignPyVarToUiaWithId("table");
     await testIsControl("table", true);
-    if (!gIsUiaEnabled) {
-      // The remaining tests are broken with the UIA -> IA2 proxy.
-      return;
-    }
     await definePyVar(
       "linkTextLeaf",
       `uiaClient.RawViewWalker.GetFirstChildElement(link)`

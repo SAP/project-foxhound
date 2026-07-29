@@ -1557,7 +1557,7 @@ class InactivePropertyHelper {
         return p;
       }
 
-      const style = computedStyle(p, node.ownerGlobal);
+      const style = computedStyle(p, node.documentGlobal);
       const display = style.display;
 
       if (display !== "contents") {
@@ -1610,7 +1610,7 @@ class InactivePropertyHelper {
       p && p !== node.ownerDocument;
       p = p.flattenedTreeParentNode
     ) {
-      const style = computedStyle(p, node.ownerGlobal);
+      const style = computedStyle(p, node.documentGlobal);
       if (style.columnWidth !== "auto" || style.columnCount !== "auto") {
         // It's a multi-column container!
         return p;
@@ -1747,7 +1747,7 @@ function allCssPropertiesExcept(propertiesToIgnore) {
  *         Optional window object. If omitted, will get the node's window.
  * @return {object}
  */
-function computedStyle(node, window = node.ownerGlobal) {
+function computedStyle(node, window = node.documentGlobal) {
   return window.getComputedStyle(node);
 }
 

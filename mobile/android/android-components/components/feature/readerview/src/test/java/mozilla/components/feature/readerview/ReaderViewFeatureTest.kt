@@ -44,7 +44,6 @@ import mozilla.ext.appCompatContext
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -56,6 +55,7 @@ import org.mockito.Mockito.spy
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import java.util.Locale
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class ReaderViewFeatureTest {
@@ -340,7 +340,7 @@ class ReaderViewFeatureTest {
         assertEquals(ReaderViewFeature.ACTION_SHOW, message[ReaderViewFeature.ACTION_MESSAGE_KEY])
         val config = message[ReaderViewFeature.ACTION_VALUE] as JSONObject?
         assertNotNull(config)
-        assertEquals(FONT_SIZE_DEFAULT, config!![ReaderViewFeature.ACTION_VALUE_SHOW_FONT_SIZE])
+        assertEquals(FONT_SIZE_DEFAULT, config[ReaderViewFeature.ACTION_VALUE_SHOW_FONT_SIZE])
         assertEquals(
             ReaderViewFeature.FontType.SERIF.value.lowercase(Locale.ROOT),
             config[ReaderViewFeature.ACTION_VALUE_SHOW_FONT_TYPE],
@@ -358,7 +358,7 @@ class ReaderViewFeatureTest {
         assertEquals(ReaderViewFeature.ACTION_SHOW, message[ReaderViewFeature.ACTION_MESSAGE_KEY])
         val config = message[ReaderViewFeature.ACTION_VALUE] as JSONObject?
         assertNotNull(config)
-        assertEquals(1234, config!![ReaderViewFeature.ACTION_VALUE_SCROLLY])
+        assertEquals(1234, config[ReaderViewFeature.ACTION_VALUE_SCROLLY])
     }
 
     @Test

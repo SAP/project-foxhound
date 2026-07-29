@@ -84,17 +84,19 @@ pub struct VertexBufferLayout<'a> {
 #[repr(C)]
 pub struct VertexState<'a> {
     stage: ProgrammableStageDescriptor<'a>,
-    buffers: FfiSlice<'a, VertexBufferLayout<'a>>,
+    buffers: FfiSlice<'a, FfiOption<VertexBufferLayout<'a>>>,
 }
 
 impl VertexState<'_> {
     fn to_wgpu(&self) -> wgc::pipeline::VertexState<'_> {
         let buffer_layouts = unsafe { self.buffers.as_slice() }
             .iter()
-            .map(|vb| wgc::pipeline::VertexBufferLayout {
-                array_stride: vb.array_stride,
-                step_mode: vb.step_mode,
-                attributes: Cow::Borrowed(unsafe { vb.attributes.as_slice() }),
+            .map(|vb| {
+                vb.as_ref().map(|vb| wgc::pipeline::VertexBufferLayout {
+                    array_stride: vb.array_stride,
+                    step_mode: vb.step_mode,
+                    attributes: Cow::Borrowed(unsafe { vb.attributes.as_slice() }),
+                })
             })
             .collect();
         wgc::pipeline::VertexState {
@@ -161,13 +163,34 @@ impl PrimitiveState<'_> {
 }
 
 #[repr(C)]
+pub struct DepthStencilState {
+    format: wgt::TextureFormat,
+    depth_write_enabled: FfiOption<bool>,
+    depth_compare: FfiOption<wgt::CompareFunction>,
+    stencil: wgt::StencilState,
+    bias: wgt::DepthBiasState,
+}
+
+impl DepthStencilState {
+    fn to_wgpu(&self) -> wgt::DepthStencilState {
+        wgt::DepthStencilState {
+            format: self.format,
+            depth_write_enabled: self.depth_write_enabled.to_std(),
+            depth_compare: self.depth_compare.to_std(),
+            stencil: self.stencil.clone(),
+            bias: self.bias,
+        }
+    }
+}
+
+#[repr(C)]
 pub struct RenderPipelineDescriptor<'a> {
     label: Option<&'a nsACString>,
     layout: Option<id::PipelineLayoutId>,
     vertex: &'a VertexState<'a>,
     primitive: PrimitiveState<'a>,
     fragment: Option<&'a FragmentState<'a>>,
-    depth_stencil: Option<&'a wgt::DepthStencilState>,
+    depth_stencil: Option<&'a DepthStencilState>,
     multisample: wgt::MultisampleState,
 }
 
@@ -259,7 +282,7 @@ pub struct BindGroupDescriptor<'a> {
 #[repr(C)]
 pub struct PipelineLayoutDescriptor<'a> {
     label: Option<&'a nsACString>,
-    bind_group_layouts: FfiSlice<'a, id::BindGroupLayoutId>,
+    bind_group_layouts: FfiSlice<'a, Option<id::BindGroupLayoutId>>,
 }
 
 #[repr(C)]
@@ -517,16 +540,10 @@ pub extern "C" fn wgpu_client_request_device(
         label,
         required_features,
         required_limits: desc.required_limits.clone(),
-        memory_hints: wgt::MemoryHints::MemoryUsage,
-        // The content process is untrusted, so this value is ignored
-        // by the GPU process. The GPU process overwrites this with
-        // the result of consulting the `WGPU_TRACE` environment
-        // variable itself in `wgpu_server_adapter_request_device`.
-        trace: wgt::Trace::Off,
-        // The content process is untrusted, so this value is ignored
-        // by the GPU process. The GPU process overwrites this with
-        // `ExperimentalFeatures::disabled()`.
-        experimental_features: wgt::ExperimentalFeatures::disabled(),
+        // The content process is untrusted, so values set here in fields of the device descriptor
+        // not intended to be set by content are ignored, and are overridden in
+        // `server::request_device`.
+        ..wgt::DeviceDescriptor::default()
     };
     let message = Message::RequestDevice {
         adapter_id,
@@ -895,8 +912,15 @@ pub extern "C" fn wgpu_client_create_shader_module(
 }
 
 #[no_mangle]
-pub extern "C" fn wgpu_client_on_submitted_work_done(client: &Client, queue_id: id::QueueId) {
-    let message = Message::QueueOnSubmittedWorkDone(queue_id);
+pub extern "C" fn wgpu_client_on_submitted_work_done(
+    client: &Client,
+    device_id: id::DeviceId,
+    queue_id: id::QueueId,
+) {
+    let message = Message::QueueOnSubmittedWorkDone {
+        device_id,
+        queue_id,
+    };
     client.queue_message(&message);
 }
 
@@ -908,6 +932,9 @@ pub extern "C" fn wgpu_client_create_swap_chain(
     width: i32,
     height: i32,
     format: crate::SurfaceFormat,
+    texture_format: TextureFormat,
+    usage: wgt::TextureUsages,
+    view_formats: FfiSlice<TextureFormat>,
     remote_texture_owner_id: crate::RemoteTextureOwnerId,
     use_shared_texture_in_swap_chain: bool,
 ) {
@@ -916,12 +943,17 @@ pub extern "C" fn wgpu_client_create_swap_chain(
         array::from_fn(|_| identities.buffers.process());
     drop(identities);
 
+    let view_formats = unsafe { view_formats.as_slice() }.to_vec();
+
     let message = Message::CreateSwapChain {
         device_id,
         queue_id,
         width,
         height,
         format,
+        texture_format,
+        usage,
+        view_formats,
         buffer_ids,
         remote_texture_owner_id,
         use_shared_texture_in_swap_chain,
@@ -1229,7 +1261,7 @@ pub extern "C" fn wgpu_device_create_render_bundle_encoder(
         sample_count: desc.sample_count,
         multiview: None,
     };
-    match wgc::command::RenderBundleEncoder::new(&descriptor, device_id) {
+    match wgc::command::RenderBundleEncoder::new(&descriptor, None, device_id) {
         Ok(encoder) => Box::into_raw(Box::new(encoder)),
         Err(e) => {
             let message = format!("Error in `Device::create_render_bundle_encoder`: {}", e);
@@ -1720,7 +1752,7 @@ pub unsafe extern "C" fn wgpu_client_create_render_pipeline(
         vertex: desc.vertex.to_wgpu(),
         fragment: desc.fragment.map(FragmentState::to_wgpu),
         primitive: desc.primitive.to_wgpu(),
-        depth_stencil: desc.depth_stencil.cloned(),
+        depth_stencil: desc.depth_stencil.map(DepthStencilState::to_wgpu),
         multisample: desc.multisample.clone(),
         multiview_mask: None,
         cache: None,
@@ -2084,7 +2116,7 @@ pub extern "C" fn wgpu_render_bundle_set_pipeline(
 pub extern "C" fn wgpu_render_bundle_set_vertex_buffer(
     bundle: &mut RenderBundleEncoder,
     slot: u32,
-    buffer_id: id::BufferId,
+    buffer_id: Option<id::BufferId>,
     offset: BufferAddress,
     size: Option<&BufferSize>,
 ) {

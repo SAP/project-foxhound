@@ -15,6 +15,12 @@
       let testHelpers = new InputTestHelpers();
 
       add_setup(async function setup() {
+        if (navigator.platform.startsWith("Mac")) {
+          // This test specifically exercises input methods, which requires non-native menus.
+          await SpecialPowers.pushPrefEnv({
+            set: [["widget.macos.allow-native-select", false]],
+          });
+        }
         await testHelpers.setupLit();
         let templateFn = (attrs, children) => testHelpers.html`
         <moz-select ${attrs}>
@@ -46,7 +52,7 @@
         select.addEventListener("click", trackEvent);
 
         let changed = BrowserTestUtils.waitForEvent(select, "change");
-        let topWindow = window.docShell.chromeEventHandler.ownerGlobal;
+        let topWindow = window.docShell.chromeEventHandler.documentGlobal;
         let pickerOpened = BrowserTestUtils.waitForSelectPopupShown(topWindow);
         select.focus();
         synthesizeKey(" ");
@@ -161,7 +167,7 @@
       });
 
       function openSelectAndGetMenuPopup(select) {
-        let topWindow = window.docShell.chromeEventHandler.ownerGlobal;
+        let topWindow = window.docShell.chromeEventHandler.documentGlobal;
         let pickerOpened = BrowserTestUtils.waitForSelectPopupShown(topWindow);
         select.focus();
         synthesizeKey(" ");

@@ -28,11 +28,7 @@ from collections import namedtuple
 class PerfectHash:
     """PerfectHash objects represent a computed perfect hash function, which
     can be generated at compile time to provide highly efficient and compact
-    static HashTables.
-
-    Consumers must provide an intermediate table size to store the generated
-    hash function. Larger tables will generate more quickly, while smaller
-    tables will consume less space on disk."""
+    static HashTables."""
 
     # 32-bit FNV offset basis and prime value.
     # NOTE: Must match values in |PerfectHash.h|
@@ -40,14 +36,16 @@ class PerfectHash:
     FNV_PRIME = 16777619
     U32_MAX = 0xFFFFFFFF
 
+    # Maximum basis before falling back to a larger intermediate table size.
+    MAX_BASIS = 0xFFFF
+
     # Bucket of entries which map into a given intermediate index.
     Bucket = namedtuple("Bucket", "index entries")
 
-    def __init__(self, entries, size, validate=True, key=lambda e: e[0]):
+    def __init__(self, entries, validate=True, key=lambda e: e[0]):
         """Create a new PerfectHash
 
         @param entries  set of entries to generate a PHF for
-        @param size     size of the PHF intermediate table
         @param validate test the generated hash function after generation
         @param key      function to get 'memoryview'-compatible key for an
                         entry. defaults to extracting the first element of an
@@ -57,6 +55,19 @@ class PerfectHash:
         assert 0 < len(entries) < self.U32_MAX, "bad # of entries!"
         self._key = key
 
+        # Determine the initial size by rounding the number of entries to the
+        # next power of 2, then dividing into ~4-entry buckets.
+        # If this fails, we grow the table and try again.
+        size = max(1, (1 << len(entries).bit_length()) // 4)
+        while not self._build_table(entries, size):
+            size <<= 1
+
+        # Validate that looking up each key succeeds
+        if validate:
+            for entry in entries:
+                assert self.get_entry(self.key(entry)), "get_entry(%s)" % repr(entry)
+
+    def _build_table(self, entries, size):
         # Allocate the intermediate table and keys.
         self.table = [0] * size
         self.entries = [None] * len(entries)
@@ -92,7 +103,8 @@ class PerfectHash:
                     basis += 1
                     idx = 0
                     slots.clear()
-                    assert basis < self.U32_MAX, "table too small"
+                    if basis > self.MAX_BASIS:
+                        return False
                 else:
                     slots.append(slot)
                     idx += 1
@@ -104,10 +116,7 @@ class PerfectHash:
             for slot, entry in zip(slots, bucket.entries):
                 self.entries[slot] = entry
 
-        # Validate that looking up each key succeeds
-        if validate:
-            for entry in entries:
-                assert self.get_entry(self.key(entry)), "get_entry(%s)" % repr(entry)
+        return True
 
     @classmethod
     def _hash(cls, key, basis=FNV_OFFSET_BASIS):

@@ -10,6 +10,7 @@ import mozilla.components.concept.engine.permission.SitePermissions
 import mozilla.components.concept.engine.permission.SitePermissions.AutoplayStatus
 import mozilla.components.lib.state.State
 import org.mozilla.fenix.R
+import org.mozilla.fenix.components.menu.store.IPProtectionMenuState
 import org.mozilla.fenix.settings.PhoneFeature
 import org.mozilla.fenix.trackingprotection.TrackerBuckets
 import org.mozilla.fenix.trackingprotection.TrackingProtectionCategory
@@ -31,6 +32,7 @@ typealias WebsitePermissionsState = Map<PhoneFeature, WebsitePermission>
  * for the current site.
  * @property websiteInfoState [State] containing information about the website connection.
  * @property websitePermissionsState Mapping of [PhoneFeature]s to [WebsitePermission]s.
+ * @property ipProtectionMenuState The current [IPProtectionMenuState] for the IP protection menu item.
  */
 data class TrustPanelState(
     val baseDomain: String? = null,
@@ -42,6 +44,7 @@ data class TrustPanelState(
     val sitePermissions: SitePermissions? = null,
     val websiteInfoState: WebsiteInfoState = WebsiteInfoState(),
     val websitePermissionsState: WebsitePermissionsState = mapOf(),
+    val ipProtectionMenuState: IPProtectionMenuState = IPProtectionMenuState(),
 ) : State
 
 /**
@@ -51,12 +54,14 @@ data class TrustPanelState(
  * @property websiteUrl The URL of the current web page.
  * @property websiteTitle The title of the current web page.
  * @property certificate The certificate presented by the current web page.
+ * @property qwac The Qualified Website Authentication Certificate presented by the current web page.
  */
 data class WebsiteInfoState(
     val isSecured: Boolean = true,
     val websiteUrl: String = "",
     val websiteTitle: String = "",
     val certificate: X509Certificate? = null,
+    val qwac: X509Certificate? = null,
 )
 
 /**

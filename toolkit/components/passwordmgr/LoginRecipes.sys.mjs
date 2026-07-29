@@ -365,9 +365,9 @@ export const LoginRecipesContent = {
       lazy.log.debug(`Login field selector wasn't matched: ${aSelector}.`);
       return null;
     }
-    // ownerGlobal doesn't exist in content privileged windows.
+    // documentGlobal doesn't exist in content privileged windows.
     if (
-      // eslint-disable-next-line mozilla/use-ownerGlobal
+      // eslint-disable-next-line mozilla/use-documentGlobal
       !aParent.ownerDocument.defaultView.HTMLInputElement.isInstance(field)
     ) {
       lazy.log.warn(

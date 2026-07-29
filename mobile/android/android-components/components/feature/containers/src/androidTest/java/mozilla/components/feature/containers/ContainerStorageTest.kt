@@ -14,9 +14,9 @@ import mozilla.components.browser.state.state.ContainerState.Color
 import mozilla.components.browser.state.state.ContainerState.Icon
 import mozilla.components.feature.containers.db.ContainerDatabase
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Test
+import kotlin.test.assertNotNull
 
 @Suppress("LargeClass")
 class ContainerStorageTest {

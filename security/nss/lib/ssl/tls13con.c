@@ -1025,7 +1025,7 @@ tls13_HandleKeyShare(sslSocket *ss,
                     ec_data = entry->key_exchange.len < ec_len
                                   ? NULL
                                   : entry->key_exchange.data;
-                    ecGroup = ssl_LookupNamedGroup(ssl_grp_ec_secp256r1);
+                    ecGroup = ssl_LookupNamedGroup(ssl_grp_ec_secp384r1);
                     break;
                 default:
                     ec_data = NULL;
@@ -3177,6 +3177,7 @@ tls13_HandleHelloRetryRequest(sslSocket *ss, const PRUint8 *savedMsg,
     rv = ssl3_HandleParsedExtensions(ss, ssl_hs_hello_retry_request);
     ssl3_DestroyRemoteExtensions(&ss->ssl3.hs.remoteExtensions);
     if (rv != SECSuccess) {
+        SECITEM_FreeItem(&ss->ssl3.hs.cookie, PR_FALSE);
         return SECFailure; /* Error code set below */
     }
     rv = tls13_MaybeHandleEchSignal(ss, savedMsg, savedLength, PR_TRUE);
@@ -3210,10 +3211,12 @@ tls13_HandleHelloRetryRequest(sslSocket *ss, const PRUint8 *savedMsg,
     }
 
     ssl_ReleaseXmitBufLock(ss);
+    SECITEM_FreeItem(&ss->ssl3.hs.cookie, PR_FALSE);
     return SECSuccess;
 
 loser:
     ssl_ReleaseXmitBufLock(ss);
+    SECITEM_FreeItem(&ss->ssl3.hs.cookie, PR_FALSE);
     return SECFailure;
 }
 
@@ -4208,6 +4211,20 @@ tls13_HandleCertificateDecode(sslSocket *ss, PRUint8 *b, PRUint32 length)
         return SECFailure;
     }
 
+    /* Cap the decompressed size to prevent memory exhaustion. The wire field
+     * is a uint24 (max 16MB) but the CompressedCertificate path bypasses the
+     * 128KB cap applied to regular handshake messages. 100KB matches the limit
+     * enforced by OpenSSL and BoringSSL. */
+#define MAX_CERT_UNCOMPRESSED_LEN (100 * 1024)
+    if (decodedCertLen > MAX_CERT_UNCOMPRESSED_LEN) {
+        SSL_TRC(50, ("%d: TLS13[%d]: %s uncompressed_length %u exceeds limit %u",
+                     SSL_GETPID(), ss->fd, SSL_ROLE(ss),
+                     decodedCertLen, MAX_CERT_UNCOMPRESSED_LEN));
+        FATAL_ERROR(ss, SSL_ERROR_RX_MALFORMED_CERTIFICATE, bad_certificate);
+        return SECFailure;
+    }
+#undef MAX_CERT_UNCOMPRESSED_LEN
+
     /* opaque compressed_certificate_message<1..2^24-1>; */
     PRUint32 compressedCertLen = 0;
     rv = ssl3_ConsumeHandshakeNumber(ss, &compressedCertLen, 3, &b, &length);
@@ -4506,7 +4523,7 @@ tls13_SignOrVerifyHashWithContext(sslSocket *ss, const SSL3Hashes *hashes,
     return SECSuccess;
 
 loser:
-    tls_DestroySignOrVerifyContext(ctx);
+    tls_DestroySignOrVerifyContext(&ctx);
     ssl_MapLowLevelError(SSL_ERROR_SIGN_HASHES_FAILURE);
     return SECFailure;
 }
@@ -5148,6 +5165,10 @@ tls13_AEAD(PK11Context *context, PRBool decrypt,
         PORT_Memcpy(ivOut, ivIn, ivLen);
     }
     if (decrypt) {
+        if (inLen < tagLen) {
+            PORT_SetError(SEC_ERROR_INPUT_LEN);
+            return SECFailure;
+        }
         inLen = inLen - tagLen;
         tag = (unsigned char *)in + inLen;
         /* tag is const on decrypt, but returned on encrypt */
@@ -5229,6 +5250,7 @@ tls13_HandleEncryptedExtensions(sslSocket *ss, PRUint8 *b, PRUint32 length)
             /* Illegal to accept 0-RTT without also accepting PSK. */
             FATAL_ERROR(ss, SSL_ERROR_RX_MALFORMED_ENCRYPTED_EXTENSIONS,
                         illegal_parameter);
+            return SECFailure;
         }
         ss->ssl3.hs.zeroRttState = ssl_0rtt_accepted;
 
@@ -5801,7 +5823,7 @@ tls13_VerifyFinished(sslSocket *ss, SSLHandshakeType message,
 
     if (length != finishedLen) {
 #ifndef UNSAFE_FUZZER_MODE
-        FATAL_ERROR(ss, message == ssl_hs_finished ? SSL_ERROR_RX_MALFORMED_FINISHED : SSL_ERROR_RX_MALFORMED_CLIENT_HELLO, illegal_parameter);
+        FATAL_ERROR(ss, message == ssl_hs_finished ? SSL_ERROR_RX_MALFORMED_FINISHED : SSL_ERROR_RX_MALFORMED_CLIENT_HELLO, decode_error);
         return SECFailure;
 #endif
     }

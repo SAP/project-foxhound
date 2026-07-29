@@ -27,8 +27,18 @@ ChromeUtils.defineLazyGetter(lazy, "logger", () => lazy.Log.get());
  * @enum {SessionDataCategory}
  */
 export const SessionDataCategory = {
+  DownloadBehaviorOverride: "download-behavior-override",
   Event: "event",
+  GeolocationOverride: "geolocation-override",
+  LocaleOverride: "locale-override",
+  NetworkConditions: "network-conditions",
   PreloadScript: "preload-script",
+  ResponseCollector: "response-collector",
+  ScreenOrientationOverride: "screen-orientation-override",
+  ScreenSettingsOverride: "screen-settings-override",
+  TimezoneOverride: "timezone-override",
+  UserAgentOverride: "user-agent-override",
+  ViewportOverride: "viewport-override",
 };
 
 /**

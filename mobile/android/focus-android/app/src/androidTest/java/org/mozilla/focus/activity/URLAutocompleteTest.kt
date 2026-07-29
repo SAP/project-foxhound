@@ -9,19 +9,22 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.focus.activity.robots.homeScreen
 import org.mozilla.focus.activity.robots.searchScreen
+import org.mozilla.focus.helpers.FocusTestRule
 import org.mozilla.focus.helpers.MainActivityFirstrunTestRule
 import org.mozilla.focus.helpers.TestHelper.exitToTop
 import org.mozilla.focus.helpers.TestHelper.mDevice
-import org.mozilla.focus.helpers.TestSetup
 import org.mozilla.focus.testAnnotations.SmokeTest
 
 // Tests url autocompletion and adding custom autocomplete urls
 @RunWith(AndroidJUnit4ClassRunner::class)
-class URLAutocompleteTest : TestSetup() {
+class URLAutocompleteTest {
     private val searchTerm = "mozilla"
     private val autocompleteSuggestion = "mozilla.org"
     private val pageUrl = "https://www.mozilla.org/"
     private val customURL = "680news.com"
+
+    @get:Rule(order = 0)
+    val focusTestRule: FocusTestRule = FocusTestRule()
 
     @get:Rule
     val mActivityTestRule = MainActivityFirstrunTestRule(showFirstRun = false)

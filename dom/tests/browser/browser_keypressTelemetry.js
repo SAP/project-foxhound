@@ -1,4 +1,3 @@
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,30 +13,17 @@ const { ContentTaskUtils } = ChromeUtils.importESModule(
   "resource://testing-common/ContentTaskUtils.sys.mjs"
 );
 
-function getRecordedKeypressCount() {
-  let snapshot = Services.telemetry.getSnapshotForHistograms("main", false);
-
-  var totalCount = 0;
-  for (var prop in snapshot) {
-    if (snapshot[prop].KEYPRESS_PRESENT_LATENCY) {
-      dump("found snapshot");
-      totalCount += Object.values(
-        snapshot[prop].KEYPRESS_PRESENT_LATENCY.values
-      ).reduce((a, b) => a + b, 0);
-    }
-  }
-
-  return totalCount;
+async function getRecordedKeypressCount() {
+  await Services.fog.testFlushAllChildren();
+  const v = Glean.performanceInteraction.keypressPresentLatency.testGetValue();
+  return v ? v.count : 0;
 }
 
 add_task(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [["toolkit.telemetry.ipcBatchTimeout", 10]],
   });
-  let histogram = Services.telemetry.getHistogramById(
-    "KEYPRESS_PRESENT_LATENCY"
-  );
-  histogram.clear();
+  Services.fog.testResetFOG();
 
   waitForExplicitFinish();
 
@@ -46,14 +32,14 @@ add_task(async function () {
   EventUtils.sendChar("x");
 
   await ContentTaskUtils.waitForCondition(
-    () => {
-      return getRecordedKeypressCount() > 0;
+    async () => {
+      return (await getRecordedKeypressCount()) > 0;
     },
     "waiting for telemetry",
     200,
     600
   );
-  let result = getRecordedKeypressCount();
+  let result = await getRecordedKeypressCount();
   Assert.equal(result, 1, "One keypress recorded");
 
   gURLBar.focus();
@@ -61,13 +47,13 @@ add_task(async function () {
   EventUtils.sendChar("x");
 
   await ContentTaskUtils.waitForCondition(
-    () => {
-      return getRecordedKeypressCount() > 1;
+    async () => {
+      return (await getRecordedKeypressCount()) > 1;
     },
     "waiting for telemetry",
     200,
     600
   );
-  result = getRecordedKeypressCount();
+  result = await getRecordedKeypressCount();
   Assert.equal(result, 2, "Two keypresses recorded");
 });

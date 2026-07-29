@@ -50,6 +50,29 @@ let ignoreTasksCache = null;
 let componentsData = null;
 let dailyStatsMap = new Map();
 
+const MOCHITEST_FLAVOR_PREFIXES = [
+  ["devtools", "devtools"],
+  ["browser", "browser-chrome"],
+  ["chrome", "chrome"],
+  ["a11y", "a11y"],
+  ["plain", "plain"],
+  ["media", "media"],
+  ["remote", "remote"],
+  ["webgl", "webgl"],
+];
+
+function classifyMochitestFlavor(jobName) {
+  const m = jobName.match(/mochitest-(\w+)/);
+  if (m) {
+    for (const [prefix, flavor] of MOCHITEST_FLAVOR_PREFIXES) {
+      if (m[1].startsWith(prefix)) {
+        return flavor;
+      }
+    }
+  }
+  return "other";
+}
+
 if (!fs.existsSync(OUTPUT_DIR)) {
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 }
@@ -619,7 +642,8 @@ function sortStringTablesByFrequency(dataStructure) {
         return;
       }
 
-      // Handle both aggregated format (counts/days) and detailed format (taskIdIds)
+      // Handle aggregated format (counts/days), bucket format (durations),
+      // and detailed format (taskIdIds)
       if (statusGroup.taskIdIds) {
         // Check if taskIdIds is array of arrays (aggregated) or flat array (daily)
         const isArrayOfArrays =
@@ -647,10 +671,28 @@ function sortStringTablesByFrequency(dataStructure) {
             frequencyCounts.taskIds[taskIdId]++;
           }
         }
+      } else if (
+        statusGroup.durations &&
+        Array.isArray(statusGroup.durations[0])
+      ) {
+        // Bucket pass format: durations is array of arrays
+        const totalRuns = statusGroup.durations.reduce(
+          (sum, arr) => sum + arr.length,
+          0
+        );
+        frequencyCounts.statuses[statusId] += totalRuns;
       } else if (statusGroup.counts) {
         // Aggregated passing tests - count total runs
         const totalRuns = statusGroup.counts.reduce((a, b) => a + b, 0);
         frequencyCounts.statuses[statusId] += totalRuns;
+      }
+
+      if (statusGroup.jobNameIds) {
+        for (const jobNameId of statusGroup.jobNameIds) {
+          if (jobNameId !== null) {
+            frequencyCounts.jobNames[jobNameId]++;
+          }
+        }
       }
 
       if (statusGroup.messageIds) {
@@ -685,18 +727,21 @@ function sortStringTablesByFrequency(dataStructure) {
       count: counts[oldIndex],
     }));
 
-    // Sort by count descending, then by value for deterministic order when counts are equal
-    indexed.sort((a, b) => {
-      if (b.count !== a.count) {
-        return b.count - a.count;
-      }
-      return a.value.localeCompare(b.value);
-    });
+    // Filter out unused entries and sort by count descending,
+    // then by value for deterministic order when counts are equal
+    const sorted = indexed
+      .filter(item => item.count > 0)
+      .sort((a, b) => {
+        if (b.count !== a.count) {
+          return b.count - a.count;
+        }
+        return a.value.localeCompare(b.value);
+      });
 
     // Extract sorted values and create mapping
-    sortedTables[tableName] = indexed.map(item => item.value);
+    sortedTables[tableName] = sorted.map(item => item.value);
     indexMaps[tableName] = new Map(
-      indexed.map((item, newIndex) => [item.oldIndex, newIndex])
+      sorted.map((item, newIndex) => [item.oldIndex, newIndex])
     );
   }
 
@@ -708,6 +753,10 @@ function sortStringTablesByFrequency(dataStructure) {
     jobNameIds: [],
     commitIds: [],
   };
+  const hasChunks = !!taskInfo.chunks;
+  if (hasChunks) {
+    sortedTaskInfo.chunks = [];
+  }
 
   for (
     let oldTaskIdId = 0;
@@ -715,6 +764,9 @@ function sortStringTablesByFrequency(dataStructure) {
     oldTaskIdId++
   ) {
     const newTaskIdId = indexMaps.taskIds.get(oldTaskIdId);
+    if (newTaskIdId === undefined) {
+      continue;
+    }
     sortedTaskInfo.repositoryIds[newTaskIdId] = indexMaps.repositories.get(
       taskInfo.repositoryIds[oldTaskIdId]
     );
@@ -725,6 +777,9 @@ function sortStringTablesByFrequency(dataStructure) {
       taskInfo.commitIds[oldTaskIdId] === null
         ? null
         : indexMaps.commitIds.get(taskInfo.commitIds[oldTaskIdId]);
+    if (hasChunks) {
+      sortedTaskInfo.chunks[newTaskIdId] = taskInfo.chunks[oldTaskIdId] ?? null;
+    }
   }
 
   // Remap testInfo indices
@@ -751,13 +806,41 @@ function sortStringTablesByFrequency(dataStructure) {
         return statusGroup;
       }
 
-      // Handle aggregated format (counts/days) differently from detailed format
-      if (statusGroup.counts) {
-        // Aggregated passing tests - no remapping needed
-        return {
+      // Bucket pass format: durations is array of arrays, with jobNameIds
+      if (
+        statusGroup.durations &&
+        Array.isArray(statusGroup.durations[0]) &&
+        !statusGroup.taskIdIds
+      ) {
+        const remapped = {
+          durations: statusGroup.durations,
+          days: statusGroup.days,
+        };
+        if (statusGroup.jobNameIds) {
+          remapped.jobNameIds = statusGroup.jobNameIds.map(oldId =>
+            oldId === null ? null : indexMaps.jobNames.get(oldId)
+          );
+        }
+        return remapped;
+      }
+
+      // Aggregated counts format (may have jobNameIds/messageIds in bucket files)
+      if (statusGroup.counts && !statusGroup.taskIdIds) {
+        const remapped = {
           counts: statusGroup.counts,
           days: statusGroup.days,
         };
+        if (statusGroup.jobNameIds) {
+          remapped.jobNameIds = statusGroup.jobNameIds.map(oldId =>
+            oldId === null ? null : indexMaps.jobNames.get(oldId)
+          );
+        }
+        if (statusGroup.messageIds) {
+          remapped.messageIds = statusGroup.messageIds.map(oldId =>
+            oldId === null ? null : indexMaps.messages.get(oldId)
+          );
+        }
+        return remapped;
       }
 
       // Check if this is aggregated format (array of arrays) or daily format (flat array)
@@ -1234,7 +1317,7 @@ async function fetchPreviousRunData() {
       console.log(`Found ${previousStats.dates.length} days of previous stats`);
       for (let i = 0; i < previousStats.dates.length; i++) {
         const date = previousStats.dates[i];
-        dailyStatsMap.set(date, {
+        const entry = {
           totalTestRuns: previousStats.totalTestRuns[i],
           failedTestRuns: previousStats.failedTestRuns[i],
           skippedTestRuns: previousStats.skippedTestRuns[i],
@@ -1242,7 +1325,21 @@ async function fetchPreviousRunData() {
           failedJobs: previousStats.failedJobs[i],
           invalidJobs: previousStats.invalidJobs[i],
           ignoredJobs: previousStats.ignoredJobs[i],
-        });
+        };
+        if (previousStats.flavors) {
+          entry.flavors = {};
+          for (const [flavor, data] of Object.entries(previousStats.flavors)) {
+            entry.flavors[flavor] = {
+              totalTestRuns: data.totalTestRuns[i],
+              failedTestRuns: data.failedTestRuns[i],
+              skippedTestRuns: data.skippedTestRuns[i],
+              processedJobCount: data.processedJobCount[i],
+              failedJobs: data.failedJobs[i],
+              ignoredJobs: data.ignoredJobs[i],
+            };
+          }
+        }
+        dailyStatsMap.set(date, entry);
       }
     }
 
@@ -1253,7 +1350,11 @@ async function fetchPreviousRunData() {
 }
 
 // Process data for a single date
-async function processDateData(targetDate, forceRefetch = false) {
+async function processDateData(
+  targetDate,
+  forceRefetch = false,
+  acceptIncomplete = false
+) {
   const timingsFilename = `${HARNESS}-${targetDate}.json`;
   const resourcesFilename = `${HARNESS}-${targetDate}-resources.json`;
   const timingsPath = path.join(OUTPUT_DIR, timingsFilename);
@@ -1261,7 +1362,15 @@ async function processDateData(targetDate, forceRefetch = false) {
 
   // Check if we already have data for this date
   if (fs.existsSync(timingsPath) && !forceRefetch) {
-    console.log(`Data for ${targetDate} already exists. Skipping.`);
+    console.log(`Data for ${targetDate} already exists, recomputing stats.`);
+    const testData = JSON.parse(fs.readFileSync(timingsPath, "utf-8"));
+    const existing = dailyStatsMap.get(targetDate);
+    calculateStatsFromData(
+      testData,
+      targetDate,
+      existing?.ignoredJobs,
+      existing?.failedJobs
+    );
     return;
   }
 
@@ -1282,6 +1391,29 @@ async function processDateData(targetDate, forceRefetch = false) {
   const jobs = allDateJobs.filter(job => !ignoreTasksCache.has(job.task));
   const ignoredJobsCount = allDateJobs.length - jobs.length;
   const failedJobsCount = jobs.filter(j => j.state === "failed").length;
+
+  // Per-flavor job counts from the raw job list
+  let flavorJobCounts = null;
+  if (HARNESS === "mochitest") {
+    flavorJobCounts = {};
+    for (const job of allDateJobs) {
+      const flavor = classifyMochitestFlavor(job.name);
+      if (flavor === "other") {
+        continue;
+      }
+      if (!flavorJobCounts[flavor]) {
+        flavorJobCounts[flavor] = { total: 0, failed: 0, ignored: 0 };
+      }
+      if (ignoreTasksCache.has(job.task)) {
+        flavorJobCounts[flavor].ignored++;
+      } else {
+        flavorJobCounts[flavor].total++;
+        if (job.state === "failed") {
+          flavorJobCounts[flavor].failed++;
+        }
+      }
+    }
+  }
 
   console.log(
     `Found ${allDateJobs.length} jobs for ${targetDate} (${ignoredJobsCount} ignored, ${jobs.length} to process)`
@@ -1311,7 +1443,7 @@ async function processDateData(targetDate, forceRefetch = false) {
           (timings.metadata.invalidJobCount || 0);
 
         // Check if previous run processed fewer jobs (had retryable errors or incomplete data)
-        if (actualProcessedCount < expectedJobCount) {
+        if (!acceptIncomplete && actualProcessedCount < expectedJobCount) {
           const missingJobs = expectedJobCount - actualProcessedCount;
           console.log(
             `Ignoring artifact from previous run: missing ${missingJobs} jobs (expected ${expectedJobCount}, got ${actualProcessedCount})`
@@ -1325,7 +1457,8 @@ async function processDateData(targetDate, forceRefetch = false) {
             timings,
             targetDate,
             ignoredJobsCount,
-            failedJobsCount
+            failedJobsCount,
+            flavorJobCounts
           );
           return;
         }
@@ -1339,6 +1472,11 @@ async function processDateData(targetDate, forceRefetch = false) {
         `Error fetching artifact from previous run: ${error.message}`
       );
     }
+  }
+
+  if (acceptIncomplete) {
+    console.log(`No previous data available for ${targetDate}, skipping.`);
+    return;
   }
 
   if (forceRefetch) {
@@ -1364,7 +1502,8 @@ async function processDateData(targetDate, forceRefetch = false) {
       output.testData,
       targetDate,
       ignoredJobsCount,
-      failedJobsCount
+      failedJobsCount,
+      flavorJobCounts
     );
   } catch (error) {
     console.error(`Error processing ${targetDate}:`, error);
@@ -1612,70 +1751,100 @@ async function createAggregatedFailuresFile(dates) {
     }
   }
 
+  function compareNullable(a, b) {
+    if (a === b) {
+      return 0;
+    }
+    if (a === null || a === undefined) {
+      return 1;
+    }
+    if (b === null || b === undefined) {
+      return -1;
+    }
+    return a - b;
+  }
+
   function aggregateRunsByDay(
     statusGroup,
-    includeMessages = false,
-    returnTaskIds = false
+    {
+      includeMessages = false,
+      includeTaskIds = false,
+      includeJobNames = false,
+      includeDurations = false,
+    } = {}
   ) {
     const buckets = new Map();
     const length = statusGroup.timestamps.length;
 
+    function getOrCreateBucket(
+      key,
+      dayBucket,
+      messageId,
+      crashSignatureId,
+      jobNameId
+    ) {
+      let bucket = buckets.get(key);
+      if (!bucket) {
+        bucket = { day: dayBucket, count: 0, messageId, crashSignatureId };
+        if (includeTaskIds) {
+          bucket.taskIdIds = [];
+          bucket.minidumps = [];
+        }
+        if (includeDurations) {
+          bucket.durations = [];
+        }
+        if (includeJobNames) {
+          bucket.jobNameId = jobNameId;
+        }
+        buckets.set(key, bucket);
+      }
+      return bucket;
+    }
+
     for (let i = 0; i < length; i++) {
       const dayBucket = Math.floor(statusGroup.timestamps[i] / 86400);
-      let key = dayBucket;
+      let key = `${dayBucket}`;
 
       const messageId = statusGroup.messageIds?.[i];
       const crashSignatureId = statusGroup.crashSignatureIds?.[i];
+      const jobNameId = statusGroup.jobNameIds?.[i];
+
+      if (includeJobNames && jobNameId !== undefined) {
+        key += `:j${jobNameId}`;
+      }
 
       if (includeMessages && typeof messageId === "number") {
-        key = `${dayBucket}:m${messageId}`;
+        key += `:m${messageId}`;
       } else if (includeMessages && typeof crashSignatureId === "number") {
-        key = `${dayBucket}:c${crashSignatureId}`;
+        key += `:c${crashSignatureId}`;
       }
 
-      if (!buckets.has(key)) {
-        buckets.set(key, {
-          day: dayBucket,
-          count: 0,
-          taskIdIds: [],
-          minidumps: [],
-          messageId,
-          crashSignatureId,
-        });
-      }
-      const bucket = buckets.get(key);
+      const bucket = getOrCreateBucket(
+        key,
+        dayBucket,
+        messageId,
+        crashSignatureId,
+        jobNameId
+      );
       bucket.count++;
-      if (returnTaskIds && statusGroup.taskIdIds) {
+      if (includeTaskIds && statusGroup.taskIdIds) {
         bucket.taskIdIds.push(statusGroup.taskIdIds[i]);
       }
-      if (returnTaskIds && statusGroup.minidumps) {
+      if (includeTaskIds && statusGroup.minidumps) {
         bucket.minidumps.push(statusGroup.minidumps[i] ?? null);
+      }
+      if (includeDurations && statusGroup.durations) {
+        bucket.durations.push(statusGroup.durations[i]);
       }
     }
 
     const aggregated = Array.from(buckets.values()).sort((a, b) => {
-      if (a.day !== b.day) {
-        return a.day - b.day;
-      }
-      if (a.messageId !== b.messageId) {
-        if (a.messageId === null || a.messageId === undefined) {
-          return 1;
-        }
-        if (b.messageId === null || b.messageId === undefined) {
-          return -1;
-        }
-        return a.messageId - b.messageId;
-      }
-      if (a.crashSignatureId !== b.crashSignatureId) {
-        if (a.crashSignatureId === null || a.crashSignatureId === undefined) {
-          return 1;
-        }
-        if (b.crashSignatureId === null || b.crashSignatureId === undefined) {
-          return -1;
-        }
-        return a.crashSignatureId - b.crashSignatureId;
-      }
-      return 0;
+      return (
+        a.day - b.day ||
+        compareNullable(a.jobNameId, b.jobNameId) ||
+        compareNullable(a.messageId, b.messageId) ||
+        compareNullable(a.crashSignatureId, b.crashSignatureId)
+      );
     });
 
     const days = [];
@@ -1689,10 +1858,16 @@ async function createAggregatedFailuresFile(dates) {
       days,
     };
 
-    if (returnTaskIds) {
+    if (includeTaskIds) {
       result.taskIdIds = aggregated.map(a => a.taskIdIds);
+    } else if (includeDurations) {
+      result.durations = aggregated.map(a => a.durations);
     } else {
       result.counts = aggregated.map(a => a.count);
+    }
+
+    if (includeJobNames) {
+      result.jobNameIds = aggregated.map(a => a.jobNameId ?? null);
     }
 
     if (includeMessages) {
@@ -1708,7 +1883,7 @@ async function createAggregatedFailuresFile(dates) {
           a => a.crashSignatureId ?? null
         );
       }
-      if (returnTaskIds && aggregated.some(a => a.minidumps?.length)) {
+      if (includeTaskIds && aggregated.some(a => a.minidumps?.length)) {
         result.minidumps = aggregated.map(a => a.minidumps);
       }
     }
@@ -1740,11 +1915,10 @@ async function createAggregatedFailuresFile(dates) {
       if (isPass) {
         finalTestRuns[testId][statusId] = aggregateRunsByDay(statusGroup);
       } else {
-        finalTestRuns[testId][statusId] = aggregateRunsByDay(
-          statusGroup,
-          true,
-          true
-        );
+        finalTestRuns[testId][statusId] = aggregateRunsByDay(statusGroup, {
+          includeMessages: true,
+          includeTaskIds: true,
+        });
       }
     }
   }
@@ -1843,13 +2017,224 @@ async function createAggregatedFailuresFile(dates) {
     `Successfully created aggregated files with ${outputData.metadata.totalTestCount} tests`
   );
   console.log(`  Tests with failures: ${testsWithFailures}`);
+
+  // --- Bucket file generation ---
+  const TOTAL_BUCKETS = 64;
+
+  function getBucketIndex(fullPath) {
+    let hash = 0;
+    for (let i = 0; i < fullPath.length; i++) {
+      hash = ((hash << 5) - hash + fullPath.charCodeAt(i)) | 0;
+    }
+    return ((hash % TOTAL_BUCKETS) + TOTAL_BUCKETS) % TOTAL_BUCKETS;
+  }
+
+  console.log("\nGenerating bucket files...");
+
+  // Build jobNameBaseMap: merged jobNameId -> { baseId, chunk }
+  // Strip chunk suffixes like "-1", "-2" from job names.
+  const bucketJobNames = [];
+  const bucketJobNameMap = new Map();
+  const jobNameBaseMap = new Map();
+
+  for (let id = 0; id < mergedTables.jobNames.length; id++) {
+    const jobName = mergedTables.jobNames[id];
+    let baseName = jobName;
+    let chunkNumber = null;
+    const chunkMatch = jobName.match(/^(.+)-(\d+)(-cf)?$/);
+    if (chunkMatch) {
+      baseName = chunkMatch[1] + (chunkMatch[3] || "");
+      chunkNumber = parseInt(chunkMatch[2], 10);
+    }
+
+    let baseId = bucketJobNameMap.get(baseName);
+    if (baseId === undefined) {
+      baseId = bucketJobNames.length;
+      bucketJobNames.push(baseName);
+      bucketJobNameMap.set(baseName, baseId);
+    }
+
+    jobNameBaseMap.set(id, { baseId, chunk: chunkNumber });
+  }
+
+  // Build bucketTaskInfo: extend mergedTaskInfo with chunks, using base jobNameIds
+  const bucketTaskInfo = {
+    repositoryIds: mergedTaskInfo.repositoryIds.slice(),
+    jobNameIds: mergedTaskInfo.jobNameIds.map(id => {
+      if (id === undefined) {
+        return undefined;
+      }
+      return jobNameBaseMap.get(id).baseId;
+    }),
+    commitIds: mergedTaskInfo.commitIds.slice(),
+    chunks: mergedTaskInfo.jobNameIds.map(id => {
+      if (id === undefined) {
+        return null;
+      }
+      return jobNameBaseMap.get(id).chunk;
+    }),
+  };
+
+  function aggregateTestForBucket(testId) {
+    const testGroup = mergedTestRuns[testId];
+    if (!testGroup) {
+      return [];
+    }
+
+    const result = [];
+    for (let statusId = 0; statusId < testGroup.length; statusId++) {
+      const statusGroup = testGroup[statusId];
+      if (!statusGroup?.timestamps?.length) {
+        continue;
+      }
+
+      const status = mergedTables.statuses[statusId];
+      const isPass = status.startsWith("PASS");
+      const isSkip = status === "SKIP";
+
+      if (isPass) {
+        const sg = {
+          timestamps: statusGroup.timestamps,
+          durations: statusGroup.durations,
+          jobNameIds: statusGroup.jobNameIds.map(
+            id => jobNameBaseMap.get(id).baseId
+          ),
+        };
+        result[statusId] = aggregateRunsByDay(sg, {
+          includeJobNames: true,
+          includeDurations: true,
+        });
+      } else if (isSkip) {
+        const sg = {
+          timestamps: statusGroup.timestamps,
+          jobNameIds: statusGroup.jobNameIds.map(
+            id => jobNameBaseMap.get(id).baseId
+          ),
+          messageIds: statusGroup.messageIds,
+        };
+        result[statusId] = aggregateRunsByDay(sg, {
+          includeMessages: true,
+          includeJobNames: true,
+        });
+      } else {
+        result[statusId] = aggregateRunsByDay(statusGroup, {
+          includeMessages: true,
+          includeTaskIds: true,
+        });
+      }
+    }
+    return result;
+  }
+
+  // Group tests by bucket index
+  const bucketGroups = new Array(TOTAL_BUCKETS).fill(null).map(() => []);
+
+  for (const [fullPath, testId] of testPathMap) {
+    const bucketIdx = getBucketIndex(fullPath);
+    bucketGroups[bucketIdx].push({ fullPath, testId });
+  }
+
+  // Write bucket files, aggregating each test on demand per bucket
+  let totalBucketSize = 0;
+  let nonEmptyBuckets = 0;
+
+  for (let bucketIdx = 0; bucketIdx < TOTAL_BUCKETS; bucketIdx++) {
+    const tests = bucketGroups[bucketIdx];
+
+    // Build testInfo and testRuns for this bucket using global indices;
+    // sortStringTablesByFrequency will compact out unused table entries.
+    const localTestInfo = {
+      testPathIds: [],
+      testNameIds: [],
+      componentIds: [],
+    };
+    const localTestRuns = [];
+    let testsWithFailures = 0;
+
+    for (let localTestId = 0; localTestId < tests.length; localTestId++) {
+      const { testId } = tests[localTestId];
+
+      localTestInfo.testPathIds.push(mergedTestInfo.testPathIds[testId]);
+      localTestInfo.testNameIds.push(mergedTestInfo.testNameIds[testId]);
+      localTestInfo.componentIds.push(mergedTestInfo.componentIds[testId]);
+
+      const aggregated = aggregateTestForBucket(testId);
+      localTestRuns[localTestId] = aggregated;
+
+      if (
+        aggregated.some(
+          (sg, idx) => sg && !mergedTables.statuses[idx].startsWith("PASS")
+        )
+      ) {
+        testsWithFailures++;
+      }
+    }
+
+    const bucketHex = bucketIdx.toString(16).padStart(2, "0");
+    const bucketFile = path.join(OUTPUT_DIR, `${HARNESS}-${bucketHex}.json`);
+
+    const bucketData = {
+      metadata: {
+        startDate,
+        endDate,
+        days: dates.length,
+        startTime,
+        generatedAt: new Date().toISOString(),
+        totalTestCount: tests.length,
+        testsWithFailures,
+        totalBuckets: TOTAL_BUCKETS,
+        bucketIndex: bucketIdx,
+        aggregatedFrom: dailyFiles.map(f => path.basename(f.filePath)),
+      },
+      tables: {
+        jobNames: bucketJobNames,
+        testPaths: mergedTables.testPaths,
+        testNames: mergedTables.testNames,
+        repositories: mergedTables.repositories,
+        statuses: mergedTables.statuses,
+        taskIds: mergedTables.taskIds,
+        messages: mergedTables.messages,
+        crashSignatures: mergedTables.crashSignatures,
+        components: mergedTables.components,
+        commitIds: mergedTables.commitIds,
+      },
+      taskInfo: bucketTaskInfo,
+      testInfo: localTestInfo,
+      testRuns: localTestRuns,
+    };
+
+    const sortedBucketData = sortStringTablesByFrequency(bucketData);
+
+    saveJsonFile(
+      {
+        metadata: bucketData.metadata,
+        tables: sortedBucketData.tables,
+        taskInfo: sortedBucketData.taskInfo,
+        testInfo: sortedBucketData.testInfo,
+        testRuns: sortedBucketData.testRuns,
+      },
+      bucketFile
+    );
+
+    if (tests.length) {
+      nonEmptyBuckets++;
+    }
+    const fileSize = fs.statSync(bucketFile).size;
+    totalBucketSize += fileSize;
+  }
+
+  const totalBucketSizeMB = Math.round(totalBucketSize / (1024 * 1024));
+  console.log(
+    `Generated ${TOTAL_BUCKETS} bucket files (${nonEmptyBuckets} non-empty, ${totalBucketSizeMB}MB total)`
+  );
 }
 
 function calculateStatsFromData(
   testData,
   targetDate,
   ignoredJobsCount = 0,
-  failedJobsCount = 0
+  failedJobsCount = 0,
+  flavorJobCounts = null
 ) {
   const stats = {
     totalTestRuns: 0,
@@ -1860,6 +2245,39 @@ function calculateStatsFromData(
     invalidJobs: testData.metadata.invalidJobCount || 0,
     ignoredJobs: ignoredJobsCount,
   };
+
+  const trackFlavors = HARNESS === "mochitest";
+  let flavorByJobNameId, flavorStatsMap;
+
+  if (trackFlavors) {
+    flavorByJobNameId = testData.tables.jobNames.map(classifyMochitestFlavor);
+    flavorStatsMap = new Map();
+  }
+
+  function addToFlavors(taskIdIds, isFailed, isSkipped) {
+    if (!trackFlavors) {
+      return;
+    }
+    for (const taskIdId of taskIdIds) {
+      const jobNameId = testData.taskInfo.jobNameIds[taskIdId];
+      const flavor = flavorByJobNameId[jobNameId];
+      if (flavor === "other") {
+        continue;
+      }
+      let fStats = flavorStatsMap.get(flavor);
+      if (!fStats) {
+        fStats = { totalTestRuns: 0, failedTestRuns: 0, skippedTestRuns: 0 };
+        flavorStatsMap.set(flavor, fStats);
+      }
+      fStats.totalTestRuns++;
+      if (isFailed) {
+        fStats.failedTestRuns++;
+      }
+      if (isSkipped) {
+        fStats.skippedTestRuns++;
+      }
+    }
+  }
 
   for (const testGroup of testData.testRuns) {
     for (let statusId = 0; statusId < testGroup.length; statusId++) {
@@ -1872,27 +2290,46 @@ function calculateStatsFromData(
       const runCount = statusGroup.taskIdIds.length;
       stats.totalTestRuns += runCount;
 
-      if (
-        status.startsWith("FAIL") ||
-        status === "CRASH" ||
-        status === "TIMEOUT"
-      ) {
+      const isFailed =
+        status.startsWith("FAIL") || status === "CRASH" || status === "TIMEOUT";
+
+      if (isFailed) {
         stats.failedTestRuns += runCount;
+        addToFlavors(statusGroup.taskIdIds, true, false);
       } else if (status === "SKIP") {
         if (statusGroup.messageIds) {
-          for (const messageId of statusGroup.messageIds) {
-            if (
-              messageId == null ||
-              !testData.tables.messages[messageId].startsWith("run-if")
-            ) {
+          for (let i = 0; i < statusGroup.messageIds.length; i++) {
+            const messageId = statusGroup.messageIds[i];
+            const isRunIf =
+              messageId != null &&
+              testData.tables.messages[messageId].startsWith("run-if");
+            if (!isRunIf) {
               stats.skippedTestRuns++;
             }
+            addToFlavors([statusGroup.taskIdIds[i]], false, !isRunIf);
           }
         } else {
           stats.skippedTestRuns += runCount;
+          addToFlavors(statusGroup.taskIdIds, false, true);
         }
+      } else {
+        addToFlavors(statusGroup.taskIdIds, false, false);
       }
     }
+  }
+
+  if (trackFlavors) {
+    const flavors = {};
+    for (const [flavor, fStats] of flavorStatsMap) {
+      flavors[flavor] = { ...fStats };
+      if (flavorJobCounts && flavorJobCounts[flavor]) {
+        const jc = flavorJobCounts[flavor];
+        flavors[flavor].processedJobCount = jc.total;
+        flavors[flavor].failedJobs = jc.failed;
+        flavors[flavor].ignoredJobs = jc.ignored;
+      }
+    }
+    stats.flavors = flavors;
   }
 
   console.log(
@@ -1928,6 +2365,31 @@ async function saveStatsFile() {
     ignoredJobs: [],
   };
 
+  // Collect all flavor names across all dates
+  const allFlavors = new Set();
+  for (const date of allDates) {
+    const stats = dailyStatsMap.get(date);
+    if (stats.flavors) {
+      for (const flavor of Object.keys(stats.flavors)) {
+        allFlavors.add(flavor);
+      }
+    }
+  }
+
+  if (allFlavors.size > 0) {
+    output.flavors = {};
+    for (const flavor of [...allFlavors].sort()) {
+      output.flavors[flavor] = {
+        totalTestRuns: [],
+        failedTestRuns: [],
+        skippedTestRuns: [],
+        processedJobCount: [],
+        failedJobs: [],
+        ignoredJobs: [],
+      };
+    }
+  }
+
   for (const date of allDates) {
     const stats = dailyStatsMap.get(date);
     output.totalTestRuns.push(stats.totalTestRuns);
@@ -1937,6 +2399,25 @@ async function saveStatsFile() {
     output.failedJobs.push(stats.failedJobs);
     output.invalidJobs.push(stats.invalidJobs);
     output.ignoredJobs.push(stats.ignoredJobs);
+
+    // Not every date has every flavor (a flavor may not have run on a
+    // given day, or flavor data may be missing for older dates carried
+    // forward from a pre-flavor stats file), so fall back to 0.
+    if (output.flavors) {
+      for (const flavor of Object.keys(output.flavors)) {
+        const fStats = stats.flavors?.[flavor];
+        output.flavors[flavor].totalTestRuns.push(fStats?.totalTestRuns || 0);
+        output.flavors[flavor].failedTestRuns.push(fStats?.failedTestRuns || 0);
+        output.flavors[flavor].skippedTestRuns.push(
+          fStats?.skippedTestRuns || 0
+        );
+        output.flavors[flavor].processedJobCount.push(
+          fStats?.processedJobCount || 0
+        );
+        output.flavors[flavor].failedJobs.push(fStats?.failedJobs || 0);
+        output.flavors[flavor].ignoredJobs.push(fStats?.ignoredJobs || 0);
+      }
+    }
   }
 
   const statsFileName = `${HARNESS}-stats.json`;
@@ -2022,24 +2503,27 @@ async function main() {
     `Fetching ${HARNESS} test data for the last ${numDays} day${numDays > 1 ? "s" : ""}: ${dates.join(", ")}`
   );
 
-  const processedDates = [];
-  const ONE_HOUR_MS = 60 * 60 * 1000;
+  const TIME_LIMIT_HOURS = 1.5;
+  const TIME_LIMIT_MS = TIME_LIMIT_HOURS * 60 * 60 * 1000;
+  let acceptIncomplete = false;
 
   for (const date of dates) {
     console.log(`\n=== Processing ${date} ===`);
-    await processDateData(date, forceRefetch);
-    processedDates.push(date);
+    await processDateData(date, forceRefetch, acceptIncomplete);
 
-    // Check if we've been running for more than 1 hour
-    const elapsedTime = Date.now() - scriptStartTime;
-    if (elapsedTime > ONE_HOUR_MS) {
-      const remainingDates = dates.length - processedDates.length;
-      if (remainingDates > 0) {
-        console.log(
-          `\nStopping after 1 hour of processing. Skipping ${remainingDates} remaining date${remainingDates > 1 ? "s" : ""}.`
-        );
+    // After the time limit, accept incomplete data from the previous run
+    // instead of re-processing from scratch, to avoid losing data entirely.
+    if (!acceptIncomplete) {
+      const elapsedTime = Date.now() - scriptStartTime;
+      if (elapsedTime > TIME_LIMIT_MS) {
+        const remainingDates = dates.length - dates.indexOf(date) - 1;
+        if (remainingDates > 0) {
+          console.log(
+            `\nStopping full processing after ${TIME_LIMIT_HOURS} hours. Accepting incomplete previous data for ${remainingDates} remaining date${remainingDates > 1 ? "s" : ""}.`
+          );
+        }
+        acceptIncomplete = true;
       }
-      break;
     }
   }
 
@@ -2076,8 +2560,8 @@ async function main() {
   await saveStatsFile();
 
   // Create aggregated failures file if processing multiple days
-  if (processedDates.length > 1) {
-    await createAggregatedFailuresFile(processedDates);
+  if (dates.length > 1) {
+    await createAggregatedFailuresFile(dates);
   }
 }
 

@@ -2,7 +2,6 @@
 support-files = [
   "head.js",
   "tab_webauthn_result.html",
-  "../pkijs/*",
   "../cbor.js",
   "../u2futil.js",
 ]
@@ -13,6 +12,7 @@ prefs = [
  "security.webauthn.ctap2=true",
  "security.webauthn.enable_conditional_mediation=true",
  "security.webauthn.enable_macos_passkeys=false",
+ "security.webauthn.related_origin_requests_mode=0",
 ]
 
 ["browser_abort_visibility.js"]
@@ -32,6 +32,7 @@ run-if = [
 skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1892213
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1892213
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && opt", # Bug 1892213
 ]
 
 ["browser_webauthn_ipaddress.js"]

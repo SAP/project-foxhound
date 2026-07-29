@@ -122,7 +122,7 @@ add_task(async function testMainViewVisible() {
     let menulist = document.getElementById("permission-popup-menulist");
     Assert.equal(menulist.label, "Block Audio");
 
-    await EventUtils.synthesizeMouseAtCenter(menulist, { type: "mousedown" });
+    EventUtils.synthesizeMouseAtCenter(menulist, { type: "mousedown" });
     await TestUtils.waitForCondition(() => {
       return (
         menulist.getElementsByTagName("menuitem")[0].label ===
@@ -315,7 +315,7 @@ add_task(async function testBlockedAll() {
     );
 
     let menulist = document.getElementById("permission-popup-menulist");
-    await EventUtils.synthesizeMouseAtCenter(menulist, { type: "mousedown" });
+    EventUtils.synthesizeMouseAtCenter(menulist, { type: "mousedown" });
     await TestUtils.waitForCondition(() => {
       return (
         menulist.getElementsByTagName("menuitem")[1].label === "Block Audio"

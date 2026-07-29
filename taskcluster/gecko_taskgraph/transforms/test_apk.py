@@ -19,6 +19,9 @@ def resolve_keys(config, tasks):
             "routes",
             "scopes",
             "extra.notify",
+            "worker.env.GOOGLE_PROJECT",
+            "treeherder.platform",
+            "run.secrets",
         ):
             resolve_keyed_by(
                 task,

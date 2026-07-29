@@ -49,11 +49,10 @@ function run_test() {
   MockRegistrar.register("@mozilla.org/prompter;1", gPromptFactory);
 
   // Set a primary password.
-  let tokenDB = Cc["@mozilla.org/security/pk11tokendb;1"].getService(
-    Ci.nsIPK11TokenDB
+  let token = Cc["@mozilla.org/security/internalkeytoken;1"].createInstance(
+    Ci.nsIPKCS11Token
   );
-  let token = tokenDB.getInternalKeyToken();
-  token.initPassword("password");
+  token.changePassword("", "password");
 
   let clientAuthRememberService = Cc[
     "@mozilla.org/security/clientAuthRememberService;1"
@@ -68,7 +67,7 @@ function run_test() {
 
   add_tls_server_setup("BadCertAndPinningServer", "bad_certs");
   add_test(function () {
-    token.logoutSimple();
+    token.logout();
     run_next_test();
   });
   Services.prefs.setIntPref("network.http.speculative-parallel-limit", 6);

@@ -868,11 +868,11 @@ PK11_SignWithMechanism(SECKEYPrivateKey *key, CK_MECHANISM_TYPE mechanism,
     if (haslock)
         PK11_ExitSlotMonitor(slot);
     pk11_CloseSession(slot, session, owner);
-    sig->len = len;
     if (crv != CKR_OK) {
         PORT_SetError(PK11_MapError(crv));
         return SECFailure;
     }
+    sig->len = len;
     return SECSuccess;
 }
 
@@ -1234,16 +1234,26 @@ PK11_UnwrapPrivKey(PK11SlotInfo *slot, PK11SymKey *wrappingKey,
     CK_RV crv;
     CK_SESSION_HANDLE rwsession;
     PK11SymKey *newKey = NULL;
+    SECKEYPrivateKey *privKey = NULL;
+    SECKEYPublicKey *pubKey = NULL;
     int i;
 
-    if (!slot || !wrappedKey || !idValue) {
+    if (!slot || !wrappedKey) {
         PORT_SetError(SEC_ERROR_INVALID_ARGS);
         return NULL;
     }
 
-    ck_id = PK11_MakeIDFromPubKey(idValue);
-    if (!ck_id) {
+    if (usageCount < 0 ||
+        usageCount > (int)(PR_ARRAY_SIZE(keyTemplate) - 8)) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
         return NULL;
+    }
+
+    if (idValue) {
+        ck_id = PK11_MakeIDFromPubKey(idValue);
+        if (!ck_id) {
+            return NULL;
+        }
     }
 
     PK11_SETATTRS(attrs, CKA_TOKEN, perm ? &cktrue : &ckfalse,
@@ -1263,14 +1273,16 @@ PK11_UnwrapPrivKey(PK11SlotInfo *slot, PK11SymKey *wrappingKey,
         PK11_SETATTRS(attrs, CKA_LABEL, label->data, label->len);
         attrs++;
     }
-    PK11_SETATTRS(attrs, CKA_ID, ck_id->data, ck_id->len);
-    attrs++;
+    if (ck_id) {
+        PK11_SETATTRS(attrs, CKA_ID, ck_id->data, ck_id->len);
+        attrs++;
+    }
     for (i = 0; i < usageCount; i++) {
         PK11_SETATTRS(attrs, usage[i], &cktrue, sizeof(cktrue));
         attrs++;
     }
 
-    if (PK11_IsInternal(slot)) {
+    if (idValue && PK11_IsInternal(slot)) {
         PK11_SETATTRS(attrs, CKA_NSS_DB, idValue->data,
                       idValue->len);
         attrs++;
@@ -1339,10 +1351,10 @@ PK11_UnwrapPrivKey(PK11SlotInfo *slot, PK11SymKey *wrappingKey,
         PK11SlotInfo *int_slot = PK11_GetInternalSlot();
 
         if (int_slot && (slot != int_slot)) {
-            SECKEYPrivateKey *privKey = PK11_UnwrapPrivKey(int_slot,
-                                                           wrappingKey, wrapType, param, wrappedKey, label,
-                                                           idValue, PR_FALSE, PR_FALSE,
-                                                           keyType, usage, usageCount, wincx);
+            privKey = PK11_UnwrapPrivKey(int_slot, wrappingKey, wrapType,
+                                         param, wrappedKey, label,
+                                         idValue, PR_FALSE, PR_FALSE,
+                                         keyType, usage, usageCount, wincx);
             if (privKey) {
                 SECKEYPrivateKey *newPrivKey = PK11_LoadPrivKey(slot, privKey,
                                                                 NULL, perm, sensitive);
@@ -1359,10 +1371,55 @@ PK11_UnwrapPrivKey(PK11SlotInfo *slot, PK11SymKey *wrappingKey,
         return NULL;
     }
     SECITEM_FreeItem(param_free, PR_TRUE);
-    return PK11_MakePrivKey(slot, nullKey, PR_FALSE, privKeyID, wincx);
+    privKey = pk11_MakePrivKey(slot, nullKey, PR_FALSE, privKeyID, wincx);
+    if (!privKey) {
+        goto loser;
+    }
+    /* we weren't given the public key, get it from the key itself so we
+     * can set the CKA_ID */
+    if (idValue == NULL) {
+        SECStatus rv;
+        pubKey = SECKEY_ConvertToPublicKey(privKey);
+        if (pubKey == NULL) {
+            goto loser;
+        }
+        idValue = PK11_GetPublicValueFromPublicKey(pubKey);
+        if (idValue == NULL) {
+            goto loser;
+        }
+        ck_id = PK11_MakeIDFromPubKey(idValue);
+        if (ck_id == NULL) {
+            goto loser;
+        }
+        rv = PK11_WriteRawAttribute(PK11_TypePrivKey, privKey, CKA_ID, ck_id);
+        if (rv != SECSuccess) {
+            goto loser;
+        }
+        if (pubKey->pkcs11Slot) {
+            rv = PK11_WriteRawAttribute(PK11_TypePubKey, pubKey, CKA_ID, ck_id);
+            if (rv != SECSuccess) {
+                goto loser;
+            }
+        }
+        /* try to import the public key but if it doesn't work,
+         * it's not fatal */
+        if (!pubKey->pkcs11Slot ||
+            !PK11_IsPermObject(pubKey->pkcs11Slot, pubKey->pkcs11ID)) {
+            (void)PK11_ImportPublicKey(privKey->pkcs11Slot, pubKey, PR_TRUE);
+        }
+        SECKEY_DestroyPublicKey(pubKey);
+        SECITEM_FreeItem(ck_id, PR_TRUE);
+    }
+    return privKey;
 
 loser:
-    PK11_FreeSymKey(newKey);
+    if (newKey) {
+        PK11_FreeSymKey(newKey);
+    }
+    if (privKey)
+        SECKEY_DestroyPrivateKey(privKey);
+    if (pubKey)
+        SECKEY_DestroyPublicKey(pubKey);
     SECITEM_FreeItem(ck_id, PR_TRUE);
     SECITEM_FreeItem(param_free, PR_TRUE);
     return NULL;

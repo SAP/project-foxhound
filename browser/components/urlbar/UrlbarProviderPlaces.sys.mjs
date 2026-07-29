@@ -1,13 +1,10 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * vim: sw=2 ts=2 sts=2 expandtab
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /* eslint complexity: ["error", 53] */
 
 /**
  * @import {OpenedConnection} from "resource://gre/modules/Sqlite.sys.mjs"
- * @import {UrlbarSearchStringTokenData} from "UrlbarTokenizer.sys.mjs"
  */
 
 /**
@@ -102,12 +99,13 @@ const lazy = XPCOMUtils.declareLazy({
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   Sqlite: "resource://gre/modules/Sqlite.sys.mjs",
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
   UrlbarProviderOpenTabs:
     "moz-src:///browser/components/urlbar/UrlbarProviderOpenTabs.sys.mjs",
   ProvidersManager:
     "moz-src:///browser/components/urlbar/UrlbarProvidersManager.sys.mjs",
   SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
   UrlbarSearchUtils:
     "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
   UrlbarTokenizer:
@@ -119,15 +117,15 @@ const lazy = XPCOMUtils.declareLazy({
   },
   // Maps restriction character types to textual behaviors.
   typeToBehaviorMap: () => {
-    return /** @type {Map<Values<typeof lazy.UrlbarTokenizer.TYPE>, string>} */ (
+    return /** @type {Map<Values<typeof lazy.UrlbarShared.TOKEN_TYPE>, string>} */ (
       new Map([
-        [lazy.UrlbarTokenizer.TYPE.RESTRICT_HISTORY, "history"],
-        [lazy.UrlbarTokenizer.TYPE.RESTRICT_BOOKMARK, "bookmark"],
-        [lazy.UrlbarTokenizer.TYPE.RESTRICT_TAG, "tag"],
-        [lazy.UrlbarTokenizer.TYPE.RESTRICT_OPENPAGE, "openpage"],
-        [lazy.UrlbarTokenizer.TYPE.RESTRICT_SEARCH, "search"],
-        [lazy.UrlbarTokenizer.TYPE.RESTRICT_TITLE, "title"],
-        [lazy.UrlbarTokenizer.TYPE.RESTRICT_URL, "url"],
+        [lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_HISTORY, "history"],
+        [lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_BOOKMARK, "bookmark"],
+        [lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_TAG, "tag"],
+        [lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_OPENPAGE, "openpage"],
+        [lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_SEARCH, "search"],
+        [lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_TITLE, "title"],
+        [lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_URL, "url"],
       ])
     );
   },
@@ -501,7 +499,7 @@ class Search {
       if (
         lazy.UrlbarTokenizer.isRestrictionToken(tokens[0]) &&
         (tokens.length > 1 ||
-          tokens[0].type == lazy.UrlbarTokenizer.TYPE.RESTRICT_SEARCH)
+          tokens[0].type == lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_SEARCH)
       ) {
         this.#leadingRestrictionToken = tokens[0].value;
       }
@@ -701,7 +699,8 @@ class Search {
       // UrlbarProviderSearchSuggestions will handle suggestions, if any.
       let emptySearchRestriction =
         this.#trimmedOriginalSearchString.length <= 3 &&
-        this.#leadingRestrictionToken == lazy.UrlbarTokenizer.RESTRICT.SEARCH &&
+        this.#leadingRestrictionToken ==
+          lazy.UrlbarShared.RESTRICT_TOKENS.SEARCH &&
         /\s*\S?$/.test(this.#trimmedOriginalSearchString);
       if (
         emptySearchRestriction ||

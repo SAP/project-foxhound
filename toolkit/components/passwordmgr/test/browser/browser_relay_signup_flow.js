@@ -5,12 +5,6 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-add_setup(async function () {
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.urlbar.trustPanel.featureGate", false]],
-  });
-});
-
 add_task(
   async function test_default_does_not_display_Relay_to_unauthenticated_browser() {
     await BrowserTestUtils.withNewTab(
@@ -105,7 +99,7 @@ add_task(
         await clickRelayItemAndWaitForPopup(acPopup);
 
         const primaryButton = notificationPopup.querySelector(
-          "button.popup-notification-primary-button"
+          "moz-button.popup-notification-primary-button"
         );
 
         await clickButtonAndWaitForPopupToClose(primaryButton);
@@ -113,7 +107,7 @@ add_task(
         await verifyConfirmationHint(
           browser,
           true,
-          "identity-icon-box",
+          "trust-icon-container",
           "confirmation-hint-firefox-relay-mask-created"
         );
 

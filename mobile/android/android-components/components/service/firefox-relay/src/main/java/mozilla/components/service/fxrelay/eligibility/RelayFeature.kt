@@ -13,7 +13,6 @@ import mozilla.components.concept.sync.AuthType
 import mozilla.components.concept.sync.OAuthAccount
 import mozilla.components.concept.sync.Profile
 import mozilla.components.lib.state.ext.flowScoped
-import mozilla.components.service.fxa.manager.FxaAccountManager
 import mozilla.components.service.fxrelay.EmailMask
 import mozilla.components.service.fxrelay.FxRelay
 import mozilla.components.service.fxrelay.FxRelayImpl
@@ -22,7 +21,10 @@ import mozilla.components.service.fxrelay.eligibility.ext.relayClient
 import mozilla.components.service.fxrelay.eligibility.ext.shouldCheckStatus
 import mozilla.components.support.base.feature.LifecycleAwareFeature
 import mozilla.components.support.base.log.logger.Logger
+import mozilla.components.support.ktx.kotlin.extractHostUrl
 import mozilla.components.support.ktx.kotlinx.coroutines.flow.ifAnyChanged
+import mozilla.components.support.utils.DateTimeProvider
+import mozilla.components.support.utils.DefaultDateTimeProvider
 
 internal const val FETCH_TIMEOUT_MS: Long = 10_000L
 
@@ -30,10 +32,13 @@ internal const val FETCH_TIMEOUT_MS: Long = 10_000L
  * Feature for accessing Firefox Relay service.
  */
 class RelayFeature(
-    private val accountManager: FxaAccountManager,
+    private val accountManager: FxaAccountManagerDelegate,
     private val store: RelayEligibilityStore,
     private val fetchTimeoutMs: Long = FETCH_TIMEOUT_MS,
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+    private val dateTimeProvider: DateTimeProvider = DefaultDateTimeProvider(),
+    private val fxRelayFactory: (OAuthAccount) -> FxRelay = ::FxRelayImpl,
+    private val extractHostUrl: (String) -> String = String::extractHostUrl,
 ) : LifecycleAwareFeature {
 
     private val logger = Logger("RelayEligibilityFeature")
@@ -56,7 +61,7 @@ class RelayFeature(
         store.dispatch(RelayEligibilityAction.AccountLoginStatusChanged(isLoggedIn))
 
         if (authenticatedAccount != null) {
-            fxRelay = FxRelayImpl(authenticatedAccount)
+            fxRelay = fxRelayFactory(authenticatedAccount)
         }
 
         scope = store.flowScoped(dispatcher = mainDispatcher) { flow ->
@@ -84,7 +89,7 @@ class RelayFeature(
             return
         }
 
-        val existingClient = accountManager.authenticatedAccount()?.relayClient() != null
+        val existingClient = accountManager.connectedAccount()?.relayClient() != null
         if (!existingClient) {
             logger.info("Account does not have an existing relay service.")
             return
@@ -98,7 +103,7 @@ class RelayFeature(
                 fetchSucceeded = relayDetails != null,
                 relayPlanTier = relayDetails?.relayPlanTier,
                 totalMasksUsed = relayDetails?.totalMasksUsed ?: 0,
-                lastCheckedMs = System.currentTimeMillis(),
+                lastCheckedMs = dateTimeProvider.currentTimeMillis(),
             ),
         )
 
@@ -122,7 +127,7 @@ class RelayFeature(
      * @return an email masks or `null` if the operation fails.
      */
     suspend fun getOrCreateNewMask(generatedFor: String, description: String): EmailMask? {
-        val mask = fxRelay?.createEmailMask(generatedFor, description)
+        val mask = fxRelay?.createEmailMask(extractHostUrl(generatedFor), extractHostUrl(description))
         store.dispatch(RelayEligibilityAction.UpdateLastUsed(mask))
         return mask
     }
@@ -130,7 +135,7 @@ class RelayFeature(
     private inner class RelayAccountObserver : AccountObserver {
         override fun onAuthenticated(account: OAuthAccount, authType: AuthType) {
             store.dispatch(RelayEligibilityAction.AccountLoginStatusChanged(true))
-            fxRelay = FxRelayImpl(account)
+            fxRelay = fxRelayFactory(account)
         }
 
         override fun onProfileUpdated(profile: Profile) {

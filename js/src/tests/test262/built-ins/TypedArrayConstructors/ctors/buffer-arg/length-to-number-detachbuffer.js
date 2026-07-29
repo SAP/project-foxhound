@@ -18,6 +18,6 @@ testWithTypedArrayConstructors(function(TA) {
   var buffer = new ArrayBuffer(3 * offset);
   var length = { valueOf() { $DETACHBUFFER(buffer); return 1; } };
   assert.throws(TypeError, () => new TA(buffer, 0, length));
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

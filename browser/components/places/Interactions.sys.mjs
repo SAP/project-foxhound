@@ -299,7 +299,7 @@ class _Interactions {
 
     // Only reset the time if this is being loaded in the active tab of the
     // active window.
-    if (docInfo.isActive && browser.ownerGlobal == this.#activeWindow) {
+    if (docInfo.isActive && browser.documentGlobal == this.#activeWindow) {
       this._pageViewStartTime = ChromeUtils.now();
     }
 
@@ -438,7 +438,7 @@ class _Interactions {
     pageViewStartTime,
     store
   ) {
-    if (!activeWindow || (browser && browser.ownerGlobal != activeWindow)) {
+    if (!activeWindow || (browser && browser.documentGlobal != activeWindow)) {
       lazy.logConsole.debug(
         "Not updating interaction as there is no active window"
       );

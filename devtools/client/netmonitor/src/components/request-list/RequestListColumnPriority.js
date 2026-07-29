@@ -21,14 +21,22 @@ class RequestListColumnPriority extends Component {
   }
 
   shouldComponentUpdate(nextProps) {
-    return this.props.item.method !== nextProps.item.method;
+    return (
+      this.props.item.priority !== nextProps.item.priority ||
+      this.props.item.method !== nextProps.item.method
+    );
   }
 
   render() {
     const { priority } = this.props.item;
+
+    const textPriority = Number.isInteger(priority)
+      ? getRequestPriorityAsText(priority)
+      : "";
+
     return dom.td(
-      { className: "requests-list-column" },
-      getRequestPriorityAsText(priority)
+      { className: "requests-list-column", title: textPriority },
+      textPriority
     );
   }
 }

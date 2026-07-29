@@ -39,6 +39,10 @@ const SHARED_DATA_KEY = "PictureInPicture:SiteOverrides";
 // Used for clearing the size and location of the PiP window
 const PLAYER_URI = "chrome://global/content/pictureinpicture/player.xhtml";
 const ACCEPTABLE_DIFFERENCE = 2;
+const AUTO_CLOSE_ENABLED_PREF =
+  "media.videocontrols.picture-in-picture.auto-close.enabled";
+const AUTO_CLOSE_TIMEOUT_PREF =
+  "media.videocontrols.picture-in-picture.auto-close.timeoutMs";
 
 /**
  * We currently ship with a few different variations of the
@@ -521,7 +525,7 @@ async function getToggleClientRect(
   toggleStyles = DEFAULT_TOGGLE_STYLES
 ) {
   let args = { videoID, toggleID: toggleStyles.rootID };
-  return ContentTask.spawn(browser, args, async args => {
+  return SpecialPowers.spawn(browser, [args], async args => {
     const { Rect } = ChromeUtils.importESModule(
       "resource://gre/modules/Geometry.sys.mjs"
     );
@@ -1088,77 +1092,6 @@ function overrideSavedPosition(left, top, width, height) {
   xulStore.setValue(PLAYER_URI, "picture-in-picture", "top", top);
   xulStore.setValue(PLAYER_URI, "picture-in-picture", "width", width);
   xulStore.setValue(PLAYER_URI, "picture-in-picture", "height", height);
-}
-
-/**
- * Function used to filter events when waiting for the correct number
- * telemetry events.
- *
- * @param {string} expected The expected string or undefined
- * @param {string} actual The actual string
- * @returns true if the expected is undefined or if expected matches actual
- */
-function matches(expected, actual) {
-  if (expected === undefined) {
-    return true;
-  }
-  return expected === actual;
-}
-
-/**
- * Function that waits for the expected number of events aftering filtering.
- *
- * @param {object} filter An object containing optional filters
- *  {
- *    category: (optional) The category of the event. Ex. "pictureinpicture"
- *    method: (optional) The method of the event. Ex. "create"
- *    object: (optional) The object of the event. Ex. "player"
- *  }
- * @param {number} length The number of events to wait for
- * @param {string} process Should be "content" or "parent" depending on the event
- */
-async function waitForTelemeryEvents(filter, length, process) {
-  let {
-    category: filterCategory,
-    method: filterMethod,
-    object: filterObject,
-  } = filter;
-
-  let events = [];
-  await TestUtils.waitForCondition(
-    () => {
-      events = Services.telemetry.snapshotEvents(
-        Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
-        false
-      )[process];
-      if (!events) {
-        return false;
-      }
-
-      let filtered = events
-        .map(([, /* timestamp */ category, method, object, value, extra]) => {
-          // We don't care about the `timestamp` value.
-          // Tests that examine that value should use `snapshotEvents` directly.
-          return [category, method, object, value, extra];
-        })
-        .filter(([category, method, object]) => {
-          return (
-            matches(filterCategory, category) &&
-            matches(filterMethod, method) &&
-            matches(filterObject, object)
-          );
-        });
-      info(JSON.stringify(filtered, null, 2));
-      return filtered && filtered.length >= length;
-    },
-    `Waiting for ${length} pictureinpicture telemetry event(s) with filter ${JSON.stringify(
-      filter,
-      null,
-      2
-    )}`,
-    200,
-    100
-  );
 }
 
 /**

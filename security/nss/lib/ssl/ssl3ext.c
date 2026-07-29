@@ -336,6 +336,26 @@ ssl3_ExtensionAdvertised(const sslSocket *ss, PRUint16 ex_type)
                                   xtnData->numAdvertised, ex_type);
 }
 
+void
+ssl3_RecordExtensionNegotiated(const sslSocket *ss, TLSExtensionData *xtnData,
+                               PRUint16 ex_type)
+{
+    /* Record that an extension was negotiated during a full TLS handshake.
+     * This function must NOT be used to track extensions carried in
+     * post-handshake messages (e.g. CertificateRequest during PHA);
+     * their negotiation state should instead be stored in dedicated fields on
+     * TLSExtensionData or sslSocket (e.g. xtnData->compressionAlg for
+     * certificate compression). */
+    PORT_Assert(!ss->firstHsDone ||
+                ss->opt.enableRenegotiation != SSL_RENEGOTIATE_NEVER);
+    PORT_Assert(!arrayContainsExtension(xtnData->negotiated,
+                                        xtnData->numNegotiated, ex_type));
+    PORT_Assert(xtnData->numNegotiated < SSL_MAX_EXTENSIONS);
+    if (xtnData->numNegotiated < SSL_MAX_EXTENSIONS) {
+        xtnData->negotiated[xtnData->numNegotiated++] = ex_type;
+    }
+}
+
 PRBool
 ssl3_ExtensionAdvertisedClientHelloInner(const sslSocket *ss, PRUint16 ex_type)
 {
@@ -707,7 +727,12 @@ ssl_CallCustomExtensionSenders(sslSocket *ss, sslBuffer *buf,
         if (hook->writer) {
             /* The writer writes directly into |buf|.  Provide space that allows
              * for the existing extensions, any tail, plus type and length. */
-            unsigned int space = buf->space - (buf->len + tail.len + 4);
+            unsigned int used = buf->len + tail.len + 4;
+            if (used > buf->space) {
+                PORT_SetError(SEC_ERROR_APPLICATION_CALLBACK_ERROR);
+                goto loser;
+            }
+            unsigned int space = buf->space - used;
             append = (*hook->writer)(ss->fd, message,
                                      buf->buf + buf->len + 4, &len, space,
                                      hook->writerArg);

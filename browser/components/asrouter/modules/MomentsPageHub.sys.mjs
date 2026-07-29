@@ -78,6 +78,7 @@ export class _MomentsPageHub {
   }
 
   executeAction(message) {
+    const { _nimbusFeature: feature_id, _nimbusSlug: slug } = message;
     const { id, data } = message.content.action;
     switch (id) {
       case "moments-wnp": {
@@ -86,11 +87,16 @@ export class _MomentsPageHub {
         if (!expire) {
           expire = this.getExpirationDate(expireDelta);
         }
-        // In order to reset this action we can dispatch a new message that
-        // will overwrite the prev value with an expiration date from the past.
         Services.prefs.setStringPref(
           HOMEPAGE_OVERRIDE_PREF,
-          JSON.stringify({ message_id: message.id, url, expire })
+          JSON.stringify({
+            message_id: message.id,
+            url,
+            expire,
+            // These two are used in BrowserContentHandler for exposure events:
+            feature_id,
+            slug,
+          })
         );
         // Add impression and block immediately after taking the action
         this.sendUserEventTelemetry(message);
@@ -99,13 +105,6 @@ export class _MomentsPageHub {
         break;
       }
     }
-  }
-
-  _recordReachEvent(message) {
-    Glean.messagingExperiments.reachMomentsPage.record({
-      value: message.experimentSlug,
-      branches: message.branchSlug,
-    });
   }
 
   async messageRequest({ triggerId, template }) {
@@ -117,21 +116,18 @@ export class _MomentsPageHub {
     });
     Glean.messagingSystem.messageRequestTime.stopAndAccumulate(timerId);
 
-    // Record the "reach" event for all the messages with `forReachEvent`,
-    // only execute action for the first message without forReachEvent.
+    // Don't bother recording reach for moments page messages, since all they do
+    // for this message type is track startup and the interval. We do get more
+    // useful telemetry with exposure events in BrowserContentHandler.
     const nonReachMessages = [];
     for (const message of messages) {
-      if (message.forReachEvent) {
-        if (!message.forReachEvent.sent) {
-          this._recordReachEvent(message);
-          message.forReachEvent.sent = true;
-        }
-      } else {
+      if (!message.recordReach && !message._reachId) {
         nonReachMessages.push(message);
       }
     }
-    if (nonReachMessages.length) {
-      this.executeAction(nonReachMessages[0]);
+    const [message] = nonReachMessages;
+    if (message) {
+      this.executeAction(message);
     }
   }
 

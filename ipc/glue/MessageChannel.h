@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=4 et :
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,7 +15,6 @@
 #endif  // defined(XP_WIN)
 
 #include <functional>
-#include <stack>
 
 #include "MessageLink.h"  // for HasResultCodes
 #include "mozilla/ipc/ScopedPort.h"
@@ -262,6 +258,36 @@ class MessageChannel : HasResultCodes {
     MonitorAutoLock lock(*mMonitor);
     return mMessageChannelId;
   }
+
+  /**
+   * In some cases, such as when losing connection to another process over IPC,
+   * a large number of actors may be torn down simultaneously.
+   * To minimize the overhead of dispatching a potentially-large number of IPC
+   * messages to the same event target, we batch error notification tasks on our
+   * MessageChannel instances for each event target together.
+   * This RAII type defines the scope of this batching.
+   * If multiple ErrorNotifyBatcher instances are on the stack, the outermost
+   * batcher takes precidence.
+   */
+  struct MOZ_RAII ErrorNotifyBatcher {
+    ErrorNotifyBatcher();
+    ~ErrorNotifyBatcher();
+
+    // If a batch dispatcher is available, uses it; otherwise directly
+    // dispatches.
+    static void BatchDispatch(nsIEventTarget* aTarget,
+                              already_AddRefed<CancelableRunnable> aRunnable);
+
+   private:
+    [[nodiscard]] static bool TryBatchDispatch(
+        nsIEventTarget* aTarget, RefPtr<CancelableRunnable>& aRunnable);
+
+    // NOTE: Only ever accessed/set on the IPC I/O thread.
+    static ErrorNotifyBatcher* sCurrent;
+
+    class BatchTask;
+    AutoTArray<RefPtr<BatchTask>, 8> mToNotify;
+  };
 
 #ifdef FUZZING_SNAPSHOT
   Maybe<mojo::core::ports::PortName> GetPortName() {

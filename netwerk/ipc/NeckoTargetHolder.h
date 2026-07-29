@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,7 +25,7 @@ class NeckoTargetHolder {
   // When |mNeckoTarget| is not null, use it to dispatch the runnable.
   // Otherwise, dispatch the runnable to the main thread.
   nsresult Dispatch(
-      already_AddRefed<nsIRunnable>&& aRunnable,
+      already_AddRefed<nsIRunnable> aRunnable,
       nsIEventTarget::DispatchFlags aDispatchFlags = NS_DISPATCH_NORMAL);
 
   // EventTarget for labeling networking events.

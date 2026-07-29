@@ -38,7 +38,7 @@ export class CanonicalURLParent extends JSWindowActorParent {
             return;
           }
 
-          if (!browser.ownerGlobal.gBrowser?.getTabForBrowser(browser)) {
+          if (!browser.documentGlobal.gBrowser?.getTabForBrowser(browser)) {
             lazy.logConsole.debug(
               "CanonicalURL:Identified: reject due to the browser not being a tab browser"
             );
@@ -47,7 +47,7 @@ export class CanonicalURLParent extends JSWindowActorParent {
 
           const { canonicalUrl, canonicalUrlSources } = msg.data;
 
-          let event = new browser.ownerGlobal.CustomEvent(
+          let event = new browser.documentGlobal.CustomEvent(
             "CanonicalURL:Identified",
             {
               bubbles: true,

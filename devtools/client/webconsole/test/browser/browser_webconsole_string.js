@@ -27,7 +27,7 @@ add_task(async function () {
     ".console-api"
   );
 
-  await ContentTask.spawn(gBrowser.selectedBrowser, {}, function () {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
     const name = "";
     content.wrappedJSObject.console.log("hello", name);
   });
@@ -43,7 +43,7 @@ add_task(async function () {
     ".console-api"
   );
 
-  await ContentTask.spawn(gBrowser.selectedBrowser, {}, function () {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
     content.wrappedJSObject.console.log({ a: "" });
   });
   await receivedMessages;

@@ -35,20 +35,21 @@ fun List<Wallpaper>.groupByDisplayableCollection(): Map<Wallpaper.Collection, Li
  * seasonal and classic wallpapers.
  */
 fun List<Wallpaper>.getWallpapersForOnboarding(): List<Wallpaper> {
-    val (allClassicWallpapers, allSeasonalWallpapers) = this.filterNot { it.collection.name == Wallpaper.DEFAULT }
-        .partition { it.collection.name == Wallpaper.CLASSIC_FIREFOX_COLLECTION }
+    val (localWallpapers, remoteWallpapers) = this.partition { it.collection.name == Wallpaper.DEFAULT }
 
-    val localWallpaper = listOf(Wallpaper.EdgeToEdge, Wallpaper.Default)
+    val (allClassicWallpapers, allSeasonalWallpapers) = remoteWallpapers.partition {
+        it.collection.name == Wallpaper.CLASSIC_FIREFOX_COLLECTION
+    }
 
     val seasonalWallpapersCount = max(
         SEASONAL_WALLPAPERS_COUNT,
-        THUMBNAILS_SELECTION_COUNT - localWallpaper.size - allClassicWallpapers.size,
+        THUMBNAILS_SELECTION_COUNT - localWallpapers.size - allClassicWallpapers.size,
     )
     val seasonalWallpapers = allSeasonalWallpapers.take(seasonalWallpapersCount)
 
     val classicWallpapers = allClassicWallpapers.take(
-        THUMBNAILS_SELECTION_COUNT - localWallpaper.size - seasonalWallpapers.size,
+        THUMBNAILS_SELECTION_COUNT - localWallpapers.size - seasonalWallpapers.size,
     )
 
-    return localWallpaper + seasonalWallpapers + classicWallpapers
+    return localWallpapers + seasonalWallpapers + classicWallpapers
 }

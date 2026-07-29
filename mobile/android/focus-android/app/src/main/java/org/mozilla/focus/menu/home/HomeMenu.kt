@@ -17,6 +17,9 @@ class HomeMenu(
     private val context: Context,
     private val onItemTapped: ((HomeMenuItem) -> Unit),
 ) {
+    /**
+     * Returns a [BrowserMenuBuilder] for the home screen overflow menu.
+     */
     fun getMenuBuilder(): BrowserMenuBuilder {
         val help = BrowserMenuImageText(
             label = context.getString(R.string.menu_help),

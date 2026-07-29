@@ -1,0 +1,18 @@
+{
+  "label": "vitra.com.tr",
+  "bugs": {
+    "2041215": {
+      "issue": "broken-images",
+      "matches": ["*://www.vitra.com.tr/*"]
+    }
+  },
+  "css": {
+    "fix_zero_width_product_images": ".product-cart-image { width: 100%; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "css": ["fix_zero_width_product_images"]
+    }
+  ]
+}

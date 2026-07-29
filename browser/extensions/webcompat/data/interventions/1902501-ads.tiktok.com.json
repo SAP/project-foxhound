@@ -1,0 +1,15 @@
+{
+  "label": "ads.tiktok.com",
+  "bugs": {
+    "1902501": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://ads.tiktok.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

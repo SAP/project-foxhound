@@ -2,7 +2,7 @@ requires-python:>=3.9
 # We need sphinx to avoid some rstcheck errors and warnings
 pypi:Sphinx==7.1.2
 pypi:alabaster==0.7.13
-pypi:codespell==2.4.0
+pypi:codespell==2.4.2
 pypi:dataclasses==0.6
 pypi:distlib==0.3.7
 pypi:docutils==0.18.1
@@ -13,19 +13,21 @@ pypi:pluggy==0.13.1
 pypi:psutil==5.9.4
 pypi:py==1.11.0
 pypi:pytz==2022.7.1
-pypi:rstcheck==6.2.4
-pypi:ruff==0.14.9
+pypi:rstcheck==6.2.5
+pypi:ruff==0.15.15
+pypi:rumdl==0.1.91
 pypi:snowballstemmer==2.2.0
 pypi:sphinxcontrib-applehelp==1.0.4
 pypi:sphinxcontrib-htmlhelp==2.0.1
 pypi:sphinxcontrib-mermaid==1.0.0
-pypi:tox==2.7.0
+pypi:tox==3.28.0
 pypi:virtualenv==20.24.7
 requirements-txt:taskcluster/requirements.txt
 vendored:third_party/python/aiohappyeyeballs
 vendored:third_party/python/aiohttp
 vendored:third_party/python/aiosignal
 vendored:third_party/python/compare_locales
+vendored:third_party/python/diskarzhan
 vendored:third_party/python/esprima
 vendored:third_party/python/fluent.syntax
 vendored:third_party/python/frozenlist

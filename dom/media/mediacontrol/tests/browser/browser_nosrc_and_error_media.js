@@ -76,7 +76,7 @@ add_task(async function testNoSrcOrErrorMediaEntersFullscreen() {
  */
 async function enterAndLeaveFullScreen(tab, elementId) {
   await new Promise(resolve =>
-    SimpleTest.waitForFocus(resolve, tab.linkedBrowser.ownerGlobal)
+    SimpleTest.waitForFocus(resolve, tab.linkedBrowser.documentGlobal)
   );
   await SpecialPowers.spawn(tab.linkedBrowser, [elementId], elementId => {
     return new Promise(r => {

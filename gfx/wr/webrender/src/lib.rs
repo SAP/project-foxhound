@@ -120,6 +120,8 @@ mod render_target;
 mod render_task_graph;
 mod render_task_cache;
 mod render_task;
+#[cfg(feature = "debugger")]
+mod renderdoc;
 mod renderer;
 mod resource_cache;
 pub mod scene;
@@ -198,7 +200,7 @@ pub use webrender_build::shader::{ProgramSourceDigest, ShaderKind};
 pub use crate::tile_cache::TileOffset;
 pub use crate::intern::ItemUid;
 pub use crate::render_api::*;
-pub use crate::tile_cache::{PictureCacheDebugInfo, DirtyTileDebugInfo, TileDebugInfo, SliceDebugInfo};
+pub use crate::tile_cache::{PictureCacheDebugInfo, DirtyTileDebugInfo, TileDebugInfo, SliceDebugInfo, CompositorClipDebugInfo};
 pub use glyph_rasterizer;
 pub use bump_allocator::ChunkPool;
 

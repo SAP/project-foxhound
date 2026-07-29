@@ -9,7 +9,7 @@ transforms:
     - android_taskgraph.transforms.upstream_artifacts
     - android_taskgraph.transforms.treeherder:transforms
     - android_taskgraph.transforms.signing_android_app:transforms
-    - android_taskgraph.transforms.notify:transforms
+    - gecko_taskgraph.transforms.release_notifications:transforms
     - gecko_taskgraph.transforms.task:transforms
 
 kind-dependencies:
@@ -57,18 +57,17 @@ tasks:
                     (fenix.*): fenix-android-all/opt
                     default: focus-android-all/opt
             tier: 1
-        notify:
+        notifications:
             by-build-type:
                 .*(fenix-beta|fenix-release)-mozillaonline:
                     by-level:
                         '3':
-                            email:
-                                content: The Mozilla Online Fenix {version} APKs are now available
-                                link:
-                                    text: Taskcluster Task
-                                    href: 'https://firefox-ci-tc.services.mozilla.com/tasks/${status.taskId}'
-                                on-reasons: [completed]
-                                subject: Mozilla Online Fenix {version} APKs are now available
-                                to-addresses: [mozillaonline-fenix@mozilla.com]
+                            subject: Mozilla Online Fenix {release_config[version]} APKs are now available
+                            message: The Mozilla Online Fenix {release_config[version]} APKs are now available
+                            emails: [mozillaonline-fenix@mozilla.com]
+                            status-types: [on-completed]
+                            link:
+                                text: Taskcluster Task
+                                href: 'https://firefox-ci-tc.services.mozilla.com/tasks/${status.taskId}'
                         default: {}
                 default: {}

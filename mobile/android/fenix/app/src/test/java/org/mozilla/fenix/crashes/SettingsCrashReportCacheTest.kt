@@ -4,14 +4,14 @@
 
 package org.mozilla.fenix.crashes
 
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import mozilla.components.lib.crash.store.TimeInMillis
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
-import org.mockito.Mockito.mock
-import org.mockito.Mockito.verify
-import org.mockito.Mockito.`when`
 import org.mozilla.fenix.utils.Settings
 
 class SettingsCrashReportCacheTest {
@@ -19,12 +19,12 @@ class SettingsCrashReportCacheTest {
 
     @Before
     fun setup() {
-        settings = mock()
+        settings = mockk(relaxed = true)
     }
 
     @Test
     fun `GIVEN cache has 0 stored for crashReportCutoffDate WHEN accessed THEN returns null`() = runTest {
-        `when`(settings.crashReportCutoffDate).thenReturn(0)
+        every { settings.crashReportCutoffDate } returns 0
 
         val cache = SettingsCrashReportCache(settings)
         val result: TimeInMillis? = cache.getCutoffDate()
@@ -37,12 +37,12 @@ class SettingsCrashReportCacheTest {
         val cache = SettingsCrashReportCache(settings)
         cache.setCutoffDate(null)
 
-        verify(settings).crashReportCutoffDate = 0
+        verify { settings.crashReportCutoffDate = 0 }
     }
 
     @Test
     fun `GIVEN cache has 0 stored for DeferredUntil WHEN accessed THEN returns null`() = runTest {
-        `when`(settings.crashReportDeferredUntil).thenReturn(0)
+        every { settings.crashReportDeferredUntil } returns 0
 
         val cache = SettingsCrashReportCache(settings)
         val result: TimeInMillis? = cache.getDeferredUntil()
@@ -55,13 +55,13 @@ class SettingsCrashReportCacheTest {
         val cache = SettingsCrashReportCache(settings)
         cache.setDeferredUntil(null)
 
-        verify(settings).crashReportDeferredUntil = 0
+        verify { settings.crashReportDeferredUntil = 0 }
     }
 
     @Test
     fun `WHEN retrieving CrashPullDeferUntil with never show again set THEN returns a future timestamp`() = runTest {
-        `when`(settings.crashPullNeverShowAgain).thenReturn(true)
-        `when`(settings.crashPullDontShowBefore).thenReturn(0)
+        every { settings.crashPullNeverShowAgain } returns true
+        every { settings.crashPullDontShowBefore } returns 0
 
         val cache = SettingsCrashReportCache(settings)
         val result: TimeInMillis? = cache.getCrashPullDeferUntil()

@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s giver dig fuld kontrol.</p>\n<p>Anvend den som privat browser:\n<ul>\n<li>Søg og surf direkte i appen</li>\n<li>Bloker sporing (eller opdater indstillingerne og tillad sporing)</li>\n<li>Fjern nemt cookies samt søge- og browser-historik</li>\n</ul> </p>\n<p>%1$s er udviklet af Mozilla. Vores formål er at fremme et sundt, åbent internet.<br/>\n<a href=\"%2$s\">Læs mere</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s giver dig fuld kontrol.</p>\n<p>Anvend den som privat browser:\n<ul>\n<li>Søg og surf direkte i appen</li>\n<li>Bloker sporing (eller opdater indstillingerne og tillad sporing)</li>\n<li>Fjern nemt cookies samt søge- og browser-historik</li>\n</ul> </p>\n<p>%1$s er udviklet af Mozilla. Vores formål er at fremme et sundt, åbent internet.<br/>\n<a href=\"%2$s\">Læs mere</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Læs mere</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Indsæt eller skriv URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Eksempel: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Eksempel: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Eksempel: eksempel.dk</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Angiv %1$s som standard-browser</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Send data for anvendelse</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Læs mere</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla tilstræber kun at indsamle, hvad vi skal bruge for at kunne udbyde og forbedre %1$s for alle.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla tilstræber kun at indsamle, hvad vi skal bruge for at kunne udbyde og forbedre %1$s for alle.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Ping for dagligt brug</string>
-  <string name="preference_daily_usage_ping_description">Dette hjælper Mozilla med at vurdere antallet af aktive brugere.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Dette hjælper Mozilla med at vurdere antallet af aktive brugere.</string>
   <string name="preference_daily_usage_ping_learn_more">Læs mere</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Privatlivserklæring</string>
@@ -562,6 +562,8 @@
   <string name="tabs_tray_action_erase">Slet browser-historik</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">Luk de andre faneblade</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">Tilføj nyt faneblad</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -582,6 +584,21 @@
   <string name="security_popup_security_verified">Bekræftet af: %1$s</string>
   <!-- Content Description of Security Icon in toolbar -->
   <string name="site_security_icon_content_description">Sikkerhed for webstedet</string>
+  <!--
+    %1$s will be replaced with the organization for which the certificate
+    used by the site was issued. For example, the certificate in use by
+    the site https://eidas.ec.europa.eu/ was issued to "The European
+    Commission".
+  -->
+  <string name="qualified_identity">Certifikatet er udstedt til %1$s</string>
+  <!--
+    The European Union eIDAS Regulation specifies a type of certificate
+    called a "qualified website authentication certificate" (QWAC) and
+    requires that browsers identify and indicate such certificates. This
+    text was paraphrased from ETSI TS 119 411-5 V2.1.1 section 6.3 and
+    indicates that the website uses a QWAC.
+  -->
+  <string name="qualified_text">Kvalificeret som angivet i forordning (EU) 2024/1183.</string>
   <string name="preference_autocomplete_duplicate_url_error">URL\'en findes allerede</string>
   <!-- Label for the Find in page button -->
   <string name="find_in_page">Find på side</string>
@@ -812,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Luk faneblad</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Send fejlrapport til Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Send fejlrapport til Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

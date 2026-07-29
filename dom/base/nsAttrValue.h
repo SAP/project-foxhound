@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -136,7 +134,6 @@ class nsAttrValue {
     // struct.
     eCSSDeclaration = 0x10,
     eURL,
-    eImage,
     eAtomArray,
     eDoubleValue,
     // eShadowParts is refcounted in the misc container, as we do copy attribute
@@ -184,7 +181,11 @@ class nsAttrValue {
 
   void SetTo(const nsAttrValue& aOther);
   void SetTo(const nsAString& aValue);
+  // The StringBuffer must be exactly-sized so that the logical length
+  // can be computed from storage size the way nsAttrValue expects.
+  void SetToAssumeUnset(already_AddRefed<mozilla::StringBuffer> aValue);
   void SetTo(nsAtom* aValue);
+  void SetToAssumeUnset(already_AddRefed<nsAtom> aValue);
   void SetTo(int16_t aInt);
   void SetTo(int32_t aInt, const nsAString* aSerialized);
   void SetTo(double aValue, const nsAString* aSerialized);

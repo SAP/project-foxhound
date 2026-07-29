@@ -47,8 +47,7 @@ function setPrefs(eat_space, stop_at_punctuation) {
   stopAtPunctuation = stop_at_punctuation;
   return SpecialPowers.pushPrefEnv({
     "set": [["layout.word_select.eat_space_to_next_word", eat_space],
-	    ["layout.word_select.stop_at_punctuation", stop_at_punctuation],
-	    ["intl.icu4x.segmenter.enabled", true]]
+            ["layout.word_select.stop_at_punctuation", stop_at_punctuation]]
   });
 }
 

@@ -565,6 +565,6 @@ async function flushScrollStyle() {
   gURLBar.inputField.scrollLeft;
   // Ensure to apply the style.
   await new Promise(resolve =>
-    gURLBar.inputField.ownerGlobal.requestAnimationFrame(resolve)
+    gURLBar.inputField.documentGlobal.requestAnimationFrame(resolve)
   );
 }

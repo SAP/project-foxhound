@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -160,7 +158,7 @@ static Maybe<H264Setting> GetH264Level(const H264_LEVEL& aLevel) {
   int val = static_cast<int>(aLevel);
   nsPrintfCString str("%d", val);
   str.Insert('.', 1);
-  return Some(H264Setting{val, str});
+  return Some(H264Setting{val, std::move(str)});
 }
 
 struct VPXSVCAppendix {
@@ -297,7 +295,7 @@ RefPtr<MediaDataEncoder::InitPromise> FFmpegVideoEncoder<LIBAV_VER>::Init() {
   return InvokeAsync(mTaskQueue, __func__, [self = RefPtr(this)]() {
     MediaResult r = self->InitEncoder();
     if (NS_FAILED(r.Code())) {
-      FFMPEGV_LOG("%s", r.Description().get());
+      FFMPEGV_LOG("{}", r.Description().get());
       return InitPromise::CreateAndReject(r, __func__);
     }
     return InitPromise::CreateAndResolve(true, __func__);
@@ -422,9 +420,9 @@ MediaResult FFmpegVideoEncoder<LIBAV_VER>::InitEncoderInternal(bool aHardware) {
   mCodecContext->height = static_cast<int>(mConfig.mSize.height);
   // Reasonnable default for the quantization range.
   mCodecContext->qmin =
-      static_cast<int>(StaticPrefs::media_ffmpeg_encoder_quantizer_min());
+      AssertedCast<int>(StaticPrefs::media_ffmpeg_encoder_quantizer_min());
   mCodecContext->qmax =
-      static_cast<int>(StaticPrefs::media_ffmpeg_encoder_quantizer_max());
+      AssertedCast<int>(StaticPrefs::media_ffmpeg_encoder_quantizer_max());
   if (mConfig.mUsage == Usage::Realtime) {
     mCodecContext->thread_count = 1;
   } else {
@@ -441,17 +439,17 @@ MediaResult FFmpegVideoEncoder<LIBAV_VER>::InitEncoderInternal(bool aHardware) {
     } else if (pixels >= 640 * 480) {
       threads = 2;
     }
-    mCodecContext->thread_count =
-        std::clamp<int>(threads, 1, GetNumberOfProcessors() - 1);
+    mCodecContext->thread_count = std::clamp<int>(
+        threads, 1, AssertedCast<int>(GetNumberOfProcessors()) - 1);
   }
   // TODO(bug 1869560): The recommended time_base is the reciprocal of the frame
   // rate, but we set it to microsecond for now.
   mCodecContext->time_base =
-      AVRational{.num = 1, .den = static_cast<int>(USECS_PER_S)};
+      AVRational{.num = 1, .den = AssertedCast<int>(USECS_PER_S)};
 #if LIBAVCODEC_VERSION_MAJOR >= 57
   // Note that sometimes framerate can be zero (from webcodecs).
   mCodecContext->framerate =
-      AVRational{.num = static_cast<int>(mConfig.mFramerate), .den = 1};
+      AVRational{.num = AssertedCast<int>(mConfig.mFramerate), .den = 1};
 #endif
 
 #if LIBAVCODEC_VERSION_MAJOR >= 60
@@ -460,7 +458,7 @@ MediaResult FFmpegVideoEncoder<LIBAV_VER>::InitEncoderInternal(bool aHardware) {
 
   // Setting 0 here disable inter-frames: all frames are keyframes
   mCodecContext->gop_size = mConfig.mKeyframeInterval
-                                ? static_cast<int>(mConfig.mKeyframeInterval)
+                                ? AssertedCast<int>(mConfig.mKeyframeInterval)
                                 : 10000;
   mCodecContext->keyint_min = 0;
 
@@ -510,7 +508,7 @@ MediaResult FFmpegVideoEncoder<LIBAV_VER>::InitEncoderInternal(bool aHardware) {
     if (mConfig.mCodec == CodecType::AV1) {
       mLib->av_opt_set_int(
           mCodecContext->priv_data, "cpu-used",
-          static_cast<int>(StaticPrefs::media_ffmpeg_encoder_cpu_used()), 0);
+          AssertedCast<int>(StaticPrefs::media_ffmpeg_encoder_cpu_used()), 0);
     }
   }
 
@@ -524,7 +522,7 @@ MediaResult FFmpegVideoEncoder<LIBAV_VER>::InitEncoderInternal(bool aHardware) {
       }
 
       SVCSettings s = settings.extract();
-      FFMPEGV_LOG("SVC options string: %s=%s", s.mSettingKeyValue.first.get(),
+      FFMPEGV_LOG("SVC options string: {}={}", s.mSettingKeyValue.first.get(),
                   s.mSettingKeyValue.second.get());
       mLib->av_opt_set(mCodecContext->priv_data, s.mSettingKeyValue.first.get(),
                        s.mSettingKeyValue.second.get(), 0);
@@ -612,8 +610,8 @@ MediaResult FFmpegVideoEncoder<LIBAV_VER>::InitEncoderInternal(bool aHardware) {
   mLib->av_dict_free(&options);
 
   FFMPEGV_LOG(
-      "%s has been initialized with format: %s, bitrate: %" PRIi64
-      ", width: %d, height: %d, quantizer: [%d, %d], time_base: %d/%d%s",
+      "{} has been initialized with format: {}, bitrate: {}, width: {}, "
+      "height: {}, quantizer: [{}, {}], time_base: {}/{}{}",
       mCodecName.get(), ffmpeg::GetPixelFormatString(mCodecContext->pix_fmt),
       static_cast<int64_t>(mCodecContext->bit_rate), mCodecContext->width,
       mCodecContext->height, mCodecContext->qmin, mCodecContext->qmax,
@@ -697,7 +695,7 @@ Result<MediaDataEncoder::EncodedData, MediaResult> FFmpegVideoEncoder<
   // rate, but we set it to microsecond for now.
 #  if LIBAVCODEC_VERSION_MAJOR >= 59
   mFrame->time_base =
-      AVRational{.num = 1, .den = static_cast<int>(USECS_PER_S)};
+      AVRational{.num = 1, .den = AssertedCast<int>(USECS_PER_S)};
 #  endif
   // Provide fake pts, see header file.
   if (mConfig.mCodec == CodecType::AV1) {
@@ -710,7 +708,6 @@ Result<MediaDataEncoder::EncodedData, MediaResult> FFmpegVideoEncoder<
   }
 #  ifdef MOZ_FFMPEG_ENCODER_USE_DURATION_MAP
   if (mUseDurationMap) {
-    // Save duration in the time_base unit.
     mDurationMap.Insert(mFrame->pts, aSample->mDuration.ToMicroseconds());
   }
 #  else
@@ -743,39 +740,61 @@ FFmpegVideoEncoder<LIBAV_VER>::ToMediaRawData(AVPacket* aPacket) {
   MOZ_ASSERT(mTaskQueue->IsOnCurrentThread());
   MOZ_ASSERT(aPacket);
 
-  auto creationResult = CreateMediaRawData(aPacket);
-  if (creationResult.isErr()) {
-    return Err(creationResult.unwrapErr());
-  }
-
-  RefPtr<MediaRawData> data = creationResult.unwrap();
-
-  data->mKeyframe = (aPacket->flags & AV_PKT_FLAG_KEY) != 0;
-
   auto extradataResult = GetExtraData(aPacket);
   if (extradataResult.isOk()) {
-    data->mExtraData = extradataResult.unwrap();
+    mLastExtraData = extradataResult.unwrap();
   } else if (extradataResult.isErr()) {
     MediaResult e = extradataResult.unwrapErr();
     if (e.Code() != NS_ERROR_NOT_AVAILABLE &&
         e.Code() != NS_ERROR_NOT_IMPLEMENTED) {
       return Err(e);
     }
-    FFMPEGV_LOG("GetExtraData failed with %s, but we can ignore it for now",
+    FFMPEGV_LOG("GetExtraData failed with {}, but we can ignore it for now",
                 e.Description().get());
   }
 
-  if (mCodecID == AV_CODEC_ID_H264 &&
-      mConfig.mCodecSpecific.is<H264Specific>() &&
+  auto data = MakeRefPtr<MediaRawData>();
+  data->mKeyframe = (aPacket->flags & AV_PKT_FLAG_KEY) != 0;
+  UniquePtr<MediaRawDataWriter> writer(data->CreateWriter());
+
+  const bool isH264 =
+      mCodecID == AV_CODEC_ID_H264 && mConfig.mCodecSpecific.is<H264Specific>();
+
+#ifdef MOZ_WIDGET_ANDROID
+  // If we have an AnnexB keyframe, and we failed to extract extradata from the
+  // packet, then we know that the SPS/PPS data is missing from the data. In
+  // that case we need to prepend our cached extradata to supply it in-band.
+  //
+  // When our minimum supported Android version is >= 9, then we can just use
+  // the prepend-sps-pps-to-idr-frames parameter with AMediaFormat.
+  if (data->mKeyframe && !extradataResult.isOk() && mLastExtraData && isH264 &&
       mConfig.mCodecSpecific.as<H264Specific>().mFormat ==
-          H264BitStreamFormat::AVC &&
-      !mCodecName.Equals("libx264"_ns) && AnnexB::IsAnnexB(*data)) {
-    if (data->mExtraData) {
-      mLastExtraData = std::move(data->mExtraData);
+          H264BitStreamFormat::ANNEXB) {
+    if (!writer->Append(mLastExtraData->Elements(), mLastExtraData->Length())) {
+      return Err(
+          MediaResult(NS_ERROR_OUT_OF_MEMORY,
+                      "fail to append extradata to MediaRawData buffer"_ns));
     }
-    if (!AnnexB::ConvertSampleToAVCC(data, mLastExtraData)) {
-      return Err(MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
-                             "Failed to convert to AVCC"_ns));
+  }
+#endif
+
+  if (!writer->Append(aPacket->data, aPacket->size)) {
+    return Err(MediaResult(NS_ERROR_OUT_OF_MEMORY,
+                           "fail to append packet to MediaRawData buffer"_ns));
+  }
+
+  // With AVC, we are expected to provide the extradata out-of-band. This will
+  // either be done as part of our conversion from AnnexB, or we will attach the
+  // extradata we cached/extracted from the packet earlier.
+  if (isH264 && mConfig.mCodecSpecific.as<H264Specific>().mFormat ==
+                    H264BitStreamFormat::AVC) {
+    if (!mCodecName.Equals("libx264"_ns) && AnnexB::IsAnnexB(*data)) {
+      if (!AnnexB::ConvertSampleToAVCC(data, mLastExtraData)) {
+        return Err(MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                               "Failed to convert to AVCC"_ns));
+      }
+    } else {
+      data->mExtraData = mLastExtraData;
     }
   }
 
@@ -784,9 +803,9 @@ FFmpegVideoEncoder<LIBAV_VER>::ToMediaRawData(AVPacket* aPacket) {
   // microsecond for now.
   data->mTime = media::TimeUnit::FromMicroseconds(aPacket->pts);
 #ifdef MOZ_FFMPEG_ENCODER_USE_DURATION_MAP
-  int64_t duration;
-  if (mUseDurationMap && mDurationMap.Find(aPacket->pts, duration)) {
-    data->mDuration = media::TimeUnit::FromMicroseconds(duration);
+  Maybe<int64_t> duration;
+  if (mUseDurationMap && (duration = mDurationMap.Take(aPacket->pts))) {
+    data->mDuration = media::TimeUnit::FromMicroseconds(*duration);
   } else
 #endif
   {
@@ -820,17 +839,19 @@ FFmpegVideoEncoder<LIBAV_VER>::GetExtraData(AVPacket* aPacket) {
 
   // We only extract the extra data when encoding into AVCC format.
   if (mCodecID != AV_CODEC_ID_H264 ||
-      !mConfig.mCodecSpecific.is<H264Specific>() ||
-      mConfig.mCodecSpecific.as<H264Specific>().mFormat !=
-          H264BitStreamFormat::AVC) {
+      !mConfig.mCodecSpecific.is<H264Specific>()) {
     return Err(
         MediaResult(NS_ERROR_NOT_AVAILABLE, "Extra data unnecessary"_ns));
   }
 
+  const bool wantAVCC = mConfig.mCodecSpecific.as<H264Specific>().mFormat ==
+                        H264BitStreamFormat::AVC;
+
   Span<const uint8_t> packetBuf(aPacket->data,
-                                static_cast<size_t>(aPacket->size));
+                                AssertedCast<size_t>(aPacket->size));
   if (!mCodecName.Equals("libx264"_ns) && AnnexB::IsAnnexB(packetBuf)) {
-    auto extraData = AnnexB::ExtractExtraDataForAVCC(packetBuf);
+    auto extraData = wantAVCC ? AnnexB::ExtractExtraDataForAVCC(packetBuf)
+                              : AnnexB::ExtractExtraData(packetBuf);
     if (!extraData) {
       return Err(MediaResult(NS_ERROR_NOT_AVAILABLE,
                              "Extra data missing from packet"_ns));
@@ -851,6 +872,11 @@ FFmpegVideoEncoder<LIBAV_VER>::GetExtraData(AVPacket* aPacket) {
             mCodecName.get())));
   }
 
+  if (!wantAVCC) {
+    return Err(
+        MediaResult(NS_ERROR_NOT_AVAILABLE, "Extra data unnecessary"_ns));
+  }
+
   bool useGlobalHeader =
 #if LIBAVCODEC_VERSION_MAJOR >= 57
       mCodecContext->flags & AV_CODEC_FLAG_GLOBAL_HEADER;
@@ -860,9 +886,9 @@ FFmpegVideoEncoder<LIBAV_VER>::GetExtraData(AVPacket* aPacket) {
 
   Span<const uint8_t> buf;
   if (useGlobalHeader) {
-    buf =
-        Span<const uint8_t>(mCodecContext->extradata,
-                            static_cast<size_t>(mCodecContext->extradata_size));
+    buf = Span<const uint8_t>(
+        mCodecContext->extradata,
+        AssertedCast<size_t>(mCodecContext->extradata_size));
   } else {
     buf = packetBuf;
   }
@@ -890,8 +916,8 @@ FFmpegVideoEncoder<LIBAV_VER>::GetExtraData(AVPacket* aPacket) {
   }
 
   FFMPEGV_LOG(
-      "Generate extra data: profile - %u, constraints: %u, level: %u for pts @ "
-      "%" PRId64,
+      "Generate extra data: profile - {}, constraints: {}, level: {} for pts @ "
+      "{}",
       spsData[1], spsData[2], spsData[3], aPacket->pts);
 
   // Create extra data.
@@ -917,7 +943,7 @@ FFmpegVideoEncoder<LIBAV_VER>::GetSVCSettings() {
   }
 
   if (codecType == CodecType::Unknown) {
-    FFMPEGV_LOG("SVC setting is not implemented for %s codec",
+    FFMPEGV_LOG("SVC setting is not implemented for {} codec",
                 mCodecName.get());
     return Nothing();
   }

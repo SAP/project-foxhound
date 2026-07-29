@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright 2016 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,8 +19,6 @@
 
 #include "mozilla/Atomics.h"
 #include "mozilla/Maybe.h"
-
-#include <functional>
 
 #include "gc/Barrier.h"
 #include "js/shadow/Zone.h"  // for BarrierState
@@ -61,6 +57,7 @@ struct FuncExportInstanceData;
 struct MemoryDesc;
 struct MemoryInstanceData;
 class GlobalDesc;
+struct Handlers;
 struct TableDesc;
 struct TableInstanceData;
 struct TagDesc;
@@ -143,14 +140,22 @@ class alignas(16) Instance {
   }
 
   // The number of baseline scratch storage words available.
-  static constexpr size_t N_BASELINE_SCRATCH_WORDS = 4;
+  static constexpr size_t N_BASELINE_SCRATCH_WORDS = 8;
+
+  // The size and offset of baselineScratchWords_.
+  static constexpr size_t sizeofBaselineScratchWords() {
+    return sizeof(baselineScratchWords_);
+  }
+  static constexpr size_t offsetofBaselineScratchWords() {
+    return offsetof(Instance, baselineScratchWords_);
+  }
 
  private:
   // When compiling with tiering, the jumpTable has one entry for each
   // baseline-compiled function.
   void** jumpTable_;
 
-  // 4 words of scratch storage for the baseline compiler, which can't always
+  // 8 words of scratch storage for the baseline compiler, which can't always
   // use the stack for this.
   uintptr_t baselineScratchWords_[N_BASELINE_SCRATCH_WORDS];
 
@@ -377,6 +382,8 @@ class alignas(16) Instance {
   SharedArrayRawBuffer* sharedMemoryBuffer(
       uint32_t memoryIndex) const;  // never null
   bool memoryAccessInGuardRegion(const uint8_t* addr, unsigned numBytes) const;
+  bool memoryAccessInMappedRegion(const uint8_t* addr, uint32_t* memoryIndex,
+                                  uint64_t* offset) const;
 
   // Methods to set, test and clear the interrupt fields. Both interrupt
   // fields are Relaxed and so no consistency/ordering can be assumed.
@@ -618,6 +625,11 @@ class alignas(16) Instance {
   static int32_t arrayCopy(Instance* instance, void* dstArray,
                            uint32_t dstIndex, void* srcArray, uint32_t srcIndex,
                            uint32_t numElements, uint32_t elementSize);
+#ifdef ENABLE_WASM_JSPI
+  static void* contNew(Instance* instance, void* funcRef);
+  static void* contNewEmpty(Instance* instance);
+  static void contUnwind(Instance* instance, wasm::Handlers* handlers);
+#endif
   static int32_t refTest(Instance* instance, void* refPtr,
                          const wasm::TypeDef* typeDef);
   static int32_t intrI8VecMul(Instance* instance, uint32_t dest, uint32_t src1,
@@ -644,6 +656,8 @@ class alignas(16) Instance {
                               void* secondStringArg);
   static int32_t stringCompare(Instance* instance, void* firstStringArg,
                                void* secondStringArg);
+  static void addSubI128(Instance* instance, uint32_t isAdd);
+  static void mulI64Wide(Instance* instance, uint32_t isSigned);
 };
 
 bool ResultsToJSValue(JSContext* cx, ResultType type, void* registerResultLoc,

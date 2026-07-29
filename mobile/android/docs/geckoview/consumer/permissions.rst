@@ -1,5 +1,3 @@
-.. -*- Mode: rst; fill-column: 80; -*-
-
 =============================
 Working with Site Permissions
 =============================
@@ -190,7 +188,7 @@ call, you will also receive the ``GeckoSession`` the request was sent
 from, the URI of the site that requested the permission, as a String,
 the list of video devices available, if requesting video, the list of
 audio devices available, if requesting audio, and a
-`MediaCallback <https://searchfox.org/mozilla-central/source/mobile/android/geckoview_example/src/main/java/org/mozilla/geckoview_example/GeckoViewActivity.java#686>`_
+:searchfox:`MediaCallback <mobile/android/geckoview_example/src/main/java/org/mozilla/geckoview_example/GeckoViewActivity.java#686>`
 to respond to the request.
 
 It is up to the app to present UI to the user asking for the

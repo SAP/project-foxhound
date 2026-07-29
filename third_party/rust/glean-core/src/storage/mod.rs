@@ -10,7 +10,6 @@ use std::collections::HashMap;
 
 use serde_json::{json, Value as JsonValue};
 
-use crate::coverage::record_coverage;
 use crate::database::Database;
 use crate::metrics::dual_labeled_counter::RECORD_SEPARATOR;
 use crate::metrics::Metric;
@@ -187,29 +186,39 @@ impl StorageManager {
         snapshot
     }
 
-    /// Gets the current value of a single metric identified by name.
-    ///
-    /// Use this API, rather than `snapshot_metric` within the testing API, so
-    /// that the usage will be reported in coverage, if enabled.
+    /// Gets the list of currently-stored labels for a single labeled metric.
     ///
     /// # Arguments
     ///
     /// * `storage` - The database to get data from.
     /// * `store_name` - The store name to look into.
     /// * `metric_id` - The full metric identifier.
+    /// * `metric_lifetime` - The metric's lifetime.
     ///
     /// # Returns
     ///
-    /// The decoded metric or `None` if no data is found.
-    pub fn snapshot_metric_for_test(
+    /// The list of all labels with values in the db. Empty if none.
+    pub fn snapshot_labels(
         &self,
         storage: &Database,
         store_name: &str,
         metric_id: &str,
         metric_lifetime: Lifetime,
-    ) -> Option<Metric> {
-        record_coverage(metric_id);
-        self.snapshot_metric(storage, store_name, metric_id, metric_lifetime)
+    ) -> Vec<String> {
+        let mut labels = Vec::new();
+
+        let mut snapshotter = |id: &[u8], _metric: &Metric| {
+            let id = String::from_utf8_lossy(id).into_owned();
+            if let Some((base_id, label)) = id.split_once('/') {
+                if base_id == metric_id {
+                    labels.push(label.to_owned());
+                }
+            }
+        };
+
+        storage.iter_store_from(metric_lifetime, store_name, None, &mut snapshotter);
+
+        labels
     }
 
     ///  Snapshots the experiments.

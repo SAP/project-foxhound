@@ -23,16 +23,12 @@ const evalMetadata = {
   },
 };
 
-function reportEvalData(data) {
-  info("evalDataPayload | " + JSON.stringify(data));
-}
-
 add_task(async function test_synthetic_translation_eval() {
   const src = "Bonjour le monde";
   const trg = "Hello the world";
   const ref = "Hello world";
 
-  reportEvalData({
+  MLTestUtils.reportEvalData({
     langPair: { src: "fr", trg: "en" },
     src,
     trg,

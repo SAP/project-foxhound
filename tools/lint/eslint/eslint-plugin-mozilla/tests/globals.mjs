@@ -4,10 +4,11 @@
 import assert from "assert";
 import globalsUtils from "../lib/globals.mjs";
 import path from "path";
+import fs from "fs";
 
 var { getGlobalsForCode } = globalsUtils;
 
-/* global describe, it, beforeEach */
+/* global describe, it, beforeEach, afterEach */
 
 describe("global variables", function () {
   it("should reflect top-level this property assignment", function () {
@@ -292,6 +293,44 @@ describe("global import - file trees", () => {
         "import-globals-from-circular-5.js",
       ])
     );
+  });
+});
+
+describe("mtime invalidation", () => {
+  let tempFiles = [];
+
+  function writeTempFile(filename, content) {
+    let filePath = getFullTestFilePath(filename);
+    fs.writeFileSync(filePath, content, "utf8");
+    tempFiles.push(filePath);
+    return filePath;
+  }
+
+  beforeEach(() => {
+    globalsUtils.clearFileImportGraph();
+    tempFiles = [];
+  });
+
+  afterEach(() => {
+    for (let filePath of tempFiles) {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    }
+  });
+
+  it("should re-parse globals when a file's mtime changes", async () => {
+    let filePath = writeTempFile("mtime-test-a.js", "var x = 1;");
+
+    let globals = globalsUtils.getGlobalsForFile({ filePath });
+    assert.deepEqual(globals, [{ name: "x", writable: true }]);
+
+    // Wait to ensure a different mtime.
+    await new Promise(resolve => setTimeout(resolve, 10));
+    fs.writeFileSync(filePath, "var y = 1;", "utf8");
+
+    globals = globalsUtils.getGlobalsForFile({ filePath });
+    assert.deepEqual(globals, [{ name: "y", writable: true }]);
   });
 });
 

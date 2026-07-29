@@ -2,10 +2,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from gecko_taskgraph.util.scriptworker import generate_beetmover_upstream_artifacts
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_dependencies
-
-from android_taskgraph.util.scriptworker import generate_beetmover_upstream_artifacts
 
 transforms = TransformSequence()
 

@@ -1,6 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * vim: sw=4 ts=4 sts=4 et
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -50,7 +48,7 @@ add_task(c, async function test_backgroundtask_cleans_up_stale_profiles() {
   // testing-specific location by setting TMP, per
   // https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-gettemppathw.
   // On Linux, this works as well: see
-  // [GetSpecialSystemDirectory](https://searchfox.org/mozilla-central/source/xpcom/io/SpecialSystemDirectory.cpp).
+  // [GetSpecialSystemDirectory](https://searchfox.org/firefox-main/source/xpcom/io/SpecialSystemDirectory.cpp).
   // On macOS, we can't set the temporary directory in this manner so we skip
   // this test.
   let tmp = do_get_profile();

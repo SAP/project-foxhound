@@ -44,6 +44,9 @@ EXCLUDED_PACKAGES = {
     # but later versions use a dependency with Rust components, which we thus can't vendor.
     # For now we apply the minimal patch to jsonschema to make it work again.
     "jsonschema",
+    # filelock is temporarily excluded from the mach site to avoid conflicts with other sites
+    # that require a newer version via PyPI. It is instead loaded directly via the mach.filelock wrapper.
+    "filelock",
 }
 
 

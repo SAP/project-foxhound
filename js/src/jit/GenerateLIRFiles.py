@@ -415,7 +415,7 @@ class {class_name} : public {parent_class}<{num_defs}, {num_operands}, {num_temp
 def mir_type_to_lir_type(mir_type):
     assert mir_type and mir_type != "None"
 
-    if mir_type == "Value":
+    if mir_type in ("Value", "any"):
         return "BoxedValue"
 
     if mir_type == "Int64":

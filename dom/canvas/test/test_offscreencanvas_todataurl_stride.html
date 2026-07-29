@@ -1,0 +1,81 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>Transferred OffscreenCanvas toDataURL stride</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="offscreencanvas.js"></script>
+<link rel="stylesheet" href="/tests/SimpleTest/test.css">
+</head>
+<body>
+<script>
+
+SimpleTest.waitForExplicitFinish();
+
+// Width=5 ensures the surface stride is larger than width*4, so that an encoder
+// using a wrong stride would read across row boundaries and corrupt the output.
+const W = 5, H = 8;
+
+function allGreen(data) {
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i] !== 0 || data[i + 1] !== 255 ||
+        data[i + 2] !== 0 || data[i + 3] !== 255) {
+      return false;
+    }
+  }
+  return true;
+}
+
+async function runTest() {
+  let htmlCanvas = document.createElement("canvas");
+  htmlCanvas.width = W;
+  htmlCanvas.height = H;
+  document.body.appendChild(htmlCanvas);
+
+  let offscreenCanvas = htmlCanvas.transferControlToOffscreen();
+  let worker = new Worker("offscreencanvas.js");
+
+  await new Promise(resolve => {
+    worker.onmessage = function(evt) {
+      let msg = evt.data || {};
+      if (msg.type == "test") {
+        ok(msg.result, msg.name);
+      } else if (msg.type == "finish") {
+        resolve();
+      }
+    };
+    worker.postMessage(
+      { test: "webgl_todataurl_stride", canvas: offscreenCanvas },
+      [offscreenCanvas]
+    );
+  });
+
+  // Wait for the WebGL frame to be committed to the HTMLCanvasElement.
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+  let url = htmlCanvas.toDataURL("image/png");
+  let img = new Image();
+  await new Promise((resolve, reject) => {
+    img.onload = resolve;
+    img.onerror = reject;
+    img.src = url;
+  });
+
+  let tmp = document.createElement("canvas");
+  tmp.width = W;
+  tmp.height = H;
+  let ctx = tmp.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0);
+  let pixels = ctx.getImageData(0, 0, W, H).data;
+
+  ok(allGreen(pixels),
+     "toDataURL on transferred OffscreenCanvas should return all green pixels");
+
+  worker.terminate();
+  SimpleTest.finish();
+}
+
+SpecialPowers.pushPrefEnv({ set: [["webgl.force-enabled", true]] }, runTest);
+
+</script>
+</body>
+</html>

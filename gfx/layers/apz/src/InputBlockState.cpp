@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -850,7 +848,9 @@ bool TouchBlockState::UpdateSlopState(const MultiTouchInput& aInput,
   return mInSlop;
 }
 
-bool TouchBlockState::IsInSlop() const { return mInSlop; }
+TouchBlockState::InSlop TouchBlockState::IsInSlop() const {
+  return mInSlop ? InSlop::Yes : InSlop::No;
+}
 
 Maybe<ScrollDirection> TouchBlockState::GetBestGuessPanDirection(
     const MultiTouchInput& aInput) const {
@@ -858,17 +858,22 @@ Maybe<ScrollDirection> TouchBlockState::GetBestGuessPanDirection(
       aInput.mTouches.Length() != 1) {
     return Nothing();
   }
-  ScreenPoint vector = aInput.mTouches[0].mScreenPoint - mSlopOrigin;
-  double angle = atan2(vector.y, vector.x);  // range [-pi, pi]
-  angle = fabs(angle);                       // range [0, pi]
+  RefPtr<AsyncPanZoomController> apzc = GetTargetApzc();
+  if (!apzc) {
+    return Nothing();
+  }
+  ScreenPoint screenVector =
+      ScreenPoint(aInput.mTouches[0].mScreenPoint - mSlopOrigin);
+  ParentLayerPoint vector =
+      apzc->ToParentLayerCoordinates(screenVector, ScreenPoint(mSlopOrigin));
 
   double angleThreshold = TouchActionAllowsPanningXY()
                               ? StaticPrefs::apz_axis_lock_lock_angle()
                               : StaticPrefs::apz_axis_lock_direct_pan_angle();
-  if (apz::IsCloseToHorizontal(angle, angleThreshold)) {
+  if (apz::IsCloseToHorizontal(vector, angleThreshold)) {
     return Some(ScrollDirection::eHorizontal);
   }
-  if (apz::IsCloseToVertical(angle, angleThreshold)) {
+  if (apz::IsCloseToVertical(vector, angleThreshold)) {
     return Some(ScrollDirection::eVertical);
   }
   return Nothing();
@@ -880,6 +885,36 @@ uint32_t TouchBlockState::GetActiveTouchCount() const {
 
 bool TouchBlockState::IsTargetOriginallyConfirmed() const {
   return mOriginalTargetConfirmedState != TargetConfirmationState::eUnconfirmed;
+}
+
+bool TouchBlockState::NeedsContentResponseAfterLongTap(
+    const MultiTouchInput& aEvent, InSlop aWasInSlop) const {
+  if (aWasInSlop != InSlop::Yes) {
+    return false;
+  }
+  if (aEvent.mType != MultiTouchInput::MULTITOUCH_MOVE) {
+    return false;
+  }
+  if (!WasLongTapProcessed() && !IsWaitingLongTapResult()) {
+    return false;
+  }
+  if (IsTargetOriginallyConfirmed()) {
+    return false;
+  }
+  // This function can run while the content response is still pending
+  // (mContentResponded=false, mContentResponseTimerExpired=false), e.g.
+  // when ReceiveTouchInput has just called ResetContentResponseTimerExpired
+  // to start a new wait for the first touch-move's content response. In
+  // that window, CancelableBlockState::ShouldDropEvents() would trip the
+  // assertion in IsDefaultPrevented() assertion. Call the base-class overload
+  // here so we only check the target-confirmation half of "should drop", and
+  // handle the IsDefaultPrevented() half below with a
+  // HasContentResponded() short-circuit so the assertion is never reached
+  // when the response is unsettled.
+  if (InputBlockState::ShouldDropEvents()) {
+    return false;
+  }
+  return !HasContentResponded() || !IsDefaultPrevented();
 }
 
 KeyboardBlockState::KeyboardBlockState(

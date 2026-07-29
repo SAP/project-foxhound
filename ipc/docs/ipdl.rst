@@ -97,7 +97,7 @@ that represents the child.  The generated files are then automatically included
 in the C++ build process.  The generated classes contain public methods for
 sending the protocol messages, which client code will use as the entry-point to
 IPC communication.  The generated methods are built atop our IPC framework,
-defined in `/ipc <https://searchfox.org/mozilla-central/source/ipc>`_, that
+defined in :searchfox:`/ipc <ipc>`, that
 standardizes the safe and secure use of sockets, pipes, shared memory, etc on
 all supported platforms.  See `Using The IPDL compiler`_ for more on
 integration with the build process.
@@ -107,10 +107,8 @@ to add handlers for the tasks generated to respond to each message.  It must
 also add routines (``ParamTraits``) that define serialization and
 deserialization for any types used in the payload of a message that aren't
 already known to the IPDL system.  Primitive types, and a bunch of Mozilla
-types, have predefined ``ParamTraits`` (`here
-<https://searchfox.org/mozilla-central/source/ipc/glue/IPCMessageUtils.h>`__
-and `here
-<https://searchfox.org/mozilla-central/source/ipc/glue/IPCMessageUtilsSpecializations.h>`__).
+types, have predefined ``ParamTraits`` (:searchfox:`here <ipc/glue/IPCMessageUtils.h>`
+and :searchfox:`here <ipc/glue/IPCMessageUtilsSpecializations.h>`).
 
 .. note::
     Among other things, client code that uses the generated code must include
@@ -588,7 +586,7 @@ can be any type that has a C++ ``ParamTraits`` specialization and is imported
 by a directive.  That said, there are some surprises in the list of messages:
 
 ================= =============================================================
-``int32_t``,...   The standard primitive types are included.  See `builtin.py`_
+``int32_t``,...   The standard primitive types are included.  See :searchfox:`builtin.py <ipc/ipdl/ipdl/builtin.py>`
                   for a list.  Pointer types are, unsurprisingly, forbidden.
 ``?``             When following a type T, the parameter is translated into
                   ``Maybe<T>`` in C++.
@@ -605,8 +603,6 @@ This concludes our tour of the IPDL example file.  The connection to C++ is
 discussed in the next chapter; messages in particular are covered in `Actors
 and Messages in C++`_.  For suggestions on best practices when designing your
 IPDL actor approach, see `IPDL Best Practices`_.
-
-.. _builtin.py: https://searchfox.org/mozilla-central/source/ipc/ipdl/ipdl/builtin.py
 
 IPDL Syntax Quick Reference
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -798,12 +794,9 @@ Most basic types and many essential Mozilla types are always available for use
 without inclusion.  An incomplete list includes: C++ primitives, strings
 (``std`` and ``mozilla``), vectors (``std`` and ``mozilla``), ``RefPtr<T>``
 (for serializable ``T``), ``UniquePtr<T>``, ``nsCOMPtr<T>``, ``nsTArray<T>``,
-``std::unordered_map<T>``, ``nsresult``, etc.  See `builtin.py
-<https://searchfox.org/mozilla-central/source/ipc/ipdl/ipdl/builtin.py>`_,
-`ipc_message_utils.h
-<https://searchfox.org/mozilla-central/source/ipc/chromium/src/chrome/common/ipc_message_utils.h>`_
-and `IPCMessageUtilsSpecializations.h
-<https://searchfox.org/mozilla-central/source/ipc/glue/IPCMessageUtilsSpecializations.h>`_.
+``std::unordered_map<T>``, ``nsresult``, etc.  See :searchfox:`builtin.py <ipc/ipdl/ipdl/builtin.py>`,
+:searchfox:`ipc_message_utils.h <ipc/chromium/src/chrome/common/ipc_message_utils.h>`
+and :searchfox:`IPCMessageUtilsSpecializations.h <ipc/glue/IPCMessageUtilsSpecializations.h>`.
 
 ``ParamTraits`` typically bootstrap with the ``ParamTraits`` of more basic
 types, until they hit bedrock (e.g. one of the basic types above).  In the most
@@ -1110,8 +1103,7 @@ result of the [Tainted] annotation in the protocol file.  Recall that
 handler before their values can be used (as opposed to validation in
 ``ParamTraits``).  They therefore have access to any state that the message
 handler does.  Their APIs, along with a list of macros that are used to
-validate them, are detailed `here
-<https://searchfox.org/mozilla-central/source/mfbt/Tainting.h>`__.
+validate them, are detailed :searchfox:`here <mfbt/Tainting.h>`.
 
 Send methods that are not for async messages with return values follow a
 simpler form; they return a ``bool`` indicating success or failure and return
@@ -1669,7 +1661,7 @@ while a sync messagee is waiting for a response.  The rules for when a nested
 message can be handled are somewhat complex but they try to safely allow a
 ``sync`` message ``M`` to handle and respond to some special (nested) messages
 that may be needed for the other endpoint to finish processing ``M``.  There is
-a `comment in MessageChannel`_ with info on how the decision to handle nested
+a :searchfox:`comment in MessageChannel <mozilla-central/rev/077501b34cca91763ae04f4633a42fddd919fdbd:ipc/glue/MessageChannel.cpp#54-118>` with info on how the decision to handle nested
 messages is made.  For sync nested messages, note that this implies a relay
 between the endpoints, which could dramatically affect their throughput.
 
@@ -1770,7 +1762,7 @@ The following tables explain what happens in all cases:
     \*                                 sync inside_cpow               IPDL compiler error: parent cannot use inside_cpow priority
     =============================      =========================      ========================================================
 
-We haven't seen rule #2 from the `comment in MessageChannel`_ in action but, as
+We haven't seen rule #2 from the :searchfox:`comment in MessageChannel <mozilla-central/rev/077501b34cca91763ae04f4633a42fddd919fdbd:ipc/glue/MessageChannel.cpp#54-118>` in action but, as
 the comment mentions, it is needed to break deadlocks in cases where both the
 parent and child are initiating message-threads simultaneously.  It
 accomplishes this by favoring the parent's sent messages over the child's when
@@ -1787,8 +1779,6 @@ they will coordinate within themselves and with the rest of the application
 objects.  Control flow, and hence state, can be very difficult to predict and
 are just as hard to maintain.  This is one of the key reasons why we have
 stressed that message priorities should be avoided whenever possible.
-
-.. _comment in MessageChannel: https://searchfox.org/mozilla-central/rev/077501b34cca91763ae04f4633a42fddd919fdbd/ipc/glue/MessageChannel.cpp#54-118
 
 .. _Message Logging:
 

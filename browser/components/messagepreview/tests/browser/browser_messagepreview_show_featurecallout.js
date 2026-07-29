@@ -317,7 +317,7 @@ add_task(async function test_show_happy_feature_callout_message() {
   );
 
   await waitForClick("button.dismiss-button", win);
-  await dialogClosed(win);
+  await dialogClosed(browser);
   messageSandbox.restore();
   await BrowserTestUtils.closeWindow(win);
 });
@@ -352,7 +352,7 @@ add_task(async function test_show_feature_callout_without_trigger() {
   );
 
   await waitForClick("button.dismiss-button", win);
-  await dialogClosed(win);
+  await dialogClosed(browser);
   messageSandbox.restore();
   await BrowserTestUtils.closeWindow(win);
 });
@@ -387,7 +387,7 @@ add_task(async function test_show_feature_callout_anchors() {
   );
 
   await waitForClick("button.dismiss-button", win);
-  await dialogClosed(win);
+  await dialogClosed(browser);
   messageSandbox.restore();
   await BrowserTestUtils.closeWindow(win);
 });
@@ -422,7 +422,7 @@ add_task(async function test_show_bad_feature_callout_message() {
   );
 
   await waitForClick("button.dismiss-button", win);
-  await dialogClosed(win);
+  await dialogClosed(browser);
   messageSandbox.restore();
   await BrowserTestUtils.closeWindow(win);
 });

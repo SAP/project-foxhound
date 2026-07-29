@@ -36,6 +36,12 @@ const MERINO_DYNAMIC_WIKIPEDIA_SUGGESTION = {
   block_id: 1,
 };
 
+// Expected AMP icon sizes.
+const AMP_ICON_SIZE_TOP_PICK_LARGE_NOVA = 58;
+const AMP_ICON_SIZE_TOP_PICK_LARGE_PROTON = 52;
+const AMP_ICON_SIZE_TOP_PICK_SMALL = 28;
+const AMP_ICON_SIZE_NON_TOP_PICK = 16;
+
 // Trying to avoid timeouts in TV mode.
 requestLongerTimeout(5);
 
@@ -137,7 +143,11 @@ add_task(async function sponsoredPriorityButNotSponsoredSuggestion() {
 
   let row = await UrlbarTestUtils.waitForAutocompleteResultAt(window, 1);
   let before = window.getComputedStyle(row, "::before");
-  Assert.equal(before.content, "attr(label)", "::before.content is enabled");
+  Assert.equal(
+    before.content,
+    '"Firefox Suggest"',
+    "::before.content is enabled"
+  );
   Assert.equal(
     row.getAttribute("label"),
     "Firefox Suggest",
@@ -211,7 +221,11 @@ add_task(async function ampTopPickCharThreshold_belowThreshold() {
 
   // Group label.
   let before = window.getComputedStyle(row, "::before");
-  Assert.equal(before.content, "attr(label)", "::before.content is enabled");
+  Assert.equal(
+    before.content,
+    '"Firefox Suggest"',
+    "::before.content is enabled"
+  );
   Assert.equal(
     row.getAttribute("label"),
     "Firefox Suggest",
@@ -310,26 +324,22 @@ add_task(async function ampIconSize() {
     {
       topPick: true,
       useNovaIconSize: true,
-      expected: 52,
     },
     {
       topPick: true,
       useNovaIconSize: false,
-      expected: 28,
     },
     {
       topPick: false,
       useNovaIconSize: true,
-      expected: 16,
     },
     {
       topPick: false,
       useNovaIconSize: false,
-      expected: 16,
     },
   ];
 
-  for (let { topPick, useNovaIconSize, expected } of TEST_DATA) {
+  for (let { topPick, useNovaIconSize } of TEST_DATA) {
     if (topPick) {
       UrlbarPrefs.set("quicksuggest.ampTopPickCharThreshold", 1);
     }
@@ -343,9 +353,50 @@ add_task(async function ampIconSize() {
       value: "fra",
     });
 
+    await QuickSuggestTestUtils.assertIsQuickSuggest({
+      window,
+      index: 1,
+      isSponsored: true,
+      isBestMatch: topPick,
+      url: REMOTE_SETTINGS_RESULTS[0].url,
+    });
+
     let row = await UrlbarTestUtils.waitForAutocompleteResultAt(window, 1);
     let icon = row.querySelector(".urlbarView-favicon");
-    Assert.equal(icon.getAttribute("icon-size"), expected);
+
+    let expectedSize;
+    if (!topPick) {
+      expectedSize = AMP_ICON_SIZE_NON_TOP_PICK;
+    } else if (!useNovaIconSize) {
+      expectedSize = AMP_ICON_SIZE_TOP_PICK_SMALL;
+    } else if (Services.prefs.getBoolPref("browser.nova.enabled")) {
+      expectedSize = AMP_ICON_SIZE_TOP_PICK_LARGE_NOVA;
+    } else {
+      expectedSize = AMP_ICON_SIZE_TOP_PICK_LARGE_PROTON;
+    }
+
+    // The `icon-size` attribute is set in both Nova and Proton, but Nova
+    // doesn't use it, and when Nova is enabled it's set to 52 instead of the
+    // correct 58. We should stop setting it when Proton is removed.
+    if (!Services.prefs.getBoolPref("browser.nova.enabled")) {
+      Assert.equal(
+        icon.getAttribute("icon-size"),
+        expectedSize.toString(),
+        "icon-size attribute should have expected value"
+      );
+    }
+
+    let { width, height } = window.getComputedStyle(icon);
+    Assert.equal(
+      width,
+      `${expectedSize}px`,
+      "style.width should have expected value"
+    );
+    Assert.equal(
+      height,
+      `${expectedSize}px`,
+      "style.height should have expected value"
+    );
 
     await UrlbarTestUtils.promisePopupClose(window);
     await cleanUpNimbus();

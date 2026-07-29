@@ -14,18 +14,25 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "chrome://remote/content/shared/messagehandler/MessageHandler.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
   generateUUID: "chrome://remote/content/shared/UUID.sys.mjs",
+  isParentProcess:
+    "chrome://remote/content/shared/BrowsingContextUtils.sys.mjs",
   NavigableManager: "chrome://remote/content/shared/NavigableManager.sys.mjs",
   OwnershipModel: "chrome://remote/content/webdriver-bidi/RemoteValue.sys.mjs",
   pprint: "chrome://remote/content/shared/Format.sys.mjs",
   processExtraData:
     "chrome://remote/content/webdriver-bidi/modules/Intercept.sys.mjs",
   RealmType: "chrome://remote/content/shared/Realm.sys.mjs",
+  RemoteAgent: "chrome://remote/content/components/RemoteAgent.sys.mjs",
+  SessionDataCategory:
+    "chrome://remote/content/shared/messagehandler/sessiondata/SessionData.sys.mjs",
   SessionDataMethod:
     "chrome://remote/content/shared/messagehandler/sessiondata/SessionData.sys.mjs",
   setDefaultAndAssertSerializationOptions:
     "chrome://remote/content/webdriver-bidi/RemoteValue.sys.mjs",
   UserContextManager:
     "chrome://remote/content/shared/UserContextManager.sys.mjs",
+  waitForTopBrowsingContextToBeReady:
+    "chrome://remote/content/shared/BrowsingContextUtils.sys.mjs",
   WindowGlobalMessageHandler:
     "chrome://remote/content/shared/messagehandler/WindowGlobalMessageHandler.sys.mjs",
   workerListenerRegistry:
@@ -67,6 +74,7 @@ const ScriptEvaluateResultType = {
  */
 
 class ScriptModule extends RootBiDiModule {
+  #submittedContextsCreated;
   #contextListener;
   #preloadScriptMap;
   #realmInfoMap;
@@ -77,6 +85,10 @@ class ScriptModule extends RootBiDiModule {
 
     this.#contextListener = new lazy.BrowsingContextListener();
     this.#contextListener.on("attached", this.#onContextAttached);
+    this.#contextListener.on("discarded", this.#onContextDiscarded);
+
+    // Set of browsing context ids for which "browsingContext.contextCreated" event was sent.
+    this.#submittedContextsCreated = new Set();
 
     // Map in which the keys are UUIDs, and the values are structs
     // of the type PreloadScript.
@@ -92,8 +104,10 @@ class ScriptModule extends RootBiDiModule {
 
   destroy() {
     this.#contextListener.off("attached", this.#onContextAttached);
+    this.#contextListener.off("discarded", this.#onContextDiscarded);
     this.#contextListener.destroy();
 
+    this.#submittedContextsCreated = null;
     this.#preloadScriptMap = null;
     this.#realmInfoMap = null;
     this.#subscribedEvents = null;
@@ -263,7 +277,7 @@ class ScriptModule extends RootBiDiModule {
     this.#preloadScriptMap.set(script, preloadScript);
 
     const preloadScriptDataItem = {
-      category: "preload-script",
+      category: lazy.SessionDataCategory.PreloadScript,
       moduleName: "_configuration",
       values: [
         {
@@ -455,6 +469,10 @@ class ScriptModule extends RootBiDiModule {
       supportsChromeScope: true,
     });
 
+    // Bug 2030901: this check should be handled by getContextFromTarget via
+    // _getNavigable, but at the moment this would regress other commands.
+    this.#assertParentProcessScriptAccess(context);
+
     const serializationOptionsWithDefaults =
       lazy.setDefaultAndAssertSerializationOptions(serializationOptions);
 
@@ -576,6 +594,10 @@ class ScriptModule extends RootBiDiModule {
       supportsChromeScope: true,
     });
 
+    // Bug 2030901: this check should be handled by getContextFromTarget via
+    // _getNavigable, but at the moment this would regress other commands.
+    this.#assertParentProcessScriptAccess(context);
+
     const serializationOptionsWithDefaults =
       lazy.setDefaultAndAssertSerializationOptions(serializationOptions);
 
@@ -688,15 +710,23 @@ class ScriptModule extends RootBiDiModule {
         );
       }
 
-      // Remove this check when other realm types are supported
-      if (type !== lazy.RealmType.Window) {
+      const unsupportedRealmTypes = [
+        lazy.RealmType.AudioWorklet,
+        lazy.RealmType.PaintWorklet,
+        lazy.RealmType.Worker,
+        lazy.RealmType.Worklet,
+      ];
+      if (unsupportedRealmTypes.includes(type)) {
         throw new lazy.error.UnsupportedOperationError(
-          `Unsupported "type": ${type}. Only "type" ${lazy.RealmType.Window} is currently supported.`
+          `Unsupported "type": ${type}`
         );
       }
     }
 
-    return { realms: await this.#getRealmInfos(destination) };
+    const realms = await this.#getRealmInfos(destination);
+    return {
+      realms: type === null ? realms : realms.filter(r => r.type === type),
+    };
   }
 
   /**
@@ -727,7 +757,7 @@ class ScriptModule extends RootBiDiModule {
 
     const preloadScript = this.#preloadScriptMap.get(script);
     const sessionDataItem = {
-      category: "preload-script",
+      category: lazy.SessionDataCategory.PreloadScript,
       moduleName: "_configuration",
       values: [
         {
@@ -806,6 +836,16 @@ class ScriptModule extends RootBiDiModule {
     )(ownership);
 
     return true;
+  }
+
+  #assertParentProcessScriptAccess(context) {
+    // `supportsChromeScope` only checks browsingContext.isContent, but about
+    // pages can have isContent=true but still run in parent process.
+    if (!lazy.RemoteAgent.allowSystemAccess && lazy.isParentProcess(context)) {
+      throw new lazy.error.UnsupportedOperationError(
+        `script.evaluate and script.callFunction are not supported for parent process browsing contexts: ${context.id}`
+      );
+    }
   }
 
   #assertResultOwnership(resultOwnership) {
@@ -904,7 +944,7 @@ class ScriptModule extends RootBiDiModule {
         type: lazy.ContextDescriptorType.All,
       },
     };
-    const realmInfos = await this.#getRealmInfos(destination);
+    const realmInfos = await this.#getWindowRealmInfos(destination);
     const realm = realmInfos.find(info => info.realm == realmId);
 
     if (realm && realm.context !== null) {
@@ -915,6 +955,12 @@ class ScriptModule extends RootBiDiModule {
   }
 
   async #getRealmInfos(destination) {
+    const windowRealms = await this.#getWindowRealmInfos(destination);
+    const workerRealms = this.#getWorkerRealmInfos(destination);
+    return [...windowRealms, ...workerRealms];
+  }
+
+  async #getWindowRealmInfos(destination) {
     let realms = await this.messageHandler.forwardCommand({
       moduleName: "script",
       commandName: "getWindowRealms",
@@ -940,6 +986,60 @@ class ScriptModule extends RootBiDiModule {
         return realm;
       })
       .filter(realm => realm.context !== null);
+  }
+
+  #getWorkerRealmInfo(workerData) {
+    const { id, type, url } = workerData;
+
+    const realmInfo = {
+      origin: url,
+      realm: id,
+    };
+
+    switch (type) {
+      case Ci.nsIWorkerDebugger.TYPE_DEDICATED: {
+        const owners = this.#getWorkerOwners(workerData);
+        realmInfo.owners = owners;
+        realmInfo.type = lazy.RealmType.DedicatedWorker;
+        break;
+      }
+      case Ci.nsIWorkerDebugger.TYPE_SHARED: {
+        realmInfo.type = lazy.RealmType.SharedWorker;
+        break;
+      }
+      case Ci.nsIWorkerDebugger.TYPE_SERVICE: {
+        realmInfo.type = lazy.RealmType.ServiceWorker;
+        break;
+      }
+      default:
+        throw new Error(`Unexpected worker type ${type}`);
+    }
+
+    return realmInfo;
+  }
+
+  #getWorkerRealmInfos(destination) {
+    const workers = lazy.workerListenerRegistry.getWorkers();
+    const realmInfos = [];
+
+    for (const workerData of workers) {
+      if (workerData.isChrome) {
+        // Bug 2016576: Support workers for chrome scope.
+        continue;
+      }
+
+      if (destination.id !== undefined) {
+        const workerBrowsingContextIds =
+          this.#getWorkerBrowsingContexts(workerData);
+        if (!workerBrowsingContextIds.includes(destination.id)) {
+          continue;
+        }
+      }
+
+      realmInfos.push(this.#getWorkerRealmInfo(workerData));
+    }
+
+    return realmInfos;
   }
 
   /**
@@ -1002,7 +1102,7 @@ class ScriptModule extends RootBiDiModule {
     );
   }
 
-  #onContextAttached = (eventName, data) => {
+  #onContextAttached = async (eventName, data) => {
     const { browsingContext } = data;
     // If there is a subscription for "browsingContext.contextCreated" event,
     // do not send "script.realmCreated" event yet and
@@ -1011,29 +1111,65 @@ class ScriptModule extends RootBiDiModule {
       this.#realmInfoMap.has(browsingContext) &&
       !this.#hasEventSubscriptionToContextCreated(browsingContext)
     ) {
+      // If `waitForTopBrowsingContextToBeReady` returns `null`,
+      // it means that the browsing context was discarded.
+      // Do not send an event in this case.
+      if (
+        !browsingContext.parent &&
+        (await lazy.waitForTopBrowsingContextToBeReady(browsingContext)) ===
+          null
+      ) {
+        return;
+      }
+
       this.#sendDelayedRealmCreatedEvent(browsingContext);
     }
   };
 
+  #onContextDiscarded = (eventName, data) => {
+    const { browsingContext, why } = data;
+
+    // Filter out top-level browsing contexts that are destroyed because of a
+    // cross-group navigation.
+    if (why !== "replace") {
+      const contextId =
+        lazy.NavigableManager.getIdForBrowsingContext(browsingContext);
+      this.#submittedContextsCreated.delete(contextId);
+    }
+  };
+
   #onContextCreatedSubmitted = (eventName, { browsingContext }) => {
+    const contextId =
+      lazy.NavigableManager.getIdForBrowsingContext(browsingContext);
+    this.#submittedContextsCreated.add(contextId);
+
     if (this.#realmInfoMap.has(browsingContext)) {
       this.#sendDelayedRealmCreatedEvent(browsingContext);
     }
   };
 
   #onRealmCreated = (eventName, { realmInfo }) => {
-    // Resolve browsing context to a TabManager id.
-    const context = lazy.NavigableManager.getIdForBrowsingContext(
-      realmInfo.context
-    );
+    const browsingContext = realmInfo.context;
 
-    // Do not emit the event, if the browsing context is gone or not created yet.
-    if (context === null) {
+    // Resolve browsing context to a TabManager id.
+    const contextId =
+      lazy.NavigableManager.getIdForBrowsingContext(browsingContext);
+
+    // Do not emit the event, if the browsing context is gone, not created, not ready yet,
+    // or if the browsing context with the subscription for
+    // "browsingContext.contextCreated" event is not received yet.
+    if (
+      contextId === null ||
+      (!browsingContext.currentWindowGlobal && !browsingContext.parent) ||
+      (this.#hasEventSubscriptionToContextCreated(browsingContext) &&
+        !this.#submittedContextsCreated.has(contextId))
+    ) {
       // Save the realm info to send it when the browsing context is ready.
-      this.#realmInfoMap.set(realmInfo.context, realmInfo);
+      this.#realmInfoMap.set(browsingContext, realmInfo);
       return;
     }
-    this.#sendRealmCreatedEvent(realmInfo, realmInfo.context, context);
+
+    this.#sendRealmCreatedEvent(realmInfo, browsingContext, contextId);
   };
 
   #onRealmDestroyed = (eventName, { realm, context }) => {
@@ -1043,43 +1179,15 @@ class ScriptModule extends RootBiDiModule {
   };
 
   #onWorkerRegistered = (eventName, workerData) => {
-    const { id, isChrome, type, url } = workerData;
-
-    if (isChrome) {
+    if (workerData.isChrome) {
       // Bug 2016576: Support workers for chrome scope.
       return;
-    }
-
-    const realmInfo = {};
-    switch (type) {
-      case Ci.nsIWorkerDebugger.TYPE_DEDICATED: {
-        const owners = this.#getWorkerOwners(workerData);
-        realmInfo.origin = url;
-        realmInfo.owners = owners;
-        realmInfo.realm = id;
-        realmInfo.type = lazy.RealmType.DedicatedWorker;
-        break;
-      }
-      case Ci.nsIWorkerDebugger.TYPE_SHARED: {
-        realmInfo.origin = url;
-        realmInfo.realm = id;
-        realmInfo.type = lazy.RealmType.SharedWorker;
-        break;
-      }
-      case Ci.nsIWorkerDebugger.TYPE_SERVICE: {
-        realmInfo.origin = url;
-        realmInfo.realm = id;
-        realmInfo.type = lazy.RealmType.ServiceWorker;
-        break;
-      }
-      default:
-        throw new Error(`Unexpected worker type ${type}`);
     }
 
     this._emitEventForBrowsingContexts(
       this.#getWorkerBrowsingContexts(workerData),
       "script.realmCreated",
-      realmInfo
+      this.#getWorkerRealmInfo(workerData)
     );
   };
 
@@ -1103,13 +1211,19 @@ class ScriptModule extends RootBiDiModule {
   };
 
   #sendDelayedRealmCreatedEvent(browsingContext) {
-    const realmInfo = this.#realmInfoMap.get(browsingContext);
-    // Resolve browsing context to a TabManager id.
-    const browsingContextId = lazy.NavigableManager.getIdForBrowsingContext(
-      realmInfo.context
-    );
-    this.#sendRealmCreatedEvent(realmInfo, browsingContext, browsingContextId);
-    this.#realmInfoMap.delete(browsingContext);
+    if (this.#realmInfoMap?.has(browsingContext)) {
+      const realmInfo = this.#realmInfoMap.get(browsingContext);
+      // Resolve browsing context to a TabManager id.
+      const browsingContextId = lazy.NavigableManager.getIdForBrowsingContext(
+        realmInfo.context
+      );
+      this.#sendRealmCreatedEvent(
+        realmInfo,
+        browsingContext,
+        browsingContextId
+      );
+      this.#realmInfoMap.delete(browsingContext);
+    }
   }
 
   #sendRealmCreatedEvent(realmInfo, context, browsingContextId) {

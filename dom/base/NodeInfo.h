@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,6 +24,7 @@
 #include "mozilla/dom/NameSpaceConstants.h"
 #include "nsAtom.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsHTMLTags.h"
 #include "nsHashKeys.h"
 #include "nsString.h"
 
@@ -75,6 +74,13 @@ class NodeInfo final {
    * Returns the node's localName as defined in DOM Core
    */
   const nsString& LocalName() const { return mLocalName; }
+
+  /**
+   * Returns an nsHTMLTag value if this is for an HTML element node.
+   */
+  const mozilla::Maybe<const nsHTMLTag>& HTMLTag() const {
+    return mInner.HTMLTag();
+  }
 
   /*
    * Get the prefix from this node as a string.
@@ -267,6 +273,8 @@ class NodeInfo final {
       return mHash.value();
     }
 
+    const mozilla::Maybe<const nsHTMLTag>& HTMLTag() const;
+
     nsAtom* const MOZ_OWNING_REF mName;
     nsAtom* MOZ_OWNING_REF mPrefix;
     int32_t mNamespaceID;
@@ -274,6 +282,7 @@ class NodeInfo final {
     const nsAString* const mNameString;
     nsAtom* MOZ_OWNING_REF mExtraName;  // Only used by PIs and DocTypes
     mutable mozilla::Maybe<const uint32_t> mHash;
+    mutable mozilla::Maybe<const nsHTMLTag> mHTMLTag;
   };
 
   // nsNodeInfoManager needs to pass mInner to the hash table.

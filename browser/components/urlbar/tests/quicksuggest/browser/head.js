@@ -86,6 +86,11 @@ async function updateTopSites(condition, searchShortcuts = false) {
     let sites = AboutNewTab.getTopSites();
     return condition(sites);
   }, "Waiting for top sites to be updated");
+
+  let feed = AboutNewTab.activityStream?.store?.feeds.get(
+    "feeds.system.topsites"
+  );
+  await feed?._latestRefreshPromise;
 }
 
 /**

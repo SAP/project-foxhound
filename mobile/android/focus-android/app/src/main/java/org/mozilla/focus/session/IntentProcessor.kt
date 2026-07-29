@@ -30,9 +30,23 @@ class IntentProcessor(
     private val tabsUseCases: TabsUseCases,
     private val customTabsUseCases: CustomTabsUseCases,
 ) {
+    /**
+     * Represents the result of processing an intent.
+     */
     sealed class Result {
+        /**
+         * No action was taken.
+         */
         object None : Result()
+
+        /**
+         * A new standard tab was created.
+         */
         data class Tab(val id: String) : Result()
+
+        /**
+         * A new custom tab was created.
+         */
         data class CustomTab(val id: String) : Result()
     }
 

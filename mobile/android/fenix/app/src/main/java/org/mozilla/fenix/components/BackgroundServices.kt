@@ -55,7 +55,6 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.maxActiveTime
 import org.mozilla.fenix.ext.recordEventInNimbus
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.perf.StrictModeManager
 import org.mozilla.fenix.perf.lazyMonitored
 import org.mozilla.fenix.sync.SyncedTabsIntegration
@@ -152,6 +151,7 @@ class BackgroundServices(
 
     private val telemetryAccountObserver = TelemetryAccountObserver(
         context,
+        settings,
     )
 
     val accountAbnormalities = AccountAbnormalities(context, crashReporter, strictMode)
@@ -180,7 +180,7 @@ class BackgroundServices(
     val syncedTabsCommandsFlushScheduler by lazyMonitored {
         SyncedTabsCommandsFlushScheduler(
             context = context,
-            flushDelay = context.getUndoDelay().milliseconds + DEFAULT_SYNCED_TABS_COMMANDS_EXTRA_FLUSH_DELAY,
+            flushDelay = settings.getUndoDelay().milliseconds + DEFAULT_SYNCED_TABS_COMMANDS_EXTRA_FLUSH_DELAY,
         )
     }
     val closeSyncedTabsCommandReceiver by lazyMonitored {
@@ -281,9 +281,10 @@ internal class TelemetryMiddleware : Middleware<SyncState, SyncAction> {
 @VisibleForTesting(otherwise = PRIVATE)
 internal class TelemetryAccountObserver(
     private val context: Context,
+    private val settings: Settings,
 ) : AccountObserver {
     override fun onAuthenticated(account: OAuthAccount, authType: AuthType) {
-        context.settings().signedInFxaAccount = true
+        settings.signedInFxaAccount = true
         when (authType) {
             // User signed-in into an existing FxA account.
             AuthType.Signin -> {
@@ -318,7 +319,7 @@ internal class TelemetryAccountObserver(
 
     override fun onLoggedOut() {
         SyncAuth.signOut.record(NoExtras())
-        context.settings().signedInFxaAccount = false
+        settings.signedInFxaAccount = false
     }
 }
 

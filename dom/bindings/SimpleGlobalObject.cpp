@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -55,16 +53,11 @@ static size_t SimpleGlobal_moved(JSObject* obj, JSObject* old) {
 }
 
 static const JSClassOps SimpleGlobalClassOps = {
-    nullptr,
-    nullptr,
-    nullptr,
-    JS_NewEnumerateStandardClasses,
-    JS_ResolveStandardClass,
-    JS_MayResolveStandardClass,
-    SimpleGlobal_finalize,
-    nullptr,
-    nullptr,
-    JS_GlobalObjectTraceHook,
+    .newEnumerate = JS_NewEnumerateStandardClasses,
+    .resolve = JS_ResolveStandardClass,
+    .mayResolve = JS_MayResolveStandardClass,
+    .finalize = SimpleGlobal_finalize,
+    .trace = JS_GlobalObjectTraceHook,
 };
 
 static const js::ClassExtension SimpleGlobalClassExtension = {

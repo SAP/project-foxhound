@@ -110,7 +110,7 @@ class BuildBackend(LoggingMixin):
         )
         backend_output_list = set()
         if os.path.exists(list_file):
-            with open(list_file) as fh:
+            with open(list_file, encoding="utf-8") as fh:
                 backend_output_list.update(
                     mozpath.normsep(p) for p in fh.read().splitlines()
                 )

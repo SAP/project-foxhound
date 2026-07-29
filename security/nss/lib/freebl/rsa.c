@@ -12,7 +12,8 @@
 #include "secerr.h"
 
 #include "prclist.h"
-#include "nssilock.h"
+#include "prlock.h"
+#include "prcvar.h"
 #include "prinit.h"
 #include "blapi.h"
 #include "mpi.h"
@@ -73,7 +74,7 @@ typedef struct RSABlindingParamsStr RSABlindingParams;
 ** of the counter for each set of blinding parameters.
 */
 struct RSABlindingParamsListStr {
-    PZLock *lock;    /* Lock for the list   */
+    PRLock *lock;    /* Lock for the list   */
     PRCondVar *cVar; /* Condidtion Variable */
     int waitCount;   /* Number of threads waiting on cVar */
     PRCList head;    /* Pointer to the list */
@@ -1142,7 +1143,7 @@ static PRCallOnceType coBPInit = { 0, 0, 0 };
 static PRStatus
 init_blinding_params_list(void)
 {
-    blindingParamsList.lock = PZ_NewLock(nssILockOther);
+    blindingParamsList.lock = PR_NewLock();
     if (!blindingParamsList.lock) {
         PORT_SetError(SEC_ERROR_NO_MEMORY);
         return PR_FAILURE;
@@ -1162,14 +1163,16 @@ generate_blinding_params(RSAPrivateKey *key, mp_int *f, mp_int *g, mp_int *n,
                          unsigned int modLen)
 {
     SECStatus rv = SECSuccess;
-    mp_int e, k;
+    mp_int e, k, res;
     mp_err err = MP_OKAY;
     unsigned char *kb = NULL;
 
     MP_DIGITS(&e) = 0;
     MP_DIGITS(&k) = 0;
+    MP_DIGITS(&res) = 0;
     CHECK_MPI_OK(mp_init(&e));
     CHECK_MPI_OK(mp_init(&k));
+    CHECK_MPI_OK(mp_init(&res));
     SECITEM_TO_MPINT(key->publicExponent, &e);
     /* generate random k < n */
     kb = PORT_Alloc(modLen);
@@ -1177,8 +1180,12 @@ generate_blinding_params(RSAPrivateKey *key, mp_int *f, mp_int *g, mp_int *n,
         PORT_SetError(SEC_ERROR_NO_MEMORY);
         goto cleanup;
     }
-    CHECK_SEC_OK(RNG_GenerateGlobalRandomBytes(kb, modLen));
-    CHECK_MPI_OK(mp_read_unsigned_octets(&k, kb, modLen));
+    /* make sure k and n do not share a multiple */
+    do {
+        CHECK_SEC_OK(RNG_GenerateGlobalRandomBytes(kb, modLen));
+        CHECK_MPI_OK(mp_read_unsigned_octets(&k, kb, modLen));
+        CHECK_MPI_OK(mp_gcd(&k, n, &res));
+    } while (mp_cmp_d(&res, 1) != MP_EQ);
     /* k < n */
     CHECK_MPI_OK(mp_mod(&k, n, &k));
     /* f = k**e mod n */
@@ -1190,6 +1197,7 @@ generate_blinding_params(RSAPrivateKey *key, mp_int *f, mp_int *g, mp_int *n,
 cleanup:
     if (kb)
         PORT_ZFree(kb, modLen);
+    mp_clear(&res);
     mp_clear(&k);
     mp_clear(&e);
     if (err) {
@@ -1249,7 +1257,7 @@ get_blinding_params(RSAPrivateKey *key, mp_int *n, unsigned int modLen,
             return SECFailure;
         }
         /* Acquire the list lock */
-        PZ_Lock(blindingParamsList.lock);
+        PR_Lock(blindingParamsList.lock);
         holdingLock = PR_TRUE;
 
         /* Walk the list looking for the private key */
@@ -1300,7 +1308,7 @@ get_blinding_params(RSAPrivateKey *key, mp_int *n, unsigned int modLen,
             CHECK_MPI_OK(mp_copy(&bp->f, f));
             CHECK_MPI_OK(mp_copy(&bp->g, g));
 
-            PZ_Unlock(blindingParamsList.lock);
+            PR_Unlock(blindingParamsList.lock);
             return SECSuccess;
 #else
             if (--(bp->counter) > 0) {
@@ -1309,7 +1317,7 @@ get_blinding_params(RSAPrivateKey *key, mp_int *n, unsigned int modLen,
                 CHECK_MPI_OK(mp_copy(&bp->f, f));
                 CHECK_MPI_OK(mp_copy(&bp->g, g));
 
-                PZ_Unlock(blindingParamsList.lock);
+                PR_Unlock(blindingParamsList.lock);
                 return SECSuccess;
             }
             /* exhausted this one, give its values to caller, and
@@ -1331,7 +1339,7 @@ get_blinding_params(RSAPrivateKey *key, mp_int *n, unsigned int modLen,
                 PR_NotifyCondVar(blindingParamsList.cVar);
                 blindingParamsList.waitCount--;
             }
-            PZ_Unlock(blindingParamsList.lock);
+            PR_Unlock(blindingParamsList.lock);
             return SECSuccess;
 #endif
         }
@@ -1343,7 +1351,7 @@ get_blinding_params(RSAPrivateKey *key, mp_int *n, unsigned int modLen,
             bp->next = NULL;
             bpUnlinked = bp; /* In case we fail */
 
-            PZ_Unlock(blindingParamsList.lock);
+            PR_Unlock(blindingParamsList.lock);
             holdingLock = PR_FALSE;
             /* generate blinding parameter values for the current thread */
             CHECK_SEC_OK(generate_blinding_params(key, f, g, n, modLen));
@@ -1355,7 +1363,7 @@ get_blinding_params(RSAPrivateKey *key, mp_int *n, unsigned int modLen,
             CHECK_MPI_OK(mp_copy(g, &bp->g));
 
             /* Put this at head of queue of usable params. */
-            PZ_Lock(blindingParamsList.lock);
+            PR_Lock(blindingParamsList.lock);
             holdingLock = PR_TRUE;
             (void)holdingLock;
             /* initialize RSABlindingParamsStr */
@@ -1370,7 +1378,7 @@ get_blinding_params(RSAPrivateKey *key, mp_int *n, unsigned int modLen,
                 PR_NotifyAllCondVar(blindingParamsList.cVar);
                 blindingParamsList.waitCount = 0;
             }
-            PZ_Unlock(blindingParamsList.lock);
+            PR_Unlock(blindingParamsList.lock);
             return SECSuccess;
         }
         /* Here, there are no usable blinding parameters available,
@@ -1381,7 +1389,7 @@ get_blinding_params(RSAPrivateKey *key, mp_int *n, unsigned int modLen,
          */
         blindingParamsList.waitCount++;
         PR_WaitCondVar(blindingParamsList.cVar, PR_INTERVAL_NO_TIMEOUT);
-        PZ_Unlock(blindingParamsList.lock);
+        PR_Unlock(blindingParamsList.lock);
         holdingLock = PR_FALSE;
         (void)holdingLock;
     } while (1);
@@ -1390,7 +1398,7 @@ cleanup:
     /* It is possible to reach this after the lock is already released.  */
     if (bpUnlinked) {
         if (!holdingLock) {
-            PZ_Lock(blindingParamsList.lock);
+            PR_Lock(blindingParamsList.lock);
             holdingLock = PR_TRUE;
         }
         bp = bpUnlinked;
@@ -1402,7 +1410,7 @@ cleanup:
         rsabp->free = bp;
     }
     if (holdingLock) {
-        PZ_Unlock(blindingParamsList.lock);
+        PR_Unlock(blindingParamsList.lock);
     }
     if (err) {
         MP_TO_SEC_ERROR(err);
@@ -1661,7 +1669,7 @@ RSA_Cleanup(void)
     }
 
     if (blindingParamsList.lock) {
-        SKIP_AFTER_FORK(PZ_DestroyLock(blindingParamsList.lock));
+        SKIP_AFTER_FORK(PR_DestroyLock(blindingParamsList.lock));
         blindingParamsList.lock = NULL;
     }
 

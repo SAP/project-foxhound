@@ -21,7 +21,6 @@ WebConsolePanel["WebConsolePanel<br/>[panel.js]"] -- "{hud}" --> WebConsole["Web
 BrowserConsole -- extends --> WebConsole;
 ```
 
-
 ## Components
 
 The Console panel UI is built on top of [React](../frontend/react.md). It defines set of React components in `components` directory
@@ -46,6 +45,7 @@ JSTerm -- editor --> Editor["Editor<br/>[client/shared/sourceeditor/editor.js]"]
 ```
 
 There are several external components we use from the WebConsole:
+
 - ObjectInspector/Rep: Used to display a variable in the console output and handle expanding the variable when it's not a primitive.
 - Frame: Used to display the location of messages.
 - SmartTrace: Used to display the stack trace of messages and errors

@@ -164,15 +164,6 @@ linux64-zucchini-bin:
             - third_party/zucchini/
             - tools/zucchini/
 
-linux64-upx:
-    description: "UPX build"
-    treeherder:
-        symbol: TL(upx)
-        tier: 1
-    run:
-        script: build-upx.sh
-        toolchain-artifact: public/build/upx.tar.zst
-
 linux64-msix-packaging:
     description: "msix-packaging build"
     treeherder:
@@ -204,6 +195,27 @@ linux64-custom-v8:
         ]
         toolchain-artifact: public/build/d8.tar.zst
 
+linux64-marannon:
+    description: "marannon"
+    treeherder:
+        symbol: TL(marannon)
+    fetches:
+        toolchain:
+            - linux64-clang-toolchain
+            - linux64-rust
+            - sysroot-x86_64-linux-gnu
+    run:
+        script: build-rust-based-toolchain.sh
+        sparse-profile: null
+        toolchain-artifact: public/build/marannon.tar.zst
+        resources:
+            - tools/update-verify/marannon/**
+        arguments: ["x86_64-unknown-linux-gnu"]
+    worker:
+        env:
+            CRATE_PATH: tools/update-verify/marannon
+            RUN_TESTS: "1"
+
 macosx64-xz:
     description: "xz development library"
     worker-type: b-osx-1015
@@ -217,7 +229,7 @@ macosx64-xz:
         toolchain-artifact: public/build/xz.tar.zst
     fetches:
         fetch:
-            - xz-5.8.1
+            - xz
         toolchain:
             - macosx64-clang-toolchain
             - macosx64-sdk-toolchain
@@ -250,13 +262,14 @@ macosx-custom-car:
             is_official_build=true,
             symbol_level=0,
             target_cpu="x64",
+            use_clang_modules=false,
             use_v8_context_snapshot=false,
             v8_symbol_level=0
         ]
         toolchain-artifact: public/build/car_macosx.tar.zst
     fetches:
         toolchain:
-            - MacOSX26.2.sdk
+            - MacOSX26.5.sdk
 
 macosx-arm64-custom-car:
     description: "Custom chromium-as-release build for mac (apple silicon)"
@@ -286,13 +299,14 @@ macosx-arm64-custom-car:
             is_official_build=true,
             symbol_level=0,
             target_cpu="arm64",
+            use_clang_modules=false,
             use_v8_context_snapshot=false,
             v8_symbol_level=0
         ]
         toolchain-artifact: public/build/car_macosx_arm.tar.zst
     fetches:
         toolchain:
-            - MacOSX26.2.sdk
+            - MacOSX26.5.sdk
 
 android-custom-car:
     description: "Custom chromium-as-release build for Android"
@@ -393,7 +407,7 @@ win64-custom-car:
         toolchain-artifact: public/build/car_win64.tar.zst
     fetches:
         toolchain:
-            - win64-vs2022-car
+            - win64-vs2026
 
 browsertime:
     description: "npm install browsertime node_modules"
@@ -419,9 +433,7 @@ puppeteer-build:
         script: puppeteer-build.sh
         sparse-profile: null
         resources:
-            - 'remote/test/puppeteer/package.json'
-            - 'remote/test/puppeteer/package-lock.json'
-            - 'remote/test/puppeteer/test/package.json'
+            - 'remote/test/puppeteer/**'
         toolchain-artifact: public/build/puppeteer-build.tar.zst
     fetches:
         toolchain:
@@ -626,86 +638,6 @@ linux64-makecab:
             - linux64-rust-toolchain
             - sysroot-x86_64-linux-gnu
 
-linux64-samply:
-    description: "samply toolchain build for x86_64 Linux"
-    treeherder:
-        symbol: TL(samply)
-    worker:
-        env:
-            FETCH: samply/samply
-    run:
-        script: build-rust-based-toolchain.sh
-        arguments: ['x86_64-unknown-linux-gnu']
-        toolchain-artifact: public/build/samply.tar.zst
-    run-on-projects: []
-    fetches:
-        fetch:
-            - samply
-        toolchain:
-            - linux64-clang-toolchain
-            - linux64-rust
-            - sysroot-x86_64-linux-gnu
-
-macosx64-samply:
-    description: "samply toolchain build for x86_64 macOS"
-    treeherder:
-        symbol: TM(samply)
-    worker:
-        env:
-            FETCH: samply/samply
-    run:
-        script: build-rust-based-toolchain.sh
-        arguments: ['x86_64-apple-darwin']
-        toolchain-artifact: public/build/samply.tar.zst
-    run-on-projects: []
-    fetches:
-        fetch:
-            - samply
-        toolchain:
-            - linux64-clang-toolchain
-            - linux64-rust-macos
-            - macosx64-sdk-toolchain
-
-macosx64-aarch64-samply:
-    description: "samply toolchain build for aarch64 macOS"
-    treeherder:
-        symbol: TMA64(samply)
-    worker:
-        env:
-            FETCH: samply/samply
-    run:
-        script: build-rust-based-toolchain.sh
-        arguments: ['aarch64-apple-darwin']
-        toolchain-artifact: public/build/samply.tar.zst
-    run-on-projects: []
-    fetches:
-        fetch:
-            - samply
-        toolchain:
-            - linux64-clang-toolchain
-            - linux64-rust-macos
-            - macosx64-sdk-toolchain
-
-win64-samply:
-    description: "samply toolchain build for Windows"
-    treeherder:
-        symbol: TW64(samply)
-    worker:
-        env:
-            FETCH: samply/samply
-    run:
-        script: build-rust-based-toolchain.sh
-        arguments: ['x86_64-pc-windows-msvc']
-        toolchain-artifact: public/build/samply.tar.zst
-    run-on-projects: []
-    fetches:
-        fetch:
-            - samply
-        toolchain:
-            - linux64-clang-toolchain
-            - linux64-rust-windows
-            - vs-toolchain
-
 win64-mozmake:
     description: "mozmake for Windows"
     attributes:
@@ -757,23 +689,6 @@ nsis:
             - linux64-clang-toolchain
             - sysroot-x86_64-linux-gnu
 
-win64-vs2022-car:
-    description: "VS 2022 toolchain with SDK 10.0.26100.x, for CaR builds"
-    attributes:
-        local-toolchain: true
-    treeherder:
-        symbol: TW64(msvc2022-car)
-    worker:
-        env:
-            MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: system
-    run:
-        script: get_vs.py
-        arguments:
-            - build/vs/vs2022-car.yaml
-        resources:
-            - build/vs/vs2022-car.yaml
-        toolchain-artifact: project/gecko/vs/vs.tar.zst
-
 win64-vs2026:
     description: "VS 2026"
     attributes:
@@ -802,7 +717,7 @@ win64-WindowsAppSDK:
         symbol: TW64(WindowsAppSDK)
     run:
         script: build-WindowsAppSDK.sh
-        arguments: ['x64', '1.8']
+        arguments: ['x64', '2']
         toolchain-artifact: public/build/winappsdk-x86_64-pc-windows-msvc.tar.zst
         toolchain-alias: winappsdk-x86_64-pc-windows-msvc
     fetches:
@@ -818,7 +733,7 @@ win32-WindowsAppSDK:
         symbol: TW32(WindowsAppSDK)
     run:
         script: build-WindowsAppSDK.sh
-        arguments: ['x86', '1.8']
+        arguments: ['x86', '2']
         toolchain-artifact: public/build/winappsdk-x86-pc-windows-msvc.tar.zst
         toolchain-alias: winappsdk-x86-pc-windows-msvc
     fetches:
@@ -834,7 +749,7 @@ win64-aarch64-WindowsAppSDK:
         symbol: TWA64(WindowsAppSDK)
     run:
         script: build-WindowsAppSDK.sh
-        arguments: ['arm64', '1.8']
+        arguments: ['arm64', '2']
         toolchain-artifact: public/build/winappsdk-aarch64-pc-windows-msvc.tar.zst
         toolchain-alias: winappsdk-aarch64-pc-windows-msvc
     fetches:
@@ -859,7 +774,7 @@ win64-aarch64-vs2026:
         toolchain-artifact: project/gecko/vs/vs.tar.zst
         toolchain-alias: win64-aarch64-vs
 
-linux64-afl-instrumentation-4.0:
+linux64-afl-instrumentation:
     description: "AFL++ instrumentation toolchain build"
     treeherder:
         symbol: TL(afl++)
@@ -870,10 +785,9 @@ linux64-afl-instrumentation-4.0:
         resources:
             - taskcluster/scripts/misc/afl-nyx.patch
         toolchain-artifact: public/build/afl-instrumentation.tar.zst
-        toolchain-alias: linux64-afl-instrumentation
     fetches:
         fetch:
-            - afl-plus-plus-4.0
+            - afl-plus-plus
         toolchain:
             - linux64-clang
             - linux64-toolchain-sysroot
@@ -930,17 +844,3 @@ talos-pdfs:
     fetches:
         fetch:
             - mozilla-pdf.js
-
-symbolicator-cli:
-    description: "symbolicator-cli from firefox profiler"
-    treeherder:
-        symbol: TL(symbolicator-cli)
-    run:
-        script: build-symbolicator-cli.sh
-        toolchain-artifact: public/build/symbolicator-cli.tar.zst
-    run-on-projects: []
-    fetches:
-        fetch:
-            - firefox-profiler
-        toolchain:
-            - linux64-node

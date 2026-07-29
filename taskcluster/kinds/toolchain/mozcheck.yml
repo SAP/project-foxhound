@@ -1,0 +1,64 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+task-defaults:
+    description: "mozcheck toolchain build"
+    worker-type: b-linux-docker-amd
+    worker:
+        max-run-time: 1800
+        env:
+            CRATE_PATH: tools/lint/mozcheck
+    attributes:
+        local-toolchain: true
+    run:
+        script: build-rust-based-toolchain.sh
+        toolchain-artifact: public/build/mozcheck.tar.zst
+        sparse-profile: null
+        resources:
+            - 'tools/lint/mozcheck'
+
+linux64-mozcheck:
+    treeherder:
+        symbol: TL(mozcheck)
+        platform: linux64/opt
+    run:
+        arguments: ['x86_64-unknown-linux-musl']
+    attributes:
+        build_platform: linux64-mozcheck
+    fetches:
+        toolchain:
+            - linux64-rust-static
+
+macosx64-mozcheck:
+    treeherder:
+        symbol: TM(mozcheck)
+    run:
+        arguments: ['x86_64-apple-darwin']
+    fetches:
+        toolchain:
+            - linux64-clang-toolchain
+            - linux64-rust-macos-toolchain
+            - macosx64-sdk-toolchain
+
+macosx64-aarch64-mozcheck:
+    treeherder:
+        symbol: TMA64(mozcheck)
+    run:
+        arguments: ['aarch64-apple-darwin']
+    fetches:
+        toolchain:
+            - linux64-clang-toolchain
+            - linux64-rust-macos-toolchain
+            - macosx64-sdk-toolchain
+
+win64-mozcheck:
+    treeherder:
+        symbol: TW64(mozcheck)
+    run:
+        arguments: ['x86_64-pc-windows-msvc']
+    fetches:
+        toolchain:
+            - linux64-clang-toolchain
+            - linux64-rust-windows-toolchain
+            - vs-toolchain

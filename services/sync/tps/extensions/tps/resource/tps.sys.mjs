@@ -29,15 +29,12 @@ ChromeUtils.defineESModuleGetters(lazy, {
   DumpCreditCards: "resource://tps/modules/formautofill.sys.mjs",
   DumpHistory: "resource://tps/modules/history.sys.mjs",
   DumpPasswords: "resource://tps/modules/passwords.sys.mjs",
-  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
   FormData: "resource://tps/modules/forms.sys.mjs",
   FormValidator: "resource://services-sync/engines/forms.sys.mjs",
   HistoryEntry: "resource://tps/modules/history.sys.mjs",
-  JsonSchema: "resource://gre/modules/JsonSchema.sys.mjs",
   Livemark: "resource://tps/modules/bookmarks.sys.mjs",
   Log: "resource://gre/modules/Log.sys.mjs",
   Logger: "resource://tps/logger.sys.mjs",
-  NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
   Password: "resource://tps/modules/passwords.sys.mjs",
   PasswordValidator: "resource://services-sync/engines/passwords.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
@@ -50,15 +47,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   WEAVE_VERSION: "resource://services-sync/constants.sys.mjs",
   Weave: "resource://services-sync/main.sys.mjs",
   extensionStorageSync: "resource://gre/modules/ExtensionStorageSync.sys.mjs",
-});
-
-ChromeUtils.defineLazyGetter(lazy, "fileProtocolHandler", () => {
-  let fileHandler = Services.io.getProtocolHandler("file");
-  return fileHandler.QueryInterface(Ci.nsIFileProtocolHandler);
-});
-
-ChromeUtils.defineLazyGetter(lazy, "gTextDecoder", () => {
-  return new TextDecoder();
 });
 
 // Options for wiping data during a sync
@@ -80,6 +68,7 @@ const ACTION_VERIFY_NOT = "verify-not";
 
 const OBSERVER_TOPICS = [
   "fxaccounts:onlogin",
+  "fxaccounts:onverified",
   "fxaccounts:onlogout",
   "profile-before-change",
   "weave:service:tracking-started",
@@ -119,6 +108,8 @@ export var TPS = {
   shouldValidatePasswords: false,
   shouldValidateForms: false,
   _placesInitDeferred: Promise.withResolvers(),
+  SYNC_WIPE_CLIENT,
+  SYNC_WIPE_REMOTE,
   ACTIONS: [
     ACTION_ADD,
     ACTION_DELETE,
@@ -174,8 +165,8 @@ export var TPS = {
 
       switch (topic) {
         case "profile-before-change":
-          OBSERVER_TOPICS.forEach(function (topic) {
-            Services.obs.removeObserver(this, topic);
+          OBSERVER_TOPICS.forEach(function (aTopic) {
+            Services.obs.removeObserver(this, aTopic);
           }, this);
 
           lazy.Logger.close();
@@ -248,8 +239,19 @@ export var TPS = {
           break;
 
         case "fxaccounts:onlogin":
-          // A user signed in - for TPS that always means sync - so configure
-          // that.
+          // User logged in but sync keys may not be ready yet (OAuth still in progress)
+          lazy.Logger.logInfo(
+            `User logged in via ${topic}, OAuth flow in progress...`
+          );
+          break;
+
+        case "fxaccounts:onverified":
+          // User verification status changed from false to true - configure sync
+          // Note: This only fires when verification status CHANGES from false to true.
+          // For pre-verified accounts, this event won't fire at all.
+          lazy.Logger.logInfo(
+            `User verified via ${topic}, configuring sync...`
+          );
           lazy.Weave.Service.configure().catch(e => {
             this.DumpError("Configuring sync failed.", e);
           });
@@ -326,7 +328,7 @@ export var TPS = {
             "profile must be defined when verifying tabs"
           );
           lazy.Logger.AssertTrue(
-            await !lazy.BrowserTabs.Find(tab.uri, tab.title, tab.profile),
+            !(await lazy.BrowserTabs.Find(tab.uri, tab.title, tab.profile)),
             "tab found which was expected to be absent"
           );
           break;
@@ -969,68 +971,6 @@ export var TPS = {
     await this.RunNextTestAction();
   },
 
-  _getFileRelativeToSourceRoot(testFileURL, relativePath) {
-    let file = lazy.fileProtocolHandler.getFileFromURLSpec(testFileURL);
-    let root = file.parent.parent.parent.parent.parent; // <root>/services/sync/tests/tps/test_foo.js // <root>/services/sync/tests/tps // <root>/services/sync/tests // <root>/services/sync // <root>/services // <root>
-    root.appendRelativePath(relativePath);
-    root.normalize();
-    return root;
-  },
-
-  _pingValidator: null,
-
-  // Default ping validator that always says the ping passes. This should be
-  // overridden unless the `testing.tps.skipPingValidation` pref is true.
-  get pingValidator() {
-    return this._pingValidator
-      ? this._pingValidator
-      : {
-          validate() {
-            lazy.Logger.logInfo(
-              "Not validating ping -- disabled by pref or failure to load schema"
-            );
-            return { valid: true, errors: [] };
-          },
-        };
-  },
-
-  // Attempt to load the sync_ping_schema.json and initialize `this.pingValidator`
-  // based on the source of the tps file. Assumes that it's at "../unit/sync_ping_schema.json"
-  // relative to the directory the tps test file (testFile) is contained in.
-  _tryLoadPingSchema(testFile) {
-    if (Services.prefs.getBoolPref("testing.tps.skipPingValidation", false)) {
-      return;
-    }
-    try {
-      let schemaFile = this._getFileRelativeToSourceRoot(
-        testFile,
-        "services/sync/tests/unit/sync_ping_schema.json"
-      );
-
-      let stream = Cc[
-        "@mozilla.org/network/file-input-stream;1"
-      ].createInstance(Ci.nsIFileInputStream);
-
-      stream.init(
-        schemaFile,
-        lazy.FileUtils.MODE_RDONLY,
-        lazy.FileUtils.PERMS_FILE,
-        0
-      );
-
-      let bytes = lazy.NetUtil.readInputStream(stream, stream.available());
-      let schema = JSON.parse(lazy.gTextDecoder.decode(bytes));
-      lazy.Logger.logInfo("Successfully loaded schema");
-
-      this._pingValidator = new lazy.JsonSchema.Validator(schema);
-    } catch (e) {
-      this.DumpError(
-        `Failed to load ping schema relative to "${testFile}".`,
-        e
-      );
-    }
-  },
-
   /**
    * Runs a single test phase.
    *
@@ -1112,9 +1052,6 @@ export var TPS = {
         let profileToClean = this._currentPhase.slice("cleanup-".length);
         this.phases[this._currentPhase] = profileToClean;
         this.Phase(this._currentPhase, [[this.Cleanup]]);
-      } else {
-        // Don't bother doing this for cleanup phases.
-        this._tryLoadPingSchema(file);
       }
       let this_phase = this._phaselist[this._currentPhase];
 
@@ -1199,24 +1136,6 @@ export var TPS = {
             `Telemetry missed syncs: Saw ${this._syncsReportedViaTelemetry}, should have >= ${this._syncCount}.`
           );
         }
-      }
-      if (!record.syncs.length) {
-        // Note: we're overwriting submit, so this is called even for pings that
-        // may have no data (which wouldn't be submitted to telemetry and would
-        // fail validation).
-        return;
-      }
-      // Our ping may have some undefined values, which we rely on JSON stripping
-      // out as part of the ping submission - but our validator fails with them,
-      // so round-trip via JSON here to avoid that.
-      record = JSON.parse(JSON.stringify(record));
-      const result = this.pingValidator.validate(record);
-      if (!result.valid) {
-        // Note that we already logged the record.
-        this.DumpError(
-          "Sync ping validation failed with errors: " +
-            JSON.stringify(result.errors)
-        );
       }
     };
   },
@@ -1343,9 +1262,48 @@ export var TPS = {
       return;
     }
 
+    // Configure FxA staging server if requested
+    if (this.config.fxaStaging) {
+      const STAGING_ROOT = "https://accounts.stage.mozaws.net";
+      Services.prefs.setStringPref(
+        "identity.fxaccounts.autoconfig.uri",
+        STAGING_ROOT
+      );
+      lazy.Logger.logInfo("Using FxA staging autoconfig: " + STAGING_ROOT);
+    } else {
+      Services.prefs.clearUserPref("identity.fxaccounts.autoconfig.uri");
+    }
+
+    if (this.config.autoCreateAccount) {
+      await lazy.Authentication.createAndVerifyAccount(
+        this.config.fx_account.username,
+        this.config.fx_account.password,
+        this.config.fxaApiUrl
+      );
+    }
+
     lazy.Logger.logInfo("Setting client credentials and login.");
+    // wait for setup-complete before calling signIn()
+    let setupCompleteWaiter = this.promiseObserver(
+      "weave:service:setup-complete"
+    );
     await lazy.Authentication.signIn(this.config.fx_account);
-    await this.waitForSetupComplete();
+
+    // fxaccounts:onverified only fires when verification status CHANGES from false to true,
+    // so for pre-verified accounts we need to check and call configure() ourselves.
+    const user = await lazy.Authentication.getSignedInUser();
+    if (user && user.verified) {
+      lazy.Logger.logInfo(
+        "User is verified (pre-verified account), configuring sync..."
+      );
+      await lazy.Weave.Service.configure();
+    } else {
+      lazy.Logger.logInfo(
+        "User not yet verified, waiting for fxaccounts:onverified to configure sync..."
+      );
+    }
+
+    await setupCompleteWaiter;
     lazy.Logger.AssertEqual(
       lazy.Weave.Status.service,
       lazy.STATUS_OK,
@@ -1401,7 +1359,25 @@ export var TPS = {
     lazy.Logger.logInfo("Wiping data from server.");
 
     await this.Login();
-    await lazy.Weave.Service.login();
+    if (!lazy.Weave.Service.storageURL) {
+      lazy.Logger.logInfo(
+        "No storage node assigned yet, attempting sync login before wipe"
+      );
+      try {
+        await lazy.Weave.Service.login();
+      } catch (error) {
+        lazy.Logger.logInfo(
+          "Sync login before wipe failed: " + (error?.message || error)
+        );
+      }
+    }
+
+    if (!lazy.Weave.Service.storageURL) {
+      throw new Error(
+        "Cannot wipe server: no storage node assigned after sync login"
+      );
+    }
+
     await lazy.Weave.Service.wipeServer();
   },
 

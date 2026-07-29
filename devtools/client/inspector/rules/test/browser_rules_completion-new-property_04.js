@@ -20,7 +20,7 @@ add_task(async function () {
   await selectNode("h1", inspector);
 
   info("Focusing the new property editable field");
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
   let editor = await focusNewRuleViewProperty(ruleEditor);
 
   info('Sending "background" to the editable field.');
@@ -42,7 +42,7 @@ add_task(async function () {
   info("Select the background-color suggestion with a mouse click.");
   const onSuggest = editor.once("after-suggest");
   const node = editor.popup.elements.get(bgcItem);
-  EventUtils.synthesizeMouseAtCenter(node, {}, node.ownerGlobal);
+  EventUtils.synthesizeMouseAtCenter(node, {}, node.documentGlobal);
 
   await onSuggest;
   is(editor.input.value, "background-color", "Correct value is autocompleted");

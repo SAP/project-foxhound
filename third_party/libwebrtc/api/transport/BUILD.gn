@@ -31,6 +31,7 @@ rtc_library("bandwidth_estimation_settings") {
 rtc_source_set("ecn_marking") {
   visibility = [ "*" ]
   sources = [ "ecn_marking.h" ]
+  deps = [ "//third_party/abseil-cpp/absl/strings:string_view" ]
 }
 
 rtc_source_set("enums") {
@@ -48,10 +49,9 @@ rtc_library("network_control") {
 
   deps = [
     ":ecn_marking",
-    "../../api:field_trials_view",
+    "..:field_trials_view",
     "../../rtc_base/system:rtc_export",
     "../environment",
-    "../rtc_event_log",
     "../units:data_rate",
     "../units:data_size",
     "../units:time_delta",
@@ -64,10 +64,10 @@ rtc_source_set("datagram_transport_interface") {
   visibility = [ "*" ]
   sources = [ "data_channel_transport_interface.h" ]
   deps = [
-    "..:array_view",
     "..:priority",
     "..:rtc_error",
     "../../rtc_base:copy_on_write_buffer",
+    "../../rtc_base:ssl_adapter",
   ]
 }
 
@@ -79,20 +79,22 @@ rtc_library("goog_cc") {
   ]
   deps = [
     ":network_control",
+    "..:field_trials_view",
     "..:network_state_predictor_api",
-    "../../api/units:time_delta",
     "../../modules/congestion_controller/goog_cc",
+    "../../modules/congestion_controller/goog_cc_scream_network_controller",
+    "../../modules/congestion_controller/scream:scream_network_controller",
+    "../../rtc_base:logging",
+    "../../rtc_base/experiments:field_trial_parser",
     "../../rtc_base/system:rtc_export",
+    "../units:time_delta",
   ]
 }
 
 rtc_source_set("sctp_transport_factory_interface") {
   visibility = [ "*" ]
   sources = [ "sctp_transport_factory_interface.h" ]
-  deps = [
-    "..:field_trials_view",
-    "../../api/environment",
-  ]
+  deps = [ "../environment" ]
 }
 
 rtc_library("stun_types") {
@@ -104,7 +106,6 @@ if (!build_with_mozilla) {
   ]
 
   deps = [
-    "../../api:array_view",
     "../../rtc_base:byte_buffer",
     "../../rtc_base:byte_order",
     "../../rtc_base:checks",
@@ -115,7 +116,10 @@ if (!build_with_mozilla) {
     "../../rtc_base:logging",
     "../../rtc_base:net_helpers",
     "../../rtc_base:socket_address",
+    "../../rtc_base:span_helpers",
+    "../../rtc_base:stringutils",
     "../../system_wrappers:metrics",
+    "//third_party/abseil-cpp/absl/base:core_headers",
     "//third_party/abseil-cpp/absl/strings:string_view",
   ]
 }
@@ -128,9 +132,9 @@ if (rtc_include_tests) {
     visibility = [ "*" ]
     deps = [
       ":network_control",
+      "..:network_emulation_manager_api",
       "..:simulated_network_api",
-      "../../api:network_emulation_manager_api",
-      "../../api/rtc_event_log",
+      "../rtc_event_log",
       "../units:data_rate",
       "../units:data_size",
       "../units:time_delta",
@@ -145,27 +149,35 @@ if (rtc_include_tests) {
     ]
     visibility = [ "*" ]
     deps = [
-      ":network_control",
       ":test_feedback_generator_interface",
-      "../../api:network_emulation_manager_api",
-      "../../api/rtc_event_log",
+      "..:network_emulation_manager_api",
       "../../test/network:feedback_generator",
     ]
   }
 }
 
 if (rtc_include_tests) {
+  rtc_library("ecn_marking_unittest") {
+    testonly = true
+    sources = [ "ecn_marking_unittest.cc" ]
+    deps = [
+      ":ecn_marking",
+      "../../test:test_support",
+      "//third_party/abseil-cpp/absl/strings",
+    ]
+  }
+
   rtc_library("stun_unittest") {
     visibility = [ "*" ]
     testonly = true
     sources = [ "stun_unittest.cc" ]
     deps = [
       ":stun_types",
-      "..:array_view",
       "../../rtc_base:byte_buffer",
       "../../rtc_base:byte_order",
       "../../rtc_base:ip_address",
       "../../rtc_base:socket_address",
+      "../../rtc_base:span_helpers",
       "../../system_wrappers:metrics",
       "../../test:test_support",
       "//testing/gtest",

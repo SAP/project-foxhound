@@ -19,12 +19,13 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.compose.base.annotation.FlexibleWindowPreview
 import org.mozilla.fenix.R
 import org.mozilla.fenix.pbmlock.UnlockPrivateTabsTrayScreen
-import org.mozilla.fenix.tabstray.TabsTrayState
 import org.mozilla.fenix.tabstray.TabsTrayTestTag
+import org.mozilla.fenix.tabstray.controller.TabInteractionHandler
+import org.mozilla.fenix.tabstray.data.TabsTrayItem
+import org.mozilla.fenix.tabstray.redux.state.TabsTrayState
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.Theme
 import mozilla.components.ui.icons.R as iconsR
@@ -35,28 +36,28 @@ private val EmptyPageWidth = 190.dp
  * UI for displaying the Private Tabs Page in the Tab Manager.
  *
  * @param privateTabs The list of private tabs to display.
- * @param selectedTabId The ID of the currently selected tab.
+ * @param selectedItemIndex The index of the currently selected tab. This will be scrolled to on first-render.
  * @param selectionMode [TabsTrayState.Mode] indicating whether the Tab Manager is in single selection.
  * @param displayTabsInGrid Whether the normal and private tabs should be displayed in a grid.
  * @param privateTabsLocked Whether the private browsing mode is currently locked.
  * @param onTabClose Invoked when the user clicks to close a tab.
- * @param onTabClick Invoked when the user clicks on a tab.
- * @param onTabLongClick Invoked when the user long clicks on a tab.
- * @param onMove Invoked after the drag and drop gesture completed. Swaps position of two tabs.
+ * @param onItemClick Invoked when the user clicks on a tab.
+ * @param onItemLongClick Invoked when the user long clicks on a tab.
+ * @param tabInteractionHandler Handlers tab interactions such as moves and drag and drop.
  * @param onUnlockPbmClick Invoked when user clicks on Unlock button.
  */
 @Suppress("LongParameterList")
 @Composable
 internal fun PrivateTabsPage(
-    privateTabs: List<TabSessionState>,
-    selectedTabId: String?,
+    privateTabs: List<TabsTrayItem>,
+    selectedItemIndex: Int,
     selectionMode: TabsTrayState.Mode,
     displayTabsInGrid: Boolean,
     privateTabsLocked: Boolean,
-    onTabClose: (TabSessionState) -> Unit,
-    onTabClick: (TabSessionState) -> Unit,
-    onTabLongClick: (TabSessionState) -> Unit,
-    onMove: (String, String?, Boolean) -> Unit,
+    onTabClose: (TabsTrayItem.Tab) -> Unit,
+    onItemClick: (TabsTrayItem) -> Unit,
+    onItemLongClick: (TabsTrayItem) -> Unit,
+    tabInteractionHandler: TabInteractionHandler,
     onUnlockPbmClick: () -> Unit,
 ) {
     when {
@@ -72,17 +73,20 @@ internal fun PrivateTabsPage(
             TabLayout(
                 tabs = privateTabs,
                 displayTabsInGrid = displayTabsInGrid,
-                selectedTabId = selectedTabId,
+                tabInteractionHandler = tabInteractionHandler,
+                selectedItemIndex = selectedItemIndex,
                 selectionMode = selectionMode,
                 modifier = Modifier.testTag(TabsTrayTestTag.PRIVATE_TABS_LIST),
                 onTabClose = onTabClose,
-                onTabClick = onTabClick,
-                onTabLongClick = onTabLongClick,
-                onTabDragStart = {
-                    // Because we don't currently support selection mode for private tabs,
-                    // there's no need to exit selection mode when dragging tabs.
-                },
-                onMove = onMove,
+                onItemClick = onItemClick,
+                onItemLongClick = onItemLongClick,
+                onDeleteTabGroupClick = {},
+                onEditTabGroupClick = {},
+                onCloseTabGroupClick = {},
+                onTabGroupOnboardingDismiss = {},
+                dragAndDropEnabled = false,
+                displayTabGroupOnboarding = false,
+                focusEnabled = true, // Drag and drop is not possible, so there's no reason to hide the focus state
             )
         }
     }
@@ -105,7 +109,7 @@ private fun EmptyPrivateTabsPage(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Icon(
-                painter = painterResource(id = iconsR.drawable.mozac_ic_private_mode_72),
+                painter = painterResource(id = iconsR.drawable.mozac_ic_private_mode_fill_72),
                 contentDescription = null,
             )
 

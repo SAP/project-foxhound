@@ -46,8 +46,9 @@ support-files = [
 ["test_bug1328865.js"]
 
 ["test_bug1550815.js"]
-run-if = [
-  "false", # recovering from SIGBUS is temporarily disabled by bug 1583735
+skip-if = [
+  "os != 'linux'",
+  "tsan",
 ]
 
 ["test_bug1940027_embedded_null.js"]

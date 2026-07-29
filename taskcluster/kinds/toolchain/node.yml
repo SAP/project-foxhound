@@ -38,6 +38,13 @@ linux64-node-22:
             - linux64-gcc-11
             - linux64-toolchain-sysroot-gcc10
 
+linux64-node-24:
+    treeherder:
+        symbol: TL(node-24)
+    fetches:
+        fetch:
+            - nodejs-24-linux64
+
 linux64-aarch64-node-22:
     treeherder:
         symbol: TLA64(node-22)

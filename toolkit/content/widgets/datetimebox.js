@@ -17,6 +17,7 @@ this.DateTimeBoxWidget = class {
     this.element = shadowRoot.host;
     this.document = this.element.ownerDocument;
     this.window = this.document.defaultView;
+    this.mEnableTimePicker = prefs["dom.forms.datetime.timepicker"];
     // When undefined, DOMLocalization will use the app locales.
     let locales;
     if (prefs["privacy.resistFingerprinting"]) {
@@ -85,7 +86,7 @@ this.DateTimeBoxWidget = class {
     this.l10n.disconnectRoot(this.shadowRoot);
 
     this.removeEditFields();
-    this.removeEventListenersToField(this.mCalendarButton);
+    this.removeEventListenersToField(this.mPickerButton);
 
     this.mInputElement = null;
 
@@ -147,7 +148,7 @@ this.DateTimeBoxWidget = class {
     this.generateContent();
 
     this.mDateTimeBoxElement = this.shadowRoot.firstChild;
-    this.mCalendarButton = this.shadowRoot.getElementById("calendar-button");
+    this.mPickerButton = this.shadowRoot.getElementById("picker-button");
     this.mInputElement = this.element;
     this.mLocales = this.window.getWebExposedLocales();
 
@@ -160,6 +161,10 @@ this.DateTimeBoxWidget = class {
     if (this.mIsRTL) {
       let inputBoxWrapper = this.shadowRoot.getElementById("input-box-wrapper");
       inputBoxWrapper.dir = "rtl";
+    }
+
+    if (this.type == "time") {
+      this.mPickerButton.setAttribute("data-l10n-id", "datetime-time");
     }
 
     this.mIsPickerOpen = false;
@@ -232,7 +237,7 @@ this.DateTimeBoxWidget = class {
     });
 
     this.buildEditFields();
-    this.buildCalendarBtn();
+    this.buildPickerBtn();
     this.updateEditAttributes();
 
     if (this.mInputElement.value) {
@@ -247,7 +252,7 @@ this.DateTimeBoxWidget = class {
   generateContent() {
     const parser = new this.window.DOMParser();
     let parserDoc = parser.parseFromSafeString(
-      `<div class="datetimebox" xmlns="http://www.w3.org/1999/xhtml" role="none">
+      `<div class="datetimebox" id="datetimebox" xmlns="http://www.w3.org/1999/xhtml" role="none">
         <link rel="stylesheet" type="text/css" href="chrome://global/content/bindings/datetimebox.css" />
         <div class="datetime-input-box-wrapper" id="input-box-wrapper" role="presentation">
           <span class="datetime-input-edit-wrapper"
@@ -255,9 +260,13 @@ this.DateTimeBoxWidget = class {
             <!-- Each of the date/time input types will append their input child
                - elements here -->
           </span>
-          <button data-l10n-id="datetime-calendar" class="datetime-calendar-button" id="calendar-button" aria-expanded="false">
+          <button data-l10n-id="datetime-calendar" class="datetime-picker-button" id="picker-button" aria-expanded="false">
             <svg role="none" class="datetime-calendar-button-svg" xmlns="http://www.w3.org/2000/svg" id="calendar-16" viewBox="0 0 16 16" width="16" height="16">
               <path d="M13.5 2H13V1c0-.6-.4-1-1-1s-1 .4-1 1v1H5V1c0-.6-.4-1-1-1S3 .4 3 1v1h-.5C1.1 2 0 3.1 0 4.5v9C0 14.9 1.1 16 2.5 16h11c1.4 0 2.5-1.1 2.5-2.5v-9C16 3.1 14.9 2 13.5 2zm0 12.5h-11c-.6 0-1-.4-1-1V6h13v7.5c0 .6-.4 1-1 1z"/>
+            </svg>
+            <svg role="none" class="datetime-time-button-svg" xmlns="http://www.w3.org/2000/svg" id="time-16" viewBox="0 0 16 16" width="16" height="16">
+              <path d="M7.625 1.75c3.446 0 6.25 2.804 6.25 6.25s-2.804 6.25-6.25 6.25-6.25-2.804-6.25-6.25 2.804-6.25 6.25-6.25m0-1.25a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15z"/>
+              <path d="M10.624 10.424a.625.625 0 0 1-.312-.084l-3-1.732L7 8.066l0-3.441a.625.625 0 0 1 1.25 0l0 3.081 2.688 1.552a.626.626 0 0 1-.314 1.166z"/>
             </svg>
           </button>
         </div>
@@ -290,7 +299,7 @@ this.DateTimeBoxWidget = class {
   }
 
   get showPickerOnClick() {
-    return this.isAndroid || this.type == "time";
+    return this.isAndroid;
   }
 
   addEventListenersToField(aElement) {
@@ -368,25 +377,25 @@ this.DateTimeBoxWidget = class {
       field.setAttribute("maxlength", aMaxLength);
       // Set spinbutton ARIA role
       field.setAttribute("role", "spinbutton");
-
-      if (this.mIsRTL) {
-        // Force the direction to be "ltr", so that the field stays in the
-        // same order even when it's empty (with placeholder). By using
-        // "embed", the text inside the element is still displayed based
-        // on its directionality.
-        field.style.unicodeBidi = "embed";
-        field.style.direction = "ltr";
-      }
     } else {
       // Set generic textbox ARIA role
       field.setAttribute("role", "textbox");
     }
 
+    if (this.mIsRTL) {
+      // Force the direction to be "ltr", so that the field stays in the
+      // same order even when it's empty (with placeholder). By using
+      // "embed", the text inside the element is still displayed based
+      // on its directionality.
+      field.style.unicodeBidi = "embed";
+      field.style.direction = "ltr";
+    }
+
     return field;
   }
 
-  updateCalendarButtonState(isExpanded) {
-    this.mCalendarButton.setAttribute("aria-expanded", isExpanded);
+  updatePickerButtonState(isExpanded) {
+    this.mPickerButton.setAttribute("aria-expanded", isExpanded);
   }
 
   notifyInputElementValueChanged() {
@@ -435,8 +444,8 @@ this.DateTimeBoxWidget = class {
     this.log("picker is now " + (aIsOpen ? "opened" : "closed"));
     this.mIsPickerOpen = aIsOpen;
     this.mInputElement.setOpenState(aIsOpen);
-    // Calendar button's expanded state mirrors this.mIsPickerOpen
-    this.updateCalendarButtonState(this.mIsPickerOpen);
+    // Picker button's expanded state mirrors this.mIsPickerOpen
+    this.updatePickerButtonState(this.mIsPickerOpen);
   }
 
   setFieldTabIndexAttribute(field) {
@@ -576,7 +585,7 @@ this.DateTimeBoxWidget = class {
     }
 
     let target = aEvent.originalTarget;
-    if (target.matches(".datetime-edit-field,.datetime-calendar-button")) {
+    if (target.matches(".datetime-edit-field,.datetime-picker-button")) {
       if (target.disabled) {
         return;
       }
@@ -662,7 +671,7 @@ this.DateTimeBoxWidget = class {
     if (this.type != "datetime-local") {
       return false;
     }
-    return this.isTimeField(field);
+    return this.isTimeField(field) && !this.mEnableTimePicker;
   }
 
   onKeyDown(aEvent) {
@@ -673,7 +682,7 @@ this.DateTimeBoxWidget = class {
     }
 
     switch (aEvent.key) {
-      // Toggle the date picker on Space/Enter on Calendar button or Space on input,
+      // Toggle the date/time picker on Space/Enter on picker button or Space on input,
       // time picker on Space on input, close picker on Escape anywhere.
       case "Escape": {
         if (this.mIsPickerOpen) {
@@ -694,8 +703,8 @@ this.DateTimeBoxWidget = class {
         ) {
           this.openDateTimePicker();
         } else if (
-          // open from the Calendar button on either keydown
-          aEvent.originalTarget == this.mCalendarButton &&
+          // open from the picker button on either keydown
+          aEvent.originalTarget == this.mPickerButton &&
           this.shouldOpenDateTimePickerOnKeyDown()
         ) {
           this.openDateTimePicker();
@@ -708,8 +717,8 @@ this.DateTimeBoxWidget = class {
       }
       case "Delete":
       case "Backspace": {
-        if (aEvent.originalTarget == this.mCalendarButton) {
-          // Do not remove Calendar button
+        if (aEvent.originalTarget == this.mPickerButton) {
+          // Do not remove picker button
           aEvent.preventDefault();
           break;
         }
@@ -768,16 +777,12 @@ this.DateTimeBoxWidget = class {
       return;
     }
 
-    // We toggle the picker on click on the Calendar button on any platform.
-    // For Android and for type=time inputs, we also toggle the picker when
-    // clicking on the input field.
+    // We toggle the picker on click on the picker button on any platform.
+    // For Android, we also toggle the picker when clicking on the input field.
     //
-    // We do not toggle the picker when clicking the input field for Calendar
-    // on desktop to avoid interfering with the default Calendar behavior.
-    if (
-      aEvent.originalTarget == this.mCalendarButton ||
-      this.showPickerOnClick
-    ) {
+    // We do not toggle the picker when clicking the input field on desktop
+    // to avoid interfering with the default input behavior.
+    if (aEvent.originalTarget == this.mPickerButton || this.showPickerOnClick) {
       if (
         !this.mIsPickerOpen &&
         this.shouldOpenDateTimePickerOnClick(aEvent.originalTarget)
@@ -930,11 +935,11 @@ this.DateTimeBoxWidget = class {
     });
   }
 
-  buildCalendarBtn() {
-    this.addEventListenersToField(this.mCalendarButton);
-    // This is to open the picker when a Calendar button is clicked (this
+  buildPickerBtn() {
+    this.addEventListenersToField(this.mPickerButton);
+    // This is to open the picker when the picker button is clicked (this
     // includes padding area).
-    this.mCalendarButton.addEventListener(
+    this.mPickerButton.addEventListener(
       "click",
       this,
       { mozSystemGroup: true },

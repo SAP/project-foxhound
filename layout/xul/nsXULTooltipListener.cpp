@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -243,6 +241,11 @@ nsXULTooltipListener::HandleEvent(Event* aEvent) {
     return NS_OK;
   }
 
+  if (type.EqualsLiteral("pagehide")) {
+    HideTooltip();
+    return NS_OK;
+  }
+
   // Note that mousemove, mouseover and mouseout might be
   // fired even during dragging due to widget's bug.
   nsCOMPtr<nsIDragService> dragService =
@@ -415,6 +418,11 @@ nsresult nsXULTooltipListener::ShowTooltip() {
     doc->AddSystemEventListener(u"keydown"_ns, this, true);
   }
   mSourceNode = nullptr;
+
+  if (Document* sourceDoc = sourceNode->GetComposedDoc()) {
+    mTooltipSourceDoc = do_GetWeakReference(sourceDoc);
+    sourceDoc->AddSystemEventListener(u"pagehide"_ns, this, true);
+  }
 
   return NS_OK;
 }
@@ -641,6 +649,10 @@ nsresult nsXULTooltipListener::DestroyTooltip() {
   // kill any ongoing timers
   KillTooltipTimer();
   mSourceNode = nullptr;
+  if (nsCOMPtr<Document> sourceDoc = do_QueryReferent(mTooltipSourceDoc)) {
+    sourceDoc->RemoveSystemEventListener(u"pagehide"_ns, this, true);
+  }
+  mTooltipSourceDoc = nullptr;
   mLastTreeCol = nullptr;
 
   return NS_OK;

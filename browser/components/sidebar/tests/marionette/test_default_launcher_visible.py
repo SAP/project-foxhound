@@ -2,12 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import json
 from pathlib import Path
 
 from marionette_driver import Wait
-from marionette_driver.by import By
 from marionette_harness import MarionetteTestCase
+from mozfile import json
 
 
 class TestDefaultLauncherVisible(MarionetteTestCase):
@@ -125,9 +124,11 @@ class TestDefaultLauncherVisible(MarionetteTestCase):
         self.marionette.set_context("chrome")
         self.wait_for_sidebar_initialized()
 
-        self.assertTrue(
-            self.is_button_visible(),
-            "Sidebar button should be visible",
+        # The sidebar-button is placed and rendered by CustomizableUI, which is
+        # independent of the sidebar's initialization path. Just wait for it to show up.
+        Wait(self.marionette).until(
+            lambda _: self.is_button_visible(),
+            message="Sidebar button should be visible",
         )
 
         self.assertFalse(
@@ -173,9 +174,17 @@ class TestDefaultLauncherVisible(MarionetteTestCase):
 
         # Navigate to about:preferences and enable the new sidebar
         self.marionette.set_context("content")
-        self.marionette.navigate("about:preferences")
+        srd_enabled = self.marionette.get_pref("browser.settings-redesign.enabled")
+        self.marionette.navigate(
+            "about:preferences#tabsBrowsing" if srd_enabled else "about:preferences"
+        )
 
-        self.marionette.find_element(By.ID, "browserLayoutShowSidebar").click()
+        self.marionette.execute_script(
+            """
+            let el = document.getElementById("browserLayoutShowSidebar");
+            el.click();
+            """
+        )
 
         self.marionette.set_context("chrome")
         self.assertTrue(
@@ -209,70 +218,6 @@ class TestDefaultLauncherVisible(MarionetteTestCase):
         self.assertTrue(
             self.is_launcher_visible(),
             "Sidebar launcher should still be shown after restart",
-        )
-
-    def test_new_sidebar_enabled_at_runtime_via_nimbus(self):
-        self.restart_with_default_prefs({
-            "sidebar.revamp": False,
-            "browser.uiCustomization.state": None,
-        })
-        self.marionette.set_context("chrome")
-        self.wait_for_sidebar_initialized()
-        self.assertFalse(
-            self.is_launcher_visible(),
-            "Sidebar launcher is not visible",
-        )
-        self.assertFalse(
-            self.is_button_visible(),
-            "Sidebar toolbar button is not visible",
-        )
-
-        # stub the getVariable function to return false so sidebar code thinks
-        # we're enrolled in an experiment
-        self.marionette.execute_script(
-            """
-            const window = BrowserWindowTracker.getTopWindow();
-            window.NimbusFeatures.sidebar.getVariable = () => false;
-            """
-        )
-
-        showLauncherOnEnabled = self.marionette.execute_script(
-            """
-            const window = BrowserWindowTracker.getTopWindow();
-            return window.SidebarController.SidebarManager.showLauncherOnEnabled;
-            """
-        )
-        self.assertFalse(
-            showLauncherOnEnabled,
-            "showLauncherOnEnabled should be false when with the mocked NimbusFeatures getVariable",
-        )
-
-        # This mocks the enrollment in which Nimbus sets the following prefs
-        self.marionette.set_prefs({
-            "sidebar.revamp": True,
-            "sidebar.revamp.defaultLauncherVisible": False,
-        })
-
-        # We expect enabling the pref to add the button to the toolbar
-        Wait(self.marionette).until(
-            lambda _: self.is_button_visible(),
-            message="The toolbar button is visible",
-        )
-
-        # In this scenario, we expect the launcher visibility to be determined by the nimbus variable
-        self.assertFalse(
-            self.is_launcher_visible(),
-            "The launcher is hidden when revamp is not initiated by the user",
-        )
-
-        # And it should stay hidden on restart
-        self.marionette.restart()
-        self.marionette.set_context("chrome")
-        self.wait_for_sidebar_initialized()
-
-        self.assertFalse(
-            self.is_launcher_visible(),
-            "The launcher is remains hidden after a restart",
         )
 
     def test_vertical_tabs_default_hidden(self):

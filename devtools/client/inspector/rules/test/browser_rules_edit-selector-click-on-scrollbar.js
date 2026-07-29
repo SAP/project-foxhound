@@ -50,7 +50,7 @@ add_task(async function () {
   ok(hasScrollbar, "The rule view container should have a vertical scrollbar.");
 
   info("Focusing an existing selector name in the rule-view.");
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
   const editor = await focusEditableField(view, ruleEditor.selectorText);
   is(
     inplaceEditor(ruleEditor.selectorText),

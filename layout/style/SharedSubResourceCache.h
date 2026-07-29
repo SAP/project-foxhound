@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,7 +24,6 @@
 //   ValueForCache() and ExpirationTime() members. For style, this is the
 //   SheetLoadData.
 
-#include "mozilla/MemoryReporting.h"
 #include "mozilla/PrincipalHashKey.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/StaticPtr.h"
@@ -37,7 +34,6 @@
 #include "mozilla/dom/CacheablePerformanceTimingData.h"
 #include "mozilla/dom/Document.h"
 #include "nsContentUtils.h"
-#include "nsIMemoryReporter.h"
 #include "nsISupportsImpl.h"
 #include "nsRefPtrHashtable.h"
 #include "nsTHashMap.h"
@@ -67,7 +63,7 @@ void RemoveMemoryPressureObserver(nsIObserver* aObserver);
 // SharedSubResourceCache::Result::mNetworkMetadata and use it for notifying
 // the observers once the necessary data becomes ready.
 // This struct is ref-counted in order to allow this usage.
-class SubResourceNetworkMetadataHolder {
+class SubResourceNetworkMetadataHolder final {
  public:
   SubResourceNetworkMetadataHolder() = delete;
 
@@ -212,7 +208,7 @@ class SharedSubResourceCache {
 
  public:
   struct Result {
-    Value* mCompleteValue = nullptr;
+    RefPtr<Value> mCompleteValue;
     RefPtr<SubResourceNetworkMetadataHolder> mNetworkMetadata;
 
     LoadingValue* mLoadingOrPendingValue = nullptr;
@@ -313,12 +309,10 @@ class SharedSubResourceCache {
     return NS_OK;
   }
 
- private:
-  void ClearInProcessForMemoryPressure() {
+  virtual void ClearInProcessForMemoryPressure() {
     ClearInProcess(Nothing(), Nothing(), Nothing(), Nothing(), Nothing());
   }
 
- protected:
   void CancelPendingLoadsForLoader(Loader&);
 
   void WillStartPendingLoad(LoadingValue&);
@@ -338,7 +332,6 @@ class SharedSubResourceCache {
   // eviction as described in RegisterLoader / UnregisterLoader.
   nsTHashMap<PrincipalHashKey, uint32_t> mLoaderPrincipalRefCnt;
 
- protected:
   // Lazily created in the first Get() call.
   // The singleton should be deleted by DeleteSingleton() during shutdown.
   inline static MOZ_GLOBINIT StaticRefPtr<Derived> sSingleton;

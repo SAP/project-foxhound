@@ -264,7 +264,7 @@ class LoopbackTransport : public MediaTransportHandler {
   }
 
   void SetState(const std::string& aTransportId, TransportLayer::State aState) {
-    MediaTransportHandler::OnStateChange(aTransportId, aState);
+    MediaTransportHandler::OnStateChange(aTransportId, aState, {});
   }
 
   void SetRtcpState(const std::string& aTransportId,

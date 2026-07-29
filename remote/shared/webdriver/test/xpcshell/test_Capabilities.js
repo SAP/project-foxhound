@@ -15,6 +15,7 @@ const {
   ProxyConfiguration,
   Timeouts,
   validateCapabilities,
+  WEBDRIVER_CLASSIC_CAPABILITIES,
 } = ChromeUtils.importESModule(
   "chrome://remote/content/shared/webdriver/Capabilities.sys.mjs"
 );
@@ -449,15 +450,21 @@ add_task(function test_Capabilities_toJSON() {
   let caps = new Capabilities();
   let json = caps.toJSON();
 
+  equal(caps.get("acceptInsecureCerts"), json.acceptInsecureCerts);
   equal(caps.get("browserName"), json.browserName);
   equal(caps.get("browserVersion"), json.browserVersion);
-  equal(caps.get("platformName"), json.platformName);
   equal(caps.get("pageLoadStrategy"), json.pageLoadStrategy);
-  equal(caps.get("acceptInsecureCerts"), json.acceptInsecureCerts);
-  deepEqual(caps.get("proxy").toJSON(), json.proxy);
-  deepEqual(caps.get("timeouts").toJSON(), json.timeouts);
+  equal(caps.get("platformName"), json.platformName);
+  ok(
+    "proxy" in json,
+    "proxy should always be in WebDriver Classic capabilities when not configured"
+  );
+  deepEqual({}, json.proxy);
+
   equal(caps.get("setWindowRect"), json.setWindowRect);
   equal(caps.get("strictFileInteractability"), json.strictFileInteractability);
+  deepEqual(caps.get("timeouts").toJSON(), json.timeouts);
+  equal(caps.get("userAgent"), json.userAgent);
   equal(caps.get("webSocketUrl"), json.webSocketUrl);
 
   equal(caps.get("moz:accessibilityChecks"), json["moz:accessibilityChecks"]);
@@ -466,6 +473,52 @@ add_task(function test_Capabilities_toJSON() {
   equal(caps.get("moz:processID"), json["moz:processID"]);
   equal(caps.get("moz:profile"), json["moz:profile"]);
   equal(caps.get("moz:webdriverClick"), json["moz:webdriverClick"]);
+  equal(caps.get("moz:windowless"), json["moz:windowless"]);
+
+  // Check a configured proxy
+  caps.set("proxy", ProxyConfiguration.fromJSON({ proxyType: "direct" }));
+  json = caps.toJSON();
+
+  ok(
+    "proxy" in json,
+    "proxy should always be in WebDriver Classic capabilities when configured"
+  );
+  deepEqual(json.proxy, { proxyType: "direct" });
+});
+
+add_task(function test_Capabilities_toJSON_bidi() {
+  let caps = new Capabilities(true);
+  let json = caps.toJSON();
+
+  equal(caps.get("acceptInsecureCerts"), json.acceptInsecureCerts);
+  equal(caps.get("browserName"), json.browserName);
+  equal(caps.get("browserVersion"), json.browserVersion);
+  equal(caps.get("platformName"), json.platformName);
+  ok(
+    !("proxy" in json),
+    "proxy should not be in BiDi capabilities when not configured"
+  );
+  equal(caps.get("setWindowRect"), json.setWindowRect);
+  equal(caps.get("userAgent"), json.userAgent);
+
+  equal(caps.get("moz:buildID"), json["moz:buildID"]);
+  equal(caps.get("moz:platformVersion"), json["moz:platformVersion"]);
+  equal(caps.get("moz:processID"), json["moz:processID"]);
+  equal(caps.get("moz:profile"), json["moz:profile"]);
+
+  for (const capability of WEBDRIVER_CLASSIC_CAPABILITIES) {
+    ok(
+      !(capability in json),
+      `${capability} should not be in BiDi capabilities`
+    );
+  }
+
+  // Check a configured proxy
+  caps.set("proxy", ProxyConfiguration.fromJSON({ proxyType: "direct" }));
+  json = caps.toJSON();
+
+  ok("proxy" in json, "proxy should be in BiDi capabilities when configured");
+  deepEqual(json.proxy, { proxyType: "direct" });
 });
 
 add_task(function test_Capabilities_fromJSON_http() {

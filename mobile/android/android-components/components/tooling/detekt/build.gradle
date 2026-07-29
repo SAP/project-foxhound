@@ -16,20 +16,14 @@ dependencies {
     testImplementation libs.detekt.test
     testImplementation platform(libs.junit.bom)
     testImplementation libs.junit4
+    testImplementation libs.kotlin.test
     testRuntimeOnly libs.junit.platform.launcher
     testRuntimeOnly libs.junit.vintage
 }
 
-tasks.register("lintRelease") {
+tasks.register("lint") {
     doLast {
         // Do nothing. We execute the same set of tasks for all our modules in parallel on taskcluster.
         // This project doesn't have a lint task.
-    }
-}
-
-tasks.register("assembleAndroidTest") {
-    doLast {
-        // Do nothing. Like the `lint` task above this is just a dummy task so that this module
-        // behaves like our others and we do not need to special case it in automation.
     }
 }

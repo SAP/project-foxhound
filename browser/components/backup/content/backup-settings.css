@@ -7,7 +7,9 @@
 
 :host {
   --margin-inline-start-checkbox-content: calc(var(--checkbox-margin-inline) + var(--checkbox-size));
-  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-large);
 }
 
 .backup-dialog {
@@ -28,63 +30,28 @@
   width: 29.27rem;
 }
 
-#backup-sensitive-data-checkbox {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  row-gap: var(--space-xsmall);
+.scheduled-backups-enabled {
+  --box-icon-start-fill: var(--icon-color-success);
 }
 
-#backup-sensitive-data-checkbox-label {
-  display: flex;
-  align-items: center;
+.scheduled-backups-disabled {
+  --box-icon-start-fill: var(--icon-color-warning);
 }
 
-#backup-sensitive-data-checkbox-description {
-  margin-inline-start: var(--margin-inline-start-checkbox-content);
-}
-
-.backups-control {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  column-gap: var(--space-large);
-  row-gap: var(--space-xsmall);
-  align-items: center;
-
-  moz-button {
-    justify-self: end;
-  }
-
-  moz-button:last-of-type {
-    grid-column: 3;
-  }
-
-  [id$="description"] {
-    grid-column: 1 / -1;
-  }
-}
-
-section {
-  margin-block-start: 24px;
+moz-input-folder {
+  --input-folder-wrap: wrap;
 }
 
 #last-backup-info {
-  color: var(--text-color-deemphasized);
-}
-
-#last-backup-location-control,
-#last-backup-info > div {
-  margin-block: 14px;
-}
-
-#last-backup-location-control {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  text-overflow: ellipsis ellipsis;
+  flex-direction: column;
+  gap: var(--space-xsmall);
 }
 
-#backup-password-controls {
-  display: flex;
-  margin-block: var(--space-large);
+#sensitive-data {
+  margin-block-start: var(--space-small);
+}
+
+moz-button {
+  white-space: nowrap;
 }

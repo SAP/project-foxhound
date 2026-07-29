@@ -16,6 +16,8 @@ namespace mozilla {
 class FinalizationWitnessService final : public nsIFinalizationWitnessService,
                                          public nsIObserver {
  public:
+  void operator=(const FinalizationWitnessService* other) = delete;
+
   NS_DECL_ISUPPORTS
   NS_DECL_NSIFINALIZATIONWITNESSSERVICE
   NS_DECL_NSIOBSERVER
@@ -24,7 +26,6 @@ class FinalizationWitnessService final : public nsIFinalizationWitnessService,
 
  private:
   ~FinalizationWitnessService() = default;
-  void operator=(const FinalizationWitnessService* other) = delete;
 };
 
 }  // namespace mozilla

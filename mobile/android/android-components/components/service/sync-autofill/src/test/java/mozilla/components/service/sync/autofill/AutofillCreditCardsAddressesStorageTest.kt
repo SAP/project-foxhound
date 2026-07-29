@@ -16,7 +16,6 @@ import mozilla.components.lib.dataprotect.SecureAbove22Preferences
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -24,6 +23,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class AutofillCreditCardsAddressesStorageTest {
@@ -141,9 +141,9 @@ class AutofillCreditCardsAddressesStorageTest {
         val count = storage.countAllCreditCards()
         assertEquals(3, count)
 
-        assertEquals(plaintextNumber1, storage.crypto.decrypt(key, savedCreditCard1!!.encryptedCardNumber))
-        assertEquals(plaintextNumber2, storage.crypto.decrypt(key, savedCreditCard2!!.encryptedCardNumber))
-        assertEquals(plaintextNumber3, storage.crypto.decrypt(key, savedCreditCard3!!.encryptedCardNumber))
+        assertEquals(plaintextNumber1, storage.crypto.decrypt(key, savedCreditCard1.encryptedCardNumber))
+        assertEquals(plaintextNumber2, storage.crypto.decrypt(key, savedCreditCard2.encryptedCardNumber))
+        assertEquals(plaintextNumber3, storage.crypto.decrypt(key, savedCreditCard3.encryptedCardNumber))
     }
 
     @Test

@@ -61,7 +61,7 @@
     width: 10px;
     height: 10px;
     flex-shrink: 0;
-    background-image: url(chrome://devtools/content/debugger/images/arrow.svg);
+    background-image: url(chrome://devtools/content/shared/components/images/arrow.svg);
     background-repeat: no-repeat;
     background-size: contain;
     -moz-context-properties: fill;
@@ -69,6 +69,7 @@
     rotate: -90deg;
     transition: rotate 180ms var(--animation-curve);
   }
+
   &:dir(rtl)::before {
     rotate: 90deg;
   }

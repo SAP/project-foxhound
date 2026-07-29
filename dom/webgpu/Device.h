@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -146,6 +145,9 @@ class Device final : public DOMEventTargetHelper,
   already_AddRefed<Buffer> CreateBuffer(const dom::GPUBufferDescriptor& aDesc,
                                         ErrorResult& aRv);
 
+  static dom::GPUTextureDescriptor SwapChainTextureDescriptor(
+      const dom::GPUCanvasConfiguration& aConfig,
+      const gfx::IntSize& aCanvasSize);
   already_AddRefed<Texture> CreateTextureForSwapChain(
       const dom::GPUCanvasConfiguration* const aConfig,
       const gfx::IntSize& aCanvasSize,

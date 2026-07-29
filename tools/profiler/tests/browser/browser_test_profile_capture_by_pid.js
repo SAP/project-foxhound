@@ -21,7 +21,7 @@ async function GetPidsWithSamplerThread() {
 // fnFilterWithContentId: Called with content child pid, returns filters to use.
 // E.g.: 123 => ["GeckoMain", "pid:123"], or 123 => ["pid:456"].
 async function test_with_filter(fnFilterWithContentId) {
-  Assert.ok(!Services.profiler.IsActive());
+  await ProfilerTestUtils.assertProfilerInactive();
   info("Clear the previous pages just in case we still some open tabs.");
   await Services.profiler.ClearAllPages();
 

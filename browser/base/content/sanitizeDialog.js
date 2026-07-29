@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,6 +15,8 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AIWindow:
+    "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
   DownloadUtils: "resource://gre/modules/DownloadUtils.sys.mjs",
   SiteDataManager: "resource:///modules/SiteDataManager.sys.mjs",
 });
@@ -167,6 +168,26 @@ var gSanitizePromptDialog = {
     // Show loading spinners while data sizes are being fetched
     this.showLoadingSpinners();
 
+    // Update history labels to include chat conversations if Smart Window is enabled.
+    if (lazy.AIWindow.isEnabled) {
+      for (let checkbox of document.querySelectorAll(
+        "#browsingHistoryAndDownloads"
+      )) {
+        document.l10n.setAttributes(
+          checkbox,
+          "item-history-downloads-and-chat"
+        );
+      }
+      for (let desc of document.querySelectorAll(
+        "#browsing-history-downloads-description"
+      )) {
+        document.l10n.setAttributes(
+          desc,
+          "item-history-downloads-and-chat-description"
+        );
+      }
+    }
+
     document
       .getElementById("sanitizeDurationChoice")
       .addEventListener("select", () => this.selectByTimespan());
@@ -178,6 +199,14 @@ var gSanitizePromptDialog = {
         this.sanitize(e);
       }
     });
+
+    const { onAccept, onCancel } = arg.wrappedJSObject ?? arg;
+    if (typeof onAccept === "function") {
+      document.addEventListener("dialogaccept", onAccept);
+    }
+    if (typeof onCancel === "function") {
+      document.addEventListener("dialogcancel", onCancel);
+    }
 
     this._allCheckboxes = document.querySelectorAll("checkbox[preference]");
 

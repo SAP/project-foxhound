@@ -57,7 +57,7 @@ macro_rules! success {
     };
     ( pointer $e:expr ) => {{
         let ptr = $e;
-        assert_ne!(ptr, 0);
+        assert!(!ptr.is_null());
         ptr
     }};
 }
@@ -154,7 +154,7 @@ impl UI {
 
         // Run the event loop.
         let mut msg = unsafe { std::mem::zeroed::<win::MSG>() };
-        while unsafe { win::GetMessageW(&mut msg, 0, 0, 0) } > 0 {
+        while unsafe { win::GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) } > 0 {
             if let Some(f) = get_invoke(&msg) {
                 f();
                 continue;
@@ -170,7 +170,8 @@ impl UI {
         }
 
         // Flush queue to properly drop late invokes (this is a very unlikely case)
-        while unsafe { win::PeekMessageW(&mut msg, 0, 0, 0, win::PM_REMOVE) } > 0 {
+        while unsafe { win::PeekMessageW(&mut msg, std::ptr::null_mut(), 0, 0, win::PM_REMOVE) } > 0
+        {
             if let Some(f) = get_invoke(&msg) {
                 drop(f);
             }
@@ -291,10 +292,15 @@ impl window::WindowClass for AppWindow {
 
 impl CustomWindowClass for AppWindow {
     fn icon() -> win::HICON {
-        static ICON: Lazy<win::HICON> = Lazy::new(|| unsafe {
+        // SAFETY: Windows HICON handles are safe to send and share across threads.
+        struct SendSyncIcon(win::HICON);
+        unsafe impl Send for SendSyncIcon {}
+        unsafe impl Sync for SendSyncIcon {}
+
+        static ICON: Lazy<SendSyncIcon> = Lazy::new(|| unsafe {
             // If CreateIconFromResource fails it returns NULL, which is fine (a default icon will be
             // used).
-            win::CreateIconFromResource(
+            SendSyncIcon(win::CreateIconFromResource(
                 // We take advantage of the fact that since Windows Vista, an RT_ICON resource entry
                 // can simply be a PNG image.
                 super::icon::PNG_DATA.as_ptr(),
@@ -303,10 +309,10 @@ impl CustomWindowClass for AppWindow {
                 // The 0x00030000 constant isn't available anywhere; the docs basically say to just
                 // pass it...
                 0x00030000,
-            )
+            ))
         });
 
-        *ICON
+        ICON.0
     }
 
     fn message(
@@ -416,7 +422,7 @@ impl CustomWindowClass for AppWindow {
                 };
                 return Some(0);
             }
-            win::WM_GETFONT => return Some(me.renderer.font()),
+            win::WM_GETFONT => return Some(me.renderer.font() as _),
             win::WM_COMMAND => {
                 let child = lparam as HWND;
                 let windows = me.renderer.windows.borrow();

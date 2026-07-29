@@ -131,8 +131,8 @@ load 486974-1.html
 == bug533251.html bug533251-ref.html
 
 # Bug 875287
-== font-familiy-whitespace-1.html font-familiy-whitespace-1-ref.html
-!= font-familiy-whitespace-1.html font-familiy-whitespace-1-notref.html
+== font-family-whitespace-1.html font-family-whitespace-1-ref.html
+!= font-family-whitespace-1.html font-family-whitespace-1-notref.html
 
 skip-if(Android) == ivs-1.html ivs-1-ref.html # Android bug 1250229
 skip-if(Android) == cjkcisvs-1.html cjkcisvs-1-ref.html # Android bug 1250229, Bug 1392106

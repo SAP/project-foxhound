@@ -1,11 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AnimationInfo.h"
 #include "mozilla/LayerAnimationInfo.h"
+#include "mozilla/gfx/Matrix.h"
+#include "mozilla/layers/AnimationStorageData.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
 #include "mozilla/layers/AnimationHelper.h"
 #include "mozilla/layers/CompositorThread.h"
@@ -227,7 +227,10 @@ static StyleTranslate ResolveTranslate(const StyleTranslate& aValue,
 }
 
 static StyleTransform ResolveTransformOperations(
-    const StyleTransform& aTransform, TransformReferenceBox& aRefBox) {
+    const StyleTransform& aTransform, TransformReferenceBox& aRefBox,
+    mozilla::StyleZoom aEffectiveZoom) {
+  // Note that we need to manually apply CSS zoom because animation values are
+  // unzoomed (unlike other computed values).
   auto convertMatrix = [](const gfx::Matrix4x4& aM) {
     return StyleTransformOperation::Matrix3D(StyleGenericMatrix3D<StyleNumber>{
         aM._11, aM._12, aM._13, aM._14, aM._21, aM._22, aM._23, aM._24, aM._31,
@@ -239,6 +242,7 @@ static StyleTransform ResolveTransformOperations(
       result.initCapacity(aTransform.Operations().Length()),
       "Allocating vector of transform operations should be successful.");
 
+  // TODO(salipov, bug 2045846): Fix zooming for transforms other than matrix
   for (const StyleTransformOperation& op : aTransform.Operations()) {
     switch (op.tag) {
       case StyleTransformOperation::Tag::TranslateX:
@@ -267,14 +271,35 @@ static StyleTransform ResolveTransformOperations(
       }
       case StyleTransformOperation::Tag::InterpolateMatrix: {
         gfx::Matrix4x4 matrix;
-        nsStyleTransformMatrix::ProcessInterpolateMatrix(matrix, op, aRefBox);
+        nsStyleTransformMatrix::ProcessInterpolateMatrix(matrix, op, aRefBox,
+                                                         aEffectiveZoom);
         result.infallibleAppend(convertMatrix(matrix));
         break;
       }
       case StyleTransformOperation::Tag::AccumulateMatrix: {
         gfx::Matrix4x4 matrix;
-        nsStyleTransformMatrix::ProcessAccumulateMatrix(matrix, op, aRefBox);
+        nsStyleTransformMatrix::ProcessAccumulateMatrix(matrix, op, aRefBox,
+                                                        aEffectiveZoom);
         result.infallibleAppend(convertMatrix(matrix));
+        break;
+      }
+      case StyleTransformOperation::Tag::Matrix: {
+        auto matrix = op.AsMatrix();
+
+        matrix.e = aEffectiveZoom.Zoom(matrix.e);
+        matrix.f = aEffectiveZoom.Zoom(matrix.f);
+
+        result.infallibleAppend(StyleTransformOperation::Matrix(matrix));
+        break;
+      }
+      case StyleTransformOperation::Tag::Matrix3D: {
+        auto matrix3d = op.AsMatrix3D();
+
+        matrix3d.m41 = aEffectiveZoom.Zoom(matrix3d.m41);
+        matrix3d.m42 = aEffectiveZoom.Zoom(matrix3d.m42);
+        matrix3d.m43 = aEffectiveZoom.Zoom(matrix3d.m43);
+
+        result.infallibleAppend(StyleTransformOperation::Matrix3D(matrix3d));
         break;
       }
       case StyleTransformOperation::Tag::RotateX:
@@ -290,8 +315,6 @@ static StyleTransform ResolveTransformOperations(
       case StyleTransformOperation::Tag::SkewX:
       case StyleTransformOperation::Tag::SkewY:
       case StyleTransformOperation::Tag::Skew:
-      case StyleTransformOperation::Tag::Matrix:
-      case StyleTransformOperation::Tag::Matrix3D:
       case StyleTransformOperation::Tag::Perspective:
         result.infallibleAppend(op);
         break;
@@ -315,16 +338,17 @@ static Maybe<ScrollTimelineOptions> GetScrollTimelineOptions(
   }
 
   const dom::ScrollTimeline* timeline = aTimeline->AsScrollTimeline();
-  MOZ_ASSERT(timeline->IsActive(),
+  const auto state = timeline->GetState();
+  MOZ_ASSERT(state.IsActive(),
              "We send scroll animation to the compositor only if its timeline "
              "is active");
 
   ScrollableLayerGuid::ViewID source = ScrollableLayerGuid::NULL_SCROLL_ID;
   DebugOnly<bool> success =
-      nsLayoutUtils::FindIDFor(timeline->SourceElement(), &source);
+      nsLayoutUtils::FindIDFor(state.SourceElement(), &source);
   MOZ_ASSERT(success, "We should have a valid ViewID for the scroller");
 
-  return Some(ScrollTimelineOptions(source, timeline->Axis()));
+  return Some(ScrollTimelineOptions(source, state.Axis()));
 }
 
 static void SetAnimatable(NonCustomCSSPropertyId aProperty,
@@ -361,8 +385,9 @@ static void SetAnimatable(NonCustomCSSPropertyId aProperty,
           ResolveTranslate(aAnimationValue.GetTranslateProperty(), aRefBox);
       break;
     case eCSSProperty_transform:
-      aAnimatable = ResolveTransformOperations(
-          aAnimationValue.GetTransformProperty(), aRefBox);
+      aAnimatable =
+          ResolveTransformOperations(aAnimationValue.GetTransformProperty(),
+                                     aRefBox, aFrame->Style()->EffectiveZoom());
       break;
     case eCSSProperty_offset_path:
       aAnimatable = StyleOffsetPath::None();
@@ -870,7 +895,8 @@ void AnimationInfo::AddNonAnimatingTransformLikePropertiesStyles(
         if (!display->mTransform.IsNone()) {
           TransformReferenceBox refBox(aFrame);
           appendFakeAnimation(
-              id, ResolveTransformOperations(display->mTransform, refBox));
+              id, ResolveTransformOperations(display->mTransform, refBox,
+                                             aFrame->Style()->EffectiveZoom()));
         }
         break;
       case eCSSProperty_translate:
@@ -958,7 +984,7 @@ void AnimationInfo::AddAnimationsForDisplayItem(
   // If the frame is not prerendered, bail out.
   // Do this check only during layer construction; during updating the
   // caller is required to check it appropriately.
-  if (aItem && !aItem->CanUseAsyncAnimations(aBuilder)) {
+  if (aItem && !aItem->CanUseAsyncAnimations()) {
     // EffectCompositor needs to know that we refused to run this animation
     // asynchronously so that it will not throttle the main thread
     // animation.

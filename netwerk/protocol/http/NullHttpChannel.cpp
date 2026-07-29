@@ -21,7 +21,9 @@ NullHttpChannel::NullHttpChannel() {
 }
 
 NullHttpChannel::NullHttpChannel(nsIHttpChannel* chan)
-    : mAllRedirectsSameOrigin(false), mAllRedirectsPassTimingAllowCheck(false) {
+    : mAllRedirectsSameOrigin(false),
+      mAllRedirectsSameOriginIgnoringInternal(false),
+      mAllRedirectsPassTimingAllowCheck(false) {
   nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
   ssm->GetChannelURIPrincipal(chan, getter_AddRefs(mResourcePrincipal));
 
@@ -420,6 +422,18 @@ NullHttpChannel::SetLoadInfo(nsILoadInfo* aLoadInfo) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
+NS_IMETHODIMP
+NullHttpChannel::GetParentProcessChannelHandle(
+    mozilla::dom::ParentProcessChannelHandle** aValue) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+NullHttpChannel::SetParentProcessChannelHandle(
+    mozilla::dom::ParentProcessChannelHandle* aValue) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
 //-----------------------------------------------------------------------------
 // NullHttpChannel::nsIRequest
 //-----------------------------------------------------------------------------
@@ -671,6 +685,20 @@ NullHttpChannel::GetResponseStart(mozilla::TimeStamp* aResponseStart) {
 }
 
 NS_IMETHODIMP
+NullHttpChannel::GetFirstInterimResponseStart(
+    mozilla::TimeStamp* aFirstInterimResponseStart) {
+  *aFirstInterimResponseStart = mozilla::TimeStamp();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+NullHttpChannel::GetFinalResponseHeadersStart(
+    mozilla::TimeStamp* aFinalResponseHeadersStart) {
+  *aFinalResponseHeadersStart = mAsyncOpenTime;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 NullHttpChannel::GetResponseEnd(mozilla::TimeStamp* aResponseEnd) {
   *aResponseEnd = mAsyncOpenTime;
   return NS_OK;
@@ -718,6 +746,20 @@ NullHttpChannel::GetAllRedirectsSameOrigin(bool* aAllRedirectsSameOrigin) {
 
 NS_IMETHODIMP
 NullHttpChannel::SetAllRedirectsSameOrigin(bool aAllRedirectsSameOrigin) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+NullHttpChannel::GetAllRedirectsSameOriginIgnoringInternal(
+    bool* aAllRedirectsSameOriginIgnoringInternal) {
+  *aAllRedirectsSameOriginIgnoringInternal =
+      mAllRedirectsSameOriginIgnoringInternal;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+NullHttpChannel::SetAllRedirectsSameOriginIgnoringInternal(
+    bool aAllRedirectsSameOriginIgnoringInternal) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -885,6 +927,8 @@ IMPL_TIMING_ATTR(SecureConnectionStart)
 IMPL_TIMING_ATTR(ConnectEnd)
 IMPL_TIMING_ATTR(RequestStart)
 IMPL_TIMING_ATTR(ResponseStart)
+IMPL_TIMING_ATTR(FirstInterimResponseStart)
+IMPL_TIMING_ATTR(FinalResponseHeadersStart)
 IMPL_TIMING_ATTR(ResponseEnd)
 IMPL_TIMING_ATTR(CacheReadStart)
 IMPL_TIMING_ATTR(CacheReadEnd)

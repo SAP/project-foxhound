@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,19 +13,19 @@ namespace mozilla::dom {
 
 // avoid redefined macro in unified build
 #undef LOG_SOURCE
-#define LOG_SOURCE(msg, ...)                 \
-  MOZ_LOG(gMediaControlLog, LogLevel::Debug, \
-          ("MediaControlKeySource=%p, " msg, this, ##__VA_ARGS__))
+#define LOG_SOURCE(msg, ...)                     \
+  MOZ_LOG_FMT(gMediaControlLog, LogLevel::Debug, \
+              "MediaControlKeySource={}, " msg, fmt::ptr(this), ##__VA_ARGS__)
 
 #undef LOG_KEY
-#define LOG_KEY(msg, key, ...)                                                 \
-  MOZ_LOG(gMediaControlLog, LogLevel::Debug,                                   \
-          ("MediaControlKeyHandler=%p, " msg, this, ToMediaControlKeyStr(key), \
-           ##__VA_ARGS__));
+#define LOG_KEY(msg, key, ...)                                   \
+  MOZ_LOG_FMT(gMediaControlLog, LogLevel::Debug,                 \
+              "MediaControlKeyHandler={}, " msg, fmt::ptr(this), \
+              ToMediaControlKeyStr(key), ##__VA_ARGS__);
 
 void MediaControlKeyHandler::OnActionPerformed(
     const MediaControlAction& aAction) {
-  LOG_KEY("OnActionPerformed '%s'", aAction.mKey);
+  LOG_KEY("OnActionPerformed '{}'", aAction.mKey);
 
   RefPtr<MediaControlService> service = MediaControlService::GetService();
   MOZ_ASSERT(service);
@@ -65,27 +63,39 @@ void MediaControlKeyHandler::OnActionPerformed(
       controller->NextTrack();
       return;
     case MediaControlKey::Seekbackward: {
-      const SeekDetails& details = *aAction.mDetails;
-      MOZ_ASSERT(details.mRelativeSeekOffset);
-      controller->SeekBackward(fmin(details.mRelativeSeekOffset.value(), 10.0));
+      const MediaControlActionParams& params = aAction.mParams;
+      MOZ_ASSERT(params.mRelativeSeekOffset);
+      controller->SeekBackward(fmin(params.mRelativeSeekOffset.value(), 10.0));
       return;
     }
     case MediaControlKey::Seekforward: {
-      const SeekDetails& details = *aAction.mDetails;
-      MOZ_ASSERT(details.mRelativeSeekOffset);
-      controller->SeekForward(fmin(details.mRelativeSeekOffset.value(), 10.0));
+      const MediaControlActionParams& params = aAction.mParams;
+      MOZ_ASSERT(params.mRelativeSeekOffset);
+      controller->SeekForward(fmin(params.mRelativeSeekOffset.value(), 10.0));
       return;
     }
     case MediaControlKey::Skipad:
       controller->SkipAd();
       return;
     case MediaControlKey::Seekto: {
-      const SeekDetails& details = *aAction.mDetails;
-      MOZ_ASSERT(details.mAbsolute);
-      controller->SeekTo(details.mAbsolute->mSeekTime,
-                         details.mAbsolute->mFastSeek);
+      const MediaControlActionParams& params = aAction.mParams;
+      MOZ_ASSERT(params.mAbsolute);
+      controller->SeekTo(params.mAbsolute->mSeekTime,
+                         params.mAbsolute->mFastSeek);
       return;
     }
+    case MediaControlKey::Setvolume: {
+      const MediaControlActionParams& params = aAction.mParams;
+      MOZ_ASSERT(params.mVolume);
+      controller->SetVolume(params.mVolume.value());
+      return;
+    }
+    case MediaControlKey::Mute:
+      controller->Mute();
+      return;
+    case MediaControlKey::Unmute:
+      controller->Unmute();
+      return;
     case MediaControlKey::Stop:
       controller->Stop();
       return;
@@ -100,13 +110,13 @@ MediaControlKeySource::MediaControlKeySource()
 
 void MediaControlKeySource::AddListener(MediaControlKeyListener* aListener) {
   MOZ_ASSERT(aListener);
-  LOG_SOURCE("Add listener %p", aListener);
+  LOG_SOURCE("Add listener {}", fmt::ptr(aListener));
   mListeners.AppendElement(aListener);
 }
 
 void MediaControlKeySource::RemoveListener(MediaControlKeyListener* aListener) {
   MOZ_ASSERT(aListener);
-  LOG_SOURCE("Remove listener %p", aListener);
+  LOG_SOURCE("Remove listener {}", fmt::ptr(aListener));
   mListeners.RemoveElement(aListener);
 }
 
@@ -123,7 +133,7 @@ void MediaControlKeySource::SetPlaybackState(MediaSessionPlaybackState aState) {
   if (mPlaybackState == aState) {
     return;
   }
-  LOG_SOURCE("SetPlaybackState '%s'", ToMediaSessionPlaybackStateStr(aState));
+  LOG_SOURCE("SetPlaybackState '{}'", ToMediaSessionPlaybackStateStr(aState));
   mPlaybackState = aState;
 }
 

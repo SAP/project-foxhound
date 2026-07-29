@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,7 +26,7 @@ class TimelineCollection final
     : public LinkedListElement<TimelineCollection<TimelineType>> {
  public:
   using SelfType = TimelineCollection<TimelineType>;
-  using TimelineMap = nsTHashMap<RefPtr<nsAtom>, RefPtr<TimelineType>>;
+  using TimelineMap = nsTHashMap<RefPtr<const nsAtom>, RefPtr<TimelineType>>;
 
   TimelineCollection(dom::Element& aElement,
                      const PseudoStyleRequest& aPseudoRequest)
@@ -38,11 +36,11 @@ class TimelineCollection final
 
   ~TimelineCollection();
 
-  already_AddRefed<TimelineType> Lookup(nsAtom* aName) const {
+  already_AddRefed<TimelineType> Lookup(const nsAtom* aName) const {
     return mTimelines.Get(aName).forget();
   }
 
-  already_AddRefed<TimelineType> Extract(nsAtom* aName) {
+  already_AddRefed<TimelineType> Extract(const nsAtom* aName) {
     Maybe<RefPtr<TimelineType>> timeline = mTimelines.Extract(aName);
     return timeline ? timeline->forget() : nullptr;
   }

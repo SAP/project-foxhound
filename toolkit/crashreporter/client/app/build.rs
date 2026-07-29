@@ -57,20 +57,12 @@ fn crash_annotations() {
         panic!("unexpected crash annotations root type");
     };
 
-    let mut ping_annotations = phf_codegen::Set::new();
     let mut annotations = phf_codegen::Set::new();
 
     for (k, v) in entries {
         let scope = v["scope"].as_str().unwrap_or("client");
         match scope {
-            "ping-only" => {
-                ping_annotations.entry(k.into_string().unwrap());
-            }
-            "ping" => {
-                ping_annotations.entry(k.clone().into_string().unwrap());
-                annotations.entry(k.into_string().unwrap());
-            }
-            "report" => {
+            "ping" | "report" => {
                 annotations.entry(k.into_string().unwrap());
             }
             _ => (),
@@ -78,12 +70,6 @@ fn crash_annotations() {
     }
 
     let mut file = BufWriter::new(File::create(&crash_ping_file).unwrap());
-    writeln!(
-        &mut file,
-        "static PING_ANNOTATIONS: phf::Set<&'static str> = {};",
-        ping_annotations.build(),
-    )
-    .unwrap();
     writeln!(
         &mut file,
         "static ALL_REPORT_ANNOTATIONS: phf::Set<&'static str> = {};",

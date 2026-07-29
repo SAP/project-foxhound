@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,16 +15,18 @@
 
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/nsCSPService.h"
+#include "nsContentPolicyType.h"
 #include "nsContentUtils.h"
 #include "nsIContent.h"
 #include "nsIContentPolicy.h"
 #include "nsIURI.h"
+#include "nsPIDOMWindow.h"
+#include "nsPIDOMWindowInlines.h"  // FIXME: Stop including inline definitions!
 #include "nsServiceManagerUtils.h"
 #include "nsStringFwd.h"
 
 // XXXtw sadly, this makes consumers of nsContentPolicyUtils depend on widget
 #include "mozilla/dom/Document.h"
-#include "nsPIDOMWindow.h"
 
 #define NS_CONTENTPOLICY_CONTRACTID "@mozilla.org/layout/content-policy;1"
 #define NS_CONTENTPOLICY_CATEGORY "content-policy"
@@ -86,70 +87,15 @@ inline const char* NS_CP_ResponseName(int16_t response) {
  */
 inline const char* NS_CP_ContentTypeName(nsContentPolicyType contentType) {
   switch (contentType) {
-    CASE_RETURN(TYPE_OTHER);
-    CASE_RETURN(TYPE_SCRIPT);
-    CASE_RETURN(TYPE_IMAGE);
-    CASE_RETURN(TYPE_STYLESHEET);
-    CASE_RETURN(TYPE_OBJECT);
-    CASE_RETURN(TYPE_DOCUMENT);
-    CASE_RETURN(TYPE_SUBDOCUMENT);
-    CASE_RETURN(TYPE_PING);
-    CASE_RETURN(TYPE_XMLHTTPREQUEST);
-    CASE_RETURN(TYPE_DTD);
-    CASE_RETURN(TYPE_FONT);
-    CASE_RETURN(TYPE_MEDIA);
-    CASE_RETURN(TYPE_WEBSOCKET);
-    CASE_RETURN(TYPE_CSP_REPORT);
-    CASE_RETURN(TYPE_XSLT);
-    CASE_RETURN(TYPE_BEACON);
-    CASE_RETURN(TYPE_FETCH);
-    CASE_RETURN(TYPE_IMAGESET);
-    CASE_RETURN(TYPE_WEB_MANIFEST);
-    CASE_RETURN(TYPE_INTERNAL_SCRIPT);
-    CASE_RETURN(TYPE_INTERNAL_WORKER);
-    CASE_RETURN(TYPE_INTERNAL_SHARED_WORKER);
-    CASE_RETURN(TYPE_INTERNAL_EMBED);
-    CASE_RETURN(TYPE_INTERNAL_OBJECT);
-    CASE_RETURN(TYPE_INTERNAL_FRAME);
-    CASE_RETURN(TYPE_INTERNAL_IFRAME);
-    CASE_RETURN(TYPE_INTERNAL_AUDIO);
-    CASE_RETURN(TYPE_INTERNAL_VIDEO);
-    CASE_RETURN(TYPE_INTERNAL_TRACK);
-    CASE_RETURN(TYPE_INTERNAL_XMLHTTPREQUEST_ASYNC);
-    CASE_RETURN(TYPE_INTERNAL_EVENTSOURCE);
-    CASE_RETURN(TYPE_INTERNAL_SERVICE_WORKER);
-    CASE_RETURN(TYPE_INTERNAL_SCRIPT_PRELOAD);
-    CASE_RETURN(TYPE_INTERNAL_IMAGE);
-    CASE_RETURN(TYPE_INTERNAL_IMAGE_PRELOAD);
-    CASE_RETURN(TYPE_INTERNAL_IMAGE_FAVICON);
-    CASE_RETURN(TYPE_INTERNAL_IMAGE_NOTIFICATION);
-    CASE_RETURN(TYPE_INTERNAL_STYLESHEET);
-    CASE_RETURN(TYPE_INTERNAL_STYLESHEET_PRELOAD);
-    CASE_RETURN(TYPE_INTERNAL_WORKER_IMPORT_SCRIPTS);
-    CASE_RETURN(TYPE_SAVEAS_DOWNLOAD);
-    CASE_RETURN(TYPE_SPECULATIVE);
-    CASE_RETURN(TYPE_INTERNAL_MODULE);
-    CASE_RETURN(TYPE_INTERNAL_MODULE_PRELOAD);
-    CASE_RETURN(TYPE_INTERNAL_DTD);
-    CASE_RETURN(TYPE_INTERNAL_FORCE_ALLOWED_DTD);
-    CASE_RETURN(TYPE_INTERNAL_AUDIOWORKLET);
-    CASE_RETURN(TYPE_INTERNAL_PAINTWORKLET);
-    CASE_RETURN(TYPE_INTERNAL_FONT_PRELOAD);
-    CASE_RETURN(TYPE_INTERNAL_CHROMEUTILS_COMPILED_SCRIPT);
-    CASE_RETURN(TYPE_INTERNAL_FRAME_MESSAGEMANAGER_SCRIPT);
-    CASE_RETURN(TYPE_INTERNAL_FETCH_PRELOAD);
-    CASE_RETURN(TYPE_UA_FONT);
-    CASE_RETURN(TYPE_INTERNAL_WORKER_STATIC_MODULE);
-    CASE_RETURN(TYPE_PROXIED_WEBRTC_MEDIA);
-    CASE_RETURN(TYPE_WEB_IDENTITY);
-    CASE_RETURN(TYPE_WEB_TRANSPORT);
-    CASE_RETURN(TYPE_INTERNAL_XMLHTTPREQUEST_SYNC);
-    CASE_RETURN(TYPE_INTERNAL_EXTERNAL_RESOURCE);
-    CASE_RETURN(TYPE_JSON);
-    CASE_RETURN(TYPE_INTERNAL_JSON_PRELOAD);
-    CASE_RETURN(TYPE_END);
-    case nsIContentPolicy::TYPE_INVALID:
+#define TYPE_TO_STRING(name)      \
+  case nsContentPolicyType::name: \
+    return #name;
+    FOR_EACH_CONTENT_POLICY_TYPE(TYPE_TO_STRING)
+#undef TYPE_TO_STRING
+
+    case nsContentPolicyType::TYPE_INVALID:
       break;
+
       // Do not add default: so that compilers can catch the missing case.
   }
   return "<Unknown Type>";

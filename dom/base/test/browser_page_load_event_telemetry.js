@@ -45,11 +45,10 @@ add_task(async function () {
         BrowserTestUtils.startLoadingURIString(browser, "https://example.com");
         await BrowserTestUtils.browserLoaded(browser);
       }
+      BrowserTestUtils.removeTab(tab);
     },
     // The ping itself is submitted via idle dispatch, so we need to specify a
     // timeout.
     1000
   );
-
-  BrowserTestUtils.removeTab(tab);
 });

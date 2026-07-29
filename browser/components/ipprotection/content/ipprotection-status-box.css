@@ -5,7 +5,7 @@
 @import "chrome://global/skin/global.css";
 
 :host {
-  --border-color: var(--border-color-card);
+  --border-color: var(--card-border-color);
 }
 
 .disconnected,
@@ -16,7 +16,7 @@
 .connected {
   background-color: var(--background-color-success);
 
-  ::slotted([slot="icon"]) {
+  ::slotted([slot="image"]) {
     -moz-context-properties: fill;
     fill: var(--icon-color-success);
   }
@@ -25,26 +25,44 @@
 .excluded {
   background-color: var(--background-color-success);
 
-  ::slotted([slot="icon"]) {
+  ::slotted([slot="image"]) {
     -moz-context-properties: fill, stroke;
     fill: transparent;
     stroke: var(--icon-color-success);
   }
 }
 
+.paused {
+  background-color: var(--background-color-box-info);
+
+  ::slotted([slot="image"]) {
+    -moz-context-properties: fill;
+    fill: var(--icon-color);
+  }
+}
+
 .connecting {
   background-color: var(--background-color-box-info);
 
-  ::slotted([slot="icon"]) {
+  ::slotted([slot="image"]) {
     -moz-context-properties: fill;
     fill: var(--icon-color);
   }
 }
 
 .network-error {
+  background-color: var(--background-color-information);
+
+  ::slotted([slot="image"]) {
+    -moz-context-properties: fill;
+    fill: var(--icon-color-information);
+  }
+}
+
+.catastrophic-error {
   background-color: var(--background-color-critical);
 
-  ::slotted([slot="icon"]) {
+  ::slotted([slot="image"]) {
     -moz-context-properties: fill;
     fill: var(--icon-color-critical);
   }
@@ -53,6 +71,7 @@
 #content-container {
   display: flex;
   flex-direction: column;
+  border: var(--border-width) solid var(--border-color);
   border-radius: var(--border-radius-medium);
   padding: var(--space-medium);
 }
@@ -60,6 +79,8 @@
 #header {
   display: flex;
   justify-content: space-between;
+  gap: var(--space-medium);
+  min-block-size: var(--size-image-small);
 }
 
 #title {
@@ -83,8 +104,7 @@
   flex-direction: column;
 }
 
-#bandwidth,
-#location {
+#bandwidth {
   display: flex;
   align-items: center;
   gap: var(--space-xsmall);
@@ -96,28 +116,31 @@
   margin-top: var(--space-large);
 }
 
-::slotted([slot="icon"]) {
-  height: var(--icon-size-large);
-  width: var(--icon-size-large);
+::slotted([slot="content"].location-message) {
+  border: none;
+  margin-top: var(--space-small);
+  color: var(--text-color-deemphasized);
+  text-align: center;
 }
 
-::slotted([slot="location-icon"]) {
-  -moz-context-properties: fill;
-  /* Intentionally set the icon color to match the deemphasized text */
-  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
-  fill: var(--text-color-deemphasized);
-
-  @media (prefers-contrast) {
-    fill: currentColor;
-  }
+::slotted([slot="image"]) {
+  display: block;
+  height: var(--size-image-small);
+  width: var(--size-image-small);
 }
 
-::slotted([slot="bandwidth"]),
-::slotted([slot="location"]) {
+::slotted([slot="bandwidth"]) {
   color: var(--text-color-deemphasized);
 }
 
 ::slotted([slot="action"]) {
-  align-self: flex-end;
-  margin-block-start: var(--space-large);
+  margin-block-start: var(--space-xxlarge);
+  --button-padding: var(--space-medium);
+  width: 100%;
+}
+
+::slotted([slot="location-action"]) {
+  margin-block-start: var(--space-small);
+  width: 100%;
+  --button-padding: var(--space-medium);
 }

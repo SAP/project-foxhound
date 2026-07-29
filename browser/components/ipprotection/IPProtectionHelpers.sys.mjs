@@ -7,28 +7,34 @@
  * corresponding documentation in the `docs` folder as well.
  */
 
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
+import { IPProtectionActivator } from "moz-src:///toolkit/components/ipprotection/IPProtectionActivator.sys.mjs";
+
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   IPPExceptionsManager:
-    "moz-src:///browser/components/ipprotection/IPPExceptionsManager.sys.mjs",
+    "moz-src:///toolkit/components/ipprotection/IPPExceptionsManager.sys.mjs",
   IPProtection:
     "moz-src:///browser/components/ipprotection/IPProtection.sys.mjs",
   IPProtectionService:
-    "moz-src:///browser/components/ipprotection/IPProtectionService.sys.mjs",
+    "moz-src:///toolkit/components/ipprotection/IPProtectionService.sys.mjs",
   IPProtectionStates:
-    "moz-src:///browser/components/ipprotection/IPProtectionService.sys.mjs",
+    "moz-src:///toolkit/components/ipprotection/IPProtectionService.sys.mjs",
+  IPPFxaAuthProvider:
+    "moz-src:///toolkit/components/ipprotection/fxa/IPPFxaAuthProvider.sys.mjs",
+  IPPFxaActivateAuthProvider:
+    "moz-src:///toolkit/components/ipprotection/fxa/IPPFxaActivateAuthProvider.sys.mjs",
 });
 
-import { IPPProxyManager } from "moz-src:///browser/components/ipprotection/IPPProxyManager.sys.mjs";
-import { IPPAutoRestoreHelper } from "moz-src:///browser/components/ipprotection/IPPAutoRestore.sys.mjs";
-import { IPPAutoStartHelpers } from "moz-src:///browser/components/ipprotection/IPPAutoStart.sys.mjs";
-import { IPPEnrollAndEntitleManager } from "moz-src:///browser/components/ipprotection/IPPEnrollAndEntitleManager.sys.mjs";
-import { IPPNimbusHelper } from "moz-src:///browser/components/ipprotection/IPPNimbusHelper.sys.mjs";
+if (AppConstants.MOZ_ENTERPRISE) {
+  ChromeUtils.defineESModuleGetters(lazy, {
+    IPPEnterpriseAuthProvider:
+      "moz-src:///toolkit/components/ipprotection/enterprise/IPPEnterpriseAuthProvider.sys.mjs",
+  });
+}
+import { IPPUsageHelper } from "moz-src:///browser/components/ipprotection/IPPUsageHelper.sys.mjs";
 import { IPPOnboardingMessage } from "moz-src:///browser/components/ipprotection/IPPOnboardingMessageHelper.sys.mjs";
-import { IPProtectionServerlist } from "moz-src:///browser/components/ipprotection/IPProtectionServerlist.sys.mjs";
-import { IPPSignInWatcher } from "moz-src:///browser/components/ipprotection/IPPSignInWatcher.sys.mjs";
-import { IPPStartupCache } from "moz-src:///browser/components/ipprotection/IPPStartupCache.sys.mjs";
 import { IPPOptOutHelper } from "moz-src:///browser/components/ipprotection/IPPOptOutHelper.sys.mjs";
 import { IPProtectionAlertManager } from "moz-src:///browser/components/ipprotection/IPProtectionAlertManager.sys.mjs";
 import { IPProtectionInfobarManager } from "moz-src:///browser/components/ipprotection/IPProtectionInfobarManager.sys.mjs";
@@ -82,20 +88,33 @@ class UIHelper {
   }
 }
 
-const IPPHelpers = [
-  IPPStartupCache,
-  IPPSignInWatcher,
-  IPProtectionServerlist,
-  IPPEnrollAndEntitleManager,
+function pickAuthProvider() {
+  if (AppConstants.MOZ_ENTERPRISE) {
+    return lazy.IPPEnterpriseAuthProvider;
+  }
+  if (
+    Services.prefs.getBoolPref(
+      "browser.ipProtection.fxa.useActivateFlow",
+      false
+    )
+  ) {
+    return lazy.IPPFxaActivateAuthProvider;
+  }
+  return lazy.IPPFxaAuthProvider;
+}
+
+const authProvider = pickAuthProvider();
+
+IPProtectionActivator.addHelpers([
   IPPOnboardingMessage,
-  IPPProxyManager,
+  IPPUsageHelper,
   new UIHelper(),
-  IPPAutoRestoreHelper,
-  ...IPPAutoStartHelpers,
   IPPOptOutHelper,
-  IPPNimbusHelper,
   IPProtectionAlertManager,
   IPProtectionInfobarManager,
-];
+  ...authProvider.helpers,
+]);
 
-export { IPPHelpers };
+IPProtectionActivator.setAuthProvider(authProvider);
+
+export { IPProtectionActivator };

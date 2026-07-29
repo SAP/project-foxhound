@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,8 +14,7 @@ class TableRowsCollection;
 
 class HTMLTableElement final : public nsGenericHTMLElement {
  public:
-  explicit HTMLTableElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+  explicit HTMLTableElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
   NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLTableElement, table)
 
@@ -85,11 +82,11 @@ class HTMLTableElement final : public nsGenericHTMLElement {
   }
   already_AddRefed<nsGenericHTMLElement> CreateTFoot();
 
-  nsIHTMLCollection* TBodies();
+  HTMLCollection* TBodies();
 
   already_AddRefed<nsGenericHTMLElement> CreateTBody();
 
-  nsIHTMLCollection* Rows();
+  HTMLCollection* Rows();
 
   already_AddRefed<nsGenericHTMLElement> InsertRow(int32_t aIndex,
                                                    ErrorResult& aError);
@@ -189,7 +186,7 @@ class HTMLTableElement final : public nsGenericHTMLElement {
     return nullptr;
   }
 
-  RefPtr<nsContentList> mTBodies;
+  RefPtr<ContentList> mTBodies;
   RefPtr<TableRowsCollection> mRows;
   RefPtr<StyleLockedDeclarationBlock> mTableInheritedAttributes;
   void BuildInheritedAttributes();

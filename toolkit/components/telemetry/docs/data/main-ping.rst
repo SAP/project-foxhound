@@ -131,11 +131,11 @@ This format was adopted in Firefox 51 via bug 1218576.
 
 scalars and keyedScalars
 ~~~~~~~~~~~~~~~~~~~~~~~~
-This section contains the :doc:`../collection/scalars` that are valid for the current platform. Scalars are only submitted if data was added to them, and are only reported with subsession pings. The recorded scalars are described in the `Scalars.yaml <https://searchfox.org/mozilla-central/source/toolkit/components/telemetry/Scalars.yaml>`_ file. The ``info.revision`` field indicates the revision of the file that describes the reported scalars.
+This section contains the Scalars that are valid for the current platform. Scalars are only submitted if data was added to them, and are only reported with subsession pings. The recorded scalars are described in the :searchfox:`Scalars.yaml <toolkit/components/telemetry/Scalars.yaml>` file. The ``info.revision`` field indicates the revision of the file that describes the reported scalars.
 
 simpleMeasurements
 ------------------
-This section contains a list of simple measurements, or counters. In addition to the ones highlighted below, Telemetry timestamps (see `here <https://searchfox.org/mozilla-central/search?q=TelemetryTimestamps.add&redirect=false&case=true>`__ and `here <https://searchfox.org/mozilla-central/search?q=recordTimestamp&redirect=false&case=true>`__) can be reported.
+This section contains a list of simple measurements, or counters. Only specific simple measurements are supported by the data pipeline.
 
 totalTime
 ~~~~~~~~~
@@ -143,27 +143,9 @@ A non-monotonic integer representing the number of seconds the session has been 
 
 addonManager
 ~~~~~~~~~~~~
+As of Firefox 150 this section is no longer present.
+
 Only available in the extended set of measures, it contains a set of counters related to Addons. See `here <https://searchfox.org/mozilla-central/search?q=AddonManagerPrivate.recordSimpleMeasure&redirect=false&case=true>`__ for a list of recorded measures.
-
-UITelemetry
-~~~~~~~~~~~
-As of Firefox 61 this section is no longer present.
-
-Only available in the extended set of measures. For more see :ref:`uitelemetry`.
-
-js
-~~
-This section contains a series of counters from the JavaScript engine.
-
-Structure:
-
-.. code-block:: js
-
-    "js" : {
-      // ...
-    }
-
-As of Firefox 59 this section no longer contains any entries, as of Firefox 61 this section is removed.
 
 maximalNumberOfConcurrentThreads
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -199,157 +181,17 @@ The number of times the system failed to lock the user profile.
 
 activeTicks
 ~~~~~~~~~~~
-Integer count of the number of five-second intervals ('ticks') the user was considered 'active' (sending UI events to the window). An extra event is fired immediately when the user becomes active after being inactive. This is for some mouse and gamepad events, and all touch, keyboard, wheel, and pointer events (see `EventStateManager.cpp <https://searchfox.org/mozilla-central/source/dom/events/EventStateManager.cpp#504>`__).
+Integer count of the number of five-second intervals ('ticks') the user was considered 'active' (sending UI events to the window). An extra event is fired immediately when the user becomes active after being inactive. This is for some mouse and gamepad events, and all touch, keyboard, wheel, and pointer events (see :searchfox:`EventStateManager.cpp <dom/events/EventStateManager.cpp#504>`).
 This measure might be useful to give a trend of how much a user actually interacts with the browser when compared to overall session duration. It does not take into account whether or not the window has focus or is in the foreground. Just if it is receiving these interaction events.
 Note that in ``main`` pings, this measure is reset on subsession splits, while in ``saved-session`` pings it covers the whole browser session.
 
 histograms
 ----------
-This section contains the histograms that are valid for the current platform. ``Flag`` histograms are always created and submitted with a default value of ``false`` if a value of ``true`` is not recorded during the time period. Other histogram types (see :ref:`choosing-histogram-type`) are not created nor submitted if no data was added to them. The type and format of the reported histograms is described by the ``Histograms.json`` file. Its most recent version is available `here <https://searchfox.org/mozilla-central/source/toolkit/components/telemetry/Histograms.json>`__. The ``info.revision`` field indicates the revision of the file that describes the reported histograms.
+This section contains the histograms that are valid for the current platform. ``Flag`` histograms are always created and submitted with a default value of ``false`` if a value of ``true`` is not recorded during the time period. Other histogram types (see :ref:`choosing-histogram-type`) are not created nor submitted if no data was added to them. The type and format of the reported histograms is described by the ``Histograms.json`` file. Its most recent version is available :searchfox:`here <toolkit/components/telemetry/Histograms.json>`. The ``info.revision`` field indicates the revision of the file that describes the reported histograms.
 
 keyedHistograms
 ---------------
 This section contains the keyed histograms available for the current platform.
-
-As of Firefox 48, this section does not contain empty keyed histograms anymore.
-
-threadHangStats
----------------
-As of Firefox 57 this section is no longer present, and has been replaced with the :doc:`bhr ping <backgroundhangmonitor-ping>`.
-
-Contains the statistics about the hangs in main and background threads. Note that hangs in this section capture the `label stack <https://developer.mozilla.org/en-US/docs/Mozilla/Performance/Profiling_with_the_Built-in_Profiler#Native_stack_vs._label_stack>`_ and an incomplete JS stack, which is not 100% precise. For particularly egregious hangs, and on nightly, an unsymbolicated native stack is also captured. The amount of time that is considered "egregious" is different from thread to thread, and is set when the BackgroundHangMonitor is constructed for that thread. In general though, hangs from 5 - 10 seconds are generally considered egregious. Shorter hangs (1 - 2s) are considered egregious for other threads (the compositor thread, and the hang monitor that is only enabled during tab switch).
-
-To avoid submitting overly large payloads, some limits are applied:
-
-* Identical, adjacent "(chrome script)" or "(content script)" stack entries are collapsed together. If a stack is reduced, the "(reduced stack)" frame marker is added as the oldest frame.
-* The depth of the reported label stacks is limited to 11 entries. This value represents the 99.9th percentile of the thread hangs stack depths reported by Telemetry.
-* The native stacks are limited to a depth of 25 stack frames.
-
-Structure:
-
-.. code-block:: js
-
-    "threadHangStats" : [
-      {
-        "name" : "Gecko",
-        "activity" : {...}, // a time histogram of all task run times
-        "nativeStacks": { // captured for all hangs on nightly, or egregious hangs on beta
-          "memoryMap": [
-            ["wgdi32.pdb", "08A541B5942242BDB4AEABD8C87E4CFF2"],
-            ["igd10iumd32.pdb", "D36DEBF2E78149B5BE1856B772F1C3991"],
-            // ... other entries in the format ["module name", "breakpad identifier"] ...
-          ],
-          "stacks": [
-            [
-              [
-                0, // the module index or -1 for invalid module indices
-                190649 // the offset of this program counter in its module or an absolute pc
-              ],
-              [1, 2540075],
-              // ... other frames ...
-            ],
-            // ... other stacks ...
-          ]
-        },
-        "hangs" : [
-          {
-            "stack" : [
-              "Startup::XRE_Main",
-              "Timer::Fire",
-              "(content script)",
-              "IPDL::PPluginScriptableObject::SendGetChildProperty",
-              ... up to 11 frames ...
-            ],
-            "nativeStack": 0, // index into nativeStacks.stacks array
-            "histogram" : {...}, // the time histogram of the hang times
-            "annotations" : [
-              {
-                "pluginName" : "Shockwave Flash",
-                "pluginVersion" : "18.0.0.209"
-              },
-              ... other annotations ...
-            ]
-          },
-        ],
-      },
-      ... other threads ...
-    ]
-
-.. _chromeHangs:
-
-chromeHangs
------------
-As of Firefox 62, chromeHangs has been removed. Please look to the bhr ping for
-similar functionality.
-
-Contains the statistics about the hangs happening exclusively on the main thread of the parent process. Precise C++ stacks are reported. This is only available on Nightly Release on Windows, when building using "--enable-profiling" switch.
-
-Some limits are applied:
-
-* Reported chrome hang stacks are limited in depth to 50 entries.
-* The maximum number of reported stacks is 50.
-
-The module names can contain unicode characters.
-
-Structure:
-
-.. code-block:: js
-
-    "chromeHangs" : {
-      "memoryMap" : [
-        ["wgdi32.pdb", "08A541B5942242BDB4AEABD8C87E4CFF2"],
-        ["igd10iumd32.pdb", "D36DEBF2E78149B5BE1856B772F1C3991"],
-        ... other entries in the format ["module name", "breakpad identifier"] ...
-       ],
-      "stacks" : [
-        [
-          [
-            0, // the module index or -1 for invalid module indices
-            190649 // the offset of this program counter in its module or an absolute pc
-          ],
-          [1, 2540075],
-          ... other frames, up to 50 ...
-         ],
-         ... other stacks, up to 50 ...
-      ],
-      "durations" : [8, ...], // the hang durations (in seconds)
-      "systemUptime" : [692, ...], // the system uptime (in minutes) at the time of the hang
-      "firefoxUptime" : [672, ...], // the Firefox uptime (in minutes) at the time of the hang
-      "annotations" : [
-        [
-          [0, ...], // the indices of the related hangs
-          {
-            "pluginName" : "Shockwave Flash",
-            "pluginVersion" : "18.0.0.209",
-            ... other annotations as key:value pairs ...
-          }
-        ],
-        ...
-      ]
-    },
-
-log
----
-As of Firefox 61 this section is no longer present, use :ref:`eventtelemetry` or :doc:`../collection/scalars`.
-
-This section contains a log of important or unusual events reported through Telemetry.
-
-Structure:
-
-.. code-block:: js
-
-    "log": [
-      [
-        "Event_ID",
-        3785, // the timestamp (in milliseconds) for the log entry
-        ... other data ...
-      ],
-      ...
-    ]
-
-At present there is one known users of this section: Telemetry Experiments.
-
-Telemetry Experiments uses it to note when experiments are activated and terminated.
 
 fileIOReports
 -------------
@@ -450,6 +292,10 @@ Structure:
 
 Version History
 ---------------
+
+- Firefox 150:
+
+  - Stopped reporting ``simpleMeasurements`` that the pipeline doesn't provide columns for (`bug 2017318 <https://bugzilla.mozilla.org/show_bug.cgi?id=2017318>`_).
 
 - Firefox 142:
 

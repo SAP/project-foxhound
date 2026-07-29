@@ -2,11 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-:host {
-  --visual-picker-item-border-radius: var(--border-radius-medium);
-  --visual-picker-item-border-width: var(--border-width);
-  --visual-picker-item-border-color: var(--border-color-interactive);
+@import url("chrome://global/content/elements/moz-visual-picker-item.tokens.css");
 
+:host {
   cursor: default;
   display: flex;
 }
@@ -17,7 +15,9 @@
   overflow: hidden;
   border: var(--visual-picker-item-border-width) solid var(--visual-picker-item-border-color);
   border-radius: var(--visual-picker-item-border-radius);
-  margin: 2px;
+  /* The margin needs to account for the increased border-width on the checked item. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  margin: calc(var(--visual-picker-item-border-width-checked) - var(--visual-picker-item-border-width));
   flex: 1;
 
   &:focus {
@@ -30,7 +30,7 @@
   }
 
   &[checked] {
-    --visual-picker-item-border-width: 3px;
+    --visual-picker-item-border-width: var(--visual-picker-item-border-width-checked);
     border-color: var(--border-color-selected);
     margin: 0;
   }

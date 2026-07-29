@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,6 +20,7 @@ const lazy = XPCOMUtils.declareLazy({
   DevToolsShim: "chrome://devtools-startup/content/DevToolsShim.sys.mjs",
   ExtensionActivityLog: "resource://gre/modules/ExtensionActivityLog.sys.mjs",
   ExtensionData: "resource://gre/modules/Extension.sys.mjs",
+  ExtensionDocumentId: "resource://gre/modules/ExtensionDocumentId.sys.mjs",
   GeckoViewConnection: "resource://gre/modules/GeckoViewWebExtension.sys.mjs",
   MessageManagerProxy: "resource://gre/modules/MessageManagerProxy.sys.mjs",
   NativeApp: "resource://gre/modules/NativeMessaging.sys.mjs",
@@ -308,6 +307,12 @@ const ProxyMessenger = {
         sender.frameId = source.frameId;
       }
 
+      if (currentWindowContext?.innerWindowId) {
+        sender.documentId = lazy.ExtensionDocumentId.getDocumentId(
+          currentWindowContext.innerWindowId
+        );
+      }
+
       let principal = currentWindowContext.documentPrincipal;
       // We intend the serialization of null principals *and* file scheme to be
       // "null".
@@ -342,6 +347,17 @@ const ProxyMessenger = {
 
     arg.sender = this.getSender(extension, sender);
     arg.topBC = arg.tabId && this.getTopBrowsingContextId(arg.tabId);
+
+    if (arg.documentId) {
+      let innerWindowId =
+        lazy.ExtensionDocumentId.getInnerWindowIdForDocumentId(arg.documentId);
+      if (!innerWindowId) {
+        throw new ExtensionError(ERROR_NO_RECEIVERS);
+      }
+      arg.innerWindowId = innerWindowId;
+      return "frame";
+    }
+
     return arg.tabId ? "tab" : "messenger";
   },
 
@@ -763,7 +779,7 @@ class ExtensionPageContextParent extends ProxyContextParent {
 
   // The window that contains this context. This may change due to moving tabs.
   get appWindow() {
-    let win = this.xulBrowser.ownerGlobal;
+    let win = this.xulBrowser.documentGlobal;
     return win.browsingContext.topChromeWindow;
   }
 
@@ -776,16 +792,18 @@ class ExtensionPageContextParent extends ProxyContextParent {
 
   get tabId() {
     let { tabTracker } = apiManager.global;
-    let data = tabTracker.getBrowserData(this.xulBrowser);
-    if (data.tabId >= 0) {
-      return data.tabId;
+    const xulBrowser = this.xulBrowser;
+    const tab = xulBrowser && tabTracker.getTabForBrowser(xulBrowser);
+    if (tab) {
+      return tabTracker.getId(tab);
     }
     return undefined;
   }
 
   toExtensionContext() {
     const { tabTracker } = apiManager.global;
-    const { tabId, windowId } = tabTracker.getBrowserDataForContext(this);
+    const xulBrowser = this.xulBrowser;
+    const browserData = xulBrowser && tabTracker.getBrowserData(xulBrowser);
     const windowContext = this.browsingContext?.currentWindowContext;
     return {
       // NOTE: the contextId property in the final set of properties returned to
@@ -797,7 +815,9 @@ class ExtensionPageContextParent extends ProxyContextParent {
       // contextType property (which should be one of the values part of the
       // runtime.ContextType enum).
       contextType: this.contextType,
-      // TODO(Bug 1891478): add documentId.
+      documentId: windowContext?.innerWindowId
+        ? lazy.ExtensionDocumentId.getDocumentId(windowContext.innerWindowId)
+        : undefined,
       // TODO(Bug 1890739): consider switching this to use webExposedOriginSerialization when available
       // Using nsIPrincipal.originNoSuffix to avoid including the
       // private browsing (or contextual identity ones)
@@ -805,8 +825,8 @@ class ExtensionPageContextParent extends ProxyContextParent {
       documentUrl: windowContext?.documentURI.spec,
       incognito: this.incognito,
       frameId: this.frameId,
-      tabId,
-      windowId,
+      tabId: browserData ? browserData.tabId : -1,
+      windowId: browserData ? browserData.windowId : -1,
       // TODO: File followup to also add a Firefox-only userContextId?
     };
   }
@@ -1486,7 +1506,7 @@ class HiddenXULWindow {
 
     let awaitFrameLoader;
 
-    if (browser.getAttribute("remote") === "true") {
+    if (browser.hasAttribute("remote")) {
       awaitFrameLoader = promiseEvent(browser, "XULFrameLoaderCreated");
     }
 
@@ -2467,7 +2487,7 @@ ChromeUtils.defineLazyGetter(ExtensionParent, "PlatformInfo", () => {
 });
 
 // Register WPTMessages actor when running under WPT.
-if (ExtensionCommon.isInWPT && AppConstants.NIGHTLY_BUILD) {
+if (ExtensionCommon.isInWPT) {
   const { WPTEventsParent } = ChromeUtils.importESModule(
     "resource://gre/modules/WPTEventsParent.sys.mjs"
   );

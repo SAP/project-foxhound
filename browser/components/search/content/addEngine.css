@@ -18,8 +18,8 @@ hbox {
 .dialogRow {
   & > label,
   & > .error-label {
-    /* Align the labels with the inputs */
-    margin-inline-start: 4px;
+    /* Align the labels with the `html|input`s */
+    margin-inline: var(--space-xsmall);
   }
 }
 

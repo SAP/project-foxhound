@@ -111,20 +111,6 @@ def add_common_arguments(parser):
         help="Directory where testing modules are located.",
     )
     parser.add_argument(
-        "--total-chunks",
-        type=int,
-        dest="totalChunks",
-        default=1,
-        help="how many chunks to split the tests up into",
-    )
-    parser.add_argument(
-        "--this-chunk",
-        type=int,
-        dest="thisChunk",
-        default=1,
-        help="which chunk to run between 1 and --total-chunks",
-    )
-    parser.add_argument(
         "--profile-name",
         type=str,
         dest="profileName",

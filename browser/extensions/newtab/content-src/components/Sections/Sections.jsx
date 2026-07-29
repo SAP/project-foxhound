@@ -90,17 +90,15 @@ export class Section extends React.PureComponent {
     }
   }
 
-  componentWillMount() {
-    this.sendNewTabRehydrated(this.props.initialized);
-  }
-
   componentDidMount() {
+    this.sendNewTabRehydrated(this.props.initialized);
     if (this.props.rows.length && !this.props.pref.collapsed) {
       this.sendImpressionStatsOrAddListener();
     }
   }
 
   componentDidUpdate(prevProps) {
+    this.sendNewTabRehydrated(this.props.initialized);
     const { props } = this;
     const isCollapsed = props.pref.collapsed;
     const wasCollapsed = prevProps.pref.collapsed;
@@ -115,10 +113,6 @@ export class Section extends React.PureComponent {
     ) {
       this.sendImpressionStatsOrAddListener();
     }
-  }
-
-  componentWillUpdate(nextProps) {
-    this.sendNewTabRehydrated(nextProps.initialized);
   }
 
   componentWillUnmount() {
@@ -252,11 +246,7 @@ export class Section extends React.PureComponent {
           dispatch={this.props.dispatch}
           isWebExtension={this.props.isWebExtension}
         >
-          {!shouldShowEmptyState && (
-            <ul className="section-list" style={{ padding: 0 }}>
-              {cards}
-            </ul>
-          )}
+          {!shouldShowEmptyState && <ul className="section-list">{cards}</ul>}
           {shouldShowEmptyState && (
             <div className="section-empty-state">
               <div className="empty-state">

@@ -7,6 +7,7 @@ package org.mozilla.fenix.experiments
 import android.content.Context
 import android.os.Build
 import androidx.annotation.VisibleForTesting
+import kotlinx.coroutines.flow.first
 import mozilla.components.support.locale.LocaleManager
 import mozilla.components.support.locale.LocaleManager.getSystemDefault
 import mozilla.components.support.utils.ext.packageManagerCompatHelper
@@ -18,9 +19,9 @@ import org.mozilla.experiments.nimbus.internal.JsonObject
 import org.mozilla.experiments.nimbus.internal.RecordedContext
 import org.mozilla.experiments.nimbus.internal.getCalculatedAttributes
 import org.mozilla.fenix.GleanMetrics.NimbusSystem
-import org.mozilla.fenix.GleanMetrics.Pings
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.home.pocket.ContentRecommendationsFeatureHelper
+import org.mozilla.fenix.perf.runBlockingIncrement
 import org.mozilla.fenix.termsofuse.experimentation.TermsOfUseAdvancedTargetingHelper
 import org.mozilla.fenix.termsofuse.experimentation.utils.DefaultTermsOfUseDataProvider
 import org.mozilla.fenix.utils.Settings
@@ -69,6 +70,7 @@ class RecordedNimbusContext(
     val noShortcutsOrStoriesOptOuts: Boolean,
     val addonIds: List<String>,
     val touPoints: Int?,
+    val userDisabledAi: Boolean,
 ) : RecordedContext {
     /**
      * [getEventQueries] is called by the Nimbus SDK Rust code to retrieve the map of event
@@ -111,9 +113,9 @@ class RecordedNimbusContext(
                 noShortcutsOrStoriesOptOuts = noShortcutsOrStoriesOptOuts,
                 addonIds = NimbusSystem.RecordedNimbusContextObjectAddonIds(addonIds.toMutableList()),
                 touPoints = touPoints,
+                userDisabledAi = userDisabledAi,
             ),
         )
-        Pings.nimbus.submit()
     }
 
     /**
@@ -158,6 +160,7 @@ class RecordedNimbusContext(
                 "no_shortcuts_or_stories_opt_outs" to noShortcutsOrStoriesOptOuts,
                 "addon_ids" to JSONArray(addonIds),
                 "tou_points" to touPoints,
+                "user_disabled_ai" to userDisabledAi,
             ),
         )
         return obj
@@ -178,7 +181,7 @@ class RecordedNimbusContext(
             context: Context,
             isFirstRun: Boolean,
         ): RecordedNimbusContext {
-            val settings = context.settings()
+            val settings = context.components.settings
             val langTag = LocaleManager.getCurrentLocale(context)
                 ?.toLanguageTag() ?: getSystemDefault().toLanguageTag()
             val termsOfUseAdvancedTargetingHelper = TermsOfUseAdvancedTargetingHelper(
@@ -195,6 +198,8 @@ class RecordedNimbusContext(
                 db.path,
                 deviceInfo.localeTag,
             )
+
+            val isAiBlocked = runBlockingIncrement { context.components.aiFeatureBlockStorage.isBlocked.first() }
 
             return RecordedNimbusContext(
                 isFirstRun = isFirstRun,
@@ -214,6 +219,7 @@ class RecordedNimbusContext(
                 noShortcutsOrStoriesOptOuts = settings.noShortcutsOrStoriesOptOuts(context),
                 addonIds = getFormattedAddons(settings),
                 touPoints = termsOfUseAdvancedTargetingHelper.getTouPoints(),
+                userDisabledAi = isAiBlocked,
             )
         }
 
@@ -277,6 +283,7 @@ class RecordedNimbusContext(
                 noShortcutsOrStoriesOptOuts = true,
                 addonIds = addonIds,
                 touPoints = 3,
+                userDisabledAi = true,
             )
         }
     }

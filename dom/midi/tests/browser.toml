@@ -8,7 +8,10 @@ prefs = [
 ]
 
 ["browser_midi_permission_gated.js"]
-support-files = ["blank.html"]
+support-files = [
+  "blank.html",
+  "../../../toolkit/mozapps/extensions/test/xpinstall/helpers_addons_install_dialogs.js",
+]
 skip-if = [
   "a11y_checks", # Bug 1858041 clicked popup-notification-primary-button may not be focusable, intermittent results (passes on Try, fails on Autoland)
 ]

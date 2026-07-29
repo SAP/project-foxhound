@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -222,7 +220,6 @@ system_headers = [
     "exdisp.h",
     "ExDisp.h",
     "exe386.h",
-    "execinfo.h",
     "extras.h",
     "fcntl.h",
     "features.h",
@@ -232,7 +229,6 @@ system_headers = [
     "File.h",
     "filehdr.h",
     "files.h",
-    "Files.h",
     "FindDirectory.h",
     "Finder.h",
     "FinderRegistry.h",
@@ -310,9 +306,11 @@ system_headers = [
     "getopt.h",
     "gio/gdesktopappinfo.h",
     "gio/gio.h",
+    "gio/gunixinputstream.h",
     "glibconfig.h",
     "glib.h",
     "glib-object.h",
+    "glib-unix.h",
     "glob.h",
     "gmodule.h",
     "gnome.h",
@@ -426,7 +424,6 @@ system_headers = [
     "libutil.h",
     "limits.h",
     "link.h",
-    "linux/ioprio.h",
     "linux/kernel.h",
     "linux/limits.h",
     "linux/rtc.h",
@@ -513,7 +510,6 @@ system_headers = [
     "mbstring.h",
     "mem.h",
     "memory.h",
-    "Memory.h",
     "MenuBar.h",
     "Menu.h",
     "Menus.h",
@@ -673,7 +669,6 @@ system_headers = [
     "prnetdb.h",
     "Processes.h",
     "process.h",
-    "Process.h",
     "prolock.h",
     "proto/dos.h",
     "proto/exec.h",
@@ -790,9 +785,7 @@ system_headers = [
     "StorageKit.h",
     "StringCompare.h",
     "string.h",
-    "String.h",
     "strings.h",
-    "Strings.h",
     "StringView.h",
     "stropts.h",
     "strstrea.h",
@@ -864,7 +857,6 @@ system_headers = [
     "sys/shm.h",
     "sys/siginfo.h",
     "sys/signal.h",
-    "sys/single_threaded.h",
     "sys/socket.h",
     "sys/sockio.h",
     "sys/sparc/frame.h",
@@ -923,7 +915,6 @@ system_headers = [
     "tttables.h",
     "typeinfo",
     "types.h",
-    "Types.h",
     "UAppleEventsMgr.h",
     "UAttachments.h",
     "ucontext.h",
@@ -1035,6 +1026,16 @@ system_headers = [
     "aom/aom_encoder.h",
 ]
 
+if CONFIG["HAVE_EXECINFO"]:
+    system_headers += [
+        "execinfo.h",
+    ]
+
+if CONFIG["HAVE_SINGLE_THREADED_H"]:
+    system_headers += [
+        "sys/single_threaded.h",
+    ]
+
 if CONFIG["MOZ_X11"]:
     system_headers += [
         "gdk/gdkx.h",
@@ -1140,6 +1141,8 @@ if CONFIG["OS_TARGET"] == "Android":
         "media/IOMX.h",
         "media/MediaProfiles.h",
         "media/MediaRecorderBase.h",
+        "media/NdkImage.h",
+        "media/NdkImageReader.h",
         "media/NdkMediaCodec.h",
         "media/NdkMediaCrypto.h",
         "media/NdkMediaDrm.h",

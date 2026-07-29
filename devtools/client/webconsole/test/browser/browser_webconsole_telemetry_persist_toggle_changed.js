@@ -5,20 +5,13 @@
 
 "use strict";
 
-const { TelemetryTestUtils } = ChromeUtils.importESModule(
-  "resource://testing-common/TelemetryTestUtils.sys.mjs"
-);
-
 const TEST_URI = `data:text/html,<!DOCTYPE html><meta charset=utf8><script>
   console.log("test message");
 </script>`;
 
 add_task(async function () {
   // Let's reset the counts.
-  Services.telemetry.clearEvents();
-
-  // Ensure no events have been logged
-  TelemetryTestUtils.assertNumberOfEvents(0);
+  Services.fog.testResetFOG();
 
   const hud = await openNewTabAndConsole(TEST_URI);
 
@@ -40,27 +33,8 @@ add_task(async function () {
     () => hud.ui.wrapper.getStore().getState().ui.persistLogs === false
   );
 
-  const expectedEvents = [
-    {
-      category: "devtools.main",
-      method: "persist_changed",
-      object: "webconsole",
-      value: "true",
-    },
-    {
-      category: "devtools.main",
-      method: "persist_changed",
-      object: "webconsole",
-      value: "false",
-    },
-  ];
-
-  const filter = {
-    category: "devtools.main",
-    method: "persist_changed",
-    object: "webconsole",
-  };
-
-  // Will compare filtered events to event list above
-  await TelemetryTestUtils.assertEvents(expectedEvents, filter);
+  const events = Glean.devtoolsMain.persistChangedWebconsole.testGetValue();
+  is(2, events.length);
+  is("true", events[0].extra.value);
+  is("false", events[1].extra.value);
 });

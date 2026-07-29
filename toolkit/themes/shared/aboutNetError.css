@@ -108,8 +108,22 @@ button:disabled {
 .advanced-container h3 {
   margin-block-end: var(--space-small);
 
-  & + p {
-    margin-block-start: var(--space-small);
+  & + p,
+  & + ul {
+    margin-block-start: var(--space-large);
+  }
+}
+
+.what-can-you-do-list {
+  margin: 0;
+  margin-block-end: var(--space-xxlarge);
+  padding-inline-start: var(--space-large);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xxsmall);
+
+  & > li {
+    padding-inline-start: var(--space-small);
   }
 }
 
@@ -172,7 +186,6 @@ button:disabled {
 }
 
 /* Felt Privacy v1 LARGER SCREEN! */
-/* stylelint-disable-next-line media-query-no-invalid */
 @media -moz-pref("security.certerrors.felt-privacy-v1") {
   .felt-privacy-body {
     justify-content: start;
@@ -198,6 +211,10 @@ button:disabled {
     width: 8.75em;
     margin-block-start: 2em;
     margin-inline-end: 2.5em;
+
+    &.no-connection {
+      width: 13em;
+    }
   }
 
   #viewCertificate {

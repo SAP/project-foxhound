@@ -83,9 +83,8 @@ def check_executable_version(exe, wrap_call_with_node=False):
         binary, _ = find_node_executable()
         if binary:
             out = (
-                subprocess.check_output(
-                    [binary, exe, "--version"], universal_newlines=True
-                )
+                subprocess
+                .check_output([binary, exe, "--version"], universal_newlines=True)
                 .lstrip("v")
                 .rstrip()
             )
@@ -94,7 +93,8 @@ def check_executable_version(exe, wrap_call_with_node=False):
     # direct.
     if not out:
         out = (
-            subprocess.check_output([exe, "--version"], universal_newlines=True)
+            subprocess
+            .check_output([exe, "--version"], universal_newlines=True)
             .lstrip("v")
             .rstrip()
         )

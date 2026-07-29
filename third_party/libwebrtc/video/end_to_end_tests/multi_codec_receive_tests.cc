@@ -13,10 +13,10 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <vector>
 
-#include "api/array_view.h"
 #include "api/environment/environment.h"
 #include "api/test/simulated_network.h"
 #include "api/test/video/function_video_decoder_factory.h"
@@ -96,7 +96,7 @@ class FrameObserver : public test::RtpRtcpObserver,
 
  private:
   // Sends kFramesToObserve.
-  Action OnSendRtp(ArrayView<const uint8_t> packet) override {
+  Action OnSendRtp(std::span<const uint8_t> packet) override {
     MutexLock lock(&mutex_);
 
     RtpPacket rtp_packet;
@@ -288,28 +288,42 @@ void MultiCodecReceiveTest::RunTestWithCodecs(
 }
 
 TEST_F(MultiCodecReceiveTest, SingleStreamReceivesVp8Vp9) {
-  RunTestWithCodecs({{"VP8", 1}, {"VP9", 1}, {"VP8", 1}});
+  RunTestWithCodecs({{.payload_name = "VP8", .num_temporal_layers = 1},
+                     {.payload_name = "VP9", .num_temporal_layers = 1},
+                     {.payload_name = "VP8", .num_temporal_layers = 1}});
 }
 
 TEST_F(MultiCodecReceiveTest, SingleStreamReceivesVp8Vp9WithTl) {
-  RunTestWithCodecs({{"VP8", 2}, {"VP9", 2}, {"VP8", 2}});
+  RunTestWithCodecs({{.payload_name = "VP8", .num_temporal_layers = 2},
+                     {.payload_name = "VP9", .num_temporal_layers = 2},
+                     {.payload_name = "VP8", .num_temporal_layers = 2}});
 }
 
 #if defined(WEBRTC_USE_H264)
 TEST_F(MultiCodecReceiveTest, SingleStreamReceivesVp8H264) {
-  RunTestWithCodecs({{"VP8", 1}, {"H264", 1}, {"VP8", 1}});
+  RunTestWithCodecs({{.payload_name = "VP8", .num_temporal_layers = 1},
+                     {.payload_name = "H264", .num_temporal_layers = 1},
+                     {.payload_name = "VP8", .num_temporal_layers = 1}});
 }
 
 TEST_F(MultiCodecReceiveTest, SingleStreamReceivesVp8H264WithTl) {
-  RunTestWithCodecs({{"VP8", 3}, {"H264", 1}, {"VP8", 3}});
+  RunTestWithCodecs({{.payload_name = "VP8", .num_temporal_layers = 3},
+                     {.payload_name = "H264", .num_temporal_layers = 1},
+                     {.payload_name = "VP8", .num_temporal_layers = 3}});
 }
 
 TEST_F(MultiCodecReceiveTest, SingleStreamReceivesVp8Vp9H264) {
-  RunTestWithCodecs({{"VP8", 1}, {"VP9", 1}, {"H264", 1}, {"VP9", 1}});
+  RunTestWithCodecs({{.payload_name = "VP8", .num_temporal_layers = 1},
+                     {.payload_name = "VP9", .num_temporal_layers = 1},
+                     {.payload_name = "H264", .num_temporal_layers = 1},
+                     {.payload_name = "VP9", .num_temporal_layers = 1}});
 }
 
 TEST_F(MultiCodecReceiveTest, SingleStreamReceivesVp8Vp9H264WithTl) {
-  RunTestWithCodecs({{"VP8", 3}, {"VP9", 2}, {"H264", 1}, {"VP9", 3}});
+  RunTestWithCodecs({{.payload_name = "VP8", .num_temporal_layers = 3},
+                     {.payload_name = "VP9", .num_temporal_layers = 2},
+                     {.payload_name = "H264", .num_temporal_layers = 1},
+                     {.payload_name = "VP9", .num_temporal_layers = 3}});
 }
 #endif  // defined(WEBRTC_USE_H264)
 

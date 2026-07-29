@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,6 +27,9 @@
 #define WITH_COOP_COEP_REMOTE_TYPE "webCOOP+COEP"_ns
 #define WITH_COOP_COEP_REMOTE_TYPE_PREFIX "webCOOP+COEP="_ns
 #define SERVICEWORKER_REMOTE_TYPE "webServiceWorker"_ns
+
+// A flag appended to the origin suffix to disable the JIT for that process.
+#define DISABLE_JIT_REMOTE_TYPE_SUFFIX "disableJit=1"_ns
 
 // Remote type value used to represent being non-remote.
 #define NOT_REMOTE_TYPE VoidCString()

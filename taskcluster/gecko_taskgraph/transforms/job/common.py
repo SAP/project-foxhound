@@ -76,7 +76,7 @@ def support_vcs_checkout(config, job, taskdesc, repo_configs):
     worker = job["worker"]
     is_mac = worker["os"] == "macosx"
     is_win = worker["os"] == "windows"
-    is_linux = worker["os"] == "linux" or "linux-bitbar" or "linux-lambda"
+    is_linux = worker["os"] in ("linux", "linux-bitbar", "linux-lambda")
     is_docker = worker["implementation"] == "docker-worker"
     assert is_mac or is_win or is_linux
 
@@ -87,7 +87,7 @@ def support_vcs_checkout(config, job, taskdesc, repo_configs):
             # arm64 instances on azure don't support local ssds
             hgstore = f"{checkoutdir}/hg-store"
         else:
-            hgstore = "y:/hg-shared"
+            hgstore = r"%HG_CACHE%\..\hg-shared"
     elif is_docker:
         checkoutdir = "{workdir}/checkouts".format(**job["run"])
         geckodir = f"{checkoutdir}/gecko"

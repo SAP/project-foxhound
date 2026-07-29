@@ -10,7 +10,7 @@ the [Gecko Logging document](/xpcom/logging).
 The general ethos is to keep the browser console "clean" of logging output by
 default, except in situations where there are errors or potentially warnings.
 
-There is also [a test](https://searchfox.org/mozilla-central/source/browser/components/tests/marionette/test_no_errors_clean_profile.py)
+There is also [a test](https://searchfox.org/firefox-main/source/browser/components/tests/marionette/test_no_errors_clean_profile.py)
 which will fail if there are any unexpected logs on startup.
 
 For situations where it is useful to have debug logging available, these are
@@ -22,8 +22,8 @@ developer tools are not displayed.
 ### Obsolete Utilities
 
 In the tree, there are two modules that should be considered obsolete:
-[Log.sys.mjs](https://searchfox.org/mozilla-central/source/toolkit/modules/Log.sys.mjs)
-and [Console.sys.mjs](https://searchfox.org/mozilla-central/source/toolkit/modules/Console.sys.mjs). Existing uses should be transitioned to use `console.createInstance` as part of
+[Log.sys.mjs](https://searchfox.org/firefox-main/source/toolkit/modules/Log.sys.mjs)
+and [Console.sys.mjs](https://searchfox.org/firefox-main/source/toolkit/modules/Console.sys.mjs). Existing uses should be transitioned to use `console.createInstance` as part of
 the [one logger](https://bugzilla.mozilla.org/show_bug.cgi?id=881389) effort.
 
 The `console` object is available in all areas of the Firefox code base and

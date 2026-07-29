@@ -8,6 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <array>
 #include <memory>
 #include <optional>
 #include <set>
@@ -35,7 +36,6 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/fake_mdns_responder.h"
 #include "rtc_base/fake_network.h"
-#include "rtc_base/gunit.h"
 #include "rtc_base/ip_address.h"
 #include "rtc_base/network.h"
 #include "rtc_base/socket_address.h"
@@ -44,6 +44,7 @@
 #include "system_wrappers/include/metrics.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
+#include "test/run_loop.h"
 #include "test/wait_until.h"
 
 namespace webrtc {
@@ -75,8 +76,8 @@ a=rtpmap:101 fake_audio_codec/8000
 
 constexpr char kUsagePatternMetric[] = "WebRTC.PeerConnection.UsagePattern";
 constexpr TimeDelta kDefaultTimeout = TimeDelta::Millis(10000);
-const SocketAddress kLocalAddrs[2] = {SocketAddress("1.1.1.1", 0),
-                                      SocketAddress("2.2.2.2", 0)};
+const std::array kLocalAddrs{SocketAddress("1.1.1.1", 0),
+                             SocketAddress("2.2.2.2", 0)};
 const SocketAddress kPrivateLocalAddress("10.1.1.1", 0);
 const SocketAddress kPrivateIpv6LocalAddress("fd12:3456:789a:1::1", 0);
 
@@ -176,12 +177,17 @@ class PeerConnectionWrapperForUsageHistogramTest
       return false;
     }
     // Wait until the gathering completes before we signal the candidate.
-    WAIT(observer()->ice_gathering_complete_, kDefaultTimeout.ms());
-    WAIT(callee->observer()->ice_gathering_complete_, kDefaultTimeout.ms());
+    EXPECT_TRUE(WaitUntil([&] { return observer()->ice_gathering_complete_; },
+                          {.timeout = kDefaultTimeout}));
+    EXPECT_TRUE(
+        WaitUntil([&] { return callee->observer()->ice_gathering_complete_; },
+                  {.timeout = kDefaultTimeout}));
     AddBufferedIceCandidates();
     callee->AddBufferedIceCandidates();
-    WAIT(IsConnected(), kDefaultTimeout.ms());
-    WAIT(callee->IsConnected(), kDefaultTimeout.ms());
+    EXPECT_TRUE(
+        WaitUntil([&] { return IsConnected(); }, {.timeout = kDefaultTimeout}));
+    EXPECT_TRUE(WaitUntil([&] { return callee->IsConnected(); },
+                          {.timeout = kDefaultTimeout}));
     return IsConnected() && callee->IsConnected();
   }
 
@@ -339,7 +345,7 @@ class PeerConnectionUsageHistogramTest : public ::testing::Test {
 
   int next_local_address_ = 0;
   VirtualSocketServer vss_;
-  AutoSocketServerThread main_;
+  test::RunLoop main_;
 };
 
 TEST_F(PeerConnectionUsageHistogramTest, UsageFingerprintHistogramFromTimeout) {

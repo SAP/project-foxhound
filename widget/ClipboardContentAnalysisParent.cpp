@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -142,6 +141,60 @@ static RefPtr<ClipboardResultPromise> GetClipboardImpl(
       aWhichClipboard, contentAnalysisCallback, aCheckAllContent);
   return resultPromise;
 }
+
+static RefPtr<ClipboardResultPromise> GetClipboardDataIfSmallerThanImpl(
+    const nsTArray<nsCString>& aTypes, uint64_t aThreshold,
+    const nsIClipboard::ClipboardType aWhichClipboard,
+    const uint64_t aRequestingWindowContextId,
+    dom::ThreadsafeContentParentHandle* aRequestingContentParent) {
+  AssertIsOnMainThread();
+
+  RefPtr<dom::WindowGlobalParent> window =
+      dom::WindowGlobalParent::GetByInnerWindowId(aRequestingWindowContextId);
+  if (!window) {
+    return ClipboardResultPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
+  }
+  if (window->IsDiscarded()) {
+    NS_WARNING(
+        "discarded window passed to RecvGetClipboardIfSmallerThan(); returning "
+        "no clipboard "
+        "content");
+    return ClipboardResultPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
+  }
+  if (aRequestingContentParent->ChildID() != window->ContentParentId()) {
+    NS_WARNING(
+        "incorrect content process passing window to "
+        "GetClipboardIfSmallerThan");
+    return ClipboardResultPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
+  }
+
+  nsCOMPtr<nsIClipboard> clipboard =
+      do_GetService("@mozilla.org/widget/clipboard;1");
+  if (!clipboard) {
+    return ClipboardResultPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
+  }
+
+  auto transferableToCheck =
+      dom::ContentParent::CreateClipboardTransferable(aTypes);
+  if (transferableToCheck.isErr()) {
+    return ClipboardResultPromise::CreateAndReject(
+        transferableToCheck.unwrapErr(), __func__);
+  }
+  nsCOMPtr<nsITransferable> transferable = transferableToCheck.unwrap();
+
+  nsresult rv = clipboard->GetDataIfSmallerThanNative(transferable, aThreshold,
+                                                      aWhichClipboard, window);
+  if (NS_FAILED(rv)) {
+    return ClipboardResultPromise::CreateAndReject(rv, __func__);
+  }
+
+  dom::IPCTransferableData ipcData;
+  auto cpHandle = RefPtr{aRequestingContentParent};
+  RefPtr<dom::ContentParent> contentParent = cpHandle->GetContentParent();
+  nsContentUtils::TransferableToIPCTransferableData(
+      transferable, &ipcData, true /* aInSyncMessage */, contentParent);
+  return ClipboardResultPromise::CreateAndResolve(std::move(ipcData), __func__);
+}
 }  // namespace
 
 ipc::IPCResult ClipboardContentAnalysisParent::GetSomeClipboardData(
@@ -234,5 +287,36 @@ ipc::IPCResult ClipboardContentAnalysisParent::RecvGetAllClipboardDataSync(
   return GetSomeClipboardData(
       std::move(aTypes), aWhichClipboard, aRequestingWindowContextId,
       /* aCheckAllContent */ true, aTransferableDataOrError);
+}
+
+ipc::IPCResult
+ClipboardContentAnalysisParent::RecvGetClipboardDataIfSmallerThan(
+    nsTArray<nsCString>&& aTypes, uint64_t aThreshold,
+    const nsIClipboard::ClipboardType& aWhichClipboard,
+    const uint64_t& aRequestingWindowContextId,
+    GetClipboardDataIfSmallerThanResolver&& aResolver) {
+  MOZ_ASSERT(!NS_IsMainThread());
+
+  auto types = std::move(aTypes);
+  auto resolver = std::move(aResolver);
+
+  InvokeAsync(GetMainThreadSerialEventTarget(), __func__,
+              [types = std::move(types), threshold = aThreshold,
+               whichClipboard = aWhichClipboard,
+               windowContextId = aRequestingWindowContextId,
+               handle = mThreadsafeContentParentHandle]() {
+                return GetClipboardDataIfSmallerThanImpl(
+                    types, threshold, whichClipboard, windowContextId, handle);
+              })
+      ->Then(GetCurrentSerialEventTarget(), __func__,
+             [resolver = std::move(resolver)](
+                 ClipboardResultPromise::ResolveOrRejectValue&& aResult) {
+               if (aResult.IsReject()) {
+                 resolver(aResult.RejectValue());
+                 return;
+               }
+               resolver(std::move(aResult.ResolveValue()));
+             });
+  return IPC_OK();
 }
 }  // namespace mozilla

@@ -7,6 +7,7 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   AddonRepository: "resource://gre/modules/addons/AddonRepository.sys.mjs",
+  RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
 });
 
 if (Services.appinfo.processType !== Services.appinfo.PROCESS_TYPE_DEFAULT) {
@@ -19,13 +20,14 @@ if (Services.appinfo.processType !== Services.appinfo.PROCESS_TYPE_DEFAULT) {
  * Attempts to find an appropriate langpack for a given language. The async function
  * is infallible, but may not return a langpack.
  *
- * @returns {{
+ * @returns {Promise<{
  *   langPack: LangPack | null,
  *   langPackDisplayName: string | null
- * }}
+ * }>}
  */
 async function negotiateLangPackForLanguageMismatch() {
   const localeInfo = getAppAndSystemLocaleInfo();
+  /** @type {Awaited<ReturnType<negotiateLangPackForLanguageMismatch>>} */
   const nullResult = {
     langPack: null,
     langPackDisplayName: null,
@@ -97,8 +99,7 @@ async function negotiateLangPackForLanguageMismatch() {
 let installingLangpack = new Map();
 
 /**
- * @typedef {LangPack}
- * @type {object}
+ * @typedef {object} LangPack
  * @property {string} target_locale
  * @property {string} url
  * @property {string} hash
@@ -108,9 +109,10 @@ let installingLangpack = new Map();
  * Ensure that a given lanpack is installed.
  *
  * @param {LangPack} langPack
+ * @param {string} source Where the install is happening for telemetry.
  * @returns {Promise<boolean>} Success or failure.
  */
-function ensureLangPackInstalled(langPack) {
+function ensureLangPackInstalled(langPack, source = "about:welcome") {
   if (!langPack) {
     throw new Error("Expected a LangPack to install.");
   }
@@ -121,11 +123,13 @@ function ensureLangPackInstalled(langPack) {
   if (inProgress) {
     return inProgress;
   }
-  const promise = _ensureLangPackInstalledImpl(langPack);
+  const promise = _ensureLangPackInstalledImpl(langPack, source);
   installingLangpack.set(langPack.hash, promise);
-  promise.finally(() => {
-    installingLangpack.delete(langPack.hash);
-  });
+  promise
+    .finally(() => {
+      installingLangpack.delete(langPack.hash);
+    })
+    .catch(() => {});
   return promise;
 }
 
@@ -133,14 +137,14 @@ function ensureLangPackInstalled(langPack) {
  * @param {LangPack} langPack
  * @returns {boolean} Success or failure.
  */
-async function _ensureLangPackInstalledImpl(langPack) {
+async function _ensureLangPackInstalledImpl(langPack, source) {
   const availablelocales = await getAvailableLocales();
   if (availablelocales.includes(langPack.target_locale)) {
     // The langpack is already installed.
     return true;
   }
 
-  return mockable.installLangPack(langPack);
+  return mockable.installLangPack(langPack, source);
 }
 
 /**
@@ -163,18 +167,20 @@ const mockable = {
   },
 
   /**
-   * Use the AddonManager to install an addon from the URL.
+   * Install an add-on from URL, generally AMO.
    *
-   * @param {LangPack} langPack
+   * @param {string} url The URL.
+   * @param {object} options
+   * @param {string} options.source
+   *  Where the download was triggered e.g. about:welcome or about:preferences
+   * @param {string} [options.hash] Verify the download against this hash.
    */
-  async installLangPack(langPack) {
+  async _installAddon(url, { hash, source }) {
     let install;
     try {
-      install = await lazy.AddonManager.getInstallForURL(langPack.url, {
-        hash: langPack.hash,
-        telemetryInfo: {
-          source: "about:welcome",
-        },
+      install = await lazy.AddonManager.getInstallForURL(url, {
+        hash,
+        telemetryInfo: { source },
       });
     } catch (error) {
       console.error(error);
@@ -188,6 +194,48 @@ const mockable = {
       return false;
     }
     return true;
+  },
+
+  /**
+   * Use the AddonManager to install an addon from the URL.
+   *
+   * @param {LangPack} langPack
+   * @param {string} source Where the install is happening for telemetry.
+   */
+  async installLangPack(langPack, source = "about:welcome") {
+    const langPackInstalled = await this._installAddon(langPack.url, {
+      hash: langPack.hash,
+      telemetryInfo: { source },
+    });
+    if (langPackInstalled) {
+      // Install the dictionaries in the background without waiting.
+      this.installDictionariesForLocale(langPack.target_locale, source);
+    }
+    return langPackInstalled;
+  },
+
+  async dictionaryIdsForLocale(locale) {
+    let entries = await lazy.RemoteSettings("language-dictionaries").get({
+      filters: { id: locale },
+    });
+    if (entries.length) {
+      return entries[0].dictionaries;
+    }
+    return [];
+  },
+
+  async installDictionariesForLocale(locale, source) {
+    try {
+      let ids = await this.dictionaryIdsForLocale(locale);
+      let addonInfos = await lazy.AddonRepository.getAddonsByIDs(ids);
+      await Promise.all(
+        addonInfos.map(info =>
+          this._installAddon(info.sourceURI.spec, { source })
+        )
+      );
+    } catch (e) {
+      console.error(e);
+    }
   },
 
   /**

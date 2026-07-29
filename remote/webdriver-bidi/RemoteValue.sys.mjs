@@ -461,7 +461,7 @@ function getSharedIdForNode(node, extraOptions) {
     return null;
   }
 
-  const browsingContext = node.ownerGlobal.browsingContext;
+  const browsingContext = node.documentGlobal.browsingContext;
   if (!browsingContext) {
     return null;
   }

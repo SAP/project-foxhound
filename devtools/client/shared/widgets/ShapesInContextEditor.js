@@ -230,7 +230,6 @@ class ShapesInContextEditor extends EventEmitter {
    *         - {String} type: the event type ("shape-change").
    */
   onShapeChange(data) {
-    this.preview(data.value);
     this.commit(data.value);
   }
 
@@ -303,23 +302,6 @@ class ShapesInContextEditor extends EventEmitter {
   }
 
   /**
-   * Preview a shape value on the element without committing the changes to the Rule view.
-   *
-   * @param {string} value
-   *        The shape value to set the current property to
-   */
-  preview(value) {
-    if (!this.textProperty) {
-      return;
-    }
-    // Update the element's style to see live results.
-    this.textProperty.rule.previewPropertyValue(this.textProperty, value);
-    // Update the text of CSS value in the Rule view. This makes it inert.
-    // When commit() is called, the value is reparsed and its DOM structure rebuilt.
-    this.swatch.nextSibling.textContent = value;
-  }
-
-  /**
    * Commit a shape value change which triggers an expensive operation that rebuilds
    * part of the DOM of the TextPropertyEditor. Called in a debounced manner; see
    * constructor.
@@ -331,8 +313,8 @@ class ShapesInContextEditor extends EventEmitter {
     if (!this.textProperty) {
       return;
     }
-
-    this.textProperty.setValue(value);
+    // Update the element's style to see live results.
+    this.rule.setPropertyValue(this.textProperty, value);
   }
 
   destroy() {

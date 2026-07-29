@@ -4,12 +4,10 @@
 
 package org.mozilla.fenix.home.ui
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentHeight
@@ -21,12 +19,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
-import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -35,8 +33,6 @@ import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
-import org.mozilla.fenix.home.ui.HomepageTestTag.HOMEPAGE_WORDMARK_LOGO
-import org.mozilla.fenix.home.ui.HomepageTestTag.HOMEPAGE_WORDMARK_TEXT
 import org.mozilla.fenix.home.ui.HomepageTestTag.PRIVATE_BROWSING_HOMEPAGE_BUTTON
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.PreviewThemeProvider
@@ -51,7 +47,9 @@ fun HomepageHeader(
     wordmarkTextColor: Color?,
     privateBrowsingButtonColor: Color,
     browsingMode: BrowsingMode,
+    isSportsWidgetEnabled: Boolean,
     browsingModeChanged: (BrowsingMode) -> Unit,
+    onLogoClicked: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -60,7 +58,10 @@ fun HomepageHeader(
             .padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 32.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        WordmarkLogo()
+        WordmarkLogo(
+            isSportsWidgetEnabled = isSportsWidgetEnabled,
+            onLogoClicked = onLogoClicked,
+        )
 
         WordmarkText(wordmarkTextColor)
 
@@ -72,36 +73,6 @@ fun HomepageHeader(
             browsingModeChanged = browsingModeChanged,
         )
     }
-}
-
-@Composable
-private fun WordmarkLogo() {
-    Image(
-        modifier = Modifier
-            .height(40.dp)
-            .semantics {
-                testTagsAsResourceId = true
-                testTag = HOMEPAGE_WORDMARK_LOGO
-            }
-            .padding(end = 10.dp),
-        painter = painterResource(getAttr(R.attr.fenixWordmarkLogo)),
-        contentDescription = null,
-    )
-}
-
-@Composable
-private fun WordmarkText(color: Color?) {
-    Image(
-        modifier = Modifier
-            .semantics {
-                testTagsAsResourceId = true
-                testTag = HOMEPAGE_WORDMARK_TEXT
-            }
-            .height(dimensionResource(R.dimen.wordmark_text_height)),
-        painter = painterResource(getAttr(R.attr.fenixWordmarkText)),
-        colorFilter = color?.let { ColorFilter.tint(it) },
-        contentDescription = stringResource(R.string.app_name),
-    )
 }
 
 @Composable
@@ -118,6 +89,7 @@ private fun PrivateBrowsingButton(
             )
             .size(40.dp)
             .semantics {
+                role = Role.Switch
                 testTagsAsResourceId = true
                 testTag = PRIVATE_BROWSING_HOMEPAGE_BUTTON
             },
@@ -128,7 +100,7 @@ private fun PrivateBrowsingButton(
     ) {
         Icon(
             tint = color,
-            painter = painterResource(iconsR.drawable.mozac_ic_private_mode_24),
+            painter = painterResource(iconsR.drawable.mozac_ic_private_mode_fill_24),
             contentDescription = stringResource(R.string.content_description_private_browsing),
         )
     }
@@ -158,7 +130,9 @@ private fun HomepageHeaderPreview(
                     ),
                 ),
                 browsingMode = BrowsingMode.Normal,
+                isSportsWidgetEnabled = true,
                 browsingModeChanged = {},
+                onLogoClicked = {},
             )
         }
     }

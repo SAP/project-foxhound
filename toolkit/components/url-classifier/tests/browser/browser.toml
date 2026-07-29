@@ -7,13 +7,21 @@ support-files = [
 
 ["browser_antifraud_annotation.js"]
 
+["browser_check_channel_helper_telemetry.js"]
+
 ["browser_consentmanager_annotation.js"]
+
+["browser_defer_annotation_pref.js"]
+
+["browser_defer_annotation_suspend_resume.js"]
 
 ["browser_emailtracking_telemetry.js"]
 
 ["browser_realtime_lookup.js"]
 
 ["browser_realtime_simulation.js"]
+
+["browser_third_party_only_annotations.js"]
 
 ["browser_v5_completion.js"]
 support-files = ["gethashV5.sjs"]

@@ -30,8 +30,8 @@ def main(output, file):
     )
     appdata["flags"] = " | ".join(sorted(flags)) if flags else "0"
     for key in ("App:vendor", "App:profile"):
-        # Set to NULL when not present or falsy such as an empty string
-        appdata[key] = '"%s"' % appdata[key] if appdata.get(key, None) else "NULL"
+        # Set to nullptr when not present or falsy such as an empty string
+        appdata[key] = '"%s"' % appdata[key] if appdata.get(key, None) else "nullptr"
     expected = (
         "App:vendor",
         "App:name",
@@ -55,7 +55,7 @@ def main(output, file):
             '"%(App:sourcerepository)s/rev/%(App:sourcestamp)s"' % appdata
         )
     else:
-        appdata["App:sourceurl"] = "NULL"
+        appdata["App:sourceurl"] = "nullptr"
 
     if "AppUpdate:url" not in appdata:
         appdata["AppUpdate:url"] = ""
@@ -63,10 +63,10 @@ def main(output, file):
     if sourcestamp := appdata.get("App:sourcestamp"):
         appdata["App:sourcerevision"] = f'"{sourcestamp}"'
     else:
-        appdata["App:sourcerevision"] = "NULL"
+        appdata["App:sourcerevision"] = "nullptr"
 
     output.write(
-        """#include "mozilla/XREAppData.h"
+        """#include "mozilla/StaticXREAppData.h"
              static const mozilla::StaticXREAppData sAppData = {
                  %(App:vendor)s,
                  "%(App:name)s",
@@ -74,13 +74,13 @@ def main(output, file):
                  "%(App:version)s",
                  "%(App:buildid)s",
                  "%(App:id)s",
-                 NULL, // copyright
+                 nullptr, // copyright
                  %(flags)s,
                  "%(Gecko:minversion)s",
                  "%(Gecko:maxversion)s",
                  "%(Crash Reporter:serverurl)s",
                  %(App:profile)s,
-                 NULL, // UAName
+                 nullptr, // UAName
                  %(App:sourceurl)s,
                  %(App:sourcerevision)s,
                  "%(AppUpdate:url)s"

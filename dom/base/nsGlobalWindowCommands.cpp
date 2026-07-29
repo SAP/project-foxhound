@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -42,21 +40,23 @@ using namespace mozilla;
 using namespace mozilla::layers;
 
 constexpr nsLiteralCString kSelectMoveScrollCommands[] = {
-    "cmd_beginLine"_ns,      "cmd_charNext"_ns,     "cmd_charPrevious"_ns,
-    "cmd_endLine"_ns,        "cmd_lineNext"_ns,     "cmd_linePrevious"_ns,
-    "cmd_moveBottom"_ns,     "cmd_movePageDown"_ns, "cmd_movePageUp"_ns,
-    "cmd_moveTop"_ns,        "cmd_scrollBottom"_ns, "cmd_scrollLeft"_ns,
-    "cmd_scrollLineDown"_ns, "cmd_scrollLineUp"_ns, "cmd_scrollPageDown"_ns,
-    "cmd_scrollPageUp"_ns,   "cmd_scrollRight"_ns,  "cmd_scrollTop"_ns,
-    "cmd_wordNext"_ns,       "cmd_wordPrevious"_ns,
+    "cmd_beginLine"_ns,    "cmd_beginParagraph"_ns, "cmd_charNext"_ns,
+    "cmd_charPrevious"_ns, "cmd_endLine"_ns,        "cmd_endParagraph"_ns,
+    "cmd_lineNext"_ns,     "cmd_linePrevious"_ns,   "cmd_moveBottom"_ns,
+    "cmd_movePageDown"_ns, "cmd_movePageUp"_ns,     "cmd_moveTop"_ns,
+    "cmd_scrollBottom"_ns, "cmd_scrollLeft"_ns,     "cmd_scrollLineDown"_ns,
+    "cmd_scrollLineUp"_ns, "cmd_scrollPageDown"_ns, "cmd_scrollPageUp"_ns,
+    "cmd_scrollRight"_ns,  "cmd_scrollTop"_ns,      "cmd_wordNext"_ns,
+    "cmd_wordPrevious"_ns,
 };
 
 // These are so the browser can use editor navigation key bindings
 // helps with accessibility (boolean pref accessibility.browsewithcaret)
 constexpr nsLiteralCString kSelectCommands[] = {
-    "cmd_selectBeginLine"_ns,    "cmd_selectBottom"_ns,
-    "cmd_selectCharNext"_ns,     "cmd_selectCharPrevious"_ns,
-    "cmd_selectEndLine"_ns,      "cmd_selectLineNext"_ns,
+    "cmd_selectBeginLine"_ns,    "cmd_selectBeginParagraph"_ns,
+    "cmd_selectBottom"_ns,       "cmd_selectCharNext"_ns,
+    "cmd_selectCharPrevious"_ns, "cmd_selectEndLine"_ns,
+    "cmd_selectEndParagraph"_ns, "cmd_selectLineNext"_ns,
     "cmd_selectLinePrevious"_ns, "cmd_selectPageDown"_ns,
     "cmd_selectPageUp"_ns,       "cmd_selectTop"_ns,
     "cmd_selectWordNext"_ns,     "cmd_selectWordPrevious"_ns,
@@ -64,15 +64,17 @@ constexpr nsLiteralCString kSelectCommands[] = {
 
 // Physical-direction movement and selection commands
 constexpr nsLiteralCString kPhysicalSelectMoveScrollCommands[] = {
-    "cmd_moveDown"_ns,  "cmd_moveDown2"_ns, "cmd_moveLeft"_ns,
-    "cmd_moveLeft2"_ns, "cmd_moveRight"_ns, "cmd_moveRight2"_ns,
-    "cmd_moveUp"_ns,    "cmd_moveUp2"_ns,
+    "cmd_moveDown"_ns,   "cmd_moveDown2"_ns,  "cmd_moveLeft"_ns,
+    "cmd_moveLeft2"_ns,  "cmd_moveLeft3"_ns,  "cmd_moveRight"_ns,
+    "cmd_moveRight2"_ns, "cmd_moveRight3"_ns, "cmd_moveUp"_ns,
+    "cmd_moveUp2"_ns,
 };
 
 constexpr nsLiteralCString kPhysicalSelectCommands[] = {
-    "cmd_selectDown"_ns,  "cmd_selectDown2"_ns, "cmd_selectLeft"_ns,
-    "cmd_selectLeft2"_ns, "cmd_selectRight"_ns, "cmd_selectRight2"_ns,
-    "cmd_selectUp"_ns,    "cmd_selectUp2"_ns,
+    "cmd_selectDown"_ns,   "cmd_selectDown2"_ns,  "cmd_selectLeft"_ns,
+    "cmd_selectLeft2"_ns,  "cmd_selectLeft3"_ns,  "cmd_selectRight"_ns,
+    "cmd_selectRight2"_ns, "cmd_selectRight3"_ns, "cmd_selectUp"_ns,
+    "cmd_selectUp2"_ns,
 };
 
 // a base class for selection-related commands, for code sharing
@@ -221,7 +223,11 @@ static constexpr struct BrowseCommand {
     {Command::BeginLine, Command::EndLine,
      KeyboardScrollAction::eScrollComplete,
      &nsISelectionController::CompleteScroll,
-     &nsISelectionController::IntraLineMove}};
+     &nsISelectionController::IntraLineMove},
+    {Command::BeginParagraph, Command::EndParagraph,
+     KeyboardScrollAction::eScrollComplete,
+     &nsISelectionController::CompleteScroll,
+     &nsISelectionController::ParagraphMove}};
 
 nsresult nsSelectMoveScrollCommand::DoCommand(const nsACString& aCommandName,
                                               nsICommandParams*,
@@ -292,6 +298,12 @@ static const struct PhysicalBrowseCommand {
     {Command::MoveDown2, nsISelectionController::MOVE_DOWN, 1,
      KeyboardScrollAction::eScrollComplete,
      &nsISelectionController::CompleteScroll},
+    {Command::MoveLeft3, nsISelectionController::MOVE_LEFT, 2,
+     KeyboardScrollAction::eScrollComplete,
+     &nsISelectionController::CompleteScroll},
+    {Command::MoveRight3, nsISelectionController::MOVE_RIGHT, 2,
+     KeyboardScrollAction::eScrollComplete,
+     &nsISelectionController::CompleteScroll},
 };
 
 nsresult nsPhysicalSelectMoveScrollCommand::DoCommand(
@@ -336,18 +348,21 @@ nsresult nsPhysicalSelectMoveScrollCommand::DoCommand(
 static const struct SelectCommand {
   Command reverse, forward;
   nsresult (NS_STDCALL nsISelectionController::*select)(bool, bool);
-} selectCommands[] = {{Command::SelectCharPrevious, Command::SelectCharNext,
-                       &nsISelectionController::CharacterMove},
-                      {Command::SelectWordPrevious, Command::SelectWordNext,
-                       &nsISelectionController::WordMove},
-                      {Command::SelectBeginLine, Command::SelectEndLine,
-                       &nsISelectionController::IntraLineMove},
-                      {Command::SelectLinePrevious, Command::SelectLineNext,
-                       &nsISelectionController::LineMove},
-                      {Command::SelectPageUp, Command::SelectPageDown,
-                       &nsISelectionController::PageMove},
-                      {Command::SelectTop, Command::SelectBottom,
-                       &nsISelectionController::CompleteMove}};
+} selectCommands[] = {
+    {Command::SelectCharPrevious, Command::SelectCharNext,
+     &nsISelectionController::CharacterMove},
+    {Command::SelectWordPrevious, Command::SelectWordNext,
+     &nsISelectionController::WordMove},
+    {Command::SelectBeginLine, Command::SelectEndLine,
+     &nsISelectionController::IntraLineMove},
+    {Command::SelectBeginParagraph, Command::SelectEndParagraph,
+     &nsISelectionController::ParagraphMove},
+    {Command::SelectLinePrevious, Command::SelectLineNext,
+     &nsISelectionController::LineMove},
+    {Command::SelectPageUp, Command::SelectPageDown,
+     &nsISelectionController::PageMove},
+    {Command::SelectTop, Command::SelectBottom,
+     &nsISelectionController::CompleteMove}};
 
 nsresult nsSelectCommand::DoCommand(const nsACString& aCommandName,
                                     nsICommandParams*,
@@ -392,7 +407,9 @@ static const struct PhysicalSelectCommand {
     {Command::SelectLeft2, nsISelectionController::MOVE_LEFT, 1},
     {Command::SelectRight2, nsISelectionController::MOVE_RIGHT, 1},
     {Command::SelectUp2, nsISelectionController::MOVE_UP, 1},
-    {Command::SelectDown2, nsISelectionController::MOVE_DOWN, 1}};
+    {Command::SelectDown2, nsISelectionController::MOVE_DOWN, 1},
+    {Command::SelectLeft3, nsISelectionController::MOVE_LEFT, 2},
+    {Command::SelectRight3, nsISelectionController::MOVE_RIGHT, 2}};
 
 nsresult nsPhysicalSelectCommand::DoCommand(const nsACString& aCommandName,
                                             nsICommandParams* aParams,

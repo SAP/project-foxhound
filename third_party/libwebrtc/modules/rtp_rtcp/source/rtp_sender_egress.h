@@ -15,10 +15,10 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
-#include "api/array_view.h"
 #include "api/call/transport.h"
 #include "api/environment/environment.h"
 #include "api/rtp_packet_sender.h"
@@ -49,7 +49,7 @@ class RtpSenderEgress {
     NonPacedPacketSender(TaskQueueBase& worker_queue,
                          RtpSenderEgress* sender,
                          PacketSequencer* sequencer);
-    virtual ~NonPacedPacketSender();
+    ~NonPacedPacketSender() override;
 
     void EnqueuePackets(
         std::vector<std::unique_ptr<RtpPacketToSend>> packets) override;
@@ -93,14 +93,14 @@ class RtpSenderEgress {
   // recalled, return a vector with all of them (in corresponding order).
   // If any could not be recalled, return an empty vector.
   std::vector<RtpSequenceNumberMap::Info> GetSentRtpPacketInfos(
-      ArrayView<const uint16_t> sequence_numbers) const;
+      std::span<const uint16_t> sequence_numbers) const;
 
   void SetFecProtectionParameters(const FecProtectionParams& delta_params,
                                   const FecProtectionParams& key_params);
   std::vector<std::unique_ptr<RtpPacketToSend>> FetchFecPackets();
 
   // Clears pending status for these sequence numbers in the packet history.
-  void OnAbortedRetransmissions(ArrayView<const uint16_t> sequence_numbers);
+  void OnAbortedRetransmissions(std::span<const uint16_t> sequence_numbers);
 
  private:
   struct Packet {
@@ -165,7 +165,6 @@ class RtpSenderEgress {
   RepeatingTaskHandle update_task_ RTC_GUARDED_BY(worker_queue_);
   std::vector<Packet> packets_to_send_ RTC_GUARDED_BY(worker_queue_);
   ScopedTaskSafety task_safety_;
-  const bool use_ntp_time_for_absolute_send_time_;
 };
 
 }  // namespace webrtc

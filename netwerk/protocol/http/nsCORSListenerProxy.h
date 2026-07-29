@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,7 +15,6 @@
 #include "nsIChannelEventSink.h"
 #include "nsICORSPreflightCache.h"
 #include "nsIThreadRetargetableStreamListener.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Mutex.h"
 
@@ -102,7 +99,7 @@ class nsCORSListenerProxy final : public nsIInterfaceRequestor,
                                               UpdateType aUpdateType,
                                               bool aStripAuthHeader);
 
-  nsCOMPtr<nsIStreamListener> mOuterListener;
+  nsCOMPtr<nsIStreamListener> mOuterListener MOZ_GUARDED_BY(mMutex);
   // The principal that originally kicked off the request
   nsCOMPtr<nsIPrincipal> mRequestingPrincipal;
   // The principal to use for our Origin header ("source origin" in spec terms).
@@ -129,7 +126,7 @@ class nsCORSListenerProxy final : public nsIInterfaceRequestor,
   // only locking mOuterListener, because it can be used on different threads.
   // We guarantee that OnStartRequest, OnDataAvailable and OnStopReques will be
   // called in order, but to make tsan happy we will lock mOuterListener.
-  mutable mozilla::Mutex mMutex MOZ_UNANNOTATED;
+  mutable mozilla::Mutex mMutex;
 };
 
 #endif

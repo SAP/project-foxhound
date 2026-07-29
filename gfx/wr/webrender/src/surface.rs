@@ -19,8 +19,8 @@ use crate::render_task::{RenderTask, RenderTaskKind, RenderTaskLocation};
 use crate::space::SpaceMapper;
 use crate::spatial_tree::{SpatialTree, SpatialNodeIndex};
 use crate::util::MaxRect;
-use crate::visibility::{VisibilityState, PrimitiveVisibility, FrameVisibilityContext};
-pub use crate::picture_composite_mode::{get_surface_rects, calculate_uv_rect_kind};
+use crate::visibility::{DrawState, PrimitiveDrawHeader, FrameVisibilityContext};
+pub use crate::picture_composite_mode::get_surface_rects;
 
 
 /// Maximum blur radius for blur filter
@@ -57,6 +57,21 @@ pub struct SurfaceInfo {
     /// A local rect defining the size of this surface, in the
     /// coordinate system of the parent surface. This contains
     /// the unclipped bounding rect of child primitives.
+    ///
+    /// SNAPTODO: This rect is built by mapping per-cluster bounding
+    /// rects (and child-surface coverage rects) into this surface's
+    /// picture space via `map_local_to_picture`. Even once the source
+    /// cluster bound is a true union of per-prim *snapped* local
+    /// rects, the resulting `unclipped_local_rect` is not guaranteed
+    /// to be snapped: any 2D transform that isn't an axis-aligned,
+    /// integer-pixel translation between the cluster/child-surface
+    /// spatial node and this surface's spatial node will produce
+    /// sub-pixel edges in picture space. Float blur-margin inflation
+    /// inside `composite_mode.get_coverage` can also break the snap.
+    /// Consumers that need a snapped value will either need to
+    /// re-snap in surface space or restrict the snap path to surfaces
+    /// where the cross-space mapping preserves grid alignment (see
+    /// `SurfaceInfo.allow_snapping`).
     pub unclipped_local_rect: PictureRect,
     /// The local space coverage of child primitives after they are
     /// are clipped to their owning clip-chain.
@@ -84,7 +99,13 @@ pub struct SurfaceInfo {
     pub local_scale: (f32, f32),
     /// If true, we know this surface is completely opaque.
     pub is_opaque: bool,
-    /// If true, allow snapping on this and child surfaces
+    /// Whether content rasterized into this surface is snapped to the device
+    /// pixel grid at frame time. True for tile caches (snapped against the
+    /// scroll-stable cache node) and root-snapping surfaces (raster node is
+    /// root). False for a non-snapping raster root (preserve-3d / perspective /
+    /// huge-scale, `enable_snapping == false`): snapping against its own scaled
+    /// node would use only the tiny local scale and collapse content to zero,
+    /// so content is left unsnapped there instead.
     pub allow_snapping: bool,
     /// If true, the scissor rect must be set when drawing this surface
     pub force_scissor_rect: bool,
@@ -217,7 +238,7 @@ impl SurfaceInfo {
         let raster_rect = if self.raster_spatial_node_index != self.surface_spatial_node_index {
             // Currently, the surface's spatial node can be different from its raster node only
             // for surfaces in the root coordinate system for snapping reasons.
-            // See `PicturePrimitive::assign_surface`.
+            // See `PictureInstance::assign_surface`.
             assert_eq!(self.device_pixel_scale.0, 1.0);
             assert_eq!(self.raster_spatial_node_index, spatial_tree.root_reference_frame_index());
 
@@ -560,26 +581,26 @@ impl SurfaceBuilder {
     // to for a given current visbility / dirty state
     pub fn get_cmd_buffer_targets_for_prim(
         &mut self,
-        vis: &PrimitiveVisibility,
+        vis: &PrimitiveDrawHeader,
         targets: &mut Vec<CommandBufferIndex>,
     ) -> bool {
         targets.clear();
 
         match vis.state {
-            VisibilityState::Unset => {
+            DrawState::Unset => {
                 panic!("bug: invalid vis state");
             }
-            VisibilityState::Culled => {
+            DrawState::Culled => {
                 false
             }
-            VisibilityState::Visible { sub_slice_index, .. } => {
+            DrawState::Visible { sub_slice_index, .. } => {
                 self.current_cmd_buffers.get_cmd_buffer_targets_for_rect(
                     &vis.clip_chain.pic_coverage_rect,
                     sub_slice_index,
                     targets,
                 )
             }
-            VisibilityState::PassThrough => {
+            DrawState::PassThrough => {
                 true
             }
         }
@@ -699,7 +720,7 @@ impl SurfaceBuilder {
                                     }
                                 }
                             }
-                            CommandBufferBuilderKind::Simple { render_task_id: ref mut parent_task_id, .. } => {
+                            CommandBufferBuilderKind::Simple { render_task_id: ref mut parent_task_id, root_task_id: ref parent_root_task_id, .. } => {
                                 let parent_task = rg_builder.get_task_mut(*parent_task_id);
 
                                 // Get info about the parent tile task location and params
@@ -742,6 +763,19 @@ impl SurfaceBuilder {
                                     new_task_id,
                                     *parent_task_id,
                                 );
+
+                                // If the parent is a chained surface (e.g. a CSS blur or drop-shadow
+                                // filter), its filter pass (root_task_id) reads from the same texture
+                                // as parent_task_id. Ensure it executes after new_task_id has written
+                                // post-backdrop-capture content (e.g. backdrop-filter children) to
+                                // that texture, otherwise those primitives will be missing from the
+                                // filter output.
+                                if let Some(root_task_id) = *parent_root_task_id {
+                                    rg_builder.add_dependency(
+                                        root_task_id,
+                                        new_task_id,
+                                    );
+                                }
 
                                 // Update the surface builder with the now current target for future primitives
                                 *parent_task_id = new_task_id;

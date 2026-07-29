@@ -13,13 +13,17 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <memory>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "api/array_view.h"
+#include "absl/strings/string_view.h"
 #include "modules/audio_processing/aec3/aec3_common.h"
+#include "modules/audio_processing/aec3/block.h"
 #include "modules/audio_processing/aec3/neural_residual_echo_estimator/neural_feature_extractor.h"
 #include "modules/audio_processing/test/echo_canceller_test_tools.h"
 #include "rtc_base/checks.h"
@@ -74,27 +78,35 @@ class MockModelRunner : public NeuralResidualEchoEstimatorImpl::ModelRunner {
 
   int StepSize() const override { return constants_.step_size; }
 
-  webrtc::ArrayView<float> GetInput(ModelInputEnum input_enum) override {
+  std::span<float> GetInput(ModelInputEnum input_enum) override {
     switch (input_enum) {
       case ModelInputEnum::kMic:
-        return webrtc::ArrayView<float>(input_mic_.data(),
-                                        constants_.frame_size);
+        return std::span<float>(input_mic_.data(), constants_.frame_size);
       case ModelInputEnum::kLinearAecOutput:
-        return webrtc::ArrayView<float>(input_linear_aec_output_.data(),
-                                        constants_.frame_size);
+        return std::span<float>(input_linear_aec_output_.data(),
+                                constants_.frame_size);
       case ModelInputEnum::kAecRef:
-        return webrtc::ArrayView<float>(input_aec_ref_.data(),
-                                        constants_.frame_size);
+        return std::span<float>(input_aec_ref_.data(), constants_.frame_size);
       case ModelInputEnum::kModelState:
       case ModelInputEnum::kNumInputs:
         RTC_CHECK(false);
-        return webrtc::ArrayView<float>();
+        return std::span<float>();
     }
   }
 
-  webrtc::ArrayView<const float> GetOutputEchoMask() override {
-    return webrtc::ArrayView<const float>(output_echo_mask_.data(),
-                                          constants_.frame_size_by_2_plus_1);
+  std::span<const float> GetOutput(ModelOutputEnum output_enum) override {
+    switch (output_enum) {
+      case ModelOutputEnum::kEchoMask:
+      case ModelOutputEnum::kUnboundedEchoMask:
+        return std::span<const float>(output_echo_mask_.data(),
+                                      constants_.frame_size_by_2_plus_1);
+      case ModelOutputEnum::kModelState:
+        // Mock model state output if needed, for now return empty
+        return std::span<const float>();
+      default:
+        RTC_CHECK(false);
+        return std::span<float>();
+    }
   }
 
   const audioproc::ReeModelMetadata& GetMetadata() const override {
@@ -102,6 +114,8 @@ class MockModelRunner : public NeuralResidualEchoEstimatorImpl::ModelRunner {
   }
 
   MOCK_METHOD(bool, Invoke, (), (override));
+
+  MOCK_METHOD(void, Reset, (), (override));
 
   const ModelConstants constants_;
   const audioproc::ReeModelMetadata metadata_;
@@ -128,14 +142,14 @@ TEST_P(NeuralResidualEchoEstimatorImplTest,
 
   constexpr int kNumCaptureChannels = 1;
   std::array<float, kBlockSize> x;
-  std::vector<std::array<float, kBlockSize>> y{kNumCaptureChannels};
-  std::vector<std::array<float, kBlockSize>> e{kNumCaptureChannels};
-  std::vector<std::array<float, kFftLengthBy2Plus1>> E2{kNumCaptureChannels};
-  std::vector<std::array<float, kFftLengthBy2Plus1>> S2{kNumCaptureChannels};
-  std::vector<std::array<float, kFftLengthBy2Plus1>> Y2{kNumCaptureChannels};
-  std::vector<std::array<float, kFftLengthBy2Plus1>> R2{kNumCaptureChannels};
-  std::vector<std::array<float, kFftLengthBy2Plus1>> R2_unbounded{
-      kNumCaptureChannels};
+  std::vector<std::array<float, kBlockSize>> y(kNumCaptureChannels);
+  std::vector<std::array<float, kBlockSize>> e(kNumCaptureChannels);
+  std::vector<std::array<float, kFftLengthBy2Plus1>> E2(kNumCaptureChannels);
+  std::vector<std::array<float, kFftLengthBy2Plus1>> S2(kNumCaptureChannels);
+  std::vector<std::array<float, kFftLengthBy2Plus1>> Y2(kNumCaptureChannels);
+  std::vector<std::array<float, kFftLengthBy2Plus1>> R2(kNumCaptureChannels);
+  std::vector<std::array<float, kFftLengthBy2Plus1>> R2_unbounded(
+      kNumCaptureChannels);
 
   auto mock_model_runner = std::make_unique<MockModelRunner>(model_constants);
   for (int i = 0; i < model_constants.frame_size; ++i) {
@@ -165,29 +179,31 @@ TEST_P(NeuralResidualEchoEstimatorImplTest,
       S2[0][j] = block_counter * kFftLengthBy2Plus1 + j + 29;
       Y2[0][j] = block_counter * kFftLengthBy2Plus1 + j + 31;
     }
-    estimator.Estimate(x, y, e, S2, Y2, E2, R2, R2_unbounded);
+    Block render_block(1, 1);
+    for (size_t j = 0; j < kBlockSize; ++j) {
+      render_block.View(/*band=*/0, /*ch=*/0)[j] = x[j];
+    }
+    estimator.Estimate(render_block, y, e, S2, Y2, E2,
+                       /*dominant_nearend=*/false, R2, R2_unbounded);
   }
 
   // Check that old buffer content is shifted down properly.
   for (int i = 0; i < model_constants.frame_size - model_constants.step_size;
        ++i) {
     SCOPED_TRACE(testing::Message() << "i=" << i);
-    EXPECT_FLOAT_EQ(mock_model_runner_ptr->input_mic_[i],
-                    model_constants.step_size + i + 2311);
     EXPECT_FLOAT_EQ(mock_model_runner_ptr->input_linear_aec_output_[i],
                     model_constants.step_size + i + 2333);
     EXPECT_FLOAT_EQ(mock_model_runner_ptr->input_aec_ref_[i],
                     model_constants.step_size + i + 2339);
   }
-  // Check that new buffer content matches the input data.
+  // Check that new buffer content matches the input data. This time with
+  // scaling as the scaling is applied when new data is buffered.
   for (int i = model_constants.frame_size - model_constants.step_size;
        i < model_constants.frame_size; ++i) {
-    SCOPED_TRACE(testing::Message() << "i=" << i);
     constexpr float kScaling = 1.0f / 32768;
+    SCOPED_TRACE(testing::Message() << "i=" << i);
     int input_index =
         i - (model_constants.frame_size - model_constants.step_size);
-    EXPECT_FLOAT_EQ(mock_model_runner_ptr->input_mic_[i],
-                    kScaling * (input_index + 13));
     EXPECT_FLOAT_EQ(mock_model_runner_ptr->input_linear_aec_output_[i],
                     kScaling * (input_index + 17));
     EXPECT_FLOAT_EQ(mock_model_runner_ptr->input_aec_ref_[i],
@@ -202,14 +218,14 @@ TEST_P(NeuralResidualEchoEstimatorImplTest, OutputMaskIsApplied) {
 
   constexpr int kNumCaptureChannels = 1;
   std::array<float, kBlockSize> x;
-  std::vector<std::array<float, kBlockSize>> y{kNumCaptureChannels};
-  std::vector<std::array<float, kBlockSize>> e{kNumCaptureChannels};
-  std::vector<std::array<float, kFftLengthBy2Plus1>> E2{kNumCaptureChannels};
+  std::vector<std::array<float, kBlockSize>> y(kNumCaptureChannels);
+  std::vector<std::array<float, kBlockSize>> e(kNumCaptureChannels);
+  std::vector<std::array<float, kFftLengthBy2Plus1>> E2(kNumCaptureChannels);
   std::vector<std::array<float, kFftLengthBy2Plus1>> S2{kNumCaptureChannels};
   std::vector<std::array<float, kFftLengthBy2Plus1>> Y2{kNumCaptureChannels};
   std::vector<std::array<float, kFftLengthBy2Plus1>> R2{kNumCaptureChannels};
-  std::vector<std::array<float, kFftLengthBy2Plus1>> R2_unbounded{
-      kNumCaptureChannels};
+  std::vector<std::array<float, kFftLengthBy2Plus1>> R2_unbounded(
+      kNumCaptureChannels);
   std::fill(x.begin(), x.end(), 10000);
   std::fill(y[0].begin(), y[0].end(), 10000);
   std::fill(e[0].begin(), e[0].end(), 10000);
@@ -238,7 +254,12 @@ TEST_P(NeuralResidualEchoEstimatorImplTest, OutputMaskIsApplied) {
       .WillOnce(testing::Return(true));
 
   for (int b = 0; b < blocks_per_model_step; ++b) {
-    estimator.Estimate(x, y, e, S2, Y2, E2, R2, R2_unbounded);
+    Block render_block(1, 1);
+    for (size_t j = 0; j < kBlockSize; ++j) {
+      render_block.View(/*band=*/0, /*ch=*/0)[j] = x[j];
+    }
+    estimator.Estimate(render_block, y, e, S2, Y2, E2,
+                       /*dominant_nearend=*/false, R2, R2_unbounded);
   }
 
   // Check that the mocked output mask is applied.
@@ -248,6 +269,48 @@ TEST_P(NeuralResidualEchoEstimatorImplTest, OutputMaskIsApplied) {
     const float power_adjusted_mask = 1 - (1 - mask) * (1 - mask);
     EXPECT_FLOAT_EQ(R2[0][i], 10000 * power_adjusted_mask);
     EXPECT_FLOAT_EQ(R2_unbounded[0][i], R2[0][i]);
+  }
+}
+
+TEST_P(NeuralResidualEchoEstimatorImplTest, ResetsState) {
+  const ModelConstants model_constants = GetParam();
+  if (model_constants.step_size == kBlockSize) {
+    // This reset test needs to have a step size larger than the block size.
+    return;
+  }
+  SCOPED_TRACE(testing::Message()
+               << "model_constants.frame_size=" << model_constants.frame_size);
+
+  constexpr int kNumCaptureChannels = 1;
+  std::vector<std::array<float, kBlockSize>> y(kNumCaptureChannels);
+  std::vector<std::array<float, kBlockSize>> e(kNumCaptureChannels);
+  std::vector<std::array<float, kFftLengthBy2Plus1>> E2(kNumCaptureChannels);
+  std::vector<std::array<float, kFftLengthBy2Plus1>> S2(kNumCaptureChannels);
+  std::vector<std::array<float, kFftLengthBy2Plus1>> Y2(kNumCaptureChannels);
+  std::vector<std::array<float, kFftLengthBy2Plus1>> R2(kNumCaptureChannels);
+  std::vector<std::array<float, kFftLengthBy2Plus1>> R2_unbounded(
+      kNumCaptureChannels);
+
+  auto mock_model_runner = std::make_unique<MockModelRunner>(model_constants);
+  auto* mock_model_runner_ptr = mock_model_runner.get();
+  NeuralResidualEchoEstimatorImpl estimator(std::move(mock_model_runner));
+
+  EXPECT_CALL(*mock_model_runner_ptr, Invoke()).Times(1);
+  EXPECT_CALL(*mock_model_runner_ptr, Reset()).Times(1);
+
+  const int num_blocks_to_process = model_constants.step_size / kBlockSize;
+  for (int frame = 0; frame < 2; ++frame) {
+    for (int block = 0; block < num_blocks_to_process; ++block) {
+      Block render_block(1, 1);
+      estimator.Estimate(render_block, y, e, S2, Y2, E2,
+                         /*dominant_nearend=*/false, R2, R2_unbounded);
+      if (frame == 1 && block == 0) {
+        // Resetting after the first block clears the estimator internal
+        // buffers. This prevents the model from receiving a full input frame,
+        // so Invoke() will not be called again within this second frame.
+        estimator.Reset();
+      }
+    }
   }
 }
 
@@ -273,10 +336,10 @@ TEST(NeuralResidualEchoEstimatorWithRealModelTest,
   std::array<float, kBlockSize> x;
   std::vector<std::array<float, kBlockSize>> y{kNumCaptureChannels};
   std::vector<std::array<float, kBlockSize>> e{kNumCaptureChannels};
-  std::vector<std::array<float, kFftLengthBy2Plus1>> E2{kNumCaptureChannels};
-  std::vector<std::array<float, kFftLengthBy2Plus1>> S2{kNumCaptureChannels};
-  std::vector<std::array<float, kFftLengthBy2Plus1>> Y2{kNumCaptureChannels};
-  std::vector<std::array<float, kFftLengthBy2Plus1>> R2{kNumCaptureChannels};
+  std::vector<std::array<float, kFftLengthBy2Plus1>> E2(kNumCaptureChannels);
+  std::vector<std::array<float, kFftLengthBy2Plus1>> S2(kNumCaptureChannels);
+  std::vector<std::array<float, kFftLengthBy2Plus1>> Y2(kNumCaptureChannels);
+  std::vector<std::array<float, kFftLengthBy2Plus1>> R2(kNumCaptureChannels);
   std::vector<std::array<float, kFftLengthBy2Plus1>> R2_unbounded{
       kNumCaptureChannels};
   Random random_generator(4635U);
@@ -293,7 +356,12 @@ TEST(NeuralResidualEchoEstimatorWithRealModelTest,
       std::fill(R2[ch].begin(), R2[ch].end(), 1234.0f);
       std::fill(R2_unbounded[ch].begin(), R2_unbounded[ch].end(), 1234.0f);
     }
-    estimator.Estimate(x, y, e, S2, Y2, E2, R2, R2_unbounded);
+    Block render_block(1, 1);
+    for (size_t j = 0; j < kBlockSize; ++j) {
+      render_block.View(/*band=*/0, /*ch=*/0)[j] = x[j];
+    }
+    estimator.Estimate(render_block, y, e, S2, Y2, E2,
+                       /*dominant_nearend=*/false, R2, R2_unbounded);
 
     // Check that the output is populated.
     for (int ch = 0; ch < kNumCaptureChannels; ++ch) {
@@ -305,6 +373,86 @@ TEST(NeuralResidualEchoEstimatorWithRealModelTest,
       }
     }
   }
+}
+
+// Verifies that LoadTfLiteModel returns nullptr if the model's metadata version
+// is unsupported. This is done by loading a test model with a valid version,
+// modifying the version in the metadata to an unsupported value, and then
+// checking that the model fails to load.
+TEST(NeuralResidualEchoEstimatorWithRealModelTest, WrongModelVersion) {
+  std::string model_path = test::ResourcePath(
+      "audio_processing/aec3/noop_ml_aec_model_for_testing", "tflite");
+
+  // 1. Load the model from file.
+  auto original_model =
+      tflite::FlatBufferModel::BuildFromFile(model_path.c_str());
+  ASSERT_TRUE(original_model != nullptr);
+
+  // 2. Get the raw buffer and size from the loaded model.
+  const tflite::Allocation* allocation = original_model->allocation();
+  const char* original_buffer_data =
+      static_cast<const char*>(allocation->base());
+  size_t original_buffer_size = allocation->bytes();
+
+  // 3. Read the metadata
+  const tflite::Model* model_obj = original_model->GetModel();
+  ASSERT_TRUE(model_obj != nullptr);
+  int32_t metadata_buffer_index = -1;
+  if (model_obj->metadata()) {
+    for (const auto* meta : *model_obj->metadata()) {
+      if (meta->name() && meta->name()->str() == "REE_METADATA") {
+        metadata_buffer_index = meta->buffer();
+        break;
+      }
+    }
+  }
+  ASSERT_NE(metadata_buffer_index, -1) << "Metadata not found";
+
+  // 4. Get the metadata buffer details from the model structure.
+  const tflite::Buffer* ree_metadata_buffer =
+      model_obj->buffers()->Get(metadata_buffer_index);
+  ASSERT_TRUE(ree_metadata_buffer != nullptr);
+  ASSERT_TRUE(ree_metadata_buffer->data() != nullptr);
+  const char* metadata_data_ptr =
+      reinterpret_cast<const char*>(ree_metadata_buffer->data()->data());
+  size_t metadata_data_size = ree_metadata_buffer->data()->size();
+  ASSERT_LT(metadata_data_ptr, original_buffer_data + original_buffer_size);
+
+  // 5. Deserialize the metadata from the buffer copy, check original version.
+  audioproc::ReeModelMetadata metadata_proto;
+  ASSERT_TRUE(metadata_proto.ParseFromString(
+      absl::string_view(metadata_data_ptr, metadata_data_size)));
+  ASSERT_EQ(metadata_proto.version(), 2);
+
+  // 6. Modify the version.
+  metadata_proto.set_version(3);
+
+  // 7. Serialize the modified metadata.
+  std::string modified_metadata_str;
+  ASSERT_TRUE(metadata_proto.SerializeToString(&modified_metadata_str));
+
+  // 8. Ensure the size hasn't changed, then overwrite the bytes in the buffer
+  // copy.
+  ASSERT_EQ(modified_metadata_str.size(), metadata_data_size)
+      << "Serialized metadata size changed, direct overwrite not possible.";
+  std::vector<char> modified_buffer(
+      original_buffer_data, original_buffer_data + original_buffer_size);
+
+  std::memcpy(
+      modified_buffer.data() + (metadata_data_ptr - original_buffer_data),
+      modified_metadata_str.data(), modified_metadata_str.size());
+
+  // 9. Build the modified model from the updated buffer.
+  auto modified_model = tflite::FlatBufferModel::BuildFromBuffer(
+      modified_buffer.data(), modified_buffer.size());
+  ASSERT_TRUE(modified_model != nullptr);
+
+  // 13. Attempt to load the model and expect failure due to version mismatch.
+  tflite::ops::builtin::BuiltinOpResolver op_resolver;
+  std::unique_ptr<NeuralResidualEchoEstimatorImpl::ModelRunner>
+      tflite_model_runner = NeuralResidualEchoEstimatorImpl::LoadTfLiteModel(
+          modified_model.get(), op_resolver);
+  EXPECT_TRUE(tflite_model_runner == nullptr);
 }
 
 }  // namespace

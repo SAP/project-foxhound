@@ -480,7 +480,7 @@ Specific keys are:
   - MissingWebRender = 2
   - OperatingSystemNotSupported = 3
   - PrefNotSet = 4 - After Firefox 98, this value will no longer appear in Telemetry.
-  - MissingRemoteWebGL = 5
+  - MissingRemoteWebGL = 5 - From Firefox 152 onwards, this value will no longer appear in Telemetry.
   - MissingNonNativeTheming = 6
   - DisabledByEnvVar = 7 - MOZ_ENABLE_WIN32K is set
   - DisabledBySafeMode = 8 - From Firefox 140 onwards, this value will no longer appear in Telemetry.

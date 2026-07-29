@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -64,7 +62,12 @@ class ScriptFetchOptions {
 
   // Returns true if given fetch option is compatible with this fetch option
   // in term of sharing the server response.
-  inline bool IsCompatible(ScriptFetchOptions* other) {
+  //
+  // Nonce is excluded here because the cached response can have different
+  // nonce, and in that case ScriptLoadRequest is responsible for using the
+  // appropriate one.
+  // See ScriptLoadRequest::SetCacheEntry.
+  inline bool IsCompatibleExcludingNonce(ScriptFetchOptions* other) {
     if (this == other) {
       return true;
     }
@@ -79,9 +82,8 @@ class ScriptFetchOptions {
       return false;
     }
 
-    // NOTE: mParserMetadata can be ignored.
-    return mCORSMode == other->mCORSMode && mNonce == other->mNonce &&
-           mFetchPriority == other->mFetchPriority;
+    // NOTE: mParserMetadata and mFetchPriority can be ignored.
+    return mCORSMode == other->mCORSMode;
   }
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const {

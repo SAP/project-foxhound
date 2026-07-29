@@ -6,6 +6,7 @@
 
 use crate::derives::*;
 use crate::properties::{LogicalGroupId, LonghandId};
+use crate::typed_om::{ToTyped, TypedValue};
 use crate::values::animated::{Context as AnimatedContext, ToAnimatedValue};
 use crate::values::computed::length::{
     CSSPixelLength, NonNegativeLength, NonNegativeLengthPercentage,
@@ -21,6 +22,7 @@ use crate::values::generics::NonNegative;
 use crate::values::resolved::{Context as ResolvedContext, ToResolvedValue};
 use crate::Zero;
 use app_units::Au;
+use thin_vec::ThinVec;
 
 pub use crate::values::specified::border::BorderImageRepeat;
 
@@ -30,7 +32,6 @@ pub type LineWidth = Au;
 /// A computed value for border-width (and the like).
 #[derive(Clone, Debug, MallocSizeOf, PartialEq, ToCss, ToTyped, From)]
 #[repr(transparent)]
-#[typed_value(derive_fields)]
 pub struct BorderSideWidth(pub Au);
 
 impl BorderSideWidth {
@@ -94,12 +95,24 @@ pub type BorderSideOffset = Au;
 /// A computed value for the `border-image-width` property.
 pub type BorderImageWidth = Rect<BorderImageSideWidth>;
 
+impl ToTyped for BorderImageWidth {
+    fn to_typed(&self, _dest: &mut ThinVec<TypedValue>) -> Result<(), ()> {
+        return Err(());
+    }
+}
+
 /// A computed value for a single side of a `border-image-width` property.
 pub type BorderImageSideWidth =
     GenericBorderImageSideWidth<NonNegativeLengthPercentage, NonNegativeNumber>;
 
 /// A computed value for the `border-image-slice` property.
 pub type BorderImageSlice = GenericBorderImageSlice<NonNegativeNumberOrPercentage>;
+
+impl ToTyped for BorderImageSlice {
+    fn to_typed(&self, _dest: &mut ThinVec<TypedValue>) -> Result<(), ()> {
+        return Err(());
+    }
+}
 
 /// A computed value for the `border-radius` property.
 pub type BorderRadius = GenericBorderRadius<NonNegativeLengthPercentage>;

@@ -232,7 +232,7 @@ function setInputValue(loginForm, fieldElement, value) {
 }
 
 function getMegalistParent() {
-  const megalistChromeWindow = gBrowser.ownerGlobal[0];
+  const megalistChromeWindow = gBrowser.documentGlobal[0];
   return megalistChromeWindow.browsingContext.currentWindowGlobal.getActor(
     "Megalist"
   );

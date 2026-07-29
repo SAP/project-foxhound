@@ -184,8 +184,13 @@ function snapshot(elem)
     ++count;
     if (count <= 1) {
         // close the submenu and open the bottom submenu
-        document.getElementById(elem.parentNode.id).openMenu(false);
-        document.getElementById("menu9").openMenu(true);
+        if (elem.parentNode.parentNode.isNativeMenu) {
+            document.getElementById(elem.parentNode.id).openMenu(false);
+            document.getElementById("menu9").openMenu(true);
+        } else {
+            synthesizeKey("KEY_ArrowLeft");
+            sendString("9");
+        }
     } else {
         if (!navigator.platform.includes("Mac")) {
             is(pos[1], pos[0], `Popup ${elem.parentNode.id} should open in the same place when the menu is scrolled`);
@@ -211,7 +216,11 @@ function openSubmenu(mainMenu, e)
     }
     info("openSubmenu() called");
     // open a submenu in the middle
-    document.getElementById("menu5").openMenu(true);
+    if (mainMenu.isNativeMenu) {
+        document.getElementById("menu5").openMenu(true);
+    } else {
+        sendString("5");
+    }
 }
 
 SimpleTest.waitForExplicitFinish();

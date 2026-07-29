@@ -1,0 +1,173 @@
+[DEFAULT]
+support-files = [
+  "DOMTestCase.js",
+  "activity-home.css",
+  "exclusions.js",
+  "files/hc_nodtdstaff.html",
+  "files/hc_nodtdstaff.xhtml",
+  "files/hc_staff.html",
+  "files/hc_staff.xhtml",
+  "files/staff.dtd",
+  "files/staff.xml",
+  "files/svgunit.js",
+  "files/xhtml-special.ent",
+  "files/xhtml1-frameset.dtd",
+  "files/xhtml1-transitional.dtd",
+  "files/hc_nodtdstaff.svg",
+  "files/hc_nodtdstaff.xml",
+  "files/hc_staff.svg",
+  "files/hc_staff.xml",
+  "files/staff.svg",
+  "files/svgtest.js",
+  "files/xhtml-lat1.ent",
+  "files/xhtml-symbol.ent",
+  "files/xhtml1-strict.dtd",
+]
+
+["test_cdatasectiongetdata.html"]
+
+["test_cdatasectionnormalize.html"]
+
+["test_characterdataappenddata.html"]
+
+["test_characterdataappenddatagetdata.html"]
+
+["test_characterdataappenddatanomodificationallowederr.html"]
+
+["test_characterdataappenddatanomodificationallowederrEE.html"]
+
+["test_characterdatadeletedatabegining.html"]
+
+["test_characterdatadeletedataend.html"]
+
+["test_characterdatadeletedataexceedslength.html"]
+
+["test_characterdatadeletedatagetlengthanddata.html"]
+
+["test_characterdatadeletedatamiddle.html"]
+
+["test_characterdatadeletedatanomodificationallowederr.html"]
+
+["test_characterdatadeletedatanomodificationallowederrEE.html"]
+
+["test_characterdatagetdata.html"]
+
+["test_characterdatagetlength.html"]
+
+["test_characterdataindexsizeerrdeletedatacountnegative.html"]
+
+["test_characterdataindexsizeerrdeletedataoffsetgreater.html"]
+
+["test_characterdataindexsizeerrdeletedataoffsetnegative.html"]
+
+["test_characterdataindexsizeerrinsertdataoffsetgreater.html"]
+
+["test_characterdataindexsizeerrinsertdataoffsetnegative.html"]
+
+["test_characterdataindexsizeerrreplacedatacountnegative.html"]
+
+["test_characterdataindexsizeerrreplacedataoffsetgreater.html"]
+
+["test_characterdataindexsizeerrreplacedataoffsetnegative.html"]
+
+["test_characterdataindexsizeerrsubstringcountnegative.html"]
+
+["test_characterdataindexsizeerrsubstringnegativeoffset.html"]
+
+["test_characterdataindexsizeerrsubstringoffsetgreater.html"]
+
+["test_characterdatainsertdatabeginning.html"]
+
+["test_characterdatainsertdataend.html"]
+
+["test_characterdatainsertdatamiddle.html"]
+
+["test_characterdatainsertdatanomodificationallowederr.html"]
+
+["test_characterdatainsertdatanomodificationallowederrEE.html"]
+
+["test_characterdatareplacedatabegining.html"]
+
+["test_characterdatareplacedataend.html"]
+
+["test_characterdatareplacedataexceedslengthofarg.html"]
+
+["test_characterdatareplacedataexceedslengthofdata.html"]
+
+["test_characterdatareplacedatamiddle.html"]
+
+["test_characterdatareplacedatanomodificationallowederr.html"]
+
+["test_characterdatareplacedatanomodificationallowederrEE.html"]
+
+["test_characterdatasetdatanomodificationallowederr.html"]
+
+["test_characterdatasetdatanomodificationallowederrEE.html"]
+
+["test_characterdatasetnodevalue.html"]
+
+["test_characterdatasubstringexceedsvalue.html"]
+
+["test_characterdatasubstringvalue.html"]
+
+["test_hc_characterdataappenddata.html"]
+
+["test_hc_characterdataappenddatagetdata.html"]
+
+["test_hc_characterdatadeletedatabegining.html"]
+
+["test_hc_characterdatadeletedataend.html"]
+
+["test_hc_characterdatadeletedataexceedslength.html"]
+
+["test_hc_characterdatadeletedatagetlengthanddata.html"]
+
+["test_hc_characterdatadeletedatamiddle.html"]
+
+["test_hc_characterdatagetdata.html"]
+
+["test_hc_characterdatagetlength.html"]
+
+["test_hc_characterdataindexsizeerrdeletedatacountnegative.html"]
+
+["test_hc_characterdataindexsizeerrdeletedataoffsetgreater.html"]
+
+["test_hc_characterdataindexsizeerrdeletedataoffsetnegative.html"]
+
+["test_hc_characterdataindexsizeerrinsertdataoffsetgreater.html"]
+
+["test_hc_characterdataindexsizeerrinsertdataoffsetnegative.html"]
+
+["test_hc_characterdataindexsizeerrreplacedatacountnegative.html"]
+
+["test_hc_characterdataindexsizeerrreplacedataoffsetgreater.html"]
+
+["test_hc_characterdataindexsizeerrreplacedataoffsetnegative.html"]
+
+["test_hc_characterdataindexsizeerrsubstringcountnegative.html"]
+
+["test_hc_characterdataindexsizeerrsubstringnegativeoffset.html"]
+
+["test_hc_characterdataindexsizeerrsubstringoffsetgreater.html"]
+
+["test_hc_characterdatainsertdatabeginning.html"]
+
+["test_hc_characterdatainsertdataend.html"]
+
+["test_hc_characterdatainsertdatamiddle.html"]
+
+["test_hc_characterdatareplacedatabegining.html"]
+
+["test_hc_characterdatareplacedataend.html"]
+
+["test_hc_characterdatareplacedataexceedslengthofarg.html"]
+
+["test_hc_characterdatareplacedataexceedslengthofdata.html"]
+
+["test_hc_characterdatareplacedatamiddle.html"]
+
+["test_hc_characterdatasetnodevalue.html"]
+
+["test_hc_characterdatasubstringexceedsvalue.html"]
+
+["test_hc_characterdatasubstringvalue.html"]

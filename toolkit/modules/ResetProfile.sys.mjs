@@ -24,6 +24,26 @@ ChromeUtils.defineLazyGetter(lazy, "MigrationUtils", () => {
   return undefined;
 });
 
+// Bug 1958916. Migrate profiles code to toolkit
+ChromeUtils.defineLazyGetter(lazy, "SelectableProfileService", () => {
+  // SelectableProfileService is currently only available in browser builds.
+  // Bug 1958916: Migratre browser/profiles code to toolkit
+  if (AppConstants.MOZ_BUILD_APP != "browser") {
+    return undefined;
+  }
+
+  try {
+    let { SelectableProfileService } = ChromeUtils.importESModule(
+      // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
+      "resource:///modules/profiles/SelectableProfileService.sys.mjs"
+    );
+    return SelectableProfileService;
+  } catch (e) {
+    console.error(`Unable to load SelectableProfileService.sys.mjs: ${e}`);
+  }
+  return undefined;
+});
+
 const MOZ_APP_NAME = AppConstants.MOZ_APP_NAME;
 
 export var ResetProfile = {
@@ -45,28 +65,18 @@ export var ResetProfile = {
       return false;
     }
 
-    // Allow Firefox Refresh if force pref is set, see Bug 1928138
-    if (Services.prefs.getBoolPref("browser.profiles.forceEnableRefresh")) {
+    // We also need to be using a profile the profile manager knows about.
+    if (lazy.SelectableProfileService?.currentProfile) {
       return true;
     }
 
-    // We also need to be using a profile the profile manager knows about.
-    // We are disabling Firefox Refresh for profiles with a storeID.
-    // Bug 1928138 will add support for selectable profiles and profiles with
-    // storeID set
     let profileService = Cc[
       "@mozilla.org/toolkit/profile-service;1"
     ].getService(Ci.nsIToolkitProfileService);
-    let currentProfileDir = Services.dirsvc.get("ProfD", Ci.nsIFile);
-    for (let profile of profileService.profiles) {
-      if (
-        profile.rootDir &&
-        profile.rootDir.equals(currentProfileDir) &&
-        !profile.storeID
-      ) {
-        return true;
-      }
+    if (profileService.currentProfile) {
+      return true;
     }
+
     return false;
   },
 
@@ -118,11 +128,29 @@ export var ResetProfile = {
   },
 
   doReset() {
-    // Set the reset profile environment variable.
-    Services.env.set("MOZ_RESET_PROFILE_RESTART", "1");
+    function doRestart() {
+      // Set the reset profile environment variable.
+      Services.env.set("MOZ_RESET_PROFILE_RESTART", "1");
 
-    Services.startup.quit(
-      Ci.nsIAppStartup.eForceQuit | Ci.nsIAppStartup.eRestart
-    );
+      Services.startup.quit(
+        Ci.nsIAppStartup.eForceQuit | Ci.nsIAppStartup.eRestart
+      );
+    }
+
+    if (lazy.SelectableProfileService?.currentProfile) {
+      Services.env.set(
+        "SELECTABLE_PROFILE_RESET_PATH",
+        lazy.SelectableProfileService?.currentProfile.path
+      );
+      Services.env.set(
+        "SELECTABLE_PROFILE_RESET_STORE_ID",
+        lazy.SelectableProfileService?.storeID
+      );
+      lazy.SelectableProfileService.setDefaultProfileForGroup().then(() =>
+        doRestart()
+      );
+    } else {
+      doRestart();
+    }
   },
 };

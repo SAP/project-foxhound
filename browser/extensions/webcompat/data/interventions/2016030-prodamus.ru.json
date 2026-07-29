@@ -1,0 +1,18 @@
+{
+  "label": "prodamus.ru",
+  "bugs": {
+    "2016030": {
+      "issue": "broken-layout",
+      "matches": ["*://prodamus.ru/*"]
+    }
+  },
+  "css": {
+    "fix_hidden_content": ".tn-atom iframe[src*=pdf] { height: 100vh; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "css": ["fix_hidden_content"]
+    }
+  ]
+}

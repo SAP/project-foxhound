@@ -69,6 +69,37 @@ urlclassifier:
     expires: never
     telemetry_mirror: URLCLASSIFIER_CL_CHECK_TIME
 
+  check_channel_helper_time:
+    type: timing_distribution
+    description: >
+      Total time spent classifying a channel in
+      AntiTrackingChannelClassifierUtils::CheckChannelHelper (ms), from the
+      initial dispatch to the URL-classifier worker thread through the
+      main-thread completion of annotation/blocking.
+    time_unit: millisecond
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2030021
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2030021
+    notification_emails:
+      - bvandersloot@mozilla.com
+    expires: never
+
+  check_channel_helper_worker_time:
+    type: timing_distribution
+    description: >
+      Time spent on the URL-classifier worker thread inside
+      AntiTrackingChannelClassifierUtils::CheckChannelHelper (ms), covering
+      content-classifier and URL-classifier feature lookups.
+    time_unit: millisecond
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2030021
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2030021
+    notification_emails:
+      - bvandersloot@mozilla.com
+    expires: never
+
   cl_keyed_update_time:
     type: labeled_timing_distribution
     description: >

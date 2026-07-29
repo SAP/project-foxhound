@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,13 +18,13 @@ extern LogModule* GetGMPLog();
 
 namespace gmp {
 
-GMPTimerParent::GMPTimerParent(nsISerialEventTarget* aGMPEventTarget)
-    : mGMPEventTarget(aGMPEventTarget), mIsOpen(true) {}
+GMPTimerParent::GMPTimerParent(nsCOMPtr<nsISerialEventTarget>&& aGMPEventTarget)
+    : mGMPEventTarget(std::move(aGMPEventTarget)), mIsOpen(true) {}
 
 mozilla::ipc::IPCResult GMPTimerParent::RecvSetTimer(
     const uint32_t& aTimerId, const uint32_t& aTimeoutMs) {
-  GMP_LOG_DEBUG("%s::%s: %p mIsOpen=%d", __CLASS__, __FUNCTION__, this,
-                mIsOpen);
+  GMP_LOG_DEBUG("{}::{}: {} mIsOpen={}", __CLASS__, __FUNCTION__,
+                fmt::ptr(this), mIsOpen);
 
   MOZ_ASSERT(mGMPEventTarget->IsOnCurrentThread());
 
@@ -51,8 +50,8 @@ mozilla::ipc::IPCResult GMPTimerParent::RecvSetTimer(
 }
 
 void GMPTimerParent::Shutdown() {
-  GMP_LOG_DEBUG("%s::%s: %p mIsOpen=%d", __CLASS__, __FUNCTION__, this,
-                mIsOpen);
+  GMP_LOG_DEBUG("{}::{}: {} mIsOpen={}", __CLASS__, __FUNCTION__,
+                fmt::ptr(this), mIsOpen);
 
   MOZ_ASSERT(mGMPEventTarget->IsOnCurrentThread());
 
@@ -66,8 +65,8 @@ void GMPTimerParent::Shutdown() {
 }
 
 void GMPTimerParent::ActorDestroy(ActorDestroyReason aWhy) {
-  GMP_LOG_DEBUG("%s::%s: %p mIsOpen=%d", __CLASS__, __FUNCTION__, this,
-                mIsOpen);
+  GMP_LOG_DEBUG("{}::{}: {} mIsOpen={}", __CLASS__, __FUNCTION__,
+                fmt::ptr(this), mIsOpen);
 
   Shutdown();
 }
@@ -83,8 +82,8 @@ void GMPTimerParent::GMPTimerExpired(nsITimer* aTimer, void* aClosure) {
 }
 
 void GMPTimerParent::TimerExpired(Context* aContext) {
-  GMP_LOG_DEBUG("%s::%s: %p mIsOpen=%d", __CLASS__, __FUNCTION__, this,
-                mIsOpen);
+  GMP_LOG_DEBUG("{}::{}: {} mIsOpen={}", __CLASS__, __FUNCTION__,
+                fmt::ptr(this), mIsOpen);
   MOZ_ASSERT(mGMPEventTarget->IsOnCurrentThread());
 
   if (!mIsOpen) {

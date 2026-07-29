@@ -112,7 +112,7 @@ async function runTest(inspector, toolbox, selector, contentMethod) {
   info("Press the Enter key and verify that the debugger opens.");
   customBadge.focus();
   onDebuggerReady = toolbox.getPanelWhenReady("jsdebugger");
-  EventUtils.synthesizeKey("VK_RETURN", {}, customBadge.ownerGlobal);
+  EventUtils.synthesizeKey("VK_RETURN", {}, customBadge.documentGlobal);
 
   await onDebuggerReady;
   await waitUntilDebuggerReady(debuggerContext);

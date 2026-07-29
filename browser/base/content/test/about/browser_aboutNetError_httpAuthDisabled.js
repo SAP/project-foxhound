@@ -26,6 +26,7 @@ add_task(async function checkHttpAuthDisabledCopy() {
       content.document.querySelector("net-error-card").wrappedJSObject;
     const info = Cu.cloneInto(mockErrorInfo, netErrorCard);
     netErrorCard.errorInfo = info;
+    netErrorCard.resolvedErrorId = "basicHttpAuthDisabled";
     netErrorCard.errorConfig = netErrorCard.getErrorConfig();
     netErrorCard.hideExceptionButton = netErrorCard.shouldHideExceptionButton(
       info.errorCodeString

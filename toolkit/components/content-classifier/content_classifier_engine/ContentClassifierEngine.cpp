@@ -5,25 +5,26 @@
 #include "mozilla/ContentClassifierEngine.h"
 #include "ContentClassifierService.h"
 #include "nsIEffectiveTLDService.h"
+#include "nsNetUtil.h"
 #include "mozilla/Components.h"
 #include "mozIThirdPartyUtil.h"
 
 namespace mozilla {
 
-ContentClassifierResult ContentClassifierEngine::CheckNetworkRequest(
-    const ContentClassifierRequest& aRequest) {
+ContentClassifierEngineResult ContentClassifierEngine::CheckNetworkRequest(
+    const ContentClassifierRequest& aRequest, bool aPreviouslyMatched) {
   if (!mEngine || !sInitializedETLDService) {
-    return ContentClassifierResult(NS_ERROR_NOT_INITIALIZED);
+    return ContentClassifierEngineResult(NS_ERROR_NOT_INITIALIZED, mFeature);
   }
 
   if (!aRequest.mValid) {
-    return ContentClassifierResult(NS_ERROR_INVALID_ARG);
+    return ContentClassifierEngineResult(NS_ERROR_INVALID_ARG, mFeature);
   }
 
   // We perform no classification on third-party resources for webcompat.
   // This early-return saves CPU cycles.
   if (!aRequest.mThirdParty) {
-    return ContentClassifierResult(NS_OK);
+    return ContentClassifierEngineResult(NS_OK, mFeature);
   }
 
   bool matched = false;
@@ -33,25 +34,10 @@ ContentClassifierResult ContentClassifierEngine::CheckNetworkRequest(
   nsresult rv = content_classifier_engine_check_network_request_preparsed(
       mEngine, &aRequest.mUrl, &aRequest.mSchemelessSite,
       &aRequest.mSourceSchemelessSite, &aRequest.mRequestType,
-      aRequest.mThirdParty, &matched, &important, &exception);
-  return ContentClassifierResult(matched, important, !exception.IsEmpty(), rv);
-}
-
-void ContentClassifierResult::Accumulate(
-    const ContentClassifierResult& aOther) {
-  if (NS_FAILED(aOther.mEngineResult)) {
-    return;
-  }
-
-  if (this->mImportant) {
-    return;
-  }
-
-  if (aOther.mMatched || aOther.mException) {
-    this->mMatched = aOther.mMatched;
-    this->mException = aOther.mException;
-    this->mImportant = aOther.mImportant;
-  }
+      aRequest.mThirdParty, aPreviouslyMatched, &matched, &important,
+      &exception);
+  return ContentClassifierEngineResult(matched, !exception.IsEmpty(), important,
+                                       rv, mFeature);
 }
 
 ContentClassifierRequest::ContentClassifierRequest(nsIChannel* aChannel)
@@ -139,6 +125,8 @@ ContentClassifierRequest::ContentClassifierRequest(nsIChannel* aChannel)
   if (NS_FAILED(rv)) {
     mThirdParty = true;
   }
+
+  mPrivateBrowsing = NS_UsePrivateBrowsing(aChannel);
 
   mValid = true;
 }

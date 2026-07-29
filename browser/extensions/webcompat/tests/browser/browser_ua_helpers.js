@@ -4,7 +4,7 @@
 
 const ORIG_UA = navigator.userAgent;
 const ORIG_UA_VER = ORIG_UA.match("Firefox/((\d|\.)+)")[1];
-const CURRENT_CHROME_VER = "Chrome/143.0.0.0";
+const CURRENT_CHROME_VER = "Chrome/148.0.0.0";
 
 let UA = ORIG_UA;
 
@@ -18,13 +18,13 @@ function shimUA() {
 const WEBKIT = "AppleWebKit/537.36 (KHTML, like Gecko)";
 const SAFARI = " Safari/537.36";
 
-const PREFIX_WIN = "Mozilla/5.0 (Windows NT 11.0; Win64; x64)";
-const PREFIX_LIN = "Mozilla/5.0 (X11; Ubuntu; Linux x86_64)";
+const PREFIX_WIN = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)";
+const PREFIX_LIN = "Mozilla/5.0 (X11; Linux x86_64)";
 const PREFIX_MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)";
-const PREFIX_AND = "Mozilla/5.0 (Linux; Android 6.0; Nexus 7 Build/JSS15Q)";
+const PREFIX_AND = "Mozilla/5.0 (Linux; Android 10; K)";
 
-const PHONE = "Nexus 5 Build/MRA58N";
-const TABLET = "Nexus 7 Build/JSS15Q";
+const PHONE = "K";
+const TABLET = "K";
 
 const DEVICE_APPROPRIATE_TESTS = [
   // test that the OS is carried over if none is specified in the config
@@ -158,41 +158,41 @@ const DEVICE_APPROPRIATE_TESTS = [
   {
     ua: "Windows",
     config: { OS: "android", phone: "PHONE", noFxQuantum: true },
-    expected: `Mozilla/5.0 (Linux; Android 6.0; PHONE) ${WEBKIT} ${CURRENT_CHROME_VER} Mobile${SAFARI}`,
+    expected: `Mozilla/5.0 (Linux; Android 10; PHONE) ${WEBKIT} ${CURRENT_CHROME_VER} Mobile${SAFARI}`,
   },
   {
     ua: "Windows",
     config: { OS: "android", tablet: "TABLET", noFxQuantum: true },
-    expected: `Mozilla/5.0 (Linux; Android 6.0; TABLET) ${WEBKIT} ${CURRENT_CHROME_VER}${SAFARI}`,
+    expected: `Mozilla/5.0 (Linux; Android 10; TABLET) ${WEBKIT} ${CURRENT_CHROME_VER}${SAFARI}`,
   },
 
   // test an android phone spoofing a tablet and vice versa
   {
     ua: "Android 8.8.8 Mobile",
     config: { noFxQuantum: true, tablet: "TABLET" },
-    expected: `Mozilla/5.0 (Linux; Android 8.8.8; TABLET) ${WEBKIT} ${CURRENT_CHROME_VER}${SAFARI}`,
+    expected: `Mozilla/5.0 (Linux; Android 10; TABLET) ${WEBKIT} ${CURRENT_CHROME_VER}${SAFARI}`,
   },
   {
     ua: "Android 8.8.8 Mobile",
     config: { noFxQuantum: true, tablet: true },
-    expected: `Mozilla/5.0 (Linux; Android 8.8.8; ${TABLET}) ${WEBKIT} ${CURRENT_CHROME_VER}${SAFARI}`,
+    expected: `Mozilla/5.0 (Linux; Android 10; ${TABLET}) ${WEBKIT} ${CURRENT_CHROME_VER}${SAFARI}`,
   },
   {
     ua: "Android 8.8.8",
     config: { noFxQuantum: true, phone: "PHONE" },
-    expected: `Mozilla/5.0 (Linux; Android 8.8.8; PHONE) ${WEBKIT} ${CURRENT_CHROME_VER} Mobile${SAFARI}`,
+    expected: `Mozilla/5.0 (Linux; Android 10; PHONE) ${WEBKIT} ${CURRENT_CHROME_VER} Mobile${SAFARI}`,
   },
   {
     ua: "Android 8.8.8",
     config: { noFxQuantum: true, phone: true },
-    expected: `Mozilla/5.0 (Linux; Android 8.8.8; ${PHONE}) ${WEBKIT} ${CURRENT_CHROME_VER} Mobile${SAFARI}`,
+    expected: `Mozilla/5.0 (Linux; Android 10; ${PHONE}) ${WEBKIT} ${CURRENT_CHROME_VER} Mobile${SAFARI}`,
   },
 
   // test that accidentally spoofing both phone and tablet just picks a phone
   {
     ua: "Android 8.8.8",
     config: { noFxQuantum: true, phone: true, tablet: true },
-    expected: `Mozilla/5.0 (Linux; Android 8.8.8; ${PHONE}) ${WEBKIT} ${CURRENT_CHROME_VER} Mobile${SAFARI}`,
+    expected: `Mozilla/5.0 (Linux; Android 10; ${PHONE}) ${WEBKIT} ${CURRENT_CHROME_VER} Mobile${SAFARI}`,
   },
 
   // test android version number option
@@ -207,16 +207,26 @@ const DEVICE_APPROPRIATE_TESTS = [
     expected: `Mozilla/5.0 (Linux; Android VER; ${TABLET}) ${WEBKIT} ${CURRENT_CHROME_VER}${SAFARI}`,
   },
 
-  // test android version numbers are detected if not given
+  // test phone and tablet device-string overrides
   {
-    ua: "Android 8.8.8",
-    config: { OS: "android", phone: "DEV", noFxQuantum: true },
-    expected: `Mozilla/5.0 (Linux; Android 8.8.8; DEV) ${WEBKIT} ${CURRENT_CHROME_VER} Mobile${SAFARI}`,
+    ua: "Android 8.8.8 (Tablet)",
+    config: { OS: "android", phone: true, noFxQuantum: true },
+    expected: `Mozilla/5.0 (Linux; Android 10; K) ${WEBKIT} ${CURRENT_CHROME_VER} Mobile${SAFARI}`,
   },
   {
-    ua: "Android 8.8.8 (tablet)",
-    config: { OS: "android", noFxQuantum: true },
-    expected: `Mozilla/5.0 (Linux; Android 8.8.8; ${TABLET}) ${WEBKIT} ${CURRENT_CHROME_VER}${SAFARI}`,
+    ua: "Android 8.8.8 (Tablet)",
+    config: { OS: "android", phone: "DEV", noFxQuantum: true },
+    expected: `Mozilla/5.0 (Linux; Android 10; DEV) ${WEBKIT} ${CURRENT_CHROME_VER} Mobile${SAFARI}`,
+  },
+  {
+    ua: "Android 8.8.8",
+    config: { OS: "android", tablet: true, noFxQuantum: true },
+    expected: `Mozilla/5.0 (Linux; Android 10; K) ${WEBKIT} ${CURRENT_CHROME_VER}${SAFARI}`,
+  },
+  {
+    ua: "Android 8.8.8",
+    config: { OS: "android", tablet: "DEV", noFxQuantum: true },
+    expected: `Mozilla/5.0 (Linux; Android 10; DEV) ${WEBKIT} ${CURRENT_CHROME_VER}${SAFARI}`,
   },
 ];
 

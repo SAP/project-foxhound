@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -177,8 +175,7 @@ class HTMLMediaElement : public nsGenericHTMLElement,
 
   CORSMode GetCORSMode() { return mCORSMode; }
 
-  explicit HTMLMediaElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+  explicit HTMLMediaElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
   void Init();
 
   virtual HTMLVideoElement* AsHTMLVideoElement() { return nullptr; };
@@ -660,7 +657,10 @@ class HTMLMediaElement : public nsGenericHTMLElement,
 
   void SetVolume(double aVolume, ErrorResult& aRv);
 
-  bool Muted() const { return mMuted & MUTED_BY_CONTENT; }
+  bool Muted() const {
+    // https://html.spec.whatwg.org/multipage/media.html#concept-media-muted
+    return !!(mMuted & (MUTED_BY_CONTENT | MUTED_BY_INVALID_PLAYBACK_RATE));
+  }
   void SetMuted(bool aMuted);
 
   bool DefaultMuted() const { return GetBoolAttr(nsGkAtoms::muted); }
@@ -668,14 +668,6 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   void SetDefaultMuted(bool aMuted, ErrorResult& aRv) {
     SetHTMLBoolAttr(nsGkAtoms::muted, aMuted, aRv);
   }
-
-  bool MozAllowCasting() const { return mAllowCasting; }
-
-  void SetMozAllowCasting(bool aShow) { mAllowCasting = aShow; }
-
-  bool MozIsCasting() const { return mIsCasting; }
-
-  void SetMozIsCasting(bool aShow) { mIsCasting = aShow; }
 
   // Returns whether a call to Play() would be rejected with NotAllowedError.
   // This assumes "worst case" for unknowns. So if prompting for permission is
@@ -810,6 +802,18 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   }
 
   void NotifyCueDisplayStatesChanged();
+
+  void SetCuesDirty() {
+    if (mTextTrackManager) {
+      mTextTrackManager->SetCuesDirty();
+    }
+  }
+
+  void UpdateCueDisplay() {
+    if (mTextTrackManager) {
+      mTextTrackManager->UpdateCueDisplay();
+    }
+  }
 
   bool IsBlessed() const { return mIsBlessed; }
 
@@ -1371,7 +1375,6 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // content, or NS_ERROR_FAILURE if the document has no window.
   bool CanBeCaptured(StreamCaptureType aCaptureType, ErrorResult& aRv);
 
-  using nsGenericHTMLElement::DispatchEvent;
   // For nsAsyncEventRunner.
   // The event is blocked while the document is in B/F cache.
   MOZ_CAN_RUN_SCRIPT nsresult FireEvent(const nsAString& aName);
@@ -1611,6 +1614,14 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   };
 
   uint32_t mMuted = 0;
+
+  // The tristate "muted state". While Default, the muted content attribute is a
+  // fallback that determines whether the element is muted; once the muted
+  // setter latches the state to True or False, the content attribute no longer
+  // applies.
+  // https://html.spec.whatwg.org/multipage/media.html#concept-media-muted-state
+  enum class MutedState : uint8_t { Default, True, False };
+  MutedState mMutedState = MutedState::Default;
 
   UniquePtr<const MetadataTags> mTags;
 

@@ -79,6 +79,7 @@ export class TabNotesStorage {
   TELEMETRY_SOURCE = Object.freeze({
     TAB_CONTEXT_MENU: "context_menu",
     TAB_HOVER_PREVIEW_PANEL: "hover_menu",
+    TAB_NOTE_PREVIEW_PANEL: "note_preview",
   });
 
   /**

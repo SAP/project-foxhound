@@ -261,8 +261,7 @@ xpcAccessibilityService::CreateTextLeafPoint(
   NS_ENSURE_ARG(aAccessible);
   *aPoint = nullptr;
 
-  RefPtr<xpcAccessibleTextLeafPoint> point =
-      new xpcAccessibleTextLeafPoint(aAccessible, aOffset);
+  auto point = MakeRefPtr<xpcAccessibleTextLeafPoint>(aAccessible, aOffset);
   point.forget(aPoint);
 
   return NS_OK;

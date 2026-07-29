@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,16 +6,15 @@
 
 #include "PreloadedStyleSheet.h"
 
+#include "mozilla/StyleSheet.h"
 #include "mozilla/css/Loader.h"
 #include "mozilla/dom/Promise.h"
 #include "nsICSSLoaderObserver.h"
-#include "nsLayoutUtils.h"
 
 namespace mozilla {
 
-PreloadedStyleSheet::PreloadedStyleSheet(nsIURI* aURI,
-                                         css::SheetParsingMode aParsingMode)
-    : mLoaded(false), mURI(aURI), mParsingMode(aParsingMode) {}
+PreloadedStyleSheet::PreloadedStyleSheet(nsIURI* aURI, StyleOrigin aOrigin)
+    : mURI(aURI), mOrigin(aOrigin) {}
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(PreloadedStyleSheet)
   NS_INTERFACE_MAP_ENTRY(nsIPreloadedStyleSheet)
@@ -35,7 +32,7 @@ Result<StyleSheet*, nsresult> PreloadedStyleSheet::GetSheet() {
   if (!mSheet) {
     auto loader = MakeRefPtr<css::Loader>();
     mSheet = MOZ_TRY(loader->LoadSheetSync(
-        mURI, mParsingMode, css::Loader::UseSystemPrincipal::Yes));
+        mURI, mOrigin, css::Loader::UseSystemPrincipal::Yes));
   }
   return {mSheet.get()};
 }
@@ -72,7 +69,7 @@ nsresult PreloadedStyleSheet::PreloadAsync(NotNull<dom::Promise*> aPromise) {
 
   auto loader = MakeRefPtr<css::Loader>();
   auto obs = MakeRefPtr<StylesheetPreloadObserver>(aPromise, this);
-  auto result = loader->LoadSheet(mURI, mParsingMode,
+  auto result = loader->LoadSheet(mURI, mOrigin,
                                   css::Loader::UseSystemPrincipal::No, obs);
   if (result.isErr()) {
     return result.unwrapErr();

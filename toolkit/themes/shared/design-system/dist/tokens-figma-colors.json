@@ -1,4 +1,5 @@
 {
+  "color/gray/0": "#fbfbfe",
   "color/gray/20": "#f0f0f4",
   "color/gray/30": "#bac2ca",
   "color/gray/50": "#bfbfc9",
@@ -7,7 +8,6 @@
   "color/gray/80": "#23222b",
   "color/gray/90": "#1c1b22",
   "color/gray/100": "#15141a",
-  "color/gray/05": "#fbfbfe",
   "color/red/0": "oklch(97% 0.05 15)",
   "color/red/10": "oklch(90% 0.1 15)",
   "color/red/20": "oklch(83% 0.14 15)",

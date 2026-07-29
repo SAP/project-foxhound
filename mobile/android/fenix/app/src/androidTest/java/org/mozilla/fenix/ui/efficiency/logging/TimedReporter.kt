@@ -92,6 +92,7 @@ class TimedReporter(private val forwarder: StepLogger? = null) {
         var locs: Int = 0,
         var oks: Int = 0,
         var fails: Int = 0,
+        var skips: Int = 0,
         var stepMs: Double = 0.0,
         var cmdMs: Double = 0.0,
         var locMs: Double = 0.0,
@@ -116,6 +117,7 @@ class TimedReporter(private val forwarder: StepLogger? = null) {
         totals.locs = 0
         totals.oks = 0
         totals.fails = 0
+        totals.skips = 0
         totals.stepMs = 0.0
         totals.cmdMs = 0.0
         totals.locMs = 0.0
@@ -191,9 +193,27 @@ class TimedReporter(private val forwarder: StepLogger? = null) {
         }
     }
 
+    private fun endEventSkip(message: String) {
+        val ev = stack.removeLastOrNull() ?: return
+        val elapsedMs = (System.nanoTime() - ev.startNs) / 1_000_000.0
+        val msText = "%.1f".format(elapsedMs)
+        ConsoleLogger.skip(ev.type, ev.level, "$message ($msText ms)")
+        totals.skips += 1
+        when (ev.type) {
+            Type.STEP -> totals.stepMs += elapsedMs
+            Type.CMD -> totals.cmdMs += elapsedMs
+            Type.LOC -> totals.locMs += elapsedMs
+        }
+        forwarder?.let {
+            val descriptor = StepDescriptor(ev.id, ev.name, mapOf("type" to ev.type.name))
+            it.stepEnd(descriptor, StepResult.Ok)
+        }
+    }
+
     // Default messages are empty so callers intentionally decide what completion means.
     fun endStep(success: Boolean = true, message: String = "") = endEvent(success, message)
     fun endCmd(success: Boolean = true, message: String = "") = endEvent(success, message)
+    fun endCmdSkip(message: String = "") = endEventSkip(message)
     fun endLoc(success: Boolean = true, message: String = "") = endEvent(success, message)
 
     /**
@@ -219,7 +239,7 @@ class TimedReporter(private val forwarder: StepLogger? = null) {
         ConsoleLogger.info(1, "Steps: ${totals.steps} (total ${"%.1f".format(totals.stepMs)} ms, avg ${"%.1f".format(stepAvg)} ms)")
         ConsoleLogger.info(1, "Commands: ${totals.cmds} (total ${"%.1f".format(totals.cmdMs)} ms, avg ${"%.1f".format(cmdAvg)} ms)")
         ConsoleLogger.info(1, "Locators: ${totals.locs} (total ${"%.1f".format(totals.locMs)} ms, avg ${"%.1f".format(locAvg)} ms)")
-        ConsoleLogger.info(1, "Successes: ${totals.oks}   Failures: ${totals.fails}")
+        ConsoleLogger.info(1, "Successes: ${totals.oks}   Failures: ${totals.fails}   Skips: ${totals.skips}")
         ConsoleLogger.info(1, "Wall time: ${"%.1f".format(wallMs)} ms")
     }
 }

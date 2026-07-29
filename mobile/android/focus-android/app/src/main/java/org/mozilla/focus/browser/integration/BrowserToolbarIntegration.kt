@@ -66,6 +66,9 @@ import androidx.cardview.R as cardViewR
 import mozilla.components.browser.toolbar.R as toolbarR
 import mozilla.components.ui.icons.R as iconsR
 
+/**
+ * Integration for the browser toolbar, managing its behavior and display.
+ */
 @Suppress("LongParameterList", "LargeClass")
 class BrowserToolbarIntegration(
     private val store: BrowserStore,

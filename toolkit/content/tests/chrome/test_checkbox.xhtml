@@ -1,0 +1,49 @@
+<?xml version="1.0"?>
+<?xml-stylesheet href="chrome://global/skin" type="text/css"?>
+<?xml-stylesheet href="chrome://mochikit/content/tests/SimpleTest/test.css" type="text/css"?>
+<html xmlns="http://www.w3.org/1999/xhtml"
+      xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
+<head>
+  <title>Checkbox Test</title>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+</head>
+<body>
+
+<div id="scroller" style="height: 50px; overflow: auto;">
+  <xul:checkbox id="checkbox" label="Check me"/>
+  <div style="height: 1000px;"></div>
+</div>
+
+<script><![CDATA[
+
+SimpleTest.waitForExplicitFinish();
+
+add_task(async function test_checkbox() {
+  await SimpleTest.promiseFocus();
+
+  let scroller = document.getElementById("scroller");
+  let checkbox = document.getElementById("checkbox");
+
+  checkbox.focus();
+  is(document.activeElement, checkbox, "checkbox is focused");
+  is(scroller.scrollTop, 0, "scroller starts unscrolled");
+  ok(!checkbox.hasAttribute("checked"), "checkbox starts unchecked");
+
+  let keypressEvent = null;
+  window.addEventListener("keypress", function(e) {
+    keypressEvent = e;
+  }, { once: true });
+  synthesizeKey(" ");
+
+  ok(keypressEvent, "got keypress event for space");
+  ok(keypressEvent.defaultPrevented,
+     "space keypress on focused checkbox is preventDefaulted");
+  is(scroller.scrollTop, 0, "scroller did not scroll on space");
+  ok(checkbox.hasAttribute("checked"), "checkbox was toggled by space");
+});
+
+]]></script>
+
+</body>
+</html>

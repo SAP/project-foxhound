@@ -35,6 +35,7 @@ nimbus_targeting_environment:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1997164
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1995896
       - https://bugzilla.mozilla.org/show_bug.cgi?id=2011286
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017267
     data_reviews: &targeting_context_data_reviews
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1928107
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1937207
@@ -48,6 +49,7 @@ nimbus_targeting_environment:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1997164
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1995896
       - https://bugzilla.mozilla.org/show_bug.cgi?id=2011286
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017267
     notification_emails: &targeting_context_notification_emails
       - beth@mozilla.com
       - project-nimbus@mozilla.com
@@ -102,6 +104,9 @@ nimbus_targeting_environment:
       - "nimbus.qa.pref-2"
       - "security.sandbox.content.level"
       - "termsofuse.acceptedDate"
+      - "termsofuse.acceptedVersion"
+      - "termsofuse.bypassNotification"
+      - "termsofuse.firstAcceptedDate"
       - "trailhead.firstrun.didSeeAboutWelcome"
 
   attr_eval_errors:
@@ -224,6 +229,12 @@ nimbus_targeting_environment:
         security__sandbox__content__level:
           type: number
         termsofuse__acceptedDate:
+          type: string
+        termsofuse__acceptedVersion:
+          type: number
+        termsofuse__bypassNotification:
+          type: boolean
+        termsofuse__firstAcceptedDate:
           type: string
         trailhead__firstrun__didSeeAboutWelcome:
           type: boolean
@@ -777,7 +788,7 @@ nimbus_events:
       - technical
     notification_emails:
       - tlong@mozilla.com
-      - nimbus-team@mozilla.com
+      - project-nimbus@mozilla.com
     expires: never
     send_in_pings:
       - background-update
@@ -808,7 +819,7 @@ nimbus_events:
       - technical
     notification_emails:
       - tlong@mozilla.com
-      - nimbus-team@mozilla.com
+      - project-nimbus@mozilla.com
     expires: never
     send_in_pings:
       - background-update
@@ -882,7 +893,7 @@ nimbus_events:
       - technical
     notification_emails:
       - tlong@mozilla.com
-      - nimbus-team@mozilla.com
+      - project-nimbus@mozilla.com
     expires: never
     send_in_pings:
       - background-update
@@ -908,7 +919,7 @@ nimbus_events:
       - technical
     notification_emails:
       - tlong@mozilla.com
-      - nimbus-team@mozilla.com
+      - project-nimbus@mozilla.com
     expires: never
     send_in_pings:
       - background-update
@@ -939,7 +950,7 @@ nimbus_events:
       - technical
     notification_emails:
       - tlong@mozilla.com
-      - nimbus-team@mozilla.com
+      - project-nimbus@mozilla.com
     expires: never
     send_in_pings:
       - background-update
@@ -1040,7 +1051,7 @@ nimbus_events:
         description: If the enrollment resulted in an error, the associated error string
       conflict_slug:
         type: string
-        description: If the enrollment hit a feature conflict, the slug of the conflicting experiment/rollout
+        description: If the enrollment hit a feature conflict, the slug of the conflicting experiments/rollouts
       migration:
         type: string
         description: If the unenrollment was caused by a migration, the name of the migration.
@@ -1049,18 +1060,19 @@ nimbus_events:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1955169
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1997467
       - https://bugzilla.mozilla.org/show_bug.cgi?id=2006752
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2036433
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1817481
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1955169
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1997467
       - https://bugzilla.mozilla.org/show_bug.cgi?id=2006752
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2036433
     data_sensitivity:
       - technical
     notification_emails:
-      - chumphreys@mozilla.com
+      - beth@mozilla.com
       - project-nimbus@mozilla.com
     expires: never
-    disabled: true
     send_in_pings: *targeting_context_pings
 
   migration:
@@ -1070,8 +1082,7 @@ nimbus_events:
     extra_keys:
       migration_id:
         type: string
-        description: >
-          The name of the migration that ran.
+        description: The name of the migration that ran.
 
       success:
         type: boolean
@@ -1088,16 +1099,23 @@ nimbus_events:
           - one of the reasons documented in
             `nimbus_events.remote_settings_sync_error`.
 
-      enrollments:
-        type: string
+      duration:
+        description: How long the migration took (in milliseconds).
+        type: quantity
+
+      is_first_startup:
         description: >
-          An optional string that includes any enrollments triggered by this relation
+          Dis this migration occur during first startup (FirstStartup.sys.mjs)?
+        type: boolean
     bugs:
+
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1937169
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1985079
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2043752
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1937169
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1985079
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2043752
     data_sensitivity:
       - technical
     notification_emails:

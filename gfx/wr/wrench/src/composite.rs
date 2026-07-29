@@ -5,9 +5,9 @@
 use std::os::raw::c_void;
 use std::ptr;
 
-use glutin::platform::windows::EGLContext;
+use mozangle::egl::ffi::types::EGLContext;
 use webrender::{CompositorInputConfig, CompositorSurfaceTransform, LayerCompositor};
-use winit::platform::windows::WindowExtWindows;
+use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use crate::WindowWrapper;
 
@@ -87,8 +87,12 @@ impl WrCompositor {
 
         // Get the win32 and EGL information needed from the window
         let (hwnd, display, context) = match window {
-            WindowWrapper::Angle(window, angle, _, _) => {
-                (window.hwnd(), angle.get_display(), angle.get_context())
+            WindowWrapper::Angle { window, context: angle, .. } => {
+                let hwnd = match window.window_handle().unwrap().as_raw() {
+                    RawWindowHandle::Win32(h) => h.hwnd.get() as *const c_void,
+                    _ => unreachable!(),
+                };
+                (hwnd, angle.get_display(), angle.get_context())
             }
             _ => unreachable!(),
         };

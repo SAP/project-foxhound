@@ -8,6 +8,7 @@ import {
   LINKS,
   BANDWIDTH,
 } from "chrome://browser/content/ipprotection/ipprotection-constants.mjs";
+import { formatRemainingBandwidth } from "chrome://browser/content/ipprotection/ipprotection-utils.mjs";
 
 /**
  * Element used for displaying VPN bandwidth usage.
@@ -57,30 +58,19 @@ export default class BandwidthUsageCustomElement extends MozLitElement {
   }
 
   get remainingRounded() {
-    if (this.remainingGB < 1) {
-      // Bug 2006997 - Handle this scenario where less than 1 GB used.
-      return Math.floor(this.remainingMB);
-    }
-
-    if (this.bandwidthPercent === 75) {
-      return parseFloat(this.remainingGB.toFixed(1));
-    }
-
-    return Math.round(this.remainingGB);
+    return formatRemainingBandwidth(this.remaining).value;
   }
 
   get bandwidthLeftDataL10nId() {
-    if (this.remainingGB < 1) {
-      return "ip-protection-bandwidth-left-mb";
-    }
-    return "ip-protection-bandwidth-left-gb";
+    return formatRemainingBandwidth(this.remaining).useGB
+      ? "ip-protection-bandwidth-left-gb"
+      : "ip-protection-bandwidth-left-mb";
   }
 
   get bandwidthLeftThisMonthDataL10nId() {
-    if (this.remainingGB < 1) {
-      return "ip-protection-bandwidth-left-this-month-mb";
-    }
-    return "ip-protection-bandwidth-left-this-month-gb";
+    return formatRemainingBandwidth(this.remaining).useGB
+      ? "ip-protection-bandwidth-left-this-month-gb"
+      : "ip-protection-bandwidth-left-this-month-mb";
   }
 
   constructor() {
@@ -117,7 +107,7 @@ export default class BandwidthUsageCustomElement extends MozLitElement {
       <div class="container">
         <h3
           id="bandwidth-header"
-          data-l10n-id="ip-protection-bandwidth-header"
+          data-l10n-id="ip-protection-bandwidth-header-1"
         ></h3>
         <div>
           <span
@@ -137,8 +127,10 @@ export default class BandwidthUsageCustomElement extends MozLitElement {
           <progress
             id="progress-bar"
             max=${this.maxGB}
-            value=${this.maxGB - this.remainingGB}
+            value=${parseFloat(this.bandwidthUsedGB.toFixed(1))}
             percent=${this.bandwidthPercent}
+            aria-labelledby="bandwidth-header"
+            aria-describedby="progress-description"
           ></progress>
           <div id="min-progress"></div>
         </div>

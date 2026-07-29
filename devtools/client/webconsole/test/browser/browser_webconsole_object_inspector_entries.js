@@ -77,7 +77,14 @@ add_task(async function () {
 
         // Generate a human-friendly representation of the state of the object inspector
         for (const node of oi.querySelectorAll(".tree-node")) {
-          const label = node.textContent.replace(/\u200B/g, "");
+          let label = node.textContent.replace(/\u200B/g, "");
+
+          // Fix for the lastModified property of `new Document()` which gives the
+          // current time.
+          label = label.replace(
+            /lastModified: "[^"]*"/,
+            'lastModified: "<removed-for-test>"'
+          );
 
           let icon = "\u251C "; // "|-" character
           if (isObjectInspectorNodeExpandable(node)) {
@@ -105,6 +112,7 @@ add_task(async function () {
       // If this is a primitive data type, there won't be an object inspector,
       // but only a simple Rep that we can only stringify.
       const object = messageNode.querySelectorAll(".message-body > *")[1];
+
       return object.textContent;
     }
   );

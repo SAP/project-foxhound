@@ -55,6 +55,8 @@ skip-if = [
 
 ["browser_navigation_fetch_fault_handling.js"]
 
+["browser_pbm_cleanup.js"]
+
 ["browser_remote_type_process_swap.js"]
 
 ["browser_storage_permission.js"]

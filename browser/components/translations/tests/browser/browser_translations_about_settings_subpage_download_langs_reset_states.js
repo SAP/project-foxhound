@@ -7,37 +7,53 @@ add_task(async function test_other_actions_disable_during_active_download() {
   const { cleanup, remoteClients, translationsSettingsTestUtils } =
     await TranslationsSettingsTestUtils.openTranslationsSettingsSubpage();
 
-  await translationsSettingsTestUtils.downloadLanguage({
-    langTag: "fr",
-    remoteClients,
-    inProgressLanguages: ["fr"],
-    finalLanguages: ["fr"],
-  });
+  await translationsSettingsTestUtils.selectDownloadLanguage("fr");
 
-  const started = translationsSettingsTestUtils.waitForEvent(
-    TranslationsSettingsTestUtils.Events.DownloadStarted,
-    { expectedDetail: { langTag: "es" } }
+  const frenchCompleted = translationsSettingsTestUtils.waitForEvent(
+    TranslationsSettingsTestUtils.Events.DownloadCompleted,
+    { expectedDetail: { langTag: "fr" } }
   );
-  const renderInProgress = translationsSettingsTestUtils.waitForEvent(
+  const frenchRenderComplete = translationsSettingsTestUtils.waitForEvent(
     TranslationsSettingsTestUtils.Events.DownloadedLanguagesRendered,
     {
       expectedDetail: {
-        languages: ["fr", "es"],
-        count: 2,
-        downloading: ["es"],
+        languages: ["fr"],
+        count: 1,
+        downloading: [],
       },
     }
   );
-  const optionsUpdated = translationsSettingsTestUtils.waitForEvent(
-    TranslationsSettingsTestUtils.Events.DownloadedLanguagesSelectOptionsUpdated
+
+  await click(
+    translationsSettingsTestUtils.getDownloadLanguageButton(),
+    "Start fr download"
   );
+  await remoteClients.translationModels.resolvePendingDownloads(
+    TranslationsSettingsTestUtils.getLanguageModelNames("fr").length
+  );
+  await Promise.all([frenchCompleted, frenchRenderComplete]);
 
   await translationsSettingsTestUtils.selectDownloadLanguage("es");
+
+  const realDownloadLanguageFiles = TranslationsParent.downloadLanguageFiles;
+  const spanishDownload = Promise.withResolvers();
+  const spanishDownloadStarted = Promise.withResolvers();
+  TranslationsParent.downloadLanguageFiles = langTag => {
+    TranslationsParent.downloadLanguageFiles = realDownloadLanguageFiles;
+    is(langTag, "es", "Only the Spanish download should be intercepted");
+    spanishDownloadStarted.resolve();
+    return spanishDownload.promise;
+  };
+
   await click(
     translationsSettingsTestUtils.getDownloadLanguageButton(),
     "Start Spanish download while French exists"
   );
-  await Promise.all([started, renderInProgress, optionsUpdated]);
+  await spanishDownloadStarted.promise;
+  await translationsSettingsTestUtils.assertDownloadedLanguages({
+    languages: ["fr", "es"],
+    count: 2,
+  });
 
   ok(
     translationsSettingsTestUtils.getDownloadLanguageButton().disabled,
@@ -67,7 +83,6 @@ add_task(async function test_other_actions_disable_during_active_download() {
     TranslationsSettingsTestUtils.Events.DownloadedLanguagesRendered,
     {
       expectedDetail: {
-        languages: ["fr", "es"],
         count: 2,
         downloading: [],
       },
@@ -77,76 +92,13 @@ add_task(async function test_other_actions_disable_during_active_download() {
     TranslationsSettingsTestUtils.Events.DownloadedLanguagesSelectOptionsUpdated
   );
 
-  await remoteClients.translationModels.resolvePendingDownloads(
-    TranslationsSettingsTestUtils.getLanguageModelNames("es").length
-  );
+  spanishDownload.resolve();
   await Promise.all([completed, renderComplete, optionsAfter]);
-
-  await cleanup();
-});
-
-add_task(async function test_states_reset_after_reload() {
-  const { cleanup, remoteClients, translationsSettingsTestUtils } =
-    await TranslationsSettingsTestUtils.openTranslationsSettingsSubpage();
-
-  await translationsSettingsTestUtils.downloadLanguage({
-    langTag: "es",
-    remoteClients,
-    inProgressLanguages: ["es"],
-    finalLanguages: ["es"],
+  await translationsSettingsTestUtils.assertDownloadedLanguages({
+    languages: ["fr", "es"],
+    downloading: [],
+    count: 2,
   });
-
-  info("Trigger French download failure before reloading");
-  await translationsSettingsTestUtils.startDownloadFailure({
-    langTag: "fr",
-    remoteClients,
-    inProgressLanguages: ["fr", "es"],
-    failedLanguages: ["fr", "es"],
-  });
-
-  ok(
-    translationsSettingsTestUtils.getDownloadErrorButton("fr"),
-    "French error should be visible before opening delete confirmation"
-  );
-
-  await translationsSettingsTestUtils.openDownloadDeleteConfirmation("es");
-  ok(
-    translationsSettingsTestUtils.getDownloadDeleteConfirmButton("es"),
-    "Spanish delete confirmation should be open before reload"
-  );
-  ok(
-    !translationsSettingsTestUtils.getDownloadErrorButton("fr"),
-    "French error should close when another delete confirmation opens"
-  );
-
-  info("Reload about:preferences");
-  await loadNewPage(gBrowser.selectedBrowser, "about:preferences");
-
-  const reloadedTestUtils = new TranslationsSettingsTestUtils(
-    gBrowser.selectedBrowser.contentDocument
-  );
-
-  await reloadedTestUtils.openTranslationsSubpageFromDocument();
-  await reloadedTestUtils.assertDownloadedLanguagesEmptyState({
-    visible: true,
-  });
-  is(
-    reloadedTestUtils.getSelectedDownloadLanguage(),
-    "",
-    "Download selection should reset after reload"
-  );
-  ok(
-    !reloadedTestUtils.getDownloadDeleteConfirmButton("es"),
-    "Delete confirmation should reset after reload"
-  );
-  ok(
-    !reloadedTestUtils.getDownloadErrorButton("fr"),
-    "Failed download state should reset after reload"
-  );
-  ok(
-    !reloadedTestUtils.getDownloadRetryButton("fr"),
-    "Retry button should not persist after reload"
-  );
 
   await cleanup();
 });

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -46,6 +44,10 @@ class EncryptedBlock {
     SetActualPayloadLength(MaxPayloadLength());
   }
 
+  static constexpr size_t RoundedUpToBasicBlockSize(const size_t aValue) {
+    return (aValue + BasicBlockSize - 1) / BasicBlockSize * BasicBlockSize;
+  }
+
   size_t MaxPayloadLength() const {
     return mData.Length() - CipherPrefixLength - CipherPrefixOffset();
   }
@@ -85,10 +87,6 @@ class EncryptedBlock {
  private:
   static constexpr size_t CipherPrefixOffset() {
     return RoundedUpToBasicBlockSize(sizeof(uint16_t));
-  }
-
-  static constexpr size_t RoundedUpToBasicBlockSize(const size_t aValue) {
-    return (aValue + BasicBlockSize - 1) / BasicBlockSize * BasicBlockSize;
   }
 
   nsTArray<uint8_t> mData;

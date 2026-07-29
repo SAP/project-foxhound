@@ -32,7 +32,7 @@ const L10N = new LocalizationHelper(
 const initialSidebarState = { ...SidebarController.getUIState(), command: "" };
 registerCleanupFunction(async function () {
   info("Restoring to initial sidebar state");
-  await SidebarController.initializeUIState(initialSidebarState);
+  await SidebarController.updateUIState(initialSidebarState);
 });
 
 // Check that addon browsers can be reloaded via the toolbox reload shortcuts

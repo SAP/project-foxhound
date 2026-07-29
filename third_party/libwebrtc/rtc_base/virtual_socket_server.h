@@ -27,16 +27,15 @@
 #include "api/scoped_refptr.h"
 #include "api/transport/ecn_marking.h"
 #include "api/units/time_delta.h"
+#include "rtc_base/callback_list.h"
 #include "rtc_base/event.h"
 #include "rtc_base/fake_clock.h"
 #include "rtc_base/ip_address.h"
-#include "rtc_base/sigslot_trampoline.h"
 #include "rtc_base/socket.h"
 #include "rtc_base/socket_address.h"
 #include "rtc_base/socket_address_pair.h"
 #include "rtc_base/socket_server.h"
 #include "rtc_base/synchronization/mutex.h"
-#include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
@@ -46,7 +45,7 @@ class VirtualSocketServer;
 
 // Implements the socket interface using the virtual network. Packets are
 // passed in tasks using the thread of the socket server.
-class VirtualSocket : public Socket, public sigslot::has_slots<> {
+class VirtualSocket : public Socket {
  public:
   VirtualSocket(VirtualSocketServer* server, int family, int type);
   ~VirtualSocket() override;
@@ -387,13 +386,14 @@ class VirtualSocketServer : public SocketServer {
   uint32_t SendDelay(uint32_t size) RTC_LOCKS_EXCLUDED(mutex_);
 
   // Sending was previously blocked, but now isn't.
-  // Deprecated interface
-  sigslot::signal0<> SignalReadyToSend;
-  // New interface
-  void NotifyReadyToSend() { SignalReadyToSend(); }
-  void SubscribeReadyToSend(absl::AnyInvocable<void()> callback) {
-    ready_to_send_trampoline_.Subscribe(std::move(callback));
+  [[deprecated]] void SubscribeReadyToSend(
+      absl::AnyInvocable<void()> callback) {
+    ready_to_send_callbacks_.AddReceiver(std::move(callback));
   }
+  void SubscribeReadyToSend(void* tag, absl::AnyInvocable<void()> callback) {
+    ready_to_send_callbacks_.AddReceiver(tag, std::move(callback));
+  }
+  void NotifyReadyToSend() { ready_to_send_callbacks_.Send(); }
 
  protected:
   // Returns a new IP not used before in this network.
@@ -499,8 +499,7 @@ class VirtualSocketServer : public SocketServer {
   size_t max_udp_payload_ RTC_GUARDED_BY(mutex_) = 65507;
 
   bool sending_blocked_ RTC_GUARDED_BY(mutex_) = false;
-  SignalTrampoline<VirtualSocketServer, &VirtualSocketServer::SignalReadyToSend>
-      ready_to_send_trampoline_;
+  CallbackList<> ready_to_send_callbacks_;
 };
 
 }  // namespace webrtc

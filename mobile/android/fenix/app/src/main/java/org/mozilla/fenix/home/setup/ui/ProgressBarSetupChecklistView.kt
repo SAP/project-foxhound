@@ -11,7 +11,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -28,12 +29,6 @@ import mozilla.components.ui.colors.PhotonColors
 import org.mozilla.fenix.theme.FirefoxTheme
 
 private val heightProgressBarChecklist = 12.dp
-private val shapeProgressBarChecklist = RoundedCornerShape(
-    topStartPercent = 50,
-    topEndPercent = 50,
-    bottomEndPercent = 50,
-    bottomStartPercent = 50,
-)
 
 /**
  * The progress bar for checklist tasks.
@@ -61,7 +56,7 @@ private fun ProgressBarBackground() {
         modifier = Modifier
             .fillMaxWidth()
             .height(heightProgressBarChecklist)
-            .clip(shapeProgressBarChecklist)
+            .clip(CircleShape)
             .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)),
     ) {}
 }
@@ -83,12 +78,12 @@ private fun ProgressBarCompleted(numberOfTasks: Int, numberOfTasksCompleted: Int
         ),
     )
 
-    var shape = shapeProgressBarChecklist
+    var shape = MaterialTheme.shapes.extraLarge
 
     if (numberOfTasksCompleted < numberOfTasks) {
-        shape = RoundedCornerShape(
-            topStartPercent = 50,
-            bottomStartPercent = 50,
+        shape = MaterialTheme.shapes.extraLarge.copy(
+            topEnd = CornerSize(0.dp),
+            bottomEnd = CornerSize(0.dp),
         )
     }
 

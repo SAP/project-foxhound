@@ -2,6 +2,7 @@
 tags = "condprof"
 support-files = [
   "chrome_cleanup_script.js",
+  "file_204_no_content.sjs",
   "file_WebNavigation_page1.html",
   "file_WebNavigation_page2.html",
   "file_WebNavigation_page3.html",
@@ -405,6 +406,8 @@ skip-if = [
   "http3",
 ]
 
+["test_ext_scripting_documentId.html"]
+
 ["test_ext_scripting_executeScript.html"]
 skip-if = [
   "http2",
@@ -489,11 +492,15 @@ scheme = "https"
 
 ["test_ext_subframes_privileges.html"]
 
+["test_ext_tabs_capture_blur.html"]
+
 ["test_ext_tabs_captureTab.html"]
 skip-if = [
   "http2",
   "http3",
 ]
+
+["test_ext_tabs_connect.html"]
 
 ["test_ext_tabs_create_cookieStoreId.html"]
 
@@ -523,6 +530,8 @@ skip-if = [
 
 ["test_ext_tabs_splitViewId.html"]
 
+["test_ext_tabs_tabTracker_awaitTabReady.html"]
+
 ["test_ext_test.html"]
 skip-if = [
   "http2",
@@ -530,6 +539,16 @@ skip-if = [
 ]
 
 ["test_ext_unlimitedStorage.html"]
+
+["test_ext_userScripts_execute.html"]
+
+["test_ext_userScripts_execute_activeTab.html"]
+
+["test_ext_userScripts_execute_injectImmediately.html"]
+
+["test_ext_userScripts_execute_null_principal.html"]
+
+["test_ext_userScripts_execute_world.html"]
 
 ["test_ext_web_accessible_incognito.html"]
 skip-if = [
@@ -541,11 +560,20 @@ skip-if = [
   "os == 'android' && debug", # bug 1397615
 ]
 
+["test_ext_webauthn.html"]
+
 ["test_ext_webnavigation.html"]
 skip-if = [
   "http2",
   "http3",
   "os == 'android' && debug", # bug 1397615
+]
+
+["test_ext_webnavigation_documentId.html"]
+
+["test_ext_webnavigation_documentId_incognito.html"]
+skip-if = [
+  "os == 'android'" # Cannot open tabs in private browsing on Android (bug 1372178)
 ]
 
 ["test_ext_webnavigation_filters.html"]
@@ -561,6 +589,8 @@ skip-if = [
   "http3",
   "os == 'android'", # Bug 1513544 (GeckoView is missing the windows API and ability to open private tabs)
 ]
+
+["test_ext_webnavigation_onCommitted.html"]
 
 ["test_ext_webrequest_and_proxy_filter.html"]
 skip-if = [

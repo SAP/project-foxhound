@@ -104,7 +104,7 @@ class ToolboxTabsOrderManager {
       this.dragTarget.closest("#toolbox-container");
     this.toolboxTabsElement = this.dragTarget.closest(".toolbox-tabs");
     this.isOrderUpdated = false;
-    this.eventTarget = this.dragTarget.ownerGlobal.top;
+    this.eventTarget = this.dragTarget.documentGlobal.top;
 
     this.eventTarget.addEventListener("mousemove", this.onMouseMove);
     this.eventTarget.addEventListener("mouseup", this.onMouseUp);

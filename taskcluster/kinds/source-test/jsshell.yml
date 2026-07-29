@@ -3,15 +3,16 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
 task-defaults:
-    platform: linux64-shippable/opt
+    platform:
+        - linux2404-64-shippable/opt
     require-build:
-        linux64.*: build-linux64-shippable/opt
+        linux2404-64-shippable/opt: build-linux64-shippable/opt
     worker-type:
         by-platform:
-            linux64.*: t-linux-talos-1804
+            linux2404-64-shippable/opt: t-linux-talos-2404
     worker:
         by-platform:
-            linux64.*:
+            linux2404-64-shippable/opt:
                 env:
                     by-shell:
                         sm:

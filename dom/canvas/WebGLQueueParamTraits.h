@@ -1,5 +1,3 @@
-
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -59,32 +57,27 @@ struct QueueParamTraits<avec3<T>> : QueueParamTraits_TiedFields<avec3<T>> {};
 // ---------------------------------------------------------------------
 // Enums!
 
-}  // namespace webgl
+template <>
+struct QueueParamTraits<AttribBaseType>
+    : public ContiguousEnumSerializerInclusive<
+          AttribBaseType, AttribBaseType(0), kHighestAttribBaseType> {};
 
-inline constexpr bool IsEnumCase(const webgl::AttribBaseType raw) {
-  switch (raw) {
-    case webgl::AttribBaseType::Boolean:
-    case webgl::AttribBaseType::Float:
-    case webgl::AttribBaseType::Int:
-    case webgl::AttribBaseType::Uint:
-      return true;
+struct ProvokingVertexValidator {
+  using IntegralType = std::underlying_type_t<ProvokingVertex>;
+
+  static bool IsLegalValue(const IntegralType e) {
+    switch (static_cast<ProvokingVertex>(e)) {
+      case ProvokingVertex::FirstVertex:
+      case ProvokingVertex::LastVertex:
+        return true;
+    }
+    return false;
   }
-  return false;
-}
-static_assert(IsEnumCase(webgl::AttribBaseType(3)));
-static_assert(!IsEnumCase(webgl::AttribBaseType(4)));
-static_assert(!IsEnumCase(webgl::AttribBaseType(5)));
+};
 
-namespace webgl {
-
-#define USE_IS_ENUM_CASE(T) \
-  template <>               \
-  struct QueueParamTraits<T> : QueueParamTraits_IsEnumCase<T> {};
-
-USE_IS_ENUM_CASE(webgl::AttribBaseType)
-USE_IS_ENUM_CASE(webgl::ProvokingVertex)
-
-#undef USE_IS_ENUM_CASE
+template <>
+struct QueueParamTraits<ProvokingVertex>
+    : public EnumSerializer<ProvokingVertex, ProvokingVertexValidator> {};
 
 // ---------------------------------------------------------------------
 // Custom QueueParamTraits

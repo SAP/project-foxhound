@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,7 +18,11 @@
 #  include "nsILocalFileWin.h"
 #  include "nsLocalFile.h"
 #  include "nsWindowsHelpers.h"
+#else
+#  include <limits.h>
 #endif
+
+#include <algorithm>
 
 #include "gtest/gtest.h"
 #include "mozilla/gtest/MozAssertions.h"
@@ -720,4 +723,240 @@ TEST(TestFile, PrefixedOnWin_ComponentEndsWithPeriod)
   SetupAndTestFunctions(u"mozfiletests."_ns,
                         /* aTestCreateUnique */ true,
                         /* aTestNormalize */ false);
+}
+
+TEST(TestFile, GetRelativePath)
+{
+  nsCOMPtr<nsIFile> base;
+  ASSERT_NS_SUCCEEDED(
+      NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(base)));
+
+  nsCOMPtr<nsIFile> child;
+  ASSERT_NS_SUCCEEDED(base->Clone(getter_AddRefs(child)));
+  ASSERT_NS_SUCCEEDED(child->AppendNative("places.sqlite"_ns));
+
+  nsAutoCString result;
+
+  // Path without \\?\ prefix: child relative to base is just the filename.
+  ASSERT_NS_SUCCEEDED(child->GetRelativePath(base, result));
+  EXPECT_STREQ(result.get(), "places.sqlite");
+
+#ifdef XP_WIN
+  // GetRelativePath strips the \\?\ prefix before comparing, so paths with
+  // and without the prefix must yield the same result.
+  nsCOMPtr<nsIFile> prefixedBase;
+  ASSERT_NS_SUCCEEDED(base->Clone(getter_AddRefs(prefixedBase)));
+  nsCOMPtr<nsILocalFileWin> winPrefixedBase = do_QueryInterface(prefixedBase);
+  ASSERT_TRUE(winPrefixedBase);
+  winPrefixedBase->SetUseDOSDevicePathSyntax(true);
+
+  nsCOMPtr<nsIFile> prefixedChild;
+  ASSERT_NS_SUCCEEDED(child->Clone(getter_AddRefs(prefixedChild)));
+  nsCOMPtr<nsILocalFileWin> winPrefixedChild = do_QueryInterface(prefixedChild);
+  ASSERT_TRUE(winPrefixedChild);
+  winPrefixedChild->SetUseDOSDevicePathSyntax(true);
+
+  // Both paths with \\?\ prefix.
+  ASSERT_NS_SUCCEEDED(prefixedChild->GetRelativePath(prefixedBase, result));
+  EXPECT_STREQ(result.get(), "places.sqlite");
+
+  // Prefixed child, unprefixed base.
+  ASSERT_NS_SUCCEEDED(prefixedChild->GetRelativePath(base, result));
+  EXPECT_STREQ(result.get(), "places.sqlite");
+
+  // Unprefixed child, prefixed base.
+  ASSERT_NS_SUCCEEDED(child->GetRelativePath(prefixedBase, result));
+  EXPECT_STREQ(result.get(), "places.sqlite");
+#endif
+}
+
+// These match the limits in nsLocalFileCommon.cpp's CreateUnique.
+static constexpr size_t kMaxUniqueFilenameLength = 250;
+#ifdef XP_WIN
+static constexpr int32_t kMaxUniquePathLength = MAX_PATH - 6;
+#else
+static constexpr int32_t kMaxUniquePathLength = PATH_MAX - 6;
+#endif
+
+TEST(TestFile, CreateUnique_TruncatesLongFilename)
+{
+  nsCOMPtr<nsIFile> base;
+  nsresult rv = NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(base));
+  ASSERT_NS_SUCCEEDED(rv);
+
+  rv = base->AppendNative("cu_trunc_leaf_test"_ns);
+  ASSERT_NS_SUCCEEDED(rv);
+  base->Remove(true);
+  rv = base->Create(nsIFile::DIRECTORY_TYPE, 0700);
+  ASSERT_NS_SUCCEEDED(rv);
+
+  // 260-char root + ".txt" = 264-char leaf, exceeds kMaxUniqueFilenameLength.
+  // CreateUnique should truncate the root so the leaf fits.
+  {
+    nsCOMPtr<nsIFile> file = NewFile(base);
+    ASSERT_TRUE(file);
+
+    nsAutoCString name;
+    for (int i = 0; i < 260; ++i) {
+      name.Append('a');
+    }
+    name.AppendLiteral(".txt");
+
+    rv = file->AppendNative(name);
+    ASSERT_NS_SUCCEEDED(rv);
+
+    rv = file->CreateUnique(nsIFile::NORMAL_FILE_TYPE, 0600);
+    ASSERT_NS_SUCCEEDED(rv);
+
+    bool exists;
+    rv = file->Exists(&exists);
+    ASSERT_NS_SUCCEEDED(rv);
+    EXPECT_TRUE(exists);
+
+    nsAutoCString leafName;
+    rv = file->GetNativeLeafName(leafName);
+    ASSERT_NS_SUCCEEDED(rv);
+    EXPECT_LE(leafName.Length(), kMaxUniqueFilenameLength);
+    EXPECT_TRUE(StringEndsWith(leafName, ".txt"_ns));
+  }
+
+  // 260-char leaf with no extension.
+  {
+    nsCOMPtr<nsIFile> file = NewFile(base);
+    ASSERT_TRUE(file);
+
+    nsAutoCString name;
+    for (int i = 0; i < 260; ++i) {
+      name.Append('b');
+    }
+
+    rv = file->AppendNative(name);
+    ASSERT_NS_SUCCEEDED(rv);
+
+    rv = file->CreateUnique(nsIFile::NORMAL_FILE_TYPE, 0600);
+    ASSERT_NS_SUCCEEDED(rv);
+
+    bool exists;
+    rv = file->Exists(&exists);
+    ASSERT_NS_SUCCEEDED(rv);
+    EXPECT_TRUE(exists);
+
+    nsAutoCString leafName;
+    rv = file->GetNativeLeafName(leafName);
+    ASSERT_NS_SUCCEEDED(rv);
+    EXPECT_LE(leafName.Length(), kMaxUniqueFilenameLength);
+  }
+
+  base->Remove(true);
+}
+
+TEST(TestFile, CreateUnique_TruncatesLongPath)
+{
+  nsCOMPtr<nsIFile> base;
+  nsresult rv = NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(base));
+  ASSERT_NS_SUCCEEDED(rv);
+
+  rv = base->AppendNative("cu_trunc_path_test"_ns);
+  ASSERT_NS_SUCCEEDED(rv);
+  base->Remove(true);
+  rv = base->Create(nsIFile::DIRECTORY_TYPE, 0700);
+  ASSERT_NS_SUCCEEDED(rv);
+  rv = base->Normalize();
+  ASSERT_NS_SUCCEEDED(rv);
+
+  // Build nested directories until the path is long enough that appending a
+  // moderate leaf name (well under kMaxUniqueFilenameLength) pushes the total
+  // past kMaxUniquePathLength.
+  const int32_t kLeafLen = 104;  // 100-char root + ".dat"
+  const int32_t kOvershoot = 50;
+
+  nsCOMPtr<nsIFile> deepDir = NewFile(base);
+  ASSERT_TRUE(deepDir);
+
+#ifdef XP_WIN
+  nsAutoString dirPath;
+  rv = deepDir->GetPath(dirPath);
+#else
+  nsAutoCString dirPath;
+  rv = deepDir->GetNativePath(dirPath);
+#endif
+  ASSERT_NS_SUCCEEDED(rv);
+
+  int32_t targetDirLen = kMaxUniquePathLength - kLeafLen - 1 + kOvershoot;
+
+  while (static_cast<int32_t>(dirPath.Length()) < targetDirLen) {
+    int32_t remaining = targetDirLen - dirPath.Length() - 1;
+    int32_t nameLen = std::min(remaining, 200);
+    if (nameLen < 1) break;
+
+    nsAutoCString dirName;
+    for (int32_t i = 0; i < nameLen; ++i) {
+      dirName.Append('d');
+    }
+
+    rv = deepDir->AppendNative(dirName);
+    ASSERT_NS_SUCCEEDED(rv);
+    rv = deepDir->Create(nsIFile::DIRECTORY_TYPE, 0700);
+    ASSERT_NS_SUCCEEDED(rv);
+
+#ifdef XP_WIN
+    rv = deepDir->GetPath(dirPath);
+#else
+    rv = deepDir->GetNativePath(dirPath);
+#endif
+    ASSERT_NS_SUCCEEDED(rv);
+  }
+
+  // The leaf name is short enough for kMaxUniqueFilenameLength, but the total
+  // path would exceed kMaxUniquePathLength.
+  {
+    nsCOMPtr<nsIFile> file = NewFile(deepDir);
+    ASSERT_TRUE(file);
+
+    nsAutoCString name;
+    for (int i = 0; i < 100; ++i) {
+      name.Append('f');
+    }
+    name.AppendLiteral(".dat");
+
+    rv = file->AppendNative(name);
+    ASSERT_NS_SUCCEEDED(rv);
+
+#ifdef XP_WIN
+    nsAutoString pathBefore;
+    rv = file->GetPath(pathBefore);
+#else
+    nsAutoCString pathBefore;
+    rv = file->GetNativePath(pathBefore);
+#endif
+    ASSERT_NS_SUCCEEDED(rv);
+    ASSERT_GT(static_cast<int32_t>(pathBefore.Length()), kMaxUniquePathLength)
+        << "Test setup: path should exceed the limit before CreateUnique";
+
+    rv = file->CreateUnique(nsIFile::NORMAL_FILE_TYPE, 0600);
+    ASSERT_NS_SUCCEEDED(rv);
+
+    bool exists;
+    rv = file->Exists(&exists);
+    ASSERT_NS_SUCCEEDED(rv);
+    EXPECT_TRUE(exists);
+
+#ifdef XP_WIN
+    nsAutoString pathAfter;
+    rv = file->GetPath(pathAfter);
+#else
+    nsAutoCString pathAfter;
+    rv = file->GetNativePath(pathAfter);
+#endif
+    ASSERT_NS_SUCCEEDED(rv);
+    EXPECT_LE(static_cast<int32_t>(pathAfter.Length()), kMaxUniquePathLength);
+
+    nsAutoCString leafName;
+    rv = file->GetNativeLeafName(leafName);
+    ASSERT_NS_SUCCEEDED(rv);
+    EXPECT_TRUE(StringEndsWith(leafName, ".dat"_ns));
+    EXPECT_LT(leafName.Length(), static_cast<size_t>(kLeafLen));
+  }
+
+  base->Remove(true);
 }

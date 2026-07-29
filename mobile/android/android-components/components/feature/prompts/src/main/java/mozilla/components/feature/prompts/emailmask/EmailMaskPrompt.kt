@@ -4,6 +4,10 @@
 
 package mozilla.components.feature.prompts.emailmask
 
+import android.view.ViewTreeObserver
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,6 +22,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,10 +32,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import mozilla.components.compose.base.theme.AcornTheme
 import mozilla.components.compose.base.theme.layout.AcornWindowSize.Companion.isLargeWindow
 import mozilla.components.compose.cfr.CFRPopup
@@ -61,41 +69,53 @@ fun EmailMaskPromptBar(
     onMaskEmailClicked: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var isDismissed by remember { mutableStateOf(false) }
-    val canShowCfr = !isLandscapeNotTablet()
+    val isImeVisible = rememberImeIsVisible()
 
-    Surface(color = Color.Transparent) {
-        Column {
-            if (shouldShowCfr && canShowCfr && !isDismissed) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+    AnimatedVisibility(
+        visible = isImeVisible,
+        enter = slideInVertically(initialOffsetY = { it }),
+        exit = slideOutVertically(targetOffsetY = { it }),
+    ) {
+        var isDismissed by remember { mutableStateOf(false) }
+        val canShowCfr = !isLandscapeNotTablet()
+
+        Surface(color = Color.Transparent) {
+            Column {
+                AnimatedVisibility(
+                    visible = shouldShowCfr && canShowCfr && !isDismissed,
+                    enter = slideInVertically(initialOffsetY = { it }),
+                    exit = slideOutVertically(targetOffsetY = { it }),
                 ) {
-                    Cfr(
-                        onDismiss = {
-                            isDismissed = true
-                            onCfrDismiss()
-                        },
-                        cfrText = cfrText,
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Cfr(
+                            onDismiss = {
+                                isDismissed = true
+                                onCfrDismiss()
+                            },
+                            cfrText = cfrText,
+                        )
+                    }
                 }
-            }
 
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-            ) {
-                Row(
-                    modifier = modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
+                Surface(
+                    color = MaterialTheme.colorScheme.surface,
                 ) {
-                    MaskEmailChip(
-                        onClick = {
-                            isDismissed = true
-                            onCfrDismiss()
-                            onMaskEmailClicked()
-                        },
-                    )
+                    Row(
+                        modifier = modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                    ) {
+                        MaskEmailChip(
+                            onClick = {
+                                isDismissed = true
+                                onCfrDismiss()
+                                onMaskEmailClicked()
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -153,7 +173,7 @@ private fun MaskEmailChip(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                painter = painterResource(id = iconsR.drawable.mozac_ic_mask_email_24),
+                painter = painterResource(id = iconsR.drawable.mozac_ic_email_mask_24),
                 contentDescription = null, // talkback should focus on the whole element
                 modifier = Modifier.size(16.dp),
             )
@@ -182,4 +202,26 @@ private fun EmailMaskPromptBarPreview() {
             onMaskEmailClicked = {},
         )
     }
+}
+
+@Composable
+private fun rememberImeIsVisible(): Boolean {
+    val view = LocalView.current
+    var isImeVisible by remember {
+        val insets = ViewCompat.getRootWindowInsets(view)
+        mutableStateOf(insets?.isVisible(WindowInsetsCompat.Type.ime()) ?: false)
+    }
+
+    DisposableEffect(isImeVisible) {
+        val listener = ViewTreeObserver.OnGlobalLayoutListener {
+            val insets = ViewCompat.getRootWindowInsets(view)
+            isImeVisible = insets?.isVisible(WindowInsetsCompat.Type.ime()) ?: false
+        }
+        view.viewTreeObserver.addOnGlobalLayoutListener(listener)
+        onDispose {
+            view.viewTreeObserver.removeOnGlobalLayoutListener(listener)
+        }
+    }
+
+    return isImeVisible
 }

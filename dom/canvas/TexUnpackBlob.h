@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -64,8 +63,8 @@ class TexUnpackBlob {
   virtual ~TexUnpackBlob() = default;
 
  protected:
-  bool ConvertIfNeeded(const WebGLContext*, const uint32_t rowLength,
-                       const uint32_t rowCount, WebGLTexelFormat srcFormat,
+  bool ConvertIfNeeded(const WebGLContext*, const size_t rowLength,
+                       const size_t rowCount, WebGLTexelFormat srcFormat,
                        const uint8_t* const srcBegin, const ptrdiff_t srcStride,
                        WebGLTexelFormat dstFormat, const ptrdiff_t dstStride,
 

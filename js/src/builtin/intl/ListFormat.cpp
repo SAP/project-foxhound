@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -8,6 +6,7 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/intl/ListFormat.h"
+#include "mozilla/UsingEnum.h"
 
 #include <stddef.h>
 
@@ -17,7 +16,6 @@
 #include "builtin/intl/LocaleNegotiation.h"
 #include "builtin/intl/Packed.h"
 #include "builtin/intl/ParameterNegotiation.h"
-#include "builtin/intl/UsingEnum.h"
 #include "gc/GCContext.h"
 #include "js/ForOfIterator.h"
 #include "js/Utility.h"
@@ -34,16 +32,7 @@ using namespace js;
 using namespace js::intl;
 
 const JSClassOps ListFormatObject::classOps_ = {
-    nullptr,                     // addProperty
-    nullptr,                     // delProperty
-    nullptr,                     // enumerate
-    nullptr,                     // newEnumerate
-    nullptr,                     // resolve
-    nullptr,                     // mayResolve
-    ListFormatObject::finalize,  // finalize
-    nullptr,                     // call
-    nullptr,                     // construct
-    nullptr,                     // trace
+    .finalize = ListFormatObject::finalize,
 };
 const JSClass ListFormatObject::class_ = {
     "Intl.ListFormat",
@@ -152,11 +141,7 @@ void js::intl::ListFormatObject::setOptions(const ListFormatOptions& options) {
 
 static constexpr std::string_view ListFormatTypeToString(
     ListFormatOptions::Type type) {
-#ifndef USING_ENUM
-  using enum ListFormatOptions::Type;
-#else
-  USING_ENUM(ListFormatOptions::Type, Conjunction, Disjunction, Unit);
-#endif
+  MOZ_USING_ENUM(ListFormatOptions::Type, Conjunction, Disjunction, Unit);
   switch (type) {
     case Conjunction:
       return "conjunction";
@@ -170,11 +155,7 @@ static constexpr std::string_view ListFormatTypeToString(
 
 static constexpr std::string_view ListFormatStyleToString(
     ListFormatOptions::Style style) {
-#ifndef USING_ENUM
-  using enum ListFormatOptions::Style;
-#else
-  USING_ENUM(ListFormatOptions::Style, Long, Short, Narrow);
-#endif
+  MOZ_USING_ENUM(ListFormatOptions::Style, Long, Short, Narrow);
   switch (style) {
     case Long:
       return "long";
@@ -213,17 +194,11 @@ static bool ListFormat(JSContext* cx, unsigned argc, Value* vp) {
   // Step 3. (Inlined ResolveOptions)
 
   // ResolveOptions, step 1.
-  Rooted<LocalesList> requestedLocales(cx, cx);
-  if (!CanonicalizeLocaleList(cx, args.get(0), &requestedLocales)) {
+  auto* requestedLocales = CanonicalizeLocaleList(cx, args.get(0));
+  if (!requestedLocales) {
     return false;
   }
-
-  Rooted<ArrayObject*> requestedLocalesArray(
-      cx, LocalesListToArray(cx, requestedLocales));
-  if (!requestedLocalesArray) {
-    return false;
-  }
-  listFormat->setRequestedLocales(requestedLocalesArray);
+  listFormat->setRequestedLocales(requestedLocales);
 
   ListFormatOptions lfOptions{};
 

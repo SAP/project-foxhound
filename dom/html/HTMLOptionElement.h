@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,7 +15,7 @@ class HTMLSelectElement;
 class HTMLOptionElement final : public nsGenericHTMLElement {
  public:
   explicit HTMLOptionElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
   static already_AddRefed<HTMLOptionElement> Option(
       const GlobalObject& aGlobal, const nsAString& aText,
@@ -116,6 +114,22 @@ class HTMLOptionElement final : public nsGenericHTMLElement {
    */
   HTMLSelectElement* GetSelect() const;
 
+  // https://html.spec.whatwg.org/#concept-select-option-list
+  // Elements whose children are excluded from the select's option list.
+  // Callers handle optgroup separately (context-dependent behavior).
+  static bool IsOptionListBoundary(const nsINode& aNode) {
+    return aNode.IsAnyOfHTMLElements(nsGkAtoms::select, nsGkAtoms::hr,
+                                     nsGkAtoms::option, nsGkAtoms::datalist);
+  }
+
+  // https://html.spec.whatwg.org/#concept-option-nearest-ancestor-select
+  HTMLSelectElement* ComputeNearestAncestorSelect() const;
+
+  // https://html.spec.whatwg.org/#update-an-options-nearest-ancestor-select
+  // NOTE: PR https://github.com/whatwg/html/pull/12263 modifies this algorithm
+  // to also update descendant selectedcontent elements.
+  void UpdateNearestAncestorSelect();
+
  protected:
   virtual ~HTMLOptionElement();
 
@@ -123,9 +137,10 @@ class HTMLOptionElement final : public nsGenericHTMLElement {
 
   bool mSelectedChanged = false;
 
-  // True only while we're under the SetOptionsSelectedByIndex call when our
-  // "selected" attribute is changing and mSelectedChanged is false.
-  bool mIsInSetDefaultSelected = false;
+  // https://html.spec.whatwg.org/#concept-option-cached-nearest-ancestor-select
+  // Safe as a raw pointer: the option is always unbound from the tree before
+  // its ancestor select is destroyed, and UnbindFromTree clears this to null.
+  HTMLSelectElement* mCachedNearestAncestorSelect = nullptr;
 };
 
 }  // namespace mozilla::dom

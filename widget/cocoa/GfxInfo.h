@@ -1,6 +1,4 @@
-/* vim: se cin sw=2 ts=2 et : */
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -66,7 +64,7 @@ class GfxInfo : public GfxInfoBase {
                               uint32_t aRevision) override;
 #endif
 
-  virtual uint32_t OperatingSystemVersion() override { return mOSXVersion; }
+  virtual uint32_t OperatingSystemVersion() override { return mMacOSVersion; }
 
  protected:
   virtual ~GfxInfo() {}
@@ -97,8 +95,8 @@ class GfxInfo : public GfxInfoBase {
   nsString mAdapterVendorID[kMaxGPUs];
   nsString mAdapterDeviceID[kMaxGPUs];
 
-  GfxVersionEx mOSXVersionEx;
-  uint32_t mOSXVersion;
+  GfxVersionEx mMacOSVersionEx;
+  uint32_t mMacOSVersion;
 };
 
 }  // namespace widget

@@ -290,8 +290,12 @@ add_task(
   }
 );
 
+function getMessageEl(infobar) {
+  return infobar.notification.querySelector(':scope > [slot="message"]');
+}
+
 function getMeaningfulNodes(infobar) {
-  return [...infobar.notification.messageText.childNodes].filter(
+  return [...getMessageEl(infobar).childNodes].filter(
     n =>
       n.nodeType === Node.ELEMENT_NODE ||
       (n.nodeType === Node.TEXT_NODE && n.textContent.trim())
@@ -377,9 +381,9 @@ add_task(async function test_specialMessageAction_onLinkClick() {
   ];
   let { infobar } = await showInfobar(parts, box, browser);
 
-  let link = infobar.notification.messageText.querySelector("a[href]");
+  let link = getMessageEl(infobar).querySelector("a[href]");
   Assert.ok(link, "Found the link");
-  EventUtils.synthesizeMouseAtCenter(link, {}, browser.ownerGlobal);
+  EventUtils.synthesizeMouseAtCenter(link, {}, browser.documentGlobal);
 
   Assert.equal(handleStub.callCount, 1, "handleAction was invoked once");
   let [actionArg, browserArg] = handleStub.firstCall.args;
@@ -589,7 +593,7 @@ add_task(async function clear_activeInfobar_on_window_close() {
 add_task(async function test_buildMessageFragment_withInlineAnchors() {
   const win = BrowserWindowTracker.getTopWindow();
   const browser = win.gBrowser.selectedBrowser;
-  const doc = browser.ownerGlobal.document;
+  const doc = browser.documentGlobal.document;
 
   sinon
     .stub(RemoteL10n, "formatLocalizableText")
@@ -623,7 +627,7 @@ add_task(async function test_buildMessageFragment_withInlineAnchors() {
     "Template anchor carries the correct href"
   );
 
-  const rendered = infobar.notification.messageText.querySelector(
+  const rendered = getMessageEl(infobar).querySelector(
     'a[data-l10n-name="foo"]'
   );
   Assert.ok(rendered, "Rendered anchor is present in infobar");
@@ -655,7 +659,7 @@ add_task(async function test_buildMessageFragment_withoutInlineAnchors() {
   const win = BrowserWindowTracker.getTopWindow();
   const browser = win.gBrowser.selectedBrowser;
   const box = win.gNotificationBox;
-  const doc = browser.ownerGlobal.document;
+  const doc = browser.documentGlobal.document;
 
   // Stub Fluent to return plain text (no <a data-l10n-name>)
   sinon.stub(RemoteL10n, "formatLocalizableText").resolves("Just plain text");
@@ -727,13 +731,13 @@ add_task(
       dispatchStub
     );
 
-    const rendered = infobar.notification.messageText.querySelector(
+    const rendered = getMessageEl(infobar).querySelector(
       'a[data-l10n-name="foo"]'
     );
     Assert.ok(rendered, "Rendered inline anchor present");
     Assert.equal(rendered.href, testUrl, "Rendered href is correct");
 
-    EventUtils.synthesizeMouseAtCenter(rendered, {}, browser.ownerGlobal);
+    EventUtils.synthesizeMouseAtCenter(rendered, {}, browser.documentGlobal);
 
     Assert.equal(handleStub.callCount, 2, "handleAction called twice");
 
@@ -792,7 +796,7 @@ add_task(async function test_configurable_background_color() {
   Assert.ok(infobar.notification, "Got a notification");
 
   let node = infobar.notification;
-  let bg = browser.ownerGlobal
+  let bg = browser.documentGlobal
     .getComputedStyle(node)
     .getPropertyValue("background-color");
 
@@ -831,7 +835,7 @@ add_task(async function test_configurable_font_size() {
   Assert.ok(infobar.notification, "Got a notification");
 
   let node = infobar.notification;
-  let fs = browser.ownerGlobal
+  let fs = browser.documentGlobal
     .getComputedStyle(node)
     .getPropertyValue("font-size");
 
@@ -1125,9 +1129,7 @@ add_task(
     // Ignore impression ping.
     dispatch.resetHistory();
 
-    infobar.notification.messageText
-      .querySelector('a[data-l10n-name="test"]')
-      .click();
+    getMessageEl(infobar).querySelector('a[data-l10n-name="test"]').click();
 
     await BrowserTestUtils.waitForCondition(
       () => !infobar.notification,

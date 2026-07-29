@@ -68,7 +68,7 @@ async function testWindowElementFocus(isPopup) {
     false,
     async () => {
       info("Calling element.focus() on popup");
-      await ContentTask.spawn(tab.linkedBrowser, {}, async () => {
+      await SpecialPowers.spawn(tab.linkedBrowser, [], async () => {
         await content.wrappedJSObject.sendMessage(
           content.wrappedJSObject.openedWindow,
           "elementfocus"

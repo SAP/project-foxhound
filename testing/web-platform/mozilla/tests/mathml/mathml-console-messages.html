@@ -251,7 +251,7 @@
         ["munderover", "accent/accentunder", `<munderover><mi>A</mi><mo accent="true">x</mo><mo accent="true">y</mo></munderover>`],
     ].forEach(([name, accent, markup]) => {
         testMessageForMarkup(
-            `<math><${markup}></math>`,
+            `<math>${markup}</math>`,
             new RegExp(`Setting the accent attribute on mo elements is deprecated. Use the “${accent}” attribute on “${name}” instead.`),
             MessageLevel.WARNING);
     });
@@ -279,8 +279,24 @@
         ["munderover", "accentunder", `<munderover><mi>D</mi><mo accent="true">x</mo><mo accent="true">y</mo></munderover>`],
     ].forEach(([name, accent, markup]) => {
         testMessageForMarkup(
-            `<math><${markup}></math>`,
+            `<math>${markup}</math>`,
             new RegExp(`Inferring the ${accent} property from the core operator is deprecated. Consider adding an explicit ${accent} attribute to “${name}”.`),
+            MessageLevel.WARNING);
+    });
+
+    // MathML_DeprecatedHrefLinkOnNonAnchorElement
+    testNoMessageForMarkup('<math><a href="#"></a></math>');
+    [
+        '<math href="#"></math>',
+        '<math><mstyle href="#"></mstyle></math>',
+        '<math><mrow href="#"></mstyle></math>',
+        '<math><mtext href="#"></mstyle></math>',
+        '<math><mspace href="#"></mspace></math>',
+    ].forEach(markup => {
+        const tagName = /<([a-z]+) href=/.exec(markup)[1];
+        testMessageForMarkup(
+            markup,
+            new RegExp(`The href attribute on the MathML <${tagName}> element is deprecated.`),
             MessageLevel.WARNING);
     });
   </script>

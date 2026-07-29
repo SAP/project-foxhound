@@ -74,6 +74,7 @@ startup:
     send_in_pings:
       - metrics
       - baseline
+      - new-profile
     no_lint:
       - BASELINE_PING
 
@@ -97,12 +98,43 @@ startup:
       - https://bugzil.la/1958163
       - https://bugzil.la/1994608
       - https://bugzil.la/2010455
+    send_in_pings:
+      - metrics
+      - new-profile
     notification_emails:
       - dtownsend@mozilla.com
       - jhirsch@mozilla.com
       - kbryant@mozilla.com
     expires: 156
     telemetry_mirror: STARTUP_PROFILE_DATABASE_VERSION
+
+  profiles_ini_status:
+    type: string
+    description: >
+      Records the status of parsing the profiles.ini file during startup:
+        ok:
+          The ini file parsed correctly
+        ini-failed:
+          Parsing the ini file completely failed, normally this would indicate
+          an out of memory issue.
+        ini-error:
+          The ini parser recorded some kind of failure during parsing
+        missing-name:
+          A profile section was missing the name
+        missing-path:
+          A profile section was missing the path
+        invalid-path:
+          A profile section's path was invalid
+      Note that if multiple profile sections contain errors then only the last
+      will be reported.
+    bugs:
+      - https://bugzil.la/2038187
+    data_reviews:
+      - https://bugzil.la/2038187
+    notification_emails:
+      - dtownsend@mozilla.com
+      - jhirsch@mozilla.com
+    expires: never
 
   profile_count:
     type: quantity
@@ -123,6 +155,9 @@ startup:
       - https://bugzil.la/1958163
       - https://bugzil.la/1994608
       - https://bugzil.la/2010455
+    send_in_pings:
+      - metrics
+      - new-profile
     notification_emails:
       - dtownsend@mozilla.com
       - jhirsch@mozilla.com
@@ -180,6 +215,7 @@ profiles:
       - xdg_config
     send_in_pings:
       - metrics
+      - new-profile
 
   reset_date:
     type: quantity
@@ -249,3 +285,61 @@ profiles:
     send_in_pings:
       - metrics
       - update
+
+  source:
+    type: string
+    description: |
+      The original creation source of the profile:
+        firstrun-created-default
+          Matches the meaning in startup.profile_selection_reason
+        firstrun-skipped-default
+          Matches the meaning in startup.profile_selection_reason
+        restart-skipped-default
+          Matches the meaning in startup.profile_selection_reason
+        cmdline
+          Created by the --createprofile command line argument
+        downgrade
+          Created from the profile downgrade UI
+        legacy
+          Created to support versions of Firefox prior to 47
+        aboutprofiles
+          Created from about:profiles
+        profile-manager
+          Created from the legacy startup profile manager
+        selector-startup
+          Created from the selectable profiles profile selector during startup
+        selector-runtime
+          Created from the selectable profiles profile selector at runtime
+        profiles-panel
+          Created from the profiles panel in the application menu
+        main-menu
+          Created from the OS main menu
+        replace-last
+          Created when deleting the last profile in the group of selectable profiles
+        reset
+          Created by profile reset
+        backup
+          Created by restoring a profile from a backup
+        copy
+          Created by copying a profile from the selectable profiles UI
+        sync-warning
+          Created when warning the user about signing into a different account
+        asrouter
+          Created from the messaging system.
+        backgroundtasks
+          A profile created for a background task
+        unknown
+          The profile was created without supplying a source
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2026972
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2026972
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - dtownsend@mozilla.com
+    expires: never
+    send_in_pings:
+      - metrics
+      - first-startup
+      - new-profile

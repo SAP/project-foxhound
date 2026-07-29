@@ -22,7 +22,7 @@ export class DateTimePickerChild extends InputPickerChildCommon {
 
     // dateTimeBoxElement is within UA Widget Shadow DOM.
     // An event dispatch to it can't be accessed by document.
-    let win = inputElement.ownerGlobal;
+    let win = inputElement.documentGlobal;
     dateTimeBoxElement.dispatchEvent(
       new win.CustomEvent("MozSetDateTimePickerState", { detail: false })
     );
@@ -44,7 +44,7 @@ export class DateTimePickerChild extends InputPickerChildCommon {
       return;
     }
 
-    let win = inputElement.ownerGlobal;
+    let win = inputElement.documentGlobal;
 
     // dateTimeBoxElement is within UA Widget Shadow DOM.
     // An event dispatch to it can't be accessed by document.
@@ -75,7 +75,7 @@ export class DateTimePickerChild extends InputPickerChildCommon {
     // dateTimeBoxElement is within UA Widget Shadow DOM.
     // An event dispatch to it can't be accessed by document, because
     // the event is not composed.
-    let win = inputElement.ownerGlobal;
+    let win = inputElement.documentGlobal;
     dateTimeBoxElement.dispatchEvent(
       new win.CustomEvent("MozSetDateTimePickerState", { detail: true })
     );

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set expandtab shiftwidth=2 tabstop=2: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -41,6 +39,19 @@ class CacheDomain {
   static constexpr uint64_t APZ = ((uint64_t)0x1) << 19;
   static constexpr uint64_t All = ~((uint64_t)0x0);
 };
+
+// Cache domains needed by PdfStructTreeBuilder to walk an accessibility tree
+// and produce a tagged PDF struct tree. These are all the domains required by
+// calls from PdfStructTreeBuilder::BuildStructSubtree.
+static constexpr uint64_t kPdfCacheDomains =
+    // RemoteAccessible::Name
+    CacheDomain::NameAndDescription | CacheDomain::Text |
+    CacheDomain::Relations |
+    // Accessible::GroupPosition
+    CacheDomain::ARIA | CacheDomain::GroupInfo | CacheDomain::State |
+    CacheDomain::Viewport |
+    // TableCellAccessible headers/spans
+    CacheDomain::Table;
 
 enum class CacheUpdateType {
   /*
@@ -179,9 +190,9 @@ class CacheKey {
   static constexpr nsStaticAtom* DOMNodeClass = nsGkAtoms::_class;
   // nsAtom, CacheDomain::DOMNodeIDAndClass
   static constexpr nsStaticAtom* DOMNodeID = nsGkAtoms::id;
-  // AccGroupInfo, no domain
+  // AccGroupInfo, no domain, not sent from content
   static constexpr nsStaticAtom* GroupInfo = nsGkAtoms::group;
-  // nsTArray<int32_t>, no domain
+  // nsTArray<int32_t>, no domain, not sent from content
   // As returned by HyperTextAccessibleBase::CachedHyperTextOffsets.
   static constexpr nsStaticAtom* HyperTextOffsets = nsGkAtoms::offset;
   // bool, CacheDomain::ARIA
@@ -192,6 +203,8 @@ class CacheKey {
   static constexpr nsStaticAtom* HasLongdesc = nsGkAtoms::longdesc;
   // nsString, CacheDomain::NameAndDescription
   static constexpr nsStaticAtom* HTMLPlaceholder = nsGkAtoms::placeholder;
+  // int32_t, CacheDomain::GroupInfo
+  static constexpr nsStaticAtom* HeadingLevel = nsGkAtoms::level;
 #ifdef XP_WIN
   // nsString, CacheDomain::InnerHTML
   static constexpr nsStaticAtom* InnerHTML = nsGkAtoms::html;
@@ -290,18 +303,21 @@ class CacheKey {
   static constexpr nsStaticAtom* WritingMode = nsGkAtoms::writing_mode;
 };
 
-// Return true if the given cache domains are already active.
+// Return true if the given cache domains are already globally active. This
+// doesn't account for documents which use a specific set of cache domains that
+// is different to the global set. Core, cross-platform code should generally
+// use DocAccessibleParent::CacheDomainsAreActive instead.
 bool DomainsAreActive(uint64_t aRequiredCacheDomains);
 
-// Check whether the required cache domains are active. If they aren't, then
-// request the requisite cache domains and return true. This function returns
-// false if all required domains are already active.
-bool RequestDomainsIfInactive(uint64_t aRequiredCacheDomains);
+// Get the set of cache domains required by the given cache domains. The
+// returned value is always equal to or a superset of the input. Used by
+// DocAccessibleParent::RequestDomainsIfInactive when escalating.
+uint64_t GetCacheDomainSuperset(uint64_t aCacheDomains);
 
-#define ASSERT_DOMAINS_ACTIVE(aCacheDomains)                                 \
+#define ASSERT_DOMAINS_ACTIVE(aCacheDomains, aAcc)                           \
   MOZ_ASSERT(                                                                \
       (GetAccService() && !GetAccService()->ShouldAllowNewCacheDomains()) || \
-          DomainsAreActive(aCacheDomains),                                   \
+          (aAcc)->Document()->DomainsAreActive(aCacheDomains),               \
       "Required domain(s) are not currently active.")
 
 }  // namespace a11y

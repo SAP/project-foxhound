@@ -1,0 +1,264 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test Web Serial API - Port Lifecycle (Open/Close/Forget)</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="serial_test_utils.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script>
+
+"use strict";
+
+SimpleTest.waitForExplicitFinish();
+
+SimpleTest.registerCleanupFunction(cleanupSerialPorts);
+
+add_task(async function testOpenWithValidOptions() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  await port.open({
+    baudRate: 9600,
+    dataBits: 8,
+    stopBits: 1,
+    parity: "none"
+  });
+
+  ok(port.readable, "readable stream should be available");
+  ok(port.writable, "writable stream should be available");
+  ok(port.readable instanceof ReadableStream, "readable should be a ReadableStream");
+  ok(port.writable instanceof WritableStream, "writable should be a WritableStream");
+
+  await port.close();
+
+  ok(!port.writable, "port should not have a writable since it is not opened");
+});
+
+add_task(async function testCloseOnClosedPortRejects() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  await port.open({ baudRate: 9600 });
+  await port.close();
+  await Assert.rejects(
+    port.close(),
+    /InvalidStateError/,
+    "Should throw InvalidStateError on closing a closed port"
+  );
+});
+
+add_task(async function testOpenWithDifferentBaudRates() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  const baudRates = [9600, 19200, 38400, 57600, 115200];
+
+  for (const baudRate of baudRates) {
+    await port.open({ baudRate });
+    info(`Opened at ${baudRate} baud`);
+    await port.close();
+    ok(!port.writable, "port should not have a writable since it is not opened");
+  }
+});
+
+add_task(async function testOpenWithDifferentDataBits() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  for (const dataBits of [7, 8]) {
+    await port.open({ baudRate: 9600, dataBits });
+    info(`Opened with ${dataBits} data bits`);
+    await port.close();
+    ok(!port.writable, "port should not have a writable since it is not opened");
+  }
+});
+
+add_task(async function testOpenWithDifferentParity() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  for (const parity of ["none", "even", "odd"]) {
+    await port.open({ baudRate: 9600, parity });
+    info(`Opened with ${parity} parity`);
+    await port.close();
+    ok(!port.writable, "port should not have a writable since it is not opened");
+  }
+});
+
+add_task(async function testOpenWithDifferentFlowControl() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  for (const flowControl of ["none", "hardware"]) {
+    await port.open({ baudRate: 9600, flowControl });
+    info(`Opened with ${flowControl} flowControl`);
+    await port.close();
+    ok(!port.writable, "port should not have a writable since it is not opened");
+  }
+});
+
+add_task(async function testForgetRemovesPort() {
+  await cleanupSerialPorts();
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  let ports = await navigator.serial.getPorts();
+  const initialCount = ports.length;
+  is(initialCount, 1, "Should have 1 port after requestPort");
+
+  await port.forget();
+
+  ports = await navigator.serial.getPorts();
+  is(ports.length, 0, "Should have no ports after forget");
+});
+
+add_task(async function testForgetOnOpenPortErrorsStreams() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  // Per spec, "this.[[state]] becoming 'forgotten' must be treated as if the
+  // port was disconnected." Streams should be errored.
+  await port.forget();
+
+  ok(!port.readable, "readable should be null after forget on open port");
+  ok(!port.writable, "writable should be null after forget on open port");
+
+  // close() should reject since state is "forgotten", not "opened".
+  await Assert.rejects(
+    port.close(),
+    /InvalidStateError/,
+    "close() after forget() throws InvalidStateError"
+  );
+});
+
+add_task(async function testCannotUseAfterForget() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.forget();
+
+  await Assert.rejects(
+    port.open({ baudRate: 9600 }),
+    /InvalidStateError/,
+    "Should throw InvalidStateError opening forgotten port"
+  );
+});
+
+add_task(async function testForgetIdempotent() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.forget();
+  await port.forget();
+
+  ok(true, "Multiple forget() calls should not throw");
+});
+
+add_task(async function testCanReRequestForgottenPort() {
+  await cleanupSerialPorts();
+
+  // Request a port for the first time
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port1 = await navigator.serial.requestPort({ filters: [] });
+
+  // Get port info to verify we can identify it later
+  const info1 = port1.getInfo();
+
+  let ports = await navigator.serial.getPorts();
+  is(ports.length, 1, "Should have 1 port after first requestPort");
+
+  // Forget the port
+  await port1.forget();
+
+  ports = await navigator.serial.getPorts();
+  is(ports.length, 0, "Should have 0 ports after forget");
+
+  // Request a port again - the same port should be selectable
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port2 = await navigator.serial.requestPort({ filters: [] });
+
+  // Verify we got a port
+  ok(port2, "Should be able to request a port again after forgetting");
+
+  // Get info from the re-requested port
+  const info2 = port2.getInfo();
+
+  // Verify it's the same underlying device (matching USB IDs if present)
+  is(info1.usbVendorId, info2.usbVendorId, "Re-requested port should have same USB vendor ID");
+  is(info1.usbProductId, info2.usbProductId, "Re-requested port should have same USB product ID");
+
+  ports = await navigator.serial.getPorts();
+  is(ports.length, 1, "Should have 1 port after re-requesting");
+
+  // Verify the re-requested port is fully functional
+  await port2.open({ baudRate: 9600 });
+  ok(port2.readable, "Re-requested port should have readable stream");
+  ok(port2.writable, "Re-requested port should have writable stream");
+  await port2.close();
+
+  ok(true, "Forgotten ports can be re-requested and used normally");
+});
+
+add_task(async function testAbortWithCustomReason() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const writer = port.writable.getWriter();
+  const encoder = new TextEncoder();
+
+  await writer.write(encoder.encode("Test"));
+
+  const customReason = new Error("Custom abort reason");
+  await writer.abort(customReason);
+  ok(true, "Abort with custom reason should succeed");
+
+  await Assert.rejects(
+    writer.closed,
+    e => e === customReason || e.message.includes("Custom"),
+    "Should get custom abort reason"
+  );
+
+  await port.close();
+});
+
+add_task(async function testAbortAfterCloseSucceeds() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const writer = port.writable.getWriter();
+
+  await writer.close();
+
+  // Per Streams spec: abort() on a closed stream returns a resolved promise
+  // (it's a no-op, not an error)
+  await writer.abort();
+  ok(true, "Abort after close should succeed as a no-op");
+
+  await port.close();
+});
+
+add_task(async function testRequestPortTwiceWithTheSamePort() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+  await port.close();
+  const port2 = await navigator.serial.requestPort({ filters: [] });
+  // Ensure that we get the same port each time, otherwise this test isn't
+  // testing what we think it is.
+  is(port.getInfo().usbVendorId, port2.getInfo().usbVendorId, "got same port both times");
+  await port2.open({ baudRate: 9600 });
+  await port2.close();
+  await port.open({ baudRate: 9600 });
+  await port.close();
+  let ports = await navigator.serial.getPorts();
+  is(ports.length, 1, "selecting the same port twice should only result in one port in getPorts()");
+});
+
+
+</script>
+</body>
+</html>

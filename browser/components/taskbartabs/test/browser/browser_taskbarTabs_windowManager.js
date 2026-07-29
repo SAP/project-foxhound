@@ -4,6 +4,8 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
+  AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
+  ShellService: "moz-src:///browser/components/shell/ShellService.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
   TaskbarTabs: "resource:///modules/taskbartabs/TaskbarTabs.sys.mjs",
   TaskbarTabsUtils: "resource:///modules/taskbartabs/TaskbarTabsUtils.sys.mjs",
@@ -116,7 +118,7 @@ add_task(async function test_user_context_id() {
     );
     await wm.ejectWindow(win);
     let tab = (await tabOpenPromise).target;
-    win = tab.ownerGlobal;
+    win = tab.documentGlobal;
     checkUserContextId(win, taskbarTab);
 
     windowPromise = BrowserTestUtils.waitForNewWindow();
@@ -154,45 +156,112 @@ add_task(async function test_eject_window_selected_tab() {
   await BrowserTestUtils.removeTab(tab);
 });
 
-add_task(async function test_window_aumid() {
+add_task(async function test_window_class() {
   const wm = new TaskbarTabsWindowManager();
 
-  let windowPromise = BrowserTestUtils.waitForNewWindow();
-  await wm.openWindow(taskbarTab1);
-  let winOpen = await windowPromise;
-
+  let winOpen = await wm.openWindow(taskbarTab1);
   is(
     TaskbarTabsUtils.getTaskbarTabIdFromWindow(winOpen),
     taskbarTab1.id,
-    "The window's `tasbkartab` attribute should match the Taskbar Tab ID when opened."
+    "The window's `taskbartab` attribute should match the Taskbar Tab ID when opened."
   );
-  is(
-    WinTaskbar.getGroupIdForWindow(winOpen),
-    taskbarTab1.id,
-    "The window AUMID should match the Taskbar Tab ID when opened."
-  );
+  checkWindowAssociatedApp(taskbarTab1, winOpen);
+  await BrowserTestUtils.closeWindow(winOpen);
 
   let tab1_adopted = await BrowserTestUtils.addTab(window.gBrowser, url1.spec);
-  windowPromise = BrowserTestUtils.waitForNewWindow();
-  await wm.replaceTabWithWindow(taskbarTab1, tab1_adopted);
-  let winReplace = await windowPromise;
-
+  let winReplace = await wm.replaceTabWithWindow(taskbarTab1, tab1_adopted);
   is(
     TaskbarTabsUtils.getTaskbarTabIdFromWindow(winReplace),
     taskbarTab1.id,
-    "The window's `tasbkartab` attribute should match the Taskbar Tab ID when a tab was replaced with a Tasbkar Tab window."
+    "The window's `taskbartab` attribute should match the Taskbar Tab ID when a tab was replaced with a Taskbar Tab window."
+  );
+  checkWindowAssociatedApp(taskbarTab1, winReplace);
+  await BrowserTestUtils.closeWindow(winReplace);
+});
+
+/**
+ * Asserts that aWindow has the expected AUMID (on Windows) or 'windowclass' (on
+ * Linux) for aTaskbarTab.
+ *
+ * @param {TaskbarTab} aTaskbarTab - The expected taskbar tab for the window.
+ * @param {DOMWindow} aWindow - The window itself.
+ */
+function checkWindowAssociatedApp(aTaskbarTab, aWindow) {
+  if (AppConstants.platform === "win") {
+    if (TaskbarTabsUtils.isMSIX()) {
+      // The format of this doesn't seem to be documented anywhere; I got it
+      // through a small custom utility using the undocumented IPinnedList3 API
+      // (the one we use for pinning on Windows 10). It's possible that Windows
+      // could change it, in which case the Taskbar Tab window wouldn't line up
+      // with its taskbar entry.
+      is(
+        WinTaskbar.getGroupIdForWindow(aWindow),
+        `${Services.sysinfo.getProperty("winPackageFamilyName")}!App:taskbartab-${aTaskbarTab.id}`,
+        "The window AUMID should match the ID likely assigned by Windows."
+      );
+    } else {
+      is(
+        WinTaskbar.getGroupIdForWindow(aWindow),
+        taskbarTab1.id,
+        "The window AUMID should match the Taskbar Tab ID when opened."
+      );
+    }
+  } else if (AppConstants.platform === "linux") {
+    is(
+      aWindow.document.documentElement.getAttribute("windowclass"),
+      TaskbarTabsUtils._determineNewDesktopEntryName(aTaskbarTab.id),
+      "The window class should match the current GLib app name."
+    );
+  }
+}
+
+add_task(async function testLinuxWindowClassRestores() {
+  const wm = new TaskbarTabsWindowManager();
+
+  let altURI = Services.io.newURI("https://example.org/"); // vs. example.com
+  let taskbarTab = createTaskbarTab(registry, altURI, 0);
+
+  async function captureWindowClass(aShortcutRelativePath) {
+    registry.patchTaskbarTab(taskbarTab, {
+      shortcutRelativePath: aShortcutRelativePath,
+    });
+    let win = await wm.openWindow(taskbarTab);
+    let windowClass = win.document.documentElement.getAttribute("windowclass");
+    await BrowserTestUtils.closeWindow(win);
+
+    let tab = await BrowserTestUtils.openNewForegroundTab(
+      gBrowser,
+      altURI.spec
+    );
+    win = await wm.replaceTabWithWindow(taskbarTab, tab);
+    Assert.equal(
+      win.document.documentElement.getAttribute("windowclass"),
+      windowClass,
+      "openWindow and replaceTabWithWindow returned the same result"
+    );
+    await BrowserTestUtils.closeWindow(win);
+
+    return windowClass;
+  }
+
+  is(
+    await captureWindowClass("some.other.thing.entirely.desktop"),
+    "some.other.thing.entirely",
+    "The value in shortcutRelativePath should be used with the extension removed."
   );
   is(
-    WinTaskbar.getGroupIdForWindow(winReplace),
-    taskbarTab1.id,
-    "The window AUMID should match the Taskbar Tab ID when a tab was replaced with a Tasbkar Tab window."
+    await captureWindowClass("another.odd.thing.desktop"),
+    "another.odd.thing",
+    "Gracefully handles the relative path missing a .desktop extension."
+  );
+  is(
+    await captureWindowClass("oops/directory/name/thing.goes.here.desktop"),
+    "thing.goes.here",
+    "If for some reason it's in a subdirectory, only the basename is used."
   );
 
-  await Promise.all([
-    BrowserTestUtils.closeWindow(winOpen),
-    BrowserTestUtils.closeWindow(winReplace),
-  ]);
-});
+  registry.removeTaskbarTab(taskbarTab);
+}).skip(AppConstants.platform !== "linux"); // windowclass is only used on Linux
 
 add_task(async function testTaskbarTabCount() {
   const count = () => TaskbarTabs.getCountForId(taskbarTab1.id);
@@ -279,7 +348,7 @@ add_task(async function testWindowIconSet() {
   await check(win, "replaceTabWithWindow (explicit)");
 
   wm.testOnlyMockUIUtils(null);
-});
+}).skip(AppConstants.platform !== "win"); // The window icon is only set on Windows.
 
 add_task(async function test_taskbarTab_persistence() {
   const wm = new TaskbarTabsWindowManager();
@@ -379,4 +448,4 @@ add_task(async function test_taskbarTab_persistence() {
     BrowserTestUtils.closeWindow(win1),
     BrowserTestUtils.closeWindow(win2),
   ]);
-});
+}).skip(AppConstants.platform === "linux"); // We can't control the window position on Linux.

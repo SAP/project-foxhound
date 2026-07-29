@@ -7,12 +7,11 @@ package mozilla.components.feature.downloads
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.feature.downloads.DownloadDialogFragment.Companion.KEY_FILE_NAME
-import mozilla.components.support.utils.FakeDownloadFileUtils
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 @Suppress("Deprecation") // https://bugzilla.mozilla.org/show_bug.cgi?id=1953923

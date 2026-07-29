@@ -184,27 +184,12 @@ add_task(async function testBadPermissions() {
 });
 
 add_task(async function testMatchDataURI() {
-  // allow top level data: URI navigations, otherwise
-  // window.location.href = data: would be blocked
-  await SpecialPowers.pushPrefEnv({
-    set: [["security.data_uri.block_toplevel_data_uri_navigations", false]],
-  });
-
   const target = ExtensionTestUtils.loadExtension({
     files: {
       "page.html": `<!DOCTYPE html>
         <meta charset="utf-8">
-        <script src="page.js"></script>
         <iframe id="inherited" src="data:text/html;charset=utf-8,inherited"></iframe>
       `,
-      "page.js": function () {
-        browser.test.onMessage.addListener((msg, url) => {
-          if (msg !== "navigate") {
-            return;
-          }
-          window.location.href = url;
-        });
-      },
     },
     background() {
       browser.tabs.create({
@@ -250,16 +235,6 @@ add_task(async function testMatchDataURI() {
   // Test extension page with a data: iframe.
   const page = await scripts.awaitMessage("tab-ready");
   ok(page.endsWith("page.html"), "Extension page loaded into a tab");
-
-  scripts.sendMessage("execute");
-  await scripts.awaitMessage("done");
-
-  // Test extension tab navigated to a data: URI.
-  const data = "data:text/html;charset=utf-8,also-inherits";
-  target.sendMessage("navigate", data);
-
-  const url = await scripts.awaitMessage("tab-ready");
-  is(url, data, "Extension tab navigated to a data: URI");
 
   scripts.sendMessage("execute");
   await scripts.awaitMessage("done");

@@ -42,6 +42,7 @@ class NimbusBuilder(context: Context) : AbstractNimbusBuilder<NimbusApi>(context
         deviceInfo = createDeviceInfo(),
         delegate = createDelegate(),
         recordedContext = recordedContext,
+        geckoPrefHandler = geckoPrefHandler,
     ).apply {
         this.register(createObserver())
     }

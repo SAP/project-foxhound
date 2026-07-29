@@ -7,6 +7,7 @@
 :root {
   --content-width-offset: 340px;
   --table-width: calc(100vw - var(--content-width-offset));
+  --cell-padding: 5px;
 }
 
 body {
@@ -61,10 +62,24 @@ body {
 
 #metrics-table table {
   width: var(--table-width);
+  border-collapse: collapse;
+}
+
+#metrics-table table thead th {
+  padding: var(--cell-padding);
+  position: sticky;
+  top: 0;
+  background-color: var(--background-color-canvas);
 }
 
 #metrics-table table td {
   vertical-align: middle;
+}
+
+#metrics-table table thead tr,
+#metrics-table table tbody tr {
+  border-bottom: 2px solid var(--card-border-color);
+  border-radius: var(--border-radius-small);
 }
 
 #metrics-table-instance {
@@ -96,7 +111,7 @@ body {
 #metrics-table-settings .box {
   margin-bottom: 5px;
   padding: 10px;
-  border: 1px solid var(--border-color-card);
+  border: 1px solid var(--card-border-color);
   border-radius: var(--border-radius-small);
   background-color: var(--background-color-box);
 }
@@ -126,10 +141,10 @@ td[data-d3-cell="value"] > pre,
   width: fit-content;
 }
 
-td[data-d3-cell="value"] > svg,
-.chart-display > svg {
+td[data-d3-cell="value"] svg,
+.chart-display svg {
   color: var(--text-color);
-  border: 1px solid var(--border-color-card);
+  border: 1px solid var(--card-border-color);
   border-radius: var(--border-radius-small);
   background-color: var(--background-color-box);
 }

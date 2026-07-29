@@ -16,9 +16,8 @@ import aiohttp
 logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(message)s")
 log = logging.getLogger(__name__)
 
-UV_CACHE_PATH = os.getenv(
-    "UV_CACHE_PATH", os.path.join(path.dirname(__file__), "../release/updates/cache/")
-)
+_workspace = os.getenv("WORKSPACE_DIR", os.getcwd())
+UV_CACHE_PATH = os.path.join(_workspace, "update-verify-cache")
 UV_PARALLEL_DOWNLOADS = int(os.getenv("UV_PARALLEL_DOWNLOADS", "20"))
 
 FTP_SERVER_TO = os.getenv("ftp_server_to", "http://stage.mozilla.org/pub/mozilla.org")

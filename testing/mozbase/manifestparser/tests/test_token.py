@@ -92,6 +92,11 @@ def index():
             "os == 'android' && os_version == '22.04'",
             "value 22.04 depends on os == 'linux' in condition: os == 'android' && os_version == '22.04'",
         ),
+        (
+            12,
+            "os == 'win' && os_version == '11.26200' && arch == 'x86_64'",
+            "",
+        ),
     ],
 )
 def test_canonical_condition(index: Index, test_index: int, condition: str, msg: str):

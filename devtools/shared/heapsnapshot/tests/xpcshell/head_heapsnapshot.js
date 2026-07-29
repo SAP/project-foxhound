@@ -35,10 +35,10 @@ const { LabelAndShallowSizeVisitor } = DominatorTreeNode;
 // Always log packets when running tests. runxpcshelltests.py will throw
 // the output away anyway, unless you give it the --verbose flag.
 if (Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_DEFAULT) {
-  Services.prefs.setBoolPref("devtools.debugger.log", true);
+  Services.prefs.setIntPref("logging.devtools_rdp", 5);
   Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
   registerCleanupFunction(() => {
-    Services.prefs.clearUserPref("devtools.debugger.log");
+    Services.prefs.clearUserPref("logging.devtools_rdp");
     Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
   });
 }

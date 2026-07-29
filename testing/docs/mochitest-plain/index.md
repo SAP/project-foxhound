@@ -241,12 +241,12 @@ they are better documented and easier to find.
 ### Helper functions
 
 Right now, useful helpers derived from MochiKit are available in
-[`testing/mochitest/tests/SimpleTest/SimpleTest.js`](https://searchfox.org/mozilla-central/source/testing/mochitest/tests/SimpleTest/SimpleTest.js).
+[`testing/mochitest/tests/SimpleTest/SimpleTest.js`](https://searchfox.org/firefox-main/source/testing/mochitest/tests/SimpleTest/SimpleTest.js).
 
 Although all of Mochikit is available at `testing/mochitest/MochiKit`, only
 include files that you require to minimize test load times. Bug 367569 added
 `sendChar`, `sendKey`, and `sendString` helpers.
-These are available in [`testing/mochitest/tests/SimpleTest/EventUtils.js`](https://searchfox.org/mozilla-central/source/testing/mochitest/tests/SimpleTest/EventUtils.js).
+These are available in [`testing/mochitest/tests/SimpleTest/EventUtils.js`](https://searchfox.org/firefox-main/source/testing/mochitest/tests/SimpleTest/EventUtils.js).
 
 If you need to access some data files from your Mochitest, you can get an URI
 for them by using `SimpleTest.getTestFileURL("relative/path/to/data.file")`.

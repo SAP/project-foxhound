@@ -106,6 +106,9 @@ internal fun finishNimbusInitialization(experiments: NimbusApi) =
         fetchExperiments()
     }
 
+/**
+ * Returns the app name used for Nimbus experimentation.
+ */
 fun getNimbusAppName(): String {
     return if (BuildConfig.FLAVOR.contains("focus")) {
         "focus_android"

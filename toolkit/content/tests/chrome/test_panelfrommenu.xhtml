@@ -65,7 +65,13 @@ function runTests()
 
 function menuOpened()
 {
-  $("menu").menupopup.activateItem($("i1"));
+  const popup = $("menu").menupopup;
+  if (popup.isNativeMenu) {
+    popup.activateItem($("i1"));
+  } else {
+    synthesizeKey("KEY_ArrowDown");
+    synthesizeKey("KEY_Enter");
+  }
 }
 
 function menuClosed()

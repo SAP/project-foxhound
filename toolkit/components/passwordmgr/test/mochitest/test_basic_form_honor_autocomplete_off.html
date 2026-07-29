@@ -29,7 +29,7 @@ function checkFormValues(form, expectedUsername, expectedPassword) {
 
 async function autoCompleteFieldsFromFirstMatch(form) {
   // trigger autocomplete from the username field
-  await SimpleTest.promiseFocus(form.ownerGlobal);
+  await SimpleTest.promiseFocus(form.documentGlobal);
   let uname = form.querySelector("[name='uname']");
   await popupBy(() => uname.focus());
 

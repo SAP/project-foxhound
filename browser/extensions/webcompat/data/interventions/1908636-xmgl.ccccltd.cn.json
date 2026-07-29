@@ -1,0 +1,15 @@
+{
+  "label": "xmgl.ccccltd.cn",
+  "bugs": {
+    "1908636": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://xmgl.ccccltd.cn/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

@@ -22,141 +22,117 @@
     const kViaDisplayStyle = 0;
     const kViaVisibilityStyle = 1;
 
-    function focusMenu(aMenuBarID, aMenuID, aActiveMenuBarID) {
-      this.eventSeq = [];
+    // //////////////////////////////////////////////////////////////////////////
+    // Do tests
+    // enableLogging("tree,events,verbose");
 
-      if (aActiveMenuBarID) {
-        this.eventSeq.push(new invokerChecker(EVENT_MENU_END,
-                                              getNode(aActiveMenuBarID)));
-      }
+    async function doTests() {
+      let evts = waitForEvents([
+        [EVENT_MENU_START, getNode("menubar2")],
+        [EVENT_FOCUS, getNode("menu-help")],
+      ]);
+      getNode("menu-help").focus();
+      await evts;
 
-      this.eventSeq.push(new invokerChecker(EVENT_MENU_START, getNode(aMenuBarID)));
-      this.eventSeq.push(new invokerChecker(EVENT_FOCUS, getNode(aMenuID)));
-
-      this.invoke = function focusMenu_invoke() {
-        getNode(aMenuID).focus();
-      };
-
-      this.getID = function focusMenu_getID() {
-        return "focus menu '" + aMenuID + "'";
-      };
-    }
-
-    function showMenu(aMenuID, aParentMenuID, aHow) {
-      this.menuNode = getNode(aMenuID);
+      evts = waitForEvents([
+        [EVENT_MENU_END, getNode("menubar2")],
+        [EVENT_MENU_START, getNode("menubar")],
+        [EVENT_FOCUS, getNode("menu-file")],
+      ]);
+      getNode("menu-file").focus();
+      await evts;
 
       // Because of aria-owns processing we may have menupopup start fired before
       // related show event.
-      this.eventSeq = [
-        new invokerChecker(EVENT_SHOW, this.menuNode),
-        new invokerChecker(EVENT_REORDER, getNode(aParentMenuID)),
-        new invokerChecker(EVENT_MENUPOPUP_START, this.menuNode),
-      ];
+      evts = waitForEvents([
+        [EVENT_SHOW, getNode("menupopup-file")],
+        [EVENT_REORDER, getNode("menu-file")],
+        [EVENT_MENUPOPUP_START, getNode("menupopup-file")],
+      ]);
+      getNode("menupopup-file").style.display = "block";
+      await evts;
 
-      this.invoke = function showMenu_invoke() {
-        if (aHow == kViaDisplayStyle)
-          this.menuNode.style.display = "block";
-        else
-          this.menuNode.style.visibility = "visible";
-      };
+      let menuAcc = getAccessible(getNode("menupopup-file"));
+      evts = waitForEvents([
+        [EVENT_MENUPOPUP_END, menuAcc],
+        [EVENT_HIDE, menuAcc],
+        [EVENT_REORDER, getNode("menu-file")],
+      ]);
+      getNode("menupopup-file").style.display = "none";
+      await evts;
 
-      this.getID = function showMenu_getID() {
-        return "Show ARIA menu '" + aMenuID + "' by " +
-          (aHow == kViaDisplayStyle ? "display" : "visibility") +
-          " style tricks";
-      };
-    }
+      evts = waitForEvents([
+        [EVENT_SHOW, getNode("menupopup-edit")],
+        [EVENT_REORDER, getNode("menu-edit")],
+        [EVENT_MENUPOPUP_START, getNode("menupopup-edit")],
+      ]);
+      getNode("menupopup-edit").style.visibility = "visible";
+      await evts;
 
-    function closeMenu(aMenuID, aParentMenuID, aHow) {
-      this.menuNode = getNode(aMenuID);
-      this.menu = null;
+      menuAcc = getAccessible(getNode("menupopup-edit"));
+      evts = waitForEvents([
+        [EVENT_MENUPOPUP_END, menuAcc],
+        [EVENT_HIDE, menuAcc],
+        [EVENT_REORDER, getNode("menu-edit")],
+      ]);
+      getNode("menupopup-edit").style.visibility = "hidden";
+      await evts;
 
-      this.eventSeq = [
-        new invokerChecker(EVENT_MENUPOPUP_END, getMenu, this),
-        new invokerChecker(EVENT_HIDE, getMenu, this),
-        new invokerChecker(EVENT_REORDER, getNode(aParentMenuID)),
-      ];
+      evts = waitForEvents({
+        expected: [[EVENT_FOCUS, getNode("menu-edit")]],
+        unexpected: [[EVENT_MENU_END, getNode("menubar")]]
+      });
+      getNode("menu-edit").focus();
+      await evts;
 
-      this.invoke = function closeMenu_invoke() {
-        // Store menu accessible reference while menu is still open.
-        this.menu = getAccessible(this.menuNode);
+      evts = waitForEvents([
+        [EVENT_MENU_END, getNode("menubar")],
+        [EVENT_FOCUS, getNode("outsidemenu")],
+      ]);
+      getNode("outsidemenu").scrollIntoView(true);
+      synthesizeMouse(getNode("outsidemenu"), 1, 1, {});
+      await evts;
 
-        // Hide menu.
-        if (aHow == kViaDisplayStyle)
-          this.menuNode.style.display = "none";
-        else
-          this.menuNode.style.visibility = "hidden";
-      };
+      evts = waitForEvents([
+        [EVENT_MENU_START, getNode("menubar3")],
+        [EVENT_FOCUS, getNode("mb3-mi-outside")],
+      ]);
+      getNode("mb3-mi-outside").focus();
+      await evts;
 
-      this.getID = function closeMenu_getID() {
-        return "Close ARIA menu " + aMenuID + " by " +
-          (aHow == kViaDisplayStyle ? "display" : "visibility") +
-          " style tricks";
-      };
+      evts = waitForEvents([
+        [EVENT_SHOW, getNode("mb4-menu")],
+        [EVENT_REORDER, document],
+        [EVENT_MENUPOPUP_START, getNode("mb4-menu")],
+      ]);
+      getNode("mb4-menu").style.display = "block";
+      await evts;
 
-      function getMenu(aThisObj) {
-        return aThisObj.menu;
+      evts = waitForEvents([
+        [EVENT_MENU_START, getNode("menubar4")],
+        [EVENT_FOCUS, getNode("mb4-item1")],
+      ]);
+      getNode("mb4-item1").focus();
+      await evts;
+
+      evts = waitForEvents([
+        [EVENT_MENU_START, getNode("menubar5")],
+        [EVENT_FOCUS, getNode("mb5-mi")],
+      ]);
+      getNode("mb5-mi").focus();
+      await evts;
+
+      // synthFocus("mi6")
+      let focused = waitForEvent(EVENT_FOCUS, "mi6");
+      if (getNode("mi6").editor) {
+        getNode("mi6").selectionStart = getNode("mi6").selectionEnd =
+          getNode("mi6").value.length;
       }
-    }
+      getNode("mi6").focus();
+      await focused;
+      testStates(getAccessible("mi6"), STATE_FOCUSED);
 
-    function focusInsideMenu(aMenuID, aMenuBarID) {
-      this.eventSeq = [
-        new invokerChecker(EVENT_FOCUS, getNode(aMenuID)),
-      ];
-
-      this.unexpectedEventSeq = [
-        new invokerChecker(EVENT_MENU_END, getNode(aMenuBarID)),
-      ];
-
-      this.invoke = function focusInsideMenu_invoke() {
-        getNode(aMenuID).focus();
-      };
-
-      this.getID = function focusInsideMenu_getID() {
-        return "focus menu '" + aMenuID + "'";
-      };
-    }
-
-    function blurMenu(aMenuBarID) {
-      var eventSeq = [
-        new invokerChecker(EVENT_MENU_END, getNode(aMenuBarID)),
-        new invokerChecker(EVENT_FOCUS, getNode("outsidemenu")),
-      ];
-
-      this.__proto__ = new synthClick("outsidemenu", eventSeq);
-
-      this.getID = function blurMenu_getID() {
-        return "blur menu";
-      };
-    }
-
-    // //////////////////////////////////////////////////////////////////////////
-    // Do tests
-
-    // gA11yEventDumpToConsole = true; // debuging
-    // enableLogging("tree,events,verbose");
-
-    var gQueue = null;
-    function doTests() {
-      gQueue = new eventQueue();
-
-      gQueue.push(new focusMenu("menubar2", "menu-help"));
-      gQueue.push(new focusMenu("menubar", "menu-file", "menubar2"));
-      gQueue.push(new showMenu("menupopup-file", "menu-file", kViaDisplayStyle));
-      gQueue.push(new closeMenu("menupopup-file", "menu-file", kViaDisplayStyle));
-      gQueue.push(new showMenu("menupopup-edit", "menu-edit", kViaVisibilityStyle));
-      gQueue.push(new closeMenu("menupopup-edit", "menu-edit", kViaVisibilityStyle));
-      gQueue.push(new focusInsideMenu("menu-edit", "menubar"));
-      gQueue.push(new blurMenu("menubar"));
-
-      gQueue.push(new focusMenu("menubar3", "mb3-mi-outside"));
-      gQueue.push(new showMenu("mb4-menu", document, kViaDisplayStyle));
-      gQueue.push(new focusMenu("menubar4", "mb4-item1"));
-      gQueue.push(new focusMenu("menubar5", "mb5-mi"));
-
-      gQueue.push(new synthFocus("mi6"));
-
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

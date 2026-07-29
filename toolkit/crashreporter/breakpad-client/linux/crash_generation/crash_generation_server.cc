@@ -281,12 +281,14 @@ CrashGenerationServer::ClientEvent(short revents)
 #if defined(MOZ_OXIDIZED_BREAKPAD)
   ExceptionHandler::CrashContext* breakpad_cc =
       reinterpret_cast<ExceptionHandler::CrashContext*>(crash_context);
-  char* error_msg = nullptr;
+  ExtraCrashData* extra_data = nullptr;
   siginfo_t& si = breakpad_cc->siginfo;
   signalfd_siginfo signalfd_si = {};
   signalfd_si.ssi_signo = si.si_signo;
   signalfd_si.ssi_errno = si.si_errno;
   signalfd_si.ssi_code = si.si_code;
+  signalfd_si.ssi_pid = si.si_pid;
+  signalfd_si.ssi_uid = si.si_uid;
 
   switch (si.si_signo) {
     case SIGILL:
@@ -304,7 +306,7 @@ CrashGenerationServer::ClientEvent(short revents)
     minidump_filename.c_str(),
     crashing_pid,
     breakpad_cc->tid,
-    &error_msg
+    &extra_data
   );
   DirectAuxvDumpInfo auxvInfo = {};
   if (writer && get_auxv_info_ && get_auxv_info_(crashing_pid, &auxvInfo)) {
@@ -319,7 +321,7 @@ CrashGenerationServer::ClientEvent(short revents)
 
     minidump_writer_set_crash_context(writer, &breakpad_cc->context, float_state, &signalfd_si);
 
-    res = minidump_writer_dump(writer, &error_msg);
+    res = minidump_writer_dump(writer, extra_data);
   }
 #else
   if (!google_breakpad::WriteMinidump(minidump_filename.c_str(),
@@ -330,12 +332,9 @@ CrashGenerationServer::ClientEvent(short revents)
   }
 #endif
 
-  ClientInfo info(crashing_pid, this);
-#if defined(MOZ_OXIDIZED_BREAKPAD)
-  if (!res) {
-    info.set_error_msg(error_msg);
-  }
-#endif
+  ClientInfo info(crashing_pid, this, extra_data);
+  extra_data = nullptr; // ownership transferred to the info object.
+
   if (dump_callback_) {
     dump_callback_(dump_context_, info, minidump_filename);
   }
@@ -343,11 +342,6 @@ CrashGenerationServer::ClientEvent(short revents)
   // Send the done signal to the process: it can exit now.
   // (Closing this will make the child's sys_read unblock and return 0.)
   close(signal_fd);
-
-  info.set_error_msg(nullptr);
-  if (error_msg) {
-    free_minidump_error_msg(error_msg);
-  }
 
   return true;
 }

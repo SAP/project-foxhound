@@ -1,4 +1,3 @@
-/* -*- mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -80,8 +79,8 @@ static EnumeratedArray<FloatID, RelaxedAtomicUint32, size_t(FloatID::End)>
 constexpr int32_t kNoInt = INT32_MIN;
 static EnumeratedArray<IntID, RelaxedAtomicInt32, size_t(IntID::End)> sIntStore;
 StaticRWLock sFontStoreLock;
-MOZ_RUNINIT static EnumeratedArray<FontID, widget::LookAndFeelFont,
-                                   size_t(FontID::End)>
+constinit static EnumeratedArray<FontID, widget::LookAndFeelFont,
+                                 size_t(FontID::End)>
     sFontStore MOZ_GUARDED_BY(sFontStoreLock);
 
 // To make one of these prefs toggleable from a reftest add a user
@@ -1072,9 +1071,10 @@ widget::LookAndFeelFont nsXPLookAndFeel::StyleToLookAndFeelFont(
 #ifdef DEBUG
   {
     // Assert that all the remaining font style properties have their
-    // default values.
+    // default values, except `systemFont` which should be true.
     gfxFontStyle candidate = aStyle;
     gfxFontStyle defaults{};
+    defaults.systemFont = true;
     candidate.size = defaults.size;
     candidate.weight = defaults.weight;
     candidate.style = defaults.style;

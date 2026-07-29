@@ -16,14 +16,16 @@ ChromeUtils.defineESModuleGetters(lazy, {
  * (https://fetch.spec.whatwg.org/#concept-response).
  */
 export class NetworkResponse {
+  #cachedResponseBody;
   #channel;
   #decodedBodySize;
   #encodedBodySize;
   #fromCache;
   #fromServiceWorker;
+  #hasCachedResponseBody;
+  #headersTransmittedSize;
   #isCachedResource;
   #isDataURL;
-  #headersTransmittedSize;
   #responseBodyReady;
   #status;
   #statusMessage;
@@ -39,8 +41,13 @@ export class NetworkResponse {
    *     Whether the response was read from the cache or not.
    * @param {boolean} params.fromServiceWorker
    *     Whether the response is coming from a service worker or not.
+   * @param {boolean} params.hasResponseCollector
+   *     Whether there is an active response collector for the context which
+   *     owns this request.
    * @param {boolean} params.isCachedResource
    *     Whether the response is served by the stencil (image/CSS/JS) cache.
+   * @param {string?} params.memoryCacheKey
+   *     The cache key of the in-memory cached response.
    * @param {string=} params.rawHeaders
    *     The response's raw (ie potentially compressed) headers
    */
@@ -49,7 +56,9 @@ export class NetworkResponse {
     const {
       fromCache,
       fromServiceWorker,
+      hasResponseCollector = false,
       isCachedResource,
+      memoryCacheKey = undefined,
       rawHeaders = "",
     } = params;
     this.#fromCache = fromCache;
@@ -63,6 +72,29 @@ export class NetworkResponse {
     this.#encodedBodySize = 0;
     this.#headersTransmittedSize = rawHeaders.length;
     this.#totalTransmittedSize = rawHeaders.length;
+
+    // We use two separate fields to distinguish the "no response body" vs
+    // "response is empty" in toJSON.
+    this.#hasCachedResponseBody = false;
+    this.#cachedResponseBody = "";
+
+    if (memoryCacheKey && hasResponseCollector) {
+      let charset = "";
+      const httpChannel = channel.QueryInterface(Ci.nsIHttpChannel);
+      if (httpChannel) {
+        charset = httpChannel.classicScriptHintCharset || "";
+      }
+
+      const text = ChromeUtils.getCachedJavaScriptSource(
+        memoryCacheKey,
+        channel.URI.spec,
+        charset
+      );
+      if (text !== undefined) {
+        this.#cachedResponseBody = text;
+        this.#hasCachedResponseBody = true;
+      }
+    }
 
     // See https://github.com/w3c/webdriver-bidi/issues/761
     // For 304 responses, the response will be replaced by the cached response
@@ -78,12 +110,20 @@ export class NetworkResponse {
         : this.#channel.responseStatusText;
   }
 
+  get cachedResponseBody() {
+    return this.#cachedResponseBody;
+  }
+
   get decodedBodySize() {
     return this.#decodedBodySize;
   }
 
   get encodedBodySize() {
     return this.#encodedBodySize;
+  }
+
+  get hasCachedResponseBody() {
+    return this.#hasCachedResponseBody;
   }
 
   get headers() {
@@ -255,9 +295,11 @@ export class NetworkResponse {
    */
   toJSON() {
     return {
+      cachedResponseBody: this.cachedResponseBody,
       decodedBodySize: this.decodedBodySize,
       encodedBodySize: this.encodedBodySize,
       fromCache: this.fromCache,
+      hasCachedResponseBody: this.hasCachedResponseBody,
       headers: this.headers,
       headersTransmittedSize: this.headersTransmittedSize,
       isDataURL: this.isDataURL,

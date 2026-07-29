@@ -36,10 +36,12 @@ export const GeckoViewTabUtil = {
     });
 
     try {
-      sessionId = await lazy.EventDispatcher.instance.sendRequestForResult({
-        type: "GeckoView:Test:NewTab",
-        url,
-      });
+      sessionId = await lazy.EventDispatcher.instance.sendRequestForResult(
+        "GeckoView:Test:NewTab",
+        {
+          url,
+        }
+      );
     } catch (errorMessage) {
       throw new Error(
         errorMessage + " GeckoView:Test:NewTab is not supported."

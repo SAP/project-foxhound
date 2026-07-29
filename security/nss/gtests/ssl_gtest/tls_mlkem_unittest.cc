@@ -216,12 +216,14 @@ static void CheckECDHShareReuse(
         hybrid_offset[nextHybrid] = 0;
         hybrid_ec_type[nextHybrid] = ssl_grp_ec_secp256r1;
         nextHybrid++;
+        break;
       case ssl_grp_ec_curve25519:
       case ssl_grp_ec_secp256r1:
         ecdh_share[nextECDH] =
             DataBuffer(ext.data() + offset + 2 + 2, named_group_len);
         ec_type[nextECDH] = (SSLNamedGroup)named_group;
         nextECDH++;
+        break;
     }
     offset += 2 + 2 + named_group_len;
     ext.Read(offset, 2, &named_group);
@@ -403,8 +405,8 @@ class Mlkem768x25519ShareDamager : public TlsExtensionFilter {
         ecdh_component[0] ^= 0x01;
         break;
       case Mlkem768x25519ShareDamager::modify_mlkem:
-        // Flip a bit in the mlkem component
-        mlkem_component[0] ^= 0x01;
+        // Flip a bit in the rho seed (last 32 bytes of the ML-KEM public key).
+        mlkem_component[mlkem_component_len - 1] ^= 0x01;
         break;
       case Mlkem768x25519ShareDamager::modify_mlkem_pubkey_mod_q:
         if (agent()->role() == TlsAgent::CLIENT) {
@@ -416,8 +418,8 @@ class Mlkem768x25519ShareDamager : public TlsExtensionFilter {
             // Unpack them, change equivalence class if possible, and repack.
             uint16_t coeff0 =
                 mlkem_component[i] | ((mlkem_component[i + 1] & 0x0f) << 8);
-            uint16_t coeff1 = (mlkem_component[i + 1] & 0xf0 >> 4) |
-                              ((mlkem_component[i + 2]) << 4);
+            uint16_t coeff1 =
+                (mlkem_component[i + 1] >> 4) | ((mlkem_component[i + 2]) << 4);
             if (coeff0 < 4096 - 3329) {
               coeff0 += 3329;
             }

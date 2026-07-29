@@ -99,7 +99,10 @@ class _TabState {
       }
     }
 
-    tabData.searchMode = tab.ownerGlobal.gURLBar.getSearchMode(browser, true);
+    tabData.searchMode = tab.documentGlobal.gURLBar.getSearchMode(
+      browser,
+      true
+    );
 
     tabData.userContextId = tab.userContextId || 0;
 
@@ -121,7 +124,7 @@ class _TabState {
 
     // Store the tab icon.
     if (!("image" in tabData)) {
-      let tabbrowser = tab.ownerGlobal.gBrowser;
+      let tabbrowser = tab.documentGlobal.gBrowser;
       tabData.image = tabbrowser.getIcon(tab);
     }
 

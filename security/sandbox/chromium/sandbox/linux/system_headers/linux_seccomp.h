@@ -5,6 +5,7 @@
 #ifndef SANDBOX_LINUX_SYSTEM_HEADERS_LINUX_SECCOMP_H_
 #define SANDBOX_LINUX_SYSTEM_HEADERS_LINUX_SECCOMP_H_
 
+#include <signal.h>  // for SYS_SECCOMP
 #include <stdint.h>
 #include <sys/ioctl.h>
 

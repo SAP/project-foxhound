@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -102,12 +101,14 @@ nsForceXMLListener::OnStartRequest(nsIRequest* aRequest) {
     channel->SetContentType("text/xml"_ns);
   }
 
-  return mListener->OnStartRequest(aRequest);
+  nsCOMPtr<nsIStreamListener> listener = mListener;
+  return listener->OnStartRequest(aRequest);
 }
 
 NS_IMETHODIMP
 nsForceXMLListener::OnStopRequest(nsIRequest* aRequest, nsresult aStatusCode) {
-  return mListener->OnStopRequest(aRequest, aStatusCode);
+  nsCOMPtr<nsIStreamListener> listener = mListener;
+  return listener->OnStopRequest(aRequest, aStatusCode);
 }
 
 nsSyncLoader::~nsSyncLoader() {
@@ -247,7 +248,8 @@ nsresult nsSyncLoader::PushSyncStream(nsIStreamListener* aListener) {
 
 NS_IMETHODIMP
 nsSyncLoader::OnStartRequest(nsIRequest* aRequest) {
-  return mListener->OnStartRequest(aRequest);
+  nsCOMPtr<nsIStreamListener> listener = mListener;
+  return listener->OnStartRequest(aRequest);
 }
 
 NS_IMETHODIMP
@@ -255,7 +257,8 @@ nsSyncLoader::OnStopRequest(nsIRequest* aRequest, nsresult aStatusCode) {
   if (NS_SUCCEEDED(mAsyncLoadStatus) && NS_FAILED(aStatusCode)) {
     mAsyncLoadStatus = aStatusCode;
   }
-  nsresult rv = mListener->OnStopRequest(aRequest, aStatusCode);
+  nsCOMPtr<nsIStreamListener> listener = mListener;
+  nsresult rv = listener->OnStopRequest(aRequest, aStatusCode);
   if (NS_SUCCEEDED(mAsyncLoadStatus) && NS_FAILED(rv)) {
     mAsyncLoadStatus = rv;
   }
@@ -347,7 +350,7 @@ nsresult nsSyncLoadService::PushSyncStreamToListener(
   rv = aListener->OnStartRequest(aChannel);
   if (NS_SUCCEEDED(rv)) {
     uint64_t sourceOffset = 0;
-    while (1) {
+    while (true) {
       uint64_t readCount = 0;
       rv = in->Available(&readCount);
       if (NS_FAILED(rv) || !readCount) {

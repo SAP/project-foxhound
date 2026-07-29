@@ -42,5 +42,5 @@ add_task(async function test_getLabel_withOSKeyStore() {
 
   const name = "Foxkeh";
   const label = CreditCard.getLabel({ name: "Foxkeh", number: ccNumber });
-  is(label, `**** 1111, ${name}`, "Label matches");
+  is(label, `•••• 1111, ${name}`, "Label matches");
 });

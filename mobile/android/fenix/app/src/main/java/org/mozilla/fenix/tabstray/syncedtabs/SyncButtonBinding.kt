@@ -11,8 +11,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import mozilla.components.feature.syncedtabs.view.SyncedTabsView
 import mozilla.components.lib.state.helpers.AbstractBinding
-import org.mozilla.fenix.tabstray.TabsTrayState
-import org.mozilla.fenix.tabstray.TabsTrayStore
+import org.mozilla.fenix.tabstray.redux.state.TabsTrayState
+import org.mozilla.fenix.tabstray.redux.store.TabsTrayStore
 
 /**
  * An [AbstractBinding] that invokes the [onSyncNow] callback when the [TabsTrayState.syncing] is
@@ -26,7 +26,7 @@ class SyncButtonBinding(
     private val onSyncNow: () -> Unit,
 ) : AbstractBinding<TabsTrayState>(tabsTrayStore, mainDispatcher) {
     override suspend fun onState(flow: Flow<TabsTrayState>) {
-        flow.map { it.syncing }
+        flow.map { it.sync.isSyncing }
             .distinctUntilChanged()
             .collect { syncingNow ->
                 if (syncingNow) {

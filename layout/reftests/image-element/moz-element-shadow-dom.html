@@ -1,0 +1,31 @@
+<!doctype html>
+<!--
+  Any copyright is dedicated to the Public Domain.
+  http://creativecommons.org/licenses/publicdomain/
+
+  Test that -moz-element() works inside a shadow root.
+-->
+<html>
+<body style="margin:0">
+  <canvas id="c" width="100" height="100" style="display:none"></canvas>
+  <div id="host"></div>
+  <script>
+    const canvas = document.getElementById("c");
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "green";
+    ctx.fillRect(0, 0, 100, 100);
+    document.mozSetImageElement("test-bg", canvas);
+
+    const shadow = document.getElementById("host").attachShadow({ mode: "open" });
+    shadow.innerHTML = `
+      <style>
+        #box {
+          width: 100px;
+          height: 100px;
+          background: -moz-element(#test-bg) no-repeat;
+        }
+      </style>
+      <div id="box"></div>`;
+  </script>
+</body>
+</html>

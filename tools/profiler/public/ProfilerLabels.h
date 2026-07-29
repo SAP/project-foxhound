@@ -1,12 +1,8 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // This header contains all definitions related to profiler labels.
-// It is safe to include unconditionally, and only defines empty macros if
-// MOZ_GECKO_PROFILER is not set.
 
 #ifndef ProfilerLabels_h
 #define ProfilerLabels_h
@@ -204,36 +200,6 @@ struct JSContext;
 
 namespace mozilla {
 
-#ifndef MOZ_GECKO_PROFILER
-
-class MOZ_RAII AutoProfilerLabel {
- public:
-  // This is the AUTO_PROFILER_LABEL and AUTO_PROFILER_LABEL_DYNAMIC variant.
-  AutoProfilerLabel(const char* aLabel, const char* aDynamicString,
-                    JS::ProfilingCategoryPair aCategoryPair,
-                    uint32_t aFlags = 0) {}
-
-  ~AutoProfilerLabel() {}
-};
-
-class MOZ_RAII AutoProfilerLabelHot {
- public:
-  // This is the AUTO_PROFILER_LABEL_HOT variant.
-  AutoProfilerLabelHot(const char* aLabel, const char* aDynamicString,
-                       JS::ProfilingCategoryPair aCategoryPair,
-                       uint32_t aFlags = 0) {}
-
-  // This is the AUTO_PROFILER_LABEL_FAST variant.
-  AutoProfilerLabelHot(JSContext* aJSContext, const char* aLabel,
-                       const char* aDynamicString,
-                       JS::ProfilingCategoryPair aCategoryPair,
-                       uint32_t aFlags) {}
-
-  ~AutoProfilerLabelHot() {}
-};
-
-#else  // !MOZ_GECKO_PROFILER
-
 // This class creates a non-owning ProfilingStack reference. Objects of this
 // class are stack-allocated, and so exist within a thread, and are thus bounded
 // by the lifetime of the thread, which ensures that the references held can't
@@ -294,10 +260,10 @@ class MOZ_RAII AutoProfilerLabelHot {
       mProfilingStack->pushLabelFrame(aLabel, aDynamicString, this,
                                       aCategoryPair, aFlags);
 
-#  ifdef MOZ_EXECUTION_TRACING
+#ifdef MOZ_EXECUTION_TRACING
       // We don't have a JSContext in this case, so we don't trace it.
       mCx = nullptr;
-#  endif
+#endif
     }
   }
 
@@ -312,14 +278,14 @@ class MOZ_RAII AutoProfilerLabelHot {
     if (MOZ_UNLIKELY(mProfilingStack)) {
       mProfilingStack->pushLabelFrame(aLabel, aDynamicString, this,
                                       aCategoryPair, aFlags);
-#  ifdef MOZ_EXECUTION_TRACING
+#ifdef MOZ_EXECUTION_TRACING
       if (MOZ_UNLIKELY(JS_TracerIsTracing(aJSContext))) {
         mCx = aJSContext;
         TraceLabel(aLabel, aDynamicString);
       } else {
         mCx = nullptr;
       }
-#  endif
+#endif
     }
   }
 
@@ -327,38 +293,35 @@ class MOZ_RAII AutoProfilerLabelHot {
     // This function runs both on and off the main thread.
     if (MOZ_UNLIKELY(mProfilingStack)) {
       mProfilingStack->pop();
-#  ifdef MOZ_EXECUTION_TRACING
+#ifdef MOZ_EXECUTION_TRACING
       if (MOZ_UNLIKELY(mCx)) {
         // We do not bother to produce a detailed label here, and just use an
         // empty string. The label will be lost if we wrap over the ring
         // buffer, but that's fine.
         JS_TracerLeaveLabelLatin1(mCx, "");
       }
-#  endif
+#endif
     }
   }
 
  private:
-#  ifdef MOZ_EXECUTION_TRACING
+#ifdef MOZ_EXECUTION_TRACING
   MOZ_NEVER_INLINE void TraceLabel(const char* aLabel,
                                    const char* aDynamicString) {
     char buffer[1024];
     SprintfLiteral(buffer, "(DOM) %s.%s", aLabel, aDynamicString);
     JS_TracerEnterLabelLatin1(mCx, buffer);
   }
-#  endif
+#endif
 
   // We save a ProfilingStack pointer in the ctor so we don't have to redo the
   // TLS lookup in the dtor.
   ProfilingStack* mProfilingStack;
 
-#  ifdef MOZ_EXECUTION_TRACING
+#ifdef MOZ_EXECUTION_TRACING
   JSContext* mCx;
-#  endif
+#endif
 };
-
-#endif  // !MOZ_GECKO_PROFILER
-
 }  // namespace mozilla
 
 #endif  // ProfilerLabels_h

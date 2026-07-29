@@ -88,17 +88,7 @@ prefs = [
 ["browser_103_assets_extension.js"]
 
 ["browser_103_cleanup.js"]
-support-files = [
-  "103_preload_no_img.html",
-  "103_preload_no_img.html^headers^",
-  "103_preload_no_img.html^informationalResponse^",
-]
-skip-if = [
-  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1829935
-  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1829935
-  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'",
-  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt && verify-standalone", # Bug 1829935
-]
+support-files = ["103_cleanup.sjs"]
 
 ["browser_103_csp.js"]
 support-files = ["early_hint_preload_test_helper.sys.mjs",]
@@ -162,13 +152,15 @@ skip-if = [
 ["browser_bug1535877.js"]
 
 ["browser_bug1629307.js"]
-fail-if = [
-  "a11y_checks", # Bug 1854523 clicked button may not be focusable
-]
 
 ["browser_child_resource.js"]
 run-if = [
   "crashreporter",
+]
+
+["browser_clientAuth_he.js"]
+skip-if = [
+  "socketprocess_networking",
 ]
 
 ["browser_cookie_filtering_basic.js"]
@@ -254,11 +246,73 @@ skip-if = [
 
 ["browser_test_file_channel_observer.js"]
 
-["browser_test_local_network_access.js"]
+["browser_test_lna_insecure_context.js"]
+
+["browser_test_local_network_access_basic.js"]
 support-files = [
+  "head_local_network_access.js",
   "page_with_non_trackers.html",
   "page_with_non_trackers.html^headers^",
   "fetch_from_tracker.sjs",
+]
+
+["browser_test_lna_worker.js"]
+support-files = [
+  "head_local_network_access.js",
+  "page_with_non_trackers.html",
+  "page_with_non_trackers.html^headers^",
+  "fetch_from_tracker.sjs",
+  "worker_lna.js",
+  "shared_worker_lna.js",
+  "service_worker_lna.sjs",
+]
+
+["browser_test_local_network_access_feature_policy.js"]
+support-files = [
+  "head_local_network_access.js",
+  "page_with_non_trackers.html",
+  "page_with_non_trackers.html^headers^",
+  "lna_feature_policy_parent.html",
+  "lna_feature_policy_iframe_same_origin.html",
+  "lna_feature_policy_iframe_cross_origin.html",
+  "lna_feature_policy_nested.html",
+]
+
+["browser_test_local_network_access_navigation.js"]
+support-files = [
+  "head_local_network_access.js",
+  "page_with_non_trackers.html",
+  "page_with_non_trackers.html^headers^",
+]
+
+["browser_test_local_network_access_permissions.js"]
+support-files = [
+  "head_local_network_access.js",
+  "page_with_non_trackers.html",
+  "page_with_non_trackers.html^headers^",
+]
+skip-if = [
+  "verify",
+]
+
+["browser_test_local_network_access_sni_leak.js"]
+support-files = [
+  "page_fetch_localhost_https.html",
+  "!/netwerk/test/unit/http2-ca.pem", # for node server
+]
+
+["browser_test_local_network_access_telemetry.js"]
+support-files = [
+  "head_local_network_access.js",
+  "page_with_non_trackers.html",
+  "page_with_non_trackers.html^headers^",
+]
+
+["browser_test_local_network_access_websocket.js"]
+support-files = [
+  "head_local_network_access.js",
+  "page_with_non_trackers.html",
+  "page_with_non_trackers.html^headers^",
 ]
 
 ["browser_test_local_network_trackers.js"]
@@ -271,4 +325,5 @@ support-files = [
 ["browser_test_offline_tab.js"]
 skip-if = [
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug && verify-standalone",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && debug && verify-standalone",
 ]

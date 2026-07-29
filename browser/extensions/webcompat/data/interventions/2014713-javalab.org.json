@@ -1,0 +1,15 @@
+{
+  "label": "javalab.org",
+  "bugs": {
+    "2014713": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://javalab.org/*potential_energy_by_gravity*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Safari"]
+    }
+  ]
+}

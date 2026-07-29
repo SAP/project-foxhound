@@ -9,39 +9,30 @@ kind-dependencies:
     - release-update-verify-config
 
 transforms:
-    - gecko_taskgraph.transforms.release_deps:transforms
+    - taskgraph.transforms.from_deps
     - gecko_taskgraph.transforms.final_verify:transforms
     - gecko_taskgraph.transforms.job:transforms
     - gecko_taskgraph.transforms.task:transforms
 
-task-defaults:
-    run-on-repo-type: [hg]
-    name: final-verify
-    run-on-projects: []  # to make sure this never runs as part of CI
-    worker-type: b-linux
-    worker:
-        docker-image:
-            in-tree: "update-verify"
-        max-run-time: 7200
-
-
 tasks:
-    firefox:
-        description: final verify
-        shipping-phase: push
-        shipping-product: firefox
-        treeherder:
-            platform: firefox-release/opt
-            kind: test
-            symbol: Rel(FV)
-            tier: 1
+    final-verify:
+        from-deps:
+            kinds: [release-update-verify-config]
+            group-by:
+                # `build_platform` includes `shippable` and `devedition` so
+                # this effectively groups by platform+shipping product
+                attribute: build_platform
+            copy-attributes: true
 
-    devedition:
         description: final verify
         shipping-phase: push
-        shipping-product: devedition
         treeherder:
-            platform: devedition-release/opt
-            kind: test
-            symbol: Rel(FV)
-            tier: 1
+            symbol: FV
+        run-on-repo-type: [hg]
+        name: final-verify
+        run-on-projects: []  # to make sure this never runs as part of CI
+        worker-type: b-linux
+        worker:
+            docker-image:
+                in-tree: "update-verify"
+            max-run-time: 7200

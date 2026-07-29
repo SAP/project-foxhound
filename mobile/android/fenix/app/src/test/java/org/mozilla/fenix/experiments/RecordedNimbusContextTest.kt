@@ -15,15 +15,15 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mozilla.experiments.nimbus.Nimbus
 import org.mozilla.experiments.nimbus.internal.validateEventQueries
-import org.mozilla.fenix.GleanMetrics.Pings
 import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.mozilla.fenix.utils.Settings
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertNotNull
 import org.mozilla.fenix.GleanMetrics.NimbusSystem as GleanNimbus
 
 @RunWith(RobolectricTestRunner::class)
@@ -75,6 +75,7 @@ class RecordedNimbusContextTest {
                 put("no_shortcuts_or_stories_opt_outs", true)
                 putJsonArray("addon_ids") {}
                 put("tou_points", 3)
+                put("user_disabled_ai", true)
             },
             contextAsJson,
         )
@@ -83,8 +84,8 @@ class RecordedNimbusContextTest {
     @Test
     fun `GIVEN an instance of RecordedNimbusContext WHEN record called THEN the value recorded to Glean should match the expected value`() {
         var recordedValue: JsonElement? = null
-        val job = Pings.nimbus.testBeforeNextSubmit {
-            recordedValue = GleanNimbus.recordedNimbusContext.testGetValue()
+        val job = Nimbus.Pings.nimbusTargetingContext.testBeforeNextSubmit {
+            recordedValue = GleanNimbus.recordedNimbusContext.testGetValue("nimbus-targeting-context")
         }
 
         val recordedContext = RecordedNimbusContext.createForTest()
@@ -95,6 +96,7 @@ class RecordedNimbusContextTest {
         )
         recordedContext.record()
 
+        Nimbus.Pings.nimbusTargetingContext.submit()
         job.join()
         assertNotNull(recordedValue)
         assertEquals(
@@ -120,6 +122,7 @@ class RecordedNimbusContextTest {
                 put("user_accepted_tou", true)
                 put("no_shortcuts_or_stories_opt_outs", true)
                 put("tou_points", 3)
+                put("user_disabled_ai", true)
             },
             recordedValue?.jsonObject,
         )

@@ -51,6 +51,8 @@ let wasmGlobalInterfaces = [
   { name: "CompileError", insecureContext: true },
   { name: "LinkError", insecureContext: true },
   { name: "RuntimeError", insecureContext: true },
+  { name: "SuspendError", insecureContext: true },
+  { name: "Suspending", insecureContext: true },
   { name: "Function", insecureContext: true, nightly: true },
   { name: "Exception", insecureContext: true },
   { name: "Tag", insecureContext: true },
@@ -59,6 +61,7 @@ let wasmGlobalInterfaces = [
   { name: "compileStreaming", insecureContext: true },
   { name: "instantiate", insecureContext: true },
   { name: "instantiateStreaming", insecureContext: true },
+  { name: "promising", insecureContext: true },
   { name: "validate", insecureContext: true },
 ];
 // IMPORTANT: Do not change this list without review from
@@ -231,6 +234,8 @@ let interfaceNamesInGlobalScope = [
   { name: "CSSContainerRule", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CSSCounterStyleRule", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSFontFaceDescriptors", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CSSFontFaceRule", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -411,14 +416,12 @@ let interfaceNamesInGlobalScope = [
   {
     name: "DocumentPictureInPicture",
     insecureContext: false,
-    nightly: true,
     android: false,
   },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   {
     name: "DocumentPictureInPictureEvent",
     insecureContext: false,
-    nightly: true,
     android: false,
   },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -852,6 +855,8 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "IDBOpenDBRequest", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "IDBRecord", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "IDBRequest", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "IDBTransaction", insecureContext: true },
@@ -859,10 +864,6 @@ let interfaceNamesInGlobalScope = [
   { name: "IDBVersionChangeEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "IIRFilterNode", insecureContext: true },
-  // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "IdentityCredential", nightly: true, desktop: true },
-  // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "IdentityProvider", nightly: true, desktop: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "IdleDeadline", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -1012,43 +1013,36 @@ let interfaceNamesInGlobalScope = [
   {
     name: "NavigateEvent",
     insecureContext: true,
-    sessionHistoryInParent: true,
   },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   {
     name: "Navigation",
     insecureContext: true,
-    sessionHistoryInParent: true,
   },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   {
     name: "NavigationActivation",
     insecureContext: true,
-    sessionHistoryInParent: true,
   },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   {
     name: "NavigationCurrentEntryChangeEvent",
     insecureContext: true,
-    sessionHistoryInParent: true,
   },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   {
     name: "NavigationDestination",
     insecureContext: true,
-    sessionHistoryInParent: true,
   },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   {
     name: "NavigationHistoryEntry",
     insecureContext: true,
-    sessionHistoryInParent: true,
   },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   {
     name: "NavigationPrecommitController",
     insecureContext: true,
-    sessionHistoryInParent: true,
   },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "NavigationPreloadManager",
@@ -1056,7 +1050,6 @@ let interfaceNamesInGlobalScope = [
   {
     name: "NavigationTransition",
     insecureContext: true,
-    sessionHistoryInParent: true,
   },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Navigator", insecureContext: true },
@@ -1174,6 +1167,10 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Permissions", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "PictureInPictureEvent", insecureContext: true, android: false },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "PictureInPictureWindow", insecureContext: true, android: false },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Plugin", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "PluginArray", insecureContext: true },
@@ -1214,11 +1211,17 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "RTCEncodedVideoFrame", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "RTCError", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "RTCErrorEvent", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "RTCIceCandidate", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "RTCIceTransport", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "RTCPeerConnection", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "RTCPeerConnectionIceErrorEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "RTCPeerConnectionIceEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -1478,9 +1481,15 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "ScrollAreaEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "ScrollTimeline", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "SecurityPolicyViolationEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Selection", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "Serial", android: false },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "SerialPort", android: false },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "ServiceWorker",
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -1615,6 +1624,8 @@ let interfaceNamesInGlobalScope = [
   { name: "VideoFrame", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "VideoPlaybackQuality", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "ViewTimeline", insecureContext: true, nightly: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "ViewTransition", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -1767,7 +1778,6 @@ let interfaceNamesInGlobalScope = [
   {
     name: "documentPictureInPicture",
     insecureContext: false,
-    nightly: true,
     android: false,
   },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -1830,7 +1840,6 @@ let interfaceNamesInGlobalScope = [
   {
     name: "navigation",
     insecureContext: true,
-    sessionHistoryInParent: true,
   },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "navigator", insecureContext: true },

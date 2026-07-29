@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sts=2 sw=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -478,7 +476,7 @@ HWND WinUtils::GetTopLevelHWND(HWND aWnd, bool aStopIfNotChild,
 
 // Map from native window handles to nsWindow structures. Does not AddRef.
 // Inherently unsafe to access outside the main thread.
-MOZ_RUNINIT static nsTHashMap<HWND, nsWindow*> sExtantNSWindows;
+constinit static nsTHashMap<HWND, nsWindow*> sExtantNSWindows;
 
 /* static */
 void WinUtils::SetNSWindowPtr(HWND aWnd, nsWindow* aWindow) {
@@ -1272,33 +1270,35 @@ bool WinUtils::IsIMEEnabled(IMEEnabled aIMEState) {
 
 /* static */
 void WinUtils::SetupKeyModifiersSequence(nsTArray<KeyPair>* aArray,
-                                         uint32_t aModifiers, UINT aMessage) {
-  MOZ_ASSERT(!(aModifiers & nsIWidget::ALTGRAPH) ||
-             !(aModifiers & (nsIWidget::CTRL_L | nsIWidget::ALT_R)));
+                                         nsIWidget::NativeModifiers aModifiers,
+                                         UINT aMessage) {
+  MOZ_ASSERT(!(aModifiers & nsIWidget::NativeModifiers::ALTGRAPH) ||
+             !(aModifiers & (nsIWidget::NativeModifiers::CTRL_L |
+                             nsIWidget::NativeModifiers::ALT_R)));
   if (aMessage == WM_KEYUP) {
     // If AltGr is released, ControlLeft key is released first, then,
     // AltRight key is released.
-    if (aModifiers & nsIWidget::ALTGRAPH) {
+    if (aModifiers & nsIWidget::NativeModifiers::ALTGRAPH) {
       aArray->AppendElement(
           KeyPair(VK_CONTROL, VK_LCONTROL, ScanCode::eControlLeft));
       aArray->AppendElement(KeyPair(VK_MENU, VK_RMENU, ScanCode::eAltRight));
     }
     for (uint32_t i = std::size(sModifierKeyMap); i; --i) {
       const uint32_t* map = sModifierKeyMap[i - 1];
-      if (aModifiers & map[0]) {
+      if (aModifiers & static_cast<nsIWidget::NativeModifiers>(map[0])) {
         aArray->AppendElement(KeyPair(map[1], map[2], map[3]));
       }
     }
   } else {
     for (uint32_t i = 0; i < std::size(sModifierKeyMap); ++i) {
       const uint32_t* map = sModifierKeyMap[i];
-      if (aModifiers & map[0]) {
+      if (aModifiers & static_cast<nsIWidget::NativeModifiers>(map[0])) {
         aArray->AppendElement(KeyPair(map[1], map[2], map[3]));
       }
     }
     // If AltGr is pressed, ControlLeft key is pressed first, then,
     // AltRight key is pressed.
-    if (aModifiers & nsIWidget::ALTGRAPH) {
+    if (aModifiers & nsIWidget::NativeModifiers::ALTGRAPH) {
       aArray->AppendElement(
           KeyPair(VK_CONTROL, VK_LCONTROL, ScanCode::eControlLeft));
       aArray->AppendElement(KeyPair(VK_MENU, VK_RMENU, ScanCode::eAltRight));

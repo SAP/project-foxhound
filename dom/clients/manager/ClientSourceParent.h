@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,11 +15,12 @@ namespace mozilla::dom {
 
 class ClientHandleParent;
 class ClientManagerService;
+class ThreadsafeContentParentHandle;
 
 class ClientSourceParent final : public PClientSourceParent {
   ClientInfo mClientInfo;
   Maybe<ServiceWorkerDescriptor> mController;
-  const Maybe<ContentParentId> mContentParentId;
+  const RefPtr<ThreadsafeContentParentHandle> mContentParentHandle;
   RefPtr<ClientManagerService> mService;
   nsTArray<ClientHandleParent*> mHandleList;
   MozPromiseHolder<GenericNonExclusivePromise> mExecutionReadyPromise;
@@ -57,8 +56,9 @@ class ClientSourceParent final : public PClientSourceParent {
  public:
   NS_INLINE_DECL_REFCOUNTING(ClientSourceParent, override)
 
-  explicit ClientSourceParent(const ClientSourceConstructorArgs& aArgs,
-                              const Maybe<ContentParentId>& aContentParentId);
+  explicit ClientSourceParent(
+      const ClientSourceConstructorArgs& aArgs,
+      ThreadsafeContentParentHandle* aContentParentHandle);
 
   mozilla::ipc::IPCResult Init();
 
@@ -74,8 +74,9 @@ class ClientSourceParent final : public PClientSourceParent {
 
   void ClearController();
 
-  bool IsOwnedByProcess(ContentParentId aContentParentId) const {
-    return mContentParentId && mContentParentId.value() == aContentParentId;
+  bool IsOwnedByProcess(
+      ThreadsafeContentParentHandle* aContentParentHandle) const {
+    return mContentParentHandle == aContentParentHandle;
   }
 
   void AttachHandle(ClientHandleParent* aClientSource);

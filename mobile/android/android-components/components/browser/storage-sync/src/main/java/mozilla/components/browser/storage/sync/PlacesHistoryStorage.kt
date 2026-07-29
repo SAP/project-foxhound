@@ -31,8 +31,6 @@ import mozilla.components.concept.storage.VisitInfo
 import mozilla.components.concept.storage.VisitType
 import mozilla.components.concept.storage.constraints
 import mozilla.components.concept.storage.periodicStorageWorkRequest
-import mozilla.components.concept.sync.SyncAuthInfo
-import mozilla.components.concept.sync.SyncStatus
 import mozilla.components.concept.sync.SyncableStore
 import mozilla.components.concept.toolbar.AutocompleteProvider
 import mozilla.components.concept.toolbar.AutocompleteResult
@@ -259,20 +257,6 @@ open class PlacesHistoryStorage(
                 }
             },
         )
-    }
-
-    /**
-     * Runs syncHistory() method on the places Connection
-     *
-     * @param authInfo The authentication information to sync with.
-     * @return Sync status of OK or Error
-     */
-    suspend fun sync(authInfo: SyncAuthInfo): SyncStatus {
-        return withContext(writeScope.coroutineContext) {
-            syncAndHandleExceptions {
-                places.syncHistory(authInfo)
-            }
-        }
     }
 
     override fun registerWithSyncManager() {

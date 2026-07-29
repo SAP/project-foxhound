@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,7 +15,7 @@
 
 namespace mozilla::media {
 
-bool HostnameInPref(const char* aPref, const nsCString& aHostName) {
+bool HostnameInValue(const nsACString& aList, const nsCString& aHostName) {
   auto HostInDomain = [](const nsCString& aHost, const nsCString& aPattern) {
     int32_t patternOffset = 0;
     int32_t hostOffset = 0;
@@ -36,16 +34,10 @@ bool HostnameInPref(const char* aPref, const nsCString& aHostName) {
     }
 
     nsDependentCString hostRoot(aHost, hostOffset);
-    return hostRoot.EqualsIgnoreCase(aPattern.BeginReading() + patternOffset);
+    return hostRoot.EqualsIgnoreCase(aPattern.get() + patternOffset);
   };
 
-  nsCString domainList;
-  nsresult rv = Preferences::GetCString(aPref, domainList);
-
-  if (NS_FAILED(rv)) {
-    return false;
-  }
-
+  nsCString domainList(aList);
   domainList.StripWhitespace();
 
   if (domainList.IsEmpty() || aHostName.IsEmpty()) {
@@ -57,7 +49,7 @@ bool HostnameInPref(const char* aPref, const nsCString& aHostName) {
   // must match exactly or have a single leading '*.' wildcard.
   for (const nsACString& each : domainList.Split(',')) {
     nsCString domainPattern;
-    rv = NS_DomainToASCIIAllowAnyGlyphfulASCII(each, domainPattern);
+    nsresult rv = NS_DomainToASCIIAllowAnyGlyphfulASCII(each, domainPattern);
     if (NS_SUCCEEDED(rv)) {
       if (HostInDomain(aHostName, domainPattern)) {
         return true;
@@ -67,6 +59,14 @@ bool HostnameInPref(const char* aPref, const nsCString& aHostName) {
     }
   }
   return false;
+}
+
+bool HostnameInPref(const char* aPref, const nsCString& aHostName) {
+  nsCString domainList;
+  if (NS_FAILED(Preferences::GetCString(aPref, domainList))) {
+    return false;
+  }
+  return HostnameInValue(domainList, aHostName);
 }
 
 nsCOMPtr<nsIAsyncShutdownClient> GetShutdownBarrier() {

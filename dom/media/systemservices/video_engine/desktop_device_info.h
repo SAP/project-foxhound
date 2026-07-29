@@ -67,9 +67,9 @@ using TabCaptureInfo = CaptureInfo<TabSource>;
 std::unique_ptr<TabCaptureInfo> CreateTabCaptureInfo();
 
 std::shared_ptr<VideoCaptureModule::DeviceInfo> CreateDesktopDeviceInfo(
-    int32_t aId, std::unique_ptr<DesktopCaptureInfo>&& aInfo);
+    std::unique_ptr<DesktopCaptureInfo>&& aInfo);
 std::shared_ptr<VideoCaptureModule::DeviceInfo> CreateTabDeviceInfo(
-    int32_t aId, std::unique_ptr<TabCaptureInfo>&& aInfo);
+    std::unique_ptr<TabCaptureInfo>&& aInfo);
 
 };  // namespace webrtc
 

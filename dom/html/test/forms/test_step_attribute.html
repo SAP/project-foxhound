@@ -6,6 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=635553
 <head>
   <title>Test for Bug 635553</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="datetime_utils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -61,20 +62,26 @@ function checkValidity(aElement, aValidity, aApply, aData)
   if (aValidity) {
     is(aElement.validationMessage, "", "There should be no validation message.");
   } else {
+    let isDateTime = ["date", "time", "datetime-local", "week", "month"].includes(aElement.type);
+    let formatValue = value => {
+      return isDateTime
+        ? formatDateTimeForValidityMessage(value, aElement.type)
+        : value;
+    };
     if (aElement.validity.rangeUnderflow) {
       var underflowMsg =
-            (aElement.type == "date" || aElement.type == "time") ?
-            ("Please select a value that is no earlier than " + aElement.min + ".") :
+            isDateTime ?
+            ("Please select a value that is no earlier than " + formatValue(aElement.min) + ".") :
             ("Please select a value that is no less than " + aElement.min + ".");
       is(aElement.validationMessage, underflowMsg,
          "Checking range underflow validation message.");
     } else if (aData.low == aData.high) {
       is(aElement.validationMessage, "Please select a valid value. " +
-         "The nearest valid value is " + aData.low + ".",
+         "The nearest valid value is " + formatValue(aData.low) + ".",
          "There should be a validation message.");
     } else {
       is(aElement.validationMessage, "Please select a valid value. "  +
-         "The two nearest valid values are " + aData.low + " and " + aData.high + ".",
+         "The two nearest valid values are " + formatValue(aData.low) + " and " + formatValue(aData.high) + ".",
          "There should be a validation message.");
     }
   }

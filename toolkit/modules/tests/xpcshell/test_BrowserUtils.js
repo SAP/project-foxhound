@@ -5,6 +5,10 @@ const { BrowserUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/BrowserUtils.sys.mjs"
 );
 
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
+
 const { EnterprisePolicyTesting } = ChromeUtils.importESModule(
   "resource://testing-common/EnterprisePolicyTesting.sys.mjs"
 );
@@ -500,4 +504,249 @@ add_task(async function test_callModulesFromCategory_returns_promise() {
 
   // Now clean up our category for later tests.
   Services.catMan.deleteCategory(CATEGORY);
+});
+
+// Test a category with both a plain .js entry and an ESM entry, for both
+// single-window and multi-window scenarios.
+add_task(async function test_callModulesFromCategory_multiple_window() {
+  const CATEGORY = "test-js-global-catman";
+  // A fake .js URL — the file doesn't need to exist since we rely on
+  // jsGlobal having the object already (via lazy getter in production).
+  const MODULE_JS = "chrome://browser/content/fake-catman-test.js";
+  const MODULE_ESM = "resource://test/my_catman_1.sys.mjs";
+  const OBSTOPIC = "test-modules-from-catman-notification";
+
+  let catManUpdated = TestUtils.topicObserved("xpcom-category-entry-added");
+  Services.catMan.addCategoryEntry(
+    CATEGORY,
+    MODULE_JS,
+    "FakeObj.doThing",
+    false,
+    false
+  );
+  await catManUpdated;
+
+  catManUpdated = TestUtils.topicObserved("xpcom-category-entry-added");
+  Services.catMan.addCategoryEntry(
+    CATEGORY,
+    MODULE_ESM,
+    "Module1.test",
+    false,
+    false
+  );
+  await catManUpdated;
+
+  let sandbox = sinon.createSandbox();
+
+  // Window 1: both the .js and ESM entries should be called.
+  let fakeGlobal1 = { FakeObj: { doThing: sandbox.spy() } };
+
+  let esmResult = TestUtils.topicObserved(OBSTOPIC).then(([, data]) => data);
+  BrowserUtils.callModulesFromCategory(
+    { categoryName: CATEGORY, jsGlobal: fakeGlobal1 },
+    "window1"
+  );
+  sinon.assert.calledOnce(fakeGlobal1.FakeObj.doThing);
+  sinon.assert.calledWithExactly(fakeGlobal1.FakeObj.doThing, "window1");
+  Assert.equal(await esmResult, "window1", "ESM entry called for window 1.");
+
+  // Window 2 (multi-window): the .js entry must use the new jsGlobal, while
+  // the ESM entry continues to use the same singleton module instance.
+  let fakeGlobal2 = { FakeObj: { doThing: sandbox.spy() } };
+
+  esmResult = TestUtils.topicObserved(OBSTOPIC).then(([, data]) => data);
+  BrowserUtils.callModulesFromCategory(
+    { categoryName: CATEGORY, jsGlobal: fakeGlobal2 },
+    "window2"
+  );
+  sinon.assert.calledOnce(fakeGlobal2.FakeObj.doThing);
+  sinon.assert.calledWithExactly(fakeGlobal2.FakeObj.doThing, "window2");
+  sinon.assert.calledOnce(fakeGlobal1.FakeObj.doThing); // not called again
+  Assert.equal(await esmResult, "window2", "ESM entry called for window 2.");
+
+  sandbox.restore();
+  Services.catMan.deleteCategory(CATEGORY);
+});
+
+// Test error paths for the jsGlobal / plain-.js-script code path.
+add_task(async function test_callModulesFromCategory_jsGlobal_errors() {
+  const CATEGORY = "test-js-global-catman-errors";
+  const MODULE = "chrome://browser/content/fake-catman-test.js";
+
+  let catManUpdated = TestUtils.topicObserved("xpcom-category-entry-added");
+  Services.catMan.addCategoryEntry(
+    CATEGORY,
+    MODULE,
+    "FakeObj.doThing",
+    false,
+    false
+  );
+  await catManUpdated;
+
+  // Omitting jsGlobal for a .js entry should log an error.
+  let consolePromise = TestUtils.consoleMessageObserved(m => {
+    let firstArg = m.wrappedJSObject.arguments?.[0];
+    return typeof firstArg == "string" && firstArg.includes(CATEGORY);
+  });
+  BrowserUtils.callModulesFromCategory({ categoryName: CATEGORY }, "hello");
+  await consolePromise;
+
+  // Providing a jsGlobal that lacks the expected object should log an error.
+  consolePromise = TestUtils.consoleMessageObserved(m => {
+    let firstArg = m.wrappedJSObject.arguments?.[0];
+    return typeof firstArg == "string" && firstArg.includes(CATEGORY);
+  });
+  BrowserUtils.callModulesFromCategory(
+    { categoryName: CATEGORY, jsGlobal: {} },
+    "hello"
+  );
+  await consolePromise;
+
+  Services.catMan.deleteCategory(CATEGORY);
+});
+
+add_task(async function test_willLoadInBackground() {
+  const TEST_DATA = [
+    // where: "tab" and loadInBackgroundPref is on.
+    {
+      loadInBackgroundPref: false,
+      where: "tab",
+      expected: false,
+    },
+    {
+      loadInBackgroundPref: false,
+      where: "tab",
+      params: { inBackground: true },
+      expected: true,
+    },
+    {
+      loadInBackgroundPref: false,
+      where: "tab",
+      params: { inBackground: false },
+      expected: false,
+    },
+    {
+      loadInBackgroundPref: false,
+      where: "tab",
+      params: { forceForeground: true },
+      expected: false,
+    },
+    {
+      loadInBackgroundPref: false,
+      where: "tab",
+      params: { forceForeground: false },
+      expected: false,
+    },
+    // where: "tab" and loadInBackgroundPref is off.
+    {
+      loadInBackgroundPref: true,
+      where: "tab",
+      expected: true,
+    },
+    {
+      loadInBackgroundPref: true,
+      where: "tab",
+      params: { inBackground: true },
+      expected: true,
+    },
+    {
+      loadInBackgroundPref: true,
+      where: "tab",
+      params: { inBackground: false },
+      expected: false,
+    },
+    {
+      loadInBackgroundPref: true,
+      where: "tab",
+      params: { forceForeground: true },
+      expected: false,
+    },
+    {
+      loadInBackgroundPref: true,
+      where: "tab",
+      params: { forceForeground: false },
+      expected: true,
+    },
+    // where: "tabshifted" and loadInBackgroundPref is on.
+    {
+      loadInBackgroundPref: false,
+      where: "tabshifted",
+      expected: true,
+    },
+    {
+      loadInBackgroundPref: false,
+      where: "tabshifted",
+      params: { inBackground: true },
+      expected: false,
+    },
+    {
+      loadInBackgroundPref: false,
+      where: "tabshifted",
+      params: { inBackground: false },
+      expected: true,
+    },
+    {
+      loadInBackgroundPref: false,
+      where: "tabshifted",
+      params: { forceForeground: true },
+      expected: true,
+    },
+    {
+      loadInBackgroundPref: false,
+      where: "tabshifted",
+      params: { forceForeground: false },
+      expected: true,
+    },
+    // where: "tabshifted" and loadInBackgroundPref is off.
+    {
+      loadInBackgroundPref: true,
+      where: "tabshifted",
+      expected: false,
+    },
+    {
+      loadInBackgroundPref: true,
+      where: "tabshifted",
+      params: { inBackground: true },
+      expected: false,
+    },
+    {
+      loadInBackgroundPref: true,
+      where: "tabshifted",
+      params: { inBackground: false },
+      expected: true,
+    },
+    {
+      loadInBackgroundPref: true,
+      where: "tabshifted",
+      params: { forceForeground: true },
+      expected: true,
+    },
+    {
+      loadInBackgroundPref: true,
+      where: "tabshifted",
+      params: { forceForeground: false },
+      expected: false,
+    },
+    // where: other,
+    {
+      loadInBackgroundPref: true,
+      where: "current",
+      params: { inBackground: true },
+      expected: false,
+    },
+  ];
+
+  for (const { loadInBackgroundPref, where, params, expected } of TEST_DATA) {
+    info(
+      `Test for ${JSON.stringify({ loadInBackgroundPref, where, params, expected })}`
+    );
+    Services.prefs.setBoolPref(
+      "browser.tabs.loadInBackground",
+      loadInBackgroundPref
+    );
+
+    Assert.equal(BrowserUtils.willLoadInBackground(where, params), expected);
+
+    Services.prefs.clearUserPref("browser.tabs.loadInBackground");
+  }
 });

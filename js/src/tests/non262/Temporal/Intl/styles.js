@@ -44,19 +44,8 @@ for (let locale of locales) {
 
     assertEq(instant.toLocaleString(locale, {timeZone, dateStyle}), expected);
     assertEq(zonedDateTime.toLocaleString(locale, {dateStyle}), expected);
-
-    // https://github.com/tc39/proposal-temporal/issues/3062
-    if (
-      (locale === "zh" && (dateStyle === "long" || dateStyle === "medium")) ||
-      (locale === "ja" && (dateStyle === "full" || dateStyle === "long"))
-    ) {
-      assertNe(plainDateTime.toLocaleString(locale, {timeZone, dateStyle}), expected);
-      assertNe(plainDate.toLocaleString(locale, {timeZone, dateStyle}), expected);
-      continue;
-    }
-
-    assertEq(plainDateTime.toLocaleString(locale, {timeZone, dateStyle}), expected);
-    assertEq(plainDate.toLocaleString(locale, {timeZone, dateStyle}), expected);
+    assertEq(plainDateTime.toLocaleString(locale, {dateStyle}), expected);
+    assertEq(plainDate.toLocaleString(locale, {dateStyle}), expected);
   }
 
   for (let timeStyle of timeStyles) {
@@ -67,8 +56,8 @@ for (let locale of locales) {
     // "full" and "long" time style include time zone names, which aren't used
     // by Temporal.PlainDateTime and Temporal.PlainTime.
     if (timeStyle !== "full" && timeStyle !== "long") {
-      assertEq(plainDateTime.toLocaleString(locale, {timeZone, timeStyle}), expected);
-      assertEq(plainTime.toLocaleString(locale, {timeZone, timeStyle}), expected);
+      assertEq(plainDateTime.toLocaleString(locale, {timeStyle}), expected);
+      assertEq(plainTime.toLocaleString(locale, {timeStyle}), expected);
     }
   }
 
@@ -82,15 +71,7 @@ for (let locale of locales) {
       // "full" and "long" time style include time zone names, which aren't used
       // by Temporal.PlainDateTime and Temporal.PlainTime.
       if (timeStyle !== "full" && timeStyle !== "long") {
-        // https://github.com/tc39/proposal-temporal/issues/3062
-        if (
-          (locale === "zh" && (dateStyle === "long" || dateStyle === "medium")) ||
-          (locale === "ja" && (dateStyle === "full" || dateStyle === "long"))
-        ) {
-          assertNe(plainDateTime.toLocaleString(locale, {timeZone, dateStyle, timeStyle}), expected);
-          continue;
-        }
-        assertEq(plainDateTime.toLocaleString(locale, {timeZone, dateStyle, timeStyle}), expected);
+        assertEq(plainDateTime.toLocaleString(locale, {dateStyle, timeStyle}), expected);
       }
     }
   }

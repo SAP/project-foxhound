@@ -10,7 +10,7 @@
 type UrlbarController = import("../UrlbarController.sys.mjs").UrlbarController;
 type UrlbarInput = import("../content/UrlbarInput.mjs").UrlbarInput;
 type UrlbarQueryContext = import("../UrlbarUtils.sys.mjs").UrlbarQueryContext;
-type UrlbarResult = import("../UrlbarResult.sys.mjs").UrlbarResult;
+type UrlbarResult = import("../content/UrlbarResult.mjs").UrlbarResult;
 
 /**
  * A structure that holds the details of commands for results.

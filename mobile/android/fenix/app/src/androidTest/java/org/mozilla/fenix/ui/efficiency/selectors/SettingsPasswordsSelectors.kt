@@ -9,8 +9,15 @@ import org.mozilla.fenix.ui.efficiency.helpers.SelectorStrategy
 
 object SettingsPasswordsSelectors {
 
+    val GO_BACK_BUTTON = Selector(
+        strategy = SelectorStrategy.ESPRESSO_BY_CONTENT_DESC,
+        value = "Navigate up",
+        description = "the Back Arrow button",
+        groups = listOf("requiredForPage"),
+    )
+
     val SETTINGS_PASSWORDS_TITLE = Selector(
-        strategy = SelectorStrategy.UIAUTOMATOR2_BY_TEXT,
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
         value = "Passwords",
         description = "The Passwords Settings title",
         groups = listOf("requiredForPage"),
@@ -38,6 +45,7 @@ object SettingsPasswordsSelectors {
     )
 
     val all = listOf(
+        GO_BACK_BUTTON,
         SETTINGS_PASSWORDS_TITLE,
         SAVE_PASSWORDS_TOGGLE,
         SAVE_PASSWORDS_OPTION,

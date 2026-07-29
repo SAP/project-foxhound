@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.wallpapers
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mozilla.components.support.base.log.logger.Logger
@@ -22,21 +23,22 @@ import java.io.IOException
  * @param storageRootDirectory The top level app-local storage directory.
  * @param settings Used to update the color of the text shown above wallpapers.
  * @param downloadWallpaper Function used to download assets for legacy drawable wallpapers.
+ * @param ioDispatcher The dispatcher to use for IO operations.
  */
 class LegacyWallpaperMigration(
     private val storageRootDirectory: File,
     private val settings: Settings,
     private val downloadWallpaper: suspend (Wallpaper) -> Wallpaper.ImageFileState,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     /**
      * Migrate the legacy wallpaper to the new path and delete the remaining legacy files.
      *
      * @param wallpaperName Name of the wallpaper to be migrated.
      */
-    @Suppress("CognitiveComplexMethod")
     suspend fun migrateLegacyWallpaper(
         wallpaperName: String,
-    ): String = withContext(Dispatchers.IO) {
+    ): String = withContext(ioDispatcher) {
         // For the legacy wallpapers previously stored as drawables,
         // attempt to download them at startup.
         when (wallpaperName) {
@@ -70,6 +72,26 @@ class LegacyWallpaperMigration(
         // Directory where the legacy wallpaper files should be migrated
         val targetDirectory = "wallpapers/" + migratedWallpaperName.lowercase()
 
+        migrateLegacyWallpaperFiles(
+            wallpaperName = wallpaperName,
+            legacyPortraitFile = legacyPortraitFile,
+            legacyLandscapeFile = legacyLandscapeFile,
+            targetDirectory = targetDirectory,
+        )
+
+        // Delete the remaining legacy files
+        File(storageRootDirectory, "wallpapers/portrait").deleteRecursively()
+        File(storageRootDirectory, "wallpapers/landscape").deleteRecursively()
+
+        return@withContext migratedWallpaperName
+    }
+
+    private fun migrateLegacyWallpaperFiles(
+        wallpaperName: String,
+        legacyPortraitFile: File,
+        legacyLandscapeFile: File,
+        targetDirectory: String,
+    ) {
         try {
             // Use the portrait file as thumbnail
             legacyPortraitFile.copyTo(
@@ -101,12 +123,6 @@ class LegacyWallpaperMigration(
             Logger.error("Failed to migrate legacy wallpaper", e)
             settings.shouldMigrateLegacyWallpaperCardColors = false
         }
-
-        // Delete the remaining legacy files
-        File(storageRootDirectory, "wallpapers/portrait").deleteRecursively()
-        File(storageRootDirectory, "wallpapers/landscape").deleteRecursively()
-
-        return@withContext migratedWallpaperName
     }
 
     /**

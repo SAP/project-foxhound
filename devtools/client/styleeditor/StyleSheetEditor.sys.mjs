@@ -113,14 +113,6 @@ export class StyleSheetEditor extends EventEmitter {
       },
     };
 
-    this._styleSheetFilePath = null;
-    if (
-      this.styleSheet.href &&
-      Services.io.extractScheme(this.styleSheet.href) == "file"
-    ) {
-      this._styleSheetFilePath = this.styleSheet.href;
-    }
-
     this.onPropertyChange = this.onPropertyChange.bind(this);
     this.onAtRulesChanged = this.onAtRulesChanged.bind(this);
     this.checkLinkedFileForChanges = this.checkLinkedFileForChanges.bind(this);
@@ -823,13 +815,7 @@ export class StyleSheetEditor extends EventEmitter {
         ? PathUtils.filename(this._friendlyName)
         : this._friendlyName;
     }
-    showFilePicker(
-      file || this._styleSheetFilePath,
-      true,
-      this._window,
-      onFile,
-      defaultName
-    );
+    showFilePicker(file, true, this._window, onFile, defaultName);
   }
 
   /**

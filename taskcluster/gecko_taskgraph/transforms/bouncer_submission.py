@@ -10,10 +10,8 @@ import logging
 
 import attr
 from taskgraph.transforms.base import TransformSequence
-from taskgraph.util.schema import resolve_keyed_by
 
 from gecko_taskgraph.transforms.l10n import parse_locales_file
-from gecko_taskgraph.util.attributes import release_level
 from gecko_taskgraph.util.scriptworker import get_release_config
 
 logger = logging.getLogger(__name__)
@@ -111,25 +109,6 @@ transforms = TransformSequence()
 @transforms.add
 def make_task_worker(config, jobs):
     for job in jobs:
-        resolve_keyed_by(
-            job,
-            "worker-type",
-            item_name=job["name"],
-            **{"release-level": release_level(config.params)},
-        )
-        resolve_keyed_by(
-            job,
-            "scopes",
-            item_name=job["name"],
-            **{"release-level": release_level(config.params)},
-        )
-        resolve_keyed_by(
-            job,
-            "bouncer-products",
-            item_name=job["name"],
-            **{"release-type": config.params["release_type"]},
-        )
-
         # No need to filter out ja-JP-mac, we need to upload both; but we do
         # need to filter out the platforms they come with
         all_locales = sorted(

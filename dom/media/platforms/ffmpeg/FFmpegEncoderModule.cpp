@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -41,8 +39,8 @@ template <int V>
       !(XRE_IsParentProcess() && PR_GetEnv("MOZ_RUN_GTEST")))
 #  endif
   {
-    MOZ_LOG(sPEMLog, LogLevel::Debug,
-            ("No support in %s process", XRE_GetProcessTypeString()));
+    MOZ_LOG_FMT(sPEMLog, LogLevel::Debug, "No support in {} process",
+                XRE_GetProcessTypeString());
     return;
   }
 
@@ -86,23 +84,23 @@ template <int V>
   hwCodecs->Clear();
   for (const auto& entry : kCodecIDs) {
     if (!entry.mHwAllowed) {
-      MOZ_LOG(
-          sPEMLog, LogLevel::Debug,
-          ("Hw codec disabled by gfxVars for %s", AVCodecToString(entry.mId)));
+      MOZ_LOG_FMT(sPEMLog, LogLevel::Debug,
+                  "Hw codec disabled by gfxVars for {}",
+                  AVCodecToString(entry.mId));
       continue;
     }
 
     const auto* codec =
         FFmpegDataEncoder<V>::FindHardwareEncoder(aLib, entry.mId);
     if (!codec) {
-      MOZ_LOG(sPEMLog, LogLevel::Debug,
-              ("No hw codec or encoder for %s", AVCodecToString(entry.mId)));
+      MOZ_LOG_FMT(sPEMLog, LogLevel::Debug, "No hw codec or encoder for {}",
+                  AVCodecToString(entry.mId));
       continue;
     }
 
     hwCodecs->AppendElement(entry.mId);
-    MOZ_LOG(sPEMLog, LogLevel::Debug,
-            ("Support %s for hw encoding", AVCodecToString(entry.mId)));
+    MOZ_LOG_FMT(sPEMLog, LogLevel::Debug, "Support {} for hw encoding",
+                AVCodecToString(entry.mId));
   }
 #endif  // (XP_WIN || MOZ_WIDGET_GTK || MOZ_WIDGET_ANDROID) && MOZ_USE_HWDECODE
         // && !MOZ_FFVPX_AUDIOONLY && LIBAVCODEC_VERSION_MAJOR >= 58
@@ -193,13 +191,13 @@ already_AddRefed<MediaDataEncoder> FFmpegEncoderModule<V>::CreateVideoEncoder(
     const EncoderConfig& aConfig, const RefPtr<TaskQueue>& aTaskQueue) const {
   AVCodecID codecId = GetFFmpegEncoderCodecId<V>(aConfig.mCodec);
   if (codecId == AV_CODEC_ID_NONE) {
-    FFMPEGV_LOG("No ffmpeg encoder for %s", EnumValueToString(aConfig.mCodec));
+    FFMPEGV_LOG("No ffmpeg encoder for {}", EnumValueToString(aConfig.mCodec));
     return nullptr;
   }
 
   RefPtr<MediaDataEncoder> encoder =
       new FFmpegVideoEncoder<V>(mLib, codecId, aTaskQueue, aConfig);
-  FFMPEGV_LOG("ffmpeg %s encoder: %s has been created",
+  FFMPEGV_LOG("ffmpeg {} encoder: {} has been created",
               EnumValueToString(aConfig.mCodec),
               encoder->GetDescriptionName().get());
   return encoder.forget();
@@ -210,13 +208,13 @@ already_AddRefed<MediaDataEncoder> FFmpegEncoderModule<V>::CreateAudioEncoder(
     const EncoderConfig& aConfig, const RefPtr<TaskQueue>& aTaskQueue) const {
   AVCodecID codecId = GetFFmpegEncoderCodecId<V>(aConfig.mCodec);
   if (codecId == AV_CODEC_ID_NONE) {
-    FFMPEGV_LOG("No ffmpeg encoder for %s", EnumValueToString(aConfig.mCodec));
+    FFMPEGV_LOG("No ffmpeg encoder for {}", EnumValueToString(aConfig.mCodec));
     return nullptr;
   }
 
   RefPtr<MediaDataEncoder> encoder =
       new FFmpegAudioEncoder<V>(mLib, codecId, aTaskQueue, aConfig);
-  FFMPEGA_LOG("ffmpeg %s encoder: %s has been created",
+  FFMPEGA_LOG("ffmpeg {} encoder: {} has been created",
               EnumValueToString(aConfig.mCodec),
               encoder->GetDescriptionName().get());
   return encoder.forget();

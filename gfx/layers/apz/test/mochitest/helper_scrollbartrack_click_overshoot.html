@@ -45,13 +45,6 @@ async function test() {
   // Wait for scrolling to complete
   await scrollEndPromise;
 
-  // Work around bug 1825879: we may get an extra scrollend
-  // event too early.
-  if (window.scrollY < (window.scrollMaxY / 2)) {
-    scrollEndPromise = promiseScrollend();
-    await scrollEndPromise;
-  }
-
   // Flush everything just to be safe
   await promiseOnlyApzControllerFlushed();
 
@@ -75,17 +68,17 @@ async function test() {
   });
 }
 
+// Note: on Linux, if the gtk-primary-button-warps-slider setting
+// is enabled, this test will not exercise the codepath it intends
+// to test (the thumb will jump immediately under the cursor, causing
+// the test to pass trivially). However, the test should still not fail.
 if (getPlatform() == "mac") {
   ok(true, "Skipping test on Mac (bug 1851423)");
   subtestDone();
 } else {
-  // Note: on Linux, if the gtk-primary-button-warps-slider setting
-  // is enabled, this test will not exercise the codepath it intends
-  // to test (the thumb will jump immediately under the cursor, causing
-  // the test to pass trivially). However, the test should still not fail.
-  waitUntilApzStable()
-  .then(test)
-  .then(subtestDone, subtestFailed);
+waitUntilApzStable()
+ .then(test)
+ .then(subtestDone, subtestFailed);
 }
 
   </script>

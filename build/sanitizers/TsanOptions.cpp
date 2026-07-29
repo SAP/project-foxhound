@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -66,6 +65,7 @@ extern "C" MOZ_EXPORT const char* __tsan_default_suppressions() {
          "called_from_lib:libEGL_nvidia\n"
          "called_from_lib:libfontconfig.so\n"
          "called_from_lib:libfontconfig1\n"
+         "called_from_lib:libfreetype.so.6\n"
          "called_from_lib:libgdk-3\n"
          "called_from_lib:libgdk_pixbuf\n"
          "called_from_lib:libgdk-x11\n"
@@ -93,7 +93,9 @@ extern "C" MOZ_EXPORT const char* __tsan_default_suppressions() {
          "called_from_lib:libunity-gtk3-parser\n"
          "called_from_lib:libvorbis.so\n"
          "called_from_lib:libvorbisfile\n"
+         "called_from_lib:libvulkan_intel.so\n"
          "called_from_lib:libwayland-client\n"
+         "called_from_lib:libwidevinecdm.so\n"
          "called_from_lib:libX11.so\n"
          "called_from_lib:libX11-xcb\n"
          "called_from_lib:libXau\n"
@@ -279,6 +281,7 @@ extern "C" MOZ_EXPORT const char* __tsan_default_suppressions() {
          // parking_lot using incorrect atomic orderings in RwLock, upstream
          // fix already up for review.
          "race:StrongRuleNode::ensure_child\n"
+         "race:StrongRuleNode>::ensure_child\n"
          // No Bug - permanent
          // Upstream Bugs:
          //

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,8 +25,6 @@ namespace mozilla {
 namespace dom {
 class Element;
 }  // namespace dom
-
-enum LineBreakType { LINE_BREAK_TYPE_NATIVE, LINE_BREAK_TYPE_XP };
 
 /*
  * Query Content Event Handler
@@ -191,13 +187,15 @@ class MOZ_STACK_CLASS ContentEventHandler {
              SelectionType aSelectionType = SelectionType::eNormal,
              bool aRequireFlush = true);
   /**
-   * InitRootContent() computes the root content of current focused editor.
+   * InitRootContent() initializes mRootElement and return the first selection
+   * range in it.
    *
    * @param aNormalSelection    This must be a Selection instance whose type is
    *                            SelectionType::eNormal.
+   * @return The first valid range of aNormalSelection.
    */
-  MOZ_CAN_RUN_SCRIPT nsresult
-  InitRootContent(const Selection& aNormalSelection);
+  MOZ_CAN_RUN_SCRIPT Result<nsRange*, nsresult> InitRootContent(
+      const Selection& aNormalSelection);
 
  public:
   // FlatText means the text that is generated from DOM tree. The BR elements
@@ -318,6 +316,7 @@ class MOZ_STACK_CLASS ContentEventHandler {
 
   /**
    * Get the flatten text length in the range.
+   *
    * @param aStartPosition      Start node and offset in the node of the range.
    *                            If the container is an element node, it's
    *                            important to start from before or after its open
@@ -333,24 +332,10 @@ class MOZ_STACK_CLASS ContentEventHandler {
    * @param aRootElement        The root element of the editor or document.
    *                            aRootElement won't cause any text including
    *                            line breaks.
-   * @param aLength             The result of the flatten text length of the
-   *                            range.
-   * @param aLineBreakType      Whether this computes flatten text length with
-   *                            native line breakers on the platform or
-   *                            with XP line breaker (\n).
-   * @param aIsRemovingNode     Should be true only when this is called from
-   *                            nsIMutationObserver::ContentRemoved().
-   *                            When this is true, the container of
-   *                            aStartPosition should be the removing node and
-   *                            points start of it and the container of
-   *                            aEndPosition must be same as the container of
-   *                            aStartPosition and points end of the container.
    */
-  static nsresult GetFlatTextLengthInRange(
+  static Result<uint32_t, nsresult> GetFlatTextLengthInRange(
       const RawNodePosition& aStartPosition,
-      const RawNodePosition& aEndPosition, const Element* aRootElement,
-      uint32_t* aLength, LineBreakType aLineBreakType,
-      bool aIsRemovingNode = false);
+      const RawNodePosition& aEndPosition, const Element* aRootElement);
 
   // Computes the native text length between aStartOffset and aEndOffset of
   // aTextNode.
@@ -374,42 +359,36 @@ class MOZ_STACK_CLASS ContentEventHandler {
  protected:
   // Get the text length of aTextNode.
   static uint32_t GetTextLength(const dom::Text& aTextNode,
-                                LineBreakType aLineBreakType,
                                 uint32_t aMaxLength = UINT32_MAX);
   // Get the text length of a given range of a content node in
   // the given line break type.
   static uint32_t GetTextLengthInRange(const dom::Text& aTextNode,
                                        uint32_t aXPStartOffset,
-                                       uint32_t aXPEndOffset,
-                                       LineBreakType aLineBreakType);
+                                       uint32_t aXPEndOffset);
   // Get the contents in aElement (meaning all children of aElement) as plain
   // text.  E.g., specifying mRootElement gets whole text in it.
   // Note that the result is not same as .textContent.  The result is
   // optimized for native IMEs.  For example, <br> element and some block
-  // elements causes "\n" (or "\r\n"), see also ShouldBreakLineBefore().
-  nsresult GenerateFlatTextContent(const Element* aElement, nsString& aString,
-                                   LineBreakType aLineBreakType);
+  // elements causes "\n", see also ShouldBreakLineBefore().
+  nsresult GenerateFlatTextContent(const Element* aElement, nsString& aString);
   // Get the contents of aRange as plain text.
   template <typename NodeType, typename RangeBoundaryType>
   nsresult GenerateFlatTextContent(
       const SimpleRangeBase<NodeType, RangeBoundaryType>& aSimpleRange,
-      nsString& aString, LineBreakType aLineBreakType);
+      nsString& aString);
   // Get offset of start of aRange.  Note that the result includes the length
   // of line breaker caused by the start of aContent because aRange never
   // includes the line breaker caused by its start node.
   template <typename SimpleRangeType>
-  nsresult GetStartOffset(const SimpleRangeType& aSimpleRange,
-                          uint32_t* aOffset, LineBreakType aLineBreakType);
+  Result<uint32_t, nsresult> GetStartOffset(
+      const SimpleRangeType& aSimpleRange) const;
   // Check if we should insert a line break before aContent.
   // This should return false only when aContent is an html element which
   // is typically used in a paragraph like <em>.
   static bool ShouldBreakLineBefore(const nsIContent& aContent,
                                     const Element* aRootElement);
   // Get the line breaker length.
-  static inline uint32_t GetBRLength(LineBreakType aLineBreakType);
-  static LineBreakType GetLineBreakType(WidgetQueryContentEvent* aEvent);
-  static LineBreakType GetLineBreakType(WidgetSelectionEvent* aEvent);
-  static LineBreakType GetLineBreakType(bool aUseNativeLineBreak);
+  constexpr static uint32_t kBRLength = 1;
   // Returns focused content (including its descendant documents).
   nsIContent* GetFocusedContent();
   // QueryContentRect() sets the rect of aContent's frame(s) to aEvent.
@@ -460,22 +439,19 @@ class MOZ_STACK_CLASS ContentEventHandler {
   Result<DOMRangeAndAdjustedOffsetInFlattenedTextBase<RangeType, TextNodeType>,
          nsresult>
   ConvertFlatTextOffsetToDOMRangeBase(uint32_t aOffset, uint32_t aLength,
-                                      LineBreakType aLineBreakType,
                                       bool aExpandToClusterBoundaries);
   MOZ_ALWAYS_INLINE Result<DOMRangeAndAdjustedOffsetInFlattenedText, nsresult>
   ConvertFlatTextOffsetToDOMRange(uint32_t aOffset, uint32_t aLength,
-                                  LineBreakType aLineBreakType,
                                   bool aExpandToClusterBoundaries) {
     return ConvertFlatTextOffsetToDOMRangeBase<SimpleRange, RefPtr<dom::Text>>(
-        aOffset, aLength, aLineBreakType, aExpandToClusterBoundaries);
+        aOffset, aLength, aExpandToClusterBoundaries);
   }
   MOZ_ALWAYS_INLINE
   Result<UnsafeDOMRangeAndAdjustedOffsetInFlattenedText, nsresult>
   ConvertFlatTextOffsetToUnsafeDOMRange(uint32_t aOffset, uint32_t aLength,
-                                        LineBreakType aLineBreakType,
                                         bool aExpandToClusterBoundaries) {
     return ConvertFlatTextOffsetToDOMRangeBase<UnsafeSimpleRange, dom::Text*>(
-        aOffset, aLength, aLineBreakType, aExpandToClusterBoundaries);
+        aOffset, aLength, aExpandToClusterBoundaries);
   }
 
   // If the aSimpleRange isn't in text node but next to a text node,
@@ -495,12 +471,10 @@ class MOZ_STACK_CLASS ContentEventHandler {
   using FontRangeArray = nsTArray<mozilla::FontRange>;
   static void AppendFontRanges(FontRangeArray& aFontRanges,
                                const dom::Text& aTextNode, uint32_t aBaseOffset,
-                               uint32_t aXPStartOffset, uint32_t aXPEndOffset,
-                               LineBreakType aLineBreakType);
+                               uint32_t aXPStartOffset, uint32_t aXPEndOffset);
   nsresult GenerateFlatFontRanges(const UnsafeSimpleRange& aSimpleRange,
                                   FontRangeArray& aFontRanges,
-                                  uint32_t& aLength,
-                                  LineBreakType aLineBreakType);
+                                  uint32_t& aLength);
   nsresult QueryTextRectByRange(const SimpleRange& aSimpleRange,
                                 LayoutDeviceIntRect& aRect,
                                 WritingMode& aWritingMode);

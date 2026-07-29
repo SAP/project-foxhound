@@ -5,6 +5,8 @@
 package org.mozilla.fenix.settings.logins.ui
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LoginsReducerTest {
@@ -541,5 +543,20 @@ class LoginsReducerTest {
             resultEditStateForDuplicateLogin.updateLoginState,
             expectedEditStateForDuplicateLogin.updateLoginState,
         )
+    }
+
+    @Test
+    fun `WHEN ImportPasswordsOverflowMenuClicked THEN importPasswordsMenuShown is true`() {
+        val state = LoginsState.default
+        assertFalse(state.importPasswordsMenuShown)
+        val result = loginsReducer(state, ImportPasswordsOverflowMenuClicked)
+        assertTrue(result.importPasswordsMenuShown)
+    }
+
+    @Test
+    fun `WHEN ImportPasswordsOverflowMenuDismissed THEN importPasswordsMenuShown is false`() {
+        val state = LoginsState.default.copy(importPasswordsMenuShown = true)
+        val result = loginsReducer(state, ImportPasswordsOverflowMenuDismissed)
+        assertFalse(result.importPasswordsMenuShown)
     }
 }

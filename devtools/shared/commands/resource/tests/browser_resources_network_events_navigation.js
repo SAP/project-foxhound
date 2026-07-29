@@ -99,18 +99,12 @@ add_task(async () => {
 
   const htmlContent = await getResponseContent(navigationRequest);
   is(htmlContent, HTML_CONTENT);
-  // FIXME: bug 1982557
-  if (!isNavigationCacheEnabled) {
-    const jsContent = await getResponseContent(jsRequest);
-    is(jsContent, JS_CONTENT);
-  }
+  const jsContent = await getResponseContent(jsRequest);
+  is(jsContent, JS_CONTENT);
   const iframeContent = await getResponseContent(iframeRequest);
   is(iframeContent, IFRAME_CONTENT);
-  // FIXME: bug 1982557
-  if (!isNavigationCacheEnabled) {
-    const iframeJsContent = await getResponseContent(iframeJsRequest);
-    is(iframeJsContent, IFRAME_JS_CONTENT);
-  }
+  const iframeJsContent = await getResponseContent(iframeJsRequest);
+  is(iframeJsContent, IFRAME_JS_CONTENT);
 
   await reloadSelectedTab();
 
@@ -155,18 +149,12 @@ add_task(async () => {
   info("But we can fetch data for the last/new document");
   const htmlContent2 = await getResponseContent(navigationRequest2);
   is(htmlContent2, HTML_CONTENT);
-  // FIXME: bug 1982557
-  if (!isNavigationCacheEnabled) {
-    const jsContent2 = await getResponseContent(jsRequest2);
-    is(jsContent2, JS_CONTENT);
-  }
+  const jsContent2 = await getResponseContent(jsRequest2);
+  is(jsContent2, JS_CONTENT);
   const iframeContent2 = await getResponseContent(iframeRequest2);
   is(iframeContent2, IFRAME_CONTENT);
-  // FIXME: bug 1982557
-  if (!isNavigationCacheEnabled) {
-    const iframeJsContent2 = await getResponseContent(iframeJsRequest2);
-    is(iframeJsContent2, IFRAME_JS_CONTENT);
-  }
+  const iframeJsContent2 = await getResponseContent(iframeJsRequest2);
+  is(iframeJsContent2, IFRAME_JS_CONTENT);
 
   info("Enable persist");
   const networkParentFront =
@@ -180,14 +168,14 @@ add_task(async () => {
   info("With persist, we can fetch previous document network data");
   const htmlContent3 = await getResponseContent(navigationRequest2);
   is(htmlContent3, HTML_CONTENT);
-  // FIXME: bug 1982557
+  // If the resource comes from in-memory cache, jsRequest2 is associated with
+  // a process, and the actor is no longer reachable.
   if (!isNavigationCacheEnabled) {
     const jsContent3 = await getResponseContent(jsRequest2);
     is(jsContent3, JS_CONTENT);
   }
   const iframeContent3 = await getResponseContent(iframeRequest2);
   is(iframeContent3, IFRAME_CONTENT);
-  // FIXME: bug 1982557
   if (!isNavigationCacheEnabled) {
     const iframeJsContent3 = await getResponseContent(iframeJsRequest2);
     is(iframeJsContent3, IFRAME_JS_CONTENT);

@@ -60,55 +60,6 @@ pub mod desc {
         ],
     };
 
-    pub const FAST_LINEAR_GRADIENT: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute::quad_instance_vertex()],
-        instance_attributes: &[
-            VertexAttribute::f32x4("aTaskRect"),
-            VertexAttribute::f32x4("aColor0"),
-            VertexAttribute::f32x4("aColor1"),
-            VertexAttribute::f32("aAxisSelect"),
-        ],
-    };
-
-    pub const LINEAR_GRADIENT: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute::quad_instance_vertex()],
-        instance_attributes: &[
-            VertexAttribute::f32x4("aTaskRect"),
-            VertexAttribute::f32x2("aStartPoint"),
-            VertexAttribute::f32x2("aEndPoint"),
-            VertexAttribute::f32x2("aScale"),
-            VertexAttribute::i32("aExtendMode"),
-            VertexAttribute::gpu_buffer_address("aGradientStopsAddress"),
-        ],
-    };
-
-    pub const RADIAL_GRADIENT: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute::quad_instance_vertex()],
-        instance_attributes: &[
-            VertexAttribute::f32x4("aTaskRect"),
-            VertexAttribute::f32x2("aCenter"),
-            VertexAttribute::f32x2("aScale"),
-            VertexAttribute::f32("aStartRadius"),
-            VertexAttribute::f32("aEndRadius"),
-            VertexAttribute::f32("aXYRatio"),
-            VertexAttribute::i32("aExtendMode"),
-            VertexAttribute::i32("aGradientStopsAddress"),
-        ],
-    };
-
-    pub const CONIC_GRADIENT: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute::quad_instance_vertex()],
-        instance_attributes: &[
-            VertexAttribute::f32x4("aTaskRect"),
-            VertexAttribute::f32x2("aCenter"),
-            VertexAttribute::f32x2("aScale"),
-            VertexAttribute::f32("aStartOffset"),
-            VertexAttribute::f32("aEndOffset"),
-            VertexAttribute::f32("aAngle"),
-            VertexAttribute::i32("aExtendMode"),
-            VertexAttribute::gpu_buffer_address("aGradientStopsAddress"),
-        ],
-    };
 
     pub const BORDER: VertexDescriptor = VertexDescriptor {
         vertex_attributes: &[VertexAttribute::quad_instance_vertex()],
@@ -154,23 +105,6 @@ pub mod desc {
             VertexAttribute::f32x4("aClipRadii_BL"),
             VertexAttribute::f32x4("aClipRect_BR"),
             VertexAttribute::f32x4("aClipRadii_BR"),
-        ],
-    };
-
-    pub const CLIP_BOX_SHADOW: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute::quad_instance_vertex()],
-        instance_attributes: &[
-            // common clip attributes
-            VertexAttribute::f32x4("aClipDeviceArea"),
-            VertexAttribute::f32x4("aClipOrigins"),
-            VertexAttribute::f32("aDevicePixelScale"),
-            VertexAttribute::i32x2("aTransformIds"),
-            // specific clip attributes
-            VertexAttribute::gpu_buffer_address("aClipDataResourceAddress"),
-            VertexAttribute::f32x2("aClipSrcRectSize"),
-            VertexAttribute::i32("aClipMode"),
-            VertexAttribute::i32x2("aStretchMode"),
-            VertexAttribute::f32x4("aClipDestRect"),
         ],
     };
 
@@ -235,14 +169,9 @@ pub enum VertexArrayKind {
     Primitive,
     Blur,
     ClipRect,
-    ClipBoxShadow,
     Border,
     Scale,
     LineDecoration,
-    FastLinearGradient,
-    LinearGradient,
-    RadialGradient,
-    ConicGradient,
     SvgFilterNode,
     Composite,
     Clear,
@@ -458,14 +387,9 @@ pub struct RendererVAOs {
     prim_vao: VAO,
     blur_vao: VAO,
     clip_rect_vao: VAO,
-    clip_box_shadow_vao: VAO,
     border_vao: VAO,
     line_vao: VAO,
     scale_vao: VAO,
-    fast_linear_gradient_vao: VAO,
-    linear_gradient_vao: VAO,
-    radial_gradient_vao: VAO,
-    conic_gradient_vao: VAO,
     svg_filter_node_vao: VAO,
     composite_vao: VAO,
     clear_vao: VAO,
@@ -503,15 +427,9 @@ impl RendererVAOs {
         RendererVAOs {
             blur_vao: device.create_vao_with_new_instances(&desc::BLUR, &prim_vao),
             clip_rect_vao: device.create_vao_with_new_instances(&desc::CLIP_RECT, &prim_vao),
-            clip_box_shadow_vao: device
-                .create_vao_with_new_instances(&desc::CLIP_BOX_SHADOW, &prim_vao),
             border_vao: device.create_vao_with_new_instances(&desc::BORDER, &prim_vao),
             scale_vao: device.create_vao_with_new_instances(&desc::SCALE, &prim_vao),
             line_vao: device.create_vao_with_new_instances(&desc::LINE, &prim_vao),
-            fast_linear_gradient_vao: device.create_vao_with_new_instances(&desc::FAST_LINEAR_GRADIENT, &prim_vao),
-            linear_gradient_vao: device.create_vao_with_new_instances(&desc::LINEAR_GRADIENT, &prim_vao),
-            radial_gradient_vao: device.create_vao_with_new_instances(&desc::RADIAL_GRADIENT, &prim_vao),
-            conic_gradient_vao: device.create_vao_with_new_instances(&desc::CONIC_GRADIENT, &prim_vao),
             svg_filter_node_vao: device.create_vao_with_new_instances(&desc::SVG_FILTER_NODE, &prim_vao),
             composite_vao: device.create_vao_with_new_instances(&desc::COMPOSITE, &prim_vao),
             clear_vao: device.create_vao_with_new_instances(&desc::CLEAR, &prim_vao),
@@ -524,11 +442,6 @@ impl RendererVAOs {
     pub fn deinit(self, device: &mut Device) {
         device.delete_vao(self.prim_vao);
         device.delete_vao(self.clip_rect_vao);
-        device.delete_vao(self.clip_box_shadow_vao);
-        device.delete_vao(self.fast_linear_gradient_vao);
-        device.delete_vao(self.linear_gradient_vao);
-        device.delete_vao(self.radial_gradient_vao);
-        device.delete_vao(self.conic_gradient_vao);
         device.delete_vao(self.blur_vao);
         device.delete_vao(self.line_vao);
         device.delete_vao(self.border_vao);
@@ -547,15 +460,10 @@ impl ops::Index<VertexArrayKind> for RendererVAOs {
         match kind {
             VertexArrayKind::Primitive => &self.prim_vao,
             VertexArrayKind::ClipRect => &self.clip_rect_vao,
-            VertexArrayKind::ClipBoxShadow => &self.clip_box_shadow_vao,
             VertexArrayKind::Blur => &self.blur_vao,
             VertexArrayKind::Border => &self.border_vao,
             VertexArrayKind::Scale => &self.scale_vao,
             VertexArrayKind::LineDecoration => &self.line_vao,
-            VertexArrayKind::FastLinearGradient => &self.fast_linear_gradient_vao,
-            VertexArrayKind::LinearGradient => &self.linear_gradient_vao,
-            VertexArrayKind::RadialGradient => &self.radial_gradient_vao,
-            VertexArrayKind::ConicGradient => &self.conic_gradient_vao,
             VertexArrayKind::SvgFilterNode => &self.svg_filter_node_vao,
             VertexArrayKind::Composite => &self.composite_vao,
             VertexArrayKind::Clear => &self.clear_vao,

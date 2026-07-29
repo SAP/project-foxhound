@@ -5,7 +5,6 @@
 package org.mozilla.fenix.benchmark
 
 import android.content.Intent
-import android.net.Uri
 import androidx.benchmark.macro.BaselineProfileMode
 import androidx.benchmark.macro.CompilationMode
 import androidx.benchmark.macro.StartupMode
@@ -17,6 +16,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.benchmark.utils.FENIX_HOME_DEEP_LINK
 import org.mozilla.fenix.benchmark.utils.TARGET_PACKAGE
+import org.mozilla.fenix.benchmark.utils.completeOnboarding
 import org.mozilla.fenix.benchmark.utils.dismissWallpaperOnboarding
 import org.mozilla.fenix.benchmark.utils.flingToEnd
 import org.mozilla.fenix.benchmark.utils.isWallpaperOnboardingShown
@@ -73,6 +73,7 @@ class BaselineProfilesHomepageScrollBenchmark {
             val intent = Intent(Intent.ACTION_VIEW, FENIX_HOME_DEEP_LINK)
 
             startActivityAndWait(intent = intent)
+            device.completeOnboarding()
 
             if (device.isWallpaperOnboardingShown()) {
                 device.dismissWallpaperOnboarding()

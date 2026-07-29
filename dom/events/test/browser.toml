@@ -59,12 +59,6 @@ support-files = [
   "green.png",
 ]
 
-["browser_keyboard_event_init_key_event_enabled_in_contentscript.js"]
-support-files = [
-  "file_keyboard_event_init_key_event_enabled_in_contentscript.html",
-  "../../../browser/base/content/test/general/head.js",
-]
-
 ["browser_mouse_click_screenXY.js"]
 support-files = ["../../../browser/base/content/test/general/dummy_page.html"]
 
@@ -75,5 +69,11 @@ fail-if = [
 ]
 
 ["browser_mouseout_notification_panel.js"]
+
+
+["browser_shortcutkey_ctrlf5_prevent_default.js"]
+skip-if = [
+  "os == 'mac'" # On macOS, Ctrl+F5 is not the reload shortcut (Cmd+R is)
+]
 
 ["browser_shortcutkey_modifier_conflicts_with_content_accesskey_modifier.js"]

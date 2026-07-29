@@ -30,6 +30,7 @@ import org.mozilla.fenix.settings.studies.CustomViewHolder.SectionViewHolder
 import org.mozilla.fenix.settings.studies.CustomViewHolder.StudyViewHolder
 import org.mozilla.fenix.settings.studies.StudiesAdapter.Section
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertIs
 
 @RunWith(RobolectricTestRunner::class)
 class StudiesAdapterTest {
@@ -128,8 +129,8 @@ class StudiesAdapterTest {
         val list = adapter.createListWithSections(listOf(study))
 
         assertEquals(2, list.size)
-        assertTrue(list[0] is Section)
-        assertTrue(list[1] is EnrolledExperiment)
+        assertIs<Section>(list[0])
+        assertIs<EnrolledExperiment>(list[1])
     }
 
     @Test
@@ -147,7 +148,7 @@ class StudiesAdapterTest {
         val list = adapter.createListWithSections(listOf(study))
 
         assertEquals(2, list.size)
-        assertTrue(list[0] is Section)
-        assertTrue(list[1] is EnrolledExperiment)
+        assertIs<Section>(list[0])
+        assertIs<EnrolledExperiment>(list[1])
     }
 }

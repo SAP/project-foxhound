@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -58,8 +56,8 @@ JSObject* AudioListener::WrapObject(JSContext* aCx,
   return AudioListener_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-void AudioListener::SetOrientation(double aX, double aY, double aZ, double aXUp,
-                                   double aYUp, double aZUp) {
+void AudioListener::SetOrientation(float aX, float aY, float aZ, float aXUp,
+                                   float aYUp, float aZUp) {
   ThreeDPoint front(aX, aY, aZ);
   // The panning effect and the azimuth and elevation calculation in the Web
   // Audio spec becomes undefined with linearly dependent vectors, so keep
@@ -92,10 +90,10 @@ void AudioListener::SetOrientation(double aX, double aY, double aZ, double aXUp,
   }
 }
 
-void AudioListener::SetPosition(double aX, double aY, double aZ) {
-  if (WebAudioUtils::FuzzyEqual(mPosition.x, aX) &&
-      WebAudioUtils::FuzzyEqual(mPosition.y, aY) &&
-      WebAudioUtils::FuzzyEqual(mPosition.z, aZ)) {
+void AudioListener::SetPosition(float aX, float aY, float aZ) {
+  if (WebAudioUtils::FuzzyEqual(mPosition.x, static_cast<double>(aX)) &&
+      WebAudioUtils::FuzzyEqual(mPosition.y, static_cast<double>(aY)) &&
+      WebAudioUtils::FuzzyEqual(mPosition.z, static_cast<double>(aZ))) {
     return;
   }
   mPosition.x = aX;

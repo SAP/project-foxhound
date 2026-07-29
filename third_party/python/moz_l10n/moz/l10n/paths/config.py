@@ -15,12 +15,13 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable, Iterable, Iterator
+from collections import defaultdict
+from collections.abc import Callable, Iterator
 from glob import glob
 from os import sep
 from os.path import dirname, isfile, join, normpath, relpath
 from re import Pattern, compile
-from typing import Any, Dict
+from typing import Any, cast
 
 if sys.version_info >= (3, 11):
     from tomllib import load
@@ -48,7 +49,7 @@ def path_regex(path: str) -> Pattern[str]:
     return compile(path)
 
 
-class PartialMap(Dict[str, str]):
+class PartialMap(dict[str, str]):
     """Allows `str.format_map()` calls with partial values."""
 
     def __missing__(self, key: str) -> str:
@@ -118,8 +119,8 @@ class L10nConfigPaths:
         which are also the indexed groups captured in `target`.
         """
 
-        self._path_data: list[tuple[str, str, list[str] | None]] = []
-        """ [(ref, target, locales)] """
+        self._path_data: dict[str, dict[str, list[str] | None]] = defaultdict(dict)
+        """ ref -> target -> locales """
         fp = set(force_paths) if force_paths else None
         for path in toml.get("paths", []):
             assert isinstance(path, dict)
@@ -146,23 +147,20 @@ class L10nConfigPaths:
                         "".join(a + b for a, b in zip(tgt_parts, m.groups())) + tgt_end
                     )
 
-                self._path_data.extend(
-                    (ref_file, get_target(ref_file), locales)
-                    for ref_file in glob(ref, recursive=True)
-                    if isfile(ref_file)
-                )
+                for ref_file in glob(ref, recursive=True):
+                    if isfile(ref_file):
+                        self._path_data[ref_file][get_target(ref_file)] = locales
                 if fp:
                     ref_re = path_regex(ref.replace(sep, "/"))
                     fp_match = {
                         path for path in fp if ref_re.fullmatch(path.replace(sep, "/"))
                     }
                     if fp_match:
-                        self._path_data.extend(
-                            (path, get_target(path), locales) for path in fp_match
-                        )
+                        for path in fp_match:
+                            self._path_data[path][get_target(path)] = locales
                         fp -= fp_match
             else:
-                self._path_data.append((ref, target, locales))
+                self._path_data[ref][target] = locales
 
         self._includes: list[L10nConfigPaths] = []
         if "includes" in toml:
@@ -176,7 +174,12 @@ class L10nConfigPaths:
                 if incl_path not in _seen:
                     _seen.add(incl_path)
                     self._includes.append(
-                        L10nConfigPaths(incl_path, cfg_load=cfg_load, _seen=_seen)
+                        L10nConfigPaths(
+                            incl_path,
+                            cfg_load=cfg_load,
+                            locale_map=locale_map,
+                            _seen=_seen,
+                        )
                     )
 
     @property
@@ -220,9 +223,13 @@ class L10nConfigPaths:
     def _all_locales(self) -> Iterator[str]:
         if self._locales is not None:
             yield from self._locales
-        for _, _, locales in self._path_data:
-            if locales is not None:
-                yield from locales
+        yield from (
+            locale
+            for pd in self._path_data.values()
+            for locales in pd.values()
+            if locales is not None
+            for locale in locales
+        )
         for incl in self._includes:
             yield from incl._all_locales
 
@@ -234,10 +241,9 @@ class L10nConfigPaths:
     @property
     def ref_paths(self) -> Iterator[str]:
         """
-        All reference paths. May include duplicates.
+        All reference paths.
         """
-        for path, _, _ in self._path_data:
-            yield path
+        yield from self._path_data.keys()
         for incl in self._includes:
             yield from incl.ref_paths
 
@@ -273,12 +279,13 @@ class L10nConfigPaths:
     ) -> Iterator[tuple[tuple[str, str], list[str] | None]]:
         lc_map = PartialMap(format_map or ())
         lc_map["l10n_base"] = self._base
-        for ref, target, locales in self._path_data:
-            target = target.format_map(lc_map)
-            if target.endswith(".pot"):
-                target = target[:-1]
-            target = normpath(join(self._base, target))
-            yield (ref, target), locales or self._locales
+        for ref, pd in self._path_data.items():
+            for target, locales in pd.items():
+                target = target.format_map(lc_map)
+                if target.endswith(".pot"):
+                    target = target[:-1]
+                target = normpath(join(self._base, target))
+                yield (ref, target), locales or self._locales
         for incl in self._includes:
             yield from incl._all(format_map)
 
@@ -288,59 +295,73 @@ class L10nConfigPaths:
         *,
         format_map: dict[str, str] | None = None,
         locale: str | None = None,
-    ) -> tuple[str | None, Iterable[str]]:
+    ) -> tuple[str | None, set[str]]:
         """
         If `ref_path` is a valid reference path,
         returns its corresponding target path and locales.
         Otherwise, returns `None` for the path.
 
         If the same reference path is used by multiple `[[paths]]` entries,
-        the target path and locales of the first will be returned.
+        the target path and locales of the last matching entry will be returned.
         Use `locale` to select a specific entry.
 
         In the target path, `{l10n_base}` is replaced by `self.base`.
         Any `{locale}` or `locale_map` variables will be left in unless `locale` is set.
         Additional format variables may be set in `format_map`.
         """
+        if locale is not None and self._locales and locale not in self._locales:
+            return None, set()
         norm_ref_path = normpath(join(self._ref_root, ref_path))
         if norm_ref_path.endswith(".po"):
             norm_ref_path += "t"
-        pd_tgt, pd_locales = next(
-            (
-                (pd_tgt, pd_locales)
-                for (pd_ref, pd_tgt, pd_locales) in self._path_data
-                if pd_ref == norm_ref_path
-                and (locale is None or pd_locales is None or locale in pd_locales)
-            ),
-            (None, None),
-        )
-        if pd_tgt is None:
+        pd = self._path_data.get(norm_ref_path, None)
+        target = None
+        locales = None
+        if pd:
+            if locale is None:
+                target = next((tgt for tgt, lc in pd.items() if lc is None), None)
+                if target is None:
+                    # Select last paths entry with at least one valid locale
+                    for target, locales_ in reversed(pd.items()):
+                        locales = set(cast(list[str], locales_))
+                        if self._locales:
+                            locales = locales.intersection(self._locales)
+                            if not locales:
+                                locales = None
+                                continue
+                        break
+                else:
+                    locales = set(self._locales or [])
+            else:
+                none_tgt = None
+                for tgt, lc in pd.items():
+                    if lc is None:
+                        none_tgt = tgt
+                    elif locale in lc:
+                        target = tgt
+                        break
+                if target is None:
+                    target = none_tgt
+                locales = {locale}
+
+        if target is None or locales is None:
             for incl in self._includes:
-                target = incl.target(
+                target_ = incl.target(
                     norm_ref_path, format_map=format_map, locale=locale
                 )
-                if target[0] is not None:
-                    return target
-            return None, ()
+                if target_[0] is not None:
+                    return target_
+            return None, set()
 
         fmt_map = PartialMap(format_map or ())
         fmt_map["l10n_base"] = self._base
-        path = pd_tgt.format_map(fmt_map)
+        path = target.format_map(fmt_map)
         if path.endswith(".pot"):
             path = path[:-1]
         path = normpath(join(self._base, path))
-
-        locales = (
-            set(pd_locales).intersection(self._locales)
-            if pd_locales and self._locales
-            else pd_locales or self._locales
-        )
-
-        if locale is None:
-            return path, locales or ()
-        if locales is None or locale in locales:
-            return self.format_target_path(path, locale), {locale}
-        return None, ()
+        if isinstance(locale, str):
+            path = self.format_target_path(path, locale)
+        return path, locales
 
     def format_target_path(self, target: str, locale: str) -> str:
         lc_map = {"locale": locale}
@@ -366,15 +387,12 @@ class L10nConfigPaths:
                     if match.span(idx + 1) not in var_spans
                 ]
                 ref_path = normpath(ref.format(*star_values))
-                pot_path = ref_path + "t" if ref_path.endswith(".po") else None
-                pot_found = False
-                for pd_ref, _, _ in self._path_data:
-                    if ref_path == pd_ref:
-                        return ref_path, vars
-                    if pot_path is not None and pot_path == pd_ref:
-                        pot_found = True
-                if pot_found and pot_path is not None:
-                    return pot_path, vars
+                if ref_path in self._path_data:
+                    return ref_path, vars
+                if ref_path.endswith(".po"):
+                    pot_path = ref_path + "t"
+                    if pot_path in self._path_data:
+                        return pot_path, vars
         for incl in self._includes:
             res = incl.find_reference(abs_target)
             if res is not None:

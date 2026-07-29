@@ -4,8 +4,19 @@
 
 package org.mozilla.fenix.ui.efficiency.pageObjects
 
+import android.util.Log
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
+import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.assertion.ViewAssertions.matches
+import androidx.test.espresso.matcher.ViewMatchers.Visibility
+import androidx.test.espresso.matcher.ViewMatchers.hasSibling
+import androidx.test.espresso.matcher.ViewMatchers.withEffectiveVisibility
+import androidx.test.espresso.matcher.ViewMatchers.withText
+import androidx.test.uiautomator.UiScrollable
+import androidx.test.uiautomator.UiSelector
+import org.hamcrest.Matchers.allOf
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
+import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeShort
 import org.mozilla.fenix.ui.efficiency.helpers.BasePage
 import org.mozilla.fenix.ui.efficiency.helpers.Selector
 import org.mozilla.fenix.ui.efficiency.navigation.NavigationRegistry
@@ -85,5 +96,32 @@ class SettingsPage(composeRule: AndroidComposeTestRule<HomeActivityIntentTestRul
 
     override fun mozGetSelectorsByGroup(group: String): List<Selector> {
         return SettingsSelectors.all.filter { it.groups.contains(group) }
+    }
+
+    override fun navigateToPage(url: String, forceNavigation: Boolean): SettingsPage {
+        super.navigateToPage(url, forceNavigation)
+        return this
+    }
+
+    fun verifyHttpsOnlyModeOnAllTabs(): SettingsPage {
+        return verifySettingOptionSummary(
+            SettingsSelectors.HTTPS_ONLY_MODE_BUTTON.value,
+            SettingsSelectors.HTTPS_ONLY_MODE_ON_ALL_TABS_SUMMARY.value,
+        )
+    }
+
+    fun verifySettingOptionSummary(setting: String, summary: String): SettingsPage {
+        val appView = UiScrollable(UiSelector().scrollable(true))
+        appView.waitForExists(waitingTimeShort)
+        if (appView.exists()) {
+            try {
+                appView.scrollTextIntoView(setting)
+            } catch (e: Exception) {
+                Log.w("SettingsPage", "scrollTextIntoView failed for '$setting': ${e.message}")
+            }
+        }
+        onView(allOf(withText(setting), hasSibling(withText(summary))))
+            .check(matches(withEffectiveVisibility(Visibility.VISIBLE)))
+        return this
     }
 }

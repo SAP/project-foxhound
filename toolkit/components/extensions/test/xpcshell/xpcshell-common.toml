@@ -11,6 +11,10 @@ requesttimeoutfactor = 2
 
 ["test_ExtensionTaskScheduler.js"]
 
+["test_GuardSets.js"]
+
+["test_GuardSets_propagation.js"]
+
 ["test_QuarantinedDomains.js"]
 
 ["test_change_backgroundServiceWorker_enabled_pref_false.js"]
@@ -141,6 +145,8 @@ skip-if = [
   "os == 'win'", # Bug 1762638
 ]
 
+["test_ext_contentscript_adoptedStyleSheets.js"]
+
 ["test_ext_contentscript_antitracking.js"]
 
 ["test_ext_contentscript_api_injection.js"]
@@ -160,6 +166,8 @@ skip-if = [
 skip-if = [
   "tsan", # Bug 1683730
 ]
+
+["test_ext_contentscript_create_document.js"]
 
 ["test_ext_contentscript_create_iframe.js"]
 
@@ -436,6 +444,8 @@ skip-if = [
 
 ["test_ext_idle.js"]
 
+["test_ext_import_attributes.js"]
+
 ["test_ext_incognito.js"]
 run-if = [
   "appname != 'thunderbird'",
@@ -457,6 +467,8 @@ skip-if = [
 skip-if = [
   "os == 'android'",
 ]
+
+["test_ext_management_setEnabled.js"]
 
 ["test_ext_management_uninstall_self.js"]
 
@@ -549,6 +561,8 @@ run-if = [
 
 ["test_ext_proxy_containerIsolation.js"]
 
+["test_ext_proxy_documentId.js"]
+
 ["test_ext_proxy_onauthrequired.js"]
 
 ["test_ext_proxy_settings.js"]
@@ -569,6 +583,8 @@ run-sequentially = ["true"] # TCPServerSocket fails otherwise
 
 ["test_ext_proxy_startup.js"]
 
+["test_ext_publicSuffix.js"]
+
 ["test_ext_redirects.js"]
 skip-if = [
   "os == 'android' && debug",
@@ -581,6 +597,8 @@ skip-if = [
 ["test_ext_runtime_getBrowserInfo.js"]
 
 ["test_ext_runtime_getContexts.js"]
+
+["test_ext_runtime_getDocumentId.js"]
 
 ["test_ext_runtime_getPlatformInfo.js"]
 
@@ -676,6 +694,10 @@ skip-if = [
 ]
 
 ["test_ext_storage_local_corrupted_idb.js"]
+# Recreates the corrupted-database scenario by tampering with the storage.local
+# IndexedDB sqlite3 file directly (opening it and dropping the object store), so
+# it requires the on-disk format to be plaintext SQLite; pin encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_ext_storage_managed.js"]
 skip-if = [
@@ -691,6 +713,12 @@ skip-if = [
 ]
 
 ["test_ext_storage_quota_exceeded_errors.js"]
+# At-rest encryption inflates the storage.local IndexedDB on-disk footprint past
+# this test's deliberately tiny dom.quotaManager fixedLimit, so the IDB backend
+# fails to initialize (migration cancelled: "exceeded its quota limitations")
+# and falls back to the JSONFile backend, which does not raise the
+# QuotaExceededError the test asserts; pin encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 skip-if = [
   "os == 'android'", # Bug 1564871
 ]
@@ -708,6 +736,7 @@ skip-if = [
 ["test_ext_storage_session_on_crash.js"]
 skip-if = [
   "isolated_process", # Bug 1709961
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2023967
 ]
 
 ["test_ext_storage_sync.js"]
@@ -801,10 +830,16 @@ skip-if = [
 
 ["test_ext_webRequest_containerIsolation.js"]
 
+["test_ext_webRequest_documentId.js"]
+
 ["test_ext_webRequest_download.js"]
 skip-if = [
   "os == 'android'", # Android: downloads.download goes through the embedder app instead of Gecko.
 ]
+
+["test_ext_webRequest_error_after_redirect.js"]
+
+["test_ext_webRequest_error_no_response.js"]
 
 ["test_ext_webRequest_filterTypes.js"]
 
@@ -854,13 +889,12 @@ skip-if = [
 ]
 
 ["test_ext_webRequest_style_cache.js"]
-skip-if = [
-  "os == 'android'", # bug 1848398 - style cache miss on Android.
-]
 
 ["test_ext_webRequest_suspend.js"]
 
 ["test_ext_webRequest_type_json.js"]
+
+["test_ext_webRequest_type_text.js"]
 
 ["test_ext_webRequest_userContextId.js"]
 
@@ -912,8 +946,9 @@ run-if = [
 
 ["test_webRequest_filtering.js"]
 
+["test_wpt_actor_pref.js"]
+
 ["test_wpt_test_events.js"]
 prefs = ["extensions.wpt.enabled=true"]
-skip-if = [
-  "!nightly_build",
-]
+
+["text_ext_webRequest_js_cache.js"]

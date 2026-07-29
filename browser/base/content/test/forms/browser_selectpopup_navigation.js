@@ -1,6 +1,16 @@
 /* Any copyright is dedicated to the Public Domain.
  * https://creativecommons.org/publicdomain/zero/1.0/ */
 
+add_setup(async () => {
+  if (AppConstants.platform == "macosx") {
+    // This test requires preventing default on popuphiding which native menus
+    // do not support
+    await SpecialPowers.pushPrefEnv({
+      set: [["widget.macos.allow-native-select", false]],
+    });
+  }
+});
+
 add_task(async function test_select_popup_closing_enables_pointer_events() {
   const INITIAL_PAGE = `
 <!doctype html>

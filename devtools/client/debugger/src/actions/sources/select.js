@@ -310,7 +310,9 @@ export function selectLocation(
       return;
     }
 
-    await dispatch(setBreakableLines(location));
+    if (!source.isStyleSheet) {
+      await dispatch(setBreakableLines(location));
+    }
 
     // Stop the async work if we started selecting another location
     if (getSelectedLocation(getState()) != location) {

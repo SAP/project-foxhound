@@ -59,6 +59,11 @@
         >
         <a slot="support-link" href="#learn-less">Learn less</a>
       </moz-message-bar>
+      <moz-message-bar
+        id="customRoleMessage"
+        role="status"
+        message="Test message"
+      ></moz-message-bar>
     </div>
     <script class="testbody" type="application/javascript">
       add_task(async function test_component_declaration() {
@@ -251,6 +256,30 @@
         );
 
         ok(slottedSupportLinkElement, "still renders a slotted support link");
+      });
+
+      add_task(async function test_role_property() {
+        const mozMessageBar = document.querySelector("#customRoleMessage");
+        is(
+          mozMessageBar.getAttribute("role"),
+          "status",
+          "Custom role attribute is set correctly from HTML."
+        );
+
+        mozMessageBar.role = "log";
+        await mozMessageBar.updateComplete;
+        is(
+          mozMessageBar.getAttribute("role"),
+          "log",
+          "Role attribute updates when property changes."
+        );
+
+        const defaultMessageBar = document.querySelector("#infoMessage");
+        is(
+          defaultMessageBar.getAttribute("role"),
+          "alert",
+          "Default role is 'alert' when not specified."
+        );
       });
     </script>
   </body>

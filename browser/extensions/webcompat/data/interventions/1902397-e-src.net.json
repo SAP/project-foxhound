@@ -1,0 +1,15 @@
+{
+  "label": "e-src.net",
+  "bugs": {
+    "1902397": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://www.e-src.net/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome", "add_Firefox_as_Gecko"]
+    }
+  ]
+}

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -96,7 +94,7 @@ RefPtr<MediaDataDecoder::InitPromise> FFmpegAudioDecoder<LIBAV_VER>::Init() {
   AUTO_PROFILER_LABEL("FFmpegAudioDecoder::Init", MEDIA_PLAYBACK);
 
   if (mAudioInfo.mChannels == 0 || mAudioInfo.mRate == 0) {
-    FFMPEG_LOG("Invalid audio configuration: channels=%u, rate=%u",
+    FFMPEG_LOG("Invalid audio configuration: channels={}, rate={}",
                mAudioInfo.mChannels, mAudioInfo.mRate);
     return InitPromise::CreateAndReject(
         MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
@@ -121,7 +119,7 @@ RefPtr<MediaDataDecoder::InitPromise> FFmpegAudioDecoder<LIBAV_VER>::Init() {
     if (mAudioInfo.mChannels > 2 &&
         (!mExtraData || mExtraData->Length() < 10)) {
       FFMPEG_LOG(
-          "Cannot initialize decoder with %d channels without extradata of at "
+          "Cannot initialize decoder with {} channels without extradata of at "
           "least 10 bytes",
           mAudioInfo.mChannels);
       return InitPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
@@ -194,7 +192,8 @@ static AlignedAudioBuffer CopyAndPackAudio(AVFrame* aFrame,
   } else if (aFrame->format == AV_SAMPLE_FMT_FLTP) {
     // Planar audio data. Pack it into something we can understand.
     AudioDataValue* tmp = audio.get();
-    AudioDataValue** data = reinterpret_cast<AudioDataValue**>(aFrame->data);
+    AudioDataValue** data =
+        reinterpret_cast<AudioDataValue**>(aFrame->extended_data);
     for (uint32_t frame = 0; frame < aNumAFrames; frame++) {
       for (uint32_t channel = 0; channel < aNumChannels; channel++) {
         *tmp++ = data[channel][frame];
@@ -213,7 +212,7 @@ static AlignedAudioBuffer CopyAndPackAudio(AVFrame* aFrame,
     // Planar audio data. Convert it from S16 to 32 bits float
     // and pack it into something we can understand.
     AudioDataValue* tmp = audio.get();
-    int16_t** data = reinterpret_cast<int16_t**>(aFrame->data);
+    int16_t** data = reinterpret_cast<int16_t**>(aFrame->extended_data);
     for (uint32_t frame = 0; frame < aNumAFrames; frame++) {
       for (uint32_t channel = 0; channel < aNumChannels; channel++) {
         *tmp++ = ConvertAudioSample<float>(data[channel][frame]);
@@ -232,7 +231,7 @@ static AlignedAudioBuffer CopyAndPackAudio(AVFrame* aFrame,
     // Planar audio data. Convert it from S32 to 32 bits float
     // and pack it into something we can understand.
     AudioDataValue* tmp = audio.get();
-    int32_t** data = reinterpret_cast<int32_t**>(aFrame->data);
+    int32_t** data = reinterpret_cast<int32_t**>(aFrame->extended_data);
     for (uint32_t frame = 0; frame < aNumAFrames; frame++) {
       for (uint32_t channel = 0; channel < aNumChannels; channel++) {
         *tmp++ = ConvertAudioSample<float>(data[channel][frame]);
@@ -251,7 +250,7 @@ static AlignedAudioBuffer CopyAndPackAudio(AVFrame* aFrame,
     // Planar audio data. Convert it from u8 to the expected sample-format
     // and pack it into something we can understand.
     AudioDataValue* tmp = audio.get();
-    uint8_t** data = reinterpret_cast<uint8_t**>(aFrame->data);
+    uint8_t** data = reinterpret_cast<uint8_t**>(aFrame->extended_data);
     for (uint32_t frame = 0; frame < aNumAFrames; frame++) {
       for (uint32_t channel = 0; channel < aNumChannels; channel++) {
         *tmp++ = ConvertAudioSample<float>(data[channel][frame]);
@@ -283,10 +282,10 @@ MediaResult FFmpegAudioDecoder<LIBAV_VER>::PostProcessOutput(
   }
 
   if (aSubmitted < 0) {
-    FFMPEG_LOG("Got %d more frame from packet", mFrame->nb_samples);
+    FFMPEG_LOG("Got {} more frame from packet", mFrame->nb_samples);
   }
 
-  FFMPEG_LOG("FFmpegAudioDecoder decoded: [%s,%s] (Duration: %s) [%s]",
+  FFMPEG_LOG("FFmpegAudioDecoder decoded: [{},{}] (Duration: {}) [{}]",
              aSample->mTime.ToString().get(),
              aSample->GetEndTime().ToString().get(),
              aSample->mDuration.ToString().get(),
@@ -302,7 +301,7 @@ MediaResult FFmpegAudioDecoder<LIBAV_VER>::PostProcessOutput(
   }
 
   if (!numChannels || !samplingRate) {
-    FFMPEG_LOG("Invalid audio configuration: channels=%u, rate=%u", numChannels,
+    FFMPEG_LOG("Invalid audio configuration: channels={}, rate={}", numChannels,
                samplingRate);
     return MediaResult(NS_ERROR_DOM_MEDIA_DECODE_ERR,
                        RESULT_DETAIL("Invalid audio configuration"));
@@ -317,7 +316,7 @@ MediaResult FFmpegAudioDecoder<LIBAV_VER>::PostProcessOutput(
 
   media::TimeUnit duration = TimeUnit(mFrame->nb_samples, samplingRate);
   if (!duration.IsValid()) {
-    FFMPEG_LOG("Duration isn't valid (%d + %d)", mFrame->nb_samples,
+    FFMPEG_LOG("Duration isn't valid ({} + {})", mFrame->nb_samples,
                samplingRate);
     return MediaResult(NS_ERROR_DOM_MEDIA_OVERFLOW_ERR,
                        RESULT_DETAIL("Invalid sample duration"));
@@ -325,7 +324,7 @@ MediaResult FFmpegAudioDecoder<LIBAV_VER>::PostProcessOutput(
 
   media::TimeUnit newpts = pts + duration;
   if (!newpts.IsValid()) {
-    FFMPEG_LOG("New pts isn't valid (%lf + %lf)", pts.ToSeconds(),
+    FFMPEG_LOG("New pts isn't valid ({} + {})", pts.ToSeconds(),
                duration.ToSeconds());
     return MediaResult(
         NS_ERROR_DOM_MEDIA_OVERFLOW_ERR,
@@ -414,7 +413,7 @@ MediaResult FFmpegAudioDecoder<LIBAV_VER>::DecodeUsingFFmpeg(
               new AudioData(0, TimeUnit::Zero(), std::move(buf),
                             mAudioInfo.mChannels, mAudioInfo.mRate));
         }
-        FFMPEG_LOG("  EAGAIN (packets submitted: %" PRIu32 ").", submitted);
+        FFMPEG_LOG("  EAGAIN (packets submitted: {}).", submitted);
         rv = NS_OK;
         break;
       }
@@ -462,7 +461,7 @@ MediaResult FFmpegAudioDecoder<LIBAV_VER>::DoDecode(MediaRawData* aSample,
   }
 #endif
 
-  FFMPEG_LOG("FFmpegAudioDecoder::DoDecode: %d bytes, [%s,%s] (Duration: %s)",
+  FFMPEG_LOG("FFmpegAudioDecoder::DoDecode: {} bytes, [{},{}] (Duration: {})",
              aSize, aSample->mTime.ToString().get(),
              aSample->GetEndTime().ToString().get(),
              aSample->mDuration.ToString().get());

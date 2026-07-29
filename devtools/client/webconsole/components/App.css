@@ -296,15 +296,7 @@ body {
     "eager-evaluation      output                    sidebar"
     "eval-notification     output                    sidebar"
     "reverse-search        output                    sidebar";
-  grid-template-rows:
-    auto
-    auto
-    var(--primary-toolbar-height)
-    auto
-    1fr
-    auto
-    auto
-    auto;
+  grid-template-rows: auto auto var(--primary-toolbar-height) auto 1fr auto auto auto;
   grid-template-columns: minmax(150px, auto) minmax(200px, 1fr) minmax(0, auto);
 }
 
@@ -383,7 +375,7 @@ body {
 }
 
 .jsterm-editor .webconsole-editor-toolbar .webconsole-editor-toolbar-prettyPrintButton::before {
-  background-image: url("chrome://devtools/content/debugger/images/prettyPrint.svg");
+  background-image: url("chrome://devtools/content/shared/components/images/prettyPrint.svg");
   background-size: 16px;
   fill: var(--theme-icon-color);
   -moz-context-properties: fill;

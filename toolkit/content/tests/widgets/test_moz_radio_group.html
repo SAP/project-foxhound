@@ -104,6 +104,32 @@
         );
       });
 
+      add_task(async function testRadioGroupAriaLabel() {
+        const TEST_ARIA_LABEL = "Accessible radio group label";
+        let renderTarget = await testHelpers.renderTemplate(defaultTemplate);
+        let radioGroup = renderTarget.querySelector("moz-radio-group");
+
+        ok(!radioGroup.ariaLabel, "No aria-label set by default.");
+
+        // Set via attribute to simulate how Fluent would set it.
+        radioGroup.setAttribute("aria-label", TEST_ARIA_LABEL);
+        await radioGroup.updateComplete;
+        await radioGroup.fieldset.updateComplete;
+
+        is(
+          radioGroup.ariaLabel,
+          TEST_ARIA_LABEL,
+          "ariaLabel property reflects aria-label attribute on moz-radio-group."
+        );
+        is(
+          radioGroup.fieldset.shadowRoot
+            .querySelector("fieldset")
+            .getAttribute("aria-label"),
+          TEST_ARIA_LABEL,
+          "aria-label is set on the inner fieldset element."
+        );
+      });
+
       // Verify that each radio button is given the name of the radio group.
       add_task(async function testGroupNamePropagation() {
         const FIRST_NAME = "test-name";
@@ -718,19 +744,28 @@
         await radioGroup.updateComplete;
         verifyElementStates("disabled");
 
-        // Verify it's not possible to enable a single radio button when the
-        // parent group is disabled.
+        // Setting disabled to false while the group is disabled tracks the state
+        // change. The button remains functionally disabled until the group is enabled.
         firstButton.disabled = false;
         await firstButton.updateComplete;
         verifyElementStates("disabled");
 
-        // Re-enable the radio group. The independently disabled radio button
-        // should still be disabled.
+        // Re-enable the radio group. The first button's disabled state change is applied.
+        radioGroup.disabled = false;
+        await radioGroup.updateComplete;
+        verifyElementStates("enabled");
+
+        // Verify that a button independently disabled before the group was disabled
+        // stays disabled when the group is re-enabled without changing its state.
+        firstButton.disabled = true;
+        await firstButton.updateComplete;
+        radioGroup.disabled = true;
+        await radioGroup.updateComplete;
         radioGroup.disabled = false;
         await radioGroup.updateComplete;
         ok(
           firstButton.inputEl.hasAttribute("disabled"),
-          "The first radio button is still disabled."
+          "The first radio button is still independently disabled."
         );
         otherButtons.forEach(button =>
           ok(
@@ -743,6 +778,50 @@
         firstButton.disabled = false;
         await firstButton.updateComplete;
         verifyElementStates("enabled");
+      });
+
+      // Verify that disabling a radio group propagates the disabled state to
+      // nested elements (e.g. a checkbox slotted into a radio's nested slot).
+      add_task(async function testDisablingGroupDisablesNestedElements() {
+        let template = html`
+          <moz-radio-group name="test-name" label="Radio group label">
+            <moz-radio checked value="first" label="First">
+              <moz-checkbox
+                slot="nested"
+                label="Nested checkbox"
+              ></moz-checkbox>
+            </moz-radio>
+            <moz-radio value="second" label="Second"></moz-radio>
+          </moz-radio-group>
+        `;
+        let renderTarget = await testHelpers.renderTemplate(template);
+        let radioGroup = renderTarget.querySelector("moz-radio-group");
+        let nestedCheckbox = renderTarget.querySelector("moz-checkbox");
+
+        ok(
+          !nestedCheckbox.inputEl.disabled,
+          "Nested checkbox is enabled when the radio group is enabled and the parent radio is checked."
+        );
+
+        // Disable the radio group.
+        radioGroup.disabled = true;
+        await radioGroup.updateComplete;
+        await nestedCheckbox.updateComplete;
+
+        ok(
+          nestedCheckbox.inputEl.disabled,
+          "Nested checkbox is disabled when the radio group is disabled."
+        );
+
+        // Re-enable the radio group.
+        radioGroup.disabled = false;
+        await radioGroup.updateComplete;
+        await nestedCheckbox.updateComplete;
+
+        ok(
+          !nestedCheckbox.inputEl.disabled,
+          "Nested checkbox is re-enabled when the radio group is re-enabled."
+        );
       });
 
       // Verify that keyboard events from nested focusable elements don't trigger

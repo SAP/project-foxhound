@@ -417,23 +417,25 @@ secitem_FreeArray(SECItemArray *array, PRBool zero_items, PRBool freeit)
 {
     unsigned int i;
 
-    if (!array || !array->len || !array->items)
+    if (!array)
         return;
 
-    for (i = 0; i < array->len; ++i) {
-        SECItem *item = &array->items[i];
+    if (array->items) {
+        for (i = 0; i < array->len; ++i) {
+            SECItem *item = &array->items[i];
 
-        if (item->data) {
-            if (zero_items) {
-                SECITEM_ZfreeItem(item, PR_FALSE);
-            } else {
-                SECITEM_FreeItem(item, PR_FALSE);
+            if (item->data) {
+                if (zero_items) {
+                    SECITEM_ZfreeItem(item, PR_FALSE);
+                } else {
+                    SECITEM_FreeItem(item, PR_FALSE);
+                }
             }
         }
+        PORT_Free(array->items);
+        array->items = NULL;
+        array->len = 0;
     }
-    PORT_Free(array->items);
-    array->items = NULL;
-    array->len = 0;
 
     if (freeit)
         PORT_Free(array);
@@ -454,8 +456,9 @@ SECITEM_ZfreeArray(SECItemArray *array, PRBool freeit)
 SECItemArray *
 SECITEM_DupArray(PLArenaPool *arena, const SECItemArray *from)
 {
-    SECItemArray *result;
+    SECItemArray *result = NULL;
     unsigned int i;
+    void *mark = NULL;
 
     /* Require a "from" array.
      * Reject an inconsistent "from" array with NULL data and nonzero length.
@@ -464,18 +467,37 @@ SECITEM_DupArray(PLArenaPool *arena, const SECItemArray *from)
     if (!from || (!from->items && from->len))
         return NULL;
 
+    if (arena != NULL) {
+        mark = PORT_ArenaMark(arena);
+    }
+
     result = SECITEM_AllocArray(arena, NULL, from->len);
-    if (!result)
-        return NULL;
+    if (!result) {
+        goto loser;
+    }
 
     for (i = 0; i < from->len; ++i) {
         SECStatus rv = SECITEM_CopyItem(arena,
                                         &result->items[i], &from->items[i]);
         if (rv != SECSuccess) {
-            SECITEM_ZfreeArray(result, PR_TRUE);
-            return NULL;
+            goto loser;
         }
     }
 
+    if (mark) {
+        PORT_ArenaUnmark(arena, mark);
+    }
     return result;
+
+loser:
+    if (arena != NULL) {
+        /* Release rolls back all allocations made since the mark. */
+        if (mark) {
+            PORT_ArenaZRelease(arena, mark);
+        }
+    } else if (result != NULL) {
+        /* Non-arena path: heap-free is correct here. */
+        SECITEM_ZfreeArray(result, PR_TRUE);
+    }
+    return NULL;
 }

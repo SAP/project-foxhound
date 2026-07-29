@@ -64,110 +64,113 @@
                        { rid: "1", maxBitrate: 40000, scaleResolutionDownBy: 3.5 },
                        { rid: "2", maxBitrate: 40000, scaleResolutionDownBy: 6.8 }];
 
-    await pushPrefs(
-        // 180Kbps was determined empirically, set well-higher than
-        // the 80Kbps+overhead needed for the two simulcast streams.
-        // 100Kbps was apparently too low.
-        ['media.peerconnection.video.min_bitrate_estimate', 180*1000]);
+    const prefs = [
+      // 180Kbps was determined empirically, set well-higher than
+      // the 80Kbps+overhead needed for the two simulcast streams.
+      // 100Kbps was apparently too low.
+      ['media.peerconnection.video.min_bitrate_estimate', 180*1000],
+      ["media.peerconnection.allow_old_setParameters", true],
+    ];
 
     // [TODO] re-enable HW decoder after bug 1526207 is fixed.
     if (navigator.userAgent.includes("Android")) {
-      await pushPrefs(["media.navigator.mediadatadecoder_vpx_enabled", false]);
+      prefs.push(["media.navigator.mediadatadecoder_vpx_enabled", false]);
     }
 
+    await withPrefs(prefs, async () => {
+      const offerer = new RTCPeerConnection();
+      const answerer = new RTCPeerConnection();
 
-    const offerer = new RTCPeerConnection();
-    const answerer = new RTCPeerConnection();
+      const add = (pc, can, failed) => can && pc.addIceCandidate(can).catch(failed);
+      offerer.onicecandidate = e => add(answerer, e.candidate, generateErrorCallback());
+      answerer.onicecandidate = e => add(offerer, e.candidate, generateErrorCallback());
 
-    const add = (pc, can, failed) => can && pc.addIceCandidate(can).catch(failed);
-    offerer.onicecandidate = e => add(answerer, e.candidate, generateErrorCallback());
-    answerer.onicecandidate = e => add(offerer, e.candidate, generateErrorCallback());
+      const metadataToBeLoaded = [];
+      answerer.ontrack = (e) => {
+        metadataToBeLoaded.push(getPlaybackWithLoadedMetadata(e.track));
+      };
 
-    const metadataToBeLoaded = [];
-    answerer.ontrack = (e) => {
-      metadataToBeLoaded.push(getPlaybackWithLoadedMetadata(e.track));
-    };
+      // One send transceiver, that will be used to send both simulcast streams
+      const videoStream = emitter.stream();
+      offerer.addTrack(videoStream.getVideoTracks()[0], videoStream);
+      const senderElement = document.createElement('video');
+      senderElement.autoplay = true;
+      senderElement.srcObject = videoStream;
+      senderElement.id = videoStream.id
 
-    // One send transceiver, that will be used to send both simulcast streams
-    const videoStream = emitter.stream();
-    offerer.addTrack(videoStream.getVideoTracks()[0], videoStream);
-    const senderElement = document.createElement('video');
-    senderElement.autoplay = true;
-    senderElement.srcObject = videoStream;
-    senderElement.id = videoStream.id
+      const sender = offerer.getSenders()[0];
+      sender.setParameters({encodings});
 
-    const sender = offerer.getSenders()[0];
-    sender.setParameters({encodings});
+      const offer = await offerer.createOffer();
 
-    const offer = await offerer.createOffer();
+      const mungedOffer = ridToMid(offer);
+      info(`Transformed send simulcast offer to multiple m-sections: ${offer.sdp} to ${mungedOffer}`);
 
-    const mungedOffer = ridToMid(offer);
-    info(`Transformed send simulcast offer to multiple m-sections: ${offer.sdp} to ${mungedOffer}`);
+      await answerer.setRemoteDescription({type: "offer", sdp: mungedOffer});
+      await offerer.setLocalDescription(offer);
 
-    await answerer.setRemoteDescription({type: "offer", sdp: mungedOffer});
-    await offerer.setLocalDescription(offer);
+      const rids = answerer.getTransceivers().map(t => t.mid);
+      is(rids.length, 3, 'Should have 3 mids in offer');
+      ok(rids[0], 'First mid should be non-empty');
+      ok(rids[1], 'Second mid should be non-empty');
+      ok(rids[2], 'Third mid should be non-empty');
+      info(`rids: ${JSON.stringify(rids)}`);
 
-    const rids = answerer.getTransceivers().map(t => t.mid);
-    is(rids.length, 3, 'Should have 3 mids in offer');
-    ok(rids[0], 'First mid should be non-empty');
-    ok(rids[1], 'Second mid should be non-empty');
-    ok(rids[2], 'Third mid should be non-empty');
-    info(`rids: ${JSON.stringify(rids)}`);
+      const answer = await answerer.createAnswer();
 
-    const answer = await answerer.createAnswer();
+      const mungedAnswer = midToRid(answer);
+      info(`Transformed recv answer to simulcast: ${answer.sdp} to ${mungedAnswer}`);
+      await offerer.setRemoteDescription({type: "answer", sdp: mungedAnswer});
+      await answerer.setLocalDescription(answer);
 
-    const mungedAnswer = midToRid(answer);
-    info(`Transformed recv answer to simulcast: ${answer.sdp} to ${mungedAnswer}`);
-    await offerer.setRemoteDescription({type: "answer", sdp: mungedAnswer});
-    await answerer.setLocalDescription(answer);
+      is(metadataToBeLoaded.length, 3, 'Offerer should have gotten 3 ontrack events');
+      emitter.start();
+      info('Waiting for 3 loadedmetadata events');
+      const videoElems = await Promise.all(metadataToBeLoaded);
+      await checkVideoElements(senderElement, videoElems, encodings);
+      emitter.stop();
 
-    is(metadataToBeLoaded.length, 3, 'Offerer should have gotten 3 ontrack events');
-    emitter.start();
-    info('Waiting for 3 loadedmetadata events');
-    const videoElems = await Promise.all(metadataToBeLoaded);
-    await checkVideoElements(senderElement, videoElems, encodings);
-    emitter.stop();
+      await Promise.all([waitForSyncedRtcp(offerer), waitForSyncedRtcp(answerer)]);
 
-    await Promise.all([waitForSyncedRtcp(offerer), waitForSyncedRtcp(answerer)]);
+      info(`Changing source resolution to 1280x720`);
+      emitter.size(1280, 720);
+      emitter.start();
+      await waitForResizeEvents([senderElement, ...videoElems]);
+      await checkVideoElements(senderElement, videoElems, encodings);
+      await checkSenderStats(sender);
 
-    info(`Changing source resolution to 1280x720`);
-    emitter.size(1280, 720);
-    emitter.start();
-    await waitForResizeEvents([senderElement, ...videoElems]);
-    await checkVideoElements(senderElement, videoElems, encodings);
-    await checkSenderStats(sender);
+      encodings[0].scaleResolutionDownBy = 1;
+      encodings[1].scaleResolutionDownBy = 2;
+      encodings[2].scaleResolutionDownBy = 3;
+      info(`Changing encodings to ${JSON.stringify(encodings)}`);
+      await sender.setParameters({encodings});
+      await waitForResizeEvents(videoElems);
+      await checkVideoElements(senderElement, videoElems, encodings);
+      await checkSenderStats(sender);
 
-    encodings[0].scaleResolutionDownBy = 1;
-    encodings[1].scaleResolutionDownBy = 2;
-    encodings[2].scaleResolutionDownBy = 3;
-    info(`Changing encodings to ${JSON.stringify(encodings)}`);
-    await sender.setParameters({encodings});
-    await waitForResizeEvents(videoElems);
-    await checkVideoElements(senderElement, videoElems, encodings);
-    await checkSenderStats(sender);
+      encodings[0].scaleResolutionDownBy = 6;
+      encodings[1].scaleResolutionDownBy = 5;
+      encodings[2].scaleResolutionDownBy = 4;
+      info(`Changing encodings to ${JSON.stringify(encodings)}`);
+      await sender.setParameters({encodings});
+      await waitForResizeEvents(videoElems);
+      await checkVideoElements(senderElement, videoElems, encodings);
+      await checkSenderStats(sender);
 
-    encodings[0].scaleResolutionDownBy = 6;
-    encodings[1].scaleResolutionDownBy = 5;
-    encodings[2].scaleResolutionDownBy = 4;
-    info(`Changing encodings to ${JSON.stringify(encodings)}`);
-    await sender.setParameters({encodings});
-    await waitForResizeEvents(videoElems);
-    await checkVideoElements(senderElement, videoElems, encodings);
-    await checkSenderStats(sender);
+      encodings[0].scaleResolutionDownBy = 4;
+      encodings[1].scaleResolutionDownBy = 1;
+      encodings[2].scaleResolutionDownBy = 2;
+      info(`Changing encodings to ${JSON.stringify(encodings)}`);
+      await sender.setParameters({encodings});
+      await waitForResizeEvents(videoElems);
+      await checkVideoElements(senderElement, videoElems, encodings);
+      await checkSenderStats(sender);
 
-    encodings[0].scaleResolutionDownBy = 4;
-    encodings[1].scaleResolutionDownBy = 1;
-    encodings[2].scaleResolutionDownBy = 2;
-    info(`Changing encodings to ${JSON.stringify(encodings)}`);
-    await sender.setParameters({encodings});
-    await waitForResizeEvents(videoElems);
-    await checkVideoElements(senderElement, videoElems, encodings);
-    await checkSenderStats(sender);
-
-    emitter.stop();
-    videoStream.getVideoTracks()[0].stop();
-    offerer.close();
-    answerer.close();
+      emitter.stop();
+      videoStream.getVideoTracks()[0].stop();
+      offerer.close();
+      answerer.close();
+    });
   });
 
 </script>

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -69,7 +67,7 @@ struct FontTemplate {
 };
 
 struct FontInstanceData {
-  WrFontKey mFontKey;
+  WrFontKey mFontKey{};
   float mSize;
   Maybe<FontInstanceOptions> mOptions;
   Maybe<FontInstancePlatformOptions> mPlatformOptions;
@@ -323,12 +321,22 @@ struct Reader {
   const uint8_t* buf;
   size_t len;
   size_t pos;
+#ifdef FUZZING
+  bool ok = true;
+#endif
 
   Reader(const uint8_t* buf, size_t len) : buf(buf), len(len), pos(0) {}
 
   template <typename T>
   T Read() {
+#ifdef FUZZING
+    if (pos + sizeof(T) > len) {
+      ok = false;
+      return T{};
+    }
+#else
     MOZ_RELEASE_ASSERT(pos + sizeof(T) <= len);
+#endif
     T ret = ConvertFromBytes<T>(buf + pos);
     pos += sizeof(T);
     return ret;
@@ -388,10 +396,22 @@ static bool Moz2DRenderCallback(const Range<const uint8_t> aBlob,
   // We try hard to not have empty blobs but we can end up with
   // them because of CompositorHitTestInfo and merging.
   size_t footerSize = sizeof(size_t);
+#ifdef FUZZING
+  if (aBlob.length() < footerSize) {
+    return false;
+  }
+#else
   MOZ_RELEASE_ASSERT(aBlob.length() >= footerSize);
+#endif
   size_t indexOffset = ConvertFromBytes<size_t>(aBlob.end().get() - footerSize);
 
+#ifdef FUZZING
+  if (indexOffset > aBlob.length() - footerSize) {
+    return false;
+  }
+#else
   MOZ_RELEASE_ASSERT(indexOffset <= aBlob.length() - footerSize);
+#endif
   Reader reader(aBlob.begin().get() + indexOffset,
                 aBlob.length() - footerSize - indexOffset);
 
@@ -412,11 +432,25 @@ static bool Moz2DRenderCallback(const Range<const uint8_t> aBlob,
   while (reader.pos < reader.len) {
     size_t end = reader.ReadSize();
     size_t extra_end = reader.ReadSize();
+#ifdef FUZZING
+    if (!reader.ok) {
+      return false;
+    }
+    if (offset > end || extra_end < end || extra_end >= aBlob.length()) {
+      return false;
+    }
+#else
     MOZ_RELEASE_ASSERT(offset <= end);
     MOZ_RELEASE_ASSERT(extra_end >= end);
     MOZ_RELEASE_ASSERT(extra_end < aBlob.length());
+#endif
 
     auto combinedBounds = absBounds.Intersect(reader.ReadBounds());
+#ifdef FUZZING
+    if (!reader.ok) {
+      return false;
+    }
+#endif
     if (combinedBounds.IsEmpty()) {
       offset = extra_end;
       continue;
@@ -425,8 +459,18 @@ static bool Moz2DRenderCallback(const Range<const uint8_t> aBlob,
     layers::WebRenderTranslator translator(dt);
     Reader fontReader(aBlob.begin().get() + end, extra_end - end);
     size_t count = fontReader.ReadSize();
+#ifdef FUZZING
+    if (!fontReader.ok) {
+      return false;
+    }
+#endif
     for (size_t i = 0; i < count; i++) {
       layers::BlobFont blobFont = fontReader.ReadBlobFont();
+#ifdef FUZZING
+      if (!fontReader.ok) {
+        return false;
+      }
+#endif
       RefPtr<ScaledFont> scaledFont =
           GetScaledFont(&translator, blobFont.mFontInstanceKey);
       translator.AddScaledFont(blobFont.mScaledFontPtr, scaledFont);
@@ -437,7 +481,11 @@ static bool Moz2DRenderCallback(const Range<const uint8_t> aBlob,
         translator.TranslateRecording((char*)blob.begin().get(), blob.length());
     if (!ret) {
       gfxCriticalNote << "Replay failure: " << translator.GetError();
+#ifdef FUZZING
+      return false;
+#else
       MOZ_RELEASE_ASSERT(false);
+#endif
     }
     offset = extra_end;
   }

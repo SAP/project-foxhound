@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -67,7 +65,7 @@ void js::GCParallelTask::start() {
 }
 
 void js::GCParallelTask::startOrRunIfIdle(AutoLockHelperThreadState& lock) {
-  if (wasStarted(lock)) {
+  if (isQueued(lock) || wasStarted(lock)) {
     return;
   }
 
@@ -182,7 +180,7 @@ class MOZ_RAII AutoGCContext {
   JS::GCContext context;
 
  public:
-  explicit AutoGCContext(JSRuntime* runtime) : context(runtime) {
+  explicit AutoGCContext(JSRuntime* runtime) : context(&runtime->gc) {
     MOZ_RELEASE_ASSERT(TlsGCContext.init(),
                        "Failed to initialize TLS for GC context");
 

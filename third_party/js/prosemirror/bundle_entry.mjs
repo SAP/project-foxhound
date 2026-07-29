@@ -23,6 +23,10 @@ export {
   MarkdownSerializer,
 } from "prosemirror-markdown";
 
+// TODO (Bug 2030750) - Apply this with a patch in the vendoring process rather than
+// editing the file directly.
+export { default as MarkdownIt } from "markdown-it";
+
 // Third-party
 export {
   markdownParser,

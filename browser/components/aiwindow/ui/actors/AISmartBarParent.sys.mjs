@@ -3,10 +3,31 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /**
+ * @import { SapLocation, ContextWebsite } from "chrome://browser/content/urlbar/SmartbarInput.mjs"
+ * @import { SmartbarAction } from "chrome://browser/content/aiwindow/components/input-cta/input-cta.mjs"
+ * @import { ChatSubmitType } from "chrome://browser/content/aiwindow/components/ai-window/ai-window.mjs"
+ */
+
+/**
+ * @typedef {object} SmartbarCommitDetails
+ * @property {string} value - The query string
+ * @property {SapLocation} location - The location of the input
+ * @property {ContextWebsite[]} [contextMentions] - Context mentions
+ * @property {URL} [contextPageUrl] - The current page URL context
+ * @property {SmartbarAction} [detectedIntent] - The detected intent
+ * @property {ChatSubmitType} [submitType] - How the submit was triggered
+ */
+
+/**
  * JSWindowActor to pass a query from the Urlbar to the Smartbar.
  */
 export class AISmartBarParent extends JSWindowActorParent {
-  async ask(query) {
-    this.sendAsyncMessage("AskFromParent", { query });
+  /**
+   * Submit a chat query to the smartbar.
+   *
+   * @param {SmartbarCommitDetails} details - The details for the `smartbar-commit` event
+   */
+  async ask(details) {
+    this.sendAsyncMessage("AskFromParent", details);
   }
 }

@@ -23,7 +23,7 @@ task-defaults:
             - 'build/build-clang/build-clang.py'
     fetches:
         fetch:
-            - clang-20
+            - clang-21
 
 linux64-clang-tidy:
     index:
@@ -43,6 +43,27 @@ linux64-clang-tidy:
             - linux64-clang-toolchain
             - linux64-libxml2
             - linux64-toolchain-sysroot
+
+linux64-aarch64-clang-tidy:
+    index:
+        job-name: linux64-aarch64-clang-tidy
+    treeherder:
+        symbol: TLA64(clang-tidy)
+    run:
+        script: build-clang.sh
+        arguments:
+            - 'build/build-clang/use-clang-artifact.json'
+            - 'build/build-clang/clang-tidy.json'
+            - 'build/build-clang/linux64-aarch64.json'
+        resources:
+            - 'build/build-clang/use-clang-artifact.json'
+            - 'build/build-clang/clang-tidy.json'
+            - 'build/build-clang/linux64-aarch64.json'
+    fetches:
+        toolchain:
+            - linux64-clang-toolchain
+            - linux64-aarch64-libxml2
+            - linux64-aarch64-toolchain-sysroot
 
 macosx64-clang-tidy:
     index:

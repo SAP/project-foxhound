@@ -3,6 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import argparse
+import functools
 import os
 import re
 import subprocess
@@ -11,8 +12,6 @@ import sys
 import buildconfig
 from mozpack.executables import ELF, UNKNOWN, get_type
 from packaging.version import Version
-
-from mozbuild.util import memoize
 
 IS_ARM64 = buildconfig.substs.get("TARGET_CPU") == "aarch64"
 # libstdc++ 4.8.1 of higher (6.0 or higher on arm64)
@@ -33,10 +32,10 @@ else:
     GUESSED_NSMODULE_SIZE = 4
 
 
-get_type = memoize(get_type)
+get_type = functools.cache(get_type)
 
 
-@memoize
+@functools.cache
 def get_output(*cmd):
     env = dict(os.environ)
     env["LC_ALL"] = "C"

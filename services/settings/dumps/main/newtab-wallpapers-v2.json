@@ -1,6 +1,380 @@
 {
   "data": [
     {
+      "order": 3,
+      "theme": "light",
+      "title": "wcw-semifinals-arg",
+      "schema": 1783974974325,
+      "category": "firefox",
+      "attachment": {
+        "hash": "973528df1cf245ec1f5dde994d686997347c28fdaf25056381947dae602a8510",
+        "size": 211301,
+        "filename": "wallpaper-worldcup-D-Argentina-desktop.svg",
+        "location": "main-workspace/newtab-wallpapers-v2/20260713164941--4b93b0a8-3ccc-4356-96d4-4f2637d66eb0--4bed9c8c-2886-4969-b1f7-9c5d15122087.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "background_position": "top right",
+      "id": "4b93b0a8-3ccc-4356-96d4-4f2637d66eb0",
+      "last_modified": 1783975194430
+    },
+    {
+      "order": 5,
+      "theme": "dark",
+      "title": "wcw-semifinals-fra",
+      "schema": 1783965624205,
+      "category": "firefox",
+      "attachment": {
+        "hash": "1c3b28cf5e33e68953c0943feff61eb2bfcffae546b74b08eccaadd1101b735c",
+        "size": 210347,
+        "filename": "wallpaper-worldcup-D-France-desktop.svg",
+        "location": "main-workspace/newtab-wallpapers-v2/20260713180000--ad5a14a9-a5c1-4f07-8dc9-2132f967cdb6--e947e519-0db2-4ad4-94dd-fbe8d96b766b.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "background_position": "top right",
+      "id": "ad5a14a9-a5c1-4f07-8dc9-2132f967cdb6",
+      "last_modified": 1783975194426
+    },
+    {
+      "order": 6,
+      "theme": "dark",
+      "title": "wcw-semifinals-esp",
+      "schema": 1783961949821,
+      "category": "firefox",
+      "attachment": {
+        "hash": "47864ba7ab949efefd34efa7124c72e36a7daa47d3f4acccc8994441bce72e5e",
+        "size": 210365,
+        "filename": "wallpaper-worldcup-D-Spain-desktop.svg",
+        "location": "main-workspace/newtab-wallpapers-v2/20260713165852--e6dc9d35-16c9-4a4a-a84c-12d9be3d213e--b4050fff-c113-4487-bb7a-af4000297e67.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "background_position": "top right",
+      "id": "e6dc9d35-16c9-4a4a-a84c-12d9be3d213e",
+      "last_modified": 1783975194422
+    },
+    {
+      "order": 4,
+      "theme": "dark",
+      "title": "wcw-semifinals-eng",
+      "schema": 1783965609028,
+      "category": "firefox",
+      "attachment": {
+        "hash": "65467c6eea68d8246d90bfddbd16a4759c0a07dac7fdc5cce8821f0df0c65639",
+        "size": 210435,
+        "filename": "wallpaper-worldcup-D-England-desktop.svg",
+        "location": "main-workspace/newtab-wallpapers-v2/20260713180008--6107b831-6c13-4238-85ba-97c9a78270ea--33dec5fb-a839-4663-b3ab-4803ab2ffcce.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "background_position": "top right",
+      "id": "6107b831-6c13-4238-85ba-97c9a78270ea",
+      "last_modified": 1783975194418
+    },
+    {
+      "order": 9,
+      "theme": "light",
+      "title": "wcw-c",
+      "schema": 1780617609700,
+      "category": "firefox",
+      "attachment": {
+        "hash": "f0a849a37ed6a89fc1856bb7a5b1f3c408545504c21ad63d17ad66e785a53d90",
+        "size": 59965,
+        "filename": "wallpaper-worldcup-C-desktop.svg",
+        "location": "main-workspace/newtab-wallpapers-v2/20260608150101--b8acfb08-6b49-48b3-9ae3-3564bb4d8402--d9f26a1a-db0d-4fe1-a566-76c94f1ecf94.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "background_position": "top right",
+      "id": "b8acfb08-6b49-48b3-9ae3-3564bb4d8402",
+      "last_modified": 1780931540831
+    },
+    {
+      "order": 8,
+      "theme": "light",
+      "title": "wcw-a",
+      "schema": 1780605617152,
+      "category": "firefox",
+      "attachment": {
+        "hash": "57c307a554ce710ac9f611addb5f8398eb030fef86bd9b573afd339a180bd386",
+        "size": 398329,
+        "filename": "wallpaper-worldcup-A-desktop-light.avif",
+        "location": "main-workspace/newtab-wallpapers-v2/20260604203925--89ce089b-b568-4051-8c4c-0d2a3d1e63dc--f290b6da-1a8c-4a51-bd90-8e7abb9bf18e.avif",
+        "mimetype": "image/avif"
+      },
+      "background_position": "top right",
+      "id": "89ce089b-b568-4051-8c4c-0d2a3d1e63dc",
+      "last_modified": 1780931540828
+    },
+    {
+      "order": 7,
+      "theme": "dark",
+      "title": "wcw-b",
+      "schema": 1780930862283,
+      "category": "firefox",
+      "attachment": {
+        "hash": "d82978654e2b3fc1a11112d26e1688bac866c1873cad1f91cbffb277227bf999",
+        "size": 112355,
+        "filename": "wallpaper-worldcup-B-desktop-dark.svg",
+        "location": "main-workspace/newtab-wallpapers-v2/20260608150114--82d1fa4a-ca0f-4f97-9a35-efcefb3e368d--755165e9-cf93-46bf-aee2-e75f0b49daa9.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "background_position": "top right",
+      "id": "82d1fa4a-ca0f-4f97-9a35-efcefb3e368d",
+      "last_modified": 1780931540824
+    },
+    {
+      "order": 60,
+      "theme": "light",
+      "title": "firefox-a-light",
+      "schema": 1780605372022,
+      "category": "firefox",
+      "attachment": {
+        "hash": "01be7f29c851b15e4e5892e0b3b6539e1ac5d12f352119c0c054bafd9bf291b0",
+        "size": 18870,
+        "filename": "desktop-wallpaper-a-light-1920x1080.svg",
+        "location": "main-workspace/newtab-wallpapers-v2/ddf2cbca-daef-4702-808b-131891b326dd.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "background_position": "top right",
+      "id": "25516fbc-54f6-4f7d-9b12-0188844109b4",
+      "last_modified": 1780931540821
+    },
+    {
+      "order": 10,
+      "theme": "light",
+      "title": "firefox-orange",
+      "schema": 1780605446111,
+      "category": "firefox",
+      "attachment": {
+        "hash": "27eb5dbe3d52af1b09a7af87fd1cbde9dc550ab1de2736730d02737c482bd049",
+        "size": 10340,
+        "filename": "simplykit.svg",
+        "location": "main-workspace/newtab-wallpapers-v2/e24afb3d-a1f1-4b9f-9a57-940f5ef7261c.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "background_position": "bottom left",
+      "id": "c01058f4-5b6c-4ac4-9708-54d5bee8f450",
+      "last_modified": 1780931540818
+    },
+    {
+      "order": 30,
+      "theme": "dark",
+      "title": "firefox-desert-dark",
+      "schema": 1780605383845,
+      "category": "firefox",
+      "attachment": {
+        "hash": "bf9d8585696d53674a2792846b77114a24f27148b94b3c9bb25a82a2ce31939f",
+        "size": 80860,
+        "filename": "wallpaper-landscape1-kit-desert-dark.svg",
+        "location": "main-workspace/newtab-wallpapers-v2/2c387cda-3d68-4a45-8fd7-41aa4f7c9d2a.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "background_position": "bottom right",
+      "id": "36d49fb5-9fd4-4fa9-9504-2dd0b137d285",
+      "last_modified": 1780931540816
+    },
+    {
+      "order": 130,
+      "theme": "dark",
+      "title": "firefox-g-dark",
+      "schema": 1780605302700,
+      "category": "firefox",
+      "attachment": {
+        "hash": "e04003fa18aeca660ec8eeeedd9cf71653bdafc787c5aa5c7420b5abf8358c61",
+        "size": 9519,
+        "filename": "desktop-wallpaper-g-dark-1920x1080.svg",
+        "location": "main-workspace/newtab-wallpapers-v2/5cd10c63-472c-48e3-800e-d75f5168328a.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "background_position": "bottom left",
+      "id": "94e8a3ce-1faf-4aa1-a52e-7e15c07ff627",
+      "last_modified": 1780931540813
+    },
+    {
+      "order": 90,
+      "theme": "dark",
+      "title": "firefox-c-dark",
+      "schema": 1780605354633,
+      "category": "firefox",
+      "attachment": {
+        "hash": "600b8536a7ff982ee251a29ce1c4548b6ac1a6f5ce1dd4e0e628a2d24cf924e7",
+        "size": 12257,
+        "filename": "desktop-wallpaper-c-dark-1920x1080.svg",
+        "location": "main-workspace/newtab-wallpapers-v2/f86b89b8-1e93-43a7-844a-8718462eb8cc.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "background_position": "top left",
+      "id": "8611e834-7285-4b7b-8d56-06eab6a0a227",
+      "last_modified": 1780931540810
+    },
+    {
+      "order": 80,
+      "theme": "light",
+      "title": "firefox-b-light",
+      "schema": 1780605363654,
+      "category": "firefox",
+      "attachment": {
+        "hash": "7d10290ee82faf129c7524b80db95653391495a833945c4ea70e5947960b713d",
+        "size": 286854,
+        "filename": "desktop-wallpaper-b-light-1920x1080.svg",
+        "location": "main-workspace/newtab-wallpapers-v2/b283ca51-354c-476f-9ee8-82f5a9ced0e2.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "background_position": "center right",
+      "id": "e62aae2f-2f52-44a9-a5c5-ca68181185be",
+      "last_modified": 1780931540807
+    },
+    {
+      "order": 40,
+      "theme": "light",
+      "title": "firefox-desert-light",
+      "schema": 1780605389368,
+      "category": "firefox",
+      "attachment": {
+        "hash": "69f6bbc929f0dc9009c27d01b8274f450bacc2bc3ce59757525df791e3e6d395",
+        "size": 32801,
+        "filename": "wallpaper-landscape1-kit-desert-light.svg",
+        "location": "main-workspace/newtab-wallpapers-v2/e8b55fa2-4445-46e6-b09a-2d9d7a42e559.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "background_position": "center left",
+      "id": "dd9512ea-ea90-4d7b-9571-ab8fa3d52d51",
+      "last_modified": 1780931540805
+    },
+    {
+      "order": 20,
+      "theme": "light",
+      "title": "firefox-bold",
+      "schema": 1780605393844,
+      "category": "firefox",
+      "attachment": {
+        "hash": "0e9e5554a18b4acc557efa408a8227ea8197100503b34c7713d8326bec9fc661",
+        "size": 152080,
+        "filename": "wallpaperbold.avif",
+        "location": "main-workspace/newtab-wallpapers-v2/0fdf6f5d-8b70-473e-a0cd-50b4dbf87a4b.avif",
+        "mimetype": "image/avif"
+      },
+      "background_position": "center right",
+      "id": "25ac8c70-e0b6-4267-a7fc-c05ddeefbb11",
+      "last_modified": 1780931540802
+    },
+    {
+      "order": 150,
+      "theme": "light",
+      "title": "firefox-g-light",
+      "schema": 1780605298862,
+      "category": "firefox",
+      "attachment": {
+        "hash": "e8dbbbd65fef02542c2e404efa3779d479052c9193cd5dfb6e4025df36720658",
+        "size": 9519,
+        "filename": "desktop-wallpaper-g-light-1920x1080.svg",
+        "location": "main-workspace/newtab-wallpapers-v2/66cdcc52-7916-4bdd-94be-dc382261ef66.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "background_position": "bottom left",
+      "id": "2b1b54e2-19e7-4846-9d5b-ebbede82747b",
+      "last_modified": 1780931540799
+    },
+    {
+      "order": 110,
+      "theme": "dark",
+      "title": "firefox-d-dark",
+      "schema": 1780605309732,
+      "category": "firefox",
+      "attachment": {
+        "hash": "ffa31ae925ad95a749d6096745ea6af4f7cd58b0646b6c94777ac8a0a25722a9",
+        "size": 25117,
+        "filename": "desktop-wallpaper-d-dark-1920x1080.svg",
+        "location": "main-workspace/newtab-wallpapers-v2/9f4e8a01-0d13-4c40-a005-3c119833a33f.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "background_position": "bottom right",
+      "id": "1a0b388c-db2c-4f86-b953-0e5302573258",
+      "last_modified": 1780931540797
+    },
+    {
+      "order": 50,
+      "theme": "dark",
+      "title": "firefox-a",
+      "schema": 1780605380072,
+      "category": "firefox",
+      "attachment": {
+        "hash": "dfdeb8a64fc3a5c9d160472bc10467acc3e3ffba51da05c7b222a1315dd8a1f4",
+        "size": 19020,
+        "filename": "desktop-wallpaper-a-1920x1080.svg",
+        "location": "main-workspace/newtab-wallpapers-v2/e08c3e8c-4bda-48e4-8f36-a1d203f46536.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "background_position": "top right",
+      "id": "451090be-cdf1-49fc-b1f3-bd2f3b4ac34d",
+      "last_modified": 1780931540794
+    },
+    {
+      "order": 120,
+      "theme": "light",
+      "title": "firefox-d",
+      "schema": 1780605306030,
+      "category": "firefox",
+      "attachment": {
+        "hash": "74988ebbc20bbc957f9b082793fea4f667e307aea3e873ba01a4f094e26e8452",
+        "size": 26913,
+        "filename": "desktop-wallpaper-d-1920x1080.svg",
+        "location": "main-workspace/newtab-wallpapers-v2/3640c0ff-19a2-4f7b-a06a-fdc2232ddd4a.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "background_position": "bottom right",
+      "id": "62aa72d9-b9f3-4f29-88f5-5120ee004e7c",
+      "last_modified": 1780931540791
+    },
+    {
+      "order": 70,
+      "theme": "dark",
+      "title": "firefox-b",
+      "schema": 1780605367971,
+      "category": "firefox",
+      "attachment": {
+        "hash": "0483fd7bb1054d61301e9fcb2752009a6466f5213933f72dddd66ff909e239a2",
+        "size": 286845,
+        "filename": "desktop-wallpaper-b-1920x1080.svg",
+        "location": "main-workspace/newtab-wallpapers-v2/6f7e2155-df50-4917-81fd-9c6f16e14965.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "background_position": "center right",
+      "id": "1d43f5a1-64bd-4ad4-b825-88a89878662f",
+      "last_modified": 1780931540789
+    },
+    {
+      "order": 160,
+      "theme": "dark",
+      "title": "firefox-e",
+      "schema": 1780605352280,
+      "category": "firefox",
+      "attachment": {
+        "hash": "fe1cb48a30da9b05ba14b550918f708953ee6e44fa5a878bcbc5d3d7963176ad",
+        "size": 4567,
+        "filename": "desktop-wallpaper-e-1920x1080.svg",
+        "location": "main-workspace/newtab-wallpapers-v2/0b039df1-971b-445a-84f6-6a15da08940e.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "background_position": "bottom center",
+      "id": "2e468f89-ac6a-474f-a789-5de0be601887",
+      "last_modified": 1780931540786
+    },
+    {
+      "order": 100,
+      "theme": "light",
+      "title": "firefox-c",
+      "schema": 1780605419579,
+      "category": "firefox",
+      "attachment": {
+        "hash": "054a4389ea9087583091de88a5aa45740a3ef067667a963c587208648df87176",
+        "size": 12260,
+        "filename": "desktop-wallpaper-c-light-1920x1080.svg",
+        "location": "main-workspace/newtab-wallpapers-v2/f633134b-dc81-4b54-a8c0-61681e36c56e.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "background_position": "top left",
+      "id": "429c288c-8d92-4baa-aefb-a04719882454",
+      "last_modified": 1780931540784
+    },
+    {
       "theme": "dark",
       "title": "dark-fox-anniversary",
       "schema": 1767652222492,
@@ -136,22 +510,6 @@
       "last_modified": 1767716652295
     },
     {
-      "theme": "dark",
-      "title": "firefox-a",
-      "schema": 1767652080942,
-      "category": "firefox",
-      "attachment": {
-        "hash": "dfdeb8a64fc3a5c9d160472bc10467acc3e3ffba51da05c7b222a1315dd8a1f4",
-        "size": 19020,
-        "filename": "desktop-wallpaper-a-1920x1080.svg",
-        "location": "main-workspace/newtab-wallpapers-v2/e08c3e8c-4bda-48e4-8f36-a1d203f46536.svg",
-        "mimetype": "image/svg+xml"
-      },
-      "background_position": "top right",
-      "id": "451090be-cdf1-49fc-b1f3-bd2f3b4ac34d",
-      "last_modified": 1767716652291
-    },
-    {
       "theme": "light",
       "title": "firefox-f",
       "schema": 1767652115526,
@@ -166,54 +524,6 @@
       "background_position": "bottom center",
       "id": "2bf99683-cde8-438b-9f8e-a1222dc7f59c",
       "last_modified": 1767716652288
-    },
-    {
-      "theme": "light",
-      "title": "firefox-d",
-      "schema": 1767636605829,
-      "category": "firefox",
-      "attachment": {
-        "hash": "74988ebbc20bbc957f9b082793fea4f667e307aea3e873ba01a4f094e26e8452",
-        "size": 26913,
-        "filename": "desktop-wallpaper-d-1920x1080.svg",
-        "location": "main-workspace/newtab-wallpapers-v2/3640c0ff-19a2-4f7b-a06a-fdc2232ddd4a.svg",
-        "mimetype": "image/svg+xml"
-      },
-      "background_position": "bottom right",
-      "id": "62aa72d9-b9f3-4f29-88f5-5120ee004e7c",
-      "last_modified": 1767716652284
-    },
-    {
-      "theme": "dark",
-      "title": "firefox-b",
-      "schema": 1767652124884,
-      "category": "firefox",
-      "attachment": {
-        "hash": "0483fd7bb1054d61301e9fcb2752009a6466f5213933f72dddd66ff909e239a2",
-        "size": 286845,
-        "filename": "desktop-wallpaper-b-1920x1080.svg",
-        "location": "main-workspace/newtab-wallpapers-v2/6f7e2155-df50-4917-81fd-9c6f16e14965.svg",
-        "mimetype": "image/svg+xml"
-      },
-      "background_position": "center right",
-      "id": "1d43f5a1-64bd-4ad4-b825-88a89878662f",
-      "last_modified": 1767716652281
-    },
-    {
-      "theme": "dark",
-      "title": "firefox-e",
-      "schema": 1767652098403,
-      "category": "firefox",
-      "attachment": {
-        "hash": "fe1cb48a30da9b05ba14b550918f708953ee6e44fa5a878bcbc5d3d7963176ad",
-        "size": 4567,
-        "filename": "desktop-wallpaper-e-1920x1080.svg",
-        "location": "main-workspace/newtab-wallpapers-v2/0b039df1-971b-445a-84f6-6a15da08940e.svg",
-        "mimetype": "image/svg+xml"
-      },
-      "background_position": "bottom center",
-      "id": "2e468f89-ac6a-474f-a789-5de0be601887",
-      "last_modified": 1767716652278
     },
     {
       "theme": "light",
@@ -241,22 +551,6 @@
       "background_position": "bottom center",
       "id": "6c76fca3-3b93-41f1-b7f6-c863efcd3e91",
       "last_modified": 1767716652275
-    },
-    {
-      "theme": "light",
-      "title": "firefox-c",
-      "schema": 1767052808174,
-      "category": "firefox",
-      "attachment": {
-        "hash": "7785790af185a3eca30177b678ab590773b209149dc14167a61044f8abdc7e1a",
-        "size": 14552,
-        "filename": "desktop-wallpaper-c-1920x1080.svg",
-        "location": "main-workspace/newtab-wallpapers-v2/ae9afcad-83a6-49c5-91b3-8fbea798b88f.svg",
-        "mimetype": "image/svg+xml"
-      },
-      "background_position": "top right",
-      "id": "429c288c-8d92-4baa-aefb-a04719882454",
-      "last_modified": 1767636605736
     },
     {
       "theme": "dark",
@@ -1119,5 +1413,5 @@
       "last_modified": 1718647622926
     }
   ],
-  "timestamp": 1767716652308
+  "timestamp": 1783975194430
 }

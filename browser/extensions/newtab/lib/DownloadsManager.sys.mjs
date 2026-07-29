@@ -98,7 +98,7 @@ export class DownloadsManager {
     const downloadThreshold = Date.now() - threshold;
     let downloads = [...this._downloadItems.values()]
       .filter(download => download.endTime > downloadThreshold)
-      .sort((download1, download2) => download1.endTime < download2.endTime);
+      .sort((download1, download2) => download2.endTime - download1.endTime);
 
     for (const download of downloads) {
       // Ignore blocked links, but allow long (data:) uris to avoid high CPU

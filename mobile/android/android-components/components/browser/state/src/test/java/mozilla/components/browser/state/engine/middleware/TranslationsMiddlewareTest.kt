@@ -19,6 +19,8 @@ import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.engine.EngineSession
+import mozilla.components.concept.engine.ai.AIFeaturesError
+import mozilla.components.concept.engine.ai.AIFeaturesRuntime
 import mozilla.components.concept.engine.translate.DetectedLanguages
 import mozilla.components.concept.engine.translate.Language
 import mozilla.components.concept.engine.translate.LanguageModel
@@ -52,6 +54,7 @@ import org.mockito.Mockito.atLeastOnce
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import java.util.Locale
+import kotlin.test.assertIs
 
 class TranslationsMiddlewareTest {
     private val testDispatcher = StandardTestDispatcher()
@@ -63,6 +66,8 @@ class TranslationsMiddlewareTest {
     private lateinit var tabs: List<TabSessionState>
     private lateinit var state: BrowserState
     private lateinit var store: BrowserStore
+
+    private lateinit var mockAiFeatures: AIFeaturesRuntime
 
     // Mock Variables
     private val mockFrom = Language(code = "es", localizedDisplayName = "Spanish")
@@ -82,6 +87,8 @@ class TranslationsMiddlewareTest {
     fun setup() {
         engine = mock()
         engineSession = mock()
+        mockAiFeatures = mock()
+        whenever(engine.aiFeatures).thenReturn(mockAiFeatures)
         tab = createTab(
             url = "https://www.firefox.com",
             title = "Firefox",
@@ -90,7 +97,7 @@ class TranslationsMiddlewareTest {
         )
         tabs = listOf(tab)
         state = BrowserState(tabs = tabs, selectedTabId = tab.id)
-        translationsMiddleware = TranslationsMiddleware(engine = engine, scope = scope)
+        translationsMiddleware = TranslationsMiddleware(engine = engine, scope = scope, isTranslationsEnabled = { true })
         store = BrowserStore(
             initialState = state,
             middleware = listOf(captureActionsMiddleware, translationsMiddleware),
@@ -193,7 +200,7 @@ class TranslationsMiddlewareTest {
         captureActionsMiddleware.assertFirstAction(TranslationsAction.TranslateExceptionAction::class) { action ->
             assertEquals(tab.id, action.tabId)
             assertEquals(TranslationOperation.FETCH_SUPPORTED_LANGUAGES, action.operation)
-            assertTrue(action.translationError is TranslationError.CouldNotLoadLanguagesError)
+            assertIs<TranslationError.CouldNotLoadLanguagesError>(action.translationError)
         }
     }
 
@@ -208,11 +215,88 @@ class TranslationsMiddlewareTest {
     }
 
     @Test
+    fun `WHEN InitTranslationsBrowserState is dispatched AND isTranslationsEnabled is false THEN browser store is not initialized`() = runTest(testDispatcher) {
+        val middleware = TranslationsMiddleware(
+            engine = engine,
+            automaticallyInitialize = false,
+            scope = this,
+            isTranslationsEnabled = { false },
+        )
+
+        middleware.invoke(store = store, next = {}, action = TranslationsAction.InitTranslationsBrowserState)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val engineSupportedCallback = argumentCaptor<((Boolean) -> Unit)>()
+        verify(engine, atLeastOnce()).isTranslationsEngineSupported(
+            onSuccess = engineSupportedCallback.capture(),
+            onError = any(),
+        )
+        engineSupportedCallback.value.invoke(true)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // One of the calls made if we do a full initialization
+        verify(engine, never()).getSupportedTranslationLanguages(onSuccess = any(), onError = any())
+    }
+
+    @Test
+    fun `WHEN InitTranslationsBrowserState is dispatched AND store isTranslationsEnabled is true AND isTranslationsEnabled middleware is false THEN SetTranslationsEnabledAction is dispatched with false`() = runTest(testDispatcher) {
+        val middleware = TranslationsMiddleware(
+            engine = engine,
+            automaticallyInitialize = false,
+            scope = this,
+            // Middleware is the source of truth on feature enablement
+            isTranslationsEnabled = { false },
+        )
+
+        middleware.invoke(store = store, next = {}, action = TranslationsAction.InitTranslationsBrowserState)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val engineSupportedCallback = argumentCaptor<((Boolean) -> Unit)>()
+        verify(engine, atLeastOnce()).isTranslationsEngineSupported(
+            onSuccess = engineSupportedCallback.capture(),
+            onError = any(),
+        )
+        engineSupportedCallback.value.invoke(true)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // SetTranslationsEnabledAction aligns the store value with the source of truth
+        captureActionsMiddleware.assertFirstAction(TranslationsAction.SetTranslationsEnabledAction::class) { action ->
+            assertFalse(action.isTranslationsEnabled)
+        }
+    }
+
+    @Test
+    fun `WHEN InitTranslationsBrowserState is dispatched AND store isTranslationsEnabled is true AND isTranslationsEnabled middleware is true THEN SetTranslationsEnabledAction is not dispatched`() = runTest(testDispatcher) {
+        val middleware = TranslationsMiddleware(
+            engine = engine,
+            automaticallyInitialize = false,
+            scope = this,
+            // Middleware is the source of truth on feature enablement
+            isTranslationsEnabled = { true },
+        )
+
+        middleware.invoke(store = store, next = {}, action = TranslationsAction.InitTranslationsBrowserState)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val engineSupportedCallback = argumentCaptor<((Boolean) -> Unit)>()
+        verify(engine, atLeastOnce()).isTranslationsEngineSupported(
+            onSuccess = engineSupportedCallback.capture(),
+            onError = any(),
+        )
+        engineSupportedCallback.value.invoke(true)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // They are already aligned, so no dispatch required
+        captureActionsMiddleware.assertNotDispatched(TranslationsAction.SetTranslationsEnabledAction::class)
+    }
+
+    @Test
     fun `GIVEN automaticallyInitialize is false WHEN InitAction is dispatched THEN do nothing`() = runTest(testDispatcher) {
         val middleware = TranslationsMiddleware(
             engine = engine,
             automaticallyInitialize = false,
             scope = this,
+            isTranslationsEnabled = { true },
         )
         captureActionsMiddleware.reset()
 
@@ -223,7 +307,7 @@ class TranslationsMiddlewareTest {
     }
 
     @Test
-    fun `WHEN InitTranslationsBrowserState is dispatched AND the engine is supported THEN SetSupportedLanguagesAction is also dispatched`() = runTest(testDispatcher) {
+    fun `WHEN InitTranslationsBrowserState is dispatched AND the engine is supported AND isTranslationsEnabled is true THEN SetSupportedLanguagesAction is also dispatched`() = runTest(testDispatcher) {
         // Send Action
         translationsMiddleware.invoke(store = store, next = {}, action = TranslationsAction.InitTranslationsBrowserState)
         testDispatcher.scheduler.advanceUntilIdle()
@@ -312,7 +396,7 @@ class TranslationsMiddlewareTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         captureActionsMiddleware.assertFirstAction(TranslationsAction.EngineExceptionAction::class) { action ->
-            assertTrue(action.error is TranslationError.CouldNotLoadLanguageSettingsError)
+            assertIs<TranslationError.CouldNotLoadLanguageSettingsError>(action.error)
         }
     }
 
@@ -385,7 +469,7 @@ class TranslationsMiddlewareTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         captureActionsMiddleware.assertFirstAction(TranslationsAction.EngineExceptionAction::class) { action ->
-            assertTrue(action.error is TranslationError.UnknownEngineSupportError)
+            assertIs<TranslationError.UnknownEngineSupportError>(action.error)
         }
     }
 
@@ -532,7 +616,7 @@ class TranslationsMiddlewareTest {
         captureActionsMiddleware.assertFirstAction(TranslationsAction.TranslateExceptionAction::class) { action ->
             assertEquals(tab.id, action.tabId)
             assertEquals(TranslationOperation.FETCH_PAGE_SETTINGS, action.operation)
-            assertTrue(action.translationError is TranslationError.CouldNotLoadPageSettingsError)
+            assertIs<TranslationError.CouldNotLoadPageSettingsError>(action.translationError)
         }
     }
 
@@ -663,11 +747,11 @@ class TranslationsMiddlewareTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         captureActionsMiddleware.assertFirstAction(TranslationsAction.EngineExceptionAction::class) { action ->
-            assertTrue(action.error is TranslationError.CouldNotLoadLanguageSettingsError)
+            assertIs<TranslationError.CouldNotLoadLanguageSettingsError>(action.error)
         }
 
         captureActionsMiddleware.assertFirstAction(TranslationsAction.TranslateExceptionAction::class) { action ->
-            assertTrue(action.translationError is TranslationError.CouldNotLoadLanguageSettingsError)
+            assertIs<TranslationError.CouldNotLoadLanguageSettingsError>(action.translationError)
             assertEquals(tab.id, action.tabId)
             assertEquals(TranslationOperation.FETCH_AUTOMATIC_LANGUAGE_SETTINGS, action.operation)
         }
@@ -769,7 +853,7 @@ class TranslationsMiddlewareTest {
         errorCallback.value.invoke(Exception())
 
         captureActionsMiddleware.assertFirstAction(TranslationsAction.TranslateExceptionAction::class) { action ->
-            assertTrue(action.translationError is TranslationError.CouldNotLoadNeverTranslateSites)
+            assertIs<TranslationError.CouldNotLoadNeverTranslateSites>(action.translationError)
             assertEquals(tab.id, action.tabId)
             assertEquals(TranslationOperation.FETCH_NEVER_TRANSLATE_SITES, action.operation)
         }
@@ -907,13 +991,13 @@ class TranslationsMiddlewareTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         captureActionsMiddleware.assertFirstAction(TranslationsAction.EngineExceptionAction::class) { action ->
-            assertTrue(action.error is TranslationError.ModelCouldNotRetrieveError)
+            assertIs<TranslationError.ModelCouldNotRetrieveError>(action.error)
         }
 
         captureActionsMiddleware.assertFirstAction(TranslationsAction.TranslateExceptionAction::class) { action ->
             assertEquals(tab.id, action.tabId)
             assertEquals(TranslationOperation.FETCH_LANGUAGE_MODELS, action.operation)
-            assertTrue(action.translationError is TranslationError.ModelCouldNotRetrieveError)
+            assertIs<TranslationError.ModelCouldNotRetrieveError>(action.translationError)
         }
     }
 
@@ -1139,6 +1223,64 @@ class TranslationsMiddlewareTest {
 
         captureActionsMiddleware.assertFirstAction(TranslationsAction.SetLanguageModelsAction::class) { action ->
             assertEquals(mockLanguageModels, action.languageModels)
+        }
+    }
+
+    @Test
+    fun `WHEN SetTranslationsEnabledAction is dispatched with true THEN InitTranslationsBrowserState is also dispatched and browser state is set`() = runTest(testDispatcher) {
+        translationsMiddleware.invoke(
+            store = store,
+            next = {},
+            action = TranslationsAction.SetTranslationsEnabledAction(isTranslationsEnabled = true),
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val successCallback = argumentCaptor<(() -> Unit)>()
+        verify(mockAiFeatures).setFeatureEnablement(eq("translations"), eq(true), onSuccess = successCallback.capture(), onError = any())
+        successCallback.value.invoke()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        captureActionsMiddleware.assertFirstAction(TranslationsAction.InitTranslationsBrowserState::class)
+    }
+
+    @Test
+    fun `WHEN SetTranslationsEnabledAction is dispatched with false THEN InitTranslationsBrowserState is not dispatched and browser state is set`() = runTest(testDispatcher) {
+        // InitTranslationsBrowserState has already went through on test startup
+        captureActionsMiddleware.reset()
+
+        translationsMiddleware.invoke(
+            store = store,
+            next = {},
+            action = TranslationsAction.SetTranslationsEnabledAction(isTranslationsEnabled = false),
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val successCallback = argumentCaptor<(() -> Unit)>()
+        verify(mockAiFeatures).setFeatureEnablement(eq("translations"), eq(false), onSuccess = successCallback.capture(), onError = any())
+        successCallback.value.invoke()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        captureActionsMiddleware.assertNotDispatched(TranslationsAction.InitTranslationsBrowserState::class)
+    }
+
+    @Test
+    fun `WHEN SetTranslationsEnabledAction fails THEN EngineExceptionAction is dispatched with CouldNotSetBrowserEnabledError`() = runTest(testDispatcher) {
+        captureActionsMiddleware.reset()
+
+        translationsMiddleware.invoke(
+            store = store,
+            next = {},
+            action = TranslationsAction.SetTranslationsEnabledAction(isTranslationsEnabled = true),
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val errorCallback = argumentCaptor<((Throwable) -> Unit)>()
+        verify(mockAiFeatures).setFeatureEnablement(eq("translations"), eq(true), onSuccess = any(), onError = errorCallback.capture())
+        errorCallback.value.invoke(AIFeaturesError.CouldNotSetError(Exception("Could not set translations enabled.")))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        captureActionsMiddleware.assertFirstAction(TranslationsAction.EngineExceptionAction::class) { action ->
+            assertIs<TranslationError.CouldNotSetBrowserEnabledError>(action.error)
         }
     }
 }

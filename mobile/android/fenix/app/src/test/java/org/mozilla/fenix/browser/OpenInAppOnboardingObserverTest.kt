@@ -103,6 +103,7 @@ class OpenInAppOnboardingObserverTest {
 
     @Test
     fun `GIVEN user has not configured to open links in external app WHEN page finishes loading THEN show banner`() = runTest(testDispatcher) {
+        every { settings.inAppMessagesEnabled } returns true
         every { settings.shouldOpenLinksInApp() } returns false
         every { settings.shouldShowOpenInAppCfr } returns true
         every { appLinksUseCases.appLinkRedirect.invoke(any()).hasExternalApp() } returns true
@@ -115,6 +116,23 @@ class OpenInAppOnboardingObserverTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         verify(exactly = 1) { infoBanner.showBanner() }
+    }
+
+    @Test
+    fun `GIVEN in-app messages are disabled WHEN page finishes loading THEN do not show banner`() = runTest(testDispatcher) {
+        every { settings.inAppMessagesEnabled } returns false
+        every { settings.shouldOpenLinksInApp() } returns false
+        every { settings.shouldShowOpenInAppCfr } returns true
+        every { appLinksUseCases.appLinkRedirect.invoke(any()).hasExternalApp() } returns true
+        store.dispatch(ContentAction.UpdateLoadingStateAction("1", true))
+
+        openInAppOnboardingObserver.start()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        store.dispatch(ContentAction.UpdateLoadingStateAction("1", false))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        verify(exactly = 0) { infoBanner.showBanner() }
     }
 
     @Test
@@ -151,6 +169,7 @@ class OpenInAppOnboardingObserverTest {
 
     @Test
     fun `GIVEN banner is displayed WHEN user navigates to different domain THEN banner is dismissed`() = runTest(testDispatcher) {
+        every { settings.inAppMessagesEnabled } returns true
         every { settings.openLinksInExternalApp } returns "never"
         every { settings.shouldShowOpenInAppCfr } returns true
         every { appLinksUseCases.appLinkRedirect.invoke(any()).hasExternalApp() } returns true

@@ -8,7 +8,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.navigation.NavController
+import io.mockk.Runs
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.spyk
 import io.mockk.verify
@@ -64,7 +66,7 @@ class PwaOnboardingObserverTest {
                 dispatcher = testDispatcher,
             ),
         )
-        every { pwaOnboardingObserver.navigateToPwaOnboarding() } returns Unit
+        every { pwaOnboardingObserver.navigateToPwaOnboarding() } just Runs
     }
 
     @After

@@ -63,27 +63,30 @@ class FxSuggestFactsMiddleware : Middleware<BrowserState, BrowserAction> {
                 val positionInGroup = suggestionIndex.toLong() + 1
                 val positionInAwesomeBar = groupIndex.toLong() + positionInGroup
                 val isClicked = clickedSuggestion == suggestion
+                when (suggestion) {
+                    is AwesomeBar.Suggestion -> {
+                        val impressionInfo = suggestion.metadata?.get(
+                            FxSuggestSuggestionProvider.MetadataKeys.IMPRESSION_INFO,
+                        ) as? FxSuggestInteractionInfo
+                        impressionInfo?.let {
+                            emitSuggestionImpressedFact(
+                                interactionInfo = it,
+                                positionInAwesomeBar = positionInAwesomeBar,
+                                isClicked = isClicked,
+                                clientCountry = clientCountry,
+                                engagementAbandoned = engagementAbandoned,
+                            )
+                        }
 
-                val impressionInfo = suggestion.metadata?.get(
-                    FxSuggestSuggestionProvider.MetadataKeys.IMPRESSION_INFO,
-                ) as? FxSuggestInteractionInfo
-                impressionInfo?.let {
-                    emitSuggestionImpressedFact(
-                        interactionInfo = it,
-                        positionInAwesomeBar = positionInAwesomeBar,
-                        isClicked = isClicked,
-                        clientCountry = clientCountry,
-                        engagementAbandoned = engagementAbandoned,
-                    )
-                }
-
-                if (isClicked) {
-                    val clickInfo = suggestion.metadata?.get(
-                        FxSuggestSuggestionProvider.MetadataKeys.CLICK_INFO,
-                    ) as? FxSuggestInteractionInfo
-                    clickInfo?.let {
-                        emitSuggestionClickedFact(it, positionInAwesomeBar, clientCountry)
-                    }
+                        if (isClicked) {
+                            val clickInfo = suggestion.metadata?.get(
+                                FxSuggestSuggestionProvider.MetadataKeys.CLICK_INFO,
+                            ) as? FxSuggestInteractionInfo
+                            clickInfo?.let {
+                                emitSuggestionClickedFact(it, positionInAwesomeBar, clientCountry)
+                            }
+                        }
+                    } else -> {}
                 }
             }
         }

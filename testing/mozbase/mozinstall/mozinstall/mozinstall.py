@@ -316,7 +316,8 @@ def _install_dmg(src, dest_app):
         # separators
         # Therefor, $3 should give us the mounted path
         app_dir = (
-            subprocess.check_output(
+            subprocess
+            .check_output(
                 f'hdiutil attach -noautoopen -nobrowse -readonly "{src}"'
                 "| grep /Volumes/ | awk 'BEGIN{FS=\"\t\"} {print $3}'",
                 shell=True,
@@ -447,7 +448,8 @@ def _get_msix_install_location(pkg):
                             # line. (Not in this comment, due to linting.)
                             location = None
                             for line in (
-                                subprocess.check_output(cmd)
+                                subprocess
+                                .check_output(cmd)
                                 .decode("utf-8")
                                 .splitlines()
                             ):

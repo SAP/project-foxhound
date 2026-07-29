@@ -7,6 +7,7 @@
 import os
 import subprocess
 import sys
+import time
 
 import psutil
 
@@ -51,11 +52,16 @@ def getDoc():
     else:
         raise LookupError("Couldn't find Firefox application Accessible")
     root = app[0]
-    for embeds in root.getRelationSet():
-        if embeds.getRelationType() == pyatspi.RELATION_EMBEDS:
-            break
-    else:
-        raise LookupError("Firefox root doesn't have RELATION_EMBEDS")
+    for attempt in range(10):
+        for embeds in root.getRelationSet():
+            if embeds.getRelationType() == pyatspi.RELATION_EMBEDS:
+                break
+        else:
+            if attempt < 9:
+                time.sleep(0.5)
+                continue
+            raise LookupError("Firefox root doesn't have RELATION_EMBEDS")
+        break
     doc = embeds.getTarget(0)
     child = doc[0]
     if child.get_attributes().get("id") == "default-iframe-id":

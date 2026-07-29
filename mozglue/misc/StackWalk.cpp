@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -1166,26 +1164,25 @@ static void DoFramePointerStackWalk(MozWalkStackCallback aCallback,
   static const uintptr_t kMaxStackSize = 8 * 1024 * 1024;
   if (uintptr_t(aBp) < uintptr_t(aStackEnd) -
                            std::min(kMaxStackSize, uintptr_t(aStackEnd)) ||
-      aBp >= aStackEnd || (uintptr_t(aBp) & 3)) {
+      aBp >= aStackEnd || (uintptr_t(aBp) & (sizeof(void*) - 1))) {
     return;
   }
 
   while (aBp) {
     void** next = (void**)*aBp;
-    // aBp may not be a frame pointer on i386 if code was compiled with
+    // aBp may not be a valid frame pointer if code was compiled with
     // -fomit-frame-pointer, so do some sanity checks.
-    // (aBp should be a frame pointer on ppc(64) but checking anyway may help
-    // a little if the stack has been corrupted.)
-    // We don't need to check against the begining of the stack because
+    // We don't need to check against the beginning of the stack because
     // we can assume that aBp > sp
-    if (next <= aBp || next >= aStackEnd || (uintptr_t(next) & 3)) {
+    if (next <= aBp || next >= aStackEnd ||
+        (uintptr_t(next) & (sizeof(void*) - 1))) {
       break;
     }
 #  if (defined(__ppc__) && defined(XP_MACOSX)) || defined(__powerpc64__)
     // ppc mac or powerpc64 linux
     void* pc = *(aBp + 2);
     aBp += 3;
-#  else  // i386 or powerpc32 linux
+#  else  // i386, x86_64, aarch64, powerpc32, etc.
     void* pc = *(aBp + 1);
     aBp += 2;
 #  endif

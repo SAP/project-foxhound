@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -69,6 +68,7 @@ HTTP_ATOM(If_None_Match, "If-None-Match")
 HTTP_ATOM(If_None_Match_Any, "If-None-Match-Any")
 HTTP_ATOM(If_Range, "If-Range")
 HTTP_ATOM(If_Unmodified_Since, "If-Unmodified-Since")
+HTTP_ATOM(Integrity_Policy_WAICT, "Integrity-Policy-WAICT-v1")
 HTTP_ATOM(Keep_Alive, "Keep-Alive")
 HTTP_ATOM(Last_Modified, "Last-Modified")
 HTTP_ATOM(Lock_Token, "Lock-Token")
@@ -76,6 +76,7 @@ HTTP_ATOM(Link, "Link")
 HTTP_ATOM(Location, "Location")
 HTTP_ATOM(Max_Forwards, "Max-Forwards")
 HTTP_ATOM(NEL, "NEL")
+HTTP_ATOM(No_Vary_Search, "No-Vary-Search")
 HTTP_ATOM(Origin, "Origin")
 HTTP_ATOM(OriginAgentCluster, "Origin-Agent-Cluster")
 HTTP_ATOM(OriginTrial, "Origin-Trial")

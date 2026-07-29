@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<!-- Test: backdrop-filter child inside CSS filter parent should be visible (bug 1781159) -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+body { background: red; margin: 0; }
+.filtered {
+    position: absolute;
+    left: 50px;
+    top: 50px;
+    width: 150px;
+    height: 150px;
+    background: white;
+    filter: drop-shadow(0 0 10px rgba(0, 255, 255, 0.9));
+}
+.backdrop-child {
+    position: absolute;
+    inset: 30px;
+    background: blue;
+    backdrop-filter: blur(4px);
+}
+</style>
+</head>
+<body>
+    <div class="filtered">
+        <div class="backdrop-child"></div>
+    </div>
+</body>
+</html>

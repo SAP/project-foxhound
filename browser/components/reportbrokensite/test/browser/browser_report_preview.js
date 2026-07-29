@@ -32,118 +32,139 @@ function getClipboardAsString() {
   return data.toString();
 }
 
-async function checkPreviewPanel(rbs, basic) {
-  const items = rbs.previewItems.querySelectorAll("details");
+function adjustForWrapping(value) {
+  // match what ReportBrokenSite.sys.mjs does to strings when generating the preview markup.
+  return JSON.stringify(value)?.replace(/[,:]/g, "$& ") ?? "";
+}
 
-  let target = await pressKeyAndGetFocus("VK_TAB");
-  ok(
-    target.matches("toolbarbutton.subviewbutton-back"),
-    "First focus is on back button"
-  );
-  const previewData = {};
-  for (const [idx, item] of items.entries()) {
-    target = await pressKeyAndGetFocus("VK_TAB");
-    const summary = item.querySelector("summary");
-    is(target, summary, "Next focus is on next preview item");
-
-    is(
-      item.getAttribute("open"),
-      idx ? null : "",
-      `Next preview item starts off ${idx ? "closed" : "open"}`
-    );
-    let text = item.querySelector(".data").innerText;
-
-    EventUtils.synthesizeKey("VK_SPACE");
-    is(
-      item.getAttribute("open"),
-      idx ? "" : null,
-      `Next preview item properly ${idx ? "opens" : "closes"}`
-    );
-
-    text ||= item.querySelector(".data").innerText;
-
-    EventUtils.synthesizeKey("VK_SPACE");
-    is(
-      item.getAttribute("open"),
-      idx ? null : "",
-      `Next preview item properly ${idx ? "closes" : "opens"} again`
-    );
-
-    previewData[summary.innerText] = Object.fromEntries(
-      text.split("\n").map(line => {
-        const s = line.split(":");
-        const label = s.shift();
-        const value = s.join(":");
-        return [label, JSON.parse(value)];
-      })
-    );
-  }
-
-  function adjustForWrapping(value) {
-    // match what we do to strings when generating the preview markup.
-    return typeof value === "string"
-      ? value.replaceAll(":", ": ").replaceAll(",", ", ")
-      : value;
-  }
-
-  const expectedPreviewData = {
-    basic: Object.fromEntries(
-      Object.entries(basic).map(([n, v]) => [n, adjustForWrapping(v)])
-    ),
-  };
+async function getExpectedReportData(win, basic) {
   const rawReportData = structuredClone(
-    await ViewState.get(document).currentTabWebcompatDetailsPromise
+    await ViewState.get(win.document).currentTabWebcompatDetailsPromise
   );
-  if (!rbs.blockedTrackersCheckbox.checked) {
-    delete rawReportData.antitracking.blockedOrigins;
-  }
+
+  const out = {};
   for (const [category, values] of Object.entries(rawReportData)) {
-    expectedPreviewData[category] = Object.fromEntries(
+    out[category] = Object.fromEntries(
       Object.entries(values)
-        .filter(([_, { do_not_preview }]) => !do_not_preview)
+        .filter(
+          ([key, { do_not_preview }]) =>
+            !do_not_preview && key != "isTabSpecific"
+        )
         .map(([name, { value }]) => [name, adjustForWrapping(value)])
     );
   }
+
+  out.basic = Object.fromEntries(
+    Object.entries(basic).map(([name, value]) => [name, JSON.stringify(value)])
+  );
+
+  const { screenshot } = rawReportData.tabInfo;
+  out.basic.screenshot = screenshot.value;
+
+  return out;
+}
+
+async function checkPreviewPanelData(rbs, basic) {
+  const allDetails = rbs.previewItems.querySelectorAll("details");
+
+  const previewData = {};
+  for (const details of allDetails) {
+    details.click();
+    const section = details.querySelector("summary").innerText;
+    previewData[section] = {};
+    for (const data of details.querySelectorAll(".data .entry")) {
+      const name = data.firstElementChild.textContent.slice(0, -1); // drop the :
+      const value = data.querySelector(".value");
+      const img = value.querySelector("img")?.src;
+      if (img) {
+        previewData[section][name] = img;
+      } else {
+        previewData[section][name] = value.textContent;
+      }
+    }
+  }
+
+  const expected = await getExpectedReportData(rbs.win, basic);
   ok(
-    areObjectsEqual(previewData, expectedPreviewData),
+    areObjectsEqual(previewData, expected),
     "Preview had the expected information"
   );
+  return [previewData, expected];
+}
+
+async function checkPreviewPanelUX(rbs) {
+  const allDetails = rbs.previewItems.querySelectorAll("details");
+
+  for (const [idx, details] of allDetails.entries()) {
+    is(
+      details.open,
+      !idx,
+      `Next preview item starts off ${idx ? "closed" : "open"}`
+    );
+
+    const summary = details.querySelector("summary");
+
+    rbs.click(summary);
+    await BrowserTestUtils.waitForCondition(
+      () => details.open == !!idx,
+      `Next preview item properly ${idx ? "opens" : "closes"}`
+    );
+
+    rbs.click(summary);
+    await BrowserTestUtils.waitForCondition(
+      () => details.open == !idx,
+      `Next preview item properly ${idx ? "closes" : "opens"} again`
+    );
+  }
 }
 
 add_task(async function testPreview() {
   ensureReportBrokenSitePreffedOn();
 
-  const tab = await openTab(REPORTABLE_PAGE_URL);
+  for (const test of [
+    {
+      // Test when all data is to be shown on page without tracking info.
+      url: URL.parse(REPORTABLE_PAGE_URL).href,
+      description: "Video does not play",
+      reason: "media",
+    },
+    {
+      // Test when all data is to be shown on page with tracking info.
+      url: URL.parse(REPORTABLE_PAGE_URL3).href,
+      description: "Site says to disable my ad-blocker",
+      reason: "adblocker",
+    },
+  ]) {
+    const { description, reason, url } = test;
 
-  ViewState.get(document).reset();
+    await withNewTab(REPORTABLE_PAGE_URL3, async win => {
+      const basicInfo = {
+        url,
+        description: description ?? "",
+        reason: reason ?? "load",
+      };
 
-  const menu = AppMenu();
-  const url = menu.win.gBrowser.currentURI.spec;
-  let rbs = await menu.openAndPrefillReportBrokenSite();
+      const menu = AppMenu(win);
+      let rbs = await menu.openReportBrokenSiteToDetailsPanel(test);
+      await rbs.clickPreview();
+      await checkPreviewPanelData(rbs, basicInfo);
+      await checkPreviewPanelUX(rbs);
 
-  await rbs.clickPreview();
-  await checkPreviewPanel(rbs, {
-    description: "",
-    reason: "",
-    url,
-  });
+      if (win.browsingContext.usePrivateBrowsing) {
+        rbs.blockedTrackersToggle.pressed = false;
+        const [data] = await checkPreviewPanelData(rbs, basicInfo);
+        await checkPreviewPanelUX(rbs);
+        ok(
+          areObjectsEqual(
+            data.antitracking.blockedOrigins,
+            `["https: //trackertest.org"]`,
+            "Reporting the expected tracking data"
+          ),
+          "Preview had the expected information"
+        );
+      }
 
-  await rbs.clickPreviewBack();
-  const url2 = `${url}?test`;
-  rbs.setURL(url2);
-  rbs.setDescription("description");
-  rbs.chooseReason("slow");
-  rbs.blockedTrackersCheckbox = true;
-  await rbs.clickPreview();
-  await checkPreviewPanel(rbs, {
-    description: "description",
-    reason: ViewState.get(document).reasonText,
-    url: url2,
-  });
-
-  await rbs.close();
-
-  ViewState.get(document).reset();
-
-  closeTab(tab);
+      await rbs.close();
+    });
+  }
 });

@@ -58,7 +58,7 @@ add_task(async function test_console_to_mozlog() {
 
     // MOZ_LOG=PageMessages:5
     `I/PageMessages String message`,
-    `E/PageMessages [JavaScript Error: "Error: Async exception" {file: "resource://testing-common/backgroundtasks/BackgroundTask_console.sys.mjs" line: 51}]`,
+    `E/PageMessages [JavaScript Error: "Error: Async exception" {file: "resource://testing-common/backgroundtasks/BackgroundTask_console.sys.mjs" line: 50}]`,
   ];
 
   info(lines);

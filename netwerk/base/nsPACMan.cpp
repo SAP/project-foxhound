@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -528,7 +526,8 @@ nsresult nsPACMan::LoadPACFromURI(const nsACString& aSpec,
   NS_ENSURE_STATE(loader);
 
   LOG(("nsPACMan::LoadPACFromURI aSpec: %s, aResetLoadFailureCount: %s\n",
-       aSpec.BeginReading(), aResetLoadFailureCount ? "true" : "false"));
+       PromiseFlatCString(aSpec).get(),
+       aResetLoadFailureCount ? "true" : "false"));
 
   CancelExistingLoad();
 
@@ -618,7 +617,7 @@ nsresult nsPACMan::GetPACFromDHCP(nsACString& aSpec) {
               LOG(
                   ("nsPACMan::GetPACFromDHCP DHCP option %d query succeeded,"
                    "finding PAC URL %s\n",
-                   MOZ_DHCP_WPAD_OPTION, spec.BeginReading()));
+                   MOZ_DHCP_WPAD_OPTION, spec.get()));
             }
             MonitorAutoLock lock(self->mMonitor);
             self->mPACStringFromDHCP = spec;
@@ -643,7 +642,7 @@ nsresult nsPACMan::GetPACFromDHCP(nsACString& aSpec) {
 }
 
 nsresult nsPACMan::ConfigureWPAD(nsACString& aSpec) {
-  LOG(("nsPACMan::ConfigureWPAD(%s)", nsCString(aSpec).get()));
+  LOG(("nsPACMan::ConfigureWPAD(%s)", PromiseFlatCString(aSpec).get()));
   MOZ_ASSERT(!NS_IsMainThread(), "wrong thread");
 
   if (!IsProxyConfigValidForWPAD(mProxyConfigType, mAutoDetect)) {

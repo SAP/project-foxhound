@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,15 +6,12 @@
 #include "nsNSSModule.h"
 
 #include "ContentSignatureVerifier.h"
-#include "OSKeyStore.h"
 #include "OSReauthenticator.h"
-#include "PKCS11ModuleDB.h"
 #include "SecretDecoderRing.h"
 #include "mozilla/ModuleUtils.h"
 #include "mozilla/SyncRunnable.h"
 #include "nsCertTree.h"
 #include "nsNSSCertificateDB.h"
-#include "nsPK11TokenDB.h"
 #include "nsRandomGenerator.h"
 #include "nsXULAppAPI.h"
 
@@ -90,13 +86,10 @@ static nsresult Constructor(REFNSIID aIID, void** aResult) {
 // on main thread in advance in net_EnsurePSMInit(). Update that function when
 // new component with ThreadRestriction::MainThreadOnly is added.
 IMPL(SecretDecoderRing, nullptr)
-IMPL(nsPK11TokenDB, nullptr)
 IMPL(nsNSSCertificateDB, nullptr)
 IMPL(nsCertTree, nullptr)
 IMPL(ContentSignatureVerifier, nullptr)
 IMPL(nsRandomGenerator, nullptr, ProcessRestriction::AnyProcess)
-IMPL(OSKeyStore, nullptr, ProcessRestriction::ParentProcessOnly,
-     ThreadRestriction::MainThreadOnly)
 IMPL(OSReauthenticator, nullptr, ProcessRestriction::ParentProcessOnly,
      ThreadRestriction::MainThreadOnly)
 #undef IMPL

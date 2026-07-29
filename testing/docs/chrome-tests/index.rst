@@ -89,12 +89,11 @@ running with chrome privileges, i.e. code and UI are referenced by
 
 The comparison functions are identical to those supported by Mochitests,
 see how the comparison functions work
-in the Mochitest documentation for more details. The `EventUtils helper
-functions <https://searchfox.org/mozilla-central/source/testing/mochitest/tests/SimpleTest/EventUtils.js>`__
+in the Mochitest documentation for more details. The :searchfox:`EventUtils helper functions <testing/mochitest/tests/SimpleTest/EventUtils.js>`
 are available on the "EventUtils" object defined in the global scope.
 
 The test suite also supports asynchronous tests.
-To use these asynchronous tests, please use the `add_task() <https://searchfox.org/mozilla-central/source/testing/mochitest/tests/SimpleTest/SimpleTest.js#2025>`__ functionality.
+To use these asynchronous tests, please use the :searchfox:`add_task() <testing/mochitest/tests/SimpleTest/SimpleTest.js#2025>` functionality.
 
 Any exceptions thrown while running a test will be caught and reported
 in the test output as a failure. Exceptions thrown outside of the test's

@@ -26,12 +26,12 @@
           <menupopup id="popup" style="appearance: none; margin:0; border: 0; padding: 0;"
                                 onpopupshown="menuOpened()"
                                 onpopuphidden="if (event.target == this) SimpleTest.finish()"
-                                native="false">
+                                nonnative="">
             <menuitem label="One"/>
             <menu id="submenu" label="Three">
               <menupopup id="subpopup" style="appearance: none; margin:0; border: 0; padding: 0;"
                          onpopupshown="submenuOpened()"
-                         native="false">
+                         nonnative="">
                 <menuitem label="Four"/>
               </menupopup>
             </menu>

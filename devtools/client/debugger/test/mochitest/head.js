@@ -201,6 +201,45 @@ function getEventListenersPanel(dbg) {
   return findElementWithSelector(dbg, ".event-listeners-pane .event-listeners");
 }
 
+/**
+ * After reloading the page, wait for the breakpoint checkbox state to be
+ * restored as checked.
+ *
+ * @param {object} dbg
+ * @param {string} eventBreakpointGroup
+ *        The name of the breakpoint's group, such as "Load"
+ * @param {string} eventBreakpointName
+ *        The name of the breakpoint, such as "event.load.unload"
+ * @return {Promise} undefined
+ */
+async function waitForEventBreakpointChecked(
+  dbg,
+  eventBreakpointGroup,
+  eventBreakpointName
+) {
+  const eventCheckbox = await getEventBreakpointCheckbox(
+    dbg,
+    eventBreakpointGroup,
+    eventBreakpointName
+  );
+
+  info("Wait for the event breakpoint checkbox state to be restored");
+  await waitFor(() => eventCheckbox.checked);
+}
+
+/**
+ * Toggle the breakpoint checkbox.
+ * If the page is reloaded immediately before this, the consumer should
+ * call waitForEventBreakpointChecked to ensure that the breakpoint
+ * state is fully restored.
+ *
+ * @param {object} dbg
+ * @param {string} eventBreakpointGroup
+ *        The name of the breakpoint's group, such as "Load"
+ * @param {string} eventBreakpointName
+ *        The name of the breakpoint, such as "event.load.unload"
+ * @return {Promise} undefined
+ */
 async function toggleEventBreakpoint(
   dbg,
   eventBreakpointGroup,
@@ -228,6 +267,16 @@ async function toggleEventBreakpoint(
   });
 }
 
+/**
+ * Get the breakpoint checkbox.
+ *
+ * @param {object} dbg
+ * @param {string} eventBreakpointGroup
+ *        The name of the breakpoint's group, such as "Load"
+ * @param {string} eventBreakpointName
+ *        The name of the breakpoint, such as "event.load.unload"
+ * @return {Promise} checkbox element
+ */
 async function getEventBreakpointCheckbox(
   dbg,
   eventBreakpointGroup,

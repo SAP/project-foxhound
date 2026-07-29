@@ -1,6 +1,7 @@
 # High-Level Inspector Architecture
 
 ## UI structure
+
 The Inspector panel is a tab in the toolbox. Like all tabs, it's in its own iframe.
 
 The high-level hierarchy looks something like this:
@@ -12,11 +13,13 @@ flowchart TD
 ```
 
 ## Server dependencies
+
 - The inspector panel relies on a series of actors that live on the server.
 - Some of the most important actors are actually instantiated by the toolbox, because these actors are needed for other panels to preview and link to DOM nodes. For example, the webconsole needs to output DOM nodes, highlight them in the page on mouseover, and open them in the inspector on click. This is achieved using some of the same actors that the inspector panel uses.
 - See Toolbox.prototype.initInspector: This method instantiates the InspectorActor, WalkerActor and HighlighterActor lazily, whenever they're needed by a panel.
 
 ## Panel loading overview
+
 - As with other panels, this starts with Toolbox.prototype.loadTool(id)
 - For the inspector though, this calls Toolbox.prototype.initInspector
 - When the panel's open method is called:
@@ -32,6 +35,7 @@ flowchart TD
   - Then, as you expand nodes, it uses the WalkerActor to get more nodes lazily. It only ever knows data about nodes that have already been expanded once in the UI.
 
 ## Server-side structure
+
 Simplified actor hierarchy
 
 ```{mermaid}
@@ -56,7 +60,7 @@ __WalkerActor__
 - But only has a partial knowledge of the DOM (what is currently displayed/expanded in the MarkupView). It doesn't need to walk the whole tree when you first instantiate it.
 - Reflects some of the usual DOM APIs like querySelector.
 - Note that methods like querySelector return arbitrarily nested NodeActors, in which case the WalkerActor also sends the list of parents to link the returned nodes to the closest known nodes, so the UI can display the tree correctly.
-- Emits events when there are DOM mutations. These events are sent to the front-end and used to, for example refresh the markup-view. This uses an instance of MutationObserver (https://developer.mozilla.org/en-US/docs/Web/API/MutationObserver) configured with, in particular, chromeOnlyNodes set to true, so that mutation events are also sent when pseudo elements are added/removed via css.
+- Emits events when there are DOM mutations. These events are sent to the front-end and used to, for example refresh the markup-view. This uses an instance of MutationObserver (<https://developer.mozilla.org/en-US/docs/Web/API/MutationObserver>) configured with, in particular, chromeOnlyNodes set to true, so that mutation events are also sent when pseudo elements are added/removed via css.
 
 __NodeActor__
 
@@ -74,6 +78,7 @@ One of the important aspects of the inspector is the highlighters.
 You can find a lot more [documentation about highlighters here](highlighters.md).
 
 We don't just have 1 highlighter, we have a framework for highlighters:
+
 - a (chrome-only) platform API to inject markup in a native-anonymous node in content (that works on all targets)
 - a number of specific highlighter implementations (css transform, rect, selector, geometry, rulers, ...)
 - a CustomHighlighterActor to get instances of specific highlighters

@@ -44,7 +44,7 @@ def archive_exe(pkg_dir, tagfile, sfx_package, package, use_upx):
             sevenz = buildconfig.config.substs["7Z"]
         except BuildEnvironmentNotFoundException:
             # configure hasn't been run, just use the default
-            sevenz = "7z"
+            sevenz = "7zz"
         subprocess.check_call([
             sevenz,
             "a",

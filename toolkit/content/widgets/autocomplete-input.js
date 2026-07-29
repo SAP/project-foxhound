@@ -283,7 +283,7 @@
     }
 
     get focused() {
-      return this === document.activeElement;
+      return this === this.getRootNode().activeElement;
     }
     /**
      * maximum number of rows to display at a time when opening the popup normally

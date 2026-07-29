@@ -11,23 +11,13 @@
     reason = "Inherent in codspeed criterion_group! macro."
 )]
 
-use std::hint::black_box;
-
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 
 #[path = "common.rs"]
 mod common;
 
 fn benchmark(c: &mut Criterion) {
-    common::benchmark(c, |group, name, streams, data_size| {
-        group.bench_function(name, |b| {
-            b.iter_batched(
-                || common::setup(streams, data_size),
-                |sim| black_box(sim.run()),
-                criterion::BatchSize::SmallInput,
-            );
-        });
-    });
+    common::walltime(c);
 }
 
 criterion_group!(benches, benchmark);

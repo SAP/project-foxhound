@@ -14,19 +14,17 @@
 
 namespace mozilla::dom::indexedDB {
 
-// IDBSpecialValue represents two special return values, distinct from any other
-// value, used in several places in the IndexedDB spec.
-enum class IDBSpecialValue {
-  Failure,
-  Invalid,
-};
+// IDBSpecialValue represents three special return values, distinct from any
+// other value, used in several places in the IndexedDB spec.
+enum class IDBSpecialValue { Failure, InvalidType, InvalidValue };
 
 namespace detail {
 
 template <IDBSpecialValue Value>
 using SpecialConstant = std::integral_constant<IDBSpecialValue, Value>;
 using FailureType = SpecialConstant<IDBSpecialValue::Failure>;
-using InvalidType = SpecialConstant<IDBSpecialValue::Invalid>;
+using InvalidTypeType = SpecialConstant<IDBSpecialValue::InvalidType>;
+using InvalidValueType = SpecialConstant<IDBSpecialValue::InvalidValue>;
 struct ExceptionType final {};
 }  // namespace detail
 
@@ -35,7 +33,8 @@ struct ExceptionType final {};
 // and 3. mozilla::dom::Exception
 namespace SpecialValues {
 constexpr const detail::FailureType Failure;
-constexpr const detail::InvalidType Invalid;
+constexpr const detail::InvalidTypeType InvalidType;
+constexpr const detail::InvalidValueType InvalidValue;
 constexpr const detail::ExceptionType Exception;
 }  // namespace SpecialValues
 
@@ -97,32 +96,13 @@ class IDBError {
 
   ErrorResult& AsException() { return mVariant.template as<ErrorResult>(); }
 
-  template <typename... SpecialValueMappers>
-  ErrorResult ExtractErrorResult(SpecialValueMappers... aSpecialValueMappers) {
-#if defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 8)
+  template <typename SpecialValueMappers>
+  ErrorResult ExtractErrorResult(SpecialValueMappers aSpecialValueMappers) {
     return mVariant.match(
         [](ErrorResult& aException) { return std::move(aException); },
         [aSpecialValueMappers](const SpecialConstant<S>& aSpecialValue) {
           return ErrorResult{aSpecialValueMappers(aSpecialValue)};
         }...);
-#else
-    // gcc 7 doesn't accept the kind of parameter pack expansion above,
-    // probably due to https://gcc.gnu.org/bugzilla/show_bug.cgi?id=47226
-    return mVariant.match([aSpecialValueMappers...](auto& aValue) {
-      if constexpr (std::is_same_v<ErrorResult&, decltype(aValue)>) {
-        return std::move(aValue);
-      } else {
-        return ErrorResult{aSpecialValueMappers(aValue)...};
-      }
-    });
-#endif
-  }
-
-  template <typename... SpecialValueMappers>
-  nsresult ExtractNSResult(SpecialValueMappers... aSpecialValueMappers) {
-    return mVariant.match(
-        [](ErrorResult& aException) { return aException.StealNSResult(); },
-        aSpecialValueMappers...);
   }
 
  protected:
@@ -139,9 +119,7 @@ template <typename T, IDBSpecialValue... S>
 using IDBResult = Result<T, detail::IDBError<S...>>;
 
 template <nsresult E>
-nsresult InvalidMapsTo(const indexedDB::detail::InvalidType&) {
-  return E;
-}
+inline constexpr auto InvalidMapsTo = [](auto) { return E; };
 
 inline detail::IDBError<> IDBException(nsresult aRv) {
   return {SpecialValues::Exception, ErrorResult{aRv}};

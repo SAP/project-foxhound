@@ -10,16 +10,43 @@ ChromeUtils.defineESModuleGetters(this, {
   GeolocationTestUtils:
     "resource://testing-common/GeolocationTestUtils.sys.mjs",
   MerinoTestUtils: "resource://testing-common/MerinoTestUtils.sys.mjs",
+  TemporaryMerinoClientShim:
+    "resource://newtab/lib/TemporaryMerinoClientShim.sys.mjs",
   WeatherFeed: "resource://newtab/lib/WeatherFeed.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
 });
 
 const { WEATHER_SUGGESTION } = MerinoTestUtils;
 GeolocationTestUtils.init(this);
+MerinoTestUtils.init(this);
 
 const WEATHER_ENABLED = "browser.newtabpage.activity-stream.showWeather";
 const SYS_WEATHER_ENABLED =
   "browser.newtabpage.activity-stream.system.showWeather";
+
+add_task(async function test_MerinoClient_wrapper_passes_correct_args() {
+  let sandbox = sinon.createSandbox();
+  sandbox.stub(WeatherFeed.prototype, "PersistentCache").returns({
+    set: () => {},
+    get: () => {},
+  });
+
+  let feed = new WeatherFeed();
+  let client = feed.MerinoClient("TEST_CLIENT");
+
+  Assert.equal(
+    typeof client.name,
+    "string",
+    "MerinoClient name should be a string, not an object"
+  );
+  Assert.equal(
+    client.name,
+    "TEST_CLIENT",
+    "MerinoClient name should match the passed argument"
+  );
+
+  sandbox.restore();
+});
 
 add_task(async function test_construction() {
   let sandbox = sinon.createSandbox();
@@ -133,7 +160,10 @@ add_task(async function test_onAction_INIT() {
 
   sandbox.stub(feed, "isEnabled").returns(true);
 
-  sandbox.stub(feed, "_fetchHelper").resolves([WEATHER_SUGGESTION]);
+  sandbox.stub(feed, "_fetchHelper").resolves({
+    suggestions: [WEATHER_SUGGESTION],
+    hourlyForecasts: [],
+  });
   feed.locationData = locationData;
   feed.store = {
     dispatch: sinon.spy(),
@@ -162,6 +192,7 @@ add_task(async function test_onAction_INIT() {
         type: actionTypes.WEATHER_UPDATE,
         data: {
           suggestions: [WEATHER_SUGGESTION],
+          hourlyForecasts: [],
           lastUpdated: dateNowTestValue,
           locationData,
         },
@@ -362,39 +393,29 @@ add_task(async function test_fetch_weather_with_geolocation() {
       geolocation: {
         country_code: "TestCountry",
       },
-      expected: {
-        country: "TestCountry",
-      },
+      expected: false,
     },
     {
       geolocation: {
         region_code: "TestRegionCode",
       },
-      expected: {
-        region: "TestRegionCode",
-      },
+      expected: false,
     },
     {
       geolocation: {
         region: "TestRegion",
       },
-      expected: {
-        region: "TestRegion",
-        city: "TestRegion",
-      },
+      expected: false,
     },
     {
       geolocation: {
         city: "TestCity",
       },
-      expected: {
-        region: "TestCity",
-        city: "TestCity",
-      },
+      expected: false,
     },
     {
       geolocation: {},
-      expected: {},
+      expected: false,
     },
     {
       geolocation: null,
@@ -422,7 +443,7 @@ add_task(async function test_fetch_weather_with_geolocation() {
     feed.merino = feed.MerinoClient();
 
     // Stub merino client
-    let stub = sandbox.stub(feed.merino, "fetch").resolves(["result"]);
+    let stub = sandbox.stub(feed.merino, "fetchWeatherReport").resolves(null);
     let cleanupGeolocationStub =
       GeolocationTestUtils.stubGeolocation(geolocation);
 
@@ -431,10 +452,11 @@ add_task(async function test_fetch_weather_with_geolocation() {
     if (expected) {
       sinon.assert.calledOnce(stub);
       sinon.assert.calledWith(stub, {
-        otherParams: { request_type: "weather", source: "newtab", ...expected },
-        providers: ["accuweather"],
-        query: "",
+        source: "newtab",
+        locationName: undefined,
+        ...expected,
         timeoutMs: 7000,
+        endpointUrl: undefined,
       });
     } else {
       sinon.assert.notCalled(stub);
@@ -525,14 +547,15 @@ add_task(async function test_detect_location_with_geolocation() {
   }
 });
 
-function setupFetchHelperHarness(
-  sandbox,
-  outcomes /* e.g. ['reject','resolve'] */
-) {
-  // Prevent the “next fetch” scheduling inside fetchHelper().
+// Creates a WeatherFeed with stubbed merino methods and a virtual setTimeout
+// so that _fetchHelper retry behavior can be driven synchronously.
+
+function setupFetchHelperHarness(sandbox, outcomes, hourlyOutcomes = null) {
+  // Prevent the "next fetch" scheduling inside fetchHelper().
   sandbox.stub(WeatherFeed.prototype, "restartFetchTimer").returns(undefined);
 
-  // Stub the timeout and capture the retry callback.
+  // Stub setTimeout to capture the retry callback without actually waiting.
+  // triggerRetry() fires it on demand so the test controls timing exactly.
   let timeoutCallback = null;
   const setTimeoutStub = sandbox
     .stub(WeatherFeed.prototype, "setTimeout")
@@ -543,17 +566,27 @@ function setupFetchHelperHarness(
 
   const feed = new WeatherFeed();
 
-  // Minimal store so fetchHelper can read prefs.
+  // When testing hourly retries, enable the forecast widget so _fetchHelper
+  // calls fetchHourlyForecasts inside its Promise.all.
+  // weather.display and widgets.system.weatherForecast.enabled are the two
+  // flags _fetchHelper checks to decide whether to call fetchHourlyForecasts.
+  const prefValues =
+    hourlyOutcomes !== null
+      ? {
+          "weather.display": "detailed",
+          "widgets.system.weatherForecast.enabled": true,
+          "widgets.weather.size": "large",
+        }
+      : {};
+
   feed.store = {
     dispatch: sinon.spy(),
     getState() {
-      return { Prefs: { values: {} } };
+      return { Prefs: { values: prefValues } };
     },
   };
 
   const fetchStub = sinon.stub();
-
-  // Fail or pass each fetch.
   outcomes.forEach((outcome, index) => {
     if (outcome === "reject") {
       fetchStub.onCall(index).rejects(new Error(`fail${index}`));
@@ -561,7 +594,20 @@ function setupFetchHelperHarness(
       fetchStub.onCall(index).resolves({ city_name: "RetryCity" });
     }
   });
-  feed.merino = { fetchWeather: fetchStub };
+
+  feed.merino = { fetchWeatherReport: fetchStub };
+
+  if (hourlyOutcomes !== null) {
+    const fetchHourlyStub = sinon.stub();
+    hourlyOutcomes.forEach((outcome, index) => {
+      if (outcome === "reject") {
+        fetchHourlyStub.onCall(index).rejects(new Error(`hourlyFail${index}`));
+      } else if (outcome === "resolve") {
+        fetchHourlyStub.onCall(index).resolves([{ hour: 0 }]);
+      }
+    });
+    feed.merino.fetchHourlyForecasts = fetchHourlyStub;
+  }
 
   return {
     feed,
@@ -581,10 +627,12 @@ add_task(async function test_fetchHelper_retry_resolve() {
   // After retry success, fetchHelper should resolve to RetryCity.
   const promise = feed._fetchHelper(1, "q");
 
-  // Let the first attempt run and schedule the retry.
+  // Two microtask turns are needed: one for Promise.all to process the
+  // rejection, and one for the catch block to run and call setTimeout.
+  await Promise.resolve();
   await Promise.resolve();
 
-  Assert.equal(feed.merino.fetchWeather.callCount, 1);
+  Assert.equal(feed.merino.fetchWeatherReport.callCount, 1);
   Assert.equal(setTimeoutStub.callCount, 1);
   Assert.ok(
     setTimeoutStub.calledWith(sinon.match.func, 60 * 1000),
@@ -595,10 +643,14 @@ add_task(async function test_fetchHelper_retry_resolve() {
   triggerRetry();
   const results = await promise;
 
-  Assert.equal(feed.merino.fetchWeather.callCount, 2, "retried exactly once");
+  Assert.equal(
+    feed.merino.fetchWeatherReport.callCount,
+    2,
+    "retried exactly once"
+  );
   Assert.deepEqual(
     results,
-    [{ city_name: "RetryCity" }],
+    { suggestions: [{ city_name: "RetryCity" }], hourlyForecasts: [] },
     "returned retry result"
   );
 
@@ -616,10 +668,12 @@ add_task(async function test_fetchHelper_retry_reject() {
   // After retry also fails, fetchHelper should resolve to [].
   const promise = feed._fetchHelper(1, "q");
 
-  // Let the first attempt run and schedule the retry.
+  // Two microtask turns are needed: one for Promise.all to process the
+  // rejection, and one for the catch block to run and call setTimeout.
+  await Promise.resolve();
   await Promise.resolve();
 
-  Assert.equal(feed.merino.fetchWeather.callCount, 1);
+  Assert.equal(feed.merino.fetchWeatherReport.callCount, 1);
   Assert.equal(setTimeoutStub.callCount, 1);
   Assert.ok(
     setTimeoutStub.calledWith(sinon.match.func, 60 * 1000),
@@ -631,11 +685,300 @@ add_task(async function test_fetchHelper_retry_reject() {
   const results = await promise;
 
   Assert.equal(
-    feed.merino.fetchWeather.callCount,
+    feed.merino.fetchWeatherReport.callCount,
     2,
     "retried exactly once then gave up"
   );
-  Assert.deepEqual(results, [], "returns empty array after exhausting retries");
+  Assert.deepEqual(
+    results,
+    { suggestions: [], hourlyForecasts: [] },
+    "returns empty object after exhausting retries"
+  );
 
   sandbox.restore();
+});
+
+add_task(async function test_fetchHelper_hourly_failure_nonfatal() {
+  const sandbox = sinon.createSandbox();
+
+  // Hourly rejects, but report succeeds — result should still include the
+  // weather report and no retry should be scheduled.
+  const { feed, setTimeoutStub } = setupFetchHelperHarness(
+    sandbox,
+    ["resolve"],
+    ["reject"]
+  );
+
+  const results = await feed._fetchHelper(1, "q");
+
+  Assert.equal(feed.merino.fetchWeatherReport.callCount, 1);
+  Assert.equal(feed.merino.fetchHourlyForecasts.callCount, 1);
+  Assert.equal(setTimeoutStub.callCount, 0, "no retry scheduled");
+  Assert.deepEqual(
+    results,
+    { suggestions: [{ city_name: "RetryCity" }], hourlyForecasts: [] },
+    "report returned even when hourly fails"
+  );
+
+  sandbox.restore();
+});
+
+add_task(async function test_fetchHelper_small_size_skips_hourly() {
+  const sandbox = sinon.createSandbox();
+
+  sandbox.stub(WeatherFeed.prototype, "restartFetchTimer").returns(undefined);
+
+  const feed = new WeatherFeed();
+  feed.store = {
+    dispatch: sinon.spy(),
+    getState() {
+      return {
+        Prefs: {
+          values: {
+            "weather.display": "detailed",
+            "widgets.system.weatherForecast.enabled": true,
+            "widgets.weather.size": "small",
+          },
+        },
+      };
+    },
+  };
+  feed.merino = {
+    fetchWeatherReport: sinon.stub().resolves({ city_name: "SidebarCity" }),
+    fetchHourlyForecasts: sinon.stub().resolves([{ hour: 0 }]),
+  };
+
+  const results = await feed._fetchHelper(1, "q");
+
+  Assert.equal(
+    feed.merino.fetchHourlyForecasts.callCount,
+    0,
+    "hourly not fetched for small widget"
+  );
+  Assert.deepEqual(
+    results,
+    { suggestions: [{ city_name: "SidebarCity" }], hourlyForecasts: [] },
+    "report returned without hourly data"
+  );
+
+  sandbox.restore();
+});
+
+add_task(async function test_isEnabled_classic_mode() {
+  let sandbox = sinon.createSandbox();
+  sandbox.stub(WeatherFeed.prototype, "PersistentCache").returns({
+    set: () => {},
+    get: () => {},
+  });
+
+  let feed = new WeatherFeed();
+  feed.store = {
+    getState() {
+      return {
+        Prefs: {
+          values: {
+            showWeather: true,
+            "system.showWeather": true,
+            "nova.enabled": false,
+            "widgets.weather.enabled": false,
+          },
+        },
+      };
+    },
+  };
+
+  Assert.ok(
+    feed.isEnabled(),
+    "isEnabled returns true when showWeather is true in classic mode"
+  );
+
+  feed.store.getState = () => ({
+    Prefs: {
+      values: {
+        showWeather: false,
+        "system.showWeather": true,
+        "nova.enabled": false,
+        "widgets.weather.enabled": true,
+      },
+    },
+  });
+
+  Assert.ok(
+    !feed.isEnabled(),
+    "isEnabled returns false when showWeather is false in classic mode"
+  );
+
+  sandbox.restore();
+});
+
+add_task(async function test_isEnabled_nova_mode() {
+  let sandbox = sinon.createSandbox();
+  sandbox.stub(WeatherFeed.prototype, "PersistentCache").returns({
+    set: () => {},
+    get: () => {},
+  });
+
+  let feed = new WeatherFeed();
+  feed.store = {
+    getState() {
+      return {
+        Prefs: {
+          values: {
+            showWeather: true,
+            "system.showWeather": true,
+            "nova.enabled": true,
+            "widgets.weather.enabled": true,
+          },
+        },
+      };
+    },
+  };
+
+  Assert.ok(
+    feed.isEnabled(),
+    "isEnabled returns true when widgets.weather.enabled is true in Nova mode"
+  );
+
+  feed.store.getState = () => ({
+    Prefs: {
+      values: {
+        showWeather: true,
+        "system.showWeather": true,
+        "nova.enabled": true,
+        "widgets.weather.enabled": false,
+      },
+    },
+  });
+
+  Assert.ok(
+    !feed.isEnabled(),
+    "isEnabled returns false when widgets.weather.enabled is false in Nova mode"
+  );
+
+  sandbox.restore();
+});
+
+add_task(async function test_onPrefChanged_widgets_weather_enabled() {
+  let sandbox = sinon.createSandbox();
+  sandbox.stub(WeatherFeed.prototype, "PersistentCache").returns({
+    set: () => {},
+    get: () => {},
+  });
+
+  let feed = new WeatherFeed();
+  feed.store = {
+    dispatch: sinon.spy(),
+    getState() {
+      return {
+        Prefs: {
+          values: {
+            showWeather: true,
+            "system.showWeather": true,
+            "nova.enabled": true,
+            "widgets.weather.enabled": false,
+          },
+        },
+      };
+    },
+  };
+  feed.loaded = true;
+
+  const resetWeatherStub = sandbox.stub(feed, "resetWeather").resolves();
+  const loadWeatherStub = sandbox.stub(feed, "loadWeather").resolves();
+
+  await feed.onPrefChangedAction({
+    data: { name: "widgets.weather.enabled" },
+  });
+
+  Assert.ok(
+    resetWeatherStub.calledOnce,
+    "resetWeather called when widgets.weather.enabled is set to false"
+  );
+  Assert.ok(loadWeatherStub.notCalled, "loadWeather not called");
+
+  feed.loaded = false;
+  feed.store.getState = () => ({
+    Prefs: {
+      values: {
+        showWeather: true,
+        "system.showWeather": true,
+        "nova.enabled": true,
+        "widgets.weather.enabled": true,
+      },
+    },
+  });
+
+  await feed.onPrefChangedAction({
+    data: { name: "widgets.weather.enabled" },
+  });
+
+  Assert.ok(
+    loadWeatherStub.calledOnce,
+    "loadWeather called when widgets.weather.enabled is set to true"
+  );
+
+  sandbox.restore();
+});
+
+// HNT-2544: TemporaryMerinoClientShim should send Accept-Language on weather
+// requests so Merino/AccuWeather can return localized current conditions.
+add_task(async function test_shim_fetchWeatherReport_sends_accept_language() {
+  await MerinoTestUtils.server.start();
+  MerinoTestUtils.server.reset();
+
+  const client = new TemporaryMerinoClientShim("ACCEPT_LANGUAGE_REPORT");
+  // fetchWeatherReport() arms a long-lived Merino session timer. Cancel it so
+  // it doesn't outlive the test and leave a pending timer racing with shutdown.
+  registerCleanupFunction(() => client.resetSession());
+  await client.fetchWeatherReport({
+    source: "newtab",
+    city: "Yokohama",
+    region: "Kanagawa",
+    country: "JP",
+    endpointUrl: MerinoTestUtils.server.url.toString(),
+  });
+
+  Assert.equal(
+    MerinoTestUtils.server.requests.length,
+    1,
+    "fetchWeatherReport issued exactly one request"
+  );
+  Assert.ok(
+    MerinoTestUtils.server.requests[0].hasHeader("Accept-Language"),
+    "fetchWeatherReport sent an Accept-Language header"
+  );
+  Assert.equal(
+    MerinoTestUtils.server.requests[0].getHeader("Accept-Language"),
+    Services.locale.appLocaleAsBCP47,
+    "Accept-Language equals appLocaleAsBCP47"
+  );
+});
+
+add_task(async function test_shim_fetchHourlyForecasts_sends_accept_language() {
+  await MerinoTestUtils.server.start();
+  MerinoTestUtils.server.reset();
+
+  const client = new TemporaryMerinoClientShim("ACCEPT_LANGUAGE_HOURLY");
+  await client.fetchHourlyForecasts({
+    source: "newtab",
+    city: "Yokohama",
+    region: "Kanagawa",
+    country: "JP",
+    endpointUrl: MerinoTestUtils.server.url.toString(),
+  });
+
+  Assert.equal(
+    MerinoTestUtils.server.requests.length,
+    1,
+    "fetchHourlyForecasts issued exactly one request"
+  );
+  Assert.ok(
+    MerinoTestUtils.server.requests[0].hasHeader("Accept-Language"),
+    "fetchHourlyForecasts sent an Accept-Language header"
+  );
+  Assert.equal(
+    MerinoTestUtils.server.requests[0].getHeader("Accept-Language"),
+    Services.locale.appLocaleAsBCP47,
+    "Accept-Language equals appLocaleAsBCP47"
+  );
 });

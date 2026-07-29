@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,9 +11,7 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/ServoBindingTypes.h"
 #include "mozilla/ServoTypes.h"
-#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StyleSheetInfo.h"
-#include "mozilla/css/SheetParsingMode.h"
 #include "mozilla/dom/CSSStyleSheetBinding.h"
 #include "mozilla/dom/SRIMetadata.h"
 #include "nsICSSLoaderObserver.h"
@@ -34,7 +30,7 @@ namespace mozilla {
 
 class ServoCSSRuleList;
 class ServoStyleSet;
-class DeclarationBlock;
+struct StyleLockedDeclarationBlock;
 
 using StyleSheetParsePromise = MozPromise</* Dummy */ bool,
                                           /* Dummy */ bool,
@@ -47,14 +43,15 @@ struct StyleRuleChange {
   StyleRuleChange() = delete;
   MOZ_IMPLICIT StyleRuleChange(StyleRuleChangeKind aKind) : mKind(aKind) {}
   // Only relevant for Kind::*Declarations.
-  StyleRuleChange(StyleRuleChangeKind aKind, const DeclarationBlock* aOldBlock,
-                  const DeclarationBlock* aNewBlock)
+  StyleRuleChange(StyleRuleChangeKind aKind,
+                  const StyleLockedDeclarationBlock* aOldBlock,
+                  const StyleLockedDeclarationBlock* aNewBlock)
       : mKind(aKind), mOldBlock(aOldBlock), mNewBlock(aNewBlock) {}
 
   const StyleRuleChangeKind mKind;
   // mOldBlock and mNewBlock can be the same object.
-  const DeclarationBlock* const mOldBlock = nullptr;
-  const DeclarationBlock* const mNewBlock = nullptr;
+  const StyleLockedDeclarationBlock* const mOldBlock = nullptr;
+  const StyleLockedDeclarationBlock* const mNewBlock = nullptr;
 };
 
 namespace css {
@@ -113,8 +110,7 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   using State = StyleSheetState;
 
  public:
-  StyleSheet(css::SheetParsingMode aParsingMode, CORSMode aCORSMode,
-             const dom::SRIMetadata& aIntegrity);
+  StyleSheet(StyleOrigin, CORSMode, const dom::SRIMetadata& aIntegrity);
 
   static already_AddRefed<StyleSheet> Constructor(const dom::GlobalObject&,
                                                   const dom::CSSStyleSheetInit&,
@@ -182,7 +178,6 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
 
   void SetOwningNode(nsINode* aOwningNode) { mOwningNode = aOwningNode; }
 
-  css::SheetParsingMode ParsingMode() const { return mParsingMode; }
   dom::CSSStyleSheetParsingMode ParsingModeDOM();
 
   /**
@@ -385,12 +380,6 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   // subtree. It can be cheaper than walking the whole list of stylesheets.
   bool IsDirectlyAssociatedTo(dom::DocumentOrShadowRoot&) const;
 
-  // True if any of this sheet's ancestors were created through the
-  // Constructable StyleSheets API
-  bool SelfOrAncestorIsConstructed() const {
-    return OutermostSheet().IsConstructed();
-  }
-
   // Ture if the sheet's constructor document matches the given document
   bool ConstructorDocumentMatches(const dom::Document& aDocument) const {
     return mConstructorDocument == &aDocument;
@@ -560,8 +549,6 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
 
   // Drop our reference to mMedia
   void DropMedia();
-  // Set our relevant global if needed.
-  void UpdateRelevantGlobal();
   // Unlink our inner, if needed, for cycle collection.
   void UnlinkInner();
   // Traverse our inner, if needed, for cycle collection
@@ -571,13 +558,6 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   static bool RuleHasPendingChildSheet(css::Rule* aRule);
 
   StyleSheet* mParentSheet;  // weak ref
-
-  // A pointer to the sheet's relevant global object. This is populated when the
-  // sheet gets an associated document and is complete.
-  //
-  // This is required for the sheet to be able to create a promise.
-  // https://html.spec.whatwg.org/#concept-relevant-everything
-  nsCOMPtr<nsIGlobalObject> mRelevantGlobal;
 
   RefPtr<dom::Document> mConstructorDocument;
 
@@ -596,15 +576,6 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
 
   RefPtr<URLExtraData> mURLData;
   RefPtr<nsIURI> mOriginalSheetURI;
-
-  // mParsingMode controls access to nonstandard style constructs that
-  // are not safe for use on the public Web but necessary in UA sheets
-  // and/or useful in user sheets.
-  //
-  // FIXME(emilio): Given we store the parsed contents in the Inner, this should
-  // probably also move there.
-  css::SheetParsingMode mParsingMode;
-
   State mState;
 
   Atomic<uint32_t, ReleaseAcquire> mAsyncParseBlockers{0};

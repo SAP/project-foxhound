@@ -59,7 +59,7 @@ async function testUploadPrompt(confirmUpload) {
   // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   await BrowserTestUtils.withNewTab("http://example.com", async browser => {
     // Create file input element
-    await ContentTask.spawn(browser, null, () => {
+    await SpecialPowers.spawn(browser, [], () => {
       let input = content.document.createElement("input");
       input.id = "filepicker";
       input.setAttribute("type", "file");
@@ -71,7 +71,7 @@ async function testUploadPrompt(confirmUpload) {
     // file input.
     let changePromise;
     if (confirmUpload) {
-      changePromise = ContentTask.spawn(browser, null, async () => {
+      changePromise = SpecialPowers.spawn(browser, [], async () => {
         let input = content.document.getElementById("filepicker");
         return ContentTaskUtils.waitForEvent(input, "change").then(
           e => e.target.files.length
@@ -87,13 +87,9 @@ async function testUploadPrompt(confirmUpload) {
 
     // Open filepicker
     let path = getTestDirectory();
-    await ContentTask.spawn(browser, { path }, args => {
+    await SpecialPowers.spawn(browser, [{ path }], args => {
       let MockFilePicker = content.SpecialPowers.MockFilePicker;
-      MockFilePicker.init(
-        content.browsingContext,
-        "A Mock File Picker",
-        content.SpecialPowers.Ci.nsIFilePicker.modeGetFolder
-      );
+      MockFilePicker.init();
       MockFilePicker.useDirectory(args.path);
 
       let input = content.document.getElementById("filepicker");
@@ -143,7 +139,7 @@ async function testUploadPrompt(confirmUpload) {
       let fileCount = await changePromise;
       is(fileCount, 2, "Should have selected 2 files");
     } else {
-      let fileCount = await ContentTask.spawn(browser, null, () => {
+      let fileCount = await SpecialPowers.spawn(browser, [], () => {
         return content.document.getElementById("filepicker").files.length;
       });
 
@@ -151,7 +147,7 @@ async function testUploadPrompt(confirmUpload) {
     }
 
     // Cleanup
-    await ContentTask.spawn(browser, null, () => {
+    await SpecialPowers.spawn(browser, [], () => {
       content.SpecialPowers.MockFilePicker.cleanup();
     });
   });

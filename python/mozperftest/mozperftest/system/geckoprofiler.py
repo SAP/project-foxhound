@@ -8,10 +8,12 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from mozdevice import ADBDevice
-
 from mozperftest.layers import Layer
-from mozperftest.utils import archive_files, extract_tgz_and_find_files
+from mozperftest.utils import (
+    archive_files,
+    extract_tgz_and_find_files,
+    get_adb_device_or_emu,
+)
 
 
 class GeckoProfilerError(Exception):
@@ -51,7 +53,7 @@ class GeckoProfilerController:
         cls._package_id = package_id
 
     def __init__(self):
-        self.device = ADBDevice()
+        self.device = get_adb_device_or_emu()
         self.profiling_active = False
         self.package_id = None
         self.config_filename = None
@@ -175,7 +177,7 @@ class GeckoProfiler(Layer):
 
     def __init__(self, env, mach_cmd):
         super().__init__(env, mach_cmd)
-        self.device = ADBDevice()
+        self.device = get_adb_device_or_emu()
         self.output_dir = None
         self.test_name = None
 

@@ -13,7 +13,7 @@ import org.mozilla.fenix.webcompat.store.WebCompatReporterState
 import org.mozilla.fenix.webcompat.store.WebCompatReporterStore
 
 /**
- * A [Middleware] for recording telemetry based on [WebCompatReporterAction]s that are dispatch to the
+ * A [Middleware] for recording telemetry based on [WebCompatReporterAction]s that are dispatched to the
  * [WebCompatReporterStore].
  */
 class WebCompatReporterTelemetryMiddleware :

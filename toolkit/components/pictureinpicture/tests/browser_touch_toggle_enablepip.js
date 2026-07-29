@@ -106,12 +106,12 @@ add_task(async () => {
           await video.play();
 
           info("Hover over the video to show the Picture-in-Picture toggle");
-          await EventUtils.synthesizeMouseAtCenter(
+          EventUtils.synthesizeMouseAtCenter(
             video,
             { type: "mousemove" },
             this.content.window
           );
-          await EventUtils.synthesizeMouseAtCenter(
+          EventUtils.synthesizeMouseAtCenter(
             video,
             { type: "mouseover" },
             this.content.window

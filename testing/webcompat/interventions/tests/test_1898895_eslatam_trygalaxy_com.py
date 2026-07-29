@@ -2,8 +2,8 @@ import pytest
 
 URL = "https://eslatam.trygalaxy.com/"
 
-SUPPORTED_CSS = "video"
-UNSUPPORTED_TEXT = "Samsung Internet y Chrome"
+SUPPORTED_CSS = "[data-track-title=Install]"
+UNSUPPORTED_CSS = "[data-ref=app-fallback-android]"
 
 
 @pytest.mark.only_platforms("android")
@@ -12,7 +12,7 @@ UNSUPPORTED_TEXT = "Samsung Internet y Chrome"
 async def test_enabled(client):
     await client.navigate(URL, wait="none")
     assert client.await_css(SUPPORTED_CSS, is_displayed=True)
-    assert not client.find_text(UNSUPPORTED_TEXT, is_displayed=True)
+    assert not client.find_css(UNSUPPORTED_CSS, is_displayed=True)
 
 
 @pytest.mark.only_platforms("android")
@@ -20,5 +20,5 @@ async def test_enabled(client):
 @pytest.mark.without_interventions
 async def test_disabled(client):
     await client.navigate(URL, wait="none")
-    assert client.await_text(UNSUPPORTED_TEXT, is_displayed=True)
+    assert client.await_css(UNSUPPORTED_CSS, is_displayed=True)
     assert not client.find_css(SUPPORTED_CSS, is_displayed=True)

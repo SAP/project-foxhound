@@ -27,6 +27,7 @@ enum H264_PROFILE {
   H264_PROFILE_MAIN = 0x4D,
   H264_PROFILE_EXTENDED = 0x58,
   H264_PROFILE_HIGH = 0x64,
+  // Keep in sync with H264ProfileValidator.
 };
 
 enum class H264_LEVEL {
@@ -50,6 +51,7 @@ enum class H264_LEVEL {
   H264_LEVEL_6 = 60,
   H264_LEVEL_6_1 = 61,
   H264_LEVEL_6_2 = 62
+  // Keep in sync with H264LevelValidator.
 };
 
 // Spec 7.4.2.1

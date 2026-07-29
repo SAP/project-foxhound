@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -12,10 +11,7 @@
 [Exposed=(Window, Worker, PaintWorklet), Pref="layout.css.typed-om.enabled"]
 interface CSSMathClamp : CSSMathValue {
   [Throws] constructor(CSSNumberish lower, CSSNumberish value, CSSNumberish upper);
-  // TODO: Remove [Throws] once the lower attribute is fully implemented
-  [Throws] readonly attribute CSSNumericValue lower;
-  // TODO: Remove [Throws] once the value attribute is fully implemented
-  [Throws] readonly attribute CSSNumericValue value;
-  // TODO: Remove [Throws] once the upper attribute is fully implemented
-  [Throws] readonly attribute CSSNumericValue upper;
+  readonly attribute CSSNumericValue lower;
+  readonly attribute CSSNumericValue value;
+  readonly attribute CSSNumericValue upper;
 };

@@ -6,7 +6,7 @@
   file, You can obtain one at http://mozilla.org/MPL/2.0/.
 -->
 
-<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
   <string name="app_name_private_5">%s’a veşartî</string>
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
@@ -31,10 +31,6 @@
   <string name="tab_search_hint">Di hilpekînan de bigere</string>
   <!-- Placeholder text shown in the search bar when using application search engines -->
   <string name="application_search_hint">Peyvên lêgerînê binivîse</string>
-  <!-- No Open Tabs Message Description -->
-  <string name="no_open_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">Hilpekînên te yên vekirî ew ê li vir bên nîşandan.</string>
-  <!-- No Private Tabs Message Description -->
-  <string name="no_private_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">Hilpekînên te yên veşartî ew ê li vir bên nîşandan.</string>
   <!-- Tab tray multi select title in app bar. %1$d is the number of tabs selected -->
   <string name="tab_tray_multi_select_title">%1$d hilpekîn hatin bijartin</string>
   <!-- Tab tray multi select title in app bar when no tabs are selected -->
@@ -47,8 +43,6 @@
   <string name="tab_tray_select_collection">Koleksiyonê hilbijêre</string>
   <!-- Content description for close button while in multiselect mode in tab tray -->
   <string name="tab_tray_close_multiselect_content_description">Ji moda bijartina-pir derkeve</string>
-  <!-- Content description for save to collection button while in multiselect mode in tab tray -->
-  <string name="tab_tray_collection_button_multiselect_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Hilpekînên bijartî li koleksiyonê qeyd bike</string>
   <!--
     Home - Bookmarks
 
@@ -60,7 +54,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">Rake</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s berhemeke Mozillayê ye.</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s berhemeke Mozillayê ye.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Efsaneyên berbelav ên têkildarî gerîna veşartî</string>
   <!-- Text to be announced by the accessibility service to inform the user that the private browsing mode is currently active. -->
@@ -175,8 +169,6 @@
   <string name="browser_menu_stop">Rawestîne</string>
   <!-- Browser menu button that opens the extensions manager -->
   <string name="browser_menu_extensions">Pêvek</string>
-  <!-- Browser menu banner header text for extensions onboarding when all installed extensions have been disabled. -->
-  <string name="browser_menu_disabled_extensions_banner_onboarding_header" tools:ignore="UnusedResources" moz:removedIn="149">Te pêvekên sazkirî hene, lê ne çalakkirî ne</string>
   <!-- Browser menu button that opens the extensions manager -->
   <string name="browser_menu_manage_extensions">Pêvekan bi rê ve bibe</string>
   <!-- Browser menu group that contains additional settings in collapsed state -->
@@ -194,18 +186,12 @@
   <string name="browser_menu_no_extensions_installed_description">Tu pêvek nehatine çalakkirin</string>
   <!-- Browser menu button that opens account settings -->
   <string name="browser_menu_account_settings">Agahiyên hesêb</string>
-  <!-- Browser menu button that sends a user to help articles -->
-  <string name="browser_menu_help" tools:ignore="UnusedResources" moz:removedIn="149">Alîkarî</string>
-  <!-- Browser menu button that sends a to a the what's new article -->
-  <string name="browser_menu_whats_new" tools:ignore="UnusedResources" moz:removedIn="149">Çi tiştên nû hene?</string>
   <!-- Browser menu button that opens the settings menu -->
   <string name="browser_menu_settings">Sazkarî</string>
   <!-- Browser menu button that opens a user's library -->
   <string name="browser_menu_library">Pirtûkxane</string>
   <!-- Browser menu toggle that requests a desktop site -->
   <string name="browser_menu_desktop_site">Malpera sermaseyê</string>
-  <!-- Browser menu button that reopens a private tab as a regular tab -->
-  <string name="browser_menu_open_in_regular_tab" tools:ignore="UnusedResources" moz:removedIn="149">Di hilpekîneke asayî de veke</string>
   <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
   <string name="browser_menu_add_to_homescreen">Tevlî ekrana destpêkê bike</string>
   <!-- Browser menu toggle that adds a PWA of the site on the device home screen. -->
@@ -231,11 +217,6 @@
     Browser menu text shown in custom tabs to indicate this is a Fenix tab
     %1$s is the name of the app (for example "Firefox").
   -->
-  <string name="browser_menu_powered_by" tools:ignore="UnusedResources" moz:removedIn="149">Bihêzkirin ji aliyê %1$s</string>
-  <!--
-    Browser menu text shown in custom tabs to indicate this is a Fenix tab
-    %1$s is the name of the app (for example "Firefox").
-  -->
   <string name="browser_menu_powered_by2">Bihêzkirin ji aliyê %1$s</string>
   <!-- Browser menu button to put the current page in reader mode -->
   <string name="browser_menu_read">Moda xwînerê</string>
@@ -244,15 +225,7 @@
   <!-- Browser menu button to open the current page in an external app -->
   <string name="browser_menu_open_app_link">Di sepanê de veke</string>
   <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
-  <string name="browser_menu_customize_reader_view" tools:ignore="UnusedResources" moz:removedIn="149">Moda xwînerê taybet bike</string>
-  <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
   <string name="browser_menu_customize_reader_view_2">Xuyakirina Readerê taybet bike</string>
-  <!-- Browser menu label for adding a bookmark -->
-  <string name="browser_menu_add" tools:ignore="UnusedResources" moz:removedIn="149">Lê zêde bike</string>
-  <!-- Browser menu label for editing a bookmark -->
-  <string name="browser_menu_edit" tools:ignore="UnusedResources" moz:removedIn="149">Serast bike</string>
-  <!-- Button shown on the home page that opens the Customize home settings -->
-  <string name="browser_menu_customize_home_1" tools:ignore="UnusedResources" moz:removedIn="149">Serrûpelê taybet bike</string>
   <!-- Browser menu label to sign in to sync on the device using Mozilla accounts -->
   <string name="browser_menu_sign_in">Têkeve</string>
   <!-- Browser menu caption label for the "Sign in" browser menu item described in `browser_menu_sign_in` -->
@@ -261,24 +234,26 @@
   <string name="browser_menu_sign_back_in_to_sync">Dîsa têke senkronîzekirina xwe</string>
   <!-- Browser menu caption label for the "Sign back in to sync" browser menu item described in `browser_menu_sign_back_in_to_sync` when there is an error in syncing -->
   <string name="browser_menu_syncing_paused_caption">Senkronîzekirin hat rawestandin</string>
+  <!-- Browser menu caption label for an authenticated user -->
+  <string name="browser_menu_signed_in_caption">Tiştên ku tu hiltînî û senkronîze dikî birêve bibe</string>
   <!-- Browser menu label that creates a private tab -->
   <string name="browser_menu_new_private_tab">Hilpekîna taybet a nû</string>
   <!-- Browser menu label that navigates to the Password screen -->
   <string name="browser_menu_passwords">Şîfre</string>
-  <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar extensions menu. -->
-  <string name="browser_extensions_menu_handlebar_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Menuya pêvekan bigire</string>
-  <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar save menu. -->
-  <string name="browser_save_menu_handlebar_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Menuya qeydkirinê bigire</string>
-  <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar tools menu. -->
-  <string name="browser_tools_menu_handlebar_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Menuya amûran bigire</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the main menu at the bottom of the screen. -->
+  <string name="browser_close_main_menu_handlebar_content_description">Menuyê bigire</string>
+  <!-- Content description (not visible, for screen readers etc.) for main menu navigation header. -->
+  <string name="browser_main_menu_content_description_navigation_header">Navîgasyon</string>
   <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar custom tab menu. -->
   <string name="browser_custom_tab_menu_handlebar_content_description">Menuya hilpekîna taybet bigire</string>
   <!-- Browser menu label that bookmarks the currently visited page -->
   <string name="browser_menu_bookmark_this_page_2">Têxe nav favoriyan</string>
   <!-- Browser menu label that navigates to the edit bookmark screen for the current bookmarked page -->
   <string name="browser_menu_edit_bookmark">Favoriyan serast bike</string>
-  <!-- Browser menu label for navigating to the Web Compat Reporter feature, which provides users the ability to send bug reports for broken sites. -->
-  <string name="browser_menu_webcompat_reporter" tools:ignore="UnusedResources" moz:removedIn="149">Malpera xirabe rapor bike…</string>
+  <!-- Browser menu label for navigating to the summarization feature, which provides site summarization for the current visited page -->
+  <string name="browser_menu_summarize_page">Kurteya rûpelê çêke</string>
+  <!-- Browser menu badge text for summarization feature -->
+  <string name="browser_menu_summarize_page_badge">Nû</string>
   <!--
     Browser menu label for the Delete browsing data on quit feature.
     %1$s is the name of the app (for example "Firefox").
@@ -303,17 +278,9 @@
   <!--
     Browser Toolbar
 
-    Content description for the Home screen button on the browser toolbar
+    Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
-  <string name="browser_toolbar_home">Ekrana sereke</string>
-  <!-- Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred. -->
   <string name="browser_toolbar_translate">Rûpelê wergerîne</string>
-  <!--
-    Content description (not visible, for screen readers etc.) for the translate page toolbar button that opens the translations dialog when the page is translated successfully.
-    %1$s is the name of the language that is displayed in the original page. (For example: English)
-    %2$s is the name of the language which the page was translated to. (For example: French)
-  -->
-  <string name="browser_toolbar_translated_successfully">Rûpel ji %1$s li %2$s hat wergerandin.</string>
   <!--
     Locale Settings Fragment
 
@@ -327,12 +294,8 @@
   <!--
     Search Fragment
 
-    Button in the search view that lets a user search by scanning a QR code
+    Button in the search view that lets a user navigate to the site in their clipboard
   -->
-  <string name="search_scan_button_2">Koda QR sken bike</string>
-  <!-- Button in the search view when shortcuts are displayed that takes a user to the search engine settings -->
-  <string name="search_shortcuts_engine_settings">Sazkariyên motora lêgerînê</string>
-  <!-- Button in the search view that lets a user navigate to the site in their clipboard -->
   <string name="awesomebar_clipboard_title">Girêdanê ji panoyê bîne</string>
   <!-- Button in the search suggestions onboarding that allows search suggestions in private sessions -->
   <string name="search_suggestions_onboarding_allow_button">Destûrê bide</string>
@@ -367,62 +330,6 @@
     Content description (not visible, for screen readers etc.): Close button for the home onboarding dialog
   -->
   <string name="onboarding_home_content_description_close_button">Bigire</string>
-  <!--
-    Juno first user onboarding flow experiment, strings are marked unused as they are only referenced by Nimbus experiments.
-
-    Description for learning more about our privacy notice.
-  -->
-  <string name="juno_onboarding_privacy_notice_text" tools:ignore="BrandUsage">Danezana nepeniyê ya Firefox`ê</string>
-  <!-- Title for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_title_nimbus_2">Em ji parastina we hez dikin</string>
-  <!-- Description for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_description_nimbus_3">Geroka me ya ne ji bo qezenckirina pereyan rê li şirketan digire ku li ser webê bi dizî we bişopînin.</string>
-  <!-- Text for the button to set firefox as default browser on the device -->
-  <string name="juno_onboarding_default_browser_positive_button" tools:ignore="UnusedResources">Bike geroka sereke</string>
-  <!-- Text for the button dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_default_browser_negative_button" tools:ignore="UnusedResources">Ne niha</string>
-  <!-- Title for sign in to sync screen. -->
-  <string name="juno_onboarding_sign_in_title_2">Bi awayekî ewle ji amûreke xwe derbasî yeka din bibin</string>
-  <!--
-    Description for sign in to sync screen. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_sign_in_description_3" tools:ignore="BrandUsage">Firefox di dema senkronîzekirinê de şîfre, favorî û daneyên te yên din şîfre dike.</string>
-  <!-- Text for the button to sign in to sync on the device -->
-  <string name="juno_onboarding_sign_in_positive_button" tools:ignore="UnusedResources">Têkeve</string>
-  <!-- Text for the button dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_sign_in_negative_button" tools:ignore="UnusedResources">Ne niha</string>
-  <!--
-    Title for enable notification permission screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_enable_notifications_title_nimbus_2" tools:ignore="BrandUsage">Agahdarî dihêlin ku tu bi Firefoxê re ewletir bî</string>
-  <!--
-    Description for enable notification permission screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_enable_notifications_description_nimbus_2" tools:ignore="BrandUsage">Hilpekînan bi awayekî ewle di navbera amûrên xwe de veguhêze û taybetiyên din yên nepen yên Firefoxê kifş bike.</string>
-  <!-- Text for the button to request notification permission on the device -->
-  <string name="juno_onboarding_enable_notifications_positive_button" tools:ignore="UnusedResources">Danezanan çalak bike</string>
-  <!-- Text for the button dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_enable_notifications_negative_button" tools:ignore="UnusedResources">Ne niha</string>
-  <!--
-    Title for add search widget screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_add_search_widget_title" tools:ignore="BrandUsage,UnusedResources">Widgeta lêgerînê ya Firefoxê bi kar bîne</string>
-  <!--
-    Description for add search widget screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_add_search_widget_description" tools:ignore="BrandUsage,UnusedResources">Heke tu Firefoxê li serûpela xwe zêde bikî, tu yê dikaribî hêsantir têkevî geroka pêşî-ewlehî ku şopandina te asteng dike.</string>
-  <!--
-    Text for the button to add search widget on the device used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_add_search_widget_positive_button" tools:ignore="BrandUsage,UnusedResources">Widgeta Firefoxê lê zêde bike</string>
-  <!-- Text for the button to dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_add_search_widget_negative_button" tools:ignore="UnusedResources">Ne niha</string>
   <!-- Title for the privacy preferences dialog shown during onboarding. Note: The word "Firefox" should NOT be translated. -->
   <string name="onboarding_preferences_dialog_title" tools:ignore="BrandUsage">Alîkariya me bike ku em Firefoxê çêtir bikin</string>
   <!-- Title for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
@@ -434,10 +341,6 @@
   <string name="onboarding_preferences_dialog_positive_button">Qediya</string>
   <!-- Terms of service onboarding title card label. 'Firefox' intentionally hardcoded here -->
   <string name="onboarding_welcome_to_firefox" tools:ignore="BrandUsage">Bi xêr hatî Firefox`ê</string>
-  <!-- Terms of service sub header label. -->
-  <string name="onboarding_terms_of_service_sub_header_2">Geroka webê ya bilez û ewle</string>
-  <!-- Terms of service onboarding page continue button label. -->
-  <string name="onboarding_term_of_service_agree_and_continue_button_label_2">Bidomîne</string>
   <!-- Line one of the terms of service onboarding page. %1$s is replaced by an active link, using onboarding_term_of_service_line_one_link_text_2 as text (“Firefox Terms of Use”). -->
   <string name="onboarding_term_of_service_line_one_2">Bi berdewamkirinê, tu %1$s qebûl dikî.</string>
   <!-- Used as text for the link in onboarding_term_of_service_line_one_2. -->
@@ -455,12 +358,6 @@
   <string name="onboarding_redesign_tou_body_two" tools:ignore="BrandUsage,UnusedResources">Firefox girîngiyê dide nepeniya te. Di %1$s-ên me de bêtir fêr bibe.</string>
   <!-- Set to default browser onboarding redesign title. -->
   <string name="onboarding_redesign_set_default_browser_title" tools:ignore="UnusedResources">Parastina şopandina otomatîk bi awayê standard bistîne</string>
-  <!-- Marketing onboarding page title. 'Firefox' is intentionally hardcoded. -->
-  <string name="onboarding_marketing_title" tools:ignore="BrandUsage,UnusedResources">Alîkariya pêşxistina Firefoxê bike</string>
-  <!-- Marketing onboarding page clickable link text to "learn more" on how data is used. -->
-  <string name="onboarding_marketing_learn_more" tools:ignore="UnusedResources">Em daneyan çawa bi kar tînin</string>
-  <!-- Marketing onboarding page button label. Button to confirm choice and start browsing. -->
-  <string name="onboarding_marketing_positive_button" tools:ignore="UnusedResources">Piştrast bike û dest bi gerê bike</string>
   <!-- Marketing onboarding page title variant. “One last thing” refers to the final step or action in the onboarding process that we’re asking users to take before they can start using the browser. -->
   <string name="onboarding_marketing_title_1" tools:ignore="UnusedResources">Tiştekî dawî</string>
   <!-- Marketing onboarding page button label variant. Button to confirm choice and start browsing. -->
@@ -469,33 +366,6 @@
 
   <!-- ==== End of Project "Nova" onboarding strings ==== -->
 
-  <!-- Onboarding label for 'Save and continue' button, used by Nimbus experiments. -->
-  <string name="onboarding_save_and_continue_button">Qeyd bike û dewam bike</string>
-  <!-- Onboarding toolbar selection card label for 'top' option, used by Nimbus experiments. -->
-  <string name="onboarding_customize_toolbar_top_option">Jorê</string>
-  <!-- Onboarding toolbar selection card label for 'bottom' option, used by Nimbus experiments. -->
-  <string name="onboarding_customize_toolbar_bottom_option">Jêrê</string>
-  <!-- Onboarding toolbar selection card content description for the toolbar placement image. -->
-  <string name="onboarding_customize_toolbar_placement_bottom_content_description">Wêneyê darikê amûr ê jêrîn</string>
-  <string name="onboarding_customize_toolbar_placement_top_content_description">Wêneyê darikê amûr ê jorîn</string>
-  <!-- Action label for toolbar options that can be selected. Talkback will append this to say "Double tap to select". -->
-  <string name="onboarding_customize_toolbar_a11y_action_label_select">hilbijêre</string>
-  <!-- Onboarding header for the theme selection card, used by Nimbus experiments. -->
-  <string name="onboarding_customize_theme_title" tools:ignore="UnusedResources">Temayekê hilbijêre</string>
-  <!-- Onboarding sub header for theme selection card, used by Nimbus experiments. -->
-  <string name="onboarding_customize_theme_description" tools:ignore="UnusedResources">Webê di ronahiya herî baş de bibîne.</string>
-  <!-- Onboarding label for 'Save and start browsing' button, used by Nimbus experiments. -->
-  <string name="onboarding_save_and_start_button">Tomar bike û dest bi gerê bike</string>
-  <!-- Onboarding theme selection card label for 'dark' option, used by Nimbus experiments. -->
-  <string name="onboarding_customize_theme_dark_option">Tarî</string>
-  <!-- Onboarding theme selection card label for 'light' option, used by Nimbus experiments. -->
-  <string name="onboarding_customize_theme_light_option">Ronî</string>
-  <!-- Onboarding theme selection card label for 'System auto' option, used by Nimbus experiments. -->
-  <string name="onboarding_customize_theme_system_option">Otomatîka pergalê</string>
-  <!-- Onboarding theme selection card content description for the theme selection image. %1$s is placeholder for either 'system', 'light' or 'dark'. -->
-  <string name="onboarding_customize_theme_content_description">Wêneya temaya %1$s`ê</string>
-  <!-- Action label for options that can be selected. Talkback will append this to say "Double tap to select". -->
-  <string name="onboarding_customize_theme_a11y_action_label_select">hilbijêre</string>
   <!--
     Widget Picker
 
@@ -524,8 +394,6 @@
   <string name="preferences_category_general">Giştî</string>
   <!-- Preference category for all links about Fenix -->
   <string name="preferences_category_about">Derbar</string>
-  <!-- Preference category for settings related to changing the default search engine -->
-  <string name="preferences_category_select_default_search_engine">Yekê hilbijêre</string>
   <!-- Preference for settings related to managing search shortcuts for the quick search menu -->
   <string name="preferences_manage_search_shortcuts_2">Motorên lêgerînê yên alternatîv birêve bibin</string>
   <!-- Summary for preference for settings related to managing search shortcuts for the quick search menu -->
@@ -669,8 +537,6 @@
   <string name="preferences_open_links_in_apps_never">Ti caran</string>
   <!-- Preference title for choosing an app to handle downloads -->
   <string name="preferences_choose_app_for_downloads">Jêbarkirinan bi sepaneke din bi rê ve bibe</string>
-  <!-- Preference for downloads -->
-  <string name="preferences_downloads">Jêbarkirinên te</string>
   <!-- Preference for extensions -->
   <string name="preferences_extensions">Pêvek</string>
   <!-- Preference for notifications -->
@@ -877,7 +743,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">Lêkolîn</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">Destûrê bide Mozillayê ku lêkolînan saz bike û bimeşîne</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">Destûrê bide Mozillayê ku lêkolînan saz bike û bimeşîne</string>
   <!-- Preference for reconnecting to FxA sync -->
   <string name="preferences_sync_sign_in_to_reconnect">Ji bo dîsa girê bibî, têkeve</string>
   <!-- Preference for removing FxA account -->
@@ -916,8 +782,6 @@
   <string name="preference_gestures_website_pull_to_refresh">Ji bo nûkirinê bikişîne</string>
   <!-- Preference for using the dynamic toolbar -->
   <string name="preference_gestures_dynamic_toolbar">Ji bo darikê amûran veşêrî, bişemitîne</string>
-  <!-- Preference for showing the opened tabs by swiping up on the toolbar -->
-  <string name="preference_gestures_swipe_toolbar_show_tabs">Ji bo hilpekînan vekî, darikê amûran biherikîne jorê</string>
   <!--
     Library
 
@@ -936,8 +800,6 @@
   <string name="library_desktop_bookmarks_unfiled">Favoriyên din</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Raborî</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">Hilpekîna nû</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Sazkarî</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -1054,28 +916,14 @@
   <string name="add_tab">Hilpekînê tevlî bike</string>
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">Hilpekîna veşartî tevlî bike</string>
-  <!-- Text for the new tab button to indicate adding a new private tab in the tab -->
-  <string name="tab_drawer_fab_content" tools:ignore="UnusedResources" moz:removedIn="149">Veşartî</string>
-  <!-- Text for the new tab button to indicate syncing command on the synced tabs page -->
-  <string name="tab_drawer_fab_sync" tools:ignore="UnusedResources" moz:removedIn="149">Senkronîzekirin</string>
-  <!-- Text shown in the menu for sharing all tabs -->
-  <string name="tab_tray_menu_item_share" tools:ignore="UnusedResources" moz:removedIn="149">Hemû hilpekînan parve bike</string>
   <!-- Text shown in the menu to view recently closed tabs -->
   <string name="tab_tray_menu_recently_closed">Hilpekînên herî dawî hatine girtin</string>
-  <!-- Text shown in the tabs tray inactive tabs section -->
-  <string name="tab_tray_inactive_recently_closed" tools:ignore="UnusedResources" moz:removedIn="149">Vê dawiyê hatine girtin</string>
   <!-- Text shown in the menu to view account settings -->
   <string name="tab_tray_menu_account_settings">Sazkariyên hesabî</string>
   <!-- Text shown in the menu to view tab settings -->
   <string name="tab_tray_menu_tab_settings">Sazkariyên hilpekînê</string>
   <!-- Text shown in the menu for closing all tabs -->
   <string name="tab_tray_menu_item_close">Hemû hilpekînan bigire</string>
-  <!-- Text shown in the multiselect menu for bookmarking selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_bookmark" tools:ignore="UnusedResources" moz:removedIn="149">Favorî</string>
-  <!-- Text shown in the multiselect menu for closing selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_close" tools:ignore="UnusedResources" moz:removedIn="149">Bigire</string>
-  <!-- Content description for tabs tray multiselect share button -->
-  <string name="tab_tray_multiselect_share_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Hilpekînên hilbijartî parve bike</string>
   <!-- Content description for tabs tray multiselect menu -->
   <string name="tab_tray_multiselect_menu_content_description">Menûya hilpekînên hilbijartî</string>
   <!-- Content description (not visible, for screen readers etc.): Removes tab from collection button. Removes the selected tab from collection when pressed -->
@@ -1150,6 +998,8 @@
   <string name="download_multi_select_title">%1$d hatin bijartin</string>
   <!-- Text for the button to delete a single downloaded file item -->
   <string name="download_delete_item">Jê bibe</string>
+  <!-- Content description for the toolbar "Navigate to Downloads Settings" button -->
+  <string name="download_navigate_settings_description">Here Sazkariyên Jêbarkirinan</string>
   <string name="download_clear_search_description">Paqij bike</string>
   <!-- Text for the button to share the download URL -->
   <string name="download_share_url">URL`ê parve bike</string>
@@ -1208,7 +1058,7 @@
   -->
   <string name="tab_crash_title_2">Bibore. %1$s, nikare vê rûpelê bar bike.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">Rapora têkçûnê ji Mozillayê re bişîne</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">Rapora têkçûnê ji Mozillayê re bişîne</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">Hilpekînê bigire</string>
   <!-- Restore tab button text on the tab crash page -->
@@ -1237,8 +1087,6 @@
   <string name="bookmark_menu_move_button">Veguhêze</string>
   <!-- Bookmark overflow menu edit button -->
   <string name="bookmark_menu_edit_button">Sererast bike</string>
-  <!-- Bookmark overflow menu copy button -->
-  <string name="bookmark_menu_copy_button" tools:ignore="UnusedResources" moz:removedIn="150">Kopî bike</string>
   <!-- Bookmark overflow menu share button -->
   <string name="bookmark_menu_share_button">Parve bike</string>
   <!-- Bookmark overflow menu open in new tab button -->
@@ -1262,12 +1110,8 @@
   <string name="edit_bookmark_folder_fragment_title">Peldankê sererast bike</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">NAVNÎŞAN</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">PELDANK</string>
   <!-- Text indicating which folder a bookmark or folder will be saved in -->
   <string name="bookmark_save_in_label">Ciyê tomarkirinê</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">NAV</string>
   <!-- Label for a text input field for a bookmark or folder name -->
   <string name="bookmark_name_label_normal_case">Nav</string>
   <!-- Bookmark select folder screen title -->
@@ -1279,13 +1123,11 @@
     %1$s is the host part of the URL of the bookmark deleted, if any
   -->
   <string name="bookmark_deletion_snackbar_message">%1$s hate jêbirin</string>
-  <!-- Bookmark undo button for deletion snackbar action -->
-  <string name="bookmark_undo_deletion" tools:ignore="UnusedResources" moz:removedIn="150">VEGERÎNE</string>
-  <!-- Bookmark snackbar message for deleting a single item. %s is the title of the item being deleted -->
-  <string name="bookmark_delete_single_item" tools:ignore="UnusedResources" moz:removedIn="150">%s hat jêbirin</string>
-  <!-- Bookmark snackbar message for deleting multiple items. %s is the number of items being deleted -->
-  <string name="bookmark_delete_multiple_items" tools:ignore="UnusedResources" moz:removedIn="150">Hêmanan jêbirî: %s</string>
-  <!-- Content description for the bookmark navigation bar back button -->
+  <!--
+    Bookmark undo button for deletion snackbar action
+
+    Content description for the bookmark navigation bar back button
+  -->
   <string name="bookmark_navigate_back_button_content_description">Paşve here</string>
   <!-- Content description for the bookmark list new folder navigation bar button -->
   <string name="bookmark_add_new_folder_button_content_description">Peldankeke nû lê zêde bike</string>
@@ -1297,10 +1139,6 @@
   <string name="bookmark_search_button_content_description">Li favoriyan bigere</string>
   <!-- Title for the bookmark list empty state -->
   <string name="bookmark_empty_list_title">Hê favorî nîn in</string>
-  <!-- Description for the bookmark list empty state when you're not signed into sync. -->
-  <string name="bookmark_empty_list_guest_description">Malperan di dema vekirinê de qeyd bike. Ji bo xwe bigihînî favoriyên xwe yên cîhazên din yên senkronîzekirî, têkevê.</string>
-  <!-- Description for the bookmark list empty state when you're signed into sync. -->
-  <string name="bookmark_empty_list_authenticated_description">Malperan di dema vekirinê de qeyd bike. Em ê favoriyên ji cîhazên din yên senkronîzekirî bînin virê.</string>
   <!-- Description for the bookmark list empty state when you're in an empty folder. -->
   <string name="bookmark_empty_list_folder_description">Malperan di dema vekirinê de têxe favoriyan da dikaribî paşê xwe bigihînî wan.</string>
   <!--
@@ -1397,8 +1235,6 @@
   <string name="collections_header">Koleksiyon</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">Menûya koleksiyonê</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">Tiştên ku ji te re girîng in berhev bike.\nLêgerîn, malper û hilpekînên ku tu dixwazî xwe zû bigihînî wan bîne cem hev.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">Hilpekînan hilbijêre</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -1504,24 +1340,6 @@
     The app name is in the text, due to limitations with localizing Nimbus experiments
   -->
   <string name="nimbus_notification_default_browser_text" tools:ignore="BrandUsage,UnusedResources">Firefoxê bike geroka xwe ya standard</string>
-  <!-- Title shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_title" tools:ignore="UnusedResources" moz:removedIn="150">Gerîna veşartî biceribîne</string>
-  <!--
-    Text shown in the notification that pops up to re-engage the user.
-    %1$s is a placeholder that will be replaced by the app name.
-  -->
-  <string name="notification_re_engagement_text" tools:ignore="UnusedResources" moz:removedIn="150">Di %1$sê de bêyî ku xurek û raboriya te were tomarkirin, bigere</string>
-  <!-- Title A shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_A_title" tools:ignore="UnusedResources" moz:removedIn="150">Gereke bêşop</string>
-  <!--
-    Text A shown in the notification that pops up to re-engage the user.
-    %1$s is a placeholder that will be replaced by the app name.
-  -->
-  <string name="notification_re_engagement_A_text" tools:ignore="UnusedResources" moz:removedIn="150">Gera nepen ya bi %1$sê agahiyên te naparêze.</string>
-  <!-- Title B shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_B_title" tools:ignore="UnusedResources" moz:removedIn="150">Dest bi gera xwe ya pêşî bike</string>
-  <!-- Text B shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_B_text" tools:ignore="UnusedResources" moz:removedIn="150">Tiştên li nêzîk bibîne. Yan jî tiştên pêkenî bibîne.</string>
   <!--
     Survey
 
@@ -1539,8 +1357,6 @@
     Text shown in snackbar when user closes a tab
   -->
   <string name="snackbar_tab_closed">Hilpekîn hate girtin</string>
-  <!-- Text shown in snackbar when user closes all tabs -->
-  <string name="snackbar_tabs_closed">Hilpekîn hatin girtin</string>
   <!-- Text shown in snackbar when user adds a site to shortcuts -->
   <string name="snackbar_added_to_shortcuts">Li bijareyan hat zêdekirin!</string>
   <!-- Text shown in snackbar when user closes a private tab -->
@@ -1607,8 +1423,6 @@
   <string name="preferences_delete_browsing_data_on_quit">Di derketinê de daneyên gerînê jê bibe</string>
   <!-- Summary for the Delete browsing data on quit preference. "Quit" translation should match delete_browsing_data_on_quit_action translation. -->
   <string name="preference_summary_delete_browsing_data_on_quit_2">Gava tu ji menûya giştî \"Derkeve\"yê hilbijêrî daneyên gerînê xweber paqij dike</string>
-  <!-- Action item in menu for the Delete browsing data on quit feature -->
-  <string name="delete_browsing_data_on_quit_action" tools:ignore="UnusedResources" moz:removedIn="149">Derkeve</string>
   <!-- Title text of a delete browsing data dialog. -->
   <string name="delete_history_prompt_title">Dema dê jê bê birin</string>
   <!-- Radio button in the delete browsing data dialog to delete history items for the last hour. -->
@@ -1671,7 +1485,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Sazkariyên parastinê</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Parastina ji şopandinê ya pêşketî</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Niha taybetiya Parastina Tevahî ya Çerezan li dijî kodên şopandina navmalperî bariyera me ya herî xurt e.</string>
@@ -2058,10 +1876,6 @@
     the certificate authority that verified the ticket
   -->
   <string name="certificate_info_verified_by">Piştrastkirin ji aliyê: %1$s</string>
-  <!-- Login overflow menu delete button -->
-  <string name="login_menu_delete_button" tools:ignore="UnusedResources" moz:removedIn="149">Jê bibe</string>
-  <!-- Login overflow menu edit button -->
-  <string name="login_menu_edit_button" tools:ignore="UnusedResources" moz:removedIn="149">Sererast bike</string>
   <!-- Positive action of a dialog asking to delete -->
   <string name="dialog_delete_positive">Jê bibe</string>
   <!-- Negative action of a dialog asking to delete login -->
@@ -2158,8 +1972,6 @@
   <string name="other_default_search_engine_suggestion_header">Lêgerîna %sê</string>
   <!-- Default browser card text -->
   <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">Bila lînkên ji malperan, e-posteyan û peyaman xweber di Firefoxê de bên vekirin.</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">Rake</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">Ji bo agahiyên zêdetir, bitikîne</string>
   <!-- Content description for the action bar "up" button -->
@@ -2176,20 +1988,10 @@
     Action label for elements that can be collapsed if interacting with them. Talkback will append this to say "Double tap to collapse".
   -->
   <string name="a11y_action_label_collapse">teng bike</string>
-  <!-- Current state for elements that can be collapsed if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_collapsed">hat tengkirin</string>
   <!-- Action label for elements that can be expanded if interacting with them. Talkback will append this to say "Double tap to expand". -->
   <string name="a11y_action_label_expand">fireh bike</string>
-  <!-- Current state for elements that can be expanded if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_expanded">hat firehkirin</string>
   <!-- Action label for links to a website containing documentation about a wallpaper collection. Talkback will append this to say "Double tap to open link to learn more about this collection". -->
   <string name="a11y_action_label_wallpaper_collection_learn_more">ji bo derbarê vê koleksiyonê de bêtir bizanî, girêdankê veke</string>
-  <!-- Content description for headings announced by accessibility service. %s is the text of the heading. Talkback will announce the text and then speak the word "Heading" indicating to the user that this text is a heading for a section. -->
-  <string name="a11y_heading">%s, Sernav</string>
-  <!-- Title for dialog displayed when trying to access links present in a text. -->
-  <string name="a11y_links_title">Girêdan</string>
-  <!-- Additional content description for text bodies that contain urls. -->
-  <string name="a11y_links_available">Girêdanên berdest</string>
   <!-- Translations feature -->
 
   <!--
@@ -2238,8 +2040,6 @@
   <string name="translation_error_could_not_translate_warning_text">Di wergerandinê de çewtiyek derket. Tika ye dîsa biceribîne.</string>
   <!-- The title of the warning card informs the user that the list of languages cannot be loaded. -->
   <string name="translation_error_could_not_load_languages_warning_text">Ziman nehantin barkirin. Girêdana înterneta xwe kontrol bike û dîsa biceribîne.</string>
-  <!-- The title of the warning card informs the user that a language is not supported. %1$s is the name of the language that is not supported. -->
-  <string name="translation_error_language_not_supported_warning_text">Bibore, em niha piştgiriya %1$s nakin.</string>
   <!-- Snackbar title shown if the user closes the Translation Request dialogue and a translation is in progress. -->
   <string name="translation_in_progress_snackbar">Tê wergerandin…</string>
   <!--

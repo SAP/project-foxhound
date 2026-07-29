@@ -16,12 +16,15 @@ translations:
     labels:
       - full_page
       - select
+      - about_translations
     description: >
       The count of translation requests, along with their type.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1900432
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999999
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1900432
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999999
     data_sensitivity:
       - technical
     notification_emails:
@@ -101,7 +104,7 @@ translations:
   translation_request:
     type: event
     description: >
-      Triggers when a full-page translation request is sent.
+      Triggers when a translation request is sent.
     extra_keys:
       flow_id: *flow_id
       from_language: &from_language
@@ -113,20 +116,17 @@ translations:
       document_language: &document_language
         type: string
         description: The detected BCP-47 language tag of the document.
-      top_preferred_language: &top_preferred_language
-        type: string
-        description: The top preferred language for this user.
       request_target:
         type: string
         description: >
           The target of the translation request, whether it is
-          "full_page" or "select".
+          "full_page", "select", or "about_translations".
       source_text_code_units:
         type: quantity
-        description: The length of the source text to be translated in code units.
+        description: The length of the source text to be translated in UTF-16 code units.
       source_text_word_count:
         type: quantity
-        description: The length of the source text to be translated in words.
+        description: The number of words in the source-language text to be translated.
       auto_translate:
         type: boolean
         description: >
@@ -140,6 +140,7 @@ translations:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1847150
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1861319
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1870367
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999999
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1836381#c4
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1841366#c11
@@ -147,6 +148,7 @@ translations:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1847150#c4
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1861319#c6
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1870367
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999999
     data_sensitivity:
       - interaction
     notification_emails:
@@ -652,7 +654,6 @@ translations.select_translations_panel:
       document_language: *document_language
       from_language: *from_language
       to_language: *to_language
-      top_preferred_language: *top_preferred_language
       text_source:
         type: string
         description: The source that the text was pulled from, either "selection" or "hyperlink".
@@ -930,13 +931,182 @@ translations.about_translations_page:
   open:
     type: event
     description: >
-      Triggers when the about-translations page is opened.
+      Triggers when the about:translations page is opened.
     extra_keys:
       flow_id: *flow_id
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1814195
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1814195
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - translations-telemetry-alerts@mozilla.com
+    expires: never
+
+  try_again_button:
+    type: event
+    description: >
+      Triggers when the try-again button is invoked in the about-translations page.
+    extra_keys:
+      flow_id: *flow_id
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999999
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999999
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - translations-telemetry-alerts@mozilla.com
+    expires: never
+
+  copy_button:
+    type: event
+    description: >
+      Triggers when the copy button is invoked in the about:translations page.
+    extra_keys:
+      flow_id: *flow_id
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999999
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999999
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - translations-telemetry-alerts@mozilla.com
+    expires: never
+
+  clear_source_text_button:
+    type: event
+    description: >
+      Triggers when the clear-source-text button is invoked in the about:translations page.
+    extra_keys:
+      flow_id: *flow_id
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999999
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999999
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - translations-telemetry-alerts@mozilla.com
+    expires: never
+
+  swap_button:
+    type: event
+    description: >
+      Triggers when the swap button is invoked in the about:translations page.
+    extra_keys:
+      flow_id: *flow_id
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999999
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999999
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - translations-telemetry-alerts@mozilla.com
+    expires: never
+
+  language_load_error_message:
+    type: event
+    description: >
+      Triggers when the language-load-error message is shown in the about:translations page.
+    extra_keys:
+      flow_id: *flow_id
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999999
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999999
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - translations-telemetry-alerts@mozilla.com
+    expires: never
+
+  unsupported_info_message:
+    type: event
+    description: >
+      Triggers when the unsupported-info message is shown in the about:translations page.
+    extra_keys:
+      flow_id: *flow_id
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999999
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999999
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - translations-telemetry-alerts@mozilla.com
+    expires: never
+
+  policy_disabled_info_message:
+    type: event
+    description: >
+      Triggers when the policy-disabled-info message is shown in the about:translations page.
+    extra_keys:
+      flow_id: *flow_id
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999999
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999999
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - translations-telemetry-alerts@mozilla.com
+    expires: never
+
+  feature_blocked_info_message:
+    type: event
+    description: >
+      Triggers when the feature-blocked-info message is shown in the about:translations page.
+    extra_keys:
+      flow_id: *flow_id
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999999
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999999
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - translations-telemetry-alerts@mozilla.com
+    expires: never
+
+  unblock_feature:
+    type: event
+    description: >
+      Triggers when unblock-feature is invoked in the about:translations page.
+    extra_keys:
+      flow_id: *flow_id
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999999
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999999
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - translations-telemetry-alerts@mozilla.com
+    expires: never
+
+  unsupported_language_message:
+    type: event
+    description: >
+      Triggers when the unsupported-language message is shown in the about:translations page.
+    extra_keys:
+      flow_id: *flow_id
+      detected_language:
+        type: string
+        description: The detected language tag of the source text.
+      source_text_code_units:
+        type: quantity
+        description: The length of the source text in UTF-16 code units.
+      source_text_word_count:
+        type: quantity
+        description: The number of words in the source text.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999999
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999999
     data_sensitivity:
       - interaction
     notification_emails:

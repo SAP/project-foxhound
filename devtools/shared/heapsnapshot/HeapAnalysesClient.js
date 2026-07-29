@@ -4,7 +4,6 @@
 
 "use strict";
 
-const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   DevToolsWorker: "resource://devtools/shared/worker/worker.sys.mjs",
@@ -24,7 +23,6 @@ var workerCounter = 0;
 const HeapAnalysesClient = (module.exports = function () {
   this._worker = new lazy.DevToolsWorker(WORKER_URL, {
     name: `HeapAnalyses-${workerCounter++}`,
-    verbose: DevToolsUtils.dumpv.wantVerbose,
   });
 });
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,8 +14,10 @@
 #include "mozilla/ComputedStyleInlines.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ProfilerLabels.h"
+#include "mozilla/ReflowInput.h"
 #include "mozilla/RestyleManager.h"
 #include "mozilla/ScrollContainerFrame.h"
+#include "mozilla/ServoStyleSet.h"
 #include "mozilla/dom/ViewTransition.h"
 #include "nsCanvasFrame.h"
 #include "nsGkAtoms.h"
@@ -470,9 +470,11 @@ void ViewportFrame::Reflow(nsPresContext* aPresContext,
     // height actually changes.
     AbsPosReflowFlags flags{AbsPosReflowFlag::CBWidthChanged,
                             AbsPosReflowFlag::CBHeightChanged};
+    nsReflowStatus absposStatus;
     GetAbsoluteContainingBlock()->Reflow(this, aPresContext, reflowInput,
-                                         aStatus, cb, flags,
+                                         absposStatus, cb, flags,
                                          /* aOverflowAreas = */ nullptr);
+    aStatus.MergeCompletionStatusFrom(absposStatus);
   }
 
   if (mFrames.NotEmpty()) {
@@ -489,17 +491,6 @@ void ViewportFrame::Reflow(nsPresContext* aPresContext,
   FinishAndStoreOverflow(&aDesiredSize);
 
   NS_FRAME_TRACE_REFLOW_OUT("ViewportFrame::Reflow", aStatus);
-}
-
-void ViewportFrame::UpdateStyle(ServoRestyleState& aRestyleState) {
-  RefPtr<ComputedStyle> newStyle =
-      aRestyleState.StyleSet().ResolveInheritingAnonymousBoxStyle(
-          Style()->GetPseudoType(), nullptr);
-
-  MOZ_ASSERT(!GetNextContinuation(), "Viewport has continuations?");
-  SetComputedStyle(newStyle);
-
-  UpdateStyleOfOwnedAnonBoxes(aRestyleState);
 }
 
 void ViewportFrame::AppendDirectlyOwnedAnonBoxes(

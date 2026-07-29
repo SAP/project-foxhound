@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -3074,6 +3072,38 @@ function updateAllowedOrigins(policy, origins, isAdd) {
   policy.allowedOrigins = new MatchPatternSet(Array.from(patternMap.values()));
 }
 
+var GuardSets = {
+  _inits: null,
+  _defaults: [],
+
+  init(inits) {
+    this._inits = inits ?? Services.cpmm.sharedData.get("extensions/guards");
+    let def = this._inits?.get("*");
+    this._defaults = def ? [new ExtensionGuardSet(def)] : [];
+  },
+
+  /**
+   * Update enterprise guards cache and apply to all active extension.
+   */
+  updateAll(inits) {
+    this.init(inits);
+    WebExtensionPolicy.getActiveExtensions().forEach(p => this.updateFor(p));
+  },
+
+  /**
+   * Apply the current enterprise guards to a single policy.
+   *
+   * @param {WebExtensionPolicy} policy
+   */
+  updateFor(policy) {
+    if (this._inits === null) {
+      this.init();
+    }
+    let init = this._inits?.get(policy.id);
+    policy.guardSets = init ? [new ExtensionGuardSet(init)] : this._defaults;
+  },
+};
+
 export var ExtensionCommon = {
   BaseContext,
   CanOfAPIs,
@@ -3081,6 +3111,7 @@ export var ExtensionCommon = {
   ExtensionAPI,
   ExtensionAPIPersistent,
   EventEmitter,
+  GuardSets,
   LocalAPIImplementation,
   LocaleData,
   NoCloneSpreadArgs,

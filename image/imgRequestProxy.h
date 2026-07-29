@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -201,7 +200,7 @@ class imgRequestProxy : public mozilla::PreloaderBase,
                         Document* aLoadingDocument, bool aSyncNotify,
                         imgRequestProxy** aClone);
 
-  virtual imgRequestProxy* NewClonedProxy();
+  virtual already_AddRefed<imgRequestProxy> NewClonedProxy();
 
  public:
   NS_FORWARD_SAFE_NSITIMEDCHANNEL(TimedChannel())
@@ -266,7 +265,7 @@ class imgRequestProxyStatic : public imgRequestProxy {
       bool* aHadCrossOriginRedirects) override;
 
  protected:
-  imgRequestProxy* NewClonedProxy() override;
+  already_AddRefed<imgRequestProxy> NewClonedProxy() override;
 
   // Our principal. We have to cache it, rather than accessing the underlying
   // request on-demand, because static proxies don't have an underlying request.

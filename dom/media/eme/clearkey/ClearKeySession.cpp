@@ -50,7 +50,7 @@ bool ClearKeySession::Init(InitDataType aInitDataType, const uint8_t* aInitData,
     // "webm" initData format is simply the raw bytes of the keyId.
     std::vector<uint8_t> keyId;
     keyId.assign(aInitData, aInitData + aInitDataSize);
-    mKeyIds.push_back(keyId);
+    mKeyIds.push_back(std::move(keyId));
   }
 
   if (mKeyIds.empty()) {

@@ -75,24 +75,6 @@
   {
     "os": "All",
     "vendor": "0xabcd",
-    "versionRange": { "minVersion": "12.0", "maxVersion": "16.0" },
-    "devices": ["0x2783", "0x1234", "0x2782"],
-    "feature": " WEBGL_MSAA ",
-    "featureStatus": " BLOCKED_DRIVER_VERSION "
-  },
-
-  {
-    "os": "All",
-    "vendor": "0xabcd",
-    "versionRange": { "maxVersion": "13.0" },
-    "devices": ["0x2783", "0x1234", "0x2782"],
-    "feature": " STAGEFRIGHT ",
-    "featureStatus": " BLOCKED_DRIVER_VERSION "
-  },
-
-  {
-    "os": "All",
-    "vendor": "0xabcd",
     "versionRange": { "minVersion": "42.0", "maxVersion": "13.0b2" },
     "devices": ["0x2783", "0x1234", "0x2782"],
     "feature": " WEBRTC_HW_ACCELERATION_H264 ",
@@ -214,24 +196,6 @@
     "vendor": "0xabcd",
     "devices": ["0x2783", "0x1234", "0x2782"],
     "feature": " WEBGL2 ",
-    "featureStatus": " BLOCKED_DRIVER_VERSION "
-  },
-
-  {
-    "os": "Darwin 13",
-    "vendor": "0xabcd",
-    "versionRange": { "minVersion": "12.0", "maxVersion": "16.0" },
-    "devices": ["0x2783", "0x1234", "0x2782"],
-    "feature": " WEBGL_MSAA ",
-    "featureStatus": " BLOCKED_DRIVER_VERSION "
-  },
-
-  {
-    "os": "Darwin 13",
-    "vendor": "0xabcd",
-    "versionRange": { "maxVersion": "13.0" },
-    "devices": ["0x2783", "0x1234", "0x2782"],
-    "feature": " STAGEFRIGHT ",
     "featureStatus": " BLOCKED_DRIVER_VERSION "
   },
 
@@ -365,24 +329,6 @@
   {
     "os": "Linux",
     "vendor": "0xabcd",
-    "versionRange": { "minVersion": "12.0", "maxVersion": "16.0" },
-    "devices": ["0x2783", "0x1234", "0x2782"],
-    "feature": " WEBGL_MSAA ",
-    "featureStatus": " BLOCKED_DRIVER_VERSION "
-  },
-
-  {
-    "os": "Linux",
-    "vendor": "0xabcd",
-    "versionRange": { "maxVersion": "13.0" },
-    "devices": ["0x2783", "0x1234", "0x2782"],
-    "feature": " STAGEFRIGHT ",
-    "featureStatus": " BLOCKED_DRIVER_VERSION "
-  },
-
-  {
-    "os": "Linux",
-    "vendor": "0xabcd",
     "versionRange": { "minVersion": "42.0", "maxVersion": "13.0b2" },
     "devices": ["0x2783", "0x1234", "0x2782"],
     "feature": " WEBRTC_HW_ACCELERATION_H264 ",
@@ -504,24 +450,6 @@
     "vendor": "0xabcd",
     "devices": ["0x2783", "0x1234", "0x2782"],
     "feature": " WEBGL2 ",
-    "featureStatus": " BLOCKED_DRIVER_VERSION "
-  },
-
-  {
-    "os": "Android",
-    "vendor": "0xabcd",
-    "versionRange": { "minVersion": "12.0", "maxVersion": "16.0" },
-    "devices": ["0x2783", "0x1234", "0x2782"],
-    "feature": " WEBGL_MSAA ",
-    "featureStatus": " BLOCKED_DRIVER_VERSION "
-  },
-
-  {
-    "os": "Android",
-    "vendor": "0xabcd",
-    "versionRange": { "maxVersion": "13.0" },
-    "devices": ["0x2783", "0x1234", "0x2782"],
-    "feature": " STAGEFRIGHT ",
     "featureStatus": " BLOCKED_DRIVER_VERSION "
   },
 

@@ -40,9 +40,6 @@ tasks:
                 - name: public/browser-extensions/webcompat.xpi
                   path: /builds/worker/workspace/obj-build/dist/xpi-stage/webcompat@mozilla.org.xpi
                   type: file
-                - name: public/browser-extensions/data-leak-blocker.xpi
-                  path: /builds/worker/workspace/obj-build/dist/xpi-stage/data-leak-blocker@mozilla.com.xpi
-                  type: file
             docker-image: {in-tree: debian12-amd64-build}
             env:
                 MOZ_OBJDIR: ../../workspace/obj-build

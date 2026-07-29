@@ -14,6 +14,15 @@ const PREF_SYSTEM_SHORTCUTS_PERSONALIZATION =
 
 const PREF_SYSTEM_SHORTCUTS_LOG = "discoverystream.shortcuts.force_log.enabled";
 
+function smartshortcutsEnabled(values) {
+  // nimbus pref, if its there, overrides the local pref
+  const experimentVariable = values.trainhopConfig?.smartShortcuts?.enabled;
+  if (typeof experimentVariable === "boolean") {
+    return experimentVariable;
+  }
+  return !!values[PREF_SYSTEM_SHORTCUTS_PERSONALIZATION];
+}
+
 function timeMSToSeconds(timeMS) {
   return Math.round(timeMS / 1000);
 }
@@ -27,22 +36,16 @@ export class SmartShortcutsFeed {
   }
 
   isEnabled() {
+    // enabled by smartshortcuts being enabled or force_log=true in nimbus pref
     const { values } = this.store.getState().Prefs;
-    const systemPref = values[PREF_SYSTEM_SHORTCUTS_PERSONALIZATION];
-    const experimentVariable = values.trainhopConfig?.smartShortcuts?.enabled;
     const systemLogPref = values[PREF_SYSTEM_SHORTCUTS_LOG];
     const experimentLogPref = values.trainhopConfig?.smartShortcuts?.force_log;
 
-    return (
-      systemPref || experimentVariable || systemLogPref || experimentLogPref
-    );
+    return smartshortcutsEnabled(values) || systemLogPref || experimentLogPref;
   }
 
   async init() {
-    if (!this.isEnabled()) {
-      return;
-    }
-    this.loaded = true;
+    this.loaded = this.isEnabled();
   }
 
   async reset() {

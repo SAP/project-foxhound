@@ -10,7 +10,7 @@ add_task(async function test() {
       "https://example.com"
     ) + "dummy_page.html";
   await BrowserTestUtils.withNewTab(TEST_PAGE, async browser => {
-    let titles = await ContentTask.spawn(browser, null, () => {
+    let titles = await SpecialPowers.spawn(browser, [], () => {
       return new Promise(resolve => {
         let titles = [];
         content.document.body.innerHTML = "<div id='foo'>foo</div>";

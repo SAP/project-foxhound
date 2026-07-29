@@ -1,5 +1,10 @@
 [DEFAULT]
 head = "head.js"
+
+prefs = [
+  "extensions.formautofill.skipProgrammaticCheckForTests=true",
+]
+
 support-files = [
   "./fathom/**",
   "../fixtures/autocomplete_basic.html",
@@ -57,6 +62,7 @@ skip-if = [
 ["browser_autofill_duplicate_fields.js"]
 skip-if = [
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug", # Bug 1917060
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && debug", # Bug 1917060
 ]
 
 ["browser_autofill_invisible_fields.js"]
@@ -88,6 +94,7 @@ skip-if = [
   "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1788900
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1788900
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug && socketprocess_networking && verify-standalone",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && debug && socketprocess_networking && verify-standalone",
 ]
 
 ["browser_email_dropdown.js"]
@@ -123,11 +130,14 @@ skip-if = [
 
 ["browser_manageAddressesDialog.js"]
 
+["browser_ml_heuristics.js"]
+
 ["browser_nested_forms.js"]
 
 ["browser_page_navigation_in_subtree.js"]
 skip-if = [
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 1924248
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64'", # Bug 1924248
 ]
 
 ["browser_previewFormFields.js"]

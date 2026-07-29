@@ -25,12 +25,12 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_replace.h"
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/candidate.h"
 #include "api/jsep.h"
 #include "api/media_types.h"
 #include "api/rtp_parameters.h"
 #include "api/rtp_transceiver_direction.h"
+#include "api/uma_metrics.h"
 #include "media/base/codec.h"
 #include "media/base/media_constants.h"
 #include "media/base/rid_description.h"
@@ -46,6 +46,8 @@
 #include "rtc_base/message_digest.h"
 #include "rtc_base/socket_address.h"
 #include "rtc_base/ssl_fingerprint.h"
+#include "rtc_base/strings/string_builder.h"
+#include "system_wrappers/include/metrics.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 
@@ -226,7 +228,7 @@ constexpr char kSdpSctpDataChannelString[] =
     "4A:AD:B9:B1:3F:82:18:3B:54:02:12:DF:3E:5D:49:6B:19:E5:7C:AB\r\n"
 
     "a=mid:data_content_name\r\n"
-    "a=sctpmap:5000 webrtc-datachannel 1024\r\n";
+    "a=sctpmap:5000 webrtc-datachannel 65535\r\n";
 
 // draft-ietf-mmusic-sctp-sdp-12
 // Note - this is invalid per draft-ietf-mmusic-sctp-sdp-26,
@@ -270,7 +272,7 @@ constexpr char kSdpSctpDataChannelWithCandidatesString[] =
     "4A:AD:B9:B1:3F:82:18:3B:54:02:12:DF:3E:5D:49:6B:19:E5:7C:AB\r\n"
 
     "a=mid:data_content_name\r\n"
-    "a=sctpmap:5000 webrtc-datachannel 1024\r\n";
+    "a=sctpmap:5000 webrtc-datachannel 65535\r\n";
 
 // draft-hancke-tsvwg-snap
 // a=sctp-init:<base64("CookieMonster")>
@@ -1927,7 +1929,8 @@ class WebRtcSdpTest : public ::testing::Test {
 
   void TestDeserializeRtcpFb(
       std::unique_ptr<SessionDescriptionInterface>& jdesc_output,
-      bool use_wildcard) {
+      bool use_wildcard,
+      bool use_ccfb) {
     std::string sdp_session_and_audio =
         "v=0\r\n"
         "o=- 18446744069414584320 18446462598732840960 IN IP4 127.0.0.1\r\n"
@@ -1949,8 +1952,14 @@ class WebRtcSdpTest : public ::testing::Test {
     std::ostringstream os;
     os << sdp_session_and_audio;
     os << "a=rtcp-fb:" << (use_wildcard ? "*" : "111") << " nack\r\n";
+    if (use_ccfb) {
+      os << "a=rtcp-fb:" << (use_wildcard ? "*" : "111") << " ack ccfb\r\n";
+    }
     os << sdp_video;
     os << "a=rtcp-fb:" << (use_wildcard ? "*" : "101") << " ccm fir\r\n";
+    if (use_ccfb) {
+      os << "a=rtcp-fb:" << (use_wildcard ? "*" : "101") << " ack ccfb\r\n";
+    }
     std::string sdp = os.str();
     // Deserialize
     SdpParseError error;
@@ -1982,6 +1991,21 @@ class WebRtcSdpTest : public ::testing::Test {
         FeedbackParam(kRtcpFbParamRemb, kParamValueEmpty)));
     EXPECT_TRUE(vp8.HasFeedbackParam(
         FeedbackParam(kRtcpFbParamCcm, kRtcpFbCcmParamFir)));
+    MediaContentDescription* video_media =
+        GetFirstMediaContent(jdesc_output->description(), MediaType::VIDEO)
+            ->media_description();
+    MediaContentDescription* audio_media =
+        GetFirstMediaContent(jdesc_output->description(), MediaType::AUDIO)
+            ->media_description();
+    if (use_ccfb) {
+      EXPECT_TRUE(video_media->rtcp_fb_ack_ccfb())
+          << "Wildcard: " << use_wildcard;
+      EXPECT_TRUE(audio_media->rtcp_fb_ack_ccfb())
+          << "Wildcard: " << use_wildcard;
+    } else {
+      EXPECT_FALSE(video_media->rtcp_fb_ack_ccfb());
+      EXPECT_FALSE(audio_media->rtcp_fb_ack_ccfb());
+    }
   }
 
   // Two SDP messages can mean the same thing but be different strings, e.g.
@@ -2764,6 +2788,42 @@ TEST_F(WebRtcSdpTest, DeserializeSdpWithSctpDataChannelsWithSctpColonPort) {
       MatchesCurrentDescriptionNoCandidates(SdpDeserialize(sdp_with_data)));
 }
 
+TEST_F(WebRtcSdpTest, DeserializeSdpWithNegativeSctpPort) {
+  std::string sdp = kSdpString;
+  sdp.append(kSdpSctpDataChannelStringWithSctpColonPort);
+  SdpParseError error;
+  absl::StrReplaceAll({{absl::StrCat(kDefaultSctpPort), absl::StrCat("-1")}},
+                      &sdp);
+  std::unique_ptr<SessionDescriptionInterface> output =
+      SdpDeserialize(sdp, &error);
+  ASSERT_THAT(output, IsNull());
+  EXPECT_EQ(error.line, "a=sctp-port:-1");
+}
+
+TEST_F(WebRtcSdpTest, DeserializeSdpWithTooLargeSctpPort) {
+  std::string sdp = kSdpString;
+  sdp.append(kSdpSctpDataChannelStringWithSctpColonPort);
+  SdpParseError error;
+  absl::StrReplaceAll({{absl::StrCat(kDefaultSctpPort), absl::StrCat("70000")}},
+                      &sdp);
+  std::unique_ptr<SessionDescriptionInterface> output =
+      SdpDeserialize(sdp, &error);
+  ASSERT_THAT(output, IsNull());
+  EXPECT_EQ(error.line, "a=sctp-port:70000");
+}
+
+TEST_F(WebRtcSdpTest, DeserializeSdpWithStringSctpPort) {
+  std::string sdp = kSdpString;
+  sdp.append(kSdpSctpDataChannelStringWithSctpColonPort);
+  SdpParseError error;
+  absl::StrReplaceAll(
+      {{absl::StrCat(kDefaultSctpPort), absl::StrCat("webrtc")}}, &sdp);
+  std::unique_ptr<SessionDescriptionInterface> output =
+      SdpDeserialize(sdp, &error);
+  ASSERT_THAT(output, IsNull());
+  EXPECT_EQ(error.line, "a=sctp-port:webrtc");
+}
+
 TEST_F(WebRtcSdpTest, DeserializeSdpWithSctpDataChannelsWithSctpInit) {
   bool use_sctpmap = false;
   AddSctpDataChannel(use_sctpmap);
@@ -2862,6 +2922,18 @@ TEST_F(WebRtcSdpTest, DeserializeSdpWithSctpDataChannelsWithMaxMessageSize) {
   EXPECT_TRUE(CompareSessionDescription(
       CreateSessionDescriptionWithSctpMaxMessageSize(desc_, 12345),
       SdpDeserialize(sdp_with_data)));
+}
+
+TEST_F(WebRtcSdpTest,
+       DeserializeSdpWithSctpDataChannelsWithInvalidMaxMessageSize) {
+  std::string sdp_with_data = kSdpString;
+  sdp_with_data.append(kSdpSctpDataChannelStringWithSctpColonPort);
+  sdp_with_data.append("a=max-message-size:-1\r\n");
+  SdpParseError error;
+  std::unique_ptr<SessionDescriptionInterface> output =
+      SdpDeserialize(sdp_with_data, &error);
+  ASSERT_THAT(output, IsNull());
+  EXPECT_EQ(error.line, "a=max-message-size:-1");
 }
 
 TEST_F(WebRtcSdpTest, SerializeSdpWithSctpDataChannelWithMaxMessageSize) {
@@ -3225,14 +3297,24 @@ TEST_F(WebRtcSdpTest, DeserializeSerializeCodecParams) {
 TEST_F(WebRtcSdpTest, DeserializeSerializeRtcpFb) {
   const bool kUseWildcard = false;
   std::unique_ptr<SessionDescriptionInterface> jdesc_output;
-  TestDeserializeRtcpFb(jdesc_output, kUseWildcard);
+  TestDeserializeRtcpFb(jdesc_output, kUseWildcard, /* use_ccfb= */ false);
   TestSerialize(jdesc_output);
 }
 
 TEST_F(WebRtcSdpTest, DeserializeSerializeRtcpFbWildcard) {
   const bool kUseWildcard = true;
   std::unique_ptr<SessionDescriptionInterface> jdesc_output;
-  TestDeserializeRtcpFb(jdesc_output, kUseWildcard);
+  TestDeserializeRtcpFb(jdesc_output, kUseWildcard, /* use_ccfb= */ false);
+  TestSerialize(jdesc_output);
+}
+
+TEST_F(WebRtcSdpTest, DeserializeSerializeRtcpWithCcfb) {
+  std::unique_ptr<SessionDescriptionInterface> jdesc_output;
+  TestDeserializeRtcpFb(jdesc_output, /* use_wildcard= */ false,
+                        /* use_ccfb= */ true);
+  TestSerialize(jdesc_output);
+  TestDeserializeRtcpFb(jdesc_output, /* use_wildcard= */ true,
+                        /* use_ccfb= */ true);
   TestSerialize(jdesc_output);
 }
 
@@ -3865,6 +3947,53 @@ TEST_F(WebRtcSdpTest, BandwidthLimitOfNegativeOneIgnored) {
       GetFirstVideoContentDescription(jdesc_output->description());
   ASSERT_THAT(vcd, NotNull());
   EXPECT_EQ(kAutoBandwidth, vcd->bandwidth());
+}
+
+TEST_F(WebRtcSdpTest, SdpBandwidthMetrics) {
+  metrics::Reset();
+  auto get_sdp = [](absl::string_view value) {
+    StringBuilder sb;
+    sb << "v=0\r\n"
+       << "o=- 18446744069414584320 18446462598732840960 IN IP4 127.0.0.1\r\n"
+       << "s=-\r\n"
+       << "t=0 0\r\n"
+       << "m=video 3457 RTP/SAVPF 120\r\n"
+       << "b=AS:" << value << "\r\n";
+    return sb.Release();
+  };
+
+  // kSdpBandwidthNegativeOne
+  SdpDeserialize(get_sdp("-1"));
+  EXPECT_METRIC_EQ(1, metrics::NumEvents("WebRTC.PeerConnection.SdpBandwidth",
+                                         kSdpBandwidthNegativeOne));
+
+  // kSdpBandwidthZero
+  SdpDeserialize(get_sdp("0"));
+  EXPECT_METRIC_EQ(1, metrics::NumEvents("WebRTC.PeerConnection.SdpBandwidth",
+                                         kSdpBandwidthZero));
+
+  // kSdpBandwidthSmall
+  SdpDeserialize(get_sdp("1000"));
+  EXPECT_METRIC_EQ(1, metrics::NumEvents("WebRTC.PeerConnection.SdpBandwidth",
+                                         kSdpBandwidthSmall));
+
+  // kSdpBandwidthLarge
+  SdpDeserialize(get_sdp("3000000"));
+  EXPECT_METRIC_EQ(1, metrics::NumEvents("WebRTC.PeerConnection.SdpBandwidth",
+                                         kSdpBandwidthLarge));
+
+  // kSdpBandwidthNegative
+  SdpDeserialize(get_sdp("-1000"));
+  EXPECT_METRIC_EQ(1, metrics::NumEvents("WebRTC.PeerConnection.SdpBandwidth",
+                                         kSdpBandwidthNegative));
+
+  // kSdpBandwidthParseFailure
+  SdpDeserialize(get_sdp("999999999999"));
+  EXPECT_METRIC_EQ(1, metrics::NumEvents("WebRTC.PeerConnection.SdpBandwidth",
+                                         kSdpBandwidthParseFailure));
+
+  EXPECT_METRIC_EQ(6,
+                   metrics::NumSamples("WebRTC.PeerConnection.SdpBandwidth"));
 }
 
 // Test that "ufrag"/"pwd" in the candidate line itself are ignored, and only
@@ -5078,6 +5207,64 @@ TEST_F(WebRtcSdpTest, ShrugsOnUnknownStaticAudioCodecs) {
       "t=0\r\n"
       "m=audio 0  1\r\n";
   EXPECT_TRUE(SdpDeserialize(sdp_with_audio_codec_1));
+}
+
+TEST_F(WebRtcSdpTest, DeserializeSframeAttribute) {
+  std::string sdp = kSdpSessionString;
+  sdp += kSdpVideoString;
+  sdp += "a=sframe\r\n";
+
+  auto jdesc = SdpDeserialize(sdp);
+  ASSERT_THAT(jdesc, NotNull());
+  ASSERT_EQ(1u, jdesc->description()->contents().size());
+  EXPECT_TRUE(jdesc->description()
+                  ->contents()[0]
+                  .media_description()
+                  ->sframe_enabled());
+}
+
+TEST_F(WebRtcSdpTest, DeserializeWithoutSframeAttribute) {
+  std::string sdp = kSdpSessionString;
+  sdp += kSdpVideoString;
+
+  auto jdesc = SdpDeserialize(sdp);
+  ASSERT_THAT(jdesc, NotNull());
+  ASSERT_EQ(1u, jdesc->description()->contents().size());
+  EXPECT_FALSE(jdesc->description()
+                   ->contents()[0]
+                   .media_description()
+                   ->sframe_enabled());
+}
+
+TEST_F(WebRtcSdpTest, SerializeSframeAttribute) {
+  video_desc_->set_sframe_enabled(true);
+  std::string message = SdpSerialize(MakeDescriptionWithoutCandidates());
+  EXPECT_NE(std::string::npos, message.find("a=sframe\r\n"));
+}
+
+TEST_F(WebRtcSdpTest, SerializeWithoutSframeAttribute) {
+  video_desc_->set_sframe_enabled(false);
+  std::string message = SdpSerialize(MakeDescriptionWithoutCandidates());
+  EXPECT_EQ(std::string::npos, message.find("a=sframe"));
+}
+
+TEST_F(WebRtcSdpTest, SframeAttributeRoundTrip) {
+  video_desc_->set_sframe_enabled(true);
+  std::string message = SdpSerialize(MakeDescriptionWithoutCandidates());
+  EXPECT_NE(std::string::npos, message.find("a=sframe\r\n"));
+
+  auto jdesc = SdpDeserialize(message);
+  ASSERT_THAT(jdesc, NotNull());
+  ASSERT_EQ(2u, jdesc->description()->contents().size());
+  // audio (index 0) should not have sframe, video (index 1) should.
+  EXPECT_FALSE(jdesc->description()
+                   ->contents()[0]
+                   .media_description()
+                   ->sframe_enabled());
+  EXPECT_TRUE(jdesc->description()
+                  ->contents()[1]
+                  .media_description()
+                  ->sframe_enabled());
 }
 
 }  // namespace

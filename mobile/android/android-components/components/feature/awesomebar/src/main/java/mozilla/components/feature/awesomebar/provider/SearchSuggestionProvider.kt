@@ -231,7 +231,7 @@ class SearchSuggestionProvider private constructor(
                 id = text,
                 title = client.searchEngine?.name,
                 chips = chips,
-                score = Int.MAX_VALUE,
+                score = Int.MAX_VALUE - 1,
                 icon = icon ?: client.searchEngine?.icon,
                 onChipClicked = { chip ->
                     searchUseCase.invoke(chip.title)

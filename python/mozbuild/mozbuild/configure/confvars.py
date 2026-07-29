@@ -11,7 +11,7 @@ class ConfVarsSyntaxError(SyntaxError):
 
 
 def parse(path):
-    with open(path) as confvars:
+    with open(path, encoding="utf-8") as confvars:
         keyvals = {}
         for lineno, rawline in enumerate(confvars, start=1):
             line = rawline.rstrip()

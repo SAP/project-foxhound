@@ -89,8 +89,18 @@ bool MemoryMappedFile::MapFileRegionToMemory(
 
   file_mapping_.Set(::CreateFileMapping(file_.GetPlatformFile(), NULL, flags,
                                         size.HighPart, size.LowPart, NULL));
+#if defined(MOZ_ZUCCHINI)
+  if (!file_mapping_.is_valid()) {
+    DWORD last_error = ::GetLastError();
+    is_mapping_oom_ = last_error == ERROR_NOT_ENOUGH_MEMORY ||
+                      last_error == ERROR_OUTOFMEMORY ||
+                      last_error == ERROR_COMMITMENT_LIMIT;
+    return false;
+  }
+#else
   if (!file_mapping_.is_valid())
     return false;
+#endif  // defined(MOZ_ZUCCHINI)
 
   ULARGE_INTEGER map_start = {};
   SIZE_T map_size = 0;
@@ -131,8 +141,18 @@ bool MemoryMappedFile::MapFileRegionToMemory(
       ::MapViewOfFile(file_mapping_.get(),
                       (flags & PAGE_READONLY) ? FILE_MAP_READ : FILE_MAP_WRITE,
                       map_start.HighPart, map_start.LowPart, map_size));
+#if defined(MOZ_ZUCCHINI)
+  if (data_ == nullptr) {
+    DWORD last_error = ::GetLastError();
+    is_mapping_oom_ = last_error == ERROR_NOT_ENOUGH_MEMORY ||
+                      last_error == ERROR_OUTOFMEMORY ||
+                      last_error == ERROR_COMMITMENT_LIMIT;
+    return false;
+  }
+#else
   if (data_ == nullptr)
     return false;
+#endif  // defined(MOZ_ZUCCHINI)
   data_ += data_offset;
   return true;
 }

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -438,10 +436,10 @@ bool MediaSource::IsTypeSupported(const GlobalObject& aOwner,
   bool supported = !rv.Failed();
   RecordTypeForTelemetry(aType, window);
   diagnostics.StoreFormatDiagnostics(doc, aType, supported, __func__);
-  MOZ_LOG(GetMediaSourceAPILog(), mozilla::LogLevel::Debug,
-          ("MediaSource::%s: IsTypeSupported(aType=%s) %s", __func__,
-           NS_ConvertUTF16toUTF8(aType).get(),
-           supported ? "OK" : "[not supported]"));
+  MOZ_LOG_FMT(GetMediaSourceAPILog(), mozilla::LogLevel::Debug,
+              "MediaSource::{}: IsTypeSupported(aType={}) {}", __func__,
+              NS_ConvertUTF16toUTF8(aType).get(),
+              supported ? "OK" : "[not supported]");
   return supported;
 }
 

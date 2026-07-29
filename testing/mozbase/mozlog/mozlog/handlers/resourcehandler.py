@@ -31,6 +31,10 @@ class ResourceHandler(LogHandler):
             poll_interval=0.1,
         )
         self.resources.start()
+        self.resources.start_streaming(self.build_resources_profile_path)
+        print(
+            f"Streaming resource usage profile to: {self.build_resources_profile_path}"
+        )
 
     def shutdown(self, data):
         if not self.resources:
@@ -73,3 +77,18 @@ class ResourceHandler(LogHandler):
 
     def crash(self, data):
         self.resources.crash(data)
+
+    def lsan_leak(self, data):
+        self.resources.lsan_leak(data)
+
+    def lsan_summary(self, data):
+        self.resources.lsan_summary(data)
+
+    def tsan_error(self, data):
+        self.resources.tsan_error(data)
+
+    def mozleak_object(self, data):
+        self.resources.mozleak_object(data)
+
+    def mozleak_total(self, data):
+        self.resources.mozleak_total(data)

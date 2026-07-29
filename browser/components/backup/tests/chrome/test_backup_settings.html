@@ -120,9 +120,10 @@
       let dialog = settings.disableBackupEncryptionDialogEl;
 
       ok(sensitiveDataCheckboxInput, "Checkbox for toggling encryption should be found");
+      ok(sensitiveDataCheckboxInput.checked, "Checkbox for toggling encryption should be checked");
       ok(!dialog.open, "Dialog should not be open");
 
-      sensitiveDataCheckboxInput.click();
+      synthesizeMouseAtCenter(sensitiveDataCheckboxInput, {});
       await settings.updateComplete;
 
       ok(dialog?.open, "Dialog should be open");
@@ -202,7 +203,7 @@
       });
       await settings.updateComplete;
 
-      backupLocationControl = settings.shadowRoot.querySelector("#last-backup-location-control");
+      backupLocationControl = settings.shadowRoot.querySelector("#last-backup-location");
       ok(backupLocationControl, "Last backup location control was rendered.");
 
       let backupLocation = settings.shadowRoot.querySelector("#last-backup-location");
@@ -231,24 +232,29 @@
     });
 
     /**
-     * Test that the "Edit" button fires the right event.
+     * Test that handleEditBackupLocation dispatches ShowFilepicker with
+     * alsoDeleteLastBackup.
      */
     add_task(async function test_editLocation() {
       let settings = document.getElementById("test-backup-settings");
       let content = document.getElementById("content");
 
-      const backupDirPath = "Some/Expected/Path";
       settings.backupServiceState = createBackupServiceState({
         scheduledBackupsEnabled: true,
-        backupDirPath,
+        backupDirPath: "Some/Expected/Path",
       });
+      await settings.updateComplete;
 
-      let locationEditButton = settings.shadowRoot.querySelector("#backup-location-edit");
-      ok(locationEditButton, "Backup location edit button exists.");
-
-      let sawEditEvent = BrowserTestUtils.waitForEvent(content, "BackupUI:EditBackupLocation");
-      locationEditButton.click();
-      await sawEditEvent;
+      let sawShowFilepicker = BrowserTestUtils.waitForEvent(
+        content,
+        "BackupUI:ShowFilepicker"
+      );
+      settings.handleEditBackupLocation();
+      let event = await sawShowFilepicker;
+      ok(
+        event.detail.alsoDeleteLastBackup,
+        "Event should have alsoDeleteLastBackup flag"
+      );
     });
 
     /**
@@ -284,8 +290,8 @@
         "Sensitive data checkbox should not be checked"
       );
       ok(
-        !settings.changePasswordButtonEl,
-        "Change password button should not be found"
+        settings.changePasswordButtonEl,
+        "Change password button should be found"
       );
 
       // Now pretend encryption is enabled
@@ -315,19 +321,15 @@
       });
       await settings.updateComplete;
 
-      ok(
-        settings.scheduledBackupsDescriptionEl,
+      is(
+        settings.archiveSectionEl.getAttribute("data-l10n-id"),
+        "settings-data-backup-scheduled-backups-off2",
         "Scheduled backups description should be in the DOM"
       );
 
       is(
         settings.restoreFromBackupButtonEl.getAttribute("data-l10n-id"),
-        "settings-data-backup-scheduled-backups-off-restore-choose"
-      );
-
-      is(
-        settings.restoreFromBackupDescriptionEl.getAttribute("data-l10n-id"),
-        "settings-data-backup-scheduled-backups-off-restore-description"
+        "settings-data-backup-restore-scheduled-off"
       );
     });
 
@@ -343,26 +345,22 @@
       });
       await settings.updateComplete;
 
-      ok(
-        !settings.scheduledBackupsDescriptionEl,
-        "Scheduled backups description should not be in the DOM"
+      is(
+        settings.archiveSectionEl.getAttribute("data-l10n-id"),
+        "settings-data-backup-scheduled-backups-on2",
+        "Scheduled backups description should be in the DOM"
       );
 
       is(
         settings.restoreFromBackupButtonEl.getAttribute("data-l10n-id"),
-        "settings-data-backup-scheduled-backups-on-restore-choose"
-      );
-
-      is(
-        settings.restoreFromBackupDescriptionEl.getAttribute("data-l10n-id"),
-        "settings-data-backup-scheduled-backups-on-restore-description"
+        "settings-data-backup-restore-scheduled-on"
       );
     });
   </script>
 </head>
 <body>
 <p id="display"></p>
-<div id="content" style="display: none">
+<div id="content">
   <backup-settings id="test-backup-settings"></backup-settings>
 </div>
 <pre id="test"></pre>

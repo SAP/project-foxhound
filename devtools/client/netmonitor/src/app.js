@@ -43,7 +43,7 @@ const SearchDispatcher = require("resource://devtools/client/netmonitor/src/work
  * on the UI and can't be created independently.
  *
  * This object can be consumed by other panels (e.g. Console
- * is using inspectRequest), by the Launchpad (bootstrap), etc.
+ * is using inspectRequest).
  */
 class NetMonitorApp {
   /**

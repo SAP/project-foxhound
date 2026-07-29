@@ -5,8 +5,10 @@ package org.mozilla.fenix.ui.robots
 
 import android.net.Uri
 import android.util.Log
+import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -101,9 +103,14 @@ class CustomTabRobot(private val composeTestRule: ComposeTestRule) {
         Log.i(TAG, "verifyCustomTabCloseButton: Verified that the close custom tab button is displayed")
     }
 
+    @OptIn(ExperimentalTestApi::class)
     fun verifyCustomTabToolbarTitle(title: String) {
         Log.i(TAG, "verifyCustomTabToolbarTitle: Trying to verify that the custom tab title: $title is displayed")
-        composeTestRule.onNodeWithText(title, substring = true, useUnmergedTree = true).assertIsDisplayed()
+        composeTestRule.waitUntil(waitingTime) {
+            composeTestRule.onAllNodes(hasText(title, substring = true), useUnmergedTree = true)
+                .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
+        }
+        composeTestRule.onNodeWithText(title, substring = true, useUnmergedTree = true).assertExists()
         Log.i(TAG, "verifyCustomTabToolbarTitle: Verified that the custom tab title: $title is displayed")
     }
 
@@ -325,7 +332,7 @@ private fun mainMenuButton() = itemWithResId("$packageName:id/mozac_browser_tool
 private fun mainMenuButtonFromRedesignedToolbar() =
     itemWithDescription(getStringResource(R.string.content_description_menu))
 
-private fun desktopSiteButton() = onView(withId(R.id.switch_widget))
+private fun desktopSiteButton() = onView(withId(R.id.switchWidget))
 
 private fun findInPageButton() = onView(withText("Find in page"))
 

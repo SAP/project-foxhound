@@ -10,9 +10,9 @@ use core::{
 use arrayvec::ArrayVec;
 use ash::{ext, vk};
 use hashbrown::hash_map::Entry;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 
-use super::{conv, RawTlasInstance};
+use super::{conv, descriptor::DescriptorCounts, RawTlasInstance};
 use crate::TlasInstance;
 
 impl super::DeviceShared {
@@ -235,7 +235,10 @@ impl super::DeviceShared {
         buffer: &'a super::Buffer,
         ranges: I,
     ) -> Option<impl 'a + Iterator<Item = vk::MappedMemoryRange<'a>>> {
-        let allocation = buffer.allocation.as_ref()?.lock();
+        let super::BufferOwnership::Managed(ref allocation) = buffer.ownership else {
+            return None;
+        };
+        let allocation = allocation.lock();
         let mask = self.private_caps.non_coherent_map_mask;
         Some(ranges.map(move |range| {
             vk::MappedMemoryRange::default()
@@ -243,147 +246,6 @@ impl super::DeviceShared {
                 .offset((allocation.offset() + range.start) & !mask)
                 .size((range.end - range.start + mask) & !mask)
         }))
-    }
-}
-
-impl
-    gpu_descriptor::DescriptorDevice<vk::DescriptorSetLayout, vk::DescriptorPool, vk::DescriptorSet>
-    for super::DeviceShared
-{
-    unsafe fn create_descriptor_pool(
-        &self,
-        descriptor_count: &gpu_descriptor::DescriptorTotalCount,
-        max_sets: u32,
-        flags: gpu_descriptor::DescriptorPoolCreateFlags,
-    ) -> Result<vk::DescriptorPool, gpu_descriptor::CreatePoolError> {
-        //Note: ignoring other types, since they can't appear here
-        let unfiltered_counts = [
-            (vk::DescriptorType::SAMPLER, descriptor_count.sampler),
-            (
-                vk::DescriptorType::SAMPLED_IMAGE,
-                descriptor_count.sampled_image,
-            ),
-            (
-                vk::DescriptorType::STORAGE_IMAGE,
-                descriptor_count.storage_image,
-            ),
-            (
-                vk::DescriptorType::UNIFORM_BUFFER,
-                descriptor_count.uniform_buffer,
-            ),
-            (
-                vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC,
-                descriptor_count.uniform_buffer_dynamic,
-            ),
-            (
-                vk::DescriptorType::STORAGE_BUFFER,
-                descriptor_count.storage_buffer,
-            ),
-            (
-                vk::DescriptorType::STORAGE_BUFFER_DYNAMIC,
-                descriptor_count.storage_buffer_dynamic,
-            ),
-            (
-                vk::DescriptorType::ACCELERATION_STRUCTURE_KHR,
-                descriptor_count.acceleration_structure,
-            ),
-        ];
-
-        let filtered_counts = unfiltered_counts
-            .iter()
-            .cloned()
-            .filter(|&(_, count)| count != 0)
-            .map(|(ty, count)| vk::DescriptorPoolSize {
-                ty,
-                descriptor_count: count,
-            })
-            .collect::<ArrayVec<_, 8>>();
-
-        let mut vk_flags =
-            if flags.contains(gpu_descriptor::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND) {
-                vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND
-            } else {
-                vk::DescriptorPoolCreateFlags::empty()
-            };
-        if flags.contains(gpu_descriptor::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET) {
-            vk_flags |= vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET;
-        }
-        let vk_info = vk::DescriptorPoolCreateInfo::default()
-            .max_sets(max_sets)
-            .flags(vk_flags)
-            .pool_sizes(&filtered_counts);
-
-        match unsafe { self.raw.create_descriptor_pool(&vk_info, None) } {
-            Ok(pool) => Ok(pool),
-            Err(vk::Result::ERROR_OUT_OF_HOST_MEMORY) => {
-                Err(gpu_descriptor::CreatePoolError::OutOfHostMemory)
-            }
-            Err(vk::Result::ERROR_OUT_OF_DEVICE_MEMORY) => {
-                Err(gpu_descriptor::CreatePoolError::OutOfDeviceMemory)
-            }
-            Err(vk::Result::ERROR_FRAGMENTATION) => {
-                Err(gpu_descriptor::CreatePoolError::Fragmentation)
-            }
-            Err(err) => handle_unexpected(err),
-        }
-    }
-
-    unsafe fn destroy_descriptor_pool(&self, pool: vk::DescriptorPool) {
-        unsafe { self.raw.destroy_descriptor_pool(pool, None) }
-    }
-
-    unsafe fn alloc_descriptor_sets<'a>(
-        &self,
-        pool: &mut vk::DescriptorPool,
-        layouts: impl ExactSizeIterator<Item = &'a vk::DescriptorSetLayout>,
-        sets: &mut impl Extend<vk::DescriptorSet>,
-    ) -> Result<(), gpu_descriptor::DeviceAllocationError> {
-        let result = unsafe {
-            self.raw.allocate_descriptor_sets(
-                &vk::DescriptorSetAllocateInfo::default()
-                    .descriptor_pool(*pool)
-                    .set_layouts(
-                        &smallvec::SmallVec::<[vk::DescriptorSetLayout; 32]>::from_iter(
-                            layouts.cloned(),
-                        ),
-                    ),
-            )
-        };
-
-        match result {
-            Ok(vk_sets) => {
-                sets.extend(vk_sets);
-                Ok(())
-            }
-            Err(vk::Result::ERROR_OUT_OF_HOST_MEMORY)
-            | Err(vk::Result::ERROR_OUT_OF_POOL_MEMORY) => {
-                Err(gpu_descriptor::DeviceAllocationError::OutOfHostMemory)
-            }
-            Err(vk::Result::ERROR_OUT_OF_DEVICE_MEMORY) => {
-                Err(gpu_descriptor::DeviceAllocationError::OutOfDeviceMemory)
-            }
-            Err(vk::Result::ERROR_FRAGMENTED_POOL) => {
-                Err(gpu_descriptor::DeviceAllocationError::FragmentedPool)
-            }
-            Err(err) => handle_unexpected(err),
-        }
-    }
-
-    unsafe fn dealloc_descriptor_sets<'a>(
-        &self,
-        pool: &mut vk::DescriptorPool,
-        sets: impl Iterator<Item = vk::DescriptorSet>,
-    ) {
-        let result = unsafe {
-            self.raw.free_descriptor_sets(
-                *pool,
-                &smallvec::SmallVec::<[vk::DescriptorSet; 32]>::from_iter(sets),
-            )
-        };
-        match result {
-            Ok(()) => {}
-            Err(err) => handle_unexpected(err),
-        }
     }
 }
 
@@ -457,6 +319,21 @@ impl super::Device {
         desc: &crate::TextureDescriptor,
         external_memory_image_create_info: Option<&mut vk::ExternalMemoryImageCreateInfo>,
     ) -> Result<ImageWithoutMemory, crate::DeviceError> {
+        self.create_image_without_memory_with_tiling(
+            desc,
+            vk::ImageTiling::OPTIMAL,
+            external_memory_image_create_info,
+            None,
+        )
+    }
+
+    fn create_image_without_memory_with_tiling(
+        &self,
+        desc: &crate::TextureDescriptor,
+        tiling: vk::ImageTiling,
+        external_memory_image_create_info: Option<&mut vk::ExternalMemoryImageCreateInfo>,
+        drm_modifier_info: Option<&mut vk::ImageDrmFormatModifierExplicitCreateInfoEXT>,
+    ) -> Result<ImageWithoutMemory, crate::DeviceError> {
         let copy_size = desc.copy_extent();
 
         let mut raw_flags = vk::ImageCreateFlags::empty();
@@ -496,7 +373,7 @@ impl super::Device {
             .mip_levels(desc.mip_level_count)
             .array_layers(desc.array_layer_count())
             .samples(vk::SampleCountFlags::from_raw(desc.sample_count))
-            .tiling(vk::ImageTiling::OPTIMAL)
+            .tiling(tiling)
             .usage(conv::map_texture_usage(desc.usage))
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
             .initial_layout(vk::ImageLayout::UNDEFINED);
@@ -509,6 +386,10 @@ impl super::Device {
 
         if let Some(ext_info) = external_memory_image_create_info {
             vk_info = vk_info.push_next(ext_info);
+        }
+
+        if let Some(drm_info) = drm_modifier_info {
+            vk_info = vk_info.push_next(drm_info);
         }
 
         let raw = unsafe { self.shared.raw.create_image(&vk_info, None) }.map_err(map_err)?;
@@ -602,6 +483,162 @@ impl super::Device {
         })
     }
 
+    /// Import a DMA-buf as a texture. Currently only supports single-plane DMA-bufs.
+    ///
+    /// # Safety
+    ///
+    /// - Requires `VULKAN_EXTERNAL_MEMORY_DMA_BUF` feature (implies VK_EXT_external_memory_dma_buf
+    ///   and VK_EXT_image_drm_format_modifier)
+    /// - The `fd` must be a valid DMA-buf file descriptor matching `desc`
+    /// - On success, Vulkan takes ownership of the file descriptor. On failure,
+    ///   the file descriptor is closed.
+    /// - The `drm_modifier`, `stride`, and `offset` must match the DMA-buf layout
+    #[cfg(unix)]
+    pub unsafe fn texture_from_dmabuf_fd(
+        &self,
+        fd: std::os::unix::io::OwnedFd,
+        desc: &crate::TextureDescriptor,
+        drm_modifier: u64,
+        stride: u64,
+        offset: u64,
+    ) -> Result<super::Texture, crate::DeviceError> {
+        use std::os::unix::io::IntoRawFd;
+
+        if !self
+            .shared
+            .features
+            .contains(wgt::Features::VULKAN_EXTERNAL_MEMORY_DMA_BUF)
+        {
+            log::error!(
+                "Vulkan driver does not support VK_EXT_external_memory_dma_buf \
+                 or VK_EXT_image_drm_format_modifier"
+            );
+            return Err(crate::DeviceError::Unexpected);
+        }
+
+        let external_memory_fd_fn = self
+            .shared
+            .extension_fns
+            .external_memory_fd
+            .as_ref()
+            .ok_or_else(|| {
+                log::error!("VK_KHR_external_memory_fd extension not loaded");
+                crate::DeviceError::Unexpected
+            })?;
+
+        let mut external_memory_image_info = vk::ExternalMemoryImageCreateInfo::default()
+            .handle_types(vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT);
+
+        let plane_layout = vk::SubresourceLayout {
+            offset,
+            row_pitch: stride,
+            size: 0,
+            array_pitch: 0,
+            depth_pitch: 0,
+        };
+        let mut drm_modifier_info = vk::ImageDrmFormatModifierExplicitCreateInfoEXT::default()
+            .drm_format_modifier(drm_modifier)
+            .plane_layouts(core::slice::from_ref(&plane_layout));
+
+        let image = self.create_image_without_memory_with_tiling(
+            desc,
+            vk::ImageTiling::DRM_FORMAT_MODIFIER_EXT,
+            Some(&mut external_memory_image_info),
+            Some(&mut drm_modifier_info),
+        )?;
+
+        // Convert to raw fd. We must close it ourselves if any operation below
+        // fails, since Vulkan only takes ownership on successful vkAllocateMemory.
+        let fd_raw = fd.into_raw_fd();
+
+        let result = self.import_dmabuf_memory(
+            external_memory_fd_fn,
+            fd_raw,
+            image.raw,
+            &image.requirements,
+        );
+
+        match result {
+            Ok(memory) => Ok(unsafe {
+                self.texture_from_raw(
+                    image.raw,
+                    desc,
+                    None,
+                    super::TextureMemory::Dedicated(memory),
+                )
+            }),
+            Err(e) => {
+                // Clean up the VkImage on failure.
+                unsafe { self.shared.raw.destroy_image(image.raw, None) };
+                Err(e)
+            }
+        }
+    }
+
+    /// Import DMA-buf memory and bind it to the image.
+    ///
+    /// On failure, the raw fd is closed (if not yet consumed by Vulkan) and the
+    /// caller is responsible for destroying the VkImage.
+    #[cfg(unix)]
+    fn import_dmabuf_memory(
+        &self,
+        external_memory_fd_fn: &ash::khr::external_memory_fd::Device,
+        fd_raw: i32,
+        image: vk::Image,
+        requirements: &vk::MemoryRequirements,
+    ) -> Result<vk::DeviceMemory, crate::DeviceError> {
+        let mut fd_props = vk::MemoryFdPropertiesKHR::default();
+        unsafe {
+            external_memory_fd_fn.get_memory_fd_properties(
+                vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT,
+                fd_raw,
+                &mut fd_props,
+            )
+        }
+        .map_err(|e| {
+            unsafe { libc::close(fd_raw) };
+            super::map_host_device_oom_err(e)
+        })?;
+
+        let mem_type_index = self
+            .find_memory_type_index(
+                requirements.memory_type_bits & fd_props.memory_type_bits,
+                vk::MemoryPropertyFlags::empty(),
+            )
+            .ok_or_else(|| {
+                unsafe { libc::close(fd_raw) };
+                crate::DeviceError::Unexpected
+            })?;
+
+        let mut dedicated_allocate_info = vk::MemoryDedicatedAllocateInfo::default().image(image);
+
+        let mut import_memory_info = vk::ImportMemoryFdInfoKHR::default()
+            .handle_type(vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT)
+            .fd(fd_raw);
+
+        let memory_allocate_info = vk::MemoryAllocateInfo::default()
+            .allocation_size(requirements.size)
+            .memory_type_index(mem_type_index as _)
+            .push_next(&mut import_memory_info)
+            .push_next(&mut dedicated_allocate_info);
+
+        // vkAllocateMemory takes ownership of the fd on success.
+        // On failure, the fd is NOT consumed and we must close it.
+        let memory = unsafe { self.shared.raw.allocate_memory(&memory_allocate_info, None) }
+            .map_err(|e| {
+                unsafe { libc::close(fd_raw) };
+                super::map_host_device_oom_err(e)
+            })?;
+
+        // From this point, the fd is consumed. Only VkDeviceMemory needs cleanup on error.
+        unsafe { self.shared.raw.bind_image_memory(image, memory, 0) }.map_err(|e| {
+            unsafe { self.shared.raw.free_memory(memory, None) };
+            super::map_host_device_oom_err(e)
+        })?;
+
+        Ok(memory)
+    }
+
     fn create_shader_module_impl(
         &self,
         spv: &[u32],
@@ -653,7 +690,10 @@ impl super::Device {
                     || !runtime_checks.ray_query_initialization_tracking
                     || !binding_map.is_empty()
                     || naga_shader.debug_source.is_some()
-                    || !stage.zero_initialize_workgroup_memory;
+                    || !stage.zero_initialize_workgroup_memory
+                    || !runtime_checks.task_shader_dispatch_tracking
+                    || !runtime_checks.mesh_shader_primitive_indices_clamp;
+
                 let mut temp_options;
                 let options = if needs_temp_options {
                     temp_options = self.naga_options.clone();
@@ -686,6 +726,11 @@ impl super::Device {
                         temp_options.zero_initialize_workgroup_memory =
                             naga::back::spv::ZeroInitializeWorkgroupMemoryMode::None;
                     }
+                    if !runtime_checks.task_shader_dispatch_tracking {
+                        temp_options.task_dispatch_limits = None;
+                    }
+                    temp_options.mesh_shader_primitive_indices_clamp =
+                        runtime_checks.mesh_shader_primitive_indices_clamp;
 
                     &temp_options
                 } else {
@@ -946,24 +991,35 @@ impl crate::Device for super::Device {
 
         Ok(super::Buffer {
             raw,
-            allocation: Some(Mutex::new(super::BufferMemoryBacking::Managed(allocation))),
+            ownership: super::BufferOwnership::Managed(Mutex::new(
+                super::BufferMemoryBacking::Managed(allocation),
+            )),
         })
     }
     unsafe fn destroy_buffer(&self, buffer: super::Buffer) {
-        unsafe { self.shared.raw.destroy_buffer(buffer.raw, None) };
-        if let Some(allocation) = buffer.allocation {
-            let allocation = allocation.into_inner();
-            self.counters.buffer_memory.sub(allocation.size() as isize);
-            match allocation {
-                super::BufferMemoryBacking::Managed(allocation) => {
-                    let result = self.mem_allocator.lock().free(allocation);
-                    if let Err(err) = result {
-                        log::warn!("Failed to free buffer allocation: {err}");
+        match buffer.ownership {
+            super::BufferOwnership::Managed(allocation) => {
+                unsafe { self.shared.raw.destroy_buffer(buffer.raw, None) };
+                let allocation = allocation.into_inner();
+                self.counters.buffer_memory.sub(allocation.size() as isize);
+                match allocation {
+                    super::BufferMemoryBacking::Managed(allocation) => {
+                        let result = self.mem_allocator.lock().free(allocation);
+                        if let Err(err) = result {
+                            log::warn!("Failed to free buffer allocation: {err}");
+                        }
                     }
+                    super::BufferMemoryBacking::VulkanMemory { memory, .. } => unsafe {
+                        self.shared.raw.free_memory(memory, None);
+                    },
                 }
-                super::BufferMemoryBacking::VulkanMemory { memory, .. } => unsafe {
-                    self.shared.raw.free_memory(memory, None);
-                },
+            }
+            super::BufferOwnership::RawHandle => {
+                unsafe { self.shared.raw.destroy_buffer(buffer.raw, None) };
+            }
+            super::BufferOwnership::External(_drop_guard) => {
+                // The caller owns the `vk::Buffer` and its memory. Dropping
+                // `_drop_guard` at the end of this arm runs the cleanup callback.
             }
         }
 
@@ -979,35 +1035,36 @@ impl crate::Device for super::Device {
         buffer: &super::Buffer,
         range: crate::MemoryRange,
     ) -> Result<crate::BufferMapping, crate::DeviceError> {
-        if let Some(ref allocation) = buffer.allocation {
-            let mut allocation = allocation.lock();
-            if let super::BufferMemoryBacking::Managed(ref mut allocation) = *allocation {
-                let is_coherent = allocation
-                    .memory_properties()
-                    .contains(vk::MemoryPropertyFlags::HOST_COHERENT);
-                Ok(crate::BufferMapping {
-                    ptr: unsafe {
-                        allocation
-                            .mapped_ptr()
-                            .unwrap()
-                            .cast()
-                            .offset(range.start as isize)
-                    },
-                    is_coherent,
-                })
-            } else {
-                crate::hal_usage_error("tried to map externally created buffer")
-            }
-        } else {
+        let super::BufferOwnership::Managed(ref allocation) = buffer.ownership else {
             crate::hal_usage_error("tried to map external buffer")
-        }
+        };
+        let mut allocation = allocation.lock();
+        let super::BufferMemoryBacking::Managed(ref mut allocation) = *allocation else {
+            crate::hal_usage_error("tried to map externally created buffer")
+        };
+        let is_coherent = allocation
+            .memory_properties()
+            .contains(vk::MemoryPropertyFlags::HOST_COHERENT);
+        Ok(crate::BufferMapping {
+            ptr: unsafe {
+                allocation
+                    .mapped_ptr()
+                    .unwrap()
+                    .cast()
+                    .offset(range.start as isize)
+            },
+            is_coherent,
+        })
     }
 
     unsafe fn unmap_buffer(&self, buffer: &super::Buffer) {
-        if buffer.allocation.is_some() {
-            // gpu-allocator maps the buffer when allocated and unmap it when free'd
-        } else {
-            crate::hal_usage_error("tried to unmap external buffer")
+        match buffer.ownership {
+            super::BufferOwnership::Managed(_) => {
+                // gpu-allocator maps the buffer when allocated and unmaps it when free'd
+            }
+            super::BufferOwnership::RawHandle | super::BufferOwnership::External(_) => {
+                crate::hal_usage_error("tried to unmap external buffer")
+            }
         }
     }
 
@@ -1282,7 +1339,7 @@ impl crate::Device for super::Device {
         let mut binding_map = Vec::new();
         let mut next_binding = 0;
         let mut contains_binding_arrays = false;
-        let mut desc_count = gpu_descriptor::DescriptorTotalCount::default();
+        let mut desc_count = DescriptorCounts::default();
         for entry in desc.entries {
             if entry.count.is_some() {
                 contains_binding_arrays = true;
@@ -1384,17 +1441,36 @@ impl crate::Device for super::Device {
             unsafe { self.shared.set_object_name(raw, label) };
         }
 
-        self.counters.bind_group_layouts.add(1);
-
-        Ok(super::BindGroupLayout {
+        let layout = super::BindGroupLayout {
             raw,
             desc_count,
             entries: desc.entries.into(),
             binding_map,
             contains_binding_arrays,
-        })
+        };
+
+        let result = self
+            .desc_allocator
+            .lock()
+            .register_layout(&self.shared.raw, &layout);
+        if let Err(err) = result {
+            unsafe {
+                self.shared
+                    .raw
+                    .destroy_descriptor_set_layout(layout.raw, None)
+            };
+            return Err(err);
+        }
+
+        self.counters.bind_group_layouts.add(1);
+
+        Ok(layout)
     }
     unsafe fn destroy_bind_group_layout(&self, bg_layout: super::BindGroupLayout) {
+        self.desc_allocator
+            .lock()
+            .unregister_layout(&self.shared.raw, &bg_layout);
+
         unsafe {
             self.shared
                 .raw
@@ -1412,7 +1488,19 @@ impl crate::Device for super::Device {
         let vk_set_layouts = desc
             .bind_group_layouts
             .iter()
-            .map(|bgl| bgl.raw)
+            .map(|bgl| match bgl {
+                Some(bgl) => bgl.raw,
+                None => {
+                    // `VUID-VkPipelineLayoutCreateInfo-pSetLayouts-parameter`
+                    // says `VK_NULL_HANDLE` is allowed but
+                    // `VUID-VkPipelineLayoutCreateInfo-graphicsPipelineLibrary-06753`
+                    // says it's not, unless the `graphicsPipelineLibrary`
+                    // feature is enabled.
+                    //
+                    // We use an empty descriptor set layout to work around this.
+                    self.shared.empty_descriptor_set_layout
+                }
+            })
             .collect::<Vec<_>>();
         let vk_immediates_ranges: Option<vk::PushConstantRange> = if desc.immediate_size != 0 {
             Some(vk::PushConstantRange {
@@ -1444,7 +1532,11 @@ impl crate::Device for super::Device {
         }
 
         let mut binding_map = BTreeMap::new();
-        for (group, &layout) in desc.bind_group_layouts.iter().enumerate() {
+        for (group, layout) in desc.bind_group_layouts.iter().enumerate() {
+            let Some(layout) = layout else {
+                continue;
+            };
+
             for &(binding, binding_info) in &layout.binding_map {
                 binding_map.insert(
                     naga::ResourceBinding {
@@ -1483,25 +1575,14 @@ impl crate::Device for super::Device {
             super::AccelerationStructure,
         >,
     ) -> Result<super::BindGroup, crate::DeviceError> {
-        let desc_set_layout_flags = if desc.layout.contains_binding_arrays {
-            gpu_descriptor::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND
-        } else {
-            gpu_descriptor::DescriptorSetLayoutCreateFlags::empty()
+        let set = unsafe {
+            self.desc_allocator
+                .lock()
+                .alloc(&self.shared.raw, desc.layout)?
         };
 
-        let mut vk_sets = unsafe {
-            self.desc_allocator.lock().allocate(
-                &*self.shared,
-                &desc.layout.raw,
-                desc_set_layout_flags,
-                &desc.layout.desc_count,
-                1,
-            )?
-        };
-
-        let set = vk_sets.pop().unwrap();
         if let Some(label) = desc.label {
-            unsafe { self.shared.set_object_name(*set.raw(), label) };
+            unsafe { self.shared.set_object_name(set.raw(), label) };
         }
 
         /// Helper for splitting off and initializing a given number of elements on a pre-allocated
@@ -1581,7 +1662,7 @@ impl crate::Device for super::Device {
         });
         let mut next_binding = 0;
         for (layout, entry) in layout_and_entry_iter {
-            let write = vk::WriteDescriptorSet::default().dst_set(*set.raw());
+            let write = vk::WriteDescriptorSet::default().dst_set(set.raw());
 
             match layout.ty {
                 wgt::BindingType::Sampler(_) => {
@@ -1689,11 +1770,7 @@ impl crate::Device for super::Device {
     }
 
     unsafe fn destroy_bind_group(&self, group: super::BindGroup) {
-        unsafe {
-            self.desc_allocator
-                .lock()
-                .free(&*self.shared, Some(group.set))
-        };
+        unsafe { self.desc_allocator.lock().free(&self.shared.raw, group.set) };
 
         self.counters.bind_groups.sub(1);
     }
@@ -1747,7 +1824,8 @@ impl crate::Device for super::Device {
             crate::ShaderInput::SpirV(data) => {
                 super::ShaderModule::Raw(self.create_shader_module_impl(data, &desc.label)?)
             }
-            crate::ShaderInput::Msl { .. }
+            crate::ShaderInput::MetalLib { .. }
+            | crate::ShaderInput::Msl { .. }
             | crate::ShaderInput::Dxil { .. }
             | crate::ShaderInput::Hlsl { .. }
             | crate::ShaderInput::Glsl { .. } => unreachable!(),
@@ -1799,6 +1877,9 @@ impl crate::Device for super::Device {
         {
             vertex_buffers = Vec::with_capacity(desc_vertex_buffers.len());
             for (i, vb) in desc_vertex_buffers.iter().enumerate() {
+                let Some(vb) = vb else {
+                    continue;
+                };
                 vertex_buffers.push(vk::VertexInputBindingDescription {
                     binding: i as u32,
                     stride: vb.array_stride as u32,
@@ -1907,8 +1988,8 @@ impl crate::Device for super::Device {
             if ds.is_depth_enabled() {
                 vk_depth_stencil = vk_depth_stencil
                     .depth_test_enable(true)
-                    .depth_write_enable(ds.depth_write_enabled)
-                    .depth_compare_op(conv::map_comparison(ds.depth_compare));
+                    .depth_write_enable(ds.depth_write_enabled.unwrap_or_default())
+                    .depth_compare_op(conv::map_comparison(ds.depth_compare.unwrap_or_default()));
             }
             if ds.stencil.is_enabled() {
                 let s = &ds.stencil;
@@ -2198,11 +2279,11 @@ impl crate::Device for super::Device {
 
             super::Fence::TimelineSemaphore(raw)
         } else {
-            super::Fence::FencePool {
+            super::Fence::FencePool(RwLock::new(super::FencePool {
                 last_completed: 0,
                 active: Vec::new(),
                 free: Vec::new(),
-            }
+            }))
         })
     }
     unsafe fn destroy_fence(&self, fence: super::Fence) {
@@ -2210,13 +2291,17 @@ impl crate::Device for super::Device {
             super::Fence::TimelineSemaphore(raw) => {
                 unsafe { self.shared.raw.destroy_semaphore(raw, None) };
             }
-            super::Fence::FencePool {
-                active,
-                free,
-                last_completed: _,
-            } => {
+            super::Fence::FencePool(pool) => {
+                let super::FencePool {
+                    active,
+                    free,
+                    last_completed: _,
+                } = pool.into_inner();
+
                 for (_, raw) in active {
-                    unsafe { self.shared.raw.destroy_fence(raw, None) };
+                    unsafe {
+                        self.shared.raw.destroy_fence(Arc::into_inner(raw).expect("Fence should have its reference count be one by the end of each function"), None)
+                    };
                 }
                 for raw in free {
                     unsafe { self.shared.raw.destroy_fence(raw, None) };
@@ -2748,17 +2833,28 @@ impl super::DeviceShared {
                     Err(other) => Err(super::map_host_device_oom_and_lost_err(other)),
                 }
             }
-            super::Fence::FencePool {
-                last_completed,
-                ref active,
-                free: _,
-            } => {
+            super::Fence::FencePool(ref pool) => {
+                let pool = pool.read();
+                let super::FencePool {
+                    last_completed,
+                    ref active,
+                    free: _,
+                } = *pool;
                 if wait_value <= last_completed {
                     Ok(true)
                 } else {
                     match active.iter().find(|&&(value, _)| value >= wait_value) {
-                        Some(&(_, raw)) => {
-                            match unsafe { self.raw.wait_for_fences(&[raw], true, timeout_ns) } {
+                        Some((_, fence)) => {
+                            // clone to show we are using this fence while the pool is unlocked.
+                            let fence = fence.clone();
+                            drop(pool);
+                            match unsafe {
+                                self.raw.wait_for_fences(
+                                    core::slice::from_ref(&fence),
+                                    true,
+                                    timeout_ns,
+                                )
+                            } {
                                 Ok(()) => Ok(true),
                                 Err(vk::Result::TIMEOUT) => Ok(false),
                                 Err(other) => Err(super::map_host_device_oom_and_lost_err(other)),
@@ -2774,25 +2870,6 @@ impl super::DeviceShared {
             }
         }
     }
-}
-
-impl From<gpu_descriptor::AllocationError> for crate::DeviceError {
-    fn from(error: gpu_descriptor::AllocationError) -> Self {
-        use gpu_descriptor::AllocationError as Ae;
-        match error {
-            Ae::OutOfDeviceMemory | Ae::OutOfHostMemory | Ae::Fragmentation => Self::OutOfMemory,
-        }
-    }
-}
-
-/// We usually map unexpected vulkan errors to the [`crate::DeviceError::Unexpected`]
-/// variant to be more robust even in cases where the driver is not
-/// complying with the spec.
-///
-/// However, we implement a few Trait methods that don't have an equivalent
-/// error variant. In those cases we use this function.
-fn handle_unexpected(err: vk::Result) -> ! {
-    panic!("Unexpected Vulkan error: `{err}`")
 }
 
 struct ImageWithoutMemory {

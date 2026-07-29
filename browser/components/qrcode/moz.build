@@ -5,7 +5,10 @@
 MOZ_SRC_FILES += [
     "QRCodeGenerator.sys.mjs",
     "QRCodeWorker.sys.mjs",
-    "QRCodeWorker.worker.mjs",
 ]
+
+JAR_MANIFESTS += ["jar.mn"]
+
+BROWSER_CHROME_MANIFESTS += ["test/browser/browser.toml"]
 
 XPCSHELL_TESTS_MANIFESTS += ["test/xpcshell/xpcshell.toml"]

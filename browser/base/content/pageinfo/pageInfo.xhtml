@@ -301,7 +301,12 @@
                          control="security-identity-owner-value"/>
             </th>
             <td>
-              <input id="security-identity-owner-value" readonly="readonly" data-l10n-attrs="value"/>
+              <div class="table-split-column">
+                <input id="security-identity-owner-value" readonly="readonly"
+                       data-l10n-attrs="value"/>
+                <xul:button id="security-view-qwac" data-l10n-id="security-view-qwac"
+                            collapsed="true"/>
+              </div>
             </td>
           </tr>
           <!-- Verifier -->

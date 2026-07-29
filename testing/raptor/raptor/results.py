@@ -27,6 +27,7 @@ KNOWN_TEST_MODIFIERS = [
     "cold",
     "webrender",
     "bytecode-cached",
+    "simpleperf",
 ]
 NON_FIREFOX_OPTS = ("webrender", "bytecode-cached", "fission")
 NON_FIREFOX_BROWSERS = ("chrome", "custom-car", "safari", "safari-tp")
@@ -47,6 +48,7 @@ class PerftestResultsHandler(metaclass=ABCMeta):
         fission=True,
         perfstats=False,
         test_bytecode_cache=False,
+        simpleperf=False,
         extra_summary_methods=[],
         **kwargs,
     ):
@@ -65,6 +67,7 @@ class PerftestResultsHandler(metaclass=ABCMeta):
         self.chimera = chimera
         self.perfstats = perfstats
         self.test_bytecode_cache = test_bytecode_cache
+        self.simpleperf = simpleperf
         self.existing_results = None
         self.extra_summary_methods = extra_summary_methods
 
@@ -99,6 +102,8 @@ class PerftestResultsHandler(metaclass=ABCMeta):
                 extra_options.append("cold")
             if self.test_bytecode_cache:
                 extra_options.append("bytecode-cached")
+            if self.simpleperf:
+                extra_options.append("simpleperf")
             extra_options.append("webrender")
         else:
             for modifier, name in modifiers:
@@ -1081,6 +1086,7 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
 
                     # Add the support class to the result
                     new_result["support_class"] = test.get("support_class", None)
+                    new_result["simpleperf"] = test.get("simpleperf", False)
 
                     return new_result
 
@@ -1134,18 +1140,31 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                     else:
                         self.results.append(_new_pageload_result(new_result))
                 elif test["type"] == "benchmark":
-                    for i, item in enumerate(self.results):
-                        if item["name"] == test["name"] and not _is_supporting_data(
-                            item
-                        ):
-                            # add page cycle custom measurements to the existing results
-                            for measurement in new_result["measurements"].items():
-                                self.results[i]["measurements"][measurement[0]].extend(
-                                    measurement[1]
-                                )
-                            break
+                    if test.get("simpleperf"):
+                        for i, item in enumerate(self.results):
+                            if item["name"] == test["name"] and not _is_supporting_data(
+                                item
+                            ):
+                                for key, value in new_result["measurements"].items():
+                                    self.results[i]["measurements"].setdefault(
+                                        key, []
+                                    ).extend(value)
+                                break
+                        else:
+                            self.results.append(_new_benchmark_result(new_result))
                     else:
-                        self.results.append(_new_benchmark_result(new_result))
+                        for i, item in enumerate(self.results):
+                            if item["name"] == test["name"] and not _is_supporting_data(
+                                item
+                            ):
+                                # add page cycle custom measurements to the existing results
+                                for measurement in new_result["measurements"].items():
+                                    self.results[i]["measurements"][
+                                        measurement[0]
+                                    ].extend(measurement[1])
+                                break
+                        else:
+                            self.results.append(_new_benchmark_result(new_result))
 
         # now have all results gathered from all browsertime test URLs; format them for output
         output = BrowsertimeOutput(

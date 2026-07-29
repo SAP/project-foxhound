@@ -9,6 +9,48 @@ newtab-page-title = ផ្ទាំង​ថ្មី
 newtab-settings-button =
     .title = ប្តូរទំព័រ ផ្ទាំងថ្មី របស់អ្នកតាមបំណង
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-windows =
+    .label = បង្អួចថ្មី
+home-homepage-new-tabs =
+    .label = ផ្ទាំងថ្មី
+
+## Custom URLs subpage
+
+home-custom-homepage-delete-address-button =
+    .aria-label = លុបអាសយដ្ឋាន
+    .title = លុបអាសយដ្ឋាន
+# Button that appears in-line after text "Replace with" (home-custom-homepage-replace-with-prompt)
+home-custom-homepage-bookmarks-button =
+    .label = ចំណាំ…
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+           *[other] { $num } ជួរ
+        }
+home-restore-defaults-srd =
+    .label = ស្ដារ​លំនាំ​ដើម
+    .accesskey = R
+home-mode-choice-custom-srd =
+    .label = URL ផ្ទាល់ខ្លួន…
+home-mode-choice-blank-srd =
+    .label = ទំព័រទទេ
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = រឿងរ៉ាវដែលបានឧបត្ថម្ភ
+home-prefs-highlights-option-visited-pages-srd =
+    .label = ទំព័រ​ដែល​បាន​ទស្សនា
+home-prefs-highlights-options-bookmarks-srd =
+    .label = ចំណាំ
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = ការទាញយកថ្មីបំផុត
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +58,7 @@ newtab-search-box-search-button =
     .title = ស្វែងរក
     .aria-label = ស្វែងរក
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = បន្ថែម​ម៉ាស៊ីន​ស្វែងរក
 newtab-topsites-edit-topsites-header = កែសម្រួលសាយកំពូល
@@ -165,6 +207,8 @@ newtab-error-fallback-refresh-link = ផ្ទុកទំព័រឡើងវ�
 ## New Tab Wallpapers
 
 newtab-wallpaper-title = ផ្ទាំងរូបភាព
+newtab-wallpaper-toggle-title =
+    .label = ផ្ទាំងរូបភាព
 
 ## New Tab Weather
 
@@ -203,14 +247,9 @@ newtab-widget-lists-label-new =
 #   $number (number) - Amount of list items marked complete
 newtab-widget-lists-completed-list = បានបញ្ចប់ ({ $number })
 newtab-widget-lists-menu-delete = លុបបញ្ជីនេះ
-newtab-widget-lists-menu-hide = លាក់បញ្ជីទាំងអស់
 newtab-widget-lists-input-menu-delete = លុប
-# The placeholder value of the name field for a newly created list
-newtab-widget-lists-name-placeholder-new =
-    .placeholder = បញ្ជីថ្មី
 
-## Strings for timer productivity widget
-## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+## Strings introduced by the Nova redesign of the Timer widget
 
 newtab-widget-timer-notification-warning = ការជូនដំណឹងត្រូវបានបិទ
 newtab-widget-timer-menu-notifications = បិទការជូនដំណឹង

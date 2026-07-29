@@ -25,7 +25,7 @@
      the colors fall back to their "default" values */
   --toggle-disabled-track-border-color: var(--toggle-track-border-color);
   --toggle-disabled-track-color-pressed: var(--toggle-track-color-pressed);
-  --toggle-disabled-thumb-color: var(--toggle-disabled-thumb-color);
+  --toggle-disabled-thumb-color: var(--toggle-thumb-color);
   --toggle-track-disabled-opacity: 0.5;
   /* We don't have distinct :hover style in regular themes, the colors fall back to their
      "default" values */

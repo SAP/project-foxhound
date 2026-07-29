@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -73,6 +71,12 @@ class SandboxOpenedFiles {
  public:
   SandboxOpenedFiles() = default;
 
+  // We could allow destroying instances of this class that aren't
+  // used with seccomp-bpf (e.g., for unit testing) by having the
+  // destructor check a flag set by the syscall policy and crash,
+  // but let's not write that code until we actually need it.
+  ~SandboxOpenedFiles() = delete;
+
   template <typename... Args>
   void Add(Args&&... aArgs) {
     mFiles.emplace_back(std::forward<Args>(aArgs)...);
@@ -82,12 +86,6 @@ class SandboxOpenedFiles {
 
  private:
   std::vector<SandboxOpenedFile> mFiles;
-
-  // We could allow destroying instances of this class that aren't
-  // used with seccomp-bpf (e.g., for unit testing) by having the
-  // destructor check a flag set by the syscall policy and crash,
-  // but let's not write that code until we actually need it.
-  ~SandboxOpenedFiles() = delete;
 };
 
 }  // namespace mozilla

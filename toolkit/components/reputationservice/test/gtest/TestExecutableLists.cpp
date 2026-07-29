@@ -212,7 +212,7 @@ static const char* const kTestFileExtensions[] = {
     ".scptd",              // AppleScript
     ".scr",                // Windows
     ".sct",                // Windows shell
-    ".search-ms",          // Windows
+    ".search-ms",          // Windows Saved Search
     ".seplugin",           // AppleScript
     ".service",            // Systemd service unit file
     ".settingcontent-ms",  // Windows settings
@@ -275,6 +275,7 @@ static const char* const kTestFileExtensions[] = {
     ".wim",       // Windows Imaging
     ".workflow",  // Mac Automator
     ".ws",        // Windows script
+    ".wsb",       // Windows Sandbox configuration
     ".wsc",       // Windows script
     ".wsf",       // Windows script
     ".wsh",       // Windows script

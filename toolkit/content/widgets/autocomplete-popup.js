@@ -275,8 +275,6 @@
         // clear any previous selection, see bugs 400671 and 488357
         this.selectedIndex = -1;
 
-        var width = aElement.getBoundingClientRect().width;
-        this.style.setProperty("--panel-width", Math.max(width, 100) + "px");
         // invalidate() depends on the width attribute
         this._invalidate();
 

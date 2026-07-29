@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,68 +11,6 @@ ChromeUtils.defineESModuleGetters(this, {
 
 const getBrowserWindow = window => {
   return window.browsingContext.topChromeWindow;
-};
-
-const tabListener = {
-  tabReadyInitialized: false,
-  tabReadyPromises: new WeakMap(),
-  initializingTabs: new WeakSet(),
-
-  initTabReady() {
-    if (!this.tabReadyInitialized) {
-      windowTracker.addListener("progress", this);
-
-      this.tabReadyInitialized = true;
-    }
-  },
-
-  onLocationChange(browser, webProgress, request) {
-    if (webProgress.isTopLevel) {
-      const { tab } = browser.ownerGlobal;
-
-      // Ignore initial about:blank
-      if (!request && this.initializingTabs.has(tab)) {
-        return;
-      }
-
-      // Now we are certain that the first page in the tab was loaded.
-      this.initializingTabs.delete(tab);
-
-      // browser.innerWindowID is now set, resolve the promises if any.
-      const deferred = this.tabReadyPromises.get(tab);
-      if (deferred) {
-        deferred.resolve(tab);
-        this.tabReadyPromises.delete(tab);
-      }
-    }
-  },
-
-  /**
-   * Returns a promise that resolves when the tab is ready.
-   * Tabs created via the `tabs.create` method are "ready" once the location
-   * changes to the requested URL. Other tabs are assumed to be ready once their
-   * inner window ID is known.
-   *
-   * @param {NativeTab} nativeTab The native tab object.
-   * @returns {Promise} Resolves with the given tab once ready.
-   */
-  awaitTabReady(nativeTab) {
-    let deferred = this.tabReadyPromises.get(nativeTab);
-    if (!deferred) {
-      deferred = Promise.withResolvers();
-      if (
-        !this.initializingTabs.has(nativeTab) &&
-        (nativeTab.browser.innerWindowID ||
-          nativeTab.browser.currentURI.spec === "about:blank")
-      ) {
-        deferred.resolve(nativeTab);
-      } else {
-        this.initTabReady();
-        this.tabReadyPromises.set(nativeTab, deferred);
-      }
-    }
-    return deferred.promise;
-  },
 };
 
 this.tabs = class extends ExtensionAPIPersistent {
@@ -141,6 +77,7 @@ this.tabs = class extends ExtensionAPIPersistent {
       },
     }),
     onUpdated({ fire }) {
+      // TODO bug 1713819: Support filters in tabs.onUpdated.
       const { tabManager } = this.extension;
       const restricted = ["url", "favIconUrl", "title"];
 
@@ -171,18 +108,10 @@ this.tabs = class extends ExtensionAPIPersistent {
         let nativeTab;
         switch (event.type) {
           case "pagetitlechanged": {
-            const window = getBrowserWindow(event.target.ownerGlobal);
+            const window = getBrowserWindow(event.target.documentGlobal);
             nativeTab = window.tab;
 
             needed.push("title");
-            break;
-          }
-
-          case "DOMAudioPlaybackStarted":
-          case "DOMAudioPlaybackStopped": {
-            const window = event.target.ownerGlobal;
-            nativeTab = window.tab;
-            needed.push("audible");
             break;
           }
         }
@@ -201,7 +130,7 @@ this.tabs = class extends ExtensionAPIPersistent {
       };
 
       const statusListener = ({ browser, status, url }) => {
-        const { tab } = browser.ownerGlobal;
+        const { tab } = browser.documentGlobal;
         if (tab) {
           const changed = { status };
           if (url) {
@@ -212,6 +141,9 @@ this.tabs = class extends ExtensionAPIPersistent {
         }
       };
 
+      // The current implementation only supports: status,url,title changes.
+      // When more fields are implemented in the Tab class (ext-android.js),
+      // we should also add support here.
       windowTracker.addListener("status", statusListener);
       windowTracker.addListener("pagetitlechanged", listener);
 
@@ -253,7 +185,7 @@ this.tabs = class extends ExtensionAPIPersistent {
         );
       }
 
-      await tabListener.awaitTabReady(tab.nativeTab);
+      await tabTracker.awaitTabReady(tab.nativeTab);
 
       return tab;
     }
@@ -384,8 +316,6 @@ this.tabs = class extends ExtensionAPIPersistent {
             active = true;
           }
 
-          tabListener.initTabReady();
-
           if (url !== null) {
             url = context.uri.resolve(url);
 
@@ -419,19 +349,18 @@ this.tabs = class extends ExtensionAPIPersistent {
             },
           });
 
-          // The initial about:blank loads synchronously, so no listener is needed
-          if (url !== null && !url.startsWith("about:blank")) {
-            tabListener.initializingTabs.add(nativeTab);
-          } else {
-            url = "about:blank";
-          }
-
+          url ??= "about:blank";
           loadURIInTab(nativeTab, url);
+          tabTracker.addTabReadyBlocker(nativeTab);
 
           if (active) {
-            const newWindow = nativeTab.browser.ownerGlobal;
+            const newWindow = nativeTab.browser.documentGlobal;
             mobileWindowTracker.setTabActive(newWindow, true);
           }
+
+          // We intentionally return as soon as possible after creating the
+          // tab, without waiting for load completion. Some tabs APIs use
+          // tabTracker.awaitTabReady to await load completion if needed.
 
           return tabManager.convert(nativeTab);
         },
@@ -461,7 +390,7 @@ this.tabs = class extends ExtensionAPIPersistent {
           { active, autoDiscardable, highlighted, muted, pinned, url } = {}
         ) {
           const nativeTab = getTabOrActive(tabId);
-          const window = nativeTab.browser.ownerGlobal;
+          const window = nativeTab.browser.documentGlobal;
 
           if (url !== null) {
             url = context.uri.resolve(url);
@@ -527,7 +456,7 @@ this.tabs = class extends ExtensionAPIPersistent {
 
         async captureTab(tabId, options) {
           const nativeTab = getTabOrActive(tabId);
-          await tabListener.awaitTabReady(nativeTab);
+          await tabTracker.awaitTabReady(nativeTab);
 
           const { browser } = nativeTab;
           const tab = tabManager.wrapTab(nativeTab);
@@ -547,7 +476,7 @@ this.tabs = class extends ExtensionAPIPersistent {
           ) {
             throw new ExtensionError("Missing activeTab permission");
           }
-          await tabListener.awaitTabReady(tab.nativeTab);
+          await tabTracker.awaitTabReady(tab.nativeTab);
           const zoom = window.browsingContext.fullZoom;
 
           return tab.capture(context, zoom, options);

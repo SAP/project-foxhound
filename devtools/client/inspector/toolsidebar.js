@@ -211,6 +211,9 @@ class ToolSidebar extends EventEmitter {
     if (this.#destroyed) {
       return;
     }
+    if (id == this.#currentTool) {
+      return;
+    }
 
     const previousTool = this.#currentTool;
     this.#currentTool = id;

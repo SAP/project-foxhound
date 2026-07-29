@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# vim: set ts=4 sw=4 tw=99 et:
 
 # iongraph -- Translate IonMonkey JSON to GraphViz.
 # Originally by Sean Stangl. See LICENSE.

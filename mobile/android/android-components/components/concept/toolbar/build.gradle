@@ -30,6 +30,7 @@ dependencies {
 
     testFixturesImplementation libs.androidx.test.junit
     testImplementation libs.androidx.test.junit
+    testImplementation libs.kotlin.test
     testImplementation libs.robolectric
 }
 

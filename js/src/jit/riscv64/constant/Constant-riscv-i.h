@@ -54,9 +54,8 @@ enum OpcodeRISCV32I : uint32_t {
   RO_AND = OP | (0b111 << kFunct3Shift) | (0b0000000 << kFunct7Shift),
   RO_FENCE = MISC_MEM | (0b000 << kFunct3Shift),
   RO_ECALL = SYSTEM | (0b000 << kFunct3Shift),
-// RO_EBREAK = SYSTEM | (0b000 << kFunct3Shift), // Same as ECALL, use imm12
+  // RO_EBREAK = SYSTEM | (0b000 << kFunct3Shift), // Same as ECALL, use imm12
 
-#if JS_CODEGEN_RISCV64
   // RV64I Base Instruction Set (in addition to RV32I)
   RO_LWU = LOAD | (0b110 << kFunct3Shift),
   RO_LD = LOAD | (0b011 << kFunct3Shift),
@@ -74,7 +73,6 @@ enum OpcodeRISCV32I : uint32_t {
   RO_SLLW = OP_32 | (0b001 << kFunct3Shift) | (0b0000000 << kFunct7Shift),
   RO_SRLW = OP_32 | (0b101 << kFunct3Shift) | (0b0000000 << kFunct7Shift),
   RO_SRAW = OP_32 | (0b101 << kFunct3Shift) | (0b0100000 << kFunct7Shift),
-#endif
 };
 }  // namespace jit
 }  // namespace js

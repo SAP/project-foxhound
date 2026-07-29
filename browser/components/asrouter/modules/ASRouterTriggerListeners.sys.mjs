@@ -13,6 +13,7 @@ const lazy = XPCOMUtils.declareLazy({
   EveryWindow: "resource:///modules/EveryWindow.sys.mjs",
   FeatureCalloutBroker:
     "resource:///modules/asrouter/FeatureCalloutBroker.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
@@ -383,11 +384,11 @@ export const ASRouterTriggerListeners = new Map([
       },
 
       onTabSwitch(event) {
-        if (!event.target.ownerGlobal.gBrowser) {
+        if (!event.target.documentGlobal.gBrowser) {
           return;
         }
 
-        const { gBrowser } = event.target.ownerGlobal;
+        const { gBrowser } = event.target.documentGlobal;
         const match = checkURLMatch(gBrowser.currentURI, {
           hosts: this._hosts,
           matchPatternSet: this._matchPatternSet,
@@ -557,6 +558,92 @@ export const ASRouterTriggerListeners = new Map([
               param: match,
               context: { visitsCount },
             });
+          }
+        }
+      },
+    },
+  ],
+
+  /**
+   * Add a Places listener to notify the trigger handler whenever the user
+   * either creates a bookmark folder or saves a bookmark in a user-created
+   * folder. We don't need to differentiate between the two for targeting
+   * purposes.
+   *
+   * Only fires once per Places notification. Does not fire if the active
+   * browser window is a a private window (relevant if the user is managing
+   * bookmarks in the Library window).
+   */
+  [
+    "userBookmarkFolderActivity",
+    {
+      _initialized: false,
+      _triggerHandler: null,
+
+      init(triggerHandler) {
+        if (!this._initialized) {
+          this.handlePlacesEvents = this.handlePlacesEvents.bind(this);
+          lazy.PlacesUtils.observers.addListener(
+            ["bookmark-added"],
+            this.handlePlacesEvents
+          );
+          this._initialized = true;
+        }
+        this._triggerHandler = triggerHandler;
+      },
+
+      uninit() {
+        if (this._initialized) {
+          lazy.PlacesUtils.observers.removeListener(
+            ["bookmark-added"],
+            this.handlePlacesEvents
+          );
+          this._initialized = false;
+          this._triggerHandler = null;
+        }
+      },
+
+      handlePlacesEvents(aEvents) {
+        const builtInFolders = [
+          lazy.PlacesUtils.bookmarks.rootGuid,
+          lazy.PlacesUtils.bookmarks.menuGuid,
+          lazy.PlacesUtils.bookmarks.toolbarGuid,
+          lazy.PlacesUtils.bookmarks.unfiledGuid,
+          lazy.PlacesUtils.bookmarks.mobileGuid,
+        ];
+
+        // We only care about manually created bookmarks.
+        const sourcesToIgnore = [
+          lazy.PlacesUtils.bookmarks.SOURCES.IMPORT,
+          lazy.PlacesUtils.bookmarks.SOURCES.RESTORE,
+          lazy.PlacesUtils.bookmarks.SOURCES.RESTORE_ON_STARTUP,
+          lazy.PlacesUtils.bookmarks.SOURCES.SYNC,
+          lazy.PlacesUtils.bookmarks.SOURCES
+            .SYNC_REPARENT_REMOVED_FOLDER_CHILDREN,
+        ];
+
+        const window = Services.wm.getMostRecentBrowserWindow();
+        if (!window || isPrivateWindow(window)) {
+          return;
+        }
+        const browser = window.gBrowser.selectedBrowser;
+
+        for (let ev of aEvents) {
+          if (ev.isTagging || sourcesToIgnore.includes(ev.source)) {
+            continue;
+          }
+
+          if (
+            ev.itemType === lazy.PlacesUtils.bookmarks.TYPE_FOLDER ||
+            (ev.itemType === lazy.PlacesUtils.bookmarks.TYPE_BOOKMARK &&
+              !builtInFolders.includes(ev.parentGuid))
+          ) {
+            this._triggerHandler(browser, {
+              id: "userBookmarkFolderActivity",
+            });
+
+            // NB: Don't fire more than once per Places notification.
+            break;
           }
         }
       },
@@ -944,16 +1031,25 @@ export const ASRouterTriggerListeners = new Map([
       },
       handleEvent(event) {
         if (this._initialized) {
-          if (!event.target.ownerGlobal.gBrowser) {
+          if (!event.target.documentGlobal.gBrowser) {
             return;
           }
-          const { gBrowser } = event.target.ownerGlobal;
+          const { gBrowser } = event.target.documentGlobal;
+          // Programmatic tab closures (e.g., the 'close_current_tab'
+          // Smart Window NL toolcall in Bug 2037624) may set
+          // tab.smartWindowActionSource on the tab before removeTab()
+          // to attribute the close. Callouts can target this via the
+          // top-level 'actionSource' identifier in JEXL targeting.
+          const tab = event.target;
           this._closedTabs++;
           this._triggerHandler(gBrowser.selectedBrowser, {
             id: this.id,
             context: {
               tabsClosedCount: this._closedTabs,
               currentTabsOpen: gBrowser.tabs.length,
+              ...(tab.smartWindowActionSource && {
+                actionSource: tab.smartWindowActionSource,
+              }),
             },
           });
         }
@@ -994,10 +1090,10 @@ export const ASRouterTriggerListeners = new Map([
       },
       handleEvent(event) {
         if (this._initialized) {
-          if (!event.target.ownerGlobal.gBrowser) {
+          if (!event.target.documentGlobal.gBrowser) {
             return;
           }
-          const { gBrowser } = event.target.ownerGlobal;
+          const { gBrowser } = event.target.documentGlobal;
           this._openTabs++;
           this._triggerHandler(gBrowser.selectedBrowser, {
             id: this.id,
@@ -1044,10 +1140,10 @@ export const ASRouterTriggerListeners = new Map([
       },
       handleEvent(event) {
         if (this._initialized) {
-          if (!event.target.ownerGlobal.gBrowser) {
+          if (!event.target.documentGlobal.gBrowser) {
             return;
           }
-          const { gBrowser } = event.target.ownerGlobal;
+          const { gBrowser } = event.target.documentGlobal;
           this._tabGroupsCreated++;
           this._triggerHandler(gBrowser.selectedBrowser, {
             id: this.id,
@@ -1093,10 +1189,10 @@ export const ASRouterTriggerListeners = new Map([
       },
       handleEvent(event) {
         if (this._initialized) {
-          if (!event.target.ownerGlobal.gBrowser) {
+          if (!event.target.documentGlobal.gBrowser) {
             return;
           }
-          const { gBrowser } = event.target.ownerGlobal;
+          const { gBrowser } = event.target.documentGlobal;
           this._tabGroupsSaved++;
           this._triggerHandler(gBrowser.selectedBrowser, {
             id: this.id,
@@ -1142,10 +1238,10 @@ export const ASRouterTriggerListeners = new Map([
       },
       handleEvent(event) {
         if (this._initialized) {
-          if (!event.target.ownerGlobal.gBrowser) {
+          if (!event.target.documentGlobal.gBrowser) {
             return;
           }
-          const { gBrowser } = event.target.ownerGlobal;
+          const { gBrowser } = event.target.documentGlobal;
           this._tabGroupsCollapsed++;
           this._triggerHandler(gBrowser.selectedBrowser, {
             id: this.id,
@@ -1464,7 +1560,7 @@ export const ASRouterTriggerListeners = new Map([
         if (this._initialized) {
           const browser =
             event.detail.windowContext.rootFrameLoader?.ownerElement;
-          const win = browser?.ownerGlobal;
+          const win = browser?.documentGlobal;
           // We only want to show messages in the active browser window.
           if (
             win === Services.wm.getMostRecentBrowserWindow() &&
@@ -1570,7 +1666,7 @@ export const ASRouterTriggerListeners = new Map([
         if (browser !== tabbrowser.selectedBrowser) {
           return;
         }
-        const win = tabbrowser.ownerGlobal;
+        const win = tabbrowser.documentGlobal;
         const tab = tabbrowser.selectedTab;
         const existingCallout = this._callouts.get(win);
         const isPDFJS =
@@ -1591,7 +1687,7 @@ export const ASRouterTriggerListeners = new Map([
 
       handleEvent(event) {
         const tab = event.target;
-        const win = tab.ownerGlobal;
+        const win = tab.documentGlobal;
         const { gBrowser } = win;
         if (!gBrowser) {
           return;
@@ -1727,7 +1823,7 @@ export const ASRouterTriggerListeners = new Map([
         if (browser !== tabbrowser.selectedBrowser) {
           return;
         }
-        const win = tabbrowser.ownerGlobal;
+        const win = tabbrowser.documentGlobal;
         const tab = tabbrowser.selectedTab;
         const existingCallout = this._callouts.get(win);
         const isNewtabOrHome =
@@ -1750,7 +1846,7 @@ export const ASRouterTriggerListeners = new Map([
 
       handleEvent(event) {
         const tab = event.target;
-        const win = tab.ownerGlobal;
+        const win = tab.documentGlobal;
         const { gBrowser } = win;
         if (!gBrowser) {
           return;
@@ -1847,7 +1943,7 @@ export const ASRouterTriggerListeners = new Map([
         }
 
         const clickedElement = event.target;
-        const win = event.target.ownerGlobal;
+        const win = event.target.documentGlobal;
 
         // only fire if the element ID is in the params of the trigger in one of our messages
         if (
@@ -1878,6 +1974,26 @@ export const ASRouterTriggerListeners = new Map([
           this._triggerHandler = null;
           this._elementIds = [];
         }
+      },
+    },
+  ],
+  [
+    "messagesLoaded",
+    {
+      /**
+       * This trigger does not actually listen for any events. It's triggered
+       * imperatively by ASRouter when messages are loaded. It is mainly
+       * intended to provide a baseline for reach experiments, since almost
+       * everyone will trigger it very quickly. We track its state here, because
+       * we don't want it to fire if there aren't any messages using it.
+       */
+      id: "messagesLoaded",
+      initialized: false,
+      init() {
+        this.initialized = true;
+      },
+      uninit() {
+        this.initialized = false;
       },
     },
   ],

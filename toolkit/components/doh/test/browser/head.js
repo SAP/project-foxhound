@@ -6,12 +6,29 @@ ChromeUtils.defineESModuleGetters(this, {
   DoHController: "moz-src:///toolkit/components/doh/DoHController.sys.mjs",
   DoHTestUtils: "resource://testing-common/DoHTestUtils.sys.mjs",
   Heuristics: "moz-src:///toolkit/components/doh/DoHHeuristics.sys.mjs",
-  Preferences: "resource://gre/modules/Preferences.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
   RegionTestUtils: "resource://testing-common/RegionTestUtils.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
-  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
 });
+
+// Map DoH state names (as used by DoHController.setState) to their Glean
+// metric properties on `Glean.doh`.
+const DOH_STATE_TO_GLEAN_METRIC = {
+  enabled: "stateEnabled",
+  disabled: "stateDisabled",
+  manuallyDisabled: "stateManuallyDisabled",
+  policyDisabled: "statePolicyDisabled",
+  uninstalled: "stateUninstalled",
+  UIOk: "stateUiok",
+  UIDisabled: "stateUidisabled",
+  rollback: "stateRollback",
+  shutdown: "stateShutdown",
+};
+const ALL_DOH_STATES = Object.keys(DOH_STATE_TO_GLEAN_METRIC);
+
+function gleanStateMetricFor(state) {
+  return Glean.doh[DOH_STATE_TO_GLEAN_METRIC[state]];
+}
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
@@ -68,36 +85,34 @@ async function setup() {
   SpecialPowers.pushPrefEnv({
     set: [["security.notification_enable_delay", 0]],
   });
-  let oldCanRecord = Services.telemetry.canRecordExtended;
-  Services.telemetry.canRecordExtended = true;
-  Services.telemetry.clearEvents();
-  Services.telemetry.clearScalars();
+  Services.fog.testResetFOG();
+  _resetConsumed();
 
   // Enable the CFR.
-  Preferences.set(CFR_PREF, JSON.stringify(CFR_JSON));
+  Services.prefs.setStringPref(CFR_PREF, JSON.stringify(CFR_JSON));
 
   // Tell DoHController that this isn't real life.
-  Preferences.set(prefs.TESTING_PREF, true);
+  Services.prefs.setBoolPref(prefs.TESTING_PREF, true);
 
   // Avoid non-local connections to the TRR endpoint.
-  Preferences.set(prefs.CONFIRMATION_NS_PREF, "skip");
+  Services.prefs.setStringPref(prefs.CONFIRMATION_NS_PREF, "skip");
 
   // Enable trr selection and provider steeringfor tests. This is off
   // by default so it can be controlled via Normandy.
-  Preferences.set(prefs.TRR_SELECT_ENABLED_PREF, true);
-  Preferences.set(prefs.PROVIDER_STEERING_PREF, true);
+  Services.prefs.setBoolPref(prefs.TRR_SELECT_ENABLED_PREF, true);
+  Services.prefs.setBoolPref(prefs.PROVIDER_STEERING_PREF, true);
 
   // Enable committing the TRR selection. This pref ships false by default so
   // it can be controlled e.g. via Normandy, but for testing let's set enable.
-  Preferences.set(prefs.TRR_SELECT_COMMIT_PREF, true);
+  Services.prefs.setBoolPref(prefs.TRR_SELECT_COMMIT_PREF, true);
 
   // Clear mode on shutdown by default.
-  Preferences.set(prefs.CLEAR_ON_SHUTDOWN_PREF, true);
+  Services.prefs.setBoolPref(prefs.CLEAR_ON_SHUTDOWN_PREF, true);
 
   // Generally don't bother with debouncing or throttling.
   // The throttling test will set this explicitly.
-  Preferences.set(prefs.NETWORK_DEBOUNCE_TIMEOUT_PREF, -1);
-  Preferences.set(prefs.HEURISTICS_THROTTLE_TIMEOUT_PREF, -1);
+  Services.prefs.setIntPref(prefs.NETWORK_DEBOUNCE_TIMEOUT_PREF, -1);
+  Services.prefs.setIntPref(prefs.HEURISTICS_THROTTLE_TIMEOUT_PREF, -1);
 
   // Set up heuristics, all passing by default.
 
@@ -126,7 +141,8 @@ async function setup() {
 
   await DoHTestUtils.resetRemoteSettingsConfig(false);
 
-  Services.telemetry.clearEvents();
+  Services.fog.testResetFOG();
+  _resetConsumed();
 
   await DoHConfigController.init();
   await DoHController.init();
@@ -134,18 +150,21 @@ async function setup() {
   await waitForStateTelemetry(["rollback"]);
 
   registerCleanupFunction(async () => {
-    Services.telemetry.canRecordExtended = oldCanRecord;
-    Services.telemetry.clearEvents();
+    Services.fog.testResetFOG();
+    _resetConsumed();
     gDNSOverride.clearOverrides();
     if (ASRouter.state.messageBlockList.includes("DOH_ROLLOUT_CONFIRMATION")) {
       await ASRouter.unblockMessageById("DOH_ROLLOUT_CONFIRMATION");
     }
     // The CFR pref is set to an empty array in user.js for testing profiles,
     // so "reset" it back to that value.
-    Preferences.set(CFR_PREF, "[]");
+    Services.prefs.setStringPref(CFR_PREF, "[]");
     await DoHController._uninit();
-    Services.telemetry.clearEvents();
-    Preferences.reset(Object.values(prefs));
+    Services.fog.testResetFOG();
+    _resetConsumed();
+    for (let pref of Object.values(prefs)) {
+      Services.prefs.clearUserPref(pref);
+    }
     await DoHTestUtils.resetRemoteSettingsConfig(false);
     await DoHController.init();
   });
@@ -155,51 +174,62 @@ const kTestRegion = "DE";
 const kRegionalPrefNamespace = `doh-rollout.${kTestRegion.toLowerCase()}`;
 
 async function setupRegion() {
-  Region._home = null;
+  Region._setHomeRegion(null, false);
   RegionTestUtils.setNetworkRegion(kTestRegion);
   await Region._fetchRegion();
   is(Region.home, kTestRegion, "Should have correct region");
-  Preferences.reset("doh-rollout.home-region");
+  Services.prefs.clearUserPref("doh-rollout.home-region");
   await DoHConfigController.loadRegion();
+}
+
+// Glean events are not cleared per-metric, and `Services.fog.testResetFOG()`
+// would also wipe the scalar/counter values that other helpers verify. To
+// preserve the "check one event at a time" semantics of the legacy helpers,
+// track how many events have already been verified and only inspect new ones.
+let _consumedHeuristics = 0;
+let _consumedTrrSelect = 0;
+let _consumedStates = {};
+function _resetConsumed() {
+  _consumedHeuristics = 0;
+  _consumedTrrSelect = 0;
+  _consumedStates = {};
+}
+
+// Mark all currently-recorded state events as consumed. The original tests
+// called Services.telemetry.clearEvents() in each "check..." helper, which
+// dropped any incidental state events that fired between checks. We do the
+// same here so that waitForStateTelemetry sees only the events that fired
+// since the last "check..." helper completed.
+async function _consumeAllStateEvents() {
+  for (let state of ALL_DOH_STATES) {
+    let events = (await gleanStateMetricFor(state).testGetValue()) ?? [];
+    _consumedStates[state] = events.length;
+  }
 }
 
 async function checkTRRSelectionTelemetry() {
   let events;
-  await TestUtils.waitForCondition(() => {
-    events = Services.telemetry.snapshotEvents(
-      Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS
-    ).parent;
-    return events && events.length;
+  await TestUtils.waitForCondition(async () => {
+    events =
+      (await Glean.securityDohTrrPerformance.trrselectDryrunresult.testGetValue()) ??
+      [];
+    return events.length > _consumedTrrSelect;
   });
-  events = events.filter(
-    e =>
-      e[1] == "security.doh.trrPerformance" &&
-      e[2] == "trrselect" &&
-      e[3] == "dryrunresult"
-  );
-  is(events.length, 1, "Found the expected trrselect event.");
+  let newEvents = events.slice(_consumedTrrSelect);
+  is(newEvents.length, 1, "Found the expected trrselect event.");
   is(
-    events[0][4],
+    newEvents[0].extra.value,
     "https://example.com/dns-query",
     "The event records the expected decision"
   );
+  _consumedTrrSelect = events.length;
 }
 
-function ensureNoTRRSelectionTelemetry() {
-  let events = Services.telemetry.snapshotEvents(
-    Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS
-  ).parent;
-  if (!events) {
-    ok(true, "Found no trrselect events.");
-    return;
-  }
-  events = events.filter(
-    e =>
-      e[1] == "security.doh.trrPerformance" &&
-      e[2] == "trrselect" &&
-      e[3] == "dryrunresult"
-  );
-  is(events.length, 0, "Found no trrselect events.");
+async function ensureNoTRRSelectionTelemetry() {
+  let events =
+    (await Glean.securityDohTrrPerformance.trrselectDryrunresult.testGetValue()) ??
+    [];
+  is(events.length - _consumedTrrSelect, 0, "Found no trrselect events.");
 }
 
 async function checkHeuristicsTelemetry(
@@ -208,138 +238,125 @@ async function checkHeuristicsTelemetry(
   steeredProvider = ""
 ) {
   let events;
-  await TestUtils.waitForCondition(() => {
-    events = Services.telemetry.snapshotEvents(
-      Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS
-    ).parent;
-    events = events?.filter(
-      e => e[1] == "doh" && e[2] == "evaluate_v2" && e[3] == "heuristics"
-    );
-    return events?.length;
+  await TestUtils.waitForCondition(async () => {
+    events = (await Glean.doh.evaluateV2Heuristics.testGetValue()) ?? [];
+    return events.length > _consumedHeuristics;
   });
-  is(events.length, 1, "Found the expected heuristics event.");
-  is(events[0][4], decision, "The event records the expected decision");
-  if (evaluateReason) {
-    is(events[0][5].evaluateReason, evaluateReason, "Got the expected reason.");
-  }
-  is(events[0][5].steeredProvider, steeredProvider, "Got expected provider.");
-
-  // After checking the event, clear all telemetry. Since we check for a single
-  // event above, this ensures all heuristics events are intentional and tested.
-  // TODO: Test events other than heuristics. Those tests would also work the
-  // same way, so as to test one event at a time, and this clearEvents() call
-  // will continue to exist as-is.
-  Services.telemetry.clearEvents();
-}
-
-// Generates an array of expectations for the ever_tripped scalar
-// containing false and key, except for the keyes contained in
-// the `except` parameter.
-function falseExpectations(except) {
-  return Heuristics.Telemetry.heuristicNames()
-    .map(e => [
-      "networking.doh_heuristic_ever_tripped",
-      { value: false, key: e },
-    ])
-    .filter(e => except && !except.includes(e[1].key));
-}
-
-function checkScalars(expectations) {
-  // expectations: [[scalarname: expectationObject]]
-  // expectationObject: {value, key}
-  let snapshot = TelemetryTestUtils.getProcessScalars("parent", false, false);
-  let keyedSnapshot = TelemetryTestUtils.getProcessScalars(
-    "parent",
-    true,
-    false
+  let newEvents = events.slice(_consumedHeuristics);
+  is(newEvents.length, 1, "Found the expected heuristics event.");
+  is(
+    newEvents[0].extra.value,
+    decision,
+    "The event records the expected decision"
   );
-  for (let ex of expectations) {
-    let scalarName = ex[0];
-    let exObject = ex[1];
-    if (exObject.key) {
-      TelemetryTestUtils.assertKeyedScalar(
-        keyedSnapshot,
-        scalarName,
-        exObject.key,
-        exObject.value,
-        `${scalarName} expected to have ${exObject.value}, key: ${exObject.key}`
-      );
-    } else {
-      TelemetryTestUtils.assertScalar(
-        snapshot,
-        scalarName,
-        exObject.value,
-        `${scalarName} expected to have ${exObject.value}`
-      );
-    }
+  if (evaluateReason) {
+    is(
+      newEvents[0].extra.evaluateReason,
+      evaluateReason,
+      "Got the expected reason."
+    );
   }
+  is(
+    newEvents[0].extra.steeredProvider ?? "",
+    steeredProvider,
+    "Got expected provider."
+  );
+  _consumedHeuristics = events.length;
+  await _consumeAllStateEvents();
+}
+
+// Assert a list of Glean metric values. Each entry is `[metric, expected]`
+// or `[metric, expected, message]`. Boolean expectations treat a null
+// testGetValue (metric never set) as false.
+async function assertGleanValues(expectations) {
+  for (let [metric, expected, message] of expectations) {
+    let actual = await metric.testGetValue();
+    if (typeof expected === "boolean") {
+      actual = actual ?? false;
+    }
+    is(actual, expected, message);
+  }
+}
+
+// Returns Glean expectations asserting all `dohHeuristicEverTripped` keys
+// are false, except those listed in `except`.
+function allHeuristicsFalseExpectations(except = []) {
+  return Heuristics.Telemetry.heuristicNames()
+    .filter(name => !except.includes(name))
+    .map(name => [
+      Glean.networking.dohHeuristicEverTripped[name],
+      false,
+      `dohHeuristicEverTripped[${name}] should be false`,
+    ]);
 }
 
 async function checkHeuristicsTelemetryMultiple(expectedEvaluateReasons) {
-  let events;
-  await TestUtils.waitForCondition(() => {
-    events = Services.telemetry.snapshotEvents(
-      Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS
-    ).parent;
-    if (events && events.length) {
-      events = events.filter(
-        e => e[1] == "doh" && e[2] == "evaluate_v2" && e[3] == "heuristics"
-      );
-      if (events.length == expectedEvaluateReasons.length) {
-        return true;
-      }
+  let newEvents;
+  await TestUtils.waitForCondition(async () => {
+    let events = (await Glean.doh.evaluateV2Heuristics.testGetValue()) ?? [];
+    newEvents = events.slice(_consumedHeuristics);
+    if (newEvents.length == expectedEvaluateReasons.length) {
+      _consumedHeuristics = events.length;
+      return true;
     }
     return false;
   });
   is(
-    events.length,
+    newEvents.length,
     expectedEvaluateReasons.length,
     "Found the expected heuristics events."
   );
   for (let reason of expectedEvaluateReasons) {
-    let event = events.find(e => e[5].evaluateReason == reason);
-    is(event[5].evaluateReason, reason, `${reason} event found`);
+    let event = newEvents.find(e => e.extra.evaluateReason == reason);
+    is(event.extra.evaluateReason, reason, `${reason} event found`);
   }
-  Services.telemetry.clearEvents();
+  await _consumeAllStateEvents();
 }
 
-function ensureNoHeuristicsTelemetry() {
-  let events = Services.telemetry.snapshotEvents(
-    Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS
-  ).parent;
-  if (!events) {
-    ok(true, "Found no heuristics events.");
-    return;
-  }
-  events = events.filter(
-    e => e[1] == "doh" && e[2] == "evaluate_v2" && e[3] == "heuristics"
-  );
-  is(events.length, 0, "Found no heuristics events.");
+async function ensureNoHeuristicsTelemetry() {
+  let events = (await Glean.doh.evaluateV2Heuristics.testGetValue()) ?? [];
+  is(events.length - _consumedHeuristics, 0, "Found no heuristics events.");
 }
 
 async function waitForStateTelemetry(expectedStates) {
-  let events;
-  await TestUtils.waitForCondition(() => {
-    events = Services.telemetry.snapshotEvents(
-      Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS
-    ).parent;
-    return events;
+  let stateCounts = {};
+
+  // Wait for at least the expected number of new state events to land.
+  await TestUtils.waitForCondition(async () => {
+    let newCount = 0;
+    for (let state of ALL_DOH_STATES) {
+      let events = (await gleanStateMetricFor(state).testGetValue()) ?? [];
+      stateCounts[state] = events.length;
+      newCount += events.length - (_consumedStates[state] ?? 0);
+    }
+    return newCount >= expectedStates.length;
   });
-  events = events.filter(e => e[1] == "doh" && e[2] == "state");
-  info(events);
-  is(events.length, expectedStates.length, "Found the expected state events.");
-  for (let state of expectedStates) {
-    let event = events.find(e => e[3] == state);
-    is(event[3], state, `${state} state found`);
+
+  let totalNew = 0;
+  for (let state of ALL_DOH_STATES) {
+    let consumed = _consumedStates[state] ?? 0;
+    let newForState = stateCounts[state] - consumed;
+    let expected = expectedStates.filter(s => s == state).length;
+    is(
+      newForState,
+      expected,
+      `${state}: expected ${expected} new state event(s)`
+    );
+    totalNew += newForState;
+    _consumedStates[state] = stateCounts[state];
   }
-  Services.telemetry.clearEvents();
+  is(totalNew, expectedStates.length, "Found the expected state events.");
 }
 
 async function restartDoHController() {
-  let oldMode = Preferences.get(prefs.ROLLOUT_TRR_MODE_PREF);
+  let oldMode = Services.prefs.prefHasUserValue(prefs.ROLLOUT_TRR_MODE_PREF)
+    ? Services.prefs.getIntPref(prefs.ROLLOUT_TRR_MODE_PREF)
+    : undefined;
   await DoHController._uninit();
-  let newMode = Preferences.get(prefs.ROLLOUT_TRR_MODE_PREF);
-  let expectClear = Preferences.get(prefs.CLEAR_ON_SHUTDOWN_PREF);
+  let newMode = Services.prefs.prefHasUserValue(prefs.ROLLOUT_TRR_MODE_PREF)
+    ? Services.prefs.getIntPref(prefs.ROLLOUT_TRR_MODE_PREF)
+    : undefined;
+  let expectClear = Services.prefs.getBoolPref(prefs.CLEAR_ON_SHUTDOWN_PREF);
   is(
     newMode,
     expectClear ? undefined : oldMode,
@@ -390,9 +407,15 @@ function simulateNetworkChange() {
 
 async function ensureTRRMode(mode) {
   await TestUtils.waitForCondition(() => {
-    return Preferences.get(prefs.ROLLOUT_TRR_MODE_PREF) === mode;
+    let val = Services.prefs.prefHasUserValue(prefs.ROLLOUT_TRR_MODE_PREF)
+      ? Services.prefs.getIntPref(prefs.ROLLOUT_TRR_MODE_PREF)
+      : undefined;
+    return val === mode;
   });
-  is(Preferences.get(prefs.ROLLOUT_TRR_MODE_PREF), mode, `TRR mode is ${mode}`);
+  let actualMode = Services.prefs.prefHasUserValue(prefs.ROLLOUT_TRR_MODE_PREF)
+    ? Services.prefs.getIntPref(prefs.ROLLOUT_TRR_MODE_PREF)
+    : undefined;
+  is(actualMode, mode, `TRR mode is ${mode}`);
 }
 
 async function ensureNoTRRModeChange(mode) {
@@ -400,16 +423,20 @@ async function ensureNoTRRModeChange(mode) {
     // Try and wait for the TRR pref to change... waitForCondition should throw
     // after trying for a while.
     await TestUtils.waitForCondition(() => {
-      return Preferences.get(prefs.ROLLOUT_TRR_MODE_PREF) !== mode;
+      let val = Services.prefs.prefHasUserValue(prefs.ROLLOUT_TRR_MODE_PREF)
+        ? Services.prefs.getIntPref(prefs.ROLLOUT_TRR_MODE_PREF)
+        : undefined;
+      return val !== mode;
     });
     // If we reach this, the waitForCondition didn't throw. Fail!
     ok(false, "TRR mode changed when it shouldn't have!");
   } catch (e) {
     // Assert for clarity.
-    is(
-      Preferences.get(prefs.ROLLOUT_TRR_MODE_PREF),
-      mode,
-      "No change in TRR mode"
-    );
+    let actualMode = Services.prefs.prefHasUserValue(
+      prefs.ROLLOUT_TRR_MODE_PREF
+    )
+      ? Services.prefs.getIntPref(prefs.ROLLOUT_TRR_MODE_PREF)
+      : undefined;
+    is(actualMode, mode, "No change in TRR mode");
   }
 }

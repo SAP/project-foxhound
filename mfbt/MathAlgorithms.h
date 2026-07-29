@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,6 +10,7 @@
 #include "mozilla/Assertions.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <climits>
 #include <cstdint>
@@ -58,141 +57,6 @@ inline long double Abs<long double>(const long double aLongDouble) {
   return std::fabs(aLongDouble);
 }
 
-}  // namespace mozilla
-
-namespace mozilla {
-
-namespace detail {
-
-// FIXME: use std::count[lr]_zero once we move to C++20
-
-#if defined(__clang__) || defined(__GNUC__)
-
-#  if defined(__clang__)
-#    if !__has_builtin(__builtin_ctz) || !__has_builtin(__builtin_clz)
-#      error "A clang providing __builtin_c[lt]z is required to build"
-#    endif
-#  else
-// gcc has had __builtin_clz and friends since 3.4: no need to check.
-#  endif
-
-constexpr uint_fast8_t CountLeadingZeroes32(uint32_t aValue) {
-  return static_cast<uint_fast8_t>(__builtin_clz(aValue));
-}
-
-constexpr uint_fast8_t CountTrailingZeroes32(uint32_t aValue) {
-  return static_cast<uint_fast8_t>(__builtin_ctz(aValue));
-}
-
-constexpr uint_fast8_t CountPopulation32(uint32_t aValue) {
-  return static_cast<uint_fast8_t>(__builtin_popcount(aValue));
-}
-
-constexpr uint_fast8_t CountPopulation64(uint64_t aValue) {
-  return static_cast<uint_fast8_t>(__builtin_popcountll(aValue));
-}
-
-constexpr uint_fast8_t CountLeadingZeroes64(uint64_t aValue) {
-  return static_cast<uint_fast8_t>(__builtin_clzll(aValue));
-}
-
-constexpr uint_fast8_t CountTrailingZeroes64(uint64_t aValue) {
-  return static_cast<uint_fast8_t>(__builtin_ctzll(aValue));
-}
-
-#else
-#  error "Implement these!"
-constexpr uint_fast8_t CountLeadingZeroes32(uint32_t aValue) = delete;
-constexpr uint_fast8_t CountTrailingZeroes32(uint32_t aValue) = delete;
-constexpr uint_fast8_t CountPopulation32(uint32_t aValue) = delete;
-constexpr uint_fast8_t CountPopulation64(uint64_t aValue) = delete;
-constexpr uint_fast8_t CountLeadingZeroes64(uint64_t aValue) = delete;
-constexpr uint_fast8_t CountTrailingZeroes64(uint64_t aValue) = delete;
-#endif
-
-}  // namespace detail
-
-/**
- * Compute the number of high-order zero bits in the NON-ZERO number |aValue|.
- * That is, looking at the bitwise representation of the number, with the
- * highest- valued bits at the start, return the number of zeroes before the
- * first one is observed.
- *
- * CountLeadingZeroes32(0xF0FF1000) is 0;
- * CountLeadingZeroes32(0x7F8F0001) is 1;
- * CountLeadingZeroes32(0x3FFF0100) is 2;
- * CountLeadingZeroes32(0x1FF50010) is 3; and so on.
- */
-constexpr uint_fast8_t CountLeadingZeroes32(uint32_t aValue) {
-  MOZ_ASSERT(aValue != 0);
-  return detail::CountLeadingZeroes32(aValue);
-}
-
-/**
- * Compute the number of low-order zero bits in the NON-ZERO number |aValue|.
- * That is, looking at the bitwise representation of the number, with the
- * lowest- valued bits at the start, return the number of zeroes before the
- * first one is observed.
- *
- * CountTrailingZeroes32(0x0100FFFF) is 0;
- * CountTrailingZeroes32(0x7000FFFE) is 1;
- * CountTrailingZeroes32(0x0080FFFC) is 2;
- * CountTrailingZeroes32(0x0080FFF8) is 3; and so on.
- */
-constexpr uint_fast8_t CountTrailingZeroes32(uint32_t aValue) {
-  MOZ_ASSERT(aValue != 0);
-  return detail::CountTrailingZeroes32(aValue);
-}
-
-/**
- * Compute the number of one bits in the number |aValue|,
- */
-constexpr uint_fast8_t CountPopulation32(uint32_t aValue) {
-  return detail::CountPopulation32(aValue);
-}
-
-/** Analogous to CountPopulation32, but for 64-bit numbers */
-constexpr uint_fast8_t CountPopulation64(uint64_t aValue) {
-  return detail::CountPopulation64(aValue);
-}
-
-/** Analogous to CountLeadingZeroes32, but for 64-bit numbers. */
-constexpr uint_fast8_t CountLeadingZeroes64(uint64_t aValue) {
-  MOZ_ASSERT(aValue != 0);
-  return detail::CountLeadingZeroes64(aValue);
-}
-
-/** Analogous to CountTrailingZeroes32, but for 64-bit numbers. */
-constexpr uint_fast8_t CountTrailingZeroes64(uint64_t aValue) {
-  MOZ_ASSERT(aValue != 0);
-  return detail::CountTrailingZeroes64(aValue);
-}
-
-namespace detail {
-
-template <typename T, size_t Size = sizeof(T)>
-class CeilingLog2;
-
-template <typename T>
-class CeilingLog2<T, 4> {
- public:
-  static constexpr uint_fast8_t compute(const T aValue) {
-    // Check for <= 1 to avoid the == 0 undefined case.
-    return aValue <= 1 ? 0u : 32u - CountLeadingZeroes32(aValue - 1);
-  }
-};
-
-template <typename T>
-class CeilingLog2<T, 8> {
- public:
-  static constexpr uint_fast8_t compute(const T aValue) {
-    // Check for <= 1 to avoid the == 0 undefined case.
-    return aValue <= 1 ? 0u : 64u - CountLeadingZeroes64(aValue - 1);
-  }
-};
-
-}  // namespace detail
-
 /**
  * Compute the log of the least power of 2 greater than or equal to |aValue|.
  *
@@ -204,7 +68,11 @@ class CeilingLog2<T, 8> {
  */
 template <typename T>
 constexpr uint_fast8_t CeilingLog2(const T aValue) {
-  return detail::CeilingLog2<T>::compute(aValue);
+  static_assert(std::is_integral_v<T> && std::is_unsigned_v<T>);
+
+  return aValue <= 1 ? 0u
+                     : static_cast<uint_fast8_t>(
+                           std::bit_width(static_cast<T>(aValue - 1)));
 }
 
 /** A CeilingLog2 variant that accepts only size_t. */
@@ -218,17 +86,10 @@ constexpr uint_fast8_t CeilingLog2Size(size_t aValue) {
  */
 template <typename T>
 constexpr uint_fast8_t FindMostSignificantBit(T aValue) {
-  static_assert(sizeof(T) <= 8);
-  static_assert(std::is_integral_v<T>);
+  static_assert(std::is_integral_v<T> && std::is_unsigned_v<T>);
+
   MOZ_ASSERT(aValue != 0);
-  // This casts to 32-bits
-  if constexpr (sizeof(T) <= 4) {
-    return 31u - CountLeadingZeroes32(aValue);
-  }
-  // This doesn't
-  if constexpr (sizeof(T) == 8) {
-    return 63u - CountLeadingZeroes64(aValue);
-  }
+  return static_cast<uint_fast8_t>(std::bit_width(aValue) - 1);
 }
 
 /**
@@ -241,7 +102,7 @@ constexpr uint_fast8_t FindMostSignificantBit(T aValue) {
  */
 template <typename T>
 constexpr uint_fast8_t FloorLog2(const T aValue) {
-  return FindMostSignificantBit(aValue | 1);
+  return FindMostSignificantBit(static_cast<T>(aValue | 1));
 }
 
 /** A FloorLog2 variant that accepts only size_t. */
@@ -256,7 +117,7 @@ constexpr uint_fast8_t FloorLog2Size(size_t aValue) {
 constexpr size_t RoundUpPow2(size_t aValue) {
   MOZ_ASSERT(aValue <= (size_t(1) << (sizeof(size_t) * CHAR_BIT - 1)),
              "can't round up -- will overflow!");
-  return size_t(1) << CeilingLog2(aValue);
+  return std::bit_ceil(aValue);
 }
 
 /**
@@ -265,16 +126,9 @@ constexpr size_t RoundUpPow2(size_t aValue) {
 template <typename T>
 MOZ_NO_SANITIZE_UNSIGNED_OVERFLOW constexpr T RotateLeft(const T aValue,
                                                          uint_fast8_t aShift) {
-  static_assert(std::is_unsigned_v<T>, "Rotates require unsigned values");
-
   MOZ_ASSERT(aShift < sizeof(T) * CHAR_BIT, "Shift value is too large!");
-  MOZ_ASSERT(aShift > 0,
-             "Rotation by value length is undefined behavior, but compilers "
-             "do not currently fold a test into the rotate instruction. "
-             "Please remove this restriction when compilers optimize the "
-             "zero case (http://blog.regehr.org/archives/1063).");
 
-  return (aValue << aShift) | (aValue >> (sizeof(T) * CHAR_BIT - aShift));
+  return std::rotl(aValue, aShift);
 }
 
 /**
@@ -283,40 +137,9 @@ MOZ_NO_SANITIZE_UNSIGNED_OVERFLOW constexpr T RotateLeft(const T aValue,
 template <typename T>
 MOZ_NO_SANITIZE_UNSIGNED_OVERFLOW constexpr T RotateRight(const T aValue,
                                                           uint_fast8_t aShift) {
-  static_assert(std::is_unsigned_v<T>, "Rotates require unsigned values");
-
   MOZ_ASSERT(aShift < sizeof(T) * CHAR_BIT, "Shift value is too large!");
-  MOZ_ASSERT(aShift > 0,
-             "Rotation by value length is undefined behavior, but compilers "
-             "do not currently fold a test into the rotate instruction. "
-             "Please remove this restriction when compilers optimize the "
-             "zero case (http://blog.regehr.org/archives/1063).");
 
-  return (aValue >> aShift) | (aValue << (sizeof(T) * CHAR_BIT - aShift));
-}
-
-/**
- * Returns true if |x| is a power of two.
- * Zero is not an integer power of two. (-Inf is not an integer)
- */
-template <typename T>
-constexpr bool IsPowerOfTwo(T x) {
-  static_assert(std::is_unsigned_v<T>, "IsPowerOfTwo requires unsigned values");
-  return x && (x & (x - 1)) == 0;
-}
-
-template <typename T>
-constexpr uint_fast8_t CountTrailingZeroes(T aValue) {
-  static_assert(sizeof(T) <= 8);
-  static_assert(std::is_integral_v<T>);
-  // This casts to 32-bits
-  if constexpr (sizeof(T) <= 4) {
-    return CountTrailingZeroes32(aValue);
-  }
-  // This doesn't
-  if constexpr (sizeof(T) == 8) {
-    return CountTrailingZeroes64(aValue);
-  }
+  return std::rotr(aValue, aShift);
 }
 
 // Greatest Common Divisor, from
@@ -335,9 +158,11 @@ MOZ_ALWAYS_INLINE T GCD(T aA, T aB) {
     return aA;
   }
 
-  T az = CountTrailingZeroes(aA);
-  T bz = CountTrailingZeroes(aB);
-  T shift = std::min<T>(az, bz);
+  using UnsignedT = std::make_unsigned_t<T>;
+
+  auto az = std::countr_zero(static_cast<UnsignedT>(aA));
+  auto bz = std::countr_zero(static_cast<UnsignedT>(aB));
+  auto shift = std::min<T>(az, bz);
   aA >>= az;
   aB >>= bz;
 
@@ -357,7 +182,7 @@ MOZ_ALWAYS_INLINE T GCD(T aA, T aB) {
       aA = diff;
     }
     if (aA) {
-      aA >>= CountTrailingZeroes(aA);
+      aA >>= std::countr_zero(static_cast<UnsignedT>(aA));
     }
   }
 

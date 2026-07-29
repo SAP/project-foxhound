@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -10,6 +8,9 @@ with Files("**"):
 
 with Files("*TextInput*"):
     BUG_COMPONENT = ("Core", "DOM: UI Events & Focus Handling")
+
+with Files("nsMacPermissionMonitor*"):
+    BUG_COMPONENT = ("Core", "Permission Manager")
 
 EXPORTS += [
     "DesktopBackgroundImage.h",
@@ -33,6 +34,7 @@ UNIFIED_SOURCES += [
     "CompositorWidgetChild.cpp",
     "CompositorWidgetParent.cpp",
     "GfxInfo.mm",
+    "MacOSNotificationCenter.mm",
     "MOZDynamicCursor.mm",
     "MOZIconHelper.mm",
     "MOZMenuOpeningCoordinator.mm",
@@ -50,6 +52,7 @@ UNIFIED_SOURCES += [
     "nsLookAndFeel.mm",
     "nsMacDockSupport.mm",
     "nsMacFinderProgress.mm",
+    "nsMacPermissionMonitor.mm",
     "nsMacSharingService.mm",
     "nsMacUserActivityUpdater.mm",
     "nsMacWebAppUtils.mm",
@@ -73,7 +76,6 @@ UNIFIED_SOURCES += [
     "nsUserIdleServiceX.mm",
     "nsWidgetFactory.mm",
     "nsWindowMap.mm",
-    "OSXNotificationCenter.mm",
     "ScreenHelperCocoa.mm",
     "TextInputHandler.mm",
     "TextRecognition.mm",
@@ -128,14 +130,10 @@ RESOURCE_FILES.cursors += [
     "cursors/arrowS@2x.png",
     "cursors/cell.png",
     "cursors/cell@2x.png",
-    "cursors/colResize.png",
-    "cursors/colResize@2x.png",
     "cursors/help.png",
     "cursors/help@2x.png",
     "cursors/move.png",
     "cursors/move@2x.png",
-    "cursors/rowResize.png",
-    "cursors/rowResize@2x.png",
     "cursors/sizeNE.png",
     "cursors/sizeNE@2x.png",
     "cursors/sizeNESW.png",
@@ -150,8 +148,6 @@ RESOURCE_FILES.cursors += [
     "cursors/sizeSE@2x.png",
     "cursors/sizeSW.png",
     "cursors/sizeSW@2x.png",
-    "cursors/vtIBeam.png",
-    "cursors/vtIBeam@2x.png",
     "cursors/zoomIn.png",
     "cursors/zoomIn@2x.png",
     "cursors/zoomOut.png",
@@ -178,3 +174,6 @@ OS_LIBS += [
 ]
 
 SPHINX_TREES["/widget/cocoa"] = "docs"
+
+if CONFIG["MOZ_BUILD_APP"] == "browser":
+    DEFINES["MOZ_BUILD_APP_IS_BROWSER"] = True

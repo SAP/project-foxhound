@@ -337,8 +337,8 @@ This file is imported into `common-shared.css` and `global-shared.css` so that b
 ```css story
 h1,
 .heading-xlarge {
-  font-weight: var(--heading-font-weight);
-  font-size: var(--heading-font-size-xlarge);
+  font-weight: var(--font-weight-heading);
+  font-size: var(--font-size-heading-xlarge);
 }
 ```
 
@@ -352,8 +352,8 @@ h1,
 ```css story
 h2,
 .heading-large {
-  font-weight: var(--heading-font-weight);
-  font-size: var(--heading-font-size-large);
+  font-weight: var(--font-weight-heading);
+  font-size: var(--font-size-heading-large);
 }
 ```
 
@@ -365,8 +365,8 @@ h2,
 ```css story
 h3,
 .heading-medium {
-  font-weight: var(--heading-font-weight);
-  font-size: var(--heading-font-size-medium);
+  font-weight: var(--font-weight-heading);
+  font-size: var(--font-size-heading-medium);
 }
 ```
 

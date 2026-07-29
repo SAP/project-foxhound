@@ -32,6 +32,7 @@ skip-if = [
 # certificates.
 skip-if = [
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug && msix && verify-standalone",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && debug && msix && verify-standalone",
   "socketprocess_networking",
 ]
 

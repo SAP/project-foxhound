@@ -349,9 +349,9 @@ class SettingsRobot {
     }
 
     fun verifyDownloadsButton() {
-        scrollToElementByText(getStringResource(R.string.preferences_downloads))
+        scrollToElementByText(getStringResource(R.string.preferences_downloads_2))
         Log.i(TAG, "verifyExternalDownloadsButton: Trying to verify that the \"Downloads\" button is visible")
-        onView(withText(getStringResource(R.string.preferences_downloads)))
+        onView(withText(getStringResource(R.string.preferences_downloads_2)))
             .check(matches(withEffectiveVisibility(Visibility.VISIBLE)))
         Log.i(TAG, "verifyExternalDownloadsButton: Verified that the \"Downloads\" button is visible")
     }
@@ -478,11 +478,21 @@ class SettingsRobot {
         Log.i(TAG, "verifySettingsOptionSummary: Verified that setting: $setting with summary:$summary is visible")
     }
 
+    fun verifyPageSummariesButton() {
+        scrollToElementByText("Page summaries")
+        Log.i(TAG, "verifyPageSummariesButton: Trying to verify that the \"Page summaries\" button is visible")
+        onView(withText(R.string.preferences_page_summaries))
+            .check(matches(withEffectiveVisibility(Visibility.VISIBLE)))
+        Log.i(TAG, "verifyPageSummariesButton: Verified that the \"Page summaries\" button is visible")
+    }
+
     class Transition {
         fun goBack(composeTestRule: ComposeTestRule, interact: HomeScreenRobot.() -> Unit): HomeScreenRobot.Transition {
             Log.i(TAG, "goBack: Trying to click the navigate up button")
             goBackButton().click()
             Log.i(TAG, "goBack: Clicked the navigate up button")
+            composeTestRule.waitForIdle()
+            mDevice.waitForIdle()
 
             HomeScreenRobot(composeTestRule).interact()
             return HomeScreenRobot.Transition(composeTestRule)
@@ -543,15 +553,14 @@ class SettingsRobot {
         }
 
         fun openTabsSubMenu(interact: SettingsSubMenuTabsRobot.() -> Unit): SettingsSubMenuTabsRobot.Transition {
-            itemWithText(getStringResource(R.string.preferences_tabs))
-                .also {
-                    Log.i(TAG, "openTabsSubMenu: Waiting for $waitingTime ms for the \"Tabs\" button to exist")
-                    it.waitForExists(waitingTime)
-                    Log.i(TAG, "openTabsSubMenu: Waited for $waitingTime ms for the \"Tabs\" button to exist")
-                    Log.i(TAG, "openTabsSubMenu: Trying to click the \"Tabs\" button and wait for $waitingTimeShort ms for a new window")
-                    it.clickAndWaitForNewWindow(waitingTimeShort)
-                    Log.i(TAG, "openTabsSubMenu: Clicked the \"Tabs\" button and wait for $waitingTimeShort ms for a new window")
-                }
+            Log.i(TAG, "openTabsSubMenu: Waiting for $waitingTime ms for the \"Tabs\" button to exist")
+            val tabsButton = mDevice.wait(
+                Until.findObject(By.text(getStringResource(R.string.preferences_tabs))),
+                waitingTime,
+            ) ?: throw AssertionError("Tabs settings button not found after $waitingTime ms")
+            Log.i(TAG, "openTabsSubMenu: Trying to click the \"Tabs\" button and wait for $waitingTimeShort ms for a new window")
+            tabsButton.clickAndWait(Until.newWindow(), waitingTimeShort)
+            Log.i(TAG, "openTabsSubMenu: Clicked the \"Tabs\" button and waited for $waitingTimeShort ms for a new window")
 
             SettingsSubMenuTabsRobot().interact()
             return SettingsSubMenuTabsRobot.Transition()
@@ -570,15 +579,14 @@ class SettingsRobot {
         }
 
         fun openAutofillSubMenu(composeTestRule: ComposeTestRule, interact: SettingsSubMenuAutofillRobot.() -> Unit): SettingsSubMenuAutofillRobot.Transition {
-            mDevice.findObject(UiSelector().textContains(getStringResource(R.string.preferences_autofill)))
-                .also {
-                    Log.i(TAG, "openAutofillSubMenu: Waiting for $waitingTime ms for the \"Autofill\" button to exist")
-                    it.waitForExists(waitingTime)
-                    Log.i(TAG, "openAutofillSubMenu: Waited for $waitingTime ms for the \"Autofill\" button to exist")
-                    Log.i(TAG, "openAutofillSubMenu: Trying to click the \"Autofill\" button")
-                    it.click()
-                    Log.i(TAG, "openAutofillSubMenu: Clicked the \"Autofill\" button")
-                }
+            Log.i(TAG, "openAutofillSubMenu: Waiting for $waitingTime ms for the \"Autofill\" button to exist")
+            val autofillButton = mDevice.wait(
+                Until.findObject(By.textContains(getStringResource(R.string.preferences_autofill))),
+                waitingTime,
+            ) ?: throw AssertionError("Autofill settings button not found after $waitingTime ms")
+            Log.i(TAG, "openAutofillSubMenu: Trying to click the \"Autofill\" button")
+            autofillButton.click()
+            Log.i(TAG, "openAutofillSubMenu: Clicked the \"Autofill\" button")
 
             SettingsSubMenuAutofillRobot(composeTestRule).interact()
             return SettingsSubMenuAutofillRobot.Transition(composeTestRule)
@@ -602,6 +610,7 @@ class SettingsRobot {
             interact: SettingsSubMenuLanguageRobot.() -> Unit,
         ): SettingsSubMenuLanguageRobot.Transition {
             Log.i(TAG, "openLanguageSubMenu: Trying to click the $localizedText button")
+            mDevice.waitForIdle()
             onView(withId(R.id.recycler_view))
                 .perform(
                     RecyclerViewActions.actionOnItem<RecyclerView.ViewHolder>(
@@ -754,6 +763,16 @@ class SettingsRobot {
 
             SettingsSubMenuExperimentsRobot().interact()
             return SettingsSubMenuExperimentsRobot.Transition()
+        }
+
+        fun openPageSummariesSubMenu(composeTestRule: ComposeTestRule, interact: SettingsSubMenuPageSummariesRobot.() -> Unit): SettingsSubMenuPageSummariesRobot.Transition {
+            assertUIObjectExists(itemContainingText(getStringResource(R.string.preferences_page_summaries)))
+            Log.i(TAG, "openPageSummariesSubMenu: Trying to click the \"Page summaries\" button")
+            itemContainingText(getStringResource(R.string.preferences_page_summaries)).click()
+            Log.i(TAG, "openPageSummariesSubMenu: Clicked the \"Page summaries\" button")
+
+            SettingsSubMenuPageSummariesRobot(composeTestRule).interact()
+            return SettingsSubMenuPageSummariesRobot.Transition(composeTestRule)
         }
     }
 

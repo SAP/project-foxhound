@@ -14,7 +14,6 @@
 #include <cstring>
 #include <memory>
 
-#include "api/array_view.h"
 #include "api/audio_codecs/audio_encoder.h"
 #include "rtc_base/buffer.h"
 #include "rtc_base/checks.h"
@@ -25,19 +24,19 @@ namespace webrtc {
 // This function reads bytes from `data_view`, interprets them as RTP timestamp
 // and input samples, and sends them for encoding. The process continues until
 // no more data is available.
-void FuzzAudioEncoder(ArrayView<const uint8_t> data_view,
+void FuzzAudioEncoder(FuzzDataHelper data,
                       std::unique_ptr<AudioEncoder> encoder) {
-  test::FuzzDataHelper data(data_view);
   const size_t block_size_samples =
       encoder->SampleRateHz() / 100 * encoder->NumChannels();
   const size_t block_size_bytes = block_size_samples * sizeof(int16_t);
-  if (data_view.size() / block_size_bytes > 1000) {
+  if (data.BytesLeft() / block_size_bytes > 1000) {
     // If the size of the fuzzer data is more than 1000 input blocks (i.e., more
     // than 10 seconds), then don't fuzz at all for the fear of timing out.
     return;
   }
 
-  BufferT<int16_t> input_aligned(block_size_samples);
+  BufferT<int16_t> input_aligned =
+      BufferT<int16_t>::CreateWithCapacity(block_size_samples);
   Buffer encoded;
 
   // Each round in the loop below will need one block of samples + a 32-bit
@@ -47,9 +46,12 @@ void FuzzAudioEncoder(ArrayView<const uint8_t> data_view,
     const uint32_t timestamp = data.Read<uint32_t>();
     auto byte_array = data.ReadByteArray(block_size_bytes);
     // Align the data by copying to another array.
-    RTC_DCHECK_EQ(input_aligned.size() * sizeof(int16_t),
+    RTC_DCHECK_EQ(block_size_samples * sizeof(int16_t),
                   byte_array.size() * sizeof(uint8_t));
-    memcpy(input_aligned.data(), byte_array.data(), byte_array.size());
+    input_aligned.SetSize(0);
+    input_aligned.AppendData(
+        reinterpret_cast<const int16_t*>(byte_array.data()),
+        byte_array.size() / sizeof(int16_t));
     auto info = encoder->Encode(timestamp, input_aligned, &encoded);
   }
 }

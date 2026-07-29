@@ -18,6 +18,10 @@ ChromeUtils.defineLazyGetter(this, "SearchTestUtils", () => {
 ChromeUtils.defineESModuleGetters(this, {
   IPProtection:
     "moz-src:///browser/components/ipprotection/IPProtection.sys.mjs",
+  IPPProxyManager:
+    "moz-src:///toolkit/components/ipprotection/IPPProxyManager.sys.mjs",
+  ProxyUsage:
+    "moz-src:///toolkit/components/ipprotection/GuardianTypes.sys.mjs",
 });
 
 const mockIdleService = {
@@ -103,17 +107,23 @@ async function test_formAutofillTrigger(settingsRedesignEnabled) {
           () => browser.contentWindow?.gSubDialog?.dialogs.length
         );
       } else {
-        const savedPaymentsBtn = content.document.querySelector(
-          "#savedPaymentsButton"
-        );
-        savedPaymentsBtn.click();
-        const paymentsPage = content.document.querySelector(
-          '[data-category="paneManagePayments"]'
-        );
-        await BrowserTestUtils.waitForCondition(
-          () => !paymentsPage.hidden,
-          "Payments page failed to show."
-        );
+        await SpecialPowers.spawn(browser, [], async () => {
+          const savedPaymentsBtn = await ContentTaskUtils.waitForCondition(
+            () => content.document.querySelector("#savedPaymentsButton"),
+            "Waiting for credit card manager button"
+          );
+
+          savedPaymentsBtn.click();
+
+          const paymentsPage = content.document.querySelector(
+            '[data-category="paneManagePayments"]'
+          );
+
+          await ContentTaskUtils.waitForCondition(
+            () => paymentsPage && !paymentsPage.hidden,
+            "Payments page failed to show."
+          );
+        });
       }
 
       notifyCreditCardSaved();
@@ -299,10 +309,10 @@ add_task(async function test_nthTabOpened() {
 
   const win = await BrowserTestUtils.openNewBrowserWindow();
 
-  await BrowserTestUtils.openNewForegroundTab(win);
+  await BrowserTestUtils.openNewForegroundTab(win.gBrowser);
   Assert.ok(handlerStub.calledOnce, "Called once after first tab opened");
 
-  await BrowserTestUtils.openNewForegroundTab(win);
+  await BrowserTestUtils.openNewForegroundTab(win.gBrowser);
   Assert.ok(handlerStub.calledTwice, "Called twice after second tab opened");
 
   BrowserTestUtils.closeWindow(win);
@@ -310,6 +320,37 @@ add_task(async function test_nthTabOpened() {
   tabOpenedTrigger.uninit();
 
   Assert.ok(handlerStub.notCalled, "Not called after uninit");
+});
+
+add_task(async function test_nthTabClosed_with_actionSource_marker() {
+  const handlerStub = sinon.stub();
+  const tabClosedTrigger = ASRouterTriggerListeners.get("nthTabClosed");
+  tabClosedTrigger.uninit();
+  tabClosedTrigger.init(handlerStub);
+
+  const markedTab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
+  markedTab.smartWindowActionSource = "close_current_tab";
+  BrowserTestUtils.removeTab(markedTab);
+
+  Assert.ok(handlerStub.calledOnce, "Handler called once");
+  const [, triggerData] = handlerStub.firstCall.args;
+  Assert.equal(
+    triggerData.context.actionSource,
+    "close_current_tab",
+    "action field populated from tab marker"
+  );
+
+  // with unmarked tab action should be absent
+  const plainTab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
+  BrowserTestUtils.removeTab(plainTab);
+  Assert.ok(handlerStub.calledTwice, "Handler called a second time");
+  const [, secondContext] = handlerStub.secondCall.args;
+  Assert.ok(
+    !("actionSource" in secondContext.context),
+    "actionSource field absent on unmarked close"
+  );
+
+  tabClosedTrigger.uninit();
 });
 
 add_task(async function test_cookieBannerDetected() {
@@ -508,6 +549,12 @@ add_task(async function test_pageActionInUrlbarTrigger() {
 
   let pageAction = await receivedTrigger;
   ok(pageAction, "pageActionInUrlbar trigger sent with PiP button id");
+
+  is(
+    gBrowser.selectedBrowser.currentURI.host,
+    "example.com",
+    "host is example.com"
+  );
 
   await SpecialPowers.popPrefEnv();
   sandbox.restore();
@@ -859,4 +906,240 @@ add_task(async function test_ipprotection_panel_closed() {
   IPProtection.uninit();
   await SpecialPowers.popPrefEnv();
   sandbox.restore();
+});
+
+add_task(async function test_ipprotection_bandwidth_reset() {
+  const sandbox = sinon.createSandbox();
+  const receivedTrigger = new Promise(resolve => {
+    sandbox.stub(ASRouter, "sendTriggerMessage").callsFake(({ id }) => {
+      if (id === "ipProtectionBandwidthReset") {
+        resolve(true);
+      }
+    });
+  });
+
+  IPProtection.init();
+  IPProtection.getPanel(window);
+
+  const oldResetDate = new Date(Date.now() - 86400000).toISOString();
+  const newResetDate = new Date(Date.now() + 86400000).toISOString();
+  const max = "5368709120";
+
+  Services.prefs.setStringPref(
+    "browser.ipProtection.bandwidthResetDate",
+    oldResetDate
+  );
+
+  const usage = new ProxyUsage(max, max, newResetDate);
+  IPPProxyManager.dispatchEvent(
+    new CustomEvent("IPPProxyManager:UsageChanged", {
+      bubbles: true,
+      composed: true,
+      detail: { usage },
+    })
+  );
+
+  Assert.ok(
+    await receivedTrigger,
+    "ipProtectionBandwidthReset trigger sent when bandwidth resets"
+  );
+
+  Services.prefs.clearUserPref("browser.ipProtection.bandwidthResetDate");
+  Services.prefs.clearUserPref("browser.ipProtection.bandwidthThreshold");
+
+  IPProtection.uninit();
+  sandbox.restore();
+});
+
+add_task(async function test_userBookmarkFolderActivity_folderInsert() {
+  const handlerStub = sinon.stub();
+  const trigger = ASRouterTriggerListeners.get("userBookmarkFolderActivity");
+  trigger.uninit();
+  trigger.init(handlerStub);
+
+  const folder = await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+    type: PlacesUtils.bookmarks.TYPE_FOLDER,
+    title: "user folder",
+  });
+
+  Assert.ok(handlerStub.calledOnce, "Handler called once for folder insert");
+  Assert.deepEqual(
+    handlerStub.firstCall.args[1],
+    { id: "userBookmarkFolderActivity" },
+    "Fires userBookmarkFolderActivity trigger"
+  );
+
+  handlerStub.resetHistory();
+  trigger.uninit();
+  await PlacesUtils.bookmarks.remove(folder.guid);
+});
+
+add_task(async function test_userBookmarkFolderActivity_bookmarkInUserFolder() {
+  const handlerStub = sinon.stub();
+  const trigger = ASRouterTriggerListeners.get("userBookmarkFolderActivity");
+  trigger.uninit();
+  trigger.init(handlerStub);
+
+  const userFolder = await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+    type: PlacesUtils.bookmarks.TYPE_FOLDER,
+    title: "user folder",
+  });
+  handlerStub.resetHistory();
+
+  await PlacesUtils.bookmarks.insert({
+    parentGuid: userFolder.guid,
+    url: "https://example.com/",
+    title: "nested bookmark",
+  });
+
+  Assert.ok(handlerStub.calledOnce, "Handler called once for nested bookmark");
+  Assert.deepEqual(
+    handlerStub.firstCall.args[1],
+    { id: "userBookmarkFolderActivity" },
+    "Fires userBookmarkFolderActivity trigger when parent is user-created"
+  );
+
+  handlerStub.resetHistory();
+  trigger.uninit();
+  await PlacesUtils.bookmarks.eraseEverything();
+});
+
+add_task(
+  async function test_userBookmarkFolderActivity_bookmarkInBuiltInFolder() {
+    const handlerStub = sinon.stub();
+    const trigger = ASRouterTriggerListeners.get("userBookmarkFolderActivity");
+    trigger.uninit();
+    trigger.init(handlerStub);
+
+    for (const parentGuid of [
+      PlacesUtils.bookmarks.unfiledGuid,
+      PlacesUtils.bookmarks.menuGuid,
+      PlacesUtils.bookmarks.toolbarGuid,
+      PlacesUtils.bookmarks.mobileGuid,
+    ]) {
+      handlerStub.resetHistory();
+      const bm = await PlacesUtils.bookmarks.insert({
+        parentGuid,
+        url: "https://example.com/",
+        title: "top-level bookmark",
+      });
+      Assert.ok(
+        handlerStub.notCalled,
+        `Handler not called when bookmark added to built-in folder ${parentGuid}`
+      );
+      await PlacesUtils.bookmarks.remove(bm.guid);
+    }
+
+    trigger.uninit();
+  }
+);
+
+add_task(async function test_userBookmarkFolderActivity_uninit() {
+  const handlerStub = sinon.stub();
+  const trigger = ASRouterTriggerListeners.get("userBookmarkFolderActivity");
+  trigger.uninit();
+  trigger.init(handlerStub);
+  trigger.uninit();
+
+  const folder = await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+    type: PlacesUtils.bookmarks.TYPE_FOLDER,
+    title: "post-uninit folder",
+  });
+
+  Assert.ok(handlerStub.notCalled, "Handler not called after uninit");
+  await PlacesUtils.bookmarks.remove(folder.guid);
+});
+
+add_task(async function test_userBookmarkFolderActivity_privateWindow() {
+  const handlerStub = sinon.stub();
+  const trigger = ASRouterTriggerListeners.get("userBookmarkFolderActivity");
+  trigger.uninit();
+  trigger.init(handlerStub);
+
+  const privateWin = await BrowserTestUtils.openNewBrowserWindow({
+    private: true,
+  });
+  Assert.ok(
+    PrivateBrowsingUtils.isWindowPrivate(privateWin),
+    "Most-recent window is private"
+  );
+
+  const folder = await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+    type: PlacesUtils.bookmarks.TYPE_FOLDER,
+    title: "folder while private",
+  });
+  Assert.ok(
+    handlerStub.notCalled,
+    "Handler not called for folder insert while private window is active"
+  );
+
+  const bookmark = await PlacesUtils.bookmarks.insert({
+    parentGuid: folder.guid,
+    url: "https://example.com/",
+    title: "bookmark while private",
+  });
+  Assert.ok(
+    handlerStub.notCalled,
+    "Handler not called for bookmark-in-user-folder while private window is active"
+  );
+
+  await PlacesUtils.bookmarks.remove(bookmark.guid);
+  await PlacesUtils.bookmarks.remove(folder.guid);
+  await BrowserTestUtils.closeWindow(privateWin);
+  trigger.uninit();
+});
+
+add_task(async function test_userBookmarkFolderActivity_tagging() {
+  const handlerStub = sinon.stub();
+  const trigger = ASRouterTriggerListeners.get("userBookmarkFolderActivity");
+  trigger.uninit();
+  trigger.init(handlerStub);
+
+  const bookmark = await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+    url: "https://example.com/tagged",
+    title: "to be tagged",
+  });
+  handlerStub.resetHistory();
+
+  PlacesUtils.tagging.tagURI(Services.io.newURI(bookmark.url), ["sample-tag"]);
+
+  Assert.ok(
+    handlerStub.notCalled,
+    "Handler not called when the user tags a URL"
+  );
+
+  PlacesUtils.tagging.untagURI(Services.io.newURI(bookmark.url), [
+    "sample-tag",
+  ]);
+  await PlacesUtils.bookmarks.remove(bookmark.guid);
+  trigger.uninit();
+});
+
+add_task(async function test_userBookmarkFolderActivity_nonDefaultSource() {
+  const handlerStub = sinon.stub();
+  const trigger = ASRouterTriggerListeners.get("userBookmarkFolderActivity");
+  trigger.uninit();
+  trigger.init(handlerStub);
+
+  const folder = await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+    type: PlacesUtils.bookmarks.TYPE_FOLDER,
+    title: "sync-source folder",
+    source: PlacesUtils.bookmarks.SOURCES.SYNC,
+  });
+
+  Assert.ok(
+    handlerStub.notCalled,
+    "Handler not called for folder insert with non-default source"
+  );
+
+  await PlacesUtils.bookmarks.remove(folder.guid, {
+    source: PlacesUtils.bookmarks.SOURCES.SYNC,
+  });
+  trigger.uninit();
 });

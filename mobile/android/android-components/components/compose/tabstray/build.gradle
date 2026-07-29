@@ -20,6 +20,7 @@ android {
 
 dependencies {
     implementation project(":components:browser-state")
+    implementation project(":components:compose-base")
     implementation project(":components:concept-tabstray")
     implementation project(":components:feature-tabs")
     implementation project(":components:ui-icons")

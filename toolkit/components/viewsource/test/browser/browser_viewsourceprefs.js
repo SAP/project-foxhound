@@ -86,7 +86,7 @@ var exercisePrefs = async function (source, highlightable) {
   await closeContextMenu();
 
   // Next, test that the Wrap Long Lines menu item works.
-  let prefReady = waitForPrefChange("view_source.wrap_long_lines");
+  let prefReady = TestUtils.waitForPrefChange("view_source.wrap_long_lines");
   await openContextMenu(browser);
   await simulateClick(wrapMenuItem);
   await openContextMenu(browser);
@@ -100,7 +100,7 @@ var exercisePrefs = async function (source, highlightable) {
   );
   await closeContextMenu();
 
-  prefReady = waitForPrefChange("view_source.wrap_long_lines");
+  prefReady = TestUtils.waitForPrefChange("view_source.wrap_long_lines");
   await openContextMenu(browser);
   await simulateClick(wrapMenuItem);
   await openContextMenu(browser);
@@ -115,7 +115,7 @@ var exercisePrefs = async function (source, highlightable) {
   await closeContextMenu();
 
   // Check that the Syntax Highlighting menu item works.
-  prefReady = waitForPrefChange("view_source.syntax_highlight");
+  prefReady = TestUtils.waitForPrefChange("view_source.syntax_highlight");
   await openContextMenu(browser);
   await simulateClick(syntaxMenuItem);
   await openContextMenu(browser);
@@ -133,7 +133,7 @@ var exercisePrefs = async function (source, highlightable) {
   );
   await closeContextMenu();
 
-  prefReady = waitForPrefChange("view_source.syntax_highlight");
+  prefReady = TestUtils.waitForPrefChange("view_source.syntax_highlight");
   await openContextMenu(browser);
   await simulateClick(syntaxMenuItem);
   await openContextMenu(browser);

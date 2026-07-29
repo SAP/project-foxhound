@@ -14,6 +14,7 @@ DEFINES["PROTOBUF_ENABLE_DEBUG_LOGGING_MAY_LEAK_PII"] = "0"
 DEFINES["RTC_DAV1D_IN_INTERNAL_DECODER_FACTORY"] = True
 DEFINES["RTC_ENABLE_VP9"] = True
 DEFINES["WEBRTC_APM_DEBUG_DUMP"] = "1"
+DEFINES["WEBRTC_DEPRECATE_PLAN_B"] = True
 DEFINES["WEBRTC_ENABLE_PROTOBUF"] = "0"
 DEFINES["WEBRTC_ENCODER_PSNR_STATS"] = True
 DEFINES["WEBRTC_LIBRARY_IMPL"] = True
@@ -68,7 +69,7 @@ UNIFIED_SOURCES += [
     "/third_party/libwebrtc/modules/audio_processing/aec3/fullband_erle_estimator.cc",
     "/third_party/libwebrtc/modules/audio_processing/aec3/matched_filter.cc",
     "/third_party/libwebrtc/modules/audio_processing/aec3/matched_filter_lag_aggregator.cc",
-    "/third_party/libwebrtc/modules/audio_processing/aec3/moving_average.cc",
+    "/third_party/libwebrtc/modules/audio_processing/aec3/moving_average_spectrum.cc",
     "/third_party/libwebrtc/modules/audio_processing/aec3/multi_channel_content_detector.cc",
     "/third_party/libwebrtc/modules/audio_processing/aec3/refined_filter_update_gain.cc",
     "/third_party/libwebrtc/modules/audio_processing/aec3/render_buffer.cc",

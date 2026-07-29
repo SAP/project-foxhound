@@ -118,8 +118,11 @@
 //! ```
 
 pub(crate) mod deserializer_tags_state;
+mod flow_id;
 pub mod options;
 pub mod schema;
+
+pub use flow_id::FlowId;
 
 pub use options::*;
 pub use schema::MarkerSchema;
@@ -247,20 +250,11 @@ impl<'a> Drop for AutoProfilerTextMarker<'a> {
 /// );
 /// ```
 ///
-#[cfg(feature = "enabled")]
 #[macro_export]
 macro_rules! auto_profiler_marker_text {
     ($name:expr, $category:expr,$options:expr, $text:expr) => {
         let _macro_created_rust_text_marker =
             $crate::AutoProfilerTextMarker::new($name, $category, $options, $text);
-    };
-}
-
-#[cfg(not(feature = "enabled"))]
-#[macro_export]
-macro_rules! auto_profiler_marker_text {
-    ($name:expr, $category:expr,$options:expr, $text:expr) => {
-        // Do nothing if the profiler is not enabled
     };
 }
 
@@ -372,7 +366,6 @@ pub fn add_marker<T>(
 /// category but *not* the options is not possible, due to how we're able to
 /// define macros in Rust.
 ///
-#[cfg(feature = "enabled")]
 #[macro_export]
 macro_rules! lazy_add_marker {
     ($name:expr, $category:expr, $options:expr, $payload:expr) => {
@@ -399,20 +392,6 @@ macro_rules! lazy_add_marker {
                 $payload,
             );
         }
-    };
-}
-
-#[cfg(not(feature = "enabled"))]
-#[macro_export]
-macro_rules! lazy_add_marker {
-    ($name:expr, $category:expr, $options:expr, $text:expr) => {
-        // Do nothing if the profiler is not enabled
-    };
-    ($name: expr, $category:expr, $payload:expr) => {
-        // Do nothing if the profiler is not enabled
-    };
-    ($name: expr, $payload:expr) => {
-        // Do nothing if the profiler is not enabled
     };
 }
 
@@ -554,7 +533,6 @@ impl<'a> Drop for AutoProfilerMarker<'a> {
 /// );
 /// ```
 ///
-#[cfg(feature = "enabled")]
 #[macro_export]
 macro_rules! auto_profiler_marker {
     ($name:expr, $category:expr,$options:expr) => {
@@ -563,21 +541,13 @@ macro_rules! auto_profiler_marker {
     };
 }
 
-#[cfg(not(feature = "enabled"))]
-#[macro_export]
-macro_rules! auto_profiler_marker {
-    ($name:expr, $category:expr,$options:expr) => {
-        // Do nothing if the profiler is not enabled
-    };
-}
-
 /// Flow marker type for Rust code.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
-pub struct FlowStackMarker(pub u64);
+pub struct FlowStackMarker(pub FlowId);
 
 impl FlowStackMarker {
     pub fn from_pointer<T>(s: *const T) -> Self {
-        FlowStackMarker(s as usize as u64)
+        FlowStackMarker(FlowId::from(s))
     }
 }
 
@@ -587,17 +557,8 @@ impl ProfilerMarker for FlowStackMarker {
     }
 
     fn stream_json_marker_data(&self, json_writer: &mut JSONWriter) {
-        fn hex_string(id: u64) -> [u8; 16] {
-            let mut buf = [0; 16];
-            let hex_digits = b"0123456789abcdef";
-            for i in 0..16 {
-                buf[i] = hex_digits[(id >> (60 - i * 4)) as usize & 0xf];
-            }
-            buf
-        }
-
         json_writer.unique_string_property("flow", unsafe {
-            std::str::from_utf8_unchecked(&hex_string(self.0))
+            std::str::from_utf8_unchecked(&self.0.to_hex())
         });
     }
 
@@ -686,19 +647,10 @@ impl<'a> Drop for AutoProfilerFlowMarker<'a> {
 /// );
 /// ```
 ///
-#[cfg(feature = "enabled")]
 #[macro_export]
 macro_rules! auto_profiler_flow_marker {
     ($name:expr, $category:expr,$options:expr, $payload:expr) => {
         let _macro_created_rust_tracing_marker =
             $crate::AutoProfilerFlowMarker::new($name, $category, $options, $payload);
-    };
-}
-
-#[cfg(not(feature = "enabled"))]
-#[macro_export]
-macro_rules! auto_profiler_flow_marker {
-    ($name:expr, $category:expr,$options:expr, $payload:expr) => {
-        // Do nothing if the profiler is not enabled
     };
 }
